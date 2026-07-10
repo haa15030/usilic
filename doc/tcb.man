@@ -1,0 +1,66 @@
+
+
+
+TCB(1)                                                     TCB(1)
+
+
+NNAAMMEE
+       tcb - Text Console Buffer
+
+VVEERRSSIIOONN
+       version 1.5b-1  20 Mar 2000
+
+SSYYNNOOPPSSIISS
+       _t_c_b
+       _t_c_b [_d_i_r_e_c_t_o_r_y]
+       _t_c_b [_f_i_l_e] [<_f_i_l_e]
+
+DDEESSCCRRIIPPTTIIOONN
+       _T_c_b(1) is a file viewer that works on a text-terminal such
+       as _x_t_e_r_m(1).
+
+FFIILLEE
+       _/_u_s_r_/_l_i_b_/_t_c_b_/_H_E_L_P
+          On-line manual file.
+
+       _/_u_s_r_/_l_i_b_/_t_c_b_/_t_c_b_r_c
+          Initialization file, used for setting of environment at
+          _t_c_b(1)  startup.   Copy  _t_c_b_r_c to _~_/_._t_c_b_/ directory and
+          then edit it accordingly. (The directory  _~_/_._t_c_b_/  will
+          be made at the first execution.)
+
+EENNVVIIRROONNMMEENNTT
+       TCBCHARSET
+          A  set of character code can be determined after _t_c_b(1)
+          startup.  However, if TCBCHARSET is set, its  value  is
+          used for it.  aasscciiii or eeuucc--jjpp can be set.
+
+AAUUTTHHOORR
+       Taketo Matsubara <moody@osk.3web.ne.jp>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                1
+
+
