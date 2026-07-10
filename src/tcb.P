@@ -35,6 +35,8 @@ u_char *check_type(u_char *buff, int *sizep, char *name, int *f_Mp, int f_chkbin
 int jistoeuc(int buff_i, u_char jis[], JIS *jisp);
 int sjistoeuc(int buff_i, u_char **sjisp, int sjis_i, JIS *dummy);
 int euctoeuc(int buff_i, u_char **eucp, int euc_i, JIS *dummy);
+int utf8_seqlen(u_char c);
+int utf8_width(u_char *cp, int len);
 int count_k(u_char *cp, int ci);
 int init_code(int *sizep, u_char *buff, int f_chkbin);
 void make_map(RV *rvp, int nlen);

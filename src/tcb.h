@@ -72,7 +72,7 @@ enum {
   A_cs, A_ce,
 
   C_ascii=300, C_bin, C_sjis, C_euc, C_jis, 
-  C_base64, C_quote, C_shift_jis, C_us_ascii, C_euc_jp, 
+  C_base64, C_quote, C_shift_jis, C_us_ascii, C_euc_jp, C_utf8, 
 
   S_macro=0, 
   S_label=S_macro+N_m,

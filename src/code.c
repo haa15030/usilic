@@ -558,10 +558,79 @@ int euctoeuc(int buff_i, u_char **eucp, int euc_i, JIS *dummy)/*tcb*/
   return buff_i;
 }
 
+/*
+ * UTF-8 helpers (step 1 of UTF-8 support).
+ *
+ * utf8_seqlen(): returns the byte length (1-4) of the UTF-8
+ * sequence that starts with lead byte c. A stray/invalid
+ * continuation byte returns 1 so callers never desync/run past
+ * the buffer even on malformed input.
+ *
+ * utf8_width(): returns the display width (0, 1, or 2 columns) of
+ * the codepoint encoded by the `len'-byte UTF-8 sequence at *cp.
+ * This is a pragmatic subset of the East Asian Wide/Fullwidth
+ * ranges (enough for Japanese/CJK text, tcb's primary use case)
+ * plus a few zero-width combining-mark ranges; it is not a
+ * complete Unicode East-Asian-Width table.
+ */
+int utf8_seqlen(u_char c)/*tcb*/
+{
+  if (c < 0x80) return 1;
+  if ((c & 0xe0) == 0xc0) return 2;
+  if ((c & 0xf0) == 0xe0) return 3;
+  if ((c & 0xf8) == 0xf0) return 4;
+  return 1;
+}
+
+int utf8_width(u_char *cp, int len)/*tcb*/
+{
+  u_int cpt;
+
+  if (len <= 1) return 1;
+  else if (len == 2) cpt = ((cp[0] & 0x1f) << 6) | (cp[1] & 0x3f);
+  else if (len == 3) cpt = ((cp[0] & 0x0f) << 12) | ((cp[1] & 0x3f) << 6)
+			 | (cp[2] & 0x3f);
+  else cpt = ((cp[0] & 0x07) << 18) | ((cp[1] & 0x3f) << 12)
+	   | ((cp[2] & 0x3f) << 6) | (cp[3] & 0x3f);
+
+  /* zero-width combining marks */
+  if ((cpt >= 0x0300 && cpt <= 0x036f)
+      || (cpt >= 0x1ab0 && cpt <= 0x1aff)
+      || (cpt >= 0x1dc0 && cpt <= 0x1dff)
+      || (cpt >= 0x20d0 && cpt <= 0x20ff)
+      || (cpt >= 0xfe20 && cpt <= 0xfe2f))
+    return 0;
+
+  /* East Asian Wide / Fullwidth (CJK, Hangul, fullwidth forms,
+     common symbols/emoji) */
+  if ((cpt >= 0x1100 && cpt <= 0x115f)
+      || (cpt >= 0x2e80 && cpt <= 0xa4cf && cpt != 0x303f)
+      || (cpt >= 0xac00 && cpt <= 0xd7a3)
+      || (cpt >= 0xf900 && cpt <= 0xfaff)
+      || (cpt >= 0xfe30 && cpt <= 0xfe4f)
+      || (cpt >= 0xff00 && cpt <= 0xff60)
+      || (cpt >= 0xffe0 && cpt <= 0xffe6)
+      || (cpt >= 0x20000 && cpt <= 0x3fffd)
+      || (cpt >= 0x1f300 && cpt <= 0x1faff)
+      || (cpt >= 0x2600 && cpt <= 0x27bf))
+    return 2;
+
+  return 1;
+}
+
 int count_k(u_char *cp, int ci)/*tcb*/
 {
   int i, f_kanji;
- 
+
+  if (vt_charset(0) == C_utf8) {
+    int pos = 0, len;
+    while (pos < ci) {
+      len = utf8_seqlen(cp[pos]);
+      if (pos + len > ci) return 1;	/* ci splits a multi-byte char */
+      pos += len;
+    }
+    return 0;
+  }
   for (i = f_kanji = 0; i < ci; i++)
     f_kanji = (*cp++ >= 0x80) ? !f_kanji : 0;
   return f_kanji;

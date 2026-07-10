@@ -251,7 +251,10 @@ int vt_init(int init)/*tcb*/
     vt_mode('d');
     vt_mode(0);
     if ((tcbcharset = getenv("TCBCHARSET")))
-      vt_charset((!strcasecmp(tcbcharset, "ascii")) ? C_ascii : C_euc);
+      vt_charset((!strcasecmp(tcbcharset, "ascii")) ? C_ascii
+		 : (!strcasecmp(tcbcharset, "utf8")
+		    || !strcasecmp(tcbcharset, "utf-8")) ? C_utf8
+		 : C_euc);
     break;
   case 2:
     if (!vt_mode('H')) vt_cs(vt_row(0) - 2, 0);
