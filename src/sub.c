@@ -748,7 +748,7 @@ int ichrstr(char str0[], char c, char *str)/*tcb*/
   char *cp;
 
   if ((str && (cp = strstr(str0, str))) || (!str && (cp = strchr(str0, c))))
-    return (int)cp - (int)str0 + 1;
+    return (int)(cp - str0) + 1;
   else return 0;
 }
 
@@ -970,26 +970,28 @@ int is_list(int f_M, int *n_bp)/*tcb*/
   
 int open_pty(char str[], int f_open)/*tcb*/
 {
-  char *cp, *np;
-  int tfd, i;
+  /*
+   * Portable (Linux / macOS / *BSD) pty acquisition using the POSIX
+   * (Unix98) pty API instead of scanning legacy BSD device nodes
+   * such as /dev/ptyp0.."/dev/ptysf", which no longer exist on
+   * modern kernels (and never existed on macOS) without special
+   * kernel configuration.  str[] receives the *slave* device path
+   * (e.g. "/dev/pts/4" on Linux, "/dev/ttys004" on macOS); the
+   * caller opens str[] directly to get the slave side, no more
+   * "flip the 5th character between 'p' and 't'" trick needed.
+   */
+  int tfd;
+  char *slave;
 
-  for (cp = "pqrs", np = NULL; *cp; cp++)
-    for (np = "0123456789abcdef"; *np; np++) {
-      sprintf(str, "/dev/pty%c%c", *cp, *np);
-      if ((tfd = open(str, O_RDWR)) >= 0) {
-	str[5] = 't';
-	if ((i = open(str, O_RDWR)) >= 0) {
-	  str[5] = 'p';
-	  close(i);
-	  if (f_open) return tfd;
-	  else close(tfd);
-	  return 1;
-	}
-	str[5] = 'p';
-	close(tfd);
-      }
-    }
-  return -1;
+  if ((tfd = posix_openpt(O_RDWR | O_NOCTTY)) < 0) return -1;
+  if (grantpt(tfd) < 0 || unlockpt(tfd) < 0 || !(slave = ptsname(tfd))) {
+    close(tfd);
+    return -1;
+  }
+  strcpy(str, slave);
+  if (f_open) return tfd;
+  close(tfd);
+  return 1;
 }
 
 u_char *mtoa(int f_M)/*tcb*/

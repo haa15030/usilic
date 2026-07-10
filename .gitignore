@@ -1,0 +1,26 @@
+# build artifacts
+src/*.o
+src/*.P
+src/tcb
+src/tcb.exe
+src/config.h
+src/config.h.old
+src/Makefile
+src/Makefile.old
+src/.config
+src/TAGS
+src/t
+src/TCB.EXE.stackdump
+src/debug/
+install.sh
+.config
+
+# perl scratch/doc build output
+perl/tcb.dvi
+perl/tcb.log
+perl/tcb.aux
+perl/t
+perl/u
+perl/s
+
+doc/tcb.1.gz

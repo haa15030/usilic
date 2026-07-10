@@ -20,7 +20,7 @@ char *s_S(int n_S)/*tcb*/
   return (n_S < S_nn) ? (char*)Str.S[n_S] : NULL;
 }
 
-char **s_P(u_int n_P)/*tcb*/
+char **s_P(uintptr_t n_P)/*tcb*/
 {
   static char *child[] = { /* built-in program */
     /* file manager */
@@ -805,7 +805,7 @@ int conf(char *temp, char *args, char *version, int f_tcb)/*tcb*/
       fprintf(stderr, "Install %s or %s.\n", shell[0], shell[1]);
       return -1;
     }
-    strcpy(tmp, getenv("SHELL"));
+    strcpy(tmp, getenv("SHELL") ? getenv("SHELL") : "/bin/sh");
     for (i = 0, cp = NULL; i < 2; i++) 
       if (strstr(tmp, shell[i])) {
 	cp = shell[i];
@@ -874,7 +874,7 @@ int conf(char *temp, char *args, char *version, int f_tcb)/*tcb*/
   if (erre) save_intr(S_erre);
   print_tcb(mess, f_tcb);
   Str.S[S_TCB] = strdup(mess);
-  s_P((u_int)ARCHIVE);
+  s_P((uintptr_t)ARCHIVE);
   return 0;
 }
 
@@ -1253,7 +1253,7 @@ int init_config(CHILD *chp, LIST **lcpp, LIST **lgpp, STR **scpp, STR **sgpp, u_
   memset(p, ' ', n_tcbrc);
   p[n_tcbrc] = '\0';
   fp = fopen(s_S(S_tcbrc), "r");
-  /*  conf_arc(NULL, str, chp);*/
+  conf_arc(NULL, str, chp);
   for (f_shell = f_skip = 0; f_skip >= 0; ) {
     if (!f_skip)
       do {
@@ -1280,8 +1280,8 @@ int init_config(CHILD *chp, LIST **lcpp, LIST **lgpp, STR **scpp, STR **sgpp, u_
     p[f_tcbrc] = f_tcbrc + '0';
     switch(f_tcbrc) {
     case 0:
-      /*            if ((f_skip = conf_arc(fp, str, chp)) == 1)
-		    save_error("%src: %s: %s.\n", s_S(S_tcb), str, s_S(S_errm));*/
+      if ((f_skip = conf_arc(fp, str, chp)) == 1)
+	save_error("%src: %s: %s.\n", s_S(S_tcb), str, s_S(S_errm));
       break;
     case 1:
     case 2:

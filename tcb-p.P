@@ -133,7 +133,7 @@ int do_shell(u_char prev[], char str[], FILE **pinp, u_char *w, int *ppidp, LIST
 int is_inter(int *pv0, int pid0, int spid0);
 void r_S(int n_S);
 char *s_S(int n_S);
-char **s_P(u_int n_P);
+char **s_P(uintptr_t n_P);
 int conf_wait(FILE *fp, char str[]);
 int conf_ls(FILE *fp, char *str);
 int conf(char *temp, char *args, char *version, int f_tcb);

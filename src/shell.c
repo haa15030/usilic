@@ -1759,24 +1759,15 @@ int start_shell(int shell_pid, int disp_pid, FILE **ofpp, FILE **ifpp, char *mes
   if (mess) {
     messp = mess;
     if (!ofpp && !ifpp) tfd = 0;
-#ifdef __CYGWIN32__
-    else if ((tfd = open ("/dev/ptmx", O_RDWR)) < 0) return 0;
-#else
     else if ((tfd = open_pty(pty, 1)) < 0) return 0;
-#endif
     unlink(s_S(S_mess));
     if (!(pid = fork())) {
       char str[256];
       CHILD *chp = get_child(NULL, s_P(P_mode)[M_shell], NULL, NULL, NULL);
-      pty[5] = 't';
-#ifdef __CYGWIN32__
-      grantpt(tfd);
-      unlockpt(tfd);
-      fd = open(ptsname(tfd), O_RDWR|O_NOCTTY);   
-      setsid();
-#else
+      /* pty[] already holds the slave device path from open_pty() */
       fd = open(pty, O_RDWR);
       setsid();
+#ifdef TIOCSCTTY
       ioctl(fd, TIOCSCTTY, 0);
 #endif
       dup2(fd, 0);
