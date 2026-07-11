@@ -35,6 +35,13 @@ else
         make install
         exit 0
     else
+	if [ `uname` = Darwin ]; then	# macOS
+	    USR_DIR=/usr/local
+	    MAN=/usr/local/share/man/man1
+	    PERM='-m 644'
+	    echo '# Makefile for macOS (Darwin) version' > .config
+	    echo 'LIBS=	-lncurses'>> .config
+	else
 	if [ `uname` = CYGWIN_98-4.10 ]; then	# cygwin
 	    USR_DIR=/usr/local
 	    MAN=/usr/man/man1
@@ -43,6 +50,7 @@ else
 	else
             echo 'Not supported yet "'`uname`'".'
             exit 1
+	fi
 	fi
     fi
 fi

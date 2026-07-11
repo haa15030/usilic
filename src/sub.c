@@ -968,6 +968,13 @@ int is_list(int f_M, int *n_bp)/*tcb*/
   return n_ll;
 }  
   
+static char pty_err[128] = "";
+
+char *pty_strerror(void)/*tcb*/
+{
+  return pty_err[0] ? pty_err : "unknown reason";
+}
+
 int open_pty(char str[], int f_open)/*tcb*/
 {
   /*
@@ -983,8 +990,23 @@ int open_pty(char str[], int f_open)/*tcb*/
   int tfd;
   char *slave;
 
-  if ((tfd = posix_openpt(O_RDWR | O_NOCTTY)) < 0) return -1;
-  if (grantpt(tfd) < 0 || unlockpt(tfd) < 0 || !(slave = ptsname(tfd))) {
+  pty_err[0] = '\0';
+  if ((tfd = posix_openpt(O_RDWR | O_NOCTTY)) < 0) {
+    snprintf(pty_err, sizeof(pty_err), "posix_openpt: %s", strerror(errno));
+    return -1;
+  }
+  if (grantpt(tfd) < 0) {
+    snprintf(pty_err, sizeof(pty_err), "grantpt: %s", strerror(errno));
+    close(tfd);
+    return -1;
+  }
+  if (unlockpt(tfd) < 0) {
+    snprintf(pty_err, sizeof(pty_err), "unlockpt: %s", strerror(errno));
+    close(tfd);
+    return -1;
+  }
+  if (!(slave = ptsname(tfd))) {
+    snprintf(pty_err, sizeof(pty_err), "ptsname: %s", strerror(errno));
     close(tfd);
     return -1;
   }

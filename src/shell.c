@@ -1847,7 +1847,7 @@ int do_shell(u_char prev[], char str[], FILE **pinp, u_char *w, int *ppidp, LIST
       ifp = NULL;
     }
     if (!(pid = start_shell(0, 0, &ofp, &ifp, mess, pty))) {
-      save_error("%s: %s.\n", s_S(S_tcb), s_S(S_err5));
+      save_error("%s: %s (%s).\n", s_S(S_tcb), s_S(S_err5), pty_strerror());
       save_intr(S_err5);
       return -M_bl;
     }

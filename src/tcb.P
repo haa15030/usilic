@@ -164,6 +164,7 @@ char *is_inst(char *path, char *prog);
 int is_access(char name[], BASE *bp);
 int is_str(int f_M, int *n_bp);
 int is_list(int f_M, int *n_bp);
+char *pty_strerror(void);
 int open_pty(char str[], int f_open);
 u_char *mtoa(int f_M);
 void print_buff(u_char buff[], int kanji_s);

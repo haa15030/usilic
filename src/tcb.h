@@ -2,14 +2,18 @@
  * Need both BSD extensions (u_char/u_int/u_long from sys/types.h)
  * and XOPEN/POSIX pty calls (posix_openpt/grantpt/unlockpt/ptsname).
  * On glibc, _XOPEN_SOURCE alone hides the BSD typedefs, so pull in
- * _DEFAULT_SOURCE too.  On macOS/*BSD libc these are no-ops (both
- * families are visible by default there).
+ * _DEFAULT_SOURCE too. This is glibc/Linux-specific: macOS/*BSD
+ * libc already expose both families by default, and defining
+ * _XOPEN_SOURCE there can instead hide *their* BSD extensions, so
+ * leave their headers alone.
  */
+#ifdef __linux__
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
 #endif
 #ifndef _XOPEN_SOURCE
 #define _XOPEN_SOURCE 600
+#endif
 #endif
 #ifndef _TCB_H
 #if 1
