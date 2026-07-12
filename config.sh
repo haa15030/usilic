@@ -179,7 +179,7 @@ install $COPY -m 644 doc/HELP.jp \$1$LIB
 echo "install $COPY $PERM doc/tcb.1.gz \$1$MAN"
 install $COPY $PERM doc/tcb.1.gz \$1$MAN
 EOF
-if [ -d $JMAN ]; then
+if [ -n "$JMAN" ] && [ -d "$JMAN" ]; then
 cat >> install.sh <<EOF
 mkdir -p \$1$JMAN
 echo "install $COPY $PERM doc/tcb.1.gz \$1$JMAN"

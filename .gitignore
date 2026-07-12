@@ -16,6 +16,7 @@ src/t
 src/TCB.EXE.stackdump
 src/debug/
 install.sh
+install
 .config
 
 # perl scratch/doc build output
