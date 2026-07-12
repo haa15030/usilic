@@ -22,10 +22,10 @@ if [ `uname` = Linux ]; then	# Linux
 #    else
 #	JMAN=/usr/man/ja_JP.ujis/man1
 #    fi
-#    USR_DIR=/usr
-#    USR_DIR=/usr/local
-    USR_DIR=/tmp/usr/local
-    MAN=/tmp/usr/man/man1
+    USR_DIR=/usr
+    USR_DIR=/usr/local
+#    USR_DIR=/tmp/usr/local
+#    MAN=/tmp/usr/man/man1
     PERM='-m 644'
     echo '# Makefile for Linux version' > .config
     echo 'LIBS=	-lncurses'>> .config
