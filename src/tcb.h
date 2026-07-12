@@ -1,11 +1,19 @@
 /*
- * Need both BSD extensions (u_char/u_int/u_long from sys/types.h)
- * and XOPEN/POSIX pty calls (posix_openpt/grantpt/unlockpt/ptsname).
- * On glibc, _XOPEN_SOURCE alone hides the BSD typedefs, so pull in
- * _DEFAULT_SOURCE too. This is glibc/Linux-specific: macOS/*BSD
- * libc already expose both families by default, and defining
- * _XOPEN_SOURCE there can instead hide *their* BSD extensions, so
- * leave their headers alone.
+ * u_char/u_int/u_long come from sys/types.h. On Linux/glibc these
+ * happened to become visible transitively through another header
+ * (e.g. unistd.h) once _DEFAULT_SOURCE is active, but that is not
+ * portable: macOS/clang's libc does not pull them in the same way,
+ * so without an explicit include this fails there with "unknown
+ * type name 'u_char'" etc. Include it directly so it works
+ * everywhere regardless of what other headers happen to do.
+ *
+ * Separately, glibc also needs _XOPEN_SOURCE for the POSIX pty
+ * calls (posix_openpt/grantpt/unlockpt/ptsname), and _XOPEN_SOURCE
+ * alone would hide the BSD typedefs above, hence _DEFAULT_SOURCE
+ * too. This part is glibc/Linux-specific: macOS and the *BSDs
+ * expose both families by default, and defining _XOPEN_SOURCE
+ * there can instead hide their own BSD extensions, so leave their
+ * headers alone.
  */
 #ifdef __linux__
 #ifndef _DEFAULT_SOURCE
@@ -15,6 +23,7 @@
 #define _XOPEN_SOURCE 600
 #endif
 #endif
+#include <sys/types.h>
 #ifndef _TCB_H
 #if 1
 #define SKIP_SPC
