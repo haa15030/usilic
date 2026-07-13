@@ -251,6 +251,10 @@ u_char *fork_arc(char name[], int f_M, CHILD *chp0, int *tmp_sizep, int *bp_size
     pipe(pv);
     if (!fork()) {
       load_signal();
+      setenv("LC_ALL", "C", 1); /* archive TOC (tar tvf/unzip -l/lha/rpm -qplv)
+				    is parsed byte-by-byte by alloc_head() as
+				    ASCII; a localized date (e.g. "7月") breaks
+				    that scan and hangs or segfaults tcb */
       if (chp2) {
 	pipe(&pv[2]);
 	if (!fork()) {

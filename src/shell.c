@@ -92,7 +92,14 @@ static void write_shell(void *p)
 	if ((cp2 = strstr(dir, ":~"))) {
 	  memmove(&dir[strlen(s_S(S_home))], &cp2[3], strlen(&cp2[3]) + 1);
 	  memcpy(dir, s_S(S_home), strlen(s_S(S_home)));
-	} else strcpy(dir, &cp[strlen(version) + 1]);
+	} else { /* cp points inside dir[]; &cp[...] and dir overlap when
+		    cp != dir, so strcpy() here is undefined behavior (and
+		    on macOS, _FORTIFY_SOURCE's __chk_fail_overlap() catches
+		    it and hangs write_shell(), freezing tcb after a CP/MV/RM
+		    completes and it tries to redraw the SHELL prompt) */
+	  u_char *sp = &cp[strlen(version) + 1];
+	  memmove(dir, sp, strlen(sp) + 1);
+	}
 	if (!strlen(dir)) ; /* garbage */
 	else {
 	  strcpy(&strchr(dir, '\0')[-2], "/");

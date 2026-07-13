@@ -137,7 +137,7 @@ static void init_rv(NUM *np, PN *pnp, RV *rvp, HEAP *hp, int etop)
     for (pp = hp->bp->pp; pp && !strstr(pp->cs, "../"); pp = pp->next) ;
   else pp = hp->bp->pp;
   rvp->col = init_col(np->M, pp->cs, hp->bp->size);
-  if (hp->bp->pp->tell != (u_int)F7 /* F7: "No size" etc. */
+  if (hp->bp->pp->tell != (uintptr_t)F7 /* F7: "No size" etc. */
       && rvp->pp && rvp->col >= 0) { /* reverse attr. */
     strcpy(rvp->str, &rvp->pp->cs[rvp->col]);
   } else strcpy(rvp->str, "");
@@ -400,7 +400,13 @@ int load_ll(CHILD *chp, ARRAY *ap, u_char prev[], CUT *cutp, HEAP *hp, PN *pnp, 
       break;
     }
   }
-  return (lp) ? (((u_int)lp - (u_int)&hp->ll.a[0]) / sizeof(u_int)) : i;
+  /* hp->ll.a[] elements are u_long (8 bytes on 64-bit, to hold a LIST*);
+     dividing the byte offset by sizeof(u_int) (4) instead of the actual
+     element size doubled the computed index (e.g. p.dir, index 2, came
+     out as index 4 == p.man), so save_ll()/load_list() saved and loaded
+     the cursor position from the wrong slot. CP/RM/MV/etc. never found
+     their directory's saved row and reset the cursor to the top line. */
+  return (lp) ? (int)(lp - (LIST**)&hp->ll.a[0]) : i;
 }
 
 int mode(HEAP *hp, NUM *np, ARRAY *ap, LINE *lp, RV *rvp)/*mode*/

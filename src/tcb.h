@@ -133,7 +133,10 @@ typedef struct PP { /* line's pointer */
   struct PP *next;
   u_char *cs;
   ATTR *attr;
-  u_int tell;
+  uintptr_t tell; /* also holds a raw u_char* into an archive buffer
+		      (alloc_tar/alloc_lha/alloc_unzip + init_arc etc.);
+		      u_int truncated it on 64-bit, causing ARC mode to
+		      segfault or read garbage */
   int split;
   struct {
     u_int nl	: 1;

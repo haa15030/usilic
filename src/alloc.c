@@ -819,7 +819,18 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*tcb*/
 	    for (p = ce; *p >= '0' && *p <= '9'; p++) ;
 	    if (*p == ' ' || *p == ',') break;
 	    else ce = p;
-	  } 
+	  }
+	  break;
+	} else if (ce == Alloc.line) {
+	  /* Reached the start of the line without ever finding '/': this
+	     isn't GNU tar's "owner/group" format (BSD tar, used by macOS,
+	     has no '/' and prints owner and group as separate fields), so
+	     the backward scan above can never terminate. Without this
+	     fallback it spins forever (100% CPU) and can walk off the
+	     buffer. Recover by locating the size field the BSD way:
+	     mode links owner group SIZE mon day time/year name. */
+	  for (ce = Alloc.line, k = 0; k < 4; ce++)
+	    if (*ce == ' ') { while (ce[1] == ' ') ce++; k++; }
 	  break;
 	} else while (*ce == ' ') ce--;
       }
@@ -942,6 +953,21 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*tcb*/
   return pp0;
 }
 
+static u_char *find_tar_header(u_char *cp, u_char *cp0, u_char *end, char name[])
+{ /* Tar headers are always 512-byte aligned from the start of the
+     archive; only test alignment-matching positions, or a hidden
+     entry whose own header text merely *contains* `name` as a
+     substring (e.g. macOS's "._name" AppleDouble sidecar for
+     extended attributes, which "tar tvf" doesn't list but is a real
+     header in the byte stream) can be mistaken for it. */
+  int i = strlen(name);
+  u_char *p = cp0 + (((cp - cp0) + 511) & ~511); /* round up to header */
+
+  for (; p < end; p += 512)
+    if (!strncmp(p, name, i)) return p;
+  return end;
+}
+
 void alloc_tar(u_char cp0[], PP pp0[], int size)/*tcb*/
 {
   int i;
@@ -949,10 +975,19 @@ void alloc_tar(u_char cp0[], PP pp0[], int size)/*tcb*/
   PP *pp;
 
   end = cp0 + size;
-  for (cp = cp0, pp = pp0, end--; ;) {
+  cp = cp0;
+  pp = pp0;
+  end--;
+  strcpy(Alloc.line, &pp->cs[20]);
+  if ((sp = strchr(Alloc.line, ' '))) *sp = '\0';
+  if (cp < end) /* locate the first entry's header too: it isn't
+		   necessarily the very first physical header (see
+		   find_tar_header()) */
+    cp = find_tar_header(cp, cp0, end, Alloc.line);
+  for (; ;) {
     if ((cp += 512) > end) /* skip header */
       cp = end;
-    pp->tell = (u_int)cp;
+    pp->tell = (uintptr_t)cp;
     if (pp->split < 0) pp->split = 0;
     else {
       for (i = pp->split; i && cp < end; i--) cp++;
@@ -961,12 +996,8 @@ void alloc_tar(u_char cp0[], PP pp0[], int size)/*tcb*/
     if (!(pp = pp->next)) break;
     strcpy(Alloc.line, &pp->cs[20]);
     if ((sp = strchr(Alloc.line, ' '))) *sp = '\0';
-    if (cp < end) {
-      i = strlen(Alloc.line);
-      while (strncmp(cp, Alloc.line, i)) /* search for next header */
-	if (cp >= end) break;
-	else cp++;
-    }
+    if (cp < end) /* search for next header */
+      cp = find_tar_header(cp, cp0, end, Alloc.line);
   }
 }
 
@@ -987,7 +1018,7 @@ void alloc_lha(u_char cp0[], PP pp0[], int size)/*tcb*/
 	  "::::::::"
 	*/
 	while (cp < end && *cp++ != '\n') ;
-    pp->tell = (u_int)cp;
+    pp->tell = (uintptr_t)cp;
     if (pp->split > 0) {
       for (i = 0; i < pp->split && cp < end; i++) cp++;
       if (cp == end) pp->split = -2;
@@ -1005,7 +1036,7 @@ void alloc_unzip(u_char cp0[], PP pp0[], int size)/*tcb*/
   for (cp = cp0, end = cp + size, pp = pp0; ; ) {
     if (pp->split < 0) pp->split = 0;
     else {
-      pp->tell = (u_int)cp;
+      pp->tell = (uintptr_t)cp;
       for (i = 0; i < pp->split && cp < end; i++) cp++;
       if (cp == end) pp->split = -2;
     }
@@ -1299,7 +1330,7 @@ void make_bp(BASE *bp, char mess[], char *name, char *cp)/*tcb*/
   }
   if ((bp->buff = strdup(toul(Alloc.line, 1)))) {
     if ((bp->pp = set_pp(bp->buff, strlen(bp->buff), &bp->nrow, 0, 0))) {
-      bp->pp->tell = (u_int)F7; /* mark of error */
+      bp->pp->tell = (uintptr_t)F7; /* mark of error */
       bp->size = -1;
     } else {
       free(bp->buff);
