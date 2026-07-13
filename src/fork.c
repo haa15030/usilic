@@ -69,12 +69,21 @@ u_char *fork_bin(CHILD *chp, int *sizep, int f_M, int f_chkbin)/*tcb*/
   if (!fork()) {
     load_signal();
     dup_error();
+    if (f_M == T_dir) /* `ls' output is parsed byte-by-byte to find where
+			  the filename starts (get_col()); a localized month
+			  name (e.g. "7月") is multibyte in UTF-8, so its byte
+			  length no longer matches its 1-column display width,
+			  throwing off every column position after it and
+			  duplicating the first character of the highlighted
+			  filename on screen. Force the C locale for this
+			  child only, so `ls' always prints ASCII dates. */
+      setenv("LC_ALL", "C", 1);
     close(1);
     dup2(pv[1], 1);
     close(pv[1]);
     close(pv[0]);
     execvp(*chp->argv, chp->argv);
-  } 
+  }
   close(pv[1]);
   buff = read_buff(sizep, pv[0], f_chkbin);
   close(pv[0]);

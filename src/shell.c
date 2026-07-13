@@ -1379,7 +1379,18 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
     while (fgetc(ifp) == EOF) ; /* (12) */
     if (!fork()) {
       if (f.bash)
-	fprintf(ofp, "export PS1=\047%s%s:\\w\\$ %s\047; set -o ignoreeof; export COLUMNS=%d; unset HISTFILE; export PAGER=\047%s -p %d\047\n#\n"
+	/* unset PROMPT_COMMAND: overriding PS1 alone isn't enough to get a
+	   prompt tcb's line-by-line SHELL-mode parser can recognize. Many
+	   desktop terminal emulators (e.g. GNOME Terminal/VTE, via
+	   /etc/profile.d/vte.sh) set PROMPT_COMMAND to inject an OSC
+	   escape sequence (reporting cwd as a file:// URI, percent-encoded)
+	   before every prompt. tcb's parser doesn't know this escape
+	   sequence and reads it as literal text, desyncing the line buffer
+	   into a repeating garbage loop -- most visible when the cwd has
+	   non-ASCII characters (e.g. a localized "Pictures" folder name),
+	   which makes the injected escape sequence long enough to spill
+	   across what tcb expects to be a single prompt line. */
+	fprintf(ofp, "unset PROMPT_COMMAND; export PS1=\047%s%s:\\w\\$ %s\047; set -o ignoreeof; export COLUMNS=%d; unset HISTFILE; export PAGER=\047%s -p %d\047\n#\n"
 		, s_S(S_mark), tcb, s_S(S_mark), vt_col(0), s_S(S_tcb), pid0);
       else
 	fprintf(ofp, "set prompt = \042%s%s:%%~%%# %s\042; set ignoreeof; setenv PAGER \047%s -p %d\047\n"
