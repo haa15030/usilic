@@ -1390,8 +1390,8 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
 	   non-ASCII characters (e.g. a localized "Pictures" folder name),
 	   which makes the injected escape sequence long enough to spill
 	   across what tcb expects to be a single prompt line. */
-	fprintf(ofp, "unset PROMPT_COMMAND; export PS1=\047%s%s:\\w\\$ %s\047; set -o ignoreeof; export COLUMNS=%d; unset HISTFILE; export PAGER=\047%s -p %d\047\n#\n"
-		, s_S(S_mark), tcb, s_S(S_mark), vt_col(0), s_S(S_tcb), pid0);
+	fprintf(ofp, "unset PROMPT_COMMAND; export PS1=\047%s%s:\\w\\$ %s\047; set -o ignoreeof; export COLUMNS=%d; unset HISTFILE; export PAGER=\047%s -p %d\047\n#%s\n"
+		, s_S(S_mark), tcb, s_S(S_mark), vt_col(0), s_S(S_tcb), pid0, s_S(S_mark));
       else
 	fprintf(ofp, "set prompt = \042%s%s:%%~%%# %s\042; set ignoreeof; setenv PAGER \047%s -p %d\047\n"
 		, s_S(S_mark), tcb, s_S(S_mark), s_S(S_tcb), pid0);
@@ -1401,7 +1401,23 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
 #if 0
     while ((c = fgetc(ifp)) != '\r') ;
 #else
-    while ((c = fgetc(ifp)) != '#') ;
+    if (f.bash) {
+      /* Between the fork() above and here, bash may already have auto-drawn
+	 its very first prompt using the ORIGINAL (pre-tcb) PROMPT_COMMAND --
+	 e.g. GNOME Terminal/VTE's /etc/profile.d/vte.sh, which reports cwd
+	 via an OSC escape sequence -- before it ever reads the setup line
+	 sent above. A bare '#' sentinel can turn up by coincidence inside
+	 that leftover output and end this discard loop early, leaking the
+	 rest into what tcb parses as the first SHELL-prompt line. Match the
+	 same distinctive S_mark text PS1 is built with instead of a single
+	 '#': it also closes the setup line's comment ("#" S_mark), but is
+	 specific enough that it won't appear by chance in unrelated output. */
+      char *mk = s_S(S_mark);
+      int mi = 0, ml = strlen(mk);
+      while (mi < ml && (c = fgetc(ifp)) != EOF)
+	mi = (c == mk[mi]) ? mi + 1 : 0;
+    } else
+      while ((c = fgetc(ifp)) != '#') ;
 #endif
     wait(0);
     strcpy(prev, prev0);
