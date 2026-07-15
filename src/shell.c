@@ -813,6 +813,8 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
 {
   static int plen;
   static int n_buff, n_col;
+  static int u8_len, u8_i;
+  static u_char u8_buf[4];
   static struct {
     u_int nl	: 1;
     u_int bs	: 1;
@@ -824,7 +826,7 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
 
   if (rvp == F7) {
     ff.nl = ff.bs = ff.esc = ff.md = ff.us = 0;
-    plen = n_buff = n_col = 0;
+    plen = n_buff = n_col = u8_len = u8_i = 0;
     return 0;
   }
   plen = strlen(prompt);
@@ -870,6 +872,13 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
       j = Shell.f.alen;
       do {
 	for (i = 0; *cp && i < vt_col(0) + j; i++, cp++) {
+	  if (vt_charset(0) == C_utf8 && *cp >= 0x80) {
+	    int u_len = utf8_seqlen(*cp), k;
+	    for (k = 0; k < u_len && cp[k]; k++) vt_putchar(cp[k]);
+	    i += utf8_width(cp, k) - 1;
+	    cp += k - 1;
+	    continue;
+	  }
 	  if (is_euckana_1_byte(*cp)) i--;
 	  vt_putchar(*cp);
 	}
@@ -1002,6 +1011,18 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
       } else if (ff.esc) {
 	ff.esc = (c < 'A' || c > 'Z') && (c < 'a' || c > 'z');
 	if (!plen) buff[--n_buff] = '\0';
+      } else if (vt_charset(0) == C_utf8 && (u8_len || c >= 0x80)) {
+	/* UTF-8 (step 4): buffer a multi-byte sequence across calls
+	   (this function sees one byte per call) and only advance
+	   n_col by its real display width once the sequence
+	   completes, instead of once per byte. */
+	if (!u8_len) u8_len = utf8_seqlen(c);
+	u8_buf[(u8_i < 4) ? u8_i : 3] = c;
+	if (++u8_i >= u8_len) {
+	  n_col += utf8_width(u8_buf, (u8_i < 4) ? u8_i : 4);
+	  u8_len = u8_i = 0;
+	}
+	continue;
       } else {
 	if (!is_euckana_1_byte(c)) n_col++;
 	continue;
