@@ -1,4 +1,0 @@
-static int tc_row(int i);
-static void tc_rc(void);
-static void tc_sc(void);
-static void tc_cs(int m, int n);

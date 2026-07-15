@@ -4,6 +4,7 @@
 # build artifacts
 src/*.o
 src/*.P
+*.P
 src/tcb
 src/tcb.exe
 src/config.h
