@@ -261,7 +261,17 @@ PP *alloc_pipe(int init, FILE **pinp, int *nrowp, BASE *bp0, int nlen0)/*tcb*/
 	  if (c1 < 2) c1++;
 	  else c1 = 0;
 	} else if (c2) c2++;
-	if (f_bin <= 0 && vt_charset(0) != C_ascii && i < vt_col(0)) {
+	if (f_bin <= 0 && vt_charset(0) == C_utf8 && i < vt_col(0)
+	    && c >= 0x80) {
+	  int u_len = utf8_seqlen(c);
+	  if (ce + u_len <= end) {
+	    i += utf8_width(ce, u_len);
+	    ce += u_len;
+	    n += u_len;
+	    continue;
+	  }
+	}
+	if (f_bin <= 0 && vt_charset(0) == C_euc && i < vt_col(0)) {
 	  if (is_euckana_1_byte(ce[0]) && is_euckana_2_byte(ce[1])) {
 	    ce += 2;
 	    n += 2;
@@ -1405,7 +1415,16 @@ PP *set_pp(u_char *cs, int size, int *rowp, int f_code, int f_bin)/*tcb*/
 	else c1 = 0;
       } else if (c2) c2++;
     }
-    if (!f_code && vt_charset(0) != C_ascii && i < vt_col(0)) {
+    if (!f_code && vt_charset(0) == C_utf8 && i < vt_col(0) && c >= 0x80) {
+      int u_len = utf8_seqlen(c);
+      if (ce + u_len <= end) {
+	i += utf8_width(ce, u_len);
+	ce += u_len;
+	n += u_len;
+	continue;
+      }
+    }
+    if (!f_code && vt_charset(0) == C_euc && i < vt_col(0)) {
       if (is_euckana_1_byte(ce[0]) && is_euckana_2_byte(ce[1])) {
 	ce += 2;
 	n += 2;
