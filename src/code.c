@@ -659,11 +659,40 @@ static int count_i(u_char *cp, int col)
   return ci;
 }
 
+/*
+ * is_utf8() (step 2 of UTF-8 support): pragmatic well-formedness
+ * check used to auto-detect UTF-8 file content. Returns true only
+ * if every multi-byte lead byte is followed by the right number of
+ * valid continuation bytes (0x80-0xbf) and at least one multi-byte
+ * sequence was seen (so plain ASCII text, which is valid but
+ * ambiguous UTF-8, falls through to the existing C_ascii handling
+ * instead of being force-tagged C_utf8). A sequence truncated by
+ * the end of `buff' (e.g. a preview-sized read cut mid-character)
+ * is tolerated rather than rejected.
+ */
+static int is_utf8(u_char *buff, int size)
+{
+  int i, len, j, f_multi;
+
+  for (i = f_multi = 0; i < size; i += len) {
+    if (buff[i] < 0x80) { len = 1; continue; }
+    if (buff[i] < 0xc2 || buff[i] > 0xf4) return 0;
+    len = utf8_seqlen(buff[i]);
+    if (i + len > size) break;
+    for (j = 1; j < len; j++)
+      if ((buff[i+j] & 0xc0) != 0x80) return 0;
+    f_multi = 1;
+  }
+  return f_multi;
+}
+
 int init_code(int *sizep, u_char *buff, int f_chkbin)/*tcb*/
 {
   int i, code, size, c1, c2, c3, c4, c5, kn[3];
   int f_bin; /* for an unexpected control-character in JIS-code */
   u_char *end;
+
+  if (vt_charset(0) == C_utf8 && is_utf8(buff, *sizep)) return C_utf8;
 
   kn[0] = kn[1] = kn[2] = 0;
   c1 = c4 = c5 = f_bin = 0;
