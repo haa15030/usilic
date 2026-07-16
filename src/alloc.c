@@ -28,12 +28,20 @@ static u_char *save_attr(u_char *cp, int attr, int *n_attrp, int *np)
     n += 3;
     break;
   case A_md2:
-    cp += 4;
-    Alloc.attr[n_attr].n = n+2;
-    Alloc.attr[n_attr++].attr = A_md2;
-    Alloc.attr[n_attr].n = n+4;
-    Alloc.attr[n_attr++].attr = -A_me;
-    n += 4;
+    { /* the repeated (overstruck) character after the "^H^H" is 2 bytes
+	 in EUC/SJIS, but euctoutf8_buf() (code.c) has already re-encoded
+	 the line to UTF-8 by the time this runs, so in UTF-8 mode it can
+	 be up to 4 bytes; a hardcoded skip of 2 here split multi-byte
+	 characters (e.g. 3-byte CJK kanji) in half, corrupting them into
+	 "????" on screen. */
+      int w = (vt_charset(0) == C_utf8) ? utf8_seqlen(cp[2]) : 2;
+      cp += 2 + w;
+      Alloc.attr[n_attr].n = n+2;
+      Alloc.attr[n_attr++].attr = A_md2;
+      Alloc.attr[n_attr].n = n+2+w;
+      Alloc.attr[n_attr++].attr = -A_me;
+      n += 2 + w;
+    }
     break;
   case A_md:
     cp += 2;
