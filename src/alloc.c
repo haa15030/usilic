@@ -165,6 +165,10 @@ static int linein(FILE *fp, u_char buff[], int *lenp, int *f_binp)
 	strcat(buff, "\n");
 	len++;
       }
+      if (vt_charset(0) == C_utf8
+	  && (code == C_sjis || code == C_jis || code == C_base64
+	      || code == C_quote || code == C_euc))
+	len = euctoutf8_buf(buff, len);
     }
   }
   *lenp = len;

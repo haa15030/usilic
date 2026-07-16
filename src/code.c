@@ -144,13 +144,16 @@ u_char *check_type(u_char *buff, int *sizep, char *name, int *f_Mp, int f_chkbin
     break;
   default:
     if (code < 0 && f_chkbin == 1) {
-      buff = (name) 
+      buff = (name)
 	? type_file(buff, name, code) : type_pipe(buff, size, code);
       if (buff) size = strlen(buff);
       *f_Mp = T_type;
     }
     break;
   }
+  if (vt_charset(0) == C_utf8
+      && (code == C_jis || code == C_sjis || code == C_euc_jp || code == C_euc))
+    size = euctoutf8(size, &buff);
   *codep = code;
   *sizep = size;
   return buff;
@@ -556,6 +559,92 @@ int euctoeuc(int buff_i, u_char **eucp, int euc_i, JIS *dummy)/*tcb*/
     save_error("%s: %s.\n", s_S(S_tcb), s_S(S_errl));
   }
   return buff_i;
+}
+
+#include "euc_uni.h"
+
+/*
+ * euctoutf8() (UTF-8 support, step 6): re-encode EUC-JP content
+ * (already normalized to EUC by jistoeuc()/sjistoeuc()/euctoeuc()
+ * above, or plain EUC to begin with) as UTF-8, using the JIS X 0208
+ * table in euc_uni.h. Unlike sjis<->euc<->jis, which all share the
+ * same underlying JIS X 0208 character set and so only need a byte
+ * arithmetic remap, EUC-JP and UTF-8 encode entirely different
+ * (though overlapping) character repertoires under the Unicode
+ * standard, so an actual codepoint table is unavoidable.
+ *
+ * Called only when vt_charset(0)==C_utf8; without it, a legacy
+ * EUC-JP file (e.g. this project's own README.jp from 2003) would
+ * be left as raw EUC-JP bytes and rendered as mojibake by a real
+ * UTF-8 terminal, since tcb's display layer has a single global
+ * charset interpretation rather than per-file charset tracking.
+ */
+static int uni_to_utf8(u_int cp, u_char *out)
+{
+  if (cp < 0x80) {
+    out[0] = cp;
+    return 1;
+  }
+  if (cp < 0x800) {
+    out[0] = 0xc0 | (cp >> 6);
+    out[1] = 0x80 | (cp & 0x3f);
+    return 2;
+  }
+  out[0] = 0xe0 | (cp >> 12);
+  out[1] = 0x80 | ((cp >> 6) & 0x3f);
+  out[2] = 0x80 | (cp & 0x3f);
+  return 3;
+}
+
+static int euc_to_utf8_core(u_char *euc, int size, u_char *out)
+{
+  u_char *end = euc + size, *op = out;
+  u_int cp;
+
+  while (euc < end) {
+    u_char c = *euc;
+    if (c == 0x8e && euc + 1 < end
+	&& euc[1] >= 0xa1 && euc[1] <= 0xdf) {
+      cp = euc_kana_uni[euc[1] - 0xa1];
+      euc += 2;
+    } else if (c >= 0xa1 && c <= 0xfe && euc + 1 < end
+	       && euc[1] >= 0xa1 && euc[1] <= 0xfe) {
+      cp = euc_jisx0208_uni[c - 0xa1][euc[1] - 0xa1];
+      euc += 2;
+    } else {
+      cp = c;
+      euc++;
+    }
+    op += uni_to_utf8((cp) ? cp : '?', op);
+  }
+  return op - out;
+}
+
+int euctoutf8(int size, u_char **eucp)/*tcb*/
+{ /* for callers (check_type()) that own *eucp and can free/replace it */
+  u_char *out;
+  int newsize;
+
+  if (!(out = malloc(size * 3 + 4))) return size;
+  newsize = euc_to_utf8_core(*eucp, size, out);
+  free(*eucp);
+  *eucp = out;
+  return newsize;
+}
+
+int euctoutf8_buf(u_char *buff, int size)/*tcb*/
+{ /* for callers (alloc.c's linein()) that read into a fixed-size
+     shared line buffer instead of a reallocatable pointer. A
+     N_buff/2-byte input can expand at most 1.5x when re-encoded as
+     UTF-8, which always fits back into the N_buff-sized buffer. */
+  u_char *out;
+  int newsize;
+
+  if (!(out = malloc(size * 3 + 4))) return size;
+  newsize = euc_to_utf8_core(buff, size, out);
+  memcpy(buff, out, newsize + 1);
+  free(out);
+  return newsize;
 }
 
 /*
