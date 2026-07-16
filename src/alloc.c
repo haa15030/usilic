@@ -707,7 +707,22 @@ PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*tcb*/
 	} else {
 	  if (strlen(p) > vt_col(0)) p[vt_col(0)] = '\0';
 	  pp->f.len = strlen(p);
-	  if (count_k(p, pp->f.len)) pp->f.len--;
+	  if (vt_charset(0) == C_utf8) {
+	    /* count_k()'s single-byte backoff below assumes a 2-byte
+	       EUC pair; a UTF-8 sequence can be 1-4 bytes, so trimming
+	       only 1 byte can leave a truncated multi-byte character
+	       dangling at the end. Walk from the start and cut at the
+	       last full character boundary at or before pp->f.len. */
+	    int pos = 0, u_len;
+	    while (pos < pp->f.len) {
+	      u_len = utf8_seqlen(p[pos]);
+	      if (pos + u_len > pp->f.len) {
+		pp->f.len = pos;
+		break;
+	      }
+	      pos += u_len;
+	    }
+	  } else if (count_k(p, pp->f.len)) pp->f.len--;
 	}
 	if ((n_attr = set_attr(Alloc.attr, p, 0, 0))) {
 	  Alloc.attr[n_attr++].n = -1;

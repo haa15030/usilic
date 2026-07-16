@@ -90,7 +90,14 @@ void put_str(PP *pp, int f_mark)/*tcb*/
 	vt_seta(A_cs);
 	c2 = '*';
       }
-    } else if (c2 == K_a0) {
+    } else if (c2 == K_a0 && vt_charset(0) != C_utf8) {
+      /* K_a0 (0x00a0) is an internal sentinel byte meaning "show the
+	 next byte as ^X" (see fork.c's f.code dump). It was safe to
+	 repurpose in EUC, where a raw content byte is never 0xa0 (EUC
+	 two-byte sequences start at 0xa1). In UTF-8, 0xa0 is a common,
+	 completely ordinary continuation byte (e.g. the 2nd byte of
+	 U+5831 "報" = E5 A0 B1), so treating it as the sentinel here
+	 was corrupting real characters. */
       f_ctrl = 1;
       if (f_grep) vt_endstand();
       else vt_stand();
