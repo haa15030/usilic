@@ -446,6 +446,17 @@ static int conf_scroll(FILE *fp, char *str)
   return i;
 }
 
+int env_charset(int f)/*tcb*/
+{ /* whether the user explicitly exported TCBCHARSET (as opposed to
+     it only being set by our own auto-default below). An explicit
+     export should always win over whatever charset happened to be
+     saved in ~/.tcb/history from the previous session. */
+  static int f_env;
+
+  if (f >= 0) f_env = f;
+  return f_env;
+}
+
 int conf_ls(FILE *fp, char *str)/*tcb*/
 {
   static int f_ls;
@@ -710,6 +721,7 @@ int conf(char *temp, char *args, char *version, int f_tcb)/*tcb*/
 			     + strlen(args) + 1);
   sprintf(Str.S[S_option+7], "%s%s", s_S(S_tcb), args);
   Str.S[S_nop] = strdup("# \t\n");
+  env_charset(getenv("TCBCHARSET") != NULL);
   if (!getenv("TCBCHARSET")) setenv("TCBCHARSET", CHARSET, 1);
   if (f_tcb & (0x80|0x40)) {
     if (f_tcb & 0x80) {
