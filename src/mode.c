@@ -556,7 +556,7 @@ int mode(HEAP *hp, NUM *np, ARRAY *ap, LINE *lp, RV *rvp)/*mode*/
       } else {
 	if ((i = stat(lp->prev, &st)) < 0) i = 0;
 	else i = st.st_ctime;
-	do_prog(rvp->str, &hp->ss.p.cmd, &hp->ss.p.hist);
+	do_prog(rvp->str, &hp->ss.p.cmd, &hp->ss.p.hist, 1);
 	if (i) stat(lp->prev, &st);
 	hp->sp = load_stack(hp->sp, lp, &np->M, ap->name, &hp->bp, hp->base);
 	i = (!i || (i && i == st.st_ctime));
@@ -807,7 +807,7 @@ static void mode_cont(int dummy)
   if (s_S(S_pid)) print_pid(getpid());
 }
 
-void do_prog(char *str, STR **cmdp, STR **histp)/*tcb*/
+void do_prog(char *str, STR **cmdp, STR **histp, int f_wait)/*tcb*/
 {
   int pid;
   void (*cont)(int);
@@ -838,7 +838,8 @@ void do_prog(char *str, STR **cmdp, STR **histp)/*tcb*/
   signal(SIGCHLD, sig_child);
 #endif
   signal(SIGCONT, cont);
-  echo_mess(1);
+  if (f_wait) echo_mess(1);
+  else vt_init(2); /* still needed to restore tcb's raw termio (see vt_init(-2) above) */
 }
 
 void save_ll(int n_ll, LL *llp, SS *ssp, char full[], PN *pnp)/*tcb*/

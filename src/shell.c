@@ -614,7 +614,12 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 		else i = (find_prog(prog, buff)) ? 2 : 0;
 	      }
 	      if (i > 0) {
-		do_prog(comm, cmdp, histp);
+		/* f_wait=0: skip the "Hit any key" pause -- in SHELL mode the
+		   user naturally keeps typing the next command right away, and
+		   that keystroke was being silently swallowed as the "any key"
+		   acknowledgement (the "1 character lost after quitting less"
+		   bug). do_prog() still restores tcb's raw termio itself. */
+		do_prog(comm, cmdp, histp, 0);
 		strcpy(buff, comm);
 		sprintf(comm, "%d\n%d\n", vt_row(0), vt_col(0));
 		write_comm(pv[1], T_disp, comm, spid);
