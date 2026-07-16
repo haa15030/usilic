@@ -4,7 +4,7 @@
 TMP=/tmp/.tcb
 
 # Default character set.
-CHARSET="euc"
+CHARSET="utf-8"
 
 # Command line for DU mode.
 DU="du -ab"
