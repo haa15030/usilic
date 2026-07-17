@@ -221,7 +221,6 @@ int vt_init(int init)/*tcb*/
     vt_row(row);
     vt_col(col);
     if ((tfd = open(s_S(S_tty), O_RDONLY)) < 0) tfd = 2;
-    fprintf(stderr, "s_S(S_tty)=%s,tfd=%d\n", s_S(S_tty),tfd);
     if (!isatty(tfd)) {
       fprintf(stderr, "%s: %s\n", s_S(S_tcb), s_S(S_erru));
       if (tfd != 2) close(tfd);

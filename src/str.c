@@ -493,7 +493,10 @@ static int get_str(FILE *fp, u_char str[])
   if ((cp = strchr(cp, '#'))) *cp = '\0';
   if ((cp = strchr(str, '\n'))) *cp = '\0';
   for (cp = str; *cp && (*cp == ' ' || *cp == '\t'); cp++) ;
-  if (cp > str) strcpy(str, cp);
+  if (cp > str) memmove(str, cp, strlen((char *)cp) + 1); /* cp points inside str: strcpy() is
+    UB on overlapping ranges and was observed to corrupt data here (glibc/aarch64), e.g. dropping
+    the '-' out of "K-11" and turning "previous" into "reviouss" -- same bug class as the
+    overlapping strcpy() found earlier in write_shell()/input_shell(). */
   return 0;
 }
 
@@ -698,7 +701,6 @@ int conf(char *temp, char *args, char *version, int f_tcb)/*tcb*/
   }
   unlink(mess);
   Str.S[S_mess] = strdup(mess);	/* S_mess */
-  fprintf(stderr, "S_mess=%s\n", Str.S[S_mess]);
   mess[i_mess] = 'd';
   Str.S[S_enter] = strdup(mess);	/* S_enter */
   mess[i_mess] = 'i';
@@ -753,6 +755,9 @@ int conf(char *temp, char *args, char *version, int f_tcb)/*tcb*/
     pipe(pv);
     if (!fork()) {
       int pv2[2];
+      pipe(pv2); /* was never called: dup2()/close() below ran on whatever
+		    garbage happened to be on the stack for pv2[], which could
+		    alias a real, already-open fd and redirect/close it. */
       if (!fork()) {
 	close(1);
 	dup2(pv2[1], 1);
@@ -773,7 +778,7 @@ int conf(char *temp, char *args, char *version, int f_tcb)/*tcb*/
       exit(0);
     }
     close(pv[1]);
-    cp = malloc(strlen(groff[0]) + 1 
+    cp = malloc(strlen(groff[0]) + 1
 		+ strlen(groff[1]) + 1
 		+ strlen(groff[2]) + 1);
     sprintf(cp, "%s %s ", groff[0], groff[1]);
@@ -1054,10 +1059,10 @@ static void conf_m(FILE *fp, u_char str[])
     }
     *line = '\0';
     if (!f_m) continue;
-    for (cp = str; *cp; ) 
+    for (cp = str; *cp; )
       if (!strncmp(cp, "K-", 2)) {
 	cp = set_m(&cp[2], &j);
-	strcat(line, mtoa(j)); 
+	strcat(line, mtoa(j));
       } else if (*cp == '\042') cp = set_s(cp, strchr(line, '\0'));
       else if (*cp == '\\') {
 	do {

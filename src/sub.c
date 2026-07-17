@@ -786,9 +786,13 @@ void print_arg(char arg[], int size, u_char *buff, CHILD *chp, int f_M)/*tcb*/
 void dup_error()/*tcb*/
 {
   int fd;
-  
+  FILE *fp;
+
   if (!s_S(S_error)) return;
-  fd = fileno(fopen(s_S(S_error), "a"));
+  fp = fopen(s_S(S_error), "a");
+  if (!fp) return; /* fileno(NULL) is UB; fopen() can fail (e.g. ENOENT on the
+		       parent dir) and previously wasn't checked here */
+  fd = fileno(fp);
   dup2(fd, 2);
   close(fd);
 }

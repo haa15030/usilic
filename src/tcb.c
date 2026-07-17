@@ -287,7 +287,6 @@ int main(int argc, char *argv[])
   int i = 0;
   FILE *pin = F1;
 
-  printf("ggg\n");
   conf(tmp, NULL, NULL, 0);
   if (stat(tmp, &st) < 0) {
     if (mkdir(tmp, 0) < 0) {
