@@ -1059,7 +1059,22 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
 	  if (plen >= vt_col(0) / 4 * 3 + Shell.f.alen) {
 	    vt_move(*row0p, Shell.f.blen);
 	    i = Shell.f.blen + plen - vt_col(0) + vt_col(0) / 4 + 4;
-	    if (count_k(prompt, i)) sprintf(rvp->str, " %s", &prompt[i + 1]);
+	    if (vt_charset(0) == C_utf8) {
+	      /* count_k()'s single-byte backoff (below) assumes a 2-byte
+		 EUC pair; a UTF-8 sequence can be 1-4 bytes, so skipping
+		 only 1 byte past a split character can leave a truncated
+		 continuation byte at the front, rendered as "?" by the
+		 terminal. Walk from the start and land on the next full
+		 character boundary at or after i instead. */
+	      int pos = 0, u_len, j = i;
+	      while (pos < i) {
+		u_len = utf8_seqlen(prompt[pos]);
+		if (pos + u_len > i) { j = pos + u_len; break; }
+		pos += u_len;
+	      }
+	      if (j > i) sprintf(rvp->str, " %s", &prompt[j]);
+	      else strcpy(rvp->str, &prompt[j]);
+	    } else if (count_k(prompt, i)) sprintf(rvp->str, " %s", &prompt[i + 1]);
 	    else strcpy(rvp->str, &prompt[i]);
 	    vt_printf("...%s", rvp->str);
 	    vt_flush();
