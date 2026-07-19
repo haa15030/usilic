@@ -1082,23 +1082,52 @@ int make_list(u_char dir0[], u_char buff[], int *lenp, LIST **listp, int f_M)/*t
 
 static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, int *colep, u_char back[], u_char buff[])
 {
-  int i;
+  int i, k;
+  static int u8_len, u8_i;
+  static u_char u8_buf[4];
+  u_char seq[4];
+  int slen, swidth;
 
-  if (strlen(buff) > N_line - 2) {
+  if (vt_charset(0) == C_utf8 && (u8_len || (m >= 0x80 && m < 0x100))) {
+    /* Buffer a UTF-8 sequence across calls (this function is fed one
+       byte per call, from edit_line()'s per-keystroke loop). Inserting
+       and drawing it one byte at a time would put a vt_move() between
+       its bytes -- edit_line() moves the cursor right before every
+       call, and this function itself moves it again at the end -- which
+       tears the sequence in two on the wire. Terminals see an
+       incomplete multi-byte sequence interrupted by a cursor-position
+       escape and render the pieces as replacement characters ("?"),
+       even though every byte's *value* was correct all along (this is
+       why read_line()'s own byte log, on the output/echo side, never
+       showed any corruption: the break happens only here, on the
+       keystroke-echo side). */
+    if (!u8_len) u8_len = utf8_seqlen(m);
+    u8_buf[(u8_i < 4) ? u8_i : 3] = m;
+    if (++u8_i < u8_len) return;
+    slen = (u8_i < 4) ? u8_i : 4;
+    memcpy(seq, u8_buf, slen);
+    swidth = utf8_width(seq, slen);
+    u8_len = u8_i = 0;
+  } else {
+    seq[0] = m;
+    slen = swidth = 1;
+  }
+
+  if (strlen(buff) > N_line - 2 - slen) {
     vt_putchar(K_g);
     return;
   }
   if (*colp < col0 + len && (*shiftp || (!*shiftp && *colp < *colep))) {
     i = *shiftp + *colp - col0;
     strcpy(back, &buff[i]);
-    strcpy(&buff[i+1], back);
-    buff[i] = m;
+    memmove(&buff[i + slen], back, strlen((char*)back) + 1);
+    memcpy(&buff[i], seq, slen);
     strcpy(back, &buff[*shiftp]);
     back[len] = '\0';
     vt_move(row, col0);
     print_buff(back, count_k(buff, *shiftp));
-    (*colp)++;
-    (*colep)++;
+    *colp += swidth;
+    *colep += swidth;
     vt_move(row, *colp);
   } else {
     i = 0;
@@ -1110,15 +1139,17 @@ static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, 
 	buff[*colp-col0 + *shiftp - 1] = '\0';
       }
       print_buff(&buff[*shiftp], count_k(buff, *shiftp));
-    } 
-    if ((m > 0 && m < ' ') || m == K_at) {
+    }
+    if (slen == 1 && ((m > 0 && m < ' ') || m == K_at)) {
       vt_stand();
       vt_putchar(((m == K_at) ? 0 : m) + '@');
       vt_endstand();
-    } else vt_putchar(m);
+    } else
+      for (k = 0; k < slen; k++) vt_putchar(seq[k]);
     vt_flush();
-    sprintf(&buff[*colp-col0 + ((*shiftp) ? *shiftp - 1 : 0)], "%c", m);
-    (*colep)++;
+    memcpy(&buff[*colp-col0 + ((*shiftp) ? *shiftp - 1 : 0)], seq, slen);
+    buff[*colp-col0 + ((*shiftp) ? *shiftp - 1 : 0) + slen] = '\0';
+    *colep += swidth;
     if (i) strcat(buff, back);
     if (!*shiftp) *colp = *colep;
     else strcpy(back, &buff[*shiftp]);
