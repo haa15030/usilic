@@ -535,9 +535,12 @@ void read_list(LL *llp, SS *ssp, LINE *lp, char name[])/*tcb*/
       vt_mode((hs) ? 'h' : -'h');
       if (vt_mode('H')) vt_cs(vt_row(0) - 1, 0);
       else vt_cs(vt_row(0) - 2, 0);
-      if (!env_charset(-1)) vt_charset((charset) ? charset : C_euc);
+      if (!env_charset(-1)) vt_charset((charset) ? charset : C_utf8);
       /* else: TCBCHARSET was explicitly exported by the user, so it
-	 wins over whatever was saved in ~/.tcb/history last time. */
+	 wins over whatever was saved in ~/.tcb/history last time.
+	 (charset==0 here means the saved history line predates this
+	 field, or is otherwise missing it -- fall back to the
+	 documented UTF-8 default, not EUC.) */
     }
     f = 1;
   } while (0);

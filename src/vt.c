@@ -250,10 +250,18 @@ int vt_init(int init)/*tcb*/
     vt_mode('d');
     vt_mode(0);
     if ((tcbcharset = getenv("TCBCHARSET")))
+      /* config.h's CHARSET default is "utf-8", so an unset TCBCHARSET
+	 gets that value via setenv() in init_config() (str.c) -- but
+	 `export TCBCHARSET=` (empty, not unset) makes getenv() return
+	 a non-NULL empty string here, which matched neither "ascii"
+	 nor "utf8"/"utf-8" and fell through to a hardcoded C_euc,
+	 silently reintroducing EUC mojibake even with no TCBCHARSET
+	 value and no ~/.tcb/history to blame. Any unrecognized value
+	 (including "") now falls through to C_utf8 instead, matching
+	 the documented default. */
       vt_charset((!strcasecmp(tcbcharset, "ascii")) ? C_ascii
-		 : (!strcasecmp(tcbcharset, "utf8")
-		    || !strcasecmp(tcbcharset, "utf-8")) ? C_utf8
-		 : C_euc);
+		 : (!strcasecmp(tcbcharset, "euc")) ? C_euc
+		 : C_utf8);
     break;
   case 2:
     if (!vt_mode('H')) vt_cs(vt_row(0) - 2, 0);

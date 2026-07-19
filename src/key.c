@@ -964,7 +964,12 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
       c = M_clear;
     }
   if (c == M_ascii) {
-    vt_charset((vt_charset(0) == C_ascii) ? C_euc : C_ascii);
+    /* was a straight 2-way ASCII<->EUC toggle (pre-UTF-8 code); cycle
+       through all three now instead of leaving UTF-8 users stuck
+       toggling between ASCII and EUC with no way back to UTF-8. */
+    vt_charset((vt_charset(0) == C_ascii) ? C_euc
+	       : (vt_charset(0) == C_euc) ? C_utf8
+	       : C_ascii);
     c = M_sel;
   }
 SET_KM:
