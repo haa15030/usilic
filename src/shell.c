@@ -869,7 +869,7 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
 	/* '\\' : line continuation ==> alloc.c (2) */
 	if (!fp->bash && cp[-1] == '\r') ff.nl = 1;
 	strcpy(p, p2);
-	strcpy(p, &p[vt_col(0) + j]);
+	memmove(p, &p[vt_col(0) + j], strlen((char*)&p[vt_col(0) + j]) + 1);
         if (!*p) break;
 	if (*p == '\r') ff.nl = 1;
 	j = 0;

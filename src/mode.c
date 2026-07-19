@@ -72,7 +72,7 @@ int skip_spc(u_char cs[], int f_spc)/*tcb*/
       while (1) {
 	if ((cp = strchr(cs, ' ')) && cp[-1] != '\\') {
 	  if (cp[1]) {
-	    strcpy(cs, &cp[1]);
+	    memmove(cs, &cp[1], strlen((char*)&cp[1]) + 1);
 	    continue;
 	  } else *cp = '\0';
 	}
@@ -81,7 +81,7 @@ int skip_spc(u_char cs[], int f_spc)/*tcb*/
       break;
     case 2:
       for (cp = &cs[i_dir]; *cp == ' '; cp++) ;
-      strcpy(cs, cp);
+      memmove(cs, cp, strlen((char*)cp) + 1);
       break;
     }
   }
@@ -93,7 +93,7 @@ int skip_spc(u_char cs[], int f_spc)/*tcb*/
 	*cp++ = j;
 	i--;
       }
-      strcpy(cp, &cp[i]);
+      memmove(cp, &cp[i], strlen((char*)&cp[i]) + 1);
     } else break;
 #ifdef SKIP_SPC
  debug("1:cs=%s\n",cs);
