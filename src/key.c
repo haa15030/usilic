@@ -1080,13 +1080,45 @@ int make_list(u_char dir0[], u_char buff[], int *lenp, LIST **listp, int f_M)/*t
   return n_name;
 }
 
+/* UTF-8: on-screen column and byte offset into `buff' coincide for
+   ASCII (1 byte = 1 column) and for EUC's "wide" pairs (always
+   exactly 2 bytes = 2 columns), so this file has always tracked
+   col/cole/shift (and *colp/*colep/*shiftp) as byte offsets and fed
+   them straight to vt_move() as columns too. A UTF-8 character can
+   be 1-4 bytes but only 0-2 columns, breaking that coincidence:
+   col/cole/shift stay byte offsets (matching how the rest of this
+   file indexes `buff' with them -- e.g. count_k(buff, col-col0+shift)
+   -- so none of that math needs to change), and these two helpers
+   bridge to a real screen column only where vt_move() needs one. */
+static int char_bytes_before(u_char *buff, int pos)
+{
+  int end = pos - 1, start;
+
+  if (vt_charset(0) != C_utf8) return count_k(buff, pos) ? 2 : 1;
+  if (end < 0) return 0;
+  for (start = end; start > 0 && (buff[start] & 0xc0) == 0x80; start--) ;
+  return end - start + 1;
+}
+
+static int b2col(u_char *buff, int shift, int bytepos)
+{
+  int pos, col, sl;
+
+  if (vt_charset(0) != C_utf8) return bytepos - shift;
+  for (pos = shift, col = 0; pos < bytepos && buff[pos]; pos += sl) {
+    sl = utf8_seqlen(buff[pos]);
+    col += utf8_width(&buff[pos], sl);
+  }
+  return col;
+}
+
 static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, int *colep, u_char back[], u_char buff[])
 {
   int i, k;
   static int u8_len, u8_i;
   static u_char u8_buf[4];
   u_char seq[4];
-  int slen, swidth;
+  int slen;
 
   if (vt_charset(0) == C_utf8 && (u8_len || (m >= 0x80 && m < 0x100))) {
     /* Buffer a UTF-8 sequence across calls (this function is fed one
@@ -1106,11 +1138,10 @@ static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, 
     if (++u8_i < u8_len) return;
     slen = (u8_i < 4) ? u8_i : 4;
     memcpy(seq, u8_buf, slen);
-    swidth = utf8_width(seq, slen);
     u8_len = u8_i = 0;
   } else {
     seq[0] = m;
-    slen = swidth = 1;
+    slen = 1;
   }
 
   if (strlen(buff) > N_line - 2 - slen) {
@@ -1126,9 +1157,9 @@ static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, 
     back[len] = '\0';
     vt_move(row, col0);
     print_buff(back, count_k(buff, *shiftp));
-    *colp += swidth;
-    *colep += swidth;
-    vt_move(row, *colp);
+    *colp += slen;
+    *colep += slen;
+    vt_move(row, col0 + b2col(buff, *shiftp, *shiftp + *colp - col0));
   } else {
     i = 0;
     if (*colp == col0 + len) {
@@ -1149,11 +1180,11 @@ static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, 
     vt_flush();
     memcpy(&buff[*colp-col0 + ((*shiftp) ? *shiftp - 1 : 0)], seq, slen);
     buff[*colp-col0 + ((*shiftp) ? *shiftp - 1 : 0) + slen] = '\0';
-    *colep += swidth;
+    *colep += slen;
     if (i) strcat(buff, back);
     if (!*shiftp) *colp = *colep;
     else strcpy(back, &buff[*shiftp]);
-    vt_move(row, *colp);
+    vt_move(row, col0 + b2col(buff, *shiftp, *shiftp + *colp - col0));
   }
 }
 
@@ -1170,7 +1201,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
     if (Key.f.ctrl) {
       Key.f.ctrl = 0;
       if (((m > 0 && m < ' ') || m == K_dl || m == K_at)) {
-	vt_move(row, col);
+	vt_move(row, col0 + b2col(buff, shift, col - col0 + shift));
 	add_buff(m, &shift, row, &col, col0, len, &cole, back, buff);
 	vt_flush();
 	continue;
@@ -1287,6 +1318,18 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	    if (shift) shift--;
 	    else if (i) col--;
 	    strcpy(back, &buff[shift]);
+	    cole--;
+	  } else if (vt_charset(0) == C_utf8) {
+	    /* count_k()'s "?2:1" below assumes a fixed-width EUC pair;
+	       a UTF-8 character deleted here can be 1-4 bytes, so find
+	       its real length instead of guessing 2. */
+	    i = char_bytes_before(buff, col - col0);
+	    if (col == cole) buff[cole - col0 - i] = '\0';
+	    else memmove(&buff[col - col0 - i], &buff[col - col0]
+			 , strlen((char*)&buff[col - col0]) + 1);
+	    col -= i;
+	    cole -= i;
+	    strcpy(back, buff);
 	  } else {
 	    if (col == cole) {
 	      i = (count_k(buff, col - col0 - 1)) ? 2 : 1;
@@ -1300,13 +1343,13 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	      if (i) col--;
 	    }
 	    col--;
+	    cole--;
 	    strcpy(back, buff);
 	  }
-	  cole--;
 	  back[len] = '\0';
 	  key_eeol(row, col0, len, 0);
 	  print_buff(back, count_k(buff, shift));
-	  vt_move(row, col);
+	  vt_move(row, col0 + b2col(buff, shift, col - col0 + shift));
 	}
 	break;
       case K_d: /* ^D */
@@ -1327,6 +1370,15 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	  else if (i) col++;
 	  strcpy(back, &buff[shift]);
 	  col++;
+	  cole--;
+	} else if (vt_charset(0) == C_utf8) {
+	  /* the >=0x80 + count_k check below assumes a fixed-width EUC
+	     pair; the character at the cursor here can be 1-4 bytes. */
+	  i = utf8_seqlen(buff[col - col0]);
+	  memmove(&buff[col - col0], &buff[col - col0 + i]
+		 , strlen((char*)&buff[col - col0 + i]) + 1);
+	  cole -= i;
+	  strcpy(back, buff);
 	} else {
 	  i = buff[col - col0] >= 0x80;
 	  memmove(&buff[col - col0], &buff[col - col0 + 1]
@@ -1336,13 +1388,13 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	    memmove(&buff[col - col0], &buff[col - col0 + 1]
 		   , strlen((char*)&buff[col - col0 + 1]) + 1);
 	  }
+	  cole--;
 	  strcpy(back, buff);
 	}
 	back[len] = '\0';
-	cole--;
 	key_eeol(row, col0, len, 0);
 	print_buff(back, count_k(buff, shift));
-	vt_move(row, col);
+	vt_move(row, col0 + b2col(buff, shift, col - col0 + shift));
 	break;
       case K_a: /* ^A */
 	vt_move(row, (col = col0));
@@ -1388,6 +1440,10 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	    vt_putchar(K_g);
 	    continue;
 	  }
+	} else if (vt_charset(0) == C_utf8) {
+	  i = char_bytes_before(buff, col - col0 + shift);
+	  col -= i;
+	  vt_move(row, col0 + b2col(buff, shift, col - col0 + shift));
 	} else {
 	  vt_move(row, --col);
 	  if (count_k(buff, col - col0 + shift)) vt_move(row, --col);
@@ -1398,7 +1454,11 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	  vt_putchar(K_g);
 	  continue;
 	}
-	if (col < col0 + len - 1) {
+	if (col < col0 + len - 1 && vt_charset(0) == C_utf8) {
+	  i = utf8_seqlen(buff[col - col0 + shift]);
+	  col += i;
+	  vt_move(row, col0 + b2col(buff, shift, col - col0 + shift));
+	} else if (col < col0 + len - 1) {
 	  vt_move(row, ++col);
 	  if (count_k(buff, col - col0 + shift)) vt_move(row, ++col);
 	} else {
@@ -1420,7 +1480,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
       default:
 	if (m > 0) goto jump;
 	else m = -m - N_char;
-	vt_move(row, col);
+	vt_move(row, col0 + b2col(buff, shift, col - col0 + shift));
 	add_buff(m, &shift, row, &col, col0, len, &cole, back, buff);
 	break;
       }
