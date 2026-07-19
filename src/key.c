@@ -219,6 +219,98 @@ static void key_eeol(int row, int col0, int len, int f_exit)
   vt_move(row, col0);
 }
 
+/* UTF-8: on-screen column and byte offset into `buff' coincide for
+   ASCII (1 byte = 1 column) and for EUC's "wide" pairs (always
+   exactly 2 bytes = 2 columns), so this file has always tracked
+   col/cole/shift (and *colp/*colep/*shiftp) as byte offsets and fed
+   them straight to vt_move() as columns too, and compared them
+   directly against the field width `len' (itself a column count) to
+   decide when the field is too full and needs to scroll. A UTF-8
+   character can be 1-4 bytes but only 0-2 columns, breaking both of
+   those: byte length can exceed `len' well before the real on-screen
+   width does (triggering the "please scroll" branch far too early),
+   and the resulting `shift' byte offset -- computed from byte counts
+   -- isn't guaranteed to land on a character boundary, splitting a
+   multi-byte sequence and corrupting the redraw (a stray continuation
+   byte, missing characters). These helpers bridge byte offsets to
+   real screen columns (and back) so the rest of this file's byte-based
+   indexing doesn't need to change. */
+static int char_bytes_before(u_char *buff, int pos)
+{
+  int end = pos - 1, start;
+
+  if (vt_charset(0) != C_utf8) return count_k(buff, pos) ? 2 : 1;
+  if (end < 0) return 0;
+  for (start = end; start > 0 && (buff[start] & 0xc0) == 0x80; start--) ;
+  return end - start + 1;
+}
+
+static int b2col(u_char *buff, int shift, int bytepos)
+{
+  int pos, col, sl;
+
+  if (vt_charset(0) != C_utf8) return bytepos - shift;
+  for (pos = shift, col = 0; pos < bytepos && buff[pos]; pos += sl) {
+    sl = utf8_seqlen(buff[pos]);
+    col += utf8_width(&buff[pos], sl);
+  }
+  return col;
+}
+
+static int utf8_total_width(u_char *buff)
+{
+  int total = 0, pos, sl;
+
+  for (pos = 0; buff[pos]; pos += sl) {
+    sl = utf8_seqlen(buff[pos]);
+    total += utf8_width(&buff[pos], sl);
+  }
+  return total;
+}
+
+/* byte offset that puts the last `len' on-screen columns of `buff'
+   into view (i.e. where "scroll right-aligned to fit `len' columns"
+   should start reading from), always landing on a character start. */
+static int utf8_right_shift(u_char *buff, int len)
+{
+  int col = utf8_total_width(buff) - len, pos, sl;
+
+  for (pos = 0; buff[pos] && col > 0; ) {
+    sl = utf8_seqlen(buff[pos]);
+    col -= utf8_width(&buff[pos], sl);
+    pos += sl;
+  }
+  return pos;
+}
+
+/* returns 1 and sets *shiftp to the byte offset to scroll to (and,
+   if colp is non-NULL, *colp to the cursor position that goes with
+   it) if `buff' is wider than `len' columns; returns 0 (leaving
+   *shiftp/*colp untouched) if it already fits. Replaces the various
+   `(shift = cole - col0 - len) > 0' checks scattered through this
+   file, all of which compared a byte count (cole - col0) against a
+   column count (len) -- harmless for ASCII/EUC where the two always
+   match, but wrong for UTF-8 (see the comment above char_bytes_before
+   for the full story). Callers that set `col = col0 + len' right
+   after the old check need *colp too: col/shift are byte offsets
+   (again, see char_bytes_before), so the cursor at the end of a
+   scrolled-into-view UTF-8 buffer sits at col0 + the *byte* length of
+   the visible portion, not col0 + len (a column count) -- using the
+   latter desyncs col from the buffer and corrupts the next insert. */
+static int need_scroll(u_char *buff, int col0, int cole, int len, int *shiftp, int *colp)
+{
+  if (vt_charset(0) == C_utf8) {
+    if (utf8_total_width(buff) <= len) return 0;
+    *shiftp = utf8_right_shift(buff, len);
+    if (colp) *colp = col0 + (int)strlen((char*)buff) - *shiftp;
+    return 1;
+  }
+  if (cole - col0 - len <= 0) return 0;
+  *shiftp = cole - col0 - len;
+  if (colp) *colp = col0 + len;
+  return 1;
+}
+
 static int input_key(int f_M, u_char mess[], u_char *cs, int col0, char *cname, LIST **listp, STR *cmd, u_char iname[], char dir[], char old[], u_char copy[])
 {
   int i, j, k, m, len, row, col, cole, shift, f_list, ti;
@@ -280,8 +372,7 @@ static int input_key(int f_M, u_char mess[], u_char *cs, int col0, char *cname, 
   vt_move(row, col0);
   if ((i = *buff)) {
     if (i == K_a0) *buff = '\0';
-    else if ((i = cole - col0 - len) > 0) {
-      shift = i;
+    else if (need_scroll(buff, col0, cole, len, &shift, NULL)) {
       print_buff(&buff[shift], count_k(buff, shift));
     } else print_buff(buff, 0);
   }
@@ -340,8 +431,7 @@ static int input_key(int f_M, u_char mess[], u_char *cs, int col0, char *cname, 
 	if (*buffb) *buffb = '\0';
 	col = cole = col0 + strlen(buff);
 	len = vt_col(0) - col0 - k - 1;
-	col = (col > col0 + len) ? col0 + len : col;
-	if ((shift = cole - col0 - len) < 0) shift = 0;
+	if (!need_scroll(buff, col0, cole, len, &shift, &col)) shift = 0;
       } else i = -m;
       switch(i) {
       case 0:
@@ -1080,41 +1170,9 @@ int make_list(u_char dir0[], u_char buff[], int *lenp, LIST **listp, int f_M)/*t
   return n_name;
 }
 
-/* UTF-8: on-screen column and byte offset into `buff' coincide for
-   ASCII (1 byte = 1 column) and for EUC's "wide" pairs (always
-   exactly 2 bytes = 2 columns), so this file has always tracked
-   col/cole/shift (and *colp/*colep/*shiftp) as byte offsets and fed
-   them straight to vt_move() as columns too. A UTF-8 character can
-   be 1-4 bytes but only 0-2 columns, breaking that coincidence:
-   col/cole/shift stay byte offsets (matching how the rest of this
-   file indexes `buff' with them -- e.g. count_k(buff, col-col0+shift)
-   -- so none of that math needs to change), and these two helpers
-   bridge to a real screen column only where vt_move() needs one. */
-static int char_bytes_before(u_char *buff, int pos)
-{
-  int end = pos - 1, start;
-
-  if (vt_charset(0) != C_utf8) return count_k(buff, pos) ? 2 : 1;
-  if (end < 0) return 0;
-  for (start = end; start > 0 && (buff[start] & 0xc0) == 0x80; start--) ;
-  return end - start + 1;
-}
-
-static int b2col(u_char *buff, int shift, int bytepos)
-{
-  int pos, col, sl;
-
-  if (vt_charset(0) != C_utf8) return bytepos - shift;
-  for (pos = shift, col = 0; pos < bytepos && buff[pos]; pos += sl) {
-    sl = utf8_seqlen(buff[pos]);
-    col += utf8_width(&buff[pos], sl);
-  }
-  return col;
-}
-
 static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, int *colep, u_char back[], u_char buff[])
 {
-  int i, k;
+  int i;
   static int u8_len, u8_i;
   static u_char u8_buf[4];
   u_char seq[4];
@@ -1160,6 +1218,29 @@ static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, 
     *colp += slen;
     *colep += slen;
     vt_move(row, col0 + b2col(buff, *shiftp, *shiftp + *colp - col0));
+  } else if (vt_charset(0) == C_utf8) {
+    /* Append (or extend the currently-scrolled view with) the new
+       character. The byte-at-a-time "scroll by exactly 1 byte, save
+       whatever fell off the left edge" dance in the EUC/ASCII branch
+       below assumes 1 byte = 1 column; shifting a UTF-8 buffer by a
+       fixed 1 byte can land mid-character, corrupting the view (a
+       stray continuation byte, dropped characters). Simpler and
+       always correct: append the bytes, then let need_scroll() (the
+       same helper edit_line()'s K_e/K_u/K_y/paste use) recompute the
+       right-aligned shift for the new, longer content from scratch. */
+    int oldlen = strlen((char*)buff);
+
+    memcpy(&buff[oldlen], seq, slen);
+    buff[oldlen + slen] = '\0';
+    *colep += slen;
+    if (need_scroll(buff, col0, *colep, len, shiftp, colp)) {
+      vt_move(row, col0);
+      print_buff(&buff[*shiftp], count_k(buff, *shiftp));
+    } else {
+      key_eeol(row, col0, len, 0);
+      print_buff(buff, 0);
+      *colp = *colep;
+    }
   } else {
     i = 0;
     if (*colp == col0 + len) {
@@ -1171,12 +1252,11 @@ static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, 
       }
       print_buff(&buff[*shiftp], count_k(buff, *shiftp));
     }
-    if (slen == 1 && ((m > 0 && m < ' ') || m == K_at)) {
+    if ((m > 0 && m < ' ') || m == K_at) {
       vt_stand();
       vt_putchar(((m == K_at) ? 0 : m) + '@');
       vt_endstand();
-    } else
-      for (k = 0; k < slen; k++) vt_putchar(seq[k]);
+    } else vt_putchar(m);
     vt_flush();
     memcpy(&buff[*colp-col0 + ((*shiftp) ? *shiftp - 1 : 0)], seq, slen);
     buff[*colp-col0 + ((*shiftp) ? *shiftp - 1 : 0) + slen] = '\0';
@@ -1184,7 +1264,7 @@ static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, 
     if (i) strcat(buff, back);
     if (!*shiftp) *colp = *colep;
     else strcpy(back, &buff[*shiftp]);
-    vt_move(row, col0 + b2col(buff, *shiftp, *shiftp + *colp - col0));
+    vt_move(row, *colp);
   }
 }
 
@@ -1221,11 +1301,9 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	  memcpy(&buff[i], copy, strlen(copy));
 	}
 	cole = strlen(buff) + col0;
-	if ((i = cole - col0 - len) > 0) {
-	  shift = i;
+	if (need_scroll(buff, col0, cole, len, &shift, &col)) {
 	  strcpy(back, &buff[shift]);
 	  print_buff(back, count_k(buff, shift));
-	  col = col0 + len;
 	} else {
 	  key_eeol(row, col0, len, 0);
 	  print_buff(buff, 0);
@@ -1247,7 +1325,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	memcpy(yank, buff, i);
 	yank[i] = '\0';
 	memmove(buff, &buff[i], strlen((char*)&buff[i]) + 1);
-	shift = ((i = cole - col0 - len) > 0) ? i : 0;
+	if (!need_scroll(buff, col0, cole, len, &shift, NULL)) shift = 0;
 	strcpy(back, &buff[shift]);
 	col = col0;
 	key_eeol(row, col0, len, 0);
@@ -1260,10 +1338,7 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	  cole = shift + col;
 	  strcpy(yank, &buff[cole - col0]);
 	  buff[cole - col0] = '\0';
-	  if ((i = cole - col0 - len) > 0) {
-	    shift = i;
-	    col = col0 + len;
-	  } else {
+	  if (!need_scroll(buff, col0, cole, len, &shift, &col)) {
 	    shift = 0;
 	    col = cole;
 	  }
@@ -1290,11 +1365,9 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	  memcpy(&buff[i], yank, strlen(yank));
 	}
 	cole = strlen(buff) + col0;
-	if ((i = cole - col0 - len) > 0) {
-	  shift = i;
+	if (need_scroll(buff, col0, cole, len, &shift, &col)) {
 	  strcpy(back, &buff[shift]);
 	  print_buff(back, count_k(buff, shift));
-	  col = col0 + len;
 	} else {
 	  key_eeol(row, col0, len, 0);
 	  print_buff(buff, 0);
@@ -1411,11 +1484,9 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	m -= m;
       case K_e: /* ^E */
 	vt_move(row, col0);
-	if ((i = cole - col0 - len) > 0) {
-	  shift = i;
+	if (need_scroll(buff, col0, cole, len, &shift, &col)) {
 	  strcpy(back, &buff[shift]);
 	  print_buff(back, count_k(buff, shift));
-	  col = col0 + len;
 	} else {
 	  key_eeol(row, col0, len, 0);
 	  print_buff(buff, 0);
