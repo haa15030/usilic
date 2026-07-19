@@ -308,15 +308,46 @@ int init_row(PP **ppp, PN *pnp, int tell, int etop)/*tcb*/
 
 int get_col(char str[])/*tcb*/
 {
-  int col;
-  char *cp, *p = alloca(strlen(str) + 1);
+  static char *mon[] = {"Jan","Feb","Mar","Apr","May","Jun",
+			 "Jul","Aug","Sep","Oct","Nov","Dec"};
+  int col, i;
+  char *cp, *best, *p = alloca(strlen(str) + 1);
 
   strcpy(p, str);
   if ((cp = strstr(p, " -> "))) *cp = '\0';
   if ((cp = strchr(p, '\\'))) {
     while (*cp != ' ' && cp > p) cp--;
     col = cp - p + 2;
-  } else col = (cp = strrchr(p, ' ')) ? cp - p + 2 : 1;
+  } else {
+    /* `str' is normally a line of `ls -alF' output (fork_bin() forces
+       LC_ALL=C for that child, precisely so the date field below is
+       always this fixed English format), and used to be parsed by
+       just taking the LAST space in the whole line as "right before
+       the filename" -- which breaks the moment the filename itself
+       contains a space (a common Finder/QuickTime export pattern
+       like "2024-09-14 12.13.08.mp4"): that internal space becomes
+       the new "last space", silently truncating everything before it
+       off the filename. get_col()'s callers then stat()/access() (or
+       select for RM/MV, mode.c's is_write()) a bogus path and fail
+       with no indication why. "Mon DD HH:MM " (recent files) and
+       "Mon DD  YYYY " (older files) are both exactly 13 bytes from
+       the month abbreviation to the filename, and that abbreviation
+       is a reliable, locale-independent anchor -- unlike a bare
+       space search -- so find it first and only fall back to the
+       old last-space heuristic (e.g. for T_arc3 archive listings,
+       which may not follow `ls -alF' formatting) if it's absent. */
+    for (i = 0, best = NULL; i < 12; i++) {
+      char *q = p;
+      while ((q = strstr(q, mon[i]))) {
+	if ((q == p || q[-1] == ' ') && q[3] == ' '
+	    && (int)strlen(q) > 13 && (!best || q < best))
+	  best = q;
+	q++;
+      }
+    }
+    if (best) col = best - p + 14;
+    else col = (cp = strrchr(p, ' ')) ? cp - p + 2 : 1;
+  }
   return col - 1;
 }
 
