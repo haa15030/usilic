@@ -1255,7 +1255,7 @@ char *command(int f_Mb, u_char str[], BASE *bp, LINE *lp, int klen, u_char du[],
 
 int is_write(u_char name[], int f_dir)/*mode*/
 {
-  u_char *cp;
+  u_char *cp, *arrow;
   struct stat st;
   int i, f_symlink;
 
@@ -1265,7 +1265,19 @@ int is_write(u_char name[], int f_dir)/*mode*/
 #ifdef SKIP_SPC
 debug("is_write:%s\n", cp);
 #endif
-  skip_spc(cp, 1);
+  /* `name' is already a bare filename/path by the time every caller
+     gets here (see menu.c's get_col()/ichrstr()-based extraction
+     before calling this). The old skip_spc(cp, 1) call was written
+     for a full "ls -l"-style line with a permission/size prefix
+     before the name, and treated the FIRST unescaped space in `name'
+     as that prefix's end, discarding everything up to and including
+     it -- corrupting any filename that itself contains a literal
+     space (e.g. a Finder/QuickTime export like "2024-09-14
+     12.13.08.mp4") into a nonexistent path, which then failed
+     stat()/access() and silently rejected the RM/MV selection (a
+     beep, no error message). Only the "-> target" (symlink display)
+     stripping skip_spc(x,1) also did is still relevant here. */
+  if ((arrow = strstr((char*)cp, " -> "))) *arrow = '\0';
   lstat(cp, &st);
   f_symlink = S_ISLNK(st.st_mode);
   i = stat(cp, &st);
