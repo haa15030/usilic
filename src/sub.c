@@ -1043,6 +1043,7 @@ u_char *mtoa(int f_M)/*tcb*/
 void print_buff(u_char buff[], int kanji_s)/*tcb*/
 { /* display control character with reverse attribute */
   int c, i, len, kanji_e;
+  int f_utf8 = vt_charset(0) == C_utf8;
 
   len = strlen(buff);
   if ((kanji_e = count_k(&buff[kanji_s], len - kanji_s))) len--;
@@ -1051,7 +1052,19 @@ void print_buff(u_char buff[], int kanji_s)/*tcb*/
     vt_putchar(' ');
   } else i = 0;
   for (; i < len; i++)
-    if ((c = buff[i]) && (c < ' ' || c == K_dl || c == K_at)) {
+    /* K_at is 0x80 -- a byte value that never occurs in EUC/ASCII
+       content, safely repurposed as a sentinel meaning "show buff[i]
+       reverse-video as if it were NUL" (see K_dl below, and K_a0's
+       identical story in disp.c's put_str(), fixed for the same
+       reason). 0x80 is the single most common UTF-8 continuation
+       byte, though (e.g. the full-width space "\xe3\x80\x80"'s 2nd
+       and 3rd bytes): in UTF-8 mode this matched real character
+       bytes, silently swapping them for a reverse-video "@" and
+       tearing the character apart on screen (its 1st byte drawn
+       raw, then two bytes replaced, then whatever followed drawn
+       raw again) -- despite `buff' itself holding the correct bytes
+       throughout, which is why this was hard to pin down. */
+    if ((c = buff[i]) && (c < ' ' || c == K_dl || (!f_utf8 && c == K_at))) {
       if (c == K_dl) c -= 0x80;
       else if (c == K_at) c = 0;
       vt_stand();
