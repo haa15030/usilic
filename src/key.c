@@ -1065,6 +1065,30 @@ void make_cmd(STR *sp, LIST **listp)/*tcb*/
     if (sp->name) *listp = save_list(*listp, sp->name, &pn);
 }
 
+/* backslash-escape shell glob/metacharacters in a completed filename
+   before inserting it into the SHELL command line (M_shell only --
+   other make_list() callers are plain path-input fields that never
+   reach a shell, where escaping would be wrong). Matches how
+   bash-completion/zsh/fish etc. complete filenames containing these:
+   without it, a name like "...[二]@20260702....ts" gets inserted
+   verbatim, and unescaped "[...]" is a glob bracket expression to the
+   shell -- one that can fail to match depending on what follows it
+   (see the "202607*" case that behaved differently from
+   "\[二\]202607*" in this session's investigation), leaving the user
+   to track down by hand why a filename that "looks right" on the
+   command line doesn't match anything. */
+static void esc_shell(u_char dst[], u_char src[])
+{
+  static char sp[] = " \t[]{}()<>|&;'\"`$*?!~#\\";
+  int i, j;
+
+  for (i = j = 0; src[i]; i++) {
+    if (strchr(sp, src[i])) dst[j++] = '\\';
+    dst[j++] = src[i];
+  }
+  dst[j] = '\0';
+}
+
 int make_list(u_char dir0[], u_char buff[], int *lenp, LIST **listp, int f_M)/*tcb*/
 {
   int c, i, n_name, f_prog, f_dir;
@@ -1156,10 +1180,14 @@ int make_list(u_char dir0[], u_char buff[], int *lenp, LIST **listp, int f_M)/*t
     if ((!i && c == '/') || i) i++;
   }
   if (!*name) {
-    if (!f_prog && n_name == 1) strcpy(&buff[i], bak);
+    if (!f_prog && n_name == 1) {
+      if (f_M == M_shell) esc_shell(&buff[i], bak);
+      else strcpy(&buff[i], bak);
+    }
   } else if (n_name) {
     set_name(sp, name);
-    strcpy(&buff[i], name);
+    if (f_M == M_shell) esc_shell(&buff[i], name);
+    else strcpy(&buff[i], name);
   }
   if (n_name == 1) {
     if (f_M == M_shell)
