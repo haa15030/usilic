@@ -1,36 +1,74 @@
 # editor backup files
 *~
 
-# build artifacts
-src/*.o
-src/*.P
-*.P
-src/tcb
-src/tcb.exe
-src/config.h
-src/config.h.old
-src/progname.h
-src/progname.h.old
-src/Makefile
-src/Makefile.old
+# legacy C source (tcb/) build artifacts
+tcb/src/*.o
+tcb/src/*.P
+tcb/*.P
+tcb/src/tcb
+tcb/src/tcb.exe
+tcb/src/config.h
+tcb/src/config.h.old
+tcb/src/progname.h
+tcb/src/progname.h.old
+tcb/src/Makefile
+tcb/src/Makefile.old
+tcb/src/.config
+tcb/src/TAGS
+tcb/src/t
+tcb/src/TCB.EXE.stackdump
+tcb/src/debug/
+
+# perl scratch/doc build output (legacy C docs toolchain)
+tcb/perl/tcb.dvi
+tcb/perl/tcb.log
+tcb/perl/tcb.aux
+tcb/perl/t
+tcb/perl/u
+tcb/perl/s
+
+# src/: config.sh output, C++ port build artifacts, generated man page
+src/install.sh
 src/.config
-src/TAGS
-src/t
-src/TCB.EXE.stackdump
-src/debug/
-install.sh
-install
-.config
+src/doc/tcb.1.gz
+src/cpp/build/
 
-# perl scratch/doc build output
-perl/tcb.dvi
-perl/tcb.log
-perl/tcb.aux
-perl/t
-perl/u
-perl/s
+# Node.js (claude-code-book scaffold)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-doc/tcb.1.gz
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
 
-# C++ port build artifacts
-cpp/build/
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+coverage/
+.nyc_output/
+
+# Steering files (task management - temporary)
+.steering/*
+!.steering/.gitkeep
+
+.claude/settings.local.json

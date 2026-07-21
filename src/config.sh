@@ -7,6 +7,12 @@
 # still say "tcb" internally -- only the runtime-visible name changes.
 PROGNAME=usilic
 
+# This script lives at src/config.sh; the legacy C source it configures
+# was archived to tcb/src/ (a sibling of src/) when the repo was
+# restructured around the claude-code-book chapter8 spec-driven-dev
+# scaffold. Run this from src/ (its own directory).
+CSRC=../tcb/src
+
 # Working directory.
 TMP=/tmp/.$PROGNAME
 
@@ -21,7 +27,7 @@ CP="cp -vRi"
 MV="mv -vi"
 RM="rm -vri"
 
-echo 'Creating src/Makefile:'
+echo "Creating $CSRC/Makefile:"
 if [ `uname` = Linux ]; then	# Linux
 #    MAN=/usr/man/man1
 #    if [ ! "$USR_DIR" = "" ]; then 
@@ -128,20 +134,20 @@ clean:
 	rm -rf tcb \$(OBJS) \$(PROT) *~ debug
 EOF
 
-if [ -f src/Makefile ]; then
-    cmp -s .config src/Makefile
+if [ -f $CSRC/Makefile ]; then
+    cmp -s .config $CSRC/Makefile
     if [ ! $? = 0 ]; then
-	mv src/Makefile src/Makefile.old    
-	mv .config src/Makefile
+	mv $CSRC/Makefile $CSRC/Makefile.old
+	mv .config $CSRC/Makefile
     else
 	rm .config
-	touch src/Makefile
+	touch $CSRC/Makefile
     fi
 else
-    mv .config src/Makefile
-fi 
+    mv .config $CSRC/Makefile
+fi
 
-echo 'Creating src/config.h:'
+echo "Creating $CSRC/config.h:"
 
 cat > .config <<EOF
 #ifndef _CONFIG_H
@@ -156,20 +162,20 @@ static char LIB[] = "$LIB";
 #define _CONFIG_H
 EOF
 
-if [ -f src/config.h ]; then
-    cmp -s .config src/config.h
+if [ -f $CSRC/config.h ]; then
+    cmp -s .config $CSRC/config.h
     if [ ! $? = 0 ]; then
-	mv src/config.h src/config.h.old    
-	mv .config src/config.h
+	mv $CSRC/config.h $CSRC/config.h.old
+	mv .config $CSRC/config.h
     else
 	rm .config
-	touch src/config.h
+	touch $CSRC/config.h
     fi
 else
-    mv .config src/config.h
+    mv .config $CSRC/config.h
 fi
 
-echo 'Creating src/progname.h:'
+echo "Creating $CSRC/progname.h:"
 
 PROGNAME_UPPER=`echo "$PROGNAME" | tr '[:lower:]' '[:upper:]'`
 cat > .config <<EOF
@@ -182,27 +188,27 @@ cat > .config <<EOF
 #endif
 EOF
 
-if [ -f src/progname.h ]; then
-    cmp -s .config src/progname.h
+if [ -f $CSRC/progname.h ]; then
+    cmp -s .config $CSRC/progname.h
     if [ ! $? = 0 ]; then
-	mv src/progname.h src/progname.h.old
-	mv .config src/progname.h
+	mv $CSRC/progname.h $CSRC/progname.h.old
+	mv .config $CSRC/progname.h
     else
 	rm .config
-	touch src/progname.h
+	touch $CSRC/progname.h
     fi
 else
-    mv .config src/progname.h
+    mv .config $CSRC/progname.h
 fi
 
 cat > install.sh <<EOF
-cd src; make; cd ..
+cd $CSRC; make; cd -
 echo 'Installing $PROGNAME:'
 mkdir -p \$1$BIN
 mkdir -p \$1$LIB
 mkdir -p \$1$MAN
-echo "install $COPY -m 755 src/tcb \$1$BIN/$PROGNAME"
-install $COPY -m 755 src/tcb \$1$BIN/$PROGNAME
+echo "install $COPY -m 755 $CSRC/tcb \$1$BIN/$PROGNAME"
+install $COPY -m 755 $CSRC/tcb \$1$BIN/$PROGNAME
 echo "install $COPY -m 644 ${PROGNAME}rc \$1$LIB"
 install $COPY -m 644 ${PROGNAME}rc \$1$LIB
 echo "install $COPY -m 644 doc/HELP \$1$LIB"

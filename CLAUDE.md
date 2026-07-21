@@ -1,17 +1,106 @@
-# tcb (テキストベースファイルマネジャー) 開発メモ
+# usilic (旧tcb、テキストベースファイルマネジャー) 開発メモ
 
 このファイルは Claude Code がセッション開始時に自動で読み込む。
 claude.ai の別チャットで進めてきた作業の経緯をここに残しておくので、
 Claude Code 側でも「初めまして」にならずに続きから対応できる。
 
 土台(①②③)完成後に着手する長期構想・C++移行後の追加機能要望は
-`IDEAS.md`に分離してある。日々の作業ログは引き続きこのファイルに記録する。
+`docs/ideas/IDEAS.md`に分離してある。日々の作業ログは引き続きこのファイルに記録する。
+
+## 技術スタック
+
+- レガシーC実装(`tcb/`以下、約16,000行): `gcc`/`make`、`tcb/src/config.sh`
+  でMac(Darwin)/Linux両対応。土台①②③の対象。
+- C++移植(`src/cpp/`、④、2026-07-21本格着手): C++17、`make`、
+  [doctest](https://github.com/doctest/doctest)(単一ヘッダ、ユニット
+  テスト)。
+- Node.js/TypeScript(`package.json`/`tsconfig.json`/`vitest.config.ts`等、
+  リポジトリ直下): 本プロジェクト自体の成果物ではなく、後述の
+  スペック駆動開発ワークフロー(`claude-code-book`第8章サンプル)が
+  持ち込んだテンプレート一式。C++移植の実装には使わない。
+
+## スペック駆動開発の基本原則
+
+『実践Claude Code入門』第8章サンプル(`claude-code-book-chapter8`)の
+ディレクトリ構成・スキル・コマンド・サブエージェントを、2026-07-21に
+本プロジェクトの作業管理の土台として導入した(詳細は「これまでの作業」
+の該当項目を参照)。
+
+### 基本フロー
+
+1. **ドキュメント作成**: 永続ドキュメント(`docs/`)で「何を作るか」を定義
+2. **作業計画**: ステアリングファイル(`.steering/`)で「今回何をするか」を計画
+3. **実装**: tasklist.mdに従って実装し、進捗を随時更新
+4. **検証**: テストと動作確認
+5. **更新**: 必要に応じてドキュメント更新
+
+### 重要なルール
+
+#### ドキュメント作成時
+
+**1ファイルずつ作成し、必ずユーザーの承認を得てから次に進む**
+
+#### 実装前の確認
+
+新しい実装を始める前に、必ず以下を確認:
+
+1. CLAUDE.mdを読む
+2. 関連する永続ドキュメント(`docs/`)を読む
+3. Grepで既存の類似実装を検索(`src/cpp/`は新設計、`tcb/src/`はレガシー
+   C実装の参照元)
+4. 既存パターンを理解してから実装開始
+
+#### ステアリングファイル管理
+
+作業ごとに `.steering/[YYYYMMDD]-[タスク名]/` を作成:
+`requirements.md`(今回の要求内容)、`design.md`(実装アプローチ)、
+`tasklist.md`(具体的なタスクリスト)。
+
+**作業計画・実装・検証時は`steering`スキルを使用する。**
+
+## ディレクトリ構造(2026-07-21、本リポジトリの実際の構成)
+
+- `tcb/` — レガシーC実装のアーカイブ。`src/`(約16,000行のCソース、
+  `config.sh`生成の`Makefile`/`config.h`/`progname.h`含む)、`perl/`
+  (ドキュメント生成ツール)、`all.c`/`tcb-c.c`/`tcb-h.h`(単一ファイル
+  結合版、cscope/tags等の参照用)。**このディレクトリ自体は今後
+  積極的に手を入れる対象ではないが、定数・アルゴリズム(East Asian
+  Width判定等)の移植元として随時参照する**(`src/cpp/src/utf8.hpp`が
+  好例)。
+- `src/` — 本プロジェクトの実体。`config.sh`(実行はここから、
+  `../tcb/src/`へMakefile/config.h/progname.hを生成)、`cpp/`(C++
+  移植、doctestベースのユニットテスト付き)、`doc/`、`README`/
+  `README.jp`、`usilicrc`(旧`tcbrc`)、`utf8/`(UTF-8対応検証用
+  データ)。書籍サンプル由来の`example.ts`/`example.test.ts`(TS
+  プレースホルダー、未使用、放置)も同居している。
+- `docs/` — 永続的ドキュメント。`ideas/IDEAS.md`(旧ルートの
+  `IDEAS.md`を移動)、`ideas/initial-requirements.md`(書籍サンプル
+  由来)。`product-requirements.md`等の正式ドキュメントは未作成。
+- `.steering/` — 作業単位のドキュメント(書籍サンプル由来、まだ未使用)。
+- `.claude/` — スキル・コマンド・サブエージェント定義(書籍サンプル
+  由来)。
+- `.devcontainer/` — Ubuntu上でのC/C++ビルド確認用(本プロジェクト
+  独自のもの。書籍サンプル自身の`.devcontainer/`は使用していない)。
+- リポジトリ直下の`package.json`/`tsconfig.json`/`vitest.config.ts`/
+  `eslint.config.js`/`.prettierrc`等は書籍サンプルのTypeScript
+  ツールチェーンで、本プロジェクトの実装(C/C++)には使用しない。
 
 ## プロジェクト概要
 
 - 作者(ユーザー)が26年前(1990年代)に書いた自作のテキストベースファイルマネジャー、`tcb`。
-- Cソース、約16,000行(`src/`以下)。
-- 当時のNetBSD/Linux(32bit)環境で動いていたが、64bit環境への移行後に不具合が出ていた。
+- 2026-07-21、プログラム名を`tcb`から`usilic`へ改名(海外のフリーウェア
+  サイトで同名の別プログラムを見かけたことがあり、20年来の懸案だった)。
+  あわせてリポジトリ自体も新規の`usilic`リポジトリ(GitHub非公開、
+  旧`tcb-1.5b.linux_3`から履歴ごとclone)へ移行した。
+- レガシーC実装は`tcb/`以下に約16,000行(旧`src/`)。当時のNetBSD/
+  Linux(32bit)環境で動いていたが、64bit環境への移行後に不具合が
+  出ていた。
+- 2026-07-21、④(C++移植)にユーザー判断で本格着手(①完了を待たず前倒し)。
+  以後の実装は`src/cpp/`で進める。
+- **以前の作業ログ(下記「これまでの作業」)内の`src/*.c`等のパスは、
+  すべてこの改名・再構成"前"の状態を指す(git履歴上も当時はそのパス
+  だった、という歴史的記録のため書き換えていない)。現在の実体は
+  `tcb/src/*.c`、当時の`cpp/`は現在の`src/cpp/`にあたる。**
 - 開発は Linux + macOS の両対応を目指して進行中。Git導入済み(元々ほぼ未使用)。
 
 ## これまでの作業(git log 参照)
@@ -815,6 +904,79 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      `GraphicalDisplay`を差し替え可能にする)を最初から意識しておく
      ことで、GUI対応のための二度目の作り直しを避ける方針。
 
+17. **2026-07-21: プログラム名をtcb→usilicへ改名、実機バグ2件を修正、
+    書籍サンプル(claude-code-book-chapter8)を土台にリポジトリを再構成**
+   - **改名(`5f18b67`〜`eeb5640`、コミット群)**: 作者が20年来懸案だった
+     「tcb」という名称の変更を実施。`config.sh`に`PROGNAME`変数(既定値
+     `usilic`)を追加、`src/progname.h`(`tcb.h`が全.cから見えるよう
+     include)を新設し`PROGNAME`/`ENV_PROG`/`ENV_CHARSET`/`ENV_VT`の
+     4マクロを定義。`~/.tcb`→`~/.usilic`、`tcbrc`→`usilicrc`(`git mv`
+     で改名、履歴保持)、`TCB`/`TCBCHARSET`/`TCBVT`環境変数→`USILIC`/
+     `USILICCHARSET`/`USILICVT`、usage/エラーメッセージの表示名を
+     すべて置き換え。ソース側の`tcb.c`/`tcb.h`ファイル名・Makefile
+     ビルドターゲット名は変更していない(インストール時だけ`usilic`名
+     でコピーする形に分離)。
+   - **リポジトリ移行**: 旧`tcb-1.5b.linux_3`から履歴ごと`git clone`で
+     `~/git/usilic`を新設、GitHub非公開リポジトリ`haa15030/usilic`
+     として公開(2021年作成の空同然の同名リポジトリは
+     `usilic-2021-archive`へリネームして退避)。コミット身元も
+     `haa15030 <haa15030@gmail.com>`に修正。
+   - **実機バグ2件(`eeb5640`)**: 改名後、Sequoia機・Ubuntu機・mini機
+     での実機テストで、Sequoiaのローカルターミナル以外(Ubuntu ssh/
+     ローカル、mini、SequoiaのSSH経由)でSHELLモード(`^J.`)が
+     クラッシュ/フリーズすると報告。原因は`shell.c`の`read_shell()`
+     内、SHELLプロンプトのバージョン表示・マーカー文字列比較用の
+     2つのバッファ(`static char version[80];`、`char tcb[10];`)が、
+     格納する内容(`ENV_PROG`環境変数の値、version.hの著作権表示込みで
+     実測83byte)に対して既に不足しており(`tcb[10]`は特に深刻)、
+     改名でENV_PROGの値が3byte伸びたことで確実に踏まれるように
+     なったと見られる。両バッファを`N_line`(1024byte)へ拡大して解決。
+     Ubuntu 26.04コンテナで最小再現コードにより修正前後の挙動
+     (`*** buffer overflow detected ***: terminated`が修正後は解消)
+     を確認。
+   - **書籍サンプルを土台にしたリポジトリ再構成**: 『実践Claude Code
+     入門』第8章サンプル(`GenerativeAgents/claude-code-book-chapter8`、
+     一度削除していたものを`gh repo clone`で改めて取得)の
+     ディレクトリ構成(`.claude/{commands,skills,agents}`・`docs/`・
+     `.steering/`等)を土台として採用したいとの要望を受け、以下の
+     再構成を実施:
+     - レガシーC実装一式(`all.c`/`perl/`/`src/`/`tcb-c.c`/`tcb-h.h`)
+       を新設の`tcb/`へ`git mv`(履歴保持)。以後`tcb/`は積極的な変更
+       対象ではなく、`src/cpp/`への移植時の参照元(定数・アルゴリズム
+       の流用元)として扱う。
+     - 現usilic側の残り(`config.sh`/`cpp/`/`doc/`/`Makefile`/`README`/
+       `README.jp`/`usilicrc`/`utf8/`)を新設の`src/`へ`git mv`。
+       書籍サンプル自身の`src/example.ts`/`example.test.ts`
+       (未使用プレースホルダー)と同居させる形にした(ユーザーの
+       指示通り、書籍サンプル側の不要な設定・ファイルには手を
+       付けていない)。
+     - `config.sh`は`src/config.sh`という新しい置き場所になったため、
+       内部の相対パス(`src/Makefile`等)を`../tcb/src/Makefile`等へ
+       修正(`CSRC=../tcb/src`という変数を新設)。`install.sh`生成
+       ロジックも同様に修正。
+     - `IDEAS.md`は`docs/ideas/IDEAS.md`へ移動(書籍サンプルの
+       `docs/ideas/`という「壁打ち・アイデアメモ」の置き場所と
+       用途が一致するとの判断)。
+     - `CLAUDE.md`は、書籍サンプル側のCLAUDE.md(スペック駆動開発の
+       運用ルール一式)とこのファイル(プロジェクト全体の経緯)を
+       統合し、リポジトリ直下に1本化(ユーザー希望)。技術スタック・
+       ディレクトリ構造のセクションを新設、実際の構成に合わせて
+       記述。**この項目より前の「これまでの作業」の記述にある
+       `src/*.c`等のパスは、この再構成"前"の状態を指す歴史的記録
+       であり、書き換えていない**(現在の実体は`tcb/src/*.c`)。
+     - 書籍サンプル自身の`LICENSE`/`README.md`(このチャプター8
+       サンプル自体の説明)は、プロジェクト全体のライセンス表明と
+       混同しないよう`docs/book-sample-reference/`へ退避。
+     - `.devcontainer/`は本プロジェクト独自のもの(Ubuntu C/C++
+       ビルド環境)を維持し、書籍サンプル側のもの(Node.js向け)は
+       採用しなかった(ユーザーの明示的な判断)。
+     - `.gitignore`を新パス構成に合わせて全面的に書き直し
+       (`tcb/src/*.o`等のレガシーC側、`src/cpp/build/`等の本体側、
+       書籍サンプルのNode.js向けパターンを統合)。
+   - 検証: 再構成後、`src/config.sh`実行→`tcb/src/`でのMac側フル
+     ビルド→`src/cpp/`のdoctestユニットテスト9件、いずれも問題無く
+     成功することを確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
@@ -865,11 +1027,11 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
   5番の`^J.`経由のGNOME Terminal限定の表示ゴミ(実害無し)のみで、
   ②はほぼ完了とみなしてよい)
 - ③Git運用(導入済み、日常的に使えるよう学習中)
-- ④学習目的でのC++/Objective-C/Python/Perl5移植: IDEAS.md参照
-  (2026-07-21、C++移植に本格着手。Objective-C/Perl5/Pythonは引き続き
-  C++より後回し)
+- ④学習目的でのC++/Objective-C/Python/Perl5移植: `docs/ideas/IDEAS.md`参照
+  (2026-07-21、C++移植に本格着手。実装は`src/cpp/`。Objective-C/
+  Perl5/Pythonは引き続きC++より後回し)
 
-追加機能要望(C++移行後に検討するもの)もIDEAS.mdに移動した。
+追加機能要望(C++移行後に検討するもの)も`docs/ideas/IDEAS.md`に移動した。
 
 ## 進め方の合意事項
 
