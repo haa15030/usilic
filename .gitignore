@@ -29,3 +29,9 @@ perl/u
 perl/s
 
 doc/tcb.1.gz
+
+# C++ port build artifacts
+cpp/build/
+
+# reference material only, unrelated to tcb itself (book sample code)
+/usilic/
