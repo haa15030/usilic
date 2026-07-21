@@ -1,7 +1,7 @@
 #include "doctest.h"
 #include "utf8.hpp"
 
-using tcb::Utf8;
+using fm::Utf8;
 
 TEST_CASE("sequence_length: ASCII is always 1 byte") {
   CHECK(Utf8::sequence_length('A') == 1);

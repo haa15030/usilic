@@ -1,6 +1,8 @@
 #pragma once
 
-namespace tcb {
+// "fm" (file manager) -- deliberately not the product name, since the
+// name itself is expected to change (see CLAUDE.md/IDEAS.md).
+namespace fm {
 
 // UTF-8 byte-length / display-width helpers.
 //
@@ -26,4 +28,4 @@ class Utf8 {
   static int display_width(const unsigned char *cp, int len);
 };
 
-}  // namespace tcb
+}  // namespace fm

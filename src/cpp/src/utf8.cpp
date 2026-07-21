@@ -1,6 +1,6 @@
 #include "utf8.hpp"
 
-namespace tcb {
+namespace fm {
 
 int Utf8::sequence_length(unsigned char c) {
   if (c < 0x80) return 1;
@@ -45,4 +45,4 @@ int Utf8::display_width(const unsigned char *cp, int len) {
   return 1;
 }
 
-}  // namespace tcb
+}  // namespace fm
