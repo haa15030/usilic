@@ -35,6 +35,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+#include "progname.h"
 #include "mode.h"
 
 #define N_buff	0x10000

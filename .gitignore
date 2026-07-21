@@ -9,6 +9,8 @@ src/tcb
 src/tcb.exe
 src/config.h
 src/config.h.old
+src/progname.h
+src/progname.h.old
 src/Makefile
 src/Makefile.old
 src/.config
@@ -32,6 +34,3 @@ doc/tcb.1.gz
 
 # C++ port build artifacts
 cpp/build/
-
-# reference material only, unrelated to tcb itself (book sample code)
-/usilic/

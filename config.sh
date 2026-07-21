@@ -1,7 +1,14 @@
 #!/bin/bash
 
+# Program name. Drives the installed binary name, the ~/.$PROGNAME and
+# /tmp/.$PROGNAME runtime directories, the $PROGNAME/${PROGNAME}rc config
+# file, and the (uppercased) environment variable names ($PROGNAME,
+# ${PROGNAME}CHARSET, ${PROGNAME}VT). Source files/Makefile build targets
+# still say "tcb" internally -- only the runtime-visible name changes.
+PROGNAME=usilic
+
 # Working directory.
-TMP=/tmp/.tcb
+TMP=/tmp/.$PROGNAME
 
 # Default character set.
 CHARSET="utf-8"
@@ -55,7 +62,7 @@ else
     fi
 fi
 
-LIB=$USR_DIR/lib/tcb
+LIB=$USR_DIR/lib/$PROGNAME
 BIN=$USR_DIR/bin
 MAN=$USR_DIR/man/man1
 
@@ -160,18 +167,44 @@ if [ -f src/config.h ]; then
     fi
 else
     mv .config src/config.h
-fi 
+fi
+
+echo 'Creating src/progname.h:'
+
+PROGNAME_UPPER=`echo "$PROGNAME" | tr '[:lower:]' '[:upper:]'`
+cat > .config <<EOF
+#ifndef _PROGNAME_H
+#define _PROGNAME_H
+#define PROGNAME "$PROGNAME"
+#define ENV_PROG "$PROGNAME_UPPER"
+#define ENV_CHARSET "${PROGNAME_UPPER}CHARSET"
+#define ENV_VT "${PROGNAME_UPPER}VT"
+#endif
+EOF
+
+if [ -f src/progname.h ]; then
+    cmp -s .config src/progname.h
+    if [ ! $? = 0 ]; then
+	mv src/progname.h src/progname.h.old
+	mv .config src/progname.h
+    else
+	rm .config
+	touch src/progname.h
+    fi
+else
+    mv .config src/progname.h
+fi
 
 cat > install.sh <<EOF
-cd src; make; cd ..	
-echo 'Installing tcb:'
+cd src; make; cd ..
+echo 'Installing $PROGNAME:'
 mkdir -p \$1$BIN
 mkdir -p \$1$LIB
 mkdir -p \$1$MAN
-echo "install $COPY -m 755 src/tcb \$1$BIN"
-install $COPY -m 755 src/tcb \$1$BIN
-echo "install $COPY -m 644 tcbrc \$1$LIB"
-install $COPY -m 644 tcbrc \$1$LIB
+echo "install $COPY -m 755 src/tcb \$1$BIN/$PROGNAME"
+install $COPY -m 755 src/tcb \$1$BIN/$PROGNAME
+echo "install $COPY -m 644 ${PROGNAME}rc \$1$LIB"
+install $COPY -m 644 ${PROGNAME}rc \$1$LIB
 echo "install $COPY -m 644 doc/HELP \$1$LIB"
 install $COPY -m 644 doc/HELP \$1$LIB
 echo "install $COPY -m 644 doc/HELP.jp \$1$LIB"

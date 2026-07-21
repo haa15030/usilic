@@ -163,7 +163,7 @@ static int check_ps(int f_tty, int pid, char **err)
   static char *sp[] = {
     "ps",
     "grep",
-    "tcb",
+    PROGNAME,
     n,
   };
   
@@ -224,10 +224,10 @@ static void check_pl(int f_tty, char **err)
 
   if (!f_tty) {
     char *cp = getenv("HOME");
-    s_pid = alloca(strlen(cp) + 10);
+    s_pid = alloca(strlen(cp) + strlen(PROGNAME) + 7);
     strcpy(s_pid, cp);
     if (strchr(s_pid, '\0')[-1] != '/') strcat(s_pid, "/");
-    strcat(s_pid, ".tcb/pid");
+    strcat(s_pid, "." PROGNAME "/pid");
     if (!stat(s_pid, &st)) {
       fp = fopen(s_pid, "r");
       fscanf(fp, "%d", &pid);
@@ -235,7 +235,7 @@ static void check_pl(int f_tty, char **err)
       if (pid && !kill(pid, 0)) {
 	struct stat old;
 	stat(s_pid, &old);
-	fprintf(stderr, "tcb: Process-ID %d ... ", pid);
+	fprintf(stderr, PROGNAME ": Process-ID %d ... ", pid);
 	fflush(stdout);
 	for (i = 6; i; i--) {
 	  kill(pid, SIGCONT);
@@ -266,11 +266,11 @@ int main(int argc, char *argv[])
     u_int shell	: 1;
     u_int tcb	: 8;
   } f;
-  static char tcb[] = "tcb";
+  static char tcb[] = PROGNAME;
   static char tmp[N_line];
   static char *err[] = {
     "Invalid option",
-    "TCB environment variable is set",
+    ENV_PROG " environment variable is set",
   };
   /*
    * f.tcb
@@ -306,8 +306,8 @@ int main(int argc, char *argv[])
      no such aliasing since its 2nd argument is a literal, not tmp itself. */
   strcat(tmp, "/s.");
   *pathname = '\0';
-  if (!getenv("TCBVT") && tcgetattr(0, &otty) < 0) f.tcb |= 0x20;
-  f.shell = getenv("TCB") != NULL;
+  if (!getenv(ENV_VT) && tcgetattr(0, &otty) < 0) f.tcb |= 0x20;
+  f.shell = getenv(ENV_PROG) != NULL;
   if (argc == 1) {
     if (f.shell)
       if (f.tcb & 0x20) from_shell(NULL, 0, 0, tmp);
@@ -392,7 +392,7 @@ int main(int argc, char *argv[])
   save_signal(f.tcb);
   sprintf(tmp, "%s v%s", tcb, &(strchr(version, ' '))[1]);
   *strchr(tmp, '-') = '\0';
-  setenv("TCB", tmp, 1);
+  setenv(ENV_PROG, tmp, 1);
   if (access(s_S(S_tcbrc), F_OK) < 0) {
     fprintf(stderr, "%s: %s: %s\n", tcb, s_S(S_tcbrc), strerror(ENOENT));
     free_S();
@@ -419,7 +419,7 @@ void exit_tcb(void)/*tcb*/
       int i;
       char str[256];
       strcpy(str, s_S(S_write));
-      i = ichrstr(str, 0, "w.tcb");
+      i = ichrstr(str, 0, "w." PROGNAME);
       strcpy(&str[i-1], "shell");
       rename(s_S(S_log), str);
       strcpy(&str[i-1], "error");

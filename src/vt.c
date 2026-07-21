@@ -249,7 +249,7 @@ int vt_init(int init)/*tcb*/
     tcsetattr(tfd, TCSANOW, &vt_termio);
     vt_mode('d');
     vt_mode(0);
-    if ((tcbcharset = getenv("TCBCHARSET")))
+    if ((tcbcharset = getenv(ENV_CHARSET)))
       /* config.h's CHARSET default is "utf-8", so an unset TCBCHARSET
 	 gets that value via setenv() in init_config() (str.c) -- but
 	 `export TCBCHARSET=` (empty, not unset) makes getenv() return

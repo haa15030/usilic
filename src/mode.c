@@ -823,7 +823,7 @@ void do_prog(char *str, STR **cmdp, STR **histp, int f_wait)/*tcb*/
 #endif
   if (!(pid = fork())) {
     load_signal();
-    unsetenv("TCB"); /* enable to launch `tcb' from PROGRAM-mode */
+    unsetenv(ENV_PROG); /* enable to launch us again from PROGRAM-mode */
     execlp("sh", "sh", "-c", str, NULL);
   }
   fprintf(stdout, "\n%s: %s\n", s_S(S_tcb), str);

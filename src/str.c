@@ -607,7 +607,7 @@ int conf(char *temp, char *args, char *version, int f_tcb)/*tcb*/
     "Macro interrupted",				/* S_errb */
     "Not installed",					/* S_errc */
     "Edit `SHELL' of tcbrc",				/* S_errd */
-    "~/.tcb/tcbrc ignored",				/* S_erre */
+    "~/." PROGNAME "/" PROGNAME "rc ignored",		/* S_erre */
     "SHELL busy",					/* S_errf */
     "Exit",						/* S_errg */
     "Hit Enter",					/* S_errh */
@@ -634,8 +634,8 @@ int conf(char *temp, char *args, char *version, int f_tcb)/*tcb*/
     "bash",
     "tcsh",
   };
-  static char tcb[] = "tcb";
-  static char jman[] = "man"; 
+  static char tcb[] = PROGNAME;
+  static char jman[] = "man";
   static char *groff[] = {
     "groff",
     "-mandoc",
@@ -723,8 +723,8 @@ int conf(char *temp, char *args, char *version, int f_tcb)/*tcb*/
 			     + strlen(args) + 1);
   sprintf(Str.S[S_option+7], "%s%s", s_S(S_tcb), args);
   Str.S[S_nop] = strdup("# \t\n");
-  env_charset(getenv("TCBCHARSET") != NULL);
-  if (!getenv("TCBCHARSET")) setenv("TCBCHARSET", CHARSET, 1);
+  env_charset(getenv(ENV_CHARSET) != NULL);
+  if (!getenv(ENV_CHARSET)) setenv(ENV_CHARSET, CHARSET, 1);
   if (f_tcb & (0x80|0x40)) {
     if (f_tcb & 0x80) {
       char *p;

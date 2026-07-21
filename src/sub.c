@@ -562,7 +562,7 @@ void write_list(LL ll, SS ss, LINE *lp, char name[])/*tcb*/
   rename(s_S(S_hist), str); /* backup */
   if (!(fp = fopen(s_S(S_hist), "w"))) return;
   get_time(str);
-  fprintf(fp, "# ~/.tcb/history: %s\n", getenv("TCB"));
+  fprintf(fp, "# ~/." PROGNAME "/history: %s\n", getenv(ENV_PROG));
   fprintf(fp, "# E\010EX\010XI\010IT\010T: %s\n", str);
   fprintf(fp, "# Note: The lines begin with the character \014 or \032 mustn't be deleted.\n\n");
   fprintf(fp, "%c Current buffer\n", K_l);
