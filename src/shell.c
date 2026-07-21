@@ -54,7 +54,7 @@ typedef union {
 static void write_shell(void *p)
 {
   static int row, col, col0, colb, cole, len, f_cr, *pv;
-  static char dir[N_line], version[80];
+  static char dir[N_line], version[N_line];
   SHELL *sp;
   u_char *cp, *cp2;
   int f_disp;
@@ -1364,7 +1364,7 @@ static int add_line(int row, int c, u_char buff[], char prompt[], RV *rvp, int *
 
 static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], int pid0, int f_shell)
 {
-  static char prompt[N_pipe+1], name[N_line], arg[10], tcb[10];
+  static char prompt[N_pipe+1], name[N_line], arg[10], tcb[N_line];
   static PP *p0;
   static FILE *ifp, *ofp, **ifpp, **ofpp;
   static BASE *bp;
