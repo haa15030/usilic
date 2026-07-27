@@ -977,6 +977,77 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ビルド→`src/cpp/`のdoctestユニットテスト9件、いずれも問題無く
      成功することを確認。
 
+18. **2026-07-22〜23: 参考書PDFを踏まえたCRCカード方式でのクラス洗い出し、
+    Charsetクラス(3クラス目)・Displayクラス(4クラス目)を移植**
+   - ユーザーから提示された参考書PDF(`docs/ideas/C++のからくり抜粋.pdf`、
+     「クラスを見つけろ！」の章、CRC(Class-Responsibility-Collaboration)
+     法を紹介)を読み込み、`tcb/src/`全体(17,000行)を対象にCRCカード
+     方式でクラス候補を一括洗い出した。`menu()`(全モードに依存する
+     「全部やれ」関数)が本にある「Controller」の教訓通りクラスでは
+     なく`Application`のイベントループ相当と判明する等、実際に手法が
+     機能することを確認。候補: `Display`/`KeyInput`/`LineEditor`/
+     `Shell`/`Buffer`系/`ArchiveReader`系/`ContentView`/`Mode`系/
+     `ChildProcess`/`Charset`/`Configuration`/`History`/`NameTree`。
+   - ユーザーから「GREP/FGREPの入れ子検索とARCの入れ子は構造が違うのか」
+     との質問。調査の結果、状態管理(スタックに積んで戻る)は両方とも
+     既存の汎用`STACK`(`hp->sp`)と同型で、GREP専用の`GREP`チェーンは
+     実質その特殊ケースと判明。真のボトルネックは`fork_arc()`
+     (`fork.c`)側が`execvp()`で実ファイルパスを直接展開する設計に
+     なっており、メモリ上のバッファ(外側のアーカイブを展開した結果)
+     に対しては使えないこと。新設計では`ArchiveReader`に「バッファ
+     ソースの場合は一時ファイルへ書き出してから展開する」手順を
+     持たせれば、GREPと同じ`ModeStack`の上で入れ子アーカイブも自然に
+     動く見込み。
+   - **Charsetクラス(3クラス目)**: `code.c`の文字コード判定・変換
+     機能を移植。CRC設計時、`code.c`にはquoted-printable/base64で
+     MIMEエンコードされたメール本文の日本語ヘッダを復号する機能
+     (`conv_q`/`decode_mime`等)が埋め込まれていることを発見、
+     ユーザーに確認したところ「そんな機能すら覚えてない、今も
+     使われているか分からない」とのことで完全除外。詳細はコミット
+     `f4b9e67`参照。同コミットで、前回セッションで行った
+     `namespace tcb`→`fm`改名がコミット前に`git clone`されており
+     `usilic`側に反映されていなかった取りこぼしも発覚・修正。
+   - **Displayクラス(4クラス目)**: `tc.c`+`vt.c`(あわせて650行)を
+     移植。`tcb.h`の`VT`構造体が関数ポインタの集合ですでに事実上の
+     vtableだったため、C++の抽象クラスへの1:1対応が非常に自然だった。
+     - 抽象`Display`(`display.hpp`)+具象`TerminalDisplay`
+       (`terminal_display.hpp`/`.cpp`、termcap実装)という構成。
+       将来のSDL2版`GraphicalDisplay`(GUI慣性スクロール用)を同じ
+       インターフェースで追加できる設計。
+     - 意図的にDisplayから除外したもの: `vt_cursor()`/`tc_cursor()`
+       は名前に反して実体はSIGWINCH転送先PIDの記憶(`key_winch`)で
+       あり`Shell`/`KeyInput`行き、`vt_mode('W')`フラグも同様、
+       `A_md2`/`A_md3`/`A_us2`(重ね打ち検出の内訳タグ)は
+       `Buffer`/`ContentView`の関心事、生termios設定は`KeyInput`行き。
+       副産物として`A_ue2`/`A_me2`という呼び出し箇所ゼロの未使用
+       enum値も発見。
+     - 旧`vt_mode('H')`(スムーズスクロール、`usilicrc`の`SCROLL`
+       設定・`^Oh`キーで切替、履歴にも保存される実在機能と`str.c`/
+       `menu.c`/`sub.c`の呼び出し箇所をたどって確認)は、呼び出し側
+       6箇所で毎回`vt_cs(vt_row(0) - (vt_mode('H')?1:2), 0)`という
+       行数計算を重複させていたのを`setSmoothScrollEnabled(bool)`
+       内部に隠蔽する設計に整理。
+     - **旧Cの見過ごし挙動を1件修正**: `tc.c`は`exit_ca_mode`(`te`)を
+       `Tc.te`へ格納するだけで、どこからも呼び出していなかった
+       (usilicは終了時、常にalternate screenへ入ったまま抜けていた)。
+       `TerminalDisplay::close()`で正しく`te`を発行するよう修正。
+     - 副産物: `<term.h>`が`columns`/`lines`という単語自体をマクロ
+       定義していること(`#define columns CUR Numbers[0]`)を発見。
+       旧`tc.c`が`tc_row`/`tc_col`という変数名を使っていたのはこの
+       衝突を避けるためだったと考えられる。`terminal_display.cpp`で
+       `#undef`して対処。
+     - 検証: 純粋なロジック部分(属性/キー問い合わせ、ジオメトリ、
+       スクロール領域の行数計算)はdoctestで31件新規テスト(既存と
+       合わせて計40件)、Mac/Ubuntu双方で全件パス。実際の端末I/O
+       部分(`tputs`/`setupterm`が実端末を要求するため自動テスト対象
+       外、旧`tc.c`自体も一度も自動テストされていなかったのと同じ
+       制約)は、実際に`TerminalDisplay::fromEnvironment()`を使う
+       小さなスモークテストプログラムを書きPTY経由で実行、生バイト
+       列を目視確認(alternate screen突入・スクロール領域設定・
+       カーソル移動・Bold/Standout属性のon/off・`close()`での
+       alternate screen離脱、いずれも意図通りのエスケープシーケンス
+       が出力されることを確認)。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

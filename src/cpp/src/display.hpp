@@ -1,0 +1,113 @@
+#pragma once
+
+#include <string>
+
+namespace fm {
+
+// Abstract screen: text output, cursor movement, attributes, and
+// terminal geometry. Ported from tcb/src/tc.c + vt.c, which is
+// already a de facto vtable in C (see the VT struct in tcb.h) -- this
+// class formalizes that shape so a second implementation (a future
+// SDL2-based GraphicalDisplay for the "cat's-paw" inertial-scroll GUI
+// mode, see docs/ideas/IDEAS.md) can be dropped in without touching
+// any caller.
+//
+// Deliberately excluded (belongs to future classes, not Display):
+//   - Raw termios/raw-mode setup and reading keyboard bytes (vt_init(),
+//     vt_getch(), vt_tfd()) -- that's about how input is read, not how
+//     output is drawn; goes to a future KeyInput class.
+//   - vt_cursor()/tc_cursor(): despite the name, this doesn't touch
+//     cursor visibility at all -- it records which child SHELL pid
+//     should be forwarded SIGWINCH (key_winch(-f_cursor) in the
+//     legacy C). That's terminal-resize-forwarding bookkeeping for a
+//     future Shell class, not a Display concern.
+//   - The legacy 'W' vt_mode flag (SIGWINCH received while a SHELL
+//     child is alive) -- same reason, future Shell/KeyInput territory.
+//   - The A_md2/A_md3/A_us2 sub-tags legacy code used to remember
+//     *why* an overstrike span was detected bold/underlined (see
+//     alloc.c's save_attr()) -- Display only needs to know "turn bold
+//     on", not which nroff overstrike pattern produced that request;
+//     that classification is a Buffer/ContentView concern.
+class Display {
+ public:
+  enum class Attribute {
+    Underline,
+    UnderlineOff,
+    Bold,
+    BoldOff,
+    Standout,     // reverse video. Legacy had two code paths for this
+                  // (vt_stand()/vt_endstand() calling so/se directly,
+                  // and vt_seta(A_cs)/vt_seta(A_ce) doing the exact
+                  // same thing) -- confirmed identical by reading
+                  // tc_geta()'s A_cs/A_ce cases, so they're unified
+                  // into one Attribute here instead of two APIs.
+    StandoutOff,
+  };
+
+  enum class Key { Up, Down, Left, Right, PageUp, PageDown };
+
+  virtual ~Display() = default;
+
+  // -- raw output --
+  virtual void write(const std::string &text) = 0;
+  virtual void putChar(int c) = 0;
+  virtual void flush() = 0;
+
+  // -- cursor --
+  virtual void moveCursor(int row, int col) = 0;
+  virtual void cursorLeft() = 0;
+  virtual void saveCursor() = 0;     // no-op if the terminal lacks this
+  virtual void restoreCursor() = 0;  // capability (legacy: sc/rc optional)
+
+  // -- erasing / scrolling --
+  virtual void clearScreen() = 0;
+  virtual void clearToEndOfLine() = 0;
+  virtual void scrollForward() = 0;
+  virtual void scrollReverse() = 0;
+
+  // -- attributes --
+  virtual void setAttribute(Attribute attr) = 0;
+  // Raw escape string for the attribute, for callers that need to
+  // embed it inline in text built elsewhere (legacy use: shell.c
+  // splices vt_geta(A_md)/vt_geta(A_me) directly into the bash PS1
+  // string so bash itself prints the bold-on/off around it). Returns
+  // an empty string if the terminal doesn't support the attribute.
+  virtual std::string attributeEscape(Attribute attr) const = 0;
+
+  // -- terminal geometry --
+  virtual int rows() const = 0;
+  virtual int columns() const = 0;
+  virtual void setSize(int rows, int columns) = 0;
+
+  // Raw escape sequence a terminal sends for the given key, for a
+  // future KeyInput's raw-byte-stream parser. Empty if unsupported.
+  virtual std::string keySequence(Key key) const = 0;
+
+  // Global output-suppression switch (legacy: vt_mode('D')/'d'/-'d').
+  // While disabled, no method on this interface may touch the actual
+  // display (no stdout writes, no OS/terminal-library calls) --
+  // implementations must guard every I/O-performing method on this,
+  // not just some of them (the legacy C was inconsistent about this;
+  // see terminal_display.cpp for where that's tightened up).
+  virtual bool outputEnabled() const = 0;
+  virtual void setOutputEnabled(bool enabled) = 0;
+
+  // "Smooth scroll" (legacy: vt_mode('H')/'h'/-'h', toggled by the
+  // ^Oh key and by the SCROLL setting in usilicrc). Changes how much
+  // of the screen the scroll region covers; the exact row arithmetic
+  // is an implementation detail hidden behind this setter instead of
+  // being recomputed by every caller (legacy repeated `vt_cs(vt_row(0)
+  // - (vt_mode('H') ? 1 : 2), 0)` at every one of its ~6 call sites).
+  virtual bool smoothScrollEnabled() const = 0;
+  virtual void setSmoothScrollEnabled(bool enabled) = 0;
+
+  // Enter/leave the display (legacy: entering/leaving the terminal's
+  // alternate screen via the ti/te capabilities). Note: legacy tc.c
+  // captured te (exit_ca_mode) but never actually called it anywhere
+  // -- usilic always left the alternate screen active on exit. close()
+  // corrects that; see terminal_display.cpp.
+  virtual void open() = 0;
+  virtual void close() = 0;
+};
+
+}  // namespace fm
