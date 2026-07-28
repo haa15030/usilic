@@ -1706,6 +1706,38 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      カーソル位置の`History`往復確認を、doctestで新規8件(既存と
      合わせて計174件)、Mac/Ubuntu双方で全件パス確認。
 
+30. **2026-07-28夜(続き): FileModeクラス(16クラス目) — Modeの
+    2つ目の一切れ、`T_file`**
+   - `mode.c`のT_fileケースが`init.c`の`init_bin()`(`read_buff()`/
+     `check_type()`/`set_pp()`一式)へ委譲する経路のうち、「通常の
+     テキストファイルを表示する」という核だけを切り出した。
+     `check_type()`はcharset判定・変換・タブ展開・nroff重ね打ち
+     太字/下線検出をすべて自前で再実装していたが、そのロジックは
+     既に移植済みの`PipeBuffer`がそっくりそのまま提供している。
+     結果、`FileMode`は「ファイルの生バイトを読み、`PipeBuffer`に
+     流し込み、出てきた行を`ContentView`へ渡す」だけの薄いクラスに
+     なった(charset/重ね打ちロジックの再実装は一切無し)。
+   - `DirectoryMode`と対称的な設計: `History`との連携(`PositionCategory
+     ::File`によるカーソル位置の記憶・復元)は同じパターンを踏襲。
+     スクロール・ページングは独自実装せず、呼び出し側が同じ
+     `ContentView`を直接操作する(`DirectoryMode`もスクロールを
+     ラップしていないのと同じ理由)。
+   - 意図的に対象外としたもの: `check_type()`のコンテンツ種別判定・
+     外部プログラムへの委譲判断(将来の`Mode`/`Application`の仕事)、
+     バイナリファイルの16進ダンプ表示(`PipeBuffer`自身が同じ理由で
+     除外済みの機能、生バイトをそのまま表示するのみ)、`M_error`/
+     `M_log`/`M_tcb`/`M_du`という`init_bin()`を共有するだけの別データ
+     ソース、`T_dir`↔`T_file`間の`ModeStack`連携(「`^G`で`T_dir`に
+     戻る」という2クラスをまたぐ調整は、`DirectoryMode`が呼び出し元
+     への復帰方法を知らないのと同じ理由で対象外、将来の`Mode`/
+     `Application`の仕事)。
+   - **検証**: 実ファイルでのテキスト表示、存在しないファイルでの
+     安全な失敗、狭い表示幅での折り返し(`PipeBuffer`統合の確認)、
+     UTF-8内容の非破壊往復、`History`経由のカーソル位置往復、
+     空ファイル、`loadFile()`前の`saveCursorPosition()`が安全な
+     no-opであることを、doctestで新規7件(既存と合わせて計181件)、
+     Mac/Ubuntu双方で全件パス確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
