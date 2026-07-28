@@ -1048,6 +1048,51 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
        alternate screen離脱、いずれも意図通りのエスケープシーケンス
        が出力されることを確認)。
 
+19. **2026-07-23: KeyInputクラス(5クラス目)を移植**
+   - `key.c`(1626行)から、生キー入力読取・raw/cookedモード切替
+     (`vt_getch()`+`vt_init()`のtermios部分)・エスケープシーケンス
+     解析(`read_esc()`)・`SIGWINCH`/`SIGTTOU`/`SIGCONT`シグナル処理
+     を`KeyInput`として抽出。`key.c`はDisplay同様に複数の関心事が
+     同居した大きなファイルで、以下は意図的に対象外とした:
+     - `SIGSEGV`(`key_segv`)/`SIGTERM`/`SIGHUP`(`key_term`): キー
+       入力ではなくアプリのライフサイクル(クラッシュ回収・終了処理)。
+       将来の`Application`行き。旧`save_signal()`は全シグナルを一括
+       登録していたが、この切り分けによりKeyInputは自分の担当分
+       (`WINCH`/`TTOU`/`CONT`)だけを登録する形に整理。
+     - `read_m()`内の巨大なモード別コマンドディスパッチ: `Mode`/
+       `Application`行き。KeyInputは「何が押されたか」を返すところ
+       まで。
+     - `edit_line()`/`make_list()`: 既定通り`LineEditor`行き。
+     - `stand_str()`: `ContentView`/`Display`行き。
+     - **キーボードマクロは実装を追ってみると2つの別機構だった**:
+       ユーザー記録マクロ(`p_km`、`M_ms`/`M_mm`/`M_me`)は実は
+       「解決済みコマンド番号」を記録・再生しており、再生時は
+       ディスパッチを経由せず直接呼び出し元へ値を返す実装だった
+       ため、これはKeyInputの管轄ではなく将来の`Mode`/`Application`
+       行きと判断。一方`usilicrc`の`M-0`〜`M-19`定型マクロ(`p_bm`)
+       は生バイト列を`vt_getch()`の代替として再送する実装で、
+       これは正真正銘KeyInputの仕事のため`playRawMacro()`として
+       移植した。
+   - **副産物、旧コードのバグを1件発見・修正**: `read_esc()`が使う
+     `is_esc()`は、「一致なし」と「先頭(Up矢印)に一致」をどちらも
+     整数`0`で返しており、呼び出し元は`ks[0]`(Up矢印のケーパビリティ
+     文字列)の非NULLチェックでしか判定していなかった。ほぼ全ての
+     端末はUp矢印ケーパビリティを持つため、この非NULLチェックは
+     常に真になり、結果として**未知のエスケープシーケンスがすべて
+     「Up矢印が押された」と誤認識されていた**(実害は生じにくい
+     境界条件だが、実在するバグ)。`readEscapeSequence()`の戻り値を
+     `std::optional<SpecialKey>`にすることで、この曖昧さを型レベルで
+     解消。
+   - 検証: `readByte()`/`playRawMacro()`/`readEscapeSequence()`
+     (6種のキー全パターン・裸のESC・未知のシーケンス・矢印ケーパ
+     ビリティ自体が無い端末、上記バグの回帰テスト含む)をdoctestで
+     8件新規テスト(既存と合わせて計48件)、Mac/Ubuntu双方で全件
+     パス。実際のtermios設定・SIGWINCH処理はDisplay同様に自動テスト
+     対象外のため、PTY経由のスモークテストプログラムで実バイト読取
+     (x/y/z)・エスケープシーケンス認識(Up矢印)・実際のウィンドウ
+     リサイズ+SIGWINCH送出→`Display::setSize()`への正しい伝播
+     (40行100列への変更を確認)を実機バイト列で確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
