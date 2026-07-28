@@ -1294,6 +1294,87 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      修正したUTF-8対応バグの検証)も実データベースで確認。doctestで
      12件新規テスト(既存と合わせて計98件)、Mac/Ubuntu双方で全件パス。
 
+24. **2026-07-28: ChildProcessクラス(10クラス目)を移植**
+   - `fork.c`の`fork_key()`/`fork_bin()`/`fork_chp()`/`fork_arc()`が
+     それぞれ独自に書いていた`pipe()`/`fork()`/`dup2()`/`execvp()`の
+     一連の手順を、`ChildProcess::run()`(単一コマンド実行)と
+     `ChildProcess::runPipeline()`(2段パイプライン、`.deb`/`.tgz`展開や
+     `ar p file data.tar.gz | tar xvf -`のようなフィルタチェーン向け)
+     に一本化。旧C版側で「`execvp()`失敗時に`exit()`し忘れて子プロセスが
+     tcb本体としてそのまま複製実行され続けるバグ」(`fork_bin()`)や
+     overlapping strcpy系のバグがこれらの手書き箇所それぞれで独立に
+     見つかっていた経緯自体が、一本化の動機。
+   - 意図的に対象外としたもの: どのプログラムでファイルを開くかの判定・
+     tcbrcのCHILD/EXEC/EDITOR/SHELL指令解析(`child.c`、Configuration/
+     Modeの仕事)、SHELLモードのような対話的・pty常駐型の子プロセス
+     (将来のShell/PtySessionクラスの仕事、streaming/双方向/端末接続と
+     いう根本的に異なる形なので今回は扱わない)、`alloc_buff()`の
+     キー入力割り込み監視(UI層の関心事)と連結リストバッファリング
+     (1990年代の可変長コンテナ代替、`std::string`で不要)。
+   - 大きな入力を書き込みながら出力も読む場合のデッドロック回避に、
+     専用の「書き込み役」子プロセスをforkする設計を採用(`spawnWriter()`)。
+     旧C版の`fork_arc()`/`fork_chp()`自身が採用していたパターンをそのまま
+     踏襲(パイプライン入力の書き込み側だけを別プロセスに切り出すことで、
+     同一プロセス内でのブロッキング書き込みによるデッドロックを避ける)。
+   - **このセッション中に自分自身で作り込み、自分自身で見つけた
+     バグが2件連鎖して発覚した(いずれも旧C版由来ではない、新規
+     C++コードだけの問題)**:
+     1. **C++の二段階クラス解析による実害の無いはずのコンパイル
+        エラー**: `Options`構造体を`ChildProcess`クラスにネストし、
+        各フィールドに`= false`/`= nullptr`という通常のデフォルト
+        メンバ初期化子を書いたところ、「`static Result run(...,
+        const Options &options = {});`という囲むクラス側のデフォルト
+        引数が、ネストされた`Options`のデフォルトメンバ初期化子が
+        まだ解析されていない時点で必要とする」という、C++の
+        メンバ関数本体/デフォルト引数の二段階解析に起因する実在の
+        言語仕様上の制約でコンパイルエラーになった
+        (`"default member initializer for 'forceCLocale' needed
+        within definition of enclosing class 'ChildProcess' outside
+        of member functions"`)。
+     2. **上記の対処として安易にデフォルトメンバ初期化子を削除した
+        ことで生まれた本物のバグ**: 「呼び出し側は`Options options
+        = {}`で値初期化されるから初期化子自体は不要」と判断して
+        単純に削除したところ、テストコード側の`ChildProcess::Options
+        options;`(波括弧無し、集成体のデフォルト初期化)が
+        `stderrLogPath`等をゴミ値のまま残す実行時バグを生んだ。
+        `prepareChild()`の`if (options.stderrLogPath)
+        redirectStderr(*options.stderrLogPath);`がこのゴミ非nullptr
+        値を実際に参照してしまい、フォーク先の子プロセス(`tr`)が
+        SIGSEGVでクラッシュしていた。fprintfトレースによる調査で
+        `prepareChild()`本体の内部でクラッシュしていることまでは
+        特定できたが、根本原因(未初期化フィールド)の特定と修正は
+        いったんセッションの文脈圧縮を挟んだ。修正: `Options`を
+        `ChildProcess`クラスの外(`fm`名前空間直下、`ChildProcessOptions`
+        という名前で定義し`ChildProcess::Options`は型エイリアス)に
+        出すことで、二段階解析の制約を回避しつつ通常のデフォルト
+        メンバ初期化子を復活させ、波括弧の有無に関わらず
+        `Options options;`が常に安全な既定値になるようにした。
+     3. **さらにその先、SIGSEGVが直ってようやく実行が完走できる
+        ようになったところで新たに露呈した、以前から存在していた
+        別のバグ**: `runPipeline()`の第2段(pid2、例: `tr`)の子プロセス
+        分岐が、自分がforkされた時点で親プロセスがまだ閉じていなかった
+        `outPv[0]`(自分自身の出力パイプの読み込み端)と、入力ありの
+        場合は`inPv[1]`(入力パイプの書き込み端)を、execvp後も
+        閉じ忘れたまま引き継いでいた。特に`inPv[1]`の方は致命的で、
+        `tr`プロセスがこの余分な書き込み端を(execしたプログラム自身は
+        存在すら知らないまま)握り続けるため、第1段(pid1、`cat`)が
+        自分の標準入力`inPv[0]`側で全ての書き込み端が閉じるのを永遠に
+        待ち続け(=EOFが来ない)、テストがハングする形で発覚した。
+        `pipe()`の読み書き両端をforkのたびに全パスで確実に閉じる、
+        という基本を1箇所だけ徹底し損ねていた典型例。`prepareChild()`
+        呼び出し直後に`close(outPv[0])`と`if (options.input)
+        close(inPv[1])`を追加して修正。2番目のSIGSEGVバグに隠れて
+        今回まで一度も実行されずに残っていたコードパスだった。
+   - **検証**: `echo`/`cat`/`sh`/`tr`という実在のUnixコマンドを
+     実際にfork/exec/pipeする形でテスト(フェイク不使用、この
+     クラスの本質がfork/pipe/exec機構そのものであるため)。
+     単純実行・非ゼロ終了ステータス・存在しないプログラム・標準入力
+     経由の入力・1MB入力でのパイプデッドロック回避・`LC_ALL=C`強制の
+     有無・2段パイプライン単体・2段パイプライン+標準入力(今回の
+     SIGSEGV・ハング両方の再現条件そのもの)の計9テストケース、
+     doctestで新規9件(既存と合わせて計107件)、Mac/Ubuntu双方で
+     全件パス確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
