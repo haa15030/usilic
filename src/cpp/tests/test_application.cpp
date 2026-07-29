@@ -1013,3 +1013,59 @@ TEST_CASE_FIXTURE(Fixture, "CP/MV/RM: ^G cancels the prompt without touching the
   CHECK_FALSE(app.promptActive());
   CHECK(fs::exists(root / "cpmv_a.txt"));
 }
+
+// -- M_exit: ^X^C confirmation prompt, wantsExit() flag --
+
+TEST_CASE_FIXTURE(Fixture, "wantsExit(): false before anything happens") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.wantsExit());
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^C starts the exit-confirmation prompt") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x18, std::nullopt);
+  CHECK(app.feedByte(0x03, std::nullopt));
+  CHECK(app.promptActive());
+  CHECK_FALSE(app.wantsExit());
+}
+
+TEST_CASE_FIXTURE(Fixture, "StartExit: reachable from any mode, e.g. File") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK(app.handleCommand(Command::StartExit));
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "exit confirmation: typing 'y' then ^M sets wantsExit()") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartExit));
+  feedText("y");
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(app.wantsExit());
+  CHECK_FALSE(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "exit confirmation: anything other than exactly 'y' does not set wantsExit()") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartExit));
+  feedText("n");
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
+
+  CHECK_FALSE(app.wantsExit());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "exit confirmation: ^G cancels without setting wantsExit()") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartExit));
+  feedText("y");
+  CHECK(app.feedByte(0x07, std::nullopt));  // ^G before submitting
+
+  CHECK_FALSE(app.promptActive());
+  CHECK_FALSE(app.wantsExit());
+}

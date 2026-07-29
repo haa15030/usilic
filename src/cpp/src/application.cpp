@@ -164,6 +164,8 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
         return handleCommand(Command::StartMove);
       case 'r':  // ^X r : RM
         return handleCommand(Command::StartRemove);
+      case kControlC:  // ^X ^C : exit
+        return handleCommand(Command::StartExit);
       default:
         return false;  // unrecognized ^X-sequence in this slice (^X^Kc/^X^Km/^X^Kr/^X^Ka/^Xa are future work)
     }
@@ -311,6 +313,8 @@ bool Application::handleCommand(Command command) {
       return startMovePrompt();
     case Command::StartRemove:
       return startRemovePrompt();
+    case Command::StartExit:
+      return startExitPrompt();
     case Command::None:
       return false;
   }
@@ -511,6 +515,16 @@ bool Application::startRemovePrompt() {
   return true;
 }
 
+// Ported from M_exit (^X^C) entering a confirmation prompt -- see
+// class comment for why this is reachable from any mode and doesn't
+// need a targetEntries()-style guard the way CP/MV/RM do.
+bool Application::startExitPrompt() {
+  promptKind_ = PromptKind::ExitConfirm;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
 // Ported from m_grep(): entering FGREP/EGREP just remembers where to
 // come back to (legacy: save_stack()) and switches to a prompt state
 // so the next bytes are the search pattern, not commands. Refuses to
@@ -621,6 +635,8 @@ bool Application::submitPrompt() {
       return executeMove(text);
     case PromptKind::RemoveConfirm:
       return executeRemove(text);
+    case PromptKind::ExitConfirm:
+      return executeExit(text);
     case PromptKind::None:
       return false;
   }
@@ -760,6 +776,22 @@ bool Application::executeRemove(const std::string &confirmation) {
   directoryMode_.enterDirectory(directoryMode_.currentDirectory());
   return ok;
 }
+
+// Ported from m_cr()'s M_exit case: `if (*rvp->str == 'y') return
+// -T_exit;` -- confirmation must be exactly "y" (same simplification
+// as executeRemove()'s first-character-only legacy check). Sets
+// wantsExit_ rather than doing anything itself; nothing about
+// currentMode_/the screen changes either way.
+bool Application::executeExit(const std::string &confirmation) {
+  if (confirmation != "y") {
+    activeView().redraw();
+    return false;
+  }
+  wantsExit_ = true;
+  return true;
+}
+
+bool Application::wantsExit() const { return wantsExit_; }
 
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
 const std::string &Application::promptText() const { return promptEditor_.text(); }

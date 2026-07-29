@@ -48,7 +48,8 @@ enum class Command {
   ToggleMark,
   StartCopy,
   StartMove,
-  StartRemove
+  StartRemove,
+  StartExit
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -241,6 +242,21 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate
 //     cleared as a side effect of that reload, matching
 //     DirectoryMode's own documented behavior, so there's no separate
 //     clearMarks() call needed here.
+//   - Exiting (M_exit, ^X^C) reuses the SAME prompt mechanism as
+//     RM's confirmation: tracing m_cr()'s M_exit case shows the
+//     confirm-and-quit logic is genuinely this simple --
+//     `if (*rvp->str == 'y') return -T_exit;` -- everything else in
+//     m_exit() itself (the function, confusingly, not the same thing
+//     as the M_exit case above) is stack-unwind bookkeeping for
+//     legacy's shared-buffer-pool architecture that this port's
+//     per-mode ContentViews never needed in the first place (same
+//     reasoning as every other "NOT a literal port" note above).
+//     Unlike RM, StartExit is reachable from any mode (no
+//     targetEntries()-empty guard) and doesn't touch the filesystem
+//     or reload anything on success -- it just sets a flag
+//     (wantsExit()) for a future real run loop to notice and stop.
+//     Application still has no run loop of its own (see below); this
+//     slice only gives one somewhere to break out TO.
 //
 // Deliberately excluded (future work, not this slice):
 //   - Every mode besides Directory/File/Grep/Cut/Man/Locate/Archive/
@@ -305,19 +321,15 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate
 //     File mode (a fresh split) or CutContent (a nested resplit) in
 //     this slice. Recording cut patterns into History is likewise out
 //     of scope, same boundary GrepMode already draws.
-//   - Exiting the program (M_exit/T_exit): m_exit()'s superuser-safety
-//     confirmation dialog and screen-stack unwind isn't ported yet;
-//     there is intentionally no Command::Quit in this slice. A caller
-//     driving Application in a real run loop currently has to stop
-//     the loop by its own means (e.g. an external signal), same as
-//     this class provides no run()/main loop of its own yet either --
-//     see below.
+//   - m_exit()'s superuser-safety check (`is_inter(NULL, -1, 0)`,
+//     guarding against exiting mid-su or similar): not replicated,
+//     see the class comment's own note on this. StartExit is
+//     unconditionally reachable.
 //   - A real terminal run loop (legacy's menu()): reading bytes from
 //     a live KeyInput, translating escape sequences, and looping
-//     until exit needs the not-yet-ported M_exit flow to have
-//     somewhere to break out to, so it's deliberately not built here
-//     either. feedByte()/handleCommand() are the tested, terminal-
-//     independent primitives such a loop would call.
+//     until exit -- now has somewhere to break out to (wantsExit()),
+//     but still isn't built here. feedByte()/handleCommand() are the
+//     tested, terminal-independent primitives such a loop would call.
 //   - ARC-creation (^X^Ka/^Xa, M_arc/M_arc2, m_arc()): a DIFFERENT,
 //     unrelated "ARC" from the archive-browsing one above -- menu.c's
 //     m_arc() here is the archive-CREATION action grouped alongside
@@ -388,6 +400,12 @@ class Application {
   bool promptActive() const;
   const std::string &promptText() const;
 
+  // True once an exit has been confirmed (StartExit's prompt was
+  // submitted with a leading 'y') -- a future real run loop's signal
+  // to stop calling feedByte() and unwind. Application itself never
+  // reads this; nothing else changes when it flips.
+  bool wantsExit() const;
+
   ApplicationMode currentMode() const;
   DirectoryMode &directoryMode();
   FileMode &fileMode();
@@ -426,6 +444,7 @@ class Application {
   bool startCopyPrompt();
   bool startMovePrompt();
   bool startRemovePrompt();
+  bool startExitPrompt();
   bool feedPromptByte(int byte);
   bool submitPrompt();
   void cancelPrompt();
@@ -437,6 +456,7 @@ class Application {
   bool executeCopy(const std::string &destination);
   bool executeMove(const std::string &destination);
   bool executeRemove(const std::string &confirmation);
+  bool executeExit(const std::string &confirmation);
 
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   ModeStack modeStack_;
@@ -474,7 +494,8 @@ class Application {
 
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
   bool escPending_ = false;      // saw ESC (0x1b), waiting for the byte that completes ^[s -- see class comment
-  bool leaderXPending_ = false;  // saw ^X, waiting for the byte that completes ^Xc/^Xm/^Xr
+  bool leaderXPending_ = false;  // saw ^X, waiting for the byte that completes ^Xc/^Xm/^Xr/^X^C (exit shares ^X too)
+  bool wantsExit_ = false;
 
   enum class PromptKind {
     None,
@@ -485,7 +506,8 @@ class Application {
     LocateQuery,
     CopyDestination,
     MoveDestination,
-    RemoveConfirm
+    RemoveConfirm,
+    ExitConfirm
   };
   PromptKind promptKind_ = PromptKind::None;
 };
