@@ -11,6 +11,7 @@
 #include "cp_mv_rm_mode.hpp"
 #include "cut_mode.hpp"
 #include "directory_mode.hpp"
+#include "du_mode.hpp"
 #include "display.hpp"
 #include "file_mode.hpp"
 #include "grep_mode.hpp"
@@ -49,7 +50,8 @@ enum class Command {
   StartCopy,
   StartMove,
   StartRemove,
-  StartExit
+  StartExit,
+  StartDu
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -58,7 +60,7 @@ enum class Command {
 // legacy mode (M_cut): Cut shows the list of segment labels,
 // CutContent shows one selected segment's actual lines -- see the
 // class comment on why CutMode itself doesn't merge them.
-enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate, Archive, ArchiveContent, Shell };
+enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate, Archive, ArchiveContent, Shell, Du };
 
 // The top-level controller: owns the ModeStack(s) and every *Mode
 // instance, maps keypresses to Command, and dispatches each Command
@@ -257,14 +259,36 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate
 //     (wantsExit()) for a future real run loop to notice and stop.
 //     Application still has no run loop of its own (see below); this
 //     slice only gives one somewhere to break out TO.
+//   - DU (M_du/M_du2, ^Jd/^J^D) is prompt-driven like GREP/CUT/MAN/
+//     LOCATE, but PRE-FILLS the prompt with the current directory
+//     (tracing m_cr()'s `case T_du: strcpy(rvp->str, ap->du);` --
+//     unlike every prompt above, which starts empty) rather than
+//     requiring it typed fresh; the user can just press ^M to accept
+//     the default or edit first. Directory-only entry (m_du() itself
+//     doesn't gate on the current mode, but this slice narrows scope
+//     the same way CP/MV/RM did). Unlike every other result screen,
+//     Enter on a DU entry DOES drill in -- to DirectoryMode if the
+//     entry is a directory, FileMode if it's a file -- since
+//     DuMode's own class comment explicitly leaves that hand-off to
+//     Mode/Application ("the decision of whether opening a DU entry
+//     lands in DirectoryMode or FileMode"). Both ^Jd/^J^D are treated
+//     identically here (always a fresh `du`), deferring M_du2's own
+//     "reuse the existing DU buffer without re-running `du`" shortcut
+//     the same way LOCATE's analogous ^Jl shortcut was deferred.
 //
 // Deliberately excluded (future work, not this slice):
 //   - Every mode besides Directory/File/Grep/Cut/Man/Locate/Archive/
-//     Shell: DU, history/list browsers, help/error/log screens --
+//     Shell/Du: history/list browsers, help/error/log screens --
 //     each already has its own *Mode class built; wiring each one in
 //     is the same shape of change (extend Command/ApplicationMode,
 //     extend feedByte()'s leader table, extend handleCommand())
 //     repeated per mode, deferred to keep each slice reviewable.
+//   - DuMode's own chdir()-free design means the legacy behavior of
+//     actually changing the process's working directory while
+//     measuring isn't replicated (see DuMode's own class comment);
+//     Enter on a directory DU entry uses DirectoryMode::enterDirectory()
+//     with an absolute path instead, consistent with this port's
+//     standing "no hidden global state" rule.
 //   - The ^X^Kc/^X^Km/^X^Kr synonyms for CP/MV/RM (a second, longer
 //     leader sequence get_m() accepts for the same three actions,
 //     setting an extra `fp->comm` flag whose effect wasn't traced) and
@@ -417,11 +441,13 @@ class Application {
   ArchiveMode &archiveMode();
   Shell &shell();
   CpMvRmMode &cpMvRmMode();
+  DuMode &duMode();
 
  private:
   bool openSelectedEntry();
   bool openSelectedSegment();
   bool openSelectedArchiveEntry();
+  bool openSelectedDuEntry();
   bool toggleMark();
   bool returnToDirectory();
   bool returnFromGrep();
@@ -432,6 +458,7 @@ class Application {
   bool returnFromArchiveContent();
   bool returnFromArchive();
   bool returnFromShell();
+  bool returnFromDu();
   ContentView &activeView();
   std::vector<std::string> collectTargetPaths() const;
 
@@ -445,6 +472,7 @@ class Application {
   bool startMovePrompt();
   bool startRemovePrompt();
   bool startExitPrompt();
+  bool startDuPrompt();
   bool feedPromptByte(int byte);
   bool submitPrompt();
   void cancelPrompt();
@@ -457,6 +485,7 @@ class Application {
   bool executeMove(const std::string &destination);
   bool executeRemove(const std::string &confirmation);
   bool executeExit(const std::string &confirmation);
+  bool executeDu(const std::string &path);
 
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   ModeStack modeStack_;
@@ -470,6 +499,7 @@ class Application {
   ContentView locateView_;
   ContentView archiveView_;
   ContentView archiveContentView_;
+  ContentView duView_;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;
@@ -481,6 +511,7 @@ class Application {
   ArchiveMode archiveMode_;
   Shell shell_;
   CpMvRmMode cpMvRmMode_;
+  DuMode duMode_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
@@ -507,7 +538,8 @@ class Application {
     CopyDestination,
     MoveDestination,
     RemoveConfirm,
-    ExitConfirm
+    ExitConfirm,
+    DuPath
   };
   PromptKind promptKind_ = PromptKind::None;
 };

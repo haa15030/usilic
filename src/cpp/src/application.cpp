@@ -27,6 +27,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       locateView_(display),
       archiveView_(display),
       archiveContentView_(display),
+      duView_(display),
       promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
       fileMode_(fileView_, history, encoding, width),
@@ -42,9 +43,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
         shellOptions.encoding = encoding;
         return shellOptions;
       }()),
-      cpMvRmMode_(configuration) {
+      cpMvRmMode_(configuration),
+      duMode_(duView_, history, configuration) {
   // The bottom row is reserved for prompt text entry (search/cut/man/
-  // locate patterns) -- legacy's equivalent is the mode-line row
+  // locate/du patterns) -- legacy's equivalent is the mode-line row
   // disp_window() left alone for exactly this (see ContentView's own
   // class comment on why that row's rendering isn't ContentView's job
   // either).
@@ -58,6 +60,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   locateView_.setViewport(0, contentHeight);
   archiveView_.setViewport(0, contentHeight);
   archiveContentView_.setViewport(0, contentHeight);
+  duView_.setViewport(0, contentHeight);
   promptEditor_.setField(display.rows() - 1, 0, std::max(1, display.columns()));
 }
 
@@ -149,6 +152,9 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
       case 'l':       // ^J l : LOCATE
       case 0x0c:      // ^J ^L : LOCATE
         return handleCommand(Command::StartLocate);
+      case 'd':       // ^J d : DU
+      case 0x04:      // ^J ^D : DU
+        return handleCommand(Command::StartDu);
       default:
         return false;  // unrecognized ^J-sequence in this slice
     }
@@ -250,6 +256,8 @@ ContentView &Application::activeView() {
       return archiveContentView_;
     case ApplicationMode::Shell:
       return shell_.scrollback();
+    case ApplicationMode::Du:
+      return duView_;
     case ApplicationMode::Directory:
     default:
       return directoryView_;
@@ -274,8 +282,10 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Directory) return openSelectedEntry();
       if (currentMode_ == ApplicationMode::Cut) return openSelectedSegment();
       if (currentMode_ == ApplicationMode::Archive) return openSelectedArchiveEntry();
+      if (currentMode_ == ApplicationMode::Du) return openSelectedDuEntry();
       return false;
     case Command::Back:
+      if (currentMode_ == ApplicationMode::Du) return returnFromDu();
       if (currentMode_ == ApplicationMode::Shell) return returnFromShell();
       if (currentMode_ == ApplicationMode::ArchiveContent) return returnFromArchiveContent();
       if (currentMode_ == ApplicationMode::Archive) return returnFromArchive();
@@ -315,6 +325,8 @@ bool Application::handleCommand(Command command) {
       return startRemovePrompt();
     case Command::StartExit:
       return startExitPrompt();
+    case Command::StartDu:
+      return startDuPrompt();
     case Command::None:
       return false;
   }
@@ -366,6 +378,26 @@ bool Application::openSelectedArchiveEntry() {
   archiveContentView_.setCursorIndex(0);
   archiveContentView_.redraw();
   currentMode_ = ApplicationMode::ArchiveContent;
+  return true;
+}
+
+// Ported from mode.c's T_du Enter handling (see class comment on why
+// this, unlike every other prompt-driven result screen, drills
+// straight into DirectoryMode/FileMode instead of stopping at a
+// no-op like GREP/LOCATE do): DuMode::loadUsage() already invokes
+// `du` with an absolute path, so `du`'s own output entries are
+// already absolute -- no path-joining needed here, unlike Cut/Archive
+// segments/entries.
+bool Application::openSelectedDuEntry() {
+  const DuEntry *entry = duMode_.selectedEntry();
+  if (!entry) return false;
+  if (entry->isDirectory) {
+    if (!directoryMode_.enterDirectory(entry->path)) return false;
+    currentMode_ = ApplicationMode::Directory;
+    return true;
+  }
+  if (!fileMode_.loadFile(entry->path)) return false;
+  currentMode_ = ApplicationMode::File;
   return true;
 }
 
@@ -457,6 +489,13 @@ bool Application::returnFromArchive() {
   return true;
 }
 
+bool Application::returnFromDu() {
+  duMode_.saveCursorPosition();
+  currentMode_ = ApplicationMode::Directory;
+  directoryView_.redraw();
+  return true;
+}
+
 bool Application::returnFromShell() {
   currentMode_ = shellReturnMode_;
   activeView().redraw();
@@ -521,6 +560,19 @@ bool Application::startRemovePrompt() {
 bool Application::startExitPrompt() {
   promptKind_ = PromptKind::ExitConfirm;
   promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
+// Ported from m_du()/m_cr()'s T_du case: unlike every other prompt
+// above, the field is PRE-FILLED with the current directory
+// (`strcpy(rvp->str, ap->du)`) rather than starting empty -- ^M alone
+// accepts the default, or the user can edit first. Directory-only,
+// see class comment.
+bool Application::startDuPrompt() {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  promptKind_ = PromptKind::DuPath;
+  promptEditor_.setText(directoryMode_.currentDirectory());
   promptEditor_.redraw();
   return true;
 }
@@ -637,6 +689,8 @@ bool Application::submitPrompt() {
       return executeRemove(text);
     case PromptKind::ExitConfirm:
       return executeExit(text);
+    case PromptKind::DuPath:
+      return executeDu(text);
     case PromptKind::None:
       return false;
   }
@@ -791,6 +845,17 @@ bool Application::executeExit(const std::string &confirmation) {
   return true;
 }
 
+// Ported from mode.c's T_du case: runs `du` on `path`. False for an
+// empty path or a failed `du` invocation.
+bool Application::executeDu(const std::string &path) {
+  if (path.empty() || !duMode_.loadUsage(path)) {
+    activeView().redraw();
+    return false;
+  }
+  currentMode_ = ApplicationMode::Du;
+  return true;
+}
+
 bool Application::wantsExit() const { return wantsExit_; }
 
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
@@ -805,6 +870,7 @@ ManMode &Application::manMode() { return manMode_; }
 ProgramMode &Application::programMode() { return programMode_; }
 LocateMode &Application::locateMode() { return locateMode_; }
 ArchiveMode &Application::archiveMode() { return archiveMode_; }
+DuMode &Application::duMode() { return duMode_; }
 Shell &Application::shell() { return shell_; }
 CpMvRmMode &Application::cpMvRmMode() { return cpMvRmMode_; }
 

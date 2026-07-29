@@ -1069,3 +1069,111 @@ TEST_CASE_FIXTURE(Fixture, "exit confirmation: ^G cancels without setting wantsE
   CHECK_FALSE(app.promptActive());
   CHECK_FALSE(app.wantsExit());
 }
+
+// -- DU: ^Jd/^J^D, pre-filled destination prompt, real `du`, and
+// Enter drilling into DirectoryMode/FileMode --
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J d starts a DU prompt pre-filled with the current directory") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte('d', std::nullopt));
+  CHECK(app.promptActive());
+  CHECK(app.promptText() == path());
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^D also starts a DU prompt") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte(0x04, std::nullopt));
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): refused outside Directory mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK_FALSE(app.handleCommand(Command::StartDu));
+}
+
+TEST_CASE_FIXTURE(Fixture, "DU: accepting the pre-filled default runs real du and shows real entries") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  CHECK(app.feedByte(0x0d, std::nullopt));  // ^M accepts the pre-filled current directory
+
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  bool sawSubdir = false, sawFile = false;
+  for (const auto &entry : app.duMode().entries()) {
+    if (entry.path.find("subdir") != std::string::npos && entry.isDirectory) sawSubdir = true;
+    if (entry.path.find("plain.txt") != std::string::npos && !entry.isDirectory) sawFile = true;
+  }
+  CHECK(sawSubdir);
+  CHECK(sawFile);
+}
+
+TEST_CASE_FIXTURE(Fixture, "DU: Enter on a directory entry drills into DirectoryMode") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  bool hasSubdirEntry = false;
+  for (const auto &entry : app.duMode().entries())
+    if (entry.isDirectory && entry.path.find("subdir") != std::string::npos) hasSubdirEntry = true;
+  REQUIRE(hasSubdirEntry);
+  while (app.duMode().selectedEntry() &&
+         !(app.duMode().selectedEntry()->isDirectory &&
+           app.duMode().selectedEntry()->path.find("subdir") != std::string::npos)) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  // Real `du` implementations aren't consistent about a double vs.
+  // single slash in echoed child paths (BSD du vs. GNU du), so this
+  // checks behavior (did it actually descend into subdir/, confirmed
+  // by sub.txt showing up in the new listing) rather than an exact
+  // path string.
+  bool sawSubTxt = false;
+  for (const auto &entry : app.directoryMode().entries())
+    if (entry.name.find("sub.txt") != std::string::npos) sawSubTxt = true;
+  CHECK(sawSubTxt);
+}
+
+TEST_CASE_FIXTURE(Fixture, "DU: Enter on a file entry drills into FileMode") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  while (app.duMode().selectedEntry() &&
+         (app.duMode().selectedEntry()->isDirectory ||
+          app.duMode().selectedEntry()->path.find("plain.txt") == std::string::npos)) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.duMode().selectedEntry() != nullptr);
+  REQUIRE_FALSE(app.duMode().selectedEntry()->isDirectory);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+}
+
+TEST_CASE_FIXTURE(Fixture, "DU: Back returns to Directory mode") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());
+}
+
+TEST_CASE_FIXTURE(Fixture, "DU: ^G cancels the pre-filled prompt without running du") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  CHECK(app.feedByte(0x07, std::nullopt));
+
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
