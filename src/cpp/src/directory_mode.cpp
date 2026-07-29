@@ -41,6 +41,7 @@ bool DirectoryMode::enterDirectory(const std::string &path) {
 
   currentDirectory_ = path;
   entries_ = std::move(entries);
+  markedIndices_.clear();  // marks are scoped to the listing they were made in; a fresh `ls` invalidates them
   view_.setLines(std::move(lines));
 
   if (auto pos = history_.positionFor(PositionCategory::Directory, currentDirectory_)) {
@@ -164,6 +165,31 @@ DirectoryEntry DirectoryMode::parseLsLine(const std::string &line) const {
   if (nameStart < line.size()) entry.name = line.substr(nameStart);
   entry.isDirectory = !line.empty() && line[0] == 'd';
   return entry;
+}
+
+void DirectoryMode::toggleMark(int index) {
+  if (index < 0 || index >= static_cast<int>(entries_.size())) return;
+  auto it = markedIndices_.find(index);
+  if (it != markedIndices_.end())
+    markedIndices_.erase(it);
+  else
+    markedIndices_.insert(index);
+}
+
+bool DirectoryMode::isMarked(int index) const { return markedIndices_.count(index) > 0; }
+
+std::size_t DirectoryMode::markedCount() const { return markedIndices_.size(); }
+
+void DirectoryMode::clearMarks() { markedIndices_.clear(); }
+
+std::vector<DirectoryEntry> DirectoryMode::targetEntries() const {
+  std::vector<DirectoryEntry> result;
+  if (!markedIndices_.empty()) {
+    for (int idx : markedIndices_) result.push_back(entries_[idx]);  // std::set iterates in ascending order
+    return result;
+  }
+  if (const DirectoryEntry *entry = selectedEntry()) result.push_back(*entry);
+  return result;
 }
 
 }  // namespace fm

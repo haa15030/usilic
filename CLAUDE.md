@@ -1990,6 +1990,57 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ステータスの返却・空argvでの安全な失敗を、doctestで新規7件
      (既存と合わせて計233件)、Mac/Ubuntu双方で全件パス確認。
 
+38. **2026-07-29: DirectoryModeへの選択マーキング追加+CpMvRmMode
+    クラス(25クラス目) — 保留していたCP/MV/RM一式**
+   - `ContentView`自体は変更せず、`DirectoryMode`に選択マーキング
+     機能(`toggleMark()`/`isMarked()`/`markedCount()`/`clearMarks()`/
+     `targetEntries()`)を追加する形にした。`mode.c`の`fmark()`/
+     `nmark()`は旧PPリンクリストの`split`フィールドを流用して
+     マーキング状態を持たせていたが、`DirectoryMode`は`entries_`
+     への添字集合(`std::set<int>`)として持たせ、`enterDirectory()`
+     で一覧を再読込するたびにクリアする(1つの読み込み内で選択→
+     実行、という通常の使い方に合わせた設計判断)。`targetEntries()`
+     はマークが無ければカーソル位置の1件を返す、一般的なファイラー
+     の慣習に合わせた。
+   - `command()`(CP/MV/RM実行用のシェルスクリプト組み立て、`cd`+
+     `if !`+ファイル一覧を1つの複雑なスクリプトとして`sh`へ流し
+     込む旧設計)は1:1移植せず、`CpMvRmMode`として絶対パスを直接
+     `Configuration::commandFor(Cp/Mv/Rm)`のargvに追加して
+     `ChildProcess::run()`で実行するだけのクラスにした。`chdir`も
+     文字列組み立ても不要になった。
+   - `is_write()`(RM/MV対象の書き込み権限チェック)は
+     `CpMvRmMode::isWritable()`として移植。root(uid 0)は常に許可、
+     シンボリックリンク・`access(W_OK)`・所有者一致のいずれかで
+     許可、という判定をそのまま踏襲。
+   - `do_rm()`という名前の関数は、実はファイル削除ではなく
+     `M_lfile`/`M_ldir`/`M_man`/`M_prog`/`M_egrep`/`M_cmd`という
+     一覧ブラウザからエントリを1件削除する(履歴/GREP・PROGRAM
+     一覧編集の)別機能だったと判明。紛らわしい名前だが今回の
+     `CpMvRmMode`とは無関係、対応する一覧ブラウザ機能が無いため
+     見送り。
+   - **実装中に発見・修正したテスト側の環境依存バグ2件**:
+     (1) `isWritable()`のテストがroot権限で動くUbuntu Docker CI上で
+     失敗した — `isWritable()`自身の「rootは常に許可」という
+     旧C版通りの正しい挙動に対し、テストがroot実行を想定していな
+     かったため。`getuid()==0`を検出して期待値を切り替えるよう
+     修正。(2) `EditMode`の変更検出テストが今度はUbuntu側でのみ
+     失敗 — Docker上のオーバーレイファイルシステムが
+     `last_write_time()`を秒単位でしか報告しない場合があり、
+     一瞬で完了する編集だと前後の読み取りが同じ秒に収まって
+     しまうと判明(項目37で修正した`stat()`の粗い解像度問題と
+     同種、今度はより高解像度APIを使っていてもファイルシステム
+     自体の報告精度に依存する側面が残っていた)。編集スクリプトに
+     `sleep 1`を挟み、どのファイルシステムでも確実に秒が変わる
+     ようにして解消(`EditMode`自体の実装は変更不要、テストの
+     頑健性の問題)。
+   - **検証**: `DirectoryMode`のマーキング(トグル・範囲外index
+     の安全な無視・`targetEntries()`のフォールバック/一覧順序・
+     `clearMarks()`・再読込時のクリア)、`CpMvRmMode`の実`cp`/`mv`/
+     `rm`実行(実ファイルでのコピー・移動・削除確認)・空リストでの
+     安全な失敗・`isWritable()`の各種判定(root環境考慮込み)を、
+     doctestで新規23件(既存と合わせて計249件)、Mac/Ubuntu双方で
+     全件パス確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

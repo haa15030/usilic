@@ -56,7 +56,17 @@ TEST_CASE_FIXTURE(Fixture, "edit: an EDITOR that rewrites the file reports chang
   // A real editor stand-in: editorArgv() appends "+<lineNumber>" then
   // `path` after this configured argv, so inside `sh -c '...'`, $0 is
   // "+1" and $1 is the real target path -- reference $1 to rewrite it.
-  std::string rc = "EDITOR\n sh -c 'echo edited > $1'\n";
+  // The `sleep 1` is deliberate, not incidental: some filesystems
+  // (observed on this project's own Ubuntu Docker CI, likely an
+  // overlayfs mount) report last_write_time() at only whole-second
+  // resolution, and the fork/exec/echo sequence otherwise completes
+  // fast enough that the "before" and "after" reads can land in the
+  // same reported second despite the file genuinely having changed --
+  // exactly the coarse-stat-resolution blind spot EditMode's own
+  // class comment already documents switching away from raw stat()
+  // to avoid; the 1-second floor here guarantees this specific test
+  // clears it regardless of the underlying filesystem's granularity.
+  std::string rc = "EDITOR\n sh -c 'sleep 1; echo edited > $1'\n";
   REQUIRE(configuration.loadRcText(rc, true));
 
   bool changed = mode.edit(path.string(), 1);

@@ -174,3 +174,62 @@ TEST_CASE_FIXTURE(Fixture, "goBack: false when there is nothing to go back to") 
   REQUIRE(mode.enterDirectory(path()));
   CHECK_FALSE(mode.goBack());
 }
+
+TEST_CASE_FIXTURE(Fixture, "toggleMark: marks and unmarks entries by index") {
+  REQUIRE(mode.enterDirectory(path()));
+  CHECK(mode.markedCount() == 0);
+  CHECK_FALSE(mode.isMarked(0));
+
+  mode.toggleMark(0);
+  CHECK(mode.isMarked(0));
+  CHECK(mode.markedCount() == 1);
+
+  mode.toggleMark(0);
+  CHECK_FALSE(mode.isMarked(0));
+  CHECK(mode.markedCount() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "toggleMark: an out-of-range index is a safe no-op") {
+  REQUIRE(mode.enterDirectory(path()));
+  mode.toggleMark(-1);
+  mode.toggleMark(static_cast<int>(mode.entries().size()) + 100);
+  CHECK(mode.markedCount() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "targetEntries: falls back to the selected entry when nothing is marked") {
+  REQUIRE(mode.enterDirectory(path()));
+  view.setCursorIndex(1);
+  auto targets = mode.targetEntries();
+  REQUIRE(targets.size() == 1);
+  CHECK(targets[0].name == mode.entries()[1].name);
+}
+
+TEST_CASE_FIXTURE(Fixture, "targetEntries: returns marked entries in listing order when any are marked") {
+  REQUIRE(mode.enterDirectory(path()));
+  REQUIRE(mode.entries().size() >= 3);
+  mode.toggleMark(2);
+  mode.toggleMark(0);
+
+  auto targets = mode.targetEntries();
+  REQUIRE(targets.size() == 2);
+  CHECK(targets[0].name == mode.entries()[0].name);
+  CHECK(targets[1].name == mode.entries()[2].name);
+}
+
+TEST_CASE_FIXTURE(Fixture, "clearMarks: removes all marks") {
+  REQUIRE(mode.enterDirectory(path()));
+  mode.toggleMark(0);
+  mode.toggleMark(1);
+  REQUIRE(mode.markedCount() == 2);
+  mode.clearMarks();
+  CHECK(mode.markedCount() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "enterDirectory: reloading the listing clears marks from the previous one") {
+  REQUIRE(mode.enterDirectory(path()));
+  mode.toggleMark(0);
+  REQUIRE(mode.markedCount() == 1);
+
+  REQUIRE(mode.enterDirectory(path() + "subdir2/"));
+  CHECK(mode.markedCount() == 0);
+}

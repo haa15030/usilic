@@ -1,5 +1,6 @@
 #pragma once
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -49,8 +50,12 @@ struct DirectoryEntry {
 //   - Opening a regular file (openSelected() no-ops on one -- file
 //     viewing isn't ported yet).
 //   - Everything else in mode()'s switch: GREP, CUT, MAN, PROGRAM,
-//     archive browsing, SHELL entry, CP/MV/RM, DU, LOCATE, history/
-//     list browsers, help/error/log screens, exit confirmation.
+//     archive browsing, SHELL entry, DU, LOCATE, history/list
+//     browsers, help/error/log screens, exit confirmation. Selection
+//     marking (toggleMark()/targetEntries(), below) IS in scope, since
+//     CP/MV/RM (a separate CpMvRmMode class) needs somewhere to get
+//     its target file list from -- but actually running cp/mv/rm on
+//     the marked entries is CpMvRmMode's job, not this class's.
 //   - ModeStack's "floor" concept (pushFloor()/isFloor()): with only
 //     one mode implemented, there's nothing yet for a floor frame to
 //     usefully distinguish from "the stack is simply empty" -- an
@@ -97,6 +102,26 @@ class DirectoryMode {
 
   bool canGoBack() const;
 
+  // -- selection marking (for CP/MV/RM, ^Om-style) --
+  // Ported from mode.c's fmark()/nmark() -- legacy marked entries in
+  // place on the PP list itself (pp->split == -f_mark); marks here
+  // are indices into entries_ instead, scoped to the CURRENT listing
+  // (cleared whenever enterDirectory() reloads it, matching the
+  // ordinary file-manager workflow of "look at a listing, mark
+  // several entries, act on them" within one view rather than marks
+  // somehow surviving a fresh `ls`).
+  void toggleMark(int index);
+  bool isMarked(int index) const;
+  std::size_t markedCount() const;
+  void clearMarks();
+
+  // Marked entries in listing order, or -- if nothing is explicitly
+  // marked -- just the single currently-selected entry (matching the
+  // common file-manager convention that an action with no explicit
+  // multi-selection acts on "whatever's under the cursor"). Empty if
+  // there are no marks and no valid selection.
+  std::vector<DirectoryEntry> targetEntries() const;
+
  private:
   DirectoryEntry parseLsLine(const std::string &line) const;
   void saveCurrentCursorPosition();
@@ -109,6 +134,7 @@ class DirectoryMode {
 
   std::string currentDirectory_;
   std::vector<DirectoryEntry> entries_;
+  std::set<int> markedIndices_;
 };
 
 }  // namespace fm
