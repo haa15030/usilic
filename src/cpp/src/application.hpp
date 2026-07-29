@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 
+#include "archive_mode.hpp"
 #include "charset.hpp"
 #include "configuration.hpp"
 #include "content_view.hpp"
@@ -48,7 +49,7 @@ enum class Command {
 // legacy mode (M_cut): Cut shows the list of segment labels,
 // CutContent shows one selected segment's actual lines -- see the
 // class comment on why CutMode itself doesn't merge them.
-enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate };
+enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate, Archive, ArchiveContent };
 
 // The top-level controller: owns the ModeStack(s) and every *Mode
 // instance, maps keypresses to Command, and dispatches each Command
@@ -156,12 +157,33 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate
 //     only one of the four with both properties at once. See
 //     "Deliberately excluded" for the one piece of m_locate() this
 //     slice does NOT carry over.
+//   - Archive browsing (T_tar/T_lha/T_unzip/T_rpm/T_deb) is NOT
+//     prompt-driven at all, unlike every action above -- it's auto-
+//     detected the same way DirectoryMode::openSelected() already
+//     auto-detects "is the selection a directory": openSelectedEntry()
+//     tries ArchiveMode::loadArchive() on the selected path FIRST,
+//     falling back to FileMode::loadFile() only if that fails
+//     (loadArchive() itself reports "not a configured archive suffix"
+//     and "listing command failed" identically, both simply false --
+//     a real fidelity gap flagged rather than glossed over: legacy
+//     would presumably surface a specific error for a real archive
+//     suffix whose listing command failed, whereas this falls through
+//     to plain-text viewing instead). Archive results in a second
+//     screen the same shape as Cut's: Archive (the entry listing,
+//     ArchiveMode's own ContentView) and ArchiveContent (one
+//     extracted entry's bytes, shown as plain text lines -- no
+//     PipeBuffer charset/overstrike processing the way FileMode gets,
+//     since ArchiveMode::extractSelected() only ever hands back raw
+//     bytes). Like CutContent, opening ArchiveContent needs no
+//     ModeStack push (ArchiveMode owns no stack of its own either);
+//     Back from ArchiveContent returns to Archive, Back from Archive
+//     returns to Directory, both plain toggles.
 //
 // Deliberately excluded (future work, not this slice):
-//   - Every mode besides Directory/File/Grep/Cut/Man/Locate, and
-//     PROGRAM's own SHELL fallback: archive browsing, SHELL entry,
-//     DU, CP/MV/RM execution, history/list browsers, help/error/log
-//     screens -- each already has its own *Mode class built (SHELL's
+//   - Every mode besides Directory/File/Grep/Cut/Man/Locate/Archive,
+//     and PROGRAM's own SHELL fallback: SHELL entry, DU, CP/MV/RM
+//     execution, history/list browsers, help/error/log screens --
+//     each already has its own *Mode class built (SHELL's
 //     glue class doesn't exist yet); wiring each one in is the same
 //     shape of change (extend Command/ApplicationMode, extend
 //     feedByte()'s leader table, extend handleCommand()) repeated per
@@ -214,10 +236,14 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate
 //     either. feedByte()/handleCommand() are the tested, terminal-
 //     independent primitives such a loop would call.
 //   - Selection-mark-driven CP/MV/RM/ARC dispatch (M_cp/M_mv/M_rm/
-//     M_arc, m_arc()/m_dest()/m_yn()): DirectoryMode's marking and
-//     CpMvRmMode both already exist and are usable directly by a
-//     caller today; wiring them into Command/handleCommand() is
-//     future-slice work, not this one.
+//     M_arc, m_arc()/m_dest()/m_yn()): a DIFFERENT, unrelated "ARC"
+//     from the archive-browsing one above -- menu.c's m_arc() here is
+//     the ^X^Ka archive-CREATION action grouped alongside CP/MV/RM,
+//     not T_tar/etc's archive-browsing/viewing. DirectoryMode's
+//     marking and CpMvRmMode both already exist for CP/MV/RM; ARC-
+//     creation itself has no ported class yet. Wiring any of this
+//     into Command/handleCommand() is future-slice work, not this
+//     one.
 //   - Selection marking's own keys (^Space etc) and file-jump (M_jump):
 //     same reason, not part of the commands this slice maps.
 class Application {
@@ -272,16 +298,20 @@ class Application {
   ManMode &manMode();
   ProgramMode &programMode();
   LocateMode &locateMode();
+  ArchiveMode &archiveMode();
 
  private:
   bool openSelectedEntry();
   bool openSelectedSegment();
+  bool openSelectedArchiveEntry();
   bool returnToDirectory();
   bool returnFromGrep();
   bool returnFromCutContent();
   bool returnFromCut();
   bool returnFromMan();
   bool returnFromLocate();
+  bool returnFromArchiveContent();
+  bool returnFromArchive();
   ContentView &activeView();
 
   bool startGrepPrompt(GrepSyntax syntax);
@@ -308,6 +338,8 @@ class Application {
   ContentView cutContentView_;
   ContentView manView_;
   ContentView locateView_;
+  ContentView archiveView_;
+  ContentView archiveContentView_;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;
@@ -316,6 +348,7 @@ class Application {
   ManMode manMode_;
   ProgramMode programMode_;
   LocateMode locateMode_;
+  ArchiveMode archiveMode_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;

@@ -52,6 +52,13 @@ struct Fixture {
     // PROGRAM entries at all (only ever populated by parsing an rc
     // file), so tests need this loaded to exercise the success path.
     configuration.loadRcText("PROGRAM\n echo\n", true);
+
+    // A real archive (built via the actual `tar` CLI, matching
+    // ArchiveMode's own test precedent) for the ARC-related tests.
+    fs::create_directory(root / "arcsrc");
+    { std::ofstream(root / "arcsrc" / "inner.txt") << "archived content\n"; }
+    std::string tarCmd = "cd '" + root.string() + "' && tar cf archive.tar arcsrc";
+    REQUIRE(std::system(tarCmd.c_str()) == 0);
   }
 
   ~Fixture() { fs::remove_all(root); }
@@ -686,4 +693,74 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G cancels a pending prompt without searchin
 
   CHECK_FALSE(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+// -- ARC: opening an archive from Directory mode is auto-detected
+// (no leader key), and falls back to plain FileMode for non-archives --
+
+namespace {
+int archiveIndexOf(Application &app, const std::string &needle) {
+  const auto &entries = app.archiveMode().entries();
+  for (std::size_t i = 0; i < entries.size(); i++)
+    if (entries[i].name.find(needle) != std::string::npos) return static_cast<int>(i);
+  return -1;
+}
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "ARC: Enter on an archive file switches to Archive mode, not File") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Archive);
+  CHECK(archiveIndexOf(app, "inner.txt") >= 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "ARC: Enter on a plain (non-archive) file still opens File mode as before") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+}
+
+TEST_CASE_FIXTURE(Fixture, "ARC: Enter on a file entry inside the archive extracts and shows its real content") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.archiveMode().selectedEntry() != nullptr);
+  REQUIRE(app.archiveMode().selectedEntry()->name.find("inner.txt") != std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::ArchiveContent);
+}
+
+TEST_CASE_FIXTURE(Fixture, "ARC: Back from ArchiveContent returns to Archive, Back from Archive returns to Directory") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::ArchiveContent);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Archive);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());
 }

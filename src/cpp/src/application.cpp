@@ -1,6 +1,7 @@
 #include "application.hpp"
 
 #include <algorithm>
+#include <sstream>
 
 namespace fm {
 
@@ -22,6 +23,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       cutContentView_(display),
       manView_(display),
       locateView_(display),
+      archiveView_(display),
+      archiveContentView_(display),
       promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
       fileMode_(fileView_, history, encoding, width),
@@ -29,7 +32,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       cutMode_(cutView_, cutModeStack_, configuration),
       manMode_(manView_, history, configuration, encoding, width),
       programMode_(keyInput, history),
-      locateMode_(locateView_, configuration) {
+      locateMode_(locateView_, configuration),
+      archiveMode_(archiveView_, history, configuration) {
   // The bottom row is reserved for prompt text entry (search/cut/man/
   // locate patterns) -- legacy's equivalent is the mode-line row
   // disp_window() left alone for exactly this (see ContentView's own
@@ -43,6 +47,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   cutContentView_.setViewport(0, contentHeight);
   manView_.setViewport(0, contentHeight);
   locateView_.setViewport(0, contentHeight);
+  archiveView_.setViewport(0, contentHeight);
+  archiveContentView_.setViewport(0, contentHeight);
   promptEditor_.setField(display.rows() - 1, 0, std::max(1, display.columns()));
 }
 
@@ -152,6 +158,10 @@ ContentView &Application::activeView() {
       return manView_;
     case ApplicationMode::Locate:
       return locateView_;
+    case ApplicationMode::Archive:
+      return archiveView_;
+    case ApplicationMode::ArchiveContent:
+      return archiveContentView_;
     case ApplicationMode::Directory:
     default:
       return directoryView_;
@@ -175,8 +185,11 @@ bool Application::handleCommand(Command command) {
     case Command::Enter:
       if (currentMode_ == ApplicationMode::Directory) return openSelectedEntry();
       if (currentMode_ == ApplicationMode::Cut) return openSelectedSegment();
+      if (currentMode_ == ApplicationMode::Archive) return openSelectedArchiveEntry();
       return false;
     case Command::Back:
+      if (currentMode_ == ApplicationMode::ArchiveContent) return returnFromArchiveContent();
+      if (currentMode_ == ApplicationMode::Archive) return returnFromArchive();
       if (currentMode_ == ApplicationMode::Locate) return returnFromLocate();
       if (currentMode_ == ApplicationMode::Man) return returnFromMan();
       if (currentMode_ == ApplicationMode::CutContent) return returnFromCutContent();
@@ -207,6 +220,13 @@ bool Application::handleCommand(Command command) {
   return false;
 }
 
+// Ported from mode.c's T_dir case reaching T_tar/T_lha/T_unzip/T_rpm/
+// T_deb vs T_file: legacy dispatches on the selection's suffix before
+// ever trying to view it as plain text. Here that's just "try
+// ArchiveMode first, fall back to FileMode" -- see class comment for
+// the one fidelity gap this simplification introduces (a real archive
+// suffix whose listing command fails falls through to plain-text
+// viewing instead of a specific error).
 bool Application::openSelectedEntry() {
   const DirectoryEntry *entry = directoryMode_.selectedEntry();
   if (!entry) return false;
@@ -215,8 +235,36 @@ bool Application::openSelectedEntry() {
   std::string path = directoryMode_.currentDirectory();
   if (!path.empty() && path.back() != '/') path += '/';
   path += entry->name;
+
+  if (archiveMode_.loadArchive(path)) {
+    currentMode_ = ApplicationMode::Archive;
+    return true;
+  }
   if (!fileMode_.loadFile(path)) return false;
   currentMode_ = ApplicationMode::File;
+  return true;
+}
+
+// Ported from mode.c's T_tar/etc Enter handling: extracts the
+// selected entry's raw bytes and displays them as plain text lines
+// (no PipeBuffer charset/overstrike processing -- ArchiveMode hands
+// back raw bytes only, see class comment). False for a directory
+// entry, a format that doesn't support extraction (RPM/.deb), or a
+// failed extraction -- ArchiveMode::extractSelected() already
+// distinguishes none of these from the others, so neither does this.
+bool Application::openSelectedArchiveEntry() {
+  auto content = archiveMode_.extractSelected();
+  if (!content) return false;
+
+  std::string text(content->begin(), content->end());
+  std::istringstream stream(text);
+  std::vector<ContentView::Line> lines;
+  std::string line;
+  while (std::getline(stream, line)) lines.push_back({line});
+  archiveContentView_.setLines(std::move(lines));
+  archiveContentView_.setCursorIndex(0);
+  archiveContentView_.redraw();
+  currentMode_ = ApplicationMode::ArchiveContent;
   return true;
 }
 
@@ -270,6 +318,19 @@ bool Application::returnFromMan() {
 bool Application::returnFromLocate() {
   currentMode_ = locateReturnMode_;
   activeView().redraw();
+  return true;
+}
+
+bool Application::returnFromArchiveContent() {
+  currentMode_ = ApplicationMode::Archive;
+  archiveView_.redraw();
+  return true;
+}
+
+bool Application::returnFromArchive() {
+  archiveMode_.saveCursorPosition();
+  currentMode_ = ApplicationMode::Directory;
+  directoryView_.redraw();
   return true;
 }
 
@@ -486,5 +547,6 @@ CutMode &Application::cutMode() { return cutMode_; }
 ManMode &Application::manMode() { return manMode_; }
 ProgramMode &Application::programMode() { return programMode_; }
 LocateMode &Application::locateMode() { return locateMode_; }
+ArchiveMode &Application::archiveMode() { return archiveMode_; }
 
 }  // namespace fm

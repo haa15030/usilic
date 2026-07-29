@@ -2373,6 +2373,47 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      全件、Mac(実DB有)/Ubuntu 26.04(Docker、plocateパッケージで
      実DB構築済み)双方でパス確認。
 
+46. **2026-07-29: ApplicationクラスにARC(アーカイブ閲覧)を追加**
+   - 「その順で」の第七項目、ARCに着手。まず、`menu.c`に同名の
+     `m_arc()`が2つの無関係な機能を指しうる紛らわしさに気づいた:
+     ①T_tar/T_lha/T_unzip/T_rpm/T_deb(アーカイブの中身を閲覧する
+     `ArchiveMode`、既存クラス)と、②`m_arc()`自身(^X^Ka、CP/MV/RM
+     と並ぶ「アーカイブ作成」アクション、末尾の項目「CP・MV・RM実行」
+     に含まれる可能性がある別機能、まだクラス無し)。ユーザーの
+     「その順で」列挙と、これまで「既存*Modeクラスを1つずつ配線
+     する」という一貫した作業パターンに基づき、①(既存
+     `ArchiveMode`の配線)がここでの対象と判断した。
+   - GREP/CUT/MAN/PROGRAM/LOCATEといずれも異なる形: ARCはプロンプト
+     駆動ではなく、DirectoryModeの`openSelected()`が「選択項目が
+     ディレクトリか」を自動判定するのと全く同じ要領で、「選択
+     ファイルの拡張子がアーカイブ形式か」を自動判定する
+     (専用のリーダーキーは無い)。`openSelectedEntry()`を
+     「まず`ArchiveMode::loadArchive()`を試し、失敗したら
+     `FileMode::loadFile()`にフォールバック」という順序に変更。
+   - **意図的な精度の妥協点**: `loadArchive()`は「拡張子がアーカイブ
+     形式として設定されていない」場合と「一覧コマンドの実行に失敗
+     した」場合を区別せず、どちらも単に`false`を返す。実機の旧
+     実装なら後者は専用のエラー表示になるはずだが、このスライスでは
+     単純に「アーカイブとして開けなければ通常のファイルとして開く」
+     というフォールバックにした(実害は乏しいと判断しつつ、事実として
+     記録)。
+   - `ApplicationMode`に`Archive`(一覧)と`ArchiveContent`(選択
+     エントリの展開内容)を追加。`CutContent`と全く同じ形: どちらも
+     `ModeStack`を経由しない単純なトグルで復帰する(`ArchiveMode`も
+     `ModeStack`非依存のフラットな設計のため)。展開内容の表示は
+     `ArchiveMode::extractSelected()`が返す生バイト列を改行で分割
+     しただけの単純な処理(`FileMode`のような`PipeBuffer`文字コード
+     変換/重ね打ち検出は行わない、`ArchiveMode`自身が生バイトしか
+     返さない設計のため)。
+   - **検証**: 実`tar`で作成したアーカイブをDirectory一覧から開くと
+     Archiveモードへ遷移すること(Fileモードへは行かない)、通常の
+     非アーカイブファイルは従来通りFileモードへ開くこと(回帰無し)、
+     アーカイブ内のファイルエントリをEnterで開くと実際に展開された
+     内容が表示されること、ArchiveContent→Archive→Directoryと
+     ^Gで段階的に戻れることを、実`tar`・実一時ファイルを使った
+     doctestで新規4件、既存311件全件、Mac/Ubuntu 26.04(Docker)
+     双方でパス確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
