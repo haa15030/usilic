@@ -2547,6 +2547,58 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      doctestで新規6件、既存330件全件、Mac/Ubuntu 26.04(Docker)
      双方でパス確認。
 
+50. **2026-07-29: 本物の端末入力ループ(`app/main.cpp`)を新設 ―
+    C++移植版が初めて実際に動く状態に到達**
+   - M_exit完了を受け、ユーザーの了承(「前回同様その順で問題無ければ
+     それでよろしく」)のもと、実端末での入力ループに着手。これまで
+     `Application`は`feedByte()`という「1バイト与えて結果を受け取る」
+     テスト可能なプリミティブとしてのみ存在し、実際にキーボード入力を
+     読んで画面に描画する本物のループは意図的に未実装のまま残されて
+     いた(各スライスの「Deliberately excluded」に明記済み)。
+   - **新規ファイル`src/cpp/app/main.cpp`**: `TerminalDisplay::
+     fromEnvironment()`(実端末のterminfo読み込み)+`KeyInput`
+     (`/dev/tty`をopen)+`History`/`Configuration`(デフォルト値)+
+     `Application`を組み立て、`app.start(argv[1] または ".")`後、
+     `KeyInput::readByte()`→(ESCなら`readEscapeSequence()`)→
+     `app.feedByte()`を`app.wantsExit()`が真になるまで回すだけの
+     ループ。`main.cpp`を`src/`ではなく新設した`app/`ディレクトリに
+     置いたのは、`Makefile`の`SRCS`(`src/*.cpp`)に混ざると
+     `run_tests`(doctestが`tests/test_main.cpp`で独自の`main()`を
+     持つ)と二重`main()`衝突を起こすため。`Makefile`に`usilic`
+     ターゲットを新設(`SRCS`+`app/*.cpp`をリンク)、既存の`test`
+     ターゲット(`SRCS`+`tests/*.cpp`)には一切手を入れず共存させた。
+   - **意図的に未対応と明記した3点**(コード先頭コメントに記載):
+     ①usilicrc読み込み・`~/.tcb/history`永続化は`Configuration`/
+     `History`いずれも「文字列を受け取るだけでファイルI/Oはしない」
+     設計のため、今回は呼び出し側での読み込み自体を配線しておらず、
+     毎回コンパイル時デフォルト+空履歴で起動する。②`SIGWINCH`
+     (端末リサイズ)は`KeyInput::consumeResizeSignal()`で検知・
+     `Display`のサイズ更新はできるが、各`ContentView`の
+     `setViewport()`や`Shell::onResize()`への伝播はまだ配線して
+     いない。③SHELL(`^[s`)は、項目47で発見済みの`KeyInput::
+     readEscapeSequence()`の未解決ギャップ(既知の6端末シーケンス
+     いずれにも一致しない場合、後続バイトを呼び出し元へ返す手段が
+     無く、単に読み捨てられる)により、本物の端末経由では未到達
+     (GREP/CUT/MAN/PROGRAM/LOCATE/CP・MV・RM/終了はいずれも`^J`/
+     `^X`/`^Space`系リーダーのため問題無く動作する)。
+   - **実機検証(Python `pty.fork()`によるPTY自動テスト、この
+     プロジェクト一貫の手法)**: Mac実機・Ubuntu 26.04(Docker)
+     いずれでも、実バイナリを起動→実`ls`によるディレクトリ一覧が
+     実際に描画されること(リバース映像でのカーソル選択含む)、
+     `j`での下移動→Enterでのファイル内容表示(実ファイルの内容
+     "hello world"が正しく描画されること)、`^G`での一覧復帰、
+     `^X^C`→`y`→Enterでの終了確認プロンプト操作、そして
+     プロセスが実際に終了コード0で正常終了すること(代替スクリーン
+     復帰のエスケープシーケンス`\x1b[?1049l`が最後に送出されている
+     ことも確認)を、生バイト列レベルで確認した。既存の
+     `make test`(336件)には影響が無いことも別途確認済み。
+   - 以上により、26年前のCソースを土台にしたこのC++移植版が、
+     初めて「実際にターミナルを開いて操作できる」状態に到達した。
+     ディレクトリナビゲーション、ファイル閲覧、GREP/CUT/MAN/
+     PROGRAM/LOCATE/アーカイブ閲覧、CP/MV/RM実行、終了確認までが
+     一通り実端末上で動作する(SHELLモードの実端末対応、usilicrc/
+     履歴の永続化、リサイズ対応は既知の残課題として明記済み)。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
