@@ -14,6 +14,7 @@
 #include "history.hpp"
 #include "key_input.hpp"
 #include "line_editor.hpp"
+#include "man_mode.hpp"
 #include "mode_stack.hpp"
 
 namespace fm {
@@ -33,7 +34,8 @@ enum class Command {
   StartFgrep,
   StartEgrep,
   StartCutFixed,
-  StartCutRegex
+  StartCutRegex,
+  StartMan
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -42,7 +44,7 @@ enum class Command {
 // legacy mode (M_cut): Cut shows the list of segment labels,
 // CutContent shows one selected segment's actual lines -- see the
 // class comment on why CutMode itself doesn't merge them.
-enum class ApplicationMode { Directory, File, Grep, Cut, CutContent };
+enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man };
 
 // The top-level controller: owns the ModeStack(s) and every *Mode
 // instance, maps keypresses to Command, and dispatches each Command
@@ -114,10 +116,17 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent };
 //     LineEditor pair, distinguished by which PromptKind is pending
 //     and (for CUT) whether currentMode_ was File (fresh split) or
 //     CutContent (resplitting a segment) when the prompt started --
-//     see startCutPrompt()/executeCut().
+//     see startCutPrompt()/executeCut(). MAN's name prompt uses the
+//     same mechanism but needs no such per-mode branching: unlike
+//     GREP/CUT it doesn't read the current view's content at all
+//     (m_man() clears the prompt to empty rather than pre-filling it
+//     from the current selection, confirmed by tracing *lp->arg =
+//     K_z in m_man() -- the name is always freshly typed), so it can
+//     be started from -- and returns to -- whichever mode was active,
+//     tracked the same way grepReturnMode_/cutReturnMode_ are.
 //
 // Deliberately excluded (future work, not this slice):
-//   - Every mode besides Directory/File/Grep/Cut: MAN, PROGRAM,
+//   - Every mode besides Directory/File/Grep/Cut/Man: PROGRAM,
 //     LOCATE, archive browsing, SHELL entry, DU, CP/MV/RM execution,
 //     history/list browsers, help/error/log screens -- each already
 //     has its own *Mode class built; wiring each one in is the same
@@ -203,6 +212,7 @@ class Application {
   FileMode &fileMode();
   GrepMode &grepMode();
   CutMode &cutMode();
+  ManMode &manMode();
 
  private:
   bool openSelectedEntry();
@@ -211,15 +221,18 @@ class Application {
   bool returnFromGrep();
   bool returnFromCutContent();
   bool returnFromCut();
+  bool returnFromMan();
   ContentView &activeView();
 
   bool startGrepPrompt(GrepSyntax syntax);
   bool startCutPrompt(GrepSyntax syntax);
+  bool startManPrompt();
   bool feedPromptByte(int byte);
   bool submitPrompt();
   void cancelPrompt();
   bool executeGrep(const std::string &pattern);
   bool executeCut(const std::string &pattern);
+  bool executeMan(const std::string &name);
 
   ModeStack modeStack_;
   ModeStack cutModeStack_;
@@ -228,21 +241,24 @@ class Application {
   ContentView grepView_;
   ContentView cutView_;
   ContentView cutContentView_;
+  ContentView manView_;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;
   GrepMode grepMode_;
   CutMode cutMode_;
+  ManMode manMode_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
   ApplicationMode cutReturnMode_ = ApplicationMode::Directory;
+  ApplicationMode manReturnMode_ = ApplicationMode::Directory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;
 
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
 
-  enum class PromptKind { None, GrepPattern, CutPattern };
+  enum class PromptKind { None, GrepPattern, CutPattern, ManName };
   PromptKind promptKind_ = PromptKind::None;
 };
 

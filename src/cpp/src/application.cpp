@@ -19,13 +19,15 @@ Application::Application(Display &display, History &history, const Configuration
       grepView_(display),
       cutView_(display),
       cutContentView_(display),
+      manView_(display),
       promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
       fileMode_(fileView_, history, encoding, width),
       grepMode_(grepView_, configuration),
-      cutMode_(cutView_, cutModeStack_, configuration) {
-  // The bottom row is reserved for prompt text entry (search/cut
-  // patterns, and future slices' MAN/LOCATE name prompts) -- legacy's
+      cutMode_(cutView_, cutModeStack_, configuration),
+      manMode_(manView_, history, configuration, encoding, width) {
+  // The bottom row is reserved for prompt text entry (search/cut/man
+  // patterns, and a future slice's LOCATE query prompt) -- legacy's
   // equivalent is the mode-line row disp_window() left alone for
   // exactly this (see ContentView's own class comment on why that
   // row's rendering isn't ContentView's job either).
@@ -35,6 +37,7 @@ Application::Application(Display &display, History &history, const Configuration
   grepView_.setViewport(0, contentHeight);
   cutView_.setViewport(0, contentHeight);
   cutContentView_.setViewport(0, contentHeight);
+  manView_.setViewport(0, contentHeight);
   promptEditor_.setField(display.rows() - 1, 0, std::max(1, display.columns()));
 }
 
@@ -108,8 +111,11 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
         return handleCommand(Command::StartCutFixed);
       case kControlC:  // ^J ^C : CUT (regex)
         return handleCommand(Command::StartCutRegex);
+      case 'm':              // ^J m : MAN
+      case kCarriageReturn:  // ^J ^M : MAN (the second byte here is ^M, unrelated to a bare Enter)
+        return handleCommand(Command::StartMan);
       default:
-        return false;  // unrecognized ^J-sequence in this slice (MAN/LOCATE/... are future work)
+        return false;  // unrecognized ^J-sequence in this slice (LOCATE/... is future work)
     }
   }
 
@@ -131,6 +137,8 @@ ContentView &Application::activeView() {
       return cutView_;
     case ApplicationMode::CutContent:
       return cutContentView_;
+    case ApplicationMode::Man:
+      return manView_;
     case ApplicationMode::Directory:
     default:
       return directoryView_;
@@ -156,6 +164,7 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Cut) return openSelectedSegment();
       return false;
     case Command::Back:
+      if (currentMode_ == ApplicationMode::Man) return returnFromMan();
       if (currentMode_ == ApplicationMode::CutContent) return returnFromCutContent();
       if (currentMode_ == ApplicationMode::Cut) {
         if (cutMode_.canGoBack()) return cutMode_.goBack();
@@ -172,6 +181,8 @@ bool Application::handleCommand(Command command) {
       return startCutPrompt(GrepSyntax::Fixed);
     case Command::StartCutRegex:
       return startCutPrompt(GrepSyntax::Regex);
+    case Command::StartMan:
+      return startManPrompt();
     case Command::None:
       return false;
   }
@@ -231,6 +242,13 @@ bool Application::returnFromCut() {
   return true;
 }
 
+bool Application::returnFromMan() {
+  manMode_.saveCursorPosition();
+  currentMode_ = manReturnMode_;
+  activeView().redraw();
+  return true;
+}
+
 // Ported from m_grep(): entering FGREP/EGREP just remembers where to
 // come back to (legacy: save_stack()) and switches to a prompt state
 // so the next bytes are the search pattern, not commands. Refuses to
@@ -264,6 +282,22 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
   return true;
 }
 
+// Ported from m_man(): unlike GREP/CUT, m_man() has no is_name()
+// nested-entry guard and doesn't read anything from the currently
+// active view (see class comment) -- so this is reachable from any
+// mode, including Man itself (viewing a different page without
+// leaving Man mode first). manReturnMode_ is only updated the FIRST
+// time (i.e. when not already in Man mode), so ^G after browsing
+// several pages in a row still returns to wherever the excursion
+// originally started, not to the page viewed just before it.
+bool Application::startManPrompt() {
+  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = currentMode_;
+  promptKind_ = PromptKind::ManName;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
 bool Application::feedPromptByte(int byte) {
   if (byte == kCarriageReturn) return submitPrompt();
   if (byte == kControlG) {
@@ -285,6 +319,8 @@ bool Application::submitPrompt() {
       return executeGrep(text);
     case PromptKind::CutPattern:
       return executeCut(text);
+    case PromptKind::ManName:
+      return executeMan(text);
     case PromptKind::None:
       return false;
   }
@@ -329,6 +365,15 @@ bool Application::executeCut(const std::string &pattern) {
   return true;
 }
 
+bool Application::executeMan(const std::string &name) {
+  if (!manMode_.loadPage(name)) {
+    activeView().redraw();
+    return false;
+  }
+  currentMode_ = ApplicationMode::Man;
+  return true;
+}
+
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
 const std::string &Application::promptText() const { return promptEditor_.text(); }
 
@@ -337,5 +382,6 @@ DirectoryMode &Application::directoryMode() { return directoryMode_; }
 FileMode &Application::fileMode() { return fileMode_; }
 GrepMode &Application::grepMode() { return grepMode_; }
 CutMode &Application::cutMode() { return cutMode_; }
+ManMode &Application::manMode() { return manMode_; }
 
 }  // namespace fm
