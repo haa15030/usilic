@@ -160,16 +160,17 @@ std::optional<SuffixLine> parseSuffixLine(const std::string &trimmedLine, std::v
 }  // namespace
 
 Configuration::Configuration() {
-#ifdef __APPLE__
-  // BSD du has no GNU-style "-ab" (all-files + byte-exact); "-a"
-  // (all-files) is the closest portable equivalent. Fixes the DU
-  // startup failure on macOS recorded in CLAUDE.md's "今後の大きな
-  // 方向性" section (2026-07-22 entry) -- the compiled-in Linux
-  // default simply doesn't run on macOS's du at all.
-  roleCommands_[ConfiguredRole::Du] = {{"du", "-a"}, std::nullopt};
-#else
-  roleCommands_[ConfiguredRole::Du] = {{"du", "-ab"}, std::nullopt};  // config.h's DU default
-#endif
+  // config.h's compiled-in default was "du -ab" (all-files, byte-
+  // exact) -- GNU-only, so it failed to even start on macOS's BSD du
+  // (see CLAUDE.md's "今後の大きな方向性" section, 2026-07-22 entry).
+  // "-a" (all-files) is POSIX/portable, but "-b" (byte-exact) isn't,
+  // and dropping it entirely would leave each platform's own default
+  // block size (512 bytes on BSD, 1024 on GNU) silently disagreeing --
+  // "-k" (kilobyte blocks) is POSIX-portable *and* gives DuMode a
+  // single, consistent unit to parse on both platforms, so it's used
+  // here instead of trying to keep byte-exact sizing on just one of
+  // them.
+  roleCommands_[ConfiguredRole::Du] = {{"du", "-ak"}, std::nullopt};
   // ls's exact configured default isn't given directly in config.h
   // (only DU/CP/MV/RM/CHARSET/TMP/LIB are) -- inferred from
   // get_col()'s (scroll.c) own documented assumption that `ls`
