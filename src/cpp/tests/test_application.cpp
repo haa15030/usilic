@@ -14,6 +14,7 @@ using fm::ApplicationMode;
 using fm::Charset;
 using fm::Command;
 using fm::Configuration;
+using fm::GrepSyntax;
 using fm::History;
 using fm::KeyInput;
 using fm::test::RecordingDisplay;
@@ -48,6 +49,12 @@ struct Fixture {
     for (std::size_t i = 0; i < entries.size(); i++)
       if (entries[i].name == name) return static_cast<int>(i);
     return -1;
+  }
+
+  // Feeds each byte of text through feedByte() as an ordinary
+  // (non-special-key) keypress -- used to type a search pattern.
+  void feedText(const std::string &text) {
+    for (char c : text) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
   }
 };
 
@@ -162,4 +169,103 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) in Directory mode after descendi
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.directoryMode().currentDirectory() == path());
+}
+
+// -- resolveCommand/feedByte: ^S (single-byte) and ^J^S (leader) for GREP --
+
+TEST_CASE("resolveCommand: ^S resolves to StartFgrep") {
+  CHECK(Application::resolveCommand(0x13, std::nullopt) == Command::StartFgrep);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: a lone ^J is consumed as a pending leader byte, no action yet") {
+  REQUIRE(app.start(path()));
+  CHECK(app.feedByte(0x0a, std::nullopt));  // ^J: in progress, not a no-op
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J followed by an unrecognized byte fails cleanly") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  CHECK_FALSE(app.feedByte('z', std::nullopt));
+  // The leader state doesn't leak into the next byte: a plain 'j' afterwards still moves down.
+  CHECK(app.feedByte('j', std::nullopt));
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^S starts an EGREP prompt (StartEgrep)") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte(0x13, std::nullopt));
+  CHECK(app.promptActive());
+}
+
+// -- GREP: starting a search prompt, typing a pattern, submitting --
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartFgrep): opens a prompt without leaving Directory mode yet") {
+  REQUIRE(app.start(path()));
+  CHECK(app.handleCommand(Command::StartFgrep));
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: typing a pattern then ^M runs a real fgrep search over the directory listing") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M submits
+
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 1);
+  CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^G cancels a pending prompt without starting a search") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain");
+  CHECK(app.feedByte(0x07, std::nullopt));  // ^G cancels
+
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "GREP: searching from File mode returns to File mode on Back") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("hello");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 1);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match is a no-op in this slice") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  CHECK_FALSE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+}
+
+TEST_CASE_FIXTURE(Fixture, "GREP: starting a nested search from within grep results fails") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  CHECK_FALSE(app.handleCommand(Command::StartFgrep));
+  CHECK_FALSE(app.promptActive());
 }

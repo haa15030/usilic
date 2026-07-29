@@ -2181,6 +2181,61 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      新規17件、既存272件全件、Mac/Ubuntu 26.04(Docker)双方で
      パス確認。
 
+41. **2026-07-29: Applicationクラスを拡張 — GREP(FGREP/EGREP)検索を
+    第二スライスとして追加、^Jリーダーキー機構を新設**
+   - ユーザー承認(「その順でよろしく。」= GREP→CUT→MAN→PROGRAM→
+     LOCATE→ARC→SHELL→CP・MV・RM実行→終了フローの順)を受け、リスト
+     先頭のGREPから着手。
+   - **バグ発見・修正(前スライス由来)**: 実装を進める過程で、
+     `menu.c`の`^J`(0x0a)が実は独立した「リーダーキー」(`^Jw`/`^Jc`/
+     `^Jl`/`^Jm`/`^J^S`等、2バイト目と組み合わさって初めて1コマンドに
+     なる)であり、`^M`(0x0d、決定キー)とは全く別物だと判明。
+     項目40の`resolveCommand()`は利便性のため`0x0a`も`Enter`として
+     受理していたが、これは誤りだった(`^J^S`=EGREPを正しく扱うには
+     `0x0a`を`Enter`と衝突させられない)。`resolveCommand()`から
+     `0x0a`のケースを削除して修正(この時点でこのマッピングを検証する
+     テストは無かったため、既存テストへの影響は無し)。
+   - **設計**: `get_m()`のswitch(m)を追い、`m_grep()`(^S=FGREP、
+     ^J^S=EGREP、`save_stack()`で戻り先を記憶して`np->M`を書き換える
+     だけ)を確認。旧`read_m()`のプロンプト表示+入力受付機構
+     (klen/cname付きの汎用テキスト入力)は、既存の`LineEditor`
+     クラス(バイト単位`insertByte()`)にそのまま委譲できると判断。
+     `Application`に以下を追加:
+     - `feedByte(byte, special)`: 実端末からの生バイト入力を受ける
+       新しい入口。`^J`単体を「リーダー保留」として1回だけ記憶し、
+       次のバイトと組み合わせて解決する(現時点では`^J^S`のみ、
+       他の`^J`系コマンドは次回以降のスライスで同じ表に追加していく
+       設計)。プロンプト入力中はバイトを`Command`解決せず直接
+       `LineEditor`へ流す。`resolveCommand()`自体は単一バイトのみを
+       見る純粋関数のまま変更せず(既存テストの資産をそのまま維持)、
+       状態を持つのは`feedByte()`側だけに閉じ込めた。
+     - `ApplicationMode::Grep`+専用の`ContentView`(`grepView_`)+
+       `GrepMode`インスタンス。旧HEAP.base[]プール問題への解法
+       (項目40)をそのまま踏襲し、Grep結果表示にも独立した
+       `ContentView`を割り当てるだけで済んだ。
+     - 検索対象は「呼び出し時点でアクティブなContentViewの
+       `lines()`」に統一(Directory一覧からでもFile内容からでも
+       検索できる、`GrepMode::search()`が呼び出し元を問わない汎用
+       設計だったため自然にこうなった)。呼び出し元のモードは
+       `grepReturnMode_`に記憶し、Grep結果画面での^Gはこれを見て
+       戻る(こちらもModeStackを経由しない単純トグル)。
+     - プロンプト行表示のため、`Application`のコンストラクタで
+       `Display`の最終行を予約するよう変更(`ContentView`のビュー
+       ポート高さを`rows()-1`に、`LineEditor`をその最終行に配置)。
+   - **意図的に見送った範囲**: Grep結果でのEnter(該当行の元の
+     文脈へジャンプする機能、`GrepMode`自身のクラスコメントで既に
+     対象外と明記済み)、ネスト検索、マッチ箇所のハイライト、
+     `History`のhfgrep/hegrepリング記録 — いずれも`GrepMode`自身の
+     スコープ外として既に明記されている範囲を踏襲。
+   - **検証**: `^S`/`^J`単体/`^J^S`/`^J`+未対応バイトのキー解決、
+     プロンプト起動(Directory/Fileどちらからも)、実`fgrep`によるパ
+     ターン入力→検索実行、^Gでのキャンセル(検索を実行せず戻る)、
+     Grep結果からの^G復帰(File発の場合はFileへ、カーソル位置含めて
+     復帰)、Grep結果上でのEnterが無視されること、Grep結果内からの
+     ネスト検索禁止を、実`fgrep`・実一時ファイルを使ったdoctestで
+     新規19件、既存282件全件、Mac/Ubuntu 26.04(Docker)双方で
+     パス確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

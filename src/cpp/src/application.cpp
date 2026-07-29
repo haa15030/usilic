@@ -4,15 +4,32 @@
 
 namespace fm {
 
+namespace {
+constexpr int kLeaderJ = 0x0a;  // ^J
+constexpr int kControlS = 0x13; // ^S
+constexpr int kControlG = 0x07; // ^G
+constexpr int kCarriageReturn = 0x0d;  // ^M
+}  // namespace
+
 Application::Application(Display &display, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width)
     : directoryView_(display),
       fileView_(display),
+      grepView_(display),
+      promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
-      fileMode_(fileView_, history, encoding, width) {
-  int height = std::max(1, display.rows());
-  directoryView_.setViewport(0, height);
-  fileView_.setViewport(0, height);
+      fileMode_(fileView_, history, encoding, width),
+      grepMode_(grepView_, configuration) {
+  // The bottom row is reserved for prompt text entry (search
+  // patterns, and future slices' MAN/LOCATE name prompts) -- legacy's
+  // equivalent is the mode-line row disp_window() left alone for
+  // exactly this (see ContentView's own class comment on why that
+  // row's rendering isn't ContentView's job either).
+  int contentHeight = std::max(1, display.rows() - 1);
+  directoryView_.setViewport(0, contentHeight);
+  fileView_.setViewport(0, contentHeight);
+  grepView_.setViewport(0, contentHeight);
+  promptEditor_.setField(display.rows() - 1, 0, std::max(1, display.columns()));
 }
 
 bool Application::start(const std::string &directory) {
@@ -28,7 +45,10 @@ bool Application::start(const std::string &directory) {
 // oddly for a single-column list (left==up, right==down) but is
 // exactly what tracing move_row()'s switch confirmed. M_forw/M_back/
 // M_kforw/M_kback (space/b/^V and their arrow-adjacent bindings) map
-// to m_page(); M_cr (^M) to m_cr(); M_bl (^G) to m_bl().
+// to m_page(); M_cr (^M only -- see class comment on why ^J is NOT
+// folded in here) to m_cr(); M_bl (^G) to m_bl(); M_fgrep (^S) starts
+// a search prompt. ^J-leader sequences (e.g. ^J^S for EGREP) aren't
+// resolvable from one byte and are handled by feedByte() instead.
 Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey> special) {
   if (special) {
     switch (*special) {
@@ -57,37 +77,71 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
     case 'b':
     case 0x16:  // ^V
       return byte == 'b' ? Command::PageUp : Command::PageDown;
-    case 0x0d:  // ^M / Enter
-    case 0x0a:
+    case kCarriageReturn:
       return Command::Enter;
-    case 0x07:  // ^G
+    case kControlG:
       return Command::Back;
+    case kControlS:
+      return Command::StartFgrep;
     default:
       return Command::None;
   }
 }
 
+bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  if (promptKind_ != PromptKind::None) return feedPromptByte(byte);
+
+  if (leaderJPending_) {
+    leaderJPending_ = false;
+    if (!special && byte == kControlS) return handleCommand(Command::StartEgrep);  // ^J ^S
+    return false;  // unrecognized ^J-sequence in this slice (CUT/MAN/LOCATE/... are future work)
+  }
+
+  if (!special && byte == kLeaderJ) {
+    leaderJPending_ = true;
+    return true;  // sequence in progress, not a no-op
+  }
+
+  return handleCommand(resolveCommand(byte, special));
+}
+
+ContentView &Application::activeView() {
+  switch (currentMode_) {
+    case ApplicationMode::File:
+      return fileView_;
+    case ApplicationMode::Grep:
+      return grepView_;
+    case ApplicationMode::Directory:
+    default:
+      return directoryView_;
+  }
+}
+
 bool Application::handleCommand(Command command) {
-  ContentView &view = (currentMode_ == ApplicationMode::Directory) ? directoryView_ : fileView_;
   switch (command) {
     case Command::MoveUp:
-      view.moveUp();
+      activeView().moveUp();
       return true;
     case Command::MoveDown:
-      view.moveDown();
+      activeView().moveDown();
       return true;
     case Command::PageUp:
-      view.pageUp();
+      activeView().pageUp();
       return true;
     case Command::PageDown:
-      view.pageDown();
+      activeView().pageDown();
       return true;
     case Command::Enter:
       if (currentMode_ != ApplicationMode::Directory) return false;
       return openSelectedEntry();
     case Command::Back:
+      if (currentMode_ == ApplicationMode::Grep) return returnFromGrep();
       if (currentMode_ == ApplicationMode::File) return returnToDirectory();
       return directoryMode_.goBack();
+    case Command::StartFgrep:
+      return startGrepPrompt(GrepSyntax::Fixed);
+    case Command::StartEgrep:
+      return startGrepPrompt(GrepSyntax::Regex);
     case Command::None:
       return false;
   }
@@ -114,8 +168,77 @@ bool Application::returnToDirectory() {
   return true;
 }
 
+bool Application::returnFromGrep() {
+  currentMode_ = grepReturnMode_;
+  activeView().redraw();
+  return true;
+}
+
+// Ported from m_grep(): entering FGREP/EGREP just remembers where to
+// come back to (legacy: save_stack()) and switches to a prompt state
+// so the next bytes are the search pattern, not commands. Refuses to
+// start a nested search from within grep results, matching m_grep()'s
+// own is_name(ap->name, M_fgrep/M_egrep) guard.
+bool Application::startGrepPrompt(GrepSyntax syntax) {
+  if (currentMode_ == ApplicationMode::Grep) return false;
+  grepSyntax_ = syntax;
+  grepReturnMode_ = currentMode_;
+  promptKind_ = PromptKind::GrepPattern;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
+bool Application::feedPromptByte(int byte) {
+  if (byte == kCarriageReturn) return submitPrompt();
+  if (byte == kControlG) {
+    cancelPrompt();
+    return true;
+  }
+  promptEditor_.insertByte(static_cast<unsigned char>(byte));
+  promptEditor_.redraw();
+  return true;
+}
+
+bool Application::submitPrompt() {
+  PromptKind kind = promptKind_;
+  std::string text = promptEditor_.text();
+  promptKind_ = PromptKind::None;
+
+  switch (kind) {
+    case PromptKind::GrepPattern:
+      return executeGrep(text);
+    case PromptKind::None:
+      return false;
+  }
+  return false;
+}
+
+void Application::cancelPrompt() {
+  promptKind_ = PromptKind::None;
+  activeView().redraw();
+}
+
+bool Application::executeGrep(const std::string &pattern) {
+  ContentView &source = (grepReturnMode_ == ApplicationMode::File) ? fileView_ : directoryView_;
+  std::vector<std::string> sourceLines;
+  sourceLines.reserve(source.lines().size());
+  for (const auto &line : source.lines()) sourceLines.push_back(line.text);
+
+  if (!grepMode_.search(sourceLines, pattern, grepSyntax_)) {
+    source.redraw();
+    return false;
+  }
+  currentMode_ = ApplicationMode::Grep;
+  return true;
+}
+
+bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
+const std::string &Application::promptText() const { return promptEditor_.text(); }
+
 ApplicationMode Application::currentMode() const { return currentMode_; }
 DirectoryMode &Application::directoryMode() { return directoryMode_; }
 FileMode &Application::fileMode() { return fileMode_; }
+GrepMode &Application::grepMode() { return grepMode_; }
 
 }  // namespace fm
