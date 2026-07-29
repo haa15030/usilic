@@ -2464,6 +2464,57 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      315件全件、Mac/Ubuntu 26.04(Docker、`bash`パッケージ追加
      インストール)双方でパス確認。
 
+48. **2026-07-29: ApplicationクラスにCP/MV/RM実行を追加(「その順で」
+    列挙の最終項目)**
+   - 「その順で」(GREP→CUT→MAN→PROGRAM→LOCATE→ARC→SHELL→CP・MV・RM
+     実行)の最終項目に着手。`m_dest()`/`m_yn()`(destination検証、
+     y/n確認、`command()`によるシェルスクリプト生成)を確認したが、
+     既存の`CpMvRmMode`(25クラス目、`command()`の1:1移植ではなく
+     絶対パス+`ChildProcess`直接実行を選んだクラス)と
+     `DirectoryMode`のマーキング機能(29クラス目の拡張)が既に
+     揃っていたため、`Application`側の新規コードはプロンプト配線
+     のみで済んだ。
+   - **3つ目のリーダーキー`^X`を新設**: CP=^Xc、MV=^Xm、RM=^Xr
+     (`M_cp2`/`M_mv2`/`M_rm2`)のみを配線し、より長い`^X^Kc`等の
+     同義束縛(`fp->comm`という未追跡の追加フラグが絡む)と、
+     `^X^Ka`/`^Xa`(`m_arc()`自身、CP/MV/RMと並ぶ別の「アーカイブ
+     作成」アクション、項目46で既に「別物」と整理済み)は対象外と
+     した。
+   - **簡略化した確認フロー**: `m_dest()`のCP/MV分岐(tilde展開、
+     二重スラッシュ除去、`MustBeDirectory`/`MissingIsWritable`の
+     エントリ単位検証)は、`CpMvRmMode::copyTo()`/`moveTo()`が
+     `ChildProcess`経由で直接実行した結果(`ChildProcess::Result::
+     ok`)をそのまま真偽値として使う形に単純化。RMは`m_dest()`の
+     `*ap->mess != 'y'`チェック(1文字確認)をそのまま踏襲し、
+     プロンプトへの入力が厳密に`"y"`のときのみ削除を実行する
+     簡易確認とした(`-i`によるOSレベルの対話確認は`CpMvRmMode`
+     自身が既に対象外と明記済み)。
+   - `^Space`(M_mark)でのマーキング切り替えは、`KeyInput`が
+     Ctrl-Spaceを`0x80`として報告する既存の取り決め(`K_at`
+     センチネル、`KeyInput`自身のクラスコメントに記載済み)を
+     そのまま`resolveCommand()`で使用。実行成功後は
+     `DirectoryMode::enterDirectory()`で一覧を再読込し、実際に
+     ディスク上で起きたことを画面に反映(マークは同メソッドの
+     既存の副作用でクリアされるため、別途`clearMarks()`呼び出し
+     は不要)。
+   - **検証**: `^Space`でのマーク切り替え、`^Xc`/`^Xm`/`^Xr`の
+     キー解決、Directory以外のモードからの起動拒否、実`cp`による
+     複数マークファイルの実コピー(コピー元が残ることを含む)、
+     実`mv`による移動(コピー元が消えることを含む)、実`rm`による
+     `"y"`確認時の実削除、`"y"`以外での不実行、^Gでのプロンプト
+     キャンセル(ファイルシステム変更無し)を、実`cp`/`mv`/`rm`・
+     実一時ファイルを使ったdoctestで新規10件、既存321件全件、
+     Mac/Ubuntu 26.04(Docker、root実行環境での`isWritable()`の
+     root常時許可分岐込み)双方でパス確認。
+   - 以上でユーザー指定の「その順で」列挙(GREP/CUT/MAN/PROGRAM/
+     LOCATE/ARC/SHELL/CP・MV・RM実行)が完了。`Application`は
+     30クラス目として、Directory/File/Grep/Cut/CutContent/Man/
+     Locate/Archive/ArchiveContent/Shellの10画面+CP/MV/RM実行を
+     カバーする状態になった。残る`menu.c`/`mode.c`の主要部分は
+     `M_exit`(終了確認フロー)、DU、履歴/一覧ブラウザ、ヘルプ/
+     エラー/ログ画面、および今回明示的に対象外とした各種の
+     ショートカット類。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

@@ -81,7 +81,11 @@ struct Fixture {
     // see application.cpp) -- the default Configuration has no
     // PROGRAM entries at all (only ever populated by parsing an rc
     // file), so tests need this loaded to exercise the success path.
-    configuration.loadRcText("PROGRAM\n echo\n", true);
+    // RM is overridden to drop the default `-i` (interactive
+    // confirmation): ChildProcess::run() attaches no real terminal, so
+    // `-i` would hang waiting on stdin -- same override
+    // test_cp_mv_rm_mode.cpp's own tests already use.
+    configuration.loadRcText("PROGRAM\n echo\nRM\n rm -vr\n", true);
 
     // A real archive (built via the actual `tar` CLI, matching
     // ArchiveMode's own test precedent) for the ARC-related tests.
@@ -89,6 +93,11 @@ struct Fixture {
     { std::ofstream(root / "arcsrc" / "inner.txt") << "archived content\n"; }
     std::string tarCmd = "cd '" + root.string() + "' && tar cf archive.tar arcsrc";
     REQUIRE(std::system(tarCmd.c_str()) == 0);
+
+    // Real files for the CP/MV/RM-related tests.
+    { std::ofstream(root / "cpmv_a.txt") << "content-a\n"; }
+    { std::ofstream(root / "cpmv_b.txt") << "content-b\n"; }
+    fs::create_directory(root / "cpmvdest");
   }
 
   ~Fixture() { fs::remove_all(root); }
@@ -893,4 +902,114 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: re-entering from within Shell mode is refused
   }
   CHECK_FALSE(app.handleCommand(Command::StartShell));
   CHECK(app.currentMode() == ApplicationMode::Shell);
+}
+
+// -- CP/MV/RM: ^Space marking, ^Xc/^Xm/^Xr, real cp/mv/rm execution --
+
+TEST_CASE("resolveCommand: 0x80 (^Space, Ctrl-Space's reported byte) resolves to ToggleMark") {
+  CHECK(Application::resolveCommand(0x80, std::nullopt) == Command::ToggleMark);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleMark): toggles the mark at the cursor") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.directoryMode().isMarked(0));
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  CHECK(app.directoryMode().isMarked(0));
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  CHECK_FALSE(app.directoryMode().isMarked(0));
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X c / ^X m / ^X r start the corresponding prompt") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x18, std::nullopt);
+  CHECK(app.feedByte('c', std::nullopt));
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCopy): refused outside Directory mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK_FALSE(app.handleCommand(Command::StartCopy));
+  CHECK_FALSE(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "CP: marking two files then copying them creates real copies at the destination") {
+  REQUIRE(app.start(path()));
+  int idxA = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  int idxB = indexOf("cpmv_b.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(fs::exists(root / "cpmvdest" / "cpmv_a.txt"));
+  CHECK(fs::exists(root / "cpmvdest" / "cpmv_b.txt"));
+  // Sources are untouched by a copy.
+  CHECK(fs::exists(root / "cpmv_a.txt"));
+  CHECK(fs::exists(root / "cpmv_b.txt"));
+  // The reload clears marks (DirectoryMode::enterDirectory()'s own documented behavior).
+  CHECK(app.directoryMode().markedCount() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "MV: moving a marked file removes the source and creates the destination") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartMove));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(fs::exists(root / "cpmvdest" / "cpmv_a.txt"));
+  CHECK_FALSE(fs::exists(root / "cpmv_a.txt"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "RM: confirming with 'y' actually deletes the marked file") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_b.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartRemove));
+  feedText("y");
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK_FALSE(fs::exists(root / "cpmv_b.txt"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "RM: anything other than exactly 'y' leaves the file untouched") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_b.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartRemove));
+  feedText("n");
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(fs::exists(root / "cpmv_b.txt"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "CP/MV/RM: ^G cancels the prompt without touching the filesystem") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartRemove));
+  feedText("y");
+  CHECK(app.feedByte(0x07, std::nullopt));
+
+  CHECK_FALSE(app.promptActive());
+  CHECK(fs::exists(root / "cpmv_a.txt"));
 }

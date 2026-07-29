@@ -2,11 +2,13 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "archive_mode.hpp"
 #include "charset.hpp"
 #include "configuration.hpp"
 #include "content_view.hpp"
+#include "cp_mv_rm_mode.hpp"
 #include "cut_mode.hpp"
 #include "directory_mode.hpp"
 #include "display.hpp"
@@ -42,7 +44,11 @@ enum class Command {
   StartMan,
   StartProgram,
   StartLocate,
-  StartShell
+  StartShell,
+  ToggleMark,
+  StartCopy,
+  StartMove,
+  StartRemove
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -215,15 +221,44 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate
 //     readEscapeSequence() for bytes it already knows are app-level
 //     leaders) -- flagged rather than silently assumed solved, same
 //     as every other gap this class's own comment documents.
+//   - CP/MV/RM (^Xc/^Xm/^Xr -- a THIRD leader key, ^X this time,
+//     alongside ^J and ESC) reuses DirectoryMode's marking
+//     (toggleMark()/targetEntries(), see its own header) and the
+//     already-shipped CpMvRmMode as-is, so this slice's only real new
+//     code is the prompt plumbing: CP/MV ask for a destination path
+//     (PromptKind::CopyDestination/MoveDestination), RM asks for a
+//     literal "y" confirmation (PromptKind::RemoveConfirm) -- a
+//     deliberately simplified stand-in for m_dest()/m_yn()'s much
+//     more elaborate per-entry validation (tilde/double-slash
+//     cleanup, MustBeDirectory/MissingIsWritable destination checks
+//     folded per-entry, ARC members mixed into the same dispatch).
+//     ^Space (M_mark) toggles the mark at the cursor -- KeyInput's own
+//     documented convention reports a literal NUL/Ctrl-Space as byte
+//     0x80 (see its class comment), which is what resolveCommand()
+//     matches. On success, the directory listing is reloaded
+//     (DirectoryMode::enterDirectory() on the current directory) so
+//     the screen reflects what cp/mv/rm actually did; marks are
+//     cleared as a side effect of that reload, matching
+//     DirectoryMode's own documented behavior, so there's no separate
+//     clearMarks() call needed here.
 //
 // Deliberately excluded (future work, not this slice):
 //   - Every mode besides Directory/File/Grep/Cut/Man/Locate/Archive/
-//     Shell: DU, CP/MV/RM execution, history/list browsers, help/
-//     error/log screens -- each already has its own *Mode class
-//     built; wiring each one in is the same shape of change (extend
-//     Command/ApplicationMode, extend feedByte()'s leader table,
-//     extend handleCommand()) repeated per mode, deferred to keep
-//     each slice reviewable.
+//     Shell: DU, history/list browsers, help/error/log screens --
+//     each already has its own *Mode class built; wiring each one in
+//     is the same shape of change (extend Command/ApplicationMode,
+//     extend feedByte()'s leader table, extend handleCommand())
+//     repeated per mode, deferred to keep each slice reviewable.
+//   - The ^X^Kc/^X^Km/^X^Kr synonyms for CP/MV/RM (a second, longer
+//     leader sequence get_m() accepts for the same three actions,
+//     setting an extra `fp->comm` flag whose effect wasn't traced) and
+//     ^X^Ka/^Xa (M_arc/M_arc2, the archive-CREATION action -- see
+//     below, a different "ARC" from archive-browsing): only ^Xc/^Xm/
+//     ^Xr are wired in this slice.
+//   - CpMvRmMode's own already-documented exclusions (interactive `-i`
+//     confirmation at the OS level, entries living inside an archive
+//     or a `du`-measured subdirectory): unchanged by this slice,
+//     still out of scope for the same reasons its own header gives.
 //   - mode.c's M_prog case falls back to launching SHELL mode with
 //     the typed line pre-filled when the first word ISN'T a
 //     recognized PROGRAM-list entry (`m = -M_shell`) -- executeProgram()
@@ -283,17 +318,15 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate
 //     somewhere to break out to, so it's deliberately not built here
 //     either. feedByte()/handleCommand() are the tested, terminal-
 //     independent primitives such a loop would call.
-//   - Selection-mark-driven CP/MV/RM/ARC dispatch (M_cp/M_mv/M_rm/
-//     M_arc, m_arc()/m_dest()/m_yn()): a DIFFERENT, unrelated "ARC"
-//     from the archive-browsing one above -- menu.c's m_arc() here is
-//     the ^X^Ka archive-CREATION action grouped alongside CP/MV/RM,
-//     not T_tar/etc's archive-browsing/viewing. DirectoryMode's
-//     marking and CpMvRmMode both already exist for CP/MV/RM; ARC-
-//     creation itself has no ported class yet. Wiring any of this
-//     into Command/handleCommand() is future-slice work, not this
-//     one.
-//   - Selection marking's own keys (^Space etc) and file-jump (M_jump):
-//     same reason, not part of the commands this slice maps.
+//   - ARC-creation (^X^Ka/^Xa, M_arc/M_arc2, m_arc()): a DIFFERENT,
+//     unrelated "ARC" from the archive-browsing one above -- menu.c's
+//     m_arc() here is the archive-CREATION action grouped alongside
+//     CP/MV/RM, not T_tar/etc's archive-browsing/viewing. Unlike
+//     CP/MV/RM, this has no ported class yet at all, so it isn't
+//     wired regardless of leader-key scope.
+//   - File-jump (M_jump, ^X^X -- swap between the cursor position and
+//     the last ^Space-marked position): not part of the commands this
+//     slice maps.
 class Application {
  public:
   // `keyInput` must be the same instance actually controlling the
@@ -365,11 +398,13 @@ class Application {
   LocateMode &locateMode();
   ArchiveMode &archiveMode();
   Shell &shell();
+  CpMvRmMode &cpMvRmMode();
 
  private:
   bool openSelectedEntry();
   bool openSelectedSegment();
   bool openSelectedArchiveEntry();
+  bool toggleMark();
   bool returnToDirectory();
   bool returnFromGrep();
   bool returnFromCutContent();
@@ -380,6 +415,7 @@ class Application {
   bool returnFromArchive();
   bool returnFromShell();
   ContentView &activeView();
+  std::vector<std::string> collectTargetPaths() const;
 
   bool startGrepPrompt(GrepSyntax syntax);
   bool startCutPrompt(GrepSyntax syntax);
@@ -387,6 +423,9 @@ class Application {
   bool startProgramPrompt();
   bool startLocatePrompt();
   bool startShell();
+  bool startCopyPrompt();
+  bool startMovePrompt();
+  bool startRemovePrompt();
   bool feedPromptByte(int byte);
   bool submitPrompt();
   void cancelPrompt();
@@ -395,6 +434,9 @@ class Application {
   bool executeMan(const std::string &name);
   bool executeProgram(const std::string &command);
   bool executeLocate(const std::string &query);
+  bool executeCopy(const std::string &destination);
+  bool executeMove(const std::string &destination);
+  bool executeRemove(const std::string &confirmation);
 
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   ModeStack modeStack_;
@@ -418,6 +460,7 @@ class Application {
   LocateMode locateMode_;
   ArchiveMode archiveMode_;
   Shell shell_;
+  CpMvRmMode cpMvRmMode_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
@@ -431,8 +474,19 @@ class Application {
 
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
   bool escPending_ = false;      // saw ESC (0x1b), waiting for the byte that completes ^[s -- see class comment
+  bool leaderXPending_ = false;  // saw ^X, waiting for the byte that completes ^Xc/^Xm/^Xr
 
-  enum class PromptKind { None, GrepPattern, CutPattern, ManName, ProgramCommand, LocateQuery };
+  enum class PromptKind {
+    None,
+    GrepPattern,
+    CutPattern,
+    ManName,
+    ProgramCommand,
+    LocateQuery,
+    CopyDestination,
+    MoveDestination,
+    RemoveConfirm
+  };
   PromptKind promptKind_ = PromptKind::None;
 };
 

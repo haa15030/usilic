@@ -7,6 +7,7 @@ namespace fm {
 
 namespace {
 constexpr int kLeaderJ = 0x0a;         // ^J
+constexpr int kLeaderX = 0x18;         // ^X
 constexpr int kEscape = 0x1b;          // ESC
 constexpr int kControlS = 0x13;        // ^S
 constexpr int kControlC = 0x03;        // ^C
@@ -40,7 +41,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
         shellOptions.columns = display.columns();
         shellOptions.encoding = encoding;
         return shellOptions;
-      }()) {
+      }()),
+      cpMvRmMode_(configuration) {
   // The bottom row is reserved for prompt text entry (search/cut/man/
   // locate patterns) -- legacy's equivalent is the mode-line row
   // disp_window() left alone for exactly this (see ContentView's own
@@ -111,6 +113,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::Back;
     case kControlS:
       return Command::StartFgrep;
+    case 0x80:  // ^Space (M_mark) -- KeyInput reports a literal NUL/Ctrl-Space as 0x80, see its class comment
+      return Command::ToggleMark;
     default:
       return Command::None;
   }
@@ -150,8 +154,27 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
     }
   }
 
+  if (leaderXPending_) {
+    leaderXPending_ = false;
+    if (special) return false;
+    switch (byte) {
+      case 'c':  // ^X c : CP
+        return handleCommand(Command::StartCopy);
+      case 'm':  // ^X m : MV
+        return handleCommand(Command::StartMove);
+      case 'r':  // ^X r : RM
+        return handleCommand(Command::StartRemove);
+      default:
+        return false;  // unrecognized ^X-sequence in this slice (^X^Kc/^X^Km/^X^Kr/^X^Ka/^Xa are future work)
+    }
+  }
+
   if (!special && byte == kLeaderJ) {
     leaderJPending_ = true;
+    return true;  // sequence in progress, not a no-op
+  }
+  if (!special && byte == kLeaderX) {
+    leaderXPending_ = true;
     return true;  // sequence in progress, not a no-op
   }
   if (!special && byte == kEscape) {
@@ -280,6 +303,14 @@ bool Application::handleCommand(Command command) {
       return startLocatePrompt();
     case Command::StartShell:
       return startShell();
+    case Command::ToggleMark:
+      return toggleMark();
+    case Command::StartCopy:
+      return startCopyPrompt();
+    case Command::StartMove:
+      return startMovePrompt();
+    case Command::StartRemove:
+      return startRemovePrompt();
     case Command::None:
       return false;
   }
@@ -332,6 +363,28 @@ bool Application::openSelectedArchiveEntry() {
   archiveContentView_.redraw();
   currentMode_ = ApplicationMode::ArchiveContent;
   return true;
+}
+
+// Ported from M_mark (^Space): toggles the mark at the cursor.
+// Directory-only, matching every other CP/MV/RM-related action added
+// in this slice.
+bool Application::toggleMark() {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  if (!directoryMode_.selectedEntry()) return false;
+  directoryMode_.toggleMark(directoryView_.cursorIndex());
+  return true;
+}
+
+std::vector<std::string> Application::collectTargetPaths() const {
+  std::vector<std::string> paths;
+  std::string dir = directoryMode_.currentDirectory();
+  for (const auto &entry : directoryMode_.targetEntries()) {
+    std::string path = dir;
+    if (!path.empty() && path.back() != '/') path += '/';
+    path += entry.name;
+    paths.push_back(std::move(path));
+  }
+  return paths;
 }
 
 bool Application::openSelectedSegment() {
@@ -421,6 +474,40 @@ bool Application::startShell() {
   currentMode_ = ApplicationMode::Shell;
   shell_.scrollback().redraw();
   shell_.commandLine().redraw();
+  return true;
+}
+
+// Ported from M_cp2/M_mv2 (^Xc/^Xm) entering a destination-path
+// prompt: Directory-only, and only when there's something to act on
+// (marked entries, or the current selection -- see
+// DirectoryMode::targetEntries()).
+bool Application::startCopyPrompt() {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  if (directoryMode_.targetEntries().empty()) return false;
+  promptKind_ = PromptKind::CopyDestination;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
+bool Application::startMovePrompt() {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  if (directoryMode_.targetEntries().empty()) return false;
+  promptKind_ = PromptKind::MoveDestination;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
+// Ported from M_rm2 (^Xr) entering a confirmation prompt -- a
+// deliberately simplified stand-in for m_dest()'s T_rm branch (which
+// checks a single typed 'y' the same way), see class comment.
+bool Application::startRemovePrompt() {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  if (directoryMode_.targetEntries().empty()) return false;
+  promptKind_ = PromptKind::RemoveConfirm;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
   return true;
 }
 
@@ -528,6 +615,12 @@ bool Application::submitPrompt() {
       return executeProgram(text);
     case PromptKind::LocateQuery:
       return executeLocate(text);
+    case PromptKind::CopyDestination:
+      return executeCopy(text);
+    case PromptKind::MoveDestination:
+      return executeMove(text);
+    case PromptKind::RemoveConfirm:
+      return executeRemove(text);
     case PromptKind::None:
       return false;
   }
@@ -626,6 +719,48 @@ bool Application::executeLocate(const std::string &query) {
   return true;
 }
 
+// Ported from m_dest()'s T_cp/T_mv branches (destination validation
+// simplified away -- CpMvRmMode's own cp/mv invocation surfaces
+// failures via its ChildProcess::Result instead, see class comment).
+// Reloads the directory listing afterward either way, so the screen
+// reflects what actually happened on disk (this also clears marks,
+// via DirectoryMode::enterDirectory()'s own documented behavior).
+bool Application::executeCopy(const std::string &destination) {
+  std::vector<std::string> targets = collectTargetPaths();
+  if (targets.empty() || destination.empty()) {
+    directoryView_.redraw();
+    return false;
+  }
+  bool ok = cpMvRmMode_.copyTo(targets, destination).ok;
+  directoryMode_.enterDirectory(directoryMode_.currentDirectory());
+  return ok;
+}
+
+bool Application::executeMove(const std::string &destination) {
+  std::vector<std::string> targets = collectTargetPaths();
+  if (targets.empty() || destination.empty()) {
+    directoryView_.redraw();
+    return false;
+  }
+  bool ok = cpMvRmMode_.moveTo(targets, destination).ok;
+  directoryMode_.enterDirectory(directoryMode_.currentDirectory());
+  return ok;
+}
+
+// Ported from m_dest()'s T_rm branch: `confirmation` must be exactly
+// "y" (matching legacy's `*ap->mess != 'y'` check) or nothing is
+// removed.
+bool Application::executeRemove(const std::string &confirmation) {
+  std::vector<std::string> targets = collectTargetPaths();
+  if (targets.empty() || confirmation != "y") {
+    directoryView_.redraw();
+    return false;
+  }
+  bool ok = cpMvRmMode_.remove(targets).ok;
+  directoryMode_.enterDirectory(directoryMode_.currentDirectory());
+  return ok;
+}
+
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
 const std::string &Application::promptText() const { return promptEditor_.text(); }
 
@@ -639,5 +774,6 @@ ProgramMode &Application::programMode() { return programMode_; }
 LocateMode &Application::locateMode() { return locateMode_; }
 ArchiveMode &Application::archiveMode() { return archiveMode_; }
 Shell &Application::shell() { return shell_; }
+CpMvRmMode &Application::cpMvRmMode() { return cpMvRmMode_; }
 
 }  // namespace fm
