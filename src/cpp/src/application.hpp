@@ -372,6 +372,48 @@ enum class ApplicationMode {
 //     re-`ls` (do_edit() itself doesn't touch the listing buffer
 //     either, only the "next" viewing slot).
 //
+//   - handleResize() (terminal resize, T_winch in legacy) is the one
+//     piece of state Application reaches for that isn't reached via
+//     KeyInput/Command dispatch at all -- tracing menu.c's T_winch
+//     case shows legacy handles a resize completely differently
+//     depending on WHAT'S on screen: directory/list-buffer-backed
+//     modes (T_dir, is_list()/is_str()) just free the buffer to force
+//     a full re-list/re-fetch on next redraw (their content isn't
+//     width-wrapped paragraph text in the first place -- it's one
+//     line per ls/tar/grep/locate/du/history entry, so there's
+//     nothing to re-wrap), archive listings similarly regenerate via
+//     alloc_head(), and everything else (the free-text-viewing
+//     default case) goes through alloc_winch() -- reconstruct the
+//     raw bytes from the currently-loaded PP list, discard the old
+//     (wrong-width) line-wrapped buffer, and re-run the exact same
+//     wrap function used at initial load against the NEW width. This
+//     slice ports that same three-way split, using Display&
+//     (display_, a new member -- no other *Mode class needed direct
+//     Display access before this) to read the post-resize rows()/
+//     columns() back rather than trusting separately-passed
+//     parameters: EVERY owned ContentView's viewport is resized
+//     (matching the T_dir/is_list/archive "no content reflow needed,
+//     just refresh geometry" treatment -- correct for all of Directory/
+//     Grep/Cut/Locate/Archive/Du/ListBrowser, since none of their
+//     content is width-wrapped from a paragraph source), while File
+//     and Man mode (the two modes actually built on PipeBuffer's
+//     width-wrapping, matching legacy's alloc_winch() default case)
+//     get FileMode::reflow()/ManMode::reflow() called INSTEAD of --
+//     not in addition to -- the plain viewport resize, since reflow()
+//     already replaces their ContentView's lines outright. See their
+//     own class comments for why neither is a literal alloc_winch()
+//     port (re-reading the file / re-running `man` rather than
+//     reflowing from an in-memory raw-byte cache that doesn't exist
+//     in this port, and preserving the CURRENT session's cursor via a
+//     clamp rather than legacy's row-index-based set_rv() recompute).
+//     Shell's pty is resized unconditionally regardless of
+//     currentMode_ (Shell::onResize(), already fully built -- this
+//     slice's only Shell-related change is actually calling it): a
+//     real terminal resize is a property of the one physical terminal
+//     every mode shares, not just whichever mode happens to be
+//     visible, matching how a real terminal multiplexer resizes
+//     background panes too.
+//
 // Deliberately excluded (future work, not this slice):
 //   - The other 7 of m_list()'s 9 categories (T_hfile/T_hdir/T_hman/
 //     T_hlocate/T_hfgrep/T_hegrep/T_list -- the Configuration-seed-
@@ -477,6 +519,17 @@ enum class ApplicationMode {
 //   - File-jump (M_jump, ^X^X -- swap between the cursor position and
 //     the last ^Space-marked position): not part of the commands this
 //     slice maps.
+//   - Cut/CutContent's own content is NOT reflowed on resize, despite
+//     being derived from FileMode's width-wrapped lines at split()
+//     time (executeCut() feeds fileView_.lines() into CutMode::split()
+//     -- see its own comment): a live reflow would mean re-running
+//     that whole split against File mode's freshly-rewrapped content,
+//     which only makes sense while a CUT excursion is actually
+//     showing FILE mode underneath, and CutMode's own class comment
+//     already treats "what File mode looked like at split() time" as
+//     a one-shot snapshot, not a live view. Only the CutContent/Cut
+//     ContentViews' viewports resize; their line content stays
+//     wrapped at whatever width was active when split() last ran.
 //   - EDIT from any mode besides Directory/File (Grep/Cut/CutContent/
 //     Man/Locate/Archive/ArchiveContent/Du/ListBrowser/Shell): legacy's
 //     own refuse-list only blocks archive/cut/split viewing contexts
@@ -555,6 +608,25 @@ class Application {
   // reads this; nothing else changes when it flips.
   bool wantsExit() const;
 
+  // A terminal resize was detected (a real run loop's signal, after
+  // KeyInput::consumeResizeSignal() has already updated Display's own
+  // geometry -- this reads rows()/columns() back off `display`, not
+  // off separate parameters, so it can never see a stale size).
+  // Ported from menu.c's T_winch handling: resizes every owned
+  // ContentView's viewport and the prompt field to the new geometry,
+  // re-wraps File/Man mode's content at the new width if either is
+  // currently active (FileMode::reflow()/ManMode::reflow(), see their
+  // own comments -- Directory/Grep/Cut/Locate/Archive/Du/ListBrowser
+  // content isn't width-wrapped paragraph text the way File/Man's is,
+  // matching legacy's own T_dir/is_list/is_str non-reflow treatment,
+  // so their lines are left as-is beyond the viewport resize),
+  // propagates the new size to Shell's pty UNCONDITIONALLY (even if
+  // Shell isn't the visible mode right now -- a real terminal resize
+  // affects the one physical terminal every mode shares, matching how
+  // a real terminal multiplexer resizes background panes too), and
+  // redraws whatever's currently on screen.
+  void handleResize();
+
   ApplicationMode currentMode() const;
   DirectoryMode &directoryMode();
   FileMode &fileMode();
@@ -590,6 +662,7 @@ class Application {
   bool returnFromDu();
   bool returnFromListBrowser();
   ContentView &activeView();
+  void layoutViews();
   std::vector<std::string> collectTargetPaths() const;
   bool startListBrowser(RingCategory category);
 
@@ -619,6 +692,7 @@ class Application {
   bool executeDu(const std::string &path);
   bool executeEdit();
 
+  Display &display_;  // handleResize()'s own rows()/columns() lookup -- no other member currently needs this
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   History &history_;  // startListBrowser()'s own recentEntries() lookup -- no other member currently needs this
   ModeStack modeStack_;

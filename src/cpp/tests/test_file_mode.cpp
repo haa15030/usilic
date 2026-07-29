@@ -108,3 +108,52 @@ TEST_CASE_FIXTURE(Fixture, "saveCursorPosition before any loadFile is a safe no-
   fresh.saveCursorPosition();  // must not crash
   CHECK(history.positionFor(PositionCategory::File, "").has_value() == false);
 }
+
+TEST_CASE_FIXTURE(Fixture, "reflow: re-wraps the current file at the new width") {
+  std::string path = writeFile("long.txt", "abcdefghijklmno\n");
+  REQUIRE(mode.loadFile(path));
+  REQUIRE(view.lines().size() == 1);  // fits in 80 columns unwrapped
+
+  REQUIRE(mode.reflow(10));
+  REQUIRE(view.lines().size() == 2);
+  CHECK(view.lines()[0].text == "abcdefghij");
+  CHECK(view.lines()[1].text == "klmno");
+
+  REQUIRE(mode.reflow(80));
+  REQUIRE(view.lines().size() == 1);
+  CHECK(view.lines()[0].text == "abcdefghijklmno");
+}
+
+TEST_CASE_FIXTURE(Fixture, "reflow: preserves the CURRENT session cursor, not a History-saved one") {
+  std::string path = writeFile("multi.txt", "line1\nline2\nline3\nline4\n");
+  REQUIRE(mode.loadFile(path));
+  // A stale saved position elsewhere in History that reflow() must
+  // NOT jump to -- the whole point is preserving THIS session's
+  // in-progress scroll position across a resize, unlike loadFile().
+  History::CursorPosition stale;
+  stale.row = 0;
+  history.setPosition(PositionCategory::File, path, stale);
+
+  view.setCursorIndex(3);
+  REQUIRE(mode.reflow(80));
+  CHECK(view.cursorIndex() == 3);
+}
+
+TEST_CASE_FIXTURE(Fixture, "reflow: clamps the cursor if the new width produces fewer lines") {
+  std::string path = writeFile("wrap.txt", "abcdefghijklmno\n");
+  fm::ContentView narrowView{display};
+  History h2;
+  FileMode narrowMode{narrowView, h2, Charset::Encoding::Ascii, 10};
+  REQUIRE(narrowMode.loadFile(path));
+  REQUIRE(narrowView.lines().size() == 2);
+  narrowView.setCursorIndex(1);
+
+  REQUIRE(narrowMode.reflow(80));  // now fits on one line
+  REQUIRE(narrowView.lines().size() == 1);
+  CHECK(narrowView.cursorIndex() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "reflow: a no-op (false) when no file is currently loaded") {
+  FileMode fresh{view, history, Charset::Encoding::Ascii, 80};
+  CHECK_FALSE(fresh.reflow(40));
+}

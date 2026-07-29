@@ -1,6 +1,8 @@
 #pragma once
 
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "charset.hpp"
 #include "configuration.hpp"
@@ -41,7 +43,20 @@ class ManMode {
   const std::string &currentPage() const;
   void saveCursorPosition();
 
+  // Re-runs `man currentPage()` and re-wraps its output at newWidth,
+  // for a terminal resize. See FileMode::reflow()'s own comment for
+  // the shared design (not a literal alloc_winch() port, current-
+  // session cursor preserved via clamp rather than a History lookup)
+  // -- the one difference here is that, since there's no cached raw
+  // `man` output to reflow from, this genuinely re-invokes `man`
+  // itself rather than re-reading a file, a real (flagged) cost this
+  // doesn't try to hide. False (a no-op) if no page is currently
+  // loaded, or if re-running `man` fails.
+  bool reflow(int newWidth);
+
  private:
+  std::optional<std::vector<ContentView::Line>> runAndWrap(const std::string &name) const;
+
   ContentView &view_;
   History &history_;
   const Configuration &configuration_;

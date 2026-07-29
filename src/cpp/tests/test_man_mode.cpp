@@ -66,3 +66,28 @@ TEST_CASE_FIXTURE(Fixture, "saveCursorPosition/loadPage: cursor position round-t
   REQUIRE(reloaded.loadPage("ls"));
   CHECK(view.cursorIndex() == 1);
 }
+
+TEST_CASE_FIXTURE(Fixture, "reflow: a no-op (false) when no page is currently loaded") {
+  CHECK_FALSE(mode.reflow(40));
+}
+
+TEST_CASE_FIXTURE(Fixture, "reflow: re-wraps the current page at the new width, preserving the session cursor") {
+  if (!mode.loadPage("ls")) {
+    MESSAGE("man not installed or 'ls' has no man page here -- skipping");
+    return;
+  }
+  int wideLineCount = static_cast<int>(view.lines().size());
+  view.setCursorIndex(1);
+
+  // A stale saved position elsewhere in History that reflow() must
+  // NOT jump to -- same reasoning as FileMode::reflow()'s own test.
+  History::CursorPosition stale;
+  stale.row = 0;
+  history.setPosition(PositionCategory::ManPage, "ls", stale);
+
+  REQUIRE(mode.reflow(20));
+  CHECK(mode.currentPage() == "ls");
+  int narrowLineCount = static_cast<int>(view.lines().size());
+  CHECK(narrowLineCount >= wideLineCount);  // narrower width can only wrap into MORE lines, never fewer
+  CHECK(view.cursorIndex() == 1);           // preserved, not reset to the History-saved row (0) or top
+}

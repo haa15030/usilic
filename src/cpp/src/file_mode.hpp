@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "charset.hpp"
 #include "content_view.hpp"
@@ -74,7 +75,28 @@ class FileMode {
   // called from openSelected()/goBack() there).
   void saveCursorPosition();
 
+  // Re-reads the current file and re-wraps it at newWidth, for a
+  // terminal resize. Ported from alloc.c's alloc_winch() -- but NOT a
+  // literal port: alloc_winch() reflows from the ALREADY-LOADED PP
+  // list's own raw bytes, without touching the filesystem again; this
+  // simply re-invokes the same read-and-wrap path loadFile() already
+  // uses, at the new width, since there's no separate raw-bytes cache
+  // to reflow from otherwise (a real, flagged difference -- content
+  // that changed on disk between the initial load and this resize
+  // will be picked up too, unlike legacy's own strictly-in-memory
+  // reflow). Unlike loadFile(), does NOT consult History for a
+  // remembered position -- the whole point of a resize-triggered
+  // reflow is to preserve wherever the user's cursor already was in
+  // THIS session, not jump back to a stale saved position -- so the
+  // current cursor index is simply clamped to the new line count
+  // instead (legacy's own set_rv()-after-alloc_winch() amounts to the
+  // same row-index-based clamp in practice, not a semantic/identity-
+  // based anchor). False (a no-op) if no file is currently loaded.
+  bool reflow(int newWidth);
+
  private:
+  std::vector<ContentView::Line> readAndWrap(const std::string &path) const;
+
   ContentView &view_;
   History &history_;
   Charset::Encoding encoding_;

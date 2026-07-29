@@ -1377,3 +1377,65 @@ TEST_CASE_FIXTURE(Fixture, "EXEC: a suffix NOT configured as EXEC still opens no
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == path() + "plain.txt");
 }
+
+// -- handleResize() (SIGWINCH) --
+
+TEST_CASE_FIXTURE(Fixture, "handleResize: does nothing harmful from Directory mode with nothing loaded") {
+  REQUIRE(app.start(path()));
+  display.setSize(10, 40);
+  app.handleResize();  // must not crash
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleResize: reflows File mode's content at the new width") {
+  { std::ofstream(root / "longline.txt") << "abcdefghijklmnopqrstuvwxyz\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("longline.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  display.setSize(24, 10);  // much narrower than the 80-column width File mode was constructed with
+  app.handleResize();
+
+  bool sawWrappedLine = false;
+  for (int row = 0; row < display.rows(); row++)
+    if (display.rowText(row).substr(0, 10) == "abcdefghij") sawWrappedLine = true;
+  CHECK(sawWrappedLine);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleResize: does NOT reflow File mode's content while a different mode is active") {
+  { std::ofstream(root / "longline.txt") << "abcdefghijklmnopqrstuvwxyz\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("longline.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::Back));  // back to Directory -- File mode's own content is now inactive
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+
+  display.setSize(24, 10);
+  app.handleResize();  // must not crash even though File mode isn't active
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleResize: propagates the new size to Shell's pty, even while Shell isn't visible") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+  REQUIRE(app.handleCommand(Command::Back));  // Shell keeps running in the background
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+
+  display.setSize(10, 40);
+  app.handleResize();
+
+  // Switch back to Shell and confirm its command-line field really
+  // did move to the new bottom row (rows - 1) -- the same
+  // cursorRow()-based verification test_shell.cpp's own onResize()
+  // test uses, here confirming Application actually calls it.
+  REQUIRE(app.handleCommand(Command::StartShell));
+  for (char c : std::string("x")) app.feedShellByte(static_cast<unsigned char>(c), std::nullopt);
+  CHECK(display.cursorRow() == 9);
+}

@@ -18,7 +18,8 @@ constexpr int kCarriageReturn = 0x0d;  // ^M
 
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions)
-    : configuration_(configuration),
+    : display_(display),
+      configuration_(configuration),
       history_(history),
       directoryView_(display),
       fileView_(display),
@@ -51,12 +52,18 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       listBrowserMode_(listBrowserView_),
       editMode_(keyInput, configuration),
       execMode_(keyInput) {
-  // The bottom row is reserved for prompt text entry (search/cut/man/
-  // locate/du patterns) -- legacy's equivalent is the mode-line row
-  // disp_window() left alone for exactly this (see ContentView's own
-  // class comment on why that row's rendering isn't ContentView's job
-  // either).
-  int contentHeight = std::max(1, display.rows() - 1);
+  layoutViews();
+}
+
+// Shared by the constructor and handleResize(): sizes every owned
+// ContentView's viewport and the prompt field off display_'s CURRENT
+// geometry. The bottom row is reserved for prompt text entry (search/
+// cut/man/locate/du patterns) -- legacy's equivalent is the mode-line
+// row disp_window() left alone for exactly this (see ContentView's
+// own class comment on why that row's rendering isn't ContentView's
+// job either).
+void Application::layoutViews() {
+  int contentHeight = std::max(1, display_.rows() - 1);
   directoryView_.setViewport(0, contentHeight);
   fileView_.setViewport(0, contentHeight);
   grepView_.setViewport(0, contentHeight);
@@ -68,7 +75,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   archiveContentView_.setViewport(0, contentHeight);
   duView_.setViewport(0, contentHeight);
   listBrowserView_.setViewport(0, contentHeight);
-  promptEditor_.setField(display.rows() - 1, 0, std::max(1, display.columns()));
+  promptEditor_.setField(display_.rows() - 1, 0, std::max(1, display_.columns()));
 }
 
 bool Application::start(const std::string &directory) {
@@ -960,6 +967,20 @@ bool Application::executeEdit() {
   if (changed && currentMode_ == ApplicationMode::File) fileMode_.loadFile(path);
   activeView().redraw();
   return true;
+}
+
+// Ported from menu.c's T_winch handling -- see class comment for the
+// three-way split this preserves (plain viewport resize for Directory/
+// Grep/Cut/Locate/Archive/Du/ListBrowser, reflow() for File/Man,
+// Shell's pty resized unconditionally) and why File/Man's own
+// reflow() isn't a literal alloc_winch() port.
+void Application::handleResize() {
+  layoutViews();
+  if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns());
+  if (currentMode_ == ApplicationMode::Man) manMode_.reflow(display_.columns());
+  shell_.onResize(display_.rows(), display_.columns());
+  activeView().redraw();
+  if (promptActive()) promptEditor_.redraw();
 }
 
 bool Application::wantsExit() const { return wantsExit_; }

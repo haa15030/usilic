@@ -26,10 +26,13 @@
 //     backup dance for the RC file itself (only history gets that
 //     treatment here, matching what History's own class comment
 //     documents as its half of this "caller's job" split).
-//   - No SIGWINCH/live-resize handling: KeyInput::consumeResizeSignal()
-//     exists and updates Display's own geometry, but propagating a
-//     resize to every ContentView's viewport (and Shell's pty via
-//     onResize()) isn't wired here.
+//   - SIGWINCH/live-resize handling IS wired: KeyInput::
+//     consumeResizeSignal() updates Display's own geometry and
+//     returns true when it did, and this loop then calls
+//     Application::handleResize() (see its own comment for exactly
+//     which modes get a content reflow vs. just a viewport resize,
+//     and why Shell's pty is always resized regardless of which mode
+//     is currently visible).
 //   - ESC-leader bindings (SHELL's ^[s) ARE wired, via
 //     KeyInput::lastEscapeBytes() (added specifically to close this
 //     gap, see its own class comment): when readEscapeSequence()
@@ -177,7 +180,7 @@ int main(int argc, char **argv) {
     int ready = poll(fds, 2, 100);  // 100ms so SIGWINCH still gets noticed promptly even when both fds are idle
 
     if (ready <= 0) {
-      keyInput.consumeResizeSignal();  // updates Display's geometry; not yet propagated to ContentViews, see above
+      if (keyInput.consumeResizeSignal()) app.handleResize();  // updates Display's geometry, then reflows content
       continue;
     }
     if (watchShellPty && (fds[1].revents & POLLIN)) app.shell().onPtyReadable();
@@ -185,7 +188,7 @@ int main(int argc, char **argv) {
 
     int byte = keyInput.readByte();
     if (!byte) {
-      keyInput.consumeResizeSignal();
+      if (keyInput.consumeResizeSignal()) app.handleResize();
       continue;
     }
     if (byte == 0x1b) {
