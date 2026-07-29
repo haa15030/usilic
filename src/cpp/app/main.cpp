@@ -3,19 +3,29 @@
 // This is the first real run loop for the Application class this
 // whole port has been building toward: opens a real terminal
 // (TerminalDisplay::fromEnvironment()) and a real controlling-tty
-// KeyInput, constructs Application, and feeds it bytes until
+// KeyInput, loads ~/.usilic/usilicrc and ~/.usilic/history if
+// present, constructs Application, and feeds it bytes until
 // Application::wantsExit() (set by the M_exit ^X^C confirmation
-// flow) becomes true.
+// flow) becomes true, saving history back out on the way out.
 //
 // Deliberately minimal, not a literal port of tcb.c's main()/
 // init_menu()/menu():
-//   - No usilicrc loading, no ~/.tcb/history persistence: both
-//     Configuration::loadRcText() and History::loadHistoryText()
-//     take already-read text rather than doing file I/O themselves
-//     (by design, see their own class comments), and this first cut
-//     doesn't wire that reading up yet -- every session starts with
-//     compiled-in defaults and empty history. Flagged as follow-up
-//     work, not silently glossed over.
+//   - usilicrc/history loading IS wired (this is what closes the last
+//     of the three follow-ups this file's own history left open, see
+//     CLAUDE.md): Configuration::loadRcText() and
+//     History::loadHistoryText() take already-read text rather than
+//     doing file I/O themselves (by design, see their own class
+//     comments) -- this file does that reading, following
+//     set_tcbrc()/the S_hist path-building in legacy's str.c as
+//     closely as practical: both files live under $HOME/.usilic/ (the
+//     directory is created if missing), named usilicrc and history.
+//     Two things legacy did that this doesn't: falling back to a
+//     compiled-in system-wide LIB path when $HOME/.usilic/usilicrc
+//     doesn't exist (this port has no installed-package LIB
+//     convention yet to fall back to), and the `.old`-then-overwrite
+//     backup dance for the RC file itself (only history gets that
+//     treatment here, matching what History's own class comment
+//     documents as its half of this "caller's job" split).
 //   - No SIGWINCH/live-resize handling: KeyInput::consumeResizeSignal()
 //     exists and updates Display's own geometry, but propagating a
 //     resize to every ContentView's viewport (and Shell's pty via
@@ -58,9 +68,13 @@
 //     poll()ing that exact fd is unreliable on Darwin.
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
+#include <fstream>
 #include <iostream>
 #include <poll.h>
+#include <sstream>
 #include <string>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "application.hpp"
@@ -68,6 +82,27 @@
 #include "history.hpp"
 #include "key_input.hpp"
 #include "terminal_display.hpp"
+
+namespace {
+
+std::string readFileIfExists(const std::string &path) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) return {};
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  return ss.str();
+}
+
+// Ported from sub.c's save_time(): a plain asctime()-style timestamp
+// with the trailing newline asctime() always appends stripped off.
+std::string currentTimestampText() {
+  std::time_t t = std::time(nullptr);
+  std::string text = std::asctime(std::localtime(&t));
+  if (!text.empty() && text.back() == '\n') text.pop_back();
+  return text;
+}
+
+}  // namespace
 
 int main(int argc, char **argv) {
   std::unique_ptr<fm::TerminalDisplay> display = fm::TerminalDisplay::fromEnvironment();
@@ -77,14 +112,49 @@ int main(int argc, char **argv) {
   keyInput.open("/dev/tty");
   keyInput.installSignalHandlers();
 
+  // Ported from str.c's set_tcbrc()/S_hist path-building: both files
+  // live under $HOME/.usilic/, created if it doesn't exist yet (same
+  // directory legacy's own history file lived under after the
+  // tcb->usilic rename, see CLAUDE.md).
+  const char *homeEnv = std::getenv("HOME");
+  std::string usilicDir = (homeEnv ? std::string(homeEnv) : std::string()) + "/.usilic/";
+  ::mkdir(usilicDir.c_str(), S_IRWXU);  // ignored if it already exists; real failures surface later as I/O errors
+
   fm::History history;
   fm::Configuration configuration;
+
+  // Ported from init_config()'s env_charset()/getenv(ENV_CHARSET)
+  // check -- explicitly distinguishing "unset" from "set to an empty
+  // string" is why this isn't just `getenv(...) ?: ""`, see
+  // Configuration's own class comment on CLAUDE.md history item 13.
+  const char *charsetEnv = std::getenv("USILICCHARSET");
+  configuration.setEnvironmentCharset(charsetEnv ? std::optional<std::string>(charsetEnv) : std::nullopt);
+
+  std::string rcText = readFileIfExists(usilicDir + "usilicrc");
+  if (!rcText.empty()) configuration.loadRcText(rcText, /*fileManagerMode=*/true);
+
+  std::string historyText = readFileIfExists(usilicDir + "history");
+  if (!historyText.empty()) {
+    history.loadHistoryText(historyText, configuration.charsetExplicitlySet());
+    if (!history.isComplete()) {
+      // Ported from load_list()'s own `.old` fallback: the primary
+      // file looked truncated/corrupt (missing EOF sentinel).
+      std::string oldText = readFileIfExists(usilicDir + "history.old");
+      if (!oldText.empty()) history.loadHistoryText(oldText, configuration.charsetExplicitlySet());
+    }
+  }
+
+  // History's own saved charset already defers to the environment
+  // when charsetExplicitlySet() is true (loadHistoryText() leaves
+  // savedCharset() nullopt in that case) -- see History's own class
+  // comment. Configuration::defaultCharset() itself already folds in
+  // the environment/rc value, or the compiled-in Utf8 default.
+  fm::Charset::Encoding encoding = history.savedCharset().value_or(configuration.defaultCharset());
 
   fm::ShellOptions shellOptions;
   if (const char *shellEnv = std::getenv("SHELL"); shellEnv && *shellEnv) shellOptions.argv = {shellEnv};
 
-  fm::Application app(*display, keyInput, history, configuration, fm::Charset::Encoding::Utf8, display->columns(),
-                       shellOptions);
+  fm::Application app(*display, keyInput, history, configuration, encoding, display->columns(), shellOptions);
 
   display->open();
 
@@ -139,5 +209,15 @@ int main(int argc, char **argv) {
 
   display->close();
   keyInput.close();
+
+  // Ported from save_history()'s own `.old`-then-overwrite dance:
+  // back up the previous file before writing the new one.
+  history.setSavedCharset(encoding);  // so a future session with no explicit override resumes in this one's charset
+  std::string historyPath = usilicDir + "history";
+  std::string historyOldPath = usilicDir + "history.old";
+  if (!readFileIfExists(historyPath).empty()) std::rename(historyPath.c_str(), historyOldPath.c_str());
+  std::ofstream out(historyPath, std::ios::binary);
+  out << history.serialize("usilic", currentTimestampText());
+
   return 0;
 }

@@ -2743,6 +2743,66 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      `/dev/tty`の`poll()`に問題が無かったため、この検証は主に
      「pty多重化ループ自体の正しさ」の確認という位置付け)。
 
+54. **2026-07-29: `app/main.cpp`にusilicrc/history読み込み・保存を配線
+    (「その順序で」の3番目、最後の項目)**
+   - SHELLのKeyInputギャップ解消に続き、提案していた3項目の最後
+     「usilicrc読み込みの配線」に着手。`Configuration::loadRcText()`
+     /`History::loadHistoryText()`はいずれも「no hidden global state」
+     方針により実際のファイルI/Oを行わない設計(呼び出し元が読んだ
+     テキストを渡す)だったため、そのファイルI/O自体をこのタイミングで
+     `app/main.cpp`に実装した。
+   - legacy `str.c`の`set_tcbrc()`/`S_hist`パス構築ロジックを踏襲し、
+     `usilicrc`・`history`とも`$HOME/.usilic/`配下に統一(ディレクトリが
+     無ければ`mkdir`)。環境変数は`src/progname.h`で改名済みの
+     `USILICCHARSET`を使用。`getenv()`の結果を`std::optional`で
+     `Configuration::setEnvironmentCharset()`へ渡し、「未設定」と
+     「空文字列で明示export」を区別する項目13の教訓を踏襲した。
+   - 起動時: `usilicrc`があれば`loadRcText(text, true)`、`history`が
+     あれば`loadHistoryText(text, configuration.charsetExplicitlySet())`。
+     `history.isComplete()`が偽(EOFセンチネル欠落=壊れている)なら
+     `history.old`へフォールバック(legacyの`load_list()`と同じ二段構え)。
+     最終的な文字コードは
+     `history.savedCharset().value_or(configuration.defaultCharset())`
+     で決定 ― `History`側が「環境変数で明示上書きされていた場合は
+     `savedCharset()`をnulloptのままにする」設計を既に内包しているため、
+     この一行だけで「明示指定 > 前回セッションの保存値 > コンパイル時
+     デフォルト(UTF-8)」という優先順位が正しく成立する。
+   - 終了時: `history.setSavedCharset(encoding)`してから
+     `history.serialize("usilic", <asctime()相当のタイムスタンプ>)`を
+     生成し、既存の`history`を`history.old`へ`rename()`でバックアップ
+     してから新しい内容を書き込む(legacyの`.old`ローテーションと同じ)。
+   - **意図的に省略した範囲**: legacyの`set_tcbrc()`が持っていた
+     「`$HOME/.usilic/usilicrc`が無い/LIB版より古い場合、コンパイル時
+     組み込みのLIBパス(`$LIB/usilicrc`)へフォールバックする」という
+     システム全体向けの設定ファイル機構は、C++移植側にまだ
+     インストール済みパッケージ用のLIBパス規約自体が存在しないため
+     移植していない(ホームディレクトリのファイルが無ければ単に
+     コンパイル時デフォルトのまま起動する)。またRCファイル自体には
+     `.old`バックアップローテーションを適用していない(historyだけの
+     扱いで、`History`クラス自身のコメントが「バックアップは呼び出し元
+     の仕事」と明記している範囲に合わせた)。
+   - **検証**: PTYスモークテスト(Python `pty.fork()`、隔離した`HOME`)
+     で、(1)`usilicrc`を配置した状態での起動→`^X^C`+`y`+Enterでの
+     終了確認フロー実行→`~/.usilic/history`が生成され、想定通りの
+     ヘッダ("# ~/.usilic/history: usilic"等)を含むシリアライズ内容に
+     なっていることを確認。(2)同じ`HOME`で2回目を起動→終了すると
+     `~/.usilic/history.old`が正しく生成される(ローテーション動作)
+     ことを確認。Mac・Ubuntu 26.04(Docker)双方で同一の検証を実施し、
+     いずれも同じ結果(bit単位ではなくフォーマット単位で同一の
+     シリアライズ構造)を確認した。既存の全355件(新規0件追加、
+     `main.cpp`はdoctestの対象外のためテストケース数に変化なし)は
+     Mac/Ubuntu双方でパス。
+   - **デバッグ時の副産物(実装バグではなく判明した事実)**: 検証用
+     Pythonスクリプトの初期実装で、子プロセスへの`SIGKILL`後に
+     ブロッキングな`os.waitpid(pid, 0)`を呼ぶと、対象プロセスが
+     `ps`上は既にzombie化しているにもかかわらず`waitpid()`呼び出し
+     自体がこのサンドボックス化されたシェル環境下で恒常的にハング
+     する現象に遭遇した(実際にusilic側が固まっていたわけではないと、
+     `select()`ベースの非ブロッキング読み取りに書き換えたテスト
+     スクリプトで確認)。usilic本体・C++コード側の問題ではなく、
+     テストハーネス側(このセッションのBashツールのサンドボックス
+     環境固有の挙動と見られる)の制約として記録するのみに留める。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
