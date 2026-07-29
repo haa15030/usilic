@@ -32,7 +32,8 @@
 //     Application::handleResize() (see its own comment for exactly
 //     which modes get a content reflow vs. just a viewport resize,
 //     and why Shell's pty is always resized regardless of which mode
-//     is currently visible).
+//     is currently visible). Only meaningful in the terminal phase --
+//     see the GUI-mode section below for why.
 //   - HELP (^J^H) IS wired: USILICHELP names the ASCII/English help
 //     file's path (no installed-package LIB-path convention exists
 //     yet, same gap usilicrc/history's own LIB fallback has -- see
@@ -76,6 +77,51 @@
 //     polling stdin is a correct, portable stand-in. KeyInput::fd()
 //     itself is unaffected and still reads correctly either way; only
 //     poll()ing that exact fd is unreliable on Darwin.
+//   - GUI mode (^Og, docs/ideas/IDEAS.md) IS wired, as a genuinely
+//     separate SECOND run loop (runGuiPhase()) rather than folded into
+//     the terminal loop above -- see Application's own class comment
+//     for why ^Og/handleMouseClick() are deliberately backend-agnostic
+//     there. This file is where the two concrete backends actually
+//     meet:
+//       - `display` (the Application-facing Display&) is a
+//         DelegatingDisplay wrapping `terminalDisplay` initially;
+//         Application/KeyInput/every *Mode/ContentView/LineEditor are
+//         all constructed ONCE against `display` and never rebuilt --
+//         see DelegatingDisplay's own class comment for why toggling
+//         GUI mode is just one setBackend() call, not a teardown/
+//         rebuild of the whole Application object.
+//       - Entering GUI mode: resolves a monospace font path
+//         (USILICFONT, or a short list of common system font paths --
+//         same "env var override, then a best-effort guess, then
+//         simply unavailable" shape USILICHELP already uses) and
+//         constructs a GraphicalDisplay sized to match the terminal's
+//         CURRENT rows/columns (so switching is visually seamless --
+//         the content doesn't reflow just from toggling). If either
+//         step fails (no font found, or GraphicalDisplay::create()
+//         itself fails -- e.g. no real display server available, the
+//         common case when running headless/over SSH/in CI), the
+//         toggle is simply refused and the terminal loop continues
+//         uninterrupted -- never a hard failure.
+//       - The GUI loop polls GraphicalDisplay::pumpEvents() (which
+//         internally does SDL's own event pump -- kept entirely
+//         inside that class, this file never touches SDL directly)
+//         instead of stdin, translating queued mouse clicks into
+//         Application::handleMouseClick() and queued key events into
+//         Application::feedByte() calls (GraphicalDisplay::KeyEvent's
+//         own `special` field reuses Display::Key -- translated to
+//         KeyInput::SpecialKey here, the one place both enums are in
+//         scope, see GraphicalDisplay's own class comment on why it
+//         doesn't depend on KeyInput itself to do this translation).
+//         Shell's pty is still drained the same way as the terminal
+//         loop, via a second, non-blocking poll() alongside the SDL
+//         event pump, so a live Shell session keeps working
+//         seamlessly across the switch too.
+//       - Leaving GUI mode (^Og again, or the window's own close
+//         button -- pumpEvents() returning false): the DelegatingDisplay
+//         is pointed back at terminalDisplay and the GraphicalDisplay
+//         instance is destroyed outright (closing the real window) --
+//         re-entering GUI mode later constructs a fresh one rather
+//         than trying to hide/reshow an existing window.
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -89,6 +135,8 @@
 
 #include "application.hpp"
 #include "configuration.hpp"
+#include "delegating_display.hpp"
+#include "graphical_display.hpp"
 #include "history.hpp"
 #include "key_input.hpp"
 #include "terminal_display.hpp"
@@ -112,13 +160,129 @@ std::string currentTimestampText() {
   return text;
 }
 
+// USILICFONT, or a short best-effort list of common monospace system
+// font paths (Mac, then common Linux distros) -- see file comment on
+// why this mirrors USILICHELP's own resolution shape. Empty if none
+// found, meaning GUI mode simply stays unavailable.
+std::string resolveGuiFontPath() {
+  if (const char *env = std::getenv("USILICFONT")) return env;
+  static const char *const candidates[] = {
+      "/System/Library/Fonts/Menlo.ttc",
+      "/System/Library/Fonts/Monaco.ttf",
+      "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+      "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
+  };
+  for (const char *path : candidates) {
+    std::ifstream probe(path, std::ios::binary);
+    if (probe.good()) return path;
+  }
+  return {};
+}
+
+std::optional<fm::KeyInput::SpecialKey> translateDisplayKey(fm::Display::Key key) {
+  switch (key) {
+    case fm::Display::Key::Up:
+      return fm::KeyInput::SpecialKey::Up;
+    case fm::Display::Key::Down:
+      return fm::KeyInput::SpecialKey::Down;
+    case fm::Display::Key::Left:
+      return fm::KeyInput::SpecialKey::Left;
+    case fm::Display::Key::Right:
+      return fm::KeyInput::SpecialKey::Right;
+    case fm::Display::Key::PageUp:
+      return fm::KeyInput::SpecialKey::PageUp;
+    case fm::Display::Key::PageDown:
+      return fm::KeyInput::SpecialKey::PageDown;
+  }
+  return std::nullopt;
+}
+
+// Runs until wantsExit() or a GUI-mode toggle is requested. Returns
+// true if it should be followed by a GUI phase (false means the whole
+// program is exiting).
+bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput) {
+  while (!app.wantsExit()) {
+    if (app.consumeGuiModeToggleRequest()) return true;
+    bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
+
+    struct pollfd fds[2];
+    fds[0].fd = STDIN_FILENO;  // see file comment on why this, not keyInput.fd(), is polled
+    fds[0].events = POLLIN;
+    fds[1].fd = watchShellPty ? app.shell().ptyFd() : -1;  // negative fd: poll() ignores this slot
+    fds[1].events = POLLIN;
+    int ready = poll(fds, 2, 100);  // 100ms so SIGWINCH/GUI-toggle still get noticed promptly when idle
+
+    if (ready <= 0) {
+      if (keyInput.consumeResizeSignal()) app.handleResize();  // updates Display's geometry, then reflows content
+      continue;
+    }
+    if (watchShellPty && (fds[1].revents & POLLIN)) app.shell().onPtyReadable();
+    if (!(fds[0].revents & POLLIN)) continue;
+
+    int byte = keyInput.readByte();
+    if (!byte) {
+      if (keyInput.consumeResizeSignal()) app.handleResize();
+      continue;
+    }
+    if (byte == 0x1b) {
+      auto special = keyInput.readEscapeSequence();
+      if (special) {
+        app.feedByte(0, special);
+        continue;
+      }
+      // Not one of Display's known terminal sequences -- hand ESC,
+      // then whatever byte(s) actually followed it, to Application's
+      // own ESC-leader state machine (e.g. ^[s for SHELL, ^Og for
+      // GUI mode is a PLAIN ^O, not ESC-prefixed, so it never reaches
+      // here at all). See KeyInput::lastEscapeBytes()'s own comment
+      // for the one remaining inherited quirk (a fast-typed subsequent
+      // keystroke can occasionally ride along as a second byte here).
+      app.feedByte(0x1b, std::nullopt);
+      for (unsigned char c : keyInput.lastEscapeBytes()) app.feedByte(c, std::nullopt);
+      continue;
+    }
+    app.feedByte(byte, std::nullopt);
+  }
+  return false;
+}
+
+// Runs until wantsExit(), the GUI window is closed, or ^Og toggles
+// back to terminal mode. See file comment for the overall shape.
+void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
+  while (!app.wantsExit()) {
+    if (!gui.pumpEvents()) return;  // the window's own close button was clicked
+
+    while (auto click = gui.consumeMouseClick()) {
+      if (!click->rightButton) app.handleMouseClick(click->row, click->column);
+      // right-click: captured but not acted on yet, see class comments
+    }
+    while (auto key = gui.consumeKeyEvent()) {
+      if (key->special) {
+        app.feedByte(0, translateDisplayKey(*key->special));
+      } else {
+        app.feedByte(key->byte, std::nullopt);
+      }
+      if (app.consumeGuiModeToggleRequest()) return;
+    }
+
+    bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
+    if (watchShellPty) {
+      struct pollfd fd{app.shell().ptyFd(), POLLIN, 0};
+      if (poll(&fd, 1, 0) > 0 && (fd.revents & POLLIN)) app.shell().onPtyReadable();
+    }
+
+    usleep(16000);  // ~60Hz pacing -- see file comment on why this loop can't share the terminal loop's poll()
+  }
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
-  std::unique_ptr<fm::TerminalDisplay> display = fm::TerminalDisplay::fromEnvironment();
-  display->setOutputEnabled(true);  // fromEnvironment() leaves this off by default -- see its own class comment
+  std::unique_ptr<fm::TerminalDisplay> terminalDisplay = fm::TerminalDisplay::fromEnvironment();
+  terminalDisplay->setOutputEnabled(true);  // fromEnvironment() leaves this off by default -- see its own comment
+  fm::DelegatingDisplay display(*terminalDisplay);  // see file comment's own GUI-mode section
 
-  fm::KeyInput keyInput(*display);
+  fm::KeyInput keyInput(*terminalDisplay);
   keyInput.open("/dev/tty");
   keyInput.installSignalHandlers();
 
@@ -164,7 +328,7 @@ int main(int argc, char **argv) {
   fm::ShellOptions shellOptions;
   if (const char *shellEnv = std::getenv("SHELL"); shellEnv && *shellEnv) shellOptions.argv = {shellEnv};
 
-  fm::Application app(*display, keyInput, history, configuration, encoding, display->columns(), shellOptions);
+  fm::Application app(display, keyInput, history, configuration, encoding, display.columns(), shellOptions);
 
   // Ported from str.c's set_help(): English (HELP) vs a genuine
   // Japanese translation (HELP.jp), chosen by charset the same way
@@ -188,58 +352,37 @@ int main(int argc, char **argv) {
     }
   }
 
-  display->open();
+  display.open();
 
   std::string startDirectory = (argc > 1) ? argv[1] : ".";
   if (!app.start(startDirectory)) {
-    display->close();
+    display.close();
     keyInput.close();
     std::cerr << "usilic: cannot list " << startDirectory << "\n";
     return 1;
   }
 
   while (!app.wantsExit()) {
-    bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
+    if (!runTerminalPhase(app, keyInput)) break;
+    if (app.wantsExit()) break;
 
-    struct pollfd fds[2];
-    fds[0].fd = STDIN_FILENO;  // see file comment on why this, not keyInput.fd(), is polled
-    fds[0].events = POLLIN;
-    fds[1].fd = watchShellPty ? app.shell().ptyFd() : -1;  // negative fd: poll() ignores this slot
-    fds[1].events = POLLIN;
-    int ready = poll(fds, 2, 100);  // 100ms so SIGWINCH still gets noticed promptly even when both fds are idle
+    std::string fontPath = resolveGuiFontPath();
+    std::unique_ptr<fm::GraphicalDisplay> gui =
+        fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath);
+    if (!gui) continue;  // no usable font, or window/renderer creation failed -- stay in terminal mode
 
-    if (ready <= 0) {
-      if (keyInput.consumeResizeSignal()) app.handleResize();  // updates Display's geometry, then reflows content
-      continue;
-    }
-    if (watchShellPty && (fds[1].revents & POLLIN)) app.shell().onPtyReadable();
-    if (!(fds[0].revents & POLLIN)) continue;
+    gui->open();
+    display.setBackend(*gui);
+    app.handleResize();  // re-layout/redraw against the (same-sized, but now GUI-rendered) geometry
 
-    int byte = keyInput.readByte();
-    if (!byte) {
-      if (keyInput.consumeResizeSignal()) app.handleResize();
-      continue;
-    }
-    if (byte == 0x1b) {
-      auto special = keyInput.readEscapeSequence();
-      if (special) {
-        app.feedByte(0, special);
-        continue;
-      }
-      // Not one of Display's known terminal sequences -- hand ESC,
-      // then whatever byte(s) actually followed it, to Application's
-      // own ESC-leader state machine (e.g. ^[s for SHELL). See
-      // KeyInput::lastEscapeBytes()'s own comment for the one
-      // remaining inherited quirk (a fast-typed subsequent keystroke
-      // can occasionally ride along as a second byte here).
-      app.feedByte(0x1b, std::nullopt);
-      for (unsigned char c : keyInput.lastEscapeBytes()) app.feedByte(c, std::nullopt);
-      continue;
-    }
-    app.feedByte(byte, std::nullopt);
+    runGuiPhase(app, *gui);
+
+    display.setBackend(*terminalDisplay);
+    gui.reset();  // closes the real window
+    if (!app.wantsExit()) app.handleResize();  // redraw the terminal, which SDL's window never touched
   }
 
-  display->close();
+  display.close();
   keyInput.close();
 
   // Ported from save_history()'s own `.old`-then-overwrite dance:

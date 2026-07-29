@@ -3131,6 +3131,79 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      実際に`^X(`→`jj`→`^X)`で記録し、カーソルを戻してから`^Xe`で
      再生すると同じファイルへ正しく再選択されることを確認した。
 
+60. **2026-07-29: GUI対応(IDEAS.md)の第1次スライスに着手 ―
+    `GraphicalDisplay`(SDL2)+`DelegatingDisplay`+`^Og`セッション途中
+    切り替え+マウス左クリック選択/オープン**
+   - 「①未配線分の消化」完了後、②IDEAS.mdの追加要望のうち、ユーザーが
+     「使い勝手を確認したい」との理由でGUI対応を最優先で指定。調査の
+     結果、実装規模が非常に大きい(新規レンダリングバックエンド+
+     新規入力経路+`Display`実行時差し替えアーキテクチャ)と判明したため、
+     ユーザーと2回相談の上、範囲を段階的に絞った:
+     (1) 慣性スクロール物理挙動とマウス右クリックメニューは別段階に
+     切り出す、(2) 起動方法は当初「独立起動モードのみ」を提案したが、
+     ユーザーが「最初から^Ogでのセッション途中切り替えも実装」を希望
+     したため、この回でその通り実装した。
+   - **`GraphicalDisplay`(新規、`Display`インターフェースを実装)**:
+     SDL2+SDL2_ttf。文字セルグリッドを内部に保持し、`write()`/
+     `putChar()`で受け取ったUTF-8バイト列を既存の`fm::Utf8::
+     sequence_length()`/`display_width()`(項目16でC++移植済み)で
+     デコードし、1グリフ単位でセルへコミットする設計(`TerminalDisplay`
+     は生バイトを実端末へそのまま渡してUTF-8デコードを端末自身に
+     任せているが、`GraphicalDisplay`はピクセル描画を自前で行うため
+     自前でUTF-8デコードが必要、という違いを踏まえた設計判断)。
+     太字/下線は`TTF_SetFontStyle()`のスタイルフラグで同一フォント
+     ファイルのまま切り替え(別ファイルの太字フォントを別途ロード
+     する必要が無い)、反転(standout)はfg/bg入れ替えで実装。
+     マウスクリック・キー入力はSDL独自イベントキューから
+     `pumpEvents()`で吸い出し、`consumeMouseClick()`/
+     `consumeKeyEvent()`で1件ずつ取り出す設計にした
+     (`KeyEvent`は`KeyInput::SpecialKey`ではなく`Display::Key`を
+     再利用し、`KeyInput`への依存を意図的に持たせなかった ―
+     `Display`が`KeyInput`に依存しないという既存の依存関係境界を
+     踏襲。実際の`KeyInput::SpecialKey`への変換はmain.cppが担う)。
+   - **`DelegatingDisplay`(新規)**: `Display`を実装し、全メソッドを
+     現在アクティブな実体(`TerminalDisplay`または`GraphicalDisplay`)へ
+     転送するだけのプロキシ。`Application`・全`*Mode`・`ContentView`・
+     `LineEditor`は起動時にこの1つのインスタンスに対してのみ構築され、
+     `^Og`での切り替えは`setBackend()`の呼び出し1回で済む(仮に
+     Application自体を都度再構築する設計にしていたら、ディレクトリ
+     一覧・開いているファイルのカーソル位置・稼働中のSHELLセッション
+     等、保持中の状態をすべて手作業で引き継ぐ必要があった)。
+   - **`Application`側の新規追加**: `ContentView::lineIndexAtRow()`
+     (画面上の行番号から対応する行インデックスへの逆引き、マウス
+     クリック処理のために新設)、`^Og`(新規リーダー、legacyのKEY表で
+     `F-3`=`^O`だったものを流用、具体的なキーはユーザー自身も失念して
+     いたため暫定バインドとして合意)による`Command::ToggleGuiMode`
+     (`consumeGuiModeToggleRequest()`という`wantsExit()`と同型の
+     フラグ経由でmain.cppへ伝える、Applicationは`GraphicalDisplay`
+     の存在を一切知らない設計)、`handleMouseClick(row, column)`
+     (IDEAS.mdの「ハイライト中のファイルを左クリックで内容表示」を
+     一般的なファイルマネージャ流に解釈: 別の行のクリックは選択のみ、
+     既に選択中の行への再クリックでオープン、Directoryモード限定)。
+   - **main.cppの二重ループ化**: 従来の単一`poll()`ループを
+     `runTerminalPhase()`/`runGuiPhase()`の2つに分割し、外側のループが
+     `consumeGuiModeToggleRequest()`の結果に応じて交互に呼び出す形に
+     再構成。GUIループはSDLの都合上`poll()`を共有できないため
+     `usleep(16000)`(約60Hz)でのポーリングに変更、SHELLのptyは
+     GUIループ内でも別途`poll()`して従来通りドレインする。フォント
+     パスは`USILICFONT`環境変数(未設定時はMac/Linuxの一般的な
+     等幅フォントパスを順に試す)、`USILICHELP`と同じ「環境変数→
+     ベストエフォートの候補探索→見つからなければ単に機能を無効化」
+     という形にした。
+   - **検証**: `ContentView::lineIndexAtRow()`新規3件、
+     `DelegatingDisplay`新規3件、`Application`側(^Og解決・マウス
+     クリックでの選択/オープン・範囲外での失敗)新規4件、既存393件+
+     新規10件=404件全件、Mac/Ubuntu 26.04(Docker、`libsdl2-dev`/
+     `libsdl2-ttf-dev`追加インストール)双方でビルド・パス確認
+     (Ubuntu側はDockerに実ディスプレイが無いためコンパイル確認のみ、
+     GUI実行自体は未検証)。Mac実機でのPTYスモークテストで、
+     (1)端末モードでの通常操作(一覧表示・ファイルを開く・終了)に
+     回帰が無いこと、(2)`^Og`を押してもクラッシュせず、SDL2ウィンドウ
+     生成後もプロセスが継続して動作し続けることを確認。ただし実際の
+     見た目・マウス操作の使い勝手そのものは自動化テストでは検証
+     できないため、ユーザー自身による実機確認が必要(詳細は
+     IDEAS.mdの追記を参照)。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

@@ -61,7 +61,8 @@ enum class Command {
   StartHelp,
   StartMacroRecord,
   StopMacroRecord,
-  PlayMacro
+  PlayMacro,
+  ToggleGuiMode
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -465,6 +466,45 @@ enum class ApplicationMode {
 //     set_km()'s own M_mm "endless loop" self-appending quirk (a
 //     macro-calls-itself auto-repeat feature the legacy comment itself
 //     flags as unusual), which this port doesn't support.
+//   - GUI mode (docs/ideas/IDEAS.md's "cat's-paw" hidden mode, not
+//     part of legacy tcb at all -- an entirely new feature request)
+//     has exactly two pieces of surface here, both DELIBERATELY kept
+//     ignorant of SDL2/GraphicalDisplay specifics -- that whole
+//     concrete-backend question belongs to a real run loop (app/
+//     main.cpp), the same boundary this class already draws around
+//     TerminalDisplay:
+//       1. ^Og (a NEW leader, ^O -- F-3 in legacy's own KEY table,
+//          unused by this port until now) toggles GUI mode.
+//          ToggleGuiMode doesn't touch currentMode_/any *Mode at all;
+//          it just raises a flag (guiModeToggleRequested_) a run loop
+//          polls via consumeGuiModeToggleRequest() (same "flag, not a
+//          direct callback" shape as wantsExit()) and decides what
+//          "toggle" actually means (which concrete Display backend is
+//          active, whether a GraphicalDisplay/window already exists,
+//          swapping the run loop's own input source between real tty
+//          bytes and translated SDL events) entirely on its own.
+//          Tentative binding, confirmed with the user as a placeholder
+//          to revise once actually tried (IDEAS.md itself didn't
+//          remember the real key).
+//       2. handleMouseClick(row, column) -- IDEAS.md's own description
+//          ("click the already-highlighted file to view it") read
+//          together with ordinary file-manager convention: a click on
+//          a DIFFERENT row just selects it (moves the cursor there,
+//          matching keyboard Up/Down); a click on the ALREADY-selected
+//          row opens it (same as Enter). Directory-mode-only in this
+//          slice, matching IDEAS.md's own example scenario (the ls
+//          file-selector screen) -- File/Man/other content views
+//          could reasonably want click-to-scroll-there too, deferred.
+//          Row/column are DISPLAY coordinates (ContentView::
+//          lineIndexAtRow()'s own coordinate space, the same one
+//          moveCursor() uses) -- translating an actual pixel click
+//          into a row/column cell is GraphicalDisplay's job, not
+//          Application's. Right-click (a PROGRAM-list context menu,
+//          per IDEAS.md) and the inertial "cat's paw" drag physics
+//          itself are BOTH explicitly out of scope for this first
+//          slice (confirmed with the user) -- this wires plain click-
+//          to-select/open only, so the rendering/interaction FEEL can
+//          be evaluated before building the fancier parts on top.
 //   - handleResize() (terminal resize, T_winch in legacy) is the one
 //     piece of state Application reaches for that isn't reached via
 //     KeyInput/Command dispatch at all -- tracing menu.c's T_winch
@@ -730,6 +770,20 @@ class Application {
   // reads this; nothing else changes when it flips.
   bool wantsExit() const;
 
+  // True if ^Og was pressed since the last call (consumes the flag,
+  // same shape as KeyInput::consumeResizeSignal()) -- a run loop's
+  // signal to toggle GUI mode. See class comment's own GUI-mode
+  // section for why Application knows nothing about what "toggle"
+  // actually does.
+  bool consumeGuiModeToggleRequest();
+
+  // A mouse click at DISPLAY row/column (see class comment's own GUI-
+  // mode section for this coordinate space and current Directory-
+  // mode-only scope). Selects the entry at that row, or -- if it was
+  // already the selected one -- opens it (same as Enter). False if
+  // outside Directory mode or the click landed outside any real row.
+  bool handleMouseClick(int row, int column);
+
   // A terminal resize was detected (a real run loop's signal, after
   // KeyInput::consumeResizeSignal() has already updated Display's own
   // geometry -- this reads rows()/columns() back off `display`, not
@@ -901,7 +955,9 @@ class Application {
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
   bool escPending_ = false;      // saw ESC (0x1b), waiting for the byte that completes ^[s -- see class comment
   bool leaderXPending_ = false;  // saw ^X, waiting for the byte that completes ^Xc/^Xm/^Xr/^X^C (exit shares ^X too)
+  bool leaderOPending_ = false;  // saw ^O, waiting for the byte that completes ^Og
   bool wantsExit_ = false;
+  bool guiModeToggleRequested_ = false;
 
   enum class PromptKind {
     None,

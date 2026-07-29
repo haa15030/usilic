@@ -38,6 +38,36 @@ TEST_CASE("redraw: rows past the end of the list are left blank") {
   CHECK(d.rowText(4)[0] == ' ');
 }
 
+TEST_CASE("lineIndexAtRow: maps a display row within the viewport to a line index") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(2, 5);  // viewport starts at display row 2, matching Application's own status-bar-reserved layout
+  v.setLines(makeLines(5));
+  CHECK(v.lineIndexAtRow(2) == 0);
+  CHECK(v.lineIndexAtRow(4) == 2);
+  CHECK(v.lineIndexAtRow(6) == 4);
+}
+
+TEST_CASE("lineIndexAtRow: -1 outside the viewport (above, below, or past content)") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(2, 5);
+  v.setLines(makeLines(3));  // fewer lines than the viewport height
+  CHECK(v.lineIndexAtRow(1) == -1);   // above the viewport
+  CHECK(v.lineIndexAtRow(7) == -1);   // below the viewport (viewport is rows 2..6)
+  CHECK(v.lineIndexAtRow(5) == -1);   // within the viewport, but past the last real line
+}
+
+TEST_CASE("lineIndexAtRow: accounts for scroll (topIndex_) after moving past the first page") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(10));
+  for (int i = 0; i < 5; i++) v.moveDown();  // cursor at index 5, viewport scrolled so topIndex_ == 3
+  CHECK(v.lineIndexAtRow(0) == 3);
+  CHECK(v.lineIndexAtRow(2) == 5);
+}
+
 TEST_CASE("moveDown: cursor advances and marking follows it") {
   RecordingDisplay d(10, 20);
   ContentView v(d);

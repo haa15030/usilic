@@ -1675,3 +1675,56 @@ TEST_CASE_FIXTURE(Fixture, "recording: typed prompt text (a real GREP pattern) i
   REQUIRE(app.grepMode().matches().size() == 1);
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
 }
+
+// -- GUI mode (^Og toggle, mouse click) --
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O g requests a GUI-mode toggle, consumed once") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.consumeGuiModeToggleRequest());
+
+  app.feedByte(0x0f, std::nullopt);  // ^O
+  CHECK(app.feedByte('g', std::nullopt));  // g
+  CHECK(app.consumeGuiModeToggleRequest());
+  CHECK_FALSE(app.consumeGuiModeToggleRequest());  // consumed -- false the second time
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O followed by an unrecognized byte fails cleanly") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0f, std::nullopt);
+  CHECK_FALSE(app.feedByte('z', std::nullopt));
+  CHECK_FALSE(app.consumeGuiModeToggleRequest());
+  // The leader state doesn't leak into the next byte.
+  CHECK(app.feedByte('j', std::nullopt));
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a click on a different row selects it (like Up/Down)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+
+  CHECK(app.handleMouseClick(idx, 0));
+  CHECK(app.directoryMode().selectedEntry()->name == "plain.txt");
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // selecting alone doesn't open it
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a second click on the already-selected row opens it") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+
+  REQUIRE(app.handleMouseClick(idx, 0));  // first click: select
+  REQUIRE(app.handleMouseClick(idx, 0));  // second click on the same row: open
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == path() + "plain.txt");
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: false outside the viewport or outside Directory mode") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.handleMouseClick(999, 0));  // way past any real row
+
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  CHECK_FALSE(app.handleMouseClick(0, 0));  // Directory-only in this slice
+}

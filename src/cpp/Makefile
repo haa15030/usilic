@@ -1,8 +1,19 @@
 CXX      ?= c++
-CXXFLAGS ?= -std=c++17 -Wall -Wextra -g
+# graphical_display.cpp (the SDL2/SDL2_ttf-backed GUI-mode Display,
+# see docs/ideas/IDEAS.md) needs both SDL2 and SDL2_ttf's headers/libs
+# -- resolved via pkg-config rather than hardcoded paths so this works
+# on both Homebrew (Mac) and apt (Ubuntu) layouts unchanged. A missing
+# pkg-config or missing packages makes these expand to empty strings
+# (2>/dev/null swallows the "package not found" error) rather than
+# failing the Makefile itself -- the actual compile error surfaces
+# from the missing SDL2/SDL_ttf.h includes instead, same as before
+# this comment existed for anyone building without them installed.
+SDL_CFLAGS := $(shell pkg-config --cflags sdl2 SDL2_ttf 2>/dev/null)
+SDL_LIBS   := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null)
+CXXFLAGS ?= -std=c++17 -Wall -Wextra -g $(SDL_CFLAGS)
 # terminal_display.cpp uses ncurses' terminfo API (setupterm/tputs/
 # tgoto), same as the legacy C's config.sh (LIBS= -lncurses).
-LDLIBS   ?= -lncurses
+LDLIBS   ?= -lncurses $(SDL_LIBS)
 
 SRC_DIR   = src
 APP_DIR   = app

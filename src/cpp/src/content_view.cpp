@@ -23,6 +23,14 @@ const std::vector<ContentView::Line> &ContentView::lines() const { return lines_
 
 int ContentView::cursorIndex() const { return cursorIndex_; }
 
+int ContentView::lineIndexAtRow(int displayRow) const {
+  int row = displayRow - row0_;
+  if (row < 0 || row >= height_) return -1;
+  int idx = topIndex_ + row;
+  if (idx < 0 || idx >= static_cast<int>(lines_.size())) return -1;
+  return idx;
+}
+
 void ContentView::setCursorIndex(int index) {
   if (lines_.empty()) {
     cursorIndex_ = 0;

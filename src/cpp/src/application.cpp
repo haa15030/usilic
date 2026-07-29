@@ -11,6 +11,7 @@ namespace fm {
 namespace {
 constexpr int kLeaderJ = 0x0a;         // ^J
 constexpr int kLeaderX = 0x18;         // ^X
+constexpr int kLeaderO = 0x0f;         // ^O
 constexpr int kEscape = 0x1b;          // ESC
 constexpr int kControlS = 0x13;        // ^S
 constexpr int kControlC = 0x03;        // ^C
@@ -212,12 +213,23 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     }
   }
 
+  if (leaderOPending_) {
+    leaderOPending_ = false;
+    if (special) return false;
+    if (byte == 'g') return handleCommand(Command::ToggleGuiMode);  // ^O g : toggle GUI mode
+    return false;  // unrecognized ^O-sequence in this slice
+  }
+
   if (!special && byte == kLeaderJ) {
     leaderJPending_ = true;
     return true;  // sequence in progress, not a no-op
   }
   if (!special && byte == kLeaderX) {
     leaderXPending_ = true;
+    return true;  // sequence in progress, not a no-op
+  }
+  if (!special && byte == kLeaderO) {
+    leaderOPending_ = true;
     return true;  // sequence in progress, not a no-op
   }
   if (!special && byte == kEscape) {
@@ -437,6 +449,9 @@ bool Application::handleCommand(Command command) {
       return stopMacroRecording();
     case Command::PlayMacro:
       return playRecordedMacro();
+    case Command::ToggleGuiMode:
+      guiModeToggleRequested_ = true;
+      return true;
     case Command::None:
       return false;
   }
@@ -1137,6 +1152,26 @@ void Application::handleResize() {
 }
 
 bool Application::wantsExit() const { return wantsExit_; }
+
+bool Application::consumeGuiModeToggleRequest() {
+  bool requested = guiModeToggleRequested_;
+  guiModeToggleRequested_ = false;
+  return requested;
+}
+
+// Ported from IDEAS.md's own GUI-mode click description (not legacy) --
+// see class comment for the click-to-select/click-again-to-open
+// convention and current Directory-only scope.
+bool Application::handleMouseClick(int row, int column) {
+  (void)column;  // unused in this slice -- see class comment
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  int idx = directoryView_.lineIndexAtRow(row);
+  if (idx < 0) return false;
+  if (idx == directoryView_.cursorIndex()) return openSelectedEntry();
+  directoryView_.setCursorIndex(idx);
+  directoryView_.redraw();
+  return true;
+}
 
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
 const std::string &Application::promptText() const { return promptEditor_.text(); }

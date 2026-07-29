@@ -69,6 +69,18 @@ class ContentView {
   int cursorIndex() const;
   void setCursorIndex(int index);
 
+  // Maps an absolute DISPLAY row (the same coordinate space
+  // moveCursor()/setViewport() use, not viewport-relative) to the
+  // line index currently rendered there, or -1 if displayRow is
+  // outside this view's own viewport or past the end of lines_ (a
+  // blank row within the viewport). Added for mouse click handling
+  // (Application::handleMouseClick(), see IDEAS.md's GUI-mode click-
+  // to-select/open request) -- the inverse of what redraw() already
+  // computes internally (row0_+row <-> topIndex_+row) but not
+  // previously exposed since nothing needed it before a pointing
+  // device existed.
+  int lineIndexAtRow(int displayRow) const;
+
   // -- scrolling --
   // Single-line cursor movement (M_up/M_dn/M_kup/M_kdn): moves the
   // cursor one line, scrolling the viewport by one line (using
