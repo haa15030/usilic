@@ -1348,3 +1348,32 @@ TEST_CASE_FIXTURE(Fixture, "EDIT: refused outside Directory/File mode") {
 
   CHECK_FALSE(app.handleCommand(Command::StartEdit));
 }
+
+// -- EXEC (suffix-mapped external viewer, Enter on a matching file) --
+
+TEST_CASE_FIXTURE(Fixture, "EXEC: Enter on a suffix-mapped file runs the external program, staying in Directory mode") {
+  configuration.loadRcText("EXEC\n .marker sh -c 'echo EXECRAN >> \"$0\"'\n", true);
+  { std::ofstream(root / "target.marker") << "original\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("target.marker");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // EXEC never switches mode, like PROGRAM/EDIT
+
+  std::ifstream in(root / "target.marker");
+  std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content.find("EXECRAN") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "EXEC: a suffix NOT configured as EXEC still opens normally as a plain file") {
+  configuration.loadRcText("EXEC\n .marker sh -c 'echo EXECRAN >> \"$0\"'\n", true);
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == path() + "plain.txt");
+}

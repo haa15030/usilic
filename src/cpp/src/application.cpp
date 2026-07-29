@@ -49,7 +49,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       cpMvRmMode_(configuration),
       duMode_(duView_, history, configuration),
       listBrowserMode_(listBrowserView_),
-      editMode_(keyInput, configuration) {
+      editMode_(keyInput, configuration),
+      execMode_(keyInput) {
   // The bottom row is reserved for prompt text entry (search/cut/man/
   // locate/du patterns) -- legacy's equivalent is the mode-line row
   // disp_window() left alone for exactly this (see ContentView's own
@@ -370,6 +371,18 @@ bool Application::openSelectedEntry() {
   std::string path = directoryMode_.currentDirectory();
   if (!path.empty() && path.back() != '/') path += '/';
   path += entry->name;
+
+  // EXEC (a suffix-mapped external viewer) takes priority over
+  // archive detection -- see class comment on is_child()'s own
+  // f.exec-checked-first precedence (though Configuration's unified
+  // suffix table already makes the check order mostly moot in
+  // practice). Hands off entirely and returns to Directory mode
+  // unchanged, same shape as PROGRAM/EDIT.
+  if (configuration_.isExec(path)) {
+    if (auto command = configuration_.programForSuffix(path)) execMode_.run(*command, path);
+    activeView().redraw();
+    return true;
+  }
 
   if (archiveMode_.loadArchive(path)) {
     currentMode_ = ApplicationMode::Archive;
@@ -968,5 +981,6 @@ ListBrowserMode &Application::listBrowserMode() { return listBrowserMode_; }
 Shell &Application::shell() { return shell_; }
 CpMvRmMode &Application::cpMvRmMode() { return cpMvRmMode_; }
 EditMode &Application::editMode() { return editMode_; }
+ExecMode &Application::execMode() { return execMode_; }
 
 }  // namespace fm

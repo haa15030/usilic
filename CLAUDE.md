@@ -2883,6 +2883,54 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      実機テストを行う際は、必ず`make clean && make usilic`で
      再ビルドしてから行う必要がある、という運用上の注意点として記録)。
 
+56. **2026-07-29: EXECモードをApplicationへ配線(①未配線分の消化、
+    2番目)**
+   - EDIT配線完了後の「①未配線分の消化」2番目、EXEC(拡張子ごとの
+     外部ビューア起動、usilicrcのEXECディレクティブ)に着手。
+     `ExecMode`クラス自体は項目37で移植済みだったが未配線だった。
+   - legacy `child.c`の`is_child()`を調査した結果、拡張子ごとの
+     ディスパッチ判定が`chp->f.exec`(EXEC指定かどうかのフラグ)を
+     ARCHIVE系拡張子テーブルより先にチェックしている、という優先順位を
+     発見。ただしC++版の`Configuration::suffixEntries_`は既にARCHIVE/
+     EXECを1本の「最長一致優先」統一テーブルにまとめており、各
+     エントリは`isExec`フラグでどちらか一方にしかなり得ない設計
+     だったため、実質的にチェック順序による分岐は起きない(同じ
+     拡張子がARCHIVEとEXECの両方に登録される、という矛盾した設定は
+     そもそもあり得ない)。とはいえ`is_child()`の優先順位を明示的に
+     踏襲する形で、`openSelectedEntry()`内で`Configuration::isExec()`を
+     `ArchiveMode::loadArchive()`より先にチェックするよう実装した
+     (`loadArchive()`側も`ArchiveKind::None`を見て自然に弾く設計
+     だったため、チェック順序自体は主に無駄な`loadArchive()`呼び出しを
+     避ける最適化としての意味合いが強いことも確認)。
+   - **PROGRAM/EDITと同じく非プロンプト駆動・モード遷移なし**:
+     legacy `menu.c`をたどると、`do_exec()`実行後は`disp_window()`が
+     スキップされ画面は一切変更されない(呼び出し前の画面がそのまま
+     残る)と判明。これはARCHIVE検出(新しい画面=Archiveモードへ遷移)
+     とは異なり、PROGRAM/EDITと同じ「外部プログラムを前面実行して
+     元の画面へ戻るだけ」という形。`ExecMode::run()`実行後は
+     `activeView().redraw()`を呼び、既存のPROGRAM/EDITと同じ作法で
+     画面を再描画するようにした。
+   - **配線範囲をDirectoryモードのEnterキー(`openSelectedEntry()`)
+     のみに限定**: ARCHIVE検出が最初に配線されたのと同じ境界線に
+     揃え、DU/LOCATE結果エントリを開く経路(`openSelectedDuEntry()`
+     等)は今回のEXEC対応の対象外とした(それらは元々ARCHIVE検出も
+     経由しない、より単純な`fileMode_.loadFile()`直呼び出しの
+     ままで、今回変更なし)。
+   - `ExecMode`は`ProgramMode`/`EditMode`と同じ理由で実際の
+     `KeyInput&`が必要(外部プログラム実行前後の生termio離脱/復帰)
+     なため、既存の同一`KeyInput&`をそのままコンストラクタへ渡す形で
+     配線。`ExecMode`自身は`Configuration`に依存しない設計(拡張子
+     判定はApplicationが`Configuration::isExec()`/`programForSuffix()`
+     で行い、既に解決済みの`ProgramCommand`を渡すだけ)だったため、
+     `EditMode`とは異なりコンストラクタ引数は`KeyInput&`のみ。
+   - **検証**: `sh -c '...'`を使った実在のスクリプトによるdoctest2件
+     新規追加(拡張子マッチでEXECが実行されモードが変わらないこと、
+     EXEC未設定の拡張子は従来通り通常のFileMode表示になること)。
+     既存361件+新規2件=363件全件、Mac/Ubuntu 26.04(Docker)双方で
+     パス確認。PTYスモークテスト(実際のusilicrc経由でEXEC設定、
+     ディレクトリ一覧上でEnterを押して実ファイルが実際に変更される
+     ことを実機相当の経路で)でも動作確認済み。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

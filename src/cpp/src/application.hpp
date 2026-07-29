@@ -14,6 +14,7 @@
 #include "du_mode.hpp"
 #include "display.hpp"
 #include "edit_mode.hpp"
+#include "exec_mode.hpp"
 #include "file_mode.hpp"
 #include "grep_mode.hpp"
 #include "history.hpp"
@@ -186,27 +187,48 @@ enum class ApplicationMode {
 //     only one of the four with both properties at once. See
 //     "Deliberately excluded" for the one piece of m_locate() this
 //     slice does NOT carry over.
-//   - Archive browsing (T_tar/T_lha/T_unzip/T_rpm/T_deb) is NOT
-//     prompt-driven at all, unlike every action above -- it's auto-
-//     detected the same way DirectoryMode::openSelected() already
-//     auto-detects "is the selection a directory": openSelectedEntry()
-//     tries ArchiveMode::loadArchive() on the selected path FIRST,
-//     falling back to FileMode::loadFile() only if that fails
-//     (loadArchive() itself reports "not a configured archive suffix"
-//     and "listing command failed" identically, both simply false --
-//     a real fidelity gap flagged rather than glossed over: legacy
-//     would presumably surface a specific error for a real archive
-//     suffix whose listing command failed, whereas this falls through
-//     to plain-text viewing instead). Archive results in a second
-//     screen the same shape as Cut's: Archive (the entry listing,
-//     ArchiveMode's own ContentView) and ArchiveContent (one
-//     extracted entry's bytes, shown as plain text lines -- no
-//     PipeBuffer charset/overstrike processing the way FileMode gets,
-//     since ArchiveMode::extractSelected() only ever hands back raw
-//     bytes). Like CutContent, opening ArchiveContent needs no
-//     ModeStack push (ArchiveMode owns no stack of its own either);
-//     Back from ArchiveContent returns to Archive, Back from Archive
-//     returns to Directory, both plain toggles.
+//   - Archive browsing (T_tar/T_lha/T_unzip/T_rpm/T_deb) and EXEC
+//     (T_exec, a suffix-mapped external viewer -- e.g. a configured
+//     PDF reader) are NEITHER prompt-driven, unlike every action
+//     above -- both are auto-detected the same way
+//     DirectoryMode::openSelected() already auto-detects "is the
+//     selection a directory": openSelectedEntry() checks
+//     Configuration::isExec() on the selected path FIRST (tracing
+//     child.c's is_child() shows a suffix's own `f.exec` flag is
+//     checked before the archive-suffix table, giving EXEC priority
+//     -- though in practice Configuration's suffixEntries_ already
+//     makes this a non-issue: it's ONE unified longest-suffix-wins
+//     table where each entry is either archive-flagged or exec-
+//     flagged, never both, so ArchiveMode::loadArchive() naturally
+//     can't succeed on an exec-mapped suffix regardless of check
+//     order -- checking isExec() first just avoids a wasted
+//     loadArchive() attempt), running ExecMode::run() and returning
+//     to Directory mode unchanged if so (do_exec()'s own behavior:
+//     hand the whole file off to an external program, no new screen,
+//     matching PROGRAM/EDIT's shape more than Archive's). Only if NOT
+//     exec-mapped does openSelectedEntry() try
+//     ArchiveMode::loadArchive() next, falling back to
+//     FileMode::loadFile() only if that too fails (loadArchive()
+//     itself reports "not a configured archive suffix" and "listing
+//     command failed" identically, both simply false -- a real
+//     fidelity gap flagged rather than glossed over: legacy would
+//     presumably surface a specific error for a real archive suffix
+//     whose listing command failed, whereas this falls through to
+//     plain-text viewing instead). Archive results in a second screen
+//     the same shape as Cut's: Archive (the entry listing, ArchiveMode's
+//     own ContentView) and ArchiveContent (one extracted entry's
+//     bytes, shown as plain text lines -- no PipeBuffer charset/
+//     overstrike processing the way FileMode gets, since
+//     ArchiveMode::extractSelected() only ever hands back raw bytes).
+//     Like CutContent, opening ArchiveContent needs no ModeStack push
+//     (ArchiveMode owns no stack of its own either); Back from
+//     ArchiveContent returns to Archive, Back from Archive returns to
+//     Directory, both plain toggles. EXEC is wired ONLY into
+//     openSelectedEntry() (Directory mode's Enter key) in this slice,
+//     the same boundary Archive detection already drew -- DU/LOCATE
+//     result entries open directly via FileMode::loadFile() with no
+//     suffix dispatch of their own kind, unchanged by this addition
+//     (see their own bullets above).
 //   - SHELL (M_shell, ^[s -- ESC then 's') is structurally the odd one
 //     out among everything above: unlike GREP/CUT/MAN/PROGRAM/LOCATE,
 //     which are all "type into promptEditor_, submit, get a Command-
@@ -547,6 +569,7 @@ class Application {
   DuMode &duMode();
   ListBrowserMode &listBrowserMode();
   EditMode &editMode();
+  ExecMode &execMode();
 
  private:
   bool openSelectedEntry();
@@ -625,6 +648,7 @@ class Application {
   DuMode duMode_;
   ListBrowserMode listBrowserMode_;
   EditMode editMode_;
+  ExecMode execMode_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
