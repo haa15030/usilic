@@ -3,14 +3,15 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <memory>
 #include <sstream>
 
 #include "child_process.hpp"
 
 namespace fm {
 
-CutMode::CutMode(ContentView &view, const Configuration &configuration)
-    : view_(view), configuration_(configuration) {}
+CutMode::CutMode(ContentView &view, ModeStack &modeStack, const Configuration &configuration)
+    : view_(view), modeStack_(modeStack), configuration_(configuration) {}
 
 bool CutMode::split(const std::vector<std::string> &sourceLines, const std::string &pattern,
                      GrepSyntax syntax) {
@@ -89,5 +90,48 @@ std::vector<std::string> CutMode::segmentContent(const CutSegment &segment) cons
   for (int i = std::max(segment.startLine, 0); i < end; i++) out.push_back(sourceLines_[i]);
   return out;
 }
+
+bool CutMode::splitSelected(const std::string &pattern, GrepSyntax syntax) {
+  const CutSegment *selected = selectedSegment();
+  if (!selected) return false;
+  std::vector<std::string> content = segmentContent(*selected);
+
+  auto saved = std::make_shared<SavedState>();
+  saved->pattern = pattern_;
+  saved->sourceLines = sourceLines_;
+  saved->segments = segments_;
+  saved->cursorIndex = view_.cursorIndex();
+
+  ModeStackFrame frame;
+  frame.cutBuffer = saved;  // opaque handle, matching ModeStackFrame's CUT::buff mapping
+  modeStack_.push(std::move(frame));
+
+  if (!split(content, pattern, syntax)) {
+    modeStack_.pop();  // undo the push, matching DirectoryMode::openSelected()'s failure-undo pattern
+    return false;
+  }
+  return true;
+}
+
+bool CutMode::goBack() {
+  if (modeStack_.empty()) return false;
+  auto frame = modeStack_.pop();
+  if (!frame || !frame->cutBuffer) return false;
+  auto saved = std::static_pointer_cast<SavedState>(frame->cutBuffer);
+
+  pattern_ = saved->pattern;
+  sourceLines_ = saved->sourceLines;
+  segments_ = saved->segments;
+
+  std::vector<ContentView::Line> viewLines;
+  viewLines.reserve(segments_.size());
+  for (const auto &seg : segments_) viewLines.push_back({seg.label});
+  view_.setLines(std::move(viewLines));
+  view_.setCursorIndex(saved->cursorIndex);
+  view_.redraw();
+  return true;
+}
+
+bool CutMode::canGoBack() const { return !modeStack_.empty(); }
 
 }  // namespace fm

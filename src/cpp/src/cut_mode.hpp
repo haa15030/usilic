@@ -6,6 +6,7 @@
 #include "configuration.hpp"
 #include "content_view.hpp"
 #include "grep_mode.hpp"
+#include "mode_stack.hpp"
 
 namespace fm {
 
@@ -63,12 +64,18 @@ struct CutSegment {
 //     opens it either).
 //   - Recording cut/search patterns into History: same boundary
 //     GrepMode already draws.
-//   - Nested cut (splitting an already-split segment further) and
-//     ModeStack coordination for returning to the pre-split view:
-//     Mode/Application's job.
+//
+// Nested/recursive splitting (splitSelected()/goBack()) IS in scope,
+// per the user's own follow-up request: applying split() again to an
+// already-split segment's own content is well-defined the same way
+// opening an archive found inside another archive's extracted content
+// is ("the same operation, one level deeper") -- the only new thing
+// needed is somewhere to remember "go back up one level", which is
+// exactly ModeStack's job, the same way DirectoryMode already uses it
+// for its own recursive directory descent.
 class CutMode {
  public:
-  CutMode(ContentView &view, const Configuration &configuration);
+  CutMode(ContentView &view, ModeStack &modeStack, const Configuration &configuration);
 
   // Splits sourceLines into segments at each line matching pattern
   // (via the real fgrep/egrep binary, same mechanism as GrepMode --
@@ -76,7 +83,9 @@ class CutMode {
   // only if the search command itself couldn't be run, or pattern is
   // empty. Content before the first match (if any) becomes its own
   // unlabeled leading segment rather than being silently dropped; no
-  // matches at all means the whole input is one segment.
+  // matches at all means the whole input is one segment. Does not
+  // touch ModeStack -- this is the top-level entry point; use
+  // splitSelected() to recurse into an already-split segment.
   bool split(const std::vector<std::string> &sourceLines, const std::string &pattern, GrepSyntax syntax);
 
   const std::string &pattern() const;
@@ -87,8 +96,28 @@ class CutMode {
   // split() was called with.
   std::vector<std::string> segmentContent(const CutSegment &segment) const;
 
+  // Re-splits the currently selected segment's own content by a new
+  // pattern, pushing the current split state onto ModeStack first so
+  // goBack() can return to it. False (no state change) if there's no
+  // selection or the new split itself fails.
+  bool splitSelected(const std::string &pattern, GrepSyntax syntax);
+
+  // Returns to the split state saved by the most recent
+  // splitSelected() call. False if already at the top level (nothing
+  // to go back to).
+  bool goBack();
+  bool canGoBack() const;
+
  private:
+  struct SavedState {
+    std::string pattern;
+    std::vector<std::string> sourceLines;
+    std::vector<CutSegment> segments;
+    int cursorIndex = 0;
+  };
+
   ContentView &view_;
+  ModeStack &modeStack_;
   const Configuration &configuration_;
 
   std::string pattern_;

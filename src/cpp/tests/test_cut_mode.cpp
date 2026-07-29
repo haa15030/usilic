@@ -2,11 +2,13 @@
 #include "content_view.hpp"
 #include "cut_mode.hpp"
 #include "doctest.h"
+#include "mode_stack.hpp"
 #include "recording_display.hpp"
 
 using fm::Configuration;
 using fm::CutMode;
 using fm::GrepSyntax;
+using fm::ModeStack;
 using fm::test::RecordingDisplay;
 
 namespace {
@@ -14,8 +16,9 @@ namespace {
 struct Fixture {
   RecordingDisplay display{24, 80};
   fm::ContentView view{display};
+  ModeStack modeStack;
   Configuration configuration;
-  CutMode mode{view, configuration};
+  CutMode mode{view, modeStack, configuration};
 };
 
 // A LOG-mode-shaped fixture: repeated prompt lines (the delimiter),
@@ -94,4 +97,77 @@ TEST_CASE_FIXTURE(Fixture, "selectedSegment: tracks the ContentView cursor over 
   const auto *selected = mode.selectedSegment();
   REQUIRE(selected != nullptr);
   CHECK(selected->label == "usilic$ pwd");
+}
+
+TEST_CASE_FIXTURE(Fixture, "splitSelected: recursively re-splits the selected segment's own content") {
+  std::vector<std::string> lines = {
+      "=== chapter 1 ===", "--- section A ---", "textA1", "--- section B ---", "textB1",
+      "=== chapter 2 ===", "--- section A ---", "textA2",
+  };
+  REQUIRE(mode.split(lines, "^=== chapter", GrepSyntax::Regex));
+  REQUIRE(mode.segments().size() == 2);
+  CHECK(mode.canGoBack() == false);
+
+  view.setCursorIndex(0);  // chapter 1
+  REQUIRE(mode.splitSelected("^--- section", GrepSyntax::Regex));
+  CHECK(mode.canGoBack());
+  // The chapter's own title line precedes the first "--- section"
+  // match, so it becomes its own unlabeled leading segment (matching
+  // split()'s own "content before the first match isn't dropped"
+  // behavior) ahead of the two real section segments.
+  REQUIRE(mode.segments().size() == 3);
+  CHECK(mode.segments()[0].label == "");
+  CHECK(mode.segments()[1].label == "--- section A ---");
+  CHECK(mode.segments()[2].label == "--- section B ---");
+  CHECK(mode.segmentContent(mode.segments()[1])[1] == "textA1");
+}
+
+TEST_CASE_FIXTURE(Fixture, "goBack: restores the parent split level exactly, including cursor position") {
+  std::vector<std::string> lines = {
+      "=== chapter 1 ===", "--- section A ---", "textA1", "--- section B ---", "textB1",
+      "=== chapter 2 ===", "--- section A ---", "textA2",
+  };
+  REQUIRE(mode.split(lines, "^=== chapter", GrepSyntax::Regex));
+  view.setCursorIndex(1);  // chapter 2, so the restored cursor is verifiably non-zero
+
+  REQUIRE(mode.splitSelected("^--- section", GrepSyntax::Regex));
+  // chapter 2's own title line + one "section A" -- see the previous
+  // test case for why the title line becomes its own leading segment.
+  REQUIRE(mode.segments().size() == 2);
+
+  REQUIRE(mode.goBack());
+  CHECK_FALSE(mode.canGoBack());
+  CHECK(mode.pattern() == "^=== chapter");
+  REQUIRE(mode.segments().size() == 2);
+  CHECK(mode.segments()[0].label == "=== chapter 1 ===");
+  CHECK(view.cursorIndex() == 1);  // restored, not reset to 0
+}
+
+TEST_CASE_FIXTURE(Fixture, "splitSelected: nests arbitrarily deep, like opening an archive inside an archive") {
+  std::vector<std::string> lines = {"A", "AA", "AAA", "content", "AA", "content2"};
+  REQUIRE(mode.split(lines, "A", GrepSyntax::Fixed));
+  view.setCursorIndex(0);
+  REQUIRE(mode.splitSelected("AA", GrepSyntax::Fixed));
+  view.setCursorIndex(0);
+  REQUIRE(mode.splitSelected("AAA", GrepSyntax::Fixed));
+  CHECK(mode.pattern() == "AAA");
+
+  REQUIRE(mode.goBack());
+  CHECK(mode.pattern() == "AA");
+  REQUIRE(mode.goBack());
+  CHECK(mode.pattern() == "A");
+  CHECK_FALSE(mode.canGoBack());
+}
+
+TEST_CASE_FIXTURE(Fixture, "splitSelected: a failed re-split leaves the current level untouched") {
+  REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
+  view.setCursorIndex(0);
+  CHECK_FALSE(mode.splitSelected("", GrepSyntax::Fixed));  // empty pattern always fails
+  CHECK_FALSE(mode.canGoBack());                            // the failed attempt's push was undone
+  CHECK(mode.pattern() == "usilic$");                        // state unchanged
+}
+
+TEST_CASE_FIXTURE(Fixture, "goBack: false when already at the top level") {
+  REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
+  CHECK_FALSE(mode.goBack());
 }
