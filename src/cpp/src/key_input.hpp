@@ -48,6 +48,26 @@ class KeyInput {
   explicit KeyInput(Display &display);
   virtual ~KeyInput();
 
+  // The controlling tty fd opened by open(), or -1 if not open --
+  // for a caller's own poll()/select() loop that needs to multiplex
+  // this alongside other fds (e.g. a Shell session's own pty), the
+  // same reason ChildProcess/Shell already expose their own fds
+  // rather than only offering blocking reads. readByte() itself
+  // always reads correctly from this fd regardless of platform.
+  //
+  // Caveat found while building the real run loop (app/main.cpp):
+  // poll()ing this exact fd (opened via open("/dev/tty", O_RDONLY))
+  // unconditionally reports POLLNVAL on macOS/Darwin, even though the
+  // fd is genuinely open and reads from it work fine -- confirmed by
+  // isolated testing against a real pty, and confirmed NOT present on
+  // Linux, where it polls correctly. A caller polling this fd on
+  // Darwin should poll STDIN_FILENO instead when stdin is known to be
+  // the same controlling terminal (true for any real interactive
+  // session, which is the only context this matters for) -- see
+  // app/main.cpp's own comment for where this is actually worked
+  // around.
+  int fd() const;
+
   // -- raw byte reading --
   // Reads one raw byte, from a queued playRawMacro() sequence if one
   // is active, otherwise from the controlling tty (blocking up to the
@@ -106,6 +126,32 @@ class KeyInput {
   // them). std::optional makes "no match" and "matched Up" distinct
   // by construction.
   std::optional<SpecialKey> readEscapeSequence();
+
+  // The bytes read after ESC by the most recent readEscapeSequence()
+  // call (excluding ESC itself), regardless of whether they matched a
+  // known sequence -- including the empty string for a bare ESC with
+  // nothing following. This is the fix for a gap Application's own
+  // class comment previously documented: readEscapeSequence() exists
+  // to consume and match Display's known terminal-capability
+  // sequences, with no way for a caller to recover an unmatched
+  // trailing byte to check against its OWN application-level ESC-
+  // leader bindings (e.g. usilic's ^[s for SHELL, ^[ isn't a Display
+  // Key at all). A caller doing that now reads readEscapeSequence()'s
+  // nullopt return, then checks lastEscapeBytes() for its own
+  // bindings before giving up.
+  //
+  // One inherited quirk this doesn't paper over: readEscapeSequence()
+  // reads a *fixed* number of bytes after ESC (Up's own key-sequence
+  // length, a deliberately-preserved read_esc() quirk -- see its own
+  // comment), not "however many the actual pressed sequence needs".
+  // For a genuine one-byte binding like ^[s, that means the fixed-
+  // length read can, if the user types fast enough that a real
+  // subsequent keystroke arrives within the same VTIME window,
+  // capture that keystroke too as a second byte here alongside 's' --
+  // a caller matching against a single leading byte (as this port's
+  // Application does) is unaffected, but should be aware a second,
+  // unrelated byte can occasionally ride along.
+  const std::string &lastEscapeBytes() const;
 
   // -- signals --
   // Installs SIGWINCH/SIGTTOU/SIGCONT handlers for this instance (the
@@ -169,6 +215,8 @@ class KeyInput {
 
   std::string macroQueue_;
   std::size_t macroPos_ = 0;
+
+  std::string lastEscapeBytes_;
 
   bool errorPending_ = false;
   std::function<void(int)> pidReporter_;

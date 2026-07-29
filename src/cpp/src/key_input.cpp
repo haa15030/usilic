@@ -87,6 +87,8 @@ void KeyInput::reportPid() {
 
 bool KeyInput::errorPending() const { return errorPending_; }
 
+int KeyInput::fd() const { return fd_; }
+
 int KeyInput::readByte() {
   if (macroPos_ < macroQueue_.size())
     return static_cast<unsigned char>(macroQueue_[macroPos_++]);
@@ -161,7 +163,10 @@ std::optional<KeyInput::SpecialKey> KeyInput::readEscapeSequence() {
   };
   std::array<std::string, 6> seqs;
   for (int i = 0; i < 6; i++) seqs[i] = display_.keySequence(kDisplayOrder[i]);
-  if (seqs[0].empty()) return std::nullopt;
+  if (seqs[0].empty()) {
+    lastEscapeBytes_.clear();
+    return std::nullopt;
+  }
 
   // Ported quirk: every sequence is assumed to share Up's (seqs[0])
   // length -- read exactly that many more bytes after the already-
@@ -175,6 +180,7 @@ std::optional<KeyInput::SpecialKey> KeyInput::readEscapeSequence() {
     if (!c) break;
     esc.push_back(static_cast<char>(c));
   }
+  lastEscapeBytes_ = esc.substr(1);  // bytes after ESC, whatever was actually captured -- see lastEscapeBytes()
   if (esc.size() < 2) return std::nullopt;  // bare ESC, nothing followed
 
   int matched = -1;
@@ -189,6 +195,8 @@ std::optional<KeyInput::SpecialKey> KeyInput::readEscapeSequence() {
   if (matched >= 4) readByte();  // PageUp/PageDown: discard trailing byte (e.g. '~')
   return kSpecialOrder[matched];
 }
+
+const std::string &KeyInput::lastEscapeBytes() const { return lastEscapeBytes_; }
 
 void KeyInput::installSignalHandlers() {
   std::signal(SIGWINCH, handleWinch);

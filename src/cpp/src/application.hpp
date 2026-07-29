@@ -226,20 +226,20 @@ enum class ApplicationMode {
 //     is no way to actually terminate the shell in this slice (no
 //     M_exit yet, see below) beyond Shell's own destructor when
 //     Application itself is destroyed.
-//     A known, unresolved integration gap: ^[s isn't one of Display's
-//     6 recognized escape sequences, so KeyInput::readEscapeSequence()
-//     -- which exists specifically to consume and match ESC-prefixed
-//     terminal capability sequences -- has no defined way to hand the
-//     trailing 's' byte back to a caller when nothing matched. This
-//     class's own ESC-leader handling (mirroring the ^J-leader
-//     mechanism) works correctly when fed the raw bytes directly
-//     (0x1b then 's'), which is how it's tested here, but wiring it to
-//     a REAL terminal through the existing KeyInput boundary needs
-//     further design (KeyInput exposing an escape-sequence-didn't-
-//     match fallback, or the not-yet-built real run loop bypassing
-//     readEscapeSequence() for bytes it already knows are app-level
-//     leaders) -- flagged rather than silently assumed solved, same
-//     as every other gap this class's own comment documents.
+//     ^[s isn't one of Display's 6 recognized escape sequences, so
+//     KeyInput::readEscapeSequence() -- which exists specifically to
+//     consume and match ESC-prefixed terminal capability sequences --
+//     originally had no defined way to hand the trailing 's' byte
+//     back to a caller when nothing matched (a real, previously-
+//     documented gap). This class's own ESC-leader handling (mirroring
+//     the ^J-leader mechanism) always worked correctly when fed the
+//     raw bytes directly (0x1b then 's'), which is how it's tested
+//     here; the gap was on KeyInput's side, closed by adding
+//     KeyInput::lastEscapeBytes() (see its own class comment) -- the
+//     real run loop (app/main.cpp) now feeds ESC + whatever
+//     lastEscapeBytes() captured through feedByte() exactly the way a
+//     live keypress would arrive, so ^[s works over a real terminal
+//     too.
 //   - CP/MV/RM (^Xc/^Xm/^Xr -- a THIRD leader key, ^X this time,
 //     alongside ^J and ESC) reuses DirectoryMode's marking
 //     (toggleMark()/targetEntries(), see its own header) and the

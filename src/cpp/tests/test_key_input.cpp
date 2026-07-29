@@ -128,6 +128,46 @@ TEST_CASE("readEscapeSequence: no arrow-key capability at all returns nullopt") 
   CHECK(k.readEscapeSequence() == std::nullopt);
 }
 
+// lastEscapeBytes(): the fix for the gap Application's own class
+// comment documents -- recovering an app-level ESC-leader byte (e.g.
+// usilic's ^[s for SHELL) that doesn't match any of Display's known
+// terminal sequences.
+
+TEST_CASE("lastEscapeBytes: an unrecognized single-byte sequence (e.g. ^[s) is recoverable") {
+  FakeDisplay d;
+  KeyInput k(d);
+  k.playRawMacro("s");  // ESC already consumed by the caller before calling readEscapeSequence()
+  CHECK(k.readEscapeSequence() == std::nullopt);
+  CHECK(k.lastEscapeBytes() == "s");
+}
+
+TEST_CASE("lastEscapeBytes: empty for a bare ESC with nothing following") {
+  FakeDisplay d;
+  KeyInput k(d);
+  CHECK(k.readEscapeSequence() == std::nullopt);
+  CHECK(k.lastEscapeBytes() == "");
+}
+
+TEST_CASE("lastEscapeBytes: empty when the terminal has no arrow-key capability at all") {
+  class NoArrowsDisplay : public FakeDisplay {
+   public:
+    std::string keySequence(Key) const override { return ""; }
+  };
+  NoArrowsDisplay d;
+  KeyInput k(d);
+  k.playRawMacro("[A");
+  CHECK(k.readEscapeSequence() == std::nullopt);
+  CHECK(k.lastEscapeBytes() == "");
+}
+
+TEST_CASE("lastEscapeBytes: reflects the bytes read even when a real key WAS matched") {
+  FakeDisplay d;
+  KeyInput k(d);
+  k.playRawMacro("[A");
+  CHECK(k.readEscapeSequence() == KeyInput::SpecialKey::Up);
+  CHECK(k.lastEscapeBytes() == "[A");
+}
+
 TEST_CASE("consumeResizeSignal: false with no signal pending") {
   FakeDisplay d;
   KeyInput k(d);
