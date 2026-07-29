@@ -1923,6 +1923,35 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      されないことも含む)を、doctestで新規5件(既存と合わせて計
      218件)、Mac/Ubuntu双方で全件パス確認。
 
+36. **2026-07-29: PathResolverクラス(22クラス目) — Modeの8つ目の
+    一切れ、`M_ldir`/`M_lfile`/`T_locate`**
+   - `mode.c`の`mode()`switch文で`M_prog`/`M_prog2`の次に並んでいた
+     `M_ldir`/`M_lfile`/`M_ldir2`/`M_lfile2`/`T_locate`ケースを対象に
+     移植。入力されたパス文字列(手入力またはLOCATE結果の選択)を
+     正規化・分類し、`DirectoryMode`/`FileMode`のどちらへ渡すべきかを
+     判断できる形にする「糊」部分。
+   - `sub.c`の`erase_dot()`(`"./"`/`"../"`セグメントを`memmove`で
+     手作業除去する、この種のバグが起きやすい旧実装)を1:1移植せず、
+     `std::filesystem::path::lexically_normal()`(標準ライブラリの
+     字句的パス正規化)に置き換えた。`LIST`が`std::map`に置き換わった
+     のと同じ理由(手作りアルゴリズムを、同じ仕事をする標準ライブラリ
+     機能に置き換える)。
+   - `~`/`~/...`展開は`getenv()`を直接呼ばず、コンストラクタ引数
+     `homeDirectory`として明示的に受け取る設計(`Configuration`/
+     `Shell`等、本プロジェクトで一貫している「隠れたグローバル状態を
+     持たない」方針を踏襲)。
+   - 意図的に対象外としたもの: 解決したパスをどう使うか(`DirectoryMode`
+     か`FileMode`か、`ModeStack`へのpush)の判断は将来の`Mode`/
+     `Application`の仕事。シンボリックリンクを実際にたどる
+     `realpath()`相当の正規化(`lexically_normal()`は`erase_dot()`と
+     同じく純粋に文字列上の処理であり、ファイルシステムには問い合わせ
+     ない)。
+   - **検証**: 実ディレクトリ/実ファイルの判定とトレイリングスラッシュ
+     付与・非付与、存在しないパスの検出、`~`/`~/...`展開、
+     `"./"`/`"../"`セグメントの正規化、末尾空白のトリム、空文字列
+     の安全な扱いを、doctestで新規8件(既存と合わせて計226件)、
+     Mac/Ubuntu双方で全件パス確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
