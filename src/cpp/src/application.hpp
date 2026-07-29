@@ -829,6 +829,16 @@ class Application {
   EditMode &editMode();
   ExecMode &execMode();
 
+  // Demo-support (2026-07-30 drag-scroll feasibility sample, see
+  // GraphicalDisplay's own class comment) -- exposes whichever
+  // ContentView is currently on screen so a prototype run loop can
+  // render/scroll its full content directly, bypassing Command
+  // dispatch entirely. NOT meant as a permanent API: a real
+  // integration would fold validated scroll behavior into ContentView
+  // itself (or Application's own Command handling) once this sample
+  // is evaluated, not keep reaching in from outside like this.
+  ContentView &activeContentView();
+
  private:
   // One recorded byte, for p_km (see class comment) -- feedByte()'s
   // own former body, renamed dispatchByte(), does the actual work;

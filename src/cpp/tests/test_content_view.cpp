@@ -68,6 +68,30 @@ TEST_CASE("lineIndexAtRow: accounts for scroll (topIndex_) after moving past the
   CHECK(v.lineIndexAtRow(2) == 5);
 }
 
+TEST_CASE("setTopIndex/topIndex: scrolls the viewport without touching cursorIndex_") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(10));
+  CHECK(v.topIndex() == 0);
+
+  v.setTopIndex(4);
+  CHECK(v.topIndex() == 4);
+  CHECK(v.cursorIndex() == 0);  // unlike moveDown(), the cursor doesn't follow
+}
+
+TEST_CASE("setTopIndex: clamps to a valid range") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(10));  // max top is 10 - 3 = 7
+
+  v.setTopIndex(-5);
+  CHECK(v.topIndex() == 0);
+  v.setTopIndex(999);
+  CHECK(v.topIndex() == 7);
+}
+
 TEST_CASE("moveDown: cursor advances and marking follows it") {
   RecordingDisplay d(10, 20);
   ContentView v(d);

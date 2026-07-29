@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "display.hpp"
 
@@ -151,6 +152,51 @@ class GraphicalDisplay : public Display {
   // Application::feedByte() already expect to consume input one byte
   // at a time regardless of source.
   std::optional<KeyEvent> consumeKeyEvent();
+
+  // -- drag-scroll PROTOTYPE support (2026-07-30, feasibility sample) --
+  // Added specifically to answer "can dot-level inertial drag-scroll
+  // be built at all" before committing further to the rest of GUI
+  // mode -- see app/main.cpp's runDragScrollDemo() for the actual
+  // drag/inertia/row-commit logic that USES these. Deliberately a
+  // separate, self-contained rendering path from write()/putChar()/
+  // moveCursor() (the normal Display interface ContentView drives):
+  // real production integration (a proper "scroll the active
+  // ContentView smoothly" API) is a decision for AFTER this sample is
+  // evaluated, not assumed here.
+  struct MouseMotion {
+    int deltaY = 0;  // pixels moved (SDL's own relative motion) since the last queued event
+  };
+  // Returns and clears the next queued left-button-down/up transition
+  // or motion sample. Motion is only queued while the button is held
+  // (SDL_CaptureMouse-backed, so motion is tracked even if the cursor
+  // leaves the window mid-drag).
+  enum class DragEventType { ButtonDown, ButtonUp, Motion };
+  struct DragEvent {
+    DragEventType type;
+    int deltaY = 0;  // valid for Motion
+  };
+  std::optional<DragEvent> consumeDragEvent();
+
+  // Renders `lines` (the FULL content, not just what's visible) with
+  // row `topIndex` positioned pixelOffsetY pixels below its normal
+  // (offset==0) position -- positive pixelOffsetY shifts everything
+  // DOWN (revealing more content above topIndex, i.e. a downward
+  // drag), negative shifts everything UP (revealing more content
+  // below, i.e. an upward drag). Must satisfy -cellHeightPixels() <
+  // pixelOffsetY < cellHeightPixels(); the caller (runDragScrollDemo())
+  // is responsible for committing a real topIndex change and
+  // resetting the offset once a full row's worth has accumulated.
+  void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY);
+
+  int cellHeightPixels() const;
+
+  // Swaps the window's cursor between the default arrow and a stand-
+  // in "hand" shape (SDL_SYSTEM_CURSOR_HAND) while dragging -- a real
+  // custom cat's-paw bitmap (SDL_CreateColorCursor(), already
+  // technically verified feasible in an earlier design discussion, see
+  // IDEAS.md) is future work once this sample's basic feel is
+  // validated.
+  void setHandCursor(bool active);
 
  private:
   GraphicalDisplay();

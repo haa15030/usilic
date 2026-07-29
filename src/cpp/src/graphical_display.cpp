@@ -43,6 +43,9 @@ struct GraphicalDisplay::Impl {
 
   std::deque<MouseClick> mouseQueue;
   std::deque<KeyEvent> keyQueue;
+  std::deque<DragEvent> dragQueue;
+  SDL_Cursor *handCursor = nullptr;
+  bool handCursorActive = false;
 
   Cell &cellAt(int row, int col) { return grid[row * columns + col]; }
 };
@@ -106,6 +109,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
 }
 
 GraphicalDisplay::~GraphicalDisplay() {
+  if (impl_->handCursor) SDL_FreeCursor(impl_->handCursor);
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);
   if (impl_->font) TTF_CloseFont(impl_->font);
@@ -333,6 +337,22 @@ bool GraphicalDisplay::pumpEvents() {
         int col = event.button.x / std::max(impl_->cellWidth, 1);
         int row = event.button.y / std::max(impl_->cellHeight, 1);
         impl_->mouseQueue.push_back(MouseClick{row, col, event.button.button == SDL_BUTTON_RIGHT});
+        if (event.button.button == SDL_BUTTON_LEFT) {
+          SDL_CaptureMouse(SDL_TRUE);  // keep tracking motion even if the drag leaves the window
+          impl_->dragQueue.push_back(DragEvent{DragEventType::ButtonDown, 0});
+        }
+        break;
+      }
+      case SDL_MOUSEBUTTONUP: {
+        if (event.button.button == SDL_BUTTON_LEFT) {
+          SDL_CaptureMouse(SDL_FALSE);
+          impl_->dragQueue.push_back(DragEvent{DragEventType::ButtonUp, 0});
+        }
+        break;
+      }
+      case SDL_MOUSEMOTION: {
+        if (event.motion.state & SDL_BUTTON_LMASK)
+          impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
         break;
       }
       case SDL_KEYDOWN: {
@@ -384,6 +404,81 @@ std::optional<GraphicalDisplay::KeyEvent> GraphicalDisplay::consumeKeyEvent() {
   KeyEvent event = impl_->keyQueue.front();
   impl_->keyQueue.pop_front();
   return event;
+}
+
+std::optional<GraphicalDisplay::DragEvent> GraphicalDisplay::consumeDragEvent() {
+  if (impl_->dragQueue.empty()) return std::nullopt;
+  DragEvent event = impl_->dragQueue.front();
+  impl_->dragQueue.pop_front();
+  return event;
+}
+
+int GraphicalDisplay::cellHeightPixels() const { return impl_->cellHeight; }
+
+void GraphicalDisplay::setHandCursor(bool active) {
+  if (active == impl_->handCursorActive) return;
+  impl_->handCursorActive = active;
+  if (active) {
+    if (!impl_->handCursor) impl_->handCursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+    if (impl_->handCursor) SDL_SetCursor(impl_->handCursor);
+  } else {
+    SDL_SetCursor(SDL_GetDefaultCursor());
+  }
+}
+
+// Drag-scroll prototype rendering -- see class comment and header
+// comment on why this is a self-contained path, not layered on
+// write()/putChar()/moveCursor(). Renders each of `lines` (already
+// UTF-8-decoded per-glyph via the same fm::Utf8 helpers putByte()
+// uses) at its own computed pixel Y position, offset by pixelOffsetY,
+// including ONE extra row beyond whichever edge is being revealed.
+void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY) {
+  if (!impl_->outputEnabled) return;
+  SDL_SetRenderDrawColor(impl_->renderer, 0, 0, 0, 255);
+  SDL_RenderClear(impl_->renderer);
+
+  SDL_Color fg{220, 220, 220, 255};
+  TTF_SetFontStyle(impl_->font, TTF_STYLE_NORMAL);
+
+  // One extra row above when revealing upward (pixelOffsetY > 0,
+  // content shifting down), one extra row below when revealing
+  // downward (pixelOffsetY < 0, content shifting up) -- see header
+  // comment for the sign convention.
+  int firstRow = (pixelOffsetY > 0) ? topIndex - 1 : topIndex;
+  int rowCount = impl_->rows + 1;
+
+  for (int i = 0; i < rowCount; i++) {
+    int lineIndex = firstRow + i;
+    if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) continue;
+    int y = i * impl_->cellHeight + pixelOffsetY - ((pixelOffsetY > 0) ? impl_->cellHeight : 0);
+    if (y <= -impl_->cellHeight || y >= impl_->rows * impl_->cellHeight) continue;  // fully off-screen
+
+    const std::string &line = lines[lineIndex];
+    int x = 0;
+    std::size_t pos = 0;
+    while (pos < line.size() && x < impl_->columns) {
+      unsigned char lead = static_cast<unsigned char>(line[pos]);
+      int len = Utf8::sequence_length(lead);
+      if (pos + len > line.size()) len = 1;
+      int width = std::max(1, Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + pos), len));
+      std::string glyph = line.substr(pos, len);
+      if (glyph != " " && lead >= 0x20) {
+        SDL_Surface *surface = TTF_RenderUTF8_Blended(impl_->font, glyph.c_str(), fg);
+        if (surface) {
+          SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
+          if (texture) {
+            SDL_Rect dst{x * impl_->cellWidth, y, surface->w, surface->h};
+            SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
+            SDL_DestroyTexture(texture);
+          }
+          SDL_FreeSurface(surface);
+        }
+      }
+      x += width;
+      pos += len;
+    }
+  }
+  SDL_RenderPresent(impl_->renderer);
 }
 
 }  // namespace fm

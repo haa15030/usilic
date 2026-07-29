@@ -31,6 +31,13 @@ int ContentView::lineIndexAtRow(int displayRow) const {
   return idx;
 }
 
+int ContentView::topIndex() const { return topIndex_; }
+
+void ContentView::setTopIndex(int index) {
+  int maxTop = std::max(0, static_cast<int>(lines_.size()) - std::max(height_, 0));
+  topIndex_ = std::clamp(index, 0, maxTop);
+}
+
 void ContentView::setCursorIndex(int index) {
   if (lines_.empty()) {
     cursorIndex_ = 0;

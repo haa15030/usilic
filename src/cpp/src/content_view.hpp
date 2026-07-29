@@ -81,6 +81,20 @@ class ContentView {
   // device existed.
   int lineIndexAtRow(int displayRow) const;
 
+  // The index of the topmost currently-visible line. Added alongside
+  // setTopIndex() for the GUI drag-scroll prototype (see
+  // GraphicalDisplay's own class comment) -- scrolling the viewport
+  // WITHOUT moving cursorIndex_ (unlike moveUp()/moveDown(), which
+  // always couple the two) matches how a real trackpad/mouse-wheel
+  // scroll works in most applications: it repositions what's visible,
+  // it doesn't change the selection.
+  int topIndex() const;
+  // Sets the topmost visible line directly (clamped to a valid
+  // range), leaving cursorIndex_ untouched. Does not redraw --
+  // callers driving a custom render loop (like the drag-scroll
+  // prototype) own their own redraw timing.
+  void setTopIndex(int index);
+
   // -- scrolling --
   // Single-line cursor movement (M_up/M_dn/M_kup/M_kdn): moves the
   // cursor one line, scrolling the viewport by one line (using

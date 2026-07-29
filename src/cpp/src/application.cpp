@@ -1191,5 +1191,6 @@ Shell &Application::shell() { return shell_; }
 CpMvRmMode &Application::cpMvRmMode() { return cpMvRmMode_; }
 EditMode &Application::editMode() { return editMode_; }
 ExecMode &Application::execMode() { return execMode_; }
+ContentView &Application::activeContentView() { return activeView(); }
 
 }  // namespace fm

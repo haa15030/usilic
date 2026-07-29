@@ -127,6 +127,7 @@
 #include <ctime>
 #include <fstream>
 #include <iostream>
+#include <cmath>
 #include <poll.h>
 #include <sstream>
 #include <string>
@@ -135,6 +136,7 @@
 
 #include "application.hpp"
 #include "configuration.hpp"
+#include "content_view.hpp"
 #include "delegating_display.hpp"
 #include "graphical_display.hpp"
 #include "history.hpp"
@@ -248,7 +250,37 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput) {
 
 // Runs until wantsExit(), the GUI window is closed, or ^Og toggles
 // back to terminal mode. See file comment for the overall shape.
+//
+// Also drives the 2026-07-30 drag-scroll FEASIBILITY SAMPLE (see
+// GraphicalDisplay's own class comment on renderScrolled()/
+// consumeDragEvent()): while the left mouse button is held and
+// dragged, or while inertia is still decaying after release, this
+// renders via GraphicalDisplay::renderScrolled() (a smooth, sub-row
+// pixel-offset path) instead of the normal ContentView::redraw();
+// once fully settled on a row boundary with no residual velocity, it
+// hands rendering back to the normal Display-interface path (a single
+// redraw() call) -- see the "known gaps" note below for exactly what
+// this sample does NOT attempt yet.
+//
+// Known, deliberate gaps in this sample (evaluate the SCROLL PHYSICS
+// FEEL first; these are next steps, not oversights):
+//   - renderScrolled() draws plain glyphs only -- no cursor/standout
+//     highlight during an active drag (ContentView::renderLine()'s
+//     own reverse-video marking isn't replicated here at all).
+//   - Click-vs-drag isn't disambiguated: handleMouseClick() still
+//     fires on every button-down regardless of whether a drag
+//     follows, so a "click that turns into a drag" also selects
+//     whatever row was under the cursor at press time.
+//   - The cursor shape is SDL's built-in hand pointer
+//     (SDL_SYSTEM_CURSOR_HAND), not a custom cat's-paw bitmap.
+//   - Horizontal drag, right-click-during-drag, and File/Man mode
+//     (vs. just whichever mode is active) aren't specifically
+//     exercised, though the mechanism itself isn't Directory-specific.
 void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
+  bool dragging = false;
+  int pixelOffset = 0;   // sub-row offset; -cellHeight < pixelOffset < cellHeight
+  double velocity = 0.0;  // smoothed pixels/frame, sign matches GraphicalDisplay's renderScrolled() convention
+
   while (!app.wantsExit()) {
     if (!gui.pumpEvents()) return;  // the window's own close button was clicked
 
@@ -263,6 +295,62 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         app.feedByte(key->byte, std::nullopt);
       }
       if (app.consumeGuiModeToggleRequest()) return;
+    }
+    while (auto drag = gui.consumeDragEvent()) {
+      switch (drag->type) {
+        case fm::GraphicalDisplay::DragEventType::ButtonDown:
+          dragging = true;
+          velocity = 0.0;
+          gui.setHandCursor(true);
+          break;
+        case fm::GraphicalDisplay::DragEventType::ButtonUp:
+          dragging = false;
+          gui.setHandCursor(false);
+          break;
+        case fm::GraphicalDisplay::DragEventType::Motion:
+          pixelOffset += drag->deltaY;
+          velocity = velocity * 0.7 + drag->deltaY * 0.3;  // simple EMA so release velocity isn't one noisy sample
+          break;
+      }
+    }
+
+    if (!dragging && std::abs(velocity) > 0.5) {
+      pixelOffset += static_cast<int>(velocity);
+      velocity *= 0.92;  // friction -- ~60Hz frame-based decay, not real elapsed-time physics, see file comment
+    } else if (!dragging) {
+      velocity = 0.0;
+    }
+
+    fm::ContentView &view = app.activeContentView();
+    int cellHeight = std::max(gui.cellHeightPixels(), 1);
+    while (pixelOffset >= cellHeight) {
+      int before = view.topIndex();
+      view.setTopIndex(before - 1);
+      if (view.topIndex() == before) {
+        pixelOffset = cellHeight - 1;
+        velocity = 0.0;  // hit the top -- stop coasting rather than pinning against the boundary
+        break;
+      }
+      pixelOffset -= cellHeight;
+    }
+    while (pixelOffset <= -cellHeight) {
+      int before = view.topIndex();
+      view.setTopIndex(before + 1);
+      if (view.topIndex() == before) {
+        pixelOffset = -(cellHeight - 1);
+        velocity = 0.0;  // hit the bottom
+        break;
+      }
+      pixelOffset += cellHeight;
+    }
+
+    if (dragging || pixelOffset != 0 || std::abs(velocity) > 0.5) {
+      std::vector<std::string> lines;
+      lines.reserve(view.lines().size());
+      for (const auto &line : view.lines()) lines.push_back(line.text);
+      gui.renderScrolled(lines, view.topIndex(), pixelOffset);
+    } else {
+      view.redraw();  // settled on a row boundary -- back to the normal Display-interface rendering path
     }
 
     bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
