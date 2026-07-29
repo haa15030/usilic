@@ -2041,6 +2041,79 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      doctestで新規23件(既存と合わせて計249件)、Mac/Ubuntu双方で
      全件パス確認。
 
+39. **2026-07-29: LocateModeクラス(26クラス目)+ManModeクラス
+    (27クラス目)+ListBrowserModeクラス(28クラス目)、HelpModeは
+    新設不要と判断**
+   - ユーザーから「menu.cは呼び出しだけ？　クラスの新設等無ければ」
+     と問われ調査した結果、`menu.c`自体は`get_m()`/`menu()`/
+     `m_cr()`/`m_bl()`等の中央ディスパッチ層で新規クラスは不要と
+     判明する一方、`mode.c`側にまだ移植していない小さな独立機能が
+     3つ見つかったため、そちらを先に片付けることにした
+     (ユーザー承認: 「うっかり[Enter]の続き。後者のクラス新設の方を
+     よろしく。」)。
+   - **`LocateMode`**: `init.c`の`T_locate`ケース(`fork_bin()`+
+     `get_child(..., s_S(S_locate), name, ...)`)を移植。`locate`
+     コマンドを検索語付きで実行するだけの薄いクラス。grep系と同じ
+     「終了コード0または1は成功(1=正常実行・0件ヒット)」規約を
+     採用(既存の`Configuration::ConfiguredRole::Locate`をそのまま
+     利用、新規ロール追加は不要だった)。
+   - **`ManMode`**: `init.c`の`init_man()`/`fork_man()`を移植した
+     ところ、実体は「`man <name>`を実行し、その出力を通常のファイル
+     閲覧(`alloc_pipe()`、既に`PipeBuffer`として移植済み)と
+     全く同じnroff重ね打ち検出/文字コード変換機構に通すだけ」と
+     判明。man pageは`doc/README.jp`と同じバックスペース重ね打ち
+     慣習を使うため(項目8参照)、`ManMode`は`FileMode`とほぼ
+     同じ形(コマンド出力を`PipeBuffer`へ流し込む点のみ違う)になった。
+     `History`の`PositionCategory::ManPage`(既存だが未使用だった
+     カテゴリ)でカーソル位置を記憶する点も`FileMode`/`DuMode`と
+     同様。`ENVVAR=value manpage`という`fork_man()`の環境変数
+     前置き機能(例: `MANSECTION`指定)は、実際に使われていた形跡が
+     無く仕様を推測で決め打ちしたくないため、意図的に見送り。
+   - **`ListBrowserMode`**: `menu.c`の`m_list()`を調査した結果、
+     `m_list()`自体は`T_list`/`T_cmd`/`T_hist`/`T_hfile`/`T_hdir`/
+     `T_hman`/`T_hlocate`/`T_hfgrep`/`T_hegrep`という約9種類の
+     「一覧のうちどれを見せるか」を決めるだけの純粋な分岐で、実際の
+     描画ロジックは`alloc.c`の`init_list()`/`init_str()`(`LIST`/
+     `STR`木を辿ってPP一覧を構築)にあった。しかしこの木構造自体は
+     `History`の`std::map`/`std::vector`/`std::deque`ベースの
+     カテゴリと`Configuration`の`std::vector`ベースのシード一覧で
+     既に完全に置き換え済みのため、移植すべき木の走査コードは
+     もう存在しなかった。残っていたのは「文字列一覧を見せて選択を
+     追跡する」という約9箇所で重複していたはずの汎用ロジックのみで、
+     これを`ListBrowserMode`として1クラスに切り出した(単一の
+     旧関数からの1:1移植ではない、この一覧全体でもっとも小さい
+     クラス)。
+   - **`HelpMode`は新設しないと判断**: `m_help()`(`menu.c`)→
+     `set_help()`(`sub.c`:1237)を辿った結果、ヘルプ画面は単に
+     同梱の静的テキストファイル(非ASCII文字コード用に`.jp`
+     サフィックス版あり)を読んで表示するだけと判明。つまり既存の
+     `FileMode`がこの用途を無変更でカバーできるため、新規クラスは
+     不要と判断(意図的な見送り、実装忘れではない)。
+   - **テスト方針**: `LocateMode`/`ManMode`はいずれも実`locate`/
+     実`man`コマンドを実際に実行して検証する方針(この移植全体の
+     「実データ優先」方針を踏襲)だが、どちらも実行環境依存の外部
+     状態(`locate`はデータベースが`updatedb`されているか―項目7で
+     macOS実機でも未構築だった前例あり、`man`はman pageそのものが
+     インストールされているか)に依存するため、`Shell`の実bashテスト
+     で既に使っていた「使えない環境では結果をassertせずスキップする」
+     パターンを踏襲した。空クエリ/空ページ名は外部コマンドを一切
+     実行せず確実に失敗する、という決定的な部分のみ無条件でテスト。
+   - **検証**: Mac実機では`locate`(既存DB)・`man`(実man page)いずれも
+     実際に実行された状態で新規17件・既存261件全件パス確認。
+     Ubuntu 26.04 Dockerでは標準の`ubuntu:26.04`イメージが
+     "minimized"仕様で`/usr/bin/man`がダミースクリプト(常に
+     "This system has been minimized..."を出力し終了コード0を返す
+     だけ)にdpkg-divertされていることが判明、`plocate`パッケージを
+     追加し`dpkg-divert --remove`で本物の`man`(`man-db`)を復元した
+     上で再実行。`locate`は実際に実行され本物のDBで検証できたが、
+     `man`はman-db自体は本物になったもののman page本体
+     (`manpages`パッケージ等)がイメージから除去されていたため
+     "No manual entry"となり、該当テストはスキップ扱いで通過(261件
+     全件パス、偽陽性の失敗無し)。この種のイメージ固有の除去は
+     tcb側のコードとは無関係な既知の環境差のため、テスト側の
+     グレースフルスキップで正しく吸収できていることを確認できた
+     という意味で、むしろ想定通りの結果。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
