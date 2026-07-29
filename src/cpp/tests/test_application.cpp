@@ -1565,3 +1565,113 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: does NOT reflow HELP when it's nested 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Cut);  // the real CUT session is still intact
 }
+
+// -- Recorded macros (p_km, ^X(/^X)/^Xe) --
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ( starts recording; the control sequence itself isn't recorded") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.isRecordingMacro());
+
+  app.feedByte(0x18, std::nullopt);  // ^X
+  CHECK(app.feedByte('(', std::nullopt));  // (
+  CHECK(app.isRecordingMacro());
+  CHECK(app.recordedMacroLength() == 0);  // the ^X( sequence itself is excluded
+
+  app.feedByte('j', std::nullopt);
+  app.feedByte('j', std::nullopt);
+  CHECK(app.recordedMacroLength() == 2);
+
+  app.feedByte(0x18, std::nullopt);  // ^X
+  CHECK(app.feedByte(')', std::nullopt));  // )
+  CHECK_FALSE(app.isRecordingMacro());
+  CHECK(app.recordedMacroLength() == 2);  // the ^X) sequence is excluded too
+}
+
+TEST_CASE_FIXTURE(Fixture, "playRecordedMacro: replays recorded cursor movement") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x18, std::nullopt);
+  app.feedByte('(', std::nullopt);
+  app.feedByte('j', std::nullopt);
+  app.feedByte('j', std::nullopt);
+  app.feedByte(0x18, std::nullopt);
+  app.feedByte(')', std::nullopt);
+
+  std::string nameAfterRecording = app.directoryMode().selectedEntry()->name;
+
+  app.handleCommand(Command::MoveUp);
+  app.handleCommand(Command::MoveUp);
+  REQUIRE(app.directoryMode().selectedEntry()->name != nameAfterRecording);
+
+  app.feedByte(0x18, std::nullopt);
+  CHECK(app.feedByte('e', std::nullopt));  // ^X e : play it back
+  CHECK(app.directoryMode().selectedEntry()->name == nameAfterRecording);
+}
+
+TEST_CASE_FIXTURE(Fixture, "playRecordedMacro: false when nothing was ever recorded") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x18, std::nullopt);
+  CHECK_FALSE(app.feedByte('e', std::nullopt));
+}
+
+TEST_CASE_FIXTURE(Fixture, "stopMacroRecording (^X)): a safe no-op when not currently recording") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x18, std::nullopt);
+  CHECK_FALSE(app.feedByte(')', std::nullopt));
+  CHECK_FALSE(app.isRecordingMacro());
+}
+
+TEST_CASE_FIXTURE(Fixture, "recording: a real leaderX command (^Xc etc) IS recorded, unlike macro control itself") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x18, std::nullopt);
+  app.feedByte('(', std::nullopt);
+
+  app.feedByte(0x18, std::nullopt);  // ^X
+  app.feedByte('c', std::nullopt);   // c : a real CP prompt start, not macro control
+  CHECK(app.promptActive());
+  // Both bytes of this real ^Xc sequence are recorded, unlike the
+  // ^X(/^X)/^Xe control sequences.
+  CHECK(app.recordedMacroLength() == 2);
+  app.feedByte(0x07, std::nullopt);  // ^G : cancel the prompt
+}
+
+TEST_CASE_FIXTURE(Fixture, "recording: a ^J-leader sequence (^Jd for DU) is captured and replays correctly") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x18, std::nullopt);
+  app.feedByte('(', std::nullopt);
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  app.feedByte('d', std::nullopt);   // d : DU, pre-filled with the current directory
+  REQUIRE(app.promptActive());
+  app.feedByte(0x0d, std::nullopt);  // ^M : accept the pre-filled path
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  app.handleCommand(Command::Back);
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  app.feedByte(0x18, std::nullopt);
+  app.feedByte(')', std::nullopt);
+
+  app.feedByte(0x18, std::nullopt);
+  app.feedByte('e', std::nullopt);  // replay: ^Jd, ^M
+  CHECK(app.currentMode() == ApplicationMode::Du);
+}
+
+TEST_CASE_FIXTURE(Fixture, "recording: typed prompt text (a real GREP pattern) is captured and replays correctly") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x18, std::nullopt);
+  app.feedByte('(', std::nullopt);
+
+  app.feedByte(0x13, std::nullopt);  // ^S : start FGREP
+  feedText("plain.txt");
+  app.feedByte(0x0d, std::nullopt);  // submit
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 1);
+  app.handleCommand(Command::Back);
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+
+  app.feedByte(0x18, std::nullopt);
+  app.feedByte(')', std::nullopt);
+
+  app.feedByte(0x18, std::nullopt);
+  app.feedByte('e', std::nullopt);
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 1);
+  CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
+}

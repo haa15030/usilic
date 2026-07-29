@@ -58,7 +58,10 @@ enum class Command {
   StartDirectoryHistory,
   StartCommandHistory,
   StartEdit,
-  StartHelp
+  StartHelp,
+  StartMacroRecord,
+  StopMacroRecord,
+  PlayMacro
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -418,6 +421,50 @@ enum class ApplicationMode {
 //     text) is main.cpp's choice to make, the same "caller resolves
 //     the actual path" boundary usilicrc/history already draw --
 //     Application only ever sees whichever text it was handed.
+//   - Recorded macros (p_km, ^X(/^X)/^Xe -- see src/usilicrc's own
+//     "Begin/End/Execute macro definition" KEY entries) are ONE of
+//     TWO genuinely different legacy macro mechanisms; the other
+//     (p_bm, usilicrc's preset M-0..M-19 macros, defined via an
+//     entire user-configurable key-remapping directive format --
+//     F-?/K-?/M-? -- letting any physical key be rebound to any
+//     internal command) is a MUCH larger, separate feature this port
+//     has no supporting infrastructure for at all (Application's
+//     Command dispatch is still a fixed, hardcoded table) and is
+//     deliberately NOT attempted here -- confirmed explicitly with the
+//     user rather than silently dropped, see CLAUDE.md. Tracing
+//     key.c's set_km() shows p_km records whatever read_m() itself
+//     RETURNS each call (a resolved M_*/T_* command number during
+//     normal dispatch, or a literal typed character while a text
+//     prompt is active -- read_m() unifies both into one return
+//     channel depending on its own current mode) -- NOT the raw
+//     keyboard bytes read before interpretation. This port's closest
+//     analogous unit is "whatever byte(s) were fed to feedByte()",
+//     one layer earlier than read_m()'s own return value, but
+//     equivalent in effect: replaying the same byte(s) through
+//     feedByte() again deterministically reproduces the same leader-
+//     accumulation/prompt-routing/dispatch sequence, so recording at
+//     the byte layer needs no separate handling for "was this byte a
+//     resolved command or prompt text" the way legacy's own single-
+//     int-array a_km[] implicitly relies on read_m()'s dual return
+//     meaning to paper over. The one piece of care this needs: the
+//     ^X( / ^X) / ^Xe sequences that start/stop/play a recording must
+//     NOT themselves end up IN the recording (legacy's own set_km()
+//     doesn't append M_ms/M_me to a_km[] either) -- feedByte() holds
+//     the leading ^X byte of a leaderX sequence back in
+//     pendingLeaderXByte_ until the second byte resolves, THEN
+//     commits both bytes together only if the resolution wasn't
+//     itself StartMacroRecord/StopMacroRecord/PlayMacro (^J/ESC
+//     leader sequences need no such holdback: macro control lives
+//     exclusively under ^X, so every ^J/ESC byte can be committed
+//     immediately without knowing how its sequence will resolve).
+//     playRecordedMacro() replays each recorded byte through a private
+//     dispatchByte() (feedByte()'s own former body, now renamed and
+//     wrapped) rather than feedByte() itself, so a macro triggered
+//     from inside another recording session's own bytes is never
+//     accidentally self-recorded -- deliberately NOT replicating
+//     set_km()'s own M_mm "endless loop" self-appending quirk (a
+//     macro-calls-itself auto-repeat feature the legacy comment itself
+//     flags as unusual), which this port doesn't support.
 //   - handleResize() (terminal resize, T_winch in legacy) is the one
 //     piece of state Application reaches for that isn't reached via
 //     KeyInput/Command dispatch at all -- tracing menu.c's T_winch
@@ -576,6 +623,13 @@ enum class ApplicationMode {
 //   - File-jump (M_jump, ^X^X -- swap between the cursor position and
 //     the last ^Space-marked position): not part of the commands this
 //     slice maps.
+//   - p_bm (usilicrc's preset M-0..M-19 macros, and the entire F-?/
+//     K-?/M-? user-configurable key-remapping directive format they
+//     depend on): a genuinely separate, much larger feature from p_km
+//     (see its own section above) -- confirmed explicitly with the
+//     user to defer to a future slice rather than attempt alongside
+//     p_km, given this port's Command dispatch has no configurable-
+//     keybinding infrastructure at all yet to build it on.
 //   - Nested Cut/CutContent resplits are NOT reflowed on resize
 //     (revised from an earlier, broader version of this bullet that
 //     excluded ALL of Cut/CutContent -- see CLAUDE.md history for
@@ -647,8 +701,13 @@ class Application {
   // resolveCommand()+handleCommand() for everything else. Returns
   // false only when the resulting action (if any) was itself a
   // no-op; a byte consumed into leader/prompt state with the action
-  // still pending returns true.
+  // still pending returns true. While a macro recording is active
+  // (see class comment's own p_km section), also appends this byte
+  // (or holds it in pendingLeaderXByte_) to recordedMacro_.
   bool feedByte(int byte, std::optional<KeyInput::SpecialKey> special);
+
+  bool isRecordingMacro() const;
+  std::size_t recordedMacroLength() const;
 
   // Routes a byte while ApplicationMode::Shell is current: ^G leaves
   // (see class comment on why the pty session itself isn't torn
@@ -717,6 +776,18 @@ class Application {
   ExecMode &execMode();
 
  private:
+  // One recorded byte, for p_km (see class comment) -- feedByte()'s
+  // own former body, renamed dispatchByte(), does the actual work;
+  // feedByte() itself just wraps it with recording bookkeeping.
+  struct RecordedStep {
+    int byte;
+    std::optional<KeyInput::SpecialKey> special;
+  };
+  bool dispatchByte(int byte, std::optional<KeyInput::SpecialKey> special);
+  bool startMacroRecording();
+  bool stopMacroRecording();
+  bool playRecordedMacro();
+
   bool openSelectedEntry();
   bool openSelectedSegment();
   bool openSelectedArchiveEntry();
@@ -818,6 +889,14 @@ class Application {
   // this, see the class comment's own HELP section.
   enum class CutOrigin { File, Help };
   CutOrigin cutOrigin_ = CutOrigin::File;
+
+  bool recordingMacro_ = false;
+  std::vector<RecordedStep> recordedMacro_;
+  // Holds a leaderX sequence's leading ^X byte back until the second
+  // byte resolves, so a StartMacroRecord/StopMacroRecord/PlayMacro
+  // resolution can be excluded from recordedMacro_ entirely (both
+  // bytes at once) -- see class comment.
+  std::optional<RecordedStep> pendingLeaderXByte_;
 
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
   bool escPending_ = false;      // saw ESC (0x1b), waiting for the byte that completes ^[s -- see class comment

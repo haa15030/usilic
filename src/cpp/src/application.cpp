@@ -146,7 +146,7 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
   }
 }
 
-bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> special) {
   if (promptKind_ != PromptKind::None) return feedPromptByte(byte);
   if (currentMode_ == ApplicationMode::Shell) return feedShellByte(byte, special);
 
@@ -201,6 +201,12 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
         return handleCommand(Command::StartRemove);
       case kControlC:  // ^X ^C : exit
         return handleCommand(Command::StartExit);
+      case '(':  // ^X ( : begin macro recording
+        return handleCommand(Command::StartMacroRecord);
+      case ')':  // ^X ) : end macro recording
+        return handleCommand(Command::StopMacroRecord);
+      case 'e':  // ^X e : execute recorded macro
+        return handleCommand(Command::PlayMacro);
       default:
         return false;  // unrecognized ^X-sequence in this slice (^X^Kc/^X^Km/^X^Kr/^X^Ka/^Xa are future work)
     }
@@ -221,6 +227,63 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
 
   return handleCommand(resolveCommand(byte, special));
 }
+
+// Wraps dispatchByte() (the real logic, see its own body) with p_km
+// recording bookkeeping -- see class comment's own p_km section for
+// why this holds a leaderX sequence's leading byte back in
+// pendingLeaderXByte_ rather than recording it immediately.
+bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  bool wasLeaderXPending = leaderXPending_;
+  bool wasRecording = recordingMacro_;
+
+  bool result = dispatchByte(byte, special);
+
+  if (wasRecording) {
+    if (wasLeaderXPending) {
+      if (recordingMacro_) {
+        // still recording -- this byte did NOT resolve to
+        // StartMacroRecord/StopMacroRecord/PlayMacro, so commit both
+        // the held-back leading ^X byte and this one.
+        if (pendingLeaderXByte_) recordedMacro_.push_back(*pendingLeaderXByte_);
+        recordedMacro_.push_back({byte, special});
+      }
+      // else: recording just turned off (StopMacroRecord resolved) --
+      // discard both bytes, they're the control sequence itself.
+      pendingLeaderXByte_.reset();
+    } else if (!special && byte == kLeaderX) {
+      pendingLeaderXByte_ = RecordedStep{byte, special};  // hold back until the second byte resolves
+    } else {
+      recordedMacro_.push_back({byte, special});
+    }
+  }
+
+  return result;
+}
+
+bool Application::startMacroRecording() {
+  recordingMacro_ = true;
+  recordedMacro_.clear();
+  pendingLeaderXByte_.reset();
+  return true;
+}
+
+bool Application::stopMacroRecording() {
+  if (!recordingMacro_) return false;
+  recordingMacro_ = false;
+  return true;
+}
+
+// Replays each recorded byte through dispatchByte() directly (NOT
+// feedByte()), so a macro played back from inside an active recording
+// session is never accidentally self-recorded -- see class comment.
+bool Application::playRecordedMacro() {
+  if (recordedMacro_.empty()) return false;
+  for (const auto &step : recordedMacro_) dispatchByte(step.byte, step.special);
+  return true;
+}
+
+bool Application::isRecordingMacro() const { return recordingMacro_; }
+std::size_t Application::recordedMacroLength() const { return recordedMacro_.size(); }
 
 // See class comment for the scope of this routing (and the KeyInput/
 // escape-sequence gap in wiring ^[s to a real terminal). Left/Right
@@ -368,6 +431,12 @@ bool Application::handleCommand(Command command) {
       return executeEdit();
     case Command::StartHelp:
       return startHelp();
+    case Command::StartMacroRecord:
+      return startMacroRecording();
+    case Command::StopMacroRecord:
+      return stopMacroRecording();
+    case Command::PlayMacro:
+      return playRecordedMacro();
     case Command::None:
       return false;
   }
