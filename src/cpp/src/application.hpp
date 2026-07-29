@@ -19,6 +19,7 @@
 #include "man_mode.hpp"
 #include "mode_stack.hpp"
 #include "program_mode.hpp"
+#include "shell.hpp"
 
 namespace fm {
 
@@ -40,7 +41,8 @@ enum class Command {
   StartCutRegex,
   StartMan,
   StartProgram,
-  StartLocate
+  StartLocate,
+  StartShell
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -49,7 +51,7 @@ enum class Command {
 // legacy mode (M_cut): Cut shows the list of segment labels,
 // CutContent shows one selected segment's actual lines -- see the
 // class comment on why CutMode itself doesn't merge them.
-enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate, Archive, ArchiveContent };
+enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate, Archive, ArchiveContent, Shell };
 
 // The top-level controller: owns the ModeStack(s) and every *Mode
 // instance, maps keypresses to Command, and dispatches each Command
@@ -178,21 +180,67 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate
 //     ModeStack push (ArchiveMode owns no stack of its own either);
 //     Back from ArchiveContent returns to Archive, Back from Archive
 //     returns to Directory, both plain toggles.
+//   - SHELL (M_shell, ^[s -- ESC then 's') is structurally the odd one
+//     out among everything above: unlike GREP/CUT/MAN/PROGRAM/LOCATE,
+//     which are all "type into promptEditor_, submit, get a Command-
+//     driven result screen", Shell already owns its OWN LineEditor
+//     (commandLine()) and ContentView (scrollback()) and drives them
+//     directly against a real pty -- Application's job here is purely
+//     routing bytes to Shell's own API while ApplicationMode::Shell is
+//     active (feedShellByte()), not reimplementing any editing/
+//     display logic of its own (see Shell's own class comment for
+//     why: this project already dissolved the legacy three-process/
+//     eight-pipe IPC design when Shell itself was ported). Once
+//     started, the pty-backed child process is intentionally left
+//     running in the background across Back/^G -- switching away from
+//     Shell only changes which ContentView Application is redrawing
+//     (shell_.scrollback() is returned directly from activeView()'s
+//     Shell case, not copied into an Application-owned ContentView
+//     the way every other mode's screen is), matching how a real
+//     terminal multiplexer pane keeps running while unfocused. There
+//     is no way to actually terminate the shell in this slice (no
+//     M_exit yet, see below) beyond Shell's own destructor when
+//     Application itself is destroyed.
+//     A known, unresolved integration gap: ^[s isn't one of Display's
+//     6 recognized escape sequences, so KeyInput::readEscapeSequence()
+//     -- which exists specifically to consume and match ESC-prefixed
+//     terminal capability sequences -- has no defined way to hand the
+//     trailing 's' byte back to a caller when nothing matched. This
+//     class's own ESC-leader handling (mirroring the ^J-leader
+//     mechanism) works correctly when fed the raw bytes directly
+//     (0x1b then 's'), which is how it's tested here, but wiring it to
+//     a REAL terminal through the existing KeyInput boundary needs
+//     further design (KeyInput exposing an escape-sequence-didn't-
+//     match fallback, or the not-yet-built real run loop bypassing
+//     readEscapeSequence() for bytes it already knows are app-level
+//     leaders) -- flagged rather than silently assumed solved, same
+//     as every other gap this class's own comment documents.
 //
 // Deliberately excluded (future work, not this slice):
-//   - Every mode besides Directory/File/Grep/Cut/Man/Locate/Archive,
-//     and PROGRAM's own SHELL fallback: SHELL entry, DU, CP/MV/RM
-//     execution, history/list browsers, help/error/log screens --
-//     each already has its own *Mode class built (SHELL's
-//     glue class doesn't exist yet); wiring each one in is the same
-//     shape of change (extend Command/ApplicationMode, extend
-//     feedByte()'s leader table, extend handleCommand()) repeated per
-//     mode, deferred to keep each slice reviewable. In particular,
-//     mode.c's M_prog case falls back to launching SHELL mode with
+//   - Every mode besides Directory/File/Grep/Cut/Man/Locate/Archive/
+//     Shell: DU, CP/MV/RM execution, history/list browsers, help/
+//     error/log screens -- each already has its own *Mode class
+//     built; wiring each one in is the same shape of change (extend
+//     Command/ApplicationMode, extend feedByte()'s leader table,
+//     extend handleCommand()) repeated per mode, deferred to keep
+//     each slice reviewable.
+//   - mode.c's M_prog case falls back to launching SHELL mode with
 //     the typed line pre-filled when the first word ISN'T a
 //     recognized PROGRAM-list entry (`m = -M_shell`) -- executeProgram()
-//     here just reports failure instead, since there is no SHELL mode
-//     to fall back to yet.
+//     still just reports failure instead of that handoff, even though
+//     SHELL itself is wired in now; connecting the two is its own
+//     small future change (SHELL's own command line would need to be
+//     pre-filled with the typed text), not bundled into either slice.
+//   - Shell's own further hookups this slice leaves unset:
+//     setHistoryRecorder()/setDirectoryChangedCallback()/
+//     setProgramLauncher()/setCompletionProvider() -- all optional,
+//     all deferred (History integration, cwd-follows-shell behavior,
+//     PROGRAM handoff from within SHELL, and TAB completion
+//     candidates are each their own follow-up, not required for a
+//     working SHELL mode). Scrollback/command-line paging via arrow
+//     Up/Down or PageUp/PageDown while in Shell mode is likewise not
+//     wired (feedShellByte() only handles Left/Right cursor movement
+//     among SpecialKeys).
 //   - do_prog()'s post-run staleness check (re-stat the file being
 //     viewed; if it changed while the program ran, force a reload):
 //     not replicated here either -- a real gap, flagged rather than
@@ -251,8 +299,13 @@ class Application {
   // `keyInput` must be the same instance actually controlling the
   // real tty's raw/cooked mode (see class comment) -- Application
   // only ever forwards it to ProgramMode, never reads from it itself.
+  // `shellOptions` seeds Shell's argv/promptMark/programName/
+  // scrollbackBudget; rows/columns/encoding are overwritten from
+  // `display`/`encoding` regardless of what's passed in, so the
+  // Shell session always matches this Application's own geometry and
+  // charset instead of needing them specified twice.
   Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
-              Charset::Encoding encoding, int width);
+              Charset::Encoding encoding, int width, ShellOptions shellOptions = ShellOptions{});
 
   // Lists `directory` (DirectoryMode::enterDirectory()) and makes it
   // the active mode. Ported from init_menu()'s initial directory
@@ -287,6 +340,18 @@ class Application {
   // still pending returns true.
   bool feedByte(int byte, std::optional<KeyInput::SpecialKey> special);
 
+  // Routes a byte while ApplicationMode::Shell is current: ^G leaves
+  // (see class comment on why the pty session itself isn't torn
+  // down), ^M submits the command line, Tab asks Shell's completion
+  // hook (unset in this slice, so effectively a no-op), ^C forwards
+  // straight to the pty, DEL/^H backspaces, Left/Right move the
+  // command-line cursor, everything else is inserted as ordinary
+  // text. Exposed publicly (rather than folded silently into
+  // feedByte()) so a caller -- or a test -- can drive Shell input
+  // without needing to first get Application into Shell mode via a
+  // real ^[s sequence.
+  bool feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special);
+
   bool promptActive() const;
   const std::string &promptText() const;
 
@@ -299,6 +364,7 @@ class Application {
   ProgramMode &programMode();
   LocateMode &locateMode();
   ArchiveMode &archiveMode();
+  Shell &shell();
 
  private:
   bool openSelectedEntry();
@@ -312,6 +378,7 @@ class Application {
   bool returnFromLocate();
   bool returnFromArchiveContent();
   bool returnFromArchive();
+  bool returnFromShell();
   ContentView &activeView();
 
   bool startGrepPrompt(GrepSyntax syntax);
@@ -319,6 +386,7 @@ class Application {
   bool startManPrompt();
   bool startProgramPrompt();
   bool startLocatePrompt();
+  bool startShell();
   bool feedPromptByte(int byte);
   bool submitPrompt();
   void cancelPrompt();
@@ -349,16 +417,20 @@ class Application {
   ProgramMode programMode_;
   LocateMode locateMode_;
   ArchiveMode archiveMode_;
+  Shell shell_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
   ApplicationMode cutReturnMode_ = ApplicationMode::Directory;
   ApplicationMode manReturnMode_ = ApplicationMode::Directory;
   ApplicationMode locateReturnMode_ = ApplicationMode::Directory;
+  ApplicationMode shellReturnMode_ = ApplicationMode::Directory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;
+  bool shellStarted_ = false;
 
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
+  bool escPending_ = false;      // saw ESC (0x1b), waiting for the byte that completes ^[s -- see class comment
 
   enum class PromptKind { None, GrepPattern, CutPattern, ManName, ProgramCommand, LocateQuery };
   PromptKind promptKind_ = PromptKind::None;

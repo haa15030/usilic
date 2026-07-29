@@ -2414,6 +2414,56 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      doctestで新規4件、既存311件全件、Mac/Ubuntu 26.04(Docker)
      双方でパス確認。
 
+47. **2026-07-29: ApplicationクラスにSHELLを追加、KeyInputとの間の
+    未解決の統合課題を発見・記録**
+   - 「その順で」の第八項目、SHELLに着手。`M_shell`(^[s、ESC+'s')の
+     束縛を確認した。既存の`Shell`クラス(pty接続の対話シェルセッション、
+     自前の`LineEditor`/`ContentView`を保持)は、これまで配線した
+     GREP/CUT/MAN/PROGRAM/LOCATEのどれとも形が異なり、
+     `Application`側の`promptEditor_`を経由せず、`Shell`自身の
+     `commandLine()`/`scrollback()`を直接操作する必要があると判明。
+   - **設計**: `feedByte()`とは別に`feedShellByte()`を新設し、
+     `ApplicationMode::Shell`の間はバイトを`Command`解決せず
+     `Shell`のAPIへ直接ルーティングするようにした(^Gで離脱、
+     ^Mで`submitLine()`、Tab で`onTab()`、DEL/^Hでバックスペース、
+     ^Cはpty へ直接転送、それ以外は`commandLine().insertByte()`)。
+   - **意図的な設計判断: シェルはバックグラウンドで生き続ける**。
+     `Shell`は一度`start()`すると実プロセス(pty経由の子シェル)を
+     保持し続ける設計であり、実端末のマルチプレクサのペインに近い。
+     このため^G/Backでの離脱では`Shell::terminate()`を呼ばず、
+     単に表示を切り替えるだけにした(`shellStarted_`フラグで
+     「初回だけ`start()`する」を管理)。再度ESC sで戻ると同じ
+     セッション(scrollbackの内容含む)に復帰する。`M_exit`が
+     未移植のため、このスライスには実際にシェルを終了させる手段が
+     無い(`Application`自体の破棄時に`Shell`のデストラクタが
+     `terminate()`する以外)。
+   - **未解決のKeyInput統合課題を発見・記録**: `^[s`はDisplayが
+     認識する6種の特殊キー(矢印/PageUp/PageDown)のいずれにも
+     該当しないアプリケーション独自のESCリーダー束縛である。
+     `KeyInput::readEscapeSequence()`は「ESC後続バイトを読んで
+     既知の端末シーケンスに一致するか判定する」専用設計のため、
+     一致しなかった場合にその後続バイト('s')を呼び出し元へ返す
+     手段が無い。今回`Application`側に(^Jリーダーと同型の)
+     ESCリーダー機構自体は実装し、生バイトを直接与えるテスト
+     (`feedByte(0x1b, ...)`→`feedByte('s', ...)`)では正しく動作
+     するが、実端末を介した本当の配線(将来実装予定のメイン
+     ループが`readEscapeSequence()`を経由する場合)には、
+     `KeyInput`側に「一致しなかった場合のバイトフォールバック」
+     機構が別途必要になる、という設計上のギャップをクラス
+     コメントに明記した(黙って解決済みとみなさず、他の既知の
+     ギャップと同様に記録)。
+   - **検証**: 実`bash`(`--norc --noprofile`、`test_shell.cpp`と
+     同じ手法)を使い、ESC sでのShellモード起動、未対応ESC後続
+     バイトの安全な失敗、コマンド入力→Enterでの実行と実際の出力が
+     scrollbackに現れること、^Gでの離脱後もシェルプロセスが
+     生き続けること(`alive()`)、再度ESC sで同一セッション
+     (以前の出力含む)に戻れること、バックスペースでのコマンド
+     ライン編集、Shellモード内からの再入力拒否を、`poll()`+
+     `onPtyReadable()`によるポーリング(`test_shell.cpp`の
+     `pumpUntil()`と同じ手法)を使ったdoctestで新規7件、既存
+     315件全件、Mac/Ubuntu 26.04(Docker、`bash`パッケージ追加
+     インストール)双方でパス確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

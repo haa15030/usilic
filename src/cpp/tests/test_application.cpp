@@ -1,6 +1,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <poll.h>
 #include <unistd.h>
 
 #include "application.hpp"
@@ -17,6 +19,7 @@ using fm::Configuration;
 using fm::GrepSyntax;
 using fm::History;
 using fm::KeyInput;
+using fm::ShellOptions;
 using fm::test::RecordingDisplay;
 
 namespace {
@@ -26,6 +29,33 @@ fs::path makeTempDir() {
   char *result = mkdtemp(tmpl);
   REQUIRE(result != nullptr);
   return fs::path(result);
+}
+
+// A real, deterministic bash (matching Shell's own test convention:
+// --norc/--noprofile avoid the user's real shell config interfering,
+// and a unique promptMark keeps this session's prompt detection from
+// colliding with any other Shell instance).
+ShellOptions testShellOptions() {
+  ShellOptions options;
+  options.argv = {"bash", "--norc", "--noprofile"};
+  options.promptMark = "<usilic-app-test>";
+  options.programName = "usilictest";
+  return options;
+}
+
+// Polls a real, started Shell (via Application) until `predicate` is
+// true or a bounded number of attempts elapse -- same pattern as
+// test_shell.cpp's own pumpUntil(), needed because real bash startup/
+// echo latency isn't deterministic.
+bool pumpUntil(Application &app, const std::function<bool()> &predicate, int maxAttempts = 500) {
+  for (int i = 0; i < maxAttempts; i++) {
+    if (predicate()) return true;
+    struct pollfd pfd {
+      app.shell().ptyFd(), POLLIN, 0
+    };
+    if (poll(&pfd, 1, 20) > 0) app.shell().onPtyReadable();
+  }
+  return predicate();
 }
 
 struct Fixture {
@@ -39,7 +69,7 @@ struct Fixture {
   KeyInput keyInput{display};
   History history;
   Configuration configuration;
-  Application app{display, keyInput, history, configuration, Charset::Encoding::Ascii, 80};
+  Application app{display, keyInput, history, configuration, Charset::Encoding::Ascii, 80, testShellOptions()};
 
   Fixture() : root(makeTempDir()) {
     fs::create_directory(root / "subdir");
@@ -763,4 +793,104 @@ TEST_CASE_FIXTURE(Fixture, "ARC: Back from ArchiveContent returns to Archive, Ba
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == path());
+}
+
+// -- SHELL: ESC-leader entry, byte routing to Shell's own LineEditor/
+// pty, and the child persisting across Back/^G --
+//
+// These genuinely fork/exec a real bash (matching Shell's own test
+// precedent and this project's preference for real execution over
+// fakes for process/pty plumbing), skipped gracefully if bash isn't
+// available or the handshake fails.
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ESC s starts Shell mode (StartShell)") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x1b, std::nullopt);
+  bool ok = app.feedByte('s', std::nullopt);
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ESC followed by an unrecognized byte fails cleanly") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x1b, std::nullopt);
+  CHECK_FALSE(app.feedByte('z', std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  // The leader state doesn't leak into the next byte: a plain 'j' afterwards still moves down.
+  CHECK(app.feedByte('j', std::nullopt));
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL: typing a command and pressing Enter runs it, output reaches scrollback") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("echo APPSHELLTEST123")) app.feedShellByte(c, std::nullopt);
+  CHECK(app.feedShellByte(0x0d, std::nullopt));  // ^M submits
+
+  bool sawOutput = pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("APPSHELLTEST123") != std::string::npos) return true;
+    return false;
+  });
+  CHECK(sawOutput);
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL: ^G leaves without killing the child; re-entering resumes the same session") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("echo PERSISTMARKER456")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x0d, std::nullopt);
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("PERSISTMARKER456") != std::string::npos) return true;
+    return false;
+  }));
+
+  CHECK(app.feedShellByte(0x07, std::nullopt));  // ^G
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.shell().alive());  // the child is still running in the background
+
+  app.feedByte(0x1b, std::nullopt);
+  CHECK(app.feedByte('s', std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  // The old output is still there -- this is the SAME session, not a fresh start().
+  bool stillThere = false;
+  for (const auto &line : app.shell().scrollback().lines())
+    if (line.text.find("PERSISTMARKER456") != std::string::npos) stillThere = true;
+  CHECK(stillThere);
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL: backspace edits the command line before it's submitted") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("echo X")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x7f, std::nullopt);  // DEL: removes the trailing 'X'
+  CHECK(app.shell().commandLine().text() == "echo ");
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL: re-entering from within Shell mode is refused") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK_FALSE(app.handleCommand(Command::StartShell));
+  CHECK(app.currentMode() == ApplicationMode::Shell);
 }

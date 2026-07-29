@@ -7,6 +7,7 @@ namespace fm {
 
 namespace {
 constexpr int kLeaderJ = 0x0a;         // ^J
+constexpr int kEscape = 0x1b;          // ESC
 constexpr int kControlS = 0x13;        // ^S
 constexpr int kControlC = 0x03;        // ^C
 constexpr int kControlG = 0x07;        // ^G
@@ -14,7 +15,7 @@ constexpr int kCarriageReturn = 0x0d;  // ^M
 }  // namespace
 
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
-                          Charset::Encoding encoding, int width)
+                          Charset::Encoding encoding, int width, ShellOptions shellOptions)
     : configuration_(configuration),
       directoryView_(display),
       fileView_(display),
@@ -33,7 +34,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       manMode_(manView_, history, configuration, encoding, width),
       programMode_(keyInput, history),
       locateMode_(locateView_, configuration),
-      archiveMode_(archiveView_, history, configuration) {
+      archiveMode_(archiveView_, history, configuration),
+      shell_(display, [&] {
+        shellOptions.rows = display.rows();
+        shellOptions.columns = display.columns();
+        shellOptions.encoding = encoding;
+        return shellOptions;
+      }()) {
   // The bottom row is reserved for prompt text entry (search/cut/man/
   // locate patterns) -- legacy's equivalent is the mode-line row
   // disp_window() left alone for exactly this (see ContentView's own
@@ -111,6 +118,13 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
 
 bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
   if (promptKind_ != PromptKind::None) return feedPromptByte(byte);
+  if (currentMode_ == ApplicationMode::Shell) return feedShellByte(byte, special);
+
+  if (escPending_) {
+    escPending_ = false;
+    if (!special && byte == 's') return handleCommand(Command::StartShell);  // ESC s : SHELL
+    return false;  // unrecognized ESC-sequence in this slice
+  }
 
   if (leaderJPending_) {
     leaderJPending_ = false;
@@ -140,8 +154,55 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
     leaderJPending_ = true;
     return true;  // sequence in progress, not a no-op
   }
+  if (!special && byte == kEscape) {
+    escPending_ = true;
+    return true;  // sequence in progress, not a no-op
+  }
 
   return handleCommand(resolveCommand(byte, special));
+}
+
+// See class comment for the scope of this routing (and the KeyInput/
+// escape-sequence gap in wiring ^[s to a real terminal). Left/Right
+// move the command-line cursor; Up/Down/PageUp/PageDown (scrollback
+// paging / command history) are deliberately not handled here yet.
+bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  if (special) {
+    switch (*special) {
+      case KeyInput::SpecialKey::Left:
+        shell_.commandLine().moveLeft();
+        shell_.commandLine().redraw();
+        return true;
+      case KeyInput::SpecialKey::Right:
+        shell_.commandLine().moveRight();
+        shell_.commandLine().redraw();
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  if (byte == kControlG) return returnFromShell();
+  if (byte == kCarriageReturn) {
+    shell_.submitLine();
+    return true;
+  }
+  if (byte == 0x09) {  // Tab
+    shell_.onTab();
+    return true;
+  }
+  if (byte == 0x7f || byte == 0x08) {  // DEL / ^H
+    shell_.commandLine().backspace();
+    shell_.commandLine().redraw();
+    return true;
+  }
+  if (byte == kControlC) {
+    shell_.sendControlByte(static_cast<unsigned char>(byte));
+    return true;
+  }
+  shell_.commandLine().insertByte(static_cast<unsigned char>(byte));
+  shell_.commandLine().redraw();
+  return true;
 }
 
 ContentView &Application::activeView() {
@@ -162,6 +223,8 @@ ContentView &Application::activeView() {
       return archiveView_;
     case ApplicationMode::ArchiveContent:
       return archiveContentView_;
+    case ApplicationMode::Shell:
+      return shell_.scrollback();
     case ApplicationMode::Directory:
     default:
       return directoryView_;
@@ -188,6 +251,7 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Archive) return openSelectedArchiveEntry();
       return false;
     case Command::Back:
+      if (currentMode_ == ApplicationMode::Shell) return returnFromShell();
       if (currentMode_ == ApplicationMode::ArchiveContent) return returnFromArchiveContent();
       if (currentMode_ == ApplicationMode::Archive) return returnFromArchive();
       if (currentMode_ == ApplicationMode::Locate) return returnFromLocate();
@@ -214,6 +278,8 @@ bool Application::handleCommand(Command command) {
       return startProgramPrompt();
     case Command::StartLocate:
       return startLocatePrompt();
+    case Command::StartShell:
+      return startShell();
     case Command::None:
       return false;
   }
@@ -331,6 +397,30 @@ bool Application::returnFromArchive() {
   archiveMode_.saveCursorPosition();
   currentMode_ = ApplicationMode::Directory;
   directoryView_.redraw();
+  return true;
+}
+
+bool Application::returnFromShell() {
+  currentMode_ = shellReturnMode_;
+  activeView().redraw();
+  return true;
+}
+
+// Ported from the M_shell (^[s) entry point: starts the pty-backed
+// child on first use only (shellStarted_), and just switches the
+// active screen on every subsequent entry -- the child keeps running
+// in the background across Back/^G in between (see class comment).
+// Refuses re-entry from within Shell mode itself (nothing to do).
+bool Application::startShell() {
+  if (currentMode_ == ApplicationMode::Shell) return false;
+  if (!shellStarted_) {
+    if (!shell_.start()) return false;
+    shellStarted_ = true;
+  }
+  shellReturnMode_ = currentMode_;
+  currentMode_ = ApplicationMode::Shell;
+  shell_.scrollback().redraw();
+  shell_.commandLine().redraw();
   return true;
 }
 
@@ -548,5 +638,6 @@ ManMode &Application::manMode() { return manMode_; }
 ProgramMode &Application::programMode() { return programMode_; }
 LocateMode &Application::locateMode() { return locateMode_; }
 ArchiveMode &Application::archiveMode() { return archiveMode_; }
+Shell &Application::shell() { return shell_; }
 
 }  // namespace fm
