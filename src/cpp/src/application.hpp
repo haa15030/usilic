@@ -18,6 +18,7 @@
 #include "history.hpp"
 #include "key_input.hpp"
 #include "line_editor.hpp"
+#include "list_browser_mode.hpp"
 #include "locate_mode.hpp"
 #include "man_mode.hpp"
 #include "mode_stack.hpp"
@@ -51,7 +52,9 @@ enum class Command {
   StartMove,
   StartRemove,
   StartExit,
-  StartDu
+  StartDu,
+  StartDirectoryHistory,
+  StartCommandHistory
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -60,7 +63,20 @@ enum class Command {
 // legacy mode (M_cut): Cut shows the list of segment labels,
 // CutContent shows one selected segment's actual lines -- see the
 // class comment on why CutMode itself doesn't merge them.
-enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate, Archive, ArchiveContent, Shell, Du };
+enum class ApplicationMode {
+  Directory,
+  File,
+  Grep,
+  Cut,
+  CutContent,
+  Man,
+  Locate,
+  Archive,
+  ArchiveContent,
+  Shell,
+  Du,
+  ListBrowser
+};
 
 // The top-level controller: owns the ModeStack(s) and every *Mode
 // instance, maps keypresses to Command, and dispatches each Command
@@ -275,12 +291,53 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate
 //     identically here (always a fresh `du`), deferring M_du2's own
 //     "reuse the existing DU buffer without re-running `du`" shortcut
 //     the same way LOCATE's analogous ^Jl shortcut was deferred.
+//   - The history/list browser (m_list(), ^R=M_hist/^J^R=M_cmd/
+//     ^I=M_list) turned out to be the most heavily simplified action
+//     in this whole port: tracing m_list() shows it picks from NINE
+//     different History/Configuration-backed categories depending on
+//     which prompt context was active when the key was pressed
+//     (T_hfile/T_hdir/T_hman/T_hlocate/T_hfgrep/T_hegrep/T_list/
+//     T_cmd/T_hist) -- context-tracking this whole port's Application-
+//     level design otherwise avoids needing. This slice wires only
+//     the two least ambiguous, most directly useful cases, both
+//     Directory-mode-only: ^R browses History::RingCategory::
+//     RecentDirectory (newest first), ^J^R browses ::ShellCommand.
+//     ListBrowserMode (already a thin, generic "show strings, track a
+//     selection" class, see its own header) needed no changes at all
+//     -- Application just needed a `History &history_` reference of
+//     its own (new; every other *Mode needing History gets it via its
+//     own constructor instead) to call recentEntries() directly, since
+//     populating this list isn't any single *Mode's job. Enter on a
+//     RecentDirectory entry drills into DirectoryMode (the same shape
+//     as DU's directory entries); Enter on a ShellCommand entry is a
+//     no-op in this slice (pre-filling Shell's command line with it,
+//     the obvious next step, needs Shell to already be started, which
+//     adds a real state-management question -- what happens if it
+//     isn't -- deliberately left open rather than guessed at).
 //
 // Deliberately excluded (future work, not this slice):
+//   - The other 7 of m_list()'s 9 categories (T_hfile/T_hdir/T_hman/
+//     T_hlocate/T_hfgrep/T_hegrep/T_list -- the Configuration-seed-
+//     backed one, GREP/PROGRAM patterns rather than a History ring)
+//     and M_list's own plain ^I/Tab binding (context-dependent in
+//     legacy, and Tab already means something different in Shell mode
+//     here -- see feedShellByte()): each is the same shape of
+//     addition as ^R/^J^R above (pick a category, show it, decide
+//     what Enter does), deferred to keep this slice reviewable.
+//     Recording entries into these rings at all (e.g. every
+//     DirectoryMode::enterDirectory() call feeding
+//     RingCategory::RecentDirectory via History::pushRecent()) isn't
+//     wired yet either -- History itself is fully capable of it
+//     (pushRecent(), already exercised by History's own tests), this
+//     slice just doesn't call it from Application, so recentEntries()
+//     will be empty until something else populates it (this session's
+//     own tests call pushRecent() directly to exercise the browsing
+//     side independently).
 //   - Every mode besides Directory/File/Grep/Cut/Man/Locate/Archive/
-//     Shell/Du: history/list browsers, help/error/log screens --
-//     each already has its own *Mode class built; wiring each one in
-//     is the same shape of change (extend Command/ApplicationMode,
+//     Shell/Du/ListBrowser: help/error/log screens -- each already
+//     has its own *Mode class built (help doesn't -- see CLAUDE.md's
+//     own history on why FileMode already covers it); wiring each one
+//     in is the same shape of change (extend Command/ApplicationMode,
 //     extend feedByte()'s leader table, extend handleCommand())
 //     repeated per mode, deferred to keep each slice reviewable.
 //   - DuMode's own chdir()-free design means the legacy behavior of
@@ -442,12 +499,14 @@ class Application {
   Shell &shell();
   CpMvRmMode &cpMvRmMode();
   DuMode &duMode();
+  ListBrowserMode &listBrowserMode();
 
  private:
   bool openSelectedEntry();
   bool openSelectedSegment();
   bool openSelectedArchiveEntry();
   bool openSelectedDuEntry();
+  bool openSelectedListEntry();
   bool toggleMark();
   bool returnToDirectory();
   bool returnFromGrep();
@@ -459,8 +518,10 @@ class Application {
   bool returnFromArchive();
   bool returnFromShell();
   bool returnFromDu();
+  bool returnFromListBrowser();
   ContentView &activeView();
   std::vector<std::string> collectTargetPaths() const;
+  bool startListBrowser(RingCategory category);
 
   bool startGrepPrompt(GrepSyntax syntax);
   bool startCutPrompt(GrepSyntax syntax);
@@ -488,6 +549,7 @@ class Application {
   bool executeDu(const std::string &path);
 
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
+  History &history_;  // startListBrowser()'s own recentEntries() lookup -- no other member currently needs this
   ModeStack modeStack_;
   ModeStack cutModeStack_;
   ContentView directoryView_;
@@ -500,6 +562,7 @@ class Application {
   ContentView archiveView_;
   ContentView archiveContentView_;
   ContentView duView_;
+  ContentView listBrowserView_;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;
@@ -512,6 +575,7 @@ class Application {
   Shell shell_;
   CpMvRmMode cpMvRmMode_;
   DuMode duMode_;
+  ListBrowserMode listBrowserMode_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
@@ -519,6 +583,8 @@ class Application {
   ApplicationMode manReturnMode_ = ApplicationMode::Directory;
   ApplicationMode locateReturnMode_ = ApplicationMode::Directory;
   ApplicationMode shellReturnMode_ = ApplicationMode::Directory;
+  ApplicationMode listBrowserReturnMode_ = ApplicationMode::Directory;
+  RingCategory listBrowserCategory_ = RingCategory::RecentDirectory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;
   bool shellStarted_ = false;

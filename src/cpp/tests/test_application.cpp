@@ -19,6 +19,7 @@ using fm::Configuration;
 using fm::GrepSyntax;
 using fm::History;
 using fm::KeyInput;
+using fm::RingCategory;
 using fm::ShellOptions;
 using fm::test::RecordingDisplay;
 
@@ -1176,4 +1177,78 @@ TEST_CASE_FIXTURE(Fixture, "DU: ^G cancels the pre-filled prompt without running
 
   CHECK_FALSE(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+// -- History/list browser: ^R (recent directories), ^J^R (shell
+// command history) -- see class comment for why only these 2 of
+// m_list()'s 9 categories are wired in this slice --
+
+TEST_CASE_FIXTURE(Fixture, "resolveCommand: ^R resolves to StartDirectoryHistory") {
+  CHECK(Application::resolveCommand(0x12, std::nullopt) == Command::StartDirectoryHistory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^R starts the command-history browser (StartCommandHistory)") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte(0x12, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDirectoryHistory): refused outside Directory mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK_FALSE(app.handleCommand(Command::StartDirectoryHistory));
+}
+
+TEST_CASE_FIXTURE(Fixture, "history browser: shows real pushRecent() entries, newest first") {
+  history.pushRecent(RingCategory::RecentDirectory, "/one");
+  history.pushRecent(RingCategory::RecentDirectory, "/two");
+  history.pushRecent(RingCategory::RecentDirectory, "/three");
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().items().size() == 3);
+  CHECK(app.listBrowserMode().items()[0] == "/three");
+  CHECK(app.listBrowserMode().items()[1] == "/two");
+  CHECK(app.listBrowserMode().items()[2] == "/one");
+}
+
+TEST_CASE_FIXTURE(Fixture, "history browser: Enter on a recent directory navigates DirectoryMode there") {
+  history.pushRecent(RingCategory::RecentDirectory, (root / "subdir").string());
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  bool sawSubTxt = false;
+  for (const auto &entry : app.directoryMode().entries())
+    if (entry.name.find("sub.txt") != std::string::npos) sawSubTxt = true;
+  CHECK(sawSubTxt);
+}
+
+TEST_CASE_FIXTURE(Fixture, "command history: Enter on an entry is a no-op in this slice") {
+  history.pushRecent(RingCategory::ShellCommand, "echo hi");
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCommandHistory));
+  REQUIRE(app.listBrowserMode().items().size() == 1);
+
+  CHECK_FALSE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+}
+
+TEST_CASE_FIXTURE(Fixture, "history browser: Back returns to Directory mode") {
+  history.pushRecent(RingCategory::RecentDirectory, "/somewhere");
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());
 }

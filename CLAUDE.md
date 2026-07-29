@@ -2640,6 +2640,48 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      (Docker)双方でパス確認。実`usilic`バイナリのビルドにも影響が
      無いことを別途確認済み。
 
+52. **2026-07-29: Applicationクラスに履歴/一覧ブラウザを追加(既存
+    `ListBrowserMode`の配線)**
+   - DU完了に続き、次に提案していた「DU/履歴ブラウザの配線」の
+     残り半分として履歴/一覧ブラウザに着手。`m_list()`(^R=`M_hist`、
+     ^J^R=`M_cmd`、^I=`M_list`)を確認した。
+   - **このスライス最大の簡略化ポイントを発見**: `m_list()`を
+     追うと、実際には`T_hfile`/`T_hdir`/`T_hman`/`T_hlocate`/
+     `T_hfgrep`/`T_hegrep`/`T_list`/`T_cmd`/`T_hist`という**9種類**の
+     カテゴリのうち「直前にどのプロンプト文脈にいたか」に応じて
+     どれを見せるかを動的に切り替える設計だと判明。これは
+     `Application`が他のスライスで一貫して避けてきた「文脈依存の
+     状態追跡」そのものだったため、最も曖昧さが無く実用価値の高い
+     2つだけに絞った: `^R`は`History::RingCategory::
+     RecentDirectory`(Directory限定)、`^J^R`は`::ShellCommand`
+     (同じくDirectory限定)。
+   - `ListBrowserMode`自身(28クラス目、既に「文字列一覧を見せて
+     選択を追跡するだけ」の汎用クラスとして完成済み)には一切
+     変更不要だった。ただし`recentEntries()`を直接呼ぶ必要が
+     あったため、`Application`が初めて`History&`を自前のメンバ
+     として保持するようになった(これまでは各`*Mode`のコンストラクタ
+     経由で渡すだけだった)。
+   - Enterの扱いはカテゴリごとに分岐: `RecentDirectory`は
+     `DirectoryMode::enterDirectory()`へドリルダウン(DUのディレクトリ
+     エントリと同じ形)。`ShellCommand`は今回は無視(このスライスでは
+     何もしない) — 「Shellのコマンドラインへ差し込む」が自然な
+     次の一手だが、Shellがまだ起動していない場合にどうするか、という
+     新たな状態管理の問題が生じるため、憶測で実装せず意図的に見送った。
+   - **意図的に見送った範囲**: 残り7カテゴリ(T_hfile等)、`M_list`
+     自身の`^I`(Tab)単独束縛(Shellモードでは既にTabの意味が別
+     (completion)であり、文脈依存でもあるため)、各操作(GREP検索/
+     LOCATE検索/ディレクトリ移動等)を実際に対応する`RingCategory`
+     へ記録する処理(`History::pushRecent()`自体は既に完成済みだが、
+     `Application`側のどのアクションからも呼ばれていない — 今回の
+     テストは`pushRecent()`を直接呼んでブラウズ側だけを独立検証)。
+   - **検証**: ^Rのキー解決、^J^Rでのコマンド履歴ブラウザ起動、
+     Directory以外のモードからの起動拒否、実`pushRecent()`した
+     エントリが新しい順で一覧表示されること、ディレクトリ履歴からの
+     Enterでの実際のディレクトリ遷移、コマンド履歴でのEnterが
+     無視されること、^Gでの一覧復帰を、doctestで新規7件、既存344件
+     全件、Mac/Ubuntu 26.04(Docker)双方でパス確認。実`usilic`
+     バイナリのビルドにも影響が無いことを別途確認済み。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

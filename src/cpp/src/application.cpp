@@ -1,6 +1,7 @@
 #include "application.hpp"
 
 #include <algorithm>
+#include <deque>
 #include <sstream>
 
 namespace fm {
@@ -18,6 +19,7 @@ constexpr int kCarriageReturn = 0x0d;  // ^M
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions)
     : configuration_(configuration),
+      history_(history),
       directoryView_(display),
       fileView_(display),
       grepView_(display),
@@ -28,6 +30,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       archiveView_(display),
       archiveContentView_(display),
       duView_(display),
+      listBrowserView_(display),
       promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
       fileMode_(fileView_, history, encoding, width),
@@ -44,7 +47,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
         return shellOptions;
       }()),
       cpMvRmMode_(configuration),
-      duMode_(duView_, history, configuration) {
+      duMode_(duView_, history, configuration),
+      listBrowserMode_(listBrowserView_) {
   // The bottom row is reserved for prompt text entry (search/cut/man/
   // locate/du patterns) -- legacy's equivalent is the mode-line row
   // disp_window() left alone for exactly this (see ContentView's own
@@ -61,6 +65,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   archiveView_.setViewport(0, contentHeight);
   archiveContentView_.setViewport(0, contentHeight);
   duView_.setViewport(0, contentHeight);
+  listBrowserView_.setViewport(0, contentHeight);
   promptEditor_.setField(display.rows() - 1, 0, std::max(1, display.columns()));
 }
 
@@ -118,6 +123,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::StartFgrep;
     case 0x80:  // ^Space (M_mark) -- KeyInput reports a literal NUL/Ctrl-Space as 0x80, see its class comment
       return Command::ToggleMark;
+    case 0x12:  // ^R (M_hist)
+      return Command::StartDirectoryHistory;
     default:
       return Command::None;
   }
@@ -155,6 +162,8 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
       case 'd':       // ^J d : DU
       case 0x04:      // ^J ^D : DU
         return handleCommand(Command::StartDu);
+      case 0x12:      // ^J ^R : command history (M_cmd)
+        return handleCommand(Command::StartCommandHistory);
       default:
         return false;  // unrecognized ^J-sequence in this slice
     }
@@ -258,6 +267,8 @@ ContentView &Application::activeView() {
       return shell_.scrollback();
     case ApplicationMode::Du:
       return duView_;
+    case ApplicationMode::ListBrowser:
+      return listBrowserView_;
     case ApplicationMode::Directory:
     default:
       return directoryView_;
@@ -283,8 +294,10 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Cut) return openSelectedSegment();
       if (currentMode_ == ApplicationMode::Archive) return openSelectedArchiveEntry();
       if (currentMode_ == ApplicationMode::Du) return openSelectedDuEntry();
+      if (currentMode_ == ApplicationMode::ListBrowser) return openSelectedListEntry();
       return false;
     case Command::Back:
+      if (currentMode_ == ApplicationMode::ListBrowser) return returnFromListBrowser();
       if (currentMode_ == ApplicationMode::Du) return returnFromDu();
       if (currentMode_ == ApplicationMode::Shell) return returnFromShell();
       if (currentMode_ == ApplicationMode::ArchiveContent) return returnFromArchiveContent();
@@ -327,6 +340,10 @@ bool Application::handleCommand(Command command) {
       return startExitPrompt();
     case Command::StartDu:
       return startDuPrompt();
+    case Command::StartDirectoryHistory:
+      return startListBrowser(RingCategory::RecentDirectory);
+    case Command::StartCommandHistory:
+      return startListBrowser(RingCategory::ShellCommand);
     case Command::None:
       return false;
   }
@@ -399,6 +416,23 @@ bool Application::openSelectedDuEntry() {
   if (!fileMode_.loadFile(entry->path)) return false;
   currentMode_ = ApplicationMode::File;
   return true;
+}
+
+// Ported from m_list()'s dispatch (see class comment for the 7 other
+// categories not wired here): RecentDirectory drills into
+// DirectoryMode; every other category (just ShellCommand in this
+// slice) is a no-op, since deciding what "open" means for a shell
+// command (pre-fill Shell's command line? require Shell already
+// started?) is deliberately left open rather than guessed at.
+bool Application::openSelectedListEntry() {
+  const std::string *item = listBrowserMode_.selectedItem();
+  if (!item) return false;
+  if (listBrowserCategory_ == RingCategory::RecentDirectory) {
+    if (!directoryMode_.enterDirectory(*item)) return false;
+    currentMode_ = ApplicationMode::Directory;
+    return true;
+  }
+  return false;
 }
 
 // Ported from M_mark (^Space): toggles the mark at the cursor.
@@ -502,6 +536,12 @@ bool Application::returnFromShell() {
   return true;
 }
 
+bool Application::returnFromListBrowser() {
+  currentMode_ = listBrowserReturnMode_;
+  activeView().redraw();
+  return true;
+}
+
 // Ported from the M_shell (^[s) entry point: starts the pty-backed
 // child on first use only (shellStarted_), and just switches the
 // active screen on every subsequent entry -- the child keeps running
@@ -574,6 +614,24 @@ bool Application::startDuPrompt() {
   promptKind_ = PromptKind::DuPath;
   promptEditor_.setText(directoryMode_.currentDirectory());
   promptEditor_.redraw();
+  return true;
+}
+
+// Ported from m_list()'s dispatch, narrowed to the two least
+// ambiguous categories (see class comment). Not prompt-driven -- this
+// is an immediate action, like archive-browsing's auto-detection,
+// not a text-entry flow. Directory-only entry, matching every other
+// history-adjacent action in this slice. History::recentEntries()
+// returns oldest-first; shown newest-first here, the more useful
+// order for a "recent items" picker.
+bool Application::startListBrowser(RingCategory category) {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  const std::deque<std::string> &recent = history_.recentEntries(category);
+  std::vector<std::string> items(recent.rbegin(), recent.rend());
+  listBrowserCategory_ = category;
+  listBrowserReturnMode_ = currentMode_;
+  listBrowserMode_.show(items);
+  currentMode_ = ApplicationMode::ListBrowser;
   return true;
 }
 
@@ -871,6 +929,7 @@ ProgramMode &Application::programMode() { return programMode_; }
 LocateMode &Application::locateMode() { return locateMode_; }
 ArchiveMode &Application::archiveMode() { return archiveMode_; }
 DuMode &Application::duMode() { return duMode_; }
+ListBrowserMode &Application::listBrowserMode() { return listBrowserMode_; }
 Shell &Application::shell() { return shell_; }
 CpMvRmMode &Application::cpMvRmMode() { return cpMvRmMode_; }
 
