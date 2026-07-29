@@ -12,9 +12,10 @@ constexpr int kControlG = 0x07;        // ^G
 constexpr int kCarriageReturn = 0x0d;  // ^M
 }  // namespace
 
-Application::Application(Display &display, History &history, const Configuration &configuration,
+Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width)
-    : directoryView_(display),
+    : configuration_(configuration),
+      directoryView_(display),
       fileView_(display),
       grepView_(display),
       cutView_(display),
@@ -25,7 +26,8 @@ Application::Application(Display &display, History &history, const Configuration
       fileMode_(fileView_, history, encoding, width),
       grepMode_(grepView_, configuration),
       cutMode_(cutView_, cutModeStack_, configuration),
-      manMode_(manView_, history, configuration, encoding, width) {
+      manMode_(manView_, history, configuration, encoding, width),
+      programMode_(keyInput, history) {
   // The bottom row is reserved for prompt text entry (search/cut/man
   // patterns, and a future slice's LOCATE query prompt) -- legacy's
   // equivalent is the mode-line row disp_window() left alone for
@@ -114,6 +116,9 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
       case 'm':              // ^J m : MAN
       case kCarriageReturn:  // ^J ^M : MAN (the second byte here is ^M, unrelated to a bare Enter)
         return handleCommand(Command::StartMan);
+      case 'p':      // ^J p : PROGRAM
+      case 0x10:     // ^J ^P : PROGRAM (the second byte here is ^P, unrelated to plain ^P/MoveUp)
+        return handleCommand(Command::StartProgram);
       default:
         return false;  // unrecognized ^J-sequence in this slice (LOCATE/... is future work)
     }
@@ -183,6 +188,8 @@ bool Application::handleCommand(Command command) {
       return startCutPrompt(GrepSyntax::Regex);
     case Command::StartMan:
       return startManPrompt();
+    case Command::StartProgram:
+      return startProgramPrompt();
     case Command::None:
       return false;
   }
@@ -298,6 +305,18 @@ bool Application::startManPrompt() {
   return true;
 }
 
+// Ported from m_prog()'s M_prog/M_prog2 entry (see class comment for
+// why, unlike GREP/CUT/MAN, this never switches ApplicationMode at
+// all -- it runs a foreground command and returns to whatever was
+// already showing). Like MAN, always reachable and always starts
+// with an empty prompt.
+bool Application::startProgramPrompt() {
+  promptKind_ = PromptKind::ProgramCommand;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
 bool Application::feedPromptByte(int byte) {
   if (byte == kCarriageReturn) return submitPrompt();
   if (byte == kControlG) {
@@ -321,6 +340,8 @@ bool Application::submitPrompt() {
       return executeCut(text);
     case PromptKind::ManName:
       return executeMan(text);
+    case PromptKind::ProgramCommand:
+      return executeProgram(text);
     case PromptKind::None:
       return false;
   }
@@ -374,6 +395,42 @@ bool Application::executeMan(const std::string &name) {
   return true;
 }
 
+// Ported from mode.c's M_prog case: the typed command line's first
+// word must be a strncmp-prefix match of some PROGRAM directive
+// entry's own first word (find_prog(), sub.c) -- otherwise legacy
+// falls back to SHELL mode with the typed line pre-filled, which
+// isn't wired here yet (see class comment). Runs the whole typed line
+// via ProgramMode::run() when recognized; ApplicationMode never
+// changes either way (see class comment).
+bool Application::executeProgram(const std::string &command) {
+  std::size_t start = command.find_first_not_of(" \t");
+  if (start == std::string::npos) {
+    activeView().redraw();
+    return false;
+  }
+  std::size_t end = command.find_first_of(" \t", start);
+  std::string firstWord = command.substr(start, end == std::string::npos ? std::string::npos : end - start);
+
+  bool recognized = false;
+  for (const auto &seed : configuration_.programSeedCommands()) {
+    std::size_t seedEnd = seed.find_first_of(" \t");
+    std::string seedFirstWord = seed.substr(0, seedEnd);
+    if (!seedFirstWord.empty() && firstWord.compare(0, seedFirstWord.size(), seedFirstWord) == 0) {
+      recognized = true;
+      break;
+    }
+  }
+
+  if (!recognized) {
+    activeView().redraw();
+    return false;
+  }
+
+  programMode_.run(command);
+  activeView().redraw();
+  return true;
+}
+
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
 const std::string &Application::promptText() const { return promptEditor_.text(); }
 
@@ -383,5 +440,6 @@ FileMode &Application::fileMode() { return fileMode_; }
 GrepMode &Application::grepMode() { return grepMode_; }
 CutMode &Application::cutMode() { return cutMode_; }
 ManMode &Application::manMode() { return manMode_; }
+ProgramMode &Application::programMode() { return programMode_; }
 
 }  // namespace fm

@@ -16,6 +16,7 @@
 #include "line_editor.hpp"
 #include "man_mode.hpp"
 #include "mode_stack.hpp"
+#include "program_mode.hpp"
 
 namespace fm {
 
@@ -35,7 +36,8 @@ enum class Command {
   StartEgrep,
   StartCutFixed,
   StartCutRegex,
-  StartMan
+  StartMan,
+  StartProgram
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -124,15 +126,45 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man };
 //     K_z in m_man() -- the name is always freshly typed), so it can
 //     be started from -- and returns to -- whichever mode was active,
 //     tracked the same way grepReturnMode_/cutReturnMode_ are.
+//   - PROGRAM (M_prog/M_prog2, ^J^P/^Jp) doesn't switch
+//     ApplicationMode at ALL, unlike every other prompt-driven action
+//     above: tracing mode.c's M_prog case (the m_cr()-equivalent that
+//     runs once the typed command line is submitted) shows it just
+//     runs the command in the foreground and returns to whatever
+//     screen was already showing -- there's no new persistent screen
+//     the way GREP/CUT/MAN each create one. This also means
+//     ProgramMode needs a live KeyInput (to actually leave/re-enter
+//     raw termio around the child process, unlike every other *Mode
+//     this class owns) -- so, uniquely, Application takes a
+//     KeyInput& constructor parameter instead of only ever receiving
+//     already-resolved bytes; see ProgramMode's own class comment for
+//     why that reference has to be the SAME KeyInput instance
+//     actually controlling the real tty, not a throwaway one
+//     Application could construct for itself. Legacy's own program-
+//     name validation (find_prog(): the typed line's first word must
+//     be a strncmp-prefix match of some PROGRAM directive's own first
+//     word) is replicated in executeProgram() against
+//     Configuration::programSeedCommands().
 //
 // Deliberately excluded (future work, not this slice):
-//   - Every mode besides Directory/File/Grep/Cut/Man: PROGRAM,
-//     LOCATE, archive browsing, SHELL entry, DU, CP/MV/RM execution,
-//     history/list browsers, help/error/log screens -- each already
-//     has its own *Mode class built; wiring each one in is the same
+//   - Every mode besides Directory/File/Grep/Cut/Man, and PROGRAM's
+//     own SHELL fallback: LOCATE, archive browsing, SHELL entry, DU,
+//     CP/MV/RM execution, history/list browsers, help/error/log
+//     screens -- each already has its own *Mode class built (SHELL's
+//     glue class doesn't exist yet); wiring each one in is the same
 //     shape of change (extend Command/ApplicationMode, extend
 //     feedByte()'s leader table, extend handleCommand()) repeated per
-//     mode, deferred to keep each slice reviewable.
+//     mode, deferred to keep each slice reviewable. In particular,
+//     mode.c's M_prog case falls back to launching SHELL mode with
+//     the typed line pre-filled when the first word ISN'T a
+//     recognized PROGRAM-list entry (`m = -M_shell`) -- executeProgram()
+//     here just reports failure instead, since there is no SHELL mode
+//     to fall back to yet.
+//   - do_prog()'s post-run staleness check (re-stat the file being
+//     viewed; if it changed while the program ran, force a reload):
+//     not replicated here either -- a real gap, flagged rather than
+//     silently glossed over, deferred until this slice's minimal
+//     "just run it" behavior needs to grow that far.
 //   - GREP's own further actions: opening/jumping to a matched line's
 //     original context, nested search (searching within results),
 //     highlighting the matched substring, and recording the pattern
@@ -168,7 +200,10 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man };
 //     same reason, not part of the commands this slice maps.
 class Application {
  public:
-  Application(Display &display, History &history, const Configuration &configuration,
+  // `keyInput` must be the same instance actually controlling the
+  // real tty's raw/cooked mode (see class comment) -- Application
+  // only ever forwards it to ProgramMode, never reads from it itself.
+  Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
               Charset::Encoding encoding, int width);
 
   // Lists `directory` (DirectoryMode::enterDirectory()) and makes it
@@ -213,6 +248,7 @@ class Application {
   GrepMode &grepMode();
   CutMode &cutMode();
   ManMode &manMode();
+  ProgramMode &programMode();
 
  private:
   bool openSelectedEntry();
@@ -227,13 +263,16 @@ class Application {
   bool startGrepPrompt(GrepSyntax syntax);
   bool startCutPrompt(GrepSyntax syntax);
   bool startManPrompt();
+  bool startProgramPrompt();
   bool feedPromptByte(int byte);
   bool submitPrompt();
   void cancelPrompt();
   bool executeGrep(const std::string &pattern);
   bool executeCut(const std::string &pattern);
   bool executeMan(const std::string &name);
+  bool executeProgram(const std::string &command);
 
+  const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   ModeStack modeStack_;
   ModeStack cutModeStack_;
   ContentView directoryView_;
@@ -248,6 +287,7 @@ class Application {
   GrepMode grepMode_;
   CutMode cutMode_;
   ManMode manMode_;
+  ProgramMode programMode_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
@@ -258,7 +298,7 @@ class Application {
 
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
 
-  enum class PromptKind { None, GrepPattern, CutPattern, ManName };
+  enum class PromptKind { None, GrepPattern, CutPattern, ManName, ProgramCommand };
   PromptKind promptKind_ = PromptKind::None;
 };
 

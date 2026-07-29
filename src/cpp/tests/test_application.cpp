@@ -31,15 +31,27 @@ fs::path makeTempDir() {
 struct Fixture {
   fs::path root;
   RecordingDisplay display{24, 80};
+  // KeyInput's raw-mode methods safely no-op when never open()ed
+  // against a real tty (see test_program_mode.cpp's own fixture and
+  // key_input.cpp) -- reusing the same RecordingDisplay is fine since
+  // ProgramMode only ever calls leaveRawMode()/reenterRawMode() on
+  // this, never anything display-size-dependent.
+  KeyInput keyInput{display};
   History history;
   Configuration configuration;
-  Application app{display, history, configuration, Charset::Encoding::Ascii, 80};
+  Application app{display, keyInput, history, configuration, Charset::Encoding::Ascii, 80};
 
   Fixture() : root(makeTempDir()) {
     fs::create_directory(root / "subdir");
     { std::ofstream(root / "plain.txt") << "hello\nworld\n"; }
     { std::ofstream(root / "log.txt") << "marker one\nline1\nmarker two\nline2a\nline2b\nmarker three\nline3\n"; }
     { std::ofstream(root / "subdir" / "sub.txt") << "alpha\nbeta\nalpha\ngamma\n"; }
+    // executeProgram() only recognizes commands whose first word
+    // matches a PROGRAM directive entry (find_prog()'s own semantics,
+    // see application.cpp) -- the default Configuration has no
+    // PROGRAM entries at all (only ever populated by parsing an rc
+    // file), so tests need this loaded to exercise the success path.
+    configuration.loadRcText("PROGRAM\n echo\n", true);
   }
 
   ~Fixture() { fs::remove_all(root); }
@@ -508,5 +520,77 @@ TEST_CASE_FIXTURE(Fixture, "MAN: submitting an empty name fails cleanly without 
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartMan));
   CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+// -- feedByte: ^Jp / ^J^P leader sequences for PROGRAM --
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J p starts a PROGRAM prompt (StartProgram)") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte('p', std::nullopt));
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^P also starts a PROGRAM prompt") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte(0x10, std::nullopt));
+  CHECK(app.promptActive());
+}
+
+// -- PROGRAM: only a recognized (PROGRAM-list first-word-prefix
+// matching) command actually runs; ApplicationMode never changes --
+
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: a recognized command actually runs, with real side effects") {
+  REQUIRE(app.start(path()));
+  std::string outPath = (root / "prog_out.txt").string();
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("echo hello > '" + outPath + "'");
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // PROGRAM never switches mode
+
+  std::ifstream in(outPath);
+  std::string content;
+  std::getline(in, content);
+  CHECK(content == "hello");
+}
+
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: an unrecognized command (not in the PROGRAM list) is refused") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("some-unlisted-command arg");
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: an empty command fails cleanly") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
+}
+
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: works from File mode too, and stays in File mode afterwards") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("echo hi");
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::File);
+}
+
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^G cancels the prompt without running anything") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("echo hello");
+  CHECK(app.feedByte(0x07, std::nullopt));
+  CHECK_FALSE(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
