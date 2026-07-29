@@ -38,6 +38,8 @@ struct Fixture {
   Fixture() : root(makeTempDir()) {
     fs::create_directory(root / "subdir");
     { std::ofstream(root / "plain.txt") << "hello\nworld\n"; }
+    { std::ofstream(root / "log.txt") << "marker one\nline1\nmarker two\nline2a\nline2b\nmarker three\nline3\n"; }
+    { std::ofstream(root / "subdir" / "sub.txt") << "alpha\nbeta\nalpha\ngamma\n"; }
   }
 
   ~Fixture() { fs::remove_all(root); }
@@ -268,4 +270,147 @@ TEST_CASE_FIXTURE(Fixture, "GREP: starting a nested search from within grep resu
 
   CHECK_FALSE(app.handleCommand(Command::StartFgrep));
   CHECK_FALSE(app.promptActive());
+}
+
+// -- feedByte: ^Jc / ^J^C leader sequences for CUT --
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J c starts a CUT prompt (StartCutFixed) once in File mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte('c', std::nullopt));
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C also starts a CUT prompt (StartCutRegex)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte(0x03, std::nullopt));
+  CHECK(app.promptActive());
+}
+
+// -- CUT: split, view a segment, resplit it, back out step by step --
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFixed): refused from Directory mode (not this slice's scope)") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.handleCommand(Command::StartCutFixed));
+  CHECK_FALSE(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT: splitting log.txt on 'marker' produces one segment per marker line") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 3);
+  CHECK(app.cutMode().segments()[0].label == "marker one");
+  CHECK(app.cutMode().segments()[1].label == "marker two");
+  CHECK(app.cutMode().segments()[2].label == "marker three");
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT: Enter on a segment label shows that segment's content in CutContent") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  REQUIRE(app.handleCommand(Command::Enter));  // select segment 0 ("marker one")
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT: nested resplit from CutContent, then step back out level by level") {
+  REQUIRE(app.start(path()));
+  int rootIdx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != rootIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/ (pushes a DirectoryMode frame)
+  REQUIRE(app.directoryMode().canGoBack());
+
+  int fileIdx = indexOf("sub.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != fileIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // open sub.txt
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("alpha");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 2);  // "alpha" at line 0 and line 2
+
+  REQUIRE(app.handleCommand(Command::Enter));  // view segment 0: ["alpha", "beta"]
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));  // resplit this segment
+  feedText("beta");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 2);  // ["alpha"] then ["beta"]
+
+  // Step back out: nested Cut -> outer Cut (3-segment... 2-segment list) -> File -> Directory(subdir) -> Directory(root)
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 2);
+  CHECK(app.cutMode().segments()[0].label == "alpha");
+
+  REQUIRE(app.handleCommand(Command::Back));  // no more nested cut levels -> back to File
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "subdir" / "sub.txt").string());
+
+  REQUIRE(app.handleCommand(Command::Back));  // File -> Directory(subdir)
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
+
+  // The directory-descent frame pushed before any CUT activity must
+  // be untouched by cutModeStack_'s own push/pop churn above -- the
+  // regression this slice's separate-ModeStack design exists to
+  // prevent (see Application's class comment).
+  REQUIRE(app.directoryMode().canGoBack());
+  REQUIRE(app.handleCommand(Command::Back));  // Directory(subdir) -> Directory(root)
+  CHECK(app.directoryMode().currentDirectory() == path());
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT: Back from CutContent returns to the Cut label list, not further") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 3);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT: ^G cancels a pending cut prompt without splitting") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("marker");
+  CHECK(app.feedByte(0x07, std::nullopt));
+
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::File);
 }

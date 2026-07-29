@@ -5,9 +5,10 @@
 namespace fm {
 
 namespace {
-constexpr int kLeaderJ = 0x0a;  // ^J
-constexpr int kControlS = 0x13; // ^S
-constexpr int kControlG = 0x07; // ^G
+constexpr int kLeaderJ = 0x0a;         // ^J
+constexpr int kControlS = 0x13;        // ^S
+constexpr int kControlC = 0x03;        // ^C
+constexpr int kControlG = 0x07;        // ^G
 constexpr int kCarriageReturn = 0x0d;  // ^M
 }  // namespace
 
@@ -16,11 +17,14 @@ Application::Application(Display &display, History &history, const Configuration
     : directoryView_(display),
       fileView_(display),
       grepView_(display),
+      cutView_(display),
+      cutContentView_(display),
       promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
       fileMode_(fileView_, history, encoding, width),
-      grepMode_(grepView_, configuration) {
-  // The bottom row is reserved for prompt text entry (search
+      grepMode_(grepView_, configuration),
+      cutMode_(cutView_, cutModeStack_, configuration) {
+  // The bottom row is reserved for prompt text entry (search/cut
   // patterns, and future slices' MAN/LOCATE name prompts) -- legacy's
   // equivalent is the mode-line row disp_window() left alone for
   // exactly this (see ContentView's own class comment on why that
@@ -29,6 +33,8 @@ Application::Application(Display &display, History &history, const Configuration
   directoryView_.setViewport(0, contentHeight);
   fileView_.setViewport(0, contentHeight);
   grepView_.setViewport(0, contentHeight);
+  cutView_.setViewport(0, contentHeight);
+  cutContentView_.setViewport(0, contentHeight);
   promptEditor_.setField(display.rows() - 1, 0, std::max(1, display.columns()));
 }
 
@@ -47,8 +53,9 @@ bool Application::start(const std::string &directory) {
 // M_kforw/M_kback (space/b/^V and their arrow-adjacent bindings) map
 // to m_page(); M_cr (^M only -- see class comment on why ^J is NOT
 // folded in here) to m_cr(); M_bl (^G) to m_bl(); M_fgrep (^S) starts
-// a search prompt. ^J-leader sequences (e.g. ^J^S for EGREP) aren't
-// resolvable from one byte and are handled by feedByte() instead.
+// a fgrep search prompt. ^J-leader sequences (e.g. ^J^S for EGREP,
+// ^Jc/^J^C for CUT) aren't resolvable from one byte and are handled
+// by feedByte() instead.
 Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey> special) {
   if (special) {
     switch (*special) {
@@ -93,8 +100,17 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
 
   if (leaderJPending_) {
     leaderJPending_ = false;
-    if (!special && byte == kControlS) return handleCommand(Command::StartEgrep);  // ^J ^S
-    return false;  // unrecognized ^J-sequence in this slice (CUT/MAN/LOCATE/... are future work)
+    if (special) return false;
+    switch (byte) {
+      case kControlS:  // ^J ^S : EGREP
+        return handleCommand(Command::StartEgrep);
+      case 'c':  // ^J c : CUT (fixed string)
+        return handleCommand(Command::StartCutFixed);
+      case kControlC:  // ^J ^C : CUT (regex)
+        return handleCommand(Command::StartCutRegex);
+      default:
+        return false;  // unrecognized ^J-sequence in this slice (MAN/LOCATE/... are future work)
+    }
   }
 
   if (!special && byte == kLeaderJ) {
@@ -111,6 +127,10 @@ ContentView &Application::activeView() {
       return fileView_;
     case ApplicationMode::Grep:
       return grepView_;
+    case ApplicationMode::Cut:
+      return cutView_;
+    case ApplicationMode::CutContent:
+      return cutContentView_;
     case ApplicationMode::Directory:
     default:
       return directoryView_;
@@ -132,9 +152,15 @@ bool Application::handleCommand(Command command) {
       activeView().pageDown();
       return true;
     case Command::Enter:
-      if (currentMode_ != ApplicationMode::Directory) return false;
-      return openSelectedEntry();
+      if (currentMode_ == ApplicationMode::Directory) return openSelectedEntry();
+      if (currentMode_ == ApplicationMode::Cut) return openSelectedSegment();
+      return false;
     case Command::Back:
+      if (currentMode_ == ApplicationMode::CutContent) return returnFromCutContent();
+      if (currentMode_ == ApplicationMode::Cut) {
+        if (cutMode_.canGoBack()) return cutMode_.goBack();
+        return returnFromCut();
+      }
       if (currentMode_ == ApplicationMode::Grep) return returnFromGrep();
       if (currentMode_ == ApplicationMode::File) return returnToDirectory();
       return directoryMode_.goBack();
@@ -142,6 +168,10 @@ bool Application::handleCommand(Command command) {
       return startGrepPrompt(GrepSyntax::Fixed);
     case Command::StartEgrep:
       return startGrepPrompt(GrepSyntax::Regex);
+    case Command::StartCutFixed:
+      return startCutPrompt(GrepSyntax::Fixed);
+    case Command::StartCutRegex:
+      return startCutPrompt(GrepSyntax::Regex);
     case Command::None:
       return false;
   }
@@ -161,6 +191,21 @@ bool Application::openSelectedEntry() {
   return true;
 }
 
+bool Application::openSelectedSegment() {
+  const CutSegment *segment = cutMode_.selectedSegment();
+  if (!segment) return false;
+
+  std::vector<std::string> content = cutMode_.segmentContent(*segment);
+  std::vector<ContentView::Line> lines;
+  lines.reserve(content.size());
+  for (auto &l : content) lines.push_back({l});
+  cutContentView_.setLines(std::move(lines));
+  cutContentView_.setCursorIndex(0);
+  cutContentView_.redraw();
+  currentMode_ = ApplicationMode::CutContent;
+  return true;
+}
+
 bool Application::returnToDirectory() {
   fileMode_.saveCursorPosition();
   currentMode_ = ApplicationMode::Directory;
@@ -170,6 +215,18 @@ bool Application::returnToDirectory() {
 
 bool Application::returnFromGrep() {
   currentMode_ = grepReturnMode_;
+  activeView().redraw();
+  return true;
+}
+
+bool Application::returnFromCutContent() {
+  currentMode_ = ApplicationMode::Cut;
+  cutView_.redraw();
+  return true;
+}
+
+bool Application::returnFromCut() {
+  currentMode_ = cutReturnMode_;
   activeView().redraw();
   return true;
 }
@@ -184,6 +241,24 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
   grepSyntax_ = syntax;
   grepReturnMode_ = currentMode_;
   promptKind_ = PromptKind::GrepPattern;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
+// Ported from m_cut(): only reachable from File mode (a fresh split
+// of the whole file) or CutContent (resplitting the segment currently
+// being viewed, CutMode::splitSelected()'s "one level deeper") --
+// matching the user-confirmed semantics recorded on CutMode's own
+// class comment. Starting from the Cut label-list itself isn't
+// meaningful (nothing selected yet to resplit); starting from
+// Directory/Grep isn't part of this slice (see class comment's
+// "Deliberately excluded").
+bool Application::startCutPrompt(GrepSyntax syntax) {
+  if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::CutContent) return false;
+  cutSyntax_ = syntax;
+  if (currentMode_ == ApplicationMode::File) cutReturnMode_ = ApplicationMode::File;
+  promptKind_ = PromptKind::CutPattern;
   promptEditor_.setText("");
   promptEditor_.redraw();
   return true;
@@ -208,6 +283,8 @@ bool Application::submitPrompt() {
   switch (kind) {
     case PromptKind::GrepPattern:
       return executeGrep(text);
+    case PromptKind::CutPattern:
+      return executeCut(text);
     case PromptKind::None:
       return false;
   }
@@ -233,6 +310,25 @@ bool Application::executeGrep(const std::string &pattern) {
   return true;
 }
 
+bool Application::executeCut(const std::string &pattern) {
+  bool ok;
+  if (currentMode_ == ApplicationMode::CutContent) {
+    ok = cutMode_.splitSelected(pattern, cutSyntax_);
+  } else {
+    std::vector<std::string> sourceLines;
+    sourceLines.reserve(fileView_.lines().size());
+    for (const auto &line : fileView_.lines()) sourceLines.push_back(line.text);
+    ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
+  }
+
+  if (!ok) {
+    activeView().redraw();
+    return false;
+  }
+  currentMode_ = ApplicationMode::Cut;
+  return true;
+}
+
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
 const std::string &Application::promptText() const { return promptEditor_.text(); }
 
@@ -240,5 +336,6 @@ ApplicationMode Application::currentMode() const { return currentMode_; }
 DirectoryMode &Application::directoryMode() { return directoryMode_; }
 FileMode &Application::fileMode() { return fileMode_; }
 GrepMode &Application::grepMode() { return grepMode_; }
+CutMode &Application::cutMode() { return cutMode_; }
 
 }  // namespace fm

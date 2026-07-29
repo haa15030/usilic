@@ -6,6 +6,7 @@
 #include "charset.hpp"
 #include "configuration.hpp"
 #include "content_view.hpp"
+#include "cut_mode.hpp"
 #include "directory_mode.hpp"
 #include "display.hpp"
 #include "file_mode.hpp"
@@ -21,73 +22,102 @@ namespace fm {
 // what get_m()'s giant switch(m) case label meant, without any of the
 // byte/escape-sequence recognition that produced it (KeyInput's job)
 // or any of the ~50 case labels this port hasn't reached yet.
-enum class Command { None, MoveUp, MoveDown, PageUp, PageDown, Enter, Back, StartFgrep, StartEgrep };
+enum class Command {
+  None,
+  MoveUp,
+  MoveDown,
+  PageUp,
+  PageDown,
+  Enter,
+  Back,
+  StartFgrep,
+  StartEgrep,
+  StartCutFixed,
+  StartCutRegex
+};
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
 // T_* mode constant); scoped down to exactly the modes this slice
-// knows about.
-enum class ApplicationMode { Directory, File, Grep };
+// knows about. Cut and CutContent are two distinct screens for one
+// legacy mode (M_cut): Cut shows the list of segment labels,
+// CutContent shows one selected segment's actual lines -- see the
+// class comment on why CutMode itself doesn't merge them.
+enum class ApplicationMode { Directory, File, Grep, Cut, CutContent };
 
-// The top-level controller: owns the ModeStack and every *Mode
+// The top-level controller: owns the ModeStack(s) and every *Mode
 // instance, maps keypresses to Command, and dispatches each Command
 // to whichever *Mode is current. Ported from menu.c's get_m() (the
 // keystroke-to-command switch) + m_cr() (the "Enter was pressed, do
 // the right thing" routing) + m_bl() (^G) + m_row()/m_page() (cursor
-// movement) + m_grep() (^S/^J^S entering search) + menu()/init_menu()
-// (the outer run loop and startup) -- together the ~3300-line
-// mode.c/menu.c "Mode" layer this whole project has been building
-// toward one class at a time. This is an early slice of it (Directory
-// + File navigation, plus FGREP/EGREP search), see "Deliberately
-// excluded" below for what's intentionally not here yet.
+// movement) + m_grep()/m_cut() (^S/^J^S/^Jc/^J^C entering search/cut)
+// + menu()/init_menu() (the outer run loop and startup) -- together
+// the ~3300-line mode.c/menu.c "Mode" layer this whole project has
+// been building toward one class at a time. This is an early slice of
+// it (Directory + File navigation, plus FGREP/EGREP search and CUT),
+// see "Deliberately excluded" below for what's intentionally not here
+// yet.
 //
-// This is NOT a literal port. Legacy's get_m()/m_cr()/m_bl()/m_grep()
-// are one intertwined state machine over a dozen shared mutable
-// structs (HEAP/ARRAY/FLAG/NUM/LINE/RV/PN/CHILD, see CLAUDE.md and
-// every already-ported *Mode class's own header for why this project
-// keeps choosing not to carry that forward) -- here the equivalent
-// state is just currentMode_ (an enum), a couple of small prompt/
-// leader-key bookkeeping fields, and each owned ContentView's own
-// already-encapsulated cursor state. In particular:
+// This is NOT a literal port. Legacy's get_m()/m_cr()/m_bl()/m_grep()/
+// m_cut() are one intertwined state machine over a dozen shared
+// mutable structs (HEAP/ARRAY/FLAG/NUM/LINE/RV/PN/CHILD, see
+// CLAUDE.md and every already-ported *Mode class's own header for why
+// this project keeps choosing not to carry that forward) -- here the
+// equivalent state is just currentMode_ (an enum), a couple of small
+// prompt/leader-key bookkeeping fields, and each owned ContentView's
+// own already-encapsulated cursor state. In particular:
 //   - Legacy's single shared PP buffer (the 12-slot hp->base[] pool
 //     DirectoryMode's own header flagged as an unsolved gap) is
-//     resolved here by giving Directory, File, and Grep modes each
-//     their own ContentView, all wrapping the same Display. Switching
-//     modes is just "stop calling redraw() on one view, start calling
-//     it on another" -- a view not currently shown keeps its lines/
-//     cursor state exactly as it was, in memory, with nothing to save
-//     or restore. This is why returning from File/Grep to whatever
-//     was active before doesn't need ModeStack at all (see
-//     handleCommand()'s Back case): the prior mode's own state never
-//     left.
-//   - ModeStack is still used, but only for what DirectoryMode itself
-//     already needed it for (directory-to-directory descent, ported
-//     in DirectoryMode's own first slice) -- Application doesn't push
-//     anything onto it for Directory<->File<->Grep transitions; a
-//     plain "which mode did we start this excursion from" field is
-//     sufficient because neither File nor Grep mode recurses into
-//     anything else in this slice.
+//     resolved here by giving Directory, File, Grep, Cut, and
+//     CutContent each their own ContentView, all wrapping the same
+//     Display. Switching modes is just "stop calling redraw() on one
+//     view, start calling it on another" -- a view not currently
+//     shown keeps its lines/cursor state exactly as it was, in
+//     memory, with nothing to save or restore. This is why returning
+//     from File/Grep/Cut/CutContent to whatever was active before
+//     doesn't need a ModeStack push at all (see handleCommand()'s
+//     Back case): the prior mode's own state never left.
+//   - TWO separate ModeStack instances are owned here, not one:
+//     modeStack_ (DirectoryMode's own directory-to-directory descent,
+//     ported in its first slice) and cutModeStack_ (CutMode's own
+//     nested-resplit bookkeeping). They are NOT shared, despite both
+//     being "just a ModeStack" -- confirmed during this class's design
+//     that sharing one instance between them would be a real bug:
+//     CutMode::canGoBack()/goBack() only check "is the stack
+//     non-empty" / "does the popped frame have a cutBuffer", so if a
+//     directory-navigation frame happened to be sitting on top of a
+//     SHARED stack when the user was mid-CUT, goBack() would silently
+//     pop and discard that directory frame while returning false
+//     (frame->cutBuffer null) -- corrupting DirectoryMode's own
+//     history for a completely unrelated excursion. Giving each class
+//     its own ModeStack instance, despite the duplication, avoids
+//     this cross-contamination entirely at the wiring layer without
+//     touching either already-shipped class.
 //   - Legacy's `^J` is a genuine two-byte leader key (^Jw, ^Jc, ^Jl,
-//     ^Jm, ^J^S, ...), not a synonym for Enter/^M -- a subtlety this
-//     class's very first slice got wrong (an earlier revision folded
-//     0x0a into the Enter case for convenience; fixed once EGREP's
-//     ^J^S binding made the conflict concrete). resolveCommand()
+//     ^Jm, ^J^S, ^J^C, ...), not a synonym for Enter/^M -- a subtlety
+//     this class's very first slice got wrong (an earlier revision
+//     folded 0x0a into the Enter case for convenience; fixed once
+//     EGREP's ^J^S binding made the conflict concrete). resolveCommand()
 //     stays a pure single-byte function; the stateful leader-byte
 //     accumulation across two feedByte() calls lives in feedByte()
 //     itself, the one piece of this class that has to remember
 //     anything between keystrokes besides which mode is active.
 //   - Legacy's search-pattern text entry (read_m()'s klen/prompt
-//     machinery once np->M == M_fgrep/M_egrep) is represented here by
-//     a small explicit prompt state (promptKind_) plus an owned
-//     LineEditor -- feedByte() routes raw bytes to the editor instead
-//     of resolveCommand() while a prompt is active, submitting on ^M
-//     and cancelling on ^G, mirroring get_m()'s own read_m()-vs-
-//     dispatch split without needing read_m()'s hand-rolled klen/cname
-//     table (LineEditor already owns text editing; Application only
-//     decides when input goes there instead of through Command
-//     dispatch).
+//     machinery once np->M == M_fgrep/M_egrep/M_cut/M_cut2) is
+//     represented here by a small explicit prompt state (promptKind_)
+//     plus an owned LineEditor -- feedByte() routes raw bytes to the
+//     editor instead of resolveCommand() while a prompt is active,
+//     submitting on ^M and cancelling on ^G, mirroring get_m()'s own
+//     read_m()-vs-dispatch split without needing read_m()'s hand-
+//     rolled klen/cname table (LineEditor already owns text editing;
+//     Application only decides when input goes there instead of
+//     through Command dispatch). GREP and CUT share one promptKind_/
+//     LineEditor pair, distinguished by which PromptKind is pending
+//     and (for CUT) whether currentMode_ was File (fresh split) or
+//     CutContent (resplitting a segment) when the prompt started --
+//     see startCutPrompt()/executeCut().
 //
 // Deliberately excluded (future work, not this slice):
-//   - Every mode besides Directory/File/Grep: CUT, MAN, PROGRAM,
+//   - Every mode besides Directory/File/Grep/Cut: MAN, PROGRAM,
 //     LOCATE, archive browsing, SHELL entry, DU, CP/MV/RM execution,
 //     history/list browsers, help/error/log screens -- each already
 //     has its own *Mode class built; wiring each one in is the same
@@ -100,6 +130,13 @@ enum class ApplicationMode { Directory, File, Grep };
 //     into History's hfgrep/hegrep rings -- all explicitly out of
 //     GrepMode's own scope too (see its class comment); Enter on a
 //     grep result is a no-op in this slice.
+//   - CUT's own ^Jb/^J^B "split without first opening the file view"
+//     shortcut from a directory listing, and LOG mode's built-in
+//     prompt-marker split: both explicitly out of CutMode's own scope
+//     too (see its class comment) -- CUT can only be started from
+//     File mode (a fresh split) or CutContent (a nested resplit) in
+//     this slice. Recording cut patterns into History is likewise out
+//     of scope, same boundary GrepMode already draws.
 //   - Exiting the program (M_exit/T_exit): m_exit()'s superuser-safety
 //     confirmation dialog and screen-stack unwind isn't ported yet;
 //     there is intentionally no Command::Quit in this slice. A caller
@@ -136,9 +173,10 @@ class Application {
   // mappings and their legacy provenance. `special` is whatever
   // KeyInput::readEscapeSequence() returned after an ESC byte, or
   // nullopt for an ordinary byte. Does NOT recognize ^J-leader
-  // sequences (e.g. ^J^S for EGREP) -- those need state across two
-  // calls, which this pure function deliberately can't hold; use
-  // feedByte() for real key-by-key input, which handles both.
+  // sequences (e.g. ^J^S for EGREP, ^Jc/^J^C for CUT) -- those need
+  // state across two calls, which this pure function deliberately
+  // can't hold; use feedByte() for real key-by-key input, which
+  // handles both.
   static Command resolveCommand(int byte, std::optional<KeyInput::SpecialKey> special);
 
   // Executes command against whichever *Mode is current. Returns
@@ -164,35 +202,47 @@ class Application {
   DirectoryMode &directoryMode();
   FileMode &fileMode();
   GrepMode &grepMode();
+  CutMode &cutMode();
 
  private:
   bool openSelectedEntry();
+  bool openSelectedSegment();
   bool returnToDirectory();
   bool returnFromGrep();
+  bool returnFromCutContent();
+  bool returnFromCut();
   ContentView &activeView();
 
   bool startGrepPrompt(GrepSyntax syntax);
+  bool startCutPrompt(GrepSyntax syntax);
   bool feedPromptByte(int byte);
   bool submitPrompt();
   void cancelPrompt();
   bool executeGrep(const std::string &pattern);
+  bool executeCut(const std::string &pattern);
 
   ModeStack modeStack_;
+  ModeStack cutModeStack_;
   ContentView directoryView_;
   ContentView fileView_;
   ContentView grepView_;
+  ContentView cutView_;
+  ContentView cutContentView_;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;
   GrepMode grepMode_;
+  CutMode cutMode_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
+  ApplicationMode cutReturnMode_ = ApplicationMode::Directory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
+  GrepSyntax cutSyntax_ = GrepSyntax::Fixed;
 
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
 
-  enum class PromptKind { None, GrepPattern };
+  enum class PromptKind { None, GrepPattern, CutPattern };
   PromptKind promptKind_ = PromptKind::None;
 };
 
