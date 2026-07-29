@@ -1952,6 +1952,44 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      の安全な扱いを、doctestで新規8件(既存と合わせて計226件)、
      Mac/Ubuntu双方で全件パス確認。
 
+37. **2026-07-29: EditModeクラス(23クラス目)+ExecModeクラス
+    (24クラス目) — Modeの9・10個目の一切れ、`do_edit()`/`do_exec()`**
+   - ユーザー判断で、選択マーキング(`fmark`/`nmark`、`ContentView`
+     拡張が必要)を含む`CP`/`MV`/`RM`一式は保留し、既存クラスの
+     組み合わせで済む関数を先に進めることに。`mode.c`の関数順で
+     `do_prog()`の後に続く`save_ll()`(→`History`で対応済み)を
+     挟んで、`do_edit()`/`do_exec()`に着手。
+   - どちらも`do_prog()`と全く同じ「raw端末制御解除→標準入出力を
+     継承したフォアグラウンド実行→raw復帰」の形だったため、
+     `ProgramMode`実装時に追加した`ChildProcess::runInteractive()`
+     +既存の`KeyInput::leaveRawMode()`/`reenterRawMode()`をそのまま
+     再利用。`do_exec()`は文字列を組み立ててから`alloc_arg()`で
+     再分割するという旧C版の往復処理が不要(`Configuration::
+     programForSuffix()`が既に`vector<string>`のargvを返すため、
+     対象パスを1要素追加するだけで済む)。
+   - **実装中に発見・修正したバグ(自分自身の新規コードのみに
+     起因)**: `EditMode::edit()`の初版は`stat()`の`st_mtime`
+     (秒単位の解像度)で編集前後を比較していたが、テストで即座に
+     完了する(スクリプト化した)EDITORの場合、前後の`stat()`が
+     同じ秒に収まり変更を検出できずテストが失敗した。これは
+     テスト特有の問題ではなく、実際の高速なEDITOR実行(自動化
+     スクリプトに限らず、素早い実編集でも起こりうる)でも同じ
+     盲点になりうる実バグだったため、`std::filesystem::
+     last_write_time()`(ファイルシステムの実際のサブ秒精度を
+     保持)に切り替えて解消した。旧C版が`st_ctime`(メタデータ
+     変更でも動く、内容変更の判定としては不正確)を比較していた
+     点も、内容変更判定として意味の通る`mtime`相当の指標に
+     変更済み。
+   - 意図的に対象外としたもの: いつ編集/実行が許可されるかという
+     モード文脈のガード判定(アーカイブ/CUT/split閲覧中は編集不可、
+     等)、`do_prog()`と同様の`SIGCONT` pid報告ハンドラ(将来の
+     `Mode`/`Application`の仕事)。
+   - **検証**: `EditMode`は内容を変更しないEDITOR・実際に書き換える
+     EDITORでの変更検出・存在しないファイルでの安全な失敗・EDITOR
+     未設定時の挙動を、`ExecMode`は対象パスの追加と実行・実終了
+     ステータスの返却・空argvでの安全な失敗を、doctestで新規7件
+     (既存と合わせて計233件)、Mac/Ubuntu双方で全件パス確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
