@@ -171,3 +171,67 @@ TEST_CASE_FIXTURE(Fixture, "goBack: false when already at the top level") {
   REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
   CHECK_FALSE(mode.goBack());
 }
+
+TEST_CASE_FIXTURE(Fixture, "pushSplit: splits an independent source, not the currently selected segment") {
+  REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
+  view.setCursorIndex(1);  // "usilic$ pwd" -- pushSplit() must ignore this entirely
+
+  std::vector<std::string> independent = {"=== A ===", "one", "=== B ===", "two"};
+  REQUIRE(mode.pushSplit(independent, "^===", GrepSyntax::Regex));
+  CHECK(mode.canGoBack());
+  REQUIRE(mode.segments().size() == 2);
+  CHECK(mode.segments()[0].label == "=== A ===");
+  CHECK(mode.segments()[1].label == "=== B ===");
+  CHECK(mode.pattern() == "^===");
+}
+
+TEST_CASE_FIXTURE(Fixture, "pushSplit: goBack() restores exactly what was pushed, like splitSelected()") {
+  REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
+  view.setCursorIndex(2);
+
+  std::vector<std::string> independent = {"=== A ===", "one"};
+  REQUIRE(mode.pushSplit(independent, "^===", GrepSyntax::Regex));
+
+  REQUIRE(mode.goBack());
+  CHECK_FALSE(mode.canGoBack());
+  CHECK(mode.pattern() == "usilic$");
+  REQUIRE(mode.segments().size() == 3);
+  CHECK(view.cursorIndex() == 2);  // restored, not reset
+}
+
+TEST_CASE_FIXTURE(Fixture, "pushSplit: works from a completely fresh CutMode with nothing split yet") {
+  std::vector<std::string> independent = {"=== A ===", "one"};
+  REQUIRE(mode.pushSplit(independent, "^===", GrepSyntax::Regex));
+  CHECK(mode.canGoBack());
+  REQUIRE(mode.segments().size() == 1);
+
+  REQUIRE(mode.goBack());
+  CHECK_FALSE(mode.canGoBack());
+  CHECK(mode.segments().empty());  // restored to the original empty state
+}
+
+TEST_CASE_FIXTURE(Fixture, "pushSplit: a failed split leaves the current level untouched, like splitSelected()") {
+  REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
+  CHECK_FALSE(mode.pushSplit({"a", "b"}, "", GrepSyntax::Fixed));  // empty pattern always fails
+  CHECK_FALSE(mode.canGoBack());                                   // the failed attempt's push was undone
+  CHECK(mode.pattern() == "usilic$");                               // state unchanged
+}
+
+TEST_CASE_FIXTURE(Fixture, "pushSplit: nests on top of an existing splitSelected() level too") {
+  std::vector<std::string> lines = {
+      "=== chapter 1 ===", "--- section A ---", "textA1", "=== chapter 2 ===", "--- section A ---", "textA2",
+  };
+  REQUIRE(mode.split(lines, "^=== chapter", GrepSyntax::Regex));
+  view.setCursorIndex(0);
+  REQUIRE(mode.splitSelected("^--- section", GrepSyntax::Regex));
+
+  std::vector<std::string> independent = {"=== A ===", "one"};
+  REQUIRE(mode.pushSplit(independent, "^===", GrepSyntax::Regex));
+  CHECK(mode.pattern() == "^===");
+
+  REQUIRE(mode.goBack());
+  CHECK(mode.pattern() == "^--- section");  // back to the splitSelected() level
+  REQUIRE(mode.goBack());
+  CHECK(mode.pattern() == "^=== chapter");  // back to the original top level
+  CHECK_FALSE(mode.canGoBack());
+}

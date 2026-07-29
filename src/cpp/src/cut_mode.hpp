@@ -102,6 +102,22 @@ class CutMode {
   // selection or the new split itself fails.
   bool splitSelected(const std::string &pattern, GrepSyntax syntax);
 
+  // Like splitSelected(), but splits an arbitrary, EXTERNALLY-supplied
+  // sourceLines instead of "the currently selected segment's own
+  // content" -- splitSelected()'s own implementation is now just this
+  // plus segmentContent(*selectedSegment()) as the source. Added for
+  // HELP (^J^H): since CutMode is a single shared instance reused for
+  // both real user CUT sessions and the HELP screen (both are, at
+  // bottom, "split some text at a header pattern and let the user
+  // pick a section" -- ported from the same init_cut2() legacy calls
+  // for both, per menu.c's M_help/T_help case), pushSplit() lets HELP
+  // show its OWN independent content via a fresh top-level split
+  // without clobbering whatever real CUT session might already be in
+  // progress -- goBack() (already existing) returns to it exactly as
+  // it would for any other nested resplit, with no HELP-specific code
+  // needed in CutMode itself at all.
+  bool pushSplit(const std::vector<std::string> &sourceLines, const std::string &pattern, GrepSyntax syntax);
+
   // Returns to the split state saved by the most recent
   // splitSelected() call. False if already at the top level (nothing
   // to go back to).

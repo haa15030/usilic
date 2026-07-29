@@ -4,6 +4,8 @@
 #include <deque>
 #include <sstream>
 
+#include "pipe_buffer.hpp"
+
 namespace fm {
 
 namespace {
@@ -14,11 +16,16 @@ constexpr int kControlS = 0x13;        // ^S
 constexpr int kControlC = 0x03;        // ^C
 constexpr int kControlG = 0x07;        // ^G
 constexpr int kCarriageReturn = 0x0d;  // ^M
+// Ported from menu.c's init_cut2() call for M_help/T_help -- the
+// fixed section-header pattern HELP's own CUT split always uses (see
+// class comment).
+const char *const kHelpPattern = "^  [1-6][1-6]+\\.";
 }  // namespace
 
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions)
     : display_(display),
+      encoding_(encoding),
       configuration_(configuration),
       history_(history),
       directoryView_(display),
@@ -175,6 +182,8 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
         return handleCommand(Command::StartCommandHistory);
       case 'e':  // ^J e : EDIT
         return handleCommand(Command::StartEdit);
+      case 0x08:  // ^J ^H : HELP
+        return handleCommand(Command::StartHelp);
       default:
         return false;  // unrecognized ^J-sequence in this slice
     }
@@ -357,6 +366,8 @@ bool Application::handleCommand(Command command) {
       return startListBrowser(RingCategory::ShellCommand);
     case Command::StartEdit:
       return executeEdit();
+    case Command::StartHelp:
+      return startHelp();
     case Command::None:
       return false;
   }
@@ -802,12 +813,13 @@ bool Application::executeGrep(const std::string &pattern) {
 bool Application::executeCut(const std::string &pattern) {
   bool ok;
   if (currentMode_ == ApplicationMode::CutContent) {
-    ok = cutMode_.splitSelected(pattern, cutSyntax_);
+    ok = cutMode_.splitSelected(pattern, cutSyntax_);  // nested -- cutOrigin_ untouched, see class comment
   } else {
     std::vector<std::string> sourceLines;
     sourceLines.reserve(fileView_.lines().size());
     for (const auto &line : fileView_.lines()) sourceLines.push_back(line.text);
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
+    if (ok) cutOrigin_ = CutOrigin::File;  // a fresh top-level split -- eligible for reflow on resize
   }
 
   if (!ok) {
@@ -969,15 +981,87 @@ bool Application::executeEdit() {
   return true;
 }
 
+std::vector<std::string> Application::wrapHelpText(int width) const {
+  PipeBuffer pipe(encoding_, width, 16L * 1024 * 1024);
+  pipe.feed(helpText_);
+  pipe.flush();
+  std::vector<std::string> lines;
+  lines.reserve(pipe.lines().size());
+  for (const auto &styled : pipe.lines()) lines.push_back(styled.text);
+  return lines;
+}
+
+bool Application::loadHelpText(const std::string &text) {
+  helpText_ = text;
+  return !helpText_.empty();
+}
+
+// Ported from menu.c's M_help/T_help case -- see class comment for
+// why this is a CutMode split (real CUT and HELP share one instance)
+// rather than its own display mechanism. Reachable from any mode
+// (legacy's init_bp() default case has no mode-context guard for
+// M_help/T_help either).
+bool Application::startHelp() {
+  if (helpText_.empty()) return false;
+  std::vector<std::string> helpLines = wrapHelpText(display_.columns());
+
+  bool preserveExistingCut = (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent);
+  bool ok;
+  if (preserveExistingCut) {
+    // A real CUT session is already showing -- push it (the SAME
+    // mechanism a nested splitSelected() resplit uses) so ^G out of
+    // HELP resumes it via Back's existing canGoBack()/goBack() check.
+    // Deliberately does NOT touch cutSyntax_/cutOrigin_ here: both are
+    // single shared fields (not saved/restored per ModeStack level),
+    // so leaving them alone preserves whatever the real cut being
+    // preserved already had -- setting them for HELP's own benefit
+    // would corrupt that real cut's own state once ^G restores it
+    // (e.g. a Fixed-string real cut resuming with cutSyntax_ left at
+    // Regex from HELP would re-split wrong on a later resize).
+    ok = cutMode_.pushSplit(helpLines, kHelpPattern, GrepSyntax::Regex);
+  } else {
+    cutReturnMode_ = currentMode_;  // nothing to preserve -- same "leave Cut back to..." anchor a real CUT uses
+    ok = cutMode_.split(helpLines, kHelpPattern, GrepSyntax::Regex);
+    if (ok) {
+      cutOrigin_ = CutOrigin::Help;  // a fresh top-level split -- eligible for reflow on resize
+      cutSyntax_ = GrepSyntax::Regex;  // safe to set here: nothing real depends on the old value in this branch
+    }
+  }
+  if (!ok) return false;
+
+  currentMode_ = ApplicationMode::Cut;
+  return true;
+}
+
 // Ported from menu.c's T_winch handling -- see class comment for the
 // three-way split this preserves (plain viewport resize for Directory/
-// Grep/Cut/Locate/Archive/Du/ListBrowser, reflow() for File/Man,
-// Shell's pty resized unconditionally) and why File/Man's own
-// reflow() isn't a literal alloc_winch() port.
+// Grep/Locate/Archive/Du/ListBrowser, reflow() for File/Man and a
+// TOP-LEVEL Cut/CutContent split, Shell's pty resized unconditionally)
+// and why File/Man's own reflow() isn't a literal alloc_winch() port.
 void Application::handleResize() {
   layoutViews();
   if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns());
   if (currentMode_ == ApplicationMode::Man) manMode_.reflow(display_.columns());
+  if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
+      !cutMode_.canGoBack()) {
+    std::vector<std::string> freshSource;
+    if (cutOrigin_ == CutOrigin::Help) {
+      freshSource = wrapHelpText(display_.columns());
+    } else {
+      fileMode_.reflow(display_.columns());
+      freshSource.reserve(fileView_.lines().size());
+      for (const auto &line : fileView_.lines()) freshSource.push_back(line.text);
+    }
+    int savedIndex = cutView_.cursorIndex();
+    bool wasContent = (currentMode_ == ApplicationMode::CutContent);
+    if (cutMode_.split(freshSource, cutMode_.pattern(), cutSyntax_)) {
+      int last = static_cast<int>(cutMode_.segments().size()) - 1;
+      if (savedIndex < 0) savedIndex = 0;
+      if (savedIndex > last) savedIndex = (last < 0) ? 0 : last;
+      cutView_.setCursorIndex(savedIndex);
+      if (wasContent) openSelectedSegment();  // re-populate cutContentView_ with the (hopefully same) segment
+    }
+  }
   shell_.onResize(display_.rows(), display_.columns());
   activeView().redraw();
   if (promptActive()) promptEditor_.redraw();

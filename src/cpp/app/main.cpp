@@ -33,6 +33,13 @@
 //     which modes get a content reflow vs. just a viewport resize,
 //     and why Shell's pty is always resized regardless of which mode
 //     is currently visible).
+//   - HELP (^J^H) IS wired: USILICHELP names the ASCII/English help
+//     file's path (no installed-package LIB-path convention exists
+//     yet, same gap usilicrc/history's own LIB fallback has -- see
+//     above); unset, or an unreadable file, just leaves HELP
+//     unavailable rather than failing startup. Application::
+//     loadHelpText() takes already-read text, same "caller does the
+//     file I/O" rule as usilicrc/history.
 //   - ESC-leader bindings (SHELL's ^[s) ARE wired, via
 //     KeyInput::lastEscapeBytes() (added specifically to close this
 //     gap, see its own class comment): when readEscapeSequence()
@@ -158,6 +165,28 @@ int main(int argc, char **argv) {
   if (const char *shellEnv = std::getenv("SHELL"); shellEnv && *shellEnv) shellOptions.argv = {shellEnv};
 
   fm::Application app(*display, keyInput, history, configuration, encoding, display->columns(), shellOptions);
+
+  // Ported from str.c's set_help(): English (HELP) vs a genuine
+  // Japanese translation (HELP.jp), chosen by charset the same way
+  // legacy does. No installed-package LIB-path convention exists yet
+  // for this port (same gap usilicrc's own LIB fallback has, see
+  // above) -- USILICHELP names the ASCII/English file directly; if
+  // unset, or if the file can't be read, HELP (^J^H) is simply
+  // unavailable (Command::StartHelp fails cleanly) rather than this
+  // being a hard startup error.
+  if (const char *helpPathEnv = std::getenv("USILICHELP")) {
+    std::string helpPath = helpPathEnv;
+    if (encoding != fm::Charset::Encoding::Ascii) {
+      std::string jpText = readFileIfExists(helpPath + ".jp");
+      if (!jpText.empty()) {
+        app.loadHelpText(jpText);
+      } else {
+        app.loadHelpText(readFileIfExists(helpPath));
+      }
+    } else {
+      app.loadHelpText(readFileIfExists(helpPath));
+    }
+  }
 
   display->open();
 

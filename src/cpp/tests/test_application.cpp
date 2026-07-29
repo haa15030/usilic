@@ -1439,3 +1439,129 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: propagates the new size to Shell's pty
   for (char c : std::string("x")) app.feedShellByte(static_cast<unsigned char>(c), std::nullopt);
   CHECK(display.cursorRow() == 9);
 }
+
+// -- HELP (^J^H) --
+
+namespace {
+// Matches the fixed header pattern HELP always splits on ("^  [1-6][1-6]+\\."),
+// same shape as the real src/doc/HELP file's own numbered sections,
+// but synthetic content (no overstrike bytes needed -- CutMode::split()
+// operates on already wrapped/collapsed plain text, same as any other
+// CUT source, see Application's own class comment).
+std::string testHelpText() {
+  return "  11. Section One\nSection one content line A.\nSection one content line B.\n"
+         "  12. Section Two\nSection two content.\n";
+}
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "HELP: refused if no help text was loaded") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.handleCommand(Command::StartHelp));
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^H starts HELP (StartHelp)") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  CHECK(app.feedByte(0x08, std::nullopt));  // ^H
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+}
+
+TEST_CASE_FIXTURE(Fixture, "HELP: shows the numbered sections as a CUT segment list") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 2);
+  CHECK(app.cutMode().segments()[0].label == "  11. Section One");
+  CHECK(app.cutMode().segments()[1].label == "  12. Section Two");
+}
+
+TEST_CASE_FIXTURE(Fixture, "HELP: Enter on a section shows its content (CutContent), like a real CUT segment") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
+}
+
+TEST_CASE_FIXTURE(Fixture, "HELP: Back returns to wherever the user was, not always Directory") {
+  { std::ofstream(root / "plain2.txt") << "hello\n"; }
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);  // back to File mode, not Directory
+}
+
+TEST_CASE_FIXTURE(Fixture, "HELP: invoked mid-CUT preserves the real session; Back restores it") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("hello");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  std::string realPattern = app.cutMode().pattern();
+  auto realSegmentCount = app.cutMode().segments().size();
+
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  CHECK(app.cutMode().pattern() != realPattern);  // now showing HELP's own split
+  REQUIRE(app.cutMode().segments().size() == 2);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.cutMode().pattern() == realPattern);  // the real CUT session, restored intact
+  CHECK(app.cutMode().segments().size() == realSegmentCount);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleResize: reflows HELP's own content (a top-level split)") {
+  std::string longHelp =
+      "  11. Section One\nabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n  12. Section Two\ntext\n";
+  REQUIRE(app.loadHelpText(longHelp));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.handleCommand(Command::Enter));  // into Section One's content
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
+
+  display.setSize(24, 10);
+  app.handleResize();
+
+  bool sawWrappedLine = false;
+  for (int row = 0; row < display.rows(); row++)
+    if (display.rowText(row).substr(0, 10) == "abcdefghij") sawWrappedLine = true;
+  CHECK(sawWrappedLine);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleResize: does NOT reflow HELP when it's nested on top of a real CUT session") {
+  std::string longHelp =
+      "  11. Section One\nabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n  12. Section Two\ntext\n";
+  REQUIRE(app.loadHelpText(longHelp));
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("hello");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::StartHelp));  // pushed -- canGoBack() is now true
+  REQUIRE(app.cutMode().canGoBack());
+
+  display.setSize(24, 10);
+  app.handleResize();  // must not crash; content reflow is skipped for nested levels
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Cut);  // the real CUT session is still intact
+}

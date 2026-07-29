@@ -94,8 +94,10 @@ std::vector<std::string> CutMode::segmentContent(const CutSegment &segment) cons
 bool CutMode::splitSelected(const std::string &pattern, GrepSyntax syntax) {
   const CutSegment *selected = selectedSegment();
   if (!selected) return false;
-  std::vector<std::string> content = segmentContent(*selected);
+  return pushSplit(segmentContent(*selected), pattern, syntax);
+}
 
+bool CutMode::pushSplit(const std::vector<std::string> &sourceLines, const std::string &pattern, GrepSyntax syntax) {
   auto saved = std::make_shared<SavedState>();
   saved->pattern = pattern_;
   saved->sourceLines = sourceLines_;
@@ -106,7 +108,7 @@ bool CutMode::splitSelected(const std::string &pattern, GrepSyntax syntax) {
   frame.cutBuffer = saved;  // opaque handle, matching ModeStackFrame's CUT::buff mapping
   modeStack_.push(std::move(frame));
 
-  if (!split(content, pattern, syntax)) {
+  if (!split(sourceLines, pattern, syntax)) {
     modeStack_.pop();  // undo the push, matching DirectoryMode::openSelected()'s failure-undo pattern
     return false;
   }

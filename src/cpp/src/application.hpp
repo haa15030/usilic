@@ -57,7 +57,8 @@ enum class Command {
   StartDu,
   StartDirectoryHistory,
   StartCommandHistory,
-  StartEdit
+  StartEdit,
+  StartHelp
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -371,7 +372,52 @@ enum class ApplicationMode {
 //     class comment for why); a Directory-mode edit never triggers a
 //     re-`ls` (do_edit() itself doesn't touch the listing buffer
 //     either, only the "next" viewing slot).
-//
+//   - HELP (M_help/T_help, ^J^H -- confirmed against src/usilicrc's
+//     own KEY table: "F-1 C-h ... HELP ... K-1") turned out, on
+//     tracing menu.c's init_bp() default-case handling of M_help/
+//     T_help, to not be its own display mechanism at all: legacy
+//     hands the help text's PATH straight to init_cut2() with a fixed
+//     section-header regex ("^  [1-6][1-6]+\\.") and sets np->M =
+//     T_cut -- i.e. HELP genuinely IS a CUT split (a table of numbered
+//     sections to pick from), just with a fixed source and pattern
+//     instead of a typed one. Confirmed directly with the user this
+//     is intentional, not an implementation shortcut to route around:
+//     HELP doubling as a live, hands-on demonstration of CUT itself
+//     is part of the point. So HELP reuses the SAME CutMode instance
+//     real user CUT sessions use, via a new CutMode::pushSplit()
+//     (factored out of splitSelected()'s own push-then-split shape,
+//     see its own comment) -- if a real CUT session happens to already
+//     be active (currentMode_ is Cut/CutContent with a genuine prior
+//     split()), pushSplit() preserves it on CutMode's own ModeStack
+//     exactly the way a nested splitSelected() resplit would, so ^G
+//     out of HELP naturally resumes it via the SAME canGoBack()/
+//     goBack() path Back already checks first for Cut. If NO real CUT
+//     was active, startHelp() calls split() directly instead (nothing
+//     worth preserving) and sets cutReturnMode_ to wherever the user
+//     was, the same "leave Cut back to..." anchor a real top-level CUT
+//     already uses -- HELP is reachable from any mode, matching
+//     legacy's own init_bp() default case having no mode-context
+//     guard for M_help/T_help. The distinction between "this is a real
+//     CUT" and "this is HELP" is tracked with one new field
+//     (cutOrigin_, File or Help) updated only at the two plain split()
+//     call sites (startCutPrompt(), startHelp()'s non-preserving
+//     branch) -- pushSplit() call sites don't touch it, since a pushed
+//     level is by construction nested and already excluded from
+//     resize reflow below regardless of origin.
+//   - HELP's own text is loaded via loadHelpText(text) (mirroring
+//     Configuration::loadRcText()/History::loadHistoryText()'s
+//     "caller does the file I/O, this class just takes the text" rule
+//     -- Application still does no hidden file reads of its own) and
+//     re-wrapped through the exact same Charset::Encoding/PipeBuffer
+//     pipeline FileMode/ManMode's own readAndWrap()/runAndWrap() use
+//     (wrapHelpText(), a new private helper) -- which is also why this
+//     class now stores `encoding_` directly (no other member needed
+//     it before this). src/doc/HELP vs HELP.jp (English vs a genuine
+//     Japanese translation, not just a re-encoding -- confirmed by
+//     reading both: HELP.jp's raw bytes are actual EUC-JP Japanese
+//     text) is main.cpp's choice to make, the same "caller resolves
+//     the actual path" boundary usilicrc/history already draw --
+//     Application only ever sees whichever text it was handed.
 //   - handleResize() (terminal resize, T_winch in legacy) is the one
 //     piece of state Application reaches for that isn't reached via
 //     KeyInput/Command dispatch at all -- tracing menu.c's T_winch
@@ -393,19 +439,31 @@ enum class ApplicationMode {
 //     columns() back rather than trusting separately-passed
 //     parameters: EVERY owned ContentView's viewport is resized
 //     (matching the T_dir/is_list/archive "no content reflow needed,
-//     just refresh geometry" treatment -- correct for all of Directory/
-//     Grep/Cut/Locate/Archive/Du/ListBrowser, since none of their
-//     content is width-wrapped from a paragraph source), while File
-//     and Man mode (the two modes actually built on PipeBuffer's
-//     width-wrapping, matching legacy's alloc_winch() default case)
-//     get FileMode::reflow()/ManMode::reflow() called INSTEAD of --
-//     not in addition to -- the plain viewport resize, since reflow()
-//     already replaces their ContentView's lines outright. See their
-//     own class comments for why neither is a literal alloc_winch()
-//     port (re-reading the file / re-running `man` rather than
-//     reflowing from an in-memory raw-byte cache that doesn't exist
-//     in this port, and preserving the CURRENT session's cursor via a
-//     clamp rather than legacy's row-index-based set_rv() recompute).
+//     just refresh geometry" treatment -- correct for Directory/Grep/
+//     Locate/Archive/Du/ListBrowser, since none of their content is
+//     width-wrapped from a paragraph source), while File and Man mode
+//     (the two modes actually built on PipeBuffer's width-wrapping,
+//     matching legacy's alloc_winch() default case) get
+//     FileMode::reflow()/ManMode::reflow() called INSTEAD of -- not in
+//     addition to -- the plain viewport resize, since reflow() already
+//     replaces their ContentView's lines outright. See their own class
+//     comments for why neither is a literal alloc_winch() port
+//     (re-reading the file / re-running `man` rather than reflowing
+//     from an in-memory raw-byte cache that doesn't exist in this
+//     port, and preserving the CURRENT session's cursor via a clamp
+//     rather than legacy's row-index-based set_rv() recompute).
+//     Cut/CutContent get the SAME reflow-instead-of-plain-resize
+//     treatment, but ONLY when canGoBack()==false (a genuine top-level
+//     split, not a nested resplit -- see the "Deliberately excluded"
+//     bullet below for the nested case): the fresh source lines to
+//     re-split come from fileMode_.reflow()+fileView_.lines() when
+//     cutOrigin_==File, or wrapHelpText() when cutOrigin_==Help, then
+//     cutMode_.split() is re-run with its own already-remembered
+//     pattern()/cutSyntax_ -- the selected segment's INDEX is
+//     preserved (clamped), and for CutContent specifically,
+//     openSelectedSegment() is called again afterward to re-populate
+//     cutContentView_ with that (hopefully still the same) segment's
+//     freshly-rewrapped content.
 //     Shell's pty is resized unconditionally regardless of
 //     currentMode_ (Shell::onResize(), already fully built -- this
 //     slice's only Shell-related change is actually calling it): a
@@ -432,13 +490,12 @@ enum class ApplicationMode {
 //     will be empty until something else populates it (this session's
 //     own tests call pushRecent() directly to exercise the browsing
 //     side independently).
-//   - Every mode besides Directory/File/Grep/Cut/Man/Locate/Archive/
-//     Shell/Du/ListBrowser: help/error/log screens -- each already
-//     has its own *Mode class built (help doesn't -- see CLAUDE.md's
-//     own history on why FileMode already covers it); wiring each one
-//     in is the same shape of change (extend Command/ApplicationMode,
-//     extend feedByte()'s leader table, extend handleCommand())
-//     repeated per mode, deferred to keep each slice reviewable.
+//   - error/log screens (M_error/M_log): unlike help (see below), these
+//     have no dedicated *Mode class of their own yet at all; wiring
+//     them in is the same shape of change (extend Command/
+//     ApplicationMode, extend feedByte()'s leader table, extend
+//     handleCommand()) repeated per mode, deferred to keep each slice
+//     reviewable.
 //   - DuMode's own chdir()-free design means the legacy behavior of
 //     actually changing the process's working directory while
 //     measuring isn't replicated (see DuMode's own class comment);
@@ -519,17 +576,23 @@ enum class ApplicationMode {
 //   - File-jump (M_jump, ^X^X -- swap between the cursor position and
 //     the last ^Space-marked position): not part of the commands this
 //     slice maps.
-//   - Cut/CutContent's own content is NOT reflowed on resize, despite
-//     being derived from FileMode's width-wrapped lines at split()
-//     time (executeCut() feeds fileView_.lines() into CutMode::split()
-//     -- see its own comment): a live reflow would mean re-running
-//     that whole split against File mode's freshly-rewrapped content,
-//     which only makes sense while a CUT excursion is actually
-//     showing FILE mode underneath, and CutMode's own class comment
-//     already treats "what File mode looked like at split() time" as
-//     a one-shot snapshot, not a live view. Only the CutContent/Cut
-//     ContentViews' viewports resize; their line content stays
-//     wrapped at whatever width was active when split() last ran.
+//   - Nested Cut/CutContent resplits are NOT reflowed on resize
+//     (revised from an earlier, broader version of this bullet that
+//     excluded ALL of Cut/CutContent -- see CLAUDE.md history for
+//     why): TOP-LEVEL Cut/CutContent (canGoBack()==false) DOES now
+//     reflow on resize, both for a real File-mode-originated CUT and
+//     for HELP -- only a NESTED resplit
+//     (splitSelected(), canGoBack()==true) still doesn't, since
+//     correctly reflowing a nested level would mean walking back up
+//     the WHOLE ModeStack chain to the true root and re-deriving
+//     every intermediate split from scratch, not just re-running the
+//     current level's own split() -- CutMode's own class comment
+//     already treats "what the parent split looked like at
+//     splitSelected() time" as a one-shot snapshot at each nesting
+//     level, and this port doesn't yet walk that chain to refresh it.
+//     A nested resplit's ContentView viewport still resizes; its line
+//     content stays wrapped at whatever width was active when its own
+//     split()/splitSelected() last ran.
 //   - EDIT from any mode besides Directory/File (Grep/Cut/CutContent/
 //     Man/Locate/Archive/ArchiveContent/Du/ListBrowser/Shell): legacy's
 //     own refuse-list only blocks archive/cut/split viewing contexts
@@ -615,17 +678,27 @@ class Application {
   // Ported from menu.c's T_winch handling: resizes every owned
   // ContentView's viewport and the prompt field to the new geometry,
   // re-wraps File/Man mode's content at the new width if either is
-  // currently active (FileMode::reflow()/ManMode::reflow(), see their
-  // own comments -- Directory/Grep/Cut/Locate/Archive/Du/ListBrowser
-  // content isn't width-wrapped paragraph text the way File/Man's is,
-  // matching legacy's own T_dir/is_list/is_str non-reflow treatment,
-  // so their lines are left as-is beyond the viewport resize),
-  // propagates the new size to Shell's pty UNCONDITIONALLY (even if
-  // Shell isn't the visible mode right now -- a real terminal resize
-  // affects the one physical terminal every mode shares, matching how
-  // a real terminal multiplexer resizes background panes too), and
-  // redraws whatever's currently on screen.
+  // currently active (FileMode::reflow()/ManMode::reflow()), and does
+  // the same for a TOP-LEVEL Cut/CutContent split (real CUT or HELP --
+  // see the class comment's own HELP section) -- Directory/Grep/
+  // Locate/Archive/Du/ListBrowser content isn't width-wrapped
+  // paragraph text the way File/Man/top-level-Cut's is, matching
+  // legacy's own T_dir/is_list/is_str non-reflow treatment, so their
+  // lines are left as-is beyond the viewport resize; a NESTED Cut
+  // resplit is left as-is too (see class comment). Propagates the new
+  // size to Shell's pty UNCONDITIONALLY (even if Shell isn't the
+  // visible mode right now -- a real terminal resize affects the one
+  // physical terminal every mode shares, matching how a real terminal
+  // multiplexer resizes background panes too), and redraws whatever's
+  // currently on screen.
   void handleResize();
+
+  // Supplies HELP's (^J^H) text -- mirroring Configuration::
+  // loadRcText()/History::loadHistoryText()'s "caller does the file
+  // I/O" rule, see the class comment's own HELP section. Must be
+  // called before ^J^H can do anything; false (and HELP stays
+  // unavailable, StartHelp simply fails) if text is empty.
+  bool loadHelpText(const std::string &text);
 
   ApplicationMode currentMode() const;
   DirectoryMode &directoryMode();
@@ -691,8 +764,11 @@ class Application {
   bool executeExit(const std::string &confirmation);
   bool executeDu(const std::string &path);
   bool executeEdit();
+  bool startHelp();
+  std::vector<std::string> wrapHelpText(int width) const;
 
   Display &display_;  // handleResize()'s own rows()/columns() lookup -- no other member currently needs this
+  Charset::Encoding encoding_;  // wrapHelpText()'s own PipeBuffer construction -- no other member currently needs this
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   History &history_;  // startListBrowser()'s own recentEntries() lookup -- no other member currently needs this
   ModeStack modeStack_;
@@ -735,6 +811,13 @@ class Application {
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;
   bool shellStarted_ = false;
+  std::string helpText_;
+  // Which top-level Cut/CutContent split is currently active -- only
+  // meaningful (and only consulted by handleResize()) when
+  // !cutMode_.canGoBack(); a pushSplit() (nested) level doesn't touch
+  // this, see the class comment's own HELP section.
+  enum class CutOrigin { File, Help };
+  CutOrigin cutOrigin_ = CutOrigin::File;
 
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
   bool escPending_ = false;      // saw ESC (0x1b), waiting for the byte that completes ^[s -- see class comment
