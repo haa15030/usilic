@@ -13,6 +13,7 @@
 #include "directory_mode.hpp"
 #include "du_mode.hpp"
 #include "display.hpp"
+#include "edit_mode.hpp"
 #include "file_mode.hpp"
 #include "grep_mode.hpp"
 #include "history.hpp"
@@ -54,7 +55,8 @@ enum class Command {
   StartExit,
   StartDu,
   StartDirectoryHistory,
-  StartCommandHistory
+  StartCommandHistory,
+  StartEdit
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -314,6 +316,39 @@ enum class ApplicationMode {
 //     the obvious next step, needs Shell to already be started, which
 //     adds a real state-management question -- what happens if it
 //     isn't -- deliberately left open rather than guessed at).
+//   - EDIT (M_edit, ^Je -- confirmed against src/usilicrc's own KEY
+//     table: "F-1 e ... EDIT ... K-66", the same F-1-means-^J-leader
+//     notation ^Jd/^Jl/^Jp/^Jm etc. already use) is, like PROGRAM,
+//     NOT prompt-driven and doesn't switch ApplicationMode at all --
+//     tracing menu.c's M_edit case shows it runs immediately against
+//     whatever's already on screen (m_edit()'s do_edit() call), no
+//     text entry involved. Narrowed to exactly two contexts in this
+//     slice: Directory (edits the highlighted entry directly, using
+//     the same currentDirectory()+"/"+entry->name path-building
+//     openSelectedEntry() already uses, refusing if it's a directory
+//     -- an explicit improvement over do_edit(), which doesn't check
+//     this at all and would just hand a directory path to the
+//     editor) and File (edits the currently displayed file at its
+//     cursor line). Both call EditMode::edit() with the SAME
+//     KeyInput& PROGRAM already required, for the same reason
+//     (leaving/re-entering real raw termio around the child editor).
+//     do_edit()'s own line-number argument (`pnp->line`) turns out,
+//     on closer reading, to be the file's own per-line line-number
+//     field (`rvp->pp->f.line`) when invoked from FILE mode, but
+//     merely the cursor's ROW WITHIN THE DIRECTORY LISTING when
+//     invoked from directory-listing context -- i.e. legacy passes a
+//     directory-listing row number as if it were a line number inside
+//     an entirely different file being opened, which doesn't mean
+//     anything. This slice deliberately does NOT carry that over:
+//     Directory-mode edits always open at line 1; only File mode's
+//     ContentView::cursorIndex()+1 is used as a real line number.
+//     EditMode::edit()'s own bool return (did the file's content
+//     actually change) is used to decide whether to reload FileMode's
+//     displayed content afterward (do_edit()'s own st_ctime check,
+//     ported using last_write_time() instead -- see EditMode's own
+//     class comment for why); a Directory-mode edit never triggers a
+//     re-`ls` (do_edit() itself doesn't touch the listing buffer
+//     either, only the "next" viewing slot).
 //
 // Deliberately excluded (future work, not this slice):
 //   - The other 7 of m_list()'s 9 categories (T_hfile/T_hdir/T_hman/
@@ -420,6 +455,17 @@ enum class ApplicationMode {
 //   - File-jump (M_jump, ^X^X -- swap between the cursor position and
 //     the last ^Space-marked position): not part of the commands this
 //     slice maps.
+//   - EDIT from any mode besides Directory/File (Grep/Cut/CutContent/
+//     Man/Locate/Archive/ArchiveContent/Du/ListBrowser/Shell): legacy's
+//     own refuse-list only blocks archive/cut/split viewing contexts
+//     outright (T_tar/T_lha/T_unzip/T_rpm/T_deb/T_buff/T_cut/T_split)
+//     plus a content-based guard for synthetic non-file entries (a
+//     GREP-result "arg" containing '(', an empty/space-led name) --
+//     this slice narrows further, to exactly Directory/File, deferring
+//     the finer-grained legacy guard logic (and whether e.g. editing
+//     the source file behind a GREP match or a LOCATE result even
+//     makes sense without more path-resolution machinery than either
+//     mode currently exposes) to a future slice.
 class Application {
  public:
   // `keyInput` must be the same instance actually controlling the
@@ -500,6 +546,7 @@ class Application {
   CpMvRmMode &cpMvRmMode();
   DuMode &duMode();
   ListBrowserMode &listBrowserMode();
+  EditMode &editMode();
 
  private:
   bool openSelectedEntry();
@@ -547,6 +594,7 @@ class Application {
   bool executeRemove(const std::string &confirmation);
   bool executeExit(const std::string &confirmation);
   bool executeDu(const std::string &path);
+  bool executeEdit();
 
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   History &history_;  // startListBrowser()'s own recentEntries() lookup -- no other member currently needs this
@@ -576,6 +624,7 @@ class Application {
   CpMvRmMode cpMvRmMode_;
   DuMode duMode_;
   ListBrowserMode listBrowserMode_;
+  EditMode editMode_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;

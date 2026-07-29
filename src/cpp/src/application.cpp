@@ -48,7 +48,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       }()),
       cpMvRmMode_(configuration),
       duMode_(duView_, history, configuration),
-      listBrowserMode_(listBrowserView_) {
+      listBrowserMode_(listBrowserView_),
+      editMode_(keyInput, configuration) {
   // The bottom row is reserved for prompt text entry (search/cut/man/
   // locate/du patterns) -- legacy's equivalent is the mode-line row
   // disp_window() left alone for exactly this (see ContentView's own
@@ -164,6 +165,8 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
         return handleCommand(Command::StartDu);
       case 0x12:      // ^J ^R : command history (M_cmd)
         return handleCommand(Command::StartCommandHistory);
+      case 'e':  // ^J e : EDIT
+        return handleCommand(Command::StartEdit);
       default:
         return false;  // unrecognized ^J-sequence in this slice
     }
@@ -344,6 +347,8 @@ bool Application::handleCommand(Command command) {
       return startListBrowser(RingCategory::RecentDirectory);
     case Command::StartCommandHistory:
       return startListBrowser(RingCategory::ShellCommand);
+    case Command::StartEdit:
+      return executeEdit();
     case Command::None:
       return false;
   }
@@ -914,6 +919,36 @@ bool Application::executeDu(const std::string &path) {
   return true;
 }
 
+// Ported from menu.c's M_edit case (^Je) -- see class comment for why
+// this is neither prompt-driven nor mode-switching, and for the
+// deliberate simplification on line-number: Directory-mode edits
+// always open at line 1 (do_edit()'s own `pnp->line` argument is the
+// cursor's row within the DIRECTORY LISTING in that context, not a
+// meaningful line number inside the file about to be opened -- not
+// carried over here), File-mode edits use the real cursor line.
+bool Application::executeEdit() {
+  std::string path;
+  int lineNumber = 1;
+
+  if (currentMode_ == ApplicationMode::Directory) {
+    const DirectoryEntry *entry = directoryMode_.selectedEntry();
+    if (!entry || entry->isDirectory) return false;
+    path = directoryMode_.currentDirectory();
+    if (!path.empty() && path.back() != '/') path += '/';
+    path += entry->name;
+  } else if (currentMode_ == ApplicationMode::File) {
+    path = fileMode_.currentFile();
+    lineNumber = fileView_.cursorIndex() + 1;
+  } else {
+    return false;  // out of scope for this slice, see class comment
+  }
+
+  bool changed = editMode_.edit(path, lineNumber);
+  if (changed && currentMode_ == ApplicationMode::File) fileMode_.loadFile(path);
+  activeView().redraw();
+  return true;
+}
+
 bool Application::wantsExit() const { return wantsExit_; }
 
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
@@ -932,5 +967,6 @@ DuMode &Application::duMode() { return duMode_; }
 ListBrowserMode &Application::listBrowserMode() { return listBrowserMode_; }
 Shell &Application::shell() { return shell_; }
 CpMvRmMode &Application::cpMvRmMode() { return cpMvRmMode_; }
+EditMode &Application::editMode() { return editMode_; }
 
 }  // namespace fm

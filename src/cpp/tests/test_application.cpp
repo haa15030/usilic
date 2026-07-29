@@ -1252,3 +1252,99 @@ TEST_CASE_FIXTURE(Fixture, "history browser: Back returns to Directory mode") {
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == path());
 }
+
+// -- EDIT (^Je) --
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J e starts EDIT (StartEdit)") {
+  configuration.loadRcText("EDITOR\n sh -c 'echo \"EDITED:$0\" >> \"$1\"'\n", true);
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  app.feedByte('e', std::nullopt);   // e
+
+  std::ifstream in(root / "plain.txt");
+  std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content.find("EDITED:+1") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "EDIT: from File mode, edits the open file at the real cursor line and reloads it") {
+  configuration.loadRcText("EDITOR\n sh -c 'echo \"EDITED:$0\" >> \"$1\"'\n", true);
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  app.fileMode().currentFile();  // sanity: loaded
+
+  REQUIRE(app.handleCommand(Command::StartEdit));
+  CHECK(app.currentMode() == ApplicationMode::File);
+
+  std::ifstream in(root / "plain.txt");
+  std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content.find("EDITED:+1") != std::string::npos);  // cursor starts at index 0 -> line 1
+  // FileMode reloaded and redrew, so the newly-appended line is now
+  // visible on screen too (checked via the RecordingDisplay rather
+  // than a ContentView accessor, since Application doesn't expose
+  // fileView_ directly).
+  bool sawEdited = false;
+  for (int row = 0; row < display.rows(); row++)
+    if (display.rowText(row).find("EDITED") != std::string::npos) sawEdited = true;
+  CHECK(sawEdited);
+}
+
+TEST_CASE_FIXTURE(Fixture, "EDIT: an editor that leaves the file untouched does not force a reload") {
+  configuration.loadRcText("EDITOR\n sh -c 'exit 0'\n", true);
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  REQUIRE(app.handleCommand(Command::StartEdit));
+
+  std::ifstream in(root / "plain.txt");
+  std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content == "hello\nworld\n");
+}
+
+TEST_CASE_FIXTURE(Fixture, "EDIT: from Directory mode, edits the highlighted entry directly, always at line 1") {
+  configuration.loadRcText("EDITOR\n sh -c 'echo \"EDITED:$0\" >> \"$1\"'\n", true);
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  // Move the LISTING cursor down a few times first -- this must NOT
+  // leak into the line number passed to the editor (see class
+  // comment: unlike File mode, Directory-mode edits always open at
+  // line 1, deliberately not carrying over do_edit()'s own dubious
+  // "directory listing row as file line number" behavior).
+  app.handleCommand(Command::MoveDown);
+  app.handleCommand(Command::MoveDown);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::StartEdit));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // EDIT never switches mode
+
+  std::ifstream in(root / "plain.txt");
+  std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content.find("EDITED:+1") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "EDIT: refused on a directory entry from Directory mode") {
+  configuration.loadRcText("EDITOR\n sh -c 'echo \"EDITED:$0\" >> \"$1\"'\n", true);
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  CHECK_FALSE(app.handleCommand(Command::StartEdit));
+}
+
+TEST_CASE_FIXTURE(Fixture, "EDIT: refused outside Directory/File mode") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  CHECK_FALSE(app.handleCommand(Command::StartEdit));
+}
