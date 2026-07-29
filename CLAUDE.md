@@ -1887,6 +1887,42 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      `History`経由往復を、doctestで新規5件(既存と合わせて計213件)、
      Mac/Ubuntu双方で全件パス確認。
 
+35. **2026-07-29: ProgramModeクラス(21クラス目)+`ChildProcess::
+    runInteractive()`追加 — Modeの7つ目の一切れ、`M_prog`/`M_prog2`**
+   - `mode.c`の`mode()`switch文で`T_du`の次に並んでいた`M_prog`/
+     `M_prog2`ケースを対象に、`do_prog()`(実際の子プロセス起動元)
+     を移植。
+   - `do_prog()`は`less`/`vi`等の対話的・全画面プログラムを実行
+     するため、標準入出力を素通しでフォーク・実行し、実行中は
+     tcb自身のraw端末制御を一時解除する、という`ChildProcess`の
+     既存2メソッド(`run()`=出力キャプチャ、`runPipeline()`=2段
+     パイプ)のどちらとも異なる形だった。`ChildProcess`に新規
+     メソッド`runInteractive()`(パイプ無し、実端末を直接継承した
+     フォアグラウンド実行)を追加(`Shell`のようなpty常駐でもなく、
+     `run()`のような出力キャプチャでもない、3つ目の実行形態として
+     整理)。raw/cooked切替は既存の`KeyInput::leaveRawMode()`/
+     `reenterRawMode()`をそのまま利用、実行したコマンドは`History`の
+     `RingCategory::ShellCommand`リング(`shell.c`側のコマンドと
+     同じリング)へ記録。
+   - 意図的に対象外としたもの: `do_prog()`独自の`SIGCONT`ハンドラ
+     (`mode_cont()`、ジョブコントロール再開時のpid報告)は`KeyInput`
+     の既存`setForegroundChildPid()`/`setPidReporter()`が本来
+     SHELLの常駐子プロセス向けに作られたものであり、今回の使い捨て
+     プログラム実行に転用してよいか旧C版から確証が持てなかったため
+     未配線のまま。`unsetenv(ENV_PROG)`(PROGRAM経由でusilic自身を
+     再帰起動できるようにする細工)は`ChildProcess::runInteractive()`
+     という汎用プリミティブを1呼び出し元の特殊事情に合わせて汚す
+     ことになるため見送り。どのコマンドを実行するか決定する部分
+     (`M_prog`プロンプト、`Configuration`のPROGRAM一覧照合、実行後に
+     対象ファイルが変化したかの再描画判定)は将来の`Mode`/
+     `Application`の仕事。
+   - **検証**: `runInteractive()`が実シェルコマンドを実行し終了
+     ステータスを正しく返すこと(実ファイルへの書き込みを伴う
+     コマンドで副作用も確認)、空コマンドが安全にno-opであること、
+     `History`のShellCommandリングへの記録(空コマンド時は記録
+     されないことも含む)を、doctestで新規5件(既存と合わせて計
+     218件)、Mac/Ubuntu双方で全件パス確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

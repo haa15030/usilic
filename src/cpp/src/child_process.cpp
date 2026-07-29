@@ -211,4 +211,20 @@ ChildProcess::Result ChildProcess::runPipeline(const std::vector<std::string> &a
   return result;
 }
 
+int ChildProcess::runInteractive(const std::vector<std::string> &argv) {
+  if (argv.empty()) return -1;
+
+  pid_t pid = fork();
+  if (pid < 0) return -1;
+
+  if (pid == 0) {
+    resetSignalsToDefault();
+    auto cargv = toArgv(argv);
+    execvp(cargv[0], cargv.data());
+    _exit(127);  // execvp() failed -- never fall through and keep running as usilic
+  }
+
+  return reapStatus(pid);
+}
+
 }  // namespace fm

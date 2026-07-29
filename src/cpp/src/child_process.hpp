@@ -29,10 +29,17 @@ namespace fm {
 //     T_tar/T_exec dispatch from a suffix match) -- ChildProcess only
 //     runs an already-decided argv, it doesn't decide what that argv
 //     should be.
-//   - Long-lived/interactive child processes with a live pty (SHELL
+//   - Long-lived/interactive child processes with a live PTY (SHELL
 //     mode): a fundamentally different shape (streaming, bidirectional,
-//     terminal-attached) from "run this, wait, capture all of its
-//     output" -- future Shell/PtySession class's job.
+//     terminal-attached, needs its own pty so tcb can keep drawing
+//     around it) -- Shell's job. runInteractive() below is a much
+//     narrower case that doesn't need this: a one-shot foreground
+//     program (mode.c's do_prog(), e.g. a PROGRAM-mode command like
+//     `less somefile`) that inherits the REAL terminal's stdio
+//     directly (no pty, no piping/capturing) while tcb itself is
+//     temporarily out of the way (raw mode left via KeyInput, no
+//     drawing happening) -- there's no "keep tcb's own UI alive
+//     alongside it" requirement the way SHELL mode has.
 //   - The keyboard-interrupt-while-reading and growable-linked-list-
 //     of-chunks buffering in alloc_buff(): the former is a UI concern
 //     (ChildProcess itself has nowhere to check the keyboard from,
@@ -96,6 +103,17 @@ class ChildProcess {
   static Result runPipeline(const std::vector<std::string> &argv1,
                              const std::vector<std::string> &argv2,
                              const Options &options = {});
+
+  // Runs argv in the foreground with the real terminal's stdin/
+  // stdout/stderr inherited directly (no pipes, no captured output) --
+  // for a one-shot interactive program that needs real terminal
+  // access (e.g. `less`/`vi` launched from PROGRAM mode). Ported from
+  // do_prog()'s fork()/execlp()/wait() (the plain child-management
+  // half; leaving/re-entering raw termio around the call is the
+  // caller's job via KeyInput, matching how this class never touches
+  // terminal modes itself elsewhere either). Returns the exit status,
+  // or -1 if the child couldn't be spawned or never exited normally.
+  static int runInteractive(const std::vector<std::string> &argv);
 };
 
 }  // namespace fm
