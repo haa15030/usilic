@@ -594,3 +594,96 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^G cancels the prompt without running anyth
   CHECK_FALSE(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
+
+// -- feedByte: ^Jl / ^J^L leader sequences for LOCATE --
+//
+// These genuinely exercise the real `locate`(1) command (matching
+// this project's preference for real execution), but -- as
+// LocateMode's own tests already document -- `locate` depends on a
+// system database this project doesn't control the presence of, so
+// they skip gracefully rather than asserting specific results exist,
+// the same pattern test_locate_mode.cpp already uses.
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l starts a LOCATE prompt (StartLocate)") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte('l', std::nullopt));
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^L also starts a LOCATE prompt") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte(0x0c, std::nullopt));
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "LOCATE: typing a query then ^M runs a real locate search") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("/");
+  bool ok = app.feedByte(0x0d, std::nullopt);
+  if (!ok) {
+    MESSAGE("locate not installed or no database available -- skipping");
+    return;
+  }
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+  CHECK(app.locateMode().query() == "/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G returns to whichever mode the prompt was started from") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("/");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a result is a no-op in this slice") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("/");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  CHECK_FALSE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+}
+
+TEST_CASE_FIXTURE(Fixture, "LOCATE: starting a nested search from within locate results fails") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("/");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+
+  CHECK_FALSE(app.handleCommand(Command::StartLocate));
+  CHECK_FALSE(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G cancels a pending prompt without searching") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("/");
+  CHECK(app.feedByte(0x07, std::nullopt));
+
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}

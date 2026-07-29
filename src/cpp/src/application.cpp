@@ -21,18 +21,20 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       cutView_(display),
       cutContentView_(display),
       manView_(display),
+      locateView_(display),
       promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
       fileMode_(fileView_, history, encoding, width),
       grepMode_(grepView_, configuration),
       cutMode_(cutView_, cutModeStack_, configuration),
       manMode_(manView_, history, configuration, encoding, width),
-      programMode_(keyInput, history) {
-  // The bottom row is reserved for prompt text entry (search/cut/man
-  // patterns, and a future slice's LOCATE query prompt) -- legacy's
-  // equivalent is the mode-line row disp_window() left alone for
-  // exactly this (see ContentView's own class comment on why that
-  // row's rendering isn't ContentView's job either).
+      programMode_(keyInput, history),
+      locateMode_(locateView_, configuration) {
+  // The bottom row is reserved for prompt text entry (search/cut/man/
+  // locate patterns) -- legacy's equivalent is the mode-line row
+  // disp_window() left alone for exactly this (see ContentView's own
+  // class comment on why that row's rendering isn't ContentView's job
+  // either).
   int contentHeight = std::max(1, display.rows() - 1);
   directoryView_.setViewport(0, contentHeight);
   fileView_.setViewport(0, contentHeight);
@@ -40,6 +42,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   cutView_.setViewport(0, contentHeight);
   cutContentView_.setViewport(0, contentHeight);
   manView_.setViewport(0, contentHeight);
+  locateView_.setViewport(0, contentHeight);
   promptEditor_.setField(display.rows() - 1, 0, std::max(1, display.columns()));
 }
 
@@ -119,8 +122,11 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
       case 'p':      // ^J p : PROGRAM
       case 0x10:     // ^J ^P : PROGRAM (the second byte here is ^P, unrelated to plain ^P/MoveUp)
         return handleCommand(Command::StartProgram);
+      case 'l':       // ^J l : LOCATE
+      case 0x0c:      // ^J ^L : LOCATE
+        return handleCommand(Command::StartLocate);
       default:
-        return false;  // unrecognized ^J-sequence in this slice (LOCATE/... is future work)
+        return false;  // unrecognized ^J-sequence in this slice
     }
   }
 
@@ -144,6 +150,8 @@ ContentView &Application::activeView() {
       return cutContentView_;
     case ApplicationMode::Man:
       return manView_;
+    case ApplicationMode::Locate:
+      return locateView_;
     case ApplicationMode::Directory:
     default:
       return directoryView_;
@@ -169,6 +177,7 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Cut) return openSelectedSegment();
       return false;
     case Command::Back:
+      if (currentMode_ == ApplicationMode::Locate) return returnFromLocate();
       if (currentMode_ == ApplicationMode::Man) return returnFromMan();
       if (currentMode_ == ApplicationMode::CutContent) return returnFromCutContent();
       if (currentMode_ == ApplicationMode::Cut) {
@@ -190,6 +199,8 @@ bool Application::handleCommand(Command command) {
       return startManPrompt();
     case Command::StartProgram:
       return startProgramPrompt();
+    case Command::StartLocate:
+      return startLocatePrompt();
     case Command::None:
       return false;
   }
@@ -256,6 +267,12 @@ bool Application::returnFromMan() {
   return true;
 }
 
+bool Application::returnFromLocate() {
+  currentMode_ = locateReturnMode_;
+  activeView().redraw();
+  return true;
+}
+
 // Ported from m_grep(): entering FGREP/EGREP just remembers where to
 // come back to (legacy: save_stack()) and switches to a prompt state
 // so the next bytes are the search pattern, not commands. Refuses to
@@ -317,6 +334,22 @@ bool Application::startProgramPrompt() {
   return true;
 }
 
+// Ported from m_locate()'s M_locate (^J^L) path: unlike MAN/PROGRAM,
+// entering LOCATE from within its own results screen is refused
+// (m_locate()'s own is_name(ap->name, M_locate) guard) -- the one
+// property LOCATE shares with GREP rather than MAN/PROGRAM. The ^Jl
+// "reuse the previous result set without re-prompting" shortcut
+// (M_locate2 when a prior result exists) is deliberately not
+// replicated here; see class comment.
+bool Application::startLocatePrompt() {
+  if (currentMode_ == ApplicationMode::Locate) return false;
+  locateReturnMode_ = currentMode_;
+  promptKind_ = PromptKind::LocateQuery;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
 bool Application::feedPromptByte(int byte) {
   if (byte == kCarriageReturn) return submitPrompt();
   if (byte == kControlG) {
@@ -342,6 +375,8 @@ bool Application::submitPrompt() {
       return executeMan(text);
     case PromptKind::ProgramCommand:
       return executeProgram(text);
+    case PromptKind::LocateQuery:
+      return executeLocate(text);
     case PromptKind::None:
       return false;
   }
@@ -431,6 +466,15 @@ bool Application::executeProgram(const std::string &command) {
   return true;
 }
 
+bool Application::executeLocate(const std::string &query) {
+  if (!locateMode_.search(query)) {
+    activeView().redraw();
+    return false;
+  }
+  currentMode_ = ApplicationMode::Locate;
+  return true;
+}
+
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
 const std::string &Application::promptText() const { return promptEditor_.text(); }
 
@@ -441,5 +485,6 @@ GrepMode &Application::grepMode() { return grepMode_; }
 CutMode &Application::cutMode() { return cutMode_; }
 ManMode &Application::manMode() { return manMode_; }
 ProgramMode &Application::programMode() { return programMode_; }
+LocateMode &Application::locateMode() { return locateMode_; }
 
 }  // namespace fm

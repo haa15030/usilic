@@ -2344,6 +2344,35 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      一時ファイルを使ったdoctestで新規7件、既存297件全件、
      Mac/Ubuntu 26.04(Docker)双方でパス確認。
 
+45. **2026-07-29: ApplicationクラスにLOCATEを追加**
+   - 「その順で」の第六項目、LOCATEに着手。`m_locate()`(^Jl=
+     `M_locate2`、^J^L=`M_locate`)を確認したところ、GREP/MAN両方の
+     性質を併せ持つと判明: MAN同様「現在の画面内容を一切読まない、
+     常に空のプロンプトから始まる」独立機能でありながら、GREP同様
+     「LOCATE結果一覧内からの再入力は`is_name(ap->name, M_locate)`
+     ガードで拒否される」。この2つの性質が同時に成り立つのは
+     このスライスで移植した4つのプロンプト系機能(GREP/CUT/MAN/
+     LOCATE)の中でLOCATEだけだった。
+   - `ApplicationMode::Locate`を追加(GREPと同様、`Enter`はこの
+     スライスでは無視、`LocateMode`自身のクラスコメントで既に
+     「選択結果をどう扱うか(DirectoryMode/FileModeへの引き渡し)は
+     対象外」と明記済みの範囲を踏襲)。`LocateMode`も`ModeStack`
+     非依存のフラットな設計のため、`locateReturnMode_`という単純な
+     トグルのみで復帰を実現。
+   - **意図的に見送った範囲**: `M_locate2`(^Jl)固有の「既に
+     LOCATE結果が読み込み済みなら再検索せずそのまま再表示する」
+     ショートカット(`m_locate()`の`hp->base[5].pp`チェック)は、
+     このスライスでは^Jl/^J^L共に常に新規プロンプトを開く、という
+     単純化で対応(「以前の結果セットを覚えておいて再検索無しで
+     再表示する」機能は次回以降の課題として明記)。
+   - **検証**: ^Jl/^J^Lのキー解決、任意モードからのLOCATEプロンプト
+     起動、実`locate`によるクエリ入力→検索実行、^Gでの元モード復帰
+     (カーソル位置含む)、LOCATE結果上でのEnterが無視されること、
+     LOCATE結果内からのネスト検索禁止、^Gでのプロンプトキャンセルを、
+     実`locate`・実一時ファイルを使ったdoctestで新規7件、既存304件
+     全件、Mac(実DB有)/Ubuntu 26.04(Docker、plocateパッケージで
+     実DB構築済み)双方でパス確認。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

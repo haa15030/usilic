@@ -14,6 +14,7 @@
 #include "history.hpp"
 #include "key_input.hpp"
 #include "line_editor.hpp"
+#include "locate_mode.hpp"
 #include "man_mode.hpp"
 #include "mode_stack.hpp"
 #include "program_mode.hpp"
@@ -37,7 +38,8 @@ enum class Command {
   StartCutFixed,
   StartCutRegex,
   StartMan,
-  StartProgram
+  StartProgram,
+  StartLocate
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -46,7 +48,7 @@ enum class Command {
 // legacy mode (M_cut): Cut shows the list of segment labels,
 // CutContent shows one selected segment's actual lines -- see the
 // class comment on why CutMode itself doesn't merge them.
-enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man };
+enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man, Locate };
 
 // The top-level controller: owns the ModeStack(s) and every *Mode
 // instance, maps keypresses to Command, and dispatches each Command
@@ -145,11 +147,20 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man };
 //     be a strncmp-prefix match of some PROGRAM directive's own first
 //     word) is replicated in executeProgram() against
 //     Configuration::programSeedCommands().
+//   - LOCATE (M_locate/M_locate2, ^J^L/^Jl) is the simplest of the
+//     prompt-driven actions: like MAN it needs nothing from the
+//     current view and always starts an empty prompt, but like GREP
+//     it DOES refuse re-entry from within its own results screen
+//     (m_locate()'s own is_name(ap->name, M_locate) guard) -- so it
+//     tracks a return mode the same way GREP/CUT/MAN do, but is the
+//     only one of the four with both properties at once. See
+//     "Deliberately excluded" for the one piece of m_locate() this
+//     slice does NOT carry over.
 //
 // Deliberately excluded (future work, not this slice):
-//   - Every mode besides Directory/File/Grep/Cut/Man, and PROGRAM's
-//     own SHELL fallback: LOCATE, archive browsing, SHELL entry, DU,
-//     CP/MV/RM execution, history/list browsers, help/error/log
+//   - Every mode besides Directory/File/Grep/Cut/Man/Locate, and
+//     PROGRAM's own SHELL fallback: archive browsing, SHELL entry,
+//     DU, CP/MV/RM execution, history/list browsers, help/error/log
 //     screens -- each already has its own *Mode class built (SHELL's
 //     glue class doesn't exist yet); wiring each one in is the same
 //     shape of change (extend Command/ApplicationMode, extend
@@ -165,6 +176,17 @@ enum class ApplicationMode { Directory, File, Grep, Cut, CutContent, Man };
 //     not replicated here either -- a real gap, flagged rather than
 //     silently glossed over, deferred until this slice's minimal
 //     "just run it" behavior needs to grow that far.
+//   - LOCATE's own ^Jl shortcut (m_locate()'s M_locate2 case): when a
+//     previous locate result buffer already exists, ^Jl re-displays
+//     it directly (skipping the prompt entirely) instead of asking
+//     for a fresh query -- ^J^L always prompts fresh either way. This
+//     slice treats both bindings identically (always a fresh prompt),
+//     deferring the "remember and redisplay the last result set
+//     without re-running the search" shortcut. Deciding what to do
+//     with a selected result (handing off to DirectoryMode or
+//     FileMode) is likewise out of scope, matching LocateMode's own
+//     class comment; Enter on a locate result is a no-op in this
+//     slice, same as GREP.
 //   - GREP's own further actions: opening/jumping to a matched line's
 //     original context, nested search (searching within results),
 //     highlighting the matched substring, and recording the pattern
@@ -249,6 +271,7 @@ class Application {
   CutMode &cutMode();
   ManMode &manMode();
   ProgramMode &programMode();
+  LocateMode &locateMode();
 
  private:
   bool openSelectedEntry();
@@ -258,12 +281,14 @@ class Application {
   bool returnFromCutContent();
   bool returnFromCut();
   bool returnFromMan();
+  bool returnFromLocate();
   ContentView &activeView();
 
   bool startGrepPrompt(GrepSyntax syntax);
   bool startCutPrompt(GrepSyntax syntax);
   bool startManPrompt();
   bool startProgramPrompt();
+  bool startLocatePrompt();
   bool feedPromptByte(int byte);
   bool submitPrompt();
   void cancelPrompt();
@@ -271,6 +296,7 @@ class Application {
   bool executeCut(const std::string &pattern);
   bool executeMan(const std::string &name);
   bool executeProgram(const std::string &command);
+  bool executeLocate(const std::string &query);
 
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   ModeStack modeStack_;
@@ -281,6 +307,7 @@ class Application {
   ContentView cutView_;
   ContentView cutContentView_;
   ContentView manView_;
+  ContentView locateView_;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;
@@ -288,17 +315,19 @@ class Application {
   CutMode cutMode_;
   ManMode manMode_;
   ProgramMode programMode_;
+  LocateMode locateMode_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
   ApplicationMode cutReturnMode_ = ApplicationMode::Directory;
   ApplicationMode manReturnMode_ = ApplicationMode::Directory;
+  ApplicationMode locateReturnMode_ = ApplicationMode::Directory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;
 
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
 
-  enum class PromptKind { None, GrepPattern, CutPattern, ManName, ProgramCommand };
+  enum class PromptKind { None, GrepPattern, CutPattern, ManName, ProgramCommand, LocateQuery };
   PromptKind promptKind_ = PromptKind::None;
 };
 
