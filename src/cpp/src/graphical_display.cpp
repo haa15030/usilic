@@ -656,69 +656,104 @@ void GraphicalDisplay::setHandCursor(bool active) {
   }
 }
 
+// Draws one already-UTF-8-decoded-per-glyph line of text starting at
+// pixel position (0, y), used by both renderScrolled()'s per-content-
+// line loop and its mode-line row below -- factored out so the mode-
+// line (added 2026-07-31) doesn't need a third copy of the glyph-walk/
+// font-fallback/fitGlyphRect() dance renderCell() already has its own
+// (necessarily separate, see renderScrolled()'s own class comment on
+// why this whole path is self-contained).
+void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg) {
+  SDL_Color sdlFg{fg.r, fg.g, fg.b, 255};
+  int x = 0;
+  std::size_t pos = 0;
+  while (pos < line.size() && x < impl_->columns) {
+    unsigned char lead = static_cast<unsigned char>(line[pos]);
+    int len = Utf8::sequence_length(lead);
+    if (pos + len > line.size()) len = 1;
+    int width = std::max(1, Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + pos), len));
+    std::string glyph = line.substr(pos, len);
+    if (glyph != " " && lead >= 0x20) {
+      // See renderCell()'s own comment on why a fallback font is
+      // consulted here too.
+      TTF_Font *renderFont = impl_->font;
+      unsigned int codepoint = decodeUtf8Codepoint(glyph);
+      if (!glyphProvidedByFont(impl_->font, codepoint) && glyphProvidedByFont(impl_->fallbackFont, codepoint))
+        renderFont = impl_->fallbackFont;
+      SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, glyph.c_str(), sdlFg);
+      if (surface) {
+        SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
+        if (texture) {
+          // Fit to `width` cells via fitGlyphRect() -- see
+          // renderCell()'s own comment on why this shrinks-and-
+          // centers instead of stretching.
+          SDL_Rect dst = fitGlyphRect(x * impl_->cellWidth, y, width * impl_->cellWidth, impl_->cellHeight,
+                                       surface->w, surface->h);
+          SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
+          SDL_DestroyTexture(texture);
+        }
+        SDL_FreeSurface(surface);
+      }
+    }
+    x += width;
+    pos += len;
+  }
+}
+
 // Drag-scroll prototype rendering -- see class comment and header
 // comment on why this is a self-contained path, not layered on
 // write()/putChar()/moveCursor(). Renders each of `lines` (already
 // UTF-8-decoded per-glyph via the same fm::Utf8 helpers putByte()
 // uses) at its own computed pixel Y position, offset by pixelOffsetY,
 // including ONE extra row beyond whichever edge is being revealed.
-void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY) {
+//
+// The bottom row is reserved for `modeLineText` (ContentView's own
+// "current/total NN%" formatting, see ModeLine) and is NEVER part of
+// the scrolled content -- content only ever occupies impl_->rows - 1
+// rows here (rowCount below is sized accordingly), matching every
+// ContentView's own viewport height (Application::resize()'s
+// "contentHeight = rows()-1"). Before this, the content loop spanned
+// the FULL window height, so dragging/coasting scrolled straight
+// through where the mode-line belongs (a known gap noted in CLAUDE.md
+// well before the mode-line existed to collide with). The mode-line
+// itself is redrawn fresh every call (not offset by pixelOffsetY --
+// it's a fixed row) so it live-updates during a drag/coast, which was
+// the ORIGINAL motivation for wanting mode-line support at all (see
+// CLAUDE.md's 2026-07-30 notes on reflecting scroll state there).
+void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+                                       const std::string &modeLineText) {
   if (!impl_->outputEnabled) return;
   SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
   SDL_RenderClear(impl_->renderer);
 
-  SDL_Color fg = impl_->fg;
   TTF_SetFontStyle(impl_->font, TTF_STYLE_NORMAL);
   if (impl_->fallbackFont) TTF_SetFontStyle(impl_->fallbackFont, TTF_STYLE_NORMAL);
+
+  int contentRows = std::max(impl_->rows - 1, 0);
 
   // One extra row above when revealing upward (pixelOffsetY > 0,
   // content shifting down), one extra row below when revealing
   // downward (pixelOffsetY < 0, content shifting up) -- see header
   // comment for the sign convention.
   int firstRow = (pixelOffsetY > 0) ? topIndex - 1 : topIndex;
-  int rowCount = impl_->rows + 1;
+  int rowCount = contentRows + 1;
 
   for (int i = 0; i < rowCount; i++) {
     int lineIndex = firstRow + i;
     if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) continue;
     int y = i * impl_->cellHeight + pixelOffsetY - ((pixelOffsetY > 0) ? impl_->cellHeight : 0);
-    if (y <= -impl_->cellHeight || y >= impl_->rows * impl_->cellHeight) continue;  // fully off-screen
-
-    const std::string &line = lines[lineIndex];
-    int x = 0;
-    std::size_t pos = 0;
-    while (pos < line.size() && x < impl_->columns) {
-      unsigned char lead = static_cast<unsigned char>(line[pos]);
-      int len = Utf8::sequence_length(lead);
-      if (pos + len > line.size()) len = 1;
-      int width = std::max(1, Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + pos), len));
-      std::string glyph = line.substr(pos, len);
-      if (glyph != " " && lead >= 0x20) {
-        // See renderCell()'s own comment on why a fallback font is
-        // consulted here too.
-        TTF_Font *renderFont = impl_->font;
-        unsigned int codepoint = decodeUtf8Codepoint(glyph);
-        if (!glyphProvidedByFont(impl_->font, codepoint) && glyphProvidedByFont(impl_->fallbackFont, codepoint))
-          renderFont = impl_->fallbackFont;
-        SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, glyph.c_str(), fg);
-        if (surface) {
-          SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
-          if (texture) {
-            // Fit to `width` cells via fitGlyphRect() -- see
-            // renderCell()'s own comment on why this shrinks-and-
-            // centers instead of stretching.
-            SDL_Rect dst = fitGlyphRect(x * impl_->cellWidth, y, width * impl_->cellWidth, impl_->cellHeight,
-                                         surface->w, surface->h);
-            SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
-            SDL_DestroyTexture(texture);
-          }
-          SDL_FreeSurface(surface);
-        }
-      }
-      x += width;
-      pos += len;
-    }
+    if (y <= -impl_->cellHeight || y >= contentRows * impl_->cellHeight) continue;  // fully off-screen (or into the mode-line row)
+    renderTextRun(y, lines[lineIndex], Color{impl_->fg.r, impl_->fg.g, impl_->fg.b});
   }
+
+  if (impl_->rows > 0) {
+    int modeLineY = contentRows * impl_->cellHeight;
+    SDL_Rect rowBox{0, modeLineY, impl_->columns * impl_->cellWidth, impl_->cellHeight};
+    SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
+    SDL_RenderFillRect(impl_->renderer, &rowBox);
+    renderTextRun(modeLineY, modeLineText, Color{impl_->bg.r, impl_->bg.g, impl_->bg.b});
+  }
+
   SDL_RenderPresent(impl_->renderer);
 }
 

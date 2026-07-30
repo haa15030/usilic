@@ -4372,6 +4372,86 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      (`src/graphical_display.cpp`/`.hpp`)と無関係。コミットはpush
      保留、ユーザーの実機評価待ち。
 
+   (2026-07-31追記): ユーザーが実機で確認し「完全に直ってる」と確認、
+   pushの許可を得たため`origin/master`へpush済み。
+
+77. **2026-07-31: mode-line第一弾(最下行に「現在行/総行数 N%」)を実装**
+   - GUI版のバグ潰しが一段落したところで、ユーザーから「今後の改善点を
+     列挙する前にまずはmode-lineをサポートしてほしい」との依頼。
+     `disp_window()`(元Cの最下行ステータスバー)はファイル名パンくず・
+     前モード表示・Mark set表示・ENTRY入力欄・PROGRAM名表示まで含む
+     多機能なものだったため、まずどこまで実装するかを確認したところ、
+     「最下行に『現在行/総行数 N%』のみ」(推奨案)を選択いただいた。
+     ドットスクロール中に最下行までスクロール範囲に含まれてしまう件
+     (項目75/76で既知課題として記録済み)もこれで解消できる。
+   - **調査**: `ContentView`の`row0_`/`height_`は既に
+     `Application`側で`contentHeight = rows()-1`として全モード共通で
+     設定済み(directoryView_/fileView_/grepView_/cutView_/manView_/
+     locateView_/archiveView_/duView_/listBrowserView_等すべて)で、
+     最下行は元々予約済みだった(現状はPromptEditorが入力時にのみ
+     使う、それ以外は空白のまま)。`ContentView`の
+     クラスコメントには元々「disp_window()/print_line()等は将来の
+     StatusBar/Mode領域として意図的に除外」と明記されていたが、
+     redraw()の呼び出し箇所が`application.cpp`だけで数十箇所に
+     散らばっており、別クラス経由での一律フックが非現実的と判断、
+     フォーマット関数自体は独立クラス(`ModeLine`)に切り出しつつ、
+     配線(実際に描く場所)は`ContentView::redraw()`(および
+     `moveUp()`/`moveDown()`のハードウェアスクロール高速パス)に
+     持たせることにした――結果的に、既存の全モードで自動的に
+     mode-lineが有効になる。
+   - 元Cの`print_line()`(`disp.c`)を読み、フォーマットの正確な仕様を
+     確認: `row`(カーソル行、1-indexed)/`n_row`(総行数)/`e_row`
+     (ビューポート最下行の1-indexed行番号)から、`e_row==n_row`
+     (=最後まで見えている)なら`"row/n_row END"`、そうでなければ
+     `"row/n_row NN%"`(`NN = e_row*100/n_row`)。`row`は`n_row`の
+     桁数へゼロ埋め。**パーセントは(直感に反して)カーソル位置ではなく
+     ビューポート最下行の位置**が基準――ドラッグでビューポートだけ
+     動かしてもカーソル位置は動かない(項目68〜69の設計)ため、これで
+     自然にドラッグ中のスクロール量が反映される。
+   - **実装**:
+     - `src/mode_line.hpp/.cpp`(新規): `ModeLine::format(currentLine,
+       totalLines, bottomVisibleLine)`という純粋関数のみ。doctest
+       5件(ゼロ埋め、END判定、空リスト等)を追加。
+     - `ContentView`: `modeLineText()`(public、現在の状態から3つの
+       数値を組み立てて`ModeLine::format()`を呼ぶ)と、private
+       `renderModeLine()`(`row0_+height_`行へ`moveCursor`→
+       `clearToEndOfLine`→`Standout`属性で文字を出す)を追加。
+       `redraw()`の最後、および`moveUp()`/`moveDown()`の
+       スムーズスクロール高速パス(`display_.flush()`の直前)で
+       それぞれ呼ぶよう配線。
+     - `GraphicalDisplay::renderScrolled()`(ドラッグ/コースト専用の
+       別描画経路、項目73〜76参照)にも`modeLineText`引数を追加し、
+       (a)本文の描画行数を`impl_->rows+1`から`impl_->rows-1+1`
+       (=最下行を除いた行数+リビール用の1行)に縮小して最下行を
+       スクロール対象から除外、(b)最下行には常に固定位置で
+       `modeLineText`を反転表示で毎フレーム再描画するよう変更(offset
+       を掛けない固定行のため、ドラッグ中でも文字だけが正しく静止
+       して見える)。本文用のグリフ描画ループを`renderTextRun()`
+       という共有ヘルパーへ切り出し、mode-line行の描画と重複させない
+       ようにした。呼び出し元`runGuiPhase()`は`view.modeLineText()`
+       を渡すだけの1行変更。
+   - **検証**: doctest 428件全通過(Mac/Ubuntu 26.04双方)。
+     ターミナルモードは擬似端末(pyte)で`149x24`のレイアウトを再現し、
+     全15行(13ファイル+`.`+`..`)の一覧が0〜14行目に正しく収まり、
+     23行目(最終行)に反転表示で`"02/15 END"`(カーソルは`../`=2番目
+     の行、全15行が23行のビューポートに収まりきるためEND)が正しく
+     表示されることをバイト列・セル属性(`reverse=True`が該当セルのみ)
+     の両方で確認。GUIモードは項目75/76で整備した
+     `USILICGUIDEBUG`の`SDL_RenderReadPixels()`によるBMP保存を使い、
+     実機(本セッション環境そのもの)で実際に`usilic`を起動し、静止
+     画面で同様に最下行へ`"02/15 END"`が正しく表示され、本文が
+     最下行に一切かぶっていないことを確認。ドラッグ中の`renderScrolled()`
+     経路のライブ更新自体は、この場でマウス操作を再現する手段が
+     無いため未検証(コードレビューでのロジック確認のみ、次回ユーザー
+     の実機確認で最終確認予定)。既存の環境依存10件の失敗は今回のdiff
+     (`app/main.cpp`/`content_view.cpp`/`.hpp`/
+     `graphical_display.cpp`/`.hpp`/`mode_line.hpp`/`.cpp`)と無関係。
+   - **今回のスコープ外として残っているもの**: ファイル名パンくず・
+     前モード表示・Mark set表示・ENTRY入力欄・PROGRAM名表示(元の
+     `disp_window()`の残り部分)、SHELLモード(`ContentView`を使わない
+     ため対象外のまま)。ドラッグ中のmode-lineライブ更新の実機確認。
+     コミットはpush保留、ユーザーの実機評価待ち。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

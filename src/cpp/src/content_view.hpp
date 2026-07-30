@@ -130,8 +130,16 @@ class ContentView {
   // -- rendering --
   void redraw();
 
+  // The formatted "current/total NN%" text this view is currently
+  // showing on its mode-line row (see renderModeLine()) -- exposed so
+  // a custom render loop that bypasses redraw() (GraphicalDisplay's
+  // drag-scroll path, see its own renderScrolled() overload) can draw
+  // the same text itself without duplicating ModeLine's position math.
+  std::string modeLineText() const;
+
  private:
   void renderLine(const Line &line, bool marked);
+  void renderModeLine();
   void clampViewport();
 
   Display &display_;

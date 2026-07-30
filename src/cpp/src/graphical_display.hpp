@@ -220,7 +220,12 @@ class GraphicalDisplay : public Display {
   // pixelOffsetY < cellHeightPixels(); the caller (runDragScrollDemo())
   // is responsible for committing a real topIndex change and
   // resetting the offset once a full row's worth has accumulated.
-  void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY);
+  // `modeLineText` (see ContentView::modeLineText()) is drawn fresh
+  // every call into the fixed bottom row, in reverse video -- content
+  // itself never scrolls into that row (see this method's own comment
+  // in the .cpp for why it used to).
+  void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+                       const std::string &modeLineText);
 
   int cellHeightPixels() const;
 
@@ -242,6 +247,7 @@ class GraphicalDisplay : public Display {
   void commitGlyph(const std::string &utf8Bytes, int width);
   void renderCellBackground(int row, int col);
   void renderCell(int row, int col);
+  void renderTextRun(int y, const std::string &line, Color fg);
 };
 
 }  // namespace fm

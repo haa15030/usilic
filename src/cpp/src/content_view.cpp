@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "mode_line.hpp"
+
 namespace fm {
 
 ContentView::ContentView(Display &display) : display_(display) {}
@@ -72,6 +74,7 @@ void ContentView::moveUp() {
       display_.moveCursor(row0_, 0);
       display_.scrollReverse();
       renderLine(lines_[topIndex_], topIndex_ == cursorIndex_);
+      renderModeLine();
       display_.flush();
       return;
     }
@@ -97,6 +100,7 @@ void ContentView::moveDown() {
       int bottomIndex = topIndex_ + height_ - 1;
       if (bottomIndex < static_cast<int>(lines_.size()))
         renderLine(lines_[bottomIndex], bottomIndex == cursorIndex_);
+      renderModeLine();
       display_.flush();
       return;
     }
@@ -171,6 +175,29 @@ void ContentView::renderLine(const Line &line, bool marked) {
   setStandout(false);
 }
 
+std::string ContentView::modeLineText() const {
+  int total = static_cast<int>(lines_.size());
+  int current = total > 0 ? cursorIndex_ + 1 : 0;
+  int bottomVisible = std::min(topIndex_ + std::max(height_, 0), total);
+  return ModeLine::format(current, total, bottomVisible);
+}
+
+// Ported from print_line()'s current-line/total-line/percent display
+// (see ModeLine's own class comment for why only this sliver of
+// disp_window() moved into this class). Drawn in standout, matching
+// legacy's own vt_stand() around this line. row0_+height_ is always
+// the one screen row every mode's viewport leaves unused for exactly
+// this purpose (see Application::resize()'s "contentHeight =
+// rows()-1"), so no bounds check is needed here beyond what
+// setViewport()'s caller already guarantees.
+void ContentView::renderModeLine() {
+  display_.moveCursor(row0_ + height_, 0);
+  display_.clearToEndOfLine();
+  display_.setAttribute(Display::Attribute::Standout);
+  for (unsigned char c : modeLineText()) display_.putChar(c);
+  display_.setAttribute(Display::Attribute::StandoutOff);
+}
+
 void ContentView::redraw() {
   clampViewport();
   int highlighted = hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_;
@@ -180,6 +207,7 @@ void ContentView::redraw() {
     display_.clearToEndOfLine();
     if (idx < static_cast<int>(lines_.size())) renderLine(lines_[idx], idx == highlighted);
   }
+  renderModeLine();
   display_.flush();
 }
 
