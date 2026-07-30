@@ -171,9 +171,34 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
     return nullptr;
   }
 
+  // Loaded and measured BEFORE the window/cell grid are sized (not
+  // lazily later) so the grid can be grown to fit both fonts up
+  // front, rather than scaling either font's glyphs at render time to
+  // fit a grid sized for the OTHER one. An earlier version did the
+  // latter (uniform shrink-to-fit, added after a non-uniform-stretch
+  // attempt visibly distorted CJK glyph shapes) but that still showed
+  // up as a real report of "half-missing" Japanese characters --
+  // shrinking a fallback-font glyph down to a primary-font-sized cell
+  // can still clip/thin out fine strokes badly enough to look
+  // incomplete. Growing the grid instead means BOTH fonts always draw
+  // at their own natural, undistorted, unclipped size.
+  TTF_Font *fallbackFont = loadCjkFallbackFont(fontPointSize);
+  if (fallbackFont) {
+    int cjkWidth = 0, cjkHeight = 0;
+    if (TTF_SizeUTF8(fallbackFont, "\xE5\x9B\xBD" /* "国", a representative kanji */, &cjkWidth, &cjkHeight) == 0) {
+      // A CJK glyph occupies 2 columns (see commitGlyph()'s
+      // continuation-cell convention), so half its natural width is
+      // what one column needs to hold; round up so it's never
+      // slightly too narrow.
+      cellWidth = std::max(cellWidth, (cjkWidth + 1) / 2);
+      cellHeight = std::max(cellHeight, cjkHeight);
+    }
+  }
+
   SDL_Window *window = SDL_CreateWindow("usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                          cellWidth * columns, cellHeight * rows, SDL_WINDOW_SHOWN);
   if (!window) {
+    if (fallbackFont) TTF_CloseFont(fallbackFont);
     TTF_CloseFont(font);
     TTF_Quit();
     SDL_Quit();
@@ -182,6 +207,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
   if (!renderer) {
     SDL_DestroyWindow(window);
+    if (fallbackFont) TTF_CloseFont(fallbackFont);
     TTF_CloseFont(font);
     TTF_Quit();
     SDL_Quit();
@@ -196,7 +222,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->window = window;
   display->impl_->renderer = renderer;
   display->impl_->font = font;
-  display->impl_->fallbackFont = loadCjkFallbackFont(fontPointSize);
+  display->impl_->fallbackFont = fallbackFont;
   display->impl_->cellWidth = cellWidth;
   display->impl_->cellHeight = cellHeight;
   display->impl_->rows = rows;
