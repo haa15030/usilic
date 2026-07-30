@@ -58,3 +58,22 @@ TEST_CASE("display_width: fullwidth forms boundary is 2 columns") {
   unsigned char zero[] = {0xef, 0xbc, 0x90};
   CHECK(Utf8::display_width(zero, 3) == 2);
 }
+
+TEST_CASE("display_width: ambiguous-width geometric shapes are 2 columns in this CJK context") {
+  // U+25BD WHITE DOWN-POINTING TRIANGLE (▽) = e2 96 bd -- found via a
+  // real report: a Japanese filename's GraphicalDisplay rendering
+  // progressively misaligned starting exactly at this character,
+  // because it was being counted as 1 column instead of the 2 it
+  // renders as when set alongside the surrounding katakana.
+  unsigned char triangle[] = {0xe2, 0x96, 0xbd};
+  CHECK(Utf8::display_width(triangle, 3) == 2);
+}
+
+TEST_CASE("display_width: CJK-style curly quotation marks are 2 columns in this CJK context") {
+  // U+201C LEFT DOUBLE QUOTATION MARK (“) = e2 80 9c
+  unsigned char leftQuote[] = {0xe2, 0x80, 0x9c};
+  CHECK(Utf8::display_width(leftQuote, 3) == 2);
+  // U+201D RIGHT DOUBLE QUOTATION MARK (”) = e2 80 9d
+  unsigned char rightQuote[] = {0xe2, 0x80, 0x9d};
+  CHECK(Utf8::display_width(rightQuote, 3) == 2);
+}

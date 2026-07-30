@@ -42,6 +42,28 @@ int Utf8::display_width(const unsigned char *cp, int len) {
       || (cpt >= 0x2600 && cpt <= 0x27bf))
     return 2;
 
+  // "Ambiguous" East Asian Width (Unicode's own category A): neither
+  // clearly narrow nor clearly wide by the standard alone, but
+  // conventionally rendered WIDE when set alongside CJK text, which
+  // is the only context this whole class exists for. Added
+  // 2026-07-30 after a real report of GraphicalDisplay progressively
+  // misaligning a Japanese filename's characters starting exactly at
+  // a "▽" (U+25BD) -- confirmed (byte-for-byte, via a standalone
+  // decode check) that the filename's UTF-8 was completely valid, so
+  // the corruption traced back to THIS function under-counting a
+  // character actually used in real content, not to any decoding bug.
+  // Narrowed to just the two ranges that were actually present in the
+  // reported filenames (the Geometric Shapes block -- ▽ △ ○ ● etc.,
+  // common as bullet/marker glyphs in Japanese text -- and the CJK-
+  // style curly quotation marks) rather than the full Unicode
+  // "Ambiguous" set (which also includes things like Latin-1
+  // punctuation and Cyrillic that should stay narrow even in this
+  // context) -- deliberately conservative rather than reclassifying
+  // everything Unicode calls "Ambiguous".
+  if ((cpt >= 0x2018 && cpt <= 0x201f)   // ‘ ’ ‚ ‛ “ ” „ ‟
+      || (cpt >= 0x25a0 && cpt <= 0x25ff))  // Geometric Shapes (■ □ ▲ △ ▽ ● ○ ★ ☆ ...)
+    return 2;
+
   return 1;
 }
 
