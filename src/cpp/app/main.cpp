@@ -123,6 +123,7 @@
 //         re-entering GUI mode later constructs a fresh one rather
 //         than trying to hide/reshow an existing window.
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
@@ -149,6 +150,7 @@
 #include "graphical_display.hpp"
 #include "history.hpp"
 #include "key_input.hpp"
+#include "mac_font_resolver.hpp"
 #include "mouse_sgr.hpp"
 #include "terminal_display.hpp"
 
@@ -171,12 +173,38 @@ std::string currentTimestampText() {
   return text;
 }
 
-// USILICFONT, or a short best-effort list of common monospace system
-// font paths (Mac, then common Linux distros) -- see file comment on
-// why this mirrors USILICHELP's own resolution shape. Empty if none
-// found, meaning GUI mode simply stays unavailable.
-std::string resolveGuiFontPath() {
+struct TerminalAppearance {
+  fm::GraphicalDisplay::Color background;
+  fm::GraphicalDisplay::Color foreground;
+  int fontPointSize = 16;  // matches GraphicalDisplay::create()'s own previous hardcoded default
+  // The calling terminal's own font NAME (Terminal.app's AppleScript
+  // "font name" property, e.g. "MS-Gothic"), empty if unavailable --
+  // see resolveGuiFontPath()'s own comment on how this gets turned
+  // into an actual loadable file path.
+  std::string fontName;
+};
+
+// USILICFONT; then (macOS, when `appearance` carries a real font
+// NAME from the calling terminal) that name resolved to a real file
+// via CoreText (see mac_font_resolver.hpp); then a short best-effort
+// list of common monospace system font paths (Mac, then common Linux
+// distros) -- see file comment on why this mirrors USILICHELP's own
+// resolution shape. Empty if none found, meaning GUI mode simply
+// stays unavailable.
+//
+// The CoreText step was added 2026-07-31 at a real report that the
+// GUI window wasn't honoring the calling terminal's configured font
+// (e.g. "ＭＳゴシック14", needed for full Japanese glyph coverage
+// without falling back to the separate CJK-fallback-font mechanism at
+// all) -- until then this function only ever matched the terminal's
+// font SIZE (see TerminalAppearance's own history), never its NAME,
+// because resolving a name to a file needs a real font-lookup API.
+std::string resolveGuiFontPath(std::optional<TerminalAppearance> appearance = std::nullopt) {
   if (const char *env = std::getenv("USILICFONT")) return env;
+  if (appearance && !appearance->fontName.empty()) {
+    std::string resolved = fm::resolveMacFontPath(appearance->fontName, appearance->fontPointSize);
+    if (!resolved.empty()) return resolved;
+  }
   static const char *const candidates[] = {
       "/System/Library/Fonts/Menlo.ttc",
       "/System/Library/Fonts/Monaco.ttf",
@@ -216,27 +244,22 @@ void loadScrollDebugLevelFromEnvironment() {
 
 int resolveCoastLevel(int computedLevel) { return gScrollDebugLevel.value_or(computedLevel); }
 
-struct TerminalAppearance {
-  fm::GraphicalDisplay::Color background;
-  fm::GraphicalDisplay::Color foreground;
-  int fontPointSize = 16;  // matches GraphicalDisplay::create()'s own previous hardcoded default
-};
-
-// Queries the calling terminal's own background/text colors AND font
-// size via AppleScript, for the "実はすでにGUI" launch (docs/ideas/
-// IDEAS.md, see CLAUDE.md's 2026-07-30 notes): a GraphicalDisplay
-// window that matches the REAL terminal it's replacing is what makes
-// starting in GUI mode from process launch unnoticeable. Font size
-// matters as much as color here: GraphicalDisplay::create() used to
-// hardcode 16pt regardless of the real terminal's own font size,
-// which made the GUI window visibly LARGER (bigger cells at the same
-// row/column count) than the terminal it was supposed to look
-// identical to -- found from a real screenshot comparison. Font NAME
-// matching is deliberately still out of scope (resolving a queried
-// font family name like "SFMono-Regular" to an actual loadable TTF/
-// TTC file needs a real font-lookup API, e.g. CoreText, not just a
-// string) -- USILICFONT/the existing candidate-path list still decide
-// which face is used, only its POINT SIZE is matched here.
+// Queries the calling terminal's own background/text colors, font
+// size, AND font name via AppleScript, for the "実はすでにGUI" launch
+// (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30 notes): a
+// GraphicalDisplay window that matches the REAL terminal it's
+// replacing is what makes starting in GUI mode from process launch
+// unnoticeable. Font size matters as much as color here:
+// GraphicalDisplay::create() used to hardcode 16pt regardless of the
+// real terminal's own font size, which made the GUI window visibly
+// LARGER (bigger cells at the same row/column count) than the
+// terminal it was supposed to look identical to -- found from a real
+// screenshot comparison. Font NAME (added 2026-07-31, see
+// resolveGuiFontPath()'s own comment on why this was deliberately
+// left out until now) is resolved to an actual file by the caller via
+// mac_font_resolver.hpp -- this function only ever returns the raw
+// name AppleScript reports (e.g. "MS-Gothic"), it doesn't touch the
+// filesystem itself.
 //
 // Gated on TERM_PROGRAM=Apple_Terminal BEFORE spawning osascript at
 // all -- checked earlier in this whole project (font/color
@@ -254,15 +277,23 @@ std::optional<TerminalAppearance> queryTerminalAppColors() {
 
   fm::ChildProcess::Result result = fm::ChildProcess::run(
       {"osascript", "-e",
-       "tell application \"Terminal\" to get {background color, normal text color, font size} of front window"});
+       "tell application \"Terminal\" to get {background color, normal text color, font size, font name} of front "
+       "window"});
   if (!result.ok) return std::nullopt;
 
   // osascript prints an AppleScript list as "bgR, bgG, bgB, fgR, fgG,
-  // fgB, size" -- the two RGB triples 0-65535 (AppleScript's own RGB
-  // color range, not 0-255), the font size a plain point size.
+  // fgB, size, name" -- the two RGB triples 0-65535 (AppleScript's
+  // own RGB color range, not 0-255), the font size a plain point
+  // size, then the font name as a bare (unquoted) string, which is
+  // why it's placed LAST and parsed by taking everything past where
+  // the 7 numeric fields ended (a %n-recorded byte offset) rather than
+  // with another %-conversion -- sscanf has no "the rest of the
+  // string" specifier, and the name can't be quoted-and-scanned since
+  // AppleScript's own list-to-text coercion never quotes it.
   int bgR, bgG, bgB, fgR, fgG, fgB, fontSize;
-  if (std::sscanf(result.output.c_str(), "%d, %d, %d, %d, %d, %d, %d", &bgR, &bgG, &bgB, &fgR, &fgG, &fgB,
-                   &fontSize) != 7)
+  int consumed = 0;
+  if (std::sscanf(result.output.c_str(), "%d, %d, %d, %d, %d, %d, %d, %n", &bgR, &bgG, &bgB, &fgR, &fgG, &fgB,
+                   &fontSize, &consumed) != 7)
     return std::nullopt;
 
   auto to255 = [](int channel) -> unsigned char {
@@ -272,6 +303,11 @@ std::optional<TerminalAppearance> queryTerminalAppColors() {
   appearance.background = {to255(bgR), to255(bgG), to255(bgB)};
   appearance.foreground = {to255(fgR), to255(fgG), to255(fgB)};
   if (fontSize > 0) appearance.fontPointSize = fontSize;
+  if (consumed > 0 && consumed <= static_cast<int>(result.output.size())) {
+    std::string fontName = result.output.substr(consumed);
+    while (!fontName.empty() && std::isspace(static_cast<unsigned char>(fontName.back()))) fontName.pop_back();
+    appearance.fontName = fontName;
+  }
   return appearance;
 }
 
@@ -1143,7 +1179,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 // site comment for why THAT one insists on a match first).
 bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::TerminalDisplay &terminalDisplay,
                       std::optional<TerminalAppearance> appearance = std::nullopt) {
-  std::string fontPath = resolveGuiFontPath();
+  std::string fontPath = resolveGuiFontPath(appearance);
   std::unique_ptr<fm::GraphicalDisplay> gui =
       fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath);
   if (!gui) return false;  // no usable font, or window/renderer creation failed -- stay in terminal mode
@@ -1271,7 +1307,7 @@ int main(int argc, char **argv) {
   std::unique_ptr<fm::GraphicalDisplay> launchGui;
   bool guiOwnsWholeSession = false;
   if (auto appearance = queryTerminalAppColors()) {
-    std::string fontPath = resolveGuiFontPath();
+    std::string fontPath = resolveGuiFontPath(appearance);
     launchGui = fontPath.empty() ? nullptr
                                   : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,
                                                                   appearance->fontPointSize);

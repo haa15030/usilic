@@ -13,7 +13,15 @@ SDL_LIBS   := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null)
 CXXFLAGS ?= -std=c++17 -Wall -Wextra -g $(SDL_CFLAGS)
 # terminal_display.cpp uses ncurses' terminfo API (setupterm/tputs/
 # tgoto), same as the legacy C's config.sh (LIBS= -lncurses).
+# mac_font_resolver.cpp's CoreText/CoreFoundation use is #ifdef
+# __APPLE__-guarded (a no-op stub elsewhere), but the frameworks still
+# need linking on macOS specifically -- `-framework` isn't a flag
+# Linux's linker understands, so this is gated on uname rather than
+# added unconditionally.
 LDLIBS   ?= -lncurses $(SDL_LIBS)
+ifeq ($(shell uname), Darwin)
+LDLIBS += -framework CoreText -framework CoreFoundation
+endif
 
 SRC_DIR   = src
 APP_DIR   = app

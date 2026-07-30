@@ -4686,6 +4686,56 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      別途調査が必要なため、次回以降の課題として持ち越し。コミットは
      push保留、ユーザー評価待ち。
 
+82. **2026-07-31: GUIウィンドウが実Terminal.appの設定フォント(名前)を
+    反映するように ― CoreTextによるフォント名→ファイルパス解決を実装**
+   - 項目81で保留にしていた「使用フォント(ＭＳゴシック14)が反映
+     されていない」の状況確認・実装。事前に調べた結果を報告し、
+     ユーザーから「進めて」との許可を得て実装した。
+   - **調査結果**: フォント「名前」自体は既存の`queryTerminalAppColors()`
+     と同じosascript呼び出しに`font name of front window`を足すだけで
+     取得できる(実機で確認: `MS-Gothic`)。問題は「名前→実ファイル
+     パス」の変換で、macOSにはファイル名の命名規則からの単純な解決
+     手段が無く、CoreTextフレームワーク(`CTFontDescriptorCreateWith
+     NameAndSize()`+`kCTFontURLAttribute`)を使う必要があると判明
+     (実機で検証: `MS-Gothic`→`/Users/haa15030/Library/Fonts/
+     msgothic.ttc`と正確に解決できることを確認)。この制約自体は
+     項目75(実はすでにGUI)の`resolveGuiFontPath()`のコメントに
+     「フォント名解決は要CoreTextにつき当時スコープ外」と既に
+     明記されていた。
+   - **実装**:
+     - `src/mac_font_resolver.hpp/.cpp`(新規、macOS専用): CoreTextを
+       使い`resolveMacFontPath(fontName, pointSize)`でフォント名を
+       実ファイルパスへ解決する関数を追加。`#ifdef __APPLE__`で
+       ガードし、それ以外のプラットフォーム(Ubuntu等)では常に空
+       文字列を返すスタブとした(既存の`shell.c`由来`#ifdef __linux__`
+       と同じ、単一ファイル内で条件分岐する作法を踏襲)。
+     - `Makefile`: `uname`が`Darwin`の時だけ`-framework CoreText
+       -framework CoreFoundation`をリンクするよう追加(Linuxの
+       リンカは`-framework`を理解しないため無条件追加は不可)。
+     - `app/main.cpp`: `TerminalAppearance`に`fontName`フィールドを
+       追加。`queryTerminalAppColors()`のosascriptクエリへ
+       `font name`を追加(数値7項目+文字列という混在パースになる
+       ため、`%n`で数値部分の消費バイト数を記録し、残り文字列全体を
+       フォント名として切り出す方式にした)。`resolveGuiFontPath()`
+       が`TerminalAppearance`(オプショナル)を受け取れるよう拡張し、
+       `USILICFONT`環境変数の次、既存のMenlo/Monaco固定候補リストの
+       前に、`fontName`があれば`resolveMacFontPath()`での解決を
+       試みるようにした(解決失敗時は従来通り候補リストへフォール
+       バック)。呼び出し元2箇所(起動時の「実はすでにGUI」経路、
+       `^Og`手動切り替え経路)双方で`appearance`を渡すよう変更。
+   - **検証**: doctest 439件全通過(Mac側、`resolveMacFontPath()`の
+     新規テスト2件を含む、実在する"Helvetica"での解決成功と存在しない
+     架空フォント名での安全な失敗を確認)、Ubuntu側438件
+     (`#ifdef`の非Apple分岐用テスト1件のみのため件数差は想定通り)、
+     既存の環境依存10件の失敗は今回のdiffと無関係。実機
+     (本セッション環境そのもの)で、実際のosascript出力
+     (`0, 0, 0, 12089, 65535, 4651, 14, MS-Gothic`)からのパース、
+     および`USILICGUIDEBUG`の`SDL_RenderReadPixels()`によるBMP保存を
+     使い、実際に起動したGUIウィンドウがMSゴシック相当の字形と
+     実端末の配色(緑系の前景色)で描画されていることを直接確認した
+     (以前のMenlo+ヒラギノ角ゴシックでの描画と字形が明確に異なる
+     ことを目視確認)。コミットはpush保留、ユーザーの実機評価待ち。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
