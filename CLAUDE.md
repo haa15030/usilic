@@ -4579,6 +4579,66 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      未検証、コードレビューとdoctestのみ。コミットはpush保留、
      ユーザーの実機評価・`sudo make install`の実行待ち。
 
+   (2026-07-31追記): `sudo make install`実行時、パスワード入力待ち
+   なのに何も表示されず「フリーズした」と誤認されたが、実際は
+   単に入力待ちだった(sudoはパスワード入力中も画面に一切
+   フィードバックを返さない)。無事`/usr/local/bin/U`のインストール
+   に成功。
+
+80. **2026-07-31: `mode-lineだけでこれだけ手間取るのは何かがまだ
+    黒箱化されていないのでは」というユーザーからの指摘を受け、
+    `renderScrolled()`を`GraphicalDisplay`専用メソッドから`Display`
+    の仮想メソッドへ格上げ**
+   - 発端: 項目77〜79の作業量を見たユーザーから、「以前『表示部分は
+     抽象クラスでコーディング』という話をしたはずなのに、mode-line
+     一つでこれだけ時間がかかるのは何かを作り込んでいる印象を受ける。
+     まだ黒箱化されていないのでは」との指摘。整理して回答したところ、
+     「最下行がスクロール範囲から外れた(項目77)のだから、今はもう
+     抽象の外にあるはずがない、それなのに手間取る理由は？」との
+     再質問があり、これに対し「スクロール範囲から外す」ことと
+     「その行の面倒を抽象側(`Display`)が見るようになる」ことは別の
+     話だと回答(`GraphicalDisplay::renderScrolled()`は元々`write()`/
+     `putChar()`/`moveCursor()`を一切経由しない、`Display`抽象の外の
+     独立した描画経路だったため)。その回答の中で触れた「統合するなら
+     `renderScrolled()`を`Display`の仮想メソッドに格上げする手もある」
+     という選択肢について、ユーザーから「そちらを進めてほしい」との
+     指示があった。
+   - **設計判断**: 完全な統合(実端末側の慣性スクロール`runCoastLoop()`/
+     `runTerminalMouseDrag()`も含めて1つのループに一本化)は行わない
+     ことにした。実端末側は`cursorIndex_`をスクロール中も
+     `topIndex_`へ追従させ続ける設計(ホバー行のハイライト表示のため、
+     `runCoastLoop()`自身のコメント参照)である一方、GUI側は項目
+     68〜69の設計判断で`cursorIndex_`をスクロール中は意図的に固定
+     したままにしている。この違いは両者それぞれに正当な理由があり、
+     どちらかに寄せると既存の(動作確認済みの)挙動が変わってしまう
+     ため、ループ自体の統合はスコープ外とした。
+   - **実施した範囲**: `Display`(display.hpp)に純粋仮想メソッド
+     `renderScrolled(lines, topIndex, pixelOffsetY, modeLineText)`を
+     新設。`GraphicalDisplay`はこれの`override`(実装は変更無し、
+     ピクセル単位描画)。`TerminalDisplay`にも新規に実装を追加した
+     (行単位、`pixelOffsetY`は符号以外無視、`write()`/`moveCursor()`/
+     `setAttribute()`等の既存プリミティブを組み合わせるだけの
+     素直な実装)。ただし現状これを呼ぶ経路は無い(実端末側の
+     慣性スクロールは`runCoastLoop()`が`ContentView::redraw()`を
+     直接駆動する従来通りの経路のまま)ため、「今は呼ばれないが
+     正しく動く、スタブではない実装」という位置づけ(ユーザーが
+     選んだプレビューの「行単位の近似 or 何もしない」のうち前者を
+     採用)。`DelegatingDisplay`にも同様に転送実装を追加(これにより
+     `GraphicalDisplay`型を知らなくても`Display&`/`DelegatingDisplay&`
+     経由で呼べるようになった)。
+   - **副次的に判明した見落とし**: `Display`に新規の純粋仮想メソッドを
+     追加した影響で、テスト用のDisplay実装(`RecordingDisplay`、
+     `tests/test_key_input.cpp`の`FakeDisplay`、
+     `tests/test_program_mode.cpp`の`NullDisplay`)3件がビルド
+     エラーになり、いずれも対応が必要だった。特に`RecordingDisplay`
+     は単なる空実装ではなく、`TerminalDisplay`と同じ行単位の実装を
+     与え、doctestで検証可能にした(`DelegatingDisplay`経由の転送
+     テストを新規追加)。
+   - **検証**: doctest 436件全通過(Mac/Ubuntu 26.04双方、既存の
+     環境依存10件の失敗は今回のdiffと無関係)。`GraphicalDisplay`の
+     実装自体は変更していないため、実機での見た目への影響は無い
+     想定(コード移動のみ)。コミットはpush保留、ユーザー評価待ち。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

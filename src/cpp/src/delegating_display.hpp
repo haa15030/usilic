@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "display.hpp"
 
@@ -72,6 +73,9 @@ class DelegatingDisplay : public Display {
 
   void open() override;
   void close() override;
+
+  void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+                       const std::string &modeLineText) override;
 
  private:
   Display *backend_;

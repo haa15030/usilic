@@ -39,4 +39,9 @@ void DelegatingDisplay::setSmoothScrollEnabled(bool enabled) { backend_->setSmoo
 void DelegatingDisplay::open() { backend_->open(); }
 void DelegatingDisplay::close() { backend_->close(); }
 
+void DelegatingDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+                                        const std::string &modeLineText) {
+  backend_->renderScrolled(lines, topIndex, pixelOffsetY, modeLineText);
+}
+
 }  // namespace fm

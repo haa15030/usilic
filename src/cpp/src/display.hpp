@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace fm {
 
@@ -108,6 +109,35 @@ class Display {
   // corrects that; see terminal_display.cpp.
   virtual void open() = 0;
   virtual void close() = 0;
+
+  // -- smooth (drag/coast) scroll rendering --
+  // Renders `lines` (the FULL content, not just what's visible) with
+  // row `topIndex` positioned `pixelOffsetY` pixels below its normal
+  // (offset==0) position, and `modeLineText` (see ContentView::
+  // modeLineText()/scrollModeLineText()) in the fixed bottom row --
+  // the rendering primitive behind the GUI drag-scroll feature (docs/
+  // ideas/IDEAS.md's "cat's-paw" request). Moved onto this interface
+  // (2026-07-31, previously GraphicalDisplay-only) so callers
+  // (main.cpp's runGuiPhase()) go through the same Display abstraction
+  // every other render call does, rather than reaching for a
+  // GraphicalDisplay-specific method.
+  //
+  // `pixelOffsetY` is fundamentally pixel/dot-granular: positive
+  // shifts everything DOWN (revealing earlier content, a downward
+  // drag), negative shifts UP; must satisfy
+  // -cellHeightPixels() < pixelOffsetY < cellHeightPixels() for an
+  // implementation that has one (GraphicalDisplay). A real terminal
+  // has no sub-row addressing at all -- the real-terminal drag-scroll
+  // fallback (main.cpp's runCoastLoop()/runTerminalMouseDrag(), see
+  // CLAUDE.md's 2026-07-30 notes) is row-granular by necessity and
+  // drives ContentView::redraw() directly rather than through this
+  // method, so nothing currently calls TerminalDisplay's own
+  // implementation -- it's still a real, correct, row-granular
+  // rendering (pixelOffsetY has no effect there beyond its sign) kept
+  // independently usable rather than left as a stub, for whatever
+  // future caller wants a Display-agnostic smooth-scroll render.
+  virtual void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+                               const std::string &modeLineText) = 0;
 };
 
 }  // namespace fm

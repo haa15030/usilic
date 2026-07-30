@@ -52,6 +52,29 @@ class RecordingDisplay : public Display {
   void open() override {}
   void close() override {}
 
+  // Same row-granular shape as TerminalDisplay's real implementation
+  // (see its own comment) -- ignores pixelOffsetY, reuses this
+  // class's own write()/moveCursor()/etc. so tests can assert on
+  // rowText()/standoutAt() same as any other rendering path.
+  void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+                       const std::string &modeLineText) override {
+    (void)pixelOffsetY;
+    int contentRows = rows_ > 0 ? rows_ - 1 : 0;
+    for (int row = 0; row < contentRows; row++) {
+      int lineIndex = topIndex + row;
+      moveCursor(row, 0);
+      clearToEndOfLine();
+      if (lineIndex >= 0 && lineIndex < static_cast<int>(lines.size())) write(lines[lineIndex]);
+    }
+    if (rows_ > 0) {
+      moveCursor(contentRows, 0);
+      clearToEndOfLine();
+      setAttribute(Attribute::Standout);
+      write(modeLineText);
+      setAttribute(Attribute::StandoutOff);
+    }
+  }
+
   const std::string &rowText(int row) const { return screen_[row]; }
   int cursorRow() const { return cursorRow_; }
   int cursorCol() const { return cursorCol_; }

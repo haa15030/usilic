@@ -1,5 +1,6 @@
 #include "terminal_display.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -293,6 +294,27 @@ void TerminalDisplay::close() {
   if (!outputEnabled_ || caps_.exitAltScreen.empty()) return;
   tputs(caps_.exitAltScreen.c_str(), 1, outc);
   std::fflush(stdout);
+}
+
+void TerminalDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+                                      const std::string &modeLineText) {
+  (void)pixelOffsetY;  // no sub-row addressing on a real terminal -- see this method's own header comment
+  if (!outputEnabled_) return;
+  int contentRows = std::max(rows_ - 1, 0);
+  for (int row = 0; row < contentRows; row++) {
+    int lineIndex = topIndex + row;
+    moveCursor(row, 0);
+    clearToEndOfLine();
+    if (lineIndex >= 0 && lineIndex < static_cast<int>(lines.size())) write(lines[lineIndex]);
+  }
+  if (rows_ > 0) {
+    moveCursor(contentRows, 0);
+    clearToEndOfLine();
+    setAttribute(Attribute::Standout);
+    write(modeLineText);
+    setAttribute(Attribute::StandoutOff);
+  }
+  flush();
 }
 
 }  // namespace fm

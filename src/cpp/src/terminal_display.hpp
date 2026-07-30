@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "display.hpp"
 
@@ -93,6 +94,15 @@ class TerminalDisplay : public Display {
 
   void open() override;
   void close() override;
+
+  // See Display::renderScrolled()'s own comment: a real, row-granular
+  // implementation (pixelOffsetY has no effect beyond its sign, since
+  // a terminal has no sub-row addressing), kept correct and usable
+  // even though the real-terminal drag-scroll fallback in main.cpp
+  // currently drives ContentView::redraw() directly instead of
+  // calling this.
+  void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+                       const std::string &modeLineText) override;
 
   // Row/column arguments for the change-scroll-region capability,
   // given the current size and smooth-scroll setting. Pure (no I/O).

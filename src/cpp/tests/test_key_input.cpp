@@ -43,6 +43,7 @@ class FakeDisplay : public Display {
   void setSmoothScrollEnabled(bool) override {}
   void open() override {}
   void close() override {}
+  void renderScrolled(const std::vector<std::string> &, int, int, const std::string &) override {}
 
  private:
   int rows_ = 24, columns_ = 80;

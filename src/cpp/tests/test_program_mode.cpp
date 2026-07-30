@@ -51,6 +51,7 @@ struct Fixture {
       void setSmoothScrollEnabled(bool) override {}
       void open() override {}
       void close() override {}
+      void renderScrolled(const std::vector<std::string> &, int, int, const std::string &) override {}
     } instance;
     return instance;
   }

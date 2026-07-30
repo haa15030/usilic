@@ -211,21 +211,17 @@ class GraphicalDisplay : public Display {
   };
   std::optional<DragEvent> consumeDragEvent();
 
-  // Renders `lines` (the FULL content, not just what's visible) with
-  // row `topIndex` positioned pixelOffsetY pixels below its normal
-  // (offset==0) position -- positive pixelOffsetY shifts everything
-  // DOWN (revealing more content above topIndex, i.e. a downward
-  // drag), negative shifts everything UP (revealing more content
-  // below, i.e. an upward drag). Must satisfy -cellHeightPixels() <
-  // pixelOffsetY < cellHeightPixels(); the caller (runDragScrollDemo())
-  // is responsible for committing a real topIndex change and
-  // resetting the offset once a full row's worth has accumulated.
-  // `modeLineText` (see ContentView::modeLineText()) is drawn fresh
-  // every call into the fixed bottom row, in reverse video -- content
-  // itself never scrolls into that row (see this method's own comment
-  // in the .cpp for why it used to).
+  // See Display::renderScrolled()'s own comment for the general
+  // contract (this is that method's real, pixel-granular
+  // implementation). The caller is responsible for committing a real
+  // topIndex change and resetting pixelOffsetY once a full row's
+  // worth has accumulated (see main.cpp's commitRowCrossings()).
+  // `modeLineText` is drawn fresh every call into the fixed bottom
+  // row, in reverse video -- content itself never scrolls into that
+  // row (see this method's own comment in the .cpp for why it used
+  // to).
   void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
-                       const std::string &modeLineText);
+                       const std::string &modeLineText) override;
 
   int cellHeightPixels() const;
 
