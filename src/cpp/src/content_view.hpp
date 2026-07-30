@@ -137,6 +137,23 @@ class ContentView {
   // the same text itself without duplicating ModeLine's position math.
   std::string modeLineText() const;
 
+  // Same formatting, but for the drag/coast-scroll render path
+  // specifically: uses the viewport's own bottom-visible line as BOTH
+  // the "current" number and the percent basis, instead of
+  // cursorIndex_. A mouse-drag/Shift+arrow coast deliberately never
+  // moves cursorIndex_ (see moveUp()/moveDown() vs setTopIndex()'s own
+  // comments -- scrolling the viewport isn't the same as moving the
+  // selection), so during a coast modeLineText()'s cursorIndex_-based
+  // "current" would sit frozen while its own percent kept climbing --
+  // a real report of exactly that ("percent moves, current doesn't")
+  // pointed out the percent's own bottom-visible number was already
+  // being computed and moving correctly, so showing THAT as "current"
+  // too keeps the two numbers consistent with each other during a
+  // scroll, at the cost of "current" no longer meaning "the selected
+  // line" while actively scrolling (it goes back to meaning that the
+  // moment modeLineText() takes over again, once the scroll settles).
+  std::string scrollModeLineText() const;
+
  private:
   void renderLine(const Line &line, bool marked);
   void renderModeLine();

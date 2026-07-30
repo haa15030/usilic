@@ -234,3 +234,41 @@ TEST_CASE("setLines clamps a stale cursor index to the new list's bounds") {
   v.setLines(makeLines(3));  // shorter list
   CHECK(v.cursorIndex() == 2);
 }
+
+TEST_CASE("redraw draws modeLineText() into the row right after the viewport, in standout") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);  // rows 0-2 are content; row 3 is the mode-line row
+  v.setLines(makeLines(10));
+  v.setCursorIndex(1);
+  v.redraw();
+  CHECK(d.rowText(3).substr(0, v.modeLineText().size()) == v.modeLineText());
+  CHECK(d.standoutAt(3, 0));
+}
+
+TEST_CASE("modeLineText: tracks cursorIndex_, matching legacy print_line()'s row") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(10));
+  v.setCursorIndex(4);
+  CHECK(v.modeLineText().substr(0, 2) == "05");  // 1-indexed
+}
+
+TEST_CASE("scrollModeLineText: uses the viewport's bottom-visible line, not cursorIndex_") {
+  // A real report: during a mouse-drag/Shift-arrow coast (which
+  // deliberately never moves cursorIndex_, see setTopIndex()'s own
+  // comment), modeLineText()'s "current" sat frozen while its own
+  // percent kept climbing -- confusing since the percent is computed
+  // from the exact same bottom-visible number. scrollModeLineText()
+  // is what GraphicalDisplay::renderScrolled() calls instead while
+  // actively scrolling, so both numbers move together.
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(10));
+  v.setCursorIndex(0);  // stays here throughout, like a real coast
+  v.setTopIndex(5);     // scrolled well past the cursor's own line
+  CHECK(v.modeLineText().substr(0, 2) == "01");        // unaffected -- still cursorIndex_-based
+  CHECK(v.scrollModeLineText().substr(0, 2) == "08");  // bottomVisible = 5+3 = 8
+}

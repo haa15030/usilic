@@ -182,6 +182,12 @@ std::string ContentView::modeLineText() const {
   return ModeLine::format(current, total, bottomVisible);
 }
 
+std::string ContentView::scrollModeLineText() const {
+  int total = static_cast<int>(lines_.size());
+  int bottomVisible = std::min(topIndex_ + std::max(height_, 0), total);
+  return ModeLine::format(bottomVisible, total, bottomVisible);
+}
+
 // Ported from print_line()'s current-line/total-line/percent display
 // (see ModeLine's own class comment for why only this sliver of
 // disp_window() moved into this class). Drawn in standout, matching

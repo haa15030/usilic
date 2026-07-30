@@ -785,6 +785,32 @@ bool commitRowCrossings(fm::ContentView &view, int cellHeight, int &pixelOffset)
   return true;
 }
 
+// Syncs cursorIndex_ to the active view's current topIndex() right
+// before a key that's about to stop an active coast is forwarded to
+// the app -- otherwise the very next ContentView::moveUp()/moveDown()
+// call (from THIS SAME key) runs its own clampViewport(), which snaps
+// topIndex_ straight back to cursorIndex_'s stale, pre-coast value
+// (cursorIndex_ deliberately never moves while coasting, see
+// setTopIndex()'s own comment), discarding the whole scroll. Found via
+// a real report ("current" in the mode-line looked frozen during a
+// coast) that led to tracing exactly this path: pressing a plain key
+// to stop a long coast was silently snapping the view back near the
+// top instead of continuing from wherever the coast had scrolled to --
+// a more serious variant of the same clampViewport()-desync class of
+// bug items 68-69's wasActivelyScrolling fix addressed, just via a
+// different call path (an app.feedByte()-triggered redraw() from
+// INSIDE this same key-consumption loop, not the outer loop's own
+// settled-branch redraw() wasActivelyScrolling guards). Also clears
+// wasActivelyScrolling so the settled branch's own sync doesn't run a
+// second time immediately after and undo the cursor move this key was
+// actually supposed to make.
+void syncCursorBeforeCoastStoppingKey(fm::Application &app, int coastLevel, bool &wasActivelyScrolling) {
+  if (coastLevel <= 0) return;
+  fm::ContentView &activeView = app.activeContentView();
+  activeView.setCursorIndex(activeView.topIndex());
+  wasActivelyScrolling = false;
+}
+
 // Runs until wantsExit(), the GUI window is closed, or ^Og toggles
 // back to terminal mode. See file comment for the overall shape.
 //
@@ -940,6 +966,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // "stopping a coast" comment below the render-mode branch):
         // leaving a nonzero fractional remainder keeps the loop stuck
         // in the expensive renderScrolled() full-frame path forever.
+        syncCursorBeforeCoastStoppingKey(app, coastLevel, wasActivelyScrolling);
         coastLevel = 0;
         pixelOffset = 0;
         app.feedByte(0, translateDisplayKey(*key->special));
@@ -954,6 +981,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         app.requestImmediateExit();
       } else {
         consecutiveEscapes = 0;
+        syncCursorBeforeCoastStoppingKey(app, coastLevel, wasActivelyScrolling);
         coastLevel = 0;
         pixelOffset = 0;  // see the key->special branch's comment above
         app.feedByte(key->byte, std::nullopt);
@@ -1044,7 +1072,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       std::vector<std::string> lines;
       lines.reserve(view.lines().size());
       for (const auto &line : view.lines()) lines.push_back(line.text);
-      gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.modeLineText());
+      gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineText());
     } else if (wasActivelyScrolling || anyEventThisFrame) {
       // Settled on a row boundary -- back to the normal Display-
       // interface rendering path. redraw() calls clampViewport(),
