@@ -47,6 +47,30 @@ bool glyphProvidedByFont(TTF_Font *font, unsigned int codepoint) {
   return TTF_GlyphIsProvided(font, static_cast<Uint16>(codepoint)) != 0;
 }
 
+// Computes where to draw a glyph surface within its allocated
+// boxX/boxY..maxW/maxH cell(s), UNIFORMLY scaled down (never up, and
+// never independently in X vs Y) if it would otherwise overflow, then
+// centered. Replaces an earlier version that stretched the surface's
+// own natural size to EXACTLY fill maxW/maxH -- non-uniform stretching
+// distorts a glyph's aspect ratio, and a CJK fallback font's natural
+// glyph proportions don't necessarily match cellWidth*2 x cellHeight
+// (measured from the PRIMARY font's Latin "M"), so that stretch was
+// warping recognizable kanji/kana into different-looking, still-wrong
+// shapes (confirmed from a real report: the SPECIFIC way Japanese
+// filenames were garbled changed after adding that stretch, rather
+// than being fixed by it). Scaling only ever shrinks (never enlarges
+// a naturally-small glyph, which would blur it) and always preserves
+// aspect ratio, so a glyph either renders crisp at its natural size
+// (the common case, if it already fits) or shrinks uniformly with
+// letterboxing -- never distorted.
+SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int surfaceH) {
+  float scale = std::min(1.0f, std::min(static_cast<float>(maxW) / std::max(surfaceW, 1),
+                                         static_cast<float>(maxH) / std::max(surfaceH, 1)));
+  int drawW = static_cast<int>(surfaceW * scale);
+  int drawH = static_cast<int>(surfaceH * scale);
+  return SDL_Rect{boxX + (maxW - drawW) / 2, boxY + (maxH - drawH) / 2, drawW, drawH};
+}
+
 // Best-effort search for a CJK-capable font to fall back to when the
 // PRIMARY font (resolved by main.cpp -- Menlo/Monaco/DejaVu/Liberation
 // by default, none of which cover Japanese kana/kanji) is missing a
@@ -283,18 +307,11 @@ void GraphicalDisplay::renderCell(int row, int col) {
   if (!surface) return;
   SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
   if (texture) {
-    // Scaled to fit the cell grid exactly (isWide ? 2 : 1 cells),
-    // NOT drawn at the surface's own natural pixel size -- the
-    // fallback font's CJK glyphs (see loadCjkFallbackFont()) are a
-    // different face than the primary font's, at whatever natural
-    // width TTF_ttf renders them, which doesn't necessarily match
-    // cellWidth (measured from the PRIMARY font's Latin "M"). Drawing
-    // at the natural size let neighboring cells' glyphs overlap or
-    // leave gaps depending on that mismatch, which is what a real
-    // report's "Japanese filenames render as garbled/overlapping
-    // characters" turned out to be -- each glyph WAS the right
-    // character, just not confined to its own cell(s).
-    SDL_Rect dst{box.x, box.y, isWide ? impl_->cellWidth * 2 : impl_->cellWidth, impl_->cellHeight};
+    // Fit to the cell grid (isWide ? 2 : 1 cells) via fitGlyphRect()
+    // -- see its own comment for why this shrinks-and-centers instead
+    // of stretching to the fallback font's (mismatched) natural size.
+    int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
+    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, surface->w, surface->h);
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
     SDL_DestroyTexture(texture);
   }
@@ -581,9 +598,11 @@ void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int
         if (surface) {
           SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
           if (texture) {
-            // Scaled to `width` cells, not the surface's own natural
-            // size -- see renderCell()'s own comment on why.
-            SDL_Rect dst{x * impl_->cellWidth, y, width * impl_->cellWidth, impl_->cellHeight};
+            // Fit to `width` cells via fitGlyphRect() -- see
+            // renderCell()'s own comment on why this shrinks-and-
+            // centers instead of stretching.
+            SDL_Rect dst = fitGlyphRect(x * impl_->cellWidth, y, width * impl_->cellWidth, impl_->cellHeight,
+                                         surface->w, surface->h);
             SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
             SDL_DestroyTexture(texture);
           }
