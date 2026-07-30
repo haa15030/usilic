@@ -1,6 +1,8 @@
 #include "graphical_display.hpp"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <deque>
 #include <vector>
 
@@ -314,20 +316,34 @@ void GraphicalDisplay::renderCell(int row, int col) {
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (cell.underline) style |= TTF_STYLE_UNDERLINE;
 
+  // Whether this glyph occupies one cell or two (a CJK/full-width
+  // character, see commitGlyph()'s continuation-cell convention).
+  bool isWide = (col + 1 < impl_->columns) && impl_->cellAt(row, col + 1).continuation;
+
   // Fall back to a CJK-capable font (see loadCjkFallbackFont()'s own
   // comment) for whatever glyphs the primary font is missing --
   // without this, any character the primary font lacks renders as a
   // blank "tofu" placeholder box instead (confirmed from a real
   // report: Japanese filenames rendering as a string of boxes).
-  TTF_Font *renderFont = impl_->font;
+  //
+  // For a WIDE cell specifically, the fallback is preferred even when
+  // the primary (Latin monospace) font ALSO happens to provide a
+  // glyph: Menlo, e.g., ships its own narrow glyphs for U+25BD (▽)
+  // and the curly quotes U+201C/U+201D -- the exact "ambiguous width"
+  // characters fm::Utf8::display_width() classifies as 2 columns wide
+  // in a CJK context (see CLAUDE.md's 2026-07-30 note on why). Drawing
+  // Menlo's narrow, differently-proportioned glyph into a slot every
+  // surrounding cell already treats as double-width looks visually
+  // inconsistent with its CJK neighbors -- confirmed via
+  // TTF_GlyphIsProvided() that Menlo.ttc really does claim these three
+  // codepoints, which a real report's persistent (post-item-72)
+  // garbling around exactly these characters traces back to.
   unsigned int codepoint = decodeUtf8Codepoint(cell.glyph);
-  if (!glyphProvidedByFont(impl_->font, codepoint) && glyphProvidedByFont(impl_->fallbackFont, codepoint))
+  TTF_Font *renderFont = impl_->font;
+  bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
+  if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
   TTF_SetFontStyle(renderFont, style);
-
-  // Whether this glyph occupies one cell or two (a CJK/full-width
-  // character, see commitGlyph()'s continuation-cell convention).
-  bool isWide = (col + 1 < impl_->columns) && impl_->cellAt(row, col + 1).continuation;
 
   SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), fg);
   if (!surface) return;
@@ -346,6 +362,23 @@ void GraphicalDisplay::renderCell(int row, int col) {
 
 void GraphicalDisplay::flush() {
   if (!impl_->outputEnabled) return;
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) {
+      std::fprintf(f, "---flush---\n");
+      for (int row = 0; row < impl_->rows; row++) {
+        std::string line;
+        for (int col = 0; col < impl_->columns; col++) {
+          const Cell &cell = impl_->cellAt(row, col);
+          if (cell.continuation) line += "_";
+          else if (cell.glyph.empty()) line += ".";
+          else line += "[" + cell.glyph + "]";
+        }
+        std::fprintf(f, "%d: %s\n", row, line.c_str());
+      }
+      std::fclose(f);
+    }
+  }
   SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
   SDL_RenderClear(impl_->renderer);
   for (int row = 0; row < impl_->rows; row++)
