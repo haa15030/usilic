@@ -122,7 +122,9 @@
 //         instance is destroyed outright (closing the real window) --
 //         re-entering GUI mode later constructs a fresh one rather
 //         than trying to hide/reshow an existing window.
+#include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -138,6 +140,7 @@
 #include <utility>
 
 #include "application.hpp"
+#include "child_process.hpp"
 #include "configuration.hpp"
 #include "content_view.hpp"
 #include "delegating_display.hpp"
@@ -184,6 +187,52 @@ std::string resolveGuiFontPath() {
     if (probe.good()) return path;
   }
   return {};
+}
+
+struct TerminalAppearance {
+  fm::GraphicalDisplay::Color background;
+  fm::GraphicalDisplay::Color foreground;
+};
+
+// Queries the calling terminal's own background/text colors via
+// AppleScript, for the "実はすでにGUI" launch (docs/ideas/IDEAS.md,
+// see CLAUDE.md's 2026-07-30 notes): a GraphicalDisplay window that
+// matches the REAL terminal it's replacing is what makes starting in
+// GUI mode from process launch unnoticeable, rather than the
+// previous "black background regardless of the real terminal's own
+// colors" complaint. Gated on TERM_PROGRAM=Apple_Terminal BEFORE
+// spawning osascript at all -- checked earlier in this whole project
+// (font/color feasibility research) to be the only terminal this
+// query is known to work for, and osascript is slow enough that
+// skipping it entirely elsewhere matters for startup latency (every
+// other terminal, and every non-macOS platform, just falls through to
+// GraphicalDisplay's own hardcoded default colors -- see its own
+// class comment on setColors()). Returns nullopt on any failure
+// (wrong TERM_PROGRAM, osascript not found/fails, or output that
+// doesn't parse) -- never a hard requirement for GUI mode to work.
+std::optional<TerminalAppearance> queryTerminalAppColors() {
+  const char *termProgram = std::getenv("TERM_PROGRAM");
+  if (!termProgram || std::string(termProgram) != "Apple_Terminal") return std::nullopt;
+
+  fm::ChildProcess::Result result = fm::ChildProcess::run(
+      {"osascript", "-e",
+       "tell application \"Terminal\" to get {background color, normal text color} of front window"});
+  if (!result.ok) return std::nullopt;
+
+  // osascript prints an AppleScript list of two RGB triples as
+  // "bgR, bgG, bgB, fgR, fgG, fgB", each channel 0-65535 (AppleScript's
+  // own RGB color range, not 0-255).
+  int bgR, bgG, bgB, fgR, fgG, fgB;
+  if (std::sscanf(result.output.c_str(), "%d, %d, %d, %d, %d, %d", &bgR, &bgG, &bgB, &fgR, &fgG, &fgB) != 6)
+    return std::nullopt;
+
+  auto to255 = [](int channel) -> unsigned char {
+    return static_cast<unsigned char>(std::clamp(channel / 257, 0, 255));  // 65535 / 255 == 257
+  };
+  TerminalAppearance appearance;
+  appearance.background = {to255(bgR), to255(bgG), to255(bgB)};
+  appearance.foreground = {to255(fgR), to255(fgG), to255(fgB)};
+  return appearance;
 }
 
 std::optional<fm::KeyInput::SpecialKey> translateDisplayKey(fm::Display::Key key) {
@@ -849,6 +898,43 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   }
 }
 
+// Resolves a font, creates a GraphicalDisplay sized to match
+// `display`'s current geometry, applies `appearance` (if given) so
+// the window matches the calling terminal's own colors instead of
+// GraphicalDisplay's hardcoded defaults, swaps it in via
+// setBackend(), runs runGuiPhase() until it exits (^Og again or the
+// window's own close button), then swaps back to `terminalDisplay`.
+// Returns false without doing anything if no usable font was found or
+// GraphicalDisplay::create() itself failed (headless/no display
+// server, the common case over SSH or in CI) -- the caller should
+// just continue in terminal mode in that case, never a hard failure.
+// Shared by both entry points: the ^Og-triggered mid-session toggle
+// (main()'s own loop, `appearance` left unset -- an explicit user
+// request, so showing up with default colors is fine, unchanged from
+// before) and the "実はすでにGUI" launch-time attempt (main(), called
+// once before ever entering runTerminalPhase() -- see its own call
+// site comment for why THAT one insists on a match first).
+bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::TerminalDisplay &terminalDisplay,
+                      std::optional<TerminalAppearance> appearance = std::nullopt) {
+  std::string fontPath = resolveGuiFontPath();
+  std::unique_ptr<fm::GraphicalDisplay> gui =
+      fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath);
+  if (!gui) return false;  // no usable font, or window/renderer creation failed -- stay in terminal mode
+
+  if (appearance) gui->setColors(appearance->foreground, appearance->background);
+
+  gui->open();
+  display.setBackend(*gui);
+  app.handleResize();  // re-layout/redraw against the (same-sized, but now GUI-rendered) geometry
+
+  runGuiPhase(app, *gui);
+
+  display.setBackend(terminalDisplay);
+  gui.reset();  // closes the real window
+  if (!app.wantsExit()) app.handleResize();  // redraw the terminal, which SDL's window never touched
+  return true;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -936,24 +1022,26 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  // "実はすでにGUI" (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30
+  // notes): if the calling terminal's own colors can be matched
+  // (currently only macOS Terminal.app, via queryTerminalAppColors()),
+  // start in GUI mode directly rather than waiting for ^Og -- true
+  // dot-level scrolling (GraphicalDisplay::renderScrolled()'s real
+  // per-pixel compositing) is only possible with real pixel access,
+  // which a real terminal fundamentally doesn't have (see
+  // runTerminalMouseDrag()/runCoastLoop()'s own comments on why THAT
+  // path is row-granular instead). Deliberately gated on a successful
+  // color match, not attempted unconditionally: showing up in a
+  // mismatched-color window nobody asked for is the exact "配色が逆"
+  // complaint this whole feature exists to avoid -- on any other
+  // terminal/platform this is simply skipped, leaving the normal
+  // terminal-first loop below completely unchanged.
+  if (auto appearance = queryTerminalAppColors()) tryEnterGuiPhase(app, display, *terminalDisplay, appearance);
+
   while (!app.wantsExit()) {
     if (!runTerminalPhase(app, keyInput, display)) break;
     if (app.wantsExit()) break;
-
-    std::string fontPath = resolveGuiFontPath();
-    std::unique_ptr<fm::GraphicalDisplay> gui =
-        fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath);
-    if (!gui) continue;  // no usable font, or window/renderer creation failed -- stay in terminal mode
-
-    gui->open();
-    display.setBackend(*gui);
-    app.handleResize();  // re-layout/redraw against the (same-sized, but now GUI-rendered) geometry
-
-    runGuiPhase(app, *gui);
-
-    display.setBackend(*terminalDisplay);
-    gui.reset();  // closes the real window
-    if (!app.wantsExit()) app.handleResize();  // redraw the terminal, which SDL's window never touched
+    tryEnterGuiPhase(app, display, *terminalDisplay);
   }
 
   display.close();

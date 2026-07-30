@@ -32,6 +32,9 @@ struct GraphicalDisplay::Impl {
   int cellWidth = 0, cellHeight = 0;
   std::vector<Cell> grid;
 
+  SDL_Color fg{220, 220, 220, 255};
+  SDL_Color bg{0, 0, 0, 255};
+
   int cursorRow = 0, cursorCol = 0;
   int savedRow = 0, savedCol = 0;
   bool standoutActive = false, boldActive = false, underlineActive = false;
@@ -176,8 +179,8 @@ void GraphicalDisplay::renderCell(int row, int col) {
   const Cell &cell = impl_->cellAt(row, col);
   SDL_Rect box{col * impl_->cellWidth, row * impl_->cellHeight, impl_->cellWidth, impl_->cellHeight};
 
-  SDL_Color fg{220, 220, 220, 255};
-  SDL_Color bg{0, 0, 0, 255};
+  SDL_Color fg = impl_->fg;
+  SDL_Color bg = impl_->bg;
   if (cell.standout) std::swap(fg, bg);
 
   SDL_SetRenderDrawColor(impl_->renderer, bg.r, bg.g, bg.b, 255);
@@ -203,7 +206,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
 
 void GraphicalDisplay::flush() {
   if (!impl_->outputEnabled) return;
-  SDL_SetRenderDrawColor(impl_->renderer, 0, 0, 0, 255);
+  SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
   SDL_RenderClear(impl_->renderer);
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
@@ -415,6 +418,11 @@ std::optional<GraphicalDisplay::DragEvent> GraphicalDisplay::consumeDragEvent() 
 
 int GraphicalDisplay::cellHeightPixels() const { return impl_->cellHeight; }
 
+void GraphicalDisplay::setColors(Color foreground, Color background) {
+  impl_->fg = SDL_Color{foreground.r, foreground.g, foreground.b, 255};
+  impl_->bg = SDL_Color{background.r, background.g, background.b, 255};
+}
+
 void GraphicalDisplay::setHandCursor(bool active) {
   if (active == impl_->handCursorActive) return;
   impl_->handCursorActive = active;
@@ -434,10 +442,10 @@ void GraphicalDisplay::setHandCursor(bool active) {
 // including ONE extra row beyond whichever edge is being revealed.
 void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY) {
   if (!impl_->outputEnabled) return;
-  SDL_SetRenderDrawColor(impl_->renderer, 0, 0, 0, 255);
+  SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
   SDL_RenderClear(impl_->renderer);
 
-  SDL_Color fg{220, 220, 220, 255};
+  SDL_Color fg = impl_->fg;
   TTF_SetFontStyle(impl_->font, TTF_STYLE_NORMAL);
 
   // One extra row above when revealing upward (pixelOffsetY > 0,

@@ -78,6 +78,22 @@ class GraphicalDisplay : public Display {
 
   ~GraphicalDisplay() override;
 
+  struct Color {
+    unsigned char r = 0, g = 0, b = 0;
+  };
+  // Overrides the default foreground/background colors (220,220,220
+  // on black) -- added for the "launch already looking like the
+  // calling terminal" feature (docs/ideas/IDEAS.md's "実はすでにGUI"
+  // request, see CLAUDE.md's 2026-07-30 notes): when the real
+  // terminal's own colors can be queried (currently only macOS
+  // Terminal.app, via AppleScript -- see main.cpp), the caller applies
+  // them here before the first render so the window matches instead
+  // of using this class's own hardcoded defaults, rather than trying
+  // to make GraphicalDisplay itself terminal-aware. Takes effect on
+  // the next render (flush()/renderScrolled()); doesn't repaint
+  // immediately by itself.
+  void setColors(Color foreground, Color background);
+
   void write(const std::string &text) override;
   void putChar(int c) override;
   void flush() override;
