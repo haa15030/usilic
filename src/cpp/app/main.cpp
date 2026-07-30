@@ -122,9 +122,11 @@
 //         instance is destroyed outright (closing the real window) --
 //         re-entering GUI mode later constructs a fresh one rather
 //         than trying to hide/reshow an existing window.
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <deque>
 #include <fstream>
 #include <iostream>
 #include <cmath>
@@ -133,11 +135,13 @@
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 
 #include "application.hpp"
 #include "configuration.hpp"
 #include "content_view.hpp"
 #include "delegating_display.hpp"
+#include "drag_scroll_speed.hpp"
 #include "graphical_display.hpp"
 #include "history.hpp"
 #include "key_input.hpp"
@@ -248,38 +252,121 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput) {
   return false;
 }
 
+// Executes one usleep()/busy-loop-spin delay from `step` (see
+// drag_scroll_speed.hpp) -- the actual "wait" half of one dot of
+// scroll. Kept as its own function so the busy-loop's spin can't be
+// optimized away and so its cost is visible separately from the
+// pixel-offset bookkeeping around it.
+void performScrollStepDelay(const fm::ScrollStep &step) {
+  if (step.busyLoop) {
+    volatile long sink = 0;
+    for (long i = 0; i < step.busyIterations; i++) sink += i;
+  } else if (step.microseconds > 0) {
+    usleep(static_cast<useconds_t>(step.microseconds));
+  }
+}
+
+// Commits whole-row crossings of pixelOffset into view.setTopIndex(),
+// keeping pixelOffset within (-cellHeight, cellHeight) between
+// renders -- the same odometer-style carry the original friction-based
+// version used, just factored out so both the active-drag path and
+// the coasting path (which can cross several rows in one call) share
+// it. Returns false if a boundary (top or bottom of the list) was
+// hit, so a coasting caller knows to stop rather than pin uselessly
+// against the edge.
+bool commitRowCrossings(fm::ContentView &view, int cellHeight, int &pixelOffset) {
+  while (pixelOffset >= cellHeight) {
+    int before = view.topIndex();
+    view.setTopIndex(before - 1);
+    if (view.topIndex() == before) {
+      pixelOffset = cellHeight - 1;
+      return false;
+    }
+    pixelOffset -= cellHeight;
+  }
+  while (pixelOffset <= -cellHeight) {
+    int before = view.topIndex();
+    view.setTopIndex(before + 1);
+    if (view.topIndex() == before) {
+      pixelOffset = -(cellHeight - 1);
+      return false;
+    }
+    pixelOffset += cellHeight;
+  }
+  return true;
+}
+
 // Runs until wantsExit(), the GUI window is closed, or ^Og toggles
 // back to terminal mode. See file comment for the overall shape.
 //
-// Also drives the 2026-07-30 drag-scroll FEASIBILITY SAMPLE (see
-// GraphicalDisplay's own class comment on renderScrolled()/
-// consumeDragEvent()): while the left mouse button is held and
-// dragged, or while inertia is still decaying after release, this
-// renders via GraphicalDisplay::renderScrolled() (a smooth, sub-row
-// pixel-offset path) instead of the normal ContentView::redraw();
-// once fully settled on a row boundary with no residual velocity, it
-// hands rendering back to the normal Display-interface path (a single
-// redraw() call) -- see the "known gaps" note below for exactly what
-// this sample does NOT attempt yet.
+// Also drives the drag-scroll inertial physics (docs/ideas/IDEAS.md's
+// cat's-paw scroll request; see GraphicalDisplay's own class comment
+// on renderScrolled()/consumeDragEvent()): while the left mouse button
+// is held and dragged, or while "coasting" after release, this renders
+// via GraphicalDisplay::renderScrolled() (a smooth, sub-row pixel-
+// offset path -- the real per-dot mechanism, not a row-jump
+// approximation, per CLAUDE.md's 2026-07-30 note) instead of the
+// normal ContentView::redraw(); once fully settled on a row boundary
+// with nothing coasting, it hands rendering back to the normal
+// Display-interface path (a single redraw() call).
 //
-// Known, deliberate gaps in this sample (evaluate the SCROLL PHYSICS
-// FEEL first; these are next steps, not oversights):
+// Physics, corrected 2026-07-30 from an earlier friction-based
+// attempt the user rejected on two counts:
+//   - No deceleration: once released with enough speed to coast at
+//     all, scrolling continues at a CONSTANT rate (one of
+//     fm::kScrollSpeedLevels) until something stops it -- reaching a
+//     list boundary, or the button going down again to grab it --
+//     rather than decaying toward zero. "Inertia" here means
+//     "maintains its current state," not "gradually loses energy to
+//     friction" (friction was never part of the request).
+//   - Release speed, not in-drag velocity: the level is chosen once,
+//     at ButtonUp, from the summed drag distance in the ~150ms just
+//     before release (see recentMotion below) -- not a continuously
+//     smoothed during-drag velocity. This matches the author's own
+//     earlier "cb" app: the amount of cursor movement at the moment
+//     you let go of the button sets the scroll speed.
+//   - Speed is realized as a per-dot delay (fm::kScrollSpeedLevels):
+//     usleep() for the two slowest levels, an actual busy-loop spin
+//     for everything faster, exactly as cb did and for the same
+//     reason (OS sleep granularity can't hit the faster levels'
+//     sub-millisecond per-dot timing). At the fastest levels this
+//     spins through many dots (sometimes several full rows) within a
+//     single ~16ms outer-loop slice below -- text becoming too fast
+//     to read at top speed is an honest side effect of that, not
+//     something faked by jumping rows or scaling opacity.
+//
+// Known, deliberate gaps (still true after this rework -- next steps,
+// not oversights):
 //   - renderScrolled() draws plain glyphs only -- no cursor/standout
-//     highlight during an active drag (ContentView::renderLine()'s
-//     own reverse-video marking isn't replicated here at all).
+//     highlight during an active drag or while coasting
+//     (ContentView::renderLine()'s own reverse-video marking isn't
+//     replicated here at all).
 //   - Click-vs-drag isn't disambiguated: handleMouseClick() still
 //     fires on every button-down regardless of whether a drag
 //     follows, so a "click that turns into a drag" also selects
 //     whatever row was under the cursor at press time.
 //   - The cursor shape is SDL's built-in hand pointer
 //     (SDL_SYSTEM_CURSOR_HAND), not a custom cat's-paw bitmap.
+//   - No mode-line/status-bar row-count indicator yet (legacy's
+//     disp_window() territory, never ported -- see CLAUDE.md's
+//     2026-07-30 feasibility note); nothing here updates one.
+//   - There is no keyboard-driven trigger for coasting yet (^Og itself
+//     only toggles GUI mode) -- IDEAS.md's original spec also wanted a
+//     key+arrow combination to start inertial scroll without a mouse;
+//     not wired here.
 //   - Horizontal drag, right-click-during-drag, and File/Man mode
 //     (vs. just whichever mode is active) aren't specifically
 //     exercised, though the mechanism itself isn't Directory-specific.
 void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   bool dragging = false;
-  int pixelOffset = 0;   // sub-row offset; -cellHeight < pixelOffset < cellHeight
-  double velocity = 0.0;  // smoothed pixels/frame, sign matches GraphicalDisplay's renderScrolled() convention
+  int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
+  int coastLevel = 0;       // 0 == not coasting; otherwise an index into fm::kScrollSpeedLevels
+  int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
+  // Rolling window of recent Motion samples, trimmed to the last
+  // ~150ms -- summed at ButtonUp to get the "cursor movement at the
+  // moment you let go" release distance cb's own speed control used.
+  std::deque<std::pair<std::chrono::steady_clock::time_point, int>> recentMotion;
+  constexpr auto kReleaseWindow = std::chrono::milliseconds(150);
 
   while (!app.wantsExit()) {
     if (!gui.pumpEvents()) return;  // the window's own close button was clicked
@@ -296,55 +383,55 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       }
       if (app.consumeGuiModeToggleRequest()) return;
     }
+
+    fm::ContentView &view = app.activeContentView();
+    int cellHeight = std::max(gui.cellHeightPixels(), 1);
+
     while (auto drag = gui.consumeDragEvent()) {
       switch (drag->type) {
         case fm::GraphicalDisplay::DragEventType::ButtonDown:
           dragging = true;
-          velocity = 0.0;
+          coastLevel = 0;  // grabbing mid-coast stops it right where it is
+          coastDirection = 0;
+          recentMotion.clear();
           gui.setHandCursor(true);
           break;
-        case fm::GraphicalDisplay::DragEventType::ButtonUp:
+        case fm::GraphicalDisplay::DragEventType::ButtonUp: {
           dragging = false;
           gui.setHandCursor(false);
+          auto cutoff = std::chrono::steady_clock::now() - kReleaseWindow;
+          int releaseDistance = 0;
+          for (auto &sample : recentMotion)
+            if (sample.first >= cutoff) releaseDistance += sample.second;
+          coastLevel = fm::levelForReleaseDistance(releaseDistance, cellHeight);
+          coastDirection = coastLevel > 0 ? (releaseDistance > 0 ? 1 : -1) : 0;
           break;
+        }
         case fm::GraphicalDisplay::DragEventType::Motion:
           pixelOffset += drag->deltaY;
-          velocity = velocity * 0.7 + drag->deltaY * 0.3;  // simple EMA so release velocity isn't one noisy sample
+          recentMotion.push_back({std::chrono::steady_clock::now(), drag->deltaY});
+          while (!recentMotion.empty() && recentMotion.front().first < std::chrono::steady_clock::now() - kReleaseWindow)
+            recentMotion.pop_front();
+          commitRowCrossings(view, cellHeight, pixelOffset);
           break;
       }
     }
 
-    if (!dragging && std::abs(velocity) > 0.5) {
-      pixelOffset += static_cast<int>(velocity);
-      velocity *= 0.92;  // friction -- ~60Hz frame-based decay, not real elapsed-time physics, see file comment
-    } else if (!dragging) {
-      velocity = 0.0;
+    if (coastLevel > 0 && !dragging) {
+      const fm::ScrollStep &step = fm::kScrollSpeedLevels[coastLevel];
+      auto frameDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(16);
+      do {
+        performScrollStepDelay(step);
+        pixelOffset += coastDirection;
+        if (!commitRowCrossings(view, cellHeight, pixelOffset)) {
+          coastLevel = 0;  // hit a boundary -- stop rather than pin against the edge
+          coastDirection = 0;
+          break;
+        }
+      } while (std::chrono::steady_clock::now() < frameDeadline);
     }
 
-    fm::ContentView &view = app.activeContentView();
-    int cellHeight = std::max(gui.cellHeightPixels(), 1);
-    while (pixelOffset >= cellHeight) {
-      int before = view.topIndex();
-      view.setTopIndex(before - 1);
-      if (view.topIndex() == before) {
-        pixelOffset = cellHeight - 1;
-        velocity = 0.0;  // hit the top -- stop coasting rather than pinning against the boundary
-        break;
-      }
-      pixelOffset -= cellHeight;
-    }
-    while (pixelOffset <= -cellHeight) {
-      int before = view.topIndex();
-      view.setTopIndex(before + 1);
-      if (view.topIndex() == before) {
-        pixelOffset = -(cellHeight - 1);
-        velocity = 0.0;  // hit the bottom
-        break;
-      }
-      pixelOffset += cellHeight;
-    }
-
-    if (dragging || pixelOffset != 0 || std::abs(velocity) > 0.5) {
+    if (dragging || coastLevel > 0 || pixelOffset != 0) {
       std::vector<std::string> lines;
       lines.reserve(view.lines().size());
       for (const auto &line : view.lines()) lines.push_back(line.text);
