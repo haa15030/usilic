@@ -865,6 +865,17 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
   int coastLevel = 0;       // 0 == not coasting; otherwise an index into fm::kScrollSpeedLevels
   int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
+  // Set on any frame that renders via renderScrolled() (dragging or
+  // coasting); checked on the FIRST frame back on the normal redraw()
+  // path so the clampViewport()-desync fix below only ever fires once,
+  // right at that transition -- see its own comment for why firing it
+  // unconditionally on every settled frame was itself a bug (found
+  // from a real report: normal, non-Shift arrow-key navigation
+  // stopped working AFTER ever using Shift+arrow/mouse-drag once,
+  // because this correction was overwriting cursorIndex_ on every
+  // single ordinary redraw() too, not just the one right after a
+  // coast/drag).
+  bool wasActivelyScrolling = false;
   // Rolling window of recent Motion samples, trimmed to the last
   // ~150ms -- summed at ButtonUp to get the "cursor movement at the
   // moment you let go" release distance cb's own speed control used.
@@ -975,6 +986,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     }
 
     if (dragging || coastLevel > 0 || pixelOffset != 0) {
+      wasActivelyScrolling = true;
       std::vector<std::string> lines;
       lines.reserve(view.lines().size());
       for (const auto &line : view.lines()) lines.push_back(line.text);
@@ -985,17 +997,28 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // which enforces the normal moveUp()/moveDown() invariant
       // "topIndex_ never leads cursorIndex_"; renderScrolled() (used
       // for every frame while actively dragging/coasting) never
-      // touches cursorIndex_ at all, so by the time coasting settles
-      // here, cursorIndex_ can still be wherever it was BEFORE the
-      // scroll even started while topIndex_ has moved far away --
-      // this first post-coast redraw() would otherwise silently snap
-      // topIndex_ straight back to cursorIndex_, discarding the
+      // touches cursorIndex_ at all, so immediately after coasting
+      // settles, cursorIndex_ can still be wherever it was BEFORE the
+      // scroll even started while topIndex_ has moved far away -- the
+      // FIRST redraw() back on this path would otherwise silently
+      // snap topIndex_ straight back to cursorIndex_, discarding the
       // entire scroll (found from a real report: a plain, non-Shift
-      // arrow key pressed right after a coast appeared to "flicker
-      // one row then snap back to the top," which was actually this
-      // exact reset firing on the very next redraw()). Same fix
-      // already applied to the real-terminal path's runCoastLoop().
-      view.setCursorIndex(view.topIndex());
+      // arrow key pressed right after a coast appeared to "flicker one
+      // row then snap back to the top," which was actually this exact
+      // reset firing on the very next redraw()). Same fix already
+      // applied to the real-terminal path's runCoastLoop().
+      //
+      // Gated on wasActivelyScrolling so this only fires on that ONE
+      // transition frame, not every ordinary redraw(): doing it
+      // unconditionally (an earlier version of this fix) broke plain
+      // keyboard navigation entirely -- every redraw() from a normal
+      // Up/Down/Enter keypress was ALSO overwriting cursorIndex_ with
+      // topIndex_, which is only correct immediately after a coast,
+      // not in general (found from a real report: after using
+      // Shift+arrow/drag even once, ordinary arrow-key navigation
+      // stopped moving the selection at all).
+      if (wasActivelyScrolling) view.setCursorIndex(view.topIndex());
+      wasActivelyScrolling = false;
       view.redraw();
     }
 

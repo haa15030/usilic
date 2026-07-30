@@ -275,11 +275,26 @@ void GraphicalDisplay::renderCell(int row, int col) {
     renderFont = impl_->fallbackFont;
   TTF_SetFontStyle(renderFont, style);
 
+  // Whether this glyph occupies one cell or two (a CJK/full-width
+  // character, see commitGlyph()'s continuation-cell convention).
+  bool isWide = (col + 1 < impl_->columns) && impl_->cellAt(row, col + 1).continuation;
+
   SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), fg);
   if (!surface) return;
   SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
   if (texture) {
-    SDL_Rect dst{box.x, box.y, surface->w, surface->h};
+    // Scaled to fit the cell grid exactly (isWide ? 2 : 1 cells),
+    // NOT drawn at the surface's own natural pixel size -- the
+    // fallback font's CJK glyphs (see loadCjkFallbackFont()) are a
+    // different face than the primary font's, at whatever natural
+    // width TTF_ttf renders them, which doesn't necessarily match
+    // cellWidth (measured from the PRIMARY font's Latin "M"). Drawing
+    // at the natural size let neighboring cells' glyphs overlap or
+    // leave gaps depending on that mismatch, which is what a real
+    // report's "Japanese filenames render as garbled/overlapping
+    // characters" turned out to be -- each glyph WAS the right
+    // character, just not confined to its own cell(s).
+    SDL_Rect dst{box.x, box.y, isWide ? impl_->cellWidth * 2 : impl_->cellWidth, impl_->cellHeight};
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
     SDL_DestroyTexture(texture);
   }
@@ -566,7 +581,9 @@ void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int
         if (surface) {
           SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
           if (texture) {
-            SDL_Rect dst{x * impl_->cellWidth, y, surface->w, surface->h};
+            // Scaled to `width` cells, not the surface's own natural
+            // size -- see renderCell()'s own comment on why.
+            SDL_Rect dst{x * impl_->cellWidth, y, width * impl_->cellWidth, impl_->cellHeight};
             SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
             SDL_DestroyTexture(texture);
           }
