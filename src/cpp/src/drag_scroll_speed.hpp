@@ -48,4 +48,24 @@ extern const std::vector<ScrollStep> kScrollSpeedLevels;
 // same summed distance) -- this function only looks at magnitude.
 int levelForReleaseDistance(int pixels, int cellHeightPixels);
 
+// Scales a per-PIXEL ScrollStep (see kScrollSpeedLevels, calibrated
+// for GraphicalDisplay's dot-by-dot renderScrolled()) up to a per-ROW
+// delay for the real-terminal coast (app/main.cpp's runTerminalCoast/
+// runCoastLoop), which has no sub-row addressing at all -- crossing
+// one row there is ONE step, not cellHeightPixels of them, so its
+// delay needs to be roughly dotsPerRow times longer to produce the
+// same rows/second rate the pixel table produces in GUI mode.
+// dotsPerRow defaults to 16, the "characters are 16 dots tall"
+// convention this whole project has used since the original FM-TOWNS
+// "cb" (see CLAUDE.md) -- real font metrics aren't available in a
+// real terminal (no framebuffer access at all, see CLAUDE.md's
+// 2026-07-30 note on why GraphicalDisplay exists), so this is
+// necessarily an approximation. Found and added after the user
+// reported the terminal coast's minimum speed felt far too fast
+// compared to the GUI mouse-drag's own minimum speed, which they
+// called "just right" -- unscaled, level 1's 90ms delay was being
+// spent on a whole row instead of a single dot, i.e. roughly 16x too
+// fast.
+ScrollStep scaledForRow(const ScrollStep &pixelStep, int dotsPerRow = 16);
+
 }  // namespace fm

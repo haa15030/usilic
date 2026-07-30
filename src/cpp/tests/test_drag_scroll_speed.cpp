@@ -3,6 +3,7 @@
 
 using fm::kScrollSpeedLevels;
 using fm::levelForReleaseDistance;
+using fm::scaledForRow;
 
 TEST_CASE("levelForReleaseDistance: a near-zero flick doesn't coast") {
   CHECK(levelForReleaseDistance(0, 20) == 0);
@@ -33,6 +34,25 @@ TEST_CASE("levelForReleaseDistance: thresholds scale with cellHeightPixels") {
   // a small font (few pixels per row) than on a large one, since the
   // mapping is expressed in cellHeight units, not raw pixels.
   CHECK(levelForReleaseDistance(100, 10) > levelForReleaseDistance(100, 200));
+}
+
+TEST_CASE("scaledForRow: multiplies usleep and busy-loop delays by dotsPerRow") {
+  fm::ScrollStep sleepStep{false, 90000, 0};
+  auto scaled = scaledForRow(sleepStep, 16);
+  CHECK(scaled.busyLoop == false);
+  CHECK(scaled.microseconds == 90000 * 16);
+
+  fm::ScrollStep busyStep{true, 0, 30000};
+  auto scaledBusy = scaledForRow(busyStep, 16);
+  CHECK(scaledBusy.busyLoop == true);
+  CHECK(scaledBusy.busyIterations == 30000 * 16);
+}
+
+TEST_CASE("scaledForRow: a dotsPerRow of 1 is a no-op, and non-positive values clamp to 1") {
+  fm::ScrollStep step{false, 5000, 100};
+  CHECK(scaledForRow(step, 1).microseconds == 5000);
+  CHECK(scaledForRow(step, 0).microseconds == 5000);
+  CHECK(scaledForRow(step, -3).microseconds == 5000);
 }
 
 TEST_CASE("kScrollSpeedLevels: level 0 is inert, levels get faster (less delay) as level increases") {

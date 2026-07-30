@@ -29,4 +29,9 @@ int levelForReleaseDistance(int pixels, int cellHeightPixels) {
   return 7;
 }
 
+ScrollStep scaledForRow(const ScrollStep &pixelStep, int dotsPerRow) {
+  int factor = std::max(dotsPerRow, 1);
+  return {pixelStep.busyLoop, pixelStep.microseconds * factor, pixelStep.busyIterations * factor};
+}
+
 }  // namespace fm
