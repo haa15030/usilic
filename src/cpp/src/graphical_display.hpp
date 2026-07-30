@@ -240,6 +240,7 @@ class GraphicalDisplay : public Display {
 
   void putByte(unsigned char c);
   void commitGlyph(const std::string &utf8Bytes, int width);
+  void renderCellBackground(int row, int col);
   void renderCell(int row, int col);
 };
 

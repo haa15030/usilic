@@ -298,6 +298,36 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   impl_->cursorCol += std::max(width, 1);
 }
 
+// Paints just this cell's background rectangle -- split out from the
+// glyph drawing below (and run as its own full pass over every cell
+// in flush(), before any glyph pass runs) so that a wide glyph's
+// SECOND (continuation) cell never paints its background AFTER the
+// glyph from the cell to its left has already been drawn there. The
+// two used to be interleaved column-by-column in a single pass, which
+// meant: home cell's glyph is drawn spanning both columns (by design,
+// via fitGlyphRect()'s maxW = cellWidth*2) -- then the very next
+// renderCell() call, for the continuation cell, unconditionally
+// painted a background rect over ITS column before returning,
+// silently erasing the right half of the glyph just drawn. This
+// looked exactly like the reported "half-missing"/squished CJK
+// characters (every double-width glyph missing its right half), and
+// survived both the display_width() fix and the font-selection fix
+// because it's a pure draw-ORDER bug, unrelated to either -- found by
+// noticing GraphicalDisplay::renderScrolled() (used only while
+// dragging/coasting, and unaffected by this bug since it fills the
+// WHOLE screen's background exactly once per frame rather than per
+// cell) rendered the identical content correctly, per a real report
+// that clicking and holding the mouse "fixed" the garbling until
+// release.
+void GraphicalDisplay::renderCellBackground(int row, int col) {
+  if (!impl_->outputEnabled) return;
+  const Cell &cell = impl_->cellAt(row, col);
+  SDL_Rect box{col * impl_->cellWidth, row * impl_->cellHeight, impl_->cellWidth, impl_->cellHeight};
+  SDL_Color bg = cell.standout ? impl_->fg : impl_->bg;
+  SDL_SetRenderDrawColor(impl_->renderer, bg.r, bg.g, bg.b, 255);
+  SDL_RenderFillRect(impl_->renderer, &box);
+}
+
 void GraphicalDisplay::renderCell(int row, int col) {
   if (!impl_->outputEnabled) return;
   const Cell &cell = impl_->cellAt(row, col);
@@ -306,9 +336,6 @@ void GraphicalDisplay::renderCell(int row, int col) {
   SDL_Color fg = impl_->fg;
   SDL_Color bg = impl_->bg;
   if (cell.standout) std::swap(fg, bg);
-
-  SDL_SetRenderDrawColor(impl_->renderer, bg.r, bg.g, bg.b, 255);
-  SDL_RenderFillRect(impl_->renderer, &box);
 
   if (cell.continuation || cell.glyph.empty() || cell.glyph == " ") return;
 
@@ -382,7 +409,27 @@ void GraphicalDisplay::flush() {
   SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
   SDL_RenderClear(impl_->renderer);
   for (int row = 0; row < impl_->rows; row++)
+    for (int col = 0; col < impl_->columns; col++) renderCellBackground(row, col);
+  for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    // Same env var as the grid dump above: also save the actual
+    // rendered pixels (read back from the renderer itself, not a
+    // screen capture -- works without Screen Recording permission and
+    // without a real visible window) as "<value>.bmp", overwritten
+    // each flush() so it always holds the latest frame. This is what
+    // let a real rendering bug (renderCellBackground()'s continuation-
+    // cell fill erasing the right half of wide glyphs, see its own
+    // comment) get confirmed from within this sandbox at all, since
+    // screencapture itself was unavailable here.
+    SDL_Surface *shot = SDL_CreateRGBSurfaceWithFormat(0, impl_->columns * impl_->cellWidth,
+                                                        impl_->rows * impl_->cellHeight, 32, SDL_PIXELFORMAT_RGBA32);
+    if (shot) {
+      if (SDL_RenderReadPixels(impl_->renderer, nullptr, SDL_PIXELFORMAT_RGBA32, shot->pixels, shot->pitch) == 0)
+        SDL_SaveBMP(shot, (std::string(dbg) + ".bmp").c_str());
+      SDL_FreeSurface(shot);
+    }
+  }
   SDL_RenderPresent(impl_->renderer);
 }
 
