@@ -934,7 +934,14 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         dragging = false;  // a keyboard trigger always wins over a stale drag flag
       } else if (key->special) {
         consecutiveEscapes = 0;
-        coastLevel = 0;  // any other real key stops an active coast, matching runTerminalCoast()'s own rule
+        // Any other real key stops an active coast, matching
+        // runTerminalCoast()'s own rule -- pixelOffset must be reset
+        // together with coastLevel here (see pixelOffset's own
+        // "stopping a coast" comment below the render-mode branch):
+        // leaving a nonzero fractional remainder keeps the loop stuck
+        // in the expensive renderScrolled() full-frame path forever.
+        coastLevel = 0;
+        pixelOffset = 0;
         app.feedByte(0, translateDisplayKey(*key->special));
       } else if (key->byte == 0x1b) {
         // ESC-ESC-Enter: a direct exit gesture requested in place of
@@ -948,6 +955,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       } else {
         consecutiveEscapes = 0;
         coastLevel = 0;
+        pixelOffset = 0;  // see the key->special branch's comment above
         app.feedByte(key->byte, std::nullopt);
       }
       if (app.consumeGuiModeToggleRequest()) return;
@@ -975,6 +983,11 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             if (sample.first >= cutoff) releaseDistance += sample.second;
           coastLevel = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, cellHeight));
           coastDirection = coastLevel > 0 ? (releaseDistance > 0 ? 1 : -1) : 0;
+          // A release too slow/short to coast (coastLevel resolves to
+          // 0 here) still needs pixelOffset cleared -- see the
+          // key->special branch's comment above for why a leftover
+          // fractional remainder wedges the render-mode check forever.
+          if (coastLevel == 0) pixelOffset = 0;
           break;
         }
         case fm::GraphicalDisplay::DragEventType::Motion:
@@ -994,8 +1007,20 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         performScrollStepDelay(step);
         pixelOffset += coastDirection;
         if (!commitRowCrossings(view, cellHeight, pixelOffset)) {
-          coastLevel = 0;  // hit a boundary -- stop rather than pin against the edge
+          // Hit a boundary -- stop rather than pin against the edge.
+          // commitRowCrossings() itself left pixelOffset clamped to
+          // +-(cellHeight-1) (its "pinned" value, meant for the
+          // active-drag case where the finger is still held down and
+          // the content should visibly push up against the edge);
+          // since coasting is ending here entirely, that residual
+          // must be discarded too, or the render-mode check below
+          // stays wedged on the expensive per-frame renderScrolled()
+          // path forever even though nothing is moving anymore (this
+          // is what a real report of CPU usage jumping UP right as
+          // scrolling visibly stopped traced back to).
+          coastLevel = 0;
           coastDirection = 0;
+          pixelOffset = 0;
           break;
         }
       } while (std::chrono::steady_clock::now() < frameDeadline);
