@@ -124,6 +124,7 @@
 //         than trying to hide/reshow an existing window.
 #include <algorithm>
 #include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -188,6 +189,32 @@ std::string resolveGuiFontPath() {
   }
   return {};
 }
+
+// See loadScrollDebugLevelFromEnvironment()'s own comment.
+std::optional<int> gScrollDebugLevel;
+
+// Parses USILICSCROLLDEBUG once at startup: if set to an integer, ALL
+// coast-speed selection (mouse-release distance, Shift+arrow start/
+// accelerate -- both the GUI's real dot-level path and the real-
+// terminal row-level fallback) uses this level directly instead of
+// its normal release-distance/repeat-count-based computation. Added
+// after a real-machine report that fm::kScrollSpeedLevels' speed
+// curve "changes abruptly a few levels up from the minimum" (see its
+// own comment on why the busy-loop steps are hand-picked, not
+// measured against real hardware) -- this lets each level be tried
+// directly, one at a time, without needing an actual mouse flick or
+// enough repeated keypresses to reliably land on the level under
+// test. Clamped to the valid range; unset or unparseable simply means
+// "no override," the normal behavior.
+void loadScrollDebugLevelFromEnvironment() {
+  const char *env = std::getenv("USILICSCROLLDEBUG");
+  if (!env || !*env) return;
+  int level = std::atoi(env);
+  int maxLevel = static_cast<int>(fm::kScrollSpeedLevels.size()) - 1;
+  gScrollDebugLevel = std::clamp(level, 1, maxLevel);
+}
+
+int resolveCoastLevel(int computedLevel) { return gScrollDebugLevel.value_or(computedLevel); }
 
 struct TerminalAppearance {
   fm::GraphicalDisplay::Color background;
@@ -482,10 +509,10 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
       if (arrow != ShiftArrow::None) {
         int pressedDirection = (arrow == ShiftArrow::Up) ? -1 : 1;
         if (pressedDirection == direction) {
-          level = std::min(level + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1);
+          level = resolveCoastLevel(std::min(level + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
         } else {
           direction = pressedDirection;
-          level = 1;
+          level = resolveCoastLevel(1);
         }
         continue;
       }
@@ -602,7 +629,7 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
     int releaseDistance = 0;
     for (auto &sample : recentMotion)
       if (sample.first >= cutoff) releaseDistance += sample.second;
-    int level = fm::levelForReleaseDistance(releaseDistance, 1);
+    int level = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, 1));
     if (level == 0) {
       clearHoverAndRedraw(view);
       return TerminalCoastResult{};
@@ -679,7 +706,8 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       // bytes.
       ShiftArrow arrow = peekShiftArrow(keyInput);
       if (arrow != ShiftArrow::None) {
-        TerminalCoastResult coast = runCoastLoop(app, display, keyInput, 1, arrow == ShiftArrow::Up ? -1 : 1);
+        TerminalCoastResult coast =
+            runCoastLoop(app, display, keyInput, resolveCoastLevel(1), arrow == ShiftArrow::Up ? -1 : 1);
         if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
         continue;
       }
@@ -818,6 +846,20 @@ bool commitRowCrossings(fm::ContentView &view, int cellHeight, int &pixelOffset)
 //   - Horizontal drag, right-click-during-drag, and File/Man mode
 //     (vs. just whichever mode is active) aren't specifically
 //     exercised, though the mechanism itself isn't Directory-specific.
+// Set by handleSigintForGuiSession() (a real signal handler, so it can
+// only touch a sig_atomic_t, not call into Application directly) and
+// polled once per runGuiPhase() iteration. Only relevant when
+// guiOwnsWholeSession -- see main()'s own comment: that's the one
+// case where the real terminal that launched usilic is left sitting
+// idle (SDL owns keyboard input instead, via GraphicalDisplay's own
+// event queue), so a Ctrl-C typed into THAT terminal has nothing to
+// reach it through unless something re-enables ISIG there and catches
+// the resulting SIGINT -- ported from nothing in legacy (this
+// "waiting terminal" scenario doesn't exist without a separate GUI
+// window at all).
+volatile std::sig_atomic_t gGuiSessionSigintReceived = 0;
+void handleSigintForGuiSession(int) { gGuiSessionSigintReceived = 1; }
+
 void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   bool dragging = false;
   int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
@@ -833,6 +875,10 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   int consecutiveEscapes = 0;
 
   while (!app.wantsExit()) {
+    if (gGuiSessionSigintReceived) {
+      app.requestImmediateExit();
+      return;
+    }
     if (!gui.pumpEvents()) return;  // the window's own close button was clicked
 
     while (auto click = gui.consumeMouseClick()) {
@@ -854,10 +900,10 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         consecutiveEscapes = 0;
         int pressedDirection = (*key->special == fm::Display::Key::Up) ? 1 : -1;
         if (coastLevel > 0 && pressedDirection == coastDirection) {
-          coastLevel = std::min(coastLevel + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1);
+          coastLevel = resolveCoastLevel(std::min(coastLevel + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
         } else {
           coastDirection = pressedDirection;
-          coastLevel = 1;
+          coastLevel = resolveCoastLevel(1);
         }
         dragging = false;  // a keyboard trigger always wins over a stale drag flag
       } else if (key->special) {
@@ -900,7 +946,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           int releaseDistance = 0;
           for (auto &sample : recentMotion)
             if (sample.first >= cutoff) releaseDistance += sample.second;
-          coastLevel = fm::levelForReleaseDistance(releaseDistance, cellHeight);
+          coastLevel = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, cellHeight));
           coastDirection = coastLevel > 0 ? (releaseDistance > 0 ? 1 : -1) : 0;
           break;
         }
@@ -934,7 +980,23 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       for (const auto &line : view.lines()) lines.push_back(line.text);
       gui.renderScrolled(lines, view.topIndex(), pixelOffset);
     } else {
-      view.redraw();  // settled on a row boundary -- back to the normal Display-interface rendering path
+      // Settled on a row boundary -- back to the normal Display-
+      // interface rendering path. redraw() calls clampViewport(),
+      // which enforces the normal moveUp()/moveDown() invariant
+      // "topIndex_ never leads cursorIndex_"; renderScrolled() (used
+      // for every frame while actively dragging/coasting) never
+      // touches cursorIndex_ at all, so by the time coasting settles
+      // here, cursorIndex_ can still be wherever it was BEFORE the
+      // scroll even started while topIndex_ has moved far away --
+      // this first post-coast redraw() would otherwise silently snap
+      // topIndex_ straight back to cursorIndex_, discarding the
+      // entire scroll (found from a real report: a plain, non-Shift
+      // arrow key pressed right after a coast appeared to "flicker
+      // one row then snap back to the top," which was actually this
+      // exact reset firing on the very next redraw()). Same fix
+      // already applied to the real-terminal path's runCoastLoop().
+      view.setCursorIndex(view.topIndex());
+      view.redraw();
     }
 
     bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
@@ -987,6 +1049,8 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
 }  // namespace
 
 int main(int argc, char **argv) {
+  loadScrollDebugLevelFromEnvironment();
+
   std::unique_ptr<fm::TerminalDisplay> terminalDisplay = fm::TerminalDisplay::fromEnvironment();
   terminalDisplay->setOutputEnabled(true);  // fromEnvironment() leaves this off by default -- see its own comment
   fm::DelegatingDisplay display(*terminalDisplay);  // see file comment's own GUI-mode section
@@ -1100,6 +1164,24 @@ int main(int argc, char **argv) {
       launchGui->open();
       display.setBackend(*launchGui);
       guiOwnsWholeSession = true;
+      // The real terminal that launched usilic is left sitting idle
+      // for the rest of the session (see main()'s own comment) --
+      // keyInput.open() above already put it in raw mode (ISIG off),
+      // which means the INTR character (Ctrl-C) never reaches the
+      // kernel's SIGINT delivery at all, it just becomes an unread
+      // byte nobody consumes. Restoring cooked mode there lets a real
+      // Ctrl-C typed into that terminal behave normally again, and the
+      // handler below turns the resulting SIGINT into the same
+      // graceful requestImmediateExit() path ESC-ESC-Enter uses inside
+      // the GUI window, rather than the default "kill the process
+      // without running GraphicalDisplay's destructor" behavior (which
+      // is exactly the abrupt-termination problem the ESC-ESC-Enter
+      // gesture was added to avoid in the first place). Deliberately
+      // scoped to guiOwnsWholeSession only -- the terminal phase's own
+      // raw mode (ISIG off) is intentional there, so ^C can be part of
+      // its own keybindings (^X^C) instead of generating a real SIGINT.
+      keyInput.leaveRawMode();
+      std::signal(SIGINT, handleSigintForGuiSession);
     }
   }
 

@@ -21,12 +21,81 @@ struct Cell {
   bool continuation = false;  // the "shadow" second cell of a 2-column-wide glyph -- not drawn on its own
 };
 
+// Decodes the leading UTF-8 sequence in `utf8Bytes` (already segmented
+// to the right length by fm::Utf8::sequence_length() elsewhere) to a
+// single Unicode scalar. Returns 0 for an empty string. Deliberately a
+// small local decoder rather than an addition to fm::Utf8 (which only
+// ever needed byte-length/display-width, not the actual codepoint) --
+// this is the one place in the whole port that needs to ask a font
+// "do you have a glyph for THIS specific character," see
+// glyphProvidedByFont() below.
+unsigned int decodeUtf8Codepoint(const std::string &utf8Bytes) {
+  if (utf8Bytes.empty()) return 0;
+  auto b = [&](std::size_t i) -> unsigned int { return static_cast<unsigned char>(utf8Bytes[i]); };
+  unsigned int lead = b(0);
+  if (lead < 0x80) return lead;
+  if ((lead & 0xE0) == 0xC0 && utf8Bytes.size() >= 2) return ((lead & 0x1F) << 6) | (b(1) & 0x3F);
+  if ((lead & 0xF0) == 0xE0 && utf8Bytes.size() >= 3)
+    return ((lead & 0x0F) << 12) | ((b(1) & 0x3F) << 6) | (b(2) & 0x3F);
+  if ((lead & 0xF8) == 0xF0 && utf8Bytes.size() >= 4)
+    return ((lead & 0x07) << 18) | ((b(1) & 0x3F) << 12) | ((b(2) & 0x3F) << 6) | (b(3) & 0x3F);
+  return lead;  // malformed/truncated -- fall back to the raw lead byte, matches TTF's own "just render something"
+}
+
+bool glyphProvidedByFont(TTF_Font *font, unsigned int codepoint) {
+  if (!font || codepoint == 0 || codepoint > 0xFFFF) return false;  // TTF_GlyphIsProvided is UCS-2 only
+  return TTF_GlyphIsProvided(font, static_cast<Uint16>(codepoint)) != 0;
+}
+
+// Best-effort search for a CJK-capable font to fall back to when the
+// PRIMARY font (resolved by main.cpp -- Menlo/Monaco/DejaVu/Liberation
+// by default, none of which cover Japanese kana/kanji) is missing a
+// glyph. Added after a real-machine report of Japanese filenames
+// rendering as a string of "tofu" placeholder boxes (confirmed from
+// the reporting screenshot itself -- not generic mojibake/wrong-byte
+// decoding, just missing glyph coverage in whichever font main.cpp
+// happened to load).
+//
+// Tries each candidate path in order, keeping the first one that both
+// (a) loads at all and (b) actually has a glyph for U+3042 ('あ',
+// hiragana -- picked because hiragana coverage reliably implies kanji
+// coverage too in any font that bothers to ship Japanese support at
+// all, but the reverse isn't true: some CJK fonts cover Han ideographs
+// shared with Chinese without covering kana, which alone wouldn't fix
+// the reported filenames). The exact file names/paths for Apple's
+// Hiragino family have shifted across macOS versions and this project
+// has no way to verify them against a real machine (same sandbox
+// limitation noted throughout this port's GUI work) -- several
+// plausible candidates are listed for exactly that reason, and a
+// match failing here just means no CJK fallback (impl_->fallbackFont
+// stays nullptr), not a startup failure; ordinary ASCII text is
+// completely unaffected either way.
+TTF_Font *loadCjkFallbackFont(int pointSize) {
+  static const char *const candidates[] = {
+      "/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc",
+      "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+      "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
+      "/System/Library/Fonts/Hiragino Sans GB.ttc",
+      "/System/Library/Fonts/PingFang.ttc",
+      "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+      "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+  };
+  for (const char *path : candidates) {
+    TTF_Font *candidate = TTF_OpenFont(path, std::max(pointSize, 1));
+    if (!candidate) continue;
+    if (glyphProvidedByFont(candidate, 0x3042)) return candidate;
+    TTF_CloseFont(candidate);
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 struct GraphicalDisplay::Impl {
   SDL_Window *window = nullptr;
   SDL_Renderer *renderer = nullptr;
   TTF_Font *font = nullptr;
+  TTF_Font *fallbackFont = nullptr;  // see loadCjkFallbackFont()'s own comment; nullptr if none was found
 
   int rows = 0, columns = 0;
   int cellWidth = 0, cellHeight = 0;
@@ -103,6 +172,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->window = window;
   display->impl_->renderer = renderer;
   display->impl_->font = font;
+  display->impl_->fallbackFont = loadCjkFallbackFont(fontPointSize);
   display->impl_->cellWidth = cellWidth;
   display->impl_->cellHeight = cellHeight;
   display->impl_->rows = rows;
@@ -116,6 +186,7 @@ GraphicalDisplay::~GraphicalDisplay() {
   if (impl_->handCursor) SDL_FreeCursor(impl_->handCursor);
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);
+  if (impl_->fallbackFont) TTF_CloseFont(impl_->fallbackFont);
   if (impl_->font) TTF_CloseFont(impl_->font);
   TTF_Quit();
   SDL_Quit();
@@ -192,9 +263,19 @@ void GraphicalDisplay::renderCell(int row, int col) {
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (cell.underline) style |= TTF_STYLE_UNDERLINE;
-  TTF_SetFontStyle(impl_->font, style);
 
-  SDL_Surface *surface = TTF_RenderUTF8_Blended(impl_->font, cell.glyph.c_str(), fg);
+  // Fall back to a CJK-capable font (see loadCjkFallbackFont()'s own
+  // comment) for whatever glyphs the primary font is missing --
+  // without this, any character the primary font lacks renders as a
+  // blank "tofu" placeholder box instead (confirmed from a real
+  // report: Japanese filenames rendering as a string of boxes).
+  TTF_Font *renderFont = impl_->font;
+  unsigned int codepoint = decodeUtf8Codepoint(cell.glyph);
+  if (!glyphProvidedByFont(impl_->font, codepoint) && glyphProvidedByFont(impl_->fallbackFont, codepoint))
+    renderFont = impl_->fallbackFont;
+  TTF_SetFontStyle(renderFont, style);
+
+  SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), fg);
   if (!surface) return;
   SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
   if (texture) {
@@ -450,6 +531,7 @@ void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int
 
   SDL_Color fg = impl_->fg;
   TTF_SetFontStyle(impl_->font, TTF_STYLE_NORMAL);
+  if (impl_->fallbackFont) TTF_SetFontStyle(impl_->fallbackFont, TTF_STYLE_NORMAL);
 
   // One extra row above when revealing upward (pixelOffsetY > 0,
   // content shifting down), one extra row below when revealing
@@ -474,7 +556,13 @@ void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int
       int width = std::max(1, Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + pos), len));
       std::string glyph = line.substr(pos, len);
       if (glyph != " " && lead >= 0x20) {
-        SDL_Surface *surface = TTF_RenderUTF8_Blended(impl_->font, glyph.c_str(), fg);
+        // See renderCell()'s own comment on why a fallback font is
+        // consulted here too.
+        TTF_Font *renderFont = impl_->font;
+        unsigned int codepoint = decodeUtf8Codepoint(glyph);
+        if (!glyphProvidedByFont(impl_->font, codepoint) && glyphProvidedByFont(impl_->fallbackFont, codepoint))
+          renderFont = impl_->fallbackFont;
+        SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, glyph.c_str(), fg);
         if (surface) {
           SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
           if (texture) {

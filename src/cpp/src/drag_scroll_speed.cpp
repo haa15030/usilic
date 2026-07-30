@@ -5,28 +5,53 @@
 
 namespace fm {
 
+// Widened from 7 usable levels to 10 (2026-07-30) after a real-machine
+// report that the curve "changed abruptly three levels up from the
+// minimum" -- the old table jumped straight from a precisely-timed
+// 35ms usleep() (level 2) to an UNCALIBRATED 400,000-iteration busy
+// spin (level 3), with no way to know how those two actually compare
+// in wall-clock time on any given machine without running it for
+// real. Widening adds two more usleep() steps (still exactly timed,
+// no ambiguity) before the busy-loop range starts, and more, more
+// evenly-spaced busy-loop steps within it -- but the busy-loop values
+// themselves are still hand-picked, not measured against real
+// hardware (this whole project's sandbox has no way to do that,
+// see CLAUDE.md's repeated notes on the same limitation for GUI
+// verification generally). USILICSCROLLDEBUG (see app/main.cpp's
+// loadScrollDebugLevelFromEnvironment()) exists specifically so this
+// can be tuned further against a real machine, one level at a time,
+// without needing an actual flick/repeated keypress fast enough to
+// reliably land on the level under test.
 const std::vector<ScrollStep> kScrollSpeedLevels = {
     {false, 0, 0},          // 0: unused, "not coasting"
     {false, 90000, 0},      // 1: slowest -- usleep, ~11 dots/sec
-    {false, 35000, 0},      // 2: usleep, ~28 dots/sec
-    {true, 0, 400000},      // 3: busy-loop begins here
-    {true, 0, 120000},      // 4
-    {true, 0, 30000},       // 5
-    {true, 0, 5000},        // 6
-    {true, 0, 0},           // 7: fastest -- no delay between dots at all
+    {false, 55000, 0},      // 2: usleep
+    {false, 30000, 0},      // 3: usleep
+    {false, 15000, 0},      // 4: usleep -- last precisely-timed step before the busy-loop range
+    {true, 0, 500000},      // 5: busy-loop begins here
+    {true, 0, 250000},      // 6
+    {true, 0, 120000},      // 7
+    {true, 0, 50000},       // 8
+    {true, 0, 15000},       // 9
+    {true, 0, 0},           // 10: fastest -- no delay between dots at all
 };
 
 int levelForReleaseDistance(int pixels, int cellHeightPixels) {
   int height = std::max(cellHeightPixels, 1);
   int magnitude = std::abs(pixels);
+  int maxLevel = static_cast<int>(kScrollSpeedLevels.size()) - 1;
   if (magnitude < height / 4) return 0;
-  if (magnitude < height * 1) return 1;
-  if (magnitude < height * 2) return 2;
-  if (magnitude < height * 4) return 3;
-  if (magnitude < height * 8) return 4;
-  if (magnitude < height * 16) return 5;
-  if (magnitude < height * 32) return 6;
-  return 7;
+  // Same doubling-threshold shape as before, just carried one level
+  // further (height*1, *2, *4, ... *64) to reach the wider table --
+  // magnitude thresholds, not the per-step delays above, so this part
+  // needed no real-hardware calibration to extend correctly.
+  int level = 1;
+  int threshold = height;
+  while (level < maxLevel && magnitude >= threshold) {
+    level++;
+    threshold *= 2;
+  }
+  return level;
 }
 
 ScrollStep scaledForRow(const ScrollStep &pixelStep, int dotsPerRow) {

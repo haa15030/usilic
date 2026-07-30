@@ -58,10 +58,14 @@ TEST_CASE("scaledForRow: a dotsPerRow of 1 is a no-op, and non-positive values c
 TEST_CASE("kScrollSpeedLevels: level 0 is inert, levels get faster (less delay) as level increases") {
   CHECK(kScrollSpeedLevels[0].microseconds == 0);
   CHECK(kScrollSpeedLevels[0].busyIterations == 0);
-  // usleep-based levels (1,2) should be slower (larger delay) than the level before them
-  CHECK(kScrollSpeedLevels[1].microseconds > kScrollSpeedLevels[2].microseconds);
-  // busy-loop levels should have decreasing iteration counts (faster) as level rises
-  for (size_t i = 3; i + 1 < kScrollSpeedLevels.size(); i++) {
+  // usleep-based levels (1-4) should each be strictly faster (less delay) than the one before
+  for (size_t i = 1; i + 1 < 5; i++) {
+    CHECK_FALSE(kScrollSpeedLevels[i].busyLoop);
+    CHECK(kScrollSpeedLevels[i].microseconds > kScrollSpeedLevels[i + 1].microseconds);
+  }
+  // busy-loop levels (5 onward) should have decreasing iteration counts (faster) as level rises
+  for (size_t i = 5; i + 1 < kScrollSpeedLevels.size(); i++) {
+    CHECK(kScrollSpeedLevels[i].busyLoop);
     CHECK(kScrollSpeedLevels[i].busyIterations >= kScrollSpeedLevels[i + 1].busyIterations);
   }
 }
