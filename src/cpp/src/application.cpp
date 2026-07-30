@@ -1152,6 +1152,7 @@ void Application::handleResize() {
 }
 
 bool Application::wantsExit() const { return wantsExit_; }
+void Application::requestImmediateExit() { wantsExit_ = true; }
 
 bool Application::consumeGuiModeToggleRequest() {
   bool requested = guiModeToggleRequested_;

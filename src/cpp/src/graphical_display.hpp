@@ -70,11 +70,21 @@ class GraphicalDisplay : public Display {
   // font path is the caller's job (main.cpp), matching this port's
   // standing "no hidden global state" rule already applied to
   // Configuration/History/HELP text -- this class never searches the
-  // filesystem on its own. Returns nullptr (rather than throwing or
-  // exiting) if SDL2/SDL2_ttf initialization, window/renderer
-  // creation, or font loading fails, so a caller can fall back to
-  // staying in terminal mode instead of crashing.
-  static std::unique_ptr<GraphicalDisplay> create(int rows, int columns, const std::string &fontPath);
+  // filesystem on its own. fontPointSize defaults to 16 (this class's
+  // own long-standing hardcoded value, kept as the default for the
+  // ^Og-triggered manual GUI entry, which has no real terminal font
+  // size to match); the "実はすでにGUI" launch-time entry (see
+  // main.cpp's queryTerminalAppColors()) passes the calling terminal's
+  // own queried size instead -- a mismatched size is what made the
+  // GUI window visibly LARGER than the terminal it was replacing (see
+  // CLAUDE.md's 2026-07-30 notes), since row/column count alone
+  // doesn't determine a window's pixel size, cell size does too.
+  // Returns nullptr (rather than throwing or exiting) if SDL2/
+  // SDL2_ttf initialization, window/renderer creation, or font
+  // loading fails, so a caller can fall back to staying in terminal
+  // mode instead of crashing.
+  static std::unique_ptr<GraphicalDisplay> create(int rows, int columns, const std::string &fontPath,
+                                                    int fontPointSize = 16);
 
   ~GraphicalDisplay() override;
 
@@ -160,6 +170,14 @@ class GraphicalDisplay : public Display {
   struct KeyEvent {
     int byte = 0;                    // valid when special is nullopt
     std::optional<Key> special;      // one of Display::Key's own 6 values, when this was an arrow/page key
+    // Only meaningful when special is Up or Down: whether Shift was
+    // held. Added for the keyboard-driven dot-level inertial-scroll
+    // trigger (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30
+    // notes) -- main.cpp's runGuiPhase() intercepts Shift+Up/Down
+    // before they'd otherwise reach Application::feedByte() as plain
+    // cursor movement. Not tracked for any other key: nothing else
+    // currently cares about modifiers.
+    bool shift = false;
   };
   // Returns and clears the next queued key press, or nullopt if none
   // is pending. Ordinary characters (including multi-byte UTF-8 text

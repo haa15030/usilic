@@ -1071,6 +1071,14 @@ TEST_CASE_FIXTURE(Fixture, "exit confirmation: ^G cancels without setting wantsE
   CHECK_FALSE(app.wantsExit());
 }
 
+TEST_CASE_FIXTURE(Fixture, "requestImmediateExit: sets wantsExit() without going through the confirmation prompt") {
+  REQUIRE(app.start(path()));
+  app.requestImmediateExit();
+
+  CHECK(app.wantsExit());
+  CHECK_FALSE(app.promptActive());
+}
+
 // -- DU: ^Jd/^J^D, pre-filled destination prompt, real `du`, and
 // Enter drilling into DirectoryMode/FileMode --
 

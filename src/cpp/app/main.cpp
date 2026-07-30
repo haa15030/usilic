@@ -192,38 +192,50 @@ std::string resolveGuiFontPath() {
 struct TerminalAppearance {
   fm::GraphicalDisplay::Color background;
   fm::GraphicalDisplay::Color foreground;
+  int fontPointSize = 16;  // matches GraphicalDisplay::create()'s own previous hardcoded default
 };
 
-// Queries the calling terminal's own background/text colors via
-// AppleScript, for the "実はすでにGUI" launch (docs/ideas/IDEAS.md,
-// see CLAUDE.md's 2026-07-30 notes): a GraphicalDisplay window that
-// matches the REAL terminal it's replacing is what makes starting in
-// GUI mode from process launch unnoticeable, rather than the
-// previous "black background regardless of the real terminal's own
-// colors" complaint. Gated on TERM_PROGRAM=Apple_Terminal BEFORE
-// spawning osascript at all -- checked earlier in this whole project
-// (font/color feasibility research) to be the only terminal this
-// query is known to work for, and osascript is slow enough that
-// skipping it entirely elsewhere matters for startup latency (every
-// other terminal, and every non-macOS platform, just falls through to
-// GraphicalDisplay's own hardcoded default colors -- see its own
-// class comment on setColors()). Returns nullopt on any failure
-// (wrong TERM_PROGRAM, osascript not found/fails, or output that
-// doesn't parse) -- never a hard requirement for GUI mode to work.
+// Queries the calling terminal's own background/text colors AND font
+// size via AppleScript, for the "実はすでにGUI" launch (docs/ideas/
+// IDEAS.md, see CLAUDE.md's 2026-07-30 notes): a GraphicalDisplay
+// window that matches the REAL terminal it's replacing is what makes
+// starting in GUI mode from process launch unnoticeable. Font size
+// matters as much as color here: GraphicalDisplay::create() used to
+// hardcode 16pt regardless of the real terminal's own font size,
+// which made the GUI window visibly LARGER (bigger cells at the same
+// row/column count) than the terminal it was supposed to look
+// identical to -- found from a real screenshot comparison. Font NAME
+// matching is deliberately still out of scope (resolving a queried
+// font family name like "SFMono-Regular" to an actual loadable TTF/
+// TTC file needs a real font-lookup API, e.g. CoreText, not just a
+// string) -- USILICFONT/the existing candidate-path list still decide
+// which face is used, only its POINT SIZE is matched here.
+//
+// Gated on TERM_PROGRAM=Apple_Terminal BEFORE spawning osascript at
+// all -- checked earlier in this whole project (font/color
+// feasibility research) to be the only terminal this query is known
+// to work for, and osascript is slow enough that skipping it entirely
+// elsewhere matters for startup latency (every other terminal, and
+// every non-macOS platform, just falls through to GraphicalDisplay's
+// own hardcoded defaults -- see its own class comment on
+// setColors()). Returns nullopt on any failure (wrong TERM_PROGRAM,
+// osascript not found/fails, or output that doesn't parse) -- never a
+// hard requirement for GUI mode to work.
 std::optional<TerminalAppearance> queryTerminalAppColors() {
   const char *termProgram = std::getenv("TERM_PROGRAM");
   if (!termProgram || std::string(termProgram) != "Apple_Terminal") return std::nullopt;
 
   fm::ChildProcess::Result result = fm::ChildProcess::run(
       {"osascript", "-e",
-       "tell application \"Terminal\" to get {background color, normal text color} of front window"});
+       "tell application \"Terminal\" to get {background color, normal text color, font size} of front window"});
   if (!result.ok) return std::nullopt;
 
-  // osascript prints an AppleScript list of two RGB triples as
-  // "bgR, bgG, bgB, fgR, fgG, fgB", each channel 0-65535 (AppleScript's
-  // own RGB color range, not 0-255).
-  int bgR, bgG, bgB, fgR, fgG, fgB;
-  if (std::sscanf(result.output.c_str(), "%d, %d, %d, %d, %d, %d", &bgR, &bgG, &bgB, &fgR, &fgG, &fgB) != 6)
+  // osascript prints an AppleScript list as "bgR, bgG, bgB, fgR, fgG,
+  // fgB, size" -- the two RGB triples 0-65535 (AppleScript's own RGB
+  // color range, not 0-255), the font size a plain point size.
+  int bgR, bgG, bgB, fgR, fgG, fgB, fontSize;
+  if (std::sscanf(result.output.c_str(), "%d, %d, %d, %d, %d, %d, %d", &bgR, &bgG, &bgB, &fgR, &fgG, &fgB,
+                   &fontSize) != 7)
     return std::nullopt;
 
   auto to255 = [](int channel) -> unsigned char {
@@ -232,6 +244,7 @@ std::optional<TerminalAppearance> queryTerminalAppColors() {
   TerminalAppearance appearance;
   appearance.background = {to255(bgR), to255(bgG), to255(bgB)};
   appearance.foreground = {to255(fgR), to255(fgG), to255(fgB)};
+  if (fontSize > 0) appearance.fontPointSize = fontSize;
   return appearance;
 }
 
@@ -815,6 +828,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   // moment you let go" release distance cb's own speed control used.
   std::deque<std::pair<std::chrono::steady_clock::time_point, int>> recentMotion;
   constexpr auto kReleaseWindow = std::chrono::milliseconds(150);
+  // Counts consecutive bare ESC presses, for the ESC-ESC-Enter direct-
+  // exit gesture below -- reset by any other key.
+  int consecutiveEscapes = 0;
 
   while (!app.wantsExit()) {
     if (!gui.pumpEvents()) return;  // the window's own close button was clicked
@@ -824,9 +840,42 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // right-click: captured but not acted on yet, see class comments
     }
     while (auto key = gui.consumeKeyEvent()) {
-      if (key->special) {
+      // Shift+Up/Down: the keyboard-driven equivalent of a mouse-drag
+      // release (see fm::kScrollSpeedLevels' own comment) -- pressing
+      // the SAME direction again while already coasting accelerates
+      // (one level up); the OPPOSITE direction reverses and resets to
+      // the base speed. Direction sign matches coastDirection's
+      // existing convention (see its own comment above): Shift+Up
+      // (reveal earlier content, topIndex decreases) is +1, Shift+Down
+      // is -1 -- the same mapping runTerminalCoast()'s peekShiftArrow()
+      // handling uses, just expressed against pixelOffset's sign
+      // instead of topIndex directly.
+      if (key->shift && (key->special == fm::Display::Key::Up || key->special == fm::Display::Key::Down)) {
+        consecutiveEscapes = 0;
+        int pressedDirection = (*key->special == fm::Display::Key::Up) ? 1 : -1;
+        if (coastLevel > 0 && pressedDirection == coastDirection) {
+          coastLevel = std::min(coastLevel + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1);
+        } else {
+          coastDirection = pressedDirection;
+          coastLevel = 1;
+        }
+        dragging = false;  // a keyboard trigger always wins over a stale drag flag
+      } else if (key->special) {
+        consecutiveEscapes = 0;
+        coastLevel = 0;  // any other real key stops an active coast, matching runTerminalCoast()'s own rule
         app.feedByte(0, translateDisplayKey(*key->special));
+      } else if (key->byte == 0x1b) {
+        // ESC-ESC-Enter: a direct exit gesture requested in place of
+        // the normal ^X^C + y/n confirmation prompt for GUI-launched
+        // sessions (see main()'s own comment on why). A lone ESC
+        // doesn't touch coastLevel -- typing ESC ESC Enter mid-coast
+        // is still meant to exit, not just stop scrolling.
+        consecutiveEscapes = std::min(consecutiveEscapes + 1, 2);
+      } else if (key->byte == 0x0d && consecutiveEscapes >= 2) {
+        app.requestImmediateExit();
       } else {
+        consecutiveEscapes = 0;
+        coastLevel = 0;
         app.feedByte(key->byte, std::nullopt);
       }
       if (app.consumeGuiModeToggleRequest()) return;
@@ -1012,6 +1061,48 @@ int main(int argc, char **argv) {
     }
   }
 
+  // "実はすでにGUI" (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30
+  // notes): if the calling terminal's own colors AND font size can be
+  // matched (currently only macOS Terminal.app, via
+  // queryTerminalAppColors()), swap the backend to a matching
+  // GraphicalDisplay window BEFORE display.open()/app.start() ever
+  // render anything -- true dot-level scrolling
+  // (GraphicalDisplay::renderScrolled()'s real per-pixel compositing)
+  // is only possible with real pixel access, which a real terminal
+  // fundamentally doesn't have (see runTerminalMouseDrag()/
+  // runCoastLoop()'s own comments on why THAT path is row-granular
+  // instead), and doing the swap before the first render means the
+  // real terminal never shows so much as the initial directory
+  // listing -- a brief flash of `ls` output in the real terminal
+  // before the GUI window took over was an unwanted seam, not
+  // something worth preserving (found from a real screenshot: the
+  // real terminal stayed showing its own shell prompt the whole time
+  // once this was fixed). Deliberately gated on a successful color
+  // match, not attempted unconditionally: showing up in a mismatched-
+  // color window nobody asked for is the exact "配色が逆" complaint
+  // this whole feature exists to avoid -- on any other terminal/
+  // platform this is simply skipped, leaving the normal terminal-
+  // first flow below completely unchanged. guiOwnsWholeSession being
+  // true also means the tail of main() never falls back into
+  // runTerminalPhase() at all: once GUI mode starts the session, it
+  // runs it start to finish (no ^Og-triggered return to terminal mode
+  // -- there's no terminal-mode content to return TO in this case,
+  // since the real terminal was never used for rendering).
+  std::unique_ptr<fm::GraphicalDisplay> launchGui;
+  bool guiOwnsWholeSession = false;
+  if (auto appearance = queryTerminalAppColors()) {
+    std::string fontPath = resolveGuiFontPath();
+    launchGui = fontPath.empty() ? nullptr
+                                  : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,
+                                                                  appearance->fontPointSize);
+    if (launchGui) {
+      launchGui->setColors(appearance->foreground, appearance->background);
+      launchGui->open();
+      display.setBackend(*launchGui);
+      guiOwnsWholeSession = true;
+    }
+  }
+
   display.open();
 
   std::string startDirectory = (argc > 1) ? argv[1] : ".";
@@ -1022,26 +1113,14 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  // "実はすでにGUI" (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30
-  // notes): if the calling terminal's own colors can be matched
-  // (currently only macOS Terminal.app, via queryTerminalAppColors()),
-  // start in GUI mode directly rather than waiting for ^Og -- true
-  // dot-level scrolling (GraphicalDisplay::renderScrolled()'s real
-  // per-pixel compositing) is only possible with real pixel access,
-  // which a real terminal fundamentally doesn't have (see
-  // runTerminalMouseDrag()/runCoastLoop()'s own comments on why THAT
-  // path is row-granular instead). Deliberately gated on a successful
-  // color match, not attempted unconditionally: showing up in a
-  // mismatched-color window nobody asked for is the exact "配色が逆"
-  // complaint this whole feature exists to avoid -- on any other
-  // terminal/platform this is simply skipped, leaving the normal
-  // terminal-first loop below completely unchanged.
-  if (auto appearance = queryTerminalAppColors()) tryEnterGuiPhase(app, display, *terminalDisplay, appearance);
-
-  while (!app.wantsExit()) {
-    if (!runTerminalPhase(app, keyInput, display)) break;
-    if (app.wantsExit()) break;
-    tryEnterGuiPhase(app, display, *terminalDisplay);
+  if (guiOwnsWholeSession) {
+    runGuiPhase(app, *launchGui);
+  } else {
+    while (!app.wantsExit()) {
+      if (!runTerminalPhase(app, keyInput, display)) break;
+      if (app.wantsExit()) break;
+      tryEnterGuiPhase(app, display, *terminalDisplay);  // ^Og fallback -- unmatched terminal or no display server
+    }
   }
 
   display.close();

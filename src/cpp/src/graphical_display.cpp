@@ -55,7 +55,8 @@ struct GraphicalDisplay::Impl {
 
 GraphicalDisplay::GraphicalDisplay() : impl_(std::make_unique<Impl>()) {}
 
-std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns, const std::string &fontPath) {
+std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns, const std::string &fontPath,
+                                                             int fontPointSize) {
   if (rows <= 0 || columns <= 0) return nullptr;
   if (SDL_Init(SDL_INIT_VIDEO) != 0) return nullptr;
   if (TTF_Init() != 0) {
@@ -63,7 +64,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
     return nullptr;
   }
 
-  TTF_Font *font = TTF_OpenFont(fontPath.c_str(), 16);
+  TTF_Font *font = TTF_OpenFont(fontPath.c_str(), std::max(fontPointSize, 1));
   if (!font) {
     TTF_Quit();
     SDL_Quit();
@@ -360,7 +361,9 @@ bool GraphicalDisplay::pumpEvents() {
       }
       case SDL_KEYDOWN: {
         if (auto special = translateScancode(event.key.keysym.sym)) {
-          impl_->keyQueue.push_back(KeyEvent{0, special});
+          bool shift = (event.key.keysym.mod & KMOD_SHIFT) &&
+                       (*special == Display::Key::Up || *special == Display::Key::Down);
+          impl_->keyQueue.push_back(KeyEvent{0, special, shift});
           break;
         }
         // Control-key combos (Ctrl+A..Ctrl+_) arrive as SDLK_a.. with

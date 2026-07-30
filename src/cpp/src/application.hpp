@@ -770,6 +770,14 @@ class Application {
   // reads this; nothing else changes when it flips.
   bool wantsExit() const;
 
+  // Sets wantsExit() true directly, bypassing StartExit's y/n
+  // confirmation prompt entirely. Added for the GUI-launched session's
+  // own simpler exit gesture (ESC ESC Enter, see app/main.cpp's
+  // runGuiPhase()) -- requested in place of the confirmation prompt
+  // for that context, not a replacement for it elsewhere (the
+  // terminal phase's ^X^C+y flow is untouched).
+  void requestImmediateExit();
+
   // True if ^Og was pressed since the last call (consumes the flag,
   // same shape as KeyInput::consumeResizeSignal()) -- a run loop's
   // signal to toggle GUI mode. See class comment's own GUI-mode
