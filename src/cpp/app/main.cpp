@@ -892,11 +892,26 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     }
     if (!gui.pumpEvents()) return;  // the window's own close button was clicked
 
+    // Set true below whenever something was actually consumed this
+    // iteration (a click, a key, a drag/coast step) -- used to skip
+    // the redraw() call entirely on iterations where NOTHING changed,
+    // see its own check further down. Added after real profiling
+    // (macOS `sample`) showed this loop was calling
+    // GraphicalDisplay::flush() -- which re-renders every non-blank
+    // cell via TTF_RenderUTF8_Blended -- unconditionally 60 times a
+    // second even while the window just sat idle showing a static
+    // listing, sustaining 100%+ CPU for no visible reason. This
+    // doesn't change what gets rendered, only how often a genuinely
+    // unchanged frame gets re-rendered.
+    bool anyEventThisFrame = false;
+
     while (auto click = gui.consumeMouseClick()) {
+      anyEventThisFrame = true;
       if (!click->rightButton) app.handleMouseClick(click->row, click->column);
       // right-click: captured but not acted on yet, see class comments
     }
     while (auto key = gui.consumeKeyEvent()) {
+      anyEventThisFrame = true;
       // Shift+Up/Down: the keyboard-driven equivalent of a mouse-drag
       // release (see fm::kScrollSpeedLevels' own comment) -- pressing
       // the SAME direction again while already coasting accelerates
@@ -942,6 +957,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     int cellHeight = std::max(gui.cellHeightPixels(), 1);
 
     while (auto drag = gui.consumeDragEvent()) {
+      anyEventThisFrame = true;
       switch (drag->type) {
         case fm::GraphicalDisplay::DragEventType::ButtonDown:
           dragging = true;
@@ -985,13 +1001,26 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       } while (std::chrono::steady_clock::now() < frameDeadline);
     }
 
+    // Checked here (before the render decision below), not after, so
+    // new Shell output arriving this frame counts toward
+    // anyEventThisFrame -- otherwise a live Shell session's own
+    // output could go unrendered indefinitely once the redraw-skip
+    // optimization below is in place, since typing into a DIFFERENT
+    // program (the shell) doesn't generate any GraphicalDisplay
+    // click/key/drag event of its own.
+    bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
+    if (watchShellPty) {
+      struct pollfd fd{app.shell().ptyFd(), POLLIN, 0};
+      if (poll(&fd, 1, 0) > 0 && (fd.revents & POLLIN)) anyEventThisFrame |= app.shell().onPtyReadable();
+    }
+
     if (dragging || coastLevel > 0 || pixelOffset != 0) {
       wasActivelyScrolling = true;
       std::vector<std::string> lines;
       lines.reserve(view.lines().size());
       for (const auto &line : view.lines()) lines.push_back(line.text);
       gui.renderScrolled(lines, view.topIndex(), pixelOffset);
-    } else {
+    } else if (wasActivelyScrolling || anyEventThisFrame) {
       // Settled on a row boundary -- back to the normal Display-
       // interface rendering path. redraw() calls clampViewport(),
       // which enforces the normal moveUp()/moveDown() invariant
@@ -1020,12 +1049,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       if (wasActivelyScrolling) view.setCursorIndex(view.topIndex());
       wasActivelyScrolling = false;
       view.redraw();
-    }
-
-    bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
-    if (watchShellPty) {
-      struct pollfd fd{app.shell().ptyFd(), POLLIN, 0};
-      if (poll(&fd, 1, 0) > 0 && (fd.revents & POLLIN)) app.shell().onPtyReadable();
     }
 
     usleep(16000);  // ~60Hz pacing -- see file comment on why this loop can't share the terminal loop's poll()
