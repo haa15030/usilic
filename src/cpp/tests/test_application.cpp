@@ -833,6 +833,34 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ESC followed by an unrecognized byte fails
   CHECK(app.feedByte('j', std::nullopt));
 }
 
+// runGuiPhase()'s w/s inertial-scroll trigger (see CLAUDE.md's
+// 2026-07-31 note) checks this before hijacking a plain 'w'/'s' byte,
+// so ESC s (StartShell) and typing "w"/"s" into a prompt still work.
+TEST_CASE_FIXTURE(Fixture, "awaitingSequenceOrPromptByte: false in plain top-level navigation") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.awaitingSequenceOrPromptByte());
+}
+
+TEST_CASE_FIXTURE(Fixture, "awaitingSequenceOrPromptByte: true right after ESC, until the next byte resolves it") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x1b, std::nullopt);
+  CHECK(app.awaitingSequenceOrPromptByte());
+  app.feedByte('z', std::nullopt);  // unrecognized -- resolves (fails) the pending ESC either way
+  CHECK_FALSE(app.awaitingSequenceOrPromptByte());
+}
+
+TEST_CASE_FIXTURE(Fixture, "awaitingSequenceOrPromptByte: true right after the ^J leader byte") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  CHECK(app.awaitingSequenceOrPromptByte());
+}
+
+TEST_CASE_FIXTURE(Fixture, "awaitingSequenceOrPromptByte: true while an FGREP prompt is active") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  CHECK(app.awaitingSequenceOrPromptByte());
+}
+
 TEST_CASE_FIXTURE(Fixture, "SHELL: typing a command and pressing Enter runs it, output reaches scrollback") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {

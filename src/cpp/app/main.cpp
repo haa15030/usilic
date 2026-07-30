@@ -938,19 +938,36 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     }
     while (auto key = gui.consumeKeyEvent()) {
       anyEventThisFrame = true;
-      // Shift+Up/Down: the keyboard-driven equivalent of a mouse-drag
-      // release (see fm::kScrollSpeedLevels' own comment) -- pressing
-      // the SAME direction again while already coasting accelerates
-      // (one level up); the OPPOSITE direction reverses and resets to
-      // the base speed. Direction sign matches coastDirection's
-      // existing convention (see its own comment above): Shift+Up
-      // (reveal earlier content, topIndex decreases) is +1, Shift+Down
-      // is -1 -- the same mapping runTerminalCoast()'s peekShiftArrow()
-      // handling uses, just expressed against pixelOffset's sign
-      // instead of topIndex directly.
-      if (key->shift && (key->special == fm::Display::Key::Up || key->special == fm::Display::Key::Down)) {
+      // w/s: the keyboard-driven equivalent of a mouse-drag release
+      // (see fm::kScrollSpeedLevels' own comment) -- pressing the
+      // SAME direction again while already coasting accelerates (one
+      // level up); the OPPOSITE direction reverses and resets to the
+      // base speed. Direction sign matches coastDirection's existing
+      // convention (see its own comment above): w (reveal earlier
+      // content, topIndex decreases) is +1, s is -1.
+      //
+      // Originally bound to Shift+Up/Down; switched to plain w/s
+      // (2026-07-31, matching the same up/down sense as a game's WASD
+      // scheme) at the user's request -- not because Shift+arrow
+      // needed any user-side terminal configuration in GUI mode
+      // (unlike the real-terminal fallback's own Shift+arrow trigger,
+      // Terminal.app's own keyboard remapping was never involved
+      // here: GUI mode reads SDL's native KMOD_SHIFT flag directly),
+      // but because a plain letter is one keystroke instead of a
+      // held-modifier combo, and the user found that more comfortable
+      // to reach for repeatedly. Gated on currentMode() != Shell and
+      // !awaitingSequenceOrPromptByte() so it never steals a literal
+      // "w"/"s" that should reach the shell's command line, an
+      // FGREP/path prompt, or a pending ESC/^J-leader sequence (ESC s
+      // == StartShell, in particular) -- Shift+Up/Down needed no such
+      // gate since holding Shift never produces a plain byte those
+      // paths could otherwise want.
+      bool wKey = !key->special && (key->byte == 'w' || key->byte == 'W');
+      bool sKey = !key->special && (key->byte == 's' || key->byte == 'S');
+      if ((wKey || sKey) && app.currentMode() != fm::ApplicationMode::Shell &&
+          !app.awaitingSequenceOrPromptByte()) {
         consecutiveEscapes = 0;
-        int pressedDirection = (*key->special == fm::Display::Key::Up) ? 1 : -1;
+        int pressedDirection = wKey ? 1 : -1;
         if (coastLevel > 0 && pressedDirection == coastDirection) {
           coastLevel = resolveCoastLevel(std::min(coastLevel + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
         } else {

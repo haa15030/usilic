@@ -4523,6 +4523,62 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      1行ずつ更新されることを確認済み。コミットはpush保留、
      ユーザーの実機評価待ち。
 
+79. **2026-07-31: 慣性スクロールのキーボードトリガーをShift+↑/↓から
+    w/sへ変更、`make install`でC++版を`/usr/local/bin/U`として
+    インストールできるように**
+   - ユーザーからの依頼: 「ユーザーによる設定が必要なshift↑↓は
+     正式採用できないゆえの応急キーアサインなのでゲームで多用
+     されているw(↑)s(↓)に変更というのは？」「旧版は確か、別名で
+     レメークできるようになっていると思うので、'usilic'→'U'で
+     そうしたい。そちらで可能なら`make install`までよろしく」。
+   - 事実確認として一点補足: GUIモードのShift+↑/↓自体はSDLの
+     ネイティブ`KMOD_SHIFT`フラグを直接見ており、実は
+     Terminal.app側のキーボード設定は不要だった(設定が要るのは
+     実ターミナル代替経路(`runTerminalCoast()`)側のShift+矢印
+     トリガーのみ)。とはいえ「ホールドするより単発キーの方が
+     連打しやすい」というユーザーの主観的な使用感の話でもあり、
+     w/sへの変更自体はそのまま採用。
+   - **キー変更の実装**: `runGuiPhase()`のトリガー条件を
+     `key->shift && (Up/Down)`から、`!key->special`かつ
+     `byte`が`w`/`W`/`s`/`S`かどうかへ変更(大文字も許容)。単純に
+     「プレーンな's'/'w'は常に奪う」とはせず、`Application`に新規
+     `awaitingSequenceOrPromptByte()`を追加(`escPending_`
+     (`ESC s`=StartShell待ち等)・`leaderJPending_`(`^J`リーダー
+     待ち)・`promptKind_`(FGREP/PATH等の入力欄が開いている)の
+     いずれかがtrueなら真)し、加えて`currentMode() != Shell`も
+     チェックした上でのみ、's'/'w'をスクロールトリガーとして
+     横取りするようにした。これが無いと、SHELLモードでの通常の
+     コマンド入力(頻出のアルファベット)や、`ESC s`でのSHELL起動、
+     FGREP/PATH入力欄での検索語入力に's'/'w'が一切打てなくなって
+     いた(実装中に自分で気づいて回避、実機報告ではない)。
+     doctest 4件追加(`awaitingSequenceOrPromptByte()`が
+     ESC直後・`^J`直後・FGREPプロンプト中でtrue、平常時でfalseに
+     なることを確認)。
+   - 副産物: これにより`GraphicalDisplay::KeyEvent::shift`
+     フィールド(SDLの`KMOD_SHIFT`検出込み)は使用箇所が無くなり
+     事実上の死んだコードになったが、フィールドを削除する
+     public API変更は今回のスコープ外と判断しそのまま残した(次回
+     以降の整理候補としてここに記録)。
+   - **`make install`の追加**: `src/cpp/Makefile`に`install`
+     ターゲットを新設、`build/usilic`を`/usr/local/bin/U`へ
+     `install -m 755`でコピーする(インストール名を`usilic`では
+     なく`U`にしたのは、`/usr/local/bin/usilic`が既にレガシーC版
+     (`tcb/src/install.sh`が`tcb`バイナリを`usilic`という別名で
+     インストールしたもの、GUI着手前の2026-07-21付、今回のC++版
+     とは無関係の別バイナリ)に占有されており、まだレガシー版と
+     機能同等ではないC++版で日常使いの`usilic`コマンドを上書き
+     したくないという判断のため)。このセッションの環境では
+     `/usr/local/bin`がroot所有のため`sudo`が必要で、パスワード
+     無しの`sudo`は使えなかった(`sudo -n true`が失敗)ため、
+     `make install`の実行自体はユーザーに依頼(`cd
+     ~/git/usilic/src/cpp && sudo make install`)。
+   - **検証**: doctest 435件全通過(Mac/Ubuntu 26.04双方、既存の
+     環境依存10件の失敗は今回のdiffと無関係)。w/sトリガー自体の
+     実機動作は、前項と同じ理由(このセッションからSDLの
+     修飾キー・GUIウィンドウへの確実なキー注入ができない)で
+     未検証、コードレビューとdoctestのみ。コミットはpush保留、
+     ユーザーの実機評価・`sudo make install`の実行待ち。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

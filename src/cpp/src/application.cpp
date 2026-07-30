@@ -1178,6 +1178,10 @@ bool Application::promptActive() const { return promptKind_ != PromptKind::None;
 const std::string &Application::promptText() const { return promptEditor_.text(); }
 
 ApplicationMode Application::currentMode() const { return currentMode_; }
+
+bool Application::awaitingSequenceOrPromptByte() const {
+  return escPending_ || leaderJPending_ || promptKind_ != PromptKind::None;
+}
 DirectoryMode &Application::directoryMode() { return directoryMode_; }
 FileMode &Application::fileMode() { return fileMode_; }
 GrepMode &Application::grepMode() { return grepMode_; }

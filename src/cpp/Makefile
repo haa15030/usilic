@@ -29,12 +29,27 @@ SRCS     = $(wildcard $(SRC_DIR)/*.cpp)
 APP_SRCS = $(wildcard $(APP_DIR)/*.cpp)
 TESTS    = $(wildcard $(TEST_DIR)/*.cpp)
 
-.PHONY: test usilic clean
+# Installed name is deliberately NOT "usilic" -- /usr/local/bin/usilic
+# is already occupied by the legacy C build (src/install.sh's own
+# `install ... tcb $(DESTDIR)/usr/local/bin/usilic`, predating this
+# C++ port entirely), which stays there untouched since it's still in
+# daily use and this C++ port isn't yet at feature parity with it.
+# "U" was the user's own choice (2026-07-31) for a short, easy-to-type
+# name for trying the C++ build day-to-day without colliding with the
+# legacy binary.
+INSTALL_NAME = U
+INSTALL_DIR  = /usr/local/bin
+
+.PHONY: test usilic install clean
 
 test: $(BUILD_DIR)/run_tests
 	$(BUILD_DIR)/run_tests
 
 usilic: $(BUILD_DIR)/usilic
+
+install: $(BUILD_DIR)/usilic
+	install -d $(INSTALL_DIR)
+	install -m 755 $(BUILD_DIR)/usilic $(INSTALL_DIR)/$(INSTALL_NAME)
 
 $(BUILD_DIR)/run_tests: $(SRCS) $(TESTS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(TEST_DIR) -I$(SRC_DIR) $(SRCS) $(TESTS) -o $@ $(LDLIBS)

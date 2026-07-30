@@ -822,6 +822,19 @@ class Application {
   bool loadHelpText(const std::string &text);
 
   ApplicationMode currentMode() const;
+
+  // True whenever the NEXT byte fed to feedByte() would be consumed
+  // as part of a pending multi-key sequence (ESC-prefix, ^J-leader)
+  // or as literal text into an active prompt/entry widget, rather
+  // than interpreted as a plain top-level navigation command. Added
+  // for runGuiPhase()'s w/s inertial-scroll-trigger interception (see
+  // CLAUDE.md's 2026-07-31 note): 'w'/'s' must fall through to
+  // feedByte() untouched in any of these states -- typing "ESC s" for
+  // StartShell, or typing a literal "w"/"s" into an FGREP/path prompt
+  // -- rather than being hijacked for scrolling. Combined with a
+  // currentMode() != Shell check at the call site (typing must always
+  // reach the shell's own command line).
+  bool awaitingSequenceOrPromptByte() const;
   DirectoryMode &directoryMode();
   FileMode &fileMode();
   GrepMode &grepMode();
