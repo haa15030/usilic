@@ -145,6 +145,7 @@
 #include "graphical_display.hpp"
 #include "history.hpp"
 #include "key_input.hpp"
+#include "mouse_sgr.hpp"
 #include "terminal_display.hpp"
 
 namespace {
@@ -203,10 +204,254 @@ std::optional<fm::KeyInput::SpecialKey> translateDisplayKey(fm::Display::Key key
   return std::nullopt;
 }
 
+// -- 2026-07-30 real-terminal drag-scroll trigger (see CLAUDE.md) --
+//
+// Both peek functions below share the same shape: read raw bytes via
+// keyInput.readByte() (the same source readEscapeSequence() itself
+// reads from) looking for a pattern Display's own 6-key vocabulary
+// (readEscapeSequence()) has no way to represent, and if the bytes
+// DON'T end up matching, queue them back via playRawMacro() so the
+// normal ESC path sees exactly what it would have seen had this peek
+// never run. KeyInput has no putback of its own, but its macro queue
+// (checked before the real tty on every readByte(), see its own class
+// comment) doubles as one perfectly well here -- this is why these
+// live here instead of on KeyInput itself: KeyInput's job is "raw
+// bytes in, decide what they are"; this is the caller doing its own
+// additional decoding on top, the same split KeyInput's class comment
+// already draws for ESC-leader bindings via lastEscapeBytes().
+
+// Executes one usleep()/busy-loop-spin delay from `step` (see
+// drag_scroll_speed.hpp) -- the actual "wait" half of one dot/row of
+// scroll. Kept as its own function so the busy-loop's spin can't be
+// optimized away and so its cost is visible separately from the
+// bookkeeping around it. Shared by runTerminalCoast() (one step per
+// ROW) and runGuiPhase() (one step per PIXEL) below.
+void performScrollStepDelay(const fm::ScrollStep &step) {
+  if (step.busyLoop) {
+    volatile long sink = 0;
+    for (long i = 0; i < step.busyIterations; i++) sink += i;
+  } else if (step.microseconds > 0) {
+    usleep(static_cast<useconds_t>(step.microseconds));
+  }
+}
+
+enum class ShiftArrow { None, Up, Down };
+
+// Call immediately after readByte() returned ESC. Recognizes the
+// xterm CSI-with-modifier form of Shift+Up/Down ("\x1b[1;2A" /
+// "\x1b[1;2B") -- Up/Down's own *unmodified* sequences are shorter and
+// diverge from this one already at the 3rd byte ('1' here vs. a final
+// letter there), so a mismatch here can only mean "not a Shift-arrow,"
+// never "this was actually a plain arrow key that got misread."
+ShiftArrow peekShiftArrow(fm::KeyInput &keyInput) {
+  std::string consumed;
+  auto next = [&]() -> int {
+    int b = keyInput.readByte();
+    if (b != 0) consumed.push_back(static_cast<char>(b));
+    return b;
+  };
+  static const char kExpected[] = "[1;2";
+  for (const char *p = kExpected; *p; p++) {
+    if (next() != static_cast<unsigned char>(*p)) {
+      if (!consumed.empty()) keyInput.playRawMacro(consumed);
+      return ShiftArrow::None;
+    }
+  }
+  int final = next();
+  if (final == 'A') return ShiftArrow::Up;
+  if (final == 'B') return ShiftArrow::Down;
+  if (!consumed.empty()) keyInput.playRawMacro(consumed);
+  return ShiftArrow::None;
+}
+
+// Call immediately after readByte() returned ESC and peekShiftArrow()
+// already returned None. Recognizes an SGR extended mouse report
+// ("\x1b[<Cb;Cx;Cy(M|m)", only sent while runTerminalCoast() has
+// enabled mouse tracking -- see setTerminalMouseTracking()) and hands
+// the decoded parameter string to fm::parseMouseSgr(). A malformed or
+// non-mouse sequence is queued back exactly like peekShiftArrow()
+// above.
+std::optional<fm::MouseSgrEvent> peekMouseSgr(fm::KeyInput &keyInput) {
+  std::string consumed;
+  auto next = [&]() -> int {
+    int b = keyInput.readByte();
+    if (b != 0) consumed.push_back(static_cast<char>(b));
+    return b;
+  };
+  if (next() != '[' || next() != '<') {
+    if (!consumed.empty()) keyInput.playRawMacro(consumed);
+    return std::nullopt;
+  }
+  std::string params;
+  for (;;) {
+    int b = next();
+    if (b == 'M' || b == 'm') {
+      params.push_back(static_cast<char>(b));
+      break;
+    }
+    if (b == 0 || !((b >= '0' && b <= '9') || b == ';')) {
+      keyInput.playRawMacro(consumed);
+      return std::nullopt;
+    }
+    params.push_back(static_cast<char>(b));
+  }
+  auto event = fm::parseMouseSgr(params);
+  if (!event) keyInput.playRawMacro(consumed);  // well-formed-looking but rejected -- don't swallow it
+  return event;
+}
+
+void setTerminalMouseTracking(fm::Display &display, bool enabled) {
+  // \x1b[?1003h/l: report ALL motion (not just while a button is
+  // held), so the coast loop can highlight whatever row the pointer
+  // is over even without a button down. \x1b[?1006h/l: SGR extended
+  // coordinates -- no 223-row/column ceiling, and unambiguous to parse
+  // (see mouse_sgr.hpp).
+  display.write(enabled ? "\x1b[?1003h\x1b[?1006h" : "\x1b[?1003l\x1b[?1006l");
+}
+
+// Runs the real-terminal equivalent of runGuiPhase()'s drag-scroll
+// coasting -- see CLAUDE.md's 2026-07-30 note on why this exists
+// alongside the SDL path rather than instead of it: it trades true
+// sub-row pixel compositing (impossible here -- a real terminal only
+// exposes character-cell escape sequences, never raw framebuffer
+// access) for landing EXACTLY on the real terminal session the user
+// is already looking at, no separate window, colors/font always
+// exactly right because it never stopped being the real terminal.
+//
+// Triggered by Shift+Up/Shift+Down (see peekShiftArrow()) instead of
+// a mouse drag: reuses the SAME fm::kScrollSpeedLevels timing table
+// runGuiPhase() does, just spending each step's delay on advancing
+// ContentView by one whole ROW (there's no sub-row unit here) instead
+// of one pixel. Enables xterm mouse tracking for the duration (see
+// setTerminalMouseTracking()) so the row under the pointer highlights
+// live via ContentView::setHoverIndex() and a click opens it directly
+// -- both cleared on the way out. Stops on: a list boundary; a click
+// (which also opens whatever row is under the pointer); or any key
+// other than Shift+Up/Down (repeating the SAME direction accelerates;
+// the OPPOSITE direction reverses and resets to the base speed) --
+// that key is handed back to the caller to feed through normally,
+// exactly as if this function had never run.
+struct TerminalCoastResult {
+  bool hadLeftoverByte = false;
+  int leftoverByte = 0;
+};
+
+TerminalCoastResult runTerminalCoast(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
+                                      int initialDirection) {
+  fm::ContentView &view = app.activeContentView();
+  int level = 1;
+  int direction = initialDirection;
+  // The most recently reported mouse row (display-row space, i.e.
+  // moveCursor()'s coordinate space), or -1 before any mouse event has
+  // arrived. Deliberately a ROW, not a resolved line index: content
+  // keeps moving underneath a stationary mouse while coasting, so
+  // which LINE is under this row has to be recomputed against the
+  // current topIndex_ every step (see applyHoverAndRedraw()) -- a
+  // fixed line index would instead have the highlight visibly drift
+  // away from the actual pointer position as the list scrolled past
+  // it (found via a real PTY run: a hover event correctly highlighted
+  // row 9, but by the time of the next screen capture -- several
+  // scroll steps later, mouse untouched -- the highlight had already
+  // scrolled off to a different row entirely).
+  int lastMouseRow = -1;
+  setTerminalMouseTracking(display, true);
+  TerminalCoastResult result;
+
+  auto stop = [&]() {
+    view.setHoverIndex(std::nullopt);
+    setTerminalMouseTracking(display, false);
+    view.redraw();
+  };
+
+  auto applyHoverAndRedraw = [&]() {
+    if (lastMouseRow >= 0) {
+      int lineIndex = view.lineIndexAtRow(lastMouseRow);
+      view.setHoverIndex(lineIndex >= 0 ? std::optional<int>(lineIndex) : std::nullopt);
+    }
+    view.redraw();
+  };
+
+  for (;;) {
+    performScrollStepDelay(fm::kScrollSpeedLevels[level]);
+
+    int before = view.topIndex();
+    view.setTopIndex(before + direction);
+    if (view.topIndex() == before) {  // hit a boundary
+      stop();
+      return result;
+    }
+    // redraw() calls clampViewport(), which enforces the normal
+    // moveUp()/moveDown() invariant "topIndex_ never leads
+    // cursorIndex_" -- since setTopIndex() deliberately does NOT move
+    // cursorIndex_ (see its own comment), that clamp would otherwise
+    // snap topIndex_ straight back to 0 on every single redraw() call
+    // here (found via a real PTY run: topIndex_ kept reporting 0->1
+    // and back to 0 every iteration). Riding cursorIndex_ along with
+    // topIndex_ during coast keeps the clamp a no-op; it's harmless
+    // because the hover row (not the cursor) is what's actually
+    // highlighted while coasting (see setHoverIndex()), and where the
+    // cursor lands once coasting stops is a reasonable resting
+    // position, the same way pageDown() leaves it wherever the page
+    // landed.
+    view.setCursorIndex(view.topIndex());
+    applyHoverAndRedraw();
+
+    struct pollfd fd{STDIN_FILENO, POLLIN, 0};
+    if (poll(&fd, 1, 0) <= 0 || !(fd.revents & POLLIN)) continue;  // nothing pending -- keep coasting
+
+    int byte = keyInput.readByte();
+    if (!byte) continue;  // spurious wakeup/timeout artifact
+
+    if (byte == 0x1b) {
+      ShiftArrow arrow = peekShiftArrow(keyInput);
+      if (arrow != ShiftArrow::None) {
+        int pressedDirection = (arrow == ShiftArrow::Up) ? -1 : 1;
+        if (pressedDirection == direction) {
+          level = std::min(level + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1);
+        } else {
+          direction = pressedDirection;
+          level = 1;
+        }
+        continue;
+      }
+      auto mouse = peekMouseSgr(keyInput);
+      if (mouse) {
+        lastMouseRow = mouse->row;
+        if (mouse->pressed && !mouse->motionOnly) {
+          int lineIndex = view.lineIndexAtRow(mouse->row);
+          if (lineIndex >= 0) {
+            view.setCursorIndex(lineIndex);  // handleMouseClick() opens an already-selected row
+            int row = mouse->row, col = mouse->column;
+            stop();
+            app.handleMouseClick(row, col);
+            return result;
+          }
+        }
+        applyHoverAndRedraw();
+        continue;
+      }
+      // Neither a Shift-arrow nor a mouse report -- some other ESC
+      // sequence (an ordinary arrow key, ^[s, etc). Nothing beyond the
+      // ESC byte itself has been consumed (both peeks above queue
+      // their own bytes back on mismatch), so requeue ESC too and let
+      // the normal terminal loop re-read and handle it exactly as it
+      // always does.
+      stop();
+      keyInput.playRawMacro("\x1b");
+      return result;
+    }
+
+    stop();
+    result.hadLeftoverByte = true;
+    result.leftoverByte = byte;
+    return result;
+  }
+}
+
 // Runs until wantsExit() or a GUI-mode toggle is requested. Returns
 // true if it should be followed by a GUI phase (false means the whole
 // program is exiting).
-bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput) {
+bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display &display) {
   while (!app.wantsExit()) {
     if (app.consumeGuiModeToggleRequest()) return true;
     bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
@@ -231,6 +476,18 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput) {
       continue;
     }
     if (byte == 0x1b) {
+      // Shift+Up/Down (see peekShiftArrow()'s own comment): the
+      // real-terminal drag-scroll trigger. Checked first because its
+      // sequence is longer than Up/Down's own unmodified ones, which
+      // readEscapeSequence() reads a fixed, shorter length for -- a
+      // mismatch here safely requeues whatever was read (via
+      // playRawMacro()) rather than losing bytes.
+      ShiftArrow arrow = peekShiftArrow(keyInput);
+      if (arrow != ShiftArrow::None) {
+        TerminalCoastResult coast = runTerminalCoast(app, display, keyInput, arrow == ShiftArrow::Up ? -1 : 1);
+        if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
+        continue;
+      }
       auto special = keyInput.readEscapeSequence();
       if (special) {
         app.feedByte(0, special);
@@ -250,20 +507,6 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput) {
     app.feedByte(byte, std::nullopt);
   }
   return false;
-}
-
-// Executes one usleep()/busy-loop-spin delay from `step` (see
-// drag_scroll_speed.hpp) -- the actual "wait" half of one dot of
-// scroll. Kept as its own function so the busy-loop's spin can't be
-// optimized away and so its cost is visible separately from the
-// pixel-offset bookkeeping around it.
-void performScrollStepDelay(const fm::ScrollStep &step) {
-  if (step.busyLoop) {
-    volatile long sink = 0;
-    for (long i = 0; i < step.busyIterations; i++) sink += i;
-  } else if (step.microseconds > 0) {
-    usleep(static_cast<useconds_t>(step.microseconds));
-  }
 }
 
 // Commits whole-row crossings of pixelOffset into view.setTopIndex(),
@@ -538,7 +781,7 @@ int main(int argc, char **argv) {
   }
 
   while (!app.wantsExit()) {
-    if (!runTerminalPhase(app, keyInput)) break;
+    if (!runTerminalPhase(app, keyInput, display)) break;
     if (app.wantsExit()) break;
 
     std::string fontPath = resolveGuiFontPath();

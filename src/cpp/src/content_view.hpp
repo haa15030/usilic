@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -95,6 +96,17 @@ class ContentView {
   // prototype) own their own redraw timing.
   void setTopIndex(int index);
 
+  // Highlights an arbitrary line instead of cursorIndex_, without
+  // moving the cursor/selection -- for the 2026-07-30 real-terminal
+  // drag-scroll trigger (see CLAUDE.md): while coasting, the row under
+  // the mouse pointer is highlighted so a click can open it directly,
+  // but the actual keyboard cursor position shouldn't move just from
+  // hovering. Pass nullopt (the default) to go back to highlighting
+  // cursorIndex_ as usual. Does not redraw -- same "caller owns
+  // render timing" convention as setTopIndex().
+  void setHoverIndex(std::optional<int> index);
+  std::optional<int> hoverIndex() const;
+
   // -- scrolling --
   // Single-line cursor movement (M_up/M_dn/M_kup/M_kdn): moves the
   // cursor one line, scrolling the viewport by one line (using
@@ -127,6 +139,7 @@ class ContentView {
   std::vector<Line> lines_;
   int cursorIndex_ = 0;
   int topIndex_ = 0;
+  std::optional<int> hoverIndex_;
 
   int row0_ = 0, height_ = 0;
 };

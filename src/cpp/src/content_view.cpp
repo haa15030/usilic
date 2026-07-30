@@ -38,6 +38,9 @@ void ContentView::setTopIndex(int index) {
   topIndex_ = std::clamp(index, 0, maxTop);
 }
 
+void ContentView::setHoverIndex(std::optional<int> index) { hoverIndex_ = index; }
+std::optional<int> ContentView::hoverIndex() const { return hoverIndex_; }
+
 void ContentView::setCursorIndex(int index) {
   if (lines_.empty()) {
     cursorIndex_ = 0;
@@ -170,11 +173,12 @@ void ContentView::renderLine(const Line &line, bool marked) {
 
 void ContentView::redraw() {
   clampViewport();
+  int highlighted = hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_;
   for (int row = 0; row < height_; row++) {
     int idx = topIndex_ + row;
     display_.moveCursor(row0_ + row, 0);
     display_.clearToEndOfLine();
-    if (idx < static_cast<int>(lines_.size())) renderLine(lines_[idx], idx == cursorIndex_);
+    if (idx < static_cast<int>(lines_.size())) renderLine(lines_[idx], idx == highlighted);
   }
   display_.flush();
 }

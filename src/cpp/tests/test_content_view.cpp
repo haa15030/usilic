@@ -92,6 +92,25 @@ TEST_CASE("setTopIndex: clamps to a valid range") {
   CHECK(v.topIndex() == 7);
 }
 
+TEST_CASE("setHoverIndex: highlights the hover row instead of cursorIndex_") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  CHECK(v.hoverIndex() == std::nullopt);
+
+  v.setHoverIndex(2);
+  v.redraw();
+  CHECK(v.hoverIndex() == 2);
+  CHECK(d.standoutAt(0, 0) == false);  // cursor is on line 0, but hover takes over
+  CHECK(d.standoutAt(2, 0) == true);
+
+  v.setHoverIndex(std::nullopt);
+  v.redraw();
+  CHECK(d.standoutAt(0, 0) == true);  // back to highlighting cursorIndex_
+  CHECK(d.standoutAt(2, 0) == false);
+}
+
 TEST_CASE("moveDown: cursor advances and marking follows it") {
   RecordingDisplay d(10, 20);
   ContentView v(d);
