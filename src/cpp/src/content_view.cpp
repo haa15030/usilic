@@ -178,14 +178,13 @@ void ContentView::renderLine(const Line &line, bool marked) {
 std::string ContentView::modeLineText() const {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
-  int bottomVisible = std::min(topIndex_ + std::max(height_, 0), total);
-  return ModeLine::format(current, total, bottomVisible);
+  return ModeLine::format(current, total);
 }
 
 std::string ContentView::scrollModeLineText() const {
   int total = static_cast<int>(lines_.size());
-  int bottomVisible = std::min(topIndex_ + std::max(height_, 0), total);
-  return ModeLine::format(bottomVisible, total, bottomVisible);
+  int current = total > 0 ? topIndex_ + 1 : 0;
+  return ModeLine::format(current, total);
 }
 
 // Ported from print_line()'s current-line/total-line/percent display

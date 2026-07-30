@@ -255,20 +255,19 @@ TEST_CASE("modeLineText: tracks cursorIndex_, matching legacy print_line()'s row
   CHECK(v.modeLineText().substr(0, 2) == "05");  // 1-indexed
 }
 
-TEST_CASE("scrollModeLineText: uses the viewport's bottom-visible line, not cursorIndex_") {
+TEST_CASE("scrollModeLineText: uses topIndex_ (the viewport's top line), not cursorIndex_") {
   // A real report: during a mouse-drag/Shift-arrow coast (which
   // deliberately never moves cursorIndex_, see setTopIndex()'s own
-  // comment), modeLineText()'s "current" sat frozen while its own
-  // percent kept climbing -- confusing since the percent is computed
-  // from the exact same bottom-visible number. scrollModeLineText()
-  // is what GraphicalDisplay::renderScrolled() calls instead while
-  // actively scrolling, so both numbers move together.
+  // comment), modeLineText()'s number sat frozen even though the view
+  // was visibly scrolling. scrollModeLineText() is what
+  // GraphicalDisplay::renderScrolled() calls instead while actively
+  // scrolling, so the mode-line moves in step with what's on screen.
   RecordingDisplay d(10, 20);
   ContentView v(d);
   v.setViewport(0, 3);
   v.setLines(makeLines(10));
   v.setCursorIndex(0);  // stays here throughout, like a real coast
   v.setTopIndex(5);     // scrolled well past the cursor's own line
-  CHECK(v.modeLineText().substr(0, 2) == "01");        // unaffected -- still cursorIndex_-based
-  CHECK(v.scrollModeLineText().substr(0, 2) == "08");  // bottomVisible = 5+3 = 8
+  CHECK(v.modeLineText() == "01/10 TOP");   // unaffected -- still cursorIndex_-based
+  CHECK(v.scrollModeLineText() == "06/10 60%");  // topIndex_ + 1 = 6
 }

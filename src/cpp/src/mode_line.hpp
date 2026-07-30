@@ -18,13 +18,21 @@ namespace fm {
 class ModeLine {
  public:
   // currentLine/totalLines are 1-indexed (0 for an empty list).
-  // bottomVisibleLine is the 1-indexed line number currently showing
-  // in the viewport's last row -- when it reaches totalLines (the
-  // view is scrolled all the way to the end), legacy showed "END"
-  // instead of a percentage, ported as-is here. Format matches
-  // legacy's "%s/%s %2d%%" / "%s/%s END", current zero-padded to
-  // total's own digit width (e.g. "03/15 20%").
-  static std::string format(int currentLine, int totalLines, int bottomVisibleLine);
+  // Percent is based on currentLine's own position (currentLine ==
+  // where the cursor/viewport-top actually is -- see ContentView::
+  // modeLineText()/scrollModeLineText(), the two things that feed
+  // this), NOT on how much content has scrolled past, so it always
+  // reads 0-ish at the very top and climbs toward 100 as currentLine
+  // approaches totalLines. currentLine==1 shows "TOP" and
+  // currentLine>=totalLines shows "END" instead of a numeric percent
+  // (2026-07-31, changed from legacy's own "viewport-bottom-based %,
+  // no TOP label" shape at the user's request -- legacy had no GUI
+  // drag-scroll to decouple viewport position from cursor position in
+  // the first place, so this is a deliberate departure, not a
+  // straight port). Format: "%s/%s %2d%%" / "%s/%s TOP" /
+  // "%s/%s END", current zero-padded to total's own digit width (e.g.
+  // "03/15 20%").
+  static std::string format(int currentLine, int totalLines);
 };
 
 }  // namespace fm
