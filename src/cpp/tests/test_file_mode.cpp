@@ -175,3 +175,11 @@ TEST_CASE_FIXTURE(Fixture, "mode-line fields: before any loadFile, no fields are
   FileMode fresh{view, history, Charset::Encoding::Ascii, 80};
   CHECK(view.modeLineText() == "0/0 END");
 }
+
+TEST_CASE_FIXTURE(Fixture, "constructing FileMode disables the cursor-line highlight on its view") {
+  view.setViewport(0, 5);  // otherwise height_ defaults to 0 and nothing but the mode-line row renders
+  std::string path = writeFile("plain.txt", "hello\nworld\n");
+  REQUIRE(mode.loadFile(path));
+  view.redraw();
+  CHECK(display.standoutAt(0, 0) == false);  // cursor is on line 0 -- real CUI has no highlight here
+}

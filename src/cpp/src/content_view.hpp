@@ -113,6 +113,19 @@ class ContentView {
   void setHoverIndex(std::optional<int> index);
   std::optional<int> hoverIndex() const;
 
+  // Whether the cursor/hover line gets whole-line reverse video at
+  // all (default true). Legacy's put_str() only reverses a whole line
+  // for CP/RM/MV/ARC's own marked-selection tracking (fmark()'s
+  // f_M switch, ported: none of that applies to plain directory
+  // listing or file viewing) -- this port had already been drawing a
+  // cursor-line highlight everywhere as a basic "where am I" cue
+  // before this flag existed, which a real CUI/GUI side-by-side
+  // comparison confirmed matches Directory mode's real look but NOT
+  // File mode's (a real screenshot: plain file content has no such
+  // highlight at all). FileMode disables this on its own ContentView;
+  // DirectoryMode leaves it at the default.
+  void setCursorHighlightEnabled(bool enabled);
+
   // -- scrolling --
   // Single-line cursor movement (M_up/M_dn/M_kup/M_kdn): moves the
   // cursor one line, scrolling the viewport by one line (using
@@ -195,9 +208,25 @@ class ContentView {
   //               comment), drawn after the position (e.g. "(ls)" in
   //               Directory mode, or "<size> <directory>/" in File
   //               mode). Empty means nothing is drawn there.
+  //   fillTrailingToEdge -- legacy pads THIS field specifically with
+  //               spaces out to the terminal's own right edge (see
+  //               disp_window()'s own `for (...) prev[i] = ' '` loop),
+  //               so its reverse-video run visually reaches the edge
+  //               with no gap -- but only for modes that route their
+  //               trailing text through that specific field (File
+  //               mode's size+directory does; Directory mode's "(ls)"
+  //               is a short, separate field that legacy does NOT pad,
+  //               leaving a plain gap after it -- confirmed by
+  //               comparing real CUI screenshots of both modes side by
+  //               side, not by inspection of the C source alone, since
+  //               the source distinguishes them only by which of two
+  //               different disp_window() parameters (`arg` vs `prev0`)
+  //               each mode.c call site happens to populate). Ignored
+  //               when trailing is empty.
   struct ModeLineFields {
     std::string name;
     std::string trailing;
+    bool fillTrailingToEdge = false;
   };
 
   // Supplies this view's ModeLineFields, recomputed every time the
@@ -220,20 +249,34 @@ class ContentView {
   void renderLine(const Line &line, bool marked);
   void renderModeLine();
   void clampViewport();
-  // Assembles "name positionText trailing" from the current
-  // ModeLineFieldsProvider (see setModeLineFieldsProvider()) around
-  // `positionText`, separated by single spaces -- unless the combined
-  // string wouldn't fit in the display's own column count, in which
-  // case fields are dropped, trailing first then name (positionText
-  // itself is always kept), rather than truncated: a partial field cut
-  // at an arbitrary byte offset risks splitting a multi-byte UTF-8
-  // character (this class deliberately stays charset-ignorant
-  // otherwise, see the class comment's own note on why -- silently
-  // dropping a whole field sidesteps that instead of introducing
-  // width-aware truncation here), and on a real terminal
-  // (TerminalDisplay::write() has no bounds-checking of its own) an
-  // actual overflow would wrap into the next screen row and corrupt
-  // it, not just look visually crowded.
+
+  // Which of ModeLineFields' name/trailing pieces fit alongside
+  // `positionText` in the display's own column count -- dropped,
+  // trailing first then name (positionText itself is always kept),
+  // rather than truncated: a partial field cut at an arbitrary byte
+  // offset risks splitting a multi-byte UTF-8 character (this class
+  // deliberately stays charset-ignorant otherwise, see the class
+  // comment's own note on why -- silently dropping a whole field
+  // sidesteps that instead of introducing width-aware truncation
+  // here), and on a real terminal (TerminalDisplay::write() has no
+  // bounds-checking of its own) an actual overflow would wrap into the
+  // next screen row and corrupt it, not just look visually crowded.
+  // Shared by composeModeLineRow() (the plain-string consumers, e.g.
+  // GraphicalDisplay::renderScrolled()'s drag-scroll path) and
+  // renderModeLine() (the segmented-standout-run real render path)
+  // so both agree on what's shown.
+  struct FieldFit {
+    bool showName = false;
+    bool showTrailing = false;
+  };
+  FieldFit fitModeLineFields(const ModeLineFields &fields, const std::string &positionText) const;
+
+  // Assembles "name positionText trailing" (see fitModeLineFields())
+  // into one plain string, for callers that don't render field-by-
+  // field (composeModeLineRow()'s own consumers never call
+  // display_.setAttribute() themselves, so unlike renderModeLine()
+  // there's no separate reverse-video run per field here -- see
+  // modeLineText()'s own comment on who those callers are).
   std::string composeModeLineRow(const std::string &positionText) const;
 
   Display &display_;
@@ -242,6 +285,7 @@ class ContentView {
   int cursorIndex_ = 0;
   int topIndex_ = 0;
   std::optional<int> hoverIndex_;
+  bool cursorHighlightEnabled_ = true;
 
   int row0_ = 0, height_ = 0;
   ModeLineFieldsProvider modeLineFieldsProvider_;

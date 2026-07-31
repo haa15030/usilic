@@ -11,6 +11,14 @@ namespace fm {
 
 FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encoding, int width)
     : view_(view), history_(history), encoding_(encoding), width_(width) {
+  // Ported from put_str()'s own f_mark logic (see
+  // ContentView::setCursorHighlightEnabled()'s comment): plain file
+  // content never gets a whole-line reverse-video cursor highlight in
+  // the real CUI, unlike Directory mode's listing (which this port
+  // had already been highlighting, correctly, well before this flag
+  // existed) -- confirmed by a real CUI/GUI side-by-side screenshot.
+  view_.setCursorHighlightEnabled(false);
+
   // Mode-line fields, ported from disp_window()'s own field layout for
   // the pager case (name0 not starting with '/' takes the "copy as-
   // is" branch, see its comment): the bare filename on the left (NOT
@@ -27,7 +35,9 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     std::error_code ec;
     auto size = std::filesystem::file_size(path, ec);
     std::string trailing = ec ? directory : std::to_string(size) + " " + directory;
-    return {path.filename().string(), trailing};
+    // File mode's trailing field is legacy's padded-to-edge style, see
+    // ModeLineFields::fillTrailingToEdge's own comment.
+    return {path.filename().string(), trailing, /*fillTrailingToEdge=*/true};
   });
 }
 

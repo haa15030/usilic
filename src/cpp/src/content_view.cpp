@@ -43,6 +43,8 @@ void ContentView::setTopIndex(int index) {
 void ContentView::setHoverIndex(std::optional<int> index) { hoverIndex_ = index; }
 std::optional<int> ContentView::hoverIndex() const { return hoverIndex_; }
 
+void ContentView::setCursorHighlightEnabled(bool enabled) { cursorHighlightEnabled_ = enabled; }
+
 void ContentView::setCursorIndex(int index) {
   if (lines_.empty()) {
     cursorIndex_ = 0;
@@ -196,6 +198,7 @@ void ContentView::goToBottom() {
 }
 
 void ContentView::renderLine(const Line &line, bool marked) {
+  marked = marked && cursorHighlightEnabled_;
   bool standoutOn = false;
   auto setStandout = [&](bool on) {
     if (on == standoutOn) return;
@@ -261,39 +264,95 @@ void ContentView::setModeLineFieldsProvider(ModeLineFieldsProvider provider) {
   modeLineFieldsProvider_ = std::move(provider);
 }
 
+ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &fields,
+                                                       const std::string &positionText) const {
+  int cols = display_.columns();
+  auto rowLen = [&](bool withName, bool withTrailing) {
+    int len = static_cast<int>(positionText.size());
+    if (withName && !fields.name.empty()) len += static_cast<int>(fields.name.size()) + 1;
+    if (withTrailing && !fields.trailing.empty()) len += static_cast<int>(fields.trailing.size()) + 1;
+    return len;
+  };
+  if (cols <= 0 || rowLen(true, true) <= cols) return {true, true};
+  if (rowLen(true, false) <= cols) return {true, false};
+  return {false, false};
+}
+
 std::string ContentView::composeModeLineRow(const std::string &positionText) const {
   if (!modeLineFieldsProvider_) return positionText;
   ModeLineFields fields = modeLineFieldsProvider_(cursorIndex_);
-  int cols = display_.columns();
+  FieldFit fit = fitModeLineFields(fields, positionText);
 
   std::string row = positionText;
-  if (!fields.trailing.empty()) row += " " + fields.trailing;
-  if (!fields.name.empty()) row = fields.name + " " + row;
-  if (cols <= 0 || static_cast<int>(row.size()) <= cols) return row;
-
-  // Doesn't fit -- drop trailing first, then name, same priority order
-  // as this method's own header comment (positionText is the one
-  // piece always kept).
-  row = fields.name.empty() ? positionText : fields.name + " " + positionText;
-  if (cols <= 0 || static_cast<int>(row.size()) <= cols) return row;
-
-  return positionText;
+  if (fit.showTrailing && !fields.trailing.empty()) row += " " + fields.trailing;
+  if (fit.showName && !fields.name.empty()) row = fields.name + " " + row;
+  return row;
 }
 
 // Ported from print_line()'s current-line/total-line/percent display
 // (see ModeLine's own class comment for why only this sliver of
-// disp_window() moved into this class). Drawn in standout, matching
-// legacy's own vt_stand() around this line. row0_+height_ is always
-// the one screen row every mode's viewport leaves unused for exactly
-// this purpose (see Application::resize()'s "contentHeight =
-// rows()-1"), so no bounds check is needed here beyond what
-// setViewport()'s caller already guarantees.
+// disp_window() moved into this class). row0_+height_ is always the
+// one screen row every mode's viewport leaves unused for exactly this
+// purpose (see Application::resize()'s "contentHeight = rows()-1"), so
+// no bounds check is needed here beyond what setViewport()'s caller
+// already guarantees.
+//
+// Draws name/position/trailing as SEPARATE reverse-video runs with a
+// single plain (non-standout) space between each, rather than one
+// continuous run over composeModeLineRow()'s combined string --
+// ported from disp_window() itself calling vt_stand()/vt_endstand()
+// around each field individually (put_str() for the name, then its
+// own pair inside print_line() for the position, see disp.c). A real
+// side-by-side comparison against CUI screenshots caught this: this
+// port's first attempt drew the fully-composed string as one run,
+// which reads as a single unbroken highlight bar -- CUI's mode-line
+// visibly has small black (unhighlighted) gaps between fields.
 void ContentView::renderModeLine() {
+  int total = static_cast<int>(lines_.size());
+  int current = total > 0 ? cursorIndex_ + 1 : 0;
+  std::string positionText = ModeLine::format(current, total);
+
   display_.moveCursor(row0_ + height_, 0);
   display_.clearToEndOfLine();
-  display_.setAttribute(Display::Attribute::Standout);
-  for (unsigned char c : modeLineText()) display_.putChar(c);
-  display_.setAttribute(Display::Attribute::StandoutOff);
+
+  auto drawSegment = [&](const std::string &text) {
+    display_.setAttribute(Display::Attribute::Standout);
+    for (unsigned char c : text) display_.putChar(c);
+    display_.setAttribute(Display::Attribute::StandoutOff);
+  };
+
+  if (!modeLineFieldsProvider_) {
+    drawSegment(positionText);
+    return;
+  }
+
+  ModeLineFields fields = modeLineFieldsProvider_(cursorIndex_);
+  FieldFit fit = fitModeLineFields(fields, positionText);
+
+  if (fit.showName && !fields.name.empty()) {
+    drawSegment(fields.name);
+    display_.putChar(' ');
+  }
+  drawSegment(positionText);
+  if (fit.showTrailing && !fields.trailing.empty()) {
+    display_.putChar(' ');
+    std::string trailing = fields.trailing;
+    if (fields.fillTrailingToEdge) {
+      // Ported from disp_window()'s own `for (...) prev[i] = ' '`
+      // loop: pad with spaces (still inside this field's own standout
+      // run) so the highlight reaches the screen's right edge instead
+      // of stopping right after the text -- see ModeLineFields'
+      // fillTrailingToEdge comment for which modes want this.
+      int cols = display_.columns();
+      int usedBeforeTrailing = static_cast<int>(positionText.size()) + 1 +
+                                ((fit.showName && !fields.name.empty())
+                                     ? static_cast<int>(fields.name.size()) + 1
+                                     : 0);
+      int remaining = cols - usedBeforeTrailing - static_cast<int>(trailing.size());
+      if (remaining > 0) trailing += std::string(remaining, ' ');
+    }
+    drawSegment(trailing);
+  }
 }
 
 void ContentView::redraw() {

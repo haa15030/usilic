@@ -5107,6 +5107,98 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      何を指すか(GUIウィンドウの余白、mode-line内のフィールド間隔、
      その他)を確認中で、この項目には未反映。
 
+90. **2026-07-31: `docs/HISTORY.md`を新設(日付検索できる簡易やり取り
+    ログ)、mode-lineの黒スペース区切り・「.」展開・pagerの現在行
+    ハイライトを実CUIに合わせて修正**
+   - 項目89の報告に対し、ユーザーから実機スクリーンショット(CUI/GUI
+     の上下比較)による追加の差分指摘があった: (a)GUIウィンドウの
+     両端に余白が無くInitial-の左下隅が欠ける、(b)通常ファイル内容
+     表示にも現在行ハイライトがある(CUIには無い)、(c)mode-lineの
+     各項目間に黒色スペースが無く「.」(カレントディレクトリ)が
+     展開されていない、(d)文字がぼやけ気味。加えて「余白の件は
+     数日前に『それには...のAPIが必要』という発言があったはずだが、
+     過去ログがアーカイブされて参照できない」との指摘を受け、
+     `docs/HISTORY.md`(日付行+`>`(Claude)/`<`(ユーザー)形式の
+     簡易やり取りログ、`^YYYY-MM-DD`で日付検索できるようにする
+     ことが目的)を新設した。今回はこのうち(b)(c)を修正、
+     (a)(d)はGUI(SDL2)側の調査が必要なため次回に持ち越し。
+   - **(c)の原因**: `disp.c`の`disp_window()`を読み直し、name/
+     position/trailingの各フィールドがそれぞれ独立した
+     `vt_stand()`/`vt_endstand()`のペア(間に無色の空白1文字)で
+     描画されていることを確認(項目89では未確認だった)。一方この
+     ポートの`ContentView::renderModeLine()`は
+     `composeModeLineRow()`で結合済みの1本の文字列を単一の
+     standout runとして描画していたため、CUIでは見える黒い区切りが
+     GUI/CUI双方の当ポートの出力では消えていた。
+     - 修正: `ContentView`に`FieldFit fitModeLineFields(...)`
+       (name/trailingがどちらも収まるか判定、既存の
+       `composeModeLineRow()`の切り捨てロジックをこちらへ集約し
+       両者で共有)を追加。`renderModeLine()`を、name→無色空白→
+       position→無色空白→trailingという個別の`setAttribute()`呼び
+       出しで描画するよう全面書き換え。ただしCUIの実際の挙動は
+       ディレクトリ一覧の"(ls)"(区切り後は黒背景のまま何も塗られ
+       ない)とファイル表示の"サイズ+ディレクトリ"(残り幅を空白で
+       埋めて右端までstandoutが続く)とで見た目が異なると判明した
+       ため(disp_window()内部で前者は`arg`、後者は`prev0`という
+       別々のパラメータ経由で渡されており、`prev0`側だけ`for (...)
+       prev[i]=' '`で右端まで空白パディングされる仕様)、
+       `ModeLineFields`に`bool fillTrailingToEdge`を追加し、
+       `DirectoryMode`はfalse(デフォルト)、`FileMode`はtrueを
+       指定。legacy側の`ENV_PROG`右端ウォーターマーク("usilic
+       vX.Y"相当)の再現は、このポートにまだバージョン文字列の
+       概念が無く、かつユーザーからの指摘にも含まれていなかった
+       ため今回は対象外(黒背景のまま、という部分だけ再現)。
+   - **「.」が展開されない件**: `main()`が`argv[1]`(引数無し時は
+     `"."`)をそのまま`app.start()`に渡していたのが原因。
+     `std::filesystem::absolute(...).lexically_normal()`
+     (symlink解決は行わない、`PathResolver`と同じ方針)で絶対パス化
+     してから渡すよう修正。`DirectoryMode::enterDirectory()`自体は
+     末尾`/`の正規化のみ担当のまま(呼び出し元がどんな形で渡しても
+     動く既存のテスト群への影響を避けるため、絶対パス化はmain.cpp
+     側の責務とした)。
+   - **(b) pagerの現在行ハイライトの原因**: `disp.c`の`put_str()`を
+     読み、行全体の反転表示(`f_mark && !n`の分岐)が`fmark()`
+     (CP/RM/MV/ARCの「マーク済みエントリ」判定関数)経由でのみ発動
+     することを確認。`fmark(T_dir)`も`fmark(T_file)`もfalseであり、
+     legacy側はそもそもディレクトリ一覧・ファイル内容のどちらにも
+     この仕組みによる自動カーソル行ハイライトを持たない。ただし
+     ディレクトリ一覧側の「カーソル行を光らせる」表示は、このポート
+     が本セッションより前から実装していた基本的なUX(list中の現在位置
+     を示す最低限の手段)であり、ユーザー自身の指摘も「ファイル表示
+     にも(ディレクトリ一覧と同様に)出てしまっている」という表現
+     だったため、ディレクトリ一覧側は現状維持、ファイル表示側のみ
+     無効化する方針とした。
+     - 修正: `ContentView`に`setCursorHighlightEnabled(bool)`
+       (デフォルトtrue、既存の全モードの見た目を変えない)を追加。
+       `renderLine()`内で`marked = marked && cursorHighlightEnabled_`
+       として一括ゲート(呼び出し箇所6箇所すべてを個別に直すのでは
+       なく、`renderLine()`という単一箇所に集約)。`FileMode`の
+       コンストラクタで`view_.setCursorHighlightEnabled(false)`を
+       呼ぶよう変更。`DirectoryMode`はデフォルトのまま(変更無し)。
+   - **検証**: (1) doctest新規4件追加(`ContentView`側2件: 名前/
+     位置/trailingが個別のreverse-video runになっていること、
+     `fillTrailingToEdge`が右端までパディングされること、+
+     `setCursorHighlightEnabled(false)`でカーソル行が反転しなくなる
+     こと; `FileMode`側1件: コンストラクタでカーソルハイライトが
+     無効化されること)、計462件全通過(Mac)。(2) 実PTYで
+     `usilic .`(カレントディレクトリを相対パスで起動)を実行し、
+     mode-lineに絶対パス`/Users/haa15030/git/usilic/src/cpp/src/`が
+     展開されて出ること、生バイト列上でstandout開始エスケープ
+     (`ESC[7m`)がname/position/trailingそれぞれ独立に4回現れる
+     ことを確認(修正前は1回のみ)。(3) 同じくPTYで、ディレクトリ
+     一覧側はカーソル移動のたびにstandout runが現れる(ハイライト
+     継続)一方、ファイルを開いた後の内容表示にはカーソル行の
+     standout runが一切現れず、mode-line用の3本のみになることを
+     確認(pager側のハイライト消去を確認)。(4) Ubuntu 26.04
+     Dockerコンテナでも461件中451件通過、失敗10件はいずれも今回の
+     diffと無関係な既存の環境依存差。
+   - **未着手・範囲外(既知)**: (a)GUIウィンドウの左右余白/文字欠け、
+     (d)文字のぼやけ、はSDL2側の調査が必要なため次回対応。
+     legacy側の`ENV_PROG`右端ウォーターマーク相当の再現も上記の
+     通り対象外のまま。GUIモードでの実機ライブ確認は本セッション
+     を通じての既知課題(合成キー入力の不安定さ)により未実施、
+     実ターミナルモードでの確認で代替。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

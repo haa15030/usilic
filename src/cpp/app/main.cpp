@@ -131,6 +131,7 @@
 #include <cstring>
 #include <ctime>
 #include <deque>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <cmath>
@@ -1461,7 +1462,18 @@ int main(int argc, char **argv) {
 
   display.open();
 
-  std::string startDirectory = (argc > 1) ? argv[1] : ".";
+  // Resolved to an absolute path (textually only -- lexically_normal(),
+  // no symlink resolution, matching PathResolver's own established
+  // approach) before ever reaching DirectoryMode: a bare "." argument
+  // (the common no-argument-equivalent case) would otherwise show up
+  // verbatim as "." in the mode-line's directory-path field, unlike
+  // the CUI's own always-absolute display (confirmed against a real
+  // CUI screenshot). DirectoryMode::enterDirectory() itself does NOT
+  // do this resolution -- it only normalizes the trailing slash -- so
+  // relative-path callers elsewhere (tests, CP/MV/RM path prompts)
+  // keep working with whatever they already pass.
+  std::string startDirectory =
+      std::filesystem::absolute((argc > 1) ? argv[1] : ".").lexically_normal().string();
   if (!app.start(startDirectory)) {
     display.close();
     keyInput.close();

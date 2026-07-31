@@ -28,6 +28,17 @@ TEST_CASE("redraw: shows lines from the top and marks the cursor line") {
   CHECK(d.standoutAt(1, 0) == false);
 }
 
+TEST_CASE("setCursorHighlightEnabled(false): the cursor line is no longer reverse-video") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setCursorHighlightEnabled(false);
+  v.redraw();
+  CHECK(d.standoutAt(0, 0) == false);  // cursor is on line 0, but highlighting is off
+  CHECK(d.rowText(0).substr(0, 5) == "line0");  // content itself is unaffected
+}
+
 TEST_CASE("redraw: rows past the end of the list are left blank") {
   RecordingDisplay d(10, 20);
   ContentView v(d);
@@ -103,6 +114,45 @@ TEST_CASE("setModeLineFieldsProvider: fields that would overflow the display wid
     return {"this-name-is-way-too-long-to-fit.txt", "this-trailing-is-also-way-too-long-to-fit"};
   });
   CHECK(v.modeLineText() == "1/3 TOP");
+}
+
+TEST_CASE("renderModeLine: name/position/trailing are separate reverse-video runs with plain gaps between") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setModeLineFieldsProvider(
+      [](int) -> ContentView::ModeLineFields { return {"/tmp/dir/", "(ls)", /*fillTrailingToEdge=*/false}; });
+  v.redraw();
+
+  // "/tmp/dir/ 1/3 TOP (ls)" -- columns 0-8 name, 9 gap, 10-16 position, 17 gap, 18-21 trailing.
+  std::string row = d.rowText(5);
+  CHECK(row.substr(0, 22) == "/tmp/dir/ 1/3 TOP (ls)");
+  CHECK(d.standoutAt(5, 0) == true);    // '/' of name
+  CHECK(d.standoutAt(5, 8) == true);    // '/' at the end of name
+  CHECK(d.standoutAt(5, 9) == false);   // plain gap
+  CHECK(d.standoutAt(5, 10) == true);   // '1' of position
+  CHECK(d.standoutAt(5, 16) == true);   // 'P' of "TOP"
+  CHECK(d.standoutAt(5, 17) == false);  // plain gap
+  CHECK(d.standoutAt(5, 18) == true);   // '(' of trailing
+  CHECK(d.standoutAt(5, 21) == true);   // ')' of trailing
+  CHECK(d.standoutAt(5, 22) == false);  // past trailing -- not padded to the edge
+}
+
+TEST_CASE("renderModeLine: fillTrailingToEdge pads the trailing field's own reverse-video run to the right edge") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setModeLineFieldsProvider(
+      [](int) -> ContentView::ModeLineFields { return {"file.txt", "42 /tmp/", /*fillTrailingToEdge=*/true}; });
+  v.redraw();
+
+  // "file.txt 1/3 TOP 42 /tmp/" is 25 columns; padded with spaces (still standout) to fill 30.
+  std::string row = d.rowText(5);
+  CHECK(row.substr(0, 25) == "file.txt 1/3 TOP 42 /tmp/");
+  CHECK(d.standoutAt(5, 20) == true);  // inside the trailing field itself
+  CHECK(d.standoutAt(5, 29) == true);  // padding, still standout -- reaches the last column
 }
 
 TEST_CASE("lineIndexAtRow: -1 outside the viewport (above, below, or past content)") {
