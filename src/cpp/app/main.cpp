@@ -1451,7 +1451,15 @@ int main(int argc, char **argv) {
   // keep working with whatever they already pass.
   std::string startDirectory =
       std::filesystem::absolute((argc > 1) ? argv[1] : ".").lexically_normal().string();
-  if (!app.start(startDirectory)) {
+  // History-based cursor restoration (see DirectoryMode::enterDirectory()'s
+  // own comment) only applies to an argument-LESS launch -- legacy's
+  // own "resume last session" case. An explicit path argument
+  // (including ".") always starts at the top of that directory's
+  // listing, regardless of any position saved from an earlier,
+  // unrelated visit (a real report: launching with "." landed on a
+  // stale mid-list row instead of the top).
+  bool consultHistoryOnStart = (argc <= 1);
+  if (!app.start(startDirectory, consultHistoryOnStart)) {
     display.close();
     keyInput.close();
     std::cerr << "usilic: cannot list " << startDirectory << "\n";

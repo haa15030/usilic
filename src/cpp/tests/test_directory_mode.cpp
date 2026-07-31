@@ -190,6 +190,24 @@ TEST_CASE_FIXTURE(Fixture, "goBack: returns to the parent and restores the remem
   CHECK(saved->row == static_cast<int>(subdirIndex));
 }
 
+TEST_CASE_FIXTURE(Fixture, "enterDirectory: consultHistory=false always starts at the top, ignoring a saved position") {
+  REQUIRE(mode.enterDirectory(path()));
+  view.setCursorIndex(3);
+  mode.enterDirectory(std::string(path()) + "subdir1");  // leaves path() unvisited; save a position for it directly
+  History::CursorPosition saved;
+  saved.row = 3;
+  saved.totalRows = static_cast<int>(mode.entries().size());
+  history.setPosition(PositionCategory::Directory, path(), saved);
+
+  // With history consulted (the default, e.g. openSelected()/goBack()'s own use): restores row 3.
+  REQUIRE(mode.enterDirectory(path()));
+  CHECK(view.cursorIndex() == 3);
+
+  // Without it (main()'s own explicit-argument launch case): always the top, same saved entry notwithstanding.
+  REQUIRE(mode.enterDirectory(path(), /*consultHistory=*/false));
+  CHECK(view.cursorIndex() == 0);
+}
+
 TEST_CASE_FIXTURE(Fixture, "goBack: false when there is nothing to go back to") {
   REQUIRE(mode.enterDirectory(path()));
   CHECK_FALSE(mode.goBack());

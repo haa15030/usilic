@@ -721,7 +721,12 @@ class Application {
   // Lists `directory` (DirectoryMode::enterDirectory()) and makes it
   // the active mode. Ported from init_menu()'s initial directory
   // load. False if the initial `ls` fails.
-  bool start(const std::string &directory);
+  //
+  // consultHistory forwards straight to enterDirectory()'s own
+  // parameter (see its comment): main() passes false whenever it was
+  // launched with an explicit path argument, true only for an
+  // argument-less launch (legacy's own "resume last session" case).
+  bool start(const std::string &directory, bool consultHistory = true);
 
   // Resolves a single, non-leader-prefixed keypress to a Command.
   // Ported from the movement/Enter/^G/^S slice of get_m()'s

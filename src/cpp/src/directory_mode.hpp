@@ -72,11 +72,26 @@ class DirectoryMode {
 
   // Lists `path` (via ChildProcess + Configuration::commandFor(Ls),
   // forcing LC_ALL=C -- see parseLsLine()'s comment on why) and
-  // displays it in the owned ContentView, restoring a remembered
-  // cursor position from History if one exists for this exact path.
-  // False if the `ls` invocation failed (nonexistent/unreadable
-  // directory, no `ls` command configured).
-  bool enterDirectory(const std::string &path);
+  // displays it in the owned ContentView. If consultHistory is true
+  // (the default -- every existing caller: openSelected(), goBack(),
+  // ^Or reload), restores a remembered cursor position from History if
+  // one exists for this exact path; otherwise always starts at the top
+  // regardless of any saved position. False if the `ls` invocation
+  // failed (nonexistent/unreadable directory, no `ls` command
+  // configured).
+  //
+  // consultHistory=false exists for exactly one caller: main()'s own
+  // initial app.start() when launched with an EXPLICIT path argument
+  // (including "."). History's own class comment documents it as
+  // persisting cursor position "across runs" -- legacy's own
+  // argument-less-launch resume feature -- but that's specifically an
+  // argument-LESS-launch feature: typing an explicit path means "show
+  // me this directory now," not "resume my last session," and
+  // shouldn't silently pull in a position saved from some earlier,
+  // unrelated visit to that same path (a real report: launching with
+  // "." landed on a stale mid-list row instead of the top, confusing
+  // since nothing about that particular launch was a history replay).
+  bool enterDirectory(const std::string &path, bool consultHistory = true);
 
   const std::string &currentDirectory() const;
   const std::vector<DirectoryEntry> &entries() const;

@@ -86,9 +86,9 @@ void Application::layoutViews() {
   promptEditor_.setField(display_.rows() - 1, 0, std::max(1, display_.columns()));
 }
 
-bool Application::start(const std::string &directory) {
+bool Application::start(const std::string &directory, bool consultHistory) {
   currentMode_ = ApplicationMode::Directory;
-  return directoryMode_.enterDirectory(directory);
+  return directoryMode_.enterDirectory(directory, consultHistory);
 }
 
 // Ported from get_m()'s switch(m), cross-checked directly against

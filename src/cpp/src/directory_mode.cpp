@@ -1,5 +1,6 @@
 #include "directory_mode.hpp"
 
+#include <optional>
 #include <sstream>
 
 #include "child_process.hpp"
@@ -25,7 +26,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
   });
 }
 
-bool DirectoryMode::enterDirectory(const std::string &path) {
+bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory) {
   ProgramCommand ls = configuration_.commandFor(ConfiguredRole::Ls);
   if (ls.argv.empty()) return false;
 
@@ -66,7 +67,8 @@ bool DirectoryMode::enterDirectory(const std::string &path) {
   markedIndices_.clear();  // marks are scoped to the listing they were made in; a fresh `ls` invalidates them
   view_.setLines(std::move(lines));
 
-  if (auto pos = history_.positionFor(PositionCategory::Directory, currentDirectory_)) {
+  auto pos = consultHistory ? history_.positionFor(PositionCategory::Directory, currentDirectory_) : std::nullopt;
+  if (pos) {
     int idx = pos->row;
     if (idx < 0) idx = 0;
     if (idx >= static_cast<int>(entries_.size())) idx = static_cast<int>(entries_.size()) - 1;
