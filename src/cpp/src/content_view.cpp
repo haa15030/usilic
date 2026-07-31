@@ -183,7 +183,22 @@ std::string ContentView::modeLineText() const {
 
 std::string ContentView::scrollModeLineText() const {
   int total = static_cast<int>(lines_.size());
-  int current = total > 0 ? topIndex_ + 1 : 0;
+  int bottomVisible = std::min(topIndex_ + std::max(height_, 0), total);
+  int current;
+  if (total <= 0) {
+    current = 0;
+  } else if (bottomVisible >= total) {
+    // Scrolled (or coasted) all the way to the end -- topIndex_ itself
+    // caps out at total-height_, so it can never reach `total` on its
+    // own the way cursorIndex_ can in modeLineText(); checking
+    // bottomVisible instead is what makes coasting to the bottom show
+    // END, matching a real report that it stayed stuck on a
+    // percentage there while plain 'j'/'s' navigation (modeLineText())
+    // correctly reached END.
+    current = total;
+  } else {
+    current = topIndex_ + 1;  // topIndex_==0 here naturally shows TOP
+  }
   return ModeLine::format(current, total);
 }
 

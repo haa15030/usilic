@@ -271,3 +271,17 @@ TEST_CASE("scrollModeLineText: uses topIndex_ (the viewport's top line), not cur
   CHECK(v.modeLineText() == "01/10 TOP");   // unaffected -- still cursorIndex_-based
   CHECK(v.scrollModeLineText() == "06/10 60%");  // topIndex_ + 1 = 6
 }
+
+TEST_CASE("scrollModeLineText: reaching the bottom boundary shows END, not a percentage") {
+  // topIndex_ itself caps out at total-height_ (7 here), which never
+  // equals totalLines the way cursorIndex_ does in modeLineText() --
+  // a real report found coasting all the way down stayed stuck on a
+  // percentage instead of reaching END like plain 'j'/'s' navigation.
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(10));
+  v.setCursorIndex(0);
+  v.setTopIndex(7);  // maxTop = 10 - 3 = 7 -- fully scrolled to the end
+  CHECK(v.scrollModeLineText() == "10/10 END");
+}

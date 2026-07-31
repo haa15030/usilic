@@ -4736,6 +4736,42 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      (以前のMenlo+ヒラギノ角ゴシックでの描画と字形が明確に異なる
      ことを目視確認)。コミットはpush保留、ユーザーの実機評価待ち。
 
+83. **2026-07-31: 慣性s/wで最下行まで到達してもmode-lineがENDにならない
+    不具合を修正**
+   - ユーザー報告: 「jの挙動に合うよう慣性sの最下行画面ではENDを希望
+     (現状カーソル位置が最上行)」。通常の's'/'j'キーでのカーソル
+     移動(`modeLineText()`)は最下行到達で正しくENDになるのに対し、
+     慣性スクロール(`scrollModeLineText()`)で画面を一番下まで
+     コーストさせてもパーセント表示のままでENDにならない、という
+     項目81の実装漏れ。
+   - **原因**: `scrollModeLineText()`は`topIndex_+1`を`current`として
+     `ModeLine::format()`に渡していたが、`topIndex_`自体は
+     `total-height_`が上限(ビューポート1画面分の行数だけ余白が残る)
+     のため、`total`(総行数)に一致することが構造的に無い
+     (`height_>1`の通常ケースでは必ず`total`未満で頭打ちになる)。
+     `ModeLine::format()`の`END`判定は`currentLine>=totalLines`
+     なので、この経路では永久にENDへ到達できなかった。`TOP`側は
+     `topIndex_==0`のとき`current==1`となり偶然`currentLine<=1`の
+     条件に一致するため問題無く動いていた、という非対称な不具合
+     だった。
+   - **修正**: `ContentView::scrollModeLineText()`で、`current`の
+     算出を`topIndex_+1`固定から、まず`bottomVisible`(=
+     `min(topIndex_+height_, total)`、項目77で使っていたのと同じ
+     ビューポート最下行の値)が`total`に達しているかを先に判定する
+     方式に変更。達していれば`current=total`(→END)、そうでなければ
+     従来通り`topIndex_+1`(`topIndex_==0`のときは自然にTOPになる)。
+     `ModeLine::format()`自体(シグネチャ・判定順)は変更していない。
+   - **検証**: doctest 440件全通過(Mac/Ubuntu 26.04双方、既存の
+     環境依存10件の失敗は今回のdiffと無関係)。新規doctest
+     (`setTopIndex(7)`、10行中3行ビューポートで`maxTop=7`=完全に
+     下までスクロールした状態)で`"10/10 END"`になることを確認。
+     コーストのライブ描画(`renderScrolled()`)自体は`flush()`経由の
+     `USILICGUIDEBUG`診断フックが届かない経路のため実機の生画面では
+     未確認(コードパス自体は項目78で実機確認済みの配線から変更
+     無し、`ContentView::scrollModeLineText()`の戻り値だけが変わる
+     ため、doctestでの検証で妥当性は担保できていると判断)。コミットは
+     push保留、ユーザーの実機評価待ち。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

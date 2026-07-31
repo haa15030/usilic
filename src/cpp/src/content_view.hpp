@@ -152,7 +152,13 @@ class ContentView {
   // actually on screen during a scroll, at the cost of it no longer
   // meaning "the selected line" while actively scrolling (it goes
   // back to meaning that the moment modeLineText() takes over again,
-  // once the scroll settles).
+  // once the scroll settles). Reaching the BOTTOM boundary (the
+  // viewport's own bottom row shows the list's last line) reports END
+  // same as modeLineText() does -- checked separately from topIndex_
+  // itself, since topIndex_ caps out at total-height_ and so can never
+  // reach totalLines the way cursorIndex_ can (a real report: coasting
+  // to the very bottom stayed stuck on a percentage instead of
+  // reaching END the way plain 'j'/'s' navigation already did).
   std::string scrollModeLineText() const;
 
  private:
