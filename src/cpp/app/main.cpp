@@ -1102,6 +1102,22 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           coastLevel = 0;
           coastDirection = 0;
           pixelOffset = 0;
+          // A coast that starts AND hits this boundary within the
+          // SAME frame (easy to trigger: each queued 's'/'w' repeat
+          // the key-consumption loop already drained this frame
+          // accelerates coastLevel before this physics block even
+          // runs, and a high enough level can cross the whole
+          // remaining distance to a boundary in one 16ms budget) never
+          // takes the render-mode branch's "actively scrolling" arm
+          // below at all -- topIndex_ moved, but wasActivelyScrolling
+          // was never set true to say so. Without this line, the
+          // settled branch's clampViewport() then sees topIndex_ (now
+          // at the boundary) sitting ahead of a stale, never-updated
+          // cursorIndex_ and snaps topIndex_ straight back to it,
+          // discarding the whole scroll -- a real report of coasting
+          // to the very bottom snapping back up near the top the
+          // instant it got there traced back to exactly this gap.
+          wasActivelyScrolling = true;
           break;
         }
       } while (std::chrono::steady_clock::now() < frameDeadline);
