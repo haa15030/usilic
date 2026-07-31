@@ -4970,6 +4970,67 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
    - **検証**: doctest 451件全通過(Mac/Ubuntu 26.04双方、既存の
      環境依存10件の失敗は今回のdiffと無関係)。コミットはpush保留。
 
+88. **2026-07-31: mode-lineに「現在選択中のファイルのフルネーム」を
+    パンくず表示として追加**
+   - 項目77で実装したmode-line(最下行の「現在行/総行数 N%」)について
+     「あとはファイル名表示くらいしかないのでは？」とユーザーから確認、
+     選択肢(現在選択中のファイルのフルネーム(推奨)/現在のディレクトリ
+     パス/元のC版通り(通常は"."のみ))を提示したAskUserQuestionが拒否
+     されたため直接回答を得た。文面がやや曖昧だったが、提示した選択肢の
+     ラベルをそのまま引用する形だったため、推奨していた「現在選択中の
+     ファイルのフルネーム」を選んだものと解釈して実装した(disp_window()
+     の`name`フィールドが担っていた表示のうち、この1点のみが対象。
+     前モードのパンくず・「Mark set」表示・ENTRY入力欄・PROGRAM名表示は
+     引き続き範囲外、`ContentView`のクラスコメントに明記済み)。
+   - **設計**: `ContentView`自体は「行の表示用フルネーム」を知らない
+     (`Line`は`ls -l`整形済みの表示行全体しか持たず、パース済みの
+     ファイル名は`DirectoryMode::DirectoryEntry::name`側にしかない)。
+     mode-line描画の起点である`ContentView`にこの知識を持たせずに
+     済ませるため、`BreadcrumbProvider = std::function<std::string(int
+     cursorIndex)>`というコールバック型を追加し、`setBreadcrumbProvider()`
+     で登録する形にした。カーソル移動の呼び出し箇所(`moveUp`/`moveDown`/
+     `scrollLineUp`/`scrollLineDown`/`pageUp`/`pageDown`/`goToTop`/
+     `goToBottom`等、多数散在)を個別にフックする必要が無く、mode-line
+     描画のたびに`cursorIndex_`を渡して呼び出すだけで常に「今選択されて
+     いる行」を反映できる ― mode-line自体を`ContentView`に持たせた
+     項目77の設計判断と同じ理由。`DirectoryMode`のコンストラクタで
+     一度だけ`entries_[cursorIndex].name`を返すラムダを登録する
+     (`enterDirectory()`のたびに`entries_`が丸ごと再構築されるが、
+     ラムダは`this`経由で`entries_`を都度参照するので再登録は不要)。
+   - `modeLineText()`/`scrollModeLineText()`はどちらも新設の
+     `composeModeLineRow(positionText)`を経由するよう変更、
+     `breadcrumb + " " + positionText`を返す(プロバイダ未設定/空文字列
+     なら従来通り`positionText`のみ)。
+   - **オーバーフロー時は切り詰めず丸ごと省略**: 結合後の文字列が
+     `display_.columns()`を超える場合、パンくず自体を丸ごと落とす方針
+     にした。バイトオフセットでの機械的な切り詰めはUTF-8のマルチバイト
+     文字境界を割る危険があり(`ContentView`はクラスコメント通り元々
+     charsetを一切意識しない設計のため、幅計算を持ち込むのは避けたい)、
+     さらに実端末上では`TerminalDisplay::write()`自体に境界チェックが
+     無いため、オーバーフローした文字列は次の画面行へ折り返されて
+     その行を破壊する実害がある。「見た目が窮屈になる」より安全な
+     選択として省略を選んだ。
+   - **検証**: (1) doctest新規5件追加(`ContentView`側3件:
+     プロバイダあり/空文字列/未設定の3パターン、`display.columns()`を
+     超える場合に省略されることを確認する1件、+境界値のTOP/END確認;
+     `DirectoryMode`側1件: 半角スペースを含む実ファイル名
+     "file with space.txt"が正しくパンくずとして現れることを確認)、
+     計456件全通過(Mac)。(2) 実PTY(`pty.fork()`+`TIOCSWINSZ`)で
+     実際に`usilic <tmpdir>`を起動し、生バイト列で mode-line行が
+     `./ 1/5 TOP`→(^N×1)`../ 2/5 40%`→(^N×2)`file with space.txt
+     3/5 60%`と変化することを確認(doctestでは検証できない、実際の
+     画面描画パイプライン全体を通した確認)。(3) Ubuntu 26.04
+     Dockerコンテナ(`tcb-dev`、`/tmp/build_check_cpp`へ`docker cp`
+     してビルド)でも455件中445件通過、失敗10件はいずれもzip/ロケール/
+     locate/manという今回のdiffと無関係な既存の環境依存差(項目一覧の
+     累積分と一致)であることを確認。
+   - **範囲外(既知)**: GUIモード(`GraphicalDisplay`)でのパンくず表示は
+     `renderScrolled()`経由で`modeLineText()`/`scrollModeLineText()`の
+     戻り値をそのまま描画に使う設計のため、ロジックは共有されコード上は
+     反映されるはずだが、本セッションの合成GUIキー入力の不安定さ(既出の
+     既知課題)により実GUI上でのライブ確認はできていない。実ターミナル
+     モードでの確認で代替した。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

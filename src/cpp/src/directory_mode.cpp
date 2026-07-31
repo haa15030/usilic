@@ -8,7 +8,18 @@ namespace fm {
 
 DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &history,
                               const Configuration &configuration)
-    : view_(view), modeStack_(modeStack), history_(history), configuration_(configuration) {}
+    : view_(view), modeStack_(modeStack), history_(history), configuration_(configuration) {
+  // Mode-line breadcrumb (see ContentView::setBreadcrumbProvider()'s
+  // own comment): the selected entry's real filename, not the whole
+  // `ls -l`-formatted display line -- exactly what a long name
+  // truncated in the listing column itself would otherwise hide.
+  // Registered once here rather than re-set on every enterDirectory()
+  // call since it's a live callback into entries_, not a snapshot.
+  view_.setBreadcrumbProvider([this](int cursorIndex) -> std::string {
+    if (cursorIndex < 0 || cursorIndex >= static_cast<int>(entries_.size())) return "";
+    return entries_[cursorIndex].name;
+  });
+}
 
 bool DirectoryMode::enterDirectory(const std::string &path) {
   ProgramCommand ls = configuration_.commandFor(ConfiguredRole::Ls);

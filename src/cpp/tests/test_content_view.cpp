@@ -48,6 +48,43 @@ TEST_CASE("lineIndexAtRow: maps a display row within the viewport to a line inde
   CHECK(v.lineIndexAtRow(6) == 4);
 }
 
+TEST_CASE("setBreadcrumbProvider: modeLineText prefixes the provider's result") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setBreadcrumbProvider([](int cursorIndex) { return "file" + std::to_string(cursorIndex) + ".txt"; });
+  CHECK(v.modeLineText() == "file0.txt 1/3 TOP");
+  v.setCursorIndex(2);
+  CHECK(v.modeLineText() == "file2.txt 3/3 END");
+}
+
+TEST_CASE("setBreadcrumbProvider: an empty result from the provider omits the breadcrumb") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setBreadcrumbProvider([](int) { return ""; });
+  CHECK(v.modeLineText() == "1/3 TOP");
+}
+
+TEST_CASE("setBreadcrumbProvider: no provider set leaves modeLineText unchanged") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  CHECK(v.modeLineText() == "1/3 TOP");
+}
+
+TEST_CASE("setBreadcrumbProvider: a breadcrumb that would overflow the display width is dropped, not truncated") {
+  RecordingDisplay d(10, 20);  // narrow display -- "1/3 TOP" alone is 7 columns, leaving 13 for "name "
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setBreadcrumbProvider([](int) { return "this-name-is-way-too-long-to-fit.txt"; });
+  CHECK(v.modeLineText() == "1/3 TOP");
+}
+
 TEST_CASE("lineIndexAtRow: -1 outside the viewport (above, below, or past content)") {
   RecordingDisplay d(10, 20);
   ContentView v(d);

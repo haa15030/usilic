@@ -92,6 +92,27 @@ TEST_CASE_FIXTURE(Fixture, "selectedEntry: tracks the ContentView cursor") {
   CHECK(last->name == mode.entries().back().name);
 }
 
+TEST_CASE_FIXTURE(Fixture, "mode-line breadcrumb: shows the selected entry's real filename") {
+  REQUIRE(mode.enterDirectory(path()));
+
+  int idx = -1;
+  for (std::size_t i = 0; i < mode.entries().size(); i++) {
+    if (mode.entries()[i].name == "file with space.txt") {
+      idx = static_cast<int>(i);
+      break;
+    }
+  }
+  REQUIRE(idx >= 0);  // confirms the fixture layout this test relies on
+
+  view.setCursorIndex(idx);
+  // The mode-line breadcrumb is the parsed filename itself (not the
+  // whole `ls -l`-formatted line), and stays correct even when the
+  // name contains a space -- exercising exactly the kind of name
+  // is_write()/get_col() historically mishandled (see CLAUDE.md item
+  // 13), though DirectoryEntry::name is already parsed by this point.
+  CHECK(view.modeLineText().rfind("file with space.txt ", 0) == 0);
+}
+
 TEST_CASE_FIXTURE(Fixture, "openSelected: descending into a subdirectory pushes a ModeStack frame") {
   REQUIRE(mode.enterDirectory(path()));
   CHECK_FALSE(mode.canGoBack());

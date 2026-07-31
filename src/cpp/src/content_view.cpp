@@ -233,7 +233,7 @@ void ContentView::renderLine(const Line &line, bool marked) {
 std::string ContentView::modeLineText() const {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
-  return ModeLine::format(current, total);
+  return composeModeLineRow(ModeLine::format(current, total));
 }
 
 std::string ContentView::scrollModeLineText() const {
@@ -254,7 +254,19 @@ std::string ContentView::scrollModeLineText() const {
   } else {
     current = topIndex_ + 1;  // topIndex_==0 here naturally shows TOP
   }
-  return ModeLine::format(current, total);
+  return composeModeLineRow(ModeLine::format(current, total));
+}
+
+void ContentView::setBreadcrumbProvider(BreadcrumbProvider provider) { breadcrumbProvider_ = std::move(provider); }
+
+std::string ContentView::composeModeLineRow(const std::string &positionText) const {
+  if (!breadcrumbProvider_) return positionText;
+  std::string breadcrumb = breadcrumbProvider_(cursorIndex_);
+  if (breadcrumb.empty()) return positionText;
+  std::string row = breadcrumb + " " + positionText;
+  int cols = display_.columns();
+  if (cols > 0 && static_cast<int>(row.size()) > cols) return positionText;  // see this method's own header comment
+  return row;
 }
 
 // Ported from print_line()'s current-line/total-line/percent display
