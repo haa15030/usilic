@@ -24,6 +24,7 @@
 #include "locate_mode.hpp"
 #include "man_mode.hpp"
 #include "mode_stack.hpp"
+#include "path_resolver.hpp"
 #include "program_mode.hpp"
 #include "shell.hpp"
 
@@ -98,7 +99,20 @@ enum class Command {
   // both gaps fixed together here, since a toggle key is meaningless
   // if the persisted value it toggles never actually reaches the
   // Display in the first place.
-  ToggleScrollMode
+  ToggleScrollMode,
+  // K-45/K-47 (^Xf / ^Xd, M_lfile2/M_ldir2 -- "Input file/directory
+  // name"): prompts for a path and opens it, landing in File or
+  // Directory mode depending on what PathResolver says it actually
+  // is. Two distinct keys/commands (matching usilicrc's own two K-
+  // numbers, and two likely-different prompt labels down the line)
+  // but one shared execution path, since resolving "what kind of
+  // thing is this path" doesn't depend on which key started the
+  // prompt -- see startPathInputPrompt()'s own comment. The "Select"
+  // counterparts (K-46/K-48, ^X^F/^X^D, M_lfile/M_ldir) are a LIST-
+  // based completion picker, not a plain text prompt, and are NOT
+  // covered here -- future work, see CLAUDE.md.
+  StartFileInput,
+  StartDirectoryInput
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -744,8 +758,17 @@ class Application {
   // `display`/`encoding` regardless of what's passed in, so the
   // Shell session always matches this Application's own geometry and
   // charset instead of needing them specified twice.
+  // homeDirectory: forwarded to the owned PathResolver (K-45/K-47's
+  // ^Xf/^Xd path prompts, see StartFileInput's own comment) -- no
+  // hidden getenv("HOME") call here, matching PathResolver's own "no
+  // hidden global state" rule (already established for Configuration/
+  // Shell/etc); the caller (main()) reads the real environment.
+  // Defaulted to "" so this doesn't break existing callers that don't
+  // care about it (~ expansion in a typed path just won't do anything
+  // useful in that case).
   Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
-              Charset::Encoding encoding, int width, ShellOptions shellOptions = ShellOptions{});
+              Charset::Encoding encoding, int width, ShellOptions shellOptions = ShellOptions{},
+              std::string homeDirectory = "");
 
   // Lists `directory` (DirectoryMode::enterDirectory()) and makes it
   // the active mode. Ported from init_menu()'s initial directory
@@ -947,6 +970,7 @@ class Application {
   bool startRemovePrompt();
   bool startExitPrompt();
   bool startDuPrompt();
+  bool startPathInputPrompt();
   bool feedPromptByte(int byte);
   bool submitPrompt();
   void cancelPrompt();
@@ -960,11 +984,13 @@ class Application {
   bool executeRemove(const std::string &confirmation);
   bool executeExit(const std::string &confirmation);
   bool executeDu(const std::string &path);
+  bool executePathInput(const std::string &path);
   bool executeEdit();
   bool startHelp();
   std::vector<std::string> wrapHelpText(int width) const;
 
   Display &display_;  // handleResize()'s own rows()/columns() lookup -- no other member currently needs this
+  PathResolver pathResolver_;  // ^Xf/^Xd path prompts, see the constructor's own homeDirectory comment
   Charset::Encoding encoding_;  // wrapHelpText()'s own PipeBuffer construction -- no other member currently needs this
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   History &history_;  // startListBrowser()'s own recentEntries() lookup -- no other member currently needs this
@@ -1042,7 +1068,8 @@ class Application {
     MoveDestination,
     RemoveConfirm,
     ExitConfirm,
-    DuPath
+    DuPath,
+    PathInput  // K-45/K-47's shared prompt kind, see Command::StartFileInput's own comment
   };
   PromptKind promptKind_ = PromptKind::None;
 };

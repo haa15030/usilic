@@ -24,8 +24,10 @@ const char *const kHelpPattern = "^  [1-6][1-6]+\\.";
 }  // namespace
 
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
-                          Charset::Encoding encoding, int width, ShellOptions shellOptions)
+                          Charset::Encoding encoding, int width, ShellOptions shellOptions,
+                          std::string homeDirectory)
     : display_(display),
+      pathResolver_(std::move(homeDirectory)),
       encoding_(encoding),
       configuration_(configuration),
       history_(history),
@@ -224,6 +226,10 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::StartMove);
       case 'r':  // ^X r : RM
         return handleCommand(Command::StartRemove);
+      case 'f':  // ^X f : FILE (input file name)
+        return handleCommand(Command::StartFileInput);
+      case 'd':  // ^X d : DIR (input directory name)
+        return handleCommand(Command::StartDirectoryInput);
       case kControlC:  // ^X ^C : exit
         return handleCommand(Command::StartExit);
       case '(':  // ^X ( : begin macro recording
@@ -510,6 +516,9 @@ bool Application::handleCommand(Command command) {
       history_.setSmoothScrollEnabled(enabled);  // persisted across runs, see History's own field comment
       return true;
     }
+    case Command::StartFileInput:
+    case Command::StartDirectoryInput:
+      return startPathInputPrompt();
     case Command::None:
       return false;
   }
@@ -795,6 +804,20 @@ bool Application::startDuPrompt() {
   return true;
 }
 
+// K-45/K-47 (^Xf/^Xd, "Input file/directory name") -- unlike
+// startDuPrompt() and friends, deliberately NOT gated to Directory
+// mode: legacy's own M_lfile2/M_ldir2 are general "type any path,
+// land wherever it goes" navigation, usable from File/Man/Grep/etc
+// just as much as from a directory listing. Both keys share this one
+// prompt/execute pair since PathResolver already decides file-vs-
+// directory from the path itself, not from which key was pressed.
+bool Application::startPathInputPrompt() {
+  promptKind_ = PromptKind::PathInput;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
 // Ported from m_list()'s dispatch, narrowed to the two least
 // ambiguous categories (see class comment). Not prompt-driven -- this
 // is an immediate action, like archive-browsing's auto-detection,
@@ -927,6 +950,8 @@ bool Application::submitPrompt() {
       return executeExit(text);
     case PromptKind::DuPath:
       return executeDu(text);
+    case PromptKind::PathInput:
+      return executePathInput(text);
     case PromptKind::None:
       return false;
   }
@@ -1090,6 +1115,41 @@ bool Application::executeDu(const std::string &path) {
     return false;
   }
   currentMode_ = ApplicationMode::Du;
+  return true;
+}
+
+// Ported from mode.c's M_lfile/M_ldir handling: resolves the typed
+// path (~ expansion, ./ and ../ cleanup, see PathResolver's own class
+// comment) and lands in Directory or File mode depending on what it
+// actually is. Deliberately simpler than openSelectedEntry(): no
+// EXEC-suffix or archive-format auto-detection here (legacy's own
+// M_lfile2 doesn't do that either -- typing a path is "load this as
+// plain text/a listing," not "open it the smart way an existing
+// listing ENTRY would be," which is Enter's own, separate job). False
+// for an empty, nonexistent, or unreadable path.
+bool Application::executePathInput(const std::string &path) {
+  if (path.empty()) {
+    activeView().redraw();
+    return false;
+  }
+  ResolvedPath resolved = pathResolver_.resolve(path);
+  if (!resolved.exists) {
+    activeView().redraw();
+    return false;
+  }
+  if (resolved.isDirectory) {
+    if (!directoryMode_.enterDirectory(resolved.path)) {
+      activeView().redraw();
+      return false;
+    }
+    currentMode_ = ApplicationMode::Directory;
+    return true;
+  }
+  if (!fileMode_.loadFile(resolved.path)) {
+    activeView().redraw();
+    return false;
+  }
+  currentMode_ = ApplicationMode::File;
   return true;
 }
 

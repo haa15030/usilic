@@ -904,6 +904,38 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' exits immediately outside Directory mo
   CHECK(app.wantsExit());
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompts, and a typed FILE path switches to File mode") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('f', std::nullopt));   // f
+
+  for (char c : (root / "plain.txt").string()) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
+  CHECK(app.feedByte(0x0d, std::nullopt));  // ^M submits
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X d prompts, and a typed DIR path switches to Directory mode") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('d', std::nullopt));   // d
+
+  for (char c : (root / "subdir").string()) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f/d with a nonexistent path fails cleanly, staying in the current mode") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte('f', std::nullopt));
+
+  for (char c : std::string("/no/such/path/at/all")) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
 // runGuiPhase()'s w/s inertial-scroll trigger (see CLAUDE.md's
 // 2026-07-31 note) checks this before hijacking a plain 'w'/'s' byte,
 // so ESC s (StartShell) and typing "w"/"s" into a prompt still work.

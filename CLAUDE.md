@@ -5476,6 +5476,46 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      実装済みなのは約半数程度と見られる(正確な集計は次回の棚卸しで
      行う)。
 
+95. **2026-07-31: K-45/K-47(^Xf/^Xd、FILE/DIR名の入力)を実装 ―
+    `PathResolver`を初めてApplicationへ配線**
+   - 項目94の続き。未実装リストのうち、`PathResolver`クラス自体は
+     既に実装・テスト済みだったが本ポートのどこからも呼ばれていない
+     (完全に浮いていた)と判明していたK-45〜48(FILE/DIR名の入力/
+     選択)に着手。「選択」バリエーション(K-46/48、^X^F/^X^D、
+     `M_lfile`/`M_ldir`)はLISTベースの補完ピッカーが必要なため
+     見送り、まず「入力」バリエーション(K-45/47、^Xf/^Xd、
+     `M_lfile2`/`M_ldir2`)のみ実装した。
+   - **設計**: 入力されたパスが実際にファイルかディレクトリかは
+     `PathResolver::resolve()`が既に判定してくれるため、^Xf/^Xdの
+     どちらから入っても実行ロジックは共有(`PromptKind::PathInput`
+     1種類、`executePathInput()`1つ)にした。legacy側もmode.c内で
+     `M_lfile`/`M_ldir`系を明確に2系統に分けているが、本ポートでは
+     「型を機械的に判定してから正しいModeへ振り分ける」という
+     `PathResolver`自身の設計意図に素直に従い、あえて統合した
+     (`Command::StartFileInput`/`StartDirectoryInput`という2つの
+     Commandは維持し、usilicrc側の2つのK番号との対応関係は保った
+     まま)。`openSelectedEntry()`(一覧のエントリをEnterで開く経路)
+     とは異なり、EXEC拡張子判定やアーカイブ形式の自動検出は行わない
+     (legacyの`M_lfile2`自体もそこまではしない ― 「パスを入力する」
+     ことと「既存の一覧エントリを賢く開く」ことは別の関心事という
+     整理)。
+   - **配線**: `PathResolver`はコンストラクタで`homeDirectory`
+     (`~`展開用、"隠れたgetenv()呼び出しをしない"という既存の
+     Configuration/Shell等と同じ流儀)を要求するため、
+     `Application`のコンストラクタに`std::string homeDirectory = ""`
+     引数を追加(デフォルト空文字列、既存の全呼び出し元への影響を
+     避けるため)、`main()`側で既に取得済みだった`homeEnv`
+     (`~/.usilic/`のパス構築に使っていたのと同じ`getenv("HOME")`
+     の結果)をそのまま渡すよう変更。
+   - **検証**: doctest新規3件追加(^Xf→File mode、^Xd→Directory
+     mode、存在しないパスで失敗しモード変更無し)、計476件全通過
+     (Mac)。実PTYで実際に`^Xf`+`utf8.hpp`のフルパスでファイル表示
+     ("01/31 TOP"、項目89のPTY検証と同じ行数で一致)、`^Xd`+
+     `tests/`ディレクトリのフルパスで一覧表示("01/39 TOP")へ
+     正しく切り替わることを確認。Ubuntu 26.04でも475件中465件通過、
+     失敗10件はいずれも今回のdiffと無関係な既存の環境依存差。
+   - 引き続き未実装(K-46/48含む項目94の残りリストは変更無し)。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

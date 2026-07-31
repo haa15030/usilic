@@ -1353,7 +1353,8 @@ int main(int argc, char **argv) {
   fm::ShellOptions shellOptions;
   if (const char *shellEnv = std::getenv("SHELL"); shellEnv && *shellEnv) shellOptions.argv = {shellEnv};
 
-  fm::Application app(display, keyInput, history, configuration, encoding, display.columns(), shellOptions);
+  fm::Application app(display, keyInput, history, configuration, encoding, display.columns(), shellOptions,
+                       homeEnv ? std::string(homeEnv) : std::string());
 
   // Ported from str.c's set_help(): English (HELP) vs a genuine
   // Japanese translation (HELP.jp), chosen by charset the same way
