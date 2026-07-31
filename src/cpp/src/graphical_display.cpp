@@ -197,8 +197,21 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
     }
   }
 
-  SDL_Window *window = SDL_CreateWindow("usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                         cellWidth * columns, cellHeight * rows, SDL_WINDOW_SHOWN);
+  // SDL_WINDOW_ALLOW_HIGHDPI: without it, on a Retina/HiDPI display
+  // SDL creates the window's actual drawable at LOGICAL point
+  // resolution, and the OS compositor upscales that lower-resolution
+  // framebuffer to fill the real physical pixels -- exactly the kind
+  // of soft/blurry text a real report described ("文字がぼやけ気味"),
+  // and uniform across every draw call in this file (confirmed by
+  // reading both renderCell() and renderTextRun(): they're otherwise
+  // near-identical TTF_RenderUTF8_Blended()+fitGlyphRect() call
+  // sequences, so a text-crispness difference between them isn't a
+  // per-path rendering bug -- this compositor-level upscale is a
+  // window/renderer-wide effect neither path could individually cause
+  // or avoid).
+  SDL_Window *window =
+      SDL_CreateWindow("usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, cellWidth * columns,
+                        cellHeight * rows, SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
   if (!window) {
     if (fallbackFont) TTF_CloseFont(fallbackFont);
     TTF_CloseFont(font);
@@ -215,6 +228,22 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
     SDL_Quit();
     return nullptr;
   }
+  // The window was created in logical POINTS (cellWidth*columns etc,
+  // used throughout this file for all cell/row/col pixel math); the
+  // renderer's actual drawable is now in physical PIXELS (2x/3x on a
+  // Retina display, thanks to ALLOW_HIGHDPI above). Scaling the
+  // renderer by drawable/window keeps every existing pixel coordinate
+  // in this file meaning "one logical point" while SDL internally
+  // renders at the higher physical resolution -- the standard SDL2
+  // pattern for adding HiDPI support without rewriting all downstream
+  // pixel math to a different unit.
+  int windowWidthPoints = 0, windowHeightPoints = 0;
+  int drawableWidthPixels = 0, drawableHeightPixels = 0;
+  SDL_GetWindowSize(window, &windowWidthPoints, &windowHeightPoints);
+  SDL_GetRendererOutputSize(renderer, &drawableWidthPixels, &drawableHeightPixels);
+  if (windowWidthPoints > 0 && windowHeightPoints > 0)
+    SDL_RenderSetScale(renderer, static_cast<float>(drawableWidthPixels) / windowWidthPoints,
+                        static_cast<float>(drawableHeightPixels) / windowHeightPoints);
 
   // std::unique_ptr<GraphicalDisplay>(new ...): the constructor is
   // private (callers must go through this factory, matching
@@ -422,8 +451,17 @@ void GraphicalDisplay::flush() {
     // cell fill erasing the right half of wide glyphs, see its own
     // comment) get confirmed from within this sandbox at all, since
     // screencapture itself was unavailable here.
-    SDL_Surface *shot = SDL_CreateRGBSurfaceWithFormat(0, impl_->columns * impl_->cellWidth,
-                                                        impl_->rows * impl_->cellHeight, 32, SDL_PIXELFORMAT_RGBA32);
+    // Sized from the renderer's own OUTPUT (physical pixels, which can
+    // now be larger than columns*cellWidth/rows*cellHeight's logical
+    // POINTS since SDL_WINDOW_ALLOW_HIGHDPI -- see create()'s own
+    // comment) rather than the logical cell grid: SDL_RenderReadPixels()
+    // reads the actual drawable, and a destination surface sized for
+    // the smaller logical dimensions would overflow/truncate against
+    // its own pitch on a HiDPI display.
+    int outputWidthPixels = 0, outputHeightPixels = 0;
+    SDL_GetRendererOutputSize(impl_->renderer, &outputWidthPixels, &outputHeightPixels);
+    SDL_Surface *shot =
+        SDL_CreateRGBSurfaceWithFormat(0, outputWidthPixels, outputHeightPixels, 32, SDL_PIXELFORMAT_RGBA32);
     if (shot) {
       if (SDL_RenderReadPixels(impl_->renderer, nullptr, SDL_PIXELFORMAT_RGBA32, shot->pixels, shot->pitch) == 0)
         SDL_SaveBMP(shot, (std::string(dbg) + ".bmp").c_str());

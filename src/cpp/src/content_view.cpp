@@ -40,6 +40,21 @@ void ContentView::setTopIndex(int index) {
   topIndex_ = std::clamp(index, 0, maxTop);
 }
 
+bool ContentView::stepTopIndex(int direction) {
+  if (height_ <= 0 || lines_.empty()) return false;
+  int maxTop = std::max(0, static_cast<int>(lines_.size()) - height_);
+  if (direction > 0) {
+    if (topIndex_ >= maxTop) return false;
+    topIndex_++;
+    cursorIndex_ = std::min(topIndex_ + height_ - 1, static_cast<int>(lines_.size()) - 1);
+  } else if (direction < 0) {
+    if (topIndex_ <= 0) return false;
+    topIndex_--;
+    cursorIndex_ = topIndex_;
+  }
+  return true;
+}
+
 void ContentView::setHoverIndex(std::optional<int> index) { hoverIndex_ = index; }
 std::optional<int> ContentView::hoverIndex() const { return hoverIndex_; }
 

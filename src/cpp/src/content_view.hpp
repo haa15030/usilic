@@ -102,6 +102,28 @@ class ContentView {
   // prototype) own their own redraw timing.
   void setTopIndex(int index);
 
+  // Moves topIndex_ by exactly one row in `direction` (>0 reveals
+  // LATER content, <0 reveals EARLIER content -- same sign convention
+  // GraphicalDisplay::renderScrolled()'s pixelOffsetY uses) AND pins
+  // cursorIndex_ to the newly-revealed edge, same as scrollLineDown()/
+  // scrollLineUp()'s own state update but without their drawing side
+  // effects (a caller driving a custom render loop, e.g. the GUI
+  // drag/coast-scroll physics in main.cpp, owns its own redraw
+  // timing via renderScrolled(), same as setTopIndex()). Returns false
+  // (a no-op) at a list boundary.
+  //
+  // Added to fix a real report: the GUI coast/drag path used to leave
+  // cursorIndex_ frozen wherever it was BEFORE the scroll started
+  // (setTopIndex() deliberately doesn't touch it, see its own
+  // comment), syncing it to topIndex_ only once the scroll settled --
+  // which, after coasting all the way to the list's end, put the
+  // cursor at the TOP of the now-bottom-scrolled viewport instead of
+  // following the bottom edge the way 'j' (scrollLineDown()) does.
+  // Continuously tracking the edge via this method instead removes
+  // the need for that end-of-scroll sync altogether (cursorIndex_ is
+  // simply never stale to begin with).
+  bool stepTopIndex(int direction);
+
   // Highlights an arbitrary line instead of cursorIndex_, without
   // moving the cursor/selection -- for the 2026-07-30 real-terminal
   // drag-scroll trigger (see CLAUDE.md): while coasting, the row under

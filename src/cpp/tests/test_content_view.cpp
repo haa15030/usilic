@@ -199,6 +199,39 @@ TEST_CASE("setTopIndex: clamps to a valid range") {
   CHECK(v.topIndex() == 7);
 }
 
+TEST_CASE("stepTopIndex: unlike setTopIndex(), pins cursorIndex_ to the newly-revealed edge") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(10));  // max top is 10 - 3 = 7
+
+  CHECK(v.stepTopIndex(1) == true);  // reveal LATER content, like coasting down
+  CHECK(v.topIndex() == 1);
+  CHECK(v.cursorIndex() == 3);  // bottom edge of the now 1..3 viewport
+
+  CHECK(v.stepTopIndex(1) == true);
+  CHECK(v.topIndex() == 2);
+  CHECK(v.cursorIndex() == 4);
+
+  CHECK(v.stepTopIndex(-1) == true);  // reveal EARLIER content, like coasting up
+  CHECK(v.topIndex() == 1);
+  CHECK(v.cursorIndex() == 1);  // top edge, not wherever it was before
+}
+
+TEST_CASE("stepTopIndex: false (a no-op) at either boundary") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(5));  // max top is 5 - 3 = 2
+
+  CHECK(v.stepTopIndex(-1) == false);  // already at the top
+  CHECK(v.topIndex() == 0);
+
+  v.setTopIndex(2);
+  CHECK(v.stepTopIndex(1) == false);  // already at the bottom
+  CHECK(v.topIndex() == 2);
+}
+
 TEST_CASE("setHoverIndex: highlights the hover row instead of cursorIndex_") {
   RecordingDisplay d(10, 20);
   ContentView v(d);

@@ -898,28 +898,25 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
   return leavePhase(false);
 }
 
-// Commits whole-row crossings of pixelOffset into view.setTopIndex(),
-// keeping pixelOffset within (-cellHeight, cellHeight) between
-// renders -- the same odometer-style carry the original friction-based
-// version used, just factored out so both the active-drag path and
-// the coasting path (which can cross several rows in one call) share
-// it. Returns false if a boundary (top or bottom of the list) was
-// hit, so a coasting caller knows to stop rather than pin uselessly
-// against the edge.
+// Commits whole-row crossings of pixelOffset into view.stepTopIndex()
+// (which moves topIndex_ AND keeps cursorIndex_ pinned to the newly-
+// revealed edge, see its own comment), keeping pixelOffset within
+// (-cellHeight, cellHeight) between renders -- the same odometer-style
+// carry the original friction-based version used, just factored out
+// so both the active-drag path and the coasting path (which can cross
+// several rows in one call) share it. Returns false if a boundary (top
+// or bottom of the list) was hit, so a coasting caller knows to stop
+// rather than pin uselessly against the edge.
 bool commitRowCrossings(fm::ContentView &view, int cellHeight, int &pixelOffset) {
   while (pixelOffset >= cellHeight) {
-    int before = view.topIndex();
-    view.setTopIndex(before - 1);
-    if (view.topIndex() == before) {
+    if (!view.stepTopIndex(-1)) {  // revealing EARLIER content
       pixelOffset = cellHeight - 1;
       return false;
     }
     pixelOffset -= cellHeight;
   }
   while (pixelOffset <= -cellHeight) {
-    int before = view.topIndex();
-    view.setTopIndex(before + 1);
-    if (view.topIndex() == before) {
+    if (!view.stepTopIndex(1)) {  // revealing LATER content
       pixelOffset = -(cellHeight - 1);
       return false;
     }
@@ -928,29 +925,28 @@ bool commitRowCrossings(fm::ContentView &view, int cellHeight, int &pixelOffset)
   return true;
 }
 
-// Syncs cursorIndex_ to the active view's current topIndex() right
-// before a key that's about to stop an active coast is forwarded to
-// the app -- otherwise the very next ContentView::moveUp()/moveDown()
-// call (from THIS SAME key) runs its own clampViewport(), which snaps
-// topIndex_ straight back to cursorIndex_'s stale, pre-coast value
-// (cursorIndex_ deliberately never moves while coasting, see
-// setTopIndex()'s own comment), discarding the whole scroll. Found via
-// a real report ("current" in the mode-line looked frozen during a
-// coast) that led to tracing exactly this path: pressing a plain key
-// to stop a long coast was silently snapping the view back near the
-// top instead of continuing from wherever the coast had scrolled to --
-// a more serious variant of the same clampViewport()-desync class of
-// bug items 68-69's wasActivelyScrolling fix addressed, just via a
-// different call path (an app.feedByte()-triggered redraw() from
-// INSIDE this same key-consumption loop, not the outer loop's own
-// settled-branch redraw() wasActivelyScrolling guards). Also clears
-// wasActivelyScrolling so the settled branch's own sync doesn't run a
-// second time immediately after and undo the cursor move this key was
-// actually supposed to make.
-void syncCursorBeforeCoastStoppingKey(fm::Application &app, int coastLevel, bool &wasActivelyScrolling) {
+// Clears wasActivelyScrolling right before a key that's about to stop
+// an active coast is forwarded to the app, so the settled branch's own
+// redraw() further down this same frame doesn't treat it as "just
+// finished coasting" a second time and interfere with whatever this
+// key's own app.feedByte() call is about to do.
+//
+// This used to ALSO force cursorIndex_ to topIndex_ here, to stop the
+// very next ContentView::moveUp()/moveDown() call's own clampViewport()
+// from snapping topIndex_ back to a stale pre-coast cursorIndex_ (see
+// git history for the original comment) -- no longer needed now that
+// ContentView::stepTopIndex() (used by commitRowCrossings(), below)
+// keeps cursorIndex_ continuously pinned to the coast's leading edge
+// throughout, instead of leaving it stale until an end-of-scroll sync.
+// That old sync itself became its own bug once w/s coasting could
+// reach a list boundary: it set cursorIndex_ = topIndex_ unconditionally,
+// which is the TOP of the viewport regardless of which direction the
+// coast had been going -- coasting all the way down to the end of a
+// long directory listing left the cursor sitting at the top row of the
+// now-bottom-scrolled screen instead of following the bottom edge the
+// way scrollLineDown() ('j') does (a real report).
+void syncCursorBeforeCoastStoppingKey(int coastLevel, bool &wasActivelyScrolling) {
   if (coastLevel <= 0) return;
-  fm::ContentView &activeView = app.activeContentView();
-  activeView.setCursorIndex(activeView.topIndex());
   wasActivelyScrolling = false;
 }
 
@@ -1036,14 +1032,11 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
   // Set on any frame that renders via renderScrolled() (dragging or
   // coasting); checked on the FIRST frame back on the normal redraw()
-  // path so the clampViewport()-desync fix below only ever fires once,
-  // right at that transition -- see its own comment for why firing it
-  // unconditionally on every settled frame was itself a bug (found
-  // from a real report: normal, non-Shift arrow-key navigation
-  // stopped working AFTER ever using Shift+arrow/mouse-drag once,
-  // because this correction was overwriting cursorIndex_ on every
-  // single ordinary redraw() too, not just the one right after a
-  // coast/drag).
+  // path so that settle-transition frame's redraw() always happens
+  // even if nothing else occurred that frame (a coast that stops
+  // exactly at a list boundary, with no further key/click/drag event,
+  // would otherwise leave stale renderScrolled() output on screen
+  // forever -- see the render-mode branch below).
   bool wasActivelyScrolling = false;
   // Rolling window of recent Motion samples, trimmed to the last
   // ~150ms -- summed at ButtonUp to get the "cursor movement at the
@@ -1126,7 +1119,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // "stopping a coast" comment below the render-mode branch):
         // leaving a nonzero fractional remainder keeps the loop stuck
         // in the expensive renderScrolled() full-frame path forever.
-        syncCursorBeforeCoastStoppingKey(app, coastLevel, wasActivelyScrolling);
+        syncCursorBeforeCoastStoppingKey(coastLevel, wasActivelyScrolling);
         coastLevel = 0;
         pixelOffset = 0;
         app.feedByte(0, translateDisplayKey(*key->special));
@@ -1141,7 +1134,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         app.requestImmediateExit();
       } else {
         consecutiveEscapes = 0;
-        syncCursorBeforeCoastStoppingKey(app, coastLevel, wasActivelyScrolling);
+        syncCursorBeforeCoastStoppingKey(coastLevel, wasActivelyScrolling);
         coastLevel = 0;
         pixelOffset = 0;  // see the key->special branch's comment above
         app.feedByte(key->byte, std::nullopt);
@@ -1216,14 +1209,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // runs, and a high enough level can cross the whole
           // remaining distance to a boundary in one 16ms budget) never
           // takes the render-mode branch's "actively scrolling" arm
-          // below at all -- topIndex_ moved, but wasActivelyScrolling
-          // was never set true to say so. Without this line, the
-          // settled branch's clampViewport() then sees topIndex_ (now
-          // at the boundary) sitting ahead of a stale, never-updated
-          // cursorIndex_ and snaps topIndex_ straight back to it,
-          // discarding the whole scroll -- a real report of coasting
-          // to the very bottom snapping back up near the top the
-          // instant it got there traced back to exactly this gap.
+          // below at all -- topIndex_ (and, via stepTopIndex(),
+          // cursorIndex_ too) moved, but wasActivelyScrolling was
+          // never set true to say so, so the settled branch's own
+          // "did we just finish scrolling" check below would
+          // otherwise skip this frame's redraw() entirely, leaving
+          // stale renderScrolled() output on screen at the boundary.
           wasActivelyScrolling = true;
           break;
         }
@@ -1253,29 +1244,15 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // Settled on a row boundary -- back to the normal Display-
       // interface rendering path. redraw() calls clampViewport(),
       // which enforces the normal moveUp()/moveDown() invariant
-      // "topIndex_ never leads cursorIndex_"; renderScrolled() (used
-      // for every frame while actively dragging/coasting) never
-      // touches cursorIndex_ at all, so immediately after coasting
-      // settles, cursorIndex_ can still be wherever it was BEFORE the
-      // scroll even started while topIndex_ has moved far away -- the
-      // FIRST redraw() back on this path would otherwise silently
-      // snap topIndex_ straight back to cursorIndex_, discarding the
-      // entire scroll (found from a real report: a plain, non-Shift
-      // arrow key pressed right after a coast appeared to "flicker one
-      // row then snap back to the top," which was actually this exact
-      // reset firing on the very next redraw()). Same fix already
-      // applied to the real-terminal path's runCoastLoop().
-      //
-      // Gated on wasActivelyScrolling so this only fires on that ONE
-      // transition frame, not every ordinary redraw(): doing it
-      // unconditionally (an earlier version of this fix) broke plain
-      // keyboard navigation entirely -- every redraw() from a normal
-      // Up/Down/Enter keypress was ALSO overwriting cursorIndex_ with
-      // topIndex_, which is only correct immediately after a coast,
-      // not in general (found from a real report: after using
-      // Shift+arrow/drag even once, ordinary arrow-key navigation
-      // stopped moving the selection at all).
-      if (wasActivelyScrolling) view.setCursorIndex(view.topIndex());
+      // "topIndex_ never leads cursorIndex_"; this used to need an
+      // explicit cursorIndex_ = topIndex_ sync right here, since
+      // renderScrolled() (used for every frame while actively
+      // dragging/coasting) never touched cursorIndex_ at all, leaving
+      // it stale from before the scroll started. commitRowCrossings()
+      // now keeps cursorIndex_ continuously pinned to the coast's
+      // leading edge via ContentView::stepTopIndex() (see its own
+      // comment), so clampViewport() here is already a no-op by the
+      // time this runs -- nothing left to sync.
       wasActivelyScrolling = false;
       view.redraw();
     }
