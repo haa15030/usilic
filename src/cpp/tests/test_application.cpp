@@ -132,9 +132,13 @@ TEST_CASE("resolveCommand: special keys map to movement, with left/right as up/d
   CHECK(Application::resolveCommand(0, KeyInput::SpecialKey::PageDown) == Command::PageDown);
 }
 
-TEST_CASE("resolveCommand: plain bytes -- j/k, ^M, ^G, space/b") {
-  CHECK(Application::resolveCommand('j', std::nullopt) == Command::MoveDown);
-  CHECK(Application::resolveCommand('k', std::nullopt) == Command::MoveUp);
+TEST_CASE("resolveCommand: plain bytes -- j/k, ^N/^P, ^M, ^G, space/b") {
+  // j/k and ^N/^P are DELIBERATELY different commands, not synonyms
+  // (2026-07-31 correction, see resolveCommand()'s own comment):
+  // usilicrc documents 'j'/'k' as "move window one line" (K-8/K-9)
+  // and ^N/^P as "move cursor one line" (K-10/K-11).
+  CHECK(Application::resolveCommand('j', std::nullopt) == Command::ScrollLineDown);
+  CHECK(Application::resolveCommand('k', std::nullopt) == Command::ScrollLineUp);
   CHECK(Application::resolveCommand(0x0e, std::nullopt) == Command::MoveDown);  // ^N
   CHECK(Application::resolveCommand(0x10, std::nullopt) == Command::MoveUp);    // ^P
   CHECK(Application::resolveCommand(0x0d, std::nullopt) == Command::Enter);     // ^M
@@ -249,7 +253,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J followed by an unrecognized byte fails 
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
   CHECK_FALSE(app.feedByte('z', std::nullopt));
-  // The leader state doesn't leak into the next byte: a plain 'j' afterwards still moves down.
+  // The leader state doesn't leak into the next byte: a plain 'j' afterwards is still handled normally.
   CHECK(app.feedByte('j', std::nullopt));
 }
 
@@ -829,7 +833,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ESC followed by an unrecognized byte fails
   app.feedByte(0x1b, std::nullopt);
   CHECK_FALSE(app.feedByte('z', std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  // The leader state doesn't leak into the next byte: a plain 'j' afterwards still moves down.
+  // The leader state doesn't leak into the next byte: a plain 'j' afterwards is still handled normally.
   CHECK(app.feedByte('j', std::nullopt));
 }
 
@@ -1624,11 +1628,15 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ( starts recording; the control sequenc
 }
 
 TEST_CASE_FIXTURE(Fixture, "playRecordedMacro: replays recorded cursor movement") {
+  // ^N (0x0e), not 'j' -- 'j' is "move window one line" (see
+  // resolveCommand()'s 2026-07-31 correction) and would be a no-op
+  // beep on a list this short (nothing to scroll), unlike ^N's plain
+  // cursor movement this test actually wants to record/replay.
   REQUIRE(app.start(path()));
   app.feedByte(0x18, std::nullopt);
   app.feedByte('(', std::nullopt);
-  app.feedByte('j', std::nullopt);
-  app.feedByte('j', std::nullopt);
+  app.feedByte(0x0e, std::nullopt);
+  app.feedByte(0x0e, std::nullopt);
   app.feedByte(0x18, std::nullopt);
   app.feedByte(')', std::nullopt);
 

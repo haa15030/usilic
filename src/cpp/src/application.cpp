@@ -91,19 +91,26 @@ bool Application::start(const std::string &directory) {
   return directoryMode_.enterDirectory(directory);
 }
 
-// Ported from get_m()'s switch(m): case M_prev/M_up/M_kprev/M_kup ("k",
-// ^P, left-arrow, up-arrow) and M_next/M_dn/M_knext/M_kdn ("j", ^N,
-// right-arrow, down-arrow) both funnel into m_row() as plain up/down
-// movement -- move_row() (scroll.c) treats all four bindings for a
-// direction identically, including the pair of arrow keys that read
-// oddly for a single-column list (left==up, right==down) but is
-// exactly what tracing move_row()'s switch confirmed. M_forw/M_back/
-// M_kforw/M_kback (space/b/^V and their arrow-adjacent bindings) map
-// to m_page(); M_cr (^M only -- see class comment on why ^J is NOT
-// folded in here) to m_cr(); M_bl (^G) to m_bl(); M_fgrep (^S) starts
-// a fgrep search prompt. ^J-leader sequences (e.g. ^J^S for EGREP,
-// ^Jc/^J^C for CUT) aren't resolvable from one byte and are handled
-// by feedByte() instead.
+// Ported from get_m()'s switch(m), cross-checked directly against
+// usilicrc's own K-? default bindings (2026-07-31 correction -- an
+// earlier version of this comment claimed 'j'/'k' aliased ^N/^P into
+// the same M_dn/M_up cursor movement scroll.c's move_row() handles;
+// usilicrc actually documents them as two DELIBERATELY DIFFERENT
+// commands: K-8/K-9 "Move window one line down/up" for 'j'/'k' vs.
+// K-10/K-11 "Move cursor one line down/up" for ^N/^P -- confirmed by
+// grepping the legacy C sources: 'j'/'k' don't appear as literal key
+// bindings anywhere in str.c/key.c/mode.c at all, only through
+// usilicrc's configurable key table, and under a name ("move window")
+// that doesn't match move_row()'s cursor-relative behavior). Left/
+// Right-arrow==Up/Down is still a real legacy quirk (reads oddly for
+// a single-column list, but is what move_row()'s switch does) and IS
+// correctly ported below, unrelated to the j/k correction. M_forw/
+// M_back/M_kforw/M_kback (space/b/^V and their arrow-adjacent
+// bindings) map to m_page(); M_cr (^M only -- see class comment on
+// why ^J is NOT folded in here) to m_cr(); M_bl (^G) to m_bl();
+// M_fgrep (^S) starts a fgrep search prompt. ^J-leader sequences (e.g.
+// ^J^S for EGREP, ^Jc/^J^C for CUT) aren't resolvable from one byte
+// and are handled by feedByte() instead.
 Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey> special) {
   if (special) {
     switch (*special) {
@@ -123,9 +130,11 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
 
   switch (byte) {
     case 'j':
+      return Command::ScrollLineDown;
+    case 'k':
+      return Command::ScrollLineUp;
     case 0x0e:  // ^N
       return Command::MoveDown;
-    case 'k':
     case 0x10:  // ^P
       return Command::MoveUp;
     case ' ':
@@ -377,6 +386,12 @@ bool Application::handleCommand(Command command) {
       return true;
     case Command::MoveDown:
       activeView().moveDown();
+      return true;
+    case Command::ScrollLineUp:
+      activeView().scrollLineUp();
+      return true;
+    case Command::ScrollLineDown:
+      activeView().scrollLineDown();
       return true;
     case Command::PageUp:
       activeView().pageUp();

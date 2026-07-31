@@ -37,6 +37,13 @@ enum class Command {
   None,
   MoveUp,
   MoveDown,
+  // "Move window one line up/down" (usilicrc's own K-8/K-9 description,
+  // bound to 'j'/'k' -- see ContentView::scrollLineDown()'s own
+  // comment for exactly how this differs from MoveUp/MoveDown, which
+  // usilicrc separately describes as "move CURSOR one line" and binds
+  // to ^N/^P instead).
+  ScrollLineDown,
+  ScrollLineUp,
   PageUp,
   PageDown,
   Enter,

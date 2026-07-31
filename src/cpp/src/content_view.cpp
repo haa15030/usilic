@@ -108,6 +108,61 @@ void ContentView::moveDown() {
   redraw();
 }
 
+void ContentView::scrollLineDown() {
+  if (height_ <= 0 || lines_.empty()) {
+    display_.putChar(7);
+    return;
+  }
+  int maxTop = std::max(0, static_cast<int>(lines_.size()) - height_);
+  if (topIndex_ >= maxTop) {
+    display_.putChar(7);
+    return;
+  }
+  topIndex_++;
+  cursorIndex_ = std::min(topIndex_ + height_ - 1, static_cast<int>(lines_.size()) - 1);
+  if (display_.smoothScrollEnabled()) {
+    // Same sf_row()-style single-row hardware scroll moveDown()'s own
+    // fast path uses -- see its comment; the only difference here is
+    // this always runs (no "only if the cursor would leave the
+    // viewport" guard), matching scrollLineDown() always scrolling.
+    int bottomRow = row0_ + height_ - 1;
+    display_.moveCursor(bottomRow, 0);
+    display_.scrollForward();
+    display_.clearToEndOfLine();
+    int bottomIndex = topIndex_ + height_ - 1;
+    if (bottomIndex < static_cast<int>(lines_.size()))
+      renderLine(lines_[bottomIndex], bottomIndex == cursorIndex_);
+    renderModeLine();
+    display_.flush();
+    return;
+  }
+  redraw();
+}
+
+void ContentView::scrollLineUp() {
+  if (height_ <= 0 || lines_.empty()) {
+    display_.putChar(7);
+    return;
+  }
+  if (topIndex_ <= 0) {
+    display_.putChar(7);
+    return;
+  }
+  topIndex_--;
+  cursorIndex_ = topIndex_;
+  if (display_.smoothScrollEnabled()) {
+    // Same sr_row()-style single-row hardware scroll moveUp()'s own
+    // fast path uses -- see its comment.
+    display_.moveCursor(row0_, 0);
+    display_.scrollReverse();
+    renderLine(lines_[topIndex_], topIndex_ == cursorIndex_);
+    renderModeLine();
+    display_.flush();
+    return;
+  }
+  redraw();
+}
+
 void ContentView::pageUp() {
   if (height_ <= 0) return;
   topIndex_ = std::max(0, topIndex_ - height_);

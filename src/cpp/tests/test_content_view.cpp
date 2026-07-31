@@ -187,6 +187,63 @@ TEST_CASE("moveUp/moveDown use hardware scroll when smoothScrollEnabled") {
   CHECK(d.scrollReverseCount() >= 1);
 }
 
+TEST_CASE("scrollLineDown/scrollLineUp: 'j'/'k' (usilicrc K-8/K-9) always scroll, unlike moveUp()/moveDown()") {
+  // "Move window one line down/up", NOT "move cursor one line" -- see
+  // ContentView::scrollLineDown()'s own comment for the usilicrc
+  // reference. Every call moves topIndex_ by exactly one, and lands
+  // cursorIndex_ on the newly-revealed edge line, regardless of where
+  // the cursor started (unlike moveDown(), which only scrolls once
+  // the cursor would otherwise leave the viewport).
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(10));
+  CHECK(v.topIndex() == 0);
+  CHECK(v.cursorIndex() == 0);
+
+  v.scrollLineDown();
+  CHECK(v.topIndex() == 1);
+  CHECK(v.cursorIndex() == 3);  // new bottom row: topIndex_(1) + height_(3) - 1
+  v.scrollLineDown();
+  CHECK(v.topIndex() == 2);
+  CHECK(v.cursorIndex() == 4);
+
+  v.scrollLineUp();
+  CHECK(v.topIndex() == 1);
+  CHECK(v.cursorIndex() == 1);  // new top row: topIndex_ itself
+}
+
+TEST_CASE("scrollLineDown/scrollLineUp: beep instead of scrolling past either end") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(5));  // maxTop = 5 - 3 = 2
+
+  v.scrollLineUp();  // already at topIndex_ 0
+  CHECK(v.topIndex() == 0);
+
+  v.scrollLineDown();
+  v.scrollLineDown();
+  CHECK(v.topIndex() == 2);
+  v.scrollLineDown();  // already at maxTop
+  CHECK(v.topIndex() == 2);
+  CHECK(v.cursorIndex() == 4);
+}
+
+TEST_CASE("scrollLineDown/scrollLineUp use hardware scroll when smoothScrollEnabled") {
+  RecordingDisplay d(10, 20);
+  d.setSmoothScrollEnabled(true);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(5));
+  CHECK(d.scrollForwardCount() == 0);
+  v.scrollLineDown();
+  CHECK(d.scrollForwardCount() == 1);
+  CHECK(d.scrollReverseCount() == 0);
+  v.scrollLineUp();
+  CHECK(d.scrollReverseCount() == 1);
+}
+
 TEST_CASE("pageDown/pageUp move a full page and clamp at the ends") {
   RecordingDisplay d(10, 20);
   ContentView v(d);

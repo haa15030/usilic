@@ -115,6 +115,23 @@ class ContentView {
   void moveUp();
   void moveDown();
 
+  // "Move window one line up/down" (usilicrc's own K-8/K-9
+  // description, bound to 'j'/'k' by default) -- deliberately
+  // DIFFERENT from moveUp()/moveDown(): those move the CURSOR by one
+  // line and only scroll the viewport if the cursor would otherwise
+  // leave it (usilicrc calls that pair, bound to ^N/^P, "move cursor
+  // one line"); this pair always scrolls topIndex_ by exactly one
+  // line (clamped at either end, same boundary-bell convention as
+  // moveUp()/moveDown()) and moves cursorIndex_ to the newly-revealed
+  // edge line, same as a single-line `less` scroll. An earlier version
+  // of this port aliased 'j'/'k' to plain cursor movement instead
+  // (Application::resolveCommand()'s own comment has the correction's
+  // full story) -- confirmed against usilicrc directly, not present in
+  // scroll.c's move_row() itself (no C source binds 'j'/'k' as literal
+  // keys at all; only usilicrc's configurable key table does).
+  void scrollLineDown();
+  void scrollLineUp();
+
   // Full-page movement (M_back/M_forw): always a full redraw, ported
   // from move_page(). The legacy smooth-scroll path also animated
   // page moves one line at a time when hardware scrolling was
