@@ -147,6 +147,7 @@
 #include "content_view.hpp"
 #include "delegating_display.hpp"
 #include "drag_scroll_speed.hpp"
+#include "gnome_terminal_appearance.hpp"
 #include "graphical_display.hpp"
 #include "history.hpp"
 #include "key_input.hpp"
@@ -184,25 +185,36 @@ struct TerminalAppearance {
   std::string fontName;
 };
 
-// USILICFONT; then (macOS, when `appearance` carries a real font
-// NAME from the calling terminal) that name resolved to a real file
-// via CoreText (see mac_font_resolver.hpp); then a short best-effort
-// list of common monospace system font paths (Mac, then common Linux
-// distros) -- see file comment on why this mirrors USILICHELP's own
-// resolution shape. Empty if none found, meaning GUI mode simply
-// stays unavailable.
+// USILICFONT; then (when `appearance` carries a real font NAME from
+// the calling terminal) that name resolved to a real file via
+// CoreText on macOS (mac_font_resolver.hpp) or fontconfig's
+// `fc-match` on Linux (gnome_terminal_appearance.hpp); then a short
+// best-effort list of common monospace system font paths (Mac, then
+// common Linux distros) -- see file comment on why this mirrors
+// USILICHELP's own resolution shape. Empty if none found, meaning GUI
+// mode simply stays unavailable.
 //
-// The CoreText step was added 2026-07-31 at a real report that the
-// GUI window wasn't honoring the calling terminal's configured font
-// (e.g. "ＭＳゴシック14", needed for full Japanese glyph coverage
-// without falling back to the separate CJK-fallback-font mechanism at
-// all) -- until then this function only ever matched the terminal's
-// font SIZE (see TerminalAppearance's own history), never its NAME,
-// because resolving a name to a file needs a real font-lookup API.
+// The name-resolution step was added 2026-07-31 (macOS/CoreText
+// first, Linux/fc-match shortly after) at a real report that the GUI
+// window wasn't honoring the calling terminal's configured font (e.g.
+// "ＭＳゴシック14", needed for full Japanese glyph coverage without
+// falling back to the separate CJK-fallback-font mechanism at all) --
+// until then this function only ever matched the terminal's font SIZE
+// (see TerminalAppearance's own history), never its NAME, because
+// resolving a name to a file needs a real font-lookup mechanism.
+// Trying BOTH resolvers unconditionally (rather than branching on
+// platform) is deliberate and harmless: whichever tool isn't
+// installed just fails its ChildProcess::run() cleanly (see each
+// resolver's own comment), so this works unchanged if e.g. a Linux
+// box somehow has CoreText-alike tooling or a Mac has fontconfig
+// installed via Homebrew, without needing a compile-time platform
+// branch here at all.
 std::string resolveGuiFontPath(std::optional<TerminalAppearance> appearance = std::nullopt) {
   if (const char *env = std::getenv("USILICFONT")) return env;
   if (appearance && !appearance->fontName.empty()) {
     std::string resolved = fm::resolveMacFontPath(appearance->fontName, appearance->fontPointSize);
+    if (!resolved.empty()) return resolved;
+    resolved = fm::resolveLinuxFontPath(appearance->fontName);
     if (!resolved.empty()) return resolved;
   }
   static const char *const candidates[] = {
@@ -309,6 +321,100 @@ std::optional<TerminalAppearance> queryTerminalAppColors() {
     appearance.fontName = fontName;
   }
   return appearance;
+}
+
+// Queries GNOME Terminal's own gsettings-stored profile (background/
+// foreground colors, font) -- the Linux counterpart to
+// queryTerminalAppColors() above. Added 2026-07-31 after the user
+// found (via their own web search) that GNOME Terminal's settings
+// ARE queryable from the command line after all, contrary to an
+// earlier answer in this project that assumed no such mechanism
+// existed on Linux at all.
+//
+// Gated on GNOME_TERMINAL_SCREEN being set BEFORE spawning any
+// gsettings calls -- set specifically by gnome-terminal-server's own
+// D-Bus activation, unlike $VTE_VERSION (which every VTE-based
+// terminal sets -- Tilix, Terminator, xfce4-terminal, ... -- and
+// would misidentify all of those as gnome-terminal, whose gsettings
+// schema they don't use). Returns nullopt on any failure (env var
+// unset, gsettings or its gnome-terminal schema not installed, no
+// default profile, output that doesn't parse) -- exactly the same
+// "never a hard requirement" contract queryTerminalAppColors() has.
+//
+// Verification note: this could NOT be exercised end-to-end against a
+// real running GNOME Terminal from this project's own development
+// sandbox (a macOS machine; the only Linux environment reachable is a
+// headless Docker dev container with no gnome-terminal or D-Bus
+// session at all). The gsettings schema/key names and command shapes
+// below follow GNOME's own documented conventions; what WAS verified
+// directly in that container: gsettings and fc-match are genuinely
+// present, gsettings fails cleanly (a plain non-zero exit, not a
+// crash) when the gnome-terminal schema isn't installed there
+// (confirming the !result.ok early-return path is exercised for
+// real), fc-match resolves a real font name to a real file, and every
+// STRING PARSING step (gnome_terminal_appearance.hpp's pure
+// functions) is doctest-covered directly against real sample output
+// strings.
+std::optional<TerminalAppearance> queryGnomeTerminalColors() {
+  const char *screen = std::getenv("GNOME_TERMINAL_SCREEN");
+  if (!screen || !*screen) return std::nullopt;
+
+  fm::ChildProcess::Result profileResult =
+      fm::ChildProcess::run({"gsettings", "get", "org.gnome.Terminal.ProfilesList", "default"});
+  if (!profileResult.ok) return std::nullopt;
+  std::string profileId = fm::stripGsettingsQuotedString(profileResult.output);
+  if (profileId.empty()) return std::nullopt;
+
+  std::string profileSchema =
+      "org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles/:" + profileId + "/";
+
+  auto get = [](const std::string &schema, const std::string &key) -> std::optional<std::string> {
+    fm::ChildProcess::Result r = fm::ChildProcess::run({"gsettings", "get", schema, key});
+    if (!r.ok) return std::nullopt;
+    return r.output;
+  };
+
+  auto fgRaw = get(profileSchema, "foreground-color");
+  auto bgRaw = get(profileSchema, "background-color");
+  if (!fgRaw || !bgRaw) return std::nullopt;
+  auto fg = fm::parseGsettingsRgbColor(*fgRaw);
+  auto bg = fm::parseGsettingsRgbColor(*bgRaw);
+  if (!fg || !bg) return std::nullopt;
+
+  TerminalAppearance appearance;
+  appearance.foreground = {fg->r, fg->g, fg->b};
+  appearance.background = {bg->r, bg->g, bg->b};
+
+  // use-system-font (a boolean) decides whether the profile's own
+  // "font" key applies at all, or whether GNOME's desktop-wide
+  // monospace font (org.gnome.desktop.interface's own, unrelated,
+  // non-relocatable schema -- no profile path needed) is what
+  // actually renders -- exactly the distinction GNOME Terminal's own
+  // preferences dialog draws between "System fixed width font" and a
+  // custom font choice.
+  auto useSystemFont = get(profileSchema, "use-system-font");
+  std::optional<std::string> fontRaw =
+      (useSystemFont && fm::stripGsettingsQuotedString(*useSystemFont) == "true")
+          ? get("org.gnome.desktop.interface", "monospace-font-name")
+          : get(profileSchema, "font");
+  if (fontRaw) {
+    fm::ParsedFontDescription desc = fm::parsePangoFontDescription(*fontRaw, appearance.fontPointSize);
+    appearance.fontName = desc.family;
+    if (desc.pointSize > 0) appearance.fontPointSize = desc.pointSize;
+  }
+  return appearance;
+}
+
+// Tries every platform-specific "real terminal appearance" query this
+// project knows, in order, returning the first successful one --
+// queryTerminalAppColors()/queryGnomeTerminalColors() themselves each
+// self-gate on their own platform/environment signal and return
+// nullopt immediately when that signal is absent, so trying both
+// unconditionally costs nothing extra on whichever platform doesn't
+// apply.
+std::optional<TerminalAppearance> queryRealTerminalAppearance() {
+  if (auto appearance = queryTerminalAppColors()) return appearance;
+  return queryGnomeTerminalColors();
 }
 
 std::optional<fm::KeyInput::SpecialKey> translateDisplayKey(fm::Display::Key key) {
@@ -1295,8 +1401,8 @@ int main(int argc, char **argv) {
 
   // "実はすでにGUI" (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30
   // notes): if the calling terminal's own colors AND font size can be
-  // matched (currently only macOS Terminal.app, via
-  // queryTerminalAppColors()), swap the backend to a matching
+  // matched (macOS Terminal.app or GNOME Terminal, via
+  // queryRealTerminalAppearance()), swap the backend to a matching
   // GraphicalDisplay window BEFORE display.open()/app.start() ever
   // render anything -- true dot-level scrolling
   // (GraphicalDisplay::renderScrolled()'s real per-pixel compositing)
@@ -1322,7 +1428,7 @@ int main(int argc, char **argv) {
   // since the real terminal was never used for rendering).
   std::unique_ptr<fm::GraphicalDisplay> launchGui;
   bool guiOwnsWholeSession = false;
-  if (auto appearance = queryTerminalAppColors()) {
+  if (auto appearance = queryRealTerminalAppearance()) {
     std::string fontPath = resolveGuiFontPath(appearance);
     launchGui = fontPath.empty() ? nullptr
                                   : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,

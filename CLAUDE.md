@@ -4876,6 +4876,84 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      での修正のため、コミットはpush保留、ユーザーの実機評価を
      お願いしたい。
 
+   (2026-07-31追記): ユーザーからのフィードバック「w/sは通常押しっぱなし
+   はしない。慣性スクロールで実用的なのは低速のみ、高速部分はおまけ
+   みたいなもんなので読み取りに適した適度なスクロール速度に調整すべく
+   2、3回押せればいい(個人的には)」。また「外出するので少しの間
+   返答できなくなる、その間は返信をすべて『進めて』として自律的に
+   調査・実装を進めてよい」との許可があり、以下の項目86はその間に
+   実施した。
+
+86. **2026-07-31: Linux(GNOME Terminal)でも実端末のフォント・配色を
+    反映できるように ― `gsettings`/`fc-match`によるフォント名・色の
+    検出とファイルパス解決を実装**
+   - 発端: 項目82(macOS/CoreTextでのフォント名解決)の際に「Linuxには
+     同種の仕組みが無い」と説明していたが、ユーザーが自身でGeminiに
+     尋ねたところ、GNOME Terminalの設定は通常のテキスト設定ファイル
+     ではなく`GSettings`(`dconf`)データベースに保存されており、
+     `gsettings`コマンドで問い合わせ可能との回答を得た、との報告
+     (スクリーンショット添付)。
+   - **検証環境の制約と対応**: このプロジェクトの開発サンドボックスは
+     macOS機であり、リーチ可能なLinux環境は`.devcontainer`のヘッドレス
+     Ubuntu Dockerコンテナのみ(実GNOMEデスクトップ・D-Busセッション
+     無し)。当初`gnome-terminal`パッケージ自体が未インストールで
+     `gsettings`のスキーマも存在しなかったが、`apt-get install
+     gnome-terminal`でスキーマを正規登録したところ、D-Busセッションが
+     無い状態でも`gsettings get`がスキーマの**デフォルト値**を
+     正しく返すことを発見(dconfはユーザー上書きが無い場合スキーマ
+     定義済みのデフォルトにフォールバックするため)。これにより、
+     実際のGNOME Terminal環境を用意せずとも、このコンテナ内で
+     クエリ〜パース〜フォントファイル解決までの**全パイプラインを
+     実際に(スキーマのデフォルト値に対してではあるが)エンドツー
+     エンドで実行・検証**できた。
+   - **発見した重要な相違点**: Geminiの回答は色の書式を
+     `'rgb(255,255,255)'`としていたが、実際にこのUbuntu 26.04
+     コンテナの`gsettings`から返ってきたのは`'#171421'`
+     `'#ffffff'`という**`#RRGGBB`16進数形式**だった(GLib/GTKの
+     色シリアライズ形式がバージョンによって異なる模様)。伝聞
+     (Gemini)の回答を鵜呑みにせず実機で確かめたことで発見できた
+     差異で、両方の書式に対応するようパース関数を実装した。
+   - **実装**: `src/gnome_terminal_appearance.hpp/.cpp`(新規)に、
+     純粋なパース関数群(`stripGsettingsQuotedString()`、
+     `parseGsettingsRgbColor()`(`rgb(r,g,b)`と`#RRGGBB`の両方に
+     対応)、`parsePangoFontDescription()`(Pangoフォント記述文字列
+     `"Ubuntu Mono 11"`等をファミリー名+サイズへ分解))と、
+     fontconfigの`fc-match`コマンドでフォント名を実ファイルパスへ
+     解決する`resolveLinuxFontPath()`(macOS版の`mac_font_resolver.hpp`
+     と対称、ただしfc-matchは単なるサブプロセス呼び出しなので特別な
+     リンク設定は不要)を追加。`app/main.cpp`に
+     `queryGnomeTerminalColors()`を新設: `GNOME_TERMINAL_SCREEN`
+     環境変数(gnome-terminal-server固有、他のVTE系ターミナル
+     (Tilix/Terminator/xfce4-terminal等)を誤検出しないための
+     ゲート)の存在を確認した上で、`org.gnome.Terminal.ProfilesList`
+     の`default`プロファイルID→そのプロファイルの
+     `foreground-color`/`background-color`/`use-system-font`/`font`
+     (`use-system-font`がtrueなら代わりに
+     `org.gnome.desktop.interface`の`monospace-font-name`)を順に
+     `gsettings get`で問い合わせる。`queryTerminalAppColors()`
+     (macOS/AppleScript版)と`queryGnomeTerminalColors()`を両方
+     試す`queryRealTerminalAppearance()`を新設し、起動時の
+     「実はすでにGUI」判定をこちらへ切り替え。`resolveGuiFontPath()`
+     もCoreTextに続けて`resolveLinuxFontPath()`を試すよう拡張
+     (どちらのツールも無い/失敗する環境では単に次のフォールバックへ
+     進むだけで、プラットフォーム分岐は一切コンパイル時に持たせて
+     いない)。
+   - **検証**: doctest 451件全通過(Mac/Ubuntu 26.04双方、パース
+     関数群は`#RRGGBB`形式の実例を含め全てdoctestで検証)。上記の
+     通り、実際にビルドした`usilic`バイナリ・および同じロジックを
+     使った独立診断プログラムの両方を、`gnome-terminal`パッケージ
+     導入後のUbuntuコンテナで実行し、(1)`GNOME_TERMINAL_SCREEN`
+     未設定時は`gsettings`を一切呼ばず素通りすること、(2)スキーマ
+     未登録時は`gsettings`が非ゼロ終了し`queryGnomeTerminalColors()`
+     がクラッシュせず`nullopt`を返すこと、(3)スキーマ登録後は
+     実際のプロファイルID・色(`#171421`→`(23,20,33)`等)・
+     `use-system-font=true`に伴う`monospace-font-name`への切り替え・
+     `"Monospace 11"`→ファミリー`"Monospace"`+サイズ`11`への分解・
+     `fc-match`による実フォントファイルパスへの解決、を一つずつ
+     実際の値で確認した。実GNOME Terminal(実D-Busセッション・実
+     ウィンドウ)そのものでの動作は、このセッションからは検証
+     手段が無く未確認。コミットはpush保留、ユーザーの実機評価待ち。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
