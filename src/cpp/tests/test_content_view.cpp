@@ -65,7 +65,7 @@ TEST_CASE("setModeLineFieldsProvider: modeLineText wraps name/trailing around th
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
   v.setModeLineFieldsProvider([](int cursorIndex) -> ContentView::ModeLineFields {
-    return {"file" + std::to_string(cursorIndex) + ".txt", "(ls)"};
+    return {"file" + std::to_string(cursorIndex) + ".txt", "(ls)", false, ""};
   });
   CHECK(v.modeLineText() == "file0.txt 1/3 TOP (ls)");
   v.setCursorIndex(2);
@@ -77,13 +77,13 @@ TEST_CASE("setModeLineFieldsProvider: an empty name/trailing is simply omitted")
   ContentView v(d);
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
-  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"", ""}; });
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"", "", false, ""}; });
   CHECK(v.modeLineText() == "1/3 TOP");
 
-  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"name.txt", ""}; });
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"name.txt", "", false, ""}; });
   CHECK(v.modeLineText() == "name.txt 1/3 TOP");
 
-  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"", "(ls)"}; });
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"", "(ls)", false, ""}; });
   CHECK(v.modeLineText() == "1/3 TOP (ls)");
 }
 
@@ -105,13 +105,13 @@ TEST_CASE("setModeLineFieldsProvider: fields that would overflow the display wid
   // own, but adding the long trailing field pushes it over -- trailing
   // is dropped first, name is kept.
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"shortname.txt", "this-trailing-is-also-way-too-long"};
+    return {"shortname.txt", "this-trailing-is-also-way-too-long", false, ""};
   });
   CHECK(v.modeLineText() == "shortname.txt 1/3 TOP");
 
   // Both fields too long even without each other -- falls back to bare position text.
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"this-name-is-way-too-long-to-fit.txt", "this-trailing-is-also-way-too-long-to-fit"};
+    return {"this-name-is-way-too-long-to-fit.txt", "this-trailing-is-also-way-too-long-to-fit", false, ""};
   });
   CHECK(v.modeLineText() == "1/3 TOP");
 }
@@ -122,7 +122,7 @@ TEST_CASE("renderModeLine: name/position/trailing are separate reverse-video run
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
   v.setModeLineFieldsProvider(
-      [](int) -> ContentView::ModeLineFields { return {"/tmp/dir/", "(ls)", /*fillTrailingToEdge=*/false}; });
+      [](int) -> ContentView::ModeLineFields { return {"/tmp/dir/", "(ls)", /*fillTrailingToEdge=*/false, ""}; });
   v.redraw();
 
   // "/tmp/dir/ 1/3 TOP (ls)" -- columns 0-8 name, 9 gap, 10-16 position, 17 gap, 18-21 trailing.
@@ -145,7 +145,7 @@ TEST_CASE("renderModeLine: fillTrailingToEdge pads the trailing field's own reve
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
   v.setModeLineFieldsProvider(
-      [](int) -> ContentView::ModeLineFields { return {"file.txt", "42 /tmp/", /*fillTrailingToEdge=*/true}; });
+      [](int) -> ContentView::ModeLineFields { return {"file.txt", "42 /tmp/", /*fillTrailingToEdge=*/true, ""}; });
   v.redraw();
 
   // "file.txt 1/3 TOP 42 /tmp/" is 25 columns; padded with spaces (still standout) to fill 30.
@@ -153,6 +153,36 @@ TEST_CASE("renderModeLine: fillTrailingToEdge pads the trailing field's own reve
   CHECK(row.substr(0, 25) == "file.txt 1/3 TOP 42 /tmp/");
   CHECK(d.standoutAt(5, 20) == true);  // inside the trailing field itself
   CHECK(d.standoutAt(5, 29) == true);  // padding, still standout -- reaches the last column
+}
+
+TEST_CASE("renderModeLine: rightWatermark is right-aligned, not reverse-video, and dropped if it doesn't fit") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b"};
+  });
+  v.redraw();
+
+  // "/tmp/dir/ 1/3 TOP (ls)" occupies columns 0-21 (see the plain-gaps
+  // test above); " usilic v1.5b " (14 chars) is right-aligned at the
+  // last 14 columns (26-39 of a 40-column display).
+  std::string row = d.rowText(5);
+  CHECK(row.substr(26, 14) == " usilic v1.5b ");
+  CHECK(d.standoutAt(5, 27) == false);  // bold, not reverse-video, unlike name/position/trailing
+  CHECK(row.substr(22, 4) == "    ");   // the gap between trailing and the watermark stays plain/blank
+
+  // Too narrow to fit both the drawn fields AND the watermark -- dropped entirely, not truncated.
+  RecordingDisplay narrow(10, 25);
+  ContentView v2(narrow);
+  v2.setViewport(0, 5);
+  v2.setLines(makeLines(3));
+  v2.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b"};
+  });
+  v2.redraw();
+  CHECK(narrow.rowText(5).find("usilic") == std::string::npos);
 }
 
 TEST_CASE("lineIndexAtRow: -1 outside the viewport (above, below, or past content)") {

@@ -343,14 +343,19 @@ void ContentView::renderModeLine() {
 
   ModeLineFields fields = modeLineFieldsProvider_(cursorIndex_);
   FieldFit fit = fitModeLineFields(fields, positionText);
+  int cols = display_.columns();
 
+  int drawnLen = 0;
   if (fit.showName && !fields.name.empty()) {
     drawSegment(fields.name);
     display_.putChar(' ');
+    drawnLen += static_cast<int>(fields.name.size()) + 1;
   }
   drawSegment(positionText);
+  drawnLen += static_cast<int>(positionText.size());
   if (fit.showTrailing && !fields.trailing.empty()) {
     display_.putChar(' ');
+    drawnLen += 1;
     std::string trailing = fields.trailing;
     if (fields.fillTrailingToEdge) {
       // Ported from disp_window()'s own `for (...) prev[i] = ' '`
@@ -358,15 +363,32 @@ void ContentView::renderModeLine() {
       // run) so the highlight reaches the screen's right edge instead
       // of stopping right after the text -- see ModeLineFields'
       // fillTrailingToEdge comment for which modes want this.
-      int cols = display_.columns();
-      int usedBeforeTrailing = static_cast<int>(positionText.size()) + 1 +
-                                ((fit.showName && !fields.name.empty())
-                                     ? static_cast<int>(fields.name.size()) + 1
-                                     : 0);
-      int remaining = cols - usedBeforeTrailing - static_cast<int>(trailing.size());
+      int remaining = cols - drawnLen - static_cast<int>(trailing.size());
       if (remaining > 0) trailing += std::string(remaining, ' ');
     }
     drawSegment(trailing);
+    drawnLen += static_cast<int>(trailing.size());
+  }
+
+  // Ported from disp_window()'s own fallback: when there's no
+  // "previous mode" text to show (mode-line[6] -- see
+  // ModeLineFields::rightWatermark's own comment for exactly which
+  // modes this is), the program name and version are right-aligned in
+  // BOLD (not reverse-video) at the screen's own right edge instead --
+  // confirmed against a real CUI screenshot showing "usilic v1.5b"
+  // there on the directory-listing screen specifically (not file
+  // view, where fillTrailingToEdge above already fills the row and
+  // naturally leaves no room, matching legacy: prev0 is non-empty
+  // there so this whole fallback branch never runs in the C source
+  // either).
+  if (!fields.rightWatermark.empty()) {
+    std::string watermark = " " + fields.rightWatermark + " ";
+    if (cols > 0 && drawnLen + static_cast<int>(watermark.size()) <= cols) {
+      display_.moveCursor(row0_ + height_, cols - static_cast<int>(watermark.size()));
+      display_.setAttribute(Display::Attribute::Bold);
+      for (unsigned char c : watermark) display_.putChar(c);
+      display_.setAttribute(Display::Attribute::BoldOff);
+    }
   }
 }
 

@@ -36,8 +36,10 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     auto size = std::filesystem::file_size(path, ec);
     std::string trailing = ec ? directory : std::to_string(size) + " " + directory;
     // File mode's trailing field is legacy's padded-to-edge style, see
-    // ModeLineFields::fillTrailingToEdge's own comment.
-    return {path.filename().string(), trailing, /*fillTrailingToEdge=*/true};
+    // ModeLineFields::fillTrailingToEdge's own comment. No
+    // rightWatermark here -- see its own comment on why File mode
+    // never shows it.
+    return {path.filename().string(), trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/""};
   });
 }
 

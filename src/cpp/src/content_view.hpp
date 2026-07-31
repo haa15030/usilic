@@ -245,10 +245,31 @@ class ContentView {
   //               different disp_window() parameters (`arg` vs `prev0`)
   //               each mode.c call site happens to populate). Ignored
   //               when trailing is empty.
+  //   rightWatermark -- disp_window()'s own fallback for when mode-
+  //               line[6] has no "previous mode" text at all (prev0
+  //               is the K_z/K_y sentinel in the C source): the
+  //               program name and version, right-aligned in BOLD
+  //               (not reverse-video) at the screen's own right edge,
+  //               e.g. "usilic v1.5b" -- confirmed against a real CUI
+  //               screenshot of the directory-listing screen
+  //               specifically (a real report: this port's earlier
+  //               attempt showed nothing there at all, having
+  //               mistaken the "(ls)" field -- a completely separate
+  //               piece, populated from a different disp_window()
+  //               parameter -- for covering this slot too). File
+  //               mode's own trailing field (fillTrailingToEdge)
+  //               already fills the row and leaves no room, matching
+  //               legacy: prev0 is non-empty there, so the fallback
+  //               branch never runs in the C source for that mode
+  //               either -- DirectoryMode is the only current caller
+  //               that sets this. Drawn only if it fits alongside
+  //               whatever's already been drawn (dropped, not
+  //               truncated, same overflow policy as name/trailing).
   struct ModeLineFields {
     std::string name;
     std::string trailing;
     bool fillTrailingToEdge = false;
+    std::string rightWatermark;
   };
 
   // Supplies this view's ModeLineFields, recomputed every time the

@@ -16,13 +16,23 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
   // directory's full path on the left, and the listing command (e.g.
   // "(ls)") on the right -- NOT the selected entry's name, which was
   // this port's own invented design before this was corrected to
-  // match the real CUI. Registered once here rather than re-set on
-  // every enterDirectory() call since it's a live callback into
-  // currentDirectory_/configuration_, not a snapshot.
+  // match the real CUI. The right-edge "usilic v1.5b" watermark
+  // (rightWatermark, see its own comment on ModeLineFields) is the
+  // OTHER thing legacy shows on this screen specifically -- confirmed
+  // by a real CUI screenshot, and by prev0 genuinely being the "no
+  // previous-mode text" sentinel for T_dir in the C source (unlike
+  // File mode, which populates that slot with real content instead).
+  // "1.5b" mirrors tcb/src/version.h's own version tag -- this is the
+  // same project, same version epoch, just a different implementation
+  // language, so there's no reason to invent a separate number here.
+  // Registered once here rather than re-set on every enterDirectory()
+  // call since it's a live callback into currentDirectory_/
+  // configuration_, not a snapshot.
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     const auto &ls = configuration_.commandFor(ConfiguredRole::Ls);
     std::string program = ls.argv.empty() ? "" : ls.argv.front();
-    return {currentDirectory_, program.empty() ? "" : "(" + program + ")"};
+    return {currentDirectory_, program.empty() ? "" : "(" + program + ")", /*fillTrailingToEdge=*/false,
+            "usilic v1.5b"};
   });
 }
 

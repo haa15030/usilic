@@ -5334,6 +5334,56 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      実機での動作確認はユーザー側で「買い物中につき後で」とのことで
      未実施、コードレベルの検証(単体テスト+ビルド確認)のみ。
 
+93. **2026-07-31: ディレクトリ一覧mode-lineの右端に、legacy由来の
+    プログラム名+バージョン("usilic v1.5b")ウォーターマークを追加**
+   - ユーザーから、mode-lineに関する進め方そのものについて質問があった:
+     「CUI版のソースから移植するだけの作業をしているわけではない?
+     あっちの動作は結構まとも」という指摘に対し、アーキテクチャ(disp_window()
+     の巨大switch等、複雑で保守困難な構造)は意図的に移植せず新規に
+     設計し直している一方、mode-lineのパンくず設計・pagerの現在行
+     ハイライト・起動時のHistory参照条件など、観測可能な挙動については
+     legacyソースを確認せず自己判断で実装し、スクリーンショットで
+     指摘されてから読みに行くという順序になっていたことを認め、
+     今後は挙動に関しては実装前にlegacyソースを確認する方針へ切り替える
+     ことで合意(メモリに記録済み)。
+   - その直後、実際にもう1件見つかった: ディレクトリ一覧画面の
+     mode-line右端には、"一つ前のディレクトリ名"ではなく
+     プログラム名+バージョンが表示されるのが仕様、との指摘。
+     `disp.c`のdisp_window()を再確認したところ、mode-line[6]
+     ("previous-mode"、`prev0`引数)がK_z/K_yセンチネル(=「前モードの
+     テキストが無い」状態)のとき、`vt_printf(" %s%s%s ", A_md,
+     getenv(ENV_PROG), A_me)`で画面右端に`ENV_PROG`環境変数(起動時に
+     `tcb.c`が`"<プログラム名> v<バージョン>"`という形でセットする、
+     `tcb/src/version.h`の"1.5b"タグに由来)をボールド(reverse video
+     ではなく)で右詰め表示する、というフォールバック分岐が存在
+     すると判明。T_dirでは`prev0`が実際にこのセンチネルのままである
+     一方(項目90で実装した"(ls)"は`prev0`ではなく別の`arg`引数
+     経由)、T_file(pager)では`prev0`が実データ(サイズ+ディレクトリ)
+     で埋まっているためこの分岐自体が発火せず、ウォーターマークは
+     出ない(実CUIスクリーンショットとも整合)。
+   - **実装**: `ContentView::ModeLineFields`に`std::string
+     rightWatermark`フィールドを追加。`renderModeLine()`で
+     name/position/trailingを描画した後、収まる場合のみ
+     (`drawnLen + watermark.size() <= cols`、収まらない場合は
+     項目90と同じ「切り詰めずに丸ごと省略」方針)、画面右端
+     `cols - watermark.size()`の位置へカーソル移動し、
+     `Display::Attribute::Bold`(standoutではない)で` usilic v1.5b `
+     (前後に半角スペース、legacyの書式と同じ)を描画。
+     `DirectoryMode`のコンストラクタで`rightWatermark`に
+     `"usilic v1.5b"`を設定(バージョン番号はtcb/src/version.hの
+     タグをそのまま踏襲、同一プロジェクトの同一バージョン epoch内での
+     実装言語違いに過ぎないため独自の番号を割り振る理由が無いと判断)。
+     `FileMode`側は空文字列のまま(`fillTrailingToEdge`が既に行末まで
+     埋めるため、legacy同様この分岐は発火しない)。
+   - **検証**: doctest新規1件追加(ウォーターマークが右端に正しく
+     配置されること、standout(反転)ではないこと、収まらない幅では
+     丸ごと省略されること)、計466件全通過(Mac)。実PTYで実際に
+     `usilic ~/git/usilic/src/cpp/src`を起動し、生バイト列で
+     `ESC[1m usilic v1.5b ESC(BESC[m`(SGRのボールドON、standoutでは
+     ない)が画面右端(80桁中67桁目、`cols - 14`と一致)に描画される
+     ことを確認。Ubuntu 26.04でも465件中455件通過、失敗10件は
+     いずれも今回のdiffと無関係な既存の環境依存差。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
