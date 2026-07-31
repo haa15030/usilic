@@ -5031,6 +5031,82 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      既知課題)により実GUI上でのライブ確認はできていない。実ターミナル
      モードでの確認で代替した。
 
+89. **2026-07-31: 項目88の「選択中ファイル名」パンくず設計を全面破棄、
+    実CUI(Terminal.app)のスクリーンショット2枚に基づく本来の
+    disp_window()フィールド構成へ作り直し**
+   - ユーザーから実機のCUI版スクリーンショット2枚(ディレクトリ一覧・
+     `utf8.hpp`のファイル内容表示)が示され、「独自mode-lineなんて
+     いらない。CUIからの移植でよろしく」と明確な方向修正が入った。
+     項目88で実装した「選択中エントリの名前をパンくずとして表示する」
+     という設計は、disp_window()の実際のフィールド構成を確認せずに
+     このポート独自に考案したものであり、実CUIとは全く違う内容
+     (ディレクトリ一覧なのに選択ファイル名を出す、ファイルサイズや
+     ディレクトリパス、リストに使ったプログラム名が一切出ない)に
+     なっていたと判明。
+   - **実CUIの`tcb/src/disp.c`disp_window()を読み、実際のフィールド
+     構成を特定**: `name0`が`/`始まりかつ直前モードがK_z(file-
+     selector、ディレクトリ一覧)ならmode-line[1]「name」に絶対パス
+     そのまま、K_y(pager、ファイル表示)なら同じくname0をそのまま
+     (呼び出し側がbasenameだけを渡している)使う。mode-line[6]
+     「previous-mode」に相当する右側フィールドは、ディレクトリ一覧
+     ではリストに使ったプログラム名を`(ls)`のように括弧書き、
+     ファイル表示ではファイルの実バイト数+ディレクトリパスという、
+     ユーザーが見せてくれた2枚のスクリーンショットの内容そのもの
+     だった(`current/total TOP/N%/END`という中央の位置表示自体は
+     項目81で既にカーソル位置基準へ変更済みで、これは実CUIとの
+     意図的な差異としてユーザー自身が要望したものなので変更なし)。
+   - **設計**: `ContentView::BreadcrumbProvider`(名前1つだけのコール
+     バック)を`ModeLineFields{name, trailing}`という2フィールドの
+     構造体を返す`ModeLineFieldsProvider`に置き換え。
+     `composeModeLineRow()`は`name + " " + position + " " + trailing`
+     を組み立て、画面幅に収まらない場合は`trailing`→`name`の順に
+     丸ごと省略する(項目88から引き継いだ、UTF-8境界破壊・実端末での
+     行折り返し破壊を避けるための「切り詰めない」方針は維持)。
+     `DirectoryMode`のコンストラクタが登録するプロバイダは
+     `{currentDirectory_, "(" + ls起動コマンドのargv[0] + ")"}`
+     (`configuration_.commandFor(ConfiguredRole::Ls)`から動的に取得、
+     決め打ちの"ls"文字列にしなかったのは設定でlsコマンドを変更
+     できる余地を残すため)。`FileMode`のコンストラクタが登録する
+     プロバイダは`{basename, バイト数 + " " + directory + "/"}`
+     (`std::filesystem::file_size()`/`path::filename()`/
+     `path::parent_path()`を使用、エラー時はディレクトリのみ表示に
+     フォールバック)。
+   - **副次的な修正**: `DirectoryMode::enterDirectory()`で
+     `currentDirectory_`に常に末尾`/`を付与するよう正規化(スクリーン
+     ショットのディレクトリ一覧が末尾スラッシュ付きで表示されていた
+     ため)。シンボリックリンク解決や絶対パス化(realpath的な
+     canonicalization)は意図的に行っていない(既存のテストが
+     `/tmp`をmacOSの`/private/tmp`シンボリックリンク経由の実パスと
+     文字列比較しており、canonicalizeすると既存テストが壊れる、
+     かつ「見た目の正規化」の範囲を超える副作用のため)。
+   - **検証**: (1) doctest総入れ替え(`test_content_view.cpp`の
+     旧`setBreadcrumbProvider`系4件を`setModeLineFieldsProvider`系
+     4件へ、`test_directory_mode.cpp`の1件を「ディレクトリパス+
+     (ls)、カーソル位置に依存しない」検証へ書き換え、`test_file_mode.cpp`
+     に2件新規追加)、計458件全通過(Mac)。(2) 実PTYで実際に
+     `~/git/usilic/src/cpp/src`を開き、生バイト列で
+     `/Users/haa15030/git/usilic/src/cpp/src/ 01/74 TOP (ls)`
+     (ディレクトリ)、`utf8.hpp 01/31 TOP 1352
+     /Users/haa15030/git/usilic/src/cpp/src/`(ファイル、バイト数
+     1352はユーザー提供スクリーンショットの実測値と一致)を確認、
+     ユーザーが見せてくれたスクリーンショット2枚と字面レベルで
+     一致することを確認した。狭い画面幅でのフィールド省略(overflow
+     omit)動作も、意図的に長いテンポラリディレクトリパスを使った
+     初回のPTYテストで(狙わず)実際に発火することを確認済み。
+     (3) Ubuntu 26.04 Dockerコンテナでも457件中447件通過、失敗10件は
+     いずれも今回のdiffと無関係な既存の環境依存差。
+   - **未着手・範囲外(既知)**: disp_window()が本来カバーする
+     mode-line[6]「previous-mode」表示は、今回移植したDirectory/File
+     の2モード以外(GREP/CUT/MAN/PROGRAM/ARC/SHELL/M_copy/M_exit等)
+     ではまだ存在しない。それらのモードのContentViewは
+     `setModeLineFieldsProvider()`を呼んでいないため、従来通り
+     位置表示のみが出る(退行ではなく、単に未移植)。GUIモードでの
+     実機ライブ確認は項目88と同じ理由(合成キー入力の不安定さ)で
+     未実施、実ターミナルモードでの確認で代替。
+   - **保留**: ユーザーから同時に依頼された「余白狭すぎを解消」は
+     何を指すか(GUIウィンドウの余白、mode-line内のフィールド間隔、
+     その他)を確認中で、この項目には未反映。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

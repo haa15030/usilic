@@ -157,3 +157,21 @@ TEST_CASE_FIXTURE(Fixture, "reflow: a no-op (false) when no file is currently lo
   FileMode fresh{view, history, Charset::Encoding::Ascii, 80};
   CHECK_FALSE(fresh.reflow(40));
 }
+
+TEST_CASE_FIXTURE(Fixture, "mode-line fields: shows the bare filename, byte size, and directory") {
+  std::string path = writeFile("plain.txt", "hello\nworld\n");  // 12 bytes
+  REQUIRE(mode.loadFile(path));
+
+  // Ported from disp_window()'s pager case: unlike Directory mode, the
+  // name field here is the bare filename (NOT the full path), and the
+  // trailing field is "<byte size> <directory>/".
+  std::string text = view.modeLineText();
+  CHECK(text.rfind("plain.txt ", 0) == 0);
+  std::string expectedTrailing = "12 " + root.string() + "/";
+  CHECK(text.substr(text.size() - expectedTrailing.size()) == expectedTrailing);
+}
+
+TEST_CASE_FIXTURE(Fixture, "mode-line fields: before any loadFile, no fields are shown") {
+  FileMode fresh{view, history, Charset::Encoding::Ascii, 80};
+  CHECK(view.modeLineText() == "0/0 END");
+}

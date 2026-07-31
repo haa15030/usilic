@@ -53,8 +53,8 @@ namespace fm {
 //     control-byte detection (< 0x20) is identical across every
 //     encoding. There is nothing charset-dependent left to port here,
 //     so this class takes no Charset::Encoding at all. (The mode-line
-//     breadcrumb's own overflow handling, added 2026-07-31, stays
-//     consistent with this: it omits the whole breadcrumb rather than
+//     fields' own overflow handling, added 2026-07-31, stays
+//     consistent with this: it omits a whole field rather than
 //     truncating at a byte offset that could split a multi-byte
 //     character -- see composeModeLineRow()'s own comment -- so this
 //     class still never needs to know how wide a character is.)
@@ -184,41 +184,56 @@ class ContentView {
   // reaching END the way plain 'j'/'s' navigation already did).
   std::string scrollModeLineText() const;
 
-  // Supplies the "current selection's full name" prefix shown before
-  // current/total% on the mode-line row (the sliver of legacy
-  // disp_window()'s `name` field this port covers -- see its own
-  // comment for why the rest, e.g. the previous-mode breadcrumb and
-  // "Mark set" indicator, is still future StatusBar/Mode territory).
-  // Called with cursorIndex_ every time the mode-line is about to be
-  // drawn; ContentView itself has no notion of "the full name of a
-  // line" (Line only carries the whole formatted display row, e.g.
-  // ls -l's full column layout, not a parsed-out filename) -- that's
-  // Mode-specific knowledge (DirectoryMode's own DirectoryEntry::name,
-  // for instance), so this is a callback rather than a plain string:
-  // it always reflects whichever line is CURRENTLY selected, without
-  // ContentView needing to be told again every time the cursor moves.
-  // A default-constructed (empty) provider means no breadcrumb at all
-  // (every existing mode's mode-line is unchanged from before this
-  // was added, until its own Mode class opts in).
-  using BreadcrumbProvider = std::function<std::string(int cursorIndex)>;
-  void setBreadcrumbProvider(BreadcrumbProvider provider);
+  // The two mode-specific pieces legacy's disp_window() wraps around
+  // the current/total position text (ported from its own field
+  // layout, see the comment on setModeLineFieldsProvider() below):
+  //   name     -- mode-line[1], drawn before the position (e.g. the
+  //               directory's full path in Directory mode, or a
+  //               file's bare name in File mode -- which one legacy
+  //               shows depends on the mode, not on ContentView).
+  //   trailing -- mode-line[6] ("previous-mode" in legacy's own
+  //               comment), drawn after the position (e.g. "(ls)" in
+  //               Directory mode, or "<size> <directory>/" in File
+  //               mode). Empty means nothing is drawn there.
+  struct ModeLineFields {
+    std::string name;
+    std::string trailing;
+  };
+
+  // Supplies this view's ModeLineFields, recomputed every time the
+  // mode-line is about to be drawn (so it always reflects whichever
+  // line is CURRENTLY selected/loaded, without ContentView needing to
+  // be told again every time the cursor moves or a new file loads).
+  // ContentView itself has no notion of a line's "full name" or a
+  // mode's own identity (Line only carries the whole formatted
+  // display row, e.g. ls -l's full column layout) -- that's Mode-
+  // specific knowledge (DirectoryMode's currentDirectory(), FileMode's
+  // currentFile(), etc), so this is a callback rather than a plain
+  // string. A default-constructed (empty) provider means no extra
+  // fields at all -- just the bare position text (every existing
+  // mode's mode-line is unchanged from before this was added, until
+  // its own Mode class opts in).
+  using ModeLineFieldsProvider = std::function<ModeLineFields(int cursorIndex)>;
+  void setModeLineFieldsProvider(ModeLineFieldsProvider provider);
 
  private:
   void renderLine(const Line &line, bool marked);
   void renderModeLine();
   void clampViewport();
-  // Prepends the current breadcrumb (see setBreadcrumbProvider()) to
-  // `positionText`, separated by one space -- unless the combined
+  // Assembles "name positionText trailing" from the current
+  // ModeLineFieldsProvider (see setModeLineFieldsProvider()) around
+  // `positionText`, separated by single spaces -- unless the combined
   // string wouldn't fit in the display's own column count, in which
-  // case the breadcrumb is simply omitted (never truncated): a
-  // partial breadcrumb cut at an arbitrary byte offset risks splitting
-  // a multi-byte UTF-8 character (this class deliberately stays
-  // charset-ignorant otherwise, see the class comment's own note on
-  // why -- silently dropping the whole breadcrumb sidesteps that
-  // instead of introducing width-aware truncation here), and on a
-  // real terminal (TerminalDisplay::write() has no bounds-checking of
-  // its own) an actual overflow would wrap into the next screen row
-  // and corrupt it, not just look visually crowded.
+  // case fields are dropped, trailing first then name (positionText
+  // itself is always kept), rather than truncated: a partial field cut
+  // at an arbitrary byte offset risks splitting a multi-byte UTF-8
+  // character (this class deliberately stays charset-ignorant
+  // otherwise, see the class comment's own note on why -- silently
+  // dropping a whole field sidesteps that instead of introducing
+  // width-aware truncation here), and on a real terminal
+  // (TerminalDisplay::write() has no bounds-checking of its own) an
+  // actual overflow would wrap into the next screen row and corrupt
+  // it, not just look visually crowded.
   std::string composeModeLineRow(const std::string &positionText) const;
 
   Display &display_;
@@ -229,7 +244,7 @@ class ContentView {
   std::optional<int> hoverIndex_;
 
   int row0_ = 0, height_ = 0;
-  BreadcrumbProvider breadcrumbProvider_;
+  ModeLineFieldsProvider modeLineFieldsProvider_;
 };
 
 }  // namespace fm

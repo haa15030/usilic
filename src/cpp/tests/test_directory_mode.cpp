@@ -92,25 +92,24 @@ TEST_CASE_FIXTURE(Fixture, "selectedEntry: tracks the ContentView cursor") {
   CHECK(last->name == mode.entries().back().name);
 }
 
-TEST_CASE_FIXTURE(Fixture, "mode-line breadcrumb: shows the selected entry's real filename") {
+TEST_CASE_FIXTURE(Fixture, "mode-line fields: shows the current directory's full path and \"(ls)\"") {
   REQUIRE(mode.enterDirectory(path()));
 
-  int idx = -1;
-  for (std::size_t i = 0; i < mode.entries().size(); i++) {
-    if (mode.entries()[i].name == "file with space.txt") {
-      idx = static_cast<int>(i);
-      break;
-    }
-  }
-  REQUIRE(idx >= 0);  // confirms the fixture layout this test relies on
+  // Ported from disp_window()'s file-selector case: the mode-line's
+  // name field is the whole directory path (not the selected entry's
+  // name -- that was this port's own earlier, incorrect design), and
+  // the listing command appears in parens after the position text.
+  std::string text = view.modeLineText();
+  CHECK(text.rfind(path() + " ", 0) == 0);
+  CHECK(text.substr(text.size() - 5) == " (ls)");
 
-  view.setCursorIndex(idx);
-  // The mode-line breadcrumb is the parsed filename itself (not the
-  // whole `ls -l`-formatted line), and stays correct even when the
-  // name contains a space -- exercising exactly the kind of name
-  // is_write()/get_col() historically mishandled (see CLAUDE.md item
-  // 13), though DirectoryEntry::name is already parsed by this point.
-  CHECK(view.modeLineText().rfind("file with space.txt ", 0) == 0);
+  // Stays the SAME regardless of which entry is selected -- unlike the
+  // rejected per-entry-name design, this field isn't cursor-dependent
+  // (only the current/total position text in between changes).
+  view.setCursorIndex(static_cast<int>(mode.entries().size()) - 1);
+  std::string textAtLast = view.modeLineText();
+  CHECK(textAtLast.rfind(path() + " ", 0) == 0);
+  CHECK(textAtLast.substr(textAtLast.size() - 5) == " (ls)");
 }
 
 TEST_CASE_FIXTURE(Fixture, "openSelected: descending into a subdirectory pushes a ModeStack frame") {

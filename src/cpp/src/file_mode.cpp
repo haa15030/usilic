@@ -1,14 +1,35 @@
 #include "file_mode.hpp"
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <system_error>
 
 #include "pipe_buffer.hpp"
 
 namespace fm {
 
 FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encoding, int width)
-    : view_(view), history_(history), encoding_(encoding), width_(width) {}
+    : view_(view), history_(history), encoding_(encoding), width_(width) {
+  // Mode-line fields, ported from disp_window()'s own field layout for
+  // the pager case (name0 not starting with '/' takes the "copy as-
+  // is" branch, see its comment): the bare filename on the left (NOT
+  // the full path -- that's what the CUI actually shows), and the
+  // file's byte size plus its containing directory on the right.
+  // Registered once here rather than re-set on every loadFile() call
+  // since it's a live callback into currentFile_, not a snapshot.
+  view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    if (currentFile_.empty()) return {};
+    std::filesystem::path path(currentFile_);
+    std::string directory = path.parent_path().string();
+    if (!directory.empty() && directory.back() != '/') directory += '/';
+
+    std::error_code ec;
+    auto size = std::filesystem::file_size(path, ec);
+    std::string trailing = ec ? directory : std::to_string(size) + " " + directory;
+    return {path.filename().string(), trailing};
+  });
+}
 
 std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) const {
   std::ifstream in(path, std::ios::binary);

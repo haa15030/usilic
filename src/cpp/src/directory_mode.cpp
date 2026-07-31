@@ -9,15 +9,19 @@ namespace fm {
 DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &history,
                               const Configuration &configuration)
     : view_(view), modeStack_(modeStack), history_(history), configuration_(configuration) {
-  // Mode-line breadcrumb (see ContentView::setBreadcrumbProvider()'s
-  // own comment): the selected entry's real filename, not the whole
-  // `ls -l`-formatted display line -- exactly what a long name
-  // truncated in the listing column itself would otherwise hide.
-  // Registered once here rather than re-set on every enterDirectory()
-  // call since it's a live callback into entries_, not a snapshot.
-  view_.setBreadcrumbProvider([this](int cursorIndex) -> std::string {
-    if (cursorIndex < 0 || cursorIndex >= static_cast<int>(entries_.size())) return "";
-    return entries_[cursorIndex].name;
+  // Mode-line fields, ported from disp_window()'s own field layout for
+  // the T_dir/file-selector case (name0[i]=='/' && *prev0==K_z keeps
+  // the whole absolute path as-is, see its comment): the current
+  // directory's full path on the left, and the listing command (e.g.
+  // "(ls)") on the right -- NOT the selected entry's name, which was
+  // this port's own invented design before this was corrected to
+  // match the real CUI. Registered once here rather than re-set on
+  // every enterDirectory() call since it's a live callback into
+  // currentDirectory_/configuration_, not a snapshot.
+  view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    const auto &ls = configuration_.commandFor(ConfiguredRole::Ls);
+    std::string program = ls.argv.empty() ? "" : ls.argv.front();
+    return {currentDirectory_, program.empty() ? "" : "(" + program + ")"};
   });
 }
 
@@ -50,7 +54,14 @@ bool DirectoryMode::enterDirectory(const std::string &path) {
     lines.push_back({line});
   }
 
+  // Trailing-slash normalization only (NOT canonicalization -- no
+  // symlink resolution, no relative-to-absolute conversion): matches
+  // the CUI mode-line's own directory display convention (see
+  // CLAUDE.md's real-screenshot comparison), and is idempotent/safe
+  // for callers that already pass a trailing slash (every existing
+  // caller does).
   currentDirectory_ = path;
+  if (!currentDirectory_.empty() && currentDirectory_.back() != '/') currentDirectory_ += '/';
   entries_ = std::move(entries);
   markedIndices_.clear();  // marks are scoped to the listing they were made in; a fresh `ls` invalidates them
   view_.setLines(std::move(lines));

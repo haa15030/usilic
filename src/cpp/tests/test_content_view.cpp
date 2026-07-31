@@ -48,27 +48,35 @@ TEST_CASE("lineIndexAtRow: maps a display row within the viewport to a line inde
   CHECK(v.lineIndexAtRow(6) == 4);
 }
 
-TEST_CASE("setBreadcrumbProvider: modeLineText prefixes the provider's result") {
-  RecordingDisplay d(10, 40);
+TEST_CASE("setModeLineFieldsProvider: modeLineText wraps name/trailing around the position text") {
+  RecordingDisplay d(10, 60);
   ContentView v(d);
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
-  v.setBreadcrumbProvider([](int cursorIndex) { return "file" + std::to_string(cursorIndex) + ".txt"; });
-  CHECK(v.modeLineText() == "file0.txt 1/3 TOP");
+  v.setModeLineFieldsProvider([](int cursorIndex) -> ContentView::ModeLineFields {
+    return {"file" + std::to_string(cursorIndex) + ".txt", "(ls)"};
+  });
+  CHECK(v.modeLineText() == "file0.txt 1/3 TOP (ls)");
   v.setCursorIndex(2);
-  CHECK(v.modeLineText() == "file2.txt 3/3 END");
+  CHECK(v.modeLineText() == "file2.txt 3/3 END (ls)");
 }
 
-TEST_CASE("setBreadcrumbProvider: an empty result from the provider omits the breadcrumb") {
+TEST_CASE("setModeLineFieldsProvider: an empty name/trailing is simply omitted") {
   RecordingDisplay d(10, 40);
   ContentView v(d);
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
-  v.setBreadcrumbProvider([](int) { return ""; });
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"", ""}; });
   CHECK(v.modeLineText() == "1/3 TOP");
+
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"name.txt", ""}; });
+  CHECK(v.modeLineText() == "name.txt 1/3 TOP");
+
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"", "(ls)"}; });
+  CHECK(v.modeLineText() == "1/3 TOP (ls)");
 }
 
-TEST_CASE("setBreadcrumbProvider: no provider set leaves modeLineText unchanged") {
+TEST_CASE("setModeLineFieldsProvider: no provider set leaves modeLineText unchanged") {
   RecordingDisplay d(10, 40);
   ContentView v(d);
   v.setViewport(0, 5);
@@ -76,12 +84,24 @@ TEST_CASE("setBreadcrumbProvider: no provider set leaves modeLineText unchanged"
   CHECK(v.modeLineText() == "1/3 TOP");
 }
 
-TEST_CASE("setBreadcrumbProvider: a breadcrumb that would overflow the display width is dropped, not truncated") {
-  RecordingDisplay d(10, 20);  // narrow display -- "1/3 TOP" alone is 7 columns, leaving 13 for "name "
+TEST_CASE("setModeLineFieldsProvider: fields that would overflow the display width are dropped, trailing first, not truncated") {
+  RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
-  v.setBreadcrumbProvider([](int) { return "this-name-is-way-too-long-to-fit.txt"; });
+
+  // "shortname.txt 1/3 TOP" (21 cols) fits within 30 columns on its
+  // own, but adding the long trailing field pushes it over -- trailing
+  // is dropped first, name is kept.
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    return {"shortname.txt", "this-trailing-is-also-way-too-long"};
+  });
+  CHECK(v.modeLineText() == "shortname.txt 1/3 TOP");
+
+  // Both fields too long even without each other -- falls back to bare position text.
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    return {"this-name-is-way-too-long-to-fit.txt", "this-trailing-is-also-way-too-long-to-fit"};
+  });
   CHECK(v.modeLineText() == "1/3 TOP");
 }
 

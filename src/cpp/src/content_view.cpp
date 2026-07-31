@@ -257,16 +257,27 @@ std::string ContentView::scrollModeLineText() const {
   return composeModeLineRow(ModeLine::format(current, total));
 }
 
-void ContentView::setBreadcrumbProvider(BreadcrumbProvider provider) { breadcrumbProvider_ = std::move(provider); }
+void ContentView::setModeLineFieldsProvider(ModeLineFieldsProvider provider) {
+  modeLineFieldsProvider_ = std::move(provider);
+}
 
 std::string ContentView::composeModeLineRow(const std::string &positionText) const {
-  if (!breadcrumbProvider_) return positionText;
-  std::string breadcrumb = breadcrumbProvider_(cursorIndex_);
-  if (breadcrumb.empty()) return positionText;
-  std::string row = breadcrumb + " " + positionText;
+  if (!modeLineFieldsProvider_) return positionText;
+  ModeLineFields fields = modeLineFieldsProvider_(cursorIndex_);
   int cols = display_.columns();
-  if (cols > 0 && static_cast<int>(row.size()) > cols) return positionText;  // see this method's own header comment
-  return row;
+
+  std::string row = positionText;
+  if (!fields.trailing.empty()) row += " " + fields.trailing;
+  if (!fields.name.empty()) row = fields.name + " " + row;
+  if (cols <= 0 || static_cast<int>(row.size()) <= cols) return row;
+
+  // Doesn't fit -- drop trailing first, then name, same priority order
+  // as this method's own header comment (positionText is the one
+  // piece always kept).
+  row = fields.name.empty() ? positionText : fields.name + " " + positionText;
+  if (cols <= 0 || static_cast<int>(row.size()) <= cols) return row;
+
+  return positionText;
 }
 
 // Ported from print_line()'s current-line/total-line/percent display
