@@ -138,9 +138,11 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
     case 0x10:  // ^P
       return Command::MoveUp;
     case ' ':
+    case 0x06:  // ^F (M_forw2, usilicrc's own alias for Space/M_forw)
     case 'b':
+    case 0x02:  // ^B (M_back2, alias for b/M_back)
     case 0x16:  // ^V
-      return byte == 'b' ? Command::PageUp : Command::PageDown;
+      return (byte == 'b' || byte == 0x02) ? Command::PageUp : Command::PageDown;
     case kCarriageReturn:
       return Command::Enter;
     case kControlG:
@@ -151,6 +153,10 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::ToggleMark;
     case 0x12:  // ^R (M_hist)
       return Command::StartDirectoryHistory;
+    case 0x0c:  // ^L (M_clear)
+      return Command::Redraw;
+    case 'q':  // M_quit -- usilicrc scopes this to pager contexts; see handleCommand()'s own gate
+      return Command::QuitPager;
     default:
       return Command::None;
   }
@@ -162,8 +168,17 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
 
   if (escPending_) {
     escPending_ = false;
-    if (!special && byte == 's') return handleCommand(Command::StartShell);  // ESC s : SHELL
-    return false;  // unrecognized ESC-sequence in this slice
+    if (special) return false;
+    switch (byte) {
+      case 's':  // ESC s : SHELL
+        return handleCommand(Command::StartShell);
+      case '<':  // ESC < : go to beginning of buffer (M_head)
+        return handleCommand(Command::GoToTop);
+      case '>':  // ESC > : go to end of buffer (M_tail)
+        return handleCommand(Command::GoToBottom);
+      default:
+        return false;  // unrecognized ESC-sequence in this slice
+    }
   }
 
   if (leaderJPending_) {
@@ -225,8 +240,14 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   if (leaderOPending_) {
     leaderOPending_ = false;
     if (special) return false;
-    if (byte == 'g') return handleCommand(Command::ToggleGuiMode);  // ^O g : toggle GUI mode
-    return false;  // unrecognized ^O-sequence in this slice
+    switch (byte) {
+      case 'g':  // ^O g : toggle GUI mode (this port's own addition, not a usilicrc K-? binding)
+        return handleCommand(Command::ToggleGuiMode);
+      case 'h':  // ^O h : switch scroll mode (K-25)
+        return handleCommand(Command::ToggleScrollMode);
+      default:
+        return false;  // unrecognized ^O-sequence in this slice
+    }
   }
 
   if (!special && byte == kLeaderJ) {
@@ -467,6 +488,28 @@ bool Application::handleCommand(Command command) {
     case Command::ToggleGuiMode:
       guiModeToggleRequested_ = true;
       return true;
+    case Command::Redraw:
+      activeView().redraw();
+      return true;
+    case Command::GoToTop:
+      activeView().goToTop();
+      return true;
+    case Command::GoToBottom:
+      activeView().goToBottom();
+      return true;
+    case Command::QuitPager:
+      // usilicrc documents this as pager-only ("Exit tcb (pager)");
+      // Directory mode has its own confirmed-exit path (StartExit,
+      // ^X^C) and doesn't want a bare 'q' to bypass it.
+      if (currentMode_ == ApplicationMode::Directory) return false;
+      requestImmediateExit();
+      return true;
+    case Command::ToggleScrollMode: {
+      bool enabled = !display_.smoothScrollEnabled();
+      display_.setSmoothScrollEnabled(enabled);
+      history_.setSmoothScrollEnabled(enabled);  // persisted across runs, see History's own field comment
+      return true;
+    }
     case Command::None:
       return false;
   }

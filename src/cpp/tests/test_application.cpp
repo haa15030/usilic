@@ -151,6 +151,16 @@ TEST_CASE("resolveCommand: an unmapped byte resolves to None") {
   CHECK(Application::resolveCommand('z', std::nullopt) == Command::None);
 }
 
+TEST_CASE("resolveCommand: ^F/^B are usilicrc's own aliases for space/b (M_forw2/M_back2)") {
+  CHECK(Application::resolveCommand(0x06, std::nullopt) == Command::PageDown);  // ^F
+  CHECK(Application::resolveCommand(0x02, std::nullopt) == Command::PageUp);    // ^B
+}
+
+TEST_CASE("resolveCommand: ^L resolves to Redraw, 'q' resolves to QuitPager") {
+  CHECK(Application::resolveCommand(0x0c, std::nullopt) == Command::Redraw);
+  CHECK(Application::resolveCommand('q', std::nullopt) == Command::QuitPager);
+}
+
 // -- start()/handleCommand(): directory navigation + file viewing --
 
 TEST_CASE_FIXTURE(Fixture, "start: lists the directory and enters Directory mode") {
@@ -835,6 +845,63 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ESC followed by an unrecognized byte fails
   CHECK(app.currentMode() == ApplicationMode::Directory);
   // The leader state doesn't leak into the next byte: a plain 'j' afterwards is still handled normally.
   CHECK(app.feedByte('j', std::nullopt));
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ESC< / ESC> jump to the first/last line (M_head/M_tail)") {
+  REQUIRE(app.start(path()));
+  fm::ContentView &view = app.activeContentView();
+  view.setCursorIndex(2);
+
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  CHECK(app.feedByte('>', std::nullopt));
+  CHECK(view.cursorIndex() == static_cast<int>(view.lines().size()) - 1);
+
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  CHECK(app.feedByte('<', std::nullopt));
+  CHECK(view.cursorIndex() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^L (Redraw) is a safe no-op that doesn't change cursor/mode state") {
+  REQUIRE(app.start(path()));
+  fm::ContentView &view = app.activeContentView();
+  view.setCursorIndex(1);
+  CHECK(app.feedByte(0x0c, std::nullopt));
+  CHECK(view.cursorIndex() == 1);
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' (QuitPager) is a no-op in Directory mode, matching usilicrc's pager-only scoping") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.feedByte('q', std::nullopt));
+  CHECK_FALSE(app.wantsExit());
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O h toggles Display::smoothScrollEnabled() and persists it to History") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(display.smoothScrollEnabled());
+  CHECK_FALSE(history.smoothScrollEnabled());
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  CHECK(app.feedByte('h', std::nullopt));
+  CHECK(display.smoothScrollEnabled());
+  CHECK(history.smoothScrollEnabled());
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  CHECK(app.feedByte('h', std::nullopt));
+  CHECK_FALSE(display.smoothScrollEnabled());
+  CHECK_FALSE(history.smoothScrollEnabled());
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' exits immediately outside Directory mode, without the y/n confirmation") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK(app.feedByte('q', std::nullopt));
+  CHECK(app.wantsExit());
 }
 
 // runGuiPhase()'s w/s inertial-scroll trigger (see CLAUDE.md's

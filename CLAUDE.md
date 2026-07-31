@@ -5384,6 +5384,98 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ことを確認。Ubuntu 26.04でも465件中455件通過、失敗10件は
      いずれも今回のdiffと無関係な既存の環境依存差。
 
+94. **2026-07-31: usilicrcのKEY-modeヘルプ画面と本ポートのキーアサインを
+    突き合わせ、未実装だったK-3/K-6/K-7/K-12/K-13/K-25/K-70を実装
+    (未サポート分の第一弾)**
+   - ユーザーからCUI版の`^H`(KEY-modeヘルプ画面、全キーアサイン一覧)の
+     スクリーンショットが示され、「未サポートのキーアサインを進めるだけ
+     進めてほしい」との依頼。項目89の合意(挙動は実装前にlegacyソースを
+     確認する)に従い、スクリーンショットのOCR頼みではなく
+     `~/.usilic/usilicrc`本体の`KEY`セクション(K-0〜K-99、`F-?`の
+     leaderキー定義込み)を直接読み、`tcb/src/mode.h`の
+     `#define M_xxx N`(コメントに"mode-No. must be equal to K-No. of
+     tcbrc"とある通り、M定数の数値=K番号)と突き合わせて、この
+     ポートの`Command`enum・`resolveCommand()`・leader-key処理
+     (`leaderJPending_`/`leaderXPending_`/`leaderOPending_`/
+     `escPending_`)を1行ずつ照合、未実装分を洗い出した。
+   - **今回実装した分**:
+     - K-3(^L、M_clear)「Redisplay current window」→
+       `Command::Redraw`、`activeView().redraw()`を呼ぶだけ。
+     - K-6/K-7(^F/^B、M_forw2/M_back2)「Space/bのエイリアス」→
+       `resolveCommand()`の既存Space/b判定に追加するだけ(新規Command
+       無し)。
+     - K-12/K-13(ESC</ESC>、M_head/M_tail)「先頭/末尾行へ移動」→
+       `Command::GoToTop`/`GoToBottom`。`ContentView::goToTop()`/
+       `goToBottom()`自体は以前から実装済みだったが、Applicationの
+       どのキーにも結び付けられていなかった(未使用のまま埋もれて
+       いた実装、と判明)。`escPending_`の判定を`'s'`(SHELL)のみの
+       if文からswitch文へ拡張し、`'<'`/`'>'`を追加。
+     - K-25(^Oh、M_hs)「スクロールモード切替」→
+       `Command::ToggleScrollMode`。こちらも`Display::
+       setSmoothScrollEnabled()`/`History::smoothScrollEnabled()`
+       (履歴ファイルのTCBトレーラー行に保存/復元される設定)は
+       以前から実装済みだったが、(a)どのキーにも結び付けられておらず、
+       (b)`main()`の起動処理がHistoryから読み込んだ値をDisplayへ
+       一度も適用していなかった(=保存された設定を読み込んでも
+       捨てられるだけで、実行時は常にfalseで起動していた)という、
+       2箇所の未接続が重なっていたと判明。`leaderOPending_`に`'h'`の
+       caseを追加、`main()`の`display.open()`直後に
+       `display.setSmoothScrollEnabled(history.smoothScrollEnabled())`
+       を追加。この副産物として、既存の`moveUp()`/`moveDown()`等の
+       ハードウェアスクロール高速パス(sf_row/sr_row相当、以前の
+       セッションで実装・テスト済み)が実際のセッションで一度も
+       有効化されずに眠っていた、という別の未接続も同時に解消された。
+     - K-70(`q`、M_quit)「Exit tcb (pager)」→`Command::QuitPager`。
+       usilicrcのコメント通りpager限定の即時終了(確認プロンプト無し)
+       と判断し、`handleCommand()`側で`currentMode_==Directory`の
+       ときは無視(false)、それ以外では`requestImmediateExit()`
+       (GUI版のESC-ESC-Enter終了ジェスチャで既に実装済みの、
+       確認プロンプトを経由しない終了経路)を呼ぶよう実装。
+   - **検証**: doctest新規6件追加(^F/^B、^L/`q`のresolveCommand()、
+     ESC</ESC>のfeedByte()往復、`q`のDirectory内no-op、ファイル
+     モードでの`q`即時終了、^Ohのトグル+History永続化の往復)、
+     計473件全通過(Mac)。実PTYで`usilic ~/git/usilic/src/cpp/src`を
+     実行し、`ESC>`→mode-line「74/74 END」、`ESC<`→「01/74 TOP」、
+     ディレクトリ一覧での`q`が無反応(プロセス生存)であることを
+     生バイト列で確認。ファイルモードでの`q`即時終了はdoctestでは
+     確認済み(`wantsExit()`が同期的にtrueになることを直接検証)だが、
+     実PTY経由でのプロセス終了確認は、テスト用ヘルパースクリプトの
+     ゾンビプロセス刈り取り待ち(`waitpid`)がハングする実機固有の
+     問題に阻まれ完遂できず(検証環境側の問題であり、アプリ側の
+     ロジック自体はdoctestで直接確認済み)、この点のみ未完了として
+     記録。原因調査中に実機に残っていた本セッション由来の孤児
+     `usilic`プロセス(蓄積CPU時間あり)を発見しkillで後片付け済み
+     (今後のPTYテストでのプロセス管理をより慎重に行う必要がある
+     ことの記録として残す)。Ubuntu 26.04でも472件中462件通過、
+     失敗10件はいずれも今回のdiffと無関係な既存の環境依存差。
+   - **未実装のまま残っているusilicrcのキーアサイン(範囲外・次回
+     以降)**: K-0(^T「TCB」バナー画面)、K-15/16(Set mark/Get mark
+     ―ペアの正確な意味論の精査が必要、既存の`ToggleMark`は別概念
+     [CP/MV/RM/ARC用選択]であり単純に流用できないと判明)、
+     K-17(^X^W、バッファ保存)、K-18〜21(ファイルセレクタ/親
+     ディレクトリ/N番目ディレクトリ/直前の通常ファイルへのジャンプ)、
+     K-23/24(^O^M/ESC^M、読み込みバリエーション)、K-26(^Ol、ls
+     出力形式切替 -- `Configuration::lsMode()`は既に読み込まれて
+     いるが未使用と判明)、K-27/28(^Oa/^X^Kd、ascii/kanjiモード
+     切替)、K-29/30(^O^C/^O^Y、文字列コピー&ペースト)、
+     K-35/36(^Jb/^J^B、CUTの「regular file」バリエーション、
+     現行の`StartCutFixed`/`StartCutRegex`は「buffer」バリエーション
+     のみカバー)、K-45〜48(^Xf/^X^F/^Xd/^X^D、FILE/DIR名の入力/
+     選択 -- `PathResolver`クラスは既に実装済みだが本ポートの
+     どこからも呼ばれておらず未配線と判明)、K-51/53/55/57
+     (^X^Kc/^X^Km/^X^Kr/^X^Ka、CP/MV/RM/ARCのSHELLウィンドウ付き
+     バリエーション -- `F-2`=`^X^K`という3段目のleaderキー自体が
+     未実装)、K-60〜64(^Xs/^J./^J,/^Jw/^J^W、SHELLモード関連の
+     追加操作)、K-65(^I、LIST補完 -- SHELLモード内のTab補完とは
+     別に、汎用の入力欄補完として存在)、K-67/68(^X^Ke/^X^Kl、
+     ERROR/LOGバッファ表示)、K-71〜73(^X^M/^X^Y/^X^N、CP/MV/RM/ARC
+     の宛先入力・全選択・全解除)、M-0〜M-9(組み込みマクロ定義、
+     K-80〜88経由で呼び出される事前定義済みマクロ ― 現行の
+     `recordingMacro_`はユーザー録画マクロのみ対応)。合計すると
+     usilicrcのK-?テーブル(K-0〜K-76の主要77個)のうち、今回までに
+     実装済みなのは約半数程度と見られる(正確な集計は次回の棚卸しで
+     行う)。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

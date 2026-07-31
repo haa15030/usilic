@@ -1439,6 +1439,16 @@ int main(int argc, char **argv) {
 
   display.open();
 
+  // Restores the SCROLL setting saved by a previous session (see
+  // usilicrc's own SCROLL section and Command::ToggleScrollMode's
+  // comment on ^Oh) -- history.smoothScrollEnabled() was already
+  // parsed from/serialized to the history file's TCB trailer line,
+  // but nothing ever actually applied it to the Display until now (a
+  // real gap: the hardware-scroll fast paths this flag gates were
+  // fully built and tested, but every real run defaulted to false
+  // regardless of what a previous session had saved).
+  display.setSmoothScrollEnabled(history.smoothScrollEnabled());
+
   // Resolved to an absolute path (textually only -- lexically_normal(),
   // no symlink resolution, matching PathResolver's own established
   // approach) before ever reaching DirectoryMode: a bare "." argument

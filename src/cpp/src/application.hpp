@@ -69,7 +69,36 @@ enum class Command {
   StartMacroRecord,
   StopMacroRecord,
   PlayMacro,
-  ToggleGuiMode
+  ToggleGuiMode,
+  // K-3 (^L, M_clear): force a full redraw of the active view.
+  Redraw,
+  // K-12/K-13 (ESC< / ESC>, M_head/M_tail): jump to the first/last
+  // line -- ContentView::goToTop()/goToBottom() already existed but
+  // were never wired to a key (a real report: usilicrc's own KEY-mode
+  // help screen, compared line-by-line against this port's key table,
+  // caught several such already-implemented-but-unwired/never-ported
+  // bindings at once -- see CLAUDE.md).
+  GoToTop,
+  GoToBottom,
+  // K-70 ('q', M_quit): exits immediately (no y/n confirmation,
+  // unlike StartExit/^X^C) -- usilicrc documents this as pager-only
+  // ("Exit tcb (pager)"), so handleCommand() only honors it outside
+  // Directory mode, matching that scoping (a bare 'q' in Directory
+  // mode remains a no-op, same as before this was added).
+  QuitPager,
+  // K-25 (^Oh, M_hs): toggles Display::smoothScrollEnabled() --
+  // ported from usilicrc's own SCROLL section ("When the flag is set,
+  // tcb window will scroll within the range above bottom line" --
+  // exactly Display's hardware scroll-region path, which already
+  // excludes the mode-line row, see moveUp()/moveDown()'s own
+  // comments). Display::setSmoothScrollEnabled()/History's own
+  // smoothScrollEnabled_ field already existed (parsed from/
+  // serialized to the history file's TCB trailer line) but neither
+  // was ever wired to a key OR applied to the Display at startup --
+  // both gaps fixed together here, since a toggle key is meaningless
+  // if the persisted value it toggles never actually reaches the
+  // Display in the first place.
+  ToggleScrollMode
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
