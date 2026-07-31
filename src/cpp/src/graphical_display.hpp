@@ -170,14 +170,13 @@ class GraphicalDisplay : public Display {
   struct KeyEvent {
     int byte = 0;                    // valid when special is nullopt
     std::optional<Key> special;      // one of Display::Key's own 6 values, when this was an arrow/page key
-    // Only meaningful when special is Up or Down: whether Shift was
-    // held. Added for the keyboard-driven dot-level inertial-scroll
-    // trigger (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30
-    // notes) -- main.cpp's runGuiPhase() intercepts Shift+Up/Down
-    // before they'd otherwise reach Application::feedByte() as plain
-    // cursor movement. Not tracked for any other key: nothing else
-    // currently cares about modifiers.
-    bool shift = false;
+    // No modifier tracking: originally had a `shift` field (whether
+    // Shift was held with Up/Down) for the keyboard-driven inertial-
+    // scroll trigger, removed 2026-07-31 when that trigger moved to
+    // plain 'w'/'s' bytes instead (the user's own preference -- a
+    // single keystroke is easier to reach for repeatedly than holding
+    // a modifier -- see CLAUDE.md's 2026-07-31 note), which need no
+    // modifier state at all.
   };
   // Returns and clears the next queued key press, or nullopt if none
   // is pending. Ordinary characters (including multi-byte UTF-8 text

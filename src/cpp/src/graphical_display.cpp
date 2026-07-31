@@ -580,9 +580,7 @@ bool GraphicalDisplay::pumpEvents() {
       }
       case SDL_KEYDOWN: {
         if (auto special = translateScancode(event.key.keysym.sym)) {
-          bool shift = (event.key.keysym.mod & KMOD_SHIFT) &&
-                       (*special == Display::Key::Up || *special == Display::Key::Down);
-          impl_->keyQueue.push_back(KeyEvent{0, special, shift});
+          impl_->keyQueue.push_back(KeyEvent{0, special});
           break;
         }
         // Control-key combos (Ctrl+A..Ctrl+_) arrive as SDLK_a.. with
