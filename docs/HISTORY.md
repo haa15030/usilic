@@ -145,3 +145,17 @@ doctest新規2件を含め計525件全通過、実PTYで1/2/3回の^Oa後のhist
 続けてK-46/K-48(^X^F/^X^D、「FILE/DIR: Select file/directory name」)を実装しました。Historyクラスには既にRingCategory::RecentFile/RecentDirectoryという枠とpushRecent()(公開メソッド、ProgramModeがSHELLコマンド履歴用に既に使用中)が用意済みだったものの、RecentFile/RecentDirectoryへ実際にpushRecent()を呼ぶ箇所がどこにも無い(項目104・108と同種の「用意されているが未配線」)配線漏れを発見しました。DirectoryMode::enterDirectory()とFileMode::loadFile()それぞれの成功パスにpushRecent()呼び出しを追加し、実際にディレクトリへ入る・ファイルを開くたびに自動記録されるようにしました。K-46用に新規Command::StartFileHistoryを追加、K-48は既にK-49(^R)用に実装済みだったCommand::StartDirectoryHistoryをそのまま再利用しました。
 
 doctest新規4件を含め計529件全通過、実PTYで実際にファイルを開いた後^X^Fで一覧表示・Enterで再度開けること、^X^Dでディレクトリ履歴ピッカーが開くことを確認、Ubuntuクロスビルドも確認済みです。これでusilicrcの主要77個のK-?キーのうち、K-28(legacy側の相方の仕組みが無く保留)のみを残し、配線が完了しました。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-01 16.31.43.png'
+・HELPのCUTでマクロ機能を試そうとしたが^H、^J^Hが効かない。
+・-c起動時[ESC][ESC][Enter]で終われないため(-gはOK)再試行しづらい。
+・^Xd/^Xfではディレクトリ/ファイル名入力ができず、^X^D等ではハイライト表示箇所の文字列(ディレクトリ名)がモードラインに表示されない。
+・入れ子ARC閲覧はOK.モードラインNG.
+・SHELLではプロンプトが文字化け、コントロールコードがハイライト表示。モードライン右端はカレントディレクトリのはず。
+・LOGはSHELLプロンプトが壊れているので試せない。
+
+CP,MV,RM等ファイル操作はSHELLで行うので同モード周辺のデバッグを優先でよろしく。
+
+>SHELLの文字化けをPTY自動テスト(実機の`.zshrc`を隔離した一時HOMEへコピーして再現)で調査したところ、独立した4系統の根本原因が積み重なっていました。(1)zsh用のPS1上書きがtcsh構文のままで完全に無効化されていた(→isZsh_分岐を新設しexport PROMPT=構文へ)、(2)セットアップコマンドの長い1行がターミナルの折り返し再描画で自己破壊していた(→複数の短い行に分割)、(3)ハンドシェイク用センチネル行がzshでは本物のコマンドとして実行されエラーが可視化されていた(→`: `を前置)、(4)センチネル発見時に同じreadチャンク内の後続データを丸ごと破棄していた(→残りを通常経路へ流すよう修正)。さらに掘り下げると、そもそもANSI/CSI/OSCエスケープシーケンス自体にShellが一切対応しておらず(PipeBufferはファイル内容処理専用でこの概念が無い)、SGRカラーやbracketed-paste-mode等がリテラル文字列として漏れていました(→consumeEscapeByte()を新設し除去)。加えてzshのZLE自身が使うバックスペースベースの再描画イディオム(`u\x08unset ...`)にも未対応で生のバックスペースが可視の制御文字グリフになっていました(→pendingLine_による行組み立て前処理層を追加)。全529件のdoctest・Ubuntu 26.04クロスビルドとも回帰無しを確認済みです。コミット・プッシュ済み。
+
+「モードライン右端はカレントディレクトリのはず」の部分は、legacyのshell.c/disp.cを読んだところname(左端固定文字列)/arg(幅計算専用)/prev(呼び出し元モード名のtrailing)という3フィールドが絡む構造で単純ではなく、追加調査が必要と判断し今回は見送りました。残る5件(HELP ^H/^J^H、-c起動でのESC-ESC-Enter終了、^Xd/^Xf入力と^X^D/^X^Fのmode-line表示、入れ子ARCのmode-line表示、LOG動作確認)も未着手です。次はこれらに順次着手します。

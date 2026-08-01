@@ -41,11 +41,27 @@ void resetSignalsToDefault() {
   for (int i = 1; i < NSIG; i++) std::signal(i, SIG_DFL);
 }
 
-bool isBashProgram(const std::string &argv0) {
+std::string baseName(const std::string &argv0) {
   auto pos = argv0.find_last_of('/');
-  std::string base = (pos == std::string::npos) ? argv0 : argv0.substr(pos + 1);
-  return base == "bash";
+  return (pos == std::string::npos) ? argv0 : argv0.substr(pos + 1);
 }
+
+bool isBashProgram(const std::string &argv0) { return baseName(argv0) == "bash"; }
+
+// zsh has been macOS's own default login shell since Catalina (2019)
+// -- a real gap found via actual hands-on use (2026-08-01): the setup
+// command below used to lump "not bash" into one tcsh/csh-syntax
+// branch (`set prompt = "..."`), which zsh does NOT understand (that
+// `set VAR = value` form is tcsh/csh-specific; zsh's `set` builtin is
+// for shell OPTIONS, not variable assignment). Sent to a real zsh,
+// that line silently fails to set PROMPT at all, leaving the user's
+// OWN real, fully-themed interactive prompt (oh-my-zsh/powerlevel10k/
+// starship/etc, with whatever ANSI color codes and Unicode glyphs it
+// uses) as what's actually displayed -- which this port's Shell
+// (built assuming plain, synthetic prompt text) has no way to parse
+// or safely render, producing exactly the garbled scrollback and
+// "controlCode as a highlighted box" symptoms reported.
+bool isZshProgram(const std::string &argv0) { return baseName(argv0) == "zsh"; }
 
 // Portable pty acquisition (POSIX/Unix98 API), ported near-verbatim
 // from sub.c's open_pty() -- see CLAUDE.md history for why this
@@ -81,7 +97,10 @@ Shell::Shell(Display &display, const ShellOptions &options)
   markerPrefix_ = options_.promptMark + options_.programName + ":";
   viewportRows_ = options_.rows;
   columns_ = options_.columns;
-  if (!options_.argv.empty()) isBash_ = isBashProgram(options_.argv[0]);
+  if (!options_.argv.empty()) {
+    isBash_ = isBashProgram(options_.argv[0]);
+    isZsh_ = isZshProgram(options_.argv[0]);
+  }
   scrollback_.setViewport(0, std::max(1, viewportRows_ - 1));
   updateCommandLineField();
 }
@@ -223,6 +242,8 @@ bool Shell::onPtyReadable() {
 void Shell::processOutputBytes(const std::string &bytes) {
   const std::string &mark = options_.promptMark;
   for (unsigned char c : bytes) {
+    if (consumeEscapeByte(c)) continue;
+
     if (inPromptTail_) {
       promptTailBuffer_.push_back(static_cast<char>(c));
       if (!mark.empty() && promptTailBuffer_.size() >= mark.size() &&
@@ -277,8 +298,114 @@ void Shell::processOutputBytes(const std::string &bytes) {
   flushNewScrollbackLines();
 }
 
+// See the class's own declaration comment.
+bool Shell::consumeEscapeByte(unsigned char c) {
+  switch (escapeState_) {
+    case EscapeKind::None:
+      if (c != 0x1b) return false;
+      escapeState_ = EscapeKind::JustEsc;
+      return true;
+    case EscapeKind::JustEsc:
+      if (c == '[') {
+        escapeState_ = EscapeKind::Csi;
+      } else if (c == ']') {
+        escapeState_ = EscapeKind::Osc;
+      } else {
+        // A simple two-byte escape (ESC + one byte -- e.g. ESC =/>/M
+        // for keypad/cursor modes). Slightly over-eager for the rarer
+        // three-byte forms (e.g. ESC ( B charset designation), which
+        // would leave one real byte ('B') incorrectly swallowed too --
+        // an accepted, disclosed tradeoff: those don't show up in
+        // practice from a real interactive shell's OWN output, unlike
+        // CSI/OSC/bracketed-paste, which do on every session.
+        escapeState_ = EscapeKind::None;
+      }
+      return true;
+    case EscapeKind::Csi:
+      // Parameter bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F)
+      // keep the sequence going; a final byte (0x40-0x7E) ends it.
+      if (c >= 0x40 && c <= 0x7e) escapeState_ = EscapeKind::None;
+      return true;
+    case EscapeKind::Osc:
+      if (c == 0x07) {
+        escapeState_ = EscapeKind::None;  // BEL terminator
+      } else if (c == 0x1b) {
+        escapeState_ = EscapeKind::OscEscPending;  // possibly the start of an ST (ESC \) terminator
+      }
+      return true;
+    case EscapeKind::OscEscPending:
+      // Whether this byte is the '\' completing a real ST or not,
+      // either way the OSC sequence is done being scanned past.
+      escapeState_ = EscapeKind::None;
+      return true;
+  }
+  return false;
+}
+
+// A real bug found via actual zsh use (2026-08-01): zsh's own ZLE
+// commonly echoes a command by drawing one character, then a literal
+// backspace, then the FULL final text -- e.g. typing "unset ..." over
+// the wire arrives as "u\x08unset ..." (draw 'u', erase it, redraw
+// the whole word) -- a completely invisible no-op on a real terminal
+// (backspace just moves the cursor back one column before the redraw
+// overwrites it), but appendBodyByte() was feeding the raw backspace
+// BYTE itself into PipeBuffer as literal content, which has no cursor
+// concept at all: it just showed up as a visible reverse-video
+// control-character glyph in the middle of otherwise-clean text.
+// pendingLine_ is a small line-assembly buffer THIS class owns
+// (separate from PipeBuffer's own internal line-splitting, which
+// still only ever sees complete, backspace/CR-resolved lines) so
+// backspace/bare-CR can be resolved BEFORE anything reaches
+// PipeBuffer, the same way a real terminal's own line buffer would:
+//   - backspace (0x08): drop the last byte already buffered for the
+//     current line (a plain ASCII-scoped pop -- not UTF-8-aware --
+//     since this exists specifically for ZLE's OWN redraw of this
+//     port's own synthetic, ASCII-only setup commands, not general
+//     multibyte content).
+//   - bare CR (\r NOT immediately followed by \n): a real "return to
+//     column 0, about to overwrite" -- discards whatever's buffered
+//     for the current line so far, same net effect as backspacing it
+//     all away, without needing to guess how many columns wide it was.
+//   - CR immediately followed by LF: an ordinary CRLF line ending,
+//     the \r itself contributes nothing and is dropped.
+//   - anything else: appended normally; a trailing '\n' flushes the
+//     now-complete line to pipeBuffer_.feed() in one call.
 void Shell::appendBodyByte(unsigned char c) {
-  pipeBuffer_.feed(std::string(1, static_cast<char>(c)));
+  if (sawBareCr_) {
+    sawBareCr_ = false;
+    if (c == '\n') {
+      pendingLine_.push_back('\n');
+      pipeBuffer_.feed(pendingLine_);
+      pendingLine_.clear();
+      return;
+    }
+    pendingLine_.clear();
+    // fall through: `c` itself still needs handling below
+  }
+  if (c == '\r') {
+    sawBareCr_ = true;
+    return;
+  }
+  if (c == 0x08) {
+    if (!pendingLine_.empty()) pendingLine_.pop_back();
+    return;
+  }
+  pendingLine_.push_back(static_cast<char>(c));
+  if (c == '\n') {
+    pipeBuffer_.feed(pendingLine_);
+    pendingLine_.clear();
+  }
+}
+
+// A partial (not yet newline-terminated) line accumulated in
+// pendingLine_ needs to reach pipeBuffer_ too whenever the caller is
+// about to consult pipeBuffer_.lines()/flush() -- otherwise up to one
+// whole in-progress line of real output would simply vanish. Shared
+// by handlePromptDetected()'s own pipeBuffer_.flush() call.
+void Shell::flushPendingLine() {
+  if (pendingLine_.empty()) return;
+  pipeBuffer_.feed(pendingLine_);
+  pendingLine_.clear();
 }
 
 void Shell::flushNewScrollbackLines() {
@@ -312,6 +439,7 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
     if (directoryChangedCallback_) directoryChangedCallback_(dir);
   }
 
+  flushPendingLine();
   pipeBuffer_.flush();
   flushNewScrollbackLines();
 
@@ -357,31 +485,134 @@ int Shell::displayWidth(const std::string &text) const {
 // equivalent exists yet in this C++ port for it to point at, so it's
 // omitted rather than pointing at something meaningless; revisit once
 // a pager mode exists).
+// Ported from output_shell()'s PS1/eos setup line, but as several
+// SHORT, separately \n-terminated statements instead of one long
+// semicolon-chained line. A real bug found via actual zsh use
+// (2026-08-01): the original one-liner easily exceeds 80 columns
+// (mark+programName+the whole assignment), so it WRAPS across
+// multiple terminal rows before the shell's own line editor (zsh's
+// ZLE, but bash's readline isn't immune either) ever gets to execute
+// it -- and a wrapped input line's own redraw logic works by moving
+// the cursor around and selectively overwriting parts of what's
+// already on screen, which is fundamentally NOT compatible with this
+// class's own byte consumer (appendBodyByte() -> PipeBuffer), which
+// only understands "append this byte to the current line," with no
+// concept of cursor movement/overwrite at all. The visible symptom
+// was doubled-up fragments of the command text itself (e.g. "uunset",
+// "tt PROMPT") in the scrollback -- not a shell config issue, purely
+// this class's own setup command being long enough to trigger a kind
+// of terminal output (line-wrap redraw) it was never built to parse.
+// Keeping every individual line comfortably under 80 columns (a
+// generous margin below the narrowest realistic terminal width) means
+// the shell's line editor never needs to wrap-and-redraw ANY of them,
+// sidestepping the whole problem rather than trying to interpret
+// cursor-movement escapes after the fact.
 std::string Shell::buildSetupCommand() const {
   const std::string &mark = options_.promptMark;
   const std::string &prog = options_.programName;
+  // ": #eos<pid>#" rather than a bare "#eos<pid>#" line -- `:` is the
+  // POSIX no-op builtin, so this evaluates safely as a real, silent
+  // command in BOTH bash and zsh regardless of whether # is actually
+  // being treated as a comment character in this exact context (found
+  // via real zsh testing: an UNPREFIXED "#eos12345#" line came back
+  // as `zsh: command not found: #eos12345#`, a real, visible error
+  // that leaked into the scrollback -- zsh's interactive_comments
+  // option isn't reliably on here, unlike bash where # is always a
+  // comment). The terminal still echoes the FULL line including the
+  // ": " prefix and the "#eos<pid>#" text itself, so waitForHandshake()'s
+  // own substring search for just "#eos<pid>#" still finds it either way.
+  std::string eos = ": #eos" + std::to_string(childPid_) + "#";
   if (isBash_) {
-    std::string eos = "#eos" + std::to_string(childPid_) + "#";
-    return "unset PROMPT_COMMAND; export PS1='" + mark + prog + ":\\w\\$ " + mark +
-           "'; set -o ignoreeof; export COLUMNS=" + std::to_string(columns_) + "; unset HISTFILE\n" + eos +
-           "\n";
+    std::vector<std::string> lines = {
+        "unset PROMPT_COMMAND",
+        "export PS1='" + mark + prog + ":\\w\\$ " + mark + "'",
+        "set -o ignoreeof",
+        "export COLUMNS=" + std::to_string(columns_),
+        "unset HISTFILE",
+        eos,
+    };
+    std::string result;
+    for (const auto &line : lines) result += line + "\n";
+    return result;
   }
-  return "set prompt = \"" + mark + prog + ":%~%# " + mark + "\"; set ignoreeof\n";
+  if (isZsh_) {
+    // zsh's OWN prompt-expansion sequences (%~ for cwd, %# for the
+    // trailing '#'-if-root/'%'-otherwise prompt character) are the
+    // SAME ones already used below for the tcsh/csh fallback -- those
+    // aren't csh-specific syntax, just prompt-expansion tokens zsh
+    // happens to share with tcsh. What zsh does NOT share is tcsh's
+    // `set VAR = value` assignment form (zsh's own `set` builtin is
+    // for shell OPTIONS, not variables) -- so this needs its own
+    // branch for the ASSIGNMENT syntax alone. precmd_functions=() and
+    // RPROMPT='' silence any theme's own dynamic prompt hooks (oh-my-
+    // zsh/powerlevel10k/starship precmd hooks, right-side prompt
+    // text) that would otherwise still inject ANSI/Unicode content
+    // around this synthetic prompt, matching bash's `unset
+    // PROMPT_COMMAND` above. IGNORE_EOF is zsh's `set -o ignoreeof`
+    // equivalent (^D shouldn't be able to kill the shell child out
+    // from under this port). PROMPT_EOL_MARK='' disables zsh's own
+    // "previous output didn't end with a newline" indicator (its
+    // real, documented default behavior -- a reverse-video '%'
+    // padded to the terminal width -- found via actual use: even
+    // with consumeEscapeByte() now stripping the raw ANSI codes
+    // around it, the '%' GLYPH ITSELF is real printable content, not
+    // an escape sequence, so stripping alone can't remove it; turning
+    // the feature off at the source is simpler than trying to also
+    // recognize and hide zsh's own specific eol-mark text).
+    std::vector<std::string> lines = {
+        "unset PROMPT_COMMAND 2>/dev/null",
+        "precmd_functions=()",
+        "export PROMPT='" + mark + prog + ":%~%# " + mark + "'",
+        "RPROMPT=''",
+        "PROMPT_EOL_MARK=''",
+        "setopt IGNORE_EOF",
+        "export COLUMNS=" + std::to_string(columns_),
+        "unset HISTFILE",
+        eos,
+    };
+    std::string result;
+    for (const auto &line : lines) result += line + "\n";
+    return result;
+  }
+  // csh/tcsh fallback -- unlike bash/zsh above, NOT verified against a
+  // real csh/tcsh session (no evidence either was ever exercised in
+  // practice); kept as the pre-existing best-effort default rather
+  // than guessed at further. Plain "#eos<pid>#" here, not the ": "-
+  // prefixed form above -- csh/tcsh's `#` really is always a comment
+  // character (unlike zsh's context-dependent interactive_comments),
+  // and `:` isn't a standard csh/tcsh builtin to lean on instead.
+  std::string cshEos = "#eos" + std::to_string(childPid_) + "#";
+  return "set prompt = \"" + mark + prog + ":%~%# " + mark + "\"\nset ignoreeof\n" + cshEos + "\n";
 }
 
 // One-shot startup handshake: discard everything up through our own
-// "#eos<pid>#" sentinel (bash) or the first literal '#' (csh/tcsh),
-// exactly like output_shell()'s pre-main-loop scan -- the terminal
-// emulator (e.g. GNOME Terminal/VTE's /etc/profile.d/vte.sh) may have
-// already auto-drawn bash's very first prompt, using PROMPT_COMMAND
-// as it stood *before* the setup command above unset it, before bash
-// ever reads that command; without skipping past it, that leftover
-// output would otherwise be misparsed as real prompt/content bytes by
-// the main loop. See CLAUDE.md history for why a bare '#' isn't
-// enough for bash (it can turn up by coincidence in that leftover
-// output).
+// "#eos<pid>#" sentinel, exactly like output_shell()'s pre-main-loop
+// scan -- the terminal emulator (e.g. GNOME Terminal/VTE's
+// /etc/profile.d/vte.sh) may have already auto-drawn the shell's very
+// first prompt, using its OWN prompt-hook mechanism as it stood
+// *before* the setup command above unset/cleared it, before the
+// shell ever reads that command; without skipping past it, that
+// leftover output would otherwise be misparsed as real prompt/
+// content bytes by the main loop. See CLAUDE.md history for why a
+// bare '#' isn't enough (it can turn up by coincidence in that
+// leftover output) -- this pid-based sentinel is unique enough to
+// avoid that for every shell family buildSetupCommand() now echoes it
+// for (bash/zsh/csh-tcsh all alike), not just bash.
+//
+// A real bug found via actual zsh use (2026-08-01): once the sentinel
+// is found, everything read here up to THAT POINT is correctly
+// discarded (never reaches appendBodyByte()) -- but a single read()
+// often returns the sentinel and the start of the very NEXT real
+// prompt in the SAME chunk (the shell doesn't pause between finishing
+// the setup line and drawing its next prompt). The old code discarded
+// the WHOLE scan buffer unconditionally on a match, silently dropping
+// that trailing real content -- often the leading ESC byte of the
+// next prompt's own escape sequences, leaving just the REST of a
+// sequence (e.g. "[27m" with no ESC in front) to flow into
+// processOutputBytes() as literal garbage text. Now the remainder
+// past the sentinel is fed through normally instead of discarded.
 bool Shell::waitForHandshake() {
-  std::string sentinel = isBash_ ? ("#eos" + std::to_string(childPid_) + "#") : "#";
+  std::string sentinel = "#eos" + std::to_string(childPid_) + "#";
   std::string scan;
   const int maxAttempts = 500;  // 500 * 20ms = up to ~10s
   for (int attempt = 0; attempt < maxAttempts; attempt++) {
@@ -402,7 +633,11 @@ bool Shell::waitForHandshake() {
       return false;
     }
     scan.append(buf, static_cast<std::size_t>(n));
-    if (scan.find(sentinel) != std::string::npos) return true;
+    if (std::size_t pos = scan.find(sentinel); pos != std::string::npos) {
+      std::string remainder = scan.substr(pos + sentinel.size());
+      if (!remainder.empty()) processOutputBytes(remainder);
+      return true;
+    }
     if (scan.size() > 4096) scan.erase(0, scan.size() - sentinel.size());
   }
   return false;

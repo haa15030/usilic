@@ -229,6 +229,29 @@ class Shell {
  private:
   void handlePromptDetected(const std::string &tailBeforeMark);
   void appendBodyByte(unsigned char c);
+  void flushPendingLine();  // see appendBodyByte()'s own comment on pendingLine_
+  // Real-terminal ANSI/VT100 escape sequences (SGR color codes,
+  // bracketed-paste-mode enable/disable, etc -- anything starting
+  // with a raw ESC byte) from the child's OWN output, consumed and
+  // discarded here BEFORE they ever reach appendBodyByte()/
+  // PipeBuffer. Found necessary via actual hands-on use with a real
+  // interactive shell (2026-08-01): PipeBuffer's job is charset/tab/
+  // overstrike-bold processing for PLAIN FILE content, with zero
+  // concept of "this byte sequence is invisible terminal control
+  // data, not text" -- every real shell emits at least SOME of these
+  // even with a plain, uncolored synthetic prompt (bracketed paste
+  // mode alone is a zsh 5.x+ default), and feeding them through
+  // uninterpreted corrupts both the visible text (raw escape bytes
+  // shown as literal characters) and PipeBuffer's own width-wrapping
+  // math (which counts every byte as a visible column). Returns true
+  // if `c` was consumed as part of (starting, continuing, or
+  // completing) an escape sequence -- the caller should NOT also pass
+  // it to appendBodyByte() in that case. This is a strip, not a
+  // render: color/attribute information itself is discarded, not
+  // reproduced -- a deliberate, disclosed scope choice (building a
+  // real ANSI-to-Display::Attribute translator is future work, not
+  // needed just to stop the corruption).
+  bool consumeEscapeByte(unsigned char c);
   void flushNewScrollbackLines();
   void writeToPty(const std::string &bytes);
   void updateCommandLineField();
@@ -242,8 +265,11 @@ class Shell {
   int masterFd_ = -1;
   int childPid_ = -1;
   bool isBash_ = true;
+  bool isZsh_ = false;  // see isZshProgram()'s own comment on why this needs its own branch, not just "not bash"
 
   PipeBuffer pipeBuffer_;
+  std::string pendingLine_;  // appendBodyByte()'s own line-assembly buffer, see its comment
+  bool sawBareCr_ = false;   // appendBodyByte()'s own CR-vs-CRLF lookahead flag
   ContentView scrollback_;
   LineEditor commandLine_;
   std::size_t linesConsumed_ = 0;  // how many of pipeBuffer_.lines() are already in scrollback_
@@ -253,6 +279,11 @@ class Shell {
   std::string markerMatchBuffer_;  // bytes tentatively matched against markerPrefix_ so far
   bool inPromptTail_ = false;
   std::string promptTailBuffer_;
+
+  // consumeEscapeByte()'s own state -- which KIND of escape sequence
+  // (if any) is currently being scanned past.
+  enum class EscapeKind { None, JustEsc, Csi, Osc, OscEscPending };
+  EscapeKind escapeState_ = EscapeKind::None;
 
   int viewportRows_ = 0, columns_ = 0;
   std::string promptPlain_;  // current prompt text, no embedded escape codes (for width calc)
