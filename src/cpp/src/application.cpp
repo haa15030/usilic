@@ -262,6 +262,8 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
       case 0x0b:  // ^X ^K : leader for CP/MV/RM's "with SHELL window" variants (F-2 in usilicrc's own terms)
         leaderXKPending_ = true;
         return true;  // sequence in progress, not a no-op
+      case 's':  // ^X s : restart SHELL (K-60)
+        return handleCommand(Command::RestartShell);
       default:
         return false;  // unrecognized ^X-sequence in this slice (^X^Ka/^Xa/^X^Kd are still future work)
     }
@@ -539,6 +541,8 @@ bool Application::handleCommand(Command command) {
     case Command::GoToParentDirectory:
       if (currentMode_ != ApplicationMode::Directory) return false;
       return directoryMode_.goToParent();
+    case Command::RestartShell:
+      return shellRestart();
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
@@ -827,6 +831,24 @@ bool Application::ensureShellActive() {
     shellStarted_ = true;
   }
   shellReturnMode_ = currentMode_;
+  currentMode_ = ApplicationMode::Shell;
+  shell_.scrollback().redraw();
+  shell_.commandLine().redraw();
+  return true;
+}
+
+// K-60 (^Xs, M_hup): see the class's own declaration comment. Unlike
+// ensureShellActive(), does NOT short-circuit when already in Shell
+// mode -- that's the whole point of "restart" -- so it manages
+// shellStarted_/currentMode_/shellReturnMode_ directly rather than
+// delegating to ensureShellActive().
+bool Application::shellRestart() {
+  if (shell_.busy()) return false;
+  shell_.terminate();
+  shellStarted_ = false;
+  if (!shell_.start()) return false;
+  shellStarted_ = true;
+  if (currentMode_ != ApplicationMode::Shell) shellReturnMode_ = currentMode_;
   currentMode_ = ApplicationMode::Shell;
   shell_.scrollback().redraw();
   shell_.commandLine().redraw();

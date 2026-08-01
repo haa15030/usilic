@@ -175,7 +175,11 @@ enum class Command {
   ShellInsertBufferContent,
   // K-19 (^O^K, M_m): jumps to the parent of the current directory.
   // See DirectoryMode::goToParent()'s own comment.
-  GoToParentDirectory
+  GoToParentDirectory,
+  // K-60 (^Xs, M_hup): kills the current SHELL child (if any) and
+  // starts a fresh one. See Application::shellRestart()'s own
+  // comment.
+  RestartShell
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -1040,6 +1044,18 @@ class Application {
   // no such mode-guard either, only the separate is_inter() busy
   // check).
   bool ensureShellActive();
+  // K-60 (^Xs, M_hup): kills the current SHELL child (if any, via
+  // Shell::terminate()'s SIGHUP+wait) and starts a fresh one, entering
+  // Shell mode. Ported from menu.c's own M_hup case: legacy's
+  // is_inter(F12,...) SIGHUPs both the shell and its IPC relay process
+  // and blocks until both die, which Shell::terminate() already does
+  // the equivalent of in this port's simpler single-process pty
+  // design (see Shell's own class comment on why there's no relay
+  // process here). Refused, like legacy's own is_inter(NULL,...)
+  // guard, while a handed-off interactive PROGRAM is still running
+  // (Shell::busy()) -- restarting the pty out from under something
+  // like `less` currently controlling it would strand that child.
+  bool shellRestart();
   bool saveBufferToFile();
   bool shellChangeDirectory();
   bool shellRunLsL();

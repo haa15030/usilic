@@ -130,6 +130,10 @@ class Shell {
   // retried.
   bool start();
   bool alive() const;
+  // The current child's pid, or -1 if not started -- exposed purely
+  // so a caller (e.g. K-60/RestartShell's own tests) can confirm a
+  // restart produced a genuinely new process, not the same one reused.
+  int childPid() const;
   // SIGHUP + wait for the child to die, close the pty. Idempotent;
   // also called from the destructor. Ported from start_shell()'s
   // no-`mess` (shutdown) branch and output_shell()'s shell_hup/case

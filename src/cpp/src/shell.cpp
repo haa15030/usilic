@@ -154,6 +154,8 @@ bool Shell::alive() const {
   return kill(childPid_, 0) == 0;
 }
 
+int Shell::childPid() const { return childPid_; }
+
 void Shell::terminate() {
   if (childPid_ > 0) {
     kill(childPid_, SIGHUP);

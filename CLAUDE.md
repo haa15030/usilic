@@ -5779,6 +5779,55 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      (振る舞いは変更していない)で、既存のopenSelected関連テストが
      全通過していることでリグレッション無しを確認済み。
 
+102. **2026-08-01: K-60(^Xs、M_hup、「SHELLを再起動」)を実装**
+   - 項目101の続き。`mode.h`で`M_hup`が値60(=K-60)と確認、
+     `menu.c`の`case M_hup`を読んだところ、`is_inter(NULL,0,0)`
+     (SHELL上で対話的PROGRAMがハンドオフ中かのbusyチェック)が
+     真なら拒否、そうでなければ`is_inter(F12,0,0)`でSHELL子
+     プロセスとlegacy独自のIPC中継プロセス(spid)の両方へSIGHUP
+     を送り、両方が死ぬまでブロックしてから`m = -M_shell`で
+     `m_shell()`へ再突入(pidが死んでいるためfork_shellのfresh
+     startパスに落ちる)、という「強制終了→やり直し」の実装だと
+     判明した。
+   - 幸い、このポートの`Shell`クラスには既に`terminate()`
+     (SIGHUP→bounded waitpid→未reap時SIGKILL→bounded waitpid、
+     という同等のロジックを1プロセス構成で実装済み)と`busy()`/
+     `setBusy()`(legacyの`is_inter()`のちょうどそのままの移植、
+     対話的PROGRAM実行中かのフラグ)が既にあったため、新規ロジック
+     はほぼ不要だった。`Application::shellRestart()`を新設し、
+     `shell_.busy()`なら拒否、そうでなければ`shell_.terminate()`
+     →`shell_.start()`で強制的に作り直し、Shellモードへ入る
+     (`ensureShellActive()`と異なり「既にShellモードなら何もしない」
+     という早期returnを意図的に外し、Shellモード内からの再起動も
+     効くようにした)。`Command::RestartShell`を新設し、
+     `leaderXPending_`のswitchに`case 's': handleCommand(...)`を
+     追加(usilicrcの`F-0 s`=^Xs)。
+   - **検証中に見つかったテストの落とし穴**: 「再起動後、新しい
+     子プロセスのpidが前のpidと異なること」をdoctestで検証しようと
+     したところ、macOS実機で**同じpid番号が再利用される**ケースが
+     繰り返し再現し(`kill(oldPid,0)==0`という「まだ生きている」
+     判定での検証も、ゾンビ状態でも成功してしまいうるため同様に
+     不十分と判明、`Shell::terminate()`自身のコメントにある既知の
+     エッジケースと同種)、pid比較そのものがこの環境では信頼できない
+     指標だと分かった。最終的に「新しいSHELLへ実際にコマンドを
+     送信し、その出力が実際に返ってくること」という機能的な検証に
+     切り替えて解決した(`test_shell.cpp`の既存の`echo`往復検証と
+     同じ手法)。この過程で`Shell::childPid()`という新規publicな
+     アクセサ(既存の`ptyFd()`と同じ作法)も追加したが、最終的な
+     テストでは使わなかった(将来同種の検証が必要になった時のために
+     残置)。
+   - **検証**: doctest新規3件(Shellモード内から^Xsで再起動→新しい
+     SHELLが実際にコマンドを実行できること、Shellモード外から
+     `RestartShell`を呼んでも動くこと=legacy側にモードガードが
+     無いのと整合、`Shell::busy()`中は拒否されること)を追加、計
+     504件全通過(Mac、3回連続実行してもflakinessが再発しないこと
+     も確認)。実PTYで、SHELLモードに入り最初のコマンドの出力を
+     確認→^Xsで再起動→再起動直後に送った別コマンドの出力も
+     正しく返ってくることを生バイト列で確認。Ubuntu 26.04でも
+     新規3件を含め該当テストは全通過、既存の失敗10件はいずれも
+     `zip`未インストール・man未整備という今回のdiffと無関係な
+     既存の環境依存差。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
