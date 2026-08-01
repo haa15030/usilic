@@ -6698,6 +6698,68 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      まるごと未着手の機能。ユーザーへの報告・スコープ確認が必要な
      ため、このセッションでは実装に着手していない。
 
+118. **2026-08-01: K-2(^H、M_key、「KEY」)を実装**。項目117で発見
+    していた「このポートにclass自体が丸ごと未実装」というKEYモード
+    の欠落に対応。ユーザーから「今日はKEYモードの実装まで。動作
+    チェックは明日になるので実装だけよろしく」との指示を受け、
+    実装・doctest検証・クロスビルド確認・簡易PTYスモークテストまで
+    を今回のセッションで完了させ、実機でのハンズオン検証は次回に
+    持ち越す方針で進めた。
+   - **設計判断**: HELP.jp 2.2節によれば、KEYモードは「tcbrcで
+     定義したキーバインドおよび対応するモードを表示し、^G以外の
+     カーソル行でEnterを押すとKEYを呼び出したモードに戻ったのち
+     対応するキー定義を実行する」機能。`Configuration`クラスは
+     KEY節のパース自体を意図的に対象外としている(class comment:
+     「そのバインディングが対象とするmode/command番号がこのC++
+     ポートにまだ存在しないため、Mode実装後まで先送り」)。今回、
+     ほとんどのK-?コマンドが既に配線済み(項目111時点で77個中
+     K-28のみ保留)になったことで、この「Mode実装後」という前提
+     条件が実質満たされたと判断した一方、usilicrc自身のKEY節
+     テキストを実際にパースしてユーザーによる再バインドを反映する
+     機能は、この一回のセッションで手を付けるにはスコープが
+     大きすぎる(KEY節独自の構文全体を新規に定義・パースする
+     必要がある)と判断し、今回は見送った。代わりに、
+     `dispatchByte()`/`resolveCommand()`自身のswitch文(この
+     ポートが実際に認識するキーシーケンスの単一の真実源)を手作業で
+     ミラーした静的テーブル`kKeyTable`(application.cpp、匿名
+     namespace)を新設する設計を採った。M-0〜19(番号付きキーボード
+     マクロスロット)はこのポートに単一マクロスロットしか無い
+     (M-0〜19個別に対応する仕組みが無い)ため対象外、矢印/PageUp/
+     PageDown等のspecial keyもすべて素のバイト別名(j/k、^N/^P、
+     Space/^F/^V、b/^B)が既に表内にあるため省略、という2点の
+     スコープ限定を明示した。
+   - **実装**: `ApplicationMode::Key`、`Command::StartKey`を新設。
+     `resolveCommand()`のトップレベルswitchに`case 0x08: return
+     Command::StartKey;`を追加(SHELLモード内の^H/DELバックスペース
+     処理は`feedShellByte()`で別途処理済みのため衝突無し)。
+     `kKeyTable`は65エントリ(cursor/paging系17、ESC-leader系4、
+     ^J-leader系16、^X-leader系16、^X^K-leader系6、^O-leader系6)、
+     各エントリは`{keyLabel, description, bytes}`の組。新規
+     `keyView_`(ContentView)、`keyReturnMode_`を追加。
+     `startKey()`(KEYモードへ入る、既にKEYモード中からの再入は
+     拒否)、`returnFromKey()`(^G、何も実行せず戻る)、
+     `executeSelectedKeyBinding()`(Enter、HELP.jp通り「戻ってから
+     実行」の順序を守り、`keyReturnMode_`へ`currentMode_`を戻して
+     `activeView().redraw()`した後、選択エントリの`bytes`を1バイト
+     ずつ`feedByte()`へ流す――複数バイトのリーダーシーケンスも
+     実際のキー入力と全く同じ経路(`leaderXPending_`等の状態機械)
+     を辿って正しく解決される)を実装した。`handleCommand()`の
+     `Enter`/`Back`switchにもKeyモード分岐を追加。
+   - **検証**: doctest新規7件(`resolveCommand()`の^H→StartKey、
+     KEYモードへの遷移とリスト非空確認、KEYモード中からの再入
+     拒否、File モードから呼んでもBackでFileへ戻ること、単一バイト
+     エントリ(^S→FGREP)実行時に実際にpromptが開くこと、複数バイト
+     リーダーエントリ(^X^C→EXIT)実行時に正しく多段リーダーを
+     辿ってpromptが開くこと、Backでは何も実行されないこと)を含め
+     計550件全通過(Mac)、Ubuntu 26.04クロスビルドでも該当分すべて
+     全通過(既存の失敗12件は今回と無関係な既知の環境依存差)。
+     実バイナリのビルドもMac/Ubuntu両方で確認済み。PTYでの簡易
+     スモークテスト(`^H`でKEYモードが開き"01/65 TOP"と表示、
+     先頭エントリ("j"、Move window down)でEnter→Directoryへ戻り
+     ウィンドウが実際に1行下がることを確認、クラッシュ無し)のみ
+     実施し、詳細なハンズオン検証はユーザーの指示通り次回に持ち
+     越した。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

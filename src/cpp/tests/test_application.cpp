@@ -2495,6 +2495,90 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: does NOT reflow HELP when it's nested 
   CHECK(app.currentMode() == ApplicationMode::Cut);  // the real CUT session is still intact
 }
 
+// -- KEY (^H, M_key): a browsable table of this port's own key
+// bindings, Enter re-executes the highlighted one in the mode KEY was
+// invoked from (HELP.jp 2.2) --
+
+TEST_CASE("resolveCommand: ^H resolves to StartKey") {
+  CHECK(Application::resolveCommand(0x08, std::nullopt) == Command::StartKey);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartKey): opens a browsable table of key bindings, without leaving "
+                           "Directory mode's own return-anchor") {
+  REQUIRE(app.start(path()));
+  CHECK(app.handleCommand(Command::StartKey));
+  CHECK(app.currentMode() == ApplicationMode::Key);
+  CHECK_FALSE(app.activeContentView().lines().empty());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Key: re-entering from within Key mode itself is refused") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  CHECK_FALSE(app.handleCommand(Command::StartKey));
+  CHECK(app.currentMode() == ApplicationMode::Key);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Key: reachable from File mode too, and Back returns there (not always Directory)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartKey));
+  CHECK(app.currentMode() == ApplicationMode::Key);
+
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
+  CHECK(app.currentMode() == ApplicationMode::File);  // back to File, not Directory
+}
+
+TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^S' entry returns to Directory mode AND actually starts FGREP "
+                           "(single-byte binding)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  const auto &lines = app.activeContentView().lines();
+  int row = -1;
+  for (std::size_t i = 0; i < lines.size(); i++)
+    if (lines[i].text.rfind("^S ", 0) == 0) row = static_cast<int>(i);  // trailing space excludes "^Space"'s own row
+  REQUIRE(row >= 0);
+  app.activeContentView().setCursorIndex(row);
+
+  CHECK(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // FGREP is a prompt, not a mode switch
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^X ^C' entry (EXIT) chains a full multi-byte leader sequence "
+                           "(^X leader -> ^C sub-command)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  const auto &lines = app.activeContentView().lines();
+  int row = -1;
+  for (std::size_t i = 0; i < lines.size(); i++)
+    if (lines[i].text.rfind("^X ^C ", 0) == 0) row = static_cast<int>(i);
+  REQUIRE(row >= 0);
+  app.activeContentView().setCursorIndex(row);
+
+  CHECK(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // EXIT is a y/n prompt, not an immediate mode switch
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Key: Back (^G) on any entry returns without executing anything") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  const auto &lines = app.activeContentView().lines();
+  int row = -1;
+  for (std::size_t i = 0; i < lines.size(); i++)
+    if (lines[i].text.rfind("^X ^C ", 0) == 0) row = static_cast<int>(i);  // EXIT's own row -- would be very visible if wrongly executed
+  REQUIRE(row >= 0);
+  app.activeContentView().setCursorIndex(row);
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK_FALSE(app.promptActive());  // NOT the EXIT prompt -- Back never executed the highlighted entry
+}
+
 // -- Recorded macros (p_km, ^X(/^X)/^Xe) --
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ( starts recording; the control sequence itself isn't recorded") {

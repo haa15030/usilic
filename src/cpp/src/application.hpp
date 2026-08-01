@@ -203,7 +203,16 @@ enum class Command {
   // name") reuses the ALREADY-EXISTING StartDirectoryHistory (^R's
   // own command -- same RingCategory::RecentDirectory picker, just a
   // second way to reach it), so needs no command of its own.
-  StartFileHistory
+  StartFileHistory,
+  // K-2 (^H, M_key, "KEY"): shows a browsable table of this port's
+  // own key bindings (mirroring dispatchByte()'s/resolveCommand()'s
+  // actual switch statements -- NOT parsed from usilicrc's own KEY
+  // section, see startKey()'s own comment on why). Enter on a
+  // highlighted entry returns to whichever mode KEY was invoked from
+  // and then executes that entry's own key sequence, matching
+  // HELP.jp 2.2's documented behavior. See Application::startKey()'s
+  // own comment.
+  StartKey
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -224,7 +233,8 @@ enum class ApplicationMode {
   ArchiveContent,
   Shell,
   Du,
-  ListBrowser
+  ListBrowser,
+  Key
 };
 
 // The top-level controller: owns the ModeStack(s) and every *Mode
@@ -1090,10 +1100,21 @@ class Application {
   bool returnFromShell();
   bool returnFromDu();
   bool returnFromListBrowser();
+  bool returnFromKey();
   ContentView &activeView();
   void layoutViews();
   std::vector<std::string> collectTargetPaths() const;
   bool startListBrowser(RingCategory category);
+  // K-2 (^H, M_key, "KEY"): see startKey()'s own definition comment.
+  bool startKey();
+  // Enter while in Key mode: returns to keyReturnMode_ FIRST (matching
+  // HELP.jp 2.2's own documented order -- "KEYを呼び出したモードに
+  // 戻ったのち，対応するキー定義を実行します"), THEN feeds the
+  // selected entry's own byte sequence through feedByte(), one byte
+  // at a time, so it's dispatched exactly as if the user had typed it
+  // live in that mode (naturally re-entering leader-key states for
+  // multi-byte sequences, same as a real keypress would).
+  bool executeSelectedKeyBinding();
 
   bool startGrepPrompt(GrepSyntax syntax);
   bool startCutPrompt(GrepSyntax syntax);
@@ -1292,6 +1313,11 @@ class Application {
   ContentView archiveContentView_;
   ContentView duView_;
   ContentView listBrowserView_;
+  // K-2 (^H): backing view for startKey()'s static binding table --
+  // no dedicated *Mode class, since the table itself is static (no
+  // runtime parsing/state beyond which line is currently selected,
+  // which ContentView already tracks). See startKey()'s own comment.
+  ContentView keyView_;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;
@@ -1337,6 +1363,7 @@ class Application {
   std::string shellReturnName_;
   ApplicationMode listBrowserReturnMode_ = ApplicationMode::Directory;
   RingCategory listBrowserCategory_ = RingCategory::RecentDirectory;
+  ApplicationMode keyReturnMode_ = ApplicationMode::Directory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;
   // Non-empty between startCutFilePrompt() and the CutPattern prompt's

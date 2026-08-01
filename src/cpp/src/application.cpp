@@ -21,6 +21,110 @@ constexpr int kControlS = 0x13;        // ^S
 constexpr int kControlC = 0x03;        // ^C
 constexpr int kControlG = 0x07;        // ^G
 constexpr int kCarriageReturn = 0x0d;  // ^M
+// K-2 (^H, M_key, "KEY"): startKey()'s own static binding table.
+// Unlike HELP (which loads real prose text at runtime via
+// loadHelpText()), this table is NOT parsed from usilicrc's own KEY
+// section -- Configuration deliberately excludes that (see its own
+// class comment: "its bindings target mode/command numbers that
+// don't exist yet in this C++ port... deferred until Mode exists").
+// That gap hasn't closed by rewriting Configuration's KEY parser
+// (a separate, still-open project, since usilicrc's KEY syntax
+// supports arbitrary user rebinding this table doesn't reproduce);
+// instead, this table is a hand-maintained MIRROR of dispatchByte()'s
+// /resolveCommand()'s own switch statements -- the single source of
+// truth for which key sequences this port ACTUALLY recognizes right
+// now. Each entry's bytes are fed through Application::feedByte(),
+// one byte at a time, by executeSelectedKeyBinding() -- exactly
+// as if a real user had typed that sequence live, so multi-byte
+// leader sequences (^J c, ^X ^K l, etc.) naturally re-enter the same
+// leaderXPending_/leaderJPending_/etc. states a live keypress would.
+// M-0..M-19 (numbered keyboard-macro slots) are NOT included: this
+// port has only ONE macro slot (StartMacroRecord/PlayMacro), not
+// legacy's 20 independently-bound ones, so there's nothing per-slot
+// to list. Arrow/PageUp/PageDown special keys are omitted too --
+// every one of them already has a plain-byte alias in this table
+// (j/k, ^N/^P, Space/^F/^V, b/^B), so nothing is unreachable by
+// leaving KeyInput::SpecialKey-only entries out.
+struct KeyTableEntry {
+  const char *keyLabel;
+  const char *description;
+  std::vector<int> bytes;
+};
+
+const KeyTableEntry kKeyTable[] = {
+    // Cursor / paging / misc (no leader)
+    {"j", "Move window down", {'j'}},
+    {"k", "Move window up", {'k'}},
+    {"^N", "Move cursor down", {0x0e}},
+    {"^P", "Move cursor up", {0x10}},
+    {"Space", "Page down", {' '}},
+    {"^F", "Page down", {0x06}},
+    {"^V", "Page down", {0x16}},
+    {"b", "Page up", {'b'}},
+    {"^B", "Page up", {0x02}},
+    {"Enter", "Open selected entry", {kCarriageReturn}},
+    {"^G", "Back / cancel", {kControlG}},
+    {"^S", "FGREP", {kControlS}},
+    {"^Space", "Toggle mark (CP/MV/RM/ARC)", {0x80}},
+    {"^R", "HISTORY (directory)", {0x12}},
+    {"^L", "Redraw screen", {0x0c}},
+    {"^T", "TCB banner", {0x14}},
+    {"q", "Exit tcb (pager)", {'q'}},
+    // ESC-leader
+    {"ESC s", "SHELL", {kEscape, 's'}},
+    {"ESC <", "Go to top", {kEscape, '<'}},
+    {"ESC >", "Go to bottom", {kEscape, '>'}},
+    {"ESC ^M", "Read as is", {kEscape, kCarriageReturn}},
+    // ^J-leader
+    {"^J ^S", "EGREP", {kLeaderJ, kControlS}},
+    {"^J c", "CUT (fixed string, buffer)", {kLeaderJ, 'c'}},
+    {"^J ^C", "CUT (regex, buffer)", {kLeaderJ, kControlC}},
+    {"^J b", "CUT (fixed string, file)", {kLeaderJ, 'b'}},
+    {"^J ^B", "CUT (regex, file)", {kLeaderJ, 0x02}},
+    {"^J m", "MAN", {kLeaderJ, 'm'}},
+    {"^J p", "PROGRAM", {kLeaderJ, 'p'}},
+    {"^J l", "LOCATE", {kLeaderJ, 'l'}},
+    {"^J d", "DU", {kLeaderJ, 'd'}},
+    {"^J ^R", "HISTORY (SHELL commands)", {kLeaderJ, 0x12}},
+    {"^J e", "EDIT", {kLeaderJ, 'e'}},
+    {"^J ^H", "HELP", {kLeaderJ, 0x08}},
+    {"^J .", "SHELL: cd <directory>", {kLeaderJ, '.'}},
+    {"^J ,", "SHELL: ls -l", {kLeaderJ, ','}},
+    {"^J w", "SHELL: insert access-name", {kLeaderJ, 'w'}},
+    {"^J ^W", "SHELL: insert buffer content", {kLeaderJ, 0x17}},
+    // ^X-leader
+    {"^X c", "CP", {kLeaderX, 'c'}},
+    {"^X m", "MV", {kLeaderX, 'm'}},
+    {"^X r", "RM", {kLeaderX, 'r'}},
+    {"^X f", "FILE: input file name", {kLeaderX, 'f'}},
+    {"^X d", "DIR: input directory name", {kLeaderX, 'd'}},
+    {"^X ^F", "FILE: select file name", {kLeaderX, 0x06}},
+    {"^X ^D", "DIR: select directory name", {kLeaderX, 0x04}},
+    {"^X ^C", "EXIT", {kLeaderX, kControlC}},
+    {"^X ^W", "Save buffer to file", {kLeaderX, 0x17}},
+    {"^X ^Y", "Mark all (CP/MV/RM/ARC)", {kLeaderX, 0x19}},
+    {"^X ^N", "Clear all marks (CP/MV/RM/ARC)", {kLeaderX, 0x0e}},
+    {"^X (", "Begin macro recording", {kLeaderX, '('}},
+    {"^X )", "End macro recording", {kLeaderX, ')'}},
+    {"^X e", "Execute recorded macro", {kLeaderX, 'e'}},
+    {"^X s", "Restart SHELL", {kLeaderX, 's'}},
+    {"^X a", "ARC: expand archive", {kLeaderX, 'a'}},
+    // ^X^K-leader
+    {"^X ^K c", "CP with SHELL window", {kLeaderX, 0x0b, 'c'}},
+    {"^X ^K m", "MV with SHELL window", {kLeaderX, 0x0b, 'm'}},
+    {"^X ^K r", "RM with SHELL window", {kLeaderX, 0x0b, 'r'}},
+    {"^X ^K a", "ARC: expand with SHELL window", {kLeaderX, 0x0b, 'a'}},
+    {"^X ^K e", "ERROR", {kLeaderX, 0x0b, 'e'}},
+    {"^X ^K l", "LOG: SHELL output", {kLeaderX, 0x0b, 'l'}},
+    // ^O-leader
+    {"^O h", "Switch scroll mode", {kLeaderO, 'h'}},
+    {"^O l", "Switch ls output format", {kLeaderO, 'l'}},
+    {"^O a", "Switch charset (ASCII/EUC/UTF-8)", {kLeaderO, 'a'}},
+    {"^O ^K", "Go to parent directory", {kLeaderO, 0x0b}},
+    {"^O ^M", "Read per line", {kLeaderO, kCarriageReturn}},
+    {"^O g", "Toggle GUI mode (this port's own addition, not a usilicrc K-? binding)", {kLeaderO, 'g'}},
+};
+
 // Ported from menu.c's init_cut2() call for M_help/T_help -- the
 // fixed section-header pattern HELP's own CUT split always uses (see
 // class comment). Legacy's OWN pattern (HELP.jp 2.4's own worked
@@ -79,6 +183,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       archiveContentView_(display),
       duView_(display),
       listBrowserView_(display),
+      keyView_(display),
       promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
       fileMode_(fileView_, history, encoding, width),
@@ -208,6 +313,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::Back;
     case kControlS:
       return Command::StartFgrep;
+    case 0x08:  // ^H (M_key, K-2, "KEY") -- see startKey()'s own comment
+      return Command::StartKey;
     case 0x80:  // ^Space (M_mark) -- KeyInput reports a literal NUL/Ctrl-Space as 0x80, see its class comment
       return Command::ToggleMark;
     case 0x12:  // ^R (M_hist)
@@ -519,6 +626,8 @@ ContentView &Application::activeView() {
       return duView_;
     case ApplicationMode::ListBrowser:
       return listBrowserView_;
+    case ApplicationMode::Key:
+      return keyView_;
     case ApplicationMode::Directory:
     default:
       return directoryView_;
@@ -551,8 +660,10 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Archive) return openSelectedArchiveEntry();
       if (currentMode_ == ApplicationMode::Du) return openSelectedDuEntry();
       if (currentMode_ == ApplicationMode::ListBrowser) return openSelectedListEntry();
+      if (currentMode_ == ApplicationMode::Key) return executeSelectedKeyBinding();
       return false;
     case Command::Back:
+      if (currentMode_ == ApplicationMode::Key) return returnFromKey();
       if (currentMode_ == ApplicationMode::ListBrowser) return returnFromListBrowser();
       if (currentMode_ == ApplicationMode::Du) return returnFromDu();
       if (currentMode_ == ApplicationMode::Shell) return returnFromShell();
@@ -631,6 +742,8 @@ bool Application::handleCommand(Command command) {
       return cycleCharset();
     case Command::StartFileHistory:
       return startListBrowser(RingCategory::RecentFile);
+    case Command::StartKey:
+      return startKey();
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
@@ -1338,6 +1451,49 @@ bool Application::startListBrowser(RingCategory category) {
   listBrowserMode_.show(items);
   currentMode_ = ApplicationMode::ListBrowser;
   return true;
+}
+
+// K-2 (^H, M_key, "KEY"): see kKeyTable's own comment for why this is
+// a hand-maintained mirror of dispatchByte()'s switch statements
+// rather than a real usilicrc KEY-section parse. Reachable from any
+// mode (matching HELP's own no-mode-guard precedent, and legacy's own
+// init_bp() default case) -- re-entry from within Key mode itself is
+// refused, same shape as every other Start*() in this class.
+bool Application::startKey() {
+  if (currentMode_ == ApplicationMode::Key) return false;
+  std::vector<ContentView::Line> lines;
+  lines.reserve(std::size(kKeyTable));
+  for (const auto &entry : kKeyTable) {
+    std::string label = entry.keyLabel;
+    if (label.size() < 10) label.append(10 - label.size(), ' ');
+    lines.push_back({label + "  " + entry.description});
+  }
+  keyView_.setLines(std::move(lines));
+  keyView_.setCursorIndex(0);
+  keyReturnMode_ = currentMode_;
+  currentMode_ = ApplicationMode::Key;
+  keyView_.redraw();
+  return true;
+}
+
+bool Application::returnFromKey() {
+  currentMode_ = keyReturnMode_;
+  activeView().redraw();
+  return true;
+}
+
+// See this class's own declaration comment (application.hpp) for the
+// "return first, THEN execute" order HELP.jp 2.2 documents.
+bool Application::executeSelectedKeyBinding() {
+  int idx = keyView_.cursorIndex();
+  if (idx < 0 || idx >= static_cast<int>(std::size(kKeyTable))) return false;
+  std::vector<int> bytes = kKeyTable[idx].bytes;  // copy: returnFromKey() below may redraw/mutate state first
+
+  currentMode_ = keyReturnMode_;
+  activeView().redraw();
+  bool result = false;
+  for (int byte : bytes) result = feedByte(byte, std::nullopt);
+  return result;
 }
 
 // Ported from m_grep(): entering FGREP/EGREP just remembers where to
