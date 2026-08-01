@@ -395,6 +395,44 @@ TEST_CASE_FIXTURE(Fixture, "CUT: splitting log.txt on 'marker' produces one segm
   CHECK(app.cutMode().segments()[2].label == "marker three");
 }
 
+TEST_CASE_FIXTURE(Fixture, "CUT (regular file, K-35/^Jb): splits the SELECTED entry directly, without opening it first") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);  // never entered File mode
+
+  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 3);
+  CHECK(app.cutMode().segments()[0].label == "marker one");
+  CHECK(app.fileMode().currentFile() == (root / "log.txt").string());  // loaded behind the scenes
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT (regular file): Back returns to Directory mode, matching where it was entered from") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): refused on a directory entry or outside Directory mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  CHECK_FALSE(app.handleCommand(Command::StartCutFileFixed));  // selected entry is a directory
+  CHECK_FALSE(app.promptActive());
+}
+
 TEST_CASE_FIXTURE(Fixture, "CUT: Enter on a segment label shows that segment's content in CutContent") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");

@@ -189,10 +189,14 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     switch (byte) {
       case kControlS:  // ^J ^S : EGREP
         return handleCommand(Command::StartEgrep);
-      case 'c':  // ^J c : CUT (fixed string)
+      case 'c':  // ^J c : CUT (fixed string, buffer)
         return handleCommand(Command::StartCutFixed);
-      case kControlC:  // ^J ^C : CUT (regex)
+      case kControlC:  // ^J ^C : CUT (regex, buffer)
         return handleCommand(Command::StartCutRegex);
+      case 'b':  // ^J b : CUT (fixed string, regular file)
+        return handleCommand(Command::StartCutFileFixed);
+      case 0x02:  // ^J ^B : CUT (regex, regular file)
+        return handleCommand(Command::StartCutFileRegex);
       case 'm':              // ^J m : MAN
       case kCarriageReturn:  // ^J ^M : MAN (the second byte here is ^M, unrelated to a bare Enter)
         return handleCommand(Command::StartMan);
@@ -457,6 +461,10 @@ bool Application::handleCommand(Command command) {
       return startCutPrompt(GrepSyntax::Fixed);
     case Command::StartCutRegex:
       return startCutPrompt(GrepSyntax::Regex);
+    case Command::StartCutFileFixed:
+      return startCutFilePrompt(GrepSyntax::Fixed);
+    case Command::StartCutFileRegex:
+      return startCutFilePrompt(GrepSyntax::Regex);
     case Command::StartMan:
       return startManPrompt();
     case Command::StartProgram:
@@ -869,6 +877,32 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
   return true;
 }
 
+// K-35/K-36's "regular file" CUT variant -- CutMode's own class
+// comment already flagged this exact shortcut (split a file's content
+// straight from a directory listing, without a separate "open it
+// first" step) as unwired future work; wiring it here is just:
+// resolve the selected entry's path, stash it, and reuse the SAME
+// CutPattern prompt/executeCut() the buffer variant already has --
+// executeCut() loads cutFileSourcePath_ via FileMode before splitting
+// when it's non-empty, instead of reading the already-displayed
+// buffer. cutReturnMode_ is deliberately left untouched here: its
+// class default is already ApplicationMode::Directory, exactly where
+// this variant is entered from and should return to.
+bool Application::startCutFilePrompt(GrepSyntax syntax) {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  const DirectoryEntry *entry = directoryMode_.selectedEntry();
+  if (!entry || entry->isDirectory) return false;
+  std::string path = directoryMode_.currentDirectory();
+  if (!path.empty() && path.back() != '/') path += '/';
+  path += entry->name;
+  cutFileSourcePath_ = path;
+  cutSyntax_ = syntax;
+  promptKind_ = PromptKind::CutPattern;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
 // Ported from m_man(): unlike GREP/CUT, m_man() has no is_name()
 // nested-entry guard and doesn't read anything from the currently
 // active view (see class comment) -- so this is reachable from any
@@ -979,8 +1013,24 @@ bool Application::executeGrep(const std::string &pattern) {
 
 bool Application::executeCut(const std::string &pattern) {
   bool ok;
+  std::string fileSourcePath = std::move(cutFileSourcePath_);
+  cutFileSourcePath_.clear();  // consumed exactly once, regardless of which branch below runs or its outcome
+
   if (currentMode_ == ApplicationMode::CutContent) {
     ok = cutMode_.splitSelected(pattern, cutSyntax_);  // nested -- cutOrigin_ untouched, see class comment
+  } else if (!fileSourcePath.empty()) {
+    // K-35/K-36's "regular file" variant: load the file first (same
+    // as opening it normally would), THEN split its now-current
+    // buffer -- see startCutFilePrompt()'s own comment.
+    if (!fileMode_.loadFile(fileSourcePath)) {
+      activeView().redraw();
+      return false;
+    }
+    std::vector<std::string> sourceLines;
+    sourceLines.reserve(fileView_.lines().size());
+    for (const auto &line : fileView_.lines()) sourceLines.push_back(line.text);
+    ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
+    if (ok) cutOrigin_ = CutOrigin::File;
   } else {
     std::vector<std::string> sourceLines;
     sourceLines.reserve(fileView_.lines().size());

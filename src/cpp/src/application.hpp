@@ -53,6 +53,14 @@ enum class Command {
   StartEgrep,
   StartCutFixed,
   StartCutRegex,
+  // K-35/K-36 (^Jb / ^J^B, M_fcut2/M_fcut -- CUT's "regular file"
+  // variant): same idea as StartCutFixed/StartCutRegex, but reachable
+  // from Directory mode on the SELECTED entry directly, without first
+  // opening it in File mode (CutMode's own class comment already
+  // flagged this exact shortcut as unwired future work). See
+  // startCutFilePrompt()'s own comment.
+  StartCutFileFixed,
+  StartCutFileRegex,
   StartMan,
   StartProgram,
   StartLocate,
@@ -961,6 +969,7 @@ class Application {
 
   bool startGrepPrompt(GrepSyntax syntax);
   bool startCutPrompt(GrepSyntax syntax);
+  bool startCutFilePrompt(GrepSyntax syntax);
   bool startManPrompt();
   bool startProgramPrompt();
   bool startLocatePrompt();
@@ -1033,6 +1042,12 @@ class Application {
   RingCategory listBrowserCategory_ = RingCategory::RecentDirectory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;
+  // Non-empty between startCutFilePrompt() and the CutPattern prompt's
+  // submit (K-35/K-36's "regular file" variant): the path to load and
+  // split instead of the currently-displayed buffer. Cleared by
+  // executeCut() as soon as it's consumed, so the very next CUT (of
+  // either variant) doesn't accidentally reuse a stale path.
+  std::string cutFileSourcePath_;
   bool shellStarted_ = false;
   std::string helpText_;
   // Which top-level Cut/CutContent split is currently active -- only
