@@ -35,6 +35,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       wFilePath_(homeDirectory + "/.usilic/w.usilic"),
       errorLogPath_(homeDirectory + "/.usilic/error"),
       logFilePath_(homeDirectory + "/.usilic/shell"),
+      usilicrcPath_(homeDirectory + "/.usilic/usilicrc"),
+      historyFilePath_(homeDirectory + "/.usilic/history"),
       encoding_(encoding),
       configuration_(configuration),
       history_(history),
@@ -173,6 +175,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::StartDirectoryHistory;
     case 0x0c:  // ^L (M_clear)
       return Command::Redraw;
+    case 0x14:  // ^T (M_tcb, K-0, "TCB")
+      return Command::ShowTcbBanner;
     case 'q':  // M_quit -- usilicrc scopes this to pager contexts; see handleCommand()'s own gate
       return Command::QuitPager;
     default:
@@ -576,6 +580,8 @@ bool Application::handleCommand(Command command) {
       return executeShowErrorLog();
     case Command::ShowShellLog:
       return executeShowShellLog();
+    case Command::ShowTcbBanner:
+      return executeShowTcbBanner();
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
@@ -1078,6 +1084,32 @@ bool Application::executeShowShellLog() {
   for (const auto &line : shell_.scrollback().lines()) out << line.text << "\n";
   out.close();
   if (!fileMode_.loadFile(logFilePath_)) return false;
+  currentMode_ = ApplicationMode::File;
+  return true;
+}
+
+// K-0: see the class's own declaration comment.
+bool Application::executeShowTcbBanner() {
+  std::ostringstream banner;
+  banner << "usilic v1.5b\n";
+  banner << "Startup file : " << usilicrcPath_ << "\n";
+  banner << "History file : " << historyFilePath_ << "\n";
+  banner << "User name    : ";
+  if (const char *user = std::getenv("USER")) {
+    banner << user;
+    char hostname[256] = {0};
+    if (::gethostname(hostname, sizeof(hostname) - 1) == 0 && hostname[0]) banner << "@" << hostname;
+  } else {
+    banner << "---";
+  }
+  banner << "\n";
+  banner << "ERROR log    : " << errorLogPath_ << "\n";
+  banner << "SHELL log    : " << logFilePath_ << "\n";
+
+  std::string text = banner.str();
+  std::vector<unsigned char> bytes(text.begin(), text.end());
+  std::string tempPath = materializeArchiveTempFile("tcb", bytes);
+  if (tempPath.empty() || !fileMode_.loadFile(tempPath)) return false;
   currentMode_ = ApplicationMode::File;
   return true;
 }

@@ -6166,6 +6166,46 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
        新規4件を含め該当テストは全通過(既存の失敗10件は今回と
        無関係な既存の環境依存差)。
 
+109. **2026-08-01: K-0(^T、M_tcb、「TCB」バナー画面)を実装**
+   - ユーザーから「暫定CUI版からまんま流用でOK」との指示。
+     `str.c`の`print_tcb()`を実際に読んだところ、この画面は静的な
+     テキストではなく、バージョン・起動時の設定ファイルパス・
+     履歴ファイルパス・起動モード(file manager/pager)・
+     コマンドライン引数・ユーザー@ホスト名・(file managerモードの
+     場合のみ)ERROR/SHELLログのパス、という実行時に動的生成される
+     ステータス/aboutスクリーンだと判明した。
+   - 「まんま流用」を、静的文字列のコピーではなく「同じフィールド
+     構成を、このポート自身のデータソースで再現する」ことと解釈し
+     実装した。ただし2フィールドは意図的に省略: 「起動モード」は
+     このポートがまだpager単体起動(`tcb <file>`)を持たず常に
+     Directoryモードへ入る設計のため("file manager"固定表示に
+     する根拠が無い)、「コマンドライン」は`Application`が自身の
+     argvを一切受け取っていないため(でっち上げの固定値を出すより
+     省略する方が誠実と判断)。この2点はコメントで明記した。
+   - `Application`に`usilicrcPath_`/`historyFilePath_`
+     (いずれも`wFilePath_`/`errorLogPath_`/`logFilePath_`と同じ
+     `homeDirectory`由来の導出)を新設。`executeShowTcbBanner()`は
+     バージョン・Startup file・History file・User name(`$USER`+
+     `gethostname()`)・ERROR log・SHELL logをテキストへ組み立て、
+     項目106で新設した`materializeArchiveTempFile()`(mkdtemp一時
+     ファイルへ書き出すヘルパー、名前とは裏腹に汎用)を再利用して
+     一時ファイルへ書き出し、`FileMode::loadFile()`で開く実装に
+     した(ERROR/LOGログのような永続パスを持たない一回限りの
+     合成テキストのため)。`resolveCommand()`に`case 0x14: return
+     Command::ShowTcbBanner;`を追加(^Tは単独バイトで、リーダー
+     キー不要)。
+   - **検証**: doctest新規1件(実際に`~/.usilic/usilicrc`・
+     `history`・`error`・`shell`のフルパスと`"usilic v1.5b"`が
+     画面内容に含まれることを確認)を追加、計523件全通過(Mac)。
+     実PTYで`^T`を押し、実際のフルパス(一時テスト用HOME配下の
+     `.usilic/usilicrc`等)とユーザー名@ホスト名が正しく表示される
+     ことを確認。Ubuntu 26.04でも新規1件を含め該当テストは全通過
+     (既存の失敗10件は今回と無関係な既存の環境依存差)。
+   - これでusilicrcの主要77個のK-?キーのうち、K-27/28(charset実行時
+     切替、複数クラスにまたがる設計変更が必要)とK-46/48(LISTベース
+     の選択ピッカー、意味論を確認済みだが未着手)を残し、ほぼ全て
+     配線が完了した。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

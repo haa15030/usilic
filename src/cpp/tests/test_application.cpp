@@ -1088,6 +1088,20 @@ TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): refused when Shell was never star
   CHECK_FALSE(app.handleCommand(Command::ShowShellLog));
 }
 
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): shows a status screen with real usilicrc/history/log paths") {
+  REQUIRE(app.start(path()));
+  CHECK(app.feedByte(0x14, std::nullopt));  // ^T
+  CHECK(app.currentMode() == ApplicationMode::File);
+
+  std::string joined;
+  for (const auto &line : app.activeContentView().lines()) joined += line.text + "\n";
+  CHECK(joined.find("usilic v1.5b") != std::string::npos);
+  CHECK(joined.find((root / ".usilic" / "usilicrc").string()) != std::string::npos);
+  CHECK(joined.find((root / ".usilic" / "history").string()) != std::string::npos);
+  CHECK(joined.find((root / ".usilic" / "error").string()) != std::string::npos);
+  CHECK(joined.find((root / ".usilic" / "shell").string()) != std::string::npos);
+}
+
 // -- SHELL: ESC-leader entry, byte routing to Shell's own LineEditor/
 // pty, and the child persisting across Back/^G --
 //

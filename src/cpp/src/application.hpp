@@ -190,7 +190,10 @@ enum class Command {
   // Application::executeShowErrorLog()/executeShowShellLog()'s own
   // comments.
   ShowErrorLog,
-  ShowShellLog
+  ShowShellLog,
+  // K-0 (^T, M_tcb, "TCB"): shows a status/about screen. See
+  // Application::executeShowTcbBanner()'s own comment.
+  ShowTcbBanner
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -1125,6 +1128,21 @@ class Application {
   // print." False if Shell was never started (nothing to snapshot)
   // or the file can't be written/opened.
   bool executeShowShellLog();
+  // K-0 (^T): builds a short status/about screen -- version, the
+  // usilicrc/history file paths (str.c's print_tcb() shows the SAME
+  // two fields, "Startup file"/"History file"), user@host, and the
+  // ERROR/LOG paths (K-67/K-68) -- and opens it via File mode.
+  // Deliberately narrower than legacy's own print_tcb(): "Startup
+  // mode" (file manager vs pager) and "Command line" (the invoking
+  // argv) are both omitted -- this port has no pager-only launch path
+  // yet (main.cpp always calls Application::start() into Directory
+  // mode regardless of argument), and Application doesn't currently
+  // receive its own argv at all, so there's nothing genuine to report
+  // for either field rather than a guessed/hardcoded placeholder.
+  // Written to a throwaway mkdtemp() temp file (materializeArchiveTempFile()'s
+  // own pattern) since FileMode::loadFile() needs a real path and
+  // this text has no other natural on-disk home the way ERROR/LOG do.
+  bool executeShowTcbBanner();
   bool startCopyPrompt(bool interactive = false);
   bool startMovePrompt(bool interactive = false);
   bool startRemovePrompt(bool interactive = false);
@@ -1214,6 +1232,11 @@ class Application {
   // K-68 is actually pressed. Ported from str.c's S_log path
   // (`~/.tcb/shell`, this port's own `~/.usilic/shell`).
   std::string logFilePath_;
+  // K-0's own banner text (see executeShowTcbBanner()'s own comment)
+  // reports these two paths verbatim -- str.c's print_tcb() shows the
+  // SAME two fields ("Startup file"/"History file").
+  std::string usilicrcPath_;
+  std::string historyFilePath_;
   Charset::Encoding encoding_;  // wrapHelpText()'s own PipeBuffer construction -- no other member currently needs this
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   History &history_;  // startListBrowser()'s own recentEntries() lookup -- no other member currently needs this
