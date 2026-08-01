@@ -48,15 +48,28 @@ class Charset {
   //
   // control_whitelist lists the control-character byte values (other
   // than '\n') that are allowed to appear in a non-binary file, e.g.
-  // "\t\r" -- normally sourced from the user's tcbrc CODE setting.
-  // Simplified from the legacy heuristic: the original also special-
-  // cased backspace (0x08) sequences as a signal for nroff-style
-  // overstrike-bold text (see the CLAUDE.md history's item 8), which
-  // is a display-formatting concern, not an encoding-detection one,
-  // and is intentionally not reproduced here.
+  // "\t\r\x08" -- normally sourced from the user's tcbrc CODE setting.
+  // Backspace (0x08) is whitelisted here for a narrower reason than
+  // legacy's own special-casing: this class was originally designed
+  // (2026-07-21) treating legacy's nroff-style overstrike-bold
+  // handling (see CLAUDE.md history's item 8) as purely a DISPLAY-
+  // formatting concern (PipeBuffer's own A_md/A_md2 job), unrelated
+  // to encoding detection -- but leaving 0x08 OFF this whitelist still
+  // let it flip f_bin=true here regardless, silently defeating EUC/
+  // SJIS->UTF-8 conversion for any bold-formatted EUC-JP content
+  // (found via a real user report, 2026-08-01: HELP.jp -- which uses
+  // this exact overstrike convention throughout for its section
+  // numbers -- rendered as a garbled mix of raw EUC-JP and UTF-8
+  // bytes when USILICCHARSET=utf8, i.e. the SAME class of bug
+  // CLAUDE.md's item 8 already fixed once in the legacy C, quietly
+  // reintroduced here by this simplification's own side effect on
+  // detection rather than display). Whitelisting 0x08 by default
+  // fixes detection without reintroducing legacy's own display-side
+  // overstrike special-casing, which PipeBuffer already owns
+  // separately and correctly.
   static Encoding detect(const unsigned char *buf, int size,
                           Encoding terminal_encoding,
-                          const char *control_whitelist = "\t\r");
+                          const char *control_whitelist = "\t\r\x08");
 
   // Byte length (1-4) of the UTF-8 sequence starting with lead byte c.
   static int sequence_length(unsigned char lead_byte);

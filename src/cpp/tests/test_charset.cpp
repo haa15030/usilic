@@ -56,6 +56,20 @@ TEST_CASE("detect: allowed control bytes (tab/CR) are not binary") {
   CHECK(Charset::detect(text, sizeof(text) - 1, Encoding::Euc) == Encoding::Ascii);
 }
 
+TEST_CASE("detect: backspace (nroff overstrike-bold) doesn't get flagged as binary, "
+          "and real EUC content around it still converts (2026-08-01 user report)") {
+  // "報" in EUC-JP (b0 f1) bold-overstruck around a plain ASCII "1\b1"
+  // heading digit -- same shape as doc/HELP.jp's own section numbers.
+  // Previously, backspace wasn't in the default control_whitelist, so
+  // ANY buffer containing one (e.g. this exact HELP.jp convention) was
+  // unconditionally flagged f_bin=true and fell back to Binary --
+  // silently defeating EUC->UTF-8 conversion for the whole file
+  // (confirmed via a real PTY run: HELP.jp rendered as a garbled mix
+  // of raw EUC-JP and UTF-8 bytes under USILICCHARSET=utf8).
+  const unsigned char text[] = {'1', 0x08, '1', 0xb0, 0xf1, '\n'};
+  CHECK(Charset::detect(text, sizeof(text) - 1, Encoding::Euc) == Encoding::Euc);
+}
+
 TEST_CASE("detect: Ascii terminal never auto-switches to Sjis/Euc") {
   const unsigned char text[] = {0xa4, 0xa2, 0xa4, 0xa2, '\n'};  // EUC "あ" pairs
   CHECK(Charset::detect(text, sizeof(text), Encoding::Ascii) == Encoding::Ascii);

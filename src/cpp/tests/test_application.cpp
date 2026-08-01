@@ -2349,7 +2349,7 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: propagates the new size to Shell's pty
 // -- HELP (^J^H) --
 
 namespace {
-// Matches the fixed header pattern HELP always splits on ("^  [1-6][1-6]+\\."),
+// Matches the fixed header pattern HELP always splits on ("^  [0-9]+\\."),
 // same shape as the real src/doc/HELP file's own numbered sections,
 // but synthetic content (no overstrike bytes needed -- CutMode::split()
 // operates on already wrapped/collapsed plain text, same as any other
@@ -2383,6 +2383,29 @@ TEST_CASE_FIXTURE(Fixture, "HELP: shows the numbered sections as a CUT segment l
   REQUIRE(app.cutMode().segments().size() == 2);
   CHECK(app.cutMode().segments()[0].label == "  11. Section One");
   CHECK(app.cutMode().segments()[1].label == "  12. Section Two");
+}
+
+TEST_CASE_FIXTURE(Fixture, "HELP: splits on real doc/HELP-shaped \"chapter.section.\" headers, not just bare numbers "
+                           "(2026-08-01 user report)") {
+  // The real src/doc/HELP(.jp) uses two-level "N.M." numbering (e.g.
+  // "2.4.", "2.18.", "5.3."), not the bare "NN." shape testHelpText()
+  // uses above -- a previous kHelpPattern ("^  [1-6][1-6]+\\.", fixed
+  // 2026-08-01) never matched this real shape at all (confirmed via a
+  // real PTY run against doc/HELP.jp: HELP loaded as a single
+  // unsplit "1/1 END" segment instead of a proper table of contents).
+  std::string dottedHelp =
+      "  1. Overview\nTop-level content.\n"
+      "  2.1. First subsection\nSubsection content.\n"
+      "  2.18. Eighteenth subsection\nMore content.\n"
+      "  5.3. Another chapter's subsection\nFinal content.\n";
+  REQUIRE(app.loadHelpText(dottedHelp));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.cutMode().segments().size() == 4);
+  CHECK(app.cutMode().segments()[0].label == "  1. Overview");
+  CHECK(app.cutMode().segments()[1].label == "  2.1. First subsection");
+  CHECK(app.cutMode().segments()[2].label == "  2.18. Eighteenth subsection");
+  CHECK(app.cutMode().segments()[3].label == "  5.3. Another chapter's subsection");
 }
 
 TEST_CASE_FIXTURE(Fixture, "HELP: Enter on a section shows its content (CutContent), like a real CUT segment") {

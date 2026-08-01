@@ -23,8 +23,36 @@ constexpr int kControlG = 0x07;        // ^G
 constexpr int kCarriageReturn = 0x0d;  // ^M
 // Ported from menu.c's init_cut2() call for M_help/T_help -- the
 // fixed section-header pattern HELP's own CUT split always uses (see
-// class comment).
-const char *const kHelpPattern = "^  [1-6][1-6]+\\.";
+// class comment). Legacy's OWN pattern (HELP.jp 2.4's own worked
+// example: "^  [0-9]^H[0-9]+\.") is written for RAW, unprocessed
+// bytes -- HELP.jp/HELP's section numbers are nroff-style overstrike-
+// bold (each character doubled as "X\bX", see PipeBuffer's own
+// A_md/A_md2 handling), so legacy's pattern really just anchors on
+// "two leading spaces, one bold-doubled digit, then a period" and
+// relies on the SAME literal backspace still being present in the
+// buffer it matches against. This port's own wrapHelpText() already
+// runs the raw text through PipeBuffer BEFORE cutMode_.split() ever
+// sees it, which strips every overstrike pair down to a single
+// (still just plain, non-doubled) character -- so matching against
+// literal "\bH" or double-digit-in-a-narrow-range bytes can never
+// hit anything in THIS port's own already-clean helpLines. Found via
+// a real user report (2026-08-01: "HELPのCUTでマクロ機能を試そうと
+// したが...効かない") after a PTY test showed HELP loading as a
+// single 1-line, unsplit CUT segment ("1/1 END") instead of a proper
+// section-by-section table of contents. The previous
+// "^  [1-6][1-6]+\." here (two ADJACENT digits, both artificially
+// restricted to 1-6) never matched anything either, on raw OR
+// stripped text -- confirmed by generating a stripped-text dump of
+// the real doc/HELP.jp and checking headers span "1." (bare chapter
+// titles) through "2.18." (two-digit subsections) and "5.3.": no
+// header is two adjacent digits, and several use digits outside
+// 1-6 (e.g. "2.18.", "2.9."). "^  [0-9]+\." (one-or-more digits then
+// a period, against the CLEAN de-overstruck text) matches every one
+// of them -- it doesn't need to consume a header's OWN trailing
+// ".M." suffix (e.g. matching just "2." out of "2.4.") since CUT
+// split only needs the match to anchor where each new section
+// starts, not span the whole header.
+const char *const kHelpPattern = "^  [0-9]+\\.";
 }  // namespace
 
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
