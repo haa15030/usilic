@@ -1725,7 +1725,14 @@ bool Application::executePathInput(const std::string &path) {
     activeView().redraw();
     return false;
   }
-  ResolvedPath resolved = pathResolver_.resolve(path);
+  // Resolved relative to directoryMode_'s own currentDirectory() (the
+  // directory last BROWSED, which stays put even while looking at a
+  // File/Man/etc screen opened from it -- see PathResolver::resolve()'s
+  // own baseDirectory comment for why this can't be the process's own
+  // cwd: usilic never chdir()s). Matches Shell's own Tab-completion,
+  // which already resolves against shell_.currentDirectory() for the
+  // same reason.
+  ResolvedPath resolved = pathResolver_.resolve(path, directoryMode_.currentDirectory());
   if (!resolved.exists) {
     activeView().redraw();
     return false;

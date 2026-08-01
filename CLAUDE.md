@@ -6542,6 +6542,59 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      閉じているため)、Ubuntu 26.04クロスビルドも確認済み(既存の
      失敗10件は今回と無関係な既知の環境依存差)。
 
+115. **2026-08-01: ^Xd/^Xfで相対パス入力が効かない不具合を修正、
+    ^X^D等のLIST型ヒストリーピッカーにハイライト項目表示を追加**。
+    項目112のユーザー報告(3)への対応。
+   - **^Xd/^Xf(K-45/K-47、PathInputプロンプト)の調査**: PTYで実際に
+     入力を送ってみたところ、テキスト入力自体(1文字ずつのエコー
+     描画)は問題無く動作していた。フルパス(絶対パス)で試すと
+     正常に遷移することも確認。問題が起きるのは相対パスを入力した
+     場合のみで、`executePathInput()`が`PathResolver::resolve()`を
+     ベースディレクトリ無しで呼んでいたため、`std::filesystem::
+     exists()`がプロセス自身のcwd(usilicは一度も`chdir()`しない
+     ため、常に起動時の場所のまま)を基準に相対パスを解決していた
+     と判明。ユーザーがディレクトリを移動した後に相対パスを入力
+     すると、存在チェックが常にfalseになり`executePathInput()`が
+     何も起こさず画面を再描画するだけ(視覚的なエラーも出ない)
+     ため、「入力ができない」という体感になっていた。
+   - **修正**: `PathResolver::resolve()`に`baseDirectory`引数
+     (デフォルト空文字列で完全後方互換)を追加、絶対パスでも
+     `~`始まりでもない相対パスの場合のみ`baseDirectory`と結合する
+     ようにした。`executePathInput()`から
+     `directoryMode_.currentDirectory()`(直近にブラウズしていた
+     ディレクトリ、File/Man画面を開いていても値は保持され続ける)を
+     渡すよう変更。Shellの`^I`補完が既に`shell_.currentDirectory()`
+     を基準に同じ問題を回避していたのと同じ発想。もう1つの
+     呼び出し元`completeFilesystemPath()`(K-65補完)は、既に
+     `baseDirectory`引数を独自に手動結合する形で正しく実装済み
+     だったため変更不要と確認。
+   - **^X^D等(K-46/48/49のLIST型History Picker、mode-line表示)の
+     調査**: `ListBrowserMode`にはmode-line用の`setModeLineFields
+     Provider`が一切設定されておらず、mode-line行は常に裸の位置
+     テキスト(例: "1/3 TOP")のみだったと判明。legacyの`disp.c`を
+     確認したところ、`M_hist`/`T_hist`/`T_hfile`/`T_hdir`等はいずれも
+     `f_enter=1`(「mode-lineへ文字列入力」)グループに属しており、
+     カーソル移動に同期して選択中の行の文字列をmode-lineの編集可能な
+     フィールドへ反映する設計だった(完全なsync-editable実装は
+     大掛かりなため今回のスコープ外)。ユーザーの実際の要望
+     ("ハイライト表示箇所の文字列がモードラインに表示されない")に
+     絞り、`ListBrowserMode`のコンストラクタで`setModeLineFieldsProvider`
+     を新設、選択中の行の文字列(`items_[cursorIndex]`)をname
+     フィールド(mode-line[1]、他モードのname同様、左側)として
+     読み取り専用で表示するだけの最小実装にとどめた
+     (`ModeLineFieldsProvider`が既に`cursorIndex`をライブで受け取る
+     コールバック設計だったため、DirectoryMode等と同じ形でそのまま
+     配線できた)。
+   - **検証**: PTYで実際に(1)サブディレクトリへ移動後、^Xfで相対
+     ファイル名を入力→修正前は画面が変化せず開けなかったのが、
+     修正後はファイル内容が正しく表示されることを確認。(2)^X^Dで
+     ディレクトリ履歴ピッカーを開き、mode-lineに選択中エントリの
+     パスが表示されることを確認。doctest新規8件(PathResolverの
+     baseDirectory関連5件、ListBrowserModeのmode-line表示2件、
+     Application経由の相対パス^Xf統合テスト1件)を含め計539件全通過
+     (Mac)、Ubuntu 26.04クロスビルドでも該当分すべて全通過(既存の
+     失敗10件は今回と無関係)。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

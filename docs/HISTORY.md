@@ -169,3 +169,11 @@ Application::previousModeName()を新設し、Directory→currentDirectory()、F
 <続けて。
 
 >残る報告のうち「-c起動時[ESC][ESC][Enter]で終われない」に対応しました。app/main.cppを見たところ、この直接終了ジェスチャー(通常の^X^C+y/n確認を経由しない即終了)はGUIイベントループ(runGuiPhase())にしか実装されておらず、-c/実端末フォールバックが通る側のCUIイベントループ(runTerminalPhase())には対応するロジックが元々ありませんでした。GUI側と同じconsecutiveEscapesカウンタをCUI側にも追加し、素のESCを2回連続で受けた直後の改行でrequestImmediateExit()を直接呼ぶようにしました(Application::dispatchByte()を確認し、素のESCを連続で流してもescPending_状態機械には副作用が無いことを確認済み)。PTYで実際に-c起動→ESC→ESC→Enterでプロセスがクリーンに終了すること、ESC→sの通常のSHELL起動が引き続き動作すること(回帰無し)を確認、Ubuntuクロスビルドも確認済みです。コミット・プッシュ済み。
+
+<続けて。
+
+>残る報告のうち「^Xd/^Xfではディレクトリ/ファイル名入力ができず、^X^D等ではハイライト表示箇所の文字列がモードラインに表示されない」に対応しました。^Xf/^Xdをまず実際にPTYで試したところ、テキスト入力自体は正常でフルパスなら問題無く遷移し、相対パスを入力したときだけ何も起きない(視覚的なエラーも無い)と分かりました。原因はexecutePathInput()がPathResolver::resolve()をベースディレクトリ無しで呼んでおり、usilicは一度もchdir()しないため相対パスの存在チェックが常にプロセス起動時のディレクトリ基準になっていたことでした。ディレクトリを移動した後に相対パスを打つと存在チェックがfalseになり画面が変化しないだけ、というのが「入力ができない」の実体でした。PathResolver::resolve()にbaseDirectory引数(デフォルト空文字列で完全後方互換)を追加し、executePathInput()からdirectoryMode_.currentDirectory()を渡すようにしました(Shellの^I補完が既に同じ発想でshell_.currentDirectory()を使っているのと同じパターン)。
+
+^X^D等については、ListBrowserModeにmode-line用のフィールドプロバイダが一切無く、常に裸の位置テキストだけだったと確認しました。legacyのdisp.cではM_hist系はmode-lineへ選択中文字列を同期編集する設計でしたが、フル実装は大掛かりなため、今回はご報告通り「ハイライト項目の文字列をmode-lineに表示する」という読み取り専用の最小実装(name フィールドとして表示)にとどめました。
+
+doctest新規8件(PathResolverのbaseDirectory関連5件、ListBrowserModeのmode-line表示2件、Application経由の相対パス^Xf統合テスト1件)を含め計539件全通過、実PTYでサブディレクトリ移動後の相対パス^Xf入力が正しく開けること、^X^Dのmode-lineに選択中パスが表示されることを確認、Ubuntuクロスビルドも確認済みです。コミット・プッシュ済み。

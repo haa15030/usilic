@@ -38,6 +38,18 @@ TEST_CASE_FIXTURE(Fixture, "selectedItem: null before any list has been shown") 
   CHECK(mode.selectedItem() == nullptr);
 }
 
+TEST_CASE_FIXTURE(Fixture, "mode-line fields: shows the highlighted item's own string as the name field (2026-08-01 user report)") {
+  mode.show({"/tmp/alpha", "/tmp/beta", "/tmp/gamma"});
+  CHECK(view.modeLineText().rfind("/tmp/alpha ", 0) == 0);
+
+  view.setCursorIndex(2);
+  CHECK(view.modeLineText().rfind("/tmp/gamma ", 0) == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "mode-line fields: no name field before any list has been shown") {
+  CHECK(view.modeLineText() == "0/0 END");
+}
+
 TEST_CASE_FIXTURE(Fixture, "show: calling it again replaces the previous items entirely") {
   mode.show({"one", "two"});
   mode.show({"x"});

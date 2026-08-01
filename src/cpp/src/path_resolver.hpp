@@ -41,7 +41,22 @@ class PathResolver {
   // rule already established for Configuration/Shell/etc).
   explicit PathResolver(std::string homeDirectory);
 
-  ResolvedPath resolve(const std::string &rawPath) const;
+  // baseDirectory: joined in front of rawPath when rawPath is neither
+  // absolute nor ~-prefixed, e.g. resolve("plain.txt", "/tmp/sub") ->
+  // "/tmp/sub/plain.txt". Empty (the default) preserves this class's
+  // original behavior of leaving a relative path exactly as typed
+  // (resolved against the PROCESS's own cwd once exists()/
+  // is_directory() run, not any notion of "the directory currently
+  // browsed on screen" -- usilic never chdir()s, see main.cpp/
+  // Application, so those two are NOT the same thing). Added after a
+  // real user report (2026-08-01): "^Xd/^Xfではディレクトリ/
+  // ファイル名入力ができず" turned out to be exactly this -- typing a
+  // RELATIVE path after navigating away from wherever the process
+  // happened to be launched FROM silently failed to resolve (exists
+  // came back false, so executePathInput() just redrew the unchanged
+  // screen with no visible error), which reads as "input doesn't
+  // work" even though the prompt's own text-entry was never broken.
+  ResolvedPath resolve(const std::string &rawPath, const std::string &baseDirectory = "") const;
 
  private:
   std::string homeDirectory_;

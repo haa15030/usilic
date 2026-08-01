@@ -83,3 +83,33 @@ TEST_CASE_FIXTURE(Fixture, "resolve: an empty path resolves to nothing, safely")
   CHECK_FALSE(result.exists);
   CHECK(result.path.empty());
 }
+
+TEST_CASE_FIXTURE(Fixture, "resolve: a relative path joins onto baseDirectory when given (2026-08-01 user report)") {
+  auto result = resolver.resolve("file.txt", root.string());
+  CHECK(result.exists);
+  CHECK_FALSE(result.isDirectory);
+  CHECK(result.path == (root / "file.txt").string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "resolve: without baseDirectory, a relative path is NOT joined (original behavior preserved)") {
+  auto result = resolver.resolve("file.txt");
+  CHECK_FALSE(result.exists);  // "file.txt" alone doesn't exist relative to the test process's own cwd
+}
+
+TEST_CASE_FIXTURE(Fixture, "resolve: an absolute path ignores baseDirectory entirely") {
+  auto result = resolver.resolve((root / "subdir").string(), "/some/unrelated/base");
+  CHECK(result.isDirectory);
+  CHECK(result.path == (root / "subdir").string() + "/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "resolve: a ~-prefixed path ignores baseDirectory entirely") {
+  auto result = resolver.resolve("~/subdir", "/some/unrelated/base");
+  CHECK(result.isDirectory);
+  CHECK(result.path == (root / "subdir").string() + "/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "resolve: baseDirectory without a trailing slash is still joined correctly") {
+  auto result = resolver.resolve("subdir", root.string());  // root has no trailing slash
+  CHECK(result.isDirectory);
+  CHECK(result.path == (root / "subdir").string() + "/");
+}

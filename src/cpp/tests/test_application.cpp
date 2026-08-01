@@ -1392,6 +1392,23 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X d prompts, and a typed DIR path switche
   CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f with a RELATIVE path resolves against the currently browsed directory, "
+                           "not the process's own cwd (2026-08-01 user report)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('f', std::nullopt));   // f
+  for (char c : std::string("sub.txt")) app.feedByte(static_cast<unsigned char>(c), std::nullopt);  // relative
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "subdir" / "sub.txt").string());
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f/d with a nonexistent path fails cleanly, staying in the current mode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x18, std::nullopt));
