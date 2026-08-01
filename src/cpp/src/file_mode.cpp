@@ -97,6 +97,8 @@ bool FileMode::reflow(int newWidth) {
 
 const std::string &FileMode::currentFile() const { return currentFile_; }
 
+void FileMode::setEncoding(Charset::Encoding encoding) { encoding_ = encoding; }
+
 void FileMode::saveCursorPosition() {
   if (currentFile_.empty()) return;
   History::CursorPosition pos;

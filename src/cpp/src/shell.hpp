@@ -214,6 +214,18 @@ class Shell {
   // from the vt_mode('W') handling in input_shell()'s init case.
   void onResize(int rows, int columns);
 
+  // K-27 (^Oa): updates the encoding used by displayWidth() (input-
+  // echo/prompt-redraw width calculations, see add_buff()'s own
+  // history in CLAUDE.md) and commandLine_'s own LineEditor encoding.
+  // Does NOT retroactively re-decode scrollback() lines already
+  // received from the pty under the OLD encoding -- Shell keeps no
+  // raw-byte history to re-run that decoding from, only the
+  // already-decoded ContentView::Line text (a real, disclosed
+  // limitation: switching charset mid-SHELL-session only affects
+  // output from that point forward, matching the practical scope of
+  // what legacy's own vt_charset() toggle affects too).
+  void setEncoding(Charset::Encoding encoding);
+
  private:
   void handlePromptDetected(const std::string &tailBeforeMark);
   void appendBodyByte(unsigned char c);

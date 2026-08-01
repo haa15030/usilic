@@ -1102,6 +1102,38 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): shows a status screen with rea
   CHECK(joined.find((root / ".usilic" / "shell").string()) != std::string::npos);
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O a (K-27) cycles the charset Ascii -> Euc -> Utf8 -> Ascii") {
+  REQUIRE(app.start(path()));
+  CHECK(app.encoding() == Charset::Encoding::Ascii);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  CHECK(app.feedByte('a', std::nullopt));
+  CHECK(app.encoding() == Charset::Encoding::Euc);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  CHECK(app.feedByte('a', std::nullopt));
+  CHECK(app.encoding() == Charset::Encoding::Utf8);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  CHECK(app.feedByte('a', std::nullopt));
+  CHECK(app.encoding() == Charset::Encoding::Ascii);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(CycleCharset): has no mode restriction, unlike most other K-? commands") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK(app.handleCommand(Command::CycleCharset));
+  CHECK(app.encoding() == Charset::Encoding::Euc);
+  // Still showing the same file, un-crashed, after the reflow() this
+  // triggers for the currently-open File mode screen.
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+}
+
 // -- SHELL: ESC-leader entry, byte routing to Shell's own LineEditor/
 // pty, and the child persisting across Back/^G --
 //

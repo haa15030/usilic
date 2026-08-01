@@ -1543,7 +1543,12 @@ int main(int argc, char **argv) {
 
   // Ported from save_history()'s own `.old`-then-overwrite dance:
   // back up the previous file before writing the new one.
-  history.setSavedCharset(encoding);  // so a future session with no explicit override resumes in this one's charset
+  // app.encoding() rather than the local `encoding` variable computed
+  // at startup: K-27 (^Oa) can change it live mid-session
+  // (Application::cycleCharset()), and a switch should actually
+  // persist into the next run, not be silently overwritten by
+  // whatever this session started with.
+  history.setSavedCharset(app.encoding());  // so a future session with no explicit override resumes in this one's charset
   std::string historyPath = usilicDir + "history";
   std::string historyOldPath = usilicDir + "history.old";
   if (!readFileIfExists(historyPath).empty()) std::rename(historyPath.c_str(), historyOldPath.c_str());

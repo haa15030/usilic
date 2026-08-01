@@ -43,6 +43,11 @@ class ManMode {
   const std::string &currentPage() const;
   void saveCursorPosition();
 
+  // K-27 (^Oa): see FileMode::setEncoding()'s own comment -- the same
+  // shape here (affects the NEXT loadPage()/reflow(), not whatever's
+  // already displayed).
+  void setEncoding(Charset::Encoding encoding);
+
   // Re-runs `man currentPage()` and re-wraps its output at newWidth,
   // for a terminal resize. See FileMode::reflow()'s own comment for
   // the shared design (not a literal alloc_winch() port, current-

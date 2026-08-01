@@ -193,7 +193,11 @@ enum class Command {
   ShowShellLog,
   // K-0 (^T, M_tcb, "TCB"): shows a status/about screen. See
   // Application::executeShowTcbBanner()'s own comment.
-  ShowTcbBanner
+  ShowTcbBanner,
+  // K-27 (^Oa, M_ascii, "Switch ascii mode"): cycles the active
+  // charset Ascii -> Euc -> Utf8 -> Ascii. See
+  // Application::cycleCharset()'s own comment.
+  CycleCharset
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -970,6 +974,12 @@ class Application {
   bool loadHelpText(const std::string &text);
 
   ApplicationMode currentMode() const;
+  // The currently active charset, live-updated by cycleCharset()
+  // (K-27, ^Oa). main.cpp reads this at shutdown for History::
+  // setSavedCharset() instead of its own startup-time-only local, so
+  // a mid-session charset switch actually persists across runs --
+  // see main.cpp's own call site comment.
+  Charset::Encoding encoding() const;
 
   // True whenever the NEXT byte fed to feedByte() would be consumed
   // as part of a pending multi-key sequence (ESC-prefix, ^J-leader)
@@ -1143,6 +1153,20 @@ class Application {
   // own pattern) since FileMode::loadFile() needs a real path and
   // this text has no other natural on-disk home the way ERROR/LOG do.
   bool executeShowTcbBanner();
+  // K-27 (^Oa): ported from key.c's own key_getch() comment ("was a
+  // straight 2-way ASCII<->EUC toggle; cycle through all three now
+  // instead of leaving UTF-8 users stuck toggling between ASCII and
+  // EUC with no way back to UTF-8" -- that fix already happened on
+  // the legacy C side, this just ports the resulting 3-way cycle).
+  // Updates encoding_ and propagates it to every already-ported class
+  // that owns its own copy (FileMode/ManMode/Shell/promptEditor_ --
+  // see each one's own setEncoding() comment on what it does and
+  // doesn't retroactively affect), then reflows whatever's currently
+  // on screen (File/Man mode) so the effect is immediately visible
+  // instead of only applying to the NEXT file/page opened. Always
+  // succeeds (no mode restriction -- legacy's own M_ascii has none
+  // either, unlike most other K-? commands in this port).
+  bool cycleCharset();
   bool startCopyPrompt(bool interactive = false);
   bool startMovePrompt(bool interactive = false);
   bool startRemovePrompt(bool interactive = false);

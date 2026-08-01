@@ -69,6 +69,8 @@ bool ManMode::reflow(int newWidth) {
 
 const std::string &ManMode::currentPage() const { return currentPage_; }
 
+void ManMode::setEncoding(Charset::Encoding encoding) { encoding_ = encoding; }
+
 void ManMode::saveCursorPosition() {
   if (currentPage_.empty()) return;
   History::CursorPosition pos;

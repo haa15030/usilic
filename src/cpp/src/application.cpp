@@ -321,6 +321,8 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::ToggleScrollMode);
       case 'l':  // ^O l : switch format of `ls' output (K-26)
         return handleCommand(Command::ToggleLsMode);
+      case 'a':  // ^O a : switch ascii mode (K-27)
+        return handleCommand(Command::CycleCharset);
       case 0x0b:  // ^O ^K : go to parent directory (K-19)
         return handleCommand(Command::GoToParentDirectory);
       case kCarriageReturn:  // ^O ^M : "Read per line" (K-23, M_fp)
@@ -582,6 +584,8 @@ bool Application::handleCommand(Command command) {
       return executeShowShellLog();
     case Command::ShowTcbBanner:
       return executeShowTcbBanner();
+    case Command::CycleCharset:
+      return cycleCharset();
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
@@ -1111,6 +1115,23 @@ bool Application::executeShowTcbBanner() {
   std::string tempPath = materializeArchiveTempFile("tcb", bytes);
   if (tempPath.empty() || !fileMode_.loadFile(tempPath)) return false;
   currentMode_ = ApplicationMode::File;
+  return true;
+}
+
+// K-27: see the class's own declaration comment.
+bool Application::cycleCharset() {
+  encoding_ = (encoding_ == Charset::Encoding::Ascii)  ? Charset::Encoding::Euc
+              : (encoding_ == Charset::Encoding::Euc) ? Charset::Encoding::Utf8
+                                                       : Charset::Encoding::Ascii;
+
+  fileMode_.setEncoding(encoding_);
+  manMode_.setEncoding(encoding_);
+  shell_.setEncoding(encoding_);
+  promptEditor_.setEncoding(encoding_);
+
+  if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns());
+  else if (currentMode_ == ApplicationMode::Man) manMode_.reflow(display_.columns());
+
   return true;
 }
 
@@ -1857,6 +1878,7 @@ bool Application::promptActive() const { return promptKind_ != PromptKind::None;
 const std::string &Application::promptText() const { return promptEditor_.text(); }
 
 ApplicationMode Application::currentMode() const { return currentMode_; }
+Charset::Encoding Application::encoding() const { return encoding_; }
 
 bool Application::awaitingSequenceOrPromptByte() const {
   return escPending_ || leaderJPending_ || promptKind_ != PromptKind::None;

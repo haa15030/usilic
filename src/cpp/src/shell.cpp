@@ -528,4 +528,9 @@ void Shell::onResize(int rows, int columns) {
   commandLine_.redraw();
 }
 
+void Shell::setEncoding(Charset::Encoding encoding) {
+  options_.encoding = encoding;
+  commandLine_.setEncoding(encoding);
+}
+
 }  // namespace fm

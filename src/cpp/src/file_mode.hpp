@@ -66,6 +66,14 @@ class FileMode {
 
   const std::string &currentFile() const;
 
+  // K-27 (^Oa, M_ascii, "Switch ascii mode"): changes the encoding
+  // used by the NEXT loadFile()/reflow() call -- doesn't retroactively
+  // re-decode whatever's already displayed on its own. A caller
+  // switching charset mid-session should follow this with
+  // reflow(width) to actually re-wrap the CURRENTLY open file under
+  // the new encoding (Application's job -- see its own cycleCharset()).
+  void setEncoding(Charset::Encoding encoding);
+
   // Records the current cursor position into History under the
   // current file's path. Ported from legacy's save on leaving T_file
   // (mode.c/menu.c's save_ll()) -- exposed as an explicit method
