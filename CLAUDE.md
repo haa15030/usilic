@@ -6044,6 +6044,58 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      `runInteractive()`/`run()`使い分けと同じパターンでARC自身の
      展開キーを実装する。
 
+107. **2026-08-01: K-57/K-58(^X^Ka/^Xa、ARC「Expand archive」の
+     SHELLウィンドウ付き/無し)を実装**
+   - 項目106の続き。ユーザーから、「SHELLウィンドウ付き」の意味が
+     わかりにくいとの指摘があり、既に実装済みのCP/MV/RMの
+     `^X^Kc`/`^X^Km`/`^X^Kr`(`ChildProcess::runInteractive()`で
+     実端末へ処理経過をライブ表示するか、`run()`で静かに済ませるか
+     の違い)と全く同じ位置付けの機能だと確認・回答した。HELP.jp
+     2.11節(CP/MV/RM/ARC)を実際に読み込み、ARCの展開が
+     (1)File-selectorでアーカイブファイルを直接選んだ場合は
+     アーカイブ全体を展開先へ、(2)アーカイブのTOC画面内で特定の
+     エントリを`^M`でマークした場合はマークした項目だけを展開先へ、
+     という2通りの入口を持つと確認した(legacyの`^M`によるマーキング
+     は、このポートでは既存のK-72/73等と同じく`^Space`/ToggleMark
+     に統一済み)。
+   - **設計**: `ArchiveMode`に`DirectoryMode`と全く同じ形の
+     マーキングAPI(`toggleMark`/`isMarked`/`clearMarks`/`markAll`/
+     `targetEntries`)と`archiveKind()`アクセサを新設(`loadArchive()`
+     でマークをクリア、入れ子アーカイブへ降りても親のマークが残らない
+     ようにした)。`Application::toggleMark()`/`MarkAll`/
+     `ClearAllMarks`をArchiveモードでも動くよう拡張。
+   - 展開コマンドの構築(`buildArchiveExtractArgv()`)は、この最初の
+     実装ではTar/Zipのみサポート(Lha独自の展開構文の違い、Rpm/Debは
+     `ArchiveMode::extractSelected()`自体が既に非対応、という既存の
+     スコープ制限に合わせた): `tar xf <archive> -C <dest> [members]`
+     /`unzip -o <archive> [members] -d <dest>`。`members`が空なら
+     アーカイブ全体、非空ならその項目だけを展開。
+   - 「SHELLウィンドウ付き」実行に必要な`KeyInput`参照は、既存の
+     `CpMvRmMode`が既に持っていた(名前はCP/MV/RM専用だが、実質は
+     「rawモード切替+`ChildProcess::runInteractive()`」という汎用の
+     機能を保持しているクラス)ため、`CpMvRmMode`に汎用の
+     `runInteractive(argv)`/`run(argv)`を追加してARC側から再利用した
+     (cp/mv/rm固有の`sources...destination`という引数形状とは別に、
+     任意のargvを受け取れる薄いラッパー)。
+   - `startArchivePrompt()`(Destination プロンプト開始)は現在の
+     モードに応じて2通りの入口を判定: Directory modeなら選択中の
+     ファイルが`programForSuffix()`で認識可能なアーカイブか(既存の
+     トップレベルアーカイブ自動判定と同じ方式)、Archive modeなら
+     `targetEntries()`(マーク済み、またはマーク無しならカーソル位置)
+     が空でないか。`executeArchiveExtract()`はSubmit時点で
+     `currentMode_`を再判定し、対応するアーカイブパス・種別・
+     メンバー一覧を組み立てて展開する。
+   - **検証**: doctest新規5件(^Xaでアーカイブ全体を展開先へ実際に
+     展開すること、^X^Kaでも同様に展開できること、Archive mode内で
+     特定エントリをマークしてそれだけ展開できること、Directory/
+     Archiveモード以外では拒否されること、非アーカイブファイル
+     選択時は拒否されること)を追加、計518件全通過(Mac)。実PTYで、
+     `archive.tar`を選択し`^Xa`→展開先ディレクトリ入力→Enterで
+     実際に`arcsrc/inner.txt`が正しい内容で展開先に作られることを
+     確認、`^X^Ka`でも同様に確認。Ubuntu 26.04でも新規5件を含め
+     該当テストは全通過(既存の失敗10件は今回と無関係な既存の
+     環境依存差)。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

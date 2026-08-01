@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -62,6 +63,14 @@ class ArchiveMode {
   bool loadArchive(const std::string &path);
 
   const std::string &currentArchive() const;
+  // The concrete format of currentArchive() (None before any
+  // loadArchive() call) -- exposed for K-57/K-58 (^X^Ka/^Xa, "ARC:
+  // Expand archive"), which needs to know the format to build the
+  // right extraction command (Application's job, see its own
+  // descendToNestedArchive()/K-57 comments -- ArchiveMode itself only
+  // exposes the format, it doesn't run any extraction-to-destination
+  // command of its own).
+  ArchiveKind archiveKind() const;
   const std::vector<ArchiveEntry> &entries() const;
   const ArchiveEntry *selectedEntry() const;
 
@@ -78,6 +87,30 @@ class ArchiveMode {
 
   void saveCursorPosition();
 
+  // -- selection marking (K-57/K-58, ^X^Ka/^Xa's own "mark specific
+  // entries to extract" mode -- HELP.jp 2.11's own example marks two
+  // TOC entries with ^M before giving a Destination) --
+  // Mirrors DirectoryMode::toggleMark()/isMarked()/clearMarks()/
+  // markAll()/targetEntries() exactly (this port's own established
+  // ^Space-based simplification of legacy's real per-mode marking
+  // mechanism -- see DirectoryMode's own class comment on why marks
+  // here are indices into entries_, scoped to the CURRENT listing,
+  // not legacy's pp->split in-place marking). Cleared whenever
+  // loadArchive() loads a new listing (including a nested-archive
+  // descent -- marks from the parent archive's TOC don't carry over).
+  void toggleMark(int index);
+  bool isMarked(int index) const;
+  std::size_t markedCount() const;
+  void clearMarks();
+  void markAll();
+
+  // Marked entries in listing order, or -- if nothing is explicitly
+  // marked -- just the single currently-selected entry (same
+  // "acts on whatever's under the cursor" convention
+  // DirectoryMode::targetEntries() already established). Empty if
+  // there are no marks and no valid selection.
+  std::vector<ArchiveEntry> targetEntries() const;
+
  private:
   static std::string formatEntryLine(const ArchiveEntry &entry);
 
@@ -88,6 +121,7 @@ class ArchiveMode {
   std::string currentArchive_;
   ArchiveKind archiveKind_ = ArchiveKind::None;
   std::vector<ArchiveEntry> entries_;
+  std::set<int> markedIndices_;
 };
 
 }  // namespace fm

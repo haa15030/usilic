@@ -67,6 +67,7 @@ bool ArchiveMode::loadArchive(const std::string &path) {
   currentArchive_ = path;
   archiveKind_ = kind;
   entries_ = std::move(entries);
+  markedIndices_.clear();  // marks are scoped to the listing they were made in, matching DirectoryMode's own convention
 
   std::vector<ContentView::Line> lines;
   lines.reserve(entries_.size());
@@ -87,6 +88,7 @@ bool ArchiveMode::loadArchive(const std::string &path) {
 }
 
 const std::string &ArchiveMode::currentArchive() const { return currentArchive_; }
+ArchiveKind ArchiveMode::archiveKind() const { return archiveKind_; }
 const std::vector<ArchiveEntry> &ArchiveMode::entries() const { return entries_; }
 
 const ArchiveEntry *ArchiveMode::selectedEntry() const {
@@ -171,6 +173,36 @@ void ArchiveMode::saveCursorPosition() {
   pos.top = 0;
   pos.lineNumber = -1;
   history_.setPosition(PositionCategory::Screen, currentArchive_, pos);
+}
+
+void ArchiveMode::toggleMark(int index) {
+  if (index < 0 || index >= static_cast<int>(entries_.size())) return;
+  auto it = markedIndices_.find(index);
+  if (it != markedIndices_.end())
+    markedIndices_.erase(it);
+  else
+    markedIndices_.insert(index);
+}
+
+bool ArchiveMode::isMarked(int index) const { return markedIndices_.count(index) > 0; }
+
+std::size_t ArchiveMode::markedCount() const { return markedIndices_.size(); }
+
+void ArchiveMode::clearMarks() { markedIndices_.clear(); }
+
+void ArchiveMode::markAll() {
+  markedIndices_.clear();
+  for (int i = 0; i < static_cast<int>(entries_.size()); i++) markedIndices_.insert(i);
+}
+
+std::vector<ArchiveEntry> ArchiveMode::targetEntries() const {
+  std::vector<ArchiveEntry> result;
+  if (!markedIndices_.empty()) {
+    for (int idx : markedIndices_) result.push_back(entries_[idx]);  // std::set iterates in ascending order
+    return result;
+  }
+  if (const ArchiveEntry *entry = selectedEntry()) result.push_back(*entry);
+  return result;
 }
 
 }  // namespace fm

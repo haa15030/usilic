@@ -84,4 +84,17 @@ int CpMvRmMode::removeInteractive(const std::vector<std::string> &targets) {
   return runInteractiveWithSources(ConfiguredRole::Rm, targets, nullptr);
 }
 
+int CpMvRmMode::runInteractive(const std::vector<std::string> &argv) {
+  if (argv.empty()) return -1;
+  keyInput_.leaveRawMode();
+  int status = ChildProcess::runInteractive(argv);
+  keyInput_.reenterRawMode();
+  return status;
+}
+
+ChildProcess::Result CpMvRmMode::run(const std::vector<std::string> &argv) {
+  if (argv.empty()) return {};
+  return ChildProcess::run(argv);
+}
+
 }  // namespace fm

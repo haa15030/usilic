@@ -119,6 +119,9 @@ struct Fixture {
     { std::ofstream(root / "cpmv_a.txt") << "content-a\n"; }
     { std::ofstream(root / "cpmv_b.txt") << "content-b\n"; }
     fs::create_directory(root / "cpmvdest");
+
+    // Destination for the K-57/K-58 (ARC extraction) tests.
+    fs::create_directory(root / "arcdest");
   }
 
   ~Fixture() { fs::remove_all(root); }
@@ -975,6 +978,81 @@ TEST_CASE_FIXTURE(Fixture, "ARC nested: opening a fresh top-level archive clears
   REQUIRE(app.handleCommand(Command::Enter));  // a DIFFERENT, non-nested top-level archive
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);  // one Back reaches Directory directly -- no stale chain
+}
+
+// -- ARC extraction to a real destination (K-57/K-58, ^X^Ka/^Xa) --
+
+TEST_CASE_FIXTURE(Fixture, "ARC extract (^Xa, K-58, Directory mode): extracts the WHOLE archive to the destination") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  CHECK(app.promptActive());
+  feedText((root / "arcdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(fs::exists(root / "arcdest" / "arcsrc" / "inner.txt"));
+  CHECK(fs::exists(root / "archive.tar"));  // untouched by extraction
+}
+
+TEST_CASE_FIXTURE(Fixture, "ARC extract (^X^Ka, K-57 \"with SHELL window\"): also extracts the whole archive") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  feedText((root / "arcdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(fs::exists(root / "arcdest" / "arcsrc" / "inner.txt"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "ARC extract from within Archive mode's own TOC: marking a specific entry extracts only it") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.archiveMode().selectedEntry() != nullptr);
+  REQUIRE(app.archiveMode().selectedEntry()->name.find("inner.txt") != std::string::npos);
+  REQUIRE(app.handleCommand(Command::ToggleMark));  // ^Space -- this port's own marking key (see ArchiveMode::toggleMark())
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  feedText((root / "arcdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(fs::exists(root / "arcdest" / "arcsrc" / "inner.txt"));
+  CHECK(app.currentMode() == ApplicationMode::Archive);  // extraction doesn't leave the TOC screen
+}
+
+TEST_CASE_FIXTURE(Fixture, "ARC extract: refused outside Directory/Archive mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK_FALSE(app.handleCommand(Command::StartArchiveExtract));
+  CHECK_FALSE(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "ARC extract: refused in Directory mode when the selection isn't a recognized archive") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  CHECK_FALSE(app.handleCommand(Command::StartArchiveExtract));
+  CHECK_FALSE(app.promptActive());
 }
 
 // -- SHELL: ESC-leader entry, byte routing to Shell's own LineEditor/

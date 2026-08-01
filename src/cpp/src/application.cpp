@@ -277,8 +277,10 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return true;  // sequence in progress, not a no-op
       case 's':  // ^X s : restart SHELL (K-60)
         return handleCommand(Command::RestartShell);
+      case 'a':  // ^X a : ARC expand, without SHELL window (K-58)
+        return handleCommand(Command::StartArchiveExtract);
       default:
-        return false;  // unrecognized ^X-sequence in this slice (^X^Ka/^Xa/^X^Kd are still future work)
+        return false;  // unrecognized ^X-sequence in this slice (^X^Kd is still future work)
     }
   }
 
@@ -292,8 +294,10 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::StartMoveInteractive);
       case 'r':  // ^X ^K r : RM with SHELL window (K-55)
         return handleCommand(Command::StartRemoveInteractive);
+      case 'a':  // ^X ^K a : ARC expand, with SHELL window (K-57)
+        return handleCommand(Command::StartArchiveExtractInteractive);
       default:
-        return false;  // ^X^Ka (ARC) and ^X^Kd (kanji switch) are still future work
+        return false;  // ^X^Kd (kanji switch) is still future work
     }
   }
 
@@ -558,6 +562,10 @@ bool Application::handleCommand(Command command) {
       return directoryMode_.goToParent();
     case Command::RestartShell:
       return shellRestart();
+    case Command::StartArchiveExtract:
+      return startArchivePrompt(/*interactive=*/false);
+    case Command::StartArchiveExtractInteractive:
+      return startArchivePrompt(/*interactive=*/true);
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
@@ -612,10 +620,18 @@ bool Application::handleCommand(Command command) {
       return true;
     }
     case Command::MarkAll:
+      if (currentMode_ == ApplicationMode::Archive) {
+        archiveMode_.markAll();
+        return true;
+      }
       if (currentMode_ != ApplicationMode::Directory) return false;
       directoryMode_.markAll();
       return true;
     case Command::ClearAllMarks:
+      if (currentMode_ == ApplicationMode::Archive) {
+        archiveMode_.clearMarks();
+        return true;
+      }
       if (currentMode_ != ApplicationMode::Directory) return false;
       directoryMode_.clearMarks();
       return true;
@@ -778,7 +794,17 @@ bool Application::openSelectedListEntry() {
 // Ported from M_mark (^Space): toggles the mark at the cursor.
 // Directory-only, matching every other CP/MV/RM-related action added
 // in this slice.
+// K-57/K-58's own "mark specific entries to extract" (HELP.jp 2.11)
+// reuses this same ^Space binding within Archive mode -- matching
+// this port's established simplification of legacy's real per-mode
+// marking mechanism into one shared ^Space/ToggleMark command (see
+// DirectoryMode's own class comment on that choice).
 bool Application::toggleMark() {
+  if (currentMode_ == ApplicationMode::Archive) {
+    if (!archiveMode_.selectedEntry()) return false;
+    archiveMode_.toggleMark(archiveView_.cursorIndex());
+    return true;
+  }
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (!directoryMode_.selectedEntry()) return false;
   directoryMode_.toggleMark(directoryView_.cursorIndex());
@@ -1086,6 +1112,46 @@ bool Application::startDuPrompt() {
   return true;
 }
 
+// K-57/K-58: see the class's own declaration comment.
+bool Application::startArchivePrompt(bool interactive) {
+  if (currentMode_ == ApplicationMode::Archive) {
+    if (archiveMode_.targetEntries().empty()) return false;
+  } else if (currentMode_ == ApplicationMode::Directory) {
+    const DirectoryEntry *entry = directoryMode_.selectedEntry();
+    if (!entry || entry->isDirectory) return false;
+    std::string path = directoryMode_.currentDirectory();
+    if (!path.empty() && path.back() != '/') path += '/';
+    path += entry->name;
+    ArchiveKind kind = ArchiveKind::None;
+    if (!configuration_.programForSuffix(path, &kind) || kind == ArchiveKind::None) return false;
+  } else {
+    return false;
+  }
+  archiveExtractInteractive_ = interactive;
+  promptKind_ = PromptKind::ArchiveDestination;
+  promptEditor_.setText("");
+  promptEditor_.redraw();
+  return true;
+}
+
+std::vector<std::string> Application::buildArchiveExtractArgv(const std::string &archivePath, ArchiveKind kind,
+                                                                const std::vector<std::string> &members,
+                                                                const std::string &destination) const {
+  if (kind == ArchiveKind::Tar) {
+    std::vector<std::string> argv = {"tar", "xf", archivePath, "-C", destination};
+    for (const auto &m : members) argv.push_back(m);
+    return argv;
+  }
+  if (kind == ArchiveKind::Zip) {
+    std::vector<std::string> argv = {"unzip", "-o", archivePath};
+    for (const auto &m : members) argv.push_back(m);
+    argv.push_back("-d");
+    argv.push_back(destination);
+    return argv;
+  }
+  return {};  // Lha/Rpm/Deb/Bzip2 -- not supported by this first slice, see the class's own declaration comment
+}
+
 // K-45/K-47 (^Xf/^Xd, "Input file/directory name") -- unlike
 // startDuPrompt() and friends, deliberately NOT gated to Directory
 // mode: legacy's own M_lfile2/M_ldir2 are general "type any path,
@@ -1269,6 +1335,8 @@ bool Application::submitPrompt() {
       return executeExit(text);
     case PromptKind::DuPath:
       return executeDu(text);
+    case PromptKind::ArchiveDestination:
+      return executeArchiveExtract(text);
     case PromptKind::PathInput:
       return executePathInput(text);
     case PromptKind::None:
@@ -1466,6 +1534,53 @@ bool Application::executeDu(const std::string &path) {
   }
   currentMode_ = ApplicationMode::Du;
   return true;
+}
+
+// K-57/K-58: see startArchivePrompt()'s own comment for the two entry
+// points this re-derives at submit time (currentMode_ can't have
+// changed while the prompt was up).
+bool Application::executeArchiveExtract(const std::string &destination) {
+  bool interactive = archiveExtractInteractive_;
+  archiveExtractInteractive_ = false;  // consumed exactly once, regardless of outcome below
+
+  std::string archivePath;
+  ArchiveKind kind = ArchiveKind::None;
+  std::vector<std::string> members;
+
+  if (currentMode_ == ApplicationMode::Archive) {
+    archivePath = archiveMode_.currentArchive();
+    kind = archiveMode_.archiveKind();
+    for (const auto &entry : archiveMode_.targetEntries()) members.push_back(entry.name);
+  } else if (currentMode_ == ApplicationMode::Directory) {
+    const DirectoryEntry *entry = directoryMode_.selectedEntry();
+    if (!entry) {
+      activeView().redraw();
+      return false;
+    }
+    archivePath = directoryMode_.currentDirectory();
+    if (!archivePath.empty() && archivePath.back() != '/') archivePath += '/';
+    archivePath += entry->name;
+    configuration_.programForSuffix(archivePath, &kind);
+    // members left empty -- the whole archive, per HELP.jp 2.11's own
+    // File-selector example.
+  }
+
+  std::vector<std::string> argv = buildArchiveExtractArgv(archivePath, kind, members, destination);
+  if (argv.empty() || destination.empty()) {
+    activeView().redraw();
+    return false;
+  }
+
+  // K-57 ("with SHELL window"): runs interactively, with the real
+  // tar/unzip output visible live on the real terminal -- same
+  // ChildProcess::runInteractive() shape CP/MV/RM's own ^X^Kc/^X^Km/
+  // ^X^Kr already use (see CpMvRmMode::runInteractive()'s own
+  // comment on why this class, despite its name, is what actually
+  // owns the KeyInput reference this needs). K-58 (the default):
+  // captured silently.
+  bool ok = interactive ? cpMvRmMode_.runInteractive(argv) == 0 : cpMvRmMode_.run(argv).ok;
+  activeView().redraw();
+  return ok;
 }
 
 // Ported from mode.c's M_lfile/M_ldir handling: resolves the typed

@@ -97,6 +97,19 @@ class CpMvRmMode {
   int moveToInteractive(const std::vector<std::string> &sources, const std::string &destination);
   int removeInteractive(const std::vector<std::string> &targets);
 
+  // Runs an arbitrary argv with the real terminal handed to the child
+  // -- the SAME leave/reenter-raw-mode wrapping the *Interactive()
+  // methods above already do, but without their cp/mv/rm-specific
+  // "sources... destination" argv shape. Shared with ArchiveMode's
+  // own K-57 (^X^Ka, "ARC: with SHELL window") extraction, which
+  // builds its own tar/unzip argv (Application's job) and just needs
+  // this class's KeyInput-toggling capability, not its cp/mv/rm logic.
+  // -1 if argv is empty.
+  int runInteractive(const std::vector<std::string> &argv);
+  // Captured, non-interactive counterpart -- K-58 ("without SHELL
+  // window"). Empty Result if argv is empty.
+  ChildProcess::Result run(const std::vector<std::string> &argv);
+
  private:
   std::vector<std::string> buildArgv(ConfiguredRole role, const std::vector<std::string> &sources,
                                       const std::string *destination) const;

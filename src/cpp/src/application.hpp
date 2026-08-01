@@ -179,7 +179,11 @@ enum class Command {
   // K-60 (^Xs, M_hup): kills the current SHELL child (if any) and
   // starts a fresh one. See Application::shellRestart()'s own
   // comment.
-  RestartShell
+  RestartShell,
+  // K-58/K-57 (^Xa / ^X^Ka, ARC "Expand archive" without/with SHELL
+  // window). See Application::startArchivePrompt()'s own comment.
+  StartArchiveExtract,
+  StartArchiveExtractInteractive
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -1102,6 +1106,34 @@ class Application {
   bool startRemovePrompt(bool interactive = false);
   bool startExitPrompt();
   bool startDuPrompt();
+  // K-57/K-58 (^X^Ka/^Xa, M_arc/M_arc2, "ARC: Expand archive"):
+  // starts the "Destination ?" prompt (HELP.jp 2.11). Two entry
+  // points, both valid per HELP.jp's own text:
+  //   - From Directory mode, the selected entry must itself be a
+  //     recognized archive suffix (same programForSuffix() check
+  //     openSelectedEntry() already uses at the top level) -- the
+  //     WHOLE archive gets extracted.
+  //   - From Archive mode (already browsing an archive's TOC, whether
+  //     top-level or nested), targetEntries() must be non-empty (the
+  //     marked entries, or the current selection if nothing's marked
+  //     -- see ArchiveMode::toggleMark()'s own comment) -- only those
+  //     specific entries get extracted.
+  // False (refused) from every other mode, or if neither condition
+  // above holds (e.g. Directory mode with a non-archive file
+  // selected).
+  bool startArchivePrompt(bool interactive = false);
+  // Builds the extraction argv for `kind` (Tar/Zip only in this first
+  // slice -- Lha's own extraction syntax differs from the `lha p`
+  // extract-to-stdout command extractSelected() uses, and Rpm/Deb
+  // already have no locateContent() support at all, see ArchiveMode's
+  // own class comment; extending this to those formats is future
+  // work, not guessed at here). `members` empty means "the whole
+  // archive"; non-empty means "just these entries" (tar/unzip both
+  // accept trailing member-name arguments for exactly this). Empty
+  // result for an unsupported kind.
+  std::vector<std::string> buildArchiveExtractArgv(const std::string &archivePath, ArchiveKind kind,
+                                                    const std::vector<std::string> &members,
+                                                    const std::string &destination) const;
   bool startPathInputPrompt();
   // K-65 (^I, M_list, "LIST: Complete file name"): lists filesystem
   // entries under the directory implied by `partial` (resolved
@@ -1136,6 +1168,7 @@ class Application {
   bool executeRemove(const std::string &confirmation);
   bool executeExit(const std::string &confirmation);
   bool executeDu(const std::string &path);
+  bool executeArchiveExtract(const std::string &destination);
   bool executePathInput(const std::string &path);
   bool executeEdit();
   bool startHelp();
@@ -1204,6 +1237,10 @@ class Application {
   // executeRemove() to pick the interactive CpMvRmMode method instead
   // of the plain captured one.
   bool cpMvRmInteractive_ = false;
+  // Set by startArchivePrompt(true) (K-57's "with SHELL window" entry
+  // point), consumed once by executeArchiveExtract() the same way
+  // cpMvRmInteractive_ is.
+  bool archiveExtractInteractive_ = false;
   bool shellStarted_ = false;
   std::string helpText_;
   // Which top-level Cut/CutContent split is currently active -- only
@@ -1241,7 +1278,8 @@ class Application {
     RemoveConfirm,
     ExitConfirm,
     DuPath,
-    PathInput  // K-45/K-47's shared prompt kind, see Command::StartFileInput's own comment
+    PathInput,  // K-45/K-47's shared prompt kind, see Command::StartFileInput's own comment
+    ArchiveDestination  // K-57/K-58's own Destination prompt, see startArchivePrompt()'s own comment
   };
   PromptKind promptKind_ = PromptKind::None;
 };
