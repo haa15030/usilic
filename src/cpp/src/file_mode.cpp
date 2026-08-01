@@ -68,6 +68,10 @@ bool FileMode::loadFile(const std::string &path) {
 
   view_.setLines(readAndWrap(path));
   currentFile_ = path;
+  // K-46 (^X^F, "FILE: Select file name")'s own data source -- see
+  // DirectoryMode::enterDirectory()'s identical pushRecent() call for
+  // K-48's own RecentDirectory counterpart.
+  history_.pushRecent(RingCategory::RecentFile, currentFile_);
   if (auto pos = history_.positionFor(PositionCategory::File, currentFile_)) {
     int idx = pos->row;
     int last = static_cast<int>(view_.lines().size()) - 1;

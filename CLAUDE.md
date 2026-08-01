@@ -6267,6 +6267,68 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      相方の仕組みが無く保留)とK-46/48(LISTベースの選択ピッカー、
      意味論を確認済みだが未着手)のみを残し、配線がほぼ完了した。
 
+111. **2026-08-01: K-46/K-48(^X^F/^X^D、「FILE/DIR: Select file/
+     directory name」)を実装**
+   - HELP.jp 2.9節(FILE/DIR)を再確認、K-45/47(^Xf/^Xd)がmode-line
+     行への直接入力なのに対し、K-46/48(^X^F/^X^D)は「今までに
+     アクセスしたファイル/ディレクトリのリストから選択」――つまり
+     K-49(^R HISTORY)と同じLISTベースの選択ピッカーだと確認できた
+     (項目104のK-65調査時に一度この結論に達していたが、実装は
+     保留していた)。
+   - **発見**: `History`クラスには既に`RingCategory::RecentFile`/
+     `RecentDirectory`という枠と、それぞれへ項目を追加する
+     `pushRecent()`(公開メソッド、先着順・上限件数付き、既に
+     `ProgramMode`がSHELLコマンド履歴用に使用中)が用意済み
+     だったが、`RecentFile`/`RecentDirectory`へ実際に
+     `pushRecent()`を呼ぶ箇所がどこにも無い(コンパイル・
+     テストは通っていたが、実際に動くusilicバイナリでは
+     この2つのリストが永遠に空のまま)という配線漏れを発見した
+     (項目104のShell::setCompletionProvider()、項目108の
+     ChildProcess::Options::stderrLogPathと同種の「用意されて
+     いるが未配線」パターン)。
+   - **実装**: `DirectoryMode::enterDirectory()`の末尾(リスト
+     ロード成功後)に`history_.pushRecent(RingCategory::
+     RecentDirectory, currentDirectory_)`を、`FileMode::
+     loadFile()`の成功パスに`history_.pushRecent(RingCategory::
+     RecentFile, currentFile_)`をそれぞれ追加(いずれのモード
+     クラスも既に`History &history_`を保持しており、他の呼び出し
+     元を経由せず自分自身の成功パスへ直接追加するだけで済んだ)。
+     これにより実際にディレクトリへ入る・ファイルを開くたびに
+     自動的に記録されるようになった(HELP.jpの「アクセスした」
+     という広い書きぶりに合わせ、ピッカー経由に限らずあらゆる
+     アクセスを記録する設計)。
+   - K-46(^X^F)用に新規`Command::StartFileHistory`
+     (`startListBrowser(RingCategory::RecentFile)`)を追加。
+     K-48(^X^D)は、既にK-49(^R)用に実装済みだった
+     `Command::StartDirectoryHistory`をそのまま再利用(同じ
+     `RingCategory::RecentDirectory`ピッカーへ到達する2つ目の
+     入口という位置付けで、新規コマンドは不要だった)。
+     `openSelectedListEntry()`(ListBrowser内でのEnter処理)に
+     `RingCategory::RecentFile`の分岐を追加し、`FileMode::
+     loadFile()`で実際に開くようにした(`RecentDirectory`の
+     既存分岐と対になる形)。
+   - **既存テストへの影響**: `DirectoryMode::enterDirectory()`が
+     呼ばれるたびに`RecentDirectory`へ自動記録されるようになった
+     ため、`app.start(path())`自身も暗黙にfixtureのルート
+     ディレクトリを記録するようになり、手動で`history.
+     pushRecent()`していた既存の履歴ピッカーテスト2件
+     (「shows real pushRecent() entries」「Enter on a recent
+     directory navigates DirectoryMode there」)の期待件数・
+     選択順がずれて落ちた。`app.start()`を手動`pushRecent()`より
+     先に呼ぶよう並べ替えることで、自動記録分が最も古いエントリ
+     になるよう調整し解決した(実装側の修正は不要、テスト側の
+     前提を新しい正しい仕様に合わせただけ)。
+   - **検証**: doctest新規4件(^X^Fで実際に開いたファイルが
+     ListBrowserに表示されEnterで再度開けること、Directory
+     mode以外では拒否されること、^X^Dが^R同じRecentDirectory
+     ピッカーへ到達すること)を追加、計529件全通過(Mac)。実PTYで、
+     実際にファイルを開いた後`^X^F`→一覧に表示→Enterで再度
+     開けること、`^X^D`でディレクトリ履歴ピッカーが開くことを
+     確認。Ubuntu 26.04でも新規4件を含め該当テストは全通過
+     (既存の失敗10件は今回と無関係な既存の環境依存差)。
+   - これでusilicrcの主要77個のK-?キーのうち、K-28(legacy側の
+     相方の仕組みが無く保留)のみを残し、配線が完了した。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

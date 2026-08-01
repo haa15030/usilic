@@ -78,6 +78,13 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   markedIndices_.clear();  // marks are scoped to the listing they were made in; a fresh `ls` invalidates them
   view_.setLines(std::move(lines));
 
+  // K-48 (^X^D, "DIR: Select directory name")'s own data source --
+  // every successfully-listed directory counts as "accessed" (HELP.jp
+  // 2.9's own broad wording), matching History::pushRecent()'s
+  // existing first-occurrence-wins/capped-size behavior (see its own
+  // comment) -- no extra bookkeeping needed here.
+  history_.pushRecent(RingCategory::RecentDirectory, currentDirectory_);
+
   auto pos = consultHistory ? history_.positionFor(PositionCategory::Directory, currentDirectory_) : std::nullopt;
   if (pos) {
     int idx = pos->row;

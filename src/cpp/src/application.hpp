@@ -197,7 +197,13 @@ enum class Command {
   // K-27 (^Oa, M_ascii, "Switch ascii mode"): cycles the active
   // charset Ascii -> Euc -> Utf8 -> Ascii. See
   // Application::cycleCharset()'s own comment.
-  CycleCharset
+  CycleCharset,
+  // K-46 (^X^F, "FILE: Select file name"): opens a ListBrowser over
+  // RingCategory::RecentFile. K-48 (^X^D, "DIR: Select directory
+  // name") reuses the ALREADY-EXISTING StartDirectoryHistory (^R's
+  // own command -- same RingCategory::RecentDirectory picker, just a
+  // second way to reach it), so needs no command of its own.
+  StartFileHistory
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a

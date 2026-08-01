@@ -264,6 +264,10 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::StartFileInput);
       case 'd':  // ^X d : DIR (input directory name)
         return handleCommand(Command::StartDirectoryInput);
+      case 0x06:  // ^X ^F : FILE (select file name, K-46)
+        return handleCommand(Command::StartFileHistory);
+      case 0x04:  // ^X ^D : DIR (select directory name, K-48) -- reuses ^R's own StartDirectoryHistory
+        return handleCommand(Command::StartDirectoryHistory);
       case kControlC:  // ^X ^C : exit
         return handleCommand(Command::StartExit);
       case 0x17:  // ^X ^W : save buffer to wFilePath_
@@ -586,6 +590,8 @@ bool Application::handleCommand(Command command) {
       return executeShowTcbBanner();
     case Command::CycleCharset:
       return cycleCharset();
+    case Command::StartFileHistory:
+      return startListBrowser(RingCategory::RecentFile);
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
@@ -794,18 +800,24 @@ bool Application::openSelectedDuEntry() {
   return true;
 }
 
-// Ported from m_list()'s dispatch (see class comment for the 7 other
-// categories not wired here): RecentDirectory drills into
-// DirectoryMode; every other category (just ShellCommand in this
-// slice) is a no-op, since deciding what "open" means for a shell
-// command (pre-fill Shell's command line? require Shell already
-// started?) is deliberately left open rather than guessed at.
+// Ported from m_list()'s dispatch (see class comment for the 5 other
+// categories not wired here): RecentDirectory (K-48, ^X^D/^R) drills
+// into DirectoryMode, RecentFile (K-46, ^X^F) into FileMode; every
+// other category (just ShellCommand in this slice) is a no-op, since
+// deciding what "open" means for a shell command (pre-fill Shell's
+// command line? require Shell already started?) is deliberately left
+// open rather than guessed at.
 bool Application::openSelectedListEntry() {
   const std::string *item = listBrowserMode_.selectedItem();
   if (!item) return false;
   if (listBrowserCategory_ == RingCategory::RecentDirectory) {
     if (!directoryMode_.enterDirectory(*item)) return false;
     currentMode_ = ApplicationMode::Directory;
+    return true;
+  }
+  if (listBrowserCategory_ == RingCategory::RecentFile) {
+    if (!fileMode_.loadFile(*item)) return false;
+    currentMode_ = ApplicationMode::File;
     return true;
   }
   return false;

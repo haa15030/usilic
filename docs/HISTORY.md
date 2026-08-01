@@ -141,3 +141,7 @@ doctest新規4件(3階層のテスト用入れ子tarで検証)を含め計513件
 続けてK-27(^Oa、charsetの実行時3値切替)を実装しました。key.cを確認したところlegacy側は既にASCII→EUC→UTF8→ASCIIの3値循環になっていました(legacy C版のUTF-8対応作業で既に完了済み)。K-28(^X^Kd)はSHELLモード専用の中継プロセスへの転送だけの実装で、この中継プロセス自体がこのポートには存在しない(Shellクラスは意図的に単一プロセス設計へ再設計済み)ため今回は見送りました。FileMode/ManMode/Shellそれぞれに setEncoding() を新設し、Application::cycleCharset() が全クラスへ伝播した上で現在表示中の内容を reflow() で即座に再ラップします。main.cppの終了処理が起動時のローカル変数を使っていて^Oaでの切替がセッションを跨いで反映されないバグも見つけたため、Application::encoding()アクセサを新設して解消しました。
 
 doctest新規2件を含め計525件全通過、実PTYで1/2/3回の^Oa後のhistoryトレーラーがそれぞれ303(EUC)/310(UTF8)/300(ASCII)と正しく永続化されることを確認、Ubuntuクロスビルドも確認済みです。これでusilicrcの主要77個のK-?キーのうち、K-28(legacy側の相方の仕組みが無く保留)とK-46/48(意味論を確認済みだが未着手)のみを残し、配線がほぼ完了しました。
+
+続けてK-46/K-48(^X^F/^X^D、「FILE/DIR: Select file/directory name」)を実装しました。Historyクラスには既にRingCategory::RecentFile/RecentDirectoryという枠とpushRecent()(公開メソッド、ProgramModeがSHELLコマンド履歴用に既に使用中)が用意済みだったものの、RecentFile/RecentDirectoryへ実際にpushRecent()を呼ぶ箇所がどこにも無い(項目104・108と同種の「用意されているが未配線」)配線漏れを発見しました。DirectoryMode::enterDirectory()とFileMode::loadFile()それぞれの成功パスにpushRecent()呼び出しを追加し、実際にディレクトリへ入る・ファイルを開くたびに自動記録されるようにしました。K-46用に新規Command::StartFileHistoryを追加、K-48は既にK-49(^R)用に実装済みだったCommand::StartDirectoryHistoryをそのまま再利用しました。
+
+doctest新規4件を含め計529件全通過、実PTYで実際にファイルを開いた後^X^Fで一覧表示・Enterで再度開けること、^X^Dでディレクトリ履歴ピッカーが開くことを確認、Ubuntuクロスビルドも確認済みです。これでusilicrcの主要77個のK-?キーのうち、K-28(legacy側の相方の仕組みが無く保留)のみを残し、配線が完了しました。

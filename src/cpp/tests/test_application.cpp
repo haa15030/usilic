@@ -1996,23 +1996,32 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDirectoryHistory): refused outsid
 }
 
 TEST_CASE_FIXTURE(Fixture, "history browser: shows real pushRecent() entries, newest first") {
+  // app.start() itself now auto-records path() via DirectoryMode::
+  // enterDirectory()'s own pushRecent() call (K-48's data source) --
+  // done FIRST here so it's the OLDEST entry, keeping the three
+  // pushed below exactly as the newest three, same relative order
+  // this test always asserted.
+  REQUIRE(app.start(path()));
   history.pushRecent(RingCategory::RecentDirectory, "/one");
   history.pushRecent(RingCategory::RecentDirectory, "/two");
   history.pushRecent(RingCategory::RecentDirectory, "/three");
 
-  REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(app.listBrowserMode().items().size() == 3);
+  REQUIRE(app.listBrowserMode().items().size() == 4);
   CHECK(app.listBrowserMode().items()[0] == "/three");
   CHECK(app.listBrowserMode().items()[1] == "/two");
   CHECK(app.listBrowserMode().items()[2] == "/one");
+  CHECK(app.listBrowserMode().items()[3] == path());
 }
 
 TEST_CASE_FIXTURE(Fixture, "history browser: Enter on a recent directory navigates DirectoryMode there") {
+  // Same ordering note as the test above -- start() first so its own
+  // auto-recorded path() is the OLDEST entry, leaving subdir/ as the
+  // newest (and therefore default-selected, index 0) one.
+  REQUIRE(app.start(path()));
   history.pushRecent(RingCategory::RecentDirectory, (root / "subdir").string());
 
-  REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
   REQUIRE(app.handleCommand(Command::Enter));
 
@@ -2032,6 +2041,67 @@ TEST_CASE_FIXTURE(Fixture, "command history: Enter on an entry is a no-op in thi
 
   CHECK_FALSE(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+}
+
+// -- K-46/K-48 (^X^F/^X^D, "FILE/DIR: Select file/directory name") --
+// HELP.jp 2.9's own picker of previously-accessed files/directories,
+// backed by the SAME RingCategory::RecentFile/RecentDirectory rings
+// K-49's plain ^R already used -- see DirectoryMode::enterDirectory()/
+// FileMode::loadFile()'s own pushRecent() calls for how they get
+// populated in the first place (every real access, not just ones made
+// through this specific picker).
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^F (K-46) opens a ListBrowser over real, auto-recorded RecentFile entries") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // opens plain.txt via FileMode::loadFile() -- auto-records it
+  REQUIRE(app.handleCommand(Command::Back));   // back to Directory (^X^F is Directory-only, see startListBrowser())
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedByte(0x06, std::nullopt));    // ^F
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().items().size() == 1);
+  CHECK(app.listBrowserMode().items()[0] == (root / "plain.txt").string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "K-46: Enter on a recent file entry opens it via FileMode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartFileHistory): refused outside Directory mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK_FALSE(app.handleCommand(Command::StartFileHistory));
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^D (K-48) reuses ^R's own StartDirectoryHistory picker") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descends into subdir/ -- auto-records it
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedByte(0x04, std::nullopt));    // ^D
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  bool sawSubdir = false;
+  for (const auto &item : app.listBrowserMode().items())
+    if (item == (root / "subdir").string() + "/") sawSubdir = true;
+  CHECK(sawSubdir);
 }
 
 TEST_CASE_FIXTURE(Fixture, "history browser: Back returns to Directory mode") {
