@@ -129,6 +129,11 @@ class DirectoryMode {
   bool isMarked(int index) const;
   std::size_t markedCount() const;
   void clearMarks();
+  // K-72 (^X^Y, "Mark all"): marks every entry in the current listing.
+  // No exclusion for "./"/"../" -- toggleMark() itself has none
+  // either, so this stays consistent with marking one entry at a
+  // time. clearMarks() itself already covers K-73 ("Clear all").
+  void markAll();
 
   // Marked entries in listing order, or -- if nothing is explicitly
   // marked -- just the single currently-selected entry (matching the

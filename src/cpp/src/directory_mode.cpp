@@ -217,6 +217,11 @@ std::size_t DirectoryMode::markedCount() const { return markedIndices_.size(); }
 
 void DirectoryMode::clearMarks() { markedIndices_.clear(); }
 
+void DirectoryMode::markAll() {
+  markedIndices_.clear();
+  for (int i = 0; i < static_cast<int>(entries_.size()); i++) markedIndices_.insert(i);
+}
+
 std::vector<DirectoryEntry> DirectoryMode::targetEntries() const {
   std::vector<DirectoryEntry> result;
   if (!markedIndices_.empty()) {

@@ -236,6 +236,10 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::StartDirectoryInput);
       case kControlC:  // ^X ^C : exit
         return handleCommand(Command::StartExit);
+      case 0x19:  // ^X ^Y : mark all (CP, MV, RM, ARC)
+        return handleCommand(Command::MarkAll);
+      case 0x0e:  // ^X ^N : clear all (CP, MV, RM, ARC)
+        return handleCommand(Command::ClearAllMarks);
       case '(':  // ^X ( : begin macro recording
         return handleCommand(Command::StartMacroRecord);
       case ')':  // ^X ) : end macro recording
@@ -536,6 +540,14 @@ bool Application::handleCommand(Command command) {
       history_.setLsMode(enabled ? 1 : 0);  // persisted across runs, see History's own field comment
       return true;
     }
+    case Command::MarkAll:
+      if (currentMode_ != ApplicationMode::Directory) return false;
+      directoryMode_.markAll();
+      return true;
+    case Command::ClearAllMarks:
+      if (currentMode_ != ApplicationMode::Directory) return false;
+      directoryMode_.clearMarks();
+      return true;
     case Command::None:
       return false;
   }

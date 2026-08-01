@@ -256,6 +256,17 @@ TEST_CASE_FIXTURE(Fixture, "toggleMark: an out-of-range index is a safe no-op") 
   CHECK(mode.markedCount() == 0);
 }
 
+TEST_CASE_FIXTURE(Fixture, "markAll: marks every entry in the listing (K-72, ^X^Y)") {
+  REQUIRE(mode.enterDirectory(path()));
+  mode.toggleMark(1);  // a pre-existing single mark shouldn't matter -- markAll() replaces it wholesale
+  mode.markAll();
+  CHECK(mode.markedCount() == mode.entries().size());
+  for (int i = 0; i < static_cast<int>(mode.entries().size()); i++) CHECK(mode.isMarked(i));
+
+  mode.clearMarks();  // K-73, ^X^N
+  CHECK(mode.markedCount() == 0);
+}
+
 TEST_CASE_FIXTURE(Fixture, "targetEntries: falls back to the selected entry when nothing is marked") {
   REQUIRE(mode.enterDirectory(path()));
   view.setCursorIndex(1);

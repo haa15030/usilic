@@ -1119,6 +1119,28 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleMark): toggles the mark at the c
   CHECK_FALSE(app.directoryMode().isMarked(0));
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^Y marks all entries (K-72), ^X ^N clears all marks (K-73)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedByte(0x19, std::nullopt));    // ^Y
+  CHECK(app.directoryMode().markedCount() == app.directoryMode().entries().size());
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N
+  CHECK(app.directoryMode().markedCount() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(MarkAll/ClearAllMarks): refused outside Directory mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK_FALSE(app.handleCommand(Command::MarkAll));
+  CHECK_FALSE(app.handleCommand(Command::ClearAllMarks));
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X c / ^X m / ^X r start the corresponding prompt") {
   REQUIRE(app.start(path()));
   app.feedByte(0x18, std::nullopt);

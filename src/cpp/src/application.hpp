@@ -127,7 +127,14 @@ enum class Command {
   // mode only, matching K-26's own "file-selector" scoping (no
   // meaning in File/Man/etc content views). Persisted the same way as
   // ToggleScrollMode/K-25.
-  ToggleLsMode
+  ToggleLsMode,
+  // K-72/K-73 (^X^Y / ^X^N, "Mark all"/"Clear all" for CP/MV/RM/ARC):
+  // bulk variants of ToggleMark -- mark every entry in the current
+  // listing, or drop every mark, in one keystroke instead of pressing
+  // ^Space on each one. Same Directory-mode-only scoping as ToggleMark
+  // itself.
+  MarkAll,
+  ClearAllMarks
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
