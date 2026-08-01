@@ -177,3 +177,9 @@ Application::previousModeName()を新設し、Directory→currentDirectory()、F
 ^X^D等については、ListBrowserModeにmode-line用のフィールドプロバイダが一切無く、常に裸の位置テキストだけだったと確認しました。legacyのdisp.cではM_hist系はmode-lineへ選択中文字列を同期編集する設計でしたが、フル実装は大掛かりなため、今回はご報告通り「ハイライト項目の文字列をmode-lineに表示する」という読み取り専用の最小実装(name フィールドとして表示)にとどめました。
 
 doctest新規8件(PathResolverのbaseDirectory関連5件、ListBrowserModeのmode-line表示2件、Application経由の相対パス^Xf統合テスト1件)を含め計539件全通過、実PTYでサブディレクトリ移動後の相対パス^Xf入力が正しく開けること、^X^Dのmode-lineに選択中パスが表示されることを確認、Ubuntuクロスビルドも確認済みです。コミット・プッシュ済み。
+
+<続けて。
+
+>残る報告のうち「入れ子ARC閲覧はOK.モードラインNG.」に対応しました。PTYでouter.tar→level1.tar→level2.tarと3階層潜ってmode-lineを確認したところ、いずれの階層でも位置テキスト("1/1 END")のみで現在どのアーカイブ・どの階層かを示す表示が一切無いと確認しました。原因はArchiveModeにsetModeLineFieldsProviderが一度も配線されていなかったことで、Directory/File/Shell/ListBrowserで繰り返し見つけてきた「用意されているが未配線」と同じパターンでした。currentArchive()のbasenameをnameフィールドとして表示するよう配線し(入れ子時のcurrentArchive()はmkdtemp製の一時パスになるためフルパスは出さずbasenameのみ、各階層で名前が異なるため階層深度の別表示は追加不要と判断)、PTYでouter.tar→level1.tar→level2.tarの各階層でmode-lineが正しく切り替わることを確認しました。doctest新規2件を含め計541件全通過、Ubuntuクロスビルドも確認済みです(zip未インストールという既存の環境依存差の影響範囲が新規2件分広がりますが、原因は同一で新規の不具合ではありません)。コミット・プッシュ済み。
+
+これでユーザー報告6件のうち5件(SHELL文字化け、SHELL mode-line右端、-c起動でのESC-ESC-Enter終了、^Xd/^Xf相対パス入力+^X^D等mode-line、入れ子ARC mode-line)への対応が完了しました。残るは(1)HELPのCUTで^H/^J^Hが効かない、(6)LOG動作確認(SHELL修正により再検証可能)の2件です。

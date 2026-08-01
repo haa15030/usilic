@@ -88,6 +88,15 @@ TEST_CASE_FIXTURE(Fixture, "loadArchive: a missing archive file fails cleanly") 
   CHECK_FALSE(mode.loadArchive(path("does-not-exist.tar")));
 }
 
+TEST_CASE_FIXTURE(Fixture, "mode-line fields: shows the loaded archive's basename (2026-08-01 user report)") {
+  REQUIRE(mode.loadArchive(path("archive.tar")));
+  CHECK(view.modeLineText().rfind("archive.tar ", 0) == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "mode-line fields: no name field before any archive has been loaded") {
+  CHECK(view.modeLineText() == "0/0 END");
+}
+
 TEST_CASE_FIXTURE(Fixture, "extractSelected: recovers a real file's exact content from a .tar") {
   REQUIRE(mode.loadArchive(path("archive.tar")));
   bool found = false;

@@ -6595,6 +6595,34 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      (Mac)、Ubuntu 26.04クロスビルドでも該当分すべて全通過(既存の
      失敗10件は今回と無関係)。
 
+116. **2026-08-01: 入れ子ARC閲覧のmode-line表示を修正**。項目112の
+    ユーザー報告(4)「入れ子ARC閲覧はOK.モードラインNG.」への対応。
+   - PTYで実際にouter.tar→level1.tar→level2.tarと3階層潜って
+     mode-lineを確認したところ、いずれの階層でも位置テキスト
+     (例: "1/1 END")のみで、現在どのアーカイブ・どの階層を見て
+     いるかを示す表示が一切無いと確認した。原因は`ArchiveMode`に
+     `setModeLineFieldsProvider`が一度も配線されていなかったこと
+     (Directory/File/Shell/ListBrowserの各モードで同種の未配線
+     バグを繰り返し発見・修正してきたのと同じパターン)。
+   - **実装**: `ArchiveMode`のコンストラクタで`setModeLineFieldsProvider`
+     を新設、`currentArchive()`のbasename(`/`以降のみ)をnameフィールド
+     として表示するようにした。入れ子アーカイブの`currentArchive()`は
+     `Application::descendToNestedArchive()`が生成する`mkdtemp()`製の
+     一時ディレクトリパスになる(`materializeArchiveTempFile()`参照)
+     ため、フルパスをそのまま出すとノイズになる一方、basenameだけ
+     なら"level1.tar"のように各階層で異なり十分に判別できると判断、
+     階層深度を示す別フィールドは追加しなかった(ArchiveMode自体は
+     `archiveParentStack_`(Application側の状態)を知らないため、
+     追加するには設計変更が必要になる)。
+   - **検証**: PTYで同じ3階層降下を再現し、mode-lineがそれぞれ
+     "outer.tar"→"level1.tar"→"level2.tar"と正しく切り替わることを
+     確認。doctest新規2件を含め計541件全通過(Mac)。Ubuntu 26.04
+     クロスビルドでは新規2件も含めて`archive.zip`を使う既存
+     Fixtureの一部として同じ「zip未インストール」の既知の環境
+     依存差の影響を受ける(失敗数が10→12件に増えるが、原因は
+     Fixtureが共有する`zip`コマンド不在のみで新規の不具合ではない
+     ことを確認済み)。実バイナリのビルドもMac/Ubuntu両方で確認済み。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

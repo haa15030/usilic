@@ -30,7 +30,30 @@ std::unique_ptr<ArchiveReader> readerFor(ArchiveKind kind) {
 }  // namespace
 
 ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuration &configuration)
-    : view_(view), history_(history), configuration_(configuration) {}
+    : view_(view), history_(history), configuration_(configuration) {
+  // Mode-line fields, same left-of-position "name" convention as
+  // Directory/File mode's own providers. A real user report
+  // (2026-08-01, "入れ子ARC閲覧はOK.モードラインNG.") found that
+  // nested-archive descent (Application::descendToNestedArchive())
+  // worked functionally but gave no on-screen indication of which
+  // archive -- or which nesting level -- was currently being browsed;
+  // every level's mode-line showed only the bare position text (e.g.
+  // "1/1 END"), because no provider was ever registered here at all.
+  // Shows currentArchive()'s own basename rather than the full path:
+  // for a NESTED archive, currentArchive() is a mkdtemp()-generated
+  // temp file path (see Application::descendToNestedArchive()/
+  // materializeArchiveTempFile()), and showing that raw temp path
+  // verbatim would be confusing noise -- the basename alone (e.g.
+  // "level1.tar") is what actually identifies which archive you're
+  // looking at, and differs at every level of the chain used in
+  // practice, so no separate nesting-depth indicator is needed here.
+  view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    if (currentArchive_.empty()) return {};
+    std::size_t slash = currentArchive_.find_last_of('/');
+    std::string base = (slash == std::string::npos) ? currentArchive_ : currentArchive_.substr(slash + 1);
+    return {base, "", false, ""};
+  });
+}
 
 std::string ArchiveMode::formatEntryLine(const ArchiveEntry &entry) {
   std::string line = entry.isDirectory ? "d " : "- ";
