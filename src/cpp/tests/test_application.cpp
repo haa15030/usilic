@@ -974,6 +974,38 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ESC< / ESC> jump to the first/last line (M
   CHECK(view.cursorIndex() == 0);
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedByte: ESC ^M (K-24, \"Read as is\") opens the selected file, same as a plain Enter") {
+  // Ported as a bare alias for Command::Enter: legacy's M_code (K-24)
+  // and M_fp (K-23, see the next test) both existed to pick between
+  // two DIFFERENT internal file-reading implementations (load the
+  // whole file into one memory buffer vs. stream it line-by-line via
+  // a pipe, plus M_code additionally skipped legacy's own charset
+  // auto-detection pass) -- a distinction that doesn't exist in this
+  // port's architecture at all: FileMode always reads the whole file
+  // and always hands it to the one shared PipeBuffer, uniformly (see
+  // FileMode's own class comment). So both keys are wired straight to
+  // Command::Enter, giving them real, working behavior instead of
+  // silently no-opping as an unrecognized sequence, while the
+  // memory-representation distinction itself is simply moot here.
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
+  CHECK(app.feedByte(0x0d, std::nullopt));    // ^M
+  CHECK(app.currentMode() == ApplicationMode::File);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ^M (K-23, \"Read per line\") opens the selected file, same as a plain Enter") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  CHECK(app.feedByte(0x0d, std::nullopt));    // ^M
+  CHECK(app.currentMode() == ApplicationMode::File);
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^L (Redraw) is a safe no-op that doesn't change cursor/mode state") {
   REQUIRE(app.start(path()));
   fm::ContentView &view = app.activeContentView();

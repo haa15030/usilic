@@ -181,6 +181,8 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::GoToTop);
       case '>':  // ESC > : go to end of buffer (M_tail)
         return handleCommand(Command::GoToBottom);
+      case kCarriageReturn:  // ESC ^M : "Read as is" (K-24, M_code)
+        return handleCommand(Command::Enter);
       default:
         return false;  // unrecognized ESC-sequence in this slice
     }
@@ -296,6 +298,8 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::ToggleLsMode);
       case 0x0b:  // ^O ^K : go to parent directory (K-19)
         return handleCommand(Command::GoToParentDirectory);
+      case kCarriageReturn:  // ^O ^M : "Read per line" (K-23, M_fp)
+        return handleCommand(Command::Enter);
       default:
         return false;  // unrecognized ^O-sequence in this slice
     }
