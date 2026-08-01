@@ -170,6 +170,29 @@ TEST_CASE_FIXTURE(Fixture, "openSelected on '../' navigates to the parent direct
   CHECK(mode.currentDirectory() == path());
 }
 
+TEST_CASE_FIXTURE(Fixture, "goToParent: jumps to the parent directory without moving the cursor onto '../' first (K-19, ^O^K)") {
+  REQUIRE(mode.enterDirectory(path() + "subdir2/"));
+  view.setCursorIndex(0);  // deliberately NOT on "../" -- goToParent() shouldn't need it
+
+  REQUIRE(mode.goToParent());
+  CHECK(mode.currentDirectory() == path());
+  CHECK(mode.canGoBack());  // pushed a frame just like openSelected() on "../" does
+}
+
+TEST_CASE_FIXTURE(Fixture, "goToParent: pushes a ModeStack frame so goBack() returns to the child directory") {
+  REQUIRE(mode.enterDirectory(path() + "subdir2/"));
+  REQUIRE(mode.goToParent());
+  REQUIRE(mode.goBack());
+  CHECK(mode.currentDirectory() == path() + "subdir2/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "goToParent: at the root, is a safe no-op (matching legacy's own truncation-is-a-no-op behavior)") {
+  REQUIRE(mode.enterDirectory("/"));
+  CHECK_FALSE(mode.goToParent());
+  CHECK(mode.currentDirectory() == "/");
+  CHECK_FALSE(mode.canGoBack());
+}
+
 TEST_CASE_FIXTURE(Fixture, "goBack: returns to the parent and restores the remembered cursor position") {
   REQUIRE(mode.enterDirectory(path()));
 

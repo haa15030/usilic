@@ -109,20 +109,7 @@ std::string DirectoryMode::parentDirectory(const std::string &dir) {
   return trimmed.substr(0, slash + 1);
 }
 
-bool DirectoryMode::openSelected() {
-  const DirectoryEntry *entry = selectedEntry();
-  if (!entry || !entry->isDirectory) return false;
-  if (entry->name == "./") return false;
-
-  std::string target;
-  if (entry->name == "../") {
-    target = parentDirectory(currentDirectory_);
-  } else {
-    target = currentDirectory_;
-    if (!target.empty() && target.back() != '/') target += '/';
-    target += entry->name;
-  }
-
+bool DirectoryMode::descendTo(const std::string &target) {
   saveCurrentCursorPosition();
   ModeStackFrame frame;
   frame.directory = currentDirectory_;
@@ -137,6 +124,28 @@ bool DirectoryMode::openSelected() {
     return false;
   }
   return true;
+}
+
+bool DirectoryMode::openSelected() {
+  const DirectoryEntry *entry = selectedEntry();
+  if (!entry || !entry->isDirectory) return false;
+  if (entry->name == "./") return false;
+
+  std::string target;
+  if (entry->name == "../") {
+    target = parentDirectory(currentDirectory_);
+  } else {
+    target = currentDirectory_;
+    if (!target.empty() && target.back() != '/') target += '/';
+    target += entry->name;
+  }
+  return descendTo(target);
+}
+
+bool DirectoryMode::goToParent() {
+  std::string target = parentDirectory(currentDirectory_);
+  if (target == currentDirectory_) return false;  // already at root ("/"), matching legacy's own no-op there
+  return descendTo(target);
 }
 
 bool DirectoryMode::goBack() {

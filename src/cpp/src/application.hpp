@@ -172,7 +172,10 @@ enum class Command {
   // (same target file as K-17/SaveBufferToFile) -- unlike K-63,
   // there's no way around a real file here: `cat` needs one to read.
   ShellInsertName,
-  ShellInsertBufferContent
+  ShellInsertBufferContent,
+  // K-19 (^O^K, M_m): jumps to the parent of the current directory.
+  // See DirectoryMode::goToParent()'s own comment.
+  GoToParentDirectory
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a

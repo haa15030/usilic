@@ -292,6 +292,8 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::ToggleScrollMode);
       case 'l':  // ^O l : switch format of `ls' output (K-26)
         return handleCommand(Command::ToggleLsMode);
+      case 0x0b:  // ^O ^K : go to parent directory (K-19)
+        return handleCommand(Command::GoToParentDirectory);
       default:
         return false;  // unrecognized ^O-sequence in this slice
     }
@@ -534,6 +536,9 @@ bool Application::handleCommand(Command command) {
       return shellInsertName();
     case Command::ShellInsertBufferContent:
       return shellInsertBufferContent();
+    case Command::GoToParentDirectory:
+      if (currentMode_ != ApplicationMode::Directory) return false;
+      return directoryMode_.goToParent();
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:

@@ -1025,6 +1025,26 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O l toggles DirectoryMode::filenameOnlyMo
   CHECK(history.lsMode() == 0);
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ^K jumps to the parent directory (K-19, M_m)") {
+  REQUIRE(app.start(path() + "subdir/"));
+  REQUIRE(app.directoryMode().currentDirectory() == path() + "subdir/");
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  CHECK(app.feedByte(0x0b, std::nullopt));    // ^K
+  CHECK(app.directoryMode().currentDirectory() == path());
+  CHECK(app.directoryMode().canGoBack());  // ^G returns to subdir/, same as descending into it normally would
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): refused outside Directory mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK_FALSE(app.handleCommand(Command::GoToParentDirectory));
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleLsMode): refused outside Directory mode (K-26's own scoping)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");

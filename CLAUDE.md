@@ -5738,6 +5738,47 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      未着手のまま、項目94の残りリストからK-17/61-64を除いたもの
      は変更無し)。
 
+101. **2026-08-01: K-19(^O^K、M_m、「親ディレクトリへ移動」)を実装**
+   - 項目94〜100の続き。`menu.c`の`m_dir()`(79〜121行目)を実際に
+     読み、K-18(^J^K、`M_sel`)/K-19(^O^K、`M_m`)/K-20(その他、
+     数値指定)の3つがまとめて実装されている1つの関数だと確認した。
+     `M_m`は現在ディレクトリのパスを`rindex('/')`で1階層だけ
+     切り詰める、というシンプルな処理。`M_sel`(ファイルパスから
+     その親ディレクトリを取り出す)は既存の`returnToDirectory()`
+     で恐らくカバー済みと判断し今回は対象外、`M_sel2`の数値指定
+     ジャンプは新規の数値入力基盤が要るため引き続き見送り。
+   - **実装**: `DirectoryMode::openSelected()`の末尾(カーソル位置
+     保存→`ModeStack`へフレームをpush→`enterDirectory()`→失敗時
+     pop、という一連の処理)を新規private関数`descendTo(target)`
+     として切り出し、`openSelected()`自身をこれを呼ぶだけに簡略化。
+     `goToParent()`を新設し、`parentDirectory(currentDirectory_)`
+     を求めて`descendTo()`へ渡すだけの実装にした。ルート("/")では
+     `parentDirectory()`が自分自身を返す(legacy側の`rindex('/')`が
+     先頭の1つしかない'/'より前を切り詰められず実質no-opになるのと
+     同じ)ため、この場合は`descendTo()`を呼ばずfalseを返すよう
+     ガードした。`Command::GoToParentDirectory`を追加し、
+     `leaderOPending_`のswitchに`case 0x0b(^K): handleCommand(...)`
+     を追加、`handleCommand()`側は他のDirectory専用コマンド
+     (`ToggleLsMode`等)と同じ「Directory mode以外なら拒否」の
+     ガードを付けて`directoryMode_.goToParent()`を呼ぶだけ。
+   - **検証**: `DirectoryMode`単体でdoctest3件
+     (カーソルを"../"に乗せずとも親へ移動できること、`goBack()`で
+     元の子ディレクトリへ戻れること=`descendTo()`が`openSelected()`
+     と同じフレームを積んでいること、ルートでの安全なno-op)、
+     `Application`側で2件(^O^Kの配線、Directory mode外での拒否)
+     を追加。既存の`openSelected()`関連テストも含め計501件全通過
+     (Mac)。実PTYで一時ディレクトリツリーを作り、子ディレクトリで
+     起動→^O^K送信→画面が親ディレクトリの一覧(子ディレクトリ
+     自身を含む兄弟一覧)に正しく切り替わることを生バイト列で確認。
+     Ubuntu 26.04でも新規5件を含め該当テストは全通過、既存の
+     失敗はいずれも`zip`未インストール等、今回のdiffと無関係な
+     既存の環境依存差(コンテナに`zip`コマンドが無いための
+     `test_archive_mode.cpp`のzip関連8件、`test_child_process.cpp`
+     のLC_ALL関連1件、`test_man_mode.cpp`のman未整備1件)。
+   - `openSelected()`の`descendTo()`への切り出しは純粋なリファクタ
+     (振る舞いは変更していない)で、既存のopenSelected関連テストが
+     全通過していることでリグレッション無しを確認済み。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

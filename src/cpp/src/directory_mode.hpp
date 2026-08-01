@@ -110,6 +110,16 @@ class DirectoryMode {
   // empty.
   bool openSelected();
 
+  // K-19 (^O^K, M_m): jumps straight to the parent of currentDirectory(),
+  // pushing a ModeStack frame the same way openSelected() does for a
+  // "../" entry -- this is that exact same navigation, just reachable
+  // without first moving the cursor onto "../". Ported from m_dir()'s
+  // own M_m case: at the root ("/"), legacy's own path-truncation logic
+  // is a no-op (nothing before the one leading '/' to strip), which
+  // this mirrors by refusing (false) instead of re-entering "/"
+  // pointlessly.
+  bool goToParent();
+
   // ^G: pops the most recent ModeStack frame (if any) and returns to
   // it, restoring its cursor position from History. Returns false if
   // the stack is empty (nothing to go back to).
@@ -157,6 +167,10 @@ class DirectoryMode {
 
  private:
   DirectoryEntry parseLsLine(const std::string &line) const;
+  // Shared by openSelected()/goToParent(): saves the current cursor
+  // position, pushes a ModeStack frame remembering where to come back
+  // to, and enters `target` -- undoing the push on failure.
+  bool descendTo(const std::string &target);
   void saveCurrentCursorPosition();
   static std::string parentDirectory(const std::string &dir);
 
