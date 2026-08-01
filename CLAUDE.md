@@ -5551,6 +5551,50 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      K-46/48選択バリエーション、K-51/53/55/57のSHELLウィンドウ付き
      CP/MV/RM/ARC、K-60〜64のSHELL関連追加操作等)。
 
+97. **2026-07-31: K-26(^Ol、ls出力形式の切替)を実装、ついでに項目91の
+    K-25(^Oh)実装に残っていたConfiguration側デフォルト値の未考慮を
+    修正**
+   - 項目94/95/96の続き。`Configuration::lsMode()`が既に読み込まれて
+     いたが未使用と判明していたK-26に着手する過程で、`Configuration`
+     にも`smoothScrollEnabled()`(usilicrcのSCROLLセクション由来)が
+     存在することに気付いた。項目91でK-25(^Oh)を実装した際は
+     `History::smoothScrollEnabled()`のみを起動時に`Display`へ適用
+     しており、`Configuration`側の設定(rcファイルでの初期値指定)を
+     一切考慮していなかった ― これは、rcファイルで`SCROLL`を1に
+     設定していても、一度も^Ohでトグルしたことが無いユーザーの場合
+     常にfalseで起動してしまう、という見落としだったと判明。K-26の
+     実装と合わせて、この見落としも同じコミットで修正した。
+   - **設計**: 「LS」フラグは`usilicrc`のコメント通り「セットされて
+     いる場合、file-selectorはファイル名のみを表示する」という意味。
+     `DirectoryEntry`は元々`name`(ファイル名)と`lsLine`(`ls -alF`の
+     整形済み1行)を両方保持しているため、`ls`を再実行する必要は無く、
+     `entries_`から`view_`の表示行を再構築するだけで実現できると
+     判断。`DirectoryMode::setFilenameOnlyMode(bool)`を新設、
+     `entries_`自体はそのまま(カーソル位置・マーク状態も無影響)、
+     `view_.setLines()`を`entry.name`か`entry.lsLine`かで作り直す
+     だけの実装にした。
+   - **ConfigurationとHistoryの優先順位**: 両方とも同名の設定
+     (`smoothScrollEnabled`/`lsMode`)を持つが、`History`側は
+     `bool`/`int`の生値(`savedCharset()`のような`std::optional`では
+     無い)であり、「一度も保存されたことが無い」ことを区別できない。
+     `main()`側で`historyText`(履歴ファイルの生テキスト、既に
+     ローカル変数として存在)が空かどうかを「実際に履歴ファイルが
+     存在し読み込まれたか」の判定に流用し、存在すれば`History`の
+     値(直近にトグルされた値)を、存在しなければ`Configuration`の
+     値(rcファイルの初期設定)を採用するようにした
+     (`hasSavedHistory ? history.X() : configuration.X()`という
+     形で、K-25/K-26両方に同じ優先順位を適用)。
+   - **検証**: doctest新規5件追加(`DirectoryMode::setFilenameOnlyMode`
+     が`ls`再実行無しで表示のみ切り替わりカーソル位置が保持される
+     こと、`Application`側で^Olがトグル+History永続化されること、
+     Directory mode以外からは拒否されること)、計482件全通過(Mac)。
+     実PTYで実際に`usilic ~/git/usilic/src/cpp/src`を起動し、
+     `^Ol`で3行目の表示が`-rw-r--r--@ ... application.cpp`から
+     `application.cpp`のみへ切り替わり、再度`^Ol`で元に戻ることを
+     生バイト列で確認。Ubuntu 26.04でも481件中471件通過、失敗10件は
+     いずれも今回のdiffと無関係な既存の環境依存差。
+   - 引き続き未実装(項目94の残りリストから今回分を除いたもの)。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

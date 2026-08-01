@@ -1440,15 +1440,30 @@ int main(int argc, char **argv) {
 
   display.open();
 
-  // Restores the SCROLL setting saved by a previous session (see
-  // usilicrc's own SCROLL section and Command::ToggleScrollMode's
-  // comment on ^Oh) -- history.smoothScrollEnabled() was already
-  // parsed from/serialized to the history file's TCB trailer line,
-  // but nothing ever actually applied it to the Display until now (a
-  // real gap: the hardware-scroll fast paths this flag gates were
-  // fully built and tested, but every real run defaulted to false
-  // regardless of what a previous session had saved).
-  display.setSmoothScrollEnabled(history.smoothScrollEnabled());
+  // Restores the SCROLL/LS settings saved by a previous session (see
+  // usilicrc's own SCROLL/LS sections and Command::ToggleScrollMode/
+  // ToggleLsMode's own comments on ^Oh/^Ol) -- history.
+  // smoothScrollEnabled()/lsMode() were already parsed from/
+  // serialized to the history file's TCB trailer line, but nothing
+  // ever actually applied them anywhere until now (a real gap: the
+  // hardware-scroll fast paths ^Oh gates were fully built and tested,
+  // but every real run defaulted to false regardless of what a
+  // previous session had saved).
+  //
+  // A history file existing at all (hasSavedHistory) is what decides
+  // precedence here, the same way encoding's own history.savedCharset()
+  // .value_or(configuration.defaultCharset()) pattern above does --
+  // unlike savedCharset() though, smoothScrollEnabled()/lsMode() are
+  // plain bool/int (not std::optional), so they can't themselves
+  // distinguish "never saved" from "explicitly saved as off/0"; using
+  // historyText's own emptiness as that signal instead means a truly
+  // fresh install (no history file yet) correctly falls back to
+  // usilicrc's own SCROLL/LS defaults instead of silently always
+  // starting both off regardless of what the user configured.
+  bool hasSavedHistory = !historyText.empty();
+  display.setSmoothScrollEnabled(hasSavedHistory ? history.smoothScrollEnabled()
+                                                  : configuration.smoothScrollEnabled());
+  app.directoryMode().setFilenameOnlyMode(hasSavedHistory ? history.lsMode() != 0 : configuration.lsMode() != 0);
 
   // Resolved to an absolute path (textually only -- lexically_normal(),
   // no symlink resolution, matching PathResolver's own established

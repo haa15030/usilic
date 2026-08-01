@@ -61,8 +61,9 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   while (std::getline(stream, line)) {
     if (line.empty()) continue;
     if (line.rfind("total ", 0) == 0) continue;  // `ls -l`'s block-count summary line, not an entry
-    entries.push_back(parseLsLine(line));
-    lines.push_back({line});
+    DirectoryEntry entry = parseLsLine(line);
+    lines.push_back({filenameOnlyMode_ ? entry.name : line});
+    entries.push_back(std::move(entry));
   }
 
   // Trailing-slash normalization only (NOT canonicalization -- no
@@ -225,5 +226,16 @@ std::vector<DirectoryEntry> DirectoryMode::targetEntries() const {
   if (const DirectoryEntry *entry = selectedEntry()) result.push_back(*entry);
   return result;
 }
+
+void DirectoryMode::setFilenameOnlyMode(bool enabled) {
+  filenameOnlyMode_ = enabled;
+  std::vector<ContentView::Line> lines;
+  lines.reserve(entries_.size());
+  for (const auto &entry : entries_) lines.push_back({enabled ? entry.name : entry.lsLine});
+  view_.setLines(std::move(lines));
+  view_.redraw();
+}
+
+bool DirectoryMode::filenameOnlyMode() const { return filenameOnlyMode_; }
 
 }  // namespace fm

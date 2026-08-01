@@ -255,6 +255,8 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::ToggleGuiMode);
       case 'h':  // ^O h : switch scroll mode (K-25)
         return handleCommand(Command::ToggleScrollMode);
+      case 'l':  // ^O l : switch format of `ls' output (K-26)
+        return handleCommand(Command::ToggleLsMode);
       default:
         return false;  // unrecognized ^O-sequence in this slice
     }
@@ -527,6 +529,13 @@ bool Application::handleCommand(Command command) {
     case Command::StartFileInput:
     case Command::StartDirectoryInput:
       return startPathInputPrompt();
+    case Command::ToggleLsMode: {
+      if (currentMode_ != ApplicationMode::Directory) return false;
+      bool enabled = !directoryMode_.filenameOnlyMode();
+      directoryMode_.setFilenameOnlyMode(enabled);
+      history_.setLsMode(enabled ? 1 : 0);  // persisted across runs, see History's own field comment
+      return true;
+    }
     case Command::None:
       return false;
   }

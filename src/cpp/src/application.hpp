@@ -120,7 +120,14 @@ enum class Command {
   // based completion picker, not a plain text prompt, and are NOT
   // covered here -- future work, see CLAUDE.md.
   StartFileInput,
-  StartDirectoryInput
+  StartDirectoryInput,
+  // K-26 (^Ol, M_ls): toggles DirectoryMode::filenameOnlyMode() --
+  // ported from usilicrc's own LS section ("When the flag is set,
+  // file-selector will display only filename"). Gated to Directory
+  // mode only, matching K-26's own "file-selector" scoping (no
+  // meaning in File/Man/etc content views). Persisted the same way as
+  // ToggleScrollMode/K-25.
+  ToggleLsMode
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a

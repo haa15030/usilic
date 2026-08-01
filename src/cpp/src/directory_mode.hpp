@@ -137,6 +137,19 @@ class DirectoryMode {
   // there are no marks and no valid selection.
   std::vector<DirectoryEntry> targetEntries() const;
 
+  // K-26 (^Ol, usilicrc's own LS section: "When the flag is set,
+  // file-selector will display only filename"): switches each
+  // displayed row between the full `ls -alF` line and just the bare
+  // filename, WITHOUT re-running `ls` -- entries_ already carries
+  // both DirectoryEntry::lsLine and ::name independently, so this is
+  // purely a display-layer rebuild of view_'s lines from the already-
+  // parsed entries (selection/marks/cursor position are all untouched,
+  // since entries_ itself never changes). Persisted across runs the
+  // same way ToggleScrollMode/K-25 is -- see Application's own
+  // handling.
+  void setFilenameOnlyMode(bool enabled);
+  bool filenameOnlyMode() const;
+
  private:
   DirectoryEntry parseLsLine(const std::string &line) const;
   void saveCurrentCursorPosition();
@@ -150,6 +163,7 @@ class DirectoryMode {
   std::string currentDirectory_;
   std::vector<DirectoryEntry> entries_;
   std::set<int> markedIndices_;
+  bool filenameOnlyMode_ = false;
 };
 
 }  // namespace fm

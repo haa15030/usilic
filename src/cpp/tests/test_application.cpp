@@ -930,6 +930,36 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O h toggles Display::smoothScrollEnabled(
   CHECK_FALSE(history.smoothScrollEnabled());
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O l toggles DirectoryMode::filenameOnlyMode() and persists it to History") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+  CHECK_FALSE(app.directoryMode().filenameOnlyMode());
+  CHECK(history.lsMode() == 0);
+  CHECK(app.activeContentView().lines()[idx].text != "plain.txt");
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  CHECK(app.feedByte('l', std::nullopt));
+  CHECK(app.directoryMode().filenameOnlyMode());
+  CHECK(history.lsMode() != 0);
+  CHECK(app.activeContentView().lines()[idx].text == "plain.txt");
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  CHECK(app.feedByte('l', std::nullopt));
+  CHECK_FALSE(app.directoryMode().filenameOnlyMode());
+  CHECK(history.lsMode() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleLsMode): refused outside Directory mode (K-26's own scoping)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK_FALSE(app.handleCommand(Command::ToggleLsMode));
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' exits immediately outside Directory mode, without the y/n confirmation") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");

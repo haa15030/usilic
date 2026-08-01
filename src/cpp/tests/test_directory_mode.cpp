@@ -208,6 +208,28 @@ TEST_CASE_FIXTURE(Fixture, "enterDirectory: consultHistory=false always starts a
   CHECK(view.cursorIndex() == 0);
 }
 
+TEST_CASE_FIXTURE(Fixture, "setFilenameOnlyMode: switches displayed rows to bare filenames without re-running ls") {
+  REQUIRE(mode.enterDirectory(path()));
+  int idx = -1;
+  for (std::size_t i = 0; i < mode.entries().size(); i++)
+    if (mode.entries()[i].name == "regular.txt") idx = static_cast<int>(i);
+  REQUIRE(idx >= 0);
+
+  CHECK(view.lines()[idx].text == mode.entries()[idx].lsLine);  // default: full `ls -alF` line
+  CHECK(view.lines()[idx].text != "regular.txt");
+
+  view.setCursorIndex(idx);
+  mode.setFilenameOnlyMode(true);
+  CHECK(mode.filenameOnlyMode());
+  CHECK(view.lines()[idx].text == "regular.txt");  // now just the bare name
+  CHECK(mode.entries()[idx].name == "regular.txt");  // entries_ itself is unchanged (same list, same order)
+  CHECK(view.cursorIndex() == idx);  // selection/cursor untouched by the display-only rebuild
+
+  mode.setFilenameOnlyMode(false);
+  CHECK_FALSE(mode.filenameOnlyMode());
+  CHECK(view.lines()[idx].text == mode.entries()[idx].lsLine);  // switches back cleanly
+}
+
 TEST_CASE_FIXTURE(Fixture, "goBack: false when there is nothing to go back to") {
   REQUIRE(mode.enterDirectory(path()));
   CHECK_FALSE(mode.goBack());
