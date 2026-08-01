@@ -6499,6 +6499,49 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ハイライト項目mode-line表示、入れ子ARCのmode-line表示、
      LOG動作確認)も引き続き未着手。
 
+114. **2026-08-01: `-c`(CUI強制)起動でもESC-ESC-Enterの直接終了
+    ジェスチャーが効くようにした**。項目112のユーザー報告(2)への対応。
+    `app/main.cpp`を調査したところ、ESC-ESC-Enterによる直接終了
+    (`Application::requestImmediateExit()`、通常の^X^C+y/n確認
+    プロンプトを経由しない)は`runGuiPhase()`(GUIイベントループ)
+    にしか実装されておらず、`runTerminalPhase()`(`-c`および通常の
+    実端末フォールバック双方が経由する、CUIのイベントループ)には
+    対応するロジックが存在しなかったと判明した。GUI側のコメントに
+    よれば、この機能はもともと「実は既にGUI」自動スワップ時、GUI
+    ウィンドウを閉じる際に`GraphicalDisplay`のデストラクタを経由
+    しない不意打ちのプロセス終了(クリーンアップをすっ飛ばす)を
+    避けるために追加されたものだったが、`-c`は「この移植作業中の
+    ハンズオン検証用の足場」(項目105)であり、繰り返し手動テストする
+    際に^X^C+yより素早く終了できるショートカットとして同じ利便性が
+    欲しい、というのが今回の実際の動機だった。
+   - **実装**: `runTerminalPhase()`にGUI側と同じ`consecutiveEscapes`
+     カウンタ(直前のESCが何連続で来たか、Shift+Arrow/マウスSGR/
+     `readEscapeSequence()`が返す既知の特殊キーいずれかにマッチした
+     場合、および通常のバイトが来た場合はいずれも0へリセット)を
+     追加。GUI側と異なり、素のESCは(`Application`自身のESCリーダー
+     状態機械――ESC-s→SHELL等――を壊さないよう)引き続き
+     `app.feedByte(0x1b, ...)`で流しつつ、それとは別にカウンタだけ
+     並行してインクリメントする方式にした(`Application::
+     dispatchByte()`を読み、`escPending_`が立った状態でもう一度素の
+     ESCを受け取ると「不明なESCシーケンス」としてno-opで
+     `escPending_`をリセットするだけと確認済みなので、2回連続で
+     `feedByte(0x1b)`しても副作用が無いことを裏付けた上での判断)。
+     3回目の入力が改行(0x0d)かつカウンタが2以上なら、`feedByte()`を
+     一切呼ばずに`app.requestImmediateExit()`を直接呼んで(その
+     Enterが選択中エントリを開く通常のEnterとして`Application`側へ
+     届かないようにする、GUI側と同じ仕組み)ループを抜ける。
+   - **検証**: PTYで実際に`-c`起動→ESC→ESC→Enterの順に生バイトを
+     送信し、プロセスが確認プロンプト無しでクリーンに終了する
+     (`waitpid()`が`^X^C`のy/n無しで即座に成功、alternate-screen
+     復帰等の正常な終了シーケンスの出力も確認)ことを確認した。
+     回帰確認として、同じ`-c`起動でESC→sの通常のSHELL起動
+     (leader ESCシーケンス)が引き続き問題無く動作することも確認
+     済み。`app/main.cpp`はdoctestのビルド対象に含まれないため
+     単体テストは追加していない(GUI側の同機能も同様に単体テスト
+     対象外)。doctest計531件(変更無し、この修正はmain.cppのみに
+     閉じているため)、Ubuntu 26.04クロスビルドも確認済み(既存の
+     失敗10件は今回と無関係な既知の環境依存差)。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

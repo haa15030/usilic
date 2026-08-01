@@ -801,6 +801,20 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
 // click/selection behavior.
 bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display &display) {
   bool mouseTrackingOn = false;
+  // Counts consecutive bare ESC presses, for the ESC-ESC-Enter direct-
+  // exit gesture -- see runGuiPhase()'s own comment on why this
+  // gesture exists (avoiding an abrupt, cleanup-skipping termination
+  // in the "実は既にGUI" auto-swap case). A real user report
+  // (2026-08-01) found ESC-ESC-Enter worked under `-g` but not under
+  // `-c`, making iterative hand-testing tedious (the normal ^X^C+y/n
+  // confirmation prompt still works in both, this is purely an EXTRA
+  // shortcut, mirroring GUI mode's own parity rather than replacing
+  // anything). Reset by any other key/sequence (see each branch
+  // below); a lone ESC that doesn't turn out to be part of a known
+  // sequence (Shift+Arrow, mouse SGR, or a special key) increments
+  // it instead of reaching Application's own ESC-leader state machine
+  // immediately below.
+  int consecutiveEscapes = 0;
   auto syncMouseTracking = [&]() {
     bool want = app.currentMode() != fm::ApplicationMode::Shell;
     if (want != mouseTrackingOn) {
@@ -850,6 +864,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       // bytes.
       ShiftArrow arrow = peekShiftArrow(keyInput);
       if (arrow != ShiftArrow::None) {
+        consecutiveEscapes = 0;
         TerminalCoastResult coast =
             runCoastLoop(app, display, keyInput, resolveCoastLevel(1), arrow == ShiftArrow::Up ? -1 : 1);
         if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
@@ -861,6 +876,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       // playRawMacro() on any mismatch, same as peekShiftArrow().
       auto mouse = peekMouseSgr(keyInput);
       if (mouse) {
+        consecutiveEscapes = 0;
         if (mouse->pressed && !mouse->motionOnly && mouse->button == 0) {
           // Left-button down: the mouse-driven equivalent of
           // Shift+Up/Down -- see runTerminalMouseDrag()'s own comment
@@ -880,20 +896,29 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       }
       auto special = keyInput.readEscapeSequence();
       if (special) {
+        consecutiveEscapes = 0;
         app.feedByte(0, special);
         continue;
       }
-      // Not one of Display's known terminal sequences -- hand ESC,
-      // then whatever byte(s) actually followed it, to Application's
-      // own ESC-leader state machine (e.g. ^[s for SHELL, ^Og for
-      // GUI mode is a PLAIN ^O, not ESC-prefixed, so it never reaches
-      // here at all). See KeyInput::lastEscapeBytes()'s own comment
-      // for the one remaining inherited quirk (a fast-typed subsequent
-      // keystroke can occasionally ride along as a second byte here).
+      // Not one of Display's known terminal sequences -- a bare ESC.
+      // Counts toward the ESC-ESC-Enter direct-exit gesture (see this
+      // function's own comment above) before falling through to
+      // Application's own ESC-leader state machine (e.g. ^[s for
+      // SHELL, ^Og for GUI mode is a PLAIN ^O, not ESC-prefixed, so it
+      // never reaches here at all). See KeyInput::lastEscapeBytes()'s
+      // own comment for the one remaining inherited quirk (a fast-
+      // typed subsequent keystroke can occasionally ride along as a
+      // second byte here).
+      consecutiveEscapes = std::min(consecutiveEscapes + 1, 2);
       app.feedByte(0x1b, std::nullopt);
       for (unsigned char c : keyInput.lastEscapeBytes()) app.feedByte(c, std::nullopt);
       continue;
     }
+    if (byte == 0x0d && consecutiveEscapes >= 2) {
+      app.requestImmediateExit();
+      continue;
+    }
+    consecutiveEscapes = 0;
     app.feedByte(byte, std::nullopt);
   }
   return leavePhase(false);

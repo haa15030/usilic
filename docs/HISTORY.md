@@ -165,3 +165,7 @@ CP,MV,RM等ファイル操作はSHELLで行うので同モード周辺のデバ�
 >ご指摘の通りでした。menu.cのM_shellケース→do_shell()→make_shell()→output_shell()→disp_shell()→disp_window()という呼び出し連鎖を辿ったところ、menu.cで`strcpy(name, &ap->name[...])`により「SHELLへ切り替わる直前にいたモード自身のmode-line[1]『name』フィールド」がそのままdo_shell()のprev引数として渡され、SHELLのmode-lineでは右端(trailing)に表示される設計だと確認できました。ディレクトリ一覧から来ればフルパス、ファイルビューアから来ればファイル名、という「一つ前の名称」の持ち越しです。
 
 Application::previousModeName()を新設し、Directory→currentDirectory()、File→currentFile()、Man→currentPage()、Archive/ArchiveContent→currentArchive()、Du→currentPath()にマッピング(Grep/Cut/CutContent/Locate/ListBrowserはこのポートに単一nameアクセサが無いため今回は空文字列フォールバック)。ensureShellActive()/shellRestart()でSHELLへ切り替わる直前にshellReturnName_へ記録し、Shellのscrollback用ContentViewへ新規setModeLineFieldsProviderで`{"SHELL", shellReturnName_}`を配線しました。doctest新規2件(実bash経由でDirectory/File両方からの遷移を検証)を含め計531件全通過、Ubuntuクロスビルドも確認済みです。コミット・プッシュ済み。
+
+<続けて。
+
+>残る報告のうち「-c起動時[ESC][ESC][Enter]で終われない」に対応しました。app/main.cppを見たところ、この直接終了ジェスチャー(通常の^X^C+y/n確認を経由しない即終了)はGUIイベントループ(runGuiPhase())にしか実装されておらず、-c/実端末フォールバックが通る側のCUIイベントループ(runTerminalPhase())には対応するロジックが元々ありませんでした。GUI側と同じconsecutiveEscapesカウンタをCUI側にも追加し、素のESCを2回連続で受けた直後の改行でrequestImmediateExit()を直接呼ぶようにしました(Application::dispatchByte()を確認し、素のESCを連続で流してもescPending_状態機械には副作用が無いことを確認済み)。PTYで実際に-c起動→ESC→ESC→Enterでプロセスがクリーンに終了すること、ESC→sの通常のSHELL起動が引き続き動作すること(回帰無し)を確認、Ubuntuクロスビルドも確認済みです。コミット・プッシュ済み。
