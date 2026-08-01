@@ -6445,6 +6445,60 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      未着手(SHELL文字化けの解消により(6)は次回検証可能になった
      はず)。
 
+113. **2026-08-01: SHELLのmode-line右端「一つ前の名称」表示を実装**。
+    項目112で「追加調査が必要」として持ち越していたユーザー報告の
+    サブ項目。ユーザーから訂正が入り、「カレントディレクトリとは
+    限らない。通常ファイルから来たときはファイル名となる。要するに
+    一つ前の名称」との明確化を受けて再調査した。
+   - legacyの`shell.c`/`menu.c`を関数呼び出しの連鎖(`menu.c`の
+     M_shellケース→`do_shell(prev,...)`→`make_shell(...,prev,...)`
+     →`output_shell(...,prev0,...)`→`disp_shell(rvp,name,prev,arg,...)`
+     →`disp_window(...,T_shell,name,prev,arg,...)`)まで辿ったところ、
+     `menu.c`のM_shellケースで`strcpy(name, &ap->name[*ap->name==' ']);`
+     という代入があり、この`name`(=`ap->name`)が`do_shell()`の`prev`
+     引数としてそのまま渡されていると判明した。`ap->name`は、まさに
+     「SHELLへ切り替わる直前にいたモード自身のmode-line[1]『name』
+     フィールド」と同じ値(ディレクトリ一覧ならフルパス、ファイル
+     ビューアならファイル名)であり、ユーザーの訂正通り「一つ前の
+     モードの名前フィールドをそのまま持ち越す」設計だった。
+     `disp_shell()`側では`name`に固定文字列`"SHELL"`
+     (`s_P(P_mode)[M_shell]`)を設定して`disp_window()`へ渡しており、
+     結果としてSHELLのmode-lineは「左端: SHELL(固定)、右端(trailing):
+     一つ前のモードのname値」という構成だと確認できた。
+   - **実装**: `Application`に`shellReturnName_`(新規メンバ)と
+     `previousModeName(ApplicationMode)`(新規privateヘルパー、
+     Directory→`directoryMode_.currentDirectory()`、File→
+     `fileMode_.currentFile()`、Man→`manMode_.currentPage()`、
+     Archive/ArchiveContent→`archiveMode_.currentArchive()`、Du→
+     `duMode_.currentPath()`、それ以外(Grep/Cut/CutContent/Locate/
+     ListBrowser、いずれも単一の「name」に相当するアクセサをこの
+     ポートにまだ持たない)は空文字列でtrailingを出さないフォール
+     バック、というスコープ限定)を追加。`ensureShellActive()`/
+     `shellRestart()`のどちらも、既存の`shellReturnMode_ = currentMode_`
+     直前に`shellReturnName_ = previousModeName(currentMode_)`を
+     追加する形で配線した(いずれも「まだSHELLに入っていない現在の
+     `currentMode_`」を見ている箇所で、離れる直前のモードを正しく
+     捕捉できる)。コンストラクタで`shell_.scrollback()`へ新規
+     `setModeLineFieldsProvider`を登録し、`{"SHELL", shellReturnName_,
+     false, ""}`を返す(DirectoryMode等と同じ、`this`を捕捉する
+     ライブコールバック方式)。
+   - **検証**: doctest新規2件("SHELL mode-line: entering from
+     Directory mode shows the current directory as the trailing
+     field"/"entering from File mode shows the open file's name, not
+     a directory")を追加、いずれも実bashでのSHELL起動を経由して
+     `modeLineText()`の実際の戻り値を検証する形。計531件全通過
+     (Mac)、Ubuntu 26.04クロスビルドでも該当2件を含め全通過(既存の
+     失敗10件は今回と無関係な既知の環境依存差)。
+   - **未着手のまま残るスコープ**: Grep/Cut/CutContent/Locate/
+     ListBrowserからSHELLへ入った場合のtrailing表示(現状は空文字列
+     で何も出さない)。これらのモードにはこのポート側にまだ単一の
+     「name」アクセサが無く、legacyの`ap->name`が実際に何を返すのかも
+     未調査のため、実際にユーザーがこの経路でSHELLへ入る場面が
+     出てきたら改めて対応する。項目112の残り5件(HELP ^H/^J^H、
+     `-c`起動でのESC-ESC-Enter終了、^Xd/^Xf入力・^X^D/^X^Fの
+     ハイライト項目mode-line表示、入れ子ARCのmode-line表示、
+     LOG動作確認)も引き続き未着手。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

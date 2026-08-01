@@ -159,3 +159,9 @@ CP,MV,RM等ファイル操作はSHELLで行うので同モード周辺のデバ�
 >SHELLの文字化けをPTY自動テスト(実機の`.zshrc`を隔離した一時HOMEへコピーして再現)で調査したところ、独立した4系統の根本原因が積み重なっていました。(1)zsh用のPS1上書きがtcsh構文のままで完全に無効化されていた(→isZsh_分岐を新設しexport PROMPT=構文へ)、(2)セットアップコマンドの長い1行がターミナルの折り返し再描画で自己破壊していた(→複数の短い行に分割)、(3)ハンドシェイク用センチネル行がzshでは本物のコマンドとして実行されエラーが可視化されていた(→`: `を前置)、(4)センチネル発見時に同じreadチャンク内の後続データを丸ごと破棄していた(→残りを通常経路へ流すよう修正)。さらに掘り下げると、そもそもANSI/CSI/OSCエスケープシーケンス自体にShellが一切対応しておらず(PipeBufferはファイル内容処理専用でこの概念が無い)、SGRカラーやbracketed-paste-mode等がリテラル文字列として漏れていました(→consumeEscapeByte()を新設し除去)。加えてzshのZLE自身が使うバックスペースベースの再描画イディオム(`u\x08unset ...`)にも未対応で生のバックスペースが可視の制御文字グリフになっていました(→pendingLine_による行組み立て前処理層を追加)。全529件のdoctest・Ubuntu 26.04クロスビルドとも回帰無しを確認済みです。コミット・プッシュ済み。
 
 「モードライン右端はカレントディレクトリのはず」の部分は、legacyのshell.c/disp.cを読んだところname(左端固定文字列)/arg(幅計算専用)/prev(呼び出し元モード名のtrailing)という3フィールドが絡む構造で単純ではなく、追加調査が必要と判断し今回は見送りました。残る5件(HELP ^H/^J^H、-c起動でのESC-ESC-Enter終了、^Xd/^Xf入力と^X^D/^X^Fのmode-line表示、入れ子ARCのmode-line表示、LOG動作確認)も未着手です。次はこれらに順次着手します。
+
+<一点訂正。「SHELLのmode-line右端」はカレントディレクトリとは限らない。通常ファイルから来たときはファイル名とな。要するに一つ前の名称。
+
+>ご指摘の通りでした。menu.cのM_shellケース→do_shell()→make_shell()→output_shell()→disp_shell()→disp_window()という呼び出し連鎖を辿ったところ、menu.cで`strcpy(name, &ap->name[...])`により「SHELLへ切り替わる直前にいたモード自身のmode-line[1]『name』フィールド」がそのままdo_shell()のprev引数として渡され、SHELLのmode-lineでは右端(trailing)に表示される設計だと確認できました。ディレクトリ一覧から来ればフルパス、ファイルビューアから来ればファイル名、という「一つ前の名称」の持ち越しです。
+
+Application::previousModeName()を新設し、Directory→currentDirectory()、File→currentFile()、Man→currentPage()、Archive/ArchiveContent→currentArchive()、Du→currentPath()にマッピング(Grep/Cut/CutContent/Locate/ListBrowserはこのポートに単一nameアクセサが無いため今回は空文字列フォールバック)。ensureShellActive()/shellRestart()でSHELLへ切り替わる直前にshellReturnName_へ記録し、Shellのscrollback用ContentViewへ新規setModeLineFieldsProviderで`{"SHELL", shellReturnName_}`を配線しました。doctest新規2件(実bash経由でDirectory/File両方からの遷移を検証)を含め計531件全通過、Ubuntuクロスビルドも確認済みです。コミット・プッシュ済み。

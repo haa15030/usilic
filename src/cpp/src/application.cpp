@@ -81,6 +81,17 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // tested against a synthetic provider (see test_shell.cpp).
   shell_.setCompletionProvider(
       [this](const std::string &partial) { return completeFilesystemPath(partial, shell_.currentDirectory()); });
+  // Mode-line fields, ported from disp_shell()'s own
+  // disp_window(..., T_shell, name="SHELL", prev, arg, ...) call
+  // (shell.c): "SHELL" fixed on the left, and shellReturnName_ (see
+  // its own comment -- the previous mode's own name, snapshotted by
+  // ensureShellActive()/shellRestart()) as the trailing field on the
+  // right. A live callback (like DirectoryMode's own provider) since
+  // shellReturnName_ changes across separate Shell entries within the
+  // same session.
+  shell_.scrollback().setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    return {"SHELL", shellReturnName_, /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
+  });
 }
 
 // Shared by the constructor and handleResize(): sizes every owned
@@ -969,6 +980,7 @@ bool Application::ensureShellActive() {
     if (!shell_.start()) return false;
     shellStarted_ = true;
   }
+  shellReturnName_ = previousModeName(currentMode_);
   shellReturnMode_ = currentMode_;
   currentMode_ = ApplicationMode::Shell;
   shell_.scrollback().redraw();
@@ -987,11 +999,32 @@ bool Application::shellRestart() {
   shellStarted_ = false;
   if (!shell_.start()) return false;
   shellStarted_ = true;
-  if (currentMode_ != ApplicationMode::Shell) shellReturnMode_ = currentMode_;
+  if (currentMode_ != ApplicationMode::Shell) {
+    shellReturnName_ = previousModeName(currentMode_);
+    shellReturnMode_ = currentMode_;
+  }
   currentMode_ = ApplicationMode::Shell;
   shell_.scrollback().redraw();
   shell_.commandLine().redraw();
   return true;
+}
+
+std::string Application::previousModeName(ApplicationMode mode) const {
+  switch (mode) {
+    case ApplicationMode::Directory:
+      return directoryMode_.currentDirectory();
+    case ApplicationMode::File:
+      return fileMode_.currentFile();
+    case ApplicationMode::Man:
+      return manMode_.currentPage();
+    case ApplicationMode::Archive:
+    case ApplicationMode::ArchiveContent:
+      return archiveMode_.currentArchive();
+    case ApplicationMode::Du:
+      return duMode_.currentPath();
+    default:
+      return "";
+  }
 }
 
 // K-17 (^X^W, M_w4): ported from menu.c's own `send_pp(hp->bp->pp,

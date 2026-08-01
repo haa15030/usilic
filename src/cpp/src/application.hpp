@@ -1110,6 +1110,15 @@ class Application {
   // no such mode-guard either, only the separate is_inter() busy
   // check).
   bool ensureShellActive();
+  // Snapshot of whichever *Mode's own "current name" accessor matches
+  // `mode`, for shellReturnName_ (see its own comment). Only the
+  // modes that already have such an accessor AND are plausible entry
+  // points into Shell are covered (Directory/File/Man/Archive/
+  // ArchiveContent/Du); everything else (Grep/Cut/CutContent/Locate/
+  // ListBrowser -- none of which currently expose a single "name"
+  // string of their own) falls back to "", which simply omits the
+  // trailing field rather than guessing.
+  std::string previousModeName(ApplicationMode mode) const;
   // K-60 (^Xs, M_hup): kills the current SHELL child (if any, via
   // Shell::terminate()'s SIGHUP+wait) and starts a fresh one, entering
   // Shell mode. Ported from menu.c's own M_hup case: legacy's
@@ -1311,6 +1320,21 @@ class Application {
   ApplicationMode manReturnMode_ = ApplicationMode::Directory;
   ApplicationMode locateReturnMode_ = ApplicationMode::Directory;
   ApplicationMode shellReturnMode_ = ApplicationMode::Directory;
+  // The previous mode's own "name" field (e.g. DirectoryMode::
+  // currentDirectory(), FileMode::currentFile()), snapshotted at the
+  // moment Shell mode is entered -- see previousModeName()'s own
+  // comment. Ported from legacy's do_shell(prev, ...): menu.c's own
+  // M_shell case (ESC-s) copies `ap->name` (the SAME string every
+  // mode's own mode-line[1] "name" field is built from, see
+  // disp_window()) into a local `name` buffer and passes it straight
+  // through to do_shell() as `prev`, which shell.c carries all the
+  // way to disp_window(..., T_shell, name="SHELL", prev, ...) as the
+  // mode-line[6] "previous-mode" trailing field. A real user report
+  // (2026-08-01) confirms this reads as "whatever name identified the
+  // screen you came from" -- current directory when entering from
+  // Directory mode, but the filename when entering from File mode,
+  // NOT always "current directory" as this port first assumed.
+  std::string shellReturnName_;
   ApplicationMode listBrowserReturnMode_ = ApplicationMode::Directory;
   RingCategory listBrowserCategory_ = RingCategory::RecentDirectory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;

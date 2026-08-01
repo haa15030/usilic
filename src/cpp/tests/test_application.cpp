@@ -1553,6 +1553,34 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: re-entering from within Shell mode is refused
   CHECK(app.currentMode() == ApplicationMode::Shell);
 }
 
+TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from Directory mode shows the current directory as the trailing field") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  std::string text = app.shell().scrollback().modeLineText();
+  CHECK(text.rfind("SHELL ", 0) == 0);
+  CHECK(text.find(path()) != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from File mode shows the open file's name, not a directory (2026-08-01 user correction)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  std::string text = app.shell().scrollback().modeLineText();
+  std::string expectedTrailing = (root / "plain.txt").string();
+  CHECK(text.substr(text.size() - expectedTrailing.size()) == expectedTrailing);
+}
+
 TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): snapshots Shell's scrollback to logFilePath_, viewable via File mode") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
