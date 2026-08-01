@@ -5,6 +5,7 @@
 
 #include "child_process.hpp"
 #include "configuration.hpp"
+#include "key_input.hpp"
 
 namespace fm {
 
@@ -56,7 +57,11 @@ enum class WriteCheck {
 //     obvious name confusion.
 class CpMvRmMode {
  public:
-  explicit CpMvRmMode(const Configuration &configuration);
+  // keyInput: used only by the *Interactive() variants below (K-51/
+  // K-53/K-55, "with SHELL window") to leave/re-enter raw mode around
+  // ChildProcess::runInteractive(), same shape as ExecMode/ProgramMode/
+  // EditMode already use -- see their own comments.
+  CpMvRmMode(const Configuration &configuration, KeyInput &keyInput);
 
   // Ported from is_write(): whether path is a valid RM/MV target
   // under the given check. Root (uid 0) can always write. A symlink,
@@ -71,18 +76,37 @@ class CpMvRmMode {
   // Copies/moves sources (absolute paths) to destination using the
   // configured cp/mv command (Configuration::commandFor(Cp/Mv)).
   // Captures output (progress lines from -v) rather than attaching a
-  // real terminal -- see the class comment on -i confirmation.
+  // real terminal -- see the class comment on -i confirmation. This is
+  // usilicrc's K-52/K-54 ("without SHELL window").
   ChildProcess::Result copyTo(const std::vector<std::string> &sources, const std::string &destination);
   ChildProcess::Result moveTo(const std::vector<std::string> &sources, const std::string &destination);
 
   // Deletes targets (absolute paths) using the configured rm command.
+  // K-56 ("without SHELL window").
   ChildProcess::Result remove(const std::vector<std::string> &targets);
 
+  // K-51/K-53/K-55 (^X^Kc/^X^Km/^X^Kr, "with SHELL window"): same
+  // cp/mv/rm invocation as copyTo()/moveTo()/remove(), but via
+  // ChildProcess::runInteractive() instead of the captured run() --
+  // the real command's own output (e.g. -v progress lines) is visible
+  // live on the real terminal as it runs, instead of only being
+  // available afterward via Result::output. Returns the child's exit
+  // status, or -1 if sources is empty or no command is configured for
+  // the role (mirroring ExecMode::run()'s own -1 convention).
+  int copyToInteractive(const std::vector<std::string> &sources, const std::string &destination);
+  int moveToInteractive(const std::vector<std::string> &sources, const std::string &destination);
+  int removeInteractive(const std::vector<std::string> &targets);
+
  private:
+  std::vector<std::string> buildArgv(ConfiguredRole role, const std::vector<std::string> &sources,
+                                      const std::string *destination) const;
   ChildProcess::Result runWithSources(ConfiguredRole role, const std::vector<std::string> &sources,
                                        const std::string *destination);
+  int runInteractiveWithSources(ConfiguredRole role, const std::vector<std::string> &sources,
+                                 const std::string *destination);
 
   const Configuration &configuration_;
+  KeyInput &keyInput_;
 };
 
 }  // namespace fm

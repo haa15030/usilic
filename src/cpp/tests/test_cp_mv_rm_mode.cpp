@@ -6,12 +6,16 @@
 #include "configuration.hpp"
 #include "cp_mv_rm_mode.hpp"
 #include "doctest.h"
+#include "key_input.hpp"
+#include "recording_display.hpp"
 
 namespace fs = std::filesystem;
 
 using fm::Configuration;
 using fm::CpMvRmMode;
+using fm::KeyInput;
 using fm::WriteCheck;
+using fm::test::RecordingDisplay;
 
 namespace {
 
@@ -22,10 +26,16 @@ fs::path makeTempDir() {
   return fs::path(result);
 }
 
+// KeyInput's raw-mode methods safely no-op when it was never open()ed
+// against a real tty (see test_program_mode.cpp's own fixture, the
+// established precedent for this), so these tests can run headlessly
+// even though CpMvRmMode's *Interactive() methods call them.
 struct Fixture {
   fs::path root;
   Configuration configuration;
-  CpMvRmMode mode{configuration};
+  RecordingDisplay display{24, 80};
+  KeyInput keyInput{display};
+  CpMvRmMode mode{configuration, keyInput};
 
   Fixture() : root(makeTempDir()) {}
   ~Fixture() { fs::remove_all(root); }
@@ -101,6 +111,48 @@ TEST_CASE_FIXTURE(Fixture, "copyTo/moveTo/remove: an empty source list is a safe
   CHECK_FALSE(mode.copyTo({}, root.string() + "/").ok);
   CHECK_FALSE(mode.moveTo({}, root.string() + "/").ok);
   CHECK_FALSE(mode.remove({}).ok);
+}
+
+// *Interactive() variants (K-51/K-53/K-55, "with SHELL window"): same
+// underlying cp/mv/rm invocation, just via ChildProcess::runInteractive()
+// instead of run() -- these tests verify the real filesystem effect is
+// identical, not the terminal-attachment mechanics themselves (already
+// covered by ExecMode's own tests, which this shares its shape with).
+TEST_CASE_FIXTURE(Fixture, "copyToInteractive: copies a real file via runInteractive(), same effect as copyTo") {
+  std::string src = writeFile("ai.txt", "hello");
+  fs::create_directory(root / "destI");
+  std::string destDir = (root / "destI").string() + "/";
+
+  CHECK(mode.copyToInteractive({src}, destDir) == 0);
+  CHECK(fs::exists(src));
+  CHECK(fs::exists(root / "destI" / "ai.txt"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "moveToInteractive: moves a real file via runInteractive(), same effect as moveTo") {
+  std::string src = writeFile("bi.txt", "world");
+  fs::create_directory(root / "destI");
+  std::string destDir = (root / "destI").string() + "/";
+
+  CHECK(mode.moveToInteractive({src}, destDir) == 0);
+  CHECK_FALSE(fs::exists(src));
+  CHECK(fs::exists(root / "destI" / "bi.txt"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "removeInteractive: deletes real files via runInteractive(), same effect as remove") {
+  REQUIRE(configuration.loadRcText("RM\n rm -vr\n", true));  // avoid -i, see remove()'s own test comment
+
+  std::string a = writeFile("ci.txt", "x");
+  std::string b = writeFile("di.txt", "y");
+
+  CHECK(mode.removeInteractive({a, b}) == 0);
+  CHECK_FALSE(fs::exists(a));
+  CHECK_FALSE(fs::exists(b));
+}
+
+TEST_CASE_FIXTURE(Fixture, "copyToInteractive/moveToInteractive/removeInteractive: empty source list is a safe no-op") {
+  CHECK(mode.copyToInteractive({}, root.string() + "/") == -1);
+  CHECK(mode.moveToInteractive({}, root.string() + "/") == -1);
+  CHECK(mode.removeInteractive({}) == -1);
 }
 
 TEST_CASE_FIXTURE(Fixture, "isWritable: an existing file owned by the current user is writable") {

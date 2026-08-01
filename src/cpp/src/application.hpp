@@ -134,7 +134,19 @@ enum class Command {
   // ^Space on each one. Same Directory-mode-only scoping as ToggleMark
   // itself.
   MarkAll,
-  ClearAllMarks
+  ClearAllMarks,
+  // K-51/K-53/K-55 (^X^Kc/^X^Km/^X^Kr, "with SHELL window"): same CP/
+  // MV/RM operation as StartCopy/StartMove/StartRemove, but the real
+  // command's own output is shown live on the real terminal (via
+  // ChildProcess::runInteractive(), same shape as ExecMode/
+  // ProgramMode) instead of being silently captured -- see
+  // CpMvRmMode::copyToInteractive()'s own comment. Reuses the SAME
+  // prompt kinds/text-entry flow as the non-interactive commands;
+  // only the final execution step differs (executeCopy()/etc. check
+  // cpMvRmInteractive_).
+  StartCopyInteractive,
+  StartMoveInteractive,
+  StartRemoveInteractive
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -988,9 +1000,9 @@ class Application {
   bool startProgramPrompt();
   bool startLocatePrompt();
   bool startShell();
-  bool startCopyPrompt();
-  bool startMovePrompt();
-  bool startRemovePrompt();
+  bool startCopyPrompt(bool interactive = false);
+  bool startMovePrompt(bool interactive = false);
+  bool startRemovePrompt(bool interactive = false);
   bool startExitPrompt();
   bool startDuPrompt();
   bool startPathInputPrompt();
@@ -1062,6 +1074,12 @@ class Application {
   // executeCut() as soon as it's consumed, so the very next CUT (of
   // either variant) doesn't accidentally reuse a stale path.
   std::string cutFileSourcePath_;
+  // Set by startCopyPrompt(true)/startMovePrompt(true)/
+  // startRemovePrompt(true) (K-51/K-53/K-55's "with SHELL window"
+  // entry points), consumed once by executeCopy()/executeMove()/
+  // executeRemove() to pick the interactive CpMvRmMode method instead
+  // of the plain captured one.
+  bool cpMvRmInteractive_ = false;
   bool shellStarted_ = false;
   std::string helpText_;
   // Which top-level Cut/CutContent split is currently active -- only
@@ -1082,6 +1100,7 @@ class Application {
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
   bool escPending_ = false;      // saw ESC (0x1b), waiting for the byte that completes ^[s -- see class comment
   bool leaderXPending_ = false;  // saw ^X, waiting for the byte that completes ^Xc/^Xm/^Xr/^X^C (exit shares ^X too)
+  bool leaderXKPending_ = false;  // saw ^X^K (usilicrc's own F-2), waiting for the byte completing ^X^Kc/m/r
   bool leaderOPending_ = false;  // saw ^O, waiting for the byte that completes ^Og
   bool wantsExit_ = false;
   bool guiModeToggleRequested_ = false;

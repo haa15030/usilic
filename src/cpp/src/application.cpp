@@ -57,7 +57,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
         shellOptions.encoding = encoding;
         return shellOptions;
       }()),
-      cpMvRmMode_(configuration),
+      cpMvRmMode_(configuration, keyInput),
       duMode_(duView_, history, configuration),
       listBrowserMode_(listBrowserView_),
       editMode_(keyInput, configuration),
@@ -246,8 +246,26 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::StopMacroRecord);
       case 'e':  // ^X e : execute recorded macro
         return handleCommand(Command::PlayMacro);
+      case 0x0b:  // ^X ^K : leader for CP/MV/RM's "with SHELL window" variants (F-2 in usilicrc's own terms)
+        leaderXKPending_ = true;
+        return true;  // sequence in progress, not a no-op
       default:
-        return false;  // unrecognized ^X-sequence in this slice (^X^Kc/^X^Km/^X^Kr/^X^Ka/^Xa are future work)
+        return false;  // unrecognized ^X-sequence in this slice (^X^Ka/^Xa/^X^Kd are still future work)
+    }
+  }
+
+  if (leaderXKPending_) {
+    leaderXKPending_ = false;
+    if (special) return false;
+    switch (byte) {
+      case 'c':  // ^X ^K c : CP with SHELL window (K-51)
+        return handleCommand(Command::StartCopyInteractive);
+      case 'm':  // ^X ^K m : MV with SHELL window (K-53)
+        return handleCommand(Command::StartMoveInteractive);
+      case 'r':  // ^X ^K r : RM with SHELL window (K-55)
+        return handleCommand(Command::StartRemoveInteractive);
+      default:
+        return false;  // ^X^Ka (ARC) and ^X^Kd (kanji switch) are still future work
     }
   }
 
@@ -487,6 +505,12 @@ bool Application::handleCommand(Command command) {
       return startMovePrompt();
     case Command::StartRemove:
       return startRemovePrompt();
+    case Command::StartCopyInteractive:
+      return startCopyPrompt(/*interactive=*/true);
+    case Command::StartMoveInteractive:
+      return startMovePrompt(/*interactive=*/true);
+    case Command::StartRemoveInteractive:
+      return startRemovePrompt(/*interactive=*/true);
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
@@ -780,18 +804,20 @@ bool Application::startShell() {
 // prompt: Directory-only, and only when there's something to act on
 // (marked entries, or the current selection -- see
 // DirectoryMode::targetEntries()).
-bool Application::startCopyPrompt() {
+bool Application::startCopyPrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (directoryMode_.targetEntries().empty()) return false;
+  cpMvRmInteractive_ = interactive;
   promptKind_ = PromptKind::CopyDestination;
   promptEditor_.setText("");
   promptEditor_.redraw();
   return true;
 }
 
-bool Application::startMovePrompt() {
+bool Application::startMovePrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (directoryMode_.targetEntries().empty()) return false;
+  cpMvRmInteractive_ = interactive;
   promptKind_ = PromptKind::MoveDestination;
   promptEditor_.setText("");
   promptEditor_.redraw();
@@ -801,9 +827,10 @@ bool Application::startMovePrompt() {
 // Ported from M_rm2 (^Xr) entering a confirmation prompt -- a
 // deliberately simplified stand-in for m_dest()'s T_rm branch (which
 // checks a single typed 'y' the same way), see class comment.
-bool Application::startRemovePrompt() {
+bool Application::startRemovePrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (directoryMode_.targetEntries().empty()) return false;
+  cpMvRmInteractive_ = interactive;
   promptKind_ = PromptKind::RemoveConfirm;
   promptEditor_.setText("");
   promptEditor_.redraw();
@@ -1129,23 +1156,35 @@ bool Application::executeLocate(const std::string &query) {
 // reflects what actually happened on disk (this also clears marks,
 // via DirectoryMode::enterDirectory()'s own documented behavior).
 bool Application::executeCopy(const std::string &destination) {
+  bool interactive = cpMvRmInteractive_;
+  cpMvRmInteractive_ = false;  // consumed exactly once, regardless of outcome below
+
   std::vector<std::string> targets = collectTargetPaths();
   if (targets.empty() || destination.empty()) {
     directoryView_.redraw();
     return false;
   }
-  bool ok = cpMvRmMode_.copyTo(targets, destination).ok;
+  // K-51 ("with SHELL window"): runs interactively, with the real
+  // command's own output visible live on the real terminal -- see
+  // CpMvRmMode::copyToInteractive()'s own comment. K-52 (the default):
+  // captured silently, matching the pre-existing behavior.
+  bool ok = interactive ? cpMvRmMode_.copyToInteractive(targets, destination) == 0
+                        : cpMvRmMode_.copyTo(targets, destination).ok;
   directoryMode_.enterDirectory(directoryMode_.currentDirectory());
   return ok;
 }
 
 bool Application::executeMove(const std::string &destination) {
+  bool interactive = cpMvRmInteractive_;
+  cpMvRmInteractive_ = false;
+
   std::vector<std::string> targets = collectTargetPaths();
   if (targets.empty() || destination.empty()) {
     directoryView_.redraw();
     return false;
   }
-  bool ok = cpMvRmMode_.moveTo(targets, destination).ok;
+  bool ok = interactive ? cpMvRmMode_.moveToInteractive(targets, destination) == 0
+                        : cpMvRmMode_.moveTo(targets, destination).ok;
   directoryMode_.enterDirectory(directoryMode_.currentDirectory());
   return ok;
 }
@@ -1154,12 +1193,15 @@ bool Application::executeMove(const std::string &destination) {
 // "y" (matching legacy's `*ap->mess != 'y'` check) or nothing is
 // removed.
 bool Application::executeRemove(const std::string &confirmation) {
+  bool interactive = cpMvRmInteractive_;
+  cpMvRmInteractive_ = false;
+
   std::vector<std::string> targets = collectTargetPaths();
   if (targets.empty() || confirmation != "y") {
     directoryView_.redraw();
     return false;
   }
-  bool ok = cpMvRmMode_.remove(targets).ok;
+  bool ok = interactive ? cpMvRmMode_.removeInteractive(targets) == 0 : cpMvRmMode_.remove(targets).ok;
   directoryMode_.enterDirectory(directoryMode_.currentDirectory());
   return ok;
 }

@@ -5623,6 +5623,54 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      CP/MV/RM/ARC、K-60〜64のSHELL関連追加操作、K-71の宛先入力、
      K-0/15/16/17/18-21/23/24/27/28/29/30/65/67/68、M-0〜M-9等)。
 
+99. **2026-07-31: K-51/K-53/K-55(^X^Kc/^X^Km/^X^Kr、CP/MV/RMの「SHELL
+    ウィンドウ付き」バリエーション)を実装、^X^Kという3段目のleaderキー
+    を新設**
+   - 項目94〜98の続き。K-46/48(LISTベースの選択ピッカーが必要)を
+     検討したが、legacyのmode.c(`M_lfile`/`M_ldir`)を読んでも
+     カーソル位置復元の一般的な仕組みしか確認できず、実際に何を
+     一覧表示するのか(最近使ったファイル一覧なのか、TABキー的な
+     動的補完なのか)がソースだけでは判然としなかったため保留し、
+     ユーザーから提示された順番の次、K-51/53/55へ着手した。
+   - **「SHELLウィンドウ付き」の意味の特定**: `CpMvRmMode`のクラス
+     コメントに既にヒントがあった ―「対話的な`-i`確認が必要な場合は
+     `ChildProcess::runInteractive()`を使うべき(ExecMode/ProgramMode/
+     EditModeと同じ実行形態)」という既存の記述。「without SHELL
+     window」(既存の^Xc等)は`ChildProcess::run()`で出力を捕捉して
+     静かに実行するのに対し、「with SHELL window」は
+     `ChildProcess::runInteractive()`で実端末をそのまま渡し、
+     `cp -v`等の出力(進捗行)がリアルタイムに画面へ流れるのを見せる
+     機能、という理解で実装した。実際にdoctest実行中、`cp`の`-v`
+     出力("a.txt -> destI/a.txt"等)がテスト実行中の本物の端末へ
+     そのまま出力されるのを確認し、この理解が正しいことを確証した。
+   - **実装**: `CpMvRmMode`のコンストラクタに`KeyInput &keyInput`
+     引数を追加(ExecModeと同じ、raw mode離脱/復帰用)。
+     `runWithSources()`の引数構築部分を`buildArgv()`として切り出し、
+     `run()`版と`runInteractive()`版(`runInteractiveWithSources()`)
+     の両方から共有。`copyToInteractive()`/`moveToInteractive()`/
+     `removeInteractive()`を追加(戻り値は`ExecMode::run()`と同じ
+     `int`終了コード規約)。`Application`側は`^X^K`という新しい
+     3段目のleaderキー(`leaderXKPending_`)を新設(`F-2`=`^X^K`、
+     usilicrc自身の表記)、既存の`startCopyPrompt()`等に`bool
+     interactive`引数を追加(デフォルトfalse、既存呼び出しは無変更)、
+     新規メンバ`cpMvRmInteractive_`でプロンプト種別を跨いで
+     「今回はinteractive経路か」を1回だけ記憶し、`executeCopy()`等が
+     消費する設計にした(項目96の`cutFileSourcePath_`と同じ
+     「使用の成否に関わらず必ずクリアする」作法)。
+   - **検証**: doctest新規9件追加(`CpMvRmMode`側4件: interactive版
+     3メソッドの実ファイル操作確認+空リストでの安全なno-op確認、
+     `Application`側3件: `^X^Kc/m/r`が正しいプロンプトを開くこと・
+     実際にファイルがコピーされること、計491件全通過(Mac、実行中に
+     `cp -v`の出力が本物の端末へ流れるのを目視確認)。実PTYでも
+     `^X^Kc`→宛先入力→Enterの一連の操作で実際にファイルがコピー
+     される(`dest/a.txt`が実在)ことを確認。Ubuntu 26.04でも490件中
+     480件通過、失敗10件はいずれも今回のdiffと無関係な既存の環境
+     依存差。
+   - 引き続き未実装(K-57の^X^Ka、ARCの同種バリエーションは対象外
+     のまま ― ArchiveMode自体の対話的展開の扱いが未整理のため。
+     ^X^Kdの漢字コード切替も同じ3段目leaderの別ケースとして未実装)。
+     項目94の残りリストからK-51/53/55を除いたものは変更無し。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/

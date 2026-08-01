@@ -1148,6 +1148,30 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X c / ^X m / ^X r start the corresponding
   CHECK(app.promptActive());
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^K c / ^X ^K m / ^X ^K r (K-51/K-53/K-55) each start the same prompt") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
+  CHECK(app.feedByte('c', std::nullopt));
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "CP (^X^Kc, K-51 \"with SHELL window\"): still creates a real copy at the destination") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
+  REQUIRE(app.feedByte('c', std::nullopt));   // c
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(fs::exists(root / "cpmvdest" / "cpmv_a.txt"));
+  CHECK(fs::exists(root / "cpmv_a.txt"));  // untouched by a copy
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCopy): refused outside Directory mode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
