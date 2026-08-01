@@ -183,7 +183,14 @@ enum class Command {
   // K-58/K-57 (^Xa / ^X^Ka, ARC "Expand archive" without/with SHELL
   // window). See Application::startArchivePrompt()'s own comment.
   StartArchiveExtract,
-  StartArchiveExtractInteractive
+  StartArchiveExtractInteractive,
+  // K-67 (^X^Ke, M_error, "ERROR"): opens errorLogPath_ in File mode.
+  // K-68 (^X^Kl, M_log, "LOG: SHELL output"): snapshots Shell::
+  // scrollback() to logFilePath_, then opens THAT in File mode. See
+  // Application::executeShowErrorLog()/executeShowShellLog()'s own
+  // comments.
+  ShowErrorLog,
+  ShowShellLog
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -1101,6 +1108,23 @@ class Application {
   bool shellRunLsL();
   bool shellInsertName();
   bool shellInsertBufferContent();
+  // K-67 (^X^Ke): opens errorLogPath_ in File mode. Not prompt-driven
+  // -- an immediate action, like Directory mode's own archive
+  // auto-detection. False if the file doesn't exist yet (nothing
+  // logged there this session) or can't be opened.
+  bool executeShowErrorLog();
+  // K-68 (^X^Kl): writes Shell::scrollback()'s CURRENT lines to
+  // logFilePath_ (truncating any previous snapshot), then opens that
+  // file in File mode. This is a snapshot on demand, not a
+  // continuous tee of Shell's pty output the way legacy's own
+  // write(sfd,...) is (see shell.c's read_line()) -- building that
+  // would mean plumbing a log-file fd through Shell's byte-by-byte
+  // output processing for a payoff (seeing output that's since
+  // scrolled off-screen or been cleared) this simpler snapshot
+  // already delivers for the common case of "what did the shell just
+  // print." False if Shell was never started (nothing to snapshot)
+  // or the file can't be written/opened.
+  bool executeShowShellLog();
   bool startCopyPrompt(bool interactive = false);
   bool startMovePrompt(bool interactive = false);
   bool startRemovePrompt(bool interactive = false);
@@ -1177,6 +1201,19 @@ class Application {
   Display &display_;  // handleResize()'s own rows()/columns() lookup -- no other member currently needs this
   PathResolver pathResolver_;  // ^Xf/^Xd path prompts, see the constructor's own homeDirectory comment
   std::string wFilePath_;  // K-17/K-64's write-buffer-to-a-file target, see the constructor's own comment
+  // K-67 (^X^Ke, M_error, "ERROR"): where CpMvRmMode routes non-
+  // interactive child processes' stderr (see the constructor's own
+  // comment and CpMvRmMode's own errorLogPath_ parameter). Ported
+  // from str.c's S_error path (`~/.tcb/error`, this port's own
+  // `~/.usilic/error`).
+  std::string errorLogPath_;
+  // K-68 (^X^Kl, M_log, "LOG: SHELL output"): NOT a continuous tee of
+  // Shell's pty output the way legacy's own write(sfd,...) is (see
+  // shellLog()'s own comment on this simplification) -- a snapshot of
+  // Shell::scrollback()'s current lines, written out on demand when
+  // K-68 is actually pressed. Ported from str.c's S_log path
+  // (`~/.tcb/shell`, this port's own `~/.usilic/shell`).
+  std::string logFilePath_;
   Charset::Encoding encoding_;  // wrapHelpText()'s own PipeBuffer construction -- no other member currently needs this
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   History &history_;  // startListBrowser()'s own recentEntries() lookup -- no other member currently needs this

@@ -5,8 +5,8 @@
 
 namespace fm {
 
-CpMvRmMode::CpMvRmMode(const Configuration &configuration, KeyInput &keyInput)
-    : configuration_(configuration), keyInput_(keyInput) {}
+CpMvRmMode::CpMvRmMode(const Configuration &configuration, KeyInput &keyInput, const std::string *errorLogPath)
+    : configuration_(configuration), keyInput_(keyInput), errorLogPath_(errorLogPath) {}
 
 bool CpMvRmMode::isWritable(const std::string &path, WriteCheck check) {
   if (getuid() == 0) return true;
@@ -46,7 +46,9 @@ ChildProcess::Result CpMvRmMode::runWithSources(ConfiguredRole role, const std::
                                                  const std::string *destination) {
   std::vector<std::string> argv = buildArgv(role, sources, destination);
   if (argv.empty()) return {};
-  return ChildProcess::run(argv);
+  ChildProcess::Options options;
+  options.stderrLogPath = errorLogPath_;
+  return ChildProcess::run(argv, options);
 }
 
 int CpMvRmMode::runInteractiveWithSources(ConfiguredRole role, const std::vector<std::string> &sources,
@@ -94,7 +96,9 @@ int CpMvRmMode::runInteractive(const std::vector<std::string> &argv) {
 
 ChildProcess::Result CpMvRmMode::run(const std::vector<std::string> &argv) {
   if (argv.empty()) return {};
-  return ChildProcess::run(argv);
+  ChildProcess::Options options;
+  options.stderrLogPath = errorLogPath_;
+  return ChildProcess::run(argv, options);
 }
 
 }  // namespace fm

@@ -6096,6 +6096,76 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      該当テストは全通過(既存の失敗10件は今回と無関係な既存の
      環境依存差)。
 
+108. **2026-08-01: K-67/K-68(^X^Ke/^X^Kl、ERROR/LOG)を実装**
+   - `mode.h`で`M_error`(値67=K-67)・`M_log`(値68=K-68)を確認、
+     `init.c`を読んだところ、いずれも`T_file`と全く同じ`read_buff`
+     経路へ落ちる単なるファイルビューア呼び出しで、開く対象が
+     `s_S(S_error)`(`~/.tcb/error`)・`s_S(S_log)`(`~/.tcb/shell`)
+     という固定パスなだけと判明した。ただし、この2ファイル自体を
+     このポートで書き込む仕組みがまだ存在しなかった(項目104の
+     時点で「新規サブシステムが必要」と記録していた通り)。
+   - **ERROR側の調査**: `sub.c`の`save_error()`(`fopen(...,"a")`で
+     都度追記)と、`sub.c`にあるもう1つの関数(`dup2(fd,2)`で
+     プロセス自身のfd 2=標準エラーをこのファイルへ向け直す)の
+     組み合わせで、以後forkする子プロセスの生の標準エラー出力が
+     そのままこのファイルに溜まる仕組みだと判明。このポートの
+     `ChildProcess::Options`には既に`stderrLogPath`(非nullなら
+     子プロセスのstderrをそのファイルへdup2でリダイレクト)という
+     フィールドが用意されていたが、実際に設定して使っている
+     呼び出し元が皆無だった(項目104で見つけた`Shell::
+     setCompletionProvider()`と同種の「用意されているが未配線」)。
+   - **LOG側の調査**: `shell.c`で`sfd = fileno(fopen(s_S(S_log),
+     "a"))`をSHELL開始時に確保し、`read_line()`のSHELL出力バイト
+     処理ループの各所で`write(sfd, ...)`しており、SHELL出力を
+     リアルタイムでバイト単位で継続的にファイルへtee書きしている
+     仕組みと判明。
+   - **実装(スコープを絞った第一弾)**: フルの継続的tee書き込みは
+     このポートのShellクラスのバイト処理経路に手を入れる範囲が
+     広いため、今回は「^X^Kl押下時にShell::scrollback()の現在の
+     内容をスナップショットとしてファイルへ書き出す」という簡略化
+     を採用(実用上「SHELLで何が起きたか確認する」という目的は
+     同じ形で果たせる、という判断)。同様にERROR側もexecvp()失敗
+     時等の全網羅的なstderr捕捉ではなく、非対話実行(SHELLウィンドウ
+     無し)のCP/MV/RM/ARC展開という、`CpMvRmMode`経由の呼び出しに
+     限定して`stderrLogPath`を配線した(`CpMvRmMode`のコンストラクタ
+     へ`const std::string *errorLogPath`を追加、`run()`/
+     `runWithSources()`が`ChildProcess::Options.stderrLogPath`へ
+     渡す。`*Interactive()`側は実端末を直接子プロセスへ渡すため
+     stderrは既にライブで見えており対象外)。他の子プロセス呼び出し
+     箇所(PROGRAM/EXEC/MAN等)への展開は今回のスコープ外として
+     残した。
+   - `Application`に`errorLogPath_`(`<home>/.usilic/error`)・
+     `logFilePath_`(`<home>/.usilic/shell`)を新設、
+     `wFilePath_`と同じ`homeDirectory`由来のパス導出。
+     `Command::ShowErrorLog`/`ShowShellLog`を新設し、
+     `leaderXKPending_`のswitchに`case 'e'`/`case 'l'`を追加。
+     `executeShowErrorLog()`はファイルが存在すれば`FileMode::
+     loadFile()`で開くだけ、`executeShowShellLog()`はShellが一度も
+     開始されていなければ拒否、そうでなければscrollbackの内容を
+     truncateモードで書き出してから同様に開く。
+   - **検証**: doctest新規4件(何もログが無い状態でのERROR拒否、
+     実際にCPを失敗させて(存在しない親ディレクトリへのコピー)
+     そのstderrがERROR画面に表示されること、Shell未起動時のLOG
+     拒否、実際にSHELLでechoした内容がLOGスナップショットに
+     含まれること)を追加、計522件全通過(Mac)。
+     - **テスト作成中に気付いた設計上の制約(実装のバグではない)**:
+       `^X^Kl`はリーダーキー列であり、`dispatchByte()`冒頭の
+       `if (currentMode_ == ApplicationMode::Shell) return
+       feedShellByte(...)`により、SHELLモード内でアクティブに
+       入力中は全バイトがSHELL自身のコマンドライン編集へ渡ってしまい
+       リーダーキーとして機能しない(実際のシェルプロンプトで`^X`を
+       押したときにtcb側のリーダーキーとして奪われず、シェル自身の
+       行編集に渡ってほしいという実用上の要請と整合する、意図された
+       設計)。そのためLOGテストは、SHELLで出力を確認した後
+       `^G`でDirectoryへ戻ってから`^X^Kl`を押す、という実際の
+       利用手順に合わせて修正した。
+     - 実PTYで、CP失敗後に`^X^Ke`でエラー内容("error"というファイル
+       名がmode-lineに表示され2行の内容)が実際に見えること、SHELLで
+       `echo LOGMARKERXYZ`を実行後`^G`→`^X^Kl`で該当文字列を含む
+       スナップショットが表示されることを確認。Ubuntu 26.04でも
+       新規4件を含め該当テストは全通過(既存の失敗10件は今回と
+       無関係な既存の環境依存差)。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

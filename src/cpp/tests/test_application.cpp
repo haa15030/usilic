@@ -1055,6 +1055,39 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: refused in Directory mode when the sele
   CHECK_FALSE(app.promptActive());
 }
 
+// -- ERROR/LOG buffers (K-67/K-68, ^X^Ke/^X^Kl) --
+
+TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): refused when nothing has been logged this session yet") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.handleCommand(Command::ShowErrorLog));
+}
+
+TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): a failed CP's stderr lands in errorLogPath_, viewable via File mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- non-interactive CP (K-52)
+  // A destination whose PARENT doesn't exist either -- cp fails and
+  // writes a diagnostic to stderr (unlike a merely-missing leaf name,
+  // which cp happily creates).
+  feedText((root / "no_such_parent" / "dest").string());
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // cp fails
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
+  CHECK(app.feedByte('e', std::nullopt));     // e
+  CHECK(app.currentMode() == ApplicationMode::File);
+  REQUIRE(!app.activeContentView().lines().empty());
+}
+
+TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): refused when Shell was never started") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.handleCommand(Command::ShowShellLog));
+}
+
 // -- SHELL: ESC-leader entry, byte routing to Shell's own LineEditor/
 // pty, and the child persisting across Back/^G --
 //
@@ -1472,6 +1505,41 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: re-entering from within Shell mode is refused
   }
   CHECK_FALSE(app.handleCommand(Command::StartShell));
   CHECK(app.currentMode() == ApplicationMode::Shell);
+}
+
+TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): snapshots Shell's scrollback to logFilePath_, viewable via File mode") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  app.shell().commandLine().setText("echo LOGTESTMARKER123");
+  app.shell().submitLine();
+  bool sawOutput = pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("LOGTESTMARKER123") != std::string::npos) return true;
+    return false;
+  });
+  REQUIRE(sawOutput);
+
+  // ^X^Kl is a leader-key sequence, only recognized by dispatchByte()'s
+  // OWN state machine -- while actively in Shell mode, every byte
+  // routes straight to feedShellByte() instead (see dispatchByte()'s
+  // very first check), matching real usage: ^X while typing at a live
+  // shell prompt is command-line input, not tcb's own leader key. ^G
+  // back to Directory first, same as a real user would.
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
+  CHECK(app.feedByte('l', std::nullopt));     // l
+  CHECK(app.currentMode() == ApplicationMode::File);
+
+  bool found = false;
+  for (const auto &line : app.activeContentView().lines())
+    if (line.text.find("LOGTESTMARKER123") != std::string::npos) found = true;
+  CHECK(found);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X s restarts a fresh SHELL child, even from within Shell mode (K-60)") {

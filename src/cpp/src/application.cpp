@@ -33,6 +33,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     : display_(display),
       pathResolver_(homeDirectory),
       wFilePath_(homeDirectory + "/.usilic/w.usilic"),
+      errorLogPath_(homeDirectory + "/.usilic/error"),
+      logFilePath_(homeDirectory + "/.usilic/shell"),
       encoding_(encoding),
       configuration_(configuration),
       history_(history),
@@ -62,7 +64,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
         shellOptions.encoding = encoding;
         return shellOptions;
       }()),
-      cpMvRmMode_(configuration, keyInput),
+      cpMvRmMode_(configuration, keyInput, &errorLogPath_),
       duMode_(duView_, history, configuration),
       listBrowserMode_(listBrowserView_),
       editMode_(keyInput, configuration),
@@ -296,6 +298,10 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::StartRemoveInteractive);
       case 'a':  // ^X ^K a : ARC expand, with SHELL window (K-57)
         return handleCommand(Command::StartArchiveExtractInteractive);
+      case 'e':  // ^X ^K e : ERROR (K-67)
+        return handleCommand(Command::ShowErrorLog);
+      case 'l':  // ^X ^K l : LOG (K-68)
+        return handleCommand(Command::ShowShellLog);
       default:
         return false;  // ^X^Kd (kanji switch) is still future work
     }
@@ -566,6 +572,10 @@ bool Application::handleCommand(Command command) {
       return startArchivePrompt(/*interactive=*/false);
     case Command::StartArchiveExtractInteractive:
       return startArchivePrompt(/*interactive=*/true);
+    case Command::ShowErrorLog:
+      return executeShowErrorLog();
+    case Command::ShowShellLog:
+      return executeShowShellLog();
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
@@ -1049,6 +1059,26 @@ bool Application::shellInsertBufferContent() {
   if (!ensureShellActive()) return false;
   shell_.commandLine().setText("cat " + wFilePath_);
   shell_.commandLine().redraw();
+  return true;
+}
+
+// K-67: see the class's own declaration comment.
+bool Application::executeShowErrorLog() {
+  if (!std::filesystem::exists(errorLogPath_)) return false;
+  if (!fileMode_.loadFile(errorLogPath_)) return false;
+  currentMode_ = ApplicationMode::File;
+  return true;
+}
+
+// K-68: see the class's own declaration comment.
+bool Application::executeShowShellLog() {
+  if (!shellStarted_) return false;
+  std::ofstream out(logFilePath_, std::ios::trunc);
+  if (!out) return false;
+  for (const auto &line : shell_.scrollback().lines()) out << line.text << "\n";
+  out.close();
+  if (!fileMode_.loadFile(logFilePath_)) return false;
+  currentMode_ = ApplicationMode::File;
   return true;
 }
 

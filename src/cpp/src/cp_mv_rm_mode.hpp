@@ -61,7 +61,15 @@ class CpMvRmMode {
   // K-53/K-55, "with SHELL window") to leave/re-enter raw mode around
   // ChildProcess::runInteractive(), same shape as ExecMode/ProgramMode/
   // EditMode already use -- see their own comments.
-  CpMvRmMode(const Configuration &configuration, KeyInput &keyInput);
+  //
+  // errorLogPath: if non-null, every NON-interactive run (copyTo()/
+  // moveTo()/remove()/run() -- never the *Interactive() ones, whose
+  // child already has the real terminal, stderr included) has its
+  // stderr redirected there via ChildProcess::Options::stderrLogPath.
+  // K-67 (^X^Ke, "ERROR")'s own data source -- see Application's own
+  // errorLogPath_ comment. Null (the default) disables this, e.g. for
+  // tests that don't care about it.
+  CpMvRmMode(const Configuration &configuration, KeyInput &keyInput, const std::string *errorLogPath = nullptr);
 
   // Ported from is_write(): whether path is a valid RM/MV target
   // under the given check. Root (uid 0) can always write. A symlink,
@@ -120,6 +128,7 @@ class CpMvRmMode {
 
   const Configuration &configuration_;
   KeyInput &keyInput_;
+  const std::string *errorLogPath_;
 };
 
 }  // namespace fm
