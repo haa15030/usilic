@@ -141,6 +141,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
+#include <vector>
 
 #include "application.hpp"
 #include "child_process.hpp"
@@ -1303,6 +1304,29 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
 int main(int argc, char **argv) {
   loadScrollDebugLevelFromEnvironment();
 
+  // -c/-g: temporary, hand-debugging convenience (see CLAUDE.md) --
+  // force CUI or GUI startup regardless of the automatic "実は既に
+  // GUI" terminal-appearance detection below (queryRealTerminalAppearance()).
+  // Without this, testing CUI-only behavior by hand from a real
+  // GUI-capable terminal (iTerm2/Terminal.app/GNOME Terminal) would
+  // otherwise always auto-launch the GUI window, exactly the terminal
+  // this flag exists to let a developer bypass. Not meant as a
+  // permanent, documented user-facing flag (no usilicrc entry, no
+  // mention in HELP) -- just scaffolding for hands-on verification
+  // during this port's development.
+  bool forceCui = false;
+  bool forceGui = false;
+  std::vector<char *> positionalArgs;
+  for (int i = 1; i < argc; i++) {
+    if (std::strcmp(argv[i], "-c") == 0) forceCui = true;
+    else if (std::strcmp(argv[i], "-g") == 0) forceGui = true;
+    else positionalArgs.push_back(argv[i]);
+  }
+  if (forceCui && forceGui) {
+    std::cerr << "usilic: -c and -g are mutually exclusive.\n";
+    return 1;
+  }
+
   std::unique_ptr<fm::TerminalDisplay> terminalDisplay = fm::TerminalDisplay::fromEnvironment();
   terminalDisplay->setOutputEnabled(true);  // fromEnvironment() leaves this off by default -- see its own comment
   fm::DelegatingDisplay display(*terminalDisplay);  // see file comment's own GUI-mode section
@@ -1407,7 +1431,7 @@ int main(int argc, char **argv) {
   // since the real terminal was never used for rendering).
   std::unique_ptr<fm::GraphicalDisplay> launchGui;
   bool guiOwnsWholeSession = false;
-  if (auto appearance = queryRealTerminalAppearance()) {
+  if (auto appearance = forceCui ? std::nullopt : queryRealTerminalAppearance()) {
     std::string fontPath = resolveGuiFontPath(appearance);
     launchGui = fontPath.empty() ? nullptr
                                   : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,
@@ -1476,7 +1500,7 @@ int main(int argc, char **argv) {
   // relative-path callers elsewhere (tests, CP/MV/RM path prompts)
   // keep working with whatever they already pass.
   std::string startDirectory =
-      std::filesystem::absolute((argc > 1) ? argv[1] : ".").lexically_normal().string();
+      std::filesystem::absolute(!positionalArgs.empty() ? positionalArgs[0] : ".").lexically_normal().string();
   // History-based cursor restoration (see DirectoryMode::enterDirectory()'s
   // own comment) only applies to an argument-LESS launch -- legacy's
   // own "resume last session" case. An explicit path argument
@@ -1484,7 +1508,7 @@ int main(int argc, char **argv) {
   // listing, regardless of any position saved from an earlier,
   // unrelated visit (a real report: launching with "." landed on a
   // stale mid-list row instead of the top).
-  bool consultHistoryOnStart = (argc <= 1);
+  bool consultHistoryOnStart = positionalArgs.empty();
   if (!app.start(startDirectory, consultHistoryOnStart)) {
     display.close();
     keyInput.close();
@@ -1495,6 +1519,18 @@ int main(int argc, char **argv) {
   if (guiOwnsWholeSession) {
     runGuiPhase(app, *launchGui);
   } else {
+    if (forceGui && !app.wantsExit()) {
+      // -g: same GUI entry point ^Og already uses mid-session, just
+      // invoked once up front instead of waiting for that keypress.
+      // tryEnterGuiPhase() blocks until the GUI side exits (^Og again
+      // or the window's close button), so falling through to the
+      // ordinary terminal-first loop below afterward is correct either
+      // way -- same as if the user had pressed ^Og once by hand.
+      if (!tryEnterGuiPhase(app, display, *terminalDisplay)) {
+        std::cerr << "usilic: -g requested but no usable GUI (no font found, or no display) "
+                     "-- falling back to terminal mode.\n";
+      }
+    }
     while (!app.wantsExit()) {
       if (!runTerminalPhase(app, keyInput, display)) break;
       if (app.wantsExit()) break;
