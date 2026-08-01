@@ -66,6 +66,15 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       editMode_(keyInput, configuration),
       execMode_(keyInput) {
   layoutViews();
+  // K-65 (^I): real filesystem-backed completion for Shell's own
+  // command line, resolved relative to whatever directory Shell last
+  // reported itself in (its own prompt-parsing tracks this already --
+  // see Shell::currentDirectory()'s own comment). Previously left
+  // unset entirely, meaning Tab silently did nothing in Shell mode
+  // despite Shell::onTab() otherwise being fully implemented and
+  // tested against a synthetic provider (see test_shell.cpp).
+  shell_.setCompletionProvider(
+      [this](const std::string &partial) { return completeFilesystemPath(partial, shell_.currentDirectory()); });
 }
 
 // Shared by the constructor and handleResize(): sizes every owned
@@ -1150,6 +1159,17 @@ bool Application::feedPromptByte(int byte) {
     cancelPrompt();
     return true;
   }
+  // K-65 (^I): only for the FILE/DIR PathInput prompt in this first
+  // slice -- MAN/PROGRAM/LOCATE/GREP/etc's own prompt text isn't a
+  // filesystem path, so there's nothing meaningful to complete there
+  // yet (see completeFilesystemPath()'s own declaration comment).
+  if (byte == 0x09 && promptKind_ == PromptKind::PathInput) {
+    auto candidates = completeFilesystemPath(promptEditor_.text(), directoryMode_.currentDirectory());
+    if (candidates.size() == 1 && candidates[0].size() > promptEditor_.text().size()) {
+      promptEditor_.paste(candidates[0].substr(promptEditor_.text().size()));
+    }
+    return true;
+  }
   promptEditor_.insertByte(static_cast<unsigned char>(byte));
   promptEditor_.redraw();
   return true;
@@ -1413,6 +1433,40 @@ bool Application::executePathInput(const std::string &path) {
   }
   currentMode_ = ApplicationMode::File;
   return true;
+}
+
+// K-65 (^I, M_list): see the class's own declaration comment.
+std::vector<std::string> Application::completeFilesystemPath(const std::string &partial,
+                                                               const std::string &baseDirectory) const {
+  std::string dirPart, prefix;
+  std::size_t slash = partial.find_last_of('/');
+  if (slash == std::string::npos) {
+    prefix = partial;
+  } else {
+    dirPart = partial.substr(0, slash + 1);
+    prefix = partial.substr(slash + 1);
+  }
+
+  std::string searchDir;
+  if (!dirPart.empty() && (dirPart.front() == '/' || dirPart.front() == '~')) {
+    searchDir = pathResolver_.resolve(dirPart).path;
+  } else {
+    searchDir = baseDirectory;
+    if (!searchDir.empty() && searchDir.back() != '/') searchDir += '/';
+    searchDir += dirPart;
+  }
+
+  std::vector<std::string> results;
+  std::error_code ec;
+  std::filesystem::directory_iterator it(searchDir, ec);
+  if (ec) return results;
+  for (const auto &entry : it) {
+    std::string name = entry.path().filename().string();
+    if (name.compare(0, prefix.size(), prefix) != 0) continue;
+    bool isDir = entry.is_directory(ec);
+    results.push_back(dirPart + name + (isDir ? "/" : ""));
+  }
+  return results;
 }
 
 // Ported from menu.c's M_edit case (^Je) -- see class comment for why

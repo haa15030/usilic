@@ -1067,6 +1067,26 @@ class Application {
   bool startExitPrompt();
   bool startDuPrompt();
   bool startPathInputPrompt();
+  // K-65 (^I, M_list, "LIST: Complete file name"): lists filesystem
+  // entries under the directory implied by `partial` (resolved
+  // against `baseDirectory` when `partial` isn't itself absolute or
+  // ~-rooted) whose name starts with the remaining prefix. Each
+  // returned candidate is the FULL completion (partial's own
+  // directory portion + matched name), not just the matched suffix --
+  // matching Shell::completionProvider_'s own contract (see its
+  // declaration comment): the caller only acts when there's exactly
+  // one candidate, splicing in the part past what was already typed.
+  // Directories get a trailing '/' (this port's established ls -F
+  // convention, e.g. DirectoryEntry::name) so a single unambiguous
+  // directory match can be Tab-completed again immediately for the
+  // next path segment. Shared by Shell's own Tab-completion (wired in
+  // the constructor) and the FILE/DIR PathInput prompt's own Tab
+  // handling in feedPromptByte() -- deliberately NOT wired to every
+  // other prompt kind (MAN/PROGRAM/LOCATE/GREP names aren't
+  // filesystem paths at all) in this first slice; see class comment's
+  // own scope notes for the general pattern.
+  std::vector<std::string> completeFilesystemPath(const std::string &partial,
+                                                    const std::string &baseDirectory) const;
   bool feedPromptByte(int byte);
   bool submitPrompt();
   void cancelPrompt();

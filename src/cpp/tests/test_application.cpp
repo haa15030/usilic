@@ -1131,6 +1131,57 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f/d with a nonexistent path fails clean
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompt, ^I (K-65) completes an unambiguous filename") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('f', std::nullopt));   // f
+
+  // "plai" only matches plain.txt in root -- an absolute path so
+  // completion isn't relative to DirectoryMode's current directory.
+  for (char c : (root / "plai").string()) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
+  CHECK(app.feedByte(0x09, std::nullopt));  // ^I
+  CHECK(app.feedByte(0x0d, std::nullopt));  // ^M submits whatever got completed
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompt, ^I (K-65) with an ambiguous prefix leaves the text unchanged") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte('f', std::nullopt));
+
+  // "cpmv_" matches both cpmv_a.txt and cpmv_b.txt -- ambiguous, so
+  // nothing should be spliced in (matching Shell::onTab()'s own
+  // "single unambiguous match only" contract).
+  for (char c : (root / "cpmv_").string()) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
+  CHECK(app.feedByte(0x09, std::nullopt));
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // still an incomplete path -- doesn't resolve to a real file
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ESC s, real Shell Tab-completion resolves a real filesystem match (K-65)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
+  bool ok = app.feedByte('s', std::nullopt);  // s
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  // Force a known cwd so completion has a deterministic base directory,
+  // rather than depending on the already-tested ^J. cd wiring's timing.
+  // Compared without a trailing slash: bash's own \w PS1 expansion
+  // (Shell::buildSetupCommand()) reports getcwd()'s own output, which
+  // -- unlike DirectoryMode::currentDirectory()'s own convention --
+  // never carries one except for "/" itself.
+  app.shell().commandLine().setText("cd '" + root.string() + "'");
+  app.shell().submitLine();
+  REQUIRE(pumpUntil(app, [&] { return app.shell().currentDirectory() == root.string(); }));
+
+  app.shell().commandLine().setText("cat plai");
+  app.shell().onTab();
+  CHECK(app.shell().commandLine().text() == "cat plain.txt");
+}
+
 // runGuiPhase()'s w/s inertial-scroll trigger (see CLAUDE.md's
 // 2026-07-31 note) checks this before hijacking a plain 'w'/'s' byte,
 // so ESC s (StartShell) and typing "w"/"s" into a prompt still work.

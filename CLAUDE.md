@@ -5866,6 +5866,74 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      26.04でも新規2件を含め該当テストは全通過(既存の失敗は
      今回と無関係な既存の環境依存差)。
 
+104. **2026-08-01: K-65(^I、M_list、「LIST: Complete file name」)を
+     実装 ―― Shell自身のTab補完も配線漏れだったと判明**
+   - 項目103の続き。`mode.h`で`M_list`(値65=K-65)を確認、
+     `menu.c`の`m_list()`を読んだところ、`T_hfile`/`T_hdir`/
+     `T_hman`/`T_hlocate`/`T_hfgrep`/`T_hegrep`/`T_list`/`T_cmd`/
+     `T_hist`という多数のヒストリー/補完モードを1つの関数で
+     まとめて処理する、legacyの「Command-line」入力ウィジェット
+     全体で共有される汎用補完・ヒストリー閲覧機構だと判明した
+     (usilicrcのコメント(5)にも「^I(Tab)はCommand-lineで使える」
+     との明記あり)。MAN/LOCATE/PROGRAM名の補完までフルに再現
+     するのは別途データソースが要る大きな作業のため、今回は
+     「ファイルシステムパスの補完」という最も明確なサブセット
+     (FILE/DIR入力プロンプトとSHELLの自前コマンドライン)に
+     スコープを絞った第一弾として実装した(`DirectoryMode`の
+     クラスコメント等、このポートで繰り返し採用してきた「まず
+     narrow scopeで実装し、残りは今後の課題として明記する」という
+     既存の作法を踏襲)。
+   - **副産物として判明した見落とし**: 実装に着手する前に既存の
+     `Shell`クラスを確認したところ、`onTab()`・
+     `setCompletionProvider()`は既に完全実装・テスト済み
+     (`test_shell.cpp`で合成のcompletionProviderを使って検証
+     されていた)だったが、`Application`側からは一度も
+     `shell_.setCompletionProvider(...)`が呼ばれておらず、実際に
+     動くusilicバイナリではSHELLモードのTabキーが常に何もしない
+     配線漏れだったと判明した。
+   - **実装**: `Application::completeFilesystemPath(partial,
+     baseDirectory)`を新設。`partial`を最後の`/`で分割し
+     (ディレクトリ部分+接頭辞)、`partial`が絶対パスまたは`~`始まり
+     でなければ`baseDirectory`を基準に解決、`std::filesystem::
+     directory_iterator`でディレクトリ部分の中身を列挙して接頭辞
+     一致するものを返す(ディレクトリには`ls -F`と同じ流儀で
+     末尾`/`を付与、このポート内の既存の慣習=`DirectoryEntry::name`
+     と統一)。戻り値は候補の**完全な**パス文字列(`Shell::
+     completionProvider_`の既存の契約=「呼び出し元は候補が
+     ちょうど1件のときだけ、既に入力済みの部分を除いた残りを
+     spliceする」に合わせた)。
+     - コンストラクタで`shell_.setCompletionProvider(...)`を追加、
+       `Shell::currentDirectory()`(SHELLの直近のプロンプトから
+       検出したcwd)を基準ディレクトリとして使う。
+     - `feedPromptByte()`に`byte==0x09 && promptKind_==PathInput`
+       の分岐を追加、`DirectoryMode::currentDirectory()`を基準
+       ディレクトリとして同じ`completeFilesystemPath()`を呼ぶ。
+       他のプロンプト種別(MAN/PROGRAM/LOCATE/GREP名等はそもそも
+       ファイルシステムパスではない)は今回のスコープ外として
+       意図的に対象外のまま。
+   - **検証**: doctest新規3件(^Xfプロンプトで一意な接頭辞が
+     補完されること、複数マッチで曖昧な場合は変更されないこと
+     ――`Shell::onTab()`自身の既存の契約と同じ、実際にSHELLへ
+     入り本物のbashのcwdを`cd`で確定させた上で`onTab()`が実在の
+     ファイル名を正しく補完すること)を追加、計509件全通過(Mac)。
+     実PTYで、`^Xf`プロンプトに`.../pla`と入力→Tab→
+     `.../plain.txt`に補完される様子と、Enterで実際にその
+     ファイルの内容が表示されることを確認。Ubuntu 26.04でも
+     新規3件を含め該当テストは全通過(既存の失敗は今回と無関係な
+     既存の環境依存差)。
+   - **K-27/K-28(^Oa/^X^Kd、charsetの実行時切替)は調査の上、今回は
+     見送り保留**: `Application`/`FileMode`/`ManMode`/`PipeBuffer`/
+     `Shell`(`ShellOptions`経由)のいずれも`Charset::Encoding`を
+     コンストラクタ時の固定値として受け取るだけで、変更用の
+     setterを持たない(唯一`LineEditor`だけが`setEncoding()`を
+     持つ)と判明した。legacyの`key.c`側は`vt_charset()`という
+     グローバルな1箇所の状態を書き換えるだけで済んでいたが、この
+     ポートでは各クラスが自分自身の`encoding_`を独立して保持する
+     設計のため、真の実行時切替を実装するには複数クラスにまたがる
+     setter追加+切替後の再描画(既存のDirectoryMode一覧・File
+     modeで開いている内容の再ラップ等)が必要で、単純なキー配線
+     作業の範囲を超えると判断、保留リストに記録するに留めた。
+
 ## アーキテクチャ上の発見(参考)
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
