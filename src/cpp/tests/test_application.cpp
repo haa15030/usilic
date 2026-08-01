@@ -101,6 +101,20 @@ struct Fixture {
     std::string tarCmd = "cd '" + root.string() + "' && tar cf archive.tar arcsrc";
     REQUIRE(std::system(tarCmd.c_str()) == 0);
 
+    // Nested archives (an archive inside an archive inside an
+    // archive, to also exercise more than one level of descent) for
+    // the nested-ARC descendToNestedArchive() tests. Built bottom-up:
+    // innermost.txt -> level2.tar -> level1.tar -> outer.tar.
+    fs::create_directory(root / "nestsrc");
+    fs::create_directory(root / "nestsrc2");
+    { std::ofstream(root / "nestsrc" / "innermost.txt") << "deepest content\n"; }
+    std::string nestCmd = "cd '" + root.string() +
+                           "' && tar cf nestsrc/level2.tar -C nestsrc innermost.txt"
+                           " && rm nestsrc/innermost.txt"
+                           " && tar cf nestsrc2/level1.tar -C nestsrc level2.tar"
+                           " && tar cf outer.tar -C nestsrc2 level1.tar";
+    REQUIRE(std::system(nestCmd.c_str()) == 0);
+
     // Real files for the CP/MV/RM-related tests.
     { std::ofstream(root / "cpmv_a.txt") << "content-a\n"; }
     { std::ofstream(root / "cpmv_b.txt") << "content-b\n"; }
@@ -861,6 +875,106 @@ TEST_CASE_FIXTURE(Fixture, "ARC: Back from ArchiveContent returns to Archive, Ba
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == path());
+}
+
+// -- ARC nested-archive descent (docs/ideas/IDEAS.md's own original
+// motivating example for this whole C++ port -- see
+// Application::descendToNestedArchive()'s own comment) --
+
+TEST_CASE_FIXTURE(Fixture, "ARC nested: Enter on an archive entry inside an archive descends into IT instead of showing raw bytes") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("outer.tar");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+  REQUIRE(archiveIndexOf(app, "level1.tar") >= 0);
+
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("level1.tar") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Archive);  // still Archive, not ArchiveContent -- it descended
+  CHECK(archiveIndexOf(app, "level2.tar") >= 0);          // now listing level1.tar's OWN contents
+}
+
+TEST_CASE_FIXTURE(Fixture, "ARC nested: descending three levels deep still reaches the innermost real file's content") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("outer.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // into outer.tar
+
+  auto descendTo = [&](const std::string &needle) {
+    while (app.archiveMode().selectedEntry() != nullptr &&
+           app.archiveMode().selectedEntry()->name.find(needle) == std::string::npos) {
+      if (!app.handleCommand(Command::MoveDown)) break;
+    }
+    REQUIRE(app.handleCommand(Command::Enter));
+  };
+  descendTo("level1.tar");  // into level1.tar
+  descendTo("level2.tar");  // into level2.tar
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+  REQUIRE(archiveIndexOf(app, "innermost.txt") >= 0);
+
+  descendTo("innermost.txt");  // a real (non-archive) file -- extracts to ArchiveContent as usual
+  REQUIRE(app.currentMode() == ApplicationMode::ArchiveContent);
+  REQUIRE(!app.activeContentView().lines().empty());
+  CHECK(app.activeContentView().lines()[0].text == "deepest content");
+}
+
+TEST_CASE_FIXTURE(Fixture, "ARC nested: Back climbs the nested chain one level at a time before finally reaching Directory") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("outer.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // outer.tar's listing
+
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("level1.tar") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.handleCommand(Command::Enter));  // now inside level1.tar's listing
+  REQUIRE(app.archiveMode().currentArchive().find("outer.tar") == std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Archive);
+  CHECK(archiveIndexOf(app, "level1.tar") >= 0);  // back to outer.tar's own listing
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // outermost -- ordinary Back-to-Directory, unchanged
+  CHECK(app.directoryMode().currentDirectory() == path());
+}
+
+TEST_CASE_FIXTURE(Fixture, "ARC nested: opening a fresh top-level archive clears any earlier nested-descent chain") {
+  REQUIRE(app.start(path()));
+  int outerIdx = indexOf("outer.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != outerIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("level1.tar") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.handleCommand(Command::Enter));  // now 1 level deep inside outer.tar
+  REQUIRE(app.handleCommand(Command::Back));   // pop the nested frame
+  REQUIRE(app.handleCommand(Command::Back));   // pop the outer.tar frame -- back to a clean Directory-mode start
+
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  int plainIdx = indexOf("archive.tar");
+  REQUIRE(plainIdx >= 0);
+  // The cursor is still wherever it was left before the archive
+  // excursion (on outer.tar, AFTER archive.tar in listing order) --
+  // returnFromArchive()'s Directory fallback doesn't reset it (see
+  // its own comment), and MoveDown only goes forward, so the search
+  // needs to start from the top rather than assume archive.tar is
+  // reachable by moving down from here.
+  REQUIRE(app.handleCommand(Command::GoToTop));
+  while (indexOf(app.directoryMode().selectedEntry()->name) != plainIdx) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.directoryMode().selectedEntry()->name == "archive.tar");
+  REQUIRE(app.handleCommand(Command::Enter));  // a DIFFERENT, non-nested top-level archive
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // one Back reaches Directory directly -- no stale chain
 }
 
 // -- SHELL: ESC-leader entry, byte routing to Shell's own LineEditor/

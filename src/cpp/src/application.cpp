@@ -1,10 +1,12 @@
 #include "application.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <deque>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <unistd.h>
 
 #include "pipe_buffer.hpp"
 
@@ -652,6 +654,7 @@ bool Application::openSelectedEntry() {
   }
 
   if (archiveMode_.loadArchive(path)) {
+    archiveParentStack_.clear();  // a brand new top-level archive -- any earlier nested-descent chain no longer applies
     currentMode_ = ApplicationMode::Archive;
     return true;
   }
@@ -660,14 +663,25 @@ bool Application::openSelectedEntry() {
   return true;
 }
 
-// Ported from mode.c's T_tar/etc Enter handling: extracts the
-// selected entry's raw bytes and displays them as plain text lines
-// (no PipeBuffer charset/overstrike processing -- ArchiveMode hands
-// back raw bytes only, see class comment). False for a directory
-// entry, a format that doesn't support extraction (RPM/.deb), or a
-// failed extraction -- ArchiveMode::extractSelected() already
-// distinguishes none of these from the others, so neither does this.
+// Ported from mode.c's T_tar/etc Enter handling, PLUS new nested-
+// archive support (not a port of anything -- legacy never had this,
+// see descendToNestedArchive()'s own comment): if the selected entry
+// is itself a recognized archive suffix, recurse into it instead of
+// showing its raw bytes, the same suffix-dispatch openSelectedEntry()
+// already does at the TOP level. Otherwise: extracts the selected
+// entry's raw bytes and displays them as plain text lines (no
+// PipeBuffer charset/overstrike processing -- ArchiveMode hands back
+// raw bytes only, see class comment). False for a directory entry, a
+// format that doesn't support extraction (RPM/.deb), or a failed
+// extraction -- ArchiveMode::extractSelected() already distinguishes
+// none of these from the others, so neither does this.
 bool Application::openSelectedArchiveEntry() {
+  if (const ArchiveEntry *entry = archiveMode_.selectedEntry(); entry && !entry->isDirectory) {
+    ArchiveKind nestedKind = ArchiveKind::None;
+    if (configuration_.programForSuffix(entry->name, &nestedKind) && nestedKind != ArchiveKind::None)
+      return descendToNestedArchive(*entry);
+  }
+
   auto content = archiveMode_.extractSelected();
   if (!content) return false;
 
@@ -681,6 +695,47 @@ bool Application::openSelectedArchiveEntry() {
   archiveContentView_.redraw();
   currentMode_ = ApplicationMode::ArchiveContent;
   return true;
+}
+
+// See the class's own declaration comment on this feature.
+bool Application::descendToNestedArchive(const ArchiveEntry &entry) {
+  auto content = archiveMode_.extractSelected();
+  if (!content) return false;
+
+  std::string tempPath = materializeArchiveTempFile(entry.name, *content);
+  if (tempPath.empty()) return false;
+
+  std::string parentPath = archiveMode_.currentArchive();
+  archiveMode_.saveCursorPosition();
+  if (!archiveMode_.loadArchive(tempPath)) return false;
+
+  archiveParentStack_.push_back(parentPath);
+  currentMode_ = ApplicationMode::Archive;
+  return true;
+}
+
+std::string Application::materializeArchiveTempFile(const std::string &entryName,
+                                                      const std::vector<unsigned char> &bytes) {
+  char dirTemplate[] = "/tmp/usilic-arcXXXXXX";
+  if (!::mkdtemp(dirTemplate)) return "";
+
+  // entry.name may itself contain '/' (a path within the archive) --
+  // only the basename matters for programForSuffix()'s own suffix
+  // dispatch, and keeping the temp file directly in the fresh
+  // mkdtemp()'d directory (rather than trying to recreate the
+  // archive's internal directory structure) sidesteps needing to
+  // mkdir -p anything here.
+  std::string baseName = entryName;
+  if (std::size_t slash = baseName.find_last_of('/'); slash != std::string::npos)
+    baseName = baseName.substr(slash + 1);
+  if (baseName.empty()) baseName = "entry";
+
+  std::string path = std::string(dirTemplate) + "/" + baseName;
+  std::ofstream out(path, std::ios::binary);
+  if (!out) return "";
+  out.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  if (!out) return "";
+  return path;
 }
 
 // Ported from mode.c's T_du Enter handling (see class comment on why
@@ -801,8 +856,21 @@ bool Application::returnFromArchiveContent() {
   return true;
 }
 
+// Climbs back out of a nested-archive descent one level at a time
+// (see descendToNestedArchive()'s own comment) before finally
+// returning to Directory once archiveParentStack_ is empty again --
+// the original, still-unchanged behavior for the non-nested case.
 bool Application::returnFromArchive() {
   archiveMode_.saveCursorPosition();
+  if (!archiveParentStack_.empty()) {
+    std::string parentPath = archiveParentStack_.back();
+    archiveParentStack_.pop_back();
+    if (archiveMode_.loadArchive(parentPath)) return true;
+    // The remembered path should always still be valid (a real file
+    // or our own still-on-disk temp file) -- but if something removed
+    // it out from under us, fail safe by falling through to Directory
+    // below rather than leaving the screen showing stale content.
+  }
   currentMode_ = ApplicationMode::Directory;
   directoryView_.redraw();
   return true;

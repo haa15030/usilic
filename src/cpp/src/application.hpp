@@ -1010,6 +1010,42 @@ class Application {
   bool openSelectedEntry();
   bool openSelectedSegment();
   bool openSelectedArchiveEntry();
+  // Nested-archive support (docs/ideas/IDEAS.md's own original
+  // motivating example for the whole C++ port: "アーカイブの中に
+  // さらにアーカイブファイルがあっても、それを選んで再度ARCモードに
+  // 入る(どこまで潜っても同様に動く)ことができない" -- legacy itself
+  // never supported this either, see menu.c's T_tar/etc handling,
+  // which only ever extracts to a destination or shows raw bytes;
+  // this is new functionality this port adds, not a port of existing
+  // behavior). ArchiveMode itself stays a single-archive-at-a-time
+  // class by design (see its own class comment) -- coordinating the
+  // "currently open chain of archives" is Application's job, the same
+  // boundary already drawn for every other mode hand-off.
+  //
+  // ArchiveMode::loadArchive() needs a real file path (it shells out
+  // to tar/unzip/etc, which don't read from a memory buffer), so
+  // entering a nested archive means materializing its extracted bytes
+  // (already available via ArchiveMode::extractSelected(), no new
+  // extraction logic needed) to a real temporary file first, then
+  // loading THAT path exactly the same way the top-level archive was
+  // loaded. archiveParentStack_ remembers each level's path (real
+  // file for the outermost archive, one of these temp files for every
+  // level below it) so returnFromArchive() can climb back out one
+  // level at a time instead of always returning straight to
+  // Directory.
+  bool descendToNestedArchive(const ArchiveEntry &entry);
+  // Writes `bytes` to a freshly created temp file (a new mkdtemp()'d
+  // directory per call, avoiding basename collisions between sibling
+  // entries at different nesting levels that happen to share a name)
+  // named after entry.name's own basename (preserving its suffix,
+  // since programForSuffix() dispatches on that). Left for the OS to
+  // clean up on reboot/tmp-cleaner sweep, same as this project's
+  // already-documented, already-accepted tolerance for /tmp/.tcb's
+  // own unswept scratch files (CLAUDE.md) -- not deleted eagerly
+  // because a parent frame still on archiveParentStack_ may need to
+  // reload it later in the same session. Empty string on failure
+  // (mkdtemp()/ofstream failure).
+  std::string materializeArchiveTempFile(const std::string &entryName, const std::vector<unsigned char> &bytes);
   bool openSelectedDuEntry();
   bool openSelectedListEntry();
   bool toggleMark();
@@ -1133,6 +1169,12 @@ class Application {
   ProgramMode programMode_;
   LocateMode locateMode_;
   ArchiveMode archiveMode_;
+  // Nested-archive descent -- see descendToNestedArchive()'s own
+  // comment. archiveParentStack_[i] is the path to reload (real file
+  // for the outermost archive, one of materializeArchiveTempFile()'s
+  // own freshly mkdtemp()'d temp files below it) to climb back up to
+  // nesting level i.
+  std::vector<std::string> archiveParentStack_;
   Shell shell_;
   CpMvRmMode cpMvRmMode_;
   DuMode duMode_;
