@@ -146,7 +146,33 @@ enum class Command {
   // cpMvRmInteractive_).
   StartCopyInteractive,
   StartMoveInteractive,
-  StartRemoveInteractive
+  StartRemoveInteractive,
+  // K-17 (^X^W, M_w4): writes the active view's full content to
+  // wFilePath_ (see the constructor's own comment) -- ported from
+  // menu.c's own `send_pp(hp->bp->pp, "a")` (append mode).
+  SaveBufferToFile,
+  // K-61/K-62 (^J. / ^J,, M_chdir2/M_chdir): switches to Shell mode
+  // (starting it if not already running) and immediately submits a
+  // generated command -- ported from menu.c's own m_w() (M_chdir2/
+  // M_chdir cases): "cd '<directory>'" (the CURRENT DirectoryMode
+  // directory, matching legacy's own lp->dir) for K-61, the literal
+  // "ls -l" usilicrc's own K-62 description names for K-62. Both
+  // auto-submit (legacy's own generated strings end in \r) --
+  // K-63/K-64 below deliberately don't.
+  ShellChangeDirectory,
+  ShellRunLsL,
+  // K-63/K-64 (^Jw / ^J^W, M_w/M_w2): switches to Shell mode and
+  // PRE-FILLS (does NOT submit) the command line -- ported from
+  // menu.c's own m_w() (M_w/M_w2 cases). K-63 inserts "echo <name>"
+  // (the currently selected/open item's name -- legacy writes it to
+  // a temp file first only to sidestep 1990s shell-quoting concerns
+  // that don't apply to this port's in-memory LineEditor, see
+  // shellInsertName()'s own comment). K-64 inserts "cat <wFilePath_>"
+  // after actually writing the active view's full content there
+  // (same target file as K-17/SaveBufferToFile) -- unlike K-63,
+  // there's no way around a real file here: `cat` needs one to read.
+  ShellInsertName,
+  ShellInsertBufferContent
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -796,10 +822,13 @@ class Application {
   // ^Xf/^Xd path prompts, see StartFileInput's own comment) -- no
   // hidden getenv("HOME") call here, matching PathResolver's own "no
   // hidden global state" rule (already established for Configuration/
-  // Shell/etc); the caller (main()) reads the real environment.
-  // Defaulted to "" so this doesn't break existing callers that don't
-  // care about it (~ expansion in a typed path just won't do anything
-  // useful in that case).
+  // Shell/etc); the caller (main()) reads the real environment. Also
+  // used to derive wFilePath_ (K-17/K-64's own "write buffer to a
+  // well-known file" target, `<homeDirectory>/.usilic/w.usilic` --
+  // mirrors legacy's own `~/.tcb/w.tcb`, s_S(S_w)). Defaulted to ""
+  // so this doesn't break existing callers that don't care about it
+  // (~ expansion in a typed path just won't do anything useful, and
+  // K-17/K-64 write to a relative "./.usilic/w.usilic" instead).
   Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
               Charset::Encoding encoding, int width, ShellOptions shellOptions = ShellOptions{},
               std::string homeDirectory = "");
@@ -1000,6 +1029,19 @@ class Application {
   bool startProgramPrompt();
   bool startLocatePrompt();
   bool startShell();
+  // Shared by startShell() and K-61/K-62/K-63/K-64: gets Shell mode
+  // on screen (starting the shell process if needed) WITHOUT
+  // startShell()'s own "already in Shell mode" refusal -- unlike a
+  // plain ESC-s/^Xs entry, these four keys are meant to work whether
+  // or not Shell was already active (legacy's own m_w() call site has
+  // no such mode-guard either, only the separate is_inter() busy
+  // check).
+  bool ensureShellActive();
+  bool saveBufferToFile();
+  bool shellChangeDirectory();
+  bool shellRunLsL();
+  bool shellInsertName();
+  bool shellInsertBufferContent();
   bool startCopyPrompt(bool interactive = false);
   bool startMovePrompt(bool interactive = false);
   bool startRemovePrompt(bool interactive = false);
@@ -1026,6 +1068,7 @@ class Application {
 
   Display &display_;  // handleResize()'s own rows()/columns() lookup -- no other member currently needs this
   PathResolver pathResolver_;  // ^Xf/^Xd path prompts, see the constructor's own homeDirectory comment
+  std::string wFilePath_;  // K-17/K-64's write-buffer-to-a-file target, see the constructor's own comment
   Charset::Encoding encoding_;  // wrapHelpText()'s own PipeBuffer construction -- no other member currently needs this
   const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
   History &history_;  // startListBrowser()'s own recentEntries() lookup -- no other member currently needs this

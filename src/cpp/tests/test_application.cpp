@@ -70,9 +70,15 @@ struct Fixture {
   KeyInput keyInput{display};
   History history;
   Configuration configuration;
-  Application app{display, keyInput, history, configuration, Charset::Encoding::Ascii, 80, testShellOptions()};
+  // homeDirectory (the trailing arg) is `root` itself -- root is
+  // declared/initialized before app (member order), so this is valid;
+  // makes wFilePath_ (K-17/K-64's write-buffer target) land inside
+  // this fixture's own disposable temp dir instead of a real $HOME.
+  Application app{
+      display, keyInput, history, configuration, Charset::Encoding::Ascii, 80, testShellOptions(), root.string()};
 
   Fixture() : root(makeTempDir()) {
+    fs::create_directory(root / ".usilic");  // wFilePath_'s own parent dir, see app{}'s own comment above
     fs::create_directory(root / "subdir");
     { std::ofstream(root / "plain.txt") << "hello\nworld\n"; }
     { std::ofstream(root / "log.txt") << "marker one\nline1\nmarker two\nline2a\nline2b\nmarker three\nline3\n"; }
@@ -874,6 +880,75 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ESC s starts Shell mode (StartShell)") {
     return;
   }
   CHECK(app.currentMode() == ApplicationMode::Shell);
+}
+
+TEST_CASE_FIXTURE(Fixture, "saveBufferToFile (^X^W, K-17): writes the active view's lines to wFilePath_") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedByte(0x17, std::nullopt));    // ^W
+
+  std::ifstream in(root / ".usilic" / "w.usilic");
+  REQUIRE(in.good());
+  std::string firstLine;
+  std::getline(in, firstLine);
+  CHECK(firstLine == app.directoryMode().entries()[0].lsLine);
+}
+
+TEST_CASE_FIXTURE(Fixture, "shellChangeDirectory (^J., K-61): starts Shell and submits cd '<directory>'") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  bool ok = app.feedByte('.', std::nullopt);
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.shell().commandLine().text().empty());  // submitLine() clears it after sending
+}
+
+TEST_CASE_FIXTURE(Fixture, "shellRunLsL (^J,, K-62): starts Shell and submits ls -l") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  bool ok = app.feedByte(',', std::nullopt);
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+}
+
+TEST_CASE_FIXTURE(Fixture, "shellInsertName (^Jw, K-63): starts Shell and PRE-FILLS the selected entry's name") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  bool ok = app.feedByte('w', std::nullopt);
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.shell().commandLine().text() == "echo plain.txt");  // NOT submitted
+}
+
+TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W, K-64): writes the buffer then PRE-FILLS cat <file>") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  bool ok = app.feedByte(0x17, std::nullopt);  // ^W
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  std::string wPath = (root / ".usilic" / "w.usilic").string();
+  CHECK(app.shell().commandLine().text() == "cat " + wPath);
+
+  std::ifstream in(wPath);
+  REQUIRE(in.good());
+  std::string firstLine;
+  std::getline(in, firstLine);
+  CHECK(firstLine.find("./") != std::string::npos);  // the directory listing's own "./" entry line
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ESC followed by an unrecognized byte fails cleanly") {

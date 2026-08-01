@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <deque>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 
 #include "pipe_buffer.hpp"
@@ -27,7 +29,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
                           std::string homeDirectory)
     : display_(display),
-      pathResolver_(std::move(homeDirectory)),
+      pathResolver_(homeDirectory),
+      wFilePath_(homeDirectory + "/.usilic/w.usilic"),
       encoding_(encoding),
       configuration_(configuration),
       history_(history),
@@ -215,6 +218,14 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::StartEdit);
       case 0x08:  // ^J ^H : HELP
         return handleCommand(Command::StartHelp);
+      case '.':  // ^J . : SHELL, change current directory
+        return handleCommand(Command::ShellChangeDirectory);
+      case ',':  // ^J , : SHELL, execute `ls -l`
+        return handleCommand(Command::ShellRunLsL);
+      case 'w':  // ^J w : SHELL, insert access-name
+        return handleCommand(Command::ShellInsertName);
+      case 0x17:  // ^J ^W : SHELL, insert buffer content
+        return handleCommand(Command::ShellInsertBufferContent);
       default:
         return false;  // unrecognized ^J-sequence in this slice
     }
@@ -236,6 +247,8 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
         return handleCommand(Command::StartDirectoryInput);
       case kControlC:  // ^X ^C : exit
         return handleCommand(Command::StartExit);
+      case 0x17:  // ^X ^W : save buffer to wFilePath_
+        return handleCommand(Command::SaveBufferToFile);
       case 0x19:  // ^X ^Y : mark all (CP, MV, RM, ARC)
         return handleCommand(Command::MarkAll);
       case 0x0e:  // ^X ^N : clear all (CP, MV, RM, ARC)
@@ -511,6 +524,16 @@ bool Application::handleCommand(Command command) {
       return startMovePrompt(/*interactive=*/true);
     case Command::StartRemoveInteractive:
       return startRemovePrompt(/*interactive=*/true);
+    case Command::SaveBufferToFile:
+      return saveBufferToFile();
+    case Command::ShellChangeDirectory:
+      return shellChangeDirectory();
+    case Command::ShellRunLsL:
+      return shellRunLsL();
+    case Command::ShellInsertName:
+      return shellInsertName();
+    case Command::ShellInsertBufferContent:
+      return shellInsertBufferContent();
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
@@ -789,6 +812,11 @@ bool Application::returnFromListBrowser() {
 // Refuses re-entry from within Shell mode itself (nothing to do).
 bool Application::startShell() {
   if (currentMode_ == ApplicationMode::Shell) return false;
+  return ensureShellActive();
+}
+
+bool Application::ensureShellActive() {
+  if (currentMode_ == ApplicationMode::Shell) return true;
   if (!shellStarted_) {
     if (!shell_.start()) return false;
     shellStarted_ = true;
@@ -796,6 +824,96 @@ bool Application::startShell() {
   shellReturnMode_ = currentMode_;
   currentMode_ = ApplicationMode::Shell;
   shell_.scrollback().redraw();
+  shell_.commandLine().redraw();
+  return true;
+}
+
+// K-17 (^X^W, M_w4): ported from menu.c's own `send_pp(hp->bp->pp,
+// "a")` (append mode) -- writes activeView()'s current lines to
+// wFilePath_. Available from any mode (legacy's own M_w4 case has no
+// mode guard either). False if wFilePath_ couldn't be opened for
+// writing (e.g. Application was constructed with an empty
+// homeDirectory, see the constructor's own comment).
+bool Application::saveBufferToFile() {
+  std::ofstream out(wFilePath_, std::ios::app);
+  if (!out) return false;
+  for (const auto &line : activeView().lines()) out << line.text << "\n";
+  return true;
+}
+
+// K-61 (^J., M_chdir2): ported from menu.c's own m_w() M_chdir2 case
+// ("cd '<dir>'\r", auto-submitted). Uses DirectoryMode's own current
+// directory as the closest match to legacy's lp->dir (a generic
+// "current directory" field this port doesn't have an equivalent of
+// outside DirectoryMode).
+bool Application::shellChangeDirectory() {
+  if (shell_.busy()) return false;
+  std::string dir = directoryMode_.currentDirectory();
+  if (dir.empty()) return false;
+  if (!ensureShellActive()) return false;
+  shell_.commandLine().setText("cd '" + dir + "'");
+  shell_.submitLine();
+  return true;
+}
+
+// K-62 (^J,, M_chdir): ported from menu.c's own m_w() M_chdir case,
+// which forwards a caller-supplied command string -- usilicrc's own
+// K-62 description ("Execute `ls -l \cM`") names the literal command
+// directly, so that's what's sent here rather than re-deriving it
+// from wherever legacy's own ap->comm was populated.
+bool Application::shellRunLsL() {
+  if (shell_.busy()) return false;
+  if (!ensureShellActive()) return false;
+  shell_.commandLine().setText("ls -l");
+  shell_.submitLine();
+  return true;
+}
+
+// K-63 (^Jw, M_w): ported from menu.c's own m_w() M_w case in
+// SPIRIT, not literally -- legacy writes `name` to a temp file then
+// builds "echo `cat <file>`" purely to sidestep 1990s shell-quoting
+// concerns around embedding the name directly in a generated command
+// string; this port's LineEditor::setText() just takes the string
+// directly (no shell parsing happens until the user actually submits
+// it), so inserting "echo <name>" straight into the command line has
+// the same visible effect without the temp-file indirection. Uses
+// the selected DirectoryMode entry's name, or FileMode's own current
+// file's basename if already viewing one -- other modes aren't
+// covered yet (a real "current access name" tracked generically
+// across every mode, matching legacy's own ap->name, doesn't exist
+// in this port).
+bool Application::shellInsertName() {
+  if (shell_.busy()) return false;
+  std::string name;
+  if (currentMode_ == ApplicationMode::Directory) {
+    const DirectoryEntry *entry = directoryMode_.selectedEntry();
+    if (entry) name = entry->name;
+  } else if (currentMode_ == ApplicationMode::File || shellReturnMode_ == ApplicationMode::File) {
+    std::filesystem::path path(fileMode_.currentFile());
+    name = path.filename().string();
+  }
+  if (name.empty()) return false;
+  if (!ensureShellActive()) return false;
+  shell_.commandLine().setText("echo " + name);
+  shell_.commandLine().redraw();
+  return true;
+}
+
+// K-64 (^J^W, M_w2): ported from menu.c's own m_w() M_w2 case --
+// unlike K-63, this genuinely needs a real file (`cat` has no way to
+// display in-memory content otherwise), so it reuses the SAME target
+// saveBufferToFile() writes to. Writes activeView()'s CURRENT lines
+// (the view active BEFORE switching to Shell mode, so this must run
+// before ensureShellActive() changes currentMode_).
+bool Application::shellInsertBufferContent() {
+  if (shell_.busy()) return false;
+  ContentView &source = activeView();
+  std::ofstream out(wFilePath_, std::ios::trunc);
+  if (!out) return false;
+  for (const auto &line : source.lines()) out << line.text << "\n";
+  out.close();
+  if (!ensureShellActive()) return false;
+  shell_.commandLine().setText("cat " + wFilePath_);
   shell_.commandLine().redraw();
   return true;
 }
