@@ -1264,6 +1264,26 @@ bool Application::returnFromShell() {
   return true;
 }
 
+// Ported from do_shell()'s own "if (kill(spid, 0)) { pv = NULL; m =
+// -M_bl; break; }" -- legacy's input_shell() checks whether the
+// relay/shell process is still alive on EVERY loop iteration, and the
+// moment it isn't (typically because the user just typed `exit`),
+// automatically returns -M_bl (^G's own code) and unwinds straight
+// back to whichever mode SHELL was entered from -- no separate ^G
+// needed. Called whenever Shell::onPtyReadable() reports EOF (see its
+// own comment). shellStarted_ resets to false so the NEXT entry into
+// Shell mode spawns a genuinely fresh child via ensureShellActive()'s
+// own shellStarted_ guard, rather than trying to reuse a dead one --
+// Shell::start()'s own resetSessionState() clears scrollback_/
+// pipeBuffer_/etc at that point, matching legacy's fresh PP chain on
+// restart. A real user request (2026-08-02) confirmed this -- see
+// resetSessionState()'s own comment for the full exchange.
+void Application::handleShellChildExited() {
+  shell_.terminate();
+  shellStarted_ = false;
+  if (currentMode_ == ApplicationMode::Shell) returnFromShell();
+}
+
 bool Application::returnFromListBrowser() {
   currentMode_ = listBrowserReturnMode_;
   activeView().redraw();

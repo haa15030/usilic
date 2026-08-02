@@ -982,6 +982,11 @@ class Application {
   // currently on screen.
   void handleResize();
 
+  // Called by the main loop whenever Shell::onPtyReadable() reports
+  // EOF (the child process, typically via `exit`, has ended on its
+  // own). See the definition's own comment.
+  void handleShellChildExited();
+
   // Supplies HELP's (^J^H) text -- mirroring Configuration::
   // loadRcText()/History::loadHistoryText()'s "caller does the file
   // I/O" rule, see the class comment's own HELP section. Must be

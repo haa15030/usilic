@@ -263,6 +263,7 @@ class Shell {
   bool consumeEscapeByte(unsigned char c);
   void flushNewScrollbackLines();
   void freezePromptLine(const std::string &command);
+  void resetSessionState();
   void writeToPty(const std::string &bytes);
   void updateCommandLineField();
   // The row commandLine_'s own live prompt/input occupies: the LAST

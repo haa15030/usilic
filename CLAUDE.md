@@ -7266,6 +7266,71 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      doctest該当分全件通過(Ubuntuの既存の環境依存12件の失敗は無関係)
      を確認済み。
 
+125. **2026-08-02(続き6): `exit`でSHELLの子プロセスが自ら終了した際、
+    legacy同様「自動的にSHELLモードを離脱し、次回突入時は完全に
+    フレッシュな状態で再始動する」挙動を実装**。項目124の直後、
+    ユーザーから「SHELLが各機能を実行するためだけにある、とさっき
+    書いたものの、作っていたときには(必要最小限ではなく)ある程度
+    それらしい仕様も目指していたフシがある。exit[Enter]でSHELLが
+    終了し、再起動では再び冒頭行から始まるなど」との指摘、続けて
+    「このほうがSHELLの存在意義(ファイル操作およびコマンド実行のみ
+    限定なだけの、まともなシェルじゃない)がはっきりしていいかなと」
+    との明確な選好が示された。
+   - **legacy `do_shell()`/`input_shell()`を精読して判明**: `input_shell()`
+     のメインループは毎回`if (kill(spid, 0)) { pv = NULL; m = -M_bl;
+     break; }`(`spid`=中継プロセス、このポートが既に廃止した設計)で
+     生存確認しており、死亡していれば^Gと全く同じコード(`M_bl`)を
+     返してSHELLモードを自動的に離脱する(ユーザーが追加で^Gを押す
+     必要は無い)。子プロセス(実シェル)が`exit`で自ら終了すると、
+     それを実際に中継していた`output_shell()`(`spid`)も自身の
+     読み込みループがEOFに達して自然死し、次にキー入力があった
+     瞬間この生存確認に引っかかる、という連鎖だった。加えて
+     `do_shell()`冒頭の`if (!ofp || (spid && kill(spid, 0))) { ...
+     start_shell()/make_shell()で完全に新規再構築... }`により、次回
+     SHELL突入時は新規の子プロセス+新規のPPチェーン(空の
+     スクロールバック)で完全にフレッシュに再始動することも判明。
+   - **現行ポートの欠落を特定**: `Shell::onPtyReadable()`は既にEOF
+     (`read()`が0を返す)を検知して`false`を返す実装になっていたが、
+     呼び出し元(`app/main.cpp`の2箇所、CUI/GUI両フェーズ)はこの
+     戻り値を一切見ておらず、何も反応していなかった。加えて
+     `Application::ensureShellActive()`は`shellStarted_`が一度`true`に
+     なると再突入時に常に既存セッションへ戻ろうとする設計で、
+     「次回は必ずフレッシュに」という概念自体が存在しなかった。
+   - **実装**: (1) 新規`Application::handleShellChildExited()`
+     (`shell_.terminate()`で回収+`shellStarted_ = false`+SHELLモード中
+     なら`returnFromShell()`と同じ離脱)を追加し、`onPtyReadable()`が
+     `false`を返した際に呼ぶよう`app/main.cpp`の2箇所を配線。
+     (2) 新規`Shell::resetSessionState()`(`scrollback_`/`pipeBuffer_`/
+     `linesConsumed_`/プロンプト検出用の各種状態/`commandLine_`を
+     すべて初期状態へ)を追加し、`Shell::start()`の冒頭(新規fork直前)
+     で必ず呼ぶようにした――これにより`shellRestart()`(^Xs、項目
+     未詳の既存機能)側の「再起動してもスクロールバックが消えない」
+     という潜在バグも副次的に解消された。
+   - **Linux固有の追加バグを発見・修正**: Ubuntu実機(コンテナ)の
+     bashで検証したところ、`exit`後もSHELLモードから一切離脱しない
+     という現象が発生。原因は`app/main.cpp`の両呼び出し箇所が
+     `(fds[1].revents & POLLIN)`のみをゲート条件にしていたこと。
+     Linuxではpty スレーブ側が完全に閉じられると`POLLIN`を伴わず
+     `POLLHUP`単独が立つケースがあり(macOS/zshの組み合わせでは
+     `POLLIN`が立ち、続く`read()`が0を返すことでEOFを検知していた
+     ため気づかなかった)、ゲート自体が素通りせず`onPtyReadable()`が
+     一度も呼ばれていなかった。`(fds[1].revents & (POLLIN | POLLHUP |
+     POLLERR))`へ拡張して解消(`onPtyReadable()`自身は`read()`が
+     0以外の異常値を返すケースも既に「死亡」として扱う実装だった
+     ため、この1点のみで十分だった)。
+   - **検証**: PTY自動テスト(Mac実機のzsh、Ubuntu実機のbash両方)で、
+     SHELLで`exit`+Enterを実行すると、追加のキー操作無しに自動的に
+     元のモード(ディレクトリ一覧)へ画面が切り替わること、その後
+     再度SHELLへ入ると`scrollback_`が完全に空("0/0 END")の
+     フレッシュなセッションで始まり、子プロセスのPIDも前回と異なる
+     (実際に新規プロセスが起動している)ことを確認した。doctest
+     新規1件(実bashを実際に`exit`させ、モード自動離脱・空
+     スクロールバック・新規PID発行までEnd-to-Endで検証)を含め
+     計569件全通過(Mac)。Ubuntuクロスビルドでも該当分全件通過
+     (既存の環境依存12件の失敗は無関係)、上記Linux固有バグの修正
+     後は同じPTYシナリオで正しく動作することも確認済み。実バイナリの
+     ビルドもMac/Ubuntu両方で警告ゼロを確認。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

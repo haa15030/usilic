@@ -122,6 +122,7 @@ Shell::~Shell() { terminate(); }
 bool Shell::start() {
   if (masterFd_ >= 0) return true;
   if (options_.argv.empty()) return false;
+  resetSessionState();
 
   std::string slavePath;
   int master = openPty(slavePath);
@@ -490,6 +491,38 @@ void Shell::freezePromptLine(const std::string &command) {
   newLines.push_back({promptPlain_ + command, command});
   scrollback_.setLines(std::move(newLines));
   scrollback_.goToBottom();
+}
+
+// Clears every piece of per-session state before start() spawns a new
+// child -- ported from legacy's own do_shell(): once the underlying
+// shell process (and, with it, output_shell()'s own relay process)
+// has died, the NEXT entry into SHELL allocates a genuinely fresh PP
+// chain (print_shell()'s own "SHELL version..." banner line + first
+// empty prompt) rather than continuing to append to the old one. A
+// real user request (2026-08-02): "exit[Enter]でSHELLが終了し、再起動
+// では再び冒頭行から始まる...このほうがSHELLの存在意義がはっきり
+// する" -- the user explicitly preferred this over the port's own
+// design (Shell as a single long-lived session surviving across ^G)
+// once they compared it against the legacy CUI side by side, precisely
+// because it makes clear SHELL is a thin, purpose-built launcher for
+// file operations/commands, not a persistent terminal replacement.
+// Without this, calling start() again after terminate() would spawn a
+// new child while every other member here (scrollback_'s lines_,
+// pipeBuffer_'s partially-wrapped state, the markerPrefix_ match
+// state, etc.) still held onto the dead session's own leftovers.
+void Shell::resetSessionState() {
+  pipeBuffer_ = PipeBuffer(options_.encoding, columns_, options_.scrollbackBudget);
+  pendingLine_.clear();
+  linesConsumed_ = 0;
+  markerMatchPos_ = 0;
+  markerMatchBuffer_.clear();
+  inPromptTail_ = false;
+  promptTailBuffer_.clear();
+  escapeState_ = EscapeKind::None;
+  promptPlain_.clear();
+  currentDirectory_.clear();
+  scrollback_.setLines({});
+  commandLine_.setText("");
 }
 
 void Shell::handlePromptDetected(const std::string &tailBeforeMark) {

@@ -55,7 +55,7 @@ bool pumpUntil(Application &app, const std::function<bool()> &predicate, int max
     struct pollfd pfd {
       app.shell().ptyFd(), POLLIN, 0
     };
-    if (poll(&pfd, 1, 20) > 0) app.shell().onPtyReadable();
+    if (poll(&pfd, 1, 20) > 0 && !app.shell().onPtyReadable()) app.handleShellChildExited();
   }
   return predicate();
 }
@@ -1702,6 +1702,42 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: ^G leaves without killing the child; re-enter
   for (const auto &line : app.shell().scrollback().lines())
     if (line.text.find("PERSISTMARKER456") != std::string::npos) stillThere = true;
   CHECK(stillThere);
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL: `exit` ends the child on its own, automatically leaves Shell mode "
+                           "(matching legacy shell.c's own kill(spid,0) check -- no ^G needed), and "
+                           "re-entering spawns a genuinely fresh session (2026-08-02: \"このほうがSHELLの"
+                           "存在意義がはっきりしていい\")") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("echo BEFOREEXIT789")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x0d, std::nullopt);
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("BEFOREEXIT789") != std::string::npos) return true;
+    return false;
+  }));
+
+  int oldPid = app.shell().childPid();
+
+  for (unsigned char c : std::string("exit")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x0d, std::nullopt);
+  REQUIRE(pumpUntil(app, [&] { return app.currentMode() != ApplicationMode::Shell; }));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // back where SHELL was entered from, no ^G needed
+  CHECK_FALSE(app.shell().alive());
+
+  REQUIRE(app.handleCommand(Command::StartShell));
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.shell().scrollback().lines().empty());  // fresh PP chain, not the old dead session's leftovers
+  CHECK(app.shell().commandLine().text().empty());
+
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+  CHECK(app.shell().childPid() != oldPid);  // a genuinely new process, not the dead one reused
 }
 
 // -- Global leader-key access from within Shell mode (^J/^X/^O, NOT

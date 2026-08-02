@@ -858,7 +858,16 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       if (keyInput.consumeResizeSignal()) app.handleResize();  // updates Display's geometry, then reflows content
       continue;
     }
-    if (watchShellPty && (fds[1].revents & POLLIN)) app.shell().onPtyReadable();
+    // POLLHUP/POLLERR, not just POLLIN: a real Ubuntu/bash test found
+    // that once the child fully closes its end of the pty, Linux's
+    // poll() can report POLLHUP alone (no POLLIN bit at all) -- unlike
+    // macOS/zsh, where POLLIN still fires and the subsequent read()
+    // returning 0 is what onPtyReadable() actually detects EOF from
+    // (see its own comment). Checking POLLIN only meant this whole
+    // path silently never ran on Linux, so `exit` never got noticed at
+    // all there.
+    if (watchShellPty && (fds[1].revents & (POLLIN | POLLHUP | POLLERR)) && !app.shell().onPtyReadable())
+      app.handleShellChildExited();
     if (!(fds[0].revents & POLLIN)) continue;
 
     int byte = keyInput.readByte();
@@ -1285,7 +1294,13 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
     if (watchShellPty) {
       struct pollfd fd{app.shell().ptyFd(), POLLIN, 0};
-      if (poll(&fd, 1, 0) > 0 && (fd.revents & POLLIN)) anyEventThisFrame |= app.shell().onPtyReadable();
+      // POLLHUP/POLLERR too -- see the CUI phase's own comment on why.
+      if (poll(&fd, 1, 0) > 0 && (fd.revents & (POLLIN | POLLHUP | POLLERR))) {
+        if (app.shell().onPtyReadable())
+          anyEventThisFrame = true;
+        else
+          app.handleShellChildExited();
+      }
     }
 
     if (dragging || coastLevel > 0 || pixelOffset != 0) {
