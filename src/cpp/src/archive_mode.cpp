@@ -94,7 +94,7 @@ bool ArchiveMode::loadArchive(const std::string &path) {
 
   std::vector<ContentView::Line> lines;
   lines.reserve(entries_.size());
-  for (const auto &entry : entries_) lines.push_back({formatEntryLine(entry)});
+  for (const auto &entry : entries_) lines.push_back({formatEntryLine(entry), std::nullopt});
   view_.setLines(std::move(lines));
 
   if (auto pos = history_.positionFor(PositionCategory::Screen, currentArchive_)) {

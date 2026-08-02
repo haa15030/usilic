@@ -465,8 +465,29 @@ void Shell::flushNewScrollbackLines() {
   if (plines.size() <= linesConsumed_) return;
   std::vector<ContentView::Line> newLines(scrollback_.lines());
   newLines.reserve(plines.size());
-  for (std::size_t i = linesConsumed_; i < plines.size(); i++) newLines.push_back({plines[i].text});
+  for (std::size_t i = linesConsumed_; i < plines.size(); i++) newLines.push_back({plines[i].text, std::nullopt});
   linesConsumed_ = plines.size();
+  scrollback_.setLines(std::move(newLines));
+  scrollback_.goToBottom();
+}
+
+// Appends a PERMANENT record of the just-submitted prompt+command as
+// its own scrollback_ line (with `command` attached via Line::
+// shellCommand for later resubmission) -- ported from legacy's own
+// data model: shell.c's PP chain has no separate "live prompt widget"
+// at all, the prompt row IS just another node in the SAME linked list
+// as every other line of scrollback, which is exactly what lets
+// M_kup/M_kdn move a cursor directly onto a past prompt and re-run it
+// via '\r' (see this class's own comment on ^P/^N, and Application::
+// feedShellByte()'s Enter handling). Called from submitLine() BEFORE
+// the command is actually sent, so the frozen line's own position in
+// scrollback_ matches the moment it was submitted -- any output the
+// command produces naturally appends AFTER it via the normal
+// flushNewScrollbackLines() path, same as legacy's chain growing past
+// the prompt node once the command starts producing output.
+void Shell::freezePromptLine(const std::string &command) {
+  std::vector<ContentView::Line> newLines(scrollback_.lines());
+  newLines.push_back({promptPlain_ + command, command});
   scrollback_.setLines(std::move(newLines));
   scrollback_.goToBottom();
 }
@@ -800,6 +821,8 @@ void Shell::submitLine() {
   std::string trimmed = (start == std::string::npos) ? "" : line.substr(start);
 
   if (!trimmed.empty()) {
+    freezePromptLine(trimmed);
+
     // Trailing pipeline stage's program token (split on '|', take the
     // last stage, then its first whitespace-delimited word). Ported
     // from input_shell()'s command-dispatch logic; the PROGRAM-table

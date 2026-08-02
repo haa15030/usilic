@@ -57,7 +57,7 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
 
   std::vector<ContentView::Line> lines;
   lines.reserve(pipe.lines().size());
-  for (const auto &styled : pipe.lines()) lines.push_back({styled.text});
+  for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt});
   return lines;
 }
 

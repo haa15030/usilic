@@ -62,6 +62,17 @@ class ContentView {
  public:
   struct Line {
     std::string text;
+    // Set only for a SHELL prompt line that has an actually-submitted
+    // command attached to it (Shell::submitLine()'s own use) -- the
+    // exact text to resubmit if the user navigates a cursor back onto
+    // this line and presses Enter, ported from legacy's shell.c
+    // treating the whole scrollback+prompt history as ONE buffer a
+    // cursor can move through (see Shell's own class comment). Every
+    // other caller of ContentView (DirectoryMode, FileMode, GrepMode,
+    // etc.) leaves this at its default nullopt; ContentView itself
+    // never reads it -- purely opaque per-line data Shell attaches
+    // and later inspects on its own lines_.
+    std::optional<std::string> shellCommand;
   };
 
   explicit ContentView(Display &display);

@@ -670,7 +670,6 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
       // a side effect -- accepted as a rare, minor edge case rather
       // than adding rollback machinery for it.
       currentMode_ = shellReturnMode_;
-      shellHistoryIndex_ = -1;
       activeView().redraw();
     }
     return dispatchLeaderByte(byte, special);
@@ -692,11 +691,64 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   }
 
   if (byte == kControlG) return returnFromShell();
-  if (byte == kCarriageReturn) {
-    shell_.submitLine();
-    shellHistoryIndex_ = -1;  // a fresh submission always resets history browsing
+  // ^P/^N and Enter-while-browsing below are ported from legacy's
+  // shell.c M_kup/M_kdn: a cursor moves directly through scrollback_'s
+  // OWN lines_ (the same unified prompt+output history real content
+  // lives in, not a separate array) -- see Shell::freezePromptLine()'s
+  // own comment for the data-model half of this. A real user report
+  // (2026-08-02) pointed out that an earlier version of this (a
+  // synthetic RingCategory::ShellCommand-backed index, entirely
+  // disconnected from what's actually on screen) was "vibe coding":
+  // reaching for whatever was easiest to bolt on on top of the
+  // existing split scrollback_/commandLine_ design instead of reading
+  // legacy's actual mechanism first. ContentView::moveUp()/moveDown()
+  // already implement the exact cursor-move-with-boundary-bell
+  // semantics needed here (used elsewhere for plain list navigation),
+  // so ^P/^N end up needing no bespoke state of their own at all.
+  if (byte == 0x10) {  // ^P
+    shell_.scrollback().moveUp();
     return true;
   }
+  if (byte == 0x0e) {  // ^N
+    shell_.scrollback().moveDown();
+    return true;
+  }
+  // !empty() guard: with no lines at all yet, lines().size()-1
+  // underflows to -1, which cursorIndex()'s default of 0 never equals
+  // -- falsely reading as "browsing" and indexing lines()[0] on an
+  // empty vector below.
+  bool browsingHistory = !shell_.scrollback().lines().empty() &&
+                          shell_.scrollback().cursorIndex() != static_cast<int>(shell_.scrollback().lines().size()) - 1;
+  if (byte == kCarriageReturn) {
+    if (browsingHistory) {
+      // Ported from shell.c's own '\r' case: re-run the highlighted
+      // line's command if it's a real, previously-submitted prompt
+      // line (Line::shellCommand set by freezePromptLine()); anything
+      // else (plain output text) is legacy's own "not a prompt line"
+      // fallthrough -- simplified here to just snap back rather than
+      // also replicating legacy's own attempt to submit raw output
+      // text as a command (an edge case legacy itself handles
+      // inconsistently, not worth reproducing exactly).
+      const auto &line = shell_.scrollback().lines()[shell_.scrollback().cursorIndex()];
+      if (line.shellCommand) {
+        shell_.commandLine().setText(*line.shellCommand);
+        shell_.submitLine();
+      } else {
+        shell_.scrollback().goToBottom();
+      }
+      return true;
+    }
+    shell_.submitLine();
+    return true;
+  }
+  // Any content-modifying key while browsing snaps the cursor back to
+  // the live prompt FIRST, matching shell.c's own default case
+  // ("if (pos != M_tail) { write_comm(pv[1], M_tail, ...); ... }"
+  // before falling through to handle the actual keystroke). ^C is the
+  // only byte past this point that does NOT touch commandLine_ (it
+  // just forwards the interrupt to the child), matching legacy's own
+  // K_c case, which has no such guard either.
+  if (browsingHistory && byte != kControlC) shell_.scrollback().goToBottom();
   if (byte == 0x09) {  // Tab
     shell_.onTab();
     return true;
@@ -708,49 +760,6 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   }
   if (byte == kControlC) {
     shell_.sendControlByte(static_cast<unsigned char>(byte));
-    return true;
-  }
-  // ^P/^N: command-history recall, matching a real shell's own up/
-  // down-arrow behavior -- NOT literal HELP.jp Command-line-table
-  // "move cursor a line" semantics (this port's own commandLine_ is a
-  // single-line field, and legacy's OWN SHELL-specific M_kup/M_kdn
-  // instead move through a UNIFIED scrollback+prompt buffer this
-  // port's split scrollback_/commandLine_ design has no equivalent
-  // of, see the class comment's "single-process design" note).
-  // Before this, ^P/^N had no SHELL-specific handling at all and fell
-  // through to the literal insertByte() below -- a real user report
-  // (2026-08-02, with a screenshot literally showing "PPPPPPP" typed
-  // into the prompt from repeated ^P presses) confirmed this reads as
-  // "^P doesn't work" in practice, since the control byte renders as
-  // a visible reverse-video glyph (matching this codebase's own
-  // established "^X" caret-notation convention elsewhere) rather than
-  // doing anything useful.
-  if (byte == 0x10) {  // ^P: recall an OLDER command
-    const auto &entries = history_.recentEntries(RingCategory::ShellCommand);  // oldest..newest
-    if (!entries.empty()) {
-      if (shellHistoryIndex_ < 0) {
-        shellHistorySavedText_ = shell_.commandLine().text();
-        shellHistoryIndex_ = 0;
-      } else if (shellHistoryIndex_ + 1 < static_cast<int>(entries.size())) {
-        shellHistoryIndex_++;
-      }
-      shell_.commandLine().setText(*(entries.rbegin() + shellHistoryIndex_));
-      shell_.commandLine().redraw();
-    }
-    return true;
-  }
-  if (byte == 0x0e) {  // ^N: recall a NEWER command (or return to what was being typed)
-    if (shellHistoryIndex_ >= 0) {
-      const auto &entries = history_.recentEntries(RingCategory::ShellCommand);
-      if (shellHistoryIndex_ == 0) {
-        shell_.commandLine().setText(shellHistorySavedText_);
-        shellHistoryIndex_ = -1;
-      } else {
-        shellHistoryIndex_--;
-        shell_.commandLine().setText(*(entries.rbegin() + shellHistoryIndex_));
-      }
-      shell_.commandLine().redraw();
-    }
     return true;
   }
   shell_.commandLine().insertByte(static_cast<unsigned char>(byte));
@@ -1039,7 +1048,7 @@ bool Application::openSelectedArchiveEntry() {
   std::istringstream stream(text);
   std::vector<ContentView::Line> lines;
   std::string line;
-  while (std::getline(stream, line)) lines.push_back({line});
+  while (std::getline(stream, line)) lines.push_back({line, std::nullopt});
   archiveContentView_.setLines(std::move(lines));
   archiveContentView_.setCursorIndex(0);
   archiveContentView_.redraw();
@@ -1170,7 +1179,7 @@ bool Application::openSelectedSegment() {
   std::vector<std::string> content = cutMode_.segmentContent(*segment);
   std::vector<ContentView::Line> lines;
   lines.reserve(content.size());
-  for (auto &l : content) lines.push_back({l});
+  for (auto &l : content) lines.push_back({l, std::nullopt});
   cutContentView_.setLines(std::move(lines));
   cutContentView_.setCursorIndex(0);
   cutContentView_.redraw();
@@ -1251,7 +1260,6 @@ bool Application::returnFromDu() {
 
 bool Application::returnFromShell() {
   currentMode_ = shellReturnMode_;
-  shellHistoryIndex_ = -1;  // ^G always leaves history-browsing behind, matching submitLine()'s own reset
   activeView().redraw();
   return true;
 }
@@ -1609,7 +1617,7 @@ bool Application::startKey() {
   for (const auto &entry : kKeyTable) {
     std::string label = entry.keyLabel;
     if (label.size() < 10) label.append(10 - label.size(), ' ');
-    lines.push_back({label + "  " + entry.description});
+    lines.push_back({label + "  " + entry.description, std::nullopt});
   }
   keyView_.setLines(std::move(lines));
   keyView_.setCursorIndex(0);

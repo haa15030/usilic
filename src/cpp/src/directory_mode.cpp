@@ -62,7 +62,7 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
     if (line.empty()) continue;
     if (line.rfind("total ", 0) == 0) continue;  // `ls -l`'s block-count summary line, not an entry
     DirectoryEntry entry = parseLsLine(line);
-    lines.push_back({filenameOnlyMode_ ? entry.name : line});
+    lines.push_back({filenameOnlyMode_ ? entry.name : line, std::nullopt});
     entries.push_back(std::move(entry));
   }
 
@@ -252,7 +252,7 @@ void DirectoryMode::setFilenameOnlyMode(bool enabled) {
   filenameOnlyMode_ = enabled;
   std::vector<ContentView::Line> lines;
   lines.reserve(entries_.size());
-  for (const auto &entry : entries_) lines.push_back({enabled ? entry.name : entry.lsLine});
+  for (const auto &entry : entries_) lines.push_back({enabled ? entry.name : entry.lsLine, std::nullopt});
   view_.setLines(std::move(lines));
   view_.redraw();
 }

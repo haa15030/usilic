@@ -9,7 +9,7 @@ namespace {
 
 std::vector<ContentView::Line> makeLines(int n, const std::string &prefix = "line") {
   std::vector<ContentView::Line> lines;
-  for (int i = 0; i < n; i++) lines.push_back({prefix + std::to_string(i)});
+  for (int i = 0; i < n; i++) lines.push_back({prefix + std::to_string(i), std::nullopt});
   return lines;
 }
 
@@ -445,7 +445,7 @@ TEST_CASE("control bytes render reverse-video, consistent with LineEditor") {
   ContentView v(d);
   v.setViewport(0, 3);
   std::vector<ContentView::Line> lines;
-  lines.push_back({std::string(1, static_cast<char>(1)) + "x"});  // Ctrl-A + 'x'
+  lines.push_back({std::string(1, static_cast<char>(1)) + "x", std::nullopt});  // Ctrl-A + 'x'
   v.setLines(lines);
   v.redraw();
   CHECK(d.rowText(0)[0] == static_cast<char>(1 + '@'));  // 'A'
@@ -465,7 +465,7 @@ TEST_CASE("a literal tab byte renders as a plain space, not a reverse-video cont
   v.setViewport(0, 3);
   v.setCursorHighlightEnabled(false);  // isolate the tab's own standout, not the cursor row's
   std::vector<ContentView::Line> lines;
-  lines.push_back({std::string("a\tb")});
+  lines.push_back({std::string("a\tb"), std::nullopt});
   v.setLines(lines);
   v.redraw();
   CHECK(d.rowText(0)[0] == 'a');

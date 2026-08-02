@@ -262,6 +262,7 @@ class Shell {
   // needed just to stop the corruption).
   bool consumeEscapeByte(unsigned char c);
   void flushNewScrollbackLines();
+  void freezePromptLine(const std::string &command);
   void writeToPty(const std::string &bytes);
   void updateCommandLineField();
   // The row commandLine_'s own live prompt/input occupies: the LAST

@@ -1535,9 +1535,9 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: a real submitted command is actually recorded
   CHECK(recorded);
 }
 
-TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^P recalls the previous command, ^N steps back to what was being "
-                           "typed (2026-08-02 user report: a screenshot showed literal \"PPPPPPP\" typed into the "
-                           "prompt from repeated ^P presses)") {
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^P/^N move scrollback_'s own cursor, matching legacy's unified "
+                           "buffer model (2026-08-02(続4): replaces an earlier RingCategory::ShellCommand-backed "
+                           "index disconnected from what was actually on screen -- see CLAUDE.md)") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -1545,22 +1545,30 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^P recalls the previous command, 
   }
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
 
-  for (unsigned char c : std::string("ls -l")) app.feedShellByte(c, std::nullopt);
+  for (unsigned char c : std::string("echo MARKERPN001")) app.feedShellByte(c, std::nullopt);
   app.feedShellByte(0x0d, std::nullopt);
-  REQUIRE(pumpUntil(app, [&] { return !history.recentEntries(RingCategory::ShellCommand).empty(); }));
+  // !line.shellCommand: the frozen prompt line ITSELF already contains
+  // "MARKERPN001" as part of its own attached command text -- wait
+  // specifically for the shell's REAL echoed output line, so there are
+  // at least two lines in scrollback_ (frozen prompt + its output) for
+  // ^P to actually move between.
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (!line.shellCommand && line.text.find("MARKERPN001") != std::string::npos) return true;
+    return false;
+  }));
 
-  for (unsigned char c : std::string("echo partial")) app.feedShellByte(c, std::nullopt);
-  CHECK(app.shell().commandLine().text() == "echo partial");
-
-  CHECK(app.feedShellByte(0x10, std::nullopt));  // ^P: recall "ls -l"
-  CHECK(app.shell().commandLine().text() == "ls -l");
+  int bottom = app.shell().scrollback().cursorIndex();
+  CHECK(app.feedShellByte(0x10, std::nullopt));  // ^P
+  CHECK(app.shell().scrollback().cursorIndex() == bottom - 1);
   CHECK(app.currentMode() == ApplicationMode::Shell);  // navigating history does NOT leave Shell mode
 
-  CHECK(app.feedShellByte(0x0e, std::nullopt));  // ^N: back to what was being typed before ^P
-  CHECK(app.shell().commandLine().text() == "echo partial");
+  CHECK(app.feedShellByte(0x0e, std::nullopt));  // ^N
+  CHECK(app.shell().scrollback().cursorIndex() == bottom);
 }
 
-TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: submitting a command resets history browsing back to fresh") {
+TEST_CASE_FIXTURE(Fixture, "SHELL: Enter on a past prompt line resubmits its command, matching legacy shell.c's "
+                           "own '\\r' case (the user's own words: \"^Pでそこへ戻ってEnterでlsが再実行される\")") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -1568,16 +1576,102 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: submitting a command resets histo
   }
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
 
-  for (unsigned char c : std::string("echo one")) app.feedShellByte(c, std::nullopt);
+  for (unsigned char c : std::string("echo MARKERRERUN002")) app.feedShellByte(c, std::nullopt);
   app.feedShellByte(0x0d, std::nullopt);
-  REQUIRE(pumpUntil(app, [&] { return !history.recentEntries(RingCategory::ShellCommand).empty(); }));
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("MARKERRERUN002") != std::string::npos) return true;
+    return false;
+  }));
 
-  app.feedShellByte(0x10, std::nullopt);  // ^P: recall "echo one"
-  REQUIRE(app.shell().commandLine().text() == "echo one");
-  app.feedShellByte(0x0d, std::nullopt);  // submit it -- resets browsing
+  int promptIndex = -1;
+  {
+    const auto &lines = app.shell().scrollback().lines();
+    for (std::size_t i = 0; i < lines.size(); i++)
+      if (lines[i].shellCommand && *lines[i].shellCommand == "echo MARKERRERUN002")
+        promptIndex = static_cast<int>(i);
+  }
+  REQUIRE(promptIndex >= 0);
 
-  for (unsigned char c : std::string("x")) app.feedShellByte(c, std::nullopt);
-  CHECK(app.shell().commandLine().text() == "x");  // NOT prefixed with a stale history entry
+  int occurrencesBefore = 0;
+  for (const auto &line : app.shell().scrollback().lines())
+    if (line.text.find("MARKERRERUN002") != std::string::npos) occurrencesBefore++;
+
+  app.shell().scrollback().setCursorIndex(promptIndex);  // as if reached via repeated ^P
+  CHECK(app.feedShellByte(0x0d, std::nullopt));           // Enter while browsing: resubmits
+  CHECK(app.shell().scrollback().cursorIndex() ==
+        static_cast<int>(app.shell().scrollback().lines().size()) - 1);  // snapped back to the bottom
+
+  REQUIRE(pumpUntil(app, [&] {
+    int count = 0;
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("MARKERRERUN002") != std::string::npos) count++;
+    return count > occurrencesBefore;
+  }));
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL: Enter on a plain output line (no attached command) just snaps back to the "
+                           "live prompt instead of submitting raw output text as a command") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("echo MARKERPLAIN003")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x0d, std::nullopt);
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("MARKERPLAIN003") != std::string::npos && !line.shellCommand) return true;
+    return false;
+  }));
+
+  int plainIndex = -1;
+  {
+    const auto &lines = app.shell().scrollback().lines();
+    for (std::size_t i = 0; i < lines.size(); i++)
+      if (!lines[i].shellCommand && lines[i].text.find("MARKERPLAIN003") != std::string::npos)
+        plainIndex = static_cast<int>(i);
+  }
+  REQUIRE(plainIndex >= 0);
+
+  app.shell().scrollback().setCursorIndex(plainIndex);
+  app.shell().commandLine().setText("");
+  CHECK(app.feedShellByte(0x0d, std::nullopt));
+  CHECK(app.shell().scrollback().cursorIndex() ==
+        static_cast<int>(app.shell().scrollback().lines().size()) - 1);
+  CHECK(app.shell().commandLine().text().empty());  // did NOT get filled with the output text
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL: typing while browsing history snaps the cursor back to the live prompt "
+                           "first, matching legacy shell.c's own default case") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("echo MARKERTYPE004")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x0d, std::nullopt);
+  // !line.shellCommand: wait for the shell's REAL echoed output line
+  // specifically (see the ^P/^N test's own comment above) so ^P below
+  // has somewhere to actually move to.
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (!line.shellCommand && line.text.find("MARKERTYPE004") != std::string::npos) return true;
+    return false;
+  }));
+
+  app.feedShellByte(0x10, std::nullopt);  // ^P: now browsing, not at the bottom
+  int bottom = static_cast<int>(app.shell().scrollback().lines().size()) - 1;
+  REQUIRE(app.shell().scrollback().cursorIndex() != bottom);
+
+  app.shell().commandLine().setText("");
+  CHECK(app.feedShellByte('x', std::nullopt));
+  CHECK(app.shell().scrollback().cursorIndex() == bottom);  // snapped back
+  CHECK(app.shell().commandLine().text() == "x");
 }
 
 TEST_CASE_FIXTURE(Fixture, "SHELL: ^G leaves without killing the child; re-entering resumes the same session") {
