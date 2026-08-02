@@ -452,6 +452,28 @@ TEST_CASE("control bytes render reverse-video, consistent with LineEditor") {
   CHECK(d.rowText(0)[1] == 'x');
 }
 
+TEST_CASE("a literal tab byte renders as a plain space, not a reverse-video control glyph") {
+  // Defensive fallback for callers that embed a raw '\t' directly into
+  // a Line (e.g. DuMode::formatEntryLine()'s "size\tpath"), for any
+  // caller other than PipeBuffer -- PipeBuffer's own wrapLine() now
+  // expands tabs to spaces before they ever reach a Line. Found via a
+  // real user report (2026-08-02, screenshot): tab bytes used to hit
+  // the same reverse-video path as other control bytes (< 0x20),
+  // showing as visible boxes between `ls` filenames in SHELL scrollback.
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setCursorHighlightEnabled(false);  // isolate the tab's own standout, not the cursor row's
+  std::vector<ContentView::Line> lines;
+  lines.push_back({std::string("a\tb")});
+  v.setLines(lines);
+  v.redraw();
+  CHECK(d.rowText(0)[0] == 'a');
+  CHECK(d.rowText(0)[1] == ' ');
+  CHECK(d.standoutAt(0, 1) == false);
+  CHECK(d.rowText(0)[2] == 'b');
+}
+
 TEST_CASE("setLines clamps a stale cursor index to the new list's bounds") {
   RecordingDisplay d(10, 20);
   ContentView v(d);

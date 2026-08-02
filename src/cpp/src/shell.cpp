@@ -23,6 +23,7 @@
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 
 namespace fm {
@@ -169,6 +170,46 @@ bool Shell::start() {
   childPid_ = pid;
   masterFd_ = master;
   fcntl(masterFd_, F_SETFL, fcntl(masterFd_, F_GETFL) | O_NONBLOCK);
+
+  // Disable ECHO (and ECHONL) before the setup command below is sent
+  // -- otherwise the KERNEL's own line-discipline echo of that
+  // multi-line burst can reach waitForHandshake()'s scan buffer near-
+  // instantly, well before the child shell has actually read and
+  // EXECUTED any of it (writing to a pty and the child reading from
+  // it are two independent, racing operations; only the kernel echo
+  // is synchronous with the write itself). Since the old sentinel
+  // command (a silent `:` no-op) produced no output of its own,
+  // waitForHandshake() had no way to tell "the sentinel TEXT is
+  // visible" apart from "the shell has actually GOTTEN to and run the
+  // sentinel line" -- it could and did report success from echo alone
+  // while the real shell was still seconds away from even starting
+  // its setup, and every prompt it went on to draw for each
+  // intervening setup line (in the shell's own STOCK format, since
+  // PROMPT/PS1 hadn't taken effect yet) then leaked into scrollback_
+  // as ordinary post-handshake content instead of being swept up by
+  // this function's own "discard everything through the sentinel"
+  // logic below. A real user report (2026-08-02, screenshot): right
+  // after SHELL started, before any real command had been run, several
+  // blank lines and a stray "user@host dir %"-style prompt fragment
+  // already sat in scrollback above where the real first prompt
+  // should have been -- reproduced and confirmed via a PTY test that
+  // dumped the raw byte stream and found the shell's own STOCK-format
+  // prompt text present well before setup had genuinely finished.
+  // buildSetupCommand()'s sentinel is now a real `echo` the shell
+  // itself must actually reach and execute to produce, which combined
+  // with ECHO being off here means the ONLY way that sentinel text can
+  // reach this read loop is genuine, sequential shell execution --
+  // exactly what this function's existing "discard up to the
+  // sentinel" logic was always designed to rely on. The shell's own
+  // line editor (bash's readline / zsh's ZLE) reconfigures the pty's
+  // echo/canonical settings for itself once it starts controlling
+  // interactive input/redraw, so this early override doesn't linger
+  // into normal post-setup interactive use.
+  struct termios setupTio;
+  if (tcgetattr(masterFd_, &setupTio) == 0) {
+    setupTio.c_lflag &= ~(ECHO | ECHONL);
+    tcsetattr(masterFd_, TCSANOW, &setupTio);
+  }
 
   writeToPty(buildSetupCommand());
 
@@ -497,55 +538,102 @@ int Shell::displayWidth(const std::string &text) const {
 // equivalent exists yet in this C++ port for it to point at, so it's
 // omitted rather than pointing at something meaningless; revisit once
 // a pager mode exists).
-// Ported from output_shell()'s PS1/eos setup line, but as several
-// SHORT, separately \n-terminated statements instead of one long
-// semicolon-chained line. A real bug found via actual zsh use
-// (2026-08-01): the original one-liner easily exceeds 80 columns
-// (mark+programName+the whole assignment), so it WRAPS across
-// multiple terminal rows before the shell's own line editor (zsh's
-// ZLE, but bash's readline isn't immune either) ever gets to execute
-// it -- and a wrapped input line's own redraw logic works by moving
-// the cursor around and selectively overwriting parts of what's
-// already on screen, which is fundamentally NOT compatible with this
-// class's own byte consumer (appendBodyByte() -> PipeBuffer), which
-// only understands "append this byte to the current line," with no
-// concept of cursor movement/overwrite at all. The visible symptom
-// was doubled-up fragments of the command text itself (e.g. "uunset",
-// "tt PROMPT") in the scrollback -- not a shell config issue, purely
-// this class's own setup command being long enough to trigger a kind
-// of terminal output (line-wrap redraw) it was never built to parse.
-// Keeping every individual line comfortably under 80 columns (a
-// generous margin below the narrowest realistic terminal width) means
-// the shell's line editor never needs to wrap-and-redraw ANY of them,
-// sidestepping the whole problem rather than trying to interpret
-// cursor-movement escapes after the fact.
+// Ported from output_shell()'s PS1/eos setup line -- but ALL of its
+// statements below, including the sentinel echo, are chained into
+// ONE logical shell command via backslash-newline continuation,
+// matching legacy's own single semicolon-chained line (shell.c),
+// rather than being sent as several independent \n-terminated
+// commands (as an earlier version of this method did). The two
+// historical bugs that shaped this method turned out to sit on
+// different axes and both had to be satisfied at once:
+//   - A real bug found via actual zsh use (2026-08-01): a single
+//     PHYSICAL line long enough to exceed ~80 columns (mark+
+//     programName+the whole assignment easily does) WRAPS before the
+//     shell's own line editor (zsh's ZLE, bash's readline too) ever
+//     gets to execute it, and a wrapped input line's own redraw logic
+//     moves the cursor around and selectively overwrites what's
+//     already on screen -- fundamentally incompatible with this
+//     class's own byte consumer (appendBodyByte() -> PipeBuffer),
+//     which only understands "append this byte," with no concept of
+//     cursor movement/overwrite. Symptom: doubled-up command-text
+//     fragments (e.g. "uunset", "tt PROMPT") in scrollback.
+//   - A real user report (2026-08-02, screenshot): right after SHELL
+//     started, before any real command had been run, several blank
+//     lines and a stray "user@host dir %"-style prompt fragment
+//     already sat in scrollback above where the real first prompt
+//     should have been. Root cause: sending each statement as its own
+//     separate \n-terminated command makes each one a fully separate
+//     INTERACTIVE command, and an interactive shell draws a fresh
+//     prompt after every one of them -- including the early ones,
+//     before PROMPT/PS1 below has taken effect, so those used the
+//     shell's own stock/unmodified prompt format.
+//     processOutputBytes()'s markerPrefix_ scan only recognizes
+//     prompts in THIS class's own mark+prog+":" format, so every one
+//     of those early wrong-format prompt draws fell through and
+//     leaked into scrollback as literal text instead of being
+//     recognized and consumed as a prompt.
+// Backslash-continuation resolves both at once: each individual
+// PHYSICAL line stays short (first bug avoided), and the shell reads
+// the whole thing as ONE logical command before executing any of it
+// or drawing a fresh prompt (second bug avoided) -- exactly one
+// prompt redraw happens for the entire setup, and it happens only
+// after PROMPT/PS1 has already taken effect.
 std::string Shell::buildSetupCommand() const {
   const std::string &mark = options_.promptMark;
   const std::string &prog = options_.programName;
-  // ": #eos<pid>#" rather than a bare "#eos<pid>#" line -- `:` is the
-  // POSIX no-op builtin, so this evaluates safely as a real, silent
-  // command in BOTH bash and zsh regardless of whether # is actually
-  // being treated as a comment character in this exact context (found
-  // via real zsh testing: an UNPREFIXED "#eos12345#" line came back
-  // as `zsh: command not found: #eos12345#`, a real, visible error
-  // that leaked into the scrollback -- zsh's interactive_comments
-  // option isn't reliably on here, unlike bash where # is always a
-  // comment). The terminal still echoes the FULL line including the
-  // ": " prefix and the "#eos<pid>#" text itself, so waitForHandshake()'s
-  // own substring search for just "#eos<pid>#" still finds it either way.
-  std::string eos = ": #eos" + std::to_string(childPid_) + "#";
+  // A real `echo` here, not the silent `:` no-op this used to be --
+  // see start()'s own comment (where ECHO is now disabled on the pty
+  // before this is sent) for why: with kernel input-echo off, the
+  // sentinel text can now ONLY reach waitForHandshake()'s read loop by
+  // the shell actually EXECUTING this line and printing it as real
+  // output, which is exactly the guarantee "discard everything through
+  // the sentinel" needs to safely sweep up every earlier setup
+  // statement's own (possibly stale-prompt-format) output too. `$$`
+  // (the shell's own PID, always equal to childPid_ since this child
+  // is fork/exec'd directly with no intermediate wrapper) rather than
+  // childPid_'s digits spelled out literally -- a real user report
+  // (2026-08-02, screenshot) traced a persistent leaked "#eos<pid>#"
+  // line in scrollback right after SHELL started back to exactly this:
+  // if the shell hasn't yet reasserted its own control over the pty's
+  // echo/canonical settings (start()'s ECHO-disable happens once,
+  // early, and evidently doesn't always survive the child's own
+  // startup), the literal, unexpanded COMMAND TEXT sent here --
+  // "echo '#eos12345#'" -- gets echoed back BEFORE the shell ever
+  // executes it, and that echoed text itself already contains the
+  // exact sentinel substring "#eos12345#" (just wrapped in `echo '...'`
+  // rather than being real output). waitForHandshake()'s scan matches
+  // on this far-too-early false positive instead of the shell's own
+  // later, genuine output. Spelled out with `$$` instead, the RAW
+  // command text sent here literally contains "#eos$$#" -- no run of
+  // digits at all -- so it can never accidentally contain the fully-
+  // expanded sentinel string itself; only the shell's OWN evaluation
+  // of `$$` (which happens only once this line is actually executed,
+  // by definition after everything before it in the same chained
+  // command) can produce a match. Double-quoted rather than single-
+  // quoted specifically so `$$` still expands (`#` inside stays safe
+  // from comment-parsing either way, being mid-word inside quotes).
+  std::string eos = "echo \"#eos$$#\"";
+  // Joins statements into one logical command: " ; \<newline>" between
+  // each pair (statement separator + line continuation, so the shell
+  // keeps reading instead of executing/prompting after each physical
+  // line) and a plain newline after the last one to actually submit it.
+  auto chain = [](const std::vector<std::string> &statements) {
+    std::string result;
+    for (std::size_t i = 0; i < statements.size(); i++) {
+      result += statements[i];
+      result += (i + 1 < statements.size()) ? " ; \\\n" : "\n";
+    }
+    return result;
+  };
   if (isBash_) {
-    std::vector<std::string> lines = {
+    return chain({
         "unset PROMPT_COMMAND",
         "export PS1='" + mark + prog + ":\\w\\$ " + mark + "'",
         "set -o ignoreeof",
         "export COLUMNS=" + std::to_string(columns_),
         "unset HISTFILE",
         eos,
-    };
-    std::string result;
-    for (const auto &line : lines) result += line + "\n";
-    return result;
+    });
   }
   if (isZsh_) {
     // zsh's OWN prompt-expansion sequences (%~ for cwd, %# for the
@@ -571,7 +659,7 @@ std::string Shell::buildSetupCommand() const {
     // an escape sequence, so stripping alone can't remove it; turning
     // the feature off at the source is simpler than trying to also
     // recognize and hide zsh's own specific eol-mark text).
-    std::vector<std::string> lines = {
+    return chain({
         "unset PROMPT_COMMAND 2>/dev/null",
         "precmd_functions=()",
         "export PROMPT='" + mark + prog + ":%~%# " + mark + "'",
@@ -581,20 +669,22 @@ std::string Shell::buildSetupCommand() const {
         "export COLUMNS=" + std::to_string(columns_),
         "unset HISTFILE",
         eos,
-    };
-    std::string result;
-    for (const auto &line : lines) result += line + "\n";
-    return result;
+    });
   }
   // csh/tcsh fallback -- unlike bash/zsh above, NOT verified against a
   // real csh/tcsh session (no evidence either was ever exercised in
   // practice); kept as the pre-existing best-effort default rather
-  // than guessed at further. Plain "#eos<pid>#" here, not the ": "-
-  // prefixed form above -- csh/tcsh's `#` really is always a comment
-  // character (unlike zsh's context-dependent interactive_comments),
-  // and `:` isn't a standard csh/tcsh builtin to lean on instead.
-  std::string cshEos = "#eos" + std::to_string(childPid_) + "#";
-  return "set prompt = \"" + mark + prog + ":%~%# " + mark + "\"\nset ignoreeof\n" + cshEos + "\n";
+  // than guessed at further. Uses the same real-`echo` sentinel and
+  // same chained-into-one-command approach as bash/zsh above now (a
+  // bare "#eos<pid>#" comment line would print nothing at all with
+  // ECHO disabled -- see start()'s own comment -- and csh/tcsh's `#`
+  // is unconditionally a comment character, so it couldn't lean on a
+  // `:`-style no-op prefix either way).
+  return chain({
+      "set prompt = \"" + mark + prog + ":%~%# " + mark + "\"",
+      "set ignoreeof",
+      eos,
+  });
 }
 
 // One-shot startup handshake: discard everything up through our own
@@ -621,11 +711,43 @@ std::string Shell::buildSetupCommand() const {
 // that trailing real content -- often the leading ESC byte of the
 // next prompt's own escape sequences, leaving just the REST of a
 // sequence (e.g. "[27m" with no ESC in front) to flow into
-// processOutputBytes() as literal garbage text. Now the remainder
-// past the sentinel is fed through normally instead of discarded.
+// processOutputBytes() as literal garbage text. The bytes after the
+// sentinel are fed through normally instead of discarded -- but see
+// below for why "found the sentinel" alone isn't yet "safe to feed
+// what follows."
+//
+// A real user report (2026-08-02, screenshot): even after the sentinel
+// itself became a real, shell-emitted `echo` (see buildSetupCommand()'s
+// own comment) and ECHO was disabled on the pty (see start()'s own
+// comment), a short leaked fragment (zsh's own "> " PS2 continuation-
+// prompt indicator, from ZLE still mid-read of the backslash-continued
+// setup command at the exact moment its OWN read() call returned) could
+// still occasionally end up in scrollback_ right after SHELL started.
+// The sentinel's own echo proves the shell has EXECUTED the setup
+// command, but says nothing about whether every byte the shell is
+// about to write as a RESULT of that (its real first prompt, in the
+// now-correctly-configured mark+prog+":" format) has already arrived
+// in this read loop's buffer -- reads and writes on the two ends of a
+// pty are independent, racing operations. Rather than trust the first
+// read() that contains the sentinel, this now keeps draining
+// (bounded by the same maxAttempts loop) until a full 20ms poll
+// interval passes with nothing more arriving (a "settle" gap, cheap to
+// detect since the shell's own post-setup burst is always contiguous
+// and fast), and then looks for markerPrefix_ (mark+prog+":", the
+// fixed, unmistakable prefix of the REAL prompt this class already
+// knows how to recognize during normal operation) within everything
+// that arrived after the sentinel -- feeding only from THAT point
+// onward, so any stray PS2/other fragment between the sentinel and the
+// real prompt is discarded rather than leaking into scrollback as
+// literal text. If markerPrefix_ never turns up before the settle gap
+// (e.g. an unexpected prompt format), everything after the sentinel is
+// fed through unfiltered, same as this function did before this fix --
+// not a regression, just no longer the ONLY behavior.
 bool Shell::waitForHandshake() {
   std::string sentinel = "#eos" + std::to_string(childPid_) + "#";
   std::string scan;
+  bool sentinelFound = false;
+  std::string postSentinel;
   const int maxAttempts = 500;  // 500 * 20ms = up to ~10s
   for (int attempt = 0; attempt < maxAttempts; attempt++) {
     struct pollfd pfd {
@@ -636,7 +758,10 @@ bool Shell::waitForHandshake() {
       if (errno == EINTR) continue;
       return false;
     }
-    if (rc == 0) continue;
+    if (rc == 0) {
+      if (sentinelFound) break;  // settle gap: the post-sentinel burst has finished arriving
+      continue;
+    }
     if (pfd.revents & (POLLHUP | POLLERR)) return false;
     char buf[512];
     ssize_t n = read(masterFd_, buf, sizeof(buf));
@@ -644,15 +769,26 @@ bool Shell::waitForHandshake() {
       if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) continue;
       return false;
     }
-    scan.append(buf, static_cast<std::size_t>(n));
-    if (std::size_t pos = scan.find(sentinel); pos != std::string::npos) {
-      std::string remainder = scan.substr(pos + sentinel.size());
-      if (!remainder.empty()) processOutputBytes(remainder);
-      return true;
+    if (!sentinelFound) {
+      scan.append(buf, static_cast<std::size_t>(n));
+      if (std::size_t pos = scan.find(sentinel); pos != std::string::npos) {
+        sentinelFound = true;
+        postSentinel = scan.substr(pos + sentinel.size());
+      } else if (scan.size() > 4096) {
+        scan.erase(0, scan.size() - sentinel.size());
+      }
+      continue;
     }
-    if (scan.size() > 4096) scan.erase(0, scan.size() - sentinel.size());
+    postSentinel.append(buf, static_cast<std::size_t>(n));
   }
-  return false;
+  if (!sentinelFound) return false;
+  if (!markerPrefix_.empty()) {
+    if (std::size_t markerPos = postSentinel.find(markerPrefix_); markerPos != std::string::npos) {
+      postSentinel.erase(0, markerPos);
+    }
+  }
+  if (!postSentinel.empty()) processOutputBytes(postSentinel);
+  return true;
 }
 
 LineEditor &Shell::commandLine() { return commandLine_; }

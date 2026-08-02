@@ -145,10 +145,27 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     }
 
     if (c == '\t') {
+      // Expanded to `step` literal spaces here, NOT kept as a raw tab
+      // byte -- ported from disp.c's own "convert '\t' to ' '"
+      // comment (its own count_h()/count_i() column-counting pass
+      // does the same substitution before anything reaches the
+      // display layer). ContentView::renderLine() treats any byte
+      // < 0x20 as a control code needing reverse-video display (the
+      // K_at/K_dl convention, see its own comment) -- a raw tab byte
+      // surviving into wrapText_ used to hit that same path, showing
+      // as a visible reverse-video glyph instead of whitespace. Found
+      // via a real user report (2026-08-02, screenshot): plain `ls`
+      // column output (which real shells tab-align, not space-align)
+      // showed small reverse-video boxes between filenames in SHELL's
+      // own scrollback specifically (the one place in this port that
+      // feeds fully raw, uncooked real-command output through this
+      // same PipeBuffer FileMode/ManMode otherwise only see
+      // post-processed file text from).
       int step = 8 - (wrapCol_ % 8);
       if (wrapCol_ + step > width_) step = width_ - wrapCol_;
+      step = std::max(0, step);
       wrapCol_ += step;
-      wrapText_.push_back('\t');
+      wrapText_.append(static_cast<std::size_t>(step), ' ');
       i++;
       if (wrapCol_ >= width_) finalize(false);
       continue;

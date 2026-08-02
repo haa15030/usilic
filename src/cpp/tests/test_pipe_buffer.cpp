@@ -46,21 +46,24 @@ TEST_CASE("flush() finalizes a trailing line with no newline") {
   CHECK(buf.lines()[0].endsWithNewline == false);
 }
 
-TEST_CASE("tab advances to the next 8-column stop, byte kept literal") {
+TEST_CASE("tab advances to the next 8-column stop, expanded to spaces") {
   PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
   buf.feed("a\tb\n");
   REQUIRE(buf.lines().size() == 1);
-  // The literal tab byte is kept in the text (a real terminal expands
-  // it on render, matching legacy's put_str() passing raw tabs
-  // through) -- only the WRAP decision uses the expanded column.
-  CHECK(buf.lines()[0].text == "a\tb");
+  // The tab byte is expanded to literal spaces here, NOT kept raw --
+  // ported from disp.c's own "convert '\t' to ' '" comment. Unlike a
+  // real terminal, ContentView renders each Line's bytes glyph-by-
+  // glyph itself rather than forwarding raw control bytes to an
+  // actual terminal, so a surviving raw tab byte would hit its
+  // control-code (K_at/K_dl) reverse-video path instead of expanding.
+  CHECK(buf.lines()[0].text == "a       b");
 }
 
 TEST_CASE("tab that reaches the wrap width forces a wrap") {
   PipeBuffer buf(Charset::Encoding::Ascii, 8, 1 << 20);
   buf.feed("ab\tcd\n");  // "ab" (col 2) + tab -> col 8 (the field width) -> wrap
   REQUIRE(buf.lines().size() == 2);
-  CHECK(buf.lines()[0].text == "ab\t");
+  CHECK(buf.lines()[0].text == "ab      ");
   CHECK(buf.lines()[0].endsWithNewline == false);
   CHECK(buf.lines()[1].text == "cd");
 }

@@ -223,6 +223,28 @@ void ContentView::renderLine(const Line &line, bool marked) {
 
   setStandout(marked);
   for (unsigned char c : line.text) {
+    // Tab specifically excluded from the control-byte check below --
+    // ported from disp.c's own "convert '\t' to ' '" comment (its
+    // count_h()/count_i() column-counting pass does the same
+    // substitution before anything reaches the display layer). A raw
+    // tab byte reaching THIS layer used to get the SAME reverse-video
+    // glyph treatment as any other control byte -- found via a real
+    // user report (2026-08-02, screenshot): plain `ls` output (which
+    // real shells tab-align columns in, not space-align) showed
+    // visible reverse-video boxes between filenames in SHELL's own
+    // scrollback. PipeBuffer's own wrapLine() now expands tabs to the
+    // right number of spaces BEFORE they ever reach a Line (see its
+    // own comment) for content that passes through it, but this is a
+    // second, simpler safety net here for any OTHER caller building a
+    // Line directly with a literal '\t' in it (e.g. DuMode::
+    // formatEntryLine()'s own size/path column separator) -- legacy's
+    // own conversion is a bare 1-for-1 swap, not real tab-stop math,
+    // so matching that exactly (a single space, not a computed
+    // column-aligning run) is deliberate here, not a simplification.
+    if (c == '\t') {
+      display_.putChar(' ');
+      continue;
+    }
     // K_dl (0x7f, DEL) and plain control bytes (< 0x20) are shown
     // reverse-video as letter+'@', the same convention LineEditor's
     // renderVisible() uses -- ported from put_str()'s control-
