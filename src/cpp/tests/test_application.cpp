@@ -1943,6 +1943,45 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^C starts the exit-confirmation prompt"
   CHECK_FALSE(app.wantsExit());
 }
 
+// -- Prompt mode-line labels (activatePrompt()/promptLabelText()) --
+// a real user report (2026-08-02) found NO prompt anywhere showed any
+// visible indication of what it was asking for; every startXxxPrompt()
+// drew an unlabeled blank edit field. --
+
+TEST_CASE_FIXTURE(Fixture, "prompt labels: EXIT shows its own label with the y/n hint, in reverse video") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartExit));
+  CHECK(display.rowText(display.rows() - 1).find("EXIT (y/n)?") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "prompt labels: FGREP vs EGREP shows the right one depending on syntax") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  CHECK(display.rowText(display.rows() - 1).find("FGREP") != std::string::npos);
+
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G cancel
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  CHECK(display.rowText(display.rows() - 1).find("EGREP") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "prompt labels: DU shows its own label, and the pre-filled directory text still "
+                           "appears right after it") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  std::string row = display.rowText(display.rows() - 1);
+  CHECK(row.find("DU") != std::string::npos);
+  CHECK(row.find(path()) != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "prompt labels: cancelling (^G) clears the label along with the prompt") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartExit));
+  REQUIRE(display.rowText(display.rows() - 1).find("EXIT") != std::string::npos);
+
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
+  CHECK(display.rowText(display.rows() - 1).find("EXIT") == std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "StartExit: reachable from any mode, e.g. File") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");

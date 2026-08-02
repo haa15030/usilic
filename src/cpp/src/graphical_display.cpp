@@ -142,6 +142,7 @@ struct GraphicalDisplay::Impl {
   std::deque<MouseClick> mouseQueue;
   std::deque<KeyEvent> keyQueue;
   std::deque<DragEvent> dragQueue;
+  std::deque<HoverEvent> hoverQueue;
   SDL_Cursor *handCursor = nullptr;
   bool handCursorActive = false;
 
@@ -612,8 +613,13 @@ bool GraphicalDisplay::pumpEvents() {
         break;
       }
       case SDL_MOUSEMOTION: {
-        if (event.motion.state & SDL_BUTTON_LMASK)
+        if (event.motion.state & SDL_BUTTON_LMASK) {
           impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
+        } else {
+          int col = event.motion.x / std::max(impl_->cellWidth, 1);
+          int row = event.motion.y / std::max(impl_->cellHeight, 1);
+          impl_->hoverQueue.push_back(HoverEvent{row, col});
+        }
         break;
       }
       case SDL_KEYDOWN: {
@@ -658,6 +664,13 @@ std::optional<GraphicalDisplay::MouseClick> GraphicalDisplay::consumeMouseClick(
   MouseClick click = impl_->mouseQueue.front();
   impl_->mouseQueue.pop_front();
   return click;
+}
+
+std::optional<GraphicalDisplay::HoverEvent> GraphicalDisplay::consumeHoverEvent() {
+  if (impl_->hoverQueue.empty()) return std::nullopt;
+  HoverEvent hover = impl_->hoverQueue.front();
+  impl_->hoverQueue.pop_front();
+  return hover;
 }
 
 std::optional<GraphicalDisplay::KeyEvent> GraphicalDisplay::consumeKeyEvent() {

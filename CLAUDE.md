@@ -6873,6 +6873,86 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      全prompt系コマンドのmode-lineラベル欠落(新規発見、横断的な
      設計課題として次回検討)。
 
+120. **2026-08-02(続き): 「①」への訂正指摘に対応 ― GUI(-g)の
+    マウスhover未対応を修正、CUI(-c)のマウスtrackingを無効化、
+    全promptコマンドのmode-lineラベル欠落を最優先で解消**。項目119の
+    「①はこのポート独自の意図した新機能でバグではない」という
+    説明に対し、ユーザーから訂正が入った: 「-cはこちらの環境
+    (Claude Code)でも動作検証できるようにするためのオプションで
+    あり、Linuxのtty端末用でもある。なのでマウスでカーソルを
+    動かすわけにはいかない(グラフィック機能が使えない想定だから)。
+    逆に-g起動なのにマウスでカーソルが動かないなんてあり得ない」。
+    また「モードラインが無いと話にならない」として、項目119で
+    「副次的に発見・次回検討」としていたprompt系コマンドの
+    mode-lineラベル欠落を最優先で対応するよう指示があった。
+   - **①の訂正: GUI(-g)でマウスhoverが効かない実バグを発見・修正**。
+     `app/main.cpp`を確認したところ、実端末でのマウスtracking経路
+     (`runTerminalPhase()`)には「ボタンを押さずにマウスを動かした
+     だけ」のhover(`motionOnly`)を検出して`applyHoverRowAndRedraw()`
+     を呼ぶ処理が既にあったが、GUI経路(`runGuiPhase()`)には
+     クリックの検出(`consumeMouseClick()`)とドラッグ中のモーション
+     検出(`consumeDragEvent()`、左ボタン押下中のみ)しか無く、
+     「ボタン無しの素のマウス移動」を拾う仕組みが丸ごと存在しな
+     かったと判明した。`GraphicalDisplay`の`pumpEvents()`内、
+     `SDL_MOUSEMOTION`イベントの処理で
+     `event.motion.state & SDL_BUTTON_LMASK`が偽の場合(ボタン
+     未押下)は何もキューに積まずそのまま捨てていた。新規
+     `HoverEvent`/`consumeHoverEvent()`をGraphicalDisplayに追加し、
+     ボタン無しのMOUSEMOTIONをここに積むよう修正、`runGuiPhase()`
+     側で(ドラッグ・コースト中でなくSHELLモードでもない場合に限り)
+     ドレインして`applyHoverRowAndRedraw()`を呼ぶようにした。
+   - **①の訂正: CUI(`-c`)ではマウスtrackingそのものを無効化**。
+     ユーザーの指摘通り、`-c`は「グラフィック機能が使えない想定」の
+     環境(実Linux ttyコンソール、または表示サーバの無いこの
+     セッション自身の検証環境)を模擬する趣旨であり、実際にマウス
+     報告に対応した端末(例えばTerminal.app)の中で`-c`を起動した
+     結果としてマウスが効いてしまうのは、その想定に反すると判断
+     した。`runTerminalPhase()`に`forceCui`引数を追加し、
+     `syncMouseTracking()`の判定に`!forceCui`を組み込んで、
+     `-c`指定時はモードに関わらずマウスtrackingを一切有効化しない
+     よう変更した(`-c`無しの通常経路は従来通りSHELLモード以外で
+     有効)。
+   - **「モードラインが無いと話にならない」への対応: 全promptに
+     ラベル表示を追加**。項目119で発見していた「FGREP/DU/EXIT等の
+     promptコマンドにmode-line上の視覚的な手がかりが一切無い」
+     という横断的なギャップを、ユーザーの指示通り最優先で解消した。
+     legacyの`disp.c`を再確認したところ、`disp_window()`の
+     mode-line[1]「name」フィールドが通常時はモード名
+     (`s_P(P_mode)[...]`)に置き換わり、`M_exit`だけは追加で
+     position欄相当を`sprintf("%s (y/n) ?  ", s_S(S_errg))`
+     ("Exit (y/n) ?  ")で上書きする、という2段構成だったと判明。
+     このポートは`ContentView`自身のmode-line(`ModeLineFieldsProvider`
+     経由)と`promptEditor_`(別の`LineEditor`インスタンス、同じ最終行
+     に描画)が完全に分離した設計のため、legacyそのままの2フィールド
+     構成を再現するのではなく、両者の役割を1本の文字列
+     (例: `"FGREP"`、`"DU"`、`"EXIT (y/n)?"`)にまとめて
+     mode-line行の左端に反転表示し、`promptEditor_`自体の`col0`を
+     ラベル分だけ右へオフセットする設計にした。新規
+     `Application::activatePrompt(kind, initialText)`
+     (`promptKind_`設定・ラベル描画・`promptEditor_`のテキスト設定/
+     redraw をまとめた共通処理)、`promptLabelText(kind)`(13種類の
+     `PromptKind`それぞれのラベル文字列)、`drawPromptLabel(kind)`
+     (ラベルを反転描画し`promptEditor_.setField()`のcol0をオフセット)
+     を新設し、これまで各`startXxxPrompt()`が個別に持っていた
+     `promptKind_ = X; promptEditor_.setText(Y); promptEditor_.redraw();`
+     という3行の定型処理13箇所すべてを`activatePrompt(X, Y)`
+     一発呼び出しに置き換えた。`cancelPrompt()`(^G)側は元々
+     `activeView().redraw()`でmode-line行全体を再描画しており、
+     これがそのままラベルの消去も兼ねるため変更不要だった。
+   - **検証**: PTYで実際にFGREP/EGREP/MAN/DU/EXITの各promptを起動し、
+     mode-line行にそれぞれ"FGREP"/"EGREP"/"MAN"/"DU"(+事前入力された
+     ディレクトリパスがラベル直後から正しく表示)/"EXIT (y/n)?"が
+     反転表示されることを確認。doctest新規4件(EXITラベル、FGREP/
+     EGREPの出し分け、DUラベル+事前入力テキストの共存、^Gでの
+     ラベル消去)を含め計562件全通過(Mac)、Ubuntu 26.04クロス
+     ビルドでも該当分すべて全通過(既存の失敗12件は今回と無関係)。
+     実バイナリのビルドもMac/Ubuntu両方で確認済み。
+   - **既知の残課題として明示的にスコープ外としたもの**: プロンプト
+     表示中のウィンドウリサイズ(SIGWINCH)でラベル位置がリセット
+     される可能性(`layoutViews()`が`promptEditor_`のcol0を無条件で
+     0へ戻すため)への対応は今回見送り、次回課題として記録するに
+     留めた。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

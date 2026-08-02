@@ -167,6 +167,23 @@ class GraphicalDisplay : public Display {
   // space moveCursor() uses), or nullopt if none is pending.
   std::optional<MouseClick> consumeMouseClick();
 
+  struct HoverEvent {
+    int row;
+    int column;
+  };
+  // Returns and clears the next queued plain mouse-motion sample (no
+  // button held -- see pumpEvents()'s own SDL_MOUSEMOTION case), or
+  // nullopt if none is pending. Added after a real user report
+  // (2026-08-02, comparing side by side against the real-terminal
+  // mouse-tracking path's own applyHoverRowAndRedraw()/motionOnly
+  // handling in main.cpp): plain hover-follow (highlighting whatever
+  // row the pointer rests over, no click needed) worked over a real
+  // terminal's own SGR mouse reporting but was never wired for GUI
+  // mode at all -- SDL_MOUSEMOTION events were previously queued (as
+  // DragEvent::Motion) ONLY while the left button was held, so a bare
+  // hover was silently dropped outright.
+  std::optional<HoverEvent> consumeHoverEvent();
+
   struct KeyEvent {
     int byte = 0;                    // valid when special is nullopt
     std::optional<Key> special;      // one of Display::Key's own 6 values, when this was an arrow/page key

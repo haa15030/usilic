@@ -1428,6 +1428,34 @@ class Application {
     PathInput,  // K-45/K-47's shared prompt kind, see Command::StartFileInput's own comment
     ArchiveDestination  // K-57/K-58's own Destination prompt, see startArchivePrompt()'s own comment
   };
+  // Shared trailer for every startXxxPrompt(): sets promptKind_, draws
+  // that kind's own label onto the mode-line row (see
+  // promptLabelText()'s own comment), and starts promptEditor_ with
+  // initialText. A real user report (2026-08-02) found NO prompt
+  // anywhere showed any visible indication of what it was asking for
+  // (FGREP? EXIT y/n? DU path?) -- every startXxxPrompt() previously
+  // did its own promptKind_=/setText()/redraw() trio with no label at
+  // all, matching legacy's OWN mode-line[1] "name" field being
+  // silently left unported this whole project.
+  void activatePrompt(PromptKind kind, const std::string &initialText);
+  // The label text shown for each PromptKind -- ported from legacy's
+  // own s_P(P_mode)[...] mode-name strings (disp_window()'s mode-
+  // line[1] "name" field, e.g. " EXIT", " FGREP") for the ordinary
+  // cases, PLUS M_exit's own disp.c special case
+  // (sprintf(line, "%s (y/n) ?  ", s_S(S_errg))) folded into ONE
+  // combined string here rather than replicating legacy's separate
+  // name+position-field split -- this port has no equivalent second
+  // field to put "(y/n) ?" into once promptEditor_ already owns the
+  // rest of the row, and a single combined label communicates the
+  // same thing with far less mechanism.
+  std::string promptLabelText(PromptKind kind) const;
+  // Draws promptLabelText(kind) in reverse video at the mode-line
+  // row's own left edge, then narrows promptEditor_'s own field to
+  // start right after it (see activatePrompt()'s own comment). Split
+  // out from activatePrompt() only so a future resize-while-prompting
+  // fix (not attempted here, see this port's own known-limitations
+  // notes) has an obvious single place to re-call.
+  void drawPromptLabel(PromptKind kind);
   PromptKind promptKind_ = PromptKind::None;
 };
 

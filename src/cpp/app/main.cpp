@@ -800,7 +800,7 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
 // every way out of this function -- including the final program exit
 // -- so a real shell prompt afterward is never left with broken mouse
 // click/selection behavior.
-bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display &display) {
+bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display &display, bool forceCui) {
   bool mouseTrackingOn = false;
   // Counts consecutive bare ESC presses, for the ESC-ESC-Enter direct-
   // exit gesture -- see runGuiPhase()'s own comment on why this
@@ -816,8 +816,19 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
   // it instead of reaching Application's own ESC-leader state machine
   // immediately below.
   int consecutiveEscapes = 0;
+  // `-c`'s whole purpose is verifying behavior on a plain, graphics-
+  // incapable terminal -- a real Linux tty console, or this session's
+  // own display-less environment (see -c's own comment near main()'s
+  // argv parsing) -- so mouse tracking is never enabled under it,
+  // regardless of mode. A real user report (2026-08-02) pointed out
+  // that a real bare tty has no mouse reporting capability at all,
+  // making mouse-follow under `-c` misleading even though it happened
+  // to work when `-c` was actually run inside a real, mouse-capable
+  // terminal emulator (Terminal.app) rather than a genuine bare tty.
+  // Without `-c`, this is unchanged: real-terminal mouse tracking
+  // stays on whenever NOT in Shell mode, same as before.
   auto syncMouseTracking = [&]() {
-    bool want = app.currentMode() != fm::ApplicationMode::Shell;
+    bool want = !forceCui && app.currentMode() != fm::ApplicationMode::Shell;
     if (want != mouseTrackingOn) {
       setTerminalMouseTracking(display, want);
       mouseTrackingOn = want;
@@ -1098,6 +1109,22 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       anyEventThisFrame = true;
       if (!click->rightButton) app.handleMouseClick(click->row, click->column);
       // right-click: captured but not acted on yet, see class comments
+    }
+    // Plain hover-follow (no button held) -- matching the real-
+    // terminal mouse-tracking path's own applyHoverRowAndRedraw()/
+    // motionOnly handling above, which GUI mode never had at all
+    // before this (a real user report, 2026-08-02: "-g起動なのに
+    // マウスでカーソルが動かないなんてあり得ない"). Skipped while a
+    // drag or coast is already in progress or Shell mode is active,
+    // same guards the terminal path's own hover handling uses --
+    // hover highlighting during an active drag/coast would fight with
+    // that gesture's own redraw() calls, and Shell has no
+    // ContentView-backed row selection to hover in the first place.
+    if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell) {
+      while (auto hover = gui.consumeHoverEvent()) {
+        anyEventThisFrame = true;
+        applyHoverRowAndRedraw(app.activeContentView(), hover->row);
+      }
     }
     while (auto key = gui.consumeKeyEvent()) {
       anyEventThisFrame = true;
@@ -1569,7 +1596,7 @@ int main(int argc, char **argv) {
       }
     }
     while (!app.wantsExit()) {
-      if (!runTerminalPhase(app, keyInput, display)) break;
+      if (!runTerminalPhase(app, keyInput, display, forceCui)) break;
       if (app.wantsExit()) break;
       tryEnterGuiPhase(app, display, *terminalDisplay);  // ^Og fallback -- unmatched terminal or no display server
     }

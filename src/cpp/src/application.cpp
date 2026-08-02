@@ -1390,9 +1390,7 @@ bool Application::startCopyPrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (directoryMode_.targetEntries().empty()) return false;
   cpMvRmInteractive_ = interactive;
-  promptKind_ = PromptKind::CopyDestination;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::CopyDestination, "");
   return true;
 }
 
@@ -1400,9 +1398,7 @@ bool Application::startMovePrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (directoryMode_.targetEntries().empty()) return false;
   cpMvRmInteractive_ = interactive;
-  promptKind_ = PromptKind::MoveDestination;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::MoveDestination, "");
   return true;
 }
 
@@ -1413,9 +1409,7 @@ bool Application::startRemovePrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (directoryMode_.targetEntries().empty()) return false;
   cpMvRmInteractive_ = interactive;
-  promptKind_ = PromptKind::RemoveConfirm;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::RemoveConfirm, "");
   return true;
 }
 
@@ -1423,9 +1417,7 @@ bool Application::startRemovePrompt(bool interactive) {
 // class comment for why this is reachable from any mode and doesn't
 // need a targetEntries()-style guard the way CP/MV/RM do.
 bool Application::startExitPrompt() {
-  promptKind_ = PromptKind::ExitConfirm;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::ExitConfirm, "");
   return true;
 }
 
@@ -1436,9 +1428,7 @@ bool Application::startExitPrompt() {
 // see class comment.
 bool Application::startDuPrompt() {
   if (currentMode_ != ApplicationMode::Directory) return false;
-  promptKind_ = PromptKind::DuPath;
-  promptEditor_.setText(directoryMode_.currentDirectory());
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::DuPath, directoryMode_.currentDirectory());
   return true;
 }
 
@@ -1458,9 +1448,7 @@ bool Application::startArchivePrompt(bool interactive) {
     return false;
   }
   archiveExtractInteractive_ = interactive;
-  promptKind_ = PromptKind::ArchiveDestination;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::ArchiveDestination, "");
   return true;
 }
 
@@ -1490,9 +1478,7 @@ std::vector<std::string> Application::buildArchiveExtractArgv(const std::string 
 // prompt/execute pair since PathResolver already decides file-vs-
 // directory from the path itself, not from which key was pressed.
 bool Application::startPathInputPrompt() {
-  promptKind_ = PromptKind::PathInput;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::PathInput, "");
   return true;
 }
 
@@ -1566,9 +1552,7 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
   if (currentMode_ == ApplicationMode::Grep) return false;
   grepSyntax_ = syntax;
   grepReturnMode_ = currentMode_;
-  promptKind_ = PromptKind::GrepPattern;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::GrepPattern, "");
   return true;
 }
 
@@ -1584,9 +1568,7 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
   if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::CutContent) return false;
   cutSyntax_ = syntax;
   if (currentMode_ == ApplicationMode::File) cutReturnMode_ = ApplicationMode::File;
-  promptKind_ = PromptKind::CutPattern;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::CutPattern, "");
   return true;
 }
 
@@ -1610,9 +1592,7 @@ bool Application::startCutFilePrompt(GrepSyntax syntax) {
   path += entry->name;
   cutFileSourcePath_ = path;
   cutSyntax_ = syntax;
-  promptKind_ = PromptKind::CutPattern;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::CutPattern, "");
   return true;
 }
 
@@ -1626,9 +1606,7 @@ bool Application::startCutFilePrompt(GrepSyntax syntax) {
 // originally started, not to the page viewed just before it.
 bool Application::startManPrompt() {
   if (currentMode_ != ApplicationMode::Man) manReturnMode_ = currentMode_;
-  promptKind_ = PromptKind::ManName;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::ManName, "");
   return true;
 }
 
@@ -1638,9 +1616,7 @@ bool Application::startManPrompt() {
 // already showing). Like MAN, always reachable and always starts
 // with an empty prompt.
 bool Application::startProgramPrompt() {
-  promptKind_ = PromptKind::ProgramCommand;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::ProgramCommand, "");
   return true;
 }
 
@@ -1654,9 +1630,7 @@ bool Application::startProgramPrompt() {
 bool Application::startLocatePrompt() {
   if (currentMode_ == ApplicationMode::Locate) return false;
   locateReturnMode_ = currentMode_;
-  promptKind_ = PromptKind::LocateQuery;
-  promptEditor_.setText("");
-  promptEditor_.redraw();
+  activatePrompt(PromptKind::LocateQuery, "");
   return true;
 }
 
@@ -1721,6 +1695,57 @@ bool Application::submitPrompt() {
 void Application::cancelPrompt() {
   promptKind_ = PromptKind::None;
   activeView().redraw();
+}
+
+std::string Application::promptLabelText(PromptKind kind) const {
+  switch (kind) {
+    case PromptKind::GrepPattern:
+      return grepSyntax_ == GrepSyntax::Fixed ? "FGREP" : "EGREP";
+    case PromptKind::CutPattern:
+      return "CUT";
+    case PromptKind::ManName:
+      return "MAN";
+    case PromptKind::ProgramCommand:
+      return "PROGRAM";
+    case PromptKind::LocateQuery:
+      return "LOCATE";
+    case PromptKind::CopyDestination:
+      return "CP";
+    case PromptKind::MoveDestination:
+      return "MV";
+    case PromptKind::RemoveConfirm:
+      return "RM";
+    case PromptKind::ExitConfirm:
+      return "EXIT (y/n)?";
+    case PromptKind::DuPath:
+      return "DU";
+    case PromptKind::PathInput:
+      return "FILE/DIR";
+    case PromptKind::ArchiveDestination:
+      return "ARC";
+    case PromptKind::None:
+      return "";
+  }
+  return "";
+}
+
+void Application::drawPromptLabel(PromptKind kind) {
+  std::string label = promptLabelText(kind);
+  int row = std::max(0, display_.rows() - 1);
+  display_.moveCursor(row, 0);
+  display_.clearToEndOfLine();
+  display_.setAttribute(Display::Attribute::Standout);
+  for (unsigned char c : label) display_.putChar(c);
+  display_.setAttribute(Display::Attribute::StandoutOff);
+  int labelWidth = label.empty() ? 0 : static_cast<int>(label.size()) + 1;  // +1: one-column gap before the field
+  promptEditor_.setField(row, labelWidth, std::max(1, display_.columns() - labelWidth));
+}
+
+void Application::activatePrompt(PromptKind kind, const std::string &initialText) {
+  promptKind_ = kind;
+  drawPromptLabel(kind);
+  promptEditor_.setText(initialText);
+  promptEditor_.redraw();
 }
 
 bool Application::executeGrep(const std::string &pattern) {
