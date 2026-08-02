@@ -553,14 +553,38 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
   updateCommandLineField();
   commandLine_.setText("");
 
-  std::string decorated = display_.attributeEscape(Display::Attribute::Bold) + options_.programName +
-                           display_.attributeEscape(Display::Attribute::BoldOff) + ":" + tailBeforeMark;
+  promptDecorated_ = display_.attributeEscape(Display::Attribute::Bold) + options_.programName +
+                      display_.attributeEscape(Display::Attribute::BoldOff) + ":" + tailBeforeMark;
+  redrawPromptRow();
+}
+
+// Right after SHELL starts (or scrollback_ is otherwise short of a
+// full viewport), ANY scrollback_ mutation -- freezePromptLine(),
+// moveUp()/moveDown() (^P/^N), goToBottom() -- runs a FULL
+// ContentView::redraw() that unconditionally clears every row from 0
+// to height_-1, including commandLineRow() (scrollback_'s own LAST
+// content row, which is exactly where the live prompt lives) --
+// ContentView has no line to draw there once lines_.size() is less
+// than a full viewport, so that row is simply left blank. A plain
+// commandLine_.redraw() only repaints the EDITABLE FIELD portion
+// (from promptCol onward, see updateCommandLineField()) -- the bold
+// PROMPT PREFIX TEXT ITSELF is drawn separately, once, only inside
+// handlePromptDetected(), so nothing else was ever re-issuing it. A
+// real user report (2026-08-02): "最初の起動直後および^Pで SHELLプロン
+// プトが消える" -- reproduced via PTY for both cases: right after
+// ensureShellActive()'s own scrollback_.redraw() call ran AFTER the
+// prompt had already been drawn during the handshake, and after ^P's
+// moveUp() (which now drives scrollback_'s own cursor directly, see
+// Application::feedShellByte()'s own comment) triggered the same
+// full redraw with a short scrollback. Every call site that follows a
+// scrollback_ mutation with a bare commandLine_.redraw() needed to
+// become this instead.
+void Shell::redrawPromptRow() {
   int promptRow = commandLineRow();
   display_.moveCursor(promptRow, 0);
   display_.clearToEndOfLine();
-  display_.write(decorated);
+  display_.write(promptDecorated_);
   display_.flush();
-
   commandLine_.redraw();
 }
 
@@ -878,7 +902,7 @@ void Shell::submitLine() {
   }
 
   commandLine_.setText("");
-  commandLine_.redraw();
+  redrawPromptRow();
 }
 
 void Shell::onTab() {
@@ -968,7 +992,7 @@ void Shell::onResize(int rows, int columns) {
     ioctl(masterFd_, TIOCSWINSZ, &ws);
   }
   scrollback_.redraw();
-  commandLine_.redraw();
+  redrawPromptRow();
 }
 
 void Shell::setEncoding(Charset::Encoding encoding) {

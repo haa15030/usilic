@@ -707,10 +707,12 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   // so ^P/^N end up needing no bespoke state of their own at all.
   if (byte == 0x10) {  // ^P
     shell_.scrollback().moveUp();
+    shell_.redrawPromptRow();  // moveUp() can blank commandLineRow() -- see its own comment
     return true;
   }
   if (byte == 0x0e) {  // ^N
     shell_.scrollback().moveDown();
+    shell_.redrawPromptRow();
     return true;
   }
   // !empty() guard: with no lines at all yet, lines().size()-1
@@ -735,6 +737,7 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
         shell_.submitLine();
       } else {
         shell_.scrollback().goToBottom();
+        shell_.redrawPromptRow();  // see the browsingHistory guard below's own comment
       }
       return true;
     }
@@ -747,8 +750,16 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   // before falling through to handle the actual keystroke). ^C is the
   // only byte past this point that does NOT touch commandLine_ (it
   // just forwards the interrupt to the child), matching legacy's own
-  // K_c case, which has no such guard either.
-  if (browsingHistory && byte != kControlC) shell_.scrollback().goToBottom();
+  // K_c case, which has no such guard either. redrawPromptRow() (not
+  // just commandLine_.redraw(), which Tab/backspace/insertByte below
+  // already call on their own) is needed here specifically because
+  // goToBottom() itself just ran a full scrollback_ redraw that can
+  // blank the prompt PREFIX text -- see redrawPromptRow()'s own
+  // comment for the full story (a real user report, 2026-08-02).
+  if (browsingHistory && byte != kControlC) {
+    shell_.scrollback().goToBottom();
+    shell_.redrawPromptRow();
+  }
   if (byte == 0x09) {  // Tab
     shell_.onTab();
     return true;
@@ -1310,7 +1321,7 @@ bool Application::ensureShellActive() {
   shellReturnMode_ = currentMode_;
   currentMode_ = ApplicationMode::Shell;
   shell_.scrollback().redraw();
-  shell_.commandLine().redraw();
+  shell_.redrawPromptRow();
   return true;
 }
 
@@ -1331,7 +1342,7 @@ bool Application::shellRestart() {
   }
   currentMode_ = ApplicationMode::Shell;
   shell_.scrollback().redraw();
-  shell_.commandLine().redraw();
+  shell_.redrawPromptRow();
   return true;
 }
 

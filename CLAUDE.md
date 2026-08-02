@@ -7331,6 +7331,52 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      後は同じPTYシナリオで正しく動作することも確認済み。実バイナリの
      ビルドもMac/Ubuntu両方で警告ゼロを確認。
 
+126. **2026-08-02(続き7): SHELL起動直後および^P操作でプロンプト行が
+    消えるバグを修正**。項目125の直後、ユーザーから「SHELLを起動した
+    ときのプロンプト位置は今の方がいい。最上行から始めたところで
+    いずれは最下行が定位置なわけだし。最初の起動直後および^Pで
+    SHELLプロンプトが消えるバグはすぐ直る?」との報告。前半(プロンプト
+    位置)は項目123の設計への肯定的な確認、後半が新規バグ報告だった。
+   - **原因**: 項目123で`scrollback_`を「最上行から始まり内容と共に
+     下へ伸びる」top-anchored設計にした結果、`ContentView::redraw()`
+     (`lines_.size()`未満の行のみ描画、それ以外は`clearToEndOfLine()`
+     で空白化)が、内容が短い間`commandLineRow()`(`scrollback_`自身の
+     コンテンツ領域の最終行、ライブプロンプトの定位置)を空白化して
+     しまうようになっていた。しかもプロンプトの接頭辞テキスト
+     ("usilic:/path%"のような部分)は`Shell::handlePromptDetected()`が
+     一度だけ直接`display_`へ書き込む方式で、`commandLine_.redraw()`
+     (LineEditorの再描画)は入力欄部分しか復元しない設計だったため、
+     `scrollback_`側の再描画がいったん空白化すると接頭辞テキストは
+     二度と戻らなかった。具体的には(1)`Application::
+     ensureShellActive()`が`scrollback_.redraw()`→`commandLine_.
+     redraw()`の順で呼んでおり、ハンドシェイク中に既に描画済みの
+     プロンプトを`scrollback_.redraw()`が空白化した後、
+     `commandLine_.redraw()`が入力欄しか復元しなかった(起動直後の
+     症状)。(2)項目124で実装した^P/^N(`scrollback().moveUp()`/
+     `moveDown()`)は`ContentView::moveUp()`/`moveDown()`内部で
+     `redraw()`を呼ぶが、その後に一切`commandLine_`側の復元処理を
+     呼んでいなかった(^Pの症状)。
+   - **修正**: `promptPlain_`と対になる`promptDecorated_`(太字装飾
+     込みのプロンプト接頭辞テキスト)を`Shell`の新規メンバとして
+     保持するようにし、新規`Shell::redrawPromptRow()`(接頭辞テキスト
+     の再書き込み+`commandLine_.redraw()`を両方行う)を追加。
+     `handlePromptDetected()`自身もこれを使うよう整理した上で、
+     `scrollback_`を変化させる可能性のあるすべての箇所――
+     `Application::ensureShellActive()`/`shellRestart()`、^P/^N
+     ハンドラ、browsing中の文字入力での`goToBottom()`直後、Enterで
+     非プロンプト行から最下行へスナップバックする箇所、
+     `Shell::submitLine()`の末尾、`Shell::onResize()`の末尾――で、
+     単なる`commandLine_.redraw()`をすべて`redrawPromptRow()`へ
+     置き換えた。
+   - **検証**: PTY自動テスト(Mac実機のzsh、Ubuntu実機のbash両方)で、
+     SHELL起動直後の画面末尾に必ずプロンプト("usilic(B:/path% "の
+     ような装飾込みの文字列)が表示されていること、`echo A`実行後に
+     ^Pを2回押して過去のプロンプト行へカーソルが移動している状態でも
+     常に最下行のプロンプトが表示され続けることをそれぞれ確認した。
+     doctest全569件(Mac)/該当分全件(Ubuntu、既存の環境依存12件の
+     失敗は無関係)通過、実バイナリのビルドもMac/Ubuntu両方で警告
+     ゼロを確認済み。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

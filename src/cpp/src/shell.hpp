@@ -168,6 +168,12 @@ class Shell {
   // ported here, see the class comment).
   void submitLine();
 
+  // Redraws the live prompt row (commandLineRow()): the bold prompt
+  // prefix text (promptDecorated_) followed by commandLine_'s own
+  // editable field. Needed anywhere AFTER a scrollback_ mutation that
+  // could have blanked that row -- see the definition's own comment.
+  void redrawPromptRow();
+
   // TAB: asks completionProvider_ (if set) for candidates matching
   // the partial word ending at the cursor, and splices a single
   // unambiguous match back into the command line. Multiple/zero
@@ -313,6 +319,7 @@ class Shell {
 
   int viewportRows_ = 0, columns_ = 0;
   std::string promptPlain_;  // current prompt text, no embedded escape codes (for width calc)
+  std::string promptDecorated_;  // same text, with the bold escape codes -- see redrawPromptRow()
 
   std::string currentDirectory_;
   bool busy_ = false;

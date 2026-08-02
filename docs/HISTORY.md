@@ -307,3 +307,14 @@ PTY自動テスト(Mac/zsh、Ubuntu/bash)で、2回の^Pで直近コマンドの
 Ubuntu実機のbashで検証したところ、exit後もSHELLモードから一切離脱しないというLinux固有の追加バグを発見しました。原因はapp/main.cppの両呼び出し箇所がPOLLINのみをゲート条件にしていたことで、Linuxではptyスレーブ側が完全に閉じられるとPOLLINを伴わずPOLLHUP単独が立つケースがあり(macOS/zshではPOLLINが立ち、続くread()が0を返すことでEOFを検知していたため今まで気づきませんでした)、ゲート自体が素通りせずonPtyReadable()が一度も呼ばれていませんでした。POLLHUP/POLLERRも見るよう拡張して解消しました。
 
 PTY自動テスト(Mac/zsh、Ubuntu/bash)で、SHELLでexit+Enterを実行すると追加のキー操作無しに自動的に元のモードへ画面が切り替わること、再度SHELLへ入るとスクロールバックが完全に空のフレッシュなセッションで始まり子プロセスのPIDも前回と異なることを確認しました。doctest新規1件(実bashを実際にexitさせてEnd-to-Endで検証)を含め計569件全通過、Mac/Ubuntu両方で警告ゼロのクリーンビルドを確認しました。コミット・プッシュ済み。
+
+<SHELLを起動したときのプロンプト位置は今の方がいい。最上行から始めたところでいずれは最下行が定位置なわけだし。
+最初の起動直後および^PでSHELLプロンプトが消えるバグはすぐ直る?
+
+>プロンプト位置の件、承知しました。バグの方は原因を特定し修正しました。
+
+原因は、scrollback_を「最上行から始まり内容と共に下へ伸びる」設計にした結果、内容が短い間はcommandLineRow()(ライブプロンプトの定位置)をscrollback_自身の再描画が空白化してしまうようになっていたことでした。しかもプロンプトの接頭辞テキスト自体はhandlePromptDetected()が一度だけ直接書き込む方式で、commandLine_.redraw()は入力欄部分しか復元しない設計だったため、いったん空白化すると接頭辞テキストは二度と戻りませんでした。起動直後はensureShellActive()のscrollback_.redraw()が、^Pでは^P/^Nハンドラ内のscrollback().moveUp()/moveDown()自体の再描画が、それぞれ引き金になっていました。
+
+新規Shell::redrawPromptRow()(プロンプト接頭辞テキストの再書き込み+commandLine_.redraw()を両方行う)を追加し、scrollback_を変化させる可能性のあるすべての箇所(ensureShellActive()/shellRestart()、^P/^Nハンドラ、browsing中の文字入力、Enterでのスナップバック、submitLine()末尾、onResize()末尾)で単なるcommandLine_.redraw()をこれに置き換えました。
+
+PTY自動テスト(Mac/zsh、Ubuntu/bash)で、SHELL起動直後の画面末尾に必ずプロンプトが表示されていること、^Pを2回押して過去の行へカーソルが移動している状態でも常に最下行のプロンプトが表示され続けることを確認しました。doctest全569件通過、Mac/Ubuntu両方で警告ゼロのクリーンビルドを確認しました。コミット・プッシュ済みです。
