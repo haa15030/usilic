@@ -736,6 +736,10 @@ void Shell::setDirectoryChangedCallback(std::function<void(const std::string &)>
 
 const std::string &Shell::currentDirectory() const { return currentDirectory_; }
 
+std::string Shell::programName() const {
+  return options_.argv.empty() ? "" : baseName(options_.argv[0]);
+}
+
 void Shell::setProgramLauncher(
     std::function<bool(const std::string &, const std::string &)> launcher) {
   programLauncher_ = std::move(launcher);

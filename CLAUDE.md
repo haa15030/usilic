@@ -6760,6 +6760,119 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      実施し、詳細なハンズオン検証はユーザーの指示通り次回に持ち
      越した。
 
+119. **2026-08-02: `/usr/local/bin/usilic`(legacy C版、日常使用中の
+    お手本)と`build/usilic`(このC++ポート、`-c`/`-g`)を実機で並べて
+    比較した10項目の報告に対応、5件の実バグを修正**。ユーザーが
+    macOS実機で3ウィンドウ(a: legacy `/usr/local/bin/usilic`、
+    b: このポートの`-c`、c: このポートの`-g`)を並べ、同じ操作列を
+    行った10枚のスクリーンショットを提示。「a)をお手本に差し当たって
+    は以上をクリアして欲しい」との指示。
+   - **前提として判明した重要な事実**: `/usr/local/bin/usilic`は
+     このC++ポートではなく、**legacy C版tcbがconfig.shで`usilic`と
+     いう名前でインストールされたもの**(`src/install.sh`の
+     `install ... tcb $(DESTDIR)/usr/local/bin/usilic`、Makefileの
+     `INSTALL_NAME = U`コメントに明記)。つまりa)は26年物の完成品、
+     b)/c)がテスト対象という構図であり、10項目はすべて「legacyでは
+     動くがこのポートでは動かない/挙動が違う」という実バグ候補。
+   - **①mouse hoverがCUIでも効く(b)のみ)**: このポート独自の
+     実端末マウストラッキング機能(このセッション以前に実装済み)が
+     legacyには無いための表示差であり、意図した機能。バグではないと
+     判断、対応不要。
+   - **②^J^Hが無反応(b/c)**: `USILICHELP`環境変数が未設定だと
+     HELPが静かに無効化される仕様(項目117で判明済み)が原因と
+     確認。
+   - **③「HELP.jp」選択がEnterで効かずダブルクリックのみ、
+     c)は漢字がぼやける**: Enter動作をPTYで再現しようとしたが
+     (^J^H失敗→^G→正確に6回^N→Enter)、修正前後問わずHELP.jpが
+     正しく開き再現できなかった。実端末固有の何か(タイミング/
+     IME等)の可能性があり、原因未特定のまま持ち越し。GUI
+     (c)の漢字ぼやけは、項目66/67で既に「フォント名解決は
+     CoreText等が必要、今回はスコープ外」と明記済みの既知の
+     制約で、今回も対応せず。
+   - **④「;」キーでHELP.rejへ移動(a)のみ)**: HELP.jp 2.4節にある
+     `;`/`:`キー(前後のファイルへ移動)の機能と判明。b)/c)で無反応
+     だったのは、この時点で②のHELP起動失敗により実際には
+     HELP.jpをファイルとして開いていた状態(File mode)だったため
+     の派生症状で、②の根本原因と同一。個別の追加バグではないと
+     判断。
+   - **⑤その場で^H→a)KEY画面、b/c)最上行にゴミ表示 (原因1)**:
+     `Application::layoutViews()`に`keyView_.setViewport(...)`の
+     呼び出しが漏れていた(項目118でKEYモードを実装した際の単純な
+     見落とし、コンパイルエラーにはならず実行時にのみ症状が出る
+     ため自分自身の検証でも見逃していた)。`height_`が既定の0のまま
+     になり、`redraw()`がmode-line行(row0_+height_=0)だけを
+     描画してコンテンツ行を一切描画しない状態になっていた。
+     `layoutViews()`に1行追加して修正。
+   - **⑤(原因2、KEYのmode-line trailingフィールド欠落)**: a)の
+     KEY画面はmode-line右端に「呼び出し元のファイル/ディレクトリ名」
+     (スクリーンショットでは`/Users/.../HELP.rej`)を表示していたが、
+     このポートのKEYモードには`setModeLineFieldsProvider`が一切
+     配線されていなかった。項目113でShellに実装した
+     `previousModeName()`ヘルパーをそのまま再利用し、KEYモードの
+     コンストラクタで`{"KEY", previousModeName(keyReturnMode_), ...}`
+     を返すプロバイダを新設。
+   - **⑥⑦(SHELLプロンプトの一時的なzshリーク、mode-line
+     "(bash)"欠落)**: 一時リークは項目112で既に対応済み・許容中の
+     既知の限界(bashを使うa)には存在せず、zshを使うb/c)にのみ出る
+     という表面上の差)。一方、a)のmode-lineに表示されている
+     `(bash)`フィールド(legacyの`disp_shell()`が
+     `sprintf("%c(%s)", K_z, chp->argv[0])`で生成する、実行中の
+     シェルプログラム名)がこのポートには完全に欠落していたと確認
+     (項目113のShell mode-line修正時、trailingフィールド
+     ―呼び出し元の名称―のみ実装し、この「(program)」部分は
+     見落としていた)。`Shell`に新規`programName()`
+     (`options_.argv[0]`のbasename、`bash`/`zsh`等)を追加、SHELLの
+     `ModeLineFieldsProvider`のtrailingを`"(" + programName() + ")"
+     + " " + shellReturnName_`に変更。
+   - **⑧⑨⑩(^X^F/^X^CがSHELLモード中から一切効かない、最重要
+     バグ)**: `Application::feedShellByte()`は`currentMode_==Shell`
+     のあらゆるバイトを無条件で自分自身が処理しており、
+     `^J`/`^X`/`^O`リーダーキーの状態機械(`dispatchByte()`側にしか
+     無かった)に一切アクセスできない設計だった。legacyでは
+     SHELLプロンプト中でも^X^F/^X^C等のリーダーキーがそのまま
+     機能することを、a)の実機スクリーンショットで確認。
+     `dispatchByte()`のリーダー状態機械部分(`escPending_`/
+     `leaderJPending_`/`leaderXPending_`/`leaderXKPending_`/
+     `leaderOPending_`とその遷移ロジック)を新規`dispatchLeaderByte()`
+     へ切り出し、`feedShellByte()`からも呼べるようにした。ただし
+     素の`ESC`(0x1b)は意図的に対象外とした(実インタラクティブ
+     シェルはMeta キーバインド・viモード等で頻繁にESCそのものを
+     必要とするため、^J/^X/^Oよりもここでの横取りが実害が大きい
+     と判断)。リーダーシーケンスが完成した瞬間(2バイト目、
+     ^X^Kは3バイト目)に、`currentMode_`を`shellReturnMode_`
+     (SHELLへ入る前のモード)へ戻してから対象コマンドを実行する
+     設計にした――`startListBrowser()`等、多くのコマンドハンドラ
+     自身が`currentMode_==Directory`等の前提ガードを持っており、
+     SHELLに留まったまま呼び出すと拒否されてしまうため(KEYモードの
+     `executeSelectedKeyBinding()`で既に確立していた「戻ってから
+     実行」パターンと同じ)。未確定なシーケンス(誤入力等)でも
+     SHELLを離れてしまう副作用は許容(ロールバック機構を追加する
+     ほどではないレアケースと判断)。
+   - **副次的に発見した、今回は未対応の別ギャップ**: `^X^C`(EXIT)
+     を含むあらゆるprompt系コマンド(FGREP/DU/EXIT等)には、legacyが
+     mode-line名フィールドを「FGREP」「EXIT」等へ一時的に置き換えて
+     表示する仕組み(`disp_window()`側の`f_enter`絡みの挙動)に相当
+     するものがこのポートに一切無く、確認プロンプト中でも画面上に
+     「Exit (y/n)? 」等のラベルが一切表示されないと判明(PTYで
+     `^X^C`実行後の生バイト列に該当テキストが全く含まれないことを
+     確認)。機能自体(y入力での確定)は正しく動作するため実害は
+     低いが、視覚的な手がかりが無い状態。全prompt種別に及ぶ横断的な
+     設計課題のため、今回の10項目の対応範囲としては見送り、次回の
+     検討課題として記録するのみに留めた。
+   - **検証**: doctest新規8件(SHELLからの^X^F/^X^C/^J^d/ESC非横取り/
+     通常タイピング回帰確認5件、KEYモードのビューポート回帰1件、
+     SHELLの`(program)`フィールド1件、KEYのtrailingフィールド1件)を
+     含め計558件全通過(Mac)。Ubuntu 26.04クロスビルドでも該当分
+     すべて全通過(既存の失敗12件は今回と無関係)。実バイナリの
+     ビルドもMac/Ubuntu両方で確認済み。PTYで`^X^F`/`^X^C`が実際に
+     SHELLモードから直接機能すること、KEYモードの一覧が正しく
+     画面全体に描画されmode-line右端に呼び出し元が表示されること、
+     SHELLのmode-lineに`(zsh)`/`(bash)`が表示されることを確認。
+   - **今回未対応のまま残った項目**: ③のEnter対ダブルクリックの謎
+     (原因未特定)、③のGUI漢字ぼやけ(既存のスコープ外事項)、
+     全prompt系コマンドのmode-lineラベル欠落(新規発見、横断的な
+     設計課題として次回検討)。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

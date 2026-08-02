@@ -1547,6 +1547,79 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: ^G leaves without killing the child; re-enter
   CHECK(stillThere);
 }
 
+// -- Global leader-key access from within Shell mode (^J/^X/^O, NOT
+// bare ESC) -- a real user report (2026-08-02) comparing side by side
+// against the legacy build found ^X^F/^X^C etc. work directly from
+// within SHELL there, silently doing nothing here before this existed
+// (currentMode_==Shell routed every byte to feedShellByte() with no
+// leader-key access at all). See feedShellByte()'s own comment. --
+
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^F (FILE history) switches out of Shell and runs, "
+                           "matching legacy") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.feedShellByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedShellByte(0x06, std::nullopt));  // ^F
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // left Shell, ^X^F's own real target mode
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^C (EXIT) switches back to the mode SHELL was entered "
+                           "from FIRST, then opens the confirmation prompt") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+
+  CHECK(app.feedShellByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedShellByte(0x03, std::nullopt));  // ^C
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");  // shellReturnMode_'s own state, not reset
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^J d (DU) works too, exercising a DIFFERENT leader (^J, not ^X)") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.feedShellByte(0x0a, std::nullopt));  // ^J
+  CHECK(app.feedShellByte('d', std::nullopt));   // d
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // DU is prompt-first, like FGREP -- see startDuPrompt()
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: bare ESC is NOT intercepted -- passes straight through as "
+                           "literal shell input, unlike ^J/^X/^O") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.feedShellByte(0x1b, std::nullopt));  // bare ESC
+  CHECK(app.currentMode() == ApplicationMode::Shell);  // still in Shell -- NOT treated as an app-wide leader trigger
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: normal typing is completely unaffected (regression check)") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  for (unsigned char c : std::string("echo hello")) app.feedShellByte(c, std::nullopt);
+  CHECK(app.shell().commandLine().text() == "echo hello");
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+}
+
 TEST_CASE_FIXTURE(Fixture, "SHELL: backspace edits the command line before it's submitted") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
@@ -1596,6 +1669,18 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from File mode shows the o
   std::string text = app.shell().scrollback().modeLineText();
   std::string expectedTrailing = (root / "plain.txt").string();
   CHECK(text.substr(text.size() - expectedTrailing.size()) == expectedTrailing);
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: shows the running shell program's own basename in parentheses "
+                           "(2026-08-02 user report: missing entirely, compared against the legacy build's own "
+                           "\"(bash)\" field)") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  std::string text = app.shell().scrollback().modeLineText();
+  CHECK(text.find("(" + app.shell().programName() + ")") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): snapshots Shell's scrollback to logFilePath_, viewable via File mode") {
@@ -2511,6 +2596,18 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartKey): opens a browsable table of 
   CHECK_FALSE(app.activeContentView().lines().empty());
 }
 
+TEST_CASE_FIXTURE(Fixture, "Key: entries actually RENDER on screen, not just stored -- regression for a missing "
+                           "keyView_.setViewport() call (2026-08-02 user report: real screenshots showed only the "
+                           "mode-line row drawn, at row 0, with zero content rows)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  app.activeContentView().redraw();
+  bool sawFirstEntry = false;
+  for (int row = 0; row < display.rows() - 1; row++)  // every row EXCEPT the mode-line's own bottom row
+    if (display.rowText(row).find("Move window down") != std::string::npos) sawFirstEntry = true;
+  CHECK(sawFirstEntry);
+}
+
 TEST_CASE_FIXTURE(Fixture, "Key: re-entering from within Key mode itself is refused") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
@@ -2530,6 +2627,21 @@ TEST_CASE_FIXTURE(Fixture, "Key: reachable from File mode too, and Back returns 
 
   REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
   CHECK(app.currentMode() == ApplicationMode::File);  // back to File, not Directory
+}
+
+TEST_CASE_FIXTURE(Fixture, "Key mode-line: shows the mode KEY was invoked from as the trailing field "
+                           "(2026-08-02 user report: a real legacy screenshot showed \"KEY .../HELP.rej\" after "
+                           "invoking KEY while viewing that file; this port showed nothing at all)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartKey));
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.rfind("KEY ", 0) == 0);
+  CHECK(text.find((root / "plain.txt").string()) != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^S' entry returns to Directory mode AND actually starts FGREP "

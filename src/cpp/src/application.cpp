@@ -216,14 +216,31 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       [this](const std::string &partial) { return completeFilesystemPath(partial, shell_.currentDirectory()); });
   // Mode-line fields, ported from disp_shell()'s own
   // disp_window(..., T_shell, name="SHELL", prev, arg, ...) call
-  // (shell.c): "SHELL" fixed on the left, and shellReturnName_ (see
-  // its own comment -- the previous mode's own name, snapshotted by
-  // ensureShellActive()/shellRestart()) as the trailing field on the
-  // right. A live callback (like DirectoryMode's own provider) since
-  // shellReturnName_ changes across separate Shell entries within the
-  // same session.
+  // (shell.c): "SHELL" fixed on the left; on the right, the trailing
+  // field is "(program) shellReturnName_" -- "(bash)"/"(zsh)" (see
+  // Shell::programName()'s own comment, ported from disp_shell()'s
+  // own sprintf("%c(%s)", K_z, chp->argv[0])) followed by
+  // shellReturnName_ (see its own comment -- the previous mode's own
+  // name, snapshotted by ensureShellActive()/shellRestart()). A real
+  // user report (2026-08-02, comparing side by side against the
+  // legacy build) found the "(program)" piece missing entirely from
+  // this port's own SHELL mode-line. A live callback (like
+  // DirectoryMode's own provider) since both pieces can change across
+  // separate Shell entries/restarts within the same session.
   shell_.scrollback().setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    return {"SHELL", shellReturnName_, /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
+    std::string trailing = "(" + shell_.programName() + ")";
+    if (!shellReturnName_.empty()) trailing += " " + shellReturnName_;
+    return {"SHELL", trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
+  });
+  // Mode-line fields for KEY (^H): "KEY" fixed on the left, and
+  // whichever mode KEY was invoked from's own name (previousModeName(),
+  // the SAME helper Shell's own trailing field above uses) as the
+  // trailing field on the right -- matching a real legacy screenshot
+  // (2026-08-02 user report) that showed e.g. "KEY .../HELP.rej" after
+  // invoking KEY while viewing that file. A live callback since
+  // keyReturnMode_ changes across separate KEY entries.
+  keyView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    return {"KEY", previousModeName(keyReturnMode_), /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
   });
 }
 
@@ -247,6 +264,7 @@ void Application::layoutViews() {
   archiveContentView_.setViewport(0, contentHeight);
   duView_.setViewport(0, contentHeight);
   listBrowserView_.setViewport(0, contentHeight);
+  keyView_.setViewport(0, contentHeight);
   promptEditor_.setField(display_.rows() - 1, 0, std::max(1, display_.columns()));
 }
 
@@ -334,6 +352,18 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   if (promptKind_ != PromptKind::None) return feedPromptByte(byte);
   if (currentMode_ == ApplicationMode::Shell) return feedShellByte(byte, special);
 
+  if (escPending_ || leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_ ||
+      (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
+    return dispatchLeaderByte(byte, special);
+  }
+
+  return handleCommand(resolveCommand(byte, special));
+}
+
+// See this function's own declaration comment (application.hpp).
+// Unchanged from dispatchByte()'s own former body -- only the callers
+// changed (dispatchByte() itself, plus feedShellByte() now).
+bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKey> special) {
   if (escPending_) {
     escPending_ = false;
     if (special) return false;
@@ -499,7 +529,7 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     return true;  // sequence in progress, not a no-op
   }
 
-  return handleCommand(resolveCommand(byte, special));
+  return false;  // unreachable given dispatchByte()'s/feedShellByte()'s own guard, kept total for safety
 }
 
 // Wraps dispatchByte() (the real logic, see its own body) with p_km
@@ -564,6 +594,37 @@ std::size_t Application::recordedMacroLength() const { return recordedMacro_.siz
 // move the command-line cursor; Up/Down/PageUp/PageDown (scrollback
 // paging / command history) are deliberately not handled here yet.
 bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  // Global leader-key access from within Shell mode: ^J/^X/^X^K/^O
+  // (NOT bare ESC, unlike dispatchByte()'s own top-level check -- a
+  // real interactive shell (bash/zsh) needs raw ESC constantly for
+  // its own line editor, Meta-key bindings, vi-mode, etc, so
+  // intercepting it here would break real shell usage far more than
+  // ^J/^X/^O -- which essentially never come up as literal typed
+  // shell input -- ever would). A real user report (2026-08-02,
+  // comparing against the mature legacy build side by side) found
+  // ^X^F/^X^C etc. work directly from within SHELL there, which
+  // silently did nothing here before this existed: currentMode_==
+  // Shell routed EVERY byte straight to this function with no
+  // leader-key access at all.
+  bool shellLeaderPending = leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_;
+  if (!special && (shellLeaderPending || byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO)) {
+    if (shellLeaderPending) {
+      // Completing a sequence -- switch back to whichever mode SHELL
+      // was entered from BEFORE dispatching, exactly as if the user
+      // had pressed ^G first (matching legacy, and matching KEY
+      // mode's own executeSelectedKeyBinding() precedent): several
+      // downstream commands (startListBrowser() for ^X^F, etc.) have
+      // their own currentMode_==Directory-style guards that would
+      // otherwise reject them outright while still Shell. An
+      // unrecognized sequence (a genuine typo) still leaves Shell as
+      // a side effect -- accepted as a rare, minor edge case rather
+      // than adding rollback machinery for it.
+      currentMode_ = shellReturnMode_;
+      activeView().redraw();
+    }
+    return dispatchLeaderByte(byte, special);
+  }
+
   if (special) {
     switch (*special) {
       case KeyInput::SpecialKey::Left:

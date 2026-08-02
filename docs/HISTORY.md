@@ -201,3 +201,39 @@ doctest新規3件を含め計543件全通過、実PTYで実際のdoc/HELP.jpが2
 >K-2(^H、KEY)を実装しました。usilicrc自身のKEY節テキストを実際にパースして再バインドを反映する機能は今回のスコープには大きすぎると判断し、代わりにdispatchByte()/resolveCommand()自身のswitch文(このポートが実際に認識するキーシーケンスの単一の真実源)を手作業でミラーした静的テーブルkKeyTable(65エントリ)を新設しました。M-0〜19(番号付きマクロスロット)はこのポートに存在しないため対象外、矢印キー等special keyは既に素のバイト別名が表内にあるため省略、という2点のスコープ限定を明示しています。
 
 ^Hで開き、Enterで選択中エントリの元の呼び出し元モードへ戻ってから該当バイト列をfeedByte()へ流す(複数バイトのリーダーシーケンスも実際のキー入力と全く同じ経路で解決される)、^Gで何も実行せず戻る、という実装です。doctest新規7件を含め計550件全通過、Ubuntuクロスビルドも確認済みです。PTYでの簡易スモークテスト(^Hで65項目のKEYモードが開き、先頭エントリ実行でクラッシュ無くDirectoryへ戻ることを確認)のみ実施し、ご指示通り詳細なハンズオン検証は次回に持ち越しました。コミット・プッシュ済み。
+
+2026-08-02
+
+<'/Users/haa15030/Desktop/1.jpg' 〜 '/Users/haa15030/Desktop/10.jpg'
+~/で試行、左から順に
+a)/usr/local/bin/usilic git/usilic/src/doc(CUI)
+b)git/usilic/src/cpp/build/usilic -c git/usilic/src/doc(GUI-c)
+c)git/usilic/src/cpp/build/usilic -g git/usilic/src/doc(GUI-g)
+
+①b)はCUI起動なのにカーソル位置がマウスに連動して動いている。a)c)は無反応→
+②^J^H→a)HELP、b)c)無反応→^G→
+③a)c)「HELP.jp」を[Enter]で選択、b)左ダブルクリックでしか選べない。c)は漢字がぼやけ→
+④a)「;」(^G↓[Enter])でHELP.rejを表示、b)c)無反応→
+⑤その場で^H→a)KEY画面、b)c)最上行にゴミ表示→
+⑥(以下その場で)^J.→
+⑦「ls -l」[Enter]→
+⑧^X^F→
+⑨^X^C→a)[Enter]、c)^[^[[Enter]で終了、b)終了不能→
+⑩^G^X^C→b)y[Enter]で終了
+
+a)をお手本に差し当たっては以上をクリアして欲しい。IDEAS.md、HISTORY.mdの参照もよろしく。
+
+>10枚のスクリーンショットを確認した結果、まず重要な前提が判明しました。/usr/local/bin/usilicはこのC++ポートではなく、legacy C版tcbがconfig.shで「usilic」という名前でインストールされたものでした(src/install.shの`install ... tcb .../usilic`、Makefileの`INSTALL_NAME = U`コメントから確認)。つまりa)は26年物の完成品、b)/c)がテスト対象という構図で、10項目はすべて実バグ候補と判断しました。
+
+5件の実バグを特定・修正しました。
+1. KEYモードのビューポート未設定(⑤原因1): Application::layoutViews()にkeyView_.setViewport()の呼び出しが漏れており、mode-line行だけが最上段に描画されコンテンツが一切表示されていませんでした。
+2. KEYモードのmode-line trailingフィールド欠落(⑤原因2): previousModeName()ヘルパーを再利用し、呼び出し元のファイル/ディレクトリ名を表示するよう配線しました。
+3. SHELLのmode-line「(program)」フィールド欠落(⑥⑦): Shell::programName()を新設し、legacyの"(bash)"に相当する表示を追加しました。
+4. SHELLモード中に^J/^X/^Oリーダーキーが一切効かない(⑧⑨⑩、最重要): dispatchByte()のリーダー状態機械をdispatchLeaderByte()へ切り出し、feedShellByte()からも呼べるようにしました。素のESCは実シェルのMeta/viモード用に頻繁に使われるため意図的に対象外としています。リーダーシーケンス完成時にcurrentMode_をshellReturnMode_へ戻してから対象コマンドを実行する設計です(多くのコマンドハンドラ自身がcurrentMode_==Directory等のガードを持つため)。
+5. USILICHELP未設定時のフォールバック(②): /usr/local/lib/usilic/HELP(.jp)へフォールバックするようにしました。legacyのconfig.shが実際にインストールする場所と完全に一致するパスです。
+
+①(mouse hover)は意図した新機能でバグではないと判断、④は②の派生症状(HELP起動失敗によりFile modeでHELP.jpを開いていた状態)と判明したため個別対応不要、③(Enter対ダブルクリック)はPTYで再現できず原因未特定のまま持ち越し、③(GUI漢字ぼやけ)は既存のスコープ外事項として今回も対応していません。
+
+副次的に、^X^C(EXIT)を含む全prompt系コマンドにmode-line上の視覚的なラベル表示("Exit (y/n)?"等)が一切無いという横断的な設計課題も発見しましたが、機能自体は正しく動作するため実害は低く、今回のスコープには含めず次回検討課題として記録しました。
+
+doctest新規8件を含め計558件全通過、Ubuntuクロスビルドも確認済みです。PTYで^X^F/^X^CがSHELLモードから直接機能すること、KEYモードの一覧が正しく描画されること、SHELLのmode-lineに(zsh)/(bash)が表示されることを確認しました。コミット・プッシュ済み。

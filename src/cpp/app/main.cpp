@@ -35,12 +35,13 @@
 //     is currently visible). Only meaningful in the terminal phase --
 //     see the GUI-mode section below for why.
 //   - HELP (^J^H) IS wired: USILICHELP names the ASCII/English help
-//     file's path (no installed-package LIB-path convention exists
-//     yet, same gap usilicrc/history's own LIB fallback has -- see
-//     above); unset, or an unreadable file, just leaves HELP
-//     unavailable rather than failing startup. Application::
-//     loadHelpText() takes already-read text, same "caller does the
-//     file I/O" rule as usilicrc/history.
+//     file's path; unset falls back to /usr/local/lib/usilic/HELP
+//     (legacy's own config.sh LIB convention for a PROGNAME=usilic
+//     build -- see the HELP-loading block's own comment). Unset with
+//     no fallback file present either, or an unreadable file, just
+//     leaves HELP unavailable rather than failing startup.
+//     Application::loadHelpText() takes already-read text, same
+//     "caller does the file I/O" rule as usilicrc/history.
 //   - ESC-leader bindings (SHELL's ^[s) ARE wired, via
 //     KeyInput::lastEscapeBytes() (added specifically to close this
 //     gap, see its own class comment): when readEscapeSequence()
@@ -1407,24 +1408,35 @@ int main(int argc, char **argv) {
 
   // Ported from str.c's set_help(): English (HELP) vs a genuine
   // Japanese translation (HELP.jp), chosen by charset the same way
-  // legacy does. No installed-package LIB-path convention exists yet
-  // for this port (same gap usilicrc's own LIB fallback has, see
-  // above) -- USILICHELP names the ASCII/English file directly; if
-  // unset, or if the file can't be read, HELP (^J^H) is simply
-  // unavailable (Command::StartHelp fails cleanly) rather than this
-  // being a hard startup error.
+  // legacy does. USILICHELP names the ASCII/English file directly, no
+  // installed-package LIB-path convention for THIS PORT's own build
+  // exists yet (same gap usilicrc's own LIB fallback has, see above).
+  // When unset, fall back to /usr/local/lib/usilic/HELP -- the exact
+  // path legacy's own config.sh (`LIB=$USR_DIR/lib/$PROGNAME`) already
+  // installs to for a PROGNAME=usilic build (confirmed present via a
+  // real user's own machine, 2026-08-02: this port's own project name
+  // IS "usilic", so re-using that exact convention -- rather than
+  // inventing a new one -- is the natural default, and happens to
+  // already be populated wherever the legacy C side of this same
+  // project was ever installed under that name). If unset AND that
+  // fallback path doesn't exist either, or the file can't be read,
+  // HELP (^J^H) is simply unavailable (Command::StartHelp fails
+  // cleanly) rather than this being a hard startup error.
+  std::string helpPath;
   if (const char *helpPathEnv = std::getenv("USILICHELP")) {
-    std::string helpPath = helpPathEnv;
-    if (encoding != fm::Charset::Encoding::Ascii) {
-      std::string jpText = readFileIfExists(helpPath + ".jp");
-      if (!jpText.empty()) {
-        app.loadHelpText(jpText);
-      } else {
-        app.loadHelpText(readFileIfExists(helpPath));
-      }
+    helpPath = helpPathEnv;
+  } else {
+    helpPath = "/usr/local/lib/usilic/HELP";
+  }
+  if (encoding != fm::Charset::Encoding::Ascii) {
+    std::string jpText = readFileIfExists(helpPath + ".jp");
+    if (!jpText.empty()) {
+      app.loadHelpText(jpText);
     } else {
       app.loadHelpText(readFileIfExists(helpPath));
     }
+  } else {
+    app.loadHelpText(readFileIfExists(helpPath));
   }
 
   // "実はすでにGUI" (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30

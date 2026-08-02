@@ -1043,6 +1043,12 @@ class Application {
     std::optional<KeyInput::SpecialKey> special;
   };
   bool dispatchByte(int byte, std::optional<KeyInput::SpecialKey> special);
+  // The ESC/^J/^X/^X^K/^O leader-key state machine, factored out of
+  // dispatchByte() so feedShellByte() can also reach it -- see its own
+  // comment (2026-08-02 user report: legacy lets ^J/^X/^O leaders work
+  // directly from within SHELL, e.g. ^X^F/^X^C, which this port
+  // silently swallowed as raw shell input before this existed).
+  bool dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKey> special);
   bool startMacroRecording();
   bool stopMacroRecording();
   bool playRecordedMacro();

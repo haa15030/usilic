@@ -194,6 +194,15 @@ class Shell {
   void setDirectoryChangedCallback(std::function<void(const std::string &directory)> callback);
   const std::string &currentDirectory() const;
 
+  // The running shell child's own basename (e.g. "bash", "zsh"),
+  // matching legacy's own disp_shell() mode-line "arg" field
+  // (sprintf("%c(%s)", K_z, chp->argv[0]), see shell.c) -- a real user
+  // report (2026-08-02) comparing side by side against the legacy
+  // build found this field missing from this port's own SHELL mode-
+  // line entirely. Empty before start() (or if options_.argv is
+  // somehow empty, which ShellOptions' own default never leaves it).
+  std::string programName() const;
+
   // -- PROGRAM handoff / history --
   // Returns true if it ran (and is now responsible for) the given
   // trailing-pipeline-stage program token; false to have Shell write
