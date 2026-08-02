@@ -1372,6 +1372,16 @@ class Application {
   // Directory mode, but the filename when entering from File mode,
   // NOT always "current directory" as this port first assumed.
   std::string shellReturnName_;
+  // ^P/^N command-history recall while in Shell mode (see
+  // feedShellByte()'s own comment) -- matches a real shell's own up/
+  // down-arrow history navigation, filling commandLine_ with a past
+  // ShellCommand entry rather than the literal control byte. -1 means
+  // "not currently browsing" (fresh typing); 0 is the MOST RECENT
+  // past command, counting up toward OLDER ones as ^P repeats.
+  // shellHistorySavedText_ holds whatever commandLine_ had before
+  // browsing started, restored if ^N is pressed back past index 0.
+  int shellHistoryIndex_ = -1;
+  std::string shellHistorySavedText_;
   ApplicationMode listBrowserReturnMode_ = ApplicationMode::Directory;
   RingCategory listBrowserCategory_ = RingCategory::RecentDirectory;
   ApplicationMode keyReturnMode_ = ApplicationMode::Directory;

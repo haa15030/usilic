@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -1515,6 +1516,68 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: typing a command and pressing Enter runs it, 
     return false;
   });
   CHECK(sawOutput);
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL: a real submitted command is actually recorded into RingCategory::ShellCommand "
+                           "(2026-08-02: setHistoryRecorder() was declared but never wired to anything)") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("echo RECORDTEST789")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x0d, std::nullopt);
+
+  const auto &entries = history.recentEntries(RingCategory::ShellCommand);
+  bool recorded = std::find(entries.begin(), entries.end(), "echo RECORDTEST789") != entries.end();
+  CHECK(recorded);
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^P recalls the previous command, ^N steps back to what was being "
+                           "typed (2026-08-02 user report: a screenshot showed literal \"PPPPPPP\" typed into the "
+                           "prompt from repeated ^P presses)") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("ls -l")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x0d, std::nullopt);
+  REQUIRE(pumpUntil(app, [&] { return !history.recentEntries(RingCategory::ShellCommand).empty(); }));
+
+  for (unsigned char c : std::string("echo partial")) app.feedShellByte(c, std::nullopt);
+  CHECK(app.shell().commandLine().text() == "echo partial");
+
+  CHECK(app.feedShellByte(0x10, std::nullopt));  // ^P: recall "ls -l"
+  CHECK(app.shell().commandLine().text() == "ls -l");
+  CHECK(app.currentMode() == ApplicationMode::Shell);  // navigating history does NOT leave Shell mode
+
+  CHECK(app.feedShellByte(0x0e, std::nullopt));  // ^N: back to what was being typed before ^P
+  CHECK(app.shell().commandLine().text() == "echo partial");
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: submitting a command resets history browsing back to fresh") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("echo one")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x0d, std::nullopt);
+  REQUIRE(pumpUntil(app, [&] { return !history.recentEntries(RingCategory::ShellCommand).empty(); }));
+
+  app.feedShellByte(0x10, std::nullopt);  // ^P: recall "echo one"
+  REQUIRE(app.shell().commandLine().text() == "echo one");
+  app.feedShellByte(0x0d, std::nullopt);  // submit it -- resets browsing
+
+  for (unsigned char c : std::string("x")) app.feedShellByte(c, std::nullopt);
+  CHECK(app.shell().commandLine().text() == "x");  // NOT prefixed with a stale history entry
 }
 
 TEST_CASE_FIXTURE(Fixture, "SHELL: ^G leaves without killing the child; re-entering resumes the same session") {

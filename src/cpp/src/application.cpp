@@ -214,6 +214,18 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // tested against a synthetic provider (see test_shell.cpp).
   shell_.setCompletionProvider(
       [this](const std::string &partial) { return completeFilesystemPath(partial, shell_.currentDirectory()); });
+  // K-49 (^R)/^J^R's own RingCategory::ShellCommand history, plus this
+  // port's new ^P/^N command recall (see feedShellByte()'s own
+  // comment). Shell::submitLine() has always called historyRecorder_
+  // (if set) after successfully running a typed command -- but
+  // nothing here ever SET it, discovered while building ^P/^N
+  // (2026-08-02): this category was silently empty forever, meaning
+  // ^J^R's own picker never had anything to show either despite being
+  // fully wired otherwise -- the exact "wired but never connected"
+  // pattern found repeatedly throughout this project (see
+  // setCompletionProvider()'s own history just above).
+  shell_.setHistoryRecorder(
+      [this](const std::string &line) { history_.pushRecent(RingCategory::ShellCommand, line); });
   // Mode-line fields, ported from disp_shell()'s own
   // disp_window(..., T_shell, name="SHELL", prev, arg, ...) call
   // (shell.c): "SHELL" fixed on the left; on the right, the trailing
@@ -658,6 +670,7 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
       // a side effect -- accepted as a rare, minor edge case rather
       // than adding rollback machinery for it.
       currentMode_ = shellReturnMode_;
+      shellHistoryIndex_ = -1;
       activeView().redraw();
     }
     return dispatchLeaderByte(byte, special);
@@ -681,6 +694,7 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   if (byte == kControlG) return returnFromShell();
   if (byte == kCarriageReturn) {
     shell_.submitLine();
+    shellHistoryIndex_ = -1;  // a fresh submission always resets history browsing
     return true;
   }
   if (byte == 0x09) {  // Tab
@@ -694,6 +708,49 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   }
   if (byte == kControlC) {
     shell_.sendControlByte(static_cast<unsigned char>(byte));
+    return true;
+  }
+  // ^P/^N: command-history recall, matching a real shell's own up/
+  // down-arrow behavior -- NOT literal HELP.jp Command-line-table
+  // "move cursor a line" semantics (this port's own commandLine_ is a
+  // single-line field, and legacy's OWN SHELL-specific M_kup/M_kdn
+  // instead move through a UNIFIED scrollback+prompt buffer this
+  // port's split scrollback_/commandLine_ design has no equivalent
+  // of, see the class comment's "single-process design" note).
+  // Before this, ^P/^N had no SHELL-specific handling at all and fell
+  // through to the literal insertByte() below -- a real user report
+  // (2026-08-02, with a screenshot literally showing "PPPPPPP" typed
+  // into the prompt from repeated ^P presses) confirmed this reads as
+  // "^P doesn't work" in practice, since the control byte renders as
+  // a visible reverse-video glyph (matching this codebase's own
+  // established "^X" caret-notation convention elsewhere) rather than
+  // doing anything useful.
+  if (byte == 0x10) {  // ^P: recall an OLDER command
+    const auto &entries = history_.recentEntries(RingCategory::ShellCommand);  // oldest..newest
+    if (!entries.empty()) {
+      if (shellHistoryIndex_ < 0) {
+        shellHistorySavedText_ = shell_.commandLine().text();
+        shellHistoryIndex_ = 0;
+      } else if (shellHistoryIndex_ + 1 < static_cast<int>(entries.size())) {
+        shellHistoryIndex_++;
+      }
+      shell_.commandLine().setText(*(entries.rbegin() + shellHistoryIndex_));
+      shell_.commandLine().redraw();
+    }
+    return true;
+  }
+  if (byte == 0x0e) {  // ^N: recall a NEWER command (or return to what was being typed)
+    if (shellHistoryIndex_ >= 0) {
+      const auto &entries = history_.recentEntries(RingCategory::ShellCommand);
+      if (shellHistoryIndex_ == 0) {
+        shell_.commandLine().setText(shellHistorySavedText_);
+        shellHistoryIndex_ = -1;
+      } else {
+        shellHistoryIndex_--;
+        shell_.commandLine().setText(*(entries.rbegin() + shellHistoryIndex_));
+      }
+      shell_.commandLine().redraw();
+    }
     return true;
   }
   shell_.commandLine().insertByte(static_cast<unsigned char>(byte));
@@ -1194,6 +1251,7 @@ bool Application::returnFromDu() {
 
 bool Application::returnFromShell() {
   currentMode_ = shellReturnMode_;
+  shellHistoryIndex_ = -1;  // ^G always leaves history-browsing behind, matching submitLine()'s own reset
   activeView().redraw();
   return true;
 }
