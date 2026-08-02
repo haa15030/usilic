@@ -242,6 +242,44 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   keyView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     return {"KEY", previousModeName(keyReturnMode_), /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
   });
+  // Mode-line fields for the LIST-based history pickers (K-45..K-49,
+  // ^X^F/^X^D/^R/etc): the highlighted item's own string as name (see
+  // ListBrowserMode's own former comment on this field, moved here
+  // 2026-08-02 since only Application knows listBrowserCategory_ --
+  // see ListBrowserMode's own constructor comment), and the category
+  // itself ("FILE"/"DIR"/"HISTORY"/etc, matching legacy's own
+  // " FILE_HISTORY"-style naming, RingCategory's own comments) as the
+  // trailing field -- a real user report (2026-08-02:
+  // "^X^F（FILE）が置き換わってない") found no indication anywhere of
+  // WHICH history category was being browsed. A live callback since
+  // both cursorIndex and listBrowserCategory_ change across separate
+  // entries.
+  listBrowserView_.setModeLineFieldsProvider([this](int cursorIndex) -> ContentView::ModeLineFields {
+    const auto &items = listBrowserMode_.items();
+    if (cursorIndex < 0 || cursorIndex >= static_cast<int>(items.size())) return {};
+    return {items[cursorIndex], "(" + ringCategoryLabel(listBrowserCategory_) + ")", /*fillTrailingToEdge=*/false,
+            /*rightWatermark=*/""};
+  });
+}
+
+std::string Application::ringCategoryLabel(RingCategory category) const {
+  switch (category) {
+    case RingCategory::ShellCommand:
+      return "HISTORY";
+    case RingCategory::RecentFile:
+      return "FILE";
+    case RingCategory::RecentDirectory:
+      return "DIR";
+    case RingCategory::RecentManPage:
+      return "MAN";
+    case RingCategory::RecentLocateQuery:
+      return "LOCATE";
+    case RingCategory::RecentFgrepPattern:
+      return "FGREP";
+    case RingCategory::RecentEgrepPattern:
+      return "EGREP";
+  }
+  return "";
 }
 
 // Shared by the constructor and handleResize(): sizes every owned

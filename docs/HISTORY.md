@@ -249,3 +249,11 @@ CUI(-c)側は、ご指摘の通り「グラフィック機能が使えない想�
 最優先指示のあった「モードラインが無い」件については、FGREP/DU/EXIT等の全promptコマンドにmode-line上の視覚的なラベル表示が一切無いという、項目119で発見していた横断的なギャップへの対応でした。legacyのdisp.cを再確認したところ、mode-line[1]「name」フィールドが通常時はモード名に置き換わり、M_exitだけは追加でposition欄相当を"Exit (y/n) ?  "で上書きする、という2段構成でした。このポートはContentView自身のmode-lineとpromptEditor_(別のLineEditorインスタンス、同じ最終行に描画)が完全に分離した設計のため、両者の役割を1本の文字列("FGREP"、"DU"、"EXIT (y/n)?"等)にまとめてmode-line行の左端に反転表示し、promptEditor_自体のcol0をラベル分だけ右へオフセットする設計にしました。新規Application::activatePrompt()/promptLabelText()/drawPromptLabel()を新設し、これまで各startXxxPrompt()が個別に持っていた3行の定型処理13箇所すべてを置き換えました。
 
 doctest新規4件を含め計562件全通過、PTYでFGREP/EGREP/MAN/DU/EXITの各promptでmode-line行にラベルが正しく反転表示されることを確認、Ubuntuクロスビルドも確認済みです。プロンプト表示中のリサイズでラベル位置がリセットされる可能性は今回見送り、次回課題として記録しました。コミット・プッシュ済み。
+
+<^X^F（FILE）が置き換わってないのと-c起動SHELLのモードラインをなんとかしてほしい。
+
+>両方とも実バグでした。^X^F(FILE)は、ListBrowserModeがハイライト行の文字列はmode-lineに出していたものの、「今どのカテゴリ(FILE/DIR/HISTORY)を見ているか」のラベルが無いままでした。ListBrowserMode自身はRingCategoryを知らない設計のため、mode-line用のプロバイダ登録をApplicationのコンストラクタへ移動し、新規ringCategoryLabel()で"(FILE)"等をtrailingフィールドに表示するようにしました。
+
+-c起動SHELLのモードラインについては、Shellクラスの行レイアウトを調査した結果、scrollback_(mode-line描画元)とcommandLine_(ライブなプロンプト/入力欄)が全く同じ行を取り合っていたと判明しました。commandLine_.redraw()はプロンプト更新のたびに(SHELL使用中は絶えず)呼ばれるため、mode-lineを描画した直後にほぼ即座に上書きされ、実運用では事実上一度も見えていませんでした。新規Shell::commandLineRow()(scrollback_自身のコンテンツ領域の最終行、legacyでもプロンプト行がスクロールバック内容の最終行そのものであることと一致)を追加し、commandLine_の行をここへ移動、mode-line自体は真の最終行にとどめて衝突を解消しました。
+
+PTYで実際にechoコマンドを入力・実行し、mode-lineとコマンド行が別の行に描画され続けることを確認しました。doctest新規3件を含め計562件全通過、Ubuntuクロスビルドも確認済みです。コミット・プッシュ済み。

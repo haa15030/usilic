@@ -1146,6 +1146,11 @@ class Application {
   // string of their own) falls back to "", which simply omits the
   // trailing field rather than guessing.
   std::string previousModeName(ApplicationMode mode) const;
+  // The label shown for each RingCategory in the LIST-based history
+  // pickers' own mode-line trailing field -- see
+  // listBrowserView_.setModeLineFieldsProvider()'s own comment
+  // (constructor).
+  std::string ringCategoryLabel(RingCategory category) const;
   // K-60 (^Xs, M_hup): kills the current SHELL child (if any, via
   // Shell::terminate()'s SIGHUP+wait) and starts a fresh one, entering
   // Shell mode. Ported from menu.c's own M_hup case: legacy's

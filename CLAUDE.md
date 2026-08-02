@@ -6953,6 +6953,62 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      0へ戻すため)への対応は今回見送り、次回課題として記録するに
      留めた。
 
+121. **2026-08-02(続き2): 「^X^F（FILE）が置き換わってない」と
+    「-c起動SHELLのモードラインをなんとかしてほしい」に対応 ―
+    ListBrowserModeにRingCategoryラベルを追加、SHELLの
+    mode-line/commandLine_行衝突を解消**。
+   - **^X^F(FILE)のラベル欠落**: `ListBrowserMode`(K-45〜K-49の
+     LIST型履歴ピッカーが共通で使うクラス)には項目115で「ハイライト
+     行の文字列をnameフィールドに表示する」実装を入れていたが、
+     「今どのカテゴリ(FILE/DIR/HISTORY)を見ているか」を示す
+     ラベルが無かった。`ListBrowserMode`自身は`RingCategory`を
+     知らない設計(class comment記載の意図的な除外)のため、
+     mode-line用のプロバイダ登録をこのクラスのコンストラクタから
+     `Application`のコンストラクタへ移動し、`listBrowserCategory_`
+     (Application側で既に把握している状態)を読める形にした。
+     新規`ringCategoryLabel(RingCategory)`(legacyの`history.hpp`
+     コメントに既に書かれていた" FILE_HISTORY"等の命名規則に
+     基づき"FILE"/"DIR"/"HISTORY"/"MAN"/"LOCATE"/"FGREP"/"EGREP"を
+     返す)を追加し、trailingフィールドに`"(" + label + ")"`として
+     表示するようにした(nameフィールドは従来通りハイライト行の
+     文字列のまま)。
+   - **-c起動SHELLのモードラインが実質常に消えていた根本原因を
+     発見**: `Shell`クラスの行レイアウトを調査したところ、
+     `scrollback_`(mode-line描画元、行`viewportRows_-1`)と
+     `commandLine_`(ライブなプロンプト/入力欄、行も
+     `viewportRows_-1`)が**全く同じ行を取り合っていた**と判明
+     (項目113でSHELLのmode-line機能を追加した際、この既存の衝突に
+     気づけていなかった)。`commandLine_.redraw()`はプロンプトが
+     更新されるたびに(=SHELL使用中は絶えず)呼ばれるため、mode-line
+     を描画した直後にほぼ即座に上書きされ、実運用では事実上一度も
+     見えない状態になっていた(前回のPTY検証で「見えている」ように
+     見えたのは、たまたま`commandLine_`の再描画が発生する前の
+     瞬間を切り取っていたに過ぎなかった)。新規
+     `Shell::commandLineRow()`(戻り値`viewportRows_-2`、
+     scrollback_自身のコンテンツ領域の最終行、legacyでも実際に
+     プロンプト行がスクロールバック内容の最終行そのものである
+     ことと一致)を追加し、`commandLine_`の行をここへ移動。
+     `scrollback_`自身のビューポート高さ(`viewportRows_-1`)は
+     変更していないため、mode-line自体は引き続き真の最終行
+     (`viewportRows_-1`)にとどまり、`commandLine_`とはもう衝突
+     しない。(実装の過程で一度、`scrollback_`のビューポート高さ側を
+     `-2`にする誤った修正を先に試し、mode-lineとcommandLine_が
+     『別の行』ではあるが依然として同じ行同士になる算数ミスに気づき
+     修正した。)
+   - **検証**: PTYで実際に`echo`コマンドを入力・実行し、mode-line
+     (`SHELL 13/13 END (zsh) /Users/.../doc/`)がコマンド行(1行上の
+     `usilic:/Users/.../doc%`プロンプト)と別の行に描画され続ける
+     ことを確認(修正前は同じ行に描画され、プロンプト更新のたびに
+     mode-lineが消えていた)。doctest側は`test_shell.cpp`の
+     `onResize`テストと`test_application.cpp`の`handleResize`
+     テストがどちらも旧`viewportRows_-1`前提のカーソル行番号を
+     検証していたため、新しい`commandLineRow()`の値
+     (`viewportRows_-2`)に合わせて期待値を更新した。新規3件
+     (^X^Fのラベル+ハイライト表示2件、^X^Dのラベル1件)を含め
+     計562件全通過(Mac)、Ubuntu 26.04クロスビルドでも該当分すべて
+     全通過(既存の失敗12件は今回と無関係)。実バイナリのビルドも
+     Mac/Ubuntu両方で確認済み。
+
 
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。

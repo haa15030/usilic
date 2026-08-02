@@ -101,6 +101,17 @@ Shell::Shell(Display &display, const ShellOptions &options)
     isBash_ = isBashProgram(options_.argv[0]);
     isZsh_ = isZshProgram(options_.argv[0]);
   }
+  // Unchanged from before: height_ = viewportRows_-1 leaves scrollback_'s
+  // own mode-line at row viewportRows_-1 (ContentView's own row0_+
+  // height_ convention). commandLine_'s own row moved to viewportRows_-2
+  // instead (see commandLineRow()'s own comment) -- it used to be
+  // viewportRows_-1 too, the EXACT SAME row scrollback_'s mode-line
+  // renders at, so whichever redrew last silently clobbered the
+  // other. A real user report (2026-08-02) confirmed the SHELL
+  // mode-line effectively never stayed visible in practice:
+  // commandLine_.redraw() runs every time the prompt updates (i.e.
+  // constantly), immediately overwriting whatever the mode-line had
+  // just drawn.
   scrollback_.setViewport(0, std::max(1, viewportRows_ - 1));
   updateCommandLineField();
 }
@@ -449,7 +460,7 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
 
   std::string decorated = display_.attributeEscape(Display::Attribute::Bold) + options_.programName +
                            display_.attributeEscape(Display::Attribute::BoldOff) + ":" + tailBeforeMark;
-  int promptRow = (viewportRows_ > 0) ? viewportRows_ - 1 : 0;
+  int promptRow = commandLineRow();
   display_.moveCursor(promptRow, 0);
   display_.clearToEndOfLine();
   display_.write(decorated);
@@ -459,11 +470,12 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
 }
 
 void Shell::updateCommandLineField() {
-  int promptRow = (viewportRows_ > 0) ? viewportRows_ - 1 : 0;
   int promptCol = displayWidth(promptPlain_);
   int width = std::max(1, columns_ - promptCol);
-  commandLine_.setField(promptRow, promptCol, width);
+  commandLine_.setField(commandLineRow(), promptCol, width);
 }
+
+int Shell::commandLineRow() const { return (viewportRows_ > 1) ? viewportRows_ - 2 : 0; }
 
 int Shell::displayWidth(const std::string &text) const {
   if (options_.encoding != Charset::Encoding::Utf8) return static_cast<int>(text.size());
@@ -755,7 +767,7 @@ bool Shell::busy() const { return busy_; }
 void Shell::onResize(int rows, int columns) {
   viewportRows_ = rows;
   columns_ = columns;
-  scrollback_.setViewport(0, std::max(1, rows - 1));
+  scrollback_.setViewport(0, std::max(1, rows - 1));  // unchanged -- see the constructor's own comment
   updateCommandLineField();
   if (masterFd_ >= 0) {
     struct winsize ws {};

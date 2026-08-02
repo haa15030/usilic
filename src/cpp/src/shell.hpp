@@ -264,6 +264,21 @@ class Shell {
   void flushNewScrollbackLines();
   void writeToPty(const std::string &bytes);
   void updateCommandLineField();
+  // The row commandLine_'s own live prompt/input occupies: the LAST
+  // row of scrollback_'s own CONTENT area (row0_+height_-1, i.e.
+  // viewportRows_-2 given scrollback_'s height_ is viewportRows_-1)
+  // -- NOT a separate row reserved beyond content, and specifically
+  // NOT the same row as scrollback_'s own mode-line (row0_+height_,
+  // viewportRows_-1), which commandLine_'s row used to collide with
+  // (see the constructor's own comment on why that was wrong: a real
+  // user report, 2026-08-02, found the SHELL mode-line effectively
+  // never stayed visible in practice, constantly overwritten by
+  // commandLine_.redraw()). Overlaying the last CONTENT row like this
+  // matches legacy's own effective behavior, where the live prompt
+  // IS simply the last line of scrollback -- this port just also
+  // makes that same line independently editable via a separate
+  // widget. Shared so the formula lives in exactly one place.
+  int commandLineRow() const;
   int displayWidth(const std::string &text) const;
   std::string buildSetupCommand() const;
   bool waitForHandshake();

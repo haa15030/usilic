@@ -285,7 +285,9 @@ TEST_CASE("onResize: repositions the command-line field to the new bottom row/wi
 
   typeAscii(shell.commandLine(), "hi");
 
-  CHECK(d.cursorRow() == 9);   // rows - 1
+  CHECK(d.cursorRow() == 8);  // rows - 2: the LAST row (rows - 1) is scrollback_'s own mode-line
+                              // (2026-08-02: commandLine_ and the mode-line must not share a row --
+                              // see Shell::commandLineRow()'s own comment)
   CHECK(d.cursorCol() == 8);  // 6-column prompt + 2 typed chars
 }
 

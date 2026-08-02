@@ -2247,6 +2247,24 @@ TEST_CASE_FIXTURE(Fixture, "K-46: Enter on a recent file entry opens it via File
   CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
 }
 
+TEST_CASE_FIXTURE(Fixture, "List Browser mode-line: shows the RingCategory label as trailing, and the highlighted "
+                           "item as name (2026-08-02 user report: \"^X^F（FILE）が置き換わってない\")") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.rfind((root / "plain.txt").string() + " ", 0) == 0);  // highlighted item -- as name, left
+  CHECK(text.find("(FILE)") != std::string::npos);                // RingCategory label -- as trailing, right
+
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  CHECK(app.activeContentView().modeLineText().find("(DIR)") != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(StartFileHistory): refused outside Directory mode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
@@ -2462,12 +2480,14 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: propagates the new size to Shell's pty
   app.handleResize();
 
   // Switch back to Shell and confirm its command-line field really
-  // did move to the new bottom row (rows - 1) -- the same
-  // cursorRow()-based verification test_shell.cpp's own onResize()
-  // test uses, here confirming Application actually calls it.
+  // did move to the new bottom row (rows - 2, one row above
+  // scrollback_'s own mode-line -- see Shell::commandLineRow()'s own
+  // comment) -- the same cursorRow()-based verification
+  // test_shell.cpp's own onResize() test uses, here confirming
+  // Application actually calls it.
   REQUIRE(app.handleCommand(Command::StartShell));
   for (char c : std::string("x")) app.feedShellByte(static_cast<unsigned char>(c), std::nullopt);
-  CHECK(display.cursorRow() == 9);
+  CHECK(display.cursorRow() == 8);
 }
 
 // -- HELP (^J^H) --
