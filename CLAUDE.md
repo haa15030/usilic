@@ -7668,6 +7668,82 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      (Mac)/該当分全件(Ubuntu、既存の環境依存12件の失敗は無関係)通過、
      実バイナリのビルドもMac/Ubuntu両方で警告ゼロを確認。
 
+132. **2026-08-03(続き5): GUIウィンドウがSF Monoのフォントサイズを
+    正しく再現できていなかったバグを修正(macOS側)、Ubuntu側の
+    GNOME Terminal色/サイズ未検出問題は実機データ待ちで調査継続中**。
+    項目131の直後、ユーザーから複数のプロファイルを試したスクリーン
+    ショット付きで「それぞれのウィンドウではフォントの種類は合って
+    いるようだがサイズの取得がNG。ubuntuでは背景黒・文字白・大きめ
+    ウィンドウ。dconfだっけ?　それがうまくいってない?」との報告。
+   - **macOS側の原因特定**: 実機で複数のTerminal.appプロファイル
+     (`Red Sands`等)の`font size`プロパティを直接クエリしたところ
+     値自体は正しく取得できていた(14, 12, 12, 10, 12等)ため、
+     クエリ自体は正常と確認。次に実際に`usilic`を起動しウィンドウ
+     サイズを実測したところ、Terminal.app本体のウィンドウ(650×450)
+     に対しGUI版が明確に小さい(496×382)ことを確認。原因を追うため、
+     `resolveMacFontPath()`と全く同じCoreTextコードを複製した独立
+     テストプログラムを実際にこの実機でコンパイル・実行したところ、
+     Terminal.appが報告するフォント名`"SFMono-Regular"`(Apple純正の
+     SF Mono、最近のmacOSのTerminal.appの既定フォント)が、通常の
+     CoreText名前検索(`CTFontDescriptorCreateWithNameAndSize`)では
+     **常に解決に失敗する**と判明した。ドット接頭辞付きのプライベート名
+     `.SFMono-Regular`を試したところ、macOS自身が明示的な警告
+     ("Client requested name '.SFMono-Regular', it will get
+     TimesNewRomanPSMT rather than the intended font. All system UI
+     font access should be through proper APIs such as
+     CTFontCreateUIFontForLanguage() or +[NSFont systemFontOfSize:].")
+     と共に、全く無関係な代替フォント(Times New Roman)を返してくる
+     ことも確認した――これはこのポート側のバグではなく、Appleが
+     意図的にSF Monoのような予約済みシステムフォント名への通常API
+     アクセスをブロックしている仕様と判明した。この結果`resolveGuiFontPath()`
+     は空文字列を受けて既存のフォールバック(`Menlo.ttc`)を使って
+     いたが、MenloとSF Monoは見た目こそ似ている(ユーザーの「フォント
+     の種類は合っているようだが」という感想と一致)ものの実際の字形
+     計量は別物で、`TTF_SizeUTF8()`で計測した"M"の幅が14ptにおいて
+     Menlo=8px・SF Mono=9pxと有意に異なり、これがウィンドウサイズの
+     ズレの直接原因だった。
+   - **修正**: SF Monoは実は`/System/Library/Fonts/SFNSMono.ttf`という
+     固定の既知パスに常時インストールされている(`find`コマンドで実機
+     確認済み)ため、`resolveMacFontPath()`に「フォント名がSF Monoの
+     既知の表記(`SFMono-Regular`/`.SFMono-Regular`/`SF Mono`/
+     `SF Mono Regular`)と一致する場合は、ブロックされるCoreText検索を
+     試す前にこの固定パスを直接返す」という特別分岐を追加した。太字
+     については別ファイルを用意する必要はなく(`GraphicalDisplay::
+     renderCell()`が既存の仕組みで`TTF_STYLE_BOLD`を実行時に適用する
+     設計のため)、Regular相当のファイル1つで足りると判断した。Apple
+     公式の正規API(`+[NSFont systemFontOfSize:]`等、警告メッセージが
+     案内している)はObjective-C/AppKitのため、このプロジェクトの
+     純粋なC++コードベースに新たに`.mm`(Objective-C++)のブリッジを
+     追加するよりも、固定パスを直接チェックする方が既存の設計との
+     一貫性を保てると判断した。
+   - **検証**: doctest新規1件(`resolveMacFontPath("SFMono-Regular",
+     14.0)`が`/System/Library/Fonts/SFNSMono.ttf`を返すことを確認)を
+     含め計570件全通過(Mac)。実機で同じ`Red Sands`プロファイルの
+     テストウィンドウ(650×450)に対し`usilic`を再起動したところ、
+     修正前496×382だったGUIウィンドウが632×426まで改善(実ターミナル
+     との差が幅24%→2.8%、高さ15%→5.3%まで縮小)したことを確認した。
+     残る数%の誤差はタイトルバー/タブバー分など既知の限界の範囲内。
+     Ubuntuクロスビルドではこの修正は`#ifdef __APPLE__`の外(Linux側
+     `resolveMacFontPath()`は元から常に空文字列を返す実装)のため
+     無関係、doctest該当分全件(既存の環境依存12件の失敗は無関係)通過、
+     実バイナリのビルドもMac/Ubuntu両方で警告ゼロを確認。
+   - **Ubuntu/GNOME Terminal側は調査継続中(未解決)**: 同じ報告で
+     「ubuntuでは背景黒・文字白・大きめウィンドウ。dconfだっけ?」との
+     指摘もあったが、これは`queryGnomeTerminalColors()`
+     (`GNOME_TERMINAL_SCREEN`環境変数でゲート、`gsettings`経由で
+     プロファイルを取得、項目にあるとおり元々このセッションからは
+     実機のGNOME Terminal/D-Busセッションが存在せず一度も実機検証
+     できていなかった機能)が丸ごと機能していない可能性が高い
+     (「背景黒・文字白・大きめ」は`GraphicalDisplay`自身のハード
+     コードされたデフォルト値[前景220,220,220・背景0,0,0・16pt既定]
+     と一致するため、クエリが`nullopt`を返して素通りしている典型
+     パターンと推測される)。項目131で「iTerm2という誤った前提のまま
+     一度実装してしまった」反省を踏まえ、今回は憶測で直しに行かず、
+     ユーザーの実機のGNOME Terminalで`echo $GNOME_TERMINAL_SCREEN`/
+     `echo $TERM_PROGRAM`/`gsettings get org.gnome.Terminal.
+     ProfilesList default`を実行した結果を教えてもらった上で対応する
+     方針とした。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

@@ -378,3 +378,15 @@ front windowへの依存を完全に廃止し、このプロセス自身の制�
 実装中、最初のcurrentTtyPath()の実装(open("/dev/tty")で開いたfdへttyname()を呼ぶ方式)が、具体的なデバイスパスではなく文字列"/dev/tty"そのものを返してしまうバグに気づきました(実際にTerminal.app上で小さなCテストプログラムをコンパイル・実行して確認)。これでは常に空振りする、元のバグよりさらに深刻な状態でした。ttyname(STDIN_FILENO)に変更して修正しました。
 
 実機で意図的に複数のTerminal.appウィンドウが開いている状況を作り、新規ウィンドウを他とは明確に異なる位置へ移動した上でusilicを起動、System Events経由でGUIウィンドウの実位置を確認したところ、意図した新規ウィンドウを正しく検出・重ね合わせできていることを確認しました。iTerm2向けの修正は引き続きこのサンドボックスにiTerm2が無いため実機検証できていませんが、構文的にはTerminal.app版と同じパターンです。doctest全569件、Mac/Ubuntu両方で警告ゼロを確認しました。コミット・プッシュ済みです。
+
+<それぞれのウィンドウではフォントの種類は合っているようだがサイズの取得がNG。
+ubuntuでは背景黒・文字白・大きめウィンドウ。dconfだっけ？　それがうまくいってない？
+'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 13.25.52.png'
+
+>macOS側の原因を特定・修正しました。実機で複数のTerminal.appプロファイルのfont sizeプロパティを直接クエリしたところ値自体は正しく取得できていたため、クエリ自体は正常と確認しました。実際にusilicを起動しウィンドウサイズを実測したところ、Terminal.app本体(650×450)に対しGUI版が明確に小さい(496×382)ことを確認し、原因を追うためresolveMacFontPath()と全く同じCoreTextコードを複製した独立テストプログラムを実機でコンパイル・実行したところ、Terminal.appが報告するフォント名「SFMono-Regular」(最近のmacOSのTerminal.appの既定フォント)が、通常のCoreText名前検索では常に解決に失敗すると判明しました。これはこのポート側のバグではなく、Appleが意図的にSF Monoのような予約済みシステムフォント名への通常APIアクセスをブロックしている仕様でした。既存のフォールバック(Menlo.ttc)が使われていましたが、MenloとSF Monoは見た目こそ似ているものの実際の字形計量は別物(14ptでMenlo=8px・SF Mono=9px)で、これがウィンドウサイズのズレの直接原因でした。
+
+SF Monoは実は/System/Library/Fonts/SFNSMono.ttfという固定の既知パスに常時インストールされているため、resolveMacFontPath()に「フォント名がSF Monoの既知の表記と一致する場合は、ブロックされるCoreText検索を試す前にこの固定パスを直接返す」という特別分岐を追加しました。
+
+実機でRed Sandsプロファイルのテストウィンドウ(650×450)に対しusilicを再起動したところ、修正前496×382だったGUIウィンドウが632×426まで改善(実ターミナルとの差が幅24%→2.8%、高さ15%→5.3%まで縮小)したことを確認しました。doctest新規1件を含め計570件全通過です。
+
+Ubuntu/GNOME Terminal側については、GNOME_TERMINAL_SCREEN環境変数でゲートしているqueryGnomeTerminalColors()自体が丸ごと機能していない可能性が高いと見ていますが(このセッションからは実機のGNOME Terminal/D-Busセッションが存在せず一度も実機検証できていない機能のため)、前回iTerm2という誤った前提のまま一度実装してしまった反省を踏まえ、今回は憶測で直しに行かず、実機のGNOME Terminalでecho $GNOME_TERMINAL_SCREEN / echo $TERM_PROGRAM / gsettings get org.gnome.Terminal.ProfilesList default を実行した結果を教えていただけますか。

@@ -25,6 +25,28 @@ TEST_CASE("resolveMacFontPath: an unknown font name fails gracefully, not a cras
   CHECK(path.empty());
 }
 
+// SF Mono (Terminal.app's own default font on any reasonably recent
+// macOS) can NEVER be resolved through the ordinary CoreText name
+// lookup this function otherwise uses -- macOS deliberately blocks it
+// (confirmed live, 2026-08-03: a bare "SFMono-Regular" lookup silently
+// returns nothing, and the dot-prefixed private-name form
+// ".SFMono-Regular" returns an unrelated substitute, Times New Roman,
+// with a Console warning explaining the API misuse). See this
+// function's own comment for why the fix is a direct, fixed-path
+// check rather than a different CoreText call. A real user report
+// (2026-08-03): the GUI window silently fell back to Menlo (visually
+// similar enough that "the font TYPE looks right") whose glyph metrics
+// don't actually match SF Mono's, producing a wrong-sized window.
+TEST_CASE("resolveMacFontPath: SF Mono resolves to its known fixed system path, not Menlo") {
+  std::string path = resolveMacFontPath("SFMono-Regular", 14.0);
+  CHECK_FALSE(path.empty());
+  if (!path.empty()) {
+    CHECK(path == "/System/Library/Fonts/SFNSMono.ttf");
+    std::ifstream probe(path, std::ios::binary);
+    CHECK(probe.good());
+  }
+}
+
 #else
 
 TEST_CASE("resolveMacFontPath: always empty on non-Apple platforms") {
