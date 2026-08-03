@@ -489,3 +489,26 @@ DESKTOP_SESSION=ubuntu
 >gsettings get org.gnome.desktop.interface monospace-font-name の値が'Ubuntu Sans Mono 11'だと確認できました。必要な情報が揃ったので、queryPtyxisAppearance()を実装します。PTYXIS_VERSION環境変数でゲートし、use-system-fontに応じてfont-name/monospace-font-nameのどちらを見るか分岐、既存のparsePangoFontDescription()(GNOME Terminal対応時に追加済み、最後の空白+数字をポイントサイズとして切り出す実装のため"Ubuntu Sans Mono"のような複数単語のファミリー名でも問題無く動作します)でそのまま解析します。色はTerminalAppearanceに新規hasColorsフィールド(既定true、Ptyxis検出時のみfalse)を追加し、呼び出し側でfalseのときはsetColors()を呼ばずGraphicalDisplayの既存デフォルトをそのまま使うようにしました。
 
 doctest全570件(Mac)通過、Ubuntu 26.04を新規Dockerコンテナ(libsdl2-dev/libsdl2-ttf-dev/libncurses-dev/zip/man-db追加インストール)でクロスビルドし、567/568件通過を確認しました(唯一の失敗はman_modeの「存在しないコマンドのman」テストで、minimizedなUbuntuイメージがmanコマンド自体未インストールのまま"This system has been minimized..."とexit 0を返す既知の環境依存の挙動であり、今回の変更とは無関係と確認済みです)。実機のPtyxisでの実行時の見た目確認はまだできていないので、実際にビルド・起動して見た目を確認いただけると助かります。コミット・プッシュ済みです。
+
+<'/Users/haa15030/Screenshot From 2026-08-03 15-15-13.png'
+こんな感じ。文字もやや小さめ。
+文字の大きさ、表示位置、ウィンドウサイズを同じにできればPtyxisも-g可ターミナルでいいかな……
+macOSのようにするにはどのような仕様が必要？
+
+>スクリーンショットを見ると、GUI版だけウィンドウが小さめ・文字も小さめ・位置もズレていました。macOSと同じ精度を目指すには3つの仕様が要ります。
+
+①フォントサイズ: GNOMEのtext-scaling-factorやディスプレイのスケール設定(HiDPIだと1.25〜2倍)をまだ考慮しておらず、SDL2_ttfのTTF_OpenFontは72DPI前提でポイント数をそのままピクセル変換するだけなので、GNOME側のスケール値を追加で掛ける必要があります。
+
+②ウィンドウ位置: macOSのAppleScriptに相当する標準APIがLinuxに無いのが一番の壁です。X11セッションならxdotool/wmctrlや生のXlibで座標取得が可能ですが、Waylandセッションではセキュリティ上の理由で外部プロセスが他ウィンドウの座標を取得する標準手段が原則存在しません。Ubuntu 26.04のGNOMEは既定でWaylandなので、まずどちらのセッションか(echo $XDG_SESSION_TYPE)確認が必要です。
+
+③ウィンドウサイズ/余白: ①②が解決した前提で、Macの余白調整と同じようにPtyxisのヘッダーバー高さ・左右余白をスクリーンショットの画素値から実測してハードコードする作業が必要です。
+
+<-gは隠れ機能なのでウィンドウの重ね打ち可を必須としたい。
+ubuntu26.04はWaylandだがLinuxは種類が多いのでどれが可能かなんて調べるだけで大変だし今のところは一律-cオンリーでいいと思う（移植可能なターミナルが見つかればトライということで）。
+Linuxはひとまず置いといて、macOSの-gデバッグへ移りたい。
+
+>ご指示どおり、「実はすでにGUI」自動起動ブロックの設計を変更しました。従来は配色/フォント一致(queryRealTerminalAppearance())さえ取れれば起動し、ウィンドウ位置一致(queryRealTerminalWindowBounds())が取れない場合は中央表示にフォールバックしていましたが、これを「配色/フォント一致かつウィンドウ位置一致の両方が取れて初めて起動」という設計に変更しました。理由は、この機能はユーザーが明示的に要求していない隠れた自動検出であり、「間違った位置に出現する」ことは以前修正した「間違った配色で出現する」ことと全く同じ種類の予期しない驚きだからです。
+
+queryRealTerminalWindowBounds()は現状macOSのTerminal.app/iTerm2しか対応しておらず、UbuntuのqueryPtyxisAppearance()はフォント情報のみを返しウィンドウ位置は返さない設計のため、この必須化だけでPtyxis個別のプラットフォーム判定を新たに書くことなく、Linux側は自動的に「実はすでにGUI」の対象外(常に通常端末モードのまま)になります。まさにご希望どおりの「Linuxは当面-cオンリー」が、追加のif分岐無しで実現できました。明示的な-gデバッグフラグ(開発者が手動でテストする用の隠しオプション)はこの変更の対象外で、従来通り位置一致無しでも起動します。
+
+doctest全570件(Mac)通過、実バイナリのビルドも警告ゼロを確認しました。この変更は既存のテスト済みクエリの呼び出し順序を変えただけで新規ロジックは追加していないため、Mac実機での再検証は必須と判断していません。コミット・プッシュ済みです。macOSの-gデバッグ、具体的にどのあたりを見てみましょうか。

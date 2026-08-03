@@ -1863,7 +1863,28 @@ int main(int argc, char **argv) {
   // since the real terminal was never used for rendering).
   std::unique_ptr<fm::GraphicalDisplay> launchGui;
   bool guiOwnsWholeSession = false;
-  if (auto appearance = forceCui ? std::nullopt : queryRealTerminalAppearance()) {
+  // Window-bounds match is now a HARD requirement alongside the color/
+  // font appearance match, not an optional nicety (changed 2026-08-03,
+  // "-gは隠れ機能なのでウィンドウの重ね打ち可を必須としたい"): this
+  // launch path is an undocumented auto-detect that swaps the real
+  // terminal out for a GUI window before the user ever asked for one,
+  // so a GUI window that shows up in the wrong PLACE (e.g. centered,
+  // unrelated to where the real terminal sits) is exactly the same
+  // class of unrequested surprise as one that shows up with the wrong
+  // COLORS -- the whole reason colors are gated on a successful query
+  // instead of guessing. Currently only queryTerminalAppWindowBounds()/
+  // queryITermWindowBounds() (macOS Terminal.app/iTerm2) can answer
+  // this at all; Ptyxis's queryPtyxisAppearance() (Ubuntu) only ever
+  // supplies font info, never bounds, so this requirement is *why*
+  // "実はすでにGUI" naturally stays off on Ptyxis for now rather than
+  // needing its own separate platform check -- see CLAUDE.md's
+  // 2026-08-03 note on why matching a Linux terminal's own window
+  // position was set aside (Wayland has no general cross-app window-
+  // geometry query, and X11 support would need per-distro detection
+  // work not yet done).
+  auto appearance = forceCui ? std::nullopt : queryRealTerminalAppearance();
+  auto bounds = (forceCui || !appearance) ? std::nullopt : queryRealTerminalWindowBounds();
+  if (appearance && bounds) {
     std::string fontPath = resolveGuiFontPath(appearance);
     launchGui = fontPath.empty() ? nullptr
                                   : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,
@@ -1883,15 +1904,9 @@ int main(int argc, char **argv) {
       // needs no extra math here at all: the OS reserves the title
       // bar's own space above this window's content automatically,
       // the same way it does for the real terminal window being
-      // overlaid. A failed bounds query (any terminal/platform
-      // queryRealTerminalWindowBounds()'s own two queries don't cover)
-      // leaves the window exactly where it already is
-      // (SDL_WINDOWPOS_CENTERED from create()) -- never a hard
-      // requirement, matching every other "実はすでにGUI" appearance
-      // query in this file.
-      if (!forceCui) {
-        if (auto bounds = queryRealTerminalWindowBounds()) launchGui->setWindowPosition(bounds->x, bounds->y);
-      }
+      // overlaid. `bounds` is guaranteed present here (see the hard
+      // requirement above), so this is unconditional now.
+      launchGui->setWindowPosition(bounds->x, bounds->y);
       launchGui->open();
       display.setBackend(*launchGui);
       guiOwnsWholeSession = true;
