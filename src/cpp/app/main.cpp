@@ -1748,6 +1748,23 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  // Ported from HELP.jp's own EXIT section (2.18): "引数無しで file
+  // manager で起動した場合は...アクセス履歴のリストを~/.tcb/history
+  // に保存し、次回の起動時にはこのファイルにより、履歴リストを復元
+  // します" / "(ディレクトリ引数で起動した時...は、以上のファイルには
+  // アクセスしません)" -- an argument-launched run neither reads NOR
+  // writes ~/.usilic/history at all, matching legacy's "resume last
+  // session" feature being exclusive to the no-argument case (see
+  // startDirectory/consultHistoryOnStart's own comment below for the
+  // narrower, already-fixed half of this: which directory ROW to land
+  // on). Declared here (rather than where it's used below) so both the
+  // startup load AND the exit-time save can share one flag -- a real
+  // side-by-side screenshot comparison against legacy (2026-08-03)
+  // found an argument-launched run's ^X^F/^X^D lists polluted with
+  // unrelated entries from past unrelated sessions, because loading
+  // was previously unconditional.
+  bool consultHistoryOnStart = positionalArgs.empty();
+
   std::unique_ptr<fm::TerminalDisplay> terminalDisplay = fm::TerminalDisplay::fromEnvironment();
   terminalDisplay->setOutputEnabled(true);  // fromEnvironment() leaves this off by default -- see its own comment
   fm::DelegatingDisplay display(*terminalDisplay);  // see file comment's own GUI-mode section
@@ -1777,14 +1794,17 @@ int main(int argc, char **argv) {
   std::string rcText = readFileIfExists(usilicDir + "usilicrc");
   if (!rcText.empty()) configuration.loadRcText(rcText, /*fileManagerMode=*/true);
 
-  std::string historyText = readFileIfExists(usilicDir + "history");
-  if (!historyText.empty()) {
-    history.loadHistoryText(historyText, configuration.charsetExplicitlySet());
-    if (!history.isComplete()) {
-      // Ported from load_list()'s own `.old` fallback: the primary
-      // file looked truncated/corrupt (missing EOF sentinel).
-      std::string oldText = readFileIfExists(usilicDir + "history.old");
-      if (!oldText.empty()) history.loadHistoryText(oldText, configuration.charsetExplicitlySet());
+  std::string historyText;  // stays empty (see hasSavedHistory below) when consultHistoryOnStart is false
+  if (consultHistoryOnStart) {
+    historyText = readFileIfExists(usilicDir + "history");
+    if (!historyText.empty()) {
+      history.loadHistoryText(historyText, configuration.charsetExplicitlySet());
+      if (!history.isComplete()) {
+        // Ported from load_list()'s own `.old` fallback: the primary
+        // file looked truncated/corrupt (missing EOF sentinel).
+        std::string oldText = readFileIfExists(usilicDir + "history.old");
+        if (!oldText.empty()) history.loadHistoryText(oldText, configuration.charsetExplicitlySet());
+      }
     }
   }
 
@@ -1976,8 +1996,9 @@ int main(int argc, char **argv) {
   // (including ".") always starts at the top of that directory's
   // listing, regardless of any position saved from an earlier,
   // unrelated visit (a real report: launching with "." landed on a
-  // stale mid-list row instead of the top).
-  bool consultHistoryOnStart = positionalArgs.empty();
+  // stale mid-list row instead of the top). consultHistoryOnStart
+  // itself is declared earlier now (see its own comment) so the
+  // startup load further up can share it too.
   if (!app.start(startDirectory, consultHistoryOnStart)) {
     display.close();
     keyInput.close();
@@ -2016,13 +2037,20 @@ int main(int argc, char **argv) {
   // at startup: K-27 (^Oa) can change it live mid-session
   // (Application::cycleCharset()), and a switch should actually
   // persist into the next run, not be silently overwritten by
-  // whatever this session started with.
-  history.setSavedCharset(app.encoding());  // so a future session with no explicit override resumes in this one's charset
-  std::string historyPath = usilicDir + "history";
-  std::string historyOldPath = usilicDir + "history.old";
-  if (!readFileIfExists(historyPath).empty()) std::rename(historyPath.c_str(), historyOldPath.c_str());
-  std::ofstream out(historyPath, std::ios::binary);
-  out << history.serialize("usilic", currentTimestampText());
+  // whatever this session started with. Gated on consultHistoryOnStart
+  // (see its own comment) -- an argument-launched run doesn't touch
+  // ~/.usilic/history on exit either, matching legacy exactly (not
+  // just "load skipped, save unconditional"): saving would otherwise
+  // silently overwrite the real no-argument session's own saved state
+  // with this unrelated run's in-memory rings.
+  if (consultHistoryOnStart) {
+    history.setSavedCharset(app.encoding());  // so a future session with no explicit override resumes in this one's charset
+    std::string historyPath = usilicDir + "history";
+    std::string historyOldPath = usilicDir + "history.old";
+    if (!readFileIfExists(historyPath).empty()) std::rename(historyPath.c_str(), historyOldPath.c_str());
+    std::ofstream out(historyPath, std::ios::binary);
+    out << history.serialize("usilic", currentTimestampText());
+  }
 
   return 0;
 }
