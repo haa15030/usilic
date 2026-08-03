@@ -283,6 +283,19 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->columns = columns;
   display->impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
   SDL_StartTextInput();
+  // Without this, a real user report (2026-08-03: "^Nが無反応→マウス
+  // の左クリックも無反応→何度目かの左クリックでようやく表示") found
+  // this window created but NOT focused: SDL_WINDOW_SHOWN alone maps
+  // the window but doesn't reliably steal input focus away from
+  // whichever window was already focused (the real terminal that just
+  // launched usilic, in the "実はすでにGUI" launch path this bug was
+  // found in) on every platform/WM -- keystrokes kept going to that
+  // terminal instead, and the first several mouse clicks were consumed
+  // just bringing the window to focus rather than being delivered to
+  // this app as normal button-down events. SDL_RaiseWindow() is the
+  // standard cross-platform fix recommended for exactly this class of
+  // "window exists but isn't actually focused yet" symptom.
+  SDL_RaiseWindow(window);
   return display;
 }
 

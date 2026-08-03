@@ -964,8 +964,9 @@ bool Application::handleCommand(Command command) {
       return true;
     }
     case Command::StartFileInput:
+      return startPathInputPrompt(/*isDirectory=*/false);
     case Command::StartDirectoryInput:
-      return startPathInputPrompt();
+      return startPathInputPrompt(/*isDirectory=*/true);
     case Command::ToggleLsMode: {
       if (currentMode_ != ApplicationMode::Directory) return false;
       bool enabled = !directoryMode_.filenameOnlyMode();
@@ -1611,8 +1612,15 @@ std::vector<std::string> Application::buildArchiveExtractArgv(const std::string 
 // land wherever it goes" navigation, usable from File/Man/Grep/etc
 // just as much as from a directory listing. Both keys share this one
 // prompt/execute pair since PathResolver already decides file-vs-
-// directory from the path itself, not from which key was pressed.
-bool Application::startPathInputPrompt() {
+// directory from the path itself, not from which key was pressed --
+// `isDirectory` is stashed in pathInputIsDirectory_ purely for
+// promptLabelText()'s benefit (legacy shows a distinct " FILE"/" DIR"
+// mode-line label per key even though the two share this one
+// execution path; a real side-by-side screenshot comparison,
+// 2026-08-03, found this port always showing "FILE/DIR" regardless of
+// which key was pressed).
+bool Application::startPathInputPrompt(bool isDirectory) {
+  pathInputIsDirectory_ = isDirectory;
   activatePrompt(PromptKind::PathInput, "");
   return true;
 }
@@ -1855,7 +1863,7 @@ std::string Application::promptLabelText(PromptKind kind) const {
     case PromptKind::DuPath:
       return "DU";
     case PromptKind::PathInput:
-      return "FILE/DIR";
+      return pathInputIsDirectory_ ? "DIR" : "FILE";
     case PromptKind::ArchiveDestination:
       return "ARC";
     case PromptKind::None:

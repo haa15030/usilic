@@ -2157,6 +2157,24 @@ TEST_CASE_FIXTURE(Fixture, "prompt labels: FGREP vs EGREP shows the right one de
   CHECK(display.rowText(display.rows() - 1).find("EGREP") != std::string::npos);
 }
 
+TEST_CASE_FIXTURE(Fixture, "prompt labels: FILE vs DIR shows the right one depending on which key (^Xf/^Xd) "
+                           "started the prompt, even though both share one execution path") {
+  // Ported from legacy's own M_lfile2/M_ldir2: distinct mode-line
+  // labels for ^Xf/^Xd even though startPathInputPrompt()'s own
+  // execution is deliberately unified (PathResolver decides file-vs-
+  // directory from the typed path itself, not from which key was
+  // pressed) -- a real side-by-side screenshot comparison against
+  // legacy (2026-08-03) found this port always showing the combined
+  // "FILE/DIR" regardless of which key was actually pressed.
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFileInput));
+  CHECK(display.rowText(display.rows() - 1).find("FILE") != std::string::npos);
+
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G cancel
+  REQUIRE(app.handleCommand(Command::StartDirectoryInput));
+  CHECK(display.rowText(display.rows() - 1).find("DIR") != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "prompt labels: DU shows its own label, and the pre-filled directory text still "
                            "appears right after it") {
   REQUIRE(app.start(path()));

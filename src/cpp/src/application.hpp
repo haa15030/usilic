@@ -1252,7 +1252,7 @@ class Application {
   std::vector<std::string> buildArchiveExtractArgv(const std::string &archivePath, ArchiveKind kind,
                                                     const std::vector<std::string> &members,
                                                     const std::string &destination) const;
-  bool startPathInputPrompt();
+  bool startPathInputPrompt(bool isDirectory);
   // K-65 (^I, M_list, "LIST: Complete file name"): lists filesystem
   // entries under the directory implied by `partial` (resolved
   // against `baseDirectory` when `partial` isn't itself absolute or
@@ -1467,6 +1467,15 @@ class Application {
   // notes) has an obvious single place to re-call.
   void drawPromptLabel(PromptKind kind);
   PromptKind promptKind_ = PromptKind::None;
+  // Which of the two keys (K-45 ^Xf vs K-47 ^Xd) started the current
+  // PathInput prompt -- see startPathInputPrompt()'s own comment for
+  // why EXECUTION stays unified (PathResolver decides file-vs-
+  // directory from the typed path itself) while the mode-line LABEL
+  // still needs to match legacy's own separate " FILE"/" DIR" text for
+  // whichever key was actually pressed (a real side-by-side screenshot
+  // comparison against legacy, 2026-08-03, found this port always
+  // showing "FILE/DIR" regardless of which key started the prompt).
+  bool pathInputIsDirectory_ = false;
 };
 
 }  // namespace fm

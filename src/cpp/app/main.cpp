@@ -1257,11 +1257,20 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           // for why this isn't decided as click-vs-drag until release.
           TerminalCoastResult coast = runTerminalMouseDrag(app, display, keyInput, mouse->row);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
-        } else if (mouse->motionOnly) {
+        } else if (mouse->motionOnly && !app.promptActive()) {
           // Plain hover (no button held), outside any active drag or
           // coast: just keep the highlight live, matching how a
           // pointer resting over a normal file-manager list usually
-          // previews what a click would hit.
+          // previews what a click would hit. Guarded on !promptActive()
+          // (2026-08-03 fix, see the GUI-side hover guard below's own
+          // comment for the real bug report this addresses) --
+          // ContentView::redraw() (called via applyHoverRowAndRedraw())
+          // unconditionally redraws its OWN mode-line row, which is the
+          // exact row Application's prompt label/input field also live
+          // on while a prompt (^Xf, FGREP, ...) is active; without this
+          // guard, so much as wiggling the mouse mid-prompt silently
+          // wipes out the prompt the user was in the middle of typing
+          // into.
           applyHoverRowAndRedraw(app.activeContentView(), mouse->row);
         }
         // Any other combination (right-click, an orphan release,
@@ -1477,12 +1486,22 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // motionOnly handling above, which GUI mode never had at all
     // before this (a real user report, 2026-08-02: "-g起動なのに
     // マウスでカーソルが動かないなんてあり得ない"). Skipped while a
-    // drag or coast is already in progress or Shell mode is active,
-    // same guards the terminal path's own hover handling uses --
+    // drag or coast is already in progress, Shell mode is active
+    // (same guards the terminal path's own hover handling uses --
     // hover highlighting during an active drag/coast would fight with
     // that gesture's own redraw() calls, and Shell has no
-    // ContentView-backed row selection to hover in the first place.
-    if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell) {
+    // ContentView-backed row selection to hover in the first place),
+    // or a prompt is active (2026-08-03 fix -- a real side-by-side
+    // screenshot comparison against legacy found ^Xf's input field
+    // vanishing the moment the mouse moved even slightly: SDL reports
+    // SDL_MOUSEMOTION continuously for every pixel of movement, far
+    // denser than a real terminal's own SGR mouse reports, so this hit
+    // far more reliably in GUI mode than the equivalent gap in the
+    // terminal path above -- both are now guarded the same way).
+    // ContentView::redraw() (called via applyHoverRowAndRedraw())
+    // unconditionally redraws its own mode-line row, the exact row
+    // Application's prompt label/input field also live on.
+    if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell && !app.promptActive()) {
       while (auto hover = gui.consumeHoverEvent()) {
         anyEventThisFrame = true;
         applyHoverRowAndRedraw(app.activeContentView(), hover->row);
