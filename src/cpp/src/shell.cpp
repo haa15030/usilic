@@ -102,47 +102,58 @@ Shell::Shell(Display &display, const ShellOptions &options)
     isBash_ = isBashProgram(options_.argv[0]);
     isZsh_ = isZshProgram(options_.argv[0]);
   }
-  // Three DISTINCT rows, not two (2026-08-03 revision): scrollback_'s
-  // own CONTENT area is height_ = viewportRows_-2 rows tall (0..
-  // viewportRows_-3), the live prompt (commandLineRow(), see its own
-  // comment) is the dedicated row viewportRows_-2 right after it, and
-  // the mode-line is pinned to the TRUE last row viewportRows_-1 via
-  // setModeLineRow() -- decoupled from ContentView's own default
-  // row0_+height_ convention, which would otherwise land on the SAME
-  // row as the prompt now that height_ no longer reaches all the way
-  // to viewportRows_-1.
+  // Three DISTINCT, permanently FIXED rows (2026-08-04 revision):
+  // scrollback_'s own CONTENT area is height_ = viewportRows_-2 rows
+  // tall (0..viewportRows_-3), the live prompt (commandLineRow(), see
+  // its own comment) is the fixed row viewportRows_-2 right after it,
+  // and the mode-line is pinned to the TRUE last row viewportRows_-1
+  // via setModeLineRow(). scrollback_.setBottomAnchored(true) is what
+  // makes this work with a genuinely FIXED prompt row: with it, fewer-
+  // than-height_ lines render flush against the BOTTOM of the content
+  // area (blank padding rows above them) instead of the ContentView
+  // default of flush-against-the-TOP -- so the last real content line
+  // is ALWAYS immediately above viewportRows_-2, whether scrollback_
+  // has 1 line or 100, and the prompt never needs to move at all.
   //
-  // This replaces an EARLIER (2026-08-02) fix that made commandLine_
-  // overlay scrollback_'s own LAST CONTENT row (viewportRows_-2, back
-  // when height_ was viewportRows_-1) instead of colliding with the
-  // mode-line -- reasoned at the time as "matching legacy, where the
-  // live prompt IS simply the last line of scrollback". That reasoning
-  // was half right: legacy's prompt line and the last REAL content
-  // line are indeed the same slot -- but only at the instant a prompt
-  // has just been frozen and no new output exists yet. The moment real
-  // output starts arriving (flushNewScrollbackLines(), called on every
-  // pty read -- see processOutputBytes()'s own call), THAT output's
-  // own last line legitimately wants that identical row too, and
-  // whichever of the two (content redraw vs. commandLine_'s prompt
-  // redraw) happened to run last would silently clobber the other. A
-  // real side-by-side comparison against legacy (2026-08-03, repeating
-  // `ls`+Enter several times) confirmed this via raw escape-sequence
-  // tracing: every single command's last output line got overwritten
-  // by the reappearing prompt in -c, and the reverse (prompt
-  // overwritten by content) in -g -- a genuine row collision, not a
-  // timing race, present on both backends since the row-sharing is
-  // baked into the layout math itself, not incidental.
-  //
-  // Reserving a truly separate row for the prompt (this fix) instead
-  // matches legacy's actual on-screen behavior even more directly:
-  // legacy's prompt only ever shares a line with real output for that
-  // single instant right after freezing, and immediately becomes its
-  // own trailing line the moment anything else is appended below it
-  // (exactly what a dedicated, content-relative row achieves without
-  // needing to literally merge commandLine_'s live-editing state into
-  // scrollback_.lines() itself).
+  // This replaces TWO earlier iterations, each fixing a real bug the
+  // previous one didn't fully solve:
+  //   1. (2026-08-02) commandLine_ overlaid scrollback_'s own LAST
+  //      CONTENT row directly (back when height_ was viewportRows_-1,
+  //      no reserved row at all) -- reasoned at the time as "matching
+  //      legacy, where the live prompt IS simply the last line of
+  //      scrollback". Real output arriving after a command was
+  //      submitted legitimately wanted that same row too, and
+  //      whichever of the two redrew last silently clobbered the
+  //      other (confirmed via real escape-sequence tracing, 2026-08-03:
+  //      every command's last output line got overwritten by the
+  //      reappearing prompt in -c, and the reverse in -g).
+  //   2. (2026-08-03) Reserved a reliably separate row for the prompt,
+  //      but made it CONTENT-RELATIVE (grew as scrollback_ did,
+  //      settling at viewportRows_-2 only once content filled the
+  //      content area) to match legacy's own visible behavior (prompt
+  //      immediately after whatever came before it, not a fixed row
+  //      with an unnatural gap while scrollback_ was still short).
+  //      This introduced its OWN class of bug: nothing kept
+  //      commandLine_'s cached row or the prompt's own on-screen text
+  //      in sync as scrollback_ kept growing across several separate
+  //      pty reads before the next real prompt was detected -- a real
+  //      user report (2026-08-03/04): "ls[Enter]→一瞬プロンプト表示→
+  //      ls結果表示→一瞬プロンプト表示後消失". Two follow-up patches
+  //      (re-syncing commandLine_'s field on every flush, then also
+  //      re-asserting redrawPromptRow() on every flush) each closed
+  //      part of the gap but the user's own next report ("降下中がNG。
+  //      着地後はOK") confirmed the underlying churn -- the prompt's
+  //      row genuinely changing, repeatedly, mid-command -- was still
+  //      there, just less visible.
+  // Bottom-anchoring content instead removes the DYNAMIC positioning
+  // entirely: the prompt's row is a compile-time-obvious constant
+  // again (like iteration 1), but scrollback_ itself -- not Shell --
+  // now guarantees content and prompt never collide (unlike iteration
+  // 1) and never requires re-syncing anything as content grows (unlike
+  // iteration 2), because there is nothing left TO re-sync.
   scrollback_.setViewport(0, std::max(1, viewportRows_ - 2));
   scrollback_.setModeLineRow(viewportRows_ - 1);
+  scrollback_.setBottomAnchored(true);
   updateCommandLineField();
 }
 
@@ -513,49 +524,23 @@ void Shell::flushNewScrollbackLines() {
   linesConsumed_ = plines.size();
   scrollback_.setLines(std::move(newLines));
   scrollback_.goToBottom();
-  // commandLineRow() is content-relative (see its own comment) and
-  // grows as scrollback_ does -- but commandLine_'s own field position
-  // was previously only ever re-synced at fixed points (the
-  // constructor, onResize(), handlePromptDetected()), NOT here, on
-  // every single content growth in between. A real command's output
-  // can arrive across several separate flushes (multiple pty reads
-  // before the shell's own next prompt marker completes), during which
-  // window commandLine_'s cached row silently went stale -- normally
-  // invisible since nothing calls commandLine_.redraw() again until
-  // handlePromptDetected() re-syncs it anyway, but real user testing
-  // (2026-08-03, GUI mode specifically) found this staleness window
-  // wide enough to matter there: real output arriving in multiple
-  // frames left the live prompt's own field genuinely out of step with
-  // where scrollback_ had already grown to by the time anything next
-  // touched it. Keeping this in sync on every flush closes that gap
-  // regardless of how many separate reads a command's output happens
-  // to arrive across.
+  // Belt-and-suspenders, not load-bearing (2026-08-04): now that
+  // scrollback_.setBottomAnchored(true) (see the constructor's own
+  // comment) keeps the last real content line permanently pinned
+  // immediately above commandLineRow()'s own now-FIXED row, content
+  // growth here can no longer collide with or overwrite the prompt no
+  // matter how many separate flushes a command's output arrives
+  // across -- the two EARLIER, now-obsolete bugs these two calls were
+  // originally added to work around (commandLine_'s cached field going
+  // stale, then the prompt's own on-screen text getting silently
+  // overwritten by a later content redraw) can't recur structurally.
+  // Kept anyway: harmless (commandLineRow() is now a pure constant, so
+  // updateCommandLineField() just recomputes the same value; a
+  // repeated identical redrawPromptRow() is a handful of writes plus
+  // one flush -- see its own comment) and keeps this function self-
+  // contained rather than relying on callers elsewhere to redraw the
+  // prompt at the right moment.
   updateCommandLineField();
-  // Re-asserts the prompt overlay on top, at the freshly-synced row,
-  // every single time content grows -- not just when a real prompt is
-  // detected (2026-08-04 follow-up: syncing commandLine_'s FIELD alone,
-  // above, wasn't enough). This function's own trailing call inside
-  // processOutputBytes() means content can keep growing (a stray
-  // trailing byte or two after a prompt cycle's closing mark, still
-  // within the SAME read, gets appended here -- see
-  // processOutputBytes()'s own comment) strictly AFTER
-  // handlePromptDetected() already drew what was, at that moment, the
-  // correct final prompt -- and since nothing re-asserted it, that
-  // growth silently overwrote it via this function's own
-  // goToBottom()-triggered redraw() (a real user report, 2026-08-03/04:
-  // "ls[Enter]→一瞬プロンプト表示→ls結果表示→一瞬プロンプト表示後
-  // 消失" -- the prompt visibly flashes correctly, then vanishes,
-  // exactly matching a redraw that runs AFTER it with no knowledge of
-  // it). During active command execution (no real prompt detected yet)
-  // this redraws whatever promptDecorated_ currently holds -- the
-  // PREVIOUS prompt's text, stale but harmless, since legacy shows no
-  // live prompt at all mid-execution either and this is strictly
-  // better than the alternative of leaving fully stale text sitting at
-  // the WRONG row. redrawPromptRow() itself is cheap to call
-  // repeatedly (a handful of writes plus one flush -- see its own
-  // comment), so unconditionally re-running it here on every flush,
-  // rather than trying to detect exactly when it's "needed", is the
-  // simpler and more robust choice.
   redrawPromptRow();
 }
 
@@ -683,21 +668,14 @@ void Shell::updateCommandLineField() {
 }
 
 int Shell::commandLineRow() const {
+  // A fixed constant again (2026-08-04 revision) -- see the
+  // constructor's own comment for why this is safe now: scrollback_'s
+  // own bottom-anchoring guarantees the last real content line is
+  // ALWAYS immediately above this row, so nothing here needs to track
+  // how much content currently exists the way the previous (2026-08-03)
+  // content-relative revision did.
   if (viewportRows_ <= 1) return 0;
-  // Content-relative, not a fixed constant (2026-08-03 revision) --
-  // see the constructor's own comment for the full collision this
-  // replaces. `visible` is how many of scrollback_'s own lines are
-  // CURRENTLY rendered starting from its topIndex_ -- capped at
-  // scrollback_'s own content height (viewportRows_-2) the same way
-  // goToBottom() itself caps it, so the prompt lands right after the
-  // last visible content line: at row 0 when scrollback_ is empty,
-  // growing down as content accumulates, and settling permanently at
-  // the dedicated last-plus-one row (viewportRows_-2) once content
-  // fills or exceeds the content area -- exactly matching how legacy's
-  // own prompt line sits immediately after whatever came before it.
-  int contentHeight = std::max(1, viewportRows_ - 2);
-  int visible = static_cast<int>(scrollback_.lines().size()) - scrollback_.topIndex();
-  return std::max(0, std::min(visible, contentHeight));
+  return viewportRows_ - 2;
 }
 
 int Shell::displayWidth(const std::string &text) const {

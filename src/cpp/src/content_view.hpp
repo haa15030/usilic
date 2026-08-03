@@ -177,6 +177,26 @@ class ContentView {
   // DirectoryMode leaves it at the default.
   void setCursorHighlightEnabled(bool enabled);
 
+  // Whether fewer-than-height_ lines render flush against the BOTTOM
+  // of the viewport (blank padding rows above them) instead of the
+  // default flush-against-the-TOP (blank padding rows below) --
+  // default false, every existing caller unaffected. Added for Shell's
+  // own scrollback_ (2026-08-04): a live prompt fixed at exactly
+  // row0_+height_ (the row right after this view's own content area)
+  // only ever looks right if the last real content line is ALWAYS
+  // immediately above it -- with the previous top-anchored default,
+  // that's only true once scrollback_ has grown to completely fill
+  // height_; before that point, the prompt either has to sit at a
+  // fixed row far below a short amount of content (an unnatural gap)
+  // or follow the content's own growing edge (Shell's own EARLIER
+  // fix, which introduced its own re-sync bugs -- see Shell's class
+  // comment for the fuller history). Bottom-anchoring instead means
+  // the answer to "which row is right after the content" is the SAME
+  // fixed row regardless of how little content exists, eliminating
+  // the whole class of prompt/content re-sync bugs at the source
+  // rather than patching each one as found.
+  void setBottomAnchored(bool enabled);
+
   // -- scrolling --
   // Single-line cursor movement (M_up/M_dn/M_kup/M_kdn): moves the
   // cursor one line, scrolling the viewport by one line (using
@@ -335,6 +355,7 @@ class ContentView {
   void renderLine(const Line &line, bool marked);
   void renderModeLine();
   void clampViewport();
+  int bottomAnchorRowOffset() const;
 
   // Which of ModeLineFields' name/trailing pieces fit alongside
   // `positionText` in the display's own column count -- dropped,
@@ -372,6 +393,7 @@ class ContentView {
   int topIndex_ = 0;
   std::optional<int> hoverIndex_;
   bool cursorHighlightEnabled_ = true;
+  bool bottomAnchored_ = false;
 
   int row0_ = 0, height_ = 0;
   ModeLineFieldsProvider modeLineFieldsProvider_;

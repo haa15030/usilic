@@ -81,6 +81,50 @@ TEST_CASE("redraw: rows past the end of the list are left blank") {
   CHECK(d.rowText(4)[0] == ' ');
 }
 
+TEST_CASE("setBottomAnchored: fewer-than-height lines render flush against the bottom, blank rows above") {
+  // Added for Shell's own scrollback_ (2026-08-04) -- see its own
+  // comment for why: a live prompt fixed at exactly row0_+height_ only
+  // looks right if the last real content line is ALWAYS immediately
+  // above it, which top-anchoring (the default, tested elsewhere)
+  // can't guarantee until content happens to fill the whole viewport.
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(2));
+  v.setBottomAnchored(true);
+  v.redraw();
+  CHECK(d.rowText(0)[0] == ' ');  // blank padding, not "line0" (unlike the top-anchored default)
+  CHECK(d.rowText(1)[0] == ' ');
+  CHECK(d.rowText(2)[0] == ' ');
+  CHECK(d.rowText(3).substr(0, 5) == "line0");  // flush against the bottom: rows height-2, height-1
+  CHECK(d.rowText(4).substr(0, 5) == "line1");
+}
+
+TEST_CASE("setBottomAnchored: once lines fill (or exceed) the viewport, behaves exactly like top-anchored") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(5));  // more lines than height -- goToBottom() shows the last 3
+  v.setBottomAnchored(true);
+  v.goToBottom();
+  CHECK(d.rowText(0).substr(0, 5) == "line2");
+  CHECK(d.rowText(1).substr(0, 5) == "line3");
+  CHECK(d.rowText(2).substr(0, 5) == "line4");
+}
+
+TEST_CASE("setBottomAnchored: lineIndexAtRow accounts for the same blank padding redraw() uses") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(2));
+  v.setBottomAnchored(true);
+  v.redraw();
+  CHECK(v.lineIndexAtRow(0) == -1);  // blank padding row
+  CHECK(v.lineIndexAtRow(2) == -1);
+  CHECK(v.lineIndexAtRow(3) == 0);  // "line0"
+  CHECK(v.lineIndexAtRow(4) == 1);  // "line1"
+}
+
 TEST_CASE("lineIndexAtRow: maps a display row within the viewport to a line index") {
   RecordingDisplay d(10, 20);
   ContentView v(d);

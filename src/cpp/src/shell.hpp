@@ -273,19 +273,19 @@ class Shell {
   void resetSessionState();
   void writeToPty(const std::string &bytes);
   void updateCommandLineField();
-  // The row commandLine_'s own live prompt/input occupies: content-
-  // relative, not a fixed row (2026-08-03 revision -- see the
-  // constructor's own comment for the full history, including the
-  // EARLIER 2026-08-02 fix this replaces and exactly why it still
-  // wasn't right). scrollback_'s own content area is now permanently
-  // ONE row shorter than the viewport (viewportRows_-2, was
-  // viewportRows_-1), freeing up a genuinely dedicated row for the
-  // prompt that never collides with either real scrollback content OR
+  // The row commandLine_'s own live prompt/input occupies: a fixed
+  // constant again, viewportRows_-2 (2026-08-04 revision -- see the
+  // constructor's own comment for the full history, including the two
+  // earlier iterations this replaces and exactly why each still wasn't
+  // right). scrollback_'s own content area is permanently ONE row
+  // shorter than the viewport (viewportRows_-2, not viewportRows_-1),
+  // freeing up a genuinely dedicated row for the prompt that never
+  // collides with either real scrollback content (scrollback_'s own
+  // setBottomAnchored(true) guarantees the last content line is always
+  // immediately above this row, however little content exists) or
   // scrollback_'s own mode-line (pinned to the true last row,
-  // viewportRows_-1, via setModeLineRow() -- decoupled from
-  // ContentView's own default row0_+height_ convention specifically so
-  // it doesn't follow height_ down into the prompt's new territory).
-  // Shared so the formula lives in exactly one place.
+  // viewportRows_-1, via setModeLineRow()). Shared so the formula
+  // lives in exactly one place.
   int commandLineRow() const;
   int displayWidth(const std::string &text) const;
   std::string buildSetupCommand() const;

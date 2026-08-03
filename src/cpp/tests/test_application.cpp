@@ -2731,18 +2731,15 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: propagates the new size to Shell's pty
   app.handleResize();
 
   // Switch back to Shell and confirm its command-line field's row
-  // really is bounded by the NEW viewport (rows - 2 = 8), confirming
-  // Application actually propagated the resize down to Shell.
-  // commandLineRow() is content-relative (2026-08-03, see its own
-  // comment), not a fixed row, so its exact value here depends on how
-  // much real scrollback content this session's actual bash subprocess
-  // has produced by this point -- but it can never legitimately EXCEED
-  // rows - 2 regardless of content, which is what would happen if the
-  // resize had failed to reach Shell (the OLD, larger viewport's own
-  // cap, 24 - 2 = 22, would still be in effect instead).
+  // really is the NEW viewport's own fixed row (rows - 2 = 8),
+  // confirming Application actually propagated the resize down to
+  // Shell. commandLineRow() is a fixed constant again (2026-08-04, see
+  // its own comment), so this is an exact check now, not just a bound
+  // -- the OLD, larger viewport's own row (24 - 2 = 22) would still be
+  // in effect instead if the resize had failed to reach Shell.
   REQUIRE(app.handleCommand(Command::StartShell));
   for (char c : std::string("x")) app.feedShellByte(static_cast<unsigned char>(c), std::nullopt);
-  CHECK(display.cursorRow() <= 8);
+  CHECK(display.cursorRow() == 8);
 }
 
 // -- HELP (^J^H) --

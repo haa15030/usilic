@@ -398,13 +398,11 @@ TEST_CASE("onResize: repositions the command-line field to the new row/width") {
 
   typeAscii(shell.commandLine(), "hi");
 
-  // commandLineRow() is content-relative (2026-08-03), not a fixed
-  // row -- see its own comment. scrollback_ has no real content lines
-  // yet at this point (the prompt marker cycle itself never becomes a
-  // scrollback line), so the prompt sits at row 0, right after the
-  // (empty) content -- not "rows - 2" the way a fixed-bottom-row
-  // design would place it regardless of how little content exists.
-  CHECK(d.cursorRow() == 0);
+  // commandLineRow() is a fixed constant again (2026-08-04, see its
+  // own comment) -- rows - 2, regardless of how little scrollback_
+  // content exists (bottom-anchoring is what makes this safe: see
+  // ContentView::setBottomAnchored()'s own comment).
+  CHECK(d.cursorRow() == 8);
   CHECK(d.cursorCol() == 8);  // 6-column prompt + 2 typed chars
 }
 

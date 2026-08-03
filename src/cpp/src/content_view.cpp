@@ -28,7 +28,9 @@ int ContentView::cursorIndex() const { return cursorIndex_; }
 int ContentView::lineIndexAtRow(int displayRow) const {
   int row = displayRow - row0_;
   if (row < 0 || row >= height_) return -1;
-  int idx = topIndex_ + row;
+  int rowOffset = bottomAnchorRowOffset();
+  if (row < rowOffset) return -1;  // a blank padding row, bottom-anchored only
+  int idx = topIndex_ + (row - rowOffset);
   if (idx < 0 || idx >= static_cast<int>(lines_.size())) return -1;
   return idx;
 }
@@ -59,6 +61,18 @@ void ContentView::setHoverIndex(std::optional<int> index) { hoverIndex_ = index;
 std::optional<int> ContentView::hoverIndex() const { return hoverIndex_; }
 
 void ContentView::setCursorHighlightEnabled(bool enabled) { cursorHighlightEnabled_ = enabled; }
+
+void ContentView::setBottomAnchored(bool enabled) { bottomAnchored_ = enabled; }
+
+// Shared by redraw()/lineIndexAtRow() so both agree on where content
+// starts when bottom-anchored -- see setBottomAnchored()'s own
+// comment. 0 when top-anchored (the default) or when there's enough
+// content to fill the viewport either way (nothing to pad).
+int ContentView::bottomAnchorRowOffset() const {
+  if (!bottomAnchored_) return 0;
+  int visibleCount = std::min(static_cast<int>(lines_.size()) - topIndex_, height_);
+  return std::max(0, height_ - visibleCount);
+}
 
 void ContentView::setCursorIndex(int index) {
   if (lines_.empty()) {
@@ -434,10 +448,12 @@ void ContentView::renderModeLine() {
 void ContentView::redraw() {
   clampViewport();
   int highlighted = hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_;
+  int rowOffset = bottomAnchorRowOffset();
   for (int row = 0; row < height_; row++) {
-    int idx = topIndex_ + row;
     display_.moveCursor(row0_ + row, 0);
     display_.clearToEndOfLine();
+    if (row < rowOffset) continue;  // blank padding above the content, bottom-anchored only
+    int idx = topIndex_ + (row - rowOffset);
     if (idx < static_cast<int>(lines_.size())) renderLine(lines_[idx], idx == highlighted);
   }
   renderModeLine();
