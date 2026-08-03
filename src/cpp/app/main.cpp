@@ -180,6 +180,14 @@ std::string currentTimestampText() {
 struct TerminalAppearance {
   fm::GraphicalDisplay::Color background;
   fm::GraphicalDisplay::Color foreground;
+  // False when this query could only determine FONT, not color (see
+  // queryPtyxisAppearance()'s own comment on why background/foreground
+  // above are just left default-zeroed/meaningless in that case) --
+  // callers must check this before calling GraphicalDisplay::
+  // setColors(), rather than assuming every successful query carries
+  // real color data the way every OTHER terminal's query in this file
+  // (Terminal.app, iTerm2, GNOME Terminal) always has.
+  bool hasColors = true;
   int fontPointSize = 16;  // matches GraphicalDisplay::create()'s own previous hardcoded default
   // The calling terminal's own font NAME (Terminal.app's AppleScript
   // "font name" property, e.g. "MS-Gothic"), empty if unavailable --
@@ -678,6 +686,69 @@ std::optional<TerminalAppearance> queryGnomeTerminalColors() {
   return appearance;
 }
 
+// Ptyxis (docs.gtk.org/Ptyxis) counterpart to queryGnomeTerminalColors()
+// above -- Ubuntu 26.04 (this port's own dev/test machine, confirmed
+// live 2026-08-03) ships Ptyxis as its DEFAULT terminal, not GNOME
+// Terminal at all (gnome-terminal isn't even installed: `gsettings get
+// org.gnome.Terminal.ProfilesList default` fails outright with "no such
+// schema"), so queryGnomeTerminalColors()'s own GNOME_TERMINAL_SCREEN
+// gate never fires there and Ptyxis was previously entirely
+// undetected -- a real user report (2026-08-03: "ubuntuでは背景黒・
+// 文字白・大きめウィンドウ", i.e. GraphicalDisplay's own hardcoded
+// fallback defaults, confirming NO appearance query was matching at
+// all) traced to exactly this.
+//
+// Gated on PTYXIS_VERSION (confirmed live, run directly inside an
+// actual Ptyxis window -- unlike the OTHER env vars checked first,
+// SSH'd-in commands don't inherit it, only genuinely running inside
+// Ptyxis itself does; that mismatch is what made this take several
+// rounds to pin down). Ptyxis's own gsettings schema (org.gnome.Ptyxis,
+// confirmed live via `gsettings list-recursively`) turned out to be
+// structured very differently from GNOME Terminal's: font-name/
+// use-system-font are GLOBAL keys (not per-profile, so no relocatable-
+// schema path or profile-UUID lookup is even needed for font alone --
+// PTYXIS_PROFILE is confirmed available in the environment too, in
+// case a future per-profile need arises, but isn't used here), while
+// color is controlled by a "palette" key that turned out (confirmed
+// live) to hold a NAMED PRESET STRING ('Ubuntu', matching the maroon
+// scheme in every screenshot throughout this investigation) rather
+// than actual RGB values -- Ptyxis apparently keeps named-palette RGB
+// definitions compiled into the application itself, not exposed via
+// gsettings/dconf at all (confirmed no override exists in dconf either
+// -- `dconf dump /org/gnome/ptyxis/` came back completely empty, and
+// gsettings only ever returns compiled-in schema defaults for anything
+// dconf has no override for). Reproducing Ptyxis's own named-palette
+// RGB tables without being able to inspect its source or test against
+// it further was judged not worth the risk of silently getting colors
+// wrong -- the user's own explicit call (2026-08-03, asked directly):
+// font detection only, leave color at GraphicalDisplay's existing
+// hardcoded default rather than guess. See TerminalAppearance::
+// hasColors's own comment for how a caller is expected to respect
+// that.
+std::optional<TerminalAppearance> queryPtyxisAppearance() {
+  if (!std::getenv("PTYXIS_VERSION")) return std::nullopt;
+
+  auto get = [](const std::string &schema, const std::string &key) -> std::optional<std::string> {
+    fm::ChildProcess::Result r = fm::ChildProcess::run({"gsettings", "get", schema, key});
+    if (!r.ok) return std::nullopt;
+    return r.output;
+  };
+
+  auto useSystemFont = get("org.gnome.Ptyxis", "use-system-font");
+  std::optional<std::string> fontRaw =
+      (useSystemFont && fm::stripGsettingsQuotedString(*useSystemFont) == "true")
+          ? get("org.gnome.desktop.interface", "monospace-font-name")
+          : get("org.gnome.Ptyxis", "font-name");
+  if (!fontRaw) return std::nullopt;
+
+  TerminalAppearance appearance;
+  appearance.hasColors = false;
+  fm::ParsedFontDescription desc = fm::parsePangoFontDescription(*fontRaw, appearance.fontPointSize);
+  appearance.fontName = desc.family;
+  if (desc.pointSize > 0) appearance.fontPointSize = desc.pointSize;
+  return appearance;
+}
+
 // Tries every platform-specific "real terminal appearance" query this
 // project knows, in order, returning the first successful one --
 // queryTerminalAppColors()/queryGnomeTerminalColors() themselves each
@@ -688,6 +759,7 @@ std::optional<TerminalAppearance> queryGnomeTerminalColors() {
 std::optional<TerminalAppearance> queryRealTerminalAppearance() {
   if (auto appearance = queryTerminalAppColors()) return appearance;
   if (auto appearance = queryITermColors()) return appearance;
+  if (auto appearance = queryPtyxisAppearance()) return appearance;
   return queryGnomeTerminalColors();
 }
 
@@ -1634,7 +1706,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
       fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath);
   if (!gui) return false;  // no usable font, or window/renderer creation failed -- stay in terminal mode
 
-  if (appearance) gui->setColors(appearance->foreground, appearance->background);
+  if (appearance && appearance->hasColors) gui->setColors(appearance->foreground, appearance->background);
 
   gui->open();
   display.setBackend(*gui);
@@ -1797,7 +1869,7 @@ int main(int argc, char **argv) {
                                   : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,
                                                                   appearance->fontPointSize);
     if (launchGui) {
-      launchGui->setColors(appearance->foreground, appearance->background);
+      if (appearance->hasColors) launchGui->setColors(appearance->foreground, appearance->background);
       // Overlay this window exactly where the calling terminal's own
       // window sits -- see queryTerminalAppWindowBounds()'s own
       // comment. Deliberately left BORDERED (a real title bar, with

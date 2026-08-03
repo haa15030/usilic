@@ -390,3 +390,102 @@ SF Monoは実は/System/Library/Fonts/SFNSMono.ttfという固定の既知パス
 実機でRed Sandsプロファイルのテストウィンドウ(650×450)に対しusilicを再起動したところ、修正前496×382だったGUIウィンドウが632×426まで改善(実ターミナルとの差が幅24%→2.8%、高さ15%→5.3%まで縮小)したことを確認しました。doctest新規1件を含め計570件全通過です。
 
 Ubuntu/GNOME Terminal側については、GNOME_TERMINAL_SCREEN環境変数でゲートしているqueryGnomeTerminalColors()自体が丸ごと機能していない可能性が高いと見ていますが(このセッションからは実機のGNOME Terminal/D-Busセッションが存在せず一度も実機検証できていない機能のため)、前回iTerm2という誤った前提のまま一度実装してしまった反省を踏まえ、今回は憶測で直しに行かず、実機のGNOME Terminalでecho $GNOME_TERMINAL_SCREEN / echo $TERM_PROGRAM / gsettings get org.gnome.Terminal.ProfilesList default を実行した結果を教えていただけますか。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 13.49.51.png'
+
+>(Windows AppがUbuntu機へのRDP接続で「Configuring remote PC」のまま止まっているという別件の報告。SSHでのアクセス可否を確認したところ「SSHでアクセス可能」との回答だったため、RDP接続自体の復旧は本題のusilic調査とは別問題と切り分け、実機データを得る手段としてひとまずSSH経由での確認に切り替えることを提案しました。)
+
+<gnome-terminalじゃないかも。
+'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 13.53.30.png'
+
+>SSH経由でDBUS_SESSION_BUS_ADDRESSを指定してgsettings get org.gnome.Terminal.ProfilesList defaultを実行してもらったところ「スキーマ"org.gnome.Terminal.ProfilesList"がありません」というエラーで、そもそもgnome-terminal自体がインストールされていないと判明しました。デスクトップ環境を確認するため echo $XDG_CURRENT_DESKTOP と echo $DESKTOP_SESSION を実行していただけますか。
+
+<2行のみ。
+XDG_CURRENT_DESKTOP=ubuntu:GNOME
+DESKTOP_SESSION=ubuntu
+
+>(GNOMEデスクトップ自体は動いていることを確認。which/dpkgで実際にインストール済みの端末アプリを直接確認する方針に切り替えました。)
+
+<言っていないことがひとつあって、ubuntuデスクトップはちゃんと動いてる。ただディスプレイに表示させるにはこのmini用画面出力を切り替えなくてはならんので、となりの別のmacOSへubuntuを画面共有させようと思ったのに出来ない、いままではさっきのスクショ箇所ののちubuntu画面がちゃんと出たのにずっと止まってるってのが現状。
+
+>状況を理解しました。RDP接続自体の復旧について、Ubuntu側で実際にどのRDPサーバーが動いているか確認するため、systemctl status xrdp や loginctl list-sessions 等を実行していただけますか(usilic本体の調査とは別スレッドとして並行して見ます)。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.12.23.png'
+
+>xrdp.serviceが見つからない(未インストール)ことを確認しました。かわりに何がRDPポートを使っているか、dpkg -l | grep -i remote や ps aux | grep -i rdp、ss -tlnp | grep 3389 等を実行していただけますか。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.15.00.png'
+
+>gnome-remote-desktopがポート3389で待受していることを確認しました(xrdpではなく、Ubuntu 26.04の新しい標準搭載RDPサーバーです)。systemctl status gnome-remote-desktop.serviceのログを見せていただけますか。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.17.16.png'
+
+>サービス自体は6日間問題なく稼働中で、直近のログは7/28と8/1のみでした(今回の接続失敗の時刻のログが見当たりません)。journalctl --user -u gnome-remote-desktop で今日のログを確認できますか。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.18.44.png'
+
+>(「権限不足でジャーナルファイルを開けません」というエラー。sudoでのjournalctl実行に切り替えを提案。)
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.19.42.png'
+
+>(「-- エントリなし --」。PIDを指定した絞り込みに切り替えを提案。)
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.20.26.png'
+
+>sudo journalctl _PID=2184 で確認したところ、7/28と8/1のエントリのみで、今回の接続試行に対応するログが一切ないと分かりました。これは接続がRDPプロトコルレベルにすら到達していない可能性を示唆します。ファイアウォールとネットワーク到達性を確認するため、sudo ufw status と nc -zv <ホスト> 3389 を実行していただけますか。
+
+<sudo ufw statusは「状態：非アクティブ」、nc -zv file 3389は「Connection to file port 3389 [tcp/ms-wbt-server] succeded!」
+
+>ファイアウォールは無効、TCP到達性も成功ということで、ネットワーク層の問題ではないと切り分けられました。RDP接続の復旧自体はusilic本体の調査から外れる領域まで来てしまったため、いったんこの件は保留し、当初の目的(実機のターミナルアプリ調査)に戻ってよろしいでしょうか。まずDBus越しにgsettingsを直接叩いて、org.gnome.Terminal.ProfilesList defaultが本当に存在しないか再確認させてください。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.28.15.png'
+
+>(sudo -u usilic DBUS_SESSION_BUS_ADDRESS=...でも同じく「スキーマがありません」を再確認。gnome-terminal不在が確定したため、which/dpkgで実際にインストールされている端末アプリを直接探すことを提案。)
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.29.50.png'
+
+>ptyxisパッケージがインストール済みと判明しました。これはUbuntu 26.04の新しいGNOME既定端末(gnome-terminalの後継)です。gsettings list-schemas | grep -i ptyxis で関連スキーマの有無を確認していただけますか。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.30.54.png'
+
+>org.gnome.Ptyxisスキーマの存在を確認しました。前回iTerm2という誤った前提のまま一度実装してしまった反省があるので、今回は公式ドキュメントを推測で信じず、実機の生データだけを根拠にしたいと思います。全キーを一度に見る(gsettings list-recursively)か、フォント/色に関係しそうなキーだけを個別に確認するか、お好みはありますか。
+
+>(ユーザー回答:「gsettings list-recursively で全キーを一気に確認 (推奨)」)
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.32.59.png'
+
+>org.gnome.Ptyxisの全キーを確認しました。font-name/use-system-fontは見つかりましたが、色に関するキーがこの中には見当たりません。リロケータブルなプロファイル単位のスキーマ(org.gnome.Ptyxis.Profile)が別にあるはずなので、gsettings list-relocatable-schemas | grep -i ptyxis を確認していただけますか。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.35.21.png'
+
+>org.gnome.Ptyxis.Profileの存在を確認しました。dconf dump /org/gnome/ptyxis/ で実際にユーザーが上書きしている設定があるか(=プロファイルUUIDの特定にも使えます)確認していただけますか。
+
+<おなじく。(空)
+
+>ユーザー上書きが一切無い(=アプリ組み込みのデフォルトのまま)と分かりました。gsettings list-keys org.gnome.Ptyxis.Profile で、このプロファイル単位スキーマにどんなキーがあるか確認していただけますか。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.38.42.png'
+
+>色に関するキーがここにも見当たりません。palette というキーだけがそれらしいので、実際の値を gsettings get org.gnome.Ptyxis.Profile:/org/gnome/ptyxis/profiles/<uuid>/ palette で確認していただけますか(UUIDは先ほどのdconf dumpのパスから分かります)。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.40.46.png'
+
+>paletteの値が'Ubuntu'という、RGB値ではなく単なるプリセット名の文字列だと判明しました。dconf dumpが空だったこととも整合していて、この名前が指す実際のRGB定義はPtyxis本体にコンパイルされて埋め込まれており、gsettings経由では一切取得できないと判断しました。これはクエリ方法を工夫しても解決できない、Ptyxis自体の設定公開範囲の限界です。フォント検出だけでも先に実装して色は既存の既定値のままにするか、それとも色対応も含めて別の方法(例えばPtyxisのソース自体からプリセット定義を持ってくる等)を探るか、どちらがよろしいですか。
+
+>(ユーザー回答:「フォントのみ対応、色は現状の既定値のままでよい (推奨)」)
+
+>実装を進めるにあたり、Ptyxis検出のゲート条件として使えそうな環境変数(PTYXIS_VERSION等)がSSH越しにも見えるか確認したいので、env | grep -iE "ptyxis|term_program|vte_version" を実行していただけますか。
+
+<なんもなし。
+
+>GNOME_TERMINAL_SCREENの前例と同じく、端末エミュレータ自身が子シェルにのみ設定する環境変数のため、SSH越しには見えない(SSHのシェルはPtyxisの子ではない)と考えられます。お手数ですが、実機のPtyxisウィンドウを開いて、そのシェルの中で同じコマンドを実行していただけますか。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.45.56.png'
+
+>PTYXIS_VERSION=50.1、PTYXIS_PROFILE=<uuid>、VTE_VERSION=8400が確認できました。これでゲート条件が確定します。最後にフォント設定側を確認するため、use-system-fontの値と、真であれば org.gnome.desktop.interface の monospace-font-name の値を教えていただけますか。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.52.36.png'
+
+>gsettings get org.gnome.desktop.interface monospace-font-name の値が'Ubuntu Sans Mono 11'だと確認できました。必要な情報が揃ったので、queryPtyxisAppearance()を実装します。PTYXIS_VERSION環境変数でゲートし、use-system-fontに応じてfont-name/monospace-font-nameのどちらを見るか分岐、既存のparsePangoFontDescription()(GNOME Terminal対応時に追加済み、最後の空白+数字をポイントサイズとして切り出す実装のため"Ubuntu Sans Mono"のような複数単語のファミリー名でも問題無く動作します)でそのまま解析します。色はTerminalAppearanceに新規hasColorsフィールド(既定true、Ptyxis検出時のみfalse)を追加し、呼び出し側でfalseのときはsetColors()を呼ばずGraphicalDisplayの既存デフォルトをそのまま使うようにしました。
+
+doctest全570件(Mac)通過、Ubuntu 26.04を新規Dockerコンテナ(libsdl2-dev/libsdl2-ttf-dev/libncurses-dev/zip/man-db追加インストール)でクロスビルドし、567/568件通過を確認しました(唯一の失敗はman_modeの「存在しないコマンドのman」テストで、minimizedなUbuntuイメージがmanコマンド自体未インストールのまま"This system has been minimized..."とexit 0を返す既知の環境依存の挙動であり、今回の変更とは無関係と確認済みです)。実機のPtyxisでの実行時の見た目確認はまだできていないので、実際にビルド・起動して見た目を確認いただけると助かります。コミット・プッシュ済みです。

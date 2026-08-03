@@ -7744,6 +7744,91 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ProfilesList default`を実行した結果を教えてもらった上で対応する
      方針とした。
 
+133. **2026-08-03(続き6): Ubuntu側の外観未検出の真因はGNOME Terminal
+    未インストール・実体はPtyxisだったと判明、フォント検出のみ対応**
+    (色検出は対象外とユーザーが判断)。項目132の続きで、ユーザーの
+    実機Ubuntuに`echo $GNOME_TERMINAL_SCREEN`/`echo $TERM_PROGRAM`を
+    確認してもらったところ、`GNOME_TERMINAL_SCREEN`は未設定で
+    `TERM_PROGRAM`も空。さらに`gsettings get org.gnome.Terminal.
+    ProfilesList default`は「スキーマ"org.gnome.Terminal.ProfilesList"
+    がありません」というエラーで、そもそも`gnome-terminal`自体が
+    インストールされていないと判明した。
+   - **調査の経緯(SSHアクセスで直接確認)**: ユーザーのUbuntu機への
+     RDP接続(Windows App)が「Configuring remote PC」で止まって
+     いて画面共有できない別件が発生していたが、SSHは生きていた
+     ため、そちらから`which`/`dpkg -l`で実際にインストール済みの
+     ターミナルアプリを直接確認する方針に切り替えた(RDP接続自体の
+     復旧は本題ではないため深追いせず、実機データを得る手段として
+     SSHを使うことをユーザーと合意)。結果、`ptyxis`パッケージが
+     インストール済みで、これがUbuntu 26.04の新しい既定GNOME端末
+     (`gnome-terminal`の後継)と判明した。項目131で「iTerm2という
+     誤った前提のまま一度実装してしまった」反省から、今回もOSSの
+     GNOME公式ドキュメント等を憶測で信じず、実機の`gsettings
+     list-schemas`/`list-relocatable-schemas`/`list-recursively`の
+     生の出力をすべてユーザーに実行・共有してもらい、それだけを
+     根拠に実装した。
+   - **Ptyxisの設定構造の調査結果**:
+     - `org.gnome.Ptyxis`(グローバル、リロケータブルでない)に
+       `font-name`/`use-system-font`があり、フォント設定はGNOME
+       Terminalと違って**プロファイル単位ではなくアプリ全体で共通**
+       (`org.gnome.Ptyxis.Profile:/org/gnome/ptyxis/profiles/<uuid>/`
+       という別のリロケータブルschemaも存在するが、`list-keys`で
+       確認した限りフォント関連キーは一切無い)。
+     - `use-system-font`が真の場合は`org.gnome.desktop.interface`の
+       `monospace-font-name`(実機値: `'Ubuntu Sans Mono 11'`)を使う
+       設計で、これは既存の`queryGnomeTerminalColors()`と全く同じ
+       パターン(同一の`parsePangoFontDescription()`を再利用可能)。
+     - 色(`palette`)は`org.gnome.Ptyxis.Profile`のプロファイル単位
+       キーとして存在するが、実機で取得した値は`'Ubuntu'`という
+       **プリセット名の文字列**であり、GNOME TerminalのようなRGB値
+       (`background-color`/`foreground-color`)ではなかった。
+       `dconf dump /org/gnome/ptyxis/`が空(=ユーザー上書き無し、
+       アプリ組み込みのデフォルトをそのまま使用中)だったことからも、
+       このプリセットの実際のRGB定義はPtyxis本体にコンパイルされて
+       埋め込まれており、外部から`gsettings`だけでは一切取得できない
+       (Ptyxis自体の設定公開範囲の限界であり、クエリ方法を工夫しても
+       解決しない)と判断した。
+   - **ユーザー判断**: 上記の色検出不可という制約をAskUserQuestionで
+     提示したところ、「フォントのみ対応、色は現状の既定値のままで
+     よい」との回答。これに従い、色は`GraphicalDisplay`側の既存の
+     ハードコードされたデフォルト(前景220,220,220・背景0,0,0)を
+     そのまま使う設計とした。
+   - **実装**: `main.cpp`に`queryPtyxisAppearance()`を追加。
+     `PTYXIS_VERSION`環境変数の有無でゲート(SSH越しでは常に空だが、
+     実際のPtyxisウィンドウ内からのシェルでは`PTYXIS_VERSION=50.1`
+     等が確認できた――GNOME_TERMINAL_SCREEN等と同様、端末エミュレータ
+     自身が子シェルにのみ設定する変数のためSSH経由では見えないという
+     既知の制約に合致)。`use-system-font`を見て`font-name`または
+     `monospace-font-name`のどちらを使うか分岐し、既存の
+     `parsePangoFontDescription()`(GNOME Terminal用に項目86で
+     追加済み、`'Ubuntu Sans Mono 11'`のような「最後の空白+数字」を
+     ポイントサイズとして切り出す実装のため`Ubuntu Sans Mono`のような
+     複数単語のファミリー名でも問題無く動く)で解析する。`TerminalAppearance`
+     構造体に新規`bool hasColors`フィールド(既定true)を追加し、
+     Ptyxis検出時のみ`false`をセット、呼び出し側(`tryEnterGuiPhase()`
+     と「実はすでにGUI」の起動パス両方)で`hasColors`が真のときだけ
+     `setColors()`を呼ぶよう分岐(偽の場合は`GraphicalDisplay`の
+     コンストラクタ既定値がそのまま使われる)。`queryRealTerminalAppearance()`
+     の判定チェーンに`queryTerminalAppColors()`→`queryITermColors()`→
+     `queryPtyxisAppearance()`→`queryGnomeTerminalColors()`の順で追加。
+   - **検証**: 実機のPtyxisが無いため実行時の見た目確認はできて
+     いないが、コード上のトレースで`'Ubuntu Sans Mono 11'`が
+     `parsePangoFontDescription()`により`{family: "Ubuntu Sans Mono",
+     pointSize: 11}`に正しく分解されることを確認(この関数の既存
+     doctestに`'Ubuntu Mono 11'`という同型の複数単語ケースが既にあり、
+     最後の空白で区切るロジックのため単語数に関わらず動作することが
+     裏付けられている)。`resolveLinuxFontPath()`は`fc-match`ベースの
+     既存の汎用実装をそのまま再利用するため新規のバグ余地は無いと
+     判断。doctest全570件(Mac)通過、Ubuntu 26.04を新規Dockerコンテナ
+     (`libsdl2-dev`/`libsdl2-ttf-dev`/`libncurses-dev`/`zip`/`man-db`
+     追加インストール)でクロスビルドし、567/568件通過(唯一の失敗は
+     `man_mode`の「存在しないコマンドのman」テストで、これはminimized
+     Ubuntuイメージが`man`コマンドを未インストール状態のまま`exit 0`で
+     "This system has been minimized..."を返す既知の環境依存の挙動で
+     あり、今回の変更とは無関係と確認済み)。実機Ptyxisでの実行時
+     見た目確認は次回、ユーザーが実際にビルド・起動した際にフィード
+     バックをもらう形で行う。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す
