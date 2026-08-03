@@ -137,8 +137,16 @@ struct GraphicalDisplay::Impl {
   // position by it). Fixed pixel values (not e.g. a fraction of
   // cellWidth/cellHeight) because that's what a real terminal's own
   // margin is -- it doesn't visibly grow or shrink with font size.
-  static constexpr int kMarginX = 15;
-  static constexpr int kMarginY = 15;
+  // 10, not Gemini's originally-suggested 15: a real side-by-side
+  // screenshot comparison (2026-08-03 follow-up, "余白はやや広め")
+  // measured the real Terminal.app window's own margin directly
+  // (pixel-scanning the screenshot itself, since this sandbox has no
+  // screen-capture access to measure a live window) -- about 9px
+  // between the title bar's bottom edge and the first text row, about
+  // 11px between the window's left edge and the first column -- close
+  // enough to treat as one shared value rather than separate X/Y ones.
+  static constexpr int kMarginX = 10;
+  static constexpr int kMarginY = 10;
   std::vector<Cell> grid;
 
   SDL_Color fg{220, 220, 220, 255};
@@ -720,10 +728,6 @@ void GraphicalDisplay::setColors(Color foreground, Color background) {
 
 void GraphicalDisplay::setWindowPosition(int x, int y) {
   if (impl_->window) SDL_SetWindowPosition(impl_->window, x, y);
-}
-
-void GraphicalDisplay::setBordered(bool bordered) {
-  if (impl_->window) SDL_SetWindowBordered(impl_->window, bordered ? SDL_TRUE : SDL_FALSE);
 }
 
 void GraphicalDisplay::setHandCursor(bool active) {

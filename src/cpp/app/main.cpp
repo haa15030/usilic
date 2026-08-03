@@ -365,12 +365,15 @@ struct TerminalWindowBounds {
 // converted here so the caller gets the width/height GraphicalDisplay
 // itself already thinks in. This is the window's OUTER frame (title
 // bar included), which is also what SDL2's own window position means
-// -- see GraphicalDisplay::setBordered()'s own comment for why this
-// class goes borderless before applying this position, and for the
-// real limit on how pixel-perfect this overlay can be confirmed
-// (title bar/tab bar height isn't something this query reports, and
-// this sandbox has no screen-capture access to verify final on-screen
-// alignment against a live Terminal.app window).
+// for a normal bordered window -- the OS reserves title-bar space
+// above the content on both sides the same way, so this position
+// should already line the two windows' title bars up without this
+// class needing to separately account for title-bar height anywhere
+// (see the call site's own comment). Not provably pixel-perfect
+// (a real Terminal.app tab bar, if more than one tab is open, adds
+// height this query has no way to detect) -- this sandbox has no
+// screen-capture access to verify final on-screen alignment against a
+// live Terminal.app window beyond what a real user screenshot shows.
 std::optional<TerminalWindowBounds> queryTerminalAppWindowBounds() {
   const char *termProgram = std::getenv("TERM_PROGRAM");
   if (!termProgram || std::string(termProgram) != "Apple_Terminal") return std::nullopt;
@@ -1584,21 +1587,25 @@ int main(int argc, char **argv) {
       launchGui->setColors(appearance->foreground, appearance->background);
       // Overlay this window exactly where the calling terminal's own
       // window sits -- see queryTerminalAppWindowBounds()'s own
-      // comment. Borderless first, then positioned: setBordered()
-      // removes this window's own title bar BEFORE moving it, so the
-      // position that follows lands the actual content flush against
-      // where the terminal's outer frame was, not offset by a title
-      // bar this window won't have. A failed bounds query (any
-      // non-macOS/non-Terminal.app case, same gate as the colors
-      // query above) leaves the window exactly where it already is
+      // comment. Deliberately left BORDERED (a real title bar, with
+      // the traffic-light buttons): a real side-by-side screenshot
+      // comparison (2026-08-03 follow-up, "操作部が無い") found a
+      // borderless window looked visibly wrong next to a real
+      // Terminal.app window with its own title bar -- SDL2's window
+      // position/size parameters already describe the CLIENT area
+      // only (the title bar is added by the OS on top, outside what
+      // this class ever draws into), so leaving this window bordered
+      // needs no extra math here at all: the OS reserves the title
+      // bar's own space above this window's content automatically,
+      // the same way it does for the real terminal window being
+      // overlaid. A failed bounds query (any non-macOS/non-
+      // Terminal.app case, same gate as the colors query above)
+      // leaves the window exactly where it already is
       // (SDL_WINDOWPOS_CENTERED from create()) -- never a hard
       // requirement, matching every other "実はすでにGUI" appearance
       // query in this file.
       if (!forceCui) {
-        if (auto bounds = queryTerminalAppWindowBounds()) {
-          launchGui->setBordered(false);
-          launchGui->setWindowPosition(bounds->x, bounds->y);
-        }
+        if (auto bounds = queryTerminalAppWindowBounds()) launchGui->setWindowPosition(bounds->x, bounds->y);
       }
       launchGui->open();
       display.setBackend(*launchGui);
