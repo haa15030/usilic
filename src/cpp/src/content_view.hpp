@@ -117,6 +117,17 @@ class ContentView {
   // device existed.
   int lineIndexAtRow(int displayRow) const;
 
+  // The inverse of lineIndexAtRow(): the absolute DISPLAY row
+  // cursorIndex_ itself currently renders at, or -1 if it's scrolled
+  // out of view. Added for Shell's own ^P/^N history browsing
+  // (2026-08-04): with setCursorHighlightEnabled(false) (see its own
+  // comment -- legacy's stand_str() skips SHELL's own whole-line
+  // reverse-video highlight entirely, `f_M == M_shell` in its own
+  // early-return), there's no colored bar left to show which line is
+  // "current" while browsing -- the terminal's own plain text cursor,
+  // moved here instead, is legacy's actual replacement.
+  int cursorDisplayRow() const;
+
   // The index of the topmost currently-visible line. Added alongside
   // setTopIndex() for the GUI drag-scroll prototype (see
   // GraphicalDisplay's own class comment) -- scrolling the viewport

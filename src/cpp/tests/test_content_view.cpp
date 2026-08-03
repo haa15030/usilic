@@ -135,6 +135,29 @@ TEST_CASE("lineIndexAtRow: maps a display row within the viewport to a line inde
   CHECK(v.lineIndexAtRow(6) == 4);
 }
 
+TEST_CASE("cursorDisplayRow: the inverse of lineIndexAtRow, -1 when scrolled out of view") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(2, 5);
+  v.setLines(makeLines(10));  // more lines than height -- room to scroll topIndex_ away from cursorIndex_
+  v.setCursorIndex(2);
+  CHECK(v.cursorDisplayRow() == 4);  // row0(2) + cursorIndex(2)
+
+  v.setTopIndex(5);  // scroll cursorIndex_(2) out of view without moving it (see setTopIndex()'s own comment)
+  CHECK(v.cursorDisplayRow() == -1);
+}
+
+TEST_CASE("cursorDisplayRow: accounts for bottom-anchoring the same way lineIndexAtRow does") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(2));
+  v.setBottomAnchored(true);
+  v.setCursorIndex(1);
+  v.redraw();
+  CHECK(v.cursorDisplayRow() == 4);  // "line1" renders at row 4 when bottom-anchored, see its own test
+}
+
 TEST_CASE("setModeLineFieldsProvider: modeLineText wraps name/trailing around the position text") {
   RecordingDisplay d(10, 60);
   ContentView v(d);

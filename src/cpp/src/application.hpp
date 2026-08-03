@@ -1066,6 +1066,9 @@ class Application {
   // directly from within SHELL, e.g. ^X^F/^X^C, which this port
   // silently swallowed as raw shell input before this existed).
   bool dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKey> special);
+  // ^P/^N's own plain-text-cursor replacement for SHELL scrollback_'s
+  // whole-line highlight -- see its own definition comment.
+  void moveDisplayCursorToShellHistoryLine();
   bool startMacroRecording();
   bool stopMacroRecording();
   bool playRecordedMacro();

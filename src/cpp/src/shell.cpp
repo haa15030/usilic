@@ -98,6 +98,19 @@ Shell::Shell(Display &display, const ShellOptions &options)
   markerPrefix_ = options_.promptMark + options_.programName + ":";
   viewportRows_ = options_.rows;
   columns_ = options_.columns;
+  // Ported from key.c's stand_str(): its own early-return
+  // (`f_M == M_shell`) means legacy NEVER draws the whole-line
+  // reverse-video cursor highlight for SHELL's own scrollback
+  // browsing (^P/^N through past commands, M_kup/M_kdn) the way it
+  // does for ordinary lists -- confirmed by a real side-by-side
+  // screenshot comparison against legacy (2026-08-04) showing a plain
+  // terminal cursor there, not a highlighted bar, matching how
+  // FileMode already disables this for the same reason (see its own
+  // comment). Application's own ^P/^N handlers move the display's
+  // real cursor to ContentView::cursorDisplayRow() instead, so
+  // "current line" is still visible while browsing -- just as a
+  // normal text cursor, not a colored highlight.
+  scrollback_.setCursorHighlightEnabled(false);
   if (!options_.argv.empty()) {
     isBash_ = isBashProgram(options_.argv[0]);
     isZsh_ = isZshProgram(options_.argv[0]);

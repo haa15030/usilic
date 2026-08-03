@@ -35,6 +35,11 @@ int ContentView::lineIndexAtRow(int displayRow) const {
   return idx;
 }
 
+int ContentView::cursorDisplayRow() const {
+  if (cursorIndex_ < topIndex_ || cursorIndex_ >= topIndex_ + height_) return -1;
+  return row0_ + bottomAnchorRowOffset() + (cursorIndex_ - topIndex_);
+}
+
 int ContentView::topIndex() const { return topIndex_; }
 
 void ContentView::setTopIndex(int index) {

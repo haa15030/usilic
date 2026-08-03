@@ -32,7 +32,19 @@ class RecordingDisplay : public Display {
   void restoreCursor() override {}
   void clearScreen() override { for (auto &r : screen_) r.assign(cols_, ' '); }
   void clearToEndOfLine() override {
-    for (int c = cursorCol_; c < cols_; c++) screen_[cursorRow_][c] = ' ';
+    // Real terminals clear with whatever SGR state is active at the
+    // time (xterm etc. fill the blanked cells with the current
+    // attributes) -- so a cell left in standout by an earlier draw
+    // does NOT keep showing reverse-video forever once something
+    // later clears over it without standout on. Match that here: a
+    // clear always resets standout_ for the cells it blanks,
+    // regardless of standoutActive_ (nothing in this codebase clears
+    // to EOL while intentionally leaving a standout-colored blank
+    // run, so this doesn't need to condition on standoutActive_).
+    for (int c = cursorCol_; c < cols_; c++) {
+      screen_[cursorRow_][c] = ' ';
+      standout_[cursorRow_][c] = false;
+    }
   }
   void scrollForward() override { scrollForwardCount_++; }
   void scrollReverse() override { scrollReverseCount_++; }

@@ -716,11 +716,13 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   if (byte == 0x10) {  // ^P
     shell_.scrollback().moveUp();
     shell_.redrawPromptRow();  // moveUp() can blank commandLineRow() -- see its own comment
+    moveDisplayCursorToShellHistoryLine();
     return true;
   }
   if (byte == 0x0e) {  // ^N
     shell_.scrollback().moveDown();
     shell_.redrawPromptRow();
+    moveDisplayCursorToShellHistoryLine();
     return true;
   }
   // !empty() guard: with no lines at all yet, lines().size()-1
@@ -784,6 +786,28 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   shell_.commandLine().insertByte(static_cast<unsigned char>(byte));
   shell_.commandLine().redraw();
   return true;
+}
+
+// ^P/^N's own plain-text-cursor replacement for the whole-line
+// highlight scrollback_.setCursorHighlightEnabled(false) turns off
+// (see Shell's own constructor comment for why: legacy's stand_str()
+// never draws that highlight for SHELL mode at all). A no-op while on
+// the live prompt line itself (cursorDisplayRow() there coincides with
+// redrawPromptRow()'s own commandLine_.redraw() cursor position, which
+// already ran immediately before this is called at both ^P/^N call
+// sites, so there's nothing to override) -- only moves the display's
+// real cursor when actually browsing scrollback_ history, so the
+// live-prompt case keeps editing normally. -1 (scrolled out of view,
+// shouldn't be reachable given moveUp()/moveDown() always keep
+// cursorIndex_ within the viewport, but checked defensively) is simply
+// skipped rather than moving the cursor somewhere meaningless.
+void Application::moveDisplayCursorToShellHistoryLine() {
+  const auto &lines = shell_.scrollback().lines();
+  bool browsingHistory =
+      !lines.empty() && shell_.scrollback().cursorIndex() != static_cast<int>(lines.size()) - 1;
+  if (!browsingHistory) return;
+  int row = shell_.scrollback().cursorDisplayRow();
+  if (row >= 0) display_.moveCursor(row, 0);
 }
 
 ContentView &Application::activeView() {

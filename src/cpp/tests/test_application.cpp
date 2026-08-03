@@ -1604,6 +1604,42 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^P/^N move scrollback_'s own curs
   CHECK(app.shell().scrollback().cursorIndex() == bottom);
 }
 
+TEST_CASE_FIXTURE(Fixture, "SHELL: ^P/^N show a plain text cursor while browsing, not a reverse-video "
+                           "highlight bar (2026-08-04 user report: legacy's stand_str() never highlights SHELL "
+                           "scrollback_ at all, see Shell's own constructor comment)") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("echo MARKERPN003")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x0d, std::nullopt);
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (!line.shellCommand && line.text.find("MARKERPN003") != std::string::npos) return true;
+    return false;
+  }));
+
+  CHECK(app.feedShellByte(0x10, std::nullopt));  // ^P
+  // No line anywhere in scrollback_'s own CONTENT viewport (rows
+  // 0..viewportRows_-3, see Shell's own constructor comment) is
+  // reverse-video -- the whole-line highlight legacy never draws for
+  // SHELL is off. Deliberately excludes the last two rows (the live
+  // prompt row and the mode-line row): the mode-line legitimately
+  // draws its own position indicator in standout (see
+  // ContentView::renderModeLine()'s drawSegment()), which is
+  // unrelated to this fix.
+  for (int row = 0; row < display.rows() - 2; row++)
+    for (int col = 0; col < display.columns(); col++) CHECK_FALSE(display.standoutAt(row, col));
+  // The display's own real cursor moved to the browsed-to line instead
+  // (a plain text cursor, matching how the live prompt's own editing
+  // cursor already works -- see LineEditor::redraw()'s own moveCursor()
+  // call).
+  CHECK(display.cursorRow() == app.shell().scrollback().cursorDisplayRow());
+}
+
 TEST_CASE_FIXTURE(Fixture, "SHELL: Enter on a past prompt line resubmits its command, matching legacy shell.c's "
                            "own '\\r' case (the user's own words: \"^Pでそこへ戻ってEnterでlsが再実行される\")") {
   REQUIRE(app.start(path()));
