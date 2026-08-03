@@ -493,9 +493,22 @@ void Shell::flushPendingLine() {
 void Shell::flushNewScrollbackLines() {
   const auto &plines = pipeBuffer_.lines();
   if (plines.size() <= linesConsumed_) return;
+  std::size_t start = linesConsumed_;
+  // pendingEchoFilter_'s own comment: drop exactly the first new line
+  // if it's the shell's own line-editor echo of the command just
+  // submitted (either the literal text, bash-style, or a bare blank
+  // line, zsh-style) -- checked/cleared here, the first point after
+  // submission where any new line becomes visible at all, so it never
+  // matters how many separate pty reads the echo happened to arrive
+  // across.
+  if (pendingEchoFilter_) {
+    const std::string &first = plines[start].text;
+    if (first == *pendingEchoFilter_ || first.empty()) start++;
+    pendingEchoFilter_.reset();
+  }
   std::vector<ContentView::Line> newLines(scrollback_.lines());
   newLines.reserve(plines.size());
-  for (std::size_t i = linesConsumed_; i < plines.size(); i++)
+  for (std::size_t i = start; i < plines.size(); i++)
     newLines.push_back({plines[i].text, std::nullopt, std::nullopt});
   linesConsumed_ = plines.size();
   scrollback_.setLines(std::move(newLines));
@@ -544,6 +557,7 @@ void Shell::resetSessionState() {
   pipeBuffer_ = PipeBuffer(options_.encoding, columns_, options_.scrollbackBudget);
   pendingLine_.clear();
   linesConsumed_ = 0;
+  pendingEchoFilter_.reset();
   markerMatchPos_ = 0;
   markerMatchBuffer_.clear();
   inPromptTail_ = false;
@@ -940,6 +954,7 @@ void Shell::submitLine() {
 
     bool handled = programLauncher_ && !programToken.empty() && programLauncher_(programToken, trimmed);
     if (!handled) {
+      pendingEchoFilter_ = trimmed;  // see its own comment -- consumed by flushNewScrollbackLines()
       writeToPty(trimmed + "\n");
       if (historyRecorder_) historyRecorder_(trimmed);
     }

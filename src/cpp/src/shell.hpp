@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -304,6 +305,24 @@ class Shell {
   ContentView scrollback_;
   LineEditor commandLine_;
   std::size_t linesConsumed_ = 0;  // how many of pipeBuffer_.lines() are already in scrollback_
+  // The command text submitToPty()'s own submitLine() just wrote,
+  // still awaiting flushNewScrollbackLines()'s ONE-TIME check for a
+  // leftover shell-line-editor echo artifact -- nullopt once that
+  // check has run (whether or not it actually found and dropped
+  // anything). ECHO is disabled on this pty (see start()'s own
+  // comment) specifically so commandLine_'s own local echo is the only
+  // rendering of what's typed, but bash's readline and zsh's zle both
+  // still echo SOMETHING of their own when fed a whole line at once
+  // (found via real side-by-side testing, 2026-08-03: bash echoes the
+  // literal submitted text back as its own extra line, zsh instead
+  // emits a single bare blank line) -- independent of the raw tty
+  // ECHO flag, since both line editors manage their own on-screen
+  // rendering for interactive editing rather than relying on the tty
+  // driver's echo. flushNewScrollbackLines() uses this to recognize
+  // and drop exactly that one leftover line, matching legacy's own
+  // clean output (its screenshots show neither a blank line nor
+  // duplicated command text after submitting a command).
+  std::optional<std::string> pendingEchoFilter_;
 
   std::string markerPrefix_;  // promptMark + programName + ":" -- see buildSetupCommand()
   std::size_t markerMatchPos_ = 0;

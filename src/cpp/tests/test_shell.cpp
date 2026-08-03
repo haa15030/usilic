@@ -90,6 +90,52 @@ TEST_CASE("submitLine(): a plain command's output shows up in the real scrollbac
   shell.terminate();
 }
 
+TEST_CASE("submitLine(): no leftover blank/duplicate-text line between the frozen command and its real output") {
+  // ECHO is disabled on this pty (see start()'s own comment) so
+  // commandLine_'s own local echo is the only rendering of what's
+  // typed -- but a real side-by-side comparison against legacy
+  // (2026-08-03) found bash's readline still echoing the submitted
+  // command text back as an extra scrollback line regardless (zsh's
+  // zle instead emits a bare blank line, see the same-named test
+  // above this one and pendingEchoFilter_'s own comment for the fuller
+  // story) -- independent of the raw tty ECHO flag, since interactive
+  // line editors manage their own on-screen rendering. This exercises
+  // the real bash-echoes-literal-text case end to end.
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.argv = {"bash", "--norc", "--noprofile"};
+  options.promptMark = "<usilic-test-mark3>";
+  options.programName = "usilictest";
+  Shell shell(d, options);
+
+  if (!shell.start()) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(shell, [&] { return !shell.currentDirectory().empty(); }));
+
+  typeAscii(shell.commandLine(), "echo SHELLTESTMARKER456");
+  shell.submitLine();
+
+  REQUIRE(pumpUntil(shell, [&] {
+    for (const auto &line : shell.scrollback().lines())
+      if (line.text.find("SHELLTESTMARKER456") != std::string::npos && !line.shellCommand) return true;
+    return false;
+  }));
+
+  const auto &lines = shell.scrollback().lines();
+  int frozenIdx = -1;
+  for (int i = 0; i < static_cast<int>(lines.size()); i++)
+    if (lines[i].shellCommand == "echo SHELLTESTMARKER456") frozenIdx = i;
+  REQUIRE(frozenIdx >= 0);
+  REQUIRE(frozenIdx + 1 < static_cast<int>(lines.size()));
+  const std::string &nextLine = lines[frozenIdx + 1].text;
+  CHECK_FALSE(nextLine.empty());
+  CHECK_FALSE(nextLine == "echo SHELLTESTMARKER456");
+
+  shell.terminate();
+}
+
 // The remaining tests exercise Shell's parsing/decision logic
 // directly -- either via processOutputBytes() with synthetic bytes
 // built to exactly match buildSetupCommand()'s own PS1 format (there
@@ -208,6 +254,73 @@ TEST_CASE("submitLine: writes a plain command to history and does not consult th
 
   CHECK(recorded == "ls -la");
   CHECK(shell.commandLine().text() == "");
+}
+
+TEST_CASE("flushNewScrollbackLines: drops a bash-style literal-text echo artifact right after the frozen "
+          "command, but keeps real output that happens to differ") {
+  // Synthetic version of the real-bash test above (pendingEchoFilter_'s
+  // own comment has the full story) -- deterministic and independent
+  // of whether bash is actually installed.
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  Shell shell(d, options);
+
+  typeAscii(shell.commandLine(), "ls");
+  shell.submitLine();  // freezes the command line, sets pendingEchoFilter_ = "ls"
+
+  shell.processOutputBytes("ls\nreal output\n");  // bash-style: literal echo, then genuine output
+
+  const auto &lines = shell.scrollback().lines();
+  int frozenIdx = -1;
+  for (int i = 0; i < static_cast<int>(lines.size()); i++)
+    if (lines[i].shellCommand == "ls") frozenIdx = i;
+  REQUIRE(frozenIdx >= 0);
+  REQUIRE(frozenIdx + 1 < static_cast<int>(lines.size()));
+  CHECK(lines[frozenIdx + 1].text == "real output");  // the echoed "ls" line was dropped, not this one
+}
+
+TEST_CASE("flushNewScrollbackLines: drops a zsh-style bare blank-line echo artifact right after the frozen "
+          "command") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  Shell shell(d, options);
+
+  typeAscii(shell.commandLine(), "ls");
+  shell.submitLine();  // freezes the command line, sets pendingEchoFilter_ = "ls"
+
+  shell.processOutputBytes("\nreal output\n");  // zsh-style: a bare blank line, then genuine output
+
+  const auto &lines = shell.scrollback().lines();
+  int frozenIdx = -1;
+  for (int i = 0; i < static_cast<int>(lines.size()); i++)
+    if (lines[i].shellCommand == "ls") frozenIdx = i;
+  REQUIRE(frozenIdx >= 0);
+  REQUIRE(frozenIdx + 1 < static_cast<int>(lines.size()));
+  CHECK(lines[frozenIdx + 1].text == "real output");  // the blank line was dropped, not this one
+}
+
+TEST_CASE("flushNewScrollbackLines: a genuinely blank FIRST line of real output is only ever dropped once, "
+          "not on every flush") {
+  // pendingEchoFilter_ is consumed (reset to nullopt) the first time
+  // flushNewScrollbackLines() runs after a submission, so a command
+  // that legitimately produces its OWN blank line as later output
+  // (not the echo artifact) must not have that later blank line
+  // dropped too.
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  Shell shell(d, options);
+
+  typeAscii(shell.commandLine(), "ls");
+  shell.submitLine();
+
+  shell.processOutputBytes("real output\n");  // no echo artifact this time -- first line is genuine
+  shell.processOutputBytes("\n");             // a later, genuinely blank line of real output
+
+  const auto &lines = shell.scrollback().lines();
+  int blankCount = 0;
+  for (const auto &line : lines)
+    if (line.text.empty()) blankCount++;
+  CHECK(blankCount == 1);  // the later blank line survived; nothing extra was dropped
 }
 
 TEST_CASE("submitLine: hands off to the program launcher for the trailing pipeline stage") {
