@@ -718,6 +718,14 @@ void GraphicalDisplay::setColors(Color foreground, Color background) {
   impl_->bg = SDL_Color{background.r, background.g, background.b, 255};
 }
 
+void GraphicalDisplay::setWindowPosition(int x, int y) {
+  if (impl_->window) SDL_SetWindowPosition(impl_->window, x, y);
+}
+
+void GraphicalDisplay::setBordered(bool bordered) {
+  if (impl_->window) SDL_SetWindowBordered(impl_->window, bordered ? SDL_TRUE : SDL_FALSE);
+}
+
 void GraphicalDisplay::setHandCursor(bool active) {
   if (active == impl_->handCursorActive) return;
   impl_->handCursorActive = active;

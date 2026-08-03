@@ -326,6 +326,71 @@ std::optional<TerminalAppearance> queryTerminalAppColors() {
   return appearance;
 }
 
+struct TerminalWindowBounds {
+  int x = 0, y = 0, width = 0, height = 0;
+};
+
+// Queries the calling Terminal.app window's own SCREEN position/size
+// via AppleScript, so the "実はすでにGUI" launch (see
+// queryTerminalAppColors()'s own comment on that feature) can overlay
+// the GraphicalDisplay window exactly where the terminal window
+// already sits instead of wherever SDL_WINDOWPOS_CENTERED happens to
+// place it -- a real user follow-up request (2026-08-03), after
+// confirming the window-margin fix looked right, specifically asking
+// "テキスト表示ウィンドウに重ねる形でGUIウィンドウ版を表示したい"
+// and forwarding a Gemini-drafted technical answer to implement.
+//
+// That answer's own SDL2 code sample (SDL_GetWindowPosition() on an
+// SDL_Window*) assumes the SAME PROCESS created both windows -- not
+// what's actually true here (Terminal.app and this usilic process are
+// two entirely separate OS processes; this class has no SDL_Window*
+// for Terminal.app's window to query in the first place). Gemini's
+// own answer anticipated exactly this branch ("別々に起動する2つの
+// プログラムでしょうか...OS固有のAPI...動作させているOSを教えて
+// いただければ") and asked which case applied -- this project's own
+// answer for that question is macOS, so this follows the SAME
+// AppleScript approach queryTerminalAppColors() already established
+// for exactly this situation (querying a real running Terminal.app
+// process's own state from outside it), rather than the same-process
+// SDL API the sample code showed.
+//
+// Same TERM_PROGRAM=Apple_Terminal gate as queryTerminalAppColors()
+// (see its own comment on why); returns nullopt on any failure, never
+// a hard requirement -- a failed query just leaves the window wherever
+// GraphicalDisplay::create() already puts it (SDL_WINDOWPOS_CENTERED),
+// same fallback queryTerminalAppColors() itself has.
+//
+// AppleScript's "bounds of front window" reports {left, top, right,
+// bottom} (a rectangle's two corners), NOT {x, y, width, height} --
+// converted here so the caller gets the width/height GraphicalDisplay
+// itself already thinks in. This is the window's OUTER frame (title
+// bar included), which is also what SDL2's own window position means
+// -- see GraphicalDisplay::setBordered()'s own comment for why this
+// class goes borderless before applying this position, and for the
+// real limit on how pixel-perfect this overlay can be confirmed
+// (title bar/tab bar height isn't something this query reports, and
+// this sandbox has no screen-capture access to verify final on-screen
+// alignment against a live Terminal.app window).
+std::optional<TerminalWindowBounds> queryTerminalAppWindowBounds() {
+  const char *termProgram = std::getenv("TERM_PROGRAM");
+  if (!termProgram || std::string(termProgram) != "Apple_Terminal") return std::nullopt;
+
+  fm::ChildProcess::Result result =
+      fm::ChildProcess::run({"osascript", "-e", "tell application \"Terminal\" to get bounds of front window"});
+  if (!result.ok) return std::nullopt;
+
+  int left, top, right, bottom;
+  if (std::sscanf(result.output.c_str(), "%d, %d, %d, %d", &left, &top, &right, &bottom) != 4) return std::nullopt;
+  if (right <= left || bottom <= top) return std::nullopt;
+
+  TerminalWindowBounds bounds;
+  bounds.x = left;
+  bounds.y = top;
+  bounds.width = right - left;
+  bounds.height = bottom - top;
+  return bounds;
+}
+
 // Queries GNOME Terminal's own gsettings-stored profile (background/
 // foreground colors, font) -- the Linux counterpart to
 // queryTerminalAppColors() above. Added 2026-07-31 after the user
@@ -1517,6 +1582,24 @@ int main(int argc, char **argv) {
                                                                   appearance->fontPointSize);
     if (launchGui) {
       launchGui->setColors(appearance->foreground, appearance->background);
+      // Overlay this window exactly where the calling terminal's own
+      // window sits -- see queryTerminalAppWindowBounds()'s own
+      // comment. Borderless first, then positioned: setBordered()
+      // removes this window's own title bar BEFORE moving it, so the
+      // position that follows lands the actual content flush against
+      // where the terminal's outer frame was, not offset by a title
+      // bar this window won't have. A failed bounds query (any
+      // non-macOS/non-Terminal.app case, same gate as the colors
+      // query above) leaves the window exactly where it already is
+      // (SDL_WINDOWPOS_CENTERED from create()) -- never a hard
+      // requirement, matching every other "実はすでにGUI" appearance
+      // query in this file.
+      if (!forceCui) {
+        if (auto bounds = queryTerminalAppWindowBounds()) {
+          launchGui->setBordered(false);
+          launchGui->setWindowPosition(bounds->x, bounds->y);
+        }
+      }
       launchGui->open();
       display.setBackend(*launchGui);
       guiOwnsWholeSession = true;

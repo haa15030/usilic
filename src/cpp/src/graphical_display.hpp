@@ -104,6 +104,41 @@ class GraphicalDisplay : public Display {
   // immediately by itself.
   void setColors(Color foreground, Color background);
 
+  // Moves the window to an absolute SCREEN position (top-left-origin
+  // pixel coordinates, matching both SDL2's own cross-platform
+  // convention and what AppleScript's "bounds of front window"
+  // reports for a real terminal app -- see main.cpp's
+  // queryTerminalAppWindowBounds()). Added for the "実はすでにGUI"
+  // launch feature (docs/ideas/IDEAS.md): overlaying the GUI window
+  // exactly where the calling terminal's own window already sits, so
+  // switching backends is invisible to the user rather than the
+  // window jumping to wherever SDL_WINDOWPOS_CENTERED happens to put
+  // it (a real user request, 2026-08-03, following up on the margin
+  // fix with "テキスト表示ウィンドウに重ねる形でGUIウィンドウ版を
+  // 表示したい"). A no-op if the window hasn't been created.
+  void setWindowPosition(int x, int y);
+
+  // Toggles the OS window chrome (title bar/border) on or off. Used
+  // alongside setWindowPosition() for the same "実はすでにGUI"
+  // overlay: SDL2's own window position (like AppleScript's own
+  // "bounds of front window") is the window's OUTER frame, title bar
+  // included -- if this window ALSO drew its own title bar, its
+  // content area would sit `titleBarHeight` further down than the
+  // terminal's own text content does (whose own title bar, and
+  // possibly tab bar, already accounts for a similar but not
+  // necessarily IDENTICAL offset this class has no way to query).
+  // Going borderless removes that whole height-budget mismatch by
+  // definition (no title bar on this side to disagree about), even
+  // though it doesn't make the overlay provably pixel-perfect (the
+  // exact height a real Terminal.app title/tab bar occupies isn't
+  // something AppleScript's bounds property reports either) -- flagged
+  // here rather than assumed solved, matching this class's own
+  // pattern of documenting verification limits (see class comment) in
+  // a sandbox with no screen-capture access to confirm final pixel
+  // alignment against a live target window. A no-op if the window
+  // hasn't been created.
+  void setBordered(bool bordered);
+
   void write(const std::string &text) override;
   void putChar(int c) override;
   void flush() override;
