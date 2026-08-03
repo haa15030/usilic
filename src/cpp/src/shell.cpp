@@ -531,6 +531,32 @@ void Shell::flushNewScrollbackLines() {
   // regardless of how many separate reads a command's output happens
   // to arrive across.
   updateCommandLineField();
+  // Re-asserts the prompt overlay on top, at the freshly-synced row,
+  // every single time content grows -- not just when a real prompt is
+  // detected (2026-08-04 follow-up: syncing commandLine_'s FIELD alone,
+  // above, wasn't enough). This function's own trailing call inside
+  // processOutputBytes() means content can keep growing (a stray
+  // trailing byte or two after a prompt cycle's closing mark, still
+  // within the SAME read, gets appended here -- see
+  // processOutputBytes()'s own comment) strictly AFTER
+  // handlePromptDetected() already drew what was, at that moment, the
+  // correct final prompt -- and since nothing re-asserted it, that
+  // growth silently overwrote it via this function's own
+  // goToBottom()-triggered redraw() (a real user report, 2026-08-03/04:
+  // "ls[Enter]→一瞬プロンプト表示→ls結果表示→一瞬プロンプト表示後
+  // 消失" -- the prompt visibly flashes correctly, then vanishes,
+  // exactly matching a redraw that runs AFTER it with no knowledge of
+  // it). During active command execution (no real prompt detected yet)
+  // this redraws whatever promptDecorated_ currently holds -- the
+  // PREVIOUS prompt's text, stale but harmless, since legacy shows no
+  // live prompt at all mid-execution either and this is strictly
+  // better than the alternative of leaving fully stale text sitting at
+  // the WRONG row. redrawPromptRow() itself is cheap to call
+  // repeatedly (a handful of writes plus one flush -- see its own
+  // comment), so unconditionally re-running it here on every flush,
+  // rather than trying to detect exactly when it's "needed", is the
+  // simpler and more robust choice.
+  redrawPromptRow();
 }
 
 // Appends a PERMANENT record of the just-submitted prompt+command as
