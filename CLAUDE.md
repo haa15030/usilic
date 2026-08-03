@@ -7599,6 +7599,75 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      失敗は無関係)通過、実バイナリのビルドもMac/Ubuntu両方で警告
      ゼロを確認。
 
+131. **2026-08-03(続き4): 「Red Sans」の正体はiTerm2ではなくTerminal.app
+    自体の別プロファイルと判明、真因(`front window`の曖昧さ)を特定し
+    `tty`一致方式へ作り直し**。項目130の直後、ユーザーから「変化無し。
+    GNOME Terminal対応と同じ限界とは?」との報告。
+   - **前提が誤りだったと判明**: ユーザーへ「iTerm2の`Red Sands`
+     テーマという理解でよいか」とAskUserQuestionで確認し「はい」との
+     回答を得ていたが、直後にユーザー自身から「iTerm2かと問われて
+     yesと答えてしまったけど実は知らない。macOS備え付けのターミナル
+     ではない?」との訂正があった。実機で`osascript -e 'tell
+     application "Terminal" to get name of every settings set'`を
+     実行したところ、`Homebrew`と`Red Sands`はどちらもTerminal.app
+     (macOS標準搭載)に最初から入っている組み込みプロファイル名
+     そのものと判明。つまり「iTerm2という別アプリの話」ではなく
+     「同じTerminal.appの中でプロファイル(配色プリセット)を切り替え
+     たら壊れた」という、項目130で実装したiTerm2対応とは全く無関係の
+     問題だった(iTerm2対応自体は無駄にはならないが、今回の報告への
+     直接の答えではなかった)。
+   - **真因の特定**: 実機で`Terminal`アプリのAppleScript辞書を直接
+     調査(`tell application "Terminal" to get tty of every tab of
+     every window`等)した結果、(1)ウィンドウ・タブごとに一意な
+     `tty`プロパティ(例: `/dev/ttys016`)が存在すること、(2)このMac
+     には既に6個のTerminal.appウィンドウ/タブが開いていたこと、
+     (3)`background color of front window`は正しく「現在選択中の
+     タブ」の色を追従することを確認した上で、実際に新規ウィンドウを
+     開き位置をずらして(`900, 200, 1300, 500`)`tty`を確認、そこで
+     `usilic`を起動して検証したところ、複数ウィンドウが存在する状況
+     では`front window`(Terminal.appが最後にアクティブだったウィンドウ、
+     usilicを起動した張本人のウィンドウとは限らない)が誤ったウィンドウ
+     を指してしまう場合があると判明した。これが「情報取得がうまく
+     いっていない」の真因であり、iTerm2ともRed Sandsという名前とも
+     無関係の、`front window`という曖昧な概念に依存していたこと自体が
+     根本原因だった。
+   - **修正方針**: `front window`への依存を完全に廃止し、この
+     プロセス自身の制御端末(tty)のパスを取得した上で、Terminal.app/
+     iTerm2のAppleScriptを「全ウィンドウ・全タブを巡回し`tty`が完全
+     一致するものを探す」形へ作り直した(`tty`はウィンドウ/タブごとに
+     一意なため、`front window`のような曖昧さが原理的に生じない)。
+     新規`currentTtyPath()`を追加し、`queryTerminalAppColors()`/
+     `queryTerminalAppWindowBounds()`/`queryITermColors()`/
+     `queryITermWindowBounds()`の4つすべてをこの方式へ書き換えた。
+     AppleScriptの色変換・`bounds`パースの共有ヘルパー(項目130で
+     切り出し済み)はそのまま再利用した。
+   - **実装時の見落としを実機検証で発見・即座に修正**: `currentTtyPath()`
+     の最初の実装は`open("/dev/tty", O_RDONLY)`で開いたfdへ`ttyname()`
+     を呼ぶ方式にしていたが、実機での動作確認中(下記)、これが
+     具体的なデバイスパス(`/dev/ttys016`等)ではなく文字列
+     `"/dev/tty"`そのものをそのまま返してしまうバグに気づいた
+     (小さなCテストプログラムを実際にTerminal.app上でコンパイル・
+     実行して確認)。これでは`tty of t is "/dev/tty"`という比較が
+     どのタブにも一致せず、常に空振りする(元の`front window`バグより
+     さらに深刻な「常に何も見つからない」状態)ことになっていた。
+     `ttyname(STDIN_FILENO)`(標準入力のfdへ直接)に変更したところ、
+     正しく`/dev/ttys016`のような具体的なパスが返ることを確認した。
+   - **End-to-Endでの実機検証**: 実機で意図的に複数のTerminal.app
+     ウィンドウが開いている状況を作り(既存6枚+新規1枚)、新規ウィンドウ
+     を`{900, 200, 1300, 500}`という他とは明確に異なる位置へ移動した
+     上で、そのウィンドウの中から`usilic`を実際に起動。`System Events`
+     経由でGUIウィンドウの実位置を確認したところX座標が`900`付近と
+     なり、他の(すべてX≈0付近に固まっている)既存ウィンドウのいずれ
+     でもなく、意図した新規ウィンドウを正しく検出・重ね合わせできて
+     いることを確認した(Y座標にわずかな誤差があったが、タイトルバー
+     絡みの既知の限界の範囲内で、ウィンドウの取り違え自体は解消して
+     いることが明確に確認できた)。iTerm2向けの`tty`一致(`sessions of
+     tabs of windows`階層)は引き続きこのサンドボックスにiTerm2が
+     無いため実機検証できていない(構文的にはTerminal.app版と同じ
+     パターンなので、動作する可能性は高いと見ている)。doctest全569件
+     (Mac)/該当分全件(Ubuntu、既存の環境依存12件の失敗は無関係)通過、
+     実バイナリのビルドもMac/Ubuntu両方で警告ゼロを確認。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

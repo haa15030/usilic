@@ -290,6 +290,41 @@ int resolveCoastLevel(int computedLevel) { return gScrollDebugLevel.value_or(com
 // setColors()). Returns nullopt on any failure (wrong TERM_PROGRAM,
 // osascript not found/fails, or output that doesn't parse) -- never a
 // hard requirement for GUI mode to work.
+// This process's own controlling terminal device's CANONICAL path
+// (e.g. "/dev/ttys016"), used to find the EXACT Terminal.app/iTerm2
+// window/tab this process was actually launched from, by matching
+// against each window's own reported `tty` property -- see
+// queryTerminalAppColors()/queryTerminalAppWindowBounds()'s own
+// comment for why "front window" alone isn't reliable enough for
+// this. Empty string on any failure (no controlling terminal at all,
+// e.g. launched from a background job) -- every caller already treats
+// "couldn't identify a real terminal" as an ordinary, non-fatal
+// fallback case.
+//
+// ttyname(STDIN_FILENO), NOT ttyname() on an fd freshly opened via
+// the generic "/dev/tty" alias path (what an earlier version of this
+// function did, matching the pattern keyInput.open("/dev/tty") uses
+// elsewhere in this file for a DIFFERENT purpose -- reliably reaching
+// the controlling terminal regardless of what stdin happens to be
+// redirected to, not identifying its canonical path) -- confirmed
+// live on this machine that ttyname() on an fd opened that way
+// reports back the LITERAL STRING "/dev/tty" itself, not the
+// underlying specific device (e.g. "/dev/ttys016") Terminal.app's own
+// `tty` property actually reports, which meant this function's own
+// first version could never match anything at all. A real user report
+// (2026-08-03): after the tty-matching fix below was first written
+// using that broken version, "変化無し" (no change) -- confirmed via
+// a live end-to-end test on this machine (opening a genuinely new,
+// distinctly-positioned Terminal.app window and launching usilic
+// inside it) that this was why: not merely "still picks the wrong
+// window sometimes" but "never matches ANY window at all," an even
+// more silent failure than the original "front window" bug this was
+// meant to fix.
+std::string currentTtyPath() {
+  const char *path = ttyname(STDIN_FILENO);
+  return path ? path : "";
+}
+
 // AppleScript's own RGB color type is always a {r, g, b} list in the
 // 0-65535 range (not 0-255) regardless of which scriptable app
 // returns it -- shared by every AppleScript-based color query below
@@ -318,11 +353,40 @@ std::optional<TerminalWindowBounds> parseAppleScriptBounds(const std::string &ou
 std::optional<TerminalAppearance> queryTerminalAppColors() {
   const char *termProgram = std::getenv("TERM_PROGRAM");
   if (!termProgram || std::string(termProgram) != "Apple_Terminal") return std::nullopt;
+  std::string tty = currentTtyPath();
+  if (tty.empty()) return std::nullopt;
 
+  // Matches the SPECIFIC tab this process's own controlling terminal
+  // (`tty`) belongs to, rather than querying "front window" -- a real
+  // user report (2026-08-03): switching to a DIFFERENT profile
+  // ("Red Sands", one of Terminal.app's own bundled presets, tested
+  // alongside another preset called "Homebrew" -- initially and
+  // reasonably mistaken by both the user and this assistant for a
+  // wholly separate terminal application before being corrected) in a
+  // NEW window/tab silently broke color/position detection, because
+  // AppleScript's "front window" is whichever Terminal.app window was
+  // last active/frontmost AMONG ALL open Terminal windows -- not
+  // necessarily the specific one this usilic process actually launched
+  // from, once more than one exists (an ordinary, common situation,
+  // not an edge case: this project's own dev machine had 6 Terminal.app
+  // windows open when this was investigated). Terminal.app's own
+  // AppleScript exposes a `tty` property per tab (confirmed live on
+  // this machine, `tell application "Terminal" to get tty of every tab
+  // of every window`), which is exactly what's needed to identify the
+  // one true match deterministically instead of guessing at "front".
   fm::ChildProcess::Result result = fm::ChildProcess::run(
       {"osascript", "-e",
-       "tell application \"Terminal\" to get {background color, normal text color, font size, font name} of front "
-       "window"});
+       "tell application \"Terminal\"\n"
+       "  repeat with w in windows\n"
+       "    repeat with t in tabs of w\n"
+       "      if tty of t is \"" +
+           tty +
+           "\" then\n"
+           "        return {background color of t, normal text color of t, font size of t, font name of t}\n"
+           "      end if\n"
+           "    end repeat\n"
+           "  end repeat\n"
+           "end tell"});
   if (!result.ok) return std::nullopt;
 
   // osascript prints an AppleScript list as "bgR, bgG, bgB, fgR, fgG,
@@ -382,26 +446,46 @@ std::optional<TerminalAppearance> queryTerminalAppColors() {
 // GraphicalDisplay::create() already puts it (SDL_WINDOWPOS_CENTERED),
 // same fallback queryTerminalAppColors() itself has.
 //
-// AppleScript's "bounds of front window" reports {left, top, right,
+// Matches by `tty` rather than querying "front window" directly, for
+// the exact same reason queryTerminalAppColors() now does -- see its
+// own comment (a real user report, 2026-08-03: "front window" answered
+// with the WRONG one of several open Terminal.app windows once more
+// than one existed, silently misplacing the overlay).
+//
+// AppleScript's "bounds of <window>" reports {left, top, right,
 // bottom} (a rectangle's two corners), NOT {x, y, width, height} --
-// converted here so the caller gets the width/height GraphicalDisplay
-// itself already thinks in. This is the window's OUTER frame (title
-// bar included), which is also what SDL2's own window position means
-// for a normal bordered window -- the OS reserves title-bar space
-// above the content on both sides the same way, so this position
-// should already line the two windows' title bars up without this
-// class needing to separately account for title-bar height anywhere
-// (see the call site's own comment). Not provably pixel-perfect
-// (a real Terminal.app tab bar, if more than one tab is open, adds
-// height this query has no way to detect) -- this sandbox has no
-// screen-capture access to verify final on-screen alignment against a
-// live Terminal.app window beyond what a real user screenshot shows.
+// converted here (parseAppleScriptBounds()) so the caller gets the
+// width/height GraphicalDisplay itself already thinks in. This is the
+// window's OUTER frame (title bar included), which is also what
+// SDL2's own window position means for a normal bordered window -- the
+// OS reserves title-bar space above the content on both sides the
+// same way, so this position should already line the two windows'
+// title bars up without this class needing to separately account for
+// title-bar height anywhere (see the call site's own comment). Not
+// provably pixel-perfect (a real Terminal.app tab bar, if more than
+// one tab is open, adds height this query has no way to detect) --
+// this sandbox has no screen-capture access to verify final on-screen
+// alignment against a live Terminal.app window beyond what a real
+// user screenshot shows.
 std::optional<TerminalWindowBounds> queryTerminalAppWindowBounds() {
   const char *termProgram = std::getenv("TERM_PROGRAM");
   if (!termProgram || std::string(termProgram) != "Apple_Terminal") return std::nullopt;
+  std::string tty = currentTtyPath();
+  if (tty.empty()) return std::nullopt;
 
-  fm::ChildProcess::Result result =
-      fm::ChildProcess::run({"osascript", "-e", "tell application \"Terminal\" to get bounds of front window"});
+  fm::ChildProcess::Result result = fm::ChildProcess::run(
+      {"osascript", "-e",
+       "tell application \"Terminal\"\n"
+       "  repeat with w in windows\n"
+       "    repeat with t in tabs of w\n"
+       "      if tty of t is \"" +
+           tty +
+           "\" then\n"
+           "        return bounds of w\n"
+           "      end if\n"
+           "    end repeat\n"
+           "  end repeat\n"
+           "end tell"});
   if (!result.ok) return std::nullopt;
   return parseAppleScriptBounds(result.output);
 }
@@ -442,11 +526,33 @@ std::optional<TerminalWindowBounds> queryTerminalAppWindowBounds() {
 std::optional<TerminalAppearance> queryITermColors() {
   const char *termProgram = std::getenv("TERM_PROGRAM");
   if (!termProgram || std::string(termProgram) != "iTerm.app") return std::nullopt;
+  std::string tty = currentTtyPath();
+  if (tty.empty()) return std::nullopt;
 
+  // Matches by `tty` rather than "current session of current window",
+  // for the same reason queryTerminalAppColors() now does -- see its
+  // own comment (a real user report, 2026-08-03, traced to Terminal.app
+  // specifically, but the identical "which window is actually mine"
+  // ambiguity applies just as much here once more than one iTerm2
+  // window is open). iTerm2's own scripting dictionary is a three-level
+  // window > tab > session hierarchy (unlike Terminal.app's flatter
+  // window > tab, no separate session level) -- NOT verified against a
+  // real running iTerm2 (see this function's own class-level comment).
   fm::ChildProcess::Result result = fm::ChildProcess::run(
       {"osascript", "-e",
-       "tell application \"iTerm2\" to tell current session of current window to get {background color, "
-       "foreground color}"});
+       "tell application \"iTerm2\"\n"
+       "  repeat with w in windows\n"
+       "    repeat with tb in tabs of w\n"
+       "      repeat with s in sessions of tb\n"
+       "        if tty of s is \"" +
+           tty +
+           "\" then\n"
+           "          return {background color of s, foreground color of s}\n"
+           "        end if\n"
+           "      end repeat\n"
+           "    end repeat\n"
+           "  end repeat\n"
+           "end tell"});
   if (!result.ok) return std::nullopt;
 
   int bgR, bgG, bgB, fgR, fgG, fgB;
@@ -466,9 +572,26 @@ std::optional<TerminalAppearance> queryITermColors() {
 std::optional<TerminalWindowBounds> queryITermWindowBounds() {
   const char *termProgram = std::getenv("TERM_PROGRAM");
   if (!termProgram || std::string(termProgram) != "iTerm.app") return std::nullopt;
+  std::string tty = currentTtyPath();
+  if (tty.empty()) return std::nullopt;
 
-  fm::ChildProcess::Result result =
-      fm::ChildProcess::run({"osascript", "-e", "tell application \"iTerm2\" to get bounds of current window"});
+  // Matches by `tty` for the same reason queryITermColors() does --
+  // see its own comment (also not end-to-end verified).
+  fm::ChildProcess::Result result = fm::ChildProcess::run(
+      {"osascript", "-e",
+       "tell application \"iTerm2\"\n"
+       "  repeat with w in windows\n"
+       "    repeat with tb in tabs of w\n"
+       "      repeat with s in sessions of tb\n"
+       "        if tty of s is \"" +
+           tty +
+           "\" then\n"
+           "          return bounds of w\n"
+           "        end if\n"
+           "      end repeat\n"
+           "    end repeat\n"
+           "  end repeat\n"
+           "end tell"});
   if (!result.ok) return std::nullopt;
   return parseAppleScriptBounds(result.output);
 }
