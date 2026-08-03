@@ -188,6 +188,10 @@ struct TerminalAppearance {
   std::string fontName;
 };
 
+struct TerminalWindowBounds {
+  int x = 0, y = 0, width = 0, height = 0;
+};
+
 // USILICFONT; then (when `appearance` carries a real font NAME from
 // the calling terminal) that name resolved to a real file via
 // CoreText on macOS (mac_font_resolver.hpp) or fontconfig's
@@ -286,6 +290,31 @@ int resolveCoastLevel(int computedLevel) { return gScrollDebugLevel.value_or(com
 // setColors()). Returns nullopt on any failure (wrong TERM_PROGRAM,
 // osascript not found/fails, or output that doesn't parse) -- never a
 // hard requirement for GUI mode to work.
+// AppleScript's own RGB color type is always a {r, g, b} list in the
+// 0-65535 range (not 0-255) regardless of which scriptable app
+// returns it -- shared by every AppleScript-based color query below
+// (Terminal.app, iTerm2) rather than each keeping its own local copy.
+unsigned char appleScriptChannelTo255(int channel) {
+  return static_cast<unsigned char>(std::clamp(channel / 257, 0, 255));  // 65535 / 255 == 257
+}
+
+// AppleScript's "bounds of <window>" is always {left, top, right,
+// bottom} (a rectangle's two corners) regardless of which scriptable
+// app returns it -- shared by every AppleScript-based window-bounds
+// query below. Converts to {x, y, width, height}, which is what
+// GraphicalDisplay itself already thinks in.
+std::optional<TerminalWindowBounds> parseAppleScriptBounds(const std::string &output) {
+  int left, top, right, bottom;
+  if (std::sscanf(output.c_str(), "%d, %d, %d, %d", &left, &top, &right, &bottom) != 4) return std::nullopt;
+  if (right <= left || bottom <= top) return std::nullopt;
+  TerminalWindowBounds bounds;
+  bounds.x = left;
+  bounds.y = top;
+  bounds.width = right - left;
+  bounds.height = bottom - top;
+  return bounds;
+}
+
 std::optional<TerminalAppearance> queryTerminalAppColors() {
   const char *termProgram = std::getenv("TERM_PROGRAM");
   if (!termProgram || std::string(termProgram) != "Apple_Terminal") return std::nullopt;
@@ -311,12 +340,9 @@ std::optional<TerminalAppearance> queryTerminalAppColors() {
                    &fontSize, &consumed) != 7)
     return std::nullopt;
 
-  auto to255 = [](int channel) -> unsigned char {
-    return static_cast<unsigned char>(std::clamp(channel / 257, 0, 255));  // 65535 / 255 == 257
-  };
   TerminalAppearance appearance;
-  appearance.background = {to255(bgR), to255(bgG), to255(bgB)};
-  appearance.foreground = {to255(fgR), to255(fgG), to255(fgB)};
+  appearance.background = {appleScriptChannelTo255(bgR), appleScriptChannelTo255(bgG), appleScriptChannelTo255(bgB)};
+  appearance.foreground = {appleScriptChannelTo255(fgR), appleScriptChannelTo255(fgG), appleScriptChannelTo255(fgB)};
   if (fontSize > 0) appearance.fontPointSize = fontSize;
   if (consumed > 0 && consumed <= static_cast<int>(result.output.size())) {
     std::string fontName = result.output.substr(consumed);
@@ -325,10 +351,6 @@ std::optional<TerminalAppearance> queryTerminalAppColors() {
   }
   return appearance;
 }
-
-struct TerminalWindowBounds {
-  int x = 0, y = 0, width = 0, height = 0;
-};
 
 // Queries the calling Terminal.app window's own SCREEN position/size
 // via AppleScript, so the "実はすでにGUI" launch (see
@@ -381,17 +403,74 @@ std::optional<TerminalWindowBounds> queryTerminalAppWindowBounds() {
   fm::ChildProcess::Result result =
       fm::ChildProcess::run({"osascript", "-e", "tell application \"Terminal\" to get bounds of front window"});
   if (!result.ok) return std::nullopt;
+  return parseAppleScriptBounds(result.output);
+}
 
-  int left, top, right, bottom;
-  if (std::sscanf(result.output.c_str(), "%d, %d, %d, %d", &left, &top, &right, &bottom) != 4) return std::nullopt;
-  if (right <= left || bottom <= top) return std::nullopt;
+// iTerm2 counterpart to queryTerminalAppColors()/
+// queryTerminalAppWindowBounds() above -- a real user report
+// (2026-08-03, two screenshots): the overlay feature those two power
+// worked perfectly in Terminal.app but silently did nothing in
+// iTerm2 (tested with its built-in "Red Sands" color scheme),
+// because TERM_PROGRAM=iTerm.app never matched either function's own
+// Apple_Terminal gate, so both silently returned nullopt and the GUI
+// window fell back to its own defaults (SDL_WINDOWPOS_CENTERED,
+// hardcoded fg/bg).
+//
+// NOT end-to-end verified against a real running iTerm2 from this
+// project's own development sandbox -- iTerm2 isn't installed here
+// (confirmed: `osascript -e 'tell application "iTerm2" to version'`
+// fails outright, "アプリケーションを取り出すことはできません").
+// Follows iTerm2's own documented AppleScript dictionary conventions
+// (a "current window" containing a "current session", "background
+// color"/"foreground color" as session properties, "bounds" as a
+// standard window property) as closely as this project's own
+// knowledge allows without live access to check the exact property
+// names -- same category of limitation queryGnomeTerminalColors()
+// already has for GNOME Terminal (see its own comment), not a new
+// kind of gap for this file. If this doesn't actually work, the fix
+// is almost certainly a property-name mismatch here, not anything
+// structural -- worth checking with a direct `osascript` probe on a
+// machine that actually has iTerm2 before changing anything else.
+//
+// iTerm2's classic AppleScript session object has no font name/size
+// property the way Terminal.app's window does (font control moved to
+// iTerm2's newer Python API instead) -- TerminalAppearance's
+// fontPointSize/fontName are deliberately left at their own defaults
+// here rather than guessed at, matching queryGnomeTerminalColors()'s
+// own "don't claim more than what's actually queryable" restraint for
+// its use-system-font branch.
+std::optional<TerminalAppearance> queryITermColors() {
+  const char *termProgram = std::getenv("TERM_PROGRAM");
+  if (!termProgram || std::string(termProgram) != "iTerm.app") return std::nullopt;
 
-  TerminalWindowBounds bounds;
-  bounds.x = left;
-  bounds.y = top;
-  bounds.width = right - left;
-  bounds.height = bottom - top;
-  return bounds;
+  fm::ChildProcess::Result result = fm::ChildProcess::run(
+      {"osascript", "-e",
+       "tell application \"iTerm2\" to tell current session of current window to get {background color, "
+       "foreground color}"});
+  if (!result.ok) return std::nullopt;
+
+  int bgR, bgG, bgB, fgR, fgG, fgB;
+  if (std::sscanf(result.output.c_str(), "%d, %d, %d, %d, %d, %d", &bgR, &bgG, &bgB, &fgR, &fgG, &fgB) != 6)
+    return std::nullopt;
+
+  TerminalAppearance appearance;
+  appearance.background = {appleScriptChannelTo255(bgR), appleScriptChannelTo255(bgG), appleScriptChannelTo255(bgB)};
+  appearance.foreground = {appleScriptChannelTo255(fgR), appleScriptChannelTo255(fgG), appleScriptChannelTo255(fgB)};
+  return appearance;
+}
+
+// See queryITermColors()'s own comment on why this isn't end-to-end
+// verified. Mirrors queryTerminalAppWindowBounds() exactly, just
+// against iTerm2's "current window" instead of Terminal.app's "front
+// window".
+std::optional<TerminalWindowBounds> queryITermWindowBounds() {
+  const char *termProgram = std::getenv("TERM_PROGRAM");
+  if (!termProgram || std::string(termProgram) != "iTerm.app") return std::nullopt;
+
+  fm::ChildProcess::Result result =
+      fm::ChildProcess::run({"osascript", "-e", "tell application \"iTerm2\" to get bounds of current window"});
+  if (!result.ok) return std::nullopt;
+  return parseAppleScriptBounds(result.output);
 }
 
 // Queries GNOME Terminal's own gsettings-stored profile (background/
@@ -485,7 +564,18 @@ std::optional<TerminalAppearance> queryGnomeTerminalColors() {
 // apply.
 std::optional<TerminalAppearance> queryRealTerminalAppearance() {
   if (auto appearance = queryTerminalAppColors()) return appearance;
+  if (auto appearance = queryITermColors()) return appearance;
   return queryGnomeTerminalColors();
+}
+
+// See queryTerminalAppWindowBounds()/queryITermWindowBounds() -- same
+// "try every platform-specific query, first success wins" shape as
+// queryRealTerminalAppearance() above, kept separate from it since
+// window-bounds and color/font queries have different callers (see
+// the "実はすでにGUI" launch site below).
+std::optional<TerminalWindowBounds> queryRealTerminalWindowBounds() {
+  if (auto bounds = queryTerminalAppWindowBounds()) return bounds;
+  return queryITermWindowBounds();
 }
 
 std::optional<fm::KeyInput::SpecialKey> translateDisplayKey(fm::Display::Key key) {
@@ -1598,14 +1688,14 @@ int main(int argc, char **argv) {
       // needs no extra math here at all: the OS reserves the title
       // bar's own space above this window's content automatically,
       // the same way it does for the real terminal window being
-      // overlaid. A failed bounds query (any non-macOS/non-
-      // Terminal.app case, same gate as the colors query above)
+      // overlaid. A failed bounds query (any terminal/platform
+      // queryRealTerminalWindowBounds()'s own two queries don't cover)
       // leaves the window exactly where it already is
       // (SDL_WINDOWPOS_CENTERED from create()) -- never a hard
       // requirement, matching every other "実はすでにGUI" appearance
       // query in this file.
       if (!forceCui) {
-        if (auto bounds = queryTerminalAppWindowBounds()) launchGui->setWindowPosition(bounds->x, bounds->y);
+        if (auto bounds = queryRealTerminalWindowBounds()) launchGui->setWindowPosition(bounds->x, bounds->y);
       }
       launchGui->open();
       display.setBackend(*launchGui);

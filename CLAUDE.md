@@ -7543,6 +7543,62 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ビルドとdoctest全569件(既存の環境依存12件の失敗は無関係)の
      みを確認。実バイナリのビルドもMac/Ubuntu両方で警告ゼロを確認。
 
+130. **2026-08-03(続き3): 「実はすでにGUI」の配色/位置検出をiTerm2にも
+    対応**。項目129の直後、ユーザーから「ぴたりと一致。ウィンドウを
+    動かして初めて重ね打ちだと気づく点が素晴らしい...ただHomebrew
+    端末ではOKでもRed Sansでためしてみたら情報取得がうまくいって
+    いない模様」とのスクリーンショット2枚付き報告。1枚目はTerminal.app
+    での完璧な重ね合わせ成功例(ウィンドウをずらすことで初めて2枚
+    重なっていたと分かるほど正確)、2枚目は暗い赤茶色の配色でずれた
+    ウィンドウ位置の失敗例。
+   - **「Red Sans」の正体を確認**: スクリーンショットだけでは断定
+     できなかった(右端にスクロールバーらしき要素が見えるなど判断
+     材料が割れていた)ため、AskUserQuestionで確認したところ、
+     iTerm2の組み込み配色テーマ「Red Sands」であるとの回答を得た。
+   - **原因**: `queryTerminalAppColors()`/`queryTerminalAppWindowBounds()`
+     はいずれも`TERM_PROGRAM=="Apple_Terminal"`でゲートされており、
+     iTerm2は`TERM_PROGRAM=iTerm.app`を設定するため、この条件に
+     一切マッチせず両方とも常に`nullopt`を返し、GUIウィンドウが
+     デフォルト位置・デフォルト配色にフォールバックしていた。
+   - **実装**: 新規`queryITermColors()`/`queryITermWindowBounds()`を
+     追加し、`TERM_PROGRAM=="iTerm.app"`でゲート、Terminal.appと同じ
+     `osascript`ベースのAppleScript連携パターンに従った(iTerm2の
+     `current window`の`current session`から`background color`/
+     `foreground color`を取得、ウィンドウの`bounds`は`current window`
+     から取得)。`queryRealTerminalAppearance()`/新規
+     `queryRealTerminalWindowBounds()`という「対応済みの各ターミナル
+     アプリを順に試し、最初に成功したものを使う」統一入口を新設し、
+     Terminal.app→iTerm2→(色のみ)GNOME Terminalの順で試すよう配線。
+     このタイミングでAppleScriptの色変換(0〜65535範囲を0〜255へ)と
+     `bounds`のパース(`{left,top,right,bottom}`→`{x,y,width,height}`)
+     をそれぞれ共有ヘルパー関数へ切り出し、Terminal.app/iTerm2の
+     両方から再利用する形に整理した(この2つは全く同じAppleScript
+     の型を使うため、今回初めて重複が生じた箇所)。
+   - **検証の限界(正直に記録)**: このセッションの開発サンドボックスに
+     iTerm2はインストールされておらず(`osascript -e 'tell application
+     "iTerm2" to version'`が「アプリケーションを取り出すことは
+     できません」で失敗することを確認済み)、iTerm2向けのAppleScript
+     連携は実機でのEnd-to-End検証ができていない。iTerm2の公開
+     ドキュメントに基づくAppleScript辞書の慣習(`current window`/
+     `current session`、`bounds`プロパティ)に従って実装したが、
+     `queryGnomeTerminalColors()`(GNOME Terminal対応、同様に実機
+     検証できなかった既存の前例)と同じ限界を抱えている。もし動作
+     しない場合はプロパティ名の不一致である可能性が高く、iTerm2が
+     実際にインストールされた環境で`osascript`を直接叩いて確認する
+     ところから始めるようコメントに明記した。またiTerm2の古典的
+     AppleScriptにはTerminal.appのような「フォント名/サイズ」
+     プロパティが無い(iTerm2はフォント制御を新しいPython API側へ
+     移している)ため、`fontPointSize`/`fontName`は無理に推測せず
+     デフォルト値のまま残した。
+   - **既存経路への回帰確認**: 上記のヘルパー切り出しによる
+     リファクタリングがTerminal.app側の既存動作を壊していないか、
+     実機で`TERM_PROGRAM=Apple_Terminal`を指定して再度`usilic`を
+     起動し、`System Events`経由でウィンドウ位置が引き続き`{0, 30}`
+     (Terminal.appの座標と完全一致)のままであることを確認した。
+     doctest全569件(Mac)/該当分全件(Ubuntu、既存の環境依存12件の
+     失敗は無関係)通過、実バイナリのビルドもMac/Ubuntu両方で警告
+     ゼロを確認。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す
