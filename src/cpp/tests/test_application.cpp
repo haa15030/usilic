@@ -253,6 +253,43 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) from File mode returns to Direct
   CHECK(indexOf(app.directoryMode().selectedEntry()->name) == idx);
 }
 
+TEST_CASE_FIXTURE(Fixture, "handleCommand(JumpNext/JumpPrevious): ';'/':' are Back+MoveDown+Enter and "
+                           "Back+MoveUp+Enter, confirmed directly by the user (2026-08-03) after an initial "
+                           "wrong guess that this was a distinct \"related file\" jump feature") {
+  // A dedicated subdirectory of three plain files, alphabetically
+  // adjacent and none of them directories -- avoids depending on the
+  // shared fixture's own top-level mix of files/subdirectories (whose
+  // neighbor of plain.txt is a directory, not a file, which would
+  // switch to Directory mode instead of File mode and make this test's
+  // assertions fixture-order-fragile).
+  fs::create_directory(root / "jumpdir");
+  { std::ofstream(root / "jumpdir" / "aaa.txt") << "a\n"; }
+  { std::ofstream(root / "jumpdir" / "bbb.txt") << "b\n"; }
+  { std::ofstream(root / "jumpdir" / "ccc.txt") << "c\n"; }
+
+  REQUIRE(app.start(path()));
+  int idx = indexOf("jumpdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // Directory mode inside jumpdir/
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+
+  int bIdx = -1;
+  for (int i = 0; i < static_cast<int>(app.directoryMode().entries().size()); i++)
+    if (app.directoryMode().entries()[i].name == "bbb.txt") bIdx = i;
+  REQUIRE(bIdx >= 0);
+  while (app.directoryMode().selectedEntry()->name != "bbb.txt") app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::Enter));  // File mode on bbb.txt
+  REQUIRE(app.handleCommand(Command::JumpNext));  // ';' -- Back (-> Directory), MoveDown, Enter
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "jumpdir" / "ccc.txt").string());
+
+  REQUIRE(app.handleCommand(Command::JumpPrevious));  // ':' -- Back, MoveUp, Enter -- lands back on bbb.txt
+  REQUIRE(app.handleCommand(Command::JumpPrevious));  // ':' again -- one more entry up
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "jumpdir" / "aaa.txt").string());
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) in Directory mode with nothing to go back to fails cleanly") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(app.handleCommand(Command::Back));
@@ -2458,8 +2495,11 @@ TEST_CASE_FIXTURE(Fixture, "K-46: Enter on a recent file entry opens it via File
   CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
 }
 
-TEST_CASE_FIXTURE(Fixture, "List Browser mode-line: shows the RingCategory label as trailing, and the highlighted "
-                           "item as name (2026-08-02 user report: \"^X^F（FILE）が置き換わってない\")") {
+TEST_CASE_FIXTURE(Fixture, "List Browser mode-line: shows the RingCategory label as name (left, unparenthesized) "
+                           "and the highlighted item as trailing (2026-08-02 user report: \"^X^F（FILE）が"
+                           "置き換わってない\"; 2026-08-03 follow-up: legacy puts the category on the LEFT "
+                           "unparenthesized -- \"FILE 1/5 END /path\", not \"(FILE)\" trailing after the path, "
+                           "the parens being reserved for the PROGRAM-name field elsewhere)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -2468,12 +2508,12 @@ TEST_CASE_FIXTURE(Fixture, "List Browser mode-line: shows the RingCategory label
 
   REQUIRE(app.handleCommand(Command::StartFileHistory));
   std::string text = app.activeContentView().modeLineText();
-  CHECK(text.rfind((root / "plain.txt").string() + " ", 0) == 0);  // highlighted item -- as name, left
-  CHECK(text.find("(FILE)") != std::string::npos);                // RingCategory label -- as trailing, right
+  CHECK(text.rfind("FILE ", 0) == 0);                                     // RingCategory label -- as name, left
+  CHECK(text.find((root / "plain.txt").string()) != std::string::npos);  // highlighted item -- as trailing, right
 
   REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
-  CHECK(app.activeContentView().modeLineText().find("(DIR)") != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) == 0);
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(StartFileHistory): refused outside Directory mode") {

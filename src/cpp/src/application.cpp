@@ -255,21 +255,25 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     return {"KEY", previousModeName(keyReturnMode_), /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
   });
   // Mode-line fields for the LIST-based history pickers (K-45..K-49,
-  // ^X^F/^X^D/^R/etc): the highlighted item's own string as name (see
-  // ListBrowserMode's own former comment on this field, moved here
-  // 2026-08-02 since only Application knows listBrowserCategory_ --
-  // see ListBrowserMode's own constructor comment), and the category
-  // itself ("FILE"/"DIR"/"HISTORY"/etc, matching legacy's own
-  // " FILE_HISTORY"-style naming, RingCategory's own comments) as the
-  // trailing field -- a real user report (2026-08-02:
-  // "^X^F（FILE）が置き換わってない") found no indication anywhere of
-  // WHICH history category was being browsed. A live callback since
-  // both cursorIndex and listBrowserCategory_ change across separate
-  // entries.
+  // ^X^F/^X^D/^R/etc): the category itself ("FILE"/"DIR"/"HISTORY"/
+  // etc, matching legacy's own " FILE_HISTORY"-style naming,
+  // RingCategory's own comments) as the LEFT-aligned name field, and
+  // the highlighted item's own string as the trailing field -- a real
+  // user report (2026-08-02: "^X^F（FILE）が置き換わってない") found no
+  // indication anywhere of WHICH history category was being browsed,
+  // which this still fixes, but the initial fix (2026-08-02) put the
+  // two fields backwards AND wrapped the category in parentheses (the
+  // parens are reserved for the trailing PROGRAM-name field elsewhere,
+  // e.g. DirectoryMode's own "(ls)" -- a real side-by-side screenshot
+  // comparison against legacy, 2026-08-03, showed the category name
+  // belongs unparenthesized at the LEFT edge, e.g. "FILE 1/5 END
+  // /path/to/file", not "(FILE)" trailing after the path). A live
+  // callback since both cursorIndex and listBrowserCategory_ change
+  // across separate entries.
   listBrowserView_.setModeLineFieldsProvider([this](int cursorIndex) -> ContentView::ModeLineFields {
     const auto &items = listBrowserMode_.items();
     if (cursorIndex < 0 || cursorIndex >= static_cast<int>(items.size())) return {};
-    return {items[cursorIndex], "(" + ringCategoryLabel(listBrowserCategory_) + ")", /*fillTrailingToEdge=*/false,
+    return {ringCategoryLabel(listBrowserCategory_), items[cursorIndex], /*fillTrailingToEdge=*/false,
             /*rightWatermark=*/""};
   });
 }
@@ -379,6 +383,10 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::Enter;
     case kControlG:
       return Command::Back;
+    case ';':
+      return Command::JumpNext;
+    case ':':
+      return Command::JumpPrevious;
     case kControlS:
       return Command::StartFgrep;
     case 0x08:  // ^H (M_key, K-2, "KEY") -- see startKey()'s own comment
@@ -855,6 +863,26 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Grep) return returnFromGrep();
       if (currentMode_ == ApplicationMode::File) return returnToDirectory();
       return directoryMode_.goBack();
+    // ';'/':' -- literally Back+MoveDown+Enter / Back+MoveUp+Enter,
+    // confirmed directly by the user (2026-08-03) after an initial
+    // wrong guess that this was a "related file" jump feature of its
+    // own; see Command::JumpNext's own declaration comment. Each step
+    // re-enters handleCommand() so it sees currentMode_ as it stands
+    // AFTER the previous step (e.g. Back may switch File->Directory
+    // before MoveDown/Enter act on the now-current Directory view) --
+    // the same as if the three underlying keys had actually been typed
+    // one at a time. Intermediate steps' own success/failure is
+    // intentionally not checked (matching a real 3-keystroke replay,
+    // which doesn't stop partway through just because one keystroke
+    // was a no-op); only the final step's result is returned.
+    case Command::JumpNext:
+      handleCommand(Command::Back);
+      handleCommand(Command::MoveDown);
+      return handleCommand(Command::Enter);
+    case Command::JumpPrevious:
+      handleCommand(Command::Back);
+      handleCommand(Command::MoveUp);
+      return handleCommand(Command::Enter);
     case Command::StartFgrep:
       return startGrepPrompt(GrepSyntax::Fixed);
     case Command::StartEgrep:

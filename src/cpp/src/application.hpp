@@ -49,6 +49,18 @@ enum class Command {
   PageDown,
   Enter,
   Back,
+  // ';'/':' -- confirmed directly by the user (2026-08-03, after an
+  // initial wrong guess that this was some kind of "related file"
+  // jump): these are literally shorthand for Back+MoveDown+Enter and
+  // Back+MoveUp+Enter respectively, not a distinct feature of their
+  // own. Kept as their own Command values (rather than expanding
+  // dispatchByte() inline) so handleCommand()'s existing single place
+  // for "what does this Command actually do" stays the only place
+  // that needs to know the 3-step composition -- matches this port's
+  // existing pattern for other composite actions (e.g.
+  // StartFileInput/StartDirectoryInput sharing startPathInputPrompt()).
+  JumpNext,      // ';' : Back, MoveDown, Enter
+  JumpPrevious,  // ':' : Back, MoveUp, Enter
   StartFgrep,
   StartEgrep,
   StartCutFixed,
