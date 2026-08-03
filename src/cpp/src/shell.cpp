@@ -102,18 +102,47 @@ Shell::Shell(Display &display, const ShellOptions &options)
     isBash_ = isBashProgram(options_.argv[0]);
     isZsh_ = isZshProgram(options_.argv[0]);
   }
-  // Unchanged from before: height_ = viewportRows_-1 leaves scrollback_'s
-  // own mode-line at row viewportRows_-1 (ContentView's own row0_+
-  // height_ convention). commandLine_'s own row moved to viewportRows_-2
-  // instead (see commandLineRow()'s own comment) -- it used to be
-  // viewportRows_-1 too, the EXACT SAME row scrollback_'s mode-line
-  // renders at, so whichever redrew last silently clobbered the
-  // other. A real user report (2026-08-02) confirmed the SHELL
-  // mode-line effectively never stayed visible in practice:
-  // commandLine_.redraw() runs every time the prompt updates (i.e.
-  // constantly), immediately overwriting whatever the mode-line had
-  // just drawn.
-  scrollback_.setViewport(0, std::max(1, viewportRows_ - 1));
+  // Three DISTINCT rows, not two (2026-08-03 revision): scrollback_'s
+  // own CONTENT area is height_ = viewportRows_-2 rows tall (0..
+  // viewportRows_-3), the live prompt (commandLineRow(), see its own
+  // comment) is the dedicated row viewportRows_-2 right after it, and
+  // the mode-line is pinned to the TRUE last row viewportRows_-1 via
+  // setModeLineRow() -- decoupled from ContentView's own default
+  // row0_+height_ convention, which would otherwise land on the SAME
+  // row as the prompt now that height_ no longer reaches all the way
+  // to viewportRows_-1.
+  //
+  // This replaces an EARLIER (2026-08-02) fix that made commandLine_
+  // overlay scrollback_'s own LAST CONTENT row (viewportRows_-2, back
+  // when height_ was viewportRows_-1) instead of colliding with the
+  // mode-line -- reasoned at the time as "matching legacy, where the
+  // live prompt IS simply the last line of scrollback". That reasoning
+  // was half right: legacy's prompt line and the last REAL content
+  // line are indeed the same slot -- but only at the instant a prompt
+  // has just been frozen and no new output exists yet. The moment real
+  // output starts arriving (flushNewScrollbackLines(), called on every
+  // pty read -- see processOutputBytes()'s own call), THAT output's
+  // own last line legitimately wants that identical row too, and
+  // whichever of the two (content redraw vs. commandLine_'s prompt
+  // redraw) happened to run last would silently clobber the other. A
+  // real side-by-side comparison against legacy (2026-08-03, repeating
+  // `ls`+Enter several times) confirmed this via raw escape-sequence
+  // tracing: every single command's last output line got overwritten
+  // by the reappearing prompt in -c, and the reverse (prompt
+  // overwritten by content) in -g -- a genuine row collision, not a
+  // timing race, present on both backends since the row-sharing is
+  // baked into the layout math itself, not incidental.
+  //
+  // Reserving a truly separate row for the prompt (this fix) instead
+  // matches legacy's actual on-screen behavior even more directly:
+  // legacy's prompt only ever shares a line with real output for that
+  // single instant right after freezing, and immediately becomes its
+  // own trailing line the moment anything else is appended below it
+  // (exactly what a dedicated, content-relative row achieves without
+  // needing to literally merge commandLine_'s live-editing state into
+  // scrollback_.lines() itself).
+  scrollback_.setViewport(0, std::max(1, viewportRows_ - 2));
+  scrollback_.setModeLineRow(viewportRows_ - 1);
   updateCommandLineField();
 }
 
@@ -595,7 +624,23 @@ void Shell::updateCommandLineField() {
   commandLine_.setField(commandLineRow(), promptCol, width);
 }
 
-int Shell::commandLineRow() const { return (viewportRows_ > 1) ? viewportRows_ - 2 : 0; }
+int Shell::commandLineRow() const {
+  if (viewportRows_ <= 1) return 0;
+  // Content-relative, not a fixed constant (2026-08-03 revision) --
+  // see the constructor's own comment for the full collision this
+  // replaces. `visible` is how many of scrollback_'s own lines are
+  // CURRENTLY rendered starting from its topIndex_ -- capped at
+  // scrollback_'s own content height (viewportRows_-2) the same way
+  // goToBottom() itself caps it, so the prompt lands right after the
+  // last visible content line: at row 0 when scrollback_ is empty,
+  // growing down as content accumulates, and settling permanently at
+  // the dedicated last-plus-one row (viewportRows_-2) once content
+  // fills or exceeds the content area -- exactly matching how legacy's
+  // own prompt line sits immediately after whatever came before it.
+  int contentHeight = std::max(1, viewportRows_ - 2);
+  int visible = static_cast<int>(scrollback_.lines().size()) - scrollback_.topIndex();
+  return std::max(0, std::min(visible, contentHeight));
+}
 
 int Shell::displayWidth(const std::string &text) const {
   if (options_.encoding != Charset::Encoding::Utf8) return static_cast<int>(text.size());
@@ -984,7 +1029,8 @@ bool Shell::busy() const { return busy_; }
 void Shell::onResize(int rows, int columns) {
   viewportRows_ = rows;
   columns_ = columns;
-  scrollback_.setViewport(0, std::max(1, rows - 1));  // unchanged -- see the constructor's own comment
+  scrollback_.setViewport(0, std::max(1, rows - 2));  // see the constructor's own comment
+  scrollback_.setModeLineRow(rows - 1);
   updateCommandLineField();
   if (masterFd_ >= 0) {
     struct winsize ws {};

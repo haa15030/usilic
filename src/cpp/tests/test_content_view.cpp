@@ -527,6 +527,27 @@ TEST_CASE("redraw draws modeLineText() into the row right after the viewport, in
   CHECK(d.standoutAt(3, 0));
 }
 
+TEST_CASE("setModeLineRow: overrides the mode-line's row away from the default row0+height") {
+  // Added for Shell's own scrollback_ view (2026-08-03): SHELL needs a
+  // row permanently reserved below the scrollable content for its live
+  // prompt overlay, decoupled from where the mode-line itself draws --
+  // see Shell::commandLineRow()'s own comment for the real bug (prompt
+  // vs. last-content-line collision) this unblocks fixing.
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);  // default mode-line row would be 3
+  v.setLines(makeLines(2));
+  v.setModeLineRow(7);
+  v.redraw();
+  CHECK(d.rowText(3)[0] == ' ');  // the default row is untouched
+  CHECK(d.rowText(7).substr(0, v.modeLineText().size()) == v.modeLineText());
+  CHECK(d.standoutAt(7, 0));
+
+  v.setModeLineRow(std::nullopt);  // back to the default
+  v.redraw();
+  CHECK(d.rowText(3).substr(0, v.modeLineText().size()) == v.modeLineText());
+}
+
 TEST_CASE("modeLineText: tracks cursorIndex_, matching legacy print_line()'s row") {
   RecordingDisplay d(10, 20);
   ContentView v(d);

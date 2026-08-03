@@ -273,7 +273,7 @@ TEST_CASE("onTab: does nothing when the completion provider returns more than on
   CHECK(shell.commandLine().text() == "cat a");
 }
 
-TEST_CASE("onResize: repositions the command-line field to the new bottom row/width") {
+TEST_CASE("onResize: repositions the command-line field to the new row/width") {
   RecordingDisplay d(24, 80);
   ShellOptions options;
   options.promptMark = "<M>";
@@ -285,9 +285,13 @@ TEST_CASE("onResize: repositions the command-line field to the new bottom row/wi
 
   typeAscii(shell.commandLine(), "hi");
 
-  CHECK(d.cursorRow() == 8);  // rows - 2: the LAST row (rows - 1) is scrollback_'s own mode-line
-                              // (2026-08-02: commandLine_ and the mode-line must not share a row --
-                              // see Shell::commandLineRow()'s own comment)
+  // commandLineRow() is content-relative (2026-08-03), not a fixed
+  // row -- see its own comment. scrollback_ has no real content lines
+  // yet at this point (the prompt marker cycle itself never becomes a
+  // scrollback line), so the prompt sits at row 0, right after the
+  // (empty) content -- not "rows - 2" the way a fixed-bottom-row
+  // design would place it regardless of how little content exists.
+  CHECK(d.cursorRow() == 0);
   CHECK(d.cursorCol() == 8);  // 6-column prompt + 2 typed chars
 }
 

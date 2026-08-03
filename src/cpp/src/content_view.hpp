@@ -317,6 +317,20 @@ class ContentView {
   using ModeLineFieldsProvider = std::function<ModeLineFields(int cursorIndex)>;
   void setModeLineFieldsProvider(ModeLineFieldsProvider provider);
 
+  // Overrides which screen row the mode-line draws on, decoupling it
+  // from the default row0_+height_ -- nullopt (the default) keeps
+  // every existing caller's behavior unchanged. Added for Shell's own
+  // scrollback_ view (2026-08-03): SHELL needs a THIRD row, permanently
+  // reserved below the scrollable content, for its live prompt overlay
+  // (see Shell::commandLineRow()'s own comment) -- without this, the
+  // prompt and the mode-line would either collide with each other or
+  // with genuine scrollback content, depending on how much scrollback
+  // exists (a real side-by-side comparison against legacy found the
+  // prompt and the true last content line fighting over the same row
+  // once scrollback filled the viewport, see Shell's own class comment
+  // for the full investigation).
+  void setModeLineRow(std::optional<int> row);
+
  private:
   void renderLine(const Line &line, bool marked);
   void renderModeLine();
@@ -361,6 +375,7 @@ class ContentView {
 
   int row0_ = 0, height_ = 0;
   ModeLineFieldsProvider modeLineFieldsProvider_;
+  std::optional<int> modeLineRow_;
 };
 
 }  // namespace fm

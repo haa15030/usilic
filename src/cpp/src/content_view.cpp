@@ -315,6 +315,8 @@ void ContentView::setModeLineFieldsProvider(ModeLineFieldsProvider provider) {
   modeLineFieldsProvider_ = std::move(provider);
 }
 
+void ContentView::setModeLineRow(std::optional<int> row) { modeLineRow_ = row; }
+
 ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &fields,
                                                        const std::string &positionText) const {
   int cols = display_.columns();
@@ -362,8 +364,9 @@ void ContentView::renderModeLine() {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
   std::string positionText = ModeLine::format(current, total);
+  int modeLineRow = modeLineRow_.value_or(row0_ + height_);
 
-  display_.moveCursor(row0_ + height_, 0);
+  display_.moveCursor(modeLineRow, 0);
   display_.clearToEndOfLine();
 
   auto drawSegment = [&](const std::string &text) {
@@ -420,7 +423,7 @@ void ContentView::renderModeLine() {
   if (!fields.rightWatermark.empty()) {
     std::string watermark = " " + fields.rightWatermark + " ";
     if (cols > 0 && drawnLen + static_cast<int>(watermark.size()) <= cols) {
-      display_.moveCursor(row0_ + height_, cols - static_cast<int>(watermark.size()));
+      display_.moveCursor(modeLineRow, cols - static_cast<int>(watermark.size()));
       display_.setAttribute(Display::Attribute::Bold);
       for (unsigned char c : watermark) display_.putChar(c);
       display_.setAttribute(Display::Attribute::BoldOff);
