@@ -39,7 +39,7 @@ bool DuMode::loadUsage(const std::string &path) {
     std::error_code ec;
     entry.isDirectory = std::filesystem::is_directory(entry.path, ec) && !ec;
     entries.push_back(entry);
-    lines.push_back({formatEntryLine(entry), std::nullopt});
+    lines.push_back({formatEntryLine(entry), std::nullopt, std::nullopt});
   }
 
   currentPath_ = path;

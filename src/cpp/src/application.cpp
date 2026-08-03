@@ -1059,7 +1059,7 @@ bool Application::openSelectedArchiveEntry() {
   std::istringstream stream(text);
   std::vector<ContentView::Line> lines;
   std::string line;
-  while (std::getline(stream, line)) lines.push_back({line, std::nullopt});
+  while (std::getline(stream, line)) lines.push_back({line, std::nullopt, std::nullopt});
   archiveContentView_.setLines(std::move(lines));
   archiveContentView_.setCursorIndex(0);
   archiveContentView_.redraw();
@@ -1190,7 +1190,7 @@ bool Application::openSelectedSegment() {
   std::vector<std::string> content = cutMode_.segmentContent(*segment);
   std::vector<ContentView::Line> lines;
   lines.reserve(content.size());
-  for (auto &l : content) lines.push_back({l, std::nullopt});
+  for (auto &l : content) lines.push_back({l, std::nullopt, std::nullopt});
   cutContentView_.setLines(std::move(lines));
   cutContentView_.setCursorIndex(0);
   cutContentView_.redraw();
@@ -1648,7 +1648,7 @@ bool Application::startKey() {
   for (const auto &entry : kKeyTable) {
     std::string label = entry.keyLabel;
     if (label.size() < 10) label.append(10 - label.size(), ' ');
-    lines.push_back({label + "  " + entry.description, std::nullopt});
+    lines.push_back({label + "  " + entry.description, std::nullopt, std::nullopt});
   }
   keyView_.setLines(std::move(lines));
   keyView_.setCursorIndex(0);

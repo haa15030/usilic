@@ -68,7 +68,7 @@ bool CutMode::split(const std::vector<std::string> &sourceLines, const std::stri
 
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(segments_.size());
-  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt});
+  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt});
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(0);
   view_.redraw();
@@ -127,7 +127,7 @@ bool CutMode::goBack() {
 
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(segments_.size());
-  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt});
+  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt});
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(saved->cursorIndex);
   view_.redraw();

@@ -17,6 +17,13 @@ struct DirectoryEntry {
   std::string name;    // filename only (ls -F's trailing "/"/"*"/"@" kept, matching legacy)
   std::string lsLine;   // the full formatted ls line, for display
   bool isDirectory = false;
+  // Byte offset into lsLine where `name` starts -- ported from
+  // scroll.c's get_col()/init_col() (T_dir case), which the cursor-
+  // line's own reverse-video highlight in legacy starts from instead
+  // of column 0 (see stand_str()'s `&rvp->pp->cs[rvp->col]`). Computed
+  // by parseLsLine() alongside `name` itself so ContentView::Line's
+  // highlightStartColumn can be set without re-deriving it.
+  int nameStartColumn = 0;
 };
 
 // Directory-browsing mode: the "home base" screen every other

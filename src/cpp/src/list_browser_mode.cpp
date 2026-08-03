@@ -20,7 +20,7 @@ void ListBrowserMode::show(const std::vector<std::string> &items) {
   items_ = items;
   std::vector<ContentView::Line> lines;
   lines.reserve(items_.size());
-  for (const auto &item : items_) lines.push_back({item, std::nullopt});
+  for (const auto &item : items_) lines.push_back({item, std::nullopt, std::nullopt});
   view_.setLines(std::move(lines));
   view_.setCursorIndex(0);
   view_.redraw();

@@ -214,6 +214,7 @@ void ContentView::goToBottom() {
 
 void ContentView::renderLine(const Line &line, bool marked) {
   marked = marked && cursorHighlightEnabled_;
+  int highlightStart = std::max(0, line.highlightStartColumn.value_or(0));
   bool standoutOn = false;
   auto setStandout = [&](bool on) {
     if (on == standoutOn) return;
@@ -221,8 +222,18 @@ void ContentView::renderLine(const Line &line, bool marked) {
     standoutOn = on;
   };
 
-  setStandout(marked);
+  // `markedNow` starts true only if highlightStart is 0 (the common
+  // case, and every caller but DirectoryMode's ls-listing) -- see
+  // Line::highlightStartColumn's own comment. It flips on exactly once
+  // the loop below reaches column highlightStart.
+  bool markedNow = marked && highlightStart <= 0;
+  setStandout(markedNow);
+  int col = 0;
   for (unsigned char c : line.text) {
+    if (col == highlightStart) {
+      markedNow = marked;
+      setStandout(markedNow);
+    }
     // Tab specifically excluded from the control-byte check below --
     // ported from disp.c's own "convert '\t' to ' '" comment (its
     // count_h()/count_i() column-counting pass does the same
@@ -243,6 +254,7 @@ void ContentView::renderLine(const Line &line, bool marked) {
     // column-aligning run) is deliberate here, not a simplification.
     if (c == '\t') {
       display_.putChar(' ');
+      col++;
       continue;
     }
     // K_dl (0x7f, DEL) and plain control bytes (< 0x20) are shown
@@ -254,18 +266,20 @@ void ContentView::renderLine(const Line &line, bool marked) {
     if (isControl) {
       // Show the control-byte marker distinctly from whatever
       // background is currently active (plain text, or this line's
-      // own whole-line marking), then restore it -- unlike legacy's
+      // own current marking -- markedNow, not marked, now that a line
+      // can be partially marked), then restore it -- unlike legacy's
       // f_grep-conditional dance for the same idea (see the ported-
       // from comment in the header), this is derived structurally
       // (toggle away from the current state, then back) so it stays
       // correct regardless of whether the line is marked.
-      setStandout(!marked);
+      setStandout(!markedNow);
       int shown = (c == 0x7f) ? c - 0x80 : c;
       display_.putChar(shown + '@');
-      setStandout(marked);
+      setStandout(markedNow);
     } else {
       display_.putChar(c);
     }
+    col++;
   }
   setStandout(false);
 }

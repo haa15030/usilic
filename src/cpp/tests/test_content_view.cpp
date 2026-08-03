@@ -9,7 +9,7 @@ namespace {
 
 std::vector<ContentView::Line> makeLines(int n, const std::string &prefix = "line") {
   std::vector<ContentView::Line> lines;
-  for (int i = 0; i < n; i++) lines.push_back({prefix + std::to_string(i), std::nullopt});
+  for (int i = 0; i < n; i++) lines.push_back({prefix + std::to_string(i), std::nullopt, std::nullopt});
   return lines;
 }
 
@@ -37,6 +37,38 @@ TEST_CASE("setCursorHighlightEnabled(false): the cursor line is no longer revers
   v.redraw();
   CHECK(d.standoutAt(0, 0) == false);  // cursor is on line 0, but highlighting is off
   CHECK(d.rowText(0).substr(0, 5) == "line0");  // content itself is unaffected
+}
+
+TEST_CASE("Line::highlightStartColumn: cursor-line reverse-video starts at the given column, not column 0") {
+  // Ported from scroll.c's get_col()/init_col() (T_dir case) via
+  // DirectoryMode::parseLsLine() -- see Line::highlightStartColumn's
+  // own comment for the real-screenshot bug this fixes (the whole
+  // `ls -alF` permissions/size/date prefix wrongly reverse-videoed
+  // along with the filename).
+  RecordingDisplay d(10, 60);  // wide enough for the full ls -l-style line below (20 cols was too narrow, clipping the check columns)
+  ContentView v(d);
+  v.setViewport(0, 3);
+  std::vector<ContentView::Line> lines;
+  ContentView::Line line;
+  line.text = "drwxr-xr-x  1 a  b  0 Jan  1 00:00 name";
+  line.highlightStartColumn = 35;  // where "name" starts
+  lines.push_back(line);
+  v.setLines(lines);
+  v.redraw();
+  CHECK(d.standoutAt(0, 0) == false);   // prefix stays plain
+  CHECK(d.standoutAt(0, 34) == false);  // the space right before "name"
+  CHECK(d.standoutAt(0, 35) == true);   // "name" itself is reverse-video
+  CHECK(d.standoutAt(0, 38) == true);
+}
+
+TEST_CASE("Line::highlightStartColumn: nullopt (the default) still highlights the whole line") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(1));
+  v.redraw();
+  CHECK(d.standoutAt(0, 0) == true);
+  CHECK(d.standoutAt(0, 4) == true);
 }
 
 TEST_CASE("redraw: rows past the end of the list are left blank") {
@@ -445,7 +477,7 @@ TEST_CASE("control bytes render reverse-video, consistent with LineEditor") {
   ContentView v(d);
   v.setViewport(0, 3);
   std::vector<ContentView::Line> lines;
-  lines.push_back({std::string(1, static_cast<char>(1)) + "x", std::nullopt});  // Ctrl-A + 'x'
+  lines.push_back({std::string(1, static_cast<char>(1)) + "x", std::nullopt, std::nullopt});  // Ctrl-A + 'x'
   v.setLines(lines);
   v.redraw();
   CHECK(d.rowText(0)[0] == static_cast<char>(1 + '@'));  // 'A'
@@ -465,7 +497,7 @@ TEST_CASE("a literal tab byte renders as a plain space, not a reverse-video cont
   v.setViewport(0, 3);
   v.setCursorHighlightEnabled(false);  // isolate the tab's own standout, not the cursor row's
   std::vector<ContentView::Line> lines;
-  lines.push_back({std::string("a\tb"), std::nullopt});
+  lines.push_back({std::string("a\tb"), std::nullopt, std::nullopt});
   v.setLines(lines);
   v.redraw();
   CHECK(d.rowText(0)[0] == 'a');

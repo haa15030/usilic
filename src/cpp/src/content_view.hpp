@@ -73,6 +73,24 @@ class ContentView {
     // never reads it -- purely opaque per-line data Shell attaches
     // and later inspects on its own lines_.
     std::optional<std::string> shellCommand;
+
+    // Byte offset (== screen column; see class comment on why this
+    // class never distinguishes the two) where the cursor line's
+    // reverse-video highlight should START, when this line is the
+    // cursor line -- nullopt (the default) means "from column 0", the
+    // previous unconditional whole-line behavior every existing
+    // caller still gets. Ported from scroll.c's get_col()/init_col():
+    // legacy's cursor highlight for `ls -alF`-style directory listings
+    // starts at the filename, not column 0 (stand_str()'s
+    // `&rvp->pp->cs[rvp->col]`) -- found via a real side-by-side CUI
+    // comparison screenshot (2026-08-03) showing this port's directory
+    // listing wrongly reverse-videoing the whole permissions/size/date
+    // prefix along with the name. DirectoryMode is the only caller
+    // that sets this today; every other ContentView user (locate/grep/
+    // history/man/... lists) legitimately highlights the whole line in
+    // legacy too (init_col() returns 0 for those modes), so leaving
+    // this nullopt for them is correct, not an oversight.
+    std::optional<int> highlightStartColumn;
   };
 
   explicit ContentView(Display &display);

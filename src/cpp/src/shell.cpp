@@ -466,7 +466,8 @@ void Shell::flushNewScrollbackLines() {
   if (plines.size() <= linesConsumed_) return;
   std::vector<ContentView::Line> newLines(scrollback_.lines());
   newLines.reserve(plines.size());
-  for (std::size_t i = linesConsumed_; i < plines.size(); i++) newLines.push_back({plines[i].text, std::nullopt});
+  for (std::size_t i = linesConsumed_; i < plines.size(); i++)
+    newLines.push_back({plines[i].text, std::nullopt, std::nullopt});
   linesConsumed_ = plines.size();
   scrollback_.setLines(std::move(newLines));
   scrollback_.goToBottom();
@@ -488,7 +489,7 @@ void Shell::flushNewScrollbackLines() {
 // the prompt node once the command starts producing output.
 void Shell::freezePromptLine(const std::string &command) {
   std::vector<ContentView::Line> newLines(scrollback_.lines());
-  newLines.push_back({promptPlain_ + command, command});
+  newLines.push_back({promptPlain_ + command, command, std::nullopt});
   scrollback_.setLines(std::move(newLines));
   scrollback_.goToBottom();
 }

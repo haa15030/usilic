@@ -24,7 +24,7 @@ std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::str
 
   std::vector<ContentView::Line> lines;
   lines.reserve(pipe.lines().size());
-  for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt});
+  for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt, std::nullopt});
   return lines;
 }
 

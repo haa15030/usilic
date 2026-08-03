@@ -62,7 +62,10 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
     if (line.empty()) continue;
     if (line.rfind("total ", 0) == 0) continue;  // `ls -l`'s block-count summary line, not an entry
     DirectoryEntry entry = parseLsLine(line);
-    lines.push_back({filenameOnlyMode_ ? entry.name : line, std::nullopt});
+    ContentView::Line contentLine;
+    contentLine.text = filenameOnlyMode_ ? entry.name : line;
+    if (!filenameOnlyMode_) contentLine.highlightStartColumn = entry.nameStartColumn;
+    lines.push_back(std::move(contentLine));
     entries.push_back(std::move(entry));
   }
 
@@ -215,6 +218,7 @@ DirectoryEntry DirectoryMode::parseLsLine(const std::string &line) const {
   entry.lsLine = line;
   if (nameStart < line.size()) entry.name = line.substr(nameStart);
   entry.isDirectory = !line.empty() && line[0] == 'd';
+  entry.nameStartColumn = static_cast<int>(nameStart);
   return entry;
 }
 
@@ -252,7 +256,12 @@ void DirectoryMode::setFilenameOnlyMode(bool enabled) {
   filenameOnlyMode_ = enabled;
   std::vector<ContentView::Line> lines;
   lines.reserve(entries_.size());
-  for (const auto &entry : entries_) lines.push_back({enabled ? entry.name : entry.lsLine, std::nullopt});
+  for (const auto &entry : entries_) {
+    ContentView::Line line;
+    line.text = enabled ? entry.name : entry.lsLine;
+    if (!enabled) line.highlightStartColumn = entry.nameStartColumn;
+    lines.push_back(std::move(line));
+  }
   view_.setLines(std::move(lines));
   view_.redraw();
 }

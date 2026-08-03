@@ -76,6 +76,20 @@ TEST_CASE_FIXTURE(Fixture, "enterDirectory: lists real directory contents and cl
   CHECK(sawSpaced);
 }
 
+TEST_CASE_FIXTURE(Fixture, "enterDirectory: nameStartColumn locates the real name, even with an internal space") {
+  // Ported from scroll.c's get_col()/init_col() -- ContentView::Line::
+  // highlightStartColumn (fed from this field) is what makes the
+  // cursor's reverse-video start at the filename instead of column 0,
+  // fixing a real screenshot-reported bug (2026-08-03: the whole
+  // permissions/size/date prefix was wrongly highlighted too).
+  REQUIRE(mode.enterDirectory(path()));
+  for (const auto &e : mode.entries()) {
+    REQUIRE(e.nameStartColumn >= 0);
+    REQUIRE(static_cast<std::size_t>(e.nameStartColumn) <= e.lsLine.size());
+    CHECK(e.lsLine.substr(e.nameStartColumn) == e.name);
+  }
+}
+
 TEST_CASE_FIXTURE(Fixture, "enterDirectory: a nonexistent directory fails cleanly") {
   CHECK_FALSE(mode.enterDirectory(path() + "does-not-exist/"));
 }
