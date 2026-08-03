@@ -513,6 +513,24 @@ void Shell::flushNewScrollbackLines() {
   linesConsumed_ = plines.size();
   scrollback_.setLines(std::move(newLines));
   scrollback_.goToBottom();
+  // commandLineRow() is content-relative (see its own comment) and
+  // grows as scrollback_ does -- but commandLine_'s own field position
+  // was previously only ever re-synced at fixed points (the
+  // constructor, onResize(), handlePromptDetected()), NOT here, on
+  // every single content growth in between. A real command's output
+  // can arrive across several separate flushes (multiple pty reads
+  // before the shell's own next prompt marker completes), during which
+  // window commandLine_'s cached row silently went stale -- normally
+  // invisible since nothing calls commandLine_.redraw() again until
+  // handlePromptDetected() re-syncs it anyway, but real user testing
+  // (2026-08-03, GUI mode specifically) found this staleness window
+  // wide enough to matter there: real output arriving in multiple
+  // frames left the live prompt's own field genuinely out of step with
+  // where scrollback_ had already grown to by the time anything next
+  // touched it. Keeping this in sync on every flush closes that gap
+  // regardless of how many separate reads a command's output happens
+  // to arrive across.
+  updateCommandLineField();
 }
 
 // Appends a PERMANENT record of the just-submitted prompt+command as
