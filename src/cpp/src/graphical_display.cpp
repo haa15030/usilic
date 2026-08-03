@@ -125,6 +125,20 @@ struct GraphicalDisplay::Impl {
 
   int rows = 0, columns = 0;
   int cellWidth = 0, cellHeight = 0;
+  // Real terminal emulator windows (Terminal.app, iTerm, GNOME
+  // Terminal...) all reserve a modest border of window background
+  // around the character grid rather than butting text right up
+  // against the window edge -- this class originally didn't, so a
+  // window that otherwise looked identical still read as visibly
+  // "off" side by side with a real terminal (a real user report,
+  // 2026-08-03, via a Gemini-drafted technical answer the user asked
+  // to have implemented as written: reserve margin pixels on every
+  // side, grow the window by that amount, and offset every draw
+  // position by it). Fixed pixel values (not e.g. a fraction of
+  // cellWidth/cellHeight) because that's what a real terminal's own
+  // margin is -- it doesn't visibly grow or shrink with font size.
+  static constexpr int kMarginX = 15;
+  static constexpr int kMarginY = 15;
   std::vector<Cell> grid;
 
   SDL_Color fg{220, 220, 220, 255};
@@ -210,9 +224,9 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // per-path rendering bug -- this compositor-level upscale is a
   // window/renderer-wide effect neither path could individually cause
   // or avoid).
-  SDL_Window *window =
-      SDL_CreateWindow("usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, cellWidth * columns,
-                        cellHeight * rows, SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+  SDL_Window *window = SDL_CreateWindow(
+      "usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, cellWidth * columns + Impl::kMarginX * 2,
+      cellHeight * rows + Impl::kMarginY * 2, SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
   if (!window) {
     if (fallbackFont) TTF_CloseFont(fallbackFont);
     TTF_CloseFont(font);
@@ -352,7 +366,8 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
 void GraphicalDisplay::renderCellBackground(int row, int col) {
   if (!impl_->outputEnabled) return;
   const Cell &cell = impl_->cellAt(row, col);
-  SDL_Rect box{col * impl_->cellWidth, row * impl_->cellHeight, impl_->cellWidth, impl_->cellHeight};
+  SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth, Impl::kMarginY + row * impl_->cellHeight, impl_->cellWidth,
+               impl_->cellHeight};
   SDL_Color bg = cell.standout ? impl_->fg : impl_->bg;
   SDL_SetRenderDrawColor(impl_->renderer, bg.r, bg.g, bg.b, 255);
   SDL_RenderFillRect(impl_->renderer, &box);
@@ -361,7 +376,8 @@ void GraphicalDisplay::renderCellBackground(int row, int col) {
 void GraphicalDisplay::renderCell(int row, int col) {
   if (!impl_->outputEnabled) return;
   const Cell &cell = impl_->cellAt(row, col);
-  SDL_Rect box{col * impl_->cellWidth, row * impl_->cellHeight, impl_->cellWidth, impl_->cellHeight};
+  SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth, Impl::kMarginY + row * impl_->cellHeight, impl_->cellWidth,
+               impl_->cellHeight};
 
   SDL_Color fg = impl_->fg;
   SDL_Color bg = impl_->bg;
@@ -549,7 +565,9 @@ void GraphicalDisplay::setSize(int rows, int columns) {
   impl_->rows = rows;
   impl_->columns = columns;
   impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
-  if (impl_->window) SDL_SetWindowSize(impl_->window, impl_->cellWidth * columns, impl_->cellHeight * rows);
+  if (impl_->window)
+    SDL_SetWindowSize(impl_->window, impl_->cellWidth * columns + Impl::kMarginX * 2,
+                       impl_->cellHeight * rows + Impl::kMarginY * 2);
 }
 
 std::string GraphicalDisplay::keySequence(Key) const { return ""; }
@@ -596,8 +614,14 @@ bool GraphicalDisplay::pumpEvents() {
         break;
       case SDL_MOUSEBUTTONDOWN: {
         if (event.button.button != SDL_BUTTON_LEFT && event.button.button != SDL_BUTTON_RIGHT) break;
-        int col = event.button.x / std::max(impl_->cellWidth, 1);
-        int row = event.button.y / std::max(impl_->cellHeight, 1);
+        // max(0, ...) before dividing: a click that lands within the
+        // margin border itself (see kMarginX/kMarginY's own comment)
+        // would otherwise subtract past zero and, on most platforms,
+        // truncate toward zero rather than floor -- clamping treats
+        // the whole margin as "the nearest edge cell" instead of
+        // wrapping to a bogus row/column.
+        int col = std::max(0, event.button.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
+        int row = std::max(0, event.button.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
         impl_->mouseQueue.push_back(MouseClick{row, col, event.button.button == SDL_BUTTON_RIGHT});
         if (event.button.button == SDL_BUTTON_LEFT) {
           SDL_CaptureMouse(SDL_TRUE);  // keep tracking motion even if the drag leaves the window
@@ -616,8 +640,8 @@ bool GraphicalDisplay::pumpEvents() {
         if (event.motion.state & SDL_BUTTON_LMASK) {
           impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
         } else {
-          int col = event.motion.x / std::max(impl_->cellWidth, 1);
-          int row = event.motion.y / std::max(impl_->cellHeight, 1);
+          int col = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
+          int row = std::max(0, event.motion.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
           impl_->hoverQueue.push_back(HoverEvent{row, col});
         }
         break;
@@ -736,8 +760,8 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg) {
           // Fit to `width` cells via fitGlyphRect() -- see
           // renderCell()'s own comment on why this shrinks-and-
           // centers instead of stretching.
-          SDL_Rect dst = fitGlyphRect(x * impl_->cellWidth, y, width * impl_->cellWidth, impl_->cellHeight,
-                                       surface->w, surface->h);
+          SDL_Rect dst = fitGlyphRect(Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
+                                       width * impl_->cellWidth, impl_->cellHeight, surface->w, surface->h);
           SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
           SDL_DestroyTexture(texture);
         }
@@ -797,7 +821,8 @@ void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int
 
   if (impl_->rows > 0) {
     int modeLineY = contentRows * impl_->cellHeight;
-    SDL_Rect rowBox{0, modeLineY, impl_->columns * impl_->cellWidth, impl_->cellHeight};
+    SDL_Rect rowBox{Impl::kMarginX, Impl::kMarginY + modeLineY, impl_->columns * impl_->cellWidth,
+                     impl_->cellHeight};
     SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
     SDL_RenderFillRect(impl_->renderer, &rowBox);
     renderTextRun(modeLineY, modeLineText, Color{impl_->bg.r, impl_->bg.g, impl_->bg.b});
