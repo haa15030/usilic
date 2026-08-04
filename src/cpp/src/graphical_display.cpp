@@ -325,12 +325,28 @@ GraphicalDisplay::~GraphicalDisplay() {
   // Benign (no crash, no functional effect either way -- this is an
   // OS-level diagnostic, not anything usilic itself detects or acts
   // on) but noisy; SDL_StopTextInput() here is the documented fix for
-  // exactly this IMK teardown-ordering complaint. Not independently
-  // re-verified in this sandbox (no OS-level log capture available,
-  // same limitation noted throughout this port's other GUI-teardown
-  // work) -- please confirm after rebuilding whether the message is
-  // actually gone on real hardware.
+  // exactly this IMK teardown-ordering complaint.
+  //
+  // A 2026-08-05 follow-up report found the message still appeared,
+  // but specifically when exiting via a KEYBOARD gesture typed while
+  // the window had active text-input focus (ESC-ESC-Enter or ^X^C+y)
+  // -- as opposed to, say, the window's own close button, a plain
+  // mouse action. SDL_StopTextInput() alone only queues the
+  // deactivation with SDL/Cocoa; it doesn't force it to actually run
+  // before SDL_Quit()/window teardown proceeds immediately afterward.
+  // If the OS's Input Method Kit hadn't fully processed that
+  // notification yet -- more likely right after it was just actively
+  // handling live keyboard/IME input than after an idle mouse click --
+  // that's a plausible reason it would still complain. SDL_PumpEvents()
+  // gives SDL's own event/run-loop machinery one more explicit pass to
+  // actually deliver that notification before this destructor
+  // continues into destroying the window. Still not independently
+  // verified in this sandbox (no OS-level log capture available, same
+  // limitation noted throughout this port's other GUI-teardown work)
+  // -- please retest specifically via ESC-ESC-Enter and ^X^C+y after
+  // rebuilding.
   SDL_StopTextInput();
+  SDL_PumpEvents();
   if (impl_->handCursor) SDL_FreeCursor(impl_->handCursor);
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);
