@@ -1536,6 +1536,30 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         anyEventThisFrame = true;
         applyHoverRowAndRedraw(app.activeContentView(), hover->row, /*moveCursor=*/true);
       }
+    } else {
+      // Drain without acting on any of it (2026-08-05 fix): a real
+      // user report -- right after releasing a "cat's paw" flick and
+      // letting it coast to a stop, the block cursor visibly jumped up
+      // and down "as if replaying" the mouse motion from during the
+      // drag/coast itself. GraphicalDisplay::pumpEvents() keeps
+      // queuing every SDL_MOUSEMOTION sample as a HoverEvent whenever
+      // no button is held (see its own SDL_MOUSEMOTION case) --
+      // including motion sampled WHILE coasting (button already
+      // released, but coastLevel > 0 the whole time it animates), and
+      // this gate above skips consuming (hence draining) that queue
+      // for the entire duration of a drag/coast. Every one of those
+      // samples piled up UNDRAINED, then all got processed back-to-
+      // back the instant this gate reopened once the coast settled --
+      // and since applyHoverRowAndRedraw()'s own redraw() ends in a
+      // real flush()/SDL_RenderPresent() each time, that wasn't one
+      // instant snap to the final position but a rapid-fire sequence
+      // of real, visible frames -- exactly the "replaying past mouse
+      // operations" look reported. Actively discarding the backlog
+      // here (rather than just skipping the block that would have
+      // consumed it) means there's nothing stale left queued by the
+      // time hovering becomes meaningful again.
+      while (gui.consumeHoverEvent()) {
+      }
     }
     while (auto key = gui.consumeKeyEvent()) {
       anyEventThisFrame = true;
