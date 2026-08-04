@@ -235,6 +235,28 @@ TEST_CASE("isColumnWithinLineScope: false for an out-of-range line index") {
   CHECK_FALSE(v.isColumnWithinLineScope(2, 0));
 }
 
+TEST_CASE("setLines: resets topIndex_ to 0, so a stale deep scroll position from the PREVIOUS content "
+          "doesn't leave a much-shorter new listing scrolled almost to its own end (2026-08-05 user "
+          "reproduction: cpp/(7 entries) -> Enter into src/(74 entries) -> scroll down several lines -> "
+          "back up to cpp/ again -- cursorIndex_ itself was already correctly restored to a low, valid "
+          "index by the caller's own history-based restore, but the stale topIndex_ from src/'s deep "
+          "scroll survived and left cpp/'s own listing showing only its last couple of entries despite "
+          "all 7 easily fitting in a tall-enough viewport; note the viewport here is deliberately taller "
+          "than cursorIndex_ so clampViewport()'s own bottom-anchor branch does NOT independently explain "
+          "topIndex_ landing on 0 -- this test isolates the setLines() reset itself)") {
+  RecordingDisplay d(20, 20);
+  ContentView v(d);
+  v.setViewport(0, 10);
+  v.setLines(makeLines(74, "deep"));
+  v.setCursorIndex(5);
+  v.setTopIndex(50);  // mimics scrolling deep into a long listing, decoupled from cursorIndex_
+  REQUIRE(v.topIndex() == 50);
+
+  v.setLines(makeLines(7, "short"));  // a much shorter, unrelated listing replaces it wholesale
+  REQUIRE(v.cursorIndex() == 5);      // stays valid/unchanged -- not what forces the reset
+  CHECK(v.topIndex() == 0);
+}
+
 TEST_CASE("setModeLineFieldsProvider: modeLineText wraps name/trailing around the position text") {
   RecordingDisplay d(10, 60);
   ContentView v(d);

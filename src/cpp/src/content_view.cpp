@@ -18,6 +18,28 @@ void ContentView::setLines(std::vector<Line> lines) {
   lines_ = std::move(lines);
   if (cursorIndex_ >= static_cast<int>(lines_.size()))
     cursorIndex_ = std::max(0, static_cast<int>(lines_.size()) - 1);
+  // topIndex_, like hoverIndex_ below, is stale scroll-position state
+  // left over from whatever content THIS view was showing before --
+  // meaningless (and actively harmful) once that content is replaced
+  // wholesale. Added after a real user report/reproduction: cpp/(7
+  // entries) -> Enter into src/(74 entries) -> scroll several lines
+  // down (leaving src/'s OWN topIndex_ well into double digits) ->
+  // back up to cpp/ again. cursorIndex_ itself gets correctly re-
+  // clamped/restored (both here and by the caller's own subsequent
+  // setCursorIndex() call, e.g. DirectoryMode::enterDirectory()'s
+  // history-position restore), but the OLD, much-larger topIndex_
+  // from src/ survived into cpp/'s own redraw() -- clampViewport()'s
+  // own "topIndex_ > cursorIndex_ ? snap down" branch only fires when
+  // topIndex_ is GREATER than the (now-clamped, in-range) cursorIndex_,
+  // which a merely-still-in-bounds stale topIndex_ doesn't necessarily
+  // trip, so cpp/'s listing rendered scrolled almost to its own end
+  // (showing only its last couple of entries) despite all 7 entries
+  // easily fitting in one screen. Resetting to 0 here means every
+  // fresh setLines() starts from a clean, correct scroll position,
+  // with the caller's own setCursorIndex() (if any) free to scroll it
+  // back down again via the normal clampViewport() path if the
+  // restored cursor position genuinely needs it.
+  topIndex_ = 0;
   // hoverIndex_ (a separate, purely visual override -- see its own
   // setter comment) can't be trusted to mean anything once the actual
   // content underneath it has been replaced wholesale: it was still an
