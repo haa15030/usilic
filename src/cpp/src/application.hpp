@@ -85,6 +85,25 @@ enum class Command {
   StartDu,
   StartDirectoryHistory,
   StartCommandHistory,
+  // K-49 (plain ^R, M_hist, " HISTORY"): NOT a way to jump to a
+  // DIFFERENT category from outside a list browser (an earlier
+  // version of this port mistook it for exactly that, aliasing it to
+  // StartDirectoryHistory -- wrong, per a direct 2026-08-04 user
+  // clarification and a re-read of menu.c's m_list(), which is purely
+  // context-sensitive: `is_name(ap->name, M_lfile) -> T_hfile`, etc).
+  // Toggles the CURRENTLY-OPEN ListBrowser (whichever RingCategory --
+  // FILE/DIR/MAN/LOCATE/FGREP/EGREP/COMMAND) between its two display
+  // modes: normal (sorted alphabetically, de-duplicated -- de-dup
+  // already came for free from History::pushRecent()'s own
+  // first-occurrence-wins policy, but sorting did not) and
+  // "HISTORY" (raw chronological access order, oldest at the top,
+  // NEWEST AT THE BOTTOM ROW -- confirmed directly by the user: "FILE
+  // （DIR）は今までアクセスしたファイル（ディレクトリ）をソートした
+  // のち重複を排除した一覧、HISTORYはアクセスした順（最下行が最
+  // 新）"). A no-op (returns false) outside ListBrowser mode, matching
+  // m_list()'s own `echo_mess(S_errf)` when ^R doesn't apply to the
+  // current context -- see Application::toggleListBrowserHistory().
+  ToggleHistoryView,
   StartEdit,
   StartHelp,
   StartMacroRecord,
@@ -212,9 +231,12 @@ enum class Command {
   CycleCharset,
   // K-46 (^X^F, "FILE: Select file name"): opens a ListBrowser over
   // RingCategory::RecentFile. K-48 (^X^D, "DIR: Select directory
-  // name") reuses the ALREADY-EXISTING StartDirectoryHistory (^R's
-  // own command -- same RingCategory::RecentDirectory picker, just a
-  // second way to reach it), so needs no command of its own.
+  // name") reuses the ALREADY-EXISTING StartDirectoryHistory, so
+  // needs no command of its own. (Correction, 2026-08-04: an earlier
+  // version of this comment additionally claimed StartDirectoryHistory
+  // was "^R's own command" -- wrong, see ToggleHistoryView's own
+  // comment for why plain ^R is unrelated to which RingCategory is
+  // being browsed.)
   StartFileHistory,
   // K-2 (^H, M_key, "KEY"): shows a browsable table of this port's
   // own key bindings (mirroring dispatchByte()'s/resolveCommand()'s
@@ -1131,6 +1153,8 @@ class Application {
   void layoutViews();
   std::vector<std::string> collectTargetPaths() const;
   bool startListBrowser(RingCategory category);
+  // See ToggleHistoryView's own comment.
+  bool toggleListBrowserHistory();
   // K-2 (^H, M_key, "KEY"): see startKey()'s own definition comment.
   bool startKey();
   // Enter while in Key mode: returns to keyReturnMode_ FIRST (matching
@@ -1394,6 +1418,9 @@ class Application {
   std::string shellReturnName_;
   ApplicationMode listBrowserReturnMode_ = ApplicationMode::Directory;
   RingCategory listBrowserCategory_ = RingCategory::RecentDirectory;
+  // See ToggleHistoryView's own comment. Reset to false every fresh
+  // startListBrowser() entry; flipped by toggleListBrowserHistory().
+  bool listBrowserChronological_ = false;
   ApplicationMode keyReturnMode_ = ApplicationMode::Directory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;

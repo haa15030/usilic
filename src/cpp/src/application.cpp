@@ -66,7 +66,7 @@ const KeyTableEntry kKeyTable[] = {
     {"^G", "Back / cancel", {kControlG}},
     {"^S", "FGREP", {kControlS}},
     {"^Space", "Toggle mark (CP/MV/RM/ARC)", {0x80}},
-    {"^R", "HISTORY (directory)", {0x12}},
+    {"^R", "Toggle chronological HISTORY view (current list browser)", {0x12}},
     {"^L", "Redraw screen", {0x0c}},
     {"^T", "TCB banner", {0x14}},
     {"q", "Exit tcb (pager)", {'q'}},
@@ -85,7 +85,7 @@ const KeyTableEntry kKeyTable[] = {
     {"^J p", "PROGRAM", {kLeaderJ, 'p'}},
     {"^J l", "LOCATE", {kLeaderJ, 'l'}},
     {"^J d", "DU", {kLeaderJ, 'd'}},
-    {"^J ^R", "HISTORY (SHELL commands)", {kLeaderJ, 0x12}},
+    {"^J ^R", "COMMAND (programs run at SHELL)", {kLeaderJ, 0x12}},
     {"^J e", "EDIT", {kLeaderJ, 'e'}},
     {"^J ^H", "HELP", {kLeaderJ, 0x08}},
     {"^J .", "SHELL: cd <directory>", {kLeaderJ, '.'}},
@@ -214,9 +214,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // tested against a synthetic provider (see test_shell.cpp).
   shell_.setCompletionProvider(
       [this](const std::string &partial) { return completeFilesystemPath(partial, shell_.currentDirectory()); });
-  // K-49 (^R)/^J^R's own RingCategory::ShellCommand history, plus this
-  // port's new ^P/^N command recall (see feedShellByte()'s own
-  // comment). Shell::submitLine() has always called historyRecorder_
+  // K-50 (^J^R)'s own RingCategory::ShellCommand history (2026-08-04
+  // correction: NOT plain ^R -- see ToggleHistoryView's own comment),
+  // plus this port's new ^P/^N command recall (see feedShellByte()'s
+  // own comment). Shell::submitLine() has always called historyRecorder_
   // (if set) after successfully running a typed command -- but
   // nothing here ever SET it, discovered while building ^P/^N
   // (2026-08-02): this category was silently empty forever, meaning
@@ -255,7 +256,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     return {"KEY", previousModeName(keyReturnMode_), /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
   });
   // Mode-line fields for the LIST-based history pickers (K-45..K-49,
-  // ^X^F/^X^D/^R/etc): the category itself ("FILE"/"DIR"/"HISTORY"/
+  // ^X^F/^X^D/^R/etc): the category itself ("FILE"/"DIR"/"COMMAND"/
   // etc, matching legacy's own " FILE_HISTORY"-style naming,
   // RingCategory's own comments) as the LEFT-aligned name field, and
   // the highlighted item's own string as the trailing field -- a real
@@ -268,12 +269,19 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // comparison against legacy, 2026-08-03, showed the category name
   // belongs unparenthesized at the LEFT edge, e.g. "FILE 1/5 END
   // /path/to/file", not "(FILE)" trailing after the path). A live
-  // callback since both cursorIndex and listBrowserCategory_ change
-  // across separate entries.
+  // callback since cursorIndex, listBrowserCategory_, AND (2026-08-04
+  // addition) listBrowserChronological_ all change across separate
+  // entries/toggles: when the user has pressed ^R to switch the
+  // current list into its chronological "HISTORY" view (see
+  // ToggleHistoryView's own comment), the name field shows the fixed
+  // literal "HISTORY" instead of the category's own normal label,
+  // matching legacy's mp[M_hist]==" HISTORY" applying uniformly to
+  // T_hfile/T_hdir/etc regardless of which underlying ring is shown.
   listBrowserView_.setModeLineFieldsProvider([this](int cursorIndex) -> ContentView::ModeLineFields {
     const auto &items = listBrowserMode_.items();
     if (cursorIndex < 0 || cursorIndex >= static_cast<int>(items.size())) return {};
-    return {ringCategoryLabel(listBrowserCategory_), items[cursorIndex], /*fillTrailingToEdge=*/false,
+    std::string name = listBrowserChronological_ ? "HISTORY" : ringCategoryLabel(listBrowserCategory_);
+    return {name, items[cursorIndex], /*fillTrailingToEdge=*/false,
             /*rightWatermark=*/""};
   });
   // CutContent (the currently-selected CUT segment's own content --
@@ -343,7 +351,16 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
 std::string Application::ringCategoryLabel(RingCategory category) const {
   switch (category) {
     case RingCategory::ShellCommand:
-      return "HISTORY";
+      // K-50 (^J^R, M_cmd, " COMMAND"), per usilicrc's own line 286
+      // ("COMMAND : Select program executed at SHELL"). NOT "HISTORY"
+      // -- that label is reserved for M_hist's own chronological-view
+      // toggle (see ToggleHistoryView's comment), which is orthogonal
+      // to which RingCategory is being browsed and applies to ANY of
+      // them, this one included. An earlier version of this port
+      // conflated the two (both being vaguely "history"-shaped),
+      // corrected 2026-08-04 after a direct user clarification about
+      // plain ^R's own, unrelated behavior surfaced the mix-up.
+      return "COMMAND";
     case RingCategory::RecentFile:
       return "FILE";
     case RingCategory::RecentDirectory:
@@ -455,8 +472,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::StartKey;
     case 0x80:  // ^Space (M_mark) -- KeyInput reports a literal NUL/Ctrl-Space as 0x80, see its class comment
       return Command::ToggleMark;
-    case 0x12:  // ^R (M_hist)
-      return Command::StartDirectoryHistory;
+    case 0x12:  // ^R (M_hist) -- see ToggleHistoryView's own comment
+      return Command::ToggleHistoryView;
     case 0x0c:  // ^L (M_clear)
       return Command::Redraw;
     case 0x14:  // ^T (M_tcb, K-0, "TCB")
@@ -562,7 +579,7 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartDirectoryInput);
       case 0x06:  // ^X ^F : FILE (select file name, K-46)
         return handleCommand(Command::StartFileHistory);
-      case 0x04:  // ^X ^D : DIR (select directory name, K-48) -- reuses ^R's own StartDirectoryHistory
+      case 0x04:  // ^X ^D : DIR (select directory name, K-48)
         return handleCommand(Command::StartDirectoryHistory);
       case kControlC:  // ^X ^C : exit
         return handleCommand(Command::StartExit);
@@ -1081,6 +1098,8 @@ bool Application::handleCommand(Command command) {
       return startListBrowser(RingCategory::RecentDirectory);
     case Command::StartCommandHistory:
       return startListBrowser(RingCategory::ShellCommand);
+    case Command::ToggleHistoryView:
+      return toggleListBrowserHistory();
     case Command::StartEdit:
       return executeEdit();
     case Command::StartHelp:
@@ -1804,17 +1823,59 @@ bool Application::startPathInputPrompt(bool isDirectory) {
 // ambiguous categories (see class comment). Not prompt-driven -- this
 // is an immediate action, like archive-browsing's auto-detection,
 // not a text-entry flow. Directory-only entry, matching every other
-// history-adjacent action in this slice. History::recentEntries()
-// returns oldest-first; shown newest-first here, the more useful
-// order for a "recent items" picker.
+// history-adjacent action in this slice.
+//
+// Shown sorted alphabetically, de-duplicated -- confirmed directly by
+// the user (2026-08-04): "FILE（DIR）は今までアクセスしたファイル
+// （ディレクトリ）をソートしたのち重複を排除した一覧" ("FILE/DIR is
+// a list of accessed files/directories, sorted then de-duplicated").
+// De-dup already came for free from History::pushRecent()'s own
+// first-occurrence-wins policy; sorting is new here (2026-08-04) --
+// an earlier version of this function instead showed reverse-
+// chronological order (recent.rbegin()/rend()), which the user's
+// clarification revealed was never actually what legacy shows for
+// this normal (non-^R) view. The chronological order the earlier
+// version approximated is real, but belongs to the SEPARATE "HISTORY"
+// toggle instead -- see toggleListBrowserHistory().
 bool Application::startListBrowser(RingCategory category) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   const std::deque<std::string> &recent = history_.recentEntries(category);
-  std::vector<std::string> items(recent.rbegin(), recent.rend());
+  std::vector<std::string> items(recent.begin(), recent.end());
+  std::sort(items.begin(), items.end());
   listBrowserCategory_ = category;
   listBrowserReturnMode_ = currentMode_;
+  listBrowserChronological_ = false;
   listBrowserMode_.show(items);
   currentMode_ = ApplicationMode::ListBrowser;
+  return true;
+}
+
+// K-49 (plain ^R, M_hist): see ToggleHistoryView's own comment for the
+// full story. Re-shows listBrowserCategory_'s own ring, but toggled
+// between startListBrowser()'s own sorted/de-duplicated order and raw
+// chronological order (History::recentEntries() already returns
+// oldest-first, i.e. exactly "newest at the bottom row" with no
+// reversal needed) -- entering chronological order additionally moves
+// the cursor to the LAST entry, so the newest item is what's actually
+// visible/selected first, matching the user's own description
+// ("最下行が最新", confirmed directly, 2026-08-04) and legacy's own
+// mode.c (M_hist/T_hist group: `pnp->row = hp->bp->nrow - 1;`).
+// A no-op outside ListBrowser mode, matching m_list()'s own
+// `echo_mess(S_errf)` for a context ^R doesn't apply to.
+bool Application::toggleListBrowserHistory() {
+  if (currentMode_ != ApplicationMode::ListBrowser) return false;
+  listBrowserChronological_ = !listBrowserChronological_;
+  const std::deque<std::string> &recent = history_.recentEntries(listBrowserCategory_);
+  std::vector<std::string> items(recent.begin(), recent.end());
+  if (!listBrowserChronological_) std::sort(items.begin(), items.end());
+  listBrowserMode_.show(items);
+  if (listBrowserChronological_ && !items.empty()) {
+    // show() itself already redrew once with cursorIndex_ freshly
+    // reset to 0 -- redraw() again so the screen (not just internal
+    // state) actually reflects the moved-to-the-end cursor below.
+    listBrowserView_.setCursorIndex(static_cast<int>(items.size()) - 1);
+    listBrowserView_.redraw();
+  }
   return true;
 }
 

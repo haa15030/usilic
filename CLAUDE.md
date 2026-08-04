@@ -9495,6 +9495,84 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       続行する。「8/7」関連の追加調査は上記の通り不要(誤読と判明
       済み)。
 
+160. **2026-08-04(続き): `^X^F`(FILE)/`^X^D`(DIR)で開く一覧の`^R`
+    (HISTORY)を実装。旧実装は`^R`を`^X^D`のエイリアスとして誤配線
+    しており、既に開いているFILE一覧の中で押しても何も起きなかった**。
+    ユーザーから「いくつかファイルを閲覧後、`^X^F`で表示される
+    ファイル一覧(FILE画面)での`^R`(HISTORY)をよろしく」と、
+    スクショ無しでの依頼があった。
+   - **調査**: 現行実装では、単発の`^R`(バイト`0x12`)が
+      `Command::StartDirectoryHistory`(`RingCategory::RecentDirectory`、
+      本来`^X^D`用)に配線されており、しかも`startListBrowser()`は
+      `currentMode_ != Directory`で即座に失敗する設計だったため、
+      `^X^F`でFILE一覧に入った状態で`^R`を押しても完全に無反応
+      だった。`menu.c`の`m_list()`を読み、`^R`(`M_hist`)が現在の
+      文脈(`ap->name`)を見て挙動を変える、文脈依存キーだと判明
+      (`is_name(ap->name, M_lfile) -> T_hfile`等)。`sub.c`の
+      `.tcb/history`保存処理(`ss.p.file`/`ss.p.dir`/`ss.p.man`/
+      `ss.p.cmd`/`ss.p.hist`)がそれぞれ独立したフィールドだった
+      ことから、ソースだけでは`^R`が具体的に「何を」表示するのか
+      断定できず、一度ユーザーに実機確認を依頼した。返信は簡潔かつ
+      明確: 「FILE(DIR)は今までアクセスしたファイル(ディレクトリ)
+      をソートしたのち重複を排除した一覧、HISTORYはアクセスした順
+      (最下行が最新)。それだけ。」
+   - **設計**: FILE/DIR/MAN/LOCATE/FGREP/EGREP/COMMANDいずれの
+      一覧も、通常表示は「アルファベット順ソート+重複排除」
+      (重複排除は`History::pushRecent()`の`first-occurrence-wins`
+      で既に実現済み、ソートは今回新規)。`^R`は今開いている一覧を
+      その場で「アクセスした時系列順(`History::recentEntries()`が
+      元々返す`oldest..newest`の並びそのまま、逆順にしない=最下行が
+      最新)」に切り替えるトグルで、モードラインの名前欄も
+      カテゴリ名から`"HISTORY"`に変わる(legacyの`mp[M_hist]`が
+      `T_hfile`/`T_hdir`等すべてに共通して`" HISTORY"`を返す挙動と
+      対応)。カテゴリ自体を切り替えるものではない(ある一覧の
+      「並び順」を切り替えるだけ)。ListBrowser以外の文脈での`^R`は
+      何もしない(legacyの`echo_mess(S_errf)`相当、UI上のエラー
+      メッセージまでは今回実装せず単純な no-op)。
+   - **副次的な訂正**: 同じ`M_hist`/`M_cmd`混同の一環として、
+      `RingCategory::ShellCommand`(`^J^R`、K-50)の`ringCategoryLabel()`
+      が`"HISTORY"`を返していたのを`"COMMAND"`に訂正(usilicrc
+      286行目「COMMAND : Select program executed at SHELL」に対応)。
+      `"HISTORY"`は上記トグルの固定リテラルとして専有するため、
+      カテゴリ自身のラベルと衝突させないための変更。
+   - **実装**: `Command::ToggleHistoryView`を新設し、単発`^R`
+      (`resolveCommand()`のバイト`0x12`)をこれに配線(旧
+      `StartDirectoryHistory`への誤配線を解消、`^X^D`自体は
+      引き続き`StartDirectoryHistory`で正しく動作)。
+      `Application::startListBrowser()`は`recent.rbegin()/rend()`
+      (逆時系列)ではなく`std::sort()`(アルファベット順)で一覧を
+      構築するよう変更、新規`listBrowserChronological_`フラグを
+      追加してフラッシュ時に`false`リセット。新規
+      `Application::toggleListBrowserHistory()`が、
+      `currentMode_ == ListBrowser`のときのみ、同じ
+      `listBrowserCategory_`のまま`listBrowserChronological_`を
+      反転し、`recentEntries()`を(非時系列時のみソートして)
+      再表示、時系列モードでは末尾(最新)へカーソルを移動して
+      `redraw()`する(実装時、`ListBrowserMode::show()`自身が内部で
+      1回`redraw()`済みの状態でカーソルだけ動かし`redraw()`を
+      呼び忘れる、という一度目の実装ミスをPTY検証で発見・修正――
+      doctestでは`modeLineText()`等ライブ計算のgetterしか見ておらず
+      この種の「画面に実際に再描画されない」バグを検知できないため、
+      PTY実機相当の検証が今回も有効だった)。
+   - **検証**: `test_application.cpp`に新規doctest2件を追加
+      (`^R`でFILE↔HISTORYを往復できカーソルが末尾に動きモードライン
+      名が変わること、ListBrowser以外での`^R`が no-op であること)。
+      既存の関連doctest3件(`resolveCommand`の`^R`の戻り値、旧・
+      逆時系列順の一覧表示、`Enter`でのディレクトリ選択)も新しい
+      正しい仕様(`ToggleHistoryView`/ソート順)に合わせて書き換えた。
+      既存603件+新規2件=605件全通過、
+      警告ゼロ。実バイナリを`-c`でPTY起動し、`doc/`ディレクトリで
+      `^N`×2→`Enter`(CHANGESを開く)→`^G`→`^N`×4→`Enter`
+      (HELP.jpを開く)→`^G`→`^X^F`という実際の手順を再現、
+      モードラインが`FILE 1/2 TOP CHANGES`(ソート順、Cが先)→
+      `^R`→`HISTORY 2/2 END HELP.jp`(時系列順、後から開いた
+      HELP.jpが末尾/最新)→`^R`→`FILE 1/2 TOP CHANGES`(ソート順に
+      復帰)と正しく切り替わることを生バイト列で確認した。Ubuntu
+      26.04クロスビルド(新規Dockerコンテナ)でも失敗12件はすべて
+      既知の環境依存差のみ(総数603件、591件通過+12件既知失敗)で
+      あることを確認、直後にMac側を再ビルドして605/605件を
+      再確認済み。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

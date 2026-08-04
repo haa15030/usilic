@@ -2485,8 +2485,14 @@ TEST_CASE_FIXTURE(Fixture, "DU: ^G cancels the pre-filled prompt without running
 // command history) -- see class comment for why only these 2 of
 // m_list()'s 9 categories are wired in this slice --
 
-TEST_CASE_FIXTURE(Fixture, "resolveCommand: ^R resolves to StartDirectoryHistory") {
-  CHECK(Application::resolveCommand(0x12, std::nullopt) == Command::StartDirectoryHistory);
+TEST_CASE_FIXTURE(Fixture, "resolveCommand: ^R resolves to ToggleHistoryView, not StartDirectoryHistory "
+                           "(2026-08-04 correction: an earlier version of this port aliased plain ^R to "
+                           "StartDirectoryHistory, going by a surface-level reading of usilicrc's own key "
+                           "list; a direct user clarification plus a re-read of menu.c's m_list() showed ^R "
+                           "is actually a context-sensitive toggle on whichever ListBrowser is already open, "
+                           "unrelated to which RingCategory that happens to be -- see ToggleHistoryView's own "
+                           "comment)") {
+  CHECK(Application::resolveCommand(0x12, std::nullopt) == Command::ToggleHistoryView);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^R starts the command-history browser (StartCommandHistory)") {
@@ -2506,34 +2512,41 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDirectoryHistory): refused outsid
   CHECK_FALSE(app.handleCommand(Command::StartDirectoryHistory));
 }
 
-TEST_CASE_FIXTURE(Fixture, "history browser: shows real pushRecent() entries, newest first") {
-  // app.start() itself now auto-records path() via DirectoryMode::
-  // enterDirectory()'s own pushRecent() call (K-48's data source) --
-  // done FIRST here so it's the OLDEST entry, keeping the three
-  // pushed below exactly as the newest three, same relative order
-  // this test always asserted.
+TEST_CASE_FIXTURE(Fixture, "history browser: shows real pushRecent() entries sorted alphabetically, "
+                           "de-duplicated (2026-08-04 correction: a direct user clarification -- \"FILE"
+                           "（DIR）は今までアクセスしたファイル（ディレクトリ）をソートしたのち重複を排除"
+                           "した一覧\" -- replaced this port's earlier reverse-chronological order, which "
+                           "was never actually what the normal ^X^D screen shows; reverse-chronological "
+                           "order is real, but belongs to the separate ^R \"HISTORY\" toggle instead -- see "
+                           "the toggleListBrowserHistory tests below)") {
   REQUIRE(app.start(path()));
   history.pushRecent(RingCategory::RecentDirectory, "/one");
   history.pushRecent(RingCategory::RecentDirectory, "/two");
   history.pushRecent(RingCategory::RecentDirectory, "/three");
+  history.pushRecent(RingCategory::RecentDirectory, "/one");  // de-dup: re-visiting doesn't add a second entry
 
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(app.listBrowserMode().items().size() == 4);
-  CHECK(app.listBrowserMode().items()[0] == "/three");
-  CHECK(app.listBrowserMode().items()[1] == "/two");
-  CHECK(app.listBrowserMode().items()[2] == "/one");
-  CHECK(app.listBrowserMode().items()[3] == path());
+  const auto &items = app.listBrowserMode().items();
+  REQUIRE(items.size() == 4);  // path() (auto-recorded by start()) + /one, /two, /three -- NOT 5, dedup held
+  CHECK(std::is_sorted(items.begin(), items.end()));
+  CHECK(std::find(items.begin(), items.end(), "/one") != items.end());
+  CHECK(std::find(items.begin(), items.end(), "/two") != items.end());
+  CHECK(std::find(items.begin(), items.end(), "/three") != items.end());
+  CHECK(std::find(items.begin(), items.end(), path()) != items.end());
 }
 
 TEST_CASE_FIXTURE(Fixture, "history browser: Enter on a recent directory navigates DirectoryMode there") {
-  // Same ordering note as the test above -- start() first so its own
-  // auto-recorded path() is the OLDEST entry, leaving subdir/ as the
-  // newest (and therefore default-selected, index 0) one.
   REQUIRE(app.start(path()));
   history.pushRecent(RingCategory::RecentDirectory, (root / "subdir").string());
 
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  const auto &items = app.listBrowserMode().items();
+  auto it = std::find(items.begin(), items.end(), (root / "subdir").string());
+  REQUIRE(it != items.end());
+  while (app.listBrowserMode().selectedItem() == nullptr ||
+         *app.listBrowserMode().selectedItem() != (root / "subdir").string())
+    app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
 
   CHECK(app.currentMode() == ApplicationMode::Directory);
@@ -2541,6 +2554,36 @@ TEST_CASE_FIXTURE(Fixture, "history browser: Enter on a recent directory navigat
   for (const auto &entry : app.directoryMode().entries())
     if (entry.name.find("sub.txt") != std::string::npos) sawSubTxt = true;
   CHECK(sawSubTxt);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R (ToggleHistoryView): switches the open FILE list-browser from sorted to "
+                           "chronological order, newest at the LAST index, and back (2026-08-04, direct "
+                           "user clarification: \"HISTORYはアクセスした順（最下行が最新）\")") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  CHECK(std::is_sorted(app.listBrowserMode().items().begin(), app.listBrowserMode().items().end()));
+
+  REQUIRE(app.handleCommand(Command::ToggleHistoryView));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // still the same screen, not a new one
+  REQUIRE(app.listBrowserMode().items().size() == 1);
+  CHECK(app.listBrowserMode().items().back() == (root / "plain.txt").string());  // newest at the bottom
+  CHECK(app.activeContentView().cursorIndex() == static_cast<int>(app.listBrowserMode().items().size()) - 1);
+  CHECK(app.activeContentView().modeLineText().rfind("HISTORY ", 0) == 0);  // "HISTORY", not "FILE"
+
+  REQUIRE(app.handleCommand(Command::ToggleHistoryView));  // toggling again returns to sorted view
+  CHECK(app.activeContentView().modeLineText().rfind("FILE ", 0) == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHistoryView): refused outside ListBrowser mode, matching "
+                           "m_list()'s own echo_mess(S_errf) for a context ^R doesn't apply to") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.handleCommand(Command::ToggleHistoryView));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
 TEST_CASE_FIXTURE(Fixture, "command history: Enter on an entry is a no-op in this slice") {

@@ -922,3 +922,23 @@ cutContentView_のモードラインプロバイダも修正しました。ス�
 何が起きているのか、本当に知りたいね。
 
 >正直に振り返りました。最初の低解像度サムネイルで「8」という仮説を立ててしまい、以降の再クロップでもゼロから読み直すのではなく、その仮説に合わせて曖昧なピクセルの塊を解釈していた(1回目は下半分だけ見て「0」寄りに、2回目はフル高さを見たのに結局「8」に引き戻された)という、思い込みに基づくパターン補完が起きていたと説明しました。等幅ビットマップフォントの「6」は上のフック部分が小さいと「8」の上のループのように見えやすく、Retina画像の縮小・パッチ化で細部の情報も失われるため、そもそも小さな1桁を確信を持って読み取れる保証が無いことも合わせて伝えました。CLAUDE.mdの「8/7の正体調査」節と、それに基づく.f.line調査・端末カーソル重なり説を撤回し、「6/7が最初から正しく、Claude側の画像読み取りミスだった」という結論に置き換える形で記録を訂正します。
+
+<次はスクショはないけどいくつかファイルを閲覧後、^X^Fで表示されるファイル一覧（FILE画面）での^R（HISTORY）をよろしく。
+
+>調査しました。現行実装は単発の^R（バイト0x12）をCommand::StartDirectoryHistory（RingCategory::RecentDirectory、本来^X^D用）に配線しており、しかもstartListBrowser()はcurrentMode_ != Directoryで即座に失敗する設計のため、^X^FでFILE一覧に入った状態で^Rを押しても完全に無反応でした。
+
+menu.cのm_list()を読んだところ、^R（M_hist）は現在の文脈（ap->name）を見て挙動を変える、文脈依存のキーだと分かりました（is_name(ap->name, M_lfile) -> T_hfile等）。sub.cの.tcb/history保存処理（ss.p.file/ss.p.dir/ss.p.man/ss.p.cmd/ss.p.hist）がそれぞれ独立したフィールドだったことも踏まえ、ソースだけでは^Rが具体的に「何を」表示するのか断定できませんでした。/usr/local/bin/usilicで同じ手順を試して教えていただけますか。
+
+<これはスクショを見るよりも説明の方が速いと思う。
+FILE（DIR）は今までアクセスしたファイル（ディレクトリ）をソートしたのち重複を排除した一覧、HISTORYはアクセスした順（最下行が最新）。
+それだけ。
+
+>ありがとうございます、これで確定できました。
+
+FILE/DIR/MAN/LOCATE/FGREP/EGREP/COMMANDいずれの一覧も、通常表示は「アルファベット順ソート+重複排除」に統一しました（重複排除はHistory::pushRecent()のfirst-occurrence-winsで既に実現済み、ソートは今回新規追加）。^Rは今開いている一覧をその場で「アクセスした時系列順（History::recentEntries()が元々返すoldest..newestの並びそのまま、逆順にしない=最下行が最新）」に切り替えるトグルとして実装し、モードラインの名前欄もカテゴリ名から"HISTORY"に変わるようにしました（legacyのmp[M_hist]がT_hfile/T_hdir等すべてに共通して" HISTORY"を返す挙動と対応）。カテゴリ自体を切り替えるものではなく、あくまで今開いている一覧の並び順を切り替えるだけです。ListBrowser以外の文脈での^Rは何もしません（legacyのecho_mess(S_errf)相当、エラーメッセージ自体は今回実装せず単純なno-opにしています）。
+
+副次的に、同じM_hist/M_cmd混同の一環として、RingCategory::ShellCommand（^J^R、K-50）のringCategoryLabel()が"HISTORY"を返していたのを"COMMAND"に訂正しました（usilicrc 286行目「COMMAND : Select program executed at SHELL」に対応、"HISTORY"は上記トグルの固定リテラルとして専有するため）。
+
+実装はCommand::ToggleHistoryViewを新設して単発^Rをこれに配線（旧StartDirectoryHistoryへの誤配線を解消、^X^D自体は引き続きStartDirectoryHistoryで正しく動作）、Application::startListBrowser()をstd::sort()によるアルファベット順表示に変更、新規Application::toggleListBrowserHistory()がcurrentMode_==ListBrowserのときのみ同じカテゴリのままソート順⇔時系列順を切り替える形にしました。実装時、ListBrowserMode::show()自身が内部で1回redraw()済みの状態でカーソルだけ動かしredraw()を呼び忘れる、という一度目の実装ミスをPTY検証で発見・修正しています（doctestではmodeLineText()等ライブ計算のgetterしか見ておらず、この種の「画面に実際に再描画されない」バグを検知できないため、PTY実機相当の検証が今回も有効でした）。
+
+検証として、test_application.cppに新規doctest2件を追加（^RでFILE↔HISTORYを往復できカーソルが末尾に動きモードライン名が変わること、ListBrowser以外での^Rがno-opであること）、既存の関連doctest3件も新しい正しい仕様に合わせて書き換えました。既存603件+新規2件=605件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、doc/ディレクトリで^N×2→Enter（CHANGESを開く）→^G→^N×4→Enter（HELP.jpを開く）→^G→^X^Fという実際の手順を再現、モードラインが「FILE 1/2 TOP CHANGES」（ソート順、Cが先）→^R→「HISTORY 2/2 END HELP.jp」（時系列順、後から開いたHELP.jpが末尾/最新）→^R→「FILE 1/2 TOP CHANGES」（ソート順に復帰）と正しく切り替わることを生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数603件、591件通過+12件既知失敗）、直後にMac側を再ビルドして605/605件を再確認しました。コミット・プッシュ済みです。
