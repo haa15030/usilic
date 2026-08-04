@@ -2695,8 +2695,14 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHistoryView): refused outside Li
 // from menu.c's m_list() per-context dispatch -- see CLAUDE.md item
 // 161/162 for the source read this is based on --
 
-TEST_CASE_FIXTURE(Fixture, "^R (startPromptHistoryRecall): opens a sorted, de-duplicated history ListBrowser "
-                           "while an FGREP prompt is active, matching FILE/DIR's own sorted normal view") {
+TEST_CASE_FIXTURE(Fixture, "^R (startPromptHistoryRecall): opens the RAW chronological history ListBrowser "
+                           "while an FGREP prompt is active, name=\"HISTORY\" with \"FGREP\" as a separate "
+                           "right-aligned badge (2026-08-05 correction: an earlier same-day revision showed a "
+                           "SORTED, de-duplicated list with name=\"FGREP\" here, matching FILE/DIR's own ^X^F/"
+                           "^X^D screen -- a real user reproduction (screenshot ⑪) showed this is wrong for a "
+                           "PROMPT-triggered recall specifically: no separate sorted ring exists for these "
+                           "categories in legacy at all, so it's always the raw log, always labeled \"HISTORY\", "
+                           "with the category shown as a badge instead)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("plain.txt");
@@ -2711,7 +2717,9 @@ TEST_CASE_FIXTURE(Fixture, "^R (startPromptHistoryRecall): opens a sorted, de-du
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.listBrowserMode().items().size() == 1);
   CHECK(app.listBrowserMode().items()[0] == "plain.txt");
-  CHECK(app.activeContentView().modeLineText().rfind("FGREP ", 0) == 0);
+  CHECK(app.activeContentView().modeLineText().rfind("HISTORY ", 0) == 0);
+  std::string row = display.rowText(display.rows() - 1);
+  CHECK(row.find("FGREP") != std::string::npos);  // the right-aligned category badge
 }
 
 TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: Enter on a picked pattern re-runs the search exactly as a "
@@ -2784,6 +2792,73 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: swallowed (no ListBrowser, no
   CHECK(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.promptText().empty());  // 0x12 itself was NOT inserted as literal text
+}
+
+// -- ^R at the CUT prompt (CutPattern, 2026-08-05 -- see
+// startPromptHistoryRecall()'s own comment for why this reuses
+// RecentEgrepPattern, matching legacy's own ss.p.hegrep reuse) --
+
+TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt recalls CUT's own past patterns, sharing EGREP's ring "
+                           "(legacy's own ss.p.hegrep reuse for M_cut/M_cut2)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("plain");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // records "plain" into RecentEgrepPattern
+  REQUIRE(app.handleCommand(Command::Back));  // not nested -- one ^G exits CUT entirely, back to File
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().items().size() == 1);
+  CHECK(app.listBrowserMode().items()[0] == "plain");
+
+  const auto &egrepRing = history.recentEntries(RingCategory::RecentEgrepPattern);
+  REQUIRE(egrepRing.size() == 1);
+  CHECK(egrepRing[0] == "plain");
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: the list is the RAW chronological log, duplicates included "
+                           "and NEWEST at the end/selected -- not sorted or de-duplicated (2026-08-05 user "
+                           "reproduction, screenshot ⑪: 11 entries with \"man\"/\"tcb\" each repeated several "
+                           "times, \"tcb\" -- the most recent -- selected)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("man");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("tcb");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("man");  // revisit, non-consecutive -- must NOT be de-duplicated away
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  REQUIRE(app.listBrowserMode().items().size() == 3);  // man, tcb, man -- raw order, duplicate "man" kept
+  CHECK(app.listBrowserMode().items()[0] == "man");
+  CHECK(app.listBrowserMode().items()[1] == "tcb");
+  CHECK(app.listBrowserMode().items()[2] == "man");
+  CHECK(app.activeContentView().cursorIndex() == 2);  // newest ("man", the last one) selected, not index 0
+
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.rfind("HISTORY ", 0) == 0);
+  std::string row = display.rowText(display.rows() - 1);
+  CHECK(row.find("CUT") != std::string::npos);  // the right-aligned category badge
 }
 
 // -- ^R at the live SHELL prompt (integration point 3 of the ^R

@@ -278,9 +278,26 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // literal "HISTORY" instead of the category's own normal label,
   // matching legacy's mp[M_hist]==" HISTORY" applying uniformly to
   // T_hfile/T_hdir/etc regardless of which underlying ring is shown.
+  //
+  // 2026-08-05 addition, prompt-triggered recalls only
+  // (promptHistoryRecallKind_ set -- see startPromptHistoryRecall()'s
+  // own comment for the full story): name is ALWAYS "HISTORY" here
+  // (there's no separate sorted view for these categories to fall
+  // back to), and rightWatermark shows the PROMPT's own category
+  // label (promptLabelText(), e.g. "CUT"/"FGREP"/"MAN") -- a real
+  // user reproduction (screenshot ⑪, 2026-08-05) confirmed this exact
+  // shape: "HISTORY" + position + the selected item, with "CUT"
+  // right-aligned separately, disambiguating WHICH prompt's history
+  // this is (unlike FILE/DIR's own ^X^F/^X^D-triggered screen, which
+  // needs no such badge -- how you got there already makes the
+  // category obvious).
   listBrowserView_.setModeLineFieldsProvider([this](int cursorIndex) -> ContentView::ModeLineFields {
     const auto &items = listBrowserMode_.items();
     if (cursorIndex < 0 || cursorIndex >= static_cast<int>(items.size())) return {};
+    if (promptHistoryRecallKind_) {
+      return {"HISTORY", items[cursorIndex], /*fillTrailingToEdge=*/false,
+              /*rightWatermark=*/promptLabelText(*promptHistoryRecallKind_)};
+    }
     std::string name = listBrowserChronological_ ? "HISTORY" : ringCategoryLabel(listBrowserCategory_);
     return {name, items[cursorIndex], /*fillTrailingToEdge=*/false,
             /*rightWatermark=*/""};
@@ -1958,6 +1975,13 @@ bool Application::startListBrowser(RingCategory category) {
 // `echo_mess(S_errf)` for a context ^R doesn't apply to.
 bool Application::toggleListBrowserHistory() {
   if (currentMode_ != ApplicationMode::ListBrowser) return false;
+  // A prompt-triggered recall (startPromptHistoryRecall()) has no
+  // separate "sorted" view to toggle INTO in the first place -- see
+  // its own comment on why (no non-h ring exists in legacy for any of
+  // these categories) -- so a second ^R here is simply a no-op,
+  // rather than incorrectly re-sorting a screen whose mode-line would
+  // then still misleadingly read "HISTORY".
+  if (promptHistoryRecallKind_) return false;
   listBrowserChronological_ = !listBrowserChronological_;
   std::vector<std::string> items;
   if (listBrowserChronological_) {
@@ -2225,10 +2249,45 @@ void Application::cancelPrompt() {
 // PROGRAM invocations are already restricted to
 // Configuration::programSeedCommands()'s allow-list, unlike SHELL's
 // unrestricted command line).
-// CutPattern's own history (legacy oddly reuses ss.p.hegrep for it,
-// per the same source read) remains its own future follow-up. False
-// (caller swallows the byte without inserting it) for every other
-// PromptKind.
+// CutPattern (2026-08-05, plugging the one deliberate gap left in the
+// batch above): legacy reuses ss.p.hegrep for CUT patterns (menu.c's
+// `case M_cut: case M_cut2: hp->ss.p.hegrep = save_history(...)`, the
+// same source read cited above) -- reused here as
+// RingCategory::RecentEgrepPattern rather than inventing a new ring,
+// matching that exact quirk instead of guessing at a cleaner design.
+// A real user reproduction (2026-08-05, screenshot with ⑪) showing 11
+// mixed "man"/"manager"/"tcb" entries in one CUT-triggered recall is
+// consistent with this: "manager" is very plausibly a real EGREP
+// search the user ran at some point, sharing the ring with their CUT
+// patterns "man"/"tcb" -- flagged to the user as this function's own
+// working assumption, not independently confirmed beyond the source
+// read plus this one screenshot's circumstantial match.
+//
+// That same screenshot also corrected TWO things this function
+// originally got wrong (an earlier same-day revision showed a
+// SORTED, de-duplicated list here, name=category, e.g. "FGREP"):
+//   - The list itself is the RAW chronological log, duplicates
+//     included (matching History::pushRecent()'s own ring -- item
+//     161's correction), not sortedUniqueRecentEntries(). Unlike
+//     FILE/DIR's own ^X^F/^X^D (which DO have a separate sorted ring
+//     to show normally, toggled to chronological only on ^R --
+//     ToggleHistoryView), these prompt-triggered categories have no
+//     such separate sorted ring in legacy at all (confirmed during
+//     the same source read that produced this function originally:
+//     ss.p.hman/hlocate/hfgrep/hegrep are ALL that exist for those
+//     four, no non-h counterpart) -- so there is nothing to be
+//     "sorted" INTO here; pressing ^R at a prompt always means "show
+//     me the raw history", full stop.
+//   - The mode-line's name field is the fixed literal "HISTORY" (not
+//     the category), matching mp[M_hist]==" HISTORY" applying
+//     uniformly across T_hfile/T_hdir/T_hman/T_hlocate/T_hfgrep/
+//     T_hegrep regardless of which ring backs the current screen
+//     (menu.c's m_list(), read early in this whole investigation but
+//     not fully connected to THIS function's own rendering choice
+//     until now) -- WHICH category is shown instead as a separate
+//     right-aligned badge, via listBrowserView_'s own
+//     ModeLineFieldsProvider reading promptHistoryRecallKind_ (see
+//     its own comment).
 bool Application::startPromptHistoryRecall() {
   RingCategory category;
   switch (promptKind_) {
@@ -2244,6 +2303,9 @@ bool Application::startPromptHistoryRecall() {
     case PromptKind::ProgramCommand:
       category = RingCategory::ShellCommand;
       break;
+    case PromptKind::CutPattern:
+      category = RingCategory::RecentEgrepPattern;
+      break;
     default:
       return false;
   }
@@ -2252,9 +2314,23 @@ bool Application::startPromptHistoryRecall() {
   promptHistoryRecallReturnMode_ = currentMode_;
   promptKind_ = PromptKind::None;
   listBrowserCategory_ = category;
-  listBrowserChronological_ = false;
-  listBrowserMode_.show(sortedUniqueRecentEntries(category));
+  // true: this IS the chronological view already -- see ToggleHistoryView's
+  // own comment for what a subsequent ^R (toggleListBrowserHistory())
+  // toggling it back to false/sorted would then mean.
+  listBrowserChronological_ = true;
+  const std::deque<std::string> &recent = history_.recentEntries(category);
+  std::vector<std::string> items(recent.begin(), recent.end());
+  listBrowserMode_.show(items);
   currentMode_ = ApplicationMode::ListBrowser;
+  if (!items.empty()) {
+    // Newest (the most recently pushed entry, at the back) is what's
+    // actually visible/selected first -- matching the same "最下行が
+    // 最新" convention ToggleHistoryView's own chronological mode
+    // uses, and legacy's own mode.c (M_hist/T_hist group:
+    // `pnp->row = hp->bp->nrow - 1;`).
+    listBrowserView_.setCursorIndex(static_cast<int>(items.size()) - 1);
+    listBrowserView_.redraw();
+  }
   return true;
 }
 
@@ -2343,6 +2419,11 @@ bool Application::executeGrep(const std::string &pattern) {
 }
 
 bool Application::executeCut(const std::string &pattern) {
+  // Recorded regardless of outcome/nesting depth below -- see
+  // startPromptHistoryRecall()'s own comment for why this reuses
+  // RecentEgrepPattern (matching legacy's own ss.p.hegrep reuse for
+  // CUT) rather than a dedicated ring.
+  history_.pushRecent(RingCategory::RecentEgrepPattern, pattern);
   bool ok;
   std::string fileSourcePath = std::move(cutFileSourcePath_);
   cutFileSourcePath_.clear();  // consumed exactly once, regardless of which branch below runs or its outcome
