@@ -850,6 +850,9 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     shell_.scrollback().goToBottom();
     shell_.redrawPromptRow();
   }
+  if (byte == 0x12) {  // ^R -- see startShellHistoryRecall()'s own comment
+    return startShellHistoryRecall();
+  }
   if (byte == 0x09) {  // Tab
     shell_.onTab();
     return true;
@@ -1331,6 +1334,18 @@ bool Application::openSelectedListEntry() {
     currentMode_ = promptHistoryRecallReturnMode_;
     return executePromptSubmission(kind, text);
   }
+  if (shellHistoryRecallActive_) {
+    // Insert only -- does NOT submitLine(). See startShellHistoryRecall()'s
+    // own comment for why this deliberately differs from MAN/LOCATE/
+    // FGREP's auto-execute-on-Enter.
+    shellHistoryRecallActive_ = false;
+    std::string text = *item;
+    currentMode_ = ApplicationMode::Shell;
+    shell_.commandLine().setText(text);
+    shell_.scrollback().redraw();
+    shell_.redrawPromptRow();
+    return true;
+  }
   if (listBrowserCategory_ == RingCategory::RecentDirectory) {
     if (!directoryMode_.enterDirectory(*item)) return false;
     currentMode_ = ApplicationMode::Directory;
@@ -1513,6 +1528,15 @@ bool Application::returnFromListBrowser() {
     currentMode_ = promptHistoryRecallReturnMode_;
     activeView().redraw();
     activatePrompt(kind, text);  // resumes with whatever had already been typed before ^R
+    return true;
+  }
+  if (shellHistoryRecallActive_) {
+    shellHistoryRecallActive_ = false;
+    currentMode_ = ApplicationMode::Shell;
+    shell_.commandLine().setText(shellHistoryRecallText_);  // restores whatever had already been typed before ^R
+    shellHistoryRecallText_.clear();
+    shell_.scrollback().redraw();
+    shell_.redrawPromptRow();
     return true;
   }
   currentMode_ = listBrowserReturnMode_;
@@ -2170,6 +2194,17 @@ bool Application::startPromptHistoryRecall() {
   listBrowserCategory_ = category;
   listBrowserChronological_ = false;
   listBrowserMode_.show(sortedUniqueRecentEntries(category));
+  currentMode_ = ApplicationMode::ListBrowser;
+  return true;
+}
+
+bool Application::startShellHistoryRecall() {
+  if (currentMode_ != ApplicationMode::Shell) return false;
+  shellHistoryRecallActive_ = true;
+  shellHistoryRecallText_ = shell_.commandLine().text();
+  listBrowserCategory_ = RingCategory::ShellCommand;
+  listBrowserChronological_ = false;
+  listBrowserMode_.show(sortedUniqueRecentEntries(RingCategory::ShellCommand));
   currentMode_ = ApplicationMode::ListBrowser;
   return true;
 }

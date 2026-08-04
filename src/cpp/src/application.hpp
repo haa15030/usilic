@@ -1495,6 +1495,24 @@ class Application {
   // context ^R doesn't apply to, same spirit as ToggleHistoryView's
   // own outside-ListBrowser no-op.
   bool startPromptHistoryRecall();
+  // K-49 (^R) pressed at the live SHELL prompt (integration point 3 of
+  // the ^R design -- see CLAUDE.md item 162/163): opens a sorted
+  // RecentEntries(ShellCommand) ListBrowser, same underlying data
+  // ^J^R's own "COMMAND" picker already uses. Deliberately a SEPARATE
+  // flag (shellHistoryRecallActive_) rather than reusing
+  // promptHistoryRecallKind_ (SHELL isn't a PromptKind -- it's its own
+  // ApplicationMode with its own feedShellByte() input path) or
+  // folding into ^J^R's existing openSelectedListEntry() handling for
+  // RingCategory::ShellCommand (that stays a deliberate no-op on Enter,
+  // per its own "in this slice" test -- this is a DIFFERENT feature
+  // that happens to share the same ring). Confirmed directly with the
+  // user (2026-08-05): selecting an entry INSERTS it into the command
+  // line for review/editing, it does NOT auto-run -- unlike MAN/
+  // LOCATE/FGREP's own recall (side-effect-free actions), a picked
+  // SHELL command could be destructive (rm, mv, ...), so silently
+  // re-running an old one without a chance to look at it first would
+  // be a real safety regression, not just a UX quirk.
+  bool startShellHistoryRecall();
   // Shared trailer for every startXxxPrompt(): sets promptKind_, draws
   // that kind's own label onto the mode-line row (see
   // promptLabelText()'s own comment), and starts promptEditor_ with
@@ -1536,6 +1554,9 @@ class Application {
   std::optional<PromptKind> promptHistoryRecallKind_;
   std::string promptHistoryRecallText_;
   ApplicationMode promptHistoryRecallReturnMode_ = ApplicationMode::Directory;
+  // See startShellHistoryRecall()'s own comment.
+  bool shellHistoryRecallActive_ = false;
+  std::string shellHistoryRecallText_;
   // Which of the two keys (K-45 ^Xf vs K-47 ^Xd) started the current
   // PathInput prompt -- see startPathInputPrompt()'s own comment for
   // why EXECUTION stays unified (PathResolver decides file-vs-

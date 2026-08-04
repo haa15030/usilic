@@ -2702,6 +2702,76 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: swallowed (no ListBrowser, no
   CHECK(app.promptText().empty());  // 0x12 itself was NOT inserted as literal text
 }
 
+// -- ^R at the live SHELL prompt (integration point 3 of the ^R
+// design -- see CLAUDE.md item 162/163). History is seeded directly
+// via history.pushRecent() rather than actually running commands
+// through the real bash child, keeping these independent of shell
+// startup timing except where the live prompt itself is what's under
+// test. --
+
+TEST_CASE_FIXTURE(Fixture, "^R (startShellHistoryRecall): opens a sorted ShellCommand history ListBrowser at "
+                           "the live SHELL prompt") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+  history.pushRecent(RingCategory::ShellCommand, "echo two");
+  history.pushRecent(RingCategory::ShellCommand, "echo one");
+
+  REQUIRE(app.feedShellByte(0x12, std::nullopt));  // ^R
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().items().size() == 2);
+  CHECK(std::is_sorted(app.listBrowserMode().items().begin(), app.listBrowserMode().items().end()));
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: Enter on a picked command INSERTS it into the command line "
+                           "but does NOT run it (2026-08-05, direct user choice: option (A), since a picked "
+                           "past command could be destructive -- rm, mv, ... -- unlike MAN/LOCATE/FGREP's own "
+                           "side-effect-free recall)") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+  history.pushRecent(RingCategory::ShellCommand, "echo recalled-not-run");
+
+  REQUIRE(app.feedShellByte(0x12, std::nullopt));  // ^R
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.shell().commandLine().text() == "echo recalled-not-run");
+  // Not yet submitted -- no scrollback line reflects it having run.
+  for (const auto &line : app.shell().scrollback().lines())
+    CHECK(line.text.find("recalled-not-run") == std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: ^G restores whatever had already been typed before ^R, not a "
+                           "blank prompt") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+  history.pushRecent(RingCategory::ShellCommand, "echo something");
+
+  for (unsigned char c : std::string("partial")) app.feedShellByte(c, std::nullopt);
+  REQUIRE(app.feedShellByte(0x12, std::nullopt));  // ^R
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.shell().commandLine().text() == "partial");
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.feedByte(0x12, std::nullopt));  // top-level ^R (ToggleHistoryView) is ALSO a no-op here
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
 TEST_CASE_FIXTURE(Fixture, "command history: Enter on an entry is a no-op in this slice") {
   history.pushRecent(RingCategory::ShellCommand, "echo hi");
 
