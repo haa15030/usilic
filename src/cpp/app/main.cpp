@@ -1147,8 +1147,20 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
 
     // Release.
     if (!moved) {
-      int lineIndex = view.lineIndexAtRow(mouse->row);
-      if (lineIndex >= 0) view.setCursorIndex(lineIndex);
+      // No longer pre-selecting the row directly here (2026-08-05
+      // fix): this used to call view.setCursorIndex(lineIndex)
+      // unconditionally BEFORE handleMouseClick() ever ran, bypassing
+      // its own isColumnWithinLineScope() gate entirely -- a click
+      // landing in DirectoryMode's left margin (or past a short
+      // entry's own text) would still select that row via THIS direct
+      // mutation, even though handleMouseClick() itself would
+      // correctly refuse to act on it. handleMouseClick() already
+      // does its own select-then-open sequencing internally (checking
+      // idx against cursorIndex() and calling setCursorIndex() itself
+      // when appropriate), so this was purely redundant -- letting it
+      // be the sole authority here matches how -g's own click handling
+      // already works (see Application::handleMouseClick()'s own
+      // comment for the full user report this addresses).
       clearHoverAndRedraw(view);
       app.handleMouseClick(mouse->row, mouse->column);
       return TerminalCoastResult{};
@@ -1469,38 +1481,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
   int coastLevel = 0;       // 0 == not coasting; otherwise an index into fm::kScrollSpeedLevels
   int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
-  // Cumulative ABSOLUTE pixel motion since the current press started
-  // -- see the click-consumption loop's own comment (2026-08-05 fix)
-  // for why a left ButtonDown can no longer act as a click by itself.
-  //
-  // A first version of this (same-day revision) used a ROW-granular
-  // check instead (comparing topIndex() at press vs. release, matching
-  // the real-terminal drag path's own `rowDelta != 0` check in
-  // runTerminalMouseDrag()) -- reasoning that SDL_MOUSEMOTION's pixel
-  // granularity meant a plain "any Motion event at all" check would be
-  // too sensitive to ordinary jitter. That reasoning was backwards: a
-  // real user report found clicks now needing a second press to
-  // register, and the actual problem was the OPPOSITE direction --
-  // row-granularity means the false-positive threshold for "was this a
-  // drag" is exactly ONE cellHeightPixels() of jitter, which for an
-  // ordinary font size is easily just 15-20 real pixels, well within
-  // what a real mouse/trackpad can report as noise during a single
-  // stationary tap (unlike -c's SGR mouse reports, which are already
-  // row-quantized at the TERMINAL level before this code ever sees
-  // them, so this class of false positive can't occur there at all).
-  // A small fixed PIXEL threshold -- independent of font/cellHeight --
-  // is the standard way real UI frameworks (Cocoa, GTK, ...)
-  // distinguish a click from a drag, and is what's used here instead.
-  int totalAbsMotionSincePress = 0;
-  constexpr int kClickJitterTolerancePixels = 4;
-  // The row/column a left ButtonDown landed on, captured by the click-
-  // consumption loop below but not acted on immediately -- carried
-  // forward to ButtonUp, which decides whether this ends up being a
-  // genuine click (row/col used) or was actually the start of a drag
-  // (discarded). -1 means "no press pending" (nothing to act on if
-  // ButtonUp somehow arrives without a matching ButtonDown -- shouldn't
-  // happen, but guards a stale value from a much earlier press).
-  int pendingClickRow = -1, pendingClickCol = -1;
   // Set on any frame that renders via renderScrolled() (dragging or
   // coasting); checked on the FIRST frame back on the normal redraw()
   // path so that settle-transition frame's redraw() always happens
@@ -1540,28 +1520,21 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
     while (auto click = gui.consumeMouseClick()) {
       anyEventThisFrame = true;
-      // Deferred to ButtonUp, NOT acted on here (2026-08-05 fix): a
-      // real user report (matching a problem they'd already solved
-      // once before in their own past GUI work, "cb") -- starting a
-      // cat's-paw screen drag physically requires pressing the left
-      // button down first, and THAT press alone was immediately
-      // opening/selecting whatever row happened to be under the
-      // pointer at that instant, before any drag motion could even
-      // begin. GraphicalDisplay::pumpEvents() queues a MouseClick AND
-      // a DragEvent::ButtonDown on the exact same SDL_MOUSEBUTTONDOWN,
-      // and this loop used to act on the click immediately, with no
-      // way yet to know whether the user meant a click or a drag.
-      // Mirrors how the real-terminal drag path already worked all
-      // along (runTerminalMouseDrag(), see its own "release, if
-      // !moved" comment) -- capturing the row/column here but only
-      // actually calling handleMouseClick() from DragEventType::
-      // ButtonUp below, once it's known the total motion since this
-      // press stayed under the click/drag jitter threshold (see
-      // `totalAbsMotionSincePress`'s own comment above).
-      if (!click->rightButton) {
-        pendingClickRow = click->row;
-        pendingClickCol = click->column;
-      }
+      // Acted on immediately, right on press -- a same-day (2026-08-05)
+      // revision of two prior attempts at deferring this to release
+      // instead (first via a motion flag, then a pixel-jitter
+      // threshold), both trying to distinguish "this press is a click"
+      // from "this press is the start of a cat's-paw screen drag" by
+      // TIMING. The user's own alternative proposal, adopted here
+      // instead: distinguish by WHERE the press landed, not when it's
+      // acted on. Application::handleMouseClick() now checks whether
+      // the column is actually within the clicked row's own
+      // highlighted span (ContentView::isColumnWithinLineScope()) and
+      // simply no-ops if not -- a press in DirectoryMode's `ls` left
+      // margin, or past the end of a short entry name, was never "on"
+      // the entry to begin with, so it's free to also double as a drag
+      // start without any race against a still-in-flight ButtonUp.
+      if (!click->rightButton) app.handleMouseClick(click->row, click->column);
       // right-click: captured but not acted on yet, see class comments
     }
     // Plain hover-follow (no button held) -- matching the real-
@@ -1721,7 +1694,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       switch (drag->type) {
         case fm::GraphicalDisplay::DragEventType::ButtonDown:
           dragging = true;
-          totalAbsMotionSincePress = 0;
           coastLevel = 0;  // grabbing mid-coast stops it right where it is
           coastDirection = 0;
           recentMotion.clear();
@@ -1741,18 +1713,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // key->special branch's comment above for why a leftover
           // fractional remainder wedges the render-mode check forever.
           if (coastLevel == 0) pixelOffset = 0;
-          // Total motion since press stayed under the jitter tolerance
-          // -- a plain click after all (see the click-consumption
-          // loop's own comment for why this is deferred all the way
-          // to here instead of acting the moment the button went
-          // down).
-          if (totalAbsMotionSincePress < kClickJitterTolerancePixels && pendingClickRow >= 0)
-            app.handleMouseClick(pendingClickRow, pendingClickCol);
-          pendingClickRow = pendingClickCol = -1;
           break;
         }
         case fm::GraphicalDisplay::DragEventType::Motion:
-          totalAbsMotionSincePress += std::abs(drag->deltaY);
           pixelOffset += drag->deltaY;
           recentMotion.push_back({std::chrono::steady_clock::now(), drag->deltaY});
           while (!recentMotion.empty() && recentMotion.front().first < std::chrono::steady_clock::now() - kReleaseWindow)

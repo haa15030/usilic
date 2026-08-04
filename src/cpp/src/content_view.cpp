@@ -35,6 +35,13 @@ int ContentView::lineIndexAtRow(int displayRow) const {
   return idx;
 }
 
+bool ContentView::isColumnWithinLineScope(int lineIndex, int column) const {
+  if (lineIndex < 0 || lineIndex >= static_cast<int>(lines_.size())) return false;
+  const Line &line = lines_[lineIndex];
+  int start = std::max(0, line.highlightStartColumn.value_or(0));
+  return column >= start && column < static_cast<int>(line.text.size());
+}
+
 int ContentView::cursorDisplayRow() const {
   if (cursorIndex_ < topIndex_ || cursorIndex_ >= topIndex_ + height_) return -1;
   return row0_ + bottomAnchorRowOffset() + (cursorIndex_ - topIndex_);

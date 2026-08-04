@@ -2442,10 +2442,19 @@ bool Application::consumeGuiModeToggleRequest() {
 // see class comment for the click-to-select/click-again-to-open
 // convention and current Directory-only scope.
 bool Application::handleMouseClick(int row, int column) {
-  (void)column;  // unused in this slice -- see class comment
   if (currentMode_ != ApplicationMode::Directory) return false;
   int idx = directoryView_.lineIndexAtRow(row);
   if (idx < 0) return false;
+  // Outside this entry's own highlighted text -- DirectoryMode's `ls`
+  // listing has a fixed left margin (permissions/size/date) before the
+  // highlight starts, and a short filename can leave a variable-width
+  // empty tail after it -- so this press was never actually "on" the
+  // entry visually. Ignored here (returns false, as if nothing were
+  // under the pointer at all) so it's free to also serve as a "cat's
+  // paw" screen-drag starting point (see ContentView::
+  // isColumnWithinLineScope()'s own comment for the full 2026-08-05
+  // user report this replaces a timing/motion-based heuristic with).
+  if (!directoryView_.isColumnWithinLineScope(idx, column)) return false;
   if (idx == directoryView_.cursorIndex()) return openSelectedEntry();
   directoryView_.setCursorIndex(idx);
   directoryView_.redraw();

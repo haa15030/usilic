@@ -117,6 +117,25 @@ class ContentView {
   // device existed.
   int lineIndexAtRow(int displayRow) const;
 
+  // Whether `column` falls within lineIndex's own highlighted span --
+  // [highlightStartColumn, text.size()), see Line::highlightStartColumn's
+  // own comment for why a byte offset and a screen column are the same
+  // number here. false if lineIndex is out of range. Added for
+  // Application::handleMouseClick()'s own use (2026-08-05 user
+  // request): a mouse press landing OUTSIDE this span -- DirectoryMode's
+  // `ls`-style listing has a fixed-width left margin (permissions/
+  // size/date) before the highlight even starts, and any left-aligned
+  // list (recent-file/-directory pickers, etc.) can leave a variable-
+  // width empty tail after a short entry name -- was never actually
+  // "on" the entry visually. The user's own proposal for distinguishing
+  // a genuine click on an entry from the press that starts a "cat's
+  // paw" screen drag: rather than a timing/motion-based heuristic
+  // (which turned out fragile, see Application::handleMouseClick()'s
+  // own history), just check WHERE the press landed -- inside an
+  // entry's own visible highlighted text, or in the surrounding margin
+  // that was never part of it to begin with.
+  bool isColumnWithinLineScope(int lineIndex, int column) const;
+
   // The inverse of lineIndexAtRow(): the absolute DISPLAY row
   // cursorIndex_ itself currently renders at, or -1 if it's scrolled
   // out of view. Added for Shell's own ^P/^N history browsing

@@ -199,6 +199,42 @@ TEST_CASE("syncVisibleCursor: hides the cursor rather than showing one out of vi
   CHECK(d.visibleCursorHidden());
 }
 
+TEST_CASE("isColumnWithinLineScope: DirectoryMode's fixed left margin excludes columns before "
+          "highlightStartColumn (2026-08-05 user proposal: distinguish a click on an entry from a "
+          "\"cat's paw\" drag start by WHERE it landed, not by timing)") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  std::vector<ContentView::Line> lines;
+  lines.push_back({"drwxr-xr-x  staff  plain.txt", std::nullopt, 20});  // highlight starts at column 20
+  v.setLines(lines);
+
+  CHECK_FALSE(v.isColumnWithinLineScope(0, 19));  // one column left of the margin -- not on the entry
+  CHECK(v.isColumnWithinLineScope(0, 20));         // the highlight's own first column
+  CHECK(v.isColumnWithinLineScope(0, 27));         // still inside "plain.txt"
+}
+
+TEST_CASE("isColumnWithinLineScope: a left-aligned list (highlightStartColumn unset) excludes columns "
+          "past the end of the entry's own text") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  std::vector<ContentView::Line> lines;
+  lines.push_back({"short.txt", std::nullopt, std::nullopt});  // no fixed margin -- highlight starts at 0
+  v.setLines(lines);
+
+  CHECK(v.isColumnWithinLineScope(0, 0));           // the very first character
+  CHECK(v.isColumnWithinLineScope(0, 8));           // the last character ("short.txt".size() - 1)
+  CHECK_FALSE(v.isColumnWithinLineScope(0, 9));     // exactly at the end -- past the last real character
+  CHECK_FALSE(v.isColumnWithinLineScope(0, 40));    // well into the empty trailing area of the row
+}
+
+TEST_CASE("isColumnWithinLineScope: false for an out-of-range line index") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setLines(makeLines(2));
+  CHECK_FALSE(v.isColumnWithinLineScope(-1, 0));
+  CHECK_FALSE(v.isColumnWithinLineScope(2, 0));
+}
+
 TEST_CASE("setModeLineFieldsProvider: modeLineText wraps name/trailing around the position text") {
   RecordingDisplay d(10, 60);
   ContentView v(d);

@@ -3235,8 +3235,13 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a click on a different row selects
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   REQUIRE(idx >= 0);
+  // A column inside the entry's own highlighted span, not column 0 --
+  // DirectoryMode's `ls`-style listing has a fixed left margin (see
+  // ContentView::isColumnWithinLineScope()'s own comment) that
+  // handleMouseClick() now deliberately ignores clicks in.
+  int col = app.activeContentView().lines()[idx].highlightStartColumn.value_or(0) + 1;
 
-  CHECK(app.handleMouseClick(idx, 0));
+  CHECK(app.handleMouseClick(idx, col));
   CHECK(app.directoryMode().selectedEntry()->name == "plain.txt");
   CHECK(app.currentMode() == ApplicationMode::Directory);  // selecting alone doesn't open it
 }
@@ -3245,9 +3250,10 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a second click on the already-sele
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   REQUIRE(idx >= 0);
+  int col = app.activeContentView().lines()[idx].highlightStartColumn.value_or(0) + 1;
 
-  REQUIRE(app.handleMouseClick(idx, 0));  // first click: select
-  REQUIRE(app.handleMouseClick(idx, 0));  // second click on the same row: open
+  REQUIRE(app.handleMouseClick(idx, col));  // first click: select
+  REQUIRE(app.handleMouseClick(idx, col));  // second click on the same row: open
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == path() + "plain.txt");
 }
@@ -3261,4 +3267,29 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: false outside the viewport or outs
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
   CHECK_FALSE(app.handleMouseClick(0, 0));  // Directory-only in this slice
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a press left of the entry's own highlighted span is a no-op, "
+                           "not a selection -- so it's free to double as a \"cat's paw\" screen-drag start "
+                           "(2026-08-05 user proposal, replacing an earlier timing/motion-based attempt at "
+                           "distinguishing a click from a drag)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+  int start = app.activeContentView().lines()[idx].highlightStartColumn.value_or(0);
+  REQUIRE(start > 0);  // DirectoryMode's own ls-style listing always has a real left margin
+
+  CHECK_FALSE(app.handleMouseClick(idx, start - 1));  // one column left of the highlighted span
+  CHECK(app.directoryMode().selectedEntry()->name != "plain.txt");  // selection untouched
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a press past the end of the entry's own text is also a no-op") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+  int end = static_cast<int>(app.activeContentView().lines()[idx].text.size());
+
+  CHECK_FALSE(app.handleMouseClick(idx, end));  // exactly at the end -- past the last real character
+  CHECK(app.directoryMode().selectedEntry()->name != "plain.txt");
 }
