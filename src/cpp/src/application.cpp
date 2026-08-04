@@ -854,27 +854,50 @@ ContentView &Application::activeView() {
 
 bool Application::handleCommand(Command command) {
   switch (command) {
+    // setHoverIndex(nullopt) BEFORE each move, not after (2026-08-05
+    // fix): a real user report -- after resting the mouse over a row
+    // (setting hoverIndex_, see ContentView::setHoverIndex()'s own
+    // comment) and then switching to keyboard navigation, "モードライン
+    // 行数は変わり内容も正しいがハイライトが追随しない". moveUp()/
+    // moveDown()/etc. below all redraw() internally, and redraw()'s own
+    // highlight pick is `hoverIndex_.has_value() ? *hoverIndex_ :
+    // cursorIndex_` -- cursorIndex_ WAS moving correctly the whole
+    // time (hence the mode-line/content being right), but a stale
+    // hoverIndex_ left over from the last mouse hover kept outranking
+    // it in that redraw, so the highlighted row never visibly followed
+    // along. Clearing it here, before the move itself runs its own
+    // internal redraw(), means that redraw() already sees cursorIndex_
+    // as the (correct, up to date) highlight source -- the same
+    // "keyboard input always wins over stale mouse-driven UI state"
+    // principle the user's own OWN diagnosis already applied to the
+    // -g `dragging` bug.
     case Command::MoveUp:
+      activeView().setHoverIndex(std::nullopt);
       activeView().moveUp();
       activeView().syncVisibleCursor();
       return true;
     case Command::MoveDown:
+      activeView().setHoverIndex(std::nullopt);
       activeView().moveDown();
       activeView().syncVisibleCursor();
       return true;
     case Command::ScrollLineUp:
+      activeView().setHoverIndex(std::nullopt);
       activeView().scrollLineUp();
       activeView().syncVisibleCursor();
       return true;
     case Command::ScrollLineDown:
+      activeView().setHoverIndex(std::nullopt);
       activeView().scrollLineDown();
       activeView().syncVisibleCursor();
       return true;
     case Command::PageUp:
+      activeView().setHoverIndex(std::nullopt);
       activeView().pageUp();
       activeView().syncVisibleCursor();
       return true;
     case Command::PageDown:
+      activeView().setHoverIndex(std::nullopt);
       activeView().pageDown();
       activeView().syncVisibleCursor();
       return true;
@@ -1010,14 +1033,17 @@ bool Application::handleCommand(Command command) {
       guiModeToggleRequested_ = true;
       return true;
     case Command::Redraw:
+      activeView().setHoverIndex(std::nullopt);  // see the Move*/Page* cases' own comment
       activeView().redraw();
       activeView().syncVisibleCursor();
       return true;
     case Command::GoToTop:
+      activeView().setHoverIndex(std::nullopt);
       activeView().goToTop();
       activeView().syncVisibleCursor();
       return true;
     case Command::GoToBottom:
+      activeView().setHoverIndex(std::nullopt);
       activeView().goToBottom();
       activeView().syncVisibleCursor();
       return true;

@@ -278,6 +278,39 @@ TEST_CASE_FIXTURE(Fixture, "File mode: shows a real display cursor at the curren
   CHECK(display.visibleCursorHidden());
 }
 
+TEST_CASE_FIXTURE(Fixture, "handleCommand(MoveDown): clears a stale hover highlight left over from a "
+                           "previous mouse hover, so keyboard navigation's highlight follows the ACTUAL "
+                           "cursor again (2026-08-05 user report: mode-line/content were already correct "
+                           "after switching to the keyboard, but the highlight bar itself stayed stuck on "
+                           "the last-hovered row)") {
+  REQUIRE(app.start(path()));
+  fm::ContentView &view = app.activeContentView();
+  REQUIRE(view.cursorIndex() == 0);
+
+  // DirectoryMode's own ls-style highlight starts partway through the
+  // row (past the permission/date fields, at the filename itself, see
+  // Line::highlightStartColumn's own comment), not at column 0 -- scan
+  // the whole row rather than assuming a fixed column.
+  auto rowIsHighlighted = [&](int row) {
+    for (int col = 0; col < display.columns(); col++)
+      if (display.standoutAt(row, col)) return true;
+    return false;
+  };
+
+  // Mirrors app/main.cpp's own applyHoverRowAndRedraw(): setHoverIndex()
+  // then redraw(), same as a real mouse hover over a DIFFERENT row than
+  // the current cursor would do.
+  view.setHoverIndex(2);
+  view.redraw();
+  CHECK(rowIsHighlighted(2));        // the hovered row shows the highlight
+  CHECK_FALSE(rowIsHighlighted(0));  // cursorIndex_'s own row does not (hoverIndex_ outranks it)
+
+  REQUIRE(app.handleCommand(Command::MoveDown));
+  CHECK(app.activeContentView().cursorIndex() == 1);
+  CHECK(rowIsHighlighted(1));        // highlight follows the NEW cursor position...
+  CHECK_FALSE(rowIsHighlighted(2));  // ...and the stale hover row is no longer highlighted
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(JumpNext/JumpPrevious): ';'/':' are Back+MoveDown+Enter and "
                            "Back+MoveUp+Enter, confirmed directly by the user (2026-08-03) after an initial "
                            "wrong guess that this was a distinct \"related file\" jump feature") {
