@@ -324,15 +324,17 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // for disp_window()'s "usilic v1.5b" program-name fallback, see its
   // own comment, not a general-purpose second trailing field, so
   // repurposing it here would be a mismatch of a different kind).
-  // Scoped to CutContent only (not cutView_, the segment-LABEL list
-  // itself): disp_window()'s own switch groups M_cut/M_cut2 with
-  // M_prog/M_lfile/M_ldir's "enter string at mode-line" handling, a
-  // meaningfully different (editable-prompt-like) mode-line shape that
-  // doesn't obviously map onto this port's simple name/trailing
-  // ModeLineFields the same way HELP's own (name="HELP" is a fixed
-  // literal, not tied to that "enter string" branch at all) does --
-  // left for a follow-up once that's independently confirmed rather
-  // than guessed at here.
+  // Scoped to CutContent only when THIS provider was first written
+  // (not cutView_, the segment-LABEL list itself): disp_window()'s own
+  // switch groups M_cut/M_cut2 with M_prog/M_lfile/M_ldir's "enter
+  // string at mode-line" handling, a meaningfully different (editable-
+  // prompt-like) mode-line shape that didn't obviously map onto this
+  // port's simple name/trailing ModeLineFields the same way HELP's own
+  // (name="HELP" is a fixed literal, not tied to that "enter string"
+  // branch at all) does -- left as a follow-up rather than guessed at.
+  // That follow-up is now below (2026-08-05): a direct user
+  // reproduction (with exact expected mode-line text, not a guess)
+  // confirmed cutView_'s OWN name/trailing shape independently.
   cutContentView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     std::string name = (cutOrigin_ == CutOrigin::Help)
                             ? "HELP"
@@ -344,6 +346,34 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       std::string label = segment->label;
       std::size_t start = label.find_first_not_of(' ');
       if (start != std::string::npos) trailing += "  " + label.substr(start);
+    }
+    return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
+  });
+  // Mode-line fields for cutView_ itself (the segment-LABEL list, one
+  // level ABOVE CutContent -- see its own class comment): "CUT" fixed
+  // (or "HELP" for cutOrigin_==Help, matching CutContent's own literal-
+  // name convention) on the left; on the right, either the FULL path
+  // of the originating file (2026-08-05 user-confirmed example:
+  // splitting doc/HELP.jp by "man" shows trailing
+  // "/Users/haa15030/git/usilic/src/doc/HELP.jp" -- note this is the
+  // FULL path, unlike FileMode's/CutContent's own "bare filename"
+  // convention) for a fresh TOP-LEVEL split, or "CUT:<parent pattern>"
+  // for a NESTED one (splitSelected()'s own re-split -- see
+  // CutMode::parentPattern()'s own comment for why it's the PARENT
+  // level's pattern, e.g. "CUT:man" after re-splitting a "man" match
+  // by "tcb", not "CUT:tcb"). HELP's own top-level (non-nested)
+  // trailing is deliberately left empty here -- unlike the File-origin
+  // case, no concrete confirmed value exists for it yet (a real
+  // screenshot elsewhere showed legacy uses a directory-path trailing
+  // there too, but which directory wasn't independently confirmed);
+  // left for its own follow-up rather than guessed at.
+  cutView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    std::string name = (cutOrigin_ == CutOrigin::Help) ? "HELP" : "CUT";
+    std::string trailing;
+    if (auto parent = cutMode_.parentPattern()) {
+      trailing = "CUT:" + *parent;
+    } else if (cutOrigin_ == CutOrigin::File) {
+      trailing = fileMode_.currentFile();
     }
     return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
   });
@@ -2014,7 +2044,22 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
 // Directory/Grep isn't part of this slice (see class comment's
 // "Deliberately excluded").
 bool Application::startCutPrompt(GrepSyntax syntax) {
-  if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::CutContent) return false;
+  // ApplicationMode::Cut (2026-08-05 fix): re-splitting was already
+  // correctly wired for CutContent (having ENTERED a specific
+  // segment's own content first), but a direct user reproduction
+  // (select HELP.jp -> ^Jc "man" -> now viewing the label LIST itself,
+  // ApplicationMode::Cut, cursor on one entry -> ^Jc "tcb" AGAIN)
+  // showed this guard rejecting the second ^Jc outright, silently
+  // dropping the whole "tcb" keystroke sequence into ordinary list
+  // navigation instead. CutMode::selectedSegment()/splitSelected()
+  // already read view_'s (== cutView_'s) OWN cursorIndex_ regardless
+  // of which of cutView_/cutContentView_ happens to be the currently
+  // DISPLAYED view -- nothing about them actually required already
+  // being inside CutContent, this guard was just stricter than it
+  // needed to be.
+  if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::CutContent &&
+      currentMode_ != ApplicationMode::Cut)
+    return false;
   cutSyntax_ = syntax;
   if (currentMode_ == ApplicationMode::File) cutReturnMode_ = ApplicationMode::File;
   activatePrompt(PromptKind::CutPattern, "");
@@ -2302,8 +2347,13 @@ bool Application::executeCut(const std::string &pattern) {
   std::string fileSourcePath = std::move(cutFileSourcePath_);
   cutFileSourcePath_.clear();  // consumed exactly once, regardless of which branch below runs or its outcome
 
-  if (currentMode_ == ApplicationMode::CutContent) {
-    ok = cutMode_.splitSelected(pattern, cutSyntax_);  // nested -- cutOrigin_ untouched, see class comment
+  if (currentMode_ == ApplicationMode::CutContent || currentMode_ == ApplicationMode::Cut) {
+    // Nested resplit -- cutOrigin_ untouched, see class comment. Both
+    // "already viewing a selected segment's own content" (CutContent)
+    // and "still on the label LIST itself, cursor on one entry"
+    // (Cut) land here identically, see startCutPrompt()'s own
+    // 2026-08-05 comment for why the latter was missing.
+    ok = cutMode_.splitSelected(pattern, cutSyntax_);
   } else if (!fileSourcePath.empty()) {
     // K-35/K-36's "regular file" variant: load the file first (same
     // as opening it normally would), THEN split its now-current

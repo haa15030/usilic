@@ -998,3 +998,31 @@ shell.cのread_shell()（複数プロセス間通信を挟む構成）を読み�
 検証として、test_application.cppに新規doctest2件を追加しました(^RがPROGRAM起動ログを呼び出せること、選択してEnterすると実際に実行され副作用(ファイル書き込み)が起きることを確認)。既存616件+新規2件=618件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、実際のusilicrcをテスト用の隔離$HOMEへコピーした上で、doc/ディレクトリで^N×2→^J p→less CHANGES→Enter(実行、less自身の"may be a binary file. See it anyway?"警告が出ることを確認)→q→^J p→^R→モードラインが「COMMAND 1/1 END less CHANGES」と表示されることを確認→Enter→同じlessのバイナリ警告が再度表示されることを確認し、単なる挿入ではなく実際に再実行されていることを生バイト列で確認しました(副産物: 隔離$HOMEにusilicrcが存在しないとprogramSeedCommands()が空になりPROGRAM自体が一切"recognized"されないため、この検証は最初空振りしていました――実際のPTY検証では常に本物のusilicrcを隔離$HOMEへコピーする必要がある、という手順上の注意点として記録しました)。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数616件、604件通過+12件既知失敗）、直後にMac側を再ビルドして618/618件を再確認しました。
 
 これで^Rの4段階計画(FILE/DIR一覧トグル、MAN/LOCATE/FGREP/EGREPプロンプト呼び出し、SHELLコマンド呼び出し、PROGRAM起動ログ呼び出し)がすべて完了しました。残る既知の対象はCutPattern(legacyがss.p.hegrepを流用する等、確証を持てない部分が残る)のみで、実機での必要性が出てきたら改めて着手します。コミット・プッシュ済みです。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-05 6.50.46.png''/Users/haa15030/Desktop/スクリーンショット 2026-08-05 7.00.14.png'
+CUTについては履歴の前に入れ子が未実装。
+（⑩⑪⑫とかちゃんと見える？ＡＢＣとかに変えようか？希望あればよろしく）
+左から順に
+/usr/local/bin/usilic ~/git/usilic/src/doc
+~/git/usilic/src/cpp/build/usilic -c ~/git/usilic/src/doc
+
+「HELP.jp」を選択→^Jc→man[Enter]→スクショ⑨→
+さらに^Jc→tcb[Enter]→スクショ⑩
+
+ただしモードラインは下記であるべきなのでお手本も完全じゃない。
+⑨「CUT」「01/18 TOP」「/Users/haa15030/git/usilic/src/doc/HELP.jp」
+⑩「CUT」「1/3 TOP」「CUT:man」
+
+可能なら旧Cソースおよび-cの修正をよろしく。
+
+>(最初の2枚は同期の遅延で読み込めず、⑨⑩として再送していただき確認しました。円数字は問題なく読めています、変更不要です。)
+
+原因を2つ特定しました。
+
+(1) 入れ子: Application::startCutPrompt()のガードがcurrentMode_ == File || CutContentのみを許可しており、ApplicationMode::Cut(セグメント一覧そのもの、まだEnterでどのセグメントの内容にも入っていない状態)からの^Jcを無条件で拒否していました。ご報告の再現手順は「1回目の^Jc後、Enterを押さずそのままラベル一覧を見ている状態で2回目の^Jc」であり、このガードにより2回目の^Jc(と後続のtcb+Enter)が丸ごと無視され、通常の一覧ナビゲーションのキー入力として素通りしていました。CutMode::selectedSegment()/splitSelected()は元々cutView_自身のcursorIndex_だけを見ており、CutContentに実際に入っているかどうかに一切依存していなかったため、ガード自体を緩めるだけで済みました。
+
+(2) モードライン: cutView_(セグメント一覧そのもの)には、以前「disp_window()の"enter string at mode-line"分岐との対応が確証を持てない」との理由で意図的にモードライン設定が未登録のままでした。今回具体的な正解例を示していただいたことで、確証を持って実装できました。
+
+startCutPrompt()のガードへcurrentMode_ == ApplicationMode::Cutを追加し、executeCut()の「入れ子か否か」判定も同様に拡張、いずれも同じcutMode_.splitSelected()を呼ぶよう統一しました。cutView_用のモードラインも新設し、name欄はcutContentView_と同じ規約(HELP起点なら"HELP"固定、それ以外は"CUT"固定)、trailing欄は新規CutMode::parentPattern()(ModeStackの先頭を非破壊的にpeekし、保存済みの親パターンを返す)が値を持てば"CUT:"+親パターン(現在のパターンではなく1つ上の階層のパターンである点に注意)、値を持たなければ(トップレベル)ファイルのフルパスとしました。HELP起点のトップレベルのtrailingは確証の持てる実例が無いため今回は意図的に空のままにしています。
+
+検証として、test_application.cppに新規doctest3件を追加しました(CutContentへEnterせずラベル一覧のまま2回目の^Jcを押しても正しく入れ子分割されること、cutView_のトップレベルモードラインが"CUT"+ファイルのフルパスを示すこと、入れ子後のモードラインが"CUT:"+親パターンを示すこと)。既存618件+新規3件=621件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、doc/ディレクトリでご指定の手順そのまま(HELP.jpを開く→^Jc→man→Enter→(ラベル一覧のまま)^Jc→tcb→Enter)を再現し、1回目の結果のモードラインが「CUT 01/18 TOP /Users/haa15030/git/usilic/src/doc/HELP.jp」(⑨と完全一致)、2回目(入れ子)の結果が「CUT <N>/<M> TOP CUT:man」(件数は選択していたセグメントの違いにより⑩の「1/3」とは異なりましたが、CUT/CUT:manという構造は完全一致)と表示されることを生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数619件、607件通過+12件既知失敗）、直後にMac側を再ビルドして621/621件を再確認しました。コミット・プッシュ済みです。

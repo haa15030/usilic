@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -123,6 +124,17 @@ class CutMode {
   // to go back to).
   bool goBack();
   bool canGoBack() const;
+
+  // The pattern that was active ONE level up (i.e. before the most
+  // recent splitSelected()/pushSplit() call), or nullopt at the top
+  // level. Non-destructive peek at modeStack_'s own top frame -- for
+  // the mode-line's own "CUT:<parent pattern>" trailing field on a
+  // nested split (2026-08-05 user-confirmed example: split "man",
+  // select a match, split it again by "tcb" -> mode-line trailing
+  // reads "CUT:man", the PARENT level's pattern, not "tcb" itself --
+  // a breadcrumb identifying which outer split this nested list lives
+  // inside, not a description of the current level).
+  std::optional<std::string> parentPattern() const;
 
  private:
   struct SavedState {

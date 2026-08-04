@@ -9800,6 +9800,77 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       CutPattern(legacyが`ss.p.hegrep`を流用する等、確証を持てない
       部分が残る)のみで、実機での必要性が出てきたら改めて着手する。
 
+165. **2026-08-05(続き): CUT一覧(`cutView_`)の入れ子(再分割)未実装
+    バグを修正、`cutView_`自身のモードラインを新設**。スクショ2枚
+    (「HELP.jp」選択→`^Jc`→`man`[Enter]→⑨、さらに`^Jc`→`tcb`[Enter]
+    →⑩)による報告。ユーザーから「CUTについては履歴の前に入れ子が
+    未実装」との明確な問題提起、および「ただしモードラインは下記で
+    あるべきなのでお手本(legacy)も完全じゃない」として、legacyの
+    実表示をそのまま信用せず、正しい期待値そのもの(⑨「CUT」
+    「01/18 TOP」「/Users/haa15030/git/usilic/src/doc/HELP.jp」、
+    ⑩「CUT」「1/3 TOP」「CUT:man」)が直接提示された。
+   - **原因(入れ子)**: `Application::startCutPrompt()`のガードが
+      `currentMode_ == File || currentMode_ == CutContent`のみを
+      許可しており、`ApplicationMode::Cut`(セグメント一覧そのもの、
+      まだ`Enter`でどのセグメントの内容にも入っていない状態)からの
+      `^Jc`を無条件で拒否していた。ユーザーの再現手順は「1回目の
+      `^Jc`後、`Enter`を押さずそのままラベル一覧を見ている状態で
+      2回目の`^Jc`」であり、このガードにより2回目の`^Jc`(と後続の
+      `tcb`+`Enter`)が丸ごと無視され、通常の一覧ナビゲーションの
+      キー入力として素通りしていた。`CutMode::selectedSegment()`/
+      `splitSelected()`は元々`view_`(=`cutView_`自身)の
+      `cursorIndex_`だけを見ており、`CutContent`に実際に入って
+      いるかどうかに一切依存していなかった(=このガード自体が
+      本来より厳しすぎただけで、内部ロジックは既に対応済みだった)。
+   - **原因(モードライン)**: `cutView_`(セグメント一覧そのもの)には
+      項目157の時点で意図的に`setModeLineFieldsProvider()`が
+      未登録のままだった(「disp_window()の"enter string at
+      mode-line"分岐との対応が確証を持てない」との理由で当時
+      スコープ外にした、CLAUDE.md記載通り)。今回ユーザーから
+      具体的な正解例が示されたことで、確証を持って実装できるように
+      なった。
+   - **修正**: `startCutPrompt()`のガードへ`currentMode_ ==
+      ApplicationMode::Cut`を追加。`Application::executeCut()`の
+      「入れ子か否か」判定も`currentMode_ == CutContent`単独から
+      `currentMode_ == CutContent || currentMode_ == Cut`に拡張し、
+      いずれも同じ`cutMode_.splitSelected()`(内部で`cutModeStack_`
+      へ現在の分割状態をpushしてから新パターンで再分割)を呼ぶよう
+      統一した。
+      `cutView_`用の`setModeLineFieldsProvider()`を新設。name欄は
+      `cutContentView_`と同じ規約(`cutOrigin_==Help`なら`"HELP"`
+      固定、それ以外は`"CUT"`固定)。trailing欄は、新規`CutMode::
+      parentPattern()`(`modeStack_.top()`を非破壊的にpeekし、
+      保存済み`SavedState::pattern`を返す)が値を持つ場合(=入れ子
+      分割中)は`"CUT:" + 親パターン`(例: `"CUT:man"` -- 現在の
+      パターン`"tcb"`ではなく**1つ上の階層のパターン**である点に
+      注意、`man`で分割→1件選択→`tcb`で再分割、という操作の
+      「今どのCUTの中にいるか」を示すパンくず的な意味合いと解釈)、
+      値を持たない(=トップレベル)場合は`cutOrigin_==File`なら
+      `fileMode_.currentFile()`(フルパス、`FileMode`/
+      `CutContent`自身の「ベース名のみ」規約とは異なる点に注意、
+      ⑨の実例そのまま)。HELP起点のトップレベルの場合のtrailingは、
+      確証の持てる実例が無いため今回は意図的に空のまま(以前
+      スクショ⑦で見えていた「ディレクトリパスのtrailing」らしき
+      ものが何のパスかまでは確定できておらず、次回以降の課題として
+      保留)。
+   - **検証**: `test_application.cpp`に新規doctest3件を追加
+      (`CutContent`へ`Enter`せずラベル一覧のまま2回目の`^Jc`を
+      押しても正しく入れ子分割されること、`cutView_`のトップレベル
+      モードラインが`"CUT"`+ファイルのフルパスを示すこと、入れ子後の
+      モードラインが`"CUT:"`+親パターンを示すこと)。既存618件+
+      新規3件=621件全通過、警告ゼロ。実バイナリを`-c`でPTY起動し、
+      `doc/`ディレクトリでユーザーの手順そのまま(`HELP.jp`を開く→
+      `^Jc`→`man`→`Enter`→(ラベル一覧のまま)`^Jc`→`tcb`→`Enter`)を
+      再現し、1回目の結果のモードラインが`CUT 01/18 TOP
+      /Users/haa15030/git/usilic/src/doc/HELP.jp`(⑨と完全一致)、
+      2回目(入れ子)の結果が`CUT <N>/<M> TOP CUT:man`(件数は
+      選択していたセグメントの違いにより⑩の`1/3`とは異なる`1/5`に
+      なったが、`CUT`/`CUT:man`という構造は完全一致)と表示される
+      ことを生バイト列で確認した。Ubuntu 26.04クロスビルド(新規
+      Dockerコンテナ)でも失敗12件はすべて既知の環境依存差のみ
+      (総数619件、607件通過+12件既知失敗)であることを確認、直後に
+      Mac側を再ビルドして621/621件を再確認済み。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

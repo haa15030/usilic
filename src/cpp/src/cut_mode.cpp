@@ -136,4 +136,11 @@ bool CutMode::goBack() {
 
 bool CutMode::canGoBack() const { return !modeStack_.empty(); }
 
+std::optional<std::string> CutMode::parentPattern() const {
+  const ModeStackFrame *frame = modeStack_.top();
+  if (!frame || !frame->cutBuffer) return std::nullopt;
+  auto saved = std::static_pointer_cast<SavedState>(frame->cutBuffer);
+  return saved->pattern;
+}
+
 }  // namespace fm

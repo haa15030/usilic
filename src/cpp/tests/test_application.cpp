@@ -615,6 +615,90 @@ TEST_CASE_FIXTURE(Fixture, "CUT: nested resplit from CutContent, then step back 
   CHECK(app.directoryMode().currentDirectory() == path());
 }
 
+TEST_CASE_FIXTURE(Fixture, "CUT: ^Jc pressed WHILE STILL ON THE LABEL LIST (not yet entered into a segment's "
+                           "own content) nests correctly too (2026-08-05 fix: a direct user reproduction -- "
+                           "select HELP.jp, ^Jc \"man\", then IMMEDIATELY ^Jc \"tcb\" again without first "
+                           "pressing Enter -- found this silently dropped the second ^Jc's whole keystroke "
+                           "sequence into ordinary list navigation instead, since startCutPrompt()'s own guard "
+                           "only allowed File/CutContent, not Cut)") {
+  REQUIRE(app.start(path()));
+  int rootIdx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != rootIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  int fileIdx = indexOf("sub.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != fileIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("alpha");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);  // label list -- NOT CutContent, no Enter pressed yet
+  REQUIRE(app.cutMode().segments().size() == 2);
+  REQUIRE(app.activeContentView().cursorIndex() == 0);  // segment 0 ["alpha", "beta"] is selected
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));  // ^Jc AGAIN, straight from the label list
+  feedText("beta");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  // Re-splitting segment 0's own content (["alpha", "beta"]) by "beta"
+  // yields a leading unlabeled segment (content before the first
+  // match, ["alpha"]) plus the matched one (label="beta", ["beta"]) --
+  // same shape doctest already covers for the CutContent-triggered
+  // case just above, confirming this label-list-triggered path reused
+  // the exact same split() logic rather than falling back to a fresh
+  // top-level split of the WHOLE file (which would have produced 2
+  // segments matching "alpha", not this).
+  REQUIRE(app.cutMode().segments().size() == 2);
+  CHECK(app.cutMode().segments()[0].label.empty());
+  CHECK(app.cutMode().segments()[1].label == "beta");
+}
+
+TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: top-level split shows \"CUT\" and the originating file's FULL "
+                           "path (2026-08-05 user-confirmed example: splitting doc/HELP.jp by \"man\" shows "
+                           "trailing \"/Users/.../doc/HELP.jp\", the full path -- unlike FileMode's/CutContent's "
+                           "own bare-filename convention)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("plain");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.rfind("CUT ", 0) == 0);
+  CHECK(text.find((root / "plain.txt").string()) != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: a NESTED split shows \"CUT:<parent pattern>\" as trailing -- "
+                           "the PARENT level's own pattern, not the just-typed one (2026-08-05 user-confirmed "
+                           "example: split \"man\", select a match, re-split it by \"tcb\" -> trailing reads "
+                           "\"CUT:man\", not \"CUT:tcb\")") {
+  REQUIRE(app.start(path()));
+  int rootIdx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != rootIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  int fileIdx = indexOf("sub.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != fileIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("alpha");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("beta");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  CHECK(app.cutMode().parentPattern() == "alpha");
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.rfind("CUT ", 0) == 0);
+  CHECK(text.find("CUT:alpha") != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "CUT: Back from CutContent returns to the Cut label list, not further") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
