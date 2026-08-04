@@ -82,6 +82,14 @@ bool FileMode::loadFile(const std::string &path) {
     view_.setCursorIndex(0);
   }
   view_.redraw();
+  // A real cursor at the current line, since plain file content has
+  // no whole-line highlight to indicate it otherwise (see
+  // ContentView::syncVisibleCursor()'s own comment) -- a 2026-08-04
+  // user request: the current line still needs to be visibly and
+  // programmatically knowable in both -c/-g (launching an editor at
+  // the current line, and a future COPY mode's row+column selection,
+  // both rely on a real cursor position).
+  view_.syncVisibleCursor();
   return true;
 }
 
@@ -96,6 +104,7 @@ bool FileMode::reflow(int newWidth) {
   if (oldCursor > last) oldCursor = (last < 0) ? 0 : last;
   view_.setCursorIndex(oldCursor);
   view_.redraw();
+  view_.syncVisibleCursor();
   return true;
 }
 

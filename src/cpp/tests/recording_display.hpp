@@ -32,8 +32,15 @@ class RecordingDisplay : public Display {
   // records exactly the shape TerminalDisplay does) doesn't need to
   // track this separately from ordinary cursor movement; only
   // GraphicalDisplay does.
-  void setVisibleCursor(int row, int col) override { moveCursor(row, col); }
-  void hideVisibleCursor() override {}  // no-op, see Display's own comment
+  // visibleCursorHidden_ tracking added on top of the plain forwarding
+  // (2026-08-04, for ContentView::syncVisibleCursor()'s own tests):
+  // TerminalDisplay/GraphicalDisplay don't need this distinction
+  // observable from outside, but a test asserting "syncVisibleCursor()
+  // hid the cursor" has no other way to tell that apart from "nobody
+  // called anything" without it.
+  void setVisibleCursor(int row, int col) override { moveCursor(row, col); visibleCursorHidden_ = false; }
+  void hideVisibleCursor() override { visibleCursorHidden_ = true; }
+  bool visibleCursorHidden() const { return visibleCursorHidden_; }
   void cursorLeft() override { if (cursorCol_ > 0) cursorCol_--; }
   void saveCursor() override {}
   void restoreCursor() override {}
@@ -117,6 +124,7 @@ class RecordingDisplay : public Display {
   bool standoutActive_ = false;
   bool smoothScroll_ = false;
   int scrollForwardCount_ = 0, scrollReverseCount_ = 0;
+  bool visibleCursorHidden_ = true;  // no visible cursor asserted yet
 };
 
 }  // namespace test

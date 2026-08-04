@@ -719,3 +719,19 @@ cbでもそれ用の対処はしていて確かブロックカーソルをXORで
 検証として、GraphicalDisplay単体を直接叩く検証用プログラムを新規に用意し、setVisibleCursor()でカーソルを設定した直後に、ContentView::redraw()が行うのと同じ形の「無関係な全画面書き換え」を実行するという、今回の不具合を再現する手順を組みました。USILICGUIDEBUGのBMPダンプを手動パースし、2回目の再描画後もカーソルのブロックが意図した位置に留まり続け、バグ発生時に着地していたはずのモードライン末尾には何も描画されていないことをピクセル値から確認しました。既存586件は無関係のため全通過・警告ゼロ、PTY(-c)でも^P/^Gの挙動が本修正の前後で完全に同一であることを確認済みです。Ubuntu 26.04クロスビルドでも失敗12件はすべてzip/ロケール/locate/manという既知の環境依存差のみであることを確認し、直後にMac側を再ビルドして586/586件を再確認しました。
 
 なお、ご提案にあったCOPYモード(文字範囲選択によるコピー機能)自体はC++移植側にまだ存在していません(未着手)。今回のsetVisibleCursor()という土台は、COPYモードや将来のファイル閲覧「現在行」表示を-gで実装する際にそのまま再利用できる想定ですが、今回のスコープはSHELLの不具合修正までとし、COPYモード自体の実装には着手していません。コミット・プッシュ済みです。実機でのご確認をお願いします。
+
+<現状はこれでいいと思う。XOR方式だったのは以前の位置を消すためだがタイミングが合わなくて残ることもままあったんで点滅なしでもかまわない。
+次は-c、-g起動での通常ファイル（HELP.jp等）内カーソル表示をよろしく。
+（-gを終えると出るメーセージも調べて。'/Users/haa15030/Desktop/スクリーンショット 2026-08-04 10.34.49.png'）
+
+>ご確認ありがとうございます、点滅無しで進めます。
+
+まずスクリーンショットを確認しました。usilic -g <dir>終了直後のターミナルに「error messaging the mach port for IMKCFRunLoopWakeUpReliable」というmacOSのメッセージが出ていますね。調べたところ、これはSDL_StartTextInput()(GraphicalDisplay::create()が呼んでいる、SDL_TEXTINPUTイベント―IME経由のマルチバイト入力を含む―を受け取るために必要)を呼んだ後、対になるSDL_StopTextInput()を一度も呼ばずウィンドウ/レンダラーを破棄すると、macOSのInput Method Kitフレームワークが消えゆくテキスト入力クライアントへの参照を持ったまま取り残され、このメッセージを出すという、SDL2アプリでよく知られた良性(クラッシュや機能上の実害は無い、OSレベルの診断メッセージ)だがうるさい既知の挙動でした。GraphicalDisplayのデストラクタの先頭にSDL_StopTextInput()を追加しました。このサンドボックスにはOSレベルのログを捕捉する手段が無く、実際にメッセージが消えるかどうかは未検証です――実機での再ビルド後にご確認をお願いします。
+
+本題のカーソル表示です。FileModeは元々view_.setCursorHighlightEnabled(false)で行ハイライトを無効化していました(legacy CUIの実際の見た目に合わせた既存の仕様、プレーンなファイル内容には反転表示のハイライトが一切無いことを実機スクリーンショットで確認済みの、前回以前からの既存動作です)。しかしSHELLの^P/^Nと違い、FileModeの現在行はカーソル移動コマンド(MoveUp/MoveDown/PageUp/PageDown/ScrollLineUp/ScrollLineDown/GoToTop/GoToBottom/Redraw)がすべてApplication::handleCommand()の汎用ディスパッチ(activeView()経由、モードを問わない共通コード)を通るため、SHELLのように個別のハンドラへ1箇所ずつ追加する形は取れません。
+
+代わりにContentView自身にsyncVisibleCursor()という新しいメソッドを追加しました: cursorHighlightEnabled_がfalseならcursorDisplayRow()の位置へ実カーソルを示し、trueなら(ハイライトが既に「今どこにいるか」を示しているので二重表示を避けるため、かつ前のモードのカーソルが残留しないよう)hideVisibleCursor()で消す、という判断を1箇所に集約しています。
+
+これをContentView::redraw()自体に自動的に組み込む設計も検討しましたが、SHELLのscrollback_もcursorHighlightEnabled_がfalseのため、自動化すると「ライブなプロンプト編集中は本来LineEditorが管理する正確な編集カラム位置を出すべきなのに、cursorDisplayRow()のcol0という近似値で上書きしてしまう」という、前回修正したばかりのバグと同種のリスクが生じる恐れがありました。そのため呼び出し側を「ユーザーが実際にナビゲーションした瞬間」(FileMode::loadFile()/reflow()、Applicationの汎用Move/Page/GoTo/Redrawディスパッチ)に限定する設計を維持し、SHELLは引き続き独自の(既に正しく動いている)配線を使う形にしています。SHELLはdispatchByte()の時点でSHELLモード専用分岐に入りApplication::handleCommand()を一切経由しないため、両者は実際には衝突しません。
+
+検証として、ContentView::syncVisibleCursor()の新規doctest3件、FileModeの新規doctest2件、Applicationの新規doctest1件(実際にEnterでファイルを開き、MoveDownでカーソルが追従し、Backでディレクトリ一覧に戻ると隠れることを確認)を追加しました。既存586件+新規6件=592件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、usilic src/docからHELP.jpを開いて生バイト列を確認したところ、開いた直後は001/792 TOPのモードライン表示の直後に1行目へ、MoveDown後は002/792 0%の直後に2行目へ、MoveUpで1行目に戻ることを確認しました(SHELLの^P/^Nと同じ「モードライン描画の直後、その回の最後の書き込みとしてカーソルが正しい行に来る」という形です)。-g側はGraphicalDisplay::setVisibleCursor()/hideVisibleCursor()自体を前回・前々回で既にピクセルレベルで検証済みであり、今回追加したのは同じプリミティブを新しい呼び出し元から呼ぶ配線のみのため、doctestと合わせて追加のピクセル検証は行っていません。Ubuntu 26.04クロスビルドでも失敗12件はすべてzip/ロケール/locate/manという既知の環境依存差のみであることを確認し、直後にMac側を再ビルドして592/592件を再確認しました。コミット・プッシュ済みです。実機でのご確認をお願いします。

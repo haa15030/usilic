@@ -40,6 +40,17 @@ int ContentView::cursorDisplayRow() const {
   return row0_ + bottomAnchorRowOffset() + (cursorIndex_ - topIndex_);
 }
 
+void ContentView::syncVisibleCursor() {
+  if (!cursorHighlightEnabled_) {
+    int row = cursorDisplayRow();
+    if (row >= 0) {
+      display_.setVisibleCursor(row, 0);
+      return;
+    }
+  }
+  display_.hideVisibleCursor();
+}
+
 int ContentView::topIndex() const { return topIndex_; }
 
 void ContentView::setTopIndex(int index) {
@@ -66,6 +77,7 @@ void ContentView::setHoverIndex(std::optional<int> index) { hoverIndex_ = index;
 std::optional<int> ContentView::hoverIndex() const { return hoverIndex_; }
 
 void ContentView::setCursorHighlightEnabled(bool enabled) { cursorHighlightEnabled_ = enabled; }
+bool ContentView::cursorHighlightEnabled() const { return cursorHighlightEnabled_; }
 
 void ContentView::setBottomAnchored(bool enabled) { bottomAnchored_ = enabled; }
 

@@ -253,6 +253,31 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) from File mode returns to Direct
   CHECK(indexOf(app.directoryMode().selectedEntry()->name) == idx);
 }
 
+TEST_CASE_FIXTURE(Fixture, "File mode: shows a real display cursor at the current line and follows "
+                           "MoveDown, then Back hides it again (2026-08-04 user request: plain file content "
+                           "has no highlight of its own, but the current line still needs to be visibly and "
+                           "programmatically knowable in both -c/-g)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK_FALSE(display.visibleCursorHidden());
+  CHECK(display.cursorRow() == app.activeContentView().cursorDisplayRow());
+
+  REQUIRE(app.handleCommand(Command::MoveDown));  // "hello\nworld\n" -- moves onto "world"
+  CHECK_FALSE(display.visibleCursorHidden());
+  CHECK(display.cursorRow() == app.activeContentView().cursorDisplayRow());
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  // Directory mode relies on its own row-highlight, not a floating
+  // cursor left over from File mode -- see Application::
+  // returnToDirectory()'s own hideVisibleCursor() call.
+  CHECK(display.visibleCursorHidden());
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(JumpNext/JumpPrevious): ';'/':' are Back+MoveDown+Enter and "
                            "Back+MoveUp+Enter, confirmed directly by the user (2026-08-03) after an initial "
                            "wrong guess that this was a distinct \"related file\" jump feature") {

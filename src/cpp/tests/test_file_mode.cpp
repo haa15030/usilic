@@ -57,6 +57,28 @@ TEST_CASE_FIXTURE(Fixture, "loadFile: a nonexistent file fails cleanly") {
   CHECK_FALSE(mode.loadFile((root / "does-not-exist.txt").string()));
 }
 
+TEST_CASE_FIXTURE(Fixture, "loadFile: shows a real display cursor at the current line, since plain file "
+                            "content has no whole-line highlight of its own (2026-08-04 user request)") {
+  view.setViewport(0, 10);
+  std::string path = writeFile("plain.txt", "line0\nline1\nline2\n");
+  REQUIRE(mode.loadFile(path));
+  CHECK_FALSE(view.cursorHighlightEnabled());  // ported behavior, unchanged by this request
+  CHECK_FALSE(display.visibleCursorHidden());
+  CHECK(display.cursorRow() == view.cursorDisplayRow());
+  CHECK(display.cursorCol() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "reflow: keeps the visible cursor in sync with the (possibly re-clamped) cursor "
+                            "line after a width change") {
+  view.setViewport(0, 10);
+  std::string path = writeFile("plain.txt", "line0\nline1\nline2\n");
+  REQUIRE(mode.loadFile(path));
+  view.setCursorIndex(2);
+  REQUIRE(mode.reflow(40));
+  CHECK_FALSE(display.visibleCursorHidden());
+  CHECK(display.cursorRow() == view.cursorDisplayRow());
+}
+
 TEST_CASE_FIXTURE(Fixture, "loadFile: long lines wrap at the configured width, via PipeBuffer") {
   fm::ContentView narrowView{display};
   History h2;

@@ -313,6 +313,24 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
 }
 
 GraphicalDisplay::~GraphicalDisplay() {
+  // Matches create()'s own SDL_StartTextInput() call (needed so
+  // SDL_TEXTINPUT events, including multi-byte UTF-8 typed via an
+  // input method, arrive at all -- see pumpEvents()'s own comment).
+  // Without a matching SDL_StopTextInput() before the window/renderer
+  // are torn down, macOS's Input Method Kit framework is left holding
+  // a reference to a text-input client that's about to disappear out
+  // from under it -- a real 2026-08-04 user report (screenshot) showed
+  // this printed to the terminal right after a -g session exited:
+  // "error messaging the mach port for IMKCFRunLoopWakeUpReliable".
+  // Benign (no crash, no functional effect either way -- this is an
+  // OS-level diagnostic, not anything usilic itself detects or acts
+  // on) but noisy; SDL_StopTextInput() here is the documented fix for
+  // exactly this IMK teardown-ordering complaint. Not independently
+  // re-verified in this sandbox (no OS-level log capture available,
+  // same limitation noted throughout this port's other GUI-teardown
+  // work) -- please confirm after rebuilding whether the message is
+  // actually gone on real hardware.
+  SDL_StopTextInput();
   if (impl_->handCursor) SDL_FreeCursor(impl_->handCursor);
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);

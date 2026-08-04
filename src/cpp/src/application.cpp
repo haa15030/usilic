@@ -856,21 +856,27 @@ bool Application::handleCommand(Command command) {
   switch (command) {
     case Command::MoveUp:
       activeView().moveUp();
+      activeView().syncVisibleCursor();
       return true;
     case Command::MoveDown:
       activeView().moveDown();
+      activeView().syncVisibleCursor();
       return true;
     case Command::ScrollLineUp:
       activeView().scrollLineUp();
+      activeView().syncVisibleCursor();
       return true;
     case Command::ScrollLineDown:
       activeView().scrollLineDown();
+      activeView().syncVisibleCursor();
       return true;
     case Command::PageUp:
       activeView().pageUp();
+      activeView().syncVisibleCursor();
       return true;
     case Command::PageDown:
       activeView().pageDown();
+      activeView().syncVisibleCursor();
       return true;
     case Command::Enter:
       if (currentMode_ == ApplicationMode::Directory) return openSelectedEntry();
@@ -1005,12 +1011,15 @@ bool Application::handleCommand(Command command) {
       return true;
     case Command::Redraw:
       activeView().redraw();
+      activeView().syncVisibleCursor();
       return true;
     case Command::GoToTop:
       activeView().goToTop();
+      activeView().syncVisibleCursor();
       return true;
     case Command::GoToBottom:
       activeView().goToBottom();
+      activeView().syncVisibleCursor();
       return true;
     case Command::QuitPager:
       // usilicrc documents this as pager-only ("Exit tcb (pager)");
@@ -1264,6 +1273,13 @@ bool Application::openSelectedSegment() {
 bool Application::returnToDirectory() {
   fileMode_.saveCursorPosition();
   currentMode_ = ApplicationMode::Directory;
+  // File mode's own view now sets a real visible cursor (see
+  // ContentView::syncVisibleCursor()'s own comment) -- without this,
+  // it would keep floating over the directory listing that replaces
+  // it, since directoryView_.redraw() deliberately never touches
+  // Display's visible-cursor state itself (same reasoning as
+  // Application::returnFromShell()'s own hideVisibleCursor() call).
+  display_.hideVisibleCursor();
   directoryView_.redraw();
   return true;
 }

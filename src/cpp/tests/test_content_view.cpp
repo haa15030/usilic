@@ -158,6 +158,47 @@ TEST_CASE("cursorDisplayRow: accounts for bottom-anchoring the same way lineInde
   CHECK(v.cursorDisplayRow() == 4);  // "line1" renders at row 4 when bottom-anchored, see its own test
 }
 
+TEST_CASE("syncVisibleCursor: hides the display's visible cursor when highlighting is enabled (the default)") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setCursorIndex(1);
+  v.syncVisibleCursor();
+  CHECK(d.visibleCursorHidden());
+}
+
+TEST_CASE("syncVisibleCursor: shows a real cursor at cursorDisplayRow() when highlighting is disabled "
+          "(File mode's own case)") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(10));
+  v.setCursorIndex(3);
+  v.setCursorHighlightEnabled(false);
+  CHECK_FALSE(v.cursorHighlightEnabled());
+
+  v.syncVisibleCursor();
+  CHECK_FALSE(d.visibleCursorHidden());
+  CHECK(d.cursorRow() == 3);  // row0(0) + cursorIndex(3)
+  CHECK(d.cursorCol() == 0);
+}
+
+TEST_CASE("syncVisibleCursor: hides the cursor rather than showing one out of view (scrolled away, "
+          "highlighting still disabled)") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(2, 5);
+  v.setLines(makeLines(10));
+  v.setCursorHighlightEnabled(false);
+  v.setCursorIndex(2);
+  v.setTopIndex(5);  // scrolls cursorIndex_ out of view, see cursorDisplayRow()'s own test
+  REQUIRE(v.cursorDisplayRow() == -1);
+
+  v.syncVisibleCursor();
+  CHECK(d.visibleCursorHidden());
+}
+
 TEST_CASE("setModeLineFieldsProvider: modeLineText wraps name/trailing around the position text") {
   RecordingDisplay d(10, 60);
   ContentView v(d);

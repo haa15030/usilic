@@ -128,6 +128,45 @@ class ContentView {
   // moved here instead, is legacy's actual replacement.
   int cursorDisplayRow() const;
 
+  // Explicitly asserts (or clears) the display's own visible cursor
+  // (Display::setVisibleCursor()/hideVisibleCursor()) to match this
+  // view's current cursorHighlightEnabled_ state: shows a plain text
+  // cursor at cursorDisplayRow() when highlighting is OFF (File mode's
+  // own case -- see setCursorHighlightEnabled()'s comment on why plain
+  // file content has no whole-line highlight, yet a real 2026-08-04
+  // user request explained the CURRENT line still needs to be visually
+  // and programmatically knowable in both -c/-g: launching an editor
+  // at the current line, and a future COPY mode's row+column-based
+  // selection, both need a real cursor position the way a highlighted
+  // selector screen's cursorIndex_ alone already provides), or clears
+  // it when highlighting is ON (a highlighted selector already shows
+  // "where you are" on its own -- a second, redundant cursor glyph on
+  // top would be visual noise, and a STALE cursor left over from a
+  // PREVIOUS mode that did use one, e.g. File mode's cursor still
+  // sitting there after returning to Directory mode, is exactly the
+  // kind of leftover-state bug hideVisibleCursor() exists to prevent
+  // -- see Application::returnFromShell()'s own comment for the first
+  // occurrence of this pattern).
+  //
+  // Deliberately NOT called automatically from redraw()/moveUp()/
+  // moveDown()/etc. themselves: SHELL's own scrollback_ ALSO has
+  // cursorHighlightEnabled_ off, but its meaningful cursor position
+  // while actively editing the live prompt line is the prompt's own
+  // EDIT COLUMN (set by LineEditor::redraw()'s own setVisibleCursor()
+  // call), not column 0 of cursorDisplayRow() -- baking an automatic
+  // call into redraw() itself would silently clobber that more precise
+  // position every time ANY unrelated redraw() ran (the exact "-gの
+  // SHELLでは...一瞬出て消えるパターン" bug this whole mechanism was
+  // built to eliminate). Callers that represent "the user just
+  // genuinely navigated" (FileMode::loadFile()/reflow(), Application's
+  // generic MoveUp/MoveDown/PageUp/PageDown/GoToTop/GoToBottom/Redraw
+  // dispatch) call this explicitly instead -- SHELL keeps its own
+  // separate, already-correct wiring (moveDisplayCursorToShellHistory
+  // Line()) and is never routed through Application's generic command
+  // dispatch at all (see dispatchByte()'s own Shell-mode branch), so
+  // the two mechanisms never actually collide in practice.
+  void syncVisibleCursor();
+
   // The index of the topmost currently-visible line. Added alongside
   // setTopIndex() for the GUI drag-scroll prototype (see
   // GraphicalDisplay's own class comment) -- scrolling the viewport
@@ -187,6 +226,7 @@ class ContentView {
   // highlight at all). FileMode disables this on its own ContentView;
   // DirectoryMode leaves it at the default.
   void setCursorHighlightEnabled(bool enabled);
+  bool cursorHighlightEnabled() const;
 
   // Whether fewer-than-height_ lines render flush against the BOTTOM
   // of the viewport (blank padding rows above them) instead of the

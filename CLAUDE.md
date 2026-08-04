@@ -8679,6 +8679,109 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       はSHELLの不具合修正までとし、COPYモード自体の実装には着手して
       いない。
 
+147. **2026-08-04(続き): 通常ファイル表示(HELP.jp等)の`-c`/`-g`両方に
+    「現在行」の実カーソル表示を追加、`GraphicalDisplay`終了時の
+    `IMKCFRunLoopWakeUpReliable`メッセージに対処**。項目146の
+    「現状はこれでいい」という確認に続けて、「次は-c、-g起動での通常
+    ファイル(HELP.jp等)内カーソル表示をよろしく」という依頼。あわせて
+    `-g`終了直後のターミナルに出るmacOSのメッセージ(スクリーンショット
+    添付)の調査も依頼された。
+   - **設計**: `FileMode`は元々`view_.setCursorHighlightEnabled(false)`
+      で行ハイライトを無効化していた(legacy CUIの実際の見た目に
+      合わせた既存の仕様、「プレーンなファイル内容には反転表示の
+      ハイライトが一切無い」ことを実機スクリーンショットで確認済み
+      ―― 項目146以前からの既存動作で変更なし)。しかしSHELLの
+      `^P`/`^N`と違い、FileModeの現在行はカーソル移動コマンド
+      (`Command::MoveUp`/`MoveDown`/`PageUp`/`PageDown`/`ScrollLineUp`/
+      `ScrollLineDown`/`GoToTop`/`GoToBottom`/`Redraw`)がすべて
+      `Application::handleCommand()`の汎用ディスパッチ(`activeView()`
+      経由、モードを問わない共通コード)を通るため、SHELLのように
+      個別のハンドラへ`moveDisplayCursorToShellHistoryLine()`相当を
+      1箇所ずつ追加する形は取れない(取ると重複だらけになる)。
+      代わりに`ContentView`自身に`syncVisibleCursor()`という新しい
+      パブリックメソッドを追加した: `cursorHighlightEnabled_`が
+      falseなら`cursorDisplayRow()`の位置へ`display_.setVisibleCursor()`
+      で実カーソルを示し、trueなら(ハイライトが既に「今どこにいるか」
+      を示しているので二重表示を避けるため、かつ前のモードのカーソルが
+      残留しないよう)`display_.hideVisibleCursor()`で消す、という
+      判断を1箇所に集約した。`cursorHighlightEnabled()`という新しい
+      getterも追加(既存はsetterのみだった)。
+   - **`ContentView::redraw()`自体には組み込まなかった、SHELLとの
+      非干渉を保つため**: `syncVisibleCursor()`を`redraw()`/`moveUp()`/
+      `moveDown()`自体の内部から自動的に呼ぶ設計も検討したが、
+      SHELLの`scrollback_`も`cursorHighlightEnabled_`がfalseのため、
+      これを自動化すると「ライブなプロンプト編集中(履歴の末尾行)は
+      本来LineEditorが管理する正確な編集カラム位置を出すべきなのに、
+      `cursorDisplayRow()`のcol0という近似値で上書きしてしまう」
+      という、項目146で修正したばかりのバグと同種のリスクが生じる
+      恐れがあった。呼び出し側を「ユーザーが実際にナビゲーションした
+      瞬間」(`FileMode::loadFile()`/`reflow()`、`Application`の
+      汎用Move/Page/GoTo/Redrawディスパッチ)に限定する設計のまま
+      維持し、SHELLは引き続き独自の(既に正しく動いている)
+      `moveDisplayCursorToShellHistoryLine()`経由の配線を使う ――
+      SHELLは`dispatchByte()`の時点でSHELLモード専用分岐に入り
+      `Application::handleCommand()`を一切経由しないため
+      (`if (currentMode_ == ApplicationMode::Shell) return
+      feedShellByte(...)`)、両者は実際には衝突しない。
+   - `FileMode::loadFile()`/`reflow()`の末尾に`view_.syncVisibleCursor()`
+      を追加。`Application::handleCommand()`のMoveUp/MoveDown/
+      ScrollLineUp/ScrollLineDown/PageUp/PageDown/GoToTop/GoToBottom/
+      Redrawの各caseにも`activeView().syncVisibleCursor();`を追加
+      (SHELL以外の全モードに影響するが、ハイライト有効なモードでは
+      単に`hideVisibleCursor()`を呼ぶだけの無害な処理になる)。
+      `Application::returnToDirectory()`(FileModeから抜ける処理)には
+      `display_.hideVisibleCursor()`を追加 ―― `directoryView_.redraw()`
+      自体は意図的にこの状態へ触れない設計のため、FileMode側の古い
+      カーソルがディレクトリ一覧の上に残留しないよう明示的に消す
+      必要があった(項目146の`returnFromShell()`と同じパターン)。
+   - **検証**: `ContentView::syncVisibleCursor()`の新規doctest3件
+      (ハイライト有効時は隠す、無効時は`cursorDisplayRow()`位置に
+      表示、無効かつビューポート外にスクロールしている場合は隠す)、
+      `FileMode`の新規doctest2件(`loadFile()`直後にカーソルが表示
+      されること、`reflow()`後も追従すること)、`Application`の
+      新規doctest1件(実際にEnterでファイルを開き、MoveDownで
+      カーソルが追従し、Backでディレクトリ一覧に戻ると隠れることを
+      確認)を追加。既存の`tests/recording_display.hpp`(doctest用
+      擬似端末)に`visibleCursorHidden()`という観測用のトラッキング
+      (`setVisibleCursor()`/`hideVisibleCursor()`どちらが最後に
+      呼ばれたか)を追加(既存の呼び出し元には影響なし)。既存586件
+      +新規6件=592件全通過、警告ゼロ。
+      実バイナリを`-c`モードでPTY起動し、`usilic src/doc`から
+      `HELP.jp`を開いて生バイト列を確認 ―― 開いた直後は
+      `001/792 TOP`のモードライン表示の直後に`ESC[1;1H`で実端末
+      カーソルが1行目に、`MoveDown`後は`002/792 0%`の直後に
+      `ESC[2;1H`で2行目に、`MoveUp`で`ESC[1;1H`に戻ることを確認した
+      (SHELLの`^P`/`^N`と同じ「モードライン描画の直後、その回の
+      最後の書き込みとしてカーソルが正しい行に来る」という形)。
+      `-g`側は`GraphicalDisplay::setVisibleCursor()`/
+      `hideVisibleCursor()`自体を項目145・146で既にピクセルレベルで
+      検証済みであり、今回追加したのは同じプリミティブを新しい
+      呼び出し元(`ContentView::syncVisibleCursor()`)から呼ぶ配線
+      のみのため、doctest(`RecordingDisplay`、同じ`Display`
+      抽象インターフェースを介した分岐を検証)と合わせて追加の
+      ピクセル検証は行っていない。Ubuntu 26.04クロスビルド(新規
+      Dockerコンテナ)でも失敗12件はすべてzip/ロケール/locate/man
+      という既知の環境依存差のみ(このdiffと無関係)であることを
+      確認、直後にMac側を再ビルドして592/592件を再確認済み。
+   - **`IMKCFRunLoopWakeUpReliable`メッセージへの対処**: ユーザー
+      提供のスクリーンショット(`usilic -g <dir>`終了直後のターミナル)
+      に「`error messaging the mach port for
+      IMKCFRunLoopWakeUpReliable`」というmacOSのメッセージが表示
+      されていた。これは`SDL_StartTextInput()`(`GraphicalDisplay::
+      create()`が呼んでいる、`SDL_TEXTINPUT`イベント―IME経由の
+      マルチバイト入力を含む―を受け取るために必要)を呼んだ後、
+      対になる`SDL_StopTextInput()`を一度も呼ばずウィンドウ/
+      レンダラーを破棄すると、macOSのInput Method Kitフレームワークが
+      消えゆくテキスト入力クライアントへの参照を持ったまま取り残され、
+      このメッセージを出すという、SDL2アプリでよく知られた良性
+      (クラッシュや機能上の実害は無い、OSレベルの診断メッセージ)だが
+      うるさい既知の挙動と判明。`GraphicalDisplay`のデストラクタの
+      先頭に`SDL_StopTextInput()`を追加(ウィンドウ/レンダラー破棄
+      より前)。**このサンドボックスにはOSレベルのログを捕捉する
+      手段が無く(このポートのGUI終了処理まわりで繰り返し出てきた
+      既知の制約と同じ)、実際にメッセージが消えるかどうかは未検証**
+      ―― 実機での再ビルド後にご確認をお願いしたい。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す
