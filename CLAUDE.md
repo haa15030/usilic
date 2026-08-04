@@ -9620,6 +9620,85 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       あることを確認、直後にMac側を再ビルドして607/607件を
       再確認済み。
 
+162. **2026-08-04(続き): `^R`の全体設計を旧Cソースから洗い出し、
+    MAN/LOCATE/FGREP/EGREPプロンプト入力中の`^R`(履歴呼び出し)を
+    実装(3段階計画の1段階目)**。項目161への返信で、ユーザーから
+    「HISTORYは広範囲に使用されるモードでもあるのでそれなりの設計が
+    必要かもしれない」との指摘。SHELLでの`^R`(実行したコマンド)、
+    通常ファイル画面で`^J^P`後`less`を選んだ後の`^R`(「less .../HELP」
+    のような実行ログ)、FGREP/EGREPでの`^R`(検索文字列の履歴)を例に、
+    「未実装なモードに出くわすたびに潰していく」か「旧Cソースを
+    一通り見て設計を先に構築する」かを問われ、後者を提案・合意した。
+   - **調査**: `menu.c`/`mode.c`/`sub.c`/`shell.c`を横断的に読み、
+      `^R`が実際には**4種類の異なる統合ポイント**を持つことが
+      判明した:
+      1. **既に開いている一覧内でのトグル**(FILE/DIR、項目160/161で
+         実装済み)。
+      2. **プロンプト入力中の呼び出し**(MAN/LOCATE/FGREP/EGREP/CUT)
+         -- `menu.c`の`m_list()`が`is_name(ap->name, M_lfile) ->
+         T_hfile`のように、現在アクティブなプロンプトの文脈だけを
+         見て呼び出し先を決める。
+      3. **SHELLコマンドライン入力中の呼び出し**(実行したコマンド、
+         `RingCategory::ShellCommand`は既に記録済みだが表示側が未実装)。
+      4. **PROGRAM起動ログ**(`ss.p.hist`。`do_prog()`/`do_shell()`が
+         SHELLコマンドとPROGRAM起動(`^J^P`でlessを選ぶ等)の**両方**を
+         同じ1本のリングへ記録する、独立したカタログ)。
+      `sub.c`の`save_ll()`を読み、FILE/DIR/MANには`ss.p.file`
+      (`save_str()`、通常表示用)と`ss.p.hfile`(`save_history()`、
+      `^R`表示用)という**同時に更新される2本の独立したリング**が
+      存在することも判明したが、`save_history()`の重複抑制規則
+      (項目161で修正済みの「直前の1件とだけ比較」)を1本のリングに
+      適用してから表示時に用途別加工する現行実装は、これと**観測上
+      完全に同一の結果**になることを確認済み(ユーザーからも
+      「FILE/DIRのHISTORYはこれでOK」と確認済み)。LOCATE/FGREP/
+      EGREPは`ss.p.hlocate`/`ss.p.hfgrep`/`ss.p.hegrep`のみ存在し
+      (通常のソート一覧という概念自体が無い)、`menu.c`内の
+      該当プッシュ箇所(`case M_locate:`/`case T_hfgrep: case
+      T_hegrep: case M_fgrep:`等)を直接確認した。
+   - **実装(統合ポイント2)**: `PromptKind`(MAN/LOCATE/GREP)が
+      アクティブな状態で`^R`(バイト`0x12`)を受けたら、対応する
+      `RingCategory`の`sortedUniqueRecentEntries()`(項目161で新設)
+      でListBrowserを開く`Application::startPromptHistoryRecall()`
+      を新設。新規メンバ`promptHistoryRecallKind_`/
+      `promptHistoryRecallText_`/`promptHistoryRecallReturnMode_`で、
+      「戻るべきプロンプト種別」「`^R`を押す前に途中まで打っていた
+      文字列」「プロンプトの下にあった元のApplicationMode」を保持
+      する。一覧で`Enter`を押すと、選んだ文字列をあたかも今タイプ
+      して`Enter`したかのように同じ実行経路(`executeMan()`/
+      `executeLocate()`/`executeGrep()`)へ流し込む -- `submitPrompt()`
+      本体との重複を避けるため、その部分を共通ヘルパー
+      `executePromptSubmission()`に切り出した。`^G`(Back)を押すと、
+      `^R`を押す前に途中まで打っていた文字列を**そのまま復元**して
+      元のプロンプトへ戻る(黙って消さない)。`executeMan()`/
+      `executeLocate()`/`executeGrep()`にはそれぞれ対応する
+      `RingCategory`への`pushRecent()`呼び出しを追加(検索/参照の
+      成否に関わらず記録、legacyの「まず記録してから実行」という
+      順序を踏襲)。GREPは`grepSyntax_`で`RecentFgrepPattern`/
+      `RecentEgrepPattern`を出し分け、legacyの`p.hfgrep`/`p.hegrep`
+      分離と対応させた。CutPatternは今回のスコープ外(legacyが
+      `p.hegrep`を流用する等、確証を持てない部分が残るため次回)。
+   - **検証**: `test_application.cpp`に新規doctest5件を追加(FGREP
+      プロンプト中の`^R`がソート済み履歴ListBrowserを開くこと、
+      選択して`Enter`すると実際に検索が再実行されること、`^G`で
+      途中まで打っていた文字列(`"partial"`)ごと元のプロンプトへ
+      戻ること、FGREPとEGREPの履歴がlegacy同様に別リングとして
+      分離されていること、履歴が無い/未対応のプロンプト種別
+      (`CopyDestination`)では`^R`が一覧を開かず、かつバイトが
+      文字として挿入もされないこと)。既存607件+新規5件=612件
+      全通過、警告ゼロ。実バイナリを`-c`でPTY起動し、`doc/`
+      ディレクトリで`^S`(FGREP)→`CHANGES`→`Enter`→`^G`→`^S`→
+      `^R`という手順を再現し、モードラインが`FGREP 1/1 END
+      CHANGES`と正しく表示されることを確認。別の実行では`^S`→
+      `partial`(未送信)→`^R`→`^G`という手順で、`partial`という
+      文字列がプロンプト欄にそのまま復元されることも生バイト列で
+      確認した。Ubuntu 26.04クロスビルド(新規Dockerコンテナ)でも
+      失敗12件はすべて既知の環境依存差のみ(総数610件、598件通過+
+      12件既知失敗)であることを確認、直後にMac側を再ビルドして
+      612/612件を再確認済み。
+   - **今後**: 統合ポイント3(SHELLコマンドライン入力中の`^R`)と
+      4(PROGRAM起動ログ)は、ユーザーと合意した順序で次回以降
+      続行する。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

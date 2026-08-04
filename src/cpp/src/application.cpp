@@ -1318,6 +1318,19 @@ bool Application::openSelectedDuEntry() {
 bool Application::openSelectedListEntry() {
   const std::string *item = listBrowserMode_.selectedItem();
   if (!item) return false;
+  if (promptHistoryRecallKind_) {
+    // Restore the ORIGINAL underlying mode first (prompts overlay
+    // whatever was active when they started, and the corresponding
+    // execute*() functions -- see e.g. executeGrep()'s own
+    // grepReturnMode_ read -- assume that's still current, exactly as
+    // it is for a live-typed submitPrompt() call), THEN dispatch the
+    // picked text through the exact same path a live Enter would.
+    PromptKind kind = *promptHistoryRecallKind_;
+    std::string text = *item;
+    promptHistoryRecallKind_ = std::nullopt;
+    currentMode_ = promptHistoryRecallReturnMode_;
+    return executePromptSubmission(kind, text);
+  }
   if (listBrowserCategory_ == RingCategory::RecentDirectory) {
     if (!directoryMode_.enterDirectory(*item)) return false;
     currentMode_ = ApplicationMode::Directory;
@@ -1492,6 +1505,16 @@ void Application::handleShellChildExited() {
 }
 
 bool Application::returnFromListBrowser() {
+  if (promptHistoryRecallKind_) {
+    PromptKind kind = *promptHistoryRecallKind_;
+    std::string text = promptHistoryRecallText_;
+    promptHistoryRecallKind_ = std::nullopt;
+    promptHistoryRecallText_.clear();
+    currentMode_ = promptHistoryRecallReturnMode_;
+    activeView().redraw();
+    activatePrompt(kind, text);  // resumes with whatever had already been typed before ^R
+    return true;
+  }
   currentMode_ = listBrowserReturnMode_;
   activeView().redraw();
   return true;
@@ -2042,6 +2065,14 @@ bool Application::feedPromptByte(int byte) {
     cancelPrompt();
     return true;
   }
+  // K-49 (^R): see startPromptHistoryRecall()'s own comment. Swallowed
+  // either way (not inserted as literal text) -- 0x12 isn't printable,
+  // and legacy's own m_list() dispatch never falls through to typing
+  // it literally for a context ^R doesn't apply to either.
+  if (byte == 0x12) {
+    startPromptHistoryRecall();
+    return true;
+  }
   // K-65 (^I): only for the FILE/DIR PathInput prompt in this first
   // slice -- MAN/PROGRAM/LOCATE/GREP/etc's own prompt text isn't a
   // filesystem path, so there's nothing meaningful to complete there
@@ -2062,7 +2093,10 @@ bool Application::submitPrompt() {
   PromptKind kind = promptKind_;
   std::string text = promptEditor_.text();
   promptKind_ = PromptKind::None;
+  return executePromptSubmission(kind, text);
+}
 
+bool Application::executePromptSubmission(PromptKind kind, const std::string &text) {
   switch (kind) {
     case PromptKind::GrepPattern:
       return executeGrep(text);
@@ -2097,6 +2131,47 @@ bool Application::submitPrompt() {
 void Application::cancelPrompt() {
   promptKind_ = PromptKind::None;
   activeView().redraw();
+}
+
+// K-49 (^R) pressed while a prompt is active: ported from menu.c's
+// m_list(), which picks a RingCategory purely from the CURRENT
+// prompt's own context (`is_name(ap->name, M_man) -> T_hman`, etc) --
+// see the class's own investigation notes (CLAUDE.md item 161) for
+// the full source read this is based on, including why FILE/DIR
+// (ToggleHistoryView, an already-open-list TOGGLE) and this (a
+// prompt-time RECALL that opens a list for the first time) are
+// different integration points even though they end up sharing the
+// same ListBrowser rendering/RingCategory machinery underneath.
+// Deliberately narrow in this slice: only MAN/LOCATE/FGREP/EGREP,
+// which is the batch the user asked for first (CutPattern's own
+// history -- legacy oddly reuses ss.p.hegrep for it, per that same
+// source read -- and SHELL/PROGRAM's own recall are each their own
+// follow-up). False (caller swallows the byte without inserting it)
+// for every other PromptKind.
+bool Application::startPromptHistoryRecall() {
+  RingCategory category;
+  switch (promptKind_) {
+    case PromptKind::ManName:
+      category = RingCategory::RecentManPage;
+      break;
+    case PromptKind::LocateQuery:
+      category = RingCategory::RecentLocateQuery;
+      break;
+    case PromptKind::GrepPattern:
+      category = (grepSyntax_ == GrepSyntax::Fixed) ? RingCategory::RecentFgrepPattern : RingCategory::RecentEgrepPattern;
+      break;
+    default:
+      return false;
+  }
+  promptHistoryRecallKind_ = promptKind_;
+  promptHistoryRecallText_ = promptEditor_.text();
+  promptHistoryRecallReturnMode_ = currentMode_;
+  promptKind_ = PromptKind::None;
+  listBrowserCategory_ = category;
+  listBrowserChronological_ = false;
+  listBrowserMode_.show(sortedUniqueRecentEntries(category));
+  currentMode_ = ApplicationMode::ListBrowser;
+  return true;
 }
 
 std::string Application::promptLabelText(PromptKind kind) const {
@@ -2151,6 +2226,14 @@ void Application::activatePrompt(PromptKind kind, const std::string &initialText
 }
 
 bool Application::executeGrep(const std::string &pattern) {
+  // Recorded regardless of whether the search itself finds anything
+  // below -- see startPromptHistoryRecall()'s own comment on why FGREP
+  // and EGREP get separate rings (matching legacy's own p.hfgrep/
+  // p.hegrep split, keyed off grepSyntax_ the same way promptLabelText()
+  // already picks the FGREP/EGREP mode-line label).
+  history_.pushRecent(grepSyntax_ == GrepSyntax::Fixed ? RingCategory::RecentFgrepPattern
+                                                        : RingCategory::RecentEgrepPattern,
+                       pattern);
   ContentView &source = (grepReturnMode_ == ApplicationMode::File) ? fileView_ : directoryView_;
   std::vector<std::string> sourceLines;
   sourceLines.reserve(source.lines().size());
@@ -2201,6 +2284,7 @@ bool Application::executeCut(const std::string &pattern) {
 }
 
 bool Application::executeMan(const std::string &name) {
+  history_.pushRecent(RingCategory::RecentManPage, name);  // recorded regardless of loadPage()'s own outcome below
   if (!manMode_.loadPage(name)) {
     activeView().redraw();
     return false;
@@ -2246,6 +2330,7 @@ bool Application::executeProgram(const std::string &command) {
 }
 
 bool Application::executeLocate(const std::string &query) {
+  history_.pushRecent(RingCategory::RecentLocateQuery, query);  // recorded regardless of search()'s own outcome below
   if (!locateMode_.search(query)) {
     activeView().redraw();
     return false;

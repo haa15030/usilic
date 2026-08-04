@@ -1481,6 +1481,20 @@ class Application {
     PathInput,  // K-45/K-47's shared prompt kind, see Command::StartFileInput's own comment
     ArchiveDestination  // K-57/K-58's own Destination prompt, see startArchivePrompt()'s own comment
   };
+  // Shared by submitPrompt() (text typed live) and
+  // openSelectedListEntry()'s own prompt-recall branch (text picked
+  // from ^R's history list instead) -- see startPromptHistoryRecall()'s
+  // own comment. Factored out so both paths dispatch on PromptKind
+  // identically rather than duplicating the switch.
+  bool executePromptSubmission(PromptKind kind, const std::string &text);
+  // K-49 (^R) pressed WHILE a supported prompt (MAN/LOCATE/FGREP/
+  // EGREP name/query/pattern) is active: see its own definition
+  // comment for the full design. False (byte silently swallowed, not
+  // inserted as literal text) for prompt kinds with no history of
+  // their own yet -- matching m_list()'s own echo_mess(S_errf) for a
+  // context ^R doesn't apply to, same spirit as ToggleHistoryView's
+  // own outside-ListBrowser no-op.
+  bool startPromptHistoryRecall();
   // Shared trailer for every startXxxPrompt(): sets promptKind_, draws
   // that kind's own label onto the mode-line row (see
   // promptLabelText()'s own comment), and starts promptEditor_ with
@@ -1510,6 +1524,18 @@ class Application {
   // notes) has an obvious single place to re-call.
   void drawPromptLabel(PromptKind kind);
   PromptKind promptKind_ = PromptKind::None;
+  // Set only while a ^R-triggered prompt-history ListBrowser is open
+  // (see startPromptHistoryRecall()'s own comment): which prompt to
+  // resume, what had already been typed there before ^R was pressed
+  // (restored verbatim on Back/^G -- ^R shouldn't silently discard
+  // partial input), and which ApplicationMode was active underneath
+  // the prompt (prompts overlay the CURRENT mode rather than owning
+  // one of their own, so this has to be saved/restored across the
+  // ListBrowser interlude the same way listBrowserReturnMode_ is for
+  // the plain ^X^F/^X^D case). nullopt outside a recall session.
+  std::optional<PromptKind> promptHistoryRecallKind_;
+  std::string promptHistoryRecallText_;
+  ApplicationMode promptHistoryRecallReturnMode_ = ApplicationMode::Directory;
   // Which of the two keys (K-45 ^Xf vs K-47 ^Xd) started the current
   // PathInput prompt -- see startPathInputPrompt()'s own comment for
   // why EXECUTION stays unified (PathResolver decides file-vs-

@@ -950,3 +950,22 @@ FILE/DIR/MAN/LOCATE/FGREP/EGREP/COMMANDいずれの一覧も、通常表示は�
 pushRecent()をring.back()==name（直前の1件とだけ比較）による連続重複のみの抑制に変更しました。これによりRingCategoryの各リング自体が「生のアクセス履歴ログ（重複あり）」になり、^R（HISTORY）がこれをそのまま表示する挙動と自然に一致します。一方^X^F/^X^Dの通常（ソート）表示側は、リング自体が重複を含み得るようになったため、表示のたびに独自の重複排除が必要になりました。共通ヘルパーApplication::sortedUniqueRecentEntries()を新設し、std::set<std::string>（ソート+一意化を1ステップで行う）で構築するようstartListBrowser()/toggleListBrowserHistory()両方から呼び出す形にしています。
 
 検証として、test_history.cppの既存doctest（旧・全体重複排除を前提としたアサーション）を新しい仕様に合わせて書き換え、「直前の1件と同じなら抑制される」ことを確認する新規doctest1件を追加しました。test_application.cppにも新規doctest1件を追加（非連続の再訪問がソート表示では1件のみ、HISTORY表示では重複ありの2件として現れることをエンドツーエンドで確認）。既存605件+新規2件=607件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、doc/ディレクトリでCHANGES→HELP.jp→（間に別ファイルを挟まず）CHANGESを再訪問、という手順を再現し、^X^F（ソート表示）が「1/2 TOP」（2件、重複なし）、^R（HISTORY表示）が「3/3 END」（3件、CHANGESが末尾に重複して再登場）と正しく表示されることを生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数605件、593件通過+12件既知失敗）、直後にMac側を再ビルドして607/607件を再確認しました。コミット・プッシュ済みです。
+
+<FILE/DIRのHISTORYはこれでOK。
+ただしHISTORYは広範囲に使用されるモードでもあるのでそれなりの設計が必要かもしれない。
+例えばSHELLでの^Rは実行したコマンド、通常ファイル画面（HELP等）で^J^Pしたのちlessを選んだあとの^Rでは「less .../HELP」、FGREP/EGREPでの^Rでは検索文字列の履歴一覧等、^Rはほとんどの場所で起動可能なモードでもあるので、今日のように未実装なモードに出くわすたびに潰していく手法がいいのか、あるいは旧Cソースを一通り見てもらってそれなりの設計を先に構築したうえでのデバッグの方が効率がよければそちらでもいいと思う。
+どっちがやりやすい？
+
+>設計を先に固める方が良いと思います。理由は今回すでに2回、部分的な情報から実装→ユーザー確認で覆す、を繰り返しているからです（CUTのtrailingがバイト数のみだと思い込んで後で章名も必要と判明、^RがDIR履歴のエイリアスだと思い込んでいた等）。^Rは関わる箇所が多い分、行き当たりばったりだと同じ手戻りを何度も繰り返すリスクが高く、逆に一度全体像を掴めばm_list()のような共通ディスパッチ経由の箇所はまとめて実装できるはずです。
+
+menu.c/mode.c/sub.c/shell.cを横断的に読み、^Rが実際には4種類の異なる統合ポイントを持つことを確認しました: (1) 既に開いている一覧内でのトグル（FILE/DIR、実装済み）、(2) プロンプト入力中の呼び出し（MAN/LOCATE/FGREP/EGREP/CUT）、(3) SHELLコマンドライン入力中の呼び出し（実行したコマンド）、(4) PROGRAM起動ログ（ss.p.hist。do_prog()/do_shell()がSHELLコマンドとPROGRAM起動の両方を同じ1本のリングへ記録する独立したカタログ）。sub.cのsave_ll()を読むと、FILE/DIR/MANにはss.p.file（通常表示用）とss.p.hfile（^R表示用）という同時に更新される2本の独立したリングが存在すると判明しましたが、現行の1本リング方式(項目161の重複抑制修正込み)はこれと観測上完全に同一の結果になることを確認済みです。LOCATE/FGREP/EGREPはss.p.hlocate/ss.p.hfgrep/ss.p.hegrepのみ存在し、通常のソート一覧という概念自体がありません。
+
+2（MAN/LOCATE/FGREP/EGREP）が一番均質でまとめて片付けやすく、3（SHELL）は既存データがある分早いと思います。4は起動タイミングの確認が要りそうです、と提案しました。
+
+<その順でよろしく。
+
+>PromptKind（MAN/LOCATE/GREP）がアクティブな状態で^R（バイト0x12）を受けたら、対応するRingCategoryのsortedUniqueRecentEntries()でListBrowserを開くApplication::startPromptHistoryRecall()を新設しました。新規メンバpromptHistoryRecallKind_/promptHistoryRecallText_/promptHistoryRecallReturnMode_で、戻るべきプロンプト種別・^Rを押す前に途中まで打っていた文字列・元のApplicationModeを保持します。一覧でEnterを押すと、選んだ文字列をあたかも今タイプしてEnterしたかのように同じ実行経路(executeMan()/executeLocate()/executeGrep())へ流し込みます(submitPrompt()本体との重複を避けるため、共通ヘルパーexecutePromptSubmission()に切り出しました)。^G（Back）を押すと、^Rを押す前に途中まで打っていた文字列をそのまま復元して元のプロンプトへ戻ります(黙って消しません)。
+
+executeMan()/executeLocate()/executeGrep()にはそれぞれ対応するRingCategoryへのpushRecent()呼び出しを追加しました(検索/参照の成否に関わらず記録)。GREPはgrepSyntax_でRecentFgrepPattern/RecentEgrepPatternを出し分け、legacyのp.hfgrep/p.hegrep分離と対応させています。CutPatternは今回のスコープ外としました(legacyがp.hegrepを流用する等、確証を持てない部分が残るため)。
+
+検証として、test_application.cppに新規doctest5件を追加しました(FGREPプロンプト中の^Rがソート済み履歴ListBrowserを開くこと、選択してEnterすると実際に検索が再実行されること、^Gで途中まで打っていた文字列(「partial」)ごと元のプロンプトへ戻ること、FGREPとEGREPの履歴が別リングとして分離されていること、履歴が無い/未対応のプロンプト種別では^Rが一覧を開かずバイトも挿入されないこと)。既存607件+新規5件=612件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、doc/ディレクトリで^S（FGREP）→CHANGES→Enter→^G→^S→^Rという手順を再現し、モードラインが「FGREP 1/1 END CHANGES」と正しく表示されることを確認しました。別の実行では^S→partial（未送信）→^R→^Gという手順で、partialという文字列がプロンプト欄にそのまま復元されることも生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数610件、598件通過+12件既知失敗）、直後にMac側を再ビルドして612/612件を再確認しました。統合ポイント3（SHELL）と4（PROGRAM起動ログ）は合意した順序で次回以降続行します。コミット・プッシュ済みです。

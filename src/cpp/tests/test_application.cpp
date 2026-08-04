@@ -2607,6 +2607,101 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHistoryView): refused outside Li
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
+// -- ^R prompt-time history recall (MAN/LOCATE/FGREP/EGREP), ported
+// from menu.c's m_list() per-context dispatch -- see CLAUDE.md item
+// 161/162 for the source read this is based on --
+
+TEST_CASE_FIXTURE(Fixture, "^R (startPromptHistoryRecall): opens a sorted, de-duplicated history ListBrowser "
+                           "while an FGREP prompt is active, matching FILE/DIR's own sorted normal view") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // records "plain.txt" into RecentFgrepPattern
+
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::StartFgrep));  // a fresh prompt -- history exists from the search above
+  CHECK(app.promptActive());
+
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().items().size() == 1);
+  CHECK(app.listBrowserMode().items()[0] == "plain.txt");
+  CHECK(app.activeContentView().modeLineText().rfind("FGREP ", 0) == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: Enter on a picked pattern re-runs the search exactly as a "
+                           "live-typed submission would") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  REQUIRE(app.listBrowserMode().items().size() == 1);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 1);
+  CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: ^G restores the ORIGINAL prompt with whatever had already "
+                           "been typed before ^R was pressed, not a blank one") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("partial");  // typed, but not yet submitted, when ^R interrupts
+  REQUIRE(app.feedByte(0x12, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.promptText() == "partial");
+  CHECK(display.rowText(display.rows() - 1).find("FGREP") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: distinguishes FGREP from EGREP history, matching legacy's "
+                           "own separate p.hfgrep/p.hegrep rings") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("fixedpattern");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  feedText("plain\\.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  REQUIRE(app.listBrowserMode().items().size() == 1);
+  CHECK(app.listBrowserMode().items()[0] == "plain\\.txt");  // NOT "fixedpattern" -- that's FGREP's own ring
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: swallowed (no ListBrowser, no literal byte inserted) for a "
+                           "prompt kind without its own history yet, matching m_list()'s own echo_mess(S_errf)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  REQUIRE(app.promptActive());
+
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R -- CopyDestination has no history integration in this slice
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.promptText().empty());  // 0x12 itself was NOT inserted as literal text
+}
+
 TEST_CASE_FIXTURE(Fixture, "command history: Enter on an entry is a no-op in this slice") {
   history.pushRecent(RingCategory::ShellCommand, "echo hi");
 
