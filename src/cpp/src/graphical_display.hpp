@@ -273,6 +273,7 @@ class GraphicalDisplay : public Display {
   void commitGlyph(const std::string &utf8Bytes, int width);
   void renderCellBackground(int row, int col);
   void renderCell(int row, int col);
+  void renderCursor();
   void renderTextRun(int y, const std::string &line, Color fg);
 };
 

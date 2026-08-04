@@ -454,6 +454,83 @@ void GraphicalDisplay::renderCell(int row, int col) {
   SDL_FreeSurface(surface);
 }
 
+// Draws a visible text cursor at the current (impl_->cursorRow,
+// impl_->cursorCol) -- a real terminal's own hardware cursor renders
+// itself wherever moveCursor() last left it (TerminalDisplay just
+// forwards the escape sequence and the terminal emulator does the
+// rest), but a GraphicalDisplay window draws every pixel itself, and
+// until this method existed, nothing ever painted anything at that
+// position: moveCursor() only updated impl_->cursorRow/cursorCol for
+// putByte()'s own bookkeeping (where the NEXT glyph gets written), not
+// for anything visual. This meant -g never showed a cursor at all --
+// not just for SHELL's ^P/^N history browsing (the bug that surfaced
+// this gap, see CLAUDE.md's 2026-08-04 note on removing that mode's
+// old whole-line highlight bar), but for the live prompt-editing
+// cursor too (LineEditor::redraw()'s own moveCursor() call at the end
+// of every redraw), and for every other mode's post-redraw() resting
+// position (ContentView::redraw()'s last moveCursor() call, inside
+// renderModeLine()) -- exactly the same set of places a real -c
+// terminal's own hardware cursor already visibly lands after those
+// same calls. Drawing this unconditionally on every flush() therefore
+// doesn't single out SHELL specially; it makes -g's cursor behavior
+// match what -c has shown all along.
+//
+// Renders as a solid block in the foreground color (matching a real
+// terminal's default block-cursor look) with whatever glyph already
+// occupies that cell redrawn on top in the background color, so text
+// under the cursor stays legible instead of being hidden -- the same
+// idea Cell::standout/renderCell() already use for reverse-video, just
+// forced on for this one cell regardless of its own standout state
+// (a cursor should always read as "the cursor", even sitting on top of
+// the mode-line's own already-reverse-video text).
+void GraphicalDisplay::renderCursor() {
+  if (!impl_->outputEnabled) return;
+  int row = impl_->cursorRow;
+  int col = impl_->cursorCol;
+  if (row < 0 || row >= impl_->rows || col < 0 || col >= impl_->columns) return;
+
+  // If the cursor landed on the "shadow" second cell of a wide (CJK)
+  // glyph, draw over the glyph's actual home cell instead and span
+  // both columns -- matches how a real terminal's block cursor covers
+  // a whole wide character rather than looking like it clipped it in
+  // half.
+  int homeCol = col;
+  if (impl_->cellAt(row, col).continuation && col > 0) homeCol = col - 1;
+  bool isWide = (homeCol + 1 < impl_->columns) && impl_->cellAt(row, homeCol + 1).continuation;
+
+  SDL_Rect box{Impl::kMarginX + homeCol * impl_->cellWidth, Impl::kMarginY + row * impl_->cellHeight,
+               impl_->cellWidth * (isWide ? 2 : 1), impl_->cellHeight};
+  SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
+  SDL_RenderFillRect(impl_->renderer, &box);
+
+  const Cell &cell = impl_->cellAt(row, homeCol);
+  if (cell.glyph.empty() || cell.glyph == " ") return;
+
+  int style = TTF_STYLE_NORMAL;
+  if (cell.bold) style |= TTF_STYLE_BOLD;
+  if (cell.underline) style |= TTF_STYLE_UNDERLINE;
+
+  // Same primary/fallback-font glyph-coverage decision as renderCell()
+  // -- see its own comment.
+  unsigned int codepoint = decodeUtf8Codepoint(cell.glyph);
+  TTF_Font *renderFont = impl_->font;
+  bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
+  if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
+    renderFont = impl_->fallbackFont;
+  TTF_SetFontStyle(renderFont, style);
+
+  SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), impl_->bg);
+  if (!surface) return;
+  SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
+  if (texture) {
+    int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
+    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, surface->w, surface->h);
+    SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
+    SDL_DestroyTexture(texture);
+  }
+  SDL_FreeSurface(surface);
+}
+
 void GraphicalDisplay::flush() {
   if (!impl_->outputEnabled) return;
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
@@ -479,6 +556,7 @@ void GraphicalDisplay::flush() {
     for (int col = 0; col < impl_->columns; col++) renderCellBackground(row, col);
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
+  renderCursor();
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     // Same env var as the grid dump above: also save the actual
     // rendered pixels (read back from the renderer itself, not a
