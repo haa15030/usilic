@@ -1469,20 +1469,30 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
   int coastLevel = 0;       // 0 == not coasting; otherwise an index into fm::kScrollSpeedLevels
   int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
-  // Whether the drag actually crossed at least one real row since the
-  // current press started -- see the click-consumption loop's own
-  // comment (2026-08-05 fix) for why a left ButtonDown can no longer
-  // act as a click by itself. Row-granular (matching the real-terminal
-  // drag path's own `rowDelta != 0` check in runTerminalMouseDrag()),
-  // not "any Motion event fired at all": SDL_MOUSEMOTION is pixel-
-  // granular, and ordinary mouse/trackpad jitter of a pixel or two
-  // during an otherwise stationary tap is common enough that treating
-  // ANY motion sample as disqualifying would make plain clicks
-  // unreliable. topIndexAtPress is captured on ButtonDown; ButtonUp
-  // compares the CURRENT topIndex() against it -- content having
-  // actually scrolled by at least one row is the real, functional
-  // definition of "this was a drag," not an arbitrary pixel threshold.
-  int topIndexAtPress = -1;
+  // Cumulative ABSOLUTE pixel motion since the current press started
+  // -- see the click-consumption loop's own comment (2026-08-05 fix)
+  // for why a left ButtonDown can no longer act as a click by itself.
+  //
+  // A first version of this (same-day revision) used a ROW-granular
+  // check instead (comparing topIndex() at press vs. release, matching
+  // the real-terminal drag path's own `rowDelta != 0` check in
+  // runTerminalMouseDrag()) -- reasoning that SDL_MOUSEMOTION's pixel
+  // granularity meant a plain "any Motion event at all" check would be
+  // too sensitive to ordinary jitter. That reasoning was backwards: a
+  // real user report found clicks now needing a second press to
+  // register, and the actual problem was the OPPOSITE direction --
+  // row-granularity means the false-positive threshold for "was this a
+  // drag" is exactly ONE cellHeightPixels() of jitter, which for an
+  // ordinary font size is easily just 15-20 real pixels, well within
+  // what a real mouse/trackpad can report as noise during a single
+  // stationary tap (unlike -c's SGR mouse reports, which are already
+  // row-quantized at the TERMINAL level before this code ever sees
+  // them, so this class of false positive can't occur there at all).
+  // A small fixed PIXEL threshold -- independent of font/cellHeight --
+  // is the standard way real UI frameworks (Cocoa, GTK, ...)
+  // distinguish a click from a drag, and is what's used here instead.
+  int totalAbsMotionSincePress = 0;
+  constexpr int kClickJitterTolerancePixels = 4;
   // The row/column a left ButtonDown landed on, captured by the click-
   // consumption loop below but not acted on immediately -- carried
   // forward to ButtonUp, which decides whether this ends up being a
@@ -1545,9 +1555,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // along (runTerminalMouseDrag(), see its own "release, if
       // !moved" comment) -- capturing the row/column here but only
       // actually calling handleMouseClick() from DragEventType::
-      // ButtonUp below, once it's known no real row-level scrolling
-      // happened in between (see `topIndexAtPress`'s own comment
-      // above).
+      // ButtonUp below, once it's known the total motion since this
+      // press stayed under the click/drag jitter threshold (see
+      // `totalAbsMotionSincePress`'s own comment above).
       if (!click->rightButton) {
         pendingClickRow = click->row;
         pendingClickCol = click->column;
@@ -1711,7 +1721,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       switch (drag->type) {
         case fm::GraphicalDisplay::DragEventType::ButtonDown:
           dragging = true;
-          topIndexAtPress = view.topIndex();
+          totalAbsMotionSincePress = 0;
           coastLevel = 0;  // grabbing mid-coast stops it right where it is
           coastDirection = 0;
           recentMotion.clear();
@@ -1731,17 +1741,18 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // key->special branch's comment above for why a leftover
           // fractional remainder wedges the render-mode check forever.
           if (coastLevel == 0) pixelOffset = 0;
-          // No real row-level scrolling happened between this press
-          // and release -- a plain click after all (see the click-
-          // consumption loop's own comment for why this is deferred
-          // all the way to here instead of acting the moment the
-          // button went down).
-          if (view.topIndex() == topIndexAtPress && pendingClickRow >= 0)
+          // Total motion since press stayed under the jitter tolerance
+          // -- a plain click after all (see the click-consumption
+          // loop's own comment for why this is deferred all the way
+          // to here instead of acting the moment the button went
+          // down).
+          if (totalAbsMotionSincePress < kClickJitterTolerancePixels && pendingClickRow >= 0)
             app.handleMouseClick(pendingClickRow, pendingClickCol);
           pendingClickRow = pendingClickCol = -1;
           break;
         }
         case fm::GraphicalDisplay::DragEventType::Motion:
+          totalAbsMotionSincePress += std::abs(drag->deltaY);
           pixelOffset += drag->deltaY;
           recentMotion.push_back({std::chrono::steady_clock::now(), drag->deltaY});
           while (!recentMotion.empty() && recentMotion.front().first < std::chrono::steady_clock::now() - kReleaseWindow)
