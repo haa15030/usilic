@@ -796,18 +796,28 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
 // redrawPromptRow()'s own commandLine_.redraw() cursor position, which
 // already ran immediately before this is called at both ^P/^N call
 // sites, so there's nothing to override) -- only moves the display's
-// real cursor when actually browsing scrollback_ history, so the
+// visible cursor when actually browsing scrollback_ history, so the
 // live-prompt case keeps editing normally. -1 (scrolled out of view,
 // shouldn't be reachable given moveUp()/moveDown() always keep
 // cursorIndex_ within the viewport, but checked defensively) is simply
-// skipped rather than moving the cursor somewhere meaningless.
+// skipped rather than showing the cursor somewhere meaningless.
+//
+// setVisibleCursor(), not moveCursor() (2026-08-04 revision -- see
+// Display::setVisibleCursor()'s own comment): an earlier version used
+// plain moveCursor(), which worked for -c (nothing else touches the
+// screen between this call and the terminal going idle again) but not
+// -g, where runGuiPhase()'s own steady ~60Hz polling could re-run a
+// full, unrelated ContentView::redraw() within the SAME frame this ran
+// in, silently dragging the visible cursor back to wherever that
+// redraw()'s OWN incidental moveCursor() calls last landed (a real
+// user report: "-gのSHELLでは...一瞬出て消えるパターン").
 void Application::moveDisplayCursorToShellHistoryLine() {
   const auto &lines = shell_.scrollback().lines();
   bool browsingHistory =
       !lines.empty() && shell_.scrollback().cursorIndex() != static_cast<int>(lines.size()) - 1;
   if (!browsingHistory) return;
   int row = shell_.scrollback().cursorDisplayRow();
-  if (row >= 0) display_.moveCursor(row, 0);
+  if (row >= 0) display_.setVisibleCursor(row, 0);
 }
 
 ContentView &Application::activeView() {
@@ -1324,6 +1334,15 @@ bool Application::returnFromDu() {
 
 bool Application::returnFromShell() {
   currentMode_ = shellReturnMode_;
+  // The mode being returned to (typically a plain directory listing)
+  // relies on ContentView's own row-highlight, not a visible cursor,
+  // and never calls setVisibleCursor() itself -- without this, -g
+  // would keep showing SHELL's last cursor position (a history
+  // browsing line, or the live prompt caret) floating over the new
+  // screen's content, since ContentView::redraw() deliberately never
+  // touches it (see Display::setVisibleCursor()'s own comment on why
+  // it must persist across incidental redraws to begin with).
+  display_.hideVisibleCursor();
   activeView().redraw();
   return true;
 }

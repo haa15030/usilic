@@ -126,6 +126,8 @@ class GraphicalDisplay : public Display {
   void cursorLeft() override;
   void saveCursor() override;
   void restoreCursor() override;
+  void setVisibleCursor(int row, int col) override;
+  void hideVisibleCursor() override;
 
   void clearScreen() override;
   void clearToEndOfLine() override;

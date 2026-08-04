@@ -32,6 +32,8 @@ struct Fixture {
       void putChar(int) override {}
       void flush() override {}
       void moveCursor(int, int) override {}
+      void setVisibleCursor(int, int) override {}
+      void hideVisibleCursor() override {}
       void cursorLeft() override {}
       void saveCursor() override {}
       void restoreCursor() override {}

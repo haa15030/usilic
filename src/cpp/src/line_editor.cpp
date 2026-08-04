@@ -190,7 +190,13 @@ void LineEditor::redraw() {
   display_.moveCursor(row_, col0_);
   renderVisible(visible, shift_);
 
-  display_.moveCursor(row_, col0_ + byteToColumn(shift_, cursorPos_));
+  // setVisibleCursor(), not moveCursor(): this IS the meaningful
+  // editing caret (as opposed to every OTHER moveCursor() call in this
+  // method, which only positions where the next glyph gets written) --
+  // see Display::setVisibleCursor()'s own comment for why -g needs
+  // this distinction to keep the cursor from getting silently dragged
+  // elsewhere by a later, unrelated redraw.
+  display_.setVisibleCursor(row_, col0_ + byteToColumn(shift_, cursorPos_));
   display_.flush();
 }
 

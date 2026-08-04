@@ -27,6 +27,13 @@ class RecordingDisplay : public Display {
   void putChar(int c) override { putAdvance(c); }
   void flush() override {}
   void moveCursor(int row, int col) override { cursorRow_ = row; cursorCol_ = col; }
+  // Same as moveCursor() here -- see Display::setVisibleCursor()'s own
+  // comment for why a real terminal (and this test double, which
+  // records exactly the shape TerminalDisplay does) doesn't need to
+  // track this separately from ordinary cursor movement; only
+  // GraphicalDisplay does.
+  void setVisibleCursor(int row, int col) override { moveCursor(row, col); }
+  void hideVisibleCursor() override {}  // no-op, see Display's own comment
   void cursorLeft() override { if (cursorCol_ > 0) cursorCol_--; }
   void saveCursor() override {}
   void restoreCursor() override {}

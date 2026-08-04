@@ -163,6 +163,10 @@ void TerminalDisplay::moveCursor(int row, int col) {
   std::fflush(stdout);
 }
 
+void TerminalDisplay::setVisibleCursor(int row, int col) { moveCursor(row, col); }
+
+void TerminalDisplay::hideVisibleCursor() {}
+
 void TerminalDisplay::cursorLeft() {
   if (!outputEnabled_) return;
   tputs(caps_.cursorLeft.c_str(), 1, outc);

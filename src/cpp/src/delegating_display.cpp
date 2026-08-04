@@ -15,6 +15,8 @@ void DelegatingDisplay::moveCursor(int row, int col) { backend_->moveCursor(row,
 void DelegatingDisplay::cursorLeft() { backend_->cursorLeft(); }
 void DelegatingDisplay::saveCursor() { backend_->saveCursor(); }
 void DelegatingDisplay::restoreCursor() { backend_->restoreCursor(); }
+void DelegatingDisplay::setVisibleCursor(int row, int col) { backend_->setVisibleCursor(row, col); }
+void DelegatingDisplay::hideVisibleCursor() { backend_->hideVisibleCursor(); }
 
 void DelegatingDisplay::clearScreen() { backend_->clearScreen(); }
 void DelegatingDisplay::clearToEndOfLine() { backend_->clearToEndOfLine(); }

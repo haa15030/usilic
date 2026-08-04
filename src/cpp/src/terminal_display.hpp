@@ -71,6 +71,11 @@ class TerminalDisplay : public Display {
   void cursorLeft() override;
   void saveCursor() override;
   void restoreCursor() override;
+  // Just moveCursor(row, col) -- see Display::setVisibleCursor()'s own
+  // comment for why a real terminal doesn't need to track this
+  // separately.
+  void setVisibleCursor(int row, int col) override;
+  void hideVisibleCursor() override;  // no-op, see Display's own comment
 
   void clearScreen() override;
   void clearToEndOfLine() override;

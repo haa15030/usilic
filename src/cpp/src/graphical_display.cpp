@@ -156,6 +156,19 @@ struct GraphicalDisplay::Impl {
   int savedRow = 0, savedCol = 0;
   bool standoutActive = false, boldActive = false, underlineActive = false;
 
+  // The LOGICAL cursor position renderCursor() actually draws --
+  // deliberately separate from cursorRow/cursorCol above (which is
+  // purely "where does the next byte get written", constantly moved
+  // around by ContentView::redraw()'s own per-row/mode-line writes).
+  // Only setVisibleCursor() touches this; see Display::
+  // setVisibleCursor()'s own comment for why the split exists.
+  // hasVisibleCursor starts false so nothing is drawn before any
+  // caller has explicitly asked for a cursor (avoids a stray block at
+  // the default (0,0) the moment a window opens, before e.g. SHELL or
+  // a prompt has positioned one anywhere meaningful).
+  bool hasVisibleCursor = false;
+  int visibleCursorRow = 0, visibleCursorCol = 0;
+
   std::string pendingUtf8;  // bytes of an incomplete multi-byte sequence, see putByte()
 
   bool outputEnabled = true;
@@ -454,26 +467,37 @@ void GraphicalDisplay::renderCell(int row, int col) {
   SDL_FreeSurface(surface);
 }
 
-// Draws a visible text cursor at the current (impl_->cursorRow,
-// impl_->cursorCol) -- a real terminal's own hardware cursor renders
-// itself wherever moveCursor() last left it (TerminalDisplay just
-// forwards the escape sequence and the terminal emulator does the
-// rest), but a GraphicalDisplay window draws every pixel itself, and
-// until this method existed, nothing ever painted anything at that
-// position: moveCursor() only updated impl_->cursorRow/cursorCol for
-// putByte()'s own bookkeeping (where the NEXT glyph gets written), not
-// for anything visual. This meant -g never showed a cursor at all --
-// not just for SHELL's ^P/^N history browsing (the bug that surfaced
-// this gap, see CLAUDE.md's 2026-08-04 note on removing that mode's
-// old whole-line highlight bar), but for the live prompt-editing
-// cursor too (LineEditor::redraw()'s own moveCursor() call at the end
-// of every redraw), and for every other mode's post-redraw() resting
-// position (ContentView::redraw()'s last moveCursor() call, inside
-// renderModeLine()) -- exactly the same set of places a real -c
-// terminal's own hardware cursor already visibly lands after those
-// same calls. Drawing this unconditionally on every flush() therefore
-// doesn't single out SHELL specially; it makes -g's cursor behavior
-// match what -c has shown all along.
+// Draws a visible text cursor at (impl_->visibleCursorRow,
+// impl_->visibleCursorCol) -- the LOGICAL cursor position set by
+// setVisibleCursor(), NOT impl_->cursorRow/cursorCol (which is purely
+// putByte()'s own "where does the next glyph go" bookkeeping, moved
+// around by every incidental write -- see Display::
+// setVisibleCursor()'s own comment for the full story on why these
+// two had to be split apart).
+//
+// A first version of this method (2026-08-04) read impl_->cursorRow/
+// cursorCol directly, reasoning that -c's real hardware cursor already
+// visibly lands wherever the last moveCursor() call left it, so -g
+// should just match that. That held for -c's own event-driven run
+// loop (one input processed per iteration, nothing else touches the
+// screen afterward) but not for -g's: runGuiPhase() polls at a steady
+// ~60Hz and, within the SAME frame a caller like Shell's ^P/^N history
+// browsing explicitly moved the cursor to a specific line, its own
+// tail-end unconditionally re-runs a full ContentView::redraw() (whose
+// internal per-row/mode-line moveCursor() calls are pure glyph-
+// placement, landing wherever the mode-line text last ended) --
+// silently dragging the "cursor" back to the bottom row a frame later.
+// A real 2026-08-04 user report described exactly this: "-gのSHELLでは
+// プロンプトと同じく一瞬出て消えるパターン...モードラインの行数は
+// 追随するも位置は最下行のまま". Reading a SEPARATE piece of state
+// that only setVisibleCursor() ever touches means incidental redraws
+// physically cannot move it, regardless of a particular frame's call
+// ordering -- the same "XOR block cursor kept as its own routine,
+// decoupled from the main redraw" idea the user described from their
+// own past GUI work (cb), adapted to reuse this port's authoritative
+// Cell grid instead of needing true pixel XOR: erasing/redrawing the
+// cursor is just re-rendering that one cell normally from Cell state,
+// which a literal raster XOR toggle only ever approximated.
 //
 // Renders as a solid block in the foreground color (matching a real
 // terminal's default block-cursor look) with whatever glyph already
@@ -485,8 +509,9 @@ void GraphicalDisplay::renderCell(int row, int col) {
 // the mode-line's own already-reverse-video text).
 void GraphicalDisplay::renderCursor() {
   if (!impl_->outputEnabled) return;
-  int row = impl_->cursorRow;
-  int col = impl_->cursorCol;
+  if (!impl_->hasVisibleCursor) return;
+  int row = impl_->visibleCursorRow;
+  int col = impl_->visibleCursorCol;
   if (row < 0 || row >= impl_->rows || col < 0 || col >= impl_->columns) return;
 
   // If the cursor landed on the "shadow" second cell of a wide (CJK)
@@ -591,6 +616,14 @@ void GraphicalDisplay::moveCursor(int row, int col) {
   impl_->cursorRow = row;
   impl_->cursorCol = col;
 }
+
+void GraphicalDisplay::setVisibleCursor(int row, int col) {
+  impl_->hasVisibleCursor = true;
+  impl_->visibleCursorRow = row;
+  impl_->visibleCursorCol = col;
+}
+
+void GraphicalDisplay::hideVisibleCursor() { impl_->hasVisibleCursor = false; }
 
 void GraphicalDisplay::cursorLeft() {
   if (impl_->cursorCol > 0) impl_->cursorCol--;

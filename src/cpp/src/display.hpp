@@ -60,6 +60,58 @@ class Display {
   virtual void saveCursor() = 0;     // no-op if the terminal lacks this
   virtual void restoreCursor() = 0;  // capability (legacy: sc/rc optional)
 
+  // Marks (row, col) as where the LOGICAL/meaningful cursor -- the one
+  // a user would actually call "the cursor" (the live prompt-editing
+  // caret, the SHELL scrollback line currently being browsed via
+  // ^P/^N, and eventually a pager's current line / COPY mode's
+  // character-range endpoint once those grow cursor-position-aware
+  // GUI support) -- should visually rest, as opposed to moveCursor(),
+  // which ALSO doubles as "where the next byte gets written" (every
+  // ContentView::redraw() row-by-row write, every mode-line draw, ...
+  // all move the cursor purely as writing side effects, with no
+  // intent to park a visible cursor there).
+  //
+  // On a real terminal (TerminalDisplay) this distinction doesn't
+  // matter: nothing about -c's rendering model needs a SEPARATE
+  // "flush the whole screen" step the way -g does (every byte is
+  // already visible the instant it's written), and -c's own run loop
+  // processes one input event per iteration with nothing else
+  // touching the screen afterward -- so the plain "last moveCursor()
+  // call before the terminal goes idle" a real hardware cursor already
+  // uses is enough, and TerminalDisplay's own implementation is just
+  // moveCursor(row, col).
+  //
+  // GraphicalDisplay's -g run loop, though, polls at a steady ~60Hz
+  // and unconditionally re-issues a full ContentView::redraw() (whose
+  // OWN internal moveCursor() calls are pure glyph-placement, landing
+  // wherever the mode-line's own text last ended) within the SAME
+  // frame a caller like Shell's SHELL-history ^P/^N handling explicitly
+  // asked for the browsed-to line -- without this separate concept,
+  // that later incidental redraw was silently clobbering the
+  // deliberately-set cursor position moments after it appeared (a real
+  // 2026-08-04 user report: "-gのSHELLではプロンプトと同じく一瞬出て
+  // 消えるパターン"). Tracking this as its own explicit state, updated
+  // ONLY by callers that mean "show the cursor HERE" rather than by
+  // every incidental text-placement moveCursor() call, structurally
+  // prevents that class of clobbering regardless of a particular
+  // frame's call ordering (see GraphicalDisplay's own
+  // renderCursor()/Impl::visibleCursorRow comment for how it's used).
+  virtual void setVisibleCursor(int row, int col) = 0;
+
+  // Clears whatever setVisibleCursor() last asserted, so a stale
+  // position doesn't linger visible across a mode switch into
+  // something that never calls setVisibleCursor() itself (e.g.
+  // leaving SHELL, whose ^P/^N history browsing/live prompt editing
+  // both use it, back to a plain directory listing, which relies on
+  // ContentView's own row-highlight instead and has no cursor position
+  // of its own to assert). A no-op on TerminalDisplay/RecordingDisplay:
+  // -c's real hardware cursor and this test double's own moveCursor()-
+  // based recording never accumulated separate persistent "visible
+  // cursor" state in the first place (see setVisibleCursor()'s own
+  // comment for why only GraphicalDisplay needed the split at all), so
+  // there's nothing to clear.
+  virtual void hideVisibleCursor() = 0;
+
   // -- erasing / scrolling --
   virtual void clearScreen() = 0;
   virtual void clearToEndOfLine() = 0;
