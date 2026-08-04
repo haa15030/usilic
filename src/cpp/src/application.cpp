@@ -2166,12 +2166,24 @@ void Application::cancelPrompt() {
 // prompt-time RECALL that opens a list for the first time) are
 // different integration points even though they end up sharing the
 // same ListBrowser rendering/RingCategory machinery underneath.
-// Deliberately narrow in this slice: only MAN/LOCATE/FGREP/EGREP,
-// which is the batch the user asked for first (CutPattern's own
-// history -- legacy oddly reuses ss.p.hegrep for it, per that same
-// source read -- and SHELL/PROGRAM's own recall are each their own
-// follow-up). False (caller swallows the byte without inserting it)
-// for every other PromptKind.
+// MAN/LOCATE/FGREP/EGREP (2026-08-04) plus PROGRAM (2026-08-05,
+// integration point 4 -- see CLAUDE.md item 162's own 4-point plan):
+// ProgramMode::run() already pushes every executed invocation's FULL
+// command string (e.g. "less /path/to/HELP") into
+// RingCategory::ShellCommand -- ported from do_prog()'s own
+// `*histp = save_history(*histp, str, 1);`, which records into the
+// SAME shared ss.p.hist ring do_shell() uses for SHELL commands (see
+// mode.c's `do_prog(rvp->str, &hp->ss.p.cmd, &hp->ss.p.hist, 1);` call
+// site). Selecting a recalled entry here auto-EXECUTES it (matching
+// MAN/LOCATE/FGREP, unlike SHELL's own ^R -- confirmed directly by
+// the user, 2026-08-05: "あくまで旧版にしたがうと(B)" -- since
+// PROGRAM invocations are already restricted to
+// Configuration::programSeedCommands()'s allow-list, unlike SHELL's
+// unrestricted command line).
+// CutPattern's own history (legacy oddly reuses ss.p.hegrep for it,
+// per the same source read) remains its own future follow-up. False
+// (caller swallows the byte without inserting it) for every other
+// PromptKind.
 bool Application::startPromptHistoryRecall() {
   RingCategory category;
   switch (promptKind_) {
@@ -2183,6 +2195,9 @@ bool Application::startPromptHistoryRecall() {
       break;
     case PromptKind::GrepPattern:
       category = (grepSyntax_ == GrepSyntax::Fixed) ? RingCategory::RecentFgrepPattern : RingCategory::RecentEgrepPattern;
+      break;
+    case PromptKind::ProgramCommand:
+      category = RingCategory::ShellCommand;
       break;
     default:
       return false;

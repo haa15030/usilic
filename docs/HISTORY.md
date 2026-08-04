@@ -983,3 +983,18 @@ shell.cのread_shell()（複数プロセス間通信を挟む構成）を読み�
 既存のSHELL独自スクロールバック閲覧(^P/^N、項目144)との違いも整理しました: ^P/^Nは画面上の生のスクロールバックをカーソルで遡る既存機能で、Enterを押すと該当コマンドを即実行します(こちらは変更していません)。^Rはこれとは別に、コマンド文字列だけを抜き出した重複排除済みの一覧から素早く選べる補助手段で、選択後は「確認してから自分でEnter」という一段安全な経路にしました。
 
 検証として、test_application.cppに新規doctest4件を追加しました(^RがSHELLの生プロンプトでソート済み履歴一覧を開くこと、選択してEnterするとコマンドラインに挿入されるだけで実行されないこと、^Gで入力途中の文字列がそのまま復元されること、SHELLモード外での^Rが無反応であること)。既存612件+新規4件=616件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、実際に(実機の$SHELLである)zshを起動してecho FIRSTCMD→echo SECONDCMDを実行後^R→Enterという手順を再現し、モードラインが「COMMAND 1/2 TOP echo FIRSTCMD」（ソート順）と表示され、Enter後はプロンプト行にecho FIRSTCMDが挿入されるだけで（スクロールバックに再実行の形跡が出ないことを確認）実行されないことを生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数614件、602件通過+12件既知失敗）、直後にMac側を再ビルドして616/616件を再確認しました。統合ポイント4（PROGRAM起動ログ）は次回以降続行します。コミット・プッシュ済みです。
+
+<翌朝なう。
+調査よろしく。
+
+>ProgramMode::run()を確認したところ、^J^PでのPROGRAM起動(「less .../HELP」のような実行)は既に以前のセッションでRingCategory::ShellCommandへpushRecent()済みだったと判明しました(do_prog()の*histp = save_history(*histp, str, 1);が、SHELLコマンドと同じ共有ss.p.histリングへ記録する挙動と一致)。つまりデータ記録側は既に完了しており、残っているのは「^J^Pのプロンプト中に^Rでこの履歴を呼び出せるようにする」配線だけです(MAN/LOCATE/FGREP/EGREPと全く同じ仕組みが使えます)。
+
+1点だけ確認させてください。選択後の挙動、SHELLと同じ「(A)挿入のみ」か、MAN/LOCATE/FGREPと同じ「(B)即実行」か。個人的には、PROGRAM一覧はusilicrcの許可リストに載った(基本的にlessやvi等の閲覧系)プログラムに限定されるため、SHELLの生コマンドよりリスクが低く、(B)即実行でも妥当だと思いますが、いかがでしょうか。
+
+<あくまで旧版にしたがうと(B)
+
+>Application::startPromptHistoryRecall()のswitchにcase PromptKind::ProgramCommand: category = RingCategory::ShellCommand; break;を追加するだけで済みました(executePromptSubmission()が既にPromptKind::ProgramCommand -> executeProgram() -> programMode_.run()を正しく呼ぶため、即実行の配線自体は既存のプロンプト再帰呼び出し機構がそのまま面倒を見ます)。
+
+検証として、test_application.cppに新規doctest2件を追加しました(^RがPROGRAM起動ログを呼び出せること、選択してEnterすると実際に実行され副作用(ファイル書き込み)が起きることを確認)。既存616件+新規2件=618件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、実際のusilicrcをテスト用の隔離$HOMEへコピーした上で、doc/ディレクトリで^N×2→^J p→less CHANGES→Enter(実行、less自身の"may be a binary file. See it anyway?"警告が出ることを確認)→q→^J p→^R→モードラインが「COMMAND 1/1 END less CHANGES」と表示されることを確認→Enter→同じlessのバイナリ警告が再度表示されることを確認し、単なる挿入ではなく実際に再実行されていることを生バイト列で確認しました(副産物: 隔離$HOMEにusilicrcが存在しないとprogramSeedCommands()が空になりPROGRAM自体が一切"recognized"されないため、この検証は最初空振りしていました――実際のPTY検証では常に本物のusilicrcを隔離$HOMEへコピーする必要がある、という手順上の注意点として記録しました)。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数616件、604件通過+12件既知失敗）、直後にMac側を再ビルドして618/618件を再確認しました。
+
+これで^Rの4段階計画(FILE/DIR一覧トグル、MAN/LOCATE/FGREP/EGREPプロンプト呼び出し、SHELLコマンド呼び出し、PROGRAM起動ログ呼び出し)がすべて完了しました。残る既知の対象はCutPattern(legacyがss.p.hegrepを流用する等、確証を持てない部分が残る)のみで、実機での必要性が出てきたら改めて着手します。コミット・プッシュ済みです。

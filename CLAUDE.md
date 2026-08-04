@@ -9749,6 +9749,57 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       `less`を選んだ後に「less .../HELP」のような実行ログを`^R`で
       呼び出す機能)は、次回以降続行する。
 
+164. **2026-08-05(続き): PROGRAM起動ログ(統合ポイント4)を実装、
+    `^R`の4段階計画が完了**。`ProgramMode::run()`を確認したところ、
+    `^J^P`でのPROGRAM起動(「less .../HELP」のような実行)は**既に
+    以前のセッションで**`RingCategory::ShellCommand`へ`pushRecent()`
+    済みだったと判明(`do_prog()`の`*histp = save_history(*histp,
+    str, 1);`が、SHELLコマンドと同じ共有`ss.p.hist`リングへ記録する
+    挙動と一致)。つまりデータ記録側は既に完了しており、残っていたのは
+    「`^J^P`のプロンプト中に`^R`でこの履歴を呼び出せるようにする」
+    配線だけだった(項目162のMAN/LOCATE/FGREP/EGREPと全く同じ仕組み)。
+   - **確認**: 選択後の挙動(SHELLと同じ「(A)挿入のみ」か、
+      MAN/LOCATE/FGREPと同じ「(B)即実行」か)をユーザーへ確認。
+      PROGRAM一覧は`usilicrc`の許可リストに載ったプログラムに限定
+      されるためSHELLの生コマンドよりリスクが低く(B)でも妥当では、
+      との自分の見立てを添えたところ、ユーザーから「あくまで旧版に
+      したがうと(B)」との回答(旧版の実際の挙動を根拠にした確定的な
+      回答)。
+   - **実装**: `Application::startPromptHistoryRecall()`の
+      `switch`に`case PromptKind::ProgramCommand: category =
+      RingCategory::ShellCommand; break;`を追加するだけで済んだ
+      (`executePromptSubmission()`が既に`PromptKind::ProgramCommand
+      -> executeProgram() -> programMode_.run()`を正しく呼ぶため、
+      即実行の配線自体は既存のプロンプト再帰呼び出し機構がそのまま
+      面倒を見る)。
+   - **検証**: `test_application.cpp`に新規doctest2件を追加(`^R`が
+      PROGRAM起動ログ(`ProgramMode::run()`が既に記録済みの
+      `RingCategory::ShellCommand`)を呼び出せること、選択して
+      `Enter`すると実際に実行され副作用(ファイル書き込み)が
+      起きることを確認)。既存616件+新規2件=618件全通過、警告ゼロ。
+      実バイナリを`-c`でPTY起動し、実際の`usilicrc`をテスト用の
+      隔離`$HOME`へコピーした上で、`doc/`ディレクトリで
+      `^N`×2→`^J p`→`less CHANGES`→`Enter`(実行、`less`自身の
+      "may be a binary file. See it anyway?"警告が出ることを確認)→
+      `q`→`^J p`→`^R`→モードラインが`COMMAND 1/1 END less
+      CHANGES`と表示されることを確認→`Enter`→**同じ`less`の
+      バイナリ警告が再度表示される**ことを確認し、単なる挿入では
+      なく実際に再実行されていることを生バイト列で確認した。
+      (副産物: 隔離`$HOME`に`usilicrc`が存在しないと
+      `programSeedCommands()`が空になり、PROGRAM自体が一切
+      "recognized"されないためこの検証が最初は空振りしていた
+      ――実際のPTY検証では常に本物の`usilicrc`を隔離`$HOME`へ
+      コピーする必要がある、という今後のテスト手順上の注意点として
+      記録)。Ubuntu 26.04クロスビルド(新規Dockerコンテナ)でも失敗
+      12件はすべて既知の環境依存差のみ(総数616件、604件通過+12件
+      既知失敗)であることを確認、直後にMac側を再ビルドして
+      618/618件を再確認済み。
+   - これで項目162で計画した`^R`の4段階(FILE/DIR一覧トグル、
+      MAN/LOCATE/FGREP/EGREPプロンプト呼び出し、SHELLコマンド呼び出し、
+      PROGRAM起動ログ呼び出し)がすべて完了した。残る既知の対象は
+      CutPattern(legacyが`ss.p.hegrep`を流用する等、確証を持てない
+      部分が残る)のみで、実機での必要性が出てきたら改めて着手する。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

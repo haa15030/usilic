@@ -2772,6 +2772,50 @@ TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode") {
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
+// -- ^R at the PROGRAM prompt (integration point 4 of the ^R design
+// -- see CLAUDE.md item 162/164). ProgramMode::run() already records
+// every executed invocation's full command string into
+// RingCategory::ShellCommand (ported from do_prog()'s own
+// save_history() call into the shared ss.p.hist ring) -- this only
+// wires ^R to recall from it, reusing startPromptHistoryRecall(). --
+
+TEST_CASE_FIXTURE(Fixture, "^R (startPromptHistoryRecall): PROGRAM prompt recalls previously-run invocations "
+                           "from RingCategory::ShellCommand (already populated by ProgramMode::run() itself)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("echo one");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // records "echo one" via ProgramMode::run()
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().items().size() == 1);
+  CHECK(app.listBrowserMode().items()[0] == "echo one");
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R at PROGRAM prompt: Enter on a picked entry auto-EXECUTES it, unlike SHELL's own "
+                           "^R (2026-08-05, direct user confirmation: \"あくまで旧版にしたがうと(B)\" -- PROGRAM "
+                           "invocations are already restricted to Configuration::programSeedCommands()'s "
+                           "allow-list, unlike SHELL's unrestricted command line)") {
+  REQUIRE(app.start(path()));
+  std::string outPath = (root / "prog_recall_out.txt").string();
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("echo recalled > '" + outPath + "'");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  REQUIRE(app.listBrowserMode().items().size() == 1);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // PROGRAM never switches mode, same as a live run
+
+  std::ifstream in(outPath);
+  std::string content;
+  std::getline(in, content);
+  CHECK(content == "recalled");  // the real side effect happened -- it actually ran, not just got inserted
+}
+
 TEST_CASE_FIXTURE(Fixture, "command history: Enter on an entry is a no-op in this slice") {
   history.pushRecent(RingCategory::ShellCommand, "echo hi");
 
