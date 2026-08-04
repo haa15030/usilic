@@ -18,6 +18,31 @@ void ContentView::setLines(std::vector<Line> lines) {
   lines_ = std::move(lines);
   if (cursorIndex_ >= static_cast<int>(lines_.size()))
     cursorIndex_ = std::max(0, static_cast<int>(lines_.size()) - 1);
+  // hoverIndex_ (a separate, purely visual override -- see its own
+  // setter comment) can't be trusted to mean anything once the actual
+  // content underneath it has been replaced wholesale: it was still an
+  // index into the OLD lines_, and even when it happens to also be a
+  // valid index into the NEW lines_ (the common case, since most lists
+  // aren't drastically shorter), it's pointing at unrelated content by
+  // coincidence, not by intent. Added after a real user report: after
+  // descending into a subdirectory, hovering the mouse there, then
+  // going back up (^G) to the parent, the row that ended up visibly
+  // highlighted was wherever the LAST hover in the CHILD directory
+  // happened to land -- not the actual cursor position (which itself
+  // was correct, confirmed via the mode-line's own current/total
+  // figures, but visually overridden by this stale hoverIndex_ per
+  // redraw()'s own `hoverIndex_.has_value() ? *hoverIndex_ :
+  // cursorIndex_` priority). Clearing it here, in the single place
+  // ALL content replacement funnels through (DirectoryMode::
+  // enterDirectory(), FileMode::loadFile()/reflow(), every other
+  // Mode's own search/listing refresh), is far more robust than
+  // trying to remember a setHoverIndex(nullopt) call at each of those
+  // individual call sites (which is exactly the narrower approach
+  // Application::handleCommand()'s Move/Page/GoTo/Redraw dispatch
+  // already takes for KEYBOARD navigation -- see its own comment --
+  // but that only ever covered moving within the SAME content, never
+  // content being replaced outright).
+  hoverIndex_ = std::nullopt;
   clampViewport();
 }
 
