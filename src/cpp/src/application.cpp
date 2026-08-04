@@ -276,6 +276,39 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     return {ringCategoryLabel(listBrowserCategory_), items[cursorIndex], /*fillTrailingToEdge=*/false,
             /*rightWatermark=*/""};
   });
+  // Mode-line fields for CutContent (the currently-selected CUT
+  // segment's own content -- HELP's own screen included, see
+  // startHelp()'s comment on why HELP is a CutMode split): "HELP"
+  // fixed (matching legacy's own literal name for the help split,
+  // parallel to how Shell's own field above is the fixed literal
+  // "SHELL") when cutOrigin_ is Help, or the ORIGINATING file's own
+  // bare name (a File-origin CUT always splits fileView_'s current
+  // content, see executeCut()'s own comment -- matching FileMode's own
+  // "bare filename, not full path" convention) otherwise, on the left;
+  // the segment's own byte size (echoing FileMode's own byte-size
+  // trailing field -- the closest available analog, since a CUT
+  // segment has no on-disk size of its own to report) on the right.
+  // A real 2026-08-04 user report/screenshot showed legacy's actual
+  // HELP display as "HELP 01/48 47% 2618  1. Introduction" (name=
+  // "HELP", trailing="2618" = this segment's own byte size) side by
+  // side with this port's own bare "01/48 TOP" -- this closes that
+  // gap. Scoped to CutContent only (not cutView_, the segment-LABEL
+  // list itself): disp_window()'s own switch groups M_cut/M_cut2 with
+  // M_prog/M_lfile/M_ldir's "enter string at mode-line" handling, a
+  // meaningfully different (editable-prompt-like) mode-line shape that
+  // doesn't obviously map onto this port's simple name/trailing
+  // ModeLineFields the same way HELP's own (name="HELP" is a fixed
+  // literal, not tied to that "enter string" branch at all) does --
+  // left for a follow-up once that's independently confirmed rather
+  // than guessed at here.
+  cutContentView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    std::string name = (cutOrigin_ == CutOrigin::Help)
+                            ? "HELP"
+                            : std::filesystem::path(fileMode_.currentFile()).filename().string();
+    std::size_t bytes = 0;
+    for (const auto &line : cutContentView_.lines()) bytes += line.text.size() + 1;  // +1 for the newline
+    return {name, std::to_string(bytes), /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
+  });
 }
 
 std::string Application::ringCategoryLabel(RingCategory category) const {

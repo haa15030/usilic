@@ -9290,6 +9290,66 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       みであることを確認、直後にMac側を再ビルドして598/598件を
       再確認済み。
 
+157. **2026-08-05(続き): HELP/CUT(CutContent)のモードラインを
+    FILE/DIRと同じ「name + trailing」形式に拡充**。項目156への
+    ユーザーの返信で、実機スクリーンショット(`-c`ウィンドウ、
+    「HELP 01/48 47% 2618  1. Introduction」という表示)を根拠に
+    「HELP/CUT等のモードラインはFILE/DIRと同じでいい」との明確な
+    指示。あわせて「左端は常にCUI版」(=そのウィンドウは今日の
+    最新ビルドで間違いない)との確認と、項目156で対応した
+    「親ディレクトリへ戻ったあとの不具合」が本当に対応済みかの
+    確認があった(→対応済み、コミット`eca3a37`である旨を回答)。
+   - **調査**: `setModeLineFieldsProvider()`の全呼び出し箇所を
+      grepしたところ、`DirectoryMode`/`FileMode`/`ArchiveMode`/
+      `Shell`/`KeyMode`(`keyView_`)/`ListBrowserMode`の6箇所のみで、
+      HELPが使う`cutContentView_`(`ApplicationMode::CutContent`、
+      選択済みセグメントの内容表示)には**登録が一切無い**ことを
+      確認した。つまり現行コードのままではこの画面は常に素の
+      「current/total TOP/%/END」しか出せないはずで、ユーザーの
+      スクリーンショットが示す通りの表示が本当に「常に今日の
+      最新ビルド」から出ているのだとすれば、まさにこの未実装
+      箇所そのものが対応すべき欠落機能だと判断できた
+      (CLAUDE.md項目112で「Grep/Cut/CutContent/Locate/ListBrowser
+      にはmode-line用の`name`アクセサがまだ無く未着手」と既に
+      明記されていた、既知のスコープ外項目)。
+   - **実装**: `Application`のコンストラクタに`cutContentView_`
+      専用の`setModeLineFieldsProvider()`を新設。`name`は
+      `cutOrigin_ == CutOrigin::Help`なら固定文字列`"HELP"`
+      (`Shell`用フィールドの`"SHELL"`と同じ「固定リテラル」の
+      考え方)、実際のCUT(`CutOrigin::File`)なら分割元ファイルの
+      ベース名(`fileMode_.currentFile()`のファイル名部分、
+      `FileMode`自身の「フルパスでなくファイル名だけ」という
+      慣習と同じ)。`trailing`は現在表示中セグメントの実バイト数
+      (`cutContentView_.lines()`の各行長+改行1byteを積算) ――
+      `FileMode`自身の`trailing`が実ファイルのディスク上バイト数を
+      示すのと同じ発想の、セグメントには実ファイルが無いための
+      代替。**意図的に`cutView_`(セグメントラベル一覧、
+      `ApplicationMode::Cut`)自体は対象外とした** ――
+      `tcb/src/disp.c`の`disp_window()`は`M_cut`/`M_cut2`を
+      `M_prog`/`M_lfile`/`M_ldir`等と同じ「enter string at
+      mode-line」(`f_enter`)分岐にグループ化しており、単純な
+      name+trailingとは異なる(編集可能プロンプト風の)構成に
+      見えるため、確証の無いままここへ踏み込むのは避けた
+      (この項目自体、HELPの実機スクリーンショットという具体的な
+      裏付けがあって初めて着手したもので、それが無いCUT一覧側の
+      設計を推測で作るのは項目88→89の反省を踏まえて避けたい)。
+   - **検証**: `Application`に新規doctest2件を追加(HELPの
+      `CutContent`が`"HELP"`+セグメントの実バイト数を表示すること、
+      実CUT(`File`起源)の`CutContent`が分割元ファイル名を表示し
+      `"HELP"`は出ないこと)。既存598件+新規2件=600件全通過、
+      警告ゼロ。実バイナリを`-c`モードでPTY起動し、`doc/`ディレクトリ
+      で`^J^H`→`Enter`という実際のHELP起動手順を再現し、モードラインが
+      `HELP 01/48 TOP 2194`(name="HELP"、position、実バイト数)と
+      表示されることを生バイト列で確認した。Ubuntu 26.04クロスビルド
+      (新規Dockerコンテナ)でも失敗12件はすべて既知の環境依存差のみ
+      であることを確認、直後にMac側を再ビルドして600/600件を
+      再確認済み。
+   - **範囲外(次回以降)**: `cutView_`(CUT/HELPのセグメント一覧
+      画面自体)の`name`/`trailing`フィールド設計は、上記の理由で
+      今回意図的に対象外とした。実機での必要性が出てきたら、
+      `disp.c`の`f_enter`分岐の実際の意味を確認した上で改めて
+      対応する。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

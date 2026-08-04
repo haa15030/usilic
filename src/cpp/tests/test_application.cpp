@@ -2907,6 +2907,40 @@ TEST_CASE_FIXTURE(Fixture, "HELP: Enter on a section shows its content (CutConte
   CHECK(app.currentMode() == ApplicationMode::CutContent);
 }
 
+TEST_CASE_FIXTURE(Fixture, "HELP: CutContent's mode-line shows the fixed name \"HELP\" and this segment's own "
+                           "byte size, matching FILE/DIR's own richer name+trailing format instead of a bare "
+                           "position (2026-08-04 user report/screenshot: real legacy shows \"HELP 01/48 47% "
+                           "2618  ...\")") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.find("HELP") != std::string::npos);
+  std::size_t expectedBytes = 0;
+  for (const auto &line : app.activeContentView().lines()) expectedBytes += line.text.size() + 1;
+  CHECK(text.find(std::to_string(expectedBytes)) != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT (real, File-origin): CutContent's mode-line shows the originating file's own "
+                           "bare name, not \"HELP\"") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  REQUIRE(app.handleCommand(Command::Enter));  // select segment 0
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.find("log.txt") != std::string::npos);
+  CHECK(text.find("HELP") == std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "HELP: Back returns to wherever the user was, not always Directory") {
   { std::ofstream(root / "plain2.txt") << "hello\n"; }
   REQUIRE(app.loadHelpText(testHelpText()));

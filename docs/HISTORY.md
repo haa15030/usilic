@@ -854,3 +854,17 @@ enterDirectory()/goToParent()/goBack()それぞれのcursorIndex_クランプ処
 ContentView::setLines()にhoverIndex_ = std::nullopt;を追加しました。内容が丸ごと入れ替わる(DirectoryMode::enterDirectory()、FileMode::loadFile()/reflow()、他の各Modeの検索/一覧更新等、すべての内容置き換えが必ず経由する唯一の場所)たびに、古いhoverIndex_は新しい内容に対して意味を持たないという前提で、無条件にクリアするようにしています。前回Application::handleCommand()のMove/Page/GoTo/Redrawディスパッチに個別に追加した対応(キーボード操作でのナビゲーションのみカバー)よりも、このsetLines()側での一括対応の方が、内容そのものが置き換わるすべてのケースを構造的にカバーできる、より堅牢な設計と判断しました。
 
 検証として、既存598件全通過を確認しました。実バイナリを-cモードでPTY起動し、cpp/→src/降下→ホバー数回→^Gでcpp/復帰、という再現手順を修正前後で比較し、修正後はsrc/が正しくハイライトされることを生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く、直後にMac側を再ビルドして598/598件を再確認しました。コミット・プッシュ済みです。
+
+<左端は常にCUI版。
+HELP/CUT等のモードラインはFILE/DIRと同じでいい。
+'/Users/haa15030/Desktop/スクリーンショット 2026-08-04 14.29.35.png'は手つかず？
+
+>「親ディレクトリへ戻ったあとの不具合」のスクリーンショットへの対応は、直前の返信で既に完了・コミット・プッシュ済みです(コミットeca3a37、ContentView::setLines()でのhoverIndex_クリア)。手つかずではありません、念のため再度お伝えします。
+
+左端が常に最新のCUIビルドとのこと、承知しました。setModeLineFieldsProvider()の全呼び出し箇所を確認したところ、DirectoryMode/FileMode/ArchiveMode/Shell/KeyMode/ListBrowserModeの6箇所のみで、HELPが使うcutContentView_(選択済みセグメントの内容表示)には登録が一切ありませんでした。つまり現行コードのままではこの画面は常に素の「current/total TOP/%/END」しか出せないはずで、ご提示のスクリーンショットが本当に最新ビルドから出ているのだとすれば、まさにこの未実装箇所こそが対応すべき欠落機能だと判断しました(CLAUDE.mdの過去の記録に「Grep/Cut/CutContent/Locate/ListBrowserにはmode-line用のnameアクセサがまだ無く未着手」と既に明記されていた、既知のスコープ外項目です)。
+
+Applicationのコンストラクタにcutcontentview_(cutContentView_)専用のsetModeLineFieldsProvider()を新設しました。nameはHELPの場合固定文字列「HELP」(Shell用フィールドの「SHELL」と同じ「固定リテラル」の考え方)、実際のCUTの場合は分割元ファイルのベース名(FileMode自身の「フルパスでなくファイル名だけ」という慣習と同じ)。trailingは現在表示中セグメントの実バイト数(FileMode自身のtrailingが実ファイルのディスク上バイト数を示すのと同じ発想の、セグメントには実ファイルが無いための代替)としました。
+
+意図的にcutView_(セグメントラベル一覧そのもの)は対象外としています。legacyのdisp_window()はCUTモードをM_prog/M_lfile/M_ldir等と同じ「enter string at mode-line」という別分岐にグループ化しており、単純なname+trailingとは異なる構成に見えるため、確証の無いままここへ踏み込むのは避けました(この項目自体、HELPの実機スクリーンショットという具体的な裏付けがあって初めて着手したもので、それが無いCUT一覧側の設計を推測で作るのは以前の作り直しの反省を踏まえて避けたいところです)。
+
+検証として、Applicationに新規doctest2件を追加(HELPのCutContentが「HELP」+セグメントの実バイト数を表示すること、実CUTのCutContentが分割元ファイル名を表示し「HELP」は出ないこと)、既存598件+新規2件=600件全通過、警告ゼロを確認しました。実バイナリを-cモードでPTY起動し、doc/ディレクトリで^J^H→Enterという実際のHELP起動手順を再現し、モードラインが「HELP 01/48 TOP 2194」と表示されることを生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く、直後にMac側を再ビルドして600/600件を再確認しました。コミット・プッシュ済みです。
