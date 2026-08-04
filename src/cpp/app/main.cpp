@@ -915,10 +915,40 @@ void clearHoverAndRedraw(fm::ContentView &view) {
   view.redraw();
 }
 
-void applyHoverRowAndRedraw(fm::ContentView &view, int mouseRow) {
+// moveCursor (default false, unchanged for every EXISTING caller --
+// see each call site's own comment) additionally moves cursorIndex_
+// itself to match the hovered row, not just hoverIndex_'s purely
+// visual highlight. Added 2026-08-05 for a real user report: opening
+// README.jp, returning to Directory mode (^G), then hovering the mouse
+// over HELP.jp (which correctly highlighted it) and pressing [Enter]
+// re-opened README.jp instead -- because Enter (openSelectedEntry())
+// has always acted on cursorIndex_, and hovering alone had never
+// touched it (by original design, see setHoverIndex()'s own comment:
+// specifically so an active COAST/DRAG's fast-moving highlight
+// wouldn't drag the keyboard cursor along for the ride). That
+// rationale doesn't apply to a plain, idle hover with nothing coasting
+// or dragging -- there, a highlighted row that DOESN'T match what
+// Enter/^N/^P will actually act on next is just a confusing trap, not
+// a deliberate design tradeoff. Callers representing that idle case
+// (the two "plain hover, no button held" sites in both the terminal
+// and GUI mouse-tracking paths) pass true; the coast/drag callers
+// (runCoastLoop(), runTerminalMouseDrag()) deliberately keep the
+// default false, preserving their own documented "hover row, not
+// cursor, is what's highlighted while the list races past" behavior.
+void applyHoverRowAndRedraw(fm::ContentView &view, int mouseRow, bool moveCursor = false) {
   if (mouseRow >= 0) {
     int lineIndex = view.lineIndexAtRow(mouseRow);
     view.setHoverIndex(lineIndex >= 0 ? std::optional<int>(lineIndex) : std::nullopt);
+    if (moveCursor && lineIndex >= 0) {
+      view.setCursorIndex(lineIndex);
+      // Keeps File mode's own real cursor (see ContentView::
+      // syncVisibleCursor()'s own comment) following the hover too,
+      // the same way keyboard navigation already does via
+      // Application::handleCommand()'s Move*/Page*/GoTo* dispatch --
+      // a no-op for highlighted selector modes like Directory (whose
+      // highlighting already reflects cursorIndex_ directly).
+      view.syncVisibleCursor();
+    }
   }
   view.redraw();
 }
@@ -1271,7 +1301,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           // guard, so much as wiggling the mouse mid-prompt silently
           // wipes out the prompt the user was in the middle of typing
           // into.
-          applyHoverRowAndRedraw(app.activeContentView(), mouse->row);
+          applyHoverRowAndRedraw(app.activeContentView(), mouse->row, /*moveCursor=*/true);
         }
         // Any other combination (right-click, an orphan release,
         // etc.): nothing wired to it yet, silently ignored.
@@ -1504,7 +1534,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell && !app.promptActive()) {
       while (auto hover = gui.consumeHoverEvent()) {
         anyEventThisFrame = true;
-        applyHoverRowAndRedraw(app.activeContentView(), hover->row);
+        applyHoverRowAndRedraw(app.activeContentView(), hover->row, /*moveCursor=*/true);
       }
     }
     while (auto key = gui.consumeKeyEvent()) {
