@@ -1469,6 +1469,28 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
   int coastLevel = 0;       // 0 == not coasting; otherwise an index into fm::kScrollSpeedLevels
   int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
+  // Whether the drag actually crossed at least one real row since the
+  // current press started -- see the click-consumption loop's own
+  // comment (2026-08-05 fix) for why a left ButtonDown can no longer
+  // act as a click by itself. Row-granular (matching the real-terminal
+  // drag path's own `rowDelta != 0` check in runTerminalMouseDrag()),
+  // not "any Motion event fired at all": SDL_MOUSEMOTION is pixel-
+  // granular, and ordinary mouse/trackpad jitter of a pixel or two
+  // during an otherwise stationary tap is common enough that treating
+  // ANY motion sample as disqualifying would make plain clicks
+  // unreliable. topIndexAtPress is captured on ButtonDown; ButtonUp
+  // compares the CURRENT topIndex() against it -- content having
+  // actually scrolled by at least one row is the real, functional
+  // definition of "this was a drag," not an arbitrary pixel threshold.
+  int topIndexAtPress = -1;
+  // The row/column a left ButtonDown landed on, captured by the click-
+  // consumption loop below but not acted on immediately -- carried
+  // forward to ButtonUp, which decides whether this ends up being a
+  // genuine click (row/col used) or was actually the start of a drag
+  // (discarded). -1 means "no press pending" (nothing to act on if
+  // ButtonUp somehow arrives without a matching ButtonDown -- shouldn't
+  // happen, but guards a stale value from a much earlier press).
+  int pendingClickRow = -1, pendingClickCol = -1;
   // Set on any frame that renders via renderScrolled() (dragging or
   // coasting); checked on the FIRST frame back on the normal redraw()
   // path so that settle-transition frame's redraw() always happens
@@ -1508,7 +1530,28 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
     while (auto click = gui.consumeMouseClick()) {
       anyEventThisFrame = true;
-      if (!click->rightButton) app.handleMouseClick(click->row, click->column);
+      // Deferred to ButtonUp, NOT acted on here (2026-08-05 fix): a
+      // real user report (matching a problem they'd already solved
+      // once before in their own past GUI work, "cb") -- starting a
+      // cat's-paw screen drag physically requires pressing the left
+      // button down first, and THAT press alone was immediately
+      // opening/selecting whatever row happened to be under the
+      // pointer at that instant, before any drag motion could even
+      // begin. GraphicalDisplay::pumpEvents() queues a MouseClick AND
+      // a DragEvent::ButtonDown on the exact same SDL_MOUSEBUTTONDOWN,
+      // and this loop used to act on the click immediately, with no
+      // way yet to know whether the user meant a click or a drag.
+      // Mirrors how the real-terminal drag path already worked all
+      // along (runTerminalMouseDrag(), see its own "release, if
+      // !moved" comment) -- capturing the row/column here but only
+      // actually calling handleMouseClick() from DragEventType::
+      // ButtonUp below, once it's known no real row-level scrolling
+      // happened in between (see `topIndexAtPress`'s own comment
+      // above).
+      if (!click->rightButton) {
+        pendingClickRow = click->row;
+        pendingClickCol = click->column;
+      }
       // right-click: captured but not acted on yet, see class comments
     }
     // Plain hover-follow (no button held) -- matching the real-
@@ -1668,6 +1711,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       switch (drag->type) {
         case fm::GraphicalDisplay::DragEventType::ButtonDown:
           dragging = true;
+          topIndexAtPress = view.topIndex();
           coastLevel = 0;  // grabbing mid-coast stops it right where it is
           coastDirection = 0;
           recentMotion.clear();
@@ -1687,6 +1731,14 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // key->special branch's comment above for why a leftover
           // fractional remainder wedges the render-mode check forever.
           if (coastLevel == 0) pixelOffset = 0;
+          // No real row-level scrolling happened between this press
+          // and release -- a plain click after all (see the click-
+          // consumption loop's own comment for why this is deferred
+          // all the way to here instead of acting the moment the
+          // button went down).
+          if (view.topIndex() == topIndexAtPress && pendingClickRow >= 0)
+            app.handleMouseClick(pendingClickRow, pendingClickCol);
+          pendingClickRow = pendingClickCol = -1;
           break;
         }
         case fm::GraphicalDisplay::DragEventType::Motion:
