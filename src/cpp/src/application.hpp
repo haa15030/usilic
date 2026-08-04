@@ -1155,6 +1155,7 @@ class Application {
   bool startListBrowser(RingCategory category);
   // See ToggleHistoryView's own comment.
   bool toggleListBrowserHistory();
+  std::vector<std::string> sortedUniqueRecentEntries(RingCategory category) const;
   // K-2 (^H, M_key, "KEY"): see startKey()'s own definition comment.
   bool startKey();
   // Enter while in Key mode: returns to keyReturnMode_ FIRST (matching

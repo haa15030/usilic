@@ -181,9 +181,24 @@ const std::vector<std::string> &History::namesIn(NameSetCategory category) const
 }
 
 void History::pushRecent(RingCategory category, const std::string &name) {
+  // Correction (2026-08-04): a closer re-read of sub.c's find_hist()
+  // shows it only ever compares `name` against the LAST node of the
+  // list (the walk `for (...; hist->next; hist = hist->next)` stops
+  // exactly there), not every entry -- so save_history()'s dedup only
+  // suppresses an IMMEDIATE repeat of the single most-recently-added
+  // entry, not a re-visit of any older one. A user clarification
+  // (2026-08-04, in the context of ^R's own "HISTORY" chronological
+  // view) confirmed this matters in practice: revisiting an OLDER
+  // entry (not the immediately-previous one) is expected to genuinely
+  // re-append it, duplicates and all -- e.g. accessing A, then B, then
+  // A again yields the raw log [A, B, A], not [A, B]. The earlier
+  // version of this function (whole-ring, first-occurrence-wins dedup)
+  // was a mis-port of this exact detail. Global "unique names only"
+  // views (e.g. Application::startListBrowser()'s sorted FILE/DIR
+  // picker) now do their own de-duplication at display time instead
+  // of relying on this ring never containing repeats.
   auto &ring = rings_[category];
-  for (const auto &existing : ring)
-    if (existing == name) return;  // ported from find_hist(): unchanged, not moved to the back
+  if (!ring.empty() && ring.back() == name) return;
   ring.push_back(name);
   if (static_cast<int>(ring.size()) > retentionCount_) ring.pop_front();
 }

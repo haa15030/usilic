@@ -156,12 +156,20 @@ class History {
 
   // -- ring histories --
   // Pushes name, evicting the single oldest entry if the ring is
-  // already at the retention count. A name already present is left
-  // in its existing position, not moved to the back -- ported
-  // exactly from find_hist()'s "return unchanged if found" behavior:
-  // legacy's ring lists are FIFO by first-insertion time, not LRU by
-  // last access. Revisiting an old entry does not save it from being
-  // evicted later.
+  // already at the retention count. Suppresses only an IMMEDIATE
+  // repeat of the single most-recently-pushed name (ring.back()==
+  // name) -- ported exactly from find_hist()'s own walk, which
+  // compares against the LAST node only, not the whole list (a
+  // 2026-08-04 correction: an earlier version of this comment/
+  // implementation claimed whole-ring first-occurrence-wins dedup,
+  // which was a mis-port). Re-visiting an OLDER entry (not the one
+  // immediately before it) genuinely re-appends it, duplicates and
+  // all -- e.g. A, B, A yields the raw ring [A, B, A]. This is by
+  // design: this ring IS the raw, chronological access log ("HISTORY"
+  // -- see Application::toggleListBrowserHistory()'s own comment);
+  // callers that want a sorted, de-duplicated "unique recent items"
+  // view (e.g. Application::startListBrowser()'s FILE/DIR picker) do
+  // their own de-duplication over recentEntries() at display time.
   void pushRecent(RingCategory category, const std::string &name);
   const std::deque<std::string> &recentEntries(RingCategory category) const;  // oldest .. newest
   int retentionCount() const;

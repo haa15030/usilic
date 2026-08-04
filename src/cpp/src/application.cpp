@@ -5,6 +5,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <unistd.h>
 
@@ -1819,6 +1820,20 @@ bool Application::startPathInputPrompt(bool isDirectory) {
   return true;
 }
 
+// Shared by startListBrowser() and toggleListBrowserHistory()'s own
+// non-chronological branch: History::recentEntries() is now the RAW
+// access log (see History::pushRecent()'s own comment, 2026-08-04
+// correction) and CAN contain non-consecutive duplicates -- e.g.
+// accessing A, then B, then A again leaves [A, B, A] in the ring. The
+// sorted "unique recent items" view needs its own de-duplication over
+// that raw log rather than relying on the ring never repeating, which
+// a std::set does in one step (sorted AND unique).
+std::vector<std::string> Application::sortedUniqueRecentEntries(RingCategory category) const {
+  const std::deque<std::string> &recent = history_.recentEntries(category);
+  std::set<std::string> unique(recent.begin(), recent.end());
+  return std::vector<std::string>(unique.begin(), unique.end());
+}
+
 // Ported from m_list()'s dispatch, narrowed to the two least
 // ambiguous categories (see class comment). Not prompt-driven -- this
 // is an immediate action, like archive-browsing's auto-detection,
@@ -1829,23 +1844,25 @@ bool Application::startPathInputPrompt(bool isDirectory) {
 // the user (2026-08-04): "FILE（DIR）は今までアクセスしたファイル
 // （ディレクトリ）をソートしたのち重複を排除した一覧" ("FILE/DIR is
 // a list of accessed files/directories, sorted then de-duplicated").
-// De-dup already came for free from History::pushRecent()'s own
-// first-occurrence-wins policy; sorting is new here (2026-08-04) --
-// an earlier version of this function instead showed reverse-
-// chronological order (recent.rbegin()/rend()), which the user's
-// clarification revealed was never actually what legacy shows for
-// this normal (non-^R) view. The chronological order the earlier
-// version approximated is real, but belongs to the SEPARATE "HISTORY"
-// toggle instead -- see toggleListBrowserHistory().
+// De-dup is done HERE at display time (sortedUniqueRecentEntries()),
+// not by History::pushRecent() itself -- a same-day correction: an
+// earlier version of this comment claimed pushRecent()'s own
+// first-occurrence-wins policy already handled it, which was true of
+// an EARLIER (also-since-corrected) version of pushRecent() but not
+// the real legacy behavior it was meant to port (see pushRecent()'s
+// own comment). An even earlier version of this function showed
+// reverse-chronological order (recent.rbegin()/rend()) instead of
+// sorted order, which the user's clarification revealed was never
+// actually what legacy shows for this normal (non-^R) view either.
+// The raw chronological order (duplicates included) is real, but
+// belongs to the SEPARATE "HISTORY" toggle instead -- see
+// toggleListBrowserHistory().
 bool Application::startListBrowser(RingCategory category) {
   if (currentMode_ != ApplicationMode::Directory) return false;
-  const std::deque<std::string> &recent = history_.recentEntries(category);
-  std::vector<std::string> items(recent.begin(), recent.end());
-  std::sort(items.begin(), items.end());
   listBrowserCategory_ = category;
   listBrowserReturnMode_ = currentMode_;
   listBrowserChronological_ = false;
-  listBrowserMode_.show(items);
+  listBrowserMode_.show(sortedUniqueRecentEntries(category));
   currentMode_ = ApplicationMode::ListBrowser;
   return true;
 }
@@ -1865,9 +1882,15 @@ bool Application::startListBrowser(RingCategory category) {
 bool Application::toggleListBrowserHistory() {
   if (currentMode_ != ApplicationMode::ListBrowser) return false;
   listBrowserChronological_ = !listBrowserChronological_;
-  const std::deque<std::string> &recent = history_.recentEntries(listBrowserCategory_);
-  std::vector<std::string> items(recent.begin(), recent.end());
-  if (!listBrowserChronological_) std::sort(items.begin(), items.end());
+  std::vector<std::string> items;
+  if (listBrowserChronological_) {
+    // Raw log, duplicates included -- see History::pushRecent()'s own
+    // comment for why this ring can legitimately repeat an entry.
+    const std::deque<std::string> &recent = history_.recentEntries(listBrowserCategory_);
+    items.assign(recent.begin(), recent.end());
+  } else {
+    items = sortedUniqueRecentEntries(listBrowserCategory_);
+  }
   listBrowserMode_.show(items);
   if (listBrowserChronological_ && !items.empty()) {
     // show() itself already redrew once with cursorIndex_ freshly

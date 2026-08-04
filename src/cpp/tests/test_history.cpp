@@ -37,18 +37,34 @@ TEST_CASE("name sets: first-occurrence-wins, no duplicates, insertion order pres
   CHECK(h.namesIn(NameSetCategory::CommandModeLabel).empty());
 }
 
-TEST_CASE("ring history: pushRecent dedups without reordering (FIFO by first insertion, not LRU)") {
+TEST_CASE("ring history: pushRecent suppresses only an IMMEDIATE repeat of the single most-recent entry "
+          "(2026-08-04 correction: an earlier version of this test/implementation claimed whole-ring "
+          "first-occurrence-wins dedup, but a closer re-read of sub.c's find_hist() -- which only ever "
+          "compares against the LAST node -- plus a direct user clarification (\"アクセスした順なので"
+          "重複もあり得る\") showed re-visiting an OLDER entry genuinely re-appends it)") {
   History h(10);
   h.pushRecent(RingCategory::RecentFile, "a");
   h.pushRecent(RingCategory::RecentFile, "b");
   h.pushRecent(RingCategory::RecentFile, "c");
-  h.pushRecent(RingCategory::RecentFile, "a");  // revisit -- must NOT move to the back
+  h.pushRecent(RingCategory::RecentFile, "a");  // revisit of an OLDER entry -- re-appended, not suppressed
 
   const auto &entries = h.recentEntries(RingCategory::RecentFile);
-  REQUIRE(entries.size() == 3);
+  REQUIRE(entries.size() == 4);
   CHECK(entries[0] == "a");
   CHECK(entries[1] == "b");
   CHECK(entries[2] == "c");
+  CHECK(entries[3] == "a");
+}
+
+TEST_CASE("ring history: pushRecent DOES suppress a back-to-back repeat of the immediately-previous entry") {
+  History h(10);
+  h.pushRecent(RingCategory::RecentFile, "a");
+  h.pushRecent(RingCategory::RecentFile, "a");  // immediate repeat -- suppressed
+  h.pushRecent(RingCategory::RecentFile, "a");  // still the same immediately-previous entry -- suppressed
+
+  const auto &entries = h.recentEntries(RingCategory::RecentFile);
+  REQUIRE(entries.size() == 1);
+  CHECK(entries[0] == "a");
 }
 
 TEST_CASE("ring history: evicts the single oldest entry once at the retention cap") {

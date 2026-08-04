@@ -2579,6 +2579,27 @@ TEST_CASE_FIXTURE(Fixture, "^R (ToggleHistoryView): switches the open FILE list-
   CHECK(app.activeContentView().modeLineText().rfind("FILE ", 0) == 0);
 }
 
+TEST_CASE_FIXTURE(Fixture, "^R (ToggleHistoryView): a non-consecutive revisit shows ONCE in the sorted "
+                           "FILE view but TWICE in the HISTORY view (2026-08-04 user correction: "
+                           "\"アクセスした順なので重複もあり得る点。SORT後一覧を並び替えるだけでは不十分\" "
+                           "-- History::pushRecent() only suppresses an IMMEDIATE repeat of the single "
+                           "most-recent entry, so visiting A, then B, then A again leaves a genuine "
+                           "duplicate in the raw chronological log)") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentFile, (root / "a.txt").string());
+  history.pushRecent(RingCategory::RecentFile, (root / "b.txt").string());
+  history.pushRecent(RingCategory::RecentFile, (root / "a.txt").string());  // revisit, NOT consecutive
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.listBrowserMode().items().size() == 2);  // sorted view: a.txt, b.txt -- de-duplicated
+
+  REQUIRE(app.handleCommand(Command::ToggleHistoryView));
+  REQUIRE(app.listBrowserMode().items().size() == 3);  // chronological view: a.txt, b.txt, a.txt again
+  CHECK(app.listBrowserMode().items()[0] == (root / "a.txt").string());
+  CHECK(app.listBrowserMode().items()[1] == (root / "b.txt").string());
+  CHECK(app.listBrowserMode().items()[2] == (root / "a.txt").string());
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHistoryView): refused outside ListBrowser mode, matching "
                            "m_list()'s own echo_mess(S_errf) for a context ^R doesn't apply to") {
   REQUIRE(app.start(path()));

@@ -942,3 +942,11 @@ FILE/DIR/MAN/LOCATE/FGREP/EGREP/COMMANDいずれの一覧も、通常表示は�
 実装はCommand::ToggleHistoryViewを新設して単発^Rをこれに配線（旧StartDirectoryHistoryへの誤配線を解消、^X^D自体は引き続きStartDirectoryHistoryで正しく動作）、Application::startListBrowser()をstd::sort()によるアルファベット順表示に変更、新規Application::toggleListBrowserHistory()がcurrentMode_==ListBrowserのときのみ同じカテゴリのままソート順⇔時系列順を切り替える形にしました。実装時、ListBrowserMode::show()自身が内部で1回redraw()済みの状態でカーソルだけ動かしredraw()を呼び忘れる、という一度目の実装ミスをPTY検証で発見・修正しています（doctestではmodeLineText()等ライブ計算のgetterしか見ておらず、この種の「画面に実際に再描画されない」バグを検知できないため、PTY実機相当の検証が今回も有効でした）。
 
 検証として、test_application.cppに新規doctest2件を追加（^RでFILE↔HISTORYを往復できカーソルが末尾に動きモードライン名が変わること、ListBrowser以外での^Rがno-opであること）、既存の関連doctest3件も新しい正しい仕様に合わせて書き換えました。既存603件+新規2件=605件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、doc/ディレクトリで^N×2→Enter（CHANGESを開く）→^G→^N×4→Enter（HELP.jpを開く）→^G→^X^Fという実際の手順を再現、モードラインが「FILE 1/2 TOP CHANGES」（ソート順、Cが先）→^R→「HISTORY 2/2 END HELP.jp」（時系列順、後から開いたHELP.jpが末尾/最新）→^R→「FILE 1/2 TOP CHANGES」（ソート順に復帰）と正しく切り替わることを生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数603件、591件通過+12件既知失敗）、直後にMac側を再ビルドして605/605件を再確認しました。コミット・プッシュ済みです。
+
+<違う部分がある。アクセスした順なので重複もあり得る点。SORT後一覧を並び替えるだけでは不十分。
+
+>ご指摘の通りでした。sub.cのfind_hist()を読み直したところ、比較対象はリストの最後のノード1つだけ（末尾まで進めてからstrcmp(name, hist->name)）で、リスト全体を走査して既存の一致を探すものではありませんでした。つまりlegacyの重複抑制は「直前に追加した1件と同じ場合のみスキップ」という連続重複のみの抑制で、離れた位置にある古いエントリへの再訪問は普通に再追加されます。History::pushRecent()を「リング全体でfirst-occurrence-wins」という、実際より強い重複排除として実装していたのが原因でした。
+
+pushRecent()をring.back()==name（直前の1件とだけ比較）による連続重複のみの抑制に変更しました。これによりRingCategoryの各リング自体が「生のアクセス履歴ログ（重複あり）」になり、^R（HISTORY）がこれをそのまま表示する挙動と自然に一致します。一方^X^F/^X^Dの通常（ソート）表示側は、リング自体が重複を含み得るようになったため、表示のたびに独自の重複排除が必要になりました。共通ヘルパーApplication::sortedUniqueRecentEntries()を新設し、std::set<std::string>（ソート+一意化を1ステップで行う）で構築するようstartListBrowser()/toggleListBrowserHistory()両方から呼び出す形にしています。
+
+検証として、test_history.cppの既存doctest（旧・全体重複排除を前提としたアサーション）を新しい仕様に合わせて書き換え、「直前の1件と同じなら抑制される」ことを確認する新規doctest1件を追加しました。test_application.cppにも新規doctest1件を追加（非連続の再訪問がソート表示では1件のみ、HISTORY表示では重複ありの2件として現れることをエンドツーエンドで確認）。既存605件+新規2件=607件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、doc/ディレクトリでCHANGES→HELP.jp→（間に別ファイルを挟まず）CHANGESを再訪問、という手順を再現し、^X^F（ソート表示）が「1/2 TOP」（2件、重複なし）、^R（HISTORY表示）が「3/3 END」（3件、CHANGESが末尾に重複して再登場）と正しく表示されることを生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数605件、593件通過+12件既知失敗）、直後にMac側を再ビルドして607/607件を再確認しました。コミット・プッシュ済みです。
