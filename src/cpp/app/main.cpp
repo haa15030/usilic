@@ -1533,6 +1533,36 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // == StartShell, in particular) -- Shift+Up/Down needed no such
       // gate since holding Shift never produces a plain byte those
       // paths could otherwise want.
+      // A keypress always wins over lingering mouse-gesture state --
+      // unconditionally, for every key branch below, not just w/s
+      // (2026-08-04 fix; see this loop's own further-down comments for
+      // the previous, narrower version). A real user report: keyboard
+      // navigation (^N/^P, arrows, Enter) would work right after
+      // launch but stop responding to anything visible the moment ANY
+      // mouse operation had happened even once -- their own diagnosis
+      // ("キーボードが押されたらマウス操作ルーチンを離脱してキー操作
+      // へ移行では？") was exactly right. Root cause: `dragging` was
+      // only ever cleared in the w/s branch below; every OTHER key
+      // branch (key->special for arrows/PageUp/PageDown, and the final
+      // `else` for ordinary bytes like ^N/^P/Enter) already cleared
+      // coastLevel/pixelOffset but left `dragging` untouched. If a
+      // click's SDL_MOUSEBUTTONUP is ever missed or delayed (this
+      // sandbox couldn't confirm exactly why -- a platform/SDL
+      // quirk around SDL_CaptureMouse() on macOS is the leading
+      // suspect, but real-machine testing is what actually surfaces
+      // it), `dragging` stays stuck true forever afterward. Every
+      // subsequent frame then takes the `if (dragging || ...)` branch
+      // below and renders via renderScrolled() instead of the normal
+      // redraw() -- and renderScrolled() "draws plain glyphs only --
+      // no cursor/standout" (see its own class comment): keys were
+      // still being fed to Application and updating its internal
+      // state correctly the whole time, but the screen kept re-
+      // rendering the exact same static frame regardless, which reads
+      // exactly like "keyboard stopped working" even though nothing
+      // was actually broken past the rendering-mode decision itself.
+      dragging = false;
+      gui.setHandCursor(false);  // don't leave a stale hand cursor showing either
+
       bool wKey = !key->special && (key->byte == 'w' || key->byte == 'W');
       bool sKey = !key->special && (key->byte == 's' || key->byte == 'S');
       if ((wKey || sKey) && app.currentMode() != fm::ApplicationMode::Shell &&
@@ -1545,7 +1575,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           coastDirection = pressedDirection;
           coastLevel = resolveCoastLevel(1);
         }
-        dragging = false;  // a keyboard trigger always wins over a stale drag flag
       } else if (key->special) {
         consecutiveEscapes = 0;
         // Any other real key stops an active coast, matching
