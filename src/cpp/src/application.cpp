@@ -276,24 +276,47 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     return {ringCategoryLabel(listBrowserCategory_), items[cursorIndex], /*fillTrailingToEdge=*/false,
             /*rightWatermark=*/""};
   });
-  // Mode-line fields for CutContent (the currently-selected CUT
-  // segment's own content -- HELP's own screen included, see
-  // startHelp()'s comment on why HELP is a CutMode split): "HELP"
-  // fixed (matching legacy's own literal name for the help split,
-  // parallel to how Shell's own field above is the fixed literal
-  // "SHELL") when cutOrigin_ is Help, or the ORIGINATING file's own
-  // bare name (a File-origin CUT always splits fileView_'s current
-  // content, see executeCut()'s own comment -- matching FileMode's own
-  // "bare filename, not full path" convention) otherwise, on the left;
-  // the segment's own byte size (echoing FileMode's own byte-size
-  // trailing field -- the closest available analog, since a CUT
-  // segment has no on-disk size of its own to report) on the right.
+  // CutContent (the currently-selected CUT segment's own content --
+  // HELP's own screen included) never gets a whole-line reverse-video
+  // cursor highlight, matching FileMode's own
+  // setCursorHighlightEnabled(false) (see its constructor comment) --
+  // confirmed by a real CUI/GUI side-by-side screenshot (2026-08-04):
+  // legacy's HELP screen shows the current section's own heading line
+  // ("1.  Introduction") in plain text at the top, not reverse-video,
+  // since CutContent (like plain file content) isn't a selectable
+  // list the way DirectoryMode's own listing is. Previously left at
+  // the ContentView default (true), which is right for cutView_ (the
+  // segment-LABEL list itself IS a selectable list, same as
+  // DirectoryMode) but wrong for cutContentView_.
+  cutContentView_.setCursorHighlightEnabled(false);
+  // Mode-line fields for CutContent: "HELP" fixed (matching legacy's
+  // own literal name for the help split, parallel to how Shell's own
+  // field above is the fixed literal "SHELL") when cutOrigin_ is Help,
+  // or the ORIGINATING file's own bare name (a File-origin CUT always
+  // splits fileView_'s current content, see executeCut()'s own
+  // comment -- matching FileMode's own "bare filename, not full path"
+  // convention) otherwise, on the left; the segment's own byte size
+  // (echoing FileMode's own byte-size trailing field) followed by the
+  // CURRENTLY SELECTED segment's own label (the delimiter line it was
+  // split on -- e.g. "1.  Introduction" for HELP's numbered headings,
+  // see CutSegment's own comment) on the right.
   // A real 2026-08-04 user report/screenshot showed legacy's actual
-  // HELP display as "HELP 01/48 47% 2618  1. Introduction" (name=
-  // "HELP", trailing="2618" = this segment's own byte size) side by
-  // side with this port's own bare "01/48 TOP" -- this closes that
-  // gap. Scoped to CutContent only (not cutView_, the segment-LABEL
-  // list itself): disp_window()'s own switch groups M_cut/M_cut2 with
+  // HELP display as "HELP 01/48 47% 2618  1. Introduction": BOTH the
+  // byte count ("2618", already ported in an earlier same-day revision
+  // of this provider) AND the current chapter's own label appear on
+  // the same row, not one replacing the other, confirmed by looking at
+  // the screenshot directly a second time rather than trusting a first
+  // read of only the numbers. mode.c's own T_cut case (sprintf(...,
+  // " \042%s\042", cutp->str)) and menu.c's own init_cut(hp->bp,
+  // ap->name, cutp->str, cutp->bp) call together show cutp->str is the
+  // SELECTED segment-list entry's own label text -- appended here after
+  // the byte count within the SAME trailing field (ModeLineFields has
+  // no separate slot for this: rightWatermark is reserved specifically
+  // for disp_window()'s "usilic v1.5b" program-name fallback, see its
+  // own comment, not a general-purpose second trailing field, so
+  // repurposing it here would be a mismatch of a different kind).
+  // Scoped to CutContent only (not cutView_, the segment-LABEL list
+  // itself): disp_window()'s own switch groups M_cut/M_cut2 with
   // M_prog/M_lfile/M_ldir's "enter string at mode-line" handling, a
   // meaningfully different (editable-prompt-like) mode-line shape that
   // doesn't obviously map onto this port's simple name/trailing
@@ -307,7 +330,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                             : std::filesystem::path(fileMode_.currentFile()).filename().string();
     std::size_t bytes = 0;
     for (const auto &line : cutContentView_.lines()) bytes += line.text.size() + 1;  // +1 for the newline
-    return {name, std::to_string(bytes), /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
+    std::string trailing = std::to_string(bytes);
+    if (const CutSegment *segment = cutMode_.selectedSegment()) {
+      std::string label = segment->label;
+      std::size_t start = label.find_first_not_of(' ');
+      if (start != std::string::npos) trailing += "  " + label.substr(start);
+    }
+    return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
   });
 }
 

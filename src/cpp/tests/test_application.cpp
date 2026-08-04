@@ -2924,6 +2924,40 @@ TEST_CASE_FIXTURE(Fixture, "HELP: CutContent's mode-line shows the fixed name \"
   CHECK(text.find(std::to_string(expectedBytes)) != std::string::npos);
 }
 
+TEST_CASE_FIXTURE(Fixture, "HELP: CutContent's mode-line trailing ALSO shows the current section's own label "
+                           "alongside the byte size (2026-08-04 user correction: a second look at the same "
+                           "screenshot showed \"2618\" and \"1.  Introduction\" both present on the real legacy "
+                           "mode-line -- the byte count doesn't get replaced by the chapter label, both appear "
+                           "together)") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.handleCommand(Command::Enter));  // selects the first section, "  11. Section One"
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+
+  std::string text = app.activeContentView().modeLineText();
+  std::size_t expectedBytes = 0;
+  for (const auto &line : app.activeContentView().lines()) expectedBytes += line.text.size() + 1;
+  CHECK(text.find(std::to_string(expectedBytes)) != std::string::npos);  // byte count still present...
+  CHECK(text.find("11. Section One") != std::string::npos);              // ...alongside the section's own label
+}
+
+TEST_CASE_FIXTURE(Fixture, "HELP: CutContent shows no whole-line reverse-video highlight on the current section's "
+                           "heading, matching FileMode's own plain-content behavior (2026-08-04 user report: "
+                           "legacy's \"1.  Introduction\" heading line is plain text, not reverse-video, since "
+                           "CutContent -- like plain file content -- isn't a selectable list the way the CUT/HELP "
+                           "segment-label list itself is)") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+
+  CHECK_FALSE(app.activeContentView().cursorHighlightEnabled());
+  for (int row = 0; row < display.rows() - 1; row++)
+    for (int col = 0; col < display.columns(); col++) CHECK_FALSE(display.standoutAt(row, col));
+}
+
 TEST_CASE_FIXTURE(Fixture, "CUT (real, File-origin): CutContent's mode-line shows the originating file's own "
                            "bare name, not \"HELP\"") {
   REQUIRE(app.start(path()));
