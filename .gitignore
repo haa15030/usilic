@@ -5,13 +5,22 @@
 tcb/src/*.o
 tcb/src/*.P
 tcb/*.P
+# The built binary itself, under whatever name `make PROG=<name>` was
+# given (2026-08-05: Makefile's own PROG variable, default "usilic" --
+# see its own comment) -- "tcb"/"tcb.exe" kept for any build that
+# didn't override PROG, "usilic" for this checkout's own actual use.
 tcb/src/tcb
 tcb/src/tcb.exe
+tcb/src/usilic
 tcb/src/config.h
 tcb/src/config.h.old
+# progname.h is generated fresh by every `make` invocation (see
+# Makefile's own progname.h rule) -- never hand-edited, never
+# committed. tcb/src/Makefile itself is NOT listed here (2026-08-05):
+# it's the genuine, hand-maintained source of truth for the PROG
+# parameterization, not a locally-generated artifact -- see CLAUDE.md.
 tcb/src/progname.h
 tcb/src/progname.h.old
-tcb/src/Makefile
 tcb/src/Makefile.old
 tcb/src/.config
 tcb/src/TAGS

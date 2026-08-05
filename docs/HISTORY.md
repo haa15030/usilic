@@ -1174,3 +1174,16 @@ Application::dispatchByte()の先頭に、ListBrowserモードかつGrepPattern/
 検証として、content_view.hppのLine構造体変更に伴い既存の3引数Line構築(10箇所以上)すべてに明示的な空{}を追加し警告ゼロを維持し、RecordingDisplay(テスト用Display実装)にbold_/underline_のper-cell記録機能を新設しました。新規doctest3件を追加(ContentView単体でBold/Underlineのバイト範囲が反転表示と独立してSGR適用されること、FileMode::loadFile()でnroff風オーバーストライクファイルを読ませて4件のBold run(1文字ごとに別々のrun)が入ること、CutMode::split()/segmentContent()の往復でattributesが保持されること)。test_cut_mode.cppはsplit()/pushSplit()の型変更に伴い全面的にStyledLineベースへ書き換えました。既存636件+新規3件=639件全通過です。
 
 実バイナリを-cでPTY起動し、doc/ディレクトリで^J^H→Enter(「1. Introduction」セクションを開く)を再現したところ、生バイト列で見出しの数字・タイトルどちらもボールドSGRで囲まれ、本文中のCtrl/Enter/HELP等の強調されたキーワードも同様にボールド表示されることを確認しました。Ubuntu Dockerクロスビルドも既知差分(12件)のみでリグレッション無し、Mac側再ビルドで639/639件再確認済みです。CLAUDE.mdに項目173として記録し、コミット・プッシュします。
+
+<~/git/usilic/tcb/src/のソースを任意のプログラム名でmakeできるよう修正してほしい（ソース内の全「tcb」を「任意」でコンパイル）。
+今は任意=usilicでOK。
+
+>実装しました。事前調査したところ、str.c/tcb.cには既にPROGNAME/ENV_PROG/ENV_CHARSET/ENV_VTという一連のマクロが広く浸透しており、progname.h(gitignore対象、PROGNAME "usilic"等の値で既に存在)を経由してほぼ全体が動作する状態になっていました。おそらく本セッション全体で比較対象として使い続けてきた/usr/local/bin/usilic(CUIのお手本)自体がこの仕組みでビルド・改名されたものと見られます。ただし(1)str.cのmp[]テーブル(^Tバナーのモード名)に{" TCB", M_tcb}という未対応のハードコードが1箇所残っていた、(2)str.cのエラーメッセージ"Edit `SHELL' of tcbrc"(tcbrcが未対応)、(3)最も本質的な問題として、Makefile自体がビルド成果物の名前をtcbに固定したままで、progname.hを生成する仕組みも無く、makeしても常にtcbという名前のバイナリしか作れませんでした。
+
+Makefileに PROG変数(デフォルトusilic、make PROG=<name>で上書き可能)を追加し、progname.hをPROGから動的に生成する.PHONYターゲットへ変更しました。ビルド成果物のターゲット名もtcb:から$(PROG):へ変更、clean:ターゲットも追従させました。新規マクロPROGNAME_UPPERをprogname.hに追加し、str.cの{" TCB", M_tcb}を{" " PROGNAME_UPPER, M_tcb}へ、"Edit `SHELL' of tcbrc"を"Edit `SHELL' of " PROGNAME "rc"へ、それぞれ修正しました。
+
+.gitignoreも見直しました。tcb/src/Makefileは元々gitignore対象でしたが、config.shのような生成元スクリプトがリポジトリ内に存在しない以上、このMakefile自体が正式なソースであるとみなし、今回からgit管理下に置くことにしました。ビルド成果物の除外パターンもtcb/src/usilicを追加しています。
+
+なお、config.h(同じくgitignore対象)内のTMP(/tmp/.usilic)・LIB(/usr/local/lib/usilic)は既に"usilic"決め打ちで書かれていたため(そもそも"tcb"という文字列を含んでいない)、今回のPROG変数からの動的生成対象には含めていません。真に任意の名前で完全に統一するなら将来的な対応候補です。
+
+検証として、make clean && make(PROG省略、デフォルトusilic)で警告(既存の-Wpointer-sign系のみ)以外は問題なく完走し、usilicという名前のバイナリが生成されることを確認しました。make clean && make PROG=fooでも同様にfooという名前のバイナリが生成され、progname.hが正しく切り替わること、さらに実行時エラーメッセージ(foo: Invalid option --、Usage: foo等)も追従することを確認しました。デフォルト(usilic)へ作り直した上でPTY起動し、^T(TCBバナー)を開いたところ、モード名がUSILIC、"Startup file"が/usr/local/lib/usilic/usilicrc、"Command line"がusilic ...、"ERROR log"/"SHELL log"が/tmp/.usilic/...とすべて正しく表示され、~/.usilicディレクトリも実際に作成されることを確認しました。CLAUDE.mdに項目174として記録し、コミット・プッシュします。

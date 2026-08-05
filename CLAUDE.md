@@ -10460,6 +10460,78 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       12件既知失敗)であることを確認、直後にMac側を再ビルドして
       639/639件を再確認済み。
 
+174. **2026-08-05(続き): 旧Cソース(`tcb/src/`)を任意のプログラム名で
+    `make`できるよう修正**。「~/git/usilic/tcb/src/のソースを任意の
+    プログラム名でmakeできるよう修正してほしい（ソース内の全「tcb」を
+    「任意」でコンパイル）。今は任意=usilicでOK。」との依頼。
+   - **事前調査で判明した既存の状態**: `str.c`/`tcb.c`には既に
+      `PROGNAME`/`ENV_PROG`/`ENV_CHARSET`/`ENV_VT`という一連のマクロ
+      (`~/.tcb/history`ではなく`~/.PROGNAME/history`、環境変数
+      `TCBCHARSET`ではなく`PROGNAME_UPPERCHARSET`等)が既に広く
+      浸透しており、`progname.h`(gitignore対象、`PROGNAME "usilic"`
+      等の値で既に存在)を経由してほぼ全体が動作する状態になって
+      いた -- おそらく本セッション全体で比較対象として使い続けてきた
+      `/usr/local/bin/usilic`(CUIのお手本)自体がこの仕組みで
+      ビルド・改名されたものと見られる。ただし(1)`str.c`の`mp[]`
+      テーブル(`^T`バナーのモード名)に`{" TCB", M_tcb}`という
+      未対応のハードコードが1箇所残っていた、(2)`str.c`のエラー
+      メッセージ`"Edit \`SHELL' of tcbrc"`(`tcbrc`が未対応、すぐ下の
+      行`"~/." PROGNAME "/" PROGNAME "rc ignored"`は既に対応済みと
+      対照的だった)、(3)最も本質的な問題として、`Makefile`自体が
+      ビルド成果物の名前を`tcb`に固定したままで、`progname.h`を
+      生成する仕組みも無く(手動で作成・維持されていたと見られる、
+      `config.sh`のようなソース側の生成スクリプトはリポジトリ内に
+      存在しない)、`make`しても常に`tcb`という名前のバイナリしか
+      作れなかった。
+   - **修正**: `Makefile`に`PROG`変数(デフォルト`usilic`、
+      `make PROG=<name>`で上書き可能)を追加し、`progname.h`を
+      `PROG`から動的に生成する`.PHONY`ターゲットへ変更(毎回の
+      `make`で再生成、`PROG`の変更をファイルタイムスタンプだけでは
+      検知できないための割り切り、既存の`$(OBJS)`全体がこれに
+      依存するため`PROG`変更時は必ず全体再ビルドされる)。ビルド
+      成果物のターゲット名も`tcb:`から`$(PROG):`へ変更、`clean:`
+      ターゲットも追従。新規マクロ`PROGNAME_UPPER`を`progname.h`に
+      追加し(`ENV_PROG`と値は同じだが、環境変数名という別の意味の
+      マクロを画面表示用に流用するのは筋が悪いと判断し独立させた)、
+      `str.c`の`{" TCB", M_tcb}`を`{" " PROGNAME_UPPER, M_tcb}`へ、
+      `"Edit \`SHELL' of tcbrc"`を`"Edit \`SHELL' of " PROGNAME
+      "rc"`へ、それぞれ修正した。`tcb.P`ターゲット自身の名前や
+      `/*tcb*/`という内部的なコメントマーカー規約(依存関係抽出の
+      ための仕組み、ユーザーには見えない)はプログラム名のブランド
+      表示とは無関係なため変更していない。
+   - **`.gitignore`の見直し**: `tcb/src/Makefile`は元々gitignore
+      対象だったが、`config.sh`のような生成元スクリプトがリポジトリ
+      内に存在しない以上、このMakefile自体が(手作業で管理する)
+      正式なソースであるとみなし、今回からgit管理下に置くことにした
+      (`.gitignore`から`tcb/src/Makefile`の行を削除、`.old`
+      バックアップは引き続き対象外)。ビルド成果物の除外パターンも
+      `tcb/src/tcb`(PROG未指定時)に加え`tcb/src/usilic`(今回の
+      デフォルト)を追加。`progname.h`は毎回生成される成果物のため
+      引き続きgitignore対象のまま。
+   - **未着手として記録するもの**: `config.h`(同じくgitignore対象、
+      既存)内の`TMP`(`/tmp/.usilic`)・`LIB`(`/usr/local/lib/
+      usilic`)は既に"usilic"決め打ちで書かれていたため、今回の
+      「ソース内の`tcb`を置換する」という依頼の対象外(そもそも
+      `tcb`という文字列を含んでいない)と判断し、`PROG`変数からの
+      動的生成へは今回は変更していない。真に任意の名前で完全に
+      統一するなら将来的な対応候補として記録しておく。
+   - **検証**: `make clean && make`(PROG省略、デフォルトusilic)で
+      警告(既存の`-Wpointer-sign`系のみ)以外は問題なく完走し、
+      `usilic`という名前のバイナリが生成されることを確認。
+      `make clean && make PROG=foo`でも同様に`foo`という名前の
+      バイナリが生成され、`progname.h`が`PROGNAME "foo"`/
+      `PROGNAME_UPPER "FOO"`等に正しく切り替わること、さらに実行時
+      エラーメッセージ(`foo: Invalid option --`、`Usage: foo` /
+      `foo [directory]`)も追従することを確認した(`argv[0]`固定
+      ではなく`PROGNAME`マクロ由来と判明)。デフォルト(usilic)へ
+      作り直した上でPTY起動し、`^T`(TCBバナー)を開いたところ、
+      モード名が`USILIC`(反転表示)、"Startup file"が`/usr/local/
+      lib/usilic/usilicrc`、"Command line"が`usilic /Users/
+      haa15030/git/usilic/src/doc`、"ERROR log"/"SHELL log"が
+      `/tmp/.usilic/...`とすべて正しく表示され、`~/.usilic`
+      ディレクトリも実際に作成されることを生バイト列とファイル
+      システムの両方で確認した。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

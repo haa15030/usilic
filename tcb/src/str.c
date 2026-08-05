@@ -90,7 +90,7 @@ char **s_P(uintptr_t n_P)/*tcb*/
     char *s;
     int m;
   } mp [] = {
-    {" TCB",	M_tcb},
+    {" " PROGNAME_UPPER,	M_tcb},
     {" HELP",	M_help},
     {" KEY",	M_key},
     {" FGREP",	M_fgrep},
@@ -606,7 +606,7 @@ int conf(char *temp, char *args, char *version, int f_tcb)/*tcb*/
     "Wrote",						/* S_erra */
     "Macro interrupted",				/* S_errb */
     "Not installed",					/* S_errc */
-    "Edit `SHELL' of tcbrc",				/* S_errd */
+    "Edit `SHELL' of " PROGNAME "rc",			/* S_errd */
     "~/." PROGNAME "/" PROGNAME "rc ignored",		/* S_erre */
     "SHELL busy",					/* S_errf */
     "Exit",						/* S_errg */
