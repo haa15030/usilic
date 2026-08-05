@@ -577,6 +577,19 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
 bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> special) {
   if (promptKind_ != PromptKind::None) return feedPromptByte(byte);
   if (currentMode_ == ApplicationMode::Shell) return feedShellByte(byte, special);
+  // GrepPattern/CutPattern's own "Select string" list (see
+  // startRegexPromptList()'s own comment): unlike every other
+  // ListBrowser use (FILE/DIR/SHELL/PROGRAM pickers, all pure
+  // navigate+Enter-to-select), legacy's own EGREP/CUT-regex list is a
+  // live combobox where typing directly edits the highlighted
+  // candidate -- see feedRegexListByte()'s own comment. Checked before
+  // the generic resolveCommand() dispatch below so ordinary characters
+  // (which resolveCommand() would otherwise resolve to page/scroll
+  // commands, same table used everywhere else) reach it instead.
+  if (currentMode_ == ApplicationMode::ListBrowser && promptHistoryRecallKind_ &&
+      (*promptHistoryRecallKind_ == PromptKind::GrepPattern || *promptHistoryRecallKind_ == PromptKind::CutPattern)) {
+    return feedRegexListByte(byte, special);
+  }
 
   if (escPending_ || leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_ ||
       (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
@@ -584,6 +597,46 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   }
 
   return handleCommand(resolveCommand(byte, special));
+}
+
+// See dispatchByte()'s own comment for why this exists. A curated,
+// deliberately small set of bytes stays list-navigation-only (^N/^P/
+// arrows to move the selection, Enter to submit it as-is, ^G to cancel
+// back out entirely, ^L to redraw) -- matching resolveCommand()'s own
+// bindings for these so the muscle memory carries over. Every OTHER
+// byte (ordinary typed characters, DEL/^H) is treated as "start
+// editing": transitions into the normal editable GrepPattern/CutPattern
+// prompt (activatePrompt()'s own already-correct plain, live-cursor
+// rendering) pre-filled with the CURRENTLY HIGHLIGHTED candidate's own
+// text (not blank -- this is what makes editing an EXISTING candidate
+// possible, not just typing a fresh one from scratch), then immediately
+// re-feeds this same byte through feedPromptByte() so the transition
+// feels continuous rather than requiring a separate "start over" step.
+bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  bool isNav = special == KeyInput::SpecialKey::Up || special == KeyInput::SpecialKey::Down;
+  if (!special) {
+    switch (byte) {
+      case 0x0e:  // ^N
+      case 0x10:  // ^P
+      case kCarriageReturn:
+      case kControlG:
+      case 0x0c:  // ^L
+        isNav = true;
+        break;
+    }
+  }
+  if (isNav) return handleCommand(resolveCommand(byte, special));
+  if (special) return false;  // an unhandled special key -- nothing meaningful to feed as text
+
+  PromptKind kind = *promptHistoryRecallKind_;
+  const std::string *selected = listBrowserMode_.selectedItem();
+  std::string seed = selected ? *selected : promptHistoryRecallText_;
+  promptHistoryRecallKind_ = std::nullopt;
+  promptHistoryRecallText_.clear();
+  currentMode_ = promptHistoryRecallReturnMode_;
+  activeView().redraw();
+  activatePrompt(kind, seed);
+  return feedPromptByte(byte);
 }
 
 // See this function's own declaration comment (application.hpp).

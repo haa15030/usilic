@@ -1082,6 +1082,12 @@ class Application {
     std::optional<KeyInput::SpecialKey> special;
   };
   bool dispatchByte(int byte, std::optional<KeyInput::SpecialKey> special);
+  // GrepPattern/CutPattern's own "Select string" ListBrowser (see
+  // startRegexPromptList()'s own comment): a curated set of bytes
+  // stays list-navigation-only, everything else transitions into an
+  // editable prompt pre-filled with the highlighted candidate's own
+  // text -- see its own definition comment for the full design.
+  bool feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey> special);
   // The ESC/^J/^X/^X^K/^O leader-key state machine, factored out of
   // dispatchByte() so feedShellByte() can also reach it -- see its own
   // comment (2026-08-02 user report: legacy lets ^J/^X/^O leaders work

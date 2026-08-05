@@ -436,6 +436,88 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^S (StartEgrep) opens directly into the
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }
 
+// -- feedRegexListByte: legacy's own EGREP/CUT-regex list is a live
+// combobox, not a pure picker (2026-08-05 user report: "新たな文字列は
+// 入力できないし既存の文字列編集も受け付けない") -- see its own
+// definition comment for the design (a curated set of navigation
+// bytes stays list-only, everything else transitions into an editable
+// prompt pre-filled with the highlighted candidate).
+
+TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: ^N/^P still navigate the EGREP candidate list without "
+                           "leaving it (regression check: these must stay list-only, not trigger the "
+                           "edit-transition)") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "three");
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  // Cursor starts on the newest (last) entry -- see
+  // startPromptHistoryRecall()'s own comment -- so ^P (up) is the one
+  // guaranteed not to be a no-op boundary bounce here; ^N (down) is
+  // tried second, back to the starting position.
+  int startIndex = app.activeContentView().cursorIndex();
+
+  CHECK(app.feedByte(0x10, std::nullopt));  // ^P
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.activeContentView().cursorIndex() != startIndex);
+
+  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.activeContentView().cursorIndex() == startIndex);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: typing a character while browsing the EGREP candidate list "
+                           "transitions into an editable prompt PRE-FILLED with the highlighted candidate's "
+                           "own text, with the typed character appended -- this IS \"editing an existing "
+                           "string\", not starting from blank") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "three");
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  std::string highlighted = *app.listBrowserMode().selectedItem();
+
+  CHECK(app.feedByte('X', std::nullopt));
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.promptText() == highlighted + "X");
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: backspace while browsing the EGREP candidate list also "
+                           "transitions into editing, applied to the highlighted candidate's own text") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "three");
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  std::string highlighted = *app.listBrowserMode().selectedItem();
+  REQUIRE_FALSE(highlighted.empty());
+
+  CHECK(app.feedByte(0x7f, std::nullopt));  // DEL
+  CHECK(app.promptActive());
+  CHECK(app.promptText() == highlighted.substr(0, highlighted.size() - 1));
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: Enter still submits the highlighted candidate as-is "
+                           "(regression check: the edit-transition must not interfere with plain "
+                           "pick-from-the-list use)") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "three");
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  std::string highlighted = *app.listBrowserMode().selectedItem();
+
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  CHECK_FALSE(app.promptActive());
+  const auto &ring = history.recentEntries(RingCategory::RecentEgrepPattern);
+  CHECK(ring.back() == highlighted);
+}
+
 // -- GREP: starting a search prompt, typing a pattern, submitting --
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(StartFgrep): opens a prompt without leaving Directory mode yet") {
