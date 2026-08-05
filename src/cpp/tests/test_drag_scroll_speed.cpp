@@ -37,6 +37,19 @@ TEST_CASE("levelForReleaseDistance: thresholds scale with cellHeightPixels") {
   CHECK(levelForReleaseDistance(100, 10) > levelForReleaseDistance(100, 200));
 }
 
+TEST_CASE("levelForReleaseDistance: the upper (originally busy-loop) tier grows +50% per raw level instead of "
+          "doubling, so a hard flick reaches the fastest levels with far less distance than before") {
+  int H = 20;
+  // Raw-level buckets with the compressed upper tier (levels 1-4
+  // still double, see this function's own comment): 1:[H/4,H)
+  // 2:[H,2H) 3:[2H,4H) 4:[4H,8H) 5:[8H,12H) 6:[12H,18H) 7:[18H,27H)
+  // 8:[27H,40H) 9:[40H,60H) 10:[60H,inf). Output level always adds
+  // kReleaseLevelBias(2), clamped to the table's own last index.
+  CHECK(levelForReleaseDistance(20 * H, H) == 9);   // 18H <= 20H < 27H -> raw level 7, +2 = 9
+  CHECK(levelForReleaseDistance(27 * H, H) == 10);  // 27H <= x < 40H -> raw level 8, +2 = 10 (clamped)
+  CHECK(levelForReleaseDistance(60 * H, H) == 10);  // raw level 10 already, +2 still clamps to 10
+}
+
 TEST_CASE("levelForReleaseDistance: a real flick is biased 2 levels faster than the raw distance-doubling "
           "table alone would pick, but a too-small movement still doesn't coast at all") {
   int cellHeight = 20;

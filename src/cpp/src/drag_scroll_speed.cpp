@@ -69,15 +69,28 @@ int levelForReleaseDistance(int pixels, int cellHeightPixels) {
   int magnitude = std::abs(pixels);
   int maxLevel = static_cast<int>(kScrollSpeedLevels.size()) - 1;
   if (magnitude < height / 4) return 0;
-  // Same doubling-threshold shape as before, just carried one level
-  // further (height*1, *2, *4, ... *64) to reach the wider table --
-  // magnitude thresholds, not the per-step delays above, so this part
-  // needed no real-hardware calibration to extend correctly.
+  // Levels 1-4 (this table's own originally usleep-calibrated,
+  // precisely-timed tier -- see kScrollSpeedLevels' own comment) keep
+  // doubling per level (height*1, *2, *4, *8); level 5 onward (the
+  // tier that was always an uncalibrated busy-loop) grows more gently
+  // -- +50% per level instead of +100% -- starting 2026-08-06 after a
+  // real user report that even a hard, fast flick's coast still
+  // visibly "dropped" speed at release: the raw doubling curve made
+  // the fastest raw levels require magnitude*'s of several HUNDRED
+  // times cellHeightPixels within just kReleaseWindow (150ms) --
+  // e.g. level 10 needed 256*cellHeightPixels, thousands of real
+  // pixels in 150ms, an unreachable release velocity for an actual
+  // human hand -- so no realistic flick, however hard, could ever
+  // land past roughly the middle of the table. Compressing only the
+  // upper tier (not levels 1-4, which the same user separately
+  // confirmed already felt right after kReleaseLevelBias below was
+  // added) makes the fastest levels reachable by a real flick without
+  // touching the already-tuned low end.
   int level = 1;
   int threshold = height;
   while (level < maxLevel && magnitude >= threshold) {
     level++;
-    threshold *= 2;
+    threshold += (level <= 4) ? threshold : threshold / 2;
   }
   // +kReleaseLevelBias, a flat shift toward faster (2026-08-06, the
   // user's own proposed fix): after two failed attempts at a deeper
