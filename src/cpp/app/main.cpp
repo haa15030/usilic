@@ -1781,8 +1781,24 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     if (coastLevel > 0 && !dragging) {
       const fm::ScrollStep &step = fm::kScrollSpeedLevels[coastLevel];
       auto frameDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(16);
+      // Move-THEN-delay, not delay-then-move (this used to be the
+      // other way around) -- a real user report (2026-08-06): the
+      // screen visibly "drops" speed right at the instant the mouse
+      // is released, persisting even after -u was used to make every
+      // level's own per-dot delay much faster, which pointed away
+      // from "the chosen level is just slow" and toward the ORDERING
+      // itself: the old shape ran performScrollStepDelay() BEFORE the
+      // very first pixelOffset move of a freshly-started coast, so
+      // there was a real, visible dead pause (up to that level's own
+      // delay -- 90ms at the slowest default level) between the last
+      // drag frame and the first coast frame, no matter how fast
+      // subsequent dots were configured to be. Moving first means the
+      // coast's first dot renders in the SAME frame the drag stopped,
+      // with the per-step delay now only ever separating dot N from
+      // dot N+1 -- never gating the first one -- which is the more
+      // intuitive shape for a physics loop anyway (delay is what
+      // happens BETWEEN steps, not before the first one).
       do {
-        performScrollStepDelay(step);
         pixelOffset += coastDirection;
         if (!commitRowCrossings(view, cellHeight, pixelOffset)) {
           // Hit a boundary -- stop rather than pin against the edge.
@@ -1815,6 +1831,10 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           wasActivelyScrolling = true;
           break;
         }
+        // Delay AFTER moving, and only if there's actually a next dot
+        // coming this frame -- no point paying the delay just to have
+        // the do-while condition immediately end the loop anyway.
+        performScrollStepDelay(step);
       } while (std::chrono::steady_clock::now() < frameDeadline);
     }
 
