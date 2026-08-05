@@ -145,6 +145,41 @@ struct Fixture {
 
 }  // namespace
 
+// -- usilicrc's GREP section: seeds RecentEgrepPattern at construction --
+// (2026-08-05: Configuration::grepSeedPatterns() already parsed this
+// section, with its own doctest coverage, but nothing ever consumed
+// it -- these get a fresh Configuration/History/Application built
+// LOCALLY, in that order, rather than reusing Fixture: Fixture's own
+// configuration.loadRcText() call runs in ITS constructor BODY, which
+// is always AFTER its app{} member has already finished constructing
+// (C++ member init order follows declaration order, not the
+// initializer list), so seeding-at-construction can never be observed
+// through Fixture regardless of what rc text it loads.)
+
+TEST_CASE("Application construction: RecentEgrepPattern is seeded from usilicrc's GREP section, so ^R at "
+          "an EGREP/CUT-regex prompt shows real CUI defaults even before any pattern has ever been typed "
+          "(a real user report + direct legacy-tcb PTY testing with a fresh, argument-launched $HOME found "
+          "this exact list -- e.g. \"diff \\-\", \"^Question\", \"^Subject: \" -- appearing immediately)") {
+  RecordingDisplay display{24, 80};
+  KeyInput keyInput{display};
+  History history;
+  Configuration configuration;
+  configuration.loadRcText("GREP\n \"diff \\-\"\n ^Question\n \"^Subject: \"\n", true);
+
+  fs::path root = makeTempDir();
+  fs::create_directory(root / ".usilic");
+  Application app{display, keyInput, history, configuration, Charset::Encoding::Ascii, 80, testShellOptions(),
+                   root.string()};
+  (void)app;
+
+  const auto &seeded = history.recentEntries(RingCategory::RecentEgrepPattern);
+  REQUIRE(seeded.size() == 3);
+  CHECK(seeded[0] == "diff \\-");
+  CHECK(seeded[1] == "^Question");
+  CHECK(seeded[2] == "^Subject: ");
+  fs::remove_all(root);
+}
+
 // -- resolveCommand: the new keystroke->Command table --
 
 TEST_CASE("resolveCommand: special keys map to movement, with left/right as up/down synonyms") {
@@ -2491,14 +2526,27 @@ TEST_CASE_FIXTURE(Fixture, "StartExit: reachable from any mode, e.g. File") {
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "exit confirmation: typing 'y' then ^M sets wantsExit()") {
+TEST_CASE_FIXTURE(Fixture, "exit confirmation: 'y' is pre-filled, so ^M alone sets wantsExit() "
+                           "(2026-08-05 fix: a real CUI screenshot's \"y\" was already there next to "
+                           "\"(y/n) ? \" before the user typed anything, not typed fresh each time)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartExit));
-  feedText("y");
-  CHECK(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.feedByte(0x0d, std::nullopt));  // Enter alone, nothing typed first
 
   CHECK(app.wantsExit());
   CHECK_FALSE(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "exit confirmation: backspacing away the pre-filled 'y' and typing 'n' "
+                           "still cancels") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartExit));
+  CHECK(app.feedByte(0x7f, std::nullopt));  // DEL: removes the pre-filled 'y'
+  feedText("n");
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
+
+  CHECK_FALSE(app.wantsExit());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
 TEST_CASE_FIXTURE(Fixture, "exit confirmation: anything other than exactly 'y' does not set wantsExit()") {

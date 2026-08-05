@@ -394,6 +394,36 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     }
     return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
   });
+
+  // usilicrc's own GREP section (2026-08-05 fix): a real CUI screenshot
+  // and direct legacy-tcb PTY testing (fresh $HOME, no ~/.tcb/history at
+  // all) confirmed that ^J^S (EGREP) and ^J^C (CUT's regex variant)
+  // open directly into a non-empty candidate list even on a completely
+  // fresh install -- the exact 10 patterns from usilicrc's own GREP
+  // section ("The `string' that will be used in EGREP or CUT", e.g.
+  // "diff \-", "^Question", "^Subject: "). Configuration::
+  // grepSeedPatterns() already parsed this section (with its own
+  // doctest coverage) but nothing ever consumed it -- seeding
+  // RecentEgrepPattern with it here means ^R at any EGREP/CUT-regex
+  // prompt shows these defaults even before the user has ever typed a
+  // real pattern, matching legacy and directly addressing a user
+  // report ("EGREPのデフォルト履歴リストは入れておく必要がある" --
+  // CUT's regex variant sharing EGREP's own ring, per item 167/168,
+  // needs that ring to actually HAVE a default list in it to make the
+  // shared-spec claim visible, not just structurally true). Seeded
+  // unconditionally at construction (not "only if empty"): an
+  // argument-launched run's history_ is always empty at this point
+  // regardless (main.cpp's own consultHistoryOnStart gate -- see its
+  // comment -- skips loading ~/.usilic/history for those runs, matching
+  // legacy's own ~/.tcb/history skip confirmed by the same PTY test),
+  // and a no-argument run's already-loaded real history simply gets
+  // these appended after it chronologically. This doesn't reproduce
+  // legacy's own "^" config-line marking exactly where real history
+  // gets interleaved among the seeds (this port's ring is a simpler
+  // flat chronological deque) -- a known, deliberate simplification.
+  for (const auto &seed : configuration_.grepSeedPatterns()) {
+    history_.pushRecent(RingCategory::RecentEgrepPattern, seed);
+  }
 }
 
 std::string Application::ringCategoryLabel(RingCategory category) const {
@@ -1842,7 +1872,13 @@ bool Application::startRemovePrompt(bool interactive) {
 // class comment for why this is reachable from any mode and doesn't
 // need a targetEntries()-style guard the way CP/MV/RM do.
 bool Application::startExitPrompt() {
-  activatePrompt(PromptKind::ExitConfirm, "");
+  // "y" pre-filled (2026-08-05 fix, a real CUI screenshot's "y" was
+  // barely visible next to "(y/n) ? " because it's ALREADY there when
+  // the prompt first appears, not typed by the user afterward) -- the
+  // default answer is "yes, exit", so pressing Enter alone confirms;
+  // backspacing it away and typing "n" (then Enter) still cancels, via
+  // executeExit()'s own `confirmation != "y"` check, unchanged.
+  activatePrompt(PromptKind::ExitConfirm, "y");
   return true;
 }
 
