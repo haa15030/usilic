@@ -2794,12 +2794,18 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: swallowed (no ListBrowser, no
   CHECK(app.promptText().empty());  // 0x12 itself was NOT inserted as literal text
 }
 
-// -- ^R at the CUT prompt (CutPattern, 2026-08-05 -- see
-// startPromptHistoryRecall()'s own comment for why this reuses
-// RecentEgrepPattern, matching legacy's own ss.p.hegrep reuse) --
+// -- ^R at the CUT prompt (CutPattern, 2026-08-05): FIXED (^Jc)
+// shares FGREP's own ring, REGEX (^J^C) shares EGREP's -- matching
+// legacy's own ss.p.hfgrep/hegrep split for M_cut2/M_cut, ported here
+// (executeCut()'s own comment) after a direct user report that an
+// EARLIER same-day revision used EGREP's ring unconditionally for
+// BOTH, which is itself a real legacy bug (menu.c's own `case M_cut:
+// case M_cut2: hp->ss.p.hegrep = save_history(...)` never branches
+// here either, unlike the FGREP/EGREP block just above it in the same
+// switch) -- also fixed in tcb/src/menu.c itself, see that commit. --
 
-TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt recalls CUT's own past patterns, sharing EGREP's ring "
-                           "(legacy's own ss.p.hegrep reuse for M_cut/M_cut2)") {
+TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt (FIXED, ^Jc/StartCutFixed) recalls from RecentFgrepPattern, "
+                           "NOT RecentEgrepPattern -- matching FGREP's own fixed-string semantics") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -2808,7 +2814,7 @@ TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt recalls CUT's own past patterns
 
   REQUIRE(app.handleCommand(Command::StartCutFixed));
   feedText("plain");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // records "plain" into RecentEgrepPattern
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // records "plain" into RecentFgrepPattern
   REQUIRE(app.handleCommand(Command::Back));  // not nested -- one ^G exits CUT entirely, back to File
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
@@ -2818,9 +2824,34 @@ TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt recalls CUT's own past patterns
   REQUIRE(app.listBrowserMode().items().size() == 1);
   CHECK(app.listBrowserMode().items()[0] == "plain");
 
+  const auto &fgrepRing = history.recentEntries(RingCategory::RecentFgrepPattern);
+  REQUIRE(fgrepRing.size() == 1);
+  CHECK(fgrepRing[0] == "plain");
+  CHECK(history.recentEntries(RingCategory::RecentEgrepPattern).empty());
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt (REGEX, ^J^C/StartCutRegex) recalls from RecentEgrepPattern") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartCutRegex));
+  feedText("pla.n");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // records "pla.n" into RecentEgrepPattern
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartCutRegex));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  REQUIRE(app.listBrowserMode().items().size() == 1);
+  CHECK(app.listBrowserMode().items()[0] == "pla.n");
+
   const auto &egrepRing = history.recentEntries(RingCategory::RecentEgrepPattern);
   REQUIRE(egrepRing.size() == 1);
-  CHECK(egrepRing[0] == "plain");
+  CHECK(egrepRing[0] == "pla.n");
+  CHECK(history.recentEntries(RingCategory::RecentFgrepPattern).empty());
 }
 
 TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: the list is the RAW chronological log, duplicates included "

@@ -2304,7 +2304,9 @@ bool Application::startPromptHistoryRecall() {
       category = RingCategory::ShellCommand;
       break;
     case PromptKind::CutPattern:
-      category = RingCategory::RecentEgrepPattern;
+      // See executeCut()'s own 2026-08-05 correction comment: FIXED
+      // (^Jc) shares FGREP's own ring, not always EGREP's.
+      category = (cutSyntax_ == GrepSyntax::Fixed) ? RingCategory::RecentFgrepPattern : RingCategory::RecentEgrepPattern;
       break;
     default:
       return false;
@@ -2421,9 +2423,24 @@ bool Application::executeGrep(const std::string &pattern) {
 bool Application::executeCut(const std::string &pattern) {
   // Recorded regardless of outcome/nesting depth below -- see
   // startPromptHistoryRecall()'s own comment for why this reuses
-  // RecentEgrepPattern (matching legacy's own ss.p.hegrep reuse for
-  // CUT) rather than a dedicated ring.
-  history_.pushRecent(RingCategory::RecentEgrepPattern, pattern);
+  // RecentFgrepPattern/RecentEgrepPattern (matching legacy's own
+  // ss.p.hfgrep/hegrep reuse for CUT) rather than a dedicated ring.
+  // 2026-08-05 correction: an earlier same-day revision used
+  // RecentEgrepPattern UNCONDITIONALLY regardless of cutSyntax_ -- a
+  // real legacy bug the user directly pointed out (menu.c's own
+  // `case M_cut: case M_cut2: hp->ss.p.hegrep = save_history(...)`
+  // does the exact same thing, never branching on M_cut2 (^Jc, FIXED)
+  // vs M_cut (^J^C, REGEX) here despite the FGREP/EGREP block just
+  // above it in the same switch demonstrating the correct pattern):
+  // ^Jc's own CUT should behave like FGREP (and share ITS history),
+  // ^J^C's like EGREP, otherwise a user who already knows FGREP/EGREP
+  // reasonably expects CUT to follow the same fixed-vs-regex split
+  // and gets confused when it doesn't. Ported here to the C++ side
+  // AND back into the legacy C source itself (menu.c) -- see that
+  // fix's own comment.
+  history_.pushRecent(cutSyntax_ == GrepSyntax::Fixed ? RingCategory::RecentFgrepPattern
+                                                       : RingCategory::RecentEgrepPattern,
+                       pattern);
   bool ok;
   std::string fileSourcePath = std::move(cutFileSourcePath_);
   cutFileSourcePath_.clear();  // consumed exactly once, regardless of which branch below runs or its outcome

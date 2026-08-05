@@ -9952,6 +9952,69 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       12件既知失敗)であることを確認、直後にMac側を再ビルドして
       623/623件を再確認済み。
 
+167. **2026-08-05(続き): CUTの`^Jc`(FIXED)/`^J^C`(REGEX)が同じ
+    EGREP用リングを共有していたバグを修正 -- FGREP/EGREPプロンプト
+    自身の固定/正規表現の使い分けに揃える。C++移植版だけでなく
+    旧Cソース(`tcb/src/menu.c`)自体のバグと判明したため、両方を
+    修正した(旧Cソースへの直接修正はこのフェーズで初めて)**。
+   - **経緯**: 項目166で実装したCUT自身の履歴を、ユーザーが実地で
+      確認して指摘。「`^J^C`では正規表現一覧が出る以上、動作も
+      FGREP/EGREPに準じていないとユーザーは混乱すると思う。現状
+      `^Jc`もEGREP検索なのでFGREP仕様でないとね。当然履歴リストも
+      別になる」との報告。あわせて「旧C版もトライアンドエラーの
+      対象でもあるので反映よろしく」との新しい許可があり、これまで
+      読み取り専用の参考資料として扱ってきた`tcb/src/`への直接修正が
+      このフェーズで初めて許可された。
+   - **原因(C++移植版)**: `application.cpp`の`executeCut()`
+      (履歴への記録)と`startPromptHistoryRecall()`の
+      `case PromptKind::CutPattern:`(履歴の読み出し)がいずれも
+      `cutSyntax_`(Fixed/Regex)を見ずに無条件で`RingCategory::
+      RecentEgrepPattern`を使っていた。実際のFGREP/EGREPプロンプト
+      自身の`executeGrep()`は`cutSyntax_`相当のフラグで
+      `RecentFgrepPattern`/`RecentEgrepPattern`を正しく使い分けて
+      いるにもかかわらず、CUT側だけこの分岐が欠けていた。
+   - **原因(旧Cソース)**: `menu.c`の`case M_cut: case M_cut2:`
+      ブロック(`M_cut2`=`^Jc`=FIXED、`M_cut`=`^J^C`=REGEX、
+      `mode.h`のマクロ値と`menu.c`自身のインラインコメント
+      `/* ^Jc */`/`/* ^J^C */`、`usilicrc`のK-33/K-34の記述で確認)が
+      `hp->ss.p.hegrep = save_history(hp->ss.p.hegrep, rvp->str, 1);`
+      を無条件で実行していた。すぐ上にある`M_fgrep`/`T_hfgrep`/
+      `T_hegrep`ブロックは固定/正規表現で正しく分岐しているにも
+      関わらず、CUTブロックだけ分岐が欠けている、26年前からの
+      本物のバグと判明。
+   - **修正**: C++側は`executeCut()`の`pushRecent()`呼び出しと
+      `startPromptHistoryRecall()`の`CutPattern`caseの両方を
+      `cutSyntax_ == GrepSyntax::Fixed ? RingCategory::
+      RecentFgrepPattern : RingCategory::RecentEgrepPattern`で分岐
+      するよう変更。旧Cソース側は`case M_cut: case M_cut2:`ラベルに
+      直接入った時点では`m`(switch変数)がまだ元の`M_cut`/`M_cut2`
+      値を保持していることを確認した上で、`if (m == M_cut2)
+      hp->ss.p.hfgrep = save_history(...); else hp->ss.p.hegrep =
+      save_history(...);`と分岐(この`case`ラベルは、すぐ上の
+      `M_fgrep`ブロックから`np->Mb == M_cut`のときだけフォール
+      スルーする経路も持つが、その経路では`m`は元々のCUT以外の
+      switch入口値のままで`M_cut2`には一致しないため、`else`側
+      〈hegrep〉に正しく落ちることも確認済み)。
+   - **検証**: C++側は既存の「CUTが常にEGREPリングを共有する」
+      前提のdoctestを、FIXED/REGEXそれぞれが自分のリングだけを
+      使い、もう一方のリングは空のままであることを確認する2件の
+      新規テストに置き換え、`make test`で624/624件全通過
+      (assertions 17107件全通過)を確認。実バイナリでもPTY自動
+      テストで、`plain.txt`を開いた状態から`^Jc`で"pattern1"を
+      登録→`^G`で戻る→再度`^Jc`→`^R`で履歴一覧を開き"pattern1"の
+      みが表示されること、同様に`^J^C`で"pat.ern2"を登録した場合は
+      "pat.ern2"のみが表示され"pattern1"が混ざらないこと(=2つの
+      リングが実際に独立している)を生バイト列で確認した。右端の
+      バッジは項目166の設計通り常に`"CUT"`のまま(FIXED/REGEXで
+      バッジ自体が変わる仕様ではない、ユーザーからも変更の要望は
+      無い)。旧Cソース側は`make clean && make`のフルビルドが
+      警告(既存の`-Wpointer-sign`系のみ、`menu.c`由来のerrorは
+      ゼロ)以外は問題なく完走し、`tcb`バイナリが正常にリンクされる
+      ことを確認した。Ubuntu 26.04クロスビルド(新規Dockerコンテナ)
+      でも失敗12件は既知の環境依存差のみ(総数622件、610件通過+
+      12件既知失敗)であることを確認、直後にMac側を再ビルドして
+      624/624件を再確認済み。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

@@ -838,7 +838,18 @@ static int m_cr(int m, NUM *np, HEAP *hp, LINE *lp, ARRAY *ap, RV *rvp, FLAG *fp
       break;
     }
   case M_cut: case M_cut2:
-    hp->ss.p.hegrep = save_history(hp->ss.p.hegrep, rvp->str, 1);
+    /* 2026-08-05: M_cut2 (^Jc, FIXED string) was unconditionally
+       sharing M_cut's (^J^C, REGEX) own hegrep ring here, unlike the
+       M_fgrep/T_hfgrep/T_hegrep block just above (line ~831) which
+       DOES branch on fixed-vs-regex for exactly this same choice.
+       A user comparing CUT's fixed/regex split against the already-
+       consistent FGREP/EGREP split found this the confusing odd one
+       out. m still holds its own switch-entry value here (M_cut or
+       M_cut2), not yet overwritten by anything below. */
+    if (m == M_cut2)
+      hp->ss.p.hfgrep = save_history(hp->ss.p.hfgrep, rvp->str, 1);
+    else
+      hp->ss.p.hegrep = save_history(hp->ss.p.hegrep, rvp->str, 1);
     if (np->Mb == M_cut) {
       hp->ll.p.grep = save_list(hp->ll.p.grep, rvp->str, pnp);
       if (is_fm())
