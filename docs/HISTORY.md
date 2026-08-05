@@ -1085,3 +1085,20 @@ C++側はcutSyntax_ == GrepSyntax::Fixedならhistory_.RecentFgrepPattern、そ�
 検証として、C++側の既存テスト(CUTが常にEGREPリングを共有する前提のもの)を、FIXED/REGEXそれぞれが自分のリングだけを使いもう一方は空のままであることを確認する2件の新規テストに置き換え、make testで624/624件全通過(assertions 17107件全通過)を確認しました。実バイナリでもPTY自動テストで、^Jcで"pattern1"を登録→戻る→再度^Jc→^Rで履歴一覧を開くと"pattern1"のみが表示され、同様に^J^Cで"pat.ern2"を登録した場合は"pat.ern2"のみが表示されて"pattern1"が混ざらないこと(=2つのリングが実際に独立していること)を生バイト列で確認しました。右端のバッジは項目166の設計通り常に"CUT"のままです(FIXED/REGEXでバッジ自体が変わる仕様ではありません)。
 
 旧Cソース側はmake clean && makeのフルビルドを実行し、警告(既存の-Wpointer-sign系のみ、menu.c由来のerrorはゼロ)以外は問題なく完走してtcbバイナリが正常にリンクされることを確認しました。これがこのフェーズで初めてtcb/src/へ直接手を入れたケースになります。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く(総数622件、610件通過+12件既知失敗)、直後にMac側を再ビルドして624/624件を再確認しました。CLAUDE.mdに項目167として記録し、コミット・プッシュします。
+
+<・^J^Cで正規表現デフォルト一覧（EGREPで出るヤツ）が出ない。
+・文字列入力欄で[bs]による修正ができない。
+・ブロックカーソルが現在行に位置していない（画面右下バッジにある）ので最上部の空行にハイライト表示が出ない→最上部空行を「--」に変更し、ブロックカーソルをハイライト表示右端へ移動。
+以上よろしく。
+
+>3件それぞれ調査しました。
+
+[bs]未実装は原因が明確でした。全プロンプト(MAN/LOCATE/FGREP/EGREP/CUT/PROGRAM/PathInput/Copy/Move/Remove/...)が共有するfeedPromptByte()が、認識しない全バイトをpromptEditor_.insertByte()に素通りさせていたため、DEL(0x7f)/^H(0x08)も「消去」ではなく生の制御バイトとしてそのまま挿入されていました(反転"?"として描画されます)。SHELLコマンドライン入力には既に同種のbackspace()/redraw()の組が実装済みで、promptEditor_も同じLineEditorクラス(backspace()を既に持つ)だったため、その呼び出しが単に配線されていなかっただけでした。feedPromptByte()にDEL/^Hの分岐を追加し、backspace()/redraw()を呼ぶよう修正しました(全プロンプト種別に一括で効きます)。
+
+ブロックカーソルの位置ズレは、ContentView::syncVisibleCursor()がcursorHighlightEnabled_(SGR反転表示で現在行を示すモード、ListBrowser/Directory等の既定値)が真の場合にDisplay::hideVisibleCursor()を呼んでいたのですが、TerminalDisplay::hideVisibleCursor()の実体が空関数(no-op)で、実際には何もしていませんでした。つまり実端末の本物のブロックカーソルは「隠された」のではなく、直前の画面書き込み(たいていモードラインの右端バッジ)の位置に取り残されたままでした。^Rの履歴一覧が空(0件)のケースではredraw()のループが一度もrenderLine()を呼ばないため反転表示される行も無く、さまよう実カーソルと相まって「^Rで何も起きていないように見える」症状が最も顕著に現れていました。
+
+正規表現デフォルト一覧が出ない件は、単独では再現できませんでした。同一セッション内でEGREPパターンを登録した直後に^Jc/^J^Cの^Rを試すPTY検証では、履歴が実際に正しく共有して表示されることを確認しています。おそらく上記2件(特に空の場合にハイライトが出ない件)の症状が「デフォルト一覧が出ない」ように見えた原因ではないかと考えています。なお引数付き起動(usilic <path>)は旧版tcbと同じく~/.usilic/historyを読み書きしないため、プロセスをまたいだ履歴の永続化はそもそも関与しません(セッション内共有のみ)。
+
+修正として、ContentView::redraw()にlines_が空かつcursorHighlightEnabled_が真の場合、先頭行にプレースホルダー"--"を反転表示で描画する処理を追加しました。ContentView::syncVisibleCursor()のcursorHighlightEnabled_分岐も、hideVisibleCursor()(no-op)からdisplay_.setVisibleCursor(row, width)(現在行の右端、内容が空なら"--"の右端)に変更し、redraw()の末尾でも自動的にsyncVisibleCursor()を呼ぶようにしました(SHELLのscrollback_のようにcursorHighlightEnabled_が偽のビューは、より精密なカーソル位置を上書きする懸念があるため対象外のままです)。
+
+検証として、test_content_view.cppに新規doctest2件、test_application.cppに新規doctest2件を追加し、既存の関連テスト3件も新仕様に合わせて書き換えました。既存624件+新規5件(3件純増、2件は書き換え)=629件全通過、assertions 17142件全通過、警告ゼロです。実バイナリを-cでPTY起動し、(1)空の^Jc/^J^C履歴で^Rを押すと"--"が反転表示され実端末カーソルもその右端に移動すること、(2)^Jcプロンプトで"helloXXX"と打ってDEL(0x7f)を3回押すと"hello"まで正しく消去できること、をそれぞれ生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く(総数627件、615件通過+12件既知失敗)、直後にMac側を再ビルドして629/629件を再確認しました。CLAUDE.mdに項目168として記録し、コミット・プッシュします。

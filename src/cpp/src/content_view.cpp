@@ -6,6 +6,13 @@
 
 namespace fm {
 
+namespace {
+// Placeholder text redraw() shows on an otherwise-empty list's top row
+// (see its own comment) -- shared with syncVisibleCursor()'s own width
+// fallback so both agree on how wide that highlighted run is.
+const std::string kEmptyPlaceholderText = "--";
+}  // namespace
+
 ContentView::ContentView(Display &display) : display_(display) {}
 
 void ContentView::setViewport(int row0, int height) {
@@ -101,8 +108,35 @@ void ContentView::syncVisibleCursor() {
       display_.setVisibleCursor(row, 0);
       return;
     }
+    display_.hideVisibleCursor();
+    return;
   }
-  display_.hideVisibleCursor();
+  // cursorHighlightEnabled_ (2026-08-05 fix): the SGR reverse-video run
+  // renderLine() draws for the current row is what's SUPPOSED to show
+  // "you are here" here, so this branch used to just hideVisibleCursor()
+  // the terminal's own separate block cursor out of the way -- but
+  // TerminalDisplay::hideVisibleCursor() is a no-op (there's no ANSI
+  // "hide cursor" sequence wired up there, see its own comment), so on
+  // the real terminal backend that call did nothing at all: a real user
+  // report found the actual block cursor just sitting wherever the last
+  // screen write happened to land (typically the mode-line's own right-
+  // aligned category badge, e.g. after item 166/167's "CUT"/"FGREP"
+  // watermark), and on an EMPTY list (nothing for renderLine() to
+  // highlight at all -- see redraw()'s own "--" placeholder comment)
+  // there was no reverse-video row to compete with it either, so the
+  // current position wasn't visually indicated by anything. Moving it
+  // explicitly to the highlighted row's own right edge keeps the real
+  // cursor visually attached to the current selection instead of
+  // wandering off to whatever was drawn most recently.
+  int row = cursorDisplayRow();
+  if (row < 0) {
+    display_.hideVisibleCursor();
+    return;
+  }
+  int width = static_cast<int>(kEmptyPlaceholderText.size());  // redraw()'s own "--" placeholder
+  if (cursorIndex_ >= 0 && cursorIndex_ < static_cast<int>(lines_.size()))
+    width = static_cast<int>(lines_[cursorIndex_].text.size());
+  display_.setVisibleCursor(row, width);
 }
 
 int ContentView::topIndex() const { return topIndex_; }
@@ -520,14 +554,32 @@ void ContentView::redraw() {
   clampViewport();
   int highlighted = hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_;
   int rowOffset = bottomAnchorRowOffset();
+  bool renderedAny = false;
   for (int row = 0; row < height_; row++) {
     display_.moveCursor(row0_ + row, 0);
     display_.clearToEndOfLine();
     if (row < rowOffset) continue;  // blank padding above the content, bottom-anchored only
     int idx = topIndex_ + (row - rowOffset);
-    if (idx < static_cast<int>(lines_.size())) renderLine(lines_[idx], idx == highlighted);
+    if (idx < static_cast<int>(lines_.size())) {
+      renderLine(lines_[idx], idx == highlighted);
+      renderedAny = true;
+    }
+  }
+  // 2026-08-05 fix: with zero lines the loop above never calls
+  // renderLine() at all (idx < lines_.size() is never true) -- a real
+  // user report found this left an EMPTY highlighted list (e.g. ^R with
+  // no history yet) with no on-screen indication of "you are here"
+  // whatsoever, compounded by the terminal's own real block cursor
+  // wandering off to wherever the mode-line was last drawn (see
+  // syncVisibleCursor()'s own comment). This placeholder row stands in
+  // for "the (nonexistent) current entry", highlighted the same way a
+  // real one would be, at the same row a first real entry would occupy.
+  if (!renderedAny && cursorHighlightEnabled_ && height_ > rowOffset) {
+    display_.moveCursor(row0_ + rowOffset, 0);
+    renderLine(Line{kEmptyPlaceholderText, std::nullopt, std::nullopt}, true);
   }
   renderModeLine();
+  if (cursorHighlightEnabled_) syncVisibleCursor();
   display_.flush();
 }
 

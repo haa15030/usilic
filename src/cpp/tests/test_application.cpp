@@ -272,10 +272,15 @@ TEST_CASE_FIXTURE(Fixture, "File mode: shows a real display cursor at the curren
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  // Directory mode relies on its own row-highlight, not a floating
-  // cursor left over from File mode -- see Application::
-  // returnToDirectory()'s own hideVisibleCursor() call.
-  CHECK(display.visibleCursorHidden());
+  // 2026-08-05 fix: Directory mode's own row-highlight is drawn with
+  // SGR reverse-video, but the terminal's own REAL cursor is now also
+  // parked on that same highlighted row's right edge rather than
+  // hidden outright (see ContentView::syncVisibleCursor()'s own
+  // comment on why "hidden" never actually meant hidden on the real
+  // terminal backend to begin with) -- not left floating over File
+  // mode's old position either way.
+  CHECK_FALSE(display.visibleCursorHidden());
+  CHECK(display.cursorRow() == app.activeContentView().cursorDisplayRow());
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(MoveDown): clears a stale hover highlight left over from a "
@@ -422,6 +427,51 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^G cancels a pending prompt without starti
 
   CHECK_FALSE(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+// 2026-08-05: feedPromptByte() (every prompt kind routed through it --
+// MAN/LOCATE/FGREP/EGREP/CUT/PROGRAM/PathInput/Copy/Move/Remove/.../
+// DuPath/ArchiveDestination) fell through to promptEditor_.insertByte()
+// for EVERY byte it didn't specifically recognize, including DEL(0x7f)/
+// ^H(0x08) -- there was no backspace/correction of any kind, the raw
+// control byte just got inserted as a literal unprintable character. A
+// real user report found this while typing a CUT pattern. feedShellByte()
+// already had this same backspace()/redraw() pairing for its own
+// LineEditor (see its own comment) -- promptEditor_ is the same
+// LineEditor class and already exposed backspace(), this generic prompt
+// path was just never wired to call it.
+TEST_CASE_FIXTURE(Fixture, "feedByte: DEL/^H backspaces the prompt text before it's submitted "
+                           "(2026-08-05 fix: every prompt kind was previously missing this entirely)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain.txX");
+  CHECK(app.feedByte(0x7f, std::nullopt));  // DEL: removes the trailing 'X'
+  feedText("t");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M submits "plain.txt"
+
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 1);
+  CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^H (0x08) also backspaces the prompt text, same as DEL") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("hellZ");
+  CHECK(app.feedByte(0x08, std::nullopt));  // ^H: removes the trailing 'Z'
+  feedText("o");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  CHECK_FALSE(app.promptActive());
+  const auto &fgrepRing = history.recentEntries(RingCategory::RecentFgrepPattern);
+  REQUIRE(fgrepRing.size() == 1);
+  CHECK(fgrepRing[0] == "hello");
 }
 
 TEST_CASE_FIXTURE(Fixture, "GREP: searching from File mode returns to File mode on Back") {

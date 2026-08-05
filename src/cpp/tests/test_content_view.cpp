@@ -28,6 +28,35 @@ TEST_CASE("redraw: shows lines from the top and marks the cursor line") {
   CHECK(d.standoutAt(1, 0) == false);
 }
 
+TEST_CASE("redraw: an empty list (e.g. ^R with no history yet) shows a highlighted \"--\" placeholder on "
+          "its top row instead of nothing at all -- 2026-08-05 fix, see its own comment") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines({});
+  v.redraw();
+  CHECK(d.rowText(0).substr(0, 2) == "--");
+  CHECK(d.standoutAt(0, 0) == true);
+  // The terminal's own real cursor now sits at the placeholder's own
+  // right edge too, not hidden/left dangling -- see syncVisibleCursor().
+  CHECK_FALSE(d.visibleCursorHidden());
+  CHECK(d.cursorRow() == 0);
+  CHECK(d.cursorCol() == 2);  // "--".size()
+}
+
+TEST_CASE("redraw: an empty list does NOT show the \"--\" placeholder when cursor highlighting is "
+          "disabled (File mode's own case -- there's no content to view in the first place there, "
+          "and this placeholder is specifically for highlighted SELECTION lists)") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setCursorHighlightEnabled(false);
+  v.setLines({});
+  v.redraw();
+  CHECK(d.rowText(0).substr(0, 2) != "--");  // just clearToEndOfLine()'s blank fill, no placeholder text
+  CHECK(d.standoutAt(0, 0) == false);
+}
+
 TEST_CASE("setCursorHighlightEnabled(false): the cursor line is no longer reverse-video") {
   RecordingDisplay d(10, 20);
   ContentView v(d);
@@ -158,12 +187,31 @@ TEST_CASE("cursorDisplayRow: accounts for bottom-anchoring the same way lineInde
   CHECK(v.cursorDisplayRow() == 4);  // "line1" renders at row 4 when bottom-anchored, see its own test
 }
 
-TEST_CASE("syncVisibleCursor: hides the display's visible cursor when highlighting is enabled (the default)") {
+TEST_CASE("syncVisibleCursor: moves the display's visible cursor to the highlighted row's own right edge "
+          "when highlighting is enabled (the default) -- 2026-08-05 fix, see its own comment: "
+          "TerminalDisplay::hideVisibleCursor() is a no-op, so the OLD behavior here (hiding) left the "
+          "real terminal cursor wherever the mode-line was last drawn instead") {
   RecordingDisplay d(10, 20);
   ContentView v(d);
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
   v.setCursorIndex(1);
+  v.syncVisibleCursor();
+  CHECK_FALSE(d.visibleCursorHidden());
+  CHECK(d.cursorRow() == 1);          // row0(0) + cursorIndex(1)
+  CHECK(d.cursorCol() == 5);          // "line1".size()
+}
+
+TEST_CASE("syncVisibleCursor: hides the cursor rather than showing one out of view (scrolled away, "
+          "highlighting still enabled)") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(2, 5);
+  v.setLines(makeLines(10));
+  v.setCursorIndex(2);
+  v.setTopIndex(5);  // scrolls cursorIndex_ out of view, see cursorDisplayRow()'s own test
+  REQUIRE(v.cursorDisplayRow() == -1);
+
   v.syncVisibleCursor();
   CHECK(d.visibleCursorHidden());
 }

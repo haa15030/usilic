@@ -10015,6 +10015,87 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       12件既知失敗)であることを確認、直後にMac側を再ビルドして
       624/624件を再確認済み。
 
+168. **2026-08-05(続き): プロンプト編集欄の`[bs]`(DEL/^H)未実装、および
+    リスト系ビューでの実端末ブロックカーソルの位置ズレ(空の`^R`一覧で
+    ハイライト表示が出ない)を修正**。項目167の直後、実機で`^Jc`/
+    `^J^C`まわりを試したユーザーから3件報告(「^J^Cで正規表現デフォルト
+    一覧（EGREPで出るヤツ）が出ない」「文字列入力欄で[bs]による修正が
+    できない」「ブロックカーソルが現在行に位置していない（画面右下
+    バッジにある）ので最上部の空行にハイライト表示が出ない→最上部空行
+    を『--』に変更し、ブロックカーソルをハイライト表示右端へ移動」)。
+   - **[bs]未実装(原因・修正)**: `Application::feedPromptByte()`
+      (MAN/LOCATE/FGREP/EGREP/CUT/PROGRAM/PathInput/Copy/Move/Remove/
+      .../DuPath/ArchiveDestinationなど、すべてのプロンプトが共有する
+      入口)が、認識しない全バイトを`promptEditor_.insertByte()`に
+      素通りさせていたため、DEL(0x7f)/^H(0x08)も「消去」ではなく
+      生の制御バイトとしてそのまま挿入され(反転`?`として描画)、
+      一度も編集(訂正)できなかった。SHELLコマンドライン入力
+      (`feedShellByte()`)には既に同種の`backspace()`/`redraw()`の
+      組が実装済みで、`promptEditor_`も同じ`LineEditor`クラス
+      (`backspace()`を既に持つ)だったため、その呼び出しが単に
+      配線されていなかっただけと判明。`feedPromptByte()`の先頭近くに
+      `byte == 0x7f || byte == 0x08`の分岐を追加し、
+      `promptEditor_.backspace(); promptEditor_.redraw();`を呼ぶよう
+      修正(全プロンプト種別に一括で効く)。
+   - **ブロックカーソル位置ズレ(調査)**: `ContentView::
+      syncVisibleCursor()`は、`cursorHighlightEnabled_`(SGR反転表示で
+      現在行を示すモード、ListBrowser/Directory等の既定値)が真の場合
+      `Display::hideVisibleCursor()`を呼んでいたが、
+      `TerminalDisplay::hideVisibleCursor()`の実体は空関数(no-op、
+      ANSIの「カーソル非表示」エスケープが未実装)であり、実際には
+      何もしていなかった。つまり実端末上の本物のブロックカーソルは
+      「隠された」のではなく、直前の画面書き込み(たいていモードライン
+      の右端バッジ、例えば項目166/167で追加した"CUT"/"FGREP"の
+      watermark)の位置に取り残されたままだった。これはListBrowser
+      固有ではなく、`cursorHighlightEnabled_`が既定で真の
+      DirectoryMode等、SGR反転行を使う画面全般に共通する構造的な
+      問題だったが、`^R`の履歴一覧が空(0件、`0/0 END`)のケースでは
+      `ContentView::redraw()`のループが`idx < lines_.size()`を一度も
+      満たさず`renderLine()`自体が呼ばれないため、反転表示される行が
+      一切無く、さまよう実カーソルと相まって「`^R`で何も起きていない
+      ように見える」症状として最も顕著に現れていた(ユーザーが
+      「デフォルト一覧が出ない」と表現していたのは、実際には
+      履歴が空でも空である旨を示すUI要素自体が皆無だったためと
+      考えられる)。
+      同一セッション内でEGREPパターンを登録した直後に`^Jc`/`^J^C`の
+      `^R`を試すPTY検証では、履歴が実際に正しく共有されていることを
+      別途確認済みであり、共有ロジック自体は壊れていなかった。なお
+      引数付き起動(`usilic <path>`)は旧版`tcb`と同じく`~/.usilic/
+      history`を読み書きしないため、この報告の再現手順(パス引数付き
+      起動)ではプロセスをまたいだ履歴の永続化はそもそも関与しない)。
+   - **修正**: `ContentView::redraw()`に、`lines_`が空
+      (`renderLine()`が一度も呼ばれなかった)かつ`cursorHighlightEnabled_`
+      が真の場合、先頭行(`row0_+bottomAnchorRowOffset()`)に
+      プレースホルダー`"--"`を反転表示で描画する処理を追加。
+      `ContentView::syncVisibleCursor()`の`cursorHighlightEnabled_`
+      分岐を、`hideVisibleCursor()`(no-op)から
+      `display_.setVisibleCursor(row, width)`(現在行の右端、内容が
+      空なら上記`"--"`の右端)に変更。`redraw()`の末尾でも
+      `cursorHighlightEnabled_`が真のときだけ`syncVisibleCursor()`を
+      自動的に呼ぶようにした(SHELLのscrollback_のように
+      `cursorHighlightEnabled_`が偽のビューは、自動呼び出しで
+      プロンプト入力欄自身のより精密なカーソル位置を上書きしてしまう
+      懸念があるため対象外のまま、`ContentView::syncVisibleCursor()`
+      自身の既存コメント参照)。
+   - **検証**: `test_content_view.cpp`に新規doctest2件(空一覧で
+      `"--"`が反転表示され実カーソルもその右端に来ること、
+      `cursorHighlightEnabled_`が偽なら`"--"`は出ないこと)、
+      既存のsyncVisibleCursor()関連2件を新仕様に合わせて書き換え。
+      `test_application.cpp`に新規doctest2件(DEL/^Hいずれでも
+      FGREP/CUTプロンプトの文字が正しく1文字消えること)、既存の
+      File→Back→Directory遷移時カーソルテスト1件を新仕様
+      (非表示ではなく現在行右端に表示)に合わせて書き換え。
+      既存624件+新規5件(3件純増、2件は既存の書き換え)=629件全通過、
+      assertions 17142件全通過、警告ゼロ。実バイナリを`-c`でPTY起動し、
+      (1)空の`^Jc`/`^J^C`履歴で`^R`を押すと`"--"`が反転表示され
+      実端末カーソルもその右端(`\x1b[1;3H`)に移動すること、
+      (2)`^Jc`プロンプトで`"helloXXX"`と打ってDEL(0x7f)を3回押すと
+      `"hello"`まで正しく消去できること、をそれぞれ生バイト列で
+      確認した。Ubuntu 26.04クロスビルド(新規Dockerコンテナ)でも
+      失敗12件はすべて既知の環境依存差のみ(総数627件、615件通過+
+      12件既知失敗)であることを確認、直後にMac側を再ビルドして
+      629/629件を再確認済み。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

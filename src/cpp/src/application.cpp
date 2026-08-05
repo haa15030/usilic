@@ -2177,6 +2177,22 @@ bool Application::feedPromptByte(int byte) {
     }
     return true;
   }
+  // DEL / ^H (2026-08-05): every prompt kind (MAN/LOCATE/FGREP/EGREP/
+  // CUT/PROGRAM/PathInput/Copy/Move/Remove/.../DuPath/ArchiveDestination
+  // -- anything routed through this shared feedPromptByte()) fell
+  // through to insertByte() below, which has no concept of "erase" and
+  // just inserts the raw 0x7f/0x08 byte as an unprintable literal
+  // (rendered as a reversed "?" by print_buff()-equivalent rendering).
+  // feedShellByte() already has this same backspace()/redraw() pairing
+  // for the SHELL command line's own LineEditor (see its own comment
+  // just above, ~line 907) -- promptEditor_ is the same LineEditor
+  // class and already exposes backspace(), this generic prompt path
+  // was just never wired to call it.
+  if (byte == 0x7f || byte == 0x08) {
+    promptEditor_.backspace();
+    promptEditor_.redraw();
+    return true;
+  }
   promptEditor_.insertByte(static_cast<unsigned char>(byte));
   promptEditor_.redraw();
   return true;
