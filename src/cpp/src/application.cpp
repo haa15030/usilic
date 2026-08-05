@@ -293,13 +293,24 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // category obvious).
   listBrowserView_.setModeLineFieldsProvider([this](int cursorIndex) -> ContentView::ModeLineFields {
     const auto &items = listBrowserMode_.items();
-    if (cursorIndex < 0 || cursorIndex >= static_cast<int>(items.size())) return {};
+    bool inRange = cursorIndex >= 0 && cursorIndex < static_cast<int>(items.size());
+    // 2026-08-05 fix: an EMPTY list (^J^S/^J^C's own new direct-entry
+    // path -- see startRegexPromptList()'s own comment -- can land here
+    // with items empty far more often than the old ^R-only path ever
+    // did) used to bail out to a fully blank ModeLineFields here,
+    // hiding the name/badge fields entirely alongside redraw()'s own
+    // "--" placeholder row (ContentView's own comment) -- found via a
+    // real doctest failure once EGREP started reaching this provider
+    // with nothing in the ring yet. trailing is simply empty in that
+    // case (nothing to show); the name/badge fields are just as
+    // meaningful on an empty list as a populated one.
+    std::string trailing = inRange ? items[cursorIndex] : "";
     if (promptHistoryRecallKind_) {
-      return {"HISTORY", items[cursorIndex], /*fillTrailingToEdge=*/false,
+      return {"HISTORY", trailing, /*fillTrailingToEdge=*/false,
               /*rightWatermark=*/promptLabelText(*promptHistoryRecallKind_)};
     }
     std::string name = listBrowserChronological_ ? "HISTORY" : ringCategoryLabel(listBrowserCategory_);
-    return {name, items[cursorIndex], /*fillTrailingToEdge=*/false,
+    return {name, trailing, /*fillTrailingToEdge=*/false,
             /*rightWatermark=*/""};
   });
   // CutContent (the currently-selected CUT segment's own content --
@@ -2087,12 +2098,53 @@ bool Application::executeSelectedKeyBinding() {
 // so the next bytes are the search pattern, not commands. Refuses to
 // start a nested search from within grep results, matching m_grep()'s
 // own is_name(ap->name, M_fgrep/M_egrep) guard.
+//
+// EGREP (Regex) is a deliberate exception (2026-08-05): see
+// startRegexPromptList()'s own comment for why it skips the blank
+// prompt and opens directly into the candidate list instead -- FGREP
+// (Fixed) is unaffected.
 bool Application::startGrepPrompt(GrepSyntax syntax) {
   if (currentMode_ == ApplicationMode::Grep) return false;
   grepSyntax_ = syntax;
   grepReturnMode_ = currentMode_;
+  if (syntax == GrepSyntax::Regex) return startRegexPromptList(PromptKind::GrepPattern);
   activatePrompt(PromptKind::GrepPattern, "");
   return true;
+}
+
+// K-32/K-34 (^J^S EGREP, ^J^C CUT's regex variant, "Select string" per
+// usilicrc's own K-31..K-34 documentation -- unlike K-31/K-33's
+// "Input string" FGREP/CUT-fixed): direct legacy-tcb PTY testing
+// (fresh $HOME, no ~/.tcb/history at all -- see item 170's own ⑫
+// investigation) confirmed this isn't just a documentation nuance:
+// ^J^S/^J^C open DIRECTLY into the candidate-pattern list (usilicrc's
+// own GREP section, see Configuration::grepSeedPatterns()'s comment
+// and the seeding this port now does at construction) rather than a
+// blank prompt -- ^R is never even pressed to get there. A 2026-08-05
+// user report asked for this specifically for CUT: unlike FGREP/EGREP
+// (visually distinguishable by their own mode-line names), CUT's two
+// variants both show identically as "CUT" -- showing the list upfront
+// is the only visible signal that regex/"Select" semantics are in
+// effect for THIS invocation, preventing a user from typing a literal
+// string into what they assume is CUT's fixed-string variant.
+//
+// Reuses startPromptHistoryRecall() wholesale rather than duplicating
+// its RingCategory-selection switch: it already knows how to (a) pick
+// the right ring from promptKind_/grepSyntax_/cutSyntax_ (both already
+// set by the caller before this runs), (b) restore an editable BLANK
+// prompt on ^G (returnFromListBrowser()'s own promptHistoryRecallKind_
+// branch) -- this doubles as the "type a fresh pattern instead of
+// picking one" affordance, so no new UI had to be built for that -- and
+// (c) dispatch Enter on a selected item through the exact same
+// executeGrep()/executeCut() path a live Enter would take.
+// promptEditor_.setText("") first: without it, startPromptHistoryRecall()
+// would capture whatever STALE text happened to be left over from the
+// last time any prompt was used, and restore that (not a fresh blank
+// prompt) if the user backs out via ^G.
+bool Application::startRegexPromptList(PromptKind kind) {
+  promptKind_ = kind;
+  promptEditor_.setText("");
+  return startPromptHistoryRecall();
 }
 
 // Ported from m_cut(): only reachable from File mode (a fresh split
@@ -2122,6 +2174,13 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
     return false;
   cutSyntax_ = syntax;
   if (currentMode_ == ApplicationMode::File) cutReturnMode_ = ApplicationMode::File;
+  // Regex ("^J^C", "Select string"): opens directly into the candidate
+  // list, same as EGREP -- see startGrepPrompt()/startRegexPromptList()'s
+  // own comment for why (a 2026-08-05 user report specifically named
+  // CUT here, since its two variants -- unlike FGREP/EGREP -- share one
+  // identical "CUT" mode-line name with no other visible cue which is
+  // active).
+  if (syntax == GrepSyntax::Regex) return startRegexPromptList(PromptKind::CutPattern);
   activatePrompt(PromptKind::CutPattern, "");
   return true;
 }
@@ -2146,6 +2205,13 @@ bool Application::startCutFilePrompt(GrepSyntax syntax) {
   path += entry->name;
   cutFileSourcePath_ = path;
   cutSyntax_ = syntax;
+  // Regex ("^J^B"): same "opens directly into the candidate list"
+  // treatment as the buffer variant's own ^J^C -- see
+  // startCutPrompt()/startRegexPromptList()'s own comment. executeCut()
+  // reads cutFileSourcePath_ (set above) regardless of whether the
+  // pattern came from live typing or a picked list item, so nothing
+  // else here needs to change for this path.
+  if (syntax == GrepSyntax::Regex) return startRegexPromptList(PromptKind::CutPattern);
   activatePrompt(PromptKind::CutPattern, "");
   return true;
 }

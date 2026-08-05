@@ -1134,3 +1134,19 @@ EXITの件も修正しました。startExitPrompt()がactivatePrompt(PromptKind:
 検証として、test_application.cppに新規doctest2件を追加しました(構築直後のRecentEgrepPatternがusilicrcのGREPセクションからシードされること、yプリフィルでEnterのみで終了できることとバックスペース+nで従来通りキャンセルできること)。既存のEXIT確認プロンプトの「yを打ってEnter」前提だった既存テスト1件を新仕様に書き換えました。既存629件+新規2件(1件は書き換え)=632件全通過です。実バイナリを-cかつ~/.usilic/usilicrcに実際のsrc/usilicrcを配置した状態でPTY起動し、plain.txtを開いた状態で^J^S(EGREP)→^Rとすると、usilicrcのGREPセクションと一致する11件がモードラインHISTORY+右端バッジEGREPで表示されることを生バイト列で確認しました。Ubuntu Dockerクロスビルドも既知差分(12件)のみでリグレッション無し、Mac側再ビルドで632/632件再確認済みです。
 
 なお旧C版の直接検証で、^J^S/^J^Cは実際には「空のプロンプトを開いてから^Rで履歴一覧を見る」のではなく、キー1回でいきなりこの一覧に入る(^Rを経由しない)ことが判明しました。今回のご指摘は「デフォルト履歴リストを入れておく必要がある」という中身(リングの内容)についてのものだったため、リングへのシード投入(^R経由で見える)のみを実装し、^J^S/^J^C自体の入り口を「一覧を直接開く」形に変更するという、より大きなUXの変更は行っていません。もしこちらも本来の挙動に合わせたいということであれば、次回ご指示ください(一覧から「新規パターンを入力する」操作方法も旧Cソースの調査が追加で必要です)。CLAUDE.mdに項目170として記録し、コミット・プッシュします。
+
+<EGREPの入口でも一覧が出ないようだけど、一つ前の発言が分かりにくかったかもしれない。
+HISTORY.md:1077行のとおり、FGREP/EGREPの違いを学んだユーザーなら^Jc/^J^Cがfgrep/egrepであることも類推できるはず。だが（FGREPとEGREPみたいな違いもなくCUTだけなので）誤使用防止のためにも敢えて一覧を表示させる、という意味。
+「HISTORY.md:886行にもあるとおり、旧C版がそうなっているならそうして」と言いたくてすぐ上の「旧C版を直接調べたところ...」をコピペしようとしても範囲指定できない（できるときもある）。emacsで開いているHISTORY.mdからコピペする方がずっと楽なので、そちらの発言も投稿直後に反映してほしい。
+
+>ご指摘の通り実装しました。startGrepPrompt(GrepSyntax::Regex)/startCutPrompt(GrepSyntax::Regex)/startCutFilePrompt(GrepSyntax::Regex)(K-32/K-34/K-36、いずれも"Select string")を、従来の空プロンプトを開く処理ではなく、新設したstartRegexPromptList()(promptKind_とgrepSyntax_/cutSyntax_をセットした上でstartPromptHistoryRecall()をそのまま呼ぶ薄いラッパー)へ差し替えました。Fixed側(^S FGREP、^Jc CUT固定文字列、いずれも"Input string")は変更していません。
+
+startPromptHistoryRecall()は元々^R経由でのみ呼ばれる想定でしたが、(a)promptKind_/grepSyntax_/cutSyntax_から正しいRingCategoryを選ぶ、(b)^Gで戻ると空の編集可能プロンプトが復元される(returnFromListBrowser()の既存分岐)、(c)Enterで選択項目が実際にタイプしたのと同じ経路へ流れる、という3点をそのまま再利用できたため、新規UIを一切実装せずに「一覧から選ぶ」「^Gで一覧を抜けて新規入力する」の両方を成立させられました。
+
+副次的に、listBrowserView_のモードラインプロバイダが一覧が空の場合に名前欄・右端バッジごと表示しない不具合も見つけて修正しました(^R経由の従来の使い方では一覧が空になるケースが稀だったため気づかれていませんでした)。
+
+検証として、既存テスト5件(^J^S/^J^Cがプロンプトを開くことを前提にしていたもの等)を新フローに合わせて書き換え、632件全通過です。実バイナリを-cかつ実際のsrc/usilicrcを配置した状態でPTY起動し、doc/ディレクトリでHELP.jpをFileモードで開いた状態から^J^Cを押すと、キー1回で旧C版と完全に同一の11件の一覧が直接表示されることを生バイト列で確認しました(旧C版でのPTY直接比較と1バイトも違わず一致)。Ubuntu Dockerクロスビルドも既知差分(12件)のみでリグレッション無し、Mac側再ビルドで632/632件再確認済みです。
+
+なお、旧C版PTY検証でDirectoryモードの一覧(ファイルを開く前)から直接^J^C/^J^Sを発動できることも確認できていますが、C++移植版のstartCutPrompt()/startCutFilePrompt()の使い分け(File/CutContent/Cutからのみ許可する「buffer」変種と、Directoryから直接作用する「regular file」変種を分離する設計)は今回の依頼の対象外と判断し、変更していません。CLAUDE.mdに項目171として記録し、コミット・プッシュします。
+
+HISTORY.mdの反映についても、今後はご自身のメッセージが届いた直後にそのまま追記するよう運用を変更しました(メモリにも記録済みです)。

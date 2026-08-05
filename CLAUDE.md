@@ -10252,6 +10252,66 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       まわりの調査が追加で必要なため未確認。次回、ユーザーの意向を
       確認の上、必要であれば着手する。
 
+171. **2026-08-05(続き): `^J^S`(EGREP)/`^J^C`(CUT正規表現)の入口を
+    「一覧を直接開く」形に変更 -- 項目170で保留していた、より大きな
+    UXの変更に着手**。ユーザーから「EGREPの入口でも一覧が出ない」
+    との指摘。あわせて、FGREP/EGREPは見た目(モードライン名)で
+    区別できるがCUTの2種類は両方とも"CUT"としか出ないため、誤使用
+    防止の観点から一覧を明示的に見せる必要があるという理由の説明と、
+    「HISTORY.md:886行にもあるとおり、旧C版がそうなっているなら
+    そうして」という既存方針の適用指示があった。
+   - **実装**: `startGrepPrompt(GrepSyntax::Regex)`/
+      `startCutPrompt(GrepSyntax::Regex)`/`startCutFilePrompt(
+      GrepSyntax::Regex)`(K-32/K-34/K-36、いずれも"Select string")を、
+      従来の`activatePrompt(kind, "")`(空プロンプトを開く)ではなく、
+      新設した`Application::startRegexPromptList(PromptKind kind)`
+      (`promptKind_`と`grepSyntax_`/`cutSyntax_`をセットした上で
+      `promptEditor_.setText("")`してから既存の
+      `startPromptHistoryRecall()`をそのまま呼ぶだけの薄いラッパー)
+      へ差し替えた。Fixed側(`^S`FGREP、`^Jc`CUT固定文字列、`^Jb`CUT
+      regular file固定、いずれも"Input string")は変更していない。
+      `startPromptHistoryRecall()`は元々`^R`経由でのみ呼ばれる想定
+      だったが、(a)`promptKind_`/`grepSyntax_`/`cutSyntax_`から正しい
+      `RingCategory`を選ぶ、(b)`^G`で戻ると空の編集可能プロンプトが
+      復元される(`returnFromListBrowser()`の`promptHistoryRecallKind_`
+      分岐)、(c)`Enter`で選択項目が実際にタイプしたのと同じ経路
+      (`executeGrep()`/`executeCut()`)へ流れる、という3点をすべて
+      そのまま再利用できるため、新規UIを一切実装せずに「一覧から選ぶ」
+      「`^G`で一覧を抜けて新規入力する」の両方を成立させられた。
+   - **副次的に発覚したバグ**: `listBrowserView_`のモードライン
+      プロバイダが、`cursorIndex >= items.size()`(=一覧が空)の場合に
+      無条件で空の`ModeLineFields`を返していたため、項目168で追加した
+      「空一覧では`"--"`を表示」という仕様と組み合わせると、モード
+      ライン側の名前欄・右端バッジだけが表示されないという不整合が
+      あった。`^R`経由の従来の使い方では一覧が空になるケースが稀
+      だったため気づかれていなかったが、今回`^J^S`/`^J^C`の入口
+      そのものが(初回は履歴が無い状態で)この経路を通るようになった
+      ことで、既存doctestの実行時に初めて顕在化した。`inRange`な
+      場合のみ`trailing`(選択項目のテキスト)を設定し、`inRange`で
+      なくても名前欄・右端バッジ自体は常に返すよう修正。
+   - **検証**: `test_application.cpp`の既存テスト5件(`^J^S`/`^J^C`が
+      プロンプトを開くことを前提にしていたもの、FGREP/EGREPの
+      モードラインラベル比較、FGREP/EGREP履歴の分離確認、CUT正規表現の
+      `^R`履歴確認)を、いずれも「新規入力する際は一覧を`^G`で抜けて
+      から入力する」という新フローに合わせて書き換え(新規追加は
+      無し、5件とも既存テストの書き換えのみ)。項目170時点の632件が
+      そのまま632件全通過、assertions 17174件全通過、警告ゼロ。実バイナリを`-c`かつ実際の`src/usilicrc`を
+      配置した状態でPTY起動し、`doc/`ディレクトリでHELP.jpをFile
+      モードで開いた状態から`^J^C`を押すと、キー1回で旧C版と完全に
+      同一の11件の一覧(`^Subject: `等)が直接表示されることを生
+      バイト列で確認した(旧C版でのPTY直接比較と1バイトも違わず
+      一致)。Ubuntu 26.04クロスビルド(新規Dockerコンテナ)でも
+      失敗12件はすべて既知の環境依存差のみ(総数630件、618件通過+
+      12件既知失敗)であることを確認、直後にMac側を再ビルドして
+      632/632件を再確認済み。
+   - **今回もスコープ外としたもの**: legacyの旧C版PTY検証で、`^J^C`/
+      `^J^S`はDirectoryモードの一覧(ファイルをEnterで開く前)から
+      直接発動できることも確認できているが、C++移植版の
+      `startCutPrompt()`/`startCutFilePrompt()`の使い分け(File/
+      CutContent/Cutからのみ許可する「buffer」変種と、Directoryから
+      選択中のエントリへ直接作用する「regular file」変種を明確に
+      分離する設計)は今回の依頼の対象外と判断し、変更していない。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

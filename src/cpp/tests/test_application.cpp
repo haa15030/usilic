@@ -426,11 +426,14 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J followed by an unrecognized byte fails 
   CHECK(app.feedByte('j', std::nullopt));
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^S starts an EGREP prompt (StartEgrep)") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^S (StartEgrep) opens directly into the candidate-pattern list, "
+                           "not a blank prompt (2026-08-05: \"Select string\" per usilicrc's own K-32 "
+                           "documentation, confirmed against real legacy-tcb PTY behavior)") {
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
   CHECK(app.feedByte(0x13, std::nullopt));
-  CHECK(app.promptActive());
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }
 
 // -- GREP: starting a search prompt, typing a pattern, submitting --
@@ -563,7 +566,10 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J c starts a CUT prompt (StartCutFixed) o
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C also starts a CUT prompt (StartCutRegex)") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C (StartCutRegex) also opens directly into the candidate list, "
+                           "same as EGREP (2026-08-05: see startCutPrompt()'s own comment -- unlike "
+                           "FGREP/EGREP, CUT's own two variants show identically as \"CUT\", so this is "
+                           "the only visible cue distinguishing regex/\"Select\" from fixed/\"Input\")") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -571,7 +577,8 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C also starts a CUT prompt (StartCutRe
 
   app.feedByte(0x0a, std::nullopt);
   CHECK(app.feedByte(0x03, std::nullopt));
-  CHECK(app.promptActive());
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }
 
 // -- CUT: split, view a segment, resplit it, back out step by step --
@@ -2469,13 +2476,17 @@ TEST_CASE_FIXTURE(Fixture, "prompt labels: EXIT also shows the previous mode's n
   CHECK(display.standoutAt(row, display.columns() - 1) == true);  // filled reversed to the right edge
 }
 
-TEST_CASE_FIXTURE(Fixture, "prompt labels: FGREP vs EGREP shows the right one depending on syntax") {
+TEST_CASE_FIXTURE(Fixture, "prompt labels: FGREP shows its own name in the (still blank-prompt) bottom "
+                           "row; EGREP shows its own name as the candidate list's own badge (2026-08-05: "
+                           "EGREP no longer opens a blank prompt at all -- see startGrepPrompt()'s own "
+                           "comment)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
   CHECK(display.rowText(display.rows() - 1).find("FGREP") != std::string::npos);
 
   REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G cancel
   REQUIRE(app.handleCommand(Command::StartEgrep));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   CHECK(display.rowText(display.rows() - 1).find("EGREP") != std::string::npos);
 }
 
@@ -2888,13 +2899,20 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: distinguishes FGREP from EGRE
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.handleCommand(Command::Back));
 
+  // EGREP (2026-08-05: opens directly into the candidate list, not a
+  // blank prompt -- see startGrepPrompt()'s own comment) -- ^G from
+  // there is how a fresh pattern gets typed (returnFromListBrowser()'s
+  // own promptHistoryRecallKind_ branch reopens a blank editable
+  // prompt), no ^R needed to reach it in the first place.
   REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.handleCommand(Command::Back));
   feedText("plain\\.txt");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.handleCommand(Command::Back));
 
   REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.listBrowserMode().items().size() == 1);
   CHECK(app.listBrowserMode().items()[0] == "plain\\.txt");  // NOT "fixedpattern" -- that's FGREP's own ring
 }
@@ -2957,14 +2975,19 @@ TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt (REGEX, ^J^C/StartCutRegex) rec
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
+  // StartCutRegex (2026-08-05: opens directly into the candidate list,
+  // not a blank prompt -- see startCutPrompt()'s own comment) -- ^G
+  // from there is how a fresh pattern gets typed.
   REQUIRE(app.handleCommand(Command::StartCutRegex));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.handleCommand(Command::Back));
   feedText("pla.n");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // records "pla.n" into RecentEgrepPattern
   REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
   REQUIRE(app.handleCommand(Command::StartCutRegex));
-  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.listBrowserMode().items().size() == 1);
   CHECK(app.listBrowserMode().items()[0] == "pla.n");
 

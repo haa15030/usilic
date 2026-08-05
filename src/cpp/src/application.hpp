@@ -1495,6 +1495,14 @@ class Application {
   // context ^R doesn't apply to, same spirit as ToggleHistoryView's
   // own outside-ListBrowser no-op.
   bool startPromptHistoryRecall();
+  // K-32/K-34 (^J^S EGREP, ^J^C CUT's regex variant): opens DIRECTLY
+  // into the candidate-pattern list, skipping the blank prompt step
+  // entirely -- see startGrepPrompt()/startCutPrompt()'s own comment
+  // for why (confirmed against real legacy-tcb behavior, not just a
+  // usilicrc wording nuance) and startRegexPromptList()'s own
+  // definition comment for how it reuses startPromptHistoryRecall()
+  // wholesale.
+  bool startRegexPromptList(PromptKind kind);
   // K-49 (^R) pressed at the live SHELL prompt (integration point 3 of
   // the ^R design -- see CLAUDE.md item 162/163): opens a sorted
   // RecentEntries(ShellCommand) ListBrowser, same underlying data
