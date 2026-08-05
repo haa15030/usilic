@@ -2396,10 +2396,56 @@ std::string Application::promptLabelText(PromptKind kind) const {
 }
 
 void Application::drawPromptLabel(PromptKind kind) {
-  std::string label = promptLabelText(kind);
   int row = std::max(0, display_.rows() - 1);
   display_.moveCursor(row, 0);
   display_.clearToEndOfLine();
+
+  if (kind == PromptKind::ExitConfirm) {
+    // Ported from disp.c's own M_exit case (verified against a real
+    // CUI screenshot, 2026-08-05 user report): the mode-line NAME
+    // field is just "EXIT" (str.c's P_mode table: " EXIT"), reversed
+    // -- but the "Exit (y/n) ? " MESSAGE text after it is NOT reversed
+    // (print_line() calls vt_endstand() specifically because the
+    // message starts with S_errg, "Exit"). This port previously
+    // combined both into a single "EXIT (y/n)?" string, drawn entirely
+    // reversed -- neither the wording nor the styling matched the CUI
+    // original. The "prev" field (mode-line[6], the mode being
+    // returned to) is also ported here: reversed, filled to the
+    // screen's right edge, starting a couple of columns after the
+    // message to leave room for the typed y/n answer.
+    static const std::string kName = "EXIT";
+    static const std::string kMessage = "Exit (y/n) ? ";
+    display_.setAttribute(Display::Attribute::Standout);
+    for (unsigned char c : kName) display_.putChar(c);
+    display_.setAttribute(Display::Attribute::StandoutOff);
+    display_.putChar(' ');
+    for (unsigned char c : kMessage) display_.putChar(c);
+    int labelWidth = static_cast<int>(kName.size()) + 1 + static_cast<int>(kMessage.size());
+
+    std::string prev = previousModeName(currentMode_);
+    int editableWidth = std::max(1, display_.columns() - labelWidth);
+    constexpr int kAnswerGap = 2;  // room for the typed y/n before the trailing field starts
+    int trailingCol = labelWidth + kAnswerGap;
+    if (!prev.empty() && trailingCol < display_.columns()) {
+      int available = display_.columns() - trailingCol;
+      std::string padded = prev;
+      if (static_cast<int>(padded.size()) > available) padded = padded.substr(0, available);
+      else padded += std::string(available - padded.size(), ' ');
+      display_.moveCursor(row, trailingCol);
+      display_.setAttribute(Display::Attribute::Standout);
+      for (unsigned char c : padded) display_.putChar(c);
+      display_.setAttribute(Display::Attribute::StandoutOff);
+      // promptEditor_'s own redraw() clears its full field width with
+      // spaces every keystroke (LineEditor::redraw()'s own comment) --
+      // capping this at kAnswerGap keeps it from wiping out the
+      // trailing field just drawn above.
+      editableWidth = kAnswerGap;
+    }
+    promptEditor_.setField(row, labelWidth, editableWidth);
+    return;
+  }
+
+  std::string label = promptLabelText(kind);
   display_.setAttribute(Display::Attribute::Standout);
   for (unsigned char c : label) display_.putChar(c);
   display_.setAttribute(Display::Attribute::StandoutOff);

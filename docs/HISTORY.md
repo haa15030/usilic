@@ -1102,3 +1102,21 @@ C++側はcutSyntax_ == GrepSyntax::Fixedならhistory_.RecentFgrepPattern、そ�
 修正として、ContentView::redraw()にlines_が空かつcursorHighlightEnabled_が真の場合、先頭行にプレースホルダー"--"を反転表示で描画する処理を追加しました。ContentView::syncVisibleCursor()のcursorHighlightEnabled_分岐も、hideVisibleCursor()(no-op)からdisplay_.setVisibleCursor(row, width)(現在行の右端、内容が空なら"--"の右端)に変更し、redraw()の末尾でも自動的にsyncVisibleCursor()を呼ぶようにしました(SHELLのscrollback_のようにcursorHighlightEnabled_が偽のビューは、より精密なカーソル位置を上書きする懸念があるため対象外のままです)。
 
 検証として、test_content_view.cppに新規doctest2件、test_application.cppに新規doctest2件を追加し、既存の関連テスト3件も新仕様に合わせて書き換えました。既存624件+新規5件(3件純増、2件は書き換え)=629件全通過、assertions 17142件全通過、警告ゼロです。実バイナリを-cでPTY起動し、(1)空の^Jc/^J^C履歴で^Rを押すと"--"が反転表示され実端末カーソルもその右端に移動すること、(2)^Jcプロンプトで"helloXXX"と打ってDEL(0x7f)を3回押すと"hello"まで正しく消去できること、をそれぞれ生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く(総数627件、615件通過+12件既知失敗)、直後にMac側を再ビルドして629/629件を再確認しました。CLAUDE.mdに項目168として記録し、コミット・プッシュします。
+
+<'/Users/haa15030/Desktop/⑫.png''/Users/haa15030/Desktop/⑬.png'
+左から順に
+~/git/usilic/tcb/src/tcb ~/git/usilic/src/doc（←起動プログラム名はtcb）
+~/git/usilic/src/cpp/build/usilic -c ~/git/usilic/src/doc
+「HELP.jp」を選択→^J^C→スクショ⑫
+些細な変更だが
+^X^C→「EXIT (y/n)?」→y[Enter]を
+^X^C→「EXIT Exit (y/n) ? y」→[Enter]（CUIバージョン）へ
+修正よろしく⑬。
+
+>⑬のEXIT確認プロンプトを修正しました。disp.cのdisp_window()(M_exitケース)を読むと、`sprintf(line, "%s (y/n) ?  ", s_S(S_errg))`(S_errg="Exit")でメッセージ本文を組み立て、反転させているのはstr.cのP_modeテーブルにある名前欄" EXIT"だけで、メッセージ本文自体はvt_endstand()で非反転のまま描画されると分かりました。さらにdisp_window()はprev(mode-line[6]、直前のモード名)が存在すればメッセージ本文の直後に反転+画面右端まで空白埋めして表示する処理を共通で行っていました。ポート版のdrawPromptLabel()は"EXIT (y/n)?"という結合済み文字列をまるごと反転表示するだけで、名前欄とメッセージ本文の分離もprev欄の表示もどちらも実装されていませんでした。
+
+drawPromptLabel()にPromptKind::ExitConfirm専用の分岐を追加し、名前欄"EXIT"(反転)→スペース(非反転)→メッセージ本文"Exit (y/n) ? "(非反転)の順に描画、直後にpreviousModeName(currentMode_)(SHELLモードの遷移元表示で既に使われていた既存ヘルパー)をprev欄として反転+画面右端まで空白埋めで描画するようにしました。入力欄自身のredraw()がフィールド幅ぶん毎回空白でクリアする既存仕様があるため、それに巻き込まれないよう入力欄の幅を「y/n用の2桁」だけに絞り、prev欄はその後ろから開始する形にしています(legacy原典は両者が同じ列で隣接/一部重なる作りでしたが、LineEditorの既存の抽象化と素直に共存させるためオーバーラップさせず隙間を空けました。見た目の差は軽微と判断しています)。EXIT以外の全プロンプト種別は今回変更していません。
+
+検証として、既存EXITラベルテストを新仕様に合わせて書き換え、新規doctest1件(prev欄の表示)を追加、既存629件+新規1件=630件全通過です。実バイナリを-cでPTY起動し、HELP.jpを開いた状態で^X^Cを押すと"EXIT"反転→"Exit (y/n) ? "非反転に続けてprev欄に現在のファイルパスが反転+右端まで表示され、続けてyを打つと入力欄の位置に正しくyが表示されprev欄自体は上書きされないことを生バイト列で確認しました。Ubuntu Dockerクロスビルドも既知差分(12件)のみでリグレッション無し、Mac側再ビルドで630/630件再確認済みです。
+
+なお⑫のCUT正規表現一覧らしき表示(HELP.jp選択→^J^Cで、内容が正規表現パターンの並びに見える一覧がCUI側に表示されていた件)は、仕組みの実体をまだ特定できておらず、明示的なご依頼も無いため今回は着手していません。次回ご指摘があればmenu.c/disp.c/str.c周辺で調査します。CLAUDE.mdに項目169として記録し、コミット・プッシュします。

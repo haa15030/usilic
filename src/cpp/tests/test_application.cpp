@@ -2406,10 +2406,32 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^C starts the exit-confirmation prompt"
 // visible indication of what it was asking for; every startXxxPrompt()
 // drew an unlabeled blank edit field. --
 
-TEST_CASE_FIXTURE(Fixture, "prompt labels: EXIT shows its own label with the y/n hint, in reverse video") {
+TEST_CASE_FIXTURE(Fixture, "prompt labels: EXIT shows \"EXIT\" reversed, then the plain \"Exit (y/n) ? \" "
+                           "message text (2026-08-05 fix, ported from disp.c's own M_exit case -- a real CUI "
+                           "screenshot found this port had previously combined both into one fully-reversed "
+                           "\"EXIT (y/n)?\" string, matching neither the wording nor the styling)") {
   REQUIRE(app.start(path()));
+  int row = display.rows() - 1;
   REQUIRE(app.handleCommand(Command::StartExit));
-  CHECK(display.rowText(display.rows() - 1).find("EXIT (y/n)?") != std::string::npos);
+  CHECK(display.rowText(row).find("EXIT Exit (y/n) ? ") != std::string::npos);
+  CHECK(display.standoutAt(row, 0) == true);   // "EXIT" itself is reversed
+  CHECK(display.standoutAt(row, 5) == false);  // "Exit (y/n) ? " is not
+}
+
+TEST_CASE_FIXTURE(Fixture, "prompt labels: EXIT also shows the previous mode's name (e.g. the open file) "
+                           "as a reversed trailing field filled to the right edge -- ported from disp.c's "
+                           "own \"prev\" field (mode-line[6])") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  int row = display.rows() - 1;
+  REQUIRE(app.handleCommand(Command::StartExit));
+  std::string text = display.rowText(row);
+  CHECK(text.find(app.fileMode().currentFile()) != std::string::npos);
+  CHECK(display.standoutAt(row, display.columns() - 1) == true);  // filled reversed to the right edge
 }
 
 TEST_CASE_FIXTURE(Fixture, "prompt labels: FGREP vs EGREP shows the right one depending on syntax") {
