@@ -10861,6 +10861,63 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       標準エラーへ出力されたうえで、クラッシュせず正常に起動が
       続行されることを確認した。
 
+182. **2026-08-05(夜間、ユーザー就寝中の作業): マウスホイールで慣性
+    スクロールを制御できるよう実装(段階的な減速に対応)、Geminiが
+    提示したLinux版AppleScript相当API(kitty)情報を公式ドキュメントで
+    検証した結果、主要な技術的主張が誤りと判明**。ユーザーから
+    「w/sだと速度を緩められない(高速度からsだとと逆方向へ最低速)ため
+    ホイールで速度調整できればいいかな」との相談と、「Geminiにこんな
+    情報があった[kitty/WezTermのAppleScript相当API調査PDF]。対象
+    ターミナル上で試行可能なら-g起動を試してほしい。マウスホイールと
+    合わせて検討よろしく。明日の朝、結果を教えて」との依頼があった。
+   - **kittyのリモート制御APIをGeminiのPDFの主張と突き合わせて検証**:
+      PDFは`kitty @ ls`のJSON出力に`font_size`・`geometry`
+      (x/y/width/height)フィールドが含まれると主張していたが、
+      kitty公式ドキュメント(sw.kovidgoyal.net/kitty/remote-control/、
+      kitten-@-ls、rc_protocol各ページ)をWebFetch/WebSearchで直接
+      確認した結果、実際の`kitty @ ls`が返すのは各ウィンドウの
+      `id`/`title`/`cwd`/`pid`/`cmdline`/`env`等プロセス情報のみで、
+      `font_size`・`geometry`いずれも存在しないと判明した。さらに
+      リモート制御コマンド一覧(action, get-colors, get-text,
+      resize-os-window, resize-window, set-font-size等)を確認したが、
+      ウィンドウのピクセル位置・サイズを**取得する**コマンド、現在の
+      フォントサイズを**取得する**コマンドはどちらも存在しない
+      (`resize-*`/`set-font-size`は設定用のみ)。`get-colors`は実在の
+      サブコマンドと確認できたため色情報だけは取得可能と見られるが、
+      ユーザーが求めていた「フォント・サイズ・文字色・背景色・
+      表示位置」5項目のうち3項目(フォントサイズ・表示位置・場合により
+      サイズ)がkittyのAPIでは原理的に取得不可能と判明した。この
+      調査結果から、macOSのAppleScriptベースの`queryTerminalAppColors()`
+      に相当する完全なLinux版kitty実装は成立しないと判断し、実装は
+      見送った(既存の`queryGnomeTerminalColors()`/`queryPtyxisAppearance()`
+      でLinux側のフォント・色検出は既にカバー済みであることも
+      判断材料に含めた)。また、本機(macOS、VSCode統合ターミナル、
+      `TERM_PROGRAM=vscode`)にはkitty/WezTermいずれも未インストールで、
+      そもそもリモート制御APIを実機で試すこと自体ができない環境
+      だったため、`-g`起動での実地検証も実施していない。
+   - **マウスホイールでの慣性スクロール制御を実装**: `GraphicalDisplay`
+      (`graphical_display.hpp`/`.cpp`)に`WheelEvent`(SDLの
+      `SDL_MOUSEWHEEL`イベント、`SDL_MOUSEWHEEL_FLIPPED`対応の符号
+      補正込み)と`consumeWheelEvent()`を新設、既存の`MouseClick`/
+      `HoverEvent`/`DragEvent`と同じキュー方式で実装した。
+      `app/main.cpp`のGUIイベントループに、`w`/`s`キーの直後へ新規の
+      ホイール消費ループを追加: 同方向のティックは`w`/`s`と同じく
+      レベル+1(加速)、**逆方向のティックはレベル1へ即リセットする
+      代わりに1段階ずつ減速**するよう変更した。これがユーザーの
+      指摘していた「高速からのs→wで逆方向最低速へジャンプ」問題への
+      直接的な解決策で、ホイールを逆回転させれば現在の速度から
+      段階的に減速→停止→(さらに回せば)逆方向加速という、実際の
+      トラックパッドに近い挙動になる。
+   - **検証の限界(GUI機能全般の既知の制約)**: `make test`で646件
+      全通過(件数据え置き、`GraphicalDisplay`は実SDLウィンドウが
+      無いと動作確認できないためdoctestの対象に元々含まれておらず、
+      今回のホイール機能も同様)、警告ゼロ、`make usilic`もクリーンに
+      ビルド成功を確認した。実際にホイールを回した際の体感(段階的な
+      減速の効き方等)は、この開発環境(macOS上のヘッドレスな
+      Bashサンドボックス、実ディスプレイ・実SDLウィンドウ無し)からは
+      検証不可能なため、ビルド成功の確認に留めている。ユーザーの
+      実機での試用結果を待つ。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

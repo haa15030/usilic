@@ -1686,6 +1686,44 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       if (app.consumeGuiModeToggleRequest()) return;
     }
 
+    // Mouse wheel: a per-tick alternative to the w/s keys just above,
+    // added at the user's own 2026-08-05 request specifically because
+    // w/s's own "opposite direction resets straight to coastLevel 1"
+    // is an abrupt floor-speed jump, not a decel -- there was no way
+    // to ease down from a fast coast with w/s alone. Same
+    // acceleration rule as w/s (same direction again: +1 level), but
+    // the OPPOSITE-direction case now decrements one level per tick
+    // instead of jumping, so spinning the wheel the other way eases
+    // the current coast down through zero before it actually reverses
+    // (matching a real trackpad's own feel far better than a keyboard
+    // ever could, which is the whole point of adding wheel support at
+    // all -- see WheelEvent's own comment). Same currentMode()/
+    // awaitingSequenceOrPromptByte() gate as w/s, for the same reason
+    // (wheel events firing during Shell output or a pending prompt
+    // shouldn't hijack scrolling there).
+    while (auto wheel = gui.consumeWheelEvent()) {
+      anyEventThisFrame = true;
+      if (app.currentMode() == fm::ApplicationMode::Shell || app.awaitingSequenceOrPromptByte()) continue;
+      dragging = false;
+      gui.setHandCursor(false);
+      int wheelDirection = wheel->deltaY > 0 ? 1 : -1;
+      if (coastLevel == 0) {
+        coastDirection = wheelDirection;
+        coastLevel = resolveCoastLevel(1);
+      } else if (wheelDirection == coastDirection) {
+        coastLevel = resolveCoastLevel(std::min(coastLevel + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
+      } else {
+        int decayedLevel = coastLevel - 1;
+        if (decayedLevel <= 0) {
+          coastLevel = 0;
+          coastDirection = 0;
+          pixelOffset = 0;
+        } else {
+          coastLevel = resolveCoastLevel(decayedLevel);
+        }
+      }
+    }
+
     fm::ContentView &view = app.activeContentView();
     int cellHeight = std::max(gui.cellHeightPixels(), 1);
 

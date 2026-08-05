@@ -243,6 +243,23 @@ class GraphicalDisplay : public Display {
   };
   std::optional<DragEvent> consumeDragEvent();
 
+  // Mouse scroll-wheel ticks, queued from SDL_MOUSEWHEEL -- see
+  // app/main.cpp's own wheel-consumption comment for what this is
+  // used for (a per-tick, gradually-decelerating alternative to the
+  // w/s coast-level keys' own "opposite direction resets straight to
+  // level 1" jump, added at the user's own 2026-08-05 request: "s→w
+  // だと高速度からsだと減速じゃなくて逆方向へ最低速" -- reversing mid-
+  // coast with w/s is an abrupt floor-speed jump in the new direction,
+  // not a deceleration). `deltaY` is SDL's own wheel.y, sign-corrected
+  // for SDL_MOUSEWHEEL_FLIPPED (macOS "natural scrolling" and similar)
+  // so positive always means "reveal earlier content" here, matching
+  // coastDirection's existing +1 convention (same sense as the 'w'
+  // key) regardless of the OS-level scroll-direction preference.
+  struct WheelEvent {
+    int deltaY = 0;
+  };
+  std::optional<WheelEvent> consumeWheelEvent();
+
   // See Display::renderScrolled()'s own comment for the general
   // contract (this is that method's real, pixel-granular
   // implementation). The caller is responsible for committing a real

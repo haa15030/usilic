@@ -178,6 +178,7 @@ struct GraphicalDisplay::Impl {
   std::deque<KeyEvent> keyQueue;
   std::deque<DragEvent> dragQueue;
   std::deque<HoverEvent> hoverQueue;
+  std::deque<WheelEvent> wheelQueue;
   SDL_Cursor *handCursor = nullptr;
   bool handCursorActive = false;
 
@@ -842,6 +843,18 @@ bool GraphicalDisplay::pumpEvents() {
         for (const char *p = event.text.text; *p; p++) impl_->keyQueue.push_back(KeyEvent{static_cast<unsigned char>(*p), std::nullopt});
         break;
       }
+      case SDL_MOUSEWHEEL: {
+        // SDL_MOUSEWHEEL_FLIPPED means the OS-level "natural scrolling"
+        // preference is on (confirmed default on macOS trackpads) --
+        // SDL reports the raw hardware delta either way and leaves
+        // sign correction to the caller, so this negation is required,
+        // not optional, for wheel direction to match what the user's
+        // own OS scroll-direction setting says "up" means.
+        int deltaY = event.wheel.y;
+        if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) deltaY = -deltaY;
+        if (deltaY != 0) impl_->wheelQueue.push_back(WheelEvent{deltaY});
+        break;
+      }
       default:
         break;
     }
@@ -874,6 +887,13 @@ std::optional<GraphicalDisplay::DragEvent> GraphicalDisplay::consumeDragEvent() 
   if (impl_->dragQueue.empty()) return std::nullopt;
   DragEvent event = impl_->dragQueue.front();
   impl_->dragQueue.pop_front();
+  return event;
+}
+
+std::optional<GraphicalDisplay::WheelEvent> GraphicalDisplay::consumeWheelEvent() {
+  if (impl_->wheelQueue.empty()) return std::nullopt;
+  WheelEvent event = impl_->wheelQueue.front();
+  impl_->wheelQueue.pop_front();
   return event;
 }
 
