@@ -251,10 +251,16 @@ class GraphicalDisplay : public Display {
   // だと高速度からsだと減速じゃなくて逆方向へ最低速" -- reversing mid-
   // coast with w/s is an abrupt floor-speed jump in the new direction,
   // not a deceleration). `deltaY` is SDL's own wheel.y, sign-corrected
-  // for SDL_MOUSEWHEEL_FLIPPED (macOS "natural scrolling" and similar)
-  // so positive always means "reveal earlier content" here, matching
-  // coastDirection's existing +1 convention (same sense as the 'w'
-  // key) regardless of the OS-level scroll-direction preference.
+  // for SDL_MOUSEWHEEL_FLIPPED so its sign always tracks the same
+  // FIXED physical gesture direction regardless of the OS-level
+  // "natural scrolling" setting (SDL's own documented meaning of the
+  // correction) -- this struct does NOT decide which physical
+  // direction means "reveal earlier" vs "reveal later" content; that
+  // app-semantic mapping is main.cpp's own call (its wheel-consumption
+  // loop), and was flipped there 2026-08-06 after real-hardware
+  // testing showed the naive mapping was backwards for this project's
+  // own natural-scrolling-enabled test machine -- see that comment,
+  // not this one, for the current sign convention.
   struct WheelEvent {
     int deltaY = 0;
   };

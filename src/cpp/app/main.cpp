@@ -1706,7 +1706,22 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       if (app.currentMode() == fm::ApplicationMode::Shell || app.awaitingSequenceOrPromptByte()) continue;
       dragging = false;
       gui.setHandCursor(false);
-      int wheelDirection = wheel->deltaY > 0 ? 1 : -1;
+      // Negated relative to a "naive" reading of deltaY (positive ==
+      // 'w'/reveal-earlier) -- confirmed backwards via real hardware
+      // testing (2026-08-06 user report, macOS's own default "natural
+      // scrolling" -- content follows the physical gesture direction,
+      // the opposite sense from the old pre-natural-scrolling wheel
+      // convention). GraphicalDisplay::consumeWheelEvent() already
+      // normalizes SDL_MOUSEWHEEL_FLIPPED away to a FIXED physical-
+      // direction sign (see its own comment) -- this negation is a
+      // SEPARATE, deliberate choice about which physical direction
+      // means which app-semantic direction, picked to match natural
+      // scrolling since that's this project's real test machine's own
+      // default and the only case actually verified on real hardware.
+      // Not re-derived from SDL's own docs a second time here on
+      // purpose, after getting the direction wrong once already by
+      // reasoning it out instead of testing it.
+      int wheelDirection = wheel->deltaY > 0 ? -1 : 1;
       if (coastLevel == 0) {
         coastDirection = wheelDirection;
         coastLevel = resolveCoastLevel(1);
