@@ -79,7 +79,25 @@ int levelForReleaseDistance(int pixels, int cellHeightPixels) {
     level++;
     threshold *= 2;
   }
-  return level;
+  // +kReleaseLevelBias, a flat shift toward faster (2026-08-06, the
+  // user's own proposed fix): after two failed attempts at a deeper
+  // root-cause diagnosis for "coast speed at release feels too slow"
+  // (boosting every level's own per-dot speed via -u didn't help --
+  // ruling out "the chosen level is just configured too slow" --
+  // and reordering the coast physics loop to remove an initial-dot
+  // startup pause didn't help either -- ruling out "there's a dead
+  // pause before the first visible dot"), with no way to test real
+  // mouse-drag data from this sandbox to dig further, the user
+  // proposed simply shifting the DISTANCE-TO-LEVEL mapping itself by
+  // a couple of levels toward faster as a pragmatic compensation,
+  // regardless of the exact underlying reason typical flicks land on
+  // a lower level than they feel like they should. Only applied to
+  // an already-coasting result (level 0, "too small to count as a
+  // flick at all," is untouched -- deliberately still requires a real
+  // flick before this bias ever applies) and clamped to maxLevel so
+  // it can never select a level past the end of the table.
+  constexpr int kReleaseLevelBias = 2;
+  return std::min(level + kReleaseLevelBias, maxLevel);
 }
 
 ScrollStep scaledForRow(const ScrollStep &pixelStep, int dotsPerRow) {

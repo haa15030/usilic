@@ -37,6 +37,20 @@ TEST_CASE("levelForReleaseDistance: thresholds scale with cellHeightPixels") {
   CHECK(levelForReleaseDistance(100, 10) > levelForReleaseDistance(100, 200));
 }
 
+TEST_CASE("levelForReleaseDistance: a real flick is biased 2 levels faster than the raw distance-doubling "
+          "table alone would pick, but a too-small movement still doesn't coast at all") {
+  int cellHeight = 20;
+  // magnitude in [cellHeight, 2*cellHeight) is the raw table's own
+  // level-2 bucket (see the class comment's own worked-out ranges) --
+  // with the +2 bias this should land on level 4, not 2.
+  CHECK(levelForReleaseDistance(cellHeight + 1, cellHeight) == 4);
+  // Below cellHeight/4 is still "not a flick at all" -- the bias must
+  // never turn a resting/near-zero movement into an active coast.
+  CHECK(levelForReleaseDistance(cellHeight / 8, cellHeight) == 0);
+  // A huge flick still clamps to the last table entry, not past it.
+  CHECK(levelForReleaseDistance(100000, cellHeight) == static_cast<int>(kScrollSpeedLevels.size()) - 1);
+}
+
 TEST_CASE("scaledForRow: multiplies usleep and busy-loop delays by dotsPerRow") {
   fm::ScrollStep sleepStep{false, 90000, 0};
   auto scaled = scaledForRow(sleepStep, 16);
