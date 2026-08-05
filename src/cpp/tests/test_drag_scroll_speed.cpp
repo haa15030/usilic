@@ -115,6 +115,18 @@ TEST_CASE("applyScrollSpeedOverride: values reaching into the default busy-loop 
   kScrollSpeedLevels = original;
 }
 
+TEST_CASE("applyScrollSpeedOverride: exactly 10 values (kScrollSpeedLevels.size()-1) tunes every level, "
+          "including the fastest") {
+  std::vector<fm::ScrollStep> original = kScrollSpeedLevels;
+  REQUIRE(kScrollSpeedLevels.size() == 11);  // level 0 (placeholder) + 10 tunable levels
+  applyScrollSpeedOverride({100000, 90000, 80000, 70000, 60000, 50000, 40000, 30000, 20000, 10000});
+  for (int i = 1; i <= 10; i++) {
+    CHECK_FALSE(kScrollSpeedLevels[i].busyLoop);
+    CHECK(kScrollSpeedLevels[i].microseconds == 110000 - i * 10000);
+  }
+  kScrollSpeedLevels = original;
+}
+
 TEST_CASE("applyScrollSpeedOverride: values beyond the table's own last index are ignored, not out-of-bounds") {
   std::vector<fm::ScrollStep> original = kScrollSpeedLevels;
   std::vector<long> tooMany(kScrollSpeedLevels.size() + 5, 12345);  // more values than there are levels at all
