@@ -58,7 +58,7 @@ constexpr int kCarriageReturn = 0x0d;  // ^M
 // already-renamed usilicrc, are documented in CLAUDE.md), not
 // features worth reproducing here. Arrow/PageUp/PageDown special
 // keys are omitted too -- every one of them already has a plain-byte
-// alias in this table (j/k, ^N/^P, Space/^F/^V, b/^B), so nothing is
+// alias in this table (j/k, ^N/^P, space/^F/^V, b/^B), so nothing is
 // unreachable by leaving KeyInput::SpecialKey-only entries out.
 struct KeyTableEntry {
   const char *keyLabel;
@@ -73,12 +73,12 @@ const KeyTableEntry kKeyTable[] = {
     {"k", "Move window up", {'k'}},
     {"^N", "Move cursor down", {0x0e}},
     {"^P", "Move cursor up", {0x10}},
-    {"Space", "Page down", {' '}},
+    {"space", "Page down", {' '}},
     {"^F", "Page down", {0x06}},
     {"^V", "Page down", {0x16}},
     {"b", "Page up", {'b'}},
     {"^B", "Page up", {0x02}},
-    {"Enter", "Open selected entry", {kCarriageReturn}},
+    {"return", "Open selected entry", {kCarriageReturn}},
     {"^G", "Back / cancel", {kControlG}},
     {"^S", "FGREP", {kControlS}},
     {"^Space", "Toggle mark (CP/MV/RM/ARC)", {0x80}},
@@ -95,15 +95,18 @@ const KeyTableEntry kKeyTable[] = {
     {".", "Select, then cursor down (M-5)", {kCarriageReturn, 0x0e}, true},
     {"<", "Select, back, cursor up, select (M-6)", {kCarriageReturn, kControlG, 0x10, kCarriageReturn}, true},
     {">", "Select, back, cursor down, select (M-7)", {kCarriageReturn, kControlG, 0x0e, kCarriageReturn}, true},
-    // ESC-leader. "ESC" keeps its own trailing space (unlike every
-    // other leader below) -- it's a spelled-out word, not a single
-    // control-char symbol like ^J/^X/^O, so "ESCs"/"ESC<"/"ESC^M"
-    // would read as one run-together token instead of two, undoing
-    // the whole point of the no-space cleanup just below.
-    {"ESC s", "SHELL", {kEscape, 's'}},
-    {"ESC <", "Go to top", {kEscape, '<'}},
-    {"ESC >", "Go to bottom", {kEscape, '>'}},
-    {"ESC ^M", "Read as is", {kEscape, kCarriageReturn}},
+    // ESC-leader: "^[" (not the spelled-out word "ESC"), matching
+    // legacy's own KEY listing exactly (str.c's print_key()/tobo(),
+    // confirmed via a real PTY dump of /usr/local/bin/usilic: "^[<",
+    // "^[>", "^[^M") and, per the user's own 2026-08-05 correction,
+    // consistent with "space"/"return" below being their real Apple
+    // Keyboard keytop labels rather than "Space"/"Enter" -- "ESC" as
+    // a spelled-out word sat awkwardly between the single-control-char
+    // symbols (^J/^X/^O) and those keytop labels, matching neither.
+    {"^[s", "SHELL", {kEscape, 's'}},
+    {"^[<", "Go to top", {kEscape, '<'}},
+    {"^[>", "Go to bottom", {kEscape, '>'}},
+    {"^[^M", "Read as is", {kEscape, kCarriageReturn}},
     // ^J-leader. No space between the leader and the key that
     // follows (^J^H, not "^J ^H") -- matches legacy's own KEY listing
     // (str.c's print_key(), tobo()) and keeps this table's own ^J^H
@@ -2150,10 +2153,17 @@ bool Application::startKey() {
   if (currentMode_ == ApplicationMode::Key) return false;
   std::vector<ContentView::Line> lines;
   lines.reserve(std::size(kKeyTable));
+  // "<label> : <description>", no fixed-width column padding -- see
+  // legacy's own print_key() for the same "<key> : <caption>" shape
+  // (legacy right-justifies the key to a fixed column too, which this
+  // port deliberately does NOT reproduce: the user's own 2026-08-05
+  // report was specifically that the previous fixed-10-column-then-
+  // two-spaces padding left a visibly wide gap before short labels'
+  // descriptions -- e.g. "^X^C" padded out to 10 columns before "  "
+  // even started -- and asked for legacy's plain "j : Move window
+  // down" shape instead, i.e. no padding at all).
   for (const auto &entry : kKeyTable) {
-    std::string label = entry.keyLabel;
-    if (label.size() < 10) label.append(10 - label.size(), ' ');
-    std::string text = label + "  " + entry.description;
+    std::string text = std::string(entry.keyLabel) + " : " + entry.description;
     if (entry.isMacro) text += " (M)";
     lines.push_back({text, std::nullopt, std::nullopt, {}});
   }
