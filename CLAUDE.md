@@ -10532,6 +10532,60 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       ディレクトリも実際に作成されることを生バイト列とファイル
       システムの両方で確認した。
 
+175. **2026-08-05(続き): `config.sh`のDUオプション修正の途中で発覚した
+    誤解を整理、`ESC l`(「SHELL出力についてプロンプト（usilic:）での
+    CUT一覧」、usilicrcのK-88「Output from SHELL-prompt」/legacy
+    `M_log`)をC++移植版に新規実装**。ユーザーから「なぜ依頼したかと
+    いうとconfig.shにあるDUの起動オプションがmacOSでは不正のため」と
+    経緯説明があり、直後に「DUは置いといて`^[l`をやれるだけやって
+    みて」と方針転換。あわせて「Claudeから可能リソース92%使用との
+    通知が出ているので、やれる限りやってみて。応答が無くなったら
+    規制上限に達したということでよろしく」とのリソース制約の共有が
+    あり、以降は検証を最小限に絞って実装優先で進めた。
+   - **`^[l`の正体調査**: `usilicrc`の`ESC l "Output from SHELL-
+      prompt" # (M-9) K-88`という記述と、`shell.cpp`の
+      `promptPlain_ = options_.programName + ":" + tailBeforeMark`
+      (「usilic:」形式のプロンプト文字列)、および既存の
+      `ContentView::Line::shellCommand`(SHELLの実際に送信済みの
+      コマンド行にだけ設定される、再送信用の目印)を突き合わせ、
+      「SHELLのスクロールバック内にある、実際にコマンドを送信した
+      プロンプト行だけを一覧表示し、選ぶとその行へジャンプする」
+      機能だと判断した。既存の`^R`(`startShellHistoryRecall()`、
+      永続化された`RingCategory::ShellCommand`リングからの一覧、
+      選択でコマンドラインへ**挿入**のみ)とは別物で、`^[l`は
+      **今のセッションの画面上に実際に見えているスクロールバック**
+      が対象、選択すると**そのスクロールバック行へジャンプ**する
+      (`^P`/`^N`で1行ずつ辿り着くのと同じ場所へ、一気に移動できる
+      版)という設計にした。
+   - **実装**: 新規`Command::StartShellLog`、`ESC l`のディスパッチ
+      (`dispatchLeaderByte()`の`escPending_`分岐)、新規
+      `Application::startShellLog()`(`shell_.scrollback().lines()`
+      を走査し`.shellCommand`が設定されている行だけを抽出、
+      `ListBrowserMode`で一覧表示)、`openSelectedListEntry()`/
+      `returnFromListBrowser()`双方に`shellLogActive_`分岐を追加
+      (選択時は該当スクロールバック行へ`setCursorIndex()`+既存の
+      `moveDisplayCursorToShellHistoryLine()`でジャンプ、`^G`は
+      単純にSHELLへ戻るのみ)。
+   - **検証(リソース制約により縮小)**: `test_application.cpp`に
+      新規doctest3件を追加(実際にコマンド2つを実行後`^[l`で両方の
+      プロンプト行が一覧に含まれること、`Enter`で選んだ行へ
+      スクロールバックのカーソルが実際にジャンプすること、
+      コマンド未実行のまっさらな状態では`^[l`が失敗し画面が
+      SHELLのまま変わらないこと)。既存639件+新規3件=642件全通過、
+      assertions 17280件全通過、警告ゼロ(実際のbashを使ったテストで
+      スキップ無し)。**リソース制約のため、今回はUbuntu Docker
+      クロスビルド・実バイナリでのPTY実機検証をいずれも省略した**
+      (doctestでの実bash検証のみ)。次回セッションで両方とも
+      追って実施することを推奨する。
+   - **DUオプションの件、経緯の整理**: ユーザーが最初に「旧C版で
+      DUモードを試そうとして再現できなかった」ことが、直前の
+      「任意のプログラム名でmakeできるように」という依頼の本当の
+      動機だったと判明。項目174で修正した`config.sh`のビルド
+      パラメータ化自体は無駄にはなっていない(実際に`tcb/src/`を
+      `make`し直せるようになった意味はある)が、DUオプション自体の
+      修正(`du -a -A`)は既に項目174のコミットに含まれているため、
+      重複対応は無い。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

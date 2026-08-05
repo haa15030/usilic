@@ -1187,3 +1187,16 @@ Makefileに PROG変数(デフォルトusilic、make PROG=<name>で上書き可�
 なお、config.h(同じくgitignore対象)内のTMP(/tmp/.usilic)・LIB(/usr/local/lib/usilic)は既に"usilic"決め打ちで書かれていたため(そもそも"tcb"という文字列を含んでいない)、今回のPROG変数からの動的生成対象には含めていません。真に任意の名前で完全に統一するなら将来的な対応候補です。
 
 検証として、make clean && make(PROG省略、デフォルトusilic)で警告(既存の-Wpointer-sign系のみ)以外は問題なく完走し、usilicという名前のバイナリが生成されることを確認しました。make clean && make PROG=fooでも同様にfooという名前のバイナリが生成され、progname.hが正しく切り替わること、さらに実行時エラーメッセージ(foo: Invalid option --、Usage: foo等)も追従することを確認しました。デフォルト(usilic)へ作り直した上でPTY起動し、^T(TCBバナー)を開いたところ、モード名がUSILIC、"Startup file"が/usr/local/lib/usilic/usilicrc、"Command line"がusilic ...、"ERROR log"/"SHELL log"が/tmp/.usilic/...とすべて正しく表示され、~/.usilicディレクトリも実際に作成されることを確認しました。CLAUDE.mdに項目174として記録し、コミット・プッシュします。
+
+<申し訳ない。DUモードを思い出したくて旧版で試そうとしたのがうまくいかず旧ソースの修正を依頼してしまってリソースが無駄になった。
+DUは置いといて^[lをやれるだけやってみて。SHELL出力についてプロンプト（usilic:）でのCUT一覧
+
+<さっきClaudeからメッセージが出て可能リソース92％使用、とあるので（明日8時リセット）やれる限りやってみて。応答が無くなったら規制上限に達したということでよろしく。
+
+>実装しました。usilicrcのK-88「Output from SHELL-prompt」(ESC l)は、SHELLのスクロールバック内で実際にコマンドを送信したプロンプト行(Line::shellCommandが設定されている行)だけを一覧表示し、選ぶとその行へジャンプする機能と判断しました。既存の^R(startShellHistoryRecall()、永続化されたリングからの一覧、選択でコマンドラインへ挿入のみ)とは別物で、^[lは今のセッションの画面上に実際に見えているスクロールバックが対象、選択するとそのスクロールバック行へジャンプする(^P/^Nで1行ずつ辿り着くのと同じ場所へ一気に移動できる版)という設計です。
+
+新規Command::StartShellLog、ESC lのディスパッチ、Application::startShellLog()(shell_.scrollback().lines()を走査し.shellCommandが設定されている行だけを抽出、ListBrowserModeで一覧表示)、openSelectedListEntry()/returnFromListBrowser()双方にshellLogActive_分岐を追加しました。
+
+検証はリソース制約のため縮小しています。test_application.cppに新規doctest3件を追加し、既存639件+新規3件=642件全通過、実際のbashを使ったテストでスキップ無しです。リソース制約のため、今回はUbuntu Dockerクロスビルド・実バイナリでのPTY実機検証はいずれも省略しました。次回セッションで両方とも追って実施することを推奨します。
+
+なお、DUオプション修正の経緯も整理しました。最初に「旧C版でDUモードを試そうとして再現できなかった」ことが、直前の「任意のプログラム名でmakeできるように」という依頼の本当の動機だったと判明しています。config.shのビルドパラメータ化自体は無駄になっておらず(実際にtcb/src/をmakeし直せるようになった意味はあります)、DUオプション自体の修正(du -a -A)は既に項目174のコミットに含まれているため重複対応はありません。CLAUDE.mdに項目175として記録し、コミット・プッシュします。

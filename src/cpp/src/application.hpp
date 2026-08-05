@@ -85,6 +85,11 @@ enum class Command {
   StartDu,
   StartDirectoryHistory,
   StartCommandHistory,
+  // ESC l ("Output from SHELL-prompt" per usilicrc's own K-88
+  // documentation): a CUT-style picker over SHELL's own scrollback
+  // prompt+command lines (Line::shellCommand-tagged, see
+  // Shell::freezePromptLine()) -- see startShellLog()'s own comment.
+  StartShellLog,
   // K-49 (plain ^R, M_hist, " HISTORY"): NOT a way to jump to a
   // DIFFERENT category from outside a list browser (an earlier
   // version of this port mistook it for exactly that, aliasing it to
@@ -1527,6 +1532,10 @@ class Application {
   // re-running an old one without a chance to look at it first would
   // be a real safety regression, not just a UX quirk.
   bool startShellHistoryRecall();
+  // ESC l ("Output from SHELL-prompt", K-88/M_log) -- see its own
+  // definition comment for how this differs from startShellHistoryRecall()
+  // just above.
+  bool startShellLog();
   // Shared trailer for every startXxxPrompt(): sets promptKind_, draws
   // that kind's own label onto the mode-line row (see
   // promptLabelText()'s own comment), and starts promptEditor_ with
@@ -1571,6 +1580,12 @@ class Application {
   // See startShellHistoryRecall()'s own comment.
   bool shellHistoryRecallActive_ = false;
   std::string shellHistoryRecallText_;
+  // See startShellLog()'s own comment. shellLogLineIndices_[i] is the
+  // actual shell_.scrollback() line index the i-th picker item (its
+  // .text) came from -- openSelectedListEntry() maps the picked
+  // ListBrowser position back through this to know where to jump.
+  bool shellLogActive_ = false;
+  std::vector<int> shellLogLineIndices_;
   // Which of the two keys (K-45 ^Xf vs K-47 ^Xd) started the current
   // PathInput prompt -- see startPathInputPrompt()'s own comment for
   // why EXECUTION stays unified (PathResolver decides file-vs-

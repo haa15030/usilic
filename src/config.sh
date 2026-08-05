@@ -54,6 +54,23 @@ else
 	    PERM='-m 644'
 	    echo '# Makefile for macOS (Darwin) version' > .config
 	    echo 'LIBS=	-lncurses'>> .config
+	    # macOS's own (BSD) du has no -b (GNU coreutils-only "apparent
+	    # size in exact bytes" flag) -- "du -ab" fails outright there
+	    # ("du: invalid option -- b"), a real user report. -A (apparent
+	    # size instead of disk-usage block count) is the closest BSD
+	    # equivalent available; -B 1 (byte-sized blocks) was tried
+	    # first to also match -b's BYTE-exact precision, but this du
+	    # implementation doesn't honor -B while -A is also set (both
+	    # `du -A -B 1` and `du -A` alone gave the identical, still
+	    # 512-byte-block-rounded number on a real file -- confirmed by
+	    # direct testing, not just documentation). DU mode's own output
+	    # is displayed as opaque text (alloc_pipe(), the same generic
+	    # external-command-output path `ls`'s own output goes through)
+	    # rather than parsed/summed by tcb itself, so exact byte parity
+	    # with Linux was never actually required -- block-granular
+	    # sizes are a fine, honest platform difference, not a broken
+	    # feature.
+	    DU="du -a -A"
 	else
 	if [ `uname` = CYGWIN_98-4.10 ]; then	# cygwin
 	    USR_DIR=/usr/local
@@ -92,9 +109,9 @@ PROT=	code.P mode.P tc.P tcb.P
 .c.o:
 	\$(CC) -c \$(CFLAGS) \$<
 
-default: tcb
+default: $PROGNAME
 
-tcb:	\$(PROT) \$(OBJS)
+$PROGNAME:	\$(PROT) \$(OBJS)
 	\$(CC) \$(LDFLAGS) -o \$@  \$(OBJS) \$(LIBS)
 
 EOF
@@ -131,7 +148,7 @@ debug:
 	ln -sf ../config.h debug
 
 clean:
-	rm -rf tcb \$(OBJS) \$(PROT) *~ debug
+	rm -rf $PROGNAME \$(OBJS) \$(PROT) *~ debug
 EOF
 
 if [ -f $CSRC/Makefile ]; then
@@ -182,6 +199,7 @@ cat > .config <<EOF
 #ifndef _PROGNAME_H
 #define _PROGNAME_H
 #define PROGNAME "$PROGNAME"
+#define PROGNAME_UPPER "$PROGNAME_UPPER"
 #define ENV_PROG "$PROGNAME_UPPER"
 #define ENV_CHARSET "${PROGNAME_UPPER}CHARSET"
 #define ENV_VT "${PROGNAME_UPPER}VT"
@@ -207,8 +225,8 @@ echo 'Installing $PROGNAME:'
 mkdir -p \$1$BIN
 mkdir -p \$1$LIB
 mkdir -p \$1$MAN
-echo "install $COPY -m 755 $CSRC/tcb \$1$BIN/$PROGNAME"
-install $COPY -m 755 $CSRC/tcb \$1$BIN/$PROGNAME
+echo "install $COPY -m 755 $CSRC/$PROGNAME \$1$BIN/$PROGNAME"
+install $COPY -m 755 $CSRC/$PROGNAME \$1$BIN/$PROGNAME
 echo "install $COPY -m 644 ${PROGNAME}rc \$1$LIB"
 install $COPY -m 644 ${PROGNAME}rc \$1$LIB
 echo "install $COPY -m 644 doc/HELP \$1$LIB"
