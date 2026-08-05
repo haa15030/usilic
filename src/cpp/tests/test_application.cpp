@@ -3821,14 +3821,14 @@ TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^S' entry returns to Directory mo
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^X ^C' entry (EXIT) chains a full multi-byte leader sequence "
+TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^X^C' entry (EXIT) chains a full multi-byte leader sequence "
                            "(^X leader -> ^C sub-command)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.rfind("^X ^C ", 0) == 0) row = static_cast<int>(i);
+    if (lines[i].text.rfind("^X^C ", 0) == 0) row = static_cast<int>(i);
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
@@ -3843,7 +3843,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: Back (^G) on any entry returns without executin
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.rfind("^X ^C ", 0) == 0) row = static_cast<int>(i);  // EXIT's own row -- would be very visible if wrongly executed
+    if (lines[i].text.rfind("^X^C ", 0) == 0) row = static_cast<int>(i);  // EXIT's own row -- would be very visible if wrongly executed
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 

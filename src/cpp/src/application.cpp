@@ -95,59 +95,68 @@ const KeyTableEntry kKeyTable[] = {
     {".", "Select, then cursor down (M-5)", {kCarriageReturn, 0x0e}, true},
     {"<", "Select, back, cursor up, select (M-6)", {kCarriageReturn, kControlG, 0x10, kCarriageReturn}, true},
     {">", "Select, back, cursor down, select (M-7)", {kCarriageReturn, kControlG, 0x0e, kCarriageReturn}, true},
-    // ESC-leader
+    // ESC-leader. "ESC" keeps its own trailing space (unlike every
+    // other leader below) -- it's a spelled-out word, not a single
+    // control-char symbol like ^J/^X/^O, so "ESCs"/"ESC<"/"ESC^M"
+    // would read as one run-together token instead of two, undoing
+    // the whole point of the no-space cleanup just below.
     {"ESC s", "SHELL", {kEscape, 's'}},
     {"ESC <", "Go to top", {kEscape, '<'}},
     {"ESC >", "Go to bottom", {kEscape, '>'}},
     {"ESC ^M", "Read as is", {kEscape, kCarriageReturn}},
-    // ^J-leader
-    {"^J ^S", "EGREP", {kLeaderJ, kControlS}},
-    {"^J c", "CUT (fixed string, buffer)", {kLeaderJ, 'c'}},
-    {"^J ^C", "CUT (regex, buffer)", {kLeaderJ, kControlC}},
-    {"^J b", "CUT (fixed string, file)", {kLeaderJ, 'b'}},
-    {"^J ^B", "CUT (regex, file)", {kLeaderJ, 0x02}},
-    {"^J m", "MAN", {kLeaderJ, 'm'}},
-    {"^J p", "PROGRAM", {kLeaderJ, 'p'}},
-    {"^J l", "LOCATE", {kLeaderJ, 'l'}},
-    {"^J d", "DU", {kLeaderJ, 'd'}},
-    {"^J ^R", "COMMAND (programs run at SHELL)", {kLeaderJ, 0x12}},
-    {"^J e", "EDIT", {kLeaderJ, 'e'}},
-    {"^J ^H", "HELP", {kLeaderJ, 0x08}},
-    {"^J .", "SHELL: cd <directory>", {kLeaderJ, '.'}},
-    {"^J ,", "SHELL: ls -l", {kLeaderJ, ','}},
-    {"^J w", "SHELL: insert access-name", {kLeaderJ, 'w'}},
-    {"^J ^W", "SHELL: insert buffer content", {kLeaderJ, 0x17}},
-    // ^X-leader
-    {"^X c", "CP", {kLeaderX, 'c'}},
-    {"^X m", "MV", {kLeaderX, 'm'}},
-    {"^X r", "RM", {kLeaderX, 'r'}},
-    {"^X f", "FILE: input file name", {kLeaderX, 'f'}},
-    {"^X d", "DIR: input directory name", {kLeaderX, 'd'}},
-    {"^X ^F", "FILE: select file name", {kLeaderX, 0x06}},
-    {"^X ^D", "DIR: select directory name", {kLeaderX, 0x04}},
-    {"^X ^C", "EXIT", {kLeaderX, kControlC}},
-    {"^X ^W", "Save buffer to file", {kLeaderX, 0x17}},
-    {"^X ^Y", "Mark all (CP/MV/RM/ARC)", {kLeaderX, 0x19}},
-    {"^X ^N", "Clear all marks (CP/MV/RM/ARC)", {kLeaderX, 0x0e}},
-    {"^X (", "Begin macro recording", {kLeaderX, '('}},
-    {"^X )", "End macro recording", {kLeaderX, ')'}},
-    {"^X e", "Execute recorded macro", {kLeaderX, 'e'}},
-    {"^X s", "Restart SHELL", {kLeaderX, 's'}},
-    {"^X a", "ARC: expand archive", {kLeaderX, 'a'}},
-    // ^X^K-leader
-    {"^X ^K c", "CP with SHELL window", {kLeaderX, 0x0b, 'c'}},
-    {"^X ^K m", "MV with SHELL window", {kLeaderX, 0x0b, 'm'}},
-    {"^X ^K r", "RM with SHELL window", {kLeaderX, 0x0b, 'r'}},
-    {"^X ^K a", "ARC: expand with SHELL window", {kLeaderX, 0x0b, 'a'}},
-    {"^X ^K e", "ERROR", {kLeaderX, 0x0b, 'e'}},
-    {"^X ^K l", "LOG: SHELL output", {kLeaderX, 0x0b, 'l'}},
-    // ^O-leader
-    {"^O h", "Switch scroll mode", {kLeaderO, 'h'}},
-    {"^O l", "Switch ls output format", {kLeaderO, 'l'}},
-    {"^O a", "Switch charset (ASCII/EUC/UTF-8)", {kLeaderO, 'a'}},
-    {"^O ^K", "Go to parent directory", {kLeaderO, 0x0b}},
-    {"^O ^M", "Read per line", {kLeaderO, kCarriageReturn}},
-    {"^O g", "Toggle GUI mode (this port's own addition, not a usilicrc K-? binding)", {kLeaderO, 'g'}},
+    // ^J-leader. No space between the leader and the key that
+    // follows (^J^H, not "^J ^H") -- matches legacy's own KEY listing
+    // (str.c's print_key(), tobo()) and keeps this table's own ^J^H
+    // "HELP" entry internally consistent with everything else here;
+    // the wide gap the space produced before startKey()'s fixed
+    // column padding was the whole reason for this change.
+    {"^J^S", "EGREP", {kLeaderJ, kControlS}},
+    {"^Jc", "CUT (fixed string, buffer)", {kLeaderJ, 'c'}},
+    {"^J^C", "CUT (regex, buffer)", {kLeaderJ, kControlC}},
+    {"^Jb", "CUT (fixed string, file)", {kLeaderJ, 'b'}},
+    {"^J^B", "CUT (regex, file)", {kLeaderJ, 0x02}},
+    {"^Jm", "MAN", {kLeaderJ, 'm'}},
+    {"^Jp", "PROGRAM", {kLeaderJ, 'p'}},
+    {"^Jl", "LOCATE", {kLeaderJ, 'l'}},
+    {"^Jd", "DU", {kLeaderJ, 'd'}},
+    {"^J^R", "COMMAND (programs run at SHELL)", {kLeaderJ, 0x12}},
+    {"^Je", "EDIT", {kLeaderJ, 'e'}},
+    {"^J^H", "HELP", {kLeaderJ, 0x08}},
+    {"^J.", "SHELL: cd <directory>", {kLeaderJ, '.'}},
+    {"^J,", "SHELL: ls -l", {kLeaderJ, ','}},
+    {"^Jw", "SHELL: insert access-name", {kLeaderJ, 'w'}},
+    {"^J^W", "SHELL: insert buffer content", {kLeaderJ, 0x17}},
+    // ^X-leader (same no-space rationale as ^J-leader above)
+    {"^Xc", "CP", {kLeaderX, 'c'}},
+    {"^Xm", "MV", {kLeaderX, 'm'}},
+    {"^Xr", "RM", {kLeaderX, 'r'}},
+    {"^Xf", "FILE: input file name", {kLeaderX, 'f'}},
+    {"^Xd", "DIR: input directory name", {kLeaderX, 'd'}},
+    {"^X^F", "FILE: select file name", {kLeaderX, 0x06}},
+    {"^X^D", "DIR: select directory name", {kLeaderX, 0x04}},
+    {"^X^C", "EXIT", {kLeaderX, kControlC}},
+    {"^X^W", "Save buffer to file", {kLeaderX, 0x17}},
+    {"^X^Y", "Mark all (CP/MV/RM/ARC)", {kLeaderX, 0x19}},
+    {"^X^N", "Clear all marks (CP/MV/RM/ARC)", {kLeaderX, 0x0e}},
+    {"^X(", "Begin macro recording", {kLeaderX, '('}},
+    {"^X)", "End macro recording", {kLeaderX, ')'}},
+    {"^Xe", "Execute recorded macro", {kLeaderX, 'e'}},
+    {"^Xs", "Restart SHELL", {kLeaderX, 's'}},
+    {"^Xa", "ARC: expand archive", {kLeaderX, 'a'}},
+    // ^X^K-leader (same no-space rationale as ^J-leader above)
+    {"^X^Kc", "CP with SHELL window", {kLeaderX, 0x0b, 'c'}},
+    {"^X^Km", "MV with SHELL window", {kLeaderX, 0x0b, 'm'}},
+    {"^X^Kr", "RM with SHELL window", {kLeaderX, 0x0b, 'r'}},
+    {"^X^Ka", "ARC: expand with SHELL window", {kLeaderX, 0x0b, 'a'}},
+    {"^X^Ke", "ERROR", {kLeaderX, 0x0b, 'e'}},
+    {"^X^Kl", "LOG: SHELL output", {kLeaderX, 0x0b, 'l'}},
+    // ^O-leader (same no-space rationale as ^J-leader above)
+    {"^Oh", "Switch scroll mode", {kLeaderO, 'h'}},
+    {"^Ol", "Switch ls output format", {kLeaderO, 'l'}},
+    {"^Oa", "Switch charset (ASCII/EUC/UTF-8)", {kLeaderO, 'a'}},
+    {"^O^K", "Go to parent directory", {kLeaderO, 0x0b}},
+    {"^O^M", "Read per line", {kLeaderO, kCarriageReturn}},
+    {"^Og", "Toggle GUI mode (this port's own addition, not a usilicrc K-? binding)", {kLeaderO, 'g'}},
 };
 
 // Ported from menu.c's init_cut2() call for M_help/T_help -- the
