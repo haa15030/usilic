@@ -649,8 +649,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     switch (byte) {
       case 's':  // ESC s : SHELL
         return handleCommand(Command::StartShell);
-      case 'l':  // ESC l : "Output from SHELL-prompt" (K-88, M_log)
-        return handleCommand(Command::StartShellLog);
       case '<':  // ESC < : go to beginning of buffer (M_head)
         return handleCommand(Command::GoToTop);
       case '>':  // ESC > : go to end of buffer (M_tail)
@@ -1245,8 +1243,6 @@ bool Application::handleCommand(Command command) {
       return startListBrowser(RingCategory::RecentDirectory);
     case Command::StartCommandHistory:
       return startListBrowser(RingCategory::ShellCommand);
-    case Command::StartShellLog:
-      return startShellLog();
     case Command::ToggleHistoryView:
       return toggleListBrowserHistory();
     case Command::StartEdit:
@@ -1491,20 +1487,6 @@ bool Application::openSelectedListEntry() {
     shell_.redrawPromptRow();
     return true;
   }
-  if (shellLogActive_) {
-    // Jump the scrollback cursor straight to the picked line -- see
-    // startShellLog()'s own comment.
-    int pickedIndex = listBrowserView_.cursorIndex();
-    shellLogActive_ = false;
-    currentMode_ = ApplicationMode::Shell;
-    if (pickedIndex >= 0 && pickedIndex < static_cast<int>(shellLogLineIndices_.size())) {
-      shell_.scrollback().setCursorIndex(shellLogLineIndices_[pickedIndex]);
-      moveDisplayCursorToShellHistoryLine();
-    }
-    shell_.scrollback().redraw();
-    shell_.redrawPromptRow();
-    return true;
-  }
   if (listBrowserCategory_ == RingCategory::RecentDirectory) {
     if (!directoryMode_.enterDirectory(*item)) return false;
     currentMode_ = ApplicationMode::Directory;
@@ -1698,13 +1680,6 @@ bool Application::returnFromListBrowser() {
     currentMode_ = ApplicationMode::Shell;
     shell_.commandLine().setText(shellHistoryRecallText_);  // restores whatever had already been typed before ^R
     shellHistoryRecallText_.clear();
-    shell_.scrollback().redraw();
-    shell_.redrawPromptRow();
-    return true;
-  }
-  if (shellLogActive_) {
-    shellLogActive_ = false;
-    currentMode_ = ApplicationMode::Shell;
     shell_.scrollback().redraw();
     shell_.redrawPromptRow();
     return true;
@@ -2544,42 +2519,6 @@ bool Application::startShellHistoryRecall() {
   listBrowserChronological_ = false;
   listBrowserMode_.show(sortedUniqueRecentEntries(RingCategory::ShellCommand));
   currentMode_ = ApplicationMode::ListBrowser;
-  return true;
-}
-
-// ESC l ("Output from SHELL-prompt" per usilicrc's own K-88
-// documentation, M_log in legacy's own mode.h): unlike ^R's
-// startShellHistoryRecall() above (a flat list of past command TEXT
-// from the persisted RingCategory::ShellCommand ring, pick one to
-// INSERT into the live prompt), this is a picker over THIS session's
-// own actual scrollback -- every prompt+command line still visible
-// there (Line::shellCommand set, see Shell::freezePromptLine()'s own
-// comment), in on-screen order. Picking one jumps the scrollback
-// cursor straight to it, the same place ^P/^N browsing would land if
-// you stepped there one line at a time (moveDisplayCursorToShellHistoryLine()
-// is the same helper that call already uses) -- this is the
-// "overview, jump directly" counterpart to that "step through one at
-// a time" mechanic, not a duplicate of ^R's own separate persisted-
-// ring picker.
-bool Application::startShellLog() {
-  if (currentMode_ != ApplicationMode::Shell) return false;
-  const auto &lines = shell_.scrollback().lines();
-  std::vector<std::string> items;
-  shellLogLineIndices_.clear();
-  for (int i = 0; i < static_cast<int>(lines.size()); i++) {
-    if (lines[i].shellCommand) {
-      items.push_back(lines[i].text);
-      shellLogLineIndices_.push_back(i);
-    }
-  }
-  if (items.empty()) return false;
-  shellLogActive_ = true;
-  listBrowserCategory_ = RingCategory::ShellCommand;
-  listBrowserChronological_ = false;
-  listBrowserMode_.show(items);
-  currentMode_ = ApplicationMode::ListBrowser;
-  listBrowserView_.setCursorIndex(static_cast<int>(items.size()) - 1);
-  listBrowserView_.redraw();
   return true;
 }
 

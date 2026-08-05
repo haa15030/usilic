@@ -10586,6 +10586,70 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       修正(`du -a -A`)は既に項目174のコミットに含まれているため、
       重複対応は無い。
 
+176. **2026-08-05(続き): 項目175の`ESC l`(`StartShellLog`)実装が誤解に
+    基づくものだったと判明、C++移植版から削除**。項目175の`-c`起動版
+    バイナリでユーザーが実機確認したところ、SHELLモード中に`^[l`を押しても
+    コマンドとして解釈されず`[l`が入力欄にそのまま文字入力される(反転
+    ハイライトになるのみ)というスクリーンショット報告があった。KEYモードの
+    一覧にも出ておらず実行不能とのこと(旧C版は旧版で別に「No String」の
+    既知バグがあるとのユーザー確認済み情報も併記)。
+   - **設計上の矛盾に気付く**: `^[l`が実際に押されるのはSHELLモード
+      "中"だが、`feedShellByte()`は意図的に生の`ESC`単体をディスパッチ
+      対象から除外している(vi-mode/Meta-key等、実SHELLが生の`ESC`を
+      常時必要とするため、`^J`/`^X`/`^O`等のリーダーキーだけを例外的に
+      素通しする設計、既存・変更対象外)。一方`dispatchByte()`側の
+      `escPending_`チェックはSHELLモード"外"でしか届かない。つまり
+      項目175で追加した`startShellLog()`(`currentMode_==Shell`必須)は、
+      到達可能などちらの経路からも成立し得ない、という矛盾を最初から
+      抱えていた。
+   - **ユーザーからの訂正**: 「実際のLOGはただ単に`~/.usilic/shell`を
+      `^Jb`→`usilic:`[Enter]しただけなのでSHELLモード中である必要は
+      ないはず」との指摘。`usilicrc`の該当行(K-88)を再確認したところ、
+      `ESC l`は実際には`K-68 K-33 "tcb v1.5b\cM"`という**マクロ**
+      (`M-9`)で、(1)K-68=既存の`executeShowShellLog()`
+      (`^X^Kl`、スクロールバックを`~/.usilic/shell`へ書き出しFILEモードで
+      開く)、(2)K-33=既存の`^Jc`(`StartCutFixed`)、(3)リテラルな
+      デモ用検索文字列`"tcb v1.5b"`、の3つを合成しただけの、**新規機能
+      ではなくデモマクロ**だったと判明。旧版の「No String」も、実際の
+      ログ内容には存在しない`"tcb v1.5b"`という決め打ち文字列を検索する
+      デモマクロ由来の症状であり、修正すべき実バグではなかった。
+   - **実際に正しく動く手順を確認(既存機能のみ、新規実装ゼロ)**:
+      (1)`^X^Kl`でスクロールバックを`~/.usilic/shell`へ書き出しFILE
+      モードで開く、(2)`^G`でDirectoryモードへ戻る、(3)一覧から
+      `~/.usilic/shell`を選ぶ、(4)`^Jb`(`StartCutFileFixed`、ファイルを
+      開かずDirectoryモードから直接CUTへ入れるK-35)、(5)`usilic:`と
+      入力、(6)Enter→`CutMode`が`usilic:`行を区切りにスクロールバック
+      をセグメント分割して一覧表示。PTY実機検証で、ログファイルの中身が
+      期待通り`"usilic:~/doc% echo hello\nhello\nusilic:~/doc% echo
+      world\nworld\n"`のような形式で書き出されること、CUTプロンプトへの
+      遷移まで到達することを確認した(Enter後の最終的な分割結果画面は
+      タイムアウトのため未キャプチャだが、遷移自体は正常)。
+   - **対応**: `AskUserQuestion`でユーザーに確認の上、「前回の`ESC l`
+      専用コードを削除する(推奨)」を選択。`application.hpp`から
+      `Command::StartShellLog`列挙値・`startShellLog()`宣言・
+      `shellLogActive_`/`shellLogLineIndices_`メンバ変数を削除、
+      `application.cpp`から`dispatchLeaderByte()`の`case 'l':`分岐・
+      `handleCommand()`の`case Command::StartShellLog:`・
+      `openSelectedListEntry()`/`returnFromListBrowser()`双方の
+      `shellLogActive_`分岐・`startShellLog()`本体を削除、
+      `test_application.cpp`から関連doctest3件を削除。
+   - **検証**: `make test`で639件(642件-3件)全通過、assertions
+      17249件全通過、警告ゼロを確認。`make usilic`で実バイナリの
+      ビルドも警告ゼロで成功。リソース制約が継続中のため、Docker
+      クロスビルド・PTY実機再検証は今回も省略(次回セッションでの
+      実施を推奨)。
+   - **ユーザーからの質問への回答**: 「Metaキー、行編集ではどんな
+      ケースが該当？」(生の`ESC`をSHELLモード中に横取りすると実SHELL
+      利用と衝突する具体例)について: vi-mode(`set -o vi`)では
+      `ESC`の後に`l`でカーソルを1文字右へ移動する、という直接衝突する
+      標準バインドが存在する。emacs-mode(bashのデフォルト)でも
+      `ESC f`/`ESC b`(単語単位で前後移動)、`ESC d`(単語削除)等、
+      端末が真のMetaキーを送れない環境では`ESC`+文字の2バイトとして
+      実際に送信される定番のキーバインドが多数ある。ただし今回の
+      結論により、この論点自体は`^[l`の実装には不要と判明した(実際の
+      ワークフローはSHELLモード中に`ESC`を横取りする必要が一切
+      無いため)。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す
