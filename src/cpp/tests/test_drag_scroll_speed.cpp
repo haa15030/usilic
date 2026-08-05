@@ -98,13 +98,30 @@ TEST_CASE("applyScrollSpeedOverride: fewer values than usleep levels leaves the 
   kScrollSpeedLevels = original;
 }
 
-TEST_CASE("applyScrollSpeedOverride: extra values beyond the usleep-level count are ignored") {
+TEST_CASE("applyScrollSpeedOverride: values reaching into the default busy-loop range (5+) convert those levels "
+          "to usleep-driven too") {
   std::vector<fm::ScrollStep> original = kScrollSpeedLevels;
-  applyScrollSpeedOverride({111, 222, 333, 444, 555, 666});
-  CHECK(kScrollSpeedLevels[4].microseconds == 444);
-  for (size_t i = 5; i < kScrollSpeedLevels.size(); i++) {
+  REQUIRE(original[5].busyLoop);  // sanity: level 5 defaults to busy-loop
+  applyScrollSpeedOverride({90000, 70000, 50000, 30000, 10000});  // 5 values, the user's own real example
+  CHECK_FALSE(kScrollSpeedLevels[5].busyLoop);
+  CHECK(kScrollSpeedLevels[5].microseconds == 10000);
+  CHECK(kScrollSpeedLevels[1].microseconds == 90000);
+  CHECK(kScrollSpeedLevels[4].microseconds == 30000);
+  // levels beyond the 5 values given stay at their compiled-in default
+  for (size_t i = 6; i < kScrollSpeedLevels.size(); i++) {
+    CHECK(kScrollSpeedLevels[i].busyLoop == original[i].busyLoop);
     CHECK(kScrollSpeedLevels[i].busyIterations == original[i].busyIterations);
   }
+  kScrollSpeedLevels = original;
+}
+
+TEST_CASE("applyScrollSpeedOverride: values beyond the table's own last index are ignored, not out-of-bounds") {
+  std::vector<fm::ScrollStep> original = kScrollSpeedLevels;
+  std::vector<long> tooMany(kScrollSpeedLevels.size() + 5, 12345);  // more values than there are levels at all
+  applyScrollSpeedOverride(tooMany);
+  CHECK(kScrollSpeedLevels.size() == original.size());  // no growth, no crash
+  CHECK(kScrollSpeedLevels[0].microseconds == 0);        // index 0 (the inert placeholder) is never touched
+  for (size_t i = 1; i < kScrollSpeedLevels.size(); i++) CHECK(kScrollSpeedLevels[i].microseconds == 12345);
   kScrollSpeedLevels = original;
 }
 

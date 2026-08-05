@@ -81,7 +81,7 @@ const KeyTableEntry kKeyTable[] = {
     {"return", "Open selected entry", {kCarriageReturn}},
     {"^G", "Back / cancel", {kControlG}},
     {"^S", "FGREP", {kControlS}},
-    {"^Space", "Toggle mark (CP/MV/RM/ARC)", {0x80}},
+    {"^space", "Toggle mark (CP/MV/RM/ARC)", {0x80}},
     {"^R", "Toggle chronological HISTORY view (current list browser)", {0x12}},
     {"^L", "Redraw screen", {0x0c}},
     {"^T", "TCB banner", {0x14}},
@@ -153,13 +153,19 @@ const KeyTableEntry kKeyTable[] = {
     {"^X^Ka", "ARC: expand with SHELL window", {kLeaderX, 0x0b, 'a'}},
     {"^X^Ke", "ERROR", {kLeaderX, 0x0b, 'e'}},
     {"^X^Kl", "LOG: SHELL output", {kLeaderX, 0x0b, 'l'}},
-    // ^O-leader (same no-space rationale as ^J-leader above)
+    // ^O-leader (same no-space rationale as ^J-leader above). ^Og
+    // (ToggleGuiMode) is deliberately NOT listed here: the user found
+    // by hand that once a real run (app/main.cpp) is started with -g,
+    // there's no way back to -c/real-terminal state, so it isn't
+    // actually a toggle in practice -- listing it as one in the KEY
+    // reference would be misleading. The binding/dispatch itself is
+    // untouched (still reachable by pressing ^O g directly); only the
+    // reference-list row was removed.
     {"^Oh", "Switch scroll mode", {kLeaderO, 'h'}},
     {"^Ol", "Switch ls output format", {kLeaderO, 'l'}},
     {"^Oa", "Switch charset (ASCII/EUC/UTF-8)", {kLeaderO, 'a'}},
     {"^O^K", "Go to parent directory", {kLeaderO, 0x0b}},
     {"^O^M", "Read per line", {kLeaderO, kCarriageReturn}},
-    {"^Og", "Toggle GUI mode (this port's own addition, not a usilicrc K-? binding)", {kLeaderO, 'g'}},
 };
 
 // Ported from menu.c's init_cut2() call for M_help/T_help -- the
@@ -2153,17 +2159,26 @@ bool Application::startKey() {
   if (currentMode_ == ApplicationMode::Key) return false;
   std::vector<ContentView::Line> lines;
   lines.reserve(std::size(kKeyTable));
-  // "<label> : <description>", no fixed-width column padding -- see
-  // legacy's own print_key() for the same "<key> : <caption>" shape
-  // (legacy right-justifies the key to a fixed column too, which this
-  // port deliberately does NOT reproduce: the user's own 2026-08-05
-  // report was specifically that the previous fixed-10-column-then-
-  // two-spaces padding left a visibly wide gap before short labels'
-  // descriptions -- e.g. "^X^C" padded out to 10 columns before "  "
-  // even started -- and asked for legacy's plain "j : Move window
-  // down" shape instead, i.e. no padding at all).
+  // "<label> : <description>", front-padded (leading spaces, i.e.
+  // right-justified) to the longest label actually IN this table --
+  // not a fixed constant -- so every row's " : " lands in the same
+  // column, matching legacy's own print_key() column alignment
+  // (though legacy computes its column width differently). The
+  // user's own 2026-08-05 reports iterated this twice: first the
+  // previous fixed-10-column-then-two-spaces scheme was too wide for
+  // short labels (e.g. "^X^C" padded out to 10 columns before "  "
+  // even started), which the first fix corrected by dropping padding
+  // entirely -- but that left the ":" characters NOT lined up between
+  // rows of different label lengths, which this front-padding now
+  // fixes without reintroducing the original wide-gap problem (the
+  // padding amount is now the minimum needed to align, not a
+  // generous fixed constant).
+  std::size_t maxLabelWidth = 0;
+  for (const auto &entry : kKeyTable) maxLabelWidth = std::max(maxLabelWidth, std::string(entry.keyLabel).size());
   for (const auto &entry : kKeyTable) {
-    std::string text = std::string(entry.keyLabel) + " : " + entry.description;
+    std::string label = entry.keyLabel;
+    if (label.size() < maxLabelWidth) label.insert(0, maxLabelWidth - label.size(), ' ');
+    std::string text = label + " : " + entry.description;
     if (entry.isMacro) text += " (M)";
     lines.push_back({text, std::nullopt, std::nullopt, {}});
   }

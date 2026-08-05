@@ -39,25 +39,30 @@ struct ScrollStep {
 //
 // Deliberately NOT const (unlike everything else in this file):
 // applyScrollSpeedOverride() below (the "-u" CLI flag, app/main.cpp)
-// mutates this table's usleep()-driven entries in place at startup,
-// before any real scrolling happens -- same "tune without a
-// recompile" motivation as USILICSCROLLDEBUG just above, but for the
-// actual delay values rather than which level gets selected.
+// mutates this table's entries (including which ones are usleep- vs
+// busy-loop-driven, see its own comment) in place at startup, before
+// any real scrolling happens -- same "tune without a recompile"
+// motivation as USILICSCROLLDEBUG just above, but for the actual
+// delay values rather than which level gets selected.
 extern std::vector<ScrollStep> kScrollSpeedLevels;
 
-// Overrides the microsecond delay of each usleep()-driven level (see
-// kScrollSpeedLevels' own comment: levels 1..4, !busyLoop) with
-// `values`, assigned in order starting at level 1. Fewer values than
-// there are usleep levels leaves the remaining trailing ones at their
-// compiled-in default; values beyond that count are ignored (the
-// busy-loop levels 5+ are deliberately NOT usleep-driven -- see the
-// class-level comment on why -- so there is nothing for extra values
-// to override). No-op if `values` is empty. Values <= 0 are skipped
-// (leaving that level's compiled-in default) rather than passed to
-// usleep(), which treats 0 as "no delay at all" -- a real level, but
-// one already reachable via the busy-loop levels, not something a
-// caller silently passing a bad/placeholder value should land on by
-// accident.
+// Overrides levels 1..values.size() with `values`, assigned in order
+// starting at level 1 (index 0 is the inert placeholder, never
+// touched). Any targeted level is force-converted to usleep-driven
+// (busyLoop=false, microseconds=value) REGARDLESS of what it
+// defaulted to -- this reaches into the busy-loop range (5+) too, not
+// just the 4 levels that default to usleep -- see applyScrollSpeed
+// Override()'s own .cpp comment for why (a real user's own "-u 90000
+// 70000 50000 30000 10000", 5 values, was the reason this was
+// widened from "only levels 1..4" after the narrower version produced
+// no perceptible change: their actual flicks/drags were landing on
+// levels the first version couldn't reach at all). Levels beyond
+// values.size() are left at their compiled-in default. No-op if
+// `values` is empty. Values <= 0 are skipped (leaving that level's
+// compiled-in default) rather than passed to usleep(), which treats 0
+// as "no delay at all" -- a real level, but one already reachable via
+// the fastest busy-loop levels, not something a caller silently
+// passing a bad/placeholder value should land on by accident.
 void applyScrollSpeedOverride(const std::vector<long> &values);
 
 // Maps the summed pixel distance the drag moved in the short window

@@ -37,16 +37,30 @@ std::vector<ScrollStep> kScrollSpeedLevels = {
 };
 
 void applyScrollSpeedOverride(const std::vector<long> &values) {
-  size_t vi = 0;
   // Start at index 1: index 0 is the inert "not coasting" placeholder
   // (also !busyLoop, but never an active speed -- see kScrollSpeedLevels'
-  // own comment), not a real tunable level.
-  for (size_t i = 1; i < kScrollSpeedLevels.size(); i++) {
-    ScrollStep &step = kScrollSpeedLevels[i];
-    if (step.busyLoop) continue;  // busy-loop levels: not usleep-driven, nothing to override
-    if (vi >= values.size()) break;
-    if (values[vi] > 0) step.microseconds = values[vi];
-    vi++;
+  // own comment), not a real tunable level. Unlike the first cut of
+  // this function, values are assigned to indices 1..values.size()
+  // UNCONDITIONALLY -- including levels that default to busy-loop
+  // (5+) -- converting each one to usleep-driven as it's overridden
+  // (busyLoop set false, that level's own microseconds set from the
+  // caller's value). Found necessary after a real user report that
+  // "-u 10000 20000 30000" (3 values, only reaching the pre-existing
+  // usleep range of levels 1-4) produced no perceptible change: the
+  // user specifically wants a 5-level, all-usleep, precisely-timed
+  // curve ("usleep最低速から5段上まで"), and the busy-loop levels'
+  // whole reason for existing (OS sleep granularity can't reliably
+  // hit sub-few-ms delays, see kScrollSpeedLevels' own comment) is a
+  // concern only for the DEFAULT table, not a hard rule -- a caller
+  // who explicitly asks for a 5th precisely-timed step, knowing the
+  // usleep-granularity tradeoff, gets exactly that. Levels beyond
+  // values.size() are left at their compiled-in default (busy-loop or
+  // not, whichever they already were).
+  for (size_t i = 1; i < kScrollSpeedLevels.size() && i - 1 < values.size(); i++) {
+    long value = values[i - 1];
+    if (value <= 0) continue;  // non-positive: leave this level at its compiled-in default, see header comment
+    kScrollSpeedLevels[i].busyLoop = false;
+    kScrollSpeedLevels[i].microseconds = value;
   }
 }
 

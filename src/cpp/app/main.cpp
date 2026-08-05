@@ -1872,14 +1872,15 @@ int main(int argc, char **argv) {
     else if (std::strcmp(argv[i], "-u") == 0) {
       // User-tunable drag-scroll "inertia" speed, in usleep()
       // microseconds -- see fm::applyScrollSpeedOverride()'s own
-      // comment for exactly which levels this reaches (1..4, the
-      // usleep()-driven ones; 5+ are an uncalibrated busy-loop by
-      // design and untouched by this flag) and why. Consumes every
-      // following plain-digit argument, in order (slowest level
-      // first, matching the table's own ordering), stopping at the
-      // next flag or the end of argv -- e.g. "-u 90000 55000 30000
-      // 15000" overrides all four; "-u 90000" overrides only the
-      // slowest.
+      // comment for exactly which levels this reaches: levels
+      // 1..N (N = however many values are given here), assigned in
+      // order starting at the slowest, EACH forced to usleep-driven
+      // timing even if it defaulted to an uncalibrated busy-loop
+      // (levels 5+) -- e.g. "-u 90000 70000 50000 30000 10000" (5
+      // values) makes level 5 precisely-timed too, not just 1..4.
+      // Consumes every following plain-digit argument, stopping at
+      // the next flag or the end of argv -- "-u 90000" overrides only
+      // the slowest level.
       std::vector<long> scrollValues;
       while (i + 1 < argc && *argv[i + 1] && std::all_of(argv[i + 1], argv[i + 1] + std::strlen(argv[i + 1]),
                                                           [](unsigned char c) { return std::isdigit(c); })) {

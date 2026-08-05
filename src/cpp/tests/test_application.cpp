@@ -3812,7 +3812,9 @@ TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^S' entry returns to Directory mo
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.rfind("^S ", 0) == 0) row = static_cast<int>(i);  // trailing space excludes "^Space"'s own row
+    // Leading space before "^S" (front-padding, since "^S" is the whole label) distinguishes this row from
+    // "^J^S" (EGREP)'s own row, which also contains "^S :" as a substring but with no space before it.
+    if (lines[i].text.find(" ^S :") != std::string::npos) row = static_cast<int>(i);
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
@@ -3828,7 +3830,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^X^C' entry (EXIT) chains a full 
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.rfind("^X^C ", 0) == 0) row = static_cast<int>(i);
+    if (lines[i].text.find("^X^C :") != std::string::npos) row = static_cast<int>(i);
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
@@ -3843,7 +3845,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: Back (^G) on any entry returns without executin
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.rfind("^X^C ", 0) == 0) row = static_cast<int>(i);  // EXIT's own row -- would be very visible if wrongly executed
+    if (lines[i].text.find("^X^C :") != std::string::npos) row = static_cast<int>(i);  // EXIT's own row -- would be very visible if wrongly executed
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
