@@ -1383,7 +1383,7 @@ bool Application::openSelectedArchiveEntry() {
   std::istringstream stream(text);
   std::vector<ContentView::Line> lines;
   std::string line;
-  while (std::getline(stream, line)) lines.push_back({line, std::nullopt, std::nullopt});
+  while (std::getline(stream, line)) lines.push_back({line, std::nullopt, std::nullopt, {}});
   archiveContentView_.setLines(std::move(lines));
   archiveContentView_.setCursorIndex(0);
   archiveContentView_.redraw();
@@ -1536,10 +1536,14 @@ bool Application::openSelectedSegment() {
   const CutSegment *segment = cutMode_.selectedSegment();
   if (!segment) return false;
 
-  std::vector<std::string> content = cutMode_.segmentContent(*segment);
+  std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
   std::vector<ContentView::Line> lines;
   lines.reserve(content.size());
-  for (auto &l : content) lines.push_back({l, std::nullopt, std::nullopt});
+  // l.attributes (2026-08-05): this is the actual screen content HELP.jp/
+  // CUT display -- see ContentView::Line::attributes' own comment for why
+  // dropping this here specifically hid HELP.jp's own bold section
+  // headings even after FileMode/CutMode started carrying it through.
+  for (auto &l : content) lines.push_back({l.text, std::nullopt, std::nullopt, l.attributes});
   cutContentView_.setLines(std::move(lines));
   cutContentView_.setCursorIndex(0);
   cutContentView_.redraw();
@@ -2116,7 +2120,7 @@ bool Application::startKey() {
   for (const auto &entry : kKeyTable) {
     std::string label = entry.keyLabel;
     if (label.size() < 10) label.append(10 - label.size(), ' ');
-    lines.push_back({label + "  " + entry.description, std::nullopt, std::nullopt});
+    lines.push_back({label + "  " + entry.description, std::nullopt, std::nullopt, {}});
   }
   keyView_.setLines(std::move(lines));
   keyView_.setCursorIndex(0);
@@ -2677,15 +2681,15 @@ bool Application::executeCut(const std::string &pattern) {
       activeView().redraw();
       return false;
     }
-    std::vector<std::string> sourceLines;
+    std::vector<StyledLine> sourceLines;
     sourceLines.reserve(fileView_.lines().size());
-    for (const auto &line : fileView_.lines()) sourceLines.push_back(line.text);
+    for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
     if (ok) cutOrigin_ = CutOrigin::File;
   } else {
-    std::vector<std::string> sourceLines;
+    std::vector<StyledLine> sourceLines;
     sourceLines.reserve(fileView_.lines().size());
-    for (const auto &line : fileView_.lines()) sourceLines.push_back(line.text);
+    for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
     if (ok) cutOrigin_ = CutOrigin::File;  // a fresh top-level split -- eligible for reflow on resize
   }
@@ -2989,14 +2993,11 @@ bool Application::executeEdit() {
   return true;
 }
 
-std::vector<std::string> Application::wrapHelpText(int width) const {
+std::vector<StyledLine> Application::wrapHelpText(int width) const {
   PipeBuffer pipe(encoding_, width, 16L * 1024 * 1024);
   pipe.feed(helpText_);
   pipe.flush();
-  std::vector<std::string> lines;
-  lines.reserve(pipe.lines().size());
-  for (const auto &styled : pipe.lines()) lines.push_back(styled.text);
-  return lines;
+  return pipe.lines();  // .attributes carried straight through -- see cutMode_.split()'s own comment
 }
 
 bool Application::loadHelpText(const std::string &text) {
@@ -3011,7 +3012,7 @@ bool Application::loadHelpText(const std::string &text) {
 // M_help/T_help either).
 bool Application::startHelp() {
   if (helpText_.empty()) return false;
-  std::vector<std::string> helpLines = wrapHelpText(display_.columns());
+  std::vector<StyledLine> helpLines = wrapHelpText(display_.columns());
 
   bool preserveExistingCut = (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent);
   bool ok;
@@ -3052,13 +3053,13 @@ void Application::handleResize() {
   if (currentMode_ == ApplicationMode::Man) manMode_.reflow(display_.columns());
   if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
       !cutMode_.canGoBack()) {
-    std::vector<std::string> freshSource;
+    std::vector<StyledLine> freshSource;
     if (cutOrigin_ == CutOrigin::Help) {
       freshSource = wrapHelpText(display_.columns());
     } else {
       fileMode_.reflow(display_.columns());
       freshSource.reserve(fileView_.lines().size());
-      for (const auto &line : fileView_.lines()) freshSource.push_back(line.text);
+      for (const auto &line : fileView_.lines()) freshSource.push_back({line.text, line.attributes});
     }
     int savedIndex = cutView_.cursorIndex();
     bool wasContent = (currentMode_ == ApplicationMode::CutContent);

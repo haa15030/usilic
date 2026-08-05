@@ -1164,3 +1164,13 @@ Application::dispatchByte()の先頭に、ListBrowserモードかつGrepPattern/
 検証として、test_application.cppに新規doctest4件を追加しました(^N/^Pが一覧内ナビゲーションのままであること、文字をタイプすると選択中candidateのテキスト+タイプした文字が入ったプロンプトへ遷移すること、DELを押すと選択中candidateの末尾1文字が削られた状態のプロンプトへ遷移すること、Enterは従来通り選択中candidateをそのまま実行すること)。既存632件+新規4件=636件全通過です。実バイナリを-cかつ実際のsrc/usilicrcを配置した状態でPTY起動し、doc/ディレクトリでHELP.jpを開いた状態から^J^C→一覧が表示された状態でXを1文字送ると、選択中のcandidateの生テキストの直後にXが追記されたプロンプトへ正しく遷移することを生バイト列で確認しました。Ubuntu Dockerクロスビルドも既知差分(12件)のみでリグレッション無し、Mac側再ビルドで636/636件再確認済みです。
 
 なお、legacy実機のように「モードライン行自身がカーソルの乗る編集フィールドを兼ねる」という描画の細部までは再現していません(この移植版では一覧から離れ、通常のプロンプト画面(下段の専用行、非反転)へ実際に画面遷移する形になります)。機能面は満たしていますが、見た目の一致度としては「別画面へ切り替わって編集する」形であり、legacyの「同じ画面のままその場で」という感触までは踏襲していません。追加のご指摘があれば、さらに近づけることを検討します。CLAUDE.mdに項目172として記録し、コミット・プッシュします。
+
+<進めて。
+
+>実装しました。事前調査で判明していた通り、検出ロジック自体(PipeBufferのオーバーストライク解析)は既に実装・テスト済みで、Display::Attribute::Bold/Underlineという描画プリミティブも既に使われていましたが、検出結果(StyledLine::attributes)を実際に画面へ適用する配線がどこにも存在しませんでした。
+
+4箇所の配線を追加しました。(1)ContentView::Lineにstd::vector<AttributeRun> attributesフィールドを新設。(2)ContentView::renderLine()にsetBold()/setUnderline()を追加し、既存のsetStandout()(反転表示)とは独立にバイト範囲ごとにBold/UnderlineのSGRを適用するようにしました。(3)FileMode::readAndWrap()がpipe.lines()からLineを作る唯一の箇所で、styled.attributesを渡すよう修正しました(loadFile()/reflow()両方がここを共有するため1箇所の修正で両方に効きます)。(4)CutModeのsourceLines_/SavedState::sourceLines/split()/pushSplit()/segmentContent()の型をstd::vector<std::string>からstd::vector<StyledLine>(text+attributes)へ変更し、grepマッチング自体は.textだけを見るよう分離した上で、Application側の全呼び出し元を対応する型に更新しました。openSelectedSegment()(cutContentView_用のLineを組み立てる、実際に画面に出る箇所)でl.attributesを渡すのがHELP.jp自身の装飾を可視化する最後のピースでした。
+
+検証として、content_view.hppのLine構造体変更に伴い既存の3引数Line構築(10箇所以上)すべてに明示的な空{}を追加し警告ゼロを維持し、RecordingDisplay(テスト用Display実装)にbold_/underline_のper-cell記録機能を新設しました。新規doctest3件を追加(ContentView単体でBold/Underlineのバイト範囲が反転表示と独立してSGR適用されること、FileMode::loadFile()でnroff風オーバーストライクファイルを読ませて4件のBold run(1文字ごとに別々のrun)が入ること、CutMode::split()/segmentContent()の往復でattributesが保持されること)。test_cut_mode.cppはsplit()/pushSplit()の型変更に伴い全面的にStyledLineベースへ書き換えました。既存636件+新規3件=639件全通過です。
+
+実バイナリを-cでPTY起動し、doc/ディレクトリで^J^H→Enter(「1. Introduction」セクションを開く)を再現したところ、生バイト列で見出しの数字・タイトルどちらもボールドSGRで囲まれ、本文中のCtrl/Enter/HELP等の強調されたキーワードも同様にボールド表示されることを確認しました。Ubuntu Dockerクロスビルドも既知差分(12件)のみでリグレッション無し、Mac側再ビルドで639/639件再確認済みです。CLAUDE.mdに項目173として記録し、コミット・プッシュします。

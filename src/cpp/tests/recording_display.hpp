@@ -19,7 +19,9 @@ class RecordingDisplay : public Display {
   RecordingDisplay(int rows, int cols)
       : rows_(rows), cols_(cols),
         screen_(rows, std::string(cols, ' ')),
-        standout_(rows, std::vector<bool>(cols, false)) {}
+        standout_(rows, std::vector<bool>(cols, false)),
+        bold_(rows, std::vector<bool>(cols, false)),
+        underline_(rows, std::vector<bool>(cols, false)) {}
 
   void write(const std::string &text) override {
     for (char c : text) putAdvance(static_cast<unsigned char>(c));
@@ -58,6 +60,8 @@ class RecordingDisplay : public Display {
     for (int c = cursorCol_; c < cols_; c++) {
       screen_[cursorRow_][c] = ' ';
       standout_[cursorRow_][c] = false;
+      bold_[cursorRow_][c] = false;
+      underline_[cursorRow_][c] = false;
     }
   }
   void scrollForward() override { scrollForwardCount_++; }
@@ -65,6 +69,12 @@ class RecordingDisplay : public Display {
   void setAttribute(Attribute attr) override {
     standoutActive_ = (attr == Attribute::Standout) ? true
                      : (attr == Attribute::StandoutOff) ? false : standoutActive_;
+    // Bold/Underline tracking (2026-08-05, for ContentView::Line::
+    // attributes' own tests -- see its class comment): same shape as
+    // standoutActive_ just above.
+    boldActive_ = (attr == Attribute::Bold) ? true : (attr == Attribute::BoldOff) ? false : boldActive_;
+    underlineActive_ =
+        (attr == Attribute::Underline) ? true : (attr == Attribute::UnderlineOff) ? false : underlineActive_;
   }
   std::string attributeEscape(Attribute) const override { return ""; }
   int rows() const override { return rows_; }
@@ -105,6 +115,8 @@ class RecordingDisplay : public Display {
   int cursorRow() const { return cursorRow_; }
   int cursorCol() const { return cursorCol_; }
   bool standoutAt(int row, int col) const { return standout_[row][col]; }
+  bool boldAt(int row, int col) const { return bold_[row][col]; }
+  bool underlineAt(int row, int col) const { return underline_[row][col]; }
   int scrollForwardCount() const { return scrollForwardCount_; }
   int scrollReverseCount() const { return scrollReverseCount_; }
 
@@ -113,6 +125,8 @@ class RecordingDisplay : public Display {
     if (cursorRow_ >= 0 && cursorRow_ < rows_ && cursorCol_ >= 0 && cursorCol_ < cols_) {
       screen_[cursorRow_][cursorCol_] = static_cast<char>(c);
       standout_[cursorRow_][cursorCol_] = standoutActive_;
+      bold_[cursorRow_][cursorCol_] = boldActive_;
+      underline_[cursorRow_][cursorCol_] = underlineActive_;
     }
     cursorCol_++;
   }
@@ -120,8 +134,12 @@ class RecordingDisplay : public Display {
   int rows_, cols_;
   std::vector<std::string> screen_;
   std::vector<std::vector<bool>> standout_;
+  std::vector<std::vector<bool>> bold_;
+  std::vector<std::vector<bool>> underline_;
   int cursorRow_ = 0, cursorCol_ = 0;
   bool standoutActive_ = false;
+  bool boldActive_ = false;
+  bool underlineActive_ = false;
   bool smoothScroll_ = false;
   int scrollForwardCount_ = 0, scrollReverseCount_ = 0;
   bool visibleCursorHidden_ = true;  // no visible cursor asserted yet

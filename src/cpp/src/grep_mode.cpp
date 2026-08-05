@@ -56,7 +56,7 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   pattern_ = pattern;
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(matches_.size());
-  for (const auto &m : matches_) viewLines.push_back({m.text, std::nullopt, std::nullopt});
+  for (const auto &m : matches_) viewLines.push_back({m.text, std::nullopt, std::nullopt, {}});
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(0);
   view_.redraw();

@@ -3,12 +3,14 @@
 #include "cut_mode.hpp"
 #include "doctest.h"
 #include "mode_stack.hpp"
+#include "pipe_buffer.hpp"
 #include "recording_display.hpp"
 
 using fm::Configuration;
 using fm::CutMode;
 using fm::GrepSyntax;
 using fm::ModeStack;
+using fm::StyledLine;
 using fm::test::RecordingDisplay;
 
 namespace {
@@ -21,19 +23,34 @@ struct Fixture {
   CutMode mode{view, modeStack, configuration};
 };
 
+// 2026-08-05: split()/pushSplit() now take StyledLine (carrying
+// PipeBuffer's own Bold/Underline AttributeRuns alongside each line's
+// text -- see ContentView::Line::attributes' own comment) instead of
+// plain std::string, so CutContent's own displayed segment content can
+// preserve HELP.jp's bold section headings instead of silently losing
+// them. Every test here still only cares about plain text, so this
+// helper does the wrapping (empty attributes) once instead of at every
+// call site.
+std::vector<StyledLine> toStyled(const std::vector<std::string> &lines) {
+  std::vector<StyledLine> out;
+  out.reserve(lines.size());
+  for (const auto &line : lines) out.push_back({line, {}});
+  return out;
+}
+
 // A LOG-mode-shaped fixture: repeated prompt lines (the delimiter),
 // each followed by a command and its output -- the exact scenario the
 // user described (the "tcb(usilic)-1.5b" prompt string as the search
 // string splitting a shell log into per-command segments).
-std::vector<std::string> logLines() {
-  return {
+std::vector<StyledLine> logLines() {
+  return toStyled({
       "usilic$ ls",
       "a.txt  b.txt",
       "usilic$ pwd",
       "/home/user",
       "usilic$ echo done",
       "done",
-  };
+  });
 }
 
 }  // namespace
@@ -50,30 +67,48 @@ TEST_CASE_FIXTURE(Fixture, "segmentContent: a segment spans from its delimiter l
   REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
   auto content = mode.segmentContent(mode.segments()[0]);
   REQUIRE(content.size() == 2);
-  CHECK(content[0] == "usilic$ ls");
-  CHECK(content[1] == "a.txt  b.txt");
+  CHECK(content[0].text == "usilic$ ls");
+  CHECK(content[1].text == "a.txt  b.txt");
+}
+
+TEST_CASE_FIXTURE(Fixture, "segmentContent: a source line's own AttributeRuns (bold/underline, e.g. HELP.jp's "
+                           "own nroff-overstrike section headings) survive the split/segmentContent() "
+                           "round-trip, not just its plain text (2026-08-05 -- see StyledLine's own "
+                           "parameter comment on split())") {
+  std::vector<StyledLine> lines = {
+      {"usilic$ ls", {{0, 4, fm::Display::Attribute::Bold}}},  // "usil" bold, just to have SOMETHING to check
+      {"a.txt", {}},
+  };
+  REQUIRE(mode.split(lines, "usilic$", GrepSyntax::Fixed));
+  auto content = mode.segmentContent(mode.segments()[0]);
+  REQUIRE(content.size() == 2);
+  REQUIRE(content[0].attributes.size() == 1);
+  CHECK(content[0].attributes[0].attribute == fm::Display::Attribute::Bold);
+  CHECK(content[0].attributes[0].start == 0);
+  CHECK(content[0].attributes[0].end == 4);
+  CHECK(content[1].attributes.empty());
 }
 
 TEST_CASE_FIXTURE(Fixture, "segmentContent: the last segment runs to the end of the content") {
   REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
   auto content = mode.segmentContent(mode.segments()[2]);
   REQUIRE(content.size() == 2);
-  CHECK(content[0] == "usilic$ echo done");
-  CHECK(content[1] == "done");
+  CHECK(content[0].text == "usilic$ echo done");
+  CHECK(content[1].text == "done");
 }
 
 TEST_CASE_FIXTURE(Fixture, "split: content before the first match becomes an unlabeled leading segment") {
-  std::vector<std::string> lines = {"(session banner)", "usilic$ ls", "a.txt"};
+  auto lines = toStyled({"(session banner)", "usilic$ ls", "a.txt"});
   REQUIRE(mode.split(lines, "usilic$", GrepSyntax::Fixed));
   REQUIRE(mode.segments().size() == 2);
   CHECK(mode.segments()[0].label == "");
   auto preamble = mode.segmentContent(mode.segments()[0]);
   REQUIRE(preamble.size() == 1);
-  CHECK(preamble[0] == "(session banner)");
+  CHECK(preamble[0].text == "(session banner)");
 }
 
 TEST_CASE_FIXTURE(Fixture, "split (Regex/^J^C): supports extended regex delimiters") {
-  std::vector<std::string> lines = {"=== entry 1 ===", "content A", "=== entry 2 ===", "content B"};
+  auto lines = toStyled({"=== entry 1 ===", "content A", "=== entry 2 ===", "content B"});
   REQUIRE(mode.split(lines, "^=== entry [0-9]+ ===$", GrepSyntax::Regex));
   REQUIRE(mode.segments().size() == 2);
   CHECK(mode.segments()[0].label == "=== entry 1 ===");
@@ -81,7 +116,7 @@ TEST_CASE_FIXTURE(Fixture, "split (Regex/^J^C): supports extended regex delimite
 }
 
 TEST_CASE_FIXTURE(Fixture, "split: no matches at all means the whole input is a single segment") {
-  std::vector<std::string> lines = {"one", "two", "three"};
+  auto lines = toStyled({"one", "two", "three"});
   REQUIRE(mode.split(lines, "nonexistent", GrepSyntax::Fixed));
   REQUIRE(mode.segments().size() == 1);
   CHECK(mode.segmentContent(mode.segments()[0]).size() == 3);
@@ -100,10 +135,10 @@ TEST_CASE_FIXTURE(Fixture, "selectedSegment: tracks the ContentView cursor over 
 }
 
 TEST_CASE_FIXTURE(Fixture, "splitSelected: recursively re-splits the selected segment's own content") {
-  std::vector<std::string> lines = {
+  auto lines = toStyled({
       "=== chapter 1 ===", "--- section A ---", "textA1", "--- section B ---", "textB1",
       "=== chapter 2 ===", "--- section A ---", "textA2",
-  };
+  });
   REQUIRE(mode.split(lines, "^=== chapter", GrepSyntax::Regex));
   REQUIRE(mode.segments().size() == 2);
   CHECK(mode.canGoBack() == false);
@@ -119,14 +154,14 @@ TEST_CASE_FIXTURE(Fixture, "splitSelected: recursively re-splits the selected se
   CHECK(mode.segments()[0].label == "");
   CHECK(mode.segments()[1].label == "--- section A ---");
   CHECK(mode.segments()[2].label == "--- section B ---");
-  CHECK(mode.segmentContent(mode.segments()[1])[1] == "textA1");
+  CHECK(mode.segmentContent(mode.segments()[1])[1].text == "textA1");
 }
 
 TEST_CASE_FIXTURE(Fixture, "goBack: restores the parent split level exactly, including cursor position") {
-  std::vector<std::string> lines = {
+  auto lines = toStyled({
       "=== chapter 1 ===", "--- section A ---", "textA1", "--- section B ---", "textB1",
       "=== chapter 2 ===", "--- section A ---", "textA2",
-  };
+  });
   REQUIRE(mode.split(lines, "^=== chapter", GrepSyntax::Regex));
   view.setCursorIndex(1);  // chapter 2, so the restored cursor is verifiably non-zero
 
@@ -144,7 +179,7 @@ TEST_CASE_FIXTURE(Fixture, "goBack: restores the parent split level exactly, inc
 }
 
 TEST_CASE_FIXTURE(Fixture, "splitSelected: nests arbitrarily deep, like opening an archive inside an archive") {
-  std::vector<std::string> lines = {"A", "AA", "AAA", "content", "AA", "content2"};
+  auto lines = toStyled({"A", "AA", "AAA", "content", "AA", "content2"});
   REQUIRE(mode.split(lines, "A", GrepSyntax::Fixed));
   view.setCursorIndex(0);
   REQUIRE(mode.splitSelected("AA", GrepSyntax::Fixed));
@@ -176,7 +211,7 @@ TEST_CASE_FIXTURE(Fixture, "pushSplit: splits an independent source, not the cur
   REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
   view.setCursorIndex(1);  // "usilic$ pwd" -- pushSplit() must ignore this entirely
 
-  std::vector<std::string> independent = {"=== A ===", "one", "=== B ===", "two"};
+  auto independent = toStyled({"=== A ===", "one", "=== B ===", "two"});
   REQUIRE(mode.pushSplit(independent, "^===", GrepSyntax::Regex));
   CHECK(mode.canGoBack());
   REQUIRE(mode.segments().size() == 2);
@@ -189,7 +224,7 @@ TEST_CASE_FIXTURE(Fixture, "pushSplit: goBack() restores exactly what was pushed
   REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
   view.setCursorIndex(2);
 
-  std::vector<std::string> independent = {"=== A ===", "one"};
+  auto independent = toStyled({"=== A ===", "one"});
   REQUIRE(mode.pushSplit(independent, "^===", GrepSyntax::Regex));
 
   REQUIRE(mode.goBack());
@@ -200,7 +235,7 @@ TEST_CASE_FIXTURE(Fixture, "pushSplit: goBack() restores exactly what was pushed
 }
 
 TEST_CASE_FIXTURE(Fixture, "pushSplit: works from a completely fresh CutMode with nothing split yet") {
-  std::vector<std::string> independent = {"=== A ===", "one"};
+  auto independent = toStyled({"=== A ===", "one"});
   REQUIRE(mode.pushSplit(independent, "^===", GrepSyntax::Regex));
   CHECK(mode.canGoBack());
   REQUIRE(mode.segments().size() == 1);
@@ -212,20 +247,20 @@ TEST_CASE_FIXTURE(Fixture, "pushSplit: works from a completely fresh CutMode wit
 
 TEST_CASE_FIXTURE(Fixture, "pushSplit: a failed split leaves the current level untouched, like splitSelected()") {
   REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
-  CHECK_FALSE(mode.pushSplit({"a", "b"}, "", GrepSyntax::Fixed));  // empty pattern always fails
+  CHECK_FALSE(mode.pushSplit(toStyled({"a", "b"}), "", GrepSyntax::Fixed));  // empty pattern always fails
   CHECK_FALSE(mode.canGoBack());                                   // the failed attempt's push was undone
   CHECK(mode.pattern() == "usilic$");                               // state unchanged
 }
 
 TEST_CASE_FIXTURE(Fixture, "pushSplit: nests on top of an existing splitSelected() level too") {
-  std::vector<std::string> lines = {
+  auto lines = toStyled({
       "=== chapter 1 ===", "--- section A ---", "textA1", "=== chapter 2 ===", "--- section A ---", "textA2",
-  };
+  });
   REQUIRE(mode.split(lines, "^=== chapter", GrepSyntax::Regex));
   view.setCursorIndex(0);
   REQUIRE(mode.splitSelected("^--- section", GrepSyntax::Regex));
 
-  std::vector<std::string> independent = {"=== A ===", "one"};
+  auto independent = toStyled({"=== A ===", "one"});
   REQUIRE(mode.pushSplit(independent, "^===", GrepSyntax::Regex));
   CHECK(mode.pattern() == "^===");
 

@@ -8,6 +8,7 @@
 #include "content_view.hpp"
 #include "grep_mode.hpp"
 #include "mode_stack.hpp"
+#include "pipe_buffer.hpp"  // StyledLine -- see split()'s own comment
 
 namespace fm {
 
@@ -87,15 +88,27 @@ class CutMode {
   // matches at all means the whole input is one segment. Does not
   // touch ModeStack -- this is the top-level entry point; use
   // splitSelected() to recurse into an already-split segment.
-  bool split(const std::vector<std::string> &sourceLines, const std::string &pattern, GrepSyntax syntax);
+  //
+  // StyledLine, not plain std::string (2026-08-05): sourceLines now
+  // carries PipeBuffer's own Bold/Underline AttributeRuns alongside
+  // each line's text, so CutContent's own displayed segment content
+  // (segmentContent(), below) can show the SAME nroff-style overstrike
+  // decoration FileMode already does (see ContentView::Line::attributes'
+  // own comment) instead of silently losing it -- HELP.jp's own section
+  // headings are bold via this exact mechanism. Grep matching itself
+  // (fgrep/egrep run over the plain text) is unaffected -- only .text
+  // is fed to the child process, matching legacy's own behavior of
+  // matching against the DE-OVERSTRUCK text.
+  bool split(const std::vector<StyledLine> &sourceLines, const std::string &pattern, GrepSyntax syntax);
 
   const std::string &pattern() const;
   const std::vector<CutSegment> &segments() const;
   const CutSegment *selectedSegment() const;
 
   // The lines making up `segment`, sliced from the sourceLines
-  // split() was called with.
-  std::vector<std::string> segmentContent(const CutSegment &segment) const;
+  // split() was called with -- attributes included, see split()'s own
+  // comment.
+  std::vector<StyledLine> segmentContent(const CutSegment &segment) const;
 
   // Re-splits the currently selected segment's own content by a new
   // pattern, pushing the current split state onto ModeStack first so
@@ -117,7 +130,7 @@ class CutMode {
   // progress -- goBack() (already existing) returns to it exactly as
   // it would for any other nested resplit, with no HELP-specific code
   // needed in CutMode itself at all.
-  bool pushSplit(const std::vector<std::string> &sourceLines, const std::string &pattern, GrepSyntax syntax);
+  bool pushSplit(const std::vector<StyledLine> &sourceLines, const std::string &pattern, GrepSyntax syntax);
 
   // Returns to the split state saved by the most recent
   // splitSelected() call. False if already at the top level (nothing
@@ -139,7 +152,7 @@ class CutMode {
  private:
   struct SavedState {
     std::string pattern;
-    std::vector<std::string> sourceLines;
+    std::vector<StyledLine> sourceLines;
     std::vector<CutSegment> segments;
     int cursorIndex = 0;
   };
@@ -149,7 +162,7 @@ class CutMode {
   const Configuration &configuration_;
 
   std::string pattern_;
-  std::vector<std::string> sourceLines_;
+  std::vector<StyledLine> sourceLines_;
   std::vector<CutSegment> segments_;
 };
 

@@ -13,7 +13,7 @@ namespace fm {
 CutMode::CutMode(ContentView &view, ModeStack &modeStack, const Configuration &configuration)
     : view_(view), modeStack_(modeStack), configuration_(configuration) {}
 
-bool CutMode::split(const std::vector<std::string> &sourceLines, const std::string &pattern,
+bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::string &pattern,
                      GrepSyntax syntax) {
   if (pattern.empty()) return false;
 
@@ -25,7 +25,7 @@ bool CutMode::split(const std::vector<std::string> &sourceLines, const std::stri
 
   std::string inputText;
   for (const auto &line : sourceLines) {
-    inputText += line;
+    inputText += line.text;
     inputText += '\n';
   }
 
@@ -61,14 +61,14 @@ bool CutMode::split(const std::vector<std::string> &sourceLines, const std::stri
     for (std::size_t i = 0; i < matchLines.size(); i++) {
       int start = matchLines[i];
       int end = (i + 1 < matchLines.size()) ? matchLines[i + 1] : total;
-      std::string label = (start < total) ? sourceLines_[start] : std::string();
+      std::string label = (start < total) ? sourceLines_[start].text : std::string();
       segments_.push_back({label, start, end});
     }
   }
 
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(segments_.size());
-  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt});
+  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt, {}});
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(0);
   view_.redraw();
@@ -84,8 +84,8 @@ const CutSegment *CutMode::selectedSegment() const {
   return &segments_[idx];
 }
 
-std::vector<std::string> CutMode::segmentContent(const CutSegment &segment) const {
-  std::vector<std::string> out;
+std::vector<StyledLine> CutMode::segmentContent(const CutSegment &segment) const {
+  std::vector<StyledLine> out;
   int end = std::min(segment.endLine, static_cast<int>(sourceLines_.size()));
   for (int i = std::max(segment.startLine, 0); i < end; i++) out.push_back(sourceLines_[i]);
   return out;
@@ -97,7 +97,7 @@ bool CutMode::splitSelected(const std::string &pattern, GrepSyntax syntax) {
   return pushSplit(segmentContent(*selected), pattern, syntax);
 }
 
-bool CutMode::pushSplit(const std::vector<std::string> &sourceLines, const std::string &pattern, GrepSyntax syntax) {
+bool CutMode::pushSplit(const std::vector<StyledLine> &sourceLines, const std::string &pattern, GrepSyntax syntax) {
   auto saved = std::make_shared<SavedState>();
   saved->pattern = pattern_;
   saved->sourceLines = sourceLines_;
@@ -127,7 +127,7 @@ bool CutMode::goBack() {
 
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(segments_.size());
-  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt});
+  for (const auto &seg : segments_) viewLines.push_back({seg.label, std::nullopt, std::nullopt, {}});
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(saved->cursorIndex);
   view_.redraw();

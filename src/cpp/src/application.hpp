@@ -1336,7 +1336,7 @@ class Application {
   bool executePathInput(const std::string &path);
   bool executeEdit();
   bool startHelp();
-  std::vector<std::string> wrapHelpText(int width) const;
+  std::vector<StyledLine> wrapHelpText(int width) const;
 
   Display &display_;  // handleResize()'s own rows()/columns() lookup -- no other member currently needs this
   PathResolver pathResolver_;  // ^Xf/^Xd path prompts, see the constructor's own homeDirectory comment

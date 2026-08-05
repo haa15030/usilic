@@ -53,6 +53,28 @@ TEST_CASE_FIXTURE(Fixture, "loadFile: a plain text file's lines are displayed") 
   CHECK(view.lines()[1].text == "world");
 }
 
+TEST_CASE_FIXTURE(Fixture, "loadFile: nroff-style overstrike bold (\"X\\bX\") carries through as an "
+                           "AttributeRun on the resulting Line, not just de-overstruck plain text "
+                           "(2026-08-05: PipeBuffer already detected this, FileMode was the one place "
+                           "that discarded it before it ever reached the screen)") {
+  std::string path = writeFile("bold.txt", "plain B\bBO\bOL\bLD\bD plain\n");
+  REQUIRE(mode.loadFile(path));
+  REQUIRE(view.lines().size() == 1);
+  CHECK(view.lines()[0].text == "plain BOLD plain");
+  // One AttributeRun PER overstruck character (nroff emits "X\bX" once
+  // per bolded character, not once per bolded WORD -- PipeBuffer's own
+  // wrapAttrs_.push_back() doesn't merge adjacent same-attribute runs,
+  // confirmed by reading its source directly rather than assumed), so
+  // "BOLD" is 4 separate 1-column runs at columns 6,7,8,9 -- not one
+  // run spanning [6,10).
+  REQUIRE(view.lines()[0].attributes.size() == 4);
+  for (int i = 0; i < 4; i++) {
+    CHECK(view.lines()[0].attributes[i].attribute == fm::Display::Attribute::Bold);
+    CHECK(view.lines()[0].attributes[i].start == 6 + i);
+    CHECK(view.lines()[0].attributes[i].end == 7 + i);
+  }
+}
+
 TEST_CASE_FIXTURE(Fixture, "loadFile: a nonexistent file fails cleanly") {
   CHECK_FALSE(mode.loadFile((root / "does-not-exist.txt").string()));
 }

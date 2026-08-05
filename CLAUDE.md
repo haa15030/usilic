@@ -10386,6 +10386,80 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       指摘があれば、`ContentView`のtrailing欄の列位置を公開する等の
       形でさらに近づけることを検討する。
 
+173. **2026-08-05(続き): HELP.jp画面内文字列のnroff風装飾(ボールド・
+    アンダーライン)を実際に画面へ反映**。「規模の大きい変更は他の
+    移植がすべて済んでからのほうがいい...まずは違いを埋めていきたい。
+    HELP.jp画面内文字列の装飾（ボールド・アンダーライン）は簡単？」
+    との質問を受け、事前調査の上「進めて」との指示で着手。
+   - **事前調査で判明した実際の状態**: 検出ロジック自体
+      (`PipeBuffer`のオーバーストライク解析、`save_attr()`のポート、
+      `X\bX`→ボールド・`_\bX`→アンダーライン等)は既に実装・テスト
+      済みで、`Display::Attribute::Bold`/`Underline`という描画
+      プリミティブも(EXITプロンプトのwatermark等で)既に使われて
+      いたが、検出結果(`StyledLine::attributes`)を実際に画面へ
+      適用する配線がどこにも存在しなかった。`FileMode`ですら
+      `pipe.lines()`から`.text`だけ取り出して`.attributes`を
+      破棄しており、`CutMode`(HELP.jpが実際に通る経路)に至っては
+      `PipeBuffer`自体を通さず`sourceLines`を素の`std::vector<
+      std::string>`として受け取っていたため、この不一致は
+      HELP.jp固有ではなく`README.jp`等の通常ファイル表示でも
+      同様に未対応だったと判明した。
+   - **実装**: 4箇所の配線を追加した。(1)`ContentView::Line`に
+      `std::vector<AttributeRun> attributes`フィールドを新設
+      (既存の`highlightStartColumn`と並ぶ形、`pipe_buffer.hpp`の
+      `AttributeRun`を再利用)。(2)`ContentView::renderLine()`に
+      `setBold()`/`setUnderline()`を追加し、既存の`setStandout()`
+      (反転表示)とは独立に、バイト範囲ごとにBold/Underlineの
+      SGRを適用するようにした(反転表示中の行でも下にボールド/
+      アンダーラインが乗る、実端末のSGR組み合わせと同じ挙動)。
+      (3)`FileMode::readAndWrap()`が`pipe.lines()`から`Line`を
+      作る唯一の箇所で、`styled.attributes`を渡すよう修正
+      (`loadFile()`/`reflow()`両方がここを共有するため1箇所の
+      修正で両方に効く)。(4)`CutMode`の`sourceLines_`/
+      `SavedState::sourceLines`/`split()`/`pushSplit()`/
+      `segmentContent()`の型を`std::vector<std::string>`から
+      `std::vector<StyledLine>`(text+attributes)へ変更し、
+      grepマッチング自体は`.text`だけを見るよう分離した上で、
+      `Application`側の全呼び出し元
+      (`wrapHelpText()`、`executeCut()`の3経路、`handleResize()`の
+      再フロー、`openSelectedSegment()`)を対応する型に更新。
+      `wrapHelpText()`は`pipe.lines()`をそのまま返すだけで済む
+      ようになった(以前は`.text`だけ取り出すループが必要だった)。
+      `openSelectedSegment()`(`cutContentView_`用の`Line`を組み
+      立てる、実際に画面に出る箇所)で`l.attributes`を渡すのが
+      HELP.jp自身の装飾を可視化する最後のピースだった。
+   - **検証**: `content_view.hpp`のLine構造体変更に伴い、既存の
+      3引数`{text, shellCommand, highlightStartColumn}`形式の
+      Line構築(10箇所以上、DirectoryMode/GrepMode/DuMode/
+      ListBrowserMode/LocateMode/ManMode/Shell等)すべてに明示的な
+      空`{}`を追加し`-Wmissing-field-initializers`警告ゼロを維持。
+      `RecordingDisplay`(テスト用Display実装)に`bold_`/
+      `underline_`の per-cell 記録機能と`boldAt()`/`underlineAt()`
+      アクセサを新設(既存の`standout_`/`standoutAt()`と同じ形)。
+      新規doctest3件を追加: (1)`ContentView`単体でBold/Underlineの
+      バイト範囲が反転表示と独立してSGR適用されること、(2)
+      `FileMode::loadFile()`で`"B\bBO\bOL\bLD\bD"`形式のファイルを
+      読ませ、`view.lines()[0].attributes`に4件(1文字ごとに
+      別々のrun、`PipeBuffer`の`wrapAttrs_.push_back()`が隣接
+      runを統合しないと実装を直接読んで確認済み)のBold runが
+      入ること、(3)`CutMode::split()`/`segmentContent()`の
+      往復で`StyledLine`の`attributes`が保持されること。
+      `test_cut_mode.cpp`は`split()`/`pushSplit()`の型変更に伴い
+      全面的に`StyledLine`ベースへ書き換え(`toStyled()`ヘルパーを
+      新設、既存テストの中身は変えず型だけ追従)。項目172時点の
+      636件+新規3件=639件全通過、assertions 17249件全通過、
+      警告ゼロ。実バイナリを
+      `-c`でPTY起動し、`doc/`ディレクトリで`^J^H`→Enter(「1.
+      Introduction」セクションを開く)を再現、生バイト列で
+      `\x1b[1m1.\x1b(B\x1b[m  \x1b[1mIntroduction\x1b(B\x1b[m`
+      (見出しの数字・タイトルどちらもボールドSGRで囲まれている)、
+      および本文中の`Ctrl`/`Enter`/`HELP`等の強調されたキーワードも
+      同様に`\x1b[1m...\x1b(B\x1b[m`で囲まれて表示されることを確認
+      した。Ubuntu 26.04クロスビルド(新規Dockerコンテナ)でも失敗
+      12件はすべて既知の環境依存差のみ(総数637件、625件通過+
+      12件既知失敗)であることを確認、直後にMac側を再ビルドして
+      639/639件を再確認済み。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

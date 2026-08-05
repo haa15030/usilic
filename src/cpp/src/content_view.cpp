@@ -334,11 +334,22 @@ void ContentView::goToBottom() {
 void ContentView::renderLine(const Line &line, bool marked) {
   marked = marked && cursorHighlightEnabled_;
   int highlightStart = std::max(0, line.highlightStartColumn.value_or(0));
-  bool standoutOn = false;
+  bool standoutOn = false, boldOn = false, underlineOn = false;
+  auto setAttr = [&](bool &state, bool on, Display::Attribute onAttr, Display::Attribute offAttr) {
+    if (on == state) return;
+    display_.setAttribute(on ? onAttr : offAttr);
+    state = on;
+  };
   auto setStandout = [&](bool on) {
-    if (on == standoutOn) return;
-    display_.setAttribute(on ? Display::Attribute::Standout : Display::Attribute::StandoutOff);
-    standoutOn = on;
+    setAttr(standoutOn, on, Display::Attribute::Standout, Display::Attribute::StandoutOff);
+  };
+  // Line::attributes' own Bold/Underline byte-ranges (2026-08-05, see
+  // its own comment) -- independent of setStandout() above (a marked/
+  // reverse-video line can still carry its own bold/underline runs
+  // underneath, same as any other terminal app combining SGR codes).
+  auto setBold = [&](bool on) { setAttr(boldOn, on, Display::Attribute::Bold, Display::Attribute::BoldOff); };
+  auto setUnderline = [&](bool on) {
+    setAttr(underlineOn, on, Display::Attribute::Underline, Display::Attribute::UnderlineOff);
   };
 
   // `markedNow` starts true only if highlightStart is 0 (the common
@@ -352,6 +363,16 @@ void ContentView::renderLine(const Line &line, bool marked) {
     if (col == highlightStart) {
       markedNow = marked;
       setStandout(markedNow);
+    }
+    if (!line.attributes.empty()) {
+      bool wantBold = false, wantUnderline = false;
+      for (const AttributeRun &run : line.attributes) {
+        if (col < run.start || col >= run.end) continue;
+        if (run.attribute == Display::Attribute::Bold) wantBold = true;
+        else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
+      }
+      setBold(wantBold);
+      setUnderline(wantUnderline);
     }
     // Tab specifically excluded from the control-byte check below --
     // ported from disp.c's own "convert '\t' to ' '" comment (its
@@ -401,6 +422,8 @@ void ContentView::renderLine(const Line &line, bool marked) {
     col++;
   }
   setStandout(false);
+  setBold(false);
+  setUnderline(false);
 }
 
 std::string ContentView::modeLineText() const {
@@ -576,7 +599,7 @@ void ContentView::redraw() {
   // real one would be, at the same row a first real entry would occupy.
   if (!renderedAny && cursorHighlightEnabled_ && height_ > rowOffset) {
     display_.moveCursor(row0_ + rowOffset, 0);
-    renderLine(Line{kEmptyPlaceholderText, std::nullopt, std::nullopt}, true);
+    renderLine(Line{kEmptyPlaceholderText, std::nullopt, std::nullopt, {}}, true);
   }
   renderModeLine();
   if (cursorHighlightEnabled_) syncVisibleCursor();

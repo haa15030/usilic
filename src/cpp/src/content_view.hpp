@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "display.hpp"
+#include "pipe_buffer.hpp"  // AttributeRun -- see Line::attributes' own comment
 
 namespace fm {
 
@@ -91,6 +92,22 @@ class ContentView {
     // legacy too (init_col() returns 0 for those modes), so leaving
     // this nullopt for them is correct, not an oversight.
     std::optional<int> highlightStartColumn;
+
+    // Bold/underline byte-ranges (2026-08-05), e.g. from nroff-style
+    // overstrike ("X\bX" bold, "_\bX" underline) that PipeBuffer's own
+    // overstrike-detection already parses out of raw file content into
+    // AttributeRun{start,end,Display::Attribute} -- see PipeBuffer's
+    // own class comment. Previously detected but discarded everywhere
+    // (FileMode's loadFile()/reflow() kept only StyledLine::text,
+    // CutMode didn't route content through PipeBuffer at all, so
+    // HELP.jp's own bold section-number/heading decoration was invisible
+    // both in File mode and in HELP/CUT) -- a real user question ("HELP.jp
+    // 画面内文字列の装飾（ボールド・アンダーライン）は簡単？") prompted
+    // wiring this through instead of leaving it as a known gap. Empty
+    // for every OTHER caller (DirectoryMode, GrepMode, ListBrowserMode,
+    // etc.) exactly like highlightStartColumn is -- those never had
+    // overstrike-formatted content to begin with.
+    std::vector<AttributeRun> attributes;
   };
 
   explicit ContentView(Display &display);

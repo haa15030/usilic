@@ -57,7 +57,11 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
 
   std::vector<ContentView::Line> lines;
   lines.reserve(pipe.lines().size());
-  for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt, std::nullopt});
+  // styled.attributes (2026-08-05): PipeBuffer's own overstrike
+  // detection (nroff-style bold/underline) already produces this --
+  // previously discarded here, the one and only place FileMode turns
+  // PipeBuffer's StyledLines into what actually reaches the screen.
+  for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt, std::nullopt, styled.attributes});
   return lines;
 }
 

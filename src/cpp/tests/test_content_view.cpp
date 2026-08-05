@@ -9,7 +9,7 @@ namespace {
 
 std::vector<ContentView::Line> makeLines(int n, const std::string &prefix = "line") {
   std::vector<ContentView::Line> lines;
-  for (int i = 0; i < n; i++) lines.push_back({prefix + std::to_string(i), std::nullopt, std::nullopt});
+  for (int i = 0; i < n; i++) lines.push_back({prefix + std::to_string(i), std::nullopt, std::nullopt, {}});
   return lines;
 }
 
@@ -66,6 +66,35 @@ TEST_CASE("setCursorHighlightEnabled(false): the cursor line is no longer revers
   v.redraw();
   CHECK(d.standoutAt(0, 0) == false);  // cursor is on line 0, but highlighting is off
   CHECK(d.rowText(0).substr(0, 5) == "line0");  // content itself is unaffected
+}
+
+TEST_CASE("Line::attributes: Bold/Underline byte-ranges render as their own SGR runs, independent of "
+          "the cursor-line's own reverse-video (2026-08-05, see the field's own comment) -- PipeBuffer's "
+          "overstrike detection already produced this data, it was just discarded before reaching a Line") {
+  RecordingDisplay d(10, 30);  // wide enough for the full 28-char line below (20 cols clipped "UNDER"/"done")
+  ContentView v(d);
+  v.setViewport(0, 3);
+  ContentView::Line line;
+  line.text = "plain BOLD plain UNDER done";
+  //           0123456789...
+  line.attributes = {
+      {6, 10, fm::Display::Attribute::Bold},        // "BOLD"
+      {17, 22, fm::Display::Attribute::Underline},  // "UNDER"
+  };
+  v.setLines({line});
+  v.redraw();
+  CHECK(d.boldAt(0, 5) == false);   // space before "BOLD"
+  CHECK(d.boldAt(0, 6) == true);    // 'B'
+  CHECK(d.boldAt(0, 9) == true);    // 'D'
+  CHECK(d.boldAt(0, 10) == false);  // space after "BOLD"
+  CHECK(d.underlineAt(0, 6) == false);  // "BOLD" itself isn't underlined
+  CHECK(d.underlineAt(0, 17) == true);  // 'U' of "UNDER"
+  CHECK(d.underlineAt(0, 21) == true);  // 'R' of "UNDER"
+  CHECK(d.underlineAt(0, 22) == false);
+  // The whole line is still the reverse-video cursor line underneath --
+  // Bold/Underline combine with Standout, they don't replace it.
+  CHECK(d.standoutAt(0, 6) == true);
+  CHECK(d.standoutAt(0, 17) == true);
 }
 
 TEST_CASE("Line::highlightStartColumn: cursor-line reverse-video starts at the given column, not column 0") {
@@ -253,7 +282,7 @@ TEST_CASE("isColumnWithinLineScope: DirectoryMode's fixed left margin excludes c
   RecordingDisplay d(10, 20);
   ContentView v(d);
   std::vector<ContentView::Line> lines;
-  lines.push_back({"drwxr-xr-x  staff  plain.txt", std::nullopt, 20});  // highlight starts at column 20
+  lines.push_back({"drwxr-xr-x  staff  plain.txt", std::nullopt, 20, {}});  // highlight starts at column 20
   v.setLines(lines);
 
   CHECK_FALSE(v.isColumnWithinLineScope(0, 19));  // one column left of the margin -- not on the entry
@@ -266,7 +295,7 @@ TEST_CASE("isColumnWithinLineScope: a left-aligned list (highlightStartColumn un
   RecordingDisplay d(10, 20);
   ContentView v(d);
   std::vector<ContentView::Line> lines;
-  lines.push_back({"short.txt", std::nullopt, std::nullopt});  // no fixed margin -- highlight starts at 0
+  lines.push_back({"short.txt", std::nullopt, std::nullopt, {}});  // no fixed margin -- highlight starts at 0
   v.setLines(lines);
 
   CHECK(v.isColumnWithinLineScope(0, 0));           // the very first character
@@ -691,7 +720,7 @@ TEST_CASE("control bytes render reverse-video, consistent with LineEditor") {
   ContentView v(d);
   v.setViewport(0, 3);
   std::vector<ContentView::Line> lines;
-  lines.push_back({std::string(1, static_cast<char>(1)) + "x", std::nullopt, std::nullopt});  // Ctrl-A + 'x'
+  lines.push_back({std::string(1, static_cast<char>(1)) + "x", std::nullopt, std::nullopt, {}});  // Ctrl-A + 'x'
   v.setLines(lines);
   v.redraw();
   CHECK(d.rowText(0)[0] == static_cast<char>(1 + '@'));  // 'A'
@@ -711,7 +740,7 @@ TEST_CASE("a literal tab byte renders as a plain space, not a reverse-video cont
   v.setViewport(0, 3);
   v.setCursorHighlightEnabled(false);  // isolate the tab's own standout, not the cursor row's
   std::vector<ContentView::Line> lines;
-  lines.push_back({std::string("a\tb"), std::nullopt, std::nullopt});
+  lines.push_back({std::string("a\tb"), std::nullopt, std::nullopt, {}});
   v.setLines(lines);
   v.redraw();
   CHECK(d.rowText(0)[0] == 'a');
