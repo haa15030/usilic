@@ -1,6 +1,7 @@
 #include "drag_scroll_speed.hpp"
 #include "doctest.h"
 
+using fm::applyScrollSpeedOverride;
 using fm::kScrollSpeedLevels;
 using fm::levelForReleaseDistance;
 using fm::scaledForRow;
@@ -67,5 +68,60 @@ TEST_CASE("kScrollSpeedLevels: level 0 is inert, levels get faster (less delay) 
   for (size_t i = 5; i + 1 < kScrollSpeedLevels.size(); i++) {
     CHECK(kScrollSpeedLevels[i].busyLoop);
     CHECK(kScrollSpeedLevels[i].busyIterations >= kScrollSpeedLevels[i + 1].busyIterations);
+  }
+}
+
+// applyScrollSpeedOverride() mutates the shared global table in place
+// (see its own comment on why) -- every case below restores the
+// original values afterward so this doesn't leak into other test
+// cases/files sharing the same doctest binary.
+TEST_CASE("applyScrollSpeedOverride: overrides usleep levels 1..4 in order, leaves busy-loop levels untouched") {
+  std::vector<fm::ScrollStep> original = kScrollSpeedLevels;
+  applyScrollSpeedOverride({111, 222, 333, 444});
+  CHECK(kScrollSpeedLevels[1].microseconds == 111);
+  CHECK(kScrollSpeedLevels[2].microseconds == 222);
+  CHECK(kScrollSpeedLevels[3].microseconds == 333);
+  CHECK(kScrollSpeedLevels[4].microseconds == 444);
+  for (size_t i = 5; i < kScrollSpeedLevels.size(); i++) {
+    CHECK(kScrollSpeedLevels[i].busyIterations == original[i].busyIterations);
+  }
+  kScrollSpeedLevels = original;
+}
+
+TEST_CASE("applyScrollSpeedOverride: fewer values than usleep levels leaves the trailing ones at default") {
+  std::vector<fm::ScrollStep> original = kScrollSpeedLevels;
+  applyScrollSpeedOverride({111});
+  CHECK(kScrollSpeedLevels[1].microseconds == 111);
+  CHECK(kScrollSpeedLevels[2].microseconds == original[2].microseconds);
+  CHECK(kScrollSpeedLevels[3].microseconds == original[3].microseconds);
+  CHECK(kScrollSpeedLevels[4].microseconds == original[4].microseconds);
+  kScrollSpeedLevels = original;
+}
+
+TEST_CASE("applyScrollSpeedOverride: extra values beyond the usleep-level count are ignored") {
+  std::vector<fm::ScrollStep> original = kScrollSpeedLevels;
+  applyScrollSpeedOverride({111, 222, 333, 444, 555, 666});
+  CHECK(kScrollSpeedLevels[4].microseconds == 444);
+  for (size_t i = 5; i < kScrollSpeedLevels.size(); i++) {
+    CHECK(kScrollSpeedLevels[i].busyIterations == original[i].busyIterations);
+  }
+  kScrollSpeedLevels = original;
+}
+
+TEST_CASE("applyScrollSpeedOverride: a non-positive value in the middle is skipped, leaving that level at default") {
+  std::vector<fm::ScrollStep> original = kScrollSpeedLevels;
+  applyScrollSpeedOverride({111, 0, 333});
+  CHECK(kScrollSpeedLevels[1].microseconds == 111);
+  CHECK(kScrollSpeedLevels[2].microseconds == original[2].microseconds);
+  CHECK(kScrollSpeedLevels[3].microseconds == 333);
+  kScrollSpeedLevels = original;
+}
+
+TEST_CASE("applyScrollSpeedOverride: empty values is a no-op") {
+  std::vector<fm::ScrollStep> original = kScrollSpeedLevels;
+  applyScrollSpeedOverride({});
+  for (size_t i = 0; i < kScrollSpeedLevels.size(); i++) {
+    CHECK(kScrollSpeedLevels[i].microseconds == original[i].microseconds);
+    CHECK(kScrollSpeedLevels[i].busyIterations == original[i].busyIterations);
   }
 }

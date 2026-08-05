@@ -22,7 +22,7 @@ namespace fm {
 // can be tuned further against a real machine, one level at a time,
 // without needing an actual flick/repeated keypress fast enough to
 // reliably land on the level under test.
-const std::vector<ScrollStep> kScrollSpeedLevels = {
+std::vector<ScrollStep> kScrollSpeedLevels = {
     {false, 0, 0},          // 0: unused, "not coasting"
     {false, 90000, 0},      // 1: slowest -- usleep, ~11 dots/sec
     {false, 55000, 0},      // 2: usleep
@@ -35,6 +35,20 @@ const std::vector<ScrollStep> kScrollSpeedLevels = {
     {true, 0, 15000},       // 9
     {true, 0, 0},           // 10: fastest -- no delay between dots at all
 };
+
+void applyScrollSpeedOverride(const std::vector<long> &values) {
+  size_t vi = 0;
+  // Start at index 1: index 0 is the inert "not coasting" placeholder
+  // (also !busyLoop, but never an active speed -- see kScrollSpeedLevels'
+  // own comment), not a real tunable level.
+  for (size_t i = 1; i < kScrollSpeedLevels.size(); i++) {
+    ScrollStep &step = kScrollSpeedLevels[i];
+    if (step.busyLoop) continue;  // busy-loop levels: not usleep-driven, nothing to override
+    if (vi >= values.size()) break;
+    if (values[vi] > 0) step.microseconds = values[vi];
+    vi++;
+  }
+}
 
 int levelForReleaseDistance(int pixels, int cellHeightPixels) {
   int height = std::max(cellHeightPixels, 1);

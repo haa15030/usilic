@@ -1869,7 +1869,28 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; i++) {
     if (std::strcmp(argv[i], "-c") == 0) forceCui = true;
     else if (std::strcmp(argv[i], "-g") == 0) forceGui = true;
-    else positionalArgs.push_back(argv[i]);
+    else if (std::strcmp(argv[i], "-u") == 0) {
+      // User-tunable drag-scroll "inertia" speed, in usleep()
+      // microseconds -- see fm::applyScrollSpeedOverride()'s own
+      // comment for exactly which levels this reaches (1..4, the
+      // usleep()-driven ones; 5+ are an uncalibrated busy-loop by
+      // design and untouched by this flag) and why. Consumes every
+      // following plain-digit argument, in order (slowest level
+      // first, matching the table's own ordering), stopping at the
+      // next flag or the end of argv -- e.g. "-u 90000 55000 30000
+      // 15000" overrides all four; "-u 90000" overrides only the
+      // slowest.
+      std::vector<long> scrollValues;
+      while (i + 1 < argc && *argv[i + 1] && std::all_of(argv[i + 1], argv[i + 1] + std::strlen(argv[i + 1]),
+                                                          [](unsigned char c) { return std::isdigit(c); })) {
+        scrollValues.push_back(std::atol(argv[++i]));
+      }
+      if (scrollValues.empty()) {
+        std::cerr << "usilic: -u requires one or more microsecond values (e.g. -u 90000 55000 30000 15000).\n";
+        return 1;
+      }
+      fm::applyScrollSpeedOverride(scrollValues);
+    } else positionalArgs.push_back(argv[i]);
   }
   if (forceCui && forceGui) {
     std::cerr << "usilic: -c and -g are mutually exclusive.\n";

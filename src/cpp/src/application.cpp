@@ -39,17 +39,32 @@ constexpr int kCarriageReturn = 0x0d;  // ^M
 // as if a real user had typed that sequence live, so multi-byte
 // leader sequences (^J c, ^X ^K l, etc.) naturally re-enter the same
 // leaderXPending_/leaderJPending_/etc. states a live keypress would.
-// M-0..M-19 (numbered keyboard-macro slots) are NOT included: this
-// port has only ONE macro slot (StartMacroRecord/PlayMacro), not
-// legacy's 20 independently-bound ones, so there's nothing per-slot
-// to list. Arrow/PageUp/PageDown special keys are omitted too --
-// every one of them already has a plain-byte alias in this table
-// (j/k, ^N/^P, Space/^F/^V, b/^B), so nothing is unreachable by
-// leaving KeyInput::SpecialKey-only entries out.
+// M-0..M-9 (usilicrc's own 10 populated keyboard-macro slots, of the
+// 20 available) ARE included below, each flagged isMacro=true so
+// startKey() can render legacy's own "(M)" suffix (see legacy's
+// print_key(), tcb/src/str.c, `if (i >= 80) printf(" (M)")`) -- this
+// port has only ONE user-recordable macro slot of its own
+// (StartMacroRecord/PlayMacro, "^X (" / "^X )" / "^X e" below), not
+// legacy's 20 independently-bound ones, so these usilicrc-defined
+// entries are reproduced here as literal replayed byte sequences
+// (executeSelectedKeyBinding() already replays any table entry's
+// bytes through feedByte() one at a time -- the exact mechanism a
+// live macro playback would use) rather than as a real generic
+// per-slot macro system. M-8 ("ESC t", search ~/.tcb/tcbrc section
+// names) and M-9 ("ESC l") are both left out: both are, on
+// inspection, throwaway self-referential DEMO macros baked into
+// usilicrc's own example config (M-9's own removal story, and the
+// stale pre-rename "~/.tcb/tcbrc" path M-8 hardcodes even in this
+// already-renamed usilicrc, are documented in CLAUDE.md), not
+// features worth reproducing here. Arrow/PageUp/PageDown special
+// keys are omitted too -- every one of them already has a plain-byte
+// alias in this table (j/k, ^N/^P, Space/^F/^V, b/^B), so nothing is
+// unreachable by leaving KeyInput::SpecialKey-only entries out.
 struct KeyTableEntry {
   const char *keyLabel;
   const char *description;
   std::vector<int> bytes;
+  bool isMacro = false;
 };
 
 const KeyTableEntry kKeyTable[] = {
@@ -71,6 +86,15 @@ const KeyTableEntry kKeyTable[] = {
     {"^L", "Redraw screen", {0x0c}},
     {"^T", "TCB banner", {0x14}},
     {"q", "Exit tcb (pager)", {'q'}},
+    // Macros (usilicrc M-0..M-7, see this table's own comment above)
+    {";", "Back, cursor up, select (M-0)", {kControlG, 0x10, kCarriageReturn}, true},
+    {":", "Back, cursor down, select (M-1)", {kControlG, 0x0e, kCarriageReturn}, true},
+    {"+", "Back twice, cursor up, select twice (M-2)", {kControlG, kControlG, 0x10, kCarriageReturn, kCarriageReturn}, true},
+    {"*", "Back twice, cursor down, select twice (M-3)", {kControlG, kControlG, 0x0e, kCarriageReturn, kCarriageReturn}, true},
+    {",", "Select, then cursor up (M-4)", {kCarriageReturn, 0x10}, true},
+    {".", "Select, then cursor down (M-5)", {kCarriageReturn, 0x0e}, true},
+    {"<", "Select, back, cursor up, select (M-6)", {kCarriageReturn, kControlG, 0x10, kCarriageReturn}, true},
+    {">", "Select, back, cursor down, select (M-7)", {kCarriageReturn, kControlG, 0x0e, kCarriageReturn}, true},
     // ESC-leader
     {"ESC s", "SHELL", {kEscape, 's'}},
     {"ESC <", "Go to top", {kEscape, '<'}},
@@ -2120,7 +2144,9 @@ bool Application::startKey() {
   for (const auto &entry : kKeyTable) {
     std::string label = entry.keyLabel;
     if (label.size() < 10) label.append(10 - label.size(), ' ');
-    lines.push_back({label + "  " + entry.description, std::nullopt, std::nullopt, {}});
+    std::string text = label + "  " + entry.description;
+    if (entry.isMacro) text += " (M)";
+    lines.push_back({text, std::nullopt, std::nullopt, {}});
   }
   keyView_.setLines(std::move(lines));
   keyView_.setCursorIndex(0);

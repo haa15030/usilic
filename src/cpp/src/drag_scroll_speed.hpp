@@ -36,7 +36,29 @@ struct ScrollStep {
 // speed -- callers use level 0 to mean "not coasting" (see
 // levelForReleaseDistance()), so keeping it as a real (inert) table
 // entry avoids an off-by-one at every call site.
-extern const std::vector<ScrollStep> kScrollSpeedLevels;
+//
+// Deliberately NOT const (unlike everything else in this file):
+// applyScrollSpeedOverride() below (the "-u" CLI flag, app/main.cpp)
+// mutates this table's usleep()-driven entries in place at startup,
+// before any real scrolling happens -- same "tune without a
+// recompile" motivation as USILICSCROLLDEBUG just above, but for the
+// actual delay values rather than which level gets selected.
+extern std::vector<ScrollStep> kScrollSpeedLevels;
+
+// Overrides the microsecond delay of each usleep()-driven level (see
+// kScrollSpeedLevels' own comment: levels 1..4, !busyLoop) with
+// `values`, assigned in order starting at level 1. Fewer values than
+// there are usleep levels leaves the remaining trailing ones at their
+// compiled-in default; values beyond that count are ignored (the
+// busy-loop levels 5+ are deliberately NOT usleep-driven -- see the
+// class-level comment on why -- so there is nothing for extra values
+// to override). No-op if `values` is empty. Values <= 0 are skipped
+// (leaving that level's compiled-in default) rather than passed to
+// usleep(), which treats 0 as "no delay at all" -- a real level, but
+// one already reachable via the busy-loop levels, not something a
+// caller silently passing a bad/placeholder value should land on by
+// accident.
+void applyScrollSpeedOverride(const std::vector<long> &values);
 
 // Maps the summed pixel distance the drag moved in the short window
 // just before release to a discrete level: 0 (too small to count as a
