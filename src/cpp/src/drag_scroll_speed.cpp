@@ -81,15 +81,23 @@ int levelForReleaseDistance(int pixels, int cellHeightPixels) {
   // 256*cellHeightPixels, thousands of real pixels in 150ms, an
   // unreachable release velocity for an actual human hand -- so no
   // realistic flick, however hard, could ever land past roughly the
-  // middle of the table. First tried +50% per level (still 2026-08-06)
-  // -- a real-hardware follow-up report found even THAT still too weak
-  // to reach top speed on a hard flick, so this is now +25% per level
-  // (kUpperTierGrowthDivisor 4, i.e. threshold/4 added each step,
-  // half of the previous +50%'s threshold/2) -- compressing the
-  // top of the curve further without touching levels 1-4 (which the
-  // same user separately confirmed already felt right after
+  // middle of the table. Tuned twice already, both still 2026-08-06:
+  // +50% (kUpperTierGrowthDivisor 2) still couldn't reach top speed on
+  // a real hard flick; +25% (divisor 4) DID reach top speed but a
+  // real-hardware follow-up report found it now felt UNDER-
+  // differentiated ("同期感が今ひとつ" -- flick effort no longer felt
+  // proportional to resulting speed) -- the same narrow band that
+  // makes max speed reachable also makes most any moderately-hard
+  // flick land near the top, losing the wide, gradual feel levels 1-4
+  // (still doubling) have. +33% (divisor 3) is the midpoint between
+  // those two data points: still comfortably reachable (top speed
+  // needs magnitude >= 378 at cellHeightPixels=20, vs. divisor 4's
+  // 312 and divisor 2's 540) while widening each level's own bucket
+  // back out somewhat for more perceptible steps. Levels 1-4's
+  // doubling logic is untouched throughout all of this (the same user
+  // separately confirmed that part already felt right after
   // kReleaseLevelBias below was added).
-  constexpr int kUpperTierGrowthDivisor = 4;
+  constexpr int kUpperTierGrowthDivisor = 3;
   int level = 1;
   int threshold = height;
   while (level < maxLevel && magnitude >= threshold) {

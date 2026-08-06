@@ -37,18 +37,16 @@ TEST_CASE("levelForReleaseDistance: thresholds scale with cellHeightPixels") {
   CHECK(levelForReleaseDistance(100, 10) > levelForReleaseDistance(100, 200));
 }
 
-TEST_CASE("levelForReleaseDistance: the upper (originally busy-loop) tier grows +25% per raw level instead of "
+TEST_CASE("levelForReleaseDistance: the upper (originally busy-loop) tier grows +33% per raw level instead of "
           "doubling, so a hard flick reaches the fastest levels with far less distance than before") {
   int H = 20;  // pixel values below are this function's own actual integer-truncated output for H=20
   // Raw-level thresholds with the compressed upper tier (levels 1-4
   // still double, see this function's own comment): 1:20 2:40 3:80
-  // 4:160 5:200 6:250 7:312 8:390 9:487 (pixels, i.e. in H=20 units:
-  // 1H, 2H, 4H, 8H, 10H, 12.5H, 15.6H, 19.5H, 24.35H). Output level
-  // always adds kReleaseLevelBias(2), clamped to the table's own last
-  // index.
-  CHECK(levelForReleaseDistance(300, H) == 9);   // 250 <= 300 < 312 -> raw level 7, +2 = 9
-  CHECK(levelForReleaseDistance(312, H) == 10);  // 312 <= x < 390 -> raw level 8, +2 = 10 (clamped)
-  CHECK(levelForReleaseDistance(487, H) == 10);  // raw level 10 already, +2 still clamps to 10
+  // 4:160 5:213 6:284 7:378 8:504 9:672. Output level always adds
+  // kReleaseLevelBias(2), clamped to the table's own last index.
+  CHECK(levelForReleaseDistance(350, H) == 9);   // 284 <= 350 < 378 -> raw level 7, +2 = 9
+  CHECK(levelForReleaseDistance(378, H) == 10);  // 378 <= x < 504 -> raw level 8, +2 = 10 (clamped)
+  CHECK(levelForReleaseDistance(672, H) == 10);  // raw level 10 already, +2 still clamps to 10
 }
 
 TEST_CASE("levelForReleaseDistance: a real flick is biased 2 levels faster than the raw distance-doubling "
