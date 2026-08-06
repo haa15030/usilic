@@ -1,6 +1,7 @@
 #include "graphical_display.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
@@ -987,31 +988,24 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg) {
 // from a real screenshot (2026-08-07): a static, non-scrolling -c
 // window shows no scrollbar at all either.
 //
-// Visual style went through two real-screenshot corrections
-// (2026-08-07): the first version tinted track+thumb with impl_->fg
-// (the terminal theme's own foreground), which on this green-on-black
-// theme read as a solid saturated-green block even at low alpha. The
-// SECOND version dropped the track entirely and used a thin
-// translucent neutral-gray thumb only, guessing at macOS's modern
-// "overlay" scrollbar style -- but a tightly-cropped screenshot of
-// -c's own actual scrollbar (while scrolling) showed something
-// different: a classic, fully OPAQUE light-gray track with a solid
-// medium-gray rounded thumb, not a translucent overlay. This version
-// matches that reference directly instead of a generic "what macOS
-// scrollbars usually look like" assumption.
+// Visual style: back to a plain translucent neutral-gray thumb, no
+// track (2026-08-07, reverting the classic opaque-track/solid-thumb
+// attempt one round later) -- the classic version, even once matched
+// reasonably closely to a real -c screenshot, still wasn't an EXACT
+// pixel match and the user found that partial-but-not-quite likeness
+// MORE distracting than a simpler, honestly-not-trying-to-be-identical
+// indicator. Their own reasoning: the dot-scroll feature itself is a
+// hidden/undocumented one, and the moment scrolling is happening at
+// all the "disguised as a real terminal" pretense is already broken
+// (a real terminal doesn't animate like this) -- so there's no longer
+// a real payoff in chasing pixel-exact scrollbar fidelity specifically.
+// Color still intentionally theme-independent gray (not impl_->fg,
+// see the immediately preceding version's own reasoning for why) --
+// exact color/theme integration is deliberately left as a future
+// task, per the user's own call.
 void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int contentRows) {
   if (contentRows <= 0) return;
   int trackHeight = contentRows * impl_->cellHeight;
-  int trackX = Impl::kMarginX + impl_->columns * impl_->cellWidth;
-
-  SDL_Rect track{trackX, Impl::kMarginY, Impl::kScrollbarWidth, trackHeight};
-  SDL_SetRenderDrawColor(impl_->renderer, 235, 235, 235, 255);
-  SDL_RenderFillRect(impl_->renderer, &track);
-  // Thin darker seam on the track's own left edge -- the reference
-  // screenshot shows a subtle boundary between the content area and
-  // the track, not a hard flat merge into it.
-  SDL_SetRenderDrawColor(impl_->renderer, 200, 200, 200, 255);
-  SDL_RenderDrawLine(impl_->renderer, trackX, Impl::kMarginY, trackX, Impl::kMarginY + trackHeight - 1);
 
   // totalLines <= contentRows means the whole document already fits
   // on screen at once -- the thumb fills the entire track (nothing to
@@ -1019,26 +1013,44 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   // than dividing by a non-positive range below.
   int scrollableLines = std::max(totalLines - contentRows, 0);
   double visibleFraction = (totalLines > 0) ? std::min(1.0, static_cast<double>(contentRows) / totalLines) : 1.0;
-  int thumbHeight = std::max(static_cast<int>(trackHeight * visibleFraction), std::min(trackHeight, 24));
+  int thumbHeight = std::max(static_cast<int>(trackHeight * visibleFraction), std::min(trackHeight, 20));
   int maxThumbY = trackHeight - thumbHeight;
   int thumbY = (scrollableLines > 0)
                    ? std::clamp(static_cast<int>(maxThumbY * (effectiveTop / scrollableLines)), 0, maxThumbY)
                    : 0;
-  constexpr int kThumbInset = 3;  // margin on each side within the reserved strip
-  int thumbX = trackX + kThumbInset;
+  constexpr int kThumbInset = 4;  // margin on each side within the reserved strip, for a slender look
+  int thumbX = Impl::kMarginX + impl_->columns * impl_->cellWidth + kThumbInset;
   int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
-  SDL_Rect thumb{thumbX, Impl::kMarginY + thumbY, thumbWidth, thumbHeight};
-  SDL_SetRenderDrawColor(impl_->renderer, 150, 150, 150, 255);
-  SDL_RenderFillRect(impl_->renderer, &thumb);
-  // Rough rounded-corner approximation (SDL2 has no native rounded-
-  // rect fill primitive): punch the 4 corner pixels back to the
-  // track's own color so the thumb reads as a softly rounded pill
-  // rather than a sharp-cornered block, matching the reference.
-  SDL_SetRenderDrawColor(impl_->renderer, 235, 235, 235, 255);
-  SDL_RenderDrawPoint(impl_->renderer, thumb.x, thumb.y);
-  SDL_RenderDrawPoint(impl_->renderer, thumb.x + thumb.w - 1, thumb.y);
-  SDL_RenderDrawPoint(impl_->renderer, thumb.x, thumb.y + thumb.h - 1);
-  SDL_RenderDrawPoint(impl_->renderer, thumb.x + thumb.w - 1, thumb.y + thumb.h - 1);
+  int thumbTop = Impl::kMarginY + thumbY;
+
+  // Proper rounded-pill shape (radius = half the thumb width, i.e.
+  // fully round caps), drawn row by row with each row's own inset
+  // computed from a real circle equation -- replacing the previous
+  // "punch a single corner pixel" approximation, which read as barely
+  // rounded at all at this thumb's actual pixel width. Row-by-row
+  // (rather than filling one rect and erasing corners) also means
+  // this works correctly with NO separate track/background fill:
+  // whatever the corner pixels would have covered is simply never
+  // drawn over at all, leaving the real scrolled content underneath
+  // visible there, consistent with this version having no opaque
+  // track.
+  int radius = std::min(thumbWidth / 2, thumbHeight / 2);
+  SDL_SetRenderDrawBlendMode(impl_->renderer, SDL_BLENDMODE_BLEND);
+  SDL_SetRenderDrawColor(impl_->renderer, 150, 150, 150, 140);
+  for (int row = 0; row < thumbHeight; row++) {
+    int distFromNearestEnd = std::min(row, thumbHeight - 1 - row);
+    int inset = 0;
+    if (radius > 0 && distFromNearestEnd < radius) {
+      int dy = radius - 1 - distFromNearestEnd;
+      double dx = std::sqrt(std::max(0.0, static_cast<double>(radius * radius - dy * dy)));
+      inset = radius - static_cast<int>(dx);
+    }
+    int lineWidth = thumbWidth - inset * 2;
+    if (lineWidth <= 0) continue;
+    SDL_Rect rowRect{thumbX + inset, thumbTop + row, lineWidth, 1};
+    SDL_RenderFillRect(impl_->renderer, &rowRect);
+  }
+  SDL_SetRenderDrawBlendMode(impl_->renderer, SDL_BLENDMODE_NONE);
 }
 
 // Drag-scroll prototype rendering -- see class comment and header
