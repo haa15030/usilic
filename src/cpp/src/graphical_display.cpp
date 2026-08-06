@@ -194,6 +194,14 @@ struct GraphicalDisplay::Impl {
   std::deque<DragEvent> dragQueue;
   std::deque<HoverEvent> hoverQueue;
   std::deque<WheelEvent> wheelQueue;
+  std::deque<ScrollbarEvent> scrollbarQueue;
+  // True from a left-button-down that started inside the scrollbar
+  // strip until the matching button-up -- see ScrollbarEvent's own
+  // comment. Distinguishes a MOTION event that should be routed to
+  // scrollbarQueue (started as a thumb drag) from one that should go
+  // to the normal content dragQueue/hoverQueue, since SDL_MOUSEMOTION
+  // itself carries no memory of where the ORIGINAL button-down was.
+  bool scrollbarDragActive = false;
   SDL_Cursor *handCursor = nullptr;
   bool handCursorActive = false;
 
@@ -797,6 +805,21 @@ bool GraphicalDisplay::pumpEvents() {
         break;
       case SDL_MOUSEBUTTONDOWN: {
         if (event.button.button != SDL_BUTTON_LEFT && event.button.button != SDL_BUTTON_RIGHT) break;
+        // A left press that starts inside the scrollbar strip is a
+        // thumb-drag gesture, not a content click/drag -- routed to
+        // scrollbarQueue instead, so it neither selects/opens a file
+        // (MouseClick) nor starts a content drag-scroll (DragEvent).
+        // Right-clicks in that strip fall through to the normal
+        // MouseClick path below unchanged (no right-click behavior is
+        // defined for the scrollbar; this just avoids silently
+        // dropping the event).
+        int scrollbarStripX = Impl::kMarginX + impl_->columns * impl_->cellWidth;
+        if (event.button.button == SDL_BUTTON_LEFT && event.button.x >= scrollbarStripX) {
+          impl_->scrollbarDragActive = true;
+          SDL_CaptureMouse(SDL_TRUE);
+          impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::ButtonDown, event.button.y});
+          break;
+        }
         // max(0, ...) before dividing: a click that lands within the
         // margin border itself (see kMarginX/kMarginY's own comment)
         // would otherwise subtract past zero and, on most platforms,
@@ -815,12 +838,19 @@ bool GraphicalDisplay::pumpEvents() {
       case SDL_MOUSEBUTTONUP: {
         if (event.button.button == SDL_BUTTON_LEFT) {
           SDL_CaptureMouse(SDL_FALSE);
-          impl_->dragQueue.push_back(DragEvent{DragEventType::ButtonUp, 0});
+          if (impl_->scrollbarDragActive) {
+            impl_->scrollbarDragActive = false;
+            impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::ButtonUp, event.button.y});
+          } else {
+            impl_->dragQueue.push_back(DragEvent{DragEventType::ButtonUp, 0});
+          }
         }
         break;
       }
       case SDL_MOUSEMOTION: {
-        if (event.motion.state & SDL_BUTTON_LMASK) {
+        if (impl_->scrollbarDragActive) {
+          impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::Motion, event.motion.y});
+        } else if (event.motion.state & SDL_BUTTON_LMASK) {
           impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
         } else {
           int col = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
@@ -913,7 +943,15 @@ std::optional<GraphicalDisplay::WheelEvent> GraphicalDisplay::consumeWheelEvent(
   return event;
 }
 
+std::optional<GraphicalDisplay::ScrollbarEvent> GraphicalDisplay::consumeScrollbarEvent() {
+  if (impl_->scrollbarQueue.empty()) return std::nullopt;
+  ScrollbarEvent event = impl_->scrollbarQueue.front();
+  impl_->scrollbarQueue.pop_front();
+  return event;
+}
+
 int GraphicalDisplay::cellHeightPixels() const { return impl_->cellHeight; }
+int GraphicalDisplay::marginYPixels() const { return Impl::kMarginY; }
 
 void GraphicalDisplay::setColors(Color foreground, Color background) {
   impl_->fg = SDL_Color{foreground.r, foreground.g, foreground.b, 255};
@@ -1018,7 +1056,11 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   int thumbY = (scrollableLines > 0)
                    ? std::clamp(static_cast<int>(maxThumbY * (effectiveTop / scrollableLines)), 0, maxThumbY)
                    : 0;
-  constexpr int kThumbInset = 4;  // margin on each side within the reserved strip, for a slender look
+  // Widened 4->2 (2026-08-07, real reference-screenshot feedback: "つ
+  // まみの表示幅が狭いのでお手本と同じで") -- still a small margin on
+  // each side within the reserved strip rather than the full width,
+  // but noticeably closer to what the -c reference itself showed.
+  constexpr int kThumbInset = 2;
   int thumbX = Impl::kMarginX + impl_->columns * impl_->cellWidth + kThumbInset;
   int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
   int thumbTop = Impl::kMarginY + thumbY;

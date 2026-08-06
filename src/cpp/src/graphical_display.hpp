@@ -266,6 +266,33 @@ class GraphicalDisplay : public Display {
   };
   std::optional<WheelEvent> consumeWheelEvent();
 
+  // A left-button press/drag/release that STARTED inside the
+  // scrollbar strip reserved on the right edge (see drawScrollbar()'s
+  // own comment) -- queued instead of MouseClick/DragEvent for
+  // exactly that press, so dragging the thumb doesn't ALSO trigger
+  // content selection or content drag-scrolling. Added 2026-08-07 at
+  // the user's own request: now that the scrollbar is actually
+  // visible, it needs real functionality (jump to the dragged-to
+  // position), not just be a passive indicator. `y` is the absolute
+  // window-coordinate pixel position (not relative deltaY like
+  // DragEvent's own Motion) -- main.cpp maps it directly to a target
+  // topIndex via marginYPixels()/cellHeightPixels(), since dragging a
+  // scrollbar thumb is an ABSOLUTE "go here" gesture, not a relative
+  // "move by this much" one.
+  enum class ScrollbarEventType { ButtonDown, Motion, ButtonUp };
+  struct ScrollbarEvent {
+    ScrollbarEventType type;
+    int y = 0;
+  };
+  std::optional<ScrollbarEvent> consumeScrollbarEvent();
+
+  // The fixed top-edge margin in pixels (see Impl::kMarginY's own
+  // comment) -- exposed alongside the already-public cellHeightPixels()
+  // so main.cpp's ScrollbarEvent handling can convert an absolute
+  // window Y back into "how far down the content area" without
+  // needing to know GraphicalDisplay's own Impl internals.
+  int marginYPixels() const;
+
   // See Display::renderScrolled()'s own comment for the general
   // contract (this is that method's real, pixel-granular
   // implementation). The caller is responsible for committing a real

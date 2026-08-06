@@ -11347,6 +11347,56 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
    - **検証**: `make test`で648件全通過(件数据え置き)、警告ゼロ。
       `make usilic`もクリーンビルド成功。
 
+196. **2026-08-07(続き): スクロールバーのつまみに実機能(ドラッグで
+    任意位置へジャンプ)を実装、表示幅を拡大**。ユーザーから「スクロール
+    バーを表示した以上はつまみにも機能は必要なので実装してほしい
+    (つまみの表示幅が狭いのでお手本と同じでよろしく)。スクロール
+    バー以外の領域での左クリックはスクロール停止だが範囲内は除外、
+    つまみのドラッグで位置を決めたら画面表示もその部分へ移動」との
+    依頼があった。
+   - **表示幅の拡大**: `drawScrollbar()`の`kThumbInset`を`4`→`2`に
+      縮小し、予約領域(`kScrollbarWidth`=15px)に対してより幅の
+      広いつまみにした。
+   - **クリック/ドラッグの経路分離**: `GraphicalDisplay::pumpEvents()`
+      の`SDL_MOUSEBUTTONDOWN`で、押下位置のX座標がスクロールバー
+      予約領域(`kMarginX + columns*cellWidth`以降)にあるかを判定し、
+      該当する場合は新設の`ScrollbarEvent`キュー(`ButtonDown`/
+      `Motion`/`ButtonUp`、絶対Y座標を保持)へ振り分け、既存の
+      `MouseClick`(ファイル選択)・`DragEvent`(コンテンツのドラッグ
+      スクロール、コースト停止を含む)双方のキューへは積まないように
+      した。これにより「スクロールバー以外の領域でのクリックは
+      [従来通り]スクロール停止するが、[スクロールバーの]範囲内は
+      [その経路から]除外される」という要望どおり、スクロールバー上の
+      クリックが誤って通常のコンテンツクリック/ドラッグスクロール
+      解釈をされることが無くなった。
+   - **つまみドラッグでのジャンプ**: `app/main.cpp`に新規
+      `jumpToScrollbarY()`ラムダを追加、`ScrollbarEvent`のY座標を
+      `marginYPixels()`(新規公開ゲッター)・`cellHeightPixels()`・
+      コンテンツ行数から比例計算した`topIndex`へ変換し、
+      `ContentView::setTopIndex()`で直接ジャンプするようにした
+      (`pixelOffset`/`coastLevel`は経由しない、慣性の無い直接的な
+      「その場所へ移動」ジェスチャーのため)。`ButtonDown`/`Motion`
+      いずれでも同じ計算を行うため、つまみを掴んだ瞬間からその位置へ
+      即座に移動し、ドラッグに追従する。既存の`dragging`フラグ
+      (レンダリングモードの生存期間管理、`renderScrolled()`を毎フレーム
+      呼ぶかどうかの判定に使われる既存の仕組み)をそのまま流用し、
+      `ButtonUp`で`false`に戻すことでコンテンツドラッグと同じ「ドラッグ
+      終了時に1回だけ通常描画へ戻す」動作を自然に共有した。
+   - **`cursorIndex_`追従の考慮**: `ContentView::setTopIndex()`は
+      `cursorIndex_`に触れない設計のため、そのままだとドラッグ終了後の
+      `redraw()`(`clampViewport()`を呼ぶ)が`cursorIndex_`(ドラッグ前の
+      位置のまま)へ視点を引き戻してしまい、せっかくのジャンプが
+      無効化される問題に気付いた。`jumpToScrollbarY()`内で
+      `view.setCursorIndex(view.topIndex())`を追加で呼び、ジャンプ先を
+      選択位置としても扱うことでこの問題を回避した(コースト機構が
+      `stepTopIndex()`経由で`cursorIndex_`を追従させ続けているのと
+      同じ理由)。
+   - **検証**: `make test`で648件全通過(件数据え置き、`Graphical
+      Display`は元々doctest対象外)、警告ゼロ。`make usilic`も
+      クリーンビルド成功。`-g`起動がクラッシュしないことも確認した。
+      実際のドラッグ操作の見た目・挙動はこの環境から検証不可能な
+      ため、ユーザーの実機確認待ち。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

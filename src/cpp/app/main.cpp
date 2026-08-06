@@ -1762,6 +1762,53 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     fm::ContentView &view = app.activeContentView();
     int cellHeight = std::max(gui.cellHeightPixels(), 1);
 
+    // Scrollbar thumb drag: an ABSOLUTE "go here" gesture (unlike
+    // DragEvent's relative deltaY for content dragging), added
+    // 2026-08-07 now that the scrollbar is visible and the user wants
+    // it to actually DO something. Maps the drag's current Y straight
+    // to a proportional topIndex and jumps there immediately -- no
+    // pixelOffset/coast physics involved, since a thumb drag is a
+    // direct positional gesture, not a flick with momentum. Reuses
+    // the `dragging` flag/render-mode lifecycle content-dragging
+    // already has (renderScrolled() every frame while true, one
+    // settle redraw() on release) since both are "an active mouse-
+    // drag in progress," just driven by different math.
+    auto jumpToScrollbarY = [&](int y) {
+      int contentRows = std::max(gui.rows() - 1, 0);
+      int trackHeight = contentRows * cellHeight;
+      int totalLines = static_cast<int>(view.lines().size());
+      int scrollableLines = std::max(totalLines - contentRows, 0);
+      if (trackHeight <= 0 || scrollableLines <= 0) return;
+      double fraction = std::clamp(static_cast<double>(y - gui.marginYPixels()) / trackHeight, 0.0, 1.0);
+      view.setTopIndex(static_cast<int>(fraction * scrollableLines));
+      // clampViewport() (called by the settle-time redraw() once
+      // `dragging` goes false again) would otherwise snap topIndex_
+      // straight back to wherever cursorIndex_ still is -- undoing
+      // the jump the instant the drag ends -- unless cursorIndex_
+      // moves along with it, the same reason commitRowCrossings()
+      // keeps it pinned to the coast's own leading edge.
+      view.setCursorIndex(view.topIndex());
+    };
+    while (auto sb = gui.consumeScrollbarEvent()) {
+      anyEventThisFrame = true;
+      switch (sb->type) {
+        case fm::GraphicalDisplay::ScrollbarEventType::ButtonDown:
+          dragging = true;
+          coastLevel = 0;
+          coastDirection = 0;
+          pixelOffset = 0;
+          gui.setHandCursor(false);  // distinct gesture from grabbing content -- no drag-hand cursor here
+          jumpToScrollbarY(sb->y);
+          break;
+        case fm::GraphicalDisplay::ScrollbarEventType::Motion:
+          jumpToScrollbarY(sb->y);
+          break;
+        case fm::GraphicalDisplay::ScrollbarEventType::ButtonUp:
+          dragging = false;
+          break;
+      }
+    }
+
     while (auto drag = gui.consumeDragEvent()) {
       anyEventThisFrame = true;
       switch (drag->type) {
