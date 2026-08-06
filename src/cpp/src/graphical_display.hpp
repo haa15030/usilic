@@ -300,6 +300,11 @@ class GraphicalDisplay : public Display {
   void renderCell(int row, int col);
   void renderCursor();
   void renderTextRun(int y, const std::string &line, Color fg);
+  // See renderScrolled()'s own call site comment. `effectiveTop` is a
+  // continuous (fractional) topIndex -- topIndex adjusted by
+  // pixelOffsetY/cellHeight -- so the thumb moves smoothly in sync
+  // with sub-row scroll position, not just snapping once per full row.
+  void drawScrollbar(double effectiveTop, int totalLines, int contentRows);
 };
 
 }  // namespace fm

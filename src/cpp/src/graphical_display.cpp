@@ -147,6 +147,20 @@ struct GraphicalDisplay::Impl {
   // enough to treat as one shared value rather than separate X/Y ones.
   static constexpr int kMarginX = 10;
   static constexpr int kMarginY = 10;
+  // Reserved strip on the right edge for the scrollbar overlay (see
+  // renderScrolled()'s own drawScrollbar() call) -- 2026-08-07, first
+  // slice of the feature IDEAS.md recorded 2026-08-03 (docs/HISTORY.md
+  // line 521's own request to start it): a real side-by-side
+  // screenshot comparison found the GUI window narrower than the real
+  // terminal it's meant to overlay by roughly a scrollbar's width once
+  // the real terminal's own native scrollbar was accounted for.
+  // UNLIKE kMarginX/Y above (pixel-scanned from a real screenshot),
+  // this value is a rough placeholder, not yet measured against a
+  // real terminal's actual native scrollbar width the same way --
+  // this sandbox has no way to do that measurement itself (same
+  // limitation noted throughout this port's GUI work); real-machine
+  // verification and likely correction is expected as a follow-up.
+  static constexpr int kScrollbarWidth = 15;
   std::vector<Cell> grid;
 
   SDL_Color fg{220, 220, 220, 255};
@@ -247,8 +261,9 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // window/renderer-wide effect neither path could individually cause
   // or avoid).
   SDL_Window *window = SDL_CreateWindow(
-      "usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, cellWidth * columns + Impl::kMarginX * 2,
-      cellHeight * rows + Impl::kMarginY * 2, SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+      "usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+      cellWidth * columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth, cellHeight * rows + Impl::kMarginY * 2,
+      SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
   if (!window) {
     if (fallbackFont) TTF_CloseFont(fallbackFont);
     TTF_CloseFont(font);
@@ -733,7 +748,7 @@ void GraphicalDisplay::setSize(int rows, int columns) {
   impl_->columns = columns;
   impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
   if (impl_->window)
-    SDL_SetWindowSize(impl_->window, impl_->cellWidth * columns + Impl::kMarginX * 2,
+    SDL_SetWindowSize(impl_->window, impl_->cellWidth * columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
                        impl_->cellHeight * rows + Impl::kMarginY * 2);
 }
 
@@ -963,6 +978,43 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg) {
   }
 }
 
+// First slice of the scrollbar overlay (docs/HISTORY.md line 521 /
+// IDEAS.md's 2026-08-03 entry: "静的な見た目ではスクロールバーをフル
+// 表示、慣性スクロール操作中はつまみ位置・サイズをスクロール位置に
+// 完全連動") -- ONLY the second half (live sync during an active
+// drag/coast, since renderScrolled() is the only call site so far)
+// is implemented here; the static (non-scrolling) case needs its own
+// follow-up (see this function's own caller comment). Draws a
+// translucent track spanning the full content height in the
+// Impl::kScrollbarWidth-wide strip reserved on the right edge (see
+// its own comment), and a more-opaque thumb sized/positioned
+// proportionally to how much of the document is visible and where.
+void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int contentRows) {
+  if (contentRows <= 0) return;
+  int trackX = Impl::kMarginX + impl_->columns * impl_->cellWidth;
+  int trackHeight = contentRows * impl_->cellHeight;
+  SDL_SetRenderDrawBlendMode(impl_->renderer, SDL_BLENDMODE_BLEND);
+  SDL_Rect track{trackX, Impl::kMarginY, Impl::kScrollbarWidth, trackHeight};
+  SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 40);
+  SDL_RenderFillRect(impl_->renderer, &track);
+
+  // totalLines <= contentRows means the whole document already fits
+  // on screen at once -- the thumb fills the entire track (nothing to
+  // scroll to), matching a real scrollbar's own convention rather
+  // than dividing by a non-positive range below.
+  int scrollableLines = std::max(totalLines - contentRows, 0);
+  double visibleFraction = (totalLines > 0) ? std::min(1.0, static_cast<double>(contentRows) / totalLines) : 1.0;
+  int thumbHeight = std::max(static_cast<int>(trackHeight * visibleFraction), std::min(trackHeight, 20));
+  int maxThumbY = trackHeight - thumbHeight;
+  int thumbY = (scrollableLines > 0)
+                   ? std::clamp(static_cast<int>(maxThumbY * (effectiveTop / scrollableLines)), 0, maxThumbY)
+                   : 0;
+  SDL_Rect thumb{trackX + 2, Impl::kMarginY + thumbY, Impl::kScrollbarWidth - 4, thumbHeight};
+  SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 130);
+  SDL_RenderFillRect(impl_->renderer, &thumb);
+  SDL_SetRenderDrawBlendMode(impl_->renderer, SDL_BLENDMODE_NONE);
+}
+
 // Drag-scroll prototype rendering -- see class comment and header
 // comment on why this is a self-contained path, not layered on
 // write()/putChar()/moveCursor(). Renders each of `lines` (already
@@ -994,6 +1046,24 @@ void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int
 
   int contentRows = std::max(impl_->rows - 1, 0);
 
+  // Clip content rendering strictly to the margin boundary (2026-08-07,
+  // a real user report): without this, SDL's default clip is the
+  // whole render target, so a partially-scrolled row's glyphs (which
+  // can legitimately extend to negative y or past the content/mode-
+  // line boundary mid-scroll, see the loop below) rendered straight
+  // through the thin kMarginY border with no stable edge -- the user
+  // initially read this as "the top row disappears too early" before
+  // realizing, comparing side-by-side against the real terminal, that
+  // what they were actually seeing was content bleeding INTO what
+  // should have been a fixed, never-scrolled margin, with no visible
+  // boundary to signal that. Setting an explicit clip rect here makes
+  // the margin a real, stable edge -- content is now guaranteed to
+  // never render above/left of it or past the content/mode-line
+  // boundary, regardless of pixelOffsetY.
+  SDL_Rect contentClip{Impl::kMarginX, Impl::kMarginY, impl_->columns * impl_->cellWidth,
+                        contentRows * impl_->cellHeight};
+  SDL_RenderSetClipRect(impl_->renderer, &contentClip);
+
   // One extra row above when revealing upward (pixelOffsetY > 0,
   // content shifting down), one extra row below when revealing
   // downward (pixelOffsetY < 0, content shifting up) -- see header
@@ -1008,6 +1078,14 @@ void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int
     if (y <= -impl_->cellHeight || y >= contentRows * impl_->cellHeight) continue;  // fully off-screen (or into the mode-line row)
     renderTextRun(y, lines[lineIndex], Color{impl_->fg.r, impl_->fg.g, impl_->fg.b});
   }
+
+  SDL_RenderSetClipRect(impl_->renderer, nullptr);  // mode-line row below (and any future margin decoration) isn't bound by this
+
+  // See drawScrollbar()'s own comment -- effectiveTop is topIndex
+  // adjusted by the current sub-row pixelOffsetY so the thumb tracks
+  // smoothly instead of jumping once per full row crossing.
+  double effectiveTop = topIndex - static_cast<double>(pixelOffsetY) / std::max(impl_->cellHeight, 1);
+  drawScrollbar(effectiveTop, static_cast<int>(lines.size()), contentRows);
 
   if (impl_->rows > 0) {
     int modeLineY = contentRows * impl_->cellHeight;
