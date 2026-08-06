@@ -979,33 +979,39 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg) {
 }
 
 // First slice of the scrollbar overlay (docs/HISTORY.md line 521 /
-// IDEAS.md's 2026-08-03 entry: "静的な見た目ではスクロールバーをフル
-// 表示、慣性スクロール操作中はつまみ位置・サイズをスクロール位置に
-// 完全連動") -- ONLY the second half (live sync during an active
-// drag/coast, since renderScrolled() is the only call site so far)
-// is implemented here; the static (non-scrolling) case needs its own
-// follow-up (see this function's own caller comment).
+// IDEAS.md's 2026-08-03 entry) -- only shown WHILE actively dragging/
+// coasting, since this is only ever called from renderScrolled() (the
+// scroll-specific render path); the static (non-scrolling) case needs
+// a Display-interface extension, see this function's own caller
+// comment. This matches -c's own reference behavior too, confirmed
+// from a real screenshot (2026-08-07): a static, non-scrolling -c
+// window shows no scrollbar at all either.
 //
-// Neutral gray (NOT impl_->fg), matching a real macOS overlay
-// scrollbar's own appearance regardless of the terminal's own color
-// theme -- a real side-by-side screenshot (2026-08-07) found the
-// first version, tinted with impl_->fg, rendered as a solid-looking
-// saturated-green bar on this green-on-black theme (a highly
-// saturated hue still reads as "a bold colored block" even at fairly
-// low alpha, which a neutral gray doesn't) and asked for it to match
-// -c's own native, barely-there appearance. No persistent track
-// (deliberately, this time -- real macOS overlay scrollbars don't
-// show one at all while idle either, and neither does the -c
-// reference in that screenshot): only the thumb itself is drawn, and
-// since this function is only ever called from renderScrolled()
-// (the scroll-specific render path), it already only appears WHILE
-// actively dragging/coasting, the same "only visible during actual
-// scrolling" behavior overlay scrollbars have. Narrower than the
-// full Impl::kScrollbarWidth reserved strip (real macOS scrollbars
-// are a thin bar within a wider hit-target column, not a wide block).
+// Visual style went through two real-screenshot corrections
+// (2026-08-07): the first version tinted track+thumb with impl_->fg
+// (the terminal theme's own foreground), which on this green-on-black
+// theme read as a solid saturated-green block even at low alpha. The
+// SECOND version dropped the track entirely and used a thin
+// translucent neutral-gray thumb only, guessing at macOS's modern
+// "overlay" scrollbar style -- but a tightly-cropped screenshot of
+// -c's own actual scrollbar (while scrolling) showed something
+// different: a classic, fully OPAQUE light-gray track with a solid
+// medium-gray rounded thumb, not a translucent overlay. This version
+// matches that reference directly instead of a generic "what macOS
+// scrollbars usually look like" assumption.
 void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int contentRows) {
   if (contentRows <= 0) return;
   int trackHeight = contentRows * impl_->cellHeight;
+  int trackX = Impl::kMarginX + impl_->columns * impl_->cellWidth;
+
+  SDL_Rect track{trackX, Impl::kMarginY, Impl::kScrollbarWidth, trackHeight};
+  SDL_SetRenderDrawColor(impl_->renderer, 235, 235, 235, 255);
+  SDL_RenderFillRect(impl_->renderer, &track);
+  // Thin darker seam on the track's own left edge -- the reference
+  // screenshot shows a subtle boundary between the content area and
+  // the track, not a hard flat merge into it.
+  SDL_SetRenderDrawColor(impl_->renderer, 200, 200, 200, 255);
+  SDL_RenderDrawLine(impl_->renderer, trackX, Impl::kMarginY, trackX, Impl::kMarginY + trackHeight - 1);
 
   // totalLines <= contentRows means the whole document already fits
   // on screen at once -- the thumb fills the entire track (nothing to
@@ -1013,19 +1019,26 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   // than dividing by a non-positive range below.
   int scrollableLines = std::max(totalLines - contentRows, 0);
   double visibleFraction = (totalLines > 0) ? std::min(1.0, static_cast<double>(contentRows) / totalLines) : 1.0;
-  int thumbHeight = std::max(static_cast<int>(trackHeight * visibleFraction), std::min(trackHeight, 20));
+  int thumbHeight = std::max(static_cast<int>(trackHeight * visibleFraction), std::min(trackHeight, 24));
   int maxThumbY = trackHeight - thumbHeight;
   int thumbY = (scrollableLines > 0)
                    ? std::clamp(static_cast<int>(maxThumbY * (effectiveTop / scrollableLines)), 0, maxThumbY)
                    : 0;
-  constexpr int kThumbInset = 4;  // margin on each side within the reserved strip, for a slender look
-  int thumbX = Impl::kMarginX + impl_->columns * impl_->cellWidth + kThumbInset;
+  constexpr int kThumbInset = 3;  // margin on each side within the reserved strip
+  int thumbX = trackX + kThumbInset;
   int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
   SDL_Rect thumb{thumbX, Impl::kMarginY + thumbY, thumbWidth, thumbHeight};
-  SDL_SetRenderDrawBlendMode(impl_->renderer, SDL_BLENDMODE_BLEND);
-  SDL_SetRenderDrawColor(impl_->renderer, 150, 150, 150, 140);
+  SDL_SetRenderDrawColor(impl_->renderer, 150, 150, 150, 255);
   SDL_RenderFillRect(impl_->renderer, &thumb);
-  SDL_SetRenderDrawBlendMode(impl_->renderer, SDL_BLENDMODE_NONE);
+  // Rough rounded-corner approximation (SDL2 has no native rounded-
+  // rect fill primitive): punch the 4 corner pixels back to the
+  // track's own color so the thumb reads as a softly rounded pill
+  // rather than a sharp-cornered block, matching the reference.
+  SDL_SetRenderDrawColor(impl_->renderer, 235, 235, 235, 255);
+  SDL_RenderDrawPoint(impl_->renderer, thumb.x, thumb.y);
+  SDL_RenderDrawPoint(impl_->renderer, thumb.x + thumb.w - 1, thumb.y);
+  SDL_RenderDrawPoint(impl_->renderer, thumb.x, thumb.y + thumb.h - 1);
+  SDL_RenderDrawPoint(impl_->renderer, thumb.x + thumb.w - 1, thumb.y + thumb.h - 1);
 }
 
 // Drag-scroll prototype rendering -- see class comment and header
