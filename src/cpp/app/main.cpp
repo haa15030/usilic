@@ -1645,10 +1645,23 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
       bool wKey = !key->special && (key->byte == 'w' || key->byte == 'W');
       bool sKey = !key->special && (key->byte == 's' || key->byte == 'S');
-      if ((wKey || sKey) && app.currentMode() != fm::ApplicationMode::Shell &&
+      // Up/Down ALSO double as w/s once a coast is already running --
+      // added 2026-08-07 at the user's own request ("↑↓は普段は^P^N
+      // to速度調整を↑↓でも可能にしたい"): arrows keep their normal
+      // single-line-move role (^P/^N equivalent, via the key->special
+      // branch below) whenever nothing is coasting, but once coastLevel
+      // > 0 they accelerate/reset exactly like w/s instead of stopping
+      // the coast and moving one line -- gated the same "not Shell,
+      // not mid-prompt" way w/s already are. Direction matches Up's
+      // own existing sense (toward earlier content, same as ^P and the
+      // same sense 'w' already uses).
+      bool upKey = key->special == fm::Display::Key::Up;
+      bool downKey = key->special == fm::Display::Key::Down;
+      bool arrowSpeedControl = (upKey || downKey) && coastLevel > 0;
+      if ((wKey || sKey || arrowSpeedControl) && app.currentMode() != fm::ApplicationMode::Shell &&
           !app.awaitingSequenceOrPromptByte()) {
         consecutiveEscapes = 0;
-        int pressedDirection = wKey ? 1 : -1;
+        int pressedDirection = (wKey || upKey) ? 1 : -1;
         if (coastLevel > 0 && pressedDirection == coastDirection) {
           coastLevel = resolveCoastLevel(std::min(coastLevel + 1, static_cast<int>(fm::kScrollSpeedLevels.size()) - 1));
         } else {
