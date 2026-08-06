@@ -77,7 +77,7 @@ class DelegatingDisplay : public Display {
   void close() override;
 
   void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
-                       const std::string &modeLineText) override;
+                       const std::vector<ModeLineSegment> &modeLineSegments) override;
 
  private:
   Display *backend_;

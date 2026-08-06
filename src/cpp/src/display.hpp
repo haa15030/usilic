@@ -162,17 +162,33 @@ class Display {
   virtual void open() = 0;
   virtual void close() = 0;
 
+  // One piece of the mode-line row -- either a highlighted (reverse-
+  // video/"standout") field (a filename, the position indicator, the
+  // trailing path) or a plain, unhighlighted single-space gap between
+  // two fields. See ContentView::scrollModeLineSegments()'s own
+  // comment for why this exists as a SEQUENCE rather than one flat
+  // string: a real screenshot comparison (2026-08-07) found
+  // renderScrolled()'s mode-line drawn as one uninterrupted highlight
+  // bar, while the normal (non-scrolling) ContentView::renderModeLine()
+  // path correctly shows small black gaps between fields, matching
+  // legacy's own disp_window() (separate vt_stand()/vt_endstand()
+  // calls per field, not one call around the whole composed string).
+  struct ModeLineSegment {
+    std::string text;
+    bool standout = true;
+  };
+
   // -- smooth (drag/coast) scroll rendering --
   // Renders `lines` (the FULL content, not just what's visible) with
   // row `topIndex` positioned `pixelOffsetY` pixels below its normal
-  // (offset==0) position, and `modeLineText` (see ContentView::
-  // modeLineText()/scrollModeLineText()) in the fixed bottom row --
-  // the rendering primitive behind the GUI drag-scroll feature (docs/
-  // ideas/IDEAS.md's "cat's-paw" request). Moved onto this interface
-  // (2026-07-31, previously GraphicalDisplay-only) so callers
-  // (main.cpp's runGuiPhase()) go through the same Display abstraction
-  // every other render call does, rather than reaching for a
-  // GraphicalDisplay-specific method.
+  // (offset==0) position, and `modeLineSegments` (see ContentView::
+  // scrollModeLineSegments()) in the fixed bottom row -- the rendering
+  // primitive behind the GUI drag-scroll feature (docs/ideas/IDEAS.md's
+  // "cat's-paw" request). Moved onto this interface (2026-07-31,
+  // previously GraphicalDisplay-only) so callers (main.cpp's
+  // runGuiPhase()) go through the same Display abstraction every other
+  // render call does, rather than reaching for a GraphicalDisplay-
+  // specific method.
   //
   // `pixelOffsetY` is fundamentally pixel/dot-granular: positive
   // shifts everything DOWN (revealing earlier content, a downward
@@ -189,7 +205,7 @@ class Display {
   // independently usable rather than left as a stub, for whatever
   // future caller wants a Display-agnostic smooth-scroll render.
   virtual void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
-                               const std::string &modeLineText) = 0;
+                               const std::vector<ModeLineSegment> &modeLineSegments) = 0;
 };
 
 }  // namespace fm

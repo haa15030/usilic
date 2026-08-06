@@ -298,12 +298,16 @@ class GraphicalDisplay : public Display {
   // implementation). The caller is responsible for committing a real
   // topIndex change and resetting pixelOffsetY once a full row's
   // worth has accumulated (see main.cpp's commitRowCrossings()).
-  // `modeLineText` is drawn fresh every call into the fixed bottom
-  // row, in reverse video -- content itself never scrolls into that
-  // row (see this method's own comment in the .cpp for why it used
-  // to).
+  // `modeLineSegments` is drawn fresh every call into the fixed
+  // bottom row -- each segment its own reverse-video run (or, for a
+  // non-standout gap segment, left as plain background), matching
+  // ContentView::renderModeLine()'s own per-field look rather than
+  // one uninterrupted highlight bar (see Display::ModeLineSegment's
+  // own comment for the real bug this fixes). Content itself never
+  // scrolls into that row (see this method's own comment in the .cpp
+  // for why it used to).
   void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
-                       const std::string &modeLineText) override;
+                       const std::vector<Display::ModeLineSegment> &modeLineSegments) override;
 
   int cellHeightPixels() const;
 
@@ -326,7 +330,18 @@ class GraphicalDisplay : public Display {
   void renderCellBackground(int row, int col);
   void renderCell(int row, int col);
   void renderCursor();
-  void renderTextRun(int y, const std::string &line, Color fg);
+  // `startCol` (added 2026-08-07 for the mode-line segment rewrite --
+  // see renderScrolled()'s own mode-line block) shifts where drawing
+  // begins; every existing caller keeps passing 0 (a whole content
+  // row always starts at the left edge) via the default.
+  void renderTextRun(int y, const std::string &line, Color fg, int startCol = 0);
+  // Sums the on-screen column width of `text` the same way
+  // renderTextRun() advances `x` internally (multi-byte UTF-8 aware,
+  // via the same fm::Utf8 helpers) -- used by the mode-line segment
+  // loop to know how many columns each segment's own highlight rect
+  // should span and where the NEXT segment's startCol begins, without
+  // duplicating renderTextRun()'s own glyph-walk a second time.
+  int textRunDisplayWidth(const std::string &text) const;
   // See renderScrolled()'s own call site comment. `effectiveTop` is a
   // continuous (fractional) topIndex -- topIndex adjusted by
   // pixelOffsetY/cellHeight -- so the thumb moves smoothly in sync

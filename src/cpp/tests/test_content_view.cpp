@@ -817,6 +817,37 @@ TEST_CASE("scrollModeLineText: uses topIndex_ (the viewport's top line), not cur
   CHECK(v.scrollModeLineText() == "06/10 60%");  // topIndex_ + 1 = 6
 }
 
+TEST_CASE("scrollModeLineSegments: same fields as scrollModeLineText, but as separate standout/plain-gap "
+          "segments instead of one flat string") {
+  // Added 2026-08-07 alongside Display::ModeLineSegment -- a real
+  // screenshot comparison found GraphicalDisplay::renderScrolled()'s
+  // mode-line drawn as one uninterrupted highlight bar (from the flat
+  // scrollModeLineText() string), unlike ContentView::renderModeLine()'s
+  // own per-field gaps. This is the segment-sequence source both
+  // GraphicalDisplay's and TerminalDisplay's renderScrolled() now
+  // draw from instead.
+  RecordingDisplay d(10, 60);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(10));
+  v.setModeLineFieldsProvider(
+      [](int) -> ContentView::ModeLineFields { return {"prompt.md", "/Users/haa15030/git/usilic/", false, ""}; });
+  v.setCursorIndex(0);
+  v.setTopIndex(5);
+  auto segments = v.scrollModeLineSegments();
+  REQUIRE(segments.size() == 5);
+  CHECK(segments[0].text == "prompt.md");
+  CHECK(segments[0].standout);
+  CHECK(segments[1].text == " ");
+  CHECK_FALSE(segments[1].standout);  // the gap -- see this test's own comment
+  CHECK(segments[2].text == "06/10 60%");
+  CHECK(segments[2].standout);
+  CHECK(segments[3].text == " ");
+  CHECK_FALSE(segments[3].standout);
+  CHECK(segments[4].text == "/Users/haa15030/git/usilic/");
+  CHECK(segments[4].standout);
+}
+
 TEST_CASE("scrollModeLineText: reaching the bottom boundary shows END, not a percentage") {
   // topIndex_ itself caps out at total-height_ (7 here), which never
   // equals totalLines the way cursorIndex_ does in modeLineText() --

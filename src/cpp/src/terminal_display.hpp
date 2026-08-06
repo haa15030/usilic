@@ -107,7 +107,7 @@ class TerminalDisplay : public Display {
   // currently drives ContentView::redraw() directly instead of
   // calling this.
   void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
-                       const std::string &modeLineText) override;
+                       const std::vector<Display::ModeLineSegment> &modeLineSegments) override;
 
   // Row/column arguments for the change-scroll-region capability,
   // given the current size and smooth-scroll setting. Pure (no I/O).

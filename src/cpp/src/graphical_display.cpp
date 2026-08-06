@@ -980,9 +980,9 @@ void GraphicalDisplay::setHandCursor(bool active) {
 // font-fallback/fitGlyphRect() dance renderCell() already has its own
 // (necessarily separate, see renderScrolled()'s own class comment on
 // why this whole path is self-contained).
-void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg) {
+void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, int startCol) {
   SDL_Color sdlFg{fg.r, fg.g, fg.b, 255};
-  int x = 0;
+  int x = startCol;
   std::size_t pos = 0;
   while (pos < line.size() && x < impl_->columns) {
     unsigned char lead = static_cast<unsigned char>(line[pos]);
@@ -1017,6 +1017,19 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg) {
   }
 }
 
+int GraphicalDisplay::textRunDisplayWidth(const std::string &text) const {
+  int width = 0;
+  std::size_t pos = 0;
+  while (pos < text.size()) {
+    unsigned char lead = static_cast<unsigned char>(text[pos]);
+    int len = Utf8::sequence_length(lead);
+    if (pos + len > text.size()) len = 1;
+    width += std::max(1, Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data() + pos), len));
+    pos += len;
+  }
+  return width;
+}
+
 // First slice of the scrollbar overlay (docs/HISTORY.md line 521 /
 // IDEAS.md's 2026-08-03 entry) -- only shown WHILE actively dragging/
 // coasting, since this is only ever called from renderScrolled() (the
@@ -1026,21 +1039,22 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg) {
 // from a real screenshot (2026-08-07): a static, non-scrolling -c
 // window shows no scrollbar at all either.
 //
-// Visual style: back to a plain translucent neutral-gray thumb, no
-// track (2026-08-07, reverting the classic opaque-track/solid-thumb
-// attempt one round later) -- the classic version, even once matched
-// reasonably closely to a real -c screenshot, still wasn't an EXACT
-// pixel match and the user found that partial-but-not-quite likeness
-// MORE distracting than a simpler, honestly-not-trying-to-be-identical
-// indicator. Their own reasoning: the dot-scroll feature itself is a
-// hidden/undocumented one, and the moment scrolling is happening at
-// all the "disguised as a real terminal" pretense is already broken
-// (a real terminal doesn't animate like this) -- so there's no longer
-// a real payoff in chasing pixel-exact scrollbar fidelity specifically.
-// Color still intentionally theme-independent gray (not impl_->fg,
-// see the immediately preceding version's own reasoning for why) --
-// exact color/theme integration is deliberately left as a future
-// task, per the user's own call.
+// Visual style: solid impl_->fg (2026-08-07, replacing the previous
+// translucent neutral-gray-thumb/no-track version), same color and
+// full opacity as the mode-line's own reverse-video bar (see
+// renderModeLine()/the mode-line-drawing block below) -- the user's
+// own reasoning: matching the mode-line specifically (rather than
+// picking yet another fixed gray) means the scrollbar automatically
+// looks right under ANY color theme, not just this project's default
+// green-on-black. Plain rectangle, no rounded corners this time --
+// the mode-line bar itself is a plain rectangle, and the user asked
+// for "the same shape, a rectangle of the same width" once the color
+// was going to match it anyway. (The FIRST attempt at using impl_->fg,
+// 2026-08-07 earlier the same day, was rejected for reading as "a
+// solid saturated-green block" -- but that version filled a
+// near-full-height TRACK with it; a small thumb-sized rect, the
+// mode-line's own bar height, doesn't have the same "wall of color"
+// problem.)
 void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int contentRows) {
   if (contentRows <= 0) return;
   int trackHeight = contentRows * impl_->cellHeight;
@@ -1065,34 +1079,9 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
   int thumbTop = Impl::kMarginY + thumbY;
 
-  // Proper rounded-pill shape (radius = half the thumb width, i.e.
-  // fully round caps), drawn row by row with each row's own inset
-  // computed from a real circle equation -- replacing the previous
-  // "punch a single corner pixel" approximation, which read as barely
-  // rounded at all at this thumb's actual pixel width. Row-by-row
-  // (rather than filling one rect and erasing corners) also means
-  // this works correctly with NO separate track/background fill:
-  // whatever the corner pixels would have covered is simply never
-  // drawn over at all, leaving the real scrolled content underneath
-  // visible there, consistent with this version having no opaque
-  // track.
-  int radius = std::min(thumbWidth / 2, thumbHeight / 2);
-  SDL_SetRenderDrawBlendMode(impl_->renderer, SDL_BLENDMODE_BLEND);
-  SDL_SetRenderDrawColor(impl_->renderer, 150, 150, 150, 140);
-  for (int row = 0; row < thumbHeight; row++) {
-    int distFromNearestEnd = std::min(row, thumbHeight - 1 - row);
-    int inset = 0;
-    if (radius > 0 && distFromNearestEnd < radius) {
-      int dy = radius - 1 - distFromNearestEnd;
-      double dx = std::sqrt(std::max(0.0, static_cast<double>(radius * radius - dy * dy)));
-      inset = radius - static_cast<int>(dx);
-    }
-    int lineWidth = thumbWidth - inset * 2;
-    if (lineWidth <= 0) continue;
-    SDL_Rect rowRect{thumbX + inset, thumbTop + row, lineWidth, 1};
-    SDL_RenderFillRect(impl_->renderer, &rowRect);
-  }
-  SDL_SetRenderDrawBlendMode(impl_->renderer, SDL_BLENDMODE_NONE);
+  SDL_Rect thumb{thumbX, thumbTop, thumbWidth, thumbHeight};
+  SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
+  SDL_RenderFillRect(impl_->renderer, &thumb);
 }
 
 // Drag-scroll prototype rendering -- see class comment and header
@@ -1116,7 +1105,7 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
 // the ORIGINAL motivation for wanting mode-line support at all (see
 // CLAUDE.md's 2026-07-30 notes on reflecting scroll state there).
 void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
-                                       const std::string &modeLineText) {
+                                       const std::vector<Display::ModeLineSegment> &modeLineSegments) {
   if (!impl_->outputEnabled) return;
   SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
   SDL_RenderClear(impl_->renderer);
@@ -1168,12 +1157,29 @@ void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int
   drawScrollbar(effectiveTop, static_cast<int>(lines.size()), contentRows);
 
   if (impl_->rows > 0) {
+    // Drawn as SEPARATE per-segment reverse-video runs, not one
+    // continuous bar across the whole row -- see Display::
+    // ModeLineSegment's own comment for the real screenshot bug this
+    // fixes (this used to fill+draw the whole composed string as one
+    // uninterrupted highlight, unlike ContentView::renderModeLine()'s
+    // own per-field gaps). A non-standout segment (the plain single-
+    // space gaps composeModeLineSegments() inserts between fields)
+    // draws no fill at all, leaving the already-cleared background
+    // showing through -- exactly the small black gap the reference
+    // screenshot shows.
     int modeLineY = contentRows * impl_->cellHeight;
-    SDL_Rect rowBox{Impl::kMarginX, Impl::kMarginY + modeLineY, impl_->columns * impl_->cellWidth,
-                     impl_->cellHeight};
-    SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
-    SDL_RenderFillRect(impl_->renderer, &rowBox);
-    renderTextRun(modeLineY, modeLineText, Color{impl_->bg.r, impl_->bg.g, impl_->bg.b});
+    int col = 0;
+    for (const auto &segment : modeLineSegments) {
+      int segCols = textRunDisplayWidth(segment.text);
+      if (segment.standout) {
+        SDL_Rect segBox{Impl::kMarginX + col * impl_->cellWidth, Impl::kMarginY + modeLineY, segCols * impl_->cellWidth,
+                         impl_->cellHeight};
+        SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
+        SDL_RenderFillRect(impl_->renderer, &segBox);
+        renderTextRun(modeLineY, segment.text, Color{impl_->bg.r, impl_->bg.g, impl_->bg.b}, col);
+      }
+      col += segCols;
+    }
   }
 
   SDL_RenderPresent(impl_->renderer);

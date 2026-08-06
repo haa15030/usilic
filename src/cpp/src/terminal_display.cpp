@@ -301,7 +301,7 @@ void TerminalDisplay::close() {
 }
 
 void TerminalDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
-                                      const std::string &modeLineText) {
+                                      const std::vector<ModeLineSegment> &modeLineSegments) {
   (void)pixelOffsetY;  // no sub-row addressing on a real terminal -- see this method's own header comment
   if (!outputEnabled_) return;
   int contentRows = std::max(rows_ - 1, 0);
@@ -312,11 +312,18 @@ void TerminalDisplay::renderScrolled(const std::vector<std::string> &lines, int 
     if (lineIndex >= 0 && lineIndex < static_cast<int>(lines.size())) write(lines[lineIndex]);
   }
   if (rows_ > 0) {
+    // Per-segment Standout runs, same as ContentView::renderModeLine()
+    // itself -- see Display::ModeLineSegment's own comment for why (a
+    // non-standout segment, the plain gaps between fields, is written
+    // with no attribute at all, same as renderModeLine()'s own plain
+    // putChar(' ') between drawSegment() calls).
     moveCursor(contentRows, 0);
     clearToEndOfLine();
-    setAttribute(Attribute::Standout);
-    write(modeLineText);
-    setAttribute(Attribute::StandoutOff);
+    for (const auto &segment : modeLineSegments) {
+      if (segment.standout) setAttribute(Attribute::Standout);
+      write(segment.text);
+      if (segment.standout) setAttribute(Attribute::StandoutOff);
+    }
   }
   flush();
 }

@@ -453,6 +453,51 @@ std::string ContentView::scrollModeLineText() const {
   return composeModeLineRow(ModeLine::format(current, total));
 }
 
+std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() const {
+  int total = static_cast<int>(lines_.size());
+  int bottomVisible = std::min(topIndex_ + std::max(height_, 0), total);
+  int current;
+  if (total <= 0) {
+    current = 0;
+  } else if (bottomVisible >= total) {
+    current = total;  // see scrollModeLineText()'s own comment on why this check, not topIndex_ itself
+  } else {
+    current = topIndex_ + 1;
+  }
+  std::string positionText = ModeLine::format(current, total);
+
+  std::vector<Display::ModeLineSegment> segments;
+  if (!modeLineFieldsProvider_) {
+    segments.push_back({positionText, true});
+    return segments;
+  }
+  ModeLineFields fields = modeLineFieldsProvider_(cursorIndex_);
+  FieldFit fit = fitModeLineFields(fields, positionText);
+  int cols = display_.columns();
+  int drawnLen = 0;
+  if (fit.showName && !fields.name.empty()) {
+    segments.push_back({fields.name, true});
+    segments.push_back({" ", false});
+    drawnLen += static_cast<int>(fields.name.size()) + 1;
+  }
+  segments.push_back({positionText, true});
+  drawnLen += static_cast<int>(positionText.size());
+  if (fit.showTrailing && !fields.trailing.empty()) {
+    segments.push_back({" ", false});
+    drawnLen += 1;
+    std::string trailing = fields.trailing;
+    if (fields.fillTrailingToEdge) {
+      // See renderModeLine()'s own identical padding -- keeps the
+      // highlight reaching the screen's right edge in the modes that
+      // want that, same as the flat-string version does.
+      int remaining = cols - drawnLen - static_cast<int>(trailing.size());
+      if (remaining > 0) trailing += std::string(remaining, ' ');
+    }
+    segments.push_back({trailing, true});
+  }
+  return segments;
+}
+
 void ContentView::setModeLineFieldsProvider(ModeLineFieldsProvider provider) {
   modeLineFieldsProvider_ = std::move(provider);
 }

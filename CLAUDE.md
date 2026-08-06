@@ -11397,6 +11397,75 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       実際のドラッグ操作の見た目・挙動はこの環境から検証不可能な
       ため、ユーザーの実機確認待ち。
 
+197. **2026-08-07(続き): つまみをモードラインと同じ色・形(不透明
+    `impl_->fg`、丸みなしの長方形)へ変更、`renderScrolled()`の
+    モードライン描画に項目間の区切り(黒い隙間)が無い不具合を発見・
+    修正**。ユーザーから「つまみの色と形をモードラインと同じにして
+    ほしい。そうすればウィンドウが変わっても問題無い。形は同じ幅の
+    長方形で。ついでにモードラインでの項目の区切りも修正よろしく
+    (あとのがお手本)」との依頼があり、2枚のスクリーンショットが
+    添付された(前者=現状、後者=お手本)。
+   - **セッション開始時の顛末**: 実装前に、初めて`run`スキルを使い
+      実際に`-g`を起動してmacOSの`screencapture`で見た目を検証
+      しようと試みたが、対象ウィンドウを`osascript`経由で正確に
+      特定できず、フォールバックでフルスクリーンキャプチャを一度
+      実行してしまった。これによりこのセッション自体を含む画面全体
+      (無関係な他のウィンドウ・ファイルも)が写り込んでしまったため、
+      直ちに中止してキャプチャを削除し、ユーザーに経緯を報告した。
+      以降は目視検証を諦め、通常どおりコード読解とユーザー提供の
+      スクリーンショットに基づく実装へ切り替えた。
+   - **つまみの色・形**: `drawScrollbar()`のつまみ描画を、不透明な
+      `impl_->fg`(モードラインの反転表示バーと同じ色)、丸み無しの
+      単純な矩形(`SDL_RenderFillRect`1回のみ)に変更した。項目193で
+      いったん`impl_->fg`を採用→「緑一色のブロックに見える」との
+      指摘で撤回した経緯があるが、今回は「トラック無しの小さな
+      つまみ矩形」のみが対象のため、以前問題になった「画面のほぼ
+      全高を覆う帯」という状況とは異なると判断した。
+   - **モードライン区切りの不具合発見**: 添付の2枚のスクリーンショットを
+      Pythonで拡大トリミングして比較したところ、「現状」画面では
+      `prompt.md 1/1 END 107 /Users/.../usilic/`が項目間の区切り無しで
+      1本の連続した緑のバーとして表示されていたのに対し、「お手本」
+      画面では`prompt.md`|隙間|`1/1 END`|隙間|`107 /Users/.../usilic/`
+      という3つの反転表示ブロックの間に黒い隙間が入っていることを
+      確認した。原因を`ContentView::renderModeLine()`(通常の静的
+      描画で使われる、`name`/`position`/`trailing`の3フィールドを
+      個別の反転表示runとして描画する設計、フィールド間は非反転の
+      単一スペース)と、`GraphicalDisplay::renderScrolled()`(スクロール
+      中専用の描画パス)の食い違いに特定した。後者は`ContentView::
+      scrollModeLineText()`が返す、フィールドがすでに単純に連結
+      された1本のフラット文字列を、1回の`SDL_RenderFillRect`+1回の
+      `renderTextRun()`で一括描画しており、フィールドごとの区切りを
+      再現していなかった。`TerminalDisplay::renderScrolled()`
+      (実端末のコースト/ドラッグフォールバック用)も同じ設計のため、
+      同種の不具合を抱えていたと判明。
+   - **修正**: `Display`インターフェースに`ModeLineSegment{text,
+      standout}`型を新設し、`renderScrolled()`の引数を`const
+      std::string &modeLineText`から`const std::vector<ModeLineSegment>
+      &modeLineSegments`へ変更(`Display`/`TerminalDisplay`/
+      `GraphicalDisplay`/`DelegatingDisplay`全実装、および
+      `tests/recording_display.hpp`のテスト用実装も含む)。
+      `ContentView`に新規`scrollModeLineSegments()`を追加し、
+      `renderModeLine()`と同じ`name`+隙間+`position`+隙間+`trailing`
+      (`fillTrailingToEdge`のパディングも含む)という構成をセグメント
+      列として返すようにした(Directory一覧専用の右寄せウォーターマーク
+      フォールバックは対象外、`renderScrolled()`はファイル内容
+      スクロール専用でこのフォールバックが発生する場面が無いため)。
+      `GraphicalDisplay::renderScrolled()`はセグメントを順に走査し、
+      `standout`なセグメントだけ矩形塗り+テキスト描画、`standout`
+      でない(隙間の)セグメントは何も描画せず背景色のまま残すことで
+      黒い隙間を再現した。セグメントごとの開始X座標を計算するため
+      `renderTextRun()`に`startCol`引数を追加、文字列の表示幅を
+      計算する新規`textRunDisplayWidth()`も追加した。
+      `TerminalDisplay::renderScrolled()`/`RecordingDisplay`側も
+      同様にセグメントごとの`Standout`属性on/offへ変更した。
+   - **検証**: `tests/test_content_view.cpp`に新規doctest1件を追加し、
+      `name`フィールド付きの`scrollModeLineSegments()`が
+      `[name, " "(非標準), position, " "(非標準), trailing]`という
+      期待どおりの5セグメント構成を返すことを確認した。既存648件+
+      新規1件=649件全通過、警告ゼロ。`make usilic`もクリーンビルド
+      成功、`-g`起動のクラッシュ無しも確認した。実際の見た目は
+      この環境から検証不可能なため、ユーザーの実機再確認待ち。
+
 - `tc.c`はncursesの`WINDOW`/`addch`系を一切使わず、termcap(`tgetstr`/
   `tputs`/`tgoto`)の生の制御文字列を`putchar`で直接端末に流す方式。
 - SHELLモード(`shell.c`)は子プロセスのpty出力をそのまま垂れ流す

@@ -93,7 +93,7 @@ class RecordingDisplay : public Display {
   // class's own write()/moveCursor()/etc. so tests can assert on
   // rowText()/standoutAt() same as any other rendering path.
   void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
-                       const std::string &modeLineText) override {
+                       const std::vector<ModeLineSegment> &modeLineSegments) override {
     (void)pixelOffsetY;
     int contentRows = rows_ > 0 ? rows_ - 1 : 0;
     for (int row = 0; row < contentRows; row++) {
@@ -103,11 +103,16 @@ class RecordingDisplay : public Display {
       if (lineIndex >= 0 && lineIndex < static_cast<int>(lines.size())) write(lines[lineIndex]);
     }
     if (rows_ > 0) {
+      // Per-segment Standout runs -- see Display::ModeLineSegment's
+      // own comment (a non-standout segment gets no attribute at all,
+      // same as TerminalDisplay's own real implementation).
       moveCursor(contentRows, 0);
       clearToEndOfLine();
-      setAttribute(Attribute::Standout);
-      write(modeLineText);
-      setAttribute(Attribute::StandoutOff);
+      for (const auto &segment : modeLineSegments) {
+        if (segment.standout) setAttribute(Attribute::Standout);
+        write(segment.text);
+        if (segment.standout) setAttribute(Attribute::StandoutOff);
+      }
     }
   }
 

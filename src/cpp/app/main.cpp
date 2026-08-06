@@ -1929,7 +1929,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       std::vector<std::string> lines;
       lines.reserve(view.lines().size());
       for (const auto &line : view.lines()) lines.push_back(line.text);
-      gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineText());
+      gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments());
     } else if (wasActivelyScrolling || anyEventThisFrame) {
       // Settled on a row boundary -- back to the normal Display-
       // interface rendering path. redraw() calls clampViewport(),

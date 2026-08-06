@@ -355,6 +355,23 @@ class ContentView {
   // reaching END the way plain 'j'/'s' navigation already did).
   std::string scrollModeLineText() const;
 
+  // Same composition as scrollModeLineText() (topIndex_-based current
+  // line, same name/position/trailing fields), but as a sequence of
+  // Display::ModeLineSegment instead of one flat string -- for
+  // Display::renderScrolled() callers, which need to reproduce
+  // renderModeLine()'s own "separate reverse-video runs with plain
+  // gaps between fields" look (see ModeLineSegment's own comment for
+  // the real screenshot bug this fixes: renderScrolled()'s mode-line
+  // used to draw scrollModeLineText()'s flat string as ONE
+  // uninterrupted highlight bar, with no gaps at all). Does not
+  // reproduce renderModeLine()'s own separate right-aligned-bold-
+  // watermark fallback (Directory mode, empty trailing) -- that
+  // fallback never applies to any mode renderScrolled() itself is
+  // used for (file-content scrolling always has a non-empty trailing
+  // path), so it was deliberately left out rather than ported
+  // untested.
+  std::vector<Display::ModeLineSegment> scrollModeLineSegments() const;
+
   // The two mode-specific pieces legacy's disp_window() wraps around
   // the current/total position text (ported from its own field
   // layout, see the comment on setModeLineFieldsProvider() below):

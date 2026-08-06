@@ -1430,3 +1430,18 @@ drawScrollbar()の見た目を全面的に描き直しました。トラック�
 実装中に気付いた点として、ContentView::setTopIndex()はcursorIndex_に触れない設計のため、そのままだとドラッグ終了後のredraw()がcursorIndex_(ドラッグ前の位置のまま)へ視点を引き戻してしまい、せっかくのジャンプが無効化される問題がありました。jumpToScrollbarY()内でview.setCursorIndex(view.topIndex())を追加で呼び、ジャンプ先を選択位置としても扱うことでこれを回避しています。
 
 検証として、make testで648件全通過、警告ゼロ、make usilicもクリーンビルド成功を確認し、-g起動がクラッシュしないことも確認しました。実際のドラッグ操作の見た目・挙動はこの環境から検証不可能なため、実機での確認をお願いします。CLAUDE.mdに項目196として記録し、コミット・プッシュします。
+
+<動きはOK。
+つまみの色と形をモードラインと同じにしてほしい。そうすればウィンドウが変わっても問題無い。形は同じ幅の長方形で。
+ついでにモードラインでの項目の区切りも修正よろしく（あとのがお手本）。
+'/Users/haa15030/Desktop/スクリーンショット 2026-08-07 8.17.29.png''/Users/haa15030/Desktop/スクリーンショット 2026-08-07 8.23.18.png'
+
+>実装前に、初めてrunスキルを使い実際に-gを起動してmacOSのscreencaptureで見た目を検証しようと試みましたが、対象ウィンドウをosascript経由で正確に特定できず、フォールバックでフルスクリーンキャプチャを一度実行してしまいました。これによりこのセッション自体を含む画面全体(無関係な他のウィンドウ・ファイルも)が写り込んでしまったため、直ちに中止してキャプチャを削除しました。お詫びして経緯をご報告します。以降は目視検証を諦め、通常どおりコード読解とスクリーンショットに基づく実装に切り替えました。
+
+つまみの色・形は、drawScrollbar()を不透明なimpl_->fg(モードラインの反転表示バーと同じ色)、丸み無しの単純な矩形に変更しました。
+
+2枚のスクリーンショットをPythonで拡大トリミングして比較したところ、「現状」画面ではprompt.md 1/1 END 107 /Users/.../usilic/が項目間の区切り無しで1本の連続した緑のバーとして表示されていたのに対し、「お手本」画面ではprompt.md|隙間|1/1 END|隙間|107 /Users/.../usilic/という3つの反転表示ブロックの間に黒い隙間が入っていることを確認しました。原因は、ContentView::renderModeLine()(通常の静的描画、name/position/trailingを個別の反転表示runとして描画)とGraphicalDisplay::renderScrolled()(スクロール中専用の描画パス、フラット文字列を1回で一括描画)の設計の食い違いでした。TerminalDisplay::renderScrolled()(実端末のコースト/ドラッグフォールバック)も同じ設計のため、同種の不具合を抱えていました。
+
+修正として、DisplayインターフェースにModeLineSegment{text, standout}型を新設し、renderScrolled()の引数をフラット文字列からセグメント列へ変更しました(Display/TerminalDisplay/GraphicalDisplay/DelegatingDisplay全実装、テスト用実装も含む)。ContentViewに新規scrollModeLineSegments()を追加し、renderModeLine()と同じname+隙間+position+隙間+trailingという構成をセグメント列として返すようにしています。GraphicalDisplay側はstandoutなセグメントだけ矩形塗り+テキスト描画、隙間セグメントは何も描画しないことで黒い隙間を再現しました。
+
+検証として、test_content_view.cppに新規doctest1件を追加し、5セグメント構成が期待どおりであることを確認しました。既存648件+新規1件=649件全通過、警告ゼロです。make usilicもクリーンビルド成功、-g起動のクラッシュ無しも確認しました。実際の見た目はこの環境から検証不可能なため、実機での再確認をお願いします。CLAUDE.mdに項目197として記録し、コミット・プッシュします。
