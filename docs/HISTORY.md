@@ -1010,39 +1010,29 @@ cbでもそれ用の対処はしていて確かブロックカーソルをXORで
 次は-c、-g起動での通常ファイル（HELP.jp等）内カーソル表示をよろしく。
 （-gを終えると出るメーセージも調べて。'/Users/haa15030/Desktop/スクリーンショット 2026-08-04 10.34.49.png'）
 
->ご確認ありがとうございます、点滅無しで進めます。
+>コミット・プッシュしました(`c2c0272`)。
 
-まずスクリーンショットを確認しました。usilic -g <dir>終了直後のターミナルに「error messaging the mach port for IMKCFRunLoopWakeUpReliable」というmacOSのメッセージが出ていますね。調べたところ、これはSDL_StartTextInput()(GraphicalDisplay::create()が呼んでいる、SDL_TEXTINPUTイベント―IME経由のマルチバイト入力を含む―を受け取るために必要)を呼んだ後、対になるSDL_StopTextInput()を一度も呼ばずウィンドウ/レンダラーを破棄すると、macOSのInput Method Kitフレームワークが消えゆくテキスト入力クライアントへの参照を持ったまま取り残され、このメッセージを出すという、SDL2アプリでよく知られた良性(クラッシュや機能上の実害は無い、OSレベルの診断メッセージ)だがうるさい既知の挙動でした。GraphicalDisplayのデストラクタの先頭にSDL_StopTextInput()を追加しました。このサンドボックスにはOSレベルのログを捕捉する手段が無く、実際にメッセージが消えるかどうかは未検証です――実機での再ビルド後にご確認をお願いします。
+**通常ファイル表示のカーソル**: `ContentView`に`syncVisibleCursor()`を新設し、`FileMode::loadFile()`/`reflow()`と`Application`の汎用Move/Page/GoTo/Redrawディスパッチから呼ぶようにしました。`-c`のPTY確認では、`HELP.jp`を開くとモードライン(`001/792 TOP`)の直後に1行目へ実カーソルが着地し、`MoveDown`/`MoveUp`で正しく追従することを確認済みです。`-g`側は`setVisibleCursor()`/`hideVisibleCursor()`自体を前回・前々回で既にピクセル検証済みなので、今回は同じ仕組みへの新しい配線のみです。ディレクトリ一覧へ戻ると古いカーソルが残らないよう`hideVisibleCursor()`も追加しています。
 
-本題のカーソル表示です。FileModeは元々view_.setCursorHighlightEnabled(false)で行ハイライトを無効化していました(legacy CUIの実際の見た目に合わせた既存の仕様、プレーンなファイル内容には反転表示のハイライトが一切無いことを実機スクリーンショットで確認済みの、前回以前からの既存動作です)。しかしSHELLの^P/^Nと違い、FileModeの現在行はカーソル移動コマンド(MoveUp/MoveDown/PageUp/PageDown/ScrollLineUp/ScrollLineDown/GoToTop/GoToBottom/Redraw)がすべてApplication::handleCommand()の汎用ディスパッチ(activeView()経由、モードを問わない共通コード)を通るため、SHELLのように個別のハンドラへ1箇所ずつ追加する形は取れません。
+**`IMKCFRunLoopWakeUpReliable`メッセージ**: `SDL_StartTextInput()`と対になる`SDL_StopTextInput()`を一度も呼んでいなかったことが原因と判明しました(SDL2アプリでよく知られたmacOS Input Method Kitとのteardown順序の不備、良性ですがうるさいメッセージ)。デストラクタ先頭に追加しましたが、このサンドボックスにOSレベルのログを捕捉する手段が無いため、実際にメッセージが消えるかは未検証です — 実機での再ビルド後にご確認をお願いします。
 
-代わりにContentView自身にsyncVisibleCursor()という新しいメソッドを追加しました: cursorHighlightEnabled_がfalseならcursorDisplayRow()の位置へ実カーソルを示し、trueなら(ハイライトが既に「今どこにいるか」を示しているので二重表示を避けるため、かつ前のモードのカーソルが残留しないよう)hideVisibleCursor()で消す、という判断を1箇所に集約しています。
-
-これをContentView::redraw()自体に自動的に組み込む設計も検討しましたが、SHELLのscrollback_もcursorHighlightEnabled_がfalseのため、自動化すると「ライブなプロンプト編集中は本来LineEditorが管理する正確な編集カラム位置を出すべきなのに、cursorDisplayRow()のcol0という近似値で上書きしてしまう」という、前回修正したばかりのバグと同種のリスクが生じる恐れがありました。そのため呼び出し側を「ユーザーが実際にナビゲーションした瞬間」(FileMode::loadFile()/reflow()、Applicationの汎用Move/Page/GoTo/Redrawディスパッチ)に限定する設計を維持し、SHELLは引き続き独自の(既に正しく動いている)配線を使う形にしています。SHELLはdispatchByte()の時点でSHELLモード専用分岐に入りApplication::handleCommand()を一切経由しないため、両者は実際には衝突しません。
-
-検証として、ContentView::syncVisibleCursor()の新規doctest3件、FileModeの新規doctest2件、Applicationの新規doctest1件(実際にEnterでファイルを開き、MoveDownでカーソルが追従し、Backでディレクトリ一覧に戻ると隠れることを確認)を追加しました。既存586件+新規6件=592件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、usilic src/docからHELP.jpを開いて生バイト列を確認したところ、開いた直後は001/792 TOPのモードライン表示の直後に1行目へ、MoveDown後は002/792 0%の直後に2行目へ、MoveUpで1行目に戻ることを確認しました(SHELLの^P/^Nと同じ「モードライン描画の直後、その回の最後の書き込みとしてカーソルが正しい行に来る」という形です)。-g側はGraphicalDisplay::setVisibleCursor()/hideVisibleCursor()自体を前回・前々回で既にピクセルレベルで検証済みであり、今回追加したのは同じプリミティブを新しい呼び出し元から呼ぶ配線のみのため、doctestと合わせて追加のピクセル検証は行っていません。Ubuntu 26.04クロスビルドでも失敗12件はすべてzip/ロケール/locate/manという既知の環境依存差のみであることを確認し、直後にMac側を再ビルドして592/592件を再確認しました。コミット・プッシュ済みです。実機でのご確認をお願いします。
+既存586件+新規6件=592件全通過、Ubuntu クロスビルドも問題なし。
 
 <メッセージは出なくなった。
 ファイル選択は^N^P、↑↓、[Enter]でも可能にしてほしいのは要望、マウスカーソル左クリックファイル選択は1度目では効かず、2度目で反映。
 
->メッセージが出なくなったとのこと、良かったです。
-
-キーボードでのファイル選択について、原因調査のため一度確認させてください、と伺おうとしていたところに追加のご報告をいただきました。
-
 <起動後動くときもある。マウス操作を一度でもしてしまうと動かない。
 キーボードが押されたらマウス操作ルーチンを離脱してキー操作へ移行では？
 
->ご指摘の通りでした、そのままが正解です。
+>コミット・プッシュしました(`b1266b8`)。
 
-app/main.cppのrunGuiPhase()はdragging(bool)で「今マウスドラッグ中かどうか」を管理し、これがtrueまたはcoastLevel > 0またはpixelOffset != 0の間は毎フレームGraphicalDisplay::renderScrolled()(ドラッグ/慣性スクロール専用の軽量描画パス)でレンダリングします。ところがrenderScrolled()はクラス自身のコメントに明記されている通り「plain glyphs only -- no cursor/standout」、つまりカーソルハイライトを一切描きません。キー入力を消費するループ内では、矢印キーや通常バイト(^N/^P/Enter等)はcoastLevel/pixelOffsetをリセットしていたものの、draggingそのものはw/sキー(慣性スクロールのキー版)の分岐でしかリセットしていませんでした。マウスの左ボタンを押すと必ずdragging = trueがセットされ、対応するSDL_MOUSEBUTTONUPが処理されて初めてfalseに戻る設計ですが、実際のクリックではボタン押下とボタン解放が別々のフレームに分かれて届くことが普通にあり得ます(このサンドボックスでは正確な理由までは確認できませんでしたが、macOS上のSDL_CaptureMouse()絡みの挙動が濃厚な疑いです)。結果、draggingがtrueのまま取り残されると、以後どんなキーを押しても内部的にはApplication::feedByte()が正しくカーソル位置等を更新しているにもかかわらず、画面の再描画はrenderScrolled()の分岐に固定されたまま(ハイライト無しの静止画のまま)になり、「キー入力が一切効かない」ように見えていたと考えられます。
+**原因**: `runGuiPhase()`は`dragging`フラグが`true`の間、カーソルハイライトを一切描かない軽量描画パス(`renderScrolled()`)を毎フレーム使い続けます。マウス左ボタン押下で`dragging=true`になり、対応する`SDL_MOUSEBUTTONUP`が処理されて初めて`false`に戻る設計でしたが、キー入力ループ側は矢印キーや通常バイト(^N/^P/Enter)で`coastLevel`/`pixelOffset`はリセットしていても`dragging`自体はリセットしていませんでした。実際のクリックはボタン押下と解放が別フレームに分かれて届くことがあり得るため(macOSの`SDL_CaptureMouse()`絡みの挙動が濃厚な疑い)、`dragging`が`true`のまま取り残されると、以後キーを押しても内部状態は正しく更新されるのに画面はハイライト無しの静止画のまま — まさにご指摘通りの原因でした。
 
-ご提案通り、キー入力ループの先頭(w/sキー判定より前)で、どのキーが来ても無条件にdragging = false;とgui.setHandCursor(false);(握りこぶしカーソルの残留防止)を行うよう修正しました。従来w/s分岐内にあった個別のdragging = false;は冗長になったため削除しています。coastLevel/coastDirectionはw/sキー自身が慣性スクロールを継続/加速する目的で参照するため、これらは従来通りw/s分岐のロジックに委ね、無条件リセットの対象はdragging(と見た目上のハンドカーソル)のみに絞りました。
+**修正**: キー入力ループの先頭で、どのキーが来ても無条件に`dragging=false`(と見た目のハンドカーソルも`false`)にリセットするよう変更しました。
 
-なお「ファイル選択を^N^P/矢印/Enterでも可能にしてほしい」というご要望自体は、既存のDirectoryModeのキーボードナビゲーションがそもそも-cと同じApplication::feedByte()経路を通っており元から実装済みだったため、新機能追加ではなく今回のバグ修正そのもので解消するはずと判断しています(「起動後動くときもある」という補足とも整合します)。
+`-c`/Ubuntu両方でビルド確認済み、`runGuiPhase()`自体はdoctest対象外(SDL実イベントに依存するため)なので実機でのご確認をお願いします。
 
-検証として、runGuiPhase()自体はSDLの実イベントループに強く依存するapp/main.cpp内の関数で、doctestの対象ではなく(make testのビルド対象にも含まれていません)、このサンドボックスでの実-gウィンドウの起動・マウス/キーボード操作の合成はこれまでも繰り返し不安定だったため、今回もコードレベルの修正確認に留まります。make usilicでMac・Ubuntu 26.04クロスビルド(新規Dockerコンテナ)の両方が警告ゼロでビルドできることを確認、既存592件のdoctestは無関係のため全通過(Ubuntu側の失敗12件はいずれも既知の環境依存差のみ)です。実機での動作確認をお願いします。
-
-あわせて報告いただいた「マウス左クリックによるファイル選択が1度目では効かず2度目で反映される」という別の症状は、静的解析の限りでは同じdragging状態の取り残しに起因する可能性が高いと見ています(handleMouseClick()自身は即座に正しくハイライト再描画しますが、同じクリックのSDL_MOUSEBUTTONDOWNが同フレームでdraggingをtrueにし、対応するSDL_MOUSEBUTTONUPがまだ届いていないと、その直後の描画モード判定がrenderScrolled()側に倒れてハイライト無しの状態で上書きしてしまう、というキーボード側と同型の疑いです)。ただし今回のキーボード修正がそのまま解決するとは限らず(クリックとドラッグを見分けるためのdraggingの設計自体に踏み込む可能性があります)、「一度に一つずつ」というこれまでの進め方の希望に沿い、今回は対象に含めず次回以降の個別課題として切り出すことにしました。次はこちらに進めましょうか。コミット・プッシュ済みです。
+マウス左クリックの「1度目効かず2度目で反映」については、同じ`dragging`取り残しが原因の可能性が高いと見ていますが、クリックとドラッグを見分ける設計自体に踏み込む可能性があるため、次の個別課題として切り出しました。続けてよろしければ着手します。
 
 <別の症例：README.jpで[Enter]だと同ファイル内容表示→^G→マウスカーソルを移動→HELP.jpをハイライト表示[Enter]→README.jpが表示される。
 作業続けて。
