@@ -448,31 +448,43 @@ Geminiのコード例は「同一プロセス内のSDLウィンドウ同士」�
 <ぴたりと一致。ウィンドウを動かして初めて重ね打ちだと気づく点が素晴らしい。これはGUI可否の分岐点でもあったので大きな前進だと思う。だたHomebrew端末ではOKでもRed Sansでためしてみたら情報取得がうまくいっていない模様。改善よろしく。
 '/Users/haa15030/Desktop/スクリーンショット 2026-08-03 12.22.51.png''/Users/haa15030/Desktop/スクリーンショット 2026-08-03 12.23.09.png'
 
->「Red Sans」がどのターミナルアプリ/配色テーマを指すのか、スクリーンショットだけでは断定できなかったため確認したところ、iTerm2の組み込み配色テーマ「Red Sands」とのことでした。
+>「Red Sans」がどのターミナルアプリ(またはテーマ)を指すのか確信が持てません。スクリーンショットを見る限り、iTerm2の「Red Sands」という配色テーマの可能性を考えていますが、右端にスクロールバーらしきものが見えるなど判断材料が分かれるため、誤った前提で実装を進めるのを避けたく確認させてください。
 
-原因はqueryTerminalAppColors()/queryTerminalAppWindowBounds()がいずれもTERM_PROGRAM=="Apple_Terminal"でゲートされており、iTerm2はTERM_PROGRAM=iTerm.appを設定するためこの条件に一切マッチせず、GUIウィンドウがデフォルト位置・デフォルト配色にフォールバックしていたことでした。
+<[AskUserQuestion回答: 「「Red Sans」は具体的にどのターミナルアプリ/配色テーマを指していますか？」=「iTerm2の「Red Sands」テーマ (推奨)」]
 
-新規queryITermColors()/queryITermWindowBounds()を追加し、TERM_PROGRAM=="iTerm.app"でゲート、Terminal.appと同じosascriptベースのAppleScript連携パターンに従いました。「対応済みの各ターミナルアプリを順に試し、最初に成功したものを使う」統一入口(queryRealTerminalAppearance()/queryRealTerminalWindowBounds())も新設し、Terminal.app→iTerm2→(色のみ)GNOME Terminalの順で試すよう配線しました。
+>Push完了しました。
 
-正直にお伝えすると、このセッションの開発サンドボックスにiTerm2はインストールされておらず、iTerm2向けのAppleScript連携は実機でのEnd-to-End検証ができていません。iTerm2の公開ドキュメントに基づくAppleScript辞書の慣習に従って実装しましたが、GNOME Terminal対応と同様の限界を抱えています。もし動作しない場合はプロパティ名の不一致である可能性が高いため、iTerm2が実際にインストールされた環境でosascriptを直接叩いて確認いただけると助かります。またiTerm2の古典的AppleScriptにはTerminal.appのような「フォント名/サイズ」プロパティが無いため、そちらは無理に推測せずデフォルト値のまま残しています。
+「Red Sands」がiTerm2の配色テーマと確認できたので、iTerm2向けの`queryITermColors()`/`queryITermWindowBounds()`をTerminal.appと同じパターンで実装しました。統一入口(`queryRealTerminalAppearance()`/`queryRealTerminalWindowBounds()`)も新設し、Terminal.app→iTerm2→GNOME Terminalの順で試すよう整理しています。
 
-リファクタリングでTerminal.app側の既存動作を壊していないかは、実機で再度確認し、ウィンドウ位置が引き続きTerminal.appの座標と完全一致することを確認済みです。doctest全569件、Mac/Ubuntu両方で警告ゼロのクリーンビルドを確認しました。コミット・プッシュ済み。
+正直にお伝えすると、**このサンドボックスにはiTerm2がインストールされておらず、実機でのEnd-to-End検証はできていません**。公開ドキュメントに基づくAppleScript辞書の慣習(`current window`/`current session`、`bounds`プロパティ)に従って実装しましたが、GNOME Terminal対応と同じ限界を抱えています。もし動作しなければプロパティ名の不一致の可能性が高いので、iTerm2環境で`osascript`を直接叩いて確認いただけると助かります。
+
+既存のTerminal.app側の動作(位置`{0, 30}`との完全一致)には回帰がないことを実機で再確認済みです。doctest全569件、Mac/Ubuntu両方で警告ゼロを確認し、記録・コミット・プッシュ済みです。
 
 <変化無し。GNOME Terminal対応と同じ限界とは？
 
->「GNOME Terminal対応と同じ限界」というのは、GNOME Terminal向けの配色取得機能を実装した際、開発環境がmacOSのため実際に動いているGNOME Terminalが存在せず、公開ドキュメントの仕様どおりに書いたコードを実機で一度も動作確認できないまま実装した、という前例のことでした。今回のiTerm2対応も同じ状態(未検証)で提出してしまいました。
+>「GNOME Terminal対応と同じ限界」というのは、GNOME Terminal向けの配色取得機能(`queryGnomeTerminalColors()`)を実装した際、このセッションの開発環境がmacOSのため実際に動いているGNOME Terminalが存在せず、公開ドキュメントの仕様どおりに書いたコードを実機で一度も動作確認できないまま実装した、という過去の前例です。今回のiTerm2対応もこのサンドボックスにiTerm2自体が存在しないため、全く同じ状態(ドキュメントに基づく推測実装、未検証)で提出してしまいました。
 
 <iTerm2かと問われてyesと答えてしまったけど実は知らない。macOS備え付けのターミナルではない？
 
->実機でTerminal.appのAppleScript辞書を直接調べたところ、「Homebrew」も「Red Sands」もどちらもTerminal.app(macOS標準搭載)に最初から入っている組み込みプロファイル名そのものと判明しました。つまりiTerm2という別アプリの話ではなく、同じTerminal.appの中でプロファイルを切り替えたら壊れた、という全く別の問題でした(iTerm2対応自体は無駄にはなりませんが、今回の直接の答えではありませんでした)。
+>なるほど、それは重要な訂正です。「Homebrew」も「Red Sands」も、実はTerminal.app(macOS標準搭載)に最初から入っているプロファイル(配色プリセット)の名前でもあります。だとすると別アプリの話ではなく、同じTerminal.appの中で「プロファイルを切り替えたら情報取得が崩れた」という、私が先ほど実装したiTerm2対応とは全く別の原因の可能性が高いです。
 
-真因を実機で調査した結果、Terminal.appのウィンドウ・タブごとに一意なtty プロパティ(例: /dev/ttys016)が存在すること、このMacには既に6個のTerminal.appウィンドウ/タブが開いていたことを確認しました。複数ウィンドウが存在する状況では、これまで使っていた「front window」(Terminal.appが最後にアクティブだったウィンドウ、usilicを起動した張本人のウィンドウとは限らない)が誤ったウィンドウを指してしまうことがあると判明しました。これが真因で、iTerm2ともRed Sandsという名前とも無関係でした。
+確実に切り分けたいので、1つだけ教えてください。「Red Sands」を試したときのターミナルで、次のコマンドを打つと何が表示されますか。
 
-front windowへの依存を完全に廃止し、このプロセス自身の制御端末(tty)のパスを取得した上で、全ウィンドウ・全タブを巡回してttyが完全一致するものを探す方式へ作り直しました。
+```
+echo $TERM_PROGRAM
+```
 
-実装中、最初のcurrentTtyPath()の実装(open("/dev/tty")で開いたfdへttyname()を呼ぶ方式)が、具体的なデバイスパスではなく文字列"/dev/tty"そのものを返してしまうバグに気づきました(実際にTerminal.app上で小さなCテストプログラムをコンパイル・実行して確認)。これでは常に空振りする、元のバグよりさらに深刻な状態でした。ttyname(STDIN_FILENO)に変更して修正しました。
+これが`Apple_Terminal`と出れば「同じTerminal.app、プロファイル違いだけで何かが壊れている」という話になり、`iTerm.app`と出ればやはり別アプリ(iTerm2)の話になります。ここが分かれば、憶測を重ねずに正しい原因を追えます。
 
-実機で意図的に複数のTerminal.appウィンドウが開いている状況を作り、新規ウィンドウを他とは明確に異なる位置へ移動した上でusilicを起動、System Events経由でGUIウィンドウの実位置を確認したところ、意図した新規ウィンドウを正しく検出・重ね合わせできていることを確認しました。iTerm2向けの修正は引き続きこのサンドボックスにiTerm2が無いため実機検証できていませんが、構文的にはTerminal.app版と同じパターンです。doctest全569件、Mac/Ubuntu両方で警告ゼロを確認しました。コミット・プッシュ済みです。
+<Apple_Terminaldatt
+
+>Push完了しました。
+
+「Homebrew」「Red Sands」はどちらもTerminal.app自体の組み込みプロファイル名で、iTerm2とは無関係でした。真因は「front window」という概念の曖昧さ――このMacには既に6個のTerminal.appウィンドウが開いており、複数ウィンドウが存在する状況では「front window」が実際にusilicを起動したウィンドウとは限らなかったことでした。
+
+`tty`(ウィンドウ・タブごとに一意なデバイスパス)で正確に一致させる方式へ作り直しました。実装中、`currentTtyPath()`の最初の実装が具体的なパスではなく文字列`"/dev/tty"`をそのまま返してしまうバグにも気づき(実機でCの小さなテストプログラムを書いて確認)、`ttyname(STDIN_FILENO)`へ修正しています。
+
+最終的に、実機で意図的に複数のTerminal.appウィンドウを開き、新規ウィンドウを他とは明確に異なる位置へ移動した上でusilicを起動し、正しくそのウィンドウだけを検出・重ね合わせできることをEnd-to-Endで確認しました。記録・コミット・プッシュ済みです。
 
 <それぞれのウィンドウではフォントの種類は合っているようだがサイズの取得がNG。
 ubuntuでは背景黒・文字白・大きめウィンドウ。dconfだっけ？　それがうまくいってない？
