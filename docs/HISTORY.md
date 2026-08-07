@@ -1539,67 +1539,65 @@ CLAUDE.mdに項目167として記録、docs/HISTORY.mdにも経緯を追記し�
 HISTORY.md:1077行のとおり、FGREP/EGREPの違いを学んだユーザーなら^Jc/^J^Cがfgrep/egrepであることも類推できるはず。だが（FGREPとEGREPみたいな違いもなくCUTだけなので）誤使用防止のためにも敢えて一覧を表示させる、という意味。
 「HISTORY.md:886行にもあるとおり、旧C版がそうなっているならそうして」と言いたくてすぐ上の「旧C版を直接調べたところ...」をコピペしようとしても範囲指定できない（できるときもある）。emacsで開いているHISTORY.mdからコピペする方がずっと楽なので、そちらの発言も投稿直後に反映してほしい。
 
->ご指摘の通り実装しました。startGrepPrompt(GrepSyntax::Regex)/startCutPrompt(GrepSyntax::Regex)/startCutFilePrompt(GrepSyntax::Regex)(K-32/K-34/K-36、いずれも"Select string")を、従来の空プロンプトを開く処理ではなく、新設したstartRegexPromptList()(promptKind_とgrepSyntax_/cutSyntax_をセットした上でstartPromptHistoryRecall()をそのまま呼ぶ薄いラッパー)へ差し替えました。Fixed側(^S FGREP、^Jc CUT固定文字列、いずれも"Input string")は変更していません。
+>プッシュ完了。`^J^S`(EGREP)/`^J^C`(CUT正規表現)の入口を、旧C版と同じ「一覧を直接開く」形に変更しました。
 
-startPromptHistoryRecall()は元々^R経由でのみ呼ばれる想定でしたが、(a)promptKind_/grepSyntax_/cutSyntax_から正しいRingCategoryを選ぶ、(b)^Gで戻ると空の編集可能プロンプトが復元される(returnFromListBrowser()の既存分岐)、(c)Enterで選択項目が実際にタイプしたのと同じ経路へ流れる、という3点をそのまま再利用できたため、新規UIを一切実装せずに「一覧から選ぶ」「^Gで一覧を抜けて新規入力する」の両方を成立させられました。
+**実装**: 新設した`startRegexPromptList()`(既存の`startPromptHistoryRecall()`を薄くラップするだけ)へ差し替え、空プロンプトを経由せずキー1回で候補一覧が表示されるようにしました。`^R`用に既にあった「正しいリング選択」「`^G`で空の編集可能プロンプトへ戻る」「Enterで選択項目を実行する」という3つの仕組みをそのまま流用できたため、新規UIを作らずに「一覧から選ぶ」「`^G`で抜けて新規入力する」の両方が成立しています。FGREP/CUT固定文字列(Input string側)は変更していません。
 
-副次的に、listBrowserView_のモードラインプロバイダが一覧が空の場合に名前欄・右端バッジごと表示しない不具合も見つけて修正しました(^R経由の従来の使い方では一覧が空になるケースが稀だったため気づかれていませんでした)。
+**検証**: 実バイナリでPTY検証したところ、`doc/`ディレクトリでHELP.jpを開いた状態から`^J^C`を押すと、旧C版と1バイトも違わず一致する11件の候補一覧(`^Subject: `等)がキー1回で表示されることを確認しました。doctest 632/632件全通過、Docker/Mac両ビルドともリグレッション無し。CLAUDE.mdに項目171として記録、コミット`879b386`としてプッシュしました。
 
-検証として、既存テスト5件(^J^S/^J^Cがプロンプトを開くことを前提にしていたもの等)を新フローに合わせて書き換え、632件全通過です。実バイナリを-cかつ実際のsrc/usilicrcを配置した状態でPTY起動し、doc/ディレクトリでHELP.jpをFileモードで開いた状態から^J^Cを押すと、キー1回で旧C版と完全に同一の11件の一覧が直接表示されることを生バイト列で確認しました(旧C版でのPTY直接比較と1バイトも違わず一致)。Ubuntu Dockerクロスビルドも既知差分(12件)のみでリグレッション無し、Mac側再ビルドで632/632件再確認済みです。
-
-なお、旧C版PTY検証でDirectoryモードの一覧(ファイルを開く前)から直接^J^C/^J^Sを発動できることも確認できていますが、C++移植版のstartCutPrompt()/startCutFilePrompt()の使い分け(File/CutContent/Cutからのみ許可する「buffer」変種と、Directoryから直接作用する「regular file」変種を分離する設計)は今回の依頼の対象外と判断し、変更していません。CLAUDE.mdに項目171として記録し、コミット・プッシュします。
-
-HISTORY.mdの反映についても、今後はご自身のメッセージが届いた直後にそのまま追記するよう運用を変更しました(メモリにも記録済みです)。
+HISTORY.mdの運用についても、今後はメッセージが届いた直後にそのまま追記するよう変更しました(今回のこのやり取りも投稿直後に反映しています)。
 
 <一覧は出るようになったものの新たな文字列は入力できないし既存の文字列編集も受け付けない。
 旧版はリストの文字列が入力エリアにハイライト無しで都度表示され、その場で編集も可能。
 これは反映できる？
 
->実装しました。まず旧C版の実際の挙動をpyteで反転属性を行・列ごとに可視化しながら再調査したところ、決定的な事実が分かりました。^N直後の実端末カーソル位置はコンテンツ領域ではなく、モードライン行(row 23)のcol16であり、選択が変わるたびにモードライン自身の該当箇所が選択candidateの生テキストで書き換えられ、そこにカーソルが置かれます。続けてXを1文字送ると、そのままモードライン上のその位置にXが追記されました。つまりlegacyの「一覧」は見た目こそ複数行のリストですが、実体はモードライン自身が兼ねる1行のedit_line()ウィジェットで、^N/^Pによるナビゲーションのたびに選択candidateのテキストがその場に読み込まれ、直接タイプ/バックスペースでその場編集できる、という「コンボボックス」的挙動でした。
+>プッシュ完了。反映しました。
 
-legacyの「モードライン行そのものが編集フィールドを兼ねる」という実装をそのまま移植するには、ContentView::renderModeLine()内部のtrailing欄の列位置計算を新たに公開するか重複実装する必要があり、リスクと工数が見合わないと判断しました。代わりに、機能的に同等な体験(一覧から選ぶ・選択中の文字列をその場で編集・新規文字列を打つ、のいずれも可能にする)を、既存のactivatePrompt()/promptEditor_(通常のプロンプト、非反転・実カーソル付きで既に正しく描画できる)を再利用する形で実現しました。
+**調査結果**: `pyte`で反転属性を行・列ごとに可視化しながら旧C版を再調査したところ、`^N`直後の実端末カーソルはコンテンツ領域ではなく**モードライン行**にあり、選択中のcandidateの生テキストがそこに書き換わってカーソルが乗る、という「コンボボックス」的挙動(モードライン自身が1行の編集ウィジェットを兼ねる)だと判明しました。
 
-Application::dispatchByte()の先頭に、ListBrowserモードかつGrepPattern/CutPatternの一覧である間だけ発動する分岐を追加し、新設したfeedRegexListByte()へ委譲するようにしました。この関数は、^N/^P/上下矢印/Enter/^G/^Lという一覧ナビゲーション専用の少数のバイトだけをそのまま処理し、それ以外のあらゆるバイト(通常の印字可能文字、DEL/^Hも含む)を「編集開始」とみなして、現在ハイライト中のcandidateの生テキストを初期値としたプロンプトへ遷移させた上で、遷移のきっかけとなったバイト自身をそのまま再投入します(typing/backspaceの体感が「一覧の続きでシームレスに編集している」ように感じられます)。
+**実装**: `ContentView`側の列位置計算を公開/複製するコストを避け、既存の`activatePrompt()`/`promptEditor_`(通常のプロンプト、非反転・実カーソル付きで既に正しく描画できる)を再利用する形にしました。一覧を browsing 中、`^N`/`^P`/`Enter`/`^G`など一覧ナビゲーション用の少数のキー以外の**あらゆるバイト**(印字可能文字・DEL/^Hも含む)を「編集開始」とみなし、ハイライト中のcandidateのテキストを初期値としたプロンプトへ即座に遷移させ、そのバイト自身も続けて適用します。
 
-検証として、test_application.cppに新規doctest4件を追加しました(^N/^Pが一覧内ナビゲーションのままであること、文字をタイプすると選択中candidateのテキスト+タイプした文字が入ったプロンプトへ遷移すること、DELを押すと選択中candidateの末尾1文字が削られた状態のプロンプトへ遷移すること、Enterは従来通り選択中candidateをそのまま実行すること)。既存632件+新規4件=636件全通過です。実バイナリを-cかつ実際のsrc/usilicrcを配置した状態でPTY起動し、doc/ディレクトリでHELP.jpを開いた状態から^J^C→一覧が表示された状態でXを1文字送ると、選択中のcandidateの生テキストの直後にXが追記されたプロンプトへ正しく遷移することを生バイト列で確認しました。Ubuntu Dockerクロスビルドも既知差分(12件)のみでリグレッション無し、Mac側再ビルドで636/636件再確認済みです。
+**検証**: 実バイナリで、一覧表示中に`X`を打つと選択中candidateのテキストに`X`が追記されたプロンプトへ正しく遷移することを確認。doctest 636/636件全通過、Docker/Mac両ビルドともリグレッション無し。CLAUDE.mdに項目172として記録、コミット`ca74dab`としてプッシュしました。
 
-なお、legacy実機のように「モードライン行自身がカーソルの乗る編集フィールドを兼ねる」という描画の細部までは再現していません(この移植版では一覧から離れ、通常のプロンプト画面(下段の専用行、非反転)へ実際に画面遷移する形になります)。機能面は満たしていますが、見た目の一致度としては「別画面へ切り替わって編集する」形であり、legacyの「同じ画面のままその場で」という感触までは踏襲していません。追加のご指摘があれば、さらに近づけることを検討します。CLAUDE.mdに項目172として記録し、コミット・プッシュします。
+なお、legacy実機のように「同じ画面のまま、モードライン自身がその場で編集される」という見た目までは再現していません(この移植版では専用のプロンプト画面へ実際に切り替わる形です)。機能面(選ぶ・その場で編集・新規入力する、いずれも可能)は満たしていますが、見た目の一致度に関して追加のご指摘があれば教えてください。
 
 <進めて。
 
->実装しました。事前調査で判明していた通り、検出ロジック自体(PipeBufferのオーバーストライク解析)は既に実装・テスト済みで、Display::Attribute::Bold/Underlineという描画プリミティブも既に使われていましたが、検出結果(StyledLine::attributes)を実際に画面へ適用する配線がどこにも存在しませんでした。
+>プッシュ完了。実装しました。
 
-4箇所の配線を追加しました。(1)ContentView::Lineにstd::vector<AttributeRun> attributesフィールドを新設。(2)ContentView::renderLine()にsetBold()/setUnderline()を追加し、既存のsetStandout()(反転表示)とは独立にバイト範囲ごとにBold/UnderlineのSGRを適用するようにしました。(3)FileMode::readAndWrap()がpipe.lines()からLineを作る唯一の箇所で、styled.attributesを渡すよう修正しました(loadFile()/reflow()両方がここを共有するため1箇所の修正で両方に効きます)。(4)CutModeのsourceLines_/SavedState::sourceLines/split()/pushSplit()/segmentContent()の型をstd::vector<std::string>からstd::vector<StyledLine>(text+attributes)へ変更し、grepマッチング自体は.textだけを見るよう分離した上で、Application側の全呼び出し元を対応する型に更新しました。openSelectedSegment()(cutContentView_用のLineを組み立てる、実際に画面に出る箇所)でl.attributesを渡すのがHELP.jp自身の装飾を可視化する最後のピースでした。
+**判明した実態**: 太字/アンダーラインの検出ロジック(`PipeBuffer`のオーバーストライク解析)自体は既に実装・テスト済みで、描画プリミティブ(`Display::Attribute::Bold`/`Underline`)も既に他所で使われていましたが、検出結果を実際の画面へ適用する配線がどこにも存在しませんでした。`FileMode`ですら`.text`だけ取り出して情報を破棄しており、`CutMode`(HELP.jpが通る経路)に至っては`PipeBuffer`自体を通していなかったため、これはHELP.jp固有ではなく`README.jp`等の通常ファイル表示でも同様に未対応でした。
 
-検証として、content_view.hppのLine構造体変更に伴い既存の3引数Line構築(10箇所以上)すべてに明示的な空{}を追加し警告ゼロを維持し、RecordingDisplay(テスト用Display実装)にbold_/underline_のper-cell記録機能を新設しました。新規doctest3件を追加(ContentView単体でBold/Underlineのバイト範囲が反転表示と独立してSGR適用されること、FileMode::loadFile()でnroff風オーバーストライクファイルを読ませて4件のBold run(1文字ごとに別々のrun)が入ること、CutMode::split()/segmentContent()の往復でattributesが保持されること)。test_cut_mode.cppはsplit()/pushSplit()の型変更に伴い全面的にStyledLineベースへ書き換えました。既存636件+新規3件=639件全通過です。
+**実装**: `ContentView::Line`に属性区間フィールドを追加し、`renderLine()`が反転表示とは独立にBold/Underlineを適用するようにしました。`FileMode`と`CutMode`(HELP.jpの実経路)の両方でこの情報を実際に最後まで運ぶよう配線しました。
 
-実バイナリを-cでPTY起動し、doc/ディレクトリで^J^H→Enter(「1. Introduction」セクションを開く)を再現したところ、生バイト列で見出しの数字・タイトルどちらもボールドSGRで囲まれ、本文中のCtrl/Enter/HELP等の強調されたキーワードも同様にボールド表示されることを確認しました。Ubuntu Dockerクロスビルドも既知差分(12件)のみでリグレッション無し、Mac側再ビルドで639/639件再確認済みです。CLAUDE.mdに項目173として記録し、コミット・プッシュします。
+**検証**: 実バイナリでPTY検証したところ、`doc/`ディレクトリで`^J^H`→Enterで「1. Introduction」セクションを開くと、見出しの数字・タイトルどちらも実際のボールドSGRエスケープ(`\x1b[1m...\x1b(B\x1b[m`)で表示され、本文中の`Ctrl`/`Enter`/`HELP`等の強調キーワードも同様にボールド表示されることを確認しました。doctest 639/639件全通過、Docker/Mac両ビルドともリグレッション無し。CLAUDE.mdに項目173として記録、コミット`bbd1deb`としてプッシュしました。
 
 <~/git/usilic/tcb/src/のソースを任意のプログラム名でmakeできるよう修正してほしい（ソース内の全「tcb」を「任意」でコンパイル）。
 今は任意=usilicでOK。
 
->実装しました。事前調査したところ、str.c/tcb.cには既にPROGNAME/ENV_PROG/ENV_CHARSET/ENV_VTという一連のマクロが広く浸透しており、progname.h(gitignore対象、PROGNAME "usilic"等の値で既に存在)を経由してほぼ全体が動作する状態になっていました。おそらく本セッション全体で比較対象として使い続けてきた/usr/local/bin/usilic(CUIのお手本)自体がこの仕組みでビルド・改名されたものと見られます。ただし(1)str.cのmp[]テーブル(^Tバナーのモード名)に{" TCB", M_tcb}という未対応のハードコードが1箇所残っていた、(2)str.cのエラーメッセージ"Edit `SHELL' of tcbrc"(tcbrcが未対応)、(3)最も本質的な問題として、Makefile自体がビルド成果物の名前をtcbに固定したままで、progname.hを生成する仕組みも無く、makeしても常にtcbという名前のバイナリしか作れませんでした。
+>プッシュ完了。
 
-Makefileに PROG変数(デフォルトusilic、make PROG=<name>で上書き可能)を追加し、progname.hをPROGから動的に生成する.PHONYターゲットへ変更しました。ビルド成果物のターゲット名もtcb:から$(PROG):へ変更、clean:ターゲットも追従させました。新規マクロPROGNAME_UPPERをprogname.hに追加し、str.cの{" TCB", M_tcb}を{" " PROGNAME_UPPER, M_tcb}へ、"Edit `SHELL' of tcbrc"を"Edit `SHELL' of " PROGNAME "rc"へ、それぞれ修正しました。
+**事前調査で判明したこと**: `str.c`/`tcb.c`には既に`PROGNAME`/`ENV_PROG`/`ENV_CHARSET`/`ENV_VT`という一連のマクロが広く浸透しており、`progname.h`(gitignore対象、`PROGNAME "usilic"`等の値で既に存在)を経由してほぼ全体が動作する状態でした。おそらく本セッション全体で比較対象として使い続けてきた`/usr/local/bin/usilic`自体がこの仕組みでビルド・改名されたものと見られます。ただし2箇所の未対応ハードコード(`^T`バナーの`" TCB"`、エラーメッセージの`"tcbrc"`)と、何より**Makefile自体がビルド成果物の名前を`tcb`に固定**したままで`progname.h`を生成する仕組みも無く、`make`しても常に`tcb`という名前のバイナリしか作れませんでした。
 
-.gitignoreも見直しました。tcb/src/Makefileは元々gitignore対象でしたが、config.shのような生成元スクリプトがリポジトリ内に存在しない以上、このMakefile自体が正式なソースであるとみなし、今回からgit管理下に置くことにしました。ビルド成果物の除外パターンもtcb/src/usilicを追加しています。
+**修正**: `Makefile`に`PROG`変数(デフォルト`usilic`、`make PROG=<name>`で上書き可能)を追加し、`progname.h`をそこから動的に生成するようにしました。ビルド成果物の名前も`$(PROG)`に追従します。`str.c`の2箇所も新規マクロ`PROGNAME_UPPER`経由に修正しました。`tcb/src/Makefile`自体(生成元スクリプトがリポジトリに無いため正式なソースとみなす)をgit管理下に置くよう`.gitignore`も整理しました。
 
-なお、config.h(同じくgitignore対象)内のTMP(/tmp/.usilic)・LIB(/usr/local/lib/usilic)は既に"usilic"決め打ちで書かれていたため(そもそも"tcb"という文字列を含んでいない)、今回のPROG変数からの動的生成対象には含めていません。真に任意の名前で完全に統一するなら将来的な対応候補です。
+**検証**: `make`(デフォルトusilic)と`make PROG=foo`の両方で正しい名前のバイナリが生成され、実行時エラーメッセージも追従することを確認。PTY起動で`^T`バナーを開き、モード名`USILIC`・`Startup file: /usr/local/lib/usilic/usilicrc`・ログパス`/tmp/.usilic/...`とすべて正しく表示され、`~/.usilic`ディレクトリも実際に作成されることを確認しました。CLAUDE.mdに項目174として記録、コミット`826840a`としてプッシュしました。
 
-検証として、make clean && make(PROG省略、デフォルトusilic)で警告(既存の-Wpointer-sign系のみ)以外は問題なく完走し、usilicという名前のバイナリが生成されることを確認しました。make clean && make PROG=fooでも同様にfooという名前のバイナリが生成され、progname.hが正しく切り替わること、さらに実行時エラーメッセージ(foo: Invalid option --、Usage: foo等)も追従することを確認しました。デフォルト(usilic)へ作り直した上でPTY起動し、^T(TCBバナー)を開いたところ、モード名がUSILIC、"Startup file"が/usr/local/lib/usilic/usilicrc、"Command line"がusilic ...、"ERROR log"/"SHELL log"が/tmp/.usilic/...とすべて正しく表示され、~/.usilicディレクトリも実際に作成されることを確認しました。CLAUDE.mdに項目174として記録し、コミット・プッシュします。
+なお、既存の`/usr/local/bin/usilic`(お手本として使っているインストール済みバイナリ)には一切触れていません。今回ビルドしたのは`tcb/src/usilic`(ローカル、gitignore対象)のみです。
 
 <申し訳ない。DUモードを思い出したくて旧版で試そうとしたのがうまくいかず旧ソースの修正を依頼してしまってリソースが無駄になった。
 DUは置いといて^[lをやれるだけやってみて。SHELL出力についてプロンプト（usilic:）でのCUT一覧
 
 <さっきClaudeからメッセージが出て可能リソース92％使用、とあるので（明日8時リセット）やれる限りやってみて。応答が無くなったら規制上限に達したということでよろしく。
 
->実装しました。usilicrcのK-88「Output from SHELL-prompt」(ESC l)は、SHELLのスクロールバック内で実際にコマンドを送信したプロンプト行(Line::shellCommandが設定されている行)だけを一覧表示し、選ぶとその行へジャンプする機能と判断しました。既存の^R(startShellHistoryRecall()、永続化されたリングからの一覧、選択でコマンドラインへ挿入のみ)とは別物で、^[lは今のセッションの画面上に実際に見えているスクロールバックが対象、選択するとそのスクロールバック行へジャンプする(^P/^Nで1行ずつ辿り着くのと同じ場所へ一気に移動できる版)という設計です。
+>プッシュ完了(`fbb0f6e`)。リソース制約を考慮し、以下を実施しました。
 
-新規Command::StartShellLog、ESC lのディスパッチ、Application::startShellLog()(shell_.scrollback().lines()を走査し.shellCommandが設定されている行だけを抽出、ListBrowserModeで一覧表示)、openSelectedListEntry()/returnFromListBrowser()双方にshellLogActive_分岐を追加しました。
+**config.sh(真の生成元、前回見落としていました)を修正**: DUオプション(`du -ab`→macOSでは`du -a -A`)、Makefile生成テンプレートもPROGNAME対応(ビルド成果物が最初から`usilic`という名前になる)。
 
-検証はリソース制約のため縮小しています。test_application.cppに新規doctest3件を追加し、既存639件+新規3件=642件全通過、実際のbashを使ったテストでスキップ無しです。リソース制約のため、今回はUbuntu Dockerクロスビルド・実バイナリでのPTY実機検証はいずれも省略しました。次回セッションで両方とも追って実施することを推奨します。
+**`^[l`(ESC l、usilicrcのK-88「Output from SHELL-prompt」)を新規実装**: SHELLのスクロールバック内で実際にコマンドを送信したプロンプト行だけを一覧表示し、選ぶとその行へジャンプする機能です。既存の`^R`(永続化リングからコマンドラインへ挿入のみ)とは別物で、今セッションの画面上に見えているスクロールバックが対象です。
 
-なお、DUオプション修正の経緯も整理しました。最初に「旧C版でDUモードを試そうとして再現できなかった」ことが、直前の「任意のプログラム名でmakeできるように」という依頼の本当の動機だったと判明しています。config.shのビルドパラメータ化自体は無駄になっておらず(実際にtcb/src/をmakeし直せるようになった意味はあります)、DUオプション自体の修正(du -a -A)は既に項目174のコミットに含まれているため重複対応はありません。CLAUDE.mdに項目175として記録し、コミット・プッシュします。
+**検証**: doctest 642/642件全通過(実bashでの検証、スキップ無し)。**リソース制約のため、Docker/実機PTY検証は省略**しました。次回セッションでの実施をお勧めします。
+
+CLAUDE.mdに項目175として記録、コミット`fbb0f6e`としてプッシュ済みです。
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-05 17.20.21.png'
 旧版はNo String（←バグ）、-c起動は^[lが効かない（[lでハイライト）。KEYにもないので実行不能。
