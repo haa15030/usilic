@@ -1130,25 +1130,31 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
   if (!surface) return;
   SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
   if (texture) {
-    // Drawn at (DPI-corrected) NATIVE size, top-anchored -- NOT
+    // Drawn top-anchored, height clamped to the content area -- NOT
     // stretched to fill the full content-row height. A first attempt
     // stretched the (then also flawed, see scrollbar_idle_image.hpp's
     // own comment) source image to `contentRows * cellHeight`, and a
     // real side-by-side comparison (docs/HISTORY.md 2026-08-07,
     // "bar.jpg" reference) showed this made the thumb/track blurry and
-    // out of proportion -- the reference image simply looks like
-    // itself, unscaled. `create()`'s own comment explains why every
-    // OTHER coordinate in this file is in logical POINTS while the
-    // embedded image's pixel dimensions are physical: re-derive the
-    // same drawableWidthPixels/windowWidthPoints ratio here to convert
-    // the surface's raw pixel height back to points before use.
-    int windowWidthPoints = 0, windowHeightPoints = 0;
-    int drawableWidthPixels = 0, drawableHeightPixels = 0;
-    SDL_GetWindowSize(impl_->window, &windowWidthPoints, &windowHeightPoints);
-    SDL_GetRendererOutputSize(impl_->renderer, &drawableWidthPixels, &drawableHeightPixels);
-    float scale =
-        (windowHeightPoints > 0) ? static_cast<float>(drawableHeightPixels) / windowHeightPoints : 1.0f;
-    int heightPoints = (scale > 0.0f) ? static_cast<int>(surface->h / scale) : surface->h;
+    // out of proportion.
+    //
+    // A second attempt tried to convert the embedded image's raw pixel
+    // dimensions to points via a freshly re-queried
+    // drawableHeightPixels/windowHeightPoints ratio (mirroring
+    // create()'s own HiDPI scale-factor math) -- on a real machine
+    // this rendered the image at roughly 1/11th its intended size (a
+    // real report, docs/HISTORY.md 2026-08-07, "14.06.58" screenshot:
+    // a ~29pt-tall sliver instead of the ~300pt+ bar.jpg shows), for a
+    // reason not confirmed from this sandbox (no real HiDPI display to
+    // reproduce against). Rather than keep guessing at that ratio,
+    // this drops DPI conversion entirely and treats the embedded
+    // image's pixel dimensions AS points directly -- the same
+    // "just pick small integers, no DPI math" convention every other
+    // magic number in this file already uses (kMarginX/Y,
+    // kScrollbarWidth, etc.), and exactly what the sandboxed
+    // USILICGUIDEBUG verification here (which has no real HiDPI
+    // scaling to begin with) confirmed looks right.
+    int heightPoints = surface->h;
     int contentRows = std::max(impl_->rows - 1, 0);
     int maxHeightPoints = contentRows * impl_->cellHeight;
     SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth, Impl::kMarginY, Impl::kScrollbarWidth,
