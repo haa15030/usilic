@@ -1252,71 +1252,118 @@ if (m == T_hist) {
 FILE（DIR）は今までアクセスしたファイル（ディレクトリ）をソートしたのち重複を排除した一覧、HISTORYはアクセスした順（最下行が最新）。
 それだけ。
 
->ありがとうございます、これで確定できました。
+>コミット・プッシュしました。実装内容:
 
-FILE/DIR/MAN/LOCATE/FGREP/EGREP/COMMANDいずれの一覧も、通常表示は「アルファベット順ソート+重複排除」に統一しました（重複排除はHistory::pushRecent()のfirst-occurrence-winsで既に実現済み、ソートは今回新規追加）。^Rは今開いている一覧をその場で「アクセスした時系列順（History::recentEntries()が元々返すoldest..newestの並びそのまま、逆順にしない=最下行が最新）」に切り替えるトグルとして実装し、モードラインの名前欄もカテゴリ名から"HISTORY"に変わるようにしました（legacyのmp[M_hist]がT_hfile/T_hdir等すべてに共通して" HISTORY"を返す挙動と対応）。カテゴリ自体を切り替えるものではなく、あくまで今開いている一覧の並び順を切り替えるだけです。ListBrowser以外の文脈での^Rは何もしません（legacyのecho_mess(S_errf)相当、エラーメッセージ自体は今回実装せず単純なno-opにしています）。
+**^R（HISTORY）の実装**: `menu.c`の`m_list()`を調べても確定できなかったため、実機確認をお願いしましたが、いただいた回答「FILE(DIR)はソート+重複排除、HISTORYはアクセス順(最下行が最新)」で仕様が確定しました。
 
-副次的に、同じM_hist/M_cmd混同の一環として、RingCategory::ShellCommand（^J^R、K-50）のringCategoryLabel()が"HISTORY"を返していたのを"COMMAND"に訂正しました（usilicrc 286行目「COMMAND : Select program executed at SHELL」に対応、"HISTORY"は上記トグルの固定リテラルとして専有するため）。
+- `^X^F`/`^X^D`の一覧表示を、従来の逆時系列順から**アルファベット順ソート+重複排除**に変更
+- `^R`は新設の`Command::ToggleHistoryView`として、**今開いている一覧をその場で時系列順に切り替えるトグル**として実装(カテゴリ自体は変えない)。時系列順ではカーソルが最新(末尾行)に移動し、モードライン名も`FILE`→`HISTORY`に変わります
+- 旧実装が`^R`を`^X^D`(DIR)へ誤配線していた問題を修正
+- 副次的に、`RingCategory::ShellCommand`(`^J^R`)のモードライン名を`HISTORY`→`COMMAND`に訂正(usilicrcのK-50定義と整合)
 
-実装はCommand::ToggleHistoryViewを新設して単発^Rをこれに配線（旧StartDirectoryHistoryへの誤配線を解消、^X^D自体は引き続きStartDirectoryHistoryで正しく動作）、Application::startListBrowser()をstd::sort()によるアルファベット順表示に変更、新規Application::toggleListBrowserHistory()がcurrentMode_==ListBrowserのときのみ同じカテゴリのままソート順⇔時系列順を切り替える形にしました。実装時、ListBrowserMode::show()自身が内部で1回redraw()済みの状態でカーソルだけ動かしredraw()を呼び忘れる、という一度目の実装ミスをPTY検証で発見・修正しています（doctestではmodeLineText()等ライブ計算のgetterしか見ておらず、この種の「画面に実際に再描画されない」バグを検知できないため、PTY実機相当の検証が今回も有効でした）。
-
-検証として、test_application.cppに新規doctest2件を追加（^RでFILE↔HISTORYを往復できカーソルが末尾に動きモードライン名が変わること、ListBrowser以外での^Rがno-opであること）、既存の関連doctest3件も新しい正しい仕様に合わせて書き換えました。既存603件+新規2件=605件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、doc/ディレクトリで^N×2→Enter（CHANGESを開く）→^G→^N×4→Enter（HELP.jpを開く）→^G→^X^Fという実際の手順を再現、モードラインが「FILE 1/2 TOP CHANGES」（ソート順、Cが先）→^R→「HISTORY 2/2 END HELP.jp」（時系列順、後から開いたHELP.jpが末尾/最新）→^R→「FILE 1/2 TOP CHANGES」（ソート順に復帰）と正しく切り替わることを生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数603件、591件通過+12件既知失敗）、直後にMac側を再ビルドして605/605件を再確認しました。コミット・プッシュ済みです。
+PTY実機検証で、`FILE 1/2 TOP CHANGES`(ソート順)→`^R`→`HISTORY 2/2 END HELP.jp`(時系列順、後から開いた方が末尾)→`^R`→ソート順に復帰、という動作を確認しています。doctest605/605、Ubuntu Docker含めビルド確認済みです。
 
 <違う部分がある。アクセスした順なので重複もあり得る点。SORT後一覧を並び替えるだけでは不十分。
 
->ご指摘の通りでした。sub.cのfind_hist()を読み直したところ、比較対象はリストの最後のノード1つだけ（末尾まで進めてからstrcmp(name, hist->name)）で、リスト全体を走査して既存の一致を探すものではありませんでした。つまりlegacyの重複抑制は「直前に追加した1件と同じ場合のみスキップ」という連続重複のみの抑制で、離れた位置にある古いエントリへの再訪問は普通に再追加されます。History::pushRecent()を「リング全体でfirst-occurrence-wins」という、実際より強い重複排除として実装していたのが原因でした。
+>コミット・プッシュしました。ご指摘の通りでした。
 
-pushRecent()をring.back()==name（直前の1件とだけ比較）による連続重複のみの抑制に変更しました。これによりRingCategoryの各リング自体が「生のアクセス履歴ログ（重複あり）」になり、^R（HISTORY）がこれをそのまま表示する挙動と自然に一致します。一方^X^F/^X^Dの通常（ソート）表示側は、リング自体が重複を含み得るようになったため、表示のたびに独自の重複排除が必要になりました。共通ヘルパーApplication::sortedUniqueRecentEntries()を新設し、std::set<std::string>（ソート+一意化を1ステップで行う）で構築するようstartListBrowser()/toggleListBrowserHistory()両方から呼び出す形にしています。
+**原因**: `sub.c`の`find_hist()`を読み直したところ、比較対象はリストの**最後のノード1つだけ**で、リスト全体を走査して重複を探すものではありませんでした。つまりlegacyの重複抑制は「直前に追加した1件と同じ場合のみスキップ」という連続重複のみの抑制で、離れた位置にある古いエントリへの再訪問は普通に再追加されます。旧`History::pushRecent()`の「リング全体でfirst-occurrence-wins」はこの誤読に基づく実装でした。
 
-検証として、test_history.cppの既存doctest（旧・全体重複排除を前提としたアサーション）を新しい仕様に合わせて書き換え、「直前の1件と同じなら抑制される」ことを確認する新規doctest1件を追加しました。test_application.cppにも新規doctest1件を追加（非連続の再訪問がソート表示では1件のみ、HISTORY表示では重複ありの2件として現れることをエンドツーエンドで確認）。既存605件+新規2件=607件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、doc/ディレクトリでCHANGES→HELP.jp→（間に別ファイルを挟まず）CHANGESを再訪問、という手順を再現し、^X^F（ソート表示）が「1/2 TOP」（2件、重複なし）、^R（HISTORY表示）が「3/3 END」（3件、CHANGESが末尾に重複して再登場）と正しく表示されることを生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数605件、593件通過+12件既知失敗）、直後にMac側を再ビルドして607/607件を再確認しました。コミット・プッシュ済みです。
+**修正**:
+- `pushRecent()`を`ring.back() == name`(直前の1件とだけ比較)による連続重複のみの抑制に変更 → 各リング自体が「生のアクセス履歴ログ(重複あり)」になった
+- `^X^F`/`^X^D`の通常(ソート)表示側は、リング自体が重複を含み得るようになったため、`std::set`で表示時に独自に重複排除する共通ヘルパーを新設
+
+PTY実機検証で、`doc/`ディレクトリで`CHANGES`→`HELP.jp`→(間に別ファイルを挟まず)`CHANGES`を再訪問した結果、`^X^F`(ソート表示)は`1/2 TOP`(2件、重複なし)、`^R`(HISTORY表示)は`3/3 END`(3件、`CHANGES`が末尾に重複して再登場)と正しく表示されることを確認しています。doctest607/607、Ubuntu Docker含めビルド確認済みです。
 
 <FILE/DIRのHISTORYはこれでOK。
 ただしHISTORYは広範囲に使用されるモードでもあるのでそれなりの設計が必要かもしれない。
 例えばSHELLでの^Rは実行したコマンド、通常ファイル画面（HELP等）で^J^Pしたのちlessを選んだあとの^Rでは「less .../HELP」、FGREP/EGREPでの^Rでは検索文字列の履歴一覧等、^Rはほとんどの場所で起動可能なモードでもあるので、今日のように未実装なモードに出くわすたびに潰していく手法がいいのか、あるいは旧Cソースを一通り見てもらってそれなりの設計を先に構築したうえでのデバッグの方が効率がよければそちらでもいいと思う。
 どっちがやりやすい？
 
->設計を先に固める方が良いと思います。理由は今回すでに2回、部分的な情報から実装→ユーザー確認で覆す、を繰り返しているからです（CUTのtrailingがバイト数のみだと思い込んで後で章名も必要と判明、^RがDIR履歴のエイリアスだと思い込んでいた等）。^Rは関わる箇所が多い分、行き当たりばったりだと同じ手戻りを何度も繰り返すリスクが高く、逆に一度全体像を掴めばm_list()のような共通ディスパッチ経由の箇所はまとめて実装できるはずです。
+>設計を先に固める方が良いと思います。理由は今回すでに2回、部分的な情報から実装→ユーザー確認で覆す、を繰り返しているからです(CUTのtrailingがバイト数のみだと思い込んで後で章名も必要と判明、`^R`がDIR履歴のエイリアスだと思い込んでいた等)。`^R`は関わる箇所が多い分、行き当たりばったりだと同じ手戻りを何度も繰り返すリスクが高く、逆に一度全体像を掴めば`m_list()`のような共通ディスパッチ経由の箇所はまとめて実装できるはずです。
 
-menu.c/mode.c/sub.c/shell.cを横断的に読み、^Rが実際には4種類の異なる統合ポイントを持つことを確認しました: (1) 既に開いている一覧内でのトグル（FILE/DIR、実装済み）、(2) プロンプト入力中の呼び出し（MAN/LOCATE/FGREP/EGREP/CUT）、(3) SHELLコマンドライン入力中の呼び出し（実行したコマンド）、(4) PROGRAM起動ログ（ss.p.hist。do_prog()/do_shell()がSHELLコマンドとPROGRAM起動の両方を同じ1本のリングへ記録する独立したカタログ）。sub.cのsave_ll()を読むと、FILE/DIR/MANにはss.p.file（通常表示用）とss.p.hfile（^R表示用）という同時に更新される2本の独立したリングが存在すると判明しましたが、現行の1本リング方式(項目161の重複抑制修正込み)はこれと観測上完全に同一の結果になることを確認済みです。LOCATE/FGREP/EGREPはss.p.hlocate/ss.p.hfgrep/ss.p.hegrepのみ存在し、通常のソート一覧という概念自体がありません。
+まず`^R`が関係しそうな箇所を旧Cソース全体から洗い出し、設計としてまとめてから提示します。実装は一度に全部ではなく、確認を挟みながら段階的に進めます。少し時間をください。
 
-2（MAN/LOCATE/FGREP/EGREP）が一番均質でまとめて片付けやすく、3（SHELL）は既存データがある分早いと思います。4は起動タイミングの確認が要りそうです、と提案しました。
+>旧Cソース一式を読み込んで、`^R`が絡む箇所の全体像を掴みました。想像していたより複層的な設計でしたが、いい意味で「すでに実装済みのFILE/DIRの仕組みがそのまま使い回せる」ことも分かりました。
+
+## 分かったこと
+
+legacyには**文脈ごとに全く別のリング**が存在していて(`sub.c`の`save_ll()`/`menu.c`を突き合わせて確認):
+
+- `ss.p.file`/`ss.p.dir`/`ss.p.man`: 通常の「最近アクセスした名前」リング(`save_str()`、位置順)
+- `ss.p.hfile`/`ss.p.hdir`/`ss.p.hman`: **同じイベントで同時に**別リングへも追記される「アクセス順」リング(`save_history()`、直前と同じ場合のみ抑制) — これが`^R`表示の実体
+- `ss.p.hlocate`/`ss.p.hfgrep`/`ss.p.hegrep`: LOCATE/FGREP/EGREPは**この「アクセス順」リングしか存在しない**(通常のソート一覧という概念自体が無い)
+- `ss.p.hist`: **SHELLで実行したコマンド、およびPROGRAM起動(`^J^P`でlessを選ぶ等)の両方がここに記録される**、独立したカタログ(`do_shell()`/`do_prog()`経由)
+- `ss.p.cmd`: 「COMMAND」用の既知プログラム名セット(表示名のみ、`^J^R`)
+
+FILE/DIRで実際に確認いただいた通り、私の実装(1本のリングを表示時に「ソート+重複排除」または「そのまま時系列」で出し分け)は、legacyの2本リング構成と**観測結果としては完全に一致**します(`p.file`は位置順、`p.hfile`はアクセス順+連続重複のみ抑制—これは今回の修正後の私の実装と同じ挙動)。なので今後もこの1本リング方式を踏襲して問題ないです。
+
+## 残っている箇所は「統合ポイント」が4種類に分かれる
+
+1. **すでに開いている一覧内でのトグル**(FILE/DIR、実装済み・確認済み)
+2. **プロンプト入力中の呼び出し**(MAN/LOCATE/FGREP/EGREP/CUT — まだ`^R`が全く反応しない。入力中に`^R`で過去の入力候補一覧を出す、bashの`^R`検索に近い挙動)
+3. **SHELLコマンドライン入力中の呼び出し**(実行したコマンド。データ自体(`RingCategory::ShellCommand`)は既に記録されているが、`^R`で一覧を出す仕組みが未実装)
+4. **PROGRAM起動ログ**(`ss.p.hist`。「less .../HELP」のような「プログラム名+対象」の実行ログ。現状`RingCategory`に対応するものが無く、新設が必要)
+
+2と3は「ListBrowserを開く」のではなく「テキスト入力中に割り込む」という別の統合ポイントなので、既存の`ToggleHistoryView`とは別の実装が要ります。4は起動タイミング(`^J^P`実行直後、SHELL経由の自動起動、両方)の確認が要ります。
+
+どれから着手しましょうか。個人的には2(MAN/LOCATE/FGREP/EGREP)が一番均質でまとめて片付けやすく、3(SHELL)は既存データがある分早いと思います。4は仕様確認からになりそうです。
 
 <その順でよろしく。
 
->PromptKind（MAN/LOCATE/GREP）がアクティブな状態で^R（バイト0x12）を受けたら、対応するRingCategoryのsortedUniqueRecentEntries()でListBrowserを開くApplication::startPromptHistoryRecall()を新設しました。新規メンバpromptHistoryRecallKind_/promptHistoryRecallText_/promptHistoryRecallReturnMode_で、戻るべきプロンプト種別・^Rを押す前に途中まで打っていた文字列・元のApplicationModeを保持します。一覧でEnterを押すと、選んだ文字列をあたかも今タイプしてEnterしたかのように同じ実行経路(executeMan()/executeLocate()/executeGrep())へ流し込みます(submitPrompt()本体との重複を避けるため、共通ヘルパーexecutePromptSubmission()に切り出しました)。^G（Back）を押すと、^Rを押す前に途中まで打っていた文字列をそのまま復元して元のプロンプトへ戻ります(黙って消しません)。
+>2段階目(MAN/LOCATE/FGREP/EGREPプロンプト入力中の`^R`)、コミット・プッシュしました。
 
-executeMan()/executeLocate()/executeGrep()にはそれぞれ対応するRingCategoryへのpushRecent()呼び出しを追加しました(検索/参照の成否に関わらず記録)。GREPはgrepSyntax_でRecentFgrepPattern/RecentEgrepPatternを出し分け、legacyのp.hfgrep/p.hegrep分離と対応させています。CutPatternは今回のスコープ外としました(legacyがp.hegrepを流用する等、確証を持てない部分が残るため)。
+**実装内容**: MAN/LOCATE/FGREP/EGREPのプロンプト入力中に`^R`を押すと、対応するカテゴリのソート済み履歴一覧が開きます。一覧から`Enter`で選ぶと、その文字列を今タイプしたかのように実行(検索/参照)。`^G`で戻ると、`^R`を押す前に途中まで打っていた文字列がそのまま復元されます(消えません)。FGREPとEGREPの履歴は別々に記録されます(legacyの`p.hfgrep`/`p.hegrep`分離と対応)。
 
-検証として、test_application.cppに新規doctest5件を追加しました(FGREPプロンプト中の^Rがソート済み履歴ListBrowserを開くこと、選択してEnterすると実際に検索が再実行されること、^Gで途中まで打っていた文字列(「partial」)ごと元のプロンプトへ戻ること、FGREPとEGREPの履歴が別リングとして分離されていること、履歴が無い/未対応のプロンプト種別では^Rが一覧を開かずバイトも挿入されないこと)。既存607件+新規5件=612件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、doc/ディレクトリで^S（FGREP）→CHANGES→Enter→^G→^S→^Rという手順を再現し、モードラインが「FGREP 1/1 END CHANGES」と正しく表示されることを確認しました。別の実行では^S→partial（未送信）→^R→^Gという手順で、partialという文字列がプロンプト欄にそのまま復元されることも生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数610件、598件通過+12件既知失敗）、直後にMac側を再ビルドして612/612件を再確認しました。統合ポイント3（SHELL）と4（PROGRAM起動ログ）は合意した順序で次回以降続行します。コミット・プッシュ済みです。
+PTY実機検証で、`^S`(FGREP)→`CHANGES`検索→`^G`→`^S`→`^R`で`FGREP 1/1 END CHANGES`と正しく表示されること、`^S`→`partial`(未送信)→`^R`→`^G`で`partial`がそのまま復元されることを確認しています。doctest612/612、Ubuntu Docker含めビルド確認済みです。
+
+次は3段階目(SHELLコマンドライン入力中の`^R`)に進みます。少し調査してから着手します。
 
 <調査完了？
 
 >まだです。今から調査します。
 
-shell.cのread_shell()（複数プロセス間通信を挟む構成）を読みましたが、選択後の正確な挙動（プロンプトへの単純挿入か即実行か）まではソースだけでは断定し切れませんでした。^Rで実行済みコマンド一覧を開きEnterで選んだ場合、(A)プロンプトへ挿入するだけ(編集・確認してから自分でEnterして実行する、bashの^Rに近い動き)か、(B)選んだ瞬間に即実行(MAN/LOCATE/FGREPと同じ)か、どちらが良いか確認しました。MAN/LOCATE/FGREPは実行しても副作用が無いので即実行にしましたが、SHELLコマンドはrm等の破壊的なコマンドもあり得るため個人的には(A)が安全だと思う、と伝えました。
+`shell.c`を追ってみましたが、選択後の正確な挙動(SHELLプロンプトへの単純挿入か、即実行か)まではソースだけでは断定し切れませんでした。ここは安全性に関わる設計判断なので確認させてください。
+
+`^R`でSHELLの実行済みコマンド一覧を開き、`Enter`で1件選んだ場合、
+
+- (A) その文字列を**プロンプトへ挿入するだけ**(編集・確認してから自分で`Enter`して実行する、bashの`^R`に近い動き)
+- (B) 選んだ瞬間に**即実行**(MAN/LOCATE/FGREPで今実装した動きと同じ)
+
+MAN/LOCATE/FGREPは実行しても副作用が無い(見るだけ・検索するだけ)ので即実行にしましたが、SHELLコマンドは`rm`等の破壊的なコマンドもあり得るので、個人的には(A)挿入のみが安全だと思います。旧Cソースのこの部分は複数プロセス間通信を挟んでいて追い切れませんでした。どちらが希望ですか。
 
 <(A)
 
->Application::startShellHistoryRecall()を新設しました。currentMode_==Shellのときのみ^R（バイト0x12）で発動し、RingCategory::ShellCommandのソート済み履歴ListBrowserを開きます（^J^Rの"COMMAND"一覧と同じデータソースだが、意図的に別のフラグshellHistoryRecallActive_で管理し、^J^R側の「Enterはこのスライスではno-op」という既存の挙動・既存テストには触れないようにしました）。一覧でEnterを押すと、選んだ文字列をshell_.commandLine().setText(...)でコマンドラインへ挿入するだけ（submitLine()は呼びません）。^G（Back）を押すと、^Rを押す前に途中まで打っていた文字列をそのまま復元します。
+>3段階目(SHELLコマンドライン入力中の`^R`)、コミット・プッシュしました。
 
-既存のSHELL独自スクロールバック閲覧(^P/^N、項目144)との違いも整理しました: ^P/^Nは画面上の生のスクロールバックをカーソルで遡る既存機能で、Enterを押すと該当コマンドを即実行します(こちらは変更していません)。^Rはこれとは別に、コマンド文字列だけを抜き出した重複排除済みの一覧から素早く選べる補助手段で、選択後は「確認してから自分でEnter」という一段安全な経路にしました。
+**実装内容**: SHELLの生プロンプトで`^R`を押すと、実行済みコマンドのソート済み一覧が開きます。`Enter`で選んでも**即実行はせず、プロンプトへ挿入するだけ**(選んだ(A)の設計通り)。`^G`で戻ると、`^R`を押す前に途中まで打っていた文字列がそのまま復元されます。既存の`^P`/`^N`(スクロールバック閲覧、`Enter`で即実行)とは別の、より安全な補助手段として共存します。
 
-検証として、test_application.cppに新規doctest4件を追加しました(^RがSHELLの生プロンプトでソート済み履歴一覧を開くこと、選択してEnterするとコマンドラインに挿入されるだけで実行されないこと、^Gで入力途中の文字列がそのまま復元されること、SHELLモード外での^Rが無反応であること)。既存612件+新規4件=616件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、実際に(実機の$SHELLである)zshを起動してecho FIRSTCMD→echo SECONDCMDを実行後^R→Enterという手順を再現し、モードラインが「COMMAND 1/2 TOP echo FIRSTCMD」（ソート順）と表示され、Enter後はプロンプト行にecho FIRSTCMDが挿入されるだけで（スクロールバックに再実行の形跡が出ないことを確認）実行されないことを生バイト列で確認しました。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数614件、602件通過+12件既知失敗）、直後にMac側を再ビルドして616/616件を再確認しました。統合ポイント4（PROGRAM起動ログ）は次回以降続行します。コミット・プッシュ済みです。
+PTY実機検証で、実際にzshを起動して`echo FIRSTCMD`→`echo SECONDCMD`実行後`^R`→`Enter`という手順を再現し、`COMMAND 1/2 TOP echo FIRSTCMD`(ソート順)と表示され、`Enter`後はプロンプト行に挿入されるだけで実行されないことを確認しています。doctest616/616、Ubuntu Docker含めビルド確認済みです。
+
+残る統合ポイント4(PROGRAM起動ログ、`^J^P`で`less`を選んだ後の「less .../HELP」)は、起動タイミングの確認が必要になりそうなので、着手前に少し調査してから改めて相談します。
+
+<調査結果は明日教えて。ご苦労さま。
+
+>お疲れ様でした。今日の分の実装(FILE/DIR、MAN/LOCATE/FGREP/EGREP、SHELLの`^R`)はすべてコミット・プッシュ済みです。
+
+残る統合ポイント4(PROGRAM起動ログ)の調査は、明日改めてご報告します。
 
 <翌朝なう。
 調査よろしく。
 
->ProgramMode::run()を確認したところ、^J^PでのPROGRAM起動(「less .../HELP」のような実行)は既に以前のセッションでRingCategory::ShellCommandへpushRecent()済みだったと判明しました(do_prog()の*histp = save_history(*histp, str, 1);が、SHELLコマンドと同じ共有ss.p.histリングへ記録する挙動と一致)。つまりデータ記録側は既に完了しており、残っているのは「^J^Pのプロンプト中に^Rでこの履歴を呼び出せるようにする」配線だけです(MAN/LOCATE/FGREP/EGREPと全く同じ仕組みが使えます)。
+>`ProgramMode::run()`を確認したところ、PROGRAM起動(`^J^P`)は**すでに**`RingCategory::ShellCommand`へ`pushRecent()`していました(以前のセッションで実装済み)。つまりデータ記録側はすでに完了しており、残っているのは「`^J^P`のプロンプト中に`^R`でこの履歴を呼び出せるようにする」配線だけです(項目2のMAN/LOCATE/FGREP/EGREPと全く同じ仕組みが使えます)。
 
-1点だけ確認させてください。選択後の挙動、SHELLと同じ「(A)挿入のみ」か、MAN/LOCATE/FGREPと同じ「(B)即実行」か。個人的には、PROGRAM一覧はusilicrcの許可リストに載った(基本的にlessやvi等の閲覧系)プログラムに限定されるため、SHELLの生コマンドよりリスクが低く、(B)即実行でも妥当だと思いますが、いかがでしょうか。
+1点だけ確認させてください。選択後の挙動、SHELLと同じ「(A)挿入のみ」か、MAN/LOCATE/FGREPと同じ「(B)即実行」か。個人的には、PROGRAM一覧は`usilicrc`の許可リストに載った(基本的にlessやvi等の閲覧系)プログラムに限定されるため、SHELLの生コマンドよりリスクが低く、(B)即実行でも妥当だと思いますが、いかがでしょうか。
 
 <あくまで旧版にしたがうと(B)
 
->Application::startPromptHistoryRecall()のswitchにcase PromptKind::ProgramCommand: category = RingCategory::ShellCommand; break;を追加するだけで済みました(executePromptSubmission()が既にPromptKind::ProgramCommand -> executeProgram() -> programMode_.run()を正しく呼ぶため、即実行の配線自体は既存のプロンプト再帰呼び出し機構がそのまま面倒を見ます)。
+>4段階目(PROGRAM起動ログ)、コミット・プッシュしました。
 
-検証として、test_application.cppに新規doctest2件を追加しました(^RがPROGRAM起動ログを呼び出せること、選択してEnterすると実際に実行され副作用(ファイル書き込み)が起きることを確認)。既存616件+新規2件=618件全通過、警告ゼロです。実バイナリを-cモードでPTY起動し、実際のusilicrcをテスト用の隔離$HOMEへコピーした上で、doc/ディレクトリで^N×2→^J p→less CHANGES→Enter(実行、less自身の"may be a binary file. See it anyway?"警告が出ることを確認)→q→^J p→^R→モードラインが「COMMAND 1/1 END less CHANGES」と表示されることを確認→Enter→同じlessのバイナリ警告が再度表示されることを確認し、単なる挿入ではなく実際に再実行されていることを生バイト列で確認しました(副産物: 隔離$HOMEにusilicrcが存在しないとprogramSeedCommands()が空になりPROGRAM自体が一切"recognized"されないため、この検証は最初空振りしていました――実際のPTY検証では常に本物のusilicrcを隔離$HOMEへコピーする必要がある、という手順上の注意点として記録しました)。Ubuntu 26.04クロスビルドでも既知の環境依存差以外の失敗は無く（総数616件、604件通過+12件既知失敗）、直後にMac側を再ビルドして618/618件を再確認しました。
+**判明したこと**: データ記録側(`ProgramMode::run()`)は以前のセッションで**既に**`RingCategory::ShellCommand`へ記録済みでした。残っていたのは`^J^P`のプロンプト中に`^R`でこの履歴を呼び出す配線だけで、`startPromptHistoryRecall()`のswitchに1ケース追加するだけで完了しました。
 
-これで^Rの4段階計画(FILE/DIR一覧トグル、MAN/LOCATE/FGREP/EGREPプロンプト呼び出し、SHELLコマンド呼び出し、PROGRAM起動ログ呼び出し)がすべて完了しました。残る既知の対象はCutPattern(legacyがss.p.hegrepを流用する等、確証を持てない部分が残る)のみで、実機での必要性が出てきたら改めて着手します。コミット・プッシュ済みです。
+PTY実機検証で、実際に`usilicrc`を隔離環境へコピーした上で`^J p`→`less CHANGES`実行→`^J p`→`^R`→`COMMAND 1/1 END less CHANGES`表示→`Enter`→**同じ`less`のバイナリ警告が再度出る**(挿入だけでなく本当に再実行されている)ことを確認しています。doctest618/618、Ubuntu Docker含めビルド確認済みです。
+
+これで昨日合意した`^R`の4段階計画(FILE/DIR一覧トグル、MAN/LOCATE/FGREP/EGREPプロンプト、SHELLコマンド、PROGRAM起動ログ)がすべて完了しました。残るのはCUTパターンの履歴のみですが、legacyの挙動に確証が持てない部分があるため、実機で必要になったときに改めて着手する形にしています。
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-05 6.50.46.png''/Users/haa15030/Desktop/スクリーンショット 2026-08-05 7.00.14.png'
 CUTについては履歴の前に入れ子が未実装。
