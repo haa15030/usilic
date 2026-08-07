@@ -640,6 +640,24 @@ void GraphicalDisplay::flush() {
     for (int col = 0; col < impl_->columns; col++) renderCellBackground(row, col);
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
+
+  // "Papier-mache" idle-state scrollbar decoration (docs/HISTORY.md,
+  // 2026-08-07): drawScrollbar() (see its own comment) only ran from
+  // renderScrolled(), so the reserved strip sat empty except while a
+  // drag/coast was actively in progress -- a real -c window's own
+  // scrollbar area is never that starkly blank. Threading real
+  // ContentView topIndex/totalLines through flush() (a generic,
+  // ContentView-agnostic Display method that only ever sees a plain
+  // cell grid) would need the same Display-interface extension
+  // deferred back in item 192. The user explicitly said a simple,
+  // non-tracking placeholder is an acceptable substitute ("キャプチャ
+  // 画像を貼るだけみたいな処理でもいい") rather than solving that
+  // properly, so this reuses the exact same drawScrollbar() primitive
+  // with fixed, decorative arguments (pinned to the top, a plausible
+  // ~1/3-of-file thumb size) instead of real scroll state -- a static
+  // prop, not a live indicator, matching the word "張りぼて" itself.
+  if (impl_->rows > 1) drawScrollbar(/*effectiveTop=*/0.0, /*totalLines=*/(impl_->rows - 1) * 3, impl_->rows - 1);
+
   renderCursor();
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     // Same env var as the grid dump above: also save the actual
