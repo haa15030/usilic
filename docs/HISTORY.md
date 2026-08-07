@@ -490,13 +490,17 @@ echo $TERM_PROGRAM
 ubuntuでは背景黒・文字白・大きめウィンドウ。dconfだっけ？　それがうまくいってない？
 '/Users/haa15030/Desktop/スクリーンショット 2026-08-03 13.25.52.png'
 
->macOS側の原因を特定・修正しました。実機で複数のTerminal.appプロファイルのfont sizeプロパティを直接クエリしたところ値自体は正しく取得できていたため、クエリ自体は正常と確認しました。実際にusilicを起動しウィンドウサイズを実測したところ、Terminal.app本体(650×450)に対しGUI版が明確に小さい(496×382)ことを確認し、原因を追うためresolveMacFontPath()と全く同じCoreTextコードを複製した独立テストプログラムを実機でコンパイル・実行したところ、Terminal.appが報告するフォント名「SFMono-Regular」(最近のmacOSのTerminal.appの既定フォント)が、通常のCoreText名前検索では常に解決に失敗すると判明しました。これはこのポート側のバグではなく、Appleが意図的にSF Monoのような予約済みシステムフォント名への通常APIアクセスをブロックしている仕様でした。既存のフォールバック(Menlo.ttc)が使われていましたが、MenloとSF Monoは見た目こそ似ているものの実際の字形計量は別物(14ptでMenlo=8px・SF Mono=9px)で、これがウィンドウサイズのズレの直接原因でした。
+>macOS側は原因特定・修正・実機検証まで完了し、コミット・プッシュ済みです。
 
-SF Monoは実は/System/Library/Fonts/SFNSMono.ttfという固定の既知パスに常時インストールされているため、resolveMacFontPath()に「フォント名がSF Monoの既知の表記と一致する場合は、ブロックされるCoreText検索を試す前にこの固定パスを直接返す」という特別分岐を追加しました。
+**フォントサイズの件**: Terminal.appの既定フォント「SF Mono」は、macOSが意図的に通常のフォント名検索APIからブロックしている特殊なシステムフォントでした(実機で検証コード付きで確認、macOS自身が「TimesNewRomanになるがいいか」という警告を出すほど明示的な仕様)。見た目が近いMenloへ静かにフォールバックしていたため「フォントの種類は合っているように見えるがサイズがずれる」という症状になっていました。SF Monoの実ファイルパスを直接指すよう修正し、テストウィンドウで650×450に対し496×382→632×426まで改善しました。
 
-実機でRed Sandsプロファイルのテストウィンドウ(650×450)に対しusilicを再起動したところ、修正前496×382だったGUIウィンドウが632×426まで改善(実ターミナルとの差が幅24%→2.8%、高さ15%→5.3%まで縮小)したことを確認しました。doctest新規1件を含め計570件全通過です。
+**Ubuntu側**は、GNOME_TERMINAL_SCREEN環境変数のゲート自体が機能していない可能性が高いと見ていますが、前回iTerm2を推測で実装して外した反省があるので、今回は先に実機データをいただきたいです。お手数ですがUbuntuの実際のGNOME Terminalで以下を実行して結果を教えてください。
 
-Ubuntu/GNOME Terminal側については、GNOME_TERMINAL_SCREEN環境変数でゲートしているqueryGnomeTerminalColors()自体が丸ごと機能していない可能性が高いと見ていますが(このセッションからは実機のGNOME Terminal/D-Busセッションが存在せず一度も実機検証できていない機能のため)、前回iTerm2という誤った前提のまま一度実装してしまった反省を踏まえ、今回は憶測で直しに行かず、実機のGNOME Terminalでecho $GNOME_TERMINAL_SCREEN / echo $TERM_PROGRAM / gsettings get org.gnome.Terminal.ProfilesList default を実行した結果を教えていただけますか。
+```
+echo $GNOME_TERMINAL_SCREEN
+echo $TERM_PROGRAM
+gsettings get org.gnome.Terminal.ProfilesList default
+```
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 13.49.51.png'
 
