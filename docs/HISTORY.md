@@ -502,90 +502,232 @@ echo $TERM_PROGRAM
 gsettings get org.gnome.Terminal.ProfilesList default
 ```
 
-<'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 13.49.51.png'
+<Windows Appでubuntuに繋げようとするとここから進まなくなった。なにが原因？
+'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 13.49.51.png'
 
->(Windows AppがUbuntu機へのRDP接続で「Configuring remote PC」のまま止まっているという別件の報告。SSHでのアクセス可否を確認したところ「SSHでアクセス可能」との回答だったため、RDP接続自体の復旧は本題のusilic調査とは別問題と切り分け、実機データを得る手段としてひとまずSSH経由での確認に切り替えることを提案しました。)
+>了解しました。SSHでアクセスできるなら、Windows App/RDPの接続問題を直さなくても、既に動いているGNOME Terminalのプロセス環境変数を直接覗くことで同じ情報が得られるはずです。お手数ですがSSHでUbuntu機へログインして、以下を順に実行し結果を教えてください。
+
+```bash
+# 1. 稼働中のgnome-terminal-serverプロセスを探す
+pgrep -a gnome-terminal-server
+
+# 2. 見つかったPIDの環境変数からGNOME_TERMINAL_SCREEN/TERM_PROGRAMを確認
+#    (<PID>は上のコマンドの結果に置き換えてください)
+cat /proc/<PID>/environ | tr '\0' '\n' | grep -E 'GNOME_TERMINAL_SCREEN|TERM_PROGRAM'
+
+# 3. gsettingsが動くか単体で確認
+gsettings get org.gnome.Terminal.ProfilesList default
+```
+
+もし`pgrep`で何も見つからなければ(GNOME Terminal自体が今起動していない場合)、SSH先で先
 
 <gnome-terminalじゃないかも。
 '/Users/haa15030/Desktop/スクリーンショット 2026-08-03 13.53.30.png'
 
->SSH経由でDBUS_SESSION_BUS_ADDRESSを指定してgsettings get org.gnome.Terminal.ProfilesList defaultを実行してもらったところ「スキーマ"org.gnome.Terminal.ProfilesList"がありません」というエラーで、そもそもgnome-terminal自体がインストールされていないと判明しました。デスクトップ環境を確認するため echo $XDG_CURRENT_DESKTOP と echo $DESKTOP_SESSION を実行していただけますか。
+>`pgrep`が15文字のプロセス名制限で空振りしていますね。GNOME Terminalかどうかも含めて、まず何が動いているか広く確認しましょう。
+
+```bash
+# 稼働中のデスクトップ環境・ターミナル関連プロセスを幅広く確認
+echo "XDG_CURRENT_DESKTOP=$XDG_CURRENT_DESKTOP"
+echo "DESKTOP_SESSION=$DESKTOP_SESSION"
+ps aux | grep -iE "gnome-terminal|konsole|xterm|terminator|tilix|kitty|alacritty|xfce4-terminal" | grep -v grep
+```
+
+これで実際にどのターミナルアプリ(あるいはそもそもデスクトップセッション自体)が動いているか分かるはずです。結果を教えていただけますか。
 
 <2行のみ。
 XDG_CURRENT_DESKTOP=ubuntu:GNOME
 DESKTOP_SESSION=ubuntu
 
->(GNOMEデスクトップ自体は動いていることを確認。which/dpkgで実際にインストール済みの端末アプリを直接確認する方針に切り替えました。)
+>`ps aux`が空(2行のみ)ということは、現時点でこのUbuntu機にターミナルアプリはおろか、実際に動いているGNOMEデスクトップセッション自体が無い可能性が高いです(`XDG_CURRENT_DESKTOP`/`DESKTOP_SESSION`はSSHログインシェルのプロファイルから来ている静的な値で、実際にセッションが起動している証拠にはなりません)。
+
+つまり、さっきの「Windows Appが`Configuring remote PC...`で止まる」問題こそが本丸で、そのせいでGNOMEデスクトップセッション自体が一度も正常に起動できていない状態だと思われます。これが直らないと、usilicの色/フォント検出バグの調査以前の話になります。
+
+このUbuntu機はおそらくxrdp(RDPプロトコルでLinuxデスクトップに繋ぐ定番ソフト)を使っていると思われます。SSHはまだ生きているので、まずは壊さない範囲で状態だけ確認させてください。
+
+```bash
+sudo systemctl status xrdp
+sudo systemctl status xrdp-sesman
+who
+loginctl list-sessions
+```
+
+これらの結果を教えていただけますか。xrdpサービス自体が落ちている、あるいは古いセッションが詰まっている、といった原因が見えてくるかもしれません。
 
 <言っていないことがひとつあって、ubuntuデスクトップはちゃんと動いてる。ただディスプレイに表示させるにはこのmini用画面出力を切り替えなくてはならんので、となりの別のmacOSへubuntuを画面共有させようと思ったのに出来ない、いままではさっきのスクショ箇所ののちubuntu画面がちゃんと出たのにずっと止まってるってのが現状。
 
->状況を理解しました。RDP接続自体の復旧について、Ubuntu側で実際にどのRDPサーバーが動いているか確認するため、systemctl status xrdp や loginctl list-sessions 等を実行していただけますか(usilic本体の調査とは別スレッドとして並行して見ます)。
+>状況が分かりました。以前は同じ手順でUbuntu画面がちゃんと出ていたのに今回だけ止まる、ということなら、xrdp(または同種のリモートデスクトップサーバー)側に前回の接続が正しく切断されずに残っている「詰まったセッション」が典型的な原因です。
+
+先ほど提案したコマンドを、SSHで**Ubuntu機側**に入って実行し、結果を教えていただけますか(まだ何も変更しない、状態確認のみです)。
+
+```bash
+sudo systemctl status xrdp
+sudo systemctl status xrdp-sesman
+who
+loginctl list-sessions
+```
+
+特に`who`や`loginctl list-sessions`で、すでに「ログイン済み」として残っているセッションが無いかを見たいです。もしあれば、それが新しい接続をブロックしている可能性が高いです。
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.12.23.png'
 
->xrdp.serviceが見つからない(未インストール)ことを確認しました。かわりに何がRDPポートを使っているか、dpkg -l | grep -i remote や ps aux | grep -i rdp、ss -tlnp | grep 3389 等を実行していただけますか。
+>`xrdp`自体がsystemdサービスとして見つかっていません(「Unit xrdp.service could not be found」)。つまりMicrosoft純正のリモートデスクトップ接続を受けているのは別の仕組みかもしれません。また`loginctl`のセッション282番(TTY無し、seat無し)が気になります――過去の接続が正しく終了せず残っている可能性があります。
+
+もう少し広く確認させてください。
+
+```bash
+dpkg -l | grep -i rdp
+ps aux | grep -i rdp | grep -v grep
+sudo ss -tlnp | grep 3389
+```
+
+これでRDP接続を実際に受けている実体(またはそもそも何も待ち受けていないのか)が分かるはずです。
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.15.00.png'
 
->gnome-remote-desktopがポート3389で待受していることを確認しました(xrdpではなく、Ubuntu 26.04の新しい標準搭載RDPサーバーです)。systemctl status gnome-remote-desktop.serviceのログを見せていただけますか。
+>見つかりました。**xrdpではなく`gnome-remote-desktop`**(Ubuntu最近のバージョンに標準搭載されているGNOME純正のRDPサーバー)がポート3389で待ち受けています(PID 2184)。
+
+xrdpと違い、`gnome-remote-desktop`はGNOMEデスクトップと統合されたユーザーサービスとして動きます。以前見えた`loginctl`のセッション282(TTY無し・seat無し)が、このサービスに残った「前回切断しきれなかったセッション」で、新しい接続を受け付けられずブロックしている可能性が高いです。
+
+まず状態だけ確認させてください(まだ何も変更しません)。
+
+```bash
+systemctl --user status gnome-remote-desktop
+```
+
+これで「セッションが残っている」ことを示す表示が出るようなら、`systemctl --user restart gnome-remote-desktop`で再起動するのが次の一手になりそうです。ただし、これは今使おうとしている接続そのものに関わるサービスの再起動になるので、実行してよいか一度確認させてください。
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.17.16.png'
 
->サービス自体は6日間問題なく稼働中で、直近のログは7/28と8/1のみでした(今回の接続失敗の時刻のログが見当たりません)。journalctl --user -u gnome-remote-desktop で今日のログを確認できますか。
+>サービス自体は6日間ずっと生きていて(PID 2184のまま一度も再起動していません)、過去のセッションは"stopping session"ときちんと終了しているように見えます。ただ表示されているログは7/28と8/1のもので、今回(8/3)の接続試行時のログがまだ見えていません。そこが本命だと思うので、直近のログだけ見せてください。
+
+```bash
+journalctl --user -u gnome-remote-desktop -n 30 --no-pager
+```
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.18.44.png'
 
->(「権限不足でジャーナルファイルを開けません」というエラー。sudoでのjournalctl実行に切り替えを提案。)
+>権限エラーですね。`sudo`を付けて、PIDで直接絞り込む形で試してください。
+
+```bash
+sudo journalctl _PID=2184 -n 30 --no-pager
+```
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.19.42.png'
 
->(「-- エントリなし --」。PIDを指定した絞り込みに切り替えを提案。)
-
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.20.26.png'
 
->sudo journalctl _PID=2184 で確認したところ、7/28と8/1のエントリのみで、今回の接続試行に対応するログが一切ないと分かりました。これは接続がRDPプロトコルレベルにすら到達していない可能性を示唆します。ファイアウォールとネットワーク到達性を確認するため、sudo ufw status と nc -zv <ホスト> 3389 を実行していただけますか。
+>今日の接続試行分のログが1件も無いのが重要な手がかりです――7/28と8/1の過去の接続はきちんとログに残っている(接続→切断まで記録)のに対し、今回はサーバー側に一切届いていないということは、**セッション詰まりではなく、そもそも接続がUbuntu機のポート3389まで到達していない**(ネットワーク経路・ファイアウォール・接続先アドレスの問題)可能性が高いです。
+
+2点確認させてください。
+
+1. Ubuntu側のファイアウォール設定:
+```bash
+sudo ufw status
+```
+
+2. 「Windows App」で接続しようとしている接続先(ホスト名かIPアドレス)は今までと同じものですか？ もし分かれば、隣のmacOS側のターミナルから`nc -zv <その接続先> 3389`を実行してみると、そもそも到達できているかが分かります。
 
 <sudo ufw statusは「状態：非アクティブ」、nc -zv file 3389は「Connection to file port 3389 [tcp/ms-wbt-server] succeded!」
 
->ファイアウォールは無効、TCP到達性も成功ということで、ネットワーク層の問題ではないと切り分けられました。RDP接続の復旧自体はusilic本体の調査から外れる領域まで来てしまったため、いったんこの件は保留し、当初の目的(実機のターミナルアプリ調査)に戻ってよろしいでしょうか。まずDBus越しにgsettingsを直接叩いて、org.gnome.Terminal.ProfilesList defaultが本当に存在しないか再確認させてください。
+>TCP到達性(nc)とファイアウォールは問題無しとのことなので、RDPプロトコルのネゴシエーション自体で止まっている可能性が高そうです。ただ、この先はほぼネットワーク/RDP固有の話になり、usilicの色・フォント検出バグの調査からは離れてしまいます。
+
+実は元々の目的(GNOME Terminalの環境変数/設定値を知りたい)は、Windows App経由でリモートデスクトップに繋がなくても達成できるかもしれません。`loginctl`で見えていたセッション1(seat0, tty2)は、おそらく物理的に(またはこのMac mini経由で)既にログイン済みのアクティブなGNOMEセッションです。SSHから、そのセッションのDBusバスに直接アクセスして`gsettings`を叩けば、リモートデスクトップ接続を直さなくても欲しい情報が取れる可能性があります。試してみてください。
+
+```bash
+sudo -u usilic DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus gsettings get org.gnome.Terminal.ProfilesList default
+```
+
+もしこれで値が返ってくれば、そのままプロファイルの配色・フォント設定も同じ要領で取得できます。RDP接続自体を直す必要があれば、それはそれで別途続けましょう。
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.28.15.png'
 
->(sudo -u usilic DBUS_SESSION_BUS_ADDRESS=...でも同じく「スキーマがありません」を再確認。gnome-terminal不在が確定したため、which/dpkgで実際にインストールされている端末アプリを直接探すことを提案。)
+>`org.gnome.Terminal.ProfilesList`というスキーマ自体が存在しない、つまり**このUbuntu機にはgnome-terminalがインストールされていない**ことが判明しました。まさに「gnome-terminalじゃないかも」というご指摘の通りでした。
+
+何が実際に使われているターミナルか確認させてください。
+
+```bash
+which gnome-terminal ptyxis kgx x-terminal-emulator 2>/dev/null
+dpkg -l | grep -iE "gnome-terminal|ptyxis|console|kgx"
+echo $COLORTERM
+```
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.29.50.png'
 
->ptyxisパッケージがインストール済みと判明しました。これはUbuntu 26.04の新しいGNOME既定端末(gnome-terminalの後継)です。gsettings list-schemas | grep -i ptyxis で関連スキーマの有無を確認していただけますか。
+>`gnome-terminal`ではなく**Ptyxis**(Ubuntu最新版のGNOME標準ターミナル、gnome-terminalの後継)が使われていると判明しました。Ptyxisの設定スキーマを確認させてください。
+
+```bash
+gsettings list-schemas | grep -i ptyxis
+```
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.30.54.png'
 
->org.gnome.Ptyxisスキーマの存在を確認しました。前回iTerm2という誤った前提のまま一度実装してしまった反省があるので、今回は公式ドキュメントを推測で信じず、実機の生データだけを根拠にしたいと思います。全キーを一度に見る(gsettings list-recursively)か、フォント/色に関係しそうなキーだけを個別に確認するか、お好みはありますか。
+<[AskUserQuestion回答: 「gsettings list-recursively で全キーを一気に確認 (推奨)」]
 
->(ユーザー回答:「gsettings list-recursively で全キーを一気に確認 (推奨)」)
+>では、`org.gnome.Ptyxis`の全キーと値を一度に確認しましょう。
+
+```bash
+gsettings list-recursively org.gnome.Ptyxis
+```
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.32.59.png'
 
->org.gnome.Ptyxisの全キーを確認しました。font-name/use-system-fontは見つかりましたが、色に関するキーがこの中には見当たりません。リロケータブルなプロファイル単位のスキーマ(org.gnome.Ptyxis.Profile)が別にあるはずなので、gsettings list-relocatable-schemas | grep -i ptyxis を確認していただけますか。
+>グローバル設定に色の項目が無いので、プロファイル単位(UUID `e97b22defb272c54e0d1b90e6a4a3d40`)の設定を見る必要がありそうです。まず正確なスキーマ名を確認しましょう。
+
+```bash
+gsettings list-relocatable-schemas | grep -i ptyxis
+```
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.35.21.png'
 
->org.gnome.Ptyxis.Profileの存在を確認しました。dconf dump /org/gnome/ptyxis/ で実際にユーザーが上書きしている設定があるか(=プロファイルUUIDの特定にも使えます)確認していただけますか。
+>まず実際のdconfパス構造を確認してから、確実な形でクエリしましょう。
 
-<おなじく。(空)
+```bash
+dconf list /org/gnome/ptyxis/profiles/
+dconf list /org/gnome/ptyxis/profiles/e97b22defb272c54e0d1b90e6a4a3d40/
+```
 
->ユーザー上書きが一切無い(=アプリ組み込みのデフォルトのまま)と分かりました。gsettings list-keys org.gnome.Ptyxis.Profile で、このプロファイル単位スキーマにどんなキーがあるか確認していただけますか。
+<なんもなし。
+
+>パスの想定が外れているようです。実際のdconfツリー全体を見てみましょう。
+
+```bash
+dconf dump /org/gnome/ptyxis/
+```
+
+<おなじく。
+
+>なるほど、dconfは「ユーザーが変更した差分」しか保存しないので、初期値のままだと空になります。`gsettings`はスキーマの初期値も返すので、そちらで直接確認しましょう。まずキー名一覧だけ取得します(パス指定不要です)。
+
+```bash
+gsettings list-keys org.gnome.Ptyxis.Profile
+```
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.38.42.png'
 
->色に関するキーがここにも見当たりません。palette というキーだけがそれらしいので、実際の値を gsettings get org.gnome.Ptyxis.Profile:/org/gnome/ptyxis/profiles/<uuid>/ palette で確認していただけますか(UUIDは先ほどのdconf dumpのパスから分かります)。
+>`background color`/`foreground color`という単体キーが無く、代わりに`palette`(配色パレット全体)というキーがあります。パレットの中身次第では背景色・文字色もそこに含まれている可能性があるので確認します。
+
+```bash
+gsettings get org.gnome.Ptyxis.Profile:/org/gnome/ptyxis/profiles/e97b22defb272c54e0d1b90e6a4a3d40/ palette
+```
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.40.46.png'
 
->paletteの値が'Ubuntu'という、RGB値ではなく単なるプリセット名の文字列だと判明しました。dconf dumpが空だったこととも整合していて、この名前が指す実際のRGB定義はPtyxis本体にコンパイルされて埋め込まれており、gsettings経由では一切取得できないと判断しました。これはクエリ方法を工夫しても解決できない、Ptyxis自体の設定公開範囲の限界です。フォント検出だけでも先に実装して色は既存の既定値のままにするか、それとも色対応も含めて別の方法(例えばPtyxisのソース自体からプリセット定義を持ってくる等)を探るか、どちらがよろしいですか。
+>重要な発見です。`palette`は色の配列ではなく、`'Ubuntu'`という**名前付きプリセットの名前**でした。つまりPtyxisは実際のRGB値をgsettings/dconfに保存しておらず、プリセット名だけを保存して、実際の色はPtyxisアプリ本体の中にハードコードされている設計のようです(ずっと画面に出ていたあの赤茶色が「Ubuntu」プリセットの色そのものですね)。
 
->(ユーザー回答:「フォントのみ対応、色は現状の既定値のままでよい (推奨)」)
+これは私の問い合わせ方の問題ではなく、**Ptyxis自体の設計上、外部から正確な背景色/文字色を取得する手段が無い**という構造的な制約のようです。
 
->実装を進めるにあたり、Ptyxis検出のゲート条件として使えそうな環境変数(PTYXIS_VERSION等)がSSH越しにも見えるか確認したいので、env | grep -iE "ptyxis|term_program|vte_version" を実行していただけますか。
+一方、フォントの方は`use-system-font`/`font-name`が通常のgsettingsキーとして見えているので、こちらは既存のgnome-terminal対応と同じやり方で正しく取得できる見込みです。
+
+色についてどう対応するか、方針を選んでいただけますか。
+
+<[AskUserQuestion回答: 「フォントのみ対応、色は現状の既定値のままでよい (推奨)」]
+
+>環境変数でPtyxisを検出する仕組みが必要です。ゲート条件を確認させてください。
+
+```bash
+env | grep -iE "ptyxis|term_program|vte_version"
+```
 
 <なんもなし。
 
