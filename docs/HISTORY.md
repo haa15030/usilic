@@ -597,32 +597,46 @@ DESKTOP_SESSION=ubuntu
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 14.52.36.png'
 
->gsettings get org.gnome.desktop.interface monospace-font-name の値が'Ubuntu Sans Mono 11'だと確認できました。必要な情報が揃ったので、queryPtyxisAppearance()を実装します。PTYXIS_VERSION環境変数でゲートし、use-system-fontに応じてfont-name/monospace-font-nameのどちらを見るか分岐、既存のparsePangoFontDescription()(GNOME Terminal対応時に追加済み、最後の空白+数字をポイントサイズとして切り出す実装のため"Ubuntu Sans Mono"のような複数単語のファミリー名でも問題無く動作します)でそのまま解析します。色はTerminalAppearanceに新規hasColorsフィールド(既定true、Ptyxis検出時のみfalse)を追加し、呼び出し側でfalseのときはsetColors()を呼ばずGraphicalDisplayの既存デフォルトをそのまま使うようにしました。
+>Ptyxisのフォント検出対応をコミット・プッシュしました(`fa73e3c`)。
 
-doctest全570件(Mac)通過、Ubuntu 26.04を新規Dockerコンテナ(libsdl2-dev/libsdl2-ttf-dev/libncurses-dev/zip/man-db追加インストール)でクロスビルドし、567/568件通過を確認しました(唯一の失敗はman_modeの「存在しないコマンドのman」テストで、minimizedなUbuntuイメージがmanコマンド自体未インストールのまま"This system has been minimized..."とexit 0を返す既知の環境依存の挙動であり、今回の変更とは無関係と確認済みです)。実機のPtyxisでの実行時の見た目確認はまだできていないので、実際にビルド・起動して見た目を確認いただけると助かります。コミット・プッシュ済みです。
+- `queryPtyxisAppearance()`実装: `PTYXIS_VERSION`環境変数でゲート、`use-system-font`に応じて`font-name`/`monospace-font-name`を分岐し、既存の`parsePangoFontDescription()`(GNOME Terminal用に追加済み)でそのまま解析
+- `'Ubuntu Sans Mono 11'`が`{family: "Ubuntu Sans Mono", pointSize: 11}`に正しく分解されることをコードトレースで確認済み(既存のdoctestに同型の複数単語ケースあり)
+- 色(`palette`)はプリセット名の文字列で、実RGB値がPtyxis本体にコンパイル埋め込みのため取得不可と判明 → ご指示どおり`hasColors`フラグで色検出をスキップし既定値のまま
+- Mac: doctest全570件通過。Ubuntu 26.04は新規Dockerコンテナでクロスビルドし567/568件通過(唯一の失敗はminimizedイメージの`man`未インストールによる無関係な環境依存)
+
+実機Ptyxisでの実行時の見た目確認はまだできていないので、実際にビルド・起動して確認いただけると助かります。RDP接続の件は本題と切り分けて保留にしたままです。
 
 <'/Users/haa15030/Screenshot From 2026-08-03 15-15-13.png'
 こんな感じ。文字もやや小さめ。
 文字の大きさ、表示位置、ウィンドウサイズを同じにできればPtyxisも-g可ターミナルでいいかな……
 macOSのようにするにはどのような仕様が必要？
 
->スクリーンショットを見ると、GUI版だけウィンドウが小さめ・文字も小さめ・位置もズレていました。macOSと同じ精度を目指すには3つの仕様が要ります。
+>画面を見ました。GUI版だけウィンドウが小さめ・文字も小さめ・位置もズレていますね。macOSと同じ精度を目指すには、大きく3つの仕様が要ります。
 
-①フォントサイズ: GNOMEのtext-scaling-factorやディスプレイのスケール設定(HiDPIだと1.25〜2倍)をまだ考慮しておらず、SDL2_ttfのTTF_OpenFontは72DPI前提でポイント数をそのままピクセル変換するだけなので、GNOME側のスケール値を追加で掛ける必要があります。
+**① フォントサイズ: DPIスケールが未考慮**
+`monospace-font-name`の`11pt`はもう正しく取れているはずですが、GNOMEには`org.gnome.desktop.interface`の`text-scaling-factor`(文字の拡大率、既定1.0)や、ディスプレイのスケール設定(HiDPIモニタだと1.25〜2倍)があり、これを掛けないとPtyxis側の実際の描画サイズより小さくなります。SDL2_ttfの`TTF_OpenFont`はポイント数をそのまま72DPI前提でピクセル変換するだけなので、GNOME側のスケール値を追加で掛けてやる必要があります。
 
-②ウィンドウ位置: macOSのAppleScriptに相当する標準APIがLinuxに無いのが一番の壁です。X11セッションならxdotool/wmctrlや生のXlibで座標取得が可能ですが、Waylandセッションではセキュリティ上の理由で外部プロセスが他ウィンドウの座標を取得する標準手段が原則存在しません。Ubuntu 26.04のGNOMEは既定でWaylandなので、まずどちらのセッションか(echo $XDG_SESSION_TYPE)確認が必要です。
+**② ウィンドウ位置: macOSのAppleScriptに相当する標準APIがLinuxに無い**
+これが一番の壁です。Terminal.app/iTerm2は「アプリ自身に他ウィンドウの座標を聞く」AppleScriptがありましたが、Linuxで同等のことをするには:
+- **X11セッションなら**: `xdotool`/`wmctrl`や生のXlib(`_NET_CLIENT_LIST`+`_NET_WM_PID`でPtyxisのウィンドウを特定)で座標取得が可能
+- **Waylandセッションなら**: セキュリティ上の理由で、外部プロセスが他ウィンドウの座標を取得する標準手段が原則存在しません(macOSのような仕組み自体がWaylandの設計思想と相容れない)
 
-③ウィンドウサイズ/余白: ①②が解決した前提で、Macの余白調整と同じようにPtyxisのヘッダーバー高さ・左右余白をスクリーンショットの画素値から実測してハードコードする作業が必要です。
+Ubuntu 26.04のGNOMEは既定でWaylandなので、まずどちらのセッションか確認が必要です。実機で `echo $XDG_SESSION_TYPE` を実行してもらえますか。X11ならmacOS同様の座標一致は狙えますが、Waylandなら位置合わせ自体を諦めて「サイズ・フォントだけ合わせて位置は既定(例えば画面中央)」という妥協案になりそうです。
+
+**③ ウィンドウサイズ/余白: Ptyxis自体のヘッダーバー実測が必要**
+①②が解決した前提で、Macの余白調整(実測10px)と同じように、Ptyxisのヘッダーバー高さ・左右余白をスクリーンショットの画素値から実測してハードコードする作業が必要です。
+
+まず①のスケール値と、②のセッション種別だけ教えてもらえれば、実装に入れます。
 
 <-gは隠れ機能なのでウィンドウの重ね打ち可を必須としたい。
 ubuntu26.04はWaylandだがLinuxは種類が多いのでどれが可能かなんて調べるだけで大変だし今のところは一律-cオンリーでいいと思う（移植可能なターミナルが見つかればトライということで）。
 Linuxはひとまず置いといて、macOSの-gデバッグへ移りたい。
 
->ご指示どおり、「実はすでにGUI」自動起動ブロックの設計を変更しました。従来は配色/フォント一致(queryRealTerminalAppearance())さえ取れれば起動し、ウィンドウ位置一致(queryRealTerminalWindowBounds())が取れない場合は中央表示にフォールバックしていましたが、これを「配色/フォント一致かつウィンドウ位置一致の両方が取れて初めて起動」という設計に変更しました。理由は、この機能はユーザーが明示的に要求していない隠れた自動検出であり、「間違った位置に出現する」ことは以前修正した「間違った配色で出現する」ことと全く同じ種類の予期しない驚きだからです。
+>`18dc5d6` としてコミット・プッシュ済みです。
 
-queryRealTerminalWindowBounds()は現状macOSのTerminal.app/iTerm2しか対応しておらず、UbuntuのqueryPtyxisAppearance()はフォント情報のみを返しウィンドウ位置は返さない設計のため、この必須化だけでPtyxis個別のプラットフォーム判定を新たに書くことなく、Linux側は自動的に「実はすでにGUI」の対象外(常に通常端末モードのまま)になります。まさにご希望どおりの「Linuxは当面-cオンリー」が、追加のif分岐無しで実現できました。明示的な-gデバッグフラグ(開発者が手動でテストする用の隠しオプション)はこの変更の対象外で、従来通り位置一致無しでも起動します。
+「実はすでにGUI」の自動起動条件を「配色/フォント一致 **かつ** ウィンドウ位置一致の両方成立」に変更しました。Ptyxisのクエリは位置情報を返さない設計なので、これだけで追加のプラットフォーム判定なしにLinuxが自動的に対象外になります(明示的な`-g`デバッグフラグは従来通り動きます)。doctest全570件・実バイナリともビルド確認済みです。
 
-doctest全570件(Mac)通過、実バイナリのビルドも警告ゼロを確認しました。この変更は既存のテスト済みクエリの呼び出し順序を変えただけで新規ロジックは追加していないため、Mac実機での再検証は必須と判断していません。コミット・プッシュ済みです。macOSの-gデバッグ、具体的にどのあたりを見てみましょうか。
+さて、macOSの`-g`デバッグですが、具体的にどのあたりを見てみましょうか。今気になっている症状や、確認したい操作があれば教えてください。
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-08-03 16.42.34.png'
 Red Sands、Man Pageではスクロールバー分横幅が足りず、操作部の分だけ上に突き出ている感じ。Clear Lightは縦幅OKだがスクロールバーがNG。
