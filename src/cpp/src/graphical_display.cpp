@@ -10,6 +10,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
+#include "scrollbar_idle_image.hpp"
 #include "utf8.hpp"
 
 namespace fm {
@@ -641,22 +642,7 @@ void GraphicalDisplay::flush() {
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
 
-  // "Papier-mache" idle-state scrollbar decoration (docs/HISTORY.md,
-  // 2026-08-07): drawScrollbar() (see its own comment) only ran from
-  // renderScrolled(), so the reserved strip sat empty except while a
-  // drag/coast was actively in progress -- a real -c window's own
-  // scrollbar area is never that starkly blank. Threading real
-  // ContentView topIndex/totalLines through flush() (a generic,
-  // ContentView-agnostic Display method that only ever sees a plain
-  // cell grid) would need the same Display-interface extension
-  // deferred back in item 192. The user explicitly said a simple,
-  // non-tracking placeholder is an acceptable substitute ("キャプチャ
-  // 画像を貼るだけみたいな処理でもいい") rather than solving that
-  // properly, so this reuses the exact same drawScrollbar() primitive
-  // with fixed, decorative arguments (pinned to the top, a plausible
-  // ~1/3-of-file thumb size) instead of real scroll state -- a static
-  // prop, not a live indicator, matching the word "張りぼて" itself.
-  if (impl_->rows > 1) drawScrollbar(/*effectiveTop=*/0.0, /*totalLines=*/(impl_->rows - 1) * 3, impl_->rows - 1);
+  drawIdleScrollbarImage();
 
   renderCursor();
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
@@ -1113,6 +1099,44 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   SDL_Rect thumb{thumbX, thumbTop, thumbWidth, thumbHeight};
   SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
   SDL_RenderFillRect(impl_->renderer, &thumb);
+}
+
+// "Papier-mache" idle-state scrollbar decoration (docs/HISTORY.md,
+// 2026-08-07): drawScrollbar() (above) only ever runs from
+// renderScrolled(), so the reserved strip sat empty except while a
+// drag/coast was actively in progress -- a real -c window's own
+// scrollbar area is never that starkly blank. Threading real
+// ContentView topIndex/totalLines through flush() (a generic,
+// ContentView-agnostic Display method that only ever sees a plain
+// cell grid) would need the same Display-interface extension deferred
+// back in item 192. Rather than solve that properly, the user asked
+// for exactly this instead ("キャプチャ画像を貼るだけみたいな処理
+// でもいい", then supplied the actual screenshot to use): paste a
+// real -c scrollbar screenshot as a static decorative image, not a
+// live-tracking render -- literally "張りぼて" (a stage prop). The
+// image bytes are embedded at compile time (scrollbar_idle_image.hpp)
+// so there's no runtime file path to resolve and no new library
+// dependency (SDL2 core reads BMP natively via SDL_LoadBMP_RW, the
+// same primitive flush()'s own USILICGUIDEBUG dump uses in reverse via
+// SDL_SaveBMP()). Decoded fresh every flush() call rather than cached
+// on Impl, matching this file's existing per-frame-texture style (see
+// renderCell()'s own glyph texture, created and destroyed every call)
+// -- cheap relative to the full-screen TTF re-rasterization flush()
+// already does every frame.
+void GraphicalDisplay::drawIdleScrollbarImage() {
+  SDL_RWops *rw = SDL_RWFromConstMem(kScrollbarIdleImageBmp, sizeof(kScrollbarIdleImageBmp));
+  if (!rw) return;
+  SDL_Surface *surface = SDL_LoadBMP_RW(rw, 1);  // 1 == SDL closes/frees rw for us
+  if (!surface) return;
+  SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
+  if (texture) {
+    int contentRows = std::max(impl_->rows - 1, 0);
+    SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth, Impl::kMarginY, Impl::kScrollbarWidth,
+                 contentRows * impl_->cellHeight};
+    SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
+    SDL_DestroyTexture(texture);
+  }
+  SDL_FreeSurface(surface);
 }
 
 // Drag-scroll prototype rendering -- see class comment and header

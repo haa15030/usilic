@@ -347,6 +347,12 @@ class GraphicalDisplay : public Display {
   // pixelOffsetY/cellHeight -- so the thumb moves smoothly in sync
   // with sub-row scroll position, not just snapping once per full row.
   void drawScrollbar(double effectiveTop, int totalLines, int contentRows);
+  // Pastes the embedded real -c-terminal scrollbar screenshot
+  // (scrollbar_idle_image.hpp) into the reserved strip on every
+  // flush() (the static, non-scrolling render path) -- see flush()'s
+  // own call site comment for why this exists instead of a real
+  // position-tracking render.
+  void drawIdleScrollbarImage();
 };
 
 }  // namespace fm
