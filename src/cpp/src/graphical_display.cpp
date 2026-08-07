@@ -1081,9 +1081,34 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
   int thumbTop = Impl::kMarginY + thumbY;
 
-  SDL_Rect thumb{thumbX, thumbTop, thumbWidth, thumbHeight};
+  // Rounded-pill shape (radius = half the thumb width, i.e. fully
+  // round caps), drawn row by row with each row's own horizontal
+  // inset computed from a real circle equation -- the SAME technique
+  // item 195 built and then removed when this thumb switched to
+  // plain-rectangle mode-line-matching styling. Revived 2026-08-07
+  // answering the user's own direct question ("装飾目的だからこそ
+  // オリジナルと同一が必須なんだがSDL描画でもできるの？"): yes -- pure
+  // SDL primitive drawing, no image asset needed, real rounded
+  // corners rather than an approximation. Applies to the ACTIVE
+  // (currently-scrolling) thumb itself, not just a hypothetical future
+  // idle-state decoration -- this brings the thumb closer to the -c
+  // reference's own rounded look at every scroll moment, not only
+  // when idle.
+  int radius = std::min(thumbWidth / 2, thumbHeight / 2);
   SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
-  SDL_RenderFillRect(impl_->renderer, &thumb);
+  for (int row = 0; row < thumbHeight; row++) {
+    int distFromNearestEnd = std::min(row, thumbHeight - 1 - row);
+    int inset = 0;
+    if (radius > 0 && distFromNearestEnd < radius) {
+      int dy = radius - 1 - distFromNearestEnd;
+      double dx = std::sqrt(std::max(0.0, static_cast<double>(radius * radius - dy * dy)));
+      inset = radius - static_cast<int>(dx);
+    }
+    int lineWidth = thumbWidth - inset * 2;
+    if (lineWidth <= 0) continue;
+    SDL_Rect rowRect{thumbX + inset, thumbTop + row, lineWidth, 1};
+    SDL_RenderFillRect(impl_->renderer, &rowRect);
+  }
 }
 
 // Drag-scroll prototype rendering -- see class comment and header
@@ -1181,6 +1206,30 @@ void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int
         renderTextRun(modeLineY, segment.text, Color{impl_->bg.r, impl_->bg.g, impl_->bg.b}, col);
       }
       col += segCols;
+    }
+  }
+
+  // Same USILICGUIDEBUG pixel-dump flush() itself has (see its own
+  // comment on why: SDL_RenderReadPixels() works headlessly, without
+  // Screen Recording permission or a real visible window, so it was
+  // built specifically for verifying rendering bugs from within a
+  // sandbox that has no other way to see the real pixels). Extended
+  // here (2026-08-07) since renderScrolled() is a fully separate
+  // render path with its own SDL_RenderPresent() -- flush()'s own
+  // dump never fires during an active drag/coast at all, which meant
+  // the scrollbar/mode-line-segment work earlier this same session had
+  // no way to be verified this way despite the mechanism already
+  // existing. ".scrolled.bmp" suffix (vs. flush()'s own plain ".bmp")
+  // so the two don't overwrite each other.
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    int outputWidthPixels = 0, outputHeightPixels = 0;
+    SDL_GetRendererOutputSize(impl_->renderer, &outputWidthPixels, &outputHeightPixels);
+    SDL_Surface *shot =
+        SDL_CreateRGBSurfaceWithFormat(0, outputWidthPixels, outputHeightPixels, 32, SDL_PIXELFORMAT_RGBA32);
+    if (shot) {
+      if (SDL_RenderReadPixels(impl_->renderer, nullptr, SDL_PIXELFORMAT_RGBA32, shot->pixels, shot->pitch) == 0)
+        SDL_SaveBMP(shot, (std::string(dbg) + ".scrolled.bmp").c_str());
+      SDL_FreeSurface(shot);
     }
   }
 
