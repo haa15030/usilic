@@ -1130,9 +1130,29 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
   if (!surface) return;
   SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
   if (texture) {
+    // Drawn at (DPI-corrected) NATIVE size, top-anchored -- NOT
+    // stretched to fill the full content-row height. A first attempt
+    // stretched the (then also flawed, see scrollbar_idle_image.hpp's
+    // own comment) source image to `contentRows * cellHeight`, and a
+    // real side-by-side comparison (docs/HISTORY.md 2026-08-07,
+    // "bar.jpg" reference) showed this made the thumb/track blurry and
+    // out of proportion -- the reference image simply looks like
+    // itself, unscaled. `create()`'s own comment explains why every
+    // OTHER coordinate in this file is in logical POINTS while the
+    // embedded image's pixel dimensions are physical: re-derive the
+    // same drawableWidthPixels/windowWidthPoints ratio here to convert
+    // the surface's raw pixel height back to points before use.
+    int windowWidthPoints = 0, windowHeightPoints = 0;
+    int drawableWidthPixels = 0, drawableHeightPixels = 0;
+    SDL_GetWindowSize(impl_->window, &windowWidthPoints, &windowHeightPoints);
+    SDL_GetRendererOutputSize(impl_->renderer, &drawableWidthPixels, &drawableHeightPixels);
+    float scale =
+        (windowHeightPoints > 0) ? static_cast<float>(drawableHeightPixels) / windowHeightPoints : 1.0f;
+    int heightPoints = (scale > 0.0f) ? static_cast<int>(surface->h / scale) : surface->h;
     int contentRows = std::max(impl_->rows - 1, 0);
+    int maxHeightPoints = contentRows * impl_->cellHeight;
     SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth, Impl::kMarginY, Impl::kScrollbarWidth,
-                 contentRows * impl_->cellHeight};
+                 std::min(heightPoints, maxHeightPoints)};
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
     SDL_DestroyTexture(texture);
   }
