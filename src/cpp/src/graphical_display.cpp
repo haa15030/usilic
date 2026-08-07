@@ -1070,11 +1070,13 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   int thumbY = (scrollableLines > 0)
                    ? std::clamp(static_cast<int>(maxThumbY * (effectiveTop / scrollableLines)), 0, maxThumbY)
                    : 0;
-  // Widened 4->2 (2026-08-07, real reference-screenshot feedback: "つ
-  // まみの表示幅が狭いのでお手本と同じで") -- still a small margin on
-  // each side within the reserved strip rather than the full width,
-  // but noticeably closer to what the -c reference itself showed.
-  constexpr int kThumbInset = 2;
+  // Widened again, 2->1 (2026-08-07, a real side-by-side comparison
+  // against a normal Directory-mode selection highlight bar -- "ハイ
+  // ライトとの比較ではつまみ部の幅がやや狭い"): still a 1px margin on
+  // each side within the reserved strip (kThumbInset 0 would use the
+  // whole strip, no visual edge against the mode-line/content area at
+  // all) rather than the full width.
+  constexpr int kThumbInset = 1;
   int thumbX = Impl::kMarginX + impl_->columns * impl_->cellWidth + kThumbInset;
   int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
   int thumbTop = Impl::kMarginY + thumbY;
