@@ -1131,33 +1131,38 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
   SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
   if (texture) {
     // Drawn top-anchored, height clamped to the content area -- NOT
-    // stretched to fill the full content-row height. A first attempt
-    // stretched the (then also flawed, see scrollbar_idle_image.hpp's
-    // own comment) source image to `contentRows * cellHeight`, and a
-    // real side-by-side comparison (docs/HISTORY.md 2026-08-07,
-    // "bar.jpg" reference) showed this made the thumb/track blurry and
-    // out of proportion.
+    // stretched to fill the full content-row height (a first attempt
+    // stretched the source image to `contentRows * cellHeight`, and a
+    // real side-by-side comparison, docs/HISTORY.md 2026-08-07's
+    // "bar.jpg" reference, showed this made the thumb/track blurry and
+    // out of proportion).
     //
-    // A second attempt tried to convert the embedded image's raw pixel
-    // dimensions to points via a freshly re-queried
-    // drawableHeightPixels/windowHeightPoints ratio (mirroring
-    // create()'s own HiDPI scale-factor math) -- on a real machine
-    // this rendered the image at roughly 1/11th its intended size (a
-    // real report, docs/HISTORY.md 2026-08-07, "14.06.58" screenshot:
-    // a ~29pt-tall sliver instead of the ~300pt+ bar.jpg shows), for a
-    // reason not confirmed from this sandbox (no real HiDPI display to
-    // reproduce against). Rather than keep guessing at that ratio,
-    // this drops DPI conversion entirely and treats the embedded
-    // image's pixel dimensions AS points directly -- the same
-    // "just pick small integers, no DPI math" convention every other
-    // magic number in this file already uses (kMarginX/Y,
-    // kScrollbarWidth, etc.), and exactly what the sandboxed
-    // USILICGUIDEBUG verification here (which has no real HiDPI
-    // scaling to begin with) confirmed looks right.
-    int heightPoints = surface->h;
+    // Sizing this correctly needs a pixels-to-points conversion (the
+    // embedded image's dimensions are physical screenshot pixels;
+    // every other coordinate in this file, e.g. kMarginX/Y,
+    // kScrollbarWidth, is in logical points -- see create()'s own
+    // comment on why). This sandbox has no real HiDPI display to
+    // calibrate that conversion against, so rather than re-derive a
+    // formula blind (a prior attempt did exactly that and, per a real
+    // report, came out wrong -- though the report itself turned out to
+    // be a measurement error reading the wrong screen column, not
+    // proof the formula was actually broken; the true size on real
+    // hardware was never conclusively pinned down either way), this
+    // exposes the scale as a runtime knob instead: USILICSCROLLBARSCALE
+    // (a float, default 1.0 == embedded pixel count treated directly
+    // as points) lets it be tuned to match a real display without a
+    // rebuild, the same pattern this project already uses for
+    // USILICSCROLLDEBUG/-u.
+    float scale = 1.0f;
+    if (const char *env = std::getenv("USILICSCROLLBARSCALE")) {
+      float parsed = static_cast<float>(std::atof(env));
+      if (parsed > 0.0f) scale = parsed;
+    }
+    int widthPoints = std::max(static_cast<int>(Impl::kScrollbarWidth * scale), 1);
+    int heightPoints = std::max(static_cast<int>(surface->h * scale), 1);
     int contentRows = std::max(impl_->rows - 1, 0);
     int maxHeightPoints = contentRows * impl_->cellHeight;
-    SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth, Impl::kMarginY, Impl::kScrollbarWidth,
+    SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth, Impl::kMarginY, widthPoints,
                  std::min(heightPoints, maxHeightPoints)};
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
     SDL_DestroyTexture(texture);
