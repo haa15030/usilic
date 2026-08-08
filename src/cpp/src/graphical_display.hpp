@@ -118,11 +118,13 @@ class GraphicalDisplay : public Display {
   // 表示したい"). A no-op if the window hasn't been created.
   void setWindowPosition(int x, int y);
 
-  // Forces the window's content-area size to exactly (width, height),
-  // overriding this class's own cellWidth*columns+margins+scrollbar-
-  // width formula -- see the .cpp's own comment on why (matching a
-  // real terminal window's own measured pixel size exactly, for the
-  // "実はすでにGUI" overlay launch). A no-op if the window hasn't been
+  // `width, height` is in the SAME "outer frame, title bar included"
+  // convention setWindowPosition() takes -- NOT SDL's own native
+  // content-area convention; converted internally the same way. See
+  // the .cpp's own comment for why (matching a real terminal window's
+  // own measured pixel size exactly, for the "実はすでにGUI" overlay
+  // launch), overriding this class's own cellWidth*columns+margins+
+  // scrollbar-width formula. A no-op if the window hasn't been
   // created.
   void setWindowSize(int width, int height);
 

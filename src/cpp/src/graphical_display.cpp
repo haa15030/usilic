@@ -995,11 +995,29 @@ void GraphicalDisplay::setWindowPosition(int x, int y) {
   SDL_SetWindowPosition(impl_->window, x, y);
 }
 
-// Forces this window's SDL-reported size (content area, per
-// setWindowPosition()'s own comment) to match the real terminal's own
-// measured pixel dimensions exactly, overriding whatever this class's
-// own cellWidth*columns+margins+scrollbar-width formula computed. The
-// same real report found the formula's own computed width
+// `width, height` is expected in the SAME "outer frame, title bar
+// included" convention setWindowPosition() takes (see its own
+// comment) -- NOT SDL_SetWindowSize()'s own native convention, which
+// (like SetWindowPosition) describes the CONTENT area only. A first
+// version of this function passed `width`/`height` straight through
+// unconverted, which -- combined with setWindowPosition()'s correct
+// title-bar-height addition to `y` -- made this window's OUTER frame
+// end up title-bar-height TALLER than the real terminal's own outer
+// frame (a real report, 2026-08-08, screenshot: "ウィンドウ操作部の
+// 分だけ縦長かつ表示行数が少なめ"): setting the CONTENT height to the
+// real terminal's OUTER height (title bar included) makes this
+// window's content area itself already title-bar-height taller than
+// it needs to be, so the whole window (that oversized content area,
+// plus this window's OWN title bar on top of it) ends up one full
+// title-bar-height taller overall. Corrected the same way
+// setWindowPosition() converts its own coordinate: subtract the real,
+// OS-reported border sizes (SDL_GetWindowBordersSize()) from the
+// given outer dimensions before handing them to SDL, converting
+// outer-frame size to the content-area size SDL actually wants.
+//
+// Beyond that conversion, this still overrides whatever this class's
+// own cellWidth*columns+margins+scrollbar-width formula computed --
+// the same 2026-08-07 report found that formula's own computed width
 // consistently a point or two narrower than the real terminal across
 // every profile tried (Basic/Homebrew/Ocean/Red Sands/Man Page).
 // Rather than chase the exact source of that small, cross-profile-
@@ -1012,7 +1030,13 @@ void GraphicalDisplay::setWindowPosition(int x, int y) {
 // at the right/bottom edge) -- imperceptible next to the alternative
 // of a visibly mismatched window size.
 void GraphicalDisplay::setWindowSize(int width, int height) {
-  if (impl_->window) SDL_SetWindowSize(impl_->window, width, height);
+  if (!impl_->window) return;
+  int top = 0, left = 0, bottom = 0, right = 0;
+  if (SDL_GetWindowBordersSize(impl_->window, &top, &left, &bottom, &right) == 0) {
+    width -= (left + right);
+    height -= (top + bottom);
+  }
+  if (width > 0 && height > 0) SDL_SetWindowSize(impl_->window, width, height);
 }
 
 void GraphicalDisplay::setHandCursor(bool active) {
