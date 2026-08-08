@@ -233,6 +233,19 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
     SDL_Quit();
     return nullptr;
   }
+  // TTF_SizeUTF8()'s height above is "M"'s own tight glyph bounding
+  // box (ascent+descent for THAT specific glyph only) -- narrower than
+  // the font's actual recommended LINE height (ascent+|descent|+line
+  // gap across the whole font, the metric a real terminal emulator
+  // uses for line spacing). A real side-by-side screenshot comparison
+  // (2026-08-08, "行間が狭い", -c/-g windows placed next to each
+  // other) confirmed this window's line spacing visibly tighter than
+  // the real terminal's own. TTF_FontHeight() returns that proper
+  // line-height metric directly; take the larger of the two (rather
+  // than replacing outright) so an unusual font where TTF_FontHeight()
+  // somehow reports smaller than a single glyph's own bounding box
+  // still can't clip that glyph.
+  cellHeight = std::max(cellHeight, TTF_FontHeight(font));
 
   // Loaded and measured BEFORE the window/cell grid are sized (not
   // lazily later) so the grid can be grown to fit both fonts up
@@ -256,6 +269,18 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
       cellWidth = std::max(cellWidth, (cjkWidth + 1) / 2);
       cellHeight = std::max(cellHeight, cjkHeight);
     }
+  }
+
+  // Escape hatch if the TTF_FontHeight()-based fix above still doesn't
+  // fully close the gap to a real terminal's own line spacing for a
+  // particular font (line-height conventions vary more by font/app
+  // than the title-bar-height case above did) -- same "tunable via
+  // env var instead of another code-and-rebuild round" pattern as
+  // USILICTITLEBARHEIGHT/USILICSCROLLBARSCALE. Overrides the fully-
+  // computed cellHeight (post CJK-fallback-max) outright when set.
+  if (const char *env = std::getenv("USILICLINEHEIGHT")) {
+    int parsed = std::atoi(env);
+    if (parsed > 0) cellHeight = parsed;
   }
 
   // SDL_WINDOW_ALLOW_HIGHDPI: without it, on a Retina/HiDPI display
@@ -983,16 +1008,16 @@ namespace {
 // setWindowSize()) working even when the "authoritative" OS query
 // itself doesn't.
 //
-// The literal value (28, then tuned to 31 -- see kDefaultTitleBarHeight
-// below) isn't from Apple documentation; nothing in this sandbox can
-// measure a real macOS title bar directly. 28 was an initial estimate;
-// a real side-by-side comparison (2026-08-08 follow-up, "横幅はピッタ
-// リ。縦が2,3ドット長い" -- width now exact, height still 2-3pt too
-// generous) showed it was too large by about that much, so it's now
-// tunable via USILICTITLEBARHEIGHT (an env var override, same pattern
-// as USILICSCROLLBARSCALE/-u elsewhere in this file/main.cpp) so
-// further correction doesn't need another code-and-rebuild round.
-constexpr int kDefaultTitleBarHeight = 31;
+// The literal value isn't from Apple documentation; nothing in this
+// sandbox can measure a real macOS title bar directly -- it's been
+// tuned entirely from real user feedback: 28 (initial estimate) ->
+// "縦が2,3ドット長い" (still ~2-3pt too SMALL, making the window that
+// much too tall overall) -> 31 -> confirmed exactly right at 32 via
+// USILICTITLEBARHEIGHT=32 (the env var override, same pattern as
+// USILICSCROLLBARSCALE/-u elsewhere in this file/main.cpp, added
+// specifically so this kind of tuning doesn't need a fresh
+// code-and-rebuild round each time).
+constexpr int kDefaultTitleBarHeight = 32;
 
 int estimatedTitleBarHeight() {
   if (const char *env = std::getenv("USILICTITLEBARHEIGHT")) {

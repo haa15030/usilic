@@ -12152,6 +12152,33 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
    - **検証**: `make test`で649/649件全通過、`make usilic`もクリーン
       ビルド成功。実際の重ね打ち精度は引き続き実機での確認が必要。
 
+220. **2026-08-08(続き): タイトルバー高さのデフォルト値を32ptで確定、
+    行間(line-height)が実端末より狭い不具合を修正、
+    `USILICLINEHEIGHT`を新設**。ユーザーが`USILICTITLEBARHEIGHT=32`
+    で完全一致することを実機確認し、デフォルト値への反映を依頼。
+    あわせて、-c/-gを並べたスクリーンショットで「行間が狭い」という
+    別の不具合を報告。
+   - **タイトルバー高さ**: `kDefaultTitleBarHeight`を31→32ptへ確定。
+   - **行間の原因**: `cellHeight`が`TTF_SizeUTF8(font, "M", ...)`の
+      戻り値、つまり"M"という1文字の**タイトなグリフ境界ボックス**
+      (その文字のascent+descentのみ)をそのまま使っていた。実際の
+      端末アプリが行間隔として使うのは、フォント全体のascent+
+      |descent|+line gapを含む**フォントの推奨行高**(SDL_ttfの
+      `TTF_FontHeight()`が返す値)で、これより本来狭いはずだった。
+   - **修正**: `cellHeight`の計算に`TTF_FontHeight(font)`との
+      最大値を取るよう追加した(1文字のグリフ境界ボックスより小さく
+      なることは無いよう、置き換えではなく`max`とした)。ただし
+      使い捨て検証で、Menlo/16ptではこの2値がたまたま一致しており
+      (どちらも19)、フォントによってはこの修正だけでは効果が無い
+      可能性があるため、`USILICTITLEBARHEIGHT`/`USILICSCROLLBARSCALE`
+      と同じ作法で環境変数`USILICLINEHEIGHT`(`cellHeight`を直接
+      上書き)も追加した。
+   - **検証**: `make test`で649/649件全通過、`make usilic`もクリーン
+      ビルド成功。TTF_FontHeight()とグリフ境界ボックスの実測比較は
+      このマシン上で確認したが、Menlo/16ptでは差が無かった(上記の
+      通り)。実際の行間の見た目・`USILICLINEHEIGHT`での追加調整の
+      要否は実機での確認が必要。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が
