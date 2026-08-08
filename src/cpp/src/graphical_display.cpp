@@ -962,8 +962,57 @@ void GraphicalDisplay::setColors(Color foreground, Color background) {
   impl_->bg = SDL_Color{background.r, background.g, background.b, 255};
 }
 
+// `x, y` is expected in the SAME "outer frame, title bar included"
+// coordinate convention AppleScript's "bounds of window" uses (see
+// queryTerminalAppWindowBounds()'s own comment in main.cpp) -- NOT
+// SDL_SetWindowPosition()'s own native convention. SDL's own
+// documented behavior is that position/size describe the window's
+// CONTENT area, with OS-drawn decorations (the title bar) added
+// OUTSIDE/ABOVE that -- passing the outer-frame `y` straight through
+// unmodified (the previous version of this function) would place this
+// window's CONTENT top where the real terminal's OUTER top (title
+// bar) sits, making this window's own title bar float
+// title-bar-height above where the real terminal's title bar actually
+// is (a real report, 2026-08-07, screenshots ⑮⑯: "表示開始位置の縦
+// 方向へのズレが共通してある", the same magnitude regardless of which
+// Terminal.app profile/color scheme was used, consistent with a fixed
+// geometric offset rather than anything profile-specific). Corrected
+// by adding this window's own REAL, OS-reported top border height
+// (SDL_GetWindowBordersSize() -- the authoritative source, rather
+// than hardcoding a guessed title-bar height that could vary by OS
+// version/window style) to `y` before handing it to SDL.
 void GraphicalDisplay::setWindowPosition(int x, int y) {
-  if (impl_->window) SDL_SetWindowPosition(impl_->window, x, y);
+  if (!impl_->window) return;
+  int top = 0, left = 0, bottom = 0, right = 0;
+  // Per SDL's own doc, this may fail if the window hasn't been
+  // decorated by the display server yet; falls back to the
+  // uncorrected position (this function's prior behavior) rather than
+  // failing the whole call.
+  if (SDL_GetWindowBordersSize(impl_->window, &top, &left, &bottom, &right) == 0) {
+    x += left;
+    y += top;
+  }
+  SDL_SetWindowPosition(impl_->window, x, y);
+}
+
+// Forces this window's SDL-reported size (content area, per
+// setWindowPosition()'s own comment) to match the real terminal's own
+// measured pixel dimensions exactly, overriding whatever this class's
+// own cellWidth*columns+margins+scrollbar-width formula computed. The
+// same real report found the formula's own computed width
+// consistently a point or two narrower than the real terminal across
+// every profile tried (Basic/Homebrew/Ocean/Red Sands/Man Page).
+// Rather than chase the exact source of that small, cross-profile-
+// constant discrepancy (font-metric rounding in cellWidth, or a fixed
+// margin/scrollbar-width constant off by a point or two), matching
+// the real terminal's own already-measured size directly is both
+// simpler and guaranteed exact, at the cost of a possible sliver of
+// empty background (or, in the unlikely case the real terminal is
+// somehow the SMALLER of the two, a point or two of content clipped
+// at the right/bottom edge) -- imperceptible next to the alternative
+// of a visibly mismatched window size.
+void GraphicalDisplay::setWindowSize(int width, int height) {
+  if (impl_->window) SDL_SetWindowSize(impl_->window, width, height);
 }
 
 void GraphicalDisplay::setHandCursor(bool active) {

@@ -464,13 +464,16 @@ std::optional<TerminalAppearance> queryTerminalAppColors() {
 // bottom} (a rectangle's two corners), NOT {x, y, width, height} --
 // converted here (parseAppleScriptBounds()) so the caller gets the
 // width/height GraphicalDisplay itself already thinks in. This is the
-// window's OUTER frame (title bar included), which is also what
-// SDL2's own window position means for a normal bordered window -- the
-// OS reserves title-bar space above the content on both sides the
-// same way, so this position should already line the two windows'
-// title bars up without this class needing to separately account for
-// title-bar height anywhere (see the call site's own comment). Not
-// provably pixel-perfect (a real Terminal.app tab bar, if more than
+// window's OUTER frame (title bar included) -- NOT the same
+// coordinate SDL2's own window position uses (SDL's position/size
+// describe the CLIENT area only, title bar added OUTSIDE/ABOVE that;
+// confirmed the hard way, 2026-08-07 real report/screenshots ⑮⑯,
+// after an earlier version of this comment assumed otherwise and
+// left this window's title bar floating title-bar-height above the
+// real terminal's own). GraphicalDisplay::setWindowPosition() is
+// responsible for that conversion now, using the real OS-reported
+// border size rather than this function guessing at it. Not provably
+// pixel-perfect even so (a real Terminal.app tab bar, if more than
 // one tab is open, adds height this query has no way to detect) --
 // this sandbox has no screen-capture access to verify final on-screen
 // alignment against a live Terminal.app window beyond what a real
@@ -2215,16 +2218,33 @@ int main(int argc, char **argv) {
       // the traffic-light buttons): a real side-by-side screenshot
       // comparison (2026-08-03 follow-up, "操作部が無い") found a
       // borderless window looked visibly wrong next to a real
-      // Terminal.app window with its own title bar -- SDL2's window
+      // Terminal.app window with its own title bar. `bounds` is
+      // guaranteed present here (see the hard requirement above), so
+      // both calls below are unconditional.
+      //
+      // A previous version of this comment claimed "SDL2's window
       // position/size parameters already describe the CLIENT area
-      // only (the title bar is added by the OS on top, outside what
-      // this class ever draws into), so leaving this window bordered
-      // needs no extra math here at all: the OS reserves the title
-      // bar's own space above this window's content automatically,
-      // the same way it does for the real terminal window being
-      // overlaid. `bounds` is guaranteed present here (see the hard
-      // requirement above), so this is unconditional now.
+      // only... so leaving this window bordered needs no extra math
+      // here at all" -- that first half was correct (confirmed
+      // against SDL's own documented position/size semantics) but the
+      // conclusion didn't follow: `bounds->y` (from AppleScript's
+      // "bounds of window", queryTerminalAppWindowBounds()'s own
+      // comment) is the window's OUTER frame top (title bar
+      // included), a DIFFERENT coordinate than SDL's own CLIENT-area
+      // top -- passing it straight through left this window's title
+      // bar floating title-bar-height above where the real terminal's
+      // title bar actually sits. setWindowPosition() itself now
+      // corrects for this (see its own comment) using the real
+      // terminal window's own OS-reported border size, so this call
+      // site doesn't need to know the conversion. setWindowSize()
+      // separately forces an exact size match to the real terminal's
+      // own measured pixels, rather than trusting this class's own
+      // cellWidth*columns+margins+scrollbar-width formula to land
+      // exactly on the same value (a real report, 2026-08-07,
+      // screenshots ⑮⑯: consistently a point or two narrower across
+      // every terminal profile tried).
       launchGui->setWindowPosition(bounds->x, bounds->y);
+      launchGui->setWindowSize(bounds->width, bounds->height);
       launchGui->open();
       display.setBackend(*launchGui);
       guiOwnsWholeSession = true;

@@ -118,6 +118,14 @@ class GraphicalDisplay : public Display {
   // 表示したい"). A no-op if the window hasn't been created.
   void setWindowPosition(int x, int y);
 
+  // Forces the window's content-area size to exactly (width, height),
+  // overriding this class's own cellWidth*columns+margins+scrollbar-
+  // width formula -- see the .cpp's own comment on why (matching a
+  // real terminal window's own measured pixel size exactly, for the
+  // "実はすでにGUI" overlay launch). A no-op if the window hasn't been
+  // created.
+  void setWindowSize(int width, int height);
+
   void write(const std::string &text) override;
   void putChar(int c) override;
   void flush() override;
