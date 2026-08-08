@@ -1183,8 +1183,10 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   // screen than the real terminal in that case) for guaranteed-
   // readable text -- overlap is a functional regression, a few points
   // of unfilled margin is not.
-  int flooredCellWidth = std::max(cellWidth, impl_->cellWidth);
-  int flooredCellHeight = std::max(cellHeight, impl_->cellHeight);
+  int fontMetricCellWidth = impl_->cellWidth;
+  int fontMetricCellHeight = impl_->cellHeight;
+  int flooredCellWidth = std::max(cellWidth, fontMetricCellWidth);
+  int flooredCellHeight = std::max(cellHeight, fontMetricCellHeight);
   impl_->cellWidth = flooredCellWidth;
   impl_->cellHeight = flooredCellHeight;
   // When the floor above didn't change anything, contentWidth/Height
@@ -1211,6 +1213,27 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   }
   if (flooredCellHeight != cellHeight) {
     height = flooredCellHeight * impl_->rows + Impl::kMarginY * 2;
+  }
+  // Same opt-in USILICGUIDEBUG file flush()/drawIdleScrollbarImage()
+  // already use, reused here for exactly the same reason: this sandbox
+  // has no real Terminal.app window to compare against, so a real
+  // report ("Man Pageが余白大", 2026-08-08) that this function's own
+  // resize-to-grid logic (just above) still isn't fully closing the
+  // gap for at least one real profile can't be root-caused blind
+  // another round -- this dumps every number the function computed so
+  // the next real-machine run can be diffed directly instead of
+  // guessed at.
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) {
+      std::fprintf(f,
+                    "---matchWindowSize--- rows=%d columns=%d outer=%dx%d borders(t/l/b/r)=%d/%d/%d/%d "
+                    "content=%dx%d arithCell=%dx%d fontMetricCell=%dx%d flooredCell=%dx%d finalWindow=%dx%d\n",
+                    impl_->rows, impl_->columns, outerWidth, outerHeight, borders.top, borders.left, borders.bottom,
+                    borders.right, contentWidth, contentHeight, cellWidth, cellHeight, fontMetricCellWidth,
+                    fontMetricCellHeight, flooredCellWidth, flooredCellHeight, width, height);
+      std::fclose(f);
+    }
   }
   SDL_SetWindowSize(impl_->window, width, height);
 }
