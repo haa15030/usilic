@@ -1183,11 +1183,36 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   // screen than the real terminal in that case) for guaranteed-
   // readable text -- overlap is a functional regression, a few points
   // of unfilled margin is not.
-  cellWidth = std::max(cellWidth, impl_->cellWidth);
-  cellHeight = std::max(cellHeight, impl_->cellHeight);
-  impl_->cellWidth = cellWidth;
-  impl_->cellHeight = cellHeight;
-  SDL_SetWindowSize(impl_->window, contentWidth, contentHeight);
+  int flooredCellWidth = std::max(cellWidth, impl_->cellWidth);
+  int flooredCellHeight = std::max(cellHeight, impl_->cellHeight);
+  impl_->cellWidth = flooredCellWidth;
+  impl_->cellHeight = flooredCellHeight;
+  // When the floor above didn't change anything, contentWidth/Height
+  // (the real terminal's own measured size) is still the right target --
+  // matching it exactly is what removes the "few pixel gap" a plain
+  // grid-formula size would otherwise leave (see this function's own
+  // top comment). But when the floor DID kick in (cellWidth/cellHeight
+  // increased to the font's real metrics), grid content now needs MORE
+  // room than contentWidth/Height provides -- keeping the window at the
+  // unchanged target size in that case was itself a bug (a real report,
+  // 2026-08-08, "方向性はいいと思うんだが余白が多すぎる": the window
+  // stayed sized for the smaller arithmetic-derived cells while
+  // rendering used the larger floored ones, so the grid no longer filled
+  // the window). Recomputing the window's own size from the FLOORED
+  // cell dimensions whenever the floor actually changed something makes
+  // the grid exactly fill the window again in that case too, at the
+  // cost of no longer matching the real terminal's outer size to the
+  // pixel (an accepted, smaller trade-off than either overlap or a
+  // visible gap).
+  int width = contentWidth;
+  int height = contentHeight;
+  if (flooredCellWidth != cellWidth) {
+    width = flooredCellWidth * impl_->columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth;
+  }
+  if (flooredCellHeight != cellHeight) {
+    height = flooredCellHeight * impl_->rows + Impl::kMarginY * 2;
+  }
+  SDL_SetWindowSize(impl_->window, width, height);
 }
 
 void GraphicalDisplay::setHandCursor(bool active) {
