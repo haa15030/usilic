@@ -2236,15 +2236,17 @@ int main(int argc, char **argv) {
       // title bar actually sits. setWindowPosition() itself now
       // corrects for this (see its own comment) using the real
       // terminal window's own OS-reported border size, so this call
-      // site doesn't need to know the conversion. setWindowSize()
+      // site doesn't need to know the conversion. matchWindowSize()
       // separately forces an exact size match to the real terminal's
-      // own measured pixels, rather than trusting this class's own
-      // cellWidth*columns+margins+scrollbar-width formula to land
-      // exactly on the same value (a real report, 2026-08-07,
-      // screenshots ⑮⑯: consistently a point or two narrower across
-      // every terminal profile tried).
+      // own measured pixels, deriving cellWidth/cellHeight directly
+      // from that known size rather than trusting this class's own
+      // font-metric-based computation to land on the same line
+      // spacing a real terminal uses (a real report, 2026-08-08: the
+      // needed correction varied by font size across 5 different
+      // real terminal profiles in a way no font-metric heuristic
+      // reliably captured -- see matchWindowSize()'s own comment).
       launchGui->setWindowPosition(bounds->x, bounds->y);
-      launchGui->setWindowSize(bounds->width, bounds->height);
+      launchGui->matchWindowSize(bounds->width, bounds->height);
       launchGui->open();
       display.setBackend(*launchGui);
       guiOwnsWholeSession = true;

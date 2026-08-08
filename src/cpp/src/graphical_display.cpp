@@ -1124,6 +1124,50 @@ void GraphicalDisplay::setWindowSize(int width, int height) {
   if (width > 0 && height > 0) SDL_SetWindowSize(impl_->window, width, height);
 }
 
+// Overrides both the SDL window's outer size AND this class's own
+// cellWidth/cellHeight, so that columns*cellWidth+margins+scrollbar-
+// width and rows*cellHeight+margins exactly fill the given outer
+// dimensions -- a more direct fix for the same "行間が狭い" line-
+// spacing mismatch the TTF_FontHeight()-based cellHeight computation
+// in create() (and USILICLINEHEIGHT) were added for. A real report
+// (2026-08-08, font sizes 13/13/14/18/14pt across 5 different real
+// Terminal.app profiles, "フォントの大きさによる。同サイズから適正値
+// を一律に算出できればUSILICLINEHEIGHTは不要かと") found the needed
+// correction scales with font size in a way no single fixed
+// constant -- or even TTF_FontHeight() vs the raw glyph metrics --
+// reliably captures across different fonts/sizes. Since the「実は
+// すでにGUI」launch already KNOWS the real terminal's exact outer
+// pixel dimensions (via AppleScript bounds) and the exact row/column
+// count it needs to display, this derives cellWidth/cellHeight
+// DIRECTLY from that arithmetic instead of estimating from font
+// metrics at all, guaranteeing a pixel-exact match regardless of
+// which font/size the real terminal happens to be using. The window's
+// own outer size is set from the RAW (unrounded) target dimensions
+// rather than recomputed from the (integer-divided, so possibly
+// rounded-down-by-a-pixel-or-two) cellWidth/cellHeight, so the outer
+// frame still matches exactly even if that leaves a pixel or two of
+// slack at the content's own right/bottom edge -- imperceptible next
+// to a mismatched overall window size.
+//
+// Font-metric-based cellWidth/cellHeight (create()'s own computation)
+// remains the right fallback for launches with no real terminal to
+// match against (plain `-g`, or `^Og` mid-session) -- this method is
+// only called from the "実はすでにGUI" overlay path, where a real
+// target size is always available.
+void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
+  if (!impl_->window || impl_->rows <= 0 || impl_->columns <= 0) return;
+  WindowBorders borders = realOrEstimatedWindowBorders(impl_->window);
+  int contentWidth = outerWidth - (borders.left + borders.right);
+  int contentHeight = outerHeight - (borders.top + borders.bottom);
+  if (contentWidth <= 0 || contentHeight <= 0) return;
+  int cellWidth = (contentWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth) / impl_->columns;
+  int cellHeight = (contentHeight - Impl::kMarginY * 2) / impl_->rows;
+  if (cellWidth <= 0 || cellHeight <= 0) return;
+  impl_->cellWidth = cellWidth;
+  impl_->cellHeight = cellHeight;
+  SDL_SetWindowSize(impl_->window, contentWidth, contentHeight);
+}
+
 void GraphicalDisplay::setHandCursor(bool active) {
   if (active == impl_->handCursorActive) return;
   impl_->handCursorActive = active;

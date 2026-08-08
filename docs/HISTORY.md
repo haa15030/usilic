@@ -2155,3 +2155,16 @@ IDEAS.mdを確認したところ、未着手のものだと以下あたりが候
 `cellHeight`の計算に`TTF_FontHeight(font)`との最大値を取るよう追加しました。ただし使い捨て検証で、Menlo/16ptではこの2値がたまたま一致しており(どちらも19)、フォントによってはこの修正だけでは効果が無い可能性があるため、`USILICTITLEBARHEIGHT`/`USILICSCROLLBARSCALE`と同じ作法で環境変数`USILICLINEHEIGHT`(`cellHeight`を直接上書き)も追加しました。
 
 `make test` 649/649件全通過、`make usilic`もクリーンビルド成功です。実際の行間の見た目・`USILICLINEHEIGHT`での追加調整の要否は実機でのご確認をお願いします。CLAUDE.mdに項目220として記録し、コミット・プッシュ済みです。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-08 16.06.13.png'
+Basic:13/Homebrew:13/Ocean:14/Red Sands:18/Man Page:14
+フォントの大きさによる。
+同サイズから適正値を一律に算出できればUSILICLINEHEIGHTは不要かと。
+
+>「実はすでにGUI」起動時は、既にAppleScript経由で実端末の正確な外枠ピクセルサイズ(`bounds`)と、表示すべき行数・桁数(`display.rows()`/`columns()`)の両方が分かっているため、フォントメトリクス(`TTF_FontHeight()`等)から`cellHeight`を推定する必要が本来無いと気づきました。
+
+新設`matchWindowSize()`は、枠サイズ変換後のコンテンツ領域サイズを既知の行数・桁数で単純に割り算し、`cellWidth`/`cellHeight`を算術的に直接算出します(フォントの種類・サイズに一切依存しません)。ウィンドウの外枠サイズ自体は算出前の生の実測値をそのまま使うため、内部丸め誤差(整数除算による切り捨てが最大1〜2px)があっても外枠は常に完全一致します。
+
+`create()`のフォントメトリクスベースの`cellWidth`/`cellHeight`計算(前回の`TTF_FontHeight()`修正・`USILICLINEHEIGHT`含む)は、比較対象となる実端末が存在しない起動経路(通常の`-g`単体起動、セッション途中の`^Og`)向けのフォールバックとしてそのまま残しています。
+
+`make test` 649/649件全通過、`make usilic`もクリーンビルド成功です。使い捨て検証ドライバで`matchWindowSize()`がクラッシュせず呼べること、`cellHeight`が実際に指定サイズから再計算されることを確認しましたが、実際の重ね打ち精度は実機でのご確認をお願いします。CLAUDE.mdに項目221として記録し、コミット・プッシュ済みです。

@@ -128,6 +128,17 @@ class GraphicalDisplay : public Display {
   // created.
   void setWindowSize(int width, int height);
 
+  // Like setWindowSize(), but ALSO recomputes cellWidth/cellHeight
+  // (overriding create()'s own font-metric-based computation) so the
+  // known rows/columns count exactly fills the given outer dimensions
+  // -- see the .cpp's own comment for why (a real terminal's line
+  // spacing can't be reliably derived from font metrics alone across
+  // different fonts/sizes, but IS exactly recoverable arithmetically
+  // once the real terminal's own outer pixel size is already known,
+  // as it is for the "実はすでにGUI" overlay launch). A no-op if the
+  // window hasn't been created.
+  void matchWindowSize(int outerWidth, int outerHeight);
+
   void write(const std::string &text) override;
   void putChar(int c) override;
   void flush() override;
