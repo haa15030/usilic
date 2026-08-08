@@ -1163,6 +1163,28 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   int cellWidth = (contentWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth) / impl_->columns;
   int cellHeight = (contentHeight - Impl::kMarginY * 2) / impl_->rows;
   if (cellWidth <= 0 || cellHeight <= 0) return;
+  // Floored at create()'s own font-metric-based cellWidth/cellHeight
+  // (the values already in impl_ at this point, computed from the
+  // font's REAL glyph/line-height metrics) rather than trusting this
+  // arithmetic derivation unconditionally -- a real report (2026-08-08,
+  // two of five real terminal profiles, both the SMALLEST font sizes
+  // tried, 13pt: garbled/overlapping text, adjacent rows visibly
+  // smeared into each other) showed this arithmetic can come out
+  // SMALLER than the font's own actual rendered glyph height, which a
+  // single fixed title-bar-height estimate (still not the real OS-
+  // reported value -- see realOrEstimatedWindowBorders()'s own
+  // comment) being off by even a few pixels is enough to cause once
+  // divided across a small-font terminal's larger row count: the same
+  // few-pixel absolute error is a much bigger fraction of a 13pt
+  // line's own natural height than an 18pt line's, so only the
+  // smallest fonts tested actually crossed into visible overlap. The
+  // floor trades a small, purely cosmetic gap at the content's own
+  // right/bottom edge (this window ends up very slightly SHORTER on-
+  // screen than the real terminal in that case) for guaranteed-
+  // readable text -- overlap is a functional regression, a few points
+  // of unfilled margin is not.
+  cellWidth = std::max(cellWidth, impl_->cellWidth);
+  cellHeight = std::max(cellHeight, impl_->cellHeight);
   impl_->cellWidth = cellWidth;
   impl_->cellHeight = cellHeight;
   SDL_SetWindowSize(impl_->window, contentWidth, contentHeight);
