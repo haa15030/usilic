@@ -964,31 +964,50 @@ void GraphicalDisplay::setColors(Color foreground, Color background) {
 
 namespace {
 
-// Standard macOS title bar height (points) for a normal titled,
-// closable, resizable window -- has held steady at this value from
-// Big Sur through the OS version this project targets. Used ONLY as
-// a fallback when SDL_GetWindowBordersSize() itself fails, which a
-// real report (2026-08-08, "変化無し" -- the border-size-based
-// correction below produced NO visible change at all on real
-// hardware) points to as the actual, silent root cause: SDL2's own
-// documented behavior is that a failed SDL_GetWindowBordersSize()
-// call leaves the output at 0/0/0/0, and this project's own web
-// research turned up exactly this as a known Cocoa/macOS limitation
-// ("the -1 return value on macOS Cocoa indicates that the window
-// border size information is either not supported on that
-// platform"). Falling back to 0 (this function's first version)
-// silently skipped the whole correction -- exactly the "no change"
-// symptom reported. This constant keeps the SAME two call sites
-// (setWindowPosition()/setWindowSize()) working even when the
-// "authoritative" OS query itself doesn't.
-constexpr int kFallbackTitleBarHeight = 28;
+// Estimated macOS title bar height (points) for a normal titled,
+// closable, resizable window. Used ONLY as a fallback when
+// SDL_GetWindowBordersSize() itself fails, which a real report
+// (2026-08-08, "変化無し" -- the border-size-based correction produced
+// NO visible change at all on real hardware) points to as the actual,
+// silent root cause: SDL2's own documented behavior is that a failed
+// SDL_GetWindowBordersSize() call leaves the output at 0/0/0/0, and
+// this project's own web research turned up exactly this as a known
+// Cocoa/macOS limitation ("the -1 return value on macOS Cocoa
+// indicates that the window border size information is either not
+// supported on that platform") -- confirmed directly on this machine
+// too (a standalone driver calling SDL_GetWindowBordersSize() printed
+// `rc=-1 ... error=That operation is not supported`). Falling back to
+// 0 (this function's first version) silently skipped the whole
+// correction -- exactly the "no change" symptom reported. This
+// constant keeps the SAME two call sites (setWindowPosition()/
+// setWindowSize()) working even when the "authoritative" OS query
+// itself doesn't.
+//
+// The literal value (28, then tuned to 31 -- see kDefaultTitleBarHeight
+// below) isn't from Apple documentation; nothing in this sandbox can
+// measure a real macOS title bar directly. 28 was an initial estimate;
+// a real side-by-side comparison (2026-08-08 follow-up, "横幅はピッタ
+// リ。縦が2,3ドット長い" -- width now exact, height still 2-3pt too
+// generous) showed it was too large by about that much, so it's now
+// tunable via USILICTITLEBARHEIGHT (an env var override, same pattern
+// as USILICSCROLLBARSCALE/-u elsewhere in this file/main.cpp) so
+// further correction doesn't need another code-and-rebuild round.
+constexpr int kDefaultTitleBarHeight = 31;
+
+int estimatedTitleBarHeight() {
+  if (const char *env = std::getenv("USILICTITLEBARHEIGHT")) {
+    int parsed = std::atoi(env);
+    if (parsed > 0) return parsed;
+  }
+  return kDefaultTitleBarHeight;
+}
 
 // Shared by setWindowPosition()/setWindowSize() -- both need the same
 // top-border (title bar) height to convert between AppleScript's
 // "bounds of window" (outer frame) coordinate convention and SDL's
 // own (content area) one. Prefers the real, OS-reported value
 // (SDL_GetWindowBordersSize()) when it's actually available, falling
-// back to kFallbackTitleBarHeight otherwise (see its own comment).
+// back to estimatedTitleBarHeight() otherwise (see its own comment).
 // left/bottom/right are effectively always 0 on macOS (no visible
 // side/bottom chrome on a normal titled window beyond the title bar
 // itself), but still queried/returned for completeness and so a
@@ -1004,7 +1023,7 @@ WindowBorders realOrEstimatedWindowBorders(SDL_Window *window) {
     return borders;
   }
   borders = WindowBorders{};
-  borders.top = kFallbackTitleBarHeight;
+  borders.top = estimatedTitleBarHeight();
   return borders;
 }
 
