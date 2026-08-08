@@ -962,6 +962,54 @@ void GraphicalDisplay::setColors(Color foreground, Color background) {
   impl_->bg = SDL_Color{background.r, background.g, background.b, 255};
 }
 
+namespace {
+
+// Standard macOS title bar height (points) for a normal titled,
+// closable, resizable window -- has held steady at this value from
+// Big Sur through the OS version this project targets. Used ONLY as
+// a fallback when SDL_GetWindowBordersSize() itself fails, which a
+// real report (2026-08-08, "変化無し" -- the border-size-based
+// correction below produced NO visible change at all on real
+// hardware) points to as the actual, silent root cause: SDL2's own
+// documented behavior is that a failed SDL_GetWindowBordersSize()
+// call leaves the output at 0/0/0/0, and this project's own web
+// research turned up exactly this as a known Cocoa/macOS limitation
+// ("the -1 return value on macOS Cocoa indicates that the window
+// border size information is either not supported on that
+// platform"). Falling back to 0 (this function's first version)
+// silently skipped the whole correction -- exactly the "no change"
+// symptom reported. This constant keeps the SAME two call sites
+// (setWindowPosition()/setWindowSize()) working even when the
+// "authoritative" OS query itself doesn't.
+constexpr int kFallbackTitleBarHeight = 28;
+
+// Shared by setWindowPosition()/setWindowSize() -- both need the same
+// top-border (title bar) height to convert between AppleScript's
+// "bounds of window" (outer frame) coordinate convention and SDL's
+// own (content area) one. Prefers the real, OS-reported value
+// (SDL_GetWindowBordersSize()) when it's actually available, falling
+// back to kFallbackTitleBarHeight otherwise (see its own comment).
+// left/bottom/right are effectively always 0 on macOS (no visible
+// side/bottom chrome on a normal titled window beyond the title bar
+// itself), but still queried/returned for completeness and so a
+// future non-macOS Display backend isn't silently wrong here either.
+struct WindowBorders {
+  int top = 0, left = 0, bottom = 0, right = 0;
+};
+
+WindowBorders realOrEstimatedWindowBorders(SDL_Window *window) {
+  WindowBorders borders;
+  if (window && SDL_GetWindowBordersSize(window, &borders.top, &borders.left, &borders.bottom, &borders.right) == 0 &&
+      borders.top > 0) {
+    return borders;
+  }
+  borders = WindowBorders{};
+  borders.top = kFallbackTitleBarHeight;
+  return borders;
+}
+
+}  // namespace
+
 // `x, y` is expected in the SAME "outer frame, title bar included"
 // coordinate convention AppleScript's "bounds of window" uses (see
 // queryTerminalAppWindowBounds()'s own comment in main.cpp) -- NOT
@@ -977,21 +1025,15 @@ void GraphicalDisplay::setColors(Color foreground, Color background) {
 // 方向へのズレが共通してある", the same magnitude regardless of which
 // Terminal.app profile/color scheme was used, consistent with a fixed
 // geometric offset rather than anything profile-specific). Corrected
-// by adding this window's own REAL, OS-reported top border height
-// (SDL_GetWindowBordersSize() -- the authoritative source, rather
-// than hardcoding a guessed title-bar height that could vary by OS
-// version/window style) to `y` before handing it to SDL.
+// by adding this window's own top border (title bar) height -- see
+// realOrEstimatedWindowBorders()'s own comment on why that isn't
+// simply SDL_GetWindowBordersSize()'s raw result -- to `y` before
+// handing it to SDL.
 void GraphicalDisplay::setWindowPosition(int x, int y) {
   if (!impl_->window) return;
-  int top = 0, left = 0, bottom = 0, right = 0;
-  // Per SDL's own doc, this may fail if the window hasn't been
-  // decorated by the display server yet; falls back to the
-  // uncorrected position (this function's prior behavior) rather than
-  // failing the whole call.
-  if (SDL_GetWindowBordersSize(impl_->window, &top, &left, &bottom, &right) == 0) {
-    x += left;
-    y += top;
-  }
+  WindowBorders borders = realOrEstimatedWindowBorders(impl_->window);
+  x += borders.left;
+  y += borders.top;
   SDL_SetWindowPosition(impl_->window, x, y);
 }
 
@@ -1010,10 +1052,11 @@ void GraphicalDisplay::setWindowPosition(int x, int y) {
 // it needs to be, so the whole window (that oversized content area,
 // plus this window's OWN title bar on top of it) ends up one full
 // title-bar-height taller overall. Corrected the same way
-// setWindowPosition() converts its own coordinate: subtract the real,
-// OS-reported border sizes (SDL_GetWindowBordersSize()) from the
-// given outer dimensions before handing them to SDL, converting
-// outer-frame size to the content-area size SDL actually wants.
+// setWindowPosition() converts its own coordinate: subtract the
+// border sizes from realOrEstimatedWindowBorders() (see its own
+// comment) from the given outer dimensions before handing them to
+// SDL, converting outer-frame size to the content-area size SDL
+// actually wants.
 //
 // Beyond that conversion, this still overrides whatever this class's
 // own cellWidth*columns+margins+scrollbar-width formula computed --
@@ -1031,11 +1074,9 @@ void GraphicalDisplay::setWindowPosition(int x, int y) {
 // of a visibly mismatched window size.
 void GraphicalDisplay::setWindowSize(int width, int height) {
   if (!impl_->window) return;
-  int top = 0, left = 0, bottom = 0, right = 0;
-  if (SDL_GetWindowBordersSize(impl_->window, &top, &left, &bottom, &right) == 0) {
-    width -= (left + right);
-    height -= (top + bottom);
-  }
+  WindowBorders borders = realOrEstimatedWindowBorders(impl_->window);
+  width -= (borders.left + borders.right);
+  height -= (borders.top + borders.bottom);
   if (width > 0 && height > 0) SDL_SetWindowSize(impl_->window, width, height);
 }
 
