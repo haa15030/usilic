@@ -1537,16 +1537,20 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
     // pixel data: the topmost ~18 rows are a gradient, not the flat
     // fill the rest of the track/thumb uses), so pasting it starting
     // exactly at kMarginY reads as sitting that much lower than a real
-    // terminal's own scrollbar, which has no such lead-in. -9 is an
-    // ESTIMATE, not a measurement (this sandbox has no real display to
-    // measure against, same limitation as every other pixel-tuned
-    // constant in this file) -- converted from "2mm" via a typical
-    // MacBook Retina display's logical point density (~113pt/inch):
-    // 2mm / 25.4mm-per-inch * 113pt-per-inch =~ 9pt. USILICIDLEIMAGEYOFFSET
-    // overrides this outright (same "tunable knob instead of another
-    // code-and-rebuild round" pattern as USILICTITLEBARHEIGHT/
-    // USILICSCROLLBARSCALE) for exact real-hardware correction.
-    constexpr int kDefaultIdleImageYOffset = -9;
+    // terminal's own scrollbar, which has no such lead-in. -9 was an
+    // ESTIMATE (this sandbox has no real display to measure against,
+    // same limitation as every other pixel-tuned constant in this
+    // file), converted from "2mm" via a typical MacBook Retina
+    // display's logical point density (~113pt/inch) -- confirmed
+    // exactly via USILICIDLEIMAGEYOFFSET=-11 on real hardware
+    // ("USILICIDLEIMAGEYOFFSET=-11でピッタリ"), close to but not
+    // exactly the estimate. USILICIDLEIMAGEYOFFSET (same "tunable knob
+    // instead of another code-and-rebuild round" pattern as
+    // USILICTITLEBARHEIGHT/USILICSCROLLBARSCALE) still overrides this
+    // default outright, kept for the same reason those other knobs
+    // are: display/font/profile variation this sandbox can't itself
+    // verify against.
+    constexpr int kDefaultIdleImageYOffset = -11;
     int yOffset = kDefaultIdleImageYOffset;
     if (const char *env = std::getenv("USILICIDLEIMAGEYOFFSET")) {
       yOffset = std::atoi(env);

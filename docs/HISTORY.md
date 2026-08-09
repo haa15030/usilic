@@ -2481,3 +2481,7 @@ Basicで起動すれば、はみ出したり足りなかったりは無い。Bas
 `drawIdleScrollbarImage()`に貼り付け先Y座標の補正値(デフォルト`-9`、根拠は上記の2mm→9pt換算)を追加しました。この推定が外れていた場合も再ビルド無しで微調整できるよう、`USILICTITLEBARHEIGHT`等と同じパターンで`USILICIDLEIMAGEYOFFSET`環境変数も追加しています。
 
 `make test` 649/649件全通過、`make usilic`もクリーンビルド成功です。スタンドアロンドライバ+`USILICGUIDEBUG`のBMPダンプで、補正適用後は画像がウィンドウ上端により近い位置に表示されることを視覚的に確認しました。CLAUDE.mdに項目239として記録し、コミット・プッシュ済みです。正確に「2mm分ちょうど」詰まっているかは実機でのご確認をお願いします。ズレていれば`USILICIDLEIMAGEYOFFSET`の値で調整できます。
+
+<USILICIDLEIMAGEYOFFSET=-11でピッタリ。反映よろしく。
+
+>`kDefaultIdleImageYOffset`のデフォルト値を`-9`(推定値)から`-11`(実測確定値)へ更新しました。`make test` 649/649件全通過、`make usilic`もクリーンビルド成功です。CLAUDE.mdに項目240として記録し、コミット・プッシュ済みです。`USILICIDLEIMAGEYOFFSET`環境変数自体は今後の別プロファイル・別画面での微調整用にそのまま残しています。
