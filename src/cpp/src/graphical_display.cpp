@@ -1527,8 +1527,32 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
     // Same trailing `+ Impl::kMarginX` shift as drawScrollbar()'s own
     // thumbX -- see its comment. Keeps this idle-state image aligned
     // with where the real thumb sits once it takes over.
-    SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX, Impl::kMarginY, surface->w,
-                 surface->h};
+    //
+    // kDefaultIdleImageYOffset: a real report (2026-08-09, screenshots,
+    // "2ミリほど下がるけど下にはみ出さない") found this image pasted a
+    // few mm LOWER than it should sit -- plausibly the embedded
+    // screenshot's own top edge already includes a few pixels of the
+    // real scrollbar's own rounded/faded top-of-track appearance above
+    // its visually "solid" portion (confirmed by inspecting the raw
+    // pixel data: the topmost ~18 rows are a gradient, not the flat
+    // fill the rest of the track/thumb uses), so pasting it starting
+    // exactly at kMarginY reads as sitting that much lower than a real
+    // terminal's own scrollbar, which has no such lead-in. -9 is an
+    // ESTIMATE, not a measurement (this sandbox has no real display to
+    // measure against, same limitation as every other pixel-tuned
+    // constant in this file) -- converted from "2mm" via a typical
+    // MacBook Retina display's logical point density (~113pt/inch):
+    // 2mm / 25.4mm-per-inch * 113pt-per-inch =~ 9pt. USILICIDLEIMAGEYOFFSET
+    // overrides this outright (same "tunable knob instead of another
+    // code-and-rebuild round" pattern as USILICTITLEBARHEIGHT/
+    // USILICSCROLLBARSCALE) for exact real-hardware correction.
+    constexpr int kDefaultIdleImageYOffset = -9;
+    int yOffset = kDefaultIdleImageYOffset;
+    if (const char *env = std::getenv("USILICIDLEIMAGEYOFFSET")) {
+      yOffset = std::atoi(env);
+    }
+    SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX, Impl::kMarginY + yOffset,
+                 surface->w, surface->h};
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
     SDL_DestroyTexture(texture);
   }
