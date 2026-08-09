@@ -847,30 +847,44 @@ void GraphicalDisplay::open() {
   // background color, which is enough to avoid a jarring flash and is
   // all a real terminal's own idle background looks like anyway in
   // the instant before the first prompt/listing paints.
+  // Cleared/presented several times, not once, before the window is
+  // ever shown -- a real report (2026-08-09, video capture, "縦横微少
+  // 縮み→正規→横のみ微少縮み→正規") found the single-present version
+  // below (still left in place, harmless) plus an NSDisableScreenUpdates()/
+  // NSEnableScreenUpdates() bracket (Cocoa's own "defer flushing to the
+  // physical display" primitive, added for exactly this report) made
+  // NO observable difference at all ("全く変わってない") -- a strong
+  // signal, per the user's own diagnosis, that NSDisableScreenUpdates()
+  // simply doesn't apply here: it's long-deprecated (macOS 10.11+) and
+  // documented not to suspend compositing for Core-Animation-layer-
+  // backed content, which SDL2's SDL_RENDERER_ACCELERATED backend (a
+  // CAMetalLayer/CAOpenGLLayer-backed view under the hood on macOS)
+  // almost certainly is -- so that bracket was very likely bracketing
+  // the wrong layer of the stack entirely, consistent with "zero
+  // change" rather than a partial improvement.
+  //
+  // This is the NEXT hypothesis instead, cheaper to try than a genuine
+  // CATransaction-based Objective-C++ bridge (the theoretically more
+  // correct fix for that same Core Animation layer, but unverifiable
+  // from this sandbox and a real new build dependency -- left as the
+  // next step if this doesn't help either): a freshly resized
+  // accelerated drawable/layer may take a couple of present() cycles
+  // for the GPU compositor to actually settle at its new (already-
+  // correct, since setWindowPosition()/matchWindowSize() ran before
+  // this) size, rather than committing it instantly on the very first
+  // present -- if so, showing the window only after a few WARM-UP
+  // presents already happened (while still hidden, so none of them
+  // were ever visible) means whatever settling occurs has already
+  // finished by the time the window appears at all.
   SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
-  SDL_RenderClear(impl_->renderer);
-  SDL_RenderPresent(impl_->renderer);
+  for (int warmup = 0; warmup < 4; warmup++) {
+    SDL_RenderClear(impl_->renderer);
+    SDL_RenderPresent(impl_->renderer);
+  }
 #ifdef __APPLE__
-  // Brackets the actual show -- a real report (2026-08-09, video
-  // capture, "縦横微少縮み→正規→横のみ微少縮み→正規") found that even
-  // with the window fully positioned/sized BEFORE SDL_ShowWindow()
-  // (the fix directly above/this function's own class comment), a
-  // brief two-step settling was still visible right after it appeared
-  // -- traced (by ruling out every usilic-side cause: GraphicalDisplay
-  // ::setSize()'s own grid-formula resize is only ever reachable via
-  // KeyInput::consumeResizeSignal(), which runGuiPhase() never calls
-  // at all, so nothing in this codebase issues a second SDL_SetWindow
-  // Size()/Position() call after this point) to macOS's own window
-  // server settling the just-shown window's frame asynchronously,
-  // outside anything plain SDL2 exposes control over.
-  // NSDisableScreenUpdates()/NSEnableScreenUpdates() is Cocoa's own
-  // answer to exactly the "prepare fully off-screen, then flip to the
-  // display atomically" request this was reported with ("VRAMではなく
-  // 一旦バッファ内へ描画しておいて、完成したらVRAMへ転送すればいい"):
-  // the window server defers flushing ANY visual change to the
-  // physical screen until NSEnableScreenUpdates() closes the bracket,
-  // so whatever settling happens in between -- ours or the OS's own --
-  // is invisible, and only the final state ever reaches the display.
+  // Kept even though the report above found it made no difference --
+  // harmless, and still theoretically correct for any NON-layer-backed
+  // part of this window's own show/order-front sequence.
   NSDisableScreenUpdates();
 #endif
   SDL_ShowWindow(impl_->window);

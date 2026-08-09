@@ -2294,3 +2294,15 @@ finalWindow=597x689
 `NSDisableScreenUpdates()`/`NSEnableScreenUpdates()`はAppKitの`NSGraphics.h`が提供するプレーンなC関数(Objective-Cメソッドではない)なので、`mac_font_resolver.cpp`が意図的に避けてきたObjective-C++(`.mm`)ファイルを新設する必要はなく、`graphical_display.cpp`に`extern "C"`で2関数を直接宣言するだけで済みました。`open()`内の`SDL_ShowWindow()`/`SDL_RaiseWindow()`をこの2関数で挟み込みました(このプロジェクト初のAppKitリンク、`Makefile`の`Darwin`分岐に`-framework AppKit`を追加)。
 
 `make test` 649/649件全通過、`make usilic`もクリーンビルド成功(`-framework AppKit`のリンクも確認)です。スタンドアロンドライバで`create()`→`setWindowPosition()`→`matchWindowSize()`→`open()`がクラッシュしないことを確認しました。ただし`NSDisableScreenUpdates()`はmacOS 10.11以降非推奨のAPIで、レイヤーバックウィンドウ(現代のmacOSではデフォルト)に対してどこまで実効性があるかはドキュメント上も不明瞭です。このサンドボックスには実際の画面キャプチャ・動画比較の手段が無いため、症状が実際に解消したかどうかは実機での動画確認が必須です。効果が無かった場合は、`SDL_GetWindowWMInfo()`経由で実際の`NSWindow*`を取得し`setAnimationBehavior:`等をより直接制御する、真の`.mm`ブリッジ導入という次の選択肢が残っています。CLAUDE.mdに項目229として記録し、コミット・プッシュ済みです。
+
+<全く変わってない。バッファではなくて最初からVRAMに描いているときと症状が同じだが最初の描画先は確かにバッファなの？
+
+>鋭いご指摘です。実際にはSDLの`SDL_RENDERER_ACCELERATED`自体はGPU側でダブル/トリプルバッファされているはずですが、`NSDisableScreenUpdates()`は古い(macOS 10.11以降非推奨の)APIで、Core Animationレイヤーで合成される描画には効かないことがAppleの実装上知られています。SDLのアクセラレーテッドレンダラーは内部的にCAMetalLayer/CAOpenGLLayerを使っており、まさにこの「レイヤーバック」なコンテンツに該当する可能性が高いです。つまり「バッファに描いてから転送」という私の説明は理屈上は正しいのですが、`NSDisableScreenUpdates()`という道具が今回のウィンドウには効いていない(効果ゼロ)というのが、「全く変わってない」という結果の一番筋の通る説明です。ご指摘の通り、実質的に「最初からVRAM(＝画面)に直接描いている」のと同じ状態のままだった、ということだと思います。
+
+同じ目的を果たす現代的な(Core Animation対応の)道具は`CATransaction`(`QuartzCore`)で、レイヤーのプロパティ変更に伴う暗黙のアニメーションを`[CATransaction setDisableActions:YES]`で止めつつ、`[CATransaction begin]`〜`[CATransaction commit]`で一括反映させる仕組みです。ただし`CATransaction`はObjective-Cのクラスメソッドなので、`NSDisableScreenUpdates()`のような素のC関数宣言だけでは呼べず、今度こそ本当にObjective-C++(`.mm`)ブリッジが必要になります。
+
+[AskUserQuestion: 「ここからどう進めますか？」→「GPUレイヤーのウォームアップ的な対処を試す」を選択]
+
+>`open()`内の背景色クリア+presentを、1回から4回のウォームアップループに変更しました。仮説: リサイズ直後のアクセラレーテッド・レンダラー(GPU側のドローアブル/レイヤー)が、新しいサイズに実際に落ち着くまで数フレームのpresentを要するのではないか、というものです。ウィンドウを見せる前に非表示のまま複数回present()するので、ウォームアップ中の中間状態自体は一切画面に映りません。`NSDisableScreenUpdates()`ブラケット自体は(効果は無かったのですが)無害なため、コメントで無効だった旨を明記した上でそのまま残しています。
+
+`make test` 649/649件全通過、`make usilic`もクリーンビルド成功です。スタンドアロンドライバでクラッシュしないことを確認しましたが、GPUドローアブルのウォームアップという仮説自体が正しいかどうかは実機の動画確認でしか判断できません。効果が無かった場合の次の候補は`CATransaction`ベースの`.mm`ブリッジです。CLAUDE.mdに項目230として記録し、コミット・プッシュ済みです。
