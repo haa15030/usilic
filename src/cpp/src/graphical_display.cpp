@@ -158,12 +158,21 @@ struct GraphicalDisplay::Impl {
   // terminal it's meant to overlay by roughly a scrollbar's width once
   // the real terminal's own native scrollbar was accounted for.
   // UNLIKE kMarginX/Y above (pixel-scanned from a real screenshot),
-  // this value is a rough placeholder, not yet measured against a
-  // real terminal's actual native scrollbar width the same way --
-  // this sandbox has no way to do that measurement itself (same
-  // limitation noted throughout this port's GUI work); real-machine
-  // verification and likely correction is expected as a follow-up.
-  static constexpr int kScrollbarWidth = 15;
+  // this value was originally a rough placeholder, not yet measured
+  // against a real terminal's actual native scrollbar width. Fixed
+  // 2026-08-09 (a real user request, "バーの幅...をターミナル標準に
+  // 合わせられる？", the same day the hand-drawn strip was replaced by
+  // a real MacScrollbar): no longer a compile-time guess at all --
+  // set once in create() from MacScrollbar::preferredWidth() (a live
+  // `+[NSScroller scrollerWidthForControlSize:scrollerStyle:]` query,
+  // the exact number Terminal.app/Finder/every other NSScroller-based
+  // app's own scrollbar already uses on whichever machine this runs
+  // on), falling back to the OLD placeholder value only on non-Apple
+  // platforms where no real scrollbar exists to query (see
+  // mac_scrollbar_stub.cpp's own comment). No longer `static
+  // constexpr` for exactly that reason -- a per-instance runtime value
+  // now, not a shared compile-time one.
+  int scrollbarWidth = 15;
   std::vector<Cell> grid;
 
   SDL_Color fg{220, 220, 220, 255};
@@ -311,12 +320,17 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // per-path rendering bug -- this compositor-level upscale is a
   // window/renderer-wide effect neither path could individually cause
   // or avoid).
+  // Queried before Impl/the window even exist -- a pure class-level
+  // call (see MacScrollbar::preferredWidth()'s own comment), needed
+  // here to size the INITIAL window correctly since the reserved
+  // scrollbar strip's width is no longer a compile-time guess.
+  int scrollbarWidth = MacScrollbar::preferredWidth();
   // SDL_WINDOW_HIDDEN, not SDL_WINDOW_SHOWN -- see open()'s own
   // comment for why the window is deliberately left unshown until
   // open() is called, not here.
   SDL_Window *window = SDL_CreateWindow(
       "usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-      cellWidth * columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth, cellHeight * rows + Impl::kMarginY * 2,
+      cellWidth * columns + Impl::kMarginX * 2 + scrollbarWidth, cellHeight * rows + Impl::kMarginY * 2,
       SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
   if (!window) {
     if (fallbackFont) TTF_CloseFont(fallbackFont);
@@ -364,6 +378,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->cellHeight = cellHeight;
   display->impl_->rows = rows;
   display->impl_->columns = columns;
+  display->impl_->scrollbarWidth = scrollbarWidth;
   display->impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
   // Real native scrollbar (mac_scrollbar.hpp, 2026-08-09) -- nullptr
   // (a harmless no-op) on any non-Apple platform, see
@@ -818,7 +833,7 @@ void GraphicalDisplay::setSize(int rows, int columns) {
   impl_->columns = columns;
   impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
   if (impl_->window)
-    SDL_SetWindowSize(impl_->window, impl_->cellWidth * columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
+    SDL_SetWindowSize(impl_->window, impl_->cellWidth * columns + Impl::kMarginX * 2 + impl_->scrollbarWidth,
                        impl_->cellHeight * rows + Impl::kMarginY * 2);
   layoutNativeScrollbar();
 }
@@ -1068,7 +1083,7 @@ void GraphicalDisplay::layoutNativeScrollbar() {
   int x = Impl::kMarginX + impl_->columns * impl_->cellWidth;
   int y = Impl::kMarginY;
   int height = contentRows * impl_->cellHeight;
-  impl_->nativeScrollbar->setFrame(x, y, Impl::kScrollbarWidth, height);
+  impl_->nativeScrollbar->setFrame(x, y, impl_->scrollbarWidth, height);
 }
 
 void GraphicalDisplay::syncScrollbar(int topIndex, int totalLines, int contentRows) {
@@ -1291,7 +1306,7 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   // window a mere 3px TALLER than the real terminal instead of 45px
   // SHORTER). Ties round up (`+denom/2` before truncating), fine here
   // since both directions are an equally acceptable few-px mismatch.
-  int cellWidth = (contentWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth + impl_->columns / 2) / impl_->columns;
+  int cellWidth = (contentWidth - Impl::kMarginX * 2 - impl_->scrollbarWidth + impl_->columns / 2) / impl_->columns;
   int cellHeight = (contentHeight - Impl::kMarginY * 2 + impl_->rows / 2) / impl_->rows;
   if (cellWidth <= 0 || cellHeight <= 0) return;
   // Floored at create()'s own font-metric-based cellWidth/cellHeight
@@ -1491,7 +1506,7 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   // all) rather than the full width.
   constexpr int kThumbInset = 1;
   int thumbX = Impl::kMarginX + impl_->columns * impl_->cellWidth + kThumbInset;
-  int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
+  int thumbWidth = std::max(impl_->scrollbarWidth - kThumbInset * 2, 2);
   int thumbTop = Impl::kMarginY + thumbY;
 
   // Plain rectangle -- FINAL, per the user's own explicit 2026-08-07
@@ -1570,7 +1585,7 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
       float parsed = static_cast<float>(std::atof(env));
       if (parsed > 0.0f) scale = parsed;
     }
-    int widthPoints = std::max(static_cast<int>(Impl::kScrollbarWidth * scale), 1);
+    int widthPoints = std::max(static_cast<int>(impl_->scrollbarWidth * scale), 1);
     int heightPoints = std::max(static_cast<int>(surface->h * scale), 1);
     int contentRows = std::max(impl_->rows - 1, 0);
     int maxHeightPoints = contentRows * impl_->cellHeight;

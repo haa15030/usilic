@@ -27,6 +27,18 @@ MacScrollbar::~MacScrollbar() = default;
 
 std::unique_ptr<MacScrollbar> MacScrollbar::create(void *, std::function<void(double)>) { return nullptr; }
 
+// UNLIKE create()/setFrame()/setPosition()/setVisible() above, this
+// IS actually called on every platform (GraphicalDisplay::create()
+// reads it unconditionally, before even attempting the native
+// scrollbar, to size its own hand-drawn fallback strip identically
+// either way) -- 15 is the same placeholder value this project's
+// reserved scrollbar strip already used before this class existed at
+// all (GraphicalDisplay::Impl::kScrollbarWidth's own original
+// comment: "a rough placeholder, not yet measured"), kept here as the
+// non-Apple fallback since there's no native widget to query a real
+// value from on this platform.
+int MacScrollbar::preferredWidth() { return 15; }
+
 void MacScrollbar::setFrame(int, int, int, int) {}
 void MacScrollbar::setPosition(double, double) {}
 void MacScrollbar::setVisible(bool) {}

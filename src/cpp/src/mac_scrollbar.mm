@@ -77,6 +77,11 @@ MacScrollbar::~MacScrollbar() {
   }
 }
 
+int MacScrollbar::preferredWidth() {
+  CGFloat width = [NSScroller scrollerWidthForControlSize:NSControlSizeRegular scrollerStyle:NSScrollerStyleLegacy];
+  return width > 0 ? static_cast<int>(width + 0.5) : 15;
+}
+
 std::unique_ptr<MacScrollbar> MacScrollbar::create(void *sdlWindowPtr, std::function<void(double)> onUserScroll) {
   SDL_Window *sdlWindow = static_cast<SDL_Window *>(sdlWindowPtr);
   if (!sdlWindow) return nullptr;
@@ -89,13 +94,19 @@ std::unique_ptr<MacScrollbar> MacScrollbar::create(void *sdlWindowPtr, std::func
   NSView *contentView = nsWindow ? [nsWindow contentView] : nil;
   if (!contentView) return nullptr;
 
-  // NSScrollerStyleLegacy: an always-visible track+knob at a fixed
-  // width, matching GraphicalDisplay::Impl::kScrollbarWidth's own
-  // reserved strip -- the modern default (NSScrollerStyleOverlay) is a
-  // thin auto-hiding sliver only shown transiently during a scroll
-  // gesture/hover, which wouldn't visually fill (or make obviously
-  // interactive) the space this class already reserves for it.
-  NSScroller *scroller = [[NSScroller alloc] initWithFrame:NSMakeRect(0, 0, 15, 100)];
+  // NSScrollerStyleLegacy: an always-visible track+knob, matching a
+  // real terminal's own scrollbar (which the user's own real-hardware
+  // "Show scroll bars" System Settings preference controls for every
+  // NSScroller-based app uniformly, Terminal.app/Emacs/this one alike)
+  // -- the modern default (NSScrollerStyleOverlay) is a thin auto-
+  // hiding sliver only shown transiently during a scroll gesture/
+  // hover, which wouldn't visually fill (or make obviously
+  // interactive) the space this class reserves for it. Width/position
+  // colors are NOT set here at all -- see this file's own knob/track
+  // color comment further down for why that's correct, not an
+  // oversight.
+  CGFloat width = preferredWidth();
+  NSScroller *scroller = [[NSScroller alloc] initWithFrame:NSMakeRect(0, 0, width, 100)];
   [scroller setScrollerStyle:NSScrollerStyleLegacy];
   [scroller setEnabled:YES];
   [contentView addSubview:scroller];
@@ -140,5 +151,24 @@ void MacScrollbar::setVisible(bool visible) {
   if (!impl_ || !impl_->scroller) return;
   [impl_->scroller setHidden:!visible];
 }
+
+// No setKnobColor:/setTrackColor:-style method exists anywhere in this
+// file, and deliberately so -- a real user request (2026-08-09,
+// "つまみ色、背景色...をターミナル標準に合わせられる？") asked for
+// exactly this, but a plain NSScroller has no public API for
+// overriding its own knob/track color at all: it always draws using
+// whatever the CURRENT SYSTEM APPEARANCE dictates (light/dark mode,
+// accent color, increased-contrast accessibility settings...), the
+// exact same rendering path Terminal.app/Finder/Emacs's own
+// EmacsScroller all go through. That's not a gap to fill in -- it's
+// the reason colors need zero code here at all: this scroller already
+// matches "ターミナル標準" automatically, on every machine, in every
+// appearance mode, for free, by virtue of being the same system
+// control. The only way to get an INDEPENDENTLY colored knob/track
+// would be to stop using a plain NSScroller and subclass it with a
+// custom -drawKnob/-drawKnobSlotInRect:highlight: override (drawing
+// pixels by hand again, the exact "custom drawing to get out of that
+// business entirely" problem this whole class was written to avoid --
+// see mac_scrollbar.hpp's own class comment) -- not attempted here.
 
 }  // namespace fm

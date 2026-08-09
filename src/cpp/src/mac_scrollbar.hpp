@@ -53,6 +53,26 @@ class MacScrollbar {
   // own "fall back, don't crash" convention.
   static std::unique_ptr<MacScrollbar> create(void *sdlWindow, std::function<void(double)> onUserScroll);
 
+  // The width (logical points) a REAL system scrollbar of this same
+  // style/control size actually needs on the current machine --
+  // queried live via `+[NSScroller scrollerWidthForControlSize:
+  // scrollerStyle:]` (a pure class-level query, no window/view
+  // required, so this can be called before create() or even if
+  // create() will go on to fail/return nullptr). Added 2026-08-09
+  // after a real user request to match "ターミナル標準" scrollbar
+  // proportions exactly: the constant this project used before
+  // (GraphicalDisplay::Impl::kScrollbarWidth == 15) was always just "a
+  // rough placeholder, not yet measured" (its own original comment) --
+  // this replaces that guess with the SAME number Terminal.app/Finder/
+  // every other NSScroller-based app's own scrollbar actually uses,
+  // on whichever real machine this runs on (17pt on this sandbox's own
+  // macOS/AppKit version -- confirmed via a standalone driver -- but
+  // deliberately NOT hardcoded here, since this can legitimately vary
+  // by OS version). Falls back to 15 (the old placeholder) on non-
+  // Apple platforms, where it's cosmetic only -- see
+  // mac_scrollbar_stub.cpp's own comment.
+  static int preferredWidth();
+
   ~MacScrollbar();
   MacScrollbar(const MacScrollbar &) = delete;
   MacScrollbar &operator=(const MacScrollbar &) = delete;
