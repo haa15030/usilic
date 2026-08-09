@@ -2410,3 +2410,15 @@ Man PageのCUIでusilicバイナリのタイムスタンプを確認したうえ
 ご判断通り、`NSScroller`案を撤回し、手描きの矩形バーへ全面的に戻しました。`git checkout 4b6c1a3 -- src/cpp/Makefile src/cpp/app/main.cpp src/cpp/src/graphical_display.cpp src/cpp/src/graphical_display.hpp`で項目232(`NSScroller`導入)着手直前の状態へ完全に戻し、新規追加していた`mac_scrollbar.hpp`/`mac_scrollbar.mm`/`mac_scrollbar_stub.cpp`の3ファイルを削除しました。CLAUDE.md/docs/HISTORY.mdはこれまでの経緯の記録としてそのまま残しています。
 
 `make test` 649/649件全通過、`make usilic`もクリーンビルド成功(`-framework Cocoa`/`AppKit`のリンクも解除されたことを確認)です。手描きの矩形バーが復活しています。CLAUDE.mdに項目235として記録し、コミット・プッシュ済みです。実機で今動いているプロセスは古いバイナリのままなので、再起動していただければ矩形バーに戻っているはずです。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-09 19.41.39.png'
+矩形には戻ったが位置も戻った。
+BasicHome brewで違い
+
+>2点確認しました。まず矩形バーの位置ズレは、私が全面撤回した際に`drawScrollbar()`自身の座標式には位置修正を適用していなかったためです(NSScroller版の`layoutNativeScrollbar()`だけに適用していました)。同じ修正を手描き版にも入れます。
+
+`drawScrollbar()`の`thumbX`、および同じ帯を使う`drawIdleScrollbarImage()`(静止時の「張りぼて」画像)の`dst`両方に同じ`+ Impl::kMarginX`シフトを適用し、手描き版でもウィンドウの真の右端に一致するようにしました。
+
+`make test` 649/649件全通過、`make usilic`もクリーンビルド成功です。CLAUDE.mdに項目236として記録し、コミット・プッシュ済みです。
+
+「BasicHome brewで違い」について、具体的にどのような違いか今回のメッセージからは特定できませんでした。お手数ですが、もう少し詳しく教えていただけますか。

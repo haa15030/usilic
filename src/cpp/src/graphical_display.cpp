@@ -1412,7 +1412,21 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   // whole strip, no visual edge against the mode-line/content area at
   // all) rather than the full width.
   constexpr int kThumbInset = 1;
-  int thumbX = Impl::kMarginX + impl_->columns * impl_->cellWidth + kThumbInset;
+  // The extra trailing `+ Impl::kMarginX`: this class's own window-
+  // sizing formula (`kMarginX*2 + columns*cellWidth + kScrollbarWidth`,
+  // used throughout this file) reserves the scrollbar strip BEFORE a
+  // trailing kMarginX-wide gap of plain background between it and the
+  // window's own true right edge -- a real terminal's own native
+  // scrollbar instead sits flush against that true right edge, no
+  // trailing gap. A real user request (2026-08-09, made while briefly
+  // trying a real NSScroller widget instead of this hand-drawn thumb,
+  // but restated as still wanting to apply once that attempt was
+  // reverted: "位置だけは元からあるスクロールバーと同じにしたい")
+  // asked for this shift explicitly; applied here (and to
+  // drawIdleScrollbarImage()'s identical strip below) rather than only
+  // to the since-reverted NSScroller code, since the same visual gap
+  // exists for this thumb too.
+  int thumbX = Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX + kThumbInset;
   int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
   int thumbTop = Impl::kMarginY + thumbY;
 
@@ -1493,7 +1507,11 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
     int heightPoints = std::max(static_cast<int>(surface->h * scale), 1);
     int contentRows = std::max(impl_->rows - 1, 0);
     int maxHeightPoints = contentRows * impl_->cellHeight;
-    SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth, Impl::kMarginY, widthPoints,
+    // Same trailing `+ Impl::kMarginX` shift as drawScrollbar()'s own
+    // thumbX -- see its comment. Keeps this idle-state decoration
+    // aligned with the active thumb rather than sitting one kMarginX
+    // to its left.
+    SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX, Impl::kMarginY, widthPoints,
                  std::min(heightPoints, maxHeightPoints)};
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
     SDL_DestroyTexture(texture);
