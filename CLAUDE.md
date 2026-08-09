@@ -12590,6 +12590,27 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       待ち。効果が無かった場合の次の候補は`CATransaction`ベースの
       `.mm`ブリッジ。
 
+231. **2026-08-09(続き): GPUドローアブルのウォームアップ対処も「変化
+    無し」と判明、項目229・230のコード変更を撤回(HISTORY.md:2259
+    時点まで)**。ユーザーから「変化無し。変更はHISTORY.md:2259まで
+    戻していい。」との報告。
+   - **対応**: `NSDisableScreenUpdates()`/`NSEnableScreenUpdates()`
+      ブラケット(項目229)と、表示前の複数回`present()`によるウォーム
+      アップ処理(項目230)を両方とも撤回し、`graphical_display.cpp`
+      /`Makefile`を項目228時点(コミット`2daa059`)の状態へ戻した
+      (`git checkout 2daa059 -- src/cpp/Makefile src/cpp/src/
+      graphical_display.cpp`)。`CLAUDE.md`/`docs/HISTORY.md`は経緯の
+      記録として残す(逐語性ルールにより、既に記録した過去の試行錯誤
+      自体を削除・書き換えはしない)。`-framework AppKit`のリンクも
+      解除された。
+   - **検証**: `make test`で649/649件全通過、`make usilic`もクリーン
+      ビルド成功(`-framework AppKit`が外れたことも確認)。
+   - この結果、「実はすでにGUI」オーバーレイ表示直後の微少な2段階
+      収まり(項目229/230で対処を試みたが効果無しと確認済みのもの)は
+      未解決のまま残る。原因はmacOS/Cocoa側の何らかの機構と推定
+      しているが、真の対処候補である`CATransaction`ベースの`.mm`
+      ブリッジは未着手。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

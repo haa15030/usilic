@@ -19,14 +19,8 @@ CXXFLAGS ?= -std=c++17 -Wall -Wextra -g $(SDL_CFLAGS)
 # Linux's linker understands, so this is gated on uname rather than
 # added unconditionally.
 LDLIBS   ?= -lncurses $(SDL_LIBS)
-# AppKit: graphical_display.cpp's open() calls NSDisableScreenUpdates()/
-# NSEnableScreenUpdates() (declared by hand as extern "C" there, no
-# Objective-C++ needed -- see its own comment) to bracket the window's
-# first show so macOS doesn't flush any of the window server's own
-# post-show frame settling to the physical display as a visible
-# intermediate flash (docs/HISTORY.md 2026-08-09).
 ifeq ($(shell uname), Darwin)
-LDLIBS += -framework CoreText -framework CoreFoundation -framework AppKit
+LDLIBS += -framework CoreText -framework CoreFoundation
 endif
 
 SRC_DIR   = src
