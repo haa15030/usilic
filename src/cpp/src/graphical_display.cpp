@@ -1075,12 +1075,34 @@ std::optional<GraphicalDisplay::ScrollbarEvent> GraphicalDisplay::consumeScrollb
 
 void GraphicalDisplay::layoutNativeScrollbar() {
   if (!impl_->nativeScrollbar) return;
-  // Matches the SAME reserved strip drawScrollbar()/
-  // drawIdleScrollbarImage() paint into (Impl::kMarginX/kMarginY/
-  // kScrollbarWidth), so the native widget sits exactly where the
-  // hand-drawn one otherwise would have.
+  // Deliberately NOT the same x the hand-drawn strip (drawScrollbar()/
+  // drawIdleScrollbarImage()) uses -- a real policy clarification
+  // (2026-08-09, predating docs/HISTORY.md's own creation, restated
+  // that day: "元々スクロールバーは不要との方針であり、今も実は
+  // 変わってない...ただしターミナルを起動した際、最初からある
+  // スクロールバーは例外") makes the NATIVE scrollbar's only
+  // justification for existing at all conditional on it being
+  // pixel-indistinguishable from the real terminal's own PRE-EXISTING
+  // scrollbar -- any visible difference would itself be the "this is
+  // secretly a GUI app" tell the whole "実はすでにGUI" feature exists
+  // to avoid. Width (MacScrollbar::preferredWidth(), see its own
+  // comment) and color (automatic, same system widget -- see
+  // mac_scrollbar.mm's own comment) already match for that reason; the
+  // one gap was POSITION: this class's own window-sizing formula
+  // (`kMarginX*2 + columns*cellWidth + scrollbarWidth`, used
+  // throughout this file) reserves the scrollbar BEFORE a trailing
+  // kMarginX-wide strip of plain background between it and the
+  // window's own true right edge -- fine for the hand-drawn thumb
+  // (drawScrollbar() only ever needed to sit somewhere inside that
+  // general area), but a REAL terminal's own native scrollbar sits
+  // FLUSH against the window's true right edge, no trailing gap at
+  // all. Shifting this by exactly one more Impl::kMarginX closes that
+  // gap -- x + width now lands exactly on the window's own right edge
+  // (kMarginX*2 + columns*cellWidth + scrollbarWidth, the same total
+  // width formula used everywhere else in this file), matching where
+  // a real terminal's own scrollbar would already be.
   int contentRows = std::max(impl_->rows - 1, 0);
-  int x = Impl::kMarginX + impl_->columns * impl_->cellWidth;
+  int x = Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX;
   int y = Impl::kMarginY;
   int height = contentRows * impl_->cellHeight;
   impl_->nativeScrollbar->setFrame(x, y, impl_->scrollbarWidth, height);
