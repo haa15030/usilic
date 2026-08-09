@@ -12499,6 +12499,61 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       クラッシュしないことを確認。実際の見た目(ドラッグの無効化・
       表示フラッシュの解消)は実機でのご確認待ち。
 
+229. **2026-08-09(続き): 動画キャプチャで判明した表示直後の2段階の
+    微少なサイズ収まりを、`NSDisableScreenUpdates()`/
+    `NSEnableScreenUpdates()`で抑制、初のAppKitリンク・plain C関数
+    直接宣言によるCocoa連携を導入**。ユーザーが起動過程を動画に
+    撮ってキャプチャし、項目228適用後もなお「縦横微少縮み→正規→
+    横のみ微少縮み→正規」という2段階の遷移が見えると報告
+    (スクリーンショット4枚)。「画面が静止していれば気づかれない
+    かもしれないが、動いているさなかでは微少か否かにかかわらず
+    否応無しに分かるので容認はできない」との指摘。あわせて
+    「ターミナルウィンドウの描画先は変えられない？VRAMではなく
+    一旦バッファ内へ描画しておいて、完成したらVRAMへ転送すれば
+    いいと思うんだが」という技術的な提案があった。
+   - **原因の切り分け**: 項目228で疑っていた`GraphicalDisplay::
+      setSize()`(グリッド式で幅を上書きする関数)による再上書き説を
+      再検証したが、この関数の唯一の外部呼び出し元は`KeyInput::
+      consumeResizeSignal()`(実端末の`SIGWINCH`検知時のみ発火)で、
+      これが呼ばれるのは`runTerminalPhase()`内のみと確認した。
+      「実はすでにGUI」起動は`guiOwnsWholeSession=true`により
+      `runTerminalPhase()`には一切入らず`runGuiPhase()`のみが動く
+      (`app/main.cpp:2353-2354`)ため、`consumeResizeSignal()`は
+      この経路では一度も呼ばれない。コード全体を検索しても
+      `setWindowPosition()`→`matchWindowSize()`→`open()`の後に
+      `SDL_SetWindowSize()`/`SDL_SetWindowPosition()`を再度呼ぶ
+      箇所は他に見つからなかった。つまりusilic自身のコードが二度目の
+      リサイズを指示しているのではなく、macOS側(ウィンドウサーバーが
+      表示直後にフレームを非同期に確定させる挙動)が原因と判断した。
+   - **修正**: ユーザー提案(「バッファへ描画→完成後にVRAMへ転送」)を
+      Cocoaのウィンドウ表示に対応する実際のAPIで実現した:
+      `NSDisableScreenUpdates()`/`NSEnableScreenUpdates()`
+      (AppKitの`NSGraphics.h`が提供する、プレーンなC関数――
+      Objective-Cメソッドではない)で`open()`内の`SDL_ShowWindow()`/
+      `SDL_RaiseWindow()`呼び出しを挟み込んだ。この2関数の間では
+      ウィンドウサーバーが画面への実際のフラッシュを保留するため、
+      その間に(usilic自身か、OS自身かを問わず)何らかのフレーム調整が
+      発生しても、`NSEnableScreenUpdates()`が閉じた時点の最終状態
+      **だけ**が画面に反映される。プレーンC関数のため、これまで
+      `mac_font_resolver.cpp`が意図的に避けてきたObjective-C++
+      (`.mm`)ファイルの追加は不要で、`graphical_display.cpp`に
+      `extern "C"`で2関数を直接宣言するだけで済んだ(このプロジェクト
+      初のAppKitリンク、`Makefile`の`Darwin`分岐に`-framework AppKit`
+      を追加)。
+   - **検証**: `make test`で649/649件全通過、`make usilic`もクリーン
+      ビルド成功(`-framework AppKit`のリンクも確認)。スタンドアロン
+      ドライバで`create()`→`setWindowPosition()`→`matchWindowSize()`→
+      `open()`(新しい`NSDisableScreenUpdates`ブラケット込み)が
+      クラッシュしないことを確認。ただし`NSDisableScreenUpdates()`は
+      macOS 10.11以降非推奨(deprecated)のAPIで、レイヤーバック
+      ウィンドウ(現代のmacOSではデフォルト)に対してどこまで実効性が
+      あるかはドキュメント上も不明瞭であり、このサンドボックスには
+      実際の画面キャプチャ・動画比較の手段が無いため、症状が実際に
+      解消したかどうかは実機での動画確認が必須。効果が無かった場合の
+      次の選択肢(`SDL_GetWindowWMInfo()`経由で実際の`NSWindow*`を
+      取得し`setAnimationBehavior:`等をより直接制御する、真の`.mm`
+      ブリッジ導入)も選択肢として残る。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

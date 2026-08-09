@@ -13,6 +13,20 @@
 #include "scrollbar_idle_image.hpp"
 #include "utf8.hpp"
 
+#ifdef __APPLE__
+// NSDisableScreenUpdates()/NSEnableScreenUpdates() -- see open()'s own
+// comment for why. Both are plain C functions (part of AppKit's
+// NSGraphics.h), not Objective-C methods, so they can be declared and
+// called directly from this otherwise-plain-C++ file without needing
+// an Objective-C++ (.mm) translation unit -- the same reasoning
+// mac_font_resolver.cpp's own comment gives for avoiding one there.
+// -framework AppKit (Makefile) supplies the symbols at link time.
+extern "C" {
+void NSDisableScreenUpdates(void);
+void NSEnableScreenUpdates(void);
+}
+#endif
+
 namespace fm {
 
 namespace {
@@ -836,8 +850,34 @@ void GraphicalDisplay::open() {
   SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
   SDL_RenderClear(impl_->renderer);
   SDL_RenderPresent(impl_->renderer);
+#ifdef __APPLE__
+  // Brackets the actual show -- a real report (2026-08-09, video
+  // capture, "縦横微少縮み→正規→横のみ微少縮み→正規") found that even
+  // with the window fully positioned/sized BEFORE SDL_ShowWindow()
+  // (the fix directly above/this function's own class comment), a
+  // brief two-step settling was still visible right after it appeared
+  // -- traced (by ruling out every usilic-side cause: GraphicalDisplay
+  // ::setSize()'s own grid-formula resize is only ever reachable via
+  // KeyInput::consumeResizeSignal(), which runGuiPhase() never calls
+  // at all, so nothing in this codebase issues a second SDL_SetWindow
+  // Size()/Position() call after this point) to macOS's own window
+  // server settling the just-shown window's frame asynchronously,
+  // outside anything plain SDL2 exposes control over.
+  // NSDisableScreenUpdates()/NSEnableScreenUpdates() is Cocoa's own
+  // answer to exactly the "prepare fully off-screen, then flip to the
+  // display atomically" request this was reported with ("VRAMではなく
+  // 一旦バッファ内へ描画しておいて、完成したらVRAMへ転送すればいい"):
+  // the window server defers flushing ANY visual change to the
+  // physical screen until NSEnableScreenUpdates() closes the bracket,
+  // so whatever settling happens in between -- ours or the OS's own --
+  // is invisible, and only the final state ever reaches the display.
+  NSDisableScreenUpdates();
+#endif
   SDL_ShowWindow(impl_->window);
   SDL_RaiseWindow(impl_->window);
+#ifdef __APPLE__
+  NSEnableScreenUpdates();
+#endif
 }
 void GraphicalDisplay::close() {}  // torn down by the destructor instead, see its own comment
 

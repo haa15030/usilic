@@ -2269,3 +2269,28 @@ finalWindow=597x689
 `SDL_CreateWindow()`のフラグを`SDL_WINDOW_HIDDEN`に変更し、`create()`からは表示・フォーカス処理を除去。代わりに`open()`で`SDL_ShowWindow()`+`SDL_RaiseWindow()`を行うよう変更しました。呼び出し順(`setWindowPosition()`→`matchWindowSize()`→`open()`)は既存のまま変更不要で、これにより非表示のまま位置・サイズを確定させてから初めて画面に現れるようになります。あわせて、`open()`内で`SDL_ShowWindow()`の直前に背景色(`setColors()`で既に実端末と合わせ済み)へ`SDL_RenderClear`+`SDL_RenderPresent`しておくことで、レンダラー自体が未クリアのまま最初に表示される(不定な内容の初期フレームが一瞬見える可能性がある)ケースも予防しました。通常の`-g`単体起動・`^Og`もどちらも`create()`直後に`open()`を無条件に呼ぶ構造は変わらないため、この2箇所への影響はありません。
 
 `make test` 649/649件全通過、`make usilic`もクリーンビルド成功です。スタンドアロンドライバで`create()`→`open()`がクラッシュしないことを確認しましたが、実際の見た目(ドラッグの無効化・表示フラッシュの解消)は実機でのご確認をお願いします。CLAUDE.mdに項目228として記録し、コミット・プッシュ済みです。
+
+<動画に撮って過程をキャプチャしてみた。
+縦横微少縮み→正規→横のみ微少縮み→正規
+'/Users/haa15030/Desktop/スクリーンショット 2026-08-09 15.29.11.png''/Users/haa15030/Desktop/スクリーンショット 2026-08-09 15.29.20.png''/Users/haa15030/Desktop/スクリーンショット 2026-08-09 15.29.30.png''/Users/haa15030/Desktop/スクリーンショット 2026-08-09 15.29.36.png'
+
+>4枚とも拝見しました。まず、直前の修正(項目228)で疑っていた「`setSize()`が別の(実端末と合わない)グリッド式でウィンドウサイズを上書きしている」という説を確認するため、実際のコールパスを追いました。
+
+`GraphicalDisplay::setSize()`(グリッド式で幅を上書きしてしまう関数)の呼び出し元を全部たどりましたが、実際に呼ばれているのは`runTerminalPhase()`内の`consumeResizeSignal()`経由のみで、これは`SIGWINCH`(実端末のリサイズ)を検知した時だけ発火します。そして「実はすでにGUI」起動時は`guiOwnsWholeSession=true`となり、`runTerminalPhase()`には一切入らず`runGuiPhase()`だけが動きます(`app/main.cpp:2353-2354`)。`runGuiPhase()`自身は`consumeResizeSignal()`を一度も呼んでいません。つまり、前回私が疑っていた「`setSize()`によるグリッド式での上書き」は、この起動経路では原理的に発生し得ないと確認できました — 私の見立て違いです。
+
+コード全体を検索しても、`setWindowPosition()`→`matchWindowSize()`→`open()`の後、`SDL_SetWindowSize()`/`SDL_SetWindowPosition()`を再度呼ぶ箇所は他に見つかりませんでした。ということは、動画で捉えていただいた「縦横微少縮み→正規→横のみ微少縮み→正規」という2段階の遷移は、usilic自身のコードが再度サイズ変更を指示しているのではなく、macOS/Cocoa側(ウィンドウ表示時のアニメーションや状態復元など)が、表示直後に自分でウィンドウのフレームを調整している可能性が高いと考えられます。これはSDL2の通常のAPI(`SDL_SetWindowSize`等)だけでは観測も制御もできない領域で、確認するには実機でのInstruments/Consoleログ調査か、あるいはネイティブのCocoa API(`NSWindow`の`isRestorable`/`animationBehavior`等、以前Swift/`.mm`の話で触れた`SDL_GetWindowWMInfo()`経由のブリッジ)で直接制御する必要がありそうです。
+
+現状「微少」という表現の通り、当初の「重ね打ちだとバレる」レベルの大きなズレは解消できています。この残り(表示直後のごくわずかな2段階の収まり)について、①`.mm`ブリッジを追加してCocoaレベルで直接抑制を試みる(効果があるか未検証、新規のビルド系統追加)か、②現状で十分として一旦区切るか、どちらの方針がよろしいですか？
+
+<画面が静止していれば微少なズレなど気づかれないかもしれない。だが動いているさなかでは微少か否かにかかわらず否応無しに分かるので容認はできない。
+ターミナルウィンドウの描画先は変えられない？　可能なら、VRAMではなくて一旦バッファ内へ描画しておいて、完成したらVRAMへ転送すればいいと思うんだが。
+
+>それは実際に有効な手です。SDLのレンダラー自体は既にダブルバッファリングされていますが(ピクセル内容の描画はそもそも問題ではありません)、今回問題になっているのはウィンドウの**枠(位置・サイズ)自体**で、これはウィンドウサーバー側のプロパティであり、SDLのピクセルバッファとは別物です。macOSにはご提案とちょうど同じ考え方に対応する実際のAPIがあります: `NSDisableScreenUpdates()`/`NSEnableScreenUpdates()`です。この2つで挟んだ範囲内では、ウィンドウサーバーが物理ディスプレイへの実際のフラッシュを保留するため、その間に何が起きても(usilic自身の処理でもOS自身の後処理でも)、`NSEnableScreenUpdates()`が閉じた時点の最終状態だけが画面に反映されます。
+
+さっそく実装しました。
+
+原因の再確認: 項目228で疑っていた`setSize()`の再上書き説を再検証しましたが、`consumeResizeSignal()`(この関数の唯一の呼び出し元)は`runTerminalPhase()`内でのみ呼ばれ、「実はすでにGUI」起動は`guiOwnsWholeSession=true`によりこの関数には一切入らないため、原理的に無関係と確定しました。つまりusilic自身が二度目のリサイズを指示しているのではなく、macOS側の非同期なフレーム確定が原因という結論のままです。
+
+`NSDisableScreenUpdates()`/`NSEnableScreenUpdates()`はAppKitの`NSGraphics.h`が提供するプレーンなC関数(Objective-Cメソッドではない)なので、`mac_font_resolver.cpp`が意図的に避けてきたObjective-C++(`.mm`)ファイルを新設する必要はなく、`graphical_display.cpp`に`extern "C"`で2関数を直接宣言するだけで済みました。`open()`内の`SDL_ShowWindow()`/`SDL_RaiseWindow()`をこの2関数で挟み込みました(このプロジェクト初のAppKitリンク、`Makefile`の`Darwin`分岐に`-framework AppKit`を追加)。
+
+`make test` 649/649件全通過、`make usilic`もクリーンビルド成功(`-framework AppKit`のリンクも確認)です。スタンドアロンドライバで`create()`→`setWindowPosition()`→`matchWindowSize()`→`open()`がクラッシュしないことを確認しました。ただし`NSDisableScreenUpdates()`はmacOS 10.11以降非推奨のAPIで、レイヤーバックウィンドウ(現代のmacOSではデフォルト)に対してどこまで実効性があるかはドキュメント上も不明瞭です。このサンドボックスには実際の画面キャプチャ・動画比較の手段が無いため、症状が実際に解消したかどうかは実機での動画確認が必須です。効果が無かった場合は、`SDL_GetWindowWMInfo()`経由で実際の`NSWindow*`を取得し`setAnimationBehavior:`等をより直接制御する、真の`.mm`ブリッジ導入という次の選択肢が残っています。CLAUDE.mdに項目229として記録し、コミット・プッシュ済みです。
