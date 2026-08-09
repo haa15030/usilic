@@ -1812,6 +1812,29 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       }
     }
 
+    // A real NSScroller click/drag (mac_scrollbar.hpp, 2026-08-09) --
+    // an ABSOLUTE "go here" gesture like the scrollbar strip's own
+    // ButtonDown/Motion handling just above, except AppKit has already
+    // done the pixel-to-fraction math itself (no jumpToScrollbarY()
+    // pixel-Y translation needed here). A no-op fraction of 1.0 while
+    // `totalLines` doesn't exceed `contentRows` can't happen -- the
+    // native scrollbar is hidden via setVisible(false) in that case
+    // (see GraphicalDisplay::syncScrollbar()'s own guard), so AppKit
+    // never delivers a click for it to begin with.
+    if (auto jump = gui.consumeNativeScrollbarJump()) {
+      anyEventThisFrame = true;
+      int totalLines = static_cast<int>(view.lines().size());
+      int contentRows = std::max(gui.rows() - 1, 0);
+      int scrollableLines = std::max(totalLines - contentRows, 0);
+      if (scrollableLines > 0) {
+        view.setTopIndex(static_cast<int>(*jump * scrollableLines));
+        // See jumpToScrollbarY()'s own comment on why this follow-up
+        // cursorIndex_ sync is needed (clampViewport() would otherwise
+        // snap topIndex_ back at the next settle-time redraw()).
+        view.setCursorIndex(view.topIndex());
+      }
+    }
+
     while (auto drag = gui.consumeDragEvent()) {
       anyEventThisFrame = true;
       switch (drag->type) {
@@ -1973,6 +1996,15 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       wasActivelyScrolling = false;
       view.redraw();
     }
+
+    // Keeps the native scrollbar (if any -- a no-op otherwise, see its
+    // own comment) in sync every iteration, not just on frames that
+    // actually re-rendered -- unlike the hand-drawn scrollbar (which
+    // only ever gets redrawn as part of an actual flush()/
+    // renderScrolled() call), a real always-visible AppKit widget
+    // needs its position current continuously, since the user can see
+    // it even on iterations where nothing else changed.
+    gui.syncScrollbar(view.topIndex(), static_cast<int>(view.lines().size()), std::max(gui.rows() - 1, 0));
 
     usleep(16000);  // ~60Hz pacing -- see file comment on why this loop can't share the terminal loop's poll()
   }

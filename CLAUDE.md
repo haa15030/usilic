@@ -12611,6 +12611,87 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       しているが、真の対処候補である`CATransaction`ベースの`.mm`
       ブリッジは未着手。
 
+232. **2026-08-09(続き): 実機のEmacs30.2スクロールバーを参考に、
+    `-g`スクロールバーを本物の`NSScroller`に置き換え(初のObjective-
+    C++`.mm`導入)**。ユーザーが「長文はemacs30.2で書いているんだが、
+    スクロールバーはちゃんと稼働している。あれってソース公開されて
+    いるんで当該箇所を参考に同じようなの作れない？」と提案。
+    WebSearchでEmacs(GPL、公開ソース)の`nsterm.m`を確認したところ、
+    `EmacsScroller`という`NSScroller`のサブクラスをウィンドウの
+    コンテンツビューの子ビューとして追加しているだけで、独自の
+    ピクセル描画は行っていないと判明(Emacsのスクロールバーが
+    「ちゃんと稼働している」のは、OS標準ウィジェットをそのまま
+    使っているから)。続けてユーザーから「ターミナルのスクロール
+    バーをusilic -gで乗っ取って動かせる？」との追加提案があったが、
+    (1)実端末(Terminal.app)自身のスクロールバーは別プロセスの
+    プライベートなUIで、他プロセスから制御する公式APIが無い、
+    (2)`matchWindowSize()`によりusilicのオーバーレイが実端末の真上に
+    重なっているため、実端末のスクロールバーは既に完全に隠れて
+    見えない、という2点から実現不可・無意味と判断し、代わりに
+    Emacsと同じ手法(usilic自身のオーバーレイウィンドウに本物の
+    `NSScroller`を貼る)を提案、`AskUserQuestion`で承認を得て着手。
+   - **新規ファイル**: `src/cpp/src/mac_scrollbar.hpp`(プラットフォーム
+      非依存のプレーンC++インターフェース、Objective-C型を一切含まない
+      ため他のファイルはObjective-C++コンパイル不要)、
+      `src/cpp/src/mac_scrollbar.mm`(macOS向け実装、初の`.mm`ファイル。
+      `UsilicScrollerTarget`という`NSObject`サブクラスでtarget/action
+      を受け、`SDL_GetWindowWMInfo()`でSDLウィンドウの実`NSWindow*`/
+      `NSView*`を取得し`NSScroller`(`NSScrollerStyleLegacy`、常時表示)
+      を子ビューとして追加。ARCは使わず(ビルドシステムを変更せず
+      `-fobjc-arc`無しで済ませるため)従来型の`retain`/`release`で
+      手動メモリ管理)、`src/cpp/src/mac_scrollbar_stub.cpp`
+      (非macOS向けの無害なno-op実装、`create()`は常に`nullptr`を返す)。
+   - **Makefile変更**: `.mm`ファイルを初めて扱うため、Darwin時のみ
+      `mac_scrollbar_stub.cpp`を`SRCS`から除外し`mac_scrollbar.mm`を
+      追加(`c++`/clangは`.mm`拡張子を自動的にObjective-C++として
+      扱うため追加フラグ不要)、`-framework Cocoa`をリンクに追加。
+      Linux側は`$(wildcard)`がstubを自動的に拾うだけで変更不要。
+   - **`GraphicalDisplay`側の配線**: `Impl`に`std::unique_ptr<
+      MacScrollbar> nativeScrollbar`と`std::optional<double>
+      pendingNativeScrollbarJump`を追加。`create()`で構築(コールバック
+      は`pendingNativeScrollbarJump`に書き込むだけ)、新設
+      `layoutNativeScrollbar()`(既存の手描きスクロールバー用の
+      予約ストライプ`kMarginX+columns*cellWidth`等と全く同じ座標式)を
+      `create()`/`setWindowSize()`/`matchWindowSize()`/`setSize()`の
+      末尾で呼び、常に正しい位置・サイズへ追従させる。新設公開API
+      `syncScrollbar(topIndex, totalLines, contentRows)`(現在の
+      スクロール状態を反映、スクロール不要なら`setVisible(false)`)と
+      `consumeNativeScrollbarJump()`(ユーザーがクリック/ドラッグした
+      際の目標位置[0,1]を1件返す)を追加。既存の手描き
+      `drawScrollbar()`/`drawIdleScrollbarImage()`は、本物の
+      `nativeScrollbar`が存在する場合は即returnして二重描画を回避
+      (非mac環境ではnullptrのため従来通り手描きが動く、feature-detected
+      フォールバック)。デストラクタでは`impl_->nativeScrollbar.reset()`
+      を`SDL_DestroyWindow()`より前に明示的に呼び、ウィンドウ破棄後に
+      サブビューを操作する順序バグを回避。
+   - **`main.cpp`側の配線**: `runGuiPhase()`のループで、既存の
+      `consumeScrollbarEvent()`(手描きスクロールバー用)処理の直後に
+      `consumeNativeScrollbarJump()`を追加(絶対位置ジェスチャーとして
+      `view.setTopIndex()`/`setCursorIndex()`へ反映)、ループ末尾
+      (レンダリング判定の後)に`gui.syncScrollbar(view.topIndex(),
+      view.lines().size(), gui.rows()-1)`を毎イテレーション呼び、
+      本物のウィジェットが常に最新のスクロール位置を反映するようにした
+      (手描き版と違い、実際に再描画したフレームだけでなく毎回同期が
+      必要)。
+   - **既知の制約(v1のスコープ)**: `NSScroller`のヒット部位判定は
+      `NSScrollerKnob`(つまみドラッグ)/`NSScrollerKnobSlot`(トラック
+      クリック、現代macOSのデフォルト設定では「クリックした位置へ
+      ジャンプ」)のみ対応。上下矢印ボタン(`NSScrollerDecrementLine`/
+      `IncrementLine`)によるステップスクロールは、AppKitが
+      `doubleValue`を自動更新しないため今回は未対応(既存の手描き
+      スクロールバーもドラッグのみでボタンは無かったため、同じ
+      スコープ)。
+   - **検証**: `make test`で649/649件全通過、`make usilic`もクリーン
+      ビルド成功(`-framework Cocoa`のリンクも確認)。
+      `mac_scrollbar_stub.cpp`単体でのコンパイルも別途確認(`Impl`が
+      不完全型のままだと`unique_ptr`のデストラクタがコンパイルエラー
+      になる実バグを発見・修正、`struct Impl {}`を追加)。スタンド
+      アロンドライバで`create()`→`setWindowPosition()`→
+      `matchWindowSize()`→`syncScrollbar()`(非表示/表示両パターン)
+      →`consumeNativeScrollbarJump()`→`open()`の一連がクラッシュ
+      しないことを確認。実際の見た目・クリック/ドラッグの実際の
+      挙動は実機でのご確認が必須(このサンドボックスには実画面が無い)。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

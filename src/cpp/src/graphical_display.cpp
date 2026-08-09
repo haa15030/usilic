@@ -10,6 +10,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
+#include "mac_scrollbar.hpp"
 #include "scrollbar_idle_image.hpp"
 #include "utf8.hpp"
 
@@ -206,6 +207,21 @@ struct GraphicalDisplay::Impl {
   SDL_Cursor *handCursor = nullptr;
   bool handCursorActive = false;
 
+  // Real native macOS scrollbar (mac_scrollbar.hpp, 2026-08-09) --
+  // nullptr on any platform/situation where one couldn't be created
+  // (see MacScrollbar::create()'s own comment), in which case
+  // drawScrollbar()/drawIdleScrollbarImage() fall back to the
+  // hand-drawn strip exactly as before this feature existed.
+  std::unique_ptr<MacScrollbar> nativeScrollbar;
+  // Set by nativeScrollbar's onUserScroll callback (fired from inside
+  // AppKit's own event handling during pumpEvents()), read/cleared by
+  // consumeNativeScrollbarJump() -- same one-slot "latest wins"
+  // queueing renderScrolled()'s own pixelOffset carry uses elsewhere
+  // in this file, sufficient since a scroller drag/click is a single
+  // absolute "go here" gesture, not a stream of discrete events like
+  // mouseQueue/keyQueue above.
+  std::optional<double> pendingNativeScrollbarJump;
+
   Cell &cellAt(int row, int col) { return grid[row * columns + col]; }
 };
 
@@ -349,6 +365,21 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->rows = rows;
   display->impl_->columns = columns;
   display->impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
+  // Real native scrollbar (mac_scrollbar.hpp, 2026-08-09) -- nullptr
+  // (a harmless no-op) on any non-Apple platform, see
+  // MacScrollbar::create()'s own comment. `rawDisplay` (not `display`
+  // itself, still a moved-from-pending unique_ptr at this point in the
+  // function) is safe to capture by raw pointer here: the callback is
+  // only ever invoked later, from pumpEvents(), by which point this
+  // object is long since fully constructed and owned elsewhere -- and
+  // the MacScrollbar itself (holding the only copy of this lambda) is
+  // destroyed before `display`/its Impl are (see ~GraphicalDisplay()'s
+  // own explicit impl_->nativeScrollbar.reset() ordering comment), so
+  // the callback can never fire after `rawDisplay` stops being valid.
+  GraphicalDisplay *rawDisplay = display.get();
+  display->impl_->nativeScrollbar =
+      MacScrollbar::create(window, [rawDisplay](double fraction) { rawDisplay->impl_->pendingNativeScrollbarJump = fraction; });
+  display->layoutNativeScrollbar();
   SDL_StartTextInput();
   // Deliberately NOT shown/raised here (a previous version called
   // SDL_RaiseWindow() right after SDL_CreateWindow(SDL_WINDOW_SHOWN,
@@ -393,6 +424,13 @@ GraphicalDisplay::~GraphicalDisplay() {
   SDL_StopTextInput();
   SDL_PumpEvents();
   if (impl_->handCursor) SDL_FreeCursor(impl_->handCursor);
+  // Explicitly torn down here, BEFORE SDL_DestroyWindow() below --
+  // MacScrollbar's own destructor detaches its NSScroller from the
+  // window's content view (see its own comment), which needs that
+  // view hierarchy to still be alive. Left to the automatic
+  // impl_ (unique_ptr<Impl>) teardown after this destructor body
+  // returns, it would run AFTER SDL_DestroyWindow() instead.
+  impl_->nativeScrollbar.reset();
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);
   if (impl_->fallbackFont) TTF_CloseFont(impl_->fallbackFont);
@@ -782,6 +820,7 @@ void GraphicalDisplay::setSize(int rows, int columns) {
   if (impl_->window)
     SDL_SetWindowSize(impl_->window, impl_->cellWidth * columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
                        impl_->cellHeight * rows + Impl::kMarginY * 2);
+  layoutNativeScrollbar();
 }
 
 std::string GraphicalDisplay::keySequence(Key) const { return ""; }
@@ -1019,6 +1058,37 @@ std::optional<GraphicalDisplay::ScrollbarEvent> GraphicalDisplay::consumeScrollb
   return event;
 }
 
+void GraphicalDisplay::layoutNativeScrollbar() {
+  if (!impl_->nativeScrollbar) return;
+  // Matches the SAME reserved strip drawScrollbar()/
+  // drawIdleScrollbarImage() paint into (Impl::kMarginX/kMarginY/
+  // kScrollbarWidth), so the native widget sits exactly where the
+  // hand-drawn one otherwise would have.
+  int contentRows = std::max(impl_->rows - 1, 0);
+  int x = Impl::kMarginX + impl_->columns * impl_->cellWidth;
+  int y = Impl::kMarginY;
+  int height = contentRows * impl_->cellHeight;
+  impl_->nativeScrollbar->setFrame(x, y, Impl::kScrollbarWidth, height);
+}
+
+void GraphicalDisplay::syncScrollbar(int topIndex, int totalLines, int contentRows) {
+  if (!impl_->nativeScrollbar) return;
+  bool scrollable = contentRows > 0 && totalLines > contentRows;
+  impl_->nativeScrollbar->setVisible(scrollable);
+  if (!scrollable) return;
+  int scrollableLines = std::max(totalLines - contentRows, 0);
+  double position = scrollableLines > 0 ? static_cast<double>(topIndex) / scrollableLines : 0.0;
+  double knobProportion = totalLines > 0 ? std::min(1.0, static_cast<double>(contentRows) / totalLines) : 1.0;
+  impl_->nativeScrollbar->setPosition(position, knobProportion);
+}
+
+std::optional<double> GraphicalDisplay::consumeNativeScrollbarJump() {
+  if (!impl_->pendingNativeScrollbarJump) return std::nullopt;
+  double fraction = *impl_->pendingNativeScrollbarJump;
+  impl_->pendingNativeScrollbarJump.reset();
+  return fraction;
+}
+
 int GraphicalDisplay::cellHeightPixels() const { return impl_->cellHeight; }
 int GraphicalDisplay::marginYPixels() const { return Impl::kMarginY; }
 
@@ -1162,6 +1232,7 @@ void GraphicalDisplay::setWindowSize(int width, int height) {
   width -= (borders.left + borders.right);
   height -= (borders.top + borders.bottom);
   if (width > 0 && height > 0) SDL_SetWindowSize(impl_->window, width, height);
+  layoutNativeScrollbar();
 }
 
 // Overrides both the SDL window's outer size AND this class's own
@@ -1295,6 +1366,7 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
     }
   }
   SDL_SetWindowSize(impl_->window, width, height);
+  layoutNativeScrollbar();
 }
 
 void GraphicalDisplay::setHandCursor(bool active) {
@@ -1391,6 +1463,12 @@ int GraphicalDisplay::textRunDisplayWidth(const std::string &text) const {
 // mode-line's own bar height, doesn't have the same "wall of color"
 // problem.)
 void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int contentRows) {
+  // A real native scrollbar (mac_scrollbar.hpp, 2026-08-09) already
+  // sits in this exact same reserved strip and stays in sync via
+  // syncScrollbar() (main.cpp's runGuiPhase(), called independently of
+  // this render path) -- painting the hand-drawn thumb underneath it
+  // too would be redundant at best, visually conflicting at worst.
+  if (impl_->nativeScrollbar) return;
   if (contentRows <= 0) return;
   int trackHeight = contentRows * impl_->cellHeight;
 
@@ -1455,6 +1533,9 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
 // -- cheap relative to the full-screen TTF re-rasterization flush()
 // already does every frame.
 void GraphicalDisplay::drawIdleScrollbarImage() {
+  // See drawScrollbar()'s own identical guard -- a real native
+  // scrollbar already occupies this strip.
+  if (impl_->nativeScrollbar) return;
   SDL_RWops *rw = SDL_RWFromConstMem(kScrollbarIdleImageBmp, sizeof(kScrollbarIdleImageBmp));
   if (!rw) return;
   SDL_Surface *surface = SDL_LoadBMP_RW(rw, 1);  // 1 == SDL closes/frees rw for us

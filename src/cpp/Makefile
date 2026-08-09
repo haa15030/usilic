@@ -20,7 +20,7 @@ CXXFLAGS ?= -std=c++17 -Wall -Wextra -g $(SDL_CFLAGS)
 # added unconditionally.
 LDLIBS   ?= -lncurses $(SDL_LIBS)
 ifeq ($(shell uname), Darwin)
-LDLIBS += -framework CoreText -framework CoreFoundation
+LDLIBS += -framework CoreText -framework CoreFoundation -framework Cocoa
 endif
 
 SRC_DIR   = src
@@ -34,6 +34,20 @@ BUILD_DIR = build
 # this wildcard -- run_tests already gets its own main() from
 # tests/test_main.cpp (doctest's), and two main()s would conflict.
 SRCS     = $(wildcard $(SRC_DIR)/*.cpp)
+# mac_scrollbar.mm/mac_scrollbar_stub.cpp (2026-08-09, the native
+# NSScroller for the "実はすでにGUI" overlay -- see mac_scrollbar.hpp's
+# own class comment) are mutually exclusive, same-symbols
+# implementations of the same class, picked by platform exactly like
+# CoreText/CoreFoundation's own Darwin-only linking above: the plain
+# C++ stub is what $(wildcard) already picked up in SRCS by default
+# (works unchanged on Linux), swapped out for the real Objective-C++
+# (.mm) implementation on Darwin, where `c++`/clang dispatches .mm
+# files to the Objective-C++ frontend automatically (no extra flag
+# needed, unlike -x objective-c++ some non-Apple toolchains would
+# require).
+ifeq ($(shell uname), Darwin)
+SRCS := $(filter-out $(SRC_DIR)/mac_scrollbar_stub.cpp, $(SRCS)) $(SRC_DIR)/mac_scrollbar.mm
+endif
 APP_SRCS = $(wildcard $(APP_DIR)/*.cpp)
 TESTS    = $(wildcard $(TEST_DIR)/*.cpp)
 

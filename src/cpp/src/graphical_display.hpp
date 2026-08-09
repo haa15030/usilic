@@ -307,6 +307,29 @@ class GraphicalDisplay : public Display {
   };
   std::optional<ScrollbarEvent> consumeScrollbarEvent();
 
+  // Keeps the native macOS scrollbar (mac_scrollbar.hpp, 2026-08-09 --
+  // a real NSScroller, not the hand-drawn strip
+  // ScrollbarEvent/drawScrollbar() above implement) in sync with the
+  // current scroll state. A no-op wherever no native scrollbar exists
+  // (non-Apple platforms, or the SDL window had no accessible native
+  // handle -- see MacScrollbar::create()'s own comment), so main.cpp
+  // can call this unconditionally every runGuiPhase() iteration
+  // without its own platform branching. `topIndex`/`totalLines`/
+  // `contentRows` are the same three numbers jumpToScrollbarY() (the
+  // hand-drawn scrollbar's own call site) already reads from
+  // ContentView/GraphicalDisplay -- this doesn't read them itself
+  // (GraphicalDisplay has no ContentView dependency at all, and isn't
+  // meant to gain one, see this class's own top comment on that
+  // boundary).
+  void syncScrollbar(int topIndex, int totalLines, int contentRows);
+
+  // Returns and clears the target fraction [0,1] a native-scrollbar
+  // click/drag just set (see MacScrollbar::create()'s own onUserScroll
+  // comment for the convention), or nullopt if none is pending --
+  // analogous to consumeScrollbarEvent() above, but for the native
+  // widget's own gesture instead of the hand-drawn strip's.
+  std::optional<double> consumeNativeScrollbarJump();
+
   // The fixed top-edge margin in pixels (see Impl::kMarginY's own
   // comment) -- exposed alongside the already-public cellHeightPixels()
   // so main.cpp's ScrollbarEvent handling can convert an absolute
@@ -368,6 +391,14 @@ class GraphicalDisplay : public Display {
   // pixelOffsetY/cellHeight -- so the thumb moves smoothly in sync
   // with sub-row scroll position, not just snapping once per full row.
   void drawScrollbar(double effectiveTop, int totalLines, int contentRows);
+  // Repositions/resizes the native scrollbar (mac_scrollbar.hpp) to
+  // match the SAME reserved strip drawScrollbar()/
+  // drawIdleScrollbarImage() paint into -- called from create() and
+  // anywhere columns/rows/cellWidth/cellHeight can change afterward
+  // (setWindowSize()/matchWindowSize()/setSize()). A no-op wherever no
+  // native scrollbar exists, see MacScrollbar::setFrame()'s own
+  // comment.
+  void layoutNativeScrollbar();
   // Pastes the embedded real -c-terminal scrollbar screenshot
   // (scrollbar_idle_image.hpp) into the reserved strip on every
   // flush() (the static, non-scrolling render path) -- see flush()'s
