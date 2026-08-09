@@ -1297,31 +1297,38 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   int flooredCellHeight = std::max(cellHeight, fontMetricCellHeight);
   impl_->cellWidth = flooredCellWidth;
   impl_->cellHeight = flooredCellHeight;
-  // WIDTH and HEIGHT are deliberately handled with DIFFERENT
-  // strategies here, not the same grid-formula treatment for both --
-  // an earlier version of this function used the grid formula
-  // (flooredCellWidth*columns+margins+scrollbar) for width too, and a
-  // real report (2026-08-09, screenshot "⑱", "横幅分は？一度は直って
-  // るんだが") caught that this silently UNDID an already-solved
-  // problem: docs/HISTORY.md line 2116 ("横幅が1〜2ドット分くらい
-  // 狭い", 2026-08-07) was fixed back then precisely by matching
-  // contentWidth directly instead of trusting this grid formula -- and
-  // the exact same -2px gap reappears from the grid formula today
-  // (confirmed: 562/80 columns rounds to cellWidth=7, 7*80+35=595 vs
-  // contentWidth=597). Width's real terminal size is simply used
-  // as-is, with zero error, exactly like the original fix -- there is
-  // no known case (unlike height) where width's own division remainder
-  // grows large enough to matter, so there's nothing here for the
-  // grid formula to usefully trade against.
-  //
-  // Height keeps the grid-formula treatment (see cellHeight's own
-  // rounding comment above): unlike width, a real report showed
-  // contentHeight/rows's remainder CAN grow large (45px for a 48-row
-  // profile) because it's an integer-division remainder that scales
-  // with row count, not a fixed few-pixel slop -- matching
-  // contentHeight directly (this function's own first version) left
-  // that whole remainder as unfilled internal margin instead.
+  // WIDTH and HEIGHT are handled with different DEFAULT strategies,
+  // but both fall back to the grid formula once their own floor
+  // actually changes something -- an earlier version made width ALWAYS
+  // use contentWidth unconditionally (matching a real report,
+  // 2026-08-09, screenshot "⑱", "横幅分は？一度は直ってるんだが": the
+  // grid formula alone reintroduced an already-solved "横幅が1〜2ドット
+  // 分くらい狭い" bug, docs/HISTORY.md line 2116, 2026-08-07, when the
+  // floor was a no-op -- confirmed then: 562/80 columns rounds to
+  // cellWidth=7, 7*80+35=595 vs contentWidth=597). That fix was real
+  // but incomplete: it didn't account for the floor ever actually
+  // engaging for WIDTH at all, which a real report (2026-08-09, 24pt
+  // "Novel" profile, "フォントサイズ24でNovelを起動してみたところ、
+  // 文字が画面に収まらない") showed does happen at large font sizes --
+  // confirmed via a standalone driver reproducing the exact scenario
+  // (deliberately tight outerWidth against a 24pt font): arithCell=12,
+  // fontMetricCell=14, flooredCell=14, but width stayed at the
+  // unconditional contentWidth (1000) while the grid needed
+  // 14*80+20+17=1157 -- a 157px shortfall, clipping the rightmost ~11
+  // columns (exactly matching the report: wrapped text overflowing
+  // off the right edge, and the mode-line's own rightWatermark --
+  // "usilic v1.5b" -- half-clipped to "usilic v1." since it's rendered
+  // in those same rightmost columns). This mirrors EXACTLY the
+  // original height bug (item 224/225: grid needing more room than a
+  // fixed contentHeight provided) -- fixed the same way, but only WHEN
+  // the floor actually changed something (unlike height, which needs
+  // the grid formula unconditionally -- see cellHeight's own rounding
+  // comment above for why height's base arithmetic remainder alone,
+  // even with no floor involved, can already be large).
   int width = contentWidth;
+  if (flooredCellWidth != cellWidth) {
+    width = flooredCellWidth * impl_->columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth;
+  }
   int height = flooredCellHeight * impl_->rows + Impl::kMarginY * 2;
   // Same opt-in USILICGUIDEBUG file flush() already uses, reused here
   // for exactly the same reason: this sandbox
