@@ -1838,13 +1838,37 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           if (coastLevel == 0) pixelOffset = 0;
           break;
         }
-        case fm::GraphicalDisplay::DragEventType::Motion:
-          pixelOffset += drag->deltaY;
-          recentMotion.push_back({std::chrono::steady_clock::now(), drag->deltaY});
-          while (!recentMotion.empty() && recentMotion.front().first < std::chrono::steady_clock::now() - kReleaseWindow)
-            recentMotion.pop_front();
-          commitRowCrossings(view, cellHeight, pixelOffset);
+        case fm::GraphicalDisplay::DragEventType::Motion: {
+          // No-op when the content already fits entirely on screen (no
+          // row can ever scroll either direction) -- a real report
+          // (2026-08-09: "-g git/usilic起動でBasic端末でも一画面に収
+          // まるためj/kは利かない。ところがマウスによる画面ドラッグ
+          // はできてしまう") found j/k already correctly do nothing in
+          // this case (ContentView::stepTopIndex()'s own maxTop==0
+          // check refuses to move topIndex_ either direction), but
+          // dragging still visibly shifted content by up to
+          // (cellHeight-1) pixels: commitRowCrossings() pins
+          // pixelOffset at that value specifically so a drag that hits
+          // a REAL scroll boundary still visibly "pushes up against
+          // the edge" for tactile feedback (see its own call site
+          // comment) -- but with topIndex_ permanently stuck at 0
+          // (nothing scrollable at all), EVERY drag motion hits that
+          // same boundary immediately, so the intentional rubber-band
+          // effect fired on every drag instead of only at a genuine
+          // edge. Matches jumpToScrollbarY()'s own identical
+          // scrollableLines<=0 guard just above.
+          int totalLines = static_cast<int>(view.lines().size());
+          int contentRows = std::max(gui.rows() - 1, 0);
+          if (totalLines > contentRows) {
+            pixelOffset += drag->deltaY;
+            recentMotion.push_back({std::chrono::steady_clock::now(), drag->deltaY});
+            while (!recentMotion.empty() &&
+                   recentMotion.front().first < std::chrono::steady_clock::now() - kReleaseWindow)
+              recentMotion.pop_front();
+            commitRowCrossings(view, cellHeight, pixelOffset);
+          }
           break;
+        }
       }
     }
 

@@ -295,10 +295,13 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // per-path rendering bug -- this compositor-level upscale is a
   // window/renderer-wide effect neither path could individually cause
   // or avoid).
+  // SDL_WINDOW_HIDDEN, not SDL_WINDOW_SHOWN -- see open()'s own
+  // comment for why the window is deliberately left unshown until
+  // open() is called, not here.
   SDL_Window *window = SDL_CreateWindow(
       "usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
       cellWidth * columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth, cellHeight * rows + Impl::kMarginY * 2,
-      SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+      SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
   if (!window) {
     if (fallbackFont) TTF_CloseFont(fallbackFont);
     TTF_CloseFont(font);
@@ -347,19 +350,10 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->columns = columns;
   display->impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
   SDL_StartTextInput();
-  // Without this, a real user report (2026-08-03: "^Nが無反応→マウス
-  // の左クリックも無反応→何度目かの左クリックでようやく表示") found
-  // this window created but NOT focused: SDL_WINDOW_SHOWN alone maps
-  // the window but doesn't reliably steal input focus away from
-  // whichever window was already focused (the real terminal that just
-  // launched usilic, in the "実はすでにGUI" launch path this bug was
-  // found in) on every platform/WM -- keystrokes kept going to that
-  // terminal instead, and the first several mouse clicks were consumed
-  // just bringing the window to focus rather than being delivered to
-  // this app as normal button-down events. SDL_RaiseWindow() is the
-  // standard cross-platform fix recommended for exactly this class of
-  // "window exists but isn't actually focused yet" symptom.
-  SDL_RaiseWindow(window);
+  // Deliberately NOT shown/raised here (a previous version called
+  // SDL_RaiseWindow() right after SDL_CreateWindow(SDL_WINDOW_SHOWN,
+  // ...) at this exact point) -- see open()'s own comment for why
+  // showing the window is now deferred there instead.
   return display;
 }
 
@@ -798,7 +792,53 @@ void GraphicalDisplay::setOutputEnabled(bool enabled) { impl_->outputEnabled = e
 bool GraphicalDisplay::smoothScrollEnabled() const { return impl_->smoothScroll; }
 void GraphicalDisplay::setSmoothScrollEnabled(bool enabled) { impl_->smoothScroll = enabled; }
 
-void GraphicalDisplay::open() {}   // the window is already shown by create(); nothing further to do
+// Shows (and raises/focuses) the window created hidden by create() --
+// deliberately split from create() itself so a caller that needs to
+// position/resize the window FIRST (setWindowPosition()/
+// matchWindowSize(), the "実はすでにGUI" overlay launch) can do so
+// while it's still invisible, then reveal it already in its final
+// place. A previous version showed (SDL_WINDOW_SHOWN) and raised the
+// window immediately inside create(), before the overlay launch call
+// site had a chance to reposition/resize it -- a real report
+// (2026-08-09: "横幅が狭いは解消されたものの重ね打ち画面が出る前に
+// 一旦は狭い画面が表示されてしまうので重ね打ちだとわかってしまう")
+// confirmed this as a visible flash: the font-metric-sized, centered
+// window from create() briefly on screen, then jumping to match the
+// real terminal's position/size a moment later -- exactly the kind of
+// seam this whole feature exists to avoid. The plain `-g` and `^Og`
+// call sites (no real terminal to match, nothing to reposition first)
+// still call open() unconditionally right after create() too, so
+// their own visible behavior is unchanged by this split.
+//
+// SDL_RaiseWindow() itself is unchanged from create()'s own previous
+// call -- see the removed comment there (still applicable): without
+// it, a real 2026-08-03 report found a merely-shown window doesn't
+// reliably steal input focus from whichever window was already
+// focused on every platform/WM.
+void GraphicalDisplay::open() {
+  if (!impl_->window) return;
+  // Clear to the already-set bg color (setColors(), called by the
+  // overlay launch call site before this) and present once BEFORE
+  // showing the window -- SDL_CreateRenderer() never implicitly
+  // clears its own buffer, so without this the window's first-ever
+  // visible frame would be whatever undefined content happened to be
+  // sitting in the renderer's backbuffer (typically solid black, but
+  // not guaranteed) rather than the real terminal's own matched
+  // background -- a smaller version of the exact "briefly shows the
+  // wrong thing before snapping to correct" seam this whole open()
+  // split (see its own comment) exists to close. The real character
+  // grid itself isn't drawn here (flush() runs that; content isn't
+  // even wired to this backend yet at this point in the "実はすでに
+  // GUI" launch, see main()'s own call-site comment) -- only the
+  // background color, which is enough to avoid a jarring flash and is
+  // all a real terminal's own idle background looks like anyway in
+  // the instant before the first prompt/listing paints.
+  SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
+  SDL_RenderClear(impl_->renderer);
+  SDL_RenderPresent(impl_->renderer);
+  SDL_ShowWindow(impl_->window);
+  SDL_RaiseWindow(impl_->window);
+}
 void GraphicalDisplay::close() {}  // torn down by the destructor instead, see its own comment
 
 namespace {
