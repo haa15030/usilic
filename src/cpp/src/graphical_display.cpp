@@ -10,7 +10,6 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
-#include "scrollbar_idle_image.hpp"
 #include "utf8.hpp"
 
 namespace fm {
@@ -157,12 +156,28 @@ struct GraphicalDisplay::Impl {
   // terminal it's meant to overlay by roughly a scrollbar's width once
   // the real terminal's own native scrollbar was accounted for.
   // UNLIKE kMarginX/Y above (pixel-scanned from a real screenshot),
-  // this value is a rough placeholder, not yet measured against a
-  // real terminal's actual native scrollbar width the same way --
-  // this sandbox has no way to do that measurement itself (same
-  // limitation noted throughout this port's GUI work); real-machine
-  // verification and likely correction is expected as a follow-up.
-  static constexpr int kScrollbarWidth = 15;
+  // this value was originally a rough, unmeasured placeholder (15).
+  // Corrected 2026-08-09 to 17: the embedded reference screenshot this
+  // project captured early on (scrollbar_idle_image.hpp, since removed
+  // -- see updateScrollPosition()'s own comment) was a real -c
+  // terminal scrollbar crop measuring exactly 17px wide
+  // (kScrollbarIdleImageWidth, that file's own constant); a completely
+  // independent same-day measurement (querying `+[NSScroller
+  // scrollerWidthForControlSize:scrollerStyle:]` directly, during a
+  // later, since-reverted attempt at a real NSScroller widget) returned
+  // the SAME 17pt on this machine. Two independent real measurements
+  // agreeing is a much stronger basis than the original guess. A real
+  // user request (2026-08-09, "今の張りぼて画像は縮小されていて本来は
+  // Home brewくらいなので、つまみ幅も同じくらいにして...色々使ってから
+  // 正式に決めたい") asked for the thumb width to match that original,
+  // un-shrunk reference size -- treated as provisional (their own
+  // words), not a final measurement, pending more real-world use.
+  static constexpr int kScrollbarWidth = 17;
+  // Cached by updateScrollPosition() (called every runGuiPhase()
+  // iteration, main.cpp) so flush() can draw a real, always-current
+  // thumb via drawScrollbar() instead of the removed decorative
+  // placeholder -- see updateScrollPosition()'s own comment.
+  int scrollTopIndex = 0, scrollTotalLines = 0, scrollContentRows = 0;
   std::vector<Cell> grid;
 
   SDL_Color fg{220, 220, 220, 255};
@@ -661,7 +676,12 @@ void GraphicalDisplay::flush() {
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
 
-  drawIdleScrollbarImage();
+  // Real, always-current thumb (see updateScrollPosition()'s own
+  // comment for why this replaced a decorative static image) --
+  // effectiveTop is a plain int here (no active sub-row pixel offset
+  // outside renderScrolled()'s own drag/coast path), unlike
+  // renderScrolled()'s own fractional effectiveTop.
+  drawScrollbar(static_cast<double>(impl_->scrollTopIndex), impl_->scrollTotalLines, impl_->scrollContentRows);
 
   renderCursor();
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
@@ -1275,8 +1295,8 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   // that whole remainder as unfilled internal margin instead.
   int width = contentWidth;
   int height = flooredCellHeight * impl_->rows + Impl::kMarginY * 2;
-  // Same opt-in USILICGUIDEBUG file flush()/drawIdleScrollbarImage()
-  // already use, reused here for exactly the same reason: this sandbox
+  // Same opt-in USILICGUIDEBUG file flush() already uses, reused here
+  // for exactly the same reason: this sandbox
   // has no real Terminal.app window to compare against, so root-
   // causing a real-hardware report (this exact dump is what found the
   // 45px-remainder bug above, "Man Pageが余白大", 2026-08-08) can't be
@@ -1422,10 +1442,7 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   // trying a real NSScroller widget instead of this hand-drawn thumb,
   // but restated as still wanting to apply once that attempt was
   // reverted: "位置だけは元からあるスクロールバーと同じにしたい")
-  // asked for this shift explicitly; applied here (and to
-  // drawIdleScrollbarImage()'s identical strip below) rather than only
-  // to the since-reverted NSScroller code, since the same visual gap
-  // exists for this thumb too.
+  // asked for this shift explicitly.
   int thumbX = Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX + kThumbInset;
   int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
   int thumbTop = Impl::kMarginY + thumbY;
@@ -1446,77 +1463,25 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   SDL_RenderFillRect(impl_->renderer, &thumb);
 }
 
-// "Papier-mache" idle-state scrollbar decoration (docs/HISTORY.md,
-// 2026-08-07): drawScrollbar() (above) only ever runs from
-// renderScrolled(), so the reserved strip sat empty except while a
-// drag/coast was actively in progress -- a real -c window's own
-// scrollbar area is never that starkly blank. Threading real
-// ContentView topIndex/totalLines through flush() (a generic,
-// ContentView-agnostic Display method that only ever sees a plain
-// cell grid) would need the same Display-interface extension deferred
-// back in item 192. Rather than solve that properly, the user asked
-// for exactly this instead ("キャプチャ画像を貼るだけみたいな処理
-// でもいい", then supplied the actual screenshot to use): paste a
-// real -c scrollbar screenshot as a static decorative image, not a
-// live-tracking render -- literally "張りぼて" (a stage prop). The
-// image bytes are embedded at compile time (scrollbar_idle_image.hpp)
-// so there's no runtime file path to resolve and no new library
-// dependency (SDL2 core reads BMP natively via SDL_LoadBMP_RW, the
-// same primitive flush()'s own USILICGUIDEBUG dump uses in reverse via
-// SDL_SaveBMP()). Decoded fresh every flush() call rather than cached
-// on Impl, matching this file's existing per-frame-texture style (see
-// renderCell()'s own glyph texture, created and destroyed every call)
-// -- cheap relative to the full-screen TTF re-rasterization flush()
-// already does every frame.
-void GraphicalDisplay::drawIdleScrollbarImage() {
-  SDL_RWops *rw = SDL_RWFromConstMem(kScrollbarIdleImageBmp, sizeof(kScrollbarIdleImageBmp));
-  if (!rw) return;
-  SDL_Surface *surface = SDL_LoadBMP_RW(rw, 1);  // 1 == SDL closes/frees rw for us
-  if (!surface) return;
-  SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
-  if (texture) {
-    // Drawn top-anchored, height clamped to the content area -- NOT
-    // stretched to fill the full content-row height (a first attempt
-    // stretched the source image to `contentRows * cellHeight`, and a
-    // real side-by-side comparison, docs/HISTORY.md 2026-08-07's
-    // "bar.jpg" reference, showed this made the thumb/track blurry and
-    // out of proportion).
-    //
-    // Sizing this correctly needs a pixels-to-points conversion (the
-    // embedded image's dimensions are physical screenshot pixels;
-    // every other coordinate in this file, e.g. kMarginX/Y,
-    // kScrollbarWidth, is in logical points -- see create()'s own
-    // comment on why). This sandbox has no real HiDPI display to
-    // calibrate that conversion against, so rather than re-derive a
-    // formula blind (a prior attempt did exactly that and, per a real
-    // report, came out wrong -- though the report itself turned out to
-    // be a measurement error reading the wrong screen column, not
-    // proof the formula was actually broken; the true size on real
-    // hardware was never conclusively pinned down either way), this
-    // exposes the scale as a runtime knob instead: USILICSCROLLBARSCALE
-    // (a float, default 1.0 == embedded pixel count treated directly
-    // as points) lets it be tuned to match a real display without a
-    // rebuild, the same pattern this project already uses for
-    // USILICSCROLLDEBUG/-u.
-    float scale = 1.0f;
-    if (const char *env = std::getenv("USILICSCROLLBARSCALE")) {
-      float parsed = static_cast<float>(std::atof(env));
-      if (parsed > 0.0f) scale = parsed;
-    }
-    int widthPoints = std::max(static_cast<int>(Impl::kScrollbarWidth * scale), 1);
-    int heightPoints = std::max(static_cast<int>(surface->h * scale), 1);
-    int contentRows = std::max(impl_->rows - 1, 0);
-    int maxHeightPoints = contentRows * impl_->cellHeight;
-    // Same trailing `+ Impl::kMarginX` shift as drawScrollbar()'s own
-    // thumbX -- see its comment. Keeps this idle-state decoration
-    // aligned with the active thumb rather than sitting one kMarginX
-    // to its left.
-    SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX, Impl::kMarginY, widthPoints,
-                 std::min(heightPoints, maxHeightPoints)};
-    SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
-    SDL_DestroyTexture(texture);
-  }
-  SDL_FreeSurface(surface);
+// Caches the current scroll position -- see this method's own header
+// comment for why flush() needs this at all (it has no scroll-position
+// parameters of its own, unlike renderScrolled()). Formerly, flush()
+// pasted a static embedded screenshot into the scrollbar strip instead
+// ("Papier-mache" idle-state decoration, docs/HISTORY.md 2026-08-07):
+// drawScrollbar() only ever ran from renderScrolled(), so the reserved
+// strip sat empty except while a drag/coast was actively in progress.
+// Removed 2026-08-09 -- a real report found the swap between this
+// decoration and the real thumb itself actively harmful ("マウス操作
+// ON/OFFのたびに矩形つまみと張りぼて画像を切り替えるのは無意味な気が
+// する。つまみが消えてしまうので継続操作もできない"): showing a real,
+// always-current thumb via drawScrollbar() (see flush()'s own call
+// site) both looks right AND lets a drag start from wherever it
+// currently sits, rather than only after the first drag establishes
+// it.
+void GraphicalDisplay::updateScrollPosition(int topIndex, int totalLines, int contentRows) {
+  impl_->scrollTopIndex = topIndex;
+  impl_->scrollTotalLines = totalLines;
+  impl_->scrollContentRows = contentRows;
 }
 
 // Drag-scroll prototype rendering -- see class comment and header

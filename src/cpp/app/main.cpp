@@ -1951,6 +1951,15 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       }
     }
 
+    // Kept current every iteration (cheap -- three int writes), not
+    // just on frames that redraw() -- see updateScrollPosition()'s own
+    // comment: flush() (redraw()'s eventual target) has no scroll-
+    // position parameters of its own, so this is what lets it draw a
+    // real, always-current thumb instead of the removed decorative
+    // placeholder. Must run BEFORE the redraw() call below so flush()
+    // sees this frame's values, not the previous one's.
+    gui.updateScrollPosition(view.topIndex(), static_cast<int>(view.lines().size()), std::max(gui.rows() - 1, 0));
+
     if (dragging || coastLevel > 0 || pixelOffset != 0) {
       wasActivelyScrolling = true;
       std::vector<std::string> lines;

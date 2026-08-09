@@ -307,6 +307,28 @@ class GraphicalDisplay : public Display {
   };
   std::optional<ScrollbarEvent> consumeScrollbarEvent();
 
+  // Caches the current scroll position so flush() (the static, non-
+  // scrolling render path) can draw a REAL, always-current thumb via
+  // drawScrollbar() instead of a decorative placeholder -- an earlier
+  // version pasted a static embedded screenshot here instead
+  // (scrollbar_idle_image.hpp, since removed) specifically BECAUSE
+  // flush() has no scroll-position parameters of its own (Display's
+  // generic interface, shared with TerminalDisplay, has no such
+  // concept) and threading real ContentView topIndex/totalLines
+  // through it directly would need a Display-interface change (see
+  // this method's own git history for that deferred alternative).
+  // This sidesteps that: a real report (2026-08-09, "マウス操作ON/OFF
+  // のたびに矩形つまみと張りぼて画像を切り替えるのは無意味な気がする。
+  // つまみが消えてしまうので継続操作もできないし") found the swap
+  // itself actively harmful -- the decorative image doesn't track
+  // position, so it was impossible to see (and grab) where the thumb
+  // currently was between drags. Call every runGuiPhase() iteration
+  // (main.cpp), the same "call unconditionally, cheap" pattern
+  // syncScrollbar() used before it was reverted -- BEFORE any redraw()
+  // that might run that same iteration, so flush() always sees fresh
+  // values when it does.
+  void updateScrollPosition(int topIndex, int totalLines, int contentRows);
+
   // The fixed top-edge margin in pixels (see Impl::kMarginY's own
   // comment) -- exposed alongside the already-public cellHeightPixels()
   // so main.cpp's ScrollbarEvent handling can convert an absolute
@@ -368,12 +390,6 @@ class GraphicalDisplay : public Display {
   // pixelOffsetY/cellHeight -- so the thumb moves smoothly in sync
   // with sub-row scroll position, not just snapping once per full row.
   void drawScrollbar(double effectiveTop, int totalLines, int contentRows);
-  // Pastes the embedded real -c-terminal scrollbar screenshot
-  // (scrollbar_idle_image.hpp) into the reserved strip on every
-  // flush() (the static, non-scrolling render path) -- see flush()'s
-  // own call site comment for why this exists instead of a real
-  // position-tracking render.
-  void drawIdleScrollbarImage();
 };
 
 }  // namespace fm
