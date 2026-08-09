@@ -1160,8 +1160,28 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   int contentWidth = outerWidth - (borders.left + borders.right);
   int contentHeight = outerHeight - (borders.top + borders.bottom);
   if (contentWidth <= 0 || contentHeight <= 0) return;
-  int cellWidth = (contentWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth) / impl_->columns;
-  int cellHeight = (contentHeight - Impl::kMarginY * 2) / impl_->rows;
+  // Rounded to the NEAREST integer cell size, not floored -- a real
+  // report (2026-08-09, screenshot "⑰", Man Page profile, 48 rows)
+  // showed the previous plain-truncating division (contentHeight/rows)
+  // reappearing as the exact same class of bug this whole "実はすでに
+  // GUI" feature's setWindowSize() originally fixed (docs/HISTORY.md
+  // 2026-08-07 "⑯": the real terminal visibly peeking out below this
+  // window because it's shorter) -- because the window's own size is
+  // now always derived FROM cellHeight (see below), truncating (always
+  // rounding cellHeight DOWN) always makes the resulting grid, and so
+  // the window itself, shorter than contentHeight by the division's
+  // full remainder (up to rows-1px, not "at most one cell" as an
+  // earlier version of this comment assumed -- confirmed live: 48 rows
+  // left a 45px gap). Rounding to nearest instead minimizes |rows*
+  // cellHeight - contentHeight| directly (the best any single uniform
+  // integer cell height can do), bounding the mismatch to roughly half
+  // that (~rows/2 px worst case, and often far less in practice -- the
+  // real Man Page numbers above round 13.9375 up to 14, landing the
+  // window a mere 3px TALLER than the real terminal instead of 45px
+  // SHORTER). Ties round up (`+denom/2` before truncating), fine here
+  // since both directions are an equally acceptable few-px mismatch.
+  int cellWidth = (contentWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth + impl_->columns / 2) / impl_->columns;
+  int cellHeight = (contentHeight - Impl::kMarginY * 2 + impl_->rows / 2) / impl_->rows;
   if (cellWidth <= 0 || cellHeight <= 0) return;
   // Floored at create()'s own font-metric-based cellWidth/cellHeight
   // (the values already in impl_ at this point, computed from the
