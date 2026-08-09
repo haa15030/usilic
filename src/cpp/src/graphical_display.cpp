@@ -10,6 +10,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
+#include "scrollbar_idle_image.hpp"
 #include "utf8.hpp"
 
 namespace fm {
@@ -178,6 +179,22 @@ struct GraphicalDisplay::Impl {
   // thumb via drawScrollbar() instead of the removed decorative
   // placeholder -- see updateScrollPosition()'s own comment.
   int scrollTopIndex = 0, scrollTotalLines = 0, scrollContentRows = 0;
+  // False from window creation until the FIRST mouse interaction of
+  // any kind (set true in pumpEvents(), never reset back to false) --
+  // a real request (2026-08-09, restoring the idle image removed one
+  // round earlier: "-g起動後、マウスに触れるまでは画像が必要（一度でも
+  // 触れればつまみが永続的に表示され、以後は画像も不要となる）") wants
+  // the "実はすでにGUI" illusion's own reasoning applied one level
+  // deeper than before: it only matters up to the moment the user
+  // actually starts operating the window (a real mouse touch is
+  // unambiguous proof of that), not merely "at launch" as the earlier,
+  // now-reverted always-image-until-drag version treated it. Before
+  // that first touch, flush() pastes the static reference image
+  // (indistinguishable from -- because it IS -- a real captured
+  // terminal scrollbar); after it, flush() switches permanently to the
+  // real, always-current thumb (drawScrollbar()), matching
+  // renderScrolled()'s own active-drag rendering.
+  bool everInteracted = false;
   std::vector<Cell> grid;
 
   SDL_Color fg{220, 220, 220, 255};
@@ -676,12 +693,17 @@ void GraphicalDisplay::flush() {
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
 
-  // Real, always-current thumb (see updateScrollPosition()'s own
-  // comment for why this replaced a decorative static image) --
-  // effectiveTop is a plain int here (no active sub-row pixel offset
-  // outside renderScrolled()'s own drag/coast path), unlike
-  // renderScrolled()'s own fractional effectiveTop.
-  drawScrollbar(static_cast<double>(impl_->scrollTopIndex), impl_->scrollTotalLines, impl_->scrollContentRows);
+  // Static reference image until the first real mouse touch, the real
+  // always-current thumb from then on -- see Impl::everInteracted's
+  // own comment. effectiveTop is a plain int here when the real thumb
+  // path runs (no active sub-row pixel offset outside renderScrolled()'s
+  // own drag/coast path), unlike renderScrolled()'s own fractional
+  // effectiveTop.
+  if (!impl_->everInteracted) {
+    drawIdleScrollbarImage();
+  } else {
+    drawScrollbar(static_cast<double>(impl_->scrollTopIndex), impl_->scrollTotalLines, impl_->scrollContentRows);
+  }
 
   renderCursor();
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
@@ -893,6 +915,11 @@ bool GraphicalDisplay::pumpEvents() {
         stillOpen = false;
         break;
       case SDL_MOUSEBUTTONDOWN: {
+        // See Impl::everInteracted's own comment -- any button press
+        // (even one this switch otherwise ignores below) counts as
+        // "touched" and permanently flips flush() over from the
+        // static idle image to the real thumb.
+        impl_->everInteracted = true;
         if (event.button.button != SDL_BUTTON_LEFT && event.button.button != SDL_BUTTON_RIGHT) break;
         // A left press that starts inside the scrollbar strip is a
         // thumb-drag gesture, not a content click/drag -- routed to
@@ -979,6 +1006,7 @@ bool GraphicalDisplay::pumpEvents() {
         break;
       }
       case SDL_MOUSEWHEEL: {
+        impl_->everInteracted = true;  // see Impl::everInteracted's own comment
         // SDL_MOUSEWHEEL_FLIPPED means the OS-level "natural scrolling"
         // preference is on (confirmed default on macOS trackpads) --
         // SDL reports the raw hardware delta either way and leaves
@@ -1465,23 +1493,46 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
 
 // Caches the current scroll position -- see this method's own header
 // comment for why flush() needs this at all (it has no scroll-position
-// parameters of its own, unlike renderScrolled()). Formerly, flush()
-// pasted a static embedded screenshot into the scrollbar strip instead
-// ("Papier-mache" idle-state decoration, docs/HISTORY.md 2026-08-07):
-// drawScrollbar() only ever ran from renderScrolled(), so the reserved
-// strip sat empty except while a drag/coast was actively in progress.
-// Removed 2026-08-09 -- a real report found the swap between this
-// decoration and the real thumb itself actively harmful ("マウス操作
-// ON/OFFのたびに矩形つまみと張りぼて画像を切り替えるのは無意味な気が
-// する。つまみが消えてしまうので継続操作もできない"): showing a real,
-// always-current thumb via drawScrollbar() (see flush()'s own call
-// site) both looks right AND lets a drag start from wherever it
-// currently sits, rather than only after the first drag establishes
-// it.
+// parameters of its own, unlike renderScrolled()) -- only used once
+// Impl::everInteracted is true (see its own comment); before that,
+// flush() calls drawIdleScrollbarImage() below instead. A same-day
+// real report ("マウス操作ON/OFFのたびに矩形つまみと張りぼて画像を
+// 切り替えるのは無意味な気がする。つまみが消えてしまうので継続操作も
+// できない") found unconditionally swapping between the two on every
+// drag start/stop (this method's own first version) actively harmful;
+// gating the swap on a one-time "has the user ever touched it" flag
+// instead keeps the illusion intact up to the moment it stops
+// mattering (the user's own words, restoring this image one round
+// later: "「実はすでにGUI」が意味を持つのは最初だけ"), then never
+// switches back.
 void GraphicalDisplay::updateScrollPosition(int topIndex, int totalLines, int contentRows) {
   impl_->scrollTopIndex = topIndex;
   impl_->scrollTotalLines = totalLines;
   impl_->scrollContentRows = contentRows;
+}
+
+// See this method's own header comment for the "native size, no
+// clamping" design and why. Otherwise unchanged from the mechanics of
+// the original 2026-08-07 version: embedded BMP bytes decoded fresh
+// every call (matching this file's existing per-frame-texture style,
+// see renderCell()'s own glyph texture) via SDL2's native BMP reader,
+// no runtime file path or new library dependency.
+void GraphicalDisplay::drawIdleScrollbarImage() {
+  SDL_RWops *rw = SDL_RWFromConstMem(kScrollbarIdleImageBmp, sizeof(kScrollbarIdleImageBmp));
+  if (!rw) return;
+  SDL_Surface *surface = SDL_LoadBMP_RW(rw, 1);  // 1 == SDL closes/frees rw for us
+  if (!surface) return;
+  SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
+  if (texture) {
+    // Same trailing `+ Impl::kMarginX` shift as drawScrollbar()'s own
+    // thumbX -- see its comment. Keeps this idle-state image aligned
+    // with where the real thumb sits once it takes over.
+    SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX, Impl::kMarginY, surface->w,
+                 surface->h};
+    SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
+    SDL_DestroyTexture(texture);
+  }
+  SDL_FreeSurface(surface);
 }
 
 // Drag-scroll prototype rendering -- see class comment and header
