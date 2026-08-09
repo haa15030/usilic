@@ -1209,29 +1209,31 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   int flooredCellHeight = std::max(cellHeight, fontMetricCellHeight);
   impl_->cellWidth = flooredCellWidth;
   impl_->cellHeight = flooredCellHeight;
-  // ALWAYS recomputed from the (possibly-floored) cell dimensions via
-  // this class's own grid formula -- NOT contentWidth/Height (the real
-  // terminal's own measured size) -- even when the floor above was a
-  // complete no-op. An earlier version only recomputed when the floor
-  // actually changed something, on the theory that otherwise
-  // contentWidth/Height was already the exactly-right target and the
-  // grid formula would merely leave "a few pixel gap" by comparison.
-  // That theory was wrong: a real USILICGUIDEBUG dump (2026-08-08,
-  // "Man Pageプロファイル", 48 rows, floor a no-op: arithCell==
-  // fontMetricCell==7x13 exactly) showed the grid formula
-  // (13*48+marginY*2=644) falling a full 45px short of contentHeight
-  // (689) -- not "a pixel or two". The gap is the integer-division
-  // REMAINDER of contentHeight/rows (here 669%48=45), which grows with
-  // row count, not a fixed small constant -- a 48-row terminal can
-  // lose nearly 3.5 full rows' worth of pixels to floor-division
-  // rounding alone. Always deriving the window's own size from the
-  // cell grid (the same formula create() itself uses to size a brand
-  // new window) guarantees the grid exactly fills the window in every
-  // case, at the cost of at most ONE cell's worth of pixel mismatch
-  // against the real terminal's own outer size (columns-1 / rows-1 px
-  // of REMAINDER, not accumulated across every row) -- a genuinely
-  // small, easy-to-miss sliver, unlike the 45px gap this replaces.
-  int width = flooredCellWidth * impl_->columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth;
+  // WIDTH and HEIGHT are deliberately handled with DIFFERENT
+  // strategies here, not the same grid-formula treatment for both --
+  // an earlier version of this function used the grid formula
+  // (flooredCellWidth*columns+margins+scrollbar) for width too, and a
+  // real report (2026-08-09, screenshot "⑱", "横幅分は？一度は直って
+  // るんだが") caught that this silently UNDID an already-solved
+  // problem: docs/HISTORY.md line 2116 ("横幅が1〜2ドット分くらい
+  // 狭い", 2026-08-07) was fixed back then precisely by matching
+  // contentWidth directly instead of trusting this grid formula -- and
+  // the exact same -2px gap reappears from the grid formula today
+  // (confirmed: 562/80 columns rounds to cellWidth=7, 7*80+35=595 vs
+  // contentWidth=597). Width's real terminal size is simply used
+  // as-is, with zero error, exactly like the original fix -- there is
+  // no known case (unlike height) where width's own division remainder
+  // grows large enough to matter, so there's nothing here for the
+  // grid formula to usefully trade against.
+  //
+  // Height keeps the grid-formula treatment (see cellHeight's own
+  // rounding comment above): unlike width, a real report showed
+  // contentHeight/rows's remainder CAN grow large (45px for a 48-row
+  // profile) because it's an integer-division remainder that scales
+  // with row count, not a fixed few-pixel slop -- matching
+  // contentHeight directly (this function's own first version) left
+  // that whole remainder as unfilled internal margin instead.
+  int width = contentWidth;
   int height = flooredCellHeight * impl_->rows + Impl::kMarginY * 2;
   // Same opt-in USILICGUIDEBUG file flush()/drawIdleScrollbarImage()
   // already use, reused here for exactly the same reason: this sandbox
