@@ -13160,6 +13160,64 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       ケース)。`make test`で650/650件全通過、`make usilic`も
       クリーンビルド成功。実際の見た目は実機でのご確認が必要。
 
+245. **2026-08-10(続き): 丸みカーソルも「却下したロボット指より
+    ひどい」と判定、ユーザーの鋭い指摘を受けて手描きビットマップを
+    全面放棄、本物の`NSCursor.openHand`をネイティブ呼び出しする
+    方式へ転換**。ユーザーから「さっき却下のロボット指よりもひどく
+    なった。HISTORY.md:2522「SDL2にはこの形状に対応するシステム
+    カーソル定数が無いため」を読めば、人差し指形状のためのカーソル
+    定数はあるんだな、と誰だって思うはず。実際に描画されてるんで。
+    じゃそれはどうやって描いてんの？」という指摘。
+   - **指摘の正しさ**: 項目244のHISTORY.mdの書き方(「システムカーソル
+      定数が無いため」)は、暗に「人差し指用のシステムカーソル定数
+      (`SDL_SYSTEM_CURSOR_HAND`)は存在する」ことを示唆しており、
+      それがどう描画されているかを確認せずに手描きビットマップ路線を
+      続けていたのは筋が通っていなかった。改めて確認したところ
+      `SDL_SYSTEM_CURSOR_HAND`はmacOS上で`[NSCursor
+      pointingHandCursor]`(項目244で`gh api`経由のSDL2ソース確認
+      済み)への単純な委譲であり、この既存の「人差し指」カーソルは
+      そもそも自分たちで描いたものでは全くなく、100%本物のOS標準
+      カーソルだった。さらに実機ファイルシステムで
+      `.../HIServices.framework/.../cursors/`配下に`pointinghand`
+      フォルダも存在することを確認し、この裏付けを補強。
+   - **結論**: 「本物のopenhandと見比べられる以上、手描き近似は
+      原理的に見劣りし続ける」という構造的な問題だったと判断。
+      2回の手描き試行(項目242の矩形、項目244の丸みカプセル、
+      いずれも却下)を完全に放棄し、`NSCursor.openHand`を実行時に
+      直接呼ぶ方式に転換した。以前(スクロールバー用`NSScroller`、
+      項目232-235)は「CUIの見た目に合わない」という美観上の理由で
+      `.mm`導入を撤回していたが、今回は(1)手描き2回とも明確に
+      却下された実証済みの必要性があり、(2)必要なCocoa API面が
+      `[[NSCursor openHandCursor] set]`という状態を持たない単純な
+      呼び出し1つだけ(ウィンドウハンドルもsubview管理も不要、
+      撤回したNSScrollerよりずっと単純)という2点から、`.mm`再導入
+      は妥当と判断。
+   - **実装**: `src/cpp/src/mac_cursor.hpp`(プレーンC++
+      インターフェース、`setOpenHandCursor()`/`clearOpenHandCursor()`
+      の2関数のみ)、`mac_cursor.mm`(Darwin実装、
+      `[[NSCursor openHandCursor] set]`/`[[NSCursor arrowCursor]
+      set]`)、`mac_cursor_stub.cpp`(非Darwinの no-op)を新設
+      (撤回済みの`mac_scrollbar.hpp`/`.mm`/`_stub.cpp`と全く同じ
+      3ファイル構成パターンを踏襲)。`Makefile`に`-framework Cocoa`
+      を再追加し、Darwin限定で`mac_cursor_stub.cpp`を`mac_cursor.mm`
+      に差し替えるSRCS置換ルールを追加。`graphical_display.cpp`から
+      手描きビットマップ生成コード(`fillCircle()`/`fillCapsule()`/
+      `createOpenHandSurface()`、および未使用になった`SDL_Cursor
+      *handCursor`フィールドと`<cmath>` include)を完全に削除し、
+      `setHandCursor(bool)`を`setOpenHandCursor()`/
+      `clearOpenHandCursor()`呼び出しに書き換えた。
+      `setPointingCursor()`(スクロールバードラッグ用、
+      `SDL_SYSTEM_CURSOR_HAND`のまま)は変更なし。
+   - **検証**: `make test`で650/650件全通過(この変更自体は
+      カーソル描画の見た目そのものなので新規doctestケースは追加せず)、
+      `make usilic`も`-framework Cocoa`リンク込みでクリーンビルド
+      成功。さらにスタンドアロンの検証ドライバ(`GraphicalDisplay::
+      create()`→`setHandCursor(true/false)`→`setPointingCursor
+      (true/false)`を順に呼ぶ)をこのサンドボックス内で実行し、
+      `create()`が実際に成功した上で一連のカーソル切り替えが
+      クラッシュ無く完走することを確認した。実際の見た目(本物の
+      openhandカーソルとして表示されるか)は実機でのご確認が必要。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

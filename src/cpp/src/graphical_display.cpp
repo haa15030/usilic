@@ -1,7 +1,6 @@
 #include "graphical_display.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
@@ -11,6 +10,7 @@
 #include <SDL2/SDL_ttf.h>
 
 #include "scrollbar_idle_image.hpp"
+#include "mac_cursor.hpp"
 #include "utf8.hpp"
 
 namespace fm {
@@ -235,19 +235,21 @@ struct GraphicalDisplay::Impl {
   // to the normal content dragQueue/hoverQueue, since SDL_MOUSEMOTION
   // itself carries no memory of where the ORIGINAL button-down was.
   bool scrollbarDragActive = false;
-  // handCursor: the CUSTOM open-hand/grab bitmap (see
-  // createOpenHandCursor()), used only for dragging CONTENT itself
-  // (the "cat's paw" scroll gesture). pointingCursor: SDL's own system
+  // handCursorActive: tracks whether the REAL macOS open-hand cursor
+  // (mac_cursor.hpp's setOpenHandCursor()/clearOpenHandCursor(), NOT
+  // an SDL_Cursor* -- see setHandCursor()'s own comment for why there
+  // were two earlier, since-abandoned hand-drawn SDL_CreateColorCursor
+  // attempts) is currently showing, for dragging CONTENT itself (the
+  // "cat's paw" scroll gesture). pointingCursor: SDL's own system
   // pointing-hand (index finger), used for scrollbar-thumb dragging --
-  // see setHandCursor()/setPointingCursor()'s own comments. Split into
-  // two cursors 2026-08-10 after a real request ("画面ドラッグでは
-  // 手の形をこれにして欲しい...現状の人差し指は、スクロールバーの
-  // ドラッグ...のみでの表示よろしく") pointed out that a single
-  // "pointing hand for every drag" cursor didn't distinguish the two
-  // gestures the way a real trackpad/mouse OS convention does (open
-  // hand while panning content, pointing hand only for a clickable
-  // control like a scrollbar).
-  SDL_Cursor *handCursor = nullptr;
+  // see setPointingCursor()'s own comment. Split into two cursors
+  // 2026-08-10 after a real request ("画面ドラッグでは手の形をこれに
+  // して欲しい...現状の人差し指は、スクロールバーのドラッグ...のみ
+  // での表示よろしく") pointed out that a single "pointing hand for
+  // every drag" cursor didn't distinguish the two gestures the way a
+  // real trackpad/mouse OS convention does (open hand while panning
+  // content, pointing hand only for a clickable control like a
+  // scrollbar).
   bool handCursorActive = false;
   SDL_Cursor *pointingCursor = nullptr;
   bool pointingCursorActive = false;
@@ -438,7 +440,6 @@ GraphicalDisplay::~GraphicalDisplay() {
   // rebuilding.
   SDL_StopTextInput();
   SDL_PumpEvents();
-  if (impl_->handCursor) SDL_FreeCursor(impl_->handCursor);
   if (impl_->pointingCursor) SDL_FreeCursor(impl_->pointingCursor);
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);
@@ -1367,135 +1368,45 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   SDL_SetWindowSize(impl_->window, width, height);
 }
 
-namespace {
-
-// Filled circle via a simple per-row horizontal-span scan (not the
-// fastest possible algorithm, but this only ever runs a handful of
-// times when a cursor is first created and cached -- see
-// GraphicalDisplay::setHandCursor()'s own impl_->handCursor caching --
-// so simplicity wins over speed here).
-void fillCircle(SDL_Surface *surface, int cx, int cy, int r, Uint32 color) {
-  for (int dy = -r; dy <= r; dy++) {
-    int dx = static_cast<int>(std::sqrt(static_cast<double>(r * r - dy * dy)) + 0.5);
-    SDL_Rect row{cx - dx, cy + dy, dx * 2 + 1, 1};
-    SDL_FillRect(surface, &row, color);
-  }
-}
-
-// A vertical capsule (a rect body with fully-rounded top/bottom caps,
-// rounding radius == half the width) -- used for each finger/thumb
-// below, giving them a real rounded silhouette instead of flat-topped
-// rectangles.
-void fillCapsule(SDL_Surface *surface, int x, int y, int w, int h, Uint32 color) {
-  int r = w / 2;
-  SDL_Rect body{x, y + r, w, h - w};
-  SDL_FillRect(surface, &body, color);
-  fillCircle(surface, x + r, y + r, r, color);
-  fillCircle(surface, x + r, y + h - r, r, color);
-}
-
-// A small (32x32) open-palm/"grab" hand silhouette -- black 1px
-// outline, white fill, fully transparent elsewhere -- built via plain
-// SDL2 shape fills rather than an embedded image file (this project's
-// established style for small generated assets, see mac_scrollbar.mm's
-// own "no new binary asset" preference and this class's OWN doctest-
-// verified feasibility note for exactly this, IDEAS.md's "猫の手
-// スクロール" spec). Added 2026-08-10 for a real request ("画面
-// ドラッグでは手の形をこれにして欲しい", referencing a photo of
-// macOS's own screen-capture-region drag cursor, Shift+Cmd+5's open
-// hand -- NOT SDL's system SDL_SYSTEM_CURSOR_HAND, which renders as a
-// pointing INDEX FINGER on macOS, the wrong shape for "grabbing"
-// content).
-//
-// Deliberately original artwork, not a pixel/vector copy of Apple's
-// own cursor -- a same-day follow-up investigation (real request:
-// "怪しいGeminiにこんな情報があった。これってできる？") confirmed
-// Apple's REAL openhand cursor art genuinely exists as a readable
-// system file (/System/Library/Frameworks/ApplicationServices.
-// framework/Versions/A/Frameworks/HIServices.framework/Versions/A/
-// Resources/cursors/openhand/cursor.pdf -- verified live on this
-// machine, its content is a real rounded open-hand vector), and that
-// SDL2 itself calls `[NSCursor pointingHandCursor]` directly on macOS
-// for SDL_SYSTEM_CURSOR_HAND with no bitmap of its own to build on
-// (confirmed by reading SDL2's own upstream source, src/video/cocoa/
-// SDL_cocoamouse.m) -- so "extend SDL2's own hand image" (a real
-// follow-up request) isn't literally possible on this platform either.
-// Embedding a copy of Apple's own proprietary cursor asset into this
-// (eventually public) repository would be a licensing concern even
-// though reading it locally for reference isn't; calling
-// NSCursor.openHand live at runtime would resolve that but needs the
-// same Objective-C++ (.mm) bridge this project deliberately avoided
-// for the scrollbar work. This shape instead only takes the real
-// cursor's PROPORTIONS as a design reference (rounded fingertips of
-// staggered height, a stubby rounded thumb low on the palm's side, a
-// rounded-bottom palm) -- a real user report on the FIRST (flat-
-// rectangle) version, "ロボットの手みたいなやつは却下", is what this
-// rounded-capsule rework replaces.
-SDL_Surface *createOpenHandSurface() {
-  constexpr int kSize = 32;
-  SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, kSize, kSize, 32, SDL_PIXELFORMAT_RGBA32);
-  if (!surface) return nullptr;
-  SDL_FillRect(surface, nullptr, SDL_MapRGBA(surface->format, 0, 0, 0, 0));  // fully transparent base
-  Uint32 black = SDL_MapRGBA(surface->format, 0, 0, 0, 255);
-  Uint32 white = SDL_MapRGBA(surface->format, 255, 255, 255, 255);
-  // Each shape drawn as a 1px-larger black version first, then a white
-  // version inset by 1px on top -- a cheap outline-plus-fill without
-  // needing per-pixel edge detection. Later shapes drawn on top of
-  // earlier ones naturally separate touching fingers with their own
-  // outline, giving each one a distinct silhouette instead of merging
-  // into the palm.
-  auto outlinedCapsule = [&](int x, int y, int w, int h) {
-    fillCapsule(surface, x - 1, y - 1, w + 2, h + 2, black);
-    fillCapsule(surface, x, y, w, h, white);
-  };
-  auto outlinedRoundedRect = [&](int x, int y, int w, int h, int r) {
-    SDL_Rect outline{x - 1, y - 1, w + 2, h + 2};
-    SDL_FillRect(surface, &outline, black);
-    fillCircle(surface, x - 1 + r, y - 1 + r, r, black);
-    fillCircle(surface, x - 1 + w - r, y - 1 + r, r, black);
-    SDL_Rect inner{x, y, w, h};
-    SDL_FillRect(surface, &inner, white);
-    fillCircle(surface, x + r, y + r, r, white);
-    fillCircle(surface, x + w - r, y + r, r, white);
-  };
-  outlinedRoundedRect(7, 15, 15, 12, 4);  // palm, rounded bottom corners
-  outlinedCapsule(8, 4, 4, 14);           // index finger
-  outlinedCapsule(13, 1, 4, 17);          // middle finger (tallest)
-  outlinedCapsule(18, 3, 4, 15);          // ring finger
-  outlinedCapsule(23, 7, 4, 11);          // pinky finger (shortest)
-  outlinedCapsule(1, 17, 5, 10);          // thumb, stubby, low on the palm's side
-  return surface;
-}
-
-}  // namespace
-
+// The REAL macOS system open-hand cursor (mac_cursor.hpp's
+// setOpenHandCursor()/clearOpenHandCursor(), backed by
+// NSCursor.openHand) -- not an SDL_Cursor built from a hand-drawn
+// bitmap. Two earlier, since-abandoned attempts at drawing this
+// shape ourselves (a flat-rectangle silhouette, then a rounded-
+// capsule one) were both real rejections ("ロボットの手みたいな
+// やつは却下", then "さっき却下のロボット指よりもひどくなった") --
+// a same-day sharp catch explained why neither could ever look
+// right: the pointing-hand cursor this project ALREADY shows for
+// scrollbar dragging (setPointingCursor() below) was never actually
+// drawn by this project or by SDL2 either -- it's macOS's own real
+// system cursor asset (SDL_SYSTEM_CURSOR_HAND maps directly to
+// `[NSCursor pointingHandCursor]` on macOS, confirmed by reading
+// SDL2's own upstream source, src/video/cocoa/SDL_cocoamouse.m), so
+// any hand-drawn approximation sitting next to it was always going
+// to look inferior by comparison. Switching this cursor to the SAME
+// kind of real system asset (NSCursor.openHand, confirmed to exist
+// as a real, well-formed vector cursor on this machine:
+// /System/Library/Frameworks/ApplicationServices.framework/Versions/
+// A/Frameworks/HIServices.framework/Versions/A/Resources/cursors/
+// openhand/cursor.pdf) via a tiny Objective-C++ (.mm) bridge
+// (mac_cursor.mm) -- reconsidered from the earlier "avoid .mm"
+// preference (the scrollbar's own NSScroller work) specifically
+// because the payoff here is concrete and already demonstrated,
+// unlike that more speculative attempt.
 void GraphicalDisplay::setHandCursor(bool active) {
   if (active == impl_->handCursorActive) return;
   impl_->handCursorActive = active;
   if (active) {
-    if (!impl_->handCursor) {
-      SDL_Surface *surface = createOpenHandSurface();
-      if (surface) {
-        // Hotspot centered in the palm (roughly where a real grab
-        // gesture's "grip point" would be, and the rounded-rect palm's
-        // own center at these coordinates -- see createOpenHandSurface()'s
-        // own palm placement), not the surface's own top-left corner --
-        // otherwise the cursor would visually jump up-and-left of the
-        // actual mouse position.
-        impl_->handCursor = SDL_CreateColorCursor(surface, 14, 21);
-        SDL_FreeSurface(surface);
-      }
-    }
-    if (impl_->handCursor) SDL_SetCursor(impl_->handCursor);
+    setOpenHandCursor();
   } else {
-    SDL_SetCursor(SDL_GetDefaultCursor());
+    clearOpenHandCursor();
   }
 }
 
 // SDL's own system pointing-hand (index finger) -- what setHandCursor()
 // used to show for EVERY drag gesture, before a real request
 // (2026-08-10, see setHandCursor()'s own comment) split content-
-// dragging off to its own custom open-hand cursor instead. Reserved
+// dragging off to the real macOS open-hand cursor instead. Reserved
 // now for gestures that really are more like clicking/operating a
 // control than grabbing content: scrollbar-thumb dragging (see its
 // own call site in main.cpp) -- and, per that same request ("可能なら

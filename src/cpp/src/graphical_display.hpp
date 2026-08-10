@@ -354,14 +354,14 @@ class GraphicalDisplay : public Display {
 
   int cellHeightPixels() const;
 
-  // Swaps the window's cursor between the default arrow and a custom
-  // open-palm/"grab" bitmap (SDL_CreateColorCursor(), see the .cpp's
-  // own createOpenHandSurface()) while dragging CONTENT (the "cat's
-  // paw" scroll gesture) -- a real request (2026-08-10) asked for this
-  // exact shape (macOS's own screen-capture-region drag cursor), not
-  // SDL's system SDL_SYSTEM_CURSOR_HAND (a pointing index finger),
-  // which this method used before that day and which setPointingCursor()
-  // below now covers instead.
+  // Swaps the window's cursor between the default arrow and the REAL
+  // macOS open-hand cursor (NSCursor.openHand, via mac_cursor.hpp --
+  // see the .cpp's own comment for why a real system cursor, not a
+  // hand-drawn SDL_CreateColorCursor bitmap, after two rejected
+  // attempts at the latter) while dragging CONTENT (the "cat's paw"
+  // scroll gesture) -- NOT SDL's system SDL_SYSTEM_CURSOR_HAND (a
+  // pointing index finger), which this method used before 2026-08-10
+  // and which setPointingCursor() below now covers instead.
   void setHandCursor(bool active);
 
   // SDL's system pointing-hand (index finger) cursor -- reserved for
