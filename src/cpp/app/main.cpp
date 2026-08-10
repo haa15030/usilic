@@ -1645,6 +1645,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // was actually broken past the rendering-mode decision itself.
       dragging = false;
       gui.setHandCursor(false);  // don't leave a stale hand cursor showing either
+      gui.setPointingCursor(false);  // ditto, for a scrollbar-thumb drag this key press interrupted
 
       // Up/Down double as coast-speed control once a coast is already
       // running -- 2026-08-07, replacing the original w/s keys
@@ -1729,6 +1730,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       if (app.currentMode() == fm::ApplicationMode::Shell || app.awaitingSequenceOrPromptByte()) continue;
       dragging = false;
       gui.setHandCursor(false);
+      gui.setPointingCursor(false);
       // Negated relative to a "naive" reading of deltaY (positive ==
       // 'w'/reveal-earlier) -- confirmed backwards via real hardware
       // testing (2026-08-06 user report, macOS's own default "natural
@@ -1800,7 +1802,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           coastLevel = 0;
           coastDirection = 0;
           pixelOffset = 0;
-          gui.setHandCursor(false);  // distinct gesture from grabbing content -- no drag-hand cursor here
+          // Distinct gesture from grabbing content -- the system
+          // pointing-hand (index finger), not the open-hand/grab
+          // cursor setHandCursor() shows for content dragging (a real
+          // request, 2026-08-10, asked for exactly this split -- see
+          // setHandCursor()/setPointingCursor()'s own comments).
+          gui.setPointingCursor(true);
           jumpToScrollbarY(sb->y);
           break;
         case fm::GraphicalDisplay::ScrollbarEventType::Motion:
@@ -1808,6 +1815,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           break;
         case fm::GraphicalDisplay::ScrollbarEventType::ButtonUp:
           dragging = false;
+          gui.setPointingCursor(false);
           break;
       }
     }
@@ -1893,6 +1901,32 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // intuitive shape for a physics loop anyway (delay is what
       // happens BETWEEN steps, not before the first one).
       do {
+        // Checked BEFORE moving, not just after (commitRowCrossings()'s
+        // own check below) -- a real report (2026-08-10, screenshots,
+        // "上への動きでは最上行の表示を終えた時点でスクロールバーは
+        // 停止するのに画面は止まらず空行を表示したのち一行分戻って
+        // 正規画面になる") found that waiting for pixelOffset to
+        // accumulate a FULL cellHeight before discovering the boundary
+        // (the only way commitRowCrossings() itself finds out) let
+        // several frames render with topIndex_ already at 0 (or the
+        // bottom equivalent) and a growing positive (or negative)
+        // pixelOffset in between -- renderScrolled()'s own firstRow=
+        // topIndex-1 reveals a row that doesn't exist there, drawn as
+        // blank (see its own comment), while drawScrollbar()'s thumb
+        // position is separately clamped to [0,maxThumbY] and so
+        // stayed visually pinned at the edge the whole time -- exactly
+        // the "scrollbar already stopped but the screen kept revealing
+        // blank space" mismatch reported. Checking canStepTopIndex()
+        // up front stops the coast the INSTANT topIndex_ is already at
+        // its limit, before pixelOffset is ever allowed to move past 0
+        // in that direction at all.
+        if (!view.canStepTopIndex(coastDirection)) {
+          coastLevel = 0;
+          coastDirection = 0;
+          pixelOffset = 0;
+          wasActivelyScrolling = true;  // see the identical assignment below for why
+          break;
+        }
         pixelOffset += coastDirection;
         if (!commitRowCrossings(view, cellHeight, pixelOffset)) {
           // Hit a boundary -- stop rather than pin against the edge.

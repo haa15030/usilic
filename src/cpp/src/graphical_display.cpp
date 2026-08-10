@@ -235,8 +235,22 @@ struct GraphicalDisplay::Impl {
   // to the normal content dragQueue/hoverQueue, since SDL_MOUSEMOTION
   // itself carries no memory of where the ORIGINAL button-down was.
   bool scrollbarDragActive = false;
+  // handCursor: the CUSTOM open-hand/grab bitmap (see
+  // createOpenHandCursor()), used only for dragging CONTENT itself
+  // (the "cat's paw" scroll gesture). pointingCursor: SDL's own system
+  // pointing-hand (index finger), used for scrollbar-thumb dragging --
+  // see setHandCursor()/setPointingCursor()'s own comments. Split into
+  // two cursors 2026-08-10 after a real request ("画面ドラッグでは
+  // 手の形をこれにして欲しい...現状の人差し指は、スクロールバーの
+  // ドラッグ...のみでの表示よろしく") pointed out that a single
+  // "pointing hand for every drag" cursor didn't distinguish the two
+  // gestures the way a real trackpad/mouse OS convention does (open
+  // hand while panning content, pointing hand only for a clickable
+  // control like a scrollbar).
   SDL_Cursor *handCursor = nullptr;
   bool handCursorActive = false;
+  SDL_Cursor *pointingCursor = nullptr;
+  bool pointingCursorActive = false;
 
   Cell &cellAt(int row, int col) { return grid[row * columns + col]; }
 };
@@ -425,6 +439,7 @@ GraphicalDisplay::~GraphicalDisplay() {
   SDL_StopTextInput();
   SDL_PumpEvents();
   if (impl_->handCursor) SDL_FreeCursor(impl_->handCursor);
+  if (impl_->pointingCursor) SDL_FreeCursor(impl_->pointingCursor);
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);
   if (impl_->fallbackFont) TTF_CloseFont(impl_->fallbackFont);
@@ -1352,12 +1367,92 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   SDL_SetWindowSize(impl_->window, width, height);
 }
 
+namespace {
+
+// A small (24x24) open-palm/"grab" hand silhouette -- black 1px
+// outline, white fill, fully transparent elsewhere -- built via plain
+// SDL2 rect fills rather than an embedded image file (this project's
+// established style for small generated assets, see mac_scrollbar.mm's
+// own "no new binary asset" preference and this class's OWN doctest-
+// verified feasibility note for exactly this, IDEAS.md's "猫の手
+// スクロール" spec). Added 2026-08-10 for a real request ("画面
+// ドラッグでは手の形をこれにして欲しい", referencing a photo of
+// macOS's own screen-capture-region drag cursor, Shift+Cmd+5's open
+// hand -- NOT SDL's system SDL_SYSTEM_CURSOR_HAND, which renders as a
+// pointing INDEX FINGER on macOS, the wrong shape for "grabbing"
+// content) -- this is deliberately original artwork (four fingers +
+// a thumb, roughly proportioned), not a pixel copy of Apple's own
+// cursor (which isn't accessible to this code anyway; SDL2 has no
+// system-cursor constant for an open/grabbing hand at all, only the
+// pointing one).
+SDL_Surface *createOpenHandSurface() {
+  constexpr int kSize = 24;
+  SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, kSize, kSize, 32, SDL_PIXELFORMAT_RGBA32);
+  if (!surface) return nullptr;
+  SDL_FillRect(surface, nullptr, SDL_MapRGBA(surface->format, 0, 0, 0, 0));  // fully transparent base
+  Uint32 black = SDL_MapRGBA(surface->format, 0, 0, 0, 255);
+  Uint32 white = SDL_MapRGBA(surface->format, 255, 255, 255, 255);
+  // Each shape drawn as a 1px-larger black rect first, then a white
+  // rect inset by 1px on top -- a cheap outline-plus-fill without
+  // needing per-pixel edge detection. Later shapes drawn on top of
+  // earlier ones naturally separate touching fingers with their own
+  // outline, giving each one a distinct silhouette instead of merging
+  // into the palm.
+  auto outlinedRect = [&](SDL_Rect r) {
+    SDL_Rect outline{r.x - 1, r.y - 1, r.w + 2, r.h + 2};
+    SDL_FillRect(surface, &outline, black);
+    SDL_FillRect(surface, &r, white);
+  };
+  outlinedRect(SDL_Rect{6, 12, 12, 9});   // palm
+  outlinedRect(SDL_Rect{7, 2, 2, 11});    // index finger
+  outlinedRect(SDL_Rect{10, 0, 2, 13});   // middle finger (tallest)
+  outlinedRect(SDL_Rect{13, 1, 2, 12});   // ring finger
+  outlinedRect(SDL_Rect{16, 4, 2, 9});    // pinky finger
+  outlinedRect(SDL_Rect{2, 13, 5, 3});    // thumb, to the side
+  return surface;
+}
+
+}  // namespace
+
 void GraphicalDisplay::setHandCursor(bool active) {
   if (active == impl_->handCursorActive) return;
   impl_->handCursorActive = active;
   if (active) {
-    if (!impl_->handCursor) impl_->handCursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+    if (!impl_->handCursor) {
+      SDL_Surface *surface = createOpenHandSurface();
+      if (surface) {
+        // Hotspot centered in the palm (roughly where a real grab
+        // gesture's "grip point" would be), not the surface's own
+        // top-left corner -- otherwise the cursor would visually jump
+        // up-and-left of the actual mouse position.
+        impl_->handCursor = SDL_CreateColorCursor(surface, 12, 16);
+        SDL_FreeSurface(surface);
+      }
+    }
     if (impl_->handCursor) SDL_SetCursor(impl_->handCursor);
+  } else {
+    SDL_SetCursor(SDL_GetDefaultCursor());
+  }
+}
+
+// SDL's own system pointing-hand (index finger) -- what setHandCursor()
+// used to show for EVERY drag gesture, before a real request
+// (2026-08-10, see setHandCursor()'s own comment) split content-
+// dragging off to its own custom open-hand cursor instead. Reserved
+// now for gestures that really are more like clicking/operating a
+// control than grabbing content: scrollbar-thumb dragging (see its
+// own call site in main.cpp) -- and, per that same request ("可能なら
+// ファイルおよび文字列選択でのスコープ範囲内...のみでの表示"), a
+// future hover-over-selectable-content indicator, not yet wired here
+// (no continuous hover-vs-selectable-region tracking exists yet to
+// drive it -- left for a follow-up, see CLAUDE.md's own note on this
+// request for the reasoning).
+void GraphicalDisplay::setPointingCursor(bool active) {
+  if (active == impl_->pointingCursorActive) return;
+  impl_->pointingCursorActive = active;
+  if (active) {
+    if (!impl_->pointingCursor) impl_->pointingCursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+    if (impl_->pointingCursor) SDL_SetCursor(impl_->pointingCursor);
   } else {
     SDL_SetCursor(SDL_GetDefaultCursor());
   }

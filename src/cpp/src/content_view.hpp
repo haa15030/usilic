@@ -239,6 +239,12 @@ class ContentView {
   // simply never stale to begin with).
   bool stepTopIndex(int direction);
 
+  // Non-mutating peek at stepTopIndex()'s own boundary condition --
+  // see its own .cpp comment for why (lets a caller check "is there
+  // room to move this way" before committing to a sub-row pixel move,
+  // rather than only discovering the boundary after the fact).
+  bool canStepTopIndex(int direction) const;
+
   // Highlights an arbitrary line instead of cursorIndex_, without
   // moving the cursor/selection -- for the 2026-07-30 real-terminal
   // drag-scroll trigger (see CLAUDE.md): while coasting, the row under

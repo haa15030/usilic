@@ -147,17 +147,31 @@ void ContentView::setTopIndex(int index) {
 }
 
 bool ContentView::stepTopIndex(int direction) {
-  if (height_ <= 0 || lines_.empty()) return false;
-  int maxTop = std::max(0, static_cast<int>(lines_.size()) - height_);
+  if (!canStepTopIndex(direction)) return false;
   if (direction > 0) {
-    if (topIndex_ >= maxTop) return false;
     topIndex_++;
     cursorIndex_ = std::min(topIndex_ + height_ - 1, static_cast<int>(lines_.size()) - 1);
   } else if (direction < 0) {
-    if (topIndex_ <= 0) return false;
     topIndex_--;
     cursorIndex_ = topIndex_;
   }
+  return true;
+}
+
+// Non-mutating peek at exactly the same boundary condition
+// stepTopIndex() itself enforces -- added 2026-08-10 so a caller can
+// check "is there room to move THIS way at all" BEFORE committing to a
+// pixel-offset move, rather than only discovering the boundary AFTER
+// pixelOffset has already accumulated a full cellHeight's worth (see
+// main.cpp's own coast-loop call site comment for the real bug this
+// fixes: a few frames of blank space briefly visible past the actual
+// top/bottom row during inertial coasting, "空行を表示したのち一行分
+// 戻って正規画面になる").
+bool ContentView::canStepTopIndex(int direction) const {
+  if (height_ <= 0 || lines_.empty()) return false;
+  int maxTop = std::max(0, static_cast<int>(lines_.size()) - height_);
+  if (direction > 0) return topIndex_ < maxTop;
+  if (direction < 0) return topIndex_ > 0;
   return true;
 }
 

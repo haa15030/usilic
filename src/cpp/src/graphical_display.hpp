@@ -354,13 +354,21 @@ class GraphicalDisplay : public Display {
 
   int cellHeightPixels() const;
 
-  // Swaps the window's cursor between the default arrow and a stand-
-  // in "hand" shape (SDL_SYSTEM_CURSOR_HAND) while dragging -- a real
-  // custom cat's-paw bitmap (SDL_CreateColorCursor(), already
-  // technically verified feasible in an earlier design discussion, see
-  // IDEAS.md) is future work once this sample's basic feel is
-  // validated.
+  // Swaps the window's cursor between the default arrow and a custom
+  // open-palm/"grab" bitmap (SDL_CreateColorCursor(), see the .cpp's
+  // own createOpenHandSurface()) while dragging CONTENT (the "cat's
+  // paw" scroll gesture) -- a real request (2026-08-10) asked for this
+  // exact shape (macOS's own screen-capture-region drag cursor), not
+  // SDL's system SDL_SYSTEM_CURSOR_HAND (a pointing index finger),
+  // which this method used before that day and which setPointingCursor()
+  // below now covers instead.
   void setHandCursor(bool active);
+
+  // SDL's system pointing-hand (index finger) cursor -- reserved for
+  // gestures more like operating a control than grabbing content: see
+  // its own .cpp comment for the scrollbar-drag call site and the
+  // (not yet wired) future hover-over-selectable-content one.
+  void setPointingCursor(bool active);
 
  private:
   GraphicalDisplay();
