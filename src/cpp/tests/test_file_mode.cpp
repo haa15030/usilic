@@ -215,6 +215,19 @@ TEST_CASE_FIXTURE(Fixture, "mode-line fields: shows the bare filename, byte size
   CHECK(text.substr(text.size() - expectedTrailing.size()) == expectedTrailing);
 }
 
+TEST_CASE_FIXTURE(Fixture, "mode-line fields: byte size over 999 is space-grouped into 3s from the right") {
+  // 2026-08-10, a real request ("モードラインのファイルサイズ表示...
+  // 区切りの空白入れてみて") after a large file's byte count showed up
+  // as an unbroken run of digits. 1234 bytes -> "1 234", not "1234".
+  std::string content(1234, 'x');
+  std::string path = writeFile("big.txt", content);
+  REQUIRE(mode.loadFile(path));
+
+  std::string text = view.modeLineText();
+  std::string expectedTrailing = "1 234 " + root.string() + "/";
+  CHECK(text.substr(text.size() - expectedTrailing.size()) == expectedTrailing);
+}
+
 TEST_CASE_FIXTURE(Fixture, "mode-line fields: before any loadFile, no fields are shown") {
   FileMode fresh{view, history, Charset::Encoding::Ascii, 80};
   CHECK(view.modeLineText() == "0/0 END");
