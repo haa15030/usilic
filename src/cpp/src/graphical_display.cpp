@@ -1369,9 +1369,34 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
 
 namespace {
 
-// A small (24x24) open-palm/"grab" hand silhouette -- black 1px
+// Filled circle via a simple per-row horizontal-span scan (not the
+// fastest possible algorithm, but this only ever runs a handful of
+// times when a cursor is first created and cached -- see
+// GraphicalDisplay::setHandCursor()'s own impl_->handCursor caching --
+// so simplicity wins over speed here).
+void fillCircle(SDL_Surface *surface, int cx, int cy, int r, Uint32 color) {
+  for (int dy = -r; dy <= r; dy++) {
+    int dx = static_cast<int>(std::sqrt(static_cast<double>(r * r - dy * dy)) + 0.5);
+    SDL_Rect row{cx - dx, cy + dy, dx * 2 + 1, 1};
+    SDL_FillRect(surface, &row, color);
+  }
+}
+
+// A vertical capsule (a rect body with fully-rounded top/bottom caps,
+// rounding radius == half the width) -- used for each finger/thumb
+// below, giving them a real rounded silhouette instead of flat-topped
+// rectangles.
+void fillCapsule(SDL_Surface *surface, int x, int y, int w, int h, Uint32 color) {
+  int r = w / 2;
+  SDL_Rect body{x, y + r, w, h - w};
+  SDL_FillRect(surface, &body, color);
+  fillCircle(surface, x + r, y + r, r, color);
+  fillCircle(surface, x + r, y + h - r, r, color);
+}
+
+// A small (32x32) open-palm/"grab" hand silhouette -- black 1px
 // outline, white fill, fully transparent elsewhere -- built via plain
-// SDL2 rect fills rather than an embedded image file (this project's
+// SDL2 shape fills rather than an embedded image file (this project's
 // established style for small generated assets, see mac_scrollbar.mm's
 // own "no new binary asset" preference and this class's OWN doctest-
 // verified feasibility note for exactly this, IDEAS.md's "猫の手
@@ -1380,35 +1405,65 @@ namespace {
 // macOS's own screen-capture-region drag cursor, Shift+Cmd+5's open
 // hand -- NOT SDL's system SDL_SYSTEM_CURSOR_HAND, which renders as a
 // pointing INDEX FINGER on macOS, the wrong shape for "grabbing"
-// content) -- this is deliberately original artwork (four fingers +
-// a thumb, roughly proportioned), not a pixel copy of Apple's own
-// cursor (which isn't accessible to this code anyway; SDL2 has no
-// system-cursor constant for an open/grabbing hand at all, only the
-// pointing one).
+// content).
+//
+// Deliberately original artwork, not a pixel/vector copy of Apple's
+// own cursor -- a same-day follow-up investigation (real request:
+// "怪しいGeminiにこんな情報があった。これってできる？") confirmed
+// Apple's REAL openhand cursor art genuinely exists as a readable
+// system file (/System/Library/Frameworks/ApplicationServices.
+// framework/Versions/A/Frameworks/HIServices.framework/Versions/A/
+// Resources/cursors/openhand/cursor.pdf -- verified live on this
+// machine, its content is a real rounded open-hand vector), and that
+// SDL2 itself calls `[NSCursor pointingHandCursor]` directly on macOS
+// for SDL_SYSTEM_CURSOR_HAND with no bitmap of its own to build on
+// (confirmed by reading SDL2's own upstream source, src/video/cocoa/
+// SDL_cocoamouse.m) -- so "extend SDL2's own hand image" (a real
+// follow-up request) isn't literally possible on this platform either.
+// Embedding a copy of Apple's own proprietary cursor asset into this
+// (eventually public) repository would be a licensing concern even
+// though reading it locally for reference isn't; calling
+// NSCursor.openHand live at runtime would resolve that but needs the
+// same Objective-C++ (.mm) bridge this project deliberately avoided
+// for the scrollbar work. This shape instead only takes the real
+// cursor's PROPORTIONS as a design reference (rounded fingertips of
+// staggered height, a stubby rounded thumb low on the palm's side, a
+// rounded-bottom palm) -- a real user report on the FIRST (flat-
+// rectangle) version, "ロボットの手みたいなやつは却下", is what this
+// rounded-capsule rework replaces.
 SDL_Surface *createOpenHandSurface() {
-  constexpr int kSize = 24;
+  constexpr int kSize = 32;
   SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, kSize, kSize, 32, SDL_PIXELFORMAT_RGBA32);
   if (!surface) return nullptr;
   SDL_FillRect(surface, nullptr, SDL_MapRGBA(surface->format, 0, 0, 0, 0));  // fully transparent base
   Uint32 black = SDL_MapRGBA(surface->format, 0, 0, 0, 255);
   Uint32 white = SDL_MapRGBA(surface->format, 255, 255, 255, 255);
-  // Each shape drawn as a 1px-larger black rect first, then a white
-  // rect inset by 1px on top -- a cheap outline-plus-fill without
+  // Each shape drawn as a 1px-larger black version first, then a white
+  // version inset by 1px on top -- a cheap outline-plus-fill without
   // needing per-pixel edge detection. Later shapes drawn on top of
   // earlier ones naturally separate touching fingers with their own
   // outline, giving each one a distinct silhouette instead of merging
   // into the palm.
-  auto outlinedRect = [&](SDL_Rect r) {
-    SDL_Rect outline{r.x - 1, r.y - 1, r.w + 2, r.h + 2};
-    SDL_FillRect(surface, &outline, black);
-    SDL_FillRect(surface, &r, white);
+  auto outlinedCapsule = [&](int x, int y, int w, int h) {
+    fillCapsule(surface, x - 1, y - 1, w + 2, h + 2, black);
+    fillCapsule(surface, x, y, w, h, white);
   };
-  outlinedRect(SDL_Rect{6, 12, 12, 9});   // palm
-  outlinedRect(SDL_Rect{7, 2, 2, 11});    // index finger
-  outlinedRect(SDL_Rect{10, 0, 2, 13});   // middle finger (tallest)
-  outlinedRect(SDL_Rect{13, 1, 2, 12});   // ring finger
-  outlinedRect(SDL_Rect{16, 4, 2, 9});    // pinky finger
-  outlinedRect(SDL_Rect{2, 13, 5, 3});    // thumb, to the side
+  auto outlinedRoundedRect = [&](int x, int y, int w, int h, int r) {
+    SDL_Rect outline{x - 1, y - 1, w + 2, h + 2};
+    SDL_FillRect(surface, &outline, black);
+    fillCircle(surface, x - 1 + r, y - 1 + r, r, black);
+    fillCircle(surface, x - 1 + w - r, y - 1 + r, r, black);
+    SDL_Rect inner{x, y, w, h};
+    SDL_FillRect(surface, &inner, white);
+    fillCircle(surface, x + r, y + r, r, white);
+    fillCircle(surface, x + w - r, y + r, r, white);
+  };
+  outlinedRoundedRect(7, 15, 15, 12, 4);  // palm, rounded bottom corners
+  outlinedCapsule(8, 4, 4, 14);           // index finger
+  outlinedCapsule(13, 1, 4, 17);          // middle finger (tallest)
+  outlinedCapsule(18, 3, 4, 15);          // ring finger
+  outlinedCapsule(23, 7, 4, 11);          // pinky finger (shortest)
+  outlinedCapsule(1, 17, 5, 10);          // thumb, stubby, low on the palm's side
   return surface;
 }
 
@@ -1422,10 +1477,12 @@ void GraphicalDisplay::setHandCursor(bool active) {
       SDL_Surface *surface = createOpenHandSurface();
       if (surface) {
         // Hotspot centered in the palm (roughly where a real grab
-        // gesture's "grip point" would be), not the surface's own
-        // top-left corner -- otherwise the cursor would visually jump
-        // up-and-left of the actual mouse position.
-        impl_->handCursor = SDL_CreateColorCursor(surface, 12, 16);
+        // gesture's "grip point" would be, and the rounded-rect palm's
+        // own center at these coordinates -- see createOpenHandSurface()'s
+        // own palm placement), not the surface's own top-left corner --
+        // otherwise the cursor would visually jump up-and-left of the
+        // actual mouse position.
+        impl_->handCursor = SDL_CreateColorCursor(surface, 14, 21);
         SDL_FreeSurface(surface);
       }
     }
