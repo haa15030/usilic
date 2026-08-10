@@ -1301,76 +1301,59 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   int cellWidth = (contentWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth + impl_->columns / 2) / impl_->columns;
   int cellHeight = (contentHeight - Impl::kMarginY * 2 + impl_->rows / 2) / impl_->rows;
   if (cellWidth <= 0 || cellHeight <= 0) return;
-  // HEIGHT is still floored at create()'s own font-metric-based
-  // cellHeight (the value already in impl_ at this point, computed
-  // from the font's REAL line-height metric) rather than trusting this
-  // arithmetic derivation unconditionally -- a real report (2026-08-08,
-  // two of five real terminal profiles, both the SMALLEST font sizes
-  // tried, 13pt: garbled/overlapping text, adjacent rows visibly
-  // smeared into each other) showed this arithmetic can come out
-  // SMALLER than the font's own actual rendered line height, which a
-  // single fixed title-bar-height estimate (still not the real OS-
-  // reported value -- see realOrEstimatedWindowBorders()'s own
-  // comment) being off by even a few pixels is enough to cause once
-  // divided across a small-font terminal's larger row count. The floor
-  // trades a small, purely cosmetic gap at the content's own bottom
-  // edge (this window ends up very slightly SHORTER on-screen than the
-  // real terminal in that case) for guaranteed-readable text -- row
-  // overlap is a functional regression, a few points of unfilled
-  // margin is not.
   int fontMetricCellWidth = impl_->cellWidth;
   int fontMetricCellHeight = impl_->cellHeight;
-  int flooredCellHeight = std::max(cellHeight, fontMetricCellHeight);
-  // WIDTH, unlike height, is now the PLAIN ARITHMETIC value, UNFLOORED
-  // -- a deliberate 2026-08-10 reversal of an earlier width-flooring
-  // fix (item 241, kept below for the historical record), after a real
-  // report (screenshots, 2026-08-10, 24pt "Novel") showed that fix's
-  // own real side effect: growing the window to fit a floored cellWidth
-  // made this window visibly WIDER than the real terminal it's
-  // supposed to overlay (a real terminal peeking out from behind on
-  // the right, "-g窓が実端末よりはみ出して大きい"), because Novel's
-  // font-metric-measured "M" width (15px, from SDL_ttf/FreeType) is
-  // simply WIDER than what the real terminal's own renderer (Apple's
-  // CoreText, a different engine measuring the same font/size
-  // differently) actually uses per column (the arithmetic 14px,
-  // 1157/80≈14.46, derived directly from the real terminal's own
-  // measured pixel width -- presumably CoreText's own true value).
-  // Re-examining renderCell()'s own fitGlyphRect() (used for every
-  // glyph drawn) found it ALWAYS uniformly downscales a glyph surface
-  // that's larger than its own cell (scale = min(1.0, maxW/glyphW,
-  // maxH/glyphH), never upscales, never clips) -- so a cellWidth of 14
-  // instead of 15 was never actually at risk of clipping/losing any
-  // character; the (previously assumed necessary) floor was only ever
-  // protecting against a shrink of a few percent (15→14 here, ~7%),
-  // not the row-OVERLAP class of bug height's own floor above exists
-  // for. Given that, matching the real terminal's own measured pixel
-  // width EXACTLY (this class's own established "誤差ゼロ" standard,
-  // item 227) and letting fitGlyphRect() absorb the resulting sub-
-  // pixel-per-column difference is strictly better than growing the
-  // window beyond the real terminal's own size: it fixes today's
-  // report without reintroducing item 241's own original symptom
-  // (item 241's bug was a WINDOW/GRID size MISMATCH -- cellWidth used
-  // for glyph placement disagreeing with the window's own actual pixel
-  // width, so the rightmost columns' computed X positions fell outside
-  // the window entirely -- not per-glyph clipping at all; keeping
-  // width and cellWidth ALWAYS equal to the same single arithmetic
-  // value, as done here, makes that specific mismatch impossible by
-  // construction, independent of whether a floor is applied).
+  // BOTH cellWidth and cellHeight are now the PLAIN ARITHMETIC values,
+  // UNFLOORED -- height's own font-metric floor (originally added for
+  // a real report, 2026-08-08, two of five real terminal profiles at
+  // 13pt: "garbled/overlapping text, adjacent rows visibly smeared
+  // into each other") was removed 2026-08-10, the same day and for the
+  // same reason width's own floor already was (see the class-wide
+  // reasoning below, ported from that fix): a real report (screenshots,
+  // pixel-measured: 1119x813 for -g vs 1119x690 for -c, SAME 22-line
+  // content, at a real terminal profile's line-spacing set to 0.8x)
+  // found -g refusing to shrink below its own font-metric floor while
+  // -c's real line spacing shrank normally, making -g visibly TALLER
+  // ("縦長") than the real terminal it's supposed to overlay -- the
+  // exact same class of divergence the width floor caused for 24pt
+  // "Novel", just triggered by a sub-1.0 line-spacing MULTIPLIER
+  // instead of a large font SIZE this time (both ultimately mean "the
+  // real terminal's own actual per-row/per-column pixel measurement
+  // differs from this class's own font-metric-based estimate of it").
+  //
+  // Whether removing the floor risks reintroducing the ORIGINAL 13pt
+  // "smeared" bug this floor was added for was checked before doing
+  // this, not assumed: renderCell()'s own fitGlyphRect() (used for
+  // EVERY glyph drawn, confirmed by re-reading it here again) always
+  // uniformly downscales a glyph surface larger than its own cell
+  // (scale = min(1.0, maxW/glyphW, maxH/glyphH) -- applies to height
+  // exactly like it does to width, never upscales, never clips) --
+  // meaning a smaller-than-font-metric cellHeight shrinks each row's
+  // own glyphs to fit their own row's box, it does not let them bleed
+  // into an ADJACENT row's box the way un-uniform positioning could.
+  // The original 13pt report's real root cause was very likely the
+  // SAME class of window/grid SIZE MISMATCH item 241's width bug (and
+  // this file's own matching comment on it) turned out to be, not
+  // literal unsafe glyph overflow -- matching the real terminal's own
+  // measured pixel height EXACTLY (this class's own established
+  // "誤差ゼロ" standard, item 227) removes that mismatch by
+  // construction, the same way it already did for width.
   impl_->cellWidth = cellWidth;
-  impl_->cellHeight = flooredCellHeight;
+  impl_->cellHeight = cellHeight;
   int width = contentWidth;
-  int height = flooredCellHeight * impl_->rows + Impl::kMarginY * 2;
+  int height = contentHeight;
   // Same opt-in USILICGUIDEBUG file flush() already uses, reused here
   // for exactly the same reason: this sandbox
   // has no real Terminal.app window to compare against, so root-
   // causing a real-hardware report (this exact dump is what found the
   // 45px-remainder bug above, "Man Pageが余白大", 2026-08-08) can't be
   // done blind -- kept in place so any FUTURE mismatch report can be
-  // diffed against real numbers immediately too. flooredCellWidth is
-  // computed here PURELY for this diagnostic line (to see how far the
-  // font-metric estimate would have diverged) -- it no longer drives
-  // any decision above.
+  // diffed against real numbers immediately too. flooredCellWidth/
+  // flooredCellHeight are computed here PURELY for this diagnostic
+  // line (to see how far the font-metric estimate would have
+  // diverged) -- neither drives any decision above anymore.
   int flooredCellWidth = std::max(cellWidth, fontMetricCellWidth);
+  int flooredCellHeight = std::max(cellHeight, fontMetricCellHeight);
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     FILE *f = std::fopen(dbg, "a");
     if (f) {
