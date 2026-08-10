@@ -1538,10 +1538,25 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     std::string glyph = line.substr(pos, len);
     if (glyph != " " && lead >= 0x20) {
       // See renderCell()'s own comment on why a fallback font is
-      // consulted here too.
+      // consulted here too -- including the `isWide` check below,
+      // ADDED 2026-08-10 (a real report, "慣性スクロール中は日本語も
+      // ビットマップになる"): this function was missing renderCell()'s
+      // own `isWide && fallbackHasIt` preference, using the PRIMARY
+      // (Latin) font instead of the CJK fallback for the small set of
+      // "ambiguous width" codepoints the primary font ALSO happens to
+      // claim (▽ U+25BD, curly quotes U+201C/U+201D -- see renderCell()'s
+      // own comment for why classifying these as CJK-fallback-only
+      // matters: Menlo's own narrow glyphs for them look visually
+      // inconsistent, and stretched into a full 2-column box via
+      // fitGlyphRect() far MORE drastically than a properly-proportioned
+      // CJK glyph would need, reading as noticeably blurrier/more
+      // "bitmap" -- exactly the reported symptom, and specific to the
+      // SCROLLING render path since only THIS function had the gap).
       TTF_Font *renderFont = impl_->font;
       unsigned int codepoint = decodeUtf8Codepoint(glyph);
-      if (!glyphProvidedByFont(impl_->font, codepoint) && glyphProvidedByFont(impl_->fallbackFont, codepoint))
+      bool isWide = width >= 2;
+      bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
+      if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
         renderFont = impl_->fallbackFont;
       SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, glyph.c_str(), sdlFg);
       if (surface) {
