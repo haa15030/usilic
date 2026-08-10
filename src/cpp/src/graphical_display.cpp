@@ -1301,64 +1301,64 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   int cellWidth = (contentWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth + impl_->columns / 2) / impl_->columns;
   int cellHeight = (contentHeight - Impl::kMarginY * 2 + impl_->rows / 2) / impl_->rows;
   if (cellWidth <= 0 || cellHeight <= 0) return;
-  // Floored at create()'s own font-metric-based cellWidth/cellHeight
-  // (the values already in impl_ at this point, computed from the
-  // font's REAL glyph/line-height metrics) rather than trusting this
+  // HEIGHT is still floored at create()'s own font-metric-based
+  // cellHeight (the value already in impl_ at this point, computed
+  // from the font's REAL line-height metric) rather than trusting this
   // arithmetic derivation unconditionally -- a real report (2026-08-08,
   // two of five real terminal profiles, both the SMALLEST font sizes
   // tried, 13pt: garbled/overlapping text, adjacent rows visibly
   // smeared into each other) showed this arithmetic can come out
-  // SMALLER than the font's own actual rendered glyph height, which a
+  // SMALLER than the font's own actual rendered line height, which a
   // single fixed title-bar-height estimate (still not the real OS-
   // reported value -- see realOrEstimatedWindowBorders()'s own
   // comment) being off by even a few pixels is enough to cause once
-  // divided across a small-font terminal's larger row count: the same
-  // few-pixel absolute error is a much bigger fraction of a 13pt
-  // line's own natural height than an 18pt line's, so only the
-  // smallest fonts tested actually crossed into visible overlap. The
-  // floor trades a small, purely cosmetic gap at the content's own
-  // right/bottom edge (this window ends up very slightly SHORTER on-
-  // screen than the real terminal in that case) for guaranteed-
-  // readable text -- overlap is a functional regression, a few points
-  // of unfilled margin is not.
+  // divided across a small-font terminal's larger row count. The floor
+  // trades a small, purely cosmetic gap at the content's own bottom
+  // edge (this window ends up very slightly SHORTER on-screen than the
+  // real terminal in that case) for guaranteed-readable text -- row
+  // overlap is a functional regression, a few points of unfilled
+  // margin is not.
   int fontMetricCellWidth = impl_->cellWidth;
   int fontMetricCellHeight = impl_->cellHeight;
-  int flooredCellWidth = std::max(cellWidth, fontMetricCellWidth);
   int flooredCellHeight = std::max(cellHeight, fontMetricCellHeight);
-  impl_->cellWidth = flooredCellWidth;
+  // WIDTH, unlike height, is now the PLAIN ARITHMETIC value, UNFLOORED
+  // -- a deliberate 2026-08-10 reversal of an earlier width-flooring
+  // fix (item 241, kept below for the historical record), after a real
+  // report (screenshots, 2026-08-10, 24pt "Novel") showed that fix's
+  // own real side effect: growing the window to fit a floored cellWidth
+  // made this window visibly WIDER than the real terminal it's
+  // supposed to overlay (a real terminal peeking out from behind on
+  // the right, "-g窓が実端末よりはみ出して大きい"), because Novel's
+  // font-metric-measured "M" width (15px, from SDL_ttf/FreeType) is
+  // simply WIDER than what the real terminal's own renderer (Apple's
+  // CoreText, a different engine measuring the same font/size
+  // differently) actually uses per column (the arithmetic 14px,
+  // 1157/80≈14.46, derived directly from the real terminal's own
+  // measured pixel width -- presumably CoreText's own true value).
+  // Re-examining renderCell()'s own fitGlyphRect() (used for every
+  // glyph drawn) found it ALWAYS uniformly downscales a glyph surface
+  // that's larger than its own cell (scale = min(1.0, maxW/glyphW,
+  // maxH/glyphH), never upscales, never clips) -- so a cellWidth of 14
+  // instead of 15 was never actually at risk of clipping/losing any
+  // character; the (previously assumed necessary) floor was only ever
+  // protecting against a shrink of a few percent (15→14 here, ~7%),
+  // not the row-OVERLAP class of bug height's own floor above exists
+  // for. Given that, matching the real terminal's own measured pixel
+  // width EXACTLY (this class's own established "誤差ゼロ" standard,
+  // item 227) and letting fitGlyphRect() absorb the resulting sub-
+  // pixel-per-column difference is strictly better than growing the
+  // window beyond the real terminal's own size: it fixes today's
+  // report without reintroducing item 241's own original symptom
+  // (item 241's bug was a WINDOW/GRID size MISMATCH -- cellWidth used
+  // for glyph placement disagreeing with the window's own actual pixel
+  // width, so the rightmost columns' computed X positions fell outside
+  // the window entirely -- not per-glyph clipping at all; keeping
+  // width and cellWidth ALWAYS equal to the same single arithmetic
+  // value, as done here, makes that specific mismatch impossible by
+  // construction, independent of whether a floor is applied).
+  impl_->cellWidth = cellWidth;
   impl_->cellHeight = flooredCellHeight;
-  // WIDTH and HEIGHT are handled with different DEFAULT strategies,
-  // but both fall back to the grid formula once their own floor
-  // actually changes something -- an earlier version made width ALWAYS
-  // use contentWidth unconditionally (matching a real report,
-  // 2026-08-09, screenshot "⑱", "横幅分は？一度は直ってるんだが": the
-  // grid formula alone reintroduced an already-solved "横幅が1〜2ドット
-  // 分くらい狭い" bug, docs/HISTORY.md line 2116, 2026-08-07, when the
-  // floor was a no-op -- confirmed then: 562/80 columns rounds to
-  // cellWidth=7, 7*80+35=595 vs contentWidth=597). That fix was real
-  // but incomplete: it didn't account for the floor ever actually
-  // engaging for WIDTH at all, which a real report (2026-08-09, 24pt
-  // "Novel" profile, "フォントサイズ24でNovelを起動してみたところ、
-  // 文字が画面に収まらない") showed does happen at large font sizes --
-  // confirmed via a standalone driver reproducing the exact scenario
-  // (deliberately tight outerWidth against a 24pt font): arithCell=12,
-  // fontMetricCell=14, flooredCell=14, but width stayed at the
-  // unconditional contentWidth (1000) while the grid needed
-  // 14*80+20+17=1157 -- a 157px shortfall, clipping the rightmost ~11
-  // columns (exactly matching the report: wrapped text overflowing
-  // off the right edge, and the mode-line's own rightWatermark --
-  // "usilic v1.5b" -- half-clipped to "usilic v1." since it's rendered
-  // in those same rightmost columns). This mirrors EXACTLY the
-  // original height bug (item 224/225: grid needing more room than a
-  // fixed contentHeight provided) -- fixed the same way, but only WHEN
-  // the floor actually changed something (unlike height, which needs
-  // the grid formula unconditionally -- see cellHeight's own rounding
-  // comment above for why height's base arithmetic remainder alone,
-  // even with no floor involved, can already be large).
   int width = contentWidth;
-  if (flooredCellWidth != cellWidth) {
-    width = flooredCellWidth * impl_->columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth;
-  }
   int height = flooredCellHeight * impl_->rows + Impl::kMarginY * 2;
   // Same opt-in USILICGUIDEBUG file flush() already uses, reused here
   // for exactly the same reason: this sandbox
@@ -1366,7 +1366,11 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   // causing a real-hardware report (this exact dump is what found the
   // 45px-remainder bug above, "Man Pageが余白大", 2026-08-08) can't be
   // done blind -- kept in place so any FUTURE mismatch report can be
-  // diffed against real numbers immediately too.
+  // diffed against real numbers immediately too. flooredCellWidth is
+  // computed here PURELY for this diagnostic line (to see how far the
+  // font-metric estimate would have diverged) -- it no longer drives
+  // any decision above.
+  int flooredCellWidth = std::max(cellWidth, fontMetricCellWidth);
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     FILE *f = std::fopen(dbg, "a");
     if (f) {
