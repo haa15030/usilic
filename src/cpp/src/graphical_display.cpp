@@ -127,6 +127,23 @@ struct GraphicalDisplay::Impl {
 
   int rows = 0, columns = 0;
   int cellWidth = 0, cellHeight = 0;
+  // The font's own TRUE, never-overwritten native metrics -- captured
+  // ONCE in create(), from the SAME measurement create()'s own
+  // cellWidth/cellHeight locals are seeded from (before matchWindowSize()
+  // ever runs and starts overwriting the ABOVE cellWidth/cellHeight with
+  // the real terminal's own arithmetic-derived target values instead).
+  // Added 2026-08-10 alongside matchWindowSize()'s own font-rescaling
+  // (see its own comment) specifically so that method can always
+  // compute "how far has the target size drifted from the font's
+  // ORIGINAL native size" from a stable baseline, even across multiple
+  // calls (a live font-size change mid-session, `^Og` re-entry, etc.)
+  // -- reading the ABOVE cellWidth/cellHeight for this instead would
+  // compound: after the FIRST matchWindowSize() call already replaced
+  // them with a target value, a SECOND call would then be scaling
+  // relative to the PREVIOUS target, not the font's real original size,
+  // drifting further off with each call.
+  int baseFontPointSize = 16;
+  int baseFontMetricCellWidth = 0, baseFontMetricCellHeight = 0;
   // Real terminal emulator windows (Terminal.app, iTerm, GNOME
   // Terminal...) all reserve a modest border of window background
   // around the character grid rather than butting text right up
@@ -407,6 +424,9 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->fallbackFont = fallbackFont;
   display->impl_->cellWidth = cellWidth;
   display->impl_->cellHeight = cellHeight;
+  display->impl_->baseFontPointSize = fontPointSize;
+  display->impl_->baseFontMetricCellWidth = cellWidth;
+  display->impl_->baseFontMetricCellHeight = cellHeight;
   display->impl_->rows = rows;
   display->impl_->columns = columns;
   display->impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
@@ -1301,8 +1321,15 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   int cellWidth = (contentWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth + impl_->columns / 2) / impl_->columns;
   int cellHeight = (contentHeight - Impl::kMarginY * 2 + impl_->rows / 2) / impl_->rows;
   if (cellWidth <= 0 || cellHeight <= 0) return;
-  int fontMetricCellWidth = impl_->cellWidth;
-  int fontMetricCellHeight = impl_->cellHeight;
+  // Read from the STABLE base fields (Impl::baseFontMetricCellWidth/
+  // Height, captured once in create()), NOT impl_->cellWidth/cellHeight
+  // -- the latter get overwritten with the real terminal's own target
+  // values a few lines below, so on a SECOND matchWindowSize() call
+  // (a live font-size change mid-session, `^Og` re-entry, etc.) they'd
+  // no longer hold the font's own true native metric at all. See
+  // Impl::baseFontMetricCellWidth's own comment for the full reasoning.
+  int fontMetricCellWidth = impl_->baseFontMetricCellWidth;
+  int fontMetricCellHeight = impl_->baseFontMetricCellHeight;
   // BOTH cellWidth and cellHeight are now the PLAIN ARITHMETIC values,
   // UNFLOORED -- height's own font-metric floor (originally added for
   // a real report, 2026-08-08, two of five real terminal profiles at
@@ -1338,6 +1365,51 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   // measured pixel height EXACTLY (this class's own established
   // "誤差ゼロ" standard, item 227) removes that mismatch by
   // construction, the same way it already did for width.
+  //
+  // Re-render the font itself at (approximately) the RIGHT size for
+  // this target cellHeight, rather than leaving it fixed at create()'s
+  // own original fontPointSize -- added 2026-08-10, a real report
+  // ("18ドットだと行が重なる...24ドットにしてみて文字が細すぎるから
+  // だとわかった。-gだとベクトルフォントにならないのはなぜ？") caught
+  // by comparing -g against -c at two sizes: -g's text looked
+  // noticeably THINNER/more aliased than -c's real terminal rendering
+  // at 24pt, and outright illegible at 18pt -- NOT a hinting/AA
+  // setting difference, but this exact method's own doing: every
+  // matchWindowSize() call before this one changed impl_->cellWidth/
+  // cellHeight (the LAYOUT grid the WINDOW is sized from) but left the
+  // FONT itself untouched at its original create()-time point size, so
+  // whenever the target cell size (now always the real terminal's own
+  // exact arithmetic-derived value, items 254/258) differed EVEN
+  // SLIGHTLY from that original size, fitGlyphRect() (renderCell()'s
+  // own glyph-fit helper) had to bitmap-rescale an already-rasterized
+  // glyph texture via SDL_RenderCopy -- a blurry/thin raster resize,
+  // not a real vector re-render at the correct size, and MUCH more
+  // frequently needed now that items 254/258 stopped flooring
+  // cellWidth/cellHeight up to the font's own native size (which used
+  // to make scale==1.0, i.e. no rescaling at all, essentially always).
+  // TTF_SetFontSize() (SDL_ttf 2.0.18+) re-renders the font's own
+  // internal glyph cache at a NEW point size natively -- scaling from
+  // Impl::baseFontPointSize/baseFontMetricCellHeight (the font's own
+  // STABLE, never-overwritten original measurement, not the
+  // now-target-holding impl_->cellHeight) keeps this accurate across
+  // repeated calls the same way fontMetricCellWidth/Height's own read
+  // above does. Height (not width) drives the ratio because line-
+  // height is the more reliable/conventional metric most fonts scale
+  // point size from; the resulting native width won't necessarily
+  // land exactly on the target cellWidth too, but fitGlyphRect() still
+  // catches that small residual safely, just far less drastically than
+  // before. A no-op (skipped entirely) when the target already matches
+  // the font's own current native size, avoiding a redundant
+  // TTF_SetFontSize() call (not free -- it rebuilds the font's glyph
+  // cache) on every single matchWindowSize() call when nothing about
+  // the font size actually needs to change.
+  int newPointSize = impl_->baseFontPointSize;
+  if (fontMetricCellHeight > 0 && cellHeight != fontMetricCellHeight) {
+    newPointSize = std::max(
+        1, (impl_->baseFontPointSize * cellHeight + impl_->baseFontMetricCellHeight / 2) / impl_->baseFontMetricCellHeight);
+    TTF_SetFontSize(impl_->font, newPointSize);
+    if (impl_->fallbackFont) TTF_SetFontSize(impl_->fallbackFont, newPointSize);
+  }
   impl_->cellWidth = cellWidth;
   impl_->cellHeight = cellHeight;
   int width = contentWidth;
@@ -1357,12 +1429,16 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     FILE *f = std::fopen(dbg, "a");
     if (f) {
+      int rescaledW = 0, rescaledH = 0;
+      TTF_SizeUTF8(impl_->font, "M", &rescaledW, &rescaledH);
       std::fprintf(f,
                     "---matchWindowSize--- rows=%d columns=%d outer=%dx%d borders(t/l/b/r)=%d/%d/%d/%d "
-                    "content=%dx%d arithCell=%dx%d fontMetricCell=%dx%d flooredCell=%dx%d finalWindow=%dx%d\n",
+                    "content=%dx%d arithCell=%dx%d fontMetricCell=%dx%d flooredCell=%dx%d finalWindow=%dx%d "
+                    "newPointSize=%d rescaledFontCell=%dx%d\n",
                     impl_->rows, impl_->columns, outerWidth, outerHeight, borders.top, borders.left, borders.bottom,
                     borders.right, contentWidth, contentHeight, cellWidth, cellHeight, fontMetricCellWidth,
-                    fontMetricCellHeight, flooredCellWidth, flooredCellHeight, width, height);
+                    fontMetricCellHeight, flooredCellWidth, flooredCellHeight, width, height, newPointSize, rescaledW,
+                    rescaledH);
       std::fclose(f);
     }
   }
