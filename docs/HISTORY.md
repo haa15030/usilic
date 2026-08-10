@@ -2721,3 +2721,13 @@ cbなんてTOWNS-OS（FM-TOWNS公式OS）からのまんま頂きビットマッ
 項目255で追加したgroupDigits()ヘルパーとその呼び出しを削除し、std::to_string(size)を復元しました(ファイルサイズ自体は"1108009"のまま、区切りなし)。trailingの組み立てをstd::to_string(size) + " " + directory(空白1つ)からstd::to_string(size) + "  " + directory(空白2つ)に変更しました。
 
 `make test` 650/650件全通過(項目255で追加した桁区切り用のテストケースは削除し、既存の12byteファイルのテストを空白2つを検証する形に更新)、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目256として記録し、コミット・プッシュ済みです。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-10 19.06.10.png'←これをこのようにしてほしいだけ→'/Users/haa15030/Desktop/スクリーンショット 2026-08-10 19.07.22.png'
+
+>python3+PILで両スクリーンショットの実ピクセル色を直接サンプリングしたところ、驚くべきことに両方とも同じ2色(背景色・文字色)のみで構成されており、肉眼での「ハイライトの有無」という印象自体が誤りでした。改めて4倍拡大画像を目視したところ、真の違いは「(参考の方の)CLAUDE.mdと00034/13761  0%はそれぞれ独立したハイライトボックスで、間に非ハイライトの明色の隙間がある」のに対し、「(修正前の方の)1108009  /Users/.../ は空白を挟んでいても全体が1つの連続したハイライトのまま」という点でした。項目255・256はいずれも「空白の幅」の話だと誤読しており、実際は「ハイライトの区切り方」の話でした。
+
+content_view.cppのrenderModeLine()/scrollModeLineSegments()を確認したところ、nameとpositionTextはそれぞれ独立したdrawSegment()呼び出しで個別にハイライトされ、間に非ハイライトの空白1つを挟む設計でしたが、trailing(サイズ+ディレクトリを1つの文字列として連結したもの)は単一のdrawSegment()呼び出しでまとめてハイライトされており、文字列内部にいくら空白を増やしてもその空白自体もハイライトされたままで、真の「隙間」にはならないと判明しました。
+
+ContentView::ModeLineFieldsにtrailing2(2つ目の独立ハイライトセグメント)を新設しました。renderModeLine()/scrollModeLineSegments()/fitModeLineFields()/composeModeLineRow()をそれぞれ、trailing描画後にtrailing2が非空なら非ハイライトの空白1つ→trailing2を独立して描画するよう拡張しました。fillTrailingToEdge(行末までハイライトを伸ばすパディング)は、trailing2が存在する場合はtrailingではなくtrailing2(実際に最後に描画される方)に適用するよう変更しています。file_mode.cppはtrailing=サイズ文字列、trailing2=ディレクトリ、と分離しました(サイズ自体は引き続き桁区切り無し)。既存の他モード(SHELL/KEY/HISTORY/Archive/Directory等)のModeLineFields初期化はすべてtrailing2が空文字列のデフォルトのままで、挙動は変更していません。
+
+`make test` 651/651件全通過(trailing2が実際に独立したModeLineSegmentとして非ハイライトの隙間付きで描画されることを確認する新規回帰テストを追加、既存のtest_file_mode.cppのテストも1スペースの平文比較に更新)、`make usilic`もクリーンビルド成功(構造体にフィールドを1つ追加した副作用で他ファイルに出た「フィールド初期化漏れ」警告11件もついでに解消)。スタンドアロンドライバで実際にflush()しUSILICGUIDEBUGのSDL_SaveBMP()ダンプを目視確認したところ、サイズとディレクトリの間に本物の非ハイライトの隙間(黒い切れ目)が入っていることをピクセル単位で確認しました。CLAUDE.mdに項目257として記録し、コミット・プッシュ済みです。実機での最終確認をお願いします。

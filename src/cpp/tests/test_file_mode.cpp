@@ -207,15 +207,20 @@ TEST_CASE_FIXTURE(Fixture, "mode-line fields: shows the bare filename, byte size
   REQUIRE(mode.loadFile(path));
 
   // Ported from disp_window()'s pager case: unlike Directory mode, the
-  // name field here is the bare filename (NOT the full path), and the
-  // trailing field is "<byte size>  <directory>/" -- TWO spaces before
-  // the directory (2026-08-10, a real request to match the visual gap
-  // elsewhere on this same row, see this file's own comment). The byte
-  // size itself stays a plain, ungrouped digit run per that same
-  // request's own explicit follow-up.
+  // name field here is the bare filename (NOT the full path). The byte
+  // size and directory are two SEPARATE ModeLineFields::trailing/
+  // trailing2 segments (2026-08-10, a real request/pixel comparison:
+  // they need their own independent reverse-video highlight runs, like
+  // every other mode-line field pair, not one unbroken run) -- as
+  // plain text this still reads as "<byte size> <directory>/" with a
+  // single space, the same gap width as name/position get, just now
+  // via two separately-highlighted segments instead of one string with
+  // extra spaces baked in. The byte size itself stays a plain,
+  // ungrouped digit run (a separate, earlier misreading of this same
+  // request already established and reverted that).
   std::string text = view.modeLineText();
   CHECK(text.rfind("plain.txt ", 0) == 0);
-  std::string expectedTrailing = "12  " + root.string() + "/";
+  std::string expectedTrailing = "12 " + root.string() + "/";
   CHECK(text.substr(text.size() - expectedTrailing.size()) == expectedTrailing);
 }
 

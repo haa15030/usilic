@@ -340,7 +340,7 @@ TEST_CASE("setModeLineFieldsProvider: modeLineText wraps name/trailing around th
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
   v.setModeLineFieldsProvider([](int cursorIndex) -> ContentView::ModeLineFields {
-    return {"file" + std::to_string(cursorIndex) + ".txt", "(ls)", false, ""};
+    return {"file" + std::to_string(cursorIndex) + ".txt", "(ls)", false, "", ""};
   });
   CHECK(v.modeLineText() == "file0.txt 1/3 TOP (ls)");
   v.setCursorIndex(2);
@@ -352,13 +352,13 @@ TEST_CASE("setModeLineFieldsProvider: an empty name/trailing is simply omitted")
   ContentView v(d);
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
-  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"", "", false, ""}; });
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"", "", false, "", ""}; });
   CHECK(v.modeLineText() == "1/3 TOP");
 
-  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"name.txt", "", false, ""}; });
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"name.txt", "", false, "", ""}; });
   CHECK(v.modeLineText() == "name.txt 1/3 TOP");
 
-  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"", "(ls)", false, ""}; });
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields { return {"", "(ls)", false, "", ""}; });
   CHECK(v.modeLineText() == "1/3 TOP (ls)");
 }
 
@@ -380,13 +380,13 @@ TEST_CASE("setModeLineFieldsProvider: fields that would overflow the display wid
   // own, but adding the long trailing field pushes it over -- trailing
   // is dropped first, name is kept.
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"shortname.txt", "this-trailing-is-also-way-too-long", false, ""};
+    return {"shortname.txt", "this-trailing-is-also-way-too-long", false, "", ""};
   });
   CHECK(v.modeLineText() == "shortname.txt 1/3 TOP");
 
   // Both fields too long even without each other -- falls back to bare position text.
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"this-name-is-way-too-long-to-fit.txt", "this-trailing-is-also-way-too-long-to-fit", false, ""};
+    return {"this-name-is-way-too-long-to-fit.txt", "this-trailing-is-also-way-too-long-to-fit", false, "", ""};
   });
   CHECK(v.modeLineText() == "1/3 TOP");
 }
@@ -397,7 +397,7 @@ TEST_CASE("renderModeLine: name/position/trailing are separate reverse-video run
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
   v.setModeLineFieldsProvider(
-      [](int) -> ContentView::ModeLineFields { return {"/tmp/dir/", "(ls)", /*fillTrailingToEdge=*/false, ""}; });
+      [](int) -> ContentView::ModeLineFields { return {"/tmp/dir/", "(ls)", /*fillTrailingToEdge=*/false, "", ""}; });
   v.redraw();
 
   // "/tmp/dir/ 1/3 TOP (ls)" -- columns 0-8 name, 9 gap, 10-16 position, 17 gap, 18-21 trailing.
@@ -420,7 +420,7 @@ TEST_CASE("renderModeLine: fillTrailingToEdge pads the trailing field's own reve
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
   v.setModeLineFieldsProvider(
-      [](int) -> ContentView::ModeLineFields { return {"file.txt", "42 /tmp/", /*fillTrailingToEdge=*/true, ""}; });
+      [](int) -> ContentView::ModeLineFields { return {"file.txt", "42 /tmp/", /*fillTrailingToEdge=*/true, "", ""}; });
   v.redraw();
 
   // "file.txt 1/3 TOP 42 /tmp/" is 25 columns; padded with spaces (still standout) to fill 30.
@@ -436,7 +436,7 @@ TEST_CASE("renderModeLine: rightWatermark is right-aligned, not reverse-video, a
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b"};
+    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b", ""};
   });
   v.redraw();
 
@@ -454,7 +454,7 @@ TEST_CASE("renderModeLine: rightWatermark is right-aligned, not reverse-video, a
   v2.setViewport(0, 5);
   v2.setLines(makeLines(3));
   v2.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b"};
+    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b", ""};
   });
   v2.redraw();
   CHECK(narrow.rowText(5).find("usilic") == std::string::npos);
@@ -857,7 +857,7 @@ TEST_CASE("scrollModeLineSegments: same fields as scrollModeLineText, but as sep
   v.setViewport(0, 3);
   v.setLines(makeLines(10));
   v.setModeLineFieldsProvider(
-      [](int) -> ContentView::ModeLineFields { return {"prompt.md", "/Users/haa15030/git/usilic/", false, ""}; });
+      [](int) -> ContentView::ModeLineFields { return {"prompt.md", "/Users/haa15030/git/usilic/", false, "", ""}; });
   v.setCursorIndex(0);
   v.setTopIndex(5);
   auto segments = v.scrollModeLineSegments();
@@ -872,6 +872,42 @@ TEST_CASE("scrollModeLineSegments: same fields as scrollModeLineText, but as sep
   CHECK_FALSE(segments[3].standout);
   CHECK(segments[4].text == "/Users/haa15030/git/usilic/");
   CHECK(segments[4].standout);
+}
+
+TEST_CASE("scrollModeLineSegments: trailing2 draws as its own separate standout segment with a plain gap "
+          "before it, and takes the fillTrailingToEdge padding instead of trailing") {
+  // Added 2026-08-10 for FileMode's own byte-size/directory split -- a
+  // real report (screenshots, pixel-color-verified) caught trailing
+  // and trailing2 (when both set) being rendered as ONE unbroken
+  // highlight run before this, unlike every other mode-line field
+  // pair (name/position, position/trailing) which already had a plain
+  // gap between them.
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(10));
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    return {"plain.txt", "12", /*fillTrailingToEdge=*/true, "", "/tmp/"};
+  });
+  v.setCursorIndex(0);
+  v.setTopIndex(5);
+  auto segments = v.scrollModeLineSegments();
+  REQUIRE(segments.size() == 7);
+  CHECK(segments[0].text == "plain.txt");
+  CHECK(segments[0].standout);
+  CHECK(segments[1].text == " ");
+  CHECK_FALSE(segments[1].standout);
+  CHECK(segments[2].text == "06/10 60%");
+  CHECK(segments[2].standout);
+  CHECK(segments[3].text == " ");
+  CHECK_FALSE(segments[3].standout);
+  CHECK(segments[4].text == "12");  // trailing, NOT edge-padded -- trailing2 gets that instead
+  CHECK(segments[4].standout);
+  CHECK(segments[5].text == " ");
+  CHECK_FALSE(segments[5].standout);  // the plain gap this test exists to confirm
+  CHECK(segments[6].standout);
+  CHECK(segments[6].text.rfind("/tmp/", 0) == 0);
+  CHECK(segments[6].text.size() > 5);  // padded with trailing spaces to reach the row's own width
 }
 
 TEST_CASE("scrollModeLineText: reaching the bottom boundary shows END, not a percentage") {

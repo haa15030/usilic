@@ -34,23 +34,29 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
 
     std::error_code ec;
     auto size = std::filesystem::file_size(path, ec);
-    // Two spaces between the byte size and the directory, not one --
-    // added 2026-08-10, a real request ("「1108009」と「/Users/.../」
-    // の間...「CLAUDE.md」と「00036/13736  0%」みたいにして欲しい")
-    // pointed at the name/position gap elsewhere on this same row
-    // (ModeLine::format()'s own "%2d%%" padding happens to leave two
-    // spaces before a single-digit percentage) as the reference look
-    // to match. An EARLIER version of this fix misread the request as
-    // wanting the byte COUNT ITSELF digit-grouped (e.g. "1 108 009")
-    // instead -- reverted; the size stays a plain, ungrouped
-    // std::to_string() per the follow-up's own explicit "ファイル
-    // サイズは「1108009」のままでいい".
-    std::string trailing = ec ? directory : std::to_string(size) + "  " + directory;
+    // The byte size and the directory are TWO SEPARATE ModeLineFields::
+    // trailing/trailing2 segments, not one string -- added 2026-08-10.
+    // An EARLIER version of this fix tried to solve a real request
+    // ("「1108009」と「/Users/.../」の間...「CLAUDE.md」と
+    // 「00036/13736  0%」みたいにして欲しい") by just widening the
+    // space INSIDE one single highlighted string, which (confirmed by
+    // comparing the actual pixel colors of the two reference
+    // screenshots) still left it as one unbroken reverse-video run --
+    // the requested look has a genuine PLAIN (non-highlighted) gap
+    // between "CLAUDE.md" and "00034/13761  0%", which only two
+    // independently-standout'd segments (see trailing2's own comment)
+    // can reproduce; a single string with extra spaces in it can't,
+    // since drawSegment() highlights everything it's given uniformly.
+    // The size itself stays a plain, ungrouped std::to_string() (a
+    // separate, earlier misreading already established and reverted
+    // that "ファイルサイズは「1108009」のままでいい").
+    std::string trailing = ec ? directory : std::to_string(size);
+    std::string trailing2 = ec ? "" : directory;
     // File mode's trailing field is legacy's padded-to-edge style, see
     // ModeLineFields::fillTrailingToEdge's own comment. No
     // rightWatermark here -- see its own comment on why File mode
     // never shows it.
-    return {path.filename().string(), trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/""};
+    return {path.filename().string(), trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", trailing2};
   });
 }
 

@@ -286,7 +286,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   shell_.scrollback().setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     std::string trailing = "(" + shell_.programName() + ")";
     if (!shellReturnName_.empty()) trailing += " " + shellReturnName_;
-    return {"SHELL", trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
+    return {"SHELL", trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", /*trailing2=*/""};
   });
   // Mode-line fields for KEY (^H): "KEY" fixed on the left, and
   // whichever mode KEY was invoked from's own name (previousModeName(),
@@ -296,7 +296,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // invoking KEY while viewing that file. A live callback since
   // keyReturnMode_ changes across separate KEY entries.
   keyView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    return {"KEY", previousModeName(keyReturnMode_), /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
+    return {"KEY", previousModeName(keyReturnMode_), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
+            /*trailing2=*/""};
   });
   // Mode-line fields for the LIST-based history pickers (K-45..K-49,
   // ^X^F/^X^D/^R/etc): the category itself ("FILE"/"DIR"/"COMMAND"/
@@ -349,11 +350,11 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     std::string trailing = inRange ? items[cursorIndex] : "";
     if (promptHistoryRecallKind_) {
       return {"HISTORY", trailing, /*fillTrailingToEdge=*/false,
-              /*rightWatermark=*/promptLabelText(*promptHistoryRecallKind_)};
+              /*rightWatermark=*/promptLabelText(*promptHistoryRecallKind_), /*trailing2=*/""};
     }
     std::string name = listBrowserChronological_ ? "HISTORY" : ringCategoryLabel(listBrowserCategory_);
     return {name, trailing, /*fillTrailingToEdge=*/false,
-            /*rightWatermark=*/""};
+            /*rightWatermark=*/"", /*trailing2=*/""};
   });
   // CutContent (the currently-selected CUT segment's own content --
   // HELP's own screen included) never gets a whole-line reverse-video
@@ -417,7 +418,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       std::size_t start = label.find_first_not_of(' ');
       if (start != std::string::npos) trailing += "  " + label.substr(start);
     }
-    return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
+    return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", /*trailing2=*/""};
   });
   // Mode-line fields for cutView_ itself (the segment-LABEL list, one
   // level ABOVE CutContent -- see its own class comment): "CUT" fixed
@@ -445,7 +446,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     } else if (cutOrigin_ == CutOrigin::File) {
       trailing = fileMode_.currentFile();
     }
-    return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/""};
+    return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", /*trailing2=*/""};
   });
 
   // usilicrc's own GREP section (2026-08-05 fix): a real CUI screenshot

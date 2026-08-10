@@ -500,7 +500,10 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
     segments.push_back({" ", false});
     drawnLen += 1;
     std::string trailing = fields.trailing;
-    if (fields.fillTrailingToEdge) {
+    // See renderModeLine()'s own identical trailing2 handling -- the
+    // edge-padding applies to trailing2 (the last segment) when
+    // present, not to trailing itself.
+    if (fields.fillTrailingToEdge && fields.trailing2.empty()) {
       // See renderModeLine()'s own identical padding -- keeps the
       // highlight reaching the screen's right edge in the modes that
       // want that, same as the flat-string version does.
@@ -508,6 +511,17 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
       if (remaining > 0) trailing += std::string(remaining, ' ');
     }
     segments.push_back({trailing, true});
+    drawnLen += static_cast<int>(trailing.size());
+    if (!fields.trailing2.empty()) {
+      segments.push_back({" ", false});
+      drawnLen += 1;
+      std::string trailing2 = fields.trailing2;
+      if (fields.fillTrailingToEdge) {
+        int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
+        if (remaining > 0) trailing2 += std::string(remaining, ' ');
+      }
+      segments.push_back({trailing2, true});
+    }
   }
   return segments;
 }
@@ -525,6 +539,7 @@ ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &field
     int len = static_cast<int>(positionText.size());
     if (withName && !fields.name.empty()) len += static_cast<int>(fields.name.size()) + 1;
     if (withTrailing && !fields.trailing.empty()) len += static_cast<int>(fields.trailing.size()) + 1;
+    if (withTrailing && !fields.trailing2.empty()) len += static_cast<int>(fields.trailing2.size()) + 1;
     return len;
   };
   if (cols <= 0 || rowLen(true, true) <= cols) return {true, true};
@@ -538,7 +553,10 @@ std::string ContentView::composeModeLineRow(const std::string &positionText) con
   FieldFit fit = fitModeLineFields(fields, positionText);
 
   std::string row = positionText;
-  if (fit.showTrailing && !fields.trailing.empty()) row += " " + fields.trailing;
+  if (fit.showTrailing && !fields.trailing.empty()) {
+    row += " " + fields.trailing;
+    if (!fields.trailing2.empty()) row += " " + fields.trailing2;
+  }
   if (fit.showName && !fields.name.empty()) row = fields.name + " " + row;
   return row;
 }
@@ -597,7 +615,13 @@ void ContentView::renderModeLine() {
     display_.putChar(' ');
     drawnLen += 1;
     std::string trailing = fields.trailing;
-    if (fields.fillTrailingToEdge) {
+    // Edge-padding (see below) applies to trailing2 when present (the
+    // LAST field actually drawn) -- see ModeLineFields::trailing2's
+    // own comment for why `trailing` itself is never padded once
+    // trailing2 exists (padding it too would erase the plain gap
+    // between the two that trailing2 exists to create in the first
+    // place).
+    if (fields.fillTrailingToEdge && fields.trailing2.empty()) {
       // Ported from disp_window()'s own `for (...) prev[i] = ' '`
       // loop: pad with spaces (still inside this field's own standout
       // run) so the highlight reaches the screen's right edge instead
@@ -608,6 +632,17 @@ void ContentView::renderModeLine() {
     }
     drawSegment(trailing);
     drawnLen += static_cast<int>(trailing.size());
+    if (!fields.trailing2.empty()) {
+      display_.putChar(' ');
+      drawnLen += 1;
+      std::string trailing2 = fields.trailing2;
+      if (fields.fillTrailingToEdge) {
+        int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
+        if (remaining > 0) trailing2 += std::string(remaining, ' ');
+      }
+      drawSegment(trailing2);
+      drawnLen += static_cast<int>(trailing2.size());
+    }
   }
 
   // Ported from disp_window()'s own fallback: when there's no

@@ -51,7 +51,7 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
     if (currentArchive_.empty()) return {};
     std::size_t slash = currentArchive_.find_last_of('/');
     std::string base = (slash == std::string::npos) ? currentArchive_ : currentArchive_.substr(slash + 1);
-    return {base, "", false, ""};
+    return {base, "", false, "", ""};
   });
 }
 

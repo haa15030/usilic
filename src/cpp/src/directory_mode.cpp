@@ -32,7 +32,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
     const auto &ls = configuration_.commandFor(ConfiguredRole::Ls);
     std::string program = ls.argv.empty() ? "" : ls.argv.front();
     return {currentDirectory_, program.empty() ? "" : "(" + program + ")", /*fillTrailingToEdge=*/false,
-            "usilic v1.5b"};
+            "usilic v1.5b", /*trailing2=*/""};
   });
 }
 

@@ -429,6 +429,19 @@ class ContentView {
     std::string trailing;
     bool fillTrailingToEdge = false;
     std::string rightWatermark;
+    // A SECOND independently-highlighted trailing segment, drawn after
+    // `trailing` with its own plain (non-standout) single-space gap in
+    // between -- added 2026-08-10 for FileMode's own byte-size/directory
+    // split (a real report, screenshots: the byte size and directory
+    // were one single unbroken highlight run with no gap, unlike every
+    // other mode-line field pair -- "1108009  /Users/.../" should look
+    // like "CLAUDE.md [gap] 00034/13761  0%" instead, two separate
+    // boxes). Empty (the default) for every other mode's provider,
+    // meaning no behavior change there. When both this and
+    // `fillTrailingToEdge` are set, the edge-padding applies to THIS
+    // field (the last one drawn), not `trailing` -- see
+    // renderModeLine()'s/scrollModeLineSegments()'s own comments.
+    std::string trailing2;
   };
 
   // Supplies this view's ModeLineFields, recomputed every time the
