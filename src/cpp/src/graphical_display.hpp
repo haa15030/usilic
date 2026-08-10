@@ -406,19 +406,46 @@ class GraphicalDisplay : public Display {
   // NATIVE PIXEL DIMENSIONS -- no scaling, no clamping to the content
   // area -- called by flush() only until the first real mouse
   // interaction (see Impl::everInteracted's own comment for why, and
-  // for what replaces this afterward). A real request (2026-08-09,
-  // restoring this after briefly removing it entirely: "同じ寸法で
-  // 貼るのは簡単なら、やってみてくれない？...原寸大で貼ってみて欲しい。
-  // どんな風になるか見たい") asked for exactly this -- an EARLIER
-  // version of this same method clamped both dimensions to fit
-  // whatever content area happened to be available, which is
-  // deliberately NOT done here: the reference image was captured from
-  // a specific real profile (Basic) at its own real pixel size, so
-  // pasting it unmodified only reproduces that profile's own true
-  // scrollbar exactly -- other profiles with different font sizes/row
-  // counts may see it overflow or leave a gap, a known, accepted
-  // tradeoff of this specific request rather than a bug to fix here.
+  // for what replaces this afterward), and ONLY for a launch with no
+  // real terminal window to peek through instead (Impl::fullWindowWidth
+  // == 0 -- see revealScrollbarStrip()'s own comment for the
+  // 2026-08-10 launch that now handles the "実はすでにGUI" overlay case
+  // differently). A real request (2026-08-09, restoring this after
+  // briefly removing it entirely: "同じ寸法で貼るのは簡単なら、やって
+  // くれない？...原寸大で貼ってみて欲しい。どんな風になるか見たい")
+  // asked for exactly this -- an EARLIER version of this same method
+  // clamped both dimensions to fit whatever content area happened to
+  // be available, which is deliberately NOT done here: the reference
+  // image was captured from a specific real profile (Basic) at its own
+  // real pixel size, so pasting it unmodified only reproduces that
+  // profile's own true scrollbar exactly -- other profiles with
+  // different font sizes/row counts may see it overflow or leave a
+  // gap, a known, accepted tradeoff of this specific request rather
+  // than a bug to fix here.
   void drawIdleScrollbarImage();
+
+  // Marks the window as interacted with (Impl::everInteracted = true,
+  // idempotent -- a no-op if already set) and, if matchWindowSize() had
+  // narrowed the live window to let a real terminal's own native
+  // scrollbar peek through underneath it (Impl::fullWindowWidth > 0),
+  // widens it back to its full size to cover that strip with this
+  // window's own real, interactive scrollbar (drawScrollbar()) instead
+  // -- added 2026-08-10 ("マウスに触れた直後から本来の表示幅となる、
+  // ってのは？"), replacing three separate `impl_->everInteracted =
+  // true;` assignments in pumpEvents() with calls to this single
+  // shared helper so the widen-on-interaction behavior can never
+  // silently drift out of sync between them. See matchWindowSize()'s
+  // own comment for the full reasoning: this exists specifically
+  // because embedding a copy of a real terminal's captured scrollbar
+  // chrome in this repository (drawIdleScrollbarImage(), scrollbar_
+  // idle_image.hpp) raised the same redistribution/licensing question
+  // as mac_cursor.hpp's own cursor artwork did, and letting the REAL
+  // terminal window (already sitting at the exact same screen position,
+  // in the "実はすでにGUI" overlay launch) show through a
+  // kScrollbarWidth-pixel gap sidesteps it entirely -- nothing is
+  // copied or embedded, the pixels shown are the live terminal's own,
+  // updated by the OS itself, not by this code.
+  void revealScrollbarStrip();
 };
 
 }  // namespace fm

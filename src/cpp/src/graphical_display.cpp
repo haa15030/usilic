@@ -180,21 +180,35 @@ struct GraphicalDisplay::Impl {
   // placeholder -- see updateScrollPosition()'s own comment.
   int scrollTopIndex = 0, scrollTotalLines = 0, scrollContentRows = 0;
   // False from window creation until the FIRST mouse interaction of
-  // any kind (set true in pumpEvents(), never reset back to false) --
-  // a real request (2026-08-09, restoring the idle image removed one
-  // round earlier: "-g起動後、マウスに触れるまでは画像が必要（一度でも
-  // 触れればつまみが永続的に表示され、以後は画像も不要となる）") wants
-  // the "実はすでにGUI" illusion's own reasoning applied one level
-  // deeper than before: it only matters up to the moment the user
-  // actually starts operating the window (a real mouse touch is
-  // unambiguous proof of that), not merely "at launch" as the earlier,
-  // now-reverted always-image-until-drag version treated it. Before
-  // that first touch, flush() pastes the static reference image
-  // (indistinguishable from -- because it IS -- a real captured
-  // terminal scrollbar); after it, flush() switches permanently to the
-  // real, always-current thumb (drawScrollbar()), matching
-  // renderScrolled()'s own active-drag rendering.
+  // any kind (set true in pumpEvents() via revealScrollbarStrip(),
+  // never reset back to false) -- a real request (2026-08-09, restoring
+  // the idle image removed one round earlier: "-g起動後、マウスに触れる
+  // までは画像が必要（一度でも触れればつまみが永続的に表示され、以後は
+  // 画像も不要となる）") wants the "実はすでにGUI" illusion's own
+  // reasoning applied one level deeper than before: it only matters up
+  // to the moment the user actually starts operating the window (a
+  // real mouse touch is unambiguous proof of that), not merely "at
+  // launch" as the earlier, now-reverted always-image-until-drag
+  // version treated it. Before that first touch, flush() either pastes
+  // the static reference image or (2026-08-10, see fullWindowWidth's
+  // own comment) leaves the strip undrawn because the LIVE window is
+  // physically narrower there, letting the real terminal underneath
+  // show through directly; after it, flush() switches permanently to
+  // the real, always-current thumb (drawScrollbar()), matching
+  // renderScrolled()'s own active-drag rendering, and the live window
+  // widens (if it had been narrowed) to cover that strip with it.
   bool everInteracted = false;
+  // The window's FULL width/height (scrollbar strip included) as
+  // computed by matchWindowSize() -- 0/0 for any launch that never
+  // calls it (a plain standalone `-g`/`^Og`, with no real terminal
+  // window behind this one to match against). Added 2026-08-10 for the
+  // "覗き見" (peek-through) scrollbar redesign: see matchWindowSize()'s
+  // own comment for why the LIVE SDL window is deliberately made
+  // narrower than this by kScrollbarWidth pixels until the first
+  // interaction, and revealScrollbarStrip()'s own comment for how
+  // these cached values get used to widen it back on demand.
+  int fullWindowWidth = 0;
+  int fullWindowHeight = 0;
   std::vector<Cell> grid;
 
   SDL_Color fg{220, 220, 220, 255};
@@ -723,14 +737,17 @@ void GraphicalDisplay::flush() {
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
 
-  // Static reference image until the first real mouse touch, the real
-  // always-current thumb from then on -- see Impl::everInteracted's
-  // own comment. effectiveTop is a plain int here when the real thumb
-  // path runs (no active sub-row pixel offset outside renderScrolled()'s
-  // own drag/coast path), unlike renderScrolled()'s own fractional
-  // effectiveTop.
+  // Static reference image (or, in the "実はすでにGUI" overlay case,
+  // simply nothing -- the live window is physically narrower there, see
+  // matchWindowSize()'s own comment, so the real terminal underneath
+  // shows through on its own with no drawing needed here at all) until
+  // the first real mouse touch, the real always-current thumb from then
+  // on -- see Impl::everInteracted's own comment. effectiveTop is a
+  // plain int here when the real thumb path runs (no active sub-row
+  // pixel offset outside renderScrolled()'s own drag/coast path),
+  // unlike renderScrolled()'s own fractional effectiveTop.
   if (!impl_->everInteracted) {
-    drawIdleScrollbarImage();
+    if (impl_->fullWindowWidth <= 0) drawIdleScrollbarImage();
   } else {
     drawScrollbar(static_cast<double>(impl_->scrollTopIndex), impl_->scrollTotalLines, impl_->scrollContentRows);
   }
@@ -945,11 +962,12 @@ bool GraphicalDisplay::pumpEvents() {
         stillOpen = false;
         break;
       case SDL_MOUSEBUTTONDOWN: {
-        // See Impl::everInteracted's own comment -- any button press
+        // See revealScrollbarStrip()'s own comment -- any button press
         // (even one this switch otherwise ignores below) counts as
         // "touched" and permanently flips flush() over from the
-        // static idle image to the real thumb.
-        impl_->everInteracted = true;
+        // static idle image (or peek-through real terminal, see
+        // matchWindowSize()'s own comment) to the real thumb.
+        revealScrollbarStrip();
         if (event.button.button != SDL_BUTTON_LEFT && event.button.button != SDL_BUTTON_RIGHT) break;
         // A left press that starts inside the scrollbar strip is a
         // thumb-drag gesture, not a content click/drag -- routed to
@@ -999,6 +1017,23 @@ bool GraphicalDisplay::pumpEvents() {
         } else if (event.motion.state & SDL_BUTTON_LMASK) {
           impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
         } else {
+          // Edge-hover trigger for revealScrollbarStrip() -- added
+          // 2026-08-10, see matchWindowSize()'s own comment for the
+          // full "peek-through" design this is part of. While the live
+          // window is still narrowed (fullWindowWidth > 0, not yet
+          // interacted with), SDL simply can't report mouse events past
+          // this window's own right edge -- the real terminal peeking
+          // out there is a DIFFERENT window as far as the OS is
+          // concerned, so there's no way to detect the mouse actually
+          // touching that strip directly. Hovering into the last
+          // kEdgeHoverThreshold pixels of THIS window (i.e. reaching
+          // toward where the strip begins) is used as the closest
+          // available proxy for "touched it".
+          if (!impl_->everInteracted && impl_->fullWindowWidth > 0) {
+            constexpr int kEdgeHoverThreshold = 8;
+            int narrowWidth = impl_->fullWindowWidth - Impl::kScrollbarWidth;
+            if (event.motion.x >= narrowWidth - kEdgeHoverThreshold) revealScrollbarStrip();
+          }
           int col = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
           int row = std::max(0, event.motion.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
           impl_->hoverQueue.push_back(HoverEvent{row, col});
@@ -1036,7 +1071,7 @@ bool GraphicalDisplay::pumpEvents() {
         break;
       }
       case SDL_MOUSEWHEEL: {
-        impl_->everInteracted = true;  // see Impl::everInteracted's own comment
+        revealScrollbarStrip();  // see its own comment
         // SDL_MOUSEWHEEL_FLIPPED means the OS-level "natural scrolling"
         // preference is on (confirmed default on macOS trackpads) --
         // SDL reports the raw hardware delta either way and leaves
@@ -1360,6 +1395,39 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
     width = flooredCellWidth * impl_->columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth;
   }
   int height = flooredCellHeight * impl_->rows + Impl::kMarginY * 2;
+  // Cached so revealScrollbarStrip() can widen the window back to this
+  // exact size later -- see its own comment, and liveWidth's below.
+  impl_->fullWindowWidth = width;
+  impl_->fullWindowHeight = height;
+  // The LIVE window is deliberately opened kScrollbarWidth pixels
+  // NARROWER than the real terminal's own measured width (unless
+  // already interacted with, which matchWindowSize() is never actually
+  // called again after in practice, but this guard keeps the method
+  // idempotent/safe if that ever changes) -- added 2026-08-10
+  // ("-gウィンドウは重ね打ち状態なわけだから、スクロールバーの幅だけ
+  // 狭い画面で立ち上げたらどうだろう？"). SDL_SetWindowSize keeps this
+  // window's top-left corner fixed (confirmed: matches
+  // setWindowPosition()'s own already-placed bounds->x/y) and shrinks
+  // from the bottom-right, so narrowing ONLY the width leaves exactly a
+  // kScrollbarWidth-pixel-wide vertical strip uncovered on the RIGHT
+  // edge -- precisely where the real terminal window underneath (this
+  // method is only ever called from the "実はすでにGUI" overlay launch,
+  // where one is guaranteed to be sitting at this exact position, see
+  // this method's own class-comment) has its own native scrollbar,
+  // confirmed to be the same 17px width as kScrollbarWidth itself (see
+  // kScrollbarWidth's own comment: two independent real measurements
+  // agree on this). The result: instead of this project's own captured
+  // screenshot of a scrollbar (drawIdleScrollbarImage(),
+  // scrollbar_idle_image.hpp -- kept only as a fallback for a
+  // standalone launch with no real terminal to peek through, see its
+  // own comment) or a hand-drawn approximation, what's visible in that
+  // strip before the first interaction is the REAL terminal's own live,
+  // always-current, always-correctly-themed native scrollbar chrome --
+  // not a copy of it. revealScrollbarStrip() widens this window back to
+  // impl_->fullWindowWidth (covering that strip with this window's own
+  // interactive drawScrollbar() instead) the moment the user's mouse
+  // reaches for it.
+  int liveWidth = impl_->everInteracted ? width : width - Impl::kScrollbarWidth;
   // Same opt-in USILICGUIDEBUG file flush() already uses, reused here
   // for exactly the same reason: this sandbox
   // has no real Terminal.app window to compare against, so root-
@@ -1372,14 +1440,39 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
     if (f) {
       std::fprintf(f,
                     "---matchWindowSize--- rows=%d columns=%d outer=%dx%d borders(t/l/b/r)=%d/%d/%d/%d "
-                    "content=%dx%d arithCell=%dx%d fontMetricCell=%dx%d flooredCell=%dx%d finalWindow=%dx%d\n",
+                    "content=%dx%d arithCell=%dx%d fontMetricCell=%dx%d flooredCell=%dx%d finalWindow=%dx%d "
+                    "liveWidth=%d\n",
                     impl_->rows, impl_->columns, outerWidth, outerHeight, borders.top, borders.left, borders.bottom,
                     borders.right, contentWidth, contentHeight, cellWidth, cellHeight, fontMetricCellWidth,
-                    fontMetricCellHeight, flooredCellWidth, flooredCellHeight, width, height);
+                    fontMetricCellHeight, flooredCellWidth, flooredCellHeight, width, height, liveWidth);
       std::fclose(f);
     }
   }
-  SDL_SetWindowSize(impl_->window, width, height);
+  SDL_SetWindowSize(impl_->window, liveWidth, height);
+}
+
+// See its own declaration comment (graphical_display.hpp) for the full
+// reasoning. Idempotent: a no-op once everInteracted is already true,
+// so repeated calls (mouse button, wheel, and edge-hover all funnel
+// here) never re-issue a redundant SDL_SetWindowSize.
+void GraphicalDisplay::revealScrollbarStrip() {
+  if (impl_->everInteracted) return;
+  impl_->everInteracted = true;
+  if (impl_->fullWindowWidth > 0) {
+    SDL_SetWindowSize(impl_->window, impl_->fullWindowWidth, impl_->fullWindowHeight);
+    // Same opt-in debug dump matchWindowSize()/flush() already use --
+    // this sandbox has no real display to visually confirm the widen
+    // actually happened, so this is what a standalone verification
+    // driver checks for instead.
+    if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+      FILE *f = std::fopen(dbg, "a");
+      if (f) {
+        std::fprintf(f, "---revealScrollbarStrip--- widened to %dx%d\n", impl_->fullWindowWidth,
+                      impl_->fullWindowHeight);
+        std::fclose(f);
+      }
+    }
+  }
 }
 
 // The REAL macOS system open-hand cursor, extracted live from
