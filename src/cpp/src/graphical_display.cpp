@@ -1689,16 +1689,35 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
   // gradient-lead-in reason -- the bottom slice's real cap has no such
   // lead-in to correct for, so it must stay anchored to the track's
   // real, unshifted bottom edge regardless of yOffset.
+  //
+  // kDefaultIdleBottomOffset: a FOLLOW-UP real report (screenshot,
+  // 2026-08-10, after the trackTop-decoupling fix above: "さっきより
+  // 2,3ドット高い") found the bottom slice still landing a few px
+  // above the real content edge even once decoupled from yOffset --
+  // plausibly bar-3.jpg's own bottom edge has a few pixels of the real
+  // scrollbar's own rounded/faded lead-in below its visually "solid"
+  // portion, the same class of issue yOffset already corrects for at
+  // the TOP slice, just unmeasured for this new bottom slice yet. +3
+  // is an ESTIMATE ("2,3ドット" split down the middle, rounded toward
+  // the reported end) pending exact confirmation on real hardware --
+  // same "tunable knob instead of another code-and-rebuild round"
+  // pattern as USILICIDLEIMAGEYOFFSET itself (which started as an
+  // estimate too, -9, before being confirmed exactly at -11).
+  constexpr int kDefaultIdleBottomOffset = 3;
+  int bottomOffset = kDefaultIdleBottomOffset;
+  if (const char *env = std::getenv("USILICIDLEBOTTOMOFFSET")) {
+    bottomOffset = std::atoi(env);
+  }
   int contentRows = std::max(impl_->rows - 1, 0);
-  int trackBottom = Impl::kMarginY + contentRows * impl_->cellHeight;
+  int trackBottom = Impl::kMarginY + contentRows * impl_->cellHeight + bottomOffset;
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     FILE *f = std::fopen(dbg, "a");
     if (f) {
       int windowHeight = Impl::kMarginY * 2 + impl_->rows * impl_->cellHeight;
       std::fprintf(f,
                     "---drawIdleScrollbarImage--- rows=%d cellHeight=%d trackTop=%d trackBottom=%d "
-                    "windowHeight=%d modeLineRowTop=%d\n",
-                    impl_->rows, impl_->cellHeight, trackTop, trackBottom, windowHeight,
+                    "bottomOffset=%d windowHeight=%d modeLineRowTop=%d\n",
+                    impl_->rows, impl_->cellHeight, trackTop, trackBottom, bottomOffset, windowHeight,
                     Impl::kMarginY + contentRows * impl_->cellHeight);
       std::fclose(f);
     }

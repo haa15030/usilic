@@ -2654,3 +2654,11 @@ cbなんてTOWNS-OS（FM-TOWNS公式OS）からのまんま頂きビットマッ
 下部スライスの基準位置を、上部の`yOffset`補正とは完全に切り離し、`drawScrollbar()`と全く同じ`contentRows=rows-1`のtrackHeight公式で独立に算出するよう修正しました。上部スライスのみ引き続き`yOffset`分だけ上にずらします。
 
 `make test` 650/650件全通過、`make usilic`もクリーンビルド成功。`drawIdleScrollbarImage()`に一時的なデバッグ出力を追加し、スタンドアロンドライバ(24行、cellHeight=19px)で`trackBottom=447`がモードライン行の開始Y座標と完全に一致することを数値で確認しました。CLAUDE.mdに項目251として記録し、コミット・プッシュ済みです。実機での最終的な見た目確認をお願いします。
+
+<さっきよりも2,3ドット高い。'/Users/haa15030/Desktop/スクリーンショット 2026-08-10 15.58.18.png'
+
+>`trackBottom`の算出自体は`drawScrollbar()`と同じ公式で正しくなったはずですが、`bar-3.jpg`画像自身の下端にも、上部の`USILICIDLEIMAGEYOFFSET`が補正しているのと同種の、実スクロールバーの丸み/フェード部分の余白ピクセルが数px含まれている可能性が高いです(未計測)。
+
+`USILICIDLEIMAGEYOFFSET`と同じ「まず妥当な既定値を仮置きし、実機の数値で確定させる」パターンで、`USILICIDLEBOTTOMOFFSET`(既定+3、下方向、「2,3ドット」を間を取って報告寄りに丸めた推定値)を新設し、`trackBottom`の算出に加算しました。`USILICIDLEIMAGEYOFFSET`自身も当初-9推定→実機確認で-11に確定した前例と同じ進め方です。
+
+`make test` 650/650件全通過、`make usilic`もクリーンビルド成功。この推定値の正確さ自体はこのサンドボックスでは検証不能なため、実機での見た目確認と(必要なら)`USILICIDLEBOTTOMOFFSET`での微調整をお願いします。CLAUDE.mdに項目252として記録し、コミット・プッシュ済みです。
