@@ -596,18 +596,6 @@ void GraphicalDisplay::renderCell(int row, int col) {
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (cell.underline) style |= TTF_STYLE_UNDERLINE;
-  // 2026-08-10: force half-width glyphs bold regardless of the cell's
-  // own SGR bold attribute -- a real report ("半角英数をboldにして
-  // みたら？") after SDL_HINT_RENDER_SCALE_QUALITY made no visible
-  // difference, on the theory that a thin single-column stroke at
-  // small pixel sizes reads as "jagged"/bitmap-like mostly because
-  // FreeType's antialiased edge is a large fraction of the stroke's
-  // own width -- a heavier (bold) stroke has more solid pixels
-  // relative to its edge, so it should read as smoother even without
-  // changing the underlying rasterization technology. See CLAUDE.md's
-  // item 261/262 for the fuller story (linear scale-quality hint
-  // alone was NOT sufficient).
-  if (!isWide) style |= TTF_STYLE_BOLD;
 
   // Fall back to a CJK-capable font (see loadCjkFallbackFont()'s own
   // comment) for whatever glyphs the primary font is missing --
@@ -633,6 +621,22 @@ void GraphicalDisplay::renderCell(int row, int col) {
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
   TTF_SetFontStyle(renderFont, style);
+  // 2026-08-11: replaces the item 262 "force half-width glyphs bold"
+  // experiment, reverted after real reports showed it wasn't font-
+  // independent (RedSands' "SF Mono Regular 24" came out WORSE/blurrier
+  // when forced bold, opposite of the default profile's "MS Gothic"
+  // pairing) and it collided with genuine SGR-bold semantics (^J^H's
+  // HELP screen uses real bold for emphasis). FreeType's default
+  // autohinter (TTF_HINTING_NORMAL) aggressively snaps stems to the
+  // pixel grid at small sizes, which is a plausible root cause of thin
+  // single-column glyphs reading as "jagged"/thin next to -c's CoreText
+  // rendering. TTF_HINTING_LIGHT only grid-fits vertically and lets
+  // horizontal stem widths follow the outline more naturally, which
+  // tends to look fuller/smoother without changing the font's actual
+  // weight the way TTF_STYLE_BOLD does. Applied only to narrow (half-
+  // width) glyphs, matching the original report's scope; wide (CJK)
+  // glyphs keep normal hinting.
+  TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_LIGHT);
 
   SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), fg);
   if (!surface) return;
@@ -716,9 +720,6 @@ void GraphicalDisplay::renderCursor() {
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (cell.underline) style |= TTF_STYLE_UNDERLINE;
-  // Same half-width-forced-bold experiment as renderCell() -- see its
-  // own comment.
-  if (!isWide) style |= TTF_STYLE_BOLD;
 
   // Same primary/fallback-font glyph-coverage decision as renderCell()
   // -- see its own comment.
@@ -728,6 +729,9 @@ void GraphicalDisplay::renderCursor() {
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
   TTF_SetFontStyle(renderFont, style);
+  // Same half-width-hinting adjustment as renderCell() -- see its own
+  // comment.
+  TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_LIGHT);
 
   SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), impl_->bg);
   if (!surface) return;
@@ -1582,12 +1586,17 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
       if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
         renderFont = impl_->fallbackFont;
-      // Same half-width-forced-bold experiment as renderCell() -- see
-      // its own comment. This function previously never called
-      // TTF_SetFontStyle() at all, silently inheriting whatever style
-      // renderCell()/renderCursor() last left the font in; now made
-      // explicit so the scrolling render path matches the static one.
-      TTF_SetFontStyle(renderFont, isWide ? TTF_STYLE_NORMAL : TTF_STYLE_BOLD);
+      // This function previously never called TTF_SetFontStyle() at
+      // all, silently inheriting whatever style renderCell()/
+      // renderCursor() last left the font in; now made explicit so the
+      // scrolling render path matches the static one. No per-glyph bold
+      // info reaches this function (renderTextRun() only gets a flat
+      // fg color, not a Cell), so this is always NORMAL.
+      TTF_SetFontStyle(renderFont, TTF_STYLE_NORMAL);
+      // Same half-width-hinting adjustment as renderCell() -- see its
+      // own comment (item 263, replacing the item 262 forced-bold
+      // experiment).
+      TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_LIGHT);
       SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, glyph.c_str(), sdlFg);
       if (surface) {
         SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
