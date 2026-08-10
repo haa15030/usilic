@@ -355,12 +355,15 @@ class GraphicalDisplay : public Display {
   int cellHeightPixels() const;
 
   // Swaps the window's cursor between the default arrow and the REAL
-  // macOS open-hand cursor (NSCursor.openHand, via mac_cursor.hpp --
-  // see the .cpp's own comment for why a real system cursor, not a
-  // hand-drawn SDL_CreateColorCursor bitmap, after two rejected
-  // attempts at the latter) while dragging CONTENT (the "cat's paw"
-  // scroll gesture) -- NOT SDL's system SDL_SYSTEM_CURSOR_HAND (a
-  // pointing index finger), which this method used before 2026-08-10
+  // macOS open-hand cursor's pixels (extracted at runtime from
+  // NSCursor.openHand via mac_cursor.hpp, then driven through SDL's
+  // own SDL_SetCursor() like an ordinary SDL_Cursor -- see the .cpp's
+  // own comment for why a real system cursor's pixels, not a
+  // hand-drawn SDL_CreateColorCursor bitmap, and not a raw
+  // [NSCursor set] call either, after two rejected hand-drawn attempts
+  // and one cursor-reverts-mid-drag bug) while dragging CONTENT (the
+  // "cat's paw" scroll gesture) -- NOT SDL's system SDL_SYSTEM_CURSOR_HAND
+  // (a pointing index finger), which this method used before 2026-08-10
   // and which setPointingCursor() below now covers instead.
   void setHandCursor(bool active);
 

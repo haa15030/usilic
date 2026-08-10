@@ -2,13 +2,13 @@
 
 // Compiled instead of mac_cursor.mm on non-Darwin platforms (see the
 // Makefile's own Darwin-only substitution) -- NSCursor/AppKit simply
-// don't exist elsewhere. GraphicalDisplay::setHandCursor() calls these
-// unconditionally (no #ifdef __APPLE__ at its own call site); both are
-// harmless no-ops here, leaving the cursor whatever it already was.
+// don't exist elsewhere. GraphicalDisplay::setHandCursor() checks
+// CursorImage::width before using the result, so an empty (all-default)
+// CursorImage here is a harmless "extraction unavailable" signal that
+// leaves the cursor whatever it already was.
 
 namespace fm {
 
-void setOpenHandCursor() {}
-void clearOpenHandCursor() {}
+CursorImage extractOpenHandCursorImage() { return CursorImage{}; }
 
 }  // namespace fm

@@ -235,11 +235,8 @@ struct GraphicalDisplay::Impl {
   // to the normal content dragQueue/hoverQueue, since SDL_MOUSEMOTION
   // itself carries no memory of where the ORIGINAL button-down was.
   bool scrollbarDragActive = false;
-  // handCursorActive: tracks whether the REAL macOS open-hand cursor
-  // (mac_cursor.hpp's setOpenHandCursor()/clearOpenHandCursor(), NOT
-  // an SDL_Cursor* -- see setHandCursor()'s own comment for why there
-  // were two earlier, since-abandoned hand-drawn SDL_CreateColorCursor
-  // attempts) is currently showing, for dragging CONTENT itself (the
+  // handCursorActive: tracks whether the open-hand cursor (handCursor
+  // below) is currently showing, for dragging CONTENT itself (the
   // "cat's paw" scroll gesture). pointingCursor: SDL's own system
   // pointing-hand (index finger), used for scrollbar-thumb dragging --
   // see setPointingCursor()'s own comment. Split into two cursors
@@ -250,7 +247,23 @@ struct GraphicalDisplay::Impl {
   // real trackpad/mouse OS convention does (open hand while panning
   // content, pointing hand only for a clickable control like a
   // scrollbar).
+  //
+  // handCursor: an SDL_Cursor built (lazily, on first use) from the
+  // REAL macOS open-hand cursor's pixels (mac_cursor.hpp's
+  // extractOpenHandCursorImage()), driven through SDL_SetCursor() just
+  // like pointingCursor below -- NOT a raw [[NSCursor openHandCursor]
+  // set] call. An earlier version of this field called that directly
+  // and skipped SDL entirely; it displayed correctly on mouse-down but
+  // reverted to the plain arrow the instant a drag actually started
+  // moving (a real report: "画面ドラッグを開始したとたんに矢印に戻る"),
+  // because SDL's own Cocoa backend re-asserts ITS OWN tracked
+  // SDL_Cursor on every mouse-motion event, stomping any cursor set
+  // through a side channel SDL doesn't know about. Routing it through
+  // SDL_SetCursor() like pointingCursor fixes that the same way
+  // pointingCursor never had the problem in the first place -- see
+  // setHandCursor()'s own comment.
   bool handCursorActive = false;
+  SDL_Cursor *handCursor = nullptr;
   SDL_Cursor *pointingCursor = nullptr;
   bool pointingCursorActive = false;
 
@@ -440,6 +453,7 @@ GraphicalDisplay::~GraphicalDisplay() {
   // rebuilding.
   SDL_StopTextInput();
   SDL_PumpEvents();
+  if (impl_->handCursor) SDL_FreeCursor(impl_->handCursor);
   if (impl_->pointingCursor) SDL_FreeCursor(impl_->pointingCursor);
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);
@@ -1368,38 +1382,54 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   SDL_SetWindowSize(impl_->window, width, height);
 }
 
-// The REAL macOS system open-hand cursor (mac_cursor.hpp's
-// setOpenHandCursor()/clearOpenHandCursor(), backed by
-// NSCursor.openHand) -- not an SDL_Cursor built from a hand-drawn
-// bitmap. Two earlier, since-abandoned attempts at drawing this
-// shape ourselves (a flat-rectangle silhouette, then a rounded-
-// capsule one) were both real rejections ("ロボットの手みたいな
-// やつは却下", then "さっき却下のロボット指よりもひどくなった") --
-// a same-day sharp catch explained why neither could ever look
-// right: the pointing-hand cursor this project ALREADY shows for
-// scrollbar dragging (setPointingCursor() below) was never actually
-// drawn by this project or by SDL2 either -- it's macOS's own real
-// system cursor asset (SDL_SYSTEM_CURSOR_HAND maps directly to
+// The REAL macOS system open-hand cursor, extracted live from
+// NSCursor.openHand (mac_cursor.hpp's extractOpenHandCursorImage())
+// and wrapped in an SDL_Cursor -- not a hand-drawn SDL_CreateColorCursor
+// bitmap, and NOT a raw [[NSCursor openHandCursor] set] call either
+// (an earlier version of this function did that and it reverted to
+// the plain arrow the instant a drag started moving -- see
+// mac_cursor.hpp's own comment for the full story of why routing
+// through SDL_SetCursor(), like setPointingCursor() below already
+// does, was the fix). Two earlier, since-abandoned attempts at
+// drawing this shape ourselves (a flat-rectangle silhouette, then a
+// rounded-capsule one) were both real rejections ("ロボットの手みたい
+// なやつは却下", then "さっき却下のロボット指よりもひどくなった") --
+// a same-day sharp catch explained why neither could ever look right:
+// the pointing-hand cursor this project ALREADY shows for scrollbar
+// dragging (setPointingCursor() below) was never actually drawn by
+// this project or by SDL2 either -- it's macOS's own real system
+// cursor asset (SDL_SYSTEM_CURSOR_HAND maps directly to
 // `[NSCursor pointingHandCursor]` on macOS, confirmed by reading
 // SDL2's own upstream source, src/video/cocoa/SDL_cocoamouse.m), so
-// any hand-drawn approximation sitting next to it was always going
-// to look inferior by comparison. Switching this cursor to the SAME
-// kind of real system asset (NSCursor.openHand, confirmed to exist
-// as a real, well-formed vector cursor on this machine:
-// /System/Library/Frameworks/ApplicationServices.framework/Versions/
-// A/Frameworks/HIServices.framework/Versions/A/Resources/cursors/
-// openhand/cursor.pdf) via a tiny Objective-C++ (.mm) bridge
-// (mac_cursor.mm) -- reconsidered from the earlier "avoid .mm"
-// preference (the scrollbar's own NSScroller work) specifically
-// because the payoff here is concrete and already demonstrated,
-// unlike that more speculative attempt.
+// any hand-drawn approximation sitting next to it was always going to
+// look inferior by comparison. Extracting NSCursor.openHand's own
+// pixels (confirmed to exist as a real, well-formed vector cursor on
+// this machine: /System/Library/Frameworks/ApplicationServices.
+// framework/Versions/A/Frameworks/HIServices.framework/Versions/A/
+// Resources/cursors/openhand/cursor.pdf) via a tiny Objective-C++
+// (.mm) bridge (mac_cursor.mm) shows the exact same real asset instead
+// -- reconsidered from the earlier "avoid .mm" preference (the
+// scrollbar's own NSScroller work) specifically because the payoff
+// here is concrete and already demonstrated, unlike that more
+// speculative attempt.
 void GraphicalDisplay::setHandCursor(bool active) {
   if (active == impl_->handCursorActive) return;
   impl_->handCursorActive = active;
   if (active) {
-    setOpenHandCursor();
+    if (!impl_->handCursor) {
+      CursorImage img = extractOpenHandCursorImage();
+      if (img.width > 0 && img.height > 0) {
+        SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(
+            img.rgba.data(), img.width, img.height, 32, img.width * 4, SDL_PIXELFORMAT_RGBA32);
+        if (surface) {
+          impl_->handCursor = SDL_CreateColorCursor(surface, img.hotspotX, img.hotspotY);
+          SDL_FreeSurface(surface);
+        }
+      }
+    }
+    if (impl_->handCursor) SDL_SetCursor(impl_->handCursor);
   } else {
-    clearOpenHandCursor();
+    SDL_SetCursor(SDL_GetDefaultCursor());
   }
 }
 

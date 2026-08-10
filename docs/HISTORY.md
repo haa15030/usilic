@@ -2570,3 +2570,11 @@ HISTORY.md:2522「SDL2にはこの形状に対応するシステムカーソル�
 以前スクロールバー用の`NSScroller`で`.mm`(Objective-C++)ブリッジを導入して結局撤回したのは「CUIの見た目に合わない」という美観上の理由でしたが、今回は(1)手描き2回とも明確に却下された実証済みの必要性があり、(2)必要なCocoa API面が`[[NSCursor openHandCursor] set]`という状態を持たない単純な呼び出し1つだけ(ウィンドウハンドルもsubview管理も不要)という2点から、`.mm`再導入は妥当と判断しました。
 
 `mac_cursor.hpp`/`.mm`/`_stub.cpp`を新設し(撤回済みの`mac_scrollbar`と同じ3ファイル構成)、`Makefile`に`-framework Cocoa`を再追加、`graphical_display.cpp`から手描きビットマップ生成コードを完全に削除して`NSCursor.openHand`呼び出しに置き換えました。`make test` 650/650件全通過、`make usilic`もクリーンビルド成功、スタンドアロンの検証ドライバでも一連のカーソル切り替えがクラッシュ無く完走することを確認しました。CLAUDE.mdに項目245として記録し、コミット・プッシュ済みです。実際に本物のopenhandカーソルとして表示されるかは実機でのご確認をお願いします。
+
+<openhandはバッチリ。惜しいのは、左クリック中は確かにopenhandだが画面ドラッグを開始したとたんに矢印に戻る。戻らなければ完成。
+
+>原因が分かりました。前回の実装は`[[NSCursor openHandCursor] set]`をSDLを経由せず直接呼んでいました。これはマウスボタン押下の瞬間は正しく表示されますが、SDLのCocoaバックエンドはマウス移動イベントのたびに「SDL自身が把握しているカーソル」を再適用します。SDLの関知しない側経路でNSCursorを直接切り替えても、次のマウス移動イベントでSDLが自分の管理しているカーソル(=デフォルトの矢印、こちらの変更をSDLは知らない)を再度突きつけて上書きしていました。既存の`setPointingCursor()`(スクロールバードラッグ用)がこの問題を一度も起こしていなかったのは、`SDL_CreateSystemCursor()`+`SDL_SetCursor()`というSDL管理下の経路を使っていたためです。
+
+修正として、`mac_cursor.hpp`/`.mm`のAPIを「その場でNSCursorをset()する」方式から「`NSCursor.openHandCursor`の画像とホットスポット座標を実行時に抽出して返す」方式(`extractOpenHandCursorImage()`)に全面変更しました。抽出したピクセルを`SDL_CreateRGBSurfaceWithFormatFrom()`→`SDL_CreateColorCursor()`でSDL管理下の`SDL_Cursor*`に変換した上で`SDL_SetCursor()`を呼ぶよう変更し、`setPointingCursor()`と全く同じSDL管理下の経路に統一しました。本物のアセットをリポジトリに埋め込むのではなく実行時に生きたOSから毎回抽出する設計は維持しています。
+
+`make test` 650/650件全通過、`make usilic`もクリーンビルド成功。抽出処理単体を検証する簡易ドライバで、32×32・ホットスポット(16,17)・非透明ピクセル353/1024というhand形状として妥当な値が実際に返ることを確認し(フォールバックではなく本物の抽出が成功していることの裏付け)、スタンドアロンのカーソル切り替えドライバもクラッシュ無く完走することを確認しました。CLAUDE.mdに項目246として記録し、コミット・プッシュ済みです。ドラッグ移動中もopenhandのまま維持されるか自体はこのサンドボックス(表示デバイス無し)では検証不能なため、実機でのご確認をお願いします。
