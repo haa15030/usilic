@@ -13545,6 +13545,41 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       前例と同じく、実機での見た目確認と(必要なら)
       `USILICIDLEBOTTOMOFFSET`での微調整をお願いしたい。
 
+253. **2026-08-10(続き): `USILICIDLEBOTTOMOFFSET`が固定ピクセル値では
+    なかったと判明、`bottomOffset = cellHeight - yOffset`という
+    厳密な式へ置き換え、専用の環境変数自体を廃止**。ユーザーから
+    「USILICIDLEBOTTOMOFFSET=40で大丈夫そうだが、HISTORY.md:2500-2502
+    を反映してからの方がよくない？」との指摘(HISTORY.md:2500-2502は
+    項目241、Novelプロファイルでの`arithCell`/`fontMetricCell`
+    フロア問題の実測データ)。「Novelだけ補正値が違う」という事実
+    自体が、固定ピクセル値ではなく何らかのプロファイル依存量(＝
+    フォントサイズ、＝`cellHeight`)に比例する量ではないか、という
+    鋭い示唆だった。
+   - **実測**: ユーザーに`USILICGUIDEBUG`のダンプ2行(`matchWindowSize`/
+      `drawIdleScrollbarImage`)をNovelプロファイルで取得・共有して
+      いただいた: `cellHeight=29`で`USILICIDLEBOTTOMOFFSET=40`が
+      ピッタリ。既に確定していた「通常プロファイル」側は
+      `cellHeight=19`(このサンドボックスの標準検証ドライバの実測値と
+      一致)で`=30`がピッタリだった。
+   - **発見**: 2点のデータ`(cellHeight, offset) = (19, 30), (29, 40)`
+      はどちらも寸分違わず`offset = cellHeight - yOffset`
+      (`yOffset`は既存の`USILICIDLEIMAGEYOFFSET`、既定-11)を満たして
+      いた(19-(-11)=30、29-(-11)=40)。2つの全く異なるフォント
+      サイズでこれほど正確に一致するのは偶然ではなく、元画像自体の
+      上端・下端が同じ大きさのリード・イン余白を持っている(上端の
+      `yOffset`補正と対称)という構造的な関係と判断した。
+   - **実装**: `trackBottom`を`Impl::kMarginY + rows*cellHeight -
+      yOffset`という厳密な式に置き換え(`USILICIDLEBOTTOMOFFSET`
+      環境変数と`kDefaultIdleBottomOffset`定数は削除)、上下ともに
+      既存の`USILICIDLEIMAGEYOFFSET`ひとつだけで対称に効くよう整理
+      した。新規のチューニングノブは不要になった。
+   - **検証**: `make test`で650/650件全通過、`make usilic`もクリーン
+      ビルド成功。スタンドアロンドライバ(`cellHeight=19`)で
+      `trackBottom=477`(=`modeLineRowTop`447+実測offset 30)が
+      式から導出した値と完全一致することを確認、Novelの実測値
+      (`cellHeight=29`→`trackBottom=717`)も手計算で式に当てはめ
+      完全一致することを確認済み。実機での最終確認をお願いしたい。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

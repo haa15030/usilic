@@ -2662,3 +2662,22 @@ cbなんてTOWNS-OS（FM-TOWNS公式OS）からのまんま頂きビットマッ
 `USILICIDLEIMAGEYOFFSET`と同じ「まず妥当な既定値を仮置きし、実機の数値で確定させる」パターンで、`USILICIDLEBOTTOMOFFSET`(既定+3、下方向、「2,3ドット」を間を取って報告寄りに丸めた推定値)を新設し、`trackBottom`の算出に加算しました。`USILICIDLEIMAGEYOFFSET`自身も当初-9推定→実機確認で-11に確定した前例と同じ進め方です。
 
 `make test` 650/650件全通過、`make usilic`もクリーンビルド成功。この推定値の正確さ自体はこのサンドボックスでは検証不能なため、実機での見た目確認と(必要なら)`USILICIDLEBOTTOMOFFSET`での微調整をお願いします。CLAUDE.mdに項目252として記録し、コミット・プッシュ済みです。
+
+<USILICIDLEBOTTOMOFFSET=40で大丈夫そうだが、HISTORY.md:2500-2502を反映してからの方がよくない？
+
+>失礼しました、日本語で続けます。
+
+<日本語でよろしく。
+
+<USILICIDLEBOTTOMOFFSET=40で大丈夫そうだが、HISTORY.md:2500-2502を反映してからの方がよくない？
+
+>HISTORY.md:2500-2502は項目241(Novelプロファイルでの幅フロア問題、arithCellとflooredCellが食い違うケース)の実測データですね。ご指摘の通り、Novelがなぜ他プロファイルと違う補正値を必要とするのか、同じ「フロアが効いているかどうか」という観点で高さ側(cellHeight)も怪しいと思います。Novelプロファイルで`USILICGUIDEBUG`のダンプ2行を共有していただけますか。
+
+<---matchWindowSize--- rows=24 columns=80 outer=1157x742 borders(t/l/b/r)=32/0/0/0 content=1157x710 arithCell=14x29 fontMetricCell=15x25 flooredCell=15x29 finalWindow=1237x716
+---drawIdleScrollbarImage--- rows=24 cellHeight=29 trackTop=-1 trackBottom=680 bottomOffset=3 windowHeight=716 modeLineRowTop=677
+
+>見事に一致しました。`bottomOffset = cellHeight - yOffset`(既存のyOffset定数をそのまま流用)という単一の式で、Novel(cellHeight=29→40)と通常プロファイル(cellHeight=19→30)の両方の実測値がぴったり一致します(19-(-11)=30、29-(-11)=40)。2つの全く異なるフォントサイズでこれほど正確に一致するのは偶然ではなく、元画像自体の上端・下端が同じ大きさのリード・イン余白を持っている(上端のyOffset補正と対称)という構造的な関係と判断しました。
+
+`trackBottom`を`Impl::kMarginY + rows*cellHeight - yOffset`という厳密な式に置き換え、`USILICIDLEBOTTOMOFFSET`環境変数と`kDefaultIdleBottomOffset`定数は削除しました。上下ともに既存の`USILICIDLEIMAGEYOFFSET`ひとつだけで対称に効くようになり、新規のチューニングノブは不要になりました。
+
+`make test` 650/650件全通過、`make usilic`もクリーンビルド成功。スタンドアロンドライバ(cellHeight=19)で`trackBottom=477`(=modeLineRowTop 447+実測offset 30)が式から導出した値と完全一致することを確認し、Novelの実測値(cellHeight=29→trackBottom=717)も手計算で式に当てはめ完全一致することを確認しました。CLAUDE.mdに項目253として記録し、コミット・プッシュ済みです。実機での最終確認をお願いします。

@@ -1659,65 +1659,62 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
   // a real terminal's own scrollbar, which has no such lead-in. -11
   // was confirmed exactly on real hardware
   // ("USILICIDLEIMAGEYOFFSET=-11でピッタリ") for that original single
-  // image; applied identically to this 3-slice composite's own TOP
-  // edge now (the top slice is a direct re-crop of that same original
-  // image's own top region, so the same lead-in reasoning should still
-  // apply) -- but deliberately NOT to the bottom edge (see trackBottom's
-  // own comment below for why an earlier version of this method got
-  // that wrong, "bar-3位置が高め", 2026-08-10). USILICIDLEIMAGEYOFFSET
-  // (same "tunable knob instead of another code-and-rebuild round"
-  // pattern as USILICTITLEBARHEIGHT/USILICSCROLLBARSCALE) still
-  // overrides this default outright, kept for the same reason those
-  // other knobs are: display/font/profile variation this sandbox can't
-  // itself verify against.
+  // image; applied to this 3-slice composite's own TOP edge (the top
+  // slice is a direct re-crop of that same original image's own top
+  // region, so the same lead-in reasoning still applies) -- AND,
+  // symmetrically, to the BOTTOM edge too (see trackBottom's own
+  // comment below for the real-hardware data that confirmed this).
+  // USILICIDLEIMAGEYOFFSET (same "tunable knob instead of another
+  // code-and-rebuild round" pattern as USILICTITLEBARHEIGHT/
+  // USILICSCROLLBARSCALE) still overrides this default outright, kept
+  // for the same reason those other knobs are: display/font/profile
+  // variation this sandbox can't itself verify against.
   constexpr int kDefaultIdleImageYOffset = -11;
   int yOffset = kDefaultIdleImageYOffset;
   if (const char *env = std::getenv("USILICIDLEIMAGEYOFFSET")) {
     yOffset = std::atoi(env);
   }
   int trackTop = Impl::kMarginY + yOffset;
-  // trackBottom is the real scrollbar's own UNSHIFTED bottom edge
-  // (Impl::kMarginY + contentRows*cellHeight, matching drawScrollbar()'s
-  // own trackHeight formula exactly -- contentRows is rows-1, NOT rows:
-  // the last row is reserved for the mode line, see main.cpp's own
-  // `std::max(gui.rows() - 1, 0)` passed to updateScrollPosition(),
-  // never part of the scrollable track) -- a real report (screenshot,
-  // 2026-08-10, "bar-3位置が高め") caught an EARLIER version of this
-  // method computing trackBottom from trackTop (i.e. `+= yOffset` too),
-  // which dragged the bottom slice's own position up by the same
-  // amount the top slice is intentionally nudged for its own unrelated
-  // gradient-lead-in reason -- the bottom slice's real cap has no such
-  // lead-in to correct for, so it must stay anchored to the track's
-  // real, unshifted bottom edge regardless of yOffset.
-  //
-  // kDefaultIdleBottomOffset: a FOLLOW-UP real report (screenshot,
-  // 2026-08-10, after the trackTop-decoupling fix above: "さっきより
-  // 2,3ドット高い") found the bottom slice still landing a few px
-  // above the real content edge even once decoupled from yOffset --
-  // plausibly bar-3.jpg's own bottom edge has a few pixels of the real
-  // scrollbar's own rounded/faded lead-in below its visually "solid"
-  // portion, the same class of issue yOffset already corrects for at
-  // the TOP slice, just unmeasured for this new bottom slice yet. +3
-  // is an ESTIMATE ("2,3ドット" split down the middle, rounded toward
-  // the reported end) pending exact confirmation on real hardware --
-  // same "tunable knob instead of another code-and-rebuild round"
-  // pattern as USILICIDLEIMAGEYOFFSET itself (which started as an
-  // estimate too, -9, before being confirmed exactly at -11).
-  constexpr int kDefaultIdleBottomOffset = 3;
-  int bottomOffset = kDefaultIdleBottomOffset;
-  if (const char *env = std::getenv("USILICIDLEBOTTOMOFFSET")) {
-    bottomOffset = std::atoi(env);
-  }
-  int contentRows = std::max(impl_->rows - 1, 0);
-  int trackBottom = Impl::kMarginY + contentRows * impl_->cellHeight + bottomOffset;
+  // trackBottom -- two real reports (screenshots, 2026-08-10) got this
+  // wrong in two different ways before landing here:
+  //   1. An EARLIER version computed trackBottom from trackTop (i.e.
+  //      applying yOffset there too), dragging the bottom slice up by
+  //      the same amount the top slice is nudged for its own gradient
+  //      lead-in -- wrong, "bar-3位置が高め".
+  //   2. The NEXT version anchored trackBottom to the track's plain
+  //      unshifted bottom edge (Impl::kMarginY + contentRows*cellHeight,
+  //      contentRows == rows-1 since the last row is reserved for the
+  //      mode line -- matching drawScrollbar()'s own trackHeight
+  //      formula) with no correction at all -- still wrong, "さっきより
+  //      2,3ドット高い", meaning bar-3.jpg's own bottom edge ALSO has a
+  //      few pixels of real-scrollbar lead-in below its visually
+  //      "solid" portion, the same class of thing yOffset already
+  //      corrects for at the top.
+  // A real USILICIDLEBOTTOMOFFSET tuning session across TWO very
+  // different profiles (a small-font one needing +30, and 24pt "Novel"
+  // -- cellHeight 19 vs 29 respectively -- needing +40) revealed the
+  // correction is not a fixed pixel count at all: it's exactly
+  // `cellHeight - yOffset` in BOTH cases (19-(-11)=30, 29-(-11)=40, an
+  // exact match, not a coincidence -- the two ends of the original
+  // source screenshot most likely have matching-magnitude lead-in
+  // margins, so shifting the WHOLE composite kMarginY+rows*cellHeight
+  // range outward by |yOffset| at both ends, symmetrically, is exactly
+  // what both real data points independently confirm). This makes
+  // trackBottom simply `Impl::kMarginY + rows*cellHeight - yOffset`
+  // (equivalently: the mode-line row's own top edge, PLUS one more
+  // cellHeight to account for stepping from contentRows back to the
+  // full row count, MINUS yOffset) -- no separate tunable knob needed;
+  // USILICIDLEIMAGEYOFFSET alone now drives both ends symmetrically.
+  int trackBottom = Impl::kMarginY + impl_->rows * impl_->cellHeight - yOffset;
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     FILE *f = std::fopen(dbg, "a");
     if (f) {
       int windowHeight = Impl::kMarginY * 2 + impl_->rows * impl_->cellHeight;
+      int contentRows = std::max(impl_->rows - 1, 0);
       std::fprintf(f,
-                    "---drawIdleScrollbarImage--- rows=%d cellHeight=%d trackTop=%d trackBottom=%d "
-                    "bottomOffset=%d windowHeight=%d modeLineRowTop=%d\n",
-                    impl_->rows, impl_->cellHeight, trackTop, trackBottom, bottomOffset, windowHeight,
+                    "---drawIdleScrollbarImage--- rows=%d cellHeight=%d yOffset=%d trackTop=%d "
+                    "trackBottom=%d windowHeight=%d modeLineRowTop=%d\n",
+                    impl_->rows, impl_->cellHeight, yOffset, trackTop, trackBottom, windowHeight,
                     Impl::kMarginY + contentRows * impl_->cellHeight);
       std::fclose(f);
     }
