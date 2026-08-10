@@ -8,9 +8,13 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#ifdef __APPLE__
+#include <SDL2/SDL_syswm.h>
+#endif
 
 #include "scrollbar_idle_image.hpp"
 #include "mac_cursor.hpp"
+#include "mac_window_transparency.hpp"
 #include "utf8.hpp"
 
 namespace fm {
@@ -190,25 +194,41 @@ struct GraphicalDisplay::Impl {
   // real mouse touch is unambiguous proof of that), not merely "at
   // launch" as the earlier, now-reverted always-image-until-drag
   // version treated it. Before that first touch, flush() either pastes
-  // the static reference image or (2026-08-10, see fullWindowWidth's
-  // own comment) leaves the strip undrawn because the LIVE window is
-  // physically narrower there, letting the real terminal underneath
-  // show through directly; after it, flush() switches permanently to
-  // the real, always-current thumb (drawScrollbar()), matching
-  // renderScrolled()'s own active-drag rendering, and the live window
-  // widens (if it had been narrowed) to cover that strip with it.
+  // the static reference image or (2026-08-10, see scrollbarPeekEligible's
+  // own comment) leaves that strip's pixels fully TRANSPARENT, letting
+  // the real terminal underneath show through directly; after it,
+  // flush() switches permanently to the real, always-current thumb
+  // (drawScrollbar()), matching renderScrolled()'s own active-drag
+  // rendering.
   bool everInteracted = false;
-  // The window's FULL width/height (scrollbar strip included) as
-  // computed by matchWindowSize() -- 0/0 for any launch that never
-  // calls it (a plain standalone `-g`/`^Og`, with no real terminal
-  // window behind this one to match against). Added 2026-08-10 for the
-  // "覗き見" (peek-through) scrollbar redesign: see matchWindowSize()'s
-  // own comment for why the LIVE SDL window is deliberately made
-  // narrower than this by kScrollbarWidth pixels until the first
-  // interaction, and revealScrollbarStrip()'s own comment for how
-  // these cached values get used to widen it back on demand.
-  int fullWindowWidth = 0;
-  int fullWindowHeight = 0;
+  // True once matchWindowSize() has run (the "実はすでにGUI" overlay
+  // launch, where a real terminal window is guaranteed to be sitting at
+  // this exact position/size underneath -- see that method's own class
+  // comment; false for any launch that never calls it, e.g. a plain
+  // standalone `-g`/`^Og`). Added 2026-08-10 for the "覗き見"
+  // (peek-through) scrollbar redesign: gates BOTH the real-terminal-
+  // window transparency setup (matchWindowSize() itself, via
+  // mac_window_transparency.hpp) and flush()'s own decision to leave
+  // the scrollbar strip's pixels transparent instead of opaque while
+  // idle -- see both of their own comments. Named for what it MEANS
+  // (peeking through this strip at a real terminal makes sense here),
+  // not merely "did matchWindowSize() run", even though that's exactly
+  // how it's set, to keep call sites reading naturally.
+  //
+  // An EARLIER version of this whole feature (same day) instead made
+  // the LIVE SDL window itself physically narrower by kScrollbarWidth
+  // pixels (via SDL_SetWindowSize) until first interaction, then
+  // widened it back on demand -- real testing (screenshots, 2026-08-10)
+  // showed at least one profile (large 24pt "Novel") visibly changing
+  // OVERALL WINDOW SIZE as a side effect of that narrow/wide toggle
+  // ("Novelは画面サイズが拡大"), and the user explicitly asked for a
+  // design that keeps "表示範囲はそのままに"(the displayed footprint
+  // exactly as-is) and makes ONLY the strip itself transparent instead
+  // -- this field, and the per-pixel-alpha approach it drives, replaces
+  // that resize-based mechanism entirely (the window's geometry is now
+  // set ONCE by matchWindowSize() and never changes again for this
+  // reason).
+  bool scrollbarPeekEligible = false;
   std::vector<Cell> grid;
 
   SDL_Color fg{220, 220, 220, 255};
@@ -730,24 +750,50 @@ void GraphicalDisplay::flush() {
       std::fclose(f);
     }
   }
-  SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
-  SDL_RenderClear(impl_->renderer);
+  // Peek-through idle state (2026-08-10, scrollbarPeekEligible's own
+  // comment): clear the WHOLE renderer to fully transparent (alpha=0)
+  // first, then re-opaque just the content+margin area (everything
+  // EXCEPT the scrollbar strip) -- SDL_RenderClear()/SDL_RenderFillRect()
+  // both write the draw color directly rather than alpha-blending it
+  // (this file never calls SDL_SetRenderDrawBlendMode(), so the
+  // default SDL_BLENDMODE_NONE applies throughout), so this reliably
+  // leaves the strip's own pixels at literal alpha=0 -- letting the
+  // real terminal window sitting behind this one (matchWindowSize()'s
+  // own comment) show through it directly -- while every other pixel
+  // stays fully opaque exactly as before. Only takes effect once
+  // enableWindowTransparency() has actually configured the real
+  // NSWindow to respect per-pixel alpha at all (matchWindowSize()'s own
+  // comment); on any platform/launch where that never ran
+  // (scrollbarPeekEligible false), this always takes the plain,
+  // fully-opaque `else` branch, unchanged from before this feature.
+  bool peekTransparent = impl_->scrollbarPeekEligible && !impl_->everInteracted;
+  if (peekTransparent) {
+    SDL_SetRenderDrawColor(impl_->renderer, 0, 0, 0, 0);
+    SDL_RenderClear(impl_->renderer);
+    SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
+    SDL_Rect contentRect{0, 0, Impl::kMarginX * 2 + impl_->columns * impl_->cellWidth,
+                          Impl::kMarginY * 2 + impl_->rows * impl_->cellHeight};
+    SDL_RenderFillRect(impl_->renderer, &contentRect);
+  } else {
+    SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
+    SDL_RenderClear(impl_->renderer);
+  }
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCellBackground(row, col);
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
 
-  // Static reference image (or, in the "実はすでにGUI" overlay case,
-  // simply nothing -- the live window is physically narrower there, see
-  // matchWindowSize()'s own comment, so the real terminal underneath
-  // shows through on its own with no drawing needed here at all) until
-  // the first real mouse touch, the real always-current thumb from then
-  // on -- see Impl::everInteracted's own comment. effectiveTop is a
-  // plain int here when the real thumb path runs (no active sub-row
-  // pixel offset outside renderScrolled()'s own drag/coast path),
-  // unlike renderScrolled()'s own fractional effectiveTop.
+  // Static reference image (standalone launch only -- see
+  // scrollbarPeekEligible's own comment; the overlay/peek-through case
+  // instead leaves the strip transparent above, nothing more to draw)
+  // until the first real mouse touch, the real always-current thumb
+  // from then on -- see Impl::everInteracted's own comment.
+  // effectiveTop is a plain int here when the real thumb path runs (no
+  // active sub-row pixel offset outside renderScrolled()'s own
+  // drag/coast path), unlike renderScrolled()'s own fractional
+  // effectiveTop.
   if (!impl_->everInteracted) {
-    if (impl_->fullWindowWidth <= 0) drawIdleScrollbarImage();
+    if (!impl_->scrollbarPeekEligible) drawIdleScrollbarImage();
   } else {
     drawScrollbar(static_cast<double>(impl_->scrollTopIndex), impl_->scrollTotalLines, impl_->scrollContentRows);
   }
@@ -1017,22 +1063,20 @@ bool GraphicalDisplay::pumpEvents() {
         } else if (event.motion.state & SDL_BUTTON_LMASK) {
           impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
         } else {
-          // Edge-hover trigger for revealScrollbarStrip() -- added
-          // 2026-08-10, see matchWindowSize()'s own comment for the
-          // full "peek-through" design this is part of. While the live
-          // window is still narrowed (fullWindowWidth > 0, not yet
-          // interacted with), SDL simply can't report mouse events past
-          // this window's own right edge -- the real terminal peeking
-          // out there is a DIFFERENT window as far as the OS is
-          // concerned, so there's no way to detect the mouse actually
-          // touching that strip directly. Hovering into the last
-          // kEdgeHoverThreshold pixels of THIS window (i.e. reaching
-          // toward where the strip begins) is used as the closest
-          // available proxy for "touched it".
-          if (!impl_->everInteracted && impl_->fullWindowWidth > 0) {
-            constexpr int kEdgeHoverThreshold = 8;
-            int narrowWidth = impl_->fullWindowWidth - Impl::kScrollbarWidth;
-            if (event.motion.x >= narrowWidth - kEdgeHoverThreshold) revealScrollbarStrip();
+          // Hover-into-the-strip trigger for revealScrollbarStrip() --
+          // added 2026-08-10, see matchWindowSize()'s own comment for
+          // the full "peek-through" design this is part of. Unlike an
+          // EARLIER version of this feature (which physically narrowed
+          // the live window, so the real strip's screen coordinates
+          // were literally outside this window and undetectable
+          // directly), the window's real geometry never changes now --
+          // it's always the full matched size, with the strip merely
+          // left transparent while idle (flush()'s own comment) -- so
+          // this is an exact hit-test, the same scrollbarStripX formula
+          // MOUSEBUTTONDOWN already uses above, not a proxy.
+          if (!impl_->everInteracted && impl_->scrollbarPeekEligible) {
+            int scrollbarStripX = Impl::kMarginX + impl_->columns * impl_->cellWidth;
+            if (event.motion.x >= scrollbarStripX) revealScrollbarStrip();
           }
           int col = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
           int row = std::max(0, event.motion.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
@@ -1395,39 +1439,6 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
     width = flooredCellWidth * impl_->columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth;
   }
   int height = flooredCellHeight * impl_->rows + Impl::kMarginY * 2;
-  // Cached so revealScrollbarStrip() can widen the window back to this
-  // exact size later -- see its own comment, and liveWidth's below.
-  impl_->fullWindowWidth = width;
-  impl_->fullWindowHeight = height;
-  // The LIVE window is deliberately opened kScrollbarWidth pixels
-  // NARROWER than the real terminal's own measured width (unless
-  // already interacted with, which matchWindowSize() is never actually
-  // called again after in practice, but this guard keeps the method
-  // idempotent/safe if that ever changes) -- added 2026-08-10
-  // ("-gウィンドウは重ね打ち状態なわけだから、スクロールバーの幅だけ
-  // 狭い画面で立ち上げたらどうだろう？"). SDL_SetWindowSize keeps this
-  // window's top-left corner fixed (confirmed: matches
-  // setWindowPosition()'s own already-placed bounds->x/y) and shrinks
-  // from the bottom-right, so narrowing ONLY the width leaves exactly a
-  // kScrollbarWidth-pixel-wide vertical strip uncovered on the RIGHT
-  // edge -- precisely where the real terminal window underneath (this
-  // method is only ever called from the "実はすでにGUI" overlay launch,
-  // where one is guaranteed to be sitting at this exact position, see
-  // this method's own class-comment) has its own native scrollbar,
-  // confirmed to be the same 17px width as kScrollbarWidth itself (see
-  // kScrollbarWidth's own comment: two independent real measurements
-  // agree on this). The result: instead of this project's own captured
-  // screenshot of a scrollbar (drawIdleScrollbarImage(),
-  // scrollbar_idle_image.hpp -- kept only as a fallback for a
-  // standalone launch with no real terminal to peek through, see its
-  // own comment) or a hand-drawn approximation, what's visible in that
-  // strip before the first interaction is the REAL terminal's own live,
-  // always-current, always-correctly-themed native scrollbar chrome --
-  // not a copy of it. revealScrollbarStrip() widens this window back to
-  // impl_->fullWindowWidth (covering that strip with this window's own
-  // interactive drawScrollbar() instead) the moment the user's mouse
-  // reaches for it.
-  int liveWidth = impl_->everInteracted ? width : width - Impl::kScrollbarWidth;
   // Same opt-in USILICGUIDEBUG file flush() already uses, reused here
   // for exactly the same reason: this sandbox
   // has no real Terminal.app window to compare against, so root-
@@ -1440,37 +1451,57 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
     if (f) {
       std::fprintf(f,
                     "---matchWindowSize--- rows=%d columns=%d outer=%dx%d borders(t/l/b/r)=%d/%d/%d/%d "
-                    "content=%dx%d arithCell=%dx%d fontMetricCell=%dx%d flooredCell=%dx%d finalWindow=%dx%d "
-                    "liveWidth=%d\n",
+                    "content=%dx%d arithCell=%dx%d fontMetricCell=%dx%d flooredCell=%dx%d finalWindow=%dx%d\n",
                     impl_->rows, impl_->columns, outerWidth, outerHeight, borders.top, borders.left, borders.bottom,
                     borders.right, contentWidth, contentHeight, cellWidth, cellHeight, fontMetricCellWidth,
-                    fontMetricCellHeight, flooredCellWidth, flooredCellHeight, width, height, liveWidth);
+                    fontMetricCellHeight, flooredCellWidth, flooredCellHeight, width, height);
       std::fclose(f);
     }
   }
-  SDL_SetWindowSize(impl_->window, liveWidth, height);
+  // ALWAYS the full matched size -- the window's geometry is set here
+  // ONCE and never resized again for the peek-through scrollbar's own
+  // sake (see scrollbarPeekEligible's own comment for why an EARLIER
+  // version of this method instead opened the window kScrollbarWidth
+  // pixels narrower and widened it later, and why that was replaced:
+  // a real report, 2026-08-10, screenshots, found the large 24pt
+  // "Novel" profile visibly changing overall window size as a result
+  // of that narrow/wide toggle -- "Novelは画面サイズが拡大" -- which
+  // the user's own follow-up made explicit: "表示範囲はそのままに
+  // 当該箇所だけ透明、ってできない？", i.e. keep this window's real
+  // footprint fixed and constant, and make ONLY the scrollbar strip's
+  // PIXELS transparent instead). enableWindowTransparency() below
+  // configures the real NSWindow underneath this SDL window to support
+  // genuine per-pixel alpha (see its own comment for why that's needed
+  // at all -- an ordinary window ignores alpha and paints everything
+  // solid); flush() is what actually leaves the strip's pixels at
+  // alpha=0 while idle (see its own comment).
+  SDL_SetWindowSize(impl_->window, width, height);
+  impl_->scrollbarPeekEligible = true;
+#ifdef __APPLE__
+  SDL_SysWMinfo wmInfo;
+  SDL_VERSION(&wmInfo.version);
+  if (SDL_GetWindowWMInfo(impl_->window, &wmInfo) && wmInfo.subsystem == SDL_SYSWM_COCOA) {
+    enableWindowTransparency(wmInfo.info.cocoa.window);
+  }
+#endif
 }
 
 // See its own declaration comment (graphical_display.hpp) for the full
 // reasoning. Idempotent: a no-op once everInteracted is already true,
-// so repeated calls (mouse button, wheel, and edge-hover all funnel
-// here) never re-issue a redundant SDL_SetWindowSize.
+// so repeated calls (mouse button, wheel, and strip-hover all funnel
+// here) are harmless.
 void GraphicalDisplay::revealScrollbarStrip() {
   if (impl_->everInteracted) return;
   impl_->everInteracted = true;
-  if (impl_->fullWindowWidth > 0) {
-    SDL_SetWindowSize(impl_->window, impl_->fullWindowWidth, impl_->fullWindowHeight);
-    // Same opt-in debug dump matchWindowSize()/flush() already use --
-    // this sandbox has no real display to visually confirm the widen
-    // actually happened, so this is what a standalone verification
-    // driver checks for instead.
-    if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
-      FILE *f = std::fopen(dbg, "a");
-      if (f) {
-        std::fprintf(f, "---revealScrollbarStrip--- widened to %dx%d\n", impl_->fullWindowWidth,
-                      impl_->fullWindowHeight);
-        std::fclose(f);
-      }
+  // Same opt-in debug dump matchWindowSize()/flush() already use --
+  // this sandbox has no real display to visually confirm the strip
+  // actually became opaque+interactive on the next flush(), so this is
+  // what a standalone verification driver checks for instead.
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) {
+      std::fprintf(f, "---revealScrollbarStrip--- revealed\n");
+      std::fclose(f);
     }
   }
 }

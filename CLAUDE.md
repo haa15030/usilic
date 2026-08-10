@@ -13327,6 +13327,67 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
       (表示デバイス無し、裏に本物のターミナルも無し)では検証
       不能なため、実機でのご確認が必要。
 
+248. **2026-08-10(続き): 項目247の「窓を狭く起動して覗かせる」方式を
+    撤回、「窓のサイズは一切変えず、スクロールバー領域のピクセルだけ
+    透明にする」方式へ全面的に作り直し**。実機3枚のスクリーンショット
+    とともにユーザーから「なるほど、って感じ（Novelは画面サイズが
+    拡大）。ターミナル種別によっては背景がぼんやり透けて見えるのも
+    あるんで（Red Sands等）、表示範囲はそのままに当該箇所だけ透明、
+    ってできない？」との報告。
+   - **問題点**: 項目247の実装(`SDL_SetWindowSize`で窓を
+      `kScrollbarWidth`分狭く起動し、操作時に本来のフルサイズへ
+      widenする)は、少なくとも大きいフォント(24pt「Novel」)の
+      プロファイルで、この狭い⇔広いのトグル自体が窓全体のサイズを
+      目に見えて変える副作用を持っていた(「Novelは画面サイズが
+      拡大」)。ユーザーは「表示範囲はそのままに」(窓の外形は起動時
+      から一切変えない)、「当該箇所だけ透明に」という、根本的に
+      異なる実現方法を明示的に要望した。
+   - **新方式**: 窓のジオメトリは`matchWindowSize()`で一度だけ設定し、
+      以後リサイズは一切行わない。代わりに、実際のmacOSウィンドウ
+      (`NSWindow`)がピクセル単位の透明度を尊重するよう設定した上で、
+      `flush()`が未操作時のみスクロールバー領域のピクセルを文字通り
+      alpha=0でクリアする。これにより裏の本物のターミナル窓
+      (`「実はすでにGUI」`により常に同じ位置・サイズで重なっている)
+      が、コピーではなく本物の透過合成としてそのまま透けて見える。
+   - **実装**: 新設`mac_window_transparency.hpp`/`.mm`/`_stub.cpp`
+      (`mac_cursor`と同じ3ファイル構成)。`enableWindowTransparency()`
+      は`NSWindow.opaque=NO`+`backgroundColor=clearColor`に加え、
+      SDLがMetal/GL描画用に生成する`contentView`の`CALayer`自体も
+      `layer.opaque=NO`にする(これを忘れるとCoreAnimation側が
+      alpha=0のピクセルも不透明として合成してしまう、既知の
+      SDL2+Cocoa透過ウィンドウの落とし穴)。`matchWindowSize()`から
+      `SDL_GetWindowWMInfo()`(`<SDL2/SDL_syswm.h>`、`#ifdef __APPLE__`
+      でLinuxビルドから隔離)経由で実際の`NSWindow*`を取得し1回だけ
+      呼び出す。`Impl::fullWindowWidth`/`fullWindowHeight`(リサイズ
+      目標値のキャッシュ)は不要になったため削除し、代わりに
+      「オーバーレイ起動で覗き見に適格かどうか」を意味する単一の
+      `bool scrollbarPeekEligible`に置き換えた。`flush()`は未操作時、
+      レンダラー全体をalpha=0でクリアしてから、スクロールバー
+      ストリップを除いた部分だけを不透明な背景色で塗り直す
+      (このファイルは`SDL_SetRenderDrawBlendMode()`を一度も呼んで
+      おらずデフォルトの`SDL_BLENDMODE_NONE`のままなので、
+      `SDL_RenderClear`/`SDL_RenderFillRect`はブレンドされず指定値が
+      そのまま書き込まれることを利用)。`pumpEvents()`の
+      `revealScrollbarStrip()`呼び出しは、以前は「狭い窓の右端に
+      近づいた」という代理判定だったが、窓が常にフルサイズになった
+      ことで、`SDL_MOUSEBUTTONDOWN`と全く同じ`scrollbarStripX`の
+      正確な当たり判定に置き換えられ、より正確になった。
+   - **検証**: `make test`で650/650件全通過、`make usilic`もクリーン
+      ビルド成功(`mac_window_transparency.mm`のコンパイル・リンク
+      含む)。スタンドアロンの検証ドライバで、(1)`matchWindowSize
+      (1000, 700)`後に`finalWindow=1000x668`と記録され(項目247の
+      `liveWidth`のような縮小値はもう存在しない)、(2)窓の最右端
+      1ピクセルへの`SDL_MOUSEMOTION`を合成したところ
+      `revealScrollbarStrip()`が正確な境界判定で発火することを、
+      debugダンプの数値で確認した。`enableWindowTransparency()`
+      (`SDL_GetWindowWMInfo`経由の実`NSWindow`取得を含む)もクラッシュ
+      無く実行されることを確認済み。ただし実際に透明合成が視覚的に
+      機能するか(裏のターミナルが本当に覗いて見えるか)自体は、この
+      サンドボックス(表示デバイス無し、裏に本物のターミナルも無し)
+      では原理的に検証不能であり、これまでの変更より確度が低い
+      (`NSWindow`の実合成挙動に依存する、実機で初めて確認できる領域)
+      ため、実機での確認を強く推奨する。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

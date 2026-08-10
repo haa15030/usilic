@@ -44,6 +44,13 @@ SRCS     = $(wildcard $(SRC_DIR)/*.cpp)
 ifeq ($(shell uname), Darwin)
 SRCS := $(filter-out $(SRC_DIR)/mac_cursor_stub.cpp, $(SRCS)) $(SRC_DIR)/mac_cursor.mm
 endif
+# mac_window_transparency.mm/mac_window_transparency_stub.cpp
+# (2026-08-10, the real-terminal-peek-through scrollbar strip -- see
+# mac_window_transparency.hpp's own class comment) follow the exact
+# same pattern as mac_cursor.mm above.
+ifeq ($(shell uname), Darwin)
+SRCS := $(filter-out $(SRC_DIR)/mac_window_transparency_stub.cpp, $(SRCS)) $(SRC_DIR)/mac_window_transparency.mm
+endif
 APP_SRCS = $(wildcard $(APP_DIR)/*.cpp)
 TESTS    = $(wildcard $(TEST_DIR)/*.cpp)
 
