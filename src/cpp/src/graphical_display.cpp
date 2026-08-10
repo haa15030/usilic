@@ -292,6 +292,15 @@ GraphicalDisplay::GraphicalDisplay() : impl_(std::make_unique<Impl>()) {}
 std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns, const std::string &fontPath,
                                                              int fontPointSize) {
   if (rows <= 0 || columns <= 0) return nullptr;
+  // Without this hint, SDL_RenderCopy() scales textures with nearest-
+  // neighbor sampling. fitGlyphRect() scales almost every glyph bitmap
+  // by some small fractional factor (the font-rendered pixel size
+  // essentially never lands exactly on the target cell box), so nearest-
+  // neighbor turns FreeType's already-antialiased glyph into visibly
+  // blocky/staircased edges -- this is what read as "not vector, thin
+  // half-width text" next to -c's smooth CoreText rendering. "linear"
+  // makes SDL_RenderCopy's scaling smooth instead.
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
   if (SDL_Init(SDL_INIT_VIDEO) != 0) return nullptr;
   if (TTF_Init() != 0) {
     SDL_Quit();
