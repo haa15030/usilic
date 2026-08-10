@@ -2645,3 +2645,12 @@ cbなんてTOWNS-OS（FM-TOWNS公式OS）からのまんま頂きビットマッ
 `scrollbar_idle_image.hpp`を全面刷新し、単一の331px画像を`kScrollbarIdleTopBmp`/`kScrollbarIdleMiddleBmp`/`kScrollbarIdleBottomBmp`(各17×34px)の3配列に置き換えました。`drawIdleScrollbarImage()`を、`drawScrollbar()`と全く同じ`trackHeight`(=rows*cellHeight)formulaで算出した現在の実際のコンテンツ高さぴったりに、上部・下部スライスを原寸で描画しつつ、その間の隙間だけを中間スライスの描画先矩形の高さを変えることで埋めるよう書き換えました。既存の`USILICIDLEIMAGEYOFFSET`チューニング(実機確認済みの-11)は3枚構成の全体オフセットとしてそのまま継続適用しています。
 
 `make test` 650/650件全通過、`make usilic`もクリーンビルド成功。スタンドアロンの検証ドライバで実際に`flush()`を1回実行し、`USILICGUIDEBUG`の`SDL_SaveBMP()`ダンプ機構でレンダリング結果を画像化、スクロールバーストリップ部分を切り出して目視確認したところ、上部のグリップ模様・中間のプレーンなトラック・下部の丸角がシームレスに合成され、ウィンドウの実際の行数(24行)にぴったり収まっていることを確認しました(過去のような隙間やはみ出しは発生しません)。CLAUDE.mdに項目250として記録し、コミット・プッシュ済みです。実機での最終的な見た目確認をお願いします。
+
+<'/Users/haa15030/Desktop/スクリーンショット 2026-08-10 15.43.55.png'
+あと一息、bar-3位置が高め。
+
+>原因が分かりました。`drawIdleScrollbarImage()`が下部スライスの位置を`trackTop + trackHeight`(=上部スライスの開始位置からの相対値)で計算していたため、上部スライスにだけ本来必要な`USILICIDLEIMAGEYOFFSET`(既定-11、元画像自身が持つグラデーション分の見た目調整用)が、下部スライスの位置にもそのまま連動して11px分上へ引きずられていました。下部の丸角には元々そのようなグラデーション補正の必要性は無く、実際の(補正無しの)トラック下端に固定されるべきでした。加えて、トラック高さの算出に`impl_->rows`(モードライン行を含む全行数)を使っていましたが、本物の`drawScrollbar()`は`contentRows`(=`rows-1`、モードライン行はスクロール対象外)を使っており、この2つの誤りが打ち消し合って偶然ほぼ正しい高さに見えていました。
+
+下部スライスの基準位置を、上部の`yOffset`補正とは完全に切り離し、`drawScrollbar()`と全く同じ`contentRows=rows-1`のtrackHeight公式で独立に算出するよう修正しました。上部スライスのみ引き続き`yOffset`分だけ上にずらします。
+
+`make test` 650/650件全通過、`make usilic`もクリーンビルド成功。`drawIdleScrollbarImage()`に一時的なデバッグ出力を追加し、スタンドアロンドライバ(24行、cellHeight=19px)で`trackBottom=447`がモードライン行の開始Y座標と完全に一致することを数値で確認しました。CLAUDE.mdに項目251として記録し、コミット・プッシュ済みです。実機での最終的な見た目確認をお願いします。

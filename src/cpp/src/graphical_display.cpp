@@ -1614,8 +1614,9 @@ void GraphicalDisplay::updateScrollPosition(int topIndex, int totalLines, int co
 // Composites the three embedded slices (scrollbar_idle_image.hpp's own
 // class comment explains why three, not one) to fill the SAME vertical
 // span drawScrollbar()'s real track occupies (Impl::kMarginY to
-// Impl::kMarginY + rows*cellHeight, its own trackHeight formula) --
-// unlike the original single-image version, this ALWAYS exactly fills
+// Impl::kMarginY + contentRows*cellHeight, contentRows == rows-1 since
+// the last row is reserved for the mode line -- its own trackHeight
+// formula) -- unlike the original single-image version, this ALWAYS exactly fills
 // the current profile's own content height, no overflow/gap tradeoff
 // to accept anymore: only the plain, textureless middle slice (drawn
 // via a dst rect taller than its own native size, letting SDL_RenderCopy
@@ -1658,27 +1659,50 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
   // a real terminal's own scrollbar, which has no such lead-in. -11
   // was confirmed exactly on real hardware
   // ("USILICIDLEIMAGEYOFFSET=-11でピッタリ") for that original single
-  // image; applied identically to this whole 3-slice composite's own
-  // top edge now (the top slice is a direct re-crop of that same
-  // original image's own top region, so the same lead-in reasoning
-  // should still apply). USILICIDLEIMAGEYOFFSET (same "tunable knob
-  // instead of another code-and-rebuild round" pattern as
-  // USILICTITLEBARHEIGHT/USILICSCROLLBARSCALE) still overrides this
-  // default outright, kept for the same reason those other knobs are:
-  // display/font/profile variation this sandbox can't itself verify
-  // against.
+  // image; applied identically to this 3-slice composite's own TOP
+  // edge now (the top slice is a direct re-crop of that same original
+  // image's own top region, so the same lead-in reasoning should still
+  // apply) -- but deliberately NOT to the bottom edge (see trackBottom's
+  // own comment below for why an earlier version of this method got
+  // that wrong, "bar-3位置が高め", 2026-08-10). USILICIDLEIMAGEYOFFSET
+  // (same "tunable knob instead of another code-and-rebuild round"
+  // pattern as USILICTITLEBARHEIGHT/USILICSCROLLBARSCALE) still
+  // overrides this default outright, kept for the same reason those
+  // other knobs are: display/font/profile variation this sandbox can't
+  // itself verify against.
   constexpr int kDefaultIdleImageYOffset = -11;
   int yOffset = kDefaultIdleImageYOffset;
   if (const char *env = std::getenv("USILICIDLEIMAGEYOFFSET")) {
     yOffset = std::atoi(env);
   }
   int trackTop = Impl::kMarginY + yOffset;
-  // Same trackHeight formula as drawScrollbar()'s own -- see its
-  // comment -- so this composite always spans exactly the current
-  // profile's own real content height, the whole point of slicing
-  // this into three pieces in the first place.
-  int trackHeight = impl_->rows * impl_->cellHeight;
-  int trackBottom = trackTop + trackHeight;
+  // trackBottom is the real scrollbar's own UNSHIFTED bottom edge
+  // (Impl::kMarginY + contentRows*cellHeight, matching drawScrollbar()'s
+  // own trackHeight formula exactly -- contentRows is rows-1, NOT rows:
+  // the last row is reserved for the mode line, see main.cpp's own
+  // `std::max(gui.rows() - 1, 0)` passed to updateScrollPosition(),
+  // never part of the scrollable track) -- a real report (screenshot,
+  // 2026-08-10, "bar-3位置が高め") caught an EARLIER version of this
+  // method computing trackBottom from trackTop (i.e. `+= yOffset` too),
+  // which dragged the bottom slice's own position up by the same
+  // amount the top slice is intentionally nudged for its own unrelated
+  // gradient-lead-in reason -- the bottom slice's real cap has no such
+  // lead-in to correct for, so it must stay anchored to the track's
+  // real, unshifted bottom edge regardless of yOffset.
+  int contentRows = std::max(impl_->rows - 1, 0);
+  int trackBottom = Impl::kMarginY + contentRows * impl_->cellHeight;
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) {
+      int windowHeight = Impl::kMarginY * 2 + impl_->rows * impl_->cellHeight;
+      std::fprintf(f,
+                    "---drawIdleScrollbarImage--- rows=%d cellHeight=%d trackTop=%d trackBottom=%d "
+                    "windowHeight=%d modeLineRowTop=%d\n",
+                    impl_->rows, impl_->cellHeight, trackTop, trackBottom, windowHeight,
+                    Impl::kMarginY + contentRows * impl_->cellHeight);
+      std::fclose(f);
+    }
+  }
 
   SDL_Rect topDst{stripX, trackTop, kScrollbarIdleTopWidth, kScrollbarIdleTopHeight};
   drawSlice(kScrollbarIdleTopBmp, sizeof(kScrollbarIdleTopBmp), topDst);
