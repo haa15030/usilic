@@ -537,6 +537,32 @@ TEST_CASE("stepTopIndex: false (a no-op) at either boundary") {
   CHECK(v.topIndex() == 2);
 }
 
+TEST_CASE("canStepTopIndex: a non-mutating preview of stepTopIndex()'s own boundary check -- added "
+          "2026-08-10 after a real report that the FIRST version of its main.cpp caller (the inertial-"
+          "coast boundary-flicker fix) passed the wrong sign and never actually triggered") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines(makeLines(5));  // max top is 5 - 3 = 2
+
+  // At the top: can't step further up, CAN step down -- and neither
+  // call mutates topIndex_, unlike stepTopIndex() itself.
+  CHECK(v.canStepTopIndex(-1) == false);
+  CHECK(v.canStepTopIndex(1) == true);
+  CHECK(v.topIndex() == 0);
+
+  v.setTopIndex(2);
+  // At the bottom: the reverse.
+  CHECK(v.canStepTopIndex(1) == false);
+  CHECK(v.canStepTopIndex(-1) == true);
+  CHECK(v.topIndex() == 2);
+
+  // Mid-list: room in both directions.
+  v.setTopIndex(1);
+  CHECK(v.canStepTopIndex(-1) == true);
+  CHECK(v.canStepTopIndex(1) == true);
+}
+
 TEST_CASE("setHoverIndex: highlights the hover row instead of cursorIndex_") {
   RecordingDisplay d(10, 20);
   ContentView v(d);

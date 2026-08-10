@@ -1920,7 +1920,21 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // up front stops the coast the INSTANT topIndex_ is already at
         // its limit, before pixelOffset is ever allowed to move past 0
         // in that direction at all.
-        if (!view.canStepTopIndex(coastDirection)) {
+        //
+        // `-coastDirection`, NOT `coastDirection` -- a real report
+        // (2026-08-10, "スクロールは直ってない") caught that the first
+        // version of this fix passed the wrong sign and so never
+        // actually triggered. commitRowCrossings() just above shows
+        // the real mapping: pixelOffset growing POSITIVE (i.e.
+        // coastDirection == +1) is what eventually calls
+        // stepTopIndex(-1) once it crosses a full cellHeight, and
+        // pixelOffset growing NEGATIVE (coastDirection == -1) calls
+        // stepTopIndex(+1) -- the direction actually about to be
+        // stepped is the NEGATION of coastDirection, not coastDirection
+        // itself. Passing coastDirection unflipped checked room in the
+        // opposite direction from the one about to be taken, which is
+        // almost always available, so the guard was a near no-op.
+        if (!view.canStepTopIndex(-coastDirection)) {
           coastLevel = 0;
           coastDirection = 0;
           pixelOffset = 0;
