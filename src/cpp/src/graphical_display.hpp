@@ -401,23 +401,27 @@ class GraphicalDisplay : public Display {
   // pixelOffsetY/cellHeight -- so the thumb moves smoothly in sync
   // with sub-row scroll position, not just snapping once per full row.
   void drawScrollbar(double effectiveTop, int totalLines, int contentRows);
-  // Pastes the embedded real -c-terminal scrollbar screenshot
-  // (scrollbar_idle_image.hpp) into the reserved strip AT ITS OWN
-  // NATIVE PIXEL DIMENSIONS -- no scaling, no clamping to the content
-  // area -- called by flush() only until the first real mouse
-  // interaction (see Impl::everInteracted's own comment for why, and
-  // for what replaces this afterward). A real request (2026-08-09,
-  // restoring this after briefly removing it entirely: "同じ寸法で
-  // 貼るのは簡単なら、やってみてくれない？...原寸大で貼ってみて欲しい。
-  // どんな風になるか見たい") asked for exactly this -- an EARLIER
-  // version of this same method clamped both dimensions to fit
-  // whatever content area happened to be available, which is
-  // deliberately NOT done here: the reference image was captured from
-  // a specific real profile (Basic) at its own real pixel size, so
-  // pasting it unmodified only reproduces that profile's own true
-  // scrollbar exactly -- other profiles with different font sizes/row
-  // counts may see it overflow or leave a gap, a known, accepted
-  // tradeoff of this specific request rather than a bug to fix here.
+  // Composites the three embedded real -c-terminal scrollbar slices
+  // (scrollbar_idle_image.hpp's own class comment -- top cap, a
+  // stretchable plain middle, bottom cap) into the reserved strip so
+  // the decoration always exactly fills the CURRENT profile's own
+  // content height, no overflow/gap tradeoff -- called by flush() only
+  // until the first real mouse interaction (see Impl::everInteracted's
+  // own comment for why, and for what replaces this afterward).
+  //
+  // Added 2026-08-10, replacing an EARLIER single-image version (which
+  // pasted one full screenshot at its own captured profile's native
+  // pixel size, unscaled, deliberately overflowing/leaving a gap on
+  // other profiles -- a real 2026-08-09 request had explicitly asked
+  // for exactly that native-size, no-clamping tradeoff after a
+  // uniform whole-image stretch/clamp attempt was tried and rejected
+  // for distorting the thumb and rounded track ends). This 3-slice
+  // version resolves the SAME problem a different way -- ordinary
+  // 9-slice/3-slice UI scaling -- by only ever stretching the ONE
+  // slice with no detail worth preserving (the plain middle track),
+  // while the two detailed end slices still draw undistorted at their
+  // own native size, so there is no longer any overflow/gap tradeoff
+  // to accept at all.
   void drawIdleScrollbarImage();
 };
 

@@ -1611,56 +1611,93 @@ void GraphicalDisplay::updateScrollPosition(int topIndex, int totalLines, int co
   impl_->scrollContentRows = contentRows;
 }
 
-// See this method's own header comment for the "native size, no
-// clamping" design and why. Otherwise unchanged from the mechanics of
-// the original 2026-08-07 version: embedded BMP bytes decoded fresh
-// every call (matching this file's existing per-frame-texture style,
-// see renderCell()'s own glyph texture) via SDL2's native BMP reader,
-// no runtime file path or new library dependency.
+// Composites the three embedded slices (scrollbar_idle_image.hpp's own
+// class comment explains why three, not one) to fill the SAME vertical
+// span drawScrollbar()'s real track occupies (Impl::kMarginY to
+// Impl::kMarginY + rows*cellHeight, its own trackHeight formula) --
+// unlike the original single-image version, this ALWAYS exactly fills
+// the current profile's own content height, no overflow/gap tradeoff
+// to accept anymore: only the plain, textureless middle slice (drawn
+// via a dst rect taller than its own native size, letting SDL_RenderCopy
+// scale it) ever gets resized, while the top/bottom slices -- the only
+// parts with real detail (the thumb/grip area, the rounded track end)
+// -- always draw at their own native, undistorted pixel size.
+//
+// drawSlice(): a small local helper (not its own method -- used only
+// here, three times) matching the mechanics of the original 2026-08-07
+// single-image version: embedded BMP bytes decoded fresh every call
+// (matching this file's existing per-frame-texture style, see
+// renderCell()'s own glyph texture) via SDL2's native BMP reader, no
+// runtime file path or new library dependency.
 void GraphicalDisplay::drawIdleScrollbarImage() {
-  SDL_RWops *rw = SDL_RWFromConstMem(kScrollbarIdleImageBmp, sizeof(kScrollbarIdleImageBmp));
-  if (!rw) return;
-  SDL_Surface *surface = SDL_LoadBMP_RW(rw, 1);  // 1 == SDL closes/frees rw for us
-  if (!surface) return;
-  SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
-  if (texture) {
-    // Same trailing `+ Impl::kMarginX` shift as drawScrollbar()'s own
-    // thumbX -- see its comment. Keeps this idle-state image aligned
-    // with where the real thumb sits once it takes over.
-    //
-    // kDefaultIdleImageYOffset: a real report (2026-08-09, screenshots,
-    // "2ミリほど下がるけど下にはみ出さない") found this image pasted a
-    // few mm LOWER than it should sit -- plausibly the embedded
-    // screenshot's own top edge already includes a few pixels of the
-    // real scrollbar's own rounded/faded top-of-track appearance above
-    // its visually "solid" portion (confirmed by inspecting the raw
-    // pixel data: the topmost ~18 rows are a gradient, not the flat
-    // fill the rest of the track/thumb uses), so pasting it starting
-    // exactly at kMarginY reads as sitting that much lower than a real
-    // terminal's own scrollbar, which has no such lead-in. -9 was an
-    // ESTIMATE (this sandbox has no real display to measure against,
-    // same limitation as every other pixel-tuned constant in this
-    // file), converted from "2mm" via a typical MacBook Retina
-    // display's logical point density (~113pt/inch) -- confirmed
-    // exactly via USILICIDLEIMAGEYOFFSET=-11 on real hardware
-    // ("USILICIDLEIMAGEYOFFSET=-11でピッタリ"), close to but not
-    // exactly the estimate. USILICIDLEIMAGEYOFFSET (same "tunable knob
-    // instead of another code-and-rebuild round" pattern as
-    // USILICTITLEBARHEIGHT/USILICSCROLLBARSCALE) still overrides this
-    // default outright, kept for the same reason those other knobs
-    // are: display/font/profile variation this sandbox can't itself
-    // verify against.
-    constexpr int kDefaultIdleImageYOffset = -11;
-    int yOffset = kDefaultIdleImageYOffset;
-    if (const char *env = std::getenv("USILICIDLEIMAGEYOFFSET")) {
-      yOffset = std::atoi(env);
+  auto drawSlice = [&](const unsigned char *bmp, size_t bmpSize, const SDL_Rect &dst) {
+    SDL_RWops *rw = SDL_RWFromConstMem(bmp, static_cast<int>(bmpSize));
+    if (!rw) return;
+    SDL_Surface *surface = SDL_LoadBMP_RW(rw, 1);  // 1 == SDL closes/frees rw for us
+    if (!surface) return;
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
+    if (texture) {
+      SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
+      SDL_DestroyTexture(texture);
     }
-    SDL_Rect dst{Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX, Impl::kMarginY + yOffset,
-                 surface->w, surface->h};
-    SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
-    SDL_DestroyTexture(texture);
+    SDL_FreeSurface(surface);
+  };
+
+  // Same trailing `+ Impl::kMarginX` shift as drawScrollbar()'s own
+  // thumbX -- see its comment. Keeps this idle-state composite aligned
+  // with where the real thumb sits once it takes over.
+  int stripX = Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX;
+
+  // kDefaultIdleImageYOffset: a real report (2026-08-09, screenshots,
+  // "2ミリほど下がるけど下にはみ出さない") found the (then single-image)
+  // decoration pasted a few mm LOWER than it should sit -- plausibly
+  // the embedded screenshot's own top edge already includes a few
+  // pixels of the real scrollbar's own rounded/faded top-of-track
+  // appearance above its visually "solid" portion, so pasting it
+  // starting exactly at kMarginY reads as sitting that much lower than
+  // a real terminal's own scrollbar, which has no such lead-in. -11
+  // was confirmed exactly on real hardware
+  // ("USILICIDLEIMAGEYOFFSET=-11でピッタリ") for that original single
+  // image; applied identically to this whole 3-slice composite's own
+  // top edge now (the top slice is a direct re-crop of that same
+  // original image's own top region, so the same lead-in reasoning
+  // should still apply). USILICIDLEIMAGEYOFFSET (same "tunable knob
+  // instead of another code-and-rebuild round" pattern as
+  // USILICTITLEBARHEIGHT/USILICSCROLLBARSCALE) still overrides this
+  // default outright, kept for the same reason those other knobs are:
+  // display/font/profile variation this sandbox can't itself verify
+  // against.
+  constexpr int kDefaultIdleImageYOffset = -11;
+  int yOffset = kDefaultIdleImageYOffset;
+  if (const char *env = std::getenv("USILICIDLEIMAGEYOFFSET")) {
+    yOffset = std::atoi(env);
   }
-  SDL_FreeSurface(surface);
+  int trackTop = Impl::kMarginY + yOffset;
+  // Same trackHeight formula as drawScrollbar()'s own -- see its
+  // comment -- so this composite always spans exactly the current
+  // profile's own real content height, the whole point of slicing
+  // this into three pieces in the first place.
+  int trackHeight = impl_->rows * impl_->cellHeight;
+  int trackBottom = trackTop + trackHeight;
+
+  SDL_Rect topDst{stripX, trackTop, kScrollbarIdleTopWidth, kScrollbarIdleTopHeight};
+  drawSlice(kScrollbarIdleTopBmp, sizeof(kScrollbarIdleTopBmp), topDst);
+
+  SDL_Rect bottomDst{stripX, trackBottom - kScrollbarIdleBottomHeight, kScrollbarIdleBottomWidth,
+                      kScrollbarIdleBottomHeight};
+  drawSlice(kScrollbarIdleBottomBmp, sizeof(kScrollbarIdleBottomBmp), bottomDst);
+
+  // The gap between the top and bottom slices, filled by stretching
+  // the plain middle slice to whatever height is needed -- negative
+  // (top/bottom slices would overlap) only for a pathologically short
+  // window (well under the two slices' own combined 68px), not a real
+  // profile in practice, so simply skipped rather than clamped.
+  int middleTop = trackTop + kScrollbarIdleTopHeight;
+  int middleHeight = (trackBottom - kScrollbarIdleBottomHeight) - middleTop;
+  if (middleHeight > 0) {
+    SDL_Rect middleDst{stripX, middleTop, kScrollbarIdleMiddleWidth, middleHeight};
+    drawSlice(kScrollbarIdleMiddleBmp, sizeof(kScrollbarIdleMiddleBmp), middleDst);
+  }
 }
 
 // Drag-scroll prototype rendering -- see class comment and header
