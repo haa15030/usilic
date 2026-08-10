@@ -208,23 +208,14 @@ TEST_CASE_FIXTURE(Fixture, "mode-line fields: shows the bare filename, byte size
 
   // Ported from disp_window()'s pager case: unlike Directory mode, the
   // name field here is the bare filename (NOT the full path), and the
-  // trailing field is "<byte size> <directory>/".
+  // trailing field is "<byte size>  <directory>/" -- TWO spaces before
+  // the directory (2026-08-10, a real request to match the visual gap
+  // elsewhere on this same row, see this file's own comment). The byte
+  // size itself stays a plain, ungrouped digit run per that same
+  // request's own explicit follow-up.
   std::string text = view.modeLineText();
   CHECK(text.rfind("plain.txt ", 0) == 0);
-  std::string expectedTrailing = "12 " + root.string() + "/";
-  CHECK(text.substr(text.size() - expectedTrailing.size()) == expectedTrailing);
-}
-
-TEST_CASE_FIXTURE(Fixture, "mode-line fields: byte size over 999 is space-grouped into 3s from the right") {
-  // 2026-08-10, a real request ("モードラインのファイルサイズ表示...
-  // 区切りの空白入れてみて") after a large file's byte count showed up
-  // as an unbroken run of digits. 1234 bytes -> "1 234", not "1234".
-  std::string content(1234, 'x');
-  std::string path = writeFile("big.txt", content);
-  REQUIRE(mode.loadFile(path));
-
-  std::string text = view.modeLineText();
-  std::string expectedTrailing = "1 234 " + root.string() + "/";
+  std::string expectedTrailing = "12  " + root.string() + "/";
   CHECK(text.substr(text.size() - expectedTrailing.size()) == expectedTrailing);
 }
 

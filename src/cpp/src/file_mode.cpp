@@ -1,6 +1,5 @@
 #include "file_mode.hpp"
 
-#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -9,29 +8,6 @@
 #include "pipe_buffer.hpp"
 
 namespace fm {
-
-namespace {
-
-// Groups `value`'s decimal digits into 3s from the right, space-
-// separated (e.g. 1108009 -> "1 108 009") -- added 2026-08-10, a real
-// request ("モードラインのファイルサイズ表示...区切りの空白入れて
-// みて") after a large file's byte count (CLAUDE.md, over 1MB) showed
-// up as an unbroken run of 7 digits, hard to read at a glance. Legacy
-// tcb never grouped this (plain %ld in disp_window()), so this is a
-// genuinely new convenience, not a ported behavior. A half-width space
-// (not a comma) per the request's own wording.
-std::string groupDigits(std::uintmax_t value) {
-  std::string digits = std::to_string(value);
-  std::string grouped;
-  int fromEnd = static_cast<int>(digits.size());
-  for (size_t i = 0; i < digits.size(); i++) {
-    if (i > 0 && (fromEnd - static_cast<int>(i)) % 3 == 0) grouped.push_back(' ');
-    grouped.push_back(digits[i]);
-  }
-  return grouped;
-}
-
-}  // namespace
 
 FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encoding, int width)
     : view_(view), history_(history), encoding_(encoding), width_(width) {
@@ -58,7 +34,18 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
 
     std::error_code ec;
     auto size = std::filesystem::file_size(path, ec);
-    std::string trailing = ec ? directory : groupDigits(size) + " " + directory;
+    // Two spaces between the byte size and the directory, not one --
+    // added 2026-08-10, a real request ("「1108009」と「/Users/.../」
+    // の間...「CLAUDE.md」と「00036/13736  0%」みたいにして欲しい")
+    // pointed at the name/position gap elsewhere on this same row
+    // (ModeLine::format()'s own "%2d%%" padding happens to leave two
+    // spaces before a single-digit percentage) as the reference look
+    // to match. An EARLIER version of this fix misread the request as
+    // wanting the byte COUNT ITSELF digit-grouped (e.g. "1 108 009")
+    // instead -- reverted; the size stays a plain, ungrouped
+    // std::to_string() per the follow-up's own explicit "ファイル
+    // サイズは「1108009」のままでいい".
+    std::string trailing = ec ? directory : std::to_string(size) + "  " + directory;
     // File mode's trailing field is legacy's padded-to-edge style, see
     // ModeLineFields::fillTrailingToEdge's own comment. No
     // rightWatermark here -- see its own comment on why File mode
