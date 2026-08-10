@@ -2818,3 +2818,11 @@ graphical_display.cppのどこにもSDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, .
 create()冒頭、SDL_Init()の直前にSDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear")を追加しました。これによりSDL_RenderCopy()のテクスチャ縮小・拡大がすべてバイリニア補間になり、ジャギーが解消される見込みです。
 
 `make test` 651/651件全通過、`make usilic`もクリーンビルド成功。SDL_HINT_RENDER_SCALE_QUALITYはSDL本体の描画品質設定でありdoctestでの自動検証対象外のため、実際にジャギーが解消したかは実機での見た目確認をお願いします。CLAUDE.mdに項目261として記録し、コミット・プッシュ済みです。
+
+<変化無し。半角英数をboldにしてみたら？
+
+>SDL_HINT_RENDER_SCALE_QUALITYが効果無しだったことから、fitGlyphRect()のビットマップ縮小量自体が実際にはごく小さい可能性が高く、「-cより細くガタガタに見える」の実体はビットマップ縮小そのものではなく、FreeType(SDL_ttf)がApple CoreTextよりも軽い(細い)ストロークでヒンティング/レンダリングするという、根本的なラスタライズ技術の違いだと考えられます。細い1列幅のストロークは、アンチエイリアスの縁が線の太さに対して占める割合が大きいため特にジャギーに見えやすく、ストローク自体を太くする(bold化)ことで縁が相対的に小さくなり、同じラスタライズ技術のままでも滑らかに見えやすくなるはずです。
+
+renderCell()/renderCursor()で、既存のcell.bold(実際のSGR太字属性)による判定に加えて、!isWide(半角、全角2列幅でない)の場合は無条件にTTF_STYLE_BOLDをORするよう変更しました。renderTextRun()(慣性スクロール中の描画関数)は従来TTF_SetFontStyle()を一度も呼んでおらず、直前にrenderCell()/renderCursor()が最後に設定したスタイルをそのまま暗黙に引き継いでいたという別の欠落も見つけたため、この機会に明示的にスタイル設定を追加し、静止描画とスクロール描画で半角bold化の挙動を揃えました。
+
+`make test` 651/651件全通過、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目262として記録し、コミット・プッシュ済みです。実際に見た目が改善するか、常時boldが太すぎて読みづらい・実際のSGR太字表示と見分けがつかなくなる等の副作用が無いかは実機でのご確認をお願いします。
