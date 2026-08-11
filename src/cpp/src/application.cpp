@@ -720,6 +720,10 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   const std::string *selected = listBrowserMode_.selectedItem();
   std::string seed = selected ? *selected : promptHistoryRecallText_;
   promptHistoryRecallKind_ = std::nullopt;
+  // See pendingSearchFromDirectEntryList_'s own comment: captured
+  // BEFORE clearing, so executeGrep()/executeCut() can still see it
+  // once this edit actually gets submitted.
+  pendingSearchFromDirectEntryList_ = promptHistoryRecallIsDirectEntry_;
   promptHistoryRecallIsDirectEntry_ = false;
   promptHistoryRecallText_.clear();
   currentMode_ = promptHistoryRecallReturnMode_;
@@ -1597,6 +1601,8 @@ bool Application::openSelectedListEntry() {
     PromptKind kind = *promptHistoryRecallKind_;
     std::string text = *item;
     promptHistoryRecallKind_ = std::nullopt;
+    // See pendingSearchFromDirectEntryList_'s own comment.
+    pendingSearchFromDirectEntryList_ = promptHistoryRecallIsDirectEntry_;
     promptHistoryRecallIsDirectEntry_ = false;
     currentMode_ = promptHistoryRecallReturnMode_;
     return executePromptSubmission(kind, text);
@@ -1722,18 +1728,34 @@ bool Application::openSelectedGrepMatch() {
 }
 
 bool Application::returnFromGrep() {
+  // 2026-08-11 fix: a direct user clarification -- "検索への入口が
+  // CUTなら出るときもCUTから出るはず" (if the search's own entrance
+  // was the candidate list, Back should exit through it too). See
+  // grepReturnsToCandidateList_'s own comment (pendingSearchFromDirectEntryList_):
+  // re-enters the candidate list instead of jumping straight to
+  // grepReturnMode_, one level at a time, matching a proper LIFO
+  // stack. currentMode_ is set to grepReturnMode_ FIRST so
+  // startRegexPromptList()'s own startPromptHistoryRecall() captures
+  // the right promptHistoryRecallReturnMode_ (it reads currentMode_
+  // at call time), even though this function never actually SHOWS
+  // grepReturnMode_'s own view in this branch.
+  if (grepReturnsToCandidateList_) {
+    grepReturnsToCandidateList_ = false;
+    currentMode_ = grepReturnMode_;
+    return startRegexPromptList(PromptKind::GrepPattern);
+  }
   currentMode_ = grepReturnMode_;
-  // 2026-08-11 fix: a real report -- ^G from the Directory listing
-  // (with a "FGREP: pattern" annotation already showing, from a prior
-  // openSelectedGrepMatch()) goes back to Grep mode (returnToGrepResults(),
-  // just above), and a SECOND ^G from there came back through HERE,
-  // but the mode line still read "FGREP: .json" instead of the plain
-  // "(ls)" a fresh Back-out-of-grep should show. openSelectedGrepMatch()
-  // is the only caller that means "I picked THIS match" -- this
-  // function means "cancel, I'm backing out without picking anything
-  // (new)," so whatever annotation was left over from a previous
-  // selection no longer describes what just happened and needs to be
-  // cleared, not carried forward a second time.
+  // ^G from the Directory listing (with a "FGREP: pattern" annotation
+  // already showing, from a prior openSelectedGrepMatch()) goes back
+  // to Grep mode (returnToGrepResults(), just above), and a SECOND ^G
+  // from there comes back through HERE -- but the mode line should
+  // read the plain "(ls)" a fresh Back-out-of-grep shows, not the
+  // stale "FGREP: .json" from before. openSelectedGrepMatch() is the
+  // only caller that means "I picked THIS match" -- this function
+  // means "cancel, I'm backing out without picking anything (new),"
+  // so whatever annotation was left over from a previous selection no
+  // longer describes what just happened and needs to be cleared, not
+  // carried forward a second time.
   if (grepReturnMode_ == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
   activeView().redraw();
   return true;
@@ -1769,6 +1791,17 @@ bool Application::returnFromCutContent() {
 // no stale-annotation risk the way returnFromGrep() had to guard
 // against.
 bool Application::returnFromCut() {
+  // 2026-08-11 fix: same LIFO-stack reasoning as returnFromGrep()'s
+  // own grepReturnsToCandidateList_ check -- see its comment. Checked
+  // before the "Nothing between the candidate list and Cut mode"
+  // comment above's own always-fresh annotation write, since re-
+  // entering the candidate list means we haven't actually left the
+  // search yet.
+  if (cutReturnsToCandidateList_) {
+    cutReturnsToCandidateList_ = false;
+    currentMode_ = cutReturnMode_;
+    return startRegexPromptList(PromptKind::CutPattern);
+  }
   currentMode_ = cutReturnMode_;
   if (cutReturnMode_ == ApplicationMode::Directory) {
     directoryMode_.setSearchAnnotation("CUT: " + cutMode_.pattern());
@@ -2911,6 +2944,11 @@ bool Application::executeGrep(const std::string &pattern) {
     return false;
   }
   currentMode_ = ApplicationMode::Grep;
+  // See pendingSearchFromDirectEntryList_'s own comment -- consumed
+  // (one-shot) here regardless of its value, so a later resplit/
+  // typed-from-blank-prompt search doesn't inherit a stale true.
+  grepReturnsToCandidateList_ = pendingSearchFromDirectEntryList_;
+  pendingSearchFromDirectEntryList_ = false;
   return true;
 }
 
@@ -2993,6 +3031,11 @@ bool Application::executeCut(const std::string &pattern) {
     return false;
   }
   currentMode_ = ApplicationMode::Cut;
+  // See pendingSearchFromDirectEntryList_'s own comment -- consumed
+  // (one-shot) here regardless of its value, so a later resplit/
+  // typed-from-blank-prompt search doesn't inherit a stale true.
+  cutReturnsToCandidateList_ = pendingSearchFromDirectEntryList_;
+  pendingSearchFromDirectEntryList_ = false;
   return true;
 }
 

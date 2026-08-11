@@ -862,6 +862,53 @@ TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the full reported reproduction
   REQUIRE(app.cutMode().segments().size() == 4);
 }
 
+TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): Back from a Cut split reached via the ^J^C candidate "
+                           "list re-opens that SAME candidate list (a proper LIFO stack -- Directory -> "
+                           "list -> results, popping one level at a time), not Directory directly -- a "
+                           "direct user clarification: \"検索への入口がCUTなら出るときもCUTから出るはず\"") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutRegex));  // ^J^C: candidate list
+  CHECK(app.feedByte(0x15, std::nullopt));             // ^U: start editing
+  feedText("cpmv");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter: submits, lands in Cut
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // back to the candidate list, NOT Directory
+  // Confirms this is genuinely the CUT candidate-list-recall screen
+  // (not some other ListBrowser use, e.g. FILE/DIR picker) -- see the
+  // direct-entry mode-line fix's own test for what this field means.
+  CHECK(app.activeContentView().modeLineText().find("CUT") != std::string::npos);
+
+  // A second round-trip -- edit again, submit again -- still chains
+  // back to the candidate list, not Directory, since THIS submission
+  // also came from the list.
+  CHECK(app.feedByte(0x15, std::nullopt));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+
+  // Only cancelling FROM the candidate list itself (^G there) reaches
+  // Directory.
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): Back from a Cut split reached via ^Jc's plain blank "
+                           "prompt (not the candidate list) still returns straight to Directory, unchanged "
+                           "from item 269's own behavior") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));  // ^Jc: blank prompt, no candidate list involved
+  feedText("cpmv");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
 TEST_CASE_FIXTURE(Fixture, "CUT: splitting log.txt on 'marker' produces one segment per marker line") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");

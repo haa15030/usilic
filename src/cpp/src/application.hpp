@@ -1595,6 +1595,29 @@ class Application {
   // set `i = -2`, defaulting to the top). Reset alongside
   // promptHistoryRecallKind_ at every consumption site.
   bool promptHistoryRecallIsDirectEntry_ = false;
+  // 2026-08-11: a real report + direct user clarification -- "検索への
+  // 入口がCUTなら出るときもCUTから出るはず" (if the search's own
+  // entrance was the candidate list, Back should exit through it too),
+  // i.e. a proper LIFO stack: Directory -> candidate list -> results,
+  // and ^G pops ONE level at a time, not straight back to Directory.
+  // promptHistoryRecallIsDirectEntry_ itself gets cleared the instant
+  // feedRegexListByte()/openSelectedListEntry() consume it (well
+  // before the search actually runs), so its value is captured here
+  // FIRST and carried through to executeGrep()/executeCut() on
+  // success, which transfer it into grepReturnsToCandidateList_/
+  // cutReturnsToCandidateList_ -- consulted (and cleared, one-shot)
+  // by returnFromGrep()/returnFromCut() to decide whether Back
+  // reopens the candidate list (via startRegexPromptList() again)
+  // instead of returning straight to grepReturnMode_/cutReturnMode_.
+  // A SECOND round-trip (re-edit the pattern from that reopened list,
+  // submit again) sets the flag fresh again, so this naturally chains
+  // for as many search/edit cycles as the user does -- the only way
+  // to reach Directory is explicitly cancelling FROM the candidate
+  // list itself (returnFromListBrowser()'s own unrelated, pre-existing
+  // ^G-cancel path).
+  bool pendingSearchFromDirectEntryList_ = false;
+  bool grepReturnsToCandidateList_ = false;
+  bool cutReturnsToCandidateList_ = false;
   // See startShellHistoryRecall()'s own comment.
   bool shellHistoryRecallActive_ = false;
   std::string shellHistoryRecallText_;
