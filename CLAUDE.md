@@ -14373,6 +14373,38 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      クリーンビルド成功。項目269と同じくApplication層のみの変更
      のため`-c`/`-g`共通で直っているはず。
 
+271. **2026-08-11(続き): 項目270で戻ったGrep結果画面から更に`^G`を
+    押してディレクトリへ戻ると、「FGREP: .json」の注記が消えずに
+    残ってしまう不具合を修正**。ユーザーから「㉑からの続き→^G^G→
+    モードライン右下端が『FGREP: .json』のまま(最初の^Gでの戻り先が
+    モードライン右下端『/Users/haa15030/git/usilic/』なので正しくは
+    (ls)へ帰還)」との報告。
+   - **原因**: `Application::returnFromGrep()`(`Command::Back`が
+     `ApplicationMode::Grep`のとき呼ぶ既存の関数、項目270の
+     `returnToGrepResults()`とちょうど対になる「Grep→Directory」方向)
+     が`currentMode_ = grepReturnMode_;`だけを行い、
+     `DirectoryMode`側の`grepAnnotation_`(項目269の
+     `openSelectedGrepMatch()`が設定したもの)を一切クリアしていな
+     かった。`enterDirectory()`(新しい`ls`)以外にこの注記を消す
+     経路が無かったため、「マッチを選んでディレクトリへ戻る」
+     (`openSelectedGrepMatch()`)と「Grep結果を単にキャンセルして
+     戻る」(`returnFromGrep()`)という意味の異なる2つの『戻る』が
+     同じ注記を共有してしまい、後者でも前者の注記がそのまま
+     残り続けていた。
+   - **実装**: `returnFromGrep()`に、`grepReturnMode_ ==
+     ApplicationMode::Directory`のときのみ`directoryMode_.
+     setGrepAnnotation("")`を呼ぶ処理を追加。「特定のマッチを選んだ
+     わけではなく、ただ結果画面から抜けて戻ってきた」という状況では
+     注記を消し、通常の`(ls)`表示に戻すようにした。
+   - **検証**: `make test`で653/653件全通過(新規テスト「GREP: a
+     second Back (out of the grep results reached via the first Back)
+     clears the stale "FGREP: pattern" annotation instead of carrying
+     it forward」を追加、Enter→Back→Backの3手順を実行し、最終的に
+     `hasGrepAnnotation() == false`かつモードライン文字列に
+     `"FGREP:"`が含まれないことを確認)、`make usilic`もクリーン
+     ビルド成功。項目269/270と同じくApplication層のみの変更のため
+     `-c`/`-g`共通で直っているはず。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

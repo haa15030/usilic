@@ -1676,6 +1676,18 @@ bool Application::openSelectedGrepMatch() {
 
 bool Application::returnFromGrep() {
   currentMode_ = grepReturnMode_;
+  // 2026-08-11 fix: a real report -- ^G from the Directory listing
+  // (with a "FGREP: pattern" annotation already showing, from a prior
+  // openSelectedGrepMatch()) goes back to Grep mode (returnToGrepResults(),
+  // just above), and a SECOND ^G from there came back through HERE,
+  // but the mode line still read "FGREP: .json" instead of the plain
+  // "(ls)" a fresh Back-out-of-grep should show. openSelectedGrepMatch()
+  // is the only caller that means "I picked THIS match" -- this
+  // function means "cancel, I'm backing out without picking anything
+  // (new)," so whatever annotation was left over from a previous
+  // selection no longer describes what just happened and needs to be
+  // cleared, not carried forward a second time.
+  if (grepReturnMode_ == ApplicationMode::Directory) directoryMode_.setGrepAnnotation("");
   activeView().redraw();
   return true;
 }

@@ -646,6 +646,25 @@ TEST_CASE_FIXTURE(Fixture, "GREP: Back from the \"FGREP: pattern\"-annotated Dir
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
 }
 
+TEST_CASE_FIXTURE(Fixture, "GREP: a second Back (out of the grep results reached via the first Back) "
+                           "clears the stale \"FGREP: pattern\" annotation instead of carrying it forward "
+                           "(2026-08-11 fix: a real report found the mode line still read \"FGREP: .json\" "
+                           "here instead of the plain \"(ls)\" a fresh Back-out-of-grep should show)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.activeContentView().modeLineText().find("FGREP: plain.txt") != std::string::npos);
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK_FALSE(app.directoryMode().hasGrepAnnotation());
+  CHECK(app.activeContentView().modeLineText().find("FGREP:") == std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "GREP: starting a nested search from within grep results fails") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));

@@ -2954,3 +2954,12 @@ ApplicationコンストラクタにgrepView_.setModeLineFieldsProvider(...)を�
 DirectoryModeにhasGrepAnnotation()を追加し、Application::handleCommand()のCommand::Back、Directory分岐でdirectoryMode_.goBack()より前にこれをチェックするようにしました。真なら新設のApplication::returnToGrepResults()(currentMode_ = ApplicationMode::Grep; grepView_.redraw();)を呼びます。openSelectedGrepMatch()(項目269)はgrepView_自体(検索結果の行データ)には一切触れず戻り先のビューだけを操作しているため、検索を再実行する必要は無く、単にcurrentMode_をGrepへ戻すだけで元の結果画面がそのまま復元されます。returnFromGrep()(Grep→Directory)とちょうど対になる、Directory→Grep方向のsymmetryとして実装しました。
 
 `make test` 652/652件全通過(modeStack_が空のままであることを明示的に確認した上で、Back後に検索結果が再実行なしにそのまま残っていることを確認する新規テストを追加)、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目270として記録し、コミット・プッシュ済みです。項目269と同じくApplication層のみの変更なので-c/-g共通で直っているはずです。
+
+<㉑からの続き→
+^G^G→モードライン右下端が「FGREP: .json」のまま（最初の^Gでの戻り先がモードライン右下端「/Users/haa15030/git/usilic/」なので正しくは(ls)へ帰還）。
+
+>原因が分かりました。Application::returnFromGrep()(Command::BackがApplicationMode::Grepのとき呼ぶ既存の関数、項目270のreturnToGrepResults()とちょうど対になるGrep→Directory方向)がcurrentMode_ = grepReturnMode_;だけを行い、DirectoryMode側のgrepAnnotation_(項目269のopenSelectedGrepMatch()が設定したもの)を一切クリアしていませんでした。enterDirectory()(新しいls)以外にこの注記を消す経路が無かったため、「マッチを選んでディレクトリへ戻る」(openSelectedGrepMatch())と「Grep結果を単にキャンセルして戻る」(returnFromGrep())という意味の異なる2つの『戻る』が同じ注記を共有してしまい、後者でも前者の注記がそのまま残り続けていました。
+
+returnFromGrep()に、grepReturnMode_ == ApplicationMode::DirectoryのときのみdirectoryMode_.setGrepAnnotation("")を呼ぶ処理を追加しました。「特定のマッチを選んだわけではなく、ただ結果画面から抜けて戻ってきた」という状況では注記を消し、通常の(ls)表示に戻すようにしています。
+
+`make test` 653/653件全通過(Enter→Back→Backの3手順を実行し、最終的にhasGrepAnnotation() == falseかつモードライン文字列に"FGREP:"が含まれないことを確認する新規テストを追加)、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目271として記録し、コミット・プッシュ済みです。項目269/270と同じくApplication層のみの変更なので-c/-g共通で直っているはずです。
