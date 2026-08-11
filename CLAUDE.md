@@ -14135,6 +14135,51 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      で見た目が改善したかは実機での確認待ち。`gamma=0.65`は目分量の
      初期値であり、強すぎ/弱すぎであれば調整可能。
 
+266. **2026-08-11(続き): 項目265の`stem darkening`も「変化無し」との
+    報告を受け、RedSandsで実際に読み込まれているフォントファイル自体を
+    疑い、`resolveGuiFontPath()`の解決結果をダンプする診断用ログを追加
+    (レンダリング手法の変更ではなく、まず前提を疑う回)**。ユーザーから
+    「変化無し。」の一言のみの報告。
+   - **状況整理**: RedSandsに対して行った4つの独立した実験
+     (項目262の強制bold、項目263の`TTF_HINTING_LIGHT`、項目264の
+     `TTF_HINTING_NONE`、項目265のアルファガンマ補正)が、いずれも
+     半角グリフの実際の描画結果を(理論上は)確実に変えるはずの変更
+     であるにも関わらず、すべて「変化無し」と報告されている。4連続で
+     「変化はあるはずなのに何も見えない」というのは、個々の手法が
+     間違っているというより、**そもそも意図したフォント
+     (`SFNSMono.ttf`)が実際にはロードされていないのではないか**、
+     という前提そのものを疑うべきサインと判断した。
+   - **根拠**: `mac_font_resolver.cpp`の`resolveMacFontPath()`自身の
+     コメントに、`CTFontDescriptorCreateWithNameAndSize()`によるSF
+     Monoの名前ベース解決がAppleの意図的なガードにより失敗し得ること
+     (空文字列、あるいは無関係な代替フォントのパスが返ってくることが
+     実機で確認済みと記載されている)、また`isSFMono()`が
+     `"SFMono-Regular"`/`".SFMono-Regular"`/`"SF Mono"`/
+     `"SF Mono Regular"`という限られた文字列との完全一致でしか
+     SF Monoと認識しない実装になっている。もしAppleScript経由で
+     取得される実際のフォント名がこれらのいずれとも一致しなければ、
+     `resolveMacFontPath()`は空文字列を返し、`resolveGuiFontPath()`は
+     何の警告も無く汎用の候補リスト(`Menlo.ttc`等)に静かに
+     フォールバックする。この場合、これまでの4つの実験はすべて
+     「意図した通りSF Monoに対して変更を加えていたが効果が無かった」
+     のではなく「SF Monoではない別のフォント(既にチューニング済みの
+     Menlo等)に対して変更を加えていたので、追加のチューニングの
+     効果が乏しかった」という、全く別の説明になる。
+   - **実装**: `main.cpp`の`tryEnterGuiPhase()`とは別の、実際に
+     ユーザーが使っている「実はすでにGUI」自動検出パス
+     (`main()`内、`appearance && bounds`分岐、`-g`起動時も
+     `forceCui`が偽である限りここを通る)で、`resolveGuiFontPath()`
+     の呼び出し直後に`USILICGUIDEBUG`環境変数(既存の
+     `matchWindowSize()`等と同じダンプ規約を再利用)へ
+     `appearance.fontName`/`appearance.fontPointSize`/実際に解決
+     された`resolvedPath`を書き出す診断ログを追加した。
+   - **検証**: `make test`で651/651件全通過、`make usilic`もクリーン
+     ビルド成功。今回は描画ロジック自体には手を入れていない(純粋な
+     診断用ログの追加のみ)。ユーザーに`USILICGUIDEBUG=/tmp/dbg.txt`
+     等を設定した状態でRedSandsプロファイルから`usilic -g`を起動して
+     もらい、ダンプされた`resolvedPath`が`SFNSMono.ttf`になっている
+     かどうかを次回確認してもらう予定。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

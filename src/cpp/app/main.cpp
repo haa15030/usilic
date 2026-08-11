@@ -2288,6 +2288,32 @@ int main(int argc, char **argv) {
   auto bounds = (forceCui || !appearance) ? std::nullopt : queryRealTerminalWindowBounds();
   if (appearance && bounds) {
     std::string fontPath = resolveGuiFontPath(appearance);
+    // 2026-08-11: a real report of FOUR separate rendering-quality
+    // experiments (forced bold, TTF_HINTING_LIGHT, TTF_HINTING_NONE,
+    // alpha-channel gamma boost) all landing as "変化無し" (no visible
+    // change) for one specific real-terminal profile, despite each one
+    // measurably changing SOMETHING about how narrow glyphs render, is
+    // suspicious enough to doubt the premise that the intended font is
+    // even being used at all -- resolveMacFontPath()'s own comment
+    // documents that CoreText's name-based lookup can fail outright
+    // (returning an empty string, or worse a bizarre unrelated
+    // substitute) for exactly this kind of system font depending on
+    // precisely which name string AppleScript reports, silently
+    // falling through to resolveGuiFontPath()'s own generic Menlo/
+    // Monaco candidate list with nothing on screen indicating it
+    // happened. Dumped here (not inside GraphicalDisplay, which has no
+    // visibility into `appearance` at all) so a real run can confirm
+    // or rule this out directly, rather than continuing to guess at
+    // rendering techniques against a font that might not be the one
+    // actually loaded.
+    if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+      FILE *f = std::fopen(dbg, "a");
+      if (f) {
+        std::fprintf(f, "---resolveGuiFontPath--- appearance.fontName=%s appearance.fontPointSize=%d resolvedPath=%s\n",
+                     appearance->fontName.c_str(), appearance->fontPointSize, fontPath.c_str());
+        std::fclose(f);
+      }
+    }
     launchGui = fontPath.empty() ? nullptr
                                   : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath,
                                                                   appearance->fontPointSize);

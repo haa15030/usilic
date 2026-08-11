@@ -2894,3 +2894,13 @@ renderCell()等の全角グリフにはTTF_HINTING_NORMAL(フォント自身の�
 ヒンティング方面はここで手詰まりなので、別の切り口を試しました。TTF_RenderUTF8_Blended()が返すサーフェスは、RGBは全ピクセル共通の前景色、アルファチャンネルのみがグリフの被覆率(0=背景、255=完全に線の内側、中間値=アンチエイリアスされた縁)を表します。これを利用し、alpha' = 255 * (alpha/255)^gamma(gamma=0.65の冪乗カーブ)で中間アルファ値を底上げするboostGlyphAlpha()を追加しました。フォントのヒントプログラムの有無に一切依存しないピクセルレベルの後処理で、プロ向けラスタライザが実装している「stem darkening」(アンヒントの小さい文字が細く見えすぎるのを補正する技法)と同じ考え方です。renderCell()/renderCursor()/renderTextRun()の3箇所、TTF_RenderUTF8_Blended()直後・テクスチャ化の前に、半角グリフのみへ適用しています。
 
 `make test` 651/651件全通過、`make usilic`もクリーンビルド成功。Pythonでgamma=0.65のカーブを検算し(alpha=128→163、約27%の底上げ)、0と255は変化しないまま中間階調のみが持ち上がることを確認しました。CLAUDE.mdに項目265として記録し、コミット・プッシュ済みです。実際の描画結果はdoctestでの自動検証対象外のため、RedSands/Novel(18ドット含む)で見た目が改善したか実機でのご確認をお願いします。gamma=0.65は目分量の初期値なので、強すぎ/弱すぎであれば調整します。
+
+<変化無し。
+
+>RedSandsに対して行った4つの独立した実験(強制bold、TTF_HINTING_LIGHT、TTF_HINTING_NONE、アルファガンマ補正)が、いずれも半角グリフの実際の描画結果を理論上は確実に変えるはずの変更であるにも関わらず、すべて「変化無し」と報告されています。4連続で「変化はあるはずなのに何も見えない」というのは、個々の手法が間違っているというより、そもそも意図したフォント(SFNSMono.ttf)が実際にはロードされていないのではないか、という前提そのものを疑うべきサインだと判断しました。
+
+mac_font_resolver.cppのresolveMacFontPath()自身のコメントに、CTFontDescriptorCreateWithNameAndSize()によるSF Monoの名前ベース解決がAppleの意図的なガードにより失敗し得ること(空文字列、あるいは無関係な代替フォントのパスが返ってくることが実機で確認済みと記載)、またisSFMono()が"SFMono-Regular"/".SFMono-Regular"/"SF Mono"/"SF Mono Regular"という限られた文字列との完全一致でしかSF Monoと認識しない実装になっていることがわかりました。もしAppleScript経由で取得される実際のフォント名がこれらのいずれとも一致しなければ、resolveMacFontPath()は空文字列を返し、resolveGuiFontPath()は何の警告も無く汎用の候補リスト(Menlo.ttc等)に静かにフォールバックします。この場合、これまでの4つの実験はすべて「SF Monoに対して変更を加えていたが効果が無かった」のではなく「SF Monoではない別の(既にチューニング済みの)フォントに対して変更を加えていたので効果が乏しかった」という、全く別の説明になります。
+
+レンダリングロジックを変える前に、まず前提を確認することにしました。main.cppの「実はすでにGUI」自動検出パス(-g起動時もここを通ります)で、resolveGuiFontPath()の呼び出し直後にUSILICGUIDEBUG環境変数へappearance.fontName/appearance.fontPointSize/実際に解決されたresolvedPathを書き出す診断ログを追加しました。
+
+`make test` 651/651件全通過、`make usilic`もクリーンビルド成功。今回は描画ロジック自体には手を入れていません(純粋な診断用ログの追加のみ)。CLAUDE.mdに項目266として記録し、コミット・プッシュ済みです。USILICGUIDEBUG=/tmp/dbg.txt等を設定した状態でRedSandsプロファイルからusilic -gを起動していただき、ダンプされたresolvedPathがSFNSMono.ttfになっているかどうか教えてください。
