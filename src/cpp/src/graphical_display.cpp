@@ -1,6 +1,7 @@
 #include "graphical_display.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
@@ -74,6 +75,50 @@ SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int 
   int drawH = static_cast<int>(surfaceH * scale);
   return SDL_Rect{boxX + (maxW - drawW) / 2, boxY + (maxH - drawH) / 2, drawW, drawH};
 }
+
+// 2026-08-11: darkens a freshly-rendered glyph surface's partially-
+// covered (anti-aliased edge) pixels, to make thin strokes read as
+// visually heavier without touching the font's hinting or style --
+// item 264's TTF_HINTING_NONE experiment turned out to be moot for
+// "SF Mono Regular" specifically: inspecting the font file directly
+// (fontTools) showed it has NO fpgm/prep tables and 0 bytes of
+// instructions across every glyph, so there was never a native hint
+// program for TTF_HINTING_NORMAL/LIGHT/NONE to select between in the
+// first place -- consistent with a real report that toggling hinting
+// mode produced no visible change for this font at all.
+//
+// TTF_RenderUTF8_Blended() returns a surface whose RGB is the flat
+// foreground color everywhere; only the alpha channel varies, encoding
+// how much of each pixel the glyph outline covers (0 = background,
+// 255 = fully inside the stroke, partial values = the antialiased
+// edge). Raising alpha through a gamma curve (alpha' = 255 *
+// (alpha/255)^gamma, gamma < 1) pushes partially-covered edge pixels
+// toward fully-opaque, which is the same idea professional rasterizers
+// call "stem darkening" -- a deliberate boost to compensate for
+// unhinted small text reading as too thin, applied as a pixel-level
+// post-process instead of relying on any hint program (native or
+// FreeType's autohinter), so it works identically regardless of
+// whether the font has one.
+void boostGlyphAlpha(SDL_Surface *surface, double gamma) {
+  if (!surface) return;
+  if (SDL_MUSTLOCK(surface) && SDL_LockSurface(surface) != 0) return;
+  Uint32 *pixels = static_cast<Uint32 *>(surface->pixels);
+  int count = surface->w * surface->h;
+  for (int i = 0; i < count; ++i) {
+    Uint8 r, g, b, a;
+    SDL_GetRGBA(pixels[i], surface->format, &r, &g, &b, &a);
+    if (a == 0 || a == 255) continue;
+    double boosted = 255.0 * std::pow(a / 255.0, gamma);
+    Uint8 newAlpha = static_cast<Uint8>(std::min(255.0, std::max(0.0, boosted)));
+    pixels[i] = SDL_MapRGBA(surface->format, r, g, b, newAlpha);
+  }
+  if (SDL_MUSTLOCK(surface)) SDL_UnlockSurface(surface);
+}
+
+// Gamma < 1 boosts partial-coverage alpha upward (darkens); picked by
+// eye as a starting point, not measured against a specific target --
+// see boostGlyphAlpha()'s own comment.
+constexpr double kNarrowGlyphAlphaGamma = 0.65;
 
 // Best-effort search for a CJK-capable font to fall back to when the
 // PRIMARY font (resolved by main.cpp -- Menlo/Monaco/DejaVu/Liberation
@@ -645,6 +690,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
 
   SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), fg);
   if (!surface) return;
+  if (!isWide) boostGlyphAlpha(surface, kNarrowGlyphAlphaGamma);
   SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
   if (texture) {
     // Fit to the cell grid (isWide ? 2 : 1 cells) via fitGlyphRect()
@@ -740,6 +786,7 @@ void GraphicalDisplay::renderCursor() {
 
   SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), impl_->bg);
   if (!surface) return;
+  if (!isWide) boostGlyphAlpha(surface, kNarrowGlyphAlphaGamma);
   SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
   if (texture) {
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
@@ -1603,6 +1650,8 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE);
       SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, glyph.c_str(), sdlFg);
       if (surface) {
+        // Same alpha-gamma boost as renderCell() -- see boostGlyphAlpha()'s own comment (item 265).
+        if (!isWide) boostGlyphAlpha(surface, kNarrowGlyphAlphaGamma);
         SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
         if (texture) {
           // Fit to `width` cells via fitGlyphRect() -- see
