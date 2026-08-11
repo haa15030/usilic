@@ -3021,3 +3021,22 @@ startPromptHistoryRecall(bool directEntry = false)に変更し、startRegexPromp
 promptHistoryRecallIsDirectEntry_(項目273)はfeedRegexListByte()/openSelectedListEntry()の消費時点で即座にfalseへクリアされ検索実行時点まで残らないため、新設のpendingSearchFromDirectEntryList_にクリア直前の値を退避してexecuteGrep()/executeCut()の成功時まで持ち越すようにしました。成功時、この値をgrepReturnsToCandidateList_/cutReturnsToCandidateList_(いずれもワンショット)へ転記します。returnFromGrep()/returnFromCut()は、この新フラグが立っていればgrepReturnMode_/cutReturnMode_を経由せずstartRegexPromptList()を再度呼んで候補一覧を再表示するようにしました。2回目以降の編集→再送信でも同じ経路をたどるため、候補一覧⇄検索結果の往復が何度でも自然にチェーンします。候補一覧自体から直接^Gでキャンセルする経路だけが唯一ディレクトリへ到達する経路になります。^Jc/^S(固定文字列、候補一覧を経由しない)由来の検索はpendingSearchFromDirectEntryList_が終始falseのままのため、項目269〜271で確立した「ディレクトリへ直接戻る」挙動が従来通り維持されます。
 
 `make test` 663/663件全通過(候補一覧経由のCUTが^Gで候補一覧へ戻り2回目もチェーンすること、候補一覧自体からの^Gでのみディレクトリへ到達すること、^Jc(候補一覧を経由しない版)は従来通り^Gで直接ディレクトリへ戻ることを確認する新規テスト2件を追加)、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目275として記録し、コミット・プッシュ済みです。実機でのご確認をお願いします。
+
+<仮にPUSH/POPの話だとするとこうなる、という話はさっきしたけれども、それはモード単位であってモード内の履歴まで踏み込む必要はない。
+例えば（ls）から（fgrep)→マッチ一覧→該当箇所
+と進んだなら^G連打で
+該当箇所→マッチ一覧→（fgrep）→（ls）
+となればいい。でないと例えば（ls）の代わりに別の文字列で（fgrep）したとすると
+別のマッチ一覧→該当箇所→以後^G連打→
+マッチ一覧→（fgrep）→前のマッチ一覧→（fgrep）→（ls）
+となって（fgrep）による検索試行回数分だけ行き来が生ずることになる。
+確かに正しい挙動ではあるものの実用的じゃない。なので単純LIFOではなく、モード単位でお願いしたい。
+他にも新規文字列入力に難ありだが、それはまた明日のお話。今日もおつかれさま。
+
+>コードを逐一トレースして確認しました。実装は文字通りの「フレームを積むスタック」ではなく、「直近の検索が候補一覧経由だったか」を示す単純なワンショットフラグ(grepReturnsToCandidateList_/cutReturnsToCandidateList_)方式で、grepView_/cutView_自体のデータも毎回の検索で単純に上書きされます(古い結果を別領域に退避したりはしません)。実際には試行回数に関わらず深さが一定であることを確認できました。
+
+(ls)→^J^S→候補一覧→パターン1入力→[return]→結果1→(該当箇所を選んでEnter、openSelectedGrepMatch())→(ls)(注記付き)→^G(returnToGrepResults())→結果1→^G(returnFromGrep()、grepReturnsToCandidateList_がまだ真なので)→候補一覧再表示→^G(候補一覧自体のキャンセル)→(ls)、という4ホップの経路が、ご期待の該当箇所→マッチ一覧→(fgrep)→(ls)と一致します。
+
+続けて、候補一覧へ戻った時点で別のパターン2を再入力して[return]しても(grepView_のデータがパターン2の結果で上書きされるだけで、パターン1の結果は消えます)、その後の^G連打は「結果2→候補一覧(パターン2用に再表示、promptHistoryRecallReturnMode_はgrepReturnMode_(=(ls))を指す、パターン1の結果画面ではない)→(ls)」の3ホップに留まり、パターン1の結果画面を経由することはありません。grepReturnsToCandidateList_はワンショットで検索の都度上書きされるだけの単純な真偽値であり、過去の検索回数分だけ積み重なる構造にはなっていません。CUTの入れ子再分割(cutMode_.canGoBack()/pushSplit())についても、この新フラグは「cutMode_.canGoBack()が偽になる最後の瞬間」(=入れ子分割を全て^Gで遡り終えてCUTモード自体から抜ける瞬間)にのみ参照される作りのため、入れ子の再分割回数とこのフラグの挙動は独立しており、同様に「モード単位」の性質を保っています。
+
+コードの追加変更はありません(調査・説明のみ)。「LIFOスタック」という表現を使ったことが「試行のたびに積み重なる」実装を連想させ誤解を招いた可能性があるため、CLAUDE.mdに項目276として正確な動作を記録しました。「新規文字列入力に難あり」の件は次回セッションで確認します。今日もお疲れさまでした、また明日。
