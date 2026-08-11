@@ -2945,3 +2945,12 @@ FGREP/EGREP等でも同じなので修正よろしく。
 ApplicationコンストラクタにgrepView_.setModeLineFieldsProvider(...)を追加し、DirectoryModeの(ls)と同じ流儀でFGREP/(fgrep)/検索元ディレクトリを表示するようにしました。Application::openSelectedGrepMatch()を新設してCommand::Enterから配線し、mode.cのT_grepケースをポート: 選択中のマッチのsourceLineIndex(fgrep -n/egrep -nの行番号出力から解析済み)を取得し、検索元(grepReturnMode_、DirectoryまたはFile)へ戻ってそのカーソル位置に着地するようにしました。Directoryへ戻る場合のみ「FGREP: パターン」という注記をDirectoryModeのモードラインに残す仕組み(setGrepAnnotation())も追加し、新しいlsを実行するたびに自動で消えるようにしています。
 
 既存のテストは新しい正しい挙動に書き換えました。`make test` 651/651件全通過、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目269として記録し、コミット・プッシュ済みです。Application層の純粋なロジック変更なので-c/-gどちらでも同じように直っているはずです。実機での見た目確認をお願いします。
+
+<㉑からの続き→
+^G→モードライン右下端「FGREP: .json」（←以前のモード）へ戻らない。
+
+>原因が分かりました。Command::BackのDirectory分岐は最終的にdirectoryMode_.goBack()(ModeStackのフレームをpopして親方向へ戻る、descendTo()でサブディレクトリへ潜った場合にのみ積まれる)に落ちる実装でした。今回のシナリオ(トップレベルの一覧で直接FGREPを実行し、Enterで結果を選んでディレクトリへ戻っただけ、サブディレクトリへは一度も潜っていない)ではmodeStack_が空のままのため、goBack()はreturn falseで即座に無反応になっていました。「FGREP: .json」という注記は「ここに戻れます」という目印のはずなのに、それを実際にたどる経路が存在しませんでした。
+
+DirectoryModeにhasGrepAnnotation()を追加し、Application::handleCommand()のCommand::Back、Directory分岐でdirectoryMode_.goBack()より前にこれをチェックするようにしました。真なら新設のApplication::returnToGrepResults()(currentMode_ = ApplicationMode::Grep; grepView_.redraw();)を呼びます。openSelectedGrepMatch()(項目269)はgrepView_自体(検索結果の行データ)には一切触れず戻り先のビューだけを操作しているため、検索を再実行する必要は無く、単にcurrentMode_をGrepへ戻すだけで元の結果画面がそのまま復元されます。returnFromGrep()(Grep→Directory)とちょうど対になる、Directory→Grep方向のsymmetryとして実装しました。
+
+`make test` 652/652件全通過(modeStack_が空のままであることを明示的に確認した上で、Back後に検索結果が再実行なしにそのまま残っていることを確認する新規テストを追加)、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目270として記録し、コミット・プッシュ済みです。項目269と同じくApplication層のみの変更なので-c/-g共通で直っているはずです。

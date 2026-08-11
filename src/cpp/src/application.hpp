@@ -1146,6 +1146,7 @@ class Application {
   bool returnToDirectory();
   bool openSelectedGrepMatch();
   bool returnFromGrep();
+  bool returnToGrepResults();
   bool returnFromCutContent();
   bool returnFromCut();
   bool returnFromMan();

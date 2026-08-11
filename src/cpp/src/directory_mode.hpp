@@ -183,6 +183,7 @@ class DirectoryMode {
   // legacy's own T_dir handling, which only clears this on a genuine
   // directory change.
   void setGrepAnnotation(const std::string &text);
+  bool hasGrepAnnotation() const { return !grepAnnotation_.empty(); }
 
  private:
   DirectoryEntry parseLsLine(const std::string &line) const;

@@ -14335,6 +14335,44 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      (ユーザー報告通り両方に共通する原因だった)。実機での見た目
      確認は次回のご報告待ち。
 
+270. **2026-08-11(続き): 項目269で「FGREP: .json」注記付きの
+    ディレクトリ一覧へ戻った状態から`^G`(Back)を押しても検索結果に
+    戻らない不具合を修正**。ユーザーから「㉑からの続き→^G→モードライン
+    右下端『FGREP: .json』(←以前のモード)へ戻らない」との報告。
+   - **原因**: `Command::Back`のDirectory分岐は最終的に
+     `directoryMode_.goBack()`(`ModeStack`のフレームをpopして親方向へ
+     戻る、`descendTo()`でサブディレクトリへ潜った場合にのみ積まれる)
+     に落ちる実装だった。今回のシナリオ(トップレベルの一覧で直接
+     FGREPを実行し、Enterで結果を選んでディレクトリへ戻っただけ、
+     サブディレクトリへは一度も潜っていない)では`modeStack_`が
+     空のままのため、`goBack()`は`return false`で即座に無反応になって
+     いた。「FGREP: .json」という注記は「ここに戻れます」という
+     目印のはずなのに、それを実際にたどる経路が存在しなかった。
+   - **実装**: `DirectoryMode`に`hasGrepAnnotation()`(既存の
+     `grepAnnotation_`が空でないかを返すだけの薄いアクセサ)を追加。
+     `Application::handleCommand()`の`Command::Back`、Directory分岐で
+     `directoryMode_.goBack()`より前に`directoryMode_.
+     hasGrepAnnotation()`をチェックし、真なら新設の
+     `Application::returnToGrepResults()`(`currentMode_ =
+     ApplicationMode::Grep; grepView_.redraw();`)を呼ぶようにした。
+     `openSelectedGrepMatch()`(項目269)は`grepView_`自体(検索結果の
+     行データ・`GrepMode::matches_`)には一切触れず、戻り先の
+     ディレクトリ/ファイルビューだけを操作しているため、検索を
+     再実行する必要は無く、単に`currentMode_`を`Grep`へ戻すだけで
+     元の結果画面がそのまま復元される。`returnFromGrep()`
+     (`Grep→Directory`、`Command::Back`の`ApplicationMode::Grep`
+     ケースで既存)とちょうど対になる、`Directory→Grep`方向の
+     symmetryとして実装した。
+   - **検証**: `make test`で652/652件全通過(新規テスト「GREP: Back
+     from the "FGREP: pattern"-annotated Directory listing returns to
+     the still-intact grep results, even with an empty ModeStack」を
+     追加、`modeStack_`が空のままであることを`canGoBack() ==
+     false`で明示的に確認した上で、`Command::Back`後に
+     `ApplicationMode::Grep`へ戻り検索結果(1件、`plain.txt`)が
+     再実行なしにそのまま残っていることを確認)、`make usilic`も
+     クリーンビルド成功。項目269と同じくApplication層のみの変更
+     のため`-c`/`-g`共通で直っているはず。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

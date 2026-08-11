@@ -628,6 +628,24 @@ TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match returns to Directory mode wit
   CHECK(app.activeContentView().modeLineText().find("FGREP: plain.txt") != std::string::npos);
 }
 
+TEST_CASE_FIXTURE(Fixture, "GREP: Back from the \"FGREP: pattern\"-annotated Directory listing returns to "
+                           "the still-intact grep results, even with an empty ModeStack (2026-08-11 fix: "
+                           "a real report found ^G did nothing here since there was no directory to pop "
+                           "back to)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE_FALSE(app.directoryMode().canGoBack());  // no subdirectory was ever entered
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 1);  // the original search results, not re-run
+  CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "GREP: starting a nested search from within grep results fails") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));

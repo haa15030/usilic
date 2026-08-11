@@ -1217,6 +1217,19 @@ bool Application::handleCommand(Command command) {
       }
       if (currentMode_ == ApplicationMode::Grep) return returnFromGrep();
       if (currentMode_ == ApplicationMode::File) return returnToDirectory();
+      // 2026-08-11 fix: a real report -- after openSelectedGrepMatch()
+      // lands back in Directory mode with a "FGREP: pattern" mode-line
+      // annotation (see DirectoryMode::setGrepAnnotation()'s own
+      // comment), pressing Back (^G) did nothing at all whenever
+      // modeStack_ was empty (the common case: the search was run
+      // directly from the top-level listing, never having descended
+      // into a subdirectory, so there was no ModeStack frame to pop).
+      // The annotation exists specifically to mark "you can get back
+      // to this," so Back should honor it -- checked BEFORE the
+      // ModeStack-based goBack() fallback, matching this same
+      // ordering's existing precedent (File/Cut/etc. all get their own
+      // dedicated check ahead of the generic directory case).
+      if (currentMode_ == ApplicationMode::Directory && directoryMode_.hasGrepAnnotation()) return returnToGrepResults();
       return directoryMode_.goBack();
     // ';'/':' -- literally Back+MoveDown+Enter / Back+MoveUp+Enter,
     // confirmed directly by the user (2026-08-03) after an initial
@@ -1664,6 +1677,18 @@ bool Application::openSelectedGrepMatch() {
 bool Application::returnFromGrep() {
   currentMode_ = grepReturnMode_;
   activeView().redraw();
+  return true;
+}
+
+// 2026-08-11 fix: the symmetric counterpart to openSelectedGrepMatch()
+// -- Back (^G) from Directory mode while its "FGREP: pattern"
+// annotation is showing re-enters Grep mode over the SAME still-intact
+// results (grepView_'s lines/matches_ are never touched by
+// openSelectedGrepMatch(), only the Directory/File view it lands on),
+// so this doesn't need to re-run the search at all.
+bool Application::returnToGrepResults() {
+  currentMode_ = ApplicationMode::Grep;
+  grepView_.redraw();
   return true;
 }
 
