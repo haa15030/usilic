@@ -2014,7 +2014,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       lines.reserve(view.lines().size());
       for (const auto &line : view.lines()) lines.push_back(line.text);
       gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments());
-    } else if (wasActivelyScrolling || anyEventThisFrame) {
+    } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.promptActive()) {
       // Settled on a row boundary -- back to the normal Display-
       // interface rendering path. redraw() calls clampViewport(),
       // which enforces the normal moveUp()/moveDown() invariant
@@ -2027,6 +2027,27 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // leading edge via ContentView::stepTopIndex() (see its own
       // comment), so clampViewport() here is already a no-op by the
       // time this runs -- nothing left to sync.
+      //
+      // !app.promptActive() (2026-08-11 fix, a real report: "EXIT
+      // (y/n) ? y" flashed for an instant then got overwritten by the
+      // mode line -- same for FGREP/EGREP etc, anything routed through
+      // activatePrompt()). ContentView::redraw() unconditionally
+      // redraws its own mode-line row, the SAME row Application's
+      // prompt label/input field live on (see drawPromptLabel()'s own
+      // comment) -- and this branch ran unconditionally on ANY
+      // anyEventThisFrame, including the very keypress that just
+      // opened the prompt (activatePrompt()'s own promptEditor_.redraw()
+      // already presented a correct frame with the prompt visible;
+      // this redraw() then immediately clobbered it with the normal
+      // mode line before the user had a chance to answer). The
+      // hover-consumption code earlier in this same loop already
+      // learned this exact lesson for a different symptom (2026-08-03,
+      // "^Xf's input field vanishing the moment the mouse moved") and
+      // already gates on !app.promptActive() -- this call just never
+      // got the same guard. Submitting or cancelling the prompt clears
+      // promptKind_ synchronously (submitPrompt()), so the SAME
+      // keypress that closes a prompt still reaches this branch and
+      // redraws normally once promptActive() has already gone false.
       wasActivelyScrolling = false;
       view.redraw();
     }

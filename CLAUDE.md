@@ -14209,6 +14209,66 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      作業に戻ることで合意した。半透明背景の不足(項目264で指摘、
      未対応)も同様に、今回は着手しない。
 
+268. **2026-08-11(続き): `-g`と`-c`の挙動差の解消に着手。EXIT確認
+    プロンプト(`^X^C`)が「Exit (y/n) ? y」表示直後にモードラインで
+    上書きされてしまう不具合を修正(FGREP/EGREP等`activatePrompt()`
+    を使う全プロンプトが同じ症状)**。ユーザーから「次は-cとの違いを
+    潰していきたい。まずはEXITで『Exit (y/n) ? y』が一瞬出たあと
+    モードラインで上書きされる([return]で終了はOKなので実害は無い)。
+    FGREP/EGREP等でも同じなので修正よろしく」との依頼。
+   - **原因**: `main.cpp`の`runGuiPhase()`(`-g`のメインループ、
+     約60Hzポーリング)の末尾、`else if (wasActivelyScrolling ||
+     anyEventThisFrame) { ... view.redraw(); }`という分岐が、
+     プロンプトが開いているかどうかに関係なく、その回のフレームで
+     何らかのキー入力を処理した(`anyEventThisFrame == true`)だけで
+     無条件に`view.redraw()`(=`ContentView::redraw()`、自身の
+     モードライン行を含めて丸ごと再描画し、最後に`display_.flush()`
+     で実際に画面へ提示する)を呼んでいた。
+     - `^X^C`(EXIT)を押す → `Application::feedByte()`→
+       `startExitPrompt()`→`activatePrompt()`が`drawPromptLabel()`
+       (「EXIT」「Exit (y/n) ? 」を直接書き込み)+
+       `promptEditor_.setText("y")`+`promptEditor_.redraw()`
+       (`LineEditor::redraw()`も自前で`display_.flush()`を呼ぶ、
+       `line_editor.cpp:200`)を実行 → **この時点で実際に画面へ
+       正しいプロンプトが1フレーム分提示される**。
+     - 同じフレームの末尾で`anyEventThisFrame`が真(直前の`^X^C`
+       キー入力そのものが原因)のため、`view.redraw()`が続けて
+       実行され、**同じ行(モードライン行)に通常のモードライン
+       内容を上書きし、`ContentView::redraw()`自身の
+       `display_.flush()`(`content_view.cpp:700`)でこちらも実際に
+       画面へ提示**される。
+     - 結果、同じ16msのフレーム内で「正しいプロンプト」→「通常の
+       モードライン」という2枚の実フレームが連続して画面に提示され、
+       ユーザーの目には「一瞬出たあと上書きされる」ちらつきとして
+       見えていた。FGREP/EGREP含む`activatePrompt()`を使う全プロンプト
+       が同一の仕組みで開始されるため、症状は共通だった。
+     - `[return]`での終了(=プロンプトの答えを確定してそのまま
+       `executeExit()`が呼ばれるケース)で問題が起きなかった理由:
+       この場合`submitPrompt()`が`promptKind_ = PromptKind::None`
+       にした直後にアプリ自体が終了処理へ入り、ウィンドウがすぐ
+       閉じるため、同じ「上書きするview.redraw()」が実行されても
+       ユーザーがそれを視認する前にプロセスが終わる(バグ自体は
+       同じ経路を通っているが、体感できないだけ)。
+   - **関連する既存の前例**: 同じループの少し手前、マウスホバー処理
+     (`applyHoverRowAndRedraw()`)は既に`!app.promptActive()`で
+     ガードされている(2026-08-03、"^Xf's input field vanishing the
+     moment the mouse moved"という別の実害の修正で追加済み)。今回の
+     `view.redraw()`だけが同じガードを持っていなかった、という
+     抜け漏れだった。
+   - **修正**: 該当の`else if`条件に`&& !app.promptActive()`を追加。
+     プロンプトが開いている間はこの末尾の`view.redraw()`を呼ばない
+     (プロンプト自身の入力エコーは`feedPromptByte()`内の
+     `promptEditor_.redraw()`が個別に処理しており、そちらは元々
+     問題無く機能していた)。`submitPrompt()`はプロンプト確定/
+     キャンセル時に`promptKind_`を同じキー処理の中で同期的に
+     `None`へ戻すため、プロンプトを閉じた**その瞬間のフレーム**でも
+     `promptActive()`は既に偽になっており、`view.redraw()`は
+     正常に(通常通り)実行される。
+   - **検証**: `make test`で651/651件全通過、`make usilic`もクリーン
+     ビルド成功。既存のdoctestカバレッジは`GraphicalDisplay`本体の
+     実描画に依存しないため新規テストは追加していない。実機での
+     `^X^C`/FGREP/EGREP等の見た目の確認は次回のご報告待ち。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が
