@@ -1511,7 +1511,7 @@ class Application {
   // their own yet -- matching m_list()'s own echo_mess(S_errf) for a
   // context ^R doesn't apply to, same spirit as ToggleHistoryView's
   // own outside-ListBrowser no-op.
-  bool startPromptHistoryRecall();
+  bool startPromptHistoryRecall(bool directEntry = false);
   // K-32/K-34 (^J^S EGREP, ^J^C CUT's regex variant): opens DIRECTLY
   // into the candidate-pattern list, skipping the blank prompt step
   // entirely -- see startGrepPrompt()/startCutPrompt()'s own comment
@@ -1579,6 +1579,22 @@ class Application {
   std::optional<PromptKind> promptHistoryRecallKind_;
   std::string promptHistoryRecallText_;
   ApplicationMode promptHistoryRecallReturnMode_ = ApplicationMode::Directory;
+  // True only when this ListBrowser interlude was reached via
+  // startRegexPromptList() (^J^S/^J^C's own "opens directly into the
+  // candidate list" entry, see its own comment) rather than a real ^R
+  // recall of PAST typed patterns -- legacy's mode.c distinguishes
+  // these as genuinely different screens (T_hfgrep/T_hegrep for ^R vs
+  // plain M_fgrep/M_locate/M_cut2 for direct entry): a real ^R recall
+  // always shows the fixed literal "HISTORY" name (see
+  // startPromptHistoryRecall()'s own 2026-08-05 comment on why that's
+  // correct there) and starts on the NEWEST entry (bottom); direct
+  // entry shows the actual mode name (e.g. "CUT") plus the destination
+  // directory highlighted on the right, and starts on the TOP entry
+  // (a real report + legacy source read, 2026-08-11: T_hfgrep/T_hegrep
+  // explicitly set `row = nrow - 1`, but M_fgrep/M_locate/M_cut2 just
+  // set `i = -2`, defaulting to the top). Reset alongside
+  // promptHistoryRecallKind_ at every consumption site.
+  bool promptHistoryRecallIsDirectEntry_ = false;
   // See startShellHistoryRecall()'s own comment.
   bool shellHistoryRecallActive_ = false;
   std::string shellHistoryRecallText_;

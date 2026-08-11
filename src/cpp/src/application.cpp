@@ -349,6 +349,25 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // meaningful on an empty list as a populated one.
     std::string trailing = inRange ? items[cursorIndex] : "";
     if (promptHistoryRecallKind_) {
+      // 2026-08-11 fix: a real report + legacy source read (mode.c's
+      // T_hfgrep/T_hegrep vs plain M_fgrep/M_locate/M_cut2) -- direct
+      // entry (^J^S/^J^C, startRegexPromptList()) is NOT the same
+      // screen as a real ^R recall, and shows differently: the actual
+      // mode name (e.g. "CUT", via promptLabelText() -- NOT
+      // ringCategoryLabel(), which would wrongly say "EGREP" for CUT's
+      // regex variant since it borrows that ring) on the left, and the
+      // destination directory highlighted on the right (when this
+      // search returns to Directory mode) instead of the fixed literal
+      // "HISTORY" name + unhighlighted mode-name badge a real ^R uses.
+      if (promptHistoryRecallIsDirectEntry_) {
+        PromptKind kind = *promptHistoryRecallKind_;
+        bool destinationIsDirectory =
+            (kind == PromptKind::GrepPattern && grepReturnMode_ == ApplicationMode::Directory) ||
+            (kind == PromptKind::CutPattern && cutReturnMode_ == ApplicationMode::Directory);
+        std::string trailing2 = destinationIsDirectory ? directoryMode_.currentDirectory() : "";
+        return {promptLabelText(kind), trailing, /*fillTrailingToEdge=*/!trailing2.empty(),
+                /*rightWatermark=*/"", trailing2};
+      }
       return {"HISTORY", trailing, /*fillTrailingToEdge=*/false,
               /*rightWatermark=*/promptLabelText(*promptHistoryRecallKind_), /*trailing2=*/""};
     }
@@ -701,6 +720,7 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   const std::string *selected = listBrowserMode_.selectedItem();
   std::string seed = selected ? *selected : promptHistoryRecallText_;
   promptHistoryRecallKind_ = std::nullopt;
+  promptHistoryRecallIsDirectEntry_ = false;
   promptHistoryRecallText_.clear();
   currentMode_ = promptHistoryRecallReturnMode_;
   activeView().redraw();
@@ -1563,6 +1583,7 @@ bool Application::openSelectedListEntry() {
     PromptKind kind = *promptHistoryRecallKind_;
     std::string text = *item;
     promptHistoryRecallKind_ = std::nullopt;
+    promptHistoryRecallIsDirectEntry_ = false;
     currentMode_ = promptHistoryRecallReturnMode_;
     return executePromptSubmission(kind, text);
   }
@@ -1840,6 +1861,7 @@ bool Application::returnFromListBrowser() {
     PromptKind kind = *promptHistoryRecallKind_;
     std::string text = promptHistoryRecallText_;
     promptHistoryRecallKind_ = std::nullopt;
+    promptHistoryRecallIsDirectEntry_ = false;
     promptHistoryRecallText_.clear();
     currentMode_ = promptHistoryRecallReturnMode_;
     activeView().redraw();
@@ -2390,7 +2412,7 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
 bool Application::startRegexPromptList(PromptKind kind) {
   promptKind_ = kind;
   promptEditor_.setText("");
-  return startPromptHistoryRecall();
+  return startPromptHistoryRecall(/*directEntry=*/true);
 }
 
 // Ported from m_cut(): reachable from File mode (a fresh split of the
@@ -2550,6 +2572,34 @@ bool Application::feedPromptByte(int byte) {
     promptEditor_.redraw();
     return true;
   }
+  // ^U/^K/^Y (2026-08-11 fix): LineEditor already implements
+  // killToStart()/killToEnd()/yank() (ported from key.c's K_u/K_k/K_y
+  // cases -- see their own doc comments) but nothing anywhere ever
+  // called them, so these bytes fell through to insertByte() below and
+  // got inserted as literal control characters instead of editing the
+  // line. A real report: after startRegexPromptList()'s candidate list
+  // (^J^C) transitions into editable-prompt mode pre-filled with the
+  // highlighted candidate's text (feedRegexListByte()'s own "start
+  // editing" fallback), ^U -- meant to clear that pre-filled text
+  // before typing a fresh pattern -- silently corrupted the prompt
+  // text instead (a literal 0x15 byte prepended), so the subsequently
+  // typed pattern never matched anything and the search silently
+  // failed ("何も起きない").
+  if (byte == 0x15) {  // ^U: kill from field start to cursor
+    promptEditor_.killToStart();
+    promptEditor_.redraw();
+    return true;
+  }
+  if (byte == 0x0b) {  // ^K: kill from cursor to field end
+    promptEditor_.killToEnd();
+    promptEditor_.redraw();
+    return true;
+  }
+  if (byte == 0x19) {  // ^Y: re-insert the ^U/^K kill buffer
+    promptEditor_.yank();
+    promptEditor_.redraw();
+    return true;
+  }
   promptEditor_.insertByte(static_cast<unsigned char>(byte));
   promptEditor_.redraw();
   return true;
@@ -2661,7 +2711,7 @@ void Application::cancelPrompt() {
 //     right-aligned badge, via listBrowserView_'s own
 //     ModeLineFieldsProvider reading promptHistoryRecallKind_ (see
 //     its own comment).
-bool Application::startPromptHistoryRecall() {
+bool Application::startPromptHistoryRecall(bool directEntry) {
   RingCategory category;
   switch (promptKind_) {
     case PromptKind::ManName:
@@ -2687,6 +2737,7 @@ bool Application::startPromptHistoryRecall() {
   promptHistoryRecallKind_ = promptKind_;
   promptHistoryRecallText_ = promptEditor_.text();
   promptHistoryRecallReturnMode_ = currentMode_;
+  promptHistoryRecallIsDirectEntry_ = directEntry;
   promptKind_ = PromptKind::None;
   listBrowserCategory_ = category;
   // true: this IS the chronological view already -- see ToggleHistoryView's
@@ -2698,12 +2749,22 @@ bool Application::startPromptHistoryRecall() {
   listBrowserMode_.show(items);
   currentMode_ = ApplicationMode::ListBrowser;
   if (!items.empty()) {
-    // Newest (the most recently pushed entry, at the back) is what's
-    // actually visible/selected first -- matching the same "最下行が
-    // 最新" convention ToggleHistoryView's own chronological mode
-    // uses, and legacy's own mode.c (M_hist/T_hist group:
-    // `pnp->row = hp->bp->nrow - 1;`).
-    listBrowserView_.setCursorIndex(static_cast<int>(items.size()) - 1);
+    if (directEntry) {
+      // 2026-08-11: legacy's mode.c distinguishes real ^R recall
+      // (T_hfgrep/T_hegrep, `row = nrow - 1`) from direct entry
+      // (M_fgrep/M_locate/M_cut2, `i = -2` -- no explicit row, falling
+      // back to the top) -- see promptHistoryRecallIsDirectEntry_'s
+      // own comment. A real report found this landing on the LAST
+      // (11th of 11) seed pattern instead of the first.
+      listBrowserView_.setCursorIndex(0);
+    } else {
+      // Newest (the most recently pushed entry, at the back) is what's
+      // actually visible/selected first -- matching the same "最下行が
+      // 最新" convention ToggleHistoryView's own chronological mode
+      // uses, and legacy's own mode.c (M_hist/T_hist group:
+      // `pnp->row = hp->bp->nrow - 1;`).
+      listBrowserView_.setCursorIndex(static_cast<int>(items.size()) - 1);
+    }
     listBrowserView_.redraw();
   }
   return true;

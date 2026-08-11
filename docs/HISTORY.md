@@ -2978,3 +2978,23 @@ GREP用に追加していたDirectoryModeのgrepAnnotation_/setGrepAnnotation()/
 「お手本㉓」の実際の一覧内容(mvp-log.json等4件)自体が正しいCUTの結果を表しているかは、ご自身「モードラインがNG」と留保されていたこともあり検証しきれていません(FGREPの結果⑳と偶然同じファイル一覧に見えたため、取り違えの可能性を疑っています)。今回はモードラインの"CUT: package*"表示と^Gでの往復という、テキストで明確に断定されていた部分のみを実装しました。CutContent側のモードラインはDirectory起源の場合も未対応のままです(今回の報告はCutのセグメント一覧止まりで、CutContentまで踏み込んだ操作は含まれていなかったため)。
 
 `make test` 654/654件全通過(新規テスト2件を追加、既存の^Jbファイル変種テストが新しい分岐順序でも引き続き正しく動作することも確認)、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目272として記録し、コミット・プッシュ済みです。Application層のみの変更のため-c/-g共通で直っているはずです。㉓の一覧内容が実際に正しいかどうか、実機でのご確認をお願いします。
+
+<手順を再現すると
+お手本)起動直後の(ls)㉔→^J^C㉕→^U（カーソル位置から行頭までの文字列クリア）㉖→'package*'㉗[return]㉘（←モードライン右下端は「CUT: package*」が正解）[return]㉙（←ls画面最上行から正規表現「package*」にマッチする行の直前までの内容）
+試作版)^J^C㉚→モード名がHISTORY（正しくはCUT）、右下端がハイライトでない「CUT」（正しくはハイライトの「/Users/haa15030/git/usilic/」）。カーソル位置は文字列最上行が正解（usilicを引数付きで起動しているため~/.usilic/historyは読み込まず初期位置からなので）→^U ㉛→'package*'[return]→㉚（なんもなし）
+文字列消去は^Uの他^K等。旧ソース参照。
+'/Users/haa15030/Desktop/㉔.png''/Users/haa15030/Desktop/㉕.png''/Users/haa15030/Desktop/㉖.png''/Users/haa15030/Desktop/㉗.png''/Users/haa15030/Desktop/㉘.png''/Users/haa15030/Desktop/㉙.png''/Users/haa15030/Desktop/㉚.png''/Users/haa15030/Desktop/㉛.png''/Users/haa15030/Desktop/㉜.png'
+
+>9枚とも拝見しました。3つの不具合が重なっていました。
+
+不具合1(モードライン): ^J^C直後の候補一覧画面が、モード名「HISTORY」+ハイライト無しの右バッジ「CUT」を表示していましたが、正しくは「CUT」(実際のモード名)+ハイライト付きの検索先ディレクトリパスでした。startRegexPromptList()(^J^S/^J^C用の「候補一覧へ直接入る」経路)が、本物の^Rによる履歴呼び出しと全く同じstartPromptHistoryRecall()を経由しており、listBrowserView_のモードラインプロバイダは両者を区別できていませんでした。tcb本家のmode.cを確認したところ、T_hfgrep/T_hegrep(本物の^R)とM_fgrep/M_locate/M_cut2(直接入る版)は別画面として扱われており、前者のみ固定文字列「HISTORY」を使う設計でした。
+
+不具合2(初期カーソル位置): 同じ理由で、startPromptHistoryRecall()は常に最新エントリ(末尾)へカーソルを置いていましたが、mode.cではT_hfgrep/T_hegrepのみrow = nrow - 1を明示的に設定しており、M_fgrep/M_locate/M_cut2はi = -2(位置指定無し=デフォルトの先頭)でした。
+
+不具合3(^U/^K未実装によるCUT失敗): LineEditorにはkillToStart()(^U)/killToEnd()(^K)/yank()(^Y)がkey.cのK_u/K_k/K_yケースを移植済みの実装として既に存在していましたが、どこからも一切呼ばれていませんでした。候補一覧で^Uを押すとfeedRegexListByte()の「編集開始」フォールバック経由でfeedPromptByte()に0x15が届きますが、そちらでも特別扱いしておらず、生の制御バイトがプロンプト文字列にそのまま挿入されていました。結果、続けて'package*'と入力しても既に化けた文字列の末尾に追加されるだけで、fgrep/egrepが無効なパターンとして失敗し、[return]を押しても何も起きないように見えていました。
+
+startPromptHistoryRecall(bool directEntry = false)に変更し、startRegexPromptList()からtrueで呼ぶようにしました。directEntryのとき、カーソル初期位置を0(先頭)にし、新設のフラグでモードラインを正しいCUT/FGREP/EGREP名+ディレクトリ表示に切り替えます。feedPromptByte()には0x15(^U)→killToStart()、0x0b(^K)→killToEnd()、0x19(^Y)→yank()の3ケースを追加しました(SHELLのコマンドラインは今回のスコープ外として未対応のまま残しています)。
+
+副産物として、モードライン検証テストを書く過程でContentViewのrenderModeLine()/scrollModeLineSegments()/composeModeLineRow()3箇所全てで、trailing2がtrailingの非空チェックの内側にネストされており、trailingが空(今回の候補一覧のようにリングが空の場合等)だとtrailing2(検索先ディレクトリ)が黙って描画されなくなる不具合も見つけて修正しました。項目269でこの3関数にtrailing2を追加した際からの潜在バグで、FGREP/CUTのtrailingがほぼ常に非空だったため今回まで表面化していませんでした。
+
+`make test` 658/658件全通過(新規テスト5件: 候補一覧のモード名/ディレクトリ表示、初期カーソル位置、^U単体でのプロンプトクリア+以後のCUT成功、報告された手順をそのまま再現する統合テスト)、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目273として記録し、コミット・プッシュ済みです。実機での再現確認をお願いします。

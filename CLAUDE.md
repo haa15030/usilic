@@ -14483,6 +14483,83 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ビルド成功。Application層のみの変更のため`-c`/`-g`共通で
      直っているはず。
 
+273. **2026-08-11(続き): 項目272のCUT機能を実際に手順再現してもらった
+    ところ、`^J^C`候補一覧のモード名/カーソル初期位置が誤っていること、
+    `^U`(文字列クリア)が未実装で結果的に検索自体が失敗することの
+    3つの不具合が判明、まとめて修正**。ユーザーから「お手本」(期待
+    される正しい手順、9枚のスクリーンショット付き)と「試作版」
+    (実際の挙動)を1手ずつ対比した詳細な再現報告。「文字列消去は^Uの
+    他^K等。旧ソース参照。」との指示も。
+   - **不具合1(モードライン)**: `^J^C`直後の候補一覧画面が、モード名
+     「HISTORY」+ハイライト無しの右バッジ「CUT」を表示していたが、
+     正しくは「CUT」(実際のモード名)+ハイライト付きの検索先
+     ディレクトリパスだった。`startRegexPromptList()`(^J^S/^J^C用の
+     「候補一覧へ直接入る」経路)が、本物の`^R`による履歴呼び出しと
+     全く同じ`startPromptHistoryRecall()`を経由しており、
+     `listBrowserView_`のモードラインプロバイダは両者を区別できて
+     いなかった。tcb本家の`mode.c`を確認したところ、`T_hfgrep`/
+     `T_hegrep`(本物の`^R`)と`M_fgrep`/`M_locate`/`M_cut2`(直接
+     入る版)は別画面として扱われており、前者のみ固定文字列
+     「HISTORY」を使う設計だった(`mp[M_hist]==" HISTORY"`が
+     `T_hfile`/`T_hdir`/`T_hman`/`T_hlocate`/`T_hfgrep`/`T_hegrep`
+     全てに一律適用される、というのが本来の正しい理由であって、
+     直接入る版まで巻き込んでいたのがバグだった)。
+   - **不具合2(初期カーソル位置)**: 同じ理由で、`startPromptHistoryRecall()`
+     は常に最新エントリ(末尾)へカーソルを置いていたが、`mode.c`では
+     `T_hfgrep`/`T_hegrep`のみ`row = nrow - 1`を明示的に設定しており、
+     `M_fgrep`/`M_locate`/`M_cut2`は`i = -2`(位置指定無し=デフォルトの
+     先頭)だった。ユーザーの実機では11件中11番目(最後)に着地して
+     いたが、正しくは1番目(先頭)。
+   - **不具合3(^U/^K未実装によるCUT失敗)**: `LineEditor`には
+     `killToStart()`(^U)/`killToEnd()`(^K)/`yank()`(^Y)が
+     `key.c`のK_u/K_k/K_yケースを移植済みの実装として既に存在して
+     いたが、どこからも一切呼ばれていなかった。候補一覧で`^U`を押すと
+     `feedRegexListByte()`の「編集開始」フォールバック(ナビゲーション
+     キー以外は編集可能プロンプトへ遷移し、同じバイトを再投入する)
+     経由で`feedPromptByte()`に0x15が届くが、そちらでも0x15を特別扱い
+     しておらず、生の制御バイトがプロンプト文字列にそのまま挿入されて
+     いた。結果、続けて`'package*'`と入力しても既に化けた文字列の末尾に
+     追加されるだけで、`fgrep`/`egrep`が無効なパターンとして失敗し、
+     `[return]`を押しても何も起きないように見えていた。
+   - **実装**:
+     - `startPromptHistoryRecall(bool directEntry = false)`に変更、
+       `startRegexPromptList()`から`true`で呼ぶようにした。
+       `directEntry`のとき: (a)カーソル初期位置を`0`(先頭)に、
+       (b)新設の`promptHistoryRecallIsDirectEntry_`フラグを立てる
+       (他の`promptHistoryRecallKind_`等と同じ3箇所の消費地点で
+       同時にリセット)。
+     - `listBrowserView_`のモードラインプロバイダに
+       `promptHistoryRecallIsDirectEntry_`分岐を追加。真のときは
+       `promptLabelText(kind)`(正しく"CUT"/"FGREP"/"EGREP"を返す、
+       CUTの正規表現版がEGREPのリングを借用していてもリング名では
+       なく実際のモード名を返す)を名前に、`grepReturnMode_`/
+       `cutReturnMode_`が`Directory`の場合のみ検索先ディレクトリを
+       `trailing2`(ハイライト付き)に表示するようにした。
+     - `feedPromptByte()`に`0x15`(^U)→`killToStart()`、`0x0b`(^K)→
+       `killToEnd()`、`0x19`(^Y)→`yank()`の3ケースを追加(バックス
+       ペースの2026-08-05修正と同じ配線パターン)。SHELLの
+       コマンドライン(`feedShellByte()`)は今回のスコープ外として
+       未対応のまま残した(今回の報告はCUT/GREP系プロンプトの範囲
+       だったため)。
+     - **副産物として発見・修正した別バグ**: 上記のモードライン検証
+       テストを書く過程で、`ContentView`の`renderModeLine()`/
+       `scrollModeLineSegments()`/`composeModeLineRow()`3箇所全てで、
+       `trailing2`が`trailing`の非空チェックの内側にネストされており、
+       `trailing`が空(今回の候補一覧のように、リングが空でハイライト
+       対象が無い場合等)だと`trailing2`(検索先ディレクトリ)が
+       黙って描画されなくなる不具合を発見。項目269でこの3関数に
+       `trailing2`を追加した際からの潜在バグで、FGREP/CUTの
+       `trailing`(`(fgrep)`等)がほぼ常に非空だったため今回まで
+       表面化していなかった。3箇所とも`trailing`/`trailing2`を
+       それぞれ独立した空文字列チェックに分離して修正。
+   - **検証**: `make test`で658/658件全通過。新規テスト5件:
+     候補一覧のモード名/ディレクトリ表示、初期カーソル位置(先頭)、
+     `^U`単体でのプロンプトクリア+以後のCUT成功、報告された手順を
+     そのまま再現する統合テスト(`^J^C`→`^U`→パターン入力→
+     `[return]`→実際に4セグメントへ分割される)。`make usilic`も
+     クリーンビルド成功。Application/ContentView層のみの変更のため
+     `-c`/`-g`共通で直っているはず。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

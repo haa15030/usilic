@@ -452,17 +452,21 @@ TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: ^N/^P still navigate the EGREP ca
   history.pushRecent(RingCategory::RecentEgrepPattern, "three");
   REQUIRE(app.handleCommand(Command::StartEgrep));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  // Cursor starts on the newest (last) entry -- see
-  // startPromptHistoryRecall()'s own comment -- so ^P (up) is the one
-  // guaranteed not to be a no-op boundary bounce here; ^N (down) is
-  // tried second, back to the starting position.
+  // Cursor starts on the TOP (oldest) entry for this direct-entry path
+  // (2026-08-11 fix -- see promptHistoryRecallIsDirectEntry_'s own
+  // comment: legacy's mode.c distinguishes M_fgrep/M_locate/M_cut2's
+  // direct entry, defaulting to the top, from a real ^R recall's own
+  // T_hfgrep/T_hegrep, which starts on the newest/bottom entry
+  // instead), so ^N (down) is the one guaranteed not to be a no-op
+  // boundary bounce here; ^P (up) is tried second, back to the
+  // starting position.
   int startIndex = app.activeContentView().cursorIndex();
 
-  CHECK(app.feedByte(0x10, std::nullopt));  // ^P
+  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   CHECK(app.activeContentView().cursorIndex() != startIndex);
 
-  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N
+  CHECK(app.feedByte(0x10, std::nullopt));  // ^P
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   CHECK(app.activeContentView().cursorIndex() == startIndex);
 }
@@ -736,6 +740,70 @@ TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): submitting a pattern from Dire
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Cut);
   CHECK(app.cutMode().segments().size() == 4);  // still intact, not re-split
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the ^J^C candidate list shows the real mode name and "
+                           "the destination directory highlighted on the right, not the fixed \"HISTORY\" "
+                           "name + unhighlighted mode-name badge a real ^R recall uses (a real report + "
+                           "legacy source read: direct entry via startRegexPromptList() is a different "
+                           "screen from ^R, per mode.c's own T_hfgrep/T_hegrep vs plain M_cut2)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutRegex));  // ^J^C
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  std::string modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("CUT") != std::string::npos);
+  CHECK(modeLine.find("HISTORY") == std::string::npos);
+  CHECK(modeLine.find(path()) != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the ^J^C candidate list starts on the TOP (oldest) "
+                           "entry, not the bottom -- a real report found it landing on the LAST seed "
+                           "pattern instead of the first") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "first");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "second");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "third");
+  REQUIRE(app.handleCommand(Command::StartCutRegex));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.activeContentView().cursorIndex() == 0);
+  CHECK(*app.listBrowserMode().selectedItem() == "first");
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^U clears from the field start to the cursor (2026-08-11 fix: "
+                           "LineEditor::killToStart() already existed but was never wired to any actual "
+                           "keystroke, so ^U silently corrupted the prompt text -- a real report traced a "
+                           "\"CUT search does nothing after ^U\" symptom to exactly this)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("garbage");
+  REQUIRE(app.promptText() == "garbage");
+
+  CHECK(app.feedByte(0x15, std::nullopt));  // ^U
+  CHECK(app.promptText().empty());
+
+  feedText("cpmv");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 4);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the full reported reproduction -- ^J^C, ^U to clear the "
+                           "pre-filled seed pattern, type a real pattern, Enter -- actually splits the "
+                           "directory listing instead of silently doing nothing") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutRegex));  // ^J^C: candidate list
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.feedByte(0x15, std::nullopt));  // ^U: transitions to editable, pre-filled text cleared
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.promptActive());
+  CHECK(app.promptText().empty());
+
+  feedText("cpmv");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 4);
 }
 
 TEST_CASE_FIXTURE(Fixture, "CUT: splitting log.txt on 'marker' produces one segment per marker line") {

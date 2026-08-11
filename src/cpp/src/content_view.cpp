@@ -496,6 +496,9 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
   }
   segments.push_back({positionText, true});
   drawnLen += static_cast<int>(positionText.size());
+  // 2026-08-11 fix: see renderModeLine()'s own identical fix -- each
+  // field's own emptiness now gates only itself, so trailing2 no
+  // longer silently disappears whenever trailing itself is empty.
   if (fit.showTrailing && !fields.trailing.empty()) {
     segments.push_back({" ", false});
     drawnLen += 1;
@@ -512,16 +515,16 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
     }
     segments.push_back({trailing, true});
     drawnLen += static_cast<int>(trailing.size());
-    if (!fields.trailing2.empty()) {
-      segments.push_back({" ", false});
-      drawnLen += 1;
-      std::string trailing2 = fields.trailing2;
-      if (fields.fillTrailingToEdge) {
-        int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
-        if (remaining > 0) trailing2 += std::string(remaining, ' ');
-      }
-      segments.push_back({trailing2, true});
+  }
+  if (fit.showTrailing && !fields.trailing2.empty()) {
+    segments.push_back({" ", false});
+    drawnLen += 1;
+    std::string trailing2 = fields.trailing2;
+    if (fields.fillTrailingToEdge) {
+      int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
+      if (remaining > 0) trailing2 += std::string(remaining, ' ');
     }
+    segments.push_back({trailing2, true});
   }
   return segments;
 }
@@ -553,8 +556,16 @@ std::string ContentView::composeModeLineRow(const std::string &positionText) con
   FieldFit fit = fitModeLineFields(fields, positionText);
 
   std::string row = positionText;
-  if (fit.showTrailing && !fields.trailing.empty()) {
-    row += " " + fields.trailing;
+  // 2026-08-11 fix: trailing2 used to be nested inside `!fields.
+  // trailing.empty()`, so a field with a non-empty trailing2 but an
+  // EMPTY trailing (e.g. the ^J^C candidate list's own provider, whose
+  // `trailing` is the currently-highlighted item and can legitimately
+  // be empty on an empty ring while trailing2 -- the destination
+  // directory -- still has something to show) silently dropped
+  // trailing2 entirely. Each field's own emptiness now gates only
+  // itself.
+  if (fit.showTrailing) {
+    if (!fields.trailing.empty()) row += " " + fields.trailing;
     if (!fields.trailing2.empty()) row += " " + fields.trailing2;
   }
   if (fit.showName && !fields.name.empty()) row = fields.name + " " + row;
@@ -611,6 +622,13 @@ void ContentView::renderModeLine() {
   }
   drawSegment(positionText);
   drawnLen += static_cast<int>(positionText.size());
+  // 2026-08-11 fix: trailing2 used to be nested inside `!fields.
+  // trailing.empty()`, silently dropping it whenever trailing itself
+  // was empty (e.g. the ^J^C candidate list's own provider, whose
+  // `trailing` -- the currently-highlighted item -- can legitimately
+  // be empty on an empty ring while trailing2, the destination
+  // directory, still has something to show). Each field's own
+  // emptiness now gates only itself.
   if (fit.showTrailing && !fields.trailing.empty()) {
     display_.putChar(' ');
     drawnLen += 1;
@@ -632,17 +650,17 @@ void ContentView::renderModeLine() {
     }
     drawSegment(trailing);
     drawnLen += static_cast<int>(trailing.size());
-    if (!fields.trailing2.empty()) {
-      display_.putChar(' ');
-      drawnLen += 1;
-      std::string trailing2 = fields.trailing2;
-      if (fields.fillTrailingToEdge) {
-        int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
-        if (remaining > 0) trailing2 += std::string(remaining, ' ');
-      }
-      drawSegment(trailing2);
-      drawnLen += static_cast<int>(trailing2.size());
+  }
+  if (fit.showTrailing && !fields.trailing2.empty()) {
+    display_.putChar(' ');
+    drawnLen += 1;
+    std::string trailing2 = fields.trailing2;
+    if (fields.fillTrailingToEdge) {
+      int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
+      if (remaining > 0) trailing2 += std::string(remaining, ' ');
     }
+    drawSegment(trailing2);
+    drawnLen += static_cast<int>(trailing2.size());
   }
 
   // Ported from disp_window()'s own fallback: when there's no
