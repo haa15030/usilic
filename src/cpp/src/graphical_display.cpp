@@ -621,22 +621,27 @@ void GraphicalDisplay::renderCell(int row, int col) {
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
   TTF_SetFontStyle(renderFont, style);
-  // 2026-08-11: replaces the item 262 "force half-width glyphs bold"
-  // experiment, reverted after real reports showed it wasn't font-
-  // independent (RedSands' "SF Mono Regular 24" came out WORSE/blurrier
-  // when forced bold, opposite of the default profile's "MS Gothic"
-  // pairing) and it collided with genuine SGR-bold semantics (^J^H's
-  // HELP screen uses real bold for emphasis). FreeType's default
-  // autohinter (TTF_HINTING_NORMAL) aggressively snaps stems to the
-  // pixel grid at small sizes, which is a plausible root cause of thin
-  // single-column glyphs reading as "jagged"/thin next to -c's CoreText
-  // rendering. TTF_HINTING_LIGHT only grid-fits vertically and lets
-  // horizontal stem widths follow the outline more naturally, which
-  // tends to look fuller/smoother without changing the font's actual
-  // weight the way TTF_STYLE_BOLD does. Applied only to narrow (half-
-  // width) glyphs, matching the original report's scope; wide (CJK)
-  // glyphs keep normal hinting.
-  TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_LIGHT);
+  // 2026-08-11: TTF_HINTING_LIGHT (item 263) turned out font-dependent
+  // too -- a real report showed it fully fixed the default profile's
+  // "MS Gothic" pairing (confirmed via fontTools: msgothic.ttc's gasp
+  // table is {24: GASP_GRIDFIT, 65535: GASP_GRIDFIT|GASP_DOGRAY}, an
+  // exact ppem=24 threshold matching the report's own "24pt fixes it,
+  // 18pt doesn't"), but made NO visible difference for RedSands' "SF
+  // Mono Regular" pairing. SF Mono's own file (SFNSMono.ttf) has NO
+  // gasp table at all -- consistent with modern Apple system fonts
+  // generally shipping unhinted, since CoreText's own rasterizer
+  // (what -c actually renders through) has not used TrueType grid-
+  // fitting since early Mac OS X, relying purely on antialiased/
+  // subpixel-positioned outlines regardless of point size. TTF_HINTING_
+  // LIGHT still runs FreeType's autohinter (a synthetic hint program
+  // this font was never designed to need), which doesn't reproduce
+  // that "no grid-fitting at all" behavior -- TTF_HINTING_NONE (skip
+  // hinting entirely, scale the raw outline and just antialias it) is
+  // the closer structural match to how -c actually rasterizes text,
+  // for any font. Applied only to narrow (half-width) glyphs, matching
+  // the original report's scope; wide (CJK) glyphs keep normal
+  // hinting.
+  TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE);
 
   SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), fg);
   if (!surface) return;
@@ -731,7 +736,7 @@ void GraphicalDisplay::renderCursor() {
   TTF_SetFontStyle(renderFont, style);
   // Same half-width-hinting adjustment as renderCell() -- see its own
   // comment.
-  TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_LIGHT);
+  TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE);
 
   SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), impl_->bg);
   if (!surface) return;
@@ -1594,9 +1599,8 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       // fg color, not a Cell), so this is always NORMAL.
       TTF_SetFontStyle(renderFont, TTF_STYLE_NORMAL);
       // Same half-width-hinting adjustment as renderCell() -- see its
-      // own comment (item 263, replacing the item 262 forced-bold
-      // experiment).
-      TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_LIGHT);
+      // own comment (item 264, replacing item 263's TTF_HINTING_LIGHT).
+      TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE);
       SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, glyph.c_str(), sdlFg);
       if (surface) {
         SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
