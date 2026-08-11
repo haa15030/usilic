@@ -445,6 +445,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       trailing = "CUT:" + *parent;
     } else if (cutOrigin_ == CutOrigin::File) {
       trailing = fileMode_.currentFile();
+    } else if (cutOrigin_ == CutOrigin::Directory) {
+      trailing = directoryMode_.currentDirectory();
     }
     return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", /*trailing2=*/""};
   });
@@ -1219,7 +1221,7 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::File) return returnToDirectory();
       // 2026-08-11 fix: a real report -- after openSelectedGrepMatch()
       // lands back in Directory mode with a "FGREP: pattern" mode-line
-      // annotation (see DirectoryMode::setGrepAnnotation()'s own
+      // annotation (see DirectoryMode::setSearchAnnotation()'s own
       // comment), pressing Back (^G) did nothing at all whenever
       // modeStack_ was empty (the common case: the search was run
       // directly from the top-level listing, never having descended
@@ -1228,8 +1230,16 @@ bool Application::handleCommand(Command command) {
       // to this," so Back should honor it -- checked BEFORE the
       // ModeStack-based goBack() fallback, matching this same
       // ordering's existing precedent (File/Cut/etc. all get their own
-      // dedicated check ahead of the generic directory case).
-      if (currentMode_ == ApplicationMode::Directory && directoryMode_.hasGrepAnnotation()) return returnToGrepResults();
+      // dedicated check ahead of the generic directory case). Extended
+      // (same day) to also cover CUT run directly from Directory mode
+      // (returnFromCut() sets the SAME annotation, see its own
+      // comment) -- lastDirectorySearchKind_ (set alongside whichever
+      // of these two set the annotation) picks which results screen to
+      // route back to, since the annotation text alone doesn't
+      // structurally distinguish them.
+      if (currentMode_ == ApplicationMode::Directory && directoryMode_.hasSearchAnnotation()) {
+        return lastDirectorySearchKind_ == DirectorySearchKind::Cut ? returnToCutResults() : returnToGrepResults();
+      }
       return directoryMode_.goBack();
     // ';'/':' -- literally Back+MoveDown+Enter / Back+MoveUp+Enter,
     // confirmed directly by the user (2026-08-03) after an initial
@@ -1657,8 +1667,9 @@ bool Application::returnToDirectory() {
 // before the search started -- confirmed against a real CUI screenshot
 // showing the matched entry highlighted in the full listing afterward.
 // Also records the "FGREP: pattern" mode-line annotation (see
-// DirectoryMode::setGrepAnnotation()'s own comment) for the Directory
-// case specifically, matching legacy's own lp->prev behavior.
+// DirectoryMode::setSearchAnnotation()'s own comment) for the
+// Directory case specifically, matching legacy's own lp->prev
+// behavior.
 bool Application::openSelectedGrepMatch() {
   const GrepMatch *match = grepMode_.selectedMatch();
   if (!match) return false;
@@ -1667,7 +1678,8 @@ bool Application::openSelectedGrepMatch() {
   target.setCursorIndex(match->sourceLineIndex);
   if (grepReturnMode_ == ApplicationMode::Directory) {
     std::string label = (grepSyntax_ == GrepSyntax::Fixed) ? "FGREP" : "EGREP";
-    directoryMode_.setGrepAnnotation(label + ": " + grepMode_.pattern());
+    directoryMode_.setSearchAnnotation(label + ": " + grepMode_.pattern());
+    lastDirectorySearchKind_ = DirectorySearchKind::Grep;
   }
   display_.hideVisibleCursor();
   target.redraw();
@@ -1687,7 +1699,7 @@ bool Application::returnFromGrep() {
   // (new)," so whatever annotation was left over from a previous
   // selection no longer describes what just happened and needs to be
   // cleared, not carried forward a second time.
-  if (grepReturnMode_ == ApplicationMode::Directory) directoryMode_.setGrepAnnotation("");
+  if (grepReturnMode_ == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
   activeView().redraw();
   return true;
 }
@@ -1710,9 +1722,35 @@ bool Application::returnFromCutContent() {
   return true;
 }
 
+// 2026-08-11: unlike GREP (where Enter on a match is the ONLY path
+// back to Directory with an annotation, and plain Back is a separate
+// "cancel" path that clears it -- see openSelectedGrepMatch()/
+// returnFromGrep()'s own comments), CUT run directly from Directory
+// mode has no such split: Back is the ONLY way out of Cut mode back
+// to Directory (there's no "select a segment and jump to Directory"
+// action the way GREP's Enter works), so this single function both
+// leaves Cut mode AND records the "CUT: pattern" annotation. Always
+// freshly written with the CURRENT pattern on every call, so there's
+// no stale-annotation risk the way returnFromGrep() had to guard
+// against.
 bool Application::returnFromCut() {
   currentMode_ = cutReturnMode_;
+  if (cutReturnMode_ == ApplicationMode::Directory) {
+    directoryMode_.setSearchAnnotation("CUT: " + cutMode_.pattern());
+    lastDirectorySearchKind_ = DirectorySearchKind::Cut;
+  }
   activeView().redraw();
+  return true;
+}
+
+// The Cut/CUT-from-Directory counterpart to returnToGrepResults() --
+// see Command::Back's own comment on why lastDirectorySearchKind_
+// picks between the two. cutView_'s own lines/segments are untouched
+// by returning to Directory, so (like the Grep case) this doesn't
+// need to re-run the split.
+bool Application::returnToCutResults() {
+  currentMode_ = ApplicationMode::Cut;
+  cutView_.redraw();
   return true;
 }
 
@@ -2355,14 +2393,13 @@ bool Application::startRegexPromptList(PromptKind kind) {
   return startPromptHistoryRecall();
 }
 
-// Ported from m_cut(): only reachable from File mode (a fresh split
-// of the whole file) or CutContent (resplitting the segment currently
-// being viewed, CutMode::splitSelected()'s "one level deeper") --
-// matching the user-confirmed semantics recorded on CutMode's own
-// class comment. Starting from the Cut label-list itself isn't
-// meaningful (nothing selected yet to resplit); starting from
-// Directory/Grep isn't part of this slice (see class comment's
-// "Deliberately excluded").
+// Ported from m_cut(): reachable from File mode (a fresh split of the
+// whole file), CutContent/Cut (resplitting, see the 2026-08-05 comment
+// just below), or -- as of 2026-08-11 -- Directory mode (a fresh split
+// of the current `ls` listing itself, mirroring startGrepPrompt()'s
+// own unrestricted Directory support; see executeCut()'s own Directory
+// branch for where the listing's lines actually get read). Starting
+// from Grep isn't part of this slice.
 bool Application::startCutPrompt(GrepSyntax syntax) {
   // ApplicationMode::Cut (2026-08-05 fix): re-splitting was already
   // correctly wired for CutContent (having ENTERED a specific
@@ -2377,11 +2414,21 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
   // DISPLAYED view -- nothing about them actually required already
   // being inside CutContent, this guard was just stricter than it
   // needed to be.
+  // 2026-08-11: ApplicationMode::Directory added -- a real report
+  // found ^J^C from a plain directory listing was a silent no-op ("反応
+  // 無し"), unlike ^J^S (EGREP, startGrepPrompt() has no such
+  // restriction at all). CUT was never wired to read directoryView_'s
+  // OWN lines the way GrepMode::search() already branches on
+  // grepReturnMode_ to do -- see executeCut()'s own new Directory
+  // branch, added alongside this.
   if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::CutContent &&
-      currentMode_ != ApplicationMode::Cut)
+      currentMode_ != ApplicationMode::Cut && currentMode_ != ApplicationMode::Directory)
     return false;
   cutSyntax_ = syntax;
   if (currentMode_ == ApplicationMode::File) cutReturnMode_ = ApplicationMode::File;
+  // cutReturnMode_ is left untouched for Directory (its class default
+  // is already ApplicationMode::Directory, matching startCutFilePrompt()'s
+  // own identical reasoning, see its comment).
   // Regex ("^J^C", "Select string"): opens directly into the candidate
   // list, same as EGREP -- see startGrepPrompt()/startRegexPromptList()'s
   // own comment for why (a 2026-08-05 user report specifically named
@@ -2827,7 +2874,13 @@ bool Application::executeCut(const std::string &pattern) {
   } else if (!fileSourcePath.empty()) {
     // K-35/K-36's "regular file" variant: load the file first (same
     // as opening it normally would), THEN split its now-current
-    // buffer -- see startCutFilePrompt()'s own comment.
+    // buffer -- see startCutFilePrompt()'s own comment. Checked BEFORE
+    // the plain Directory branch just below: startCutFilePrompt() is
+    // ALSO invoked with currentMode_ still Directory (its own prompt
+    // never changes currentMode_ either), so fileSourcePath being
+    // non-empty is what actually distinguishes "split THIS selected
+    // file" from "split the listing itself" -- both are reachable from
+    // the exact same currentMode_.
     if (!fileMode_.loadFile(fileSourcePath)) {
       activeView().redraw();
       return false;
@@ -2837,6 +2890,21 @@ bool Application::executeCut(const std::string &pattern) {
     for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
     if (ok) cutOrigin_ = CutOrigin::File;
+  } else if (currentMode_ == ApplicationMode::Directory) {
+    // 2026-08-11: CUT run directly over the directory listing (^J^C
+    // from Directory mode, see startCutPrompt()'s own comment) --
+    // mirrors GrepMode::search() reading directoryView_.lines() when
+    // grepReturnMode_ == Directory, the same "the listing itself is
+    // the buffer" idea. Directory listing lines never carry
+    // overstrike attributes (see ContentView::Line::attributes' own
+    // comment), so `.attributes` here is always empty -- passed
+    // through anyway only for structural symmetry with the other
+    // branches.
+    std::vector<StyledLine> sourceLines;
+    sourceLines.reserve(directoryView_.lines().size());
+    for (const auto &line : directoryView_.lines()) sourceLines.push_back({line.text, line.attributes});
+    ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
+    if (ok) cutOrigin_ = CutOrigin::Directory;
   } else {
     std::vector<StyledLine> sourceLines;
     sourceLines.reserve(fileView_.lines().size());
@@ -3207,6 +3275,15 @@ void Application::handleResize() {
     std::vector<StyledLine> freshSource;
     if (cutOrigin_ == CutOrigin::Help) {
       freshSource = wrapHelpText(display_.columns());
+    } else if (cutOrigin_ == CutOrigin::Directory) {
+      // 2026-08-11: directory listing lines don't reflow/word-wrap
+      // with width the way File/Man text does (DirectoryMode has no
+      // reflow() of its own -- `ls -alF` output is truncated at
+      // render time, not re-fetched), so there's nothing to call here
+      // analogous to fileMode_.reflow() below; directoryView_'s
+      // already-current lines are simply re-split as-is.
+      freshSource.reserve(directoryView_.lines().size());
+      for (const auto &line : directoryView_.lines()) freshSource.push_back({line.text, line.attributes});
     } else {
       fileMode_.reflow(display_.columns());
       freshSource.reserve(fileView_.lines().size());

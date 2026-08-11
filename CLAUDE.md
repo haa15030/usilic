@@ -14405,6 +14405,84 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ビルド成功。項目269/270と同じくApplication層のみの変更のため
      `-c`/`-g`共通で直っているはず。
 
+272. **2026-08-11(続き): `^J^C`(CUT正規表現版)がディレクトリ一覧
+    から使えず無反応だった不具合を修正。GREPと同じ「検索元へ戻る」
+    仕組み(項目269〜271)をCUTにも一般化した**。ユーザーから
+    「/Users/haa15030/git/usilic/の(ls)→^J^C→反応無し(正しくは㉒)
+    →^U'package*'[return]→お手本㉓もモードラインがNG。正しくは
+    右下端が『CUT: package*』)→^G→㉒」との報告。
+   - **原因**: `Application::startCutPrompt()`(`^Jc`/`^J^C`の実体)が
+     `currentMode_ != File && != CutContent && != Cut`のときは
+     無条件`return false`という強いガードを持っており、
+     `ApplicationMode::Directory`が最初から除外されていた
+     (対照的に`startGrepPrompt()`にはこの種の制限が一切無く、
+     `^J^S`/EGREPは元々ディレクトリ一覧からも問題無く使えていた)。
+     さらにガードを外しただけでは不十分で、`executeCut()`自体が
+     `fileView_.lines()`(File由来のバッファ)からしか分割ソースを
+     読む経路を持っておらず、`GrepMode::search()`が
+     `grepReturnMode_`で`directoryView_`/`fileView_`を切り替えている
+     のと違い、ディレクトリ一覧をCUTの対象にする経路がそもそも
+     存在しなかった。
+   - **実装**:
+     - `startCutPrompt()`のガードに`ApplicationMode::Directory`を
+       追加(Fixed/Regex両方)。`cutReturnMode_`はクラスのデフォルトが
+       既に`Directory`のため触れる必要が無い
+       (`startCutFilePrompt()`と同じ理屈)。
+     - `executeCut()`に`currentMode_ == ApplicationMode::Directory`の
+       分岐を追加し、`directoryView_.lines()`を分割ソースとして
+       `cutMode_.split()`に渡すようにした。既存の`!fileSourcePath.
+       empty()`分岐(`^Jb`/`^J^B`、ディレクトリ一覧から選択した
+       特定ファイルを割る変種)は`currentMode_`が同じく`Directory`の
+       ままである点が衝突するため、Directory分岐より**前**に判定
+       する順序に変更(`fileSourcePath`の有無で本当に区別すべきは
+       こちら)。
+     - `CutOrigin`列挙に`Directory`を追加。`cutView_`のモードライン
+       プロバイダに`cutOrigin_ == Directory`のケースを追加し、
+       trailingに検索元ディレクトリのフルパスを表示するようにした
+       (File起源が`fileMode_.currentFile()`を表示するのと対称)。
+       `handleResize()`のトップレベルCut/CutContent再分割ロジックにも
+       Directory分岐を追加(`DirectoryMode`にはFile/Manのような
+       `reflow()`が無い=`ls`出力は幅で組み直す必要が無いため、単に
+       `directoryView_.lines()`を読み直すだけで良い)。
+     - GREP用に項目269で追加した`DirectoryMode`の
+       `grepAnnotation_`/`setGrepAnnotation()`/`hasGrepAnnotation()`
+       を、CUTでも使えるよう`searchAnnotation_`/`setSearchAnnotation()`
+       /`hasSearchAnnotation()`へ一般化(リネーム)。`Application::
+       returnFromCut()`(Cut→Directory)で、`cutReturnMode_ ==
+       Directory`のとき`"CUT: パターン"`を注記として書き込むように
+       した。GREPと違い「マッチを選んで戻る」に相当する経路がCUTには
+       無く(`Enter`はセグメントの中身を見る`openSelectedSegment()`
+       止まりで、`Back`だけが唯一Directoryへ戻る経路)、`returnFrom
+       Cut()`単体が毎回最新のパターンで注記を書き直すため、GREPの
+       項目271で必要だった「古い注記が残る」問題はCUTでは構造的に
+       発生しない。
+     - `Command::Back`のDirectory分岐が「検索結果へ戻る」際、GREPか
+       CUTかを判定できるよう、`Application`に
+       `lastDirectorySearchKind_`(`Grep`/`Cut`)を新設。
+       `openSelectedGrepMatch()`/`returnFromCut()`がそれぞれ自分の
+       種類を書き込み、`Command::Back`はこれを見て
+       `returnToGrepResults()`/新設`returnToCutResults()`のどちらを
+       呼ぶか選ぶ。
+   - **未対応として残した点**: `お手本㉓」の実際の一覧内容
+     (`mvp-log.json`等4件)自体が正しいCUTの結果を表しているかは、
+     ユーザー自身「モードラインがNG」と留保していたこともあり検証
+     しきれていない(FGREPの結果⑳と偶然同じファイル一覧に見えたため、
+     取り違えの可能性を疑っている)。今回はモードラインの
+     `"CUT: package*"`表示と`^G`での往復という、テキストで明確に
+     断定されていた部分のみを実装した。また`CutContent`
+     (`cutContentView_`)側のモードラインは、Directory起源の場合も
+     `fileMode_.currentFile()`を参照したままで未対応(今回の報告は
+     `Cut`(セグメント一覧)止まりで、`CutContent`まで踏み込んだ
+     操作は含まれていなかったため、次回以降の課題として残す)。
+   - **検証**: `make test`で654/654件全通過(新規テスト2件:
+     「handleCommand(StartCutFixed): opens a prompt from Directory
+     mode」、「CUT (2026-08-11 fix): submitting a pattern from
+     Directory mode splits the directory listing itself...」、
+     さらに既存の`^Jb`ファイル変種テストが新しい分岐順序でも
+     引き続き正しく動作することを確認)、`make usilic`もクリーン
+     ビルド成功。Application層のみの変更のため`-c`/`-g`共通で
+     直っているはず。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

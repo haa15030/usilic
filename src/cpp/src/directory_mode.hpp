@@ -172,18 +172,25 @@ class DirectoryMode {
   void setFilenameOnlyMode(bool enabled);
   bool filenameOnlyMode() const;
 
-  // Set by Application::openSelectedGrepMatch() when the user picks a
-  // result from an FGREP/EGREP search over this listing -- shown as
-  // the mode line's trailing2 field ("FGREP: pattern"), ported from
-  // mode.c's own T_grep case (`sprintf(lp->prev, "%s: %s", ...)`, the
-  // "remembers which search you just came from" annotation a real CUI
-  // screenshot confirmed). Cleared by enterDirectory() (a fresh `ls`
-  // invalidates whatever search produced the old listing this
-  // annotation referred to), NOT by every cursor move -- matches
-  // legacy's own T_dir handling, which only clears this on a genuine
-  // directory change.
-  void setGrepAnnotation(const std::string &text);
-  bool hasGrepAnnotation() const { return !grepAnnotation_.empty(); }
+  // Set by Application::openSelectedGrepMatch()/returnFromCut() when
+  // the user comes back from an FGREP/EGREP/CUT search over this
+  // listing -- shown as the mode line's trailing2 field ("FGREP:
+  // pattern"/"CUT: pattern"), ported from mode.c's own T_grep case
+  // (`sprintf(lp->prev, "%s: %s", ...)`, the "remembers which search
+  // you just came from" annotation a real CUI screenshot confirmed;
+  // legacy's own is_prev(prev, M_fgrep/M_egrep) checks in the T_dir
+  // case are the same idea generalized to CUT here, since CUT can
+  // land back on this SAME "prev" slot too). Cleared by
+  // enterDirectory() (a fresh `ls` invalidates whatever search
+  // produced the old listing this annotation referred to), NOT by
+  // every cursor move -- matches legacy's own T_dir handling, which
+  // only clears this on a genuine directory change. Deliberately
+  // generic (not "grep-only" by name): Application tracks separately
+  // which KIND of search set it (see its own lastDirectorySearchKind_)
+  // so Back can route to the right results screen -- this class only
+  // owns displaying the text, not what it means.
+  void setSearchAnnotation(const std::string &text);
+  bool hasSearchAnnotation() const { return !searchAnnotation_.empty(); }
 
  private:
   DirectoryEntry parseLsLine(const std::string &line) const;
@@ -203,7 +210,7 @@ class DirectoryMode {
   std::vector<DirectoryEntry> entries_;
   std::set<int> markedIndices_;
   bool filenameOnlyMode_ = false;
-  std::string grepAnnotation_;
+  std::string searchAnnotation_;
 };
 
 }  // namespace fm

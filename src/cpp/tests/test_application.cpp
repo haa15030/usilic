@@ -661,7 +661,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP: a second Back (out of the grep results reached
 
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK_FALSE(app.directoryMode().hasGrepAnnotation());
+  CHECK_FALSE(app.directoryMode().hasSearchAnnotation());
   CHECK(app.activeContentView().modeLineText().find("FGREP:") == std::string::npos);
 }
 
@@ -707,10 +707,35 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C (StartCutRegex) also opens directly 
 
 // -- CUT: split, view a segment, resplit it, back out step by step --
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFixed): refused from Directory mode (not this slice's scope)") {
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFixed): opens a prompt from Directory mode (2026-08-11 fix: "
+                           "a real report found ^J^C was a silent no-op here, unlike ^J^S/EGREP which was "
+                           "never restricted this way)") {
   REQUIRE(app.start(path()));
-  CHECK_FALSE(app.handleCommand(Command::StartCutFixed));
-  CHECK_FALSE(app.promptActive());
+  CHECK(app.handleCommand(Command::StartCutFixed));
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): submitting a pattern from Directory mode splits the "
+                           "directory listing itself, landing in Cut mode with a \"CUT: pattern\" mode-line "
+                           "annotation to get back to it from Directory") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("cpmv");  // matches cpmv_a.txt/cpmv_b.txt/cpmvdest's own ls lines
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  // One leading unlabeled segment (everything before the first match)
+  // plus one per matching line -- see CutMode::split()'s own comment.
+  REQUIRE(app.cutMode().segments().size() == 4);
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.activeContentView().modeLineText().find("CUT: cpmv") != std::string::npos);
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.cutMode().segments().size() == 4);  // still intact, not re-split
 }
 
 TEST_CASE_FIXTURE(Fixture, "CUT: splitting log.txt on 'marker' produces one segment per marker line") {

@@ -1149,6 +1149,7 @@ class Application {
   bool returnToGrepResults();
   bool returnFromCutContent();
   bool returnFromCut();
+  bool returnToCutResults();
   bool returnFromMan();
   bool returnFromLocate();
   bool returnFromArchiveContent();
@@ -1455,8 +1456,16 @@ class Application {
   // meaningful (and only consulted by handleResize()) when
   // !cutMode_.canGoBack(); a pushSplit() (nested) level doesn't touch
   // this, see the class comment's own HELP section.
-  enum class CutOrigin { File, Help };
+  enum class CutOrigin { File, Help, Directory };
   CutOrigin cutOrigin_ = CutOrigin::File;
+
+  // Which search set DirectoryMode's current search annotation (see
+  // its own setSearchAnnotation() comment) -- the annotation text
+  // alone doesn't distinguish "FGREP:/EGREP:" from "CUT:" structurally
+  // enough to know which results screen Command::Back should route
+  // to, so this is set alongside every setSearchAnnotation() call.
+  enum class DirectorySearchKind { Grep, Cut };
+  DirectorySearchKind lastDirectorySearchKind_ = DirectorySearchKind::Grep;
 
   bool recordingMacro_ = false;
   std::vector<RecordedStep> recordedMacro_;

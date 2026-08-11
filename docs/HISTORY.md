@@ -2963,3 +2963,18 @@ DirectoryModeにhasGrepAnnotation()を追加し、Application::handleCommand()�
 returnFromGrep()に、grepReturnMode_ == ApplicationMode::DirectoryのときのみdirectoryMode_.setGrepAnnotation("")を呼ぶ処理を追加しました。「特定のマッチを選んだわけではなく、ただ結果画面から抜けて戻ってきた」という状況では注記を消し、通常の(ls)表示に戻すようにしています。
 
 `make test` 653/653件全通過(Enter→Back→Backの3手順を実行し、最終的にhasGrepAnnotation() == falseかつモードライン文字列に"FGREP:"が含まれないことを確認する新規テストを追加)、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目271として記録し、コミット・プッシュ済みです。項目269/270と同じくApplication層のみの変更なので-c/-g共通で直っているはずです。
+
+</Users/haa15030/git/usilic/の(ls)→
+^J^C→反応無し（正しくは㉒）
+→^U'package*'[return]→お手本㉓もモードラインがNG。正しくは右下端が「CUT: package*」）→^G→㉒
+'/Users/haa15030/Desktop/㉒.png''/Users/haa15030/Desktop/㉓.png'
+
+>原因が分かりました。Application::startCutPrompt()(^Jc/^J^Cの実体)がcurrentMode_ != File && != CutContent && != Cutのときは無条件return falseという強いガードを持っており、ApplicationMode::Directoryが最初から除外されていました(対照的にstartGrepPrompt()にはこの種の制限が一切無く、^J^S/EGREPは元々ディレクトリ一覧からも問題無く使えていました)。さらにガードを外しただけでは不十分で、executeCut()自体がfileView_.lines()(File由来のバッファ)からしか分割ソースを読む経路を持っておらず、GrepMode::search()がgrepReturnMode_でdirectoryView_/fileView_を切り替えているのと違い、ディレクトリ一覧をCUTの対象にする経路がそもそも存在しませんでした。
+
+startCutPrompt()のガードにApplicationMode::Directoryを追加し(Fixed/Regex両方)、executeCut()にcurrentMode_ == ApplicationMode::Directoryの分岐を追加してdirectoryView_.lines()を分割ソースとして渡すようにしました。既存の^Jb/^J^B(ディレクトリ一覧から選択した特定ファイルを割る変種)はcurrentMode_が同じくDirectoryのままである点が衝突するため、Directory分岐より前に判定する順序に変更しています。CutOrigin列挙にDirectoryを追加し、cutView_のモードラインにも検索元ディレクトリを表示するようにしました。
+
+GREP用に追加していたDirectoryModeのgrepAnnotation_/setGrepAnnotation()/hasGrepAnnotation()を、CUTでも使えるようsearchAnnotation_/setSearchAnnotation()/hasSearchAnnotation()へ一般化(リネーム)しました。Application::returnFromCut()(Cut→Directory)で、cutReturnMode_ == Directoryのとき「CUT: パターン」を注記として書き込むようにしています。GREPと違い「マッチを選んで戻る」に相当する経路がCUTには無く、returnFromCut()単体が毎回最新のパターンで注記を書き直すため、GREPの項目271で必要だった「古い注記が残る」問題はCUTでは構造的に発生しません。Command::BackのDirectory分岐がGREPかCUTかを判定できるよう、lastDirectorySearchKind_を新設しました。
+
+「お手本㉓」の実際の一覧内容(mvp-log.json等4件)自体が正しいCUTの結果を表しているかは、ご自身「モードラインがNG」と留保されていたこともあり検証しきれていません(FGREPの結果⑳と偶然同じファイル一覧に見えたため、取り違えの可能性を疑っています)。今回はモードラインの"CUT: package*"表示と^Gでの往復という、テキストで明確に断定されていた部分のみを実装しました。CutContent側のモードラインはDirectory起源の場合も未対応のままです(今回の報告はCutのセグメント一覧止まりで、CutContentまで踏み込んだ操作は含まれていなかったため)。
+
+`make test` 654/654件全通過(新規テスト2件を追加、既存の^Jbファイル変種テストが新しい分岐順序でも引き続き正しく動作することも確認)、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目272として記録し、コミット・プッシュ済みです。Application層のみの変更のため-c/-g共通で直っているはずです。㉓の一覧内容が実際に正しいかどうか、実機でのご確認をお願いします。
