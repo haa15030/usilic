@@ -366,7 +366,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
             (kind == PromptKind::CutPattern && cutReturnMode_ == ApplicationMode::Directory);
         std::string trailing2 = destinationIsDirectory ? directoryMode_.currentDirectory() : "";
         return {promptLabelText(kind), trailing, /*fillTrailingToEdge=*/!trailing2.empty(),
-                /*rightWatermark=*/"", trailing2};
+                /*rightWatermark=*/"", trailing2, /*trailingPlain=*/true};
       }
       return {"HISTORY", trailing, /*fillTrailingToEdge=*/false,
               /*rightWatermark=*/promptLabelText(*promptHistoryRecallKind_), /*trailing2=*/""};
@@ -723,7 +723,21 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   promptHistoryRecallIsDirectEntry_ = false;
   promptHistoryRecallText_.clear();
   currentMode_ = promptHistoryRecallReturnMode_;
-  activeView().redraw();
+  // 2026-08-11 fix: this used to redraw activeView() (the DESTINATION
+  // Directory/File view), replacing the candidate list on screen with
+  // the full underlying listing the instant editing started -- a real
+  // report + reference screenshot found this reads exactly like ^Jc's
+  // own plain fgrep prompt (a blank prompt over the full listing), not
+  // the live-editable COMBOBOX legacy's own M_egrep/M_cut screen is:
+  // the candidate list stays fully visible, with only the mode line's
+  // own row turning into an editable field over the currently-selected
+  // candidate. currentMode_ is still switched to promptHistoryRecallReturnMode_
+  // right above (executeCut()/executeGrep() need it correct at submit
+  // time), but nothing redraws that mode's own view until the prompt
+  // resolves (promptActive() gates every other redraw() call -- see
+  // e.g. runGuiPhase()'s own !app.promptActive() check), so leaving
+  // listBrowserView_'s own content on screen here is safe.
+  listBrowserView_.redraw();
   activatePrompt(kind, seed);
   return feedPromptByte(byte);
 }

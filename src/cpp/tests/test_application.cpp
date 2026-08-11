@@ -770,6 +770,62 @@ TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the ^J^C candidate list starts
   CHECK(*app.listBrowserMode().selectedItem() == "first");
 }
 
+TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the destination directory still shows even when the "
+                           "highlighted candidate's own long pattern text would overflow the row width -- "
+                           "fitModeLineFields() used to drop trailing/trailing2 together as one all-or-"
+                           "nothing unit, silently hiding the directory too even though it alone would fit") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, std::string(70, 'x'));  // deliberately overflows 80 cols
+  REQUIRE(app.handleCommand(Command::StartCutRegex));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  std::string modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("CUT") != std::string::npos);
+  CHECK(modeLine.find(path()) != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the highlighted candidate's own preview text in the mode "
+                           "line is drawn plain (non-reverse-video), since that position reads as an "
+                           "editable text area (what typing would replace), not a static highlighted label "
+                           "-- a real report + reference screenshot found it wrongly highlighted") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "abc");
+  REQUIRE(app.handleCommand(Command::StartCutRegex));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  int modeLineRow = 23;  // rows()-1, the fixed mode-line row every ContentView uses
+  const std::string &row = display.rowText(modeLineRow);
+  CHECK(row.find("CUT") != std::string::npos);
+  CHECK(display.standoutAt(modeLineRow, 0));  // "CUT" itself is still highlighted, unaffected
+
+  std::size_t candidatePos = row.find("abc");
+  REQUIRE(candidatePos != std::string::npos);
+  CHECK_FALSE(display.standoutAt(modeLineRow, static_cast<int>(candidatePos)));
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the candidate list stays visible on screen while editing "
+                           "starts (^U no longer replaces it with the full directory listing, which read "
+                           "confusingly identical to ^Jc's own plain fgrep-style prompt -- a real report)") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "abc");
+  REQUIRE(app.handleCommand(Command::StartCutRegex));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.feedByte(0x15, std::nullopt));  // ^U: starts in-place editing
+  // currentMode_ switches internally so executeCut() resolves the
+  // right source at submit time (see feedRegexListByte()'s own
+  // comment) -- but what's actually ON SCREEN should still be the
+  // candidate list's own content, not the full directory listing.
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.promptActive());
+
+  bool foundCandidateRow = false;
+  for (int row = 0; row < 23; ++row) {
+    if (display.rowText(row).find("abc") != std::string::npos) foundCandidateRow = true;
+  }
+  CHECK(foundCandidateRow);
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^U clears from the field start to the cursor (2026-08-11 fix: "
                            "LineEditor::killToStart() already existed but was never wired to any actual "
                            "keystroke, so ^U silently corrupted the prompt text -- a real report traced a "

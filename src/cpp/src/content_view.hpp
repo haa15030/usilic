@@ -442,6 +442,21 @@ class ContentView {
     // field (the last one drawn), not `trailing` -- see
     // renderModeLine()'s/scrollModeLineSegments()'s own comments.
     std::string trailing2;
+    // Draws `trailing` as plain (non-reverse-video) text instead of
+    // the usual highlighted run -- added 2026-08-11 for the ^J^S/^J^C
+    // candidate list's own "live preview" use (see listBrowserView_'s
+    // own provider): a real report + reference screenshot showed the
+    // currently-highlighted candidate's pattern text (e.g.
+    // "^[0-9]*¥.") drawn reverse-video in the mode line, but that
+    // position is meant to read as an EDITABLE TEXT AREA (what would
+    // populate if you started typing), which every other editable
+    // field in this port (promptEditor_'s own LineEditor) renders
+    // plain, not highlighted -- highlighting it made it look like a
+    // static label instead. Every other provider leaves this at its
+    // default (false, the pre-existing always-highlighted behavior),
+    // via aggregate-init's default-member-initializer fallback for
+    // callers that don't list this 6th field explicitly.
+    bool trailingPlain = false;
   };
 
   // Supplies this view's ModeLineFields, recomputed every time the
@@ -498,6 +513,13 @@ class ContentView {
   struct FieldFit {
     bool showName = false;
     bool showTrailing = false;
+    // Independent of showTrailing (2026-08-11 fix): a real report
+    // found the ^J^C candidate list's own long regex-pattern preview
+    // (`trailing`) pushing the whole trailing region over the column
+    // budget, which silently dropped trailing2 (the destination
+    // directory) too even though trailing2 alone would easily fit --
+    // see fitModeLineFields()'s own comment on the drop priority.
+    bool showTrailing2 = false;
   };
   FieldFit fitModeLineFields(const ModeLineFields &fields, const std::string &positionText) const;
 

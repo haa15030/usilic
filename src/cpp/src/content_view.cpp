@@ -513,10 +513,10 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
       int remaining = cols - drawnLen - static_cast<int>(trailing.size());
       if (remaining > 0) trailing += std::string(remaining, ' ');
     }
-    segments.push_back({trailing, true});
+    segments.push_back({trailing, !fields.trailingPlain});  // see ModeLineFields::trailingPlain's own comment
     drawnLen += static_cast<int>(trailing.size());
   }
-  if (fit.showTrailing && !fields.trailing2.empty()) {
+  if (fit.showTrailing2 && !fields.trailing2.empty()) {
     segments.push_back({" ", false});
     drawnLen += 1;
     std::string trailing2 = fields.trailing2;
@@ -538,16 +538,28 @@ void ContentView::setModeLineRow(std::optional<int> row) { modeLineRow_ = row; }
 ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &fields,
                                                        const std::string &positionText) const {
   int cols = display_.columns();
-  auto rowLen = [&](bool withName, bool withTrailing) {
+  auto rowLen = [&](bool withName, bool withTrailing, bool withTrailing2) {
     int len = static_cast<int>(positionText.size());
     if (withName && !fields.name.empty()) len += static_cast<int>(fields.name.size()) + 1;
     if (withTrailing && !fields.trailing.empty()) len += static_cast<int>(fields.trailing.size()) + 1;
-    if (withTrailing && !fields.trailing2.empty()) len += static_cast<int>(fields.trailing2.size()) + 1;
+    if (withTrailing2 && !fields.trailing2.empty()) len += static_cast<int>(fields.trailing2.size()) + 1;
     return len;
   };
-  if (cols <= 0 || rowLen(true, true) <= cols) return {true, true};
-  if (rowLen(true, false) <= cols) return {true, false};
-  return {false, false};
+  if (cols <= 0 || rowLen(true, true, true) <= cols) return {true, true, true};
+  // 2026-08-11 fix: `trailing` and `trailing2` used to be dropped
+  // together as one all-or-nothing unit whenever the combined width
+  // overflowed -- a real report found the ^J^C candidate list's own
+  // long regex-pattern preview (`trailing`) pushing the row over the
+  // column budget, which silently dropped trailing2 (the destination
+  // directory) too even though trailing2 ALONE would easily have
+  // fit. `trailing` (a short decorative tag like "(fgrep)" for every
+  // OTHER provider, or here a long, less essential live-preview) is
+  // now dropped first, keeping trailing2 (the more load-bearing
+  // context -- a directory path) visible whenever there's room for it
+  // on its own.
+  if (rowLen(true, false, true) <= cols) return {true, false, true};
+  if (rowLen(true, false, false) <= cols) return {true, false, false};
+  return {false, false, false};
 }
 
 std::string ContentView::composeModeLineRow(const std::string &positionText) const {
@@ -564,10 +576,8 @@ std::string ContentView::composeModeLineRow(const std::string &positionText) con
   // directory -- still has something to show) silently dropped
   // trailing2 entirely. Each field's own emptiness now gates only
   // itself.
-  if (fit.showTrailing) {
-    if (!fields.trailing.empty()) row += " " + fields.trailing;
-    if (!fields.trailing2.empty()) row += " " + fields.trailing2;
-  }
+  if (fit.showTrailing && !fields.trailing.empty()) row += " " + fields.trailing;
+  if (fit.showTrailing2 && !fields.trailing2.empty()) row += " " + fields.trailing2;
   if (fit.showName && !fields.name.empty()) row = fields.name + " " + row;
   return row;
 }
@@ -648,10 +658,15 @@ void ContentView::renderModeLine() {
       int remaining = cols - drawnLen - static_cast<int>(trailing.size());
       if (remaining > 0) trailing += std::string(remaining, ' ');
     }
-    drawSegment(trailing);
+    // See ModeLineFields::trailingPlain's own comment.
+    if (fields.trailingPlain) {
+      for (unsigned char c : trailing) display_.putChar(c);
+    } else {
+      drawSegment(trailing);
+    }
     drawnLen += static_cast<int>(trailing.size());
   }
-  if (fit.showTrailing && !fields.trailing2.empty()) {
+  if (fit.showTrailing2 && !fields.trailing2.empty()) {
     display_.putChar(' ');
     drawnLen += 1;
     std::string trailing2 = fields.trailing2;
