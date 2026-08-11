@@ -21,6 +21,7 @@ constexpr int kEscape = 0x1b;          // ESC
 constexpr int kControlS = 0x13;        // ^S
 constexpr int kControlC = 0x03;        // ^C
 constexpr int kControlG = 0x07;        // ^G
+constexpr int kControlQ = 0x11;        // ^Q
 constexpr int kCarriageReturn = 0x0d;  // ^M
 // K-2 (^H, M_key, "KEY"): startKey()'s own static binding table.
 // Unlike HELP (which loads real prose text at runtime via
@@ -700,6 +701,26 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
 // possible, not just typing a fresh one from scratch), then immediately
 // re-feeds this same byte through feedPromptByte() so the transition
 // feels continuous rather than requiring a separate "start over" step.
+//
+// Leader sequences (^J/^X/^O/ESC, 2026-08-11 fix) are dispatched as
+// COMMANDS here too, not treated as "start editing" -- a real report
+// (^J^W, "SHELL: insert buffer content"/K-64, already fully
+// implemented as shellInsertBufferContent() and reachable from every
+// OTHER ContentView-backed screen) found it silently became literal
+// "JW" text in the candidate's own pattern instead. Ported from
+// key.c's own key_dir()/edit_line() switch: `case K_w: if (f_M !=
+// T_input) { c = T_w; break; } default: c = k + N_char;` -- ^W (and by
+// extension any leader-initiated command) resolves to its COMMAND
+// meaning everywhere EXCEPT `T_input` (a plain text-entry field, this
+// port's activatePrompt()-driven editing state) -- this list-browsing
+// state is NOT T_input yet (that only starts once editing begins,
+// below), so leader bytes should behave exactly like they do
+// everywhere else. Routed to dispatchLeaderByte() directly rather than
+// the top-level dispatchByte() (which would recurse straight back into
+// THIS function, since currentMode_/promptHistoryRecallKind_ haven't
+// changed) -- covers both the byte that STARTS a sequence (kLeaderJ
+// itself) and any CONTINUATION byte while one of the leaderXPending_-
+// style flags is already set from a previous call.
 bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey> special) {
   bool isNav = special == KeyInput::SpecialKey::Up || special == KeyInput::SpecialKey::Down;
   if (!special) {
@@ -714,6 +735,10 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
     }
   }
   if (isNav) return handleCommand(resolveCommand(byte, special));
+  if (escPending_ || leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_ ||
+      (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
+    return dispatchLeaderByte(byte, special);
+  }
   if (special) return false;  // an unhandled special key -- nothing meaningful to feed as text
 
   PromptKind kind = *promptHistoryRecallKind_;
@@ -2579,6 +2604,31 @@ bool Application::startLocatePrompt() {
 }
 
 bool Application::feedPromptByte(int byte) {
+  // ^Q (2026-08-11 fix): a real user recollection -- "文字列入力の際の
+  // コントロールコードは^Qの前置で入力できたような" (control codes
+  // during string entry used to be enterable by prefixing with ^Q).
+  // LineEditor already implements toggleQuotedInsert()/
+  // quotedInsertPending()/clearQuotedInsert() (ported from key.c's own
+  // K_q case, `Key.f.ctrl = 1;`) but nothing anywhere ever called them
+  // -- same "existing but unwired" pattern as killToStart()/killToEnd()
+  // before item 273's fix. Checked FIRST, before every other special
+  // byte below: once armed, the VERY NEXT byte is inserted literally
+  // regardless of what it would otherwise mean (even kCarriageReturn/
+  // kControlG/^R/^U/^K/DEL), matching usilicrc's own GREP seed
+  // patterns that embed literal control bytes mid-pattern (confirmed
+  // by reading the raw file: line 64's "^  [0-9]\x08[0-9]+\." has a
+  // literal ^H, line 71's "^\x0c" a literal ^L -- ^Q^H/^Q^L is
+  // presumably how those were originally typed in).
+  if (promptEditor_.quotedInsertPending()) {
+    promptEditor_.clearQuotedInsert();
+    promptEditor_.insertByte(static_cast<unsigned char>(byte));
+    promptEditor_.redraw();
+    return true;
+  }
+  if (byte == kControlQ) {
+    promptEditor_.toggleQuotedInsert();
+    return true;
+  }
   if (byte == kCarriageReturn) return submitPrompt();
   if (byte == kControlG) {
     cancelPrompt();

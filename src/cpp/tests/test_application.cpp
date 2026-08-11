@@ -844,6 +844,45 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^U clears from the field start to th
   REQUIRE(app.cutMode().segments().size() == 4);
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^Q (quoted insert) inserts the NEXT byte literally instead of "
+                           "treating it as a command -- LineEditor::toggleQuotedInsert()/quotedInsertPending()/"
+                           "clearQuotedInsert() already existed but were never wired (2026-08-11 fix: a real "
+                           "user recollection, \"文字列入力の際のコントロールコードは^Qの前置で入力できた\")") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("ab");
+
+  CHECK(app.feedByte(0x11, std::nullopt));  // ^Q: arms quoted-insert
+  // The very next byte would normally backspace (0x08) -- quoted, it's
+  // inserted literally instead.
+  CHECK(app.feedByte(0x08, std::nullopt));
+  CHECK(app.promptText() == std::string("ab\x08"));
+  CHECK(app.promptActive());  // still editing, nothing submitted/cancelled
+
+  feedText("c");
+  // Split into adjacent literals ("ab\x08" "c"), NOT "ab\x08c" as one --
+  // C++'s \x escape greedily consumes every following hex digit, and
+  // 'c' is a valid hex digit, so a single literal would parse as "ab"
+  // + chr(0x08c) instead of "ab" + BS + 'c'.
+  CHECK(app.promptText() == std::string("ab\x08" "c"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^Q also quotes Enter/^G/^U -- normally-special bytes -- so a "
+                           "single ^Q only affects the ONE byte right after it, not a whole mode") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("x");
+
+  CHECK(app.feedByte(0x11, std::nullopt));  // ^Q
+  CHECK(app.feedByte(0x07, std::nullopt));  // quoted ^G: inserted literally, prompt NOT cancelled
+  CHECK(app.promptActive());
+  CHECK(app.promptText() == std::string("x\x07"));
+
+  // The very NEXT ^G (no longer quoted) cancels normally.
+  CHECK(app.feedByte(0x07, std::nullopt));
+  CHECK_FALSE(app.promptActive());
+}
+
 TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the full reported reproduction -- ^J^C, ^U to clear the "
                            "pre-filled seed pattern, type a real pattern, Enter -- actually splits the "
                            "directory listing instead of silently doing nothing") {
@@ -1812,6 +1851,37 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W, K-64): writes the bu
   std::string firstLine;
   std::getline(in, firstLine);
   CHECK(firstLine.find("./") != std::string::npos);  // the directory listing's own "./" entry line
+}
+
+TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W) also works from WITHIN the ^J^S/^J^C candidate "
+                           "list (2026-08-11 fix: a real report + reference screenshot comparison against "
+                           "legacy found ^J^W became literal \"JW\" text in the edited pattern instead, "
+                           "since feedRegexListByte() didn't know leader sequences exist -- matches key.c's "
+                           "own T_input-vs-list-navigation distinction: leader bytes are commands everywhere "
+                           "except while actually editing text)") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
+  REQUIRE(app.handleCommand(Command::StartEgrep));  // ^J^S: candidate list
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  bool ok = app.feedByte(0x17, std::nullopt);  // ^W
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  std::string wPath = (root / ".usilic" / "w.usilic").string();
+  CHECK(app.shell().commandLine().text() == "cat " + wPath);
+
+  // The written buffer is the candidate LIST's own content (one
+  // pattern per line), not the directory listing underneath it.
+  std::ifstream in(wPath);
+  REQUIRE(in.good());
+  std::string firstLine;
+  std::getline(in, firstLine);
+  CHECK((firstLine == "one" || firstLine == "two"));
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ESC followed by an unrecognized byte fails cleanly") {

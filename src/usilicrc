@@ -58,17 +58,16 @@ GREP
 # The `string' that will be used in EGREP or CUT.
 # (String contains a space character must be enclosed within parentheses "".)
 
-	"^[0-9]*/[0-9]* *[A-Z][A-Z][A-Z][0-9]*  "# NIFTY-Serve
-	^[0-9]*\.				 # FAQ etc.
-	"^  [0-9]+\."				 # ^J^C for HELP
-	"^  [0-9][0-9]+\."			 # ^J^B for HELP	
-	"^[A-Z][A-Z]+"			 # MAN
-	"diff \-"				 # diff file
 	\/\*[a-z]*\*\/				 # tcb source
+	^					 # ~/.tcb/history 
+	"^  [0-9][0-9]+\."			 # ^J^B for HELP
+	"^  [0-9]+\."				 # ^J^C for HELP
 	^Question				 # Linux-FAQ
 	"^Subject: "				 # Mailing list
+	^[0-9]*\.				 # FAQ etc.
+	"^[A-Z][A-Z]+"			 # MAN
+	"diff \-"				 # diff file
 	~$					 # backup file
-	^					 # ~/.tcb/history 
 
 PROGRAM
 # Format: `program' (option)
