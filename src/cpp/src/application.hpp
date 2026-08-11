@@ -1144,6 +1144,7 @@ class Application {
   bool openSelectedListEntry();
   bool toggleMark();
   bool returnToDirectory();
+  bool openSelectedGrepMatch();
   bool returnFromGrep();
   bool returnFromCutContent();
   bool returnFromCut();

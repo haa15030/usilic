@@ -2930,3 +2930,18 @@ FGREP/EGREP等でも同じなので修正よろしく。
 同じループの少し手前、マウスホバー処理は既に!app.promptActive()でガードされている(2026-08-03、別の実害の修正で追加済み)前例があり、今回のview.redraw()だけが同じガードを持っていなかった、という抜け漏れでした。該当のelse if条件に&& !app.promptActive()を追加し、プロンプトが開いている間はこの末尾のview.redraw()を呼ばないようにしました。プロンプト自身の入力エコーはfeedPromptByte()内のpromptEditor_.redraw()が個別に処理しており、そちらは元々問題無く機能しています。submitPrompt()はプロンプト確定/キャンセル時にpromptKind_を同じキー処理の中で同期的にNoneへ戻すため、プロンプトを閉じたその瞬間のフレームでもview.redraw()は正常に実行されます。
 
 `make test` 651/651件全通過、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目268として記録し、コミット・プッシュ済みです。実機での^X^C/FGREP/EGREP等の見た目の確認をお願いします。
+
+<[-c/-g共通]
+「~/git/usilic/src/cpp/build/usilic -g git/usilic」で起動→
+^S'.json'[return]→⑲：モードラインがNG（正しくは⑳）→[return]→反応無し（正しくは㉑）
+'/Users/haa15030/Desktop/⑲.png''/Users/haa15030/Desktop/⑳.png''/Users/haa15030/Desktop/㉑.png'
+
+>3枚拝見しました。原因は2つ、いずれもApplication層の共通コードで、-c/-g両方に影響します。
+
+原因1(モードライン欠落): grepView_(FGREP/EGREP結果表示用のContentView)だけ、他の全ての専用ビューが持っているsetModeLineFieldsProvider()の登録がありませんでした。プロバイダ未設定時、ContentView::renderModeLine()は「位置情報(1/4 END等)のみ描画して即return」という最小限のフォールバックしか行わない実装になっており、「FGREP」「(fgrep)」「検索元ディレクトリパス」等の本来表示されるべきフィールドが軒並み欠落していました。
+
+原因2(Enter無反応): Application::handleCommand()のCommand::Enter switchが、ApplicationMode::Directory/Cut/Archive/Du/ListBrowser/Keyの6モードしか処理しておらず、ApplicationMode::Grepのcaseが存在しませんでした(該当無しでreturn falseに落ちる=無反応)。既存のdoctestに「GREP: Enter on a match is a no-op in this slice」という、この未実装状態をそのまま期待値として固定したテストが存在していました。
+
+ApplicationコンストラクタにgrepView_.setModeLineFieldsProvider(...)を追加し、DirectoryModeの(ls)と同じ流儀でFGREP/(fgrep)/検索元ディレクトリを表示するようにしました。Application::openSelectedGrepMatch()を新設してCommand::Enterから配線し、mode.cのT_grepケースをポート: 選択中のマッチのsourceLineIndex(fgrep -n/egrep -nの行番号出力から解析済み)を取得し、検索元(grepReturnMode_、DirectoryまたはFile)へ戻ってそのカーソル位置に着地するようにしました。Directoryへ戻る場合のみ「FGREP: パターン」という注記をDirectoryModeのモードラインに残す仕組み(setGrepAnnotation())も追加し、新しいlsを実行するたびに自動で消えるようにしています。
+
+既存のテストは新しい正しい挙動に書き換えました。`make test` 651/651件全通過、`make usilic`もクリーンビルド成功。CLAUDE.mdに項目269として記録し、コミット・プッシュ済みです。Application層の純粋なロジック変更なので-c/-gどちらでも同じように直っているはずです。実機での見た目確認をお願いします。

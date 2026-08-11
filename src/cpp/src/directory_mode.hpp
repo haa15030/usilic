@@ -172,6 +172,18 @@ class DirectoryMode {
   void setFilenameOnlyMode(bool enabled);
   bool filenameOnlyMode() const;
 
+  // Set by Application::openSelectedGrepMatch() when the user picks a
+  // result from an FGREP/EGREP search over this listing -- shown as
+  // the mode line's trailing2 field ("FGREP: pattern"), ported from
+  // mode.c's own T_grep case (`sprintf(lp->prev, "%s: %s", ...)`, the
+  // "remembers which search you just came from" annotation a real CUI
+  // screenshot confirmed). Cleared by enterDirectory() (a fresh `ls`
+  // invalidates whatever search produced the old listing this
+  // annotation referred to), NOT by every cursor move -- matches
+  // legacy's own T_dir handling, which only clears this on a genuine
+  // directory change.
+  void setGrepAnnotation(const std::string &text);
+
  private:
   DirectoryEntry parseLsLine(const std::string &line) const;
   // Shared by openSelected()/goToParent(): saves the current cursor
@@ -190,6 +202,7 @@ class DirectoryMode {
   std::vector<DirectoryEntry> entries_;
   std::set<int> markedIndices_;
   bool filenameOnlyMode_ = false;
+  std::string grepAnnotation_;
 };
 
 }  // namespace fm

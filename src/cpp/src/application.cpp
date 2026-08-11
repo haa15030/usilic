@@ -449,6 +449,30 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", /*trailing2=*/""};
   });
 
+  // 2026-08-11 fix: grepView_ never had a mode-line-fields provider at
+  // all (every other excursion view above already does), so a real
+  // FGREP/EGREP search's mode line fell back to ContentView::
+  // renderModeLine()'s own "no provider" branch -- just the bare
+  // position text, missing the "FGREP"/"(fgrep)"/source-directory
+  // fields a real CUI screenshot shows. Mirrors DirectoryMode's own
+  // "(ls)" convention (see its provider's comment) but for whichever
+  // grep program actually ran, and shows the directory the search was
+  // run FROM (grepReturnMode_ == File's own fileMode_.currentFile()'s
+  // directory isn't tracked separately here, so this only fills
+  // trailing2 for the common Directory-search case -- a search over an
+  // open file's content just shows the name/(egrep) fields, matching
+  // legacy's own T_grep case never populating a directory field for
+  // that path either).
+  grepView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    bool fixed = grepSyntax_ == GrepSyntax::Fixed;
+    std::string name = fixed ? "FGREP" : "EGREP";
+    const auto &cmd = configuration_.commandFor(fixed ? ConfiguredRole::Fgrep : ConfiguredRole::Egrep);
+    std::string program = cmd.argv.empty() ? "" : cmd.argv.front();
+    std::string trailing = program.empty() ? "" : "(" + program + ")";
+    std::string trailing2 = (grepReturnMode_ == ApplicationMode::Directory) ? directoryMode_.currentDirectory() : "";
+    return {name, trailing, /*fillTrailingToEdge=*/!trailing2.empty(), /*rightWatermark=*/"", trailing2};
+  });
+
   // usilicrc's own GREP section (2026-08-05 fix): a real CUI screenshot
   // and direct legacy-tcb PTY testing (fresh $HOME, no ~/.tcb/history at
   // all) confirmed that ^J^S (EGREP) and ^J^C (CUT's regex variant)
@@ -1175,6 +1199,7 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Du) return openSelectedDuEntry();
       if (currentMode_ == ApplicationMode::ListBrowser) return openSelectedListEntry();
       if (currentMode_ == ApplicationMode::Key) return executeSelectedKeyBinding();
+      if (currentMode_ == ApplicationMode::Grep) return openSelectedGrepMatch();
       return false;
     case Command::Back:
       if (currentMode_ == ApplicationMode::Key) return returnFromKey();
@@ -1605,6 +1630,34 @@ bool Application::returnToDirectory() {
   // Application::returnFromShell()'s own hideVisibleCursor() call).
   display_.hideVisibleCursor();
   directoryView_.redraw();
+  return true;
+}
+
+// 2026-08-11 fix: Command::Enter's own switch never had a Grep case at
+// all (a real report: pressing Enter on an FGREP/EGREP result did
+// nothing, "反応無し"). Ported from mode.c's T_grep case: jump back to
+// wherever the search was run FROM (grepReturnMode_, same target
+// returnFromGrep()'s ^G/Back path already uses), landing the cursor on
+// the SOURCE line the selected match came from (GrepMatch::
+// sourceLineIndex, parsed from fgrep/egrep's own `-n` line-number
+// output in GrepMode::search()) rather than leaving it wherever it was
+// before the search started -- confirmed against a real CUI screenshot
+// showing the matched entry highlighted in the full listing afterward.
+// Also records the "FGREP: pattern" mode-line annotation (see
+// DirectoryMode::setGrepAnnotation()'s own comment) for the Directory
+// case specifically, matching legacy's own lp->prev behavior.
+bool Application::openSelectedGrepMatch() {
+  const GrepMatch *match = grepMode_.selectedMatch();
+  if (!match) return false;
+  currentMode_ = grepReturnMode_;
+  ContentView &target = activeView();
+  target.setCursorIndex(match->sourceLineIndex);
+  if (grepReturnMode_ == ApplicationMode::Directory) {
+    std::string label = (grepSyntax_ == GrepSyntax::Fixed) ? "FGREP" : "EGREP";
+    directoryMode_.setGrepAnnotation(label + ": " + grepMode_.pattern());
+  }
+  display_.hideVisibleCursor();
+  target.redraw();
   return true;
 }
 

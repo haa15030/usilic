@@ -31,8 +31,8 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     const auto &ls = configuration_.commandFor(ConfiguredRole::Ls);
     std::string program = ls.argv.empty() ? "" : ls.argv.front();
-    return {currentDirectory_, program.empty() ? "" : "(" + program + ")", /*fillTrailingToEdge=*/false,
-            "usilic v1.5b", /*trailing2=*/""};
+    return {currentDirectory_, program.empty() ? "" : "(" + program + ")", /*fillTrailingToEdge=*/!grepAnnotation_.empty(),
+            "usilic v1.5b", grepAnnotation_};
   });
 }
 
@@ -77,6 +77,7 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   // caller does).
   currentDirectory_ = path;
   if (!currentDirectory_.empty() && currentDirectory_.back() != '/') currentDirectory_ += '/';
+  grepAnnotation_.clear();  // a fresh `ls` invalidates the old search -- see setGrepAnnotation()'s own comment
   entries_ = std::move(entries);
   markedIndices_.clear();  // marks are scoped to the listing they were made in; a fresh `ls` invalidates them
   view_.setLines(std::move(lines));
@@ -100,6 +101,8 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   view_.redraw();
   return true;
 }
+
+void DirectoryMode::setGrepAnnotation(const std::string &text) { grepAnnotation_ = text; }
 
 const std::string &DirectoryMode::currentDirectory() const { return currentDirectory_; }
 const std::vector<DirectoryEntry> &DirectoryMode::entries() const { return entries_; }

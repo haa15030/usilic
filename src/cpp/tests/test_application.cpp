@@ -612,15 +612,20 @@ TEST_CASE_FIXTURE(Fixture, "GREP: searching from File mode returns to File mode 
   CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
 }
 
-TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match is a no-op in this slice") {
+TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match returns to Directory mode with the cursor on the "
+                           "matched entry and a \"FGREP: pattern\" mode-line annotation (2026-08-11 fix: "
+                           "a real report found Enter did nothing at all here)") {
   REQUIRE(app.start(path()));
+  int expectedIdx = indexOf("plain.txt");
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("plain.txt");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Grep);
 
-  CHECK_FALSE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.activeContentView().cursorIndex() == expectedIdx);
+  CHECK(app.activeContentView().modeLineText().find("FGREP: plain.txt") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "GREP: starting a nested search from within grep results fails") {

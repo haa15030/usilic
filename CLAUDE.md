@@ -14269,6 +14269,72 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      実描画に依存しないため新規テストは追加していない。実機での
      `^X^C`/FGREP/EGREP等の見た目の確認は次回のご報告待ち。
 
+269. **2026-08-11(続き): FGREP/EGREP検索結果画面のモードラインが
+    ほぼ空欄になる不具合と、検索結果でEnterを押しても無反応な不具合を
+    修正(`-c`/`-g`共通、`Application`層のバグ)**。ユーザーから
+    「[-c/-g共通] `usilic -g git/usilic`で起動→`^S`'.json'[return]→
+    ⑲：モードラインがNG(正しくは⑳)→[return]→反応無し(正しくは㉑)」
+    との報告(3枚のスクリーンショット付き)。
+   - **原因1(モードライン欠落)**: `grepView_`(FGREP/EGREP結果表示用の
+     `ContentView`)だけ、他の全ての専用ビュー(`shell_.scrollback()`/
+     `keyView_`/`listBrowserView_`/`cutContentView_`/`cutView_`/
+     `directoryView_`等)が持っている`setModeLineFieldsProvider()`の
+     登録が無かった。プロバイダ未設定時、`ContentView::renderModeLine()`
+     /`scrollModeLineSegments()`は「位置情報(`1/4 END`等)のみ描画して
+     即return」という最小限のフォールバックしか行わない実装になって
+     おり、「FGREP」「(fgrep)」「検索元ディレクトリパス」等の本来
+     表示されるべきフィールドが軒並み欠落していた。
+   - **原因2(Enter無反応)**: `Application::handleCommand()`の
+     `Command::Enter`switchが、`ApplicationMode::Directory`/`Cut`/
+     `Archive`/`Du`/`ListBrowser`/`Key`の6モードしか処理しておらず、
+     `ApplicationMode::Grep`のcaseが存在しなかった(該当無しで
+     `return false`に落ちる=無反応)。既存のdoctestに
+     「GREP: Enter on a match is a no-op in this slice」という、
+     この未実装状態をそのまま期待値として固定したテストが存在して
+     おり、今回の修正でこのテスト自体も新しい正しい挙動へ書き換えた。
+   - **実装**:
+     - `Application`コンストラクタに`grepView_.setModeLineFieldsProvider(...)`
+       を追加。`DirectoryMode`の`(ls)`と同じ流儀で、`name`=
+       `grepSyntax_`に応じ`"FGREP"`/`"EGREP"`、`trailing`=
+       `configuration_.commandFor(Fgrep/Egrep)`から得た実際のプログラム名
+       (デフォルト`fgrep`/`egrep`)を`"(fgrep)"`のように括弧書き、
+       `trailing2`=`grepReturnMode_ == Directory`のときのみ
+       `directoryMode_.currentDirectory()`(ファイル内容からの検索
+       (`grepReturnMode_ == File`)の場合は元々legacy側にも
+       ディレクトリ欄を出す仕組みが無いため対象外)。
+     - `Application::openSelectedGrepMatch()`を新設し
+       `Command::Enter`の`ApplicationMode::Grep`caseから呼ぶよう配線。
+       `mode.c`のT_grepケース(`sprintf(lp->prev, "%s: %s", ...)`)を
+       ポート: `grepMode_.selectedMatch()`から`GrepMatch::
+       sourceLineIndex`(`fgrep -n`/`egrep -n`の行番号出力を
+       `GrepMode::search()`が解析済み)を取得し、`currentMode_`を
+       `grepReturnMode_`(検索元、`Directory`または`File`)へ戻した上で
+       戻り先ビューの`setCursorIndex()`にこれを渡す。`grepReturnMode_
+       == Directory`の場合のみ、`"FGREP: パターン"`形式の注記を
+       `DirectoryMode::setGrepAnnotation()`経由で記録する。
+     - `DirectoryMode`に`grepAnnotation_`メンバと
+       `setGrepAnnotation()`を新設。既存のモードライン
+       プロバイダの`trailing2`にこれを渡し、値がある場合のみ
+       `fillTrailingToEdge`も真にする(項目257で確立済みの
+       trailing2+fillTrailingToEdgeの組み合わせをそのまま再利用)。
+       `enterDirectory()`(新しい`ls`を実行するたび)の先頭で
+       `grepAnnotation_.clear()`し、ディレクトリを移動したら注記が
+       自動的に消えるようにした(legacyの`T_dir`ケースが
+       `is_prev(prev, M_egrep/M_fgrep)`を見て`clear_stack()`する
+       挙動を簡略化して再現)。`rightWatermark`("usilic v1.5b")との
+       共存は、`fillTrailingToEdge`済みで行が埋まっている場合
+       `renderModeLine()`側の「右端に収まる余地があれば」という
+       既存ガードにより自然にスキップされる(既存の仕組みのまま、
+       追加の分岐は不要だった)。
+   - **検証**: `make test`で651/651件全通過(新規の期待値へ書き換えた
+     「GREP: Enter on a match returns to Directory mode with the
+     cursor on the matched entry and a "FGREP: pattern" mode-line
+     annotation」1件を含む)、`make usilic`もクリーンビルド成功。
+     `Application`層の純粋なロジック変更で`GraphicalDisplay`の実描画に
+     依存しないため、`-c`/`-g`どちらでも同じように直っているはず
+     (ユーザー報告通り両方に共通する原因だった)。実機での見た目
+     確認は次回のご報告待ち。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が
