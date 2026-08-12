@@ -15538,6 +15538,72 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ラインに「MAN 1/1 END ls」と表示、候補一覧が実際のMAN実行
      履歴から構築されていることを確認)、をそれぞれ直接確認した。
 
+291. **2026-08-13(続き): モードラインのフォーマット監査、`manView_`/
+    `locateView_`/`duView_`/`archiveContentView_`の4画面がProvider
+    未登録のまま(位置情報のみの素のモードライン)だった不具合を発見・
+    修正、`contentByteCount()`共有ヘルパーを新設**。
+   - ユーザーの観察: 「モードラインのフォーマットはすでに決まってる。
+     左から順に「モード名」「現在行情報」「(使用アプリ)」「画面TOP
+     からENDまでのバイト数」「戻り値(が無いときは『usilic＋版数』
+     バッジ)」なので共有ルーチン化もできるのでは」との指摘を受け、
+     このApplicationが持つ全12個の`ContentView`
+     (`directoryView_`/`fileView_`/`grepView_`/`cutView_`/
+     `cutContentView_`/`manView_`/`locateView_`/`archiveView_`/
+     `archiveContentView_`/`duView_`/`listBrowserView_`/`keyView_`)
+     を`setModeLineFieldsProvider()`登録の有無で棚卸しした。
+   - 判明した内容: `ModeLineFields`構造体(`content_view.hpp`)自体は
+     既に全プロバイダ共通のフォーマットとして機能しており、実際の
+     描画ルーチン`renderModeLine()`(`content_view.cpp`)も既に
+     ただ1つの共有実装だった(legacy`disp_window()`のC++移植)。
+     つまり「フォーマットの共有化」自体はこのセッションの過去の
+     ラウンド(項目280〜290)を通じてほぼ既に完成していた。ただし
+     `manView_`/`locateView_`/`duView_`/`archiveContentView_`の4つ
+     だけ、そもそもプロバイダが一度も登録されておらず、位置情報
+     (「001/533 TOP」等)だけの空のモードラインのままだったと判明。
+     項目280〜290で毎回「また別の画面でモードラインの不具合が
+     見つかった」を繰り返していたのは、場当たり的な実装というより、
+     全画面を横断した棚卸しを一度もしていなかったことが根本原因
+     だったと分かった。
+   - `tcb/src/disp.c`の`disp_window()`本体、および呼び出し元
+     `tcb/src/menu.c`(特にmain redrawループの`print_arg()`→
+     `disp_window()`呼び出し)を直接確認し、`name`(mode-line[1])は
+     `ap->name`(モード遷移関数、例:`m_locate()`が`^Jl`/`^J^L`
+     いずれの経路でもプロンプト突入時に必ずモード名文字列をセット
+     し、それが結果画面まで持ち越される)由来、`trailing`はほぼ
+     全モードで`print_arg()`が汎用的にセットするバッファの
+     バイト数由来、という構造を確認した。
+   - 修正: `application.cpp`に共有ヘルパー`contentByteCount(const
+     ContentView&)`を新設(現在ロードされている各行のバイト数+改行
+     1byteを合算、`cutContentView_`が既に個別に持っていた同等の
+     インライン計算を実際の入力として検証済みの実装として抽出し、
+     こちらもこのヘルパーに置き換え)。`manView_`/`locateView_`/
+     `duView_`はいずれも「モード名(固定文字列)+バイト数」のみの
+     シンプルな2フィールド構成(`cutContentView_`と同型、
+     trailing2/rightWatermarkは無し)。`archiveContentView_`は
+     `fileView_`と同型(ファイル名+バイト数+格納元アーカイブパス、
+     `fillTrailingToEdge=true`)とした。これは実際の生アーカイブ内の
+     1ファイルの中身を表示する画面という点で`fileView_`と性質が
+     近い(単なる結果一覧ではない)ため。
+   - **既知の限界(明記して記録)**: 今回追加した4画面の具体的な
+     フィールド構成は、legacyソースの読解と、この移植内で既に
+     実CUIスクリーンショットで検証済みだったDirectory/File/CUTの
+     確立済みパターンからの類推によるもので、これら4画面自体を
+     実CUIスクリーンショットと直接比較検証してはいない(比較対象と
+     なる稼働中のlegacyバイナリが無いため)。ユーザー自身の言葉を
+     借りれば「机上の構想」であり、実地(PTY/実機)での見た目確認
+     までは完了しているが、legacyの「本来の」表示内容と完全一致
+     している保証はない。今後実際の見え方に違和感があれば都度
+     報告してもらう前提。
+   - **検証**: `make test` 693/693件全通過(4画面それぞれについて、
+     モード名とバイト数がモードラインに表示されることを確認する
+     新規テストを追加)、`make usilic`クリーンビルド確認済み
+     (`-Wmissing-field-initializers`警告が出たため他プロバイダと
+     同じ全フィールド明示の書き方に揃えて解消)。macOS実機上のPTY
+     検証で、`^Jm`→`ls`で「MAN 001/533 TOP 25929」、`^J^L`→
+     `usilicrc`で「LOCATE 1/1 END 31」、`^Jd`→`.`で
+     「DU 1/3 TOP 280」と、それぞれモード名・位置情報・バイト数が
+     揃って表示されることを直接確認した。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

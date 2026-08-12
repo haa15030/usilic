@@ -41,6 +41,30 @@ std::string truncatedTrailingPath(const std::string &path) {
   if (static_cast<int>(path.size()) <= kTrailingPathTailChars) return path;
   return "..." + path.substr(path.size() - kTrailingPathTailChars);
 }
+
+// Byte count shown in the `trailing` field of every *results*-shaped
+// mode line (CUT's segment content, and -- as of 2026-08-13, following
+// a user request to consolidate this port's now-settled mode-line
+// FORMAT into shared logic instead of re-deriving it per mode -- MAN/
+// LOCATE/DU/archive-entry content too). Mirrors legacy disp_window()'s
+// own generic print_arg()-populated buffer-size field (menu.c's main
+// redraw loop calls print_arg() with h.bp->size for essentially every
+// mode before calling disp_window() itself, not a mode-by-mode special
+// case) -- reproduced here as a simple sum of each currently-loaded
+// line's byte length (+1 for the newline every real line in the
+// original buffer had) rather than tracking a separate raw byte count
+// alongside each Mode class's own already-parsed std::vector<Line>,
+// since the two always agree by construction (every line came FROM
+// that many source bytes). Originally only cutContentView_'s own
+// provider computed this (validated there via a direct user
+// reproduction with exact expected mode-line text -- see its own
+// comment); factored out once MAN/LOCATE/DU/archive content needed
+// the identical computation instead of a fourth/fifth copy.
+std::size_t contentByteCount(const ContentView &view) {
+  std::size_t bytes = 0;
+  for (const auto &line : view.lines()) bytes += line.text.size() + 1;
+  return bytes;
+}
 // K-2 (^H, M_key, "KEY"): startKey()'s own static binding table.
 // Unlike HELP (which loads real prose text at runtime via
 // loadHelpText()), this table is NOT parsed from usilicrc's own KEY
@@ -462,9 +486,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     } else {
       name = std::filesystem::path(fileMode_.currentFile()).filename().string();
     }
-    std::size_t bytes = 0;
-    for (const auto &line : cutContentView_.lines()) bytes += line.text.size() + 1;  // +1 for the newline
-    std::string trailing = std::to_string(bytes);
+    std::string trailing = std::to_string(contentByteCount(cutContentView_));
     if (const CutSegment *segment = cutMode_.selectedSegment()) {
       std::string label = segment->label;
       std::size_t start = label.find_first_not_of(' ');
@@ -531,6 +553,68 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // own comment) is set dynamically, per search, by GrepMode::search()
   // itself (it's the one place that actually knows the pattern just
   // searched) rather than statically here.
+
+  // 2026-08-13: manView_/locateView_/duView_/archiveContentView_ had NO
+  // ModeLineFieldsProvider at all until now -- a user observation ("モード
+  // ラインの現状を見て...フォーマットはすでに決まってる...共有ルーチン化
+  // もできるのでは") prompted an audit of every ContentView this
+  // Application owns against the other 8 already-registered providers,
+  // which turned up these 4 as genuinely bare (position text only, no
+  // name/trailing/badge) -- the same class of gap items 280-290 each
+  // found one at a time in different views, just never systematically
+  // checked for ALL of them at once before. `name` mirrors legacy's own
+  // ap->name persistence (set to the mode's own name string by
+  // m_locate()/m_man() at PROMPT-entry time, and never overwritten again
+  // before the results screen renders -- confirmed by reading
+  // tcb/src/menu.c's m_locate() directly, and already independently
+  // established for CUT/GREP's own literal "CUT"/"EGREP" names below and
+  // above) -- NOT a content-derived name the way FileMode's bare filename
+  // is (File's ap->name genuinely IS the filename in legacy, a real
+  // difference in how that one mode's transition populates it, not an
+  // oversight). `trailing` reuses contentByteCount() -- the same
+  // generic byte-count field legacy's own disp_window() shows via
+  // print_arg()'s h.bp->size for essentially every mode's results screen
+  // (menu.c's main redraw loop, not a per-mode special case), already
+  // established and user-validated for cutContentView_ above. None of
+  // these 4 have a natural trailing2/rightWatermark counterpart the way
+  // Directory's "(ls)"+"usilic v1.5b" or File's byte-size+directory pair
+  // do (no second concept to pair the byte count with here), so neither
+  // is set -- matching cutContentView_'s own precedent, not a partial
+  // implementation. Flagged as source-derived, not yet independently
+  // confirmed against a real CUI screenshot the way Directory/File/CUT
+  // were (this port has no legacy binary to run for direct comparison) --
+  // a reasonable-confidence first pass per the user's own framing of
+  // this round as a "机上の構想...実地検証必須" (desk design needing
+  // field verification), not a guess made without reading the source.
+  manView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    if (manMode_.currentPage().empty()) return {};
+    return {"MAN", std::to_string(contentByteCount(manView_)), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
+            /*trailing2=*/""};
+  });
+  locateView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    if (locateMode_.query().empty()) return {};
+    return {"LOCATE", std::to_string(contentByteCount(locateView_)), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
+            /*trailing2=*/""};
+  });
+  duView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    if (duMode_.currentPath().empty()) return {};
+    return {"DU", std::to_string(contentByteCount(duView_)), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
+            /*trailing2=*/""};
+  });
+  // archiveContentView_ mirrors fileView_'s own shape (a single
+  // extracted entry's raw content, name=bare filename not a literal
+  // mode word -- see openSelectedArchiveEntry()'s own comment on why
+  // this is genuinely "a file", just sourced from inside an archive
+  // instead of the real filesystem) rather than the bare-byte-count-only
+  // shape used just above: trailing=byte size (fillTrailingToEdge, same
+  // convention as fileView_), trailing2=the archive's own path (the
+  // "directory" this file lives inside, in spirit).
+  archiveContentView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    const ArchiveEntry *entry = archiveMode_.selectedEntry();
+    if (!entry) return {};
+    return {entry->name, std::to_string(contentByteCount(archiveContentView_)), /*fillTrailingToEdge=*/true,
+            /*rightWatermark=*/"", archiveMode_.currentArchive()};
+  });
 
   // usilicrc's own GREP section (2026-08-05 fix): a real CUI screenshot
   // and direct legacy-tcb PTY testing (fresh $HOME, no ~/.tcb/history at

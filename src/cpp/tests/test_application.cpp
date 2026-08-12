@@ -1644,6 +1644,26 @@ TEST_CASE_FIXTURE(Fixture, "MAN: typing a page name then ^M loads it and switche
   CHECK(app.manMode().currentPage() == "ls");
 }
 
+// 2026-08-13 (CLAUDE.md history item 291's mode-line audit): manView_
+// had no ModeLineFieldsProvider at all before this round -- see
+// contentByteCount()'s own comment in application.cpp.
+TEST_CASE_FIXTURE(Fixture, "MAN: mode line shows 'MAN' and a byte count once a page is loaded") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartMan));
+  feedText("ls");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("man not installed or 'ls' has no man page here -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Man);
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("MAN") != std::string::npos);
+  std::size_t expectedBytes = 0;
+  for (const auto &line : app.activeContentView().lines()) expectedBytes += line.text.size() + 1;
+  REQUIRE(expectedBytes > 0);
+  CHECK(modeLine.find(std::to_string(expectedBytes)) != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "MAN: ^G returns to whichever mode the prompt was started from") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
@@ -1841,6 +1861,24 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: typing a query then ^M runs a real locate se
   CHECK(app.locateMode().query() == "/");
 }
 
+// 2026-08-13 (CLAUDE.md history item 291's mode-line audit):
+// locateView_ had no ModeLineFieldsProvider at all before this round.
+TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line shows 'LOCATE' and a byte count once results are shown") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("/");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not installed or no database available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("LOCATE") != std::string::npos);
+  std::size_t expectedBytes = 0;
+  for (const auto &line : app.activeContentView().lines()) expectedBytes += line.text.size() + 1;
+  CHECK(modeLine.find(std::to_string(expectedBytes)) != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "LOCATE: ^J ^L seeds the prompt with the previous query") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartLocate));
@@ -1976,6 +2014,20 @@ TEST_CASE_FIXTURE(Fixture, "ARC: Enter on a file entry inside the archive extrac
 
   REQUIRE(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::ArchiveContent);
+
+  // 2026-08-13 (CLAUDE.md history item 291's mode-line audit):
+  // archiveContentView_ had no ModeLineFieldsProvider at all before
+  // this round -- mirrors fileView_'s own shape (bare entry name +
+  // byte size + the archive's own path), not the bare byte-count-only
+  // shape MAN/LOCATE/DU use just above (see application.cpp's own
+  // comment on why).
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("inner.txt") != std::string::npos);
+  CHECK(modeLine.find("archive.tar") != std::string::npos);
+  std::size_t expectedBytes = 0;
+  for (const auto &line : app.activeContentView().lines()) expectedBytes += line.text.size() + 1;
+  REQUIRE(expectedBytes > 0);
+  CHECK(modeLine.find(std::to_string(expectedBytes)) != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "ARC: Back from ArchiveContent returns to Archive, Back from Archive returns to Directory") {
@@ -3507,6 +3559,21 @@ TEST_CASE_FIXTURE(Fixture, "DU: accepting the pre-filled default runs real du an
   }
   CHECK(sawSubdir);
   CHECK(sawFile);
+}
+
+// 2026-08-13 (CLAUDE.md history item 291's mode-line audit): duView_
+// had no ModeLineFieldsProvider at all before this round.
+TEST_CASE_FIXTURE(Fixture, "DU: mode line shows 'DU' and a byte count once results are shown") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("DU") != std::string::npos);
+  std::size_t expectedBytes = 0;
+  for (const auto &line : app.activeContentView().lines()) expectedBytes += line.text.size() + 1;
+  REQUIRE(expectedBytes > 0);
+  CHECK(modeLine.find(std::to_string(expectedBytes)) != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "DU: Enter on a directory entry drills into DirectoryMode") {
