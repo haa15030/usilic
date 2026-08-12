@@ -1577,6 +1577,8 @@ class Application {
   // notes) has an obvious single place to re-call.
   void drawPromptLabel(PromptKind kind, const std::string &positionText = "");
   PromptKind promptKind_ = PromptKind::None;
+  // See activatePrompt()'s own comment.
+  bool promptCandidateListActive_ = false;
   // Set only while a ^R-triggered prompt-history ListBrowser is open
   // (see startPromptHistoryRecall()'s own comment): which prompt to
   // resume, what had already been typed there before ^R was pressed

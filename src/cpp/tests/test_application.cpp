@@ -528,6 +528,65 @@ TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: the candidate list's own \"NN/MM 
   CHECK(display.rowText(23).find("01/10 TOP") != std::string::npos);
 }
 
+TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the candidate's own text lands at the EXACT "
+                           "same column once editing starts as it sat at while just browsing -- a real "
+                           "report + reference screenshot found it shifted one column to the right (an "
+                           "earlier version of the positionText fix above double-counted the gap after the "
+                           "position field: one increment for the space actually drawn before it, another "
+                           "+1 folded into the length-plus-gap increment after it, six vs. the seven the "
+                           "listBrowserView_-provider math above actually produces)") {
+  REQUIRE(app.start(path()));
+  for (int i = 0; i < 10; i++) history.pushRecent(RingCategory::RecentEgrepPattern, "pattern" + std::to_string(i));
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  std::string browsingRow = display.rowText(23);
+  std::size_t browsingCol = browsingRow.find("pattern0");
+  REQUIRE(browsingCol != std::string::npos);
+
+  // ^U doesn't move the cursor before starting to edit (unlike ^A/^E/
+  // ^B/^F, which would confound this column comparison), so the
+  // freshly-drawn seed text's own STARTING column is directly
+  // comparable to where it sat while browsing.
+  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U: starts editing, clears the seed
+  REQUIRE(app.promptActive());
+  // The field is now empty (^U cleared it), so compare the CURSOR's
+  // own column instead -- it sits right where "pattern0" itself
+  // started (the field's own col0_), which must match browsingCol.
+  CHECK(display.cursorCol() == static_cast<int>(browsingCol));
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^N/^P keep cycling through the STILL-VISIBLE candidate list "
+                           "even after editing has started, re-seeding the prompt with each newly-"
+                           "highlighted candidate's own text -- 2026-08-12 fix, a direct user report: "
+                           "typing a character correctly starts editing, but \"^N^Pが利かなくなる（他の"
+                           "ハイライト文字列へ移れない）\" (^N/^P stop working -- can't move to another "
+                           "highlighted string)") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "aaa");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "bbb");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "ccc");
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  std::string first = *app.listBrowserMode().selectedItem();
+
+  CHECK(app.feedByte('X', std::nullopt));  // starts editing, appends 'X'
+  REQUIRE(app.promptActive());
+  CHECK(app.promptText() == first + "X");
+
+  REQUIRE(app.feedByte(0x0e, std::nullopt));  // ^N: cycle to the next candidate
+  CHECK(app.promptActive());                  // still editing -- ^N didn't cancel/submit
+  std::string second = *app.listBrowserMode().selectedItem();
+  CHECK(second != first);
+  // Re-seeded with the NEW candidate's own text, not "first+X" with
+  // anything appended/replaced -- the in-progress "X" edit is
+  // deliberately discarded (matching a combobox's own "cycle through
+  // the ORIGINAL suggestions" semantics).
+  CHECK(app.promptText() == second);
+
+  REQUIRE(app.feedByte(0x10, std::nullopt));  // ^P: cycle back
+  CHECK(app.promptText() == first);
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: typing a character while browsing the EGREP candidate list "
                            "transitions into an editable prompt PRE-FILLED with the highlighted candidate's "
                            "own text, with the typed character appended -- this IS \"editing an existing "
@@ -993,7 +1052,12 @@ TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the ^J^C candidate list shows 
   std::string modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find("CUT") != std::string::npos);
   CHECK(modeLine.find("HISTORY") == std::string::npos);
-  CHECK(modeLine.find(path()) != std::string::npos);
+  // 2026-08-12 fix: the destination directory is now truncated to its
+  // own last 16 characters (see truncatedTrailingPath()'s own
+  // comment) -- checking for path()'s own trailing 16 chars survives
+  // that truncation regardless of how long the fixture's temp dir path
+  // happens to be, unlike the full path() itself.
+  CHECK(modeLine.find(path().substr(path().size() - 16)) != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the ^J^C candidate list starts on the TOP (oldest) "
@@ -1020,7 +1084,12 @@ TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the destination directory stil
 
   std::string modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find("CUT") != std::string::npos);
-  CHECK(modeLine.find(path()) != std::string::npos);
+  // 2026-08-12 fix: the destination directory is now truncated to its
+  // own last 16 characters (see truncatedTrailingPath()'s own
+  // comment) -- checking for path()'s own trailing 16 chars survives
+  // that truncation regardless of how long the fixture's temp dir path
+  // happens to be, unlike the full path() itself.
+  CHECK(modeLine.find(path().substr(path().size() - 16)) != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the highlighted candidate's own preview text in the mode "

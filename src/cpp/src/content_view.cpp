@@ -678,9 +678,43 @@ void ContentView::renderModeLine() {
       int remaining = cols - drawnLen - static_cast<int>(trailing.size());
       if (remaining > 0) trailing += std::string(remaining, ' ');
     }
-    // See ModeLineFields::trailingPlain's own comment.
+    // See ModeLineFields::trailingPlain's own comment. 2026-08-12 fix:
+    // this used to putChar() every byte completely raw, including
+    // literal control bytes embedded in a candidate pattern (e.g.
+    // usilicrc's own "^  [0-9]\x08[0-9]+\." GREP pattern, ^H = 0x08) --
+    // a real terminal receiving a raw 0x08 actually MOVES THE CURSOR
+    // BACK one column instead of printing anything, so the bytes that
+    // followed silently overwrote what was already there (a real
+    // report/screenshot showed "[0-9]\x08[0-9]+." rendering as the
+    // garbled "[0-9[0-9]+.", the "]" clobbered by the backspace's own
+    // cursor movement plus the next "[" overwriting on top of it).
+    // Fixed the same way renderLine() (this same class, just above)
+    // already handles control bytes in ordinary CONTENT rows --
+    // reverse-video letter+'@' -- for consistency within this port
+    // (legacy's own reference rendering uses a different, literal
+    // "^"+letter two-character convention here, but this port has
+    // already deliberately diverged to the single-reversed-glyph
+    // convention everywhere else a control byte can appear -- LineEditor::
+    // renderVisible(), renderLine() itself -- so matching THOSE, not
+    // legacy verbatim, keeps this one candidate-preview text
+    // rendering identically wherever it's shown instead of picking up
+    // a third, one-off convention).
     if (fields.trailingPlain) {
-      for (unsigned char c : trailing) display_.putChar(c);
+      for (unsigned char c : trailing) {
+        if (c == '\t') {
+          display_.putChar(' ');
+          continue;
+        }
+        bool isControl = c && (c < ' ' || c == 0x7f);
+        if (isControl) {
+          int shown = (c == 0x7f) ? c - 0x80 : c;
+          display_.setAttribute(Display::Attribute::Standout);
+          display_.putChar(shown + '@');
+          display_.setAttribute(Display::Attribute::StandoutOff);
+        } else {
+          display_.putChar(c);
+        }
+      }
     } else {
       drawSegment(trailing);
     }

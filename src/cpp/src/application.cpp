@@ -24,6 +24,23 @@ constexpr int kControlC = 0x03;        // ^C
 constexpr int kControlG = 0x07;        // ^G
 constexpr int kControlQ = 0x11;        // ^Q
 constexpr int kCarriageReturn = 0x0d;  // ^M
+// Trailing-directory truncation (2026-08-12 fix): shared by both
+// drawPromptLabel() (the active-editing mode line) and
+// listBrowserView_'s own ModeLineFieldsProvider direct-entry branch
+// (the ^J^S/^J^C candidate-list BROWSING mode line, before editing
+// starts) -- a real report + reference screenshot (=aa) found the
+// latter still showed the destination directory in full, untruncated,
+// so its own available width for the candidate preview text stretched
+// and shrank depending on how long the directory path happened to be
+// ("戻り値が「...〜」になっておらず、文字列の長さによって入力エリア
+// が伸縮"). Factored out here (rather than duplicated) once a SECOND
+// call site needed the exact same "...<last 16 chars>" rule
+// drawPromptLabel() already established.
+constexpr int kTrailingPathTailChars = 16;
+std::string truncatedTrailingPath(const std::string &path) {
+  if (static_cast<int>(path.size()) <= kTrailingPathTailChars) return path;
+  return "..." + path.substr(path.size() - kTrailingPathTailChars);
+}
 // K-2 (^H, M_key, "KEY"): startKey()'s own static binding table.
 // Unlike HELP (which loads real prose text at runtime via
 // loadHelpText()), this table is NOT parsed from usilicrc's own KEY
@@ -366,7 +383,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
         bool destinationIsDirectory =
             (kind == PromptKind::GrepPattern && grepReturnMode_ == ApplicationMode::Directory) ||
             (kind == PromptKind::CutPattern && cutReturnMode_ == ApplicationMode::Directory);
-        std::string trailing2 = destinationIsDirectory ? directoryMode_.currentDirectory() : "";
+        std::string trailing2 = destinationIsDirectory ? truncatedTrailingPath(directoryMode_.currentDirectory()) : "";
         return {promptLabelText(kind), trailing, /*fillTrailingToEdge=*/!trailing2.empty(),
                 /*rightWatermark=*/"", trailing2, /*trailingPlain=*/true};
       }
@@ -2824,6 +2841,36 @@ bool Application::feedPromptByte(int byte) {
     promptEditor_.redraw();
     return true;
   }
+  // ^N/^P (2026-08-12 fix): a direct user report -- typing even one
+  // character while browsing the ^J^S/^J^C candidate list correctly
+  // transitions into editing (feedRegexListByte()'s own "start
+  // editing" fallback), but that used to permanently give up ^N/^P's
+  // OWN meaning there ("さらに^N^Pが利かなくなる（他のハイライト
+  // 文字列へ移れない）") -- they fell through to the generic
+  // control-byte-rejection catch-all just below, silently beeping
+  // instead of cycling. The candidate LIST itself stays fully visible
+  // on screen the whole time editing is active (activatePrompt()'s own
+  // "start editing" comment), so there's no reason ^N/^P shouldn't
+  // keep moving through it even mid-edit -- this re-seeds the prompt
+  // with whichever candidate ^N/^P lands on next, discarding whatever
+  // had been typed so far (matching a combobox's own "cycle through
+  // the ORIGINAL suggestions" semantics, not an attempt to preserve
+  // in-progress edits across a jump to a different entry). Only active
+  // when promptCandidateListActive_ (see its own comment) -- a plain
+  // FGREP/MAN/LOCATE/etc prompt never came from a list to cycle
+  // through in the first place, so ^N/^P there still falls through to
+  // the ordinary rejection below.
+  if ((byte == 0x0e || byte == 0x10) && promptCandidateListActive_) {
+    if (byte == 0x0e) listBrowserView_.moveDown();
+    else listBrowserView_.moveUp();
+    listBrowserView_.redraw();
+    int count = static_cast<int>(listBrowserMode_.items().size());
+    int idx = listBrowserView_.cursorIndex();
+    const std::string *selected = listBrowserMode_.selectedItem();
+    drawPromptLabel(promptKind_, count > 0 ? ModeLine::format(idx + 1, count) : "");
+    promptEditor_.setText(selected ? *selected : "");
+    return true;
+  }
   // Reject any OTHER unrecognized control byte outright rather than
   // inserting it literally (2026-08-12 fix, a direct user instruction:
   // "コントロールコード入力は^Qの前置が必須、を反映して" -- control-code
@@ -3154,10 +3201,18 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // comment. Reversed, matching the SAME "01/10 TOP" styling the
   // candidate list's own ModeLineFieldsProvider already used for it
   // one frame earlier (feedRegexListByte()'s edit-transition is the
-  // only caller that passes this non-empty).
+  // only caller that passes this non-empty). moveCursor() to
+  // labelWidth explicitly (rather than relying on wherever the cursor
+  // happened to land after drawing `label`) so the gap-before-this-
+  // field math below can't silently double-count a column the way an
+  // earlier version of this fix did -- a real report + reference
+  // screenshot found this list's own candidate text (e.g. "^Question")
+  // landing ONE COLUMN further right once editing started than it sat
+  // at during plain list-browsing (listBrowserView_'s own
+  // ModeLineFieldsProvider, which draws name+" "+position+" "+trailing
+  // with exactly ONE gap column after each field, not two).
   if (!positionText.empty()) {
-    display_.putChar(' ');
-    labelWidth += 1;
+    display_.moveCursor(row, labelWidth);
     display_.setAttribute(Display::Attribute::Standout);
     for (unsigned char c : positionText) display_.putChar(c);
     display_.setAttribute(Display::Attribute::StandoutOff);
@@ -3185,7 +3240,6 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // that trailing field's own CONTENT gets drawn in a later round.
   // ExitConfirm is excluded (own branch above, already reserves ITS
   // actual "prev mode" trailing field correctly).
-  constexpr int kTrailingPathTailChars = 16;
   constexpr int kTrailingPathEllipsis = 3;  // "..."
   constexpr int kTrailingPathGap = 1;
   int trailingReserve = kTrailingPathTailChars + kTrailingPathEllipsis + kTrailingPathGap;
@@ -3215,10 +3269,7 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     destinationDirectory = directoryMode_.currentDirectory();
   }
   if (!destinationDirectory.empty()) {
-    std::string tail = destinationDirectory;
-    if (static_cast<int>(tail.size()) > kTrailingPathTailChars) {
-      tail = "..." + tail.substr(tail.size() - kTrailingPathTailChars);
-    }
+    std::string tail = truncatedTrailingPath(destinationDirectory);
     int col = display_.columns() - static_cast<int>(tail.size());
     if (col > labelWidth) {
       display_.moveCursor(row, col);
@@ -3233,6 +3284,13 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
 
 void Application::activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText) {
   promptKind_ = kind;
+  // See feedPromptByte()'s own ^N/^P handling -- a non-empty
+  // positionText is passed ONLY by feedRegexListByte()'s edit-
+  // transition (every other activatePrompt() call site leaves it at
+  // the "" default), so it doubles as "this prompt is editing a
+  // candidate FROM the still-visible ^J^S/^J^C list, so ^N/^P should
+  // keep cycling through it" without a separate parameter.
+  promptCandidateListActive_ = !positionText.empty();
   drawPromptLabel(kind, positionText);
   promptEditor_.setText(initialText);
   promptEditor_.redraw();
