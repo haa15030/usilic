@@ -15493,6 +15493,51 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      (このMac実機には`updatedb`という名のコマンドが無いため、
      実行結果自体はfalse/ビープになるのは既知・想定通り)。
 
+290. **2026-08-13(続き): PROGRAM(K-41/K-42)・MAN(K-43/K-44)を実装、
+    ユーザーから許可されていたLOCATE→PROGRAM→MANの順の作業が完了**。
+   - LOCATEとは異なり、`usilicrc`の該当2ペアの表現は本当に「Input」/
+     「Select」(EGREPの`^J^S`と同じ形)だったので、項目287時点の想定
+     どおりに実装できた。既存のEGREP/CUT正規表現版が使っている
+     `startRegexPromptList()`(名前は regex 専用に見えるが実際には
+     `promptKind_`をセットして`startPromptHistoryRecall(directEntry=
+     true)`を呼ぶだけの、`PromptKind`非依存の共有処理)をそのまま
+     再利用し、複製を避けた。`startPromptHistoryRecall()`自体は
+     以前から`PromptKind::ManName`→`RecentManPage`、`PromptKind::
+     ProgramCommand`→`RingCategory::ShellCommand`という対応を
+     (実^Rrecall用に)既に知っていたため、新規のリング管理は不要
+     だった。
+   - `Command::StartManList`/`Command::StartProgramList`を新設。
+     leader-J分岐で`case kCarriageReturn`(`^J^M`、これまで`case 'm'`
+     と同じ`StartMan`に同居)を`StartManList`へ、`case 0x10`(`^J^P`、
+     これまで`case 'p'`と同じ`StartProgram`に同居)を`StartProgramList`
+     へ、それぞれ分離配線した。
+   - `startManList()`は`startManPrompt()`と同じ「`currentMode_`が
+     `Man`でないときだけ`manReturnMode_`を更新」ルールを踏襲する
+     必要があった: 一覧から選択後に実際にMANへ入るのは
+     `executeMan()`(`openSelectedListEntry()`の
+     `promptHistoryRecallKind_`分岐経由)だが、`executeMan()`自体は
+     `manReturnMode_`を一切触らないため、ここで設定しておかないと
+     一覧選択後にMANへ入ってから`^G`した際の戻り先が壊れる。
+     `startProgramList()`側はexecuteProgram()がApplicationModeを
+     一切変更しない(class comment参照)ため、追加の戻り先管理は不要
+     だった。
+   - PROGRAM/MANの候補一覧からの`^G`は、EGREP限定で導入した項目285/
+     286の「空プロンプトをスキップ」修正の対象外のまま(スコープを
+     `kind==PromptKind::GrepPattern`に絞ってあるため自動的に対象外)
+     にした。この2つについて同様の要望が出るかどうかはまだ分から
+     ないため、CUT正規表現版と同様、既存の「候補一覧から`^G`で空
+     プロンプトへ戻る」挙動のまま変更していない。
+   - **検証**: `make test` 690/690件全通過(MAN/PROGRAM双方について
+     「^J^M・^J^Pがプロンプトではなく候補一覧を開く」「実行履歴が
+     正しくシードされる」の計4件を追加)、`make usilic`クリーン
+     ビルド確認済み。macOS実機上のPTY検証で、`^Jp`→`less -F -X
+     usilicrc`実行→`^J^P`(モードラインに「PROGRAM 1/1 END less -F
+     -X ...usilicrc」と実行したコマンドがそのままシードされている
+     ことを確認)→Enterで同じコマンドが実際に再実行されることを
+     確認。`^Jm`→`ls`で実際の`man ls`ページを表示→`^J^M`(モード
+     ラインに「MAN 1/1 END ls」と表示、候補一覧が実際のMAN実行
+     履歴から構築されていることを確認)、をそれぞれ直接確認した。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

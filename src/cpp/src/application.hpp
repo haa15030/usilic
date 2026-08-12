@@ -74,7 +74,9 @@ enum class Command {
   StartCutFileFixed,
   StartCutFileRegex,
   StartMan,
+  StartManList,
   StartProgram,
+  StartProgramList,
   StartLocate,
   LocateUpdateDb,
   StartShell,
@@ -1181,7 +1183,9 @@ class Application {
   bool startCutPrompt(GrepSyntax syntax);
   bool startCutFilePrompt(GrepSyntax syntax);
   bool startManPrompt();
+  bool startManList();
   bool startProgramPrompt();
+  bool startProgramList();
   bool startLocatePrompt();
   bool runLocateUpdateDb();
   bool startShell();

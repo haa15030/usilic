@@ -1605,11 +1605,30 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J m starts a MAN prompt (StartMan)") {
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^M also starts a MAN prompt") {
+// 2026-08-13 (CLAUDE.md history item 289's follow-up): ^J m and ^J ^M
+// are no longer the same command -- ^J ^M (K-44, "Select manual
+// page") now opens directly into a candidate list of recent MAN
+// pages, the same "Input"/"Select" shape as EGREP's ^Jl/^J^S.
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^M opens a MAN candidate list (StartManList), not a prompt") {
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
   CHECK(app.feedByte(0x0d, std::nullopt));
-  CHECK(app.promptActive());
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+}
+
+TEST_CASE_FIXTURE(Fixture, "MAN: ^J ^M seeds the candidate list from RecentManPage history") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartMan));
+  feedText("this-command-does-not-exist-xyz123");
+  app.feedByte(0x0d, std::nullopt);  // pushed to RecentManPage regardless of loadPage()'s outcome
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);  // loadPage() failed, never left Directory
+  app.feedByte(0x0a, std::nullopt);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  const std::deque<std::string> &recent = history.recentEntries(RingCategory::RecentManPage);
+  REQUIRE_FALSE(recent.empty());
+  CHECK(recent.back() == "this-command-does-not-exist-xyz123");
 }
 
 TEST_CASE_FIXTURE(Fixture, "MAN: typing a page name then ^M loads it and switches to Man mode") {
@@ -1694,11 +1713,32 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J p starts a PROGRAM prompt (StartProgram
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^P also starts a PROGRAM prompt") {
+// 2026-08-13 (CLAUDE.md history item 289's follow-up): ^J p and ^J ^P
+// are no longer the same command -- ^J ^P (K-42, "Select program
+// name") now opens directly into a candidate list, the same "Input"/
+// "Select" shape as MAN's ^Jm/^J^M just above.
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^P opens a PROGRAM candidate list (StartProgramList), not a prompt") {
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
   CHECK(app.feedByte(0x10, std::nullopt));
-  CHECK(app.promptActive());
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+}
+
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^J ^P seeds the candidate list from ShellCommand history, and Enter runs it") {
+  REQUIRE(app.start(path()));
+  std::string outPath = (root / "prog_out2.txt").string();
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("echo hi > " + outPath);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);  // executeProgram() never changes ApplicationMode
+
+  fs::remove(outPath);
+  app.feedByte(0x0a, std::nullopt);
+  REQUIRE(app.feedByte(0x10, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter on the seeded (most recent) entry
+  CHECK(fs::exists(outPath));
 }
 
 // -- PROGRAM: only a recognized (PROGRAM-list first-word-prefix

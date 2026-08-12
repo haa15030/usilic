@@ -851,12 +851,22 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartCutFileFixed);
       case 0x02:  // ^J ^B : CUT (regex, regular file)
         return handleCommand(Command::StartCutFileRegex);
-      case 'm':              // ^J m : MAN
-      case kCarriageReturn:  // ^J ^M : MAN (the second byte here is ^M, unrelated to a bare Enter)
+      // K-43/K-44, K-41/K-42 (CLAUDE.md history item 289's follow-up):
+      // unlike LOCATE/DU, usilicrc's own wording for these two pairs
+      // really is "Input"/"Select" -- same shape as EGREP's ^J^S -- so
+      // the second key of each pair now opens directly into a
+      // candidate list (startPromptHistoryRecall(directEntry=true)
+      // via startManList()/startProgramList()), reusing the exact same
+      // machinery startRegexPromptList() already established for
+      // EGREP/CUT-regex rather than duplicating it.
+      case 'm':  // ^J m : MAN (K-43, "Input manual page")
         return handleCommand(Command::StartMan);
-      case 'p':      // ^J p : PROGRAM
-      case 0x10:     // ^J ^P : PROGRAM (the second byte here is ^P, unrelated to plain ^P/MoveUp)
+      case kCarriageReturn:  // ^J ^M : MAN (K-44, "Select manual page"; the second byte here is ^M, unrelated to a bare Enter)
+        return handleCommand(Command::StartManList);
+      case 'p':  // ^J p : PROGRAM (K-41, "Input program name")
         return handleCommand(Command::StartProgram);
+      case 0x10:  // ^J ^P : PROGRAM (K-42, "Select program name"; the second byte here is ^P, unrelated to plain ^P/MoveUp)
+        return handleCommand(Command::StartProgramList);
       // K-39/K-40 (docs/ideas/IDEAS.md LOCATE section): the two keys
       // are deliberately NOT the same command here, unlike DU's own
       // still-undifferentiated 'd'/0x04 pair a few lines below --
@@ -1393,8 +1403,12 @@ bool Application::handleCommand(Command command) {
       return startCutFilePrompt(GrepSyntax::Regex);
     case Command::StartMan:
       return startManPrompt();
+    case Command::StartManList:
+      return startManList();
     case Command::StartProgram:
       return startProgramPrompt();
+    case Command::StartProgramList:
+      return startProgramList();
     case Command::StartLocate:
       return startLocatePrompt();
     case Command::LocateUpdateDb:
@@ -2644,6 +2658,15 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
 // would capture whatever STALE text happened to be left over from the
 // last time any prompt was used, and restore that (not a fresh blank
 // prompt) if the user backs out via ^G.
+//
+// 2026-08-13 (CLAUDE.md history item 289's follow-up): despite the
+// name, none of this is actually regex-specific -- it's just "open a
+// prompt's history ring as a candidate list instead of a blank
+// editor", which is exactly what MAN's/PROGRAM's own "Select" keys
+// (K-44/K-42) need too (startManList()/startProgramList()), matching
+// usilicrc's "Select" wording for those two the same way EGREP/
+// CUT-regex's "Select string" wording is handled here. Not renamed to
+// avoid an unrelated diff across every existing EGREP/CUT call site.
 bool Application::startRegexPromptList(PromptKind kind) {
   promptKind_ = kind;
   promptEditor_.setText("");
@@ -2742,6 +2765,23 @@ bool Application::startManPrompt() {
   return true;
 }
 
+// K-44 (^J^M, "MAN: Select manual page"): unlike LOCATE/DU's "Execute"/
+// "Redisplay window" pair (see CLAUDE.md history item 288's
+// investigation, and item 289's follow-up), usilicrc's own wording
+// here really is "Input"/"Select" -- the same shape as EGREP's ^J^S --
+// so this opens directly into a candidate list of recent MAN pages via
+// startRegexPromptList()'s shared machinery (its own doc comment
+// covers the mechanics; it's not actually regex-specific despite the
+// name). manReturnMode_ is set with the exact same "only when not
+// already in Man" rule startManPrompt() uses just above -- needed
+// because executeMan() (reached once a candidate is picked, via
+// openSelectedListEntry()'s promptHistoryRecallKind_ branch) doesn't
+// touch manReturnMode_ itself, only currentMode_.
+bool Application::startManList() {
+  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = currentMode_;
+  return startRegexPromptList(PromptKind::ManName);
+}
+
 // Ported from m_prog()'s M_prog/M_prog2 entry (see class comment for
 // why, unlike GREP/CUT/MAN, this never switches ApplicationMode at
 // all -- it runs a foreground command and returns to whatever was
@@ -2751,6 +2791,15 @@ bool Application::startProgramPrompt() {
   activatePrompt(PromptKind::ProgramCommand, "");
   return true;
 }
+
+// K-42 (^J^P, "PROGRAM: Select program name"): same "Input"/"Select"
+// shape as MAN's K-43/K-44 just above -- see startManList()'s own
+// comment. Unlike MAN, no return-mode bookkeeping is needed here:
+// executeProgram() never changes ApplicationMode at all (this
+// function's own class comment), so there's nothing for a later ^G to
+// need to unwind beyond what startPromptHistoryRecall() already
+// captures in promptHistoryRecallReturnMode_.
+bool Application::startProgramList() { return startRegexPromptList(PromptKind::ProgramCommand); }
 
 // Ported from m_locate()'s M_locate (^J^L) path: unlike MAN/PROGRAM,
 // entering LOCATE from within its own results screen is refused
