@@ -3207,3 +3207,15 @@ returnFromListBrowser()のpromptHistoryRecallKind_分岐の先頭に、kind==Gre
 `make test` 682/682件全通過、`make usilic`もクリーンビルド成功。macOS実機上のPTY検証で、^J^S→^Gが空プロンプトを経由せず直接(ls)へ抜けることを直接確認しました。CLAUDE.mdに項目285として記録し、コミット・プッシュ済みです。
 
 なお今回のテスト調査中に、既存の幅予約テスト(項目282由来)が約20%の頻度でまれに失敗することを発見しました。単独実行では常に成功し、失敗時も実際の描画内容は正しく見えるため、今回の一連の変更とは無関係な既存のテスト間干渉(タイミング依存)の可能性が高いと判断し、深追いはしていません。実害は確認されていません。
+
+<空プロンプトは経なくなったが候補一覧からの^Gがおかしい。
+戻り値が(ls)ならちゃんとそこ（(ls)でEGREPしたので当然(ls)のはず）へ戻ってほしい。
+^J^S→^U→'package*'[return]→検索結果→[return]→=ad→^G^G→候補一覧（戻り値は(ls)）→^G→なぜか=ad→^G→検索結果→^G→ようやく(ls)
+
+>ご指摘の通りでした。前回の修正だけでは不十分でした。
+
+候補一覧からの^GがpromptHistoryRecallReturnMode_(=Directory)へは正しく戻るようになっていましたが、openSelectedGrepMatch()が残した「EGREP: package*」という検索注記自体は誰もクリアしていませんでした。returnFromGrep()のワンショットgrepReturnsToCandidateList_機構により、(ls)+注記→検索結果→候補一覧という経路で候補一覧へ戻る際、currentMode_は正しくDirectoryに復元されるものの、注記のクリアは従来returnFromGrep()自身の素の^G経路でのみ行われており、LIFO経由でこの経路をバイパスするケースは想定されていませんでした。
+
+returnFromListBrowser()の早期returnブロックに、returnFromGrep()自身の素の^G経路と同じ注記クリア処理を追加しました。これで候補一覧からの^G一発で、注記無しの真の(ls)へ到達します。
+
+`make test` 683/683件全通過(^J^S→^U→検索→マッチ選択→^G→^G(候補一覧)→^Gという実際の再現手順そのままの新規回帰テスト1件を追加)、`make usilic`もクリーンビルド成功。macOS実機上のPTY検証で、候補一覧からの^G一発で注記無しの真の(ls)に到達することを直接確認しました。CLAUDE.mdに項目286として記録し、コミット・プッシュ済みです。

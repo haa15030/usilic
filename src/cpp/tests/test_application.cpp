@@ -505,6 +505,34 @@ TEST_CASE_FIXTURE(Fixture, "startPromptHistoryRecall (2026-08-12 fix): the EGREP
   CHECK(display.cursorRow() == 0);
 }
 
+TEST_CASE_FIXTURE(Fixture, "returnFromListBrowser (2026-08-12 fix): ^G from the candidate list reached via "
+                           "item 275's own LIFO return from Grep results clears the STALE \"EGREP: pattern\" "
+                           "search annotation too, landing on the TRUE plain (ls) the whole excursion "
+                           "started from -- a direct user correction: \"戻り値が(ls)ならちゃんとそこ"
+                           "（(ls)でEGREPしたので当然(ls)のはず）へ戻ってほしい\". Before this fix, "
+                           "currentMode_ was correctly restored to Directory, but the annotation set by the "
+                           "earlier openSelectedGrepMatch() lingered, so the screen still read as \"just "
+                           "picked a match\" instead of a genuinely fresh (ls)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartEgrep));  // ^J^S
+  REQUIRE(app.feedByte(0x15, std::nullopt));         // ^U: start editing, clear the seed
+  feedText("plain");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit -- search from the candidate list
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // select the match
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().hasSearchAnnotation());  // "EGREP: plain" now showing
+
+  REQUIRE(app.handleCommand(Command::Back));  // ^G #1: Directory+annotation -> Grep results
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.handleCommand(Command::Back));  // ^G #2: results -> candidate list (LIFO, item 275)
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  REQUIRE(app.handleCommand(Command::Back));  // ^G #3: candidate list -> should be TRUE plain (ls)
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK_FALSE(app.directoryMode().hasSearchAnnotation());  // NOT still showing "EGREP: plain"
+}
+
 TEST_CASE_FIXTURE(Fixture, "listBrowserView_'s own ModeLineFieldsProvider (2026-08-12 fix): the truncated "
                            "destination-directory field is right-justified to the SCREEN's own edge, not "
                            "drawn immediately after the candidate-preview text's own gap -- a real report + "

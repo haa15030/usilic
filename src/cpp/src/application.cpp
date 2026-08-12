@@ -1990,6 +1990,20 @@ bool Application::returnFromListBrowser() {
       promptHistoryRecallIsDirectEntry_ = false;
       promptHistoryRecallText_.clear();
       currentMode_ = promptHistoryRecallReturnMode_;
+      // 2026-08-12 fix, a direct user correction: "戻り値が(ls)なら
+      // ちゃんとそこ（(ls)でEGREPしたので当然(ls)のはず）へ戻って
+      // ほしい" -- landing back on promptHistoryRecallReturnMode_
+      // alone isn't enough when this candidate list was reached via
+      // item 275's own LIFO return from Grep results: THAT return
+      // path leaves currentMode_ as Directory but does NOT clear
+      // directoryMode_'s own stale "EGREP: pattern" annotation (only
+      // openSelectedGrepMatch() sets it, nothing along that path
+      // clears it), so landing here still showed the annotated screen
+      // (indistinguishable from having just picked a match again)
+      // instead of the TRUE plain "(ls)" the whole excursion actually
+      // started from. Mirrors returnFromGrep()'s own identical
+      // clearing for the exact same reason -- see its own comment.
+      if (promptHistoryRecallReturnMode_ == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
       activeView().redraw();
       return true;
     }

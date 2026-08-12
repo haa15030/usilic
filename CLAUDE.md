@@ -15320,6 +15320,33 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      深追いはしていない。実害(実際のアプリの誤動作)は確認されて
      いない。
 
+286. **2026-08-12(続き): 項目285の修正だけでは不十分と判明。候補一覧
+    からの`^G`が`promptHistoryRecallReturnMode_`(=Directory)へは
+    正しく戻るようになったが、`openSelectedGrepMatch()`が残した
+    「EGREP: package*」注記が残留し、真の空の`(ls)`ではなく注記付き
+    Directory(=以前の`=ad`相当)に着地していた不具合を追加修正**。
+   - **原因**: `returnFromGrep()`のワンショット
+     `grepReturnsToCandidateList_`機構により、`(ls)+注記`→`検索結果`
+     →`候補一覧`という経路で候補一覧へ戻る際、`currentMode_`は
+     正しく`Directory`に復元されるが、`directoryMode_`の検索注記
+     自体は誰もクリアしていなかった(注記のクリアは従来
+     `returnFromGrep()`自身のワンショットでない「素の`^G`」経路
+     でのみ行われており、LIFO経由でこの経路をバイパスするケースは
+     想定されていなかった)。ユーザーからの直接の指摘:
+     「戻り値が(ls)ならちゃんとそこ（(ls)でEGREPしたので当然(ls)の
+     はず）へ戻ってほしい」。
+   - **修正**: `returnFromListBrowser()`の項目285で追加した早期return
+     ブロックに、`returnFromGrep()`自身の素の`^G`経路と同じ注記
+     クリア処理(`promptHistoryRecallReturnMode_==Directory`の場合に
+     `directoryMode_.setSearchAnnotation("")`)を追加。
+   - **検証**: `make test` 683/683件全通過(`^J^S→^U→検索→マッチ選択
+     →^G→^G(候補一覧)→^G`という実際の再現手順そのままの新規
+     回帰テスト1件を追加、`directoryMode().hasSearchAnnotation()`が
+     最終的に偽になることを確認)、`make usilic`クリーンビルド
+     確認済み。macOS実機上のPTY検証で、候補一覧からの`^G`一発で
+     注記無しの真の`(ls)`(モードライン「/Users/.../usilic/ 16/22
+     72% (ls)」、`EGREP:`注記無し)に到達することを直接確認した。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が
