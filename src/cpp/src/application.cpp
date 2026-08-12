@@ -2629,6 +2629,44 @@ bool Application::feedPromptByte(int byte) {
     promptEditor_.toggleQuotedInsert();
     return true;
   }
+  // Leader sequences (^J/^X/^O/ESC, 2026-08-12 fix): a direct user
+  // complaint that the string-entry routines look "ad-hoc" (場当たり的)
+  // because ^J^W ("SHELL: insert buffer content"/K-64) worked from the
+  // ^J^S candidate list (feedRegexListByte()'s own 2026-08-11 fix,
+  // right above) but NOT from FGREP/CUT's own plain prompt entry --
+  // still showed literal reversed "JW" text there. Root cause: THIS
+  // function -- the ONE shared prompt-editing routine already used by
+  // every PromptKind (GrepPattern covers both FGREP's ^Jc AND EGREP's
+  // direct-entry path, CutPattern, ManName, ProgramCommand, LocateQuery,
+  // Copy/Move/RemoveDestination, ExitConfirm, DuPath, PathInput,
+  // ArchiveDestination -- see the enum's own comment) -- never checked
+  // for leader bytes at all, unlike feedRegexListByte(). Fixing it HERE
+  // instead of per-mode is exactly what was asked: "全モードが同ルーチン
+  // を共有化する形に作り直して欲しい" -- and since every one of those
+  // prompt kinds already funnels through this single function, one
+  // check here covers all of them at once, matching legacy key.c's own
+  // `case K_w: if (f_M != T_input) { c = T_w; break; }` design (leader
+  // bytes resolve to their COMMAND meaning in every context except
+  // T_input; ^Q's quoted-insert above remains the one escape hatch for
+  // typing a literal leader byte into the pattern itself, e.g. usilicrc's
+  // own ^Q^H-embedded GREP patterns). shellInsertBufferContent() itself
+  // already reads activeView().lines() generically (not gated on
+  // currentMode_ beyond that), so it naturally captures whatever screen
+  // is actually behind the active prompt -- FGREP/CUT's directory
+  // listing, a Grep/Cut results screen mid re-search, etc. -- matching
+  // "画面表示のある場面ならどこでも有効" (anywhere with an on-screen
+  // view). SHELL itself is excluded automatically: feedShellByte() has
+  // its own separate input path entirely (dispatchByte() routes there
+  // before promptKind_ is ever consulted for a SHELL-originated prompt),
+  // so this change can't reach in and reinterpret SHELL's own live
+  // command line. Routed to dispatchLeaderByte() directly, same
+  // reasoning as feedRegexListByte(): calling dispatchByte() here would
+  // just re-enter feedPromptByte() through its own promptKind_ check
+  // (promptKind_ hasn't changed), so go straight to the leader resolver.
+  if (escPending_ || leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_ ||
+      byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape) {
+    return dispatchLeaderByte(byte, std::nullopt);
+  }
   if (byte == kCarriageReturn) return submitPrompt();
   if (byte == kControlG) {
     cancelPrompt();

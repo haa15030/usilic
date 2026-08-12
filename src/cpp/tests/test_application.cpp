@@ -883,6 +883,49 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^Q also quotes Enter/^G/^U -- normal
   CHECK_FALSE(app.promptActive());
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W (SHELL: insert buffer content) works from a PLAIN FGREP "
+                           "prompt too, not just the ^J^S candidate list -- 2026-08-12 fix. A real report: "
+                           "^J^W worked once already routed through feedRegexListByte()'s own 2026-08-11 "
+                           "leader-dispatch fix, but FGREP/CUT's plain prompt entry (this shared "
+                           "feedPromptByte(), used by every PromptKind) still showed literal reversed "
+                           "\"JW\" text -- the same gap, just not yet closed in the OTHER routine that "
+                           "feeds prompt bytes.") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));  // ^S: plain prompt, no candidate list
+  REQUIRE(app.promptActive());
+  feedText("abc");
+  CHECK(app.promptText() == "abc");
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  bool ok = app.feedByte(0x17, std::nullopt);  // ^W
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  // "abc" must NOT have gained literal ^J/^W bytes -- the whole point is
+  // that pressing ^J^W is interpreted as a command, not as two characters
+  // typed into the pattern.
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  std::string wPath = (root / ".usilic" / "w.usilic").string();
+  CHECK(app.shell().commandLine().text() == "cat " + wPath);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W also works from CUT's plain prompt (2026-08-12 fix, same "
+                           "shared routine as the FGREP case above)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.promptActive());
+  feedText("x");
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  bool ok = app.feedByte(0x17, std::nullopt);  // ^W
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+}
+
 TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the full reported reproduction -- ^J^C, ^U to clear the "
                            "pre-filled seed pattern, type a real pattern, Enter -- actually splits the "
                            "directory listing instead of silently doing nothing") {
