@@ -731,15 +731,28 @@ void ContentView::renderModeLine() {
     lastModeLineTrailingEndColumn_ = drawnLen;
   }
   if (fit.showTrailing2 && !fields.trailing2.empty()) {
-    display_.putChar(' ');
-    drawnLen += 1;
     std::string trailing2 = fields.trailing2;
-    if (fields.fillTrailingToEdge) {
-      int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
-      if (remaining > 0) trailing2 += std::string(remaining, ' ');
+    // trailing2RightJustified (2026-08-12 fix): see its own comment.
+    // Moves the cursor straight to the edge-aligned start column
+    // instead of drawing sequentially right after `trailing`'s own
+    // gap -- the candidate-preview text's own length varies from
+    // search to search, so a purely-sequential trailing2 (this port's
+    // ORIGINAL, still-default behavior for every OTHER provider) drifts
+    // left and right with it instead of staying pinned to the edge.
+    if (fields.trailing2RightJustified) {
+      display_.moveCursor(modeLineRow, cols - static_cast<int>(trailing2.size()));
+      drawSegment(trailing2);
+      drawnLen = cols;
+    } else {
+      display_.putChar(' ');
+      drawnLen += 1;
+      if (fields.fillTrailingToEdge) {
+        int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
+        if (remaining > 0) trailing2 += std::string(remaining, ' ');
+      }
+      drawSegment(trailing2);
+      drawnLen += static_cast<int>(trailing2.size());
     }
-    drawSegment(trailing2);
-    drawnLen += static_cast<int>(trailing2.size());
   }
 
   // Ported from disp_window()'s own fallback: when there's no

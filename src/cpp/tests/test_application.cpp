@@ -506,6 +506,26 @@ TEST_CASE_FIXTURE(Fixture, "startPromptHistoryRecall (2026-08-12 fix): the EGREP
   CHECK(display.cursorRow() == 0);
 }
 
+TEST_CASE_FIXTURE(Fixture, "listBrowserView_'s own ModeLineFieldsProvider (2026-08-12 fix): the truncated "
+                           "destination-directory field is right-justified to the SCREEN's own edge, not "
+                           "drawn immediately after the candidate-preview text's own gap -- a real report + "
+                           "reference screenshot (=ac): \"戻り値自体はいいけど位置が右端じゃない\" (the "
+                           "value itself is fine, but the position isn't at the right edge) -- "
+                           "drawPromptLabel()'s own matching field was already right-justified via an "
+                           "explicit moveCursor(), this provider's own trailing2 wasn't") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "x");
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  std::string row = display.rowText(23);
+  std::string dir = app.directoryMode().currentDirectory();
+  std::string expectedTail = dir;
+  if (expectedTail.size() > 16) expectedTail = "..." + expectedTail.substr(expectedTail.size() - 16);
+  // Ends at the VERY LAST column, not somewhere in the middle of the row.
+  CHECK(row.substr(row.size() - expectedTail.size()) == expectedTail);
+  CHECK(row.back() == expectedTail.back());
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: the candidate list's own \"NN/MM TOP/END\" position stays "
                            "visible in the mode line once editing starts (2026-08-12 fix: a direct user "
                            "correction -- \"[bs]→「1/10 TOP」が消滅\", i.e. backspacing an existing "

@@ -385,7 +385,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
             (kind == PromptKind::CutPattern && cutReturnMode_ == ApplicationMode::Directory);
         std::string trailing2 = destinationIsDirectory ? truncatedTrailingPath(directoryMode_.currentDirectory()) : "";
         return {promptLabelText(kind), trailing, /*fillTrailingToEdge=*/!trailing2.empty(),
-                /*rightWatermark=*/"", trailing2, /*trailingPlain=*/true};
+                /*rightWatermark=*/"", trailing2, /*trailingPlain=*/true, /*trailing2RightJustified=*/true};
       }
       return {"HISTORY", trailing, /*fillTrailingToEdge=*/false,
               /*rightWatermark=*/promptLabelText(*promptHistoryRecallKind_), /*trailing2=*/""};

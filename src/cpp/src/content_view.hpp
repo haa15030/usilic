@@ -512,6 +512,21 @@ class ContentView {
     // via aggregate-init's default-member-initializer fallback for
     // callers that don't list this 6th field explicitly.
     bool trailingPlain = false;
+    // Right-justifies `trailing2` to the screen's own right edge
+    // instead of drawing it immediately after `trailing`'s own single-
+    // space gap -- added 2026-08-12 for the ^J^S/^J^C candidate list's
+    // own destination-directory field (see listBrowserView_'s own
+    // provider): a real report + reference screenshot (=ac) found the
+    // truncated "...<tail>" directory (drawPromptLabel()'s own
+    // matching field IS right-justified, via an explicit moveCursor())
+    // still landing wherever `trailing` (the candidate preview text)
+    // happened to end, NOT at the edge -- "戻り値自体はいいけど位置が
+    // 右端じゃない" (the value itself is fine, but the position isn't
+    // at the right edge). Every other provider leaves this at its
+    // default (false, the pre-existing immediately-after-trailing
+    // behavior) via the same aggregate-init fallback trailingPlain
+    // above already relies on.
+    bool trailing2RightJustified = false;
   };
 
   // Supplies this view's ModeLineFields, recomputed every time the
