@@ -1766,14 +1766,22 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^G cancels the prompt without running anyth
 // they skip gracefully rather than asserting specific results exist,
 // the same pattern test_locate_mode.cpp already uses.
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l starts a LOCATE prompt (StartLocate)") {
+// 2026-08-13 (docs/ideas/IDEAS.md's LOCATE section, CLAUDE.md history
+// item 288): ^J l and ^J ^L are no longer the same command. ^J l now
+// runs `updatedb` (LocateUpdateDb) and never opens a prompt; ^J ^L
+// keeps the "open a prompt" role, now seeded with the previous query.
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l runs `updatedb` (LocateUpdateDb), not a prompt") {
   REQUIRE(app.start(path()));
+  ApplicationMode before = app.currentMode();
   app.feedByte(0x0a, std::nullopt);
-  CHECK(app.feedByte('l', std::nullopt));
-  CHECK(app.promptActive());
+  bool ok = app.feedByte('l', std::nullopt);
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == before);
+  if (!ok) MESSAGE("updatedb not installed/permitted -- ok is false, which is expected here");
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^L also starts a LOCATE prompt") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^L starts a LOCATE prompt (StartLocate)") {
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
   CHECK(app.feedByte(0x0c, std::nullopt));
@@ -1791,6 +1799,37 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: typing a query then ^M runs a real locate se
   }
   CHECK(app.currentMode() == ApplicationMode::Locate);
   CHECK(app.locateMode().query() == "/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "LOCATE: ^J ^L seeds the prompt with the previous query") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("/");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not installed or no database available -- skipping");
+    return;
+  }
+  REQUIRE(app.handleCommand(Command::Back));  // ^G back to Directory
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  CHECK(app.promptActive());
+  CHECK(app.promptText() == "/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "LOCATE: submitting the seeded query unchanged redisplays without re-running locate") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("/");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not installed or no database available -- skipping");
+    return;
+  }
+  std::vector<std::string> firstResults = app.locateMode().results();
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  REQUIRE(app.promptText() == "/");  // the seed, unedited
+  CHECK(app.feedByte(0x0d, std::nullopt));  // submit unchanged
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+  CHECK(app.locateMode().results() == firstResults);
 }
 
 TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G returns to whichever mode the prompt was started from") {

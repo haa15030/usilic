@@ -42,6 +42,12 @@ bool LocateMode::search(const std::string &query) {
   return true;
 }
 
+bool LocateMode::updateDb() {
+  ProgramCommand command = configuration_.commandFor(ConfiguredRole::UpdateDb);
+  if (command.argv.empty()) return false;
+  return ChildProcess::run(command.argv).ok;
+}
+
 const std::string &LocateMode::query() const { return query_; }
 const std::vector<std::string> &LocateMode::results() const { return results_; }
 

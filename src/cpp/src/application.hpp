@@ -76,6 +76,7 @@ enum class Command {
   StartMan,
   StartProgram,
   StartLocate,
+  LocateUpdateDb,
   StartShell,
   ToggleMark,
   StartCopy,
@@ -1182,6 +1183,7 @@ class Application {
   bool startManPrompt();
   bool startProgramPrompt();
   bool startLocatePrompt();
+  bool runLocateUpdateDb();
   bool startShell();
   // Shared by startShell() and K-61/K-62/K-63/K-64: gets Shell mode
   // on screen (starting the shell process if needed) WITHOUT

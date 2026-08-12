@@ -52,6 +52,17 @@ TEST_CASE_FIXTURE(Fixture, "selectedResult: tracks the ContentView cursor when t
   CHECK(*selected == mode.results()[0]);
 }
 
+// 2026-08-13 (docs/ideas/IDEAS.md's LOCATE section): updateDb() is a
+// new feature (K-39, ^Jl) with no legacy equivalent -- runs
+// `updatedb` and never touches query_/results_/view_, regardless of
+// whether the real binary exists/is permitted in this environment.
+TEST_CASE_FIXTURE(Fixture, "updateDb: runs `updatedb`; never touches query()/results()") {
+  bool ok = mode.updateDb();
+  CHECK(mode.query().empty());
+  CHECK(mode.results().empty());
+  if (!ok) MESSAGE("updatedb not installed/permitted -- ok is false, which is fine here");
+}
+
 TEST_CASE_FIXTURE(Fixture, "search: a second search replaces the previous query and results") {
   if (!mode.search("a")) {
     MESSAGE("locate not available -- skipping");

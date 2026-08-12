@@ -857,8 +857,18 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       case 'p':      // ^J p : PROGRAM
       case 0x10:     // ^J ^P : PROGRAM (the second byte here is ^P, unrelated to plain ^P/MoveUp)
         return handleCommand(Command::StartProgram);
-      case 'l':       // ^J l : LOCATE
-      case 0x0c:      // ^J ^L : LOCATE
+      // K-39/K-40 (docs/ideas/IDEAS.md LOCATE section): the two keys
+      // are deliberately NOT the same command here, unlike DU's own
+      // still-undifferentiated 'd'/0x04 pair a few lines below --
+      // legacy's own m_locate() gave them genuinely different
+      // behavior too (see CLAUDE.md history item 288's investigation),
+      // just not the "Input"/"Select" shape this port originally
+      // assumed. ^Jl now runs `updatedb` (a feature legacy never had
+      // at all); ^J^L keeps the "open a prompt" role, now seeded with
+      // the previous query (startLocatePrompt()'s own comment).
+      case 'l':       // ^J l : LOCATE (K-39, "Execute `locate'" -> updatedb)
+        return handleCommand(Command::LocateUpdateDb);
+      case 0x0c:      // ^J ^L : LOCATE (K-40, "Redisplay window")
         return handleCommand(Command::StartLocate);
       case 'd':       // ^J d : DU
       case 0x04:      // ^J ^D : DU
@@ -1387,6 +1397,8 @@ bool Application::handleCommand(Command command) {
       return startProgramPrompt();
     case Command::StartLocate:
       return startLocatePrompt();
+    case Command::LocateUpdateDb:
+      return runLocateUpdateDb();
     case Command::StartShell:
       return startShell();
     case Command::ToggleMark:
@@ -2743,16 +2755,30 @@ bool Application::startProgramPrompt() {
 // Ported from m_locate()'s M_locate (^J^L) path: unlike MAN/PROGRAM,
 // entering LOCATE from within its own results screen is refused
 // (m_locate()'s own is_name(ap->name, M_locate) guard) -- the one
-// property LOCATE shares with GREP rather than MAN/PROGRAM. The ^Jl
-// "reuse the previous result set without re-prompting" shortcut
-// (M_locate2 when a prior result exists) is deliberately not
-// replicated here; see class comment.
+// property LOCATE shares with GREP rather than MAN/PROGRAM.
+//
+// 2026-08-13 update (docs/ideas/IDEAS.md's LOCATE section, CLAUDE.md
+// history item 288): legacy's own ^Jl "reuse the previous result set
+// without re-prompting" shortcut (M_locate2) is NOT replicated --
+// ^Jl now runs updatedb instead (LocateUpdateDb/runLocateUpdateDb()),
+// a feature legacy never had. What IS replicated, in spirit, is the
+// requested UX: the prompt opened here is seeded with the MOST
+// RECENT locate query (rather than blank) so that pressing Enter
+// unchanged re-shows the previous results without re-running `locate`
+// (see executeLocate()'s own comment for the other half of this).
 bool Application::startLocatePrompt() {
   if (currentMode_ == ApplicationMode::Locate) return false;
   locateReturnMode_ = currentMode_;
-  activatePrompt(PromptKind::LocateQuery, "");
+  const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentLocateQuery);
+  activatePrompt(PromptKind::LocateQuery, recent.empty() ? std::string() : recent.back());
   return true;
 }
+
+// K-39 (^Jl, "LOCATE: Execute `locate'"), per docs/ideas/IDEAS.md's
+// LOCATE section: refreshes the locate database. Doesn't touch
+// currentMode_/any view -- stays wherever the user was, matching how
+// this is a maintenance action rather than a navigation one.
+bool Application::runLocateUpdateDb() { return locateMode_.updateDb(); }
 
 bool Application::feedPromptByte(int byte) {
   // ^Q (2026-08-11 fix): a real user recollection -- "文字列入力の際の
@@ -3538,8 +3564,27 @@ bool Application::executeProgram(const std::string &command) {
   return true;
 }
 
+// 2026-08-13 (docs/ideas/IDEAS.md's LOCATE section, CLAUDE.md history
+// item 288): if `query` is exactly the previous entry in the ring
+// (i.e. the user submitted startLocatePrompt()'s seed unchanged),
+// `locate` is NOT re-run -- LocateMode's own results_/view_ from the
+// prior search are simply still there, so switching currentMode_
+// back to Locate redisplays them as-is. Checked BEFORE pushRecent()
+// (which would otherwise move the ring's back() to `query` first and
+// make this always look "unchanged"). A changed query runs a normal
+// fresh search, same as before this change.
 bool Application::executeLocate(const std::string &query) {
+  const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentLocateQuery);
+  bool unchanged = !recent.empty() && recent.back() == query;
   history_.pushRecent(RingCategory::RecentLocateQuery, query);  // recorded regardless of search()'s own outcome below
+  if (unchanged) {
+    currentMode_ = ApplicationMode::Locate;
+    // search() normally redraws locateView_ itself at the end of a
+    // real run (locate_mode.cpp); skipping search() here means this
+    // is the only redraw the newly-active view gets.
+    locateView_.redraw();
+    return true;
+  }
   if (!locateMode_.search(query)) {
     activeView().redraw();
     return false;

@@ -185,6 +185,15 @@ Configuration::Configuration() {
   roleCommands_[ConfiguredRole::Groff] = {{"groff", "-Tutf8"}, std::nullopt};
   roleCommands_[ConfiguredRole::Man] = {{"man"}, std::nullopt};
   roleCommands_[ConfiguredRole::Locate] = {{"locate"}, std::nullopt};
+  // K-39 (^Jl, "LOCATE: Execute `locate'") per docs/ideas/IDEAS.md's
+  // LOCATE section: legacy has no updatedb-refresh feature at all
+  // (m_locate() just re-runs/redisplays a search) -- this role and
+  // LocateMode::updateDb() are a new feature added on top, not a
+  // port. Linux's plain `updatedb` default; macOS's own path
+  // (`/usr/libexec/locate.updatedb`, typically needs sudo -- see
+  // CLAUDE.md history item 7) is a known, deliberately unaddressed
+  // gap here, same status as DU's own untracked macOS flag mismatch.
+  roleCommands_[ConfiguredRole::UpdateDb] = {{"updatedb"}, std::nullopt};
   roleCommands_[ConfiguredRole::Egrep] = {{"egrep", "-n"}, std::nullopt};
   roleCommands_[ConfiguredRole::Fgrep] = {{"fgrep", "-ne"}, std::nullopt};
   roleCommands_[ConfiguredRole::GzipDecompress] = {{"gzip", "-dc"}, std::nullopt};

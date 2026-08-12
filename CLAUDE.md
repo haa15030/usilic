@@ -15446,6 +15446,53 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      PROGRAM/MANだけ先に進めてよいか。docs/HISTORY.mdにも同内容を
      記録済み。
 
+289. **2026-08-13: 項目288の確認事項に、原典どおりではなく
+    `docs/ideas/IDEAS.md:41`の既存の機能要望どおりに実装してほしい
+    との回答があり、LOCATE(K-39/K-40)を実装。続けてPROGRAM/MANへ
+    順に進める**。
+   - `IDEAS.md`の該当箇所が指定する仕様: `^Jl`(K-39)は`updatedb`を
+     実行(現状はlocateの実行のみ)。`^J^L`(K-40)は前回の検索文字列を
+     入力欄に残しておき、そのままEnterならlocateを再実行せず前回の
+     結果画面へ戻る、別の文字列を入力すれば通常通りlocateを実行
+     (現状は前回画面へ戻るだけ)。項目288で読んだ原典の生の挙動
+     (再実行無しショートカットが`^Jl`側)とは異なる、ユーザー自身が
+     以前から構想していた別設計として実装した。
+   - **`^Jl`(K-39)→`updatedb`実行**: `ConfiguredRole::UpdateDb`を
+     新設(`configuration.hpp`/`.cpp`、デフォルト`{"updatedb"}`)し、
+     `LocateMode::updateDb()`(`ChildProcess::run()`で実行、
+     `query_`/`results_`/`view_`はいずれも触らない)を追加。
+     `Command::LocateUpdateDb`を新設し、`application.cpp`の
+     leader-J分岐で`case 'l'`をこれに、`case 0x0c`は従来通り
+     `Command::StartLocate`に分離配線(これまで両方とも同じ
+     `StartLocate`だった)。macOSの`updatedb`は`/usr/libexec/
+     locate.updatedb`という別名+通常sudo必須(CLAUDE.md項目7参照)
+     で、`{"updatedb"}`のままでは動かない既知のギャップだが、DU自身の
+     未解決のmacOSフラグ不一致と同じ扱いとして、今回はあえて対応
+     しない(スコープ外と判断)。
+   - **`^J^L`(K-40)→前回文字列をシードしたプロンプト、無変更なら
+     再実行なしで再表示**: `startLocatePrompt()`を、空文字列固定
+     ではなく`history_.recentEntries(RecentLocateQuery)`の最新
+     エントリ(無ければ空文字列)をシードするよう変更。
+     `executeLocate()`は、提出文字列が(pushRecent()で書き換わる前の)
+     直近のリング末尾と一致するかを先に判定し、一致すれば
+     `locateMode_.search()`を呼ばず`currentMode_`だけLocateへ切り替え、
+     直前の`locateMode_`の結果(`results_`はメンバとして保持済みなので
+     何もしなくても残っている)をそのまま再表示する(`search()`が
+     自前で呼ぶはずの`view_.redraw()`をこの分岐でも代わりに呼ぶ必要が
+     あった点に注意)。
+   - **検証**: `make test` 688/688件全通過(`LocateMode::updateDb()`用
+     1件、`^Jl`/`^J^L`の分離・シード・無変更再表示用に4件、を追加。
+     いずれも`updatedb`/`locate`が実機に無い/権限が無い環境では
+     `MESSAGE`で優雅にスキップする既存の慣習を踏襲)、`make usilic`
+     クリーンビルド確認済み。macOS実機上のPTY検証で、`^J^L`→
+     `usilicrc`→Enter→検索結果(`/usr/local/lib/usilic/usilicrc`)→
+     `^G`→`^J^L`(モードラインに「LOCATE usilicrc」とシードされた
+     文字列が見えることを確認)→無変更でEnter→再実行の遅延無く
+     同じ結果が即座に再表示されることを確認。`^G`→`^Jl`は
+     ディレクトリ一覧のまま(プロンプトを一切開かない)ことも確認した
+     (このMac実機には`updatedb`という名のコマンドが無いため、
+     実行結果自体はfalse/ビープになるのは既知・想定通り)。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

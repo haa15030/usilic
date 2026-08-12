@@ -36,6 +36,13 @@ class LocateMode {
   // failure -- results() is simply empty afterward.
   bool search(const std::string &query);
 
+  // Runs `updatedb` to refresh the locate database (K-39, ^Jl). Not a
+  // literal port -- see ConfiguredRole::UpdateDb's own comment
+  // (configuration.cpp) for why this exists despite legacy having no
+  // such feature. Touches neither query_/results_ nor view_: it's a
+  // side-effecting maintenance action, not a search.
+  bool updateDb();
+
   const std::string &query() const;
   const std::vector<std::string> &results() const;
   const std::string *selectedResult() const;

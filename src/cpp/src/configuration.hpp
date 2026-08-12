@@ -46,6 +46,7 @@ enum class ConfiguredRole {
   Groff,
   Man,
   Locate,
+  UpdateDb,
   Egrep,
   Fgrep,
   GzipDecompress,

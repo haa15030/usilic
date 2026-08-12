@@ -3270,3 +3270,15 @@ m_locate()の中身を確認したところ、^Jl(K-39「Execute `locate'」)は
 (2) それとも、LOCATEは今回スキップしてPROGRAM/MANだけ先に進めてよいか。
 
 お目覚めになったらご確認ください。CLAUDE.mdに項目288として記録済みです(コード変更は無いため、コミットはドキュメントのみになります)。
+
+<LOCATEについてはIDEAS.md:41で進めて。あとは順によろしく。
+
+>プッシュ完了。LOCATE(K-39/K-40)をIDEAS.md:41の仕様どおりに実装しました。
+
+^Jl(K-39)はupdatedbを実行するようにしました。ConfiguredRole::UpdateDbを新設(デフォルト`{"updatedb"}`)し、LocateMode::updateDb()で実行します。macOSのupdatedbは実際には`/usr/libexec/locate.updatedb`という別名でsudoも必要(CLAUDE.md項目7で以前確認済み)なので、このままでは動きませんが、DU自身が持つ未解決のmacOSフラグ不一致と同じ扱いとして今回はあえて手を付けていません。
+
+^J^L(K-40)は、前回の検索文字列をプロンプトのシードとして残すようにしました。そのままEnterすれば(文字列が前回と一致すれば)locateを再実行せず、前回の結果をそのまま再表示します。別の文字列を入力すればいつも通り新規検索します。
+
+`make test` 688/688件全通過(updateDb()用・^Jl/^J^Lの分離とシード・無変更再表示の確認用に計5件追加)、`make usilic`もクリーンビルド成功。macOS実機上のPTY検証で、^J^L→usilicrc→Enter→検索結果→^G→^J^L(モードラインに「LOCATE usilicrc」とシードされた文字列が見えることを確認)→無変更でEnter→再実行の遅延無く同じ結果が即座に再表示、をそれぞれ直接確認しました。^G→^Jlはディレクトリ一覧のまま(プロンプトを開かない)ことも確認しています(このMacにupdatedbという名のコマンドが無いため実行結果自体はfalse/ビープになりますが、これは既知・想定通りです)。CLAUDE.mdに項目289として記録、コミット・プッシュ済みです。
+
+続けてPROGRAM(K-42、^J^P「Select program name」)の調査・実装に進みます。
