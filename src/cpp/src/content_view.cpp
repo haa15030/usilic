@@ -8,6 +8,8 @@ namespace fm {
 
 ContentView::ContentView(Display &display) : display_(display) {}
 
+void ContentView::setCursorAtModeLineTrailingEnd(bool enabled) { cursorAtModeLineTrailingEnd_ = enabled; }
+
 void ContentView::setEmptyPlaceholder(Line line, bool marked) {
   emptyPlaceholderLine_ = std::move(line);
   emptyPlaceholderMarked_ = marked;
@@ -100,6 +102,26 @@ int ContentView::cursorDisplayRow() const {
 }
 
 void ContentView::syncVisibleCursor() {
+  // cursorAtModeLineTrailingEnd_ (2026-08-12 fix): see its own setter
+  // comment. Checked FIRST, ahead of the normal highlighted-content-
+  // row logic below -- a direct user correction: "『候補一覧のハイ
+  // ライト行末尾へ正しくカーソルを移動する設計』が有効なのはハイ
+  // ライト行を選択する場合の話で文字入力はモードラインで行われる
+  // ので最下行の文字列末尾にないとおかしい" (that "cursor moves to
+  // the end of the highlighted content row" design is right for
+  // SELECTING a highlighted row, but text INPUT happens in the mode
+  // line, so the cursor belongs at the end of the candidate's own text
+  // THERE instead). Confirmed via a real macOS report: ATOK's own
+  // input-mode indicator icon (which macOS draws directly under the
+  // system's actual current text-insertion caret) was appearing over
+  // the TOP content row instead of the mode line -- independent,
+  // OS-level proof that the caret this port was telling the terminal
+  // about really was in the wrong place, not just a cosmetic
+  // preference.
+  if (cursorAtModeLineTrailingEnd_ && lastModeLineTrailingEndColumn_ >= 0) {
+    display_.setVisibleCursor(modeLineRow_.value_or(row0_ + height_), lastModeLineTrailingEndColumn_);
+    return;
+  }
   if (!cursorHighlightEnabled_) {
     int row = cursorDisplayRow();
     if (row >= 0) {
@@ -663,6 +685,16 @@ void ContentView::renderModeLine() {
       drawSegment(trailing);
     }
     drawnLen += static_cast<int>(trailing.size());
+    // See setCursorAtModeLineTrailingEnd()'s own comment: cached here
+    // (not recomputed by syncVisibleCursor() itself) so it always
+    // matches EXACTLY what was actually drawn -- trailing only ends up
+    // padded to the row's own edge above when trailing2 is empty (see
+    // the fillTrailingToEdge check just above), which never applies to
+    // the ^J^S/^J^C candidate list this exists for (it always has a
+    // non-empty trailing2, the destination directory), so drawnLen
+    // here is genuinely "right after the candidate's own text", not
+    // "the row's full width".
+    lastModeLineTrailingEndColumn_ = drawnLen;
   }
   if (fit.showTrailing2 && !fields.trailing2.empty()) {
     display_.putChar(' ');

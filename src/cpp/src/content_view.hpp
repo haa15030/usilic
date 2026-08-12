@@ -256,6 +256,26 @@ class ContentView {
   void setHoverIndex(std::optional<int> index);
   std::optional<int> hoverIndex() const;
 
+  // Whether syncVisibleCursor() positions the terminal's real caret at
+  // the MODE LINE's own trailing-field text (right after whatever
+  // ModeLineFieldsProvider's `trailing` currently shows there) instead
+  // of the highlighted CONTENT row -- default false (every ordinary
+  // list-browsing use: FILE/DIR/MAN/etc pickers, where Enter simply
+  // selects the highlighted row and the highlighted row itself is the
+  // right place for a caret). listBrowserView_ turns this on
+  // specifically while showing the ^J^S/^J^C regex-pattern candidate
+  // list (2026-08-12 fix, a direct user correction -- see
+  // syncVisibleCursor()'s own comment for the exact wording and the
+  // independent ATOK-icon-position evidence): THAT list is a live-
+  // editable combobox, not a plain selector -- ANY typed byte
+  // transitions into editing the highlighted candidate's own text
+  // (feedRegexListByte()'s "start editing" fallback), and that text is
+  // rendered in the MODE LINE (not the content row) even before
+  // editing starts (ModeLineFields::trailingPlain's own comment), so
+  // the caret belongs there from the very first frame, not just once
+  // activatePrompt() takes over.
+  void setCursorAtModeLineTrailingEnd(bool enabled);
+
   // Whether the cursor/hover line gets whole-line reverse video at
   // all (default true). Legacy's put_str() only reverses a whole line
   // for CP/RM/MV/ARC's own marked-selection tracking (fmark()'s
@@ -576,6 +596,11 @@ class ContentView {
   bool bottomAnchored_ = false;
   Line emptyPlaceholderLine_ = Line{"--", std::nullopt, std::nullopt, {}};
   bool emptyPlaceholderMarked_ = true;
+  bool cursorAtModeLineTrailingEnd_ = false;
+  // Set by renderModeLine() itself (see its own comment on why it's
+  // cached from there instead of recomputed here) -- -1 until the
+  // first renderModeLine() call with a non-empty `trailing` field.
+  int lastModeLineTrailingEndColumn_ = -1;
 
   int row0_ = 0, height_ = 0;
   ModeLineFieldsProvider modeLineFieldsProvider_;

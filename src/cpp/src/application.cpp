@@ -9,6 +9,7 @@
 #include <sstream>
 #include <unistd.h>
 
+#include "mode_line.hpp"
 #include "pipe_buffer.hpp"
 
 namespace fm {
@@ -749,6 +750,14 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   PromptKind kind = *promptHistoryRecallKind_;
   const std::string *selected = listBrowserMode_.selectedItem();
   std::string seed = selected ? *selected : promptHistoryRecallText_;
+  // Captured BEFORE promptHistoryRecallKind_/etc. below stop this being
+  // "the candidate list" at all -- see activatePrompt()'s own comment
+  // (a direct user correction: "[bs]→「1/10 TOP」が消滅", i.e. this
+  // position indicator, visible the whole time the list was just being
+  // browsed, shouldn't vanish the instant editing starts).
+  std::string positionText;
+  int candidateCount = static_cast<int>(listBrowserMode_.items().size());
+  if (candidateCount > 0) positionText = ModeLine::format(listBrowserView_.cursorIndex() + 1, candidateCount);
   promptHistoryRecallKind_ = std::nullopt;
   // See pendingSearchFromDirectEntryList_'s own comment: captured
   // BEFORE clearing, so executeGrep()/executeCut() can still see it
@@ -772,7 +781,7 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   // e.g. runGuiPhase()'s own !app.promptActive() check), so leaving
   // listBrowserView_'s own content on screen here is safe.
   listBrowserView_.redraw();
-  activatePrompt(kind, seed);
+  activatePrompt(kind, seed, positionText);
   return feedPromptByte(byte);
 }
 
@@ -2368,6 +2377,10 @@ bool Application::startListBrowser(RingCategory category) {
   listBrowserCategory_ = category;
   listBrowserReturnMode_ = currentMode_;
   listBrowserChronological_ = false;
+  // See ContentView::setCursorAtModeLineTrailingEnd()'s own comment --
+  // a plain FILE/DIR picker, unlike the GrepPattern/CutPattern
+  // candidate list, so the caret belongs at the highlighted row.
+  listBrowserView_.setCursorAtModeLineTrailingEnd(false);
   listBrowserMode_.show(sortedUniqueRecentEntries(category));
   currentMode_ = ApplicationMode::ListBrowser;
   return true;
@@ -2969,6 +2982,16 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   promptHistoryRecallIsDirectEntry_ = directEntry;
   promptKind_ = PromptKind::None;
   listBrowserCategory_ = category;
+  // 2026-08-12 fix: see ContentView::setCursorAtModeLineTrailingEnd()'s
+  // own comment. Both GrepPattern's and CutPattern's rings share this
+  // (RecentFgrepPattern/RecentEgrepPattern) -- true whether reached via
+  // direct entry (^J^S/^J^C) or a real ^R mid-typing recall, since
+  // BOTH are the same live-editable combobox (feedRegexListByte()'s
+  // dispatch check is keyed on promptHistoryRecallKind_'s VALUE alone,
+  // not directEntry). Every other category (MAN/LOCATE/PROGRAM) stays
+  // false -- Enter simply selects there, no live-editing paradigm.
+  listBrowserView_.setCursorAtModeLineTrailingEnd(category == RingCategory::RecentFgrepPattern ||
+                                                   category == RingCategory::RecentEgrepPattern);
   // ^J^S/^J^C's own DIRECT-ENTRY candidate list (2026-08-12 fix,
   // scoped narrowly to directEntry -- see below for why): sorted +
   // de-duplicated, NOT the raw chronological log every other
@@ -3029,6 +3052,12 @@ bool Application::startShellHistoryRecall() {
   shellHistoryRecallText_ = shell_.commandLine().text();
   listBrowserCategory_ = RingCategory::ShellCommand;
   listBrowserChronological_ = false;
+  // See ContentView::setCursorAtModeLineTrailingEnd()'s own comment --
+  // Enter simply INSERTS the selection into the shell command line
+  // here (see openSelectedListEntry()'s own shellHistoryRecallActive_
+  // branch), not a live-edit-the-highlighted-row paradigm, so the
+  // caret belongs at the highlighted row like any other plain picker.
+  listBrowserView_.setCursorAtModeLineTrailingEnd(false);
   listBrowserMode_.show(sortedUniqueRecentEntries(RingCategory::ShellCommand));
   currentMode_ = ApplicationMode::ListBrowser;
   return true;
@@ -3066,7 +3095,7 @@ std::string Application::promptLabelText(PromptKind kind) const {
   return "";
 }
 
-void Application::drawPromptLabel(PromptKind kind) {
+void Application::drawPromptLabel(PromptKind kind, const std::string &positionText) {
   int row = std::max(0, display_.rows() - 1);
   display_.moveCursor(row, 0);
   display_.clearToEndOfLine();
@@ -3121,6 +3150,19 @@ void Application::drawPromptLabel(PromptKind kind) {
   for (unsigned char c : label) display_.putChar(c);
   display_.setAttribute(Display::Attribute::StandoutOff);
   int labelWidth = label.empty() ? 0 : static_cast<int>(label.size()) + 1;  // +1: one-column gap before the field
+  // positionText (2026-08-12 fix): see this function's own declaration
+  // comment. Reversed, matching the SAME "01/10 TOP" styling the
+  // candidate list's own ModeLineFieldsProvider already used for it
+  // one frame earlier (feedRegexListByte()'s edit-transition is the
+  // only caller that passes this non-empty).
+  if (!positionText.empty()) {
+    display_.putChar(' ');
+    labelWidth += 1;
+    display_.setAttribute(Display::Attribute::Standout);
+    for (unsigned char c : positionText) display_.putChar(c);
+    display_.setAttribute(Display::Attribute::StandoutOff);
+    labelWidth += static_cast<int>(positionText.size()) + 1;  // +1: one-column gap before the field
+  }
   // Trailing reserve (2026-08-12 fix): a direct user formula --
   // "文字入力エリアの幅は、「モード名（EGREPなら5＋1）」＋「...右詰
   // 16文字（/Users/haa15030/git/usilicなら「...5030/git/usilic/」＋
@@ -3189,9 +3231,9 @@ void Application::drawPromptLabel(PromptKind kind) {
   promptEditor_.setField(row, labelWidth, editableWidth);
 }
 
-void Application::activatePrompt(PromptKind kind, const std::string &initialText) {
+void Application::activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText) {
   promptKind_ = kind;
-  drawPromptLabel(kind);
+  drawPromptLabel(kind, positionText);
   promptEditor_.setText(initialText);
   promptEditor_.redraw();
 }

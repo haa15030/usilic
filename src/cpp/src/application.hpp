@@ -1547,7 +1547,17 @@ class Application {
   // did its own promptKind_=/setText()/redraw() trio with no label at
   // all, matching legacy's OWN mode-line[1] "name" field being
   // silently left unported this whole project.
-  void activatePrompt(PromptKind kind, const std::string &initialText);
+  // positionText (2026-08-12 fix, default ""/not shown): a direct
+  // user correction -- "[bs]→「1/10 TOP」が消滅" (backspacing an
+  // existing candidate straight into editing dropped its own "which
+  // of N candidates" position, which had been visible the whole time
+  // the candidate list was just being browsed). feedRegexListByte()'s
+  // own edit-transition passes ModeLine::format(cursorIndex+1, count)
+  // through here so drawPromptLabel() can keep showing it; every other
+  // activatePrompt() call site (plain FGREP/MAN/LOCATE/.../ArchiveDestination
+  // prompts, none of which originate from a numbered list) leaves it
+  // at the default.
+  void activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText = "");
   // The label text shown for each PromptKind -- ported from legacy's
   // own s_P(P_mode)[...] mode-name strings (disp_window()'s mode-
   // line[1] "name" field, e.g. " EXIT", " FGREP") for the ordinary
@@ -1565,7 +1575,7 @@ class Application {
   // out from activatePrompt() only so a future resize-while-prompting
   // fix (not attempted here, see this port's own known-limitations
   // notes) has an obvious single place to re-call.
-  void drawPromptLabel(PromptKind kind);
+  void drawPromptLabel(PromptKind kind, const std::string &positionText = "");
   PromptKind promptKind_ = PromptKind::None;
   // Set only while a ^R-triggered prompt-history ListBrowser is open
   // (see startPromptHistoryRecall()'s own comment): which prompt to

@@ -471,6 +471,63 @@ TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: ^N/^P still navigate the EGREP ca
   CHECK(app.activeContentView().cursorIndex() == startIndex);
 }
 
+TEST_CASE_FIXTURE(Fixture, "startPromptHistoryRecall (2026-08-12 fix): the EGREP/CUT candidate list's own "
+                           "visible caret sits at the END of the mode line's own trailing field (the "
+                           "candidate text shown there), not at the highlighted content row -- a direct "
+                           "user correction: \"『候補一覧のハイライト行末尾へ正しくカーソルを移動する設計』"
+                           "が有効なのはハイライト行を選択する場合の話で文字入力はモードラインで行われる"
+                           "ので最下行の文字列末尾にないとおかしい\" (that design is right for SELECTING a "
+                           "row, but text input happens in the mode line, so the caret belongs there), "
+                           "independently confirmed by a real macOS report that ATOK's own input-mode icon "
+                           "(drawn under the system's actual text caret) was appearing over the top content "
+                           "row instead") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(display.cursorRow() == 23);  // the mode line (24-row fixture), NOT row 0 (the highlighted candidate)
+  CHECK_FALSE(display.visibleCursorHidden());
+
+  // A plain FILE/DIR/PROGRAM-command picker (Enter simply selects, no
+  // live-editing paradigm) must NOT get this treatment -- regression
+  // check for the same code path. ^G here resumes the ORIGINAL prompt
+  // (promptHistoryRecallKind_ was set by StartEgrep above), so a
+  // second ^G (feedPromptByte()'s own cancelPrompt()) is needed to get
+  // back to a plain Directory to start a DIFFERENT list from.
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.promptActive());
+  REQUIRE(app.feedByte(0x07, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+
+  history.pushRecent(RingCategory::ShellCommand, "echo hi");
+  REQUIRE(app.handleCommand(Command::StartCommandHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(display.cursorRow() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: the candidate list's own \"NN/MM TOP/END\" position stays "
+                           "visible in the mode line once editing starts (2026-08-12 fix: a direct user "
+                           "correction -- \"[bs]→「1/10 TOP」が消滅\", i.e. backspacing an existing "
+                           "candidate straight into editing used to drop this the instant editing began, "
+                           "even though it had been on screen the whole time the list was just being "
+                           "browsed)") {
+  REQUIRE(app.start(path()));
+  // 10 entries, matching the double-digit "01/10" zero-padding real
+  // screenshots showed (ModeLine::format() zero-pads current to
+  // total's own digit width -- 2 entries would format as "1/2", not
+  // "01/02").
+  for (int i = 0; i < 10; i++) history.pushRecent(RingCategory::RecentEgrepPattern, "pattern" + std::to_string(i));
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.feedByte(0x7f, std::nullopt));  // backspace: transitions into editing
+  CHECK(app.promptActive());
+  // "01/10 TOP" -- cursor started on the top (oldest) direct-entry
+  // candidate, per promptHistoryRecallIsDirectEntry_'s own comment.
+  CHECK(display.rowText(23).find("01/10 TOP") != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: typing a character while browsing the EGREP candidate list "
                            "transitions into an editable prompt PRE-FILLED with the highlighted candidate's "
                            "own text, with the typed character appended -- this IS \"editing an existing "
