@@ -57,7 +57,19 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
   if (matchLines.empty()) {
     if (total > 0) segments_.push_back({std::string(), 0, total});
   } else {
-    if (matchLines.front() > 0) segments_.push_back({std::string(), 0, matchLines.front()});
+    // "--" (2026-08-12 fix, matching ContentView's own established
+    // "empty/unlabeled region" convention -- see setEmptyPlaceholder()'s
+    // own comment): this LEADING segment (everything before the FIRST
+    // match, e.g. a directory listing's own "./" through whatever line
+    // precedes the first "package*" hit) has no delimiter line of its
+    // own to use as a label the way every OTHER segment below does
+    // (`sourceLines_[start].text`, the matching line itself). A real
+    // report + reference screenshot (=ah) found this shown as a
+    // completely BLANK top row instead -- this was left as
+    // std::string() (empty) here from the very first CUT port, and the
+    // gap was flagged as far back as this session's item ㉜/㊱ ("最上行
+    // の「--」...が無い") but never actually fixed until now.
+    if (matchLines.front() > 0) segments_.push_back({"--", 0, matchLines.front()});
     for (std::size_t i = 0; i < matchLines.size(); i++) {
       int start = matchLines[i];
       int end = (i + 1 < matchLines.size()) ? matchLines[i + 1] : total;

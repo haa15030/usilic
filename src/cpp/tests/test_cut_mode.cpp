@@ -97,11 +97,15 @@ TEST_CASE_FIXTURE(Fixture, "segmentContent: the last segment runs to the end of 
   CHECK(content[1].text == "done");
 }
 
-TEST_CASE_FIXTURE(Fixture, "split: content before the first match becomes an unlabeled leading segment") {
+TEST_CASE_FIXTURE(Fixture, "split: content before the first match becomes a leading segment labeled \"--\" "
+                           "(2026-08-12 fix: this used to be an empty string, rendering as a completely "
+                           "blank top row instead of ContentView's own established \"empty/unlabeled "
+                           "region\" convention -- a real report + reference screenshot found exactly that "
+                           "blank row, tracing back to this session's own much earlier item ㉜/㊱)") {
   auto lines = toStyled({"(session banner)", "usilic$ ls", "a.txt"});
   REQUIRE(mode.split(lines, "usilic$", GrepSyntax::Fixed));
   REQUIRE(mode.segments().size() == 2);
-  CHECK(mode.segments()[0].label == "");
+  CHECK(mode.segments()[0].label == "--");
   auto preamble = mode.segmentContent(mode.segments()[0]);
   REQUIRE(preamble.size() == 1);
   CHECK(preamble[0].text == "(session banner)");
@@ -147,11 +151,11 @@ TEST_CASE_FIXTURE(Fixture, "splitSelected: recursively re-splits the selected se
   REQUIRE(mode.splitSelected("^--- section", GrepSyntax::Regex));
   CHECK(mode.canGoBack());
   // The chapter's own title line precedes the first "--- section"
-  // match, so it becomes its own unlabeled leading segment (matching
-  // split()'s own "content before the first match isn't dropped"
-  // behavior) ahead of the two real section segments.
+  // match, so it becomes its own "--"-labeled leading segment
+  // (matching split()'s own "content before the first match isn't
+  // dropped" behavior) ahead of the two real section segments.
   REQUIRE(mode.segments().size() == 3);
-  CHECK(mode.segments()[0].label == "");
+  CHECK(mode.segments()[0].label == "--");
   CHECK(mode.segments()[1].label == "--- section A ---");
   CHECK(mode.segments()[2].label == "--- section B ---");
   CHECK(mode.segmentContent(mode.segments()[1])[1].text == "textA1");

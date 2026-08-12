@@ -774,6 +774,17 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^A/^E/^B/^F move the cursor (beginni
   CHECK(app.promptText() == "XabcZY!");
 }
 
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^D deletes forward -- the readline-family counterpart to "
+                           "^A/^E/^B/^F above (2026-08-12 fix, a real CUT report: \"^A→^Dが利かない\", "
+                           "found while trying ^A then ^D from the ^J^C candidate list)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("abc");
+  REQUIRE(app.feedByte(0x01, std::nullopt));  // ^A: home
+  CHECK(app.feedByte(0x04, std::nullopt));    // ^D: delete forward
+  CHECK(app.promptText() == "bc");
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^A/^E/^B/^F themselves can still be typed LITERALLY via ^Q, "
                            "matching the same quoted-insert escape hatch as any other control byte") {
   REQUIRE(app.start(path()));
@@ -1491,7 +1502,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: ^Jc pressed WHILE STILL ON THE LABEL LIST (not 
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::Cut);
   // Re-splitting segment 0's own content (["alpha", "beta"]) by "beta"
-  // yields a leading unlabeled segment (content before the first
+  // yields a leading "--"-labeled segment (content before the first
   // match, ["alpha"]) plus the matched one (label="beta", ["beta"]) --
   // same shape doctest already covers for the CutContent-triggered
   // case just above, confirming this label-list-triggered path reused
@@ -1499,7 +1510,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: ^Jc pressed WHILE STILL ON THE LABEL LIST (not 
   // top-level split of the WHOLE file (which would have produced 2
   // segments matching "alpha", not this).
   REQUIRE(app.cutMode().segments().size() == 2);
-  CHECK(app.cutMode().segments()[0].label.empty());
+  CHECK(app.cutMode().segments()[0].label == "--");
   CHECK(app.cutMode().segments()[1].label == "beta");
 }
 
@@ -3505,14 +3516,19 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^R starts the command-history browser (
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDirectoryHistory): refused outside Directory mode") {
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDirectoryHistory): reachable from OUTSIDE Directory mode too "
+                           "(2026-08-12 fix -- an earlier version of startListBrowser() rejected this "
+                           "outright unless currentMode_==Directory, contradicting the K-45..K-48 family's "
+                           "own documented \"reachable from any mode\" design -- see startListBrowser()'s "
+                           "own comment for the direct user report that caught this trying ^X^D from CUT)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  CHECK_FALSE(app.handleCommand(Command::StartDirectoryHistory));
+  CHECK(app.handleCommand(Command::StartDirectoryHistory));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }
 
 TEST_CASE_FIXTURE(Fixture, "history browser: shows real pushRecent() entries sorted alphabetically, "
@@ -4005,14 +4021,17 @@ TEST_CASE_FIXTURE(Fixture, "List Browser mode-line: shows the RingCategory label
   CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) == 0);
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartFileHistory): refused outside Directory mode") {
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartFileHistory): reachable from OUTSIDE Directory mode too "
+                           "(2026-08-12 fix, same as StartDirectoryHistory's own identical correction just "
+                           "above -- both share startListBrowser())") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  CHECK_FALSE(app.handleCommand(Command::StartFileHistory));
+  CHECK(app.handleCommand(Command::StartFileHistory));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^D (K-48) reuses ^R's own StartDirectoryHistory picker") {
@@ -4029,6 +4048,39 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^D (K-48) reuses ^R's own StartDirector
   for (const auto &item : app.listBrowserMode().items())
     if (item == (root / "subdir").string() + "/") sawSubdir = true;
   CHECK(sawSubdir);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^F/^X^D/^J^R all work from CUT mode too, not just Directory "
+                           "(2026-08-12 fix -- a real report: tried ^J^C into CUT, then found these didn't "
+                           "work there, matching a broader design question -- \"^J^D/^J^F自体、どのモード"
+                           "からでも（^Rも含め）移行可能な仕様が目的\" (the whole point of these keys is to "
+                           "be reachable from ANY mode) -- see startListBrowser()'s own comment for the "
+                           "investigation confirming this was ONE narrow Directory-only guard, not scattered "
+                           "ad-hoc restrictions needing a mode-by-mode redesign)") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentFile, "/some/file.txt");
+  history.pushRecent(RingCategory::RecentDirectory, "/some/dir/");
+  history.pushRecent(RingCategory::ShellCommand, "echo hi");
+  REQUIRE(app.handleCommand(Command::StartCutFixed));  // ^Jc: blank prompt
+  feedText("plain");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedByte(0x06, std::nullopt));    // ^F: StartFileHistory (K-46)
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Cut);  // back to CUT, not Directory
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedByte(0x04, std::nullopt));    // ^D: StartDirectoryHistory (K-48)
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  CHECK(app.feedByte(0x12, std::nullopt));    // ^R: StartCommandHistory (K-50, ^J^R)
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }
 
 TEST_CASE_FIXTURE(Fixture, "history browser: Back returns to Directory mode") {

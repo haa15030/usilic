@@ -445,9 +445,23 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // reproduction (with exact expected mode-line text, not a guess)
   // confirmed cutView_'s OWN name/trailing shape independently.
   cutContentView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    std::string name = (cutOrigin_ == CutOrigin::Help)
-                            ? "HELP"
-                            : std::filesystem::path(fileMode_.currentFile()).filename().string();
+    // CutOrigin::Directory (2026-08-12 fix): this provider only ever
+    // handled Help vs. "assume File" (fileMode_.currentFile()) --
+    // there was no CUT-from-Directory support at all when it was
+    // written. A real report + reference screenshot (=ai) found
+    // fileMode_.currentFile() genuinely empty for a Directory-origin
+    // split (FileMode was never involved), so `name` came out as an
+    // empty string -- "モードラインにモード名（CUT）が無く". Mirrors
+    // cutView_'s own Directory-origin choice just below (literal
+    // "CUT", not a derived name -- there's no single file to name).
+    std::string name;
+    if (cutOrigin_ == CutOrigin::Help) {
+      name = "HELP";
+    } else if (cutOrigin_ == CutOrigin::Directory) {
+      name = "CUT";
+    } else {
+      name = std::filesystem::path(fileMode_.currentFile()).filename().string();
+    }
     std::size_t bytes = 0;
     for (const auto &line : cutContentView_.lines()) bytes += line.text.size() + 1;  // +1 for the newline
     std::string trailing = std::to_string(bytes);
@@ -2414,8 +2428,28 @@ std::vector<std::string> Application::sortedUniqueRecentEntries(RingCategory cat
 // Ported from m_list()'s dispatch, narrowed to the two least
 // ambiguous categories (see class comment). Not prompt-driven -- this
 // is an immediate action, like archive-browsing's auto-detection,
-// not a text-entry flow. Directory-only entry, matching every other
-// history-adjacent action in this slice.
+// not a text-entry flow.
+//
+// NOT gated to Directory mode (2026-08-12 fix -- an earlier version of
+// this comment claimed "Directory-only entry, matching every other
+// history-adjacent action in this slice", which was never actually
+// true of the whole K-45..K-48 family: startPathInputPrompt() (K-45/
+// K-47, "Input file/directory name", just above) was ALREADY
+// deliberately unrestricted -- "usable from File/Man/Grep/etc just as
+// much as from a directory listing" -- and usilicrc documents K-46/
+// K-48 ("Select file/directory name") and K-50/^J^R (COMMAND, which
+// also calls this function) with the exact same "reachable from any
+// mode" intent, no Directory-only caveat anywhere in its own K-?
+// table. A real user report + direct clarification: "^X^F/^X^D自体、
+// どのモードからでも（^Rも含め）移行可能な仕様が目的" (the whole POINT
+// of ^X^F/^X^D's own design is to be reachable from ANY mode) --
+// caught while trying ^J^C (CUT) and finding these didn't work from
+// there either. This function's own body needs nothing from
+// Directory-specific state to run (listBrowserReturnMode_ just
+// captures whatever currentMode_ already was, for ANY mode, exactly
+// the same way startPromptHistoryRecall() does for its own MAN/
+// LOCATE/GREP/CUT/PROGRAM recall categories -- this Directory-only
+// guard was the ONE inconsistency, not a structural need).
 //
 // Shown sorted alphabetically, de-duplicated -- confirmed directly by
 // the user (2026-08-04): "FILE（DIR）は今までアクセスしたファイル
@@ -2435,7 +2469,6 @@ std::vector<std::string> Application::sortedUniqueRecentEntries(RingCategory cat
 // belongs to the SEPARATE "HISTORY" toggle instead -- see
 // toggleListBrowserHistory().
 bool Application::startListBrowser(RingCategory category) {
-  if (currentMode_ != ApplicationMode::Directory) return false;
   listBrowserCategory_ = category;
   listBrowserReturnMode_ = currentMode_;
   listBrowserChronological_ = false;
@@ -2856,6 +2889,10 @@ bool Application::feedPromptByte(int byte) {
   }
   if (byte == 0x06) {  // ^F: forward one character
     promptEditor_.moveRight();
+    return true;
+  }
+  if (byte == 0x04) {  // ^D: delete forward (the readline-family counterpart to ^A/^E/^B/^F above)
+    promptEditor_.deleteForward();
     return true;
   }
   // ^U/^K/^Y (2026-08-11 fix): LineEditor already implements
