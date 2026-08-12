@@ -4196,6 +4196,48 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^D (K-48) reuses ^R's own StartDirector
   CHECK(sawSubdir);
 }
 
+// 2026-08-13 (CLAUDE.md history item 292's ^G policy, DIR half): a
+// user-specified policy -- "「選択後の画面」以降のDIR...については
+// 履歴を廃棄して真っ新から始める...^Gの連打もDIRならカレントおよび
+// 以前のディレクトリを行き来" -- picking a directory via the ^X^D
+// history picker should discard whatever multi-level descent chain
+// was active before, and ^G afterward should just toggle between the
+// picked directory and wherever the picker was invoked FROM (not
+// resurrect the old chain). See DirectoryMode::resetNavigationToFloor()'s
+// own comment for the mechanism (ModeStack's pre-existing, previously
+// unused pushFloor()/isFloor()).
+TEST_CASE_FIXTURE(Fixture, "DIR Select (^X^D): picking a directory discards a prior descent chain, "
+                           "^G then toggles current<->previous") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descends into subdir/ -- a real chain on the DIR ModeStack
+  CHECK(app.directoryMode().canGoBack());
+
+  history.pushRecent(RingCategory::RecentDirectory, root.string() + "/");
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x04, std::nullopt));  // ^D: StartDirectoryHistory (K-48)
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  for (int i = 0; i < static_cast<int>(app.listBrowserMode().items().size()); i++) {
+    if (app.listBrowserMode().items()[i] == root.string() + "/") {
+      app.activeContentView().setCursorIndex(i);
+      break;
+    }
+  }
+  REQUIRE(app.handleCommand(Command::Enter));  // picks root -- back to path(), previous == subdir/
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().currentDirectory() == path());
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.directoryMode().currentDirectory() == path());
+  // Never exhausts -- the OLD descent chain (subdir/'s own parent
+  // frame from the Enter above) is gone, replaced by this fresh
+  // toggling floor, matching resetNavigationToFloor()'s own contract.
+  CHECK(app.directoryMode().canGoBack());
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^F/^X^D/^J^R all work from CUT mode too, not just Directory "
                            "(2026-08-12 fix -- a real report: tried ^J^C into CUT, then found these didn't "
                            "work there, matching a broader design question -- \"^J^D/^J^F自体、どのモード"

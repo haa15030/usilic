@@ -166,10 +166,24 @@ bool DirectoryMode::goBack() {
   saveCurrentCursorPosition();
   auto frame = modeStack_.pop();
   if (!frame) return false;
+  if (modeStack_.isFloor(*frame)) {
+    if (frame->previousDirectory.empty()) return false;
+    std::string target = frame->previousDirectory;
+    if (!enterDirectory(target)) return false;
+    // Swap directory/previousDirectory and re-push -- see this
+    // function's own declaration comment on why (a genuine toggle, not
+    // a one-shot pop).
+    modeStack_.pushFloor(target, frame->directory, nullptr, 0);
+    return true;
+  }
   return enterDirectory(frame->directory);
 }
 
 bool DirectoryMode::canGoBack() const { return !modeStack_.empty(); }
+
+void DirectoryMode::resetNavigationToFloor(const std::string &previousDirectory) {
+  modeStack_.pushFloor(currentDirectory_, previousDirectory, nullptr, 0);
+}
 
 void DirectoryMode::saveCurrentCursorPosition() {
   if (currentDirectory_.empty()) return;

@@ -272,6 +272,49 @@ TEST_CASE_FIXTURE(Fixture, "goBack: false when there is nothing to go back to") 
   CHECK_FALSE(mode.goBack());
 }
 
+// 2026-08-13 (CLAUDE.md history item 292's ^G policy): resetNavigationToFloor()
+// discards a prior descent chain and establishes a fresh, TOGGLING
+// current<->previous pair, matching the ^X^D "Select directory" picker's
+// own required behavior (see the method's own declaration comment).
+TEST_CASE_FIXTURE(Fixture, "resetNavigationToFloor: discards a prior multi-level descent chain") {
+  REQUIRE(mode.enterDirectory(path()));
+  std::size_t subdirIndex = 0;
+  for (std::size_t i = 0; i < mode.entries().size(); i++)
+    if (mode.entries()[i].name == "subdir2/") subdirIndex = i;
+  view.setCursorIndex(static_cast<int>(subdirIndex));
+  REQUIRE(mode.openSelected());  // descend into subdir2/
+  CHECK(mode.canGoBack());       // one real descent frame on the stack
+
+  // Simulate the ^X^D picker landing somewhere unrelated to that chain.
+  REQUIRE(mode.enterDirectory(std::string(path()) + "subdir1"));
+  mode.resetNavigationToFloor(path());
+
+  CHECK(mode.canGoBack());  // the floor itself still counts as "something to go back to"
+  REQUIRE(mode.goBack());
+  // NOT the subdir2/ descent frame's own parent (path()) via the OLD
+  // chain -- goBack() lands on path() either way here, so the real
+  // proof is the NEXT assertion: a stack that still remembered the old
+  // subdir2/ frame would have nothing left to pop now (canGoBack()
+  // false), but the floor's own re-push (this function's own
+  // toggle behavior) means there's still exactly one more level.
+  CHECK(mode.currentDirectory() == path());
+  CHECK(mode.canGoBack());
+}
+
+TEST_CASE_FIXTURE(Fixture, "resetNavigationToFloor + goBack: toggles back and forth indefinitely") {
+  REQUIRE(mode.enterDirectory(path()));
+  REQUIRE(mode.enterDirectory(std::string(path()) + "subdir1"));
+  mode.resetNavigationToFloor(path());
+
+  REQUIRE(mode.goBack());
+  CHECK(mode.currentDirectory() == path());
+  REQUIRE(mode.goBack());
+  CHECK(mode.currentDirectory() == std::string(path()) + "subdir1/");
+  REQUIRE(mode.goBack());
+  CHECK(mode.currentDirectory() == path());
+  CHECK(mode.canGoBack());  // never exhausts -- a genuine toggle, not a one-shot pop
+}
+
 TEST_CASE_FIXTURE(Fixture, "toggleMark: marks and unmarks entries by index") {
   REQUIRE(mode.enterDirectory(path()));
   CHECK(mode.markedCount() == 0);

@@ -1800,7 +1800,13 @@ bool Application::openSelectedListEntry() {
     return true;
   }
   if (listBrowserCategory_ == RingCategory::RecentDirectory) {
+    // 2026-08-13: resetNavigationToFloor() -- see its own declaration
+    // comment (directory_mode.hpp) -- captured BEFORE enterDirectory()
+    // overwrites currentDirectory_, so it's genuinely "where you were
+    // before picking this," not the newly-entered directory itself.
+    std::string previousDirectory = directoryMode_.currentDirectory();
     if (!directoryMode_.enterDirectory(*item)) return false;
+    directoryMode_.resetNavigationToFloor(previousDirectory);
     currentMode_ = ApplicationMode::Directory;
     return true;
   }

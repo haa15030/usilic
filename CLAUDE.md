@@ -15604,6 +15604,80 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      「DU 1/3 TOP 280」と、それぞれモード名・位置情報・バイト数が
      揃って表示されることを直接確認した。
 
+292. **2026-08-13(続き): `^G`の暫定指針をユーザーから明示され、CUT/EGREP
+    の系列(候補一覧を持つ)とDIR/FILE等(履歴のみ)とで異なる`^G`
+    挙動を検証・実装。前者は既存実装で既に要件を満たしていると
+    判明(コード変更無し)、後者はDIR側に実際のギャップがあり
+    `ModeStack::pushFloor()`(既存だが未配線だった)を配線して修正**。
+   - **ユーザー指定の指針(要約)**: (1)CUT/EGREPは「起動→候補一覧→
+     選択後の画面」までが`^G`のデフォルト守備範囲だが、FGREP/EGREP
+     (入れ子)/SHELLは例外とし、これら3者をその画面から起動した後も
+     `^G`連打でCUT/EGREPの候補一覧を経由し、最終的な起動元
+     (`(ls)`とは限らない)へ戻ること。(2)DIR/FILE等の履歴専用一覧は
+     選択後、履歴を廃棄して真っ新から始める。`^G`連打はDIRなら
+     カレント/以前のディレクトリの行き来、FILE等はカレント
+     ディレクトリへ。ユーザー自身「実地検証必須な机上の構想」と
+     明言した上での依頼。
+   - **(1)の検証(CUT/EGREP系列)**: `^J^S`→候補一覧→検索→マッチ
+     選択(→Directoryにアノテーション付きで着地)→`ESC s`(SHELL)を
+     起動→実コマンド実行→`^G`連打、というPTYシナリオを実際に
+     組んで確認した。結果、既存実装(`shellReturnMode_ =
+     currentMode_`を`ensureShellActive()`が汎用的にキャプチャ、
+     `returnFromShell()`がそれをそのまま復元、その後は
+     `Command::Back`自身の`directoryMode_.hasSearchAnnotation()`
+     チェックが`returnToGrepResults()`へ、`returnFromGrep()`自身の
+     `grepReturnsToCandidateList_`(項目275/283-286)が候補一覧へ、と
+     連鎖する)だけで、「SHELL実行後も`^G`連打でCUT/EGREPを経由し
+     最終的な起動元へ戻る」という要求を満たしていることを直接確認
+     した。`startGrepPrompt()`自身も`grepReturnMode_ = currentMode_`
+     と汎用的にキャプチャしているため、FGREP/EGREP(入れ子)からの
+     復帰も同じ理屈で機能するはず(こちらはコード読解による確認、
+     SHELLほど直接的なPTY実地確認はしていない)。結果として、
+     この部分はコード変更不要と判断した。
+   - **(2)の検証・修正(DIR/FILE等)**: FILE(`^X^F`で選択後の`^G`)
+     は元々`returnToDirectory()`という単純な「常にカレント
+     ディレクトリへ」関数のみを使っており、履歴チェーンを一切
+     参照しないため、既に指針どおりだった(コード変更不要)。
+     DIRには実際のギャップがあった:`^X^D`(DIR選択)で
+     `directoryMode_.enterDirectory()`を直接呼ぶだけで、`^G`が
+     参照する`modeStack_`(通常の`Enter`によるサブディレクトリ
+     降下チェーン専用)を一切リセットしていなかったため、選択前に
+     深い階層まで潜っていた場合、その古いチェーンが選択後の`^G`に
+     漏れて無関係な場所へ戻ってしまう不具合があった。調査の過程で
+     `ModeStack`クラスに`pushFloor()`/`isFloor()`
+     (`mode_stack.hpp`/`.cpp`)というlegacy`save_stack_dir()`の
+     センチネル移植が既に存在するが、呼び出し箇所が一つも無い
+     (このセッションで繰り返し見つかっている「移植済みだが未配線」
+     パターンと同種)と判明。これがまさに指針(2)が求める「真っ新
+     から始める」ための機構だったと判断し、配線した。
+   - 実装: `DirectoryMode::resetNavigationToFloor(previousDirectory)`
+     (`directory_mode.hpp`/`.cpp`)を新設、`modeStack_.pushFloor()`
+     (内部で`frames_.clear()`してから1枚だけ積む)を呼ぶ。
+     `Application::openSelectedListEntry()`の`RecentDirectory`分岐で、
+     `enterDirectory()`する**前**に現在のディレクトリを
+     `previousDirectory`として捕捉し、`enterDirectory()`成功後に
+     この関数を呼ぶよう変更。`DirectoryMode::goBack()`も、popした
+     フレームが`isFloor()`なら`previousDirectory`側へ入り、
+     directory/previousDirectoryを入れ替えて`pushFloor()`し直す
+     (単発のpopで終わらせず、`^G`連打で本当に行き来できるようにする
+     ため)よう変更。
+   - **検証**: `make test` 696/696件全通過
+     (`test_directory_mode.cpp`に`resetNavigationToFloor()`単体の
+     新規テスト2件、`test_application.cpp`に`^X^D`選択→旧チェーン
+     破棄→`^G`行き来を確認する新規テスト1件を追加)、`make usilic`
+     クリーンビルド確認済み。macOS実機上のPTY検証で、
+     `home/`→`aaa/`→`aaa/bbb/`と2段階降下した状態から`^X^D`で
+     `home/`を選択→`^G`が(古いチェーンの`aaa/`ではなく)正しく
+     `aaa/bbb/`(選択直前にいた場所)へ戻り、以後`home/`⇄`aaa/bbb/`を
+     何度でも行き来できることを直接確認した。
+   - **既知の限界(明記して記録)**: ユーザー自身が「机上の構想...
+     実地検証必須」「CUT/EGREPが入れ子になるケースも含め実地検証
+     必須」と述べているとおり、これは暫定指針であり、(1)のFGREP/
+     EGREP入れ子側は実PTY確認までは行っていない、(2)の「行き来」が
+     2地点間のトグルで十分か(3地点以上の巡回等、より複雑な使い方を
+     ユーザーが試した場合に別の挙動を期待するかもしれない)も
+     未確認。実際に使ってみて違和感があれば都度報告してもらう前提。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

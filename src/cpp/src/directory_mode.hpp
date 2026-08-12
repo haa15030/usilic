@@ -129,10 +129,33 @@ class DirectoryMode {
 
   // ^G: pops the most recent ModeStack frame (if any) and returns to
   // it, restoring its cursor position from History. Returns false if
-  // the stack is empty (nothing to go back to).
+  // the stack is empty (nothing to go back to). A popped FLOOR frame
+  // (see resetNavigationToFloor()'s own comment) is handled specially:
+  // goes to its previousDirectory instead of its own directory, and
+  // re-pushes a floor with the two swapped, so repeated ^G presses
+  // genuinely toggle back and forth rather than exhausting after one
+  // pop.
   bool goBack();
 
   bool canGoBack() const;
+
+  // K-48 (^X^D, "DIR: Select directory name" -- the history/recency
+  // picker, NOT ordinary Enter-into-subdirectory descent): resets ^G's
+  // own navigation stack to a fresh "floor" rooted at the
+  // JUST-ENTERED directory (currentDirectory_ as of the call), so a
+  // multi-level descent chain accumulated before the picker was
+  // invoked doesn't leak into ^G's behavior afterward. Call AFTER
+  // enterDirectory() has already updated currentDirectory_ to the
+  // newly-picked directory. Ported from legacy's save_stack_dir()
+  // sentinel (ModeStack::kFloorMarker) -- pushFloor()/isFloor() already
+  // existed in ModeStack but nothing called them, the same
+  // "existing but unwired" pattern found repeatedly elsewhere in this
+  // port. Added 2026-08-13 per a user-specified, explicitly PROVISIONAL
+  // ^G policy pending real-world verification (not a guaranteed-final
+  // design): "「選択後の画面」以降のDIR...については履歴を廃棄して
+  // 真っ新から始める...^Gの連打もDIRならカレントおよび以前の
+  // ディレクトリを行き来".
+  void resetNavigationToFloor(const std::string &previousDirectory);
 
   // -- selection marking (for CP/MV/RM, ^Om-style) --
   // Ported from mode.c's fmark()/nmark() -- legacy marked entries in
