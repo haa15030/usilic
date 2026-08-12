@@ -15273,6 +15273,53 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      `make usilic`クリーンビルド確認済み。macOS実機上のPTY検証で
      実際に列80まで届くことを直接確認した。
 
+285. **2026-08-12(続き): 項目284で保留していた「候補一覧からの`^G`が
+    空プロンプトを再度開く」件、EGREPに限りその挙動を廃止(直接
+    `promptHistoryRecallReturnMode_`(≒(ls))へ抜けるよう変更)。
+    CUT正規表現版は今回対象外のまま維持**。ユーザーへ「これは
+    どのケースの話か」と問われ、docs/HISTORY.md:1538で確立済みの
+    「EGREPは候補一覧自体が『これは正規表現モードだ』という視覚的
+    合図なので、`^J^S`はキー一回で必ず候補一覧を経由する」という
+    設計意図を踏まえ、「EGREPでは空表示をしたくない、まずEGREPだけ
+    試してほしい、CUTは未検証なので不具合が出たら別途対応する」との
+    明確な指示を受けての対応。
+   - **対象範囲の確認**: `returnFromListBrowser()`の
+     `promptHistoryRecallKind_`分岐は、EGREP/CUT正規表現版の
+     直接入力候補一覧(`promptHistoryRecallIsDirectEntry_`真)と、
+     MAN/LOCATE/FGREP/CUT固定版/EGREP/CUT正規表現版いずれの実`^R`
+     recall(`directEntry`偽)の、計7通りの場面すべてで共有されて
+     いる。今回の変更は`kind==PromptKind::GrepPattern &&
+     promptHistoryRecallIsDirectEntry_`の場合のみに限定しており、
+     CUT正規表現版の候補一覧、および全ての実`^R`recall(入力途中の
+     文字列を復元する、という本来の`^R`の趣旨通りの挙動)は影響を
+     受けない。
+   - **実装**: `returnFromListBrowser()`の`promptHistoryRecallKind_`
+     分岐の先頭に、上記条件に一致する場合は`activatePrompt()`を
+     呼ばず`promptHistoryRecallReturnMode_`へ直接戻る(候補一覧を
+     開いた際に記録した戻り先、通常はDirectory)早期returnを追加。
+   - **既存テストへの影響**: `startRegexPromptList()`自身のコメントに
+     明記されていた「候補一覧の`^G`は空の新規入力プロンプトへ戻る、
+     というアフォーダンス」に依拠していた既存テスト2件のうち、
+     EGREP側の1件(「^R prompt-time recall: distinguishes FGREP from
+     EGREP history」)を、`^G`ではなく`^U`(候補一覧を編集済み状態へ
+     遷移させてからシード文字列を消す、既存の別の「新規文字列を
+     打つ」経路)を使う形に書き換え、判定方法も再度EGREPを開いて
+     一覧を確認する代わりに`history.recentEntries()`でリングの中身を
+     直接確認する形に簡略化した。CUT正規表現版側の同種テストは、
+     今回の変更対象外(CutPattern)のため無変更のまま全通過している。
+   - **検証**: `make test` 682/682件全通過(前述の書き換え1件・
+     EGREP候補一覧`^G`が直接Directoryへ戻ることを確認する既存テスト
+     1件の更新を含む)、`make usilic`クリーンビルド確認済み。macOS
+     実機上のPTY検証で、`^J^S`→`^G`が空プロンプトを経由せず直接
+     `(ls)`へ抜けることを直接確認した。
+   - **副産物(未対応、影響範囲なし)**: 今回のテスト調査中に、既存の
+     幅予約テスト(項目282由来)が約20%の頻度でまれに失敗する
+     ことを発見した。単独実行では常に成功し、失敗時も実際の描画
+     内容(`row`)は正しく見えるため、今回の一連の変更とは無関係な
+     既存のテスト間干渉(タイミング依存)の可能性が高いと判断し、
+     深追いはしていない。実害(実際のアプリの誤動作)は確認されて
+     いない。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

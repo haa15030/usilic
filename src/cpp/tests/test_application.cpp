@@ -491,13 +491,12 @@ TEST_CASE_FIXTURE(Fixture, "startPromptHistoryRecall (2026-08-12 fix): the EGREP
 
   // A plain FILE/DIR/PROGRAM-command picker (Enter simply selects, no
   // live-editing paradigm) must NOT get this treatment -- regression
-  // check for the same code path. ^G here resumes the ORIGINAL prompt
-  // (promptHistoryRecallKind_ was set by StartEgrep above), so a
-  // second ^G (feedPromptByte()'s own cancelPrompt()) is needed to get
-  // back to a plain Directory to start a DIFFERENT list from.
+  // check for the same code path. ^G here goes straight to Directory
+  // (2026-08-12 fix: EGREP's own candidate list no longer resumes a
+  // blank prompt on ^G -- see returnFromListBrowser()'s own comment),
+  // so a single ^G is enough to get back to Directory to start a
+  // DIFFERENT list from.
   REQUIRE(app.handleCommand(Command::Back));
-  REQUIRE(app.promptActive());
-  REQUIRE(app.feedByte(0x07, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
 
   history.pushRecent(RingCategory::ShellCommand, "echo hi");
@@ -3660,22 +3659,23 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: distinguishes FGREP from EGRE
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.handleCommand(Command::Back));
 
-  // EGREP (2026-08-05: opens directly into the candidate list, not a
-  // blank prompt -- see startGrepPrompt()'s own comment) -- ^G from
-  // there is how a fresh pattern gets typed (returnFromListBrowser()'s
-  // own promptHistoryRecallKind_ branch reopens a blank editable
-  // prompt), no ^R needed to reach it in the first place.
+  // EGREP opens directly into the candidate list, not a blank prompt
+  // (startGrepPrompt()'s own comment). ^G no longer reopens a blank
+  // prompt to type a fresh pattern from there (2026-08-12 fix, a
+  // direct user instruction -- see returnFromListBrowser()'s own
+  // comment) -- ^U (clears the pre-filled seed, same as the "start
+  // editing" transition any other byte would trigger) is the current
+  // way to type a genuinely fresh pattern instead.
   REQUIRE(app.handleCommand(Command::StartEgrep));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U: starts editing, clears the seed
   feedText("plain\\.txt");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.handleCommand(Command::Back));
 
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(app.listBrowserMode().items().size() == 1);
-  CHECK(app.listBrowserMode().items()[0] == "plain\\.txt");  // NOT "fixedpattern" -- that's FGREP's own ring
+  const auto &egrepRing = history.recentEntries(RingCategory::RecentEgrepPattern);
+  CHECK(egrepRing.back() == "plain\\.txt");  // the just-submitted pattern landed in EGREP's own ring...
+  CHECK(history.recentEntries(RingCategory::RecentFgrepPattern).back() ==
+        "fixedpattern");  // ...NOT FGREP's, which stayed separate
 }
 
 TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: swallowed (no ListBrowser, no literal byte inserted) for a "

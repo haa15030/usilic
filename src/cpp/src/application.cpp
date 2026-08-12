@@ -1962,6 +1962,37 @@ void Application::handleShellChildExited() {
 bool Application::returnFromListBrowser() {
   if (promptHistoryRecallKind_) {
     PromptKind kind = *promptHistoryRecallKind_;
+    // EGREP's own candidate list (2026-08-12 fix, direct user
+    // instruction, scoped to GrepPattern only -- CUT's regex variant
+    // keeps the old behavior below "for now", per that same
+    // instruction: "まだCUTの試用まではしていないので不具合があれば
+    // 対処すればいい"): ^G here must NOT reopen a blank editable
+    // prompt. Per docs/HISTORY.md:1538 -- the entire reason ^J^S opens
+    // DIRECTLY into the candidate list instead of a blank prompt in
+    // the first place (startRegexPromptList()'s own history) is that
+    // EGREP has no FGREP-vs-EGREP-style naming cue the way CUT's
+    // ^Jc/^J^C do share one name with no visual distinction otherwise
+    // -- so the list itself IS the "this is regex mode" signal, shown
+    // deliberately to prevent misuse. Silently falling through to a
+    // blank prompt on ^G (this function's own pre-existing behavior,
+    // inherited wholesale from the unrelated real-^R-recall case this
+    // function ALSO handles, see the general branch below) undermines
+    // that exact signal by letting a user slip back into typing
+    // without ever seeing the list again. Only applies when
+    // promptHistoryRecallIsDirectEntry_ (i.e. reached via ^J^S itself,
+    // or item 275's own "return to candidate list" LIFO mechanism) --
+    // a REAL ^R recall for EGREP (mid-typing, directEntry==false)
+    // keeps resuming whatever was already typed, unaffected, since
+    // that's a completely different scenario (recall while editing,
+    // not "the list IS the entry point").
+    if (kind == PromptKind::GrepPattern && promptHistoryRecallIsDirectEntry_) {
+      promptHistoryRecallKind_ = std::nullopt;
+      promptHistoryRecallIsDirectEntry_ = false;
+      promptHistoryRecallText_.clear();
+      currentMode_ = promptHistoryRecallReturnMode_;
+      activeView().redraw();
+      return true;
+    }
     std::string text = promptHistoryRecallText_;
     promptHistoryRecallKind_ = std::nullopt;
     promptHistoryRecallIsDirectEntry_ = false;
