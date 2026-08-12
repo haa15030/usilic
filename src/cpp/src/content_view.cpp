@@ -8,7 +8,10 @@ namespace fm {
 
 ContentView::ContentView(Display &display) : display_(display) {}
 
-void ContentView::setEmptyPlaceholderText(std::string text) { emptyPlaceholderText_ = std::move(text); }
+void ContentView::setEmptyPlaceholder(Line line, bool marked) {
+  emptyPlaceholderLine_ = std::move(line);
+  emptyPlaceholderMarked_ = marked;
+}
 
 void ContentView::setViewport(int row0, int height) {
   row0_ = row0;
@@ -128,7 +131,7 @@ void ContentView::syncVisibleCursor() {
     display_.hideVisibleCursor();
     return;
   }
-  int width = static_cast<int>(emptyPlaceholderText_.size());  // redraw()'s own empty-list placeholder
+  int width = static_cast<int>(emptyPlaceholderLine_.text.size());  // redraw()'s own empty-list placeholder
   if (cursorIndex_ >= 0 && cursorIndex_ < static_cast<int>(lines_.size()))
     width = static_cast<int>(lines_[cursorIndex_].text.size());
   display_.setVisibleCursor(row, width);
@@ -717,11 +720,14 @@ void ContentView::redraw() {
   // whatsoever, compounded by the terminal's own real block cursor
   // wandering off to wherever the mode-line was last drawn (see
   // syncVisibleCursor()'s own comment). This placeholder row stands in
-  // for "the (nonexistent) current entry", highlighted the same way a
-  // real one would be, at the same row a first real entry would occupy.
+  // for "the (nonexistent) current entry", at the same row a first real
+  // entry would occupy -- whether it's ALSO fully reverse-video like a
+  // real entry depends on emptyPlaceholderMarked_ (default true; see
+  // setEmptyPlaceholder()'s own comment for why grepView_ turns this
+  // off).
   if (!renderedAny && cursorHighlightEnabled_ && height_ > rowOffset) {
     display_.moveCursor(row0_ + rowOffset, 0);
-    renderLine(Line{emptyPlaceholderText_, std::nullopt, std::nullopt, {}}, true);
+    renderLine(emptyPlaceholderLine_, emptyPlaceholderMarked_);
   }
   renderModeLine();
   if (cursorHighlightEnabled_) syncVisibleCursor();

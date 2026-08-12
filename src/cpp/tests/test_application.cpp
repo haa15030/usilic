@@ -634,11 +634,17 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: an unrecognized, UNQUOTED control by
   CHECK(app.promptActive());                // still editing, not cancelled/submitted
 }
 
-TEST_CASE_FIXTURE(Fixture, "grepView_'s empty-result placeholder reads \"No String\", not ContentView's "
-                           "generic \"--\" (2026-08-12 fix: a direct user correction -- \"EGREPはファイル"
-                           "の切り分けではないので「--」ではなくて「No String」\", i.e. EGREP isn't a "
-                           "file-splitting operation like CUT, so its own zero-match placeholder shouldn't "
-                           "reuse CUT's empty-region marker)") {
+TEST_CASE_FIXTURE(Fixture, "grepView_'s empty-result placeholder reads \"<pattern>: No String\", not "
+                           "ContentView's generic \"--\" -- and shows plain (not full reverse-video), with "
+                           "ONLY \"No String\" underlined (2026-08-12, two rounds of user correction: first "
+                           "\"EGREPはファイルの切り分けではないので「--」ではなくて「No String」\" (EGREP "
+                           "isn't CUT's own region-splitting, so its empty placeholder shouldn't reuse "
+                           "CUT's \"--\" marker), then \"ハイライトだと選択可能文字列と紛らわしいので"
+                           "アンダーライン\" + \"マッチしないと検索対象文字列情報が失われるので「abc: No "
+                           "String」かつ「No String」のみアンダーライン\" (full reverse-video reads as "
+                           "\"selectable\", which this isn't -- underline instead; and losing which "
+                           "pattern was searched is its own problem, so show it with only the \"No "
+                           "String\" suffix underlined)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("this-pattern-matches-nothing-at-all");
@@ -649,7 +655,16 @@ TEST_CASE_FIXTURE(Fixture, "grepView_'s empty-result placeholder reads \"No Stri
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M
   REQUIRE(app.currentMode() == ApplicationMode::Grep);
   REQUIRE(app.grepMode().matches().empty());
-  CHECK(display.rowText(0).substr(0, 9) == "No String");
+  std::string expected = "this-pattern-matches-nothing-at-all: No String";
+  CHECK(display.rowText(0).substr(0, expected.size()) == expected);
+  // Not fully reverse-video: the pattern prefix's own first cell must
+  // NOT be in standout.
+  CHECK_FALSE(display.standoutAt(0, 0));
+  // "No String" itself is underlined, the "<pattern>: " prefix is not.
+  int underlineFrom = static_cast<int>(expected.size() - std::string("No String").size());
+  CHECK_FALSE(display.underlineAt(0, 0));
+  CHECK(display.underlineAt(0, underlineFrom));
+  CHECK(display.underlineAt(0, static_cast<int>(expected.size()) - 1));
 }
 
 TEST_CASE_FIXTURE(Fixture, "startRegexPromptList (^J^S/^J^C, 2026-08-12 fix): the direct-entry candidate "

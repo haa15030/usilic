@@ -494,13 +494,11 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     std::string trailing2 = (grepReturnMode_ == ApplicationMode::Directory) ? directoryMode_.currentDirectory() : "";
     return {name, trailing, /*fillTrailingToEdge=*/!trailing2.empty(), /*rightWatermark=*/"", trailing2};
   });
-  // 2026-08-12 fix: see setEmptyPlaceholderText()'s own comment. Applies
-  // to both FGREP and EGREP (this same grepView_ is shared between the
-  // two, switched on grepSyntax_ above) -- neither is a file-splitting
-  // operation the way CUT is, so a zero-match result reads as "no
-  // string [matched]", not ContentView's own generic "--" empty-region
-  // default (which stays correct for cutView_, left untouched below).
-  grepView_.setEmptyPlaceholderText("No String");
+  // grepView_'s own empty-result placeholder ("<pattern>: No String",
+  // "No String" underlined -- see ContentView::setEmptyPlaceholder()'s
+  // own comment) is set dynamically, per search, by GrepMode::search()
+  // itself (it's the one place that actually knows the pattern just
+  // searched) rather than statically here.
 
   // usilicrc's own GREP section (2026-08-05 fix): a real CUI screenshot
   // and direct legacy-tcb PTY testing (fresh $HOME, no ~/.tcb/history at

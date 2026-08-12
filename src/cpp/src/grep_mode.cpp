@@ -54,6 +54,23 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   }
 
   pattern_ = pattern;
+  // Empty-result placeholder (2026-08-12, two rounds of user
+  // correction -- see ContentView::setEmptyPlaceholder()'s own
+  // comment for the full history): "<pattern>: No String", with ONLY
+  // "No String" underlined (not the pattern prefix) and no full
+  // reverse-video "marked" treatment at all (that read as "this is a
+  // selectable string", which it isn't). Set fresh on every search --
+  // legacy has no concept of "the last pattern that found nothing"
+  // persisting once a NEW search runs, and neither should this.
+  if (matches_.empty()) {
+    static const std::string kSuffix = "No String";
+    std::string text = pattern_ + ": " + kSuffix;
+    int underlineFrom = static_cast<int>(text.size() - kSuffix.size());
+    view_.setEmptyPlaceholder(
+        ContentView::Line{text, std::nullopt, std::nullopt,
+                           {AttributeRun{underlineFrom, static_cast<int>(text.size()), Display::Attribute::Underline}}},
+        /*marked=*/false);
+  }
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(matches_.size());
   for (const auto &m : matches_) viewLines.push_back({m.text, std::nullopt, std::nullopt, {}});

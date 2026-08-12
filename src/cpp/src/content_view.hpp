@@ -270,20 +270,40 @@ class ContentView {
   void setCursorHighlightEnabled(bool enabled);
   bool cursorHighlightEnabled() const;
 
-  // Text redraw() shows, highlighted, on an otherwise-empty list (see
-  // redraw()'s own comment) -- default "--" (a directory/file-listing
+  // Text/formatting redraw() shows on an otherwise-empty list (see
+  // redraw()'s own comment) -- default "--", FULLY reverse-video/
+  // "marked" like a real entry would be (a directory/file-listing
   // convention: CUT reuses this same view for its own list-of-segments
   // display, where "--" already means "an empty region between two
   // matches", so an empty overall list reads consistently as "an empty
-  // region" too). GrepMode overrides this to "No String" (2026-08-12
-  // fix): a real user correction -- "EGREPはファイルの切り分けでは
-  // ないので「--」ではなくて「No String」" (EGREP isn't about
-  // splitting a file into regions, so an empty result should read "No
-  // String", not "--") -- after a real report where a search with zero
-  // matches showed "--" the same way CUT's own empty-region marker
-  // does, which is misleading outside CUT's actual region-splitting
-  // context.
-  void setEmptyPlaceholderText(std::string text);
+  // region" too).
+  //
+  // GrepMode overrides this per-search (2026-08-12, two rounds of user
+  // correction). First: "EGREPはファイルの切り分けではないので
+  // 「--」ではなくて「No String」" (EGREP isn't about splitting a
+  // file into regions, so an empty result should read "No String", not
+  // "--", which is misleading outside CUT's actual region-splitting
+  // context). Then, after seeing that plain "No String" alone reused
+  // the SAME full reverse-video treatment as a real (selectable)
+  // candidate: "ハイライトだと選択可能文字列と紛らわしいので
+  // アンダーライン" (full highlight reads as "this is a selectable
+  // string", which it isn't -- underline instead) -- `marked=false`
+  // (below) turns that off entirely for THIS line specifically, and
+  // "さらに要望だがマッチしないと検索対象文字列情報が失われるので
+  // 「abc: No String」かつ「No String」のみアンダーラインで" (losing
+  // which pattern was searched is its own problem -- show "abc: No
+  // String" with ONLY the "No String" portion underlined) -- Line's
+  // own `attributes` (AttributeRun, already used for HELP.jp's
+  // overstrike bold/underline) is reused here to underline just that
+  // suffix, leaving the "abc: " pattern prefix plain.
+  //
+  // `marked` (2026-08-12, second correction above): whether this line
+  // gets renderLine()'s own reverse-video "cursor is here" treatment,
+  // independent of `line.attributes`' own underline/bold runs (the
+  // same "standout AND underline can coexist, orthogonally" combining
+  // renderLine() already does for any OTHER Line). true (the default)
+  // preserves cutView_'s existing "--" look untouched.
+  void setEmptyPlaceholder(Line line, bool marked = true);
 
   // Whether fewer-than-height_ lines render flush against the BOTTOM
   // of the viewport (blank padding rows above them) instead of the
@@ -554,7 +574,8 @@ class ContentView {
   std::optional<int> hoverIndex_;
   bool cursorHighlightEnabled_ = true;
   bool bottomAnchored_ = false;
-  std::string emptyPlaceholderText_ = "--";
+  Line emptyPlaceholderLine_ = Line{"--", std::nullopt, std::nullopt, {}};
+  bool emptyPlaceholderMarked_ = true;
 
   int row0_ = 0, height_ = 0;
   ModeLineFieldsProvider modeLineFieldsProvider_;
