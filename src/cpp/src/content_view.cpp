@@ -6,14 +6,9 @@
 
 namespace fm {
 
-namespace {
-// Placeholder text redraw() shows on an otherwise-empty list's top row
-// (see its own comment) -- shared with syncVisibleCursor()'s own width
-// fallback so both agree on how wide that highlighted run is.
-const std::string kEmptyPlaceholderText = "--";
-}  // namespace
-
 ContentView::ContentView(Display &display) : display_(display) {}
+
+void ContentView::setEmptyPlaceholderText(std::string text) { emptyPlaceholderText_ = std::move(text); }
 
 void ContentView::setViewport(int row0, int height) {
   row0_ = row0;
@@ -133,7 +128,7 @@ void ContentView::syncVisibleCursor() {
     display_.hideVisibleCursor();
     return;
   }
-  int width = static_cast<int>(kEmptyPlaceholderText.size());  // redraw()'s own "--" placeholder
+  int width = static_cast<int>(emptyPlaceholderText_.size());  // redraw()'s own empty-list placeholder
   if (cursorIndex_ >= 0 && cursorIndex_ < static_cast<int>(lines_.size()))
     width = static_cast<int>(lines_[cursorIndex_].text.size());
   display_.setVisibleCursor(row, width);
@@ -726,7 +721,7 @@ void ContentView::redraw() {
   // real one would be, at the same row a first real entry would occupy.
   if (!renderedAny && cursorHighlightEnabled_ && height_ > rowOffset) {
     display_.moveCursor(row0_ + rowOffset, 0);
-    renderLine(Line{kEmptyPlaceholderText, std::nullopt, std::nullopt, {}}, true);
+    renderLine(Line{emptyPlaceholderText_, std::nullopt, std::nullopt, {}}, true);
   }
   renderModeLine();
   if (cursorHighlightEnabled_) syncVisibleCursor();

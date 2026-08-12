@@ -14871,6 +14871,83 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      (SDL/macOS側の既知の挙動)等の外部要因も候補だが未確認のため、
      次回セッションで再現条件の詳細を伺ってから調査する。
 
+279. **2026-08-12(続き): GREP候補一覧の読み込み後ソート+重複排除、
+    文字入力エリアの幅の予約式、EGREPの空一致プレースホルダ、
+    `^J^W`をSHELL経由で使った後`^R`がEGREPの残留状態に誤配線される
+    不具合、の4件に対応**。
+   - **GREP候補一覧を読み込み後もソート+重複排除**: 「usilicrcに
+     書き込んだ順とは異なるけれども、のちのち文字列数が多くなってから
+     起きる重複等回避するためにもやはりソート後重複削除は必要」との
+     要望。`startPromptHistoryRecall()`(^J^S/^J^C直接入力・素の
+     プロンプトからの実`^R`両方が通る共有関数)は、これまで
+     `RingCategory`の生ログをそのまま(読み込み順=時系列、重複含む)
+     表示していた(同日早い時間の同じ関数のコメントで、実`^R`recallは
+     legacy自身がソートしない生ログを見せる設計だと screenshot付きで
+     既に確認・修正済みだった経緯があるため)。今回`directEntry`(^J^S/
+     ^J^Cの直接入力)かつ`RecentFgrepPattern`/`RecentEgrepPattern`の
+     場合に限り、既存の`sortedUniqueRecentEntries()`(`std::set`で
+     ソート+重複排除、FILE/DIR履歴一覧が既に使っている関数)を使うよう
+     分岐。実`^R`(プロンプト編集中に押す場合)は既存の生ログ表示の
+     ままで変更していない(過去に screenshot付きで確定済みの挙動を
+     再度崩さないため)。
+   - **文字入力エリアの幅の予約式**: 「文字入力エリアの幅は、
+     『モード名(EGREPなら5+1)』+『...右詰16文字(/Users/haa15030/
+     git/usilicなら「...5030/git/usilic/」+1)』をCOLUMNSから引いた
+     値でいい。それを超える文字幅入力への対処はのちほど」との具体的な
+     計算式の指示。`drawPromptLabel()`(全`PromptKind`共通、
+     `activatePrompt()`から呼ばれる)の非`ExitConfirm`分岐に、
+     モード名分(既存の`labelWidth`)に加えて右側16文字+「...」+
+     区切り1桁(=20)を新たに予約する`trailingReserve`を追加し、
+     `promptEditor_`の編集可能幅を`COLUMNS - labelWidth -
+     trailingReserve`に変更。今回はこの予約領域に実際に何かを描画する
+     処理までは追加していない(ユーザー自身の言う「のちほど」の
+     範囲、右側にCWD等を実際に表示する仕上げと、この幅を超える入力の
+     横スクロール対応は次回以降)。
+   - **EGREPの空一致プレースホルダを「No String」に**: 「EGREPは
+     ファイルの切り分けではないので「--」ではなくて「No String」」
+     との指摘(^J^W実行結果を検索文字列として誤検索した際の一致
+     0件表示が、CUTの空領域マーカーである「--」のままだったこと
+     から)。`ContentView`の空リスト時プレースホルダ(元は`"--"`
+     固定のフリー関数定数)を、`setEmptyPlaceholderText()`という
+     インスタンス単位の設定に変更(デフォルトは引き続き`"--"`、
+     `cutView_`等はそのまま)。`grepView_`のみ`"No String"`に
+     上書き(FGREP/EGREP共有のこの1つのビューで両方カバー)。
+   - **`^J^W`をSHELL経由で使った後`^R`がEGREPの残留状態に誤配線
+     される不具合**: 実機報告「起動後^J^S→^J^W→'|sort'[return]→
+     ^R(モード名が「PROGRAM」ではなく「EGREP」)→[return]→
+     「--」(←「cat ...|sort」で検索している)」。
+     - 原因: `^J^S`が開く候補一覧は`promptHistoryRecallKind_`
+       (=`GrepPattern`)を立てて`ApplicationMode::ListBrowser`に
+       入るが、これは本来`feedRegexListByte()`の「編集開始」
+       遷移か`openSelectedListEntry()`の選択確定のどちらかで一度
+       だけ消費される想定の値だった。今回追加した`^J^W`の
+       リーダー配線(項目277/278)経由でSHELLへ直接ジャンプする
+       `shellInsertBufferContent()`は、そのどちらの消費経路も
+       通らずに`currentMode_`だけをShellへ切り替えていたため、
+       `promptHistoryRecallKind_`が`GrepPattern`のまま残留した。
+       その後SHELLの`^R`(`startShellHistoryRecall()`、正しくは
+       `RingCategory::ShellCommand`/「PROGRAM」)が別のListBrowser
+       セッションを開始しても、`dispatchByte()`の先頭チェック
+       (`currentMode_==ListBrowser && promptHistoryRecallKind_ &&
+       (GrepPattern|CutPattern)`)が残留したこの値にヒットし続け、
+       すべてのバイトが`feedRegexListByte()`(EGREP候補一覧の
+       コンボボックス処理)に誤って配線されていた。これがモード名
+       誤表示と、選択したシェルコマンド文字列をEGREPパターンとして
+       誤検索する挙動の両方の原因。
+     - 修正: SHELLへ入るあらゆる経路が共通して通る`ensureShellActive()`
+       の先頭で`promptHistoryRecallKind_`等を無条件にクリア。既に
+       SHELL中なら早期returnするため無関係な場面には影響せず、
+       通常は既に`std::nullopt`のため無害な操作。`^J^W`に限らず
+       `shellChangeDirectory()`/`shellRunLsL()`/`shellInsertName()`
+       等SHELLへ入る他の全経路にも同じリスクがあったため、個別対応
+       ではなくこの共通の入口1箇所で解消した。
+   - **検証**: `make test` 672/672件全通過(候補一覧の幅の予約式、
+     EGREPの空一致「No String」表示、直接入力候補一覧のソート+
+     重複排除と実`^R`recallが引き続き生ログのままであることの両方、
+     `^J^W`→SHELL→`^R`が正しく「PROGRAM」/シェルコマンド挿入に
+     解決されることを確認する新規テスト5件を追加)、`make usilic`
+     クリーンビルド確認済み。実機での見た目の確認は次回のご報告待ち。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

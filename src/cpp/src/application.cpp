@@ -494,6 +494,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     std::string trailing2 = (grepReturnMode_ == ApplicationMode::Directory) ? directoryMode_.currentDirectory() : "";
     return {name, trailing, /*fillTrailingToEdge=*/!trailing2.empty(), /*rightWatermark=*/"", trailing2};
   });
+  // 2026-08-12 fix: see setEmptyPlaceholderText()'s own comment. Applies
+  // to both FGREP and EGREP (this same grepView_ is shared between the
+  // two, switched on grepSyntax_ above) -- neither is a file-splitting
+  // operation the way CUT is, so a zero-match result reads as "no
+  // string [matched]", not ContentView's own generic "--" empty-region
+  // default (which stays correct for cutView_, left untouched below).
+  grepView_.setEmptyPlaceholderText("No String");
 
   // usilicrc's own GREP section (2026-08-05 fix): a real CUI screenshot
   // and direct legacy-tcb PTY testing (fresh $HOME, no ~/.tcb/history at
@@ -1966,6 +1973,44 @@ bool Application::startShell() {
 
 bool Application::ensureShellActive() {
   if (currentMode_ == ApplicationMode::Shell) return true;
+  // 2026-08-12 fix: a real report -- start usilic, ^J^S (EGREP
+  // candidate list), ^J^W (now reachable from there thanks to today's
+  // earlier feedRegexListByte()/feedPromptByte() leader-dispatch fix),
+  // type "|sort" and run it, then ^R at the live SHELL prompt -- showed
+  // the ListBrowser's own mode line reading "EGREP" instead of
+  // "PROGRAM", and selecting an entry ran an EGREP search using the
+  // shell command text as the pattern ("cat .../w.usilic|sort") instead
+  // of inserting it into the command line. Root cause: promptHistoryRecallKind_
+  // (set by the ORIGINAL ^J^S's startPromptHistoryRecall(), meant to be
+  // consumed exactly once -- either by feedRegexListByte()'s own "start
+  // editing" transition or by openSelectedListEntry()'s submission) was
+  // never cleared by shellInsertBufferContent() jumping straight into
+  // Shell mode instead of going through either of those normal
+  // consumption paths. It stayed set (still == GrepPattern) all the way
+  // through running the shell command, so when startShellHistoryRecall()
+  // later opened its OWN, unrelated ListBrowser session (for
+  // RingCategory::ShellCommand), dispatchByte()'s top-level check
+  // (`currentMode_==ListBrowser && promptHistoryRecallKind_ && (...==
+  // GrepPattern || ...==CutPattern)`) still matched on the STALE flag
+  // and routed every byte through feedRegexListByte() -- the EGREP/CUT
+  // candidate-list combobox logic -- instead of ordinary ListBrowser
+  // navigation, hence both symptoms at once (wrong mode-line label, and
+  // Enter submitting the selection as a grep pattern via
+  // feedRegexListByte()'s own edit-then-submit path).
+  //
+  // Cleared here (not inside shellInsertBufferContent() specifically)
+  // because ensureShellActive() is the one common choke point EVERY
+  // Shell-entering command funnels through (shellInsertBufferContent(),
+  // shellChangeDirectory(), shellRunLsL(), shellInsertName(), plain
+  // startShell()) -- any of them jumping to Shell while a prompt-recall
+  // ListBrowser session is still logically "in progress" (abandoned via
+  // a leader command rather than its own ^G/Enter/edit-start
+  // consumption path) has the identical staleness risk, not just ^J^W.
+  // A no-op in the ordinary case (no recall was in progress, this is
+  // already std::nullopt) -- so safe to run unconditionally.
+  promptHistoryRecallKind_ = std::nullopt;
+  promptHistoryRecallText_.clear();
+  promptHistoryRecallIsDirectEntry_ = false;
   if (!shellStarted_) {
     if (!shell_.start()) return false;
     shellStarted_ = true;
@@ -2875,12 +2920,36 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   promptHistoryRecallIsDirectEntry_ = directEntry;
   promptKind_ = PromptKind::None;
   listBrowserCategory_ = category;
-  // true: this IS the chronological view already -- see ToggleHistoryView's
-  // own comment for what a subsequent ^R (toggleListBrowserHistory())
-  // toggling it back to false/sorted would then mean.
-  listBrowserChronological_ = true;
-  const std::deque<std::string> &recent = history_.recentEntries(category);
-  std::vector<std::string> items(recent.begin(), recent.end());
+  // ^J^S/^J^C's own DIRECT-ENTRY candidate list (2026-08-12 fix,
+  // scoped narrowly to directEntry -- see below for why): sorted +
+  // de-duplicated, NOT the raw chronological log every other
+  // prompt-triggered recall uses (the very policy the big comment above
+  // this function documents being corrected TO, from an earlier
+  // same-day revision that got this wrong the other way). A real user
+  // request: "GREPの文字列一覧だが、同ファイルを読み込んだ後もソート
+  // してほしい...のちのち文字列数が多くなってから起きる重複等回避
+  // するためにもやはりソート後重複削除は必要" (please also sort the
+  // GREP string list after loading the file, not just keep the file
+  // itself pre-sorted -- sort-then-dedup is needed to avoid duplicates
+  // once the pattern count grows). Deliberately NOT applied to a real
+  // ^R recall (directEntry==false, e.g. mid-typing a pattern and
+  // pressing ^R): that case is exactly what the comment above already
+  // settled, backed by a real screenshot (⑪) of legacy's own raw,
+  // duplicate-including recall list -- this fix only concerns the
+  // separate direct-entry candidate list ^J^S/^J^C open into BEFORE any
+  // typing happens (matching legacy's own referenced screenshots ㊳/㊴
+  // showing THAT list sorted), and only for GrepPattern/CutPattern
+  // (MAN/LOCATE/PROGRAM's own direct-entry-less recall is untouched).
+  bool sortDirectEntryList =
+      directEntry && (category == RingCategory::RecentFgrepPattern || category == RingCategory::RecentEgrepPattern);
+  listBrowserChronological_ = !sortDirectEntryList;
+  std::vector<std::string> items;
+  if (sortDirectEntryList) {
+    items = sortedUniqueRecentEntries(category);
+  } else {
+    const std::deque<std::string> &recent = history_.recentEntries(category);
+    items.assign(recent.begin(), recent.end());
+  }
   listBrowserMode_.show(items);
   currentMode_ = ApplicationMode::ListBrowser;
   if (!items.empty()) {
@@ -3003,7 +3072,34 @@ void Application::drawPromptLabel(PromptKind kind) {
   for (unsigned char c : label) display_.putChar(c);
   display_.setAttribute(Display::Attribute::StandoutOff);
   int labelWidth = label.empty() ? 0 : static_cast<int>(label.size()) + 1;  // +1: one-column gap before the field
-  promptEditor_.setField(row, labelWidth, std::max(1, display_.columns() - labelWidth));
+  // Trailing reserve (2026-08-12 fix): a direct user formula --
+  // "文字入力エリアの幅は、「モード名（EGREPなら5＋1）」＋「...右詰
+  // 16文字（/Users/haa15030/git/usilicなら「...5030/git/usilic/」＋
+  // 1）」をCOLUMNSから引いた値でいい" (the input area's width should be
+  // COLUMNS minus the mode name (+1 gap) minus a right-justified,
+  // "..."-truncated 16-character tail (+1 gap)) -- mirroring
+  // grepView_'s own ModeLineFieldsProvider trailing2 field (the CWD
+  // shown on a GREP/CUT RESULTS screen, see its own comment) but
+  // reserved here uniformly for every prompt kind's own EDITING screen,
+  // not just GREP/CUT's. Deliberately reserving the WIDTH only for now
+  // -- nothing is actually drawn into this space yet, matching the
+  // user's own explicit "それを超える文字幅入力への対処はのちほど"
+  // (handling input that exceeds this width is for later): without
+  // this reservation, a prompt could currently be typed all the way out
+  // to the screen's actual right edge, wider than legacy's own
+  // equivalent field ever was (legacy's own field always left this
+  // trailing area alone for a directory-path field), so narrowing it
+  // now keeps this port's own line-wrap/`need_scroll()`-equivalent
+  // logic consistent with legacy's real available width even before
+  // that trailing field's own CONTENT gets drawn in a later round.
+  // ExitConfirm is excluded (own branch above, already reserves ITS
+  // actual "prev mode" trailing field correctly).
+  constexpr int kTrailingPathTailChars = 16;
+  constexpr int kTrailingPathEllipsis = 3;  // "..."
+  constexpr int kTrailingPathGap = 1;
+  int trailingReserve = kTrailingPathTailChars + kTrailingPathEllipsis + kTrailingPathGap;
+  int editableWidth = std::max(1, display_.columns() - labelWidth - trailingReserve);
+  promptEditor_.setField(row, labelWidth, editableWidth);
 }
 
 void Application::activatePrompt(PromptKind kind, const std::string &initialText) {

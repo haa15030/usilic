@@ -270,6 +270,21 @@ class ContentView {
   void setCursorHighlightEnabled(bool enabled);
   bool cursorHighlightEnabled() const;
 
+  // Text redraw() shows, highlighted, on an otherwise-empty list (see
+  // redraw()'s own comment) -- default "--" (a directory/file-listing
+  // convention: CUT reuses this same view for its own list-of-segments
+  // display, where "--" already means "an empty region between two
+  // matches", so an empty overall list reads consistently as "an empty
+  // region" too). GrepMode overrides this to "No String" (2026-08-12
+  // fix): a real user correction -- "EGREPはファイルの切り分けでは
+  // ないので「--」ではなくて「No String」" (EGREP isn't about
+  // splitting a file into regions, so an empty result should read "No
+  // String", not "--") -- after a real report where a search with zero
+  // matches showed "--" the same way CUT's own empty-region marker
+  // does, which is misleading outside CUT's actual region-splitting
+  // context.
+  void setEmptyPlaceholderText(std::string text);
+
   // Whether fewer-than-height_ lines render flush against the BOTTOM
   // of the viewport (blank padding rows above them) instead of the
   // default flush-against-the-TOP (blank padding rows below) --
@@ -539,6 +554,7 @@ class ContentView {
   std::optional<int> hoverIndex_;
   bool cursorHighlightEnabled_ = true;
   bool bottomAnchored_ = false;
+  std::string emptyPlaceholderText_ = "--";
 
   int row0_ = 0, height_ = 0;
   ModeLineFieldsProvider modeLineFieldsProvider_;

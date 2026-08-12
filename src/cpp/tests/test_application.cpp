@@ -553,6 +553,110 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^G cancels a pending prompt without starti
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
+TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the editable field's width reserves COLUMNS "
+                           "- (mode name + 1) - (16 + 3 + 1) for a right-justified, \"...\"-truncated "
+                           "trailing path field, matching a direct user formula, even though nothing is "
+                           "drawn into that reserved space yet") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));  // label "FGREP", 5 chars
+  // labelWidth = 5+1 = 6, trailingReserve = 16+3+1 = 20, so the field
+  // spans columns [6, 80-20) = [6, 60) -- columns 60..79 must stay
+  // untouched (still the blank clearToEndOfLine() left them in).
+  std::string typed(60, 'x');  // long enough to reach right up to the boundary if unreserved
+  feedText(typed);
+  const std::string &row = display.rowText(23);
+  for (int col = 60; col < 80; col++) {
+    CAPTURE(col);
+    CHECK(row[col] == ' ');
+  }
+}
+
+TEST_CASE_FIXTURE(Fixture, "grepView_'s empty-result placeholder reads \"No String\", not ContentView's "
+                           "generic \"--\" (2026-08-12 fix: a direct user correction -- \"EGREPはファイル"
+                           "の切り分けではないので「--」ではなくて「No String」\", i.e. EGREP isn't a "
+                           "file-splitting operation like CUT, so its own zero-match placeholder shouldn't "
+                           "reuse CUT's empty-region marker)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("this-pattern-matches-nothing-at-all");
+  // A zero-match search is still a SUCCESSFUL search (GrepMode::search()'s
+  // own comment: "exit 1 = ran fine but found none -- both are a
+  // successful search"), so this enters Grep mode with an empty
+  // matches_ list, not a rejected/failed submission.
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().empty());
+  CHECK(display.rowText(0).substr(0, 9) == "No String");
+}
+
+TEST_CASE_FIXTURE(Fixture, "startRegexPromptList (^J^S/^J^C, 2026-08-12 fix): the direct-entry candidate "
+                           "list is sorted + de-duplicated, not shown in raw load/chronological order -- a "
+                           "direct user request (avoiding future duplicate growth as usilicrc's own GREP "
+                           "section is edited over time), scoped ONLY to this direct-entry list, not to a "
+                           "real ^R recall while typing (that case was already deliberately corrected to "
+                           "stay raw/chronological earlier, backed by a real legacy screenshot)") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentEgrepPattern, "zzz");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "aaa");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "aaa");  // duplicate
+  history.pushRecent(RingCategory::RecentEgrepPattern, "mmm");
+  REQUIRE(app.handleCommand(Command::StartEgrep));  // ^J^S: direct-entry candidate list
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  const auto &items = app.listBrowserMode().items();
+  std::vector<std::string> sorted(items.begin(), items.end());
+  CHECK(std::is_sorted(sorted.begin(), sorted.end()));
+  CHECK(std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end());  // no consecutive duplicates
+  // A genuinely REAL ^R recall (not direct entry) still shows raw
+  // chronological order, duplicate "aaa" included -- unaffected by
+  // this fix. Reached by typing a character right here (the SAME
+  // open list's own edit-transition, matching how legacy's own
+  // T_hegrep real-recall is only ever reachable from an ALREADY-
+  // active EGREP prompt -- ^J^S has no separate "start blank" entry
+  // point of its own to invoke instead).
+  REQUIRE(app.feedByte('X', std::nullopt));
+  REQUIRE(app.promptActive());
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  CHECK(app.listBrowserMode().items().back() == "mmm");  // newest at the bottom, chronological
+}
+
+TEST_CASE_FIXTURE(Fixture, "ensureShellActive (2026-08-12 fix): jumping into Shell mode from a still-"
+                           "in-progress ^J^S/^J^C candidate-list recall (via ^J^W, not that recall's own "
+                           "^G/Enter/edit-start consumption path) no longer leaves promptHistoryRecallKind_ "
+                           "stale -- a real report: start, ^J^S, ^J^W, run a shell command, then ^R at the "
+                           "live SHELL prompt showed the ListBrowser mode line reading \"EGREP\" instead of "
+                           "\"PROGRAM\", and selecting an entry ran an EGREP search using the shell command "
+                           "text as the pattern instead of inserting it into the command line") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartEgrep));  // ^J^S
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  bool ok = app.feedByte(0x0a, std::nullopt);  // ^J
+  ok = app.feedByte(0x17, std::nullopt) && ok;  // ^W -- shellInsertBufferContent()
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+  // Matches the report's own "|sort" [return] step: a real shell
+  // command actually having been run (pushed into RingCategory::
+  // ShellCommand) is what makes the later ^R meaningful at all. The
+  // only entry in this ring in this test, so it's also the only (and
+  // therefore already-selected) item in the ^R list below.
+  history.pushRecent(RingCategory::ShellCommand, "echo shell-history-marker");
+
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R at the live SHELL prompt
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().items() == std::vector<std::string>{"echo shell-history-marker"});
+
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter: select it
+  // openSelectedListEntry() checks promptHistoryRecallKind_ BEFORE
+  // shellHistoryRecallActive_ -- the bug had the former still stale
+  // (== GrepPattern), so this used to run executeGrep("echo shell-
+  // history-marker") instead (currentMode() would come back as Grep,
+  // not Shell, and the shell command line would be untouched).
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.shell().commandLine().text() == "echo shell-history-marker");
+}
+
 // 2026-08-05: feedPromptByte() (every prompt kind routed through it --
 // MAN/LOCATE/FGREP/EGREP/CUT/PROGRAM/PathInput/Copy/Move/Remove/.../
 // DuPath/ArchiveDestination) fell through to promptEditor_.insertByte()
