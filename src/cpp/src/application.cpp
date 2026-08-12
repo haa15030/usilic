@@ -2752,6 +2752,39 @@ bool Application::feedPromptByte(int byte) {
     promptEditor_.redraw();
     return true;
   }
+  // ^A/^E/^B/^F (2026-08-12 fix): LineEditor already implements
+  // moveHome()/moveEnd()/moveLeft()/moveRight() (used by feedShellByte()
+  // for the SHELL command line's own arrow-key handling) but nothing
+  // ever wired the readline-style CONTROL-KEY equivalents (^A/^E/^B/^F)
+  // into this shared prompt path -- a real report: "^A^E^B^F等文字列
+  //編集のためのキーが利かずハイライトAEBFとなる" (^A/^E/^B/^F, the
+  // keys for editing the string, don't work -- they show up as reversed
+  // "AEBF" instead), i.e. these fell all the way through to the literal
+  // insertByte() fallback below, each control byte rendered as its own
+  // reversed "@"-offset glyph (LineEditor::renderVisible()'s own
+  // convention: byte b < ' ' renders as reversed chr(b+'@'), so 0x01+
+  // 0x40='A', 0x05+0x40='E', 0x02+0x40='B', 0x06+0x40='F' -- exactly
+  // "AEBF"). Note this port's OWN plain ^B/^F command bindings
+  // (resolveCommand()'s PageUp/PageDown, usilicrc's K-8/K-9) never
+  // apply here regardless: dispatchByte() already routes every byte to
+  // feedPromptByte() FIRST whenever a prompt is active, before
+  // resolveCommand() is ever consulted.
+  if (byte == 0x01) {  // ^A: beginning of line
+    promptEditor_.moveHome();
+    return true;
+  }
+  if (byte == 0x05) {  // ^E: end of line
+    promptEditor_.moveEnd();
+    return true;
+  }
+  if (byte == 0x02) {  // ^B: back one character
+    promptEditor_.moveLeft();
+    return true;
+  }
+  if (byte == 0x06) {  // ^F: forward one character
+    promptEditor_.moveRight();
+    return true;
+  }
   // ^U/^K/^Y (2026-08-11 fix): LineEditor already implements
   // killToStart()/killToEnd()/yank() (ported from key.c's K_u/K_k/K_y
   // cases -- see their own doc comments) but nothing anywhere ever
@@ -2778,6 +2811,24 @@ bool Application::feedPromptByte(int byte) {
   if (byte == 0x19) {  // ^Y: re-insert the ^U/^K kill buffer
     promptEditor_.yank();
     promptEditor_.redraw();
+    return true;
+  }
+  // Reject any OTHER unrecognized control byte outright rather than
+  // inserting it literally (2026-08-12 fix, a direct user instruction:
+  // "コントロールコード入力は^Qの前置が必須、を反映して" -- control-code
+  // entry should require the ^Q prefix). Before this, e.g. a stray Tab
+  // (0x09, meaningful only for PathInput's own completion above) typed
+  // into a GrepPattern/CutPattern/etc. prompt fell all the way through
+  // to the plain insertByte() fallback below, silently corrupting the
+  // pattern with a literal control byte -- rendered as a reversed
+  // control-character glyph (see the ^A/^E/^B/^F comment above for the
+  // "byte+'@'" convention) that reads as a display glitch rather than
+  // what it actually is. ^Q's own quoted-insert check at the very top
+  // of this function remains the ONE way to insert a literal control
+  // byte on purpose (already true before this change -- this only
+  // closes off the UNQUOTED path for bytes that used to slip through).
+  if (byte < 0x20) {
+    display_.putChar(7);  // BEL, matching LineEditor's own boundary-reject convention
     return true;
   }
   promptEditor_.insertByte(static_cast<unsigned char>(byte));
@@ -3099,6 +3150,44 @@ void Application::drawPromptLabel(PromptKind kind) {
   constexpr int kTrailingPathGap = 1;
   int trailingReserve = kTrailingPathTailChars + kTrailingPathEllipsis + kTrailingPathGap;
   int editableWidth = std::max(1, display_.columns() - labelWidth - trailingReserve);
+
+  // Return-destination content (2026-08-12 fix): the reservation above
+  // used to be width-only, deliberately deferring what actually gets
+  // drawn there -- a real report ("FGREPで戻り先が無い", and for EGREP,
+  // "モードラインでは戻り先の消える" the instant editing starts) found
+  // that left the space blank, reading as "no destination at all"
+  // rather than "reserved but not yet implemented". Mirrors
+  // grepView_/cutView_'s own RESULTS-screen trailing2/trailing (see
+  // their own ModeLineFieldsProvider comments): the directory a
+  // GrepPattern/CutPattern search will actually run against, when that
+  // destination is Directory mode (matching those two providers'
+  // identical `grepReturnMode_ == ApplicationMode::Directory` /
+  // `cutReturnMode_ == ApplicationMode::Directory` guards -- returning
+  // to File/Cut/CutContent has no single destination DIRECTORY to
+  // show, same as those two screens). Other PromptKinds (MAN/LOCATE/
+  // PROGRAM/Copy/Move/Remove/.../PathInput/ArchiveDestination) don't
+  // have an established "trailing2 = destination directory" precedent
+  // to mirror and aren't covered by this round's screenshots, so their
+  // reserved trailing space intentionally stays blank for now.
+  std::string destinationDirectory;
+  if ((kind == PromptKind::GrepPattern && grepReturnMode_ == ApplicationMode::Directory) ||
+      (kind == PromptKind::CutPattern && cutReturnMode_ == ApplicationMode::Directory)) {
+    destinationDirectory = directoryMode_.currentDirectory();
+  }
+  if (!destinationDirectory.empty()) {
+    std::string tail = destinationDirectory;
+    if (static_cast<int>(tail.size()) > kTrailingPathTailChars) {
+      tail = "..." + tail.substr(tail.size() - kTrailingPathTailChars);
+    }
+    int col = display_.columns() - static_cast<int>(tail.size());
+    if (col > labelWidth) {
+      display_.moveCursor(row, col);
+      display_.setAttribute(Display::Attribute::Standout);
+      for (unsigned char c : tail) display_.putChar(c);
+      display_.setAttribute(Display::Attribute::StandoutOff);
+    }
+  }
+
   promptEditor_.setField(row, labelWidth, editableWidth);
 }
 

@@ -319,6 +319,36 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         break;
       }
       case 5: {  // GREP
+        // Ported from conf_grep(): for a QUOTED pattern, everything up
+        // to the matching closing quote (already handled below); for
+        // an UNQUOTED one, `while (*cp != ' ' && *cp != '\t') cp++;`
+        // truncates at the first space OR TAB. This port previously
+        // only had the quoted branch and used an unquoted line's data
+        // WHOLESALE, unmodified -- missing this truncation entirely.
+        // usilicrc's own GREP section right-aligns each pattern's `#
+        // comment' with a run of tabs (e.g. "\/\*[a-z]*\*\/\t\t\t\t #
+        // tcb source"), and nextDataLine()/trimCommentAndLeadingWs()
+        // (a faithful port of the separate, generic get_cp(), used
+        // for OTHER config sections too) only strips the comment and
+        // LEADING whitespace -- exactly matching get_cp()'s own real
+        // behavior, trailing whitespace included, which is fine for
+        // every OTHER section (tokenize() strips it) but NOT fine
+        // here, since an unquoted GREP pattern is used as -one wholesale
+        // string with no further tokenization. Without this
+        // truncation, every unquoted seed pattern carried its own
+        // trailing tab run as literal bytes, corrupting both the
+        // ^J^S/^J^C candidate list's own mode-line layout (the tabs'
+        // real terminal tab-stop jumps threw off column alignment,
+        // pushing the destination-directory field far to the right and
+        // even wrapping) and, once such a candidate's text seeded an
+        // actual editable prompt (feedRegexListByte()'s own edit-
+        // transition), its embedded tab bytes rendered as reversed
+        // "IIII"-style control-character glyphs (LineEditor::
+        // renderVisible()'s own reversed `c + '@'` convention: TAB
+        // 0x09 + 0x40 = 'I') the moment editing began -- a real report
+        // (screenshots ㊹/㊺) where this was mistaken for a NEW display
+        // bug ("文字を入力したとたんハイライトIIIIが出る") rather than
+        // pre-corrupted seed data becoming visible for the first time.
         while (auto data = nextDataLine(lines, i)) {
           std::string pattern = *data;
           if (!pattern.empty() && (pattern[0] == '\'' || pattern[0] == '"')) {
@@ -326,6 +356,9 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
             std::size_t close = pattern.find_first_of("'\"", 1);
             (void)openQuote;
             if (close != std::string::npos) pattern = pattern.substr(1, close - 1);
+          } else {
+            std::size_t ws = pattern.find_first_of(" \t");
+            if (ws != std::string::npos) pattern = pattern.substr(0, ws);
           }
           grepSeedPatterns_.push_back(pattern);
         }

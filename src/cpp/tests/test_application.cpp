@@ -555,20 +555,83 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^G cancels a pending prompt without starti
 
 TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the editable field's width reserves COLUMNS "
                            "- (mode name + 1) - (16 + 3 + 1) for a right-justified, \"...\"-truncated "
-                           "trailing path field, matching a direct user formula, even though nothing is "
-                           "drawn into that reserved space yet") {
+                           "trailing path field, matching a direct user formula") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));  // label "FGREP", 5 chars
   // labelWidth = 5+1 = 6, trailingReserve = 16+3+1 = 20, so the field
-  // spans columns [6, 80-20) = [6, 60) -- columns 60..79 must stay
-  // untouched (still the blank clearToEndOfLine() left them in).
+  // spans columns [6, 80-20) = [6, 60) -- none of the typed 'x' run
+  // should reach column 60 or beyond, regardless of what (if anything)
+  // the reserved trailing area itself shows.
   std::string typed(60, 'x');  // long enough to reach right up to the boundary if unreserved
   feedText(typed);
   const std::string &row = display.rowText(23);
   for (int col = 60; col < 80; col++) {
     CAPTURE(col);
-    CHECK(row[col] == ' ');
+    CHECK(row[col] != 'x');
   }
+}
+
+TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the reserved trailing area actually shows the "
+                           "destination directory (right-justified, \"...\"-truncated to its last 16 "
+                           "characters when longer) for FGREP/EGREP/CUT prompts returning to Directory mode "
+                           "-- a real report (\"FGREPで戻り先が無い\", and for EGREP, the destination "
+                           "vanishing the instant editing starts) found this space left blank before") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  std::string dir = app.directoryMode().currentDirectory();
+  std::string expectedTail = dir;
+  if (expectedTail.size() > 16) expectedTail = "..." + expectedTail.substr(expectedTail.size() - 16);
+  const std::string &row = display.rowText(23);
+  CHECK(row.substr(row.size() - expectedTail.size()) == expectedTail);
+  CHECK(display.standoutAt(23, static_cast<int>(row.size()) - 1));  // shown reversed, like every other field
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^A/^E/^B/^F move the cursor (beginning/end/back/forward) "
+                           "instead of inserting literally -- 2026-08-12 fix, a real report: \"^A^E^B^F等"
+                           "文字列編集のためのキーが利かずハイライトAEBFとなる\"") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("abc");
+  REQUIRE(app.promptText() == "abc");
+
+  CHECK(app.feedByte(0x01, std::nullopt));  // ^A: home
+  feedText("X");
+  CHECK(app.promptText() == "Xabc");
+
+  CHECK(app.feedByte(0x05, std::nullopt));  // ^E: end
+  feedText("Y");
+  CHECK(app.promptText() == "XabcY");
+
+  CHECK(app.feedByte(0x02, std::nullopt));  // ^B: back one char (now before the trailing 'Y')
+  feedText("Z");
+  CHECK(app.promptText() == "XabcZY");
+
+  CHECK(app.feedByte(0x06, std::nullopt));  // ^F: forward one char (now after 'Y', i.e. at the end)
+  feedText("!");
+  CHECK(app.promptText() == "XabcZY!");
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^A/^E/^B/^F themselves can still be typed LITERALLY via ^Q, "
+                           "matching the same quoted-insert escape hatch as any other control byte") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  CHECK(app.feedByte(0x11, std::nullopt));  // ^Q
+  CHECK(app.feedByte(0x01, std::nullopt));  // quoted ^A: inserted literally, cursor NOT moved
+  CHECK(app.promptText() == std::string("\x01"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedPromptByte: an unrecognized, UNQUOTED control byte is rejected (BEL), not "
+                           "inserted literally -- 2026-08-12 fix, a direct user instruction: \"コントロール"
+                           "コード入力は^Qの前置が必須、を反映して\". A real report: a stray Tab (0x09, "
+                           "meaningful only for PathInput's own completion) typed into an EGREP pattern "
+                           "corrupted it with a literal control byte, rendered as reversed \"IIII\"-style "
+                           "glyphs, instead of being rejected or requiring ^Q") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("ab");
+  CHECK(app.feedByte(0x09, std::nullopt));  // Tab: not PathInput, so rejected outright
+  CHECK(app.promptText() == "ab");          // unchanged -- NOT "ab\t"
+  CHECK(app.promptActive());                // still editing, not cancelled/submitted
 }
 
 TEST_CASE_FIXTURE(Fixture, "grepView_'s empty-result placeholder reads \"No String\", not ContentView's "

@@ -164,6 +164,32 @@ TEST_CASE("GREP directive: strips surrounding quotes; PROGRAM directive: only in
   CHECK(pagerConfig.programSeedCommands().empty());
 }
 
+TEST_CASE("GREP directive (2026-08-12 fix): an UNQUOTED pattern is truncated at the first space/tab, "
+          "matching legacy conf_grep()'s own `while (*cp != ' ' && *cp != '\\t') cp++;` -- usilicrc's real "
+          "GREP section right-aligns each pattern's own `# comment' with a run of tabs (e.g. "
+          "\"\\\\/\\\\*[a-z]*\\\\*\\\\/\\t\\t\\t\\t # tcb source\"), and this port previously used an "
+          "unquoted line's data wholesale (only trimCommentAndLeadingWs()'s own comment-strip + LEADING-"
+          "whitespace-strip, no trailing-whitespace handling), baking the trailing tab run into the seed "
+          "pattern as literal bytes -- a real report found this corrupted both the ^J^S/^J^C candidate "
+          "list's own mode-line layout (real terminal tab-stop jumps threw off column alignment) and, once "
+          "such a candidate seeded an actual editable prompt, rendered as reversed \"IIII\"-style control-"
+          "character glyphs the moment editing began") {
+  Configuration config;
+  std::string rc =
+      "GREP\n"
+      "\t\\/\\*[a-z]*\\*\\/\t\t\t\t # tcb source\n"
+      "\t^Question\t\t\t\t # Linux-FAQ\n"
+      "\t\"^Subject: \"\t\t\t\t # Mailing list\n";
+  REQUIRE(config.loadRcText(rc, true));
+  REQUIRE(config.grepSeedPatterns().size() == 3);
+  CHECK(config.grepSeedPatterns()[0] == "\\/\\*[a-z]*\\*\\/");
+  CHECK(config.grepSeedPatterns()[1] == "^Question");
+  // The quoted branch is untouched by this fix -- still extracts
+  // exactly the quoted span, trailing tabs and all excluded by the
+  // closing quote itself, not by this new truncation.
+  CHECK(config.grepSeedPatterns()[2] == "^Subject: ");
+}
+
 TEST_CASE("CP/MV/RM directives override the default command, only in file-manager mode") {
   Configuration config;
   REQUIRE(config.loadRcText("CP\n cp -vRi --reflink=auto\n", true));
