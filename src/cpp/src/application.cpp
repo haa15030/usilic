@@ -2950,26 +2950,19 @@ bool Application::startLocatePrompt() {
 // (this port stays single-threaded/synchronous throughout -- "機能
 // 自体は完了でいい" (the function itself doesn't need to change) --
 // so this doesn't need real async plumbing, just draw-then-block-
-// then-draw-again in this one call). Reuses drawPromptLabel()'s own
-// "LOCATE " label + gap math (promptLabelText(LocateQuery).size()+1,
-// no positionText) rather than duplicating it, matching the exact
-// column startLocatePrompt()'s own activatePrompt() would place the
-// editable field at -- confirmed against a real CUI screenshot (=ak)
-// showing the live prompt's own caret sitting at that same column.
+// then-draw-again in this one call).
+//
+// 2026-08-13 follow-up: the first version of this hand-rolled its own
+// copy of drawPromptLabel()'s label-drawing logic directly here -- a
+// real follow-up report ("モードライン共有ルーチンはできない？")
+// pointed out that was exactly the kind of one-off duplication item
+// 291's own mode-line audit had just finished eliminating elsewhere.
+// Now goes through drawPromptLabel() itself (its own staticMessage
+// parameter, added specifically for this case) instead of
+// re-deriving the label/column math independently.
 bool Application::runLocateUpdateDb() {
-  std::string label = promptLabelText(PromptKind::LocateQuery);
-  int row = std::max(0, display_.rows() - 1);
-  int col = label.empty() ? 0 : static_cast<int>(label.size()) + 1;
-  display_.moveCursor(row, 0);
-  display_.clearToEndOfLine();
-  display_.setAttribute(Display::Attribute::Standout);
-  for (unsigned char c : label) display_.putChar(c);
-  display_.setAttribute(Display::Attribute::StandoutOff);
-  display_.moveCursor(row, col);
   static const std::string kUpdatingMessage = "Updating database...";
-  display_.setAttribute(Display::Attribute::Underline);
-  for (unsigned char c : kUpdatingMessage) display_.putChar(c);
-  display_.setAttribute(Display::Attribute::UnderlineOff);
+  drawPromptLabel(PromptKind::LocateQuery, /*positionText=*/"", kUpdatingMessage);
   display_.flush();
 
   bool ok = locateMode_.updateDb();
@@ -3447,7 +3440,7 @@ std::string Application::promptLabelText(PromptKind kind) const {
   return "";
 }
 
-void Application::drawPromptLabel(PromptKind kind, const std::string &positionText) {
+void Application::drawPromptLabel(PromptKind kind, const std::string &positionText, const std::string &staticMessage) {
   int row = std::max(0, display_.rows() - 1);
   display_.moveCursor(row, 0);
   display_.clearToEndOfLine();
@@ -3522,6 +3515,18 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     for (unsigned char c : positionText) display_.putChar(c);
     display_.setAttribute(Display::Attribute::StandoutOff);
     labelWidth += static_cast<int>(positionText.size()) + 1;  // +1: one-column gap before the field
+  }
+  // staticMessage (2026-08-13): see this function's own declaration
+  // comment -- draws a plain UNDERLINED status message at exactly the
+  // column an editable field would otherwise start at, then returns
+  // WITHOUT touching promptEditor_ at all (no field to reserve/set --
+  // this isn't a real editable prompt).
+  if (!staticMessage.empty()) {
+    display_.moveCursor(row, labelWidth);
+    display_.setAttribute(Display::Attribute::Underline);
+    for (unsigned char c : staticMessage) display_.putChar(c);
+    display_.setAttribute(Display::Attribute::UnderlineOff);
+    return;
   }
   // Trailing reserve (2026-08-12 fix): a direct user formula --
   // "文字入力エリアの幅は、「モード名（EGREPなら5＋1）」＋「...右詰

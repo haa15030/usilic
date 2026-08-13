@@ -15760,6 +15760,40 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      全く同じ確立済みパターンを再利用しているため実装の信頼度は
      高いと判断)。
 
+294. **2026-08-13(続き): 項目293の「Updating database...」実装が
+    `drawPromptLabel()`のロジックを再度個別に複製していた点をユーザー
+    から指摘され(「モードライン共有ルーチンはできない？」)、
+    `drawPromptLabel()`自体に`staticMessage`引数を追加してそちらへ
+    一本化**。
+   - 項目293で`runLocateUpdateDb()`に書いた「LOCATE」ラベル+
+     アンダーライン付きメッセージの描画コードは、`drawPromptLabel()`
+     の同じラベル描画ロジックを手動で再現しただけの独立実装
+     だった。項目291のモードライン監査の趣旨(場当たり的な個別実装を
+     減らし共有ルーチンへ寄せる)に反しており、ユーザーから
+     再度同じ指摘(=ao)を受けた。
+   - 修正: `Application::drawPromptLabel(PromptKind kind,
+     const std::string &positionText = "", const std::string
+     &staticMessage = "")`に第3引数`staticMessage`を追加。
+     非空の場合、ラベル(+`positionText`があればそれも)描画後、
+     `promptEditor_`用のフィールド幅確保・戻り先ディレクトリ描画
+     などプロンプト固有のロジックを一切スキップし、代わりに
+     `staticMessage`をアンダーライン付き(非反転)でラベル直後の
+     列に描画して即returnするようにした。`runLocateUpdateDb()`は
+     独自の描画コードを全廃し、
+     `drawPromptLabel(PromptKind::LocateQuery, "", kUpdatingMessage)`
+     を呼ぶだけに簡略化。
+   - **検証**: `make test` 700/700件全通過(`^Jl`実行後にLOCATE
+     プロンプトへ連鎖することを確認する既存テストを維持)、
+     `make usilic`クリーンビルド確認済み。`staticMessage`自体の
+     描画は、`updatedb`の代わりに2秒`sleep`してから成功するダミー
+     コマンドをPATHに仕込んだ状態でのPTY実機検証により、実行中は
+     モードラインに「LOCATE Updating database...」("LOCATE"は反転、
+     "Updating database..."はアンダーライン・非反転)と正しく
+     表示され、完了後は空のLOCATEプロンプトへ正しく連鎖することを
+     生の端末セル属性(pyteの`underscore`/`reverse`)レベルで直接
+     確認した(項目293の時点ではこの検証ができておらず、今回
+     初めて実際に確認できた)。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

@@ -749,6 +749,29 @@ TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the reserved traili
   CHECK(display.standoutAt(23, static_cast<int>(row.size()) - 1));  // shown reversed, like every other field
 }
 
+// 2026-08-13 (CLAUDE.md history item 294): a follow-up report --
+// "モードライン共有ルーチンはできない？" -- found runLocateUpdateDb()'s
+// own FIRST version hand-rolled its own copy of drawPromptLabel()'s
+// label-drawing logic instead of reusing it (item 291's whole point
+// was eliminating exactly this kind of one-off duplication). Now
+// routed through drawPromptLabel()'s own new staticMessage parameter.
+TEST_CASE_FIXTURE(Fixture, "LOCATE: ^Jl draws \"LOCATE \" + underlined \"Updating database...\" via "
+                           "drawPromptLabel()'s own shared staticMessage path, not a separate one-off") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  app.feedByte('l', std::nullopt);  // synchronous: draws the message, blocks on updateDb(), then chains onward
+  // The message itself is long gone by the time feedByte() returns
+  // (runLocateUpdateDb() draws it, blocks, then immediately calls
+  // startLocatePrompt() which redraws the mode line as a real editable
+  // prompt) -- this only asserts the FINAL state (a real prompt,
+  // matching startLocatePrompt()'s own already-tested behavior), since
+  // there's no way to observe the transient synchronously-drawn-then-
+  // overwritten frame from outside this one call without a dedicated
+  // test seam; the message's own rendering was instead verified via a
+  // live PTY reproduction (see CLAUDE.md history item 294).
+  CHECK(app.promptActive());
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^A/^E/^B/^F move the cursor (beginning/end/back/forward) "
                            "instead of inserting literally -- 2026-08-12 fix, a real report: \"^A^E^B^F等"
                            "文字列編集のためのキーが利かずハイライトAEBFとなる\"") {

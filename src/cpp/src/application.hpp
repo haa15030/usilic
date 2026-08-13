@@ -1581,7 +1581,25 @@ class Application {
   // out from activatePrompt() only so a future resize-while-prompting
   // fix (not attempted here, see this port's own known-limitations
   // notes) has an obvious single place to re-call.
-  void drawPromptLabel(PromptKind kind, const std::string &positionText = "");
+  //
+  // staticMessage (2026-08-13, default ""/unused): a direct user
+  // request -- LOCATE's own updatedb progress indicator ("Updating
+  // database...") needed to appear at exactly this same "right after
+  // the label" position, underlined, WHILE a blocking ChildProcess
+  // call runs (no promptEditor_ involved at all, nothing editable).
+  // The first version of this hand-rolled its own copy of this
+  // function's label-drawing logic directly in runLocateUpdateDb() --
+  // a real follow-up report ("モードライン共有ルーチンはできない？")
+  // pointed out that was exactly the kind of one-off duplication
+  // item 291's own mode-line audit had just finished eliminating
+  // elsewhere. When non-empty, this draws staticMessage underlined at
+  // the SAME column promptEditor_'s own field would otherwise start at
+  // (labelWidth) and skips the promptEditor_.setField()/trailing-
+  // reservation logic entirely (there's no editable field or
+  // destination-directory trailing to reserve room for here -- this
+  // isn't a real prompt, just a transient status line reusing the
+  // prompt row's own label-drawing).
+  void drawPromptLabel(PromptKind kind, const std::string &positionText = "", const std::string &staticMessage = "");
   PromptKind promptKind_ = PromptKind::None;
   // See activatePrompt()'s own comment.
   bool promptCandidateListActive_ = false;
