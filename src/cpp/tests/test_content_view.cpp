@@ -923,3 +923,53 @@ TEST_CASE("scrollModeLineText: reaching the bottom boundary shows END, not a per
   v.setTopIndex(7);  // maxTop = 10 - 3 = 7 -- fully scrolled to the end
   CHECK(v.scrollModeLineText() == "10/10 END");
 }
+
+// 2026-08-13 (LOCATE results, real reports/screenshots =am/=an): a
+// MARKED (cursor-highlighted) line exactly as wide as the terminal
+// used to leave the last column's own trailing setStandout(false)
+// escape landing on the NEXT row instead (most real terminals'
+// auto-wrap silently advances the cursor on the last column's write,
+// which this class's own escape-sequence emission has no way to
+// detect) -- corrupting that next row's own highlight state one row
+// out of sync with cursorIndex_/the mode line's own position text.
+// renderLine() now reserves the last column specifically for a
+// MARKED line (see its own comment for why NOT for an unmarked one).
+// RecordingDisplay itself doesn't simulate real terminal auto-wrap
+// (see its own putAdvance()), so this can't reproduce the visual
+// symptom directly -- it instead verifies the actual fix (the marked
+// line's own last column is left untouched) is in place; the fix
+// itself was confirmed against the real bug via a live PTY
+// reproduction (both wide-content-present and wide-content-absent
+// real `locate` results in the same session).
+TEST_CASE("redraw: a MARKED line exactly as wide as the terminal leaves its own last column untouched") {
+  RecordingDisplay d(10, 20);  // 20 columns wide
+  ContentView v(d);
+  v.setViewport(0, 5);
+  std::vector<ContentView::Line> lines;
+  lines.push_back({std::string(20, 'x'), std::nullopt, std::nullopt, {}});  // exactly the terminal's own width
+  v.setLines(lines);
+  v.setCursorIndex(0);  // this is the marked/highlighted row
+  v.redraw();
+  CHECK(d.rowText(0).substr(0, 19) == std::string(19, 'x'));
+  CHECK(d.rowText(0)[19] == ' ');  // the last column deliberately left untouched
+}
+
+// The unmarked counterpart: an UNMARKED full-width line (e.g. every
+// row of a reflowed File-mode view, cursorHighlightEnabled_ disabled
+// there -- see FileMode's own class comment) is NOT truncated, since
+// it never calls setStandout(true) in the first place and so has
+// nothing for auto-wrap to corrupt -- confirmed by
+// handleResize()'s own "reflows File mode's content at the new width"
+// test, which intentionally relies on the full width rendering.
+TEST_CASE("redraw: an UNMARKED line exactly as wide as the terminal still renders its own last column") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setCursorHighlightEnabled(false);  // FileMode's own convention
+  v.setViewport(0, 5);
+  std::vector<ContentView::Line> lines;
+  lines.push_back({std::string(20, 'x'), std::nullopt, std::nullopt, {}});
+  v.setLines(lines);
+  v.setCursorIndex(0);
+  v.redraw();
+  CHECK(d.rowText(0) == std::string(20, 'x'));  // full width, including the last column
+}

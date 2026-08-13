@@ -418,6 +418,28 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     return {name, trailing, /*fillTrailingToEdge=*/false,
             /*rightWatermark=*/"", /*trailing2=*/""};
   });
+  // 2026-08-13 fix: a real report -- an empty history ring (e.g. a
+  // fresh install's very first ^J^L/^Jm/etc, or a real ^R with nothing
+  // recorded yet) showed ContentView's own DEFAULT empty-list
+  // placeholder here, a bare "--". That default exists for CUT's own
+  // content view (an actual unlabeled REGION within real split
+  // content, see CutMode::split()'s own comment) -- semantically
+  // wrong for listBrowserView_, which is a HISTORY/RESULTS list, not
+  // content with regions. "「--」はCUTのみ" (per the user's own
+  // correction) -- reuses GrepMode::search()'s own "No String"
+  // convention (HISTORY.md's own record of that decision) instead,
+  // just without a pattern prefix (there's no single "pattern" concept
+  // for a FILE/DIR/MAN/PROGRAM/LOCATE/COMMAND ring the way there is
+  // for an EGREP/FGREP search) -- set once, statically, since unlike
+  // GrepMode's dynamic per-search version there's no varying text to
+  // refresh here.
+  {
+    static const std::string kNoString = "No String";
+    listBrowserView_.setEmptyPlaceholder(
+        ContentView::Line{kNoString, std::nullopt, std::nullopt,
+                           {AttributeRun{0, static_cast<int>(kNoString.size()), Display::Attribute::Underline}}},
+        /*marked=*/false);
+  }
   // CutContent (the currently-selected CUT segment's own content --
   // HELP's own screen included) never gets a whole-line reverse-video
   // cursor highlight, matching FileMode's own
@@ -2917,7 +2939,43 @@ bool Application::startLocatePrompt() {
 // LOCATE section: refreshes the locate database. Doesn't touch
 // currentMode_/any view -- stays wherever the user was, matching how
 // this is a maintenance action rather than a navigation one.
-bool Application::runLocateUpdateDb() { return locateMode_.updateDb(); }
+//
+// 2026-08-13 update, a direct user request: (1) chain straight into
+// K-40's own seeded prompt (startLocatePrompt()) once updatedb()
+// finishes, rather than just silently returning to wherever the user
+// was -- IDEAS.md's own spec ("^Jl -> updatedbを実行") only covered
+// running the command, this closes the loop into an actual next
+// action; (2) show an underlined "Updating database..." message at
+// the LOCATE prompt's own field position WHILE updatedb() is running
+// (this port stays single-threaded/synchronous throughout -- "機能
+// 自体は完了でいい" (the function itself doesn't need to change) --
+// so this doesn't need real async plumbing, just draw-then-block-
+// then-draw-again in this one call). Reuses drawPromptLabel()'s own
+// "LOCATE " label + gap math (promptLabelText(LocateQuery).size()+1,
+// no positionText) rather than duplicating it, matching the exact
+// column startLocatePrompt()'s own activatePrompt() would place the
+// editable field at -- confirmed against a real CUI screenshot (=ak)
+// showing the live prompt's own caret sitting at that same column.
+bool Application::runLocateUpdateDb() {
+  std::string label = promptLabelText(PromptKind::LocateQuery);
+  int row = std::max(0, display_.rows() - 1);
+  int col = label.empty() ? 0 : static_cast<int>(label.size()) + 1;
+  display_.moveCursor(row, 0);
+  display_.clearToEndOfLine();
+  display_.setAttribute(Display::Attribute::Standout);
+  for (unsigned char c : label) display_.putChar(c);
+  display_.setAttribute(Display::Attribute::StandoutOff);
+  display_.moveCursor(row, col);
+  static const std::string kUpdatingMessage = "Updating database...";
+  display_.setAttribute(Display::Attribute::Underline);
+  for (unsigned char c : kUpdatingMessage) display_.putChar(c);
+  display_.setAttribute(Display::Attribute::UnderlineOff);
+  display_.flush();
+
+  bool ok = locateMode_.updateDb();
+  startLocatePrompt();
+  return ok;
+}
 
 bool Application::feedPromptByte(int byte) {
   // ^Q (2026-08-11 fix): a real user recollection -- "文字列入力の際の

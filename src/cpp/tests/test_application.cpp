@@ -1831,13 +1831,19 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^G cancels the prompt without running anyth
 // runs `updatedb` (LocateUpdateDb) and never opens a prompt; ^J ^L
 // keeps the "open a prompt" role, now seeded with the previous query.
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l runs `updatedb` (LocateUpdateDb), not a prompt") {
+// 2026-08-13 update (CLAUDE.md history item 293): ^J l now chains
+// straight into K-40's own seeded LOCATE prompt once updatedb()
+// finishes, rather than silently returning to wherever it was
+// invoked from -- a direct user request ("完了次第^J^Lへ移行して
+// ほしい"). ok (updatedb's own success/failure) is orthogonal to
+// this -- the chain happens either way, matching "機能自体は完了で
+// いい" (don't gate the chain on the command actually working).
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l runs `updatedb` (LocateUpdateDb), then chains into the LOCATE prompt") {
   REQUIRE(app.start(path()));
-  ApplicationMode before = app.currentMode();
   app.feedByte(0x0a, std::nullopt);
   bool ok = app.feedByte('l', std::nullopt);
-  CHECK_FALSE(app.promptActive());
-  CHECK(app.currentMode() == before);
+  CHECK(app.promptActive());
+  CHECK(app.promptText().empty());  // no prior query yet -- same seeding rule as ^J^L itself
   if (!ok) MESSAGE("updatedb not installed/permitted -- ok is false, which is expected here");
 }
 
@@ -1877,6 +1883,25 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line shows 'LOCATE' and a byte count on
   std::size_t expectedBytes = 0;
   for (const auto &line : app.activeContentView().lines()) expectedBytes += line.text.size() + 1;
   CHECK(modeLine.find(std::to_string(expectedBytes)) != std::string::npos);
+}
+
+// 2026-08-13 (CLAUDE.md history item 293's mode-line fix): a real ^R
+// with nothing recorded yet used to show ContentView's own DEFAULT
+// empty-list placeholder ("--", CUT's own convention) here -- wrong
+// for a plain history ring. Now shares GrepMode's own "No String"
+// (underlined, non-reversed) convention instead, just without a
+// pattern prefix. Exercised via LOCATE here, but the fix is on
+// listBrowserView_ itself, shared by every ^R/^X^F/^X^D/^J^R history
+// screen.
+TEST_CASE_FIXTURE(Fixture, "LOCATE: real ^R with no history yet shows \"No String\", not CUT's own \"--\"") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R: real history recall
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.listBrowserMode().items().empty());
+  std::string row = display.rowText(0);
+  CHECK(row.substr(0, 9) == "No String");
+  CHECK(row.substr(0, 2) != "--");
 }
 
 TEST_CASE_FIXTURE(Fixture, "LOCATE: ^J ^L seeds the prompt with the previous query") {

@@ -393,7 +393,44 @@ void ContentView::renderLine(const Line &line, bool marked) {
   bool markedNow = marked && highlightStart <= 0;
   setStandout(markedNow);
   int col = 0;
+  // 2026-08-13 fix: a real report (LOCATE results, screenshots =am/=an)
+  // -- long absolute paths landing EXACTLY at the terminal's own width
+  // (80 columns) left the reverse-video highlight visually one row
+  // off (row N's highlight appearing to land on row N+1), and the
+  // FOLLOWING row's Enter became unresponsive. Root-caused via a PTY
+  // reproduction + temporary instrumentation: ContentView's own
+  // cursorIndex_/topIndex_/marked computation was confirmed correct at
+  // every step (logged and matched the mode-line's own position text
+  // exactly) -- the bug was downstream, in the raw terminal bytes.
+  // Writing a character to the terminal's LAST column triggers most
+  // terminals' own auto-wrap (the real cursor silently advances to the
+  // next row's start), which this class's own escape-sequence emission
+  // (setStandout(false)/etc. at the end of THIS function, see below)
+  // doesn't know happened -- those trailing "turn the attribute back
+  // off" codes end up applied at the START of the NEXT row instead of
+  // at the END of THIS one, since non-printing SGR codes don't
+  // themselves trigger a wrap and so land wherever the cursor already
+  // silently moved to. Confirmed by reproducing with both long
+  // (80-column, bug present) and short (<80-column, bug absent) real
+  // `locate` results in the same session. Capping at columns()-1
+  // (reserving the very last column, a standard terminal-programming
+  // convention for exactly this reason) avoids the wrap outright,
+  // matching legacy's own line-truncation precedent elsewhere (see
+  // CLAUDE.md history item 5's Step 5) -- this is the shared,
+  // centralized fix point every renderLine() caller benefits from at
+  // once, not a per-Mode workaround.
+  // Only applied when THIS call might toggle Standout on at all
+  // (`marked`, fixed for the whole call -- not `markedNow`, which can
+  // still flip mid-line via highlightStart): a plain marked=false line
+  // never calls setStandout(true), so its own trailing resets are
+  // already no-ops regardless of any auto-wrap, and truncating it too
+  // would be a pure regression with no corresponding fix -- confirmed
+  // by handleResize()'s own File-mode-reflow tests (cursorHighlightEnabled_
+  // false there, see FileMode's own class comment), which intentionally
+  // rely on full-width wrapped lines rendering their LAST column.
+  int maxCol = marked ? std::max(0, display_.columns() - 1) : display_.columns();
   for (unsigned char c : line.text) {
+    if (col >= maxCol) break;
     if (col == highlightStart) {
       markedNow = marked;
       setStandout(markedNow);
