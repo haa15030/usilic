@@ -3555,27 +3555,43 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   int trailingReserve = kTrailingPathTailChars + kTrailingPathEllipsis + kTrailingPathGap;
   int editableWidth = std::max(1, display_.columns() - labelWidth - trailingReserve);
 
-  // Return-destination content (2026-08-12 fix): the reservation above
-  // used to be width-only, deliberately deferring what actually gets
-  // drawn there -- a real report ("FGREPで戻り先が無い", and for EGREP,
-  // "モードラインでは戻り先の消える" the instant editing starts) found
-  // that left the space blank, reading as "no destination at all"
-  // rather than "reserved but not yet implemented". Mirrors
-  // grepView_/cutView_'s own RESULTS-screen trailing2/trailing (see
-  // their own ModeLineFieldsProvider comments): the directory a
-  // GrepPattern/CutPattern search will actually run against, when that
-  // destination is Directory mode (matching those two providers'
-  // identical `grepReturnMode_ == ApplicationMode::Directory` /
-  // `cutReturnMode_ == ApplicationMode::Directory` guards -- returning
-  // to File/Cut/CutContent has no single destination DIRECTORY to
-  // show, same as those two screens). Other PromptKinds (MAN/LOCATE/
-  // PROGRAM/Copy/Move/Remove/.../PathInput/ArchiveDestination) don't
-  // have an established "trailing2 = destination directory" precedent
-  // to mirror and aren't covered by this round's screenshots, so their
-  // reserved trailing space intentionally stays blank for now.
+  // Return-destination content (2026-08-12 fix, generalized 2026-08-13):
+  // the reservation above used to be width-only, deliberately
+  // deferring what actually gets drawn there -- a real report
+  // ("FGREPで戻り先が無い", and for EGREP, "モードラインでは戻り先の
+  // 消える" the instant editing starts) found that left the space
+  // blank, reading as "no destination at all" rather than "reserved
+  // but not yet implemented". Mirrors grepView_/cutView_'s own
+  // RESULTS-screen trailing2/trailing (see their own
+  // ModeLineFieldsProvider comments): the directory this prompt will
+  // actually return to, when that destination is Directory mode.
+  //
+  // Originally scoped to GrepPattern/CutPattern only ("other
+  // PromptKinds...aren't covered by this round's screenshots"), but a
+  // follow-up report (LOCATE's own prompt, =ap -- "モードラインに
+  // モード名しか無い") showed this reads as the SAME "reserved but
+  // blank" gap the 2026-08-12 fix itself was written to close, just
+  // for a different PromptKind -- exactly the kind of one-off-per-
+  // report pattern the user has repeatedly asked to see turned into a
+  // shared rule instead. Generalized here to every PromptKind that
+  // has its OWN dedicated "return mode" variable (grepReturnMode_/
+  // cutReturnMode_/manReturnMode_/locateReturnMode_ -- each already
+  // set unconditionally, or "if not already in that mode", by its own
+  // start*Prompt()) rather than special-casing two of them by name.
+  // ProgramCommand is deliberately excluded -- executeProgram() never
+  // changes ApplicationMode at all (see startProgramPrompt()'s own
+  // comment), so there's no "return mode" concept to show a
+  // destination for in the first place, not an oversight.
+  const ApplicationMode *returnMode = nullptr;
+  switch (kind) {
+    case PromptKind::GrepPattern: returnMode = &grepReturnMode_; break;
+    case PromptKind::CutPattern: returnMode = &cutReturnMode_; break;
+    case PromptKind::ManName: returnMode = &manReturnMode_; break;
+    case PromptKind::LocateQuery: returnMode = &locateReturnMode_; break;
+    default: break;
+  }
   std::string destinationDirectory;
-  if ((kind == PromptKind::GrepPattern && grepReturnMode_ == ApplicationMode::Directory) ||
-      (kind == PromptKind::CutPattern && cutReturnMode_ == ApplicationMode::Directory)) {
+  if (returnMode && *returnMode == ApplicationMode::Directory) {
     destinationDirectory = directoryMode_.currentDirectory();
   }
   if (!destinationDirectory.empty()) {

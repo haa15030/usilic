@@ -749,6 +749,33 @@ TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the reserved traili
   CHECK(display.standoutAt(23, static_cast<int>(row.size()) - 1));  // shown reversed, like every other field
 }
 
+// 2026-08-13 (CLAUDE.md history item 295): the 2026-08-12 fix above
+// was scoped to GrepPattern/CutPattern only -- a follow-up report
+// (LOCATE's own prompt, =ap: "モードラインにモード名しか無い") showed
+// this same "reserved but blank" gap for every OTHER PromptKind with
+// its own return-mode variable. Generalized via each PromptKind's own
+// dedicated *ReturnMode_ variable instead of naming two of them.
+TEST_CASE_FIXTURE(Fixture, "drawPromptLabel (2026-08-13 generalization): LOCATE/MAN prompts returning to "
+                           "Directory mode also show the destination directory, not just GREP/CUT") {
+  REQUIRE(app.start(path()));
+  std::string dir = app.directoryMode().currentDirectory();
+  std::string expectedTail = dir;
+  if (expectedTail.size() > 16) expectedTail = "..." + expectedTail.substr(expectedTail.size() - 16);
+
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  {
+    const std::string &row = display.rowText(23);
+    CHECK(row.substr(row.size() - expectedTail.size()) == expectedTail);
+  }
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G cancels the prompt (feedPromptByte's own path, not Command::Back)
+
+  REQUIRE(app.handleCommand(Command::StartMan));
+  {
+    const std::string &row = display.rowText(23);
+    CHECK(row.substr(row.size() - expectedTail.size()) == expectedTail);
+  }
+}
+
 // 2026-08-13 (CLAUDE.md history item 294): a follow-up report --
 // "モードライン共有ルーチンはできない？" -- found runLocateUpdateDb()'s
 // own FIRST version hand-rolled its own copy of drawPromptLabel()'s

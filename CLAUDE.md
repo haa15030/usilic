@@ -15794,6 +15794,36 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      確認した(項目293の時点ではこの検証ができておらず、今回
      初めて実際に確認できた)。
 
+295. **2026-08-13(続き): LOCATE(`^J^L`)プロンプトのモードラインに
+    モード名しか無い(=ap)との指摘を受け、`drawPromptLabel()`の
+    「戻り先ディレクトリ表示」がGREP/CUTの2種類にしか配線されて
+    いなかったギャップを発見・一般化して修正**。
+   - 項目291(モードライン共有化)は`ModeLineFields`/
+    `renderModeLine()`経由で描画される「結果一覧・コンテンツ表示
+    画面」(12個の`ContentView`)を対象にしたもので、`drawPromptLabel()`
+    (プロンプト=文字入力待ち画面専用の別の描画経路)は対象外だった。
+    ユーザーへその旨を説明した上で、`drawPromptLabel()`側の
+    「戻り先ディレクトリ表示」(項目283/284でFGREP/EGREP/CUT向けに
+    実装済み)を実際に確認したところ、`kind == PromptKind::
+    GrepPattern`・`CutPattern`の2種類にしか配線されておらず、
+    それ以外(MAN/LOCATE/PROGRAM/...)は「幅は予約されているが
+    何も描画しない」空白のままだったと判明。=apのLOCATEプロンプトが
+    まさにこの未配線ケースだった。
+   - 修正: `kind`から対応する`*ReturnMode_`変数
+     (`grepReturnMode_`/`cutReturnMode_`/`manReturnMode_`/
+     `locateReturnMode_`)への対応をswitchで解決し、その値が
+     `ApplicationMode::Directory`であれば戻り先ディレクトリを
+     描画するよう一般化。特定の2種類だけを名指しする条件式を
+     廃止した。`PromptKind::ProgramCommand`は意図的に対象外
+     (`executeProgram()`は`ApplicationMode`を一切変更しないため、
+     そもそも「戻り先」という概念自体が存在しない、と`startProgramPrompt()`
+     自身のコメントで既に確認済み)。
+   - **検証**: `make test` 701/701件全通過(LOCATE/MANのプロンプトも
+     戻り先ディレクトリを表示することを確認する新規テストを追加)、
+     `make usilic`クリーンビルド確認済み。macOS実機上のPTY検証で、
+     `^J^L`(LOCATE)・`^Jm`(MAN)いずれのプロンプトも右詰めで戻り先
+     ディレクトリが表示されることを直接確認した。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

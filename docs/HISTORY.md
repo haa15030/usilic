@@ -3348,3 +3348,18 @@ LOCATEのupdatedb→^J^L自動連鎖は実装しました。updateDb()実行前�
 drawPromptLabel()自体に第3引数staticMessageを追加し、非空の場合はラベル描画後にプロンプト用のフィールド確保・戻り先ディレクトリ描画などを一切スキップして、staticMessageをアンダーライン付きでラベル直後に描画するだけにしました。runLocateUpdateDb()は独自の描画コードを全廃し、drawPromptLabel(PromptKind::LocateQuery, "", "Updating database...")を呼ぶだけに簡略化しています。
 
 `make test` 700/700件全通過、`make usilic`もクリーンビルド成功。今回は「Updating database...」の実際の描画(前回はupdatedbバイナリが実機に無く一瞬すぎて確認できなかった箇所)についても、2秒sleepしてから成功するダミーのupdatedbをPATHに仕込んでPTY実機検証し、実行中は「LOCATE」が反転・「Updating database...」がアンダーライン(非反転)で正しく表示され、完了後は空のLOCATEプロンプトへ正しく連鎖することを生の端末セル属性レベルで直接確認しました。CLAUDE.mdに項目294として記録、コミット・プッシュ済みです。
+
+<変化無し=ap
+
+<linuxだとupdatedbだがmacOSでは/usr/libexec/locate.updatedbらしい。だが本題はそれじゃなくてモードラインにモード名しか無い点=ap。
+HISTORY.md:3310には「モードライン共有化と^Gの暫定指針、両方対応しました」とあるけどどんな対応したの？ HISTORY.md:3301を読み返してみて。
+
+>ご指摘の通りでした。項目291(モードライン共有化)は、ModeLineFields/renderModeLine()経由で描画される「結果一覧・コンテンツ表示画面」(12個のContentView)を対象にしたもので、drawPromptLabel()(プロンプト=文字入力待ち画面専用の別の描画経路)は対象外でした。=apのLOCATEプロンプトはこのdrawPromptLabel()側の画面です。
+
+改めてdrawPromptLabel()の「戻り先ディレクトリ表示」を確認したところ、項目283/284でFGREP/EGREP/CUT向けに実装したものが、実際にはkind==PromptKind::GrepPattern・CutPatternの2種類にしか配線されておらず、それ以外(MAN/LOCATE/PROGRAM/...)は「幅は予約されているが何も描画しない」空白のままでした。=apはまさにこの未配線ケースで、「モード名しか無い」というご指摘は正確でした。
+
+kindから対応する*ReturnMode_変数(grepReturnMode_/cutReturnMode_/manReturnMode_/locateReturnMode_)への対応をswitchで解決し、その値がApplicationMode::Directoryであれば戻り先ディレクトリを描画するよう一般化しました。特定の2種類だけを名指しする条件式を廃止しています。PROGRAMは意図的に対象外です(executeProgram()はApplicationModeを一切変更しないため「戻り先」という概念自体が存在しません)。
+
+`make test` 701/701件全通過(LOCATE/MANのプロンプトも戻り先ディレクトリを表示することを確認する新規テストを追加)、`make usilic`もクリーンビルド成功。macOS実機上のPTY検証で、^J^L(LOCATE)・^Jm(MAN)いずれのプロンプトも右詰めで戻り先ディレクトリが表示されることを直接確認しました。CLAUDE.mdに項目295として記録、コミット・プッシュ済みです。
+
+なおupdatedbのmacOSでの実パス(/usr/libexec/locate.updatedb、要sudo)については、項目289・293で意図的にスコープ外としたままです。対応が必要でしたら改めてお知らせください。
