@@ -51,7 +51,11 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     // separate, earlier misreading already established and reverted
     // that "ファイルサイズは「1108009」のままでいい").
     std::string trailing = ec ? directory : std::to_string(size);
-    std::string trailing2 = ec ? "" : directory;
+    // searchAnnotation_ (see its own setSearchAnnotation() comment)
+    // takes over trailing2 in place of the plain directory whenever
+    // it's set -- same substitution DirectoryMode's own provider makes
+    // for searchAnnotation_ vs. its "usilic v1.5b" rightWatermark.
+    std::string trailing2 = ec ? "" : (searchAnnotation_.empty() ? directory : searchAnnotation_);
     // File mode's trailing field is legacy's padded-to-edge style, see
     // ModeLineFields::fillTrailingToEdge's own comment. No
     // rightWatermark here -- see its own comment on why File mode
@@ -89,6 +93,7 @@ bool FileMode::loadFile(const std::string &path) {
 
   view_.setLines(readAndWrap(path));
   currentFile_ = path;
+  searchAnnotation_.clear();  // a fresh load invalidates the old search -- see setSearchAnnotation()'s own comment
   // K-46 (^X^F, "FILE: Select file name")'s own data source -- see
   // DirectoryMode::enterDirectory()'s identical pushRecent() call for
   // K-48's own RecentDirectory counterpart.
@@ -130,6 +135,8 @@ bool FileMode::reflow(int newWidth) {
 }
 
 const std::string &FileMode::currentFile() const { return currentFile_; }
+
+void FileMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
 
 void FileMode::setEncoding(Charset::Encoding encoding) { encoding_ = encoding; }
 

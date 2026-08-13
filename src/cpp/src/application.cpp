@@ -616,10 +616,20 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     return {"MAN", std::to_string(contentByteCount(manView_)), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
             /*trailing2=*/""};
   });
+  // 2026-08-14 fix: name changed from the bare literal "LOCATE" to
+  // "LOCATE: <query>" -- a real report ("^J^L→'.txt'[return]→戻り値
+  // 「LOCATE: .txt」が無い") pointed out that, unlike GREP's own results
+  // screen (whose "戻り値" convention shows the search string once you
+  // LAND somewhere via a match, see DirectoryMode::setSearchAnnotation()
+  // callers), LOCATE's OWN results screen had nowhere at all showing
+  // what was actually searched -- easy to lose track of among many
+  // near-identical result rows. query() is never empty here (the guard
+  // above already returns {} otherwise), so this is always safe to
+  // append.
   locateView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (locateMode_.query().empty()) return {};
-    return {"LOCATE", std::to_string(contentByteCount(locateView_)), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
-            /*trailing2=*/""};
+    return {"LOCATE: " + locateMode_.query(), std::to_string(contentByteCount(locateView_)),
+            /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", /*trailing2=*/""};
   });
   duView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (duMode_.currentPath().empty()) return {};
@@ -941,6 +951,23 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::GoToBottom);
       case kCarriageReturn:  // ESC ^M : "Read as is" (K-24, M_code)
         return handleCommand(Command::Enter);
+      // ESC v : page back one page (2026-08-14, per direct user
+      // instruction: "旧版のKEYには収録し忘れだが「1ページ戻る」は
+      // ^[wではなくて、emacs同様^[vで反映してほしい"). A previous round
+      // had found tcb/src/key.c's OWN real binding for this is bare
+      // ESC-w (M_kback), not ESC-v -- reported back to the user as a
+      // discrepancy rather than assumed -- and this is the user's
+      // explicit, informed decision to deliberately deviate from that
+      // legacy binding (an acknowledged omission in legacy's own KEY
+      // list) in favor of Emacs' own M-v convention instead. Reuses the
+      // same Command::PageUp already bound to plain 'b'/^B (see
+      // resolveCommand()'s own space/'b' switch a few lines below) --
+      // legacy's M_kback and M_back both ultimately reach the same
+      // m_page() page-back behavior, so there's no separate distinct
+      // command to invent here, just another key reaching the existing
+      // one.
+      case 'v':
+        return handleCommand(Command::PageUp);
       default:
         return false;  // unrecognized ESC-sequence in this slice
     }
@@ -1808,10 +1835,43 @@ bool Application::openSelectedLocateResult() {
   if (std::filesystem::is_directory(*path, ec) && !ec) {
     if (!directoryMode_.enterDirectory(*path)) return false;
     currentMode_ = ApplicationMode::Directory;
+    // 2026-08-14 fix: a real report ("モードラインにバイト数...および
+    // 戻り値「LOCATE: .../HKSCS.txt」が無い（旧版と違うので注意）") --
+    // landing here via a LOCATE match previously left no trace of the
+    // search that led here, unlike GREP's own identical convention
+    // (setSearchAnnotation() calls right above/below this function).
+    // Query (not the matched path) here, mirroring EGREP/CUT's own
+    // "MODE: pattern" convention exactly -- the destination directory
+    // itself is already the whole of DirectoryMode's own name field,
+    // so there's nothing further to add beyond which search found it.
+    directoryMode_.setSearchAnnotation("LOCATE: " + locateMode_.query());
+    // enterDirectory() already redrew ONCE internally, before the
+    // annotation above was set -- unlike openSelectedGrepMatch() (which
+    // never calls enterDirectory() at all, since a GREP match is always
+    // inside the ALREADY-listed current directory), LOCATE can jump to
+    // an arbitrary not-yet-listed directory and has to call it. Without
+    // this second redraw, the screen keeps showing that first, stale,
+    // annotation-less mode line until the next unrelated redraw
+    // happens to occur -- caught by a live PTY run (a real `locate`
+    // search + Enter), not by the unit tests above, which call
+    // modeLineText() directly (recomputes fresh on demand) rather than
+    // checking what actually reached the RecordingDisplay's own screen
+    // buffer.
+    directoryView_.redraw();
     return true;
   }
   if (!fileMode_.loadFile(*path)) return false;
   currentMode_ = ApplicationMode::File;
+  // Path (not the bare query) here, unlike the Directory branch just
+  // above: FileMode's mode line has no other field showing where this
+  // file actually lives (its name field is the bare filename, see
+  // FileMode's own constructor comment), so the located path itself is
+  // the informative thing to show in its place -- confirmed against
+  // the exact string the user's own report expected ("LOCATE:
+  // ...s/Adobe/HKSCS.txt", a truncated PATH ending in the file's own
+  // name, not the 4-character query ".txt" that led to it).
+  fileMode_.setSearchAnnotation("LOCATE: " + *path);
+  fileView_.redraw();  // see the Directory branch's identical comment just above
   return true;
 }
 
@@ -3016,16 +3076,43 @@ bool Application::startLocatePrompt() {
 // updatedb. If ^C (0x03) arrives during that window, cancel the run
 // entirely and merge straight into ^J^L's own seeded-prompt flow
 // instead -- as if updatedb had never been invoked in the first
-// place. keyInput_.readByte() already checks a queued playRawMacro()
-// sequence before the real tty (see its own class comment) and
-// blocks up to its own VTIME timeout when reading from a real tty, so
-// this loop just keeps calling it and checking the deadline -- no
-// separate real-time sleep()/poll() of its own needed, and a test
-// queuing ^C via playRawMacro() sees it on the very first readByte()
-// call regardless of locateUpdateDbWaitMs_.
+// place.
+//
+// 2026-08-14 follow-up (real report: "^Jl→^C→暴走→別のターミナルから
+// killall usilicで対処"): the first version of this loop called
+// keyInput_.readByte() directly, relying on its own internal VTIME
+// timeout to bound each call and re-check the deadline -- it never
+// actually hung in THIS session's own PTY testing, but that testing
+// itself carries the same caveat CLAUDE.md history already records
+// for other real-terminal-only issues (a real macOS Terminal.app's
+// raw-tty read() blocking behavior isn't guaranteed to match a pyte-
+// simulated pty exactly). Every OTHER place in this codebase that
+// waits on keyboard input with a bound goes through poll() FIRST and
+// only calls readByte() once poll() has confirmed a byte is actually
+// there (app/main.cpp's own run loop, this exact pattern) -- this is
+// the one place that skipped that and called readByte() unconditionally,
+// so it's the most likely real difference. Rewritten to match:
+// poll()s STDIN_FILENO (not keyInput_.fd() -- see KeyInput::fd()'s own
+// doc comment on why polling that exact fd unconditionally reports
+// POLLNVAL on Darwin) with an explicit, shrinking timeout computed
+// from the deadline, so this call can never block longer than that
+// timeout regardless of what readByte()'s own termios state happens
+// to be. isPlayingRawMacro() is checked first and bypasses poll()
+// entirely when true -- a test's queued ^C isn't reflected on the
+// real stdin fd at all, so polling it would just wait out the whole
+// window and never see the queued byte.
 bool Application::runLocateUpdateDb() {
   auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(locateUpdateDbWaitMs_);
-  while (std::chrono::steady_clock::now() < deadline) {
+  for (;;) {
+    auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+    if (remaining.count() <= 0) break;
+    if (!keyInput_.isPlayingRawMacro()) {
+      struct pollfd pfd {
+        STDIN_FILENO, POLLIN, 0
+      };
+      int rv = ::poll(&pfd, 1, static_cast<int>(remaining.count()));
+      if (rv <= 0 || !(pfd.revents & POLLIN)) break;  // timed out, or a real poll() error -- stop waiting either way
+    }
     if (keyInput_.readByte() == 0x03) return startLocatePrompt();
   }
 

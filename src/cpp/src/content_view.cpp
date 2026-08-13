@@ -497,11 +497,37 @@ void ContentView::renderLine(const Line &line, bool marked) {
   // highlightStartColumn, GrepMode's match highlighting, etc. keep
   // their existing simple right-truncation (the loop's own `col >=
   // maxCol` break below) unchanged.
+  // 2026-08-14 fix: the ellipsis budget below is columns()-1 whenever
+  // Standout can toggle on THIS view at all (cursorHighlightEnabled_),
+  // rather than reusing maxCol's own marked-dependent value directly --
+  // a real report ("ハイライト時は「...bat Uninstaller.app/...」だった
+  // のが「...obat Uninstaller.app/...」", reproduced by pressing ^N to
+  // move off the row, then confirmed to flip back by re-hovering it
+  // with the mouse) traced to exactly this: maxCol is marked-dependent
+  // (columns()-1 vs. columns(), see its own comment just above) for a
+  // reason that has nothing to do with ellipsis truncation (avoiding an
+  // unrelated auto-wrap bug that only matters when Standout gets
+  // toggled). Since ellipsis truncation runs on marked=false plain
+  // lines just as often as marked=true ones (LOCATE/DU results scroll
+  // past the cursor constantly), reusing maxCol made the SAME row's own
+  // rendered text visibly shift by one character depending purely on
+  // whether it happened to be the highlighted row at that instant -- a
+  // genuine, user-visible flicker, not two independently-valid
+  // renderings. Gated on cursorHighlightEnabled_ (not unconditional):
+  // when it's false, `marked` is always false for every row regardless
+  // of cursor position (see this function's own opening line), so
+  // there's no flicker to fix and maxCol already equals the full
+  // columns() -- exactly the full-width rendering
+  // "redraw: an UNMARKED line exactly as wide as the terminal still
+  // renders its own last column" (and handleResize()'s own File-mode-
+  // reflow tests) deliberately rely on; forcing columns()-1 here
+  // unconditionally regressed that.
+  int ellipsisBudget = cursorHighlightEnabled_ ? std::max(0, display_.columns() - 1) : maxCol;
   std::string ellipsisText;
   const std::string *renderedText = &line.text;
   if (!line.highlightStartColumn.has_value() && line.attributes.empty() &&
-      static_cast<int>(line.text.size()) > maxCol) {
-    ellipsisText = middleEllipsisTruncate(line.text, maxCol);
+      static_cast<int>(line.text.size()) > ellipsisBudget) {
+    ellipsisText = middleEllipsisTruncate(line.text, ellipsisBudget);
     renderedText = &ellipsisText;
   }
   for (unsigned char c : *renderedText) {
@@ -690,6 +716,20 @@ ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &field
   // context -- a directory path) visible whenever there's room for it
   // on its own.
   if (rowLen(true, false, true) <= cols) return {true, false, true};
+  // 2026-08-14 fix: the tier above assumes dropping `trailing` alone
+  // is always enough once `trailing2` fits on its own -- true for
+  // GREP's own case (a long preview vs. a short destination
+  // directory), but FALSE whenever trailing2 itself is the long field
+  // (e.g. FileMode's directory, or its new LOCATE-path annotation --
+  // see FileMode::setSearchAnnotation()) and trailing is short (e.g.
+  // FileMode's byte count). A real report ("モードラインにバイト数
+  // 「397723」...が無い") found exactly this: a long directory alone
+  // still didn't fit, so BOTH tiers above failed and the fallback below
+  // dropped trailing (the byte count) too, even though trailing ALONE
+  // would easily have fit without trailing2 in the way. Tried before
+  // giving up entirely, so a short, useful trailing is shown whenever
+  // it's the long trailing2 that's actually the problem.
+  if (rowLen(true, true, false) <= cols) return {true, true, false};
   if (rowLen(true, false, false) <= cols) return {true, false, false};
   return {false, false, false};
 }

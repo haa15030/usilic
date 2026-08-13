@@ -15946,6 +15946,144 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      約2秒待ってから「Updating database...」が表示されること、を
      それぞれ直接確認した。
 
+298. **2026-08-14(続き): 項目297①の`^Jl`実装が実機で本物の「暴走」
+    (`killall usilic`が必要)を引き起こしていた件を修正、②③の
+    LOCATE周りモードライン欠落2件を修正、④`ESC-v`を新規に
+    「1ページ戻る」へ割当**。
+   - **①`^Jl`実機ハングの修正**: 項目297の実装
+     (`keyInput_.readByte()`を直接ループで呼び続け`std::chrono`の
+     期限とだけ比較する方式)は、このセッション自身のPTY検証
+     (`pty.fork()`)では`^C`キャンセル・2秒フル待機いずれも問題なく
+     動作していたが、実機では`^Jl`→`^C`で本当にハングし、別
+     ターミナルからの`killall usilic`でしか復帰できないとの報告
+     があった。`key_input.cpp`のtermios設定(`VMIN=0`/`VTIME=1`、
+     `ISIG`無効化済みで`^C`は生バイト0x03として届くはず)を読む
+     限り「`readByte()`が無期限にブロックする」という単純な説明は
+     コード上裏付けられず、真の機構は完全には特定できなかった。
+     ただし`runLocateUpdateDb()`が、`app/main.cpp`自身の本番ループ
+     (`^Og`/`handleMouseClick()`用に、macOS実機で`KeyInput::fd()`を
+     直接pollすると`POLLNVAL`を返す既知の問題を回避するため、必ず
+     `STDIN_FILENO`を先に`poll()`してから`readByte()`を呼ぶ、
+     `key_input.hpp`の`fd()`コメント自身にも明記された確立済みの
+     作法)を経由せず`readByte()`を直接呼んでいた、コードベース内で
+     唯一の箇所だったと判明。確証は無いが最も安全な修正として、
+     `main.cpp`と全く同じ`poll(STDIN_FILENO, POLLIN, remainingMs)`を
+     `readByte()`の前に必ず挟む方式へ書き換えた(`remainingMs`は
+     期限までの残り時間を毎回再計算、`poll()`自体が必ずタイムアウト
+     付きなので原理的に指定時間を超えてブロックし得ない)。既存の
+     `playRawMacro()`テストキュー(実`STDIN_FILENO`には反映されない)
+     との両立のため、`keyInput_.isPlayingRawMacro()`が真のときは
+     `poll()`自体をスキップする分岐を追加。`<poll.h>`/`<chrono>`を
+     新規include。
+   - **②LOCATE結果一覧に検索クエリの「戻り値」が無かった件**:
+     GREPの結果一覧が`DirectoryMode::setSearchAnnotation()`経由で
+     検索文字列を表示するのと異なり、LOCATE自身の結果一覧
+     (`locateView_`)は項目293で新設したばかりの
+     `ModeLineFieldsProvider`が`name`を常に文字列リテラル`"LOCATE"`
+     固定にしており、何を検索したのかが画面のどこにも残っていな
+     かった。`name`を`"LOCATE: " + locateMode_.query()`に変更。
+   - **②(付随)ハイライト行と非ハイライト行で中央省略の切れ目が
+     1桁ずれる件**: 項目297④で追加した中央省略の予算に、
+     `renderLine()`が別目的(Standoutトグルに伴う端末の自動折返し
+     バグ回避、項目293)で使っている`maxCol`(`marked`のときだけ
+     `columns()-1`、非`marked`なら`columns()`)をそのまま再利用して
+     いたため、同一行でもカーソルが乗っている(marked)瞬間と
+     乗っていない瞬間とで表示される文字数が1文字だけ変わり、
+     `^N`でカーソルが行を通過するたびに表示がちらつく実害があった
+     (マウスでの再ホバーでも同じちらつきが再現するとの報告と
+     一致)。`cursorHighlightEnabled_`が真の(=`marked`が行ごとに
+     実際に変化しうる)ビューに限り、中央省略の予算を常に
+     `columns()-1`固定に統一。`cursorHighlightEnabled_`が偽の
+     Fileモード等(`marked`は常に偽で、ちらつきの原理的な余地が
+     無い)は従来通り`maxCol`(=`columns()`)のまま据え置き、既存の
+     「非markedの全幅行はそのまま最終列まで描画する」テストとの
+     衝突を回避した(最初`columns()-1`へ無条件統一する版を書いて
+     このテストを2件壊し、原因を特定した上でこの限定版に修正した)。
+   - **③LOCATE経由で開いたFileモードのバイト数・戻り値欠落**:
+     実機スクリーンショットで、`locate`結果を`[return]`で開いた
+     ファイルのモードラインに、期待されるバイト数(`397723`)も
+     「戻り値」(`LOCATE: .../HKSCS.txt`)も表示されないとの報告
+     (「旧版と違うので注意」)。原因は2つ重なっていた:
+     (a) `ContentView::fitModeLineFields()`の幅超過時フォールバック
+     順序が「`trailing`(FileModeではバイト数、通常は短い)を先に
+     落とし、`trailing2`(通常はディレクトリ、`locate`経由だと更に
+     長い検索パス)を優先して残す」という固定順序で、GREPの
+     プレビュー文字列(長い)vs戻り先ディレクトリ(短い)という
+     項目293の想定ケースには合っていたが、FileModeでは逆に
+     `trailing2`側が長すぎて結局2つとも落ち、短くて有用な
+     バイト数まで道連れで消えていた。「`trailing`だけ残す」
+     フォールバック段(`trailing2`を落として`trailing`を残す)を、
+     既存の「`trailing`を落として`trailing2`を残す」段より後の
+     追加のフォールバックとして新設。(b)
+     `FileMode`自身には(`DirectoryMode::setSearchAnnotation()`と
+     異なり)検索由来の注記を保持する仕組みが元々無かった。
+     `FileMode::setSearchAnnotation()`を新設し、`trailing2`を
+     「未設定ならディレクトリ、設定済みなら注記文字列」に変更
+     (`loadFile()`の先頭で毎回クリア、`DirectoryMode`の「新しい
+     `ls`は古い注記を無効化する」という既存の作法と同じ)。
+     `openSelectedLocateResult()`のFile分岐で
+     `fileMode_.setSearchAnnotation("LOCATE: " + *path)`
+     (クエリではなく実際に見つかった完全パス。Directory分岐の
+     `directoryMode_.setSearchAnnotation("LOCATE: " + query)`
+     とは非対称だが、Fileモードの`name`欄は素のファイル名のみで
+     他にどこにも所在が表示されないため、実際に見つかったパス
+     そのものを見せる方が実用的と判断。ユーザー報告の期待文字列
+     `LOCATE: ...s/Adobe/HKSCS.txt`がクエリ`.txt`ではなく
+     ファイル自身の完全パスの末尾切り詰めであることからも
+     裏付けられる)。
+   - **③(実装中に発覚した副次バグ)`setSearchAnnotation()`が
+     画面に反映されない**: 上記の実装をPTY実機検証で確認した
+     ところ、`modeLineText()`(オンデマンドで都度再計算する
+     メソッド)は正しい注記付き文字列を返すのに、実際に
+     `RecordingDisplay`/実端末へ描画された内容は注記の無い古い
+     ものだった(ユニットテストは前者だけを見ていたため見逃して
+     いた)。原因は`enterDirectory()`/`loadFile()`がどちらも
+     自分自身の内部で`view_.redraw()`を呼んでおり、それが
+     `openSelectedLocateResult()`が`setSearchAnnotation()`を
+     呼ぶ**より前**に実行されてしまうため。GREPの同名処理
+     (`openSelectedGrepMatch()`)がこの問題を踏まないのは、GREPの
+     マッチが常に「既に一覧済みの現在のディレクトリ」内なので
+     `enterDirectory()`自体を呼ばず、注記設定後に自前で1回だけ
+     `redraw()`しているため。LOCATEは任意の未一覧ディレクトリへ
+     跳べる都合上`enterDirectory()`/`loadFile()`を呼ばざるを
+     得ないので、`setSearchAnnotation()`の直後に
+     `directoryView_.redraw()`/`fileView_.redraw()`を明示的に
+     追加(内部の1回目の`redraw()`は無駄になるが実害は無い)。
+   - **④`ESC-v`を新規に「1ページ戻る」へ割当**: 項目297②で保留
+     していた件について、ユーザーから「旧版のKEYには収録し忘れ
+     だが、emacs同様`^[v`で反映してほしい(`^[w`ではない)」との
+     明確な指示があった。legacy自身の実際の割当(`v`単体が前進、
+     `ESC w`が後退)とは異なる、意図的な新規割当という位置づけ。
+     `dispatchLeaderByte()`の`escPending_`switchに`case 'v':`を
+     追加し、`'b'`/`^B`と全く同じ`Command::PageUp`を呼ぶだけに
+     した(legacyの`M_kback`/`M_back`はどちらも同じ`m_page()`の
+     ページ戻り処理に行き着くため、別コマンドを新設する理由が
+     無い)。
+   - **検証**: `make test` 708/708件全通過(①`poll()`化後も
+     既存の`^C`キャンセル/2秒フル待機テストは無修正で通過、
+     ②LOCATE名欄の新規テスト、②中央省略の一貫性を確認する新規
+     `ContentView`テスト、③`fitModeLineFields()`のバイト数
+     非欠落と検索注記を確定的な偽`locate`スクリプトで検証する
+     新規テスト、④`ESC-v`が`Command::PageUp`と同一の結果になる
+     ことを確認する新規テスト)。`make usilic`もクリーンビルド
+     成功。macOS実機相当のPTY検証で: ①`^Jl`直後の`^C`が0.3秒
+     程度で即座にキャンセルされプロセスが応答可能なまま残る
+     こと、`^C`無しの約3.5秒のフル待機後もハングせず応答可能な
+     ままであることを確認。②実際の`locate`検索で結果一覧の
+     モードラインに`LOCATE: <クエリ>`が表示されること、`ESC-v`が
+     `ESC->`でカーソルを末尾へ動かした後に実際に手前へ戻す
+     ことを確認。③実際のファイル(`/System/.../pam.d/sudo`)を
+     `locate`結果から`[return]`で開いた際、モードラインに
+     バイト数(`283`)と`LOCATE: <完全パス>`の両方が表示される
+     こと、ディレクトリ結果を開いた際も`(ls)`と`LOCATE: <クエリ>`
+     が両方表示されることを、それぞれ実際の画面セル内容レベルで
+     直接確認した。マウスの左クリックでLOCATE結果を選択できない
+     という付随報告については、`handleMouseClick()`が現状
+     意図的に`ApplicationMode::Directory`限定
+     (`test_application.cpp`の"Directory-only in this slice"という
+     既存コメント通り)であることを確認しただけで、今回は対応
+     していない(①②③④として明示された依頼の対象外だったため)。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

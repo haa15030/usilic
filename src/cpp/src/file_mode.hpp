@@ -102,6 +102,20 @@ class FileMode {
   // based anchor). False (a no-op) if no file is currently loaded.
   bool reflow(int newWidth);
 
+  // Overrides the mode-line's trailing2 field (normally the file's
+  // containing directory, see the constructor's own comment) with
+  // arbitrary text -- mirrors DirectoryMode::setSearchAnnotation()
+  // exactly (see its own comment for the full rationale), added for
+  // Application::openSelectedLocateResult()'s File branch: a file
+  // reached via LOCATE isn't necessarily anywhere near the directory
+  // you were just browsing, so the plain containing-directory display
+  // is less useful there than showing which LOCATE search actually
+  // found it (a real user report: "旧版と違うので注意" -- legacy's own
+  // "戻り値" field for this case). Cleared automatically at the top of
+  // every loadFile() call (see its own comment), same as
+  // DirectoryMode clears searchAnnotation_ on every fresh `ls`.
+  void setSearchAnnotation(const std::string &text);
+
  private:
   std::vector<ContentView::Line> readAndWrap(const std::string &path) const;
 
@@ -110,6 +124,7 @@ class FileMode {
   Charset::Encoding encoding_;
   int width_;
   std::string currentFile_;
+  std::string searchAnnotation_;
 };
 
 }  // namespace fm

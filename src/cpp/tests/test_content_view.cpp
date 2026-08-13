@@ -981,3 +981,36 @@ TEST_CASE("redraw: an UNMARKED line exactly as wide as the terminal still render
   v.redraw();
   CHECK(d.rowText(0) == std::string(20, 'x'));  // full width, including the last column
 }
+
+// 2026-08-14 fix: a real report ("^N→１つ上の行が、ハイライト時は
+// 「...bat Uninstaller.app/...」だったのが「...obat Uninstaller.app/
+// ...」", confirmed to flip back on a mouse re-hover) -- the SAME
+// row's own ellipsis truncation point used to shift by one character
+// depending purely on whether it was currently the highlighted/marked
+// row, since the ellipsis budget reused maxCol (marked ? columns()-1 :
+// columns(), a distinction that exists for an unrelated auto-wrap
+// reason -- see maxCol's own comment). Two otherwise-identical rows,
+// one marked (cursor on it) and one not, must now render byte-for-byte
+// the same truncated text in a view where marked genuinely varies
+// (cursorHighlightEnabled_ true, LOCATE/DU's own convention).
+TEST_CASE("redraw: ellipsis truncation is identical whether or not the row is currently marked") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  std::string longText = "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/x.txt";
+  std::vector<ContentView::Line> lines;
+  lines.push_back({longText, std::nullopt, std::nullopt, {}});
+  lines.push_back({longText, std::nullopt, std::nullopt, {}});
+  v.setLines(lines);
+
+  v.setCursorIndex(0);  // row 0 marked, row 1 not
+  v.redraw();
+  std::string markedRendering = d.rowText(0);
+  std::string unmarkedRendering = d.rowText(1);
+
+  v.setCursorIndex(1);  // row 1 marked, row 0 not -- the same two rows, roles swapped
+  v.redraw();
+  CHECK(d.rowText(1) == markedRendering);
+  CHECK(d.rowText(0) == unmarkedRendering);
+  CHECK(markedRendering == unmarkedRendering);  // the actual bug: these used to differ by one character
+}

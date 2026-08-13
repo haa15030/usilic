@@ -1959,6 +1959,25 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line shows 'LOCATE' and a byte count on
   CHECK(modeLine.find(std::to_string(expectedBytes)) != std::string::npos);
 }
 
+// 2026-08-14 fix: a real report ("^J^L→'.txt'[return]→戻り値「LOCATE:
+// .txt」が無い") -- the results screen's own name used to be the bare
+// literal "LOCATE", with nowhere at all showing what was actually
+// searched (unlike GREP's own results screen convention, see
+// DirectoryMode::setSearchAnnotation()'s callers). See
+// locateView_'s setModeLineFieldsProvider() in the Application
+// constructor for the fix itself.
+TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line's name field is \"LOCATE: <query>\", not the bare literal \"LOCATE\"") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText(".txt");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not installed or no database available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  CHECK(app.activeContentView().modeLineText().find("LOCATE: .txt") != std::string::npos);
+}
+
 // 2026-08-13 (CLAUDE.md history item 293's mode-line fix): a real ^R
 // with nothing recorded yet used to show ContentView's own DEFAULT
 // empty-list placeholder ("--", CUT's own convention) here -- wrong
@@ -2059,10 +2078,63 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a result opens it (Directory or Fil
   std::error_code ec;
   if (std::filesystem::is_directory(selected, ec) && !ec) {
     CHECK(app.currentMode() == ApplicationMode::Directory);
+    // 2026-08-14 fix: see openSelectedLocateResult()'s own comment --
+    // landing here via a LOCATE match now leaves a trace of the search
+    // that led here, mirroring EGREP/CUT's own setSearchAnnotation()
+    // convention exactly.
+    CHECK(app.activeContentView().modeLineText().find("LOCATE: /") != std::string::npos);
   } else {
     CHECK(app.currentMode() == ApplicationMode::File);
     CHECK(app.fileMode().currentFile() == selected);
+    // Path (not the bare query), per openSelectedLocateResult()'s own
+    // comment -- a real report ("...戻り値「LOCATE: ...s/Adobe/
+    // HKSCS.txt」が無い（旧版と違うので注意）") expected the located
+    // path itself, not the short query, since FileMode's name field is
+    // already just the bare filename with nothing else showing where
+    // it actually lives. Only checked when it plausibly fits the row
+    // (real `locate` results can be arbitrarily long, and a too-wide
+    // annotation is legitimately dropped by fitModeLineFields()'s own
+    // width-fit logic rather than shown truncated) -- the fixed-string
+    // "LOCATE: <path exactly>" test below covers the mechanism itself
+    // without depending on a real filesystem's path lengths.
+    if (selected.size() < 50) {
+      CHECK(app.activeContentView().modeLineText().find("LOCATE: " + selected) != std::string::npos);
+    }
   }
+}
+
+// Deterministic counterpart to the real-filesystem test just above
+// (the "selected.size() < 50" guard there can legitimately skip the
+// annotation check for a long real `locate` match): a fake ConfiguredRole::
+// Locate command that always returns one fixed, short, known path, so
+// the annotation AND the byte-count-not-dropped fix (fitModeLineFields()'s
+// new fallback tier, see its own comment) can both be checked exactly,
+// unconditionally.
+TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a File result sets a short, exact \"LOCATE: <path>\" annotation "
+                           "and still shows the byte count") {
+  fs::path target = root / "found.txt";
+  { std::ofstream(target) << "hello"; }  // 5 bytes
+  fs::path fakeLocate = root / "fake_locate.sh";
+  {
+    std::ofstream script(fakeLocate);
+    script << "#!/bin/sh\necho '" << target.string() << "'\n";
+  }
+  std::filesystem::permissions(fakeLocate, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate.string()}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");  // ignored by the fake script -- always returns target
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  REQUIRE(app.locateMode().results() == std::vector<std::string>{target.string()});
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.fileMode().currentFile() == target.string());
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("LOCATE: " + target.string()) != std::string::npos);
+  CHECK(modeLine.find("5") != std::string::npos);  // the byte count, no longer dropped alongside the long path
 }
 
 TEST_CASE_FIXTURE(Fixture, "LOCATE: starting a nested search from within locate results fails") {
@@ -2567,6 +2639,32 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ESC< / ESC> jump to the first/last line (M
   REQUIRE(app.feedByte(0x1b, std::nullopt));
   CHECK(app.feedByte('<', std::nullopt));
   CHECK(view.cursorIndex() == 0);
+}
+
+// 2026-08-14 addition, per direct user instruction ("旧版のKEYには収録
+// し忘れだが「1ページ戻る」は^[wではなくて、emacs同様^[vで反映してほしい"):
+// legacy's own tcb/src/key.c binds bare 'w' page-back and ESC-only to
+// M_head/M_tail's own escPending handler above -- ESC-v/ESC-w aren't
+// in legacy's own table at all (a real, acknowledged omission there,
+// per the user's own framing), so this is a deliberate NEW binding,
+// not a literal port. Reuses the exact same Command::PageUp already
+// bound to plain 'b'/^B (see resolveCommand()'s own switch) rather
+// than inventing a new distinct command -- legacy's M_kback/M_back
+// both reach the same underlying m_page() page-back behavior.
+TEST_CASE_FIXTURE(Fixture, "feedByte: ESC v pages back one page (Command::PageUp), matching Emacs' M-v") {
+  REQUIRE(app.start(path()));
+  fm::ContentView &view = app.activeContentView();
+  int last = static_cast<int>(view.lines().size()) - 1;
+  REQUIRE(last > 0);
+  view.setCursorIndex(last);
+
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  CHECK(app.feedByte('v', std::nullopt));
+  int afterEscV = view.cursorIndex();
+
+  view.setCursorIndex(last);
+  app.handleCommand(Command::PageUp);
+  CHECK(view.cursorIndex() == afterEscV);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ESC ^M (K-24, \"Read as is\") opens the selected file, same as a plain Enter") {
