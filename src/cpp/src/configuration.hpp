@@ -207,6 +207,17 @@ class Configuration {
   // one" directives); every other role is fixed at its built-in
   // default.
   ProgramCommand commandFor(ConfiguredRole role) const;
+  // Overrides a role's command directly, bypassing usilicrc parsing
+  // entirely -- exists for test isolation from roles whose real
+  // default programs are unsuitable for an automated test suite (e.g.
+  // ConfiguredRole::UpdateDb's real macOS/Linux commands genuinely
+  // scan the whole filesystem, which is both slow and typically needs
+  // root to complete -- 2026-08-13, added after exactly that hung an
+  // actual `make test` run once the macOS default started pointing at
+  // a real, executable binary instead of a nonexistent one). NOT a
+  // general "any role is now usilicrc-configurable" escape hatch --
+  // see commandFor()'s own comment on which roles that applies to.
+  void setCommandForTest(ConfiguredRole role, ProgramCommand command);
 
   // -- seed lists (GREP/PROGRAM directives) --
   // Canned patterns/commands offered as history/autocomplete

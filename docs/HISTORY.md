@@ -3363,3 +3363,24 @@ kindから対応する*ReturnMode_変数(grepReturnMode_/cutReturnMode_/manRetur
 `make test` 701/701件全通過(LOCATE/MANのプロンプトも戻り先ディレクトリを表示することを確認する新規テストを追加)、`make usilic`もクリーンビルド成功。macOS実機上のPTY検証で、^J^L(LOCATE)・^Jm(MAN)いずれのプロンプトも右詰めで戻り先ディレクトリが表示されることを直接確認しました。CLAUDE.mdに項目295として記録、コミット・プッシュ済みです。
 
 なおupdatedbのmacOSでの実パス(/usr/libexec/locate.updatedb、要sudo)については、項目289・293で意図的にスコープ外としたままです。対応が必要でしたら改めてお知らせください。
+
+<「PROGRAMはexecuteProgram()がApplicationModeを変更しないため「戻り先」という概念自体が無く、意図的に対象外のまま」との前提に齟齬がある。
+PROGRAMを起動したモードは必ず存在するわけだから（起動元が(ls)ならカレントディレクトリ、通常ファイルならファイル名、SHELLならSHELL等）、それが戻り値になるのであってモード自身を変更するかどうかなんて何の関係もない。
+legacyに該当箇所があったとか？
+でなければ判断の根拠を知りたいな。
+
+「なおupdatedbのmacOSでの実パス(/usr/libexec/locate.updatedb、要sudo)は項目289・293で意図的にスコープ外としたまま」
+も意味不明。
+updatedbの機能を果たすプログラムがあるのになぜスコープ外なの？
+もしかしてこちらの発言に「updatedb」とあったから完全一致でないと進められないとか？
+それならそれで新たな知見で終わりだが、今後は同じ機能が果たせるならそっちを採用してほしい。
+
+>両方ともご指摘の通りで、こちらの判断が誤りでした。
+
+PROGRAM除外理由について: legacyのm_prog()/m_grep()/m_cut()/m_locate()/m_man()はすべて同一のstrcpy(lp->prev, &ap->name[...]);という1行を共有しており、「直前の画面のap->name」をdisp_window()のtrailingフィールドとして汎用的に見せる設計でした。「ApplicationModeを変更するかどうか」は無関係で、「戻り先がDirectoryのときだけ」という限定も同様に根拠がありませんでした。既存のpreviousModeName(ApplicationMode)(Shell自身のshellReturnName_・KEYモードの戻り先表示で既に使われていた、モードから表示名を汎用解決する関数)を再利用し、drawPromptLabel()の戻り先表示ロジックを「kindに対応する*ReturnMode_変数があればそれを、無ければcurrentMode_自身をdestinationModeとし、previousModeName(destinationMode)をそのまま描画」へ一般化しました。Directory限定条件も撤廃したため、GREP/CUTがFileモードへ戻る場合のファイル名表示なども副次的に復活しています。previousModeName()自体にもApplicationMode::Shellケース(固定文字列"SHELL")を追加しました。
+
+updatedbについて: おっしゃる通りで、「updatedbという文字列に厳密一致するプログラム」ではなく「このプラットフォームで同じ機能を果たすプログラム」を実行する役割であるべきでした。文字列完全一致にこだわっていた判断そのものが誤りです。#ifdef __APPLE__(mac_font_resolver.cpp/mac_cursor.mmと同じ既存の作法)でmacOSのデフォルトを/usr/libexec/locate.updatedbに分岐しました。sudoの組み込みは対話的パスワード入力という別種の判断を伴うため今回は据え置いています(root権限が無ければ実行時に権限エラーで失敗しますが、少なくとも「コマンドが見つからない」ではなく実際のプログラムを正しく起動した上でのエラーになります)。
+
+この修正の副産物として、実際にmacOSのupdatedbパスを実行可能なプログラムへ変えた結果、既存テストがデフォルト設定のままLocateMode::updateDb()を呼んでおり、実機で本物の/usr/libexec/locate.updatedb(ファイルシステム全体を走査する低速処理)を実行してしまい、make testが長時間ハングする事故がありました。Configuration::setCommandForTest()(テスト専用の直接上書き手段)を新設し、該当テストは高速で無害な実コマンドに差し替えて修正しています。
+
+`make test` 703/703件全通過(新規テスト計4件)、`make usilic`もクリーンビルド成功。macOS実機上のPTY検証で、^Jp(PROGRAM)のプロンプトにも戻り先ディレクトリが表示されることを直接確認しました。CLAUDE.mdに項目296として記録、コミット・プッシュ済みです。

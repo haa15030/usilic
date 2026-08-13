@@ -14,6 +14,21 @@ TEST_CASE("built-in defaults: role-based commands are populated without loading 
   CHECK_FALSE(config.commandFor(ConfiguredRole::Du).argv.empty());
 }
 
+// 2026-08-13 (CLAUDE.md history item 296): a direct user correction --
+// "updatedbの機能を果たすプログラムがあるのになぜスコープ外なの？" --
+// this role runs whatever program fulfills the updatedb FUNCTION on
+// the current platform, not literally the string "updatedb". macOS
+// has no bare `updatedb` on PATH at all (see configuration.cpp's own
+// #ifdef __APPLE__ comment).
+TEST_CASE("built-in defaults: LOCATE's UpdateDb role uses the platform-appropriate program") {
+  Configuration config;
+#ifdef __APPLE__
+  CHECK(config.commandFor(ConfiguredRole::UpdateDb).argv == std::vector<std::string>{"/usr/libexec/locate.updatedb"});
+#else
+  CHECK(config.commandFor(ConfiguredRole::UpdateDb).argv == std::vector<std::string>{"updatedb"});
+#endif
+}
+
 TEST_CASE("built-in defaults: the ARCHIVE table's compiled-in suffixes resolve without any rc text") {
   Configuration config;
   ArchiveKind kind = ArchiveKind::None;

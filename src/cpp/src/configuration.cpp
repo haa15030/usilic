@@ -189,11 +189,32 @@ Configuration::Configuration() {
   // LOCATE section: legacy has no updatedb-refresh feature at all
   // (m_locate() just re-runs/redisplays a search) -- this role and
   // LocateMode::updateDb() are a new feature added on top, not a
-  // port. Linux's plain `updatedb` default; macOS's own path
-  // (`/usr/libexec/locate.updatedb`, typically needs sudo -- see
-  // CLAUDE.md history item 7) is a known, deliberately unaddressed
-  // gap here, same status as DU's own untracked macOS flag mismatch.
+  // port. Linux's plain `updatedb` default. macOS has no bare
+  // `updatedb` on PATH at all -- the equivalent program is
+  // `/usr/libexec/locate.updatedb` (see CLAUDE.md history item 7).
+  // 2026-08-13 correction: an earlier version of this comment called
+  // that difference a "known, deliberately unaddressed gap", treating
+  // it the same as DU's own untracked macOS flag mismatch -- a direct
+  // user correction pointed out that reasoning was wrong: "updatedbの
+  // 機能を果たすプログラムがあるのになぜスコープ外なの？" (there IS a
+  // program that does what updatedb does on this platform, so why
+  // treat it as out of scope?) -- the role exists to run "whatever
+  // program fulfills this FUNCTION on the current platform", not to
+  // literally match the string "updatedb". Branched via #ifdef
+  // __APPLE__, matching this port's own existing convention for
+  // Mac-only paths (see mac_font_resolver.cpp/mac_cursor.mm). Still
+  // typically needs root to actually write /var/db/locate.database --
+  // deliberately NOT wrapped in `sudo` here (an interactive password
+  // prompt from a child process this port spawns is a real, separate
+  // design/security question flagged back to the user rather than
+  // guessed at); running this as a non-root user will still likely
+  // fail with a permission error, just a real one from the correct
+  // binary instead of "command not found".
+#ifdef __APPLE__
+  roleCommands_[ConfiguredRole::UpdateDb] = {{"/usr/libexec/locate.updatedb"}, std::nullopt};
+#else
   roleCommands_[ConfiguredRole::UpdateDb] = {{"updatedb"}, std::nullopt};
+#endif
   roleCommands_[ConfiguredRole::Egrep] = {{"egrep", "-n"}, std::nullopt};
   roleCommands_[ConfiguredRole::Fgrep] = {{"fgrep", "-ne"}, std::nullopt};
   roleCommands_[ConfiguredRole::GzipDecompress] = {{"gzip", "-dc"}, std::nullopt};
@@ -505,6 +526,10 @@ void Configuration::setFallbackShellArgv(std::vector<std::string> argv) { fallba
 ProgramCommand Configuration::commandFor(ConfiguredRole role) const {
   auto it = roleCommands_.find(role);
   return (it != roleCommands_.end()) ? it->second : ProgramCommand{};
+}
+
+void Configuration::setCommandForTest(ConfiguredRole role, ProgramCommand command) {
+  roleCommands_[role] = std::move(command);
 }
 
 const std::vector<std::string> &Configuration::grepSeedPatterns() const { return grepSeedPatterns_; }

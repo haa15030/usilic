@@ -53,14 +53,25 @@ TEST_CASE_FIXTURE(Fixture, "selectedResult: tracks the ContentView cursor when t
 }
 
 // 2026-08-13 (docs/ideas/IDEAS.md's LOCATE section): updateDb() is a
-// new feature (K-39, ^Jl) with no legacy equivalent -- runs
-// `updatedb` and never touches query_/results_/view_, regardless of
-// whether the real binary exists/is permitted in this environment.
-TEST_CASE_FIXTURE(Fixture, "updateDb: runs `updatedb`; never touches query()/results()") {
+// new feature (K-39, ^Jl) with no legacy equivalent -- runs the
+// configured UpdateDb role's command and never touches
+// query_/results_/view_. setCommandForTest() swaps in a fast, harmless
+// real command instead of the actual configured default (macOS's own
+// `/usr/libexec/locate.updatedb`, per configuration.cpp's own #ifdef
+// __APPLE__ comment, genuinely scans the WHOLE filesystem -- this
+// literally hung a `make test` run once that default started pointing
+// at a real, executable binary instead of a nonexistent "updatedb").
+TEST_CASE_FIXTURE(Fixture, "updateDb: runs the configured command; never touches query()/results()") {
+  configuration.setCommandForTest(fm::ConfiguredRole::UpdateDb, {{"true"}, std::nullopt});
   bool ok = mode.updateDb();
+  CHECK(ok);
   CHECK(mode.query().empty());
   CHECK(mode.results().empty());
-  if (!ok) MESSAGE("updatedb not installed/permitted -- ok is false, which is fine here");
+}
+
+TEST_CASE_FIXTURE(Fixture, "updateDb: false if the configured command fails to run at all") {
+  configuration.setCommandForTest(fm::ConfiguredRole::UpdateDb, {{"this-command-does-not-exist-xyz123"}, std::nullopt});
+  CHECK_FALSE(mode.updateDb());
 }
 
 TEST_CASE_FIXTURE(Fixture, "search: a second search replaces the previous query and results") {

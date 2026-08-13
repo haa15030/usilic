@@ -15823,6 +15823,63 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      `make usilic`クリーンビルド確認済み。macOS実機上のPTY検証で、
      `^J^L`(LOCATE)・`^Jm`(MAN)いずれのプロンプトも右詰めで戻り先
      ディレクトリが表示されることを直接確認した。
+   - **(同日追記、項目296で訂正)**: 上記の`PromptKind::ProgramCommand`
+     除外理由「`executeProgram()`が`ApplicationMode`を変更しないため
+     戻り先概念が存在しない」は、ユーザーから論理的な誤りを指摘され
+     訂正した。詳細は項目296を参照。
+
+296. **2026-08-13(続き): 項目295のPROGRAM除外理由がロジックとして
+    誤りだとユーザーから指摘され訂正、さらに`updatedb`の
+    「スコープ外」判断自体も誤りだったと指摘されmacOSパスを修正**。
+   - **PROGRAM除外理由の誤り**: 「PROGRAMを起動したモードは必ず存在
+     するわけだから(起動元が(ls)ならカレントディレクトリ、通常
+     ファイルならファイル名、SHELLならSHELL等)、それが戻り値になる
+     のであってモード自身を変更するかどうかなんて何の関係もない」
+     とのご指摘のとおりだった。legacyの`m_prog()`/`m_grep()`/
+     `m_cut()`/`m_locate()`/`m_man()`はすべて同一の
+     `strcpy(lp->prev, &ap->name[...]);`という1行を共有しており、
+     「直前の画面の`ap->name`」を`disp_window()`のtrailingフィールド
+     (mode-line[6])として汎用的に見せる設計だった。「戻り先が
+     Directoryのときだけ」という項目283/284由来の限定も同様に
+     根拠が無かった。
+   - 修正: 既存の`previousModeName(ApplicationMode)`(Shell自身の
+     `shellReturnName_`・KEYモードの戻り先表示で既に使われていた、
+     モードから表示名を汎用解決する関数)を再利用し、
+     `drawPromptLabel()`の戻り先表示ロジックを「`kind`に対応する
+     `*ReturnMode_`変数があればそれを、無ければ`currentMode_`自身を
+     `destinationMode`とし、`previousModeName(destinationMode)`を
+     そのまま描画」へ一般化。Directory限定条件も撤廃したため、
+     GREP/CUTがFileモードへ戻る場合のファイル名表示なども副次的に
+     復活した。`previousModeName()`自体にも`ApplicationMode::Shell`
+     ケース(固定文字列`"SHELL"`)を追加(ユーザー例示どおり)。
+   - **`updatedb`「スコープ外」判断の誤り**: 「updatedbの機能を
+     果たすプログラムがあるのになぜスコープ外なの？」とのご指摘の
+     とおり、`ConfiguredRole::UpdateDb`は「updatedbという文字列に
+     厳密一致するプログラム」ではなく「このプラットフォームで同じ
+     機能を果たすプログラム」を実行する役割であるべきで、文字列
+     完全一致にこだわっていた判断が誤りだった。`#ifdef __APPLE__`
+     (`mac_font_resolver.cpp`/`mac_cursor.mm`と同じ既存の作法)で
+     macOSのデフォルトを`/usr/libexec/locate.updatedb`に分岐。
+     `sudo`の組み込みは対話的パスワード入力という別種の判断を伴う
+     ため、今回は据え置き(root権限が無ければ実行時に権限エラーで
+     失敗するが、少なくとも「コマンドが見つからない」ではなく実際の
+     プログラムを正しく起動した上でのエラーになる)。
+   - **副産物のテスト事故**: macOSの`updatedb`パスを実際の実行可能な
+     プログラムへ修正した結果、`test_locate_mode.cpp`/
+     `test_application.cpp`の既存テストがデフォルト設定のまま
+     `LocateMode::updateDb()`を呼んでおり、実機で本物の
+     `/usr/libexec/locate.updatedb`(ファイルシステム全体を走査する、
+     本質的に低速な処理)を実行してしまい、`make test`が長時間
+     ハングする事故が発生した。`Configuration::setCommandForTest()`
+     (usilicrc経由の設定とは別の、テスト専用の直接上書き手段)を
+     新設し、該当テストではこれで高速で無害な実コマンド(`true`等)に
+     差し替えるよう修正した。
+   - **検証**: `make test` 703/703件全通過(PROGRAM/Shell宛の戻り先
+     表示、`setCommandForTest()`によるテスト分離、macOSデフォルト
+     パスの確認、で新規テスト計4件を追加)、`make usilic`クリーン
+     ビルド確認済み。macOS実機上のPTY検証で、`^Jp`(PROGRAM)の
+     プロンプトにも戻り先ディレクトリが表示されることを直接確認
+     した。
 
 ## 今後の大きな方向性
 

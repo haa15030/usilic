@@ -17,6 +17,7 @@ using fm::ApplicationMode;
 using fm::Charset;
 using fm::Command;
 using fm::Configuration;
+using fm::ConfiguredRole;
 using fm::GrepSyntax;
 using fm::History;
 using fm::KeyInput;
@@ -1888,13 +1889,18 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^G cancels the prompt without running anyth
 // ほしい"). ok (updatedb's own success/failure) is orthogonal to
 // this -- the chain happens either way, matching "機能自体は完了で
 // いい" (don't gate the chain on the command actually working).
+// setCommandForTest() swaps in a fast, harmless real command instead
+// of the actual configured UpdateDb default -- see
+// test_locate_mode.cpp's own identical comment for why (macOS's real
+// default genuinely scans the whole filesystem, which once hung an
+// actual `make test` run).
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l runs `updatedb` (LocateUpdateDb), then chains into the LOCATE prompt") {
+  configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"true"}, std::nullopt});
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
-  bool ok = app.feedByte('l', std::nullopt);
+  CHECK(app.feedByte('l', std::nullopt));
   CHECK(app.promptActive());
   CHECK(app.promptText().empty());  // no prior query yet -- same seeding rule as ^J^L itself
-  if (!ok) MESSAGE("updatedb not installed/permitted -- ok is false, which is expected here");
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^L starts a LOCATE prompt (StartLocate)") {

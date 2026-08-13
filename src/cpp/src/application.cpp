@@ -2278,6 +2278,24 @@ std::string Application::previousModeName(ApplicationMode mode) const {
       return archiveMode_.currentArchive();
     case ApplicationMode::Du:
       return duMode_.currentPath();
+    // Shell (2026-08-13): a direct user correction -- drawPromptLabel()'s
+    // own destination-trailing field previously only ever showed
+    // something for `mode == Directory`, on the reasoning that only
+    // GrepPattern/CutPattern (the only two PromptKinds it was wired
+    // for at all) had an established "returns to Directory" case to
+    // mirror. The user pointed out this reasoning didn't hold: EVERY
+    // prompt is launched FROM some mode, and that mode's own display
+    // name IS the destination, independent of whether launching the
+    // prompt itself happens to change currentMode_ or not ("PROGRAMを
+    // 起動したモードは必ず存在する...SHELLならSHELL等"). This literal
+    // "SHELL" fills in the one case previousModeName() itself hadn't
+    // covered yet (existing callers -- Shell's own shellReturnName_,
+    // K-2's own KEY trailing field -- never needed it: shellReturnName_
+    // captures the mode BEFORE Shell, never Shell itself, and nothing
+    // returns FROM a prompt directly into Shell without going through
+    // ensureShellActive() first).
+    case ApplicationMode::Shell:
+      return "SHELL";
     default:
       return "";
   }
@@ -3555,45 +3573,50 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   int trailingReserve = kTrailingPathTailChars + kTrailingPathEllipsis + kTrailingPathGap;
   int editableWidth = std::max(1, display_.columns() - labelWidth - trailingReserve);
 
-  // Return-destination content (2026-08-12 fix, generalized 2026-08-13):
-  // the reservation above used to be width-only, deliberately
-  // deferring what actually gets drawn there -- a real report
-  // ("FGREPで戻り先が無い", and for EGREP, "モードラインでは戻り先の
-  // 消える" the instant editing starts) found that left the space
-  // blank, reading as "no destination at all" rather than "reserved
-  // but not yet implemented". Mirrors grepView_/cutView_'s own
-  // RESULTS-screen trailing2/trailing (see their own
-  // ModeLineFieldsProvider comments): the directory this prompt will
-  // actually return to, when that destination is Directory mode.
+  // Return-destination content (2026-08-12 fix; generalized 2026-08-13
+  // TWICE in the same day -- see below): the reservation above used to
+  // be width-only, deliberately deferring what actually gets drawn
+  // there -- a real report ("FGREPで戻り先が無い", and for EGREP,
+  // "モードラインでは戻り先の消える" the instant editing starts) found
+  // that left the space blank, reading as "no destination at all"
+  // rather than "reserved but not yet implemented".
   //
-  // Originally scoped to GrepPattern/CutPattern only ("other
-  // PromptKinds...aren't covered by this round's screenshots"), but a
-  // follow-up report (LOCATE's own prompt, =ap -- "モードラインに
-  // モード名しか無い") showed this reads as the SAME "reserved but
-  // blank" gap the 2026-08-12 fix itself was written to close, just
-  // for a different PromptKind -- exactly the kind of one-off-per-
-  // report pattern the user has repeatedly asked to see turned into a
-  // shared rule instead. Generalized here to every PromptKind that
-  // has its OWN dedicated "return mode" variable (grepReturnMode_/
-  // cutReturnMode_/manReturnMode_/locateReturnMode_ -- each already
-  // set unconditionally, or "if not already in that mode", by its own
-  // start*Prompt()) rather than special-casing two of them by name.
-  // ProgramCommand is deliberately excluded -- executeProgram() never
-  // changes ApplicationMode at all (see startProgramPrompt()'s own
-  // comment), so there's no "return mode" concept to show a
-  // destination for in the first place, not an oversight.
-  const ApplicationMode *returnMode = nullptr;
+  // First generalization (still wrong, corrected below): scoped to
+  // "every PromptKind with its OWN dedicated *ReturnMode_ variable,
+  // shown only when that mode == Directory" -- which excluded
+  // ProgramCommand on the reasoning that executeProgram() never
+  // changes ApplicationMode, so "there's no return mode concept". A
+  // direct user correction: that reasoning doesn't hold at all --
+  // "PROGRAMを起動したモードは必ず存在するわけだから...それが戻り値に
+  // なるのであってモード自身を変更するかどうかなんて何の関係もない"
+  // (whatever mode PROGRAM was launched FROM necessarily still exists,
+  // and IS the destination -- whether launching the prompt itself
+  // happens to change currentMode_ is irrelevant). Restricting to
+  // "only when the destination is Directory" was equally arbitrary --
+  // legacy's own lp->prev (disp_window()'s mode-line[6]) is populated
+  // identically by EVERY mode-transition function via
+  // `strcpy(lp->prev, &ap->name[...]);` (m_prog()/m_grep()/m_cut()/
+  // m_locate()/m_man() all share this one line), i.e. "whatever
+  // ap->name (the PREVIOUS screen's own display name) was" -- not a
+  // Directory-only special case.
+  //
+  // previousModeName(ApplicationMode) already exists and IS this
+  // port's own equivalent of that generic "display name for mode X"
+  // resolver (used by Shell's own shellReturnName_ and KEY's own
+  // trailing field already) -- reusing it here, for the mode this
+  // prompt will actually return to (or, for PromptKinds with no
+  // dedicated *ReturnMode_ variable -- ProgramCommand included --
+  // simply currentMode_ itself, since nothing changes it), rather than
+  // hand-rolling a second, narrower Directory-only version.
+  ApplicationMode destinationMode = currentMode_;
   switch (kind) {
-    case PromptKind::GrepPattern: returnMode = &grepReturnMode_; break;
-    case PromptKind::CutPattern: returnMode = &cutReturnMode_; break;
-    case PromptKind::ManName: returnMode = &manReturnMode_; break;
-    case PromptKind::LocateQuery: returnMode = &locateReturnMode_; break;
+    case PromptKind::GrepPattern: destinationMode = grepReturnMode_; break;
+    case PromptKind::CutPattern: destinationMode = cutReturnMode_; break;
+    case PromptKind::ManName: destinationMode = manReturnMode_; break;
+    case PromptKind::LocateQuery: destinationMode = locateReturnMode_; break;
     default: break;
   }
-  std::string destinationDirectory;
-  if (returnMode && *returnMode == ApplicationMode::Directory) {
-    destinationDirectory = directoryMode_.currentDirectory();
-  }
+  std::string destinationDirectory = previousModeName(destinationMode);
   if (!destinationDirectory.empty()) {
     std::string tail = truncatedTrailingPath(destinationDirectory);
     int col = display_.columns() - static_cast<int>(tail.size());
