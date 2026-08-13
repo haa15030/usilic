@@ -16188,6 +16188,111 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      で終わる省略表示)の両方が同時に表示されることを、それぞれ
      実際の画面セル内容レベルで直接確認した。
 
+300. **2026-08-14(続き): ③戻り値の意味の取り違えを訂正(通常ファイル
+    なのに(ls)扱いだった点、モード名/戻り値フォーマット)+K-18
+    「ファイルセレクタへ移動」を新規実装、④の真因が-g固有の
+    イベントポンプ阻害と判明・runLocateUpdateDbを完全非同期化**。
+   - **③戻り値の意味の取り違えを訂正**: 項目299で実装した
+    `LOCATE: <完全パス>`は、ユーザーから「戻り値は通常ファイル
+    ...なので^G→(ls)はおかしい。LOCATEの検索結果一覧へ戻るわけ
+    だし」との訂正を受けた。原因は`Command::Back`のFileモード
+    分岐が常に`returnToDirectory()`(固定で`ApplicationMode::
+    Directory`)を呼んでいたこと。LOCATE経由のファイルは検索元
+    ディレクトリと無関係な場所にあり得るため、`^G`はまず
+    LOCATE結果一覧へ戻るべきだった。`fileReturnMode_`
+    (Application新設メンバ、既定`Directory`)を追加し、
+    `openSelectedLocateResult()`のFile分岐でのみ`Locate`を設定、
+    それ以外の`fileMode_.loadFile()`呼び出し箇所(9箇所)では
+    明示的に`Directory`へ戻すことでこのフラグが漏れて残らない
+    ようにした。`returnFromFileToLocate()`を新設し
+    `Command::Back`のFile分岐で`fileReturnMode_`を確認して
+    分岐。2回目の`^G`(LOCATE結果一覧からの`^G`)は既存の
+    `returnFromLocate()`(`locateReturnMode_`ベース)がそのまま
+    正しく効くため変更不要(ユーザー自身の「^G連打で最終的に
+    LOCATEを起動した(ls)へ戻るのはかまわない」という要求と
+    自然に一致)。
+   - **③モード名/戻り値フォーマットの訂正**: 「モード名はLOCATE、
+    戻り値も検索一覧同様「/Applications/Adobe Acrob...source/
+    .../HKSCS.txt」形式で」との指示を受け、`FileMode::
+    setSearchAnnotation(text)`を`setSearchOrigin(label, detail)`
+    へ再設計。`label`(例:"LOCATE")がモード名欄そのものを置き換え
+    (旧版は素のファイル名だった欄)、`detail`(完全パス、
+    「LOCATE: 」接頭辞なし)が戻り値欄に入る。戻り値欄の切り詰め
+    方式も、`ContentView::withTruncatedTrailing2()`内の`truncate`
+    ラムダを、末尾のみ保持する独自実装から`middleEllipsisTruncate()`
+    (LOCATE結果一覧の各行が既に使っているFinder風の頭...末尾
+    省略)の呼び出しへ差し替えて統一した。
+   - **K-18(`^J^K`「ファイルセレクタへ移動」)を新規実装**: 「検索
+    ファイル所在地へ降りるためのキーアサインも実はあるので反映
+    してほしい（^J^K）」との指示を受け、usilicrc自身のK-18行
+    ("Go to file-selector")を確認したところ、このC++移植では
+    今回まで未実装だったと判明。Fileモードから、現在のファイル
+    自身の所在ディレクトリへ`directoryMode_.enterDirectory()`で
+    直接ジャンプする(ユーザー自身の例の通り、LOCATEへは戻らない
+    ワンウェイの遷移。legacy自身の`K_z`センチネル絡みの詳細な
+    カーソル復元ロジック(menu.c)まではlegacyバイナリが手元に無く
+    検証できないため、ナビゲーション本体のみに意図的にスコープ
+    を絞った)。`Command::GoToFileSelector`を新設、
+    `dispatchLeaderByte()`の`leaderJPending_`switchに
+    `case 0x0b:`(`^J^K`)を追加。
+   - **④の真因判明: `-g`(GUI)固有のイベントポンプ阻害**:
+    「④の^[不具合は-gで起きる模様。^Jl後の^Gも受け付けない。
+    -cでは問題なし」との報告を受け、`app/main.cpp`の`-g`用
+    `runGuiPhase()`を確認したところ、真因は`^[v`自体ではなく
+    項目299で実装した`runLocateUpdateDb()`の非同期化がまだ
+    不完全だったことだと判明(`^[v`自体はDirectory/LOCATE
+    いずれの文脈でもコード上・`-c`実機相当環境双方で正常動作
+    することを改めて確認済み)。項目299の実装は`runLocateUpdateDb()`
+    内部で`poll(STDIN_FILENO,...)`を伴う無期限ループを回す
+    設計だったため、このループが**Application呼び出し1回の中で
+    ブロックしたまま**であり、`-g`自身のSDLイベントポンプ
+    (`runGuiPhase()`の`gui.pumpEvents()`)がループを抜けるまで
+    二度と呼ばれなくなっていた。SDLウィンドウで実際に押された
+    `^G`はSDL自身にはキューされるが、`gui.pumpEvents()`が
+    呼ばれない限りApplication側には一切届かない。`-c`側だけ
+    たまたま問題が起きなかったのは、`STDIN_FILENO`がそのまま
+    実キーボードだったからに過ぎず、設計上の意図ではなかった
+    (このクラス自身のクラスコメントが謳う「backend-agnostic」
+    という前提を、2つ目のバックエンドで初めて試した瞬間に
+    破っていた)。3度目の再設計として、`runLocateUpdateDb()`
+    自体を完全非ブロッキング化: `LocateMode::startUpdateDb()`で
+    detached起動した直後に即座にreturnし、新設の
+    `Application::awaitingLocateUpdateDb()`(公開、状態確認用)と
+    `pollLocateUpdateDbCompletion()`(公開、`ChildProcess::
+    hasExited()`を確認し完了していれば`startLocatePrompt()`へ
+    遷移)を、`-c`/`-g`双方の実行ループ自身が元々持っている
+    毎ループティック(`-c`は`poll(STDIN_FILENO,...,100)`、`-g`は
+    `while(!app.wantsExit())`の毎フレーム)から呼び出す設計に
+    変更した。`^G`自体は新たなポーリングを必要とせず、
+    `dispatchByte()`冒頭(`promptKind_`チェックより前)に追加した
+    `awaitingLocateUpdateDb()`ゲート経由で、両バックエンドが
+    既に毎キー入力ごと呼んでいる`feedByte()`を通じてそのまま
+    届く(待機中は`^G`以外の全バイトを無視)。この設計変更に伴い
+    `Application`から`KeyInput&`メンバ(前回の再設計で追加した
+    ばかりのもの)を再度削除。
+   - **検証**: `make test` 715/715件全通過(③`fileReturnMode_`・
+    `setSearchOrigin()`・K-18の新規テスト計5件、④非同期版
+    `awaitingLocateUpdateDb()`/`pollLocateUpdateDbCompletion()`の
+    新規テスト3件)。テスト作成時、新規追加した`indexOf("subdir")`
+    (ディレクトリ実体は末尾スラッシュ付きの`"subdir/"`が正しい
+    表記だった)の1文字ミスにより`while`ループが無限ループし
+    `make test`が実質ハングする事故があり、CPU使用率を見て
+    プロセスを強制終了、原因特定の上修正した(既存の全テストが
+    一貫して`"subdir/"`表記を使っていたことから発見)。
+    `make usilic`もクリーンビルド成功。macOS実機相当のPTY検証で、
+    ③LOCATE経由で開いたファイルのモードラインが
+    `LOCATE 1/7 TOP 283 /System/.../pam.d/sudo`(モード名
+    「LOCATE」、戻り値が完全パスそのもの)になること、そこから
+    `^G`で`(ls)`ではなくLOCATE結果一覧(`LOCATE 1/4 TOP 186
+    LOCATE: pam.d/sudo`)へ戻ること、同じファイルから`^J^K`で
+    `/System/.../pam.d/`の`(ls)`(LOCATEへは戻らない)へ直接
+    遷移することを、それぞれ実際の画面セル内容レベルで直接
+    確認した。④は`-g`環境そのものでのPTY同等検証ができない
+    (このセッションにSDL/GUI実行環境が無い)ため、`-c`側での
+    再検証と、`runGuiPhase()`のコードレベルでの動作確認に
+    留まっている旨をユーザーへ申告し、実機での`-g`再現確認を
+    依頼する必要がある。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

@@ -5,7 +5,6 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
-#include <poll.h>
 #include <set>
 #include <sstream>
 #include <unistd.h>
@@ -158,6 +157,7 @@ const KeyTableEntry kKeyTable[] = {
     // "HELP" entry internally consistent with everything else here;
     // the wide gap the space produced before startKey()'s fixed
     // column padding was the whole reason for this change.
+    {"^J^K", "Go to file-selector", {kLeaderJ, 0x0b}},
     {"^J^S", "EGREP", {kLeaderJ, kControlS}},
     {"^Jc", "CUT (fixed string, buffer)", {kLeaderJ, 'c'}},
     {"^J^C", "CUT (regex, buffer)", {kLeaderJ, kControlC}},
@@ -251,7 +251,6 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
                           std::string homeDirectory)
     : display_(display),
-      keyInput_(keyInput),
       pathResolver_(homeDirectory),
       wFilePath_(homeDirectory + "/.usilic/w.usilic"),
       errorLogPath_(homeDirectory + "/.usilic/error"),
@@ -825,6 +824,23 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
 }
 
 bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  // See awaitingLocateUpdateDb()'s own comment: checked before even
+  // promptKind_ (drawPromptLabel()'s own staticMessage path never sets
+  // promptKind_ at all -- this isn't a real editable prompt). ^G always
+  // wins immediately, at any point during the run, leaving updatedb
+  // running detached in the background (per the user's own explicit
+  // spec: "常時^G（←^Cではなく）で^J^Cへ移行"). Every other byte is
+  // simply ignored while this message is showing, matching the
+  // original design's own scope (no other interaction was ever
+  // possible here).
+  if (awaitingLocateUpdateDb()) {
+    if (!special && byte == kControlG) {
+      locateUpdateDbPid_ = -1;
+      startLocatePrompt();
+      return true;
+    }
+    return false;
+  }
   if (promptKind_ != PromptKind::None) return feedPromptByte(byte);
   if (currentMode_ == ApplicationMode::Shell) return feedShellByte(byte, special);
   // GrepPattern/CutPattern's own "Select string" list (see
@@ -982,6 +998,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     leaderJPending_ = false;
     if (special) return false;
     switch (byte) {
+      case 0x0b:  // ^J ^K : Go to file-selector (K-18)
+        return handleCommand(Command::GoToFileSelector);
       case kControlS:  // ^J ^S : EGREP
         return handleCommand(Command::StartEgrep);
       case 'c':  // ^J c : CUT (fixed string, buffer)
@@ -1488,7 +1506,17 @@ bool Application::handleCommand(Command command) {
         return returnFromCut();
       }
       if (currentMode_ == ApplicationMode::Grep) return returnFromGrep();
-      if (currentMode_ == ApplicationMode::File) return returnToDirectory();
+      if (currentMode_ == ApplicationMode::File) {
+        // 2026-08-14 fix: see fileReturnMode_'s own declaration
+        // comment -- a file reached via LOCATE returns to LOCATE's
+        // own results list first (matching the user's own explicit
+        // spec: "^G連打で最終的にLOCATEを起動した(ls)へ戻るのは
+        // かまわない" -- a SECOND ^G, now from Locate mode, already
+        // correctly reaches locateReturnMode_ via returnFromLocate()'s
+        // own existing, untouched logic).
+        if (fileReturnMode_ == ApplicationMode::Locate) return returnFromFileToLocate();
+        return returnToDirectory();
+      }
       // 2026-08-11 fix: a real report -- after openSelectedGrepMatch()
       // lands back in Directory mode with a "FGREP: pattern" mode-line
       // annotation (see DirectoryMode::setSearchAnnotation()'s own
@@ -1584,6 +1612,8 @@ bool Application::handleCommand(Command command) {
     case Command::GoToParentDirectory:
       if (currentMode_ != ApplicationMode::Directory) return false;
       return directoryMode_.goToParent();
+    case Command::GoToFileSelector:
+      return goToFileSelector();
     case Command::RestartShell:
       return shellRestart();
     case Command::StartArchiveExtract:
@@ -1721,6 +1751,7 @@ bool Application::openSelectedEntry() {
   }
   if (!fileMode_.loadFile(path)) return false;
   currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
   return true;
 }
 
@@ -1816,6 +1847,7 @@ bool Application::openSelectedDuEntry() {
   }
   if (!fileMode_.loadFile(entry->path)) return false;
   currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
   return true;
 }
 
@@ -1867,16 +1899,51 @@ bool Application::openSelectedLocateResult() {
   }
   if (!fileMode_.loadFile(*path)) return false;
   currentMode_ = ApplicationMode::File;
-  // Path (not the bare query) here, unlike the Directory branch just
-  // above: FileMode's mode line has no other field showing where this
-  // file actually lives (its name field is the bare filename, see
-  // FileMode's own constructor comment), so the located path itself is
-  // the informative thing to show in its place -- confirmed against
-  // the exact string the user's own report expected ("LOCATE:
-  // ...s/Adobe/HKSCS.txt", a truncated PATH ending in the file's own
-  // name, not the 4-character query ".txt" that led to it).
-  fileMode_.setSearchAnnotation("LOCATE: " + *path);
+  // 2026-08-14 fix (two direct user corrections against the previous
+  // version here): (1) "^Gで(ls)へ戻るのはおかしい、LOCATEの検索結果
+  // 一覧へ戻るわけだし" -- a file reached via LOCATE could be anywhere
+  // on the filesystem, unrelated to whatever directory was active
+  // before the search, so ^G should return to LOCATE's own results
+  // list first (see fileReturnMode_'s own declaration comment), not
+  // straight to some unrelated directory. (2) "モード名はLOCATE、
+  // 戻り値も検索一覧同様「/Applications/Adobe Acrob...source/.../
+  // HKSCS.txt」形式で" -- setSearchOrigin()'s label ("LOCATE", not the
+  // bare filename) and detail (the full path, not prefixed with
+  // "LOCATE: " -- see its own comment for why that duplication no
+  // longer makes sense once the label itself already says LOCATE).
+  fileMode_.setSearchOrigin("LOCATE", *path);
+  fileReturnMode_ = ApplicationMode::Locate;
   fileView_.redraw();  // see the Directory branch's identical comment just above
+  return true;
+}
+
+// K-18 (^J^K, "Go to file-selector", per usilicrc's own line -- this
+// port had never implemented it before now). A direct user request
+// ("検索ファイル所在地へ降りるためのキーアサインも実はあるので反映
+// してほしい（^J^K）") made specifically in the context of a file
+// reached via LOCATE, but the binding itself is a general File-mode
+// feature, not LOCATE-specific -- jumps straight to a real `ls`
+// listing of the CURRENT file's own containing directory. Legacy's own
+// "file-selector" naming (disp.c) is tied to deeper K_z-sentinel
+// bookkeeping (menu.c) this port doesn't have a legacy binary handy to
+// verify the exact cursor-positioning behavior of, so deliberately
+// scoped to just the navigation itself -- matching the user's own
+// explicit spec: "^J^Kなら「.../Adobe/」の(ls)になる（LOCATEへは戻ら
+// ない）", a plain, ONE-WAY jump. Untouched by fileReturnMode_ or
+// ModeStack bookkeeping -- same as openSelectedLocateResult()'s own
+// Directory branch (see its own comment on NOT calling
+// resetNavigationToFloor()) -- so a subsequent ^G from the new
+// directory listing follows normal Directory-mode ^G semantics, not
+// LOCATE's or the file's own.
+bool Application::goToFileSelector() {
+  if (currentMode_ != ApplicationMode::File) return false;
+  std::filesystem::path path(fileMode_.currentFile());
+  std::string parent = path.parent_path().string();
+  if (parent.empty()) return false;
+  if (!directoryMode_.enterDirectory(parent)) return false;
+  currentMode_ = ApplicationMode::Directory;
+  display_.hideVisibleCursor();
+  directoryView_.redraw();
   return true;
 }
 
@@ -1932,6 +1999,7 @@ bool Application::openSelectedListEntry() {
   if (listBrowserCategory_ == RingCategory::RecentFile) {
     if (!fileMode_.loadFile(*item)) return false;
     currentMode_ = ApplicationMode::File;
+    fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
     return true;
   }
   return false;
@@ -2137,6 +2205,18 @@ bool Application::returnFromMan() {
 bool Application::returnFromLocate() {
   currentMode_ = locateReturnMode_;
   activeView().redraw();
+  return true;
+}
+
+// See fileReturnMode_'s own declaration comment. Mirrors
+// returnToDirectory() exactly (saveCursorPosition() + hideVisibleCursor()
+// + redraw the destination view), just landing on locateView_ instead
+// of directoryView_.
+bool Application::returnFromFileToLocate() {
+  fileMode_.saveCursorPosition();
+  currentMode_ = ApplicationMode::Locate;
+  display_.hideVisibleCursor();
+  locateView_.redraw();
   return true;
 }
 
@@ -2493,6 +2573,7 @@ bool Application::executeShowErrorLog() {
   if (!std::filesystem::exists(errorLogPath_)) return false;
   if (!fileMode_.loadFile(errorLogPath_)) return false;
   currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
   return true;
 }
 
@@ -2505,6 +2586,7 @@ bool Application::executeShowShellLog() {
   out.close();
   if (!fileMode_.loadFile(logFilePath_)) return false;
   currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
   return true;
 }
 
@@ -2531,6 +2613,7 @@ bool Application::executeShowTcbBanner() {
   std::string tempPath = materializeArchiveTempFile("tcb", bytes);
   if (tempPath.empty() || !fileMode_.loadFile(tempPath)) return false;
   currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
   return true;
 }
 
@@ -3078,60 +3161,61 @@ bool Application::startLocatePrompt() {
 // 2026-08-14 update: "^Jl直後に「Updating database...」がモードライン
 // 左端に出てくれないと意味がない。フリーズ中ではないメッセージなので"
 // -- draws the message immediately now (see below), never hidden
-// behind any wait. A same-day FIRST attempt at the rest of this ("常時
-// ^Gで...移行") simply reverted to item 294's original blocking
-// locateMode_.updateDb() call, reasoning that ^G would already work
-// the moment startLocatePrompt() was reached -- but a real updatedb
-// run on the user's own machine turned out to run for MINUTES (this
-// port's own PTY testing confirmed it: still going after 60 real
-// seconds), during which that blocking call never returns at all, so
-// ^G is never even read, let alone acted on. "常時" (always) genuinely
-// means always, including WHILE updatedb is still running -- which
-// needs it to run detached (LocateMode::startUpdateDb(), see its own
-// comment) with THIS function polling both its own completion
-// (ChildProcess::hasExited()) and the keyboard (the same poll(
-// STDIN_FILENO,...)-before-readByte() pattern app/main.cpp's own run
-// loop establishes, see KeyInput::fd()'s own comment on why not
-// keyInput_.fd() directly) in the same loop, with no overall deadline
-// this time (unlike the earlier, since-reverted 2-second-window
-// version) -- ^G always wins immediately, whether checked 1ms or 10
-// minutes into the run.
+// behind any wait.
+//
+// 2026-08-14 follow-up (a real report: "④の^[不具合は-gで起きる模様。
+// ^Jl後の^Gも受け付けない。-cでは問題なし"): TWO earlier same-day
+// attempts at "常時^Gで...移行" each had a real problem. The first
+// simply reverted to item 294's original BLOCKING locateMode_.
+// updateDb() call, reasoning ^G would already work once
+// startLocatePrompt() was reached -- but a real updatedb run turned
+// out to take MINUTES, during which that blocking call never returns,
+// so ^G is never read at all. The second fixed THAT by polling
+// keyboard input AND ChildProcess::hasExited() in an unbounded loop
+// inside this same call -- which worked in -c (confirmed by direct PTY
+// testing) but NOT in -g: that loop blocked INSIDE this one
+// Application call, so app/main.cpp's own GUI event pump
+// (runGuiPhase()'s gui.pumpEvents()) never ran again until the loop
+// returned, meaning a real ^G click/keypress in the SDL window was
+// queued by SDL but never actually processed. -c's own run loop
+// happened to still work only because STDIN_FILENO IS the real
+// keyboard there -- incidental, not by design, and broke this class's
+// own "backend-agnostic" property (see its class comment) the moment a
+// second backend was tried against it.
+//
+// Redesigned a third time to not block AT ALL: launches the detached
+// updatedb (LocateMode::startUpdateDb()) and returns immediately,
+// leaving locateUpdateDbPid_ set. awaitingLocateUpdateDb()/
+// pollLocateUpdateDbCompletion() (see their own comments) let EITHER
+// run loop's own existing per-iteration tick drive the wait instead --
+// -c's poll(STDIN_FILENO,...,100) loop and -g's while(!wantsExit())
+// frame loop both already iterate on their own regardless of backend,
+// so neither needs new backend-specific plumbing. ^G itself needs no
+// special polling at all: it arrives as an ordinary byte through
+// feedByte()/dispatchByte()'s own new top-level
+// awaitingLocateUpdateDb() gate, the exact same call both run loops
+// already make for every other keystroke.
 bool Application::runLocateUpdateDb() {
   static const std::string kUpdatingMessage = "Updating database...";
   drawPromptLabel(PromptKind::LocateQuery, /*positionText=*/"", kUpdatingMessage);
   display_.flush();
 
-  pid_t pid = locateMode_.startUpdateDb();
-  bool ok = false;
-  if (pid > 0) {
-    for (;;) {
-      // isPlayingRawMacro() checked first, unconditionally, so a
-      // test's queued ^G always wins on the very first iteration
-      // regardless of how fast the configured command finishes -- a
-      // real stdin poll() would just wait out the interval and never
-      // see a byte that was never written to the real fd at all.
-      if (keyInput_.isPlayingRawMacro()) {
-        if (keyInput_.readByte() == kControlG) {
-          startLocatePrompt();
-          return true;
-        }
-      } else {
-        struct pollfd pfd {
-          STDIN_FILENO, POLLIN, 0
-        };
-        if (::poll(&pfd, 1, 150) > 0 && (pfd.revents & POLLIN) && keyInput_.readByte() == kControlG) {
-          startLocatePrompt();
-          return true;
-        }
-      }
-      if (ChildProcess::hasExited(pid)) {
-        ok = true;
-        break;
-      }
-    }
+  locateUpdateDbPid_ = locateMode_.startUpdateDb();
+  if (locateUpdateDbPid_ <= 0) {
+    locateUpdateDbPid_ = -1;
+    startLocatePrompt();
+    return false;
   }
+  return true;  // now awaiting -- see awaitingLocateUpdateDb()/pollLocateUpdateDbCompletion()
+}
+
+bool Application::awaitingLocateUpdateDb() const { return locateUpdateDbPid_ > 0; }
+
+void Application::pollLocateUpdateDbCompletion() {
+  if (locateUpdateDbPid_ <= 0) return;
+  if (!ChildProcess::hasExited(locateUpdateDbPid_)) return;
+  locateUpdateDbPid_ = -1;
   startLocatePrompt();
-  return ok;
 }
 
 bool Application::feedPromptByte(int byte) {
@@ -4148,6 +4232,7 @@ bool Application::executePathInput(const std::string &path) {
     return false;
   }
   currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
   return true;
 }
 

@@ -1242,6 +1242,12 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
 
   while (!app.wantsExit()) {
     if (app.consumeGuiModeToggleRequest()) return leavePhase(true);
+    // See Application::awaitingLocateUpdateDb()'s own comment: this
+    // loop's own poll() below already ticks every ~100ms regardless of
+    // input, so a detached `updatedb` launched by ^Jl is noticed and
+    // chained into the LOCATE prompt on its own, without the user
+    // needing to press anything.
+    app.pollLocateUpdateDbCompletion();
     syncMouseTracking();
     bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
 
@@ -1507,6 +1513,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       return;
     }
     if (!gui.pumpEvents()) return;  // the window's own close button was clicked
+    // See Application::awaitingLocateUpdateDb()'s own comment: this is
+    // exactly the call whose ABSENCE (before this fix) let a real ^G
+    // click/keypress get queued by SDL but never processed -- a
+    // detached `updatedb` launched by ^Jl is now noticed and chained
+    // into the LOCATE prompt every frame, same as -c's own poll loop.
+    app.pollLocateUpdateDbCompletion();
 
     // Set true below whenever something was actually consumed this
     // iteration (a click, a key, a drag/coast step) -- used to skip

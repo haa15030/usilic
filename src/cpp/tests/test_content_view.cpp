@@ -396,11 +396,14 @@ TEST_CASE("setModeLineFieldsProvider: fields that would overflow the display wid
 // fix (item 298's own fitModeLineFields() fallback tier) kept trailing
 // (a short byte count) visible when trailing2 (a long LOCATE-path
 // annotation) didn't fit, but DROPPED trailing2 entirely in that case.
-// withTruncatedTrailing2() now truncates it instead (Finder-style,
-// "..." + tail -- the request's own literal spec: "一行に収まる文字数
-// -3を算出でOK"), so both fields show something.
-TEST_CASE("setModeLineFieldsProvider: an overflowing trailing2 is truncated (\"...\" + tail), "
-          "not dropped, when trailing still fits alongside it") {
+// withTruncatedTrailing2() now truncates it instead. 2026-08-14 update:
+// changed from tail-only ("..."+tail) to Finder-style MIDDLE-ellipsis
+// (head...tail, matching middleEllipsisTruncate()'s own convention) --
+// a direct user request: "戻り値も検索一覧同様「/Applications/Adobe
+// Acrob...source/.../HKSCS.txt」形式で", i.e. the same head-and-tail
+// convention LOCATE's own results-list rows already use.
+TEST_CASE("setModeLineFieldsProvider: an overflowing trailing2 is middle-ellipsis truncated "
+          "(head...tail), not dropped, when trailing still fits alongside it") {
   RecordingDisplay d(10, 40);  // 40 columns
   ContentView v(d);
   v.setViewport(0, 5);
@@ -410,12 +413,14 @@ TEST_CASE("setModeLineFieldsProvider: an overflowing trailing2 is truncated (\".
   // it well over 40. trailing ("283", short) stays; trailing2 gets
   // truncated to whatever's left.
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"HKSCS.txt", "283", false, "", "LOCATE: /very/long/path/that/does/not/fit/HKSCS.txt"};
+    return {"HKSCS.txt", "283", false, "", "/very/long/path/that/does/not/fit/at/all/HKSCS.txt"};
   });
   std::string text = v.modeLineText();
-  CHECK(text.find("283") != std::string::npos);       // the byte count survived
-  CHECK(text.find("...") != std::string::npos);        // trailing2 was truncated, not dropped
-  CHECK(text.substr(text.size() - 9) == "HKSCS.txt");  // the tail (filename) is what's kept visible
+  CHECK(text.find("283") != std::string::npos);          // the byte count survived
+  std::size_t ellipsisPos = text.find("...");
+  REQUIRE(ellipsisPos != std::string::npos);              // trailing2 was truncated, not dropped
+  CHECK(text.find('/') < ellipsisPos);                    // the HEAD is also kept visible, not just the tail
+  CHECK(text.substr(text.size() - 9) == "HKSCS.txt");     // the tail (filename) is kept visible too
 }
 
 // The GREP/CUT candidate-list precedent (2026-08-11 fix) still holds:

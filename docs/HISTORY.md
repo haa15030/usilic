@@ -3445,3 +3445,20 @@ make test 708/708件全通過(①②③④それぞれに新規テストを追�
 ④^[vについて: LOCATE結果一覧の文脈で改めてPTY検証しましたが、ESC>でカーソルを末尾へ動かした直後のESC-vが実際に手前へ正しく戻ることを確認しました(bキー単体と全く同じ挙動)。ユニットテスト・Directory文脈・LOCATE結果一覧文脈のいずれでもコード上・実バイナリ上ともに正常動作しており、tcb本体側での再現に至っていません。実機での再現条件(具体的な操作手順、使用ターミナルアプリ、Option/Altキーの「Meta相当」設定の有無等)を教えていただけますか。
 
 make test 711/711件全通過(①ChildProcess::runDetached()/hasExited()、LocateMode::startUpdateDb()、^Gが実行中のupdatedbを即座にキャンセルする新規テスト、②LOCATE結果へのマウスクリックの新規テスト、③withTruncatedTrailing2()の新規テスト2件)、make usilicもクリーンビルド成功。macOS実機相当のPTY検証で、①^Jl直後0.2秒でメッセージが表示され実行中である2.2秒後も表示され続け、そこで^Gを押すと約1秒以内に空のLOCATEプロンプトへ遷移し即座に文字入力できるようになること、②結果一覧で1回目のクリックが選択・同じ行への2回目のクリックでFileモードへの遷移になること、③HKSCS.txt実例でバイト数(367723)と「...TypeSupport/Unicode/Mappings/Adobe/HKSCS.txt」の両方が同時に表示されることを、それぞれ直接確認しました。CLAUDE.mdに項目299として記録、コミット・プッシュ済みです。
+
+<③の戻り値は通常ファイル（/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/Resource/TypeSupport/Unicode/Mappings/Adobe/HKSCS.txt）なので^G→(ls)はおかしい=ay。
+LOCATEの検索結果一覧へ戻るわけだし検索対象ファイルの所在地情報も重要なので表示もなるべく詳しい方が望ましい。その意味でも=ayのモード名はLOCATE、戻り値も検索一覧同様「/Applications/Adobe Acrob...source/TypeSupport/Unicode/Mappings/Adobe/HKSCS.txt」形式でよろしく。
+^G連打で最終的にLOCATEを起動した(ls)へ戻るのはかまわないが、検索ファイル所在地へ降りるためのキーアサインも実はあるので反映してほしい（^J^K）。上の例なら「/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/Resource/TypeSupport/Unicode/Mappings/Adobe/」の(ls)になる（LOCATEへは戻らない）。
+④の^[不具合は-gで起きる模様。^Jl後の^Gも受け付けない。-cでは問題なし。
+
+>③④修正しました。④は-g固有の設計不備が真因でした、詳細は以下の通りです。
+
+③戻り値の意味の取り違え: ご指摘の通り、通常ファイルの^Gが(ls)へ行くのはおかしいという点、その通りでした。原因はCommand::BackのFileモード分岐が常にreturnToDirectory()(固定でDirectoryモード)を呼んでいたことです。LOCATE経由のファイルは検索元ディレクトリと無関係な場所にあり得るため、^Gはまず検索結果一覧へ戻るべきでした。fileReturnMode_を新設し、LOCATE経由で開いた場合のみLocateへ、それ以外は従来通りDirectoryへ戻すようにしました。^G連打で最終的にLOCATEの起動元へ戻る点は、既存のreturnFromLocate()がそのまま正しく効くため変更不要でした。
+
+③モード名/戻り値のフォーマット: FileMode::setSearchAnnotation()をsetSearchOrigin(label, detail)へ再設計し、labelがモード名欄(「LOCATE」)、detailが完全パス(「LOCATE: 」接頭辞なし)を戻り値欄に表示するようにしました。戻り値欄が一行に収まらない場合の切り詰めも、末尾のみ保持する方式から、検索結果一覧の各行と同じFinder風の頭...末尾省略に統一しています。
+
+K-18(^J^K「ファイルセレクタへ移動」)を新規実装しました。usilicrc自身にこのキー割当は存在していましたが、このC++移植では今回まで未実装でした。ご指示通り、LOCATEへは戻らないワンウェイの遷移として、現在のファイルの所在ディレクトリへ直接ジャンプします。
+
+④の真因: -g用のrunGuiPhase()を確認したところ、^[v自体の問題ではなく、前回実装したrunLocateUpdateDb()の非同期化がまだ不完全だったことが原因と判明しました。前回の実装はrunLocateUpdateDb()内部でpoll(STDIN_FILENO,...)を伴う無期限ループを回す設計だったため、このループがApplication呼び出し1回の中でブロックしたままとなり、-g自身のSDLイベントポンプ(gui.pumpEvents())がループを抜けるまで二度と呼ばれなくなっていました。SDLウィンドウで実際に押された^GはSDL自身にはキューされますが、gui.pumpEvents()が呼ばれない限りApplication側には一切届きません。-c側だけたまたま問題が起きなかったのは、STDIN_FILENOがそのまま実キーボードだったからに過ぎず、設計上の意図ではありませんでした。runLocateUpdateDb()自体を完全非ブロッキング化し、detached起動した直後に即座にreturnするよう変更、新設のawaitingLocateUpdateDb()/pollLocateUpdateDbCompletion()を-c/-g双方の実行ループ自身が元々持っている毎ループティックから呼び出す設計にしました。^G自体は新たなポーリングを必要とせず、両バックエンドが既に毎キー入力ごと呼んでいるfeedByte()を通じてそのまま届きます。
+
+make test 715/715件全通過(テスト作成時、新規追加したindexOf("subdir")の1文字ミス("subdir/"が正しい表記でした)によりwhileループが無限ループしmake testが実質ハングする事故があり、原因特定の上修正しました)、make usilicもクリーンビルド成功。macOS実機相当のPTY検証で、③LOCATE経由で開いたファイルのモードラインがモード名「LOCATE」+完全パスの戻り値になること、そこから^Gで(ls)ではなくLOCATE結果一覧へ戻ること、同じファイルから^J^Kで所在ディレクトリの(ls)(LOCATEへは戻らない)へ直接遷移することを直接確認しました。④はこのセッションに-g(GUI)の実行環境が無いため、-c側での再検証とrunGuiPhase()のコードレベルでの動作確認に留まっています。実機での-g再現確認をお願いします。CLAUDE.mdに項目300として記録、コミット・プッシュ済みです。

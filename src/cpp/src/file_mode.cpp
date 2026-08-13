@@ -51,16 +51,18 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     // separate, earlier misreading already established and reverted
     // that "ファイルサイズは「1108009」のままでいい").
     std::string trailing = ec ? directory : std::to_string(size);
-    // searchAnnotation_ (see its own setSearchAnnotation() comment)
-    // takes over trailing2 in place of the plain directory whenever
-    // it's set -- same substitution DirectoryMode's own provider makes
-    // for searchAnnotation_ vs. its "usilic v1.5b" rightWatermark.
-    std::string trailing2 = ec ? "" : (searchAnnotation_.empty() ? directory : searchAnnotation_);
+    // searchOriginLabel_/searchOriginDetail_ (see setSearchOrigin()'s
+    // own comment) take over the name/trailing2 fields whenever set --
+    // same substitution DirectoryMode's own provider makes for
+    // searchAnnotation_ vs. its "usilic v1.5b" rightWatermark, just
+    // spanning two fields here instead of one.
+    std::string name = searchOriginLabel_.empty() ? path.filename().string() : searchOriginLabel_;
+    std::string trailing2 = ec ? "" : (searchOriginLabel_.empty() ? directory : searchOriginDetail_);
     // File mode's trailing field is legacy's padded-to-edge style, see
     // ModeLineFields::fillTrailingToEdge's own comment. No
     // rightWatermark here -- see its own comment on why File mode
     // never shows it.
-    return {path.filename().string(), trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", trailing2};
+    return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", trailing2};
   });
 }
 
@@ -93,7 +95,9 @@ bool FileMode::loadFile(const std::string &path) {
 
   view_.setLines(readAndWrap(path));
   currentFile_ = path;
-  searchAnnotation_.clear();  // a fresh load invalidates the old search -- see setSearchAnnotation()'s own comment
+  // a fresh load invalidates the old search -- see setSearchOrigin()'s own comment
+  searchOriginLabel_.clear();
+  searchOriginDetail_.clear();
   // K-46 (^X^F, "FILE: Select file name")'s own data source -- see
   // DirectoryMode::enterDirectory()'s identical pushRecent() call for
   // K-48's own RecentDirectory counterpart.
@@ -136,7 +140,10 @@ bool FileMode::reflow(int newWidth) {
 
 const std::string &FileMode::currentFile() const { return currentFile_; }
 
-void FileMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
+void FileMode::setSearchOrigin(const std::string &label, const std::string &detail) {
+  searchOriginLabel_ = label;
+  searchOriginDetail_ = detail;
+}
 
 void FileMode::setEncoding(Charset::Encoding encoding) { encoding_ = encoding; }
 

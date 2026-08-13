@@ -707,11 +707,22 @@ ContentView::ModeLineFields ContentView::withTruncatedTrailing2(ModeLineFields f
 
   if (trailing2Len <= budgetWith) return fields;  // already fits fully alongside trailing -- nothing to do
 
+  // 2026-08-14 fix: was tail-only ("..." + the very end), which loses
+  // the HEAD entirely (e.g. FileMode::setSearchOrigin()'s full
+  // absolute path lost its "/Applications/..." start). A direct user
+  // request ("戻り値も検索一覧同様「/Applications/Adobe Acrob...
+  // source/.../HKSCS.txt」形式で") asked for the SAME middle-ellipsis
+  // convention LOCATE's own results-list rows already use (head...tail,
+  // see middleEllipsisTruncate()'s own comment) here too -- both ends
+  // of a full path carry real information (where it lives, what it's
+  // named), unlike this function's own trailing/trailing2 CHOICE logic
+  // just above, which is about which FIELD to keep, not how to elide
+  // one.
   auto truncate = [&](int budget) -> std::string {
     if (budget <= 0) return "";
     if (trailing2Len <= budget) return fields.trailing2;
     if (budget < 4) return "";  // no room even for "..." + one real character
-    return "..." + fields.trailing2.substr(fields.trailing2.size() - (budget - 3));
+    return middleEllipsisTruncate(fields.trailing2, budget);
   };
 
   if (trailing2Len <= budgetWithout && !fields.trailing.empty()) {

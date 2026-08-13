@@ -783,53 +783,77 @@ TEST_CASE_FIXTURE(Fixture, "drawPromptLabel (2026-08-13 generalization): LOCATE/
 // label-drawing logic instead of reusing it (item 291's whole point
 // was eliminating exactly this kind of one-off duplication). Now
 // routed through drawPromptLabel()'s own new staticMessage parameter.
+// 2026-08-14 (CLAUDE.md history item 299): the THIRD redesign of this
+// call in one day -- see runLocateUpdateDb()'s own comment for why the
+// first two (a blocking locateMode_.updateDb() call, then an unbounded
+// poll()-in-one-call loop) each broke down, the second specifically in
+// -g (a real report: "④の^[不具合は-gで起きる模様。^Jl後の^Gも受け
+// 付けない"). runLocateUpdateDb() itself is now NON-BLOCKING: it
+// launches the detached command and returns immediately, leaving
+// awaitingLocateUpdateDb() true until either ^G arrives (through the
+// normal feedByte() path) or pollLocateUpdateDbCompletion() (called
+// every run-loop tick by app/main.cpp, both backends) notices the
+// child has exited.
 TEST_CASE_FIXTURE(Fixture, "LOCATE: ^Jl draws \"LOCATE \" + underlined \"Updating database...\" via "
                            "drawPromptLabel()'s own shared staticMessage path, not a separate one-off") {
-  // 2026-08-14: startUpdateDb() now runs detached (see its own
-  // comment) -- the real default UpdateDb command (macOS's own
-  // /usr/libexec/locate.updatedb) can take MINUTES, and this test
-  // needs it to finish so app.promptActive() below reflects the
-  // POST-updatedb state, not a still-running one. A fast stand-in
-  // command (same convention as every other UpdateDb test).
   configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"true"}, std::nullopt});
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
-  app.feedByte('l', std::nullopt);  // draws the message, polls until `true` exits, then chains onward
-  // The message itself is long gone by the time feedByte() returns
-  // (runLocateUpdateDb() draws it, polls until the child exits, then
-  // immediately calls startLocatePrompt() which redraws the mode line
-  // as a real editable prompt) -- this only asserts the FINAL state (a
-  // real prompt, matching startLocatePrompt()'s own already-tested
-  // behavior), since there's no way to observe the transient
-  // synchronously-drawn-then-overwritten frame from outside this one
-  // call without a dedicated test seam; the message's own rendering
-  // was instead verified via a live PTY reproduction (see CLAUDE.md
-  // history item 294).
+  CHECK(app.feedByte('l', std::nullopt));
+  // Returns immediately, BEFORE `true` has necessarily even exited --
+  // this only asserts the "now awaiting" state (a real prompt hasn't
+  // started yet); the message's own rendering was verified via a live
+  // PTY reproduction (see CLAUDE.md history item 294).
+  CHECK(app.awaitingLocateUpdateDb());
+  CHECK_FALSE(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "LOCATE: pollLocateUpdateDbCompletion() chains into the LOCATE prompt once "
+                           "the detached updatedb actually exits") {
+  configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"true"}, std::nullopt});
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  app.feedByte('l', std::nullopt);
+  REQUIRE(app.awaitingLocateUpdateDb());
+  // `true` exits almost instantly, but exactly when is a real race --
+  // poll a few times rather than asserting after exactly one call.
+  for (int i = 0; i < 200 && app.awaitingLocateUpdateDb(); i++) {
+    app.pollLocateUpdateDbCompletion();
+    if (app.awaitingLocateUpdateDb()) usleep(1000);
+  }
+  CHECK_FALSE(app.awaitingLocateUpdateDb());
   CHECK(app.promptActive());
 }
 
-// 2026-08-14 (CLAUDE.md history item 298's follow-up, "常時^Gで...
-// 移行"): ^G now cancels out of a still-RUNNING updatedb at any point,
-// not just during a pre-run grace window -- a slow-enough command
-// (`sleep`) combined with a queued ^G (via playRawMacro(), read on the
-// very first loop iteration regardless of real elapsed time -- see
-// runLocateUpdateDb()'s own isPlayingRawMacro()-first comment) proves
-// this without the test itself actually waiting out a real sleep.
+// 2026-08-14 (CLAUDE.md history item 298/299's follow-up, "常時^Gで...
+// 移行"): ^G cancels out of a still-RUNNING updatedb at any point --
+// arrives as an ordinary byte through feedByte(), handled by
+// dispatchByte()'s own top-level awaitingLocateUpdateDb() gate, so no
+// polling or real elapsed time is needed to prove this: the command
+// doesn't even need to be slow anymore (unlike the previous, now-
+// removed poll()-in-one-call design), since runLocateUpdateDb() itself
+// no longer blocks waiting for it.
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l, ^G cancels a still-running updatedb and merges into ^J^L") {
-  // "sleep 2" (not "true"): genuinely still running when ^G is checked,
-  // matching the real scenario this guards against -- short enough
-  // that an orphaned instance (this test bails out via the queued ^G
-  // before ever reaping it, by design -- see hasExited()'s own comment
-  // on why an unreaped detached child isn't this class's concern) exits
-  // on its own well within any reasonable test-suite run.
   configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"sleep", "2"}, std::nullopt});
   history.pushRecent(RingCategory::RecentLocateQuery, "previous-query");
-  keyInput.playRawMacro("\x07");  // ^G, queued before ^Jl is even sent
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
-  CHECK(app.feedByte('l', std::nullopt));
+  app.feedByte('l', std::nullopt);
+  REQUIRE(app.awaitingLocateUpdateDb());
+  CHECK(app.feedByte(0x07, std::nullopt));  // ^G
+  CHECK_FALSE(app.awaitingLocateUpdateDb());
   CHECK(app.promptActive());
   CHECK(app.promptText() == "previous-query");  // ^J^L's own seeding, not a blank prompt
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: while awaiting updatedb, every byte except ^G is ignored") {
+  configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"sleep", "2"}, std::nullopt});
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  app.feedByte('l', std::nullopt);
+  REQUIRE(app.awaitingLocateUpdateDb());
+  CHECK_FALSE(app.feedByte('x', std::nullopt));
+  CHECK(app.awaitingLocateUpdateDb());  // unaffected -- still waiting
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^A/^E/^B/^F move the cursor (beginning/end/back/forward) "
@@ -1914,35 +1938,6 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^G cancels the prompt without running anyth
 // runs `updatedb` (LocateUpdateDb) and never opens a prompt; ^J ^L
 // keeps the "open a prompt" role, now seeded with the previous query.
 
-// 2026-08-13 update (CLAUDE.md history item 293): ^J l now chains
-// straight into K-40's own seeded LOCATE prompt once updatedb()
-// finishes, rather than silently returning to wherever it was
-// invoked from -- a direct user request ("完了次第^J^Lへ移行して
-// ほしい"). ok (updatedb's own success/failure) is orthogonal to
-// this -- the chain happens either way, matching "機能自体は完了で
-// いい" (don't gate the chain on the command actually working).
-// setCommandForTest() swaps in a fast, harmless real command instead
-// of the actual configured UpdateDb default -- see
-// test_locate_mode.cpp's own identical comment for why (macOS's real
-// default genuinely scans the whole filesystem, which once hung an
-// actual `make test` run).
-// 2026-08-14 (CLAUDE.md history item 298): a direct user request --
-// the item-297 "wait 2s, ^C cancels" experiment hid this exact chain
-// behind a silent pre-run window and, separately, caused a real hang
-// on the user's own machine. Reverted to item 294's own original
-// shape: runLocateUpdateDb() draws its status message immediately and
-// blocks straight through to startLocatePrompt(), whose own prompt
-// already has independently-tested ^G-cancel support -- no bespoke
-// cancel key or test-only wait-ms override needed anymore.
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l runs `updatedb` (LocateUpdateDb), then chains into the LOCATE prompt") {
-  configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"true"}, std::nullopt});
-  REQUIRE(app.start(path()));
-  app.feedByte(0x0a, std::nullopt);
-  CHECK(app.feedByte('l', std::nullopt));
-  CHECK(app.promptActive());
-  CHECK(app.promptText().empty());  // no prior query yet -- same seeding rule as ^J^L itself
-}
-
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^L starts a LOCATE prompt (StartLocate)") {
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
@@ -2132,8 +2127,14 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a result opens it (Directory or Fil
 // the annotation AND the byte-count-not-dropped fix (fitModeLineFields()'s
 // new fallback tier, see its own comment) can both be checked exactly,
 // unconditionally.
-TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a File result sets a short, exact \"LOCATE: <path>\" annotation "
-                           "and still shows the byte count") {
+// 2026-08-14 fix (two direct user corrections): the name field is
+// "LOCATE" (not the bare filename) and the trailing2 field is the raw
+// path with NO "LOCATE: " prefix (not "LOCATE: <path>") -- see
+// FileMode::setSearchOrigin()'s own comment. Also: ^G from here
+// returns to LOCATE's own results list, not straight to (ls)
+// (fileReturnMode_, see its own declaration comment).
+TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a File result sets name=\"LOCATE\" + the raw path as trailing2, "
+                           "still shows the byte count, and ^G returns to LOCATE results") {
   fs::path target = root / "found.txt";
   { std::ofstream(target) << "hello"; }  // 5 bytes
   fs::path fakeLocate = root / "fake_locate.sh";
@@ -2155,8 +2156,12 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a File result sets a short, exact \
   REQUIRE(app.currentMode() == ApplicationMode::File);
   REQUIRE(app.fileMode().currentFile() == target.string());
   const std::string &modeLine = app.activeContentView().modeLineText();
-  CHECK(modeLine.find("LOCATE: " + target.string()) != std::string::npos);
+  CHECK(modeLine.substr(0, 6) == "LOCATE");  // the name field itself, not the bare filename
+  CHECK(modeLine.find(target.string()) != std::string::npos);  // the raw path, no "LOCATE: " prefix
   CHECK(modeLine.find("5") != std::string::npos);  // the byte count, no longer dropped alongside the long path
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
 }
 
 TEST_CASE_FIXTURE(Fixture, "LOCATE: starting a nested search from within locate results fails") {
@@ -2790,6 +2795,51 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): refused outside 
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
   CHECK_FALSE(app.handleCommand(Command::GoToParentDirectory));
+}
+
+// 2026-08-14 addition, K-18 (^J^K, "Go to file-selector") -- a direct
+// user request ("検索ファイル所在地へ降りるためのキーアサインも実は
+// あるので反映してほしい（^J^K）"), previously unimplemented in this
+// port. See goToFileSelector()'s own comment on scope.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from File mode, jumps to a real `ls` listing "
+                           "of the file's own containing directory") {
+  fs::path subdir = root / "subdir";
+  fs::create_directories(subdir);
+  { std::ofstream(subdir / "target.txt") << "x"; }
+
+  REQUIRE(app.start(path()));
+  int subdirIdx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != subdirIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().currentDirectory() == subdir.string() + "/");
+  int fileIdx = indexOf("target.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != fileIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // open target.txt
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.fileMode().currentFile() == (subdir / "target.txt").string());
+
+  CHECK(app.handleCommand(Command::GoToFileSelector));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == subdir.string() + "/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^K dispatches GoToFileSelector") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  CHECK(app.feedByte(0x0b, std::nullopt));  // ^K
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): refused outside File mode") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.handleCommand(Command::GoToFileSelector));
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleLsMode): refused outside Directory mode (K-26's own scoping)") {

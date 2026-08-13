@@ -210,6 +210,15 @@ enum class Command {
   // K-19 (^O^K, M_m): jumps to the parent of the current directory.
   // See DirectoryMode::goToParent()'s own comment.
   GoToParentDirectory,
+  // K-18 (^J^K, "Go to file-selector"): from File mode, jumps straight
+  // to a real `ls` listing of the CURRENT file's own containing
+  // directory -- see Application::goToFileSelector()'s own comment. A
+  // direct user request ("検索ファイル所在地へ降りるためのキー
+  // アサインも実はあるので反映してほしい（^J^K）"), added 2026-08-14;
+  // not legacy-source-verified beyond usilicrc's own K-18 line itself
+  // (this port has no legacy binary to compare cursor-positioning
+  // behavior against, see goToFileSelector()'s own comment on scope).
+  GoToFileSelector,
   // K-60 (^Xs, M_hup): kills the current SHELL child (if any) and
   // starts a fresh one. See Application::shellRestart()'s own
   // comment.
@@ -971,6 +980,38 @@ class Application {
   bool promptActive() const;
   const std::string &promptText() const;
 
+  // 2026-08-14: a real report ("④の^[不具合は-gで起きる模様。^Jl後の
+  // ^Gも受け付けない。-cでは問題なし") traced runLocateUpdateDb()'s
+  // OWN internal poll(STDIN_FILENO,...) loop back to the exact
+  // architectural boundary this class otherwise always respects (see
+  // its own class comment on staying "single-threaded/synchronous
+  // throughout" and backend-agnostic): that loop blocked INSIDE one
+  // Application call, so -g's own SDL event pump (app/main.cpp's
+  // runGuiPhase()) never got to run again until the loop returned --
+  // meaning a real ^G click/keypress in the GUI window was queued by
+  // SDL but never actually processed, since gui.pumpEvents() was never
+  // called again while stuck in there. -c's own terminal run loop
+  // happened to still work because STDIN_FILENO IS the real keyboard
+  // there, so the poll() inside the blocked call could still see ^G
+  // directly -- but that was incidental, not by design, and broke the
+  // very "backend-agnostic" property this class otherwise guarantees.
+  // Redesigned so runLocateUpdateDb() itself returns immediately after
+  // launching the detached updatedb (see its own comment) -- these two
+  // methods let EITHER run loop's own OWN existing per-iteration tick
+  // (both already loop frequently regardless of backend) drive the
+  // wait instead, the same "flag checked externally" shape wantsExit()/
+  // promptActive() themselves already use.
+  bool awaitingLocateUpdateDb() const;
+  // Call once per run-loop iteration, unconditionally (cheap no-op
+  // when nothing is pending) -- checks ChildProcess::hasExited() on
+  // the running updatedb and, once it's done, transitions to
+  // startLocatePrompt() itself. ^G is NOT handled here: it arrives as
+  // an ordinary byte through feedByte()/dispatchByte()'s own new
+  // top-level awaitingLocateUpdateDb() gate (checked before even
+  // promptKind_), so both run loops get it for free through the exact
+  // same call they already make for every other keystroke.
+  void pollLocateUpdateDbCompletion();
+
   // True once an exit has been confirmed (StartExit's prompt was
   // submitted with a leading 'y') -- a future real run loop's signal
   // to stop calling feedByte() and unwind. Application itself never
@@ -1147,6 +1188,7 @@ class Application {
   std::string materializeArchiveTempFile(const std::string &entryName, const std::vector<unsigned char> &bytes);
   bool openSelectedDuEntry();
   bool openSelectedLocateResult();
+  bool goToFileSelector();
   bool openSelectedListEntry();
   bool toggleMark();
   bool returnToDirectory();
@@ -1158,6 +1200,7 @@ class Application {
   bool returnToCutResults();
   bool returnFromMan();
   bool returnFromLocate();
+  bool returnFromFileToLocate();
   bool returnFromArchiveContent();
   bool returnFromArchive();
   bool returnFromShell();
@@ -1191,6 +1234,11 @@ class Application {
   bool startProgramList();
   bool startLocatePrompt();
   bool runLocateUpdateDb();
+  // >0 while a detached `updatedb` launched by runLocateUpdateDb() is
+  // still running (see awaitingLocateUpdateDb()'s own comment); -1
+  // otherwise. Not KeyInput-related at all anymore -- the earlier
+  // poll()-based version's own keyInput_ member is gone along with it.
+  pid_t locateUpdateDbPid_ = -1;
   bool startShell();
   // Shared by startShell() and K-61/K-62/K-63/K-64: gets Shell mode
   // on screen (starting the shell process if needed) WITHOUT
@@ -1351,11 +1399,6 @@ class Application {
   std::vector<StyledLine> wrapHelpText(int width) const;
 
   Display &display_;  // handleResize()'s own rows()/columns() lookup -- no other member currently needs this
-  // 2026-08-14: previously only ever forwarded straight through to
-  // programMode_'s own constructor, never stored here -- runLocateUpdateDb()
-  // is the first thing that needs KeyInput itself (polling for ^G
-  // while a detached `updatedb` child runs, see its own comment).
-  KeyInput &keyInput_;
   PathResolver pathResolver_;  // ^Xf/^Xd path prompts, see the constructor's own homeDirectory comment
   std::string wFilePath_;  // K-17/K-64's write-buffer-to-a-file target, see the constructor's own comment
   // K-67 (^X^Ke, M_error, "ERROR"): where CpMvRmMode routes non-
@@ -1424,6 +1467,21 @@ class Application {
   ApplicationMode cutReturnMode_ = ApplicationMode::Directory;
   ApplicationMode manReturnMode_ = ApplicationMode::Directory;
   ApplicationMode locateReturnMode_ = ApplicationMode::Directory;
+  // 2026-08-14: unlike grepReturnMode_/cutReturnMode_/etc (which track
+  // where a PROMPT should return to), this tracks where FILE mode's
+  // OWN ^G (Command::Back) should go -- a real user correction
+  // ("戻り値は通常ファイル...なので^G→(ls)はおかしい。LOCATEの検索
+  // 結果一覧へ戻るわけだし") found openSelectedLocateResult()'s File
+  // branch always fell through to returnToDirectory()'s hardcoded
+  // ApplicationMode::Directory, even though a file reached via LOCATE
+  // could be anywhere on the filesystem, unrelated to whatever
+  // directory was active before the search. Explicitly reset to
+  // Directory at every OTHER loadFile()-then-File-mode call site (see
+  // each one's own "see its own declaration comment" marker) rather
+  // than relying on FileMode::loadFile() itself to clear it (FileMode
+  // has no idea this Application-level field exists, same boundary
+  // FileMode::setSearchOrigin() already respects).
+  ApplicationMode fileReturnMode_ = ApplicationMode::Directory;
   ApplicationMode shellReturnMode_ = ApplicationMode::Directory;
   // The previous mode's own "name" field (e.g. DirectoryMode::
   // currentDirectory(), FileMode::currentFile()), snapshotted at the

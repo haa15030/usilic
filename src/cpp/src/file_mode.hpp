@@ -102,19 +102,29 @@ class FileMode {
   // based anchor). False (a no-op) if no file is currently loaded.
   bool reflow(int newWidth);
 
-  // Overrides the mode-line's trailing2 field (normally the file's
-  // containing directory, see the constructor's own comment) with
-  // arbitrary text -- mirrors DirectoryMode::setSearchAnnotation()
-  // exactly (see its own comment for the full rationale), added for
+  // Overrides BOTH the mode-line's name field (normally the bare
+  // filename) and its trailing2 field (normally the file's containing
+  // directory, see the constructor's own comment) -- added for
   // Application::openSelectedLocateResult()'s File branch: a file
   // reached via LOCATE isn't necessarily anywhere near the directory
   // you were just browsing, so the plain containing-directory display
-  // is less useful there than showing which LOCATE search actually
-  // found it (a real user report: "旧版と違うので注意" -- legacy's own
-  // "戻り値" field for this case). Cleared automatically at the top of
-  // every loadFile() call (see its own comment), same as
-  // DirectoryMode clears searchAnnotation_ on every fresh `ls`.
-  void setSearchAnnotation(const std::string &text);
+  // is less useful there than the search that actually found it (a
+  // real user report: "旧版と違うので注意" -- legacy's own "戻り値"
+  // field for this case). `label` becomes the name (e.g. "LOCATE",
+  // matching that search's own results-screen name -- a direct user
+  // correction, screenshot =aw: "「LOCATE: .txt」はモード名ではなく
+  // 戻り値、モード名は「LOCATE」で" clarified that the search's own
+  // label belongs in the NAME slot here, not prefixed onto detail).
+  // `detail` becomes trailing2 verbatim (Finder-style middle-ellipsis
+  // truncated to fit -- see ContentView::withTruncatedTrailing2()'s
+  // own comment -- matching a direct user request: "戻り値も検索一覧
+  // 同様「/Applications/Adobe Acrob...source/.../HKSCS.txt」形式で"
+  // -- the SAME truncation convention LOCATE's own results-list rows
+  // already use, since a file's full absolute path is exactly the kind
+  // of "long shared prefix, differing tail" text that convention
+  // exists for). Cleared automatically at the top of every loadFile()
+  // call (see its own comment).
+  void setSearchOrigin(const std::string &label, const std::string &detail);
 
  private:
   std::vector<ContentView::Line> readAndWrap(const std::string &path) const;
@@ -124,7 +134,8 @@ class FileMode {
   Charset::Encoding encoding_;
   int width_;
   std::string currentFile_;
-  std::string searchAnnotation_;
+  std::string searchOriginLabel_;
+  std::string searchOriginDetail_;
 };
 
 }  // namespace fm
