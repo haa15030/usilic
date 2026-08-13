@@ -3384,3 +3384,24 @@ updatedbについて: おっしゃる通りで、「updatedbという文字列�
 この修正の副産物として、実際にmacOSのupdatedbパスを実行可能なプログラムへ変えた結果、既存テストがデフォルト設定のままLocateMode::updateDb()を呼んでおり、実機で本物の/usr/libexec/locate.updatedb(ファイルシステム全体を走査する低速処理)を実行してしまい、make testが長時間ハングする事故がありました。Configuration::setCommandForTest()(テスト専用の直接上書き手段)を新設し、該当テストは高速で無害な実コマンドに差し替えて修正しています。
 
 `make test` 703/703件全通過(新規テスト計4件)、`make usilic`もクリーンビルド成功。macOS実機上のPTY検証で、^Jp(PROGRAM)のプロンプトにも戻り先ディレクトリが表示されることを直接確認しました。CLAUDE.mdに項目296として記録、コミット・プッシュ済みです。
+
+<①^Jlでは2秒間だけ待機したのちupdatedbを実行。2秒sleep間に^Cが押されたらupdatedbを実行せずに^J^Cに合流。
+②^J^C→'.txt'[return]→^[が利かない（^[v：1ページ戻る/^[<：ページTOPへ/^[>：ページENDへ等）。
+③ハイライト行で[return]が無反応=aq
+④行末が同じで区別できない=aq。macOSのFinder=arと同じく行の中央を「...」として行末まで表示して欲しい。
+
+①②③④をよろしく。
+
+>①③④は実装、②は調査の結果ご報告と食い違う点があったため判断根拠を確認させてください。
+
+①^Jlの2秒待機+^Cキャンセル: updatedb実行前にlocateUpdateDbWaitMs_(既定2000ms)だけ待機し、その間に^C(0x03)が来たらupdatedbを一切実行せずstartLocatePrompt()(^J^Lと同じ、前回クエリをシードしたプロンプト)へ直接合流するようにしました。KeyInput::readByte()をループで呼び続け経過時間をstd::chronoで比較する方式です(専用のsleep()/poll()は新設せず、readByte()自身のタイムアウトが自然なペーシングになります)。
+
+③検索結果への[return]実装: LocateModeのクラスコメントで「今回のスライスでは未対応」と明記されていた「選択結果に対して何をするか」を実装しました。DUの同種実装を鏡写しにし、locateの結果(生パスのみ)をstd::filesystem::is_directory()で判定してDirectory/Fileへ振り分けます。
+
+④長い共通接頭辞行のFinder風中央省略: ContentView::renderLine()にmiddleEllipsisTruncate()を追加しました。UTF-8境界を壊さずに歩きつつ、予算を頭1:尾2の比率で分配しています(LOCATEの絶対パスは末尾の差分こそ見せる必要があるため)。ハイライトや属性範囲を持つ行(Directory一覧・GREPマッチ等)は対象外で、素のプレーンテキスト行(LocateMode/DuMode等)のみに適用しています。
+
+②ESC系ナビゲーションキーについて: PTY実機検証したところ、^[</^[>(Command::GoToTop/GoToBottom)は実際には既に正常に動作していることを確認しました(ご報告と食い違う結果です)。一方tcb/src/key.cを直接確認したところ、legacy側の実際のキー割当はv単体(ESC無し)がM_kforw、ESC wがM_kbackであり、ご記述の「^[v＝1ページ戻る」とは対応するキーも前進/後退の向きも異なっていました。以下2点を確認させてください。
+(a) ^[</^[>は今どう再現していますか(操作手順・タイミング等)？
+(b) v/ESC-wの実際の割当はそのまま採用してよいですか、それとも別の意図がありましたか？
+
+`make test` 704/704件全通過(①③④それぞれに新規テストを追加、既存の「LOCATE結果へのEnterはno-op」テストを新挙動へ更新)、`make usilic`もクリーンビルド成功。macOS実機上のPTY検証で、長い共通接頭辞を持つlocate .txtの各行が中央省略により末尾まで判別可能になること、ハイライト行で[return]すると実際にFile/Directoryへ遷移すること、^Jl直後の^Cがupdatedbを実行せず即座に^J^Lのシード付きプロンプトへ合流すること、^C無しの場合は約2秒待ってから「Updating database...」が表示されることを、それぞれ直接確認しました。CLAUDE.mdに項目297として記録、コミット・プッシュ済みです。

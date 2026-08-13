@@ -969,6 +969,13 @@ class Application {
   bool promptActive() const;
   const std::string &promptText() const;
 
+  // Test-only override for runLocateUpdateDb()'s own ^Jl 2-second
+  // cancel-window wait (see its own comment) -- production code never
+  // calls this. Exists so an automated test can exercise the ^C-
+  // cancels and waits-out-normally paths without a real multi-second
+  // delay, the same reasoning as Configuration::setCommandForTest().
+  void setLocateUpdateDbWaitMsForTest(int ms);
+
   // True once an exit has been confirmed (StartExit's prompt was
   // submitted with a leading 'y') -- a future real run loop's signal
   // to stop calling feedByte() and unwind. Application itself never
@@ -1144,6 +1151,7 @@ class Application {
   // (mkdtemp()/ofstream failure).
   std::string materializeArchiveTempFile(const std::string &entryName, const std::vector<unsigned char> &bytes);
   bool openSelectedDuEntry();
+  bool openSelectedLocateResult();
   bool openSelectedListEntry();
   bool toggleMark();
   bool returnToDirectory();
@@ -1188,6 +1196,8 @@ class Application {
   bool startProgramList();
   bool startLocatePrompt();
   bool runLocateUpdateDb();
+  // See setLocateUpdateDbWaitMsForTest()'s own (public) comment.
+  int locateUpdateDbWaitMs_ = 2000;
   bool startShell();
   // Shared by startShell() and K-61/K-62/K-63/K-64: gets Shell mode
   // on screen (starting the shell process if needed) WITHOUT
@@ -1348,6 +1358,11 @@ class Application {
   std::vector<StyledLine> wrapHelpText(int width) const;
 
   Display &display_;  // handleResize()'s own rows()/columns() lookup -- no other member currently needs this
+  // 2026-08-14: previously only ever forwarded straight through to
+  // programMode_'s own constructor, never stored here -- runLocateUpdateDb()
+  // is the first thing that needs KeyInput itself (polling its fd()
+  // during the ^Jl 2-second cancel window, see its own comment).
+  KeyInput &keyInput_;
   PathResolver pathResolver_;  // ^Xf/^Xd path prompts, see the constructor's own homeDirectory comment
   std::string wFilePath_;  // K-17/K-64's write-buffer-to-a-file target, see the constructor's own comment
   // K-67 (^X^Ke, M_error, "ERROR"): where CpMvRmMode routes non-

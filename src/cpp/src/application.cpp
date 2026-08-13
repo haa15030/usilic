@@ -1,10 +1,12 @@
 #include "application.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <poll.h>
 #include <set>
 #include <sstream>
 #include <unistd.h>
@@ -249,6 +251,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
                           std::string homeDirectory)
     : display_(display),
+      keyInput_(keyInput),
       pathResolver_(homeDirectory),
       wFilePath_(homeDirectory + "/.usilic/w.usilic"),
       errorLogPath_(homeDirectory + "/.usilic/error"),
@@ -1436,6 +1439,7 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::ListBrowser) return openSelectedListEntry();
       if (currentMode_ == ApplicationMode::Key) return executeSelectedKeyBinding();
       if (currentMode_ == ApplicationMode::Grep) return openSelectedGrepMatch();
+      if (currentMode_ == ApplicationMode::Locate) return openSelectedLocateResult();
       return false;
     case Command::Back:
       if (currentMode_ == ApplicationMode::Key) return returnFromKey();
@@ -1779,6 +1783,34 @@ bool Application::openSelectedDuEntry() {
     return true;
   }
   if (!fileMode_.loadFile(entry->path)) return false;
+  currentMode_ = ApplicationMode::File;
+  return true;
+}
+
+// 2026-08-14: a direct user report ("ハイライト行で[return]が無反応")
+// -- LocateMode's own class comment had explicitly deferred this
+// ("Deliberately excluded (future work, not this slice): deciding
+// what to do with a selected result"), and that "future work" moment
+// arrived. Mirrors openSelectedDuEntry() just above exactly (DU's own
+// results are ALSO arbitrary filesystem paths that can be either) --
+// the one difference is DuEntry already carries its own isDirectory
+// flag (parsed from `du`'s own output), while LocateMode::results()
+// is just raw paths from `locate`, so this checks the filesystem
+// directly instead. Matches DU's own precedent of NOT resetting the
+// directory-navigation floor here (see DirectoryMode::
+// resetNavigationToFloor()'s own comment -- that's specifically for
+// the ^X^D history PICKER's "discard a stale prior chain" case, not
+// every non-linear way of arriving at a directory).
+bool Application::openSelectedLocateResult() {
+  const std::string *path = locateMode_.selectedResult();
+  if (!path) return false;
+  std::error_code ec;
+  if (std::filesystem::is_directory(*path, ec) && !ec) {
+    if (!directoryMode_.enterDirectory(*path)) return false;
+    currentMode_ = ApplicationMode::Directory;
+    return true;
+  }
+  if (!fileMode_.loadFile(*path)) return false;
   currentMode_ = ApplicationMode::File;
   return true;
 }
@@ -2978,7 +3010,25 @@ bool Application::startLocatePrompt() {
 // Now goes through drawPromptLabel() itself (its own staticMessage
 // parameter, added specifically for this case) instead of
 // re-deriving the label/column math independently.
+// 2026-08-14 update, a direct user request: wait locateUpdateDbWaitMs_
+// (2 real seconds in production, see setLocateUpdateDbWaitMsForTest()'s
+// own comment for why that's overridable) before actually running
+// updatedb. If ^C (0x03) arrives during that window, cancel the run
+// entirely and merge straight into ^J^L's own seeded-prompt flow
+// instead -- as if updatedb had never been invoked in the first
+// place. keyInput_.readByte() already checks a queued playRawMacro()
+// sequence before the real tty (see its own class comment) and
+// blocks up to its own VTIME timeout when reading from a real tty, so
+// this loop just keeps calling it and checking the deadline -- no
+// separate real-time sleep()/poll() of its own needed, and a test
+// queuing ^C via playRawMacro() sees it on the very first readByte()
+// call regardless of locateUpdateDbWaitMs_.
 bool Application::runLocateUpdateDb() {
+  auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(locateUpdateDbWaitMs_);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (keyInput_.readByte() == 0x03) return startLocatePrompt();
+  }
+
   static const std::string kUpdatingMessage = "Updating database...";
   drawPromptLabel(PromptKind::LocateQuery, /*positionText=*/"", kUpdatingMessage);
   display_.flush();
@@ -4195,6 +4245,8 @@ bool Application::handleMouseClick(int row, int column) {
 
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
 const std::string &Application::promptText() const { return promptEditor_.text(); }
+
+void Application::setLocateUpdateDbWaitMsForTest(int ms) { locateUpdateDbWaitMs_ = ms; }
 
 ApplicationMode Application::currentMode() const { return currentMode_; }
 Charset::Encoding Application::encoding() const { return encoding_; }

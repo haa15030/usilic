@@ -941,6 +941,14 @@ TEST_CASE("scrollModeLineText: reaching the bottom boundary shows END, not a per
 // itself was confirmed against the real bug via a live PTY
 // reproduction (both wide-content-present and wide-content-absent
 // real `locate` results in the same session).
+// 2026-08-14 update: this line (plain, no highlightStartColumn/
+// attributes) is now ALSO subject to renderLine()'s own middle-
+// ellipsis truncation (see its own comment) once it exceeds maxCol,
+// so the rendered text is no longer a simple 19-byte prefix of 'x's --
+// the core regression this test guards (the terminal's own LAST
+// column is never written to, avoiding the auto-wrap bug) still
+// holds either way, so the assertions check that structurally instead
+// of the exact byte sequence.
 TEST_CASE("redraw: a MARKED line exactly as wide as the terminal leaves its own last column untouched") {
   RecordingDisplay d(10, 20);  // 20 columns wide
   ContentView v(d);
@@ -950,8 +958,8 @@ TEST_CASE("redraw: a MARKED line exactly as wide as the terminal leaves its own 
   v.setLines(lines);
   v.setCursorIndex(0);  // this is the marked/highlighted row
   v.redraw();
-  CHECK(d.rowText(0).substr(0, 19) == std::string(19, 'x'));
   CHECK(d.rowText(0)[19] == ' ');  // the last column deliberately left untouched
+  CHECK(d.rowText(0).substr(0, 19).find("...") != std::string::npos);  // middle-ellipsis kicked in
 }
 
 // The unmarked counterpart: an UNMARKED full-width line (e.g. every

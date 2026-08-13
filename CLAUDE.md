@@ -15881,6 +15881,71 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      プロンプトにも戻り先ディレクトリが表示されることを直接確認
      した。
 
+297. **2026-08-14: LOCATE周りの4件の要望(①`^Jl`の2秒待機+`^C`
+    キャンセル、②ESC系ナビゲーションキーの調査、③検索結果への
+    `[return]`実装、④長い共通接頭辞を持つ行のFinder風中央省略)の
+    うち①③④を実装、②は調査の結果legacy側の実際のキー割当が
+    ユーザーの記述と食い違っていたため判断根拠を確認中として保留**。
+   - **①`^Jl`の2秒待機+`^C`キャンセル**: `updatedb`実行前に
+     `locateUpdateDbWaitMs_`(既定2000ms)だけ待機し、その間に`^C`
+     (0x03)が来たら`updatedb`を一切実行せず`startLocatePrompt()`
+     (`^J^L`と同じ、前回クエリをシードしたプロンプト)へ直接合流
+     するよう`runLocateUpdateDb()`を変更。`KeyInput::readByte()`
+     (`playRawMacro()`キューを実tty読み取りより優先してチェック
+     する既存の仕組み)をループで呼び続け、経過時間を`std::chrono`
+     で比較する方式にした(専用の`sleep()`/`poll()`を新設せず、
+     production環境では`readByte()`自身のVTIMEタイムアウトが自然な
+     ペーシングになる)。`Application`が`KeyInput&`を(これまでは
+     `ProgramMode`へ転送するだけで)保持していなかったため、
+     コンストラクタでメンバとして保持するよう変更。テストが実際に
+     2秒待たされないよう`setLocateUpdateDbWaitMsForTest(int)`
+     (`Configuration::setCommandForTest()`と同じ趣旨のテスト専用
+     上書き)を新設。
+   - **③検索結果への`[return]`実装**: `LocateMode`自身のクラス
+     コメントで「Deliberately excluded (future work, not this
+     slice)」と明記されていた「選択結果に対して何をするか」を実装。
+     `openSelectedDuEntry()`(DUの同種実装、`DuEntry`が既に
+     `isDirectory`フラグを持つ)を鏡写しにした`openSelectedLocateResult()`
+     を新設。`locate`の結果は生パスのみで種別情報が無いため、
+     `std::filesystem::is_directory()`で都度判定してDirectory/File
+     いずれかへ振り分ける。DU自身の既存実装がディレクトリ降下時に
+     `resetNavigationToFloor()`(項目292の`^X^D`専用の仕組み)を
+     呼んでいないのに倣い、LOCATE側も同様に呼ばない。
+   - **④長い共通接頭辞行のFinder風中央省略**: macOSのFinderの
+     ファイル名切り詰め("先頭...末尾"、中央だけ省略)を参考に、
+     `ContentView::renderLine()`に`middleEllipsisTruncate()`を追加。
+     `Utf8::sequence_length()`でUTF-8境界を壊さずに歩きつつ、
+     予算(利用可能桁数−3)を頭1:尾2の比率で分配(直接の動機だった
+     LOCATEの絶対パスは長い共通接頭辞ではなく末尾の差分こそ見せる
+     必要があるため、尾側を優先)。`highlightStartColumn`も
+     `attributes`も持たない素のプレーンテキスト行(LocateMode/DuMode
+     等の結果一覧がまさにこの形)にのみ適用し、Directory一覧の
+     ハイライトやGREPマッチ表示などバイトオフセット付き属性範囲を
+     持つ行は対象外(そちらを中央省略後の座標系へ再マッピングする
+     のは別種の難しい問題として今回は手を付けていない)。
+   - **②ESC系ナビゲーションキーの調査(保留)**: 「`^[v`：1ページ
+     戻る、`^[<`：ページTOPへ、`^[>`：ページENDへ等が利かない」との
+     報告を受けPTY実機検証したところ、`^[<`/`^[>`(`Command::
+     GoToTop`/`GoToBottom`)は実際には**既に正常に動作している**ことを
+     確認した(ご報告と食い違う結果)。一方`tcb/src/key.c`を直接
+     確認したところ、legacy側の実際のキー割当は`v`単体(ESC無し)が
+     `M_kforw`、`ESC w`が`M_kback`であり、ユーザーの記述
+     (`^[v`＝「1ページ戻る」)とは対応するキーも前進/後退の向きも
+     異なっていた。この2点(a. `<`/`>`が本当に動いていないなら
+     再現条件、b. `v`/`ESC-w`の実際の割当をどう扱うか)を明確化
+     できるまで実装を保留し、ユーザーへ判断を仰ぐこととした。
+   - **検証**: `make test` 704/704件全通過(①③④それぞれに新規
+     テストを追加、既存の「LOCATE結果へのEnterは今スライスでは
+     no-op」テストを新挙動へ更新、マーク済み行の中央省略で既存の
+     オートラップ回避テストの期待値も更新)、`make usilic`クリーン
+     ビルド確認済み。macOS実機上のPTY検証で、長い共通接頭辞を持つ
+     `locate .txt`の各行が中央省略により末尾まで判別可能になる
+     こと、ハイライト行で`[return]`すると実際にFile/Directoryへ
+     遷移すること、`^Jl`直後の`^C`が`updatedb`を実行せず即座に
+     `^J^L`のシード付きプロンプトへ合流すること、`^C`無しの場合は
+     約2秒待ってから「Updating database...」が表示されること、を
+     それぞれ直接確認した。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

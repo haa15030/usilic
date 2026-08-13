@@ -1896,11 +1896,29 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^G cancels the prompt without running anyth
 // actual `make test` run).
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l runs `updatedb` (LocateUpdateDb), then chains into the LOCATE prompt") {
   configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"true"}, std::nullopt});
+  app.setLocateUpdateDbWaitMsForTest(1);  // see its own comment -- avoids a real multi-second test
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
   CHECK(app.feedByte('l', std::nullopt));
   CHECK(app.promptActive());
   CHECK(app.promptText().empty());  // no prior query yet -- same seeding rule as ^J^L itself
+}
+
+// 2026-08-14 (CLAUDE.md history item 297): a direct user request --
+// ^C during ^Jl's own 2-second cancel window skips updatedb entirely
+// and merges straight into ^J^L's own seeded prompt, as if updatedb
+// had never been invoked. playRawMacro() queues the byte BEFORE
+// runLocateUpdateDb()'s own readByte() loop starts, so it's seen
+// immediately -- no real wait, regardless of locateUpdateDbWaitMs_.
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l, ^C during the 2-second wait cancels updatedb and merges into ^J^L") {
+  configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"false"}, std::nullopt});  // would fail loudly if reached
+  history.pushRecent(RingCategory::RecentLocateQuery, "previous-query");
+  keyInput.playRawMacro("\x03");  // ^C, queued before ^Jl is even sent
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte('l', std::nullopt));
+  CHECK(app.promptActive());
+  CHECK(app.promptText() == "previous-query");  // ^J^L's own seeding, not a blank prompt
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^L starts a LOCATE prompt (StartLocate)") {
@@ -2011,7 +2029,19 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G returns to whichever mode the prompt was 
   CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
 }
 
-TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a result is a no-op in this slice") {
+// 2026-08-14 (CLAUDE.md history item 297): a direct user report
+// ("ハイライト行で[return]が無反応") -- LocateMode's own class comment
+// had explicitly deferred this ("Deliberately excluded (future work,
+// not this slice): deciding what to do with a selected result").
+// Mirrors DU's own identical Directory-vs-File dispatch (see
+// openSelectedDuEntry()'s own tests) -- since `locate` searches the
+// REAL system database, the actual TYPE (directory or file) of
+// whatever it returns first isn't predictable from here, so this
+// checks the real filesystem itself to decide which branch applies,
+// same "test against real state, skip gracefully if unavailable"
+// convention every other real-`locate` test in this file already
+// uses.
+TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a result opens it (Directory or File, matching the real filesystem)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartLocate));
   feedText("/");
@@ -2020,8 +2050,19 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a result is a no-op in this slice")
     return;
   }
   REQUIRE(app.currentMode() == ApplicationMode::Locate);
-  CHECK_FALSE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Locate);
+  if (app.locateMode().results().empty()) {
+    MESSAGE("locate returned no results -- skipping");
+    return;
+  }
+  std::string selected = app.locateMode().results()[0];
+  REQUIRE(app.handleCommand(Command::Enter));
+  std::error_code ec;
+  if (std::filesystem::is_directory(selected, ec) && !ec) {
+    CHECK(app.currentMode() == ApplicationMode::Directory);
+  } else {
+    CHECK(app.currentMode() == ApplicationMode::File);
+    CHECK(app.fileMode().currentFile() == selected);
+  }
 }
 
 TEST_CASE_FIXTURE(Fixture, "LOCATE: starting a nested search from within locate results fails") {

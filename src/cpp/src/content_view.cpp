@@ -1,10 +1,61 @@
 #include "content_view.hpp"
 
 #include <algorithm>
+#include <vector>
 
 #include "mode_line.hpp"
+#include "utf8.hpp"
 
 namespace fm {
+
+namespace {
+
+// Finder-style truncation for renderLine()'s own plain-line case (see
+// its own call site comment): keep a prefix and a suffix, elide the
+// middle with "...", instead of simply cutting the tail off. Byte-
+// indexed (matching renderLine()'s own `col`, which counts bytes not
+// display columns) but walks via Utf8::sequence_length() so a multi-
+// byte UTF-8 character is never split across the cut. Biases toward
+// keeping more of the TAIL than the head (1/3 budget to the head, 2/3
+// to the tail): the direct motivating case (LOCATE's absolute paths
+// sharing one long common prefix, e.g. many
+// ".../SharedFrameworks/SsSvcImgFrmwk.frame..." entries all cut off
+// identically) needs the DIFFERING suffix to stay visible, not the
+// shared prefix every entry already has in common.
+std::string middleEllipsisTruncate(const std::string &text, int maxBytes) {
+  static const std::string kEllipsis = "...";
+  int budget = maxBytes - static_cast<int>(kEllipsis.size());
+  if (budget <= 0) return text.substr(0, static_cast<std::size_t>(std::max(0, maxBytes)));
+
+  std::vector<int> boundaries;  // character-start byte offsets, text.size() itself included as the final one
+  boundaries.push_back(0);
+  int i = 0;
+  while (i < static_cast<int>(text.size())) {
+    i += Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
+    boundaries.push_back(std::min(i, static_cast<int>(text.size())));
+  }
+
+  int headBudget = budget / 3;
+  int tailBudget = budget - headBudget;
+
+  int headEnd = 0;
+  for (int b : boundaries) {
+    if (b > headBudget) break;
+    headEnd = b;
+  }
+
+  int tailStart = static_cast<int>(text.size());
+  for (std::size_t k = boundaries.size(); k-- > 0;) {
+    int b = boundaries[k];
+    if (static_cast<int>(text.size()) - b > tailBudget) break;
+    tailStart = b;
+  }
+
+  if (tailStart <= headEnd) return text;  // too narrow to usefully elide -- let the plain cutoff below handle it
+  return text.substr(0, static_cast<std::size_t>(headEnd)) + kEllipsis + text.substr(static_cast<std::size_t>(tailStart));
+}
+
+}  // namespace
 
 ContentView::ContentView(Display &display) : display_(display) {}
 
@@ -429,7 +480,31 @@ void ContentView::renderLine(const Line &line, bool marked) {
   // false there, see FileMode's own class comment), which intentionally
   // rely on full-width wrapped lines rendering their LAST column.
   int maxCol = marked ? std::max(0, display_.columns() - 1) : display_.columns();
-  for (unsigned char c : line.text) {
+  // Middle-ellipsis truncation (2026-08-14): a direct user report --
+  // LOCATE results sharing one long common prefix all rendered
+  // IDENTICAL visible text once naively cut off at the terminal's own
+  // width, making individual entries impossible to tell apart
+  // ("行末が同じで区別できない"), matching macOS Finder's own
+  // convention for long filenames ("macOSのFinderと同じく行の中央を
+  // 「...」として行末まで表示して欲しい" -- elide the MIDDLE, keep
+  // both the start and the end visible). Scoped to lines with NO
+  // highlightStartColumn/attributes (plain, unstyled text) -- the
+  // only shape this port's own results-list Lines actually use
+  // (LocateMode/DuMode/etc never set either): rewriting a highlighted
+  // SUBSTRING's own byte-offset-indexed attribute ranges through a
+  // middle-elided string is a genuinely different, harder problem
+  // this doesn't attempt to solve here -- Directory's own ls-listing
+  // highlightStartColumn, GrepMode's match highlighting, etc. keep
+  // their existing simple right-truncation (the loop's own `col >=
+  // maxCol` break below) unchanged.
+  std::string ellipsisText;
+  const std::string *renderedText = &line.text;
+  if (!line.highlightStartColumn.has_value() && line.attributes.empty() &&
+      static_cast<int>(line.text.size()) > maxCol) {
+    ellipsisText = middleEllipsisTruncate(line.text, maxCol);
+    renderedText = &ellipsisText;
+  }
+  for (unsigned char c : *renderedText) {
     if (col >= maxCol) break;
     if (col == highlightStart) {
       markedNow = marked;
