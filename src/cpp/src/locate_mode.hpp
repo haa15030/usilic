@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <sys/types.h>  // pid_t
+
 #include "configuration.hpp"
 #include "content_view.hpp"
 
@@ -36,12 +38,21 @@ class LocateMode {
   // failure -- results() is simply empty afterward.
   bool search(const std::string &query);
 
-  // Runs `updatedb` to refresh the locate database (K-39, ^Jl). Not a
-  // literal port -- see ConfiguredRole::UpdateDb's own comment
+  // Starts `updatedb` (to refresh the locate database, K-39, ^Jl) in
+  // the BACKGROUND -- doesn't wait for it to finish. Not a literal
+  // port -- see ConfiguredRole::UpdateDb's own comment
   // (configuration.cpp) for why this exists despite legacy having no
   // such feature. Touches neither query_/results_ nor view_: it's a
-  // side-effecting maintenance action, not a search.
-  bool updateDb();
+  // side-effecting maintenance action, not a search. 2026-08-14
+  // change: was originally a blocking call (ChildProcess::run()),
+  // which meant Application::runLocateUpdateDb() couldn't respond to
+  // ^G until a real (potentially minutes-long) updatedb run finished
+  // entirely -- a real user report ("フリーズ中ではないメッセージなの
+  // で...常時^Gで...移行"). Runs detached instead (ChildProcess::
+  // runDetached()); the caller polls ChildProcess::hasExited() on the
+  // returned pid alongside its own keyboard input loop. Returns -1 if
+  // the command couldn't be launched at all (not configured/installed).
+  pid_t startUpdateDb();
 
   const std::string &query() const;
   const std::vector<std::string> &results() const;

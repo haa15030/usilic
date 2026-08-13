@@ -391,6 +391,51 @@ TEST_CASE("setModeLineFieldsProvider: fields that would overflow the display wid
   CHECK(v.modeLineText() == "1/3 TOP");
 }
 
+// 2026-08-14 fix: a real report ("モードラインにバイト数「397723」
+// および戻り値「LOCATE: ...s/Adobe/HKSCS.txt」が無い") -- an earlier
+// fix (item 298's own fitModeLineFields() fallback tier) kept trailing
+// (a short byte count) visible when trailing2 (a long LOCATE-path
+// annotation) didn't fit, but DROPPED trailing2 entirely in that case.
+// withTruncatedTrailing2() now truncates it instead (Finder-style,
+// "..." + tail -- the request's own literal spec: "一行に収まる文字数
+// -3を算出でOK"), so both fields show something.
+TEST_CASE("setModeLineFieldsProvider: an overflowing trailing2 is truncated (\"...\" + tail), "
+          "not dropped, when trailing still fits alongside it") {
+  RecordingDisplay d(10, 40);  // 40 columns
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+
+  // "HKSCS.txt 1/3 TOP 283" (22 cols) fits; adding the long path pushes
+  // it well over 40. trailing ("283", short) stays; trailing2 gets
+  // truncated to whatever's left.
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    return {"HKSCS.txt", "283", false, "", "LOCATE: /very/long/path/that/does/not/fit/HKSCS.txt"};
+  });
+  std::string text = v.modeLineText();
+  CHECK(text.find("283") != std::string::npos);       // the byte count survived
+  CHECK(text.find("...") != std::string::npos);        // trailing2 was truncated, not dropped
+  CHECK(text.substr(text.size() - 9) == "HKSCS.txt");  // the tail (filename) is what's kept visible
+}
+
+// The GREP/CUT candidate-list precedent (2026-08-11 fix) still holds:
+// when trailing2 would fit FULLY if trailing were simply dropped, drop
+// trailing rather than truncate trailing2 needlessly.
+TEST_CASE("setModeLineFieldsProvider: trailing is dropped (not trailing2 truncated) when trailing2 "
+          "would otherwise fit in full") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    return {"EGREP", "this-preview-is-long-enough-to-force-a-choice", false, "", "/tmp/short/"};
+  });
+  std::string text = v.modeLineText();
+  CHECK(text.find("/tmp/short/") != std::string::npos);         // trailing2 shown in FULL
+  CHECK(text.find("this-preview") == std::string::npos);        // trailing dropped, not truncated either
+}
+
 TEST_CASE("renderModeLine: name/position/trailing are separate reverse-video runs with plain gaps between") {
   RecordingDisplay d(10, 40);
   ContentView v(d);

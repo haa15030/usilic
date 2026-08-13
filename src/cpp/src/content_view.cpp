@@ -643,7 +643,7 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
     segments.push_back({positionText, true});
     return segments;
   }
-  ModeLineFields fields = modeLineFieldsProvider_(cursorIndex_);
+  ModeLineFields fields = withTruncatedTrailing2(modeLineFieldsProvider_(cursorIndex_), positionText);
   FieldFit fit = fitModeLineFields(fields, positionText);
   int cols = display_.columns();
   int drawnLen = 0;
@@ -693,6 +693,47 @@ void ContentView::setModeLineFieldsProvider(ModeLineFieldsProvider provider) {
 
 void ContentView::setModeLineRow(std::optional<int> row) { modeLineRow_ = row; }
 
+ContentView::ModeLineFields ContentView::withTruncatedTrailing2(ModeLineFields fields,
+                                                                  const std::string &positionText) const {
+  if (fields.trailing2.empty()) return fields;
+  int cols = display_.columns();
+  if (cols <= 0) return fields;
+  int base = static_cast<int>(positionText.size());
+  if (!fields.name.empty()) base += static_cast<int>(fields.name.size()) + 1;
+  int trailingLen = fields.trailing.empty() ? 0 : static_cast<int>(fields.trailing.size()) + 1;
+  int budgetWith = cols - base - trailingLen - 1;      // room for trailing2 alongside trailing
+  int budgetWithout = cols - base - 1;                 // room for trailing2 if trailing were dropped
+  int trailing2Len = static_cast<int>(fields.trailing2.size());
+
+  if (trailing2Len <= budgetWith) return fields;  // already fits fully alongside trailing -- nothing to do
+
+  auto truncate = [&](int budget) -> std::string {
+    if (budget <= 0) return "";
+    if (trailing2Len <= budget) return fields.trailing2;
+    if (budget < 4) return "";  // no room even for "..." + one real character
+    return "..." + fields.trailing2.substr(fields.trailing2.size() - (budget - 3));
+  };
+
+  if (trailing2Len <= budgetWithout && !fields.trailing.empty()) {
+    // Dropping trailing lets trailing2 show in FULL -- worth it, same
+    // preference the 2026-08-11 GREP fix established (a long candidate
+    // preview vs. a short destination directory).
+    fields.trailing.clear();
+    return fields;
+  }
+  if (budgetWith >= 4) {
+    fields.trailing2 = truncate(budgetWith);
+    return fields;
+  }
+  if (budgetWithout >= 4 && !fields.trailing.empty()) {
+    fields.trailing.clear();
+    fields.trailing2 = truncate(budgetWithout);
+    return fields;
+  }
+  fields.trailing2.clear();
+  return fields;
+}
+
 ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &fields,
                                                        const std::string &positionText) const {
   int cols = display_.columns();
@@ -736,7 +777,7 @@ ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &field
 
 std::string ContentView::composeModeLineRow(const std::string &positionText) const {
   if (!modeLineFieldsProvider_) return positionText;
-  ModeLineFields fields = modeLineFieldsProvider_(cursorIndex_);
+  ModeLineFields fields = withTruncatedTrailing2(modeLineFieldsProvider_(cursorIndex_), positionText);
   FieldFit fit = fitModeLineFields(fields, positionText);
 
   std::string row = positionText;
@@ -792,7 +833,7 @@ void ContentView::renderModeLine() {
     return;
   }
 
-  ModeLineFields fields = modeLineFieldsProvider_(cursorIndex_);
+  ModeLineFields fields = withTruncatedTrailing2(modeLineFieldsProvider_(cursorIndex_), positionText);
   FieldFit fit = fitModeLineFields(fields, positionText);
   int cols = display_.columns();
 

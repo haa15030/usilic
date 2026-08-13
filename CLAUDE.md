@@ -16084,6 +16084,110 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      既存コメント通り)であることを確認しただけで、今回は対応
      していない(①②③④として明示された依頼の対象外だったため)。
 
+299. **2026-08-14(続き): 項目298①の`^Jl`再設計が実は不十分だったと
+    判明・真の非同期化で修正、②戻り値の配置ミスをユーザー訂正で
+    修正+LOCATE結果へのマウス左クリック選択対応、③戻り値の
+    Finder風省略表示、④は再現できず調査継続**。
+   - **①`^Jl`の真の非同期化**: 項目298の「メッセージを即座に描画し、
+     実行完了を待って`^Gですでに動くはずのプロンプトの標準機能に
+     任せる」という設計は、`locateMode_.updateDb()`(`ChildProcess::
+     run()`による同期ブロッキング呼び出し)を素朴に呼ぶだけの
+     ままだった。「フリーズ中ではないメッセージなので」という
+     ユーザー指摘を実地検証したところ、実機の`/usr/libexec/
+     locate.updatedb`は本当に**数分単位**で完走しないことが
+     PTY検証で判明(60秒待っても`Updating database...`のまま)。
+     この間`runLocateUpdateDb()`自体がブロックしたまま戻らないため、
+     `^G`は一度も読まれず、「戻ってきたプロンプトでは^Gが効く」
+     という項目298の理屈はそもそも成立していなかった。
+     `ChildProcess`に`runDetached()`(fork+execするが`waitpid`せず
+     即座にpidを返す、stdout/stderrは`/dev/null`)と`hasExited()`
+     (`waitpid(pid,...,WNOHANG)`による非ブロッキング完了確認、
+     reap込み)を新設。`LocateMode::updateDb()`を`startUpdateDb()`
+     (同じ`runDetached()`を呼びpidを返すだけ)に置き換え。
+     `runLocateUpdateDb()`はメッセージを即座に描画した後、
+     「`keyInput_.isPlayingRawMacro()`なら即`readByte()`、
+     でなければ`poll(STDIN_FILENO, ..., 150ms)`後に`readByte()`」
+     で`^G`(0x07)を待ちつつ、`ChildProcess::hasExited(pid)`も
+     同じループ内で毎回確認する、**期限なしの**ポーリングループに
+     全面書き換え(項目298の2秒固定タイムアウト版とは異なり、
+     `^G`は経過時間に関係なく常に即座に効く)。テスト用の
+     `isPlayingRawMacro()`優先チェックにより、`configuration.
+     setCommandForTest(UpdateDb, {"sleep","2"})`+事前に
+     `playRawMacro("\x07")`をキューしておくだけで、実際の
+     スリープを待たずに1回目のループ反復で確定的にキャンセル
+     経路を検証できる(実sleepの完走を待つ必要が無い)。
+   - **②「LOCATE: .txt」の配置ミス修正**: 項目298で`locateView_`の
+     `name`フィールド自体を`"LOCATE: " + query`にしていたが、
+     ユーザーからスクリーンショット(`=aw`)付きで「モード名では
+     なく戻り値だ、モード名は「LOCATE」のままで」と訂正が入った。
+     `name`を素の`"LOCATE"`へ戻し、同じ文字列を新設の`trailing2`
+     (戻り値欄)へ移動(既存の`directoryMode_.setSearchAnnotation()`
+     が担う「EGREP: pattern」等と全く同じ「MODE: query」規約を、
+     GREP等の着地先画面だけでなくLOCATEの結果一覧画面自身にも
+     適用する形)。
+   - **②マウス左クリックでのLOCATE選択対応**: `^N`でカーソルが
+     行を通過するとハイライト有無で中央省略の切れ目が1文字
+     ずれてちらつく件(項目297で発見、項目298で`renderLine()`の
+     `ellipsisBudget`計算を修正済み)について、ユーザーから
+     「マウスの左クリックでも選択可(←`(ls)`のように)を導入すれば
+     解消」との提案があり、`Application::handleMouseClick()`を
+     `ApplicationMode::Locate`にも対応させた(`ApplicationMode::
+     Directory`分岐をほぼそのまま複製し、`openSelectedEntry()`の
+     代わりに`openSelectedLocateResult()`を呼ぶ形。LOCATEの結果は
+     `highlightStartColumn`を持たない素のプレーン行のため、
+     `isColumnWithinLineScope()`の左マージン判定は実質無効化され
+     行全体がクリック対象になる)。実機同等のPTY検証(SGR拡張
+     マウスレポート`ESC[<Cb;Cx;CyM`(press)/`m`(release)を生バイト
+     注入)で、1回目のクリックで選択(カーソル移動)、同じ行への
+     2回目のクリックでFileモードへの遷移(Directoryの既存挙動と
+     同一)を直接確認した。
+   - **③戻り値のFinder風省略表示**: `fitModeLineFields()`の項目298
+     フォールバック段(trailing2が長すぎる場合はtrailing2を丸ごと
+     落としてtrailingだけ残す)は、`HKSCS.txt`の実例(バイト数は
+     出るが`LOCATE: .../HKSCS.txt`が全く出ない=`ax`)を解消できて
+     いなかった。ユーザーから「ファイル名(=trailing2)は一行に
+     収まる文字数-3(「...」の分)を算出でOK」との具体的な指示が
+     あり、`ContentView::withTruncatedTrailing2()`を新設。
+     name/position/trailing込みで収まる場合はそのまま、trailingを
+     落とせばtrailing2が丸ごと収まる場合はtrailingを落とす
+     (項目293のEGREP候補プレビュー vs 戻り先ディレクトリの優先順位
+     をそのまま特殊ケースとして包含)、それでも収まらない場合は
+     trailing2を「...」+末尾(ファイル名側)で切り詰める、という
+     優先順位に整理。`renderModeLine()`/`composeModeLineRow()`/
+     `scrollModeLineSegments()`の3箇所全てで、`modeLineFieldsProvider_()`
+     呼び出し直後にこの関数を通すよう統一(結果として`fitModeLineFields()`
+     自身の複数フォールバック段は、この前処理により実質常に
+     tier1で成立するようになったが、極端に狭い端末幅向けの
+     安全網としてそのまま残した)。
+   - **④`^[v`が依然反応しないとの報告、再現できず**: ユーザーの
+     「④は相変わらず^[v等反応無し」を受け、LOCATE結果一覧の
+     文脈で改めてPTY検証したところ、`ESC>`(ページEND)でカーソルを
+     末尾へ動かした直後の`ESC-v`が実際に手前へ正しく戻ることを
+     確認した(`b`キー単体と全く同じ挙動)。ユニットテスト
+     (`feedByte: ESC v pages back...`)・Directory文脈・LOCATE
+     結果一覧文脈のいずれでもコード上・実バイナリ上ともに
+     正常動作を確認できており、この時点でtcb本体側の再現には
+     至っていない。実機での再現条件(具体的な操作手順・使用
+     ターミナルアプリ・Option/Altキーの「Meta相当」設定有無等)を
+     ユーザーへ確認中。
+   - **検証**: `make test` 711/711件全通過(①`ChildProcess::
+     runDetached()`/`hasExited()`の新規テスト、`LocateMode::
+     startUpdateDb()`の新規テスト、`^G`が実行中の`updatedb`を
+     即座にキャンセルする新規テスト、②LOCATE結果へのマウス
+     クリックの新規テスト、③`withTruncatedTrailing2()`の切り詰め・
+     優先順位双方を確定的に検証する新規`ContentView`テスト2件)。
+     `make usilic`もクリーンビルド成功。macOS実機相当のPTY検証で:
+     ①`^Jl`直後0.2秒で`Updating database...`が表示され、実際に
+     まだ実行中である2.2秒後も表示され続け、そこで`^G`を押すと
+     約1秒以内に空のLOCATEプロンプトへ遷移し即座に文字入力できる
+     ようになること(実行中のupdatedbを本当に「待たずに」抜けられる
+     ことを実機相当の環境で直接確認)。②LOCATE結果一覧で1回目の
+     クリックが選択、同じ行への2回目のクリックがFileモードへの
+     遷移になること。③`HKSCS.txt`実例で、バイト数(`367723`)と
+     「...TypeSupport/Unicode/Mappings/Adobe/HKSCS.txt」(ファイル名
+     で終わる省略表示)の両方が同時に表示されることを、それぞれ
+     実際の画面セル内容レベルで直接確認した。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

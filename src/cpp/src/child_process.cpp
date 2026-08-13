@@ -227,4 +227,32 @@ int ChildProcess::runInteractive(const std::vector<std::string> &argv) {
   return reapStatus(pid);
 }
 
+pid_t ChildProcess::runDetached(const std::vector<std::string> &argv) {
+  if (argv.empty()) return -1;
+
+  pid_t pid = fork();
+  if (pid < 0) return -1;
+
+  if (pid == 0) {
+    resetSignalsToDefault();
+    int devNull = open("/dev/null", O_WRONLY);
+    if (devNull >= 0) {
+      dup2(devNull, 1);
+      dup2(devNull, 2);
+      close(devNull);
+    }
+    auto cargv = toArgv(argv);
+    execvp(cargv[0], cargv.data());
+    _exit(127);  // execvp() failed -- never fall through and keep running as usilic
+  }
+
+  return pid;
+}
+
+bool ChildProcess::hasExited(pid_t pid) {
+  if (pid <= 0) return true;
+  int status = 0;
+  return waitpid(pid, &status, WNOHANG) != 0;  // >0: reaped just now; -1 (e.g. already reaped): treat as done
+}
+
 }  // namespace fm

@@ -593,6 +593,27 @@ class ContentView {
   };
   FieldFit fitModeLineFields(const ModeLineFields &fields, const std::string &positionText) const;
 
+  // 2026-08-14 fix: fitModeLineFields() above only ever decides whether
+  // to show trailing2 in FULL or not at all -- a real report ("戻り値
+  // が無い", FileMode's own long LOCATE-path annotation, see
+  // FileMode::setSearchAnnotation()) found this dropping it ENTIRELY
+  // whenever it didn't fit, even though a truncated (Finder-style,
+  // "..." + tail) version would have fit easily. Returns a copy of
+  // fields with trailing2 truncated (or, only if there's truly no room
+  // at all even for "...x", cleared) to fit alongside name/position/
+  // trailing -- UNLESS dropping trailing entirely would let trailing2
+  // show in FULL, in which case trailing is dropped instead (this is
+  // exactly the 2026-08-11 GREP-candidate-preview-vs-destination-
+  // directory case, preserved as a special case of the same rule: show
+  // the most complete trailing2 that's actually achievable). Called
+  // once, right after reading modeLineFieldsProvider_(), by every
+  // consumer of fitModeLineFields() below -- with trailing2 already
+  // fit to the column budget by construction, fitModeLineFields()'s
+  // own tier 1 always succeeds afterward; its remaining tiers stay in
+  // place purely as a safety net for pathologically narrow terminals
+  // (name+position+trailing alone not fitting), unrelated to this fix.
+  ModeLineFields withTruncatedTrailing2(ModeLineFields fields, const std::string &positionText) const;
+
   // Assembles "name positionText trailing" (see fitModeLineFields())
   // into one plain string, for callers that don't render field-by-
   // field (composeModeLineRow()'s own consumers never call

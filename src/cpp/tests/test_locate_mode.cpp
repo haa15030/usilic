@@ -1,3 +1,6 @@
+#include <unistd.h>
+
+#include "child_process.hpp"
 #include "configuration.hpp"
 #include "content_view.hpp"
 #include "doctest.h"
@@ -52,8 +55,8 @@ TEST_CASE_FIXTURE(Fixture, "selectedResult: tracks the ContentView cursor when t
   CHECK(*selected == mode.results()[0]);
 }
 
-// 2026-08-13 (docs/ideas/IDEAS.md's LOCATE section): updateDb() is a
-// new feature (K-39, ^Jl) with no legacy equivalent -- runs the
+// 2026-08-13 (docs/ideas/IDEAS.md's LOCATE section): startUpdateDb()
+// is a new feature (K-39, ^Jl) with no legacy equivalent -- runs the
 // configured UpdateDb role's command and never touches
 // query_/results_/view_. setCommandForTest() swaps in a fast, harmless
 // real command instead of the actual configured default (macOS's own
@@ -61,17 +64,30 @@ TEST_CASE_FIXTURE(Fixture, "selectedResult: tracks the ContentView cursor when t
 // __APPLE__ comment, genuinely scans the WHOLE filesystem -- this
 // literally hung a `make test` run once that default started pointing
 // at a real, executable binary instead of a nonexistent "updatedb").
-TEST_CASE_FIXTURE(Fixture, "updateDb: runs the configured command; never touches query()/results()") {
+// 2026-08-14: renamed from updateDb() and changed to run DETACHED
+// (returns the child's pid immediately, doesn't wait for it to exit) --
+// a real report ("フリーズ中ではないメッセージなので...常時^Gで...
+// 移行してほしい") found a real updatedb run can take MINUTES, during
+// which the OLD blocking version left Application::runLocateUpdateDb()
+// unable to respond to ^G at all until it finally returned. See
+// ChildProcess::runDetached()/hasExited() for the primitive this now
+// builds on, and Application::runLocateUpdateDb()'s own comment for
+// how the caller polls for completion.
+TEST_CASE_FIXTURE(Fixture, "startUpdateDb: launches the configured command and returns its pid; "
+                           "never touches query()/results()") {
   configuration.setCommandForTest(fm::ConfiguredRole::UpdateDb, {{"true"}, std::nullopt});
-  bool ok = mode.updateDb();
-  CHECK(ok);
+  pid_t pid = mode.startUpdateDb();
+  CHECK(pid > 0);
   CHECK(mode.query().empty());
   CHECK(mode.results().empty());
+  // Reap it (ChildProcess::hasExited() polls WNOHANG) so this test
+  // doesn't leak a zombie -- `true` exits almost immediately.
+  for (int i = 0; i < 100 && !fm::ChildProcess::hasExited(pid); i++) usleep(1000);
 }
 
-TEST_CASE_FIXTURE(Fixture, "updateDb: false if the configured command fails to run at all") {
-  configuration.setCommandForTest(fm::ConfiguredRole::UpdateDb, {{"this-command-does-not-exist-xyz123"}, std::nullopt});
-  CHECK_FALSE(mode.updateDb());
+TEST_CASE_FIXTURE(Fixture, "startUpdateDb: -1 if the configured command doesn't exist at all") {
+  configuration.setCommandForTest(fm::ConfiguredRole::UpdateDb, {{}, std::nullopt});  // empty argv -- "not configured"
+  CHECK(mode.startUpdateDb() == -1);
 }
 
 TEST_CASE_FIXTURE(Fixture, "search: a second search replaces the previous query and results") {

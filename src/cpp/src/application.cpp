@@ -1,7 +1,6 @@
 #include "application.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <cstdlib>
 #include <deque>
 #include <filesystem>
@@ -11,6 +10,7 @@
 #include <sstream>
 #include <unistd.h>
 
+#include "child_process.hpp"
 #include "mode_line.hpp"
 #include "pipe_buffer.hpp"
 
@@ -616,20 +616,25 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     return {"MAN", std::to_string(contentByteCount(manView_)), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
             /*trailing2=*/""};
   });
-  // 2026-08-14 fix: name changed from the bare literal "LOCATE" to
-  // "LOCATE: <query>" -- a real report ("^J^L→'.txt'[return]→戻り値
-  // 「LOCATE: .txt」が無い") pointed out that, unlike GREP's own results
-  // screen (whose "戻り値" convention shows the search string once you
-  // LAND somewhere via a match, see DirectoryMode::setSearchAnnotation()
-  // callers), LOCATE's OWN results screen had nowhere at all showing
-  // what was actually searched -- easy to lose track of among many
-  // near-identical result rows. query() is never empty here (the guard
-  // above already returns {} otherwise), so this is always safe to
-  // append.
+  // 2026-08-14 fix, then corrected same-day: a real report ("^J^L→
+  // '.txt'[return]→戻り値「LOCATE: .txt」が無い") pointed out LOCATE's
+  // own results screen had nowhere at all showing what was actually
+  // searched, unlike GREP's own results screen (whose 戻り値/trailing2
+  // convention shows the search string once you LAND somewhere via a
+  // match, see DirectoryMode::setSearchAnnotation() callers). The
+  // FIRST fix folded "LOCATE: <query>" into the `name` field itself
+  // (replacing the bare literal "LOCATE") -- a direct user correction
+  // (screenshot =aw) pointed out this was the wrong SLOT: 「LOCATE:
+  // .txt」はモード名ではなく戻り値、モード名は「LOCATE」で. `name`
+  // reverted to the bare literal; the same "MODE: query" string now
+  // lives in `trailing2` instead, matching every other search-results
+  // screen's own 戻り値 convention exactly (just applied to LOCATE's
+  // own results screen, not only its eventual Directory/File
+  // destination, see openSelectedLocateResult()'s identical strings).
   locateView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (locateMode_.query().empty()) return {};
-    return {"LOCATE: " + locateMode_.query(), std::to_string(contentByteCount(locateView_)),
-            /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", /*trailing2=*/""};
+    return {"LOCATE", std::to_string(contentByteCount(locateView_)), /*fillTrailingToEdge=*/false,
+            /*rightWatermark=*/"", "LOCATE: " + locateMode_.query()};
   });
   duView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (duMode_.currentPath().empty()) return {};
@@ -3070,57 +3075,61 @@ bool Application::startLocatePrompt() {
 // Now goes through drawPromptLabel() itself (its own staticMessage
 // parameter, added specifically for this case) instead of
 // re-deriving the label/column math independently.
-// 2026-08-14 update, a direct user request: wait locateUpdateDbWaitMs_
-// (2 real seconds in production, see setLocateUpdateDbWaitMsForTest()'s
-// own comment for why that's overridable) before actually running
-// updatedb. If ^C (0x03) arrives during that window, cancel the run
-// entirely and merge straight into ^J^L's own seeded-prompt flow
-// instead -- as if updatedb had never been invoked in the first
-// place.
-//
-// 2026-08-14 follow-up (real report: "^Jl→^C→暴走→別のターミナルから
-// killall usilicで対処"): the first version of this loop called
-// keyInput_.readByte() directly, relying on its own internal VTIME
-// timeout to bound each call and re-check the deadline -- it never
-// actually hung in THIS session's own PTY testing, but that testing
-// itself carries the same caveat CLAUDE.md history already records
-// for other real-terminal-only issues (a real macOS Terminal.app's
-// raw-tty read() blocking behavior isn't guaranteed to match a pyte-
-// simulated pty exactly). Every OTHER place in this codebase that
-// waits on keyboard input with a bound goes through poll() FIRST and
-// only calls readByte() once poll() has confirmed a byte is actually
-// there (app/main.cpp's own run loop, this exact pattern) -- this is
-// the one place that skipped that and called readByte() unconditionally,
-// so it's the most likely real difference. Rewritten to match:
-// poll()s STDIN_FILENO (not keyInput_.fd() -- see KeyInput::fd()'s own
-// doc comment on why polling that exact fd unconditionally reports
-// POLLNVAL on Darwin) with an explicit, shrinking timeout computed
-// from the deadline, so this call can never block longer than that
-// timeout regardless of what readByte()'s own termios state happens
-// to be. isPlayingRawMacro() is checked first and bypasses poll()
-// entirely when true -- a test's queued ^C isn't reflected on the
-// real stdin fd at all, so polling it would just wait out the whole
-// window and never see the queued byte.
+// 2026-08-14 update: "^Jl直後に「Updating database...」がモードライン
+// 左端に出てくれないと意味がない。フリーズ中ではないメッセージなので"
+// -- draws the message immediately now (see below), never hidden
+// behind any wait. A same-day FIRST attempt at the rest of this ("常時
+// ^Gで...移行") simply reverted to item 294's original blocking
+// locateMode_.updateDb() call, reasoning that ^G would already work
+// the moment startLocatePrompt() was reached -- but a real updatedb
+// run on the user's own machine turned out to run for MINUTES (this
+// port's own PTY testing confirmed it: still going after 60 real
+// seconds), during which that blocking call never returns at all, so
+// ^G is never even read, let alone acted on. "常時" (always) genuinely
+// means always, including WHILE updatedb is still running -- which
+// needs it to run detached (LocateMode::startUpdateDb(), see its own
+// comment) with THIS function polling both its own completion
+// (ChildProcess::hasExited()) and the keyboard (the same poll(
+// STDIN_FILENO,...)-before-readByte() pattern app/main.cpp's own run
+// loop establishes, see KeyInput::fd()'s own comment on why not
+// keyInput_.fd() directly) in the same loop, with no overall deadline
+// this time (unlike the earlier, since-reverted 2-second-window
+// version) -- ^G always wins immediately, whether checked 1ms or 10
+// minutes into the run.
 bool Application::runLocateUpdateDb() {
-  auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(locateUpdateDbWaitMs_);
-  for (;;) {
-    auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
-    if (remaining.count() <= 0) break;
-    if (!keyInput_.isPlayingRawMacro()) {
-      struct pollfd pfd {
-        STDIN_FILENO, POLLIN, 0
-      };
-      int rv = ::poll(&pfd, 1, static_cast<int>(remaining.count()));
-      if (rv <= 0 || !(pfd.revents & POLLIN)) break;  // timed out, or a real poll() error -- stop waiting either way
-    }
-    if (keyInput_.readByte() == 0x03) return startLocatePrompt();
-  }
-
   static const std::string kUpdatingMessage = "Updating database...";
   drawPromptLabel(PromptKind::LocateQuery, /*positionText=*/"", kUpdatingMessage);
   display_.flush();
 
-  bool ok = locateMode_.updateDb();
+  pid_t pid = locateMode_.startUpdateDb();
+  bool ok = false;
+  if (pid > 0) {
+    for (;;) {
+      // isPlayingRawMacro() checked first, unconditionally, so a
+      // test's queued ^G always wins on the very first iteration
+      // regardless of how fast the configured command finishes -- a
+      // real stdin poll() would just wait out the interval and never
+      // see a byte that was never written to the real fd at all.
+      if (keyInput_.isPlayingRawMacro()) {
+        if (keyInput_.readByte() == kControlG) {
+          startLocatePrompt();
+          return true;
+        }
+      } else {
+        struct pollfd pfd {
+          STDIN_FILENO, POLLIN, 0
+        };
+        if (::poll(&pfd, 1, 150) > 0 && (pfd.revents & POLLIN) && keyInput_.readByte() == kControlG) {
+          startLocatePrompt();
+          return true;
+        }
+      }
+      if (ChildProcess::hasExited(pid)) {
+        ok = true;
+        break;
+      }
+    }
+  }
   startLocatePrompt();
   return ok;
 }
@@ -4309,31 +4318,54 @@ bool Application::consumeGuiModeToggleRequest() {
 
 // Ported from IDEAS.md's own GUI-mode click description (not legacy) --
 // see class comment for the click-to-select/click-again-to-open
-// convention and current Directory-only scope.
+// convention. Directory-only for a long time (see class comment) until
+// 2026-08-14: a direct user request ("マウスの左クリックでも選択可
+// （←(ls)のように）を導入すれば解消") to also cover LOCATE results the
+// same way, offered specifically as the fix for a separate report (a
+// hovered-but-unclicked row's middle-ellipsis truncation width flicker,
+// see ContentView::renderLine()'s own ellipsisBudget comment) --
+// letting a click commit to a real selection immediately, the same way
+// Directory's own listing already does, rather than the pointer
+// merely hovering (and un-hovering) rows as it passes over them.
 bool Application::handleMouseClick(int row, int column) {
-  if (currentMode_ != ApplicationMode::Directory) return false;
-  int idx = directoryView_.lineIndexAtRow(row);
-  if (idx < 0) return false;
-  // Outside this entry's own highlighted text -- DirectoryMode's `ls`
-  // listing has a fixed left margin (permissions/size/date) before the
-  // highlight starts, and a short filename can leave a variable-width
-  // empty tail after it -- so this press was never actually "on" the
-  // entry visually. Ignored here (returns false, as if nothing were
-  // under the pointer at all) so it's free to also serve as a "cat's
-  // paw" screen-drag starting point (see ContentView::
-  // isColumnWithinLineScope()'s own comment for the full 2026-08-05
-  // user report this replaces a timing/motion-based heuristic with).
-  if (!directoryView_.isColumnWithinLineScope(idx, column)) return false;
-  if (idx == directoryView_.cursorIndex()) return openSelectedEntry();
-  directoryView_.setCursorIndex(idx);
-  directoryView_.redraw();
-  return true;
+  if (currentMode_ == ApplicationMode::Directory) {
+    int idx = directoryView_.lineIndexAtRow(row);
+    if (idx < 0) return false;
+    // Outside this entry's own highlighted text -- DirectoryMode's `ls`
+    // listing has a fixed left margin (permissions/size/date) before the
+    // highlight starts, and a short filename can leave a variable-width
+    // empty tail after it -- so this press was never actually "on" the
+    // entry visually. Ignored here (returns false, as if nothing were
+    // under the pointer at all) so it's free to also serve as a "cat's
+    // paw" screen-drag starting point (see ContentView::
+    // isColumnWithinLineScope()'s own comment for the full 2026-08-05
+    // user report this replaces a timing/motion-based heuristic with).
+    if (!directoryView_.isColumnWithinLineScope(idx, column)) return false;
+    if (idx == directoryView_.cursorIndex()) return openSelectedEntry();
+    directoryView_.setCursorIndex(idx);
+    directoryView_.redraw();
+    return true;
+  }
+  if (currentMode_ == ApplicationMode::Locate) {
+    int idx = locateView_.lineIndexAtRow(row);
+    if (idx < 0) return false;
+    // LOCATE's own results are plain, unattributed lines (no
+    // highlightStartColumn -- see LocateMode::search()'s own Line
+    // construction), so isColumnWithinLineScope()'s left-margin skip
+    // is a no-op here (start defaults to 0) -- the whole rendered row
+    // is clickable, matching how the entire path is the "entry", not
+    // just a filename substring within a fixed-format `ls -l` row.
+    if (!locateView_.isColumnWithinLineScope(idx, column)) return false;
+    if (idx == locateView_.cursorIndex()) return openSelectedLocateResult();
+    locateView_.setCursorIndex(idx);
+    locateView_.redraw();
+    return true;
+  }
+  return false;
 }
 
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
 const std::string &Application::promptText() const { return promptEditor_.text(); }
-
-void Application::setLocateUpdateDbWaitMsForTest(int ms) { locateUpdateDbWaitMs_ = ms; }
 
 ApplicationMode Application::currentMode() const { return currentMode_; }
 Charset::Encoding Application::encoding() const { return encoding_; }

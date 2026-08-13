@@ -785,19 +785,51 @@ TEST_CASE_FIXTURE(Fixture, "drawPromptLabel (2026-08-13 generalization): LOCATE/
 // routed through drawPromptLabel()'s own new staticMessage parameter.
 TEST_CASE_FIXTURE(Fixture, "LOCATE: ^Jl draws \"LOCATE \" + underlined \"Updating database...\" via "
                            "drawPromptLabel()'s own shared staticMessage path, not a separate one-off") {
+  // 2026-08-14: startUpdateDb() now runs detached (see its own
+  // comment) -- the real default UpdateDb command (macOS's own
+  // /usr/libexec/locate.updatedb) can take MINUTES, and this test
+  // needs it to finish so app.promptActive() below reflects the
+  // POST-updatedb state, not a still-running one. A fast stand-in
+  // command (same convention as every other UpdateDb test).
+  configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"true"}, std::nullopt});
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
-  app.feedByte('l', std::nullopt);  // synchronous: draws the message, blocks on updateDb(), then chains onward
+  app.feedByte('l', std::nullopt);  // draws the message, polls until `true` exits, then chains onward
   // The message itself is long gone by the time feedByte() returns
-  // (runLocateUpdateDb() draws it, blocks, then immediately calls
-  // startLocatePrompt() which redraws the mode line as a real editable
-  // prompt) -- this only asserts the FINAL state (a real prompt,
-  // matching startLocatePrompt()'s own already-tested behavior), since
-  // there's no way to observe the transient synchronously-drawn-then-
-  // overwritten frame from outside this one call without a dedicated
-  // test seam; the message's own rendering was instead verified via a
-  // live PTY reproduction (see CLAUDE.md history item 294).
+  // (runLocateUpdateDb() draws it, polls until the child exits, then
+  // immediately calls startLocatePrompt() which redraws the mode line
+  // as a real editable prompt) -- this only asserts the FINAL state (a
+  // real prompt, matching startLocatePrompt()'s own already-tested
+  // behavior), since there's no way to observe the transient
+  // synchronously-drawn-then-overwritten frame from outside this one
+  // call without a dedicated test seam; the message's own rendering
+  // was instead verified via a live PTY reproduction (see CLAUDE.md
+  // history item 294).
   CHECK(app.promptActive());
+}
+
+// 2026-08-14 (CLAUDE.md history item 298's follow-up, "常時^Gで...
+// 移行"): ^G now cancels out of a still-RUNNING updatedb at any point,
+// not just during a pre-run grace window -- a slow-enough command
+// (`sleep`) combined with a queued ^G (via playRawMacro(), read on the
+// very first loop iteration regardless of real elapsed time -- see
+// runLocateUpdateDb()'s own isPlayingRawMacro()-first comment) proves
+// this without the test itself actually waiting out a real sleep.
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l, ^G cancels a still-running updatedb and merges into ^J^L") {
+  // "sleep 2" (not "true"): genuinely still running when ^G is checked,
+  // matching the real scenario this guards against -- short enough
+  // that an orphaned instance (this test bails out via the queued ^G
+  // before ever reaping it, by design -- see hasExited()'s own comment
+  // on why an unreaped detached child isn't this class's concern) exits
+  // on its own well within any reasonable test-suite run.
+  configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"sleep", "2"}, std::nullopt});
+  history.pushRecent(RingCategory::RecentLocateQuery, "previous-query");
+  keyInput.playRawMacro("\x07");  // ^G, queued before ^Jl is even sent
+  REQUIRE(app.start(path()));
+  app.feedByte(0x0a, std::nullopt);
+  CHECK(app.feedByte('l', std::nullopt));
+  CHECK(app.promptActive());
+  CHECK(app.promptText() == "previous-query");  // ^J^L's own seeding, not a blank prompt
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^A/^E/^B/^F move the cursor (beginning/end/back/forward) "
@@ -1894,31 +1926,21 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^G cancels the prompt without running anyth
 // test_locate_mode.cpp's own identical comment for why (macOS's real
 // default genuinely scans the whole filesystem, which once hung an
 // actual `make test` run).
+// 2026-08-14 (CLAUDE.md history item 298): a direct user request --
+// the item-297 "wait 2s, ^C cancels" experiment hid this exact chain
+// behind a silent pre-run window and, separately, caused a real hang
+// on the user's own machine. Reverted to item 294's own original
+// shape: runLocateUpdateDb() draws its status message immediately and
+// blocks straight through to startLocatePrompt(), whose own prompt
+// already has independently-tested ^G-cancel support -- no bespoke
+// cancel key or test-only wait-ms override needed anymore.
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l runs `updatedb` (LocateUpdateDb), then chains into the LOCATE prompt") {
   configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"true"}, std::nullopt});
-  app.setLocateUpdateDbWaitMsForTest(1);  // see its own comment -- avoids a real multi-second test
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
   CHECK(app.feedByte('l', std::nullopt));
   CHECK(app.promptActive());
   CHECK(app.promptText().empty());  // no prior query yet -- same seeding rule as ^J^L itself
-}
-
-// 2026-08-14 (CLAUDE.md history item 297): a direct user request --
-// ^C during ^Jl's own 2-second cancel window skips updatedb entirely
-// and merges straight into ^J^L's own seeded prompt, as if updatedb
-// had never been invoked. playRawMacro() queues the byte BEFORE
-// runLocateUpdateDb()'s own readByte() loop starts, so it's seen
-// immediately -- no real wait, regardless of locateUpdateDbWaitMs_.
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J l, ^C during the 2-second wait cancels updatedb and merges into ^J^L") {
-  configuration.setCommandForTest(ConfiguredRole::UpdateDb, {{"false"}, std::nullopt});  // would fail loudly if reached
-  history.pushRecent(RingCategory::RecentLocateQuery, "previous-query");
-  keyInput.playRawMacro("\x03");  // ^C, queued before ^Jl is even sent
-  REQUIRE(app.start(path()));
-  app.feedByte(0x0a, std::nullopt);
-  CHECK(app.feedByte('l', std::nullopt));
-  CHECK(app.promptActive());
-  CHECK(app.promptText() == "previous-query");  // ^J^L's own seeding, not a blank prompt
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^L starts a LOCATE prompt (StartLocate)") {
@@ -5183,7 +5205,7 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a second click on the already-sele
   CHECK(app.fileMode().currentFile() == path() + "plain.txt");
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleMouseClick: false outside the viewport or outside Directory mode") {
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: false outside the viewport or outside Directory/LOCATE modes") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(app.handleMouseClick(999, 0));  // way past any real row
 
@@ -5191,7 +5213,40 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: false outside the viewport or outs
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
-  CHECK_FALSE(app.handleMouseClick(0, 0));  // Directory-only in this slice
+  CHECK_FALSE(app.handleMouseClick(0, 0));  // File mode still isn't covered (see class comment)
+}
+
+// 2026-08-14 addition: mirrors the Directory-mode click tests above
+// exactly, for LOCATE's own results (a direct user request, see
+// handleMouseClick()'s own comment).
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: LOCATE results -- a click selects, a second click on the "
+                           "already-selected row opens it") {
+  fs::path targetA = root / "click_a.txt";
+  fs::path targetB = root / "click_b.txt";
+  { std::ofstream(targetA) << "a"; }
+  { std::ofstream(targetB) << "b"; }
+  fs::path fakeLocate = root / "fake_locate_click.sh";
+  {
+    std::ofstream script(fakeLocate);
+    script << "#!/bin/sh\necho '" << targetA.string() << "'\necho '" << targetB.string() << "'\n";
+  }
+  std::filesystem::permissions(fakeLocate, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate.string()}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  REQUIRE(app.locateMode().results().size() == 2);
+
+  REQUIRE(app.handleMouseClick(1, 0));  // click row 1 (targetB), not yet selected -- just selects it
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+  CHECK(app.activeContentView().cursorIndex() == 1);
+
+  REQUIRE(app.handleMouseClick(1, 0));  // click the SAME row again -- opens it, matching Directory's convention
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == targetB.string());
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a press left of the entry's own highlighted span is a no-op, "

@@ -114,6 +114,28 @@ class ChildProcess {
   // terminal modes itself elsewhere either). Returns the exit status,
   // or -1 if the child couldn't be spawned or never exited normally.
   static int runInteractive(const std::vector<std::string> &argv);
+
+  // Launches argv in the background: forked and exec'd like every
+  // other call above, but returns immediately without waiting for it
+  // to finish or capturing its output -- for a one-shot maintenance
+  // command (e.g. `updatedb`, which can genuinely run for minutes on a
+  // real filesystem) whose caller wants to keep polling its OWN input
+  // loop alongside it (Application::runLocateUpdateDb()) rather than
+  // block synchronously the way run() does. stdout/stderr are
+  // redirected to /dev/null (nothing is left around to read them, and
+  // this class's own captured-Result shape doesn't apply once the
+  // caller has already moved on). Returns the child's pid, or -1 if it
+  // couldn't be spawned. Pair with hasExited() to reap it once done.
+  static pid_t runDetached(const std::vector<std::string> &argv);
+
+  // Non-blocking check (waitpid(pid, ..., WNOHANG)) of whether a
+  // runDetached() child has exited yet -- reaps it (avoiding a zombie)
+  // the moment it's confirmed to have. Safe to call repeatedly,
+  // including after the child has already been reaped (waitpid then
+  // fails with ECHILD, which this treats the same as "exited" rather
+  // than as an error the caller needs to distinguish -- there's
+  // nothing left to poll for either way).
+  static bool hasExited(pid_t pid);
 };
 
 }  // namespace fm
