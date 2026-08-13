@@ -413,8 +413,8 @@ TEST_CASE("setModeLineFieldsProvider: an overflowing trailing is dropped (not tr
 // a direct user request: "戻り値も検索一覧同様「/Applications/Adobe
 // Acrob...source/.../HKSCS.txt」形式で", i.e. the same head-and-tail
 // convention LOCATE's own results-list rows already use.
-TEST_CASE("setModeLineFieldsProvider: an overflowing trailing2 is middle-ellipsis truncated "
-          "(head...tail), not dropped, when trailing still fits alongside it") {
+TEST_CASE("setModeLineFieldsProvider: trailing2MiddleEllipsis=true middle-ellipsis truncates "
+          "(head...tail), not drops, when trailing still fits alongside it") {
   RecordingDisplay d(10, 40);  // 40 columns
   ContentView v(d);
   v.setViewport(0, 5);
@@ -422,16 +422,50 @@ TEST_CASE("setModeLineFieldsProvider: an overflowing trailing2 is middle-ellipsi
 
   // "HKSCS.txt 1/3 TOP 283" (22 cols) fits; adding the long path pushes
   // it well over 40. trailing ("283", short) stays; trailing2 gets
-  // truncated to whatever's left.
+  // truncated to whatever's left. 2026-08-15 update: this convention
+  // turned out to be LOCATE-specific (see the next test) -- opted
+  // into here via trailing2MiddleEllipsis=true, matching FileMode's
+  // own provider when reached via LOCATE.
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
-    return {"HKSCS.txt", "283", false, "", "/very/long/path/that/does/not/fit/at/all/HKSCS.txt"};
+    return {"HKSCS.txt",
+            "283",
+            false,
+            "",
+            "/very/long/path/that/does/not/fit/at/all/HKSCS.txt",
+            /*trailingPlain=*/false,
+            /*trailing2RightJustified=*/false,
+            /*trailing2MiddleEllipsis=*/true};
   });
   std::string text = v.modeLineText();
   CHECK(text.find("283") != std::string::npos);          // the byte count survived
   std::size_t ellipsisPos = text.find("...");
   REQUIRE(ellipsisPos != std::string::npos);              // trailing2 was truncated, not dropped
-  CHECK(text.find('/') < ellipsisPos);                    // the HEAD is also kept visible, not just the tail
+  CHECK(text.find("/very") != std::string::npos);         // the HEAD is also kept visible, not just the tail
+  CHECK(text.find("/very") < ellipsisPos);
   CHECK(text.substr(text.size() - 9) == "HKSCS.txt");     // the tail (filename) is kept visible too
+}
+
+// 2026-08-15 addition: the DEFAULT (trailing2MiddleEllipsis left
+// unset/false) is tail-only "..." + up to 16 characters -- a direct
+// user policy statement: "なおLOCATE以外では、右下端の戻り値が長す
+// ぎる場合「...16文字」でよろしく". Every provider OTHER than
+// FileMode-reached-via-LOCATE relies on this default.
+TEST_CASE("setModeLineFieldsProvider: trailing2MiddleEllipsis left at its default (false) "
+          "truncates tail-only, \"...\" + up to 16 characters") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    return {"DIR", "", false, "", "/very/long/path/that/does/not/fit/at/all/HKSCS.txt"};
+  });
+  std::string text = v.modeLineText();
+  std::size_t ellipsisPos = text.find("...");
+  REQUIRE(ellipsisPos != std::string::npos);
+  CHECK(text.find("/very") == std::string::npos);          // the HEAD is NOT kept -- tail-only this time
+  CHECK(text.substr(text.size() - 9) == "HKSCS.txt");       // the tail is still kept
+  CHECK(text.size() - ellipsisPos - 3 <= 16);               // at most 16 tail characters
 }
 
 // The GREP/CUT candidate-list precedent (2026-08-11 fix) still holds:
@@ -466,15 +500,33 @@ TEST_CASE("setModeLineFieldsProvider: an overflowing name is middle-ellipsis tru
   v.setViewport(0, 5);
   v.setLines(makeLines(3));
 
+  // Mirrors DirectoryMode's own REAL field shape exactly (trailing=byte
+  // count, trailing2="(ls)", rightWatermark="usilic v1.5b" -- see its
+  // own 2026-08-15 provider comment), not just an approximation: an
+  // earlier version of this test used trailing="(ls)"/no trailing2,
+  // which didn't actually exercise the interacting-fields regression
+  // this name-truncation reservation logic needed two more fix rounds
+  // for (missing the name-position gap, then missing trailing2 itself)
+  // -- DirectoryMode's own unit test (a real, short temp-dir path)
+  // never triggered name truncation at all, so it couldn't catch this
+  // either; only a genuinely long name here does.
   std::string longPath =
       "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/Resource/TypeSupport/Unicode/Mappings/Adobe/";
   v.setModeLineFieldsProvider([&](int) -> ContentView::ModeLineFields {
-    return {longPath, "(ls)", false, "usilic v1.5b", ""};
+    return {longPath, "460", false, "usilic v1.5b", "(ls)"};
   });
   std::string text = v.modeLineText();
   CHECK(text.find("1/3 TOP") != std::string::npos);   // position still shows
   CHECK(text.find("...") != std::string::npos);       // name was truncated, not corrupted/dropped
   CHECK(text.find("/Applications") == 0);              // the head is kept visible
+  CHECK(text.find("460") != std::string::npos);          // trailing (byte count) survives
+  CHECK(text.find("(ls)") != std::string::npos);         // trailing2 survives too (see =bd/=be)
+
+  // rightWatermark isn't part of modeLineText() (composeModeLineRow()
+  // never includes it -- renderModeLine() draws it separately, right-
+  // justified) -- check the actual rendered row instead.
+  v.redraw();
+  CHECK(d.rowText(5).find("usilic v1.5b") != std::string::npos);
 }
 
 TEST_CASE("renderModeLine: name/position/trailing are separate reverse-video runs with plain gaps between") {

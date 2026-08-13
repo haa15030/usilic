@@ -47,11 +47,18 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
   // "level1.tar") is what actually identifies which archive you're
   // looking at, and differs at every level of the chain used in
   // practice, so no separate nesting-depth indicator is needed here.
+  // trailing (2026-08-15 addition): the listing's own total byte
+  // count, matching the same convention every other mode's own
+  // trailing field already uses (ContentView::totalByteCount(), see
+  // its own comment) -- a direct user request ("全モードのモードラ
+  // インに「画面TOPからENDまでのバイト数」を追加してほしい"). Unlike
+  // DirectoryMode's own equivalent fix, nothing else was already using
+  // this slot here, so no restructuring was needed.
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (currentArchive_.empty()) return {};
     std::size_t slash = currentArchive_.find_last_of('/');
     std::string base = (slash == std::string::npos) ? currentArchive_ : currentArchive_.substr(slash + 1);
-    return {base, "", false, "", ""};
+    return {base, std::to_string(view_.totalByteCount()), false, "", ""};
   });
 }
 

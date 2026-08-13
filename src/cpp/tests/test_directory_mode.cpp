@@ -76,6 +76,36 @@ TEST_CASE_FIXTURE(Fixture, "enterDirectory: lists real directory contents and cl
   CHECK(sawSpaced);
 }
 
+// 2026-08-15 addition: a direct user request ("全モードのモードライン
+// に「画面TOPからENDまでのバイト数」を追加してほしい") specifically
+// named Directory as one of the modes still missing this -- trailing
+// changed from the "(ls)" program indicator to the listing's own
+// total byte count (see ContentView::totalByteCount()'s own comment),
+// matching every other mode's shared convention; "(ls)" moved to
+// trailing2 as a fallback (see the provider's own comment on this
+// judgment call).
+TEST_CASE_FIXTURE(Fixture, "enterDirectory: mode line shows the listing's own total byte count "
+                           "(trailing) and \"(ls)\" (trailing2, when no search annotation is active), "
+                           "AND the \"usilic v1.5b\" rightWatermark still shows alongside both") {
+  REQUIRE(mode.enterDirectory(path()));
+  std::string modeLine = view.modeLineText();
+  CHECK(modeLine.find(std::to_string(view.totalByteCount())) != std::string::npos);
+  CHECK(modeLine.find("(ls)") != std::string::npos);
+  // 2026-08-15 regression check: fillTrailingToEdge must stay keyed on
+  // searchAnnotation_ specifically, NOT trailing2's own emptiness (see
+  // the provider's own comment) -- a real regression found "(ls)"
+  // itself getting padded to the row's right edge, which silently
+  // dropped the watermark via renderModeLine()'s own drawnLen check.
+  // modeLineText() doesn't include rightWatermark at all (see the
+  // ContentView tests' own identical comment) -- check the real
+  // rendered row instead.
+  view.redraw();
+  bool sawWatermark = false;
+  for (int row = 0; row < 24; row++)
+    if (display.rowText(row).find("usilic v1.5b") != std::string::npos) sawWatermark = true;
+  CHECK(sawWatermark);
+}
+
 TEST_CASE_FIXTURE(Fixture, "enterDirectory: nameStartColumn locates the real name, even with an internal space") {
   // Ported from scroll.c's get_col()/init_col() -- ContentView::Line::
   // highlightStartColumn (fed from this field) is what makes the

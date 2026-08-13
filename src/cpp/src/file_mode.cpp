@@ -61,8 +61,18 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     // File mode's trailing field is legacy's padded-to-edge style, see
     // ModeLineFields::fillTrailingToEdge's own comment. No
     // rightWatermark here -- see its own comment on why File mode
-    // never shows it.
-    return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", trailing2};
+    // never shows it. trailing2MiddleEllipsis=true only when reached
+    // via LOCATE (searchOriginLabel_ set) -- see ModeLineFields::
+    // trailing2MiddleEllipsis's own comment for why this is the one
+    // exception to every other provider's tail-only truncation.
+    return {name,
+            trailing,
+            /*fillTrailingToEdge=*/true,
+            /*rightWatermark=*/"",
+            trailing2,
+            /*trailingPlain=*/false,
+            /*trailing2RightJustified=*/false,
+            /*trailing2MiddleEllipsis=*/!searchOriginLabel_.empty()};
   });
 }
 

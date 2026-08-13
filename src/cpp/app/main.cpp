@@ -1572,7 +1572,13 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // ContentView::redraw() (called via applyHoverRowAndRedraw())
     // unconditionally redraws its own mode-line row, the exact row
     // Application's prompt label/input field also live on.
-    if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell && !app.promptActive()) {
+    if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell && !app.promptActive() &&
+        !app.awaitingLocateUpdateDb()) {
+      // !app.awaitingLocateUpdateDb() (2026-08-15 fix): see the render-
+      // mode branch's own identical addition below -- a mouse wiggle
+      // during a real, still-running `updatedb` wait would otherwise
+      // clobber "Updating database..." via this same redraw()-inside-
+      // applyHoverRowAndRedraw() path too.
       while (auto hover = gui.consumeHoverEvent()) {
         anyEventThisFrame = true;
         applyHoverRowAndRedraw(app.activeContentView(), hover->row, /*moveCursor=*/true);
@@ -2046,7 +2052,21 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       lines.reserve(view.lines().size());
       for (const auto &line : view.lines()) lines.push_back(line.text);
       gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments());
-    } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.promptActive()) {
+    } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.promptActive() &&
+               !app.awaitingLocateUpdateDb()) {
+      // !app.awaitingLocateUpdateDb() (2026-08-15 fix): the exact same
+      // bug class !app.promptActive() below was already added for (a
+      // real report: "EXIT (y/n) ? y" flashed then got overwritten),
+      // just for a DIFFERENT non-promptKind_ status display --
+      // runLocateUpdateDb() draws "Updating database..." via
+      // drawPromptLabel() directly, then returns immediately (see its
+      // own comment) -- the very same key event that triggered ^Jl
+      // still lands here as anyEventThisFrame, and this unconditional
+      // view.redraw() (which unconditionally redraws the mode-line
+      // row) clobbered that message with the underlying view's own
+      // normal mode line one frame later, reading exactly like
+      // "flashes then reverts" (a real report: "-gの「Updating
+      // database...」が一瞬表示されて元に戻る、が直ってない").
       // Settled on a row boundary -- back to the normal Display-
       // interface rendering path. redraw() calls clampViewport(),
       // which enforces the normal moveUp()/moveDown() invariant

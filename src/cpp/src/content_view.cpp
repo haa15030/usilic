@@ -128,6 +128,12 @@ void ContentView::setLines(std::vector<Line> lines) {
 
 const std::vector<ContentView::Line> &ContentView::lines() const { return lines_; }
 
+std::size_t ContentView::totalByteCount() const {
+  std::size_t bytes = 0;
+  for (const auto &line : lines_) bytes += line.text.size() + 1;
+  return bytes;
+}
+
 int ContentView::cursorIndex() const { return cursorIndex_; }
 
 int ContentView::lineIndexAtRow(int displayRow) const {
@@ -708,7 +714,80 @@ ContentView::ModeLineFields ContentView::withTruncatedTrailing2(ModeLineFields f
   // render paths already funnel every field through -- reserves room
   // for AT LEAST the position text (the one field this port never
   // drops), same budget-then-truncate shape as trailing2 below.
-  int positionBudget = cols - static_cast<int>(positionText.size()) - 1;
+  //
+  // 2026-08-15 fix: the first version of this only reserved room for
+  // position, greedily truncating name to fill the ENTIRE remainder --
+  // a real report + screenshot (=bd, a deep directory's own mode line
+  // missing BOTH "(ls)" and the "usilic v1.5b" rightWatermark, unlike
+  // the reference =be) found that left zero room for trailing/
+  // rightWatermark, so fitModeLineFields()'s own later tiers correctly
+  // (by their own logic) decided neither fit anymore and dropped both.
+  // Reserves room for trailing and rightWatermark too when computing
+  // name's own budget, so a short, high-value pair like "(ls)"/
+  // "usilic v1.5b" survives alongside a truncated name instead of
+  // being silently squeezed out. trailing2 isn't reserved for here --
+  // its own budget logic just below already decides independently
+  // whether it fits in whatever's left.
+  //
+  // Each field is reserved for only if it's individually short
+  // (<= kReservableFieldLength) -- a real regression found this same
+  // reservation, applied unconditionally, made a doctest fixture's own
+  // "CUT" name vanish entirely: the ^J^C candidate list's own
+  // `trailing` is a 70-character candidate-preview string that was
+  // NEVER going to fit alongside name+position regardless (and
+  // fitModeLineFields()'s own EXISTING tiers already correctly drop it
+  // in that case -- see the 2026-08-11 fix), but reserving room for
+  // its full length here starved name down to 2 characters before that
+  // logic ever got a chance to run. "(ls)" (4)/byte counts (~10)/
+  // "usilic v1.5b" (12) all comfortably clear this cap; an arbitrary
+  // long preview/annotation does not, and is deliberately left for
+  // fitModeLineFields()'s own tiers to decide instead.
+  constexpr int kReservableFieldLength = 20;
+  // +1: the gap between name and position itself (renderModeLine()
+  // always draws this once both are shown, same as every other tier
+  // in this function already accounts for via rowLen()'s own "+1").
+  int reserved = 1;
+  // Trailing is drawn as " " + trailing (renderModeLine()'s own
+  // drawnLen tracking): 1 separator + its own length.
+  if (!fields.trailing.empty() && static_cast<int>(fields.trailing.size()) <= kReservableFieldLength) {
+    reserved += 1 + static_cast<int>(fields.trailing.size());
+  }
+  // rightWatermark is drawn as " " + rightWatermark + " " (see its own
+  // renderModeLine() call site: `watermark = " " + rightWatermark +
+  // " "`) -- TWO extra spaces, not one. A real regression (this
+  // reservation initially used just "1 +", one short) found the
+  // watermark still silently dropped by renderModeLine()'s own
+  // `drawnLen + watermark.size() <= cols` check even after this fix's
+  // first attempt, landing exactly 1 column short.
+  if (!fields.rightWatermark.empty() && static_cast<int>(fields.rightWatermark.size()) <= kReservableFieldLength) {
+    reserved += 2 + static_cast<int>(fields.rightWatermark.size());
+  }
+  // trailing2 as well (e.g. DirectoryMode's own "(ls)" fallback,
+  // always populated even without a search annotation) -- a real
+  // regression found reserving for trailing/rightWatermark alone still
+  // wasn't enough: trailing2's OWN downstream truncation logic (just
+  // below) tries to fit it into whatever budget REMAINS after name,
+  // but that budget had already been fully spent reserving exactly
+  // enough for trailing+rightWatermark and nothing more, so a short
+  // trailing2 like "(ls)" pushed the total back over budget anyway,
+  // silently dropping the watermark again via the SAME downstream
+  // `drawnLen + watermark.size() <= cols` check. Not reserved for if
+  // it's the one being middle-ellipsis-truncated (FileMode's own long
+  // LOCATE-path annotation) -- those are long by construction, well
+  // past kReservableFieldLength, so they're excluded the same way an
+  // overly-long trailing already is.
+  if (!fields.trailing2.empty() && static_cast<int>(fields.trailing2.size()) <= kReservableFieldLength) {
+    reserved += 1 + static_cast<int>(fields.trailing2.size());
+  }
+  int positionBudget = cols - static_cast<int>(positionText.size()) - reserved;
+  if (positionBudget < 0) {
+    // Not enough room even reserving for trailing/rightWatermark too --
+    // fall back to the ORIGINAL, unconditional guarantee (name fits
+    // alongside AT LEAST position); fitModeLineFields()'s own tiers
+    // still decide whether trailing/trailing2 actually get shown from
+    // here.
+    positionBudget = cols - static_cast<int>(positionText.size()) - 1;
+  }
   if (positionBudget < 0) positionBudget = 0;
   if (static_cast<int>(fields.name.size()) > positionBudget) {
     fields.name = positionBudget >= 4 ? middleEllipsisTruncate(fields.name, positionBudget)
@@ -736,11 +815,27 @@ ContentView::ModeLineFields ContentView::withTruncatedTrailing2(ModeLineFields f
   // named), unlike this function's own trailing/trailing2 CHOICE logic
   // just above, which is about which FIELD to keep, not how to elide
   // one.
+  //
+  // 2026-08-15 fix: that middle-ellipsis switch turned out to be too
+  // broad -- applied here UNCONDITIONALLY, it also changed every OTHER
+  // mode's own trailing2 (e.g. DirectoryMode::searchAnnotation_), which
+  // a direct user policy statement clarified should stay tail-only:
+  // "なおLOCATE以外では、右下端の戻り値が長すぎる場合「...16文字」で
+  // よろしく". Now gated on fields.trailing2MiddleEllipsis (see its own
+  // comment) -- FileMode's own LOCATE-origin case opts in explicitly;
+  // every other provider keeps the ORIGINAL tail-only behavior, capped
+  // at the SAME 16 characters truncatedTrailingPath() already
+  // established elsewhere (but still budget-aware: never shows MORE
+  // than what actually fits, unlike that helper's own fixed-width
+  // version used where the string is pre-truncated before it ever
+  // reaches a ModeLineFields).
   auto truncate = [&](int budget) -> std::string {
     if (budget <= 0) return "";
     if (trailing2Len <= budget) return fields.trailing2;
     if (budget < 4) return "";  // no room even for "..." + one real character
-    return middleEllipsisTruncate(fields.trailing2, budget);
+    if (fields.trailing2MiddleEllipsis) return middleEllipsisTruncate(fields.trailing2, budget);
+    int tailChars = std::min(16, budget - 3);  // budget>=4 already checked above
+    return "..." + fields.trailing2.substr(fields.trailing2.size() - static_cast<std::size_t>(tailChars));
   };
 
   if (trailing2Len <= budgetWithout && !fields.trailing.empty()) {

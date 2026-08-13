@@ -119,6 +119,22 @@ class ContentView {
   void setLines(std::vector<Line> lines);
   const std::vector<Line> &lines() const;
 
+  // Total byte size of every currently-loaded line, "TOP to END" of
+  // the whole buffer (NOT just what's visible in the viewport) --
+  // mirrors legacy disp_window()'s own generic print_arg()-populated
+  // buffer-size field (menu.c's main redraw loop calls print_arg()
+  // with h.bp->size for essentially every mode before calling
+  // disp_window() itself, not a mode-by-mode special case). +1 per
+  // line for the newline every real line in the original buffer had.
+  // Originally a private helper duplicated inline by MAN/LOCATE/DU/
+  // CUT/archive-entry content's own providers (see Application::
+  // contentByteCount()'s history); promoted to a real ContentView
+  // method 2026-08-15 so DirectoryMode/ArchiveMode (a different
+  // translation unit, no access to that private helper) can share it
+  // too, per a direct user request ("全モードのモードラインに「画面
+  // TOPからENDまでのバイト数」を追加してほしい").
+  std::size_t totalByteCount() const;
+
   int cursorIndex() const;
   void setCursorIndex(int index);
 
@@ -527,6 +543,20 @@ class ContentView {
     // behavior) via the same aggregate-init fallback trailingPlain
     // above already relies on.
     bool trailing2RightJustified = false;
+    // Selects HOW withTruncatedTrailing2() elides an overflowing
+    // trailing2: false (the default) truncates tail-only, "..." + up
+    // to the last 16 characters -- the SAME convention
+    // truncatedTrailingPath() already established for the destination-
+    // directory fields elsewhere (drawPromptLabel(), listBrowserView_'s
+    // own direct-entry branch), per a direct user policy statement
+    // ("なおLOCATE以外では、右下端の戻り値が長すぎる場合「...16文字」
+    // でよろしく"). true is the exception: FileMode's own trailing2
+    // when reached via LOCATE (see FileMode::setSearchOrigin()'s own
+    // comment) shows Finder-style middle-ellipsis (head...tail)
+    // instead, since a full absolute path's HEAD carries real
+    // information too, unlike a short search pattern/query where only
+    // the tail ever mattered.
+    bool trailing2MiddleEllipsis = false;
   };
 
   // Supplies this view's ModeLineFields, recomputed every time the

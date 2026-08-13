@@ -2846,6 +2846,55 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from File mode, jum
   CHECK(app.directoryMode().currentDirectory() == subdir.string() + "/");
 }
 
+// 2026-08-15 addition: a direct user report ("^Gで一つ前のディレクト
+// リ...へ戻らない（(ls)での^Gは一つ前と行き来）", screenshots =bd/
+// =bf/=bg) -- ^X^D/^R's own RecentDirectory branch already establishes
+// this "toggle back and forth" relationship (resetNavigationToFloor())
+// for every OTHER way of landing in a new directory; goToFileSelector()
+// was the one entry point that hadn't been given the same treatment.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): ^G toggles back to the directory the "
+                           "original file's own session started from (resetNavigationToFloor())") {
+  // Mirrors the real user scenario exactly: a file opened via LOCATE
+  // (directoryMode_.currentDirectory() is NEVER touched by that path --
+  // openSelectedLocateResult() goes straight to fileMode_.loadFile(),
+  // see its own comment), so goToFileSelector()'s own captured
+  // "previous directory" is genuinely DIFFERENT from the file's own
+  // containing directory. A version of this test that instead opened
+  // the file via a normal Directory descent into the SAME subdir first
+  // made this a degenerate no-op (previousDirectory == the new
+  // directory itself, since DirectoryMode's currentDirectory_ was
+  // already sitting there) -- not what the real report was about.
+  fs::path subdir = root / "subdir";
+  fs::create_directories(subdir);
+  fs::path target = subdir / "target.txt";
+  { std::ofstream(target) << "x"; }
+  fs::path fakeLocate = root / "fake_locate_floor.sh";
+  {
+    std::ofstream script(fakeLocate);
+    script << "#!/bin/sh\necho '" << target.string() << "'\n";
+  }
+  std::filesystem::permissions(fakeLocate, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate.string()}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.directoryMode().currentDirectory() == path());
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.handleCommand(Command::Enter));  // open the (only) LOCATE result
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.fileMode().currentFile() == target.string());
+  REQUIRE(app.directoryMode().currentDirectory() == path());  // untouched by the LOCATE path
+
+  REQUIRE(app.handleCommand(Command::GoToFileSelector));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().currentDirectory() == subdir.string() + "/");
+
+  CHECK(app.handleCommand(Command::Back));  // ^G
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());  // toggled back to the original root directory
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^K dispatches GoToFileSelector") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
@@ -3989,6 +4038,33 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDirectoryHistory): reachable from
 
   CHECK(app.handleCommand(Command::StartDirectoryHistory));
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+}
+
+// 2026-08-15 fix: a real report + screenshot (=bf/=bg) -- ^X^D's own
+// mode line showed a garbled, unrelated fragment left over from an
+// EARLIER, unrelated MAN/GREP/CUT direct-entry candidate-list session
+// that never fully resolved. Root cause: startListBrowser() (the
+// single shared entry point for every PLAIN FILE/DIR/MAN/PROGRAM/
+// COMMAND picker) never cleared promptHistoryRecallKind_/
+// promptHistoryRecallIsDirectEntry_ itself, so a stale value from that
+// completely different feature made listBrowserView_'s own provider
+// take the wrong branch (the direct-entry "live combobox" shape
+// instead of the plain picker shape). Reproduced here by starting a
+// MAN direct-entry list (which sets promptHistoryRecallKind_ even on
+// an empty ring) and, WITHOUT resolving it via Enter/^G, switching
+// straight to ^X^D.
+TEST_CASE_FIXTURE(Fixture, "startListBrowser: clears a stale promptHistoryRecallKind_ left over from an "
+                           "earlier, unresolved MAN/GREP/CUT direct-entry list") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartManList));  // sets promptHistoryRecallKind_, even with no history
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  history.pushRecent(RingCategory::RecentDirectory, "/some/directory");
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  std::string modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.substr(0, 3) == "DIR");  // the plain picker's own name, not "HISTORY"/promptLabelText()
+  CHECK(modeLine.find("/some/directory") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "history browser: shows real pushRecent() entries sorted alphabetically, "

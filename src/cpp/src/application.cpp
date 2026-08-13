@@ -61,11 +61,11 @@ std::string truncatedTrailingPath(const std::string &path) {
 // reproduction with exact expected mode-line text -- see its own
 // comment); factored out once MAN/LOCATE/DU/archive content needed
 // the identical computation instead of a fourth/fifth copy.
-std::size_t contentByteCount(const ContentView &view) {
-  std::size_t bytes = 0;
-  for (const auto &line : view.lines()) bytes += line.text.size() + 1;
-  return bytes;
-}
+// 2026-08-15: now a thin wrapper -- see ContentView::totalByteCount()'s
+// own comment for why the actual computation moved there (so
+// DirectoryMode/ArchiveMode, different translation units with no
+// access to this file's anonymous namespace, can share it too).
+std::size_t contentByteCount(const ContentView &view) { return view.totalByteCount(); }
 // K-2 (^H, M_key, "KEY"): startKey()'s own static binding table.
 // Unlike HELP (which loads real prose text at runtime via
 // loadHelpText()), this table is NOT parsed from usilicrc's own KEY
@@ -1939,18 +1939,35 @@ bool Application::openSelectedLocateResult() {
 // verify the exact cursor-positioning behavior of, so deliberately
 // scoped to just the navigation itself -- matching the user's own
 // explicit spec: "^J^Kなら「.../Adobe/」の(ls)になる（LOCATEへは戻ら
-// ない）", a plain, ONE-WAY jump. Untouched by fileReturnMode_ or
-// ModeStack bookkeeping -- same as openSelectedLocateResult()'s own
-// Directory branch (see its own comment on NOT calling
-// resetNavigationToFloor()) -- so a subsequent ^G from the new
-// directory listing follows normal Directory-mode ^G semantics, not
-// LOCATE's or the file's own.
+// ない）", a plain, ONE-WAY jump (LOCATE's own results list is never
+// touched, so ^G from the new directory does NOT return there).
+// Untouched by fileReturnMode_, same as openSelectedLocateResult()'s
+// own Directory branch (see its own comment on NOT calling
+// resetNavigationToFloor()) -- this function DOES call it, though (see
+// its own 2026-08-15 addition just below), for a different reason:
+// ^X^D/^R's own RecentDirectory branch already establishes this exact
+// "toggle back and forth with wherever you were" relationship for
+// every OTHER way of landing in a new directory, and a direct user
+// report ("(ls)での^Gは一つ前と行き来" -- confirmed missing here
+// specifically, screenshots =bd/=bf/=bg) found this was the one
+// directory-jumping entry point that hadn't been given the same
+// treatment.
 bool Application::goToFileSelector() {
   if (currentMode_ != ApplicationMode::File) return false;
   std::filesystem::path path(fileMode_.currentFile());
   std::string parent = path.parent_path().string();
   if (parent.empty()) return false;
+  // Captured BEFORE enterDirectory() overwrites currentDirectory_ --
+  // see openSelectedListEntry()'s own identical RecentDirectory-branch
+  // comment. Genuinely empty (not just unset) whenever the whole
+  // session started directly on a file (`usilic somefile.txt`, no
+  // Directory session ever active) -- resetNavigationToFloor() isn't
+  // called in that case, matching every other floor-establishing call
+  // site's own implicit assumption that there IS a real "previous
+  // directory" to toggle back to.
+  std::string previousDirectory = directoryMode_.currentDirectory();
   if (!directoryMode_.enterDirectory(parent)) return false;
+  if (!previousDirectory.empty()) directoryMode_.resetNavigationToFloor(previousDirectory);
   currentMode_ = ApplicationMode::Directory;
   display_.hideVisibleCursor();
   directoryView_.redraw();
@@ -2815,6 +2832,23 @@ std::vector<std::string> Application::sortedUniqueRecentEntries(RingCategory cat
 // belongs to the SEPARATE "HISTORY" toggle instead -- see
 // toggleListBrowserHistory().
 bool Application::startListBrowser(RingCategory category) {
+  // 2026-08-15 fix: a real report + screenshot (=bf/=bg, ^X^D showing
+  // a garbled trailing2 fragment from an unrelated earlier LOCATE
+  // path) traced back to promptHistoryRecallKind_/
+  // promptHistoryRecallIsDirectEntry_ being left set by an EARLIER,
+  // unrelated GREP/CUT/MAN direct-entry candidate-list session that
+  // never fully resolved (e.g. backed out via ^G partway through) --
+  // listBrowserView_'s own ModeLineFieldsProvider checks
+  // `if (promptHistoryRecallKind_)` to decide whether THIS is a
+  // direct-entry regex list (name/trailing2 shaped very differently)
+  // or a plain FILE/DIR/MAN/PROGRAM/COMMAND picker, and a stale
+  // leftover value from a completely different feature made it take
+  // the wrong branch. startListBrowser() is the single shared entry
+  // point for every PLAIN picker (never itself a direct-entry regex
+  // list), so clearing both here guarantees a fresh, correct state
+  // regardless of what an earlier, unrelated session left behind.
+  promptHistoryRecallKind_ = std::nullopt;
+  promptHistoryRecallIsDirectEntry_ = false;
   listBrowserCategory_ = category;
   listBrowserReturnMode_ = currentMode_;
   listBrowserChronological_ = false;

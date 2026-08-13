@@ -16384,6 +16384,103 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      環境が無いためコードレベルの確認(`-c`側の同一ロジックが既に
      実機相当PTY検証済みであることの確認)に留まる。
 
+302. **2026-08-15(続き): 全モードへのバイト数追加、`-g`の
+    「Updating database...」フラッシュバグ修正、名前欄切り詰めの
+    trailing/rightWatermark対応漏れ修正、`^J^K`の^Gトグル対応、
+    `^X^D`のモードライン汚染修正、非LOCATE戻り値の16文字省略へ回帰**。
+   - **お手本①全モードへバイト数追加**: `ContentView::
+    totalByteCount()`(旧`Application::contentByteCount()`を昇格、
+    DirectoryMode/ArchiveModeという別翻訳単位からも共有できるよう
+    ヘッダへ移動)を、DirectoryMode(既存の`trailing`="(ls)"を
+    `trailing2`へ移し、`trailing`をバイト数に変更)とArchiveMode
+    (元々空だった`trailing`へそのまま追加)へ適用。MAN/LOCATE/DU/
+    CUT/ArchiveContent/Fileは既に対応済みだったため対象外
+    (Shell/Key/ListBrowserはピッカー/参照系画面でバイト数の概念が
+    無いと判断し対象外とした、legacyバイナリ未検証の判断)。
+   - **LOCATE①`-g`の「Updating database...」フラッシュバグ、
+    真因判明・修正**: 項目300で`runLocateUpdateDb()`自体は非同期化
+    済みだったが、`app/main.cpp`の`runGuiPhase()`側で、項目294の
+    `!app.promptActive()`ガード(実在の既知バグクラス、"EXIT (y/n) ?
+    y"が一瞬表示されて上書きされた事例)と全く同じ理由で
+    `!app.awaitingLocateUpdateDb()`も必要だったのに漏れていたと
+    判明。`^Jl`を押した同じフレームの`anyEventThisFrame`により
+    無条件の`view.redraw()`が発火し、`drawPromptLabel()`が直後に
+    描画した「Updating database...」をモードライン全体の再描画で
+    即座に上書きしていた。同じガードをホバー消費ループにも追加。
+   - **(ls)①a 深いディレクトリで`(ls)`/`usilic v1.5b`が消える件、
+    真因判明・修正**: 項目301で追加した名前欄切り詰めの予算計算が
+    position分しか予約しておらず、trailing/rightWatermarkの分を
+    考慮していなかった。予約ロジックを追加する過程で3回の反復
+    修正が必要だった: (1)まず`trailing`/`rightWatermark`を無条件に
+    予約したところ、EGREP/CUT候補一覧の70文字プレビュー文字列
+    (元々`fitModeLineFields()`が正しく落とす設計)まで予約対象に
+    なり`name`が「CU」まで削られる回帰を発生させ、20文字以下の
+    フィールドのみ予約する上限を導入して解決。(2)予約量の計算式が
+    name-position間のギャップと、`rightWatermark`自身が持つ余分な
+    2スペース分を数え忘れており、`usilic v1.5b`が1桁分だけ足りず
+    描画から漏れ続けていたため、正確な計算式に修正。(3)
+    DirectoryModeの`trailing2`(「(ls)」)も予約対象に含めていな
+    かったため、`trailing`/`rightWatermark`用に確保した余白を
+    `trailing2`の追加描画が食いつぶし、結局`usilic v1.5b`が漏れて
+    いたと判明、`trailing2`も同じ20文字上限付きで予約対象に追加
+    して最終的に解決。あわせて、DirectoryModeの
+    `fillTrailingToEdge`が`trailing2.empty()`ベースになっていた
+    ため(項目お手本①の副産物として`trailing2`が常に"(ls)"で
+    非空になった)、検索注記が無いときも`(ls)`自体が行末まで
+    パディングされ`rightWatermark`の描画チェックが常に失敗する
+    別の回帰も発生・修正(`fillTrailingToEdge`は`searchAnnotation_`
+    自体の非空性のみを見るよう訂正)。
+   - **(ls)①b `^J^K`の`^G`トグル対応**: `goToFileSelector()`が
+    `directoryMode_.resetNavigationToFloor()`を呼んでいなかった
+    ため、`^X^D`/`^R`の`RecentDirectory`分岐が既に持っていた
+    「一つ前のディレクトリと行き来する」トグルがこの遷移経路
+    だけ欠けていた。`enterDirectory()`で上書きされる前の
+    `currentDirectory()`を捕捉し、`resetNavigationToFloor()`へ渡す
+    よう修正(セッションがファイル起動から始まっていて「前の
+    ディレクトリ」が存在しない場合はスキップ)。
+   - **DIR①`^X^D`のモードライン汚染、真因判明・修正**: 実機
+    スクリーンショット(`=bf`/`=bg`)の原因は、`startListBrowser()`
+    (`^X^D`/`^X^F`等プレーンピッカー全ての共有エントリポイント)が
+    `promptHistoryRecallKind_`/`promptHistoryRecallIsDirectEntry_`
+    を一度も自分でクリアしていなかったこと。以前の、未解決のまま
+    (`^G`等で完全に確定させずに)終わったMAN/GREP/CUTの
+    ダイレクトエントリ候補一覧セッションの残留値が、
+    `listBrowserView_`自身のプロバイダに「これは通常のピッカー
+    ではなくダイレクトエントリの検索候補一覧だ」と誤認させて
+    いた。`startListBrowser()`の先頭で両方を明示的にクリアする
+    よう修正。
+   - **DIR①b 非LOCATE戻り値は「...16文字」に統一**: 「なおLOCATE
+    以外では、右下端の戻り値が長すぎる場合「...16文字」でよろしく」
+    との明確な方針指示を受け、項目300で`withTruncatedTrailing2()`の
+    `trailing2`切り詰めを無条件でmiddle-ellipsis化していたのを
+    訂正。`ModeLineFields`に`trailing2MiddleEllipsis`(既定`false`)
+    を新設し、`false`(既定、ほぼ全プロバイダ)は
+    `truncatedTrailingPath()`と同じ「...」+末尾16文字方式、`true`
+    (`FileMode`がLOCATE経由で開かれた場合のみ明示的に設定)は
+    従来通りFinder風の頭...末尾方式、という2方式に分岐した。
+   - **検証**: `make test` 724/724件全通過(お手本①のDirectoryMode/
+    ArchiveModeテスト各1件、(ls)①aの名前欄切り詰め回帰検証テスト
+    (DirectoryModeの実フィールド形状=trailing:バイト数+trailing2:
+    "(ls)"+rightWatermark:"usilic v1.5b"を直接再現、以前のテストは
+    短い一時ディレクトリパスしか使っておらず名前切り詰め自体が
+    発動しないため今回の回帰を検出できていなかった)、(ls)①bの
+    `^G`トグルテスト(LOCATE経由でのファイルオープンを再現、通常の
+    ディレクトリ降下経由だと「前のディレクトリ」が新ディレクトリ
+    と同一になる退化ケースになってしまうため要注意)、DIR①の
+    stale状態クリアテスト、DIR①bのデフォルト16文字切り詰め/
+    LOCATE専用middle-ellipsisテスト各1件)。`make usilic`もクリーン
+    ビルド成功。macOS実機相当のPTY検証で、①ルートディレクトリと
+    深い階層のディレクトリ両方のモードラインにバイト数・
+    「(ls)」・「usilic v1.5b」が全て同時に表示されること、`^J^K`
+    からの`^G`が元のディレクトリへ正しくトグルすることを実際の
+    画面全行内容レベルで確認、②`^J^M`(未解決)→`^X^D`の順で
+    操作した際、`^X^D`のモードラインが汚染されずクリーンに
+    「DIR 1/1 END」等になることを確認、③MANの3項目(候補一覧への
+    入力・太字装飾・不要ハイライト排除)が最新バイナリでも回帰
+    無く動作することを再確認した。`-g`固有のESC取りこぼし修正は
+    今回追加の変更が無いため未再検証(項目301の確認内容がそのまま
+    有効)。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

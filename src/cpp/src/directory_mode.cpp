@@ -28,11 +28,40 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
   // Registered once here rather than re-set on every enterDirectory()
   // call since it's a live callback into currentDirectory_/
   // configuration_, not a snapshot.
+  // 2026-08-15 addition: `trailing` changed from the "(ls)" program
+  // indicator to the listing's own total byte count, matching the
+  // SAME convention every other mode's own trailing field already
+  // uses (contentByteCount()/ContentView::totalByteCount(), see its
+  // own comment) -- a direct user request ("全モードのモードラインに
+  // 「画面TOPからENDまでのバイト数」を追加してほしい") specifically
+  // named Directory as one of the modes still missing this. All THREE
+  // of trailing/trailing2/rightWatermark were already spoken for here
+  // (byte count makes a fourth concept with nowhere obvious to go), so
+  // "(ls)" now lives in trailing2 instead, as a fallback shown only
+  // when searchAnnotation_ isn't set -- a search annotation (which
+  // mode a LOCATE/GREP/CUT search actually came from) is more
+  // situationally useful than the program name, which is almost always
+  // just "(ls)" anyway. A judgment call, not legacy-source-verified
+  // (this port has no legacy binary to compare a byte-count-showing
+  // Directory screen against); flagged for correction if this doesn't
+  // match what was actually meant.
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     const auto &ls = configuration_.commandFor(ConfiguredRole::Ls);
     std::string program = ls.argv.empty() ? "" : ls.argv.front();
-    return {currentDirectory_, program.empty() ? "" : "(" + program + ")", /*fillTrailingToEdge=*/!searchAnnotation_.empty(),
-            "usilic v1.5b", searchAnnotation_};
+    std::string programBadge = program.empty() ? "" : "(" + program + ")";
+    std::string trailing2 = searchAnnotation_.empty() ? programBadge : searchAnnotation_;
+    // fillTrailingToEdge stays keyed on searchAnnotation_ specifically
+    // (NOT trailing2's own emptiness, which is now ALWAYS non-empty
+    // once "(ls)" is filling in as its fallback) -- a real regression
+    // found "(ls)" itself getting padded all the way to the row's
+    // right edge, which left renderModeLine()'s own drawnLen tracking
+    // already AT the column count by the time it got to rightWatermark,
+    // silently dropping "usilic v1.5b" via that function's own
+    // `drawnLen + watermark.size() <= cols` check -- exactly the
+    // "usilic v1.5b" half of the =bd/=be report this round was
+    // supposed to fix, not preserve.
+    return {currentDirectory_, std::to_string(view_.totalByteCount()), /*fillTrailingToEdge=*/!searchAnnotation_.empty(),
+            "usilic v1.5b", trailing2};
   });
 }
 

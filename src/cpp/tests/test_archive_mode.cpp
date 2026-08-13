@@ -70,6 +70,15 @@ TEST_CASE_FIXTURE(Fixture, "loadArchive: lists a real .tar file's contents") {
   CHECK(sawWorld);
 }
 
+// 2026-08-15 addition: a direct user request ("全モードのモードライン
+// に「画面TOPからENDまでのバイト数」を追加してほしい") -- unlike
+// DirectoryMode, nothing else was already using this slot here, so no
+// restructuring was needed (see the provider's own comment).
+TEST_CASE_FIXTURE(Fixture, "loadArchive: mode line shows the listing's own total byte count") {
+  REQUIRE(mode.loadArchive(path("archive.tar")));
+  CHECK(view.modeLineText().find(std::to_string(view.totalByteCount())) != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "loadArchive: lists a real .zip file's contents") {
   REQUIRE(mode.loadArchive(path("archive.zip")));
   bool sawHello = false;

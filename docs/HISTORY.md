@@ -3487,3 +3487,32 @@ MAN②文字装飾の欠落: ManMode::runAndWrap()がPipeBufferのstyled.attribu
 MAN③選択不能な行のハイライト表示: ManModeのコンストラクタがview_.setCursorHighlightEnabled(false)を一度も呼んでおらず、ContentViewの既定値(true)のままだったのが原因でした。FileModeのコンストラクタには同じ呼び出しが既にあり、ManModeだけ見落とされていました。
 
 make test 719/719件全通過、make usilicクリーンビルド成功。macOS実機相当のPTY検証で、深い階層のディレクトリへ^J^Kで移動した際にモードラインが頭...末尾形式で正しく表示されること、MANの候補一覧で「No String」表示後にlsと入力すると編集モードへ正しく移行しman lsを開けること、man lsの内容に太字文字が実際に出現すること、内容行に反転表示が一切残っていないことを、それぞれ実際の画面セル属性レベルで直接確認しました。-g固有のESC修正のみ、このセッションに-g実行環境が無いためコードレベルの確認に留まります。実機での-g再現確認をお願いします。CLAUDE.mdに項目301として記録、コミット・プッシュ済みです。今日もお疲れ様でした、また明日。
+
+<お手本（legacy）：
+①全モードのモードラインに「画面TOPからENDまでのバイト数」を追加してほしい。
+
+C++版-g起動：
+LOCATE:
+①-gの「Updating database...」が一瞬表示されて元に戻る、が直ってない。
+(ls):
+①/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/Resource/TypeSupport/Unicode/Mappings/Adobe/の(ls)モードラインでは「(ls)」「画面TOPからENDまでのバイト数」および右端のバッジが無い=bd（お手本=be）→^G→一つ前のディレクトリ（/Users/haa15030/git/usilic/）へ戻らない（(ls)での^Gは一つ前と行き来）。
+DIR:
+①^X^D→モードライン不良=bf（お手本=bg）。なおLOCATE以外では、右下端の戻り値が長すぎる場合「...16文字」でよろしく。
+
+お手本①、LOCATE:①、(ls)①、DIR:①をよろしく。
+
+>お手本①、LOCATE①、(ls)①、DIR①すべて修正しました。
+
+お手本①(全モードへバイト数追加): ContentView::totalByteCount()を新設(DirectoryMode/ArchiveModeという別翻訳単位からも共有できるようヘッダへ移動)し、DirectoryMode(既存のtrailing="(ls)"をtrailing2へ移し、trailingをバイト数に変更)とArchiveModeへ適用しました。MAN/LOCATE/DU/CUT/ArchiveContent/Fileは既に対応済みでした。
+
+LOCATE①(-gのフラッシュバグ): 真因は、runLocateUpdateDb()自体は既に非同期化済みでしたが、app/main.cppのrunGuiPhase()側で、以前追加した!app.promptActive()ガードと全く同じ理由で!app.awaitingLocateUpdateDb()も必要だったのに漏れていたことでした。^Jlを押した同じフレームのanyEventThisFrameにより無条件のview.redraw()が発火し、drawPromptLabel()が直後に描画した「Updating database...」をモードライン全体の再描画で即座に上書きしていました。
+
+(ls)①a(深いディレクトリで(ls)/usilic v1.5bが消える件): 前回追加した名前欄切り詰めの予算計算がposition分しか予約しておらず、trailing/rightWatermarkの分を考慮していませんでした。修正には3回の反復が必要でした: (1)EGREP/CUT候補一覧の70文字プレビュー文字列まで予約対象になりnameが過度に削られる回帰が発生したため20文字以下のフィールドのみ予約する上限を導入、(2)予約量の計算式がギャップ分を数え忘れていたため正確な式に修正、(3)DirectoryModeのtrailing2("(ls)")も予約対象に含めていなかったため追加、あわせてfillTrailingToEdgeがtrailing2.empty()ベースになっていた副次的な回帰も修正しました。
+
+(ls)①b(^J^Kの^Gトグル対応): goToFileSelector()がresetNavigationToFloor()を呼んでいなかったため、^X^D/^Rの既存トグル機能がこの遷移経路だけ欠けていました。enterDirectory()で上書きされる前のcurrentDirectory()を捕捉し渡すよう修正しました。
+
+DIR①(^X^Dのモードライン汚染): 原因は、startListBrowser()(^X^D/^X^F等プレーンピッカー全ての共有エントリポイント)がpromptHistoryRecallKind_/promptHistoryRecallIsDirectEntry_を一度も自分でクリアしていなかったことでした。以前の、未解決のまま終わったMAN/GREP/CUTのダイレクトエントリ候補一覧セッションの残留値が、listBrowserView_自身のプロバイダを誤動作させていました。
+
+DIR①b(非LOCATE戻り値は「...16文字」に統一): ModeLineFieldsにtrailing2MiddleEllipsis(既定false)を新設し、falseの場合はtruncatedTrailingPath()と同じ「...」+末尾16文字方式、trueの場合(FileModeがLOCATE経由で開かれた場合のみ)は従来通りFinder風の頭...末尾方式に分岐しました。
+
+make test 724/724件全通過、make usilicクリーンビルド成功。macOS実機相当のPTY検証で、ルートディレクトリと深い階層のディレクトリ両方のモードラインにバイト数・「(ls)」・「usilic v1.5b」が全て同時に表示されること、^J^Kからの^Gが元のディレクトリへ正しくトグルすること、^J^M(未解決)→^X^Dの順で操作した際にモードラインが汚染されずクリーンになること、MANの3項目が最新バイナリでも回帰無く動作することを確認しました。-g固有のESC取りこぼし修正は今回追加の変更が無いため未再検証です(前回の確認内容がそのまま有効)。CLAUDE.mdに項目302として記録、コミット・プッシュ済みです。
