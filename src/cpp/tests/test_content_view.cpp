@@ -370,7 +370,8 @@ TEST_CASE("setModeLineFieldsProvider: no provider set leaves modeLineText unchan
   CHECK(v.modeLineText() == "1/3 TOP");
 }
 
-TEST_CASE("setModeLineFieldsProvider: fields that would overflow the display width are dropped, trailing first, not truncated") {
+TEST_CASE("setModeLineFieldsProvider: an overflowing trailing is dropped (not truncated); "
+          "an overflowing name is truncated (not dropped)") {
   RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
@@ -384,11 +385,21 @@ TEST_CASE("setModeLineFieldsProvider: fields that would overflow the display wid
   });
   CHECK(v.modeLineText() == "shortname.txt 1/3 TOP");
 
-  // Both fields too long even without each other -- falls back to bare position text.
+  // 2026-08-15 update: name itself no longer falls back to being
+  // dropped entirely when nothing fits -- see withTruncatedTrailing2()'s
+  // own comment (a real report + screenshot found an over-long
+  // DirectoryMode::currentDirectory() corrupting the whole mode-line
+  // row instead of just failing to fit). name is now ALWAYS truncated
+  // to fit alongside at least the position text, so this case (both
+  // fields too long) now shows a middle-ellipsis-truncated name
+  // instead of falling back to bare position text.
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
     return {"this-name-is-way-too-long-to-fit.txt", "this-trailing-is-also-way-too-long-to-fit", false, "", ""};
   });
-  CHECK(v.modeLineText() == "1/3 TOP");
+  std::string text = v.modeLineText();
+  CHECK(text.find("1/3 TOP") != std::string::npos);
+  CHECK(text.find("...") != std::string::npos);  // the name was truncated, not dropped
+  CHECK(text.substr(0, 4) != "1/3 ");             // name still comes first -- it wasn't dropped either
 }
 
 // 2026-08-14 fix: a real report ("モードラインにバイト数「397723」
@@ -439,6 +450,31 @@ TEST_CASE("setModeLineFieldsProvider: trailing is dropped (not trailing2 truncat
   std::string text = v.modeLineText();
   CHECK(text.find("/tmp/short/") != std::string::npos);         // trailing2 shown in FULL
   CHECK(text.find("this-preview") == std::string::npos);        // trailing dropped, not truncated either
+}
+
+// 2026-08-15 fix: a real report + screenshot (=ba) -- a deeply-nested
+// directory reached via Application::goToFileSelector() (K-18, ^J^K)
+// left the mode line's name field ("モードラインが不調（←ディレクト
+// リ名長過ぎ？」") corrupted instead of just truncated, since
+// fitModeLineFields() never dropped/truncated name on its own (only
+// its LAST fallback tier drops it entirely, and only when even
+// name+position alone don't fit -- see the test just above this one).
+TEST_CASE("setModeLineFieldsProvider: an overflowing name is middle-ellipsis truncated to fit "
+          "alongside the position text") {
+  RecordingDisplay d(10, 80);  // 80 columns, matching the real report's own terminal width
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+
+  std::string longPath =
+      "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/Resource/TypeSupport/Unicode/Mappings/Adobe/";
+  v.setModeLineFieldsProvider([&](int) -> ContentView::ModeLineFields {
+    return {longPath, "(ls)", false, "usilic v1.5b", ""};
+  });
+  std::string text = v.modeLineText();
+  CHECK(text.find("1/3 TOP") != std::string::npos);   // position still shows
+  CHECK(text.find("...") != std::string::npos);       // name was truncated, not corrupted/dropped
+  CHECK(text.find("/Applications") == 0);              // the head is kept visible
 }
 
 TEST_CASE("renderModeLine: name/position/trailing are separate reverse-video runs with plain gaps between") {

@@ -695,9 +695,27 @@ void ContentView::setModeLineRow(std::optional<int> row) { modeLineRow_ = row; }
 
 ContentView::ModeLineFields ContentView::withTruncatedTrailing2(ModeLineFields fields,
                                                                   const std::string &positionText) const {
-  if (fields.trailing2.empty()) return fields;
   int cols = display_.columns();
   if (cols <= 0) return fields;
+  // 2026-08-15 fix: name itself can be arbitrarily long (e.g.
+  // DirectoryMode::currentDirectory() after Application::
+  // goToFileSelector() jumps straight into a deeply-nested path) --
+  // a real report + screenshot (=ba, "モードラインが不調（←ディレクト
+  // リ名長過ぎ？」) found an over-long name corrupted the whole mode-
+  // line row instead of just failing to fit (fitModeLineFields()'s own
+  // tiers never drop name at all, so it was drawn in full regardless
+  // of width). Truncated here, in the one place ALL THREE mode-line
+  // render paths already funnel every field through -- reserves room
+  // for AT LEAST the position text (the one field this port never
+  // drops), same budget-then-truncate shape as trailing2 below.
+  int positionBudget = cols - static_cast<int>(positionText.size()) - 1;
+  if (positionBudget < 0) positionBudget = 0;
+  if (static_cast<int>(fields.name.size()) > positionBudget) {
+    fields.name = positionBudget >= 4 ? middleEllipsisTruncate(fields.name, positionBudget)
+                                       : fields.name.substr(0, static_cast<std::size_t>(positionBudget));
+  }
+
+  if (fields.trailing2.empty()) return fields;
   int base = static_cast<int>(positionText.size());
   if (!fields.name.empty()) base += static_cast<int>(fields.name.size()) + 1;
   int trailingLen = fields.trailing.empty() ? 0 : static_cast<int>(fields.trailing.size()) + 1;

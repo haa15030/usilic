@@ -612,6 +612,15 @@ class ContentView {
   // own tier 1 always succeeds afterward; its remaining tiers stay in
   // place purely as a safety net for pathologically narrow terminals
   // (name+position+trailing alone not fitting), unrelated to this fix.
+  //
+  // 2026-08-15 addition: also truncates `name` itself first, before
+  // any of the above -- a real report + screenshot (an over-long
+  // DirectoryMode::currentDirectory() after Application::
+  // goToFileSelector() jumped into a deeply-nested path) found the
+  // mode-line row corrupted, since fitModeLineFields() never drops
+  // name at all regardless of width. Kept in this same function
+  // (despite the name no longer being only about trailing2) since it's
+  // still the one shared funnel point every render path already calls.
   ModeLineFields withTruncatedTrailing2(ModeLineFields fields, const std::string &positionText) const;
 
   // Assembles "name positionText trailing" (see fitModeLineFields())

@@ -653,6 +653,28 @@ TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: typing a character while browsing
   CHECK(app.promptText() == highlighted + "X");
 }
 
+// 2026-08-15 addition: a real user report ("^J^M→「No String」はいい
+// けどモードラインに入力できない") -- key.c's own input_key() groups
+// M_man2 (K-44's own list-editing case) in the exact same switch case
+// as M_cut2/M_locate/T_locate/M_fgrep, confirming MAN's "Select manual
+// page" list is ALSO meant to be a live combobox like GREP/CUT's own,
+// not a plain navigate-only picker. Mirrors the EGREP test just above
+// exactly, for PromptKind::ManName instead.
+TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: typing a character while browsing the MAN candidate list "
+                           "also transitions into an editable prompt, matching EGREP/CUT") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::RecentManPage, "one");
+  history.pushRecent(RingCategory::RecentManPage, "two");
+  history.pushRecent(RingCategory::RecentManPage, "three");
+  REQUIRE(app.handleCommand(Command::StartManList));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  std::string highlighted = *app.listBrowserMode().selectedItem();
+
+  CHECK(app.feedByte('X', std::nullopt));
+  CHECK(app.promptActive());
+  CHECK(app.promptText() == highlighted + "X");
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: backspace while browsing the EGREP candidate list also "
                            "transitions into editing, applied to the highlighted candidate's own text") {
   REQUIRE(app.start(path()));

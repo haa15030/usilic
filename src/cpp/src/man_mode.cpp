@@ -7,7 +7,17 @@ namespace fm {
 
 ManMode::ManMode(ContentView &view, History &history, const Configuration &configuration,
                   Charset::Encoding encoding, int width)
-    : view_(view), history_(history), configuration_(configuration), encoding_(encoding), width_(width) {}
+    : view_(view), history_(history), configuration_(configuration), encoding_(encoding), width_(width) {
+  // See FileMode's own identical call for why: plain page content
+  // never gets a whole-line reverse-video cursor highlight in the real
+  // CUI (put_str()'s own f_mark logic) -- a real user report ("選べ
+  // ないのに行がハイライト表示", 2026-08-15) found ManMode had never
+  // been given this call at all, unlike FileMode, so it was still
+  // showing ContentView's own default (true) highlight bar as the
+  // cursor moved through a man page, even though nothing there is
+  // actually "selectable" the way a Directory/LOCATE entry is.
+  view_.setCursorHighlightEnabled(false);
+}
 
 std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::string &name) const {
   ProgramCommand command = configuration_.commandFor(ConfiguredRole::Man);
@@ -24,7 +34,14 @@ std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::str
 
   std::vector<ContentView::Line> lines;
   lines.reserve(pipe.lines().size());
-  for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt, std::nullopt, {}});
+  // styled.attributes (2026-08-15, matching FileMode::readAndWrap()'s
+  // own 2026-08-05 fix -- see its own comment): PipeBuffer's nroff-
+  // overstrike bold/underline detection already produces this; ManMode
+  // never picked up the same fix when FileMode got it, so `man`'s own
+  // bold section headers and underlined cross-references were showing
+  // as plain text (a real user report + side-by-side screenshot
+  // against a real terminal's own `man` rendering, "文字装飾が無い").
+  for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt, std::nullopt, styled.attributes});
   return lines;
 }
 

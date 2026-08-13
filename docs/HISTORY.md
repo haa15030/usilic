@@ -3462,3 +3462,28 @@ K-18(^J^K「ファイルセレクタへ移動」)を新規実装しました。u
 ④の真因: -g用のrunGuiPhase()を確認したところ、^[v自体の問題ではなく、前回実装したrunLocateUpdateDb()の非同期化がまだ不完全だったことが原因と判明しました。前回の実装はrunLocateUpdateDb()内部でpoll(STDIN_FILENO,...)を伴う無期限ループを回す設計だったため、このループがApplication呼び出し1回の中でブロックしたままとなり、-g自身のSDLイベントポンプ(gui.pumpEvents())がループを抜けるまで二度と呼ばれなくなっていました。SDLウィンドウで実際に押された^GはSDL自身にはキューされますが、gui.pumpEvents()が呼ばれない限りApplication側には一切届きません。-c側だけたまたま問題が起きなかったのは、STDIN_FILENOがそのまま実キーボードだったからに過ぎず、設計上の意図ではありませんでした。runLocateUpdateDb()自体を完全非ブロッキング化し、detached起動した直後に即座にreturnするよう変更、新設のawaitingLocateUpdateDb()/pollLocateUpdateDbCompletion()を-c/-g双方の実行ループ自身が元々持っている毎ループティックから呼び出す設計にしました。^G自体は新たなポーリングを必要とせず、両バックエンドが既に毎キー入力ごと呼んでいるfeedByte()を通じてそのまま届きます。
 
 make test 715/715件全通過(テスト作成時、新規追加したindexOf("subdir")の1文字ミス("subdir/"が正しい表記でした)によりwhileループが無限ループしmake testが実質ハングする事故があり、原因特定の上修正しました)、make usilicもクリーンビルド成功。macOS実機相当のPTY検証で、③LOCATE経由で開いたファイルのモードラインがモード名「LOCATE」+完全パスの戻り値になること、そこから^Gで(ls)ではなくLOCATE結果一覧へ戻ること、同じファイルから^J^Kで所在ディレクトリの(ls)(LOCATEへは戻らない)へ直接遷移することを直接確認しました。④はこのセッションに-g(GUI)の実行環境が無いため、-c側での再検証とrunGuiPhase()のコードレベルでの動作確認に留まっています。実機での-g再現確認をお願いします。CLAUDE.mdに項目300として記録、コミット・プッシュ済みです。
+
+<①-g起動→^Jl→「Updating database...」が一瞬表示されて元に戻る→^Gは問題なし=az→'.txt'[return]→HKSCS.txtを選択→^J^K→モードラインが不調=ba（←ディレクトリ名長過ぎ？）。
+^[は相変わらず反応無し。
+
+MANを少々。
+①^J^M→「No String」はいいけどモードラインに入力できない→^G→'tcb'[return]→モードラインが不良
+②文字装飾が無い=bb（旧版=bc）
+③選べないのに行がハイライト表示。
+
+①②③をよろしく。
+今日もご苦労さま。ではまた明日。
+
+>①②③修正しました。
+
+①-g固有のESCリーダーバイト取りこぼしを発見・修正しました。app/main.cppのrunGuiPhase()(-g用)を確認したところ、ESC単体を受け取る分岐が「ESC-ESC-Enterでの直接終了」のカウントだけを行い、app.feedByte()を一度も呼んでいないと判明しました。-c用のrunTerminalPhase()は全く同じ状況でapp.feedByte(0x1b, ...)を呼んでおり、-g側だけこの転送が漏れていました。結果として^[v/^[s/^[</^[>等ESCリーダーで始まる操作は全て、Applicationへ届く前に-gのこの分岐で握りつぶされていました。-cでのみ問題無く動作していたのはこの偶然の非対称性のためで、意図された設計ではありませんでした。
+
+①深いディレクトリ名でのモードライン破損も修正しました。^J^K(前回新規実装)が80桁端末の幅を超える深いディレクトリへ直接ジャンプした際、モードライン全体が破損する不具合でした。ご指摘の通り「ディレクトリ名長過ぎ」が原因です。fitModeLineFields()の全フォールバック段がnameフィールド自体を単独では決して切り詰めない設計だったため、withTruncatedTrailing2()の先頭にname自体の切り詰めステップを追加し、middleEllipsisTruncate()で頭...末尾形式に切り詰めるようにしました。
+
+MAN①候補一覧(^J^M)への入力不可: 履歴が空のとき「No String」が出るのは正しいのですが、そこで文字を打っても入力欄への編集移行が起きませんでした。原因はdispatchByte()のGREP/CUT候補一覧限定の「入力すると編集モードへ移行する」ライブコンボボックス分岐がPromptKind::ManNameを対象外にしていたことでした。legacy tcb/src/key.cのinput_key()を確認したところ、M_man2(K-44自身)はM_cut2/M_locate/T_locate/M_fgrepと全く同じswitch caseにまとめられており、MANの「候補選択」一覧もEGREP/CUTと同じライブコンボボックスである設計だったと確認できたため、PromptKind::ManNameをこの条件へ追加しました。
+
+MAN②文字装飾の欠落: ManMode::runAndWrap()がPipeBufferのstyled.attributes(nroff重ね打ちの太字/下線検出結果)を握り潰していたのが原因でした。FileMode::readAndWrap()が全く同じ問題を以前修正済みでしたが、ManModeには同じ修正が反映されていませんでした。1行修正しています。
+
+MAN③選択不能な行のハイライト表示: ManModeのコンストラクタがview_.setCursorHighlightEnabled(false)を一度も呼んでおらず、ContentViewの既定値(true)のままだったのが原因でした。FileModeのコンストラクタには同じ呼び出しが既にあり、ManModeだけ見落とされていました。
+
+make test 719/719件全通過、make usilicクリーンビルド成功。macOS実機相当のPTY検証で、深い階層のディレクトリへ^J^Kで移動した際にモードラインが頭...末尾形式で正しく表示されること、MANの候補一覧で「No String」表示後にlsと入力すると編集モードへ正しく移行しman lsを開けること、man lsの内容に太字文字が実際に出現すること、内容行に反転表示が一切残っていないことを、それぞれ実際の画面セル属性レベルで直接確認しました。-g固有のESC修正のみ、このセッションに-g実行環境が無いためコードレベルの確認に留まります。実機での-g再現確認をお願いします。CLAUDE.mdに項目301として記録、コミット・プッシュ済みです。今日もお疲れ様でした、また明日。

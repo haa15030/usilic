@@ -1705,7 +1705,27 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // sessions (see main()'s own comment on why). A lone ESC
         // doesn't touch coastLevel -- typing ESC ESC Enter mid-coast
         // is still meant to exit, not just stop scrolling.
+        //
+        // 2026-08-15 fix: this branch used to ONLY track
+        // consecutiveEscapes and never call app.feedByte() at all -- a
+        // real report ("^[は相変わらず反応無し", specifically in -g,
+        // confirmed fine in -c) traced back to exactly this: EVERY
+        // ESC-leader sequence (^[s/SHELL, ^[v/PageUp, ^[</^[>, ...)
+        // was silently swallowed here before ever reaching Application,
+        // in -g only -- the terminal path (runTerminalPhase(), a few
+        // hundred lines up) already forwards ESC via this exact same
+        // app.feedByte(0x1b, std::nullopt) call, so this was a real gap
+        // specific to -g's own separate key-handling code, not a
+        // property of ESC-leader sequences themselves (confirmed
+        // working via direct testing in -c and via unit tests). Setting
+        // escPending_ this way is harmless for the exit gesture itself:
+        // a second ESC lands in dispatchLeaderByte()'s own escPending_
+        // switch as an unrecognized sequence (a no-op, resetting
+        // escPending_ back to false), and consecutiveEscapes/Enter's
+        // own check just below is entirely independent of Application's
+        // internal state.
         consecutiveEscapes = std::min(consecutiveEscapes + 1, 2);
+        app.feedByte(0x1b, std::nullopt);
       } else if (key->byte == 0x0d && consecutiveEscapes >= 2) {
         app.requestImmediateExit();
       } else {

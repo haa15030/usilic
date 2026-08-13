@@ -843,17 +843,27 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   }
   if (promptKind_ != PromptKind::None) return feedPromptByte(byte);
   if (currentMode_ == ApplicationMode::Shell) return feedShellByte(byte, special);
-  // GrepPattern/CutPattern's own "Select string" list (see
+  // GrepPattern/CutPattern/ManName's own "Select ..." list (see
   // startRegexPromptList()'s own comment): unlike every other
   // ListBrowser use (FILE/DIR/SHELL/PROGRAM pickers, all pure
-  // navigate+Enter-to-select), legacy's own EGREP/CUT-regex list is a
-  // live combobox where typing directly edits the highlighted
+  // navigate+Enter-to-select), legacy's own EGREP/CUT-regex/MAN list is
+  // a live combobox where typing directly edits the highlighted
   // candidate -- see feedRegexListByte()'s own comment. Checked before
   // the generic resolveCommand() dispatch below so ordinary characters
   // (which resolveCommand() would otherwise resolve to page/scroll
   // commands, same table used everywhere else) reach it instead.
+  // ManName added 2026-08-15: a real report ("^J^M→「No String」は
+  // いいけどモードラインに入力できない") -- key.c's own input_key()
+  // groups M_man2 (K-44's own list-editing case) in the exact same
+  // switch case as M_cut2/M_locate/T_locate/M_fgrep (see its own `k =
+  // vt_col(0) / 2` branch), confirming this isn't unique to GREP/CUT.
+  // PROGRAM's own M_prog2 is grouped in a DIFFERENT case in that same
+  // switch (only sharing the *width* calculation, not confirmed to
+  // share this editing behavior) and wasn't part of this report, so
+  // deliberately left out here rather than guessed at.
   if (currentMode_ == ApplicationMode::ListBrowser && promptHistoryRecallKind_ &&
-      (*promptHistoryRecallKind_ == PromptKind::GrepPattern || *promptHistoryRecallKind_ == PromptKind::CutPattern)) {
+      (*promptHistoryRecallKind_ == PromptKind::GrepPattern || *promptHistoryRecallKind_ == PromptKind::CutPattern ||
+       *promptHistoryRecallKind_ == PromptKind::ManName)) {
     return feedRegexListByte(byte, special);
   }
 

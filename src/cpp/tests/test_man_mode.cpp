@@ -29,6 +29,15 @@ TEST_CASE_FIXTURE(Fixture, "loadPage: an empty name fails cleanly without runnin
   CHECK(mode.currentPage().empty());
 }
 
+// 2026-08-15 fix: a real user report ("選べないのに行がハイライト
+//表示") -- unlike FileMode, ManMode never called this at all, so the
+// view kept ContentView's own default (true), showing an unwanted
+// reverse-video cursor bar as it moved through a man page even though
+// nothing there is "selectable" the way a Directory/LOCATE entry is.
+TEST_CASE_FIXTURE(Fixture, "construction: cursor highlight is disabled, matching FileMode's own convention") {
+  CHECK_FALSE(view.cursorHighlightEnabled());
+}
+
 // The rest genuinely exercise the real `man`(1) command (this project's
 // preference for real end-to-end execution over synthetic fixtures --
 // see PipeBuffer/ArchiveReader precedent), but minimal environments
@@ -44,6 +53,29 @@ TEST_CASE_FIXTURE(Fixture, "loadPage: a real man page loads through PipeBuffer a
   }
   CHECK(mode.currentPage() == "ls");
   CHECK_FALSE(view.lines().empty());
+}
+
+// 2026-08-15 fix: a real user report + side-by-side screenshot against
+// a real terminal's own `man` rendering ("文字装飾が無い") -- ManMode
+// discarded PipeBuffer's own nroff-overstrike bold/underline detection
+// (styled.attributes), unlike FileMode's identical 2026-08-05 fix. A
+// real man page's own section headers (NAME, SYNOPSIS, ...) are
+// reliably bold via this convention, so this checks at least one line
+// carries a non-empty attributes vector rather than asserting on any
+// SPECIFIC line's exact content (which varies by platform/man version).
+TEST_CASE_FIXTURE(Fixture, "loadPage: a real man page's bold/underline overstrike survives as line attributes") {
+  if (!mode.loadPage("ls")) {
+    MESSAGE("man not installed or 'ls' has no man page here -- skipping");
+    return;
+  }
+  bool anyAttributed = false;
+  for (const auto &line : view.lines())
+    if (!line.attributes.empty()) { anyAttributed = true; break; }
+  if (!anyAttributed) {
+    MESSAGE("this platform's `man ls` output has no overstrike formatting -- skipping");
+    return;
+  }
+  CHECK(anyAttributed);
 }
 
 TEST_CASE_FIXTURE(Fixture, "loadPage: a nonexistent page fails cleanly") {

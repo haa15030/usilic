@@ -16293,6 +16293,97 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
     留まっている旨をユーザーへ申告し、実機での`-g`再現確認を
     依頼する必要がある。
 
+301. **2026-08-15: `-g`固有のESCリーダーバイト取りこぼしを発見・修正、
+    深いディレクトリ名でのモードライン破損を修正、MANモードの
+    3件(装飾欠落・不要なハイライト・候補一覧への入力不可)を修正**。
+   - **`-g`固有のESCリーダーバイト取りこぼしを発見・修正**:
+     「①-g起動→^Jl→...^Gは問題なし→...→^J^K→モードラインが不調
+     ...^[は相変わらず反応無し」との報告を受け、`app/main.cpp`の
+     `runGuiPhase()`(`-g`用)を確認したところ、`key->byte == 0x1b`
+     (ESC単体)を受け取る分岐が「ESC-ESC-Enterでの直接終了」の
+     カウントだけを行い、`app.feedByte()`を一度も呼んでいないと
+     判明。`-c`用の`runTerminalPhase()`は全く同じ状況で
+     `app.feedByte(0x1b, ...)`を呼んでおり(数百行上に実在)、
+     `-g`側だけこの転送が漏れていた。結果として`^[v`/`^[s`/`^[<`/
+     `^[>`等ESCリーダーで始まる操作は全て、Applicationへ届く前に
+     `-g`のこの分岐で握りつぶされていた(`-c`でのみ問題無く動作
+     していたのはこの偶然の非対称性のためで、意図された設計では
+     なかった)。`consecutiveEscapes`のカウントはそのまま維持しつつ
+     `app.feedByte(0x1b, std::nullopt)`を追加するだけの修正。
+     ESC-ESC-Enterの直接終了ジェスチャー自体への副作用は無い
+     (2回目のESCは`dispatchLeaderByte()`のescPending_switch内で
+     未対応シーケンスとして無害に処理されるだけで、`main.cpp`
+     自身の`consecutiveEscapes`カウントとは独立)。
+   - **深いディレクトリ名でのモードライン破損を修正**: `^Jl→'.txt'
+     [return]→HKSCS.txtを選択→^J^K`の操作列で、`^J^K`(項目300で
+     新規実装)が「/Applications/Adobe Acrobat DC/Adobe Acrobat.app/
+     Contents/Resources/Resource/TypeSupport/Unicode/Mappings/
+     Adobe/」という80桁端末の幅を超える深いディレクトリへ直接
+     ジャンプした際、モードライン全体が破損する不具合(スクリーン
+     ショット=ba、ユーザー自身の見立て「ディレクトリ名長過ぎ？」
+     が的中)を修正。原因は`fitModeLineFields()`の全フォールバック
+     段が`name`フィールド自体を単独では決して切り詰めない/落とさ
+     ない設計だったこと(名前が単独で幅を超える場合のみ最終段で
+     name/trailing/trailing2すべてを落とす、という極端な二択
+     しかなかった)。`ContentView::withTruncatedTrailing2()`
+     (項目298/299でtrailing2向けに新設した共有前処理関数)の先頭に
+     name自体の切り詰めステップを追加、`middleEllipsisTruncate()`
+     で頭...末尾形式に切り詰めるようにした(常に少なくとも
+     position欄と並んで収まる幅を確保)。同じ関数を全3箇所の
+     モードライン描画経路が既に共有していたため、この1箇所の
+     修正で全経路に反映される。
+   - **MANモードの3件を修正**:
+     - **①候補一覧(`^J^M`)への入力不可**: 履歴が空のとき
+       「No String」が出るのは正しいが、そこで文字を打っても
+       入力欄への編集移行が起きなかった。原因は
+       `dispatchByte()`のGREP/CUT候補一覧限定の「入力すると
+       編集モードへ移行する」ライブコンボボックス分岐
+       (`feedRegexListByte()`)が`PromptKind::GrepPattern`/
+       `CutPattern`にしか対応しておらず、`PromptKind::ManName`は
+       対象外だったこと。legacy `tcb/src/key.c`の`input_key()`を
+       確認したところ、`M_man2`(K-44自身)は`M_cut2`/`M_locate`/
+       `T_locate`/`M_fgrep`と全く同じswitch caseにまとめられており、
+       MANの「候補選択」一覧もEGREP/CUTと同じライブコンボボックス
+       である設計だったと確認できた。`PromptKind::ManName`を
+       この条件へ追加。同じswitch内で`M_prog2`(PROGRAM、K-42)も
+       別ケースとはいえ同じ幅計算グループに含まれていたが、今回
+       報告の対象外であり未確認のため意図的に対象外のままとした。
+     - **②文字装飾(太字・下線)の欠落**: 実機スクリーンショット
+       (`=bb`、旧版`=bc`との比較)で、`man tcb`のNAME/VERSION等の
+       見出しが太字にならず、参照箇所(`tcb(1)`等)も下線無しの
+       プレーンテキストになっていると判明。原因は`ManMode::
+       runAndWrap()`が`PipeBuffer`の`styled.attributes`
+       (nroff重ね打ちの太字/下線検出結果)を`{}`で握り潰していた
+       こと。`FileMode::readAndWrap()`が全く同じ問題を2026-08-05に
+       修正済みだったが、ManModeには同じ修正が反映されていなかった
+       (実装が独立しているため見落とされていた)。`styled.attributes`
+       をそのまま渡すよう1行修正。
+     - **③選択不能な行のハイライト表示**: MANの内容行がカーソル
+       移動のたびに反転表示されるが、man page内の行は
+       Directory/LOCATEの一覧項目と違い「選択」できる対象では
+       ないため不適切だった。原因は`ManMode`のコンストラクタが
+       `view_.setCursorHighlightEnabled(false)`を一度も呼んで
+       おらず、`ContentView`の既定値(`true`)のままだったこと。
+       `FileMode`のコンストラクタには同じ呼び出しが既にあり
+       (「plain file content never gets a whole-line reverse-video
+       cursor highlight」)、ManModeだけ見落とされていた。
+   - **検証**: `make test` 719/719件全通過(MANの3件それぞれに新規
+     テスト、モードライン`name`切り詰めの新規`ContentView`テスト
+     2件(既存の「nameは切り詰めではなく丸ごと落ちる」旧テストも
+     新しい「name/positionは常に確保される」挙動に合わせて更新))。
+     `make usilic`もクリーンビルド成功。macOS実機相当のPTY検証で、
+     深い階層のディレクトリ(=baと同じ条件)へ`^J^K`で移動した際、
+     モードラインが「/Applications/Adobe Acr...s/Resource/
+     TypeSupport/Unicode/Mappings/Adobe/ 1/8 TOP」のように頭...末尾
+     形式で正しく表示されること、MANの候補一覧で「No String」表示後
+     `ls`と入力すると編集モードへ正しく移行し`man ls`を開けること、
+     `man ls`の内容に太字文字(pyteの`bold`属性)が実際に出現する
+     こと、内容行(モードライン自身を除く全行)に反転表示が一切
+     残っていないことを、それぞれ実際の画面セル属性レベルで直接
+     確認した。`-g`固有のESC修正のみ、このセッションに`-g`実行
+     環境が無いためコードレベルの確認(`-c`側の同一ロジックが既に
+     実機相当PTY検証済みであることの確認)に留まる。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が
