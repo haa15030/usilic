@@ -3526,3 +3526,98 @@ make test 724/724件全通過、make usilicクリーンビルド成功。macOS�
 ②(;/:の機能が逆): application.cppのkKeyTable(項目177でusilicrc自身のM-0/M-1マクロ定義から一字一句そのまま起こしたもの)では「;」=M-0=Back+cursor up+select、「:」=M-1=Back+cursor down+selectでしたが、実際のキー入力を解決するresolveCommand()のswitch文では';'→Command::JumpNext(Back+MoveDown+Enter)、':'→Command::JumpPrevious(Back+MoveUp+Enter)と、真逆の割り当てになっていました。この食い違いは2026-08-03の回で導入されたもので、その時のコメントには「ユーザーに直接確認した」とありましたが、kKeyTableはusilicrcという一次資料からの直接転記であり、そちらを正としてresolveCommand()側のcase ';':/case ':':を入れ替えました。Command::JumpNext/JumpPrevious自体の中身(Back+MoveDown+Enter/Back+MoveUp+Enterという定義そのもの)は変更していません。
 
 resolveCommand(';', ...)/resolveCommand(':', ...)を直接検証する新規テストケースを追加し、既存のhandleCommand(JumpNext/JumpPrevious)テストの古い(逆の)コメントも訂正しました。make test 725/725件全通過、make usilicクリーンビルド成功。実バイナリでのPTY検証: 専用の3ファイルディレクトリ(aaa.txt/bbb.txt/ccc.txt)でbbb.txtをFileモードで開いた状態から「;」を押すとaaa.txt(1つ上)へ、続けて「:」を押すとbbb.txt(1つ下)へ戻ることを、モードライン上のファイル名表示で確認しました。CLAUDE.mdに項目303として記録、コミット・プッシュ済みです。
+
+<legacy版をmake installしてほしい。
+
+>src/tcbのビルドは完了しました(config.hもデフォルトのUTF-8・実際の/usr/localパスで再生成済み)。ただ、実際のインストール先/usr/local/{bin,lib,man}はrootオーナーで、このBashツールからは非対話的にsudoできず失敗しました。
+
+お手数ですが、以下をご自身のターミナルで実行してください(!プレフィックスでこのセッションからも実行できます):
+
+```
+! sudo make -C /Users/haa15030/git/tcb-1.5b.linux_3 install
+```
+
+これで/usr/local/bin/tcb、/usr/local/lib/tcb/(tcbrc・HELP)、/usr/local/man/man1/tcb.1.gzがインストールされます。
+
+<ちょっと待って。今までlegacyで言及してきたのはそっちなの？
+
+>その通り、揺れがありました。整理すると:
+
+- 今回の一連の会話(;/:修正など)はすべて/Users/haa15030/git/usilic/で作業していました。そこではtcb/サブディレクトリが「legacy archive」(旧Cソース)、src/cpp/が現行のC++移植版という構成です。
+- 一方、今make installしたのは/Users/haa15030/git/tcb-1.5b.linux_3/という別リポジトリでした。こちらはセッションのcwd(.devcontainer)が属する場所で、CLAUDE.mdもここから自動読み込みされていましたが、今回の会話の実質的な作業対象ではありません。
+
+usilic/tcb/src/の方はMakefileにinstallターゲット自体が無く(default/usilic/debug/cleanのみ)、tcb-1.5b.linux_3の方はinstall.sh/config.sh付きの完全なインストール一式を持っていたため、後者を選んでしまいました。
+
+つまり「legacy」として今まで言及していたのはusilic/tcb/の方である可能性が高いです。どちらをインストールしますか?
+
+<git/usilic/tcbの分ではあるんだが、過去に旧版インストールの件で、そちらの発言としてMakefileにinstallがないので追記した旨あったような気がしたのに試したら実行できない。
+HISTORYにも無いんだけどね。そんなに前かなと。
+tcb-1.5b.linux_3は土台版でデバッグはgit/usilic/tcbじゃなかった？
+
+>理解しました。ご指摘の通りです。整理すると:
+
+- /usr/local/bin/usilicは既に存在する、legacy C版(tcb/src/)がconfig.shで`usilic`という名前でインストールされたものでした(CLAUDE.md項目119に明記: 「a)をお手本に」として今までずっと比較対象にしてきたバイナリそのものです)。
+- installの仕組みはtcb/src/Makefileにではなく、usilic/src/config.sh(tcb/src/Makefile/config.h/progname.hと、src/install.shを生成)+ usilic/src/install.sh(生成された実際のインストールスクリプト)という、src/側にある一式でした。tcb/src/Makefile自体にinstallが無いのは正しい設計で、後付けする必要はありませんでした。
+- 先ほど私が試したtcb-1.5b.linux_3は全くの別リポジトリで、無関係でした。申し訳ありません。
+
+正しい手順で再インストールします。
+
+(config.sh実行→ビルド→doc/tcb.1.gz生成まで完了、最後のsudo部分のみユーザー実行を依頼)
+
+/usr/local/bin/usilic(legacy C版、これまで「お手本」として比較に使ってきたもの)、/usr/local/lib/usilic/(usilicrc・HELP)、/usr/local/man/man1/tcb.1.gzが最新のソース内容で再インストールされます。
+
+なおtcb-1.5b.linux_3側で行った作業(make clean && make installの途中経過)はそちらのリポジトリ内に留まっており、usilic側には一切影響していません。念のため状態を確認しますか?それとも今回の件はこれで良ければ、tcb-1.5b.linux_3側の変更(未コミットのcpp/src/utf8.*等とは別に、今回生成したsrc/tcbバイナリ等)は放置で大丈夫でしょうか。
+
+<放置でいい。
+これはあとでもいいんだけど、以前のやり取りをjsonファイルからHISTORY.mdフォーマットで取り出すことはできる？
+
+>はい、できます。セッションのやり取りは~/.claude/projects/<プロジェクトパスをエンコードした名前>/<セッションID>.jsonlにJSON Lines形式で保存されていて(今回のusilic作業はcwdベースの別プロジェクト名の下に入っています)、各行が1メッセージです。実際に構造を確認したところ:
+
+- "type":"user"かつ"origin":{"kind":"human"}の行が、あなたが実際に入力した生のメッセージ。ツール結果を運ぶuserロールの行と区別できます。
+- "type":"assistant"の行のうちmessage.content内のtextブロックだけを拾えば、私が実際に画面に出した返信文になります(tool_use/thinkingブロックは除外)。
+
+なので、この2種を時系列に拾って<(ユーザー発言)/>(私の返信)に整形すれば、HISTORY.mdの verbatim フォーマットへ機械的に変換できます。
+
+注意点:
+- 今回のセッションの.jsonl自体が既に314MB(長時間セッションのため)あるので、都度Pythonで1行ずつストリーム処理する必要があります(一括Readは不可)。
+- 1つのユーザー発言に対して複数回のアシスタントtextブロック(ツール呼び出しの合間の発言)が挟まることがあるので、次のユーザー発言までのtextを連結して1つの>エントリにする必要があります。
+- 対象がどのセッションIDか(日付・作業内容)を絞り込む必要があります。
+
+やる際は「このセッションのこの期間を抽出して」と指定してもらえれば、スクリプトを書いて実行します。今すぐ着手しますか、それとも本当にあとで大丈夫ですか？
+
+<あとでいい。
+ひとつ聞きたいのは、ユーザーへの回答じゃない文章があるじゃない？
+↓これってエージェントとの会話なの？　あるいは独り言とか？
+
+My test had a navigation bug (only one ^N instead of three, landing on ../ instead of bbb.txt). Let me fix it, using the mode-line's N/M position indicator to confirm cursor placement.
+
+収録して欲しいのはユーザーの発言とそれへの回答だけ。
+「ではまた明日」のあと着手してくれればいい。
+あまりに長時間だと規制に引っかかるかもしれないので１日分で。
+大丈夫そう？
+
+>「独り言」でも「サブエージェントとの会話」でもなく、私自身の指示(システムプロンプト)に「ツール呼び出しの結果はユーザーに直接は見えないので、作業の要所要所で短い進捗コメントを本文として出力せよ」という決まりがあり、それに従って出している経過報告です。厳密には「あなたへの発言」として出力されてはいますが、質問への回答ではなく、作業の実況中継のようなものです。HISTORY.mdに記録したいのはこの実況部分ではなく、各ターンの最後に出す「まとめの返信」だけ、という理解で合っています。
+
+1日単位でのチャンク分割は問題なく可能です。JSONLの各行にISO形式のタイムスタンプが付いているので、314MBのファイル全体を一度に読み込む必要はなく、日付文字列でストリーム的にフィルタしながら該当日の分だけを抜き出せます。やり方の想定は:
+
+1. type:"user" かつ origin.kind:"human" の行から、その日付のユーザー発言(生テキスト)を抽出。
+2. 各ユーザー発言の直後から次のユーザー発言までの間にあるtype:"assistant"の行のうち、tool_useを伴わない最後の1件(=その日の作業の締めの返信)のtextブロックだけを>として採用。途中の実況コメントは除外。
+3. これを日付単位でHISTORY.mdの</>形式に整形。
+
+これなら1日分ずつ安全に処理できます。実行するときは対象の日付(または「ではまた明日、の区切りをこちらで見つけて」)を教えてください。
+
+<了解。
+HISTORY.md:3524とはどれのこと？　未実装みたいだけど。'/Users/haa15030/Desktop/スクリーンショット 2026-08-14 11.17.42.png'
+
+>HISTORY.md:3524は私の返信「お手本①は前回(項目302)で既にDirectoryModeへのバイト数表示を実装・PTY検証済みでしたので、今回は再確認のみ行い、実装の追加はしていません。」の行です。
+
+原因が分かりました。スクリーンショットは/usr/local/bin/usilic(先ほど再インストールしたlegacy C版)を実行したものです。同じディレクトリ(/Users/haa15030/git/usilic/、22エントリ)でC++版(src/cpp/build/usilic)を今実際に動かして確認したところ、こちらはバイト数がちゃんと表示されます:
+
+/Users/haa15030/git/usilic/ 01/22 TOP 1399 (ls)                    usilic v1.5b
+
+つまり:
+- バイト数表示(お手本①)はC++版だけの新機能で、legacy版のtcb/src/には元々実装されていません(今回の依頼も「追加してほしい」であって「legacyにある機能」ではありませんでした)。
+- 一方「usilic v1.5b」という右端のバージョン表示自体はlegacy側のtcb.c:393由来の本物の機能(sprintf(tmp, "%s v%s", tcb, ...))で、C++版はこれを再現しているだけです。なのでlegacy版でもこの文字列は出ます。
+- ちょうど先ほど/usr/local/bin/usilicをlegacy版で上書きインストールしたばかりで、同じ「usilic」という名前のバイナリが2つ(legacy版=PATH上のusilic、C++版=src/cpp/build/usilic)存在する状態のため、紛らわしく混同されたのだと思います。
+
+実装は未実装ではなく正常に動いています。今後C++版を試す際は/Users/haa15030/git/usilic/src/cpp/build/usilicを明示的に指定していただくと確実です。

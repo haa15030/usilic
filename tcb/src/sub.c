@@ -767,7 +767,8 @@ void print_arg(char arg[], int size, u_char *buff, CHILD *chp, int f_M)/*tcb*/
   else 
     switch(f_M) {
     case T_dir:
-      sprintf(&arg[1], "(%s)", s_S(S_ls));
+      if (size >= 0) sprintf(&arg[1], "%d (%s)", size, s_S(S_ls));
+      else sprintf(&arg[1], "(%s)", s_S(S_ls));
       break;
     case T_du:
       sprintf(&arg[1], "(%s)", s_S(S_du));
