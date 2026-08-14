@@ -25,7 +25,7 @@ void init_man(BASE *bp, FILE **pinp, char name[], u_char prev[], char arg[], int
   *pinp = fork_man(name);
   bp->pp = alloc_pipe(T_man, pinp, &bp->nrow, bp, strlen(name));
   bp->nrow = 1;
-  while (*pinp && bp->nrow < vt_row(0)) 
+  while (*pinp) /* read the whole man page up front, not just one screen */
     alloc_pipe(0, pinp, &bp->nrow, NULL, 0);
   if (!bp->pp) make_bp(bp, s_S(S_err6), NULL, NULL);
 }

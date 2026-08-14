@@ -1860,7 +1860,11 @@ void menu(char pathname[], FILE *pin)/*tcb*/
 			 || (n.M != T_dir && rv.pp && rv.col >= 0))
 		? -1 : h.bp->size, h.bp->buff, chp, n.M);
       if (n.M != T_pipe && n.M != T_pipe2 && n.M != T_pipe3)
-	n.nlen = disp_window(rv.ps, rv.pp, n.Mb, a.name, 
+	/* mode-line[1] should read "MAN" (the mode), not the man page's
+	   own name -- a.name itself is left untouched since it still
+	   feeds write_list()'s history persistence below */
+	n.nlen = disp_window(rv.ps, rv.pp, n.Mb
+			     , (n.M == T_man) ? "MAN" : a.name,
 			     l.prev, l.arg, &n.klen);
       else n.Mb = n.M = (n.M == T_pipe3) ? T_pipe5 : T_pipe4;
       if (rv.col == -1) rv.col = 0;
