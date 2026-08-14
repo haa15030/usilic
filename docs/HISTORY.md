@@ -4127,3 +4127,23 @@ CUTからの^J^K利用は実装しました。usilicrcの「K-?」節を確認�
 SHELLモードの^A/^E/^B/^F/^D欠落も修正しました。2026-08-12の回でfeedPromptByte()(LOCATE/CUT/GREP等が共有する汎用プロンプト編集)には既にこの5キーが実装済みでしたが、SHELLモード自身は別の独立したLineEditorを使っており、この修正が一度もミラーされていませんでした。同じロジックをshell_.commandLine()向けに追加しています。
 
 make test 728/728件全通過(CUTからの^J^K、SHELLの^A/^E/^B/^F/^Dそれぞれに新規テスト追加)。②本体(状態破損の再現)は実機での再現手順の詳細待ちのため、コードレベルの修正は今回未着手です。CLAUDE.mdに項目311として記録、コミット・プッシュ済みです。
+
+<新FILE:
+③-c起動後、^J^L'.txt'[return][return]^G^G→起動直後の（ls）→^X^F→モードライン不良=bo（旧=bp）。
+④同画面で^J^Kが利かない=bo。
+
+③④の修正をよろしく。
+ひとつ思いついたことがある。
+
+=bo→[return]=bq→^G
+
+では「BDF_Driver_License.txt」所在地のはず（旧=br）なのに結果は起動直後の（ls）なので「それ/BDF_Driver...」を表示しようとしてんじゃないの？
+'/Users/haa15030/Desktop/=bo.png''/Users/haa15030/Desktop/=bp.png''/Users/haa15030/Desktop/=bq.png''/Users/haa15030/Desktop/=br.png'
+
+>ご指摘の通りでした。真因が分かりました。
+
+application.cppのreturnToDirectory()(Fileモードから^Gで戻る処理)が、directoryMode_のcurrentDirectory_を無条件に信頼してそのまま再描画するだけの実装でした。通常の「ディレクトリ降下→Enter」経路では暗黙にファイルの格納先と一致しているため問題ありませんが、^X^F(RecentFile)経由でファイルを開いた場合(openSelectedListEntry()のRecentFile分岐はdirectoryMode_.enterDirectory()を一切呼ばない)、^X^Fを押す前にたまたま表示していた無関係なディレクトリ(今回は起動直後の(ls))がそのまま残り続け、^Gでそこへ戻ってしまっていました。legacy側の実機動作(=br、正しくファイルの実際の格納先Libraries/へ戻る)と比較して裏付けを取りました。goToFileSelector()(^J^K)が既に持っていた「enterDirectory()+resetNavigationToFloor()」の組み合わせをreturnToDirectory()にも追加しています(通常ケースでは無条件に素通りするため既存挙動への影響は無し)。
+
+④も修正しました。goToFileSelector()のモードガードにApplicationMode::ListBrowser(RecentFileカテゴリのときのみ)を追加し、候補をEnterで開く前の段階でも、ハイライト中の候補の格納先ディレクトリへ直接ジャンプできるようにしています。
+
+make test 730/730件全通過(両修正に新規テスト追加、legacyの実際の挙動と一致することを確認)。なお=bp(legacy)が依然として旧来のハードカット表示のままだった件は、前回のalloc_str()修正(項目310)がまだ/usr/local/bin/usilicへ反映されていない(sudo sh install.sh未実行)可能性が高いです。②(状態破損系)は今回見つかったバグとは別種と判断し、引き続き未解決のまま持ち越します。CLAUDE.mdに項目312として記録、コミット・プッシュ済みです。

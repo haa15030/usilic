@@ -2943,6 +2943,52 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works from Cut
   CHECK(app.directoryMode().currentDirectory() == path());
 }
 
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works straight from ^X^F's own RecentFile "
+                           "candidate list (ListBrowser), without opening it first (2026-08-16 fix: a real "
+                           "report -- \"同画面で^J^Kが利かない=bo\" -- =bo being that exact candidate-list "
+                           "screen)") {
+  fs::path subdir = root / "subdir";
+  fs::create_directories(subdir);
+  fs::path target = subdir / "target.txt";
+  { std::ofstream(target) << "x"; }
+  history.pushRecent(RingCategory::RecentFile, target.string());
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.handleCommand(Command::GoToFileSelector));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == subdir.string() + "/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) from File mode reached via ^X^F (RecentFile) lands on the "
+                           "file's OWN containing directory, not whatever directory happened to be showing "
+                           "before ^X^F was pressed (2026-08-16 fix: a real report + own diagnosis -- "
+                           "\"=bo→[return]=bq→^G...結果は起動直後の（ls）なので「それ/BDF_Driver...」を表示 "
+                           "しようとしてんじゃないの？\" -- openSelectedListEntry()'s RecentFile branch never "
+                           "calls directoryMode_.enterDirectory(), so returnToDirectory() used to just redraw "
+                           "whatever directoryMode_ already had, confirmed against legacy's own correct "
+                           "behavior here)") {
+  fs::path subdir = root / "subdir";
+  fs::create_directories(subdir);
+  fs::path target = subdir / "target.txt";
+  { std::ofstream(target) << "x"; }
+  history.pushRecent(RingCategory::RecentFile, target.string());
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.directoryMode().currentDirectory() == path());  // still the startup directory, unrelated to target
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.handleCommand(Command::Enter));  // opens target.txt via the RecentFile branch
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.fileMode().currentFile() == target.string());
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == subdir.string() + "/");  // NOT path() (the stale startup dir)
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleLsMode): refused outside Directory mode (K-26's own scoping)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");

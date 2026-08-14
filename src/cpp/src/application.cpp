@@ -2058,10 +2058,26 @@ bool Application::goToFileSelector() {
   // consumes it, so nothing retains that path once inside Cut mode;
   // out of scope for this fix, matching the user's own tested
   // scenario which was the buffer variant reached via LOCATE->File).
-  if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::Cut &&
-      currentMode_ != ApplicationMode::CutContent)
+  // 2026-08-16(続き): also usable straight from ^X^F's own RecentFile
+  // candidate list (ApplicationMode::ListBrowser) without first pressing
+  // Enter to open the highlighted candidate -- a real report
+  // ("同画面で^J^Kが利かない=bo", =bo being that exact candidate-list
+  // screen). Reads the highlighted candidate string itself (items()[
+  // cursorIndex]) rather than fileMode_.currentFile(), since nothing has
+  // been opened yet at this point.
+  std::string sourceFile;
+  if (currentMode_ == ApplicationMode::ListBrowser) {
+    if (listBrowserCategory_ != RingCategory::RecentFile) return false;
+    const std::string *selected = listBrowserMode_.selectedItem();
+    if (!selected) return false;
+    sourceFile = *selected;
+  } else if (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut ||
+             currentMode_ == ApplicationMode::CutContent) {
+    sourceFile = fileMode_.currentFile();
+  } else {
     return false;
-  std::filesystem::path path(fileMode_.currentFile());
+  }
+  std::filesystem::path path(sourceFile);
   std::string parent = path.parent_path().string();
   if (parent.empty()) return false;
   // Captured BEFORE enterDirectory() overwrites currentDirectory_ --
@@ -2192,6 +2208,31 @@ bool Application::openSelectedSegment() {
 
 bool Application::returnToDirectory() {
   fileMode_.saveCursorPosition();
+  // 2026-08-16 fix: this used to just flip currentMode_ and redraw
+  // directoryView_ AS-IS, trusting directoryMode_'s own currentDirectory_
+  // to already be the file's containing directory -- true for a normal
+  // Directory-descent-then-Enter session, but NOT for a file reached via
+  // ^X^F/RecentFile (openSelectedListEntry()'s own RecentFile branch
+  // never calls directoryMode_.enterDirectory() at all, so whatever
+  // directory happened to be showing BEFORE ^X^F stays showing after ^G
+  // too). A real user report + own diagnosis nailed this exactly:
+  // "=bo→[return]=bq→^G...結果は起動直後の（ls）なので「それ/
+  // BDF_Driver...」を表示しようとしてんじゃないの？" -- confirmed
+  // against legacy's own real behavior (=br: lands on the file's actual
+  // Libraries/ directory), and goToFileSelector()'s own identical
+  // enterDirectory()+resetNavigationToFloor() pairing already established
+  // this exact fix for the ^J^K case; just missing here for plain ^G.
+  // A no-op for the normal-descent case (parent already matches
+  // currentDirectory_), so this doesn't touch existing cursor-position
+  // behavior there.
+  std::filesystem::path filePath(fileMode_.currentFile());
+  std::string parent = filePath.parent_path().string();
+  if (!parent.empty() && parent.back() != '/') parent += '/';
+  if (!parent.empty() && parent != directoryMode_.currentDirectory()) {
+    std::string previousDirectory = directoryMode_.currentDirectory();
+    if (directoryMode_.enterDirectory(parent) && !previousDirectory.empty())
+      directoryMode_.resetNavigationToFloor(previousDirectory);
+  }
   currentMode_ = ApplicationMode::Directory;
   // File mode's own view now sets a real visible cursor (see
   // ContentView::syncVisibleCursor()'s own comment) -- without this,

@@ -16957,6 +16957,52 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      再現)は依然として実機での再現手順の詳細待ちのため、コード
      レベルの修正は今回未着手。
 
+312. **2026-08-16(続き): `^X^F`(RecentFile)から開いたFileモードで
+    `^G`が実際の格納先ディレクトリへ戻らない不具合を修正、`^J^K`を
+    `^X^F`候補一覧自体からも使えるように拡張**。ユーザー自身の
+    鋭い診断("「BDF_Driver_License.txt」所在地のはず（旧=br）なのに
+    結果は起動直後の（ls）なので「それ/BDF_Driver...」を表示しようと
+    してんじゃないの？")がきっかけ。
+   - **③④の報告**: 「-c起動後、^J^L'.txt'[return][return]^G^G→
+     起動直後の（ls）→^X^F→モードライン不良=bo（旧=bp）」
+     「同画面で^J^Kが利かない=bo」。
+   - **真因(ユーザー自身の診断で特定)**: `application.cpp`の
+     `returnToDirectory()`(File→Directoryの`^G`)が、
+     `directoryMode_`の`currentDirectory_`を無条件に信頼して
+     そのまま再描画するだけの実装だった。通常の「ディレクトリ降下
+     →Enter」経路では暗黙にファイルの格納先と一致しているため
+     問題無いが、`^X^F`(RecentFile)経由でファイルを開いた場合
+     (`openSelectedListEntry()`のRecentFile分岐は
+     `directoryMode_.enterDirectory()`を一切呼ばない)、`^X^F`を
+     押す**前**にたまたま表示していた無関係なディレクトリ(今回は
+     起動直後の`(ls)`)がそのまま残り続け、`^G`でそこへ戻って
+     しまっていた。legacy側の実機動作(`=br`、正しくファイルの
+     実際の格納先`Libraries/`へ戻る)と比較して裏付けを取った。
+     `goToFileSelector()`(`^J^K`)が既に持っていた「`enterDirectory()`
+     +`resetNavigationToFloor()`」の組み合わせを`returnToDirectory()`
+     にも追加(ファイルの親ディレクトリが現在の`directoryMode_`の
+     ディレクトリと既に一致する通常ケースでは無条件に素通りする
+     ため、既存の挙動への影響は無い)。
+   - **`^J^K`を`^X^F`候補一覧自体からも使えるように拡張**:
+     `goToFileSelector()`のモードガードに`ApplicationMode::
+     ListBrowser`(`listBrowserCategory_ ==
+     RingCategory::RecentFile`のときのみ)を追加。候補をEnterで
+     開く前の段階でも、ハイライト中の候補の格納先ディレクトリへ
+     直接ジャンプできるようにした(`fileMode_.currentFile()`では
+     なく`listBrowserMode_.selectedItem()`を参照)。
+   - **検証**: `make test` 730/730件全通過(`^X^F`候補一覧からの
+     `^J^K`、`^X^F`経由で開いたFileモードからの`^G`が正しい
+     ディレクトリへ戻ることの2件を新規doctest追加、いずれも
+     legacy(`=br`)の実際の挙動と一致することを確認)。`make usilic`
+     クリーンビルド成功。なお`=bp`(legacy)が依然として旧来のハード
+     カット表示のままだった件は、前回の`alloc_str()`修正
+     (項目310)がまだ`/usr/local/bin/usilic`へ反映されていない
+     (`sudo sh install.sh`未実行)可能性が高いとユーザーへ伝えた。
+   - **②(状態破損系、未解決)は今回も持ち越し**。今回見つかった
+     `returnToDirectory()`のバグは②とは別種(こちらは「間違った
+     場所に戻る」、②は「以後の操作が反応しなくなる」)と判断、
+     ②自体の再現条件はまだユーザーからの追加情報待ち。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が
