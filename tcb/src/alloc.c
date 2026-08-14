@@ -526,7 +526,41 @@ PP *alloc_str(STR s0[], int *rowp, int f_grep)/*tcb*/
 	  pp->f.len = strlen(p);
 	} else {
 	  i = count_k(p, vt_col(0)); /* FGREP_HISTORY etc. */
-	  if (strlen(p) > vt_col(0) - i) p[vt_col(0) - i] = '\0';
+	  if (strlen(p) > vt_col(0) - i) {
+	    /* Finder-style middle-ellipsis ("head...tail") instead of a
+	       raw head-only chop -- a real report (screenshot =bm/=bn,
+	       ^X^F's "select recent file" list on a >150-byte path) found
+	       this silently truncated to just its first ~80 bytes with no
+	       indication anything was cut, and the tail -- the actual
+	       filename, the most useful part -- was lost entirely. This
+	       matches the C++ port's own middleEllipsisTruncate(), which
+	       already handles this case. Boundary-safety follows the
+	       exact same "+1 byte on a detected split" convention
+	       disp.c's own name/prev truncation already uses elsewhere
+	       (count_k() only reports whether a cut splits a char, not
+	       how many bytes to skip; that existing code has always
+	       assumed 1 byte is enough to clear it, kept consistent here
+	       rather than inventing a different, more "correct" scheme
+	       just for this one call site). Falls back to the original
+	       head-only chop when the available width is too narrow for
+	       a head+"..."+tail to mean anything (rare: needs <8 columns).
+	    */
+	    int width = vt_col(0) - i;
+	    if (width < 8) p[width] = '\0';
+	    else {
+	      int full = strlen(p);
+	      int tailw = (width - 3) / 2;
+	      int headw = width - 3 - tailw;
+	      int tailstart = full - tailw;
+	      u_char tmp[N_line];
+	      if (count_k(p, headw)) headw--;
+	      if (count_k(p, tailstart)) tailstart++;
+	      memcpy(tmp, p, headw);
+	      strcpy((char*)&tmp[headw], "...");
+	      strcat((char*)tmp, (char*)&p[tailstart]);
+	      strcpy((char*)p, (char*)tmp);
+	    }
+	  }
 	  pp->f.len = strlen(p);
 	}
 	pp->f.line = (pp->prev) ? pp->prev->f.line + 1 : 1;
