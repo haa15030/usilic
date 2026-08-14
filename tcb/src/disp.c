@@ -251,11 +251,15 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
     llen += 17; /* "000000/000000 END" */
     break;
   default:
+    /* T_man reads the whole man page up front (see init_man()), so its
+       total is known immediately -- it uses the same dynamic-width
+       "N/M" format as fully-loaded content, not the fixed 6-digit
+       width reserved for genuinely still-streaming pipes below. */
     llen += print_line(ps, pp
-		       , (f_M == M_shell || f_M == T_pipe2 
-			  || f_M == T_man || f_M == T_pipe 
+		       , (f_M == M_shell || f_M == T_pipe2
+			  || f_M == T_pipe
 			  || f_M == T_pipe4 || f_M == T_pipe5
-			  || f_M == T_pipe3) 
+			  || f_M == T_pipe3)
 		       ? -1 : 1, line);
     break;
   }

@@ -1856,7 +1856,7 @@ void menu(char pathname[], FILE *pin)/*tcb*/
       int j = h.bp == &h.base[4] && pin && pin != F1;
       set_rv(&n, &pn, &rv, &h 
 	     , ((i = pn.nrow - (vt_row(0) - !j)) > 0) ? i : 0);
-      print_arg(l.arg, (h.bp == &h.base[4]
+      print_arg(l.arg, ((h.bp == &h.base[4] && n.M != T_man)
 			 || (n.M != T_dir && rv.pp && rv.col >= 0))
 		? -1 : h.bp->size, h.bp->buff, chp, n.M);
       if (n.M != T_pipe && n.M != T_pipe2 && n.M != T_pipe3)

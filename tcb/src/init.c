@@ -28,6 +28,15 @@ void init_man(BASE *bp, FILE **pinp, char name[], u_char prev[], char arg[], int
   while (*pinp) /* read the whole man page up front, not just one screen */
     alloc_pipe(0, pinp, &bp->nrow, NULL, 0);
   if (!bp->pp) make_bp(bp, s_S(S_err6), NULL, NULL);
+  else { /* alloc_pipe() never maintains bp->size (it's only tracked
+	    for overflow detection internally) -- now that the whole
+	    page is loaded, total it up so the mode-line can show a
+	    real byte count, the same as File/Directory. */
+    PP *pp;
+    int size = 0;
+    for (pp = bp->pp; pp; pp = pp->next) size += pp->f.len + 1;
+    bp->size = size;
+  }
 }
   
 int init_pipe(BASE *bp, FILE **pinp, int f_Mb, char mess[], char prev[], char arg[], int *klenp, CHILD **chpp, int ppid)/*tcb*/

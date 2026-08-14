@@ -774,7 +774,8 @@ void print_arg(char arg[], int size, u_char *buff, CHILD *chp, int f_M)/*tcb*/
       sprintf(&arg[1], "(%s)", s_S(S_du));
       break;
     case T_man:
-      sprintf(&arg[1], "(%s)", s_S(S_man));
+      if (size >= 0) sprintf(&arg[1], "%d (%s)", size, s_S(S_man));
+      else sprintf(&arg[1], "(%s)", s_S(S_man));
       break;
     case T_pipe4:
     case T_pipe5:
