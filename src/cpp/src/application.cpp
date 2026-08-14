@@ -610,10 +610,20 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // a reasonable-confidence first pass per the user's own framing of
   // this round as a "机上の構想...実地検証必須" (desk design needing
   // field verification), not a guess made without reading the source.
+  // 2026-08-16 fix: trailing2 was empty (see the now-stale comment
+  // above about "no natural trailing2 counterpart") -- legacy's own
+  // tcb/src/sub.c print_arg() T_man case was independently given the
+  // same "%d (%s)" byte-count+label shape as T_dir's "(ls)" this same
+  // day (see CLAUDE.md items 305/306), so "(man)" is the real
+  // counterpart after all, matching DirectoryMode's trailing/trailing2
+  // split below (also confirmed to already render with the correct
+  // plain-space gap between the two reverse-video segments, unlike
+  // legacy's own single-run rendering of this pair -- see disp.c's
+  // disp_window() fix from the same round).
   manView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (manMode_.currentPage().empty()) return {};
     return {"MAN", std::to_string(contentByteCount(manView_)), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
-            /*trailing2=*/""};
+            /*trailing2=*/"(man)"};
   });
   // 2026-08-14 fix, then corrected same-day: a real report ("^J^L→
   // '.txt'[return]→戻り値「LOCATE: .txt」が無い") pointed out LOCATE's

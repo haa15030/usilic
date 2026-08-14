@@ -305,9 +305,33 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
     vt_putchar(' ');
   }
   if (f_M != M_exit && f_enter != 2 && arg[1]) {
-    vt_stand();
-    vt_printf("%s", &arg[1]);
-    vt_endstand();
+    /* print_arg() combines a byte count and a "(mode)" label into one
+       string ("1410 (ls)", "1307 (man)", etc, see its T_dir/T_man
+       cases and the chp branch) -- a real report (screenshot =bh)
+       pointed out this whole string was drawn as a single unbroken
+       reverse-video run, unlike every OTHER pair of mode-line fields
+       here (name/position/prev), which all get a plain non-standout
+       space between them. Split on " (" (the exact separator print_arg()
+       always uses before a label) so the byte count and the label are
+       their own reverse-video runs with a real gap, matching the rest
+       of this function; a bare number with no label (e.g. plain File
+       byte count) or a bare "(label)" with no number (e.g. T_du/T_pipe4)
+       has no " (" to find and falls through to the single-run case
+       unchanged. */
+    u_char *paren = (u_char *)strchr((char *)&arg[1], '(');
+    if (paren && paren > &arg[1] && paren[-1] == ' ') {
+      vt_stand();
+      vt_printf("%.*s", (int)(paren - 1 - &arg[1]), &arg[1]);
+      vt_endstand();
+      vt_putchar(' ');
+      vt_stand();
+      vt_printf("%s", paren);
+      vt_endstand();
+    } else {
+      vt_stand();
+      vt_printf("%s", &arg[1]);
+      vt_endstand();
+    }
     vt_putchar(' ');
     len += strlen(&arg[1]) + 1;
   }
