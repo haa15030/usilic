@@ -2923,6 +2923,26 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): refused outside Fil
   CHECK_FALSE(app.handleCommand(Command::GoToFileSelector));
 }
 
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works from Cut mode (2026-08-16 fix: a "
+                           "real report -- \"CUTでは？と思い試そうとしたら^J^Kが不能だった...本来どこでも "
+                           "使えるキーアサインなので\" -- usilicrc's own K-? section groups K-18 with "
+                           "plainly-universal bindings, not just File)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("hello");  // matches plain.txt's own first line ("hello\nworld\n")
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  CHECK(app.handleCommand(Command::GoToFileSelector));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleLsMode): refused outside Directory mode (K-26's own scoping)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
@@ -3071,6 +3091,32 @@ TEST_CASE_FIXTURE(Fixture, "awaitingSequenceOrPromptByte: true while an FGREP pr
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
   CHECK(app.awaitingSequenceOrPromptByte());
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL: ^A/^E/^B/^F/^D edit the command line, not insert as literal control bytes "
+                           "(2026-08-16 fix: a real report -- \"^A^DDDD'cat'...を打とうとしたらハイライトの "
+                           "ADDDDだった\" -- the 2026-08-12 fix wired these into feedPromptByte()'s own "
+                           "promptEditor_ but never into feedShellByte()'s separate commandLine() editor)") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("xbc")) app.feedShellByte(c, std::nullopt);
+  REQUIRE(app.shell().commandLine().text() == "xbc");
+
+  CHECK(app.feedShellByte(0x01, std::nullopt));  // ^A: home
+  CHECK(app.feedShellByte(0x04, std::nullopt));  // ^D: delete forward -- removes the leading 'x'
+  CHECK(app.shell().commandLine().text() == "bc");
+
+  app.feedShellByte('a', std::nullopt);
+  CHECK(app.shell().commandLine().text() == "abc");  // inserted at the still-home cursor, not appended
+
+  CHECK(app.feedShellByte(0x05, std::nullopt));  // ^E: end
+  app.feedShellByte('!', std::nullopt);
+  CHECK(app.shell().commandLine().text() == "abc!");  // now appends, confirming ^E actually moved to the end
 }
 
 TEST_CASE_FIXTURE(Fixture, "SHELL: typing a command and pressing Enter runs it, output reaches scrollback") {

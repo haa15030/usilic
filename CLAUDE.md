@@ -16908,6 +16908,55 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      対話的な最終確認はできていない。ユーザーによる実機確認を
      推奨する。
 
+311. **2026-08-16(続き): 項目310の許可仮説をユーザーが反証、②の
+    真因を「^J^K後に以後の操作が反応しなくなる」という別の症状として
+    再認識(未解決)、`^J^K`のCUTモードからの利用を実装、SHELLモードの
+    `^A`/`^E`/`^B`/`^F`/`^D`欠落を修正**
+   - **項目310の許可仮説への反証**: ユーザーから「パーミッションに
+     問題があるのならFILEでも拒否されるんじゃない？FILEは問題ない。
+     LOCATEでもOKだが、一度でも^J^Kすると以後は反応しなくなる。」
+     との指摘。さらに実機のターミナルから直接`locate BDF_Driver`を
+     実行した結果、`LOCATE→^J^K→NG`と`^X^F→OK`が**全く同じ実ファイル**
+     (`/Applications/ABBYY FineReader for ScanSnap/.../
+     BDF_Driver_License.txt`)を指していたことが判明、`FileMode::
+     loadFile()`の`std::ifstream`失敗という項目310の仮説は誤りと
+     確定した。真因は「特定ファイルが開けない」ことではなく、
+     「`^J^K`を一度使うと(そのファイルに限らず)以後の操作が反応
+     しなくなる」という、状態破損系の別のバグである可能性が高いと
+     判明。**未解決のまま持ち越し**、詳細な再現条件についてユーザー
+     への確認待ち。
+   - **CUTモードからの`^J^K`利用を実装**: 上記の調査中、ユーザーが
+     「CUTでは？と思い試そうとしたら^J^Kが不能だった。本来どこでも
+     使えるキーアサインなので反映よろしく。」と新規要望。
+     usilicrcの「K-?」節(項目177で言及したK-2「Return to previous
+     mode」等と同じ、モードを問わず汎用的に使えるキーバインド群)に
+     K-18がK-21「Go to previous regular file」・K-22「Read content
+     of file to buffer」と並んで属しており、これらは全て「現在の
+     ファイル」概念を扱うモード全般で使えることが前提と判明。
+     `goToFileSelector()`のモードガードを`File`単独から`File`/
+     `Cut`/`CutContent`へ拡張。`cutFileSourcePath_`は`executeCut()`
+     消費直後にクリアされる一過性の変数のため使えず、代わりに
+     (File発の"buffer"系CUTでは変更されない)`fileMode_.currentFile()`
+     をそのまま参照する実装とした(ディレクトリ発の"regular file"系
+     CUT(K-35/36)は`cutFileSourcePath_`が既にクリア済みで対応不可、
+     ユーザーの実テストシナリオ(LOCATE→File→CUT)の範囲外として今回は
+     見送り)。
+   - **SHELLモードの`^A`/`^E`/`^B`/`^F`/`^D`欠落を修正**: ユーザーが
+     「FILEから表示したのち^Jw→SHELLで...`echo /tmp/.usilic/...`を
+     `^A^DDDD'cat'[return]`しようとしたらハイライトのADDDDだった。」
+     と報告。2026-08-12の回で`feedPromptByte()`(LOCATE/CUT/GREP等が
+     共有する汎用プロンプト編集)には既にこの5キーが実装済みだったが、
+     SHELLモード自身の`feedShellByte()`は別の独立した`commandLine()`
+     LineEditorを使っており、この修正が一度もミラーされていな
+     かったと判明。同じバイト値・同じ`LineEditor`クラスに対し、
+     `promptEditor_`の代わりに`shell_.commandLine()`を操作する
+     形で同型の5ケースを追加。
+   - **検証**: `make test` 728/728件全通過(CUTモードからの`^J^K`、
+     SHELLモードの`^A`/`^E`/`^B`/`^F`/`^D`それぞれに新規doctest
+     追加)。`make usilic`クリーンビルド成功。②本体(状態破損系の
+     再現)は依然として実機での再現手順の詳細待ちのため、コード
+     レベルの修正は今回未着手。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

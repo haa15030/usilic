@@ -4111,3 +4111,19 @@ CLAUDE.mdに項目308・309として記録、コミット・プッシュ済み�
 検証の限界: legacy版のクリーンビルドは成功、151バイトの実パスに対しhead=39B+"..."+tail=38Bでちょうど80バイトに収まることを手計算で確認しましたが、^X^Fの候補一覧に実際に長いパスを載せてPTYで最終確認することは、このセッションのサンドボックス環境でRecentFileリングへ確実にエントリを積む再現手順が構築できず断念しました。実機での確認をお願いします。
 
 CLAUDE.mdに項目310として記録、コミット・プッシュ済みです。
+
+<パーミッションに問題があるのならFILEでも拒否されるんじゃない？
+FILEは問題ない。LOCATEでもOKだが、一度でも^J^Kすると以後は反応しなくなる。
+CUTでは？　と思い試そうとしたら^J^K不能だった。本来どこでも使えるキーアサインなので反映よろしく。
+FILEから表示したのち^Jw→SHELLでファイル名を確認すべく「echo /tmp/.usilic/...」を^A^DDDD'cat'[return]しようとしたらハイライトのADDDDだった。こちらもよろしく。
+結局ターミナルのコマンドラインから'locate BDF_Driver'[return]すると下記が表示された。LOCATE→^J^K→NGかつ^X^F→OKなヤツなので調べて見て。
+
+/Applications/ABBYY FineReader for ScanSnap/ABBYY FineReader for ScanSnap.app/Contents/Frameworks/FREngine.framework/Versions/Darwin-x86_64-11.1.9.1039537/Libraries/BDF_Driver_License.txt
+
+>ご指摘の通りでした。実機でlocateを直接実行した結果、LOCATE→^J^K→NGと^X^F→OKが全く同じ実ファイルを指していたことが分かり、前回のstd::ifstream失敗という仮説は誤りと確定しました。真因は「特定ファイルが開けない」ことではなく「^J^Kを一度使うと(そのファイルに限らず)以後の操作が反応しなくなる」という状態破損系の別のバグである可能性が高いです。こちらは未解決のまま持ち越します。再現条件についてもう少し詳しく教えていただけますか(^J^Kの直後に何か別の操作、例えば^Gや別のディレクトリへの移動を試すと復帰するか等)。
+
+CUTからの^J^K利用は実装しました。usilicrcの「K-?」節を確認したところ、K-18は「Go to previous regular file」等と同じ、モードを問わず使える汎用キーバインド群に属しており、CUTのように「現在のファイル」概念を扱うモードでも使えるべきと判明。goToFileSelector()のモードガードをFile単独からFile/Cut/CutContentへ拡張しました(ディレクトリ発の"regular file"系CUT(K-35/36)は現状のデータ保持の都合で対象外、LOCATE→File→CUTというテストされたシナリオの範囲で対応)。
+
+SHELLモードの^A/^E/^B/^F/^D欠落も修正しました。2026-08-12の回でfeedPromptByte()(LOCATE/CUT/GREP等が共有する汎用プロンプト編集)には既にこの5キーが実装済みでしたが、SHELLモード自身は別の独立したLineEditorを使っており、この修正が一度もミラーされていませんでした。同じロジックをshell_.commandLine()向けに追加しています。
+
+make test 728/728件全通過(CUTからの^J^K、SHELLの^A/^E/^B/^F/^Dそれぞれに新規テスト追加)。②本体(状態破損の再現)は実機での再現手順の詳細待ちのため、コードレベルの修正は今回未着手です。CLAUDE.mdに項目311として記録、コミット・プッシュ済みです。

@@ -1417,6 +1417,44 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     shell_.commandLine().redraw();
     return true;
   }
+  // ^A/^E/^B/^F/^D (2026-08-16 fix): feedPromptByte() got these wired
+  // in 2026-08-12 (see its own comment) for the GENERIC prompt editor
+  // (promptEditor_, used by LOCATE/CUT/GREP/etc.), but SHELL mode has
+  // its own separate commandLine() LineEditor that this fix never got
+  // mirrored into -- a real report ("^A^DDDD'cat'...を打とうとしたら
+  // ハイライトのADDDDだった") found the exact same symptom the 2026-08-12
+  // fix already describes (each control byte falling through to
+  // insertByte() below and rendering as its own reversed "@"-offset
+  // glyph) still happening here. Same byte values, same LineEditor
+  // class, just a different instance (shell_.commandLine() instead of
+  // promptEditor_) and redraw() call (commandLine().redraw(), matching
+  // backspace's own pairing just above) since SHELL's own prompt row
+  // isn't drawn by the generic prompt-label path.
+  if (byte == 0x01) {  // ^A: beginning of line
+    shell_.commandLine().moveHome();
+    shell_.commandLine().redraw();
+    return true;
+  }
+  if (byte == 0x05) {  // ^E: end of line
+    shell_.commandLine().moveEnd();
+    shell_.commandLine().redraw();
+    return true;
+  }
+  if (byte == 0x02) {  // ^B: back one character
+    shell_.commandLine().moveLeft();
+    shell_.commandLine().redraw();
+    return true;
+  }
+  if (byte == 0x06) {  // ^F: forward one character
+    shell_.commandLine().moveRight();
+    shell_.commandLine().redraw();
+    return true;
+  }
+  if (byte == 0x04) {  // ^D: delete forward
+    shell_.commandLine().deleteForward();
+    shell_.commandLine().redraw();
+    return true;
+  }
   if (byte == kControlC) {
     shell_.sendControlByte(static_cast<unsigned char>(byte));
     return true;
@@ -2004,7 +2042,25 @@ bool Application::openSelectedLocateResult() {
 // directory-jumping entry point that hadn't been given the same
 // treatment.
 bool Application::goToFileSelector() {
-  if (currentMode_ != ApplicationMode::File) return false;
+  // 2026-08-16 fix: usilicrc's own K-? section (item 177/CLAUDE.md)
+  // groups K-18 alongside plainly-universal bindings (K-2 "Return to
+  // previous mode", K-21 "Go to previous regular file", K-22 "Read
+  // content of file to buffer") -- a real user report ("CUTでは？と
+  // 思い試そうとしたら^J^K不能だった...本来どこでも使えるキーアサイン
+  // なので") confirmed this was meant to work from CUT too, not just
+  // File. CutContent/Cut both operate on a file's content the same way
+  // File itself does, so they get the same treatment here. Reads
+  // fileMode_.currentFile() regardless of mode -- correct for the
+  // buffer-variant CUT (^Jc from File mode, which never touches
+  // FileMode's own state, so it's still holding the source file) --
+  // NOT extended to the Directory-variant CUT (K-35/36, whose own
+  // cutFileSourcePath_ is deliberately cleared the moment executeCut()
+  // consumes it, so nothing retains that path once inside Cut mode;
+  // out of scope for this fix, matching the user's own tested
+  // scenario which was the buffer variant reached via LOCATE->File).
+  if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::Cut &&
+      currentMode_ != ApplicationMode::CutContent)
+    return false;
   std::filesystem::path path(fileMode_.currentFile());
   std::string parent = path.parent_path().string();
   if (parent.empty()) return false;
