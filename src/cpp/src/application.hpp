@@ -59,8 +59,12 @@ enum class Command {
   // that needs to know the 3-step composition -- matches this port's
   // existing pattern for other composite actions (e.g.
   // StartFileInput/StartDirectoryInput sharing startPathInputPrompt()).
-  JumpNext,      // ';' : Back, MoveDown, Enter
-  JumpPrevious,  // ':' : Back, MoveUp, Enter
+  // 2026-08-16: reachable from ':' , not ';' -- see resolveCommand()'s
+  // own comment for why (a real user correction swapping which
+  // character maps to which of these two, not a change to either
+  // command's own Back+Move+Enter body).
+  JumpNext,      // ':' : Back, MoveDown, Enter
+  JumpPrevious,  // ';' : Back, MoveUp, Enter
   StartFgrep,
   StartEgrep,
   StartCutFixed,

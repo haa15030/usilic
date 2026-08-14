@@ -207,6 +207,16 @@ TEST_CASE("resolveCommand: plain bytes -- j/k, ^N/^P, ^M, ^G, space/b") {
   CHECK(Application::resolveCommand('b', std::nullopt) == Command::PageUp);
 }
 
+TEST_CASE("resolveCommand: ';' is JumpPrevious (Back+MoveUp+Enter), ':' is JumpNext (Back+MoveDown+Enter)") {
+  // 2026-08-16: a real user report ("「;」「:」の機能が逆") showed these two
+  // had been swapped -- kKeyTable's own M-0/M-1 entries (item 177,
+  // sourced VERBATIM from usilicrc's own macro definitions) say ';'
+  // (M-0) = ^G ^P Enter = "Back, cursor up" and ':' (M-1) = ^G ^N
+  // Enter = "Back, cursor down", which is what this asserts.
+  CHECK(Application::resolveCommand(';', std::nullopt) == Command::JumpPrevious);
+  CHECK(Application::resolveCommand(':', std::nullopt) == Command::JumpNext);
+}
+
 TEST_CASE("resolveCommand: an unmapped byte resolves to None") {
   CHECK(Application::resolveCommand('z', std::nullopt) == Command::None);
 }
@@ -352,9 +362,9 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(MoveDown): clears a stale hover highli
   CHECK_FALSE(rowIsHighlighted(2));  // ...and the stale hover row is no longer highlighted
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(JumpNext/JumpPrevious): ';'/':' are Back+MoveDown+Enter and "
-                           "Back+MoveUp+Enter, confirmed directly by the user (2026-08-03) after an initial "
-                           "wrong guess that this was a distinct \"related file\" jump feature") {
+TEST_CASE_FIXTURE(Fixture, "handleCommand(JumpNext/JumpPrevious): JumpNext is Back+MoveDown+Enter and "
+                           "JumpPrevious is Back+MoveUp+Enter -- see resolveCommand()'s own test for which "
+                           "of ';'/':' reaches which (corrected 2026-08-16, see application.cpp's own comment)") {
   // A dedicated subdirectory of three plain files, alphabetically
   // adjacent and none of them directories -- avoids depending on the
   // shared fixture's own top-level mix of files/subdirectories (whose
@@ -379,12 +389,12 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(JumpNext/JumpPrevious): ';'/':' are Ba
   while (app.directoryMode().selectedEntry()->name != "bbb.txt") app.handleCommand(Command::MoveDown);
 
   REQUIRE(app.handleCommand(Command::Enter));  // File mode on bbb.txt
-  REQUIRE(app.handleCommand(Command::JumpNext));  // ';' -- Back (-> Directory), MoveDown, Enter
+  REQUIRE(app.handleCommand(Command::JumpNext));  // Back (-> Directory), MoveDown, Enter
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == (root / "jumpdir" / "ccc.txt").string());
 
-  REQUIRE(app.handleCommand(Command::JumpPrevious));  // ':' -- Back, MoveUp, Enter -- lands back on bbb.txt
-  REQUIRE(app.handleCommand(Command::JumpPrevious));  // ':' again -- one more entry up
+  REQUIRE(app.handleCommand(Command::JumpPrevious));  // Back, MoveUp, Enter -- lands back on bbb.txt
+  REQUIRE(app.handleCommand(Command::JumpPrevious));  // again -- one more entry up
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == (root / "jumpdir" / "aaa.txt").string());
 }

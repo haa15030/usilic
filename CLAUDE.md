@@ -16481,6 +16481,52 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
     今回追加の変更が無いため未再検証(項目301の確認内容がそのまま
     有効)。
 
+303. **2026-08-16: `;`/`:`のJumpNext/JumpPrevious割り当てが逆だった
+    不具合を修正、お手本①(全モードへバイト数追加)はDirectoryMode
+    でも既に動作済みと再確認**
+   - **お手本①再確認**: 「（ls）時もモードラインに「画面TOPから
+     ENDまでのバイト数」反映よろしく」との依頼だったが、スクリーン
+     ショットも「直っていない」という言及も無く、項目302で既に
+     DirectoryModeへバイト数表示を実装・PTY検証済み(実機で"169"
+     "460"等のバイト数がDirectory一覧のモードラインに表示される
+     ことを確認済み)だったため、新規の不具合報告ではなく確認的な
+     言及と判断。今回はビルド済みバイナリでの再検証のみ行い、実装
+     の追加は行わなかった。
+   - **②`;`/`:`の機能が逆、真因判明・修正**: `application.cpp`の
+     `kKeyTable`(`;`=M-0=「Back, cursor up, select」、`:`=M-1=
+     「Back, cursor down, select」)は項目177でusilicrc自身のM-0/
+     M-1マクロ定義から一字一句そのまま起こした、legacy側で検証済み
+     の正の値だったが、実際のキー入力を解決する`resolveCommand()`
+     の`switch`文では`';'`→`Command::JumpNext`(Back+MoveDown+
+     Enter)、`':'`→`Command::JumpPrevious`(Back+MoveUp+Enter)と、
+     真逆の割り当てになっていた。この`resolveCommand()`側の実装は
+     2026-08-03の回で「ユーザーに直接確認した」というコメント付きで
+     導入されたものだったが、今回の実機報告と付き合わせた結果、
+     この時の「確認」自体が誤りだったと判断(`kKeyTable`はusilicrc
+     という一次資料からの直接転記であり、後から来た「確認済み」
+     コメントより優先されるべき根拠と判断した)。`resolveCommand()`
+     の`case ';':`/`case ':':`を入れ替え、`Command::JumpNext`/
+     `JumpPrevious`自体の中身(Back+MoveDown+Enter/Back+MoveUp+
+     Enterという定義そのもの)は変更せず、どちらの文字がどちらの
+     コマンドに到達するかだけを訂正した。あわせて`application.hpp`
+     の`Command`列挙子コメント、`handleCommand()`内の
+     `case Command::JumpNext:`/`JumpPrevious:`の古いコメント
+     (「confirmed directly by the user (2026-08-03)」という記述)も
+     訂正後の内容に書き換えた。
+   - **検証**: `resolveCommand(';', ...)`/`resolveCommand(':', ...)`
+     を直接検証する新規テストケースを追加(`kKeyTable`のM-0/M-1と
+     整合することを明示的にコメントで説明)、既存の
+     `handleCommand(JumpNext/JumpPrevious)`テストの古い(逆の)
+     コメントも訂正。`make test` 725/725件全通過。`make usilic`
+     クリーンビルド成功。実バイナリでのPTY検証: 専用の3ファイル
+     ディレクトリ(aaa.txt/bbb.txt/ccc.txt)で`bbb.txt`をFile
+     モードで開いた状態から`;`を押すと`aaa.txt`(1つ上)へ、続けて
+     `:`を押すと`bbb.txt`(1つ下)へ戻ることを、モードライン上の
+     ファイル名表示で確認した(修正前の動作を意図的に再現する
+     テストは行っていないが、`kKeyTable`とresolveCommand()の
+     食い違いというバグの構造上、逆向きの動作をしていたことは
+     コード上明白)。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

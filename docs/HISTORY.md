@@ -3516,3 +3516,13 @@ DIR①(^X^Dのモードライン汚染): 原因は、startListBrowser()(^X^D/^X^
 DIR①b(非LOCATE戻り値は「...16文字」に統一): ModeLineFieldsにtrailing2MiddleEllipsis(既定false)を新設し、falseの場合はtruncatedTrailingPath()と同じ「...」+末尾16文字方式、trueの場合(FileModeがLOCATE経由で開かれた場合のみ)は従来通りFinder風の頭...末尾方式に分岐しました。
 
 make test 724/724件全通過、make usilicクリーンビルド成功。macOS実機相当のPTY検証で、ルートディレクトリと深い階層のディレクトリ両方のモードラインにバイト数・「(ls)」・「usilic v1.5b」が全て同時に表示されること、^J^Kからの^Gが元のディレクトリへ正しくトグルすること、^J^M(未解決)→^X^Dの順で操作した際にモードラインが汚染されずクリーンになること、MANの3項目が最新バイナリでも回帰無く動作することを確認しました。-g固有のESC取りこぼし修正は今回追加の変更が無いため未再検証です(前回の確認内容がそのまま有効)。CLAUDE.mdに項目302として記録、コミット・プッシュ済みです。
+
+<お手本（legacy）：
+①（ls）時もモードラインに「画面TOPからENDまでのバイト数」反映よろしく。最初は意味不明かもしれないが、HELPでCUTを知り、レギュラーファイル分割を経てディレクトリは？　の時点で意味が分かる。
+②「;」「:」の機能が逆。
+
+>お手本①は前回(項目302)で既にDirectoryModeへのバイト数表示を実装・PTY検証済みでしたので、今回は再確認のみ行い、実装の追加はしていません。
+
+②(;/:の機能が逆): application.cppのkKeyTable(項目177でusilicrc自身のM-0/M-1マクロ定義から一字一句そのまま起こしたもの)では「;」=M-0=Back+cursor up+select、「:」=M-1=Back+cursor down+selectでしたが、実際のキー入力を解決するresolveCommand()のswitch文では';'→Command::JumpNext(Back+MoveDown+Enter)、':'→Command::JumpPrevious(Back+MoveUp+Enter)と、真逆の割り当てになっていました。この食い違いは2026-08-03の回で導入されたもので、その時のコメントには「ユーザーに直接確認した」とありましたが、kKeyTableはusilicrcという一次資料からの直接転記であり、そちらを正としてresolveCommand()側のcase ';':/case ':':を入れ替えました。Command::JumpNext/JumpPrevious自体の中身(Back+MoveDown+Enter/Back+MoveUp+Enterという定義そのもの)は変更していません。
+
+resolveCommand(';', ...)/resolveCommand(':', ...)を直接検証する新規テストケースを追加し、既存のhandleCommand(JumpNext/JumpPrevious)テストの古い(逆の)コメントも訂正しました。make test 725/725件全通過、make usilicクリーンビルド成功。実バイナリでのPTY検証: 専用の3ファイルディレクトリ(aaa.txt/bbb.txt/ccc.txt)でbbb.txtをFileモードで開いた状態から「;」を押すとaaa.txt(1つ上)へ、続けて「:」を押すとbbb.txt(1つ下)へ戻ることを、モードライン上のファイル名表示で確認しました。CLAUDE.mdに項目303として記録、コミット・プッシュ済みです。

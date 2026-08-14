@@ -800,10 +800,27 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::Enter;
     case kControlG:
       return Command::Back;
+    // 2026-08-16 fix: swapped -- a direct user report ("「;」「:」の
+    // 機能が逆") traced back to kKeyTable's own M-0/M-1 entries (item
+    // 177, taken VERBATIM from usilicrc's own M-? macro section: `;`
+    // (M-0) = ^G ^P Enter = "Back, cursor up", `:` (M-1) = ^G ^N Enter
+    // = "Back, cursor down") disagreeing with THIS dispatch, which the
+    // 2026-08-03 comment on JumpNext/JumpPrevious's own declaration
+    // claims was "confirmed directly by the user" as the opposite
+    // (';'=MoveDown, ':'=MoveUp). Since kKeyTable's own mapping is
+    // directly sourced from usilicrc itself (not a guess), it's the
+    // legacy-verified ground truth here; the earlier "confirmed"
+    // dispatch had the two backwards. JumpNext/JumpPrevious's own
+    // bodies (Back+MoveDown+Enter / Back+MoveUp+Enter respectively)
+    // are unchanged -- only WHICH character reaches which command is
+    // swapped, so this is the minimal fix that also keeps
+    // executeSelectedKeyBinding()'s own KEY-list replay (which feeds
+    // ^G/^P/^N/^M directly, never through this switch at all) already
+    // correct and untouched.
     case ';':
-      return Command::JumpNext;
-    case ':':
       return Command::JumpPrevious;
+    case ':':
+      return Command::JumpNext;
     case kControlS:
       return Command::StartFgrep;
     case 0x08:  // ^H (M_key, K-2, "KEY") -- see startKey()'s own comment
@@ -1549,10 +1566,13 @@ bool Application::handleCommand(Command command) {
         return lastDirectorySearchKind_ == DirectorySearchKind::Cut ? returnToCutResults() : returnToGrepResults();
       }
       return directoryMode_.goBack();
-    // ';'/':' -- literally Back+MoveDown+Enter / Back+MoveUp+Enter,
-    // confirmed directly by the user (2026-08-03) after an initial
-    // wrong guess that this was a "related file" jump feature of its
-    // own; see Command::JumpNext's own declaration comment. Each step
+    // ':'/';' -- literally Back+MoveDown+Enter / Back+MoveUp+Enter.
+    // 2026-08-16: a real user report ("「;」「:」の機能が逆") showed the
+    // 2026-08-03 "confirmed directly by the user" mapping had these two
+    // backwards relative to kKeyTable's own M-0/M-1 entries (item 177,
+    // sourced VERBATIM from usilicrc's own macro definitions); see
+    // resolveCommand()'s own comment and Command::JumpNext's declaration
+    // comment for the full account. Each step
     // re-enters handleCommand() so it sees currentMode_ as it stands
     // AFTER the previous step (e.g. Back may switch File->Directory
     // before MoveDown/Enter act on the now-current Directory view) --
