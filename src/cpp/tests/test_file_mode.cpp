@@ -229,6 +229,30 @@ TEST_CASE_FIXTURE(Fixture, "mode-line fields: before any loadFile, no fields are
   CHECK(view.modeLineText() == "0/0 END");
 }
 
+TEST_CASE_FIXTURE(Fixture, "mode-line fields: directory trailing2 uses the full available width when it "
+                           "overflows, not legacy's fixed 16-char tail cap") {
+  // 2026-08-16 fix: a real report/screenshot (=bk vs =bl, ^X^F on a
+  // deeply-nested real path) found this port's own tail truncated to
+  // exactly 16 characters ("...39537/Libraries/") while the real CUI
+  // showed a far longer tail using whatever room was actually left on
+  // the row -- the 16-char cap was only ever meant for a typed search
+  // STRING's own fixed-width preview area (DirectoryMode's
+  // searchAnnotation_), not a PATH like this one. See
+  // ModeLineFields::trailing2FullWidthTail's own comment.
+  fs::path deep = root / "some" / "really" / "deeply" / "nested" / "Directory-x86_64-11.1.9.1039537" / "Libraries";
+  fs::create_directories(deep);
+  std::string path = (deep / "BDF_Driver_License.txt").string();
+  { std::ofstream(path) << "x"; }
+  REQUIRE(mode.loadFile(path));
+  std::string text = view.modeLineText();
+  // Still overflows an 80-column row (the temp root alone plus this
+  // deep chain is well over 80 characters), so it's still truncated --
+  // just with the FULL available tail, not capped at 16. "Libraries/"
+  // (10 chars) is well past the old cap's own reach ("39537/Libraries/",
+  // the last 16 characters of the path) but comfortably within budget.
+  CHECK(text.find("Directory-x86_64-11.1.9.1039537/Libraries/") != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "constructing FileMode disables the cursor-line highlight on its view") {
   view.setViewport(0, 5);  // otherwise height_ defaults to 0 and nothing but the mode-line row renders
   std::string path = writeFile("plain.txt", "hello\nworld\n");

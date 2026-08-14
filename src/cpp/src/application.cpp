@@ -570,7 +570,18 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     std::string program = cmd.argv.empty() ? "" : cmd.argv.front();
     std::string trailing = program.empty() ? "" : "(" + program + ")";
     std::string trailing2 = (grepReturnMode_ == ApplicationMode::Directory) ? directoryMode_.currentDirectory() : "";
-    return {name, trailing, /*fillTrailingToEdge=*/!trailing2.empty(), /*rightWatermark=*/"", trailing2};
+    // trailing2 here is a PATH (the directory the search ran from), not
+    // a typed search string -- see ModeLineFields::trailing2FullWidthTail's
+    // own comment for why paths opt out of the 16-char tail cap.
+    return {name,
+            trailing,
+            /*fillTrailingToEdge=*/!trailing2.empty(),
+            /*rightWatermark=*/"",
+            trailing2,
+            /*trailingPlain=*/false,
+            /*trailing2RightJustified=*/false,
+            /*trailing2MiddleEllipsis=*/false,
+            /*trailing2FullWidthTail=*/true};
   });
   // grepView_'s own empty-result placeholder ("<pattern>: No String",
   // "No String" underlined -- see ContentView::setEmptyPlaceholder()'s
@@ -661,8 +672,18 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   archiveContentView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     const ArchiveEntry *entry = archiveMode_.selectedEntry();
     if (!entry) return {};
-    return {entry->name, std::to_string(contentByteCount(archiveContentView_)), /*fillTrailingToEdge=*/true,
-            /*rightWatermark=*/"", archiveMode_.currentArchive()};
+    // trailing2 here is the archive's own PATH, not a typed search
+    // string -- see ModeLineFields::trailing2FullWidthTail's own
+    // comment for why paths opt out of the 16-char tail cap.
+    return {entry->name,
+            std::to_string(contentByteCount(archiveContentView_)),
+            /*fillTrailingToEdge=*/true,
+            /*rightWatermark=*/"",
+            archiveMode_.currentArchive(),
+            /*trailingPlain=*/false,
+            /*trailing2RightJustified=*/false,
+            /*trailing2MiddleEllipsis=*/false,
+            /*trailing2FullWidthTail=*/true};
   });
 
   // usilicrc's own GREP section (2026-08-05 fix): a real CUI screenshot

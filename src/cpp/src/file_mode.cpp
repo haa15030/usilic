@@ -72,7 +72,13 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
             trailing2,
             /*trailingPlain=*/false,
             /*trailing2RightJustified=*/false,
-            /*trailing2MiddleEllipsis=*/!searchOriginLabel_.empty()};
+            /*trailing2MiddleEllipsis=*/!searchOriginLabel_.empty(),
+            // Not-via-LOCATE case: trailing2 is the containing directory
+            // PATH, not a typed search string -- see
+            // trailing2FullWidthTail's own comment for why paths get the
+            // full available width instead of legacy's fixed 16-char
+            // tail cap.
+            /*trailing2FullWidthTail=*/searchOriginLabel_.empty()};
   });
 }
 

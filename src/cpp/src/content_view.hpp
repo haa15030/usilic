@@ -557,6 +557,24 @@ class ContentView {
     // information too, unlike a short search pattern/query where only
     // the tail ever mattered.
     bool trailing2MiddleEllipsis = false;
+    // 2026-08-16 fix: the tail-16-char cap above turned out to be
+    // scoped too broadly. A direct user correction clarified the "..."
+    // +16 policy was only ever meant for genuine STRING INPUT echoes
+    // (a typed search pattern/query, whose OWN preview area is fixed-
+    // width by convention regardless of terminal size -- e.g.
+    // DirectoryMode's searchAnnotation_, "FGREP: <pattern>"):
+    // "モードラインの戻り値が長くて「...16文字」になるのは、文字列
+    // 入力（←エリア長が不変）の場合のみ". A PATH shown in trailing2
+    // (FileMode's own containing directory, GrepMode's search-origin
+    // directory, ArchiveContent's own archive path) has no such fixed
+    // "natural" width -- legacy's own disp_window() just uses however
+    // much of the row is actually left (confirmed against a real CUI
+    // screenshot, =bl, showing a far-longer-than-16-char tail). true
+    // opts a PATH-shaped trailing2 out of the 16 cap, using the full
+    // available budget instead (still tail-only "...", not middle-
+    // ellipsis -- that distinction is trailing2MiddleEllipsis's own,
+    // orthogonal axis).
+    bool trailing2FullWidthTail = false;
   };
 
   // Supplies this view's ModeLineFields, recomputed every time the

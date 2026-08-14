@@ -834,7 +834,7 @@ ContentView::ModeLineFields ContentView::withTruncatedTrailing2(ModeLineFields f
     if (trailing2Len <= budget) return fields.trailing2;
     if (budget < 4) return "";  // no room even for "..." + one real character
     if (fields.trailing2MiddleEllipsis) return middleEllipsisTruncate(fields.trailing2, budget);
-    int tailChars = std::min(16, budget - 3);  // budget>=4 already checked above
+    int tailChars = fields.trailing2FullWidthTail ? budget - 3 : std::min(16, budget - 3);  // budget>=4 checked above
     return "..." + fields.trailing2.substr(fields.trailing2.size() - static_cast<std::size_t>(tailChars));
   };
 
