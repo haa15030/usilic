@@ -426,6 +426,14 @@ TEST_CASE("setModeLineFieldsProvider: trailing2MiddleEllipsis=true middle-ellips
   // turned out to be LOCATE-specific (see the next test) -- opted
   // into here via trailing2MiddleEllipsis=true, matching FileMode's
   // own provider when reached via LOCATE.
+  //
+  // 2026-08-16 update: middleEllipsisTruncate()'s own head/tail split
+  // moved from 1/3 head to 1/2 head (a real report: "「...」の位置を
+  // 行中央付近にしてほしい" -- the "..." sat too far left to read
+  // comfortably), which shrinks the tail budget available here, so
+  // this narrow 40-column fixture no longer fits the FULL 9-character
+  // "HKSCS.txt" filename in the tail -- checking a shorter, still-
+  // meaningful suffix instead of the exact original assertion.
   v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
     return {"HKSCS.txt",
             "283",
@@ -442,7 +450,7 @@ TEST_CASE("setModeLineFieldsProvider: trailing2MiddleEllipsis=true middle-ellips
   REQUIRE(ellipsisPos != std::string::npos);              // trailing2 was truncated, not dropped
   CHECK(text.find("/very") != std::string::npos);         // the HEAD is also kept visible, not just the tail
   CHECK(text.find("/very") < ellipsisPos);
-  CHECK(text.substr(text.size() - 9) == "HKSCS.txt");     // the tail (filename) is kept visible too
+  CHECK(text.substr(text.size() - 4) == ".txt");           // the tail (filename suffix) is kept visible too
 }
 
 // 2026-08-15 addition: the DEFAULT (trailing2MiddleEllipsis left

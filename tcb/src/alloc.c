@@ -562,6 +562,12 @@ PP *alloc_str(STR s0[], int *rowp, int f_grep)/*tcb*/
 	    }
 	  }
 	  pp->f.len = strlen(p);
+	  /* put_str() draws pp->cs, NOT p -- pp->cs was strdup()'d from
+	     the ORIGINAL untruncated sp->name above, so without this the
+	     "..."-elided text computed into p above never actually
+	     reached the screen. Safe to strcpy in place: p only ever
+	     shrinks relative to pp->cs's own allocated length. */
+	  strcpy((char*)pp->cs, (char*)p);
 	}
 	pp->f.line = (pp->prev) ? pp->prev->f.line + 1 : 1;
 	pp->f.nl = 1;
@@ -741,7 +747,45 @@ PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*tcb*/
 	pp->cs = strdup(cp);
 	pp->f.str = 1;
 	strcpy(p, cp);
-	if (f_ascii) {
+	if (f_M == T_locate && strlen(p) > (unsigned)vt_col(0)) {
+	  /* Finder-style middle-ellipsis ("head...tail") for LOCATE
+	     results specifically, same fix as alloc_str()'s own
+	     T_hfile/etc case (see its own comment) -- LOCATE's absolute
+	     paths often share one long common prefix, so the raw
+	     head-only chop below left many results looking identical (a
+	     real report/screenshot =bt: several rows all cut to the
+	     exact same "...ScanSnap.app/Co" prefix, hiding the DIFFERING
+	     filename each actually ends with). Centered near the middle
+	     (roughly half the budget to each side) per a same-day
+	     follow-up report ("「...」の位置を行中央付近にしてほしい"),
+	     matching the C++ port's own middleEllipsisTruncate() same-day
+	     fix. Scoped to T_locate only -- every other f_M value sharing
+	     this function (T_dir/T_cut/M_cut/M_key) keeps the original
+	     head-only behavior, an established, unrelated convention this
+	     round doesn't touch. */
+	  int width = vt_col(0);
+	  int full = strlen(p);
+	  int tailw = (width - 3) / 2;
+	  int headw = width - 3 - tailw;
+	  int tailstart = full - tailw;
+	  u_char tmp[N_line];
+	  if (count_k(p, headw)) headw--;
+	  if (count_k(p, tailstart)) tailstart++;
+	  memcpy(tmp, p, headw);
+	  strcpy((char*)&tmp[headw], "...");
+	  strcat((char*)tmp, (char*)&p[tailstart]);
+	  strcpy((char*)p, (char*)tmp);
+	  pp->f.len = strlen(p);
+	  /* put_str() draws pp->cs[0..pp->f.len), NOT p -- pp->cs was
+	     strdup()'d from the ORIGINAL untruncated cp above, so without
+	     this the "..."-elided text computed into p above never
+	     actually reached the screen (pp->f.len alone just moved the
+	     cutoff earlier into pp->cs's own still-full-length string,
+	     which looked identical to the old head-only chop). Safe to
+	     strcpy in place: p's ellipsis'd result is always <= pp->cs's
+	     own allocated length (strdup(cp), and p only ever shrinks). */
+	  strcpy((char*)pp->cs, (char*)p);
+	} else if (f_ascii) {
 	  for (i = n = 0, len = strlen(p); len; len--) {
 	    if ((p[i] >= 0x80 && (n += 4) <= vt_col(0))
 		|| (p[i] < ' ' && (n += 2) <= vt_col(0))

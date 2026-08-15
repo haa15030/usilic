@@ -15,13 +15,17 @@ namespace {
 // middle with "...", instead of simply cutting the tail off. Byte-
 // indexed (matching renderLine()'s own `col`, which counts bytes not
 // display columns) but walks via Utf8::sequence_length() so a multi-
-// byte UTF-8 character is never split across the cut. Biases toward
-// keeping more of the TAIL than the head (1/3 budget to the head, 2/3
-// to the tail): the direct motivating case (LOCATE's absolute paths
-// sharing one long common prefix, e.g. many
-// ".../SharedFrameworks/SsSvcImgFrmwk.frame..." entries all cut off
-// identically) needs the DIFFERING suffix to stay visible, not the
-// shared prefix every entry already has in common.
+// byte UTF-8 character is never split across the cut.
+//
+// 2026-08-16 fix: originally biased 1/3 head, 2/3 tail (LOCATE's
+// absolute paths sharing one long common prefix needed the DIFFERING
+// suffix to stay visible), but a real report + screenshot (=bu) found
+// this put the "..." too far toward the LEFT to read comfortably --
+// "「...」の位置を行中央付近にしてほしい". A roughly even (1/2, 1/2)
+// split still keeps enough of the tail to disambiguate entries sharing
+// a long prefix (the original motivating case) while looking visually
+// centered, matching legacy's own equivalent fix in alloc.c's
+// alloc_str()/alloc_pp() (same day, same "..." near the middle request).
 std::string middleEllipsisTruncate(const std::string &text, int maxBytes) {
   static const std::string kEllipsis = "...";
   int budget = maxBytes - static_cast<int>(kEllipsis.size());
@@ -35,7 +39,7 @@ std::string middleEllipsisTruncate(const std::string &text, int maxBytes) {
     boundaries.push_back(std::min(i, static_cast<int>(text.size())));
   }
 
-  int headBudget = budget / 3;
+  int headBudget = budget / 2;
   int tailBudget = budget - headBudget;
 
   int headEnd = 0;

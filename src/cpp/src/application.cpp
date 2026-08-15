@@ -2065,10 +2065,19 @@ bool Application::goToFileSelector() {
   // screen). Reads the highlighted candidate string itself (items()[
   // cursorIndex]) rather than fileMode_.currentFile(), since nothing has
   // been opened yet at this point.
+  // 2026-08-16(続き): also usable straight from LOCATE's own results
+  // list (ApplicationMode::Locate) -- a real report ("新^J^K: どこでも
+  // 使えない。特にLOCATE一覧=buでの^J^Kを試したい"), same shape as the
+  // ListBrowser/RecentFile case just above: reads the highlighted
+  // result's own path, nothing needs to have been opened first.
   std::string sourceFile;
   if (currentMode_ == ApplicationMode::ListBrowser) {
     if (listBrowserCategory_ != RingCategory::RecentFile) return false;
     const std::string *selected = listBrowserMode_.selectedItem();
+    if (!selected) return false;
+    sourceFile = *selected;
+  } else if (currentMode_ == ApplicationMode::Locate) {
+    const std::string *selected = locateMode_.selectedResult();
     if (!selected) return false;
     sourceFile = *selected;
   } else if (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut ||

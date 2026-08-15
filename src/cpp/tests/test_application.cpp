@@ -2943,6 +2943,32 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works from Cut
   CHECK(app.directoryMode().currentDirectory() == path());
 }
 
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works straight from LOCATE's own results "
+                           "list, without opening a result first (2026-08-16 fix: a real report -- \"新^J^K: "
+                           "どこでも使えない。特にLOCATE一覧=buでの^J^Kを試したい\")") {
+  fs::path subdir = root / "subdir";
+  fs::create_directories(subdir);
+  fs::path target = subdir / "found.txt";
+  { std::ofstream(target) << "x"; }
+  fs::path fakeLocate = root / "fake_locate3.sh";
+  {
+    std::ofstream script(fakeLocate);
+    script << "#!/bin/sh\necho '" << target.string() << "'\n";
+  }
+  std::filesystem::permissions(fakeLocate, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate.string()}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+
+  CHECK(app.handleCommand(Command::GoToFileSelector));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == subdir.string() + "/");
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works straight from ^X^F's own RecentFile "
                            "candidate list (ListBrowser), without opening it first (2026-08-16 fix: a real "
                            "report -- \"同画面で^J^Kが利かない=bo\" -- =bo being that exact candidate-list "
