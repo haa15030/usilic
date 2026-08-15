@@ -168,6 +168,43 @@ TEST_CASE("processOutputBytes: recognizes a synthetic PS1 marker and extracts th
   CHECK(shell.scrollback().lines()[0].text == "hello output");
 }
 
+// 2026-08-17 fix: zsh's default PS1 (`%~`)/bash's `\w` abbreviate the
+// cwd with a leading '~' whenever it's $HOME (bare "~") or a
+// subdirectory of it ("~/subdir") -- used to be stored into
+// currentDirectory_ completely unexpanded, which isn't a real
+// filesystem path (tilde expansion is a shell convention, not
+// something std::filesystem understands). A real report ("SHELLで
+// 'less CLA'^I（補完が利かない）", comparing directly against legacy's
+// own working completion) traced back to exactly this:
+// completeFilesystemPath()'s std::filesystem::directory_iterator()
+// silently returning zero candidates whenever the shell's cwd was
+// anywhere under $HOME, which in practice is nearly always real usage.
+TEST_CASE("processOutputBytes: a bare '~' prompt directory (cwd == $HOME) is expanded to the real "
+          "$HOME path, not stored as a literal tilde") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.promptMark = "<M>";
+  options.programName = "prog";
+  Shell shell(d, options);
+
+  setenv("HOME", "/Users/testuser", 1);
+  shell.processOutputBytes("<M>prog:~% <M>");
+  CHECK(shell.currentDirectory() == "/Users/testuser");
+}
+
+TEST_CASE("processOutputBytes: a '~/subdir' prompt directory is expanded to the real $HOME-relative "
+          "path, not stored with the tilde still embedded") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.promptMark = "<M>";
+  options.programName = "prog";
+  Shell shell(d, options);
+
+  setenv("HOME", "/Users/testuser", 1);
+  shell.processOutputBytes("<M>prog:~/git/usilic% <M>");
+  CHECK(shell.currentDirectory() == "/Users/testuser/git/usilic");
+}
+
 TEST_CASE("processOutputBytes: directoryChangedCallback only fires when the directory actually changes") {
   RecordingDisplay d(24, 80);
   ShellOptions options;

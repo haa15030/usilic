@@ -626,6 +626,29 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
       (dir[dir.size() - 2] == '$' || dir[dir.size() - 2] == '#' || dir[dir.size() - 2] == '%')) {
     dir.erase(dir.size() - 2);
   }
+  // 2026-08-17 fix: zsh's default PS1 (`%~`) -- and bash's `\w` too --
+  // abbreviate the cwd with a leading '~' whenever it's $HOME itself or
+  // a subdirectory of it (e.g. "~" or "~/git/usilic"), which used to be
+  // stored into currentDirectory_ completely unexpanded. A real report
+  // ("SHELLで'less CLA'^I（補完が利かない）", comparing directly against
+  // legacy's own working completion) traced back to setCompletionProvider()'s
+  // completeFilesystemPath() calling std::filesystem::directory_iterator()
+  // on this raw "~"-prefixed string, which isn't a real filesystem path
+  // (tilde expansion is a SHELL convention, never something the OS or
+  // std::filesystem understands) -- silently returning zero candidates
+  // every time the shell's cwd was anywhere under $HOME, which in
+  // practice is nearly always. Expanded here, the one place every
+  // consumer of currentDirectory_ (completion, the mode-line's own
+  // trailing2 display, directoryChangedCallback_) already funnels
+  // through.
+  if (const char *home = std::getenv("HOME"); home && *home) {
+    std::string homeStr = home;
+    if (dir == "~") {
+      dir = homeStr;
+    } else if (dir.size() > 1 && dir[0] == '~' && dir[1] == '/') {
+      dir = homeStr + dir.substr(1);
+    }
+  }
   if (dir != currentDirectory_) {
     currentDirectory_ = dir;
     if (directoryChangedCallback_) directoryChangedCallback_(dir);
