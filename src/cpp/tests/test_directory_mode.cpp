@@ -76,6 +76,59 @@ TEST_CASE_FIXTURE(Fixture, "enterDirectory: lists real directory contents and cl
   CHECK(sawSpaced);
 }
 
+// 2026-08-17 fix: `ls -alF`'s own trailing type-indicator character
+// ('*' for an executable file here) used to stay embedded in `name`
+// verbatim -- harmless for a directory's own trailing '/' (opendir()/
+// stat() treat "dir" and "dir/" identically, and openSelected()
+// actually DEPENDS on it staying present, see its own "./"/"../"
+// checks), but silently broken for every other type: a real
+// reproduction (^J^L search -> open a LOCATE result -> ^J^K, landing
+// in a directory full of executables -- exactly how a real
+// .app/Contents bundle looks) found Enter on ANY such entry doing
+// nothing at all, because the constructed path (e.g. ".../runme*")
+// doesn't exist on disk. No OTHER fixture in this file ever chmod
+// +x's a file, so this never surfaced until now.
+TEST_CASE_FIXTURE(Fixture, "enterDirectory: an executable file's ls -alF '*' suffix is stripped from "
+                           "name, not left embedded in it (previously broke opening it via Enter)") {
+  fs::path exe = root / "runme";
+  { std::ofstream(exe) << "#!/bin/sh\necho hi\n"; }
+  fs::permissions(exe, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec |
+                            fs::perms::others_read | fs::perms::others_exec);
+
+  REQUIRE(mode.enterDirectory(path()));
+  bool sawExe = false;
+  for (const auto &e : mode.entries()) {
+    if (e.name == "runme*") FAIL("name still has the raw ls -F suffix embedded: " << e.name);
+    if (e.name == "runme") { sawExe = true; CHECK_FALSE(e.isDirectory); }
+  }
+  CHECK(sawExe);
+}
+
+// 2026-08-17 fix (found alongside the '*'-suffix bug just above, same
+// function): `name` used to be sliced from the RAW `line` (nameStart
+// was computed against `searchable`, the arrow-stripped copy, but the
+// actual substr() call still used `line`), so a symlink's own
+// " -> target" text -- plus the trailing '@' `ls -F` appends -- stayed
+// embedded in `name` too, e.g. "link@ -> realfile" instead of "link".
+// lsLine (the raw display row, unaffected by this fix) still shows the
+// arrow correctly.
+TEST_CASE_FIXTURE(Fixture, "enterDirectory: a symlink's name excludes both the ls -F '@' suffix AND "
+                           "the \" -> target\" arrow text, even though lsLine (the raw display row) "
+                           "still shows the arrow") {
+  fs::create_symlink(root / "regular.txt", root / "linkname");
+
+  REQUIRE(mode.enterDirectory(path()));
+  bool sawLink = false;
+  for (const auto &e : mode.entries()) {
+    if (e.name.find("linkname") != std::string::npos) {
+      sawLink = true;
+      CHECK(e.name == "linkname");                          // no "@", no " -> target"
+      CHECK(e.lsLine.find(" -> ") != std::string::npos);     // the raw row still shows it
+    }
+  }
+  CHECK(sawLink);
+}
+
 // 2026-08-15 addition: a direct user request ("全モードのモードライン
 // に「画面TOPからENDまでのバイト数」を追加してほしい") specifically
 // named Directory as one of the modes still missing this -- trailing

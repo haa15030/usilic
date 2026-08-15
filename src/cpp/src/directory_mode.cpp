@@ -262,8 +262,35 @@ DirectoryEntry DirectoryMode::parseLsLine(const std::string &line) const {
 
   DirectoryEntry entry;
   entry.lsLine = line;
-  if (nameStart < line.size()) entry.name = line.substr(nameStart);
+  // searchable (arrow-stripped), not the raw `line` -- a symlink's " ->
+  // target" portion belongs in lsLine (the raw display row) but NOT in
+  // `name` (used to build real filesystem paths, e.g. openSelectedEntry()'s
+  // own `path += entry->name`), which the original `line.substr()` here
+  // never accounted for.
+  if (nameStart < searchable.size()) entry.name = searchable.substr(nameStart);
   entry.isDirectory = !line.empty() && line[0] == 'd';
+  // 2026-08-17 fix: `ls -alF`'s own trailing type-indicator character
+  // ('*' executable, '@' symlink, '=' socket, '%' whiteout, '|' FIFO --
+  // '/' for directories is handled separately below) used to stay
+  // embedded in `name` verbatim, silently breaking every path built
+  // from a non-directory entry with one of these types. Harmless for a
+  // DIRECTORY's own trailing '/' (opendir()/stat() treat "dir" and
+  // "dir/" identically, and openSelected() actually DEPENDS on it
+  // staying present -- see its own `entry->name == "./"` checks -- so
+  // directories are deliberately left untouched here). A real
+  // reproduction (^J^L search -> open a LOCATE result -> ^J^K, landing
+  // in a directory full of executables -- exactly how a real
+  // .app/Contents bundle looks, which no synthetic test fixture in
+  // this port ever chmod +x's) found Enter on ANY such entry silently
+  // doing nothing: the constructed path (".../LicensingSettings.xml*")
+  // doesn't exist on disk, so fileMode_.loadFile() failed and
+  // openSelectedEntry() returned false with no visible change --
+  // exactly the "^J^Kを使うと以後反応しなくなる" symptom reported,
+  // previously misdiagnosed as broader state corruption.
+  if (!entry.isDirectory && !entry.name.empty()) {
+    char last = entry.name.back();
+    if (last == '*' || last == '@' || last == '=' || last == '%' || last == '|') entry.name.pop_back();
+  }
   entry.nameStartColumn = static_cast<int>(nameStart);
   return entry;
 }
