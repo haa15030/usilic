@@ -17079,6 +17079,53 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ボックス環境で安定して再現できず、実バイナリでの独立した
      end-to-endのPTY再確認はできていない。
 
+314. **2026-08-16(続き): 新LOCATE④の真意を誤解していたと判明・修正
+    (「はみ出し」ではなく「埋まっていない」)、モードライン構成の
+    アーキテクチャに関する指摘への回答**
+   - **④の再調査**: 前回「-cでは再現しない」と回答したところ、
+     ユーザーから「④は-cでも確認できるけど？」「④の実態を知るには
+     -cで起動したのち^N^N[return]で「.DS_Store」を開けばいい。要する
+     に戻り値の「LOCATE: .txt」を「/Users/haa15030/git/usilic/
+     」（←右端）にしてくれってだけ」との訂正が入った。実際にPTYで
+     `renderModeLine()`の生エスケープシーケンスを確認したところ、
+     `locateView_`のtrailing2("LOCATE: <query>")は`fillTrailing
+     ToEdge=false`のため右端まで**埋まっていない**(スペースで
+     パディングされていない)ことが真の指摘だったと判明。前回の
+     「右端まではみ出している」という自分の読み違いを訂正した
+     (スクリーンショットの見た目だけで判断せず、都度実際にコードと
+     PTYで裏付けを取るべきだった)。DirectoryMode/GrepMode等、
+     ディレクトリパスを持つ他のtrailing2はすでに`fillTrailing
+     ToEdge=true`で右端まで埋まっており、LOCATEだけがこの一貫性から
+     外れていた。`locateView_`のプロバイダで`fillTrailingToEdge`を
+     `true`に変更して解決(`trailing`(バイト数)側への影響は無い、
+     `trailing2`が空でない限りその側のパディング条件は発火しない
+     設計のため)。
+   - **アーキテクチャに関する指摘への回答**: 「モードラインで表示
+     するパラメータが決まったら、あとは渡すだけの黒箱にはなってない
+     のか、都度修正のように見える」というユーザーからの率直な疑問に
+     対し、正直に「その通り、黒箱にはなっていない」と回答した。
+     `ModeLineFields`は`fillTrailingToEdge`/`trailingPlain`/
+     `trailing2RightJustified`/`trailing2MiddleEllipsis`/
+     `trailing2FullWidthTail`という5つの独立したbool値を持ち、
+     `DirectoryMode`/`FileMode`/`GrepMode`/`LocateMode`等
+     30箇所以上の各プロバイダがこれらを個別に手動設定する設計に
+     なっている。「trailing2がパスならこう」「クエリならこう」
+     という意味的な種類に応じた振る舞いの自動導出が無いため、
+     新しいプロバイダを書くたびに(または既存のプロバイダにtrailing2
+     を追加するたびに)5つのフラグを正しく設定し忘れる、という
+     同種のバグが繰り返し発生していた(今回のLOCATE、前回の
+     `trailing2FullWidthTail`関連、項目300のtail-16文字問題等、
+     いずれもこの構造に起因)。改善案として、5つの独立フラグを
+     `enum class TrailingKind { Path, QueryEcho, Label }`のような
+     意味的な種別1つに置き換え、レンダリング側がその種別から
+     パディング/切り詰め方式を自動的に導出する設計への将来的な
+     リファクタリングを提案した(即座には着手せず、ユーザーの
+     判断を仰ぐ形で提示)。
+   - **検証**: `make test` 732/732件全通過(新規doctest1件、
+     `display.rowText(23)`でLOCATE結果画面の実際の描画行を検査し
+     trailing2の後ろがスペースで埋め尽くされていることを確認)。
+     `make usilic`クリーンビルド成功。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

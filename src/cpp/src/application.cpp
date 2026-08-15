@@ -651,9 +651,21 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // screen's own 戻り値 convention exactly (just applied to LOCATE's
   // own results screen, not only its eventual Directory/File
   // destination, see openSelectedLocateResult()'s identical strings).
+  // 2026-08-16 fix: fillTrailingToEdge was false, so trailing2
+  // ("LOCATE: <query>") stopped right after its own text instead of
+  // being padded with spaces to the row's right edge -- a real report
+  // + direct comparison against a working example ("戻り値がディレク
+  // トリ名の時は左詰め、空きもちゃんとスペースで埋めるてるのに、なぜ
+  // 「LOCATE: .txt」でそうならないのか") pointed out every OTHER
+  // directory-shaped trailing2 (DirectoryMode's own "(ls)"/search-
+  // annotation fallback, GrepMode's search-origin directory, etc.)
+  // already gets this padding, and this was the one inconsistent
+  // holdout. Safe regardless of `trailing` (the byte count): the
+  // trailing-padding branch only fires when trailing2 is EMPTY, which
+  // it never is here.
   locateView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (locateMode_.query().empty()) return {};
-    return {"LOCATE", std::to_string(contentByteCount(locateView_)), /*fillTrailingToEdge=*/false,
+    return {"LOCATE", std::to_string(contentByteCount(locateView_)), /*fillTrailingToEdge=*/true,
             /*rightWatermark=*/"", "LOCATE: " + locateMode_.query()};
   });
   duView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {

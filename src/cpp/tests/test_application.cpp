@@ -2015,6 +2015,27 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line shows 'LOCATE' and a byte count on
 // DirectoryMode::setSearchAnnotation()'s callers). See
 // locateView_'s setModeLineFieldsProvider() in the Application
 // constructor for the fix itself.
+TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line's trailing2 (\"LOCATE: <query>\") is padded with spaces to the "
+                           "row's right edge, matching every other directory-shaped trailing2 (2026-08-16 fix: "
+                           "a real report + direct comparison against a working example -- \"戻り値がディレクト "
+                           "リ名の時は左詰め、空きもちゃんとスペースで埋めるてるのに、なぜ「LOCATE: .txt」で "
+                           "そうならないのか\")") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText(".txt");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not installed or no database available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  std::string row = display.rowText(23);
+  std::size_t pos = row.find("LOCATE: .txt");
+  REQUIRE(pos != std::string::npos);
+  std::string afterQuery = row.substr(pos + std::string("LOCATE: .txt").size());
+  CHECK(afterQuery.size() > 4);                                    // padded well past a single trailing space
+  CHECK(afterQuery.find_first_not_of(' ') == std::string::npos);   // and it's ALL spaces, reaching the row's edge
+}
+
 TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line's name field is \"LOCATE: <query>\", not the bare literal \"LOCATE\"") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartLocate));

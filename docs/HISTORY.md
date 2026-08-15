@@ -4172,3 +4172,22 @@ middle-ellipsisの「...」位置も中央寄りに変更しました。C++版�
 新LOCATE④(トレイリング2のハイライトが右端まで伸びる件)は、コードレベルではfillTrailingToEdgeがfalseに設定されており原因を特定できませんでした。-g(GUI)固有の描画経路の可能性を疑っていますが、GUI環境が無く直接検証できないため今回は見送ります。
 
 make test 731/731件全通過。フェイクのlocateコマンドを使ったPTY検証で、pp->cs同期の追加後に実際にhead...tail形式・各行が異なる末尾を保持したまま表示されることを確認しました(修正前は複数の結果が見分けのつかない同一のプレフィックスに見えていました)。alloc_str()(T_hfile)側は同一の修正パターンであることの確認に留め、^X^Fの履歴登録経路がこのセッションのサンドボックス環境で安定して再現できず、独立したend-to-endのPTY再確認はできていません。CLAUDE.mdに項目313として記録、コミット・プッシュ済みです。
+
+<④の実態を知るには-cで起動したのち^N^N[return]で「.DS_Store」を開けばいい。
+要するに戻り値の
+「LOCATE: .txt」
+を
+「/Users/haa15030/git/usilic/      」（←右端）
+にしてくれってだけ。
+
+ちょっと素朴な疑問なんだが。
+モードラインで表示するパラメータ（モード名、行関係、使用アプリ、戻り値等）が決まったら、あとは渡せすだけの黒箱にはなってないの？　なんか都度修正のように見えるんだけど。
+戻り値がディレクトリ名の時は左詰め、空きもちゃんとスペースで埋めるてるのに、なぜ「LOCATE: .txt」でそうならないのか理由がわからない。
+
+>前回の回答が誤読でした。実際にPTYで生エスケープシーケンスを確認したところ、locateView_のtrailing2("LOCATE: <query>")はfillTrailingToEdge=falseのため右端まで埋まっていない(スペースでパディングされていない)ことが真の指摘だったと分かりました。前回「右端まではみ出している」と読んだのは私の読み違いでした。DirectoryMode/GrepMode等、ディレクトリパスを持つ他のtrailing2はすでにfillTrailingToEdge=trueで右端まで埋まっており、LOCATEだけがこの一貫性から外れていました。fillTrailingToEdgeをtrueに変更して解決しています。
+
+アーキテクチャのご質問について、正直にお答えすると「その通り、黒箱にはなっていません」。ModeLineFieldsはfillTrailingToEdge/trailingPlain/trailing2RightJustified/trailing2MiddleEllipsis/trailing2FullWidthTailという5つの独立したbool値を持ち、DirectoryMode/FileMode/GrepMode/LocateMode等30箇所以上の各プロバイダがこれらを個別に手動設定する設計になっています。「trailing2がパスならこう」「クエリならこう」という意味的な種類に応じた振る舞いの自動導出が無いため、新しいプロバイダを書くたびに5つのフラグを正しく設定し忘れる、という同種のバグが繰り返し発生していました(今回のLOCATE、前回のtrailing2FullWidthTail関連、以前のtail-16文字問題等、いずれもこの構造に起因します)。
+
+改善案として、5つの独立フラグをenum class TrailingKind { Path, QueryEcho, Label }のような意味的な種別1つに置き換え、レンダリング側がその種別からパディング/切り詰め方式を自動的に導出する設計への将来的なリファクタリングを提案します。即座には着手せず、ご判断を仰ぎたいです。
+
+make test 732/732件全通過(display.rowText(23)でLOCATE結果画面の実際の描画行を検査する新規テストを追加)。make usilicクリーンビルド成功。CLAUDE.mdに項目314として記録、コミット・プッシュ済みです。
