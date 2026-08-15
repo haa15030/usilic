@@ -3540,15 +3540,36 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^J d (DU) works too, exercising a
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: bare ESC is NOT intercepted -- passes straight through as "
-                           "literal shell input, unlike ^J/^X/^O") {
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ESC-leader (e.g. ESC < / GoToTop) also works from within Shell "
+                           "now, exercising the ONE remaining leader that used to be deliberately excluded "
+                           "(2026-08-17 fix, reversing an earlier deliberate exclusion -- a real user report "
+                           "found this was the same 'fixed in feedPromptByte() but never mirrored into "
+                           "feedShellByte()' gap as the ^A/^E/^B/^F/^D fix just above)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(idx != 0);
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.feedShellByte(0x1b, std::nullopt));  // ESC
+  CHECK(app.feedShellByte('<', std::nullopt));   // < : GoToTop (M_head)
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // left Shell, matching ^J/^X's own precedent
+  CHECK(indexOf(app.directoryMode().selectedEntry()->name) == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: an unrecognized ESC-sequence still leaves Shell as a side "
+                           "effect, matching the same accepted edge case ^J/^X already have") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
     return;
   }
-  CHECK(app.feedShellByte(0x1b, std::nullopt));  // bare ESC
-  CHECK(app.currentMode() == ApplicationMode::Shell);  // still in Shell -- NOT treated as an app-wide leader trigger
+  CHECK(app.feedShellByte(0x1b, std::nullopt));        // ESC : arms the sequence
+  CHECK_FALSE(app.feedShellByte('z', std::nullopt));   // z : not a recognized ESC-sequence
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
 TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: normal typing is completely unaffected (regression check)") {

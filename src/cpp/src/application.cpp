@@ -1299,20 +1299,35 @@ std::size_t Application::recordedMacroLength() const { return recordedMacro_.siz
 // move the command-line cursor; Up/Down/PageUp/PageDown (scrollback
 // paging / command history) are deliberately not handled here yet.
 bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special) {
-  // Global leader-key access from within Shell mode: ^J/^X/^X^K/^O
-  // (NOT bare ESC, unlike dispatchByte()'s own top-level check -- a
-  // real interactive shell (bash/zsh) needs raw ESC constantly for
-  // its own line editor, Meta-key bindings, vi-mode, etc, so
-  // intercepting it here would break real shell usage far more than
-  // ^J/^X/^O -- which essentially never come up as literal typed
-  // shell input -- ever would). A real user report (2026-08-02,
-  // comparing against the mature legacy build side by side) found
-  // ^X^F/^X^C etc. work directly from within SHELL there, which
-  // silently did nothing here before this existed: currentMode_==
-  // Shell routed EVERY byte straight to this function with no
-  // leader-key access at all.
-  bool shellLeaderPending = leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_;
-  if (!special && (shellLeaderPending || byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO)) {
+  // Global leader-key access from within Shell mode: ^J/^X/^X^K/^O/ESC.
+  // A real user report (2026-08-02, comparing against the mature legacy
+  // build side by side) found ^X^F/^X^C etc. work directly from within
+  // SHELL there, which silently did nothing here before this existed:
+  // currentMode_==Shell routed EVERY byte straight to this function with
+  // no leader-key access at all.
+  //
+  // ESC included (2026-08-17 fix, reversing an earlier deliberate
+  // exclusion): a real user report ("^[は今も利かない...いずれも他の
+  // 文字列入力ルーチンでは直っていたのでこれも似たようなケースなの？")
+  // pointed out this was the SAME "fixed generically in feedPromptByte()
+  // but never mirrored here" gap as the ^A/^E/^B/^F/^D fix just above.
+  // The earlier exclusion's own rationale -- "a real interactive shell
+  // needs raw ESC constantly for its own line editor/Meta-keys/vi-mode"
+  // -- turns out not to hold for THIS port: shell_.commandLine() is a
+  // fully local LineEditor (matching legacy shell.c's own non-passthrough
+  // design, see the architecture note in CLAUDE.md), and nothing here
+  // ever forwards a raw per-keystroke byte to the child pty except
+  // sendControlByte() (^C only, below) and submitLine() (the WHOLE
+  // composed line, at Enter). The child shell never sees an ESC typed
+  // while composing a command in usilic's own editor either way, so
+  // treating it as a leader byte here (matching ^J/^X/^O, and matching
+  // feedPromptByte()'s escPending_ handling) only adds the missing
+  // global command access -- it doesn't take anything away from real
+  // shell usage. (A genuinely raw, interactive child like `vim`/`less`
+  // launched via do_prog() is a completely separate, real pty-passthrough
+  // code path that this doesn't touch.)
+  bool shellLeaderPending = leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_ || escPending_;
+  if (!special && (shellLeaderPending || byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape)) {
     if (shellLeaderPending) {
       // Completing a sequence -- switch back to whichever mode SHELL
       // was entered from BEFORE dispatching, exactly as if the user
