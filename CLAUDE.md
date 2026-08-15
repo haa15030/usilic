@@ -17419,6 +17419,87 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      実内容を表示することも確認した(=ca相当の結果が本当に自動で
      再現することの直接証拠)。
 
+320. **2026-08-17(続き): 新PROGRAM②(SHELLプロンプトで`less`を打つと
+    画面が壊れる)の真因判明・修正 ―― `Shell::setProgramLauncher()`が
+    宣言のみで一度も配線されていなかった(この種のバグの再発)。
+    ①(`less`初回起動のみ画面が空白になる)は未確証ながら有力仮説に
+    基づく予防的修正を実施、ユーザーの実機再確認待ち**
+   - **②の調査**: ユーザー報告(=ce/=cf、SHELLプロンプトで`less CLA`+
+     Tab補完→`[return]`)を再現・分析した結果、`Shell::submitLine()`に
+     `programLauncher_`という既存フックが宣言されているのに一度も
+     `Application`側で配線されていないと判明(`setHistoryRecorder()`/
+     `setCompletionProvider()`で繰り返し見つかっている「移植済みだが
+     未配線」パターンの再発)。配線が無いため、SHELLプロンプトで
+     認識済みPROGRAM名(`less`等)を打っても、実際にpty接続された
+     本物の`zsh`子プロセスへそのまま送られていた。`zsh`自体は`less`を
+     正しく起動するが、Shellクラスの出力処理パイプライン(行指向・
+     プロンプト検出用、クラスコメント参照)は元々`less`のような
+     フルスクリーンプログラムの生カーソル制御シーケンスを想定して
+     おらず、scrollbackへ「テキスト」として誤って取り込み文字化け
+     させていた。さらにShell側の`commandLine_`はキー入力を1文字ずつ
+     子プロセスへ転送する設計になっておらず(項目315のESC調査で確認
+     済み)、`[return]`連打時は空行の`"\n"`だけがptyへ送られ、それを
+     `less`自身が「次の行へ進む」キーとして正しく解釈していた
+     (「キーだけlessに渡ってる」というユーザー自身の見立て通り)。
+   - **修正**: `executeProgram()`から`isRecognizedProgram()`(認識判定)
+     と`cdWrap()`(usilicが`chdir()`しない設計のためのcdラップ、
+     項目319で導入したロジックを共通化)の2つを切り出し、
+     `Application`のコンストラクタで`shell_.setProgramLauncher(...)`を
+     新規配線。認識済みPROGRAM名の場合は`shell_.currentDirectory()`
+     基準でcdラップした上で`programMode_.run()`(`ChildProcess::
+     runInteractive()`による本物の生ターミナル引き渡し)へ委譲し、
+     `shell_.setBusy(true/false)`で囲み、戻り後に`shell_.scrollback()
+     .redraw()`で画面を再描画。`historyRecorder_`は意図的に呼ばない
+     (`ProgramMode::run()`自身の`recordedCommand`が同じ
+     `RingCategory::ShellCommand`へ既に記録するため、二重記録を回避)。
+   - **既存テストへの副作用と修正**: `Fixture`が`echo`をテスト用の
+     「認識済みPROGRAM」として設定していたため、SHELLモードのテストが
+     大量に使っていた`echo <marker>`という「observableな出力を得る
+     ための便宜的なコマンド」が軒並みこの新しいlauncherに横取り
+     されるようになり、5件が実際に失敗(`!line.shellCommand`で
+     フィルタして本物の出力行を要求するテスト)、さらに複数件が
+     「本来検証したいはずの実行結果ではなく、submitLine()が常に追加する
+     フリーズ済みプロンプトエコー行に偶然マッチして見かけ上パスして
+     いるだけ」という別の問題(ハードな失敗ではないが検証が骨抜きに
+     なっていた)と判明。該当する全SHELLテストのマーカーコマンドを
+     `echo`から(Fixtureで認識済みPROGRAM指定していない)`printf`へ
+     一括置換して解消。新たに`setProgramLauncher()`自体を直接検証する
+     テストも追加(認識済み`echo`をSHELLプロンプトで実行→実side effect
+     確認、本物のbashへ送られていない(scrollbackに出力行が現れない)
+     ことの確認、`recordedCommand`が正しく記録されることの確認)。
+   - **①(未確証、予防的修正のみ)**: `^Jp`経由の初回`less`起動のみ
+     画面が空白になり(`less`自身は起動しファイル名も認識、`v`での
+     `vi`起動は正常)、以後は問題無い、という報告(=cc/=cd)。
+     `TerminalDisplay::write()`(通常のテキスト出力)だけが他の全
+     プリミティブ(`moveCursor()`/`clearScreen()`等)と異なり
+     `fflush(stdout)`を呼んでいないと判明し、`ChildProcess::
+     runInteractive()`(素の`fork()`+`execvp()`、明示的なflushなし)
+     への引き渡し直前に未flushの出力がstdioバッファに残っていた
+     可能性を有力仮説とした。ただしこのセッションのPTYシミュレーション
+     環境では再現できず(このセッション内の全PTY検証でこの症状は
+     一度も出ていない)、実機固有のタイミング問題である可能性が高い。
+     `executeProgram()`と`setProgramLauncher()`のラムダ双方に
+     `display_.flush()`を`programMode_.run()`直前へ追加(害の無い
+     予防的措置)。根本原因の確証は得られていないため、ユーザーの
+     実機再確認が必要。
+   - **検証**: `make test` 744/744件全通過(新規1件:
+     `setProgramLauncher()`自体の直接検証)。`make usilic`クリーン
+     ビルド確認済み。PTYで②の実手順(隔離した`HOME`に`PROGRAM\n less\n`
+     を仕込み、`ESC s`→SHELL→`less CLA`+Tab→`[return]`)を再現し、
+     修正前後の生バイト列を比較。`less`が実際にalt-screenへ入り
+     CLAUDE.mdの実内容を表示すること、`q`で正しくSHELLへ復帰する
+     ことを確認した。
+   - **既知の限界(正直な記録)**: フルスイート実行時、今回の変更とは
+     無関係な既存テスト(`activatePrompt (2026-08-12 fix): the
+     editable field's width reserves...`、FGREPプロンプトの幅計算)が
+     低頻度(体感2割程度)で不安定に失敗する現象を発見した。単体実行
+     では毎回成功、環境変数リーク(`setenv("HOME",...)`の復元漏れ、
+     これは今回実際に見つけて`ScopedHomeEnv`で修正済み)・temp
+     ディレクトリパス長のばらつき・`RecordingDisplay`のバッファ
+     未初期化、のいずれも原因として除外した。原因未特定のまま切り分け
+     を打ち切り(本ラウンドの主題であるPROGRAM/SHELL修正とは無関係な
+     既存の潜在バグと判断)、今後の課題として記録するのみに留める。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

@@ -1390,6 +1390,10 @@ class Application {
   bool executeCut(const std::string &pattern);
   bool executeMan(const std::string &name);
   bool executeProgram(const std::string &command);
+  // Shared by executeProgram() and setProgramLauncher()'s own lambda
+  // (constructor) -- see their own call-site comments.
+  bool isRecognizedProgram(const std::string &firstWord) const;
+  static std::string cdWrap(const std::string &dir, const std::string &command);
   bool executeLocate(const std::string &query);
   bool executeCopy(const std::string &destination);
   bool executeMove(const std::string &destination);

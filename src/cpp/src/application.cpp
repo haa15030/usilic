@@ -315,6 +315,39 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // setCompletionProvider()'s own history just above).
   shell_.setHistoryRecorder(
       [this](const std::string &line) { history_.pushRecent(RingCategory::ShellCommand, line); });
+  // 2026-08-17 fix: this hook (Shell::submitLine()'s own dispatch,
+  // ported from input_shell()'s do_prog() hand-off) existed but was
+  // never wired -- the exact "wired but never connected" pattern noted
+  // just above for setHistoryRecorder(). A real report ("'less CLA'^I
+  // →[return]→less画面でなく「cat CLAUDE.md」のような画面...[return]
+  // 連打で一行ずつ進む") found that typing a recognized PROGRAM command
+  // (e.g. "less CLAUDE.md") AT THE SHELL PROMPT sent it to the real,
+  // pty-attached zsh child instead -- which DOES run `less`, but
+  // Shell's own OUTPUT pipeline (line-oriented, prompt-detecting, see
+  // the class comment) was never built to carry a full-screen program's
+  // raw cursor-control/repaint escape sequences, garbling them into
+  // scrollback "text", and Shell's own commandLine_ never forwards
+  // per-keystroke bytes to the child either (see feedShellByte()'s ESC
+  // comment) -- explaining the "bare Enter reaches less as its own
+  // next-line keybinding" symptom exactly. Reuses isRecognizedProgram()/
+  // cdWrap() (see executeProgram()'s own comment on why a bare command
+  // needs the cd prefix: usilic never chdir()s, and this handoff runs
+  // via ChildProcess::runInteractive() -- a fresh fork/exec, NOT the
+  // pty-attached zsh -- so it inherits usilic's own process cwd, not
+  // wherever Shell is currently browsing) resolved against
+  // shell_.currentDirectory() instead of directoryMode_'s.
+  // historyRecorder_ is deliberately NOT also invoked here:
+  // ProgramMode::run()'s own recordedCommand parameter already pushes
+  // into the exact same RingCategory::ShellCommand ring.
+  shell_.setProgramLauncher([this](const std::string &programToken, const std::string &fullLine) -> bool {
+    if (!isRecognizedProgram(programToken)) return false;
+    display_.flush();
+    shell_.setBusy(true);
+    programMode_.run(cdWrap(shell_.currentDirectory(), fullLine), fullLine);
+    shell_.setBusy(false);
+    shell_.scrollback().redraw();
+    return true;
+  });
   // Mode-line fields, ported from disp_shell()'s own
   // disp_window(..., T_shell, name="SHELL", prev, arg, ...) call
   // (shell.c): "SHELL" fixed on the left; on the right, the trailing
@@ -4281,13 +4314,50 @@ bool Application::executeMan(const std::string &name) {
   return true;
 }
 
-// Ported from mode.c's M_prog case: the typed command line's first
-// word must be a strncmp-prefix match of some PROGRAM directive
-// entry's own first word (find_prog(), sub.c) -- otherwise legacy
-// falls back to SHELL mode with the typed line pre-filled, which
-// isn't wired here yet (see class comment). Runs the whole typed line
-// via ProgramMode::run() when recognized; ApplicationMode never
-// changes either way (see class comment).
+// Shared by executeProgram() and setProgramLauncher()'s own lambda
+// (2026-08-17 addition, factored out when the latter was added): a
+// strncmp-prefix match of some PROGRAM directive entry's own first
+// word (find_prog(), sub.c's own semantics).
+bool Application::isRecognizedProgram(const std::string &firstWord) const {
+  for (const auto &seed : configuration_.programSeedCommands()) {
+    std::size_t seedEnd = seed.find_first_of(" \t");
+    std::string seedFirstWord = seed.substr(0, seedEnd);
+    if (!seedFirstWord.empty() && firstWord.compare(0, seedFirstWord.size(), seedFirstWord) == 0) return true;
+  }
+  return false;
+}
+
+// Shared by executeProgram() and setProgramLauncher()'s own lambda:
+// usilic itself never chdir()s (see executePathInput()'s own comment),
+// so a command referencing a bare/relative filename only resolves
+// correctly if the actual child process is `cd`'d into the right
+// directory first -- neither ChildProcess::runInteractive() (a fresh
+// fork/exec) nor sh -c inherits anything from directoryMode_'s or
+// Shell's own purely-logical "current directory" bookkeeping. POSIX
+// single-quote escaping (close the quote, emit an escaped literal
+// quote, reopen) handles a directory path containing an embedded "'"
+// correctly; a plain '<dir>' wrap alone already handles the far more
+// common case (spaces). `dir` empty is a no-op (command unchanged) --
+// callers with no directory context to resolve against (e.g.
+// startProgramPrompt() found no file) leave the process cwd as-is,
+// the pre-existing behavior.
+std::string Application::cdWrap(const std::string &dir, const std::string &command) {
+  if (dir.empty()) return command;
+  std::string quoted = "'";
+  for (char c : dir) {
+    if (c == '\'')
+      quoted += "'\\''";
+    else
+      quoted += c;
+  }
+  quoted += "'";
+  return "cd " + quoted + " && " + command;
+}
+
+// Ported from mode.c's M_prog case (see isRecognizedProgram()'s own
+// comment). Runs the whole typed line via ProgramMode::run() when
+// recognized; ApplicationMode never changes either way (see class
+// comment).
 bool Application::executeProgram(const std::string &command) {
   std::size_t start = command.find_first_not_of(" \t");
   if (start == std::string::npos) {
@@ -4297,43 +4367,19 @@ bool Application::executeProgram(const std::string &command) {
   std::size_t end = command.find_first_of(" \t", start);
   std::string firstWord = command.substr(start, end == std::string::npos ? std::string::npos : end - start);
 
-  bool recognized = false;
-  for (const auto &seed : configuration_.programSeedCommands()) {
-    std::size_t seedEnd = seed.find_first_of(" \t");
-    std::string seedFirstWord = seed.substr(0, seedEnd);
-    if (!seedFirstWord.empty() && firstWord.compare(0, seedFirstWord.size(), seedFirstWord) == 0) {
-      recognized = true;
-      break;
-    }
-  }
-
-  if (!recognized) {
+  if (!isRecognizedProgram(firstWord)) {
     activeView().redraw();
     return false;
   }
 
-  // 2026-08-17 addition: see programPromptDirectory_'s own declaration
-  // comment -- startProgramPrompt()'s bare-filename pre-fill (e.g.
-  // "CLAUDE.md") only resolves correctly if the actual child process
-  // is running FROM that file's own directory, which usilic's own
-  // process cwd never tracks. POSIX single-quote escaping (close the
-  // quote, emit an escaped literal quote, reopen) handles a directory
-  // path containing an embedded "'" correctly; a plain '<dir>' wrap
-  // alone already handles the far more common case (spaces).
-  std::string toRun = command;
-  if (!programPromptDirectory_.empty()) {
-    std::string quoted = "'";
-    for (char c : programPromptDirectory_) {
-      if (c == '\'')
-        quoted += "'\\''";
-      else
-        quoted += c;
-    }
-    quoted += "'";
-    toRun = "cd " + quoted + " && " + command;
-  }
+  // programPromptDirectory_: see its own declaration comment --
+  // startProgramPrompt()'s bare-filename pre-fill (e.g. "CLAUDE.md")
+  // needs this cd wrap; empty (a no-op) whenever no file context was
+  // found, matching the pre-existing behavior for a hand-typed command.
+  std::string toRun = cdWrap(programPromptDirectory_, command);
   programPromptDirectory_.clear();  // consumed exactly once, regardless of outcome
 
+  display_.flush();
   programMode_.run(toRun, command);
   activeView().redraw();
   return true;

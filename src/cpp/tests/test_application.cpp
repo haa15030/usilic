@@ -3294,7 +3294,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: typing a command and pressing Enter runs it, 
   }
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
 
-  for (unsigned char c : std::string("echo APPSHELLTEST123")) app.feedShellByte(c, std::nullopt);
+  for (unsigned char c : std::string("printf 'APPSHELLTEST123\\n'")) app.feedShellByte(c, std::nullopt);
   CHECK(app.feedShellByte(0x0d, std::nullopt));  // ^M submits
 
   bool sawOutput = pumpUntil(app, [&] {
@@ -3303,6 +3303,58 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: typing a command and pressing Enter runs it, 
     return false;
   });
   CHECK(sawOutput);
+}
+
+// 2026-08-17 fix: Shell::setProgramLauncher() (ported from
+// input_shell()'s do_prog() hand-off) was declared but never wired --
+// a real report ("'less CLA'^I→[return]→less画面でなく「cat
+// CLAUDE.md」のような画面...[return]連打で一行ずつ進む") found a
+// recognized PROGRAM command typed AT THE SHELL PROMPT going to the
+// real, pty-attached bash instead, whose raw full-screen output then
+// got mangled by Shell's own line-oriented scrollback pipeline. "echo"
+// is the Fixture's own configured PROGRAM entry -- a real recognized
+// command reaching this handoff, not `less`/`vi` (this test suite
+// never drives a genuinely interactive full-screen program, matching
+// every other PROGRAM-prompt test's own "echo ... > outPath" real
+// side-effect pattern instead of asserting terminal escape sequences).
+TEST_CASE_FIXTURE(Fixture, "SHELL: a recognized PROGRAM command (e.g. \"echo\", the Fixture's own configured "
+                           "entry) is intercepted and run via ProgramMode -- NOT sent to the real pty-attached "
+                           "bash -- when typed at the live SHELL prompt") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  std::string outPath = (root / "shell_program_out.txt").string();
+  feedText("echo hello > '" + outPath + "'");
+  CHECK(app.feedShellByte(0x0d, std::nullopt));
+
+  // Real side effect proves it actually ran (via EITHER path -- this
+  // alone doesn't distinguish bash from the launcher).
+  std::ifstream in(outPath);
+  std::string content;
+  std::getline(in, content);
+  CHECK(content == "hello");
+
+  // The real bash child never saw this command at all -- its own
+  // output-detection/echo pipeline (flushNewScrollbackLines(), prompt
+  // re-display, etc.) never ran for it, so scrollback shows only the
+  // frozen prompt-echo line submitLine() always adds regardless of
+  // handoff, never a SEPARATE output line (there's no output to see:
+  // the redirection sent "hello" to outPath, not to any terminal).
+  int outputLines = 0;
+  for (const auto &line : app.shell().scrollback().lines())
+    if (!line.shellCommand && line.text.find("hello") != std::string::npos) outputLines++;
+  CHECK(outputLines == 0);
+
+  // recordedCommand (ProgramMode::run()'s own mechanism) still records
+  // the CLEAN typed command, not some internal cd-wrapped variant.
+  const auto &entries = history.recentEntries(RingCategory::ShellCommand);
+  bool recorded =
+      std::find(entries.begin(), entries.end(), "echo hello > '" + outPath + "'") != entries.end();
+  CHECK(recorded);
 }
 
 TEST_CASE_FIXTURE(Fixture, "SHELL: a real submitted command is actually recorded into RingCategory::ShellCommand "
@@ -3314,11 +3366,11 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: a real submitted command is actually recorded
   }
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
 
-  for (unsigned char c : std::string("echo RECORDTEST789")) app.feedShellByte(c, std::nullopt);
+  for (unsigned char c : std::string("printf 'RECORDTEST789\\n'")) app.feedShellByte(c, std::nullopt);
   app.feedShellByte(0x0d, std::nullopt);
 
   const auto &entries = history.recentEntries(RingCategory::ShellCommand);
-  bool recorded = std::find(entries.begin(), entries.end(), "echo RECORDTEST789") != entries.end();
+  bool recorded = std::find(entries.begin(), entries.end(), "printf 'RECORDTEST789\\n'") != entries.end();
   CHECK(recorded);
 }
 
@@ -3332,7 +3384,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^P/^N move scrollback_'s own curs
   }
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
 
-  for (unsigned char c : std::string("echo MARKERPN001")) app.feedShellByte(c, std::nullopt);
+  for (unsigned char c : std::string("printf 'MARKERPN001\\n'")) app.feedShellByte(c, std::nullopt);
   app.feedShellByte(0x0d, std::nullopt);
   // !line.shellCommand: the frozen prompt line ITSELF already contains
   // "MARKERPN001" as part of its own attached command text -- wait
@@ -3364,7 +3416,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: ^P/^N show a plain text cursor while browsing
   }
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
 
-  for (unsigned char c : std::string("echo MARKERPN003")) app.feedShellByte(c, std::nullopt);
+  for (unsigned char c : std::string("printf 'MARKERPN003\\n'")) app.feedShellByte(c, std::nullopt);
   app.feedShellByte(0x0d, std::nullopt);
   REQUIRE(pumpUntil(app, [&] {
     for (const auto &line : app.shell().scrollback().lines())
@@ -3399,7 +3451,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: Enter on a past prompt line resubmits its com
   }
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
 
-  for (unsigned char c : std::string("echo MARKERRERUN002")) app.feedShellByte(c, std::nullopt);
+  for (unsigned char c : std::string("printf 'MARKERRERUN002\\n'")) app.feedShellByte(c, std::nullopt);
   app.feedShellByte(0x0d, std::nullopt);
   REQUIRE(pumpUntil(app, [&] {
     for (const auto &line : app.shell().scrollback().lines())
@@ -3411,7 +3463,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: Enter on a past prompt line resubmits its com
   {
     const auto &lines = app.shell().scrollback().lines();
     for (std::size_t i = 0; i < lines.size(); i++)
-      if (lines[i].shellCommand && *lines[i].shellCommand == "echo MARKERRERUN002")
+      if (lines[i].shellCommand && *lines[i].shellCommand == "printf 'MARKERRERUN002\\n'")
         promptIndex = static_cast<int>(i);
   }
   REQUIRE(promptIndex >= 0);
@@ -3442,7 +3494,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: Enter on a plain output line (no attached com
   }
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
 
-  for (unsigned char c : std::string("echo MARKERPLAIN003")) app.feedShellByte(c, std::nullopt);
+  for (unsigned char c : std::string("printf 'MARKERPLAIN003\\n'")) app.feedShellByte(c, std::nullopt);
   app.feedShellByte(0x0d, std::nullopt);
   REQUIRE(pumpUntil(app, [&] {
     for (const auto &line : app.shell().scrollback().lines())
@@ -3476,7 +3528,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: typing while browsing history snaps the curso
   }
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
 
-  for (unsigned char c : std::string("echo MARKERTYPE004")) app.feedShellByte(c, std::nullopt);
+  for (unsigned char c : std::string("printf 'MARKERTYPE004\\n'")) app.feedShellByte(c, std::nullopt);
   app.feedShellByte(0x0d, std::nullopt);
   // !line.shellCommand: wait for the shell's REAL echoed output line
   // specifically (see the ^P/^N test's own comment above) so ^P below
@@ -3505,7 +3557,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: ^G leaves without killing the child; re-enter
   }
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
 
-  for (unsigned char c : std::string("echo PERSISTMARKER456")) app.feedShellByte(c, std::nullopt);
+  for (unsigned char c : std::string("printf 'PERSISTMARKER456\\n'")) app.feedShellByte(c, std::nullopt);
   app.feedShellByte(0x0d, std::nullopt);
   REQUIRE(pumpUntil(app, [&] {
     for (const auto &line : app.shell().scrollback().lines())
@@ -3538,7 +3590,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: `exit` ends the child on its own, automatical
   }
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
 
-  for (unsigned char c : std::string("echo BEFOREEXIT789")) app.feedShellByte(c, std::nullopt);
+  for (unsigned char c : std::string("printf 'BEFOREEXIT789\\n'")) app.feedShellByte(c, std::nullopt);
   app.feedShellByte(0x0d, std::nullopt);
   REQUIRE(pumpUntil(app, [&] {
     for (const auto &line : app.shell().scrollback().lines())
@@ -3726,7 +3778,7 @@ TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): snapshots Shell's scrollback to l
     MESSAGE("bash not available or handshake failed -- skipping");
     return;
   }
-  app.shell().commandLine().setText("echo LOGTESTMARKER123");
+  app.shell().commandLine().setText("printf 'LOGTESTMARKER123\\n'");
   app.shell().submitLine();
   bool sawOutput = pumpUntil(app, [&] {
     for (const auto &line : app.shell().scrollback().lines())
@@ -3779,7 +3831,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X s restarts a fresh SHELL child, even fr
   // signal that actually matters -- the new child is a genuinely
   // live, working bash -- is checked below instead: it actually
   // executes a freshly submitted command.
-  app.shell().commandLine().setText("echo RESTARTSHELLTESTMARKER");
+  app.shell().commandLine().setText("printf 'RESTARTSHELLTESTMARKER\\n'");
   app.shell().submitLine();
   bool sawOutput = pumpUntil(app, [&] {
     for (const auto &line : app.shell().scrollback().lines())
