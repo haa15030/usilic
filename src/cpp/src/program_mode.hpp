@@ -51,12 +51,20 @@ class ProgramMode {
 
   // Runs `command` as `sh -c command` in the foreground with real
   // terminal access (leaving raw mode first, re-entering it after),
-  // and records command into History's ShellCommand ring (the same
-  // ring shell.c's own commands feed, matching do_prog()'s own
-  // `*histp = save_history(*histp, str, 1)`). Returns the child's
-  // exit status, or -1 if command is empty or the child couldn't be
-  // spawned.
-  int run(const std::string &command);
+  // and records `recordedCommand` (defaults to `command` itself) into
+  // History's ShellCommand ring (the same ring shell.c's own commands
+  // feed, matching do_prog()'s own `*histp = save_history(*histp, str,
+  // 1)`). Returns the child's exit status, or -1 if command is empty or
+  // the child couldn't be spawned.
+  //
+  // recordedCommand as a SEPARATE parameter (2026-08-17 addition):
+  // executeProgram()'s own `cd '<dir>' && ` prefix (see its own
+  // comment) is an internal implementation detail of how a bare
+  // filename gets resolved, not something the user typed -- recording
+  // THAT into history would corrupt ^J^R's command recall and the
+  // ^J^P PROGRAM list with a string that doesn't even start with a
+  // recognized program name if re-submitted later.
+  int run(const std::string &command, const std::string &recordedCommand = "");
 
  private:
   KeyInput &keyInput_;

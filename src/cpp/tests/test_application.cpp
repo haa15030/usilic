@@ -1942,9 +1942,83 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: works from File mode too, and stays in File
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
   REQUIRE(app.handleCommand(Command::StartProgram));
-  feedText("echo hi");
+  // 2026-08-17 fix: StartProgram now pre-fills the prompt with the open
+  // file's own bare name, cursor at the START -- see its own comment.
+  // "echo " (with the trailing space) prepends into "echo plain.txt";
+  // an earlier version of this test typed "echo hi" without accounting
+  // for the pre-fill, silently producing the nonsensical "echo
+  // hiplain.txt" (visible as stray "hiplain.txt" output in a real test
+  // run, caught while implementing this same fix).
+  REQUIRE(app.promptText() == "plain.txt");
+  feedText("echo ");
+  REQUIRE(app.promptText() == "echo plain.txt");
   CHECK(app.feedByte(0x0d, std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::File);
+}
+
+// 2026-08-17 fix (docs/ideas/IDEAS.md:218, a NEW feature -- legacy
+// never had this): a real report + hand-drawn mockup (=cb) specified
+// that ^Jp should pre-fill the prompt with the highlighted file's own
+// BARE filename, cursor on the FIRST character, so typing a program
+// name prepends naturally ("less " + "CLAUDE.md" -> "less CLAUDE.md").
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^Jp pre-fills the prompt with the highlighted file's own bare "
+                           "filename, cursor at the START (so typing a program name prepends)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  CHECK(app.promptText() == "plain.txt");  // bare name, not the full path
+  feedText("less ");
+  CHECK(app.promptText() == "less plain.txt");  // prepended, proving the cursor started at position 0
+}
+
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^Jp starts with an EMPTY prompt when a directory (not a file) is "
+                           "highlighted, matching the pre-existing behavior") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  CHECK(app.promptText().empty());
+}
+
+// The real end-to-end proof: usilic itself never chdir()s (see
+// executePathInput()'s own comment), so a bare pre-filled filename
+// only resolves correctly if executeProgram() actually `cd`s into the
+// file's own directory before running the command -- this reads
+// sub.txt's REAL content via shell command substitution ($(cat ...)),
+// which only succeeds if that resolution is correct. Deliberately run
+// from `subdir/` (not `root`, which happens to already be roughly
+// where a naive implementation might accidentally work by coincidence
+// of the test process's own cwd).
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: the pre-filled filename actually resolves to the REAL file on disk "
+                           "when executed, not whatever directory the process happened to launch in") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/
+  REQUIRE(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
+
+  idx = indexOf("sub.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  std::string outPath = (root / "prog_resolve_out.txt").string();
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  REQUIRE(app.promptText() == "sub.txt");
+  feedText("echo $(cat ");        // prepends -> "echo $(cat sub.txt"
+  REQUIRE(app.feedByte(0x05, std::nullopt));  // ^E: end
+  feedText(") > '" + outPath + "'");
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  std::ifstream in(outPath);
+  std::string content;
+  std::getline(in, content);
+  // $(cat sub.txt) inside echo (unquoted) word-splits sub.txt's own
+  // "alpha\nbeta\nalpha\ngamma\n" (see the Fixture's own setup) into
+  // separate echo arguments, rejoined with single spaces -- real shell
+  // behavior, not a simplification made for this test.
+  CHECK(content == "alpha beta alpha gamma");
 }
 
 TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^G cancels the prompt without running anything") {

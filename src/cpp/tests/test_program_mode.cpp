@@ -98,3 +98,24 @@ TEST_CASE_FIXTURE(Fixture, "run: an empty command is not recorded into history")
   mode.run("");
   CHECK(history.recentEntries(RingCategory::ShellCommand).empty());
 }
+
+// 2026-08-17 addition: Application::executeProgram()'s own `cd '<dir>'
+// && ` prefix (see its own comment) is an internal implementation
+// detail, not something the user typed -- recording it into history
+// would corrupt ^J^R's command recall and the ^J^P PROGRAM list with a
+// string that doesn't start with a recognized program name if
+// resubmitted. run()'s SECOND argument lets a caller record something
+// different from what actually executed.
+TEST_CASE_FIXTURE(Fixture, "run: records recordedCommand (not command) into history, when given") {
+  CHECK(mode.run("cd /tmp && echo hi", "echo hi") == 0);
+  const auto &entries = history.recentEntries(RingCategory::ShellCommand);
+  REQUIRE_FALSE(entries.empty());
+  CHECK(entries.back() == "echo hi");
+}
+
+TEST_CASE_FIXTURE(Fixture, "run: falls back to recording command itself when recordedCommand is omitted") {
+  mode.run("exit 0");
+  const auto &entries = history.recentEntries(RingCategory::ShellCommand);
+  REQUIRE_FALSE(entries.empty());
+  CHECK(entries.back() == "exit 0");
+}

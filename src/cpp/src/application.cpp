@@ -3337,10 +3337,48 @@ bool Application::startManList() {
 // Ported from m_prog()'s M_prog/M_prog2 entry (see class comment for
 // why, unlike GREP/CUT/MAN, this never switches ApplicationMode at
 // all -- it runs a foreground command and returns to whatever was
-// already showing). Like MAN, always reachable and always starts
-// with an empty prompt.
+// already showing).
+//
+// 2026-08-17 fix (docs/ideas/IDEAS.md:218, a NEW feature -- legacy
+// never had this, confirmed by the user directly: "IDEAS.mdだから旧
+// では動かない"): a real report + hand-drawn mockup (=cb, "お手本は
+// 手入力なので念のため" -- the reference was typed by hand, not a real
+// screenshot of working legacy or C++ behavior) specified that ^Jp
+// should pre-fill the prompt with the highlighted/open file's own
+// BARE filename, cursor on the FIRST character, so typing a program
+// name ("less ") prepends naturally into "less CLAUDE.md" rather than
+// requiring the file's full path to be typed by hand. Previously
+// always started with an empty prompt regardless of context, which is
+// what this now falls back to whenever no file context exists (e.g.
+// invoked from a screen with no current file). sourceFile mirrors
+// goToFileSelector()'s own currentMode_ branches (Directory's
+// selectedEntry, File/Cut/CutContent's fileMode_.currentFile()) --
+// deliberately narrower than that function's full set (ListBrowser/
+// Locate) since those weren't part of what was tested/requested here.
 bool Application::startProgramPrompt() {
-  activatePrompt(PromptKind::ProgramCommand, "");
+  std::string sourceFile;
+  if (currentMode_ == ApplicationMode::Directory) {
+    const DirectoryEntry *entry = directoryMode_.selectedEntry();
+    if (entry && !entry->isDirectory) {
+      sourceFile = directoryMode_.currentDirectory();
+      if (!sourceFile.empty() && sourceFile.back() != '/') sourceFile += '/';
+      sourceFile += entry->name;
+    }
+  } else if (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut ||
+             currentMode_ == ApplicationMode::CutContent) {
+    sourceFile = fileMode_.currentFile();
+  }
+
+  std::string seed;
+  bool cursorAtStart = false;
+  programPromptDirectory_.clear();
+  if (!sourceFile.empty()) {
+    std::filesystem::path path(sourceFile);
+    programPromptDirectory_ = path.parent_path().string();
+    seed = path.filename().string();
+    cursorAtStart = true;
+  }
+  activatePrompt(PromptKind::ProgramCommand, seed, "", cursorAtStart);
   return true;
 }
 
@@ -4103,7 +4141,8 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   promptEditor_.setField(row, labelWidth, editableWidth);
 }
 
-void Application::activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText) {
+void Application::activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText,
+                                  bool cursorAtStart) {
   promptKind_ = kind;
   // See feedPromptByte()'s own ^N/^P handling -- a non-empty
   // positionText is passed ONLY by feedRegexListByte()'s edit-
@@ -4114,6 +4153,7 @@ void Application::activatePrompt(PromptKind kind, const std::string &initialText
   promptCandidateListActive_ = !positionText.empty();
   drawPromptLabel(kind, positionText);
   promptEditor_.setText(initialText);
+  if (cursorAtStart) promptEditor_.moveHome();
   promptEditor_.redraw();
 }
 
@@ -4272,7 +4312,29 @@ bool Application::executeProgram(const std::string &command) {
     return false;
   }
 
-  programMode_.run(command);
+  // 2026-08-17 addition: see programPromptDirectory_'s own declaration
+  // comment -- startProgramPrompt()'s bare-filename pre-fill (e.g.
+  // "CLAUDE.md") only resolves correctly if the actual child process
+  // is running FROM that file's own directory, which usilic's own
+  // process cwd never tracks. POSIX single-quote escaping (close the
+  // quote, emit an escaped literal quote, reopen) handles a directory
+  // path containing an embedded "'" correctly; a plain '<dir>' wrap
+  // alone already handles the far more common case (spaces).
+  std::string toRun = command;
+  if (!programPromptDirectory_.empty()) {
+    std::string quoted = "'";
+    for (char c : programPromptDirectory_) {
+      if (c == '\'')
+        quoted += "'\\''";
+      else
+        quoted += c;
+    }
+    quoted += "'";
+    toRun = "cd " + quoted + " && " + command;
+  }
+  programPromptDirectory_.clear();  // consumed exactly once, regardless of outcome
+
+  programMode_.run(toRun, command);
   activeView().redraw();
   return true;
 }

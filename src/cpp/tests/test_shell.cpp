@@ -1,4 +1,5 @@
 #include <poll.h>
+#include <cstdlib>
 
 #include "doctest.h"
 #include "recording_display.hpp"
@@ -14,6 +15,34 @@ namespace {
 void typeAscii(fm::LineEditor &e, const std::string &s) {
   for (unsigned char c : s) e.insertByte(c);
 }
+
+// RAII scoped $HOME override (2026-08-17 addition, for the '~'-
+// expansion tests below): setenv() mutates real PROCESS-WIDE
+// environment state that outlives the individual TEST_CASE it's
+// called from -- doctest runs every test case in the same process, so
+// an unrestored setenv("HOME", ...) here would leak into every OTHER
+// test that runs afterward and happens to touch $HOME (e.g. any
+// PathResolver/Application test resolving a "~"-prefixed path), a
+// real flaky-test regression caught by a `make test` run where an
+// unrelated activatePrompt test failed only when run as part of the
+// FULL suite (not in isolation) -- exactly the "ran after this one"
+// symptom of process-wide state leaking between test cases.
+struct ScopedHomeEnv {
+  std::string previous;
+  bool hadPrevious;
+  explicit ScopedHomeEnv(const std::string &value) {
+    const char *existing = std::getenv("HOME");
+    hadPrevious = existing != nullptr;
+    if (hadPrevious) previous = existing;
+    setenv("HOME", value.c_str(), 1);
+  }
+  ~ScopedHomeEnv() {
+    if (hadPrevious)
+      setenv("HOME", previous.c_str(), 1);
+    else
+      unsetenv("HOME");
+  }
+};
 
 // Polls a real, started Shell's pty until `predicate` is true or a
 // bounded number of attempts elapse -- used only by the real-pty
@@ -187,7 +216,7 @@ TEST_CASE("processOutputBytes: a bare '~' prompt directory (cwd == $HOME) is exp
   options.programName = "prog";
   Shell shell(d, options);
 
-  setenv("HOME", "/Users/testuser", 1);
+  ScopedHomeEnv homeOverride("/Users/testuser");
   shell.processOutputBytes("<M>prog:~% <M>");
   CHECK(shell.currentDirectory() == "/Users/testuser");
 }
@@ -200,7 +229,7 @@ TEST_CASE("processOutputBytes: a '~/subdir' prompt directory is expanded to the 
   options.programName = "prog";
   Shell shell(d, options);
 
-  setenv("HOME", "/Users/testuser", 1);
+  ScopedHomeEnv homeOverride("/Users/testuser");
   shell.processOutputBytes("<M>prog:~/git/usilic% <M>");
   CHECK(shell.currentDirectory() == "/Users/testuser/git/usilic");
 }

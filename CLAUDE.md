@@ -17348,6 +17348,77 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      再実行し、修正前は`CLA`のまま無反応だったのが、修正後は生バイト列
      レベルで`less CLAUDE.md`まで正しく補完されることを直接確認した。
 
+319. **2026-08-17(続き): 新PROGRAM①は「直っていない」との訂正を受け実装
+    ―― `^Jp`がハイライト中ファイルの裸のファイル名を自動挿入・カーソルを
+    先頭に置く、という手描きモックアップ(=cb)通りの新機能を実装。
+    副次的に`ProgramMode::run()`のhistory記録分離、および前回追加した
+    テスト自身のグローバル環境変数汚染(`setenv`未復元によるflaky test)
+    も発見・修正**
+   - **前回の誤り**: 項目318で「新PROGRAM①は既にC++版で正しく動作
+     している」と回答したが、これはユーザー提供のスクリーンショット
+     (=bx/=ca)だけを見て推測した誤った結論だった。ユーザーから
+     「=caは手入力で作った参考画面であり、実際に自動化された動作の
+     証拠ではない」旨の訂正(「お手本は手入力なので念のため」)を受けた。
+     実際には`startProgramPrompt()`は常に空プロンプトで始まる実装
+     のままで、①は未着手だった。
+   - **手描きモックアップ=cbが示す仕様**: `^Jp`の時点でハイライト中
+     ファイルの裸のファイル名(例:「CLAUDE.md」)が既にプロンプトへ
+     挿入されており、カーソルは先頭の「C」の位置。ここからユーザーが
+     「less 」と入力すると先頭に挿入され「less CLAUDE.md」という
+     コマンドが自然に組み上がる、という設計。IDEAS.md:218自体はlegacy
+     Cで見つかった不具合だが、この具体的なUI(裸のファイル名を可視状態
+     で挿入)はlegacyには存在しない完全新規機能とユーザー自身が明言
+     (「これらはIDEAS.mdだから旧では動かない」)。
+   - **実装**:
+     - `Application::activatePrompt()`に`cursorAtStart`引数を追加
+       (デフォルト`false`、既存呼び出し元は無影響)。`true`のとき
+       `setText()`直後に`promptEditor_.moveHome()`を呼ぶ。
+     - `startProgramPrompt()`を拡張。`goToFileSelector()`と同様の
+       `currentMode_`分岐(Directoryの`selectedEntry()`、File/Cut/
+       CutContentの`fileMode_.currentFile()`)で対象ファイルを特定し、
+       見つかった場合は裸のファイル名をシードテキストにし
+       `cursorAtStart=true`で開く。見つからない場合(ディレクトリが
+       ハイライトされている等)は従来通り空プロンプト。
+     - **実行時のパス解決**: usilicは自身が一度も`chdir()`しない設計
+       (`executePathInput()`の既存コメント参照)のため、裸のファイル名
+       のままでは実行時に見つからない。新設した`programPromptDirectory_`
+       (対象ファイルの親ディレクトリ)を`executeProgram()`で
+       `cd '<dir>' && <command>`という形にラップしてから
+       `programMode_.run()`へ渡すよう修正(ディレクトリパス中の`'`は
+       POSIX標準の`'\''`で正しくエスケープ)。
+     - **history汚染の回避**: `cd`でラップした文字列をそのまま
+       `RingCategory::ShellCommand`へ記録すると、`^J^R`のコマンド
+       再実行や`^J^P`のPROGRAM一覧に汚い内部実装の文字列が漏れて
+       しまう(再実行しても`cd`が認識されたPROGRAM名でないため失敗
+       する)。`ProgramMode::run()`に`recordedCommand`引数を追加し、
+       実行するコマンド(ラップ済み)と記録するコマンド(ユーザーが
+       実際にタイプした素の文字列)を分離。
+   - **回帰的に発見・修正した既存テストの汚染(2件)**:
+     - `test_application.cpp`の「PROGRAM: works from File mode too」が
+       `feedText("echo hi")`のあとに新しい自動挿入と衝突し、実際には
+       「echo hiplain.txt」という無意味なコマンドが組み立てられていた
+       (`make test`実行時に「hiplain.txt」という余計な標準出力として
+       発覚)。テスト自体を新仕様に合わせて修正(`"echo "`の末尾スペース
+       を明示、期待値を`"echo plain.txt"`に更新)。
+     - 前回(項目318)追加した`test_shell.cpp`の`~`展開テスト2件が
+       `setenv("HOME", ...)`をテスト終了時に復元しておらず、doctest
+       が全テストを同一プロセス内で実行するため、後続の無関係な
+       テスト(`activatePrompt`関連)へ`$HOME`汚染が漏れ、フルスイート
+       実行時のみ再現するflaky failureとして発覚(単体実行では
+       再現しない、という典型的な兆候で気付いた)。`ScopedHomeEnv`
+       というRAIIガードを新設し、両テストで使うよう修正。
+   - **検証**: `make test`(743/743件、新規5件:プレフィル+カーソル
+     位置の確認、ディレクトリハイライト時は従来通り空、`echo $(cat
+     ...)`によるcd解決の実side-effect確認、`recordedCommand`分離の
+     確認2件)。`make usilic`クリーンビルド確認済み。フルスイートを
+     連続3回実行しflaky failureが再発しないことを確認。PTYで=cbの
+     手順(`^Jp`→「CLAUDE.md」が既に挿入されカーソルは先頭→「less 」
+     入力→「less CLAUDE.md」に組み上がる)を生バイト列レベルで確認、
+     さらに隔離した`HOME`に`PROGRAM\n less\n`を仕込んだ完全な
+     end-to-end PTY検証で、`less`が実際にalt-screenへ入りCLAUDE.mdの
+     実内容を表示することも確認した(=ca相当の結果が本当に自動で
+     再現することの直接証拠)。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

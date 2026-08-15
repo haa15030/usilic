@@ -1502,6 +1502,18 @@ class Application {
   // Directory mode, but the filename when entering from File mode,
   // NOT always "current directory" as this port first assumed.
   std::string shellReturnName_;
+  // Set by startProgramPrompt() (^Jp) when it pre-fills the prompt with
+  // a highlighted/open file's own BARE filename (see its own comment):
+  // the file's containing directory, so executeProgram() can `cd` there
+  // before running the command -- usilic itself never chdir()s (see
+  // executePathInput()'s own comment on why), so a bare filename typed
+  // alongside a program name (e.g. "less CLAUDE.md") would otherwise
+  // resolve against whatever directory the process happened to launch
+  // in, not wherever the user is actually browsing. Empty when
+  // startProgramPrompt() found no file context (falls back to the
+  // pre-existing behavior: an empty prompt, no `cd` prefix). Consumed
+  // (cleared) by executeProgram() exactly once per submission.
+  std::string programPromptDirectory_;
   ApplicationMode listBrowserReturnMode_ = ApplicationMode::Directory;
   RingCategory listBrowserCategory_ = RingCategory::RecentDirectory;
   // See ToggleHistoryView's own comment. Reset to false every fresh
@@ -1633,7 +1645,16 @@ class Application {
   // activatePrompt() call site (plain FGREP/MAN/LOCATE/.../ArchiveDestination
   // prompts, none of which originate from a numbered list) leaves it
   // at the default.
-  void activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText = "");
+  // cursorAtStart (2026-08-17 addition, PROGRAM's own IDEAS.md:218 fix):
+  // when true, positions the cursor at the very BEGINNING of
+  // `initialText` instead of setText()'s own default (the end) -- for
+  // startProgramPrompt()'s own "CLAUDE.md" pre-fill, where the cursor
+  // needs to sit on the FIRST character so typing a program name
+  // ("less ") prepends naturally, forming "less CLAUDE.md". Every
+  // existing call site leaves this at its default (false, unchanged
+  // end-of-text cursor placement).
+  void activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText = "",
+                       bool cursorAtStart = false);
   // The label text shown for each PromptKind -- ported from legacy's
   // own s_P(P_mode)[...] mode-name strings (disp_window()'s mode-
   // line[1] "name" field, e.g. " EXIT", " FGREP") for the ordinary
