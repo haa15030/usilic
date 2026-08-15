@@ -413,7 +413,7 @@ TEST_CASE("setModeLineFieldsProvider: an overflowing trailing is dropped (not tr
 // a direct user request: "戻り値も検索一覧同様「/Applications/Adobe
 // Acrob...source/.../HKSCS.txt」形式で", i.e. the same head-and-tail
 // convention LOCATE's own results-list rows already use.
-TEST_CASE("setModeLineFieldsProvider: trailing2MiddleEllipsis=true middle-ellipsis truncates "
+TEST_CASE("setModeLineFieldsProvider: trailing2Kind=PathMiddle middle-ellipsis truncates "
           "(head...tail), not drops, when trailing still fits alongside it") {
   RecordingDisplay d(10, 40);  // 40 columns
   ContentView v(d);
@@ -424,7 +424,7 @@ TEST_CASE("setModeLineFieldsProvider: trailing2MiddleEllipsis=true middle-ellips
   // it well over 40. trailing ("283", short) stays; trailing2 gets
   // truncated to whatever's left. 2026-08-15 update: this convention
   // turned out to be LOCATE-specific (see the next test) -- opted
-  // into here via trailing2MiddleEllipsis=true, matching FileMode's
+  // into here via trailing2Kind=PathMiddle, matching FileMode's
   // own provider when reached via LOCATE.
   //
   // 2026-08-16 update: middleEllipsisTruncate()'s own head/tail split
@@ -442,7 +442,7 @@ TEST_CASE("setModeLineFieldsProvider: trailing2MiddleEllipsis=true middle-ellips
             "/very/long/path/that/does/not/fit/at/all/HKSCS.txt",
             /*trailingPlain=*/false,
             /*trailing2RightJustified=*/false,
-            /*trailing2MiddleEllipsis=*/true};
+            /*trailing2Kind=*/ContentView::TrailingKind::PathMiddle};
   });
   std::string text = v.modeLineText();
   CHECK(text.find("283") != std::string::npos);          // the byte count survived
@@ -453,12 +453,12 @@ TEST_CASE("setModeLineFieldsProvider: trailing2MiddleEllipsis=true middle-ellips
   CHECK(text.substr(text.size() - 4) == ".txt");           // the tail (filename suffix) is kept visible too
 }
 
-// 2026-08-15 addition: the DEFAULT (trailing2MiddleEllipsis left
-// unset/false) is tail-only "..." + up to 16 characters -- a direct
+// 2026-08-15 addition: the DEFAULT (trailing2Kind left unset, i.e.
+// QueryEcho) is tail-only "..." + up to 16 characters -- a direct
 // user policy statement: "なおLOCATE以外では、右下端の戻り値が長す
 // ぎる場合「...16文字」でよろしく". Every provider OTHER than
 // FileMode-reached-via-LOCATE relies on this default.
-TEST_CASE("setModeLineFieldsProvider: trailing2MiddleEllipsis left at its default (false) "
+TEST_CASE("setModeLineFieldsProvider: trailing2Kind left at its default (QueryEcho) "
           "truncates tail-only, \"...\" + up to 16 characters") {
   RecordingDisplay d(10, 40);
   ContentView v(d);

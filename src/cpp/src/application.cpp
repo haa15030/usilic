@@ -414,11 +414,26 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                 /*rightWatermark=*/"", trailing2, /*trailingPlain=*/true, /*trailing2RightJustified=*/true};
       }
       return {"HISTORY", trailing, /*fillTrailingToEdge=*/false,
-              /*rightWatermark=*/promptLabelText(*promptHistoryRecallKind_), /*trailing2=*/""};
+              /*rightWatermark=*/promptLabelText(*promptHistoryRecallKind_), /*trailing2=*/"",
+              /*trailingPlain=*/false, /*trailing2RightJustified=*/false,
+              /*trailing2Kind=*/ContentView::TrailingKind::QueryEcho,
+              /*trailingKind=*/ContentView::TrailingKind::PathMiddle};
     }
     std::string name = listBrowserChronological_ ? "HISTORY" : ringCategoryLabel(listBrowserCategory_);
+    // trailingKind=PathMiddle (2026-08-17 fix, =bw): this `trailing` is
+    // the highlighted FILE/DIR/COMMAND item itself -- a full absolute
+    // path (or a shell command, whose tail also tends to matter most)
+    // that can easily exceed the terminal width. Before TrailingKind
+    // existed, `trailing` had no truncation option at all, so a real
+    // reproduction (^J^L→search→open a LOCATE result→^X^F) found it
+    // vanishing ENTIRELY (mode line fell back to bare "FILE 1/1 END",
+    // no path at all) instead of eliding like every other long field
+    // already does.
     return {name, trailing, /*fillTrailingToEdge=*/false,
-            /*rightWatermark=*/"", /*trailing2=*/""};
+            /*rightWatermark=*/"", /*trailing2=*/"",
+            /*trailingPlain=*/false, /*trailing2RightJustified=*/false,
+            /*trailing2Kind=*/ContentView::TrailingKind::QueryEcho,
+            /*trailingKind=*/ContentView::TrailingKind::PathMiddle};
   });
   // 2026-08-13 fix: a real report -- an empty history ring (e.g. a
   // fresh install's very first ^J^L/^Jm/etc, or a real ^R with nothing
@@ -571,8 +586,9 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     std::string trailing = program.empty() ? "" : "(" + program + ")";
     std::string trailing2 = (grepReturnMode_ == ApplicationMode::Directory) ? directoryMode_.currentDirectory() : "";
     // trailing2 here is a PATH (the directory the search ran from), not
-    // a typed search string -- see ModeLineFields::trailing2FullWidthTail's
-    // own comment for why paths opt out of the 16-char tail cap.
+    // a typed search string -- see ContentView::TrailingKind's own
+    // comment for why paths (Path) opt out of QueryEcho's 16-char tail
+    // cap.
     return {name,
             trailing,
             /*fillTrailingToEdge=*/!trailing2.empty(),
@@ -580,8 +596,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
             trailing2,
             /*trailingPlain=*/false,
             /*trailing2RightJustified=*/false,
-            /*trailing2MiddleEllipsis=*/false,
-            /*trailing2FullWidthTail=*/true};
+            /*trailing2Kind=*/ContentView::TrailingKind::Path};
   });
   // grepView_'s own empty-result placeholder ("<pattern>: No String",
   // "No String" underlined -- see ContentView::setEmptyPlaceholder()'s
@@ -685,8 +700,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     const ArchiveEntry *entry = archiveMode_.selectedEntry();
     if (!entry) return {};
     // trailing2 here is the archive's own PATH, not a typed search
-    // string -- see ModeLineFields::trailing2FullWidthTail's own
-    // comment for why paths opt out of the 16-char tail cap.
+    // string -- see ContentView::TrailingKind's own comment for why
+    // paths (Path) opt out of QueryEcho's 16-char tail cap.
     return {entry->name,
             std::to_string(contentByteCount(archiveContentView_)),
             /*fillTrailingToEdge=*/true,
@@ -694,8 +709,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
             archiveMode_.currentArchive(),
             /*trailingPlain=*/false,
             /*trailing2RightJustified=*/false,
-            /*trailing2MiddleEllipsis=*/false,
-            /*trailing2FullWidthTail=*/true};
+            /*trailing2Kind=*/ContentView::TrailingKind::Path};
   });
 
   // usilicrc's own GREP section (2026-08-05 fix): a real CUI screenshot

@@ -61,10 +61,13 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     // File mode's trailing field is legacy's padded-to-edge style, see
     // ModeLineFields::fillTrailingToEdge's own comment. No
     // rightWatermark here -- see its own comment on why File mode
-    // never shows it. trailing2MiddleEllipsis=true only when reached
-    // via LOCATE (searchOriginLabel_ set) -- see ModeLineFields::
-    // trailing2MiddleEllipsis's own comment for why this is the one
-    // exception to every other provider's tail-only truncation.
+    // never shows it. trailing2Kind=PathMiddle only when reached via
+    // LOCATE (searchOriginLabel_ set) -- see ContentView::TrailingKind's
+    // own comment for why this is the one exception to every other
+    // provider's tail-only truncation; the not-via-LOCATE case
+    // (trailing2 = the containing directory PATH, not a typed search
+    // string) uses Path instead, for the full available width rather
+    // than QueryEcho's fixed 16-char tail cap.
     return {name,
             trailing,
             /*fillTrailingToEdge=*/true,
@@ -72,13 +75,8 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
             trailing2,
             /*trailingPlain=*/false,
             /*trailing2RightJustified=*/false,
-            /*trailing2MiddleEllipsis=*/!searchOriginLabel_.empty(),
-            // Not-via-LOCATE case: trailing2 is the containing directory
-            // PATH, not a typed search string -- see
-            // trailing2FullWidthTail's own comment for why paths get the
-            // full available width instead of legacy's fixed 16-char
-            // tail cap.
-            /*trailing2FullWidthTail=*/searchOriginLabel_.empty()};
+            /*trailing2Kind=*/searchOriginLabel_.empty() ? ContentView::TrailingKind::Path
+                                                          : ContentView::TrailingKind::PathMiddle};
   });
 }
 

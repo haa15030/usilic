@@ -17183,6 +17183,70 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      バイナリでも実機で再現するかどうかは、ユーザーによる実機再確認
      待ち。
 
+316. **2026-08-17(続き): `ModeLineFields`の`trailing`/`trailing2`を
+    `TrailingKind`という共有enumへ広範囲リファクタリング。当初想定
+    (trailing2専用の5bool→1enum)より対象を広げ、`trailing`自体にも
+    切り詰め機構を新設して=bwを実際に解消**
+   - **事前の副作用調査(=bw再現・原因特定)**: 「広いスコープで進めた
+     場合、副作用は発生しそう？」との質問に答えるため、まず=bw
+     (`^J^L`検索→LOCATE結果を開く→`^X^F`でモードライン不良)をPTYで
+     再現し、真因を特定した。`items_`/`lines_`の状態同期は問題無く
+     (状態破損系ではない)、真因は`fitModeLineFields()`の幅調整
+     ロジックにあった: `name`/`trailing2`には既に切り詰め処理
+     (`withTruncatedTrailing2()`)があるが、`trailing`(このケースでは
+     `listBrowserView_`の候補一覧のハイライト中アイテム＝フルパス)
+     には切り詰め処理が一切無く、全か無かの4段階判定でも収まらない
+     場合は丸ごと消えていた。この時点でユーザーに「当初の狭いスコープ
+     (trailing2の5bool→1enumのみ)ではまだ=bwは直らない、trailingにも
+     広げれば直る」と報告し、広いスコープでの続行と着手の許可
+     ("広いスコープで進めてもらってもかまわない…さっそく着手して")
+     を得た。
+   - **設計**: `enum class TrailingKind { Tag, QueryEcho, Path,
+     PathMiddle }`を新設(`content_view.hpp`)。Tag=切り詰め無し
+     (`trailingKind`のデフォルト、全既存プロバイダの現状維持)、
+     QueryEcho=末尾のみ「...」+16文字上限(`trailing2Kind`のデフォルト、
+     旧`trailing2MiddleEllipsis=false`相当)、Path=末尾のみ「...」で
+     上限無し(旧`trailing2FullWidthTail=true`相当)、PathMiddle=
+     Finder風の中央省略(旧`trailing2MiddleEllipsis=true`相当)。
+     `trailing2MiddleEllipsis`/`trailing2FullWidthTail`の2boolを
+     `trailing2Kind`1つに統合し、新設の`trailingKind`を追加。
+     構造体のフィールド順は1〜7番目(name/trailing/fillTrailingToEdge/
+     rightWatermark/trailing2/trailingPlain/trailing2RightJustified)を
+     一切変更せず、旧8/9番目(2つのbool)だけを新8/9番目
+     (`trailing2Kind`/`trailingKind`)に置き換えたため、7番目までしか
+     指定していない大半のプロバイダ(13箇所中10箇所)は無改修で済んだ。
+     `withTruncatedTrailing2()`を`withTruncatedFields()`へ改名し、
+     `truncateFieldByKind()`という共有ヘルパーを新設(`trailing`/
+     `trailing2`両方の切り詰めロジックを1箇所に集約、旧`trailing2`
+     専用の`truncate`ラムダはこのヘルパーへの委譲に置き換え)。
+     `trailing`の切り詰めは`trailingKind != Tag`のときのみ発火する
+     ため、既存の全プロバイダ(=bw修正対象の`listBrowserView_`以外)は
+     デフォルト値のまま完全に無改修・無影響。
+   - **=bw自体の修正**: `listBrowserView_`のプロバイダ(FILE/DIR/
+     COMMAND等の候補一覧、`^X^F`/`^X^D`/`^J^R`)の`trailing`(ハイライト
+     中アイテムの文字列)に`trailingKind=PathMiddle`を設定(通常branch・
+     `^R`のHISTORY branch双方)。長い絶対パスや長いコマンド文字列が
+     画面幅を超えても、Finder風の中央省略で表示されるようになった
+     (直接entry=regex候補一覧のライブプレビューbranchは対象外のまま、
+     既存の「収まらなければ丸ごと落とす」設計を維持)。
+   - **検証**: `make test` 734/734件全通過(=bwを直接再現する新規
+     integration test 1件を`test_application.cpp`に追加、
+     `test_content_view.cpp`の既存2件をenum名に追随)。`make usilic`
+     クリーンビルド確認済み。PTYで=bwの元の再現手順
+     (`^J^L`→`.txt`→検索→結果を開く→`^X^F`)を再実行し、修正前は
+     `FILE 1/1 END`(パス無し)だったのが、修正後は`FILE 1/1 END
+     /Applications/ABBYY FineReader f...Libraries/BDF_Driver_
+     License.txt`と、頭と末尾を残した中央省略で正しく表示される
+     ことを直接確認した。
+   - **今回のスコープに含めなかったもの**: `fillTrailingToEdge`/
+     `trailingPlain`/`trailing2RightJustified`の3boolは今回も残した
+     (それぞれ「エッジまで空白パディングするか」「反転させず素の
+     テキストにするか」「右詰めにするか」という、`TrailingKind`の
+     意味的分類とは独立した表示軸であり、無理に1つのenumへ畳み込むと
+     現状の柔軟性を失うと判断)。5bool→1boolまでは削減できなかったが、
+     切り詰めスタイルの2bool→1enumへの統合と、trailingへの切り詰め
+     機構の新設という、実際にバグ(=bw)を解消する変更は達成できた。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

@@ -495,6 +495,44 @@ class ContentView {
   //               that sets this. Drawn only if it fits alongside
   //               whatever's already been drawn (dropped, not
   //               truncated, same overflow policy as name/trailing).
+  // Semantic kind for `trailing`/`trailing2`, replacing the old
+  // trailing2MiddleEllipsis/trailing2FullWidthTail bool pair AND adding
+  // a truncation option for `trailing` itself (which previously had
+  // NONE -- see the 2026-08-17 fix below for why that was a real gap,
+  // not just cosmetic tidying). A real user question ("黒箱にはなって
+  // ないのか") pointed out the 5-independent-bool design made it easy
+  // for a new provider to forget the right combination; this collapses
+  // the two truncation-STYLE bools into one enum shared by both fields
+  // instead of duplicating a second bool pair for `trailing` too.
+  //   Tag        -- short, fixed text (a static label like "(fgrep)",
+  //                 a byte count, a filename): never truncated by this
+  //                 class -- shown in full or dropped entirely by
+  //                 fitModeLineFields()'s own tiers, exactly like every
+  //                 provider's `trailing` behaved before this enum
+  //                 existed. The default for `trailingKind`, so every
+  //                 existing provider is unaffected until it opts in.
+  //   QueryEcho  -- a typed search pattern/query, whose own preview
+  //                 area is fixed-width by convention regardless of
+  //                 terminal size (confirmed by direct user policy:
+  //                 "戻り値が長くて「...16文字」になるのは、文字列入力
+  //                 の場合のみ"): tail-only "..." + up to 16 characters.
+  //                 The default for `trailing2Kind`, matching every
+  //                 existing provider's un-opted-in trailing2 behavior.
+  //   Path       -- a full filesystem path (or similar long text) with
+  //                 no natural fixed width: tail-only "..." using
+  //                 whatever budget is actually available, no 16-char
+  //                 cap (FileMode's own containing-directory trailing2,
+  //                 ArchiveContent's own archive-path trailing2).
+  //   PathMiddle -- a full absolute path where the HEAD also carries
+  //                 real information, not just the tail (FileMode's own
+  //                 trailing2 when reached via LOCATE; 2026-08-17
+  //                 addition: also `trailing` for listBrowserView_'s
+  //                 own FILE/DIR/COMMAND picker, see its own provider's
+  //                 comment): Finder-style middle-ellipsis (head...tail,
+  //                 the SAME convention LOCATE's own results-list rows
+  //                 already use, see middleEllipsisTruncate()).
+  enum class TrailingKind { Tag, QueryEcho, Path, PathMiddle };
+
   struct ModeLineFields {
     std::string name;
     std::string trailing;
@@ -543,7 +581,7 @@ class ContentView {
     // behavior) via the same aggregate-init fallback trailingPlain
     // above already relies on.
     bool trailing2RightJustified = false;
-    // Selects HOW withTruncatedTrailing2() elides an overflowing
+    // Selects HOW withTruncatedFields() elides an overflowing
     // trailing2: false (the default) truncates tail-only, "..." + up
     // to the last 16 characters -- the SAME convention
     // truncatedTrailingPath() already established for the destination-
@@ -556,25 +594,28 @@ class ContentView {
     // instead, since a full absolute path's HEAD carries real
     // information too, unlike a short search pattern/query where only
     // the tail ever mattered.
-    bool trailing2MiddleEllipsis = false;
-    // 2026-08-16 fix: the tail-16-char cap above turned out to be
-    // scoped too broadly. A direct user correction clarified the "..."
-    // +16 policy was only ever meant for genuine STRING INPUT echoes
-    // (a typed search pattern/query, whose OWN preview area is fixed-
-    // width by convention regardless of terminal size -- e.g.
-    // DirectoryMode's searchAnnotation_, "FGREP: <pattern>"):
-    // "モードラインの戻り値が長くて「...16文字」になるのは、文字列
-    // 入力（←エリア長が不変）の場合のみ". A PATH shown in trailing2
-    // (FileMode's own containing directory, GrepMode's search-origin
-    // directory, ArchiveContent's own archive path) has no such fixed
-    // "natural" width -- legacy's own disp_window() just uses however
-    // much of the row is actually left (confirmed against a real CUI
-    // screenshot, =bl, showing a far-longer-than-16-char tail). true
-    // opts a PATH-shaped trailing2 out of the 16 cap, using the full
-    // available budget instead (still tail-only "...", not middle-
-    // ellipsis -- that distinction is trailing2MiddleEllipsis's own,
-    // orthogonal axis).
-    bool trailing2FullWidthTail = false;
+    //
+    // 2026-08-17 refactor: this field and the old trailing2FullWidthTail
+    // bool that used to follow it were collapsed into one `trailing2Kind`
+    // (TrailingKind, see its own comment above) shared with the NEW
+    // `trailingKind` field further down -- a direct user question ("黒箱
+    // にはなってないのか") plus a real reproduction (=bw: listBrowserView_'s
+    // own FILE-picker trailing, a long absolute path, vanished ENTIRELY
+    // instead of truncating, because `trailing` had no truncation option
+    // AT ALL before this) prompted widening this from "just merge two
+    // trailing2-only bools" to "give trailing2's own truncation styles to
+    // `trailing` too". Field position kept stable (trailing2Kind occupies
+    // the SAME 8th slot trailing2MiddleEllipsis used to) so every existing
+    // positional-aggregate-init call site that only specifies up to field
+    // 7 (trailing2RightJustified) is untouched by this change.
+    TrailingKind trailing2Kind = TrailingKind::QueryEcho;
+    // Opts `trailing` itself into the SAME truncation treatment
+    // trailing2Kind gives trailing2, instead of the historical "shown in
+    // full or dropped entirely" behavior every provider had before this
+    // field existed (Tag, the default, preserves that historical
+    // behavior exactly). See TrailingKind's own comment; PathMiddle is
+    // listBrowserView_'s own FILE/DIR/COMMAND picker fix (=bw).
+    TrailingKind trailingKind = TrailingKind::Tag;
   };
 
   // Supplies this view's ModeLineFields, recomputed every time the
@@ -669,7 +710,19 @@ class ContentView {
   // name at all regardless of width. Kept in this same function
   // (despite the name no longer being only about trailing2) since it's
   // still the one shared funnel point every render path already calls.
-  ModeLineFields withTruncatedTrailing2(ModeLineFields fields, const std::string &positionText) const;
+  ModeLineFields withTruncatedFields(ModeLineFields fields, const std::string &positionText) const;
+
+  // Shared by withTruncatedFields()'s own `trailing` and `trailing2`
+  // elision (2026-08-17 addition, see TrailingKind's own comment):
+  // returns `text` unchanged if it already fits in `budget`, "" if
+  // there's no room even for "..."+1 char, otherwise elides it per
+  // `kind` -- PathMiddle uses Finder-style middle-ellipsis
+  // (middleEllipsisTruncate()), Path/QueryEcho use tail-only "...",
+  // QueryEcho additionally capped at 16 characters regardless of how
+  // much budget is actually available (see TrailingKind's own comment
+  // for why). Never called with kind == Tag (callers gate on that
+  // themselves, since Tag means "don't call this at all").
+  std::string truncateFieldByKind(const std::string &text, TrailingKind kind, int budget) const;
 
   // Assembles "name positionText trailing" (see fitModeLineFields())
   // into one plain string, for callers that don't render field-by-

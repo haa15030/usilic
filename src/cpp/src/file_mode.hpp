@@ -116,7 +116,7 @@ class FileMode {
   // 戻り値、モード名は「LOCATE」で" clarified that the search's own
   // label belongs in the NAME slot here, not prefixed onto detail).
   // `detail` becomes trailing2 verbatim (Finder-style middle-ellipsis
-  // truncated to fit -- see ContentView::withTruncatedTrailing2()'s
+  // truncated to fit -- see ContentView::withTruncatedFields()'s
   // own comment -- matching a direct user request: "戻り値も検索一覧
   // 同様「/Applications/Adobe Acrob...source/.../HKSCS.txt」形式で"
   // -- the SAME truncation convention LOCATE's own results-list rows

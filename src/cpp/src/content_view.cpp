@@ -653,7 +653,7 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
     segments.push_back({positionText, true});
     return segments;
   }
-  ModeLineFields fields = withTruncatedTrailing2(modeLineFieldsProvider_(cursorIndex_), positionText);
+  ModeLineFields fields = withTruncatedFields(modeLineFieldsProvider_(cursorIndex_), positionText);
   FieldFit fit = fitModeLineFields(fields, positionText);
   int cols = display_.columns();
   int drawnLen = 0;
@@ -703,7 +703,16 @@ void ContentView::setModeLineFieldsProvider(ModeLineFieldsProvider provider) {
 
 void ContentView::setModeLineRow(std::optional<int> row) { modeLineRow_ = row; }
 
-ContentView::ModeLineFields ContentView::withTruncatedTrailing2(ModeLineFields fields,
+std::string ContentView::truncateFieldByKind(const std::string &text, TrailingKind kind, int budget) const {
+  if (budget <= 0) return "";
+  if (static_cast<int>(text.size()) <= budget) return text;
+  if (budget < 4) return "";  // no room even for "..." + one real character
+  if (kind == TrailingKind::PathMiddle) return middleEllipsisTruncate(text, budget);
+  int tailChars = kind == TrailingKind::QueryEcho ? std::min(16, budget - 3) : budget - 3;
+  return "..." + text.substr(text.size() - static_cast<std::size_t>(tailChars));
+}
+
+ContentView::ModeLineFields ContentView::withTruncatedFields(ModeLineFields fields,
                                                                   const std::string &positionText) const {
   int cols = display_.columns();
   if (cols <= 0) return fields;
@@ -798,6 +807,30 @@ ContentView::ModeLineFields ContentView::withTruncatedTrailing2(ModeLineFields f
                                        : fields.name.substr(0, static_cast<std::size_t>(positionBudget));
   }
 
+  // 2026-08-17 addition: truncate `trailing` itself when it opts into
+  // truncation (trailingKind != Tag), instead of leaving it entirely to
+  // fitModeLineFields()'s own all-or-nothing tiers below -- a real
+  // reproduction (=bw) found listBrowserView_'s own FILE/DIR/COMMAND
+  // picker `trailing` (a long absolute path, no trailing2 involved)
+  // vanishing ENTIRELY once it exceeded the column budget, because
+  // `trailing` had no truncation option at all before this (unlike
+  // `name`/`trailing2`, both truncated above/below). Every OTHER
+  // provider leaves trailingKind at its default (Tag), so this block is
+  // a no-op for them. Reserves room for trailing2 too (the same
+  // kReservableFieldLength heuristic name's own reservation above
+  // already uses) purely as a safety margin -- no current provider
+  // combines a truncatable `trailing` with a non-empty `trailing2`.
+  if (fields.trailingKind != TrailingKind::Tag && !fields.trailing.empty()) {
+    int base = static_cast<int>(positionText.size());
+    if (!fields.name.empty()) base += static_cast<int>(fields.name.size()) + 1;
+    int trailing2Reserved = 0;
+    if (!fields.trailing2.empty() && static_cast<int>(fields.trailing2.size()) <= kReservableFieldLength) {
+      trailing2Reserved = 1 + static_cast<int>(fields.trailing2.size());
+    }
+    int budget = cols - base - 1 - trailing2Reserved;
+    fields.trailing = truncateFieldByKind(fields.trailing, fields.trailingKind, budget);
+  }
+
   if (fields.trailing2.empty()) return fields;
   int base = static_cast<int>(positionText.size());
   if (!fields.name.empty()) base += static_cast<int>(fields.name.size()) + 1;
@@ -825,21 +858,19 @@ ContentView::ModeLineFields ContentView::withTruncatedTrailing2(ModeLineFields f
   // mode's own trailing2 (e.g. DirectoryMode::searchAnnotation_), which
   // a direct user policy statement clarified should stay tail-only:
   // "なおLOCATE以外では、右下端の戻り値が長すぎる場合「...16文字」で
-  // よろしく". Now gated on fields.trailing2MiddleEllipsis (see its own
-  // comment) -- FileMode's own LOCATE-origin case opts in explicitly;
-  // every other provider keeps the ORIGINAL tail-only behavior, capped
-  // at the SAME 16 characters truncatedTrailingPath() already
+  // よろしく". Now gated on fields.trailing2Kind (2026-08-17: was
+  // trailing2MiddleEllipsis, see TrailingKind's own comment) -- FileMode's
+  // own LOCATE-origin case opts in explicitly; every other provider
+  // keeps the ORIGINAL tail-only behavior (the QueryEcho default),
+  // capped at the SAME 16 characters truncatedTrailingPath() already
   // established elsewhere (but still budget-aware: never shows MORE
   // than what actually fits, unlike that helper's own fixed-width
   // version used where the string is pre-truncated before it ever
-  // reaches a ModeLineFields).
+  // reaches a ModeLineFields). Delegates to truncateFieldByKind() (see
+  // its own comment), the same helper the new `trailing`-truncation
+  // block above now shares.
   auto truncate = [&](int budget) -> std::string {
-    if (budget <= 0) return "";
-    if (trailing2Len <= budget) return fields.trailing2;
-    if (budget < 4) return "";  // no room even for "..." + one real character
-    if (fields.trailing2MiddleEllipsis) return middleEllipsisTruncate(fields.trailing2, budget);
-    int tailChars = fields.trailing2FullWidthTail ? budget - 3 : std::min(16, budget - 3);  // budget>=4 checked above
-    return "..." + fields.trailing2.substr(fields.trailing2.size() - static_cast<std::size_t>(tailChars));
+    return truncateFieldByKind(fields.trailing2, fields.trailing2Kind, budget);
   };
 
   if (trailing2Len <= budgetWithout && !fields.trailing.empty()) {
@@ -905,7 +936,7 @@ ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &field
 
 std::string ContentView::composeModeLineRow(const std::string &positionText) const {
   if (!modeLineFieldsProvider_) return positionText;
-  ModeLineFields fields = withTruncatedTrailing2(modeLineFieldsProvider_(cursorIndex_), positionText);
+  ModeLineFields fields = withTruncatedFields(modeLineFieldsProvider_(cursorIndex_), positionText);
   FieldFit fit = fitModeLineFields(fields, positionText);
 
   std::string row = positionText;
@@ -961,7 +992,7 @@ void ContentView::renderModeLine() {
     return;
   }
 
-  ModeLineFields fields = withTruncatedTrailing2(modeLineFieldsProvider_(cursorIndex_), positionText);
+  ModeLineFields fields = withTruncatedFields(modeLineFieldsProvider_(cursorIndex_), positionText);
   FieldFit fit = fitModeLineFields(fields, positionText);
   int cols = display_.columns();
 

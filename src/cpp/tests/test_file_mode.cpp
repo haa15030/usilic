@@ -238,7 +238,7 @@ TEST_CASE_FIXTURE(Fixture, "mode-line fields: directory trailing2 uses the full 
   // the row -- the 16-char cap was only ever meant for a typed search
   // STRING's own fixed-width preview area (DirectoryMode's
   // searchAnnotation_), not a PATH like this one. See
-  // ModeLineFields::trailing2FullWidthTail's own comment.
+  // ContentView::TrailingKind's own comment (trailing2Kind=Path).
   fs::path deep = root / "some" / "really" / "deeply" / "nested" / "Directory-x86_64-11.1.9.1039537" / "Libraries";
   fs::create_directories(deep);
   std::string path = (deep / "BDF_Driver_License.txt").string();

@@ -4740,6 +4740,29 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartFileHistory): reachable from OUTS
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }
 
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartFileHistory) mode line: a highlighted item whose OWN path is "
+                           "too long to fit is middle-ellipsis truncated, not dropped entirely (2026-08-17 "
+                           "fix, =bw: a real report + reproduction -- ^J^L search -> open a LOCATE result -> "
+                           "^X^F -- found the mode line falling back to bare \"FILE 1/1 END\" with the path "
+                           "gone, because `trailing` had no truncation option at all before TrailingKind "
+                           "existed, unlike name/trailing2)") {
+  std::string longPath =
+      "/Applications/Some Very Long Application Name/Contents/Frameworks/SomeFramework.framework/"
+      "Versions/A/Resources/deeply/nested/path/that/does/not/fit/at/all/target-file.txt";
+  history.pushRecent(RingCategory::RecentFile, longPath);
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  std::string modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.substr(0, 4) == "FILE");            // the category name still shows
+  std::size_t ellipsisPos = modeLine.find("...");
+  REQUIRE(ellipsisPos != std::string::npos);          // the path was truncated, not dropped
+  CHECK(modeLine.find("/Applications") != std::string::npos);  // the HEAD survived (middle-ellipsis, not tail-only)
+  CHECK(modeLine.substr(modeLine.size() - 9) == "-file.txt");  // the TAIL survived too
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^D (K-48) reuses ^R's own StartDirectoryHistory picker") {
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
