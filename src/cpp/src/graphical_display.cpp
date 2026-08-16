@@ -632,7 +632,24 @@ void GraphicalDisplay::renderCell(int row, int col) {
   SDL_Color bg = impl_->bg;
   if (cell.standout) std::swap(fg, bg);
 
-  if (cell.continuation || cell.glyph.empty() || cell.glyph == " ") return;
+  // A blank cell (empty/space glyph) still needs to fall through to
+  // the real TTF_RenderUTF8_Blended() call below when underlined --
+  // SDL_ttf draws the underline decoration spanning the glyph's own
+  // advance width independently of whether that glyph has any visible
+  // ink, so rendering " " with TTF_STYLE_UNDERLINE set genuinely does
+  // produce a surface containing just the underline stroke. Skipping
+  // this early-return ONLY for underlined blanks (not e.g. bold ones,
+  // where there's nothing bold about invisible ink to draw) keeps the
+  // original performance intent (most blank cells have nothing to
+  // render at all) while fixing a real gap: a real report + screenshot
+  // (=ci) found the space between "Invalid"/"mode" in DirectoryMode's
+  // own underlined error message (ModeLineFields::nameUnderlined) had
+  // NO underline under it in -g specifically, breaking what should
+  // read as one continuous line -- this early-return, unconditional
+  // for ANY blank cell regardless of attributes, was silently dropping
+  // it before ever reaching the underline-style code just below.
+  bool blank = cell.glyph.empty() || cell.glyph == " ";
+  if (cell.continuation || (blank && !cell.underline)) return;
 
   // Whether this glyph occupies one cell or two (a CJK/full-width
   // character, see commitGlyph()'s continuation-cell convention).
@@ -688,7 +705,15 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // hinting.
   TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE);
 
-  SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), fg);
+  // An EMPTY glyph string (as opposed to an actual " " space
+  // character) has zero advance width, so TTF_RenderUTF8_Blended()
+  // would produce a zero-width surface with nothing for the underline
+  // decoration to span even after the blank-cell early-return above
+  // was relaxed for underlined cells -- substitute a real space so
+  // there's an actual cell-width run for the underline to be drawn
+  // across.
+  const std::string &renderGlyph = cell.glyph.empty() ? std::string(" ") : cell.glyph;
+  SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, renderGlyph.c_str(), fg);
   if (!surface) return;
   if (!isWide) boostGlyphAlpha(surface, kNarrowGlyphAlphaGamma);
   SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
@@ -1098,7 +1123,19 @@ bool GraphicalDisplay::pumpEvents() {
           impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::Motion, event.motion.y});
         } else if (event.motion.state & SDL_BUTTON_LMASK) {
           impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
-        } else {
+        } else if (SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_FOCUS) {
+          // Gated on keyboard/input focus (NOT SDL_WINDOW_MOUSE_FOCUS,
+          // which would be true for ANY window the cursor happens to
+          // be over, active or not -- the whole point of this check).
+          // SDL delivers SDL_MOUSEMOTION for whichever window is under
+          // the cursor regardless of which window is actually active,
+          // unlike a real terminal's own SGR mouse reporting (which a
+          // background/unfocused terminal simply never receives at
+          // all). A real report + screenshot: "ウィンドウが非アクティブ
+          // （左上の赤黄緑がみな灰色）なのにマウスがウィンドウ内に入る
+          // とカーソルが追随" -- the cursor-follow highlight was
+          // tracking the mouse even while this window sat behind
+          // another, unfocused one.
           int col = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
           int row = std::max(0, event.motion.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
           impl_->hoverQueue.push_back(HoverEvent{row, col});

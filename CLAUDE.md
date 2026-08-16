@@ -17810,6 +17810,64 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ため、原因の推定・修正がロジック上正しいことの確認に留まる。
      ユーザーによる実機再確認待ち。
 
+330. **項目328/329の「Invalid mode」表示について、スクリーンショット
+    3枚(`=cg.png`/`=ch.png`/`=ci.png`)での指摘4点を修正**
+   - **報告**: 「エラーメッセージが出る前=cgと後=chとでモードラインが
+     違う。左端モード名だけを丸々消してメッセージを表示させたら？
+     ・-gではスペースの下にアンダーラインが無い=ci。
+     ・マウスカーソルが動いてもメッセージが消えない。
+     ・ウィンドウが非アクティブ(左上の赤黄緑がみな灰色)なのに
+     マウスがウィンドウ内に入るとカーソルが追随。」
+   - **①モードラインのフィールド欠落**: `DirectoryMode`の
+     `setModeLineFieldsProvider`が、`showEditError_`時に別途ほぼ
+     デフォルト値の`ModeLineFields`を新規に組み立てて返していたため、
+     `trailing`/`trailing2`/`rightWatermark`(`=ch.png`で消えていた
+     "1399 (ls)"や"usilic v1.5b")が丸ごと落ちていた。通常時と同じ
+     フィールドをまず計算し、`showEditError_`のときは`name`と
+     新設の`nameUnderlined`だけを上書きする方式に変更(`directory_
+     mode.cpp`)。
+   - **②`-g`でスペースの下にアンダーラインが無い**: `Graphical
+     Display::renderCell()`の空白グリフに対する早期returnが、
+     アンダーライン描画より前に効いてしまい、"Invalid mode"の
+     間の半角スペースだけアンダーラインが引かれていなかった
+     (`=ci.png`)。早期returnの条件を`cell.continuation ||
+     (blank && !cell.underline)`に変更し、さらに`TTF_RenderUTF8_
+     Blended()`へ渡すグリフが空文字列だと描画幅ゼロでアンダーライン
+     自体が生成されないため、空グリフのときは実体の半角スペース
+     文字を渡すよう変更(`graphical_display.cpp`)。ブロックカーソル
+     描画側の`renderCursor()`の同様のearly-returnは今回の報告対象
+     外のため未変更。
+   - **③マウスホバーでメッセージが消えない**: ホバーによるカーソル
+     移動は`handleCommand()`を経由しない(`applyHoverRowAndRedraw()`
+     が直接`cursorIndex_`等をいじる)独自経路のため、項目329で
+     `handleCommand()`先頭に置いた`clearEditError()`の対象外だった。
+     `-g`側(`runGuiPhase()`のプレーンホバー処理)、`-c`側(同じく
+     `mouse->motionOnly && !app.promptActive()`のホバー処理)の
+     両方の`applyHoverRowAndRedraw()`呼び出し直前に`app.directoryMode
+     ().clearEditError()`を追加(`main.cpp`)。`-c`側はユーザーからの
+     報告は無かったが、ホバーが実質的にキー操作と同じ「実操作」で
+     ある以上、放置すると同じ症状が`-c`でも起きる一貫性の問題と
+     判断し、あわせて修正。
+   - **④非アクティブウィンドウでもホバーが追随する**: SDL2の
+     `SDL_MOUSEMOTION`はウィンドウのフォーカス状態に関係なくカーソル
+     がウィンドウ内にあれば配信される仕様(キーボードフォーカスとは
+     独立)。`GraphicalDisplay::pumpEvents()`の`SDL_MOUSEMOTION`
+     処理に`SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_
+     FOCUS`のガードを追加し、非アクティブウィンドウではホバー
+     キューへの投入自体をスキップするよう変更(ドラッグ/コースト中
+     の既存分岐は変更無し)。
+   - **検証**: `make test` 747/747件・18233アサーション全通過。
+     `make usilic`クリーンビルド確認済み。①③はPTY自動テスト
+     (`pty.fork()`+`TIOCSWINSZ`、隔離した`HOME`)で`-c`相当の描画を
+     直接確認: エラー表示後も"1399 (ls)"/"usilic v1.5b"が残ること、
+     "Invalid mode"の12文字(スペース含む)全てにアンダーライン属性が
+     付くこと、次のコマンド(↓キー)でメッセージが消えて元のモード
+     ラインに戻ることをそれぞれバイト・属性レベルで確認。②④は
+     `GraphicalDisplay`(SDL2/Cocoa実描画)固有の修正であり、この
+     サンドボックス(`TERM_PROGRAM=vscode`、実SDLウィンドウ無し)では
+     実行時の見た目までは検証できない――コードレベルでの理屈の
+     正しさの確認に留まる。ユーザーによる実機再確認待ち。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

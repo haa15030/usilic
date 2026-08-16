@@ -46,6 +46,22 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
   // Directory screen against); flagged for correction if this doesn't
   // match what was actually meant.
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    const auto &ls = configuration_.commandFor(ConfiguredRole::Ls);
+    std::string program = ls.argv.empty() ? "" : ls.argv.front();
+    std::string programBadge = program.empty() ? "" : "(" + program + ")";
+    std::string trailing2 = searchAnnotation_.empty() ? programBadge : searchAnnotation_;
+    // fillTrailingToEdge stays keyed on searchAnnotation_ specifically
+    // (NOT trailing2's own emptiness, which is now ALWAYS non-empty
+    // once "(ls)" is filling in as its fallback) -- a real regression
+    // found "(ls)" itself getting padded all the way to the row's
+    // right edge, which left renderModeLine()'s own drawnLen tracking
+    // already AT the column count by the time it got to rightWatermark,
+    // silently dropping "usilic v1.5b" via that function's own
+    // `drawnLen + watermark.size() <= cols` check -- exactly the
+    // "usilic v1.5b" half of the =bd/=be report this round was
+    // supposed to fix, not preserve.
+    ContentView::ModeLineFields fields{currentDirectory_, std::to_string(view_.totalByteCount()),
+                                        /*fillTrailingToEdge=*/!searchAnnotation_.empty(), "usilic v1.5b", trailing2};
     // See reportEditError()'s/clearEditError()'s own comments -- NOT
     // cleared here on read. A real user report (2026-08-17, GUI mode
     // only: "-cはOKだが-gだといつもの一瞬出て消える症状") found that
@@ -62,28 +78,21 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
     // now persists through any number of incidental redraws exactly the
     // way legacy's own echo_mess() does, and only actually goes away
     // once the user does something else.
+    //
+    // Only `name`/`nameUnderlined` are overridden -- an earlier version
+    // returned a fresh, mostly-default-constructed ModeLineFields here
+    // instead, which silently dropped the byte count/"(ls)"/"usilic
+    // v1.5b" fields (all still computed above) for the error message's
+    // own duration -- a real report + screenshots (=cg/=ch) comparing
+    // the mode line before/after showed those fields visibly missing.
+    // Only the ONE field the user actually asked to be replaced
+    // ("左端モード名...だけを丸々消してメッセージを表示させたら？")
+    // changes now; everything else keeps rendering normally underneath.
     if (showEditError_) {
-      ContentView::ModeLineFields fields;
       fields.name = "Invalid mode";
       fields.nameUnderlined = true;
-      return fields;
     }
-    const auto &ls = configuration_.commandFor(ConfiguredRole::Ls);
-    std::string program = ls.argv.empty() ? "" : ls.argv.front();
-    std::string programBadge = program.empty() ? "" : "(" + program + ")";
-    std::string trailing2 = searchAnnotation_.empty() ? programBadge : searchAnnotation_;
-    // fillTrailingToEdge stays keyed on searchAnnotation_ specifically
-    // (NOT trailing2's own emptiness, which is now ALWAYS non-empty
-    // once "(ls)" is filling in as its fallback) -- a real regression
-    // found "(ls)" itself getting padded all the way to the row's
-    // right edge, which left renderModeLine()'s own drawnLen tracking
-    // already AT the column count by the time it got to rightWatermark,
-    // silently dropping "usilic v1.5b" via that function's own
-    // `drawnLen + watermark.size() <= cols` check -- exactly the
-    // "usilic v1.5b" half of the =bd/=be report this round was
-    // supposed to fix, not preserve.
-    return {currentDirectory_, std::to_string(view_.totalByteCount()), /*fillTrailingToEdge=*/!searchAnnotation_.empty(),
-            "usilic v1.5b", trailing2};
+    return fields;
   });
 }
 

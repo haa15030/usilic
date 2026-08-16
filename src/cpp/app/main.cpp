@@ -1322,6 +1322,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           // guard, so much as wiggling the mouse mid-prompt silently
           // wipes out the prompt the user was in the middle of typing
           // into.
+          app.directoryMode().clearEditError();  // see the GUI-side hover call site's own comment
           applyHoverRowAndRedraw(app.activeContentView(), mouse->row, /*moveCursor=*/true);
         }
         // Any other combination (right-click, an orphan release,
@@ -1581,6 +1582,18 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // applyHoverRowAndRedraw() path too.
       while (auto hover = gui.consumeHoverEvent()) {
         anyEventThisFrame = true;
+        // Real mouse movement clears DirectoryMode's own transient
+        // "Invalid mode" error (see DirectoryMode::clearEditError()'s
+        // own comment on why THIS call site, alongside Application::
+        // handleCommand()'s, is safe -- unlike the ~60Hz idle loop's
+        // own incidental redraws, this only runs when SDL actually
+        // reported real motion) -- a real user report: hover here also
+        // moves cursorIndex_ (moveCursor=true below), so leaving a
+        // stale message about the PREVIOUS selection on screen while
+        // the effective selection has already moved on is confusing,
+        // the same reasoning keyboard ^N/^P already gets via
+        // handleCommand(). Harmless outside Directory mode.
+        app.directoryMode().clearEditError();
         applyHoverRowAndRedraw(app.activeContentView(), hover->row, /*moveCursor=*/true);
       }
     } else {
