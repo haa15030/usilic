@@ -537,6 +537,63 @@ TEST_CASE("setModeLineFieldsProvider: an overflowing name is middle-ellipsis tru
   CHECK(d.rowText(5).find("usilic v1.5b") != std::string::npos);
 }
 
+// 2026-08-18 addition: a direct follow-up to DirectoryMode's "Invalid
+// mode" padding fix (CLAUDE.md item 331) -- that fix pads a SHORT
+// replacement message up to the ORIGINAL (longer) name's width, so
+// fields after it don't shift. The user then asked about the opposite
+// case: what if the original name is itself SHORTER than the
+// replacement message (e.g. "DIR" or a short directory path shorter
+// than "Invalid mode")? DirectoryMode's own guard
+// (`if (message.size() < fields.name.size()) message.resize(...)`)
+// deliberately does nothing in that direction -- no truncation, no
+// special-casing -- and this test confirms that's already correct:
+// the OVERFLOWING name just flows through the exact same sequential
+// drawnLen-based layout (renderModeLine()) and fitModeLineFields()
+// tier system the test above already exercises for a much longer
+// overflow, which naturally pushes every field after it later by
+// exactly the overflow amount (or middle-ellipsis truncates the name
+// itself if even that doesn't fit -- see the test above) instead of
+// leaving them at a now-wrong fixed offset. No production code change
+// was needed for this direction; this test exists purely to pin the
+// behavior down explicitly for the exact "short name, long message"
+// shape DirectoryMode's own error path produces.
+TEST_CASE("setModeLineFieldsProvider: a name LONGER than the field it replaces pushes every later "
+          "field back by exactly the overflow, rather than leaving them at the old (now wrong) offset") {
+  RecordingDisplay d(10, 80);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+
+  std::string shortName = "DIR";                // 3 chars
+  std::string longMessage = "Invalid mode";      // 12 chars -- 9 chars longer than shortName
+  v.setModeLineFieldsProvider(
+      [&](int) -> ContentView::ModeLineFields { return {shortName, "460", false, "usilic v1.5b", "(ls)"}; });
+  v.redraw();
+  std::string before = d.rowText(5);
+
+  v.setModeLineFieldsProvider(
+      [&](int) -> ContentView::ModeLineFields { return {longMessage, "460", false, "usilic v1.5b", "(ls)"}; });
+  v.redraw();
+  std::string after = d.rowText(5);
+
+  size_t overflow = longMessage.size() - shortName.size();
+  CHECK(after.substr(0, longMessage.size()) == longMessage);  // name itself: not truncated (room to spare)
+  // The sequentially-positioned fields (position/trailing/trailing2,
+  // each drawn right after the previous one via renderModeLine()'s own
+  // running drawnLen) are neither corrupted nor left at their old
+  // (now name-colliding) column -- each shifts right by exactly the
+  // name's own overflow.
+  CHECK(after.find("1/3 TOP") == before.find("1/3 TOP") + overflow);
+  CHECK(after.find("460") == before.find("460") + overflow);
+  CHECK(after.find("(ls)") == before.find("(ls)") + overflow);
+  // rightWatermark ("usilic v1.5b") is the one exception: renderModeLine()
+  // right-justifies it against the row's own edge rather than chaining it
+  // after trailing2, so it does NOT shift -- it stays pinned to the same
+  // column regardless of how long the name grows (the gap before it just
+  // shrinks instead).
+  CHECK(after.find("usilic v1.5b") == before.find("usilic v1.5b"));
+}
+
 TEST_CASE("renderModeLine: name/position/trailing are separate reverse-video runs with plain gaps between") {
   RecordingDisplay d(10, 40);
   ContentView v(d);

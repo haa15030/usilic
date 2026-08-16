@@ -17897,6 +17897,43 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      エラー表示の前後でカラム位置ごと完全に一致する(パディング前は
      15文字分左にズレていたのが解消)ことを生の画面バッファで確認。
 
+332. **項目331の逆方向(モード名が"Invalid mode"より短い場合)を調査
+    ―― 既存の描画機構で既に正しく動作していると判明、回帰テストのみ
+    追加**
+   - **報告**: 「DIR等モード名が短いときは、はみ出し分だけ他を後退
+     させればいいかなと。そのときは反映よろしく。」(項目331の
+     コメントで書いた「ディレクトリパスが"Invalid mode"より短い
+     場合...稀なエッジケース、今回は未対応」を受けての依頼)。
+   - **調査結果**: `DirectoryMode`の`showEditError_`ガード
+     (`if (message.size() < fields.name.size()) message.resize(...)`)
+     は、この逆方向(元の`name`のほうが"Invalid mode"より短い場合)
+     には何もしない ―― パディングもせず切り詰めもしない設計だった。
+     結果として"Invalid mode"はそのまま(切り詰められず)`fields.name`
+     に入り、`renderModeLine()`の逐次レイアウト(`drawnLen`を積算しな
+     がら各フィールドを直後に描く方式)と`fitModeLineFields()`/
+     `withTruncatedFields()`のフォールバック階層(名前が画面幅に
+     収まらない場合は中央省略記号で切り詰め、それでも収まらない
+     場合は該当フィールド自体を非表示にする)にそのまま流れ込む。
+     これは既存の`"an overflowing name is middle-ellipsis truncated
+     to fit..."`テスト(かなり長い名前でのオーバーフロー、item不明・
+     以前から存在)が既に検証している経路と全く同じであり、「はみ出し
+     分だけ他を後退させる」という依頼内容はコード変更なしで既に
+     成立していると判明した。`rightWatermark`("usilic v1.5b")のみ
+     例外で、`trailing2`に連結されず行の右端に右寄せ配置される
+     独立した仕組みのため、名前が伸びても位置は変わらない(手前の
+     余白が縮むだけ)。
+   - **対応**: プロダクションコードの変更は不要と判断。この具体的な
+     形状(`DirectoryMode`が実際に使うフィールド構成: trailing=
+     バイト数、trailing2="(ls)"、rightWatermark="usilic v1.5b")を
+     対象に、短い名前("DIR"、3文字)を"Invalid mode"(12文字)に
+     差し替えた場合の回帰テストを`test_content_view.cpp`に新規追加
+     し、position/trailing/trailing2がオーバーフロー分だけ正しく
+     後退すること、`rightWatermark`は動かないことを固定した
+     (`cpp/tests/test_content_view.cpp`)。
+   - **検証**: `make test` 748/748件・18241アサーション全通過(新規
+     テスト1件追加)。プロダクションコード側の変更が無いため
+     `make usilic`の再ビルドも差分なし。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が
