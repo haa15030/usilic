@@ -46,6 +46,15 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
   // Directory screen against); flagged for correction if this doesn't
   // match what was actually meant.
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    // See reportEditError()'s own comment -- consumed (and cleared)
+    // here, on the very next read, so it shows for exactly one redraw.
+    if (showEditError_) {
+      showEditError_ = false;
+      ContentView::ModeLineFields fields;
+      fields.name = "Invalid mode";
+      fields.nameUnderlined = true;
+      return fields;
+    }
     const auto &ls = configuration_.commandFor(ConfiguredRole::Ls);
     std::string program = ls.argv.empty() ? "" : ls.argv.front();
     std::string programBadge = program.empty() ? "" : "(" + program + ")";
@@ -132,6 +141,8 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
 }
 
 void DirectoryMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
+
+void DirectoryMode::reportEditError() { showEditError_ = true; }
 
 const std::string &DirectoryMode::currentDirectory() const { return currentDirectory_; }
 const std::vector<DirectoryEntry> &DirectoryMode::entries() const { return entries_; }

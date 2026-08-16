@@ -215,6 +215,20 @@ class DirectoryMode {
   void setSearchAnnotation(const std::string &text);
   bool hasSearchAnnotation() const { return !searchAnnotation_.empty(); }
 
+  // Shows "Invalid mode" (ported verbatim from legacy mode.c's
+  // do_edit(), S_errv -- see str.c's string table) underlined in the
+  // mode line's `name` slot for exactly the NEXT redraw, in place of
+  // the current directory path -- ported from a direct user request:
+  // pressing ^Je (EDIT) on a directory entry (rather than a file)
+  // should show this "適切な" error there instead of silently doing
+  // nothing (Application::executeEdit() previously just returned
+  // false with no feedback at all). Called by executeEdit(); the
+  // mode-line provider consumes (and clears) this on the very next
+  // read, matching legacy's own echo_mess() semantics (a message that
+  // persists until overwritten by the next real screen update, not a
+  // separately-tracked toggle a caller must remember to clear).
+  void reportEditError();
+
  private:
   DirectoryEntry parseLsLine(const std::string &line) const;
   // Shared by openSelected()/goToParent(): saves the current cursor
@@ -234,6 +248,7 @@ class DirectoryMode {
   std::set<int> markedIndices_;
   bool filenameOnlyMode_ = false;
   std::string searchAnnotation_;
+  bool showEditError_ = false;
 };
 
 }  // namespace fm

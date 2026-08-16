@@ -616,6 +616,25 @@ class ContentView {
     // behavior exactly). See TrailingKind's own comment; PathMiddle is
     // listBrowserView_'s own FILE/DIR/COMMAND picker fix (=bw).
     TrailingKind trailingKind = TrailingKind::Tag;
+    // Draws `name` underlined (Display::Attribute::Underline) instead
+    // of the usual reverse-video (Standout) box -- added for
+    // DirectoryMode's own transient "Invalid mode" error (ported from
+    // legacy do_edit()'s S_errv message, mode.c: pressing ^Je/EDIT on
+    // a directory entry rather than a file), which a real user request
+    // specifically asked to appear "アンダーラインエラーメッセージ
+    // （適切なやつ）をモードラインのモード名位置に" -- i.e. replacing
+    // `name` itself (not a separate field) with an underlined message,
+    // matching the "underline, not reverse-video, for a status message
+    // so it doesn't read as a selectable/highlighted string" convention
+    // this port already established for GrepMode's own "No String"
+    // placeholder (see its own comment). Every other provider leaves
+    // this at its default (false), unaffected. Currently only honored
+    // by renderModeLine() (the plain, non-drag-scrolling redraw path,
+    // which is what a keypress result like this always uses) --
+    // scrollModeLineSegments()/composeModeLineRow() don't have this
+    // treatment yet (a narrower gap, not expected to matter: an error
+    // message appearing mid-drag-scroll gesture isn't a real scenario).
+    bool nameUnderlined = false;
   };
 
   // Supplies this view's ModeLineFields, recomputed every time the

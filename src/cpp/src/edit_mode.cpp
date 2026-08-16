@@ -17,13 +17,21 @@ bool EditMode::edit(const std::string &path, int lineNumber) {
   auto before = std::filesystem::last_write_time(path, ec);
   if (ec) return false;
 
-  keyInput_.leaveRawMode();
-  ChildProcess::runInteractive(argv);
-  keyInput_.reenterRawMode();
+  if (foregroundLauncher_ && foregroundLauncher_(argv)) {
+    // handled entirely by the launcher
+  } else {
+    keyInput_.leaveRawMode();
+    ChildProcess::runInteractive(argv);
+    keyInput_.reenterRawMode();
+  }
 
   auto after = std::filesystem::last_write_time(path, ec);
   if (ec) return false;
   return after != before;
+}
+
+void EditMode::setForegroundLauncher(std::function<bool(const std::vector<std::string> &)> launcher) {
+  foregroundLauncher_ = std::move(launcher);
 }
 
 }  // namespace fm

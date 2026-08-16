@@ -5066,14 +5066,33 @@ TEST_CASE_FIXTURE(Fixture, "EDIT: from Directory mode, edits the highlighted ent
   CHECK(content.find("EDITED:+1") != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "EDIT: refused on a directory entry from Directory mode") {
+// 2026-08-17 addition: a direct user request ("ディレクトリ上での^Jeは
+// アンダーラインエラーメッセージ（適切なやつ）をモードラインのモード名
+// 位置に表示") replaced the previous silent no-op with legacy do_edit()'s
+// own S_errv message ("Invalid mode", str.c), underlined, in place of the
+// mode line's name field (see DirectoryMode::reportEditError()'s own
+// comment) -- so handleCommand() now returns true (handled, shown
+// feedback) instead of false.
+TEST_CASE_FIXTURE(Fixture, "EDIT: shows an underlined \"Invalid mode\" error in the mode line's name slot "
+                           "when pressed on a directory entry, instead of silently doing nothing") {
   configuration.loadRcText("EDITOR\n sh -c 'echo \"EDITED:$0\" >> \"$1\"'\n", true);
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
   REQUIRE(idx >= 0);
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
-  CHECK_FALSE(app.handleCommand(Command::StartEdit));
+  CHECK(app.handleCommand(Command::StartEdit));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // never switches mode
+  std::string expected = "Invalid mode";
+  CHECK(display.rowText(23).substr(0, expected.size()) == expected);
+  CHECK(display.underlineAt(23, 0));
+  CHECK(display.underlineAt(23, static_cast<int>(expected.size()) - 1));
+  CHECK_FALSE(display.standoutAt(23, 0));  // underlined, NOT reverse-video (see reportEditError()'s own comment)
+
+  // Consumed after exactly one redraw -- the very next mode-line render
+  // (e.g. a plain cursor move) reverts to the ordinary directory path.
+  app.handleCommand(Command::MoveUp);
+  CHECK(display.rowText(23).substr(0, expected.size()) != expected);
 }
 
 TEST_CASE_FIXTURE(Fixture, "EDIT: refused outside Directory/File mode") {

@@ -4633,7 +4633,16 @@ bool Application::executeEdit() {
 
   if (currentMode_ == ApplicationMode::Directory) {
     const DirectoryEntry *entry = directoryMode_.selectedEntry();
-    if (!entry || entry->isDirectory) return false;
+    if (!entry) return false;
+    if (entry->isDirectory) {
+      // Ported from legacy do_edit()'s S_errv ("Invalid mode") case --
+      // a real user request specifically asked for this, rather than
+      // the previous silent no-op, when ^Je is pressed on a directory
+      // entry. See DirectoryMode::reportEditError()'s own comment.
+      directoryMode_.reportEditError();
+      directoryView_.redraw();
+      return true;
+    }
     path = directoryMode_.currentDirectory();
     if (!path.empty() && path.back() != '/') path += '/';
     path += entry->name;

@@ -2217,6 +2217,22 @@ bool runProgramInLaunchingTerminal(const std::string &command, fm::GraphicalDisp
   return true;
 }
 
+// EditMode's own counterpart to runProgramInLaunchingTerminal() above
+// -- same raise/hide/run/restore shape, but takes a real argv (no
+// shell needed at all, unlike PROGRAM-mode's free-form typed command
+// line) and clears via clearLaunchingTerminal() (a plain stdout write
+// this process already owns) instead of a `clear; ` shell prefix,
+// since there's no `sh -c` step here to prepend it to.
+bool runEditorInLaunchingTerminal(const std::vector<std::string> &argv, fm::GraphicalDisplay &gui) {
+  if (!raiseLaunchingTerminalWindow()) return false;  // falls back to EditMode::edit()'s own default path
+  gui.setVisible(false);
+  clearLaunchingTerminal();
+  fm::ChildProcess::runInteractive(argv);
+  gui.setVisible(true);
+  gui.raise();
+  return true;
+}
+
 // Resolves a font, creates a GraphicalDisplay sized to match
 // `display`'s current geometry, applies `appearance` (if given) so
 // the window matches the calling terminal's own colors instead of
@@ -2255,10 +2271,13 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // below hasn't happened yet.
   app.programMode().setForegroundLauncher(
       [&gui](const std::string &command) { return runProgramInLaunchingTerminal(command, *gui); });
+  app.editMode().setForegroundLauncher(
+      [&gui](const std::vector<std::string> &argv) { return runEditorInLaunchingTerminal(argv, *gui); });
 
   runGuiPhase(app, *gui);
 
   app.programMode().setForegroundLauncher(nullptr);  // back to plain ChildProcess::runInteractive() in terminal mode
+  app.editMode().setForegroundLauncher(nullptr);
   display.setBackend(terminalDisplay);
   gui.reset();  // closes the real window
   if (!app.wantsExit()) app.handleResize();  // redraw the terminal, which SDL's window never touched
@@ -2640,8 +2659,11 @@ int main(int argc, char **argv) {
     // tryEnterGuiPhase(), which this branch never calls).
     app.programMode().setForegroundLauncher(
         [&launchGui](const std::string &command) { return runProgramInLaunchingTerminal(command, *launchGui); });
+    app.editMode().setForegroundLauncher(
+        [&launchGui](const std::vector<std::string> &argv) { return runEditorInLaunchingTerminal(argv, *launchGui); });
     runGuiPhase(app, *launchGui);
     app.programMode().setForegroundLauncher(nullptr);
+    app.editMode().setForegroundLauncher(nullptr);
   } else {
     if (forceGui && !app.wantsExit()) {
       // -g: same GUI entry point ^Og already uses mid-session, just

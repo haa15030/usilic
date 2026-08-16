@@ -986,6 +986,12 @@ void ContentView::renderModeLine() {
     for (unsigned char c : text) display_.putChar(c);
     display_.setAttribute(Display::Attribute::StandoutOff);
   };
+  // See ModeLineFields::nameUnderlined's own comment.
+  auto drawUnderlineSegment = [&](const std::string &text) {
+    display_.setAttribute(Display::Attribute::Underline);
+    for (unsigned char c : text) display_.putChar(c);
+    display_.setAttribute(Display::Attribute::UnderlineOff);
+  };
 
   if (!modeLineFieldsProvider_) {
     drawSegment(positionText);
@@ -998,7 +1004,8 @@ void ContentView::renderModeLine() {
 
   int drawnLen = 0;
   if (fit.showName && !fields.name.empty()) {
-    drawSegment(fields.name);
+    if (fields.nameUnderlined) drawUnderlineSegment(fields.name);
+    else drawSegment(fields.name);
     display_.putChar(' ');
     drawnLen += static_cast<int>(fields.name.size()) + 1;
   }

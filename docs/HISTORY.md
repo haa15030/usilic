@@ -8893,3 +8893,14 @@ macOS画面の最下行にあるターミナルのアイコンをクリックす
 `clearLaunchingTerminal()`を新設しました。AppleScriptを使わず、このプロセス自身が継承している標準出力へ直接`"\x1b[2J\x1b[H"`(ANSI画面クリア)を書き込むだけです――このプロセスの標準入出力自体がまさにそのターミナルなので、`raiseLaunchingTerminalWindow()`のように外部から`osascript`でウィンドウを探す必要がありません。GUIウィンドウが生成・表示されてそのターミナルを覆い隠した直後(起動時オーバーレイ経路と`^Og`/`-g`フォールバック経路の両方)に1回だけ呼ぶため、クリア自体が画面に見えることはありません。
 
 `make test` 747/747件全通過、`make usilic`クリーンビルド確認済みです。CLAUDE.mdに項目327として記録、コミット・プッシュ済みです。
+
+<全く問題なし。
+ついでに^Jeで起動するviもよろしく（ディレクトリ上での^Jeはアンダーラインエラーメッセージ（適切なやつ）をモードラインのモード名位置に表示）。
+
+>まず`^Je`(EDIT/`vi`)を-g対応させます。その後、ディレクトリ上での`^Je`のエラー表示を実装します。
+
+`EditMode`に`ProgramMode::setForegroundLauncher()`と同じ形のフックを新設し、`main.cpp`に`runEditorInLaunchingTerminal()`を追加、両方のGUI突入経路に配線しました。
+
+ディレクトリ上での`^Je`エラー表示は、legacy `mode.c`の`do_edit()`が同じ場面で返していた`echo_mess(S_errv)`("Invalid mode")のテキストをそのまま採用しました。`ModeLineFields`に`bool nameUnderlined`を新設し(GrepModeの"No String"と同じ「反転だと選択可能文字列と紛らわしいのでアンダーライン」という既存の作法を`name`フィールドへ適用)、`DirectoryMode::reportEditError()`が次の1回のモードライン再描画だけ`name`を"Invalid mode"(アンダーライン)に差し替え、読み取られた時点で自動的に消えるようにしました(legacyの`echo_mess()`と同じ「次の画面更新まで表示され続ける」挙動)。
+
+`make test` 747/747件全通過(アサーション数18227→18233)、`make usilic`クリーンビルド確認済みです。さらにPTY自動テストで実バイナリを操作し、`subdir/`にカーソルを合わせて`^Je`→モードラインの該当箇所が実際に`underscore=True reverse=False`("Invalid mode")、その後の位置情報部分は従来通り`reverse=True`であることを生の属性値で確認しました。CLAUDE.mdに項目328として記録、コミット・プッシュ済みです。

@@ -17742,6 +17742,49 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
    - **検証**: `make test` 747/747件全通過、`make usilic`クリーン
      ビルド確認済み。
 
+328. **`^Je`(EDIT/`vi`)にも-g対応を追加、ディレクトリ上での`^Je`は
+    「Invalid mode」をアンダーラインでモード名位置に表示するよう変更**
+   - **依頼**: 「ついでに^Jeで起動するviもよろしく（ディレクトリ上での
+     ^Jeはアンダーラインエラーメッセージ（適切なやつ）をモードラインの
+     モード名位置に表示）」。
+   - **EDITの-g対応**: `EditMode`に`ProgramMode::setForegroundLauncher()`
+     と同じ形の`setForegroundLauncher()`フックを新設(引数は`argv`
+     の`vector<string>`、`ProgramMode`側はシェルコマンド文字列)。
+     `main.cpp`に`runEditorInLaunchingTerminal()`を新設
+     (`raiseLaunchingTerminalWindow()`で前面へ→`clearLaunchingTerminal()`
+     →`ChildProcess::runInteractive(argv)`、シェルを経由しないので
+     `"clear; "`前置ではなく`clearLaunchingTerminal()`を直接使用)。
+     `tryEnterGuiPhase()`・`guiOwnsWholeSession`分岐の両方に
+     `app.editMode().setForegroundLauncher(...)`を追加配線。
+   - **ディレクトリ上での`^Je`エラー表示**: legacy`mode.c`の`do_edit()`
+     が`T_dir`かつ`is_fm()`かつファイル名先頭が`/`でない場合等に
+     `echo_mess(S_errv)`(`str.c`の文字列テーブル、"Invalid mode")を
+     返していたのを踏まえ、C++版でも同じテキストを採用。
+     `ModeLineFields`に`bool nameUnderlined`を新設(GrepModeの
+     "No String"と同じ「反転だと選択可能文字列と紛らわしいので
+     アンダーライン」という既存の作法を、`trailing`ではなく`name`
+     フィールドへ適用したもの)。`DirectoryMode::reportEditError()`
+     (新規)が次の1回のモードライン再描画だけ`name`を"Invalid mode"
+     (アンダーライン)に差し替え、読み取られた時点で自動的に消える
+     (legacyの`echo_mess()`と同じ「次の画面更新まで表示され続ける」
+     挙動)。`Application::executeEdit()`が`Directory`モードで選択中の
+     エントリがディレクトリの場合、従来の`return false`(何も起きない)
+     から`directoryMode_.reportEditError()`→再描画→`return true`
+     (処理した)へ変更。
+   - **検証**: `renderModeLine()`(CUI/GUIどちらも通常の非ドラッグ
+     スクロール再描画で使われる唯一の描画経路)のみ対応、
+     `scrollModeLineSegments()`(GUIドラッグスクロール中専用)は
+     今回未対応(エラーメッセージがドラッグスクロール中に出る場面は
+     実質無いと判断)。既存テスト`EDIT: refused on a directory entry
+     from Directory mode`を新しい挙動(`true`を返しモードラインに
+     "Invalid mode"がアンダーラインで、1回の再描画後は自動的に消える
+     ことまで)に合わせて更新。`make test` 747/747件全通過
+     (アサーション数18227→18233)。`make usilic`クリーンビルド確認済み。
+     さらにPTY自動テスト(pyte)で実バイナリを操作し、`subdir/`に
+     カーソルを合わせて`^Je`→モードライン0〜11桁目が
+     `underscore=True reverse=False`("Invalid mode")、12桁目以降は
+     従来通り`reverse=True`("4/4 END")であることを生の属性値で確認。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が

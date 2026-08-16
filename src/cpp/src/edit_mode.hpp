@@ -1,6 +1,8 @@
 #pragma once
 
+#include <functional>
 #include <string>
+#include <vector>
 
 #include "configuration.hpp"
 #include "key_input.hpp"
@@ -51,9 +53,24 @@ class EditMode {
   // sub-second precision instead.
   bool edit(const std::string &path, int lineNumber);
 
+  // Overrides HOW edit() actually runs the editor's argv, the same
+  // "settable callback, not a subclass/flag" shape ProgramMode::
+  // setForegroundLauncher() already established (see its own
+  // comment): when set and it returns true, edit() trusts it handled
+  // the whole foreground handoff itself and skips
+  // ChildProcess::runInteractive()/leaveRawMode()/reenterRawMode()
+  // entirely; false falls back to that normal path unchanged. Exists
+  // for the same one caller ProgramMode's version does -- main.cpp's
+  // GUI-mode run loop, wired for the exact same reason (a `vi`/EDITOR
+  // launch has the identical "this process's own inherited stdio
+  // isn't what's actually on screen once GraphicalDisplay owns the
+  // window" problem PROGRAM-mode commands do).
+  void setForegroundLauncher(std::function<bool(const std::vector<std::string> &argv)> launcher);
+
  private:
   KeyInput &keyInput_;
   const Configuration &configuration_;
+  std::function<bool(const std::vector<std::string> &argv)> foregroundLauncher_;
 };
 
 }  // namespace fm
