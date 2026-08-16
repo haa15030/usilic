@@ -1603,6 +1603,19 @@ ContentView &Application::activeView() {
 }
 
 bool Application::handleCommand(Command command) {
+  // See DirectoryMode::clearEditError()'s own comment on why this
+  // lives HERE (once per dispatched command) rather than inside the
+  // mode-line provider itself, and why handleCommand() specifically
+  // (not dispatchByte(), which most real keypresses funnel through
+  // but which incidental hover/idle-loop redraws never call at all,
+  // and which some callers/tests bypass by calling handleCommand()
+  // directly) -- this is the one place both real keyboard dispatch
+  // AND those direct callers agree passes through. Harmless outside
+  // Directory mode or when nothing is currently showing. Executed
+  // BEFORE the switch below, so StartEdit's own case (which may set
+  // this again via executeEdit()/reportEditError()) still shows
+  // its OWN message afterward, unaffected.
+  directoryMode_.clearEditError();
   switch (command) {
     // setHoverIndex(nullopt) BEFORE each move, not after (2026-08-05
     // fix): a real user report -- after resting the mouse over a row

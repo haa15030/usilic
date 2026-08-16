@@ -46,10 +46,23 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
   // Directory screen against); flagged for correction if this doesn't
   // match what was actually meant.
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    // See reportEditError()'s own comment -- consumed (and cleared)
-    // here, on the very next read, so it shows for exactly one redraw.
+    // See reportEditError()'s/clearEditError()'s own comments -- NOT
+    // cleared here on read. A real user report (2026-08-17, GUI mode
+    // only: "-cはOKだが-gだといつもの一瞬出て消える症状") found that
+    // clearing it here (an earlier version of this code) made it
+    // vanish almost instantly under -g specifically: -g's run loop
+    // calls redraw() far more often than a keypress alone warrants
+    // (mouse-hover tracking, the ~60Hz idle loop, ...), so a
+    // read-once-and-clear flag got consumed by one of THOSE incidental
+    // reads before the message was ever actually visible on screen --
+    // -c never has this problem since nothing there calls redraw()
+    // except in direct response to a keypress. Cleared instead by
+    // clearEditError(), called once at the top of Application::
+    // handleCommand() for every dispatched command -- so this message
+    // now persists through any number of incidental redraws exactly the
+    // way legacy's own echo_mess() does, and only actually goes away
+    // once the user does something else.
     if (showEditError_) {
-      showEditError_ = false;
       ContentView::ModeLineFields fields;
       fields.name = "Invalid mode";
       fields.nameUnderlined = true;
@@ -143,6 +156,8 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
 void DirectoryMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
 
 void DirectoryMode::reportEditError() { showEditError_ = true; }
+
+void DirectoryMode::clearEditError() { showEditError_ = false; }
 
 const std::string &DirectoryMode::currentDirectory() const { return currentDirectory_; }
 const std::vector<DirectoryEntry> &DirectoryMode::entries() const { return entries_; }

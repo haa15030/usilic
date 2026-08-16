@@ -8904,3 +8904,11 @@ macOS画面の最下行にあるターミナルのアイコンをクリックす
 ディレクトリ上での`^Je`エラー表示は、legacy `mode.c`の`do_edit()`が同じ場面で返していた`echo_mess(S_errv)`("Invalid mode")のテキストをそのまま採用しました。`ModeLineFields`に`bool nameUnderlined`を新設し(GrepModeの"No String"と同じ「反転だと選択可能文字列と紛らわしいのでアンダーライン」という既存の作法を`name`フィールドへ適用)、`DirectoryMode::reportEditError()`が次の1回のモードライン再描画だけ`name`を"Invalid mode"(アンダーライン)に差し替え、読み取られた時点で自動的に消えるようにしました(legacyの`echo_mess()`と同じ「次の画面更新まで表示され続ける」挙動)。
 
 `make test` 747/747件全通過(アサーション数18227→18233)、`make usilic`クリーンビルド確認済みです。さらにPTY自動テストで実バイナリを操作し、`subdir/`にカーソルを合わせて`^Je`→モードラインの該当箇所が実際に`underscore=True reverse=False`("Invalid mode")、その後の位置情報部分は従来通り`reverse=True`であることを生の属性値で確認しました。CLAUDE.mdに項目328として記録、コミット・プッシュ済みです。
+
+<-cはOKだが-gだといつもの一瞬出て消える症状。
+
+>原因が分かりました。`reportEditError()`はモードラインプロバイダ側で「読み取られた時点で即座にフラグを消す」設計でした。`-c`はキー入力への直接応答としてのみ`redraw()`が呼ばれるためこれで問題無く機能していましたが、`-g`は`runGuiPhase()`のループ(マウスホバー追跡・約60Hzのアイドルループ等)がキー入力とは無関係に頻繁に`redraw()`を呼ぶため、ユーザーの目に映る前にその「無関係な再描画」がフラグを消費してしまっていました。
+
+プロバイダ側での自動消去をやめ、`DirectoryMode::clearEditError()`(新規)を`Application::handleCommand()`の先頭で、コマンドがディスパッチされるたびに1回だけ呼ぶ方式に変更しました(legacyの`echo_mess()`と同じ「次の実操作まで表示され続ける」挙動に一致)。`dispatchByte()`ではなく`handleCommand()`に置いたのは、一部の再描画トリガーやテストコードが`dispatchByte()`を経由せず直接`handleCommand()`を呼ぶため、両方が確実に通るこの位置を選んだためです。
+
+`make test` 747/747件全通過、`make usilic`クリーンビルド確認済みです。`-g`環境の実機的な頻繁な再描画状況はこのサンドボックスでは再現できないため、原因の推定・修正がロジック上正しいことの確認に留まります。CLAUDE.mdに項目329として記録、コミット・プッシュ済みです。実機での再確認をお願いします。

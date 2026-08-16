@@ -217,17 +217,27 @@ class DirectoryMode {
 
   // Shows "Invalid mode" (ported verbatim from legacy mode.c's
   // do_edit(), S_errv -- see str.c's string table) underlined in the
-  // mode line's `name` slot for exactly the NEXT redraw, in place of
-  // the current directory path -- ported from a direct user request:
-  // pressing ^Je (EDIT) on a directory entry (rather than a file)
-  // should show this "適切な" error there instead of silently doing
-  // nothing (Application::executeEdit() previously just returned
-  // false with no feedback at all). Called by executeEdit(); the
-  // mode-line provider consumes (and clears) this on the very next
-  // read, matching legacy's own echo_mess() semantics (a message that
-  // persists until overwritten by the next real screen update, not a
-  // separately-tracked toggle a caller must remember to clear).
+  // mode line's `name` slot, in place of the current directory path,
+  // until clearEditError() is next called -- ported from a direct
+  // user request: pressing ^Je (EDIT) on a directory entry (rather
+  // than a file) should show this "適切な" error there instead of
+  // silently doing nothing (Application::executeEdit() previously
+  // just returned false with no feedback at all). Called by
+  // executeEdit().
   void reportEditError();
+
+  // Clears whatever reportEditError() set, reverting the mode line's
+  // `name` slot back to the current directory path on the next
+  // redraw. Called once, unconditionally, at the top of Application::
+  // handleCommand() for every dispatched command (not from the mode-
+  // line provider itself on read -- see its own comment on why: -g's
+  // render loop calls redraw() far more often than a real keypress
+  // alone, which made a read-and-clear version of this flag vanish
+  // almost instantly there, a real 2026-08-17 report; and not
+  // dispatchByte(), since some real redraw triggers -- and some
+  // callers/tests -- reach handleCommand() directly without going
+  // through it). A no-op if nothing is currently showing.
+  void clearEditError();
 
  private:
   DirectoryEntry parseLsLine(const std::string &line) const;
