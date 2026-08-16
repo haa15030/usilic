@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 
 #include "history.hpp"
@@ -66,9 +67,35 @@ class ProgramMode {
   // recognized program name if re-submitted later.
   int run(const std::string &command, const std::string &recordedCommand = "");
 
+  // Overrides HOW run() actually executes `command` in the
+  // foreground. When set and it returns true, run() trusts it handled
+  // the whole foreground handoff itself (raw-mode leave/re-enter
+  // included) and skips leaveRawMode()/ChildProcess::runInteractive()/
+  // reenterRawMode() entirely; false falls back to that normal path
+  // exactly as if no launcher were set. Unset (the default) always
+  // uses ChildProcess::runInteractive() directly, unchanged from
+  // before this existed.
+  //
+  // Ported from nowhere -- legacy has no GUI mode at all. Exists for
+  // exactly one caller: main.cpp's tryEnterGuiPhase(), for the
+  // duration a GraphicalDisplay window is the active display, when
+  // this process's own inherited stdio is no longer a real terminal a
+  // foreground program like `less`/`vi` could use directly (see
+  // runProgramInOverlayTerminal()'s own comment there for what the
+  // launcher actually does: open a real Terminal.app window overlaying
+  // the GUI window's own current screen position). Wired as a
+  // settable callback rather than a subclass/flag, the same shape
+  // Shell::setProgramLauncher() already established, so ProgramMode
+  // itself stays exactly as ignorant of SDL2/GraphicalDisplay
+  // specifics as Application already is (see Application's own class
+  // comment on that boundary) -- main.cpp is the only file that ever
+  // actually constructs a GUI-aware launcher.
+  void setForegroundLauncher(std::function<bool(const std::string &command)> launcher);
+
  private:
   KeyInput &keyInput_;
   History &history_;
+  std::function<bool(const std::string &command)> foregroundLauncher_;
 };
 
 }  // namespace fm

@@ -8786,3 +8786,35 @@ P.S.
 07-30分のバックフィルを開始しました。完了次第、報告します。
 
 (この間、07-30分のバックフィルをサブエージェントに委任、完了)
+
+>07-21〜07-30、および08-16分(ここまで)のバックフィルが完了し、`b9cd167`としてpush済みです。
+
+**完了した範囲**
+- 07-21(残り)・07-22〜07-26(該当セッションなし)・07-27〜07-30: C++移植の本格展開(Display/KeyInput/LineEditor/ContentView/ArchiveReader系/PipeBuffer/ChildProcess/Shell/Configuration/History/ModeStack/Mode系各種/Application、GUI(SDL2)初弾まで)
+- 08-16(今日、ここまで): 07-14〜07-21のbackfill完了報告、コミットハッシュ確認のやり取り、「巨大セッションファイル(073cde91)が07-22〜07-30のバックフィル対象から漏れていた」誤りの発覚と訂正、「スクショ=cc」問い合わせから見つかった08-15夜間の記録漏れの復元、07-30完了、まで
+
+これで日付ヘッダーは07-13〜07-30・07-31〜08-15(既存)・08-16(進行中)まで重複・欠落なくつながっています。08-16分は本日まだ会話が続くため、後で追記が必要になります。
+
+<ごくろうさま。
+ひとつ質問だが、-g起動後のusilicからlessを実行するためのターミナルを（-g起動時同様完全重ね打ちで）開ける？
+
+>はい、既存の起動時オーバーレイと同じ仕組みを逆向きに使えば可能です。技術的な対応関係:
+
+- 起動時(`-g`)は「実物のTerminal.appウィンドウの位置/サイズ/色をAppleScriptで問い合わせ→SDLウィンドウをそこに重ねる」という一方向でしたが、`main.cpp`にはこの問い合わせ・変換ロジック(`queryTerminalAppWindowBounds()`/`queryTerminalAppColors()`/`parseAppleScriptBounds()`)が既にあります。
+- 逆方向(GUI稼働中→PROGRAM実行)は、今度は**SDL側が自分の現在位置/サイズ/色を知っている**ので、AppleScriptで新規Terminal.appウィンドウをその座標・サイズ・配色に合わせて開き(`do script "less ..." in (make new window)`＋`set bounds`)、`less`終了を検知したらそのウィンドウを閉じてSDL側へフォーカスを戻す、という形で実装できます。
+
+ただし現状の`ProgramMode::run()`は`ChildProcess::runInteractive()`で「継承したstdioでその場実行」という設計なので、-g中は実際には(SDLウィンドウの裏に隠れているかもしれない)元のTerminal.appにそのまま出力されてしまい、ユーザーからはlessが起動していないように見える可能性があります。今回のご提案は、この既存の欠落を「新規ウィンドウを重ねて開く」形で解決する自然な拡張だと思います。
+
+主なトレードオフは、(a) 新規ウィンドウをリアルタイムに開閉するぶん起動時オーバーレイより複雑・やや遅くなる、(b) プロセス終了検知(ウィンドウを自動で閉じるタイミング)をポーリングで見る必要がある、(c) macOS/Terminal.app限定という既存機能と同じ制約、あたりです。今すぐ実装しますか？
+
+<やってみて。
+
+>実装・検証・コミット完了しました(項目321)。
+
+**やったこと**: `GraphicalDisplay`に`windowOuterBounds()`(現在位置・サイズを、既存の順方向変換`setWindowPosition()`/`setWindowSize()`の正確な逆変換で取得)・`foregroundColor()`/`backgroundColor()`・`setVisible()`/`raise()`の4メソッドを追加。`main.cpp`に`runProgramInOverlayTerminal()`を新設し、GUIウィンドウの現在位置・サイズ・配色を取得→AppleScriptで新規Terminal.appウィンドウを`do script`で開いてそこへ`bounds`/`background color`/`normal text color`を合わせ→`busy of theTab`をポーリングして終了を待ち→ウィンドウを閉じる、という一連の処理を実装しました。実行中はGUIウィンドウを隠し(`setVisible(false)`)、終了後に前面へ戻します(`raise()`)。
+
+配線は`ProgramMode`に`Shell::setProgramLauncher()`と同じ形の`setForegroundLauncher()`フックを新設する形にし、`Application`をSDL2/GraphicalDisplayの詳細から隔離する既存の設計境界を保っています(`ProgramMode`自身はGUI関連の知識を一切持ちません)。配線自体は`^Og`トグルと起動時オーバーレイ両方が共有する唯一のGUI突入経路(`tryEnterGuiPhase()`)内で行っており、CUIモードには一切影響しません。
+
+`make test` 747/747件全通過(新規4件のランチャー関連テスト含む)、`make usilic`クリーンビルド確認済み。
+
+**正直な限界**: この開発環境の`TERM_PROGRAM`は`vscode`のため実物のTerminal.appからの起動を再現できず、AppleScriptによる新規ウィンドウの実際の重ね打ち(位置/サイズ/配色の一致、`busy`ポーリングでの終了検知)はエンドツーエンドでは未検証です。ゲート条件での正しいフォールバック(`ChildProcess::runInteractive()`への切り替え)と、`-g`起動自体がクラッシュしないことはスモークテストで確認済みです。実際のTerminal.app環境での動作確認をお願いします。

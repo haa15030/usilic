@@ -2108,6 +2108,86 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   }
 }
 
+// Runs `command` in a REAL Terminal.app window positioned/sized/
+// colored to exactly overlay `gui`'s own CURRENT on-screen position
+// (the reverse of queryTerminalAppWindowBounds()/
+// queryTerminalAppColors()'s own "real terminal -> GUI window"
+// direction, using GraphicalDisplay::windowOuterBounds()/
+// foregroundColor()/backgroundColor() -- the getters added alongside
+// this function specifically for it), for PROGRAM-mode commands
+// (`less`, `vi`, a configured PROGRAM-list entry) that need real
+// terminal control ChildProcess::runInteractive() alone can't provide
+// once this process's own inherited stdio is no longer what's
+// actually on screen (a GraphicalDisplay window is). A real user
+// follow-up question/request building on the "実はすでにGUI" LAUNCH-
+// time overlay this file already has: "-g起動後のusilicからlessを
+// 実行するためのターミナルを（-g起動時同様完全重ね打ちで）開ける？"
+//
+// Same TERM_PROGRAM=Apple_Terminal / macOS-only scope as every other
+// AppleScript-based feature in this file (see queryTerminalAppColors()'s
+// own comment on why); returns false (doing nothing) if that gate
+// fails, `gui`'s own bounds can't be read (window not open), or the
+// osascript step itself fails -- ProgramMode::run()'s own launcher
+// contract (see setForegroundLauncher()'s comment) treats false as
+// "you handle it," so the caller falls back to the ordinary
+// ChildProcess::runInteractive() path exactly as if this launcher
+// weren't wired at all.
+//
+// Hides `gui`'s own window for the duration (setVisible(false)) so it
+// can't end up frontmost/focused over the real Terminal.app window
+// sitting in the exact same screen position mid-command, and raises
+// it again (raise()) once that window closes -- SDL doesn't otherwise
+// know or care that another app's window is now covering it.
+//
+// Waits for the command to finish by polling Terminal.app's own
+// `busy of <tab>` property (same idiom queryTerminalAppColors()/
+// queryTerminalAppWindowBounds() already established for reaching
+// into a live Terminal.app tab) rather than tracking a child pid
+// directly -- this process never forks the shell inside that window
+// at all, Terminal.app itself does, entirely out of process.
+bool runProgramInOverlayTerminal(const std::string &command, fm::GraphicalDisplay &gui) {
+  const char *termProgram = std::getenv("TERM_PROGRAM");
+  if (!termProgram || std::string(termProgram) != "Apple_Terminal") return false;
+
+  int x, y, width, height;
+  if (!gui.windowOuterBounds(x, y, width, height)) return false;
+  fm::GraphicalDisplay::Color fg = gui.foregroundColor();
+  fm::GraphicalDisplay::Color bg = gui.backgroundColor();
+
+  // Escaped for embedding as an AppleScript string literal (backslash
+  // and double-quote both need it) -- this is the whole shell command
+  // line `do script` will run verbatim, so no separate shell-level
+  // escaping is needed on top of that.
+  std::string escapedCommand;
+  for (char c : command) {
+    if (c == '\\' || c == '"') escapedCommand += '\\';
+    escapedCommand += c;
+  }
+
+  std::ostringstream script;
+  script << "tell application \"Terminal\"\n"
+         << "  activate\n"
+         << "  set theTab to do script \"" << escapedCommand << "\"\n"
+         << "  set theWindow to front window\n"
+         << "  set bounds of theWindow to {" << x << ", " << y << ", " << (x + width) << ", " << (y + height)
+         << "}\n"
+         << "  set background color of theTab to {" << (static_cast<int>(bg.r) * 257) << ", "
+         << (static_cast<int>(bg.g) * 257) << ", " << (static_cast<int>(bg.b) * 257) << "}\n"
+         << "  set normal text color of theTab to {" << (static_cast<int>(fg.r) * 257) << ", "
+         << (static_cast<int>(fg.g) * 257) << ", " << (static_cast<int>(fg.b) * 257) << "}\n"
+         << "  repeat while busy of theTab\n"
+         << "    delay 0.2\n"
+         << "  end repeat\n"
+         << "  close theWindow\n"
+         << "end tell";
+
+  gui.setVisible(false);
+  fm::ChildProcess::Result result = fm::ChildProcess::run({"osascript", "-e", script.str()});
+  gui.setVisible(true);
+  gui.raise();
+  return result.ok;
+}
+
 // Resolves a font, creates a GraphicalDisplay sized to match
 // `display`'s current geometry, applies `appearance` (if given) so
 // the window matches the calling terminal's own colors instead of
@@ -2137,8 +2217,18 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   display.setBackend(*gui);
   app.handleResize();  // re-layout/redraw against the (same-sized, but now GUI-rendered) geometry
 
+  // Wired for the duration of GUI mode only -- see
+  // ProgramMode::setForegroundLauncher()'s own comment on why this is
+  // the one and only place a GUI-aware launcher gets constructed.
+  // Captures `gui` by reference (a raw GraphicalDisplay&, not the
+  // owning unique_ptr) since the launcher only runs while gui.reset()
+  // below hasn't happened yet.
+  app.programMode().setForegroundLauncher(
+      [&gui](const std::string &command) { return runProgramInOverlayTerminal(command, *gui); });
+
   runGuiPhase(app, *gui);
 
+  app.programMode().setForegroundLauncher(nullptr);  // back to plain ChildProcess::runInteractive() in terminal mode
   display.setBackend(terminalDisplay);
   gui.reset();  // closes the real window
   if (!app.wantsExit()) app.handleResize();  // redraw the terminal, which SDL's window never touched

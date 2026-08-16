@@ -119,3 +119,58 @@ TEST_CASE_FIXTURE(Fixture, "run: falls back to recording command itself when rec
   REQUIRE_FALSE(entries.empty());
   CHECK(entries.back() == "exit 0");
 }
+
+// setForegroundLauncher() (GUI-mode addition): when a launcher is
+// wired and returns true, run() must trust it handled the WHOLE
+// foreground handoff itself and skip ChildProcess::runInteractive()
+// entirely -- proven here via a real side effect (the file the shell
+// command would have written) that only exists if runInteractive()
+// actually ran, not by mocking anything internal.
+TEST_CASE_FIXTURE(Fixture, "run: a launcher that returns true skips ChildProcess::runInteractive() entirely") {
+  char tmpl[] = "/tmp/programmode_launcher_testXXXXXX";
+  int fd = mkstemp(tmpl);
+  REQUIRE(fd >= 0);
+  close(fd);
+  std::string path(tmpl);
+  fs::remove(path);  // exists only if the real shell command actually ran
+
+  std::string receivedCommand;
+  mode.setForegroundLauncher([&](const std::string &command) {
+    receivedCommand = command;
+    return true;
+  });
+
+  std::string command = "echo hello > '" + path + "'";
+  CHECK(mode.run(command) == 0);
+  CHECK(receivedCommand == command);
+  CHECK_FALSE(fs::exists(path));  // the real shell command never ran
+}
+
+TEST_CASE_FIXTURE(Fixture, "run: a launcher that returns false falls back to ChildProcess::runInteractive()") {
+  char tmpl[] = "/tmp/programmode_launcher_fallback_testXXXXXX";
+  int fd = mkstemp(tmpl);
+  REQUIRE(fd >= 0);
+  close(fd);
+  std::string path(tmpl);
+  fs::remove(path);
+
+  bool launcherCalled = false;
+  mode.setForegroundLauncher([&](const std::string &) {
+    launcherCalled = true;
+    return false;
+  });
+
+  std::string command = "echo hello > '" + path + "'";
+  CHECK(mode.run(command) == 0);
+  CHECK(launcherCalled);
+  REQUIRE(fs::exists(path));  // fallback path really executed the command
+  fs::remove(path);
+}
+
+TEST_CASE_FIXTURE(Fixture, "run: history is still recorded when a launcher handles the command") {
+  mode.setForegroundLauncher([](const std::string &) { return true; });
+  mode.run("less somefile", "less somefile");
+  const auto &entries = history.recentEntries(RingCategory::ShellCommand);
+  REQUIRE_FALSE(entries.empty());
+  CHECK(entries.back() == "less somefile");
+}

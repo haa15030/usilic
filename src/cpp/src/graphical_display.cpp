@@ -1525,6 +1525,45 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   SDL_SetWindowSize(impl_->window, width, height);
 }
 
+// Exact inverse of setWindowPosition()/setWindowSize()'s own
+// outer-frame-to-content-area conversion (see their own comments):
+// reads SDL's own content-area position/size back out via
+// SDL_GetWindowPosition()/SDL_GetWindowSize(), then ADDS the same
+// realOrEstimatedWindowBorders() this class already uses for the
+// forward direction, rather than subtracting them.
+bool GraphicalDisplay::windowOuterBounds(int &x, int &y, int &width, int &height) const {
+  if (!impl_->window) return false;
+  int contentX = 0, contentY = 0, contentWidth = 0, contentHeight = 0;
+  SDL_GetWindowPosition(impl_->window, &contentX, &contentY);
+  SDL_GetWindowSize(impl_->window, &contentWidth, &contentHeight);
+  WindowBorders borders = realOrEstimatedWindowBorders(impl_->window);
+  x = contentX - borders.left;
+  y = contentY - borders.top;
+  width = contentWidth + borders.left + borders.right;
+  height = contentHeight + borders.top + borders.bottom;
+  return true;
+}
+
+GraphicalDisplay::Color GraphicalDisplay::foregroundColor() const {
+  return Color{impl_->fg.r, impl_->fg.g, impl_->fg.b};
+}
+
+GraphicalDisplay::Color GraphicalDisplay::backgroundColor() const {
+  return Color{impl_->bg.r, impl_->bg.g, impl_->bg.b};
+}
+
+void GraphicalDisplay::setVisible(bool visible) {
+  if (!impl_->window) return;
+  if (visible) SDL_ShowWindow(impl_->window);
+  else SDL_HideWindow(impl_->window);
+}
+
+void GraphicalDisplay::raise() {
+  if (!impl_->window) return;
+  SDL_ShowWindow(impl_->window);
+  SDL_RaiseWindow(impl_->window);
+}
+
 // The REAL macOS system open-hand cursor, extracted live from
 // NSCursor.openHand (mac_cursor.hpp's extractOpenHandCursorImage())
 // and wrapped in an SDL_Cursor -- not a hand-drawn SDL_CreateColorCursor

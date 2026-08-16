@@ -17500,6 +17500,61 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      を打ち切り(本ラウンドの主題であるPROGRAM/SHELL修正とは無関係な
      既存の潜在バグと判断)、今後の課題として記録するのみに留める。
 
+321. **-g起動中のPROGRAM(`less`等)実行を、実物のTerminal.appウィンドウを
+    GUIウィンドウへ完全重ね打ちする形で実行できるようにした**
+   - **経緯**: 「-g起動後のusilicからlessを実行するためのターミナルを
+     （-g起動時同様完全重ね打ちで）開ける？」という質問への回答として、
+     既存の「実はすでにGUI」起動時オーバーレイ機能(main.cppの
+     `queryTerminalAppWindowBounds()`/`queryTerminalAppColors()`、
+     実物のTerminal.appウィンドウの位置・サイズ・配色をAppleScriptで
+     問い合わせてGUIウィンドウ側をそこへ重ねる)を逆方向に使えば実現
+     可能と回答、実装の指示を受けた。
+   - **実装**: `GraphicalDisplay`に4つのメソッドを追加。
+     `windowOuterBounds(x,y,width,height)`(`setWindowPosition()`/
+     `setWindowSize()`が使う「タイトルバー込みの外枠」座標系での現在
+     位置・サイズを、`SDL_GetWindowPosition`/`SDL_GetWindowSize`+
+     `realOrEstimatedWindowBorders()`で逆算して返す、既存の順方向
+     変換の正確な逆変換)、`foregroundColor()`/`backgroundColor()`
+     (現在の配色を返す)、`setVisible(bool)`/`raise()`
+     (`SDL_HideWindow`/`SDL_ShowWindow`/`SDL_RaiseWindow`)。
+     `main.cpp`に新規関数`runProgramInOverlayTerminal()`を追加し、
+     `GraphicalDisplay`の現在位置・サイズ・配色を取得→AppleScriptで
+     新規Terminal.appウィンドウを`do script`で開き、`bounds`/
+     `background color`/`normal text color`をその値に合わせて設定→
+     `busy of theTab`をポーリングしてコマンド終了を待つ→ウィンドウを
+     閉じる、という一連の処理を実装。実行中はGUIウィンドウを
+     `setVisible(false)`で隠し、終了後`raise()`で前面へ戻す。
+     既存の起動時オーバーレイと同じ`TERM_PROGRAM=Apple_Terminal`
+     ゲート・macOS限定というスコープを踏襲。
+   - **配線**: `ProgramMode`に`setForegroundLauncher()`という
+     設定可能なコールバックフックを新設(`Shell::setProgramLauncher()`
+     と同じ形、`Application`を`SDL2`/`GraphicalDisplay`の詳細から
+     隔離する既存の境界を保つため、`ProgramMode`自身は今回も
+     GUI関連の知識を一切持たない設計とした)。`run()`はこの
+     ランチャーが設定されていてtrueを返した場合は`ChildProcess::
+     runInteractive()`(既存の「継承したstdioでその場実行」経路、
+     GUI下では実際には裏に隠れているかもしれない元のTerminal.app
+     へ出力されてしまい機能しない)を完全にスキップする。配線自体は
+     `main.cpp`の`tryEnterGuiPhase()`(`^Og`トグルと起動時オーバーレイ
+     両方が共有する唯一のGUI突入経路)内、`runGuiPhase()`の前後で
+     設定・解除しており、CUIモードの挙動には一切影響しない。
+   - **検証**: `make test` 747/747件全通過(新規4件: ランチャーが
+     trueを返すと`ChildProcess::runInteractive()`が実行されない
+     ことを実side effectで確認、falseを返すと従来通りフォールバック
+     すること、ランチャー経由でも履歴記録が行われること、ランチャー
+     未設定時は従来通りの挙動であること)。`make usilic`クリーン
+     ビルド確認済み。
+   - **正直な限界**: この開発サンドボックスの`TERM_PROGRAM`は
+     `vscode`であり、実物のTerminal.appから起動した状態を再現
+     できないため、AppleScriptによる新規ウィンドウの実際の重ね打ち
+     (位置・サイズ・配色が本当にGUIウィンドウと一致するか、
+     `busy`ポーリングでの終了検知が実際に機能するか)はエンドツー
+     エンドでは未検証。ゲート条件(`TERM_PROGRAM != Apple_Terminal`)
+     でfalseを返し、既存の`ChildProcess::runInteractive()`経路へ
+     正しくフォールバックすること、および`-g`起動自体がクラッシュ
+     しないことは実機相当のスモークテストで確認済み。実際の
+     Terminal.app環境での動作確認をお願いしたい。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が
