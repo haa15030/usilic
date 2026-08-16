@@ -139,45 +139,21 @@ class GraphicalDisplay : public Display {
   // window hasn't been created.
   void matchWindowSize(int outerWidth, int outerHeight);
 
-  // Reads this window's CURRENT position/size back out, in the SAME
-  // "outer frame, title bar included" convention setWindowPosition()/
-  // setWindowSize() take (see their own comments) -- the exact
-  // inverse conversion, via the same realOrEstimatedWindowBorders()
-  // helper those two already use, just added on rather than
-  // subtracted. Added for the PROGRAM-mode-in-a-real-terminal overlay
-  // feature (main.cpp's runProgramInOverlayTerminal(), a 2026-08-1x
-  // follow-up to the "実はすでにGUI" LAUNCH-time overlay this class
-  // already supports): that feature needs to open a REAL Terminal.app
-  // window positioned/sized to match THIS window's current on-screen
-  // location, i.e. the reverse of every other overlay call site in
-  // this class, which all go from "known real-terminal bounds" to
-  // "set this window to match." Returns false (leaving `x`/`y`/
-  // `width`/`height` untouched) if the window doesn't exist yet.
-  bool windowOuterBounds(int &x, int &y, int &width, int &height) const;
-
-  // Current foreground/background colors, in the same Color type
-  // setColors() takes. Added alongside windowOuterBounds() above, for
-  // the same overlay feature, to color the real Terminal.app window
-  // it opens to match rather than leaving it at Terminal.app's own
-  // default profile colors.
-  Color foregroundColor() const;
-  Color backgroundColor() const;
-
   // Hides/shows this window without destroying it (SDL_HideWindow()/
-  // SDL_ShowWindow()) -- used by the same overlay feature to get this
-  // window out of the way (so it can't end up frontmost/focused over
-  // the real terminal window sitting in the exact same screen
-  // position mid-command) for the duration of a delegated PROGRAM
-  // command, then bring it back once that real terminal window
-  // closes. A no-op if the window hasn't been created.
+  // SDL_ShowWindow()) -- used by the PROGRAM-mode-in-the-launching-
+  // terminal feature (main.cpp's runProgramInLaunchingTerminal()) to
+  // get this window out of the way for the duration of a delegated
+  // PROGRAM command (`less`, `vi`, ...), then bring it back once that
+  // real terminal command finishes. A no-op if the window hasn't been
+  // created.
   void setVisible(bool visible);
 
   // Brings this window to the front and gives it input focus
-  // (SDL_RaiseWindow()) -- used by the same overlay feature once the
-  // real terminal window it delegated to closes, so control visibly
-  // returns to this window rather than leaving focus wherever the OS
-  // happens to leave it after the other window closes. A no-op if the
-  // window hasn't been created.
+  // (SDL_RaiseWindow()) -- used by the same feature once the delegated
+  // PROGRAM command finishes, so control visibly returns to this
+  // window rather than leaving focus wherever the OS happens to leave
+  // it after the real terminal was raised. A no-op if the window
+  // hasn't been created.
   void raise();
 
   void write(const std::string &text) override;

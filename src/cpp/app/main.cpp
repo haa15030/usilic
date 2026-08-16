@@ -2108,132 +2108,74 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   }
 }
 
-// Runs `command` in a REAL Terminal.app window positioned/sized/
-// colored to exactly overlay `gui`'s own CURRENT on-screen position
-// (the reverse of queryTerminalAppWindowBounds()/
-// queryTerminalAppColors()'s own "real terminal -> GUI window"
-// direction, using GraphicalDisplay::windowOuterBounds()/
-// foregroundColor()/backgroundColor() -- the getters added alongside
-// this function specifically for it), for PROGRAM-mode commands
-// (`less`, `vi`, a configured PROGRAM-list entry) that need real
-// terminal control ChildProcess::runInteractive() alone can't provide
-// once this process's own inherited stdio is no longer what's
-// actually on screen (a GraphicalDisplay window is). A real user
-// follow-up question/request building on the "実はすでにGUI" LAUNCH-
-// time overlay this file already has: "-g起動後のusilicからlessを
-// 実行するためのターミナルを（-g起動時同様完全重ね打ちで）開ける？"
-//
-// Same TERM_PROGRAM=Apple_Terminal / macOS-only scope as every other
-// AppleScript-based feature in this file (see queryTerminalAppColors()'s
-// own comment on why); returns false (doing nothing) if that gate
-// fails, `gui`'s own bounds can't be read (window not open), or the
-// osascript step itself fails -- ProgramMode::run()'s own launcher
-// contract (see setForegroundLauncher()'s comment) treats false as
-// "you handle it," so the caller falls back to the ordinary
-// ChildProcess::runInteractive() path exactly as if this launcher
-// weren't wired at all.
-//
-// Hides `gui`'s own window for the duration (setVisible(false)) so it
-// can't end up frontmost/focused over the real Terminal.app window
-// sitting in the exact same screen position mid-command, and raises
-// it again (raise()) once that window closes -- SDL doesn't otherwise
-// know or care that another app's window is now covering it.
-//
-// The osascript itself blocks INSIDE the script (its own `repeat
-// while busy of theTab` loop) until the command finishes, so this
-// function's own job is just "launch it and wait for osascript to
-// return" -- but that wait is done via ChildProcess::runDetached() +
-// a poll loop calling gui.pumpEvents() every tick, NOT a single
-// blocking ChildProcess::run() call (an earlier version of this
-// function did exactly that). A real user report (2026-08-17, after
-// `set index of theWindow to 1` alone didn't fix the SAME z-order
-// symptom): "変化無し...usilicを起動したターミナルに...error
-// messaging the mach port for IMKCFRunLoopWakeUpReliable" -- that
-// Cocoa/AppKit warning (Input Method Kit failing to reach this
-// process's own run loop) pointed at the real mechanism: blocking
-// this process's main thread synchronously in waitpid() for however
-// long `less` runs means macOS's window server never gets a chance to
-// actually COMPOSITE this process's own setVisible(false)/window-
-// ordering changes -- SDL_HideWindow() can mark the window hidden
-// internally, but the visual result depends on this process's own
-// Cocoa run loop actually turning over, which a fully-blocked main
-// thread never lets happen. Regularly calling gui.pumpEvents()
-// (already the class's normal way of servicing SDL/Cocoa) while
-// polling ChildProcess::hasExited() keeps that run loop alive for the
-// whole wait instead.
-bool runProgramInOverlayTerminal(const std::string &command, fm::GraphicalDisplay &gui) {
+// Raises THIS process's own controlling-terminal window (identified
+// by tty, exactly the way queryTerminalAppColors()/
+// queryTerminalAppWindowBounds() already find "the specific Terminal
+// window this process launched from" rather than guessing at "front
+// window") to the front of Terminal.app's own window stack, via the
+// `index of <window>` property (1 == frontmost). Same
+// TERM_PROGRAM=Apple_Terminal gate as every other AppleScript feature
+// in this file. Returns whether the AppleScript itself reported
+// success -- doesn't (and can't) confirm the window is now VISUALLY
+// frontmost, same limitation every
+// AppleScript-based feature here already has.
+bool raiseLaunchingTerminalWindow() {
   const char *termProgram = std::getenv("TERM_PROGRAM");
   if (!termProgram || std::string(termProgram) != "Apple_Terminal") return false;
+  std::string tty = currentTtyPath();
+  if (tty.empty()) return false;
 
-  int x, y, width, height;
-  if (!gui.windowOuterBounds(x, y, width, height)) return false;
-  fm::GraphicalDisplay::Color fg = gui.foregroundColor();
-  fm::GraphicalDisplay::Color bg = gui.backgroundColor();
+  fm::ChildProcess::Result result = fm::ChildProcess::run(
+      {"osascript", "-e",
+       "tell application \"Terminal\"\n"
+       "  activate\n"
+       "  repeat with w in windows\n"
+       "    repeat with t in tabs of w\n"
+       "      if tty of t is \"" +
+           tty +
+           "\" then\n"
+           "        set index of w to 1\n"
+           "      end if\n"
+           "    end repeat\n"
+           "  end repeat\n"
+           "end tell"});
+  return result.ok;
+}
 
-  // Escaped for embedding as an AppleScript string literal (backslash
-  // and double-quote both need it) -- this is the whole shell command
-  // line `do script` will run verbatim, so no separate shell-level
-  // escaping is needed on top of that.
-  std::string escapedCommand;
-  for (char c : command) {
-    if (c == '\\' || c == '"') escapedCommand += '\\';
-    escapedCommand += c;
-  }
-
-  // `set index of theWindow to 1` (repeated right before the wait
-  // loop too) is deliberately used ALONGSIDE `activate`, not instead
-  // of it -- `activate` only guarantees TERMINAL.APP AS A WHOLE is
-  // frontmost among all running applications; it says nothing about
-  // WHICH of Terminal's own windows (this process's own original
-  // launching window is very likely also still open, at this exact
-  // same screen position, since the overlay feature places the GUI
-  // window to match it -- see queryTerminalAppWindowBounds()'s own
-  // comment) ends up on top WITHIN Terminal.app itself. `index` is
-  // Terminal.app's own documented window-ordering property (1 ==
-  // frontmost); setting it directly is the one unambiguous way to
-  // pick which specific window wins that WITHIN-app ordering, rather
-  // than trusting that a freshly-`do script`-created window always
-  // wins it against an already-open one. A real user report
-  // (2026-08-17): after gui.setVisible(false) + this same script
-  // WITHOUT the `set index` lines, the new terminal genuinely ran
-  // `less` (confirmed working, correctly bounds/color-matched -- "完全
-  // 重ね打ちはOK") underneath the GUI window rather than in front of
-  // it ("下になっているターミナル...が-g画面よりも上に来ればいい") --
-  // exactly the "which OF Terminal's windows is frontmost" gap this
-  // targets, distinct from gui.setVisible(false) itself (which only
-  // controls whether THIS process's own SDL window is visible at
-  // all, not Terminal's own internal window stacking).
-  std::ostringstream script;
-  script << "tell application \"Terminal\"\n"
-         << "  activate\n"
-         << "  set theTab to do script \"" << escapedCommand << "\"\n"
-         << "  set theWindow to front window\n"
-         << "  set index of theWindow to 1\n"
-         << "  set bounds of theWindow to {" << x << ", " << y << ", " << (x + width) << ", " << (y + height)
-         << "}\n"
-         << "  set background color of theTab to {" << (static_cast<int>(bg.r) * 257) << ", "
-         << (static_cast<int>(bg.g) * 257) << ", " << (static_cast<int>(bg.b) * 257) << "}\n"
-         << "  set normal text color of theTab to {" << (static_cast<int>(fg.r) * 257) << ", "
-         << (static_cast<int>(fg.g) * 257) << ", " << (static_cast<int>(fg.b) * 257) << "}\n"
-         << "  activate\n"
-         << "  set index of theWindow to 1\n"
-         << "  repeat while busy of theTab\n"
-         << "    delay 0.2\n"
-         << "  end repeat\n"
-         << "  close theWindow\n"
-         << "end tell";
-
+// Runs `command` in this process's OWN inherited stdio -- i.e.
+// exactly what ChildProcess::runInteractive() (ProgramMode::run()'s
+// own ordinary, non-launcher fallback) already does -- but first
+// raises the REAL terminal window that stdio actually belongs to
+// above `gui`'s own GUI window, and hides `gui` for the duration.
+//
+// A complete redesign (2026-08-17), replacing an earlier version that
+// tried to open a SEPARATE, newly-created Terminal.app window
+// (bounds/colors matched to `gui`'s own, via `do script`) to run the
+// command in instead. That approach never got the new window's own
+// bounds/colors/z-order right across three separate fix attempts
+// (`set index of theWindow to 1`; blocking->polling;
+// stderr-capturing debug round) and turned out to be solving the
+// wrong problem in the first place: a real user report noticed that
+// `less` was ALREADY running correctly -- with fully working keyboard
+// input -- in the ORIGINAL terminal this process was launched from
+// (ChildProcess::runInteractive()'s own inherited-stdio fallback,
+// confirmed by minimizing that terminal and finding `less` running
+// there) the whole time, EVERY prior round; only its VISIBILITY was
+// ever the actual problem. Their own suggestion -- "その辺の仕組みを
+// 頂くというのは？" (borrow whatever mechanism clicking Terminal's own
+// Dock icon uses) -- is exactly what raiseLaunchingTerminalWindow()
+// above does: find and raise THIS SPECIFIC already-existing window,
+// rather than creating, positioning, coloring, and eventually closing
+// an entirely separate one. No `windowOuterBounds()`/colors/`do
+// script`/`busy`-polling needed at all -- the command runs through
+// the exact same code path (ChildProcess::runInteractive()) the
+// CUI-only (`-c`) build already uses unmodified, so anything already
+// proven to work there (keyboard input, signal handling, exit status)
+// carries over here for free.
+bool runProgramInLaunchingTerminal(const std::string &command, fm::GraphicalDisplay &gui) {
+  if (!raiseLaunchingTerminalWindow()) return false;  // falls back to ProgramMode::run()'s own default path
   gui.setVisible(false);
-  pid_t pid = fm::ChildProcess::runDetached({"osascript", "-e", script.str()});
-  if (pid < 0) {
-    gui.setVisible(true);
-    gui.raise();
-    return false;
-  }
-  while (!fm::ChildProcess::hasExited(pid)) {
-    gui.pumpEvents();  // keeps this process's own Cocoa run loop turning over -- see this function's own comment
-    usleep(50000);
-  }
+  fm::ChildProcess::runInteractive({"sh", "-c", command});
   gui.setVisible(true);
   gui.raise();
   return true;
@@ -2275,7 +2217,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // owning unique_ptr) since the launcher only runs while gui.reset()
   // below hasn't happened yet.
   app.programMode().setForegroundLauncher(
-      [&gui](const std::string &command) { return runProgramInOverlayTerminal(command, *gui); });
+      [&gui](const std::string &command) { return runProgramInLaunchingTerminal(command, *gui); });
 
   runGuiPhase(app, *gui);
 
@@ -2652,20 +2594,14 @@ int main(int argc, char **argv) {
     // path cases -- this is the THIRD, separate GUI entry point
     // (guiOwnsWholeSession's own "実はすでにGUI" launch-time-detected
     // overlay, where GUI owns the whole session from process start and
-    // runTerminalPhase()/tryEnterGuiPhase() are never called at all) --
-    // missing here entirely was the actual root cause of a real user
-    // report (2026-08-17) that PROGRAM-mode `less` kept running against
-    // this process's own inherited stdio (the ORIGINAL launching
-    // terminal window, confirmed by the user minimizing it and finding
-    // `less` running there) instead of ever reaching
-    // runProgramInOverlayTerminal() at all -- two earlier "fixes" to
-    // that function itself (index-1 z-ordering, blocking->polling)
-    // produced literally no observed change because the function was
-    // never being called in the first place: setForegroundLauncher()
-    // had only ever been wired inside tryEnterGuiPhase(), which this
-    // branch never calls.
+    // runTerminalPhase()/tryEnterGuiPhase() are never called at all).
+    // A real user report (2026-08-17) found this branch missing the
+    // wiring entirely (PROGRAM-mode `less` kept running with correct
+    // keyboard input but no window ever came to front, since
+    // setForegroundLauncher() had only ever been wired inside
+    // tryEnterGuiPhase(), which this branch never calls).
     app.programMode().setForegroundLauncher(
-        [&launchGui](const std::string &command) { return runProgramInOverlayTerminal(command, *launchGui); });
+        [&launchGui](const std::string &command) { return runProgramInLaunchingTerminal(command, *launchGui); });
     runGuiPhase(app, *launchGui);
     app.programMode().setForegroundLauncher(nullptr);
   } else {
