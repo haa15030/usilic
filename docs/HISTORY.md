@@ -1319,6 +1319,32 @@ PTYテストで実際に`概要`・`環境`の文字化けが解消すること�
 
 (この続き――RMモードでのファイル選択不具合の調査――は本日中には完了せず、翌日へ持ち越し)
 
+2026-07-16の続き(2026-07-17早朝)
+
+<再起動すると選べるようになる（いずれもmacOSでは再現せず）。動作がどこかで違っているのかもしれないが、SHELL起動時のプロンプトゴミ表示の件もあり、やはりそちらでも実地の環境で試行してもらった方がいいと思う。そこで今、CPUの違いをなくすべくIntelCPUマシンでVS環境を構築しようとしているところなんだけど、他のmacOS環境はBigSur,MontereyしかなくVSがインストールできないためSonoma環境を構築中なんだが、Windows11ではVSインストはできない？そちらのubuntu Containerでデバッグするというのは？
+
+>結論から言うと、Intel MacやSonoma環境をわざわざ新規構築しなくても、既存の「VS Code Dev Container」のUbuntu環境内のターミナルで直接Claude Codeを起動できれば、それが一番早いはずです。Dev ContainerはDockerベースのLinuxコンテナなので、そのコンテナ内のターミナルで`claude`コマンドが動けば、私はそのUbuntu環境そのものの上でネイティブに動作し、今回のようなmacOSで再現しない不具合もそちらで直接デバッグできます。CPUアーキテクチャ(Intel/ARM)の違いは、今回見えている症状(termios・キー入力・セッション状態がらみ)の原因である可能性は低く、違いの本質はOS(Linuxのtty/glibc vs macOSのBSD系)の方だと思うので、Intel Mac確保よりコンテナ内でClaude Codeを動かす方が近道だと考えます。
+
+なお補足として、VS Code自体はWindows 11にも普通にインストールできます(制限はありません)。もしDev ContainerがWSL2やDocker Desktop経由で動く構成なら、Windows機からでも同じUbuntuコンテナ環境にアクセスできるはずです。
+
+<過去の発言を見て欲しいんだけど、ununtu Containerはないらしい。無くてもubuntu26.04用はつくれる？
+
+>`.devcontainer/Dockerfile`と`.devcontainer/devcontainer.json`を作成しました(`ubuntu:26.04`ベース、`build-essential`/`libncurses-dev`等のビルド依存関係、Claude Code CLI、`dev`ユーザーでパスワード無しsudo、を含みます)。
+
+ただしこのマシンにはDockerが入っていないため、実際にビルドできるかはこちらでは検証できていません。VS Codeの「Reopen in Container」(または`docker build .devcontainer`)で試していただき、`ubuntu:26.04`イメージがまだDocker Hubに無い場合はDockerfile冒頭のコメント通り`ubuntu:24.04`に変更してください。
+
+ビルドできてコンテナ内に入れたら、そこでターミナルから`claude`を起動すれば、私がそのUbuntuコンテナ上で直接動いて今回の`RM`選択やSHELLプロンプト表示の不具合をデバッグできるはずです。まずはコンテナが立ち上がるかどうか試してもらえますか。
+
+<それは24.04で試行するってこと？
+
+>`ubuntu:26.04`は実際にDocker Hubに存在します(HTTP 200、amd64含む複数アーキテクチャ対応、最終更新2026-07-16)。なので24.04に変える必要はなく、Dockerfileに書いた`ubuntu:26.04`のままで試してもらって大丈夫です。
+
+<わかった。やってみる。できたら戻るんでそのときはよろしく。
+
+>了解です。うまくいったら戻ってきてください、そのときはよろしくお願いします。
+
+(この日の残りはtcbプロジェクトと無関係な作業(OpenCoreセッションの移設に関するトラブルシューティング)のため省略)
+
 2026-07-31
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-07-31 14.51.41.png''/Users/haa15030/Desktop/スクリーンショット 2026-07-31 14.51.52.png'
