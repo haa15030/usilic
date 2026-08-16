@@ -2164,17 +2164,43 @@ bool runProgramInOverlayTerminal(const std::string &command, fm::GraphicalDispla
     escapedCommand += c;
   }
 
+  // `set index of theWindow to 1` (repeated right before the wait
+  // loop too) is deliberately used ALONGSIDE `activate`, not instead
+  // of it -- `activate` only guarantees TERMINAL.APP AS A WHOLE is
+  // frontmost among all running applications; it says nothing about
+  // WHICH of Terminal's own windows (this process's own original
+  // launching window is very likely also still open, at this exact
+  // same screen position, since the overlay feature places the GUI
+  // window to match it -- see queryTerminalAppWindowBounds()'s own
+  // comment) ends up on top WITHIN Terminal.app itself. `index` is
+  // Terminal.app's own documented window-ordering property (1 ==
+  // frontmost); setting it directly is the one unambiguous way to
+  // pick which specific window wins that WITHIN-app ordering, rather
+  // than trusting that a freshly-`do script`-created window always
+  // wins it against an already-open one. A real user report
+  // (2026-08-17): after gui.setVisible(false) + this same script
+  // WITHOUT the `set index` lines, the new terminal genuinely ran
+  // `less` (confirmed working, correctly bounds/color-matched -- "完全
+  // 重ね打ちはOK") underneath the GUI window rather than in front of
+  // it ("下になっているターミナル...が-g画面よりも上に来ればいい") --
+  // exactly the "which OF Terminal's windows is frontmost" gap this
+  // targets, distinct from gui.setVisible(false) itself (which only
+  // controls whether THIS process's own SDL window is visible at
+  // all, not Terminal's own internal window stacking).
   std::ostringstream script;
   script << "tell application \"Terminal\"\n"
          << "  activate\n"
          << "  set theTab to do script \"" << escapedCommand << "\"\n"
          << "  set theWindow to front window\n"
+         << "  set index of theWindow to 1\n"
          << "  set bounds of theWindow to {" << x << ", " << y << ", " << (x + width) << ", " << (y + height)
          << "}\n"
          << "  set background color of theTab to {" << (static_cast<int>(bg.r) * 257) << ", "
          << (static_cast<int>(bg.g) * 257) << ", " << (static_cast<int>(bg.b) * 257) << "}\n"
          << "  set normal text color of theTab to {" << (static_cast<int>(fg.r) * 257) << ", "
          << (static_cast<int>(fg.g) * 257) << ", " << (static_cast<int>(fg.b) * 257) << "}\n"
+         << "  activate\n"
+         << "  set index of theWindow to 1\n"
          << "  repeat while busy of theTab\n"
          << "    delay 0.2\n"
          << "  end repeat\n"
