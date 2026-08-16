@@ -2139,12 +2139,28 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 // it again (raise()) once that window closes -- SDL doesn't otherwise
 // know or care that another app's window is now covering it.
 //
-// Waits for the command to finish by polling Terminal.app's own
-// `busy of <tab>` property (same idiom queryTerminalAppColors()/
-// queryTerminalAppWindowBounds() already established for reaching
-// into a live Terminal.app tab) rather than tracking a child pid
-// directly -- this process never forks the shell inside that window
-// at all, Terminal.app itself does, entirely out of process.
+// The osascript itself blocks INSIDE the script (its own `repeat
+// while busy of theTab` loop) until the command finishes, so this
+// function's own job is just "launch it and wait for osascript to
+// return" -- but that wait is done via ChildProcess::runDetached() +
+// a poll loop calling gui.pumpEvents() every tick, NOT a single
+// blocking ChildProcess::run() call (an earlier version of this
+// function did exactly that). A real user report (2026-08-17, after
+// `set index of theWindow to 1` alone didn't fix the SAME z-order
+// symptom): "変化無し...usilicを起動したターミナルに...error
+// messaging the mach port for IMKCFRunLoopWakeUpReliable" -- that
+// Cocoa/AppKit warning (Input Method Kit failing to reach this
+// process's own run loop) pointed at the real mechanism: blocking
+// this process's main thread synchronously in waitpid() for however
+// long `less` runs means macOS's window server never gets a chance to
+// actually COMPOSITE this process's own setVisible(false)/window-
+// ordering changes -- SDL_HideWindow() can mark the window hidden
+// internally, but the visual result depends on this process's own
+// Cocoa run loop actually turning over, which a fully-blocked main
+// thread never lets happen. Regularly calling gui.pumpEvents()
+// (already the class's normal way of servicing SDL/Cocoa) while
+// polling ChildProcess::hasExited() keeps that run loop alive for the
+// whole wait instead.
 bool runProgramInOverlayTerminal(const std::string &command, fm::GraphicalDisplay &gui) {
   const char *termProgram = std::getenv("TERM_PROGRAM");
   if (!termProgram || std::string(termProgram) != "Apple_Terminal") return false;
@@ -2208,10 +2224,19 @@ bool runProgramInOverlayTerminal(const std::string &command, fm::GraphicalDispla
          << "end tell";
 
   gui.setVisible(false);
-  fm::ChildProcess::Result result = fm::ChildProcess::run({"osascript", "-e", script.str()});
+  pid_t pid = fm::ChildProcess::runDetached({"osascript", "-e", script.str()});
+  if (pid < 0) {
+    gui.setVisible(true);
+    gui.raise();
+    return false;
+  }
+  while (!fm::ChildProcess::hasExited(pid)) {
+    gui.pumpEvents();  // keeps this process's own Cocoa run loop turning over -- see this function's own comment
+    usleep(50000);
+  }
   gui.setVisible(true);
   gui.raise();
-  return result.ok;
+  return true;
 }
 
 // Resolves a font, creates a GraphicalDisplay sized to match

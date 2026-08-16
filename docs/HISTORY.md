@@ -8832,3 +8832,12 @@ P.S.
 原因は、`activate`がTerminal.appという**アプリケーション全体**を最前面にするだけで、Terminal.app自身が複数ウィンドウ(usilicを起動した元のターミナルウィンドウと、今回`do script`で新規作成したウィンドウ)を持つ場合に**そのアプリ内でどちらが最前面か**までは保証しない、という点だと推定しました。AppleScriptに`set index of theWindow to 1`(Terminal.appの公式ウィンドウ順序プロパティ、1が最前面)を追加し、`do script`直後と、`bounds`/配色設定・`activate`再実行の直後の2箇所で設定するようにしました。
 
 `make test` 747/747件全通過、`make usilic`クリーンビルド確認済みです。ただしこの環境も`TERM_PROGRAM=vscode`のままなので、実際にウィンドウ順序が直ったかどうかはエンドツーエンドでは未検証です(項目321と同じ制約)。CLAUDE.mdに項目322として記録、コミット・プッシュ済みです。再度の実機確認をお願いします。
+
+<変化無し。lessを終えたとき、usilicを起動したターミナルに下記メッセージが出た。
+2026-08-16 16:05:07.258 usilic[66165:40089052] error messaging the mach port for IMKCFRunLoopWakeUpReliable
+
+>このCocoa/AppKitの警告(Input Method KitがこのプロセスOwn run loopへ到達できない)が真因の手がかりになりました。`runProgramInOverlayTerminal()`は`osascript`の実行を`ChildProcess::run()`(fork+exec+`waitpid()`の同期ブロッキング)で待っており、`less`が動いている間ずっとこのプロセスのメインスレッドが完全に停止していました。`SDL_HideWindow()`自体は内部的にウィンドウを非表示扱いにできても、その視覚的な反映(ウィンドウサーバーへの実際の合成)にはこのプロセス自身のCocoaランループが回り続けることが必要で、メインスレッドが`waitpid()`で完全停止していたためこれが一度も起きていなかった、というのが項目322の`index`修正でも直らなかった真因と判明しました。
+
+`ChildProcess::run()`の単発ブロッキング呼び出しを、`ChildProcess::runDetached()`(既存、`updatedb`の非同期実行用に導入済みの「fork/execしてすぐ戻る」プリミティブ)+`ChildProcess::hasExited()`(既存、非ブロッキングの終了確認)によるポーリングループへ置き換え、ループの各周回で`gui.pumpEvents()`(このクラスが元々SDL/Cocoaへ処理を返す際に使っている通常の手段)を呼ぶよう変更しました。これによりosascript自身の`less`終了待ちの間もこのプロセス自身のCocoaランループが回り続けるようになります。
+
+`make test` 747/747件全通過、`make usilic`クリーンビルド確認済みです。この環境も`TERM_PROGRAM=vscode`のため、実際にウィンドウ順序・IMK警告が解消したかどうかはエンドツーエンドでは未検証です。CLAUDE.mdに項目323として記録、コミット・プッシュ済みです。再度お試しいただけますか。

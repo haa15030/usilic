@@ -17584,6 +17584,36 @@ Claude Code 側でも「初めまして」にならずに続きから対応で�
      ウィンドウ順序が正しくなったかどうかはエンドツーエンドで未検証
      (項目321と同じ制約)。ユーザーによる実機再確認待ち。
 
+323. **項目322の`set index of theWindow to 1`だけでは直らず、真因を
+    ブロッキング待機自体と特定・再修正**
+   - **報告**: 「変化無し。lessを終えたとき、usilicを起動したターミナル
+     に下記メッセージが出た。`2026-08-16 16:05:07.258 usilic[66165:
+     40089052] error messaging the mach port for
+     IMKCFRunLoopWakeUpReliable`」。
+   - **原因**: このCocoa/AppKitの警告(Input Method KitがこのプロセスOwn
+     run loopへ到達できない)が手がかりになった。`runProgramInOverlayTerminal()`
+     は`osascript`の実行を`ChildProcess::run()`(fork+exec+`waitpid()`の
+     同期ブロッキング)で待っており、`less`が動いている間ずっとこの
+     プロセスのメインスレッドが完全に停止していた。`SDL_HideWindow()`
+     自体は内部的にウィンドウを非表示扱いにできても、その視覚的な
+     反映(ウィンドウサーバーへの実際の合成)にはこのプロセス自身の
+     Cocoaランループが回り続けることが必要で、メインスレッドが
+     `waitpid()`で完全停止していたためこれが一度も起きていなかった、
+     というのが項目322の`index`修正でも直らなかった真因と判明。
+   - **修正**: `ChildProcess::run()`の単発ブロッキング呼び出しを、
+     `ChildProcess::runDetached()`(既存、`updatedb`の非同期実行用に
+     項目で導入済みの「fork/execしてすぐ戻る」プリミティブ)+
+     `ChildProcess::hasExited()`(既存、非ブロッキングの終了確認)による
+     ポーリングループへ置き換え、ループの各周回で
+     `gui.pumpEvents()`(このクラスが元々SDL/Cocoaへ処理を返す際に
+     使っている通常の手段)を呼ぶよう変更。これによりosascript自身の
+     `less`終了待ち(`repeat while busy of theTab`)の間もこのプロセス
+     自身のCocoaランループが回り続けるようになった。
+   - **検証**: `make test` 747/747件全通過(既存テストへの影響なし)。
+     `make usilic`クリーンビルド確認済み。この環境も`TERM_PROGRAM=
+     vscode`のため、実際にウィンドウ順序・IMK警告が解消したかどうかは
+     エンドツーエンドで未検証。ユーザーによる実機再確認待ち。
+
 ## 今後の大きな方向性
 
 - ①クラッシュ系バグ修正(継続中。`-Wpointer-to-int-cast`警告が
