@@ -2108,6 +2108,30 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   }
 }
 
+// Clears THIS process's own controlling terminal (a plain ANSI
+// "\x1b[2J\x1b[H" written directly to this process's own inherited
+// stdout -- no AppleScript/osascript needed at all, since this
+// process's stdio IS literally that terminal, unlike
+// raiseLaunchingTerminalWindow()'s own need to reach an EXTERNAL
+// window from outside it). Called exactly once, right after the
+// "実はすでにGUI" GUI window is created/shown and has already covered
+// this terminal from view, so the clear itself is never visible --
+// it only matters for what's THERE the next time
+// raiseLaunchingTerminalWindow() brings this same terminal back to
+// the front for a PROGRAM-mode command.
+//
+// Added (2026-08-17 follow-up) after a real user report that
+// runProgramInLaunchingTerminal()'s own "clear; " command prefix (see
+// its own comment) only hides the flash from the SECOND PROGRAM
+// invocation onward -- the FIRST one still showed this terminal's
+// genuinely original content (whatever was on screen the moment
+// `usilic -g` itself was launched, e.g. the shell echoing that
+// command), since nothing had ever cleared it before that point. This
+// closes that gap by clearing it once up front instead.
+void clearLaunchingTerminal() {
+  std::cout << "\x1b[2J\x1b[H" << std::flush;
+}
+
 // Raises THIS process's own controlling-terminal window (identified
 // by tty, exactly the way queryTerminalAppColors()/
 // queryTerminalAppWindowBounds() already find "the specific Terminal
@@ -2220,6 +2244,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
 
   gui->open();
   display.setBackend(*gui);
+  clearLaunchingTerminal();  // see its own comment -- covered by the GUI window now, so this never flashes
   app.handleResize();  // re-layout/redraw against the (same-sized, but now GUI-rendered) geometry
 
   // Wired for the duration of GUI mode only -- see
@@ -2524,6 +2549,7 @@ int main(int argc, char **argv) {
       launchGui->matchWindowSize(bounds->width, bounds->height);
       launchGui->open();
       display.setBackend(*launchGui);
+      clearLaunchingTerminal();  // see its own comment -- covered by the GUI window now, so this never flashes
       guiOwnsWholeSession = true;
       // The real terminal that launched usilic is left sitting idle
       // for the rest of the session (see main()'s own comment) --
