@@ -2967,6 +2967,231 @@ CLAUDE.mdへの記録は今回まだ行っていません(次のクラスと合�
 
 >A different way to work with Claude(異なる働き方): 普段チャットで済ませるには大きすぎるタスクを任せると、Claudeが上記のセクションに整理してくれるので、いつ自分の対応が必要になるかが分かる。
 
+2026-07-27
+
+<ちょっと他でハマっていることがあって久々に来てみた。
+ubuntuでも「usilic」で起動後検証したいんだが、どのディレクトリでmakeするんだっけ。
+git/usilicではgit pull実施済み。
+
+>Ubuntu上でのビルド手順は2ステップです。
+
+```
+cd ~/git/usilic/src
+./config.sh
+cd ../tcb/src
+make
+```
+
+`config.sh`は`src/`から実行し(`../tcb/src/`へ`Makefile`/`config.h`/`progname.h`を生成する作りです)、実際のビルド(`make`)はレガシーCソースが置かれている`tcb/src/`で行います。ビルドが終わると`tcb/src/tcb`という実行ファイルができます(名前は`tcb`のままですが、中身は`usilic`として動きます)。
+
+起動確認は:
+```
+./tcb -z
+```
+で`usilic: Invalid option -z`のようなusageメッセージが出れば正常です。
+
+<usilic: Invalid option -z
+Usage: usilic
+       usilic [directory]
+       usilic [file] [< file]
+version 1.5b-1  20 Mar 2000
+usilic@ssd-usb-bios:~/git/usilic/tcb/src$ 
+
+>ビルド成功、usageメッセージも正しく`usilic`表示になっていますね。実機のユーザー名も`usilic@ssd-usb-bios`になっているとは、名前の浸透ぶりが伺えます。
+
+正常に起動確認できたので、そのまま`./tcb`(引数無し、または`./tcb .`のようにディレクトリ指定)で実際の動作検証に入れます。他でハマっている件、力になれることがあれば言ってください。
+
+<usilic@ssd-usb-bios:~/git/usilic/tcb/src$ ./tcb
+usilicrc: No such file or directory.
+usilic@ssd-usb-bios:~/git/usilic/tcb/src$ 
+
+>`usilicrc`設定ファイルが見つからないためです。まだ`make install`していない状態(`/usr/local/lib/usilic/usilicrc`が無い)なので、個人設定用の場所に置く必要があります。
+
+```
+mkdir -p ~/.usilic
+cp ~/git/usilic/src/usilicrc ~/.usilic/usilicrc
+```
+
+これで`~/.usilic/usilicrc`から読み込まれるはずです。この状態でもう一度`./tcb`を実行してみてください。
+
+<起動はできたもののCP→SHELL→ls画面の際に「usilic: コマンドが見つかりません」となる。
+
+>`usilic`という名前をコマンドとして直接実行しようとしている箇所がありそうです。SHELLモードは`export PAGER='<パス> -p <pid>'`のように自分自身をページャーとして設定しますが、その「パス」に使っている文字列を確認させてください。
+
+`git log`をした際にPAGER経由で`less`相当の処理へ回るのと同じ理由です。SHELLモードは自分自身を`PAGER='usilic -p <pid>'`として`export`しますが(`shell.c:1448`)、これは`usilic`という名前で`$PATH`から見つかることを前提にしています。今は`tcb/src/tcb`という実行ファイルをその場で直接叩いているだけで、`usilic`という名前でどこにもインストールされていないため、SHELL内から`usilic`を呼ぼうとすると見つからない、という状態です。
+
+`ls`だけで「コマンドが見つかりません」と出たなら、`ls`の出力が何らかの形で`PAGER`(`usilic -p <pid>`)を経由しようとした、ということだと思います。
+
+**手っ取り早い確認方法**(インストールせずに試す):
+
+```
+cd ~/git/usilic/src
+./config.sh
+cd ../tcb/src
+sudo ./install.sh
+```
+
+`install.sh`は`$USR_DIR/bin`(通常`/usr/local/bin`)へ`usilic`という名前でコピーします。これで`$PATH`から`usilic`が見つかるようになるはずです。
+
+もしインストールせずこの場でだけ試したいなら、一時的に:
+```
+export PATH="$PWD:$PATH"
+ln -sf tcb usilic
+./tcb
+```
+としてカレントディレクトリに`usilic`という名前のシンボリックリンクを張り、`$PATH`に加えてから起動する方法もあります。どちらの形で進めますか。
+
+<前者。
+
+>了解しました。以下を`tcb/src`から実行してください。
+
+```
+sudo ./install.sh
+```
+
+`config.sh`が生成した`install.sh`は、`$USR_DIR/bin`(通常`/usr/local/bin`)へ`usilic`という名前で実行ファイルをコピーし、`$USR_DIR/lib/usilic`へ`usilicrc`等もコピーします(書き込み権限が要るので`sudo`推奨です)。
+
+終わったら`which usilic`で`/usr/local/bin/usilic`が見えることを確認してから、改めて`usilic`コマンド(または`./tcb`でも同じバイナリです)を起動してSHELL→`ls`を試してみてください。
+
+<usilic@ssd-usb-bios:~/git/usilic/tcb/src$ sudo ./install.sh
+sudo: './install.sh': command not found
+usilic@ssd-usb-bios:~/git/usilic/tcb/src$ 
+
+>`install.sh`は`config.sh`を実行した場所(`src/`)に生成されます。`tcb/src`ではなく`src`に戻って実行してください。
+
+```
+cd ~/git/usilic/src
+sudo ./install.sh
+```
+
+<試行ひと区切りということで下記をよろしく。
+BUGS:
+・^J^W[Enter]→SHELLでカレントディレクトリ一覧表示→^[l→LOG→SHELLプロンプト一覧のはずが「No string」
+・macOSではconfig.shのdu起動オプションが不正なのでDUが起動しない。同じくCPのデフォルト設定（cp -vRi）ではディレクトリの内容がコピーされてしまうため、こちらも対処が必要（~/git/docs/を/tmpへCPしようとすると/tmp/docs/ではなくて/tmp/book-sample-reference/と/tmp/ideas/が生成される）。
+
+IDEAS:
+・SHELLを強制終了させるためのキーアサイン（^X^[sとか）。これはusilicのSHELLでうっかり「tcb .」とやると終了できなくなる症状（プログラム名変更リメーク後、想定し得る誤動作）への対処。現状は、「^X^C→SHELL busy→^X^C」でもkillは可能だがusilic自身まで終わってしまうためSHELLだけをkill。
+・表示画面上で特定のキー（^?「←失念」+↑↓）で慣性スクロール開始。cbと同じく最低速と1つ上をusleepシステムコール、それ以外をビジーループで速度調整。
+・ls画面上のファイル選択＋PROGRAMでは、
+①[Enter]でファイル選択→ファイル内容表示画面→^Jp→less[Enter]→
+「usilic: less　Missing filename ("less --help" for help)」
+②^G→ファイルセレクタ画面へ復帰→①のファイル上（ハイライト表示）で^Jp→'less'[Enter]→上記エラー→
+③^G→②の位置での^J^P→lessを選択→
+「uslilic: less '...'　... is a directory」
+以上①②③をいずれも『ファイル内容をless表示（ハイライト表示されているファイル名でlessを起動）』へ変更
+・慣性スクロールはマウス操作も可能だがGUIは隠し機能なのでスクロールバーは無し。ただしファイルセレクタでのハイライト表示箇所を左クリックで内容表示、右クリックではPROGRAM一覧（tcbrcではEXEC）からの選択（『ファイル内容をless表示』等）。
+
+>記録・push完了しました。
+
+- **CLAUDE.md**(既知の未着手課題): `^[l`のLOG一覧「No string」エラー、macOSでの`du`オプション非互換、macOSでの`cp -vRi`ディレクトリコピー展開問題
+- **docs/ideas/IDEAS.md**(要望): 慣性スクロールのトリガーキー・速度制御方式・マウス操作の詳細追記、SHELL強制終了用キーアサインの新規要望、PROGRAM経由`less`起動の3パターン失敗の記録
+
+今回は修正には着手せず記録のみです。他でハマっている件、力になれそうであれば聞かせてください。
+
+<OpenCoreの問題をClaudeCodeチャットで継続中なのでそれはおいといて、
+クラスの選定だが、どれくらい進んだのかな？　1/4くらい？
+
+>現時点で移植済みは2つ(`fm::Utf8`と、それを取り込んだ`fm::Charset`)です。最初に洗い出した候補は`Display`/`KeyInput`/`LineEditor`/`Shell`/`Buffer`系/`ArchiveReader`系/`ContentView`/`Mode`系/`ChildProcess`/`Charset`/`Configuration`/`History`/`NameTree`のおよそ13項目だったので、単純に数だけで見ると2/13、体感で言うと1/4よりやや手前くらいです。
+
+ただし正直に言うと、この「個数」はあまり良い進捗指標ではありません。`Mode`系(各モードごとのサブクラス群)は`Charset`より遥かに大きな塊になりそうですし、CRC法自体が「試行錯誤で候補が増減する」前提の手法なので、最終的な総数もこのまま13で固定とは限りません。
+
+区切りとしては良い進み方だと思っていて、`Charset`が済んだことで「表示を司る部分が肝心」という当初の方針通り`Display`に進める状態になりました。次は`Display`から着手しますか、それとも別の切り口がよければ教えてください。
+
+<画面表示を抽象クラスってのはまさにC++っぽい話ではあるなと思っていたところでもあるのでそこからよろしく。
+
+>`tc.c`/`vt.c`(あわせて650行)を読み込みました。実はここ、Cソースの中でも一番「C++に近い」場所でした。`VT`構造体(`tcb.h`)が関数ポインタの塊で、実質すでにvtableです。
+
+## Display(抽象クラス)設計案
+
+**担当**:
+- 出力: `write(text)`/`putChar(c)`/`flush()`
+- カーソル: `moveCursor(row,col)`/`cursorLeft()`/`saveCursor()`/`restoreCursor()`
+- 消去・スクロール: `clearScreen()`/`clearToEndOfLine()`/`scrollForward()`/`scrollReverse()`
+- 属性: `setAttribute(Attribute)`(`Underline`/`UnderlineOff`/`Bold`/`BoldOff`/`Standout`/`StandoutOff`)、`attributeEscape(Attribute)→string`(SHELLプロンプト文字列への埋め込み用)
+- サイズ: `rows()`/`columns()`/`setSize(rows,cols)`
+- キーシーケンス問い合わせ: `keySequence(Key)`(↑↓←→PageUp/PageDownの端末固有エスケープ、`KeyInput`が使う)
+- `outputEnabled()`/`setOutputEnabled(bool)` — 画面出力の一括抑制フラグ(旧`vt_mode('D')`)
+- `smoothScrollEnabled()`/`setSmoothScrollEnabled(bool)` — スクロール領域の行数計算(`rows-1`か`rows-2`か)を内部に隠蔽(旧`vt_mode('H')`+呼び出し側での`vt_cs()`計算の重複を解消)
+
+**協力者**: `Charset`(文字幅計算は上位で使う側、Display自体はCharsetに依存しない)、`KeyInput`(`keySequence()`を消費する側)
+
+## TerminalDisplay : Display
+termcap経由の現行実装の正当な後継。将来`GraphicalDisplay`(SDL2)を同じインターフェースで追加できます。
+
+## Displayから意図的に除外したもの(調査で判明)
+
+- **`vt_cursor()`/`tc_cursor()`は名前が誤解を招く**: 「カーソルの表示/非表示」ではなく、実体はSIGWINCH時にリサイズを転送すべきSHELL子プロセスのPIDを記憶する処理(`key_winch(-f_cursor)`)でした。Displayの仕事ではなく、将来の`Shell`/`KeyInput`行きです。
+- `vt_mode('W')`(SHELL実行中のSIGWINCH受信フラグ)も同じ理由で`Shell`/`KeyInput`行き。
+- `A_md2`/`A_md3`/`A_us2`(重ね打ち検出の内訳タグ)は、`Display`は「太字にする」だけ知っていればよく、なぜ太字と判定されたかは`Buffer`/`ContentView`側の関心事。
+- 生の`termios`設定(raw/cookedモード切替、`vt_init()`の大半)はキー入力の読み取り方法の話なので`KeyInput`行き。
+- 副産物: `A_ue2`/`A_me2`という列挙値がヘッダに定義されているが、呼び出し箇所ゼロの未使用コードでした。
+
+`smoothScrollEnabled`は`^Oh`キーで切り替わる実在の機能(usilicrcの`SCROLL`設定、履歴保存もされる)であることをコード追跡で確認済みです。
+
+この設計で進めてよいですか。
+
+<機能の割り振り先までちゃんと把握しているところは大変参考になる。このまま進めて。
+
+>PTYで実際に描画させて生バイト列を確認しました。完璧に動いています。
+
+```
+\x1b[?1049h          ← open()でalternate screen突入
+\x1b[1;23r           ← スクロール領域設定(applyScrollRegion)
+\x1b[H\x1b[2J         ← clearScreen()
+\x1b[6;11HHello Display   ← moveCursor(5,10)+write (0始まり→1始まりへ正しく+1)
+\x1b[8;11H\x1b[1mBOLD\x1b(B\x1b[m   ← Bold on/off
+\x1b[10;11H\x1b[7mSTANDOUT\x1b[27m  ← Standout on/off
+\x1b[?1049l           ← close()でalternate screen離脱(★旧Cでは呼ばれていなかった修正箇所)
+```
+
+`close()`で`exit_ca_mode`をちゃんと発行できていることも実機バイト列で確認できました(旧C版はここが未実装のまま20年放置されていた箇所です)。
+
+**今回のテスト範囲について正直に**: `doctest`で自動テストしているのは`attributeEscape()`/`keySequence()`/`rows()`/`columns()`/`smoothScrollEnabled()`等の「実際の端末I/Oを伴わない部分」だけです(40件全パス)。実際に画面へ描く部分(`write`/`moveCursor`/`clearScreen`等)は、`setupterm`/`tputs`が本物の端末環境を要求するため自動テストの対象にできず、今回は上記のPTY実行による目視確認で担保しました。これは旧C版の`tc.c`自体が一度も自動テストされていなかったのと同じ制約です。
+
+CLAUDE.mdへの記録は、前回のCharsetの分と合わせて次にまとめて書きます。
+
+## 副産物として見つけたこと
+
+`<term.h>`が`columns`/`lines`という単語を丸ごとマクロ定義していました(`#define columns CUR Numbers[0]`等)。旧Cの`tc.c`が`tc_row`/`tc_col`という名前を使っていた理由は、おそらくこの衝突を避けるためだったと思われます。`terminal_display.cpp`では`#undef`で対処し、コメントで理由を残しました。
+
+コミットしてよければ進めます。
+
+<コミットして。
+
+>コミット・push完了しました(`5909fe0`)。CLAUDE.mdにはCharset(3クラス目)とDisplay(4クラス目)の分をまとめて記録しています。
+
+これで4クラス移植済み(`Utf8`/`Charset`/`Display`/`TerminalDisplay`)です。次はどのクラスに進みますか。CRC候補の残りは`KeyInput`/`LineEditor`/`Shell`/`Buffer`系/`ArchiveReader`系/`ContentView`/`Mode`系/`ChildProcess`/`Configuration`/`History`/`NameTree`です。Displayの次の自然な流れとしては、`Display`を消費する側の`KeyInput`か`ContentView`が候補になると思います。
+
+<KeyInputでよろしく。ところで突然画面に出たんだがこれはなに？'/Users/haa15030/Desktop/スクリーンショット 2026-07-28 8.51.32.png'
+
+>Docker Desktopのコンテナ一覧画面ですね。私がこのセッション中でUbuntu検証用に`docker run`(一時的なコンテナ)を使ったり、既存の`tcb-dev`コンテナを`docker start`で起動したりしたので、その操作でDocker Desktopが自動的に前面に出てきたのだと思います。実害はありません。
+
+`tcb-dev`(緑丸=稼働中)は、以前から`.devcontainer`用に存在していたUbuntu検証用コンテナです。`pedantic_northc...`は見覚えのない名前ですが、11日前作成・停止中(白丸)とあるので今回の私の操作とは無関係の古いものだと思います(気になるようでしたら中身を確認してから削除しても大丈夫です)。
+
+では`KeyInput`に進めます。
+
+>`key.c`(1626行)を読み込みました。ここは4クラス中で最も入り組んでいて、単純な「キー入力」以上の複数の関心事が同居しています。設計案を先に出します。
+
+## KeyInput(担当)
+
+- 生バイト読み取り(旧`vt_getch()`)+ raw/cookedモード切替(termios設定、旧`vt_init()`の一部)
+- エスケープシーケンス解析(旧`read_esc()`、`Display::keySequence()`を使って矢印キー等を認識)
+- `SIGWINCH`(端末リサイズ)+`SIGTTOU`/`SIGCONT`(ジョブコントロール、サスペンド/レジューム)のハンドリング
+- キーボードマクロの記録・再生(ユーザー記録分`p_km`、`usilicrc`定義済みの`M-0`〜`M-19`定型マクロ`p_bm`)
+
+**協力者**: `Display`(`keySequence()`問い合わせ)
+
+## 除外するもの(将来の別クラス行き)
+
+- **`SIGSEGV`(`key_segv`)/`SIGTERM`/`SIGHUP`(`key_term`)**: キー入力ではなくアプリのライフサイクル(クラッシュ回収・終了処理)の話。将来の`Application`行き。
+- **`read_m()`内の巨大なモード別コマンドディスパッチ**(生キーコードを現在のモードに応じて`M_*`/`T_*`定数へマッピングする巨大switch): `KeyInput`は「何のキーが押されたか」を返すところまでで、「今のモードでそれが何のコマンドを意味するか」の解釈は`Mode`/`Application`の管轄。
+- `edit_line()`/`make_list()`(コマンドライン入力ウィジェット、TAB補完): 既定通り`LineEditor`行き。
+- `stand_str()`(ファイル名ハイライト表示): `ContentView`/`Display`行き。
+
+この切り分けは、`save_signal()`が今は「アプリ全体のシグナルポリシーを一括登録する」役目を担ってしまっている(SIGWINCH〜SIGSEGVまで全部1関数)のを解消する意図もあります。新設計では`KeyInput`が自分の担当シグナル(`WINCH`/`TTOU`/`CONT`)だけを、`Application`が自分の担当(`SEGV`/`TERM`/`HUP`)だけを登録する形にできます。
+
+この範囲で進めてよいですか。
+
 2026-07-31
 
 <'/Users/haa15030/Desktop/スクリーンショット 2026-07-31 14.51.41.png''/Users/haa15030/Desktop/スクリーンショット 2026-07-31 14.51.52.png'
