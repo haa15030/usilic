@@ -2648,7 +2648,26 @@ int main(int argc, char **argv) {
   }
 
   if (guiOwnsWholeSession) {
+    // Same launcher tryEnterGuiPhase() wires for the ^Og / -g-via-that-
+    // path cases -- this is the THIRD, separate GUI entry point
+    // (guiOwnsWholeSession's own "実はすでにGUI" launch-time-detected
+    // overlay, where GUI owns the whole session from process start and
+    // runTerminalPhase()/tryEnterGuiPhase() are never called at all) --
+    // missing here entirely was the actual root cause of a real user
+    // report (2026-08-17) that PROGRAM-mode `less` kept running against
+    // this process's own inherited stdio (the ORIGINAL launching
+    // terminal window, confirmed by the user minimizing it and finding
+    // `less` running there) instead of ever reaching
+    // runProgramInOverlayTerminal() at all -- two earlier "fixes" to
+    // that function itself (index-1 z-ordering, blocking->polling)
+    // produced literally no observed change because the function was
+    // never being called in the first place: setForegroundLauncher()
+    // had only ever been wired inside tryEnterGuiPhase(), which this
+    // branch never calls.
+    app.programMode().setForegroundLauncher(
+        [&launchGui](const std::string &command) { return runProgramInOverlayTerminal(command, *launchGui); });
     runGuiPhase(app, *launchGui);
+    app.programMode().setForegroundLauncher(nullptr);
   } else {
     if (forceGui && !app.wantsExit()) {
       // -g: same GUI entry point ^Og already uses mid-session, just
