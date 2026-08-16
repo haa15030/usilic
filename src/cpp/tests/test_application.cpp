@@ -5081,6 +5081,9 @@ TEST_CASE_FIXTURE(Fixture, "EDIT: shows an underlined \"Invalid mode\" error in 
   REQUIRE(idx >= 0);
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
+  std::string beforeRow = display.rowText(23);
+  int nameWidth = static_cast<int>(app.directoryMode().currentDirectory().size());
+
   CHECK(app.handleCommand(Command::StartEdit));
   CHECK(app.currentMode() == ApplicationMode::Directory);  // never switches mode
   std::string expected = "Invalid mode";
@@ -5089,10 +5092,30 @@ TEST_CASE_FIXTURE(Fixture, "EDIT: shows an underlined \"Invalid mode\" error in 
   CHECK(display.underlineAt(23, static_cast<int>(expected.size()) - 1));
   CHECK_FALSE(display.standoutAt(23, 0));  // underlined, NOT reverse-video (see reportEditError()'s own comment)
 
+  // 2026-08-18 addition: a direct follow-up report ("同じ幅（27文字）分
+  // スペースでパディングすれば行数その他の位置がズレないので") found
+  // that the shorter replacement string, left unpadded, shifted every
+  // field after it (byte count, "(ls)", "usilic v1.5b") left by the
+  // difference between "Invalid mode"'s own length and the directory
+  // name's. Padded to the directory name's width instead (see
+  // reportEditError()'s own comment), so everything from the field
+  // separator onward is byte-for-byte identical to the un-errored row.
+  CHECK(display.rowText(23).substr(nameWidth + 1) == beforeRow.substr(nameWidth + 1));
+  // The padding itself is part of the underlined name field, not a
+  // plain trailing space -- covers the =ci report's "no underline under
+  // the space" complaint for this padding too, not just the message's
+  // own internal space.
+  CHECK(display.underlineAt(23, nameWidth - 1));
+
   // Consumed after exactly one redraw -- the very next mode-line render
   // (e.g. a plain cursor move) reverts to the ordinary directory path.
+  // (MoveUp itself changes the position field, e.g. "15/15 END" ->
+  // "14/15", so only the name field -- not the whole row -- is
+  // compared back against beforeRow.)
   app.handleCommand(Command::MoveUp);
-  CHECK(display.rowText(23).substr(0, expected.size()) != expected);
+  std::string afterRow = display.rowText(23);
+  CHECK(afterRow.substr(0, expected.size()) != expected);
+  CHECK(afterRow.substr(0, nameWidth) == beforeRow.substr(0, nameWidth));
 }
 
 TEST_CASE_FIXTURE(Fixture, "EDIT: refused outside Directory/File mode") {

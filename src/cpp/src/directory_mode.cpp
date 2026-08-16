@@ -89,7 +89,19 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
     // ("左端モード名...だけを丸々消してメッセージを表示させたら？")
     // changes now; everything else keeps rendering normally underneath.
     if (showEditError_) {
-      fields.name = "Invalid mode";
+      // Padded (with trailing spaces, underlined along with the message
+      // itself) to the width of the directory name it replaces, rather
+      // than left at its own natural length -- a follow-up report found
+      // that a shorter replacement string shifted every field after it
+      // (the position/byte-count/trailing badges) left by the
+      // difference, even though those fields' own *content* was by then
+      // already correctly preserved (see the long comment block above).
+      // Guarded against currentDirectory_ being shorter than the
+      // message itself (e.g. "/"), in which case no padding is added
+      // and the shift is unavoidable.
+      std::string message = "Invalid mode";
+      if (message.size() < fields.name.size()) message.resize(fields.name.size(), ' ');
+      fields.name = message;
       fields.nameUnderlined = true;
     }
     return fields;
