@@ -2175,7 +2175,19 @@ bool raiseLaunchingTerminalWindow() {
 bool runProgramInLaunchingTerminal(const std::string &command, fm::GraphicalDisplay &gui) {
   if (!raiseLaunchingTerminalWindow()) return false;  // falls back to ProgramMode::run()'s own default path
   gui.setVisible(false);
-  fm::ChildProcess::runInteractive({"sh", "-c", command});
+  // `clear; ` prefix (2026-08-17 follow-up): the terminal is raised
+  // INSTANTLY, but `command` itself (fork/exec/its own startup, e.g.
+  // `less` opening the file and entering its alternate screen) still
+  // takes a moment -- during that gap, whatever this terminal last
+  // had on screen (its own prompt from just before `usilic -g` itself
+  // was launched, typically) is still what's visibly showing. A real
+  // user follow-up ("欲を言えば...下の表示が見えてしまう") asked
+  // whether that's avoidable; it isn't ELIMINATED (the fork/exec/
+  // startup latency itself is unavoidable, whichever command runs
+  // first), but this at least makes the BRIEF flash blank instead of
+  // stale leftover content -- `clear` is a fast, near-instant builtin/
+  // binary, so the perceived gap shrinks even if it can't reach zero.
+  fm::ChildProcess::runInteractive({"sh", "-c", "clear; " + command});
   gui.setVisible(true);
   gui.raise();
   return true;
