@@ -4722,6 +4722,34 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
    - **検証**: `make test` 747/747件全通過、`make usilic`クリーン
      ビルド確認済み。
 
+337. **PROGRAMプロンプトで'less '+TABが無反応な不具合を修正**
+    (スクリーンショット =ce、SHELLでの同等操作=cj/=ckを参考動作として提示)
+   - **報告**: 「'less '^Iでは反応無し=ce(旧=cj[return]→=ck)」。
+   - **原因**: TAB補完(K-65、^I)は`PromptKind::PathInput`(K-45/K-47、
+     ^Xf/^Xd)専用にしか配線されておらず、その時点のコメントは
+     「MAN/PROGRAM/LOCATE/GREP等のプロンプト文字列はファイルパスでは
+     ないので補完する意味が無い」としていた。しかしPROGRAMのプロンプト
+     文字列("less CLAUDE.md"等)は全体がパスではなく、末尾の1単語
+     (ファイル名引数)だけがパスであり、これはまさにSHELLの
+     `Shell::onTab()`が既にコマンドラインの最後の単語だけを補完して
+     いるのと同じ形。この区別が見落とされ、PROGRAMだけ蚊帳の外に
+     なっていた。
+   - **修正**: `feedPromptByte()`のTAB分岐に`PromptKind::ProgramCommand`
+     を追加。`PromptKind::ProgramCommand`のときだけ`Shell::onTab()`と
+     全く同じ「カーソル直前の空白/タブまでを単語境界とする」ロジックで
+     部分文字列を切り出し、`completeFilesystemPath()`(既存の
+     PathInput用補完関数、再利用)へその部分文字列だけを渡すよう変更
+     (`promptEditor_`とSHELLの`commandLine_`は別々の`LineEditor`
+     インスタンスで共有オーナーが無いため、共通ヘルパーへの切り出しは
+     せず同じロジックをこの場でコピーした)。PathInput自体は従来通り
+     バッファ全体を補完対象とする(挙動変更無し)。MAN/LOCATE/GREP等は
+     引き続き対象外(ページ名・検索語はそもそもパスではないため)。
+   - **検証**: `make test` 748/748件全通過(既存テストへの影響無し)。
+     `make usilic`クリーンビルド確認済み。PTY自動テストで、^Jpで
+     PROGRAMプロンプトを開き、「less CLA」と入力してTABを押すと
+     「less CLAUDE.md」に補完される(先頭の「less 」部分は保持され、
+     末尾の単語だけが補完される)ことを実バイナリで確認した。
+
 
 ## 9. FILE / DIR
 

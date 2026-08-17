@@ -3713,14 +3713,33 @@ bool Application::feedPromptByte(int byte) {
     startPromptHistoryRecall();
     return true;
   }
-  // K-65 (^I): only for the FILE/DIR PathInput prompt in this first
-  // slice -- MAN/PROGRAM/LOCATE/GREP/etc's own prompt text isn't a
-  // filesystem path, so there's nothing meaningful to complete there
-  // yet (see completeFilesystemPath()'s own declaration comment).
-  if (byte == 0x09 && promptKind_ == PromptKind::PathInput) {
-    auto candidates = completeFilesystemPath(promptEditor_.text(), directoryMode_.currentDirectory());
-    if (candidates.size() == 1 && candidates[0].size() > promptEditor_.text().size()) {
-      promptEditor_.paste(candidates[0].substr(promptEditor_.text().size()));
+  // K-65 (^I): PathInput's own buffer IS a path in full, so the whole
+  // text gets completed. PROGRAM (2026-08-17 addition, screenshot =ce:
+  // "'less '^Iでは反応無し") is different -- its buffer is a full shell
+  // command line (e.g. "less CLAUDE.md"), of which only the LAST
+  // WORD is typically a filename argument worth completing, matching
+  // exactly how Shell::onTab() already completes the SHELL command
+  // line's own last word (same split-on-space-before-cursor logic,
+  // copied here rather than shared since promptEditor_ and
+  // shell_.commandLine() are separate LineEditor instances with no
+  // common owner to hang a shared helper off of). MAN/LOCATE/GREP/etc
+  // still have nothing meaningful to complete (a page name/query/
+  // pattern isn't a filesystem path at all), so still excluded.
+  if (byte == 0x09 && (promptKind_ == PromptKind::PathInput || promptKind_ == PromptKind::ProgramCommand)) {
+    const std::string &text = promptEditor_.text();
+    int cursor = promptEditor_.cursorBytePos();
+    std::string partial = text;
+    std::size_t wordStart = 0;
+    if (promptKind_ == PromptKind::ProgramCommand) {
+      std::size_t searchFrom = (cursor > 0) ? static_cast<std::size_t>(cursor - 1) : 0;
+      wordStart = text.find_last_of(" \t", searchFrom);
+      wordStart = (wordStart == std::string::npos) ? 0 : wordStart + 1;
+      if (static_cast<int>(wordStart) > cursor) wordStart = static_cast<std::size_t>(cursor);
+      partial = text.substr(wordStart, static_cast<std::size_t>(cursor) - wordStart);
+    }
+    auto candidates = completeFilesystemPath(partial, directoryMode_.currentDirectory());
+    if (candidates.size() == 1 && candidates[0].size() > partial.size()) {
+      promptEditor_.paste(candidates[0].substr(partial.size()));
     }
     return true;
   }
