@@ -1351,6 +1351,11 @@ class Application {
   // own pattern) since FileMode::loadFile() needs a real path and
   // this text has no other natural on-disk home the way ERROR/LOG do.
   bool executeShowTcbBanner();
+  // K-0/^T's own WORK/ARC candidate-list selection (2026-08-18): the
+  // original spec's own mockup annotated the WORK/arc.N lines with
+  // "[hit highlighted string][returns to the usilic screen]" -- see
+  // its own definition comment for the design.
+  bool openSelectedBannerEntry();
   // K-27 (^Oa): ported from key.c's own key_getch() comment ("was a
   // straight 2-way ASCII<->EUC toggle; cycle through all three now
   // instead of leaving UTF-8 users stuck toggling between ASCII and

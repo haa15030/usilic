@@ -1783,6 +1783,11 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Key) return executeSelectedKeyBinding();
       if (currentMode_ == ApplicationMode::Grep) return openSelectedGrepMatch();
       if (currentMode_ == ApplicationMode::Locate) return openSelectedLocateResult();
+      // 2026-08-18: File mode has no OTHER Enter behavior (plain
+      // pager) -- openSelectedBannerEntry() itself no-ops (returns
+      // false) unless the file actually being viewed is the ^T
+      // banner, so this is a no-op for ordinary file viewing.
+      if (currentMode_ == ApplicationMode::File) return openSelectedBannerEntry();
       return false;
     case Command::Back:
       if (currentMode_ == ApplicationMode::Key) return returnFromKey();
@@ -1808,6 +1813,16 @@ bool Application::handleCommand(Command command) {
         // correctly reaches locateReturnMode_ via returnFromLocate()'s
         // own existing, untouched logic).
         if (fileReturnMode_ == ApplicationMode::Locate) return returnFromFileToLocate();
+        // 2026-08-18: a w.N entry opened via openSelectedBannerEntry()
+        // (K-0/^T's own candidate-list selection) -- routes straight
+        // back to the banner itself rather than returnToDirectory()'s
+        // "follow the file's real parent directory" logic, which would
+        // otherwise land on tempRootDirectory_ (see that function's own
+        // 2026-08-18 comment on why the banner file itself is already
+        // excluded from that logic -- a freshly reloaded w.N is a
+        // DIFFERENT file from the banner and isn't covered by that
+        // exclusion, so it needs this separate branch here instead).
+        if (fileReturnMode_ == ApplicationMode::File) return executeShowTcbBanner();
         return returnToDirectory();
       }
       // 2026-08-11 fix: a real report -- after openSelectedGrepMatch()
@@ -3145,6 +3160,56 @@ bool Application::executeShowTcbBanner() {
   // actually wants to end up).
   fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
   return true;
+}
+
+// K-0/^T's own candidate-list selection (2026-08-18): the original
+// mockup annotated the WORK/arc.N lines with "[↑ ハイライト文字列
+// 選択後は][戻り値「usilic」画面へ]" -- select one of those lines and
+// Enter opens it, ^G comes back to this banner specifically. Reuses
+// the SAME generic cursorIndex_/moveUp()/moveDown() every other
+// ContentView already has (see ContentView::redraw()'s own
+// highlighted-line rendering, mode-agnostic by construction) rather
+// than rebuilding this as a dedicated ListBrowserMode-style screen --
+// fileView_ never opted OUT of cursor highlighting the way
+// cutContentView_/scrollback_ do, so up/down + a highlighted row
+// already worked here for free; only Enter needed new plumbing.
+// Matches by SUFFIX rather than exact-line-equals: the "WORK" line
+// itself carries a "WORK : " label prefix (field()'s own format) that
+// continuation/arc.N lines don't, so suffix-matching handles both
+// shapes uniformly without needing to special-case the first row.
+// w.N entries open as a FILE (fileReturnMode_ = File, a new case
+// added to Command::Back's own File branch, routes straight back to
+// executeShowTcbBanner() instead of returnToDirectory() -- see that
+// switch's own comment); arc.N entries open as a DIRECTORY via a
+// plain enterDirectory() with no stack frame pushed (mirrors how
+// jumping to an arbitrary path via ^Xd already behaves when reached
+// outside normal descent: ^G is a harmless no-op once the stack is
+// empty, rather than risking a stateful "return to banner" flag going
+// stale across however many further directories the user might
+// descend into from here).
+bool Application::openSelectedBannerEntry() {
+  if (fileMode_.currentFile() != tempRootDirectory_ + "/usilic") return false;
+  const auto &lines = fileView_.lines();
+  int idx = fileView_.cursorIndex();
+  if (idx < 0 || idx >= static_cast<int>(lines.size())) return false;
+  const std::string &text = lines[idx].text;
+  auto endsWith = [&text](const std::string &suffix) {
+    return !suffix.empty() && text.size() >= suffix.size() &&
+           text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+  };
+  for (const auto &workPath : allocatedWorkFiles_) {
+    if (!endsWith(workPath)) continue;
+    if (!fileMode_.loadFile(workPath)) return false;
+    fileReturnMode_ = ApplicationMode::File;
+    return true;
+  }
+  for (const auto &arcPath : allocatedArcDirs_) {
+    if (!endsWith(arcPath)) continue;
+    if (!directoryMode_.enterDirectory(arcPath)) return false;
+    currentMode_ = ApplicationMode::Directory;
+    return true;
+  }
+  return false;
 }
 
 // K-27: see the class's own declaration comment.

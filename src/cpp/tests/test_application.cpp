@@ -2785,6 +2785,63 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): WORK and arc.N lists grow as w
   CHECK(joined.find((root / ".usilic" / "w.1").string()) != std::string::npos);
 }
 
+// 2026-08-18: the original mockup's own "[↑ ハイライト文字列選択後は]
+// [戻り値「usilic」画面へ]" annotation on the WORK/arc.N lines --
+// flagged as deferred in item 338, implemented now via
+// Application::openSelectedBannerEntry().
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on the WORK line opens w.1 as a FILE; ^G returns to "
+                           "the banner itself (not the original directory)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x17, std::nullopt));  // ^W -- allocates w.1
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string bannerFile = app.fileMode().currentFile();
+
+  for (int i = 0; i < 4; i++) REQUIRE(app.handleCommand(Command::MoveDown));  // Boot/Startup/ERROR/SHELL/WORK
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / ".usilic" / "w.1").string());
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == bannerFile);  // back on the banner, not returnToDirectory()
+}
+
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on an arc.N line opens it as a DIRECTORY; ^G is a "
+                           "harmless no-op (no stack frame was pushed to open it)") {
+  REQUIRE(app.start(path()));
+  // Allocate arc.1 the same way the sibling "ARC nested" tests do:
+  // descend one level into the Fixture's own outer.tar/level1.tar chain.
+  int idx = indexOf("outer.tar");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // into outer.tar
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("level1.tar") == std::string::npos) {
+    REQUIRE(app.handleCommand(Command::MoveDown));
+  }
+  REQUIRE(app.handleCommand(Command::Enter));  // descends into level1.tar -- allocates arc.1
+
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  const auto &lines = app.activeContentView().lines();
+  int arcRow = -1;
+  for (std::size_t i = 0; i < lines.size(); i++) {
+    if (lines[i].text.find("arc.1") != std::string::npos) arcRow = static_cast<int>(i);
+  }
+  REQUIRE(arcRow >= 0);
+  app.activeContentView().setCursorIndex(arcRow);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory().find("arc.1") != std::string::npos);
+
+  CHECK_FALSE(app.handleCommand(Command::Back));  // no stack frame pushed -- a harmless no-op
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // unchanged, no crash/garbling
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^O a (K-27) cycles the charset Ascii -> Euc -> Utf8 -> Ascii") {
   REQUIRE(app.start(path()));
   CHECK(app.encoding() == Charset::Encoding::Ascii);
