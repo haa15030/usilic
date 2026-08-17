@@ -361,10 +361,27 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // this port's own SHELL mode-line. A live callback (like
   // DirectoryMode's own provider) since both pieces can change across
   // separate Shell entries/restarts within the same session.
+  // 2026-08-17 fix: `trailing`/`shellReturnName_` used to be
+  // concatenated into ONE string ("(zsh) /path/") and drawn as a
+  // single unbroken standout run -- a real report (screenshot =cl)
+  // found no visible separator between them and no padding to the
+  // row's right edge. disp_window() (legacy disp.c, read directly)
+  // draws these as two SEPARATE standout runs with a genuine plain
+  // gap between (arg's own `vt_endstand(); vt_putchar(' ')` before
+  // `prev` starts its own `vt_stand()` run), and explicitly pads
+  // `prev` with spaces out to `vt_col(0)` before printing it in
+  // standout -- the exact shape trailing/trailing2/fillTrailingToEdge
+  // already provide elsewhere (see DirectoryMode's own provider).
+  // When there's no previous-mode name at all (shellReturnName_
+  // empty -- legacy's `*prev == K_z` case), legacy falls back to a
+  // bold, right-aligned program name/version instead of padding;
+  // this port's existing `rightWatermark` fallback already implements
+  // that same fallback, just needed wiring here too.
   shell_.scrollback().setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     std::string trailing = "(" + shell_.programName() + ")";
-    if (!shellReturnName_.empty()) trailing += " " + shellReturnName_;
-    return {"SHELL", trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", /*trailing2=*/""};
+    bool hasPrev = !shellReturnName_.empty();
+    return {"SHELL", trailing, /*fillTrailingToEdge=*/hasPrev,
+            /*rightWatermark=*/hasPrev ? "" : "usilic v1.5b", /*trailing2=*/shellReturnName_};
   });
   // Mode-line fields for KEY (^H): "KEY" fixed on the left, and
   // whichever mode KEY was invoked from's own name (previousModeName(),
