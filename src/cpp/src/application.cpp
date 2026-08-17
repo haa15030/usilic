@@ -4597,7 +4597,31 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     case PromptKind::LocateQuery: destinationMode = locateReturnMode_; break;
     default: break;
   }
-  std::string destinationDirectory = previousModeName(destinationMode);
+  // RecentFile/RecentDirectory excluded (2026-08-18 fix, a real report:
+  // "-c起動→^X^D→モードライン不良＋文字列入力エリアが無い", same for
+  // ^X^F): unlike every OTHER PromptKind here, these two ARE the
+  // navigation itself -- there's no "search FROM some mode, resolves
+  // BACK to it" concept for them the way GREP/CUT/MAN/LOCATE (and
+  // ProgramCommand, via the `default` fallback) have. Falling through
+  // to `default` left destinationMode == currentMode_ (== Directory,
+  // captured by feedRegexListByte() as promptHistoryRecallReturnMode_),
+  // and previousModeName(Directory) returns the CURRENT directory path
+  // -- nearly identical text to what's already being typed in the
+  // editable field a few columns to the left, rendered a second time
+  // as a stray reversed fragment past column 61. Confirmed via a raw
+  // PTY byte trace: typing 'x' produced literal duplicated text
+  // ("/private/tmp/dirfx_dir/x" in the edit field, "...e/tmp/dirfx_dir/"
+  // stray a few columns later on the SAME row) -- exactly what read as
+  // "broken mode line" + "no visible input area" (the real editable
+  // field was there and DID work, just visually swamped by this
+  // unrelated stray text). The read-only (not-yet-editing) list view's
+  // own ModeLineFieldsProvider already never populates a destination
+  // field for these two kinds either (see its own RecentFile/
+  // RecentDirectory branch, `trailing2=""`) -- this keeps the editing
+  // state consistent with that established, correct precedent.
+  std::string destinationDirectory = (kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory)
+                                          ? std::string()
+                                          : previousModeName(destinationMode);
   if (!destinationDirectory.empty()) {
     std::string tail = truncatedTrailingPath(destinationDirectory);
     int col = display_.columns() - static_cast<int>(tail.size());
