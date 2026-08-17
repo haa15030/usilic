@@ -5085,6 +5085,54 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      場所に戻る」、②は「以後の操作が反応しなくなる」)と判断、
      ②自体の再現条件はまだユーザーからの追加情報待ち。
 
+336. **^X^D/^X^F(K-46/K-48、「Select file/directory name」)に文字
+    入力エリアが無い不具合を修正**(スクリーンショット =cn)
+   - **報告**: 「^N^N^N[return]→^X^D→文字入力エリアが無い=cn
+     （FILEも同じ症状）」。
+   - **調査**: legacy `key.c`を直接確認したところ、T_hfile/T_hdir
+     (^X^F/^X^D)はT_hfgrep/T_hegrep/T_hman(FGREP/EGREP/MANの候補
+     一覧)と全く同じ`f_enter=1`(「モードラインに文字列を入力する」)
+     グループに属しており、Enterで確定する`buff[]`もtilde展開+
+     `access()`検証という同じ処理を通っていた。つまりlegacyの
+     ^X^F/^X^Dは「一覧を眺めるだけ」ではなく、GREP/CUT/MANと同じ
+     「ハイライト中の候補を直接編集しながら新しいパスを打てる」
+     ライブコンボボックスだった。このC++版は`ListBrowserMode`という
+     ナビゲートのみの別実装(`PromptKind`ベースの直接入力機構とは
+     無関係な系統)になっており、この設計差が根本原因だった。
+   - **修正**: `PromptKind`に`RecentFile`/`RecentDirectory`を追加し、
+     GREP/CUT/MANの直接入力候補一覧(`startRegexPromptList()`/
+     `startPromptHistoryRecall()`/`feedRegexListByte()`)と同じ
+     機構に統合した。`Command::StartFileHistory`/
+     `StartDirectoryHistory`は`startListBrowser()`ではなく
+     `startRegexPromptList(PromptKind::RecentFile/RecentDirectory)`を
+     呼ぶよう変更。以下の副次的な差分を個別に手当てした:
+     - モードラインの見た目はGREP/CUT/MAN流(名前=モード名、
+       trailing2=戻り先ディレクトリ)ではなく、旧`ListBrowserMode`の
+       見た目(名前="FILE"/"DIR"、パスをPathMiddle省略記号で切り詰め)
+       を維持するよう`ModeLineFieldsProvider`に専用分岐を追加。
+     - `^R`(chronological⇔sorted切替、`toggleListBrowserHistory()`)
+       は元々「`promptHistoryRecallKind_`が立っている画面では常に
+       無効」だったが、legacyのT_hfile/T_hdirには独立したソート済み
+       リングが実在する(GREP/CUT/MAN等には無い)ため、
+       RecentFile/RecentDirectoryだけ例外的に許可するよう修正。
+     - `^X^D`固有の`resetNavigationToFloor()`(^Gでの「直前の
+       ディレクトリと行き来する」挙動)は、旧`openSelectedListEntry()`
+       の専用分岐でしか呼ばれておらず、新しい共通submission経路
+       (`executePromptSubmission()`)では呼ばれなくなってしまう
+       ため、`PromptKind::RecentDirectory`専用のラッパーを追加して
+       維持した(ハイライト候補をそのままEnterする場合・自分で
+       パスを打つ場合の両方で動作)。
+   - **検証**: `make test` 748/748件・18241アサーション全通過
+     (新機構への統合で一時的に3件回帰していたモードライン/^R
+     関連テストを、上記の専用分岐追加で復旧)。`make usilic`クリーン
+     ビルド確認済み。PTY自動テストで、(1)候補一覧が正しく表示される
+     こと、(2)`^U`で候補の事前入力テキストを消してから新しいパスを
+     直接タイプし`Enter`で実際にそのパスへ移動できること、(3)
+     何も入力せず単純にハイライト移動+`Enter`でも従来通り選択できる
+     こと、(4)`^G`で直前のディレクトリと正しく行き来できること、
+     (5)`^R`でHISTORY(chronological)表示に切り替わることを、
+     それぞれ実バイナリで確認した。
+
 
 ## 10. HISTORY / COMMAND(^R)
 

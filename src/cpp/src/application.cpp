@@ -443,6 +443,27 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // case (nothing to show); the name/badge fields are just as
     // meaningful on an empty list as a populated one.
     std::string trailing = inRange ? items[cursorIndex] : "";
+    // RecentFile/RecentDirectory (2026-08-17 addition): checked BEFORE
+    // the generic promptHistoryRecallKind_ branch below on purpose --
+    // these two are reached through the same direct-entry machinery
+    // GREP/CUT/MAN use (for the typing capability), but their mode-line
+    // shape needs to keep matching the OLD plain-picker rendering this
+    // provider already had for them (name="FILE"/"DIR" via
+    // ringCategoryLabel()-equivalent promptLabelText(), PathMiddle
+    // truncation on the path, "HISTORY"+badge only once ^R has
+    // switched to the chronological view) -- NOT GREP/CUT/MAN's own
+    // "destination directory as trailing2" shape, which makes no sense
+    // for a screen that opens paths directly rather than running a
+    // search that returns somewhere.
+    if (promptHistoryRecallKind_ &&
+        (*promptHistoryRecallKind_ == PromptKind::RecentFile || *promptHistoryRecallKind_ == PromptKind::RecentDirectory)) {
+      std::string name = listBrowserChronological_ ? "HISTORY" : promptLabelText(*promptHistoryRecallKind_);
+      return {name, trailing, /*fillTrailingToEdge=*/false,
+              /*rightWatermark=*/listBrowserChronological_ ? promptLabelText(*promptHistoryRecallKind_) : "",
+              /*trailing2=*/"", /*trailingPlain=*/false, /*trailing2RightJustified=*/false,
+              /*trailing2Kind=*/ContentView::TrailingKind::QueryEcho,
+              /*trailingKind=*/ContentView::TrailingKind::PathMiddle};
+    }
     if (promptHistoryRecallKind_) {
       // 2026-08-11 fix: a real report + legacy source read (mode.c's
       // T_hfgrep/T_hegrep vs plain M_fgrep/M_locate/M_cut2) -- direct
@@ -985,9 +1006,16 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // switch (only sharing the *width* calculation, not confirmed to
   // share this editing behavior) and wasn't part of this report, so
   // deliberately left out here rather than guessed at.
+  // RecentFile/RecentDirectory added 2026-08-17 (K-46/K-48, ^X^F/^X^D):
+  // a real report (screenshot =cn, "文字入力エリアが無い") + legacy
+  // key.c read confirmed T_hfile/T_hdir are grouped in this exact same
+  // f_enter=1 switch case too (see startListBrowser()'s own comment) --
+  // this port had them on the OLD, plain "navigate only" ListBrowserMode
+  // path instead of this live-editable one, unlike GREP/CUT/MAN.
   if (currentMode_ == ApplicationMode::ListBrowser && promptHistoryRecallKind_ &&
       (*promptHistoryRecallKind_ == PromptKind::GrepPattern || *promptHistoryRecallKind_ == PromptKind::CutPattern ||
-       *promptHistoryRecallKind_ == PromptKind::ManName)) {
+       *promptHistoryRecallKind_ == PromptKind::ManName || *promptHistoryRecallKind_ == PromptKind::RecentFile ||
+       *promptHistoryRecallKind_ == PromptKind::RecentDirectory)) {
     return feedRegexListByte(byte, special);
   }
 
@@ -1855,16 +1883,22 @@ bool Application::handleCommand(Command command) {
       return executeShowTcbBanner();
     case Command::CycleCharset:
       return cycleCharset();
+    // 2026-08-17 fix (=cn): K-46 (^X^F, "Select file name") -- see
+    // startListBrowser()'s own comment for why this no longer calls it
+    // directly. startRegexPromptList() is generic enough already
+    // (dispatches purely on the PromptKind value) despite its name.
     case Command::StartFileHistory:
-      return startListBrowser(RingCategory::RecentFile);
+      return startRegexPromptList(PromptKind::RecentFile);
     case Command::StartKey:
       return startKey();
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
       return startDuPrompt();
+    // 2026-08-17 fix (=cn): K-48 (^X^D, "Select directory name") --
+    // same reasoning as StartFileHistory just above.
     case Command::StartDirectoryHistory:
-      return startListBrowser(RingCategory::RecentDirectory);
+      return startRegexPromptList(PromptKind::RecentDirectory);
     case Command::StartCommandHistory:
       return startListBrowser(RingCategory::ShellCommand);
     case Command::ToggleHistoryView:
@@ -3126,12 +3160,20 @@ bool Application::startListBrowser(RingCategory category) {
   // listBrowserView_'s own ModeLineFieldsProvider checks
   // `if (promptHistoryRecallKind_)` to decide whether THIS is a
   // direct-entry regex list (name/trailing2 shaped very differently)
-  // or a plain FILE/DIR/MAN/PROGRAM/COMMAND picker, and a stale
+  // or a plain MAN/PROGRAM/COMMAND picker, and a stale
   // leftover value from a completely different feature made it take
   // the wrong branch. startListBrowser() is the single shared entry
   // point for every PLAIN picker (never itself a direct-entry regex
   // list), so clearing both here guarantees a fresh, correct state
   // regardless of what an earlier, unrelated session left behind.
+  // (2026-08-17: RecentFile/RecentDirectory -- ^X^F/^X^D -- no longer
+  // reach this function at all, see Command::StartFileHistory/
+  // StartDirectoryHistory's own call sites -- they now go through
+  // startRegexPromptList(PromptKind::RecentFile/RecentDirectory)
+  // instead, since legacy's own T_hfile/T_hdir turned out to be a
+  // live-editable combobox too, not a plain picker. Only
+  // Command::StartCommandHistory -- RingCategory::ShellCommand -- still
+  // calls this.)
   promptHistoryRecallKind_ = std::nullopt;
   promptHistoryRecallIsDirectEntry_ = false;
   listBrowserCategory_ = category;
@@ -3165,8 +3207,17 @@ bool Application::toggleListBrowserHistory() {
   // its own comment on why (no non-h ring exists in legacy for any of
   // these categories) -- so a second ^R here is simply a no-op,
   // rather than incorrectly re-sorting a screen whose mode-line would
-  // then still misleadingly read "HISTORY".
-  if (promptHistoryRecallKind_) return false;
+  // then still misleadingly read "HISTORY". RecentFile/RecentDirectory
+  // (2026-08-17 addition) are the one exception among promptHistoryRecallKind_
+  // holders: unlike GREP/CUT/MAN/LOCATE/PROGRAM, legacy's own T_hfile/
+  // T_hdir DO have a separate sorted ring (that same comment's own
+  // parenthetical), now reached via this same direct-entry machinery
+  // for the typing capability, but still expected to support the
+  // ordinary sorted<->chronological ^R toggle underneath.
+  if (promptHistoryRecallKind_ && *promptHistoryRecallKind_ != PromptKind::RecentFile &&
+      *promptHistoryRecallKind_ != PromptKind::RecentDirectory) {
+    return false;
+  }
   listBrowserChronological_ = !listBrowserChronological_;
   std::vector<std::string> items;
   if (listBrowserChronological_) {
@@ -3840,6 +3891,32 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
       return executeArchiveExtract(text);
     case PromptKind::PathInput:
       return executePathInput(text);
+    // K-46/K-48's own submission: identical path validation to
+    // PathInput (K-45/K-47) -- legacy's own key.c groups T_hfile/T_hdir
+    // in the SAME buff[] tilde-expand+access()-check block as
+    // M_lfile/M_ldir (the Input variant), just reached via the history
+    // list instead of a blank prompt. See startListBrowser()'s own
+    // comment for the rest of this feature.
+    case PromptKind::RecentFile:
+      return executePathInput(text);
+    case PromptKind::RecentDirectory: {
+      // Unlike PathInput, K-48 also needs openSelectedListEntry()'s OLD
+      // RecentDirectory branch's resetNavigationToFloor() call (see its
+      // own declaration comment: ^X^D is explicitly NOT ordinary
+      // Enter-into-subdirectory descent, so ^G afterward should toggle
+      // between here and the previous directory, not unwind a
+      // multi-level descent chain from before the picker opened) --
+      // that branch is now unreachable for RecentDirectory specifically
+      // (promptHistoryRecallKind_ takes priority, see
+      // openSelectedListEntry()'s own comment) but its behavior still
+      // needs to survive the move to this shared submission path,
+      // whether reached by picking a highlighted entry OR typing a
+      // fresh path.
+      std::string previousDirectory = directoryMode_.currentDirectory();
+      if (!executePathInput(text)) return false;
+      if (currentMode_ == ApplicationMode::Directory) directoryMode_.resetNavigationToFloor(previousDirectory);
+      return true;
+    }
     case PromptKind::None:
       return false;
   }
@@ -3933,6 +4010,12 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
       // (^Jc) shares FGREP's own ring, not always EGREP's.
       category = (cutSyntax_ == GrepSyntax::Fixed) ? RingCategory::RecentFgrepPattern : RingCategory::RecentEgrepPattern;
       break;
+    case PromptKind::RecentFile:
+      category = RingCategory::RecentFile;
+      break;
+    case PromptKind::RecentDirectory:
+      category = RingCategory::RecentDirectory;
+      break;
     default:
       return false;
   }
@@ -3972,8 +4055,18 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   // typing happens (matching legacy's own referenced screenshots ㊳/㊴
   // showing THAT list sorted), and only for GrepPattern/CutPattern
   // (MAN/LOCATE/PROGRAM's own direct-entry-less recall is untouched).
-  bool sortDirectEntryList =
-      directEntry && (category == RingCategory::RecentFgrepPattern || category == RingCategory::RecentEgrepPattern);
+  // RecentFile/RecentDirectory (2026-08-17 addition, K-46/K-48) are
+  // ALWAYS reached via directEntry (there's no separate "real ^R mid-
+  // typing recall" entry point for these two -- startListBrowser() is
+  // the only caller) and were already shown sorted+de-duplicated even
+  // before this whole PromptKind-based rewrite (the plain
+  // ListBrowserMode path this replaces called sortedUniqueRecentEntries()
+  // directly), so keeping that same ordering here is a straight carry-
+  // forward, not a new behavior change.
+  bool sortDirectEntryList = directEntry && (category == RingCategory::RecentFgrepPattern ||
+                                              category == RingCategory::RecentEgrepPattern ||
+                                              category == RingCategory::RecentFile ||
+                                              category == RingCategory::RecentDirectory);
   listBrowserChronological_ = !sortDirectEntryList;
   std::vector<std::string> items;
   if (sortDirectEntryList) {
@@ -4049,6 +4142,10 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return pathInputIsDirectory_ ? "DIR" : "FILE";
     case PromptKind::ArchiveDestination:
       return "ARC";
+    case PromptKind::RecentFile:
+      return "FILE";
+    case PromptKind::RecentDirectory:
+      return "DIR";
     case PromptKind::None:
       return "";
   }

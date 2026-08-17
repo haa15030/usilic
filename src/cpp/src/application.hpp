@@ -1588,7 +1588,16 @@ class Application {
     ExitConfirm,
     DuPath,
     PathInput,  // K-45/K-47's shared prompt kind, see Command::StartFileInput's own comment
-    ArchiveDestination  // K-57/K-58's own Destination prompt, see startArchivePrompt()'s own comment
+    ArchiveDestination,  // K-57/K-58's own Destination prompt, see startArchivePrompt()'s own comment
+    // K-46/K-48 (^X^F/^X^D, "Select file/directory name"): 2026-08-17
+    // addition -- see startListBrowser()'s own comment for why these
+    // two needed adding here at all (a real report + legacy key.c read
+    // found T_hfile/T_hdir share the exact same f_enter=1 "enter
+    // string at mode-line" group as T_hfgrep/T_hegrep/T_hman, i.e. the
+    // history list is a live-editable combobox like those, not a
+    // pure-navigate picker the way this port originally built it).
+    RecentFile,
+    RecentDirectory
   };
   // Shared by submitPrompt() (text typed live) and
   // openSelectedListEntry()'s own prompt-recall branch (text picked
