@@ -2122,6 +2122,64 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line's name field is \"LOCATE: <query>\
   CHECK(app.activeContentView().modeLineText().find("LOCATE: .txt") != std::string::npos);
 }
 
+// 2026-08-18 fix: a real report ("^J^L'.txt'[return]=co→^S'.txt'[return]
+// →モードライン不良かつ検索してない") -- FGREP started from Locate
+// results (startGrepPrompt() has no mode restriction beyond blocking
+// re-entry from Grep itself) used to hardcode
+// "grepReturnMode_==File ? fileView_ : directoryView_" in executeGrep(),
+// so a search launched from Locate silently read (and, on failure,
+// redrew) directoryView_'s stale content instead of the LOCATE results
+// actually on screen. Distinguishes the two buffers by searching for
+// one of the LOCATE results' OWN full lines (a real absolute path from
+// the system locate database) as a FIXED pattern: the fixture's
+// directory listing only ever contains short bare filenames like
+// "plain.txt", never a matching absolute path, so this only finds a
+// match if the search actually ran against locateView_.
+TEST_CASE_FIXTURE(Fixture, "FGREP started from LOCATE results (^S) searches the LOCATE results themselves, "
+                           "not the stale directory listing behind them") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText(".txt");  // narrow query, matching the sibling LOCATE tests -- "/" alone can return
+                      // millions of entries on a real machine, far too slow/unwieldy for a unit test
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not installed or no database available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  const auto &locateLines = app.activeContentView().lines();
+  if (locateLines.empty()) {
+    MESSAGE("locate database returned no '.txt' results -- skipping");
+    return;
+  }
+  // Longest line, not front(): a short path (e.g. a top-level directory)
+  // risks being a substring of many OTHER locate lines too, making the
+  // match count unpredictable across machines -- the longest result is
+  // the most specific/least likely to collide, so a single exact match
+  // is the realistic expectation.
+  std::string knownLocateLine =
+      std::max_element(locateLines.begin(), locateLines.end(),
+                        [](const auto &a, const auto &b) { return a.text.size() < b.text.size(); })
+          ->text;
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  CHECK(app.promptActive());
+  feedText(knownLocateLine);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  // Not garbled by a mismatched-view redraw: the results screen's own
+  // provider (grepView_'s) is now live, showing "FGREP", not whatever
+  // directoryView_'s "(ls)"-shaped provider would have left behind.
+  CHECK(app.activeContentView().modeLineText().substr(0, 5) == "FGREP");
+  const auto &matches = app.grepMode().matches();
+  REQUIRE_FALSE(matches.empty());
+  bool foundExactLine = false;
+  for (const auto &match : matches) {
+    if (match.text == knownLocateLine) foundExactLine = true;
+  }
+  CHECK(foundExactLine);
+}
+
 // 2026-08-13 (CLAUDE.md history item 293's mode-line fix): a real ^R
 // with nothing recorded yet used to show ContentView's own DEFAULT
 // empty-list placeholder ("--", CUT's own convention) here -- wrong

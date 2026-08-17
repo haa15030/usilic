@@ -1242,6 +1242,7 @@ class Application {
   bool returnFromListBrowser();
   bool returnFromKey();
   ContentView &activeView();
+  ContentView &viewForMode(ApplicationMode mode);
   void layoutViews();
   std::vector<std::string> collectTargetPaths() const;
   bool startListBrowser(RingCategory category);

@@ -1668,8 +1668,20 @@ void Application::moveDisplayCursorToShellHistoryLine() {
   if (row >= 0) display_.setVisibleCursor(row, 0);
 }
 
-ContentView &Application::activeView() {
-  switch (currentMode_) {
+ContentView &Application::activeView() { return viewForMode(currentMode_); }
+
+// Factored out of activeView() (2026-08-18) so any code that needs the
+// view for a mode OTHER than currentMode_ -- e.g. executeGrep() reading
+// grepReturnMode_'s buffer -- shares the exact same mode->view mapping
+// instead of re-deriving a narrower, easily-stale copy of it (see
+// executeGrep()'s own comment for the bug this fixes: it used to
+// hardcode File-vs-everything-else-as-Directory, silently reading the
+// wrong buffer -- and redrawing the wrong ContentView on failure --
+// for every OTHER mode grep can actually be launched from, Locate
+// included, since startGrepPrompt() only blocks re-entry from Grep
+// itself and is otherwise reachable from any mode).
+ContentView &Application::viewForMode(ApplicationMode mode) {
+  switch (mode) {
     case ApplicationMode::File:
       return fileView_;
     case ApplicationMode::Grep:
@@ -4541,7 +4553,16 @@ bool Application::executeGrep(const std::string &pattern) {
   history_.pushRecent(grepSyntax_ == GrepSyntax::Fixed ? RingCategory::RecentFgrepPattern
                                                         : RingCategory::RecentEgrepPattern,
                        pattern);
-  ContentView &source = (grepReturnMode_ == ApplicationMode::File) ? fileView_ : directoryView_;
+  // 2026-08-18 fix: was a hardcoded File-vs-Directory ternary, silently
+  // reading (and, on failure, redrawing) the WRONG ContentView for
+  // every other mode grep can be launched from -- a real report
+  // ("^J^L'.txt'→=co→^S'.txt'→モードライン不良かつ検索してない")
+  // showed FGREP started from LOCATE results actually searched
+  // directoryView_'s stale content while locateView_ stayed on screen,
+  // then redrew directoryView_ over it on failure, garbling the mode
+  // line. viewForMode() (factored out of activeView() for exactly this)
+  // picks the right view for ANY grepReturnMode_, not just File/Directory.
+  ContentView &source = viewForMode(grepReturnMode_);
   std::vector<std::string> sourceLines;
   sourceLines.reserve(source.lines().size());
   for (const auto &line : source.lines()) sourceLines.push_back(line.text);

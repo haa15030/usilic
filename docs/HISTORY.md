@@ -9181,3 +9181,13 @@ CLAUDE.md旧項目176で判明済みの通り、legacyの`ESC l`はそもそも�
 `src/usilicrc`のM-9マクロ定義を`K-68 K-33 "usilic v1.5b\cM"`に変更しました(legacy Cソース自体には手を入れず、データファイルの文字列のみの修正)。
 
 隔離した`$HOME`でlegacyバイナリをPTY起動し、M-9マクロの実体キー列(`^X^Kl`→`^Jc`→検索文字列→Enter)を手動再現してbefore/after比較しました。修正前の`"tcb v1.5b"`では`"No string"`表示・モードライン`LOG 0/0 END`(0件)、修正後の`"usilic v1.5b"`では`"No string"`は出ず・モードライン`LOG 1/3 END`(マッチあり)で、修正によって症状が解消したことを確認しました。副産物として、非常に長い`$HOME`パス限定で`print_tcb()`の`__strcat_chk`がオーバーフローを検知しSIGTRAPで終了する別の潜在バグをlldbで発見しましたが、今回の修正対象外として記録のみ残しています。docs/CHANGES.mdの「17. LOG」セクションに項目341として記録、コミット・プッシュ済みです。
+
+>**10件目: LOCATE結果から^S(FGREP)を起動すると検索が実行されずモードラインも壊れる不具合を修正**
+
+原因は`executeGrep()`の`ContentView &source = (grepReturnMode_==File) ? fileView_ : directoryView_;`という決め打ちでした。`startGrepPrompt()`自体は`currentMode_==Grep`からの再入だけを弾く設計でLocateを含むどのモードからでも起動できるのに、`executeGrep()`側はFile以外を問答無用でdirectoryView_(ディレクトリ一覧のバッファ)として扱っていました。LOCATE結果画面から`^S`を押すと、画面に見えているLOCATE結果ではなく裏で保持されたままの無関係なディレクトリ一覧を検索しており、実際のLOCATE結果に`.txt`ファイルが大量にあってもディレクトリ一覧側に無ければ「No String」になっていました(「検索してない」の正体)。検索失敗時の`source.redraw()`もdirectoryView_(画面に出ていない方)を再描画するため、モードラインが噛み合わない状態になっていました(「モードライン不良」の正体)。legacyのmenu.cのm_grep()を確認したところ、M_locate由来の起動を拒否する条件は無く、LOCATE結果に対するFGREP/EGREPはlegacyでも正規にサポートされている組み合わせと判明しました。
+
+`activeView()`のswitchを`viewForMode(ApplicationMode)`として切り出し、`executeGrep()`の`source`決定をLocateを含むあらゆる起動元で正しいバッファを引ける`viewForMode(grepReturnMode_)`に置き換えました。CUTの`startCutPrompt()`は元々File/CutContent/Cut/Directoryのみのホワイトリスト方式でLocateからは到達不可だったため、CUT側には同種の不具合は無いと確認しています。
+
+`make test` 752/752件・18290アサーション全通過(新規doctest1件、実際のlocateコマンドでLOCATE結果を取得しその中の最も長い行をFGREPパターンとして検索、結果に含まれることとモードラインが壊れずに出ることを確認)、`make usilic`クリーンビルド確認済みです。PTY自動テストで、実際のusilicバイナリにユーザー報告と同一のキー列(^J^L→.txt→Enter→^S→.txt→Enter)を再現し、修正前バイナリでは(.txtを含まないディレクトリで)「No String」・`FGREP 0/0 END`になることを確認した上で、同一条件で修正後バイナリが実際のLOCATE結果(6937件)を正しく検索し「FGREP 0001/6937 TOP (fgrep)」と壊れずに表示されることを確認しました(before/after比較)。
+
+テスト中に別件も判明しました: フルスイートを繰り返し実行すると、今回追加したLOCATE経由のdoctestが加わったことで、まれに(6回に1回程度)無関係な既存テストが失敗するようになりました。AddressSanitizer/UndefinedBehaviorSanitizer付きビルドで複数回再実行しましたが実際のメモリ安全性違反は検出されず、変更前のツリーでも確認できた時間の範囲では再現しなかった一方、失敗するテストの組み合わせが実行ごとに変わることから、実サブプロセスを大量に使うテストスイート自体が抱える既存の断続的フレーキーさ(今回のテストが処理時間を押し上げたことで顕在化しやすくなった可能性はあるが、ロジック上の欠陥はどのビルドでも確認できず)と判断しました。今回の修正・新規テストの妥当性自体は独立実行・複数回の再実行いずれでも一貫して成功しています。深追いはスコープ外として記録のみ残しました。docs/CHANGES.mdの「3. FGREP / EGREP」セクションに項目342として記録、コミット・プッシュ済みです。

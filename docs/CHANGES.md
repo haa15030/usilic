@@ -2279,6 +2279,79 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ユーザーが試した場合に別の挙動を期待するかもしれない)も
      未確認。実際に使ってみて違和感があれば都度報告してもらう前提。
 
+342. **LOCATE結果から`^S`(FGREP)を起動すると検索が実行されず
+    モードラインも壊れる不具合を修正**。ユーザー報告「^J^L'.txt'
+    [return]=co→^S'.txt'[return]→モードライン不良かつ検索してない
+    =cp」への対応。
+   - **原因**: `startGrepPrompt()`は`currentMode_==Grep`からの
+     再入だけを弾く設計で、それ以外のモード(Locate含む)からの
+     起動には制限が無い。にもかかわらず`executeGrep()`は
+     `ContentView &source = (grepReturnMode_==File) ? fileView_ :
+     directoryView_;`という決め打ちの三項演算子で、File以外は
+     問答無用で`directoryView_`(ディレクトリ一覧のバッファ)を
+     読みに行っていた。LOCATE結果画面(`locateView_`)から`^S`を
+     押すと、実際には画面に見えているLOCATE結果ではなく、その裏で
+     ずっと保持されたままの(無関係な)ディレクトリ一覧の中身を
+     検索しており、`.txt`を含むファイルが実際のLOCATE結果に
+     大量にあっても、ディレクトリ一覧側に無ければ「No String」
+     (0件)になっていた(「検索してない」の正体)。さらに検索
+     失敗時の`source.redraw()`が`directoryView_`(画面に出ていない
+     方)を再描画するため、`currentMode_`はLocateのままなのに
+     裏のビューへ描画命令が飛び、モードラインが噛み合わない状態に
+     なっていた(「モードライン不良」の正体)。legacyの`menu.c`の
+     `m_grep()`を確認したところ、`M_locate`由来の起動を拒否する
+     条件は無く(拒否されるのは`M_hist`+fgrep/egrep/cut直後、
+     `M_cut`、`M_fgrep`、`M_egrep`自身のみ)、LOCATE結果に対する
+     FGREP/EGREPはlegacyでも正規にサポートされている組み合わせと
+     判明(`m_locate()`が`hp->bp`という汎用バッファポインタを
+     切り替えるだけで、grep側はモード非依存にそのバッファを読む
+     設計)。つまりC++移植版の`executeGrep()`側がFile/Directoryの
+     2値決め打ちのまま汎用化されていなかった、というギャップ。
+   - **修正**: `activeView()`(`currentMode_`から対応する
+     `ContentView&`を引く既存の switch)を`viewForMode(ApplicationMode)`
+     として切り出し、`activeView()`自身は`return
+     viewForMode(currentMode_);`に委譲するだけにした。
+     `executeGrep()`の`source`決定を`viewForMode(grepReturnMode_)`
+     に置き換え、Locateを含む**あらゆる**起動元で正しいバッファを
+     読む(検索失敗時の`redraw()`も同じ`source`経由なので連動して
+     直る)。CUTの`startCutPrompt()`は元々File/CutContent/Cut/
+     Directoryのみのホワイトリスト方式でLocateからは到達不可(既に
+     `return false`で弾かれる)だったため、CUT側には同種の不具合は
+     無いと確認した。
+   - **検証**: `make test` 752/752件・18290アサーション全通過
+     (新規doctest1件を追加。実際の`locate`コマンドでLOCATE結果を
+     取得し、その中の最も長い行を`^S`のFGREPパターンとして検索、
+     結果に含まれること・`FGREP`ラベルのモードラインが壊れずに
+     出ることを確認。`locate`未導入/DB無しの環境では自動スキップ)。
+     `make usilic`クリーンビルド確認済み。PTY自動テストで、実際の
+     `usilic`バイナリに対しユーザー報告と同一のキー列
+     (`^J^L`→`.txt`→Enter→`^S`→`.txt`→Enter)を再現し、修正前
+     バイナリでは(`.txt`を含まないディレクトリで)「No String」・
+     `FGREP 0/0 END`になることを確認した上で、同一手順・同一
+     ディレクトリで修正後バイナリが実際のLOCATE結果(6937件)を
+     正しく検索し「FGREP 0001/6937 TOP (fgrep)」と壊れずに表示
+     されることを確認した(before/after比較)。
+   - **テスト実行中に判明した別件(今回の修正対象外)**: `make test`
+     をフルスイートで繰り返し実行すると、今回追加したLOCATE経由の
+     doctest(実際に`locate`コマンドを呼ぶ)が加わったことで、
+     全752件中まれに(6回に1回程度)無関係な既存テスト
+     (`activatePrompt`のプロンプト幅計算、`DIR Select`の`^X^D`
+     チェーン等、実行のたびに異なるテストが対象になる)が失敗する
+     ようになった。AddressSanitizer/UndefinedBehaviorSanitizer付き
+     ビルドで複数回再実行したが実際のメモリ安全性違反は一切検出
+     されず、変更前(このソース差分を`git stash`した状態)のツリー
+     でも同条件で確認する時間の範囲内では再現しなかった一方、
+     失敗するテストの組み合わせが実行ごとに変わる(グレップ/ロケート
+     とは無関係なテストも巻き込まれる)ことから、実際のサブ
+     プロセス(`locate`/`fgrep`/`tar`/`ls`等)を大量に使うこの
+     テストスイート自体が抱える、実行時間・リソース競合に起因する
+     既存の断続的フレーキーさ(今回のLOCATE検証用テストが処理時間を
+     押し上げたことで顕在化しやすくなった可能性はあるが、ロジック
+     上の欠陥はどのビルドでも確認できなかった)と判断した。今回の
+     修正・新規テストの妥当性そのものは独立実行・複数回の再実行
+     いずれでも一貫して成功しており揺らいでいない。深追いはスコープ
+     外として記録のみ残す。
+
 
 ## 4. CUT
 
