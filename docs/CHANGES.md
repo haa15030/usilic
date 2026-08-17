@@ -7457,6 +7457,34 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      キー機構(項目315等で別途対応済み)の話であり、kill/yankとは
      無関係と判断し本項目の対象外とした。
 
+335. **SHELLプロンプトを"usilic:"から太字の"usilic-1.5b:"へ変更**
+   - **報告**: 「アップデートではSHELLプロンプト（usilic:）自体を→
+     bold書体の「usilic-1.5b:」に変更してほしい」。将来のLOG機能
+     (手入力によるCUTとの差別化に太字を使う計画、後続項目参照)の
+     布石でもある。
+   - **実装**: `Shell::handlePromptDetected()`が組み立てる表示用の
+     `promptPlain_`/`promptDecorated_`を、`options_.programName`
+     (内部的なPTY出力検出用マーカー`markerPrefix_`や、モードライン
+     の「(zsh)」バッジ=`Shell::programName()`が返す"子シェルの名前"
+     にも使われている、無関係な既存の値)からは切り離し、新規の
+     ローカル定数`kPromptDisplayName = "usilic-1.5b"`を直接使うよう
+     変更。太字の範囲も、従来はプログラム名部分のみ(コロンは太字
+     対象外)だったのを、コロンを含めた"usilic-1.5b:"全体に拡大した。
+   - **検証**: `make test` 748/748件全通過(`onResize: repositions
+     the command-line field...`テストが、カスタムの短い
+     `programName="p"`がそのまま表示されるという旧仕様の前提で
+     `cursorCol()`の期待値を計算していたため、新仕様
+     ("usilic-1.5b:/x$ "=16列)に合わせて更新)。`make usilic`
+     クリーンビルド確認済み。PTY自動テストで、SHELLの実際のライブ
+     プロンプト行が"usilic-1.5b:"の12文字全てについて`bold=True`と
+     なっていることを画面セル属性レベルで確認した。
+   - **既知の未対応**: `freezePromptLine()`が確定済みのSHELL履歴行を
+     `promptPlain_`(装飾無しの生テキスト)で構築しているため、Enterで
+     確定した過去のプロンプト行には太字属性が残らない(ライブ行のみ
+     太字)。LOG機能で「太字の"usilic-1.5b:"のみを検索対象とする」
+     設計を実装する際は、この確定行側の太字情報の持たせ方も
+     あわせて設計する必要がある。
+
 ## 13. LIST(TAB補完)
 
 12. **2026-07-19: TAB補完・長い日本語行での横スクロール時のUTF-8破損を

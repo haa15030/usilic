@@ -658,12 +658,25 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
   pipeBuffer_.flush();
   flushNewScrollbackLines();
 
-  promptPlain_ = options_.programName + ":" + tailBeforeMark;
+  // 2026-08-17 change: the visible prompt prefix is "usilic-1.5b:",
+  // NOT options_.programName (still just "usilic") -- programName
+  // itself is left untouched since it also feeds markerPrefix_ (the
+  // internal PTY-output detection sentinel, an unrelated concept from
+  // what's actually drawn on screen) and Shell::programName() (the
+  // mode-line's own "(zsh)"/"(bash)" badge, the CHILD shell's name,
+  // not this program's). Requested directly, and bold now covers the
+  // whole "usilic-1.5b:" including the colon (previously only the
+  // name itself was bold, leaving the colon plain) so the LOG feature
+  // (docs/CHANGES.md, LOG section) can later distinguish a prompt line
+  // recorded to the log from a user manually typing the same plain-text
+  // string at a prompt.
+  static const std::string kPromptDisplayName = "usilic-1.5b";
+  promptPlain_ = kPromptDisplayName + ":" + tailBeforeMark;
   updateCommandLineField();
   commandLine_.setText("");
 
-  promptDecorated_ = display_.attributeEscape(Display::Attribute::Bold) + options_.programName +
-                      display_.attributeEscape(Display::Attribute::BoldOff) + ":" + tailBeforeMark;
+  promptDecorated_ = display_.attributeEscape(Display::Attribute::Bold) + kPromptDisplayName + ":" +
+                      display_.attributeEscape(Display::Attribute::BoldOff) + tailBeforeMark;
   redrawPromptRow();
 }
 

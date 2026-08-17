@@ -460,7 +460,12 @@ TEST_CASE("onResize: repositions the command-line field to the new row/width") {
   Shell shell(d, options);
 
   shell.onResize(10, 40);
-  shell.processOutputBytes("<M>p:/x$ <M>");  // establishes a known-width prompt ("p:/x$ " -> 6 cols)
+  // 2026-08-17 change: the DISPLAYED prompt prefix is now always the
+  // literal "usilic-1.5b:" (see handlePromptDetected()'s own comment),
+  // independent of options.programName -- programName still drives
+  // the INTERNAL detection marker matched here ("<M>p:" establishes
+  // that), just no longer what gets drawn on screen.
+  shell.processOutputBytes("<M>p:/x$ <M>");  // establishes a known-width prompt ("usilic-1.5b:/x$ " -> 16 cols)
 
   typeAscii(shell.commandLine(), "hi");
 
@@ -469,7 +474,7 @@ TEST_CASE("onResize: repositions the command-line field to the new row/width") {
   // content exists (bottom-anchoring is what makes this safe: see
   // ContentView::setBottomAnchored()'s own comment).
   CHECK(d.cursorRow() == 8);
-  CHECK(d.cursorCol() == 8);  // 6-column prompt + 2 typed chars
+  CHECK(d.cursorCol() == 18);  // 16-column "usilic-1.5b:/x$ " prompt + 2 typed chars
 }
 
 TEST_CASE("sendControlByte and writeToPty are safe no-ops before start()") {
