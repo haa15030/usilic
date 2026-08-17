@@ -2388,6 +2388,44 @@ int main(int argc, char **argv) {
   std::string usilicDir = (homeEnv ? std::string(homeEnv) : std::string()) + "/.usilic/";
   ::mkdir(usilicDir.c_str(), S_IRWXU);  // ignored if it already exists; real failures surface later as I/O errors
 
+  // 2026-08-18 addition (screenshot =cm): an argument-launched run
+  // (positionalArgs non-empty) can have any number of OTHER instances
+  // running concurrently against different directories -- unlike a
+  // bare no-argument "resume last session" launch, which legacy itself
+  // only ever assumed one of at a time. Application's own
+  // error/shell/work/arc files used to always live under usilicDir
+  // regardless, so two such instances would clobber each other's
+  // (confirmed: the report showed one instance's ^T screen displaying
+  // the OTHER instance's stale ERROR/SHELL content). Rooting them
+  // under a directory unique to THIS process's own pid instead fixes
+  // that; a bare no-argument launch keeps the old shared usilicDir
+  // (single-instance assumption still holds there, and it's the one
+  // case where "resume across restarts" is actually the point).
+  // getpid()'s own reuse-after-restart isn't a concern -- /tmp itself
+  // gets cleared independently (this project's own already-accepted
+  // /tmp-scratch tolerance, see materializeArchiveTempFile()'s own
+  // comment).
+  std::string tempRootDirectory;
+  if (!positionalArgs.empty()) {
+    tempRootDirectory = "/tmp/.usilic." + std::to_string(::getpid());
+    ::mkdir(tempRootDirectory.c_str(), S_IRWXU);
+  }
+  // ^T's own new "Boot options" field (see executeShowTcbBanner()'s own
+  // comment): the literal argv[1..] this process was launched with, in
+  // their original order (so -c/-g/-u and the directory argument all
+  // appear exactly as typed, whichever order that was) -- empty for a
+  // bare no-argument launch. ~ expansion only ever applies to the
+  // directory-looking token(s) (flags never start with ~).
+  std::string bootOptions;
+  for (int i = 1; i < argc; i++) {
+    std::string token = argv[i];
+    if (homeEnv && (token == "~" || (token.size() > 1 && token[0] == '~' && token[1] == '/'))) {
+      token = std::string(homeEnv) + token.substr(1);
+    }
+    if (!bootOptions.empty()) bootOptions += " ";
+    bootOptions += token;
+  }
+
   fm::History history;
   fm::Configuration configuration;
 
@@ -2426,7 +2464,7 @@ int main(int argc, char **argv) {
   if (const char *shellEnv = std::getenv("SHELL"); shellEnv && *shellEnv) shellOptions.argv = {shellEnv};
 
   fm::Application app(display, keyInput, history, configuration, encoding, display.columns(), shellOptions,
-                       homeEnv ? std::string(homeEnv) : std::string());
+                       homeEnv ? std::string(homeEnv) : std::string(), tempRootDirectory, bootOptions);
 
   // Ported from str.c's set_help(): English (HELP) vs a genuine
   // Japanese translation (HELP.jp), chosen by charset the same way

@@ -916,15 +916,21 @@ class Application {
   // hidden getenv("HOME") call here, matching PathResolver's own "no
   // hidden global state" rule (already established for Configuration/
   // Shell/etc); the caller (main()) reads the real environment. Also
-  // used to derive wFilePath_ (K-17/K-64's own "write buffer to a
-  // well-known file" target, `<homeDirectory>/.usilic/w.usilic` --
-  // mirrors legacy's own `~/.tcb/w.tcb`, s_S(S_w)). Defaulted to ""
-  // so this doesn't break existing callers that don't care about it
-  // (~ expansion in a typed path just won't do anything useful, and
-  // K-17/K-64 write to a relative "./.usilic/w.usilic" instead).
+  // the fallback root for usilicrcPath_/historyFilePath_/(and, absent
+  // an explicit tempRootDirectory below) error/shell/work/arc, all
+  // under `<homeDirectory>/.usilic`.
+  // tempRootDirectory (2026-08-18 addition, see tempRootDirectory_'s
+  // own comment): where to root error/shell/work/arc specifically.
+  // Defaulted to "" (falls back to `<homeDirectory>/.usilic`, this
+  // class's sole behavior before 2026-08-18) so existing callers that
+  // don't care about multi-instance isolation -- every test fixture --
+  // don't need updating.
+  // bootOptions (2026-08-18 addition): ^T's own new "Boot options"
+  // field, verbatim. Defaulted to "" (matches a bare no-argument
+  // launch's own empty display, see executeShowTcbBanner()'s comment).
   Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
               Charset::Encoding encoding, int width, ShellOptions shellOptions = ShellOptions{},
-              std::string homeDirectory = "");
+              std::string homeDirectory = "", std::string tempRootDirectory = "", std::string bootOptions = "");
 
   // Lists `directory` (DirectoryMode::enterDirectory()) and makes it
   // the active mode. Ported from init_menu()'s initial directory
@@ -1178,18 +1184,40 @@ class Application {
   // level at a time instead of always returning straight to
   // Directory.
   bool descendToNestedArchive(const ArchiveEntry &entry);
-  // Writes `bytes` to a freshly created temp file (a new mkdtemp()'d
-  // directory per call, avoiding basename collisions between sibling
-  // entries at different nesting levels that happen to share a name)
-  // named after entry.name's own basename (preserving its suffix,
-  // since programForSuffix() dispatches on that). Left for the OS to
-  // clean up on reboot/tmp-cleaner sweep, same as this project's
-  // already-documented, already-accepted tolerance for /tmp/.tcb's
-  // own unswept scratch files (CLAUDE.md) -- not deleted eagerly
-  // because a parent frame still on archiveParentStack_ may need to
-  // reload it later in the same session. Empty string on failure
-  // (mkdtemp()/ofstream failure).
-  std::string materializeArchiveTempFile(const std::string &entryName, const std::vector<unsigned char> &bytes);
+  // Writes `bytes` to a fresh file under `dir` (a NEW directory per
+  // call, avoiding basename collisions between sibling entries at
+  // different nesting levels that happen to share a name), named after
+  // entry.name's own basename (preserving its suffix, since
+  // programForSuffix() dispatches on that). `dir` is the caller's own
+  // concern -- descendToNestedArchive() passes allocateArcDirectory()'s
+  // result (2026-08-18: used to mkdtemp() a bare `/tmp/usilic-arcXXXXXX`
+  // itself; now consumes an arc.N slot instead, see that function's own
+  // comment), executeShowTcbBanner() passes tempRootDirectory_ directly
+  // (its own single fixed file is NOT part of the arc.N sequence -- it
+  // isn't archive extraction, and would otherwise show up recursively
+  // inside its own listing). Left for the OS to clean up on reboot/
+  // tmp-cleaner sweep, same as this project's already-documented,
+  // already-accepted tolerance for /tmp/.tcb's own unswept scratch
+  // files (CLAUDE.md) -- not deleted eagerly because a parent frame
+  // still on archiveParentStack_ may need to reload it later in the
+  // same session. Empty string on failure (directory creation/ofstream
+  // failure).
+  std::string materializeArchiveTempFile(const std::string &dir, const std::string &entryName,
+                                          const std::vector<unsigned char> &bytes);
+  // K-17 (^X^W)/K-64 (^J^W)'s shared allocator: returns a fresh
+  // `tempRootDirectory_ + "/w." + N` path, advancing nextWorkFileNumber_
+  // and recording it in allocatedWorkFiles_ (^T's own "WORK" list). Does
+  // NOT create the file itself -- callers open it with whichever mode
+  // (std::ios::app/trunc) their own use needs.
+  std::string allocateWorkFilePath();
+  // Nested-archive descent's own allocator (K-57/K-58's own
+  // descendToNestedArchive(), NOT the banner's fixed single file --
+  // see materializeArchiveTempFile()'s own comment): returns a fresh
+  // `tempRootDirectory_ + "/arc." + N` directory path (not yet created
+  // on disk -- materializeArchiveTempFile()'s own caller creates it),
+  // advancing nextArchiveNumber_ and recording it in allocatedArcDirs_
+  // (^T's own "arc.N" list).
+  std::string allocateArcDirectory();
   bool openSelectedDuEntry();
   bool openSelectedLocateResult();
   bool goToFileSelector();
@@ -1408,23 +1436,65 @@ class Application {
 
   Display &display_;  // handleResize()'s own rows()/columns() lookup -- no other member currently needs this
   PathResolver pathResolver_;  // ^Xf/^Xd path prompts, see the constructor's own homeDirectory comment
-  std::string wFilePath_;  // K-17/K-64's write-buffer-to-a-file target, see the constructor's own comment
+  // 2026-08-18 addition (screenshot =cm, a real report of two
+  // concurrently-running argument-launched instances clobbering each
+  // other's ERROR/SHELL/WORK/ARC files since they all used to share one
+  // fixed path under homeDirectory): the root directory error/shell/
+  // work/arc files are allocated under. `/tmp/.usilic.<pid>` for an
+  // argument-launched (multi-instance-capable) run, or
+  // `<homeDirectory>/.usilic` for a bare no-argument "resume last
+  // session" run (legacy's own single-instance assumption still holds
+  // there) -- see main()'s own comment for exactly how this is chosen
+  // and the directory created. usilicrcPath_/historyFilePath_ below are
+  // deliberately NOT rooted here -- see their own comment.
+  std::string tempRootDirectory_;
+  // ^T's own new "Boot options" field (see executeShowTcbBanner()'s own
+  // comment) -- the literal argv[1..] this process was launched with
+  // (flags and the directory argument, in their original order, ~
+  // expanded), or empty for a bare no-argument launch. Computed once in
+  // main() (the only place argv is available) and just carried here.
+  std::string bootOptions_;
+  // K-17 (^X^W)/K-64 (^J^W)'s shared "current" write-buffer-to-a-file
+  // target -- see allocateWorkFilePath()'s own comment for the
+  // allocation policy (^X^W reuses this, ^J^W always advances it).
+  // Empty until the first allocation.
+  std::string currentWorkFilePath_;
+  int nextWorkFileNumber_ = 0;  // last-allocated w.N suffix; 0 = none yet
+  // Every w.N path ever allocated this session, oldest first -- ^T's
+  // own "WORK" field lists all of them (see executeShowTcbBanner()'s
+  // own comment), not just the current one.
+  std::vector<std::string> allocatedWorkFiles_;
+  int nextArchiveNumber_ = 0;  // last-allocated arc.N suffix; 0 = none yet
+  // Every arc.N directory ever allocated this session (nested-archive
+  // descent only, see materializeArchiveTempFile()'s own comment --
+  // NOT the banner's own single fixed temp file), oldest first -- ^T's
+  // own "arc.N" list entries.
+  std::vector<std::string> allocatedArcDirs_;
   // K-67 (^X^Ke, M_error, "ERROR"): where CpMvRmMode routes non-
   // interactive child processes' stderr (see the constructor's own
   // comment and CpMvRmMode's own errorLogPath_ parameter). Ported
-  // from str.c's S_error path (`~/.tcb/error`, this port's own
-  // `~/.usilic/error`).
+  // from str.c's S_error path (`~/.tcb/error`), rooted under
+  // tempRootDirectory_ (2026-08-18, see its own comment) rather than
+  // always `~/.usilic/error` the way this port originally had it.
   std::string errorLogPath_;
   // K-68 (^X^Kl, M_log, "LOG: SHELL output"): NOT a continuous tee of
   // Shell's pty output the way legacy's own write(sfd,...) is (see
   // shellLog()'s own comment on this simplification) -- a snapshot of
   // Shell::scrollback()'s current lines, written out on demand when
   // K-68 is actually pressed. Ported from str.c's S_log path
-  // (`~/.tcb/shell`, this port's own `~/.usilic/shell`).
+  // (`~/.tcb/shell`), rooted under tempRootDirectory_ (2026-08-18, see
+  // its own comment).
   std::string logFilePath_;
   // K-0's own banner text (see executeShowTcbBanner()'s own comment)
-  // reports these two paths verbatim -- str.c's print_tcb() shows the
-  // SAME two fields ("Startup file"/"History file").
+  // reports Startup file verbatim -- str.c's print_tcb() shows the
+  // same field. Deliberately still rooted at `<homeDirectory>/.usilic`
+  // even for an argument-launched (multi-instance) run: usilicrc is
+  // read-only config, and historyFilePath_ is a genuinely cross-session
+  // accumulating ring neither of which a per-PID directory would make
+  // sense for -- see tempRootDirectory_'s own comment, and the
+  // 2026-08-17 report this whole redesign responds to ("^Tで表示され
+  // るファイルはusilicrc以外使えない" -- of everything ^T shows,
+  // usilicrc is the one exception that's fine to keep sharing).
   std::string usilicrcPath_;
   std::string historyFilePath_;
   Charset::Encoding encoding_;  // wrapHelpText()'s own PipeBuffer construction -- no other member currently needs this

@@ -1411,7 +1411,7 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W (SHELL: insert buffer content) 
   // that pressing ^J^W is interpreted as a command, not as two characters
   // typed into the pattern.
   CHECK(app.currentMode() == ApplicationMode::Shell);
-  std::string wPath = (root / ".usilic" / "w.usilic").string();
+  std::string wPath = (root / ".usilic" / "w.1").string();
   CHECK(app.shell().commandLine().text() == "cat " + wPath);
 }
 
@@ -2607,18 +2607,59 @@ TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): refused when Shell was never star
   CHECK_FALSE(app.handleCommand(Command::ShowShellLog));
 }
 
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): shows a status screen with real usilicrc/history/log paths") {
+// 2026-08-18 redesign (screenshot =cm): the OLD layout (bare "usilic
+// v1.5b" heading, "Startup file"/"History file"/"User name"/"ERROR
+// log"/"SHELL log") always pointed at one shared <homeDirectory>/
+// .usilic location regardless of how many instances were running --
+// this test now checks the NEW field set (Boot options/Startup file/
+// ERROR/SHELL/WORK) and confirms the two removed fields (the "usilic
+// v1.5b" heading text and the history file path) are genuinely gone,
+// not just renamed.
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): shows a status screen with the new Boot options/Startup "
+                           "file/ERROR/SHELL/WORK field layout") {
   REQUIRE(app.start(path()));
   CHECK(app.feedByte(0x14, std::nullopt));  // ^T
   CHECK(app.currentMode() == ApplicationMode::File);
 
   std::string joined;
   for (const auto &line : app.activeContentView().lines()) joined += line.text + "\n";
-  CHECK(joined.find("usilic v1.5b") != std::string::npos);
+  CHECK(joined.find("usilic v1.5b") == std::string::npos);  // removed field
+  CHECK(joined.find((root / ".usilic" / "history").string()) == std::string::npos);  // removed field
+  CHECK(joined.find("Boot options") != std::string::npos);
+  CHECK(joined.find("Startup file") != std::string::npos);
   CHECK(joined.find((root / ".usilic" / "usilicrc").string()) != std::string::npos);
-  CHECK(joined.find((root / ".usilic" / "history").string()) != std::string::npos);
+  CHECK(joined.find("ERROR") != std::string::npos);
   CHECK(joined.find((root / ".usilic" / "error").string()) != std::string::npos);
+  CHECK(joined.find("SHELL") != std::string::npos);
   CHECK(joined.find((root / ".usilic" / "shell").string()) != std::string::npos);
+  CHECK(joined.find("WORK") != std::string::npos);
+
+  // The Fixture's own app{} construction leaves tempRootDirectory/
+  // bootOptions at their default ("") -- see the constructor's own
+  // comment -- so this also exercises the no-argument-launch fallback
+  // (temp root == <homeDirectory>/.usilic) and the empty-Boot-options
+  // case in the same pass.
+
+  // "usilic", NOT "tcb" -- FileMode's own mode-line name field is the
+  // loaded file's bare basename (see executeShowTcbBanner()'s own
+  // comment on why this is the whole mechanism behind the requested
+  // "^T's own mode name is usilic").
+  CHECK(app.activeContentView().modeLineText().substr(0, 6) == "usilic");
+}
+
+// A real work file (K-17) and a real nested-archive descent (K-57/K-58
+// style, via descendToNestedArchive()) both allocate into the SAME
+// tempRootDirectory_ -- this confirms ^T's WORK/arc.N lists actually
+// grow to reflect them, not just that the labels exist.
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): WORK and arc.N lists grow as w.N/arc.N are actually used") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x17, std::nullopt));  // ^W -- allocates w.1
+
+  CHECK(app.feedByte(0x14, std::nullopt));  // ^T
+  std::string joined;
+  for (const auto &line : app.activeContentView().lines()) joined += line.text + "\n";
+  CHECK(joined.find((root / ".usilic" / "w.1").string()) != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^O a (K-27) cycles the charset Ascii -> Euc -> Utf8 -> Ascii") {
@@ -2672,12 +2713,13 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ESC s starts Shell mode (StartShell)") {
   CHECK(app.currentMode() == ApplicationMode::Shell);
 }
 
-TEST_CASE_FIXTURE(Fixture, "saveBufferToFile (^X^W, K-17): writes the active view's lines to wFilePath_") {
+TEST_CASE_FIXTURE(Fixture, "saveBufferToFile (^X^W, K-17): writes the active view's lines to the "
+                           "current work file (w.1 on first use)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   CHECK(app.feedByte(0x17, std::nullopt));    // ^W
 
-  std::ifstream in(root / ".usilic" / "w.usilic");
+  std::ifstream in(root / ".usilic" / "w.1");
   REQUIRE(in.good());
   std::string firstLine;
   std::getline(in, firstLine);
@@ -2731,7 +2773,7 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W, K-64): writes the bu
     return;
   }
   CHECK(app.currentMode() == ApplicationMode::Shell);
-  std::string wPath = (root / ".usilic" / "w.usilic").string();
+  std::string wPath = (root / ".usilic" / "w.1").string();
   CHECK(app.shell().commandLine().text() == "cat " + wPath);
 
   std::ifstream in(wPath);
@@ -2760,7 +2802,7 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W) also works from WITH
     return;
   }
   CHECK(app.currentMode() == ApplicationMode::Shell);
-  std::string wPath = (root / ".usilic" / "w.usilic").string();
+  std::string wPath = (root / ".usilic" / "w.1").string();
   CHECK(app.shell().commandLine().text() == "cat " + wPath);
 
   // The written buffer is the candidate LIST's own content (one

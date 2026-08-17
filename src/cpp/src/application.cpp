@@ -245,16 +245,26 @@ const KeyTableEntry kKeyTable[] = {
 // split only needs the match to anchor where each new section
 // starts, not span the whole header.
 const char *const kHelpPattern = "^  [0-9]+\\.";
+
+// See tempRootDirectory_'s own comment (application.hpp): an explicit
+// `tempRootDirectory` (main()'s own /tmp/.usilic.<pid>, an argument-
+// launched run) wins; a bare no-argument run passes "" here and falls
+// back to the same `<homeDirectory>/.usilic` every OTHER path in this
+// class already used exclusively before 2026-08-18.
+std::string resolveTempRoot(const std::string &homeDirectory, const std::string &tempRootDirectory) {
+  return tempRootDirectory.empty() ? (homeDirectory + "/.usilic") : tempRootDirectory;
+}
 }  // namespace
 
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
-                          std::string homeDirectory)
+                          std::string homeDirectory, std::string tempRootDirectory, std::string bootOptions)
     : display_(display),
       pathResolver_(homeDirectory),
-      wFilePath_(homeDirectory + "/.usilic/w.usilic"),
-      errorLogPath_(homeDirectory + "/.usilic/error"),
-      logFilePath_(homeDirectory + "/.usilic/shell"),
+      tempRootDirectory_(resolveTempRoot(homeDirectory, tempRootDirectory)),
+      bootOptions_(std::move(bootOptions)),
+      errorLogPath_(tempRootDirectory_ + "/error"),
+      logFilePath_(tempRootDirectory_ + "/shell"),
       usilicrcPath_(homeDirectory + "/.usilic/usilicrc"),
       historyFilePath_(homeDirectory + "/.usilic/history"),
       encoding_(encoding),
@@ -2055,7 +2065,7 @@ bool Application::descendToNestedArchive(const ArchiveEntry &entry) {
   auto content = archiveMode_.extractSelected();
   if (!content) return false;
 
-  std::string tempPath = materializeArchiveTempFile(entry.name, *content);
+  std::string tempPath = materializeArchiveTempFile(allocateArcDirectory(), entry.name, *content);
   if (tempPath.empty()) return false;
 
   std::string parentPath = archiveMode_.currentArchive();
@@ -2067,23 +2077,28 @@ bool Application::descendToNestedArchive(const ArchiveEntry &entry) {
   return true;
 }
 
-std::string Application::materializeArchiveTempFile(const std::string &entryName,
+std::string Application::materializeArchiveTempFile(const std::string &dir, const std::string &entryName,
                                                       const std::vector<unsigned char> &bytes) {
-  char dirTemplate[] = "/tmp/usilic-arcXXXXXX";
-  if (!::mkdtemp(dirTemplate)) return "";
+  // 2026-08-18: used to mkdtemp() a bare `/tmp/usilic-arcXXXXXX` itself
+  // -- `dir` is now the caller's own already-allocated directory (an
+  // arc.N slot for archive descent, or tempRootDirectory_ directly for
+  // the banner's single fixed file -- see this function's own
+  // declaration comment), so this just needs to ensure it exists.
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  if (ec) return "";
 
   // entry.name may itself contain '/' (a path within the archive) --
   // only the basename matters for programForSuffix()'s own suffix
-  // dispatch, and keeping the temp file directly in the fresh
-  // mkdtemp()'d directory (rather than trying to recreate the
-  // archive's internal directory structure) sidesteps needing to
-  // mkdir -p anything here.
+  // dispatch, and keeping the temp file directly in `dir` (rather than
+  // trying to recreate the archive's internal directory structure)
+  // sidesteps needing to mkdir -p anything else here.
   std::string baseName = entryName;
   if (std::size_t slash = baseName.find_last_of('/'); slash != std::string::npos)
     baseName = baseName.substr(slash + 1);
   if (baseName.empty()) baseName = "entry";
 
-  std::string path = std::string(dirTemplate) + "/" + baseName;
+  std::string path = dir + "/" + baseName;
   std::ofstream out(path, std::ios::binary);
   if (!out) return "";
   out.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
@@ -2826,12 +2841,17 @@ std::string Application::previousModeName(ApplicationMode mode) const {
 
 // K-17 (^X^W, M_w4): ported from menu.c's own `send_pp(hp->bp->pp,
 // "a")` (append mode) -- writes activeView()'s current lines to
-// wFilePath_. Available from any mode (legacy's own M_w4 case has no
-// mode guard either). False if wFilePath_ couldn't be opened for
-// writing (e.g. Application was constructed with an empty
-// homeDirectory, see the constructor's own comment).
+// currentWorkFilePath_, allocating a fresh w.N the FIRST time this (or
+// K-64) is used this session and reusing it on every subsequent ^X^W
+// press (2026-08-18: see allocateWorkFilePath()'s own comment for why
+// K-64 instead always advances to a new number). Available from any
+// mode (legacy's own M_w4 case has no mode guard either). False if
+// the file couldn't be opened for writing (e.g. Application was
+// constructed with an empty homeDirectory, see the constructor's own
+// comment).
 bool Application::saveBufferToFile() {
-  std::ofstream out(wFilePath_, std::ios::app);
+  if (currentWorkFilePath_.empty()) currentWorkFilePath_ = allocateWorkFilePath();
+  std::ofstream out(currentWorkFilePath_, std::ios::app);
   if (!out) return false;
   for (const auto &line : activeView().lines()) out << line.text << "\n";
   return true;
@@ -2897,21 +2917,44 @@ bool Application::shellInsertName() {
 
 // K-64 (^J^W, M_w2): ported from menu.c's own m_w() M_w2 case --
 // unlike K-63, this genuinely needs a real file (`cat` has no way to
-// display in-memory content otherwise), so it reuses the SAME target
-// saveBufferToFile() writes to. Writes activeView()'s CURRENT lines
+// display in-memory content otherwise). Unlike K-17 (saveBufferToFile()),
+// this always allocates a FRESH w.N (2026-08-18: a direct choice --
+// K-17 is an "append across multiple presses" accumulator, K-64 is a
+// one-shot "snapshot this buffer for SHELL to `cat`" action, so each
+// press gets its own numbered slot rather than truncating/clobbering
+// whatever K-17 may already have been accumulating) -- and that new
+// number becomes the current one for any LATER K-17 press to continue
+// appending to, matching legacy's own single shared wFilePath_ (both
+// K-17/K-64 always agreed on "the" current file; this just adds
+// periodic renumbering on top). Writes activeView()'s CURRENT lines
 // (the view active BEFORE switching to Shell mode, so this must run
 // before ensureShellActive() changes currentMode_).
 bool Application::shellInsertBufferContent() {
   if (shell_.busy()) return false;
   ContentView &source = activeView();
-  std::ofstream out(wFilePath_, std::ios::trunc);
+  currentWorkFilePath_ = allocateWorkFilePath();
+  std::ofstream out(currentWorkFilePath_, std::ios::trunc);
   if (!out) return false;
   for (const auto &line : source.lines()) out << line.text << "\n";
   out.close();
   if (!ensureShellActive()) return false;
-  shell_.commandLine().setText("cat " + wFilePath_);
+  shell_.commandLine().setText("cat " + currentWorkFilePath_);
   shell_.commandLine().redraw();
   return true;
+}
+
+// See allocateWorkFilePath()'s/allocateArcDirectory()'s own
+// declaration comments (application.hpp).
+std::string Application::allocateWorkFilePath() {
+  std::string path = tempRootDirectory_ + "/w." + std::to_string(++nextWorkFileNumber_);
+  allocatedWorkFiles_.push_back(path);
+  return path;
+}
+
+std::string Application::allocateArcDirectory() {
+  std::string path = tempRootDirectory_ + "/arc." + std::to_string(++nextArchiveNumber_);
+  allocatedArcDirs_.push_back(path);
+  return path;
 }
 
 // K-67: see the class's own declaration comment.
@@ -2936,27 +2979,62 @@ bool Application::executeShowShellLog() {
   return true;
 }
 
-// K-0: see the class's own declaration comment.
+// K-0 (^T): redesigned 2026-08-18 in response to a real report
+// (screenshot =cm) that two concurrently-running argument-launched
+// instances showed each other's stale ERROR/SHELL content here, since
+// every path shown used to be one fixed location under
+// `<homeDirectory>/.usilic` regardless of how many instances were
+// running. Field layout is the user's own explicit design (not ported
+// from anything in legacy, which has no per-instance concept to begin
+// with): "Boot options"/"Startup file" are single-line fields right-
+// justified to a common label width; "ERROR"/"SHELL"/"WORK" are
+// shorter labels right-justified to that SAME width (so every colon
+// lines up); WORK lists every w.N ever allocated this session
+// (allocatedWorkFiles_, oldest first -- empty if K-17/K-64 haven't
+// been used yet), continuation lines indented to the path column with
+// no repeated label; arc.N (nested-archive descent, allocatedArcDirs_)
+// follows the same way, entirely omitted if empty (unlike WORK, which
+// always shows its own label even with nothing after it) since unlike
+// WORK there's no single always-relevant "the" ARC concept to anchor
+// an empty label to. "History file"/"User name" (both present in the
+// OLD layout) are gone entirely: historyFilePath_ is a genuinely
+// cross-session accumulating ring, not a per-instance artifact this
+// redesign's "here's what THIS instance is using" framing is about,
+// and User name was never referenced by any of this round's own
+// report.
 bool Application::executeShowTcbBanner() {
+  constexpr int kLabelWidth = 12;  // "Boot options"/"Startup file" own width -- every other label right-justifies to this
+  auto field = [](const std::string &label) {
+    std::string padded = label;
+    if (static_cast<int>(padded.size()) < kLabelWidth) padded = std::string(kLabelWidth - padded.size(), ' ') + padded;
+    return padded + " : ";
+  };
+  std::string continuationIndent(kLabelWidth + 3, ' ');  // aligns under field()'s own " : "-following column
+
   std::ostringstream banner;
-  banner << "usilic v1.5b\n";
-  banner << "Startup file : " << usilicrcPath_ << "\n";
-  banner << "History file : " << historyFilePath_ << "\n";
-  banner << "User name    : ";
-  if (const char *user = std::getenv("USER")) {
-    banner << user;
-    char hostname[256] = {0};
-    if (::gethostname(hostname, sizeof(hostname) - 1) == 0 && hostname[0]) banner << "@" << hostname;
-  } else {
-    banner << "---";
+  banner << field("Boot options") << bootOptions_ << "\n";
+  banner << field("Startup file") << usilicrcPath_ << "\n";
+  banner << field("ERROR") << errorLogPath_ << "\n";
+  banner << field("SHELL") << logFilePath_ << "\n";
+  banner << field("WORK");
+  for (std::size_t i = 0; i < allocatedWorkFiles_.size(); i++) {
+    if (i) banner << continuationIndent;
+    banner << allocatedWorkFiles_[i] << "\n";
   }
-  banner << "\n";
-  banner << "ERROR log    : " << errorLogPath_ << "\n";
-  banner << "SHELL log    : " << logFilePath_ << "\n";
+  if (allocatedWorkFiles_.empty()) banner << "\n";
+  for (std::size_t i = 0; i < allocatedArcDirs_.size(); i++) banner << continuationIndent << allocatedArcDirs_[i] << "\n";
 
   std::string text = banner.str();
   std::vector<unsigned char> bytes(text.begin(), text.end());
-  std::string tempPath = materializeArchiveTempFile("tcb", bytes);
+  // "usilic", NOT "tcb" (2026-08-18): FileMode's own mode-line provider
+  // derives its `name` field from the loaded file's bare basename (see
+  // its own comment) -- this is the entire mechanism behind the
+  // requested "mode name shown here is usilic" without needing a
+  // dedicated ContentView/mode of its own. tempRootDirectory_ directly
+  // (NOT allocateArcDirectory()) -- see materializeArchiveTempFile()'s
+  // own comment on why this single fixed file is deliberately outside
+  // the arc.N sequence.
+  std::string tempPath = materializeArchiveTempFile(tempRootDirectory_, "usilic", bytes);
   if (tempPath.empty() || !fileMode_.loadFile(tempPath)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
