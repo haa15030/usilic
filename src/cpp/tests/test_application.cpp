@@ -2607,6 +2607,71 @@ TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): refused when Shell was never star
   CHECK_FALSE(app.handleCommand(Command::ShowShellLog));
 }
 
+// ESC l (2026-08-18 addition, see executeStartLog()'s own comment):
+// refused when Shell was never started, same as K-68 above -- nothing
+// to snapshot into logFilePath_ yet.
+TEST_CASE_FIXTURE(Fixture, "LOG (ESC l): refused when Shell was never started") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.handleCommand(Command::StartLog));
+}
+
+// The real end-to-end flow: run a real command in Shell (so a real
+// "usilic-1.5b:" prompt line gets frozen into scrollback, see item
+// 335's own bold-prompt change), leave Shell via ^G (returnFromShell()
+// is pure navigation -- scrollback survives, unlike re-entering
+// StartShell after `exit`, which starts a genuinely fresh empty
+// session), then ESC l from Directory.
+TEST_CASE_FIXTURE(Fixture, "LOG (ESC l): splits the current SHELL log on \"usilic-1.5b:\", labeled LOG "
+                           "(not CUT) in the mode line -- the actual feature the reverted 2026-08-05 "
+                           "Command::StartShellLog attempt (CLAUDE.md history item 176) was aiming for") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("printf 'LOGTEST123\\n'")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x0d, std::nullopt);
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("LOGTEST123") != std::string::npos) return true;
+    return false;
+  }));
+
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G -- returnFromShell(), scrollback survives
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+
+  REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
+  REQUIRE(app.feedByte('l', std::nullopt));   // l
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.activeContentView().modeLineText().substr(0, 3) == "LOG");  // NOT "CUT" -- see cutView_'s own provider
+
+  // At least one segment's own label line contains the bold prompt
+  // marker the split anchored on -- and selecting it (entering
+  // CutContent) shows the run's own output still intact underneath.
+  bool sawPromptLabel = false;
+  int matchingSegment = -1;
+  const auto &segments = app.cutMode().segments();
+  for (std::size_t i = 0; i < segments.size(); i++) {
+    if (segments[i].label.find("usilic-1.5b:") != std::string::npos) {
+      sawPromptLabel = true;
+      matchingSegment = static_cast<int>(i);
+    }
+  }
+  CHECK(sawPromptLabel);
+  REQUIRE(matchingSegment >= 0);
+
+  app.activeContentView().setCursorIndex(matchingSegment);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
+  bool sawOutput = false;
+  for (const auto &line : app.activeContentView().lines()) {
+    if (line.text.find("LOGTEST123") != std::string::npos) sawOutput = true;
+  }
+  CHECK(sawOutput);
+}
+
 // 2026-08-18 redesign (screenshot =cm): the OLD layout (bare "usilic
 // v1.5b" heading, "Startup file"/"History file"/"User name"/"ERROR
 // log"/"SHELL log") always pointed at one shared <homeDirectory>/

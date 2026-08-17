@@ -238,6 +238,8 @@ enum class Command {
   // comments.
   ShowErrorLog,
   ShowShellLog,
+  // ESC l ("LOG"): see Application::executeStartLog()'s own comment.
+  StartLog,
   // K-0 (^T, M_tcb, "TCB"): shows a status/about screen. See
   // Application::executeShowTcbBanner()'s own comment.
   ShowTcbBanner,
@@ -1328,6 +1330,11 @@ class Application {
   // print." False if Shell was never started (nothing to snapshot)
   // or the file can't be written/opened.
   bool executeShowShellLog();
+  // Shared by executeShowShellLog()/executeStartLog() -- see its own
+  // definition comment (application.cpp).
+  bool refreshShellLogFile();
+  // ESC l ("LOG"): see its own definition comment (application.cpp).
+  bool executeStartLog();
   // K-0 (^T): builds a short status/about screen -- version, the
   // usilicrc/history file paths (str.c's print_tcb() shows the SAME
   // two fields, "Startup file"/"History file"), user@host, and the
@@ -1618,7 +1625,7 @@ class Application {
   // meaningful (and only consulted by handleResize()) when
   // !cutMode_.canGoBack(); a pushSplit() (nested) level doesn't touch
   // this, see the class comment's own HELP section.
-  enum class CutOrigin { File, Help, Directory };
+  enum class CutOrigin { File, Help, Directory, Log };  // Log: ESC l, see executeStartLog()'s own comment
   CutOrigin cutOrigin_ = CutOrigin::File;
 
   // Which search set DirectoryMode's current search annotation (see

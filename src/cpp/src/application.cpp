@@ -95,15 +95,18 @@ std::size_t contentByteCount(const ContentView &view) { return view.totalByteCou
 // bytes through feedByte() one at a time -- the exact mechanism a
 // live macro playback would use) rather than as a real generic
 // per-slot macro system. M-8 ("ESC t", search ~/.tcb/tcbrc section
-// names) and M-9 ("ESC l") are both left out: both are, on
-// inspection, throwaway self-referential DEMO macros baked into
-// usilicrc's own example config (M-9's own removal story, and the
-// stale pre-rename "~/.tcb/tcbrc" path M-8 hardcodes even in this
-// already-renamed usilicrc, are documented in CLAUDE.md), not
-// features worth reproducing here. Arrow/PageUp/PageDown special
-// keys are omitted too -- every one of them already has a plain-byte
-// alias in this table (j/k, ^N/^P, space/^F/^V, b/^B), so nothing is
-// unreachable by leaving KeyInput::SpecialKey-only entries out.
+// names) is left out: on inspection it's a throwaway self-referential
+// DEMO macro baked into usilicrc's own example config, hardcoding the
+// stale pre-rename "~/.tcb/tcbrc" path even in this already-renamed
+// usilicrc (documented in CLAUDE.md), not a feature worth reproducing
+// here. M-9 ("ESC l") USED to be excluded for the same reason -- see
+// that same history -- but as of 2026-08-18 (executeStartLog()'s own
+// comment) it's a real, distinct feature (LOG), not a demo macro
+// replay, so it gets a normal entry below instead. Arrow/PageUp/
+// PageDown special keys are omitted too -- every one of them already
+// has a plain-byte alias in this table (j/k, ^N/^P, space/^F/^V,
+// b/^B), so nothing is unreachable by leaving KeyInput::SpecialKey-
+// only entries out.
 struct KeyTableEntry {
   const char *keyLabel;
   const char *description;
@@ -148,6 +151,7 @@ const KeyTableEntry kKeyTable[] = {
     // a spelled-out word sat awkwardly between the single-control-char
     // symbols (^J/^X/^O) and those keytop labels, matching neither.
     {"^[s", "SHELL", {kEscape, 's'}},
+    {"^[l", "LOG", {kEscape, 'l'}},
     {"^[<", "Go to top", {kEscape, '<'}},
     {"^[>", "Go to bottom", {kEscape, '>'}},
     {"^[^M", "Read as is", {kEscape, kCarriageReturn}},
@@ -633,7 +637,15 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // there too, but which directory wasn't independently confirmed);
   // left for its own follow-up rather than guessed at.
   cutView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    std::string name = (cutOrigin_ == CutOrigin::Help) ? "HELP" : "CUT";
+    // Log (2026-08-18, ESC l): a distinct mode-line identity from a
+    // plain CUT search, matching HELP's own established precedent of
+    // showing a name other than "CUT" for a specific, dedicated entry
+    // point into the same underlying split() engine -- see
+    // executeStartLog()'s own comment on why this is safe, unlike the
+    // reverted 2026-08-05 attempt at the same "ESC l" key.
+    std::string name = (cutOrigin_ == CutOrigin::Help)  ? "HELP"
+                        : (cutOrigin_ == CutOrigin::Log) ? "LOG"
+                                                          : "CUT";
     std::string trailing;
     if (auto parent = cutMode_.parentPattern()) {
       trailing = "CUT:" + *parent;
@@ -641,6 +653,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       trailing = fileMode_.currentFile();
     } else if (cutOrigin_ == CutOrigin::Directory) {
       trailing = directoryMode_.currentDirectory();
+    } else if (cutOrigin_ == CutOrigin::Log) {
+      trailing = logFilePath_;
     }
     return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", /*trailing2=*/""};
   });
@@ -1161,6 +1175,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // one.
       case 'v':
         return handleCommand(Command::PageUp);
+      // ESC l : LOG -- see executeStartLog()'s own comment (why this
+      // is safe to add here, unlike the reverted 2026-08-05 attempt at
+      // the same key -- CLAUDE.md history item 176).
+      case 'l':
+        return handleCommand(Command::StartLog);
       default:
         return false;  // unrecognized ESC-sequence in this slice
     }
@@ -1889,6 +1908,8 @@ bool Application::handleCommand(Command command) {
       return executeShowErrorLog();
     case Command::ShowShellLog:
       return executeShowShellLog();
+    case Command::StartLog:
+      return executeStartLog();
     case Command::ShowTcbBanner:
       return executeShowTcbBanner();
     case Command::CycleCharset:
@@ -2411,13 +2432,26 @@ bool Application::returnToDirectory() {
   // A no-op for the normal-descent case (parent already matches
   // currentDirectory_), so this doesn't touch existing cursor-position
   // behavior there.
-  std::filesystem::path filePath(fileMode_.currentFile());
-  std::string parent = filePath.parent_path().string();
-  if (!parent.empty() && parent.back() != '/') parent += '/';
-  if (!parent.empty() && parent != directoryMode_.currentDirectory()) {
-    std::string previousDirectory = directoryMode_.currentDirectory();
-    if (directoryMode_.enterDirectory(parent) && !previousDirectory.empty())
-      directoryMode_.resetNavigationToFloor(previousDirectory);
+  // 2026-08-18 fix: skip the "follow the file's real parent directory"
+  // fix just below when the currently-loaded file IS the ^T banner's
+  // own synthetic file (see executeShowTcbBanner()'s own comment) --
+  // that fix is correct for ^X^F/RecentFile (a real file the user
+  // deliberately picked), wrong for a throwaway status screen living
+  // in tempRootDirectory_, essentially never the directory the user
+  // actually wants to end up looking at. A direct path comparison
+  // rather than a separate stateful flag: self-correcting the moment
+  // ANY other file gets loaded (of which there are ~10 call sites),
+  // rather than needing every one of them to remember to clear a flag
+  // this one alone sets.
+  if (fileMode_.currentFile() != tempRootDirectory_ + "/usilic") {
+    std::filesystem::path filePath(fileMode_.currentFile());
+    std::string parent = filePath.parent_path().string();
+    if (!parent.empty() && parent.back() != '/') parent += '/';
+    if (!parent.empty() && parent != directoryMode_.currentDirectory()) {
+      std::string previousDirectory = directoryMode_.currentDirectory();
+      if (directoryMode_.enterDirectory(parent) && !previousDirectory.empty())
+        directoryMode_.resetNavigationToFloor(previousDirectory);
+    }
   }
   currentMode_ = ApplicationMode::Directory;
   // File mode's own view now sets a real visible cursor (see
@@ -2967,15 +3001,69 @@ bool Application::executeShowErrorLog() {
 }
 
 // K-68: see the class's own declaration comment.
-bool Application::executeShowShellLog() {
+// Shared by executeShowShellLog() (K-68, ^X^Kl) and executeStartLog()
+// (ESC l, LOG -- 2026-08-18 addition, see its own comment): writes
+// Shell::scrollback()'s current lines to logFilePath_ (already
+// with/without-args-aware, see tempRootDirectory_'s own comment), so
+// both features always see the SAME up-to-date snapshot. False if
+// Shell was never started (nothing to snapshot) or the file couldn't
+// be opened for writing.
+bool Application::refreshShellLogFile() {
   if (!shellStarted_) return false;
   std::ofstream out(logFilePath_, std::ios::trunc);
   if (!out) return false;
   for (const auto &line : shell_.scrollback().lines()) out << line.text << "\n";
-  out.close();
+  return static_cast<bool>(out);
+}
+
+bool Application::executeShowShellLog() {
+  if (!refreshShellLogFile()) return false;
   if (!fileMode_.loadFile(logFilePath_)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
+  return true;
+}
+
+// ESC l (LOG): a real, direct-entry-point version of the "actually
+// working manual procedure" CLAUDE.md history item 176 verified after
+// a first attempt (Command::StartShellLog, intercepting raw ESC WHILE
+// INSIDE Shell mode) turned out to be structurally impossible --
+// feedShellByte() deliberately never lets a lone ESC reach
+// dispatchLeaderByte() at all (vi-mode/Meta-key compatibility, the
+// real shell needs it), so that attempt could never actually fire and
+// was reverted. This one is different in the way that matters: it's
+// reached the SAME way every other ESC-leader command is (this
+// switch, dispatchLeaderByte()'s escPending_ case), which -- per that
+// same investigation -- is only ever reachable OUTSIDE Shell mode
+// (Directory/File/etc, exactly where the validated manual procedure
+// itself starts from after its own ^G). What used to be 6 manual
+// steps (^X^Kl snapshot -> ^G back to Directory -> select the log file
+// -> ^Jb split-without-opening -> type a pattern -> Enter) collapses
+// to this single automatic one, using "usilic-1.5b:" (item 335's own
+// new bold SHELL-prompt marker) as the fixed split pattern instead of
+// that old attempt's literal demo string "tcb v1.5b".
+bool Application::executeStartLog() {
+  if (!refreshShellLogFile()) return false;
+  if (!fileMode_.loadFile(logFilePath_)) return false;
+  std::vector<StyledLine> sourceLines;
+  sourceLines.reserve(fileView_.lines().size());
+  for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
+  cutSyntax_ = GrepSyntax::Fixed;
+  // Set BEFORE calling split(), not after checking its return value --
+  // discovered via a real PTY test: CutMode::split() redraws cutView_
+  // INTERNALLY (its own last line), before this function ever gets a
+  // chance to run, so the mode line's very first frame showed "CUT"
+  // (whatever cutOrigin_ happened to already be) instead of "LOG",
+  // self-correcting only on some LATER, unrelated redraw. Turned out to
+  // be a pre-existing ordering bug affecting every OTHER cutOrigin_
+  // assignment in this file too (executeCut()'s File/Directory
+  // branches, startHelp()) -- fixed alongside this one. Harmless to set
+  // even on eventual failure: every failure path inside split() returns
+  // before its own redraw(), so nothing ever renders using a "wasted"
+  // assignment here.
+  cutOrigin_ = CutOrigin::Log;
+  if (!cutMode_.split(sourceLines, "usilic-1.5b:", cutSyntax_)) return false;
+  currentMode_ = ApplicationMode::Cut;
   return true;
 }
 
@@ -3037,6 +3125,12 @@ bool Application::executeShowTcbBanner() {
   std::string tempPath = materializeArchiveTempFile(tempRootDirectory_, "usilic", bytes);
   if (tempPath.empty() || !fileMode_.loadFile(tempPath)) return false;
   currentMode_ = ApplicationMode::File;
+  // fileReturnMode_ = Directory as usual, but see returnToDirectory()'s
+  // own 2026-08-18 comment: unlike every other File-mode entry point,
+  // this one deliberately does NOT get the "follow the file's real
+  // parent directory" treatment on the way back out (this file's own
+  // directory, tempRootDirectory_, is essentially never where the user
+  // actually wants to end up).
   fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
   return true;
 }
@@ -4514,8 +4608,18 @@ bool Application::executeCut(const std::string &pattern) {
     std::vector<StyledLine> sourceLines;
     sourceLines.reserve(fileView_.lines().size());
     for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
+    // 2026-08-18 fix: set BEFORE calling split(), not after checking
+    // its return value -- see executeStartLog()'s own discovery
+    // comment for why (CutMode::split() redraws cutView_ INTERNALLY,
+    // before this function ever gets a chance to run; setting
+    // cutOrigin_ afterward left the mode line showing whatever the
+    // PREVIOUS cutOrigin_ happened to be for this entire redraw,
+    // self-correcting only on some LATER, unrelated redraw). Harmless
+    // to set even on eventual failure -- every failure path inside
+    // split() returns before its own redraw(), so nothing ever renders
+    // using a "wasted" assignment here.
+    cutOrigin_ = CutOrigin::File;
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
-    if (ok) cutOrigin_ = CutOrigin::File;
   } else if (currentMode_ == ApplicationMode::Directory) {
     // 2026-08-11: CUT run directly over the directory listing (^J^C
     // from Directory mode, see startCutPrompt()'s own comment) --
@@ -4529,14 +4633,16 @@ bool Application::executeCut(const std::string &pattern) {
     std::vector<StyledLine> sourceLines;
     sourceLines.reserve(directoryView_.lines().size());
     for (const auto &line : directoryView_.lines()) sourceLines.push_back({line.text, line.attributes});
+    cutOrigin_ = CutOrigin::Directory;  // see the File branch's own 2026-08-18 comment above
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
-    if (ok) cutOrigin_ = CutOrigin::Directory;
   } else {
     std::vector<StyledLine> sourceLines;
     sourceLines.reserve(fileView_.lines().size());
     for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
+    // A fresh top-level split -- eligible for reflow on resize. See the
+    // File branch's own 2026-08-18 comment above for the ordering.
+    cutOrigin_ = CutOrigin::File;
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
-    if (ok) cutOrigin_ = CutOrigin::File;  // a fresh top-level split -- eligible for reflow on resize
   }
 
   if (!ok) {
@@ -4944,11 +5050,18 @@ bool Application::startHelp() {
     ok = cutMode_.pushSplit(helpLines, kHelpPattern, GrepSyntax::Regex);
   } else {
     cutReturnMode_ = currentMode_;  // nothing to preserve -- same "leave Cut back to..." anchor a real CUT uses
+    // A fresh top-level split -- eligible for reflow on resize. Set
+    // BEFORE calling split(), not after checking its return value --
+    // see executeCut()'s own File-branch 2026-08-18 comment for why
+    // (CutMode::split() redraws cutView_ INTERNALLY, before this
+    // function ever gets a chance to run; a real report -- LOG's own
+    // mode line briefly reading "CUT" instead of "LOG" -- traced back
+    // to this exact ordering bug, which turned out to affect every
+    // OTHER cutOrigin_ assignment in this file too, HELP's own
+    // included).
+    cutOrigin_ = CutOrigin::Help;
+    cutSyntax_ = GrepSyntax::Regex;  // safe to set here: nothing real depends on the old value in this branch
     ok = cutMode_.split(helpLines, kHelpPattern, GrepSyntax::Regex);
-    if (ok) {
-      cutOrigin_ = CutOrigin::Help;  // a fresh top-level split -- eligible for reflow on resize
-      cutSyntax_ = GrepSyntax::Regex;  // safe to set here: nothing real depends on the old value in this branch
-    }
   }
   if (!ok) return false;
 
