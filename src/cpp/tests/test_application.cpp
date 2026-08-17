@@ -5104,6 +5104,23 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^F (K-46) opens a ListBrowser over real
 // before drawing itself, "punching" a plain hole through that fill
 // exactly where typing happens -- everything else on the row stays
 // filled.
+// 2026-08-18 fix (a real report + screenshot =cr: "一文字も入力され
+// ていないと不良のまま(一文字でも入力後はOK)"): item 348's
+// drawPromptLabel() fill-to-edge fix only covers the screen AFTER
+// editing starts (feedRegexListByte() routes the first typed byte
+// there) -- the READ-ONLY candidate-list state BEFORE any typing is
+// rendered by ContentView::renderModeLine() through listBrowserView_'s
+// own ModeLineFieldsProvider instead, a completely different code
+// path this fix never touched, still leaving the same beige gap from
+// the candidate's own path to the screen's right edge.
+TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line already fills to the screen's right edge on the "
+                           "read-only candidate list, before a single character has been typed") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(display.standoutAt(23, 79));  // filled all the way to the true right edge, with zero bytes typed
+}
+
 TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line fills all the way to the screen's right edge "
                            "while editing, with only the live input field itself left non-highlighted") {
   REQUIRE(app.start(path()));

@@ -472,7 +472,20 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     if (promptHistoryRecallKind_ &&
         (*promptHistoryRecallKind_ == PromptKind::RecentFile || *promptHistoryRecallKind_ == PromptKind::RecentDirectory)) {
       std::string name = listBrowserChronological_ ? "HISTORY" : promptLabelText(*promptHistoryRecallKind_);
-      return {name, trailing, /*fillTrailingToEdge=*/false,
+      // fillTrailingToEdge=true (2026-08-18 fix, a real report+
+      // screenshot =cr: "一文字も入力されていないと不良のまま" --
+      // item 348's drawPromptLabel() fill-to-edge fix only covers the
+      // screen AFTER editing starts; this READ-ONLY candidate-list
+      // state, rendered by ContentView::renderModeLine() through THIS
+      // provider instead, still left the same beige gap from the
+      // candidate path's own end to the screen's right edge, unfilled,
+      // whenever not a single character had been typed yet). No trailing2
+      // exists for this kind (see this branch's own comment above), so
+      // renderModeLine()'s own fillTrailingToEdge logic pads `trailing`
+      // itself (the candidate path) with spaces, inside its own
+      // Standout run, all the way to the edge -- the exact same
+      // mechanism DirectoryMode's "(ls)" trailing field already uses.
+      return {name, trailing, /*fillTrailingToEdge=*/true,
               /*rightWatermark=*/listBrowserChronological_ ? promptLabelText(*promptHistoryRecallKind_) : "",
               /*trailing2=*/"", /*trailingPlain=*/false, /*trailing2RightJustified=*/false,
               /*trailing2Kind=*/ContentView::TrailingKind::QueryEcho,
