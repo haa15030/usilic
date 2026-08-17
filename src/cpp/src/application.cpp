@@ -4442,7 +4442,29 @@ std::string Application::promptLabelText(PromptKind kind) const {
 void Application::drawPromptLabel(PromptKind kind, const std::string &positionText, const std::string &staticMessage) {
   int row = std::max(0, display_.rows() - 1);
   display_.moveCursor(row, 0);
-  display_.clearToEndOfLine();
+  // Fill the WHOLE row with reverse video first (2026-08-18 fix, a
+  // real report + screenshots =bn/=cq: "基本的に右端まで埋まって
+  // いないモードラインは全部不良"). Every other already-correct
+  // mode line in this port fills its own row edge-to-edge (see
+  // ContentView::renderModeLine()'s own fillTrailingToEdge), but this
+  // function only ever drew individual reversed RUNS (label/position/
+  // trailing) separated by plain, unfilled gaps from the old
+  // clearToEndOfLine() -- visible as beige "holes" on a real terminal,
+  // easy to misread as broken/missing content. Filling the base layer
+  // here, then drawing label/position/trailing on top (already
+  // reversed, no visual change to them), guarantees no gap is ever
+  // left unfilled by construction, without needing to hand-track every
+  // individual gap. promptEditor_'s own redraw() (called separately,
+  // right after this function returns) explicitly turns standout OFF
+  // before drawing its own field (LineEditor::redraw(), ported from
+  // key_eeol()'s vt_endstand()) -- it "punches" the editable field's
+  // own region back to plain on top of this fill, which is exactly the
+  // desired look: the live input area itself stays non-highlighted,
+  // everything else on the row stays filled.
+  display_.setAttribute(Display::Attribute::Standout);
+  display_.write(std::string(display_.columns(), ' '));
+  display_.setAttribute(Display::Attribute::StandoutOff);
+  display_.moveCursor(row, 0);
 
   if (kind == PromptKind::ExitConfirm) {
     // Ported from disp.c's own M_exit case (verified against a real
@@ -4597,31 +4619,17 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     case PromptKind::LocateQuery: destinationMode = locateReturnMode_; break;
     default: break;
   }
-  // RecentFile/RecentDirectory excluded (2026-08-18 fix, a real report:
-  // "-c起動→^X^D→モードライン不良＋文字列入力エリアが無い", same for
-  // ^X^F): unlike every OTHER PromptKind here, these two ARE the
-  // navigation itself -- there's no "search FROM some mode, resolves
-  // BACK to it" concept for them the way GREP/CUT/MAN/LOCATE (and
-  // ProgramCommand, via the `default` fallback) have. Falling through
-  // to `default` left destinationMode == currentMode_ (== Directory,
-  // captured by feedRegexListByte() as promptHistoryRecallReturnMode_),
-  // and previousModeName(Directory) returns the CURRENT directory path
-  // -- nearly identical text to what's already being typed in the
-  // editable field a few columns to the left, rendered a second time
-  // as a stray reversed fragment past column 61. Confirmed via a raw
-  // PTY byte trace: typing 'x' produced literal duplicated text
-  // ("/private/tmp/dirfx_dir/x" in the edit field, "...e/tmp/dirfx_dir/"
-  // stray a few columns later on the SAME row) -- exactly what read as
-  // "broken mode line" + "no visible input area" (the real editable
-  // field was there and DID work, just visually swamped by this
-  // unrelated stray text). The read-only (not-yet-editing) list view's
-  // own ModeLineFieldsProvider already never populates a destination
-  // field for these two kinds either (see its own RecentFile/
-  // RecentDirectory branch, `trailing2=""`) -- this keeps the editing
-  // state consistent with that established, correct precedent.
-  std::string destinationDirectory = (kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory)
-                                          ? std::string()
-                                          : previousModeName(destinationMode);
+  // 2026-08-18: a same-day attempt excluded RecentFile/RecentDirectory
+  // here entirely (reasoning: showing the current directory here reads
+  // as a near-duplicate of the same path being typed in the editable
+  // field a few columns to the left). A direct user correction: the
+  // actual problem was never this field's CONTENT, it was that the
+  // ROW WASN'T FILLED TO THE EDGE around it ("=bn参照。基本的に右端
+  // まで埋まっていないモードラインは全部不良" -- see the fill-to-edge
+  // block below, which is the real fix). Reverted back to the
+  // unconditional previousModeName(destinationMode) every other
+  // PromptKind already uses.
+  std::string destinationDirectory = previousModeName(destinationMode);
   if (!destinationDirectory.empty()) {
     std::string tail = truncatedTrailingPath(destinationDirectory);
     int col = display_.columns() - static_cast<int>(tail.size());

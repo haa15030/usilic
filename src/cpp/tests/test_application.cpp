@@ -5086,24 +5086,31 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^F (K-46) opens a ListBrowser over real
   CHECK(app.listBrowserMode().items()[0] == (root / "plain.txt").string());
 }
 
-// 2026-08-18 fix (a real report: "-c起動→^X^D→モードライン不良＋文字
-// 列入力エリアが無い", same for ^X^F): drawPromptLabel()'s trailing-
-// destination-directory field (correct for GREP/CUT/MAN/LOCATE/
-// PROGRAM, which really do "search FROM some mode, resolve BACK to
-// it") fell through to its `default` case for RecentFile/
-// RecentDirectory too, showing previousModeName(currentMode_) --
-// nearly the SAME text already being typed in the edit field a few
-// columns to the left, rendered a second time (ellipsis-truncated) a
-// few columns further right on the same row. Confirmed via a raw PTY
-// byte trace before this fix. Only reproducible once EDITING starts
-// (typing a byte), not on the read-only candidate-list screen itself.
-TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): typing into the candidate-list's editable field doesn't draw "
-                           "a stray duplicate of the current directory elsewhere on the mode line") {
+// 2026-08-18 fix (a real report + screenshots =bn/=cq: "基本的に右端
+// まで埋まっていないモードラインは全部不良"): drawPromptLabel() only
+// ever drew individual reversed RUNS (label/position/trailing)
+// separated by plain, unfilled gaps -- visible as beige "holes" on a
+// real terminal. A same-day earlier attempt at this same report tried
+// removing RecentFile/RecentDirectory's trailing destination-directory
+// field entirely (reasoning: it looked like a near-duplicate of the
+// path already being typed) -- a direct user correction: the field
+// itself was correct and should stay (see "戻り値「...16文字」で
+// よろしく", the SAME truncatedTrailingPath() 16-char-tail+"..."
+// convention every other prompt already uses), the actual bug was the
+// row not being filled to the edge around it. Fixed by filling the
+// WHOLE row in reverse video as a base layer before drawing anything
+// else; the live editable field's own LineEditor::redraw() (ported
+// from key_eeol()'s vt_endstand()) explicitly turns standout off
+// before drawing itself, "punching" a plain hole through that fill
+// exactly where typing happens -- everything else on the row stays
+// filled.
+TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line fills all the way to the screen's right edge "
+                           "while editing, with only the live input field itself left non-highlighted") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));  // app.start() already auto-recorded the CWD
   REQUIRE(app.feedByte('x', std::nullopt));  // starts editing -- exercises drawPromptLabel()'s trailing-field logic
-  std::string row = display.rowText(23);
-  CHECK(row.find("...") == std::string::npos);  // truncatedTrailingPath()'s own ellipsis marker -- the stray field
+  CHECK(display.standoutAt(23, 79));           // filled all the way to the true right edge
+  CHECK_FALSE(display.standoutAt(23, 15));     // ...but the live input field itself stays plain
   // ^G (not handleCommand(Back) directly): editing an active prompt
   // routes bytes through feedPromptByte() (promptKind_ != None), which
   // handleCommand() alone bypasses -- matches how a real keypress
@@ -5118,8 +5125,8 @@ TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): typing into the candidate-lis
 
   REQUIRE(app.handleCommand(Command::StartFileHistory));
   REQUIRE(app.feedByte('x', std::nullopt));
-  row = display.rowText(23);
-  CHECK(row.find("...") == std::string::npos);
+  CHECK(display.standoutAt(23, 79));
+  CHECK_FALSE(display.standoutAt(23, 15));
 }
 
 TEST_CASE_FIXTURE(Fixture, "K-46: Enter on a recent file entry opens it via FileMode") {
