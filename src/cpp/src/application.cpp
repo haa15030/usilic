@@ -2461,16 +2461,22 @@ bool Application::returnToDirectory() {
   // behavior there.
   // 2026-08-18 fix: skip the "follow the file's real parent directory"
   // fix just below when the currently-loaded file IS the ^T banner's
-  // own synthetic file (see executeShowTcbBanner()'s own comment) --
-  // that fix is correct for ^X^F/RecentFile (a real file the user
-  // deliberately picked), wrong for a throwaway status screen living
-  // in tempRootDirectory_, essentially never the directory the user
-  // actually wants to end up looking at. A direct path comparison
-  // rather than a separate stateful flag: self-correcting the moment
-  // ANY other file gets loaded (of which there are ~10 call sites),
-  // rather than needing every one of them to remember to clear a flag
-  // this one alone sets.
-  if (fileMode_.currentFile() != tempRootDirectory_ + "/usilic") {
+  // own synthetic file (bannerFilePath(), see executeShowTcbBanner()'s
+  // own comment) -- that fix is correct for ^X^F/RecentFile (a real
+  // file the user deliberately picked), wrong for a throwaway status
+  // screen whose own directory is essentially never where the user
+  // actually wants to end up (this is exactly WHY leaving
+  // directoryMode_ untouched here matters: it's what makes ^G from the
+  // banner land back wherever ^T was actually invoked FROM, not
+  // wherever the banner file itself happens to live -- a real report,
+  // "戻り値も...^Tを起動したモードのはず", confirmed this was already
+  // the intended behavior once bannerFilePath() stopped pointing at
+  // tempRootDirectory_, see that function's own comment). A direct
+  // path comparison rather than a separate stateful flag:
+  // self-correcting the moment ANY other file gets loaded (of which
+  // there are ~10 call sites), rather than needing every one of them
+  // to remember to clear a flag this one alone sets.
+  if (fileMode_.currentFile() != bannerFilePath()) {
     std::filesystem::path filePath(fileMode_.currentFile());
     std::string parent = filePath.parent_path().string();
     if (!parent.empty() && parent.back() != '/') parent += '/';
@@ -3117,6 +3123,10 @@ bool Application::executeStartLog() {
 // redesign's "here's what THIS instance is using" framing is about,
 // and User name was never referenced by any of this round's own
 // report.
+std::string Application::bannerFilePath() const {
+  return std::filesystem::path(usilicrcPath_).parent_path().string() + "/usilic";
+}
+
 bool Application::executeShowTcbBanner() {
   constexpr int kLabelWidth = 12;  // "Boot options"/"Startup file" own width -- every other label right-justifies to this
   auto field = [](const std::string &label) {
@@ -3145,12 +3155,21 @@ bool Application::executeShowTcbBanner() {
   // derives its `name` field from the loaded file's bare basename (see
   // its own comment) -- this is the entire mechanism behind the
   // requested "mode name shown here is usilic" without needing a
-  // dedicated ContentView/mode of its own. tempRootDirectory_ directly
-  // (NOT allocateArcDirectory()) -- see materializeArchiveTempFile()'s
-  // own comment on why this single fixed file is deliberately outside
-  // the arc.N sequence.
-  std::string tempPath = materializeArchiveTempFile(tempRootDirectory_, "usilic", bytes);
+  // dedicated ContentView/mode of its own. bannerFilePath()'s own
+  // directory (NOT tempRootDirectory_/allocateArcDirectory()) -- see
+  // its own declaration comment.
+  std::filesystem::path bannerPath(bannerFilePath());
+  std::string tempPath =
+      materializeArchiveTempFile(bannerPath.parent_path().string(), bannerPath.filename().string(), bytes);
   if (tempPath.empty() || !fileMode_.loadFile(tempPath)) return false;
+  // WORK/arc.N candidate-list selection (2026-08-18 fix, =cq): a real
+  // report found these lines impossible to pick out at all -- FileMode
+  // itself disables cursorHighlightEnabled_ by default (correct for
+  // plain pager reading, see its own constructor comment), which this
+  // screen specifically needs turned back ON. loadFile() itself resets
+  // it to that same "off" default on every call (see its own comment)
+  // so this doesn't leak into whatever gets loaded next.
+  fileView_.setCursorHighlightEnabled(true);
   currentMode_ = ApplicationMode::File;
   // fileReturnMode_ = Directory as usual, but see returnToDirectory()'s
   // own 2026-08-18 comment: unlike every other File-mode entry point,
@@ -3188,7 +3207,7 @@ bool Application::executeShowTcbBanner() {
 // stale across however many further directories the user might
 // descend into from here).
 bool Application::openSelectedBannerEntry() {
-  if (fileMode_.currentFile() != tempRootDirectory_ + "/usilic") return false;
+  if (fileMode_.currentFile() != bannerFilePath()) return false;
   const auto &lines = fileView_.lines();
   int idx = fileView_.cursorIndex();
   if (idx < 0 || idx >= static_cast<int>(lines.size())) return false;

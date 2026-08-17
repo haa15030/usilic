@@ -1351,6 +1351,16 @@ class Application {
   // own pattern) since FileMode::loadFile() needs a real path and
   // this text has no other natural on-disk home the way ERROR/LOG do.
   bool executeShowTcbBanner();
+  // The ^T banner's own synthetic backing file lives under
+  // "<homeDirectory>/.usilic/usilic" -- NOT tempRootDirectory_
+  // (2026-08-18 fix, a real report: unlike ERROR/SHELL/WORK/ARC, the
+  // banner is never written to in the background/continuously, so it
+  // was never actually part of the multi-instance conflict item 338's
+  // PID-based reorg was fixing; forcing it through tempRootDirectory_
+  // anyway just leaked "/tmp/.usilic.<pid>/" into its own mode line as
+  // a misleadingly return-destination-looking field). Shares
+  // usilicrcPath_'s own directory rather than a dedicated member.
+  std::string bannerFilePath() const;
   // K-0/^T's own WORK/ARC candidate-list selection (2026-08-18): the
   // original spec's own mockup annotated the WORK/arc.N lines with
   // "[hit highlighted string][returns to the usilic screen]" -- see

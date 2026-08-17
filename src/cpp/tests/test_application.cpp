@@ -2842,6 +2842,51 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on an arc.N line opens i
   CHECK(app.currentMode() == ApplicationMode::Directory);  // unchanged, no crash/garbling
 }
 
+// 2026-08-18 fix (a real report, =cq): the WORK/arc.N lines were
+// impossible to actually pick out on screen -- FileMode's own
+// constructor disables cursorHighlightEnabled_ by default (correct
+// for plain pager reading), which openSelectedBannerEntry() relies on
+// being visible to be usable at all. Also confirms the flag doesn't
+// leak into whatever gets loaded next (a plain file here; the sibling
+// WORK-selection test above already covers "a w.N reopened FROM the
+// banner" specifically).
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): the WORK/arc.N candidate list is actually highlighted (was "
+                           "invisible before this fix), and loading an ordinary file afterward turns it back off") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  CHECK(app.activeContentView().cursorHighlightEnabled());
+  REQUIRE(app.handleCommand(Command::Back));
+
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  CHECK_FALSE(app.activeContentView().cursorHighlightEnabled());
+}
+
+// 2026-08-18 fix (a real report: "usilicは/tmp/.usilic.PID/には作ら
+// なくていい。戻り値も...^Tを起動したモードのはず"): the banner's own
+// backing file used to live under tempRootDirectory_ (which for an
+// argument-launched instance is a PID-specific /tmp/.usilic.<pid>/
+// directory), leaking that path into the banner's own File-mode line
+// as a "byte size + containing directory" field that -- unlike a REAL
+// file's real parent directory -- looked like it was announcing where
+// ^G would land, when actually returnToDirectory()'s own exclusion
+// (see its comment) already left directoryMode_ untouched regardless.
+// bannerFilePath() now always resolves under usilicrcPath_'s own
+// directory (<homeDirectory>/.usilic), matching how usilicrcPath_/
+// historyFilePath_ were themselves already exempted from the
+// tempRootDirectory_ reorg in item 338 -- the banner was never
+// actually part of the multi-instance conflict that reorg was fixing
+// (unlike ERROR/SHELL, it's never written to in the background).
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): the banner's own backing file lives under "
+                           "<homeDirectory>/.usilic, not tempRootDirectory_") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  CHECK(app.fileMode().currentFile() == (root / ".usilic" / "usilic").string());
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^O a (K-27) cycles the charset Ascii -> Euc -> Utf8 -> Ascii") {
   REQUIRE(app.start(path()));
   CHECK(app.encoding() == Charset::Encoding::Ascii);

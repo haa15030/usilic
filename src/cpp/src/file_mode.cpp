@@ -107,6 +107,18 @@ bool FileMode::loadFile(const std::string &path) {
   if (!probe) return false;
   probe.close();
 
+  // Reset to the plain-pager default on EVERY load (2026-08-18): the
+  // constructor's own setCursorHighlightEnabled(false) only covers the
+  // state before the FIRST load. Application::executeShowTcbBanner()
+  // turns this back ON right after its own loadFile() call (the ^T
+  // screen's WORK/arc.N lines need a visible highlight to be
+  // selectable at all -- a real report, =cq, found them impossible to
+  // pick without one), so this reset is what keeps that flag from
+  // leaking into the NEXT ordinary file loaded afterward (including a
+  // w.N entry re-opened FROM the banner via openSelectedBannerEntry()
+  // itself, which goes through this exact same loadFile()).
+  view_.setCursorHighlightEnabled(false);
+
   view_.setLines(readAndWrap(path));
   currentFile_ = path;
   // a fresh load invalidates the old search -- see setSearchOrigin()'s own comment
