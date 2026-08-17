@@ -1034,7 +1034,35 @@ void ContentView::renderModeLine() {
       // run) so the highlight reaches the screen's right edge instead
       // of stopping right after the text -- see ModeLineFields'
       // fillTrailingToEdge comment for which modes want this.
-      int remaining = cols - drawnLen - static_cast<int>(trailing.size());
+      // Capped at cols-1, NOT cols (2026-08-18 fix, a real report:
+      // RecentFile/RecentDirectory's own candidate-list mode line, the
+      // first caller with no rightWatermark to incidentally mask this,
+      // still looked unfilled on a real Terminal.app despite
+      // byte-for-byte-correct output -- confirmed via a `script`-
+      // captured raw session). Same root cause as renderLine()'s own
+      // 2026-08-13 fix just above in this file (see its own long
+      // comment): writing a Standout-marked character to the
+      // terminal's true LAST column triggers auto-wrap, silently
+      // moving the real cursor to a row that doesn't exist (this is
+      // ROW 24, the very bottom of the screen, deliberately OUTSIDE
+      // the DECSTBM scroll region set to rows 1-23) -- real terminals
+      // handle "wrap past the bottom-right corner, outside the scroll
+      // region" inconsistently, and Terminal.app's own handling here
+      // apparently defers repainting the row until some LATER,
+      // unrelated write nudges it (matching the exact symptom: fixed
+      // the instant ANY further key -- even one that redraws nothing
+      // else -- was pressed). DirectoryMode's own "(ls)" trailing field
+      // already uses this same fillTrailingToEdge path and hits the
+      // identical last-column write, but is masked by its own
+      // rightWatermark ("usilic v1.5b") being drawn immediately after,
+      // which repositions the cursor via its own moveCursor() call
+      // regardless of where auto-wrap silently left it -- coincidental
+      // cover, not a real fix, which is exactly why only the
+      // watermark-less RecentFile/RecentDirectory case ever surfaced
+      // this. Leaving the true last column unfilled is the same
+      // pragmatic tradeoff renderLine() already made deliberately (see
+      // its own comment) rather than one this function invents fresh.
+      int remaining = (cols - 1) - drawnLen - static_cast<int>(trailing.size());
       if (remaining > 0) trailing += std::string(remaining, ' ');
     }
     // See ModeLineFields::trailingPlain's own comment. 2026-08-12 fix:

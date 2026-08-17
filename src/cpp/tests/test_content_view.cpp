@@ -630,7 +630,16 @@ TEST_CASE("renderModeLine: fillTrailingToEdge pads the trailing field's own reve
   std::string row = d.rowText(5);
   CHECK(row.substr(0, 25) == "file.txt 1/3 TOP 42 /tmp/");
   CHECK(d.standoutAt(5, 20) == true);  // inside the trailing field itself
-  CHECK(d.standoutAt(5, 29) == true);  // padding, still standout -- reaches the last column
+  // Padding reaches column 28 (cols-2), NOT the true last column 29
+  // (2026-08-18 auto-wrap fix): writing a Standout-marked character to
+  // the terminal's true last column triggers auto-wrap on a real
+  // terminal (same root cause renderLine()'s own 2026-08-13 fix
+  // already worked around for content rows) -- confirmed via a real
+  // report + a `script`-captured raw session showing byte-for-byte
+  // correct-looking output that Terminal.app still didn't repaint
+  // until an unrelated keypress nudged it.
+  CHECK(d.standoutAt(5, 28) == true);   // padding, still standout
+  CHECK(d.standoutAt(5, 29) == false);  // true last column: deliberately left unmarked
 }
 
 TEST_CASE("renderModeLine: rightWatermark is right-aligned, not reverse-video, and dropped if it doesn't fit") {

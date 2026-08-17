@@ -4474,9 +4474,33 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // own region back to plain on top of this fill, which is exactly the
   // desired look: the live input area itself stays non-highlighted,
   // everything else on the row stays filled.
+  // columns()-1, NOT columns() (2026-08-18 follow-up fix, a real
+  // report: "-c起動なのに何が違うんだろう？直ってないので", root-
+  // caused via a `script`-captured raw session showing byte-for-byte
+  // CORRECT output that Terminal.app still didn't repaint until an
+  // unrelated keypress). Same root cause as renderLine()'s own
+  // 2026-08-13 fix and ContentView::renderModeLine()'s own matching
+  // 2026-08-18 fix (see its own long comment): writing a Standout-
+  // marked character to the terminal's true LAST column triggers
+  // auto-wrap, silently moving the cursor off a row that's also
+  // OUTSIDE the DECSTBM scroll region (rows 1-23) -- real terminals
+  // handle that combination inconsistently, and evidently defer
+  // repainting until a later, unrelated write. Leaving the true last
+  // column unfilled is the same pragmatic tradeoff renderLine() and
+  // renderModeLine() already made.
   display_.setAttribute(Display::Attribute::Standout);
-  display_.write(std::string(display_.columns(), ' '));
+  display_.write(std::string(std::max(0, display_.columns() - 1), ' '));
   display_.setAttribute(Display::Attribute::StandoutOff);
+  // The true last column itself: erase it via clearToEndOfLine()
+  // (termcap `ce`), not a printed character -- an erase operation
+  // doesn't trigger auto-wrap the way WRITING a character at the last
+  // column does (that's the exact mechanism this whole cap exists to
+  // avoid), so this safely clears any stale content left there by a
+  // previous screen without reintroducing the bug.
+  if (display_.columns() > 0) {
+    display_.moveCursor(row, display_.columns() - 1);
+    display_.clearToEndOfLine();
+  }
   display_.moveCursor(row, 0);
 
   if (kind == PromptKind::ExitConfirm) {
@@ -4645,7 +4669,14 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   std::string destinationDirectory = previousModeName(destinationMode);
   if (!destinationDirectory.empty()) {
     std::string tail = truncatedTrailingPath(destinationDirectory);
-    int col = display_.columns() - static_cast<int>(tail.size());
+    // columns()-1, NOT columns() (2026-08-18 fix): same auto-wrap
+    // avoidance as the base fill just above -- ending this Standout
+    // run exactly at the true last column has the identical real-
+    // terminal repaint problem. The true last column itself is left
+    // to the base fill's own trailing plain-space write (see above),
+    // matching renderLine()'s/renderModeLine()'s own established
+    // "leave the very last column unmarked" tradeoff.
+    int col = display_.columns() - 1 - static_cast<int>(tail.size());
     if (col > labelWidth) {
       display_.moveCursor(row, col);
       display_.setAttribute(Display::Attribute::Standout);

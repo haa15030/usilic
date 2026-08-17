@@ -778,8 +778,12 @@ TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the reserved traili
   std::string expectedTail = dir;
   if (expectedTail.size() > 16) expectedTail = "..." + expectedTail.substr(expectedTail.size() - 16);
   const std::string &row = display.rowText(23);
-  CHECK(row.substr(row.size() - expectedTail.size()) == expectedTail);
-  CHECK(display.standoutAt(23, static_cast<int>(row.size()) - 1));  // shown reversed, like every other field
+  // Ends 1 column short of the true right edge, not AT it (2026-08-18
+  // auto-wrap fix, see drawPromptLabel()'s own comment) -- the true
+  // last column is deliberately left non-Standout.
+  CHECK(row.substr(row.size() - 1 - expectedTail.size(), expectedTail.size()) == expectedTail);
+  CHECK(display.standoutAt(23, static_cast<int>(row.size()) - 2));  // shown reversed, like every other field
+  CHECK_FALSE(display.standoutAt(23, static_cast<int>(row.size()) - 1));  // true last column: never Standout
 }
 
 // 2026-08-13 (CLAUDE.md history item 295): the 2026-08-12 fix above
@@ -798,14 +802,16 @@ TEST_CASE_FIXTURE(Fixture, "drawPromptLabel (2026-08-13 generalization): LOCATE/
   REQUIRE(app.handleCommand(Command::StartLocate));
   {
     const std::string &row = display.rowText(23);
-    CHECK(row.substr(row.size() - expectedTail.size()) == expectedTail);
+    // 1 column short of the true edge -- see drawPromptLabel()'s own
+    // 2026-08-18 auto-wrap-avoidance comment.
+    CHECK(row.substr(row.size() - 1 - expectedTail.size(), expectedTail.size()) == expectedTail);
   }
   REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G cancels the prompt (feedPromptByte's own path, not Command::Back)
 
   REQUIRE(app.handleCommand(Command::StartMan));
   {
     const std::string &row = display.rowText(23);
-    CHECK(row.substr(row.size() - expectedTail.size()) == expectedTail);
+    CHECK(row.substr(row.size() - 1 - expectedTail.size(), expectedTail.size()) == expectedTail);
   }
 }
 
@@ -5118,7 +5124,15 @@ TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line already fills t
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-  CHECK(display.standoutAt(23, 79));  // filled all the way to the true right edge, with zero bytes typed
+  // Column 78, not 79 (2026-08-18 follow-up fix): the true last column
+  // (79) is deliberately left non-Standout -- see
+  // ContentView::renderModeLine()'s own auto-wrap-avoidance comment
+  // (a real report: byte-for-byte correct output that a real
+  // Terminal.app still didn't repaint until an unrelated keypress,
+  // traced to the same last-column auto-wrap class renderLine() had
+  // already been fixed for once before).
+  CHECK(display.standoutAt(23, 78));
+  CHECK_FALSE(display.standoutAt(23, 79));
 }
 
 TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line fills all the way to the screen's right edge "
@@ -5126,8 +5140,10 @@ TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line fills all the w
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));  // app.start() already auto-recorded the CWD
   REQUIRE(app.feedByte('x', std::nullopt));  // starts editing -- exercises drawPromptLabel()'s trailing-field logic
-  CHECK(display.standoutAt(23, 79));           // filled all the way to the true right edge
-  CHECK_FALSE(display.standoutAt(23, 15));     // ...but the live input field itself stays plain
+  // Column 78, not 79 -- see the sibling read-only test's own comment.
+  CHECK(display.standoutAt(23, 78));
+  CHECK_FALSE(display.standoutAt(23, 79));
+  CHECK_FALSE(display.standoutAt(23, 15));     // ...and the live input field itself stays plain
   // ^G (not handleCommand(Back) directly): editing an active prompt
   // routes bytes through feedPromptByte() (promptKind_ != None), which
   // handleCommand() alone bypasses -- matches how a real keypress
@@ -5142,7 +5158,8 @@ TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line fills all the w
 
   REQUIRE(app.handleCommand(Command::StartFileHistory));
   REQUIRE(app.feedByte('x', std::nullopt));
-  CHECK(display.standoutAt(23, 79));
+  CHECK(display.standoutAt(23, 78));
+  CHECK_FALSE(display.standoutAt(23, 79));
   CHECK_FALSE(display.standoutAt(23, 15));
 }
 
