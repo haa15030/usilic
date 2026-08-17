@@ -325,7 +325,7 @@ P-?
 	K-22 K-2 K-10 K-22		# (>) ^M ^G ^N ^M		M-7
 	K-45 "~/.tcb/tcbrc\cM" \
 	K-32 "\cU^[A-Z]+\cM"		# (ESC t) ^Xf "..." ^J^S "..."	M-8
-	K-68 K-33 "tcb v1.5b\cM"	# (ESC l) ^X^Kl ^Jc "tcb v..."	M-9
+	K-68 K-33 "usilic v1.5b\cM"	# (ESC l) ^X^Kl ^Jc "usilic v..."	M-9
 					# 				M-10
 					# 				M-11
 					# 				M-12
