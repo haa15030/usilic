@@ -7427,6 +7427,36 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      末尾で反転表示が止まっていた)を、それぞれ画面セル属性レベルで
      確認した。
 
+334. **SHELLプロンプトで`^K`/`^U`/`^Y`(kill-to-end/kill-to-start/yank)
+    が効かない不具合を修正**
+   - **報告**: 「SHELLプロンプトで^K^U^Y^[が利かない(旧→「less
+     CLAUDE.md」→「U」の位置で^K→「less CLA」または「U」の位置で
+     ^U→「UDE.md」→いずれも^Yで復旧)」。
+   - **原因**: これまでの`^A`/`^E`/`^B`/`^F`/`^D`の修正
+     (2026-08-16、`application.cpp`の当該箇所自身のコメント参照)と
+     全く同じ「`promptEditor_`(LOCATE/CUT/GREP等の汎用プロンプト)側
+     では直したが、SHELLモード専用の別インスタンス
+     `shell_.commandLine()`側への反映を忘れていた」というパターンの
+     再発だった。`LineEditor`クラス自体には`killToStart()`/
+     `killToEnd()`/`yank()`が既に実装済み(`promptEditor_`側では
+     2026-08-11から動作済み)だったが、`shell_.commandLine()`側の
+     バイト振り分けには`0x15`(^U)/`0x0b`(^K)/`0x19`(^Y)の分岐が
+     一つも無く、そのまま`insertByte()`へ落ちて制御バイトがそのまま
+     反転"@"付きグリフとして挿入されていた。
+   - **修正**: `application.cpp`のSHELLモードキー振り分けに、
+     `promptEditor_`側と全く同じ形で`shell_.commandLine().
+     killToStart()`/`killToEnd()`/`yank()`への配線を追加。
+   - **検証**: `make test` 748/748件全通過(回帰無し)。`make usilic`
+     クリーンビルド確認済み。PTY自動テストで、ユーザー報告と同一の
+     再現手順(「less CLAUDE.md」入力→カーソルを「U」の直前へ→
+     `^K`→「less CLA」、`^Y`→「less CLAUDE.md」に復元、カーソルを
+     再度「U」の直前へ→`^U`→「UDE.md」、`^Y`→「less CLAUDE.md」に
+     復元)を実バイナリで再現し、全ステップが期待通りの文字列に
+     なることを画面テキストで確認した。
+   - **備考**: 報告中の「^[」(ESC)については、SHELLのESCリーダー
+     キー機構(項目315等で別途対応済み)の話であり、kill/yankとは
+     無関係と判断し本項目の対象外とした。
+
 ## 13. LIST(TAB補完)
 
 12. **2026-07-19: TAB補完・長い日本語行での横スクロール時のUTF-8破損を

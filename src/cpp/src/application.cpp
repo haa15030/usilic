@@ -1546,6 +1546,30 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     shell_.commandLine().redraw();
     return true;
   }
+  // ^U/^K/^Y (2026-08-17 fix): the exact same "fixed for promptEditor_,
+  // never mirrored into shell_.commandLine()" gap as ^A/^E/^B/^F/^D
+  // just above (see that fix's own 2026-08-16 comment) -- these three
+  // were simply missed at the time. A real report: "less CLAUDE.md"
+  // with the cursor on "U", ^K expected to kill to end-of-line ("less
+  // CLA") or ^U expected to kill to start-of-line ("UDE.md"), either
+  // way recoverable with ^Y -- none of the three did anything (the
+  // bytes fell through to insertByte() below and rendered as their own
+  // reversed "@"-offset glyphs instead of editing the line).
+  if (byte == 0x15) {  // ^U: kill from field start to cursor
+    shell_.commandLine().killToStart();
+    shell_.commandLine().redraw();
+    return true;
+  }
+  if (byte == 0x0b) {  // ^K: kill from cursor to field end
+    shell_.commandLine().killToEnd();
+    shell_.commandLine().redraw();
+    return true;
+  }
+  if (byte == 0x19) {  // ^Y: re-insert the ^U/^K kill buffer
+    shell_.commandLine().yank();
+    shell_.commandLine().redraw();
+    return true;
+  }
   if (byte == kControlC) {
     shell_.sendControlByte(static_cast<unsigned char>(byte));
     return true;
