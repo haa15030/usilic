@@ -2697,6 +2697,24 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  // 2026-08-18 addition: show ^T's own status banner for ~1 second at
+  // startup (a direct user request, "起動時にバナーとして1秒くらい
+  // 表示してみて") -- matches whatever ^T looks like when invoked
+  // manually later (same Command::ShowTcbBanner/Command::Back handlers,
+  // just invoked directly here instead of through a real keypress;
+  // Application has no separate "startup banner" concept of its own to
+  // duplicate). Mode-agnostic by construction (runs before the -c/-g/
+  // guiOwnsWholeSession branch below even looks at `display`), and
+  // usleep() (not std::this_thread::sleep_for(), avoiding a new
+  // <thread> include) matches every other fixed-delay spot in this
+  // file (e.g. the ~60Hz GUI pacing loop just below).
+  if (app.handleCommand(fm::Command::ShowTcbBanner)) {
+    app.activeContentView().redraw();
+    display.flush();
+    usleep(1000000);
+    app.handleCommand(fm::Command::Back);
+  }
+
   if (guiOwnsWholeSession) {
     // Same launcher tryEnterGuiPhase() wires for the ^Og / -g-via-that-
     // path cases -- this is the THIRD, separate GUI entry point
