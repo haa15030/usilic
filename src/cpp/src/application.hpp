@@ -1797,6 +1797,20 @@ class Application {
   // isn't a real prompt, just a transient status line reusing the
   // prompt row's own label-drawing).
   void drawPromptLabel(PromptKind kind, const std::string &positionText = "", const std::string &staticMessage = "");
+  // K-46/K-48's (^X^F/^X^D) own READ-ONLY (not-yet-editing) candidate
+  // list: 2026-08-18 fix, a real report + reference screenshot (=cw)
+  // -- the highlighted candidate needs to look like a plain,
+  // non-highlighted editable field FROM THE START (matching what it
+  // switches to the instant real editing begins, via drawPromptLabel()
+  // itself), not just once the first byte is typed. Reuses
+  // drawPromptLabel() itself (same layout, same auto-wrap-safe fill)
+  // plus a non-editing-state promptEditor_ redraw to show the
+  // currently-selected candidate's text in that field -- called after
+  // every render of listBrowserView_ that could change what's
+  // selected (startPromptHistoryRecall()'s own initial show, and
+  // MoveUp()/MoveDown() while browsing), and a no-op for every other
+  // PromptKind/mode.
+  void refreshDirectEntryModeLine();
   PromptKind promptKind_ = PromptKind::None;
   // See activatePrompt()'s own comment.
   bool promptCandidateListActive_ = false;

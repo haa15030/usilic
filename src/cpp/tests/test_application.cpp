@@ -5119,8 +5119,16 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^F (K-46) opens a ListBrowser over real
 // own ModeLineFieldsProvider instead, a completely different code
 // path this fix never touched, still leaving the same beige gap from
 // the candidate's own path to the screen's right edge.
+// 2026-08-18 follow-up fix (a real report + reference screenshot =cw):
+// the READ-ONLY (not-yet-editing) screen needs to look like an
+// editable field FROM THE START -- the highlighted candidate shown
+// non-highlighted, matching what it switches to the instant real
+// editing begins -- not just once the first byte is typed. Routed
+// through refreshDirectEntryModeLine(), which reuses drawPromptLabel()
+// itself (same layout) plus a non-editing-state promptEditor_ redraw.
 TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line already fills to the screen's right edge on the "
-                           "read-only candidate list, before a single character has been typed") {
+                           "read-only candidate list, before a single character has been typed, with the "
+                           "candidate itself shown non-highlighted like a real editable field") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
@@ -5133,6 +5141,16 @@ TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line already fills t
   // already been fixed for once before).
   CHECK(display.standoutAt(23, 78));
   CHECK_FALSE(display.standoutAt(23, 79));
+  // "DIR" / "1/1" / "END" each their own Standout run, with a plain
+  // gap between every pair (a real report: "「DIR」「1/1」「END」の
+  // 間にも隙間を入れて欲しい") -- labelWidth = 3("DIR")+1 = 4, so
+  // "1/1" spans cols 4-6, gap at 7, "END" spans cols 8-10.
+  CHECK_FALSE(display.standoutAt(23, 3));  // gap: DIR | 1/1
+  CHECK_FALSE(display.standoutAt(23, 7));  // gap: 1/1 | END
+  // The candidate path itself (labelWidth=12 onward) is now plain,
+  // like the live editable field it visually matches -- NOT reversed
+  // the way a plain ModeLineFieldsProvider `trailing` field would be.
+  CHECK_FALSE(display.standoutAt(23, 15));
 }
 
 TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line fills all the way to the screen's right edge "

@@ -1761,11 +1761,13 @@ bool Application::handleCommand(Command command) {
       activeView().setHoverIndex(std::nullopt);
       activeView().moveUp();
       activeView().syncVisibleCursor();
+      refreshDirectEntryModeLine();  // no-op outside RecentFile/RecentDirectory's own read-only browsing
       return true;
     case Command::MoveDown:
       activeView().setHoverIndex(std::nullopt);
       activeView().moveDown();
       activeView().syncVisibleCursor();
+      refreshDirectEntryModeLine();
       return true;
     case Command::ScrollLineUp:
       activeView().setHoverIndex(std::nullopt);
@@ -4396,6 +4398,12 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
     }
     listBrowserView_.redraw();
   }
+  // Outside the `!items.empty()` block on purpose: RecentFile/
+  // RecentDirectory need their own drawPromptLabel()-style mode line
+  // (see refreshDirectEntryModeLine()'s own comment) even with a
+  // genuinely empty ring (no prior file/directory ever visited), not
+  // just when there's a candidate to seed the field with.
+  refreshDirectEntryModeLine();
   return true;
 }
 
@@ -4552,7 +4560,21 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   display_.setAttribute(Display::Attribute::Standout);
   for (unsigned char c : label) display_.putChar(c);
   display_.setAttribute(Display::Attribute::StandoutOff);
-  int labelWidth = label.empty() ? 0 : static_cast<int>(label.size()) + 1;  // +1: one-column gap before the field
+  int labelWidth = static_cast<int>(label.size());
+  // 2026-08-18 fix: this gap (and every other one-column gap in this
+  // function) used to be PURELY a `labelWidth` arithmetic bump, never
+  // actually WRITTEN -- harmless before the 2026-08-18 fill-to-edge
+  // fix above (clearToEndOfLine() had already left the whole row
+  // plain, so an untouched column just stayed plain by default), but
+  // that fill now leaves every UNTOUCHED column REVERSED instead (a
+  // real report caught this: the gap between "DIR" and "1/1" was
+  // itself reversed, reading as one continuous block). Explicitly
+  // writing a plain space (Standout already off here) is what
+  // actually punches a true gap through that fill now.
+  if (!label.empty()) {
+    display_.putChar(' ');
+    labelWidth += 1;
+  }
   // positionText (2026-08-12 fix): see this function's own declaration
   // comment. Reversed, matching the SAME "01/10 TOP" styling the
   // candidate list's own ModeLineFieldsProvider already used for it
@@ -4569,10 +4591,38 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // with exactly ONE gap column after each field, not two).
   if (!positionText.empty()) {
     display_.moveCursor(row, labelWidth);
+    // Split at the internal space -- ModeLine::format()'s own "1/1
+    // END"/"01/10 TOP"/"42%" shape always has the fraction ("1/1")
+    // and the position word ("END"/"TOP"/a percentage) as two pieces
+    // joined by exactly one space (2026-08-18 fix, a real report:
+    // "「DIR」「1/1」「END」の間にも隙間を入れて欲しい" -- drawing
+    // positionText as a single Standout run left that internal space
+    // ALSO reversed, reading as one solid block rather than two
+    // separate fields the way "DIR" and "1/1 END" already are).
+    // Scoped to drawPromptLabel() only (not ModeLine::format() itself,
+    // which every OTHER mode line's renderModeLine() call also
+    // shares) -- this doesn't touch any other screen's positionText
+    // rendering. Total column math is unchanged: fraction.size() + 1
+    // (this gap) + suffix.size() + 1 (gap before the next field) ==
+    // positionText.size() + 1, the same total the single-run version
+    // below used to advance labelWidth by.
+    std::size_t splitAt = positionText.find(' ');
+    std::string fraction = splitAt == std::string::npos ? positionText : positionText.substr(0, splitAt);
+    std::string suffix = splitAt == std::string::npos ? std::string() : positionText.substr(splitAt + 1);
     display_.setAttribute(Display::Attribute::Standout);
-    for (unsigned char c : positionText) display_.putChar(c);
+    for (unsigned char c : fraction) display_.putChar(c);
     display_.setAttribute(Display::Attribute::StandoutOff);
-    labelWidth += static_cast<int>(positionText.size()) + 1;  // +1: one-column gap before the field
+    labelWidth += static_cast<int>(fraction.size());
+    if (!suffix.empty()) {
+      display_.putChar(' ');  // explicit plain gap -- see this function's own 2026-08-18 comment above
+      labelWidth += 1;
+      display_.setAttribute(Display::Attribute::Standout);
+      for (unsigned char c : suffix) display_.putChar(c);
+      display_.setAttribute(Display::Attribute::StandoutOff);
+      labelWidth += static_cast<int>(suffix.size());
+    }
+    display_.putChar(' ');  // explicit plain gap before the next field -- see the same comment above
+    labelWidth += 1;
   }
   // staticMessage (2026-08-13): see this function's own declaration
   // comment -- draws a plain UNDERLINED status message at exactly the
@@ -4686,6 +4736,19 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   }
 
   promptEditor_.setField(row, labelWidth, editableWidth);
+}
+
+void Application::refreshDirectEntryModeLine() {
+  if (currentMode_ != ApplicationMode::ListBrowser) return;
+  if (!promptHistoryRecallKind_ || !promptHistoryRecallIsDirectEntry_) return;
+  PromptKind kind = *promptHistoryRecallKind_;
+  if (kind != PromptKind::RecentFile && kind != PromptKind::RecentDirectory) return;
+  int candidateCount = static_cast<int>(listBrowserMode_.items().size());
+  std::string positionText = candidateCount > 0 ? ModeLine::format(listBrowserView_.cursorIndex() + 1, candidateCount) : "";
+  drawPromptLabel(kind, positionText);
+  const std::string *selected = listBrowserMode_.selectedItem();
+  promptEditor_.setText(selected ? *selected : "");
+  promptEditor_.redraw();
 }
 
 void Application::activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText,
