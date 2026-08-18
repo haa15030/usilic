@@ -153,8 +153,9 @@ bool ArchiveMode::loadArchive(const std::string &path) {
   lines.reserve(entries_.size());
   std::size_t sizeWidth = 0;
   for (const auto &entry : entries_) sizeWidth = std::max(sizeWidth, std::to_string(entry.size).size());
+  // ellipsisEligible=true: see Line::ellipsisEligible's own comment.
   for (const auto &entry : entries_)
-    lines.push_back({formatEntryLine(entry, sizeWidth), std::nullopt, std::nullopt, {}});
+    lines.push_back({formatEntryLine(entry, sizeWidth), std::nullopt, std::nullopt, {}, true});
   view_.setLines(std::move(lines));
 
   if (auto pos = history_.positionFor(PositionCategory::Screen, currentArchive_)) {

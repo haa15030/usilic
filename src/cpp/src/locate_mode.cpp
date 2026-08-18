@@ -35,7 +35,10 @@ bool LocateMode::search(const std::string &query) {
 
   std::vector<ContentView::Line> lines;
   lines.reserve(results_.size());
-  for (const auto &path : results_) lines.push_back({path, std::nullopt, std::nullopt, {}});
+  // ellipsisEligible=true: see Line::ellipsisEligible's own comment --
+  // each result is one discrete path, exactly the "Finder-style middle
+  // ellipsis" case that feature was designed for.
+  for (const auto &path : results_) lines.push_back({path, std::nullopt, std::nullopt, {}, true});
   view_.setLines(std::move(lines));
   view_.setCursorIndex(0);
   view_.redraw();

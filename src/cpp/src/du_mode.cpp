@@ -39,7 +39,8 @@ bool DuMode::loadUsage(const std::string &path) {
     std::error_code ec;
     entry.isDirectory = std::filesystem::is_directory(entry.path, ec) && !ec;
     entries.push_back(entry);
-    lines.push_back({formatEntryLine(entry), std::nullopt, std::nullopt, {}});
+    // ellipsisEligible=true: see Line::ellipsisEligible's own comment.
+    lines.push_back({formatEntryLine(entry), std::nullopt, std::nullopt, {}, true});
   }
 
   currentPath_ = path;

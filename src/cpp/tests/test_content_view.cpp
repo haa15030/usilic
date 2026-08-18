@@ -1266,14 +1266,15 @@ TEST_CASE("scrollModeLineText: reaching the bottom boundary shows END, not a per
 // itself was confirmed against the real bug via a live PTY
 // reproduction (both wide-content-present and wide-content-absent
 // real `locate` results in the same session).
-// 2026-08-14 update: this line (plain, no highlightStartColumn/
-// attributes) is now ALSO subject to renderLine()'s own middle-
-// ellipsis truncation (see its own comment) once it exceeds maxCol,
-// so the rendered text is no longer a simple 19-byte prefix of 'x's --
-// the core regression this test guards (the terminal's own LAST
-// column is never written to, avoiding the auto-wrap bug) still
-// holds either way, so the assertions check that structurally instead
-// of the exact byte sequence.
+// 2026-08-20 update: renderLine()'s own middle-ellipsis truncation is
+// now opt-in per-line (Line::ellipsisEligible, see its own comment --
+// a real report found plain FileMode content wrongly getting the SAME
+// "elide the middle" treatment meant only for LOCATE/DU/Archive-style
+// results lists), so this plain, unflagged line goes through the
+// original byte-based right-truncation instead (a simple 19-byte
+// prefix of 'x's, no "..."). The core regression this test guards (the
+// terminal's own LAST column is never written to, avoiding the auto-
+// wrap bug) is unrelated to ellipsis eligibility either way.
 TEST_CASE("redraw: a MARKED line exactly as wide as the terminal leaves its own last column untouched") {
   RecordingDisplay d(10, 20);  // 20 columns wide
   ContentView v(d);
@@ -1284,7 +1285,7 @@ TEST_CASE("redraw: a MARKED line exactly as wide as the terminal leaves its own 
   v.setCursorIndex(0);  // this is the marked/highlighted row
   v.redraw();
   CHECK(d.rowText(0)[19] == ' ');  // the last column deliberately left untouched
-  CHECK(d.rowText(0).substr(0, 19).find("...") != std::string::npos);  // middle-ellipsis kicked in
+  CHECK(d.rowText(0).substr(0, 19) == std::string(19, 'x'));  // plain right-truncation, no ellipsis
 }
 
 // The unmarked counterpart: an UNMARKED full-width line (e.g. every
@@ -1324,8 +1325,11 @@ TEST_CASE("redraw: ellipsis truncation is identical whether or not the row is cu
   v.setViewport(0, 5);
   std::string longText = "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/x.txt";
   std::vector<ContentView::Line> lines;
-  lines.push_back({longText, std::nullopt, std::nullopt, {}});
-  lines.push_back({longText, std::nullopt, std::nullopt, {}});
+  // ellipsisEligible=true: this test is specifically about the
+  // LOCATE-style ellipsis-truncation flicker fix (see Line::
+  // ellipsisEligible's own comment for why that's now opt-in).
+  lines.push_back({longText, std::nullopt, std::nullopt, {}, true});
+  lines.push_back({longText, std::nullopt, std::nullopt, {}, true});
   v.setLines(lines);
 
   v.setCursorIndex(0);  // row 0 marked, row 1 not

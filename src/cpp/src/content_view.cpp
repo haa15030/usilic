@@ -616,27 +616,45 @@ void ContentView::renderLine(const Line &line, bool marked) {
   // reflow tests) deliberately rely on; forcing columns()-1 here
   // unconditionally regressed that.
   int ellipsisBudget = cursorHighlightEnabled_ ? std::max(0, display_.columns() - 1) : maxCol;
-  // widthAware (2026-08-19 fix, same report as middleEllipsisTruncate()'s
-  // own comment): the exact same condition that already gates ellipsis
-  // eligibility -- a plain line with no highlightStartColumn/attributes,
-  // i.e. LOCATE/DU/Archive-style results, the only Lines in this port
-  // that reach here effectively unprocessed (Directory's ls-listing and
-  // GrepMode's match highlighting, the two real users of
-  // highlightStartColumn/attributes, need `col` to stay a precise BYTE
-  // offset for their own byte-range comparisons below, so they keep the
-  // original per-byte loop entirely unchanged). For THIS category only,
-  // `col` becomes a real display-column count instead of a byte count,
-  // consuming each UTF-8 sequence as one unit (via Utf8::sequence_length())
-  // and advancing by its own Utf8::display_width() -- otherwise a 3-byte,
-  // 2-column CJK character would only ever count as "1 byte" against
-  // maxCol, silently capping real content at roughly HALF the terminal's
-  // actual width for Japanese-heavy lines (a direct user report: ARC's
-  // own filenames stopped around 2/3 across, leaving the right side of
-  // the row blank).
+  // widthAware (2026-08-19 fix): gated on "no highlightStartColumn/
+  // attributes" -- Directory's ls-listing and GrepMode's match
+  // highlighting, the two real users of those fields, need `col` to
+  // stay a precise BYTE offset for their own byte-range comparisons
+  // below, so they keep the original per-byte loop regardless. Every
+  // OTHER plain line -- LOCATE/DU/Archive results AND ordinary FileMode
+  // content alike -- walks `col` as a real display-column count
+  // instead, consuming each UTF-8 sequence as one unit (via
+  // Utf8::sequence_length()) and advancing by its own
+  // Utf8::display_width(). This part is NOT limited to results-list
+  // Lines: FileMode's own content arrives from PipeBuffer::wrapLine(),
+  // which ALREADY pre-wraps every line to fit exactly `width_` DISPLAY
+  // columns -- for CJK-heavy text that's routinely well over `width_`
+  // *bytes* (a 2-column character costs 3 bytes), so the plain byte-
+  // counted loop used to cut it off far short of its own true (already
+  // width-correct) end, and -- worse -- could stop mid-character,
+  // sending a truncated UTF-8 sequence straight to the terminal (a real
+  // report + raw-byte capture: a lone lead byte 0xe3 immediately
+  // followed by a cursor-move escape, no continuation bytes at all).
+  //
+  // ellipsisEligible (2026-08-20 addition, same report as the comment
+  // above -- docs/HISTORY.md's own long lines showed their MIDDLE
+  // replaced with "..." in -g specifically, while GraphicalDisplay's
+  // separate momentum-scroll render path showed the same lines in
+  // full): the Finder-style middle-ellipsis SUBSTITUTION below is a
+  // separate, narrower concern from widthAware walking itself --
+  // appropriate for LOCATE/DU/Archive's own discrete, unwrapped
+  // name/path Lines (the original 2026-08-14 report this was built
+  // for), but wrong for ordinary continuous prose/log content, where
+  // eliding the middle destroys real information a reader expects to
+  // find by scrolling, not by an artificial "keep both ends" cut. Only
+  // LocateMode/DuMode/ArchiveMode's own results-list Line construction
+  // sets this true; FileMode's own (already width-wrapped) lines fall
+  // through unedited into the widthAware walk below, which simply stops
+  // at maxCol -- a character-safe plain cutoff, not an elision.
   bool widthAware = !line.highlightStartColumn.has_value() && line.attributes.empty();
   std::string ellipsisText;
   const std::string *renderedText = &line.text;
-  if (widthAware && static_cast<int>(line.text.size()) > ellipsisBudget) {
+  if (widthAware && line.ellipsisEligible && static_cast<int>(line.text.size()) > ellipsisBudget) {
     ellipsisText = middleEllipsisTruncateByWidth(line.text, ellipsisBudget);
     renderedText = &ellipsisText;
   }

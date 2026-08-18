@@ -688,25 +688,37 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // open file's content just shows the name/(egrep) fields, matching
   // legacy's own T_grep case never populating a directory field for
   // that path either).
+  // 2026-08-20 fix, a direct user request ("DIR/FILE/FGREP/EGREP:モード
+  // ラインに「バイト数」が無いモードは反映して" -- see
+  // ContentView::totalByteCount()'s own comment for the original
+  // "全モードのモードラインに...バイト数を追加してほしい" request this
+  // extends): `trailing` used to hold the "(fgrep)"/"(egrep)" program
+  // badge, leaving this the only excursion view with NO byte-count
+  // field at all (DIR/MAN/LOCATE/DU/ARC all already show
+  // totalByteCount() in `trailing`). The badge itself is still useful
+  // (matches every other mode's own "(<program>)" convention), so it
+  // moves to trailing3 (see its own comment) instead of being dropped.
   grepView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     bool fixed = grepSyntax_ == GrepSyntax::Fixed;
     std::string name = fixed ? "FGREP" : "EGREP";
     const auto &cmd = configuration_.commandFor(fixed ? ConfiguredRole::Fgrep : ConfiguredRole::Egrep);
     std::string program = cmd.argv.empty() ? "" : cmd.argv.front();
-    std::string trailing = program.empty() ? "" : "(" + program + ")";
+    std::string badge = program.empty() ? "" : "(" + program + ")";
     std::string trailing2 = (grepReturnMode_ == ApplicationMode::Directory) ? directoryMode_.currentDirectory() : "";
     // trailing2 here is a PATH (the directory the search ran from), not
     // a typed search string -- see ContentView::TrailingKind's own
     // comment for why paths (Path) opt out of QueryEcho's 16-char tail
     // cap.
-    return {name,
-            trailing,
-            /*fillTrailingToEdge=*/!trailing2.empty(),
-            /*rightWatermark=*/"",
-            trailing2,
-            /*trailingPlain=*/false,
-            /*trailing2RightJustified=*/false,
-            /*trailing2Kind=*/ContentView::TrailingKind::Path};
+    ContentView::ModeLineFields fields{name,
+                                        std::to_string(grepView_.totalByteCount()),
+                                        /*fillTrailingToEdge=*/!trailing2.empty(),
+                                        /*rightWatermark=*/"",
+                                        trailing2,
+                                        /*trailingPlain=*/false,
+                                        /*trailing2RightJustified=*/false,
+                                        /*trailing2Kind=*/ContentView::TrailingKind::Path};
+    fields.trailing3 = badge;
+    return fields;
   });
   // grepView_'s own empty-result placeholder ("<pattern>: No String",
   // "No String" underlined -- see ContentView::setEmptyPlaceholder()'s
@@ -2192,6 +2204,21 @@ bool Application::openSelectedEntry() {
   if (archiveMode_.loadArchive(path)) {
     archiveParentStack_.clear();  // a brand new top-level archive -- any earlier nested-descent chain no longer applies
     currentMode_ = ApplicationMode::Archive;
+    // 2026-08-20 fix, a real report ("ARC:^X^F→「utf8.tar」が履歴に
+    // 無い"): FileMode::loadFile() records every opened file into
+    // RecentFile history (see its own pushRecent() call), but an
+    // archive never reaches loadFile() at all -- this branch returns
+    // BEFORE the `fileMode_.loadFile(path)` call below, so opening a
+    // .tar/.zip/... never got recorded, making it permanently
+    // unreachable from ^X^F regardless of how recently it was opened.
+    // Only the TOP-LEVEL archive the user directly selected (this call
+    // site) is recorded -- descending into a NESTED archive
+    // (materializeArchiveTempFile()'s own loadArchive() call further
+    // down) uses a throwaway mkdtemp() temp path with no lasting
+    // meaning to record, and navigating back UP to an already-recorded
+    // parent (goToParentArchive()'s own loadArchive() call) would just
+    // duplicate an existing entry.
+    history_.pushRecent(RingCategory::RecentFile, path);
     return true;
   }
   if (!fileMode_.loadFile(path)) return false;

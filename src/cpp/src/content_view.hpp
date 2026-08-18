@@ -108,6 +108,34 @@ class ContentView {
     // etc.) exactly like highlightStartColumn is -- those never had
     // overstrike-formatted content to begin with.
     std::vector<AttributeRun> attributes;
+
+    // Opts this line into renderLine()'s own Finder-style middle-
+    // ellipsis truncation ("...") when it doesn't fit -- added
+    // 2026-08-20, a real report + screenshot (=dn/=do, -g mode
+    // specifically): viewing an ordinary text file with long lines
+    // (docs/HISTORY.md) showed every long line's own MIDDLE replaced
+    // with "...", destroying real content, while GraphicalDisplay's
+    // OWN momentum-scroll render path (renderScrolled(), a completely
+    // separate code path that never calls renderLine() at all) showed
+    // the exact same lines in full once scrolling kicked in -- that
+    // inconsistency is what actually surfaced the bug, not a rendering
+    // difference that was ever intentional. The pre-existing gate
+    // (see this function's own comment further down) was "no
+    // highlightStartColumn/attributes", on the assumption that only
+    // LOCATE/DU/ArchiveMode-style results lists reach renderLine()
+    // that way -- WRONG: FileMode's own ordinary content lines (a text
+    // file has no per-line highlighting data either) satisfy the exact
+    // same condition, so an arbitrary log/prose line got the SAME
+    // "elide the middle, keep both ends" treatment Finder-style
+    // filenames want, which makes no sense for continuous text (a
+    // human reads it start-to-... wherever it got cut, not
+    // start+end). Defaults to false (plain right-truncation, matching
+    // ordinary content) -- LocateMode/DuMode/ArchiveMode's own results-
+    // list Line construction sets this true explicitly (each of THEIR
+    // lines really is one discrete name/path where Finder-style
+    // ellipsis is genuinely the right call, the original 2026-08-14
+    // report this feature was built for).
+    bool ellipsisEligible = false;
   };
 
   explicit ContentView(Display &display);
