@@ -20397,4 +20397,55 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `/tmp/.usilic.<pid>/`が終了後に消えていること・`error`/
      `shell`の中身が変更されずそのまま残っていることを確認。
 
+360. **^T画面からWORK等を選択後、`^G`で同じ行に戻らない・戻り値欄が
+    不良、の2件を修正**(`/tmp/.usilic.<pid>/`自体は実在しており、
+    `ls /tmp`がドットディレクトリを表示しないだけと判明・対応不要)
+   - **報告**: 「^Tでは/tmp/.usilic.97537/なのに/tmp/には同ディレ
+     クトリが無い。/tmp/.usilic.97537/w.1等を選んだ場合、^Gで同じ行
+     （/tmp/.usilic.97537/w.1）に戻らない。戻り値が不良。」
+   - **1点目の確認**: `/tmp/.usilic.<pid>/`という名前は先頭が`.`の
+     隠しディレクトリのため、`ls /tmp`(`-a`無し)では一覧に出ない。
+     Pythonの`os.path.isdir()`/`os.listdir()`で直接確認したところ、
+     実際には正しく存在していた(セッション終了時に削除される設計も
+     項目359で確認済みの通り正しく機能)。コード側の不具合ではない
+     と判断し、対応不要。
+   - **2点目(戻り値不良)の原因調査**: PTYで`^X^W`→`^T`→WORK行で
+     Enter→`^G`を実際に再現したところ、確かにカーソルが先頭行
+     (`1/6 TOP`)へ戻ってしまい、選択した`WORK`行(`6/6 END`)には
+     戻らないことを確認。原因は`openSelectedBannerEntry()`が
+     `fileMode_.saveCursorPosition()`を一度も呼んでいなかったこと。
+     `returnFromFileToLocate()`等、他の「File→File系の遷移」は
+     必ず遷移前に現在位置を保存しているが、この関数だけ抜けていた
+     ため、`^T`画面自身の実体ファイル(`bannerFilePath()`、常に
+     同一パス)に紐づく`History`の位置情報が一度も保存されず、
+     `loadFile()`側の復元処理が常に空振りしていた。
+   - **2点目の修正1**: `openSelectedBannerEntry()`の各`loadFile()`
+     呼び出し直前に`fileMode_.saveCursorPosition()`を追加。
+   - **2点目、追加で判明した問題**: 上記調査と合わせて、WORK/ERROR/
+     SHELL/Startup fileをこの画面から開いた際のモードライン戻り値欄
+     (trailing2)が、`FileMode`の既定である「そのファイル自身の
+     格納先ディレクトリ」(`/tmp/.usilic.<pid>/`等)をそのまま表示
+     しており、実際に`^G`が戻る先(`^T`画面そのもの)とは無関係な
+     ため誤解を招くと判断。LOCATE経由のFILE表示で既に確立している
+     `setSearchOrigin()`パターン(見た目のファイル名はそのまま
+     `label`に、実際の戻り先を`detail`に)をここでも使い、
+     `detail="usilic"`を設定するよう変更。ただし当初
+     `loadFile()`の直後に`setSearchOrigin()`を呼ぶだけでは画面に
+     反映されないという別の見落としがあった――`loadFile()`自体が
+     内部で一度`redraw()`しており、その時点では`setSearchOrigin()`
+     未実行のため既定のパス表示のまま描画されてしまい、
+     `setSearchOrigin()`はデータを更新するだけで自分では再描画
+     しない(単なるsetter)ため、画面上は古い表示のまま取り残されて
+     いた。`openSelectedLocateResult()`側は同じ順序で
+     `fileView_.redraw()`を明示的に呼んでいたと確認、同じ形に
+     揃えて`setSearchOrigin()`の直後に`fileView_.redraw()`を追加。
+   - **検証**: `make test` 766/766件・18483アサーション全通過
+     (既存doctest1件を拡張: `^G`で選択前と同じ`cursorIndex()`に
+     戻ることの確認、モードラインに`"usilic"`が含まれ生の一時
+     ディレクトリパスが表示されないことの確認)。`make usilic`
+     クリーンビルド確認済み。PTY自動テストで、`^X^W`→`^T`→WORK行
+     (`6/6 END`)でEnter(モードラインが`w.1 ... usilic`になること
+     を確認)→`^G`(`6/6 END`に正しく戻ることを確認)を、修正前は
+     再現・修正後は解消することをそれぞれセル単位で確認した。
+
 

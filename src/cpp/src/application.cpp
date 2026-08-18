@@ -3404,16 +3404,48 @@ bool Application::openSelectedBannerEntry() {
   // gracefully (false) for a path that doesn't exist yet (ERROR/SHELL
   // before anything's ever been logged there) -- Enter simply stays a
   // no-op in that case, same as it already was for an empty WORK slot.
+  // saveCursorPosition() BEFORE loadFile() overwrites currentFile_/
+  // resets the view (2026-08-18 fix, a direct user report: "^Gで同じ
+  // 行に戻らない" -- every OTHER File-mode-to-File-mode-ish transition
+  // in this class saves the position it's LEAVING first, matching
+  // returnFromFileToLocate()'s own identical two-line shape, but this
+  // one never did -- loadFile()'s own History::positionFor() lookup
+  // (keyed on bannerFilePath(), a fixed path) had nothing to restore
+  // from, so ^G back to the banner always landed on row 0 regardless
+  // of which line was actually selected).
+  //
+  // setSearchOrigin("usilic") AFTER loadFile() (same report: "戻り値
+  // が不良"): FileMode's own default trailing2 for a real file is its
+  // containing directory (see the constructor's own comment) -- true
+  // but misleading here, since ^G from any of these doesn't lead to a
+  // directory listing of `/tmp/.usilic.<pid>/` at all, it goes straight
+  // back to the ^T banner screen, exactly the same "destination shown
+  // here should be where ^G ACTUALLY goes" fix already applied to the
+  // banner's own trailing2 above. `label` is passed as the file's own
+  // bare basename (unchanged from what FileMode would already show) so
+  // only the destination half of the mode line actually changes.
   for (const std::string &fixedPath : {usilicrcPath_, errorLogPath_, logFilePath_}) {
     if (!endsWith(fixedPath)) continue;
+    fileMode_.saveCursorPosition();
     if (!fileMode_.loadFile(fixedPath)) return false;
+    fileMode_.setSearchOrigin(std::filesystem::path(fixedPath).filename().string(), "usilic");
     fileReturnMode_ = ApplicationMode::File;
+    // loadFile() already redrew once internally, using the DEFAULT mode
+    // line (searchOrigin was still empty at that point -- it's only set
+    // just above, AFTER loadFile() clears it) -- an explicit second
+    // redraw() is what actually gets the corrected trailing2 onto the
+    // real screen, matching openSelectedLocateResult()'s own identical
+    // ordering/comment for the exact same reason.
+    fileView_.redraw();
     return true;
   }
   for (const auto &workPath : allocatedWorkFiles_) {
     if (!endsWith(workPath)) continue;
+    fileMode_.saveCursorPosition();
     if (!fileMode_.loadFile(workPath)) return false;
+    fileMode_.setSearchOrigin(std::filesystem::path(workPath).filename().string(), "usilic");
     fileReturnMode_ = ApplicationMode::File;
+    fileView_.redraw();  // see the fixedPath loop's own identical comment above
     return true;
   }
   for (const auto &arcPath : allocatedArcDirs_) {

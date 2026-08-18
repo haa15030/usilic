@@ -2807,13 +2807,27 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on the WORK line opens w
   std::string bannerFile = app.fileMode().currentFile();
 
   for (int i = 0; i < 4; i++) REQUIRE(app.handleCommand(Command::MoveDown));  // Boot/Startup/ERROR/SHELL/WORK
+  int workRow = app.activeContentView().cursorIndex();
   REQUIRE(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == (root / ".usilic" / "w.1").string());
+  // 2026-08-18 fix, a direct user report: "戻り値が不良" -- viewing
+  // w.1 (or ERROR/SHELL/Startup file) FROM the banner used to show its
+  // own raw containing directory (FileMode's own default trailing2) as
+  // the "戻り値" field, which is misleading here: ^G doesn't lead to a
+  // directory listing of that path at all, it goes straight back to
+  // this banner -- setSearchOrigin("usilic") now reflects that.
+  CHECK(app.activeContentView().modeLineText().find("usilic") != std::string::npos);
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == bannerFile);  // back on the banner, not returnToDirectory()
+  // 2026-08-18 fix, a direct user report: "^Gで同じ行に戻らない" --
+  // openSelectedBannerEntry() never called fileMode_.saveCursorPosition()
+  // before overwriting currentFile_/the view's lines, so loadFile()'s
+  // own History::positionFor() lookup (keyed on this fixed bannerFilePath())
+  // had nothing to restore and always landed back on row 0.
+  CHECK(app.activeContentView().cursorIndex() == workRow);
 }
 
 TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on an arc.N line opens it as a DIRECTORY; ^G is a "
