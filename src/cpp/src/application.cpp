@@ -1108,6 +1108,41 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
       case 0x0c:  // ^L
         isNav = true;
         break;
+      // ^R (2026-08-18 fix, a direct report + screenshots =cz/=da): NOT
+      // in this whitelist originally, so pressing plain ^R while still
+      // just BROWSING (not yet typed anything) fell through to the
+      // "start editing" logic below -- which treats byte 0x12 as an
+      // ordinary typed character, activates a REAL prompt pre-filled
+      // with the highlighted candidate, then re-feeds 0x12 through
+      // feedPromptByte(), where its own unrelated `if (byte == 0x12)
+      // startPromptHistoryRecall();` (K-49, the legitimate "mid-typing
+      // ^R re-opens the list" feature every other PromptKind here also
+      // relies on) fires AGAIN, but this time via startPromptHistoryRecall()'s
+      // own DEFAULT `directEntry = false` -- silently clobbering
+      // promptHistoryRecallIsDirectEntry_ back to false even though
+      // RecentFile/RecentDirectory are ALWAYS directEntry (see
+      // startPromptHistoryRecall()'s own comment), which is exactly what
+      // broke returnFromListBrowser()'s own =cx/=cy fix moments later on
+      // the very next ^G (=da, "一覧が無い" -- it silently fell back to
+      // the general "reopen a blank prompt" branch because
+      // promptHistoryRecallIsDirectEntry_ no longer read true). It also
+      // forced sortDirectEntryList=false along the way, so the resulting
+      // screen showed an unconditional chronological "HISTORY" view
+      // through the OLD pre-drawPromptLabel() rendering path instead of
+      // the real toggle (=cz, "文字列入力エリアが無い" -- this detour
+      // never goes through refreshDirectEntryModeLine() at all). Scoped
+      // to RecentFile/RecentDirectory only (toggleListBrowserHistory()'s
+      // own guard already no-ops for every other PromptKind here, so
+      // GrepPattern/CutPattern/ManName's existing "^R while browsing
+      // restarts the candidate list via the very same detour" behavior
+      // -- unreported, presumably harmless, not this bug -- is left
+      // completely unchanged rather than risked).
+      case 0x12:
+        if (promptHistoryRecallKind_ && (*promptHistoryRecallKind_ == PromptKind::RecentFile ||
+                                          *promptHistoryRecallKind_ == PromptKind::RecentDirectory)) {
+          isNav = true;
+        }
+        break;
     }
   }
   if (isNav) return handleCommand(resolveCommand(byte, special));
@@ -3535,6 +3570,18 @@ bool Application::toggleListBrowserHistory() {
     listBrowserView_.setCursorIndex(static_cast<int>(items.size()) - 1);
     listBrowserView_.redraw();
   }
+  // RecentFile/RecentDirectory (2026-08-18 fix, =cz report -- "文字列
+  // 入力エリアが無い"): this function is the ONE other place besides
+  // startPromptHistoryRecall()/Command::MoveUp/MoveDown that redraws
+  // the read-only candidate screen for these two PromptKinds, and it
+  // was never wired to refreshDirectEntryModeLine() (added one round
+  // ago) -- so a ^R toggle here left row 24 on the OLD, pre-item-351
+  // rendering (listBrowserView_'s own plain ModeLineFieldsProvider,
+  // fully reversed with no gaps and no non-highlighted candidate) even
+  // though every other redraw of this same screen already looks right.
+  // A no-op for every other PromptKind (the early-return guard above),
+  // matching every other call site's own guard.
+  refreshDirectEntryModeLine();
   return true;
 }
 
@@ -4572,7 +4619,21 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     return;
   }
 
-  std::string label = promptLabelText(kind);
+  // RecentFile/RecentDirectory + listBrowserChronological_ (2026-08-18
+  // fix, part of the same =cz/=da round): the OLD renderer this screen
+  // used before refreshDirectEntryModeLine() existed (listBrowserView_'s
+  // own ModeLineFieldsProvider, see its own comment) already showed
+  // "HISTORY" in place of "DIR"/"FILE" while toggled to chronological
+  // order (item 160's own established convention, `^R` = ToggleHistoryView).
+  // drawPromptLabel() is generic across every PromptKind and has no
+  // concept of listBrowserChronological_ at all, so without this it
+  // silently dropped that cue the moment refreshDirectEntryModeLine()
+  // took over this screen's rendering -- label stayed "DIR"/"FILE"
+  // regardless of which order was actually showing.
+  std::string label = ((kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory) &&
+                        listBrowserChronological_)
+                           ? "HISTORY"
+                           : promptLabelText(kind);
   display_.setAttribute(Display::Attribute::Standout);
   for (unsigned char c : label) display_.putChar(c);
   display_.setAttribute(Display::Attribute::StandoutOff);

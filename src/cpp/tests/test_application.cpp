@@ -5181,6 +5181,36 @@ TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line fills all the w
   CHECK_FALSE(display.standoutAt(23, 15));
 }
 
+TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): plain ^R while still just BROWSING the read-only candidate "
+                           "list (not yet editing) toggles sorted<->chronological via feedByte()'s real dispatch "
+                           "path, instead of being misrouted into feedRegexListByte()'s \"start editing\" "
+                           "fallthrough (2026-08-18 fix, a real report + screenshots =cz/=da: byte 0x12 wasn't in "
+                           "feedRegexListByte()'s own nav whitelist, so it fell through to treating ^R as an "
+                           "ordinary typed character, which activated a real prompt and then re-fed 0x12 through "
+                           "feedPromptByte()'s OWN unrelated ^R handler -- startPromptHistoryRecall() with its "
+                           "default directEntry=false -- silently clobbering promptHistoryRecallIsDirectEntry_ "
+                           "back to false and breaking the very next ^G, =da's \"一覧が無い\")") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) == 0);
+
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // plain ^R, via the real per-byte dispatch path
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // still browsing, NOT dropped into real editing
+  CHECK(app.activeContentView().modeLineText().rfind("HISTORY ", 0) == 0);
+
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // toggling again returns to the sorted "DIR" view
+  CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) == 0);
+
+  // ^G must land straight back on the real DirectoryMode screen (=cx/=cy's
+  // own fix from the previous round), NOT reopen a blank ^X^D prompt --
+  // this is exactly the regression =da caught: promptHistoryRecallIsDirectEntry_
+  // getting clobbered by the misrouted ^R above would make this fall
+  // through to returnFromListBrowser()'s general activatePrompt() branch.
+  REQUIRE(app.feedByte(0x07, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) != 0);  // NOT the ^X^D prompt's own "DIR" label
+}
+
 TEST_CASE_FIXTURE(Fixture, "K-46: Enter on a recent file entry opens it via FileMode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");

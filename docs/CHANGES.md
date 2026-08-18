@@ -5565,6 +5565,79 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      戻ることを確認、(2)の修正確認)という実際の手順をセル単位で
      再現した。
 
+353. **^X^D/^X^F、未編集の候補一覧上で`^R`を押すと文字列入力エリアが
+    消え(=cz)、直後の`^G`で戻り先も失われる(=da)不具合を修正。真因は
+    項目352までの`drawPromptLabel()`/`refreshDirectEntryModeLine()`
+    自体ではなく、`^R`(0x12)という1バイトが「候補一覧を眺めている
+    だけの状態」と「実際に編集中の状態」という別々の入力ディスパッチ
+    経路それぞれに、互いを想定しない形で別々の意味を持たせて
+    しまっていたこと**(=cz/=da参照)
+   - **報告**: 「-c起動→^X^D→^R→文字列入力エリアが無い＋戻り値不良
+     =cz→^G→一覧が無い=da」
+   - **調査**: `/usr/local/bin/usilic`(旧C版tcb)と`build/usilic`
+     (C++移植版)の切り分けをユーザーに確認したのち、`build/usilic`を
+     `-c`でPTY起動し`^X^D`→`^R`→`^G`を実際に再現。一時的な
+     デバッグ出力で追跡したところ、`^G`処理時点で
+     `promptHistoryRecallIsDirectEntry_`が(本来`RecentFile`/
+     `RecentDirectory`は常に`true`のはずなのに)`false`になっていると
+     判明。
+   - **真因**: `dispatchByte()`は、`ListBrowser`モードかつ
+     `promptHistoryRecallKind_`が`GrepPattern`/`CutPattern`/`ManName`/
+     `RecentFile`/`RecentDirectory`のいずれかのとき、すべてのバイトを
+     `feedRegexListByte()`(「候補一覧を眺めているだけの状態」用の
+     入力ディスパッチ)へ渡す。この関数は`^N`/`^P`/Enter/`^G`/`^L`の
+     5バイトだけを「一覧のナビゲーション」として`handleCommand()`へ
+     回し、**それ以外の全バイトを「編集開始」とみなす**設計になって
+     いたが、`^R`(0x12)がこの5バイトのnavホワイトリストに含まれて
+     いなかった。そのため`^R`は「編集開始」経路に落ち、(1)
+     `promptHistoryRecallKind_`/`promptHistoryRecallIsDirectEntry_`を
+     クリア、(2)`activatePrompt()`で実際に編集状態へ突入、(3)直後に
+     同じバイト0x12を今度は`feedPromptByte()`(「実際に編集中の状態」
+     用の入力ディスパッチ)へ再投入、という3段階を踏んでいた。
+     `feedPromptByte()`側には元々、GREP/CUT/MAN等が編集中に`^R`で
+     候補一覧を再表示できるようにする**別の**、正当な
+     `if (byte == 0x12) startPromptHistoryRecall();`という処理が
+     あり、これが今回横から呼ばれる形になった。しかも
+     `startPromptHistoryRecall()`は`directEntry`引数省略時の既定値が
+     `false`のため、`RecentFile`/`RecentDirectory`が「常に
+     directEntry」という前提を裏で静かに破壊し、
+     `promptHistoryRecallIsDirectEntry_`を`false`のまま上書きして
+     いた――項目352で`^G`の分岐を直すために使った、まさにその
+     フラグを。さらに`directEntry=false`は`sortDirectEntryList`も
+     falseにするため、本来の`^R`トグル(ソート順⇄時系列順の往復)
+     ではなく常に時系列固定になり、しかもこの経路は
+     `refreshDirectEntryModeLine()`を一度も通らないため、=czで
+     見えていた「文字列入力エリアが無い」(項目351で直したはずの
+     非ハイライト化以前の、行全体反転の旧描画のまま)という症状も
+     同時に説明がついた。本来`^R`は`Command::ToggleHistoryView`→
+     `toggleListBrowserHistory()`という、既に項目160で実装済みの
+     専用ルートを通るべきだった。
+   - **修正1**: `feedRegexListByte()`のnavホワイトリストに`^R`
+     (0x12)を追加。ただし`GrepPattern`/`CutPattern`/`ManName`は
+     `promptHistoryRecallKind_`が`RecentFile`/`RecentDirectory`で
+     ない場合、既存の(今回の報告とは無関係な、未報告のまま動いて
+     いた)挙動を変えないようスコープを絞り、`RecentFile`/
+     `RecentDirectory`のときだけ`isNav=true`とした。
+   - **修正2**: `toggleListBrowserHistory()`の末尾に
+     `refreshDirectEntryModeLine()`呼び出しを追加(既存の早期return
+     ガードにより他のPromptKindには影響しない)。あわせて
+     `drawPromptLabel()`のラベル決定を、`RecentFile`/
+     `RecentDirectory`かつ`listBrowserChronological_`が真のときは
+     旧描画(`listBrowserView_`自身の`ModeLineFieldsProvider`)が
+     既に持っていた「時系列表示中は"HISTORY"と表示する」という項目
+     160の慣習を`"HISTORY"`固定文字列で再現するよう変更(それ以外は
+     従来通り`promptLabelText(kind)`、右側バッジへの退避は今回の
+     報告の範囲外として見送った)。
+   - **検証**: `make test` 759/759件・18386アサーション全通過(新規
+     doctest1件: `feedByte()`実経路での`^R`が
+     `ApplicationMode::ListBrowser`に留まったまま
+     "DIR"⇄"HISTORY"を正しく往復し、直後の`^G`が本物の
+     `DirectoryMode`画面(先頭が"DIR "ではなくパスそのもの)へ
+     正しく戻ることを確認)。`make usilic`クリーンビルド確認済み。
+     PTY自動テストで、`^X^D`→`^R`→`^R`→`^G`(往復トグル+`(ls)`
+     画面への正しい復帰)、`^X^F`→`^R`→`^G`(空リングでも同様)を
+     それぞれセル単位で確認した。
+
 ## 10. HISTORY / COMMAND(^R)
 
 160. **2026-08-04(続き): `^X^F`(FILE)/`^X^D`(DIR)で開く一覧の`^R`
