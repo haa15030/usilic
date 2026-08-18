@@ -4852,20 +4852,33 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // promptHistoryRecallKind_ holder's own chronological view). Restoring
   // that same badge here, in the one slot this function actually has,
   // rather than the destination path.
-  std::string destinationDirectory =
-      ((kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory) && listBrowserChronological_)
-          ? promptLabelText(kind)
-          : previousModeName(destinationMode);
+  bool showsBadge =
+      (kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory) && listBrowserChronological_;
+  std::string destinationDirectory = showsBadge ? promptLabelText(kind) : previousModeName(destinationMode);
   if (!destinationDirectory.empty()) {
     std::string tail = truncatedTrailingPath(destinationDirectory);
-    // columns()-1, NOT columns() (2026-08-18 fix): same auto-wrap
-    // avoidance as the base fill just above -- ending this Standout
-    // run exactly at the true last column has the identical real-
-    // terminal repaint problem. The true last column itself is left
-    // to the base fill's own trailing plain-space write (see above),
-    // matching renderLine()'s/renderModeLine()'s own established
-    // "leave the very last column unmarked" tradeoff.
-    int col = display_.columns() - 1 - static_cast<int>(tail.size());
+    // Badge (2026-08-18 fix, a direct user correction + screenshot =db:
+    // "戻り値のDIRは左詰めでよろしく"): the DIR/FILE badge above is a
+    // short, fixed-width category marker, not a path -- right-
+    // justifying it (the destination-PATH convention every other
+    // PromptKind here uses, where the tail end of a long path is the
+    // meaningful part) just stranded it alone at the screen's right
+    // edge with a wide gap in front of it. Left-justified instead,
+    // starting at the same column promptEditor_'s own trailing reserve
+    // begins (labelWidth + editableWidth, computed below) -- i.e. the
+    // left edge of the reserved box, not the path-tail convention's
+    // right edge.
+    int col = showsBadge ? labelWidth + editableWidth
+                          // columns()-1, NOT columns() (2026-08-18 fix): same
+                          // auto-wrap avoidance as the base fill just above --
+                          // ending this Standout run exactly at the true last
+                          // column has the identical real-terminal repaint
+                          // problem. The true last column itself is left to
+                          // the base fill's own trailing plain-space write
+                          // (see above), matching renderLine()'s/
+                          // renderModeLine()'s own established "leave the
+                          // very last column unmarked" tradeoff.
+                          : display_.columns() - 1 - static_cast<int>(tail.size());
     if (col > labelWidth) {
       display_.moveCursor(row, col);
       display_.setAttribute(Display::Attribute::Standout);

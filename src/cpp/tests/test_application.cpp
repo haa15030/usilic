@@ -5205,7 +5205,21 @@ TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): plain ^R while still just BRO
   // writes), not modeLineText() (a separate, independently-computed
   // getter that happens to already agree, but doesn't exercise this
   // function's own trailing-field logic at all).
-  CHECK(display.rowText(23).find("DIR") != std::string::npos);
+  {
+    const std::string &row23 = display.rowText(23);
+    auto dirPos = row23.find("DIR");
+    CHECK(dirPos != std::string::npos);
+    // Left-justified, not right-flush against the screen edge (2026-08-18
+    // follow-up, a direct user correction + screenshot =db: "戻り値の
+    // DIRは左詰めでよろしく") -- everything after "DIR" through the true
+    // last column (79, left unmarked by the base fill's own auto-wrap
+    // workaround) must be blank padding, not more text crowded up
+    // against the edge.
+    if (dirPos != std::string::npos) {
+      std::string afterDir = row23.substr(dirPos + 3, row23.size() - dirPos - 3 - 1);
+      CHECK(afterDir.find_first_not_of(' ') == std::string::npos);
+    }
+  }
 
   REQUIRE(app.feedByte(0x12, std::nullopt));  // toggling again returns to the sorted "DIR" view
   CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) == 0);
