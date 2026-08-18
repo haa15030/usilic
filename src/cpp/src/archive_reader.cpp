@@ -38,32 +38,63 @@ ArchiveEntry parseTarLine(const std::string &rawLine) {
   int ce = n - 1;
   int cs = 0;
 
+  // mode links owner group SIZE mon day time/year name -- the BSD tar
+  // (macOS) fallback shape, factored out since both the ce==0 case
+  // below AND the GNU-branch's own false-positive recovery (see its
+  // comment) need to run this exact same 4-field skip.
+  auto skipBsdFields = [n, &line]() {
+    int c = 0, k = 0;
+    while (k < 4 && c < n) {
+      if (line[c] == ' ') {
+        while (c + 1 < n && line[c + 1] == ' ') c++;
+        k++;
+      }
+      c++;
+    }
+    return c;
+  };
+
   for (int i = 0;; i++) {
     for (; ce > 0; ce--)
       if (line[ce] == ' ' || (i && line[ce] == '/')) break;
     if (i == 0) cs = ce + 1;  // filename starts right after the last space
     if (i && line[ce] == '/') {
       // GNU format: walk forward from "owner/group" to the size field.
-      while (true) {
+      // 2026-08-19 fix, a real report + reproduction (a tar of a
+      // directory whose OWN name reappears as a path prefix on every
+      // entry, e.g. "utf8/foo.txt") -- the backward scan above has no
+      // way to tell a genuine GNU "owner/group" separator apart from a
+      // '/' that's simply part of the FILENAME itself (any entry
+      // nested under a subdirectory has one). A false-positive match
+      // sends this loop walking forward through arbitrary filename
+      // bytes looking for a digit-then-space/comma pattern that may
+      // not exist anywhere ahead of it -- previously an unconditional
+      // `while (true)` with no bound once `ce`/`p` both reached `n`
+      // (neither scan below advances further, and `p < n` stays false
+      // forever), spinning at 100% CPU instead of erroring out. Bounded
+      // now: on running off the end without ever finding a valid size
+      // field, this was never real GNU-format "owner/group" data to
+      // begin with -- fall back to the same reliable BSD field-skip
+      // the ce==0 branch below already uses (this system's own `tar
+      // tvf` output IS BSD-format; false positives only ever originate
+      // from a filename's own '/', never a genuine format mismatch).
+      bool foundSize = false;
+      while (ce < n) {
         while (ce < n && line[ce] != ' ') ce++;
         while (ce < n && line[ce] == ' ') ce++;
+        if (ce >= n) break;
         int p = ce;
         while (p < n && std::isdigit(static_cast<unsigned char>(line[p]))) p++;
-        if (p < n && (line[p] == ' ' || line[p] == ',')) break;
+        if (p < n && (line[p] == ' ' || line[p] == ',')) {
+          foundSize = true;
+          break;
+        }
         ce = p;
       }
+      if (!foundSize) ce = skipBsdFields();
       break;
     } else if (ce == 0) {
-      // BSD format: mode links owner group SIZE mon day time/year name.
-      int k = 0;
-      ce = 0;
-      while (k < 4) {
-        if (line[ce] == ' ') {
-          while (ce + 1 < n && line[ce + 1] == ' ') ce++;
-          k++;
-        }
-        ce++;
-      }
+      ce = skipBsdFields();
       break;
     } else {
       while (ce > 0 && line[ce] == ' ') ce--;
@@ -75,6 +106,35 @@ ArchiveEntry parseTarLine(const std::string &rawLine) {
     if (line[ce] == ',') entry.isSpecialDevice = true;
     else if (!entry.isSpecialDevice) size = size * 10 + (line[ce] - '0');
     ce++;
+  }
+
+  // Re-derive the filename start FORWARD from here (2026-08-19 fix,
+  // found via the same reproduction as the GNU-branch hang above --
+  // real filenames can and do contain literal spaces, e.g.
+  // "utf8/報道ステーション 速報 森保監督..."). The `cs` computed at
+  // i==0 above scans BACKWARD from the end of the line for the LAST
+  // space, which is wrong whenever the filename itself contains one --
+  // it lands mid-filename instead of at its true start, truncating the
+  // displayed name (confirmed: this exact entry rendered as "森保監督
+  // か会見…" instead of "utf8/報道ステーション　速報 森保監督が
+  // 会見…", missing everything up through the embedded space). Exactly
+  // 3 space-delimited fields (month, day, time-or-year) always sit
+  // between the size field and the filename in both BSD and GNU tar's
+  // `tar tvf` output, so counting FORWARD from the size field just
+  // parsed -- a position already known to be correct -- past those 3
+  // fields reaches the true filename start regardless of what the
+  // filename itself contains. Only overrides `cs` when the line
+  // actually has 3 more fields to skip; an unexpectedly short/malformed
+  // line keeps the i==0 backward-scan guess instead of trusting a
+  // partial forward count.
+  {
+    int fs = ce;
+    for (int k = 0; k < 3 && fs < n; k++) {
+      while (fs < n && line[fs] == ' ') fs++;
+      while (fs < n && line[fs] != ' ') fs++;
+    }
+    while (fs < n && line[fs] == ' ') fs++;
+    if (fs < n) cs = fs;
   }
 
   entry.name = line.substr(cs);

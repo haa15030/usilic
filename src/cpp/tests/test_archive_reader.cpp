@@ -53,6 +53,38 @@ TEST_CASE("TarReader::parseListing: GNU tar format (owner/group field)") {
   CHECK(entries[3].size == 6);
 }
 
+// 2026-08-19 fix, a real report + reproduction: tarring a directory
+// whose entries have paths like "utf8/<name>" (any nested-directory
+// tar produces this) froze at 100% CPU when one entry's NAME itself
+// contained a literal space -- confirmed via `sample` that the hang
+// was an unbounded `while (true)` loop in the GNU-format branch below.
+// Root cause: the backward scan for cs (filename start) stops at the
+// LAST space in the line, which is correct only when the filename has
+// no embedded space of its own; here it stops mid-filename instead
+// (between "報道ステーション" and "速報"), leaving the NEXT backward
+// scan (i==1, now also watching for '/') still positioned INSIDE the
+// filename's own text -- which then walks straight into the filename's
+// own "utf8/" path prefix and mistakes that '/' for a genuine GNU tar
+// "owner/group" separator. The subsequent forward walk for a numeric
+// size field never finds one (there isn't one -- this is BSD-format
+// macOS tar output, and that '/' was never a real field boundary to
+// begin with), and previously had no bound once ce/p both reached the
+// end of the line, spinning forever instead of erroring out.
+TEST_CASE("TarReader::parseListing: a filename containing a literal space, under a tarred subdirectory (so "
+          "every entry's path also contains '/'), doesn't hang and parses the full name correctly -- real "
+          "BSD tar (macOS) output shape") {
+  TarReader reader;
+  std::string listing =
+      "drwxr-xr-x  0 haa15030 staff       0 Jul 21 14:36 utf8/\n"
+      "-rw-r--r--  0 haa15030 staff     150 Jul 21 14:36 utf8/報道ステーション　速報 "
+      "森保監督が会見\n";
+  auto entries = reader.parseListing(listing);
+  REQUIRE(entries.size() == 2);
+  CHECK(entries[0].name == "utf8/");
+  CHECK(entries[1].name == "utf8/報道ステーション　速報 森保監督が会見");
+  CHECK(entries[1].size == 150);
+}
+
 TEST_CASE("TarReader::parseListing: symlink target is stripped from the name") {
   TarReader reader;
   // GNU format symlink line.

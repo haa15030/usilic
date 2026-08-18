@@ -1420,7 +1420,7 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W (SHELL: insert buffer content) 
   // 2026-08-18 REDESIGN: no longer w.N -- see shellInsertBufferContent()'s
   // own comment. Directory mode's own current directory's basename
   // (the Fixture's own temp root dir's name here).
-  std::string savePath = (root / ".usilic" / root.filename()).string();
+  std::string savePath = (root / ".usilic" / "saved" / root.filename()).string();
   CHECK(app.shell().commandLine().text() == "cat " + savePath);
 }
 
@@ -3120,7 +3120,7 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W, K-64): writes the bu
   // Directory mode's own current directory's basename (the Fixture's
   // own temp root dir's name here) -- see shellInsertBufferContent()'s
   // own comment for why "usilic"/"CLAUDE.md"-style basenames, not w.N.
-  std::string savePath = (root / ".usilic" / root.filename()).string();
+  std::string savePath = (root / ".usilic" / "saved" / root.filename()).string();
   CHECK(app.shell().commandLine().text() == "cat " + savePath);
 
   std::ifstream in(savePath);

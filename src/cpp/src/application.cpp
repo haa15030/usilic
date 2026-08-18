@@ -3175,7 +3175,18 @@ bool Application::shellInsertBufferContent() {
   ContentView &source = activeView();
   std::string savePath;
   if (!modeName.empty()) {
-    savePath = std::filesystem::path(usilicrcPath_).parent_path().string() + "/" + modeName;
+    // <homeDirectory>/.usilic/saved/ (2026-08-19 fix, a direct user
+    // request: "^J^Wの保存先は「~/.usilic/saved/」（無ければ自動
+    // 作成）でよろしく") -- a dedicated subdirectory rather than
+    // dropping named snapshots directly into .usilic/ alongside
+    // usilicrc/history/error/shell, auto-created on first use since
+    // (unlike .usilic/ itself, created unconditionally at startup --
+    // see main()'s own usilicDir mkdir) nothing else guarantees it
+    // exists yet.
+    std::string savedDir = std::filesystem::path(usilicrcPath_).parent_path().string() + "/saved";
+    std::error_code ec;
+    std::filesystem::create_directories(savedDir, ec);
+    savePath = savedDir + "/" + modeName;
   } else {
     currentWorkFilePath_ = allocateWorkFilePath();
     savePath = currentWorkFilePath_;
