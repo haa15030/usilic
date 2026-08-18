@@ -922,17 +922,30 @@ class Application {
   // an explicit tempRootDirectory below) error/shell/work/arc, all
   // under `<homeDirectory>/.usilic`.
   // tempRootDirectory (2026-08-18 addition, see tempRootDirectory_'s
-  // own comment): where to root error/shell/work/arc specifically.
-  // Defaulted to "" (falls back to `<homeDirectory>/.usilic`, this
-  // class's sole behavior before 2026-08-18) so existing callers that
-  // don't care about multi-instance isolation -- every test fixture --
-  // don't need updating.
+  // own comment): where to root error/shell specifically. Defaulted to
+  // "" (falls back to `<homeDirectory>/.usilic`, this class's sole
+  // behavior before 2026-08-18) so existing callers that don't care
+  // about multi-instance isolation -- every test fixture -- don't need
+  // updating.
+  // workRootDirectory (2026-08-18 follow-up addition, see
+  // workRootDirectory_'s own comment): where to root work/arc
+  // specifically -- SEPARATE from tempRootDirectory above (a direct
+  // user request: WORK should always live under a process-private
+  // `/tmp/.usilic.<pid>` and be cleaned up on exit, regardless of
+  // launch mode, while ERROR/SHELL should only do that for an
+  // argument-launched run and otherwise stay at the persistent
+  // `<homeDirectory>/.usilic` tempRootDirectory above already falls
+  // back to). Defaulted to "" for the exact same reason
+  // tempRootDirectory is -- falls back to the same
+  // `<homeDirectory>/.usilic` existing test fixtures already assume
+  // for work/arc paths.
   // bootOptions (2026-08-18 addition): ^T's own new "Boot options"
   // field, verbatim. Defaulted to "" (matches a bare no-argument
   // launch's own empty display, see executeShowTcbBanner()'s comment).
   Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
               Charset::Encoding encoding, int width, ShellOptions shellOptions = ShellOptions{},
-              std::string homeDirectory = "", std::string tempRootDirectory = "", std::string bootOptions = "");
+              std::string homeDirectory = "", std::string tempRootDirectory = "", std::string workRootDirectory = "",
+              std::string bootOptions = "");
 
   // Lists `directory` (DirectoryMode::enterDirectory()) and makes it
   // the active mode. Ported from init_menu()'s initial directory
@@ -1471,6 +1484,22 @@ class Application {
   // and the directory created. usilicrcPath_/historyFilePath_ below are
   // deliberately NOT rooted here -- see their own comment.
   std::string tempRootDirectory_;
+  // 2026-08-18 follow-up addition: SEPARATE from tempRootDirectory_
+  // above -- a direct user correction to the 2026-08-18 reorg just
+  // above. That reorg rooted error/shell/work/arc together, but a
+  // bare no-argument launch's own "resume last session" ERROR/SHELL
+  // logs are meant to persist across restarts (same reasoning
+  // usilicrcPath_/historyFilePath_ below already got exempted for),
+  // while WORK (^X^W/K-64's own w.N scratch buffers) is genuinely
+  // per-session throwaway content regardless of launch mode and should
+  // be cleaned up on exit either way. tempRootDirectory_ above keeps
+  // its OWN existing error/shell-only meaning (PID-scoped only for an
+  // argument-launched run); this is ALWAYS `/tmp/.usilic.<pid>`
+  // (main()'s own cleanup on exit, see its own comment, relies on that
+  // being unconditional) for work/arc specifically -- see
+  // allocateWorkFilePath()/allocateArcDirectory()'s own use of this
+  // instead of tempRootDirectory_.
+  std::string workRootDirectory_;
   // ^T's own new "Boot options" field (see executeShowTcbBanner()'s own
   // comment) -- the literal argv[1..] this process was launched with
   // (flags and the directory argument, in their original order, ~

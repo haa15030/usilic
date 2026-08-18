@@ -2392,24 +2392,32 @@ int main(int argc, char **argv) {
   // (positionalArgs non-empty) can have any number of OTHER instances
   // running concurrently against different directories -- unlike a
   // bare no-argument "resume last session" launch, which legacy itself
-  // only ever assumed one of at a time. Application's own
-  // error/shell/work/arc files used to always live under usilicDir
-  // regardless, so two such instances would clobber each other's
-  // (confirmed: the report showed one instance's ^T screen displaying
-  // the OTHER instance's stale ERROR/SHELL content). Rooting them
-  // under a directory unique to THIS process's own pid instead fixes
-  // that; a bare no-argument launch keeps the old shared usilicDir
-  // (single-instance assumption still holds there, and it's the one
-  // case where "resume across restarts" is actually the point).
-  // getpid()'s own reuse-after-restart isn't a concern -- /tmp itself
-  // gets cleared independently (this project's own already-accepted
-  // /tmp-scratch tolerance, see materializeArchiveTempFile()'s own
-  // comment).
-  std::string tempRootDirectory;
-  if (!positionalArgs.empty()) {
-    tempRootDirectory = "/tmp/.usilic." + std::to_string(::getpid());
-    ::mkdir(tempRootDirectory.c_str(), S_IRWXU);
-  }
+  // only ever assumed one of at a time. Application's own error/shell
+  // files used to always live under usilicDir regardless, so two such
+  // instances would clobber each other's (confirmed: the report showed
+  // one instance's ^T screen displaying the OTHER instance's stale
+  // ERROR/SHELL content). Rooting them under a directory unique to
+  // THIS process's own pid instead fixes that; a bare no-argument
+  // launch keeps the old shared usilicDir (single-instance assumption
+  // still holds there, and it's the one case where "resume across
+  // restarts" is actually the point).
+  //
+  // pidTempDirectory (2026-08-18 follow-up, a direct user correction):
+  // ALWAYS created and used for work/arc specifically (Application's
+  // own workRootDirectory, see its own comment), regardless of launch
+  // mode -- unlike tempRootDirectory below (error/shell only), which
+  // stays empty for a no-argument launch. A direct user request:
+  // "引数無しでは...ERROR/SHELLは~/.usilic配下、終了後もWORK以外は
+  // 削除しない" (WORK stays per-process/cleaned-up-on-exit either way;
+  // only ERROR/SHELL get the persistent-across-restarts treatment, and
+  // only for a no-argument launch). getpid()'s own reuse-after-restart
+  // isn't a concern -- /tmp itself gets cleared independently (this
+  // project's own already-accepted /tmp-scratch tolerance, see
+  // materializeArchiveTempFile()'s own comment).
+  std::string pidTempDirectory = "/tmp/.usilic." + std::to_string(::getpid());
+  ::mkdir(pidTempDirectory.c_str(), S_IRWXU);
+  std::string tempRootDirectory = positionalArgs.empty() ? "" : pidTempDirectory;
+  std::string workRootDirectory = pidTempDirectory;
   // ^T's own new "Boot options" field (see executeShowTcbBanner()'s own
   // comment): the literal argv[1..] this process was launched with, in
   // their original order (so -c/-g/-u and the directory argument all
@@ -2464,7 +2472,8 @@ int main(int argc, char **argv) {
   if (const char *shellEnv = std::getenv("SHELL"); shellEnv && *shellEnv) shellOptions.argv = {shellEnv};
 
   fm::Application app(display, keyInput, history, configuration, encoding, display.columns(), shellOptions,
-                       homeEnv ? std::string(homeEnv) : std::string(), tempRootDirectory, bootOptions);
+                       homeEnv ? std::string(homeEnv) : std::string(), tempRootDirectory, workRootDirectory,
+                       bootOptions);
 
   // Ported from str.c's set_help(): English (HELP) vs a genuine
   // Japanese translation (HELP.jp), chosen by charset the same way
@@ -2737,6 +2746,24 @@ int main(int argc, char **argv) {
 
   display.close();
   keyInput.close();
+
+  // pidTempDirectory cleanup (2026-08-18 addition, a direct user
+  // request): "引数付きusilic起動では終了(^X^C[return])後に/tmp/
+  // .usilic.PID/を削除でいい。引数無しでは...終了後もWORK以外は削除
+  // しない". For an argument-launched run, pidTempDirectory is ALSO
+  // where tempRootDirectory (error/shell) lives -- see its own
+  // assignment above -- so removing it here deletes everything
+  // (error/shell/work/arc) as one unit, exactly as requested. For a
+  // bare no-argument launch, tempRootDirectory instead falls back to
+  // the persistent usilicDir (error/shell untouched by this), so
+  // pidTempDirectory here only ever held work/arc -- removing it
+  // cleans up WORK specifically without touching usilicDir/error or
+  // usilicDir/shell. One unconditional remove_all() correctly covers
+  // both cases without needing to branch on positionalArgs again here.
+  {
+    std::error_code ec;
+    std::filesystem::remove_all(pidTempDirectory, ec);
+  }
 
   // Ported from save_history()'s own `.old`-then-overwrite dance:
   // back up the previous file before writing the new one.

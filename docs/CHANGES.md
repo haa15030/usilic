@@ -20337,4 +20337,64 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      SHELL内で`^T`(実際に`^T`画面が開くことを確認)、をそれぞれ
      セル単位で確認した。
 
+359. **WORK(w.N/arc.N)を常にプロセス固有の`/tmp/.usilic.<pid>/`へ
+    分離し、終了時に自動削除するようにした。引数無し起動では
+    ERROR/SHELLは従来通り`<homeDirectory>/.usilic/`のまま維持し
+    (終了時も削除しない)、引数付き起動ではERROR/SHELL/WORK全てが
+    同じPID専用ディレクトリに残るため終了時にまとめて削除される**
+   - **報告**: 「^T画面での「ERROR」以下について、引数付きusilic
+     起動では終了(^X^C[return])後に/tmp/.usilic.PID/を削除でいい。
+     引数無しでは下記の場所へ作成し、終了後もWORK以外は削除しない、
+     でよろしく。Startup file : ~/.usilic/usilicrc / ERROR :
+     ~/.usilic/error / SHELL : ~/.usilic/shell / WORK :
+     /tmp/.usilic.PID/w.1」
+   - **現状確認**: 項目338時点の設計では、`tempRootDirectory_`
+     (ERROR/SHELL/WORK/ARC全てが共有する単一のルート)は引数付き
+     起動時のみ`/tmp/.usilic.<pid>/`、引数無し起動時は
+     `<homeDirectory>/.usilic`へ解決される仕組みが既にあった
+     (ERROR/SHELLについては、まさにユーザーの要望通りの挙動に
+     既になっていた)。不足していたのは2点: (a) WORKが引数無し
+     起動時にERROR/SHELLと同じ`<homeDirectory>/.usilic`を共有して
+     しまっており、セッションをまたいで蓄積し続ける(本来は
+     使い捨てのはずの)スクラッチ領域になっていた、(b) 終了時に
+     `/tmp/.usilic.<pid>/`を削除する処理がそもそも一切存在しな
+     かった(mkdirするだけで、対応するrmは無かった)。
+   - **修正**: `Application`のコンストラクタに新規`workRootDirectory`
+     引数を追加し、既存の`tempRootDirectory_`(ERROR/SHELL専用、
+     従来の意味のまま変更無し)とは別に`workRootDirectory_`
+     (WORK/ARC専用)を保持するよう変更。`allocateWorkFilePath()`/
+     `allocateArcDirectory()`の参照先を`tempRootDirectory_`から
+     `workRootDirectory_`へ切り替え。`main()`側では
+     `pidTempDirectory`(`/tmp/.usilic.<pid>`)を起動時に**常に**
+     作成し、`workRootDirectory`には常にこれを渡す一方、
+     `tempRootDirectory`(ERROR/SHELL用)は従来通り引数の有無で
+     空文字列か`pidTempDirectory`かを切り替える。この結果、
+     引数付き起動では`tempRootDirectory_ == workRootDirectory_`
+     (同じPIDディレクトリを共有、従来通りの一体型)、引数無し起動
+     では`tempRootDirectory_`が`<homeDirectory>/.usilic`
+     (ERROR/SHELL、永続)、`workRootDirectory_`が`/tmp/.usilic.
+     <pid>`(WORK、使い捨て)という分離になる。終了直前
+     (`display.close()`/`keyInput.close()`の直後、`wantsExit()`に
+     よるループ脱出後の唯一の共通合流点)で
+     `std::filesystem::remove_all(pidTempDirectory)`を無条件に
+     1回呼ぶだけで両ケースを同時に満たせる設計にした
+     (引数付き起動では`pidTempDirectory`がERROR/SHELL/WORK/ARC
+     全てを内包しているためまとめて消え、引数無し起動では
+     `pidTempDirectory`はWORK/ARC専用のため`<homeDirectory>/
+     .usilic`配下のERROR/SHELLには一切触れない)。
+   - **検証**: `make test` 766/766件・18481アサーション全通過
+     (テストFixture自体は`tempRootDirectory`/`workRootDirectory`
+     両方とも省略のデフォルト構築のままのため、既存のWORK関連
+     doctest全件が引き続き`<homeDirectory>/.usilic/w.N`への解決を
+     確認しており、新規doctestの追加は不要と判断)。`make usilic`
+     クリーンビルド確認済み。PTY自動テストで2パターンを直接確認:
+     (1)`-c`引数付き起動→`^X^W`でw.1割り当て→`^X^C`+Enterで終了
+     →起動時に存在した`/tmp/.usilic.<pid>/`が終了後に消えている
+     こと・`<homeDirectory>/.usilic/`が空のまま(ERROR/SHELLが
+     一度もそこに作られていない)ことを確認。(2)引数無し起動、
+     事前に`<homeDirectory>/.usilic/error`・`shell`へダミー内容を
+     用意した状態で→`^X^W`→`^X^C`+Enterで終了→
+     `/tmp/.usilic.<pid>/`が終了後に消えていること・`error`/
+     `shell`の中身が変更されずそのまま残っていることを確認。
+
 

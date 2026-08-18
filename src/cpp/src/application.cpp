@@ -262,10 +262,12 @@ std::string resolveTempRoot(const std::string &homeDirectory, const std::string 
 
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
-                          std::string homeDirectory, std::string tempRootDirectory, std::string bootOptions)
+                          std::string homeDirectory, std::string tempRootDirectory, std::string workRootDirectory,
+                          std::string bootOptions)
     : display_(display),
       pathResolver_(homeDirectory),
       tempRootDirectory_(resolveTempRoot(homeDirectory, tempRootDirectory)),
+      workRootDirectory_(resolveTempRoot(homeDirectory, workRootDirectory)),
       bootOptions_(std::move(bootOptions)),
       errorLogPath_(tempRootDirectory_ + "/error"),
       logFilePath_(tempRootDirectory_ + "/shell"),
@@ -3149,13 +3151,13 @@ bool Application::shellInsertBufferContent() {
 // See allocateWorkFilePath()'s/allocateArcDirectory()'s own
 // declaration comments (application.hpp).
 std::string Application::allocateWorkFilePath() {
-  std::string path = tempRootDirectory_ + "/w." + std::to_string(++nextWorkFileNumber_);
+  std::string path = workRootDirectory_ + "/w." + std::to_string(++nextWorkFileNumber_);
   allocatedWorkFiles_.push_back(path);
   return path;
 }
 
 std::string Application::allocateArcDirectory() {
-  std::string path = tempRootDirectory_ + "/arc." + std::to_string(++nextArchiveNumber_);
+  std::string path = workRootDirectory_ + "/arc." + std::to_string(++nextArchiveNumber_);
   allocatedArcDirs_.push_back(path);
   return path;
 }
