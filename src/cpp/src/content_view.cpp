@@ -125,6 +125,23 @@ std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth)
   return text.substr(0, static_cast<std::size_t>(headEnd)) + kEllipsis + text.substr(static_cast<std::size_t>(tailStart));
 }
 
+// Sum of Utf8::display_width() across every character in `text` -- for
+// right-aligning an ALREADY width-truncated string (renderSplitModeLine()'s
+// own trailing2) to a real screen column, where byte length (text.size())
+// would under-shoot for any CJK content (see middleEllipsisTruncateByWidth()'s
+// own comment on the same byte-vs-width distinction).
+int totalDisplayWidth(const std::string &text) {
+  int width = 0;
+  int i = 0;
+  while (i < static_cast<int>(text.size())) {
+    int len = Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
+    len = std::min(len, static_cast<int>(text.size()) - i);
+    width += Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, len);
+    i += len;
+  }
+  return width;
+}
+
 }  // namespace
 
 ContentView::ContentView(Display &display) : display_(display) {}
@@ -1362,13 +1379,26 @@ void ContentView::renderModeLine() {
 // between the two, same convention as every other field pair in
 // renderModeLine()); name is drawn from column 0 and trailing2 from the
 // right edge, each independently Finder-style middle-ellipsis truncated
-// (middleEllipsisTruncate(), see its own comment) to whatever width is
-// actually left once the centered pair claims its own space -- unlike
-// fitModeLineFields()'s all-or-nothing drop, this guarantees SOME of
-// both name and trailing2 stays visible instead of one vanishing
-// entirely, and never drops `trailing` (the byte count) at all, which
-// is exactly what the old tiers did whenever name+trailing2 together
-// didn't fit (the report this exists for).
+// to whatever width is actually left once the centered pair claims its
+// own space -- unlike fitModeLineFields()'s all-or-nothing drop, this
+// guarantees SOME of both name and trailing2 stays visible instead of
+// one vanishing entirely, and never drops `trailing` (the byte count)
+// at all, which is exactly what the old tiers did whenever name+
+// trailing2 together didn't fit (the report this exists for).
+//
+// Uses middleEllipsisTruncateByWidth() (2026-08-20 fix, a real report
+// "モード名...が短め" -- a CJK-heavy name came back noticeably shorter
+// than its own leftBudget column count): leftBudget/rightBudget below
+// are genuine screen-COLUMN counts, but the original version of this
+// function truncated with the byte-based middleEllipsisTruncate() --
+// safe for withTruncatedFields()'s own callers (see that function's own
+// comment on why it stays byte-based), but WRONG here, where a 33-
+// column budget was being spent as if it were 33 BYTES, letting through
+// only ~11 CJK characters (3 bytes each) instead of the ~16 the real
+// column budget allows. This function never feeds its output back into
+// fitModeLineFields()'s own byte-length tiers (unlike withTruncatedFields()'s
+// callers) -- it draws directly with explicit column positions computed
+// right here -- so switching to the width-based sibling is safe.
 void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::string &positionText) {
   int modeLineRow = modeLineRow_.value_or(row0_ + height_);
   int cols = display_.columns();
@@ -1392,8 +1422,8 @@ void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::s
   int rightStart = centerStart + centerLen + 1;        // +1: the plain gap after the center block
   int rightBudget = std::max(0, cols - rightStart);
 
-  std::string name = middleEllipsisTruncate(fields.name, leftBudget);
-  std::string trailing2 = middleEllipsisTruncate(fields.trailing2, rightBudget);
+  std::string name = middleEllipsisTruncateByWidth(fields.name, leftBudget);
+  std::string trailing2 = middleEllipsisTruncateByWidth(fields.trailing2, rightBudget);
 
   if (!name.empty()) {
     display_.moveCursor(modeLineRow, 0);
@@ -1406,7 +1436,10 @@ void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::s
     drawSegment(fields.trailing);
   }
   if (!trailing2.empty()) {
-    int trailing2Start = std::max(0, cols - static_cast<int>(trailing2.size()));
+    // cols - display WIDTH (not byte length -- see this function's own
+    // comment) so a CJK-heavy trailing2 lands flush against the true
+    // right edge instead of stopping short by (bytes-width) columns.
+    int trailing2Start = std::max(0, cols - totalDisplayWidth(trailing2));
     display_.moveCursor(modeLineRow, trailing2Start);
     drawSegment(trailing2);
   }

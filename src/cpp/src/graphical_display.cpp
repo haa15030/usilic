@@ -573,6 +573,36 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   if (impl_->cursorRow < 0 || impl_->cursorRow >= impl_->rows) return;
   if (impl_->cursorCol < 0 || impl_->cursorCol >= impl_->columns) return;  // clip past the right edge
 
+  // Zero-width combining character (Utf8::display_width()'s own
+  // "combining characters (0幅)" case -- dakuten/handakuten marks
+  // U+3099/U+309A chief among them, common in macOS's own NFD-
+  // decomposed filenames, e.g. "デスクトップ" stored on disk as
+  // "テ"+U+3099+"スクトッフ"+U+309A+"...") -- 2026-08-20 fix, a real
+  // report + screenshot (=dl): "久々に-g起動したら重ね打ちじゃなく
+  // なってる", showing exactly this ("テ゛スクトッフ゜" instead of
+  // "デスクトップ" in a real directory listing). Every call site below
+  // used to unconditionally advance the cursor by `std::max(width, 1)`
+  // -- even a genuinely 0-width mark got its OWN fresh cell, so it drew
+  // as an independent, un-stacked glyph next to its base character
+  // instead of combining with it. Appending the mark's own UTF-8 bytes
+  // to the PREVIOUS cell's `glyph` string instead (without moving the
+  // cursor at all) lets SDL_ttf's own TTF_RenderUTF8_Blended() shape
+  // and render the full base+mark grapheme cluster as one glyph run,
+  // the same way any other text renderer composites a combining mark
+  // onto its base -- matching -c's own Terminal.app rendering, which
+  // already composited these correctly (confirmed via the same report's
+  // own side-by-side screenshot, =dm).
+  if (width == 0 && impl_->cursorCol > 0) {
+    int prevCol = impl_->cursorCol - 1;
+    // A wide (CJK) character's own continuation shadow cell carries no
+    // real glyph of its own (see the width==2 branch below) -- the
+    // actual glyph this mark should attach to is one column further
+    // back in that case.
+    if (impl_->cellAt(impl_->cursorRow, prevCol).continuation && prevCol > 0) prevCol--;
+    impl_->cellAt(impl_->cursorRow, prevCol).glyph += utf8Bytes;
+    return;
+  }
+
   Cell &cell = impl_->cellAt(impl_->cursorRow, impl_->cursorCol);
   cell.glyph = utf8Bytes;
   cell.bold = impl_->boldActive;
