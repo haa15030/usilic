@@ -2757,7 +2757,23 @@ bool Application::returnFromListBrowser() {
     // keeps resuming whatever was already typed, unaffected, since
     // that's a completely different scenario (recall while editing,
     // not "the list IS the entry point").
-    if (kind == PromptKind::GrepPattern && promptHistoryRecallIsDirectEntry_) {
+    // RecentFile/RecentDirectory (2026-08-18 fix, a direct user report +
+    // screenshots =cx/=cy): these two are ALWAYS directEntry (see
+    // startPromptHistoryRecall()'s own comment -- there's no separate
+    // "real ^R mid-typing recall" entry point for either), and unlike
+    // GrepPattern/CutPattern they're pure navigation with no "typed
+    // pattern to resume editing" concept at all, so reopening a blank
+    // activatePrompt() editor on ^G makes even less sense here than it
+    // did for GrepPattern -- it left the ^X^D/^X^F prompt's own "DIR"/
+    // "FILE" mode-line label and empty editable field drawn OVER the
+    // real DirectoryMode/FileMode content underneath (activeView().
+    // redraw() had already painted the correct screen, then
+    // activatePrompt() drew its own row 24 right on top of it), instead
+    // of the plain "(ls)"-showing screen the excursion actually started
+    // from ("(ls)から^X^Dしてるんで(ls)へ戻らないと"). Folded into the
+    // same early-return branch as GrepPattern's own identical fix.
+    if ((kind == PromptKind::GrepPattern || kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory) &&
+        promptHistoryRecallIsDirectEntry_) {
       promptHistoryRecallKind_ = std::nullopt;
       promptHistoryRecallIsDirectEntry_ = false;
       promptHistoryRecallText_.clear();
@@ -4704,6 +4720,26 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     case PromptKind::CutPattern: destinationMode = cutReturnMode_; break;
     case PromptKind::ManName: destinationMode = manReturnMode_; break;
     case PromptKind::LocateQuery: destinationMode = locateReturnMode_; break;
+    // RecentFile/RecentDirectory (2026-08-18 fix, =cx report -- "戻り値
+    // が惜しい"): unlike GrepPattern/CutPattern/ManName/LocateQuery,
+    // these two have no dedicated *ReturnMode_ of their own -- so
+    // destinationMode fell through to the `= currentMode_` default
+    // above. That's correct once real editing has started (currentMode_
+    // really is ListBrowser then, deliberately -- see this function's
+    // own callers), but refreshDirectEntryModeLine() calls this function
+    // WHILE STILL showing the read-only pre-typing candidate list, where
+    // currentMode_ is ALREADY ListBrowser (set by startPromptHistoryRecall()
+    // before its own refreshDirectEntryModeLine() call). previousModeName()
+    // has no case for ListBrowser (falls to its own `default: return ""`),
+    // so destinationDirectory came back empty and the whole trailing
+    // field's fill-to-edge box was drawn with no text in it at all.
+    // promptHistoryRecallReturnMode_ (set to currentMode_ BEFORE the
+    // switch to ListBrowser, see startPromptHistoryRecall()) is exactly
+    // the mode this prompt will actually return to, the same value
+    // returnFromListBrowser() itself already relies on -- reusing it here
+    // instead of hand-rolling a separate variable.
+    case PromptKind::RecentFile:
+    case PromptKind::RecentDirectory: destinationMode = promptHistoryRecallReturnMode_; break;
     default: break;
   }
   // 2026-08-18: a same-day attempt excluded RecentFile/RecentDirectory

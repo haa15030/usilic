@@ -5499,6 +5499,71 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      各区切りが列3・7・11でそれぞれ非反転であること、候補/入力
      テキスト部分(列12〜)が非反転であることをセル単位で確認した。
 
+352. **項目351の実機確認で新たに発覚した2件を修正: (1)未編集状態の
+    候補一覧で右端の「戻り先」表示欄が空欄になっていた(戻り値が
+    惜しい)、(2)`(ls)`から`^X^D`した直後に`^G`で戻ると`(ls)`画面
+    ではなく`^X^D`プロンプト自身の再表示になっていた**(=cx/=cy参照)
+   - **報告**: 「戻り値が惜しい=cx。さらに^Gで=cyへ戻るみたいだが
+     (ls)から^X^Dしてるんで(ls)へ戻らないと。」
+   - **(1)の原因**: `drawPromptLabel()`の右端「戻り先」フィールド
+     (`destinationDirectory`)は`previousModeName(destinationMode)`
+     から得ているが、`destinationMode`は`GrepPattern`/`CutPattern`/
+     `ManName`/`LocateQuery`にしか専用の`*ReturnMode_`が無く、
+     `RecentFile`/`RecentDirectory`はデフォルトの`= currentMode_`の
+     ままだった。ところが項目351で追加した`refreshDirectEntryModeLine()`
+     はこの関数を「未編集の候補一覧」表示時にも呼ぶ設計で、その時点
+     では`startPromptHistoryRecall()`が既に`currentMode_`を
+     `ListBrowser`へ切り替え済み。`previousModeName(ListBrowser)`は
+     どのcaseにも該当せず`default: return ""`で空文字列を返すため、
+     `destinationDirectory.empty()`が真になりフィールド自体の描画が
+     まるごとスキップされ、行全体を埋める反転表示の空欄だけが
+     残っていた。
+   - **(1)の修正**: `drawPromptLabel()`の`destinationMode`の
+     switchに`RecentFile`/`RecentDirectory`のcaseを追加し、
+     `promptHistoryRecallReturnMode_`(`startPromptHistoryRecall()`が
+     `currentMode_`を`ListBrowser`へ切り替える**前**に保存している、
+     `returnFromListBrowser()`自身も使っている「本当に戻るべき
+     モード」)を使うよう変更。
+   - **(2)の原因**: `returnFromListBrowser()`には既に
+     「`GrepPattern`かつ`directEntry`のときは`^G`で空の編集画面を
+     再度開いてはいけない(候補一覧そのものが「これはregexモード
+     です」という唯一の視覚的合図なので、それを経由せず再入力
+     できてしまうと合図が壊れる)」という2026-08-12の既存の分岐が
+     あったが、これが`GrepPattern`だけに限定されており
+     `RecentFile`/`RecentDirectory`は対象外だった。この2つは
+     `startPromptHistoryRecall()`のコメントにある通り「必ず
+     directEntry経由でしか到達しない、かつ`GrepPattern`/
+     `CutPattern`と違い『途中まで入力していたパターンに戻る』という
+     概念自体が無い純粋なナビゲーション」であり、GrepPatternより
+     さらに「空の編集画面を再度開く」意味が薄い。実際には一般分岐
+     (`activatePrompt(kind, text)`)へ落ち、`activeView().redraw()`で
+     一旦正しいDirectoryMode/FileModeの画面を描いた直後に
+     `activatePrompt()`自身が"DIR"/"FILE"ラベル+空の編集欄という
+     ^X^D/^X^F自身のモードライン一式を**その上から**再度描画して
+     おり、これが=cyで見えていた「`(ls)`ではない謎の画面」の正体
+     だった(バイト数・`(ls)`バッジ・`usilic v1.5b`等
+     `DirectoryMode`本来のモードラインフィールドが一切出ない
+     一方、右端には`previousModeName(Directory)`由来のパスだけが
+     出る、という組み合わせがまさにこの症状と一致)。
+   - **(2)の修正**: 既存の早期returnの条件を
+     `kind == PromptKind::GrepPattern && promptHistoryRecallIsDirectEntry_`
+     から
+     `(kind == PromptKind::GrepPattern || kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory) && promptHistoryRecallIsDirectEntry_`
+     に拡張し、`RecentFile`/`RecentDirectory`も同じ「プロンプトを
+     再度開かず`promptHistoryRecallReturnMode_`へ直接戻る」経路を
+     通るようにした。これにより`activeView().redraw()`が描いた
+     `DirectoryMode`/`FileMode`本来の画面がそのまま残り、`(ls)`
+     バッジも(項目自体のsearchAnnotation_が元から空なので)その
+     フォールバックとして自然に表示される。
+   - **検証**: `make test` 758/758件・18372アサーション全通過(既存
+     テストへの影響無し)。`make usilic`クリーンビルド確認済み。
+     PTY自動テスト(`$TERM=xterm-256color`、`-c`で実リポジトリを
+     起動)で、初期状態(`(ls)`表示、`01/22 TOP 1377 (ls)`+
+     `usilic v1.5b`)→`^X^D`(候補一覧、右端に
+     `...5030/git/usilic/`が正しく表示されることを確認、(1)の
+     修正確認)→`^G`(初期状態と完全に同一のバイト列/セル属性へ
+     戻ることを確認、(2)の修正確認)という実際の手順をセル単位で
+     再現した。
 
 ## 10. HISTORY / COMMAND(^R)
 
