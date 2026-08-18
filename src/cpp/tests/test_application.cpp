@@ -4725,10 +4725,18 @@ TEST_CASE_FIXTURE(Fixture, "^R (ToggleHistoryView): a non-consecutive revisit sh
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHistoryView): refused outside ListBrowser mode, matching "
-                           "m_list()'s own echo_mess(S_errf) for a context ^R doesn't apply to") {
+                           "m_list()'s own echo_mess(S_errf) for a context ^R doesn't apply to -- using "
+                           "Archive mode, since Directory/File now have their OWN dedicated ^R meaning (see "
+                           "the \"^R directory-name/file-name history\" tests)") {
   REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
   CHECK_FALSE(app.handleCommand(Command::ToggleHistoryView));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.currentMode() == ApplicationMode::Archive);
 }
 
 // -- ^R prompt-time history recall (MAN/LOCATE/FGREP/EGREP), ported
@@ -5009,10 +5017,57 @@ TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: ^G restores whatever had already
   CHECK(app.shell().commandLine().text() == "partial");
 }
 
-TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode") {
+TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode (using Archive mode, since plain "
+                           "Directory mode now has its OWN top-level ^R meaning -- see the dedicated "
+                           "\"^R directory-name/file-name history\" tests below)") {
   REQUIRE(app.start(path()));
-  CHECK_FALSE(app.feedByte(0x12, std::nullopt));  // top-level ^R (ToggleHistoryView) is ALSO a no-op here
+  int idx = indexOf("archive.tar");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
+  CHECK_FALSE(app.feedByte(0x12, std::nullopt));  // top-level ^R (ToggleHistoryView) is a no-op here
+  CHECK(app.currentMode() == ApplicationMode::Archive);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R directory-name/file-name history (2026-08-18 addition, a direct user request): "
+                           "plain ^R from ordinary Directory browsing opens the SAME DIR picker ^X^D does, and "
+                           "from ordinary File viewing opens the SAME FILE picker ^X^F does -- a genuinely NEW "
+                           "shortcut, not a reproduction of legacy's own dead-end bare-^R dispatch-table entry "
+                           "(see item 353's own investigation: that path opened a functionally useless empty "
+                           "\"HISTORY 0/0\" screen). Deliberately scoped to ONLY these two modes, unlike "
+                           "toggleListBrowserHistory()'s own separate, unrelated in-ListBrowser sorted<->"
+                           "chronological toggle (\"機能的にはDIR（FILE）とダブるけれども、どこからでもOKでは"
+                           "ない点が違う\")") {
+  REQUIRE(app.start(path()));
   CHECK(app.currentMode() == ApplicationMode::Directory);
+
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // plain ^R from Directory mode
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) == 0);
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G back out
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // plain ^R from File mode
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.activeContentView().modeLineText().rfind("FILE ", 0) == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^R directory-name/file-name history: excluded on the ^T banner screen -- a real "
+                           "file is regular reading material, the banner is a synthetic index screen this "
+                           "shortcut doesn't apply to (bannerFilePath()'s own comment)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK_FALSE(app.feedByte(0x12, std::nullopt));  // falls through to toggleListBrowserHistory()'s own no-op
+  CHECK(app.currentMode() == ApplicationMode::File);
 }
 
 // -- ^R at the PROGRAM prompt (integration point 4 of the ^R design

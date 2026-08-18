@@ -2009,7 +2009,36 @@ bool Application::handleCommand(Command command) {
       return startRegexPromptList(PromptKind::RecentDirectory);
     case Command::StartCommandHistory:
       return startListBrowser(RingCategory::ShellCommand);
+    // Plain ^R from ordinary Directory/File browsing (2026-08-18
+    // addition, a direct user request): legacy's own bare ^R (M_hist)
+    // is dispatched from literally any mode, but was empirically found
+    // (a real freshly-built legacy binary, see item 353's own
+    // investigation) to open a functionally useless "HISTORY 0/0 END
+    // No string" screen when pressed cold from plain "(ls)" browsing --
+    // the user's own theory: ^R was FIRST implemented for COMMAND
+    // (SHELL execution history) only, and never rewired once DIR/FILE/
+    // FGREP/etc were added later as their own dedicated entry points
+    // (^X^D/^X^F/^J^S/...). Rather than reproduce that dead-end
+    // faithfully, this is a genuinely NEW directory-name/file-name
+    // history shortcut: plain ^R from Directory mode opens the SAME
+    // DIR picker ^X^D does (startRegexPromptList(RecentDirectory)),
+    // and from File mode (excluding the ^T banner screen -- see
+    // bannerFilePath()'s own comment; a real user file is regular
+    // reading material, the banner is a synthetic index screen, not
+    // something "file name history" makes sense for) opens the SAME
+    // FILE picker ^X^F does. Deliberately scoped to ONLY these two
+    // modes -- not "reachable from anywhere" the way legacy's own
+    // (non-functional) dispatch-table entry technically was ("機能的には
+    // DIR（FILE）とダブるけれども、どこからでもOKではない点が違う").
+    // Every other mode (GREP/CUT/MAN/LOCATE/SHELL/...) falls through to
+    // toggleListBrowserHistory()'s own existing behavior unchanged (a
+    // real sorted<->chronological toggle inside an already-open
+    // ListBrowser screen, a no-op everywhere else).
     case Command::ToggleHistoryView:
+      if (currentMode_ == ApplicationMode::Directory) return startRegexPromptList(PromptKind::RecentDirectory);
+      if (currentMode_ == ApplicationMode::File && fileMode_.currentFile() != bannerFilePath()) {
+        return startRegexPromptList(PromptKind::RecentFile);
+      }
       return toggleListBrowserHistory();
     case Command::StartEdit:
       return executeEdit();
