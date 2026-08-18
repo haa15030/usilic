@@ -67,12 +67,17 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
   // "(ls)" convention) and the path (trailing3, see its own comment)
   // into two SEPARATE fields gives them a real plain-mode gap via
   // renderModeLine()'s own existing per-field rendering, no new
-  // rendering logic needed. fillTrailingToEdge is now false (was true
-  // under the old single-string design specifically to fill the row
-  // edge-to-edge) -- with trailing3 now the actual last-drawn field and
-  // not itself supporting edge-fill (see its own comment), leaving this
-  // true would have padded trailing2 ("(tar)") all the way to the row's
-  // right edge and pushed trailing3 (the path) off-screen.
+  // rendering logic needed.
+  //
+  // fillTrailingToEdge (2026-08-19, twice same day): initially set to
+  // false here, since at THAT point trailing3 didn't support edge-fill
+  // yet and leaving this true would have padded trailing2 ("(tar)")
+  // all the way to the row's right edge, pushing trailing3 (the path)
+  // off-screen. A real follow-up report (=dj: "戻り値が右端まで埋まっ
+  // てない") wanted the path itself filled to the edge, same as every
+  // other mode's own last trailing field -- trailing3 now honors
+  // fillTrailingToEdge too (see its own renderModeLine() comment), so
+  // this is back to true.
   //
   // archiveCommand_ (the actually-configured program, e.g.
   // "(tar)"/"(unzip)"/"(lha)"/"(rpm)", set at loadArchive() time, see
@@ -86,7 +91,7 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
     if (currentArchive_.empty()) return {};
     std::string badge = archiveCommand_.empty() ? "" : "(" + archiveCommand_ + ")";
     ContentView::ModeLineFields fields{"ARC", std::to_string(view_.totalByteCount()),
-                                        /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
+                                        /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/badge};
     fields.trailing3 = currentArchive_;
     return fields;

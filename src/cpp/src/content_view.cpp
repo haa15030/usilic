@@ -1177,7 +1177,13 @@ void ContentView::renderModeLine() {
     // trailing2 exists (padding it too would erase the plain gap
     // between the two that trailing2 exists to create in the first
     // place).
-    if (fields.fillTrailingToEdge && fields.trailing2.empty()) {
+    // 2026-08-19 fix: also defers to trailing3 (see its own comment)
+    // when present, same reasoning as trailing2's own identical defer
+    // just below -- unreachable for ArchiveMode today (trailing2 and
+    // trailing3 are always set together there) but kept consistent so
+    // a future trailing2-less, trailing3-only provider doesn't silently
+    // lose its own edge-fill to `trailing` eating the whole row first.
+    if (fields.fillTrailingToEdge && fields.trailing2.empty() && fields.trailing3.empty()) {
       // Ported from disp_window()'s own `for (...) prev[i] = ' '`
       // loop: pad with spaces (still inside this field's own standout
       // run) so the highlight reaches the screen's right edge instead
@@ -1282,7 +1288,17 @@ void ContentView::renderModeLine() {
     } else {
       display_.putChar(' ');
       drawnLen += 1;
-      if (fields.fillTrailingToEdge) {
+      // 2026-08-19 fix, same shape as trailing's own "only pad if
+      // trailing2 is ALSO empty" gate just above: trailing3 (see its
+      // own comment) can now exist as a genuine field AFTER trailing2,
+      // so edge-padding here defers to IT when present -- otherwise
+      // trailing2 (e.g. ArchiveMode's own "(tar)" badge) silently ate
+      // the ENTIRE rest of the row, leaving no room for trailing3 (the
+      // path) to ever be drawn at all (a real regression caught by this
+      // file's own doctest: modeLineText() still reported the path via
+      // composeModeLineRow()'s unconditional append, but the real
+      // renderModeLine() row never showed it).
+      if (fields.fillTrailingToEdge && fields.trailing3.empty()) {
         int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
         if (remaining > 0) trailing2 += std::string(remaining, ' ');
       }
@@ -1290,19 +1306,28 @@ void ContentView::renderModeLine() {
       drawnLen += static_cast<int>(trailing2.size());
     }
   }
-  // See ModeLineFields::trailing3's own comment. Deliberately simple
-  // compared to trailing/trailing2 above: no right-justify/edge-fill/
-  // truncation options, just "show it after its own plain gap if there's
-  // room, otherwise drop it" -- ArchiveMode's own badge+path is expected
-  // to fit in real terminal widths, and this exists purely to give that
-  // pair a genuine box break, not to solve narrow-terminal truncation.
+  // See ModeLineFields::trailing3's own comment. No right-justify/
+  // truncation options (unlike trailing/trailing2 above) -- just "show
+  // it after its own plain gap if there's room, otherwise drop it".
+  // fillTrailingToEdge IS honored here though (2026-08-19 follow-up, a
+  // real report =dj: "戻り値が右端まで埋まってない" -- trailing3 is now
+  // the actual LAST field drawn for ArchiveMode's own listing, same
+  // "pad the row to the edge" treatment trailing/trailing2 already give
+  // whichever of THEM is last when trailing3 is empty; same cols-1 cap
+  // as those two, for the identical auto-wrap-past-the-true-last-column
+  // reason documented on trailing's own fillTrailingToEdge block above).
   if (!fields.trailing3.empty()) {
-    int candidateLen = 1 + static_cast<int>(fields.trailing3.size());
+    std::string trailing3 = fields.trailing3;
+    int candidateLen = 1 + static_cast<int>(trailing3.size());
     if (cols > 0 && drawnLen + candidateLen <= cols) {
       display_.putChar(' ');
       drawnLen += 1;
-      drawSegment(fields.trailing3);
-      drawnLen += static_cast<int>(fields.trailing3.size());
+      if (fields.fillTrailingToEdge) {
+        int remaining = (cols - 1) - drawnLen - static_cast<int>(trailing3.size());
+        if (remaining > 0) trailing3 += std::string(remaining, ' ');
+      }
+      drawSegment(trailing3);
+      drawnLen += static_cast<int>(trailing3.size());
     }
   }
 

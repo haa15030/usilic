@@ -1,5 +1,6 @@
 #include "archive_reader.hpp"
 
+#include <algorithm>
 #include <cctype>
 
 namespace fm {
@@ -163,40 +164,6 @@ long parseTarOctalField(const unsigned char *p, int len) {
   return v;
 }
 
-// Extracts the "path" value out of a PAX extended-header data block --
-// a sequence of "<byteLen> <key>=<value>\n" records (byteLen includes
-// itself, the space, key, "=", value, and the trailing "\n"); every
-// OTHER key this doesn't care about is simply skipped over via its own
-// declared length. See findTarHeader()'s own comment for why this
-// exists at all.
-std::string extractPaxPath(const unsigned char *data, std::size_t dataSize) {
-  std::size_t i = 0;
-  while (i < dataSize) {
-    std::size_t j = i;
-    long recLen = 0;
-    while (j < dataSize && data[j] >= '0' && data[j] <= '9') {
-      recLen = recLen * 10 + (data[j] - '0');
-      j++;
-    }
-    if (j >= dataSize || data[j] != ' ' || recLen <= 0) break;
-    std::size_t recEnd = i + static_cast<std::size_t>(recLen);
-    if (recEnd > dataSize) break;
-    std::size_t eq = j + 1;
-    while (eq < recEnd && data[eq] != '=') eq++;
-    if (eq < recEnd) {
-      std::string key(reinterpret_cast<const char *>(data + (j + 1)), eq - (j + 1));
-      if (key == "path") {
-        std::size_t valStart = eq + 1;
-        std::size_t valEnd = recEnd;
-        if (valEnd > valStart && data[valEnd - 1] == '\n') valEnd--;
-        return std::string(reinterpret_cast<const char *>(data + valStart), valEnd - valStart);
-      }
-    }
-    i = recEnd;
-  }
-  return "";
-}
-
 // Ported from find_tar_header(): tar headers are always 512-byte
 // aligned from the start of the archive, so only alignment-matching
 // positions are checked -- otherwise a hidden entry whose header text
@@ -205,45 +172,82 @@ std::string extractPaxPath(const unsigned char *data, std::size_t dataSize) {
 // header in the byte stream) can be mistaken for it. See CLAUDE.md
 // history item 4 for the original bug this fixed.
 //
-// PAX extended headers (2026-08-19 fix, a direct user report: opening
-// any file with a long/Unicode name inside a tar produced completely
-// blank content, "何も無し") -- classic ustar's own `name` field is
-// only 100 bytes, nowhere near enough for a Japanese filename with a
-// "utf8/" path prefix (this port's own real reproduction archive has
-// entries whose name alone is 100-160+ UTF-8 bytes). macOS's bsdtar
-// (this system's own `tar`) stores anything past that limit in a
-// SEPARATE PAX extended-header record (typeflag 'x') immediately
-// BEFORE the real header, holding the full name as a "path=<value>"
-// line in its own data block -- the real header that follows still has
-// a name field, but it's a truncated/placeholder value, never the
-// genuine full name this function is asked to match against. The
-// pre-existing raw byte-for-byte comparison below only ever checked
-// classic short names directly in a header's own name field, so it
-// silently walked every entry with a long name all the way to `end`
-// without ever finding it, leaving contentOffset pointed at garbage
-// (empty/blank content, no crash). Checked FIRST at every candidate
-// position: if this 512-aligned block is itself a PAX extended header
-// whose OWN "path=" value matches `name`, the REAL header is exactly
-// the next 512-aligned position after its own data (computed from the
-// PAX record's own declared size, offset 124 -- same octal field every
-// tar header uses for size) -- return THAT position directly, since
-// that's what locateContent()'s own `cp += 512` (to reach content)
-// then correctly lands on.
-const unsigned char *findTarHeader(const unsigned char *cp, const unsigned char *base,
-                                    const unsigned char *end, const std::string &name) {
+// 2026-08-19 REDESIGN (report =dj/=dk: "サイズ111...以外内容が表示
+// されない" -- every entry EXCEPT the one whose name happens to contain
+// no dakuten/handakuten kana came back blank). The PREVIOUS version of
+// this function (added the same day, for a different report -- "何も
+// 無し", PAX 100-byte name overflow) matched candidate headers by
+// comparing their OWN name (classic field, or a PAX record's "path="
+// value) byte-for-byte against `entries_[i].name`. That name comes from
+// TarReader::parseListing()'s own text-based parse of `tar tvf`'s
+// STDOUT -- and on macOS, `tar tvf` silently re-encodes CJK dakuten/
+// handakuten characters (e.g. "デ"/"が") from the archive's own
+// precomposed NFC form (what's actually stored in the PAX "path="
+// record's raw bytes) into DECOMPOSED NFD form for its own human-
+// readable listing output (base kana codepoint + a separate combining
+// U+3099/U+309A mark, 3 bytes longer per such character than the NFC
+// original). Confirmed directly: dumping the raw PAX bytes for
+// "...データセンター建設が争点に..." showed "デ"=e3 83 87 (NFC, one
+// codepoint) and "が"=e3 81 8c (NFC) -- while `tar tvf`'s own stdout
+// for the exact same entry showed "テ"+U+3099 and "か"+U+3099 (NFD,
+// two codepoints each). A name with ZERO such characters (this
+// report's one working entry, "...ウクライナを支える...") round-trips
+// identically either way, which is why only it worked.
+//
+// Rather than pull in a Unicode normalization library just to reconcile
+// two representations of the same name, this drops name-matching
+// (and PAX path extraction) entirely: `tar tvf`'s own listing order is
+// the archive's real physical order (that's what "listing an archive"
+// means), and the ONLY entries missing from it are exactly these "._"
+// AppleDouble sidecars -- reliably identifiable by their own literal
+// ASCII ".", "_" prefix bytes regardless of anything Unicode (checked
+// on the REAL header, i.e. after resolving any PAX record in front of
+// it, since bsdtar always keeps the true "._"-prefixed start of even a
+// PAX-overflowed name in the header's own truncated/placeholder name
+// field). So this now just walks forward header by header, skipping
+// PAX records (jumping straight past their own declared data length)
+// and any resulting real header whose name starts with "._", and
+// returns the position of the first one that ISN'T a sidecar --
+// entries_ and the raw archive agree on order, so that's guaranteed to
+// be the entry this call was actually asked to find.
+// Whether a real header's own classic (100-byte, NUL-terminated) name
+// field is an AppleDouble sidecar -- i.e. its BASENAME, not necessarily
+// the field's own first two bytes, starts with "._". Two shapes were
+// both observed directly in real archives: a short name that never
+// needed PAX overflow keeps its full "dir/._name" path in the classic
+// field (e.g. this port's own synthetic test fixture's "src/._world.txt"),
+// while a long name that DID overflow into a PAX record had bsdtar's
+// own placeholder classic-field value drop the leading directory
+// component entirely, leaving just "._<truncated name>" with no prefix
+// at all (this port's own real utf8.tar reproduction archive). Scanning
+// for the LAST '/' within the field handles both: no '/' at all is a
+// no-op (the whole field is already the basename).
+bool isSidecarHeader(const unsigned char *header, const unsigned char *end) {
+  const unsigned char *limit = std::min(header + 100, end);
+  const unsigned char *nameEnd = header;
+  while (nameEnd < limit && *nameEnd != '\0') nameEnd++;
+  const unsigned char *base = header;
+  for (const unsigned char *q = header; q < nameEnd; q++) {
+    if (*q == '/') base = q + 1;
+  }
+  return base + 2 <= nameEnd && base[0] == '.' && base[1] == '_';
+}
+
+const unsigned char *findTarHeader(const unsigned char *cp, const unsigned char *base, const unsigned char *end) {
   const unsigned char *p = base + (((cp - base) + 511) & ~511);
-  for (; p < end; p += 512) {
+  while (p < end) {
+    const unsigned char *header = p;
     if (p + 157 <= end && (p[156] == 'x' || p[156] == 'X')) {
       long paxSize = parseTarOctalField(p + 124, 12);
       const unsigned char *paxData = p + 512;
-      if (paxSize > 0 && paxData + paxSize <= end) {
-        if (extractPaxPath(paxData, static_cast<std::size_t>(paxSize)) == name) {
-          std::size_t dataBlocks = (static_cast<std::size_t>(paxSize) + 511) / 512;
-          return paxData + dataBlocks * 512;
-        }
-      }
+      header = (paxSize > 0 && paxData + paxSize <= end)
+                   ? paxData + ((static_cast<std::size_t>(paxSize) + 511) / 512) * 512
+                   : p + 512;  // malformed PAX record -- best effort, just move past it
     }
-    if (std::string(reinterpret_cast<const char *>(p), name.size()) == name) return p;
+    if (header >= end || !isSidecarHeader(header, end)) return header;
+    long entrySize = parseTarOctalField(header + 124, 12);
+    std::size_t entryBlocks = 1 + (static_cast<std::size_t>(std::max<long>(0, entrySize)) + 511) / 512;
+    p = header + entryBlocks * 512;
   }
   return end;
 }
@@ -255,7 +259,7 @@ void TarReader::locateContent(const unsigned char *data, std::size_t size,
   const unsigned char *cp = data;
 
   for (auto &entry : entries) {
-    if (cp < end) cp = findTarHeader(cp, data, end, entry.name);
+    if (cp < end) cp = findTarHeader(cp, data, end);
     cp += 512;
     if (cp > end) cp = end;
     entry.contentOffset = cp - data;
