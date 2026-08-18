@@ -1417,8 +1417,11 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W (SHELL: insert buffer content) 
   // that pressing ^J^W is interpreted as a command, not as two characters
   // typed into the pattern.
   CHECK(app.currentMode() == ApplicationMode::Shell);
-  std::string wPath = (root / ".usilic" / "w.1").string();
-  CHECK(app.shell().commandLine().text() == "cat " + wPath);
+  // 2026-08-18 REDESIGN: no longer w.N -- see shellInsertBufferContent()'s
+  // own comment. Directory mode's own current directory's basename
+  // (the Fixture's own temp root dir's name here).
+  std::string savePath = (root / ".usilic" / root.filename()).string();
+  CHECK(app.shell().commandLine().text() == "cat " + savePath);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W also works from CUT's plain prompt (2026-08-12 fix, same "
@@ -3096,10 +3099,16 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertName (^Jw, K-63): starts Shell and PRE-FI
     return;
   }
   CHECK(app.currentMode() == ApplicationMode::Shell);
-  CHECK(app.shell().commandLine().text() == "echo plain.txt");  // NOT submitted
+  // FULL path, not the bare entry name (2026-08-18 fix, a direct user
+  // report: SHELL's own current directory isn't guaranteed to match
+  // DirectoryMode's -- see shellInsertName()'s own comment).
+  CHECK(app.shell().commandLine().text() == "echo " + (root / "plain.txt").string());  // NOT submitted
 }
 
-TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W, K-64): writes the buffer then PRE-FILLS cat <file>") {
+TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W, K-64): writes the buffer then PRE-FILLS cat <file> "
+                           "(2026-08-18 REDESIGN: saves under <homeDirectory>/.usilic/<mode name> instead of "
+                           "a numbered w.N -- a direct user request to eliminate w.N usage from ^J^W entirely, "
+                           "K-17/saveBufferToFile() remains the one remaining w.N writer)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
   bool ok = app.feedByte(0x17, std::nullopt);  // ^W
@@ -3108,10 +3117,13 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W, K-64): writes the bu
     return;
   }
   CHECK(app.currentMode() == ApplicationMode::Shell);
-  std::string wPath = (root / ".usilic" / "w.1").string();
-  CHECK(app.shell().commandLine().text() == "cat " + wPath);
+  // Directory mode's own current directory's basename (the Fixture's
+  // own temp root dir's name here) -- see shellInsertBufferContent()'s
+  // own comment for why "usilic"/"CLAUDE.md"-style basenames, not w.N.
+  std::string savePath = (root / ".usilic" / root.filename()).string();
+  CHECK(app.shell().commandLine().text() == "cat " + savePath);
 
-  std::ifstream in(wPath);
+  std::ifstream in(savePath);
   REQUIRE(in.good());
   std::string firstLine;
   std::getline(in, firstLine);
@@ -3123,7 +3135,12 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W) also works from WITH
                            "legacy found ^J^W became literal \"JW\" text in the edited pattern instead, "
                            "since feedRegexListByte() didn't know leader sequences exist -- matches key.c's "
                            "own T_input-vs-list-navigation distinction: leader bytes are commands everywhere "
-                           "except while actually editing text)") {
+                           "except while actually editing text). Still uses the w.N fallback (2026-08-18 "
+                           "REDESIGN, see shellInsertBufferContent()'s own comment) -- ListBrowser has no "
+                           "established \"mode name\" concept the way Directory/File now do, so this scenario "
+                           "keeps the old behavior rather than becoming a silent no-op and breaking the "
+                           "ensureShellActive() regression test right above, which relies on ^J^W reaching "
+                           "Shell from exactly this same context") {
   REQUIRE(app.start(path()));
   history.pushRecent(RingCategory::RecentEgrepPattern, "one");
   history.pushRecent(RingCategory::RecentEgrepPattern, "two");

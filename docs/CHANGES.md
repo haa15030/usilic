@@ -8186,6 +8186,61 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      設計を実装する際は、この確定行側の太字情報の持たせ方も
      あわせて設計する必要がある。
 
+361. **K-63(^Jw)を相対名からフルパスへ変更、K-64(^J^W)をw.N不使用の
+    新設計(`<homeDirectory>/.usilic/<モード名>`)へ再設計**
+   - **報告**: 「旧の^Jwは現在画面のモード名をw.Nへ書き込んで
+     「echo `cat<path>`」なんだが(echoをlessに変更するとlessで
+     表示)、新では「echo ./」とか「echo CLAUDE.md」とかになる。
+     w.Nは経由しなくてもそれはそれでいい(SHELLのカレント
+     ディレクトリが(ls)のそれとは違う場合もあるので「./」
+     「CLAUDE.md」のフルパスへの変更は必要)。そこで^J^Wもw.Nの
+     使用を無くしたい。ここからは新設だが、^J^Wで現在表示中の
+     内容を~/.usilic/モード名(/Users/haa15030/git/usilic/なら
+     usilic、/Users/haa15030/git/usilic/CLAUDE.mdならCLAUDE.md)
+     で保存できるようにしてほしい。CP/MV/RMでもw....は使っていた
+     と思うがそれはあとでいいのでよろしく。」(CP/MV/RM側の
+     w.N使用は今回スコープ外、ユーザー自身の明示的な保留指示に
+     従い未対応のまま)
+   - **K-63(^Jw)の修正**: `shellInsertName()`が`entry->name`
+     (Directory modeの選択エントリの素の名前、自己エントリ`"./"`
+     や`"CLAUDE.md"`等相対名のみ)または`path.filename()`(File
+     modeの現在ファイルのbasenameのみ)を使っていたのを、それぞれ
+     `directoryMode_.currentDirectory() + entry->name`(自己
+     エントリ`"./"`のときは冗長な`"/./"`を避けて
+     `currentDirectory()`のみ)、`fileMode_.currentFile()`(既に
+     フルパス)に変更。
+   - **K-64(^J^W)の再設計**: `shellInsertBufferContent()`で、
+     `currentMode_`がDirectoryのときは現在ディレクトリ自身の
+     basename(末尾`/`を落としてから`std::filesystem::path::
+     filename()`)、Fileのときは現在ファイルのbasenameを
+     `modeName`として算出し、非空ならw.Nを一切使わず
+     `<homeDirectory>/.usilic/<modeName>`(`usilicrcPath_`の
+     親ディレクトリを流用、`bannerFilePath()`と同じ発想)へ
+     現在のバッファ内容を保存、`"cat <path>"`を生成するよう変更。
+     Directory/File以外のモード(Grep/Cut/Man/LOCATE/ARC/SHELL/
+     DU/ListBrowser/KEY)では`modeName`が算出できず空になるため、
+     この場合のみ従来通りw.N(`allocateWorkFilePath()`)への
+     フォールバックを維持した――K-63と違い、K-64は`^J^S`/`^J^C`
+     候補一覧からSHELLへ抜ける唯一の経路として既存の複数の
+     doctest(候補一覧内での`promptHistoryRecallKind_`残留バグの
+     再現手順そのもの)が依存しており、無条件でno-opにすると
+     既存の正当な回帰テストを静かに壊すと判明したため、あくまで
+     Directory/Fileという「モード名を持つ2モード」限定の変更と
+     した。K-63側の「他モード未対応」というコメントと同じ
+     スコープの持たせ方に揃えている。
+   - **検証**: `make test` 766/766件・18483アサーション全通過
+     (既存の関連doctest数件を新フルパス/新保存先へ更新、
+     ^J^S候補一覧経由のw.Nフォールバックを検証するdoctestは
+     変更無しでそのまま通過することを確認)。`make usilic`
+     クリーンビルド確認済み。PTY自動テストで、Directory modeの
+     自己エントリ("./")で`^Jw`→`echo /Users/haa15030/git/usilic/`
+     (フルパス、末尾`/./`無し)、別エントリ(.DS_Store)で`^Jw`→
+     `echo /Users/haa15030/git/usilic/.DS_Store`、Directory mode
+     で`^J^W`→`cat <homeDir>/.usilic/usilic`が生成され、実際に
+     `<homeDir>/.usilic/`配下に`usilic`という名前のファイルが
+     作成されて`w.N`が一切作られないことを、それぞれ生バイト列と
+     ファイルシステムの両方で確認した。
+
 ## 13. LIST(TAB補完)
 
 12. **2026-07-19: TAB補完・長い日本語行での横スクロール時のUTF-8破損を

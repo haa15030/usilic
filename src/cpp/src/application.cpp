@@ -3103,15 +3103,27 @@ bool Application::shellRunLsL() {
 // covered yet (a real "current access name" tracked generically
 // across every mode, matching legacy's own ap->name, doesn't exist
 // in this port).
+//
+// FULL path, not the bare entry/file name (2026-08-18 fix, a direct
+// user report: "新では「echo ./」とか「echo CLAUDE.md」とかになる...
+// SHELLのカレントディレクトリが(ls)のそれとは違う場合もあるので
+// 「./」「CLAUDE.md」のフルパスへの変更は必要"): SHELL's own current
+// directory isn't guaranteed to match DirectoryMode's/FileMode's own
+// (e.g. after a `cd` typed directly into SHELL), so a bare relative
+// name inserted there can resolve against the WRONG directory or fail
+// outright. Directory mode's own self entry ("./") is special-cased to
+// just the directory path itself (dropping the redundant "./" --
+// concatenating it as-is would still work, `cat`/`echo` handle a
+// trailing "/./" fine, but it reads oddly).
 bool Application::shellInsertName() {
   if (shell_.busy()) return false;
   std::string name;
   if (currentMode_ == ApplicationMode::Directory) {
     const DirectoryEntry *entry = directoryMode_.selectedEntry();
-    if (entry) name = entry->name;
+    if (entry) name = (entry->name == "./") ? directoryMode_.currentDirectory()
+                                             : directoryMode_.currentDirectory() + entry->name;
   } else if (currentMode_ == ApplicationMode::File || shellReturnMode_ == ApplicationMode::File) {
-    std::filesystem::path path(fileMode_.currentFile());
-    name = path.filename().string();
+    name = fileMode_.currentFile();  // already a full path
   }
   if (name.empty()) return false;
   if (!ensureShellActive()) return false;
@@ -3120,30 +3132,60 @@ bool Application::shellInsertName() {
   return true;
 }
 
-// K-64 (^J^W, M_w2): ported from menu.c's own m_w() M_w2 case --
-// unlike K-63, this genuinely needs a real file (`cat` has no way to
-// display in-memory content otherwise). Unlike K-17 (saveBufferToFile()),
-// this always allocates a FRESH w.N (2026-08-18: a direct choice --
-// K-17 is an "append across multiple presses" accumulator, K-64 is a
-// one-shot "snapshot this buffer for SHELL to `cat`" action, so each
-// press gets its own numbered slot rather than truncating/clobbering
-// whatever K-17 may already have been accumulating) -- and that new
-// number becomes the current one for any LATER K-17 press to continue
-// appending to, matching legacy's own single shared wFilePath_ (both
-// K-17/K-64 always agreed on "the" current file; this just adds
-// periodic renumbering on top). Writes activeView()'s CURRENT lines
-// (the view active BEFORE switching to Shell mode, so this must run
-// before ensureShellActive() changes currentMode_).
+// K-64 (^J^W, M_w2): 2026-08-18 REDESIGN, a direct user request -- for
+// Directory/File specifically, no longer allocates a numbered w.N
+// under workRootDirectory_ at all. Instead saves under
+// `<homeDirectory>/.usilic/<name>`, where `<name>` is the CURRENT
+// mode's own basename -- DirectoryMode's own current directory's
+// basename (e.g. ".../git/usilic/" -> "usilic") or FileMode's own
+// current file's basename (e.g. ".../CLAUDE.md" -> "CLAUDE.md") --
+// overwriting on every press rather than accumulating numbered slots,
+// since the point is now "a persistent, human-readable snapshot of
+// THIS mode", not a disposable scratch buffer.
+//
+// w.N fallback for every OTHER mode (2026-08-18, kept deliberately):
+// Grep/Cut/CutContent/Man/Locate/Archive/ArchiveContent/Shell/Du/
+// ListBrowser/Key have no established "mode name" concept the way
+// Directory/File now do (matching shellInsertName()'s -- K-63's --
+// own identical, already-accepted "other modes aren't covered yet"
+// limitation right above) -- but UNLIKE K-63 (a convenience insert
+// with no other way to reach the same effect), this key is also the
+// only way several existing, already-fixed regressions reach Shell
+// mode in the first place (e.g. the ensureShellActive() test right
+// below this one: "start, ^J^S, ^J^W, run a shell command..." reached
+// straight from the ^J^S/^J^C candidate list). Making it a silent
+// no-op there would have quietly broken that reproduction path rather
+// than just "not modernizing" it, so it keeps working exactly as
+// before for every mode besides Directory/File.
+//
+// Writes activeView()'s CURRENT lines (the view active BEFORE
+// switching to Shell mode, so this must run before ensureShellActive()
+// changes currentMode_), matching the previous version's own identical
+// ordering.
 bool Application::shellInsertBufferContent() {
   if (shell_.busy()) return false;
+  std::string modeName;
+  if (currentMode_ == ApplicationMode::Directory) {
+    std::string dir = directoryMode_.currentDirectory();
+    if (!dir.empty() && dir.back() == '/') dir.pop_back();  // filename() of a "/"-terminated path is empty otherwise
+    modeName = std::filesystem::path(dir).filename().string();
+  } else if (currentMode_ == ApplicationMode::File) {
+    modeName = std::filesystem::path(fileMode_.currentFile()).filename().string();
+  }
   ContentView &source = activeView();
-  currentWorkFilePath_ = allocateWorkFilePath();
-  std::ofstream out(currentWorkFilePath_, std::ios::trunc);
+  std::string savePath;
+  if (!modeName.empty()) {
+    savePath = std::filesystem::path(usilicrcPath_).parent_path().string() + "/" + modeName;
+  } else {
+    currentWorkFilePath_ = allocateWorkFilePath();
+    savePath = currentWorkFilePath_;
+  }
+  std::ofstream out(savePath, std::ios::trunc);
   if (!out) return false;
   for (const auto &line : source.lines()) out << line.text << "\n";
   out.close();
   if (!ensureShellActive()) return false;
-  shell_.commandLine().setText("cat " + currentWorkFilePath_);
+  shell_.commandLine().setText("cat " + savePath);
   shell_.commandLine().redraw();
   return true;
 }
