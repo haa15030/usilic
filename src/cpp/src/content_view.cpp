@@ -26,20 +26,65 @@ namespace {
 // a long prefix (the original motivating case) while looking visually
 // centered, matching legacy's own equivalent fix in alloc.c's
 // alloc_str()/alloc_pp() (same day, same "..." near the middle request).
-// 2026-08-19 fix, a direct user report (ARC's own content listing:
-// "内容一覧は^Olでも2/3くらいまでしか表示されていないので右端まで
-// よろしく") -- this used to budget in raw BYTES (matching renderLine()'s
-// own per-byte `col`, see its own comment at the call site below,
-// which this fix also updates in lockstep). For CJK-heavy text (a
-// 3-byte UTF-8 character is only 2 DISPLAY columns wide), a byte
-// budget is up to 3x stingier than the real available screen width --
-// a Japanese filename filled barely half the terminal before hitting
-// "..." elision, leaving the right half of the row blank. `maxWidth`
-// is now a real display-column budget: boundaries are still found via
-// Utf8::sequence_length() (never splits a multi-byte character), but
-// head/tail are now accumulated by Utf8::display_width() per character
-// instead of raw byte length.
-std::string middleEllipsisTruncate(const std::string &text, int maxWidth) {
+std::string middleEllipsisTruncate(const std::string &text, int maxBytes) {
+  static const std::string kEllipsis = "...";
+  int budget = maxBytes - static_cast<int>(kEllipsis.size());
+  if (budget <= 0) return text.substr(0, static_cast<std::size_t>(std::max(0, maxBytes)));
+
+  std::vector<int> boundaries;  // character-start byte offsets, text.size() itself included as the final one
+  boundaries.push_back(0);
+  int i = 0;
+  while (i < static_cast<int>(text.size())) {
+    i += Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
+    boundaries.push_back(std::min(i, static_cast<int>(text.size())));
+  }
+
+  int headBudget = budget / 2;
+  int tailBudget = budget - headBudget;
+
+  int headEnd = 0;
+  for (int b : boundaries) {
+    if (b > headBudget) break;
+    headEnd = b;
+  }
+
+  int tailStart = static_cast<int>(text.size());
+  for (std::size_t k = boundaries.size(); k-- > 0;) {
+    int b = boundaries[k];
+    if (static_cast<int>(text.size()) - b > tailBudget) break;
+    tailStart = b;
+  }
+
+  if (tailStart <= headEnd) return text;  // too narrow to usefully elide -- let the plain cutoff below handle it
+  return text.substr(0, static_cast<std::size_t>(headEnd)) + kEllipsis + text.substr(static_cast<std::size_t>(tailStart));
+}
+
+// Display-WIDTH-based sibling of middleEllipsisTruncate() above (2026-08-19
+// fix, a direct user report -- ARC's own content listing: "内容一覧は
+// ^Olでも2/3くらいまでしか表示されていないので右端までよろしく"), used
+// ONLY by renderLine()'s own new widthAware rendering path below --
+// DELIBERATELY a separate function, not a modification of the byte-based
+// one above: withTruncatedFields()'s own mode-line name/trailing2
+// truncation also calls middleEllipsisTruncate() (a completely different
+// caller, several call-sites away), and its own surrounding budget math
+// AND fitModeLineFields()'s own downstream "does this actually fit"
+// tiers are BOTH byte-length based throughout -- an earlier version of
+// this fix changed middleEllipsisTruncate() itself to be width-based,
+// which silently broke that caller: a CJK-heavy name is truncated to a
+// SHORT display width but can come back with MORE bytes than before
+// (a 2-column CJK character costs 3 bytes), so fitModeLineFields()'s own
+// byte-length "does it fit" check saw an even-longer string than the
+// untruncated original and fell through every tier to hiding the WHOLE
+// mode line (confirmed via a real reproduction: opening a CJK-named file
+// from inside a tar archive left the mode line reading bare "1/1 END",
+// nothing else). For CJK-heavy text (a 3-byte UTF-8 character is only 2
+// DISPLAY columns wide), a byte budget is up to 3x stingier than the
+// real available screen width -- exactly the "stops at 2/3 width"
+// symptom the ARC report was about; `maxWidth` here is a genuine
+// display-column budget, boundaries found via Utf8::sequence_length()
+// (never splits a multi-byte character), head/tail accumulated by
+// Utf8::display_width() per character instead of raw byte length.
+std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth) {
   static const std::string kEllipsis = "...";
   int budget = maxWidth - static_cast<int>(kEllipsis.size());  // "..." itself is 3 plain ASCII columns
   if (budget <= 0) return text.substr(0, static_cast<std::size_t>(std::max(0, maxWidth)));
@@ -575,7 +620,7 @@ void ContentView::renderLine(const Line &line, bool marked) {
   std::string ellipsisText;
   const std::string *renderedText = &line.text;
   if (widthAware && static_cast<int>(line.text.size()) > ellipsisBudget) {
-    ellipsisText = middleEllipsisTruncate(line.text, ellipsisBudget);
+    ellipsisText = middleEllipsisTruncateByWidth(line.text, ellipsisBudget);
     renderedText = &ellipsisText;
   }
   if (widthAware) {

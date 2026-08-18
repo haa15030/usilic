@@ -804,19 +804,33 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // this is genuinely "a file", just sourced from inside an archive
   // instead of the real filesystem) rather than the bare-byte-count-only
   // shape used just above: trailing=byte size (fillTrailingToEdge, same
-  // convention as fileView_), trailing2=the archive's own path (the
-  // "directory" this file lives inside, in spirit).
+  // convention as fileView_).
+  //
+  // 2026-08-19 fix, a direct user correction against a real report +
+  // screenshot: "モードラインは下記でよろしく。「国際報道２０..._
+  // web_fl.ts」「1/1 END」「111」「ARC: /Users/...rc/utf8.tar」".
+  // `entry->name` is the archive-relative path (e.g. "utf8/国際報道
+  // ..."), not actually a bare filename despite this comment's own
+  // ORIGINAL claim -- true only for a flat archive with no directory
+  // nesting (this port's own small test fixtures), never for a real
+  // one like the reproduction archive here. basename() now strips
+  // that prefix the same way FileMode's own provider already does for
+  // a real filesystem path. trailing2 is now "ARC: <path>" (a single
+  // highlighted run combining a fixed literal label with the archive's
+  // own path) instead of the bare path alone.
   archiveContentView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     const ArchiveEntry *entry = archiveMode_.selectedEntry();
     if (!entry) return {};
-    // trailing2 here is the archive's own PATH, not a typed search
-    // string -- see ContentView::TrailingKind's own comment for why
-    // paths (Path) opt out of QueryEcho's 16-char tail cap.
-    return {entry->name,
+    std::string basename = std::filesystem::path(entry->name).filename().string();
+    // trailing2Kind=Path here (not QueryEcho) so this can still show a
+    // reasonably long tail of the archive's own path if it's long --
+    // see ContentView::TrailingKind's own comment for why paths opt
+    // out of QueryEcho's fixed 16-char tail cap.
+    return {basename,
             std::to_string(contentByteCount(archiveContentView_)),
             /*fillTrailingToEdge=*/true,
             /*rightWatermark=*/"",
-            archiveMode_.currentArchive(),
+            "ARC: " + archiveMode_.currentArchive(),
             /*trailingPlain=*/false,
             /*trailing2RightJustified=*/false,
             /*trailing2Kind=*/ContentView::TrailingKind::Path};

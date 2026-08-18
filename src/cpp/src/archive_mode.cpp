@@ -35,28 +35,37 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
   // Mode-line fields (2026-08-19 REDESIGN, a direct user correction:
   // "旧ARCのモードラインはお手本じゃなく、正しくは「ARC」「01/14
   // TOP」「1774」「(tar)」「/Users/haa15030/git/usilic/src/utf8.tar」
-  // でよろしく"): `name` is now the fixed literal "ARC" (matching
-  // Directory/File's own "DIR"/"FILE"-style mode-name convention,
-  // NOT the archive's own basename as an earlier version here showed)
-  // -- trailing is still the listing's own total byte count (2026-08-15
-  // addition, unchanged); trailing2 is a NEW "(<command>)" badge (the
-  // actually-configured program, e.g. "(tar)"/"(unzip)"/"(lha)"/
-  // "(rpm)" -- archiveCommand_, set at loadArchive() time, see its own
-  // comment), matching DirectoryMode's own identical "(ls)" badge
-  // convention; rightWatermark is the archive's own FULL path (was
-  // entirely absent before), right-justified to the screen edge the
-  // same way DirectoryMode's own "usilic v1.5b" watermark is -- for a
-  // NESTED archive this is Application::descendToNestedArchive()'s own
-  // mkdtemp()-generated temp path rather than anything meaningful to a
-  // human, same known tradeoff the OLD basename-only `name` field used
-  // to accept for the exact same reason; not solved here since the
-  // user's own report was specifically about a top-level (non-nested)
-  // archive.
+  // でよろしく"): `name` is the fixed literal "ARC" (matching
+  // Directory/File's own "DIR"/"FILE"-style mode-name convention, NOT
+  // the archive's own basename as an earlier version here showed) --
+  // trailing is still the listing's own total byte count (2026-08-15
+  // addition, unchanged).
+  //
+  // trailing2 (2026-08-19 FOLLOW-UP fix, same day: "戻り値が非ハイ
+  // ライト" -- a real report + screenshot found the archive's own path,
+  // originally placed in rightWatermark below, drawn in plain BOLD text
+  // instead of the reverse-video every OTHER highlighted field here
+  // uses): rightWatermark is legacy's OWN "no previous-mode text to
+  // show, so print the program name/version instead" fallback (see its
+  // own struct comment) -- deliberately non-reverse-video THERE because
+  // it's static branding, not real destination info. The archive's own
+  // path is real, meaningful "戻り値" content (same category as every
+  // OTHER mode's own highlighted trailing2), so it belongs in trailing2
+  // instead, combined with the "(<command>)" badge (the actually-
+  // configured program, e.g. "(tar)"/"(unzip)"/"(lha)"/"(rpm)" --
+  // archiveCommand_, set at loadArchive() time, see its own comment,
+  // matching DirectoryMode's own identical "(ls)" badge convention) as
+  // ONE continuous highlighted run. For a NESTED archive this is
+  // Application::descendToNestedArchive()'s own mkdtemp()-generated
+  // temp path rather than anything meaningful to a human, same known
+  // tradeoff the OLD basename-only `name` field used to accept for the
+  // exact same reason; not solved here since the user's own report was
+  // specifically about a top-level (non-nested) archive.
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (currentArchive_.empty()) return {};
-    std::string badge = archiveCommand_.empty() ? "" : "(" + archiveCommand_ + ")";
-    return {"ARC", std::to_string(view_.totalByteCount()), /*fillTrailingToEdge=*/false,
-            /*rightWatermark=*/currentArchive_, /*trailing2=*/badge};
+    std::string badge = archiveCommand_.empty() ? "" : "(" + archiveCommand_ + ") ";
+    return {"ARC", std::to_string(view_.totalByteCount()), /*fillTrailingToEdge=*/true,
+            /*rightWatermark=*/"", /*trailing2=*/badge + currentArchive_};
   });
 }
 

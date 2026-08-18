@@ -151,6 +151,52 @@ std::vector<ArchiveEntry> TarReader::parseListing(const std::string &listing) co
   return entries;
 }
 
+// Octal ASCII field (tar's own numeric encoding for size/mode/etc, up
+// to `len` digit bytes, space/NUL-terminated).
+long parseTarOctalField(const unsigned char *p, int len) {
+  long v = 0;
+  for (int i = 0; i < len; i++) {
+    unsigned char c = p[i];
+    if (c < '0' || c > '7') break;
+    v = v * 8 + (c - '0');
+  }
+  return v;
+}
+
+// Extracts the "path" value out of a PAX extended-header data block --
+// a sequence of "<byteLen> <key>=<value>\n" records (byteLen includes
+// itself, the space, key, "=", value, and the trailing "\n"); every
+// OTHER key this doesn't care about is simply skipped over via its own
+// declared length. See findTarHeader()'s own comment for why this
+// exists at all.
+std::string extractPaxPath(const unsigned char *data, std::size_t dataSize) {
+  std::size_t i = 0;
+  while (i < dataSize) {
+    std::size_t j = i;
+    long recLen = 0;
+    while (j < dataSize && data[j] >= '0' && data[j] <= '9') {
+      recLen = recLen * 10 + (data[j] - '0');
+      j++;
+    }
+    if (j >= dataSize || data[j] != ' ' || recLen <= 0) break;
+    std::size_t recEnd = i + static_cast<std::size_t>(recLen);
+    if (recEnd > dataSize) break;
+    std::size_t eq = j + 1;
+    while (eq < recEnd && data[eq] != '=') eq++;
+    if (eq < recEnd) {
+      std::string key(reinterpret_cast<const char *>(data + (j + 1)), eq - (j + 1));
+      if (key == "path") {
+        std::size_t valStart = eq + 1;
+        std::size_t valEnd = recEnd;
+        if (valEnd > valStart && data[valEnd - 1] == '\n') valEnd--;
+        return std::string(reinterpret_cast<const char *>(data + valStart), valEnd - valStart);
+      }
+    }
+    i = recEnd;
+  }
+  return "";
+}
+
 // Ported from find_tar_header(): tar headers are always 512-byte
 // aligned from the start of the archive, so only alignment-matching
 // positions are checked -- otherwise a hidden entry whose header text
@@ -158,11 +204,47 @@ std::vector<ArchiveEntry> TarReader::parseListing(const std::string &listing) co
 // AppleDouble sidecar, which "tar tvf" doesn't list but is a real
 // header in the byte stream) can be mistaken for it. See CLAUDE.md
 // history item 4 for the original bug this fixed.
+//
+// PAX extended headers (2026-08-19 fix, a direct user report: opening
+// any file with a long/Unicode name inside a tar produced completely
+// blank content, "何も無し") -- classic ustar's own `name` field is
+// only 100 bytes, nowhere near enough for a Japanese filename with a
+// "utf8/" path prefix (this port's own real reproduction archive has
+// entries whose name alone is 100-160+ UTF-8 bytes). macOS's bsdtar
+// (this system's own `tar`) stores anything past that limit in a
+// SEPARATE PAX extended-header record (typeflag 'x') immediately
+// BEFORE the real header, holding the full name as a "path=<value>"
+// line in its own data block -- the real header that follows still has
+// a name field, but it's a truncated/placeholder value, never the
+// genuine full name this function is asked to match against. The
+// pre-existing raw byte-for-byte comparison below only ever checked
+// classic short names directly in a header's own name field, so it
+// silently walked every entry with a long name all the way to `end`
+// without ever finding it, leaving contentOffset pointed at garbage
+// (empty/blank content, no crash). Checked FIRST at every candidate
+// position: if this 512-aligned block is itself a PAX extended header
+// whose OWN "path=" value matches `name`, the REAL header is exactly
+// the next 512-aligned position after its own data (computed from the
+// PAX record's own declared size, offset 124 -- same octal field every
+// tar header uses for size) -- return THAT position directly, since
+// that's what locateContent()'s own `cp += 512` (to reach content)
+// then correctly lands on.
 const unsigned char *findTarHeader(const unsigned char *cp, const unsigned char *base,
                                     const unsigned char *end, const std::string &name) {
   const unsigned char *p = base + (((cp - base) + 511) & ~511);
-  for (; p < end; p += 512)
+  for (; p < end; p += 512) {
+    if (p + 157 <= end && (p[156] == 'x' || p[156] == 'X')) {
+      long paxSize = parseTarOctalField(p + 124, 12);
+      const unsigned char *paxData = p + 512;
+      if (paxSize > 0 && paxData + paxSize <= end) {
+        if (extractPaxPath(paxData, static_cast<std::size_t>(paxSize)) == name) {
+          std::size_t dataBlocks = (static_cast<std::size_t>(paxSize) + 511) / 512;
+          return paxData + dataBlocks * 512;
+        }
+      }
+    }
     if (std::string(reinterpret_cast<const char *>(p), name.size()) == name) return p;
+  }
   return end;
 }
 

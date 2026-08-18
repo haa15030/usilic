@@ -6719,6 +6719,85 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `ls`一覧表示(ハイライト開始列を使う描画経路)には変化が無い
      ことも別途PTYで確認済み。
 
+365. **ARC画面の戻り値欄(パス)が非ハイライト表示になる不具合、
+    ARC内のファイルをEnterで開くとモードラインが空白になる不具合を
+    修正、内容表示画面のモードライン形式を再設計**
+   - **報告**: 「戻り値が非ハイライト=df→[return]→何も無し=dg。
+     モードラインは下記でよろしく。「国際報道２０..._web_fl.ts」
+     「1/1 END」「111」「ARC: /Users/...rc/utf8.tar」」
+   - **修正1(戻り値の非ハイライト)**: 項目364で`ArchiveMode`の
+     一覧画面モードラインに新設した`rightWatermark`(アーカイブの
+     フルパス)は、`renderModeLine()`側で常にプレーンな太字表示に
+     固定されていた――これは旧tcb由来の「前のモードへの戻り先が
+     無いときにプログラム名/バージョンを表示する」という別用途の
+     フォールバック(例: `"usilic v1.5b"`)の仕様をそのまま踏襲した
+     もので、静的なブランディング表示だからこそ非ハイライトが正しい
+     挙動だった。ARC自身のパスは他モードの`trailing2`と同種の
+     意味のある「戻り値」情報であり、本来ハイライト表示されるべき
+     だったため、`rightWatermark`を空文字に戻し、`(<command>)`
+     バッジ(`archiveCommand_`)とアーカイブパスを1本の文字列として
+     まとめて`trailing2`側へ移設(`trailing2`は`renderModeLine()`で
+     反転表示される)。
+   - **修正2(Enterで開くと空白、原因1: PAX拡張ヘッダ未対応)**:
+     `src/utf8.tar`(macOS標準の`bsdtar`が生成)は、100byteを超える
+     ファイル名をclassic ustarヘッダの`name`フィールドに収められない
+     ため、実体ヘッダの直前にPAX拡張ヘッダ(typeflag `'x'`、
+     `"<長さ> path=<値>\n"`形式のレコード列)を差し込む形式だった。
+     Python `tarfile`で実ファイルを検証したところ、大半のエントリが
+     この100byte制限を超えていた。`archive_reader.cpp`の
+     `findTarHeader()`が生バイト単位で`name`フィールドと単純比較する
+     だけでPAX拡張ヘッダを一切考慮しておらず、該当エントリの実ヘッダに
+     永遠にたどり着けず`extractSelected()`が空を返していた。
+     `parseTarOctalField()`(8進ASCII数値フィールドの読み取り)と
+     `extractPaxPath()`(PAXデータブロックから`path`レコードの値を
+     取り出す)を追加し、`findTarHeader()`がPAX拡張ヘッダを検出した
+     場合はそのデータ部から実際のパスを取り出して比較するよう変更。
+   - **修正3(Enterで開くと空白、原因2: 項目364の副作用による
+     モードライン全欄非表示)**: 原因1の修正だけでは中身は表示される
+     ようになったが、モードラインは依然「1/1 END」のみで残り全欄が
+     空白のままだった。`/tmp`への一時ログ出力を仕込んで追跡した結果、
+     `ArchiveMode::selectedEntry()`・モードライン用の
+     `ModeLineFieldsProvider`ラムダとも正しいエントリを受け取っていると
+     判明し、原因はさらに下流の`ContentView::fitModeLineFields()`側と
+     特定した。項目364で`middleEllipsisTruncate()`をバイト数予算から
+     表示幅予算へ変更していたが、この関数は`renderLine()`の省略表示
+     専用ではなく`withTruncatedFields()`(モードラインの`name`/
+     `trailing2`切り詰め)からも共有で呼ばれていた。CJK文字を含む名前を
+     表示幅ベースで切り詰めると、切り詰め後の文字列が(2桁のCJK文字は
+     3byteのため)元のバイト数予算を上回ることがあり、`withTruncatedFields()`
+     ・`fitModeLineFields()`側は依然バイト数ベースの予算で「収まるか」を
+     判定していたため、切り詰めたはずなのに全ての表示ティアで判定に
+     失敗し、最終的にモードライン全体が非表示になっていた(項目364
+     修正時点では合成テストのファイル名が短く、この経路が踏まれて
+     いなかったため見落としていた)。`middleEllipsisTruncate()`を
+     元のバイト数ベース予算の実装へ戻し(`withTruncatedFields()`用、
+     従来通り)、表示幅ベースの新ロジックは`middleEllipsisTruncateByWidth()`
+     という別関数として切り出して`renderLine()`の省略表示専用にした。
+   - **修正4(内容表示画面のモードライン再設計)**: `Application`の
+     `archiveContentView_`用`ModeLineFieldsProvider`を、報告の指定
+     通り「basename」「position(1/1 END)」「バイト数」「`ARC: `+
+     フルパス」の4欄構成に変更。`name`は従来`entry->name`(アーカイブ
+     内の相対パス全体、既存コメントは「basenameのはず」と誤って
+     記載していたが、実際は入れ子ディレクトリを含む実アーカイブでは
+     成り立たない仮定だった)から、`std::filesystem::path(entry->name)
+     .filename().string()`によるbasenameへ変更。`trailing2`は
+     `"ARC: " + archiveMode_.currentArchive()`。
+   - **検証**: `make test` 767/767件・18489アサーション全通過。
+     `make usilic`クリーンビルド確認済み。実際の`src/utf8.tar`を
+     使ったPTY自動テストで、(1)ARC一覧画面のモードライン
+     `"ARC 01/14 TOP 1765 (tar) /Users/.../src/utf8.tar"`が
+     `"ARC"`/`"01/14 TOP"`/`"1765"`/`"(tar) /Users/.../utf8.tar"`
+     全域にわたって反転表示(reverse video)になっていることをセル
+     単位で確認、(2)CJKファイル名のエントリでEnterを押すと実際の
+     ファイル内容が表示され、かつモードラインに「basename」
+     「1/1 END」「ARC: .../utf8.tar」が表示されることを確認(この
+     ファイルのようにファイル名自体がCJKで非常に長い場合は、既存の
+     `fitModeLineFields()`の表示ティア機構により優先度の低い
+     バイト数欄が自動的に省略される――これはDirectoryMode等
+     他モードとも共通の既存の仕組みで、今回新設したものではない)。
+     修正前はいずれも(1)非ハイライト、(2)空白のままだったことを
+     同一PTYスクリプトで再現確認済み。
+
 ## 12. SHELL
 
 5. **Ubuntu実機での`tcb .`セグフォ、SHELLモード初期化まわりの表示バグ数件**
