@@ -26,33 +26,54 @@ namespace {
 // a long prefix (the original motivating case) while looking visually
 // centered, matching legacy's own equivalent fix in alloc.c's
 // alloc_str()/alloc_pp() (same day, same "..." near the middle request).
-std::string middleEllipsisTruncate(const std::string &text, int maxBytes) {
+// 2026-08-19 fix, a direct user report (ARC's own content listing:
+// "内容一覧は^Olでも2/3くらいまでしか表示されていないので右端まで
+// よろしく") -- this used to budget in raw BYTES (matching renderLine()'s
+// own per-byte `col`, see its own comment at the call site below,
+// which this fix also updates in lockstep). For CJK-heavy text (a
+// 3-byte UTF-8 character is only 2 DISPLAY columns wide), a byte
+// budget is up to 3x stingier than the real available screen width --
+// a Japanese filename filled barely half the terminal before hitting
+// "..." elision, leaving the right half of the row blank. `maxWidth`
+// is now a real display-column budget: boundaries are still found via
+// Utf8::sequence_length() (never splits a multi-byte character), but
+// head/tail are now accumulated by Utf8::display_width() per character
+// instead of raw byte length.
+std::string middleEllipsisTruncate(const std::string &text, int maxWidth) {
   static const std::string kEllipsis = "...";
-  int budget = maxBytes - static_cast<int>(kEllipsis.size());
-  if (budget <= 0) return text.substr(0, static_cast<std::size_t>(std::max(0, maxBytes)));
+  int budget = maxWidth - static_cast<int>(kEllipsis.size());  // "..." itself is 3 plain ASCII columns
+  if (budget <= 0) return text.substr(0, static_cast<std::size_t>(std::max(0, maxWidth)));
 
-  std::vector<int> boundaries;  // character-start byte offsets, text.size() itself included as the final one
+  // boundaries[k]/boundaries[k+1] bracket the k-th character's own byte
+  // span; widths[k] is that character's own display width (0/1/2).
+  std::vector<int> boundaries;
+  std::vector<int> widths;
   boundaries.push_back(0);
   int i = 0;
   while (i < static_cast<int>(text.size())) {
-    i += Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
-    boundaries.push_back(std::min(i, static_cast<int>(text.size())));
+    int len = Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
+    len = std::min(len, static_cast<int>(text.size()) - i);
+    widths.push_back(Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, len));
+    i += len;
+    boundaries.push_back(i);
   }
 
   int headBudget = budget / 2;
   int tailBudget = budget - headBudget;
 
-  int headEnd = 0;
-  for (int b : boundaries) {
-    if (b > headBudget) break;
-    headEnd = b;
+  int headEnd = 0, headWidth = 0;
+  for (std::size_t k = 0; k < widths.size(); k++) {
+    if (headWidth + widths[k] > headBudget) break;
+    headWidth += widths[k];
+    headEnd = boundaries[k + 1];
   }
 
   int tailStart = static_cast<int>(text.size());
-  for (std::size_t k = boundaries.size(); k-- > 0;) {
-    int b = boundaries[k];
-    if (static_cast<int>(text.size()) - b > tailBudget) break;
-    tailStart = b;
+  int tailWidth = 0;
+  for (std::size_t k = widths.size(); k-- > 0;) {
+    if (tailWidth + widths[k] > tailBudget) break;
+    tailWidth += widths[k];
+    tailStart = boundaries[k];
   }
 
   if (tailStart <= headEnd) return text;  // too narrow to usefully elide -- let the plain cutoff below handle it
@@ -533,12 +554,72 @@ void ContentView::renderLine(const Line &line, bool marked) {
   // reflow tests) deliberately rely on; forcing columns()-1 here
   // unconditionally regressed that.
   int ellipsisBudget = cursorHighlightEnabled_ ? std::max(0, display_.columns() - 1) : maxCol;
+  // widthAware (2026-08-19 fix, same report as middleEllipsisTruncate()'s
+  // own comment): the exact same condition that already gates ellipsis
+  // eligibility -- a plain line with no highlightStartColumn/attributes,
+  // i.e. LOCATE/DU/Archive-style results, the only Lines in this port
+  // that reach here effectively unprocessed (Directory's ls-listing and
+  // GrepMode's match highlighting, the two real users of
+  // highlightStartColumn/attributes, need `col` to stay a precise BYTE
+  // offset for their own byte-range comparisons below, so they keep the
+  // original per-byte loop entirely unchanged). For THIS category only,
+  // `col` becomes a real display-column count instead of a byte count,
+  // consuming each UTF-8 sequence as one unit (via Utf8::sequence_length())
+  // and advancing by its own Utf8::display_width() -- otherwise a 3-byte,
+  // 2-column CJK character would only ever count as "1 byte" against
+  // maxCol, silently capping real content at roughly HALF the terminal's
+  // actual width for Japanese-heavy lines (a direct user report: ARC's
+  // own filenames stopped around 2/3 across, leaving the right side of
+  // the row blank).
+  bool widthAware = !line.highlightStartColumn.has_value() && line.attributes.empty();
   std::string ellipsisText;
   const std::string *renderedText = &line.text;
-  if (!line.highlightStartColumn.has_value() && line.attributes.empty() &&
-      static_cast<int>(line.text.size()) > ellipsisBudget) {
+  if (widthAware && static_cast<int>(line.text.size()) > ellipsisBudget) {
     ellipsisText = middleEllipsisTruncate(line.text, ellipsisBudget);
     renderedText = &ellipsisText;
+  }
+  if (widthAware) {
+    const std::string &text = *renderedText;
+    std::size_t idx = 0;
+    while (idx < text.size()) {
+      unsigned char c = static_cast<unsigned char>(text[idx]);
+      int len = Utf8::sequence_length(c);
+      len = std::min(len, static_cast<int>(text.size() - idx));
+      if (len <= 1) {
+        // Same tab/control-byte handling as the byte-based loop below,
+        // just column-counted by 1 (an ASCII byte is always 1 display
+        // column) instead of by raw byte offset.
+        if (col >= maxCol) break;
+        if (c == '\t') {
+          display_.putChar(' ');
+        } else if (c && (c < ' ' || c == 0x7f)) {
+          setStandout(!markedNow);
+          int shown = (c == 0x7f) ? c - 0x80 : c;
+          display_.putChar(shown + '@');
+          setStandout(markedNow);
+        } else {
+          display_.putChar(c);
+        }
+        col += 1;
+        idx += 1;
+      } else {
+        int width = Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + idx, len);
+        // Never let a wide (2-column) character straddle the reserved
+        // true-last-column boundary -- `col >= maxCol` alone isn't
+        // enough here since a 2-wide char starting at maxCol-1 would
+        // still pass that check yet finish AT maxCol, exactly the
+        // auto-wrap hazard renderLine()'s own maxCol reservation
+        // (see its comment above) exists to avoid.
+        if (col + std::max(width, 0) > maxCol) break;
+        for (int b = 0; b < len; b++) display_.putChar(static_cast<unsigned char>(text[idx + static_cast<std::size_t>(b)]));
+        col += width;
+        idx += static_cast<std::size_t>(len);
+      }
+    }
+    setStandout(false);
+    setBold(false);
+    setUnderline(false);
+    return;
   }
   for (unsigned char c : *renderedText) {
     if (col >= maxCol) break;

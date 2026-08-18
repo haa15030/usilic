@@ -1,5 +1,6 @@
 #include "archive_mode.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <memory>
 
@@ -31,41 +32,51 @@ std::unique_ptr<ArchiveReader> readerFor(ArchiveKind kind) {
 
 ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuration &configuration)
     : view_(view), history_(history), configuration_(configuration) {
-  // Mode-line fields, same left-of-position "name" convention as
-  // Directory/File mode's own providers. A real user report
-  // (2026-08-01, "入れ子ARC閲覧はOK.モードラインNG.") found that
-  // nested-archive descent (Application::descendToNestedArchive())
-  // worked functionally but gave no on-screen indication of which
-  // archive -- or which nesting level -- was currently being browsed;
-  // every level's mode-line showed only the bare position text (e.g.
-  // "1/1 END"), because no provider was ever registered here at all.
-  // Shows currentArchive()'s own basename rather than the full path:
-  // for a NESTED archive, currentArchive() is a mkdtemp()-generated
-  // temp file path (see Application::descendToNestedArchive()/
-  // materializeArchiveTempFile()), and showing that raw temp path
-  // verbatim would be confusing noise -- the basename alone (e.g.
-  // "level1.tar") is what actually identifies which archive you're
-  // looking at, and differs at every level of the chain used in
-  // practice, so no separate nesting-depth indicator is needed here.
-  // trailing (2026-08-15 addition): the listing's own total byte
-  // count, matching the same convention every other mode's own
-  // trailing field already uses (ContentView::totalByteCount(), see
-  // its own comment) -- a direct user request ("全モードのモードラ
-  // インに「画面TOPからENDまでのバイト数」を追加してほしい"). Unlike
-  // DirectoryMode's own equivalent fix, nothing else was already using
-  // this slot here, so no restructuring was needed.
+  // Mode-line fields (2026-08-19 REDESIGN, a direct user correction:
+  // "旧ARCのモードラインはお手本じゃなく、正しくは「ARC」「01/14
+  // TOP」「1774」「(tar)」「/Users/haa15030/git/usilic/src/utf8.tar」
+  // でよろしく"): `name` is now the fixed literal "ARC" (matching
+  // Directory/File's own "DIR"/"FILE"-style mode-name convention,
+  // NOT the archive's own basename as an earlier version here showed)
+  // -- trailing is still the listing's own total byte count (2026-08-15
+  // addition, unchanged); trailing2 is a NEW "(<command>)" badge (the
+  // actually-configured program, e.g. "(tar)"/"(unzip)"/"(lha)"/
+  // "(rpm)" -- archiveCommand_, set at loadArchive() time, see its own
+  // comment), matching DirectoryMode's own identical "(ls)" badge
+  // convention; rightWatermark is the archive's own FULL path (was
+  // entirely absent before), right-justified to the screen edge the
+  // same way DirectoryMode's own "usilic v1.5b" watermark is -- for a
+  // NESTED archive this is Application::descendToNestedArchive()'s own
+  // mkdtemp()-generated temp path rather than anything meaningful to a
+  // human, same known tradeoff the OLD basename-only `name` field used
+  // to accept for the exact same reason; not solved here since the
+  // user's own report was specifically about a top-level (non-nested)
+  // archive.
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (currentArchive_.empty()) return {};
-    std::size_t slash = currentArchive_.find_last_of('/');
-    std::string base = (slash == std::string::npos) ? currentArchive_ : currentArchive_.substr(slash + 1);
-    return {base, std::to_string(view_.totalByteCount()), false, "", ""};
+    std::string badge = archiveCommand_.empty() ? "" : "(" + archiveCommand_ + ")";
+    return {"ARC", std::to_string(view_.totalByteCount()), /*fillTrailingToEdge=*/false,
+            /*rightWatermark=*/currentArchive_, /*trailing2=*/badge};
   });
 }
 
-std::string ArchiveMode::formatEntryLine(const ArchiveEntry &entry) {
-  std::string line = entry.isDirectory ? "d " : "- ";
-  line += std::to_string(entry.size);
-  line += "\t";
+// 2026-08-19 REDESIGN, a direct user correction: "パーミッションも=dd
+// の一文字（d、-）も不要だが、「utf8/」は縦一列に揃えてほしい". The
+// leading isDirectory 'd'/'-' marker is dropped entirely, and `size` is
+// now right-justified to `sizeWidth` (the widest size actually present
+// in THIS listing, computed once by the caller across every entry --
+// see loadArchive()'s own comment) instead of the OLD "size + a single
+// literal '\t'" shape -- ContentView::renderLine() only ever converts a
+// raw '\t' byte to ONE plain space (see its own comment), not real
+// tab-stop math, so names never actually lined up in a column despite
+// looking like they might. A fixed two-space gap after the padded size
+// keeps every entry's name starting at the exact same column,
+// regardless of how many digits its own size happens to have.
+std::string ArchiveMode::formatEntryLine(const ArchiveEntry &entry, std::size_t sizeWidth) {
+  std::string sizeText = std::to_string(entry.size);
+  std::string line(sizeWidth > sizeText.size() ? sizeWidth - sizeText.size() : 0, ' ');
+  line += sizeText;
+  line += "  ";
   line += entry.name;
   return line;
 }
@@ -96,12 +107,16 @@ bool ArchiveMode::loadArchive(const std::string &path) {
 
   currentArchive_ = path;
   archiveKind_ = kind;
+  archiveCommand_ = command->argv.empty() ? "" : command->argv.front();
   entries_ = std::move(entries);
   markedIndices_.clear();  // marks are scoped to the listing they were made in, matching DirectoryMode's own convention
 
   std::vector<ContentView::Line> lines;
   lines.reserve(entries_.size());
-  for (const auto &entry : entries_) lines.push_back({formatEntryLine(entry), std::nullopt, std::nullopt, {}});
+  std::size_t sizeWidth = 0;
+  for (const auto &entry : entries_) sizeWidth = std::max(sizeWidth, std::to_string(entry.size).size());
+  for (const auto &entry : entries_)
+    lines.push_back({formatEntryLine(entry, sizeWidth), std::nullopt, std::nullopt, {}});
   view_.setLines(std::move(lines));
 
   if (auto pos = history_.positionFor(PositionCategory::Screen, currentArchive_)) {

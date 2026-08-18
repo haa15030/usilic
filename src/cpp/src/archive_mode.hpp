@@ -112,7 +112,7 @@ class ArchiveMode {
   std::vector<ArchiveEntry> targetEntries() const;
 
  private:
-  static std::string formatEntryLine(const ArchiveEntry &entry);
+  static std::string formatEntryLine(const ArchiveEntry &entry, std::size_t sizeWidth);
 
   ContentView &view_;
   History &history_;
@@ -120,6 +120,13 @@ class ArchiveMode {
 
   std::string currentArchive_;
   ArchiveKind archiveKind_ = ArchiveKind::None;
+  // The actually-configured program name (e.g. "tar"/"unzip"/"lha"/
+  // "rpm") for archiveKind_ -- see the mode-line provider's own
+  // "(<command>)" badge comment. Read from ProgramCommand::argv.front()
+  // at loadArchive() time (same source loadArchive() itself already
+  // consults to run the command), matching DirectoryMode's own "(ls)"
+  // badge convention exactly.
+  std::string archiveCommand_;
   std::vector<ArchiveEntry> entries_;
   std::set<int> markedIndices_;
 };

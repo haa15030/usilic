@@ -97,9 +97,25 @@ TEST_CASE_FIXTURE(Fixture, "loadArchive: a missing archive file fails cleanly") 
   CHECK_FALSE(mode.loadArchive(path("does-not-exist.tar")));
 }
 
-TEST_CASE_FIXTURE(Fixture, "mode-line fields: shows the loaded archive's basename (2026-08-01 user report)") {
+// 2026-08-19 REDESIGN, a direct user correction: "旧ARCのモードラインは
+// お手本じゃなく、正しくは「ARC」「01/14 TOP」「1774」「(tar)」
+// 「/Users/haa15030/git/usilic/src/utf8.tar」でよろしく" -- name is now
+// the fixed literal "ARC" (not the archive's own basename, which this
+// test originally asserted), trailing2 is a "(<command>)" badge (e.g.
+// "(tar)"), and rightWatermark is the archive's own FULL path.
+TEST_CASE_FIXTURE(Fixture, "mode-line fields: \"ARC\" name, \"(tar)\" command badge, and the archive's own "
+                           "full path (2026-08-19 redesign, was the archive's bare basename as `name`)") {
   REQUIRE(mode.loadArchive(path("archive.tar")));
-  CHECK(view.modeLineText().rfind("archive.tar ", 0) == 0);
+  // modeLineText() only composes name/position/trailing/trailing2 (see
+  // its own comment) -- rightWatermark (the archive's own full path
+  // here) only ever reaches the real screen via renderModeLine(), same
+  // as DirectoryMode's own "usilic v1.5b" watermark test precedent.
+  std::string text = view.modeLineText();
+  CHECK(text.rfind("ARC ", 0) == 0);
+  CHECK(text.find("(tar)") != std::string::npos);
+  view.setViewport(0, 23);
+  view.redraw();
+  CHECK(display.rowText(23).find(path("archive.tar")) != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "mode-line fields: no name field before any archive has been loaded") {
