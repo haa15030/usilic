@@ -1076,6 +1076,11 @@ std::string ContentView::composeModeLineRow(const std::string &positionText) con
   // itself.
   if (fit.showTrailing && !fields.trailing.empty()) row += " " + fields.trailing;
   if (fit.showTrailing2 && !fields.trailing2.empty()) row += " " + fields.trailing2;
+  // See ModeLineFields::trailing3's own comment -- always appended when
+  // present (no fit-tier gating, matching renderModeLine()'s own
+  // permissive drop-if-no-room policy; this plain-string consumer has no
+  // column budget of its own to check against here).
+  if (!fields.trailing3.empty()) row += " " + fields.trailing3;
   if (fit.showName && !fields.name.empty()) row = fields.name + " " + row;
   return row;
 }
@@ -1124,7 +1129,25 @@ void ContentView::renderModeLine() {
     return;
   }
 
-  ModeLineFields fields = withTruncatedFields(modeLineFieldsProvider_(cursorIndex_), positionText);
+  ModeLineFields rawFields = modeLineFieldsProvider_(cursorIndex_);
+  // See ModeLineFields::splitLayoutWhenCrowded's/renderSplitModeLine()'s
+  // own comments. Checked against the RAW (untruncated) fields, not
+  // withTruncatedFields()'s output -- a naive sum of the actual field
+  // lengths is exactly what decides whether the normal layout would
+  // have needed to start dropping fields in the first place.
+  if (rawFields.splitLayoutWhenCrowded) {
+    int cols = display_.columns();
+    int naiveLen = static_cast<int>(positionText.size());
+    if (!rawFields.name.empty()) naiveLen += static_cast<int>(rawFields.name.size()) + 1;
+    if (!rawFields.trailing.empty()) naiveLen += static_cast<int>(rawFields.trailing.size()) + 1;
+    if (!rawFields.trailing2.empty()) naiveLen += static_cast<int>(rawFields.trailing2.size()) + 1;
+    if (cols > 0 && naiveLen > cols) {
+      renderSplitModeLine(rawFields, positionText);
+      return;
+    }
+  }
+
+  ModeLineFields fields = withTruncatedFields(rawFields, positionText);
   FieldFit fit = fitModeLineFields(fields, positionText);
   int cols = display_.columns();
 
@@ -1267,6 +1290,21 @@ void ContentView::renderModeLine() {
       drawnLen += static_cast<int>(trailing2.size());
     }
   }
+  // See ModeLineFields::trailing3's own comment. Deliberately simple
+  // compared to trailing/trailing2 above: no right-justify/edge-fill/
+  // truncation options, just "show it after its own plain gap if there's
+  // room, otherwise drop it" -- ArchiveMode's own badge+path is expected
+  // to fit in real terminal widths, and this exists purely to give that
+  // pair a genuine box break, not to solve narrow-terminal truncation.
+  if (!fields.trailing3.empty()) {
+    int candidateLen = 1 + static_cast<int>(fields.trailing3.size());
+    if (cols > 0 && drawnLen + candidateLen <= cols) {
+      display_.putChar(' ');
+      drawnLen += 1;
+      drawSegment(fields.trailing3);
+      drawnLen += static_cast<int>(fields.trailing3.size());
+    }
+  }
 
   // Ported from disp_window()'s own fallback: when there's no
   // "previous mode" text to show (mode-line[6] -- see
@@ -1287,6 +1325,65 @@ void ContentView::renderModeLine() {
       for (unsigned char c : watermark) display_.putChar(c);
       display_.setAttribute(Display::Attribute::BoldOff);
     }
+  }
+}
+
+// See ModeLineFields::splitLayoutWhenCrowded's own comment for why this
+// exists and when renderModeLine() reaches for it instead of the usual
+// fitModeLineFields()/withTruncatedFields() tiers. Direct user proposal
+// (report =dh follow-up): "『「1/1 END」「111」』をまずは中央へ→残りの
+// エリア半分ずつを「モード名」「戻り値」で分け合った上でそれぞれ...".
+// `positionText`+`trailing` are centered as a pair (own plain gap
+// between the two, same convention as every other field pair in
+// renderModeLine()); name is drawn from column 0 and trailing2 from the
+// right edge, each independently Finder-style middle-ellipsis truncated
+// (middleEllipsisTruncate(), see its own comment) to whatever width is
+// actually left once the centered pair claims its own space -- unlike
+// fitModeLineFields()'s all-or-nothing drop, this guarantees SOME of
+// both name and trailing2 stays visible instead of one vanishing
+// entirely, and never drops `trailing` (the byte count) at all, which
+// is exactly what the old tiers did whenever name+trailing2 together
+// didn't fit (the report this exists for).
+void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::string &positionText) {
+  int modeLineRow = modeLineRow_.value_or(row0_ + height_);
+  int cols = display_.columns();
+  if (cols <= 0) return;
+
+  auto drawSegment = [&](const std::string &text) {
+    display_.setAttribute(Display::Attribute::Standout);
+    for (unsigned char c : text) display_.putChar(c);
+    display_.setAttribute(Display::Attribute::StandoutOff);
+  };
+
+  std::string center = positionText;
+  if (!fields.trailing.empty()) center += " " + fields.trailing;
+  int centerLen = static_cast<int>(center.size());
+  // True horizontal centering (not just "cols/2 either side") so the
+  // centered pair actually LOOKS centered regardless of how the two
+  // side budgets end up splitting -- matches "まずは中央へ" literally.
+  int centerStart = std::max(0, (cols - centerLen) / 2);
+
+  int leftBudget = std::max(0, centerStart - 1);      // -1: the plain gap before the center block
+  int rightStart = centerStart + centerLen + 1;        // +1: the plain gap after the center block
+  int rightBudget = std::max(0, cols - rightStart);
+
+  std::string name = middleEllipsisTruncate(fields.name, leftBudget);
+  std::string trailing2 = middleEllipsisTruncate(fields.trailing2, rightBudget);
+
+  if (!name.empty()) {
+    display_.moveCursor(modeLineRow, 0);
+    drawSegment(name);
+  }
+  display_.moveCursor(modeLineRow, centerStart);
+  drawSegment(positionText);
+  if (!fields.trailing.empty()) {
+    display_.putChar(' ');
+    drawSegment(fields.trailing);
+  }
+  if (!trailing2.empty()) {
+    int trailing2Start = std::max(0, cols - static_cast<int>(trailing2.size()));
+    display_.moveCursor(modeLineRow, trailing2Start);
+    drawSegment(trailing2);
   }
 }
 

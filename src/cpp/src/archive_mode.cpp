@@ -50,12 +50,33 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
   // own struct comment) -- deliberately non-reverse-video THERE because
   // it's static branding, not real destination info. The archive's own
   // path is real, meaningful "戻り値" content (same category as every
-  // OTHER mode's own highlighted trailing2), so it belongs in trailing2
-  // instead, combined with the "(<command>)" badge (the actually-
-  // configured program, e.g. "(tar)"/"(unzip)"/"(lha)"/"(rpm)" --
-  // archiveCommand_, set at loadArchive() time, see its own comment,
-  // matching DirectoryMode's own identical "(ls)" badge convention) as
-  // ONE continuous highlighted run. For a NESTED archive this is
+  // OTHER mode's own highlighted trailing2), so it belongs in a
+  // highlighted field instead.
+  //
+  // trailing2/trailing3 split (2026-08-19, SAME-DAY second follow-up:
+  // "「(tar)」と「/Users/.../utf8.tar」の間に空白が無い"): the FIRST
+  // attempt at this fix combined the "(<command>)" badge and the path
+  // into ONE trailing2 string ("(tar) " + path). That string DID
+  // contain a real ASCII space, but renderModeLine() draws a single
+  // field as one uninterrupted Standout run (see its own comment on
+  // why -- CUI's mode-line needs BLACK GAPS BETWEEN fields, not within
+  // one), so the embedded space rendered as a same-color reverse-video
+  // blank -- invisible against its own dark background, unlike the
+  // genuine box breaks between every OTHER field pair here. Splitting
+  // the badge (trailing2, matching DirectoryMode's own identical
+  // "(ls)" convention) and the path (trailing3, see its own comment)
+  // into two SEPARATE fields gives them a real plain-mode gap via
+  // renderModeLine()'s own existing per-field rendering, no new
+  // rendering logic needed. fillTrailingToEdge is now false (was true
+  // under the old single-string design specifically to fill the row
+  // edge-to-edge) -- with trailing3 now the actual last-drawn field and
+  // not itself supporting edge-fill (see its own comment), leaving this
+  // true would have padded trailing2 ("(tar)") all the way to the row's
+  // right edge and pushed trailing3 (the path) off-screen.
+  //
+  // archiveCommand_ (the actually-configured program, e.g.
+  // "(tar)"/"(unzip)"/"(lha)"/"(rpm)", set at loadArchive() time, see
+  // its own comment). For a NESTED archive, currentArchive_ is
   // Application::descendToNestedArchive()'s own mkdtemp()-generated
   // temp path rather than anything meaningful to a human, same known
   // tradeoff the OLD basename-only `name` field used to accept for the
@@ -63,9 +84,12 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
   // specifically about a top-level (non-nested) archive.
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (currentArchive_.empty()) return {};
-    std::string badge = archiveCommand_.empty() ? "" : "(" + archiveCommand_ + ") ";
-    return {"ARC", std::to_string(view_.totalByteCount()), /*fillTrailingToEdge=*/true,
-            /*rightWatermark=*/"", /*trailing2=*/badge + currentArchive_};
+    std::string badge = archiveCommand_.empty() ? "" : "(" + archiveCommand_ + ")";
+    ContentView::ModeLineFields fields{"ARC", std::to_string(view_.totalByteCount()),
+                                        /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
+                                        /*trailing2=*/badge};
+    fields.trailing3 = currentArchive_;
+    return fields;
   });
 }
 

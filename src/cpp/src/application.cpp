@@ -818,6 +818,17 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // a real filesystem path. trailing2 is now "ARC: <path>" (a single
   // highlighted run combining a fixed literal label with the archive's
   // own path) instead of the bare path alone.
+  //
+  // splitLayoutWhenCrowded (2026-08-19 same-day follow-up, a direct
+  // user proposal: "モードラインの長過ぎモード名および戻り値対処と
+  // しては...『「1/1 END」「111」』をまずは中央へ→残りのエリア半分
+  // ずつを「モード名」「戻り値」で分け合った上で..."): a real CJK
+  // filename inside this project's own test archive is long enough that
+  // name+trailing2 together never fit alongside trailing (the byte
+  // count) -- fitModeLineFields()'s usual tiers silently dropped
+  // trailing entirely rather than show a truncated version of anything.
+  // See ModeLineFields::splitLayoutWhenCrowded's/renderSplitModeLine()'s
+  // own comments for the replacement layout.
   archiveContentView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     const ArchiveEntry *entry = archiveMode_.selectedEntry();
     if (!entry) return {};
@@ -826,14 +837,16 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // reasonably long tail of the archive's own path if it's long --
     // see ContentView::TrailingKind's own comment for why paths opt
     // out of QueryEcho's fixed 16-char tail cap.
-    return {basename,
-            std::to_string(contentByteCount(archiveContentView_)),
-            /*fillTrailingToEdge=*/true,
-            /*rightWatermark=*/"",
-            "ARC: " + archiveMode_.currentArchive(),
-            /*trailingPlain=*/false,
-            /*trailing2RightJustified=*/false,
-            /*trailing2Kind=*/ContentView::TrailingKind::Path};
+    ContentView::ModeLineFields fields{basename,
+                                        std::to_string(contentByteCount(archiveContentView_)),
+                                        /*fillTrailingToEdge=*/true,
+                                        /*rightWatermark=*/"",
+                                        "ARC: " + archiveMode_.currentArchive(),
+                                        /*trailingPlain=*/false,
+                                        /*trailing2RightJustified=*/false,
+                                        /*trailing2Kind=*/ContentView::TrailingKind::Path};
+    fields.splitLayoutWhenCrowded = true;
+    return fields;
   });
 
   // usilicrc's own GREP section (2026-08-05 fix): a real CUI screenshot
@@ -3155,12 +3168,15 @@ bool Application::shellInsertName() {
 // current file's basename (e.g. ".../CLAUDE.md" -> "CLAUDE.md") --
 // overwriting on every press rather than accumulating numbered slots,
 // since the point is now "a persistent, human-readable snapshot of
-// THIS mode", not a disposable scratch buffer.
+// THIS mode", not a disposable scratch buffer. 2026-08-19 addition:
+// ArchiveContent joined this group too (see its own branch below), a
+// direct user report/screenshot (=di) that expected exactly this
+// naming/location for a file opened from inside an archive.
 //
 // w.N fallback for every OTHER mode (2026-08-18, kept deliberately):
-// Grep/Cut/CutContent/Man/Locate/Archive/ArchiveContent/Shell/Du/
-// ListBrowser/Key have no established "mode name" concept the way
-// Directory/File now do (matching shellInsertName()'s -- K-63's --
+// Grep/Cut/CutContent/Man/Locate/Archive/Shell/Du/ListBrowser/Key have
+// no established "mode name" concept the way Directory/File/
+// ArchiveContent now do (matching shellInsertName()'s -- K-63's --
 // own identical, already-accepted "other modes aren't covered yet"
 // limitation right above) -- but UNLIKE K-63 (a convenience insert
 // with no other way to reach the same effect), this key is also the
@@ -3170,7 +3186,7 @@ bool Application::shellInsertName() {
 // straight from the ^J^S/^J^C candidate list). Making it a silent
 // no-op there would have quietly broken that reproduction path rather
 // than just "not modernizing" it, so it keeps working exactly as
-// before for every mode besides Directory/File.
+// before for every mode besides Directory/File/ArchiveContent.
 //
 // Writes activeView()'s CURRENT lines (the view active BEFORE
 // switching to Shell mode, so this must run before ensureShellActive()
@@ -3185,6 +3201,20 @@ bool Application::shellInsertBufferContent() {
     modeName = std::filesystem::path(dir).filename().string();
   } else if (currentMode_ == ApplicationMode::File) {
     modeName = std::filesystem::path(fileMode_.currentFile()).filename().string();
+  } else if (currentMode_ == ApplicationMode::ArchiveContent) {
+    // 2026-08-19 addition, a direct user report/screenshot (=di):
+    // "=di→^J^W→/Users/haa15030/.usilic/saved/国際報道２０２６...ts" --
+    // ArchiveContent was still falling through to the w.N fallback
+    // described in this function's own class comment above ("no
+    // established mode name concept... Archive/ArchiveContent...")
+    // despite the archive content view being just as much "a file"
+    // (see openSelectedArchiveEntry()'s own comment) as FileMode's own
+    // real-filesystem case just above. Uses the selected entry's own
+    // basename, same as archiveContentView_'s own mode-line provider
+    // (application.cpp's setModeLineFieldsProvider() for this view).
+    if (const ArchiveEntry *entry = archiveMode_.selectedEntry()) {
+      modeName = std::filesystem::path(entry->name).filename().string();
+    }
   }
   ContentView &source = activeView();
   std::string savePath;

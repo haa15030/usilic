@@ -672,6 +672,119 @@ TEST_CASE("renderModeLine: rightWatermark is right-aligned, not reverse-video, a
   CHECK(narrow.rowText(5).find("usilic") == std::string::npos);
 }
 
+TEST_CASE("renderModeLine: trailing3 draws as its own separate standout segment with a plain gap after trailing2") {
+  // See ModeLineFields::trailing3's own comment: added for ArchiveMode's
+  // own listing mode line (report =dh: "「(tar)」と「/Users/.../
+  // utf8.tar」の間に空白が無い"), a real gap between the badge and the
+  // path that a single combined trailing2 string couldn't provide since
+  // renderModeLine() draws one field as ONE uninterrupted Standout run.
+  RecordingDisplay d(10, 60);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    ContentView::ModeLineFields fields{"ARC", "1765", /*fillTrailingToEdge=*/false, "", "(tar)"};
+    fields.trailing3 = "/tmp/archive.tar";
+    return fields;
+  });
+  v.redraw();
+
+  // "ARC 1/3 TOP 1765 (tar) /tmp/archive.tar":
+  // columns 0-2 name, 4-10 position, 12-15 trailing, 17-21 trailing2
+  // ("(tar)"), 23-38 trailing3 -- each pair separated by one plain gap.
+  std::string row = d.rowText(5);
+  CHECK(row.substr(0, 39) == "ARC 1/3 TOP 1765 (tar) /tmp/archive.tar");
+  CHECK(d.standoutAt(5, 21) == true);   // ')' of trailing2
+  CHECK(d.standoutAt(5, 22) == false);  // plain gap between trailing2 and trailing3
+  CHECK(d.standoutAt(5, 23) == true);   // '/' start of trailing3
+  CHECK(d.standoutAt(5, 38) == true);   // final 'r' of trailing3
+  CHECK(d.standoutAt(5, 39) == false);  // past trailing3 -- not padded to the edge
+}
+
+TEST_CASE("renderModeLine: trailing3 is dropped (not truncated) if it doesn't fit") {
+  RecordingDisplay d(10, 25);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    ContentView::ModeLineFields fields{"ARC", "1765", /*fillTrailingToEdge=*/false, "", "(tar)"};
+    fields.trailing3 = "/a/very/long/path/that/will/not/fit";
+    return fields;
+  });
+  v.redraw();
+  CHECK(d.rowText(5).find("/a/very") == std::string::npos);
+  // Everything else still shows, unaffected.
+  CHECK(d.rowText(5).find("(tar)") != std::string::npos);
+}
+
+TEST_CASE("renderModeLine: splitLayoutWhenCrowded leaves the normal layout untouched when everything fits") {
+  // A real user proposal (report =dh follow-up: "モードラインの長過ぎ
+  // モード名および戻り値対処としては...") added an alternate fallback
+  // layout, but only for rows that actually need it -- opting into the
+  // flag on a provider whose fields comfortably fit must change nothing.
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    ContentView::ModeLineFields fields{"/tmp/dir/", "(ls)", /*fillTrailingToEdge=*/false, "", ""};
+    fields.splitLayoutWhenCrowded = true;
+    return fields;
+  });
+  v.redraw();
+
+  std::string row = d.rowText(5);
+  CHECK(row.substr(0, 22) == "/tmp/dir/ 1/3 TOP (ls)");
+  CHECK(d.standoutAt(5, 0) == true);
+  CHECK(d.standoutAt(5, 9) == false);  // plain gap, same as the non-split test above
+}
+
+TEST_CASE("renderModeLine: splitLayoutWhenCrowded centers position+trailing and splits the remaining "
+          "width between name and trailing2 once the normal layout doesn't fit") {
+  // Direct user proposal, a real follow-up report (=dh): the archive
+  // content view's own long CJK filename made name+trailing2 together
+  // never fit alongside trailing (the byte count) -- fitModeLineFields()'s
+  // usual tiers silently dropped trailing entirely. This layout keeps
+  // ALL four pieces of information visible instead: "『「1/1 END」
+  // 「111」』をまずは中央へ→残りのエリア半分ずつを「モード名」
+  // 「戻り値」で分け合った上で...".
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  std::string longName = "this_is_a_very_long_mode_name_indeed_and_then_some.txt";
+  std::string longTrailing2 = "this_is_a_very_long_trailing2_path_value_and_then_some";
+  v.setModeLineFieldsProvider([&](int) -> ContentView::ModeLineFields {
+    ContentView::ModeLineFields fields{longName, "1234", /*fillTrailingToEdge=*/false, "", longTrailing2};
+    fields.splitLayoutWhenCrowded = true;
+    return fields;
+  });
+  v.redraw();
+
+  std::string row = d.rowText(5);
+  // The byte count ("1234") is never dropped, unlike the old tiers.
+  CHECK(row.find("1234") != std::string::npos);
+  CHECK(row.find("1/3 TOP") != std::string::npos);
+  // Position+trailing sit together, centered -- both standout, with a
+  // plain gap between them (same convention as every other field pair).
+  std::size_t posStart = row.find("1/3 TOP");
+  CHECK(d.standoutAt(5, static_cast<int>(posStart)) == true);
+  std::size_t trailingStart = row.find("1234");
+  CHECK(d.standoutAt(5, static_cast<int>(trailingStart)) == true);
+  CHECK(d.standoutAt(5, static_cast<int>(trailingStart) - 1) == false);  // the gap right before "1234"
+  // name is drawn from column 0, truncated (Finder-style "...") rather
+  // than dropped entirely -- some of both the head AND the byte-size
+  // survive, unlike the old all-or-nothing tiers.
+  CHECK(row.substr(0, 5) == longName.substr(0, 5));
+  CHECK(row.substr(0, static_cast<std::size_t>(posStart)).find("...") != std::string::npos);
+  CHECK(d.standoutAt(5, 0) == true);
+  // trailing2 is right-aligned to the true last column, also truncated
+  // rather than dropped.
+  CHECK(row.substr(row.size() - 5) == longTrailing2.substr(longTrailing2.size() - 5));
+  CHECK(d.standoutAt(5, 39) == true);
+  CHECK(row.find("...") != row.rfind("..."));  // "..." appears on BOTH sides (name and trailing2), not just one
+}
+
 TEST_CASE("lineIndexAtRow: -1 outside the viewport (above, below, or past content)") {
   RecordingDisplay d(10, 20);
   ContentView v(d);

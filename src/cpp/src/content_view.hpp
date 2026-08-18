@@ -635,6 +635,54 @@ class ContentView {
     // treatment yet (a narrower gap, not expected to matter: an error
     // message appearing mid-drag-scroll gesture isn't a real scenario).
     bool nameUnderlined = false;
+    // A THIRD independently-highlighted trailing segment, drawn after
+    // trailing2 with its own plain single-space gap -- added 2026-08-19
+    // for ArchiveMode's own listing mode line ("戻り値" report =dh:
+    // "「(tar)」と「/Users/.../utf8.tar」の間に空白が無い"). trailing2
+    // ALREADY contained a real ASCII space between the "(tar)" badge and
+    // the path (`badge + currentArchive_`), but since renderModeLine()
+    // draws a single field as ONE uninterrupted Standout run (see its
+    // own long comment on why: CUI's mode-line needs visible black gaps
+    // BETWEEN fields, not within one), that embedded space renders as a
+    // reverse-video blank -- same dark background as its neighbors, so
+    // the two pieces LOOK glued together despite the byte being there.
+    // Every other field pair (name/position, position/trailing,
+    // trailing/trailing2) gets a genuine gap because renderModeLine()
+    // ends one Standout run and starts a fresh one around a plain-mode
+    // space; trailing3 gives the badge+path pair that same real box
+    // break instead of a same-color embedded character. Empty (the
+    // default) for every other mode's provider, no behavior change
+    // there. Not integrated into fitModeLineFields()'s drop-priority
+    // tiers (unlike trailing/trailing2) -- kept deliberately simple,
+    // dropped outright if it doesn't fit rather than truncated, same as
+    // rightWatermark's own permissive fit check; ArchiveMode's own path
+    // here is expected to fit in the vast majority of real terminal
+    // widths, and losing it entirely on a pathologically narrow one is
+    // an acceptable degradation for a first cut. Currently only honored
+    // by renderModeLine() and composeModeLineRow() -- scrollModeLineSegments()
+    // (GraphicalDisplay's own path) doesn't have it yet, matching the
+    // existing nameUnderlined precedent just above for the same reason
+    // (narrower gap, no GUI report to work from yet).
+    std::string trailing3;
+    // Opts this mode line into an entirely different fallback layout
+    // (renderSplitModeLine(), see its own comment) instead of
+    // fitModeLineFields()'s usual "drop trailing, then trailing2" tiers,
+    // used ONLY when the normal single-row layout doesn't fit -- added
+    // 2026-08-19 for the archive content view's own mode line (report
+    // =dg/=dh follow-up: a real proposal, "モードラインの長過ぎモード名
+    // および戻り値対処としては...『「1/1 END」「111」』をまずは中央へ
+    // →残りのエリア半分ずつを「モード名」「戻り値」で分け合った上で
+    // それぞれ..."). The default tiers silently dropped `trailing` (the
+    // byte count) whenever name+trailing2 together were too long for a
+    // long CJK filename inside an archive -- this instead keeps ALL
+    // four pieces of information on screen by centering position+
+    // trailing and giving name/trailing2 half the remaining width each,
+    // Finder-style middle-ellipsis truncated to fit. Empty/false (the
+    // default) for every other provider, unaffected; deliberately
+    // opt-in rather than folded into fitModeLineFields() itself to keep
+    // this narrowly scoped to the one screen it was requested for
+    // rather than changing every mode's own crowding behavior at once.
+    bool splitLayoutWhenCrowded = false;
   };
 
   // Supplies this view's ModeLineFields, recomputed every time the
@@ -670,6 +718,15 @@ class ContentView {
  private:
   void renderLine(const Line &line, bool marked);
   void renderModeLine();
+  // See ModeLineFields::splitLayoutWhenCrowded's own comment. Called by
+  // renderModeLine() INSTEAD OF its usual fitModeLineFields()/
+  // withTruncatedFields() path once that path's own naive width check
+  // fails, using the UNTRUNCATED fields straight from the provider (not
+  // withTruncatedFields()'s output) so this function's own Finder-style
+  // middle-ellipsis is the only truncation ever applied -- feeding it
+  // an already-truncated name/trailing2 risked a double "......" if
+  // withTruncatedFields()'s own tighter budget had already elided them.
+  void renderSplitModeLine(const ModeLineFields &fields, const std::string &positionText);
   void clampViewport();
   int bottomAnchorRowOffset() const;
 

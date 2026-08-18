@@ -6798,6 +6798,81 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      修正前はいずれも(1)非ハイライト、(2)空白のままだったことを
      同一PTYスクリプトで再現確認済み。
 
+366. **ARC画面の「(tar)」バッジとパスの間に視覚的な隙間が無い不具合を
+    修正、モードラインが長過ぎる場合に中央寄せ+左右半分割で全欄を
+    残す新レイアウトを追加、^J^Wがアーカイブ内ファイルで正しい保存先
+    を使わない不具合を修正**
+   - **報告**: 「「(tar)」と「/Users/haa15030/git/usilic/src/utf8.tar」
+     の間に空白が無い=dh。モードラインの長過ぎモード名および戻り値
+     対処としては、こんなのどう？『「1/1 END」「111」』をまずは中央へ
+     →残りのエリア半分ずつを「モード名」「戻り値」で分け合った上で
+     それぞれ「国際報道２０..._web_fl.ts」「ARC: /Users/...c/utf8.tar」
+     ってのは？さらに下記を反映よろしく。=di→^J^W→/Users/haa15030/
+     .usilic/saved/国際報道２０２６　ウクライナを支える　”戦禍の
+     宅配便”@20260710-0415_GR24_web_fl.ts」
+   - **修正1(隙間が無い件、根本原因)**: 項目365で`trailing2`に
+     `"(tar) " + path`という1本の文字列を入れたが、これは確かに
+     ASCIIの空白文字を含んではいた。しかし`renderModeLine()`は1つの
+     フィールドを`drawSegment()`で1回のStandout連続run(反転表示)
+     として描くため(CUIのモードラインは「フィールドの間」に黒い
+     (非反転の)隙間が必要という同関数自身のコメント通り)、この
+     埋め込み空白は反転表示された空白として描かれ、背景色が周囲と
+     全く同じため視覚的に消えてしまっていた(実際に画面をピクセル
+     単位でサンプリングし、`trailing2`の全域が同一の背景色で途切れ
+     なく続いていることを確認)。`ModeLineFields`に新規`trailing3`
+     フィールドを追加し(既存の`trailing2`同様、独立した反転表示run
+     +独自の非反転1文字ギャップを持つ、ただし切り詰め機構は持たず
+     収まらなければ丸ごと非表示にする単純な仕様)、`ArchiveMode`の
+     一覧画面`trailing2`をバッジのみ(`"(tar)"`)に戻し、パスは
+     `trailing3`へ分離。`renderModeLine()`/`composeModeLineRow()`の
+     両方に`trailing3`描画を追加(GUI側の`scrollModeLineSegments()`
+     は今回未対応、既存の`nameUnderlined`と同じ「実害の無い非対称」
+     として次回持ち越し)。`fillTrailingToEdge`もtrueのままだと
+     `trailing2`(バッジ)が行末まで埋められてしまい`trailing3`
+     (パス)が画面外に押し出されるため、falseへ変更。
+   - **修正2(モードライン全欄温存レイアウト、直接提案の実装)**:
+     `ModeLineFields`に`splitLayoutWhenCrowded`(bool、既定false)を
+     追加。trueかつ通常レイアウト(`name position trailing trailing2`)
+     が画面幅に収まらない場合のみ、新規`renderSplitModeLine()`が
+     従来の`fitModeLineFields()`の優先順位ドロップ(狭いとバイト数
+     欄ごと消える)の代わりに使われる: `positionText`+`trailing`
+     (バイト数)を1組として画面中央に配置し、残った左右の幅を
+     ほぼ半分ずつ`name`と`trailing2`に割り当て、それぞれFinder風
+     中間省略(`middleEllipsisTruncate()`)で収める。これにより
+     「バイト数が消える」ことが無くなり、`name`/`trailing2`も
+     全消去ではなく一部が必ず残る。`Application`の
+     `archiveContentView_`用プロバイダのみで有効化(他のモードは
+     この報告の対象外のため未変更、既定false)。
+   - **修正3(^J^Wがアーカイブ内ファイルで正しい保存先を使わない件)**:
+     `shellInsertBufferContent()`(K-64、`^J^W`の実体)は
+     `ApplicationMode::Directory`/`File`の場合のみ「現在のモード名の
+     basenameを`<home>/.usilic/saved/<name>`へ保存」という項目361/362
+     の新仕様を使い、それ以外のモード(Archive/ArchiveContent含む)は
+     旧来の番号付き`w.N`スクラッチファイルへフォールバックする実装の
+     ままだった。ユーザー報告(`=di→^J^W→.../saved/国際報道...`)は、
+     ArchiveContentからの`^J^W`もFileMode同様`.usilic/saved/`配下に
+     選択中エントリのbasenameで保存されることを期待しており、実際は
+     まだ未対応だった。`ApplicationMode::ArchiveContent`の分岐を追加、
+     `archiveMode_.selectedEntry()`の`name`(アーカイブ内相対パス)の
+     basenameを使うよう実装(`archiveContentView_`自身のモードライン
+     プロバイダと同じ計算)。
+   - **検証**: `make test` 771/771件・18515アサーション全通過(新規
+     doctest4件: `trailing3`の隙間描画/収まらない場合の非表示、
+     `splitLayoutWhenCrowded`が通常時は無変化・crowded時のみ新
+     レイアウトになることを確認する2件。既存の`test_archive_mode.cpp`
+     のモードラインテストも、バッジと直後の反転有無をセル単位で
+     確認する形に強化)。`make usilic`クリーンビルド確認済み。実際の
+     `src/utf8.tar`を使ったPTY自動テストで、(1)ARC一覧画面の
+     `"(tar)"`直後(列)が`standout=false`(実際に非反転の隙間がある)
+     ことを確認、(2)CJKファイル名のエントリを開いた際のモードラインが
+     `"国際報道２...web_fl.ts      1/1 END 111 ARC: /Users/.../
+     utf8.tar"`のように、バイト数(`111`)を含む全4要素が同時に表示
+     されることを確認(修正前はバイト数が消えていた)、(3)そのまま
+     `^J^W`を実行し、`<home>/.usilic/saved/`配下に選択中エントリの
+     正しいbasenameでファイルが保存され、SHELLモードへ`cat <path>`
+     入りで正しく遷移することを確認(修正前は保存先ディレクトリ自体が
+     作成されなかった)。
+
 ## 12. SHELL
 
 5. **Ubuntu実機での`tcb .`セグフォ、SHELLモード初期化まわりの表示バグ数件**

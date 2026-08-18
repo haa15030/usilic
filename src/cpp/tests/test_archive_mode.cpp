@@ -102,20 +102,33 @@ TEST_CASE_FIXTURE(Fixture, "loadArchive: a missing archive file fails cleanly") 
 // 「/Users/haa15030/git/usilic/src/utf8.tar」でよろしく" -- name is now
 // the fixed literal "ARC" (not the archive's own basename, which this
 // test originally asserted), trailing2 is a "(<command>)" badge (e.g.
-// "(tar)"), and rightWatermark is the archive's own FULL path.
+// "(tar)").
+//
+// 2026-08-19 SAME-DAY follow-up (report =dh: "「(tar)」と「/Users/.../
+// utf8.tar」の間に空白が無い"): the archive's own full path moved from
+// rightWatermark (non-highlighted, an earlier attempt at this fix) to
+// trailing3 (see its own comment) -- a genuinely separate, independently
+// highlighted field with its own real plain-mode gap before it, instead
+// of being glued onto trailing2 as one string whose embedded space
+// rendered invisibly inside a single reverse-video run.
 TEST_CASE_FIXTURE(Fixture, "mode-line fields: \"ARC\" name, \"(tar)\" command badge, and the archive's own "
-                           "full path (2026-08-19 redesign, was the archive's bare basename as `name`)") {
+                           "full path as a genuinely separate, gapped field (not glued onto the badge)") {
   REQUIRE(mode.loadArchive(path("archive.tar")));
-  // modeLineText() only composes name/position/trailing/trailing2 (see
-  // its own comment) -- rightWatermark (the archive's own full path
-  // here) only ever reaches the real screen via renderModeLine(), same
-  // as DirectoryMode's own "usilic v1.5b" watermark test precedent.
+  // modeLineText() composes name/position/trailing/trailing2/trailing3
+  // (see its own comment).
   std::string text = view.modeLineText();
   CHECK(text.rfind("ARC ", 0) == 0);
   CHECK(text.find("(tar)") != std::string::npos);
+  CHECK(text.find(path("archive.tar")) != std::string::npos);
+
   view.setViewport(0, 23);
   view.redraw();
-  CHECK(display.rowText(23).find(path("archive.tar")) != std::string::npos);
+  const std::string &row = display.rowText(23);
+  std::size_t badgeEnd = row.find("(tar)") + 5;  // just past the ')'
+  CHECK(display.standoutAt(23, static_cast<int>(badgeEnd) - 1) == true);   // ')' of the badge itself
+  CHECK(display.standoutAt(23, static_cast<int>(badgeEnd)) == false);      // the real gap this fix adds
+  CHECK(row.find(path("archive.tar")) != std::string::npos);
+  CHECK(display.standoutAt(23, static_cast<int>(row.find(path("archive.tar")))) == true);  // path itself, highlighted
 }
 
 TEST_CASE_FIXTURE(Fixture, "mode-line fields: no name field before any archive has been loaded") {
