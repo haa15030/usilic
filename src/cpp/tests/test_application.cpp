@@ -2893,6 +2893,96 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): the banner's own backing file 
   CHECK(app.fileMode().currentFile() == (root / ".usilic" / "usilic").string());
 }
 
+// 2026-08-18 fix, a direct user report + screenshot (=??): "一覧表示の
+// ハイライトを「: 」の後からにしてほしい" -- every line used to get a
+// whole-row reverse-video highlight (label included), unlike
+// DirectoryMode's own `ls -l` rows (nameStartColumn). Every line's
+// Line::highlightStartColumn should now land exactly where the value
+// text starts, matching DirectoryMode's own established convention.
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): highlightStartColumn lands right after the \"<label> : \" "
+                           "separator on every line, not at column 0") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  const auto &lines = app.activeContentView().lines();
+  REQUIRE_FALSE(lines.empty());
+  for (const auto &line : lines) {
+    REQUIRE(line.highlightStartColumn.has_value());
+    CHECK(*line.highlightStartColumn == 15);  // kLabelWidth(12) + " : "(3)
+  }
+}
+
+// 2026-08-18 fix, a direct user report: "ハイライト上の[return]が反応
+// しない" -- only WORK/arc.N were ever wired up to Enter; a user
+// landing on "ERROR"/"SHELL"/"Startup file" (highlighted identically,
+// per the fix just above) reasonably expected Enter to open THOSE
+// too.
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on the ERROR/SHELL/Startup file lines opens each as a "
+                           "FILE too (previously only WORK/arc.N responded to Enter at all)") {
+  { std::ofstream(root / ".usilic" / "error") << "boom\n"; }
+  { std::ofstream(root / ".usilic" / "shell") << "$ echo hi\n"; }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+
+  const auto &lines = app.activeContentView().lines();
+  auto rowEndingWith = [&](const std::string &suffix) {
+    for (std::size_t i = 0; i < lines.size(); i++) {
+      if (lines[i].text.size() >= suffix.size() &&
+          lines[i].text.compare(lines[i].text.size() - suffix.size(), suffix.size(), suffix) == 0)
+        return static_cast<int>(i);
+    }
+    return -1;
+  };
+
+  int errorRow = rowEndingWith((root / ".usilic" / "error").string());
+  REQUIRE(errorRow >= 0);
+  app.activeContentView().setCursorIndex(errorRow);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / ".usilic" / "error").string());
+  REQUIRE(app.handleCommand(Command::Back));  // back to the banner itself
+
+  int shellRow = rowEndingWith((root / ".usilic" / "shell").string());
+  REQUIRE(shellRow >= 0);
+  app.activeContentView().setCursorIndex(shellRow);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / ".usilic" / "shell").string());
+}
+
+// 2026-08-18 fix, a direct user report: launched via "-c ~/git/usilic"
+// then ^T showed "/Users/haa15030/.usilic" (the banner's OWN synthetic
+// file's containing directory) as the trailing "戻り値" field instead
+// of the real directory ^G actually returns to.
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): the trailing \"戻り値\" field shows the REAL directory ^G "
+                           "returns to, not the banner file's own containing directory") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/
+  REQUIRE(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
+
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  std::string modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find((root / "subdir").string()) != std::string::npos);
+  CHECK(modeLine.find(".usilic") == std::string::npos);
+}
+
+// 2026-08-18 fix, a direct user report: "SHELLで^Tが利かない" -- ^T
+// isn't a leader byte, so it fell through feedShellByte()'s own
+// dispatch entirely and was silently swallowed as ordinary command-
+// line input instead of opening the banner.
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): reachable from SHELL mode too, not just Directory/File/etc") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartShell));
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+
+  REQUIRE(app.feedShellByte(0x14, std::nullopt));  // bare ^T
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / ".usilic" / "usilic").string());
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^O a (K-27) cycles the charset Ascii -> Euc -> Utf8 -> Ascii") {
   REQUIRE(app.start(path()));
   CHECK(app.encoding() == Charset::Encoding::Ascii);

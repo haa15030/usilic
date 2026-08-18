@@ -20256,4 +20256,85 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      <pid>/`配下のまま、=cmの競合解消は無傷)を、それぞれ実バイナリで
      確認した。
 
+358. **^T画面の不具合4件を修正: (1)ハイライトが「: 」の前(ラベル部分)
+    から始まっていた、(2)ERROR/SHELL/Startup fileの各行で`[return]`が
+    反応しなかった、(3)戻り値欄が`^T`起動元ではなく`^T`自身の実体
+    ファイルの格納先を示していた、(4)SHELLモードから`^T`が利かな
+    かった**
+   - **報告**: 「^Tだが一覧表示のハイライトを「: 」の後からにして
+     ほしいのと、ハイライト上の[return]が反応しない。戻り値も不良
+     (-c→^Tなら「~/git/usilic」から来ているのに「/Users/haa15030/
+     .usilic」)。SHELLで^Tが利かない。」
+   - **(1)の原因**: `executeShowTcbBanner()`が生成するテキストを
+     `fileMode_.loadFile()`経由でプレーンテキストとして読み込んで
+     いたため、各行に付与されるはずの`Line::highlightStartColumn`
+     (DirectoryMode独自の`ls -l`一覧が既に使っている、行全体では
+     なく特定の列から先だけを反転表示する仕組み)が一切セットされて
+     おらず、`cursorHighlightEnabled(true)`による行全体反転がラベル
+     部分ごと及んでいた。
+   - **(1)の修正**: `loadFile()`成功後、`fileView_.lines()`を取得し、
+     全行に`highlightStartColumn = continuationIndent.size()`
+     (`kLabelWidth+3`、`「: 」`の直後の桁)を一律で設定して
+     `fileView_.setLines()`で反映。全ての行(Boot options/Startup
+     file/ERROR/SHELL/WORK/arc.N)が同じ書式(`ラベル + " : " + 値`
+     または継続行のインデント+値)を共有しているため、行ごとの
+     場合分けは不要だった。既知の制限として、値が長すぎて折り返す
+     行(`readAndWrap()`が生成する2行目以降)にも同じ列番号が
+     適用されるため若干ずれる可能性があるが、実際の`$HOME`配下の
+     パス長ではまず起きない稀なケースとして許容。
+   - **(2)の原因**: `openSelectedBannerEntry()`(Enter処理)が
+     `allocatedWorkFiles_`/`allocatedArcDirs_`としか照合しておらず、
+     `usilicrcPath_`/`errorLogPath_`/`logFilePath_`(Startup file/
+     ERROR/SHELL)は最初から対象外だった。(1)の修正で全行が同じ
+     見た目でハイライトされるようになった以上、ユーザーがどの行でも
+     Enterが効くと期待するのは自然な想定。
+   - **(2)の修正**: `openSelectedBannerEntry()`の先頭に
+     `usilicrcPath_`/`errorLogPath_`/`logFilePath_`との末尾一致
+     チェックを追加、一致すればそのファイルを`fileMode_.loadFile()`
+     で開き`fileReturnMode_ = File`(WORKと同じ、`^G`で本画面へ
+     戻る)とする。「Boot options」はargvの文字列そのものでファイル
+     に対応しないため対象外のまま。ERROR/SHELLはまだ何も書き込まれて
+     いなければファイルが存在せず`loadFile()`が失敗してEnterは
+     従来通りno-opになる(空のWORKスロットと同じ扱い)。
+   - **(3)の原因**: `FileMode`のモードラインプロバイダは既定で
+     「読み込んだファイル自身の格納先ディレクトリ」を戻り値
+     (trailing2)欄に表示する設計だが、`^T`画面の実体ファイルは
+     `bannerFilePath()`(`<homeDirectory>/.usilic/usilic`)に置かれて
+     おり、`^G`の実際の戻り先(`directoryMode_`の現在ディレクトリ、
+     `^T`はこれを一切変更しない)とは無関係だった。
+   - **(3)の修正**: LOCATE経由でFILEを開いた場合に既に使われている
+     `FileMode::setSearchOrigin(label, detail)`(name/trailing2を
+     まとめて上書きする既存の仕組み)を`^T`にも流用し、
+     `fileMode_.setSearchOrigin("usilic", directoryMode_.
+     currentDirectory())`を`loadFile()`成功後に呼ぶよう変更。name
+     欄は元々表示されていた`"usilic"`をそのまま指定しているため
+     見た目に変化はなく、trailing2だけが実際の戻り先へ差し替わる。
+   - **(4)の原因**: SHELLモードは独自の`feedShellByte()`が全バイトを
+     最初に処理する設計で、リーダーキー(^J/^X/^O/ESC)以外の
+     バイトはこの関数内で個別に判定されない限りコマンドラインへの
+     文字入力として扱われる。`^T`(0x14)はリーダーキーではなく
+     `resolveCommand()`が直接`Command::ShowTcbBanner`へ解決する
+     単独バイトのため、`feedShellByte()`のどの分岐にも該当せず
+     素通りしていた。
+   - **(4)の修正**: `feedShellByte()`に`^G`判定のすぐ後ろへ`0x14`の
+     専用分岐を追加。リーダーキー完了時と同じ「`currentMode_ =
+     shellReturnMode_`してから`redraw()`」という手順を踏んでから
+     `handleCommand(Command::ShowTcbBanner)`を呼ぶ(`executeShowTcbBanner()`
+     自体は`fileReturnMode_`を無条件で`Directory`にする既存仕様のため、
+     SHELLだけ特別に「元のSHELLへ戻る」ようにはしていない――他の
+     どのモードから`^T`を起動しても`(ls)`表示へ戻る、という既存の
+     一貫した挙動に合わせた)。
+   - **検証**: `make test` 766/766件・18481アサーション全通過(新規
+     doctest4件: 全行のhighlightStartColumnが15であることの確認、
+     ERROR/SHELL行それぞれでEnterが実際にそのファイルを開くことの
+     確認、サブディレクトリへ移動後に`^T`した際のモードラインが
+     `.usilic`を含まず実際の戻り先ディレクトリを含むことの確認、
+     SHELLモードから`^T`(bare 0x14)で`^T`画面へ入れることの確認)。
+     `make usilic`クリーンビルド確認済み。PTY自動テストで、`-c`
+     起動→`^T`(ハイライトが「: 」の後ろだけになっていること・
+     戻り値欄が起動時ディレクトリになっていることを確認)→ERROR行
+     でEnter(ファイルが存在せずno-op)→`^G`→`^[s`でSHELL起動→
+     SHELL内で`^T`(実際に`^T`画面が開くことを確認)、をそれぞれ
+     セル単位で確認した。
+
 

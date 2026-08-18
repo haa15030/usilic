@@ -1530,6 +1530,24 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   }
 
   if (byte == kControlG) return returnFromShell();
+  // K-0 (^T, ShowTcbBanner): 2026-08-18 fix, a direct user report
+  // ("SHELLで^Tが利かない"). ^T isn't a leader byte (kLeaderJ/X/O/ESC
+  // above) -- resolveCommand() maps it directly, unprefixed, for every
+  // OTHER mode -- so it fell all the way through this function to the
+  // plain command-line-editing fallback at the bottom, silently
+  // inserted (or dropped, being a control byte) into the shell command
+  // line instead of doing anything banner-related. Mirrors the leader-
+  // sequence handling above: switch back to whichever mode SHELL was
+  // entered from FIRST (executeShowTcbBanner() unconditionally sets
+  // fileReturnMode_ to Directory afterward regardless of where ^T was
+  // pressed from, matching every other entry point -- SHELL isn't a
+  // special case there, see its own comment), then redraw before
+  // dispatching in case it fails and leaves this screen showing.
+  if (byte == 0x14) {
+    currentMode_ = shellReturnMode_;
+    activeView().redraw();
+    return handleCommand(Command::ShowTcbBanner);
+  }
   // ^P/^N and Enter-while-browsing below are ported from legacy's
   // shell.c M_kup/M_kdn: a cursor moves directly through scrollback_'s
   // OWN lines_ (the same unified prompt+output history real content
@@ -3288,6 +3306,27 @@ bool Application::executeShowTcbBanner() {
   // it to that same "off" default on every call (see its own comment)
   // so this doesn't leak into whatever gets loaded next.
   fileView_.setCursorHighlightEnabled(true);
+  // Highlight only from after the "<label> : " separator (2026-08-18
+  // fix, a direct user report: "一覧表示のハイライトを「: 」の後から
+  // にしてほしい"): every line loadFile()/readAndWrap() just produced
+  // for this synthetic banner has the exact same shape -- either
+  // `field(label) + value` or `continuationIndent + value` -- both of
+  // which put the VALUE at this same fixed column (continuationIndent's
+  // own width), so a single uniform highlightStartColumn works for
+  // every line without needing to distinguish which field it belongs
+  // to (mirrors DirectoryMode's own nameStartColumn precedent for `ls
+  // -l` rows). NOTE: a value long enough to WRAP onto a second physical
+  // row (readAndWrap()'s own doing, before this code ever sees the
+  // result) would apply this same column to that continuation row too,
+  // slightly misplacing the highlight there -- accepted as a rare edge
+  // case (this port's own $HOME/usilicrc paths are normally far short
+  // of the ~65-column budget available before wrapping), not solved
+  // here.
+  {
+    std::vector<ContentView::Line> lines = fileView_.lines();
+    for (auto &line : lines) line.highlightStartColumn = static_cast<int>(continuationIndent.size());
+    fileView_.setLines(std::move(lines));
+  }
   currentMode_ = ApplicationMode::File;
   // fileReturnMode_ = Directory as usual, but see returnToDirectory()'s
   // own 2026-08-18 comment: unlike every other File-mode entry point,
@@ -3296,6 +3335,22 @@ bool Application::executeShowTcbBanner() {
   // directory, tempRootDirectory_, is essentially never where the user
   // actually wants to end up).
   fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
+  // Return-destination display (2026-08-18 fix, a direct user report:
+  // launched via "-c ~/git/usilic" then ^T showed "/Users/haa15030/
+  // .usilic" as the trailing "戻り値" field instead of "~/git/usilic").
+  // FileMode's own default trailing2 (see its constructor's own
+  // comment) is the loaded file's OWN containing directory -- correct
+  // for a real file, but this file's real parent (bannerFilePath()'s
+  // own directory) is never where ^G above actually returns to (see
+  // the comment just above); setSearchOrigin() already exists exactly
+  // for "override the destination shown here" (LOCATE's own File
+  // results use it identically), reused here with the literal name
+  // this screen already shows ("usilic") so only trailing2 visibly
+  // changes. directoryMode_.currentDirectory() is right regardless of
+  // which mode ^T was actually pressed from, since fileReturnMode_
+  // above is unconditionally Directory and nothing along that path
+  // touches DirectoryMode's own state.
+  fileMode_.setSearchOrigin("usilic", directoryMode_.currentDirectory());
   return true;
 }
 
@@ -3334,6 +3389,25 @@ bool Application::openSelectedBannerEntry() {
     return !suffix.empty() && text.size() >= suffix.size() &&
            text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
   };
+  // Startup file/ERROR/SHELL (2026-08-18 fix, a direct user report:
+  // "ハイライト上の[return]が反応しない" -- every line here is now
+  // highlighted the same way (see executeShowTcbBanner()'s own
+  // highlightStartColumn comment), so a user landing the cursor on
+  // ANY of these three reasonably expects Enter to open the file it
+  // names, not silently do nothing (previously only WORK/arc.N were
+  // wired up at all). "Boot options" is deliberately excluded -- it's
+  // literal argv text, not a path to any real file. Opens as a FILE,
+  // same fileReturnMode_ = File convention as WORK below, so ^G comes
+  // straight back to this banner. loadFile() itself already fails
+  // gracefully (false) for a path that doesn't exist yet (ERROR/SHELL
+  // before anything's ever been logged there) -- Enter simply stays a
+  // no-op in that case, same as it already was for an empty WORK slot.
+  for (const std::string &fixedPath : {usilicrcPath_, errorLogPath_, logFilePath_}) {
+    if (!endsWith(fixedPath)) continue;
+    if (!fileMode_.loadFile(fixedPath)) return false;
+    fileReturnMode_ = ApplicationMode::File;
+    return true;
+  }
   for (const auto &workPath : allocatedWorkFiles_) {
     if (!endsWith(workPath)) continue;
     if (!fileMode_.loadFile(workPath)) return false;
