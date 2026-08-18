@@ -5638,6 +5638,38 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      画面への正しい復帰)、`^X^F`→`^R`→`^G`(空リングでも同様)を
      それぞれセル単位で確認した。
 
+354. **項目353の直後、ユーザーから直接の訂正: `^X^D`→`^R`の右側
+    フィールド(戻り値)は宛先パスではなく`"DIR"`バッジのはず。旧版が
+    そうなっている、との指摘を受け照合・修正**
+   - **報告**: 「やはり惜しいな。^X^D→^Rは戻り値DIRでないと。旧版は
+     そうなってるんで照合よろしく」
+   - **照合**: `listBrowserView_`自身の`ModeLineFieldsProvider`
+     (項目351でrefreshDirectEntryModeLine()に置き換わる前、
+     RecentFile/RecentDirectoryの読み取り専用一覧を担当していた
+     旧描画)の既存コメントを読み直したところ、`listBrowserChronological_`
+     が真のとき`rightWatermark`に`promptLabelText(kind)`("DIR"/
+     "FILE")を出す設計が既に確立済み(legacy `mp[M_hist]`が
+     `T_hfile`/`T_hdir`等どのリングでも共通で`" HISTORY"`を返すため、
+     どのリングの履歴を見ているかを示す目印としてこのバッジが
+     必要、という2026-08-05時点の既存の設計意図)だったと判明。
+     `refreshDirectEntryModeLine()`が`drawPromptLabel()`へ切り替わった
+     際、この「時系列表示中はバッジに切り替える」ロジックだけが
+     引き継がれておらず、代わりに(項目352で追加した)宛先パス
+     表示だけが常に出るようになっていた。
+   - **修正**: `drawPromptLabel()`の戻り値フィールド算出で、
+     `kind`が`RecentFile`/`RecentDirectory`かつ
+     `listBrowserChronological_`が真のときだけ`promptLabelText(kind)`
+     ("DIR"/"FILE")を表示し、それ以外(ソート順表示中、および編集中)
+     は従来通り項目352の宛先パス表示のままとした。
+   - **検証**: `make test` 759/759件・18387アサーション全通過(新規
+     assertion1件: `^R`トグル後の実際の描画行に"DIR"が含まれることを
+     `display.rowText()`で直接確認、`modeLineText()`という別経路の
+     チェックだけに頼らないよう追加)。`make usilic`クリーンビルド
+     確認済み。PTY自動テストで、`^X^D`→`^R`(戻り値欄が"...5030/
+     git/usilic/"から"DIR"へ切り替わることを確認)→`^R`(元の宛先
+     パス表示へ戻ることを確認)、`^X^F`→`^R`(同様に"FILE"バッジ)を
+     それぞれセル単位で確認した。
+
 ## 10. HISTORY / COMMAND(^R)
 
 160. **2026-08-04(続き): `^X^F`(FILE)/`^X^D`(DIR)で開く一覧の`^R`

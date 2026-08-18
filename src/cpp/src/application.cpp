@@ -4813,7 +4813,26 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // block below, which is the real fix). Reverted back to the
   // unconditional previousModeName(destinationMode) every other
   // PromptKind already uses.
-  std::string destinationDirectory = previousModeName(destinationMode);
+  // RecentFile/RecentDirectory + listBrowserChronological_ (2026-08-18
+  // fix, a direct user correction: "^X^D→^Rは戻り値DIRでないと。旧版は
+  // そうなってるんで"): this trailing field's own "destination path"
+  // content (the fix right above) is correct for the ORDINARY sorted
+  // "DIR"/"FILE" screen, but legacy's own T_hfile/T_hdir -- and this
+  // port's own OLD renderer for this exact screen before
+  // refreshDirectEntryModeLine() took over (listBrowserView_'s own
+  // ModeLineFieldsProvider, see its own comment: `rightWatermark =
+  // listBrowserChronological_ ? promptLabelText(...) : ""`) -- show the
+  // ORIGINAL category badge ("DIR"/"FILE") in this same slot instead,
+  // once toggled into the chronological "HISTORY" view, disambiguating
+  // WHICH ring's history this is (the left label itself just says the
+  // fixed literal "HISTORY" at that point, same as every other
+  // promptHistoryRecallKind_ holder's own chronological view). Restoring
+  // that same badge here, in the one slot this function actually has,
+  // rather than the destination path.
+  std::string destinationDirectory =
+      ((kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory) && listBrowserChronological_)
+          ? promptLabelText(kind)
+          : previousModeName(destinationMode);
   if (!destinationDirectory.empty()) {
     std::string tail = truncatedTrailingPath(destinationDirectory);
     // columns()-1, NOT columns() (2026-08-18 fix): same auto-wrap

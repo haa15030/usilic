@@ -5197,6 +5197,15 @@ TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): plain ^R while still just BRO
   REQUIRE(app.feedByte(0x12, std::nullopt));  // plain ^R, via the real per-byte dispatch path
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // still browsing, NOT dropped into real editing
   CHECK(app.activeContentView().modeLineText().rfind("HISTORY ", 0) == 0);
+  // Trailing field: legacy's own T_hdir shows the ORIGINAL category
+  // ("DIR") here once toggled to chronological, not the destination
+  // path drawPromptLabel() otherwise shows -- a direct user correction:
+  // "^X^D→^Rは戻り値DIRでないと。旧版はそうなってるんで". Checked
+  // against the real rendered row (drawPromptLabel()'s own screen
+  // writes), not modeLineText() (a separate, independently-computed
+  // getter that happens to already agree, but doesn't exercise this
+  // function's own trailing-field logic at all).
+  CHECK(display.rowText(23).find("DIR") != std::string::npos);
 
   REQUIRE(app.feedByte(0x12, std::nullopt));  // toggling again returns to the sorted "DIR" view
   CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) == 0);
