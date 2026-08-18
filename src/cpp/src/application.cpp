@@ -2809,6 +2809,29 @@ bool Application::returnFromListBrowser() {
     // same early-return branch as GrepPattern's own identical fix.
     if ((kind == PromptKind::GrepPattern || kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory) &&
         promptHistoryRecallIsDirectEntry_) {
+      // RecentFile/RecentDirectory + listBrowserChronological_
+      // (2026-08-18, a direct user correction backed by a real,
+      // freshly-built legacy binary check -- "^X^D→^R→^G(DIR一覧から
+      // 来たんだからそこへ戻るのも当たり前)...現状そうなっていない
+      // （^GでDIR一覧、じゃなくて(ls)へ戻る）"): ^R's chronological
+      // "HISTORY" toggle is its own NESTED screen stacked on top of the
+      // ordinary sorted "DIR"/"FILE" list, not a side note on the same
+      // screen -- confirmed by running `^X^D`→`^R`→`^G` against
+      // tcb/src's own legacy binary (built fresh in this same
+      // investigation): the first ^G lands back on "DIR 1/1 END ...",
+      // the SECOND ^G is what actually reaches "(ls)". The early-return
+      // branch below (unconditionally jumping straight to
+      // promptHistoryRecallReturnMode_) skipped that intermediate step
+      // entirely. Popping the toggle back to sorted first -- via the
+      // exact same toggleListBrowserHistory() a real ^R press uses --
+      // and returning early (staying in ListBrowser, NOT touching
+      // promptHistoryRecallKind_/currentMode_ at all) reproduces the
+      // legacy two-^G shape; a second ^G then falls through to this
+      // same branch again with listBrowserChronological_ already false,
+      // taking the normal exit path below.
+      if ((kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory) && listBrowserChronological_) {
+        return toggleListBrowserHistory();
+      }
       promptHistoryRecallKind_ = std::nullopt;
       promptHistoryRecallIsDirectEntry_ = false;
       promptHistoryRecallText_.clear();

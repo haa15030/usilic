@@ -5220,6 +5220,34 @@ TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): plain ^R while still just BRO
   CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) != 0);  // NOT the ^X^D prompt's own "DIR" label
 }
 
+TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): ^G while the ^R chronological \"HISTORY\" view is showing pops "
+                           "back to the underlying sorted \"DIR\"/\"FILE\" screen FIRST, not straight past it to "
+                           "the mode ^X^D/^X^F was launched from -- confirmed against a freshly-built copy of the "
+                           "legacy C binary itself (tcb/src), which shows exactly this two-^G shape for "
+                           "^X^D->^R->^G->^G (2026-08-18 fix, a direct user correction: \"^X^D→^R→^G（DIR一覧から"
+                           "来たんだからそこへ戻るのも当たり前）...現状そうなっていない（^GでDIR一覧、じゃなくて"
+                           "(ls)へ戻る）\" -- the earlier =cx/=cy fix's early-return branch jumped straight to "
+                           "promptHistoryRecallReturnMode_ regardless of listBrowserChronological_, skipping this "
+                           "intermediate screen entirely)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) == 0);
+
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R: DIR -> HISTORY (chronological)
+  CHECK(app.activeContentView().modeLineText().rfind("HISTORY ", 0) == 0);
+
+  // First ^G: pops the toggle back to sorted "DIR", stays in ListBrowser --
+  // does NOT touch promptHistoryRecallKind_/currentMode_ at all.
+  REQUIRE(app.feedByte(0x07, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) == 0);
+
+  // Second ^G: NOW actually exits back to the real DirectoryMode screen.
+  REQUIRE(app.feedByte(0x07, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.activeContentView().modeLineText().rfind("DIR ", 0) != 0);
+}
+
 TEST_CASE_FIXTURE(Fixture, "K-46: Enter on a recent file entry opens it via FileMode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
