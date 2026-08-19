@@ -162,6 +162,45 @@ class Display {
   virtual void open() = 0;
   virtual void close() = 0;
 
+  // Ported from legacy vt.c's own vt_init(-2)/vt_init(2) cases -- a
+  // real user question (2026-08-20, docs/HISTORY.md:9023, raised
+  // right after diagnosing this session's own SIGTERM/raw-mode work):
+  // "-cでも起きるんだが、^Jp'vi CLAUDE.md'[return]は問題無い。less
+  // とviの違いって何？" (why does the FIRST `less` launched from
+  // PROGRAM mode render broken while `vi` never does, and why does
+  // even a LATER `less` work fine once `vi` has run once). Root-
+  // caused by reading legacy's own vt_init() source directly: leaving
+  // raw mode for an external program (`case -2`) ALSO resets the
+  // scroll region to the FULL screen via `vt_cs(vt_row(0) - 1, 0)`,
+  // and re-entering (`case 2`) re-constrains it back to
+  // `vt_row(0) - 2` (reserving the last row for usilic's own mode
+  // line) via the same `vt_cs()` call -- this port's own KeyInput::
+  // leaveRawMode()/reenterRawMode() (ProgramMode::run()'s own
+  // pairing) only ported the termios half of vt_init(-2)/(2),
+  // dropping the scroll-region half entirely. TerminalDisplay's own
+  // applyScrollRegion() (see its own comment) constrains the scroll
+  // region to rows 0..rows-2 at startup and never resets it before
+  // handing off to an external program -- so `less` inherits that
+  // same constrained region, unable to use the terminal's own last
+  // row the way it normally would. `vi`/`vim` is well known for
+  // unconditionally resetting the scroll region itself as part of its
+  // own aggressive terminal (re)initialization on startup (via
+  // terminfo, regardless of what it inherited) -- explaining both
+  // halves of the report: `vi` always self-corrects regardless of
+  // this gap, and once it has run once, the terminal's own (kernel/
+  // terminal-emulator-level, not process-level) scroll-region state
+  // stays reset to full-screen for whatever runs next, including a
+  // LATER `less` -- until usilic's own next redraw re-establishes its
+  // own constrained region via reenterFromExternalProgram() below,
+  // completing the cycle. GraphicalDisplay has no scroll-region
+  // concept at all (see its own no-op override) -- matches "-g起動
+  // では最初からOK" (a real corroborating detail in the original
+  // report) exactly, since -g's own PROGRAM launch path
+  // (runProgramInLaunchingTerminal()) uses an entirely separate real
+  // terminal window this port's own Display never touches.
+  virtual void leaveForExternalProgram() = 0;
+  virtual void reenterFromExternalProgram() = 0;
+
   // One piece of the mode-line row -- either a highlighted (reverse-
   // video/"standout") field (a filename, the position indicator, the
   // trailing path) or a plain, unhighlighted single-space gap between

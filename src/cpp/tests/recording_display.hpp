@@ -87,6 +87,8 @@ class RecordingDisplay : public Display {
   void setSmoothScrollEnabled(bool enabled) override { smoothScroll_ = enabled; }
   void open() override {}
   void close() override {}
+  void leaveForExternalProgram() override {}
+  void reenterFromExternalProgram() override {}
 
   // Same row-granular shape as TerminalDisplay's real implementation
   // (see its own comment) -- ignores pixelOffsetY, reuses this

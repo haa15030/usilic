@@ -4823,6 +4823,72 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      「less CLAUDE.md」に補完される(先頭の「less 」部分は保持され、
      末尾の単語だけが補完される)ことを実バイナリで確認した。
 
+382. **`-c`のPROGRAM実行で`less`初回だけ表示が壊れる不具合の真因を
+    特定・修正: スクロール領域(DECSTBM)の退避/復元がleaveRawMode()/
+    reenterRawMode()から漏れていた**
+   - **報告**: docs/HISTORY.md:9023の古い未解決報告(「確かにlessの
+     ようだが画面がおかしい=cc。^[<でファイル冒頭のはずが何も無い。
+     'v'→viは正常。...最初のlessでは何も表示されないのはなぜ？
+     以後はなぜかlessの起動も含めて問題無し。-g起動では最初から
+     OK。」)について、このセッションの前半で行ったSIGTERM/raw mode
+     周りの調査を踏まえ、ユーザーから「-g起動後、最初の
+     「less CLAUDE.md」でCUIウィンドウへ戻る際もrawモードのまま
+     なんじゃない？でもってvi等起動後はrawも解除されているとか？」
+     という仮説が提示された。続けて「-cでも起きるんだが、
+     ^Jp'vi CLAUDE.md'[return]は問題無い。lessとviの違いって何？」
+     との確認依頼。
+   - **調査**: legacyの`vt.c`の`vt_init()`本体を直接確認したところ、
+     `case -2`(raw mode脱出、外部プログラム実行前)に
+     `if (!vt_mode('H')) vt_cs(vt_row(0) - 1, 0);`(スクロール
+     領域を画面全体へ拡張)、`case 2`(raw mode復帰、外部プログラム
+     終了後)に`if (!vt_mode('H')) vt_cs(vt_row(0) - 2, 0);`
+     (usilic自身のモードライン行を除いた領域へ再度制限)という、
+     termios(raw mode)とは別の**スクロール領域の退避/復元**が
+     ペアで組み込まれていることを発見した。C++版の
+     `KeyInput::leaveRawMode()`/`reenterRawMode()`(`ProgramMode::
+     run()`が呼ぶ)はtermios部分のみを移植しており、この
+     スクロール領域の退避/復元が丸ごと欠落していた。
+     `TerminalDisplay::applyScrollRegion()`は起動時に一度だけ
+     (`rows_-2`、最終行をモードライン用に確保)呼ばれるだけで、
+     外部プログラム実行の前後には一切呼ばれていなかった。つまり
+     `less`実行中もusilic自身の制限されたスクロール領域が
+     そのまま有効なままになっていた。
+     `vi`/`vimは自身の初期化で無条件にスクロール領域を画面全体へ
+     リセットする(継承した状態を信用せず常に自前で設定し直す)ため
+     この欠落の影響を受けず、一度`vi`が実行されて画面全体へ
+     リセットされると、その後は(端末エミュレータ側の状態として)
+     `less`も含めて正常に動作するようになる、という報告内容と
+     完全に整合する。`-g`は`runProgramInLaunchingTerminal()`が
+     全く別の実ターミナルウィンドウを使うため、この問題自体が
+     発生し得ない(「-g起動では最初からOK」との報告と整合)。
+   - **修正**: `Display`インターフェースへ`leaveForExternalProgram()`/
+     `reenterFromExternalProgram()`を新設。`TerminalDisplay`側で
+     `leaveForExternalProgram()`はスクロール領域を`rows_-1`
+     (画面全体)へ、`reenterFromExternalProgram()`は
+     `applyScrollRegion()`を呼んで通常の制限領域へ戻す。
+     `GraphicalDisplay`は元々スクロール領域という概念自体が無い
+     ため両方とも無条件no-op。`DelegatingDisplay`はバックエンドへ
+     委譲。`ProgramMode::run()`の`leaveRawMode()`/
+     `reenterRawMode()`の前後にこの新メソッド呼び出しを追加
+     (`ProgramMode`はこれまで`KeyInput`のみを保持していたため、
+     新たに`Display`への参照も保持するようコンストラクタを変更)。
+   - **検証**: `make test` 781/781件・18577アサーション全通過
+     (新規doctest2件: `run()`が実際の子プロセス実行の前後で
+     `leaveForExternalProgram()`/`reenterFromExternalProgram()`を
+     それぞれ1回ずつ呼ぶこと、`setForegroundLauncher()`が処理を
+     肩代わりする場合はどちらも呼ばれないこと)。`make usilic`
+     クリーンビルド確認済み。PTY自動テストで、実際の`usilicrc`を
+     隔離した`HOME`へ配置した上で`^Jp`→「less CLAUDE.md」を実行
+     すると、`less`実行中は画面全体へのスクロール領域拡張
+     (`\x1b[1;24r`)が送出され通常時の制限領域(`\x1b[1;23r`)は
+     送出されないこと、`q`で`less`を終了すると逆に制限領域
+     (`\x1b[1;23r`)が再送出され画面全体指定は送出されないことを、
+     生バイト列レベルで確認した(最初のPTY再現試行では、隔離した
+     `HOME`に本物の`usilicrc`を配置し忘れており`isRecognizedProgram()`
+     が`less`を認識できず`ProgramMode::run()`自体が一度も呼ばれて
+     いなかった、という見せかけの「再現しない」状態を経由した後に
+     気づいて修正、正しく再現・検証できた)。
+
 
 ## 9. FILE / DIR
 

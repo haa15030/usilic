@@ -41,6 +41,9 @@ void DelegatingDisplay::setSmoothScrollEnabled(bool enabled) { backend_->setSmoo
 void DelegatingDisplay::open() { backend_->open(); }
 void DelegatingDisplay::close() { backend_->close(); }
 
+void DelegatingDisplay::leaveForExternalProgram() { backend_->leaveForExternalProgram(); }
+void DelegatingDisplay::reenterFromExternalProgram() { backend_->reenterFromExternalProgram(); }
+
 void DelegatingDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
                                         const std::vector<ModeLineSegment> &modeLineSegments) {
   backend_->renderScrolled(lines, topIndex, pixelOffsetY, modeLineSegments);

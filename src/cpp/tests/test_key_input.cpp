@@ -45,6 +45,8 @@ class FakeDisplay : public Display {
   void setSmoothScrollEnabled(bool) override {}
   void open() override {}
   void close() override {}
+  void leaveForExternalProgram() override {}
+  void reenterFromExternalProgram() override {}
   void renderScrolled(const std::vector<std::string> &, int, int, const std::vector<ModeLineSegment> &) override {}
 
  private:

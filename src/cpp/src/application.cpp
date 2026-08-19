@@ -380,7 +380,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       grepMode_(grepView_, configuration),
       cutMode_(cutView_, cutModeStack_, configuration),
       manMode_(manView_, history, configuration, encoding, width),
-      programMode_(keyInput, history),
+      programMode_(keyInput, display, history),
       locateMode_(locateView_, configuration),
       archiveMode_(archiveView_, history, configuration),
       shell_(display, [&] {

@@ -201,6 +201,13 @@ class GraphicalDisplay : public Display {
   void open() override;
   void close() override;
 
+  // No-ops: -g has no scroll-region concept at all (see Display::
+  // leaveForExternalProgram()'s own comment) -- its own PROGRAM launch
+  // path (runProgramInLaunchingTerminal()) uses an entirely separate
+  // real terminal window this class never touches.
+  void leaveForExternalProgram() override {}
+  void reenterFromExternalProgram() override {}
+
   // -- GUI-specific, not part of Display's abstract interface --
 
   // Pumps pending SDL events for this window, queuing whatever mouse

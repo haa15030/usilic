@@ -100,6 +100,9 @@ class TerminalDisplay : public Display {
   void open() override;
   void close() override;
 
+  void leaveForExternalProgram() override;
+  void reenterFromExternalProgram() override;
+
   // See Display::renderScrolled()'s own comment: a real, row-granular
   // implementation (pixelOffsetY has no effect beyond its sign, since
   // a terminal has no sub-row addressing), kept correct and usable

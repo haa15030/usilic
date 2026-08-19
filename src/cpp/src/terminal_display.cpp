@@ -300,6 +300,26 @@ void TerminalDisplay::close() {
   std::fflush(stdout);
 }
 
+// See Display::leaveForExternalProgram()'s own comment for the full
+// story (docs/HISTORY.md:9023, ported from legacy vt.c's vt_init(-2)
+// case): applyScrollRegion() constrains the scroll region to
+// rows_-2 (or rows_-1 under smooth scroll) for usilic's OWN drawing,
+// reserving the last row for the mode line -- an external program
+// (`less`, a PROGRAM-list entry) inherits that same real terminal and
+// has no idea usilic ever narrowed it, so it needs the FULL screen
+// back for the duration of its own run.
+void TerminalDisplay::leaveForExternalProgram() {
+  if (!outputEnabled_ || caps_.changeScrollRegion.empty()) return;
+  tputs(tgoto(caps_.changeScrollRegion.c_str(), rows_ - 1, 0), 1, outc);
+  std::fflush(stdout);
+}
+
+// The other half of the pair above: re-constrains the scroll region
+// back to usilic's own normal (smooth-scroll-dependent) range once
+// control returns -- just applyScrollRegion() itself, already
+// computing exactly that from smoothScroll_/rows_.
+void TerminalDisplay::reenterFromExternalProgram() { applyScrollRegion(); }
+
 void TerminalDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
                                       const std::vector<ModeLineSegment> &modeLineSegments) {
   (void)pixelOffsetY;  // no sub-row addressing on a real terminal -- see this method's own header comment

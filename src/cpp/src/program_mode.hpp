@@ -3,6 +3,7 @@
 #include <functional>
 #include <string>
 
+#include "display.hpp"
 #include "history.hpp"
 #include "key_input.hpp"
 
@@ -48,7 +49,7 @@ namespace fm {
 //     every other *Mode class in this port already draws.
 class ProgramMode {
  public:
-  ProgramMode(KeyInput &keyInput, History &history);
+  ProgramMode(KeyInput &keyInput, Display &display, History &history);
 
   // Runs `command` as `sh -c command` in the foreground with real
   // terminal access (leaving raw mode first, re-entering it after),
@@ -94,6 +95,7 @@ class ProgramMode {
 
  private:
   KeyInput &keyInput_;
+  Display &display_;
   History &history_;
   std::function<bool(const std::string &command)> foregroundLauncher_;
 };
