@@ -7074,6 +7074,55 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      と判断した(HISTORY:9566の該当メッセージ自体は項目364のARC
      モードライン再設計の報告であり、この文字化けとは別件)。
 
+370. **項目369の「保留」2件を訂正・実装: ARC文字化けは`/usr/local/bin`
+    にインストール済みの4日前のバイナリを検証していたことが原因と
+    判明(ソース自体は既に修正済み)、^O^KをFILE/ARC/ArchiveContentへ
+    拡張**
+   - **報告**: 「さきほど「/usr/local/bin/usilic -g ~/git/usilic/src」
+     で起動してもutf8.tarで文字化けは再現性１００％。新：^O^KはFILE、
+     ARC、等で無反応。「新：」「旧：」の意味はわかる？CLAUDE.md見てね。」
+   - **CLAUDE.mdの記法の誤読を訂正**: 2026-08-16/08-19の追記にある
+     「旧：」は「お手本（legacy）:」の略、「新：」はC++版(このリポジトリ)
+     を指す記法であり、「旧：」は「以前報告済みで対応不要」という意味
+     ではなかった。項目369では「旧：」節の`ARC文字化け(=de)`を誤って
+     「古い(=対応不要な)スクリーンショット」と判断してしまったが、
+     実際にはユーザーは`/usr/local/bin/usilic`(実際にインストール済み
+     の実行ファイル)で改めて検証した上で「100%再現する」と報告して
+     いた。原因を調べたところ、`/usr/local/bin/usilic`は`Aug 15`付け
+     (root所有、326KB)で、`src/cpp/build/usilic`(今回のセッション中に
+     何度もビルドし直した最新版、`Aug 19`付け、2.6MB、MD5も完全に別)
+     とは全くの別物と判明――このセッション中の`make usilic`はいずれも
+     `src/cpp/build/`配下にのみ出力しており、`/usr/local/bin`への
+     `make install`(rootの書き込み権限が必要)は一度も行っていなかった
+     ため、項目365〜367のPAX/NFC-NFD修正を含む直近4日分の全ての修正が
+     インストール済みバイナリには一切反映されていなかった。**コード側の
+     修正は不要**、ユーザー側で`cd src/cpp && sudo make install`
+     (root所有のため`sudo`が必要)を実行し再インストールすることを
+     提案するに留めた。
+   - **^O^KをFILE/ARC/ArchiveContentへ拡張**: legacy側の`m_dir()`
+     (項目101)はDirectory mode専用の実装だが、ユーザーから直接
+     「どこでも機能する」ことを期待している旨の報告があったため、
+     この移植独自の一般化として対応することにした(K-18/^J^Kの
+     `goToFileSelector()`が2026-08-16に同様の理由で一般化された前例を
+     踏襲)。新規`Application::goToParentFromFileOrArchive()`を追加し、
+     `Command::GoToParentDirectory`のハンドラをDirectory mode以外でも
+     File/Archive/ArchiveContentモードなら委譲するよう変更。
+     `fileMode_.currentFile()`または`archiveMode_.currentArchive()`
+     から`std::filesystem::path::parent_path()`を2回適用(ファイル/
+     アーカイブ自身の格納ディレクトリの、さらに1つ上)して求めた
+     パスへ`directoryMode_.enterDirectory()`し、Directory modeへ切替。
+     `^J^K`(ファイル自身の格納ディレクトリへ)より1階層further上へ
+     行く形になり、Directory mode自身の`goToParent()`(現在ディレクトリ
+     →親ディレクトリ)と対称的な意味付けにした。
+   - **検証**: `make test` 772/772件・18525アサーション全通過(既存の
+     「Directory mode以外では拒否」テストを新しい一般化された挙動へ
+     更新、新規doctest1件追加)。`make usilic`クリーンビルド確認済み。
+     PTY自動テストで、File mode(`Makefile`を`src/`から開いた状態)・
+     Archive mode(`utf8.tar`を`src/`から開いた状態)・ArchiveContent
+     mode(アーカイブ内のファイルを開いた状態)のいずれからも`^O^K`で
+     `/Users/haa15030/git/usilic/`(それぞれの格納ディレクトリ`src/`の
+     さらに1つ上)へ正しく移動することを確認した。
+
 ## 12. SHELL
 
 5. **Ubuntu実機での`tcb .`セグフォ、SHELLモード初期化まわりの表示バグ数件**

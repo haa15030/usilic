@@ -3308,12 +3308,38 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ^K jumps to the parent directory (K-19,
   CHECK(app.directoryMode().canGoBack());  // ^G returns to subdir/, same as descending into it normally would
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): refused outside Directory mode") {
+// 2026-08-20 extension: GoToParentDirectory (^O^K, K-19) used to be
+// refused outside Directory mode entirely -- a direct user report
+// ("新：^O^KはFILE、ARC、等で無反応") expected it to work "everywhere",
+// same shape as K-18/^J^K's own 2026-08-16 generalization
+// (goToFileSelector()). From File mode this now goes ONE level further
+// than ^J^K would -- the PARENT of the file's own containing directory
+// -- mirroring Directory mode's own goToParent() semantics exactly.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from File mode, goes to the PARENT of the "
+                           "file's own containing directory") {
+  fs::path subdir = root / "subdir";
+  fs::create_directories(subdir);
+  { std::ofstream(subdir / "target.txt") << "x"; }
+
   REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
+  int subdirIdx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != subdirIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/
+  int fileIdx = indexOf("target.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != fileIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // open target.txt
   REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK(app.handleCommand(Command::GoToParentDirectory));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());  // one level above subdir/ -- root itself
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): refused from a mode with no current "
+                           "file/archive to compute a parent from") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  REQUIRE(app.currentMode() == ApplicationMode::Key);
 
   CHECK_FALSE(app.handleCommand(Command::GoToParentDirectory));
 }

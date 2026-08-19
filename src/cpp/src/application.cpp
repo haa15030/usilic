@@ -2030,8 +2030,8 @@ bool Application::handleCommand(Command command) {
     case Command::ShellInsertBufferContent:
       return shellInsertBufferContent();
     case Command::GoToParentDirectory:
-      if (currentMode_ != ApplicationMode::Directory) return false;
-      return directoryMode_.goToParent();
+      if (currentMode_ == ApplicationMode::Directory) return directoryMode_.goToParent();
+      return goToParentFromFileOrArchive();
     case Command::GoToFileSelector:
       return goToFileSelector();
     case Command::RestartShell:
@@ -2475,6 +2475,44 @@ bool Application::goToFileSelector() {
   // called in that case, matching every other floor-establishing call
   // site's own implicit assumption that there IS a real "previous
   // directory" to toggle back to.
+  std::string previousDirectory = directoryMode_.currentDirectory();
+  if (!directoryMode_.enterDirectory(parent)) return false;
+  if (!previousDirectory.empty()) directoryMode_.resetNavigationToFloor(previousDirectory);
+  currentMode_ = ApplicationMode::Directory;
+  display_.hideVisibleCursor();
+  directoryView_.redraw();
+  return true;
+}
+
+// K-19 (^O^K, GoToParentDirectory) extended beyond Directory mode --
+// 2026-08-20, a direct user report: "新：^O^KはFILE、ARC、等で無反応"
+// (this key, expected to work "everywhere", did nothing outside
+// Directory mode). legacy's own m_dir() (item 101's own comment) is
+// genuinely Directory-only, so this is a deliberate GENERALIZATION for
+// this port, not a legacy-fidelity fix -- modeled directly on
+// goToFileSelector()'s own already-established "compute a path from
+// whichever excursion mode is active, enterDirectory() there, switch
+// currentMode_" shape (K-18/^J^K, extended the same way for the same
+// kind of report on 2026-08-16). Where ^J^K lands you IN the file's/
+// archive's own containing directory, this goes ONE level further --
+// the PARENT of that directory -- mirroring Directory mode's own
+// goToParent() semantics exactly (currentDirectory_ -> parent), just
+// computed from "the directory the current file/archive would appear
+// in" instead of an already-active Directory listing.
+bool Application::goToParentFromFileOrArchive() {
+  std::string sourcePath;
+  if (currentMode_ == ApplicationMode::File) {
+    sourcePath = fileMode_.currentFile();
+  } else if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent) {
+    sourcePath = archiveMode_.currentArchive();
+  } else {
+    return false;
+  }
+  if (sourcePath.empty()) return false;
+  std::string parent = std::filesystem::path(sourcePath).parent_path().parent_path().string();
+  if (parent.empty()) return false;
+  // See goToFileSelector()'s own identical comment: captured BEFORE
+  // enterDirectory() overwrites currentDirectory_.
   std::string previousDirectory = directoryMode_.currentDirectory();
   if (!directoryMode_.enterDirectory(parent)) return false;
   if (!previousDirectory.empty()) directoryMode_.resetNavigationToFloor(previousDirectory);

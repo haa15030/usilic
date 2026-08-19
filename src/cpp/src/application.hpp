@@ -1236,6 +1236,7 @@ class Application {
   bool openSelectedDuEntry();
   bool openSelectedLocateResult();
   bool goToFileSelector();
+  bool goToParentFromFileOrArchive();
   bool openSelectedListEntry();
   bool toggleMark();
   bool returnToDirectory();
