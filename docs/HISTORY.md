@@ -9678,3 +9678,20 @@ make test 771/771件・18515アサーション全通過。コミット・プッ�
 **^O^KがFILE/ARC等で無反応の件**: legacyのm_dir()はDirectory mode専用の実装ですが、「どこでも機能する」ことを期待されているとのことなので、この移植独自の一般化として対応しました(^J^Kのgoto FileSelectorが同じ理由で一般化された前例に倣いました)。File/Archive/ArchiveContentモードから、現在のファイル/アーカイブの格納ディレクトリのさらに1つ上のディレクトリへ移動しDirectory modeへ切り替わります。
 
 make test 772/772件・18525アサーション全通過、PTY自動テストでFile/Archive/ArchiveContentいずれのモードからの^O^Kも確認しました。コミット・プッシュ済みです。
+
+<cd src/cpp && sudo make installは新版の方じゃない？
+旧版をinstallするには？
+
+>ご指摘の通りでした。`cd src/cpp && sudo make install`はC++版のインストール先で、`src/cpp/Makefile`の`INSTALL_NAME=U`(1文字、legacy版と衝突しないよう意図的な別名)、つまり`/usr/local/bin/U`にインストールされます。`/usr/local/bin/usilic`とは無関係でした。
+
+`otool -L /usr/local/bin/usilic`で確認したところ、リンクされているのは`libncurses`のみ(SDL2/CoreText等は一切無し)で、これは**legacy(旧)版のCバイナリ**そのものでした。`src/config.sh`は`PROGNAME=usilic`のため、legacy側もこの名前でビルド・インストールされる設計です。旧版のインストールは:
+
+```
+cd /Users/haa15030/git/usilic/src && sudo ./install.sh
+```
+
+これで`tcb/src`をビルドして`/usr/local/bin/usilic`へインストールします(root所有のためsudoが必要です)。
+
+つまり「旧：ARC:utf8.tar内容一覧で文字化け」はlegacy自身の不具合報告で正しく、実際にlegacyをビルドしてPTYで再現したところ、8進数エスケープ(`\345\233...`)による文字化けを直接確認できました。原因は`fork_arc()`(`tcb/src/fork.c`)がARC一覧のTOC生成時に`setenv("LC_ALL", "C", 1)`を無条件に行っており、これが`LC_CTYPE`も巻き込んで`tar`自身に非ASCIIバイトを「印字不可能」と誤判定させ、日本語ファイル名を8進数エスケープに変換させていました(元々は日付欄のロケール依存文字化けでalloc_head()のパーサが壊れるのを防ぐ目的で、それ自体は正当な対策でした)。`LC_ALL`の一括指定をやめ、`LC_TIME=C`(元の目的維持)と`LC_CTYPE`(UTF-8モード時のみ`en_US.UTF-8`)の2カテゴリへ分離して修正しました。
+
+修正後、8進数エスケープの塊が実際のUTF-8文字列で表示されるようになったことをPTYで確認しました。ただし詳しく見ると、濁点/半濁点付き文字の脱落(「ワールド」→「ワール」等)と一部行の右端切り詰めという、より細かい残課題も発見しました。8進数エスケープほど深刻ではない(内容は判読可能)ため今回は深追いせず、次回への持ち越しとしました。コミット・プッシュ済みです。
