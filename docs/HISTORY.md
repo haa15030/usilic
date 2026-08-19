@@ -9891,3 +9891,15 @@ USILICGUIDEBUG=/tmp/dbg.txt /Users/haa15030/git/usilic/src/cpp/build/usilic -g
 原因は`putByte()`内、`commitGlyph(impl_->pendingUtf8, std::max(width, 1))`と、`commitGlyph()`へ渡す直前に`width`を`std::max(...,1)`でクランプしていたことでした。`display_width()`が0を返していても、この時点で必ず1以上にすり替えられていました。`commitGlyph()`自身が持つ「幅0の結合文字は直前セルへ合成する」という特殊分岐(2026-08-18のコミット`09c6981`で最初に追加)は、この引数の実際の値がここで既に上書きされていたため、**実装されて以来一度も発動していなかった**ことになります。つまり項目378(display_width修正)・項目379(NFC合成)はいずれもロジックとしては正しかったのに、その手前でこのクランプにより完全に無効化されていました。
 
 `std::max(width, 1)`を削除し、`commitGlyph(impl_->pendingUtf8, width)`と生の`width`をそのまま渡すよう変更しました。デバッグ計測はコミット前に除去済みです。`make test` 778/778件全通過。今度こそ直っているはずです。お手数ですがもう一度ご確認いただけますか。
+
+<-cでも起きるんだが、^Jp'vi CLAUDE.md'[return]は問題無い。lessとviの違いって何？
+
+>legacyの`vt.c`の`vt_init()`本体を直接確認しました。
+
+`case -2`(raw mode脱出、外部プログラム実行前)に`if (!vt_mode('H')) vt_cs(vt_row(0) - 1, 0);`(スクロール領域を画面全体へ拡張)、`case 2`(raw mode復帰、外部プログラム終了後)に`if (!vt_mode('H')) vt_cs(vt_row(0) - 2, 0);`(usilic自身のモードライン行を除いた領域へ再度制限)という、termios(raw mode)とは別の**スクロール領域の退避/復元**がペアで組み込まれていました。C++版の`KeyInput::leaveRawMode()`/`reenterRawMode()`はtermios部分のみを移植しており、このスクロール領域の退避/復元が丸ごと欠落していました。
+
+`TerminalDisplay::applyScrollRegion()`は起動時に一度だけ呼ばれるだけで、外部プログラム実行の前後には一切呼ばれていませんでした。つまり`less`実行中もusilic自身の制限されたスクロール領域がそのまま有効なままでした。
+
+`vi`/`vim`は自身の初期化で無条件にスクロール領域を画面全体へリセットする(継承した状態を信用せず常に自前で設定し直す)ためこの欠落の影響を受けず、一度`vi`が実行されて画面全体へリセットされると、その後は端末エミュレータ側の状態として`less`も含めて正常に動作するようになる、というご報告内容と完全に整合します。`-g`は全く別の実ターミナルウィンドウを使うため、この問題自体が発生し得ません(「-g起動では最初からOK」との報告とも整合)。
+
+修正・検証・コミット・プッシュ済みです(項目382)。`Display`インターフェースへ`leaveForExternalProgram()`/`reenterFromExternalProgram()`を新設し、`ProgramMode::run()`の`leaveRawMode()`/`reenterRawMode()`の前後に配線しました。`make test` 781/781件全通過(新規doctest2件)。PTY自動テストで、実際の`usilicrc`を隔離した`HOME`へ配置した上で`less`実行中は画面全体へのスクロール領域拡張(`\x1b[1;24r`)、終了後は制限領域(`\x1b[1;23r`)が正しく送出されることを生バイト列レベルで確認しました。
