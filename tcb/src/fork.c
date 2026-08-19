@@ -263,10 +263,36 @@ u_char *fork_arc(char name[], int f_M, CHILD *chp0, int *tmp_sizep, int *bp_size
     pipe(pv);
     if (!fork()) {
       load_signal();
-      setenv("LC_ALL", "C", 1); /* archive TOC (tar tvf/unzip -l/lha/rpm -qplv)
+      /* 2026-08-20 fix, a real report + screenshot (utf8.tar's own ARC
+	 listing showing octal-escaped garbage, e.g. "utf8/\345\233..."
+	 instead of real UTF-8 filenames): confirmed directly that the
+	 blanket LC_ALL=C below (kept for its own original, still-valid
+	 reason -- see the comment just below) was ALSO forcing tar(1)'s
+	 own LC_CTYPE to "C", which makes it treat every non-ASCII byte
+	 in a filename as unprintable and octal-escape it -- `tar tvf' on
+	 the exact same archive, run with an empty/"C" environment,
+	 escapes every such byte, while the identical command with only
+	 LC_CTYPE set to a UTF-8 locale (LC_TIME left at "C") prints the
+	 real characters AND keeps the fixed-width English date column
+	 alloc_head() depends on. Splitting LC_ALL into its two relevant
+	 categories -- LC_TIME force to "C" (this comment's own original
+	 reason, unchanged) and LC_CTYPE to a UTF-8 locale ONLY when
+	 tcb itself is configured for UTF-8 (matching vt_charset(0),
+	 the same gate every other UTF-8-specific fix in this codebase
+	 uses -- EUC/SJIS/ASCII users see no behavior change here) --
+	 fixes the filenames without reopening the original date-parsing
+	 crash this code exists to prevent. LC_ALL must NOT also be set
+	 (even to unset it explicitly): POSIX defines LC_ALL, once set,
+	 as overriding every individual LC_* category outright. */
+      unsetenv("LC_ALL"); /* in case the invoking shell's own environment
+			      already had one set -- LC_ALL, if present at
+			      all, overrides the LC_TIME/LC_CTYPE settings
+			      below outright regardless of their own values */
+      setenv("LC_TIME", "C", 1); /* archive TOC (tar tvf/unzip -l/lha/rpm -qplv)
 				    is parsed byte-by-byte by alloc_head() as
 				    ASCII; a localized date (e.g. "7月") breaks
 				    that scan and hangs or segfaults tcb */
+      setenv("LC_CTYPE", (vt_charset(0) == C_utf8) ? "en_US.UTF-8" : "C", 1);
       if (chp2) {
 	pipe(&pv[2]);
 	if (!fork()) {
