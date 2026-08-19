@@ -647,7 +647,28 @@ void GraphicalDisplay::putByte(unsigned char c) {
     int len = Utf8::sequence_length(static_cast<unsigned char>(impl_->pendingUtf8[0]));
     if (static_cast<int>(impl_->pendingUtf8.size()) >= len) {
       int width = Utf8::display_width(reinterpret_cast<const unsigned char *>(impl_->pendingUtf8.data()), len);
-      commitGlyph(impl_->pendingUtf8, std::max(width, 1));
+      // 2026-08-20 fix, found via temporary per-glyph USILICGUIDEBUG
+      // tracing added while chasing why the width==0 combining-mark
+      // merge in commitGlyph() (both the original 09c6981 fix and this
+      // same day's composeDakutenCodepoint() follow-up) never actually
+      // fired: this `std::max(width, 1)` clamp was ERASING the 0
+      // before commitGlyph() ever saw it -- the trace showed U+3099
+      // arriving there as `width=1`, not `width=0`, despite
+      // Utf8::display_width() itself correctly returning 0 (confirmed
+      // independently, both via a standalone doctest and a standalone
+      // throwaway program run directly on the real archive's own raw
+      // bytes). commitGlyph() already has its own `std::max(width, 1)`
+      // clamp on its NORMAL (non-zero-width) path, applied AFTER its
+      // width==0 special case already had a chance to run -- clamping
+      // again HERE, before that check ever sees the value, made the
+      // whole width==0 branch permanently unreachable from this call
+      // site (the only one that ever passes a real computed width;
+      // the other two commitGlyph() call sites always pass a literal
+      // 1 for plain ASCII/control bytes, never 0, so this bug was
+      // invisible from testing calls). Passing `width` straight
+      // through restores the signal commitGlyph() was always designed
+      // to act on.
+      commitGlyph(impl_->pendingUtf8, width);
       impl_->pendingUtf8.clear();
     }
     return;
