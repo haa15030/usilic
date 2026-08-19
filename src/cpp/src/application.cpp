@@ -126,6 +126,32 @@ std::vector<std::string> fileHistoryBadges(const Configuration &configuration, R
   for (const auto &item : items) badges.push_back(archiveBadgeFor(configuration, item));
   return badges;
 }
+
+// Command::JumpToPathPrefix's own truncation arithmetic -- ported
+// 1:1 from legacy's m_dir() default case (`menu.c`): `for (i = m -
+// T_0 + 1, cp = dir; i && (cp = index(cp, '/')); i--, cp++) ; if (cp)
+// *cp = '\0';`. Counting the LEADING '/' itself as the first match is
+// what makes digit 0 land on "/" rather than the empty string (PTY-
+// verified against the real legacy binary: ^J0/^J1/^J2 from a nested
+// cwd chdir to "/"/"/Users/"/"/Users/haa15030/" respectively). If
+// `path` has fewer than `digit+1` slashes, legacy's own `cp` ends up
+// NULL and `dir` is left completely UNMODIFIED (not truncated, not
+// emptied) -- mirrored here by returning `path` as-is; the caller's
+// own enterDirectory() call naturally no-ops or fails on whatever
+// that turns out to be, exactly as it would for any other unreachable
+// path.
+std::string truncateToPathPrefix(const std::string &path, int digit) {
+  int remaining = digit + 1;
+  std::size_t pos = 0;
+  while (remaining > 0) {
+    std::size_t slash = path.find('/', pos);
+    if (slash == std::string::npos) return path;
+    pos = slash + 1;
+    remaining--;
+  }
+  return path.substr(0, pos);
+}
+
 // K-2 (^H, M_key, "KEY"): startKey()'s own static binding table.
 // Unlike HELP (which loads real prose text at runtime via
 // loadHelpText()), this table is NOT parsed from usilicrc's own KEY
@@ -1396,6 +1422,21 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ShellInsertName);
       case 0x17:  // ^J ^W : SHELL, insert buffer content
         return handleCommand(Command::ShellInsertBufferContent);
+      // ^J0..^J9 : jump to the (digit+1)-th '/' prefix of the current
+      // screen's own path string, straight into Directory mode's `ls`.
+      // See Command::JumpToPathPrefix's own comment.
+      case '0':
+      case '1':
+      case '2':
+      case '3':
+      case '4':
+      case '5':
+      case '6':
+      case '7':
+      case '8':
+      case '9':
+        pendingPathPrefixDigit_ = byte - '0';
+        return handleCommand(Command::JumpToPathPrefix);
       default:
         return false;  // unrecognized ^J-sequence in this slice
     }
@@ -2094,6 +2135,8 @@ bool Application::handleCommand(Command command) {
       return goToParentFromFileOrArchive();
     case Command::GoToFileSelector:
       return goToFileSelector();
+    case Command::JumpToPathPrefix:
+      return jumpToPathPrefix();
     case Command::RestartShell:
       return shellRestart();
     case Command::StartArchiveExtract:
@@ -2591,6 +2634,70 @@ bool Application::goToParentFromFileOrArchive() {
   // enterDirectory() overwrites currentDirectory_.
   std::string previousDirectory = directoryMode_.currentDirectory();
   if (!directoryMode_.enterDirectory(parent)) return false;
+  if (!previousDirectory.empty()) directoryMode_.resetNavigationToFloor(previousDirectory);
+  currentMode_ = ApplicationMode::Directory;
+  display_.hideVisibleCursor();
+  directoryView_.redraw();
+  return true;
+}
+
+// Command::JumpToPathPrefix (^J0..^J9): see that enum value's own
+// comment for the user request and legacy-verification context.
+// Modeled directly on goToFileSelector()/goToParentFromFileOrArchive()'s
+// own "compute a path from whichever excursion mode is active,
+// truncate/derive it, enterDirectory() there, switch currentMode_"
+// shape -- same generalization-beyond-legacy precedent (K-18/K-19),
+// just with truncateToPathPrefix() standing in for
+// parent_path()/parent_path().
+//
+// Deliberately a hard, unconditional cut-over into Directory mode
+// (matching the user's own "無条件に(戻り値も不要)" framing) rather
+// than a "preview, then restore on ^G"-style feature: no attempt is
+// made to detect or preserve whatever prompt/list-browser/mode state
+// was active when ^J+digit was pressed -- pressing it while, say,
+// mid-edit of an unrelated GREP pattern abandons that edit exactly as
+// abruptly as pressing it from a plain Directory listing does. This
+// mirrors how every OTHER leader-initiated command already behaves
+// once resolved via dispatchLeaderByte() from feedPromptByte() (see
+// that function's own 2026-08-12 comment) -- ^Q's quoted-insert
+// remains the escape hatch for anyone who genuinely wants a literal
+// "^J5" typed into a pattern instead.
+//
+// Per-mode path source, matching goToFileSelector()'s own currentMode_
+// branches (ListBrowser/Locate/File/Cut/CutContent) plus
+// goToParentFromFileOrArchive()'s own Archive/ArchiveContent branch,
+// extended with Directory itself (legacy's own, and this port's only,
+// ORIGINAL m_dir() case) -- covers all 3 contexts named directly in
+// the user's own report (DIR's own name field, ARC's own trailing
+// "戻り値" field showing currentArchive(), ^X^F/^X^D's own highlighted
+// candidate string) plus every other "excursion" screen already
+// wired the same way for K-18/K-19, matching "どこでも" (anywhere).
+bool Application::jumpToPathPrefix() {
+  std::string sourcePath;
+  if (currentMode_ == ApplicationMode::Directory) {
+    sourcePath = directoryMode_.currentDirectory();
+  } else if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent) {
+    sourcePath = archiveMode_.currentArchive();
+  } else if (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut ||
+             currentMode_ == ApplicationMode::CutContent) {
+    sourcePath = fileMode_.currentFile();
+  } else if (currentMode_ == ApplicationMode::Locate) {
+    const std::string *selected = locateMode_.selectedResult();
+    if (!selected) return false;
+    sourcePath = *selected;
+  } else if (currentMode_ == ApplicationMode::ListBrowser) {
+    const std::string *selected = listBrowserMode_.selectedItem();
+    if (!selected) return false;
+    sourcePath = *selected;
+  } else {
+    return false;
+  }
+  if (sourcePath.empty()) return false;
+  std::string truncated = truncateToPathPrefix(sourcePath, pendingPathPrefixDigit_);
+  // See goToFileSelector()'s own identical comment: captured BEFORE
+  // enterDirectory() overwrites currentDirectory_.
+  std::string previousDirectory = directoryMode_.currentDirectory();
+  if (!directoryMode_.enterDirectory(truncated)) return false;
   if (!previousDirectory.empty()) directoryMode_.resetNavigationToFloor(previousDirectory);
   currentMode_ = ApplicationMode::Directory;
   display_.hideVisibleCursor();

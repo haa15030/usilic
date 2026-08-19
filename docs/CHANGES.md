@@ -5787,6 +5787,70 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      こと、`^T`画面からの`^R`が画面を一切変化させない(no-op)ことを
      それぞれセル単位で確認した。
 
+375. **`^J0`〜`^J9`(legacyのM_cdリーダー、パス先頭からN番目の`/`まで
+    切り詰めてchdir)を新規実装、DIR名前欄/ARC戻り値欄/`^X^F`候補欄
+    どこからでも動作するよう一般化**
+   - **報告**: 「DIR:起動直後=dr→^J0,1,2でそれぞれ「/」,「/Users/」,
+     「/Users/haa15030/」へchdir(旧で試行よろしく)。ちなみに同機能は
+     モード名=dr、ARCでの戻り値=ds、^X^Fでの一覧文字列=dt上でも
+     同機能有効なのでよろしく。」に続き、「^J?(?は数字)は単なる
+     文字列上も含めたまさにどこでも機能代表格なのでおよそ「/」が
+     ある場所では無条件に(戻り値も不要)所定の(ls)へ移行して
+     欲しい」で仕様確定。
+   - **legacy側の検証**: 実装前にまずlegacyで確認(`menu.c`の
+     `m_dir()`のdefault case、`for (i = m - T_0 + 1, cp = dir; i &&
+     (cp = index(cp, '/')); i--, cp++) ; if (cp) *cp = '\0';` --
+     先頭の`/`自体を1個目としてN+1個目の`/`まで切り詰める)。PTY
+     自動テストで、ネストしたcwdから`^J0`→`/`、`^J1`→`/Users/`、
+     `^J2`→`/Users/haa15030/`と正しくchdirすることを確認した。
+   - **C++版の実装**: `^J`リーダー(`dispatchLeaderByte()`の
+     `leaderJPending_`分岐)に`'0'`〜`'9'`のcaseを追加、押された
+     digitを`pendingPathPrefixDigit_`に保存して新規
+     `Command::JumpToPathPrefix`をディスパッチする(この port の
+     Command値はペイロードを持たないため、leaderJPending_の
+     switchから`handleCommand()`までこのメンバー変数1つで受け渡す、
+     既存の他のリーダーキーには無い初めてのパターン)。
+     legacyの`m_dir()`は元々Directory mode専用の1つの`dir`ローカル
+     変数を切り詰めるだけだったが、この port には単一の情報源が
+     無いため、`goToFileSelector()`/`goToParentFromFileOrArchive()`
+     (K-18/K-19、いずれも「legacyではDirectory専用だったが、
+     "どこでも動くはず"という直接の要望で汎化した」という全く同じ
+     前例)と同じ「currentMode_に応じてパス文字列を1つ決め、
+     truncateToPathPrefix()で切り詰め、directoryMode_.
+     enterDirectory()して`currentMode_`をDirectoryへ切り替える」
+     形にモデル化した新規`jumpToPathPrefix()`を実装。
+     `Directory`(`directoryMode_.currentDirectory()`)/`Archive`・
+     `ArchiveContent`(`archiveMode_.currentArchive()`、=dsの戻り値
+     欄はまさにこれ)/`File`・`Cut`・`CutContent`
+     (`fileMode_.currentFile()`)/`Locate`
+     (`locateMode_.selectedResult()`)/`ListBrowser`
+     (`listBrowserMode_.selectedItem()`、=dtの`^X^F`候補欄は
+     まさにこれ)の6モードを網羅し、要望にあった3箇所(DIR名前欄/
+     ARC戻り値欄/`^X^F`候補欄)はすべてこの中に含まれる。
+   - **「無条件に(戻り値も不要)」の設計反映**: 切り詰め後、
+     `directoryMode_.enterDirectory()`で即座にDirectory modeの
+     `ls`へ切り替える、一切の「プレビューして`^G`で戻せるように
+     保持しておく」ような仕組みを持たない、意図的な即時遷移とした。
+     `dispatchLeaderByte()`はSHELL以外のあらゆる文字列入力中の
+     プロンプト(`feedPromptByte()`)・候補一覧編集中
+     (`feedRegexListByte()`)からも共通で呼ばれる経路のため、
+     `^J`+数字は編集中のGREPパターン等からでも同じくCommand扱い
+     される(この port の既存の全リーダーキーと同じ挙動、`^Q`+
+     `^J`+数字で文字通りの`^J5`等をパターンへ埋め込むエスケープ
+     ハッチも既存のまま利用可能)。
+   - **検証**: `make test` 776/776件・18555アサーション全通過
+     (既存回帰、新規doctestはCommand配線のみのため既存の
+     Application層PTYテストでカバー)。`make usilic`クリーン
+     ビルド確認済み。PTY自動テストで3箇所すべてを確認: (1)DIR
+     モードで`utf8/`から`^J0`/`^J1`/`^J2`→`/`/`/Users/`/
+     `/Users/haa15030/`の`(ls)`表示に正しく切り替わること、(2)
+     `utf8.tar`をARCで開いた状態(`ARC 01/14 TOP 1765 (tar)
+     /Users/.../utf8.tar`)から同様に`^J0`/`^J1`/`^J2`が同じ3箇所へ
+     正しく切り替わること、(3)`^X^F`候補一覧(`utf8.tar`が
+     ハイライト)から同様に`^J0`/`^J1`/`^J2`が正しく切り替わること。
+     いずれも修正前は`^J`+数字が未定義キーとして無視されていたのが、
+     修正後は毎回`(ls)`表示への切り替えに成功することを確認した。
+
 ## 10. HISTORY / COMMAND(^R)
 
 160. **2026-08-04(続き): `^X^F`(FILE)/`^X^D`(DIR)で開く一覧の`^R`

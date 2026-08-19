@@ -223,6 +223,29 @@ enum class Command {
   // (this port has no legacy binary to compare cursor-positioning
   // behavior against, see goToFileSelector()'s own comment on scope).
   GoToFileSelector,
+  // ^J0..^J9 (legacy's M_cd leader, `menu.c`'s m_dir() default case,
+  // T_0..T_9): a direct user request (2026-08-19/20, "^J?（?は数字）は
+  // 単なる文字列上も含めたまさにどこでも機能代表格なのでおよそ「/」が
+  // ある場所では無条件に（戻り値も不要）所定の（ls）へ移行して欲しい")
+  // after first verifying on legacy (PTY-confirmed: ^J0/^J1/^J2 from a
+  // nested cwd correctly chdir to "/"/"/Users/"/"/Users/haa15030/").
+  // Truncates whatever path string is "in play" for the current screen
+  // to the (digit+1)-th '/' from the left and jumps STRAIGHT into
+  // Directory mode showing that `ls` -- no "preview, then restore on
+  // ^G" step, matching the user's own "無条件に(戻り値も不要)" framing
+  // (an intentional, hard cut-over, not a peek). See
+  // Application::jumpToPathPrefix()'s own comment for exactly which
+  // per-mode "path string" each currentMode_ maps to and why this is
+  // modeled directly on goToFileSelector()/goToParentFromFileOrArchive()'s
+  // already-established "compute a path from whichever excursion mode
+  // is active, enterDirectory() there, switch currentMode_" shape
+  // (same "K-18/K-19 generalized beyond legacy's own Directory-only
+  // m_dir()" precedent) rather than reusing m_dir()'s own single `dir`
+  // local, which this port has no equivalent single source of truth
+  // for. pendingPathPrefixDigit_ carries the digit from
+  // dispatchLeaderByte()'s own leaderJPending_ switch through to
+  // jumpToPathPrefix() (Command values carry no payload in this port).
+  JumpToPathPrefix,
   // K-60 (^Xs, M_hup): kills the current SHELL child (if any) and
   // starts a fresh one. See Application::shellRestart()'s own
   // comment.
@@ -1237,6 +1260,7 @@ class Application {
   bool openSelectedLocateResult();
   bool goToFileSelector();
   bool goToParentFromFileOrArchive();
+  bool jumpToPathPrefix();
   bool openSelectedListEntry();
   bool toggleMark();
   bool returnToDirectory();
@@ -1691,6 +1715,14 @@ class Application {
   std::optional<RecordedStep> pendingLeaderXByte_;
 
   bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
+  // The digit dispatchLeaderByte()'s own leaderJPending_ switch just
+  // saw after ^J (Command::JumpToPathPrefix's own payload -- Command
+  // values carry no data of their own in this port, so this is the
+  // established way a leader-digit command hands its argument to the
+  // handleCommand() switch: see Command::JumpToPathPrefix's own
+  // comment). Only meaningful for the single handleCommand() call
+  // immediately following the byte that set it.
+  int pendingPathPrefixDigit_ = 0;
   bool escPending_ = false;      // saw ESC (0x1b), waiting for the byte that completes ^[s -- see class comment
   bool leaderXPending_ = false;  // saw ^X, waiting for the byte that completes ^Xc/^Xm/^Xr/^X^C (exit shares ^X too)
   bool leaderXKPending_ = false;  // saw ^X^K (usilicrc's own F-2), waiting for the byte completing ^X^Kc/m/r
