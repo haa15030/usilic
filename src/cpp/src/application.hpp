@@ -1026,6 +1026,12 @@ class Application {
   bool feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special);
 
   bool promptActive() const;
+  // See its own definition comment (application.cpp): promptActive()
+  // plus the RecentFile/RecentDirectory direct-entry recall state --
+  // for hover/incidental-redraw suppression callers, not a general-
+  // purpose "is this a real live text prompt" check (that's still
+  // promptActive() alone).
+  bool redrawSensitivePromptOrRecallActive() const;
   const std::string &promptText() const;
 
   // 2026-08-14: a real report ("④の^[不具合は-gで起きる模様。^Jl後の

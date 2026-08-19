@@ -6108,6 +6108,49 @@ bool Application::handleMouseClick(int row, int column) {
 }
 
 bool Application::promptActive() const { return promptKind_ != PromptKind::None; }
+
+// 2026-08-20 addition, root-caused via a real USILICGUIDEBUG grid-dump
+// capture (^X^D in -g): promptActive() alone (promptKind_ != None)
+// deliberately does NOT cover the RecentFile/RecentDirectory candidate-
+// recall state -- startPromptHistoryRecall() explicitly sets promptKind_
+// back to PromptKind::None the moment it captures it into
+// promptHistoryRecallKind_ (see that function's own comment), and a
+// cluster of existing tests ("opens a MAN/PROGRAM candidate list, NOT
+// a prompt") deliberately pin promptActive()==false there as a real,
+// meaningful distinction ("this is a picker, not live text-editing") --
+// widening promptActive() itself to also cover promptHistoryRecallKind_
+// (a first attempt at this fix) broke exactly those tests, so this is
+// a SEPARATE, narrower predicate instead, for callers that care about
+// a different question: "does incidentally redrawing whatever
+// ContentView is on screen right now risk clobbering something a
+// keystroke-driven refresh already carefully drew there" -- true for
+// BOTH a live prompt AND this direct-entry recall screen, false for
+// an ordinary Directory/Locate/etc. listing.
+//
+// The captured log showed exactly the symptom the gap causes:
+// runGuiPhase()'s own hover-redraw gate (`!app.promptActive()`) let a
+// stray SDL_MOUSEMOTION during ^X^D fall through to a bare
+// listBrowserView_.redraw() -- which, unlike
+// refreshDirectEntryModeLine()'s own drawPromptLabel(), still renders
+// through listBrowserView_'s OLD ModeLineFieldsProvider (the one with
+// a right-aligned "戻り先" trailing field) -- visibly flickering that
+// field in and out between frames depending on whether the most
+// recent redraw came from a keystroke (refreshDirectEntryModeLine(),
+// no box) or incidental mouse motion (listBrowserView_.redraw(), box
+// reappears). This is the exact same bug CLASS already fixed once for
+// ^Xf/PathInput's own live field (2026-08-03, "^Xfの入力欄がマウスを
+// 少し動かしただけで消える") -- that fix worked because PathInput's
+// own activatePrompt() sets promptKind_ properly, so promptActive()
+// already covered it; RecentFile/RecentDirectory's own deliberately-
+// different promptKind_-clearing design meant it fell through this
+// same gate's cracks. Used at every OTHER promptActive()-gated hover/
+// redraw-suppression call site too (main.cpp's motion-only hover
+// preview, drag/coast settle redraw), not just runGuiPhase()'s own
+// hover-consume gate -- each has the exact same class of gap for this
+// one state, matching the shape of the ^Xf precedent fix.
+bool Application::redrawSensitivePromptOrRecallActive() const {
+  return promptKind_ != PromptKind::None || promptHistoryRecallKind_.has_value();
+}
 const std::string &Application::promptText() const { return promptEditor_.text(); }
 
 ApplicationMode Application::currentMode() const { return currentMode_; }

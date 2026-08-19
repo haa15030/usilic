@@ -16692,6 +16692,61 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (`kill -9`)自体は今回も、そして原理的に今後も、修正不可能
      (OSがどのプロセスにも一切ハンドラの実行を許さない)。
 
+377. **`USILICGUIDEBUG`の実ログから`^X^D`/`^X^F`直後に「戻り先」欄が
+    出たり消えたりする`-g`固有の不具合を特定・修正**
+   - **報告**: ユーザーが`USILICGUIDEBUG=/tmp/dbg.txt`付きで実際に
+     `-g`を起動し`~/git/usilic/`配下を数回下移動した後`^X^D`を試し、
+     ログをそのまま共有してもらった(同一マシン上で稼働している
+     ため、パスを教えてもらうだけでこちらから直接`Read`できた)。
+   - **調査**: `---flush---`区切りのセルグリッドダンプから、各回の
+     23行目(モードライン)だけを時系列に抽出したところ、`^X^D`
+     直後は`"DIR 1/1 END /Users/haa15030/git/usilic/"`(戻り先欄
+     無し)だったのが、数フレーム後に
+     `"DIR 1/1 END /Users/haa15030/git/usilic/  ...5030/git/usilic/"`
+     (右寄せの戻り先欄が出現)に変化し、さらに数フレーム後に
+     また戻り先欄無しの表示に戻る、という明確な出現/消失の
+     往復が確認できた。
+   - **原因**: `startPromptHistoryRecall()`は`promptHistoryRecallKind_`
+     へ値を保存した直後に`promptKind_`を`PromptKind::None`へ戻す
+     設計(`feedRegexListByte()`側のディスパッチが`promptHistoryRecallKind_`
+     を見て判定するための意図的な設計、コメントに明記)になって
+     いるが、この結果`Application::promptActive()`
+     (`promptKind_ != None`だけを見る)は`^X^D`/`^X^F`の候補一覧
+     画面を「プロンプトではない」と判定してしまう。一方
+     `app/main.cpp`の`runGuiPhase()`は、マウスの単なるホバー
+     (`SDL_MOUSEMOTION`、ボタン押下無し)による再描画を
+     `!app.promptActive()`で抑制する仕組みを持つが、この判定漏れ
+     により`^X^D`/`^X^F`画面でもマウスが少し動くたびに
+     `listBrowserView_.redraw()`がそのまま実行されてしまっていた。
+     この`redraw()`は、`refreshDirectEntryModeLine()`(実際の
+     キー入力経由の再描画、戻り先欄を描かない新設計)とは別の、
+     `listBrowserView_`自身の古い`ModeLineFieldsProvider`(戻り先欄
+     ありの旧設計)を経由するため、キー入力直後は戻り先欄が無い
+     正しい表示なのに、直後にマウスがわずかに動くだけで戻り先欄が
+     出現し、次のキー入力でまた消える、という往復が生じていた。
+     全く同種のバグが2026-08-03に`^Xf`(PathInput)の入力欄でも
+     一度発生・修正済みだったが(「^Xfの入力欄がマウスを少し
+     動かしただけで消える」)、そちらは`activatePrompt()`が
+     `promptKind_`を正しくセットするため`promptActive()`の判定で
+     救われていた。`^X^D`/`^X^F`は`promptKind_`をあえて`None`へ
+     戻す独自設計のため、同じ防御網から漏れていた。
+   - **修正**: `promptActive()`自体の意味は変えず(「候補一覧では
+     なく本物のテキスト編集プロンプトが有効か」という既存の
+     意味を保つテストが複数存在するため、最初に試した
+     `promptActive()`自体の拡張は5件のテスト失敗で不適切と判明し
+     撤回)、新規`Application::redrawSensitivePromptOrRecallActive()`
+     (`promptActive() || promptHistoryRecallKind_.has_value()`)を
+     追加。`app/main.cpp`内の関連する3箇所(`runGuiPhase()`の
+     ホバー再描画ゲート、drag/coast停止後の設定描画ゲート、
+     `-c`側のマウスホバーゲート)の`!app.promptActive()`をこの
+     新関数へ差し替えた。
+   - **検証**: `make test` 777/777件・18566アサーション全通過
+     (新規doctest1件: `^X^F`候補一覧では`promptActive()`は
+     従来通り`false`のまま、`redrawSensitivePromptOrRecallActive()`
+     のみ`true`になること、`^G`で抜けると両方`false`に戻ることを
+     確認)。`make usilic`クリーンビルド確認済み。`-g`実機での
+     再現待ちだが、`USILICGUIDEBUG`のログから直接原因を特定できた
+     ため、コードレベルでは高い確度で修正できていると考えている。
 
 ## 20. C++移植基盤(クラス移植・Applicationへの配線)
 

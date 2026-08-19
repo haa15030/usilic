@@ -3484,6 +3484,35 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works straight
   CHECK(app.directoryMode().currentDirectory() == subdir.string() + "/");
 }
 
+// 2026-08-20 fix, root-caused via a real USILICGUIDEBUG grid-dump
+// capture (^X^D in -g): promptActive() alone doesn't cover this screen
+// (startPromptHistoryRecall() deliberately clears promptKind_ back to
+// None -- see that function's own comment), which let runGuiPhase()'s
+// hover-redraw gate (`!app.promptActive()`) fall through to a bare
+// ContentView::redraw() on stray mouse motion, visibly flickering a
+// stale "戻り先" trailing field in and out (listBrowserView_'s OLD
+// ModeLineFieldsProvider, bypassed by the real keystroke-driven
+// refreshDirectEntryModeLine() path but not by an incidental hover
+// redraw). redrawSensitivePromptOrRecallActive() is the fix: same as
+// promptActive() PLUS this recall state, used at every hover/
+// incidental-redraw suppression call site instead of promptActive()
+// alone.
+TEST_CASE_FIXTURE(Fixture, "redrawSensitivePromptOrRecallActive: true during ^X^F/^X^D's own candidate-recall "
+                           "screen, even though promptActive() itself is deliberately false there") {
+  history.pushRecent(RingCategory::RecentFile, (root / "target.txt").string());
+
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.redrawSensitivePromptOrRecallActive());
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK_FALSE(app.promptActive());                       // unchanged: still not a live text prompt
+  CHECK(app.redrawSensitivePromptOrRecallActive());       // but IS redraw-sensitive now
+
+  CHECK(app.handleCommand(Command::Back));  // ^G cancels back out
+  CHECK_FALSE(app.redrawSensitivePromptOrRecallActive());
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works straight from ^X^F's own RecentFile "
                            "candidate list (ListBrowser), without opening it first (2026-08-16 fix: a real "
                            "report -- \"同画面で^J^Kが利かない=bo\" -- =bo being that exact candidate-list "

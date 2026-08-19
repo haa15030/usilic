@@ -1357,7 +1357,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           // for why this isn't decided as click-vs-drag until release.
           TerminalCoastResult coast = runTerminalMouseDrag(app, display, keyInput, mouse->row);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
-        } else if (mouse->motionOnly && !app.promptActive()) {
+        } else if (mouse->motionOnly && !app.redrawSensitivePromptOrRecallActive()) {
           // Plain hover (no button held), outside any active drag or
           // coast: just keep the highlight live, matching how a
           // pointer resting over a normal file-manager list usually
@@ -1626,8 +1626,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // ContentView::redraw() (called via applyHoverRowAndRedraw())
     // unconditionally redraws its own mode-line row, the exact row
     // Application's prompt label/input field also live on.
-    if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell && !app.promptActive() &&
-        !app.awaitingLocateUpdateDb()) {
+    if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell &&
+        !app.redrawSensitivePromptOrRecallActive() && !app.awaitingLocateUpdateDb()) {
       // !app.awaitingLocateUpdateDb() (2026-08-15 fix): see the render-
       // mode branch's own identical addition below -- a mouse wiggle
       // during a real, still-running `updatedb` wait would otherwise
@@ -2118,7 +2118,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       lines.reserve(view.lines().size());
       for (const auto &line : view.lines()) lines.push_back(line.text);
       gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments());
-    } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.promptActive() &&
+    } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.redrawSensitivePromptOrRecallActive() &&
                !app.awaitingLocateUpdateDb()) {
       // !app.awaitingLocateUpdateDb() (2026-08-15 fix): the exact same
       // bug class !app.promptActive() below was already added for (a
