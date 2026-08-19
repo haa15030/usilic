@@ -52,6 +52,104 @@ bool glyphProvidedByFont(TTF_Font *font, unsigned int codepoint) {
   return TTF_GlyphIsProvided(font, static_cast<Uint16>(codepoint)) != 0;
 }
 
+// The inverse of decodeUtf8Codepoint() -- needed by
+// composeDakutenCodepoint() below (composeGraphemeCluster()'s own
+// caller re-encodes the composed scalar back into a cell's `glyph`
+// string). Every codepoint this port ever composes this way is <=
+// 0xFFFF (BMP-only Hiragana/Katakana), so the 4-byte case is dead in
+// practice but included for completeness/symmetry with the decoder.
+std::string encodeUtf8Codepoint(unsigned int codepoint) {
+  std::string out;
+  if (codepoint < 0x80) {
+    out.push_back(static_cast<char>(codepoint));
+  } else if (codepoint < 0x800) {
+    out.push_back(static_cast<char>(0xC0 | (codepoint >> 6)));
+    out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+  } else if (codepoint < 0x10000) {
+    out.push_back(static_cast<char>(0xE0 | (codepoint >> 12)));
+    out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+  } else {
+    out.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
+    out.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+  }
+  return out;
+}
+
+// 2026-08-20 addition, a direct user follow-up after the U+3099/U+309A
+// display_width() fix ("=dsよりはマシだが=dvには負ける...自前描画なら
+// 何とかなる？"): merging a combining dakuten/handakuten mark into the
+// PREVIOUS cell's `glyph` string as raw, still-decomposed UTF-8 bytes
+// (commitGlyph()'s existing width==0 branch) makes that cell hold a
+// TWO-codepoint string ("ト"+U+3099), which TTF_RenderUTF8_Blended()
+// then has to shape correctly for it to look like one fused "ド" --
+// but SDL_ttf/FreeType do simple linear glyph layout, not real Unicode
+// text shaping (no GPOS mark-attachment positioning the way CoreText,
+// -c's own real terminal emulator, already does), so the mark's own
+// advance/position isn't guaranteed to land exactly on top of the base
+// glyph. Since -g owns its rendering entirely (unlike -c, which just
+// hands raw bytes to a real shaping engine), the fix available here is
+// to sidestep shaping altogether: precompose the pair into its single
+// NFC codepoint (e.g. "ト"+U+3099 -> "ド" U+30C9) BEFORE storing it in
+// the cell, so the cell ends up holding one perfectly ordinary kana
+// character with normal glyph metrics -- rendered exactly like any
+// other single character, no combining-mark shaping involved at all.
+// A closed, unchanging table (every Hiragana/Katakana dakuten/
+// handakuten pair Unicode defines a canonical NFC composition for --
+// this is NOT general Unicode normalization, just this one finite,
+// well-known correspondence) rather than pulling in a full
+// normalization library for one narrow case. Falls back to the OLD
+// raw-append behavior (returns 0, caller keeps its prior behavior) for
+// any base/mark combination outside this table -- still zero-width
+// per display_width(), just not something this port knows how to
+// precompose, so the decomposed form (imperfect shaping, but not
+// visibly a separate glyph either, per Utf8::display_width()'s own
+// 0-width classification) is the best available fallback.
+unsigned int composeDakutenCodepoint(unsigned int base, unsigned int mark) {
+  if (mark != 0x3099 && mark != 0x309a) return 0;
+  bool handakuten = mark == 0x309a;
+  // う/ウ -> ゔ/ヴ (dakuten only; no handakuten form exists)
+  if (!handakuten && base == 0x3046) return 0x3094;
+  if (!handakuten && base == 0x30a6) return 0x30f4;
+  // か-gyou through と-gyou (dakuten only; no handakuten forms exist),
+  // Hiragana then Katakana (Katakana codepoints are a fixed +0x60
+  // offset from their Hiragana counterparts throughout this range,
+  // consistent enough to check post-offset below rather than list
+  // every Katakana codepoint a second time).
+  if (!handakuten) {
+    static const unsigned int kDakutenOnlyBases[] = {0x304b, 0x304d, 0x304f, 0x3051, 0x3053, 0x3055, 0x3057,
+                                                       0x3059, 0x305b, 0x305d, 0x305f, 0x3061, 0x3064, 0x3066,
+                                                       0x3068};
+    for (unsigned int hiraganaBase : kDakutenOnlyBases) {
+      if (base == hiraganaBase || base == hiraganaBase + 0x60) return base + 1;
+    }
+  }
+  // は-gyou (both dakuten AND handakuten forms exist), Hiragana then
+  // Katakana (same +0x60 offset).
+  static const unsigned int kHaGyouBases[] = {0x306f, 0x3072, 0x3075, 0x3078, 0x307b};
+  for (unsigned int hiraganaBase : kHaGyouBases) {
+    if (base == hiraganaBase || base == hiraganaBase + 0x60) return base + (handakuten ? 2 : 1);
+  }
+  // Rare/obsolete Katakana (dakuten only): ワヰヱヲ -> ヷヸヹヺ, and the
+  // Katakana/Hiragana iteration marks ヽ/ゝ -> ヾ/ゞ. NOT a fixed
+  // offset from their base (outside the contiguous block the other
+  // cases share), so listed explicitly.
+  if (!handakuten) {
+    switch (base) {
+      case 0x30ef: return 0x30f7;  // ワ -> ヷ
+      case 0x30f0: return 0x30f8;  // ヰ -> ヸ
+      case 0x30f1: return 0x30f9;  // ヱ -> ヹ
+      case 0x30f2: return 0x30fa;  // ヲ -> ヺ
+      case 0x30fd: return 0x30fe;  // ヽ -> ヾ
+      case 0x309d: return 0x309e;  // ゝ -> ゞ
+      default: break;
+    }
+  }
+  return 0;
+}
+
 // Computes where to draw a glyph surface within its allocated
 // boxX/boxY..maxW/maxH cell(s), UNIFORMLY scaled down (never up, and
 // never independently in X vs Y) if it would otherwise overflow, then
@@ -584,14 +682,7 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   // used to unconditionally advance the cursor by `std::max(width, 1)`
   // -- even a genuinely 0-width mark got its OWN fresh cell, so it drew
   // as an independent, un-stacked glyph next to its base character
-  // instead of combining with it. Appending the mark's own UTF-8 bytes
-  // to the PREVIOUS cell's `glyph` string instead (without moving the
-  // cursor at all) lets SDL_ttf's own TTF_RenderUTF8_Blended() shape
-  // and render the full base+mark grapheme cluster as one glyph run,
-  // the same way any other text renderer composites a combining mark
-  // onto its base -- matching -c's own Terminal.app rendering, which
-  // already composited these correctly (confirmed via the same report's
-  // own side-by-side screenshot, =dm).
+  // instead of combining with it.
   if (width == 0 && impl_->cursorCol > 0) {
     int prevCol = impl_->cursorCol - 1;
     // A wide (CJK) character's own continuation shadow cell carries no
@@ -599,7 +690,28 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
     // actual glyph this mark should attach to is one column further
     // back in that case.
     if (impl_->cellAt(impl_->cursorRow, prevCol).continuation && prevCol > 0) prevCol--;
-    impl_->cellAt(impl_->cursorRow, prevCol).glyph += utf8Bytes;
+    Cell &target = impl_->cellAt(impl_->cursorRow, prevCol);
+    // 2026-08-20 follow-up (a direct user report comparing screenshots:
+    // "=dsよりはマシだが=dvには負ける...自前描画なら何とかなる？" --
+    // still visibly not quite fused, next to -c's own perfect result):
+    // the FIRST version of this fix just appended the mark's raw UTF-8
+    // bytes here, leaving the cell's glyph as a still-decomposed TWO-
+    // codepoint string for TTF_RenderUTF8_Blended() to shape -- but
+    // SDL_ttf/FreeType do simple linear glyph layout, not real Unicode
+    // text shaping (no GPOS mark-attachment positioning the way -c's
+    // real terminal emulator's shaping engine already does), so the
+    // mark's own advance/position isn't guaranteed to land exactly on
+    // the base glyph. composeDakutenCodepoint() sidesteps shaping
+    // entirely by precomposing the pair into its single NFC codepoint
+    // first (e.g. "ト"+U+3099 -> "ド"), so the cell ends up holding one
+    // perfectly ordinary character -- rendered with normal glyph
+    // metrics, no combining-mark shaping involved at all. Falls back
+    // to the old raw-append behavior for any pair outside that finite,
+    // well-known table (still 0-width per display_width(), just not a
+    // composition this port's own table knows).
+    unsigned int composed = composeDakutenCodepoint(decodeUtf8Codepoint(target.glyph), decodeUtf8Codepoint(utf8Bytes));
+    if (composed) target.glyph = encodeUtf8Codepoint(composed);
+    else target.glyph += utf8Bytes;
     return;
   }
 
