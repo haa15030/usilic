@@ -7304,6 +7304,44 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (README表示)ともに修正前と同じ内容で表示されることを確認した。
      デバッグ用の一時ログ出力は修正完了後に除去済み。
 
+374. **`^X^F`(RecentFile)候補一覧に「(tar)」バッジを追加(legacy
+    `^X^F`一覧の既存挙動に追随)**
+   - **報告**: 「FILE:ARCで閲覧したutf8.tarに「(tar)」を付けて欲しい
+     （旧=dp）。」項目372で修正した「アーカイブを実際に**開く**とき
+     の判定・フォールバック」とは別に、`^X^F`の一覧**表示**自体に
+     バッジが無いままだった件(legacy側の`T_hfile`候補一覧は元々
+     `=dp`参照screenshotの通りバッジ付きで表示されており、C++版の
+     `ListBrowserMode`には同等の機能が無かった)。
+   - **修正**: `ListBrowserMode::show()`にオプション引数
+     `badges`(items と同じ長さの、表示専用の接尾辞ベクタ、デフォルト
+     空)を追加。`items_`自体(`selectedItem()`が返す値)は一切変更
+     せず、`view_.setLines()`へ渡す`Line::text`にのみ`"  " + badges[i]`
+     を追記する形にした(このクラスの既存の設計方針「RingCategoryを
+     知らない」を維持: バッジの中身が何を意味するかはApplication側が
+     決め、このクラスはただ渡された文字列を表示するだけ)。
+     `Application`側に新規ヘルパー`archiveBadgeFor()`
+     (`Configuration::programForSuffix()`で実際に`ArchiveKind`が
+     判定できるパスにのみ`"(<program>)"`を返す。項目372の`^R`拡張子
+     フィルタ(`hasArchiveCompatibleSuffix()`、`.rar`/`.7z`等
+     未対応拡張子も含む静的許可リスト)とは意図的に別物とし、バッジは
+     「今すぐ実際に開ける」ものにのみ付与するようにした)と
+     `fileHistoryBadges()`(`RingCategory::RecentFile`のときだけ
+     `archiveBadgeFor()`を全件に適用、それ以外(DIR/MAN/LOCATE/
+     FGREP/EGREP/COMMANDの各履歴、いずれも実ファイルパスではない)は
+     常に空)を追加し、`toggleListBrowserHistory()`と
+     `startPromptHistoryRecall()`の`listBrowserMode_.show(items)`
+     呼び出し2箇所を`show(items, fileHistoryBadges(...))`に変更した。
+   - **検証**: `make test` 776/776件・18555アサーション全通過
+     (新規doctest2件: `show()`の`badges`引数が表示のみに反映され
+     `items()`/`selectedItem()`は無改変のまま返すこと、`badges`が
+     `items`より短い(または空)場合は該当インデックスを「バッジ無し」
+     として扱いエラーにならないこと)。PTY自動テストで、
+     `src/utf8.tar`をDirectory modeから開いてARCモードへ入った後
+     `^G`で戻り`^X^F`を開くと、候補一覧が
+     `"/Users/.../src/utf8.tar  (tar)"`と表示されることを確認
+     (legacy側の`=dp`参照screenshotと同じ形式)。既存の全回帰テストも
+     問題無し。
+
 ## 12. SHELL
 
 5. **Ubuntu実機での`tcb .`セグフォ、SHELLモード初期化まわりの表示バグ数件**

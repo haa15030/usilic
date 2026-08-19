@@ -16,11 +16,15 @@ namespace fm {
 // letting the one caller who already has full context own it.
 ListBrowserMode::ListBrowserMode(ContentView &view) : view_(view) {}
 
-void ListBrowserMode::show(const std::vector<std::string> &items) {
+void ListBrowserMode::show(const std::vector<std::string> &items, const std::vector<std::string> &badges) {
   items_ = items;
   std::vector<ContentView::Line> lines;
   lines.reserve(items_.size());
-  for (const auto &item : items_) lines.push_back({item, std::nullopt, std::nullopt, {}});
+  for (std::size_t i = 0; i < items_.size(); i++) {
+    std::string text = items_[i];
+    if (i < badges.size() && !badges[i].empty()) text += "  " + badges[i];
+    lines.push_back({text, std::nullopt, std::nullopt, {}});
+  }
   view_.setLines(std::move(lines));
   view_.setCursorIndex(0);
   view_.redraw();

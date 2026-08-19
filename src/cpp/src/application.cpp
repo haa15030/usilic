@@ -91,6 +91,41 @@ bool hasArchiveCompatibleSuffix(const std::string &path) {
   }
   return false;
 }
+
+// "(tar)"/"(zip)"/etc badge for an archive-recognized path in the
+// ^X^F (RecentFile) candidate list -- 2026-08-20 addition, a direct
+// user request ("FILE:ARCで閲覧したutf8.tarに「(tar)」を付けて欲しい
+// （旧=dp）"): legacy's own T_hfile candidate list already shows this
+// (=dp, the reference screenshot), but this port's ListBrowserMode
+// never had it -- every entry, archive or not, rendered as a bare
+// path. Matches ArchiveMode's own archiveCommand_ badge exactly (same
+// Configuration::programForSuffix() lookup, same "(<program>)"
+// shape) -- unlike hasArchiveCompatibleSuffix()'s own static allowlist
+// (^R's own filter, deliberately includes extensions with no real
+// ArchiveKind support yet), this ONLY badges paths archiveMode_.
+// loadArchive() could actually open right now, since showing a badge
+// implies "this is openable as an archive," not just "this looks like
+// one by extension."
+std::string archiveBadgeFor(const Configuration &configuration, const std::string &path) {
+  ArchiveKind kind = ArchiveKind::None;
+  auto command = configuration.programForSuffix(path, &kind);
+  if (!command || kind == ArchiveKind::None || command->argv.empty()) return "";
+  return "(" + command->argv.front() + ")";
+}
+
+// Parallel badges vector for ListBrowserMode::show()'s own optional
+// second argument -- empty (no badges at all) unless `category` is
+// RingCategory::RecentFile, the only ring whose entries are ever real
+// filesystem paths worth checking (DIR/MAN/LOCATE/FGREP/EGREP/COMMAND
+// entries are never archive paths).
+std::vector<std::string> fileHistoryBadges(const Configuration &configuration, RingCategory category,
+                                            const std::vector<std::string> &items) {
+  std::vector<std::string> badges;
+  if (category != RingCategory::RecentFile) return badges;
+  badges.reserve(items.size());
+  for (const auto &item : items) badges.push_back(archiveBadgeFor(configuration, item));
+  return badges;
+}
 // K-2 (^H, M_key, "KEY"): startKey()'s own static binding table.
 // Unlike HELP (which loads real prose text at runtime via
 // loadHelpText()), this table is NOT parsed from usilicrc's own KEY
@@ -3947,7 +3982,7 @@ bool Application::toggleListBrowserHistory() {
                                 [](const std::string &item) { return !hasArchiveCompatibleSuffix(item); }),
                 items.end());
   }
-  listBrowserMode_.show(items);
+  listBrowserMode_.show(items, fileHistoryBadges(configuration_, listBrowserCategory_, items));
   if (listBrowserChronological_ && !items.empty()) {
     // show() itself already redrew once with cursorIndex_ freshly
     // reset to 0 -- redraw() again so the screen (not just internal
@@ -4846,7 +4881,7 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
                                 [](const std::string &item) { return !hasArchiveCompatibleSuffix(item); }),
                 items.end());
   }
-  listBrowserMode_.show(items);
+  listBrowserMode_.show(items, fileHistoryBadges(configuration_, category, items));
   currentMode_ = ApplicationMode::ListBrowser;
   if (!items.empty()) {
     if (directEntry) {

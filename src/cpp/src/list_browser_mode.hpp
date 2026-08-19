@@ -42,7 +42,20 @@ class ListBrowserMode {
   // History::recentEntries(RingCategory::RecentFile) or
   // Configuration::grepSeedPatterns() -- caller converts a
   // std::deque to a std::vector if needed).
-  void show(const std::vector<std::string> &items);
+  //
+  // `badges` (2026-08-20 addition, optional, same length as `items` or
+  // empty): a per-item DISPLAY-only suffix (e.g. "(tar)" for an
+  // archive-recognized RecentFile path, see Application's own
+  // archiveBadgeFor()) appended after each item's own text on screen.
+  // Kept entirely separate from `items_` itself (still the exact,
+  // unmodified strings selectedItem() returns) -- this class stays as
+  // unaware of WHAT a badge means (RingCategory, archive detection,
+  // ...) as its own class comment already establishes it should be;
+  // the caller decides whether/what to badge, this just renders it.
+  // An empty string for any given index (or a shorter/absent `badges`
+  // vector entirely) means "no badge for this one", matching every
+  // existing call site's unchanged behavior exactly.
+  void show(const std::vector<std::string> &items, const std::vector<std::string> &badges = {});
 
   const std::vector<std::string> &items() const;
   const std::string *selectedItem() const;
