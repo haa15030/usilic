@@ -3503,6 +3503,26 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works straight
   CHECK(app.directoryMode().currentDirectory() == subdir.string() + "/");
 }
 
+// 2026-08-20 fix, a real report + screenshot (=dq): opening an archive
+// (utf8.tar) straight from ^X^F's own candidate list showed the raw
+// binary tar header bytes as if it were plain text (no "(tar)" badge)
+// -- unlike openSelectedEntry() (Directory mode's own Enter key), the
+// RecentFile branch of openSelectedListEntry() called
+// fileMode_.loadFile() unconditionally, never trying
+// archiveMode_.loadArchive() first.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) from ^X^F's own RecentFile candidate list opens an archive "
+                           "path as an actual archive (Archive mode), not raw file content") {
+  history.pushRecent(RingCategory::RecentFile, (root / "archive.tar").string());
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Archive);
+  CHECK(app.archiveMode().currentArchive() == (root / "archive.tar").string());
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) from File mode reached via ^X^F (RecentFile) lands on the "
                            "file's OWN containing directory, not whatever directory happened to be showing "
                            "before ^X^F was pressed (2026-08-16 fix: a real report + own diagnosis -- "
@@ -4873,17 +4893,15 @@ TEST_CASE_FIXTURE(Fixture, "^R (ToggleHistoryView): a non-consecutive revisit sh
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHistoryView): refused outside ListBrowser mode, matching "
                            "m_list()'s own echo_mess(S_errf) for a context ^R doesn't apply to -- using "
-                           "Archive mode, since Directory/File now have their OWN dedicated ^R meaning (see "
-                           "the \"^R directory-name/file-name history\" tests)") {
+                           "Key mode, since Directory/File/Archive/ArchiveContent now all have their OWN "
+                           "dedicated ^R meaning (see the \"^R directory-name/file-name history\"/\"^R in "
+                           "Archive\" tests)") {
   REQUIRE(app.start(path()));
-  int idx = indexOf("archive.tar");
-  REQUIRE(idx >= 0);
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+  REQUIRE(app.handleCommand(Command::StartKey));
+  REQUIRE(app.currentMode() == ApplicationMode::Key);
 
   CHECK_FALSE(app.handleCommand(Command::ToggleHistoryView));
-  CHECK(app.currentMode() == ApplicationMode::Archive);
+  CHECK(app.currentMode() == ApplicationMode::Key);
 }
 
 // -- ^R prompt-time history recall (MAN/LOCATE/FGREP/EGREP), ported
@@ -5164,9 +5182,30 @@ TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: ^G restores whatever had already
   CHECK(app.shell().commandLine().text() == "partial");
 }
 
-TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode (using Archive mode, since plain "
-                           "Directory mode now has its OWN top-level ^R meaning -- see the dedicated "
-                           "\"^R directory-name/file-name history\" tests below)") {
+TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode (using Key mode, since Directory/"
+                           "File/Archive/ArchiveContent now all have their OWN top-level ^R meaning -- see the "
+                           "dedicated \"^R directory-name/file-name history\"/\"^R in Archive\" tests below)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  REQUIRE(app.currentMode() == ApplicationMode::Key);
+
+  CHECK_FALSE(app.feedByte(0x12, std::nullopt));  // top-level ^R (ToggleHistoryView) is a no-op here
+  CHECK(app.currentMode() == ApplicationMode::Key);
+}
+
+// 2026-08-20 addition, a direct user request: "ARC:^R新設。内容は、
+// FILE一覧のうちARC対応拡張子...付属ファイルのみの一覧" + clarification
+// "カレントディレクトリ如何に問わず今までアクセスしたアーカイブ
+// ファイルが対象。ARCモードでの^Rで発動". Reuses the same RecentFile
+// ring/picker Directory/File's own ^R (and ^X^F) already use, filtered
+// to archive-compatible paths only (archiveHistoryFilterActive()).
+TEST_CASE_FIXTURE(Fixture, "^R in Archive mode opens the RecentFile picker filtered to archive-compatible "
+                           "paths only, regardless of the current directory") {
+  fs::path plain = root / "plain2.txt";
+  { std::ofstream(plain) << "not an archive\n"; }
+  history.pushRecent(RingCategory::RecentFile, plain.string());
+  history.pushRecent(RingCategory::RecentFile, (root / "archive.tar").string());
+
   REQUIRE(app.start(path()));
   int idx = indexOf("archive.tar");
   REQUIRE(idx >= 0);
@@ -5174,7 +5213,13 @@ TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode (usin
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
-  CHECK_FALSE(app.feedByte(0x12, std::nullopt));  // top-level ^R (ToggleHistoryView) is a no-op here
+  CHECK(app.feedByte(0x12, std::nullopt));  // ^R
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.listBrowserMode().items().size() == 1);
+  CHECK(app.listBrowserMode().items()[0] == (root / "archive.tar").string());
+
+  // Selecting the filtered entry still opens it as an actual archive.
+  CHECK(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::Archive);
 }
 

@@ -66,6 +66,31 @@ std::string truncatedTrailingPath(const std::string &path) {
 // DirectoryMode/ArchiveMode, different translation units with no
 // access to this file's anonymous namespace, can share it too).
 std::size_t contentByteCount(const ContentView &view) { return view.totalByteCount(); }
+
+// ^R-in-Archive's own extension allowlist (2026-08-20 addition, a
+// direct user spec: "ARC対応拡張子（.tar/.tar.gz/.tgz/.tar.bz2/.tbz2/
+// .tar.xz/.txz/.7z/.zip/.rar/.lzh/.lha/.dmg/.iso/.cab/.msi）"). Listed
+// literally rather than derived from Configuration::programForSuffix()
+// on purpose: several of these (.rar/.7z/.dmg/.iso/.cab/.msi) have no
+// real ArchiveKind/extraction support in this port at all yet (see
+// ArchiveKind's own comment) -- the user's own explicit request is for
+// this filtered history list to show them regardless, ahead of that
+// support existing (the .7z/seven7z case specifically: "無い場合は
+// 「brew install seven7z」を...インストが終わり次第ARCで表示"), not
+// for the list to silently hide whatever archiveMode_.loadArchive()
+// doesn't currently handle. Compound suffixes (.tar.gz etc.) checked
+// as literal tails, same shape as Configuration's own suffix matching
+// elsewhere in this port.
+bool hasArchiveCompatibleSuffix(const std::string &path) {
+  static const std::vector<std::string> kSuffixes = {
+      ".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tbz2", ".txz", ".tar",
+      ".7z",     ".zip",     ".rar",    ".lzh", ".lha",  ".dmg", ".iso", ".cab", ".msi"};
+  for (const auto &suffix : kSuffixes) {
+    if (path.size() >= suffix.size() && path.compare(path.size() - suffix.size(), suffix.size(), suffix) == 0)
+      return true;
+  }
+  return false;
+}
 // K-2 (^H, M_key, "KEY"): startKey()'s own static binding table.
 // Unlike HELP (which loads real prose text at runtime via
 // loadHelpText()), this table is NOT parsed from usilicrc's own KEY
@@ -2098,6 +2123,22 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::File && fileMode_.currentFile() != bannerFilePath()) {
         return startRegexPromptList(PromptKind::RecentFile);
       }
+      // 2026-08-20 addition, a direct user request: "ARC:^R新設。内容は、
+      // FILE一覧のうちARC対応拡張子...付属ファイルのみの一覧" +
+      // clarification "カレントディレクトリ如何に問わず今までアクセス
+      // したアーカイブファイルが対象。ARCモードでの^Rで発動" -- reuses
+      // the SAME RingCategory::RecentFile ring and PromptKind::RecentFile
+      // picker Directory/File's own ^X^F already uses (an archive IS a
+      // file this port already records into that ring, see
+      // openSelectedEntry()'s/executePathInput()'s own pushRecent()
+      // calls), filtered down to just archive-compatible paths by
+      // archiveHistoryFilterActive() (checked inside
+      // startPromptHistoryRecall()/toggleListBrowserHistory() themselves,
+      // not here) -- history-based, not a directory scan, matching the
+      // user's own explicit "カレントディレクトリ如何に問わず".
+      if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent) {
+        return startRegexPromptList(PromptKind::RecentFile);
+      }
       return toggleListBrowserHistory();
     case Command::StartEdit:
       return executeEdit();
@@ -2572,6 +2613,20 @@ bool Application::openSelectedListEntry() {
     return true;
   }
   if (listBrowserCategory_ == RingCategory::RecentFile) {
+    // 2026-08-20 fix, a real report + screenshot (=dq): opening an
+    // archive (utf8.tar) straight from ^X^F's own candidate list always
+    // fell through to FileMode's raw-byte view (missing the "(tar)"
+    // badge, showing the tar file's own binary header bytes as if it
+    // were plain text) -- unlike openSelectedEntry() (Directory mode's
+    // own Enter key), this branch called fileMode_.loadFile()
+    // unconditionally, never trying archiveMode_.loadArchive() first.
+    // Mirrors openSelectedEntry()'s own archive-first, file-as-fallback
+    // order exactly.
+    if (archiveMode_.loadArchive(*item)) {
+      archiveParentStack_.clear();
+      currentMode_ = ApplicationMode::Archive;
+      return true;
+    }
     if (!fileMode_.loadFile(*item)) return false;
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
@@ -3884,6 +3939,14 @@ bool Application::toggleListBrowserHistory() {
   } else {
     items = sortedUniqueRecentEntries(listBrowserCategory_);
   }
+  // See archiveHistoryFilterActive()'s own comment -- keeps the filter
+  // applied across a ^R chronological toggle too, not just the initial
+  // list startPromptHistoryRecall() built.
+  if (archiveHistoryFilterActive()) {
+    items.erase(std::remove_if(items.begin(), items.end(),
+                                [](const std::string &item) { return !hasArchiveCompatibleSuffix(item); }),
+                items.end());
+  }
   listBrowserMode_.show(items);
   if (listBrowserChronological_ && !items.empty()) {
     // show() itself already redrew once with cursorIndex_ freshly
@@ -4615,6 +4678,18 @@ void Application::cancelPrompt() {
   activeView().redraw();
 }
 
+// See its own declaration comment (application.hpp). Both
+// startPromptHistoryRecall() and toggleListBrowserHistory() check this
+// right before showing `items`, so the archive filter -- see
+// hasArchiveCompatibleSuffix()'s own comment -- stays applied
+// regardless of how the currently-displayed RecentFile list got
+// (re)built.
+bool Application::archiveHistoryFilterActive() const {
+  return promptHistoryRecallKind_ == PromptKind::RecentFile &&
+         (promptHistoryRecallReturnMode_ == ApplicationMode::Archive ||
+          promptHistoryRecallReturnMode_ == ApplicationMode::ArchiveContent);
+}
+
 // K-49 (^R) pressed while a prompt is active: ported from menu.c's
 // m_list(), which picks a RingCategory purely from the CURRENT
 // prompt's own context (`is_name(ap->name, M_man) -> T_hman`, etc) --
@@ -4761,6 +4836,15 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   } else {
     const std::deque<std::string> &recent = history_.recentEntries(category);
     items.assign(recent.begin(), recent.end());
+  }
+  // See archiveHistoryFilterActive()'s own comment. promptHistoryRecallKind_/
+  // promptHistoryRecallReturnMode_ are both already set above, so this
+  // reads correctly even though `category` alone can't distinguish "^R
+  // from Archive" from an ordinary ^X^F (both reuse RingCategory::RecentFile).
+  if (archiveHistoryFilterActive()) {
+    items.erase(std::remove_if(items.begin(), items.end(),
+                                [](const std::string &item) { return !hasArchiveCompatibleSuffix(item); }),
+                items.end());
   }
   listBrowserMode_.show(items);
   currentMode_ = ApplicationMode::ListBrowser;
@@ -5624,6 +5708,23 @@ bool Application::executePathInput(const std::string &path) {
       return false;
     }
     currentMode_ = ApplicationMode::Directory;
+    return true;
+  }
+  // 2026-08-20 fix, a real report + screenshot (=dq): this is the ACTUAL
+  // shared path both a typed path prompt (K-45, M_lfile) and ^X^F's own
+  // RecentFile picker (K-46, PromptKind::RecentFile routes straight
+  // here -- see executePromptSubmission()'s own comment on why
+  // openSelectedListEntry()'s own RecentFile branch never actually runs
+  // for it) reach -- unlike openSelectedEntry() (Directory mode's own
+  // Enter key), this used to call fileMode_.loadFile() unconditionally,
+  // so opening an archive (utf8.tar) via either path always fell
+  // through to FileMode's raw-byte view (no "(tar)" badge, the tar
+  // file's own binary header bytes shown as if plain text) instead of
+  // Archive mode. Tries archiveMode_.loadArchive() first, matching
+  // openSelectedEntry()'s own archive-first, file-as-fallback order.
+  if (archiveMode_.loadArchive(resolved.path)) {
+    archiveParentStack_.clear();
+    currentMode_ = ApplicationMode::Archive;
     return true;
   }
   if (!fileMode_.loadFile(resolved.path)) {

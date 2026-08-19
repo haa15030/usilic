@@ -7165,6 +7165,81 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ロジック(`disp.c`側の共通描画パスではなく、`alloc_head()`が
      `tar tvf`の生テキストから列を切り出す時点)を次回調査する。
 
+372. **`^X^F`/typed-path経由でアーカイブを開くと「(tar)」が付かずベタ
+    ファイル表示になる不具合を修正、ARCモードに新規`^R`(アクセス
+    済みアーカイブ履歴、拡張子フィルタ)を追加**
+   - **報告**: 「FILE:ARCで閲覧したutf8.tarに「(tar)」が無くベタ
+     ファイルとして表示される=dq。」「ARC:^R新設。内容は、FILE一覧の
+     うち（tar）等ARC対応拡張子（.tar/.tar.gz/.tgz/.tar.bz2/.tbz2/
+     .tar.xz/.txz/.7z/.zip/.rar/.lzh/.lha/.dmg/.iso/.cab/.msi）付属
+     ファイルのみの一覧。」「カレントディクトリ如何に問わず今まで
+     アクセスしたアーカイブファイルが対象。ARCモードでの^Rで発動。」
+   - **修正1(`(tar)`が付かない件)**: `Application::openSelectedEntry()`
+     (Directory modeの`Enter`)は`archiveMode_.loadArchive()`を先に
+     試すが、`^X^F`(RecentFileピッカー)や入力欄への直接パス入力は
+     `executePathInput()`という別の共通関数を経由し、こちらは
+     `fileMode_.loadFile()`を無条件に呼ぶだけでアーカイブ判定が
+     一切無かった。`executePathInput()`にも`archiveMode_.
+     loadArchive()`を先に試す同じ分岐を追加(`openSelectedListEntry()`
+     自身のRecentFile分岐にも同様の防御を追加したが、`^X^F`は
+     `PromptKind::RecentFile`経由で`executePathInput()`へ直接
+     ルーティングされるため実際にはそちらが本体の修正)。
+   - **修正2(新規`^R`、アクセス済みアーカイブ履歴)**: プレーン`^R`
+     (`Command::ToggleHistoryView`)は既にDirectory/File modeで
+     `RecentDirectory`/`RecentFile`ピッカーを開く役割を持つ多重
+     オーバーロードされたキーだったため、Archive/ArchiveContent
+     modeでの`^R`にも同じ枠組みで新しい意味を追加した。新規のリング
+     や候補一覧を作るのではなく、既存の`RingCategory::RecentFile`
+     (`^X^F`と全く同じ履歴、アーカイブを開いた際も`pushRecent()`
+     される)を再利用し、`archiveHistoryFilterActive()`(新規private
+     メソッド、`promptHistoryRecallKind_==RecentFile`かつ
+     `promptHistoryRecallReturnMode_`がArchive/ArchiveContentの時
+     だけtrue)が立っている間だけ、`startPromptHistoryRecall()`/
+     `toggleListBrowserHistory()`(通常の一覧構築と、その後の`^R`
+     再トグルの両方)で一覧をユーザー指定の拡張子リストへフィルタ
+     する。「カレントディレクトリ如何に問わず」という要件は、この
+     実装がそもそもディレクトリ走査ではなく履歴ベースであるため
+     自然に満たされる。拡張子リストは`Configuration::
+     programForSuffix()`から動的に導出せず、ユーザー指定のリストを
+     そのままハードコードした(理由は修正3参照)。
+   - **修正3(`.7z`等、未対応拡張子の扱い)**: `.rar`/`.7z`/`.dmg`/
+     `.iso`/`.cab`/`.msi`は現状`ArchiveKind`に対応する種別が無く
+     (`ArchiveMode`が実際に展開できるのはtar/zip/lha/rpm/deb系のみ)、
+     `programForSuffix()`ベースでフィルタするとこれらが一覧から
+     消えてしまう。ユーザー自身が「(`.7z`用ツールが)無い場合は
+     brew installしてインストが終わり次第ARCで表示」という段階的な
+     運用を想定していたため、一覧には拡張子だけで表示し、実際に
+     `Enter`した際に`archiveMode_.loadArchive()`が失敗すれば
+     (未対応拡張子は失敗する)従来通りFileMode(生バイト表示)へ
+     フォールバックする、という現状の`executePathInput()`の挙動を
+     そのまま活かした(新規のエラーメッセージ等は追加していない)。
+     `.7z`実展開のサポート(`ArchiveKind::SevenZip`相当の新設、
+     7zzコマンドとの連携)自体は今回のスコープ外とし、次回以降の
+     別タスクとした。調査の副産物として、`brew list`でこの開発機に
+     `seven7z`(`/opt/homebrew/bin/7zz`)が既にインストール済み
+     である一方、`7z`という名前のコマンドは存在しないことを確認した
+     (`.7z`実装時は`7zz`という実行ファイル名を使う必要がある)。
+   - **検証**: `make test` 774/774件・18545アサーション全通過(新規
+     doctest2件: `^X^F`からアーカイブを開くと実際にArchive modeへ
+     切り替わること、ARC modeでの`^R`が拡張子フィルタ済みの1件だけを
+     表示しそれを選ぶと再度Archive modeで開けること)。`make usilic`
+     クリーンビルド確認済み。PTY自動テストで、実際の`src/utf8.tar`を
+     `^X^F`経由で開くと`"ARC 01/14 TOP 1765 (tar) ..."`のモード
+     ラインが正しく表示されること(修正前はベタファイル表示だった)、
+     ARC modeで`^R`を押すと履歴中のアーカイブ1件(`utf8.tar`)だけが
+     フィルタされた一覧が表示され、そこから選ぶと再びARCモードで
+     正しく開けることを確認した。
+   - **保留(次回持ち越し)**: 「旧：ARC:HISTORY:9565を反映よろしく」
+     (legacy自身のARCモードラインを、C++版の項目364で確定した形式
+     「ARC」「01/14 TOP」「バイト数」「(tar)」「フルパス」へ揃える
+     依頼)は、legacyの`disp.c`側のモードライン構築が`vt_printf()`/
+     `vt_move()`等の低レベルなtermcap直接操作の集合体で、C++版の
+     `ModeLineFieldsProvider`のような抽象化が無く、安全に改修する
+     には`disp_window()`本体とその呼び出し元(`menu.c`側の
+     `print_arg()`相当)を含めた広い範囲の読み込みが必要と判断した。
+     今回のセッションの残り時間で拙速に手を入れるより、次回改めて
+     専用のラウンドとして着手する方が安全と考え、意図的に見送った。
+
 ## 12. SHELL
 
 5. **Ubuntu実機での`tcb .`セグフォ、SHELLモード初期化まわりの表示バグ数件**

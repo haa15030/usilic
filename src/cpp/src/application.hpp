@@ -1736,6 +1736,15 @@ class Application {
   // context ^R doesn't apply to, same spirit as ToggleHistoryView's
   // own outside-ListBrowser no-op.
   bool startPromptHistoryRecall(bool directEntry = false);
+  // ^R-in-Archive/ArchiveContent (2026-08-20 addition, see its own call
+  // sites' comments): true while browsing the RecentFile ring but
+  // reached via ^R FROM Archive/ArchiveContent specifically, rather
+  // than the ordinary ^X^F/^R-from-File/Directory route to the SAME
+  // ring -- both startPromptHistoryRecall() (the initial list) and
+  // toggleListBrowserHistory() (the ^R-while-already-browsing
+  // chronological toggle) check this before showing items, so the
+  // archive filter stays applied no matter how the list got rebuilt.
+  bool archiveHistoryFilterActive() const;
   // K-32/K-34 (^J^S EGREP, ^J^C CUT's regex variant): opens DIRECTLY
   // into the candidate-pattern list, skipping the blank prompt step
   // entirely -- see startGrepPrompt()/startCutPrompt()'s own comment
