@@ -1343,3 +1343,39 @@ TEST_CASE("redraw: ellipsis truncation is identical whether or not the row is cu
   CHECK(d.rowText(0) == unmarkedRendering);
   CHECK(markedRendering == unmarkedRendering);  // the actual bug: these used to differ by one character
 }
+
+// 2026-08-20 fix, a direct user report ("=dz...7行目・10行目の■",
+// comparing against a screenshot showing a lone dakuten mark left
+// floating right after "..." with no base character before it):
+// middleEllipsisTruncateByWidth()'s own boundary computation used to
+// treat a 0-width combining mark as its own separate unit, letting the
+// tail-side backwards walk include a trailing mark "for free" (0
+// never blows the budget) while the base character it depends on got
+// excluded for actually costing width -- landing the cut point INSIDE
+// a base+mark pair. Constructed so the tail-side budget exactly
+// exhausts on the trailing 'B's alone, leaving no room for the
+// preceding "ト"+dakuten pair (width 2) -- before the fix this left a
+// bare dakuten mark right after "...", now the pair is excluded (and
+// elided) as one atomic unit instead of being split.
+TEST_CASE("middleEllipsisTruncateByWidth (via a plain ellipsisEligible line): never splits a base kana "
+          "character from its own trailing combining dakuten mark") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  // "ト" (U+30C8, e3 83 88) + combining dakuten (U+3099, e3 82 99),
+  // still decomposed (not precomposed "ド") -- the exact shape macOS's
+  // own NFD filenames use, matching this port's real repro (utf8.tar).
+  std::string toDakuten = "\xe3\x83\x88\xe3\x82\x99";
+  std::string text = std::string(20, 'C') + toDakuten + std::string(8, 'B');
+  std::vector<ContentView::Line> lines;
+  lines.push_back({text, std::nullopt, std::nullopt, {}, true});
+  v.setLines(lines);
+  v.setCursorIndex(0);
+  v.redraw();
+  std::string rendered = d.rowText(0);
+  CHECK(rendered.find("...") != std::string::npos);  // truncation actually triggered
+  // The pair is excluded as a whole (falls in the elided middle along
+  // with part of the C's) -- neither half appears on its own.
+  CHECK(rendered.find(toDakuten) == std::string::npos);
+  CHECK(rendered.find("\xe3\x82\x99") == std::string::npos);  // no orphaned mark either, on its own
+}

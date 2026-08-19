@@ -89,8 +89,27 @@ std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth)
   int budget = maxWidth - static_cast<int>(kEllipsis.size());  // "..." itself is 3 plain ASCII columns
   if (budget <= 0) return text.substr(0, static_cast<std::size_t>(std::max(0, maxWidth)));
 
-  // boundaries[k]/boundaries[k+1] bracket the k-th character's own byte
-  // span; widths[k] is that character's own display width (0/1/2).
+  // boundaries[k]/boundaries[k+1] bracket the k-th GRAPHEME CLUSTER's own
+  // byte span; widths[k] is that cluster's own total display width.
+  //
+  // 2026-08-20 fix, a direct user report ("=dz...7行目・10行目の■"):
+  // a standalone 0-width combining mark (dakuten/handakuten, see
+  // GraphicalDisplay::commitGlyph()'s own composeDakutenCodepoint()
+  // comment for the -g rendering half of this same class of bug) used
+  // to get its own SEPARATE boundaries/widths entry here, one per raw
+  // UTF-8 character regardless of width. Since a 0-width entry never
+  // makes `tailWidth + widths[k] > tailBudget` true on its own, the
+  // TAIL-side backwards walk below could include a trailing mark
+  // (effectively free) while the very next (base) character it
+  // depends on blew the budget and got excluded -- landing tailStart
+  // between a base and its own mark, so the truncated string started
+  // with an orphaned mark and no base to attach to (GraphicalDisplay
+  // then had nothing to compose it onto, falling back to an isolated
+  // tofu-box glyph). Consuming any 0-width marks that immediately
+  // follow a character into THAT character's own single cluster
+  // entry means a truncation boundary can now only ever land between
+  // whole clusters, never inside one -- matching how a real grapheme-
+  // cluster-aware string API would treat "base+mark" as one unit.
   std::vector<int> boundaries;
   std::vector<int> widths;
   boundaries.push_back(0);
@@ -98,8 +117,15 @@ std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth)
   while (i < static_cast<int>(text.size())) {
     int len = Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
     len = std::min(len, static_cast<int>(text.size()) - i);
-    widths.push_back(Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, len));
+    int width = Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, len);
     i += len;
+    while (i < static_cast<int>(text.size())) {
+      int markLen = Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
+      markLen = std::min(markLen, static_cast<int>(text.size()) - i);
+      if (Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, markLen) != 0) break;
+      i += markLen;
+    }
+    widths.push_back(width);
     boundaries.push_back(i);
   }
 
