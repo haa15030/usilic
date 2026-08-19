@@ -1198,6 +1198,47 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
 // every way out of this function -- including the final program exit
 // -- so a real shell prompt afterward is never left with broken mouse
 // click/selection behavior.
+// SIGTERM/SIGHUP (2026-08-20 addition, a direct user question after
+// recalling that killing legacy tcb with `kill -9` used to leave the
+// terminal in raw mode, needing `reset`): confirmed by reading key.c's
+// own save_signal()/key_term() -- legacy DOES install a real SIGTERM/
+// SIGHUP handler there (unconditionally, not just under some launch
+// mode), which just sets a flag (`Key.f.term`) the main loop notices
+// on its next iteration and unwinds through normal cleanup (restoring
+// termios) before actually exiting. A PLAIN `kill` was always safe on
+// legacy; only `kill -9` (SIGKILL, which cannot be caught by any
+// process, ever -- this part is not fixable, on either version) left
+// the terminal broken. This port had NO such handler at all until now
+// -- a real regression versus legacy, not a `-g`-specific gap: `-c`'s
+// own KeyInput::open("/dev/tty") already puts /dev/tty in raw mode
+// (ISIG off) at startup exactly like legacy's own vt_init() did, so a
+// plain `kill` on `usilic -c` (or a bare, no-flag launch) was ALSO
+// silently leaving the terminal broken before this fix -- `-g`
+// (forceGui) just makes the exposure more obvious, since it
+// deliberately keeps the LAUNCHING terminal in that same raw mode for
+// the GUI session's entire lifetime (so ^Og can toggle back to it
+// seamlessly -- see the guiOwnsWholeSession branch's own
+// keyInput.leaveRawMode() comment for the one launch mode that's
+// already exempt, since there's no terminal content to toggle back
+// to there). Same flag-not-direct-cleanup shape as
+// gGuiSessionSigintReceived (below, runGuiPhase()'s own equivalent) --
+// async-signal-safety means a signal handler can only safely touch a
+// sig_atomic_t, not call into Application/KeyInput/Display directly --
+// polled once per iteration of BOTH this function and runGuiPhase()
+// (every GUI entry point funnels through the latter, including
+// tryEnterGuiPhase()'s own call), calling the exact same
+// Application::requestImmediateExit() gGuiSessionSigintReceived
+// already uses so both loops' own `while (!app.wantsExit())` unwind
+// through their NORMAL exit path (KeyInput::close()/Display::close()
+// at the tail of main(), which already correctly restore cooked mode
+// on a normal exit) rather than needing a separate cleanup path of
+// their own. Declared here (before this function, the first of the
+// two loops that reads it) rather than alongside
+// gGuiSessionSigintReceived further down, since that one is only ever
+// read from runGuiPhase() itself.
+volatile std::sig_atomic_t gTerminationSignalReceived = 0;
+void handleTerminationSignal(int) { gTerminationSignalReceived = 1; }
+
 bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display &display, bool forceCui) {
   bool mouseTrackingOn = false;
   // Counts consecutive bare ESC presses, for the ESC-ESC-Enter direct-
@@ -1241,6 +1282,14 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
   };
 
   while (!app.wantsExit()) {
+    // See gTerminationSignalReceived's own declaration comment (a
+    // plain `kill`/SIGTERM or terminal-hangup SIGHUP, unlike SIGKILL,
+    // is recoverable -- this lets that recovery actually happen,
+    // matching legacy's own key_term()/Key.f.term).
+    if (gTerminationSignalReceived) {
+      app.requestImmediateExit();
+      return leavePhase(true);
+    }
     if (app.consumeGuiModeToggleRequest()) return leavePhase(true);
     // See Application::awaitingLocateUpdateDb()'s own comment: this
     // loop's own poll() below already ticks every ~100ms regardless of
@@ -1510,6 +1559,10 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
   while (!app.wantsExit()) {
     if (gGuiSessionSigintReceived) {
+      app.requestImmediateExit();
+      return;
+    }
+    if (gTerminationSignalReceived) {
       app.requestImmediateExit();
       return;
     }
@@ -2379,6 +2432,17 @@ int main(int argc, char **argv) {
   fm::KeyInput keyInput(*terminalDisplay);
   keyInput.open("/dev/tty");
   keyInput.installSignalHandlers();
+  // SIGTERM/SIGHUP: see gTerminationSignalReceived's own declaration
+  // comment. KeyInput::installSignalHandlers() above only covers
+  // SIGWINCH/SIGTTOU/SIGCONT (legacy's key.c save_signal() handles
+  // those THREE plus SIGTERM/SIGHUP together in one switch -- this
+  // port's own installSignalHandlers() just never picked up the other
+  // two). Installed unconditionally here, matching legacy's own
+  // unconditional save_signal() -- NOT gated on forceGui/-c, since a
+  // plain `kill` should be recoverable regardless of which display
+  // backend ends up running.
+  std::signal(SIGTERM, handleTerminationSignal);
+  std::signal(SIGHUP, handleTerminationSignal);
 
   // Ported from str.c's set_tcbrc()/S_hist path-building: both files
   // live under $HOME/.usilic/, created if it doesn't exist yet (same

@@ -16616,6 +16616,82 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      環境が無いためコードレベルの確認(`-c`側の同一ロジックが既に
      実機相当PTY検証済みであることの確認)に留まる。
 
+376. **`SIGTERM`/`SIGHUP`ハンドラを新規実装、`kill`(SIGKILLでない
+    普通のkill)で端末がraw modeのまま壊れる不具合を修正
+    (legacyに対する退行の解消)**
+   - **発端**: 「-gの2件を切り分けたい」というユーザーからの
+     ライブGUI検証の許可を受けてこのセッションで実際に`usilic -g`
+     起動を試みたところ、System Eventsでのフォーカス制御が
+     信頼できず(`set frontmost to true`が反映されない)、かつ
+     非対話的な起動経路で`"usilic: Invalid terminal."`という
+     予期しない挙動になったため、ライブ検証を安全に断念する形で
+     一旦報告した。これを受けてユーザーから「tcbをkill -9で強制
+     終了したあとはプロンプト入力で改行等が正常に機能せずreset
+     しなくてはならなかったことがある...usilicもそうなら-g
+     （グラフィック描画）では利いていないとか？」という記憶に
+     基づく仮説が提示された。
+   - **legacy側の裏付け**: `key.c`の`save_signal()`/`key_term()`を
+     確認したところ、legacyは`SIGTERM`/`SIGHUP`を(起動モードに
+     関係なく無条件に)ハンドルしており、`key_term()`自体は
+     フラグ(`Key.f.term`)を立てるだけ(シグナルハンドラ内で複雑な
+     処理をするのはasync-signal-safety上危険なため)、メインループが
+     次の反復でこのフラグに気づいて通常の終了経路(termios復元含む)
+     を辿る設計だった。つまり**普通の`kill`は元々安全**で、
+     `SIGKILL`(`kill -9`、OSレベルで捕捉不可能、どのプロセスにも
+     原理的に対処不能)のときだけ端末が壊れていた、というユーザーの
+     記憶通りだったと確認できた。
+   - **C++版側の調査**: `app/main.cpp`を確認したところ、
+     `KeyInput::installSignalHandlers()`は`SIGWINCH`/`SIGTTOU`/
+     `SIGCONT`の3つしかカバーしておらず、`SIGTERM`/`SIGHUP`用の
+     ハンドラがポート全体に一つも実装されていないと判明。つまり
+     **`-g`固有の問題ではなく、legacyに対する退行**だった:
+     `-c`の`KeyInput::open("/dev/tty")`も起動直後に`/dev/tty`を
+     raw mode化するため、`usilic`(`-c`または無指定)を普通に
+     `kill`しただけでも端末が壊れていたことになる(`-g`(`forceGui`)
+     はこの露出をより顕著にしていただけ: GUIウィンドウを閉じた後に
+     同じ起動元ターミナルへ`runTerminalPhase()`でシームレスに
+     戻れるよう、起動元ターミナルをraw modeのまま維持し続ける設計の
+     ため)。なお、Terminal.app/iTermの色・ウィンドウ位置を自動検出
+     してGUIへ丸ごと切り替える隠し機能(`guiOwnsWholeSession`)だけは
+     元々例外で、「もう端末へ戻ることはない」という前提のため
+     明示的に`keyInput.leaveRawMode()`を呼んでおり、この経路は
+     元から安全だった。
+   - **修正**: legacyの`key_term()`と同じ「シグナルハンドラは
+     `sig_atomic_t`フラグを立てるだけ、実際の後始末はメインループが
+     行う」という設計を踏襲し、新規グローバル`gTerminationSignalReceived`
+     (`gGuiSessionSigintReceived`と同じ形)と`handleTerminationSignal()`
+     を追加。`keyInput.open("/dev/tty")`の直後で`SIGTERM`/`SIGHUP`
+     双方に無条件でこのハンドラを登録(起動モードで分岐しない、
+     legacyの`save_signal()`と同じ)。`runTerminalPhase()`と
+     `runGuiPhase()`(すべての`-g`エントリポイントは
+     `tryEnterGuiPhase()`経由も含めて最終的にこの関数を通る)双方の
+     ループ先頭でこのフラグをチェックし、立っていれば
+     `Application::requestImmediateExit()`(`gGuiSessionSigintReceived`
+     が既に使っているのと全く同じ関数)を呼んで`return`、既存の
+     `while (!app.wantsExit())`が通常の終了経路(`KeyInput::close()`/
+     `Display::close()`、いずれも既にtermios/端末状態を正しく復元
+     する実装)へ自然に合流するようにした。
+   - **検証**: `make test` 776/776件・18555アサーション全通過。
+     `make usilic`クリーンビルド確認済み。PTY自動テストで、
+     `usilic`(`-c`)を起動直後に`SIGTERM`/`SIGHUP`それぞれを送信し、
+     プロセスが(強制終了ではなく)`WIFEXITED=true, exitcode=0`で
+     即座に正常終了すること、その際`\x1b[?1003l\x1b[?1006l
+     \x1b[?1049l`(マウストラッキング解除+代替スクリーンバッファ
+     終了、通常の`Display::close()`と同一の後始末シーケンス)が
+     実際に出力されることを、それぞれのシグナルで個別に確認した
+     (最初の試行では`os.waitpid()`のポーリングとPTY読み出しを
+     並行させておらず、後始末の出力でPTYバッファが埋まり子プロセス
+     の`write()`がブロックされる形の見かけ上の「ハング」を誤検出
+     していたが、読み出しを待機と並行させたところ実際には即座に
+     正常終了することを確認できた)。`-g`固有の経路(`runGuiPhase()`
+     側のフラグチェック)は、このセッションから安全に`-g`のGUI
+     ウィンドウへライブでキー入力を送り込む手段が無かった(フォーカス
+     制御が信頼できない、非対話的起動で端末初期化が不安定になる)
+     ため、`gGuiSessionSigintReceived`と全く同一の実証済みパターンを
+     踏襲していることをコードレベルで確認するに留まる。`SIGKILL`
+     (`kill -9`)自体は今回も、そして原理的に今後も、修正不可能
+     (OSがどのプロセスにも一切ハンドラの実行を許さない)。
+
 
 ## 20. C++移植基盤(クラス移植・Applicationへの配線)
 
