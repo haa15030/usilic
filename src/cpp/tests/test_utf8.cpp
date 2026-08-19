@@ -45,6 +45,24 @@ TEST_CASE("display_width: combining mark is 0 columns") {
   CHECK(Utf8::display_width(mark, 2) == 0);
 }
 
+// 2026-08-20 fix, root-caused via a real USILICGUIDEBUG grid-dump
+// capture ("ワート゛ニュース" in -g's ARC content listing): these two
+// codepoints are the actual combining dakuten/handakuten marks macOS's
+// NFD-decomposed filenames use, but they live in the Hiragana block
+// (0x3040-0x309F), NOT the generic Combining Diacritical Marks block
+// (0x0300-0x036F) the OTHER combining-mark test above already covers
+// -- before this fix they fell through into the East Asian Wide
+// bucket (0x2e80-0xa4cf) instead, reporting 2 columns instead of 0.
+TEST_CASE("display_width: dakuten/handakuten combining marks (U+3099/U+309A) are 0 columns, "
+          "not East Asian Wide") {
+  // U+3099 COMBINING KATAKANA-HIRAGANA VOICED SOUND MARK = e3 82 99
+  unsigned char dakuten[] = {0xe3, 0x82, 0x99};
+  CHECK(Utf8::display_width(dakuten, 3) == 0);
+  // U+309A COMBINING KATAKANA-HIRAGANA SEMI-VOICED SOUND MARK = e3 82 9a
+  unsigned char handakuten[] = {0xe3, 0x82, 0x9a};
+  CHECK(Utf8::display_width(handakuten, 3) == 0);
+}
+
 TEST_CASE("display_width: halfwidth katakana stays 1 column") {
   // U+FF71 HALFWIDTH KATAKANA LETTER A = ef bd b1 -- just past the
   // fullwidth-forms wide range (which stops at U+FF60), so this must

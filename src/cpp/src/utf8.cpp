@@ -21,7 +21,37 @@ int Utf8::display_width(const unsigned char *cp, int len) {
            | ((cp[2] & 0x3f) << 6) | (cp[3] & 0x3f);
 
   // zero-width combining marks
+  //
+  // U+3099/U+309A (2026-08-20 fix, root-caused via a real
+  // USILICGUIDEBUG grid-dump capture: "ワート゛ニュース" -- the
+  // combining dakuten/handakuten mark rendering as its own separate
+  // glyph instead of merging with the preceding kana, in -g's ARC
+  // content listing): these two codepoints ARE the actual combining
+  // dakuten/handakuten marks macOS's NFD-decomposed filenames use
+  // (e.g. "ワールド" stored on disk as "ワールト"+U+3099), but they
+  // live in the Hiragana block (0x3040-0x309F), NOT the generic
+  // "Combining Diacritical Marks" block (0x0300-0x036F) the range
+  // above already covers -- so they fell all the way through to the
+  // "East Asian Wide" bucket below (0x2e80-0xa4cf swallows this whole
+  // block too) and got rendered as an independent width-2 glyph next
+  // to their base character instead of being merged via
+  // GraphicalDisplay::commitGlyph()'s own width==0 special case
+  // (already correct once display_width() actually reports 0 here --
+  // see that function's own 2026-08-20 comment, added the same day
+  // this was tracked down, for the OTHER half of this fix). `-c`
+  // never showed this because it just passes raw UTF-8 bytes through
+  // to a real terminal emulator, which does its own independent
+  // Unicode text shaping regardless of what this port's own width
+  // math thinks; `-g` renders every glyph itself from this port's own
+  // Cell grid, so an incorrect classification here directly corrupts
+  // the visible output. NOT ported back to legacy's code.c (which has
+  // this exact same gap in its own, separately-maintained
+  // utf8_width()) -- unreported there, and legacy has no -g/pixel
+  // rendering path where this class of bug can surface the same way
+  // (see the class of `-c`-masks-it reasoning just above); left as a
+  // known related finding rather than an unrequested legacy edit.
   if ((cpt >= 0x0300 && cpt <= 0x036f)
+      || (cpt == 0x3099 || cpt == 0x309a)
       || (cpt >= 0x1ab0 && cpt <= 0x1aff)
       || (cpt >= 0x1dc0 && cpt <= 0x1dff)
       || (cpt >= 0x20d0 && cpt <= 0x20ff)
