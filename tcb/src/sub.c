@@ -761,10 +761,21 @@ void print_arg(char arg[], int size, u_char *buff, CHILD *chp, int f_M)/*tcb*/
 {
   *arg = K_z; /* doesn't display mode-line[4] */
   if (chp)
-    if (size >= 0 && s_S(S_sh) && f_M != T_pipe5)
+    /* 2026-08-20 fix (see menu.c's own call-site comment for the
+       size=-1 half of this same report): s_S(S_sh) (the configured
+       SHELL command string) gated the byte count here for every
+       chp-driven mode (ARC chief among them) with no clear connection
+       to archive display at all -- T_dir's/T_man's own nearly
+       identical `size >= 0' branches just below have no such gate.
+       Dropped to match those two, which is also the ONLY way the
+       byte count could ever show at all when no SHELL section is
+       configured in usilicrc (confirmed directly: s_S(S_sh) is NULL
+       in that case, unconditionally suppressing this regardless of a
+       real, valid size). */
+    if (size >= 0 && f_M != T_pipe5)
       sprintf(arg, " %d (%s)", size, *chp->argv);
     else sprintf(arg, " (%s)", *chp->argv);
-  else 
+  else
     switch(f_M) {
     case T_dir:
       if (size >= 0) sprintf(&arg[1], "%d (%s)", size, s_S(S_ls));

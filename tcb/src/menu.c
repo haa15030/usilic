@@ -1854,17 +1854,40 @@ void menu(char pathname[], FILE *pin)/*tcb*/
     }
     if (n.Mb != T_exec) {
       int j = h.bp == &h.base[4] && pin && pin != F1;
-      set_rv(&n, &pn, &rv, &h 
+      /* 2026-08-20 fix, a direct user request (C++版のARCモードライン
+	 再設計、項目364/HISTORY:9565をlegacyへも反映): ARC (T_tar/T_lha/
+	 T_unzip/T_rpm/T_deb) always fell into the `rv.col >= 0' disjunct
+	 below (its own listing highlights a specific column, same as any
+	 other results-style screen), forcing size=-1 -- print_arg()'s
+	 own `size >= 0' check then always failed, so an archive's own
+	 mode-line byte count NEVER showed regardless of the archive's
+	 own actual size, confirmed directly via temporary debug output
+	 (size=-1 logged for every T_tar redraw). That disjunct's own
+	 intent (skip the byte count for GREP/LOCATE-style search-match
+	 rows, where it's not particularly meaningful mid-search) doesn't
+	 apply to ARC's own listing -- ARC's byte count is exactly as
+	 meaningful as T_dir's own "%d (ls)" byte count immediately above
+	 it in print_arg()'s own switch, which has no such suppression at
+	 all. */
+      int f_archive = n.M == T_tar || n.M == T_lha || n.M == T_unzip
+	|| n.M == T_rpm || n.M == T_deb;
+      set_rv(&n, &pn, &rv, &h
 	     , ((i = pn.nrow - (vt_row(0) - !j)) > 0) ? i : 0);
-      print_arg(l.arg, ((h.bp == &h.base[4] && n.M != T_man)
-			 || (n.M != T_dir && rv.pp && rv.col >= 0))
+      print_arg(l.arg, (!f_archive && ((h.bp == &h.base[4] && n.M != T_man)
+			 || (n.M != T_dir && rv.pp && rv.col >= 0)))
 		? -1 : h.bp->size, h.bp->buff, chp, n.M);
       if (n.M != T_pipe && n.M != T_pipe2 && n.M != T_pipe3)
 	/* mode-line[1] should read "MAN" (the mode), not the man page's
 	   own name -- a.name itself is left untouched since it still
-	   feeds write_list()'s history persistence below */
+	   feeds write_list()'s history persistence below. 2026-08-20:
+	   ARC (f_archive, see this same block's own comment above) gets
+	   the identical "ARC" literal treatment -- matching the C++
+	   port's own ArchiveMode, which uses this fixed name for every
+	   archive kind (the "(tar)"/"(lha)"/etc badge in l.arg already
+	   distinguishes which one) rather than the archive's own
+	   basename. */
 	n.nlen = disp_window(rv.ps, rv.pp, n.Mb
-			     , (n.M == T_man) ? "MAN" : a.name,
+			     , (n.M == T_man) ? "MAN" : (f_archive) ? "ARC" : a.name,
 			     l.prev, l.arg, &n.klen);
       else n.Mb = n.M = (n.M == T_pipe3) ? T_pipe5 : T_pipe4;
       if (rv.col == -1) rv.col = 0;
