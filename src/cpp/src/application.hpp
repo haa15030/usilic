@@ -88,6 +88,11 @@ enum class Command {
   StartCopy,
   StartMove,
   StartRemove,
+  // K-71 (^X^M, M_dest): shows the destination/confirm prompt for
+  // whichever of StartCopy/StartMove/StartRemove (or their Interactive
+  // siblings below) most recently armed an operation -- see
+  // PendingCpMvRmOperation's own comment.
+  StartDestinationPrompt,
   StartExit,
   StartDu,
   StartDirectoryHistory,
@@ -1427,6 +1432,10 @@ class Application {
   bool startCopyPrompt(bool interactive = false);
   bool startMovePrompt(bool interactive = false);
   bool startRemovePrompt(bool interactive = false);
+  // K-71 (^X^M, M_dest): shows the prompt for whichever operation
+  // startCopyPrompt()/startMovePrompt()/startRemovePrompt() most
+  // recently armed -- see PendingCpMvRmOperation's own comment.
+  bool startDestinationPrompt();
   bool startExitPrompt();
   bool startDuPrompt();
   // K-57/K-58 (^X^Ka/^Xa, M_arc/M_arc2, "ARC: Expand archive"):
@@ -1493,6 +1502,9 @@ class Application {
   bool executeCopy(const std::string &destination);
   bool executeMove(const std::string &destination);
   bool executeRemove(const std::string &confirmation);
+  // Shared by executeMove()/executeRemove() -- see its own definition
+  // comment (docs/HISTORY.md:1840).
+  bool checkTargetsWritable(const std::vector<std::string> &targets);
   bool executeExit(const std::string &confirmation);
   bool executeDu(const std::string &path);
   bool executeArchiveExtract(const std::string &destination);
@@ -1760,6 +1772,31 @@ class Application {
     RecentFile,
     RecentDirectory
   };
+  // ^Xc/^Xm/^Xr (K-52/K-54/K-56) and their ^X^K "with SHELL window"
+  // siblings (K-51/K-53/K-55) used to activate the destination/confirm
+  // prompt immediately -- a real user report (=ec screenshot: an empty
+  // "CP" text-input box appearing the instant ^Xc was pressed, before
+  // any file had even been marked) asked for legacy's own two-step
+  // M_cp/M_mv/M_rm -> M_dest (^X^M, K-71) flow instead: ^Xc/^Xm/^Xr now
+  // only remember WHICH operation is armed (this struct), the user
+  // marks files in the ordinary `ls`-style listing exactly as before
+  // (^Space/^X^Y/^X^N, unchanged -- unlike legacy, marking was already
+  // decoupled from a separate "you are now in CP-mode" browsing state
+  // in this port, so no new mode was needed for that part), and
+  // startDestinationPrompt() (^X^M) is what actually shows the prompt.
+  // `directory` guards against a stale arm surviving navigation to an
+  // unrelated directory (marks themselves already clear on
+  // DirectoryMode::enterDirectory(), but targetEntries() falls back to
+  // "whatever's under the cursor" when nothing is marked -- silently
+  // acting on that in a directory the user never intended would be a
+  // real footgun, especially for RM); startDestinationPrompt() checks
+  // this and discards a stale arm rather than using it.
+  struct PendingCpMvRmOperation {
+    PromptKind kind;
+    bool interactive;
+    std::string directory;
+  };
+  std::optional<PendingCpMvRmOperation> pendingCpMvRm_;
   // Shared by submitPrompt() (text typed live) and
   // openSelectedListEntry()'s own prompt-recall branch (text picked
   // from ^R's history list instead) -- see startPromptHistoryRecall()'s

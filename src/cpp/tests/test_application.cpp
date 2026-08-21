@@ -2655,7 +2655,9 @@ TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): a failed CP's stderr lands in e
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte('c', std::nullopt));   // c -- non-interactive CP (K-52)
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm non-interactive CP (K-52)
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M -- show the prompt
   // A destination whose PARENT doesn't exist either -- cp fails and
   // writes a diagnostic to stderr (unlike a merely-missing leaf name,
   // which cp happily creates).
@@ -4367,19 +4369,55 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(MarkAll/ClearAllMarks): refused outsid
   CHECK_FALSE(app.handleCommand(Command::ClearAllMarks));
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X c / ^X m / ^X r start the corresponding prompt") {
+// 2026-08-21 change (a real user report, =ec screenshot: an empty "CP"
+// text-input box appearing the instant ^Xc was pressed, before any
+// file had even been marked): ^Xc/^Xm/^Xr now only ARM the operation --
+// see Application::PendingCpMvRmOperation's own comment -- and ^X^M
+// (K-71, M_dest) is what actually shows the prompt, matching legacy's
+// own two-step M_cp/M_mv/M_rm -> M_dest flow.
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X c / ^X m / ^X r only ARM the operation -- no prompt until ^X ^M") {
   REQUIRE(app.start(path()));
   app.feedByte(0x18, std::nullopt);
   CHECK(app.feedByte('c', std::nullopt));
+  CHECK_FALSE(app.promptActive());
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedByte(0x0d, std::nullopt));    // ^M
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^K c / ^X ^K m / ^X ^K r (K-51/K-53/K-55) each start the same prompt") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^K c / ^X ^K m / ^X ^K r (K-51/K-53/K-55) each arm the same "
+                           "operation, ^X ^M still shows the prompt") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
   CHECK(app.feedByte('c', std::nullopt));
+  CHECK_FALSE(app.promptActive());
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedByte(0x0d, std::nullopt));    // ^M
   CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "^X ^M with nothing armed is a no-op (not e.g. some stale prompt kind)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // ^M -- nothing armed
+  CHECK_FALSE(app.promptActive());
+}
+
+// A stale arm must not silently act on whatever's under the cursor in
+// an unrelated directory the user navigated to afterward -- see
+// PendingCpMvRmOperation's own comment.
+TEST_CASE_FIXTURE(Fixture, "^X ^M discards a stale arm from before navigating to a different directory") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartRemove));  // arm RM in the starting directory
+  int idx = indexOf("subdir/");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // navigate into subdir/ -- the arm was for the PARENT directory
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+
+  CHECK_FALSE(app.handleCommand(Command::StartDestinationPrompt));
+  CHECK_FALSE(app.promptActive());
 }
 
 TEST_CASE_FIXTURE(Fixture, "CP (^X^Kc, K-51 \"with SHELL window\"): still creates a real copy at the destination") {
@@ -4390,7 +4428,9 @@ TEST_CASE_FIXTURE(Fixture, "CP (^X^Kc, K-51 \"with SHELL window\"): still create
 
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
-  REQUIRE(app.feedByte('c', std::nullopt));   // c
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M -- show the prompt
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
 
@@ -4409,8 +4449,11 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCopy): refused outside Directory 
   CHECK_FALSE(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "CP: marking two files then copying them creates real copies at the destination") {
+TEST_CASE_FIXTURE(Fixture, "CP: marking two files (in either order relative to arming) then copying them "
+                           "creates real copies at the destination") {
   REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCopy));  // arm CP BEFORE marking, matching legacy's own M_cp order
+
   int idxA = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
@@ -4419,7 +4462,7 @@ TEST_CASE_FIXTURE(Fixture, "CP: marking two files then copying them creates real
   while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
-  REQUIRE(app.handleCommand(Command::StartCopy));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
 
@@ -4439,6 +4482,7 @@ TEST_CASE_FIXTURE(Fixture, "MV: moving a marked file removes the source and crea
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartMove));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
 
@@ -4453,6 +4497,7 @@ TEST_CASE_FIXTURE(Fixture, "RM: confirming with 'y' actually deletes the marked 
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartRemove));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText("y");
   CHECK(app.feedByte(0x0d, std::nullopt));
 
@@ -4466,6 +4511,7 @@ TEST_CASE_FIXTURE(Fixture, "RM: anything other than exactly 'y' leaves the file 
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartRemove));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText("n");
   CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
 
@@ -4479,11 +4525,45 @@ TEST_CASE_FIXTURE(Fixture, "CP/MV/RM: ^G cancels the prompt without touching the
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartRemove));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText("y");
   CHECK(app.feedByte(0x07, std::nullopt));
 
   CHECK_FALSE(app.promptActive());
   CHECK(fs::exists(root / "cpmv_a.txt"));
+}
+
+// docs/HISTORY.md:1840 ("chown実行後のRM、MVではファイルが選べない...
+// その旨何らかのメッセージ表示があれば親切"): a permission-denied
+// RM/MV target now shows "Permission denied" underlined in the mode
+// line's name slot (see Application::checkTargetsWritable()'s own
+// comment), reusing the exact presentation docs/HISTORY.md:8912 already
+// established for ^Je's "Invalid mode" -- instead of legacy's own
+// silent mark-time beep (this port's marking is unconditional/
+// operation-agnostic, see DirectoryMode::toggleMark()'s own comment, so
+// the check happens at execution time instead). A real `chmod`/`chown`
+// isn't reproducible here without root (CpMvRmMode::isWritable() treats
+// any file the test process owns as writable regardless of its mode
+// bits, and getuid()==0 always passes) -- removing the target out from
+// under the operation exercises the exact same isWritable()==false
+// codepath (Plain check, target doesn't exist) without needing that.
+TEST_CASE_FIXTURE(Fixture, "RM: a target that's disappeared out from under the operation shows \"Permission "
+                           "denied\" instead of silently doing nothing") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_b.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.handleCommand(Command::StartRemove));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+
+  fs::remove(root / "cpmv_b.txt");
+
+  feedText("y");
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
+
+  std::string expected = "Permission denied";
+  CHECK(display.rowText(23).substr(0, expected.size()) == expected);
+  CHECK(display.underlineAt(23, 0));
 }
 
 // -- M_exit: ^X^C confirmation prompt, wantsExit() flag --
@@ -5036,6 +5116,7 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: swallowed (no ListBrowser, no
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
   REQUIRE(app.handleCommand(Command::StartCopy));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   REQUIRE(app.promptActive());
 
   REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R -- CopyDestination has no history integration in this slice
@@ -6335,11 +6416,16 @@ TEST_CASE_FIXTURE(Fixture, "recording: a real leaderX command (^Xc etc) IS recor
   app.feedByte('(', std::nullopt);
 
   app.feedByte(0x18, std::nullopt);  // ^X
-  app.feedByte('c', std::nullopt);   // c : a real CP prompt start, not macro control
-  CHECK(app.promptActive());
+  app.feedByte('c', std::nullopt);   // c : a real CP arm, not macro control
+  CHECK_FALSE(app.promptActive());   // ^Xc only arms now, see PendingCpMvRmOperation's own comment
   // Both bytes of this real ^Xc sequence are recorded, unlike the
   // ^X(/^X)/^Xe control sequences.
   CHECK(app.recordedMacroLength() == 2);
+
+  app.feedByte(0x18, std::nullopt);  // ^X
+  app.feedByte(0x0d, std::nullopt);  // ^M : show the prompt
+  CHECK(app.promptActive());
+  CHECK(app.recordedMacroLength() == 4);
   app.feedByte(0x07, std::nullopt);  // ^G : cancel the prompt
 }
 

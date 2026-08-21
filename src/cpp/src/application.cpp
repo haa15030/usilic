@@ -276,6 +276,7 @@ const KeyTableEntry kKeyTable[] = {
     {"^X^W", "Save buffer to file", {kLeaderX, 0x17}},
     {"^X^Y", "Mark all (CP/MV/RM/ARC)", {kLeaderX, 0x19}},
     {"^X^N", "Clear all marks (CP/MV/RM/ARC)", {kLeaderX, 0x0e}},
+    {"^X^M", "Input destination / confirm (CP/MV/RM)", {kLeaderX, kCarriageReturn}},
     {"^X(", "Begin macro recording", {kLeaderX, '('}},
     {"^X)", "End macro recording", {kLeaderX, ')'}},
     {"^Xe", "Execute recorded macro", {kLeaderX, 'e'}},
@@ -1468,6 +1469,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::MarkAll);
       case 0x0e:  // ^X ^N : clear all (CP, MV, RM, ARC)
         return handleCommand(Command::ClearAllMarks);
+      case kCarriageReturn:  // ^X ^M : specify destination / confirm (CP, MV, RM, K-71)
+        return handleCommand(Command::StartDestinationPrompt);
       case '(':  // ^X ( : begin macro recording
         return handleCommand(Command::StartMacroRecord);
       case ')':  // ^X ) : end macro recording
@@ -2120,6 +2123,8 @@ bool Application::handleCommand(Command command) {
       return startMovePrompt(/*interactive=*/true);
     case Command::StartRemoveInteractive:
       return startRemovePrompt(/*interactive=*/true);
+    case Command::StartDestinationPrompt:
+      return startDestinationPrompt();
     case Command::SaveBufferToFile:
       return saveBufferToFile();
     case Command::ShellChangeDirectory:
@@ -3833,34 +3838,57 @@ bool Application::cycleCharset() {
   return true;
 }
 
-// Ported from M_cp2/M_mv2 (^Xc/^Xm) entering a destination-path
-// prompt: Directory-only, and only when there's something to act on
-// (marked entries, or the current selection -- see
-// DirectoryMode::targetEntries()).
+// Ported from M_cp/M_mv (^Xc/^Xm) entering the marking/browsing
+// sub-mode -- 2026-08-21 change (a real user report, =ec screenshot):
+// this used to activate the destination prompt immediately, which
+// showed an empty text-input box before the user had even marked
+// anything. Now it only arms the operation (see PendingCpMvRmOperation's
+// own comment); startDestinationPrompt() (^X^M) is what shows the
+// actual prompt, once the user has finished marking (^Space/^X^Y/^X^N)
+// in the ordinary `ls`-style listing. No targetEntries()-emptiness
+// check here anymore -- that's checked at ^X^M time instead, since
+// marking can legitimately still be empty right when the operation is
+// armed (the whole point of decoupling the two steps).
 bool Application::startCopyPrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
-  if (directoryMode_.targetEntries().empty()) return false;
-  cpMvRmInteractive_ = interactive;
-  activatePrompt(PromptKind::CopyDestination, "");
+  pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::CopyDestination, interactive, directoryMode_.currentDirectory()};
   return true;
 }
 
 bool Application::startMovePrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
-  if (directoryMode_.targetEntries().empty()) return false;
-  cpMvRmInteractive_ = interactive;
-  activatePrompt(PromptKind::MoveDestination, "");
+  pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::MoveDestination, interactive, directoryMode_.currentDirectory()};
   return true;
 }
 
-// Ported from M_rm2 (^Xr) entering a confirmation prompt -- a
-// deliberately simplified stand-in for m_dest()'s T_rm branch (which
-// checks a single typed 'y' the same way), see class comment.
+// Ported from M_rm (^Xr) entering the marking/browsing sub-mode -- see
+// startCopyPrompt()'s own comment for the 2026-08-21 change. The
+// confirmation prompt itself (a deliberately simplified stand-in for
+// m_dest()'s T_rm branch, which checks a single typed 'y' the same
+// way, see class comment) is shown by startDestinationPrompt() (^X^M).
 bool Application::startRemovePrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
+  pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::RemoveConfirm, interactive, directoryMode_.currentDirectory()};
+  return true;
+}
+
+// K-71 (^X^M, M_dest): the second half of the M_cp/M_mv/M_rm -> M_dest
+// flow startCopyPrompt()/startMovePrompt()/startRemovePrompt() start --
+// see PendingCpMvRmOperation's own comment. Requires marked (or
+// cursor-selected) targets to exist NOW (deferred here from arm-time,
+// see startCopyPrompt()'s own comment), and the current directory to
+// still match the one the operation was armed in -- a stale arm
+// surviving navigation to an unrelated directory must not silently act
+// on whatever happens to be under the cursor there instead.
+bool Application::startDestinationPrompt() {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  if (!pendingCpMvRm_) return false;
+  PendingCpMvRmOperation pending = *pendingCpMvRm_;
+  pendingCpMvRm_.reset();
+  if (pending.directory != directoryMode_.currentDirectory()) return false;
   if (directoryMode_.targetEntries().empty()) return false;
-  cpMvRmInteractive_ = interactive;
-  activatePrompt(PromptKind::RemoveConfirm, "");
+  cpMvRmInteractive_ = pending.interactive;
+  activatePrompt(pending.kind, "");
   return true;
 }
 
@@ -5723,6 +5751,7 @@ bool Application::executeMove(const std::string &destination) {
     directoryView_.redraw();
     return false;
   }
+  if (!checkTargetsWritable(targets)) return false;
   bool ok = interactive ? cpMvRmMode_.moveToInteractive(targets, destination) == 0
                         : cpMvRmMode_.moveTo(targets, destination).ok;
   directoryMode_.enterDirectory(directoryMode_.currentDirectory());
@@ -5741,9 +5770,34 @@ bool Application::executeRemove(const std::string &confirmation) {
     directoryView_.redraw();
     return false;
   }
+  if (!checkTargetsWritable(targets)) return false;
   bool ok = interactive ? cpMvRmMode_.removeInteractive(targets) == 0 : cpMvRmMode_.remove(targets).ok;
   directoryMode_.enterDirectory(directoryMode_.currentDirectory());
   return ok;
+}
+
+// docs/HISTORY.md:1840 ("chown実行後のRM、MVではファイルが選べない...
+// その旨何らかのメッセージ表示があれば親切"): legacy's own is_write()
+// check (menu.c's m_cr()) silently refuses to even MARK a permission-
+// denied RM/MV target with just a beep. This port's marking (^Space) is
+// unconditional and operation-agnostic (see DirectoryMode::toggleMark()'s
+// own class comment), so the check happens here instead, right before
+// the real command would run -- CP is deliberately excluded (copying
+// FROM a read-only source needs only read permission, which
+// CpMvRmMode::isWritable() doesn't check, so it would wrongly reject
+// legitimate copies). Reuses DirectoryMode::reportError()'s exact
+// underlined-mode-line-message presentation docs/HISTORY.md:8912
+// already established for ^Je's "Invalid mode", rather than a second,
+// differently-behaved mechanism.
+bool Application::checkTargetsWritable(const std::vector<std::string> &targets) {
+  for (const auto &target : targets) {
+    if (!CpMvRmMode::isWritable(target)) {
+      directoryMode_.reportError("Permission denied");
+      directoryView_.redraw();
+      return false;
+    }
+  }
+  return true;
 }
 
 // Ported from m_cr()'s M_exit case: `if (*rvp->str == 'y') return

@@ -99,7 +99,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       // Guarded against currentDirectory_ being shorter than the
       // message itself (e.g. "/"), in which case no padding is added
       // and the shift is unavoidable.
-      std::string message = "Invalid mode";
+      std::string message = editErrorMessage_;
       if (message.size() < fields.name.size()) message.resize(fields.name.size(), ' ');
       fields.name = message;
       fields.nameUnderlined = true;
@@ -176,7 +176,12 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
 
 void DirectoryMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
 
-void DirectoryMode::reportEditError() { showEditError_ = true; }
+void DirectoryMode::reportEditError() { reportError("Invalid mode"); }
+
+void DirectoryMode::reportError(const std::string &message) {
+  editErrorMessage_ = message;
+  showEditError_ = true;
+}
 
 void DirectoryMode::clearEditError() { showEditError_ = false; }
 

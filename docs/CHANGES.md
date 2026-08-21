@@ -7509,6 +7509,83 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (legacy側の`=dp`参照screenshotと同じ形式)。既存の全回帰テストも
      問題無し。
 
+387. **CP/MV/RM: ^Xc/^Xm/^Xrの即時プロンプト表示を廃止し、legacyの
+    M_cp/M_mv/M_rm→M_dest(^X^M、K-71)の2段階フローへ変更。RM/MVの
+    書き込み不可ターゲットに「Permission denied」メッセージを追加**
+   - **報告**: 「CP/MP/RM:文字列入力エリアは不要=ec。（ls）と同じ
+     要領でファイルを選択（複数可）したのち^X^Mでコピー先を指定→
+     SHELLでコマンドを実行。詳しくは旧版参照。ただし^Jwの直表示と
+     同じくコマンド行を書き込んだスクリプト経由ではなく、直に実行
+     する形にしてほしい。」+「HISTORY.md:1840のエラーメッセージは
+     同:8912のようにしてみて。」(スクリーンショット=ec: `^Xc`直後に
+     空の"CP"テキスト入力欄がいきなり表示される様子)。
+   - **確認事項(ユーザーへの事前質問で合意)**: (1)`^Xc/^Xm/^Xr`は
+     操作種別を記憶するだけにし、`^X^M`が送信先入力欄を開く形にする
+     (legacyの2段階フローを踏襲)。(2)「SHELLでコマンドを実行」は
+     現状の`CpMvRmMode`(`ChildProcess`直接実行、スクリプトファイル
+     経由ではない)のままで良い(legacyの`command()`が一時スクリプト
+     を生成・chmod +x・SHELL経由で実行するのに対し、この移植版は
+     元々`ChildProcess::run()`/`runInteractive()`で直接argv実行して
+     おり、既に「スクリプト経由ではない」要望を満たしていると判断)。
+   - **実装1(フロー変更)**: `Application::startCopyPrompt()`/
+     `startMovePrompt()`/`startRemovePrompt()`(`^Xc`/`^Xm`/`^Xr`、
+     および`^X^Kc`/`^X^Km`/`^X^Kr`)を、`activatePrompt()`の即時呼び
+     出しから、新設の`PendingCpMvRmOperation{kind, interactive,
+     directory}`を`pendingCpMvRm_`へ記憶するだけの処理に変更。
+     `directory`は武装(arm)時点の`directoryMode_.currentDirectory()`
+     を保持し、新設`startDestinationPrompt()`(`^X^M`、
+     `Command::StartDestinationPrompt`、K-71相当)がこれを検証する
+     ことで、武装後に別ディレクトリへ移動してから`^X^M`を押した際に
+     「そのディレクトリの現在カーソル位置のファイル」へ誤って作用
+     する事故(マークは`enterDirectory()`で自動クリアされるが、
+     `targetEntries()`はマーク無しならカーソル位置へフォールバック
+     するため、無警戒だと本当に危険)を防いだ。ファイルの複数選択
+     自体(`^Space`でのマーク、`^X^Y`/`^X^N`での全選択/全解除)は
+     既にこの移植版で`ls`風の通常のDirectory一覧と一体化しており
+     (legacyのようにM_cp専用の別ブラウズ状態は無い)、変更不要
+     だった。`^X^M`は`leaderXPending_`の switch に`kCarriageReturn`
+     (`^O^M`の既存ケースと同じ命名規則)で追加。KEY一覧(`^H`)の
+     `kKeyTable`にも`"^X^M", "Input destination / confirm (CP/MV/RM)"`
+     を追加(legacyのusilicrc記述"Input destination (CP, MV, RM,
+     ARC)"参考、ただしこの移植版の`^X^M`はARCの送信先プロンプトへは
+     未配線のため、範囲を偽らないようARCは含めなかった)。
+   - **実装2(Permission deniedメッセージ)**: `docs/HISTORY.md:1840`
+     ("chown実行後のRM、MVではファイルが選べない...その旨何らかの
+     メッセージ表示があれば親切")は、legacyの`is_write()`チェック
+     (`menu.c`の`m_cr()`、マーク時にビープのみで無言拒否)が題材
+     だったが、この移植版の`toggleMark()`はマーク自体が操作種別に
+     依存しない無条件実装(`isWritable()`は既存だが未使用)のため、
+     マーク時ではなく実行時(`executeMove()`/`executeRemove()`直前)
+     にチェックする形に変更(CPは対象外: コピー元は書き込み権限では
+     なく読み取り権限が必要なだけなので、`isWritable()`の判定基準と
+     噛み合わない)。新設`Application::checkTargetsWritable()`が
+     `CpMvRmMode::isWritable()`で各ターゲットを検査し、1件でも失敗
+     すれば`DirectoryMode::reportError("Permission denied")`を呼んで
+     処理を中断する。`docs/HISTORY.md:8912`で確立済みの`^Je`
+     "Invalid mode"表示(モードライン`name`欄をアンダーライン付き
+     メッセージへ差し替え、`clearEditError()`で次コマンド時に自動
+     消去)をそのまま再利用するため、`DirectoryMode::reportEditError()`
+     が固定文字列"Invalid mode"を直接セットしていた箇所を、任意の
+     メッセージを受け取る新設`reportError(message)`経由に一般化し
+     (`reportEditError()`自体は`reportError("Invalid mode")`を呼ぶ
+     薄いラッパーとして存続)、`showEditError_`と対にした
+     `editErrorMessage_`メンバーを追加した。
+   - **検証**: `make test` 789/789件・18639アサーション全通過。
+     既存9件のCP/MV/RMテスト(即時プロンプト前提だったもの)を新
+     フロー(`^X^M`または`Command::StartDestinationPrompt`を挟む形)
+     へ更新、新規doctest4件を追加(`^X^M`単体では何も武装されていな
+     ければno-opであること、武装後に別ディレクトリへ移動してから
+     `^X^M`を押しても無視されること(スタール武装ガード)、`^Xc`直後
+     は`promptActive()`が false のままであること・`^X^M`で初めて
+     true になること、RM対象がターゲットチェック直前に消えている
+     ケースで"Permission denied"がモードライン`name`欄にアンダー
+     ライン付きで表示されること)。実際の`chmod`/`chown`によるテスト
+     はroot権限が必要(`isWritable()`は所有者一致なら常にtrue、
+     `getuid()==0`でも常にtrue)なためサンドボックス内では再現不可
+     と判断し、対象ファイルを検査直前に削除してisWritable()の
+     「存在しないPlainターゲットは書き込み不可」分岐を通す形で
+     配線自体を検証した。`make usilic`クリーンビルド確認済み。
+
 ## 12. SHELL
 
 5. **Ubuntu実機での`tcb .`セグフォ、SHELLモード初期化まわりの表示バグ数件**

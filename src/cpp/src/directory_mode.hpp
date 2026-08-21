@@ -223,11 +223,25 @@ class DirectoryMode {
   // than a file) should show this "適切な" error there instead of
   // silently doing nothing (Application::executeEdit() previously
   // just returned false with no feedback at all). Called by
-  // executeEdit().
+  // executeEdit(). A thin convenience wrapper around reportError()
+  // below (its own original, and for a while only, use case).
   void reportEditError();
 
-  // Clears whatever reportEditError() set, reverting the mode line's
-  // `name` slot back to the current directory path on the next
+  // Same underlined mode-line-`name`-slot presentation as
+  // reportEditError(), but with an arbitrary caller-supplied message --
+  // generalized 2026-08-21 for CpMvRmMode::isWritable() failures
+  // (executeMove()/executeRemove(), see Application's own comment): a
+  // direct user request (docs/HISTORY.md:1840, "chown実行後のRM、MVでは
+  // ファイルが選べない...その旨何らかのメッセージ表示があれば親切")
+  // asked that a permission-denied RM/MV target explain itself instead
+  // of legacy's silent mark-time beep. Reuses the exact presentation
+  // docs/HISTORY.md:8912 already established for ^Je's "Invalid mode",
+  // rather than inventing a second, differently-behaved status-message
+  // mechanism.
+  void reportError(const std::string &message);
+
+  // Clears whatever reportEditError()/reportError() set, reverting the
+  // mode line's `name` slot back to the current directory path on the next
   // redraw. Called once, unconditionally, at the top of Application::
   // handleCommand() for every dispatched command (not from the mode-
   // line provider itself on read -- see its own comment on why: -g's
@@ -259,6 +273,7 @@ class DirectoryMode {
   bool filenameOnlyMode_ = false;
   std::string searchAnnotation_;
   bool showEditError_ = false;
+  std::string editErrorMessage_ = "Invalid mode";
 };
 
 }  // namespace fm
