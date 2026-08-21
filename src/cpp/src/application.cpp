@@ -224,8 +224,29 @@ const KeyTableEntry kKeyTable[] = {
     {":", "Back, cursor down, select (M-1)", {kControlG, 0x0e, kCarriageReturn}, true},
     {"+", "Back twice, cursor up, select twice (M-2)", {kControlG, kControlG, 0x10, kCarriageReturn, kCarriageReturn}, true},
     {"*", "Back twice, cursor down, select twice (M-3)", {kControlG, kControlG, 0x0e, kCarriageReturn, kCarriageReturn}, true},
-    {",", "Select, then cursor up (M-4)", {kCarriageReturn, 0x10}, true},
-    {".", "Select, then cursor down (M-5)", {kCarriageReturn, 0x0e}, true},
+    // usilicrc's own M-4/M-5 slots define these as "select(^M), then
+    // cursor up/down" ("K-22 K-11 # (,) ^M ^P M-4" etc.) -- a macro
+    // that only reads as "mark, then move" in legacy because ITS OWN
+    // M_cr (^M/Enter) is context-sensitive, toggling a mark instead of
+    // navigating while browsing inside the M_cp/M_mv/M_rm sub-mode
+    // ^Xc/^Xm/^Xr enters (menu.c's m_cr()) -- this port never
+    // reproduced that separate sub-mode (^Space/toggleMark() do the
+    // marking instead, decoupled from Enter entirely, see
+    // PendingCpMvRmOperation's own comment), so replaying literal
+    // Enter here would just navigate into/open the current entry, not
+    // mark it. 2026-08-21 fix, a real user report (=ed-=eh, the SAME
+    // macro demonstrated directly on an actual legacy binary) + direct
+    // follow-up ("コピーしたいディレクトリを選択しようにも[return]で
+    // そこへ移動してしまってはどうにもならない...まずはマクロとしての
+    // 「,」「.」をサポートして欲しい"): bound directly to
+    // Command::MarkAndAdvance/MarkAndRetreat (toggleMark() + move)
+    // instead of replaying legacy's own literal ^M-based byte sequence
+    // -- the same OBSERVABLE macro behavior the reference demo showed,
+    // achieved without reconstructing legacy's context-sensitive Enter.
+    // No longer isMacro (a real single-key binding now, not a
+    // synthesized multi-byte replay).
+    {",", "Mark current entry, then cursor up (CP/MV/RM/ARC)", {','}},
+    {".", "Mark current entry, then cursor down (CP/MV/RM/ARC)", {'.'}},
     {"<", "Select, back, cursor up, select (M-6)", {kCarriageReturn, kControlG, 0x10, kCarriageReturn}, true},
     {">", "Select, back, cursor down, select (M-7)", {kCarriageReturn, kControlG, 0x0e, kCarriageReturn}, true},
     // ESC-leader: "^[" (not the spelled-out word "ESC"), matching
@@ -1120,6 +1141,10 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::StartKey;
     case 0x80:  // ^Space (M_mark) -- KeyInput reports a literal NUL/Ctrl-Space as 0x80, see its class comment
       return Command::ToggleMark;
+    case '.':  // mark current entry, then move down -- see Command::MarkAndAdvance's own comment
+      return Command::MarkAndAdvance;
+    case ',':  // mark current entry, then move up
+      return Command::MarkAndRetreat;
     case 0x12:  // ^R (M_hist) -- see ToggleHistoryView's own comment
       return Command::ToggleHistoryView;
     case 0x0c:  // ^L (M_clear)
@@ -2111,6 +2136,12 @@ bool Application::handleCommand(Command command) {
       return startShell();
     case Command::ToggleMark:
       return toggleMark();
+    case Command::MarkAndAdvance:
+      if (!toggleMark()) return false;
+      return handleCommand(Command::MoveDown);
+    case Command::MarkAndRetreat:
+      if (!toggleMark()) return false;
+      return handleCommand(Command::MoveUp);
     case Command::StartCopy:
       return startCopyPrompt();
     case Command::StartMove:

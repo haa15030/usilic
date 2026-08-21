@@ -4418,6 +4418,83 @@ TEST_CASE_FIXTURE(Fixture, "^Xc shows \"CP\" Standout in the mode line's name sl
   CHECK(display.rowText(23) == beforeRow);  // the "CP" label is gone; ordinary directory path is back
 }
 
+// 2026-08-21 follow-up, a real user report ("=eiは（ls）からなので
+//戻り値はディレクトリ名では？"): the "CP" override above lost the one
+// place the directory path used to be visible -- the mode line's
+// trailing badge showed "(ls)" instead while armed, unlike the
+// reference screenshots (=ed/=ee), which show the path there.
+TEST_CASE_FIXTURE(Fixture, "^Xc shows the directory path (not \"(ls)\") in the trailing badge while armed") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm CP
+
+  std::string row = display.rowText(23);
+  CHECK(row.find("(ls)") == std::string::npos);
+  // The truncated tail of the directory's OWN path (matching
+  // truncatedTrailingPath()'s "last 16 chars" rule) should be visible
+  // somewhere in the row -- checked via a shorter, guaranteed-present
+  // suffix rather than the whole path, since a long temp-dir name here
+  // could itself exceed that 16-character window.
+  std::string dir = app.directoryMode().currentDirectory();
+  std::string tail = dir.substr(dir.size() > 10 ? dir.size() - 10 : 0);
+  CHECK(row.find(tail) != std::string::npos);
+}
+
+// 2026-08-21 addition: '.'/','  as direct "mark, then move" macros --
+// a real user report + demonstrated reference (=ed-=eh): "コピーした
+// いディレクトリを選択しようにも[return]でそこへ移動してしまっては
+// どうにもならない...まずはマクロとしての「,」「.」をサポートして
+// 欲しい". See Command::MarkAndAdvance's own comment for why this is a
+// direct toggleMark()+move binding rather than a replay of legacy's
+// own literal Enter-based M-4/M-5 macro.
+TEST_CASE_FIXTURE(Fixture, "'.': marks the current entry, then moves the cursor down") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  CHECK(app.feedByte('.', std::nullopt));
+  CHECK(app.directoryMode().isMarked(idx));
+  CHECK(app.directoryMode().selectedEntry()->name != "cpmv_a.txt");  // cursor advanced
+}
+
+TEST_CASE_FIXTURE(Fixture, "',': marks the current entry, then moves the cursor up") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::MoveDown));  // step onto the NEXT entry, so ',' has somewhere to retreat to
+  REQUIRE(indexOf(app.directoryMode().selectedEntry()->name) == idx + 1);
+
+  CHECK(app.feedByte(',', std::nullopt));
+  CHECK(app.directoryMode().isMarked(idx + 1));      // the entry ',' was pressed on got marked
+  CHECK(indexOf(app.directoryMode().selectedEntry()->name) == idx);  // cursor retreated back onto cpmv_a.txt
+}
+
+TEST_CASE_FIXTURE(Fixture, "'.'/',' toggle: pressing '.' twice on the same row unmarks it again") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  CHECK(app.feedByte('.', std::nullopt));
+  CHECK(app.directoryMode().isMarked(idx));
+  app.handleCommand(Command::MoveUp);  // back onto cpmv_a.txt
+  CHECK(app.feedByte('.', std::nullopt));
+  CHECK_FALSE(app.directoryMode().isMarked(idx));  // toggled back off
+}
+
+// '.'/',' must be inert outside Directory/Archive (toggleMark()'s own
+// mode gate) -- e.g. typing a literal '.' while viewing a file's
+// content must not silently do nothing DIFFERENT from before this
+// feature existed (still a no-op, just routed through a new Command).
+TEST_CASE_FIXTURE(Fixture, "'.' is a no-op outside Directory/Archive mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK_FALSE(app.feedByte('.', std::nullopt));
+}
+
 // 2026-08-21 regression, a real report ("なんも変わってないんだが") +
 // reference screenshot from an actual pre-refactor binary run (=ef):
 // drawPromptLabel() never actually drew this message at all for CP/MV/

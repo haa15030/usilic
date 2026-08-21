@@ -7,6 +7,18 @@
 
 namespace fm {
 
+namespace {
+// Same "...<last 16 chars>" rule Application::truncatedTrailingPath()
+// already established (application.cpp) -- duplicated here rather
+// than shared across translation units for one small, self-contained
+// helper. Used by the pendingOperationLabel_ branch below.
+constexpr int kTrailingPathTailChars = 16;
+std::string truncatedTrailingPath(const std::string &path) {
+  if (static_cast<int>(path.size()) <= kTrailingPathTailChars) return path;
+  return "..." + path.substr(path.size() - kTrailingPathTailChars);
+}
+}  // namespace
+
 DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &history,
                               const Configuration &configuration)
     : view_(view), modeStack_(modeStack), history_(history), configuration_(configuration) {
@@ -128,6 +140,15 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       std::string label = pendingOperationLabel_;
       if (label.size() < fields.name.size()) label.resize(fields.name.size(), ' ');
       fields.name = label;
+      // The directory path itself, shown in place of the usual "(ls)"
+      // program badge -- 2026-08-21 fix, a direct user report ("=eiは
+      // （ls）からなので戻り値はディレクトリ名では？"): overriding
+      // `name` above to show "CP" already lost the one place the
+      // directory path used to be visible (the reference screenshots
+      // =ed/=ee show it as their OWN trailing field while armed, not
+      // "(ls)"), leaving no way to tell which directory an operation
+      // was actually armed in without pressing ^X^M first.
+      fields.trailing2 = truncatedTrailingPath(currentDirectory_);
     }
     return fields;
   });

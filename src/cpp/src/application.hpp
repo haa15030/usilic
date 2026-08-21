@@ -85,6 +85,17 @@ enum class Command {
   LocateUpdateDb,
   StartShell,
   ToggleMark,
+  // '.'/',' macros -- a real user request, tied directly to the ^X^M
+  // CP/MV/RM flow (^Xc/^Xm/^Xr arm an operation, then the user marks
+  // targets before ^X^M): "コピーしたいディレクトリを選択しようにも
+  // [return]でそこへ移動してしまってはどうにもならない" -- toggles the
+  // current entry's mark (same as ToggleMark/^Space) and then advances
+  // the cursor, letting the user mark a run of entries with one key
+  // repeated instead of ^Space+^N alternating. Ported from the
+  // reference/legacy usage the user demonstrated directly (=ed-=eh):
+  // "「.」（現在行をマークしたのち下へ(「,」は上へ)のマクロ）".
+  MarkAndAdvance,  // '.'
+  MarkAndRetreat,  // ','
   StartCopy,
   StartMove,
   StartRemove,
