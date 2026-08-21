@@ -159,8 +159,24 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   ProgramCommand ls = configuration_.commandFor(ConfiguredRole::Ls);
   if (ls.argv.empty()) return false;
 
+  // Trailing-slash normalization, done HERE (before the `ls` argv is
+  // built) rather than only at the end of this function where
+  // currentDirectory_ itself gets it -- 2026-08-22 fix, a real report +
+  // screenshot (=en): BSD `ls` (macOS) treats a symlink-to-directory
+  // argument WITHOUT a trailing slash as "describe the symlink itself"
+  // (matching `ls -d`), not "list its contents", unlike GNU/Linux `ls`
+  // which always dereferences regardless -- `/tmp` itself is exactly
+  // such a symlink (-> `/private/tmp`) on macOS. executeCopy()/
+  // executeMove()'s own destination-navigation (enterDirectory(destination))
+  // passes whatever the user actually typed in the prompt verbatim,
+  // which had no reason to already end in "/" -- typing "/tmp" and
+  // landing there afterward showed only `/tmp`'s own symlink line
+  // ("1/1 END"), not its real contents.
+  std::string normalizedPath = path;
+  if (!normalizedPath.empty() && normalizedPath.back() != '/') normalizedPath += '/';
+
   std::vector<std::string> argv = ls.argv;
-  argv.push_back(path);
+  argv.push_back(normalizedPath);
 
   ChildProcess::Options options;
   // Ported from fork_bin()'s LC_ALL=C forcing for exactly this
@@ -191,11 +207,10 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   // Trailing-slash normalization only (NOT canonicalization -- no
   // symlink resolution, no relative-to-absolute conversion): matches
   // the CUI mode-line's own directory display convention (see
-  // CLAUDE.md's real-screenshot comparison), and is idempotent/safe
-  // for callers that already pass a trailing slash (every existing
-  // caller does).
-  currentDirectory_ = path;
-  if (!currentDirectory_.empty() && currentDirectory_.back() != '/') currentDirectory_ += '/';
+  // CLAUDE.md's real-screenshot comparison). Reuses normalizedPath
+  // (computed above, before the `ls` argv was built) rather than
+  // re-deriving the same normalization a second time.
+  currentDirectory_ = normalizedPath;
   searchAnnotation_.clear();  // a fresh `ls` invalidates the old search -- see setSearchAnnotation()'s own comment
   entries_ = std::move(entries);
   markedIndices_.clear();  // marks are scoped to the listing they were made in; a fresh `ls` invalidates them
@@ -410,8 +425,20 @@ DirectoryEntry DirectoryMode::parseLsLine(const std::string &line) const {
   return entry;
 }
 
+// "./"/"../" are never markable -- 2026-08-22 fix, a real user report
+// ("CP:「./」「../」は選択から除外してほしい"): CP/MV/RM's own targets
+// come straight from whatever's marked (or, with nothing marked, the
+// cursor's own entry -- see targetEntries()'s own comment below), and
+// "cp -R ." / "rm -r .." are exactly the kind of accident this guard
+// exists to make structurally impossible, not just unlikely.
+bool DirectoryMode::isSelfOrParentEntry(int index) const {
+  if (index < 0 || index >= static_cast<int>(entries_.size())) return false;
+  return entries_[index].name == "./" || entries_[index].name == "../";
+}
+
 void DirectoryMode::toggleMark(int index) {
   if (index < 0 || index >= static_cast<int>(entries_.size())) return;
+  if (isSelfOrParentEntry(index)) return;
   auto it = markedIndices_.find(index);
   if (it != markedIndices_.end())
     markedIndices_.erase(it);
@@ -427,7 +454,10 @@ void DirectoryMode::clearMarks() { markedIndices_.clear(); }
 
 void DirectoryMode::markAll() {
   markedIndices_.clear();
-  for (int i = 0; i < static_cast<int>(entries_.size()); i++) markedIndices_.insert(i);
+  for (int i = 0; i < static_cast<int>(entries_.size()); i++) {
+    if (isSelfOrParentEntry(i)) continue;
+    markedIndices_.insert(i);
+  }
 }
 
 std::vector<DirectoryEntry> DirectoryMode::targetEntries() const {
@@ -436,7 +466,13 @@ std::vector<DirectoryEntry> DirectoryMode::targetEntries() const {
     for (int idx : markedIndices_) result.push_back(entries_[idx]);  // std::set iterates in ascending order
     return result;
   }
-  if (const DirectoryEntry *entry = selectedEntry()) result.push_back(*entry);
+  // Same "./"/"../" exclusion as toggleMark()/markAll() above, for the
+  // cursor-fallback case (nothing explicitly marked) -- markedIndices_
+  // itself can never contain either anymore, but the cursor can still
+  // simply be resting on one.
+  if (const DirectoryEntry *entry = selectedEntry()) {
+    if (entry->name != "./" && entry->name != "../") result.push_back(*entry);
+  }
   return result;
 }
 

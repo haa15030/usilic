@@ -270,6 +270,9 @@ class DirectoryMode {
 
  private:
   DirectoryEntry parseLsLine(const std::string &line) const;
+  // "./"/"../" are never valid CP/MV/RM targets -- see toggleMark()'s
+  // own comment.
+  bool isSelfOrParentEntry(int index) const;
   // Shared by openSelected()/goToParent(): saves the current cursor
   // position, pushes a ModeStack frame remembering where to come back
   // to, and enters `target` -- undoing the push on failure.

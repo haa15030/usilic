@@ -2655,14 +2655,32 @@ TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): refused when nothing has been l
   CHECK_FALSE(app.handleCommand(Command::ShowErrorLog));
 }
 
-TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): a failed CP's stderr lands in errorLogPath_, viewable via File mode") {
+// 2026-08-22 correction: CP/MV/RM's K-52 ("without SHELL window") used
+// to run via CpMvRmMode::copyTo() -- a captured, non-interactive
+// ChildProcess::run() whose stderr was redirected to errorLogPath_
+// (this test's own original subject). A real user report ("処理過程
+// はSHELLに残してもらわないと困る...もしも-iオプション付きだったら
+// その場でフリーズするんじゃない？") pointed out that this captured
+// path has no real terminal attached at all, so `-i` (src/config.sh's
+// own default `cp -vRi`/`rm -vri`) would block forever on a
+// confirmation nothing could ever answer -- a genuine freeze risk, not
+// hypothetical. K-52 now always runs via copyToInteractive() (the same
+// real-terminal execution K-51 already used), matching legacy's own
+// M_shell-routed command() for both variants (see Application::
+// executeCopy()'s own comment) -- so a failed CP's own diagnostic goes
+// straight to the real terminal (and stays there for the user to
+// scroll back to) instead of being captured into errorLogPath_ at all.
+// ^X^Ke now correctly reports nothing logged for a CP/MV/RM failure --
+// this is intentional, not a regression left unnoticed.
+TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): a failed CP does NOT land in errorLogPath_ anymore -- "
+                           "it runs via the same real-terminal execution as K-51") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm non-interactive CP (K-52)
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm CP (K-52)
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M -- show the prompt
   // A destination whose PARENT doesn't exist either -- cp fails and
@@ -2671,11 +2689,7 @@ TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): a failed CP's stderr lands in e
   feedText((root / "no_such_parent" / "dest").string());
   CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // cp fails
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
-  CHECK(app.feedByte('e', std::nullopt));     // e
-  CHECK(app.currentMode() == ApplicationMode::File);
-  REQUIRE(!app.activeContentView().lines().empty());
+  CHECK_FALSE(app.handleCommand(Command::ShowErrorLog));  // nothing was ever captured to errorLogPath_
 }
 
 TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): refused when Shell was never started") {
@@ -4347,18 +4361,23 @@ TEST_CASE("resolveCommand: 0x80 (^Space, Ctrl-Space's reported byte) resolves to
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleMark): toggles the mark at the cursor") {
   REQUIRE(app.start(path()));
-  CHECK_FALSE(app.directoryMode().isMarked(0));
+  REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" (index 0, never markable -- see its own tests)
+  REQUIRE(app.handleCommand(Command::MoveDown));  // off "../" too, onto a real entry (index 2)
+  CHECK_FALSE(app.directoryMode().isMarked(2));
   REQUIRE(app.handleCommand(Command::ToggleMark));
-  CHECK(app.directoryMode().isMarked(0));
+  CHECK(app.directoryMode().isMarked(2));
   REQUIRE(app.handleCommand(Command::ToggleMark));
-  CHECK_FALSE(app.directoryMode().isMarked(0));
+  CHECK_FALSE(app.directoryMode().isMarked(2));
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^Y marks all entries (K-72), ^X ^N clears all marks (K-73)") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^Y marks all entries (K-72), ^X ^N clears all marks (K-73), "
+                           "excluding \"./\"/\"../\"") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   CHECK(app.feedByte(0x19, std::nullopt));    // ^Y
-  CHECK(app.directoryMode().markedCount() == app.directoryMode().entries().size());
+  CHECK(app.directoryMode().markedCount() == app.directoryMode().entries().size() - 2);
+  CHECK_FALSE(app.directoryMode().isMarked(0));  // "./"
+  CHECK_FALSE(app.directoryMode().isMarked(1));  // "../"
 
   REQUIRE(app.feedByte(0x18, std::nullopt));
   CHECK(app.feedByte(0x0e, std::nullopt));  // ^N
@@ -4384,6 +4403,8 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(MarkAll/ClearAllMarks): refused outsid
 // own two-step M_cp/M_mv/M_rm -> M_dest flow.
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X c / ^X m / ^X r only ARM the operation -- no prompt until ^X ^M") {
   REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" (never valid targets) onto a real entry
+  REQUIRE(app.handleCommand(Command::MoveDown));
   app.feedByte(0x18, std::nullopt);
   CHECK(app.feedByte('c', std::nullopt));
   CHECK_FALSE(app.promptActive());
@@ -4403,6 +4424,8 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X c / ^X m / ^X r only ARM the operation 
 TEST_CASE_FIXTURE(Fixture, "^Xc shows \"CP\" Standout in the mode line's name slot while armed, clearing "
                            "once ^X^M shows the real prompt") {
   REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" onto a real entry
+  REQUIRE(app.handleCommand(Command::MoveDown));
   std::string beforeRow = display.rowText(23);
 
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
@@ -4643,6 +4666,8 @@ TEST_CASE_FIXTURE(Fixture, "^Space marks a row Standout even when the cursor lat
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^K c / ^X ^K m / ^X ^K r (K-51/K-53/K-55) each arm the same "
                            "operation, ^X ^M still shows the prompt") {
   REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" onto a real entry
+  REQUIRE(app.handleCommand(Command::MoveDown));
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
   CHECK(app.feedByte('c', std::nullopt));
@@ -4773,6 +4798,37 @@ TEST_CASE_FIXTURE(Fixture, "CP: a successful copy navigates the view to the dest
   CHECK(app.feedByte(0x0d, std::nullopt));
 
   CHECK(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
+}
+
+// 2026-08-22 regression, a real report + screenshot (=en): copying to a
+// destination typed WITHOUT a trailing slash (e.g. "/tmp", exactly as
+// a user would naturally type it) used to pass that raw string straight
+// into `ls`'s own argv. BSD `ls` (macOS) treats a symlink-to-directory
+// argument without a trailing slash as "describe the symlink itself"
+// (matching `ls -d`), not "list its contents" -- `/tmp` itself is
+// exactly such a symlink on macOS, so landing there after a copy showed
+// only `/tmp`'s own one-line symlink entry ("1/1 END"), not its real
+// contents. Reproduced here with a fixture-local symlink so this test
+// doesn't depend on `/tmp` itself being a symlink on whatever machine
+// runs it.
+TEST_CASE_FIXTURE(Fixture, "CP: a destination typed without a trailing slash still lists the real "
+                           "directory contents, even when it's a symlink") {
+  fs::create_directory(root / "realdest");
+  { std::ofstream(root / "realdest" / "inside.txt") << "content\n"; }
+  fs::create_directory_symlink(root / "realdest", root / "linkdest");
+
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  feedText((root / "linkdest").string());  // no trailing slash -- exactly how a user would type it
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(indexOf("inside.txt") >= 0);       // the symlink's TARGET contents, not just the symlink's own line
+  CHECK(indexOf("cpmv_a.txt") >= 0);       // the freshly-copied file too
 }
 
 // A copy that fails outright (bogus command, see Fixture's own PROGRAM
@@ -6731,6 +6787,8 @@ TEST_CASE_FIXTURE(Fixture, "stopMacroRecording (^X)): a safe no-op when not curr
 
 TEST_CASE_FIXTURE(Fixture, "recording: a real leaderX command (^Xc etc) IS recorded, unlike macro control itself") {
   REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" onto a real entry, BEFORE recording starts
+  REQUIRE(app.handleCommand(Command::MoveDown));
   app.feedByte(0x18, std::nullopt);
   app.feedByte('(', std::nullopt);
 

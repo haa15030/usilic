@@ -398,17 +398,21 @@ TEST_CASE_FIXTURE(Fixture, "resetNavigationToFloor + goBack: toggles back and fo
   CHECK(mode.canGoBack());  // never exhausts -- a genuine toggle, not a one-shot pop
 }
 
+// "./"/"../" are always entries[0]/entries[1] (ls -alF's own leading
+// order) -- every test below now uses real-file indices (2+) instead,
+// see the dedicated "./"/"../" exclusion tests further down for that
+// case specifically.
 TEST_CASE_FIXTURE(Fixture, "toggleMark: marks and unmarks entries by index") {
   REQUIRE(mode.enterDirectory(path()));
   CHECK(mode.markedCount() == 0);
-  CHECK_FALSE(mode.isMarked(0));
+  CHECK_FALSE(mode.isMarked(2));
 
-  mode.toggleMark(0);
-  CHECK(mode.isMarked(0));
+  mode.toggleMark(2);
+  CHECK(mode.isMarked(2));
   CHECK(mode.markedCount() == 1);
 
-  mode.toggleMark(0);
-  CHECK_FALSE(mode.isMarked(0));
+  mode.toggleMark(2);
+  CHECK_FALSE(mode.isMarked(2));
   CHECK(mode.markedCount() == 0);
 }
 
@@ -419,12 +423,30 @@ TEST_CASE_FIXTURE(Fixture, "toggleMark: an out-of-range index is a safe no-op") 
   CHECK(mode.markedCount() == 0);
 }
 
-TEST_CASE_FIXTURE(Fixture, "markAll: marks every entry in the listing (K-72, ^X^Y)") {
+// 2026-08-22 addition, a real user report ("CP:「./」「../」は選択
+// から除外してほしい"): cp -R "." / rm -r ".." are exactly the kind of
+// accident this exclusion exists to make structurally impossible.
+TEST_CASE_FIXTURE(Fixture, "toggleMark: \"./\" and \"../\" can never be marked") {
   REQUIRE(mode.enterDirectory(path()));
-  mode.toggleMark(1);  // a pre-existing single mark shouldn't matter -- markAll() replaces it wholesale
+  REQUIRE(mode.entries()[0].name == "./");
+  REQUIRE(mode.entries()[1].name == "../");
+
+  mode.toggleMark(0);
+  CHECK_FALSE(mode.isMarked(0));
+  mode.toggleMark(1);
+  CHECK_FALSE(mode.isMarked(1));
+  CHECK(mode.markedCount() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "markAll: marks every REAL entry in the listing, excluding \"./\"/\"../\" "
+                           "(K-72, ^X^Y)") {
+  REQUIRE(mode.enterDirectory(path()));
+  mode.toggleMark(2);  // a pre-existing single mark shouldn't matter -- markAll() replaces it wholesale
   mode.markAll();
-  CHECK(mode.markedCount() == mode.entries().size());
-  for (int i = 0; i < static_cast<int>(mode.entries().size()); i++) CHECK(mode.isMarked(i));
+  CHECK(mode.markedCount() == mode.entries().size() - 2);
+  CHECK_FALSE(mode.isMarked(0));  // "./"
+  CHECK_FALSE(mode.isMarked(1));  // "../"
+  for (int i = 2; i < static_cast<int>(mode.entries().size()); i++) CHECK(mode.isMarked(i));
 
   mode.clearMarks();  // K-73, ^X^N
   CHECK(mode.markedCount() == 0);
@@ -432,28 +454,38 @@ TEST_CASE_FIXTURE(Fixture, "markAll: marks every entry in the listing (K-72, ^X^
 
 TEST_CASE_FIXTURE(Fixture, "targetEntries: falls back to the selected entry when nothing is marked") {
   REQUIRE(mode.enterDirectory(path()));
-  view.setCursorIndex(1);
+  view.setCursorIndex(2);
   auto targets = mode.targetEntries();
   REQUIRE(targets.size() == 1);
-  CHECK(targets[0].name == mode.entries()[1].name);
+  CHECK(targets[0].name == mode.entries()[2].name);
+}
+
+// Same fallback, but the cursor is resting on "./" itself -- must NOT
+// silently fall back to it (see toggleMark()'s own comment).
+TEST_CASE_FIXTURE(Fixture, "targetEntries: falls back to empty (not \"./\") when the cursor rests on it "
+                           "and nothing is marked") {
+  REQUIRE(mode.enterDirectory(path()));
+  view.setCursorIndex(0);
+  REQUIRE(mode.entries()[0].name == "./");
+  CHECK(mode.targetEntries().empty());
 }
 
 TEST_CASE_FIXTURE(Fixture, "targetEntries: returns marked entries in listing order when any are marked") {
   REQUIRE(mode.enterDirectory(path()));
-  REQUIRE(mode.entries().size() >= 3);
+  REQUIRE(mode.entries().size() >= 5);
+  mode.toggleMark(4);
   mode.toggleMark(2);
-  mode.toggleMark(0);
 
   auto targets = mode.targetEntries();
   REQUIRE(targets.size() == 2);
-  CHECK(targets[0].name == mode.entries()[0].name);
-  CHECK(targets[1].name == mode.entries()[2].name);
+  CHECK(targets[0].name == mode.entries()[2].name);
+  CHECK(targets[1].name == mode.entries()[4].name);
 }
 
 TEST_CASE_FIXTURE(Fixture, "clearMarks: removes all marks") {
   REQUIRE(mode.enterDirectory(path()));
-  mode.toggleMark(0);
-  mode.toggleMark(1);
+  mode.toggleMark(2);
+  mode.toggleMark(3);
   REQUIRE(mode.markedCount() == 2);
   mode.clearMarks();
   CHECK(mode.markedCount() == 0);
@@ -461,7 +493,7 @@ TEST_CASE_FIXTURE(Fixture, "clearMarks: removes all marks") {
 
 TEST_CASE_FIXTURE(Fixture, "enterDirectory: reloading the listing clears marks from the previous one") {
   REQUIRE(mode.enterDirectory(path()));
-  mode.toggleMark(0);
+  mode.toggleMark(2);
   REQUIRE(mode.markedCount() == 1);
 
   REQUIRE(mode.enterDirectory(path() + "subdir2/"));

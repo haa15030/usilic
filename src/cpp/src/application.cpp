@@ -5861,8 +5861,31 @@ bool Application::executeLocate(const std::string &query) {
 // Reloads the directory listing afterward either way, so the screen
 // reflects what actually happened on disk (this also clears marks,
 // via DirectoryMode::enterDirectory()'s own documented behavior).
+// 2026-08-22 fix, a real report: "処理過程はSHELLに残してもらわないと
+// 困る。あとで参照もできないし、もしも-iオプション付きだったら
+// （デフォルトはそう）その場でフリーズするんじゃない？". K-52 ("without
+// SHELL window") used to run via CpMvRmMode::copyTo() -- captured,
+// non-interactive ChildProcess::run(), stdin not attached to anything
+// that could ever answer a prompt. Configuration's own default `cp`
+// role command (src/config.sh) includes `-i`, so a destination file
+// that already exists would silently block forever on a confirmation
+// nothing could ever satisfy -- a genuine, easy-to-hit freeze, not a
+// theoretical one. Legacy's own K-52 isn't truly headless either: its
+// command() always runs through the SAME real, pty-attached SHELL
+// session M_shell owns, "with SHELL window" (K-51) only differing in
+// whether that session is brought to the foreground unconditionally or
+// only when something actually needs the user's attention -- either
+// way, a real terminal is always there to answer a prompt on. Now
+// unconditionally routed through copyToInteractive() (the SAME
+// execution CpMvRmMode::copyToInteractive() already gives K-51,
+// runInteractive()'s real pty), so an `-i` prompt can actually be
+// answered instead of hanging, and the run's own output stays in the
+// terminal's scrollback for later reference either way. cpMvRmInteractive_
+// is still consumed below (K-51/K-52 remain distinct key bindings/
+// Commands) even though it no longer changes how this actually runs --
+// left in place rather than removed, since it's plumbing this class's
+// own callers still reasonably expect to exist.
 bool Application::executeCopy(const std::string &destination) {
-  bool interactive = cpMvRmInteractive_;
   cpMvRmInteractive_ = false;  // consumed exactly once, regardless of outcome below
 
   std::vector<std::string> targets = collectTargetPaths();
@@ -5870,12 +5893,7 @@ bool Application::executeCopy(const std::string &destination) {
     directoryView_.redraw();
     return false;
   }
-  // K-51 ("with SHELL window"): runs interactively, with the real
-  // command's own output visible live on the real terminal -- see
-  // CpMvRmMode::copyToInteractive()'s own comment. K-52 (the default):
-  // captured silently, matching the pre-existing behavior.
-  bool ok = interactive ? cpMvRmMode_.copyToInteractive(targets, destination) == 0
-                        : cpMvRmMode_.copyTo(targets, destination).ok;
+  bool ok = cpMvRmMode_.copyToInteractive(targets, destination) == 0;
   // On success, land in the DESTINATION directory (a real report +
   // screenshots: legacy's own command()/M_shell relaunch mechanism
   // ends up there, matching "最後には/tmpの(ls)になる" -- seeing what
@@ -5891,8 +5909,8 @@ bool Application::executeCopy(const std::string &destination) {
   return ok;
 }
 
+// Same 2026-08-22 fix as executeCopy() -- see its own comment.
 bool Application::executeMove(const std::string &destination) {
-  bool interactive = cpMvRmInteractive_;
   cpMvRmInteractive_ = false;
 
   std::vector<std::string> targets = collectTargetPaths();
@@ -5901,8 +5919,7 @@ bool Application::executeMove(const std::string &destination) {
     return false;
   }
   if (!checkTargetsWritable(targets)) return false;
-  bool ok = interactive ? cpMvRmMode_.moveToInteractive(targets, destination) == 0
-                        : cpMvRmMode_.moveTo(targets, destination).ok;
+  bool ok = cpMvRmMode_.moveToInteractive(targets, destination) == 0;
   // Same destination-landing behavior as executeCopy() -- see its own
   // comment.
   if (!ok || !directoryMode_.enterDirectory(destination)) directoryMode_.enterDirectory(directoryMode_.currentDirectory());
@@ -5911,9 +5928,10 @@ bool Application::executeMove(const std::string &destination) {
 
 // Ported from m_dest()'s T_rm branch: `confirmation` must be exactly
 // "y" (matching legacy's `*ap->mess != 'y'` check) or nothing is
-// removed.
+// removed. Same 2026-08-22 fix as executeCopy() -- see its own
+// comment (src/config.sh's own default RM role command, "rm -vri", is
+// `-i` too, so this had the exact same freeze risk CP did).
 bool Application::executeRemove(const std::string &confirmation) {
-  bool interactive = cpMvRmInteractive_;
   cpMvRmInteractive_ = false;
 
   std::vector<std::string> targets = collectTargetPaths();
@@ -5922,7 +5940,7 @@ bool Application::executeRemove(const std::string &confirmation) {
     return false;
   }
   if (!checkTargetsWritable(targets)) return false;
-  bool ok = interactive ? cpMvRmMode_.removeInteractive(targets) == 0 : cpMvRmMode_.remove(targets).ok;
+  bool ok = cpMvRmMode_.removeInteractive(targets) == 0;
   directoryMode_.enterDirectory(directoryMode_.currentDirectory());
   return ok;
 }
