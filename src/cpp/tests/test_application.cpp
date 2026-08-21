@@ -122,6 +122,12 @@ struct Fixture {
     { std::ofstream(root / "cpmv_b.txt") << "content-b\n"; }
     fs::create_directory(root / "cpmvdest");
 
+    // A real directory (with a nested file) for the CP-of-a-directory
+    // trailing-slash regression test -- see collectTargetPaths()'s own
+    // comment.
+    fs::create_directory(root / "nested_dir");
+    { std::ofstream(root / "nested_dir" / "nested.txt") << "nested content\n"; }
+
     // Destination for the K-57/K-58 (ARC extraction) tests.
     fs::create_directory(root / "arcdest");
   }
@@ -4538,6 +4544,70 @@ TEST_CASE_FIXTURE(Fixture, "CP: marking two files (in either order relative to a
   CHECK(fs::exists(root / "cpmv_b.txt"));
   // The reload clears marks (DirectoryMode::enterDirectory()'s own documented behavior).
   CHECK(app.directoryMode().markedCount() == 0);
+}
+
+// 2026-08-21 regression, a real report + screenshot (=eh): `ls -F`'s
+// own trailing slash on a directory entry's name used to survive
+// straight into collectTargetPaths()'s own source path, and cp/rsync-
+// family tools treat "dir/" as "dir's CONTENTS", not "dir itself", as
+// a recursive copy source -- a marked directory's contents were being
+// dumped straight into the destination instead of creating a proper
+// "dest/dirname/" copy (visible in cp -v's own output as a literal
+// "dirname//nested/path" double-slash artifact too, the SAME untrimmed
+// trailing slash showing up a second way).
+TEST_CASE_FIXTURE(Fixture, "CP: copying a marked DIRECTORY creates the directory itself at the destination, "
+                           "not just its contents") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("nested_dir/");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(fs::exists(root / "cpmvdest" / "nested_dir" / "nested.txt"));  // the directory itself, not dumped flat
+  CHECK_FALSE(fs::exists(root / "cpmvdest" / "nested.txt"));         // the old (buggy) flattened location
+  CHECK(fs::exists(root / "nested_dir" / "nested.txt"));               // source untouched by a copy
+}
+
+// 2026-08-21 addition, the same real report's own explicit expectation
+// ("最後には/tmpの(ls)になる"): a successful CP/MV now lands the view in
+// the DESTINATION directory (matching legacy's own command()/M_shell
+// relaunch mechanism), not the unchanged source.
+TEST_CASE_FIXTURE(Fixture, "CP: a successful copy navigates the view to the destination directory") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
+}
+
+// A copy that fails outright (bogus command, see Fixture's own PROGRAM
+// override note near the top) must NOT attempt to navigate anywhere --
+// the view should reflect the unchanged source, exactly as before this
+// feature existed.
+TEST_CASE_FIXTURE(Fixture, "CP: a failed copy leaves the view on the (unchanged) source directory") {
+  REQUIRE(app.start(path()));
+  configuration.loadRcText("CP\n false\n", true);  // always fails, regardless of arguments
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  feedText((root / "cpmvdest").string());
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(app.directoryMode().currentDirectory() == path());
 }
 
 TEST_CASE_FIXTURE(Fixture, "MV: moving a marked file removes the source and creates the destination") {

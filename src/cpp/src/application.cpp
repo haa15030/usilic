@@ -2815,6 +2815,21 @@ std::vector<std::string> Application::collectTargetPaths() const {
     std::string path = dir;
     if (!path.empty() && path.back() != '/') path += '/';
     path += entry.name;
+    // Strip the trailing slash `ls -F`'s own directory marker leaves on
+    // entry.name -- 2026-08-21 fix, a real report + screenshot (=eh):
+    // cp/rsync-family tools treat "dir/" as "the CONTENTS of dir", not
+    // "dir itself", when given as a recursive copy SOURCE, so a marked
+    // directory's contents were being dumped straight into the
+    // destination instead of creating a proper "dest/dirname/" copy.
+    // cp -v's own verbose output showed a literal "dirname//nested/path"
+    // double-slash artifact for the exact same reason (its own
+    // recursion appends "/nested/path" onto the untrimmed "dirname/"
+    // source argument it was given) -- a direct symptom of this, not a
+    // separate bug. Guarded at size 1 so this can never reduce an
+    // already-bare "/" to an empty string (not a real case here --
+    // entries are never literally "/" -- but a cheap, obviously-correct
+    // guard).
+    while (path.size() > 1 && path.back() == '/') path.pop_back();
     paths.push_back(std::move(path));
   }
   return paths;
@@ -5753,7 +5768,18 @@ bool Application::executeCopy(const std::string &destination) {
   // captured silently, matching the pre-existing behavior.
   bool ok = interactive ? cpMvRmMode_.copyToInteractive(targets, destination) == 0
                         : cpMvRmMode_.copyTo(targets, destination).ok;
-  directoryMode_.enterDirectory(directoryMode_.currentDirectory());
+  // On success, land in the DESTINATION directory (a real report +
+  // screenshots: legacy's own command()/M_shell relaunch mechanism
+  // ends up there, matching "最後には/tmpの(ls)になる" -- seeing what
+  // was actually just copied, not the unchanged source listing).
+  // enterDirectory() itself is a safe no-op-on-failure (returns false,
+  // leaves currentDirectory_/entries_ untouched) if destination isn't
+  // actually a browsable directory (e.g. a single-file copy where
+  // `destination` was a new FILENAME, not a directory) -- falls back to
+  // the source directory exactly as before in that case. Never
+  // attempted at all on a failed copy, so a failed attempt still just
+  // reflects the (unchanged) source, same as before this fix.
+  if (!ok || !directoryMode_.enterDirectory(destination)) directoryMode_.enterDirectory(directoryMode_.currentDirectory());
   return ok;
 }
 
@@ -5769,7 +5795,9 @@ bool Application::executeMove(const std::string &destination) {
   if (!checkTargetsWritable(targets)) return false;
   bool ok = interactive ? cpMvRmMode_.moveToInteractive(targets, destination) == 0
                         : cpMvRmMode_.moveTo(targets, destination).ok;
-  directoryMode_.enterDirectory(directoryMode_.currentDirectory());
+  // Same destination-landing behavior as executeCopy() -- see its own
+  // comment.
+  if (!ok || !directoryMode_.enterDirectory(destination)) directoryMode_.enterDirectory(directoryMode_.currentDirectory());
   return ok;
 }
 
