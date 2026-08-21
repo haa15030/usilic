@@ -7,18 +7,6 @@
 
 namespace fm {
 
-namespace {
-// Same "...<last 16 chars>" rule Application::truncatedTrailingPath()
-// already established (application.cpp) -- duplicated here rather
-// than shared across translation units for one small, self-contained
-// helper. Used by the pendingOperationLabel_ branch below.
-constexpr int kTrailingPathTailChars = 16;
-std::string truncatedTrailingPath(const std::string &path) {
-  if (static_cast<int>(path.size()) <= kTrailingPathTailChars) return path;
-  return "..." + path.substr(path.size() - kTrailingPathTailChars);
-}
-}  // namespace
-
 DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &history,
                               const Configuration &configuration)
     : view_(view), modeStack_(modeStack), history_(history), configuration_(configuration) {
@@ -137,18 +125,31 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       // navigating away doesn't keep showing a label for an operation
       // that's no longer actually armed (see PendingCpMvRmOperation's
       // own comment for why the arm itself doesn't survive that either).
-      std::string label = pendingOperationLabel_;
-      if (label.size() < fields.name.size()) label.resize(fields.name.size(), ' ');
-      fields.name = label;
-      // The directory path itself, shown in place of the usual "(ls)"
-      // program badge -- 2026-08-21 fix, a direct user report ("=eiは
-      // （ls）からなので戻り値はディレクトリ名では？"): overriding
-      // `name` above to show "CP" already lost the one place the
-      // directory path used to be visible (the reference screenshots
-      // =ed/=ee show it as their OWN trailing field while armed, not
-      // "(ls)"), leaving no way to tell which directory an operation
-      // was actually armed in without pressing ^X^M first.
-      fields.trailing2 = truncatedTrailingPath(currentDirectory_);
+      //
+      // Bare, UNPADDED "CP"/"MV"/"RM" -- 2026-08-22 correction, a direct
+      // user comparison against a real reference screenshot (=ed):
+      // legacy's own armed mode line concatenates fields at their
+      // natural width (a short "CP" label simply leaves the fields
+      // after it starting earlier than the unarmed layout would), unlike
+      // showEditError_'s own padding above (which deliberately
+      // preserves alignment with the SURROUNDING unarmed layout it
+      // temporarily replaces -- a different, narrower goal that doesn't
+      // apply here).
+      fields.name = pendingOperationLabel_;
+      // The FULL directory path, not truncated -- 2026-08-21 addition
+      // (a direct user report, "=eiは（ls）からなので戻り値はディレク
+      // トリ名では？"), corrected 2026-08-22 (another direct comparison
+      // against =ed/=ee: legacy shows the path in full, right-padded
+      // with spaces to the row's own right edge, not "...”-truncated to
+      // a short tail the way drawPromptLabel()'s OWN destination-path
+      // convention does elsewhere). fillTrailingToEdge below both pads
+      // this to the edge AND (per its own established behavior, see
+      // renderModeLine()'s own comment) squeezes rightWatermark out for
+      // lack of room -- explicitly cleared here too, rather than left to
+      // rely on that as an incidental side effect.
+      fields.trailing2 = currentDirectory_;
+      fields.fillTrailingToEdge = true;
+      fields.rightWatermark = "";
     }
     return fields;
   });

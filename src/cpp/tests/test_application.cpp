@@ -8,6 +8,7 @@
 
 #include "application.hpp"
 #include "doctest.h"
+#include "mode_line.hpp"
 #include "recording_display.hpp"
 
 namespace fs = std::filesystem;
@@ -4418,26 +4419,32 @@ TEST_CASE_FIXTURE(Fixture, "^Xc shows \"CP\" Standout in the mode line's name sl
   CHECK(display.rowText(23) == beforeRow);  // the "CP" label is gone; ordinary directory path is back
 }
 
-// 2026-08-21 follow-up, a real user report ("=eiは（ls）からなので
-//戻り値はディレクトリ名では？"): the "CP" override above lost the one
+// 2026-08-21 addition, a real user report ("=eiは（ls）からなので戻り
+// 値はディレクトリ名では？"): the "CP" override above lost the one
 // place the directory path used to be visible -- the mode line's
-// trailing badge showed "(ls)" instead while armed, unlike the
-// reference screenshots (=ed/=ee), which show the path there.
-TEST_CASE_FIXTURE(Fixture, "^Xc shows the directory path (not \"(ls)\") in the trailing badge while armed") {
+// trailing badge showed "(ls)" instead while armed. Corrected
+// 2026-08-22 after a direct side-by-side comparison against the
+// reference screenshots (=ed/=ee, an actual legacy binary run): legacy
+// shows the FULL path (not "..."-truncated the way drawPromptLabel()'s
+// OWN destination-path convention truncates elsewhere), right-padded
+// with spaces to the row's edge, with the bare "CP" label (no padding)
+// and NO "usilic v1.5b" watermark -- this port's own first attempt at
+// this field got the truncation/padding/watermark details wrong even
+// though the underlying "show the path, not (ls)" idea was right.
+TEST_CASE_FIXTURE(Fixture, "^Xc shows the FULL directory path (not \"(ls)\", not truncated) padded to the "
+                           "row's edge while armed, with a bare \"CP\" label and no watermark") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm CP
 
-  std::string row = display.rowText(23);
-  CHECK(row.find("(ls)") == std::string::npos);
-  // The truncated tail of the directory's OWN path (matching
-  // truncatedTrailingPath()'s "last 16 chars" rule) should be visible
-  // somewhere in the row -- checked via a shorter, guaranteed-present
-  // suffix rather than the whole path, since a long temp-dir name here
-  // could itself exceed that 16-character window.
-  std::string dir = app.directoryMode().currentDirectory();
-  std::string tail = dir.substr(dir.size() > 10 ? dir.size() - 10 : 0);
-  CHECK(row.find(tail) != std::string::npos);
+  std::string expected = "CP " + fm::ModeLine::format(1, static_cast<int>(app.directoryMode().entries().size())) + " " +
+                          std::to_string(app.activeContentView().totalByteCount()) + " " +
+                          app.directoryMode().currentDirectory();
+  expected.resize(80, ' ');
+  CHECK(display.rowText(23) == expected);
+  CHECK(display.rowText(23).find("(ls)") == std::string::npos);
+  CHECK(display.rowText(23).find("usilic v1.5b") == std::string::npos);
+  CHECK(display.rowText(23).find("...") == std::string::npos);  // full path, not truncated
 }
 
 // 2026-08-22 fix, a real reference screenshot (=ed, an actual legacy
