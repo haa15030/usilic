@@ -2327,6 +2327,37 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   gui->open();
   display.setBackend(*gui);
   clearLaunchingTerminal();  // see its own comment -- covered by the GUI window now, so this never flashes
+  // 2026-08-21 fix, a direct user report ("HISTORY:9023...が今は逆に
+  // なっていて-cはOK。症状はかつての-cと同じ" -- the "first `less`
+  // renders broken" bug had moved FROM `-c` TO `-g`'s own
+  // runProgramInLaunchingTerminal() path, after item 382 fixed the
+  // `-c` side): this terminal briefly ran usilic itself in terminal
+  // mode before this exact swap (every launch starts in terminal mode
+  // first, see this file's own comment on the startup sequence),
+  // which means TerminalDisplay::open() already constrained ITS
+  // scroll region to rows_-2 (reserving the last row for usilic's own
+  // mode line) -- and unlike a normal PROGRAM invocation's own
+  // leaveRawMode()/reenterRawMode() pairing (item 382's own fix),
+  // NOTHING ever widened it back out, since this terminal is about to
+  // sit idle indefinitely while GUI owns the session (see this
+  // function's/main()'s own comment on that) rather than immediately
+  // running another usilic redraw that would want the constrained
+  // region back. runProgramInLaunchingTerminal() later re-raises THIS
+  // SAME terminal for every PROGRAM-mode command via
+  // ChildProcess::runInteractive() directly -- bypassing ProgramMode::
+  // run() (and therefore item 382's own leave/reenterForExternalProgram()
+  // pairing) entirely, since its own foregroundLauncher_ callback
+  // short-circuits that path -- so `less`'s first run here inherited
+  // the exact same stale constrained region `-c` used to leave behind,
+  // reproducing the identical symptom on the opposite code path. Fixed
+  // once, here, at the swap itself (not per-PROGRAM-invocation, unlike
+  // item 382's own fix): this terminal is being handed over for
+  // external-program-style use for the rest of the session, matching
+  // leaveForExternalProgram()'s own meaning exactly, and there's no
+  // corresponding reenterFromExternalProgram() call needed since this
+  // terminal never goes back to being usilic's own active display
+  // within this session.
+  terminalDisplay.leaveForExternalProgram();
   app.handleResize();  // re-layout/redraw against the (same-sized, but now GUI-rendered) geometry
 
   // Wired for the duration of GUI mode only -- see
@@ -2693,6 +2724,14 @@ int main(int argc, char **argv) {
       launchGui->open();
       display.setBackend(*launchGui);
       clearLaunchingTerminal();  // see its own comment -- covered by the GUI window now, so this never flashes
+      // See tryEnterGuiPhase()'s own identical call's comment
+      // (2026-08-21 fix): this launch path swaps to GUI the exact
+      // same way, so it needs the exact same scroll-region reset --
+      // otherwise a PROGRAM-mode command run later via THIS terminal
+      // (runProgramInLaunchingTerminal()) would inherit the same
+      // stale constrained region this process's own brief terminal-
+      // mode startup left behind.
+      terminalDisplay->leaveForExternalProgram();
       guiOwnsWholeSession = true;
       // The real terminal that launched usilic is left sitting idle
       // for the rest of the session (see main()'s own comment) --

@@ -4889,6 +4889,43 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      いなかった、という見せかけの「再現しない」状態を経由した後に
      気づいて修正、正しく再現・検証できた)。
 
+383. **項目382の副作用: `-g`側の`runProgramInLaunchingTerminal()`が
+    今度は「初回`less`表示崩れ」の同症状を発症、修正**
+   - **報告**: 項目382の実機確認後、ユーザーから
+     「HISTORY:9023「...-g起動では最初からOK」が今は逆になっていて
+     -cはOK。症状はかつての-cと同じなので修正よろしく。」との報告。
+   - **原因**: usilicは`-g`起動でも、実際にGUIウィンドウへ切り替わる
+     直前まで一瞬`-c`(端末)モードとして起動する設計になっており、
+     この間に`TerminalDisplay::open()`が起動元ターミナルの
+     スクロール領域を`rows_-2`(最終行をモードライン用に確保)へ
+     制限する。GUIウィンドウへ切り替わった後、この起動元ターミナルは
+     `runProgramInLaunchingTerminal()`によって`PROGRAM`コマンド
+     実行のたびに再利用されるが、この関数は`ChildProcess::
+     runInteractive()`を直接呼ぶ設計(`ProgramMode`の
+     `foregroundLauncher_`機構で`ProgramMode::run()`自体を
+     丸ごとバイパスする)のため、項目382で追加した
+     `leaveForExternalProgram()`/`reenterFromExternalProgram()`の
+     配線を一切経由しない。つまりこの起動元ターミナルは、GUIへ
+     切り替わった時点で制限されたスクロール領域を持ったまま
+     未来永劫放置されており、`less`の初回実行がこの古い制限領域を
+     そのまま受け継いで、かつて`-c`側で発生していたのと全く同じ
+     症状を再現していた。
+   - **修正**: `-c`から`-g`へ切り替わる箇所2箇所(`tryEnterGuiPhase()`
+     と、`実はすでにGUI`自動検出パスの`main()`本体)それぞれで、
+     `clearLaunchingTerminal()`の直後に`terminalDisplay.
+     leaveForExternalProgram()`(または`->`)を追加。この起動元
+     ターミナルはセッション中ずっとusilic自身の画面には二度と
+     戻らず、`PROGRAM`実行専用として使われ続けるため、対になる
+     `reenterFromExternalProgram()`の呼び出しは不要(切り替え時に
+     一度だけ画面全体へ開放すれば、以後は`runProgramInLaunchingTerminal()`
+     が何度呼ばれても制限領域が復元されることは無い)。
+   - **検証**: `make test` 781/781件・18577アサーション全通過
+     (`main.cpp`はアプリのエントリポイントで直接のユニットテスト
+     対象外のため新規doctestは無し、既存回帰の確認のみ)。
+     `make usilic`クリーンビルド確認済み。この経路は実際の
+     Terminal.app/GUIウィンドウ操作を要するため、このセッションから
+     の自動PTY再現・確認はできておらず、実機での確認が必要。
+
 
 ## 9. FILE / DIR
 
