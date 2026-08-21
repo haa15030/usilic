@@ -22,18 +22,32 @@ namespace fm {
 // can be tuned further against a real machine, one level at a time,
 // without needing an actual flick/repeated keypress fast enough to
 // reliably land on the level under test.
+//
+// 2026-08-21: replaced with the user's own real-machine-tuned values
+// ("-u 90000 20000 10000 5000 3000 2000 1000 500 200 100", provided
+// directly after hands-on testing via that CLI override -- see
+// applyScrollSpeedOverride()'s own comment for exactly how "-u"
+// applies these) -- baked in as the new compiled-in DEFAULT (still
+// further overridable via "-u" at any time, same as before) rather
+// than left as something every real run has to pass by hand. All 10
+// levels are usleep-driven now (busyLoop=false throughout): the same
+// "every targeted level converts to usleep, even ones that used to
+// default to busy-loop" rule applyScrollSpeedOverride() already
+// applies to a runtime "-u" override is now simply true of the
+// compiled-in table itself, since these ARE that override's own
+// values.
 std::vector<ScrollStep> kScrollSpeedLevels = {
     {false, 0, 0},          // 0: unused, "not coasting"
-    {false, 90000, 0},      // 1: slowest -- usleep, ~11 dots/sec
-    {false, 55000, 0},      // 2: usleep
-    {false, 30000, 0},      // 3: usleep
-    {false, 15000, 0},      // 4: usleep -- last precisely-timed step before the busy-loop range
-    {true, 0, 500000},      // 5: busy-loop begins here
-    {true, 0, 250000},      // 6
-    {true, 0, 120000},      // 7
-    {true, 0, 50000},       // 8
-    {true, 0, 15000},       // 9
-    {true, 0, 0},           // 10: fastest -- no delay between dots at all
+    {false, 90000, 0},      // 1: slowest
+    {false, 20000, 0},      // 2
+    {false, 10000, 0},      // 3
+    {false, 5000, 0},       // 4
+    {false, 3000, 0},       // 5
+    {false, 2000, 0},       // 6
+    {false, 1000, 0},       // 7
+    {false, 500, 0},        // 8
+    {false, 200, 0},        // 9
+    {false, 100, 0},        // 10: fastest
 };
 
 void applyScrollSpeedOverride(const std::vector<long> &values) {
@@ -64,10 +78,20 @@ void applyScrollSpeedOverride(const std::vector<long> &values) {
   }
 }
 
-// See applyReleaseDistanceOverride()'s own header comment. Empty by
-// default (built-in formula active); set once at startup by "-i", same
-// lifetime/ownership shape as kScrollSpeedLevels itself.
-std::vector<long> gReleaseDistanceOverride;
+// See applyReleaseDistanceOverride()'s own header comment. 2026-08-21:
+// starts pre-populated with the user's own real-machine-tuned values
+// ("-i 1 2 4 8 16 30 40 50 60 70", provided directly after hands-on
+// testing) instead of empty -- the same "bake the CLI override's own
+// values in as the new compiled-in default" treatment
+// kScrollSpeedLevels' own comment describes for "-u". The built-in
+// levelForReleaseDistance() formula this replaces is effectively
+// unreachable via any startup path now (still real code, still
+// reachable by explicitly passing an empty vector here, e.g. a future
+// "-i" spelling meant to mean "reset to built-in" -- not currently
+// wired to any CLI flag, since "-i" itself always requires at least
+// one value, same parsing shape as "-u"). Still further overridable
+// via "-i" at any time, same as kScrollSpeedLevels/"-u".
+std::vector<long> gReleaseDistanceOverride = {1, 2, 4, 8, 16, 30, 40, 50, 60, 70};
 
 void applyReleaseDistanceOverride(const std::vector<long> &thresholds) { gReleaseDistanceOverride = thresholds; }
 

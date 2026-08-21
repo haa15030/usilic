@@ -7,16 +7,33 @@ using fm::kScrollSpeedLevels;
 using fm::levelForReleaseDistance;
 using fm::scaledForRow;
 
+// 2026-08-21 update: gReleaseDistanceOverride (drag_scroll_speed.cpp)
+// now starts pre-populated with the user's own tuned "-i" values
+// instead of empty (see its own comment) -- every test below that
+// means to exercise the BUILT-IN formula specifically clears the
+// override first (applyReleaseDistanceOverride({})) and restores the
+// new default afterward, the same "don't leak state into other test
+// cases" discipline applyScrollSpeedOverride()'s own tests already
+// follow for kScrollSpeedLevels.
+namespace {
+const std::vector<long> kDefaultReleaseDistanceOverride = {1, 2, 4, 8, 16, 30, 40, 50, 60, 70};
+}
+
 TEST_CASE("levelForReleaseDistance: a near-zero flick doesn't coast") {
+  applyReleaseDistanceOverride({});
   CHECK(levelForReleaseDistance(0, 20) == 0);
   CHECK(levelForReleaseDistance(2, 20) == 0);  // well under cellHeight/4
+  applyReleaseDistanceOverride(kDefaultReleaseDistanceOverride);
 }
 
 TEST_CASE("levelForReleaseDistance: magnitude only, sign doesn't matter") {
+  applyReleaseDistanceOverride({});
   CHECK(levelForReleaseDistance(50, 20) == levelForReleaseDistance(-50, 20));
+  applyReleaseDistanceOverride(kDefaultReleaseDistanceOverride);
 }
 
 TEST_CASE("levelForReleaseDistance: increases monotonically with distance") {
+  applyReleaseDistanceOverride({});
   int cellHeight = 20;
   int previous = 0;
   for (int pixels : {0, 5, 25, 45, 85, 165, 325, 700}) {
@@ -24,22 +41,28 @@ TEST_CASE("levelForReleaseDistance: increases monotonically with distance") {
     CHECK(level >= previous);
     previous = level;
   }
+  applyReleaseDistanceOverride(kDefaultReleaseDistanceOverride);
 }
 
 TEST_CASE("levelForReleaseDistance: a huge flick tops out at the last table entry") {
+  applyReleaseDistanceOverride({});
   int level = levelForReleaseDistance(100000, 20);
   CHECK(level == static_cast<int>(kScrollSpeedLevels.size()) - 1);
+  applyReleaseDistanceOverride(kDefaultReleaseDistanceOverride);
 }
 
 TEST_CASE("levelForReleaseDistance: thresholds scale with cellHeightPixels") {
+  applyReleaseDistanceOverride({});
   // The same absolute pixel distance should read as a *faster* level on
   // a small font (few pixels per row) than on a large one, since the
   // mapping is expressed in cellHeight units, not raw pixels.
   CHECK(levelForReleaseDistance(100, 10) > levelForReleaseDistance(100, 200));
+  applyReleaseDistanceOverride(kDefaultReleaseDistanceOverride);
 }
 
 TEST_CASE("levelForReleaseDistance: the upper (originally busy-loop) tier grows +33% per raw level instead of "
           "doubling, so a hard flick reaches the fastest levels with far less distance than before") {
+  applyReleaseDistanceOverride({});
   int H = 20;  // pixel values below are this function's own actual integer-truncated output for H=20
   // Raw-level thresholds with the compressed upper tier (levels 1-4
   // still double, see this function's own comment): 1:20 2:40 3:80
@@ -48,10 +71,12 @@ TEST_CASE("levelForReleaseDistance: the upper (originally busy-loop) tier grows 
   CHECK(levelForReleaseDistance(350, H) == 9);   // 284 <= 350 < 378 -> raw level 7, +2 = 9
   CHECK(levelForReleaseDistance(378, H) == 10);  // 378 <= x < 504 -> raw level 8, +2 = 10 (clamped)
   CHECK(levelForReleaseDistance(672, H) == 10);  // raw level 10 already, +2 still clamps to 10
+  applyReleaseDistanceOverride(kDefaultReleaseDistanceOverride);
 }
 
 TEST_CASE("levelForReleaseDistance: a real flick is biased 2 levels faster than the raw distance-doubling "
           "table alone would pick, but a too-small movement still doesn't coast at all") {
+  applyReleaseDistanceOverride({});
   int cellHeight = 20;
   // magnitude in [cellHeight, 2*cellHeight) is the raw table's own
   // level-2 bucket (see the class comment's own worked-out ranges) --
@@ -62,6 +87,7 @@ TEST_CASE("levelForReleaseDistance: a real flick is biased 2 levels faster than 
   CHECK(levelForReleaseDistance(cellHeight / 8, cellHeight) == 0);
   // A huge flick still clamps to the last table entry, not past it.
   CHECK(levelForReleaseDistance(100000, cellHeight) == static_cast<int>(kScrollSpeedLevels.size()) - 1);
+  applyReleaseDistanceOverride(kDefaultReleaseDistanceOverride);
 }
 
 TEST_CASE("scaledForRow: multiplies usleep and busy-loop delays by dotsPerRow") {
@@ -83,18 +109,21 @@ TEST_CASE("scaledForRow: a dotsPerRow of 1 is a no-op, and non-positive values c
   CHECK(scaledForRow(step, -3).microseconds == 5000);
 }
 
-TEST_CASE("kScrollSpeedLevels: level 0 is inert, levels get faster (less delay) as level increases") {
+// 2026-08-21 update: the compiled-in default table itself is now the
+// user's own real-machine-tuned "-u 90000 20000 10000 5000 3000 2000
+// 1000 500 200 100" values (see kScrollSpeedLevels' own comment) --
+// all 10 levels usleep-driven, no busy-loop levels left in the
+// default at all. This test used to check a separate "busy-loop range
+// gets faster too" shape for levels 5+; that's still exercised
+// (applyScrollSpeedOverride() can still convert-and-tune any level,
+// busy-loop or not, at runtime), just no longer describes the
+// compiled-in DEFAULT's own levels 5+.
+TEST_CASE("kScrollSpeedLevels: level 0 is inert, every real level gets faster (less delay) as level increases") {
   CHECK(kScrollSpeedLevels[0].microseconds == 0);
   CHECK(kScrollSpeedLevels[0].busyIterations == 0);
-  // usleep-based levels (1-4) should each be strictly faster (less delay) than the one before
-  for (size_t i = 1; i + 1 < 5; i++) {
+  for (size_t i = 1; i + 1 < kScrollSpeedLevels.size(); i++) {
     CHECK_FALSE(kScrollSpeedLevels[i].busyLoop);
     CHECK(kScrollSpeedLevels[i].microseconds > kScrollSpeedLevels[i + 1].microseconds);
-  }
-  // busy-loop levels (5 onward) should have decreasing iteration counts (faster) as level rises
-  for (size_t i = 5; i + 1 < kScrollSpeedLevels.size(); i++) {
-    CHECK(kScrollSpeedLevels[i].busyLoop);
-    CHECK(kScrollSpeedLevels[i].busyIterations >= kScrollSpeedLevels[i + 1].busyIterations);
   }
 }
 
@@ -125,10 +154,18 @@ TEST_CASE("applyScrollSpeedOverride: fewer values than usleep levels leaves the 
   kScrollSpeedLevels = original;
 }
 
-TEST_CASE("applyScrollSpeedOverride: values reaching into the default busy-loop range (5+) convert those levels "
-          "to usleep-driven too") {
+// 2026-08-21 update: the compiled-in DEFAULT table no longer has any
+// busy-loop levels at all (see kScrollSpeedLevels' own comment) -- but
+// applyScrollSpeedOverride() itself still needs to convert a
+// busy-loop level to usleep-driven correctly if one is ever
+// encountered (a caller could still construct one, and the pre-
+// 2026-08-21 default table itself was exactly that shape), so this
+// test now sets up that scenario explicitly rather than relying on
+// the compiled-in default to already be in it.
+TEST_CASE("applyScrollSpeedOverride: values reaching into a busy-loop level convert it to usleep-driven too") {
   std::vector<fm::ScrollStep> original = kScrollSpeedLevels;
-  REQUIRE(original[5].busyLoop);  // sanity: level 5 defaults to busy-loop
+  kScrollSpeedLevels[5] = fm::ScrollStep{true, 0, 500000};  // force level 5 into busy-loop shape for this test
+  REQUIRE(kScrollSpeedLevels[5].busyLoop);  // sanity
   applyScrollSpeedOverride({90000, 70000, 50000, 30000, 10000});  // 5 values, the user's own real example
   CHECK_FALSE(kScrollSpeedLevels[5].busyLoop);
   CHECK(kScrollSpeedLevels[5].microseconds == 10000);
@@ -200,14 +237,14 @@ TEST_CASE("applyReleaseDistanceOverride: explicit thresholds replace the built-i
   CHECK(levelForReleaseDistance(40, 20) == 2);    // exactly at threshold 2
   CHECK(levelForReleaseDistance(1120, 20) == 10);  // exactly at the last threshold
   CHECK(levelForReleaseDistance(5000, 20) == 10);  // far past the last threshold -- still clamps, doesn't grow past it
-  applyReleaseDistanceOverride({});
+  applyReleaseDistanceOverride(kDefaultReleaseDistanceOverride);
 }
 
 TEST_CASE("applyReleaseDistanceOverride: cellHeightPixels is ignored once an override is active -- thresholds "
           "are raw pixels, not cellHeight-relative like the built-in formula") {
   applyReleaseDistanceOverride({100});
   CHECK(levelForReleaseDistance(150, 10) == levelForReleaseDistance(150, 500));
-  applyReleaseDistanceOverride({});
+  applyReleaseDistanceOverride(kDefaultReleaseDistanceOverride);
 }
 
 TEST_CASE("applyReleaseDistanceOverride: fewer thresholds than kScrollSpeedLevels' own tunable count still "
@@ -216,12 +253,14 @@ TEST_CASE("applyReleaseDistanceOverride: fewer thresholds than kScrollSpeedLevel
   CHECK(levelForReleaseDistance(10, 20) == 0);
   CHECK(levelForReleaseDistance(50, 20) == 1);
   CHECK(levelForReleaseDistance(100000, 20) == 1);  // only one threshold given -- level 1 is as high as it gets
-  applyReleaseDistanceOverride({});
+  applyReleaseDistanceOverride(kDefaultReleaseDistanceOverride);
 }
 
 TEST_CASE("applyReleaseDistanceOverride: empty thresholds falls back to the built-in formula, unaffected") {
+  applyReleaseDistanceOverride({});
   int before = levelForReleaseDistance(350, 20);
   applyReleaseDistanceOverride({100, 200});  // set, then clear -- must not leave any residual effect
   applyReleaseDistanceOverride({});
   CHECK(levelForReleaseDistance(350, 20) == before);
+  applyReleaseDistanceOverride(kDefaultReleaseDistanceOverride);
 }

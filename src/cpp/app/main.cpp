@@ -2469,6 +2469,34 @@ int main(int argc, char **argv) {
     std::cerr << "usilic: -c and -g are mutually exclusive.\n";
     return 1;
   }
+  // Platform-based default when NEITHER "-c" nor "-g" was given
+  // explicitly (2026-08-21, a direct user request: "他の隠れオプション
+  // としては「-c -g -u -i -h」、デフォルト-gで起動できるのはmacOSの
+  // みそれ以外では-cとする（-g起動では別のウィンドウ上で起動）"):
+  // -g's own GUI window creation needs SDL2/SDL2_ttf and a real
+  // display server -- reliably available on macOS (this port's only
+  // actually-tested GUI platform, see CLAUDE.md's own repeated notes
+  // on Linux GUI verification being untested), not guaranteed
+  // elsewhere (a headless Linux server, a bare tty console, etc. --
+  // -g there would just fail/fall back anyway, per forceGui's own
+  // existing "no usable GUI... falling back to terminal mode" error
+  // message below, but defaulting to it there would still cost the
+  // attempt every plain launch). Deliberately setting forceGui (not
+  // leaving it false and relying on the separate "実はすでにGUI"
+  // appearance/bounds auto-detect below, which only activates when
+  // it can OVERLAY the current Terminal.app/iTerm2 window) means an
+  // unadorned `usilic` on macOS reaches the exact same explicit "-g"
+  // code path (tryEnterGuiPhase(), a genuinely separate GUI window)
+  // a hand-typed "-g" already does, matching "別のウィンドウ上で起動"
+  // -- the auto-detect overlay path, when it also happens to match,
+  // still runs first and can still claim the session before that
+  // point (unchanged, existing behavior for explicit "-g" too, not
+  // something this default changes).
+#ifdef __APPLE__
+  if (!forceCui && !forceGui) forceGui = true;
+#else
+  if (!forceCui && !forceGui) forceCui = true;
+#endif
 
   // Ported from HELP.jp's own EXIT section (2.18): "引数無しで file
   // manager で起動した場合は...アクセス履歴のリストを~/.tcb/history
