@@ -1082,6 +1082,21 @@ class Application {
   // same call they already make for every other keystroke.
   void pollLocateUpdateDbCompletion();
 
+  // Call once per run-loop iteration, unconditionally (cheap no-op
+  // when pendingCpMvRmShellRun_ is unset) -- same "flag checked
+  // externally, driven by the run loop's own existing tick" shape as
+  // pollLocateUpdateDbCompletion() just above (see its own comment for
+  // why: an unbounded blocking wait inside a single Application call
+  // was already tried and rejected for LOCATE's updatedb, for the
+  // identical reason it would be wrong here too -- it would starve -g's
+  // own GUI event pump). While pending, shell_'s own scrollback keeps
+  // updating live on every iteration for free, via the SAME
+  // watchShellPty polling both run loops already do whenever
+  // currentMode()==Shell (see executeCopy()'s own class comment) --
+  // this method only handles noticing COMPLETION (shell_.promptGeneration()
+  // advancing) and landing back in Directory mode afterward.
+  void pollPendingCpMvRmShellRun();
+
   // True once an exit has been confirmed (StartExit's prompt was
   // submitted with a leading 'y') -- a future real run loop's signal
   // to stop calling feedByte() and unwind. Application itself never
@@ -1519,6 +1534,10 @@ class Application {
   // Shared by executeMove()/executeRemove() -- see its own definition
   // comment (docs/HISTORY.md:1840).
   bool checkTargetsWritable(const std::vector<std::string> &targets);
+  // Shared tail of executeCopy()/executeMove()/executeRemove() -- see
+  // executeCopy()'s own comment.
+  bool startCpMvRmShellRun(const std::vector<std::string> &argv, const std::string &destination,
+                            const std::string &sourceDirectory);
   bool executeExit(const std::string &confirmation);
   bool executeDu(const std::string &path);
   bool executeArchiveExtract(const std::string &destination);
@@ -1811,6 +1830,22 @@ class Application {
     std::string directory;
   };
   std::optional<PendingCpMvRmOperation> pendingCpMvRm_;
+  // executeCopy()/executeMove()/executeRemove() (2026-08-22 redesign,
+  // see their own comment): once the cp/mv/rm command line has been
+  // injected into shell_'s real, persistent SHELL session and
+  // submitted, this remembers what to do once it finishes -- detected
+  // by shell_.promptGeneration() advancing past promptGenerationBefore
+  // (see pollPendingCpMvRmShellRun()). `destination` is empty for RM
+  // (no destination concept); `sourceDirectory` is always the
+  // directory the operation was launched from, the fallback landing
+  // spot if `destination` doesn't resolve to a real, browsable
+  // directory (or for RM, where it's the ONLY landing spot).
+  struct PendingCpMvRmShellRun {
+    int promptGenerationBefore;
+    std::string destination;
+    std::string sourceDirectory;
+  };
+  std::optional<PendingCpMvRmShellRun> pendingCpMvRmShellRun_;
   // Shared by submitPrompt() (text typed live) and
   // openSelectedListEntry()'s own prompt-recall branch (text picked
   // from ^R's history list instead) -- see startPromptHistoryRecall()'s

@@ -113,3 +113,31 @@ TEST_CASE_FIXTURE(Fixture, "resolve: baseDirectory without a trailing slash is s
   CHECK(result.isDirectory);
   CHECK(result.path == (root / "subdir").string() + "/");
 }
+
+TEST_CASE_FIXTURE(Fixture, "resolve: a later embedded absolute path overrides an already-filled-in prefix (2026-08-22 user report, emacs-style)") {
+  // Simulates ^X^D's directory prompt pre-filled with an absolute
+  // path ("/first/prefix/", already ending in '/'), then the user
+  // typing another absolute path right after it (no manual erase
+  // first) -- the raw buffer ends up with a doubled "//" at the reset
+  // point.
+  std::string messy = "/first/prefix/" + (root / "subdir").string();
+  auto result = resolver.resolve(messy);
+  CHECK(result.isDirectory);
+  CHECK(result.path == (root / "subdir").string() + "/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "resolve: a LATER absolute override wins when typed twice in a row") {
+  // "/first/path/" (already ends in '/', an earlier absolute typing)
+  // followed by ANOTHER absolute path typed right after it -- only
+  // the second (rightmost) one should survive.
+  std::string messy = "/first/path/" + root.string() + "/subdir";
+  auto result = resolver.resolve(messy);
+  CHECK(result.isDirectory);
+  CHECK(result.path == (root / "subdir").string() + "/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "resolve: an ordinary single-slash relative continuation is left untouched") {
+  auto result = resolver.resolve(root.string() + "/subdir", "/some/unrelated/base");
+  CHECK(result.isDirectory);
+  CHECK(result.path == (root / "subdir").string() + "/");
+}

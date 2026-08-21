@@ -19,6 +19,21 @@ ResolvedPath PathResolver::resolve(const std::string &rawPath, const std::string
     if (tilde != std::string::npos) path = homeDirectory_ + path.substr(tilde + 1);
   }
 
+  // A later embedded absolute path overrides everything typed before
+  // it, matching emacs' read-file-name/expand-file-name convention --
+  // a real report: typing "/tmp" right after an already-filled-in
+  // absolute path (e.g. ^X^D's directory prompt pre-filled with
+  // "/Users/.../usilic/") produces ".../usilic//tmp" as the buffer's
+  // raw text, and Enter should still land in /tmp's own listing, not
+  // try (and fail) to open a literal "usilic/tmp" subdirectory. Only
+  // fires on an actual doubled "//" (a fresh '/' typed while the
+  // buffer already ends in '/'), so an ordinary relative continuation
+  // like "usilic/tmp" (single slash) is left untouched. rfind (not
+  // find) picks the LAST such reset, so a second later absolute
+  // override wins over an earlier one.
+  std::size_t lastDoubleSlash = path.rfind("//");
+  if (lastDoubleSlash != std::string::npos) path = path.substr(lastDoubleSlash + 1);
+
   // Still relative (no leading '/', and not ~-expanded above): join
   // onto baseDirectory, if the caller gave one -- see this parameter's
   // own declaration comment.

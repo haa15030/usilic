@@ -611,7 +611,10 @@ void Shell::resetSessionState() {
   commandLine_.setText("");
 }
 
+int Shell::promptGeneration() const { return promptGeneration_; }
+
 void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
+  promptGeneration_++;
   // The shell's own \w (bash) / %~ (csh) expansion, followed by its
   // literal prompt character ('$'/'#'/'%') and one space -- strip
   // that trailing two bytes to recover a clean directory string. This

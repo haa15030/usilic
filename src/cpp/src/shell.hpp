@@ -242,6 +242,16 @@ class Shell {
   // what legacy's own vt_charset() toggle affects too).
   void setEncoding(Charset::Encoding encoding);
 
+  // Increments every time handlePromptDetected() recognizes a fresh
+  // prompt -- including the very first one right after start(). Lets a
+  // caller that just injected a command via commandLine()/submitLine()
+  // (without itself typing/waiting interactively, e.g. Application's
+  // CP/MV/RM-via-SHELL handoff) detect "the shell is ready for another
+  // command" by snapshotting this value beforehand and polling for it
+  // to change, without Shell needing to know anything about what that
+  // caller is waiting for.
+  int promptGeneration() const;
+
  private:
   void handlePromptDetected(const std::string &tailBeforeMark);
   void appendBodyByte(unsigned char c);
@@ -341,6 +351,8 @@ class Shell {
 
   std::string currentDirectory_;
   bool busy_ = false;
+
+  int promptGeneration_ = 0;
 
   std::function<void(const std::string &)> directoryChangedCallback_;
   std::function<bool(const std::string &, const std::string &)> programLauncher_;

@@ -43,6 +43,51 @@ std::string truncatedTrailingPath(const std::string &path) {
   return "..." + path.substr(path.size() - kTrailingPathTailChars);
 }
 
+// Standard POSIX single-quote shell-escaping: wrap in '...', with each
+// embedded literal quote replaced by '\'' (close the quote, an
+// escaped quote, reopen the quote) -- used by executeCopy()/
+// executeMove()/executeRemove() (2026-08-22 redesign, see their own
+// comment) to build a real command LINE for shell_.commandLine(),
+// unlike CpMvRmMode's own buildArgv() which hands an argv straight to
+// execvp() and never needs quoting at all. Item 13's own "半角スペース
+// を含むファイル名" history is exactly why this can't just join argv
+// elements with spaces unquoted -- a filename containing a space,
+// glob character, or quote would otherwise be split/misinterpreted by
+// the real shell reading this line.
+std::string shellQuoteArg(const std::string &arg) {
+  std::string quoted = "'";
+  for (char c : arg) {
+    if (c == '\'')
+      quoted += "'\\''";
+    else
+      quoted += c;
+  }
+  quoted += "'";
+  return quoted;
+}
+
+std::string shellQuoteArgv(const std::vector<std::string> &argv) {
+  std::string line;
+  for (const auto &arg : argv) {
+    if (!line.empty()) line += " ";
+    line += shellQuoteArg(arg);
+  }
+  return line;
+}
+
+// startCpMvRmShellRun()/pollPendingCpMvRmShellRun()'s own exit-status
+// channel: since the actual cp/mv/rm now runs asynchronously inside
+// shell_'s real session (see executeCopy()'s own comment), there's no
+// ChildProcess::Result to read a status from directly -- appending
+// this to the injected command line makes the shell itself echo the
+// exit code as one more (real, visible-in-scrollback) output line,
+// which pollPendingCpMvRmShellRun() scans for after the next prompt
+// reappears. A small, disclosed trade-off (one extra line in the
+// user's own SHELL transcript) in exchange for still being able to
+// tell a genuine failure (e.g. a bogus destination) from success
+// before deciding whether to land in the destination directory.
+const char kCpMvRmExitMarker[] = "usilic-cpmvrm-exit:";
+
 // Byte count shown in the `trailing` field of every *results*-shaped
 // mode line (CUT's segment content, and -- as of 2026-08-13, following
 // a user request to consolidate this port's now-settled mode-line
@@ -5856,35 +5901,47 @@ bool Application::executeLocate(const std::string &query) {
 }
 
 // Ported from m_dest()'s T_cp/T_mv branches (destination validation
-// simplified away -- CpMvRmMode's own cp/mv invocation surfaces
-// failures via its ChildProcess::Result instead, see class comment).
-// Reloads the directory listing afterward either way, so the screen
-// reflects what actually happened on disk (this also clears marks,
-// via DirectoryMode::enterDirectory()'s own documented behavior).
-// 2026-08-22 fix, a real report: "処理過程はSHELLに残してもらわないと
-// 困る。あとで参照もできないし、もしも-iオプション付きだったら
-// （デフォルトはそう）その場でフリーズするんじゃない？". K-52 ("without
-// SHELL window") used to run via CpMvRmMode::copyTo() -- captured,
-// non-interactive ChildProcess::run(), stdin not attached to anything
-// that could ever answer a prompt. Configuration's own default `cp`
-// role command (src/config.sh) includes `-i`, so a destination file
-// that already exists would silently block forever on a confirmation
-// nothing could ever satisfy -- a genuine, easy-to-hit freeze, not a
-// theoretical one. Legacy's own K-52 isn't truly headless either: its
-// command() always runs through the SAME real, pty-attached SHELL
-// session M_shell owns, "with SHELL window" (K-51) only differing in
-// whether that session is brought to the foreground unconditionally or
-// only when something actually needs the user's attention -- either
-// way, a real terminal is always there to answer a prompt on. Now
-// unconditionally routed through copyToInteractive() (the SAME
-// execution CpMvRmMode::copyToInteractive() already gives K-51,
-// runInteractive()'s real pty), so an `-i` prompt can actually be
-// answered instead of hanging, and the run's own output stays in the
-// terminal's scrollback for later reference either way. cpMvRmInteractive_
-// is still consumed below (K-51/K-52 remain distinct key bindings/
-// Commands) even though it no longer changes how this actually runs --
-// left in place rather than removed, since it's plumbing this class's
-// own callers still reasonably expect to exist.
+// simplified away -- the real cp/mv invocation, run via shell_ now
+// (see below), surfaces failures as ordinary shell output instead).
+// 2026-08-22 fix (first pass, since superseded by a second below): a
+// real report -- "処理過程はSHELLに残してもらわないと困る。あとで
+// 参照もできないし、もしも-iオプション付きだったら（デフォルトは
+// そう）その場でフリーズするんじゃない？" -- found K-52 ("without
+// SHELL window") running via CpMvRmMode::copyTo(), captured/non-
+// interactive ChildProcess::run(), stdin not attached to anything that
+// could ever answer a prompt; Configuration's own default `cp` role
+// command (src/config.sh) includes `-i`, so an existing destination
+// file would silently block forever. First fix: route K-52 through
+// copyToInteractive() too (K-51's own runInteractive(), a real pty
+// inherited straight from usilic's own terminal) -- this DID let an
+// `-i` prompt be answered, but a follow-up report ("CP/MV/RM:SHELLでの
+// 実行が反映されていない（LOGが空白）") found the run's own output
+// still never reached shell_'s scrollback (^X^Kl/LOG's own data
+// source, see refreshShellLogFile()) -- runInteractive() is a bare
+// fork()+execvp() inheriting usilic's raw terminal fds directly,
+// entirely bypassing shell_ (the actual persistent bash session ^J.
+// owns) -- so there was never anything FOR LOG to show. Second,
+// current fix: inject the real cp/mv/rm command line into shell_
+// itself (shell_.commandLine().setText()+submitLine(), the exact same
+// mechanism shellChangeDirectory()/shellRunLsL() already use) and
+// switch to Shell mode -- the command's own -v output (and any -i
+// prompt, answered by typing a plain "y"/"n" line exactly like any
+// other SHELL input) now genuinely lives in shell_'s scrollback, so
+// LOG/later SHELL visits show it for real. Completion is detected
+// asynchronously (pollPendingCpMvRmShellRun(), called every run-loop
+// iteration -- see its own comment for why NOT a blocking wait here:
+// the exact same lesson pollLocateUpdateDbCompletion() already
+// learned for -g's GUI loop), which is also when the "land in the
+// destination directory" step (a real report + screenshots: legacy's
+// own command()/M_shell relaunch mechanism ends up there, matching
+// "最後には/tmpの(ls)になる") finally runs. K-51 ("with SHELL window")
+// and K-52 are thus fully unified on one mechanism now -- legacy's own
+// only distinction (bringing the session to the foreground
+// unconditionally vs. only when needed) collapses to "always show it",
+// a disclosed simplification favoring the LOG/freeze-safety guarantee
+// over replicating that one cosmetic difference. cpMvRmInteractive_ is
+// still consumed below (K-51/K-52 remain distinct key bindings/
+// Commands) even though it no longer changes how this actually runs.
 bool Application::executeCopy(const std::string &destination) {
   cpMvRmInteractive_ = false;  // consumed exactly once, regardless of outcome below
 
@@ -5893,23 +5950,17 @@ bool Application::executeCopy(const std::string &destination) {
     directoryView_.redraw();
     return false;
   }
-  bool ok = cpMvRmMode_.copyToInteractive(targets, destination) == 0;
-  // On success, land in the DESTINATION directory (a real report +
-  // screenshots: legacy's own command()/M_shell relaunch mechanism
-  // ends up there, matching "最後には/tmpの(ls)になる" -- seeing what
-  // was actually just copied, not the unchanged source listing).
-  // enterDirectory() itself is a safe no-op-on-failure (returns false,
-  // leaves currentDirectory_/entries_ untouched) if destination isn't
-  // actually a browsable directory (e.g. a single-file copy where
-  // `destination` was a new FILENAME, not a directory) -- falls back to
-  // the source directory exactly as before in that case. Never
-  // attempted at all on a failed copy, so a failed attempt still just
-  // reflects the (unchanged) source, same as before this fix.
-  if (!ok || !directoryMode_.enterDirectory(destination)) directoryMode_.enterDirectory(directoryMode_.currentDirectory());
-  return ok;
+  std::vector<std::string> argv = configuration_.commandFor(ConfiguredRole::Cp).argv;
+  if (argv.empty()) {
+    directoryView_.redraw();
+    return false;
+  }
+  for (const auto &target : targets) argv.push_back(target);
+  argv.push_back(destination);
+  return startCpMvRmShellRun(argv, destination, directoryMode_.currentDirectory());
 }
 
-// Same 2026-08-22 fix as executeCopy() -- see its own comment.
+// Same 2026-08-22 redesign as executeCopy() -- see its own comment.
 bool Application::executeMove(const std::string &destination) {
   cpMvRmInteractive_ = false;
 
@@ -5919,18 +5970,24 @@ bool Application::executeMove(const std::string &destination) {
     return false;
   }
   if (!checkTargetsWritable(targets)) return false;
-  bool ok = cpMvRmMode_.moveToInteractive(targets, destination) == 0;
-  // Same destination-landing behavior as executeCopy() -- see its own
-  // comment.
-  if (!ok || !directoryMode_.enterDirectory(destination)) directoryMode_.enterDirectory(directoryMode_.currentDirectory());
-  return ok;
+  std::vector<std::string> argv = configuration_.commandFor(ConfiguredRole::Mv).argv;
+  if (argv.empty()) {
+    directoryView_.redraw();
+    return false;
+  }
+  for (const auto &target : targets) argv.push_back(target);
+  argv.push_back(destination);
+  return startCpMvRmShellRun(argv, destination, directoryMode_.currentDirectory());
 }
 
 // Ported from m_dest()'s T_rm branch: `confirmation` must be exactly
 // "y" (matching legacy's `*ap->mess != 'y'` check) or nothing is
-// removed. Same 2026-08-22 fix as executeCopy() -- see its own
+// removed. Same 2026-08-22 redesign as executeCopy() -- see its own
 // comment (src/config.sh's own default RM role command, "rm -vri", is
-// `-i` too, so this had the exact same freeze risk CP did).
+// `-i` too, so this had the exact same freeze/LOG-visibility gap CP
+// did). No destination for RM -- always lands back in the source
+// directory once done (startCpMvRmShellRun()'s own empty-destination
+// branch).
 bool Application::executeRemove(const std::string &confirmation) {
   cpMvRmInteractive_ = false;
 
@@ -5940,9 +5997,68 @@ bool Application::executeRemove(const std::string &confirmation) {
     return false;
   }
   if (!checkTargetsWritable(targets)) return false;
-  bool ok = cpMvRmMode_.removeInteractive(targets) == 0;
-  directoryMode_.enterDirectory(directoryMode_.currentDirectory());
-  return ok;
+  std::vector<std::string> argv = configuration_.commandFor(ConfiguredRole::Rm).argv;
+  if (argv.empty()) {
+    directoryView_.redraw();
+    return false;
+  }
+  for (const auto &target : targets) argv.push_back(target);
+  return startCpMvRmShellRun(argv, /*destination=*/"", directoryMode_.currentDirectory());
+}
+
+// Shared tail of executeCopy()/executeMove()/executeRemove() (2026-08-22
+// redesign, see executeCopy()'s own comment): injects `argv` (already
+// including sources and, for CP/MV, the destination) into shell_'s
+// real, persistent SHELL session as one shell-quoted command line,
+// switches to Shell mode so the user watches/answers it exactly like
+// any other SHELL command, and remembers where to land afterward via
+// pendingCpMvRmShellRun_ -- see pollPendingCpMvRmShellRun().
+bool Application::startCpMvRmShellRun(const std::vector<std::string> &argv, const std::string &destination,
+                                       const std::string &sourceDirectory) {
+  if (!ensureShellActive()) {
+    directoryView_.redraw();
+    return false;
+  }
+  pendingCpMvRmShellRun_ = PendingCpMvRmShellRun{shell_.promptGeneration(), destination, sourceDirectory};
+  shell_.commandLine().setText(shellQuoteArgv(argv) + "; echo " + kCpMvRmExitMarker + "$?");
+  shell_.submitLine();
+  return true;
+}
+
+void Application::pollPendingCpMvRmShellRun() {
+  if (!pendingCpMvRmShellRun_) return;
+  if (!shell_.alive()) {
+    pendingCpMvRmShellRun_.reset();
+    return;
+  }
+  if (shell_.promptGeneration() == pendingCpMvRmShellRun_->promptGenerationBefore) return;  // still running
+  PendingCpMvRmShellRun run = *pendingCpMvRmShellRun_;
+  pendingCpMvRmShellRun_.reset();
+  currentMode_ = ApplicationMode::Directory;
+  // Scan scrollback (newest first) for the exit-code marker
+  // startCpMvRmShellRun() appended to the injected line -- see
+  // kCpMvRmExitMarker's own comment. Not found (shouldn't happen once
+  // the prompt has genuinely reappeared, but a bare "return" mid-
+  // pipeline or similar shell oddity is conceivable) is treated as
+  // failure, the conservative default.
+  bool ok = false;
+  const auto &lines = shell_.scrollback().lines();
+  static const std::size_t kMarkerLen = std::char_traits<char>::length(kCpMvRmExitMarker);
+  for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
+    if (it->text.compare(0, kMarkerLen, kCpMvRmExitMarker) == 0) {
+      ok = (it->text.substr(kMarkerLen) == "0");
+      break;
+    }
+  }
+  // Land in the destination directory only on success, and only when
+  // it resolves to something real (enterDirectory() is a safe no-op-
+  // on-failure otherwise -- e.g. a single-file copy where
+  // `destination` was a new FILENAME, not a directory); RM (empty
+  // destination), any failed run, and any CP/MV whose destination
+  // didn't pan out all fall back to reloading sourceDirectory.
+  if (!ok || run.destination.empty() || !directoryMode_.enterDirectory(run.destination))
+    directoryMode_.enterDirectory(run.sourceDirectory);
+  directoryView_.redraw();
 }
 
 // docs/HISTORY.md:1840 ("chown実行後のRM、MVではファイルが選べない...

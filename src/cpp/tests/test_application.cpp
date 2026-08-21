@@ -62,6 +62,27 @@ bool pumpUntil(Application &app, const std::function<bool()> &predicate, int max
   return predicate();
 }
 
+// executeCopy()/executeMove()/executeRemove() (2026-08-22 redesign, see
+// their own comment): the real cp/mv/rm command now runs by injecting
+// it into shell_'s own real, persistent SHELL session
+// (shell_.commandLine().setText()+submitLine(), currentMode() becomes
+// Shell) instead of a synchronous ChildProcess call -- completion is
+// noticed asynchronously by pollPendingCpMvRmShellRun() (called every
+// real run-loop iteration in app/main.cpp; tests call it themselves
+// here, same as pumpUntil() above stands in for the run loop's own
+// shell_.ptyFd() polling), which switches back to
+// ApplicationMode::Directory once the shell's prompt reappears. Any
+// test that submits a CP/MV/RM destination/confirm prompt now needs to
+// pump until that happens BEFORE checking the filesystem/mode-line
+// result, exactly like waiting for any other real bash round-trip
+// elsewhere in this file.
+bool pumpCpMvRmToCompletion(Application &app) {
+  return pumpUntil(app, [&]() {
+    app.pollPendingCpMvRmShellRun();
+    return app.currentMode() == fm::ApplicationMode::Directory;
+  });
+}
+
 struct Fixture {
   fs::path root;
   RecordingDisplay display{24, 80};
@@ -2673,7 +2694,7 @@ TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): refused when nothing has been l
 // ^X^Ke now correctly reports nothing logged for a CP/MV/RM failure --
 // this is intentional, not a regression left unnoticed.
 TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): a failed CP does NOT land in errorLogPath_ anymore -- "
-                           "it runs via the same real-terminal execution as K-51") {
+                           "it runs via shell_'s own real SHELL session, same as K-51") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -2687,7 +2708,13 @@ TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): a failed CP does NOT land in er
   // writes a diagnostic to stderr (unlike a merely-missing leaf name,
   // which cp happily creates).
   feedText((root / "no_such_parent" / "dest").string());
-  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // cp fails
+  // Submitting now only INJECTS the command into shell_ and switches to
+  // Shell mode -- it doesn't run cp synchronously, so this returns true
+  // (successfully injected) regardless of whether cp itself later
+  // succeeds or fails; pumpCpMvRmToCompletion() below waits for the
+  // actual result.
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
 
   CHECK_FALSE(app.handleCommand(Command::ShowErrorLog));  // nothing was ever captured to errorLogPath_
 }
@@ -4713,6 +4740,7 @@ TEST_CASE_FIXTURE(Fixture, "CP (^X^Kc, K-51 \"with SHELL window\"): still create
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M -- show the prompt
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
 
   CHECK(fs::exists(root / "cpmvdest" / "cpmv_a.txt"));
   CHECK(fs::exists(root / "cpmv_a.txt"));  // untouched by a copy
@@ -4745,6 +4773,7 @@ TEST_CASE_FIXTURE(Fixture, "CP: marking two files (in either order relative to a
   REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
 
   CHECK(fs::exists(root / "cpmvdest" / "cpmv_a.txt"));
   CHECK(fs::exists(root / "cpmvdest" / "cpmv_b.txt"));
@@ -4776,6 +4805,7 @@ TEST_CASE_FIXTURE(Fixture, "CP: copying a marked DIRECTORY creates the directory
   REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
 
   CHECK(fs::exists(root / "cpmvdest" / "nested_dir" / "nested.txt"));  // the directory itself, not dumped flat
   CHECK_FALSE(fs::exists(root / "cpmvdest" / "nested.txt"));         // the old (buggy) flattened location
@@ -4796,6 +4826,7 @@ TEST_CASE_FIXTURE(Fixture, "CP: a successful copy navigates the view to the dest
   REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
 
   CHECK(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
 }
@@ -4826,6 +4857,7 @@ TEST_CASE_FIXTURE(Fixture, "CP: a destination typed without a trailing slash sti
   REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "linkdest").string());  // no trailing slash -- exactly how a user would type it
   CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
 
   CHECK(indexOf("inside.txt") >= 0);       // the symlink's TARGET contents, not just the symlink's own line
   CHECK(indexOf("cpmv_a.txt") >= 0);       // the freshly-copied file too
@@ -4845,7 +4877,13 @@ TEST_CASE_FIXTURE(Fixture, "CP: a failed copy leaves the view on the (unchanged)
   REQUIRE(app.handleCommand(Command::StartCopy));
   REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
-  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
+  // Submitting only injects the command and switches to Shell mode --
+  // it doesn't know cp/"false" will fail until the shell actually runs
+  // it, so this returns true (successfully injected) even though the
+  // command itself is doomed; pumpCpMvRmToCompletion() below waits for
+  // the actual (failing) result via the exit-code marker.
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
 
   CHECK(app.directoryMode().currentDirectory() == path());
 }
@@ -4860,6 +4898,7 @@ TEST_CASE_FIXTURE(Fixture, "MV: moving a marked file removes the source and crea
   REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
 
   CHECK(fs::exists(root / "cpmvdest" / "cpmv_a.txt"));
   CHECK_FALSE(fs::exists(root / "cpmv_a.txt"));
@@ -4875,6 +4914,7 @@ TEST_CASE_FIXTURE(Fixture, "RM: confirming with 'y' actually deletes the marked 
   REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText("y");
   CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
 
   CHECK_FALSE(fs::exists(root / "cpmv_b.txt"));
 }
