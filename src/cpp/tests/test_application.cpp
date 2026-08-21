@@ -4418,6 +4418,43 @@ TEST_CASE_FIXTURE(Fixture, "^Xc shows \"CP\" Standout in the mode line's name sl
   CHECK(display.rowText(23) == beforeRow);  // the "CP" label is gone; ordinary directory path is back
 }
 
+// 2026-08-21 regression, a real report ("なんも変わってないんだが") +
+// reference screenshot from an actual pre-refactor binary run (=ef):
+// drawPromptLabel() never actually drew this message at all for CP/MV/
+// RM (unlike ExitConfirm's own "Exit (y/n) ? ", which it always has) --
+// ^X^M's destination/confirm prompt showed only the reversed "CP"/"MV"/
+// "RM" label jumping straight to the right-aligned source-path field,
+// easy to misread as "nothing happened" since there was no legible
+// prompt text at all.
+TEST_CASE_FIXTURE(Fixture, "^X^M's destination prompt shows plain (non-Standout) \"Destination ? \" text "
+                           "after the reversed \"CP\"/position fields, matching legacy") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+
+  std::string row = display.rowText(23);
+  std::size_t pos = row.find("Destination ? ");
+  REQUIRE(pos != std::string::npos);
+  CHECK_FALSE(display.standoutAt(23, static_cast<int>(pos)));  // plain, not reversed -- see drawPromptLabel()'s own comment
+  CHECK(display.standoutAt(23, 0));                            // "CP" itself is still reversed
+}
+
+// Same fix, RM's own "Delete ? " wording (legacy key.c's T_rm branch).
+TEST_CASE_FIXTURE(Fixture, "^X^M's confirm prompt shows \"Delete ? \" for RM, not \"Destination ? \"") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.handleCommand(Command::StartRemove));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+
+  CHECK(display.rowText(23).find("Delete ? ") != std::string::npos);
+  CHECK(display.rowText(23).find("Destination ? ") == std::string::npos);
+}
+
 // A stale arm's label must not keep showing after navigating away
 // either -- see DirectoryMode::enterDirectory()'s own comment.
 TEST_CASE_FIXTURE(Fixture, "^Xc's \"CP\" label clears on navigating to a different directory, even without "

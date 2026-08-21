@@ -3918,7 +3918,26 @@ bool Application::startDestinationPrompt() {
     return false;
   }
   cpMvRmInteractive_ = pending.interactive;
-  activatePrompt(pending.kind, "");
+  // Position text ("06/22 END", matching the underlying listing's own
+  // current cursor position) -- 2026-08-21 fix, part of the same "no
+  // 'Destination ? ' text at all" report (see drawPromptLabel()'s own
+  // comment): every other PromptKind that shows this passes it
+  // explicitly (ModeLine::format(cursorIndex+1, total)), but this call
+  // site left it at activatePrompt()'s own "" default, which also
+  // meant NOTHING advanced labelWidth before drawPromptLabel()'s
+  // "Destination ? " message, correct on its own but silently missing
+  // its neighboring position fields the reference screenshot (=ef)
+  // shows.
+  std::string positionText =
+      ModeLine::format(directoryView_.cursorIndex() + 1, static_cast<int>(directoryMode_.entries().size()));
+  activatePrompt(pending.kind, "", positionText);
+  // activatePrompt() infers promptCandidateListActive_ from positionText
+  // alone (see its own comment: every OTHER caller that passes a non-
+  // empty positionText really is editing a candidate from the still-
+  // visible ^J^S/^J^C list) -- there's no candidate list here, just a
+  // position display, so undo that inference explicitly rather than
+  // widen what non-empty positionText is allowed to mean everywhere.
+  promptCandidateListActive_ = false;
   return true;
 }
 
@@ -5306,6 +5325,30 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     }
     display_.putChar(' ');  // explicit plain gap before the next field -- see the same comment above
     labelWidth += 1;
+  }
+  // CopyDestination/MoveDestination/RemoveConfirm's own "Destination ?
+  // "/"Delete ? " message -- 2026-08-21 fix, a real report + reference
+  // screenshot (=ef, an actual legacy/pre-M_dest-refactor binary run
+  // side-by-side): this port never actually drew this text at all, so
+  // ^X^M's destination/confirm prompt showed only the reversed "CP"/
+  // "MV"/"RM" label and position fields, then jumped straight to the
+  // right-aligned source-path field with nothing legible in between --
+  // easy to misread as "the prompt isn't showing at all", which is
+  // exactly how the report first read ("なんも変わってないんだが" on
+  // the flow fix that DOES land here correctly once this text is
+  // visible). Ported from legacy key.c's own T_rm ("Delete ? ") vs.
+  // T_cp/T_mv (default, "Destination ? ") message text, drawn PLAIN
+  // (not Standout) matching the ExitConfirm branch's own "Exit (y/n) ?
+  // " precedent just above (disp.c's own vt_endstand() convention: the
+  // MODE NAME is reversed, the message after it is not) -- visible in
+  // the reference screenshot as a "hole" of normal (non-reversed) text
+  // punched through the row's own reversed fill.
+  if (kind == PromptKind::CopyDestination || kind == PromptKind::MoveDestination ||
+      kind == PromptKind::RemoveConfirm) {
+    std::string message = kind == PromptKind::RemoveConfirm ? "Delete ? " : "Destination ? ";
+    display_.moveCursor(row, labelWidth);
+    for (unsigned char c : message) display_.putChar(c);
+    labelWidth += static_cast<int>(message.size());
   }
   // staticMessage (2026-08-13): see this function's own declaration
   // comment -- draws a plain UNDERLINED status message at exactly the

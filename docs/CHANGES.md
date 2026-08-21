@@ -7692,6 +7692,61 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      のようにフラット化されていないことを、それぞれ確認した。
      `make usilic`クリーンビルド確認済み。
 
+390. **^X^Mの送信先/削除確認プロンプトに"Destination ? "/"Delete ? "
+    メッセージが一度も描画されていなかった不具合を修正**
+   - **報告**: 項目389をコミット・プッシュ後、「なんも変わってない
+     んだが。」との報告。当初`/usr/local/bin/usilic`(意図的に保持
+     している旧版比較用バイナリ)が古いままなのではと誤って疑い、
+     `sudo make install`を提案したが、「/usr/local/bin/usilicは旧版
+     なのでそれやると区別できなくなる。いつも通り、
+     「~/git/usilic/src/cpp/build/usilic -c git/usilic」で試したい
+     んだが。」と訂正された。
+   - **実機検証で判明した真因**: 実際に`~/git/usilic/src/cpp/build/
+     usilic -c git/usilic`をPTYで操作し(実リポジトリには書き込みを
+     せず`^G`でキャンセルする形で検証)、`^X^M`到達後の生バイト列を
+     直接確認したところ、`drawPromptLabel()`が"CP"ラベルと位置情報
+     欄を描画した直後、右端の送信元ディレクトリ欄(反転表示)へ
+     いきなり飛んでおり、その間にあるはずの"Destination ? "という
+     メッセージ文字列が一切出力されていないと判明。これは今回の
+     セッション(項目387〜389)で作った不具合ではなく、この
+     C++移植版がそもそも一度もこのメッセージを描画していなかった
+     という、より根本的な既存の欠落だった(項目387〜389で修正した
+     フロー自体は正しく機能していたが、肝心の目印となるテキストが
+     無いため「何も起きていないように見える」状態になっていた)。
+     `activatePrompt()`の`PromptKind::ExitConfirm`には元々
+     "Exit (y/n) ? "という同種のメッセージ描画専用分岐があった
+     (`drawPromptLabel()`)一方、`CopyDestination`/`MoveDestination`/
+     `RemoveConfirm`にはこれに相当する分岐が存在しなかった。
+   - **修正**: `drawPromptLabel()`に、`CopyDestination`/
+     `MoveDestination`は"Destination ? "、`RemoveConfirm`は
+     "Delete ? "(legacy key.cのT_rm/T_cp・T_mv分岐のメッセージ文字列
+     をそのまま踏襲)を描画する新分岐を追加。`ExitConfirm`の
+     "Exit (y/n) ? "と同じ作法(モード名部分のみ反転、メッセージ本体は
+     非反転の「素通しの穴」)で描画。あわせて`startDestinationPrompt()`
+     が`activatePrompt()`へ渡す`positionText`が常に空文字列のままだった
+     (=eiの"06/22 END"のような位置情報が表示されない)ことにも気づき、
+     `ModeLine::format(cursorIndex+1, entries().size())`で構築して渡す
+     よう修正。ただし`activatePrompt()`は「非空の`positionText`が来た
+     ら`^J^S`/`^J^C`候補一覧編集中とみなして`^N`/`^P`を候補巡回として
+     横取りする」という既存の暗黙の意味付けを持っており、CP/MV/RMには
+     候補一覧が存在しないため、`activatePrompt()`呼び出し直後に
+     `promptCandidateListActive_ = false`で明示的に打ち消し、
+     この暗黙の意味付け自体は変更しないようにした。
+   - **検証**: `make test` 797/797件・18719アサーション全通過(新規
+     doctest2件: `^X^M`後のモードライン行に非反転の"Destination ? "
+     が現れ"CP"自体は引き続き反転であること、RMでは"Delete ? "が
+     現れ"Destination ? "は現れないこと)。実PTYで`~/git/usilic/src/
+     cpp/build/usilic -c git/usilic`を実リポジトリに対して操作し
+     (書き込みは一切行わずキャンセルのみ)、生バイト列レベルで
+     "CP 02/22  9% Destination ? ...5030/git/usilic/"のように
+     参照スクリーンショット(=ef)と一致する構成で描画されることを
+     確認した。`make usilic`クリーンビルド確認済み。
+   - **教訓として記録**: 今後、モードライン/プロンプトの見た目に
+     関わる修正では、`promptActive()`や`fs::exists()`のような機能面
+     の確認だけでなく、実際に画面へ描画される文字列自体
+     (`display.rowText()`等)も最低1件は確認するテストを含めるよう
+     徹底する。
+
 ## 12. SHELL
 
 5. **Ubuntu実機での`tcb .`セグフォ、SHELLモード初期化まわりの表示バグ数件**
