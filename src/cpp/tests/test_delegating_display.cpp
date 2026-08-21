@@ -63,7 +63,7 @@ TEST_CASE("DelegatingDisplay: renderScrolled() forwards to the current backend")
   RecordingDisplay real(4, 20);
   DelegatingDisplay delegate(real);
 
-  delegate.renderScrolled({"first", "second", "third"}, 0, 0, {{"01/03 33%", true}});
+  delegate.renderScrolled({{"first", {}}, {"second", {}}, {"third", {}}}, 0, 0, {{"01/03 33%", true}});
   CHECK(real.rowText(0).substr(0, 5) == "first");
   CHECK(real.rowText(1).substr(0, 6) == "second");
   CHECK(real.rowText(2).substr(0, 5) == "third");

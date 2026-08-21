@@ -109,7 +109,7 @@ class TerminalDisplay : public Display {
   // even though the real-terminal drag-scroll fallback in main.cpp
   // currently drives ContentView::redraw() directly instead of
   // calling this.
-  void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+  void renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                        const std::vector<Display::ModeLineSegment> &modeLineSegments) override;
 
   // Row/column arguments for the change-scroll-region capability,
@@ -122,6 +122,8 @@ class TerminalDisplay : public Display {
 
  private:
   void applyScrollRegion();
+  // See its own .cpp comment.
+  void writeAttributedLine(const std::string &text, const std::vector<Display::AttributeRun> &runs);
 
   TerminalCapabilities caps_;
   int rows_, columns_;

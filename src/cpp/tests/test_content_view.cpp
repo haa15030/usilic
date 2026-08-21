@@ -97,6 +97,53 @@ TEST_CASE("Line::attributes: Bold/Underline byte-ranges render as their own SGR 
   CHECK(d.standoutAt(0, 17) == true);
 }
 
+TEST_CASE("Line::attributes: a CJK-heavy attributed line is walked by DISPLAY WIDTH, not raw byte "
+          "count -- 2026-08-21 regression for a real -g report (HELP chapter 4, screenshots =eb/=ea). "
+          "renderLine()'s widthAware gate used to also require line.attributes.empty(), so any FileMode "
+          "line with even one nroff-overstruck bold/underline word (HELP.jp's own section headings) fell "
+          "back to the old byte-counted loop -- fine for ASCII, but for CJK content (3 bytes/2 columns "
+          "per character) a maxCol budget sized in DISPLAY columns was being compared against a byte "
+          "count, silently dropping trailing characters and, worse, stopping mid-character. On "
+          "GraphicalDisplay specifically that left a dangling partial UTF-8 sequence in putByte()'s own "
+          "pendingUtf8 buffer (moveCursor() never used to reset it -- also fixed, see its own comment), "
+          "which spliced onto the NEXT row's first byte and committed one garbage glyph at column 0 -- "
+          "exactly the small black-square/hatched-box marks =ea showed on wrapped continuation rows.") {
+  // RecordingDisplay records one raw BYTE per putChar() call in its own
+  // column-indexed grid (unlike GraphicalDisplay's pendingUtf8-buffered
+  // commitGlyph(), which only advances by one cell per whole character)
+  // -- so the grid itself is constructed a full 12 columns wide (this
+  // line's total byte length) to safely record every byte regardless of
+  // outcome, then narrowed via setSize() (which -- see its own comment
+  // in recording_display.hpp -- only ever updates columns()'s return
+  // value, never the already-allocated grid vectors) so ContentView's
+  // own maxCol sees 10: strictly between this line's true display width
+  // (8) and its byte length (12), the exact byte-vs-column mismatch
+  // window the old code got wrong.
+  RecordingDisplay d(4, 12);  // +1 row beyond the 3-row viewport for redraw()'s own mode-line row
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setCursorHighlightEnabled(false);  // marked stays false for every row -- maxCol == columns(), not columns()-1
+  d.setSize(4, 10);
+  ContentView::Line line;
+  const std::string kA = "\xe3\x81\x82";  // U+3042 "あ", 3 bytes, display width 2
+  line.text = kA + kA + kA + kA;          // 4 chars: 12 bytes, 8 display columns -- fits within maxCol==10 columns
+  line.attributes = {{9, 12, fm::Display::Attribute::Bold}};  // bold the 4th (last) character only
+  v.setLines({line});
+  v.redraw();
+  // All 4 characters made it out whole -- the old byte-counted loop
+  // would have stopped once its byte count reached maxCol (10),
+  // writing only the 4th character's lead byte (a torn, incomplete
+  // sequence) and dropping its other two bytes entirely.
+  CHECK(d.rowText(0).substr(0, 12) == line.text);
+  // The 4th character's bold attribute (byte offset 9-12) still applies
+  // correctly -- proof the fix's attribute matching stayed keyed on the
+  // BYTE offset, not the display-column count, even now that both loops
+  // share the same widthAware walk.
+  CHECK(d.boldAt(0, 8) == false);  // 3rd character (bytes 6-8) is not bold
+  CHECK(d.boldAt(0, 9) == true);   // 4th character (bytes 9-11) is bold
+  CHECK(d.boldAt(0, 11) == true);
+}
+
 TEST_CASE("Line::highlightStartColumn: cursor-line reverse-video starts at the given column, not column 0") {
   // Ported from scroll.c's get_col()/init_col() (T_dir case) via
   // DirectoryMode::parseLsLine() -- see Line::highlightStartColumn's

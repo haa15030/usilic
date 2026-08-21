@@ -373,7 +373,7 @@ class GraphicalDisplay : public Display {
   // own comment for the real bug this fixes). Content itself never
   // scrolls into that row (see this method's own comment in the .cpp
   // for why it used to).
-  void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+  void renderScrolled(const std::vector<Display::ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                        const std::vector<Display::ModeLineSegment> &modeLineSegments) override;
 
   int cellHeightPixels() const;
@@ -412,7 +412,8 @@ class GraphicalDisplay : public Display {
   // see renderScrolled()'s own mode-line block) shifts where drawing
   // begins; every existing caller keeps passing 0 (a whole content
   // row always starts at the left edge) via the default.
-  void renderTextRun(int y, const std::string &line, Color fg, int startCol = 0);
+  void renderTextRun(int y, const std::string &line, Color fg, int startCol = 0,
+                      const std::vector<Display::AttributeRun> &attributes = {});
   // Sums the on-screen column width of `text` the same way
   // renderTextRun() advances `x` internally (multi-byte UTF-8 aware,
   // via the same fm::Utf8 helpers) -- used by the mode-line segment

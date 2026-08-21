@@ -16957,6 +16957,77 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      直接のユニットテスト対象外のため、コードレベルでの確認に
      留まる。
 
+386. **`-g`起動中、HELPをマウスドラッグ中は文字装飾(太字/下線)が消え、
+    解放後は左端に文字化けが発生する不具合を修正**
+   - **報告**: 「そのHELPだが、-g起動で４章を見ていたら表示に異変が
+     あった。マウスの左クリック(画面ドラッグスタンバイ状態)中だと
+     文字装飾が利かず=eb、解放時は画面左端にゴミ表示が発生=ea。」
+     (スクリーンショット2枚、HELP第4章Note、``TCB''/``PAGER''等の
+     重ね打ち太字部分)。
+   - **1点目(ドラッグ中の文字装飾消失、=eb)**: `GraphicalDisplay::
+     renderScrolled()`(ドラッグ/慣性スクロール中専用の別描画経路、
+     通常のCellグリッド/`commitGlyph()`/`flush()`とは完全に独立)は
+     行の`.text`しか受け取っておらず、`Display::AttributeRun`
+     (太字/下線のバイト範囲、`PipeBuffer`のnroff重ね打ち検出由来)を
+     一切見ていなかった。`Display::AttributeRun`を`Display`直下の
+     `ScrolledLine{text, attributes}`として再定義し
+     (`pipe_buffer.hpp`から`display.hpp`へ移設、循環インクルード
+     回避のため)、`Display::renderScrolled()`の引数を
+     `vector<string>`から`vector<ScrolledLine>`へ変更。
+     `TerminalDisplay::writeAttributedLine()`(新設)と
+     `GraphicalDisplay::renderTextRun()`(既存関数に`attributes`引数
+     追加)がそれぞれバイトオフセット一致で太字/下線を適用するよう
+     実装、`main.cpp`の`renderScrolled()`呼び出し元
+     (`runGuiPhase()`)で`line.attributes`を捨てずに渡すよう修正。
+     `DelegatingDisplay`/`RecordingDisplay`(テスト用)/テスト内の
+     ダミー`Display`実装2箇所も新シグネチャへ追随。
+   - **2点目(解放後の左端ゴミ、=ea)の真因調査**: 1点目とは別原因と
+     判明。`ContentView::renderLine()`の`widthAware`判定
+     (2026-08-19導入、項目385より前)が「`highlightStartColumn`も
+     `attributes`も無い行」だけをUTF-8文字単位で安全に歩く経路へ
+     通し、`attributes`を持つ行(HELP.jpのnroff太字/下線見出し等)は
+     旧来の「1バイト=1桁」決め打ちループへ残っていた。この旧ループの
+     打ち切り判定`col >= maxCol`は`col`をバイト数、`maxCol`を
+     `display_.columns()`(表示桁数)として比較しており、CJK混じりの
+     行(3バイト/2桁)では次元が食い違い、`PipeBuffer::wrapLine()`が
+     既に表示幅ぴったりに折り返し済みの行を、マルチバイト文字の
+     途中で不完全なまま打ち切ってしまっていた。`-c`(実端末)では
+     単に取りこぼしたバイトが次の行の先頭へ流れ込むだけで目立たな
+     かったが、`-g`の`GraphicalDisplay::putByte()`は未完成のUTF-8
+     バイト列を`pendingUtf8`という静的バッファへ貯めて次回に持ち
+     越す設計であり、かつ`moveCursor()`がこれをリセットしていな
+     かったため、次の行の先頭バイトが前の行の残骸と結合されて
+     不正なグリフ(コマ0の黒い四角/ハッチ模様)としてコミットされて
+     いた。ドラッグ中は完全に別経路(`renderScrolled()`、上記1点目)
+     が使われるため症状が出ず、解放後に通常の`flush()`/
+     `commitGlyph()`経路が初めて走った瞬間に露呈する、という
+     タイミングだった。
+   - **修正**: `ContentView::renderLine()`の`widthAware`判定から
+     `line.attributes.empty()`条件を削除(`highlightStartColumn`
+     の有無のみで判定)、UTF-8文字単位の安全な歩行ループへ太字/
+     下線判定(バイトオフセット`idx`基準、`AttributeRun`の規約と
+     一致)を統合。`highlightStartColumn`を使うDirectory一覧/
+     GrepModeのハイライトは`attributes`を同時に使うことが無いため
+     (確認済み)、旧ループはそちらだけに残し、太字/下線判定は
+     もはや到達不能になったため旧ループ側から削除。あわせて、
+     `GraphicalDisplay::moveCursor()`に`pendingUtf8`クリアを
+     追加(呼び出し元を問わず、未完成のマルチバイト列が行をまたいで
+     残留すること自体を構造的に防ぐ防御策)。
+   - **検証**: `make test` 786/786件・18594アサーション全通過
+     (新規doctest1件: `RecordingDisplay`のグリッドを実際のバイト数
+     分widerに構築した上で`columns()`だけを`setSize()`で狭め
+     `ContentView`側のmaxCol判定のみを絞る手法で、4文字のCJK
+     (12バイト/表示8桁)が`maxCol=10`で全て途切れず書き出される
+     こと・4文字目の太字属性がバイトオフセット通りに適用される
+     ことを確認。`RecordingDisplay::putAdvance()`の書き込み境界
+     チェックも`cols_`(`setSize()`で縮む値)ではなく実際に確保
+     済みのグリッドサイズ基準へ修正し、上記テスト手法自体が
+     安全に書き込めるようにした)。`make usilic`クリーンビルド
+     確認済み。`-g`実機での再現待ちだが、HELP.jpの太字/下線見出し
+     行という実際に踏んだ条件そのものをdoctestで再現・修正確認
+     できているため、コードレベルでは高い確度で修正できていると
+     考えている。
+
 ## 20. C++移植基盤(クラス移植・Applicationへの配線)
 
 16. **2026-07-21: ④C++移植に本格着手(ユーザー判断で①完了を待たず前倒し)、

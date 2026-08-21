@@ -642,15 +642,15 @@ void ContentView::renderLine(const Line &line, bool marked) {
   // reflow tests) deliberately rely on; forcing columns()-1 here
   // unconditionally regressed that.
   int ellipsisBudget = cursorHighlightEnabled_ ? std::max(0, display_.columns() - 1) : maxCol;
-  // widthAware (2026-08-19 fix): gated on "no highlightStartColumn/
-  // attributes" -- Directory's ls-listing and GrepMode's match
-  // highlighting, the two real users of those fields, need `col` to
-  // stay a precise BYTE offset for their own byte-range comparisons
+  // widthAware (2026-08-19 fix, widened 2026-08-21): gated on "no
+  // highlightStartColumn" -- Directory's ls-listing and GrepMode's
+  // match highlighting, the two real users of that field, need `col`
+  // to stay a precise BYTE offset for their own byte-range comparisons
   // below, so they keep the original per-byte loop regardless. Every
   // OTHER plain line -- LOCATE/DU/Archive results AND ordinary FileMode
-  // content alike -- walks `col` as a real display-column count
-  // instead, consuming each UTF-8 sequence as one unit (via
-  // Utf8::sequence_length()) and advancing by its own
+  // content alike, WITH or without line.attributes -- walks `col` as a
+  // real display-column count instead, consuming each UTF-8 sequence as
+  // one unit (via Utf8::sequence_length()) and advancing by its own
   // Utf8::display_width(). This part is NOT limited to results-list
   // Lines: FileMode's own content arrives from PipeBuffer::wrapLine(),
   // which ALREADY pre-wraps every line to fit exactly `width_` DISPLAY
@@ -661,6 +661,32 @@ void ContentView::renderLine(const Line &line, bool marked) {
   // sending a truncated UTF-8 sequence straight to the terminal (a real
   // report + raw-byte capture: a lone lead byte 0xe3 immediately
   // followed by a cursor-move escape, no continuation bytes at all).
+  // The original 2026-08-19 fix only widened the gate for highlight-
+  // free, ATTRIBUTE-free lines, leaving FileMode's own bold/underline
+  // (nroff-overstrike, e.g. HELP.jp's section headings) lines on the
+  // old byte-counted loop -- exactly the same class of bug survived
+  // there for any CJK-heavy bold/underlined line, undetected until a
+  // real report (2026-08-21, -g mode, HELP chapter 4 screenshots =eb/
+  // =ea): mid-drag rendering (a separate code path, see renderScrolled()'s
+  // own comment) never showed it, but the moment the normal flush()/
+  // commitGlyph() pipeline ran again on release, GraphicalDisplay::
+  // putByte()'s own pendingUtf8 buffer -- left holding a dangling
+  // partial sequence from the byte-counted loop's mid-character break,
+  // since moveCursor() never resets it between rows -- silently spliced
+  // the next row's first byte(s) onto those stale leftover bytes,
+  // committing one garbage glyph at column 0 of the FOLLOWING row (the
+  // small black-square/hatched-box marks in =ea, always on a wrapped
+  // continuation row, i.e. exactly the rows most likely to have just
+  // finished a line elsewhere in the paragraph mid-character). Since
+  // FileMode is the only caller of `line.attributes` at all (confirmed:
+  // no other Mode ever sets it, and it's never set alongside
+  // highlightStartColumn -- see Line::attributes' own comment), folding
+  // it into this same width-aware walk (attribute matching now keyed on
+  // the loop's own byte index `idx`, same convention AttributeRun
+  // already uses) is unconditionally safe: DirectoryMode/GrepMode's
+  // highlightStartColumn lines are untouched, and FileMode's attributed
+  // lines now get the identical character-safe, already-width-correct
+  // treatment plain FileMode lines already had.
   //
   // ellipsisEligible (2026-08-20 addition, same report as the comment
   // above -- docs/HISTORY.md's own long lines showed their MIDDLE
@@ -677,7 +703,7 @@ void ContentView::renderLine(const Line &line, bool marked) {
   // sets this true; FileMode's own (already width-wrapped) lines fall
   // through unedited into the widthAware walk below, which simply stops
   // at maxCol -- a character-safe plain cutoff, not an elision.
-  bool widthAware = !line.highlightStartColumn.has_value() && line.attributes.empty();
+  bool widthAware = !line.highlightStartColumn.has_value();
   std::string ellipsisText;
   const std::string *renderedText = &line.text;
   if (widthAware && line.ellipsisEligible && static_cast<int>(line.text.size()) > ellipsisBudget) {
@@ -691,6 +717,22 @@ void ContentView::renderLine(const Line &line, bool marked) {
       unsigned char c = static_cast<unsigned char>(text[idx]);
       int len = Utf8::sequence_length(c);
       len = std::min(len, static_cast<int>(text.size() - idx));
+      // Bold/underline matching, folded in here 2026-08-21 (see this
+      // function's own widthAware comment) -- keyed on `idx`, the
+      // loop's own running BYTE offset, matching AttributeRun{start,end}'s
+      // byte-offset convention exactly (unlike `col`, which is a
+      // display-column count in this branch and would misalign against
+      // CJK-heavy content).
+      if (!line.attributes.empty()) {
+        bool wantBold = false, wantUnderline = false;
+        for (const AttributeRun &run : line.attributes) {
+          if (static_cast<int>(idx) < run.start || static_cast<int>(idx) >= run.end) continue;
+          if (run.attribute == Display::Attribute::Bold) wantBold = true;
+          else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
+        }
+        setBold(wantBold);
+        setUnderline(wantUnderline);
+      }
       if (len <= 1) {
         // Same tab/control-byte handling as the byte-based loop below,
         // just column-counted by 1 (an ASCII byte is always 1 display
@@ -727,21 +769,17 @@ void ContentView::renderLine(const Line &line, bool marked) {
     setUnderline(false);
     return;
   }
+  // Reached only by highlightStartColumn lines now (2026-08-21) --
+  // Directory's ls-listing and GrepMode's match highlighting, neither
+  // of which ever sets line.attributes (see Line::attributes' own
+  // comment), so the bold/underline matching this loop used to also
+  // carry here was unreachable dead code; removed rather than left
+  // stale (see widthAware's own comment for where that matching moved).
   for (unsigned char c : *renderedText) {
     if (col >= maxCol) break;
     if (col == highlightStart) {
       markedNow = marked;
       setStandout(markedNow);
-    }
-    if (!line.attributes.empty()) {
-      bool wantBold = false, wantUnderline = false;
-      for (const AttributeRun &run : line.attributes) {
-        if (col < run.start || col >= run.end) continue;
-        if (run.attribute == Display::Attribute::Bold) wantBold = true;
-        else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
-      }
-      setBold(wantBold);
-      setUnderline(wantUnderline);
     }
     // Tab specifically excluded from the control-byte check below --
     // ported from disp.c's own "convert '\t' to ' '" comment (its

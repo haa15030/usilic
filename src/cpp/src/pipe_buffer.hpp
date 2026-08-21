@@ -8,11 +8,10 @@
 
 namespace fm {
 
-struct AttributeRun {
-  int start;  // byte offset into StyledLine::text
-  int end;
-  Display::Attribute attribute;
-};
+// AttributeRun itself now lives in display.hpp (Display::AttributeRun,
+// aliased back to plain fm::AttributeRun there) -- see its own comment
+// for why (renderScrolled()'s new ScrolledLine needed it, and
+// pipe_buffer.hpp already depends on display.hpp, not the reverse).
 
 struct StyledLine {
   std::string text;

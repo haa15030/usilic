@@ -217,6 +217,38 @@ class Display {
     bool standout = true;
   };
 
+  // Relocated here 2026-08-21 (was a free-standing fm::AttributeRun in
+  // pipe_buffer.hpp) so renderScrolled() below can carry bold/underline
+  // information through ScrolledLine without pipe_buffer.hpp's own
+  // dependency on THIS header becoming circular (pipe_buffer.hpp
+  // already includes display.hpp for Attribute; display.hpp can't
+  // include it back). A direct user report ("マウスの左クリック
+  // （画面ドラッグスタンバイ状態）中だと文字装飾が利かず" -- HELP's
+  // own bold/underlined words render plain during an active drag,
+  // confirmed by renderTextRun()'s own pre-existing comment: "No
+  // per-glyph bold info reaches this function... always NORMAL")
+  // finally gave this gap a concrete reason to close. `fm::AttributeRun`
+  // (the namespace-scope alias just below this class) keeps every
+  // existing caller (ContentView::Line::attributes, PipeBuffer's own
+  // StyledLine, CutMode/GrepMode's own overstrike-attribute plumbing)
+  // compiling unchanged.
+  struct AttributeRun {
+    int start;  // byte offset into the owning line's own text
+    int end;
+    Attribute attribute;
+  };
+
+  // A single renderScrolled() line: `text` plus the same bold/
+  // underline byte-range runs ContentView::Line::attributes/
+  // PipeBuffer::StyledLine::attributes already carry everywhere else
+  // -- see AttributeRun's own comment for why this lives here instead
+  // of reusing StyledLine itself (this header can't depend on
+  // pipe_buffer.hpp).
+  struct ScrolledLine {
+    std::string text;
+    std::vector<AttributeRun> attributes;
+  };
+
   // -- smooth (drag/coast) scroll rendering --
   // Renders `lines` (the FULL content, not just what's visible) with
   // row `topIndex` positioned `pixelOffsetY` pixels below its normal
@@ -243,8 +275,15 @@ class Display {
   // rendering (pixelOffsetY has no effect there beyond its sign) kept
   // independently usable rather than left as a stub, for whatever
   // future caller wants a Display-agnostic smooth-scroll render.
-  virtual void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+  virtual void renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                                const std::vector<ModeLineSegment> &modeLineSegments) = 0;
 };
+
+// See Display::AttributeRun's own comment: kept as a bare fm::AttributeRun
+// alias so every existing caller (ContentView::Line::attributes,
+// PipeBuffer::StyledLine::attributes, CutMode/GrepMode's own overstrike
+// plumbing) keeps compiling unchanged after AttributeRun's own
+// definition moved here from pipe_buffer.hpp.
+using AttributeRun = Display::AttributeRun;
 
 }  // namespace fm

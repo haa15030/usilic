@@ -47,7 +47,7 @@ class FakeDisplay : public Display {
   void close() override {}
   void leaveForExternalProgram() override {}
   void reenterFromExternalProgram() override {}
-  void renderScrolled(const std::vector<std::string> &, int, int, const std::vector<ModeLineSegment> &) override {}
+  void renderScrolled(const std::vector<ScrolledLine> &, int, int, const std::vector<ModeLineSegment> &) override {}
 
  private:
   int rows_ = 24, columns_ = 80;

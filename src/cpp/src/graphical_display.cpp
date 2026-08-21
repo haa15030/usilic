@@ -1055,6 +1055,16 @@ void GraphicalDisplay::flush() {
 }
 
 void GraphicalDisplay::moveCursor(int row, int col) {
+  // Defensive reset (2026-08-21, alongside the ContentView::renderLine()
+  // fix a real report traced this to -- see its own widthAware comment):
+  // a byte sequence mid-assembly in pendingUtf8 must never survive a
+  // cursor jump to a new position. Without this, some OTHER caller
+  // breaking off mid-multibyte-sequence (as renderLine()'s old byte-
+  // counted loop used to for attributed CJK lines) would leave stray
+  // bytes here that silently spliced onto the FIRST byte written at the
+  // new position, corrupting a single glyph there instead of just
+  // dropping the incomplete character that was actually abandoned.
+  impl_->pendingUtf8.clear();
   impl_->cursorRow = row;
   impl_->cursorCol = col;
 }
@@ -1818,7 +1828,8 @@ void GraphicalDisplay::setPointingCursor(bool active) {
 // font-fallback/fitGlyphRect() dance renderCell() already has its own
 // (necessarily separate, see renderScrolled()'s own class comment on
 // why this whole path is self-contained).
-void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, int startCol) {
+void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, int startCol,
+                                      const std::vector<Display::AttributeRun> &attributes) {
   SDL_Color sdlFg{fg.r, fg.g, fg.b, 255};
   int x = startCol;
   std::size_t pos = 0;
@@ -1829,6 +1840,24 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     int width = std::max(1, Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + pos), len));
     std::string glyph = line.substr(pos, len);
     if (glyph != " " && lead >= 0x20) {
+      // 2026-08-21 fix, a direct user report ("マウスの左クリック
+      // （画面ドラッグスタンバイ状態）中だと文字装飾が利かず" -- HELP's
+      // own bold/underlined words, e.g. "tcb", "``TCB''", render plain
+      // during an active drag/coast): see this function's own
+      // TTF_SetFontStyle() comment just below for the root cause this
+      // addresses (this used to always render NORMAL, no per-glyph
+      // style info reaching this function at all). Same byte-offset-
+      // range matching ContentView::renderLine()/TerminalDisplay::
+      // writeAttributedLine() already use (`pos < run.start ||
+      // pos >= run.end` -- this class's own convention throughout is
+      // byte offset == screen column for plain ASCII HELP text, the
+      // only content ever styled this way).
+      bool wantBold = false, wantUnderline = false;
+      for (const auto &run : attributes) {
+        if (static_cast<int>(pos) < run.start || static_cast<int>(pos) >= run.end) continue;
+        if (run.attribute == Display::Attribute::Bold) wantBold = true;
+        else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
+      }
       // See renderCell()'s own comment on why a fallback font is
       // consulted here too -- including the `isWide` check below,
       // ADDED 2026-08-10 (a real report, "慣性スクロール中は日本語も
@@ -1850,13 +1879,15 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
       if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
         renderFont = impl_->fallbackFont;
-      // This function previously never called TTF_SetFontStyle() at
-      // all, silently inheriting whatever style renderCell()/
-      // renderCursor() last left the font in; now made explicit so the
-      // scrolling render path matches the static one. No per-glyph bold
-      // info reaches this function (renderTextRun() only gets a flat
-      // fg color, not a Cell), so this is always NORMAL.
-      TTF_SetFontStyle(renderFont, TTF_STYLE_NORMAL);
+      // Same style computation as renderCell()'s own (`if (cell.bold)
+      // style |= TTF_STYLE_BOLD;` etc.) -- this function previously
+      // always rendered TTF_STYLE_NORMAL regardless of `attributes`
+      // (see this function's own 2026-08-21 fix comment above, right
+      // where wantBold/wantUnderline get computed).
+      int style = TTF_STYLE_NORMAL;
+      if (wantBold) style |= TTF_STYLE_BOLD;
+      if (wantUnderline) style |= TTF_STYLE_UNDERLINE;
+      TTF_SetFontStyle(renderFont, style);
       // Same half-width-hinting adjustment as renderCell() -- see its
       // own comment (item 264, replacing item 263's TTF_HINTING_LIGHT).
       TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE);
@@ -2142,7 +2173,7 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
 // it's a fixed row) so it live-updates during a drag/coast, which was
 // the ORIGINAL motivation for wanting mode-line support at all (see
 // CLAUDE.md's 2026-07-30 notes on reflecting scroll state there).
-void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                                        const std::vector<Display::ModeLineSegment> &modeLineSegments) {
   if (!impl_->outputEnabled) return;
   SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
@@ -2183,7 +2214,8 @@ void GraphicalDisplay::renderScrolled(const std::vector<std::string> &lines, int
     if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) continue;
     int y = i * impl_->cellHeight + pixelOffsetY - ((pixelOffsetY > 0) ? impl_->cellHeight : 0);
     if (y <= -impl_->cellHeight || y >= contentRows * impl_->cellHeight) continue;  // fully off-screen (or into the mode-line row)
-    renderTextRun(y, lines[lineIndex], Color{impl_->fg.r, impl_->fg.g, impl_->fg.b});
+    renderTextRun(y, lines[lineIndex].text, Color{impl_->fg.r, impl_->fg.g, impl_->fg.b}, 0,
+                  lines[lineIndex].attributes);
   }
 
   SDL_RenderSetClipRect(impl_->renderer, nullptr);  // mode-line row below (and any future margin decoration) isn't bound by this

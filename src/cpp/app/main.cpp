@@ -2114,9 +2114,17 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
     if (dragging || coastLevel > 0 || pixelOffset != 0) {
       wasActivelyScrolling = true;
-      std::vector<std::string> lines;
+      // 2026-08-21 fix, a direct user report ("マウスの左クリック
+      // （画面ドラッグスタンバイ状態）中だと文字装飾が利かず=eb"):
+      // used to drop line.attributes entirely (just .text), which is
+      // exactly why HELP's own bold/underlined words (nroff-style
+      // overstrike, see PipeBuffer's own class comment) rendered plain
+      // during an active drag/coast -- see Display::ScrolledLine's own
+      // comment for the rest of this fix (GraphicalDisplay::
+      // renderTextRun() now actually applies these).
+      std::vector<fm::Display::ScrolledLine> lines;
       lines.reserve(view.lines().size());
-      for (const auto &line : view.lines()) lines.push_back(line.text);
+      for (const auto &line : view.lines()) lines.push_back({line.text, line.attributes});
       gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments());
     } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.redrawSensitivePromptOrRecallActive() &&
                !app.awaitingLocateUpdateDb()) {

@@ -320,7 +320,38 @@ void TerminalDisplay::leaveForExternalProgram() {
 // computing exactly that from smoothScroll_/rows_.
 void TerminalDisplay::reenterFromExternalProgram() { applyScrollRegion(); }
 
-void TerminalDisplay::renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+// See ContentView::renderLine()'s own identical byte-range logic
+// (col < run.start || col >= run.end) -- this class's own convention
+// (byte offset == screen column, see ContentView's own class comment)
+// applies here too. Writes byte-by-byte (rather than one write() call
+// for the whole line) so Bold/Underline can toggle exactly at each
+// run's own boundary, same shape modeLineSegments' own Standout
+// toggling below already uses for its own (single, whole-segment)
+// runs.
+void TerminalDisplay::writeAttributedLine(const std::string &text, const std::vector<Display::AttributeRun> &runs) {
+  bool boldOn = false, underlineOn = false;
+  for (std::size_t col = 0; col < text.size(); col++) {
+    bool wantBold = false, wantUnderline = false;
+    for (const auto &run : runs) {
+      if (static_cast<int>(col) < run.start || static_cast<int>(col) >= run.end) continue;
+      if (run.attribute == Attribute::Bold) wantBold = true;
+      else if (run.attribute == Attribute::Underline) wantUnderline = true;
+    }
+    if (wantBold != boldOn) {
+      setAttribute(wantBold ? Attribute::Bold : Attribute::BoldOff);
+      boldOn = wantBold;
+    }
+    if (wantUnderline != underlineOn) {
+      setAttribute(wantUnderline ? Attribute::Underline : Attribute::UnderlineOff);
+      underlineOn = wantUnderline;
+    }
+    putChar(static_cast<unsigned char>(text[col]));
+  }
+  if (boldOn) setAttribute(Attribute::BoldOff);
+  if (underlineOn) setAttribute(Attribute::UnderlineOff);
+}
+
+void TerminalDisplay::renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                                       const std::vector<ModeLineSegment> &modeLineSegments) {
   (void)pixelOffsetY;  // no sub-row addressing on a real terminal -- see this method's own header comment
   if (!outputEnabled_) return;
@@ -329,7 +360,11 @@ void TerminalDisplay::renderScrolled(const std::vector<std::string> &lines, int 
     int lineIndex = topIndex + row;
     moveCursor(row, 0);
     clearToEndOfLine();
-    if (lineIndex >= 0 && lineIndex < static_cast<int>(lines.size())) write(lines[lineIndex]);
+    if (lineIndex >= 0 && lineIndex < static_cast<int>(lines.size())) {
+      const ScrolledLine &line = lines[lineIndex];
+      if (line.attributes.empty()) write(line.text);
+      else writeAttributedLine(line.text, line.attributes);
+    }
   }
   if (rows_ > 0) {
     // Per-segment Standout runs, same as ContentView::renderModeLine()

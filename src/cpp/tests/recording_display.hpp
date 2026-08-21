@@ -79,6 +79,11 @@ class RecordingDisplay : public Display {
   std::string attributeEscape(Attribute) const override { return ""; }
   int rows() const override { return rows_; }
   int columns() const override { return cols_; }
+  // Only updates what rows()/columns() report -- deliberately does NOT
+  // resize the already-allocated grid vectors below, so a test can
+  // construct a grid wide enough to safely record output, then narrow
+  // what columns() reports afterward to probe a caller's own maxCol-
+  // style budget without any risk of out-of-bounds writes.
   void setSize(int r, int c) override { rows_ = r; cols_ = c; }
   std::string keySequence(Key) const override { return ""; }
   bool outputEnabled() const override { return true; }
@@ -94,7 +99,7 @@ class RecordingDisplay : public Display {
   // (see its own comment) -- ignores pixelOffsetY, reuses this
   // class's own write()/moveCursor()/etc. so tests can assert on
   // rowText()/standoutAt() same as any other rendering path.
-  void renderScrolled(const std::vector<std::string> &lines, int topIndex, int pixelOffsetY,
+  void renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                        const std::vector<ModeLineSegment> &modeLineSegments) override {
     (void)pixelOffsetY;
     int contentRows = rows_ > 0 ? rows_ - 1 : 0;
@@ -102,7 +107,7 @@ class RecordingDisplay : public Display {
       int lineIndex = topIndex + row;
       moveCursor(row, 0);
       clearToEndOfLine();
-      if (lineIndex >= 0 && lineIndex < static_cast<int>(lines.size())) write(lines[lineIndex]);
+      if (lineIndex >= 0 && lineIndex < static_cast<int>(lines.size())) write(lines[lineIndex].text);
     }
     if (rows_ > 0) {
       // Per-segment Standout runs -- see Display::ModeLineSegment's
@@ -129,7 +134,14 @@ class RecordingDisplay : public Display {
 
  private:
   void putAdvance(int c) {
-    if (cursorRow_ >= 0 && cursorRow_ < rows_ && cursorCol_ >= 0 && cursorCol_ < cols_) {
+    // Bounds-checked against the actually-allocated grid (screen_'s own
+    // row width), NOT cols_ -- setSize() (see its own comment) only
+    // ever updates cols_ to change what columns() reports, deliberately
+    // without touching these vectors, so a caller narrowing cols_ to
+    // probe a smaller maxCol must still be able to write (and later
+    // read back) every byte the grid was actually constructed to hold.
+    if (cursorRow_ >= 0 && cursorRow_ < static_cast<int>(screen_.size()) && cursorCol_ >= 0 &&
+        cursorCol_ < static_cast<int>(screen_[cursorRow_].size())) {
       screen_[cursorRow_][cursorCol_] = static_cast<char>(c);
       standout_[cursorRow_][cursorCol_] = standoutActive_;
       bold_[cursorRow_][cursorCol_] = boldActive_;

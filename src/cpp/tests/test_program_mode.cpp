@@ -74,7 +74,7 @@ struct Fixture {
       void close() override {}
       void leaveForExternalProgram() override { leaveExternalProgramCount()++; }
       void reenterFromExternalProgram() override { reenterExternalProgramCount()++; }
-      void renderScrolled(const std::vector<std::string> &, int, int, const std::vector<ModeLineSegment> &) override {}
+      void renderScrolled(const std::vector<ScrolledLine> &, int, int, const std::vector<ModeLineSegment> &) override {}
     } instance;
     return instance;
   }
