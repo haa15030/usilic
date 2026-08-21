@@ -2278,18 +2278,22 @@ bool Application::handleCommand(Command command) {
     case Command::MarkAll:
       if (currentMode_ == ApplicationMode::Archive) {
         archiveMode_.markAll();
+        archiveView_.redraw();  // see ContentView::setMarkedPredicate()'s own comment
         return true;
       }
       if (currentMode_ != ApplicationMode::Directory) return false;
       directoryMode_.markAll();
+      directoryView_.redraw();
       return true;
     case Command::ClearAllMarks:
       if (currentMode_ == ApplicationMode::Archive) {
         archiveMode_.clearMarks();
+        archiveView_.redraw();
         return true;
       }
       if (currentMode_ != ApplicationMode::Directory) return false;
       directoryMode_.clearMarks();
+      directoryView_.redraw();
       return true;
     case Command::None:
       return false;
@@ -2794,11 +2798,13 @@ bool Application::toggleMark() {
   if (currentMode_ == ApplicationMode::Archive) {
     if (!archiveMode_.selectedEntry()) return false;
     archiveMode_.toggleMark(archiveView_.cursorIndex());
+    archiveView_.redraw();  // paints the mark's own Standout now -- see ContentView::setMarkedPredicate()
     return true;
   }
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (!directoryMode_.selectedEntry()) return false;
   directoryMode_.toggleMark(directoryView_.cursorIndex());
+  directoryView_.redraw();
   return true;
 }
 
@@ -3852,12 +3858,16 @@ bool Application::cycleCharset() {
 bool Application::startCopyPrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::CopyDestination, interactive, directoryMode_.currentDirectory()};
+  directoryMode_.setPendingOperationLabel("CP");
+  directoryView_.redraw();  // paints the "CP" label now -- see setPendingOperationLabel()'s own comment
   return true;
 }
 
 bool Application::startMovePrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::MoveDestination, interactive, directoryMode_.currentDirectory()};
+  directoryMode_.setPendingOperationLabel("MV");
+  directoryView_.redraw();
   return true;
 }
 
@@ -3869,6 +3879,8 @@ bool Application::startMovePrompt(bool interactive) {
 bool Application::startRemovePrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::RemoveConfirm, interactive, directoryMode_.currentDirectory()};
+  directoryMode_.setPendingOperationLabel("RM");
+  directoryView_.redraw();
   return true;
 }
 
@@ -3885,8 +3897,11 @@ bool Application::startDestinationPrompt() {
   if (!pendingCpMvRm_) return false;
   PendingCpMvRmOperation pending = *pendingCpMvRm_;
   pendingCpMvRm_.reset();
-  if (pending.directory != directoryMode_.currentDirectory()) return false;
-  if (directoryMode_.targetEntries().empty()) return false;
+  directoryMode_.clearPendingOperationLabel();
+  if (pending.directory != directoryMode_.currentDirectory() || directoryMode_.targetEntries().empty()) {
+    directoryView_.redraw();  // paints the label's removal now, matching startCopyPrompt()'s own redraw()
+    return false;
+  }
   cpMvRmInteractive_ = pending.interactive;
   activatePrompt(pending.kind, "");
   return true;

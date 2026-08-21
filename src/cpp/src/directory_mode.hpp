@@ -253,6 +253,21 @@ class DirectoryMode {
   // through it). A no-op if nothing is currently showing.
   void clearEditError();
 
+  // Shows `label` ("CP"/"MV"/"RM") plain-Standout in the mode line's
+  // `name` slot, replacing the directory path -- see the mode-line
+  // provider's own comment (directory_mode.cpp) for the full 2026-08-21
+  // rationale. Called by Application::startCopyPrompt()/
+  // startMovePrompt()/startRemovePrompt() when they arm an operation.
+  void setPendingOperationLabel(const std::string &label);
+  // Clears whatever setPendingOperationLabel() set. Called by
+  // Application::startDestinationPrompt() once it consumes the arm
+  // (whether it goes on to show the real prompt or not), and by
+  // enterDirectory() itself (alongside its own markedIndices_.clear())
+  // so a stale arm left over from navigating away doesn't keep
+  // displaying a label for an operation that's no longer actually
+  // armed.
+  void clearPendingOperationLabel();
+
  private:
   DirectoryEntry parseLsLine(const std::string &line) const;
   // Shared by openSelected()/goToParent(): saves the current cursor
@@ -274,6 +289,7 @@ class DirectoryMode {
   std::string searchAnnotation_;
   bool showEditError_ = false;
   std::string editErrorMessage_ = "Invalid mode";
+  std::string pendingOperationLabel_;
 };
 
 }  // namespace fm

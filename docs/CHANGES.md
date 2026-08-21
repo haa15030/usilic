@@ -7586,6 +7586,61 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      「存在しないPlainターゲットは書き込み不可」分岐を通す形で
      配線自体を検証した。`make usilic`クリーンビルド確認済み。
 
+388. **項目387のフォローアップ: ^Xc/m/r武装中の「CP」等モードライン
+    表示、および^Space等でのマーク自体の可視化フィードバックを追加
+    (「^Xc,m,r等反応無し」報告への対応)**
+   - **報告**: 「^Xc,m,r等反応無し。」項目387で^Xc等を「操作種別を
+     記憶するだけ」に変更した結果、押しても画面上に何の変化も無く
+     なり、キー入力自体が効いていないように見えていた。
+   - **調査(PTY自動テストによる実機検証)**: `^Xc`単体、および
+     `^Space`によるマークのいずれも、生バイト出力が完全に空
+     (`b''`)、つまり本当に画面が一切変化していないことを確認。
+     根本原因は2つ:
+     1. `startCopyPrompt()`等が`pendingCpMvRm_`を記憶するだけで、
+        モードライン側にそれを反映する仕組みが元々無かった(項目387
+        の設計自体の見落とし)。
+     2. `DirectoryMode::toggleMark()`/`markAll()`/`clearMarks()`は
+        `markedIndices_`という`std::set`を更新するだけで、
+        `isMarked()`は**このセッション以前から一度もレンダリング
+        側から参照されておらず**、マーク自体が可視化される仕組みが
+        この移植版に一度も存在していなかったと判明(既存のバグ、
+        今回の変更が引き金で表面化)。
+   - **修正1(武装インジケータ)**: `DirectoryMode`に
+     `setPendingOperationLabel(label)`/`clearPendingOperationLabel()`
+     を新設し、`showEditError_`と対になる`pendingOperationLabel_`
+     メンバーを追加。モードライン`name`欄の差し替えロジックへ
+     `else if`分岐として追加し、`showEditError_`(`^Je`の"Invalid
+     mode"、アンダーライン)とは異なりStandout(reverse-video、
+     `renderModeLine()`の`name`欄本来のデフォルト描画)で"CP"/"MV"/
+     "RM"を表示するようにした。`startCopyPrompt()`/`startMovePrompt()`/
+     `startRemovePrompt()`が武装時にセットし、`startDestinationPrompt()`
+     (^X^M、成功・失敗いずれの経路でも)およびDirectoryMode
+     `enterDirectory()`(ディレクトリ移動でスタールな武装になった
+     場合)でクリアする。
+   - **修正2(マークの可視化)**: `ContentView`に
+     `setMarkedPredicate(std::function<bool(int)>)`を新設し、
+     `redraw()`のメイン描画ループで`idx == highlighted`の判定に
+     `|| markedPredicate_(idx)`を追加(マーク済み行はカーソル行と
+     全く同じStandout表示になる)。`DirectoryMode`/`ArchiveMode`の
+     コンストラクタで、それぞれの`isMarked()`を渡す形で配線。
+   - **修正3(見落としていたredraw()呼び出し漏れ)**: 上記2つを実装
+     した後もテストが落ち、原因は`startCopyPrompt()`等や
+     `Application::toggleMark()`/`MarkAll`/`ClearAllMarks`ハンドラが
+     状態を更新するだけで`directoryView_.redraw()`(または
+     `archiveView_.redraw()`)を一度も呼んでいなかったこと。
+     `^Je`の`executeEdit()`が`reportEditError()`の直後に明示的に
+     `directoryView_.redraw()`を呼んでいる既存の作法を見落として
+     いたと判明し、同じ作法を追加した(これは単体テストで初めて
+     可視化欄をチェックしたことで発覚した実装漏れで、実機の
+     CUIメインループが常に再描画するかどうかとは無関係に、
+     Applicationの各コマンドハンドラ自身が責任を持つ設計だった)。
+   - **検証**: `make test` 792/792件・18670アサーション全通過
+     (新規doctest3件: `^Xc`直後にモードライン`name`欄が"CP"
+     Standoutで表示され`^X^M`後に元の値へ戻ること、`^Xc`武装後に
+     `^X^M`を押さずに別ディレクトリへ移動すると"CP"表示が消える
+     こと、`^Space`でマークした行がその後カーソルを移動しても
+     Standoutのままであること)。`make usilic`クリーンビルド確認済み。
+
 ## 12. SHELL
 
 5. **Ubuntu実機での`tcb .`セグフォ、SHELLモード初期化まわりの表示バグ数件**

@@ -729,6 +729,21 @@ class ContentView {
   using ModeLineFieldsProvider = std::function<ModeLineFields(int cursorIndex)>;
   void setModeLineFieldsProvider(ModeLineFieldsProvider provider);
 
+  // Called once per candidate row during redraw() (see its own comment)
+  // to decide whether a row should render highlighted (Standout, the
+  // exact same treatment the cursor row itself already gets -- see
+  // renderLine()'s own `marked` parameter) even when it ISN'T the
+  // cursor row. Added 2026-08-21 for DirectoryMode::isMarked() -- a
+  // real user report ("^Xc,m,r等反応無し") traced partly to marking
+  // (^Space) having NO visual feedback whatsoever: toggleMark() only
+  // ever mutated a std::set the render path never consulted, so a mark
+  // that had, in fact, registered was indistinguishable on screen from
+  // one that hadn't. A default-constructed (empty) predicate means only
+  // the cursor row is ever marked -- the original behavior, unchanged
+  // for every ContentView user that doesn't opt in (ArchiveMode's own
+  // marking, GrepMode, etc.).
+  void setMarkedPredicate(std::function<bool(int index)> predicate);
+
   // Overrides which screen row the mode-line draws on, decoupling it
   // from the default row0_+height_ -- nullopt (the default) keeps
   // every existing caller's behavior unchanged. Added for Shell's own
@@ -851,6 +866,7 @@ class ContentView {
   // cached from there instead of recomputed here) -- -1 until the
   // first renderModeLine() call with a non-empty `trailing` field.
   int lastModeLineTrailingEndColumn_ = -1;
+  std::function<bool(int)> markedPredicate_;
 
   int row0_ = 0, height_ = 0;
   ModeLineFieldsProvider modeLineFieldsProvider_;

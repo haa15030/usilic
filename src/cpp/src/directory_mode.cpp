@@ -10,6 +10,10 @@ namespace fm {
 DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &history,
                               const Configuration &configuration)
     : view_(view), modeStack_(modeStack), history_(history), configuration_(configuration) {
+  // Marked rows render Standout even off the cursor -- see
+  // ContentView::setMarkedPredicate()'s own comment for the real report
+  // this fixes (marking previously had zero visual feedback at all).
+  view_.setMarkedPredicate([this](int index) { return isMarked(index); });
   // Mode-line fields, ported from disp_window()'s own field layout for
   // the T_dir/file-selector case (name0[i]=='/' && *prev0==K_z keeps
   // the whole absolute path as-is, see its comment): the current
@@ -103,6 +107,27 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       if (message.size() < fields.name.size()) message.resize(fields.name.size(), ' ');
       fields.name = message;
       fields.nameUnderlined = true;
+    } else if (!pendingOperationLabel_.empty()) {
+      // "CP"/"MV"/"RM" in place of the directory path, plain Standout
+      // (renderModeLine()'s own default for `name` -- NOT nameUnderlined,
+      // which is reserved for the showEditError_ status-message
+      // convention above; this is a MODE indicator, not an error) --
+      // 2026-08-21 addition, a real user report ("^Xc,m,r等反応無し")
+      // after the same day's ^X^M flow change (see Application::
+      // startCopyPrompt()'s own comment): arming used to be completely
+      // silent (no prompt shown until ^X^M), so a keypress that had, in
+      // fact, registered looked indistinguishable from one that hadn't.
+      // Set by Application::startCopyPrompt()/startMovePrompt()/
+      // startRemovePrompt() via setPendingOperationLabel(), cleared by
+      // clearPendingOperationLabel() once startDestinationPrompt() (^X^M)
+      // consumes the arm (success OR failure/staleness) -- and here too,
+      // by enterDirectory() itself, so a stale arm left over from
+      // navigating away doesn't keep showing a label for an operation
+      // that's no longer actually armed (see PendingCpMvRmOperation's
+      // own comment for why the arm itself doesn't survive that either).
+      std::string label = pendingOperationLabel_;
+      if (label.size() < fields.name.size()) label.resize(fields.name.size(), ' ');
+      fields.name = label;
     }
     return fields;
   });
@@ -152,6 +177,13 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   searchAnnotation_.clear();  // a fresh `ls` invalidates the old search -- see setSearchAnnotation()'s own comment
   entries_ = std::move(entries);
   markedIndices_.clear();  // marks are scoped to the listing they were made in; a fresh `ls` invalidates them
+  // A CP/MV/RM arm is scoped to the directory it was made in too (see
+  // Application::PendingCpMvRmOperation's own comment) -- clearing the
+  // LABEL here as well (not just Application's own state) keeps the
+  // mode line from continuing to show "CP"/etc. for an arm that a fresh
+  // `ls` (e.g. navigating to a different directory) has already made
+  // stale.
+  clearPendingOperationLabel();
   view_.setLines(std::move(lines));
 
   // K-48 (^X^D, "DIR: Select directory name")'s own data source --
@@ -184,6 +216,10 @@ void DirectoryMode::reportError(const std::string &message) {
 }
 
 void DirectoryMode::clearEditError() { showEditError_ = false; }
+
+void DirectoryMode::setPendingOperationLabel(const std::string &label) { pendingOperationLabel_ = label; }
+
+void DirectoryMode::clearPendingOperationLabel() { pendingOperationLabel_.clear(); }
 
 const std::string &DirectoryMode::currentDirectory() const { return currentDirectory_; }
 const std::vector<DirectoryEntry> &DirectoryMode::entries() const { return entries_; }

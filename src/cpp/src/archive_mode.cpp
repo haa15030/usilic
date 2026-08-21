@@ -32,6 +32,10 @@ std::unique_ptr<ArchiveReader> readerFor(ArchiveKind kind) {
 
 ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuration &configuration)
     : view_(view), history_(history), configuration_(configuration) {
+  // Marked rows render Standout even off the cursor -- same gap and
+  // same fix as DirectoryMode's own (see ContentView::
+  // setMarkedPredicate()'s own comment).
+  view_.setMarkedPredicate([this](int index) { return isMarked(index); });
   // Mode-line fields (2026-08-19 REDESIGN, a direct user correction:
   // "旧ARCのモードラインはお手本じゃなく、正しくは「ARC」「01/14
   // TOP」「1774」「(tar)」「/Users/haa15030/git/usilic/src/utf8.tar」

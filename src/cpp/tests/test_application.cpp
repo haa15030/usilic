@@ -4385,6 +4385,71 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X c / ^X m / ^X r only ARM the operation 
   CHECK(app.promptActive());
 }
 
+// 2026-08-21 addition, a real follow-up report ("^Xc,m,r等反応無し"):
+// arming used to be completely silent (no prompt shown until ^X^M), so
+// a keypress that had, in fact, registered was indistinguishable on
+// screen from one that hadn't. ^Xc/^Xm/^Xr now show "CP"/"MV"/"RM"
+// Standout in the mode line's name slot (the SAME slot/rendering
+// reportEditError()'s "Invalid mode" uses, just Standout instead of
+// Underline -- see DirectoryMode's own mode-line-provider comment)
+// while armed, clearing once ^X^M consumes the arm.
+TEST_CASE_FIXTURE(Fixture, "^Xc shows \"CP\" Standout in the mode line's name slot while armed, clearing "
+                           "once ^X^M shows the real prompt") {
+  REQUIRE(app.start(path()));
+  std::string beforeRow = display.rowText(23);
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm CP
+  std::string expected = "CP";
+  CHECK(display.rowText(23).substr(0, expected.size()) == expected);
+  CHECK(display.standoutAt(23, 0));
+  CHECK_FALSE(display.underlineAt(23, 0));  // Standout, not the reportEditError()-style Underline
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M -- consumes the arm, shows the real prompt
+  CHECK(app.promptActive());
+  CHECK(app.feedByte(0x07, std::nullopt));  // ^G -- cancel back out to plain Directory mode
+  CHECK(display.rowText(23) == beforeRow);  // the "CP" label is gone; ordinary directory path is back
+}
+
+// A stale arm's label must not keep showing after navigating away
+// either -- see DirectoryMode::enterDirectory()'s own comment.
+TEST_CASE_FIXTURE(Fixture, "^Xc's \"CP\" label clears on navigating to a different directory, even without "
+                           "ever pressing ^X ^M") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCopy));  // arm CP
+  CHECK(display.rowText(23).substr(0, 2) == "CP");
+
+  int idx = indexOf("subdir/");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // navigate into subdir/
+
+  CHECK(display.rowText(23).substr(0, 2) != "CP");
+}
+
+// docs/HISTORY.md's own real report continued: marking (^Space) itself
+// had zero visual feedback either -- toggleMark() only ever mutated a
+// std::set the render path never consulted. Marked rows now render
+// Standout the same way the cursor row already does (see ContentView::
+// setMarkedPredicate()'s own comment), independent of cursor position.
+TEST_CASE_FIXTURE(Fixture, "^Space marks a row Standout even when the cursor later moves off it") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  // DirectoryMode's own highlightStartColumn (permissions/date prefix
+  // before the filename, see its own comment) means Standout starts at
+  // the filename, not column 0 -- same convention the cursor row's own
+  // highlight already follows.
+  int nameCol = app.directoryMode().entries()[idx].nameStartColumn;
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  CHECK(display.standoutAt(idx, nameCol));  // marked AND still the cursor row
+
+  app.handleCommand(Command::MoveDown);
+  CHECK(app.directoryMode().selectedEntry()->name != "cpmv_a.txt");  // cursor moved off it
+  CHECK(display.standoutAt(idx, nameCol));  // still Standout -- marked, not just "was the cursor row"
+}
+
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^K c / ^X ^K m / ^X ^K r (K-51/K-53/K-55) each arm the same "
                            "operation, ^X ^M still shows the prompt") {
   REQUIRE(app.start(path()));
