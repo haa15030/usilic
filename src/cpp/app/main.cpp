@@ -2432,6 +2432,37 @@ int main(int argc, char **argv) {
                    << (scrollValues.size() - tunableLevels) << " trailing value(s) will be ignored.\n";
       }
       fm::applyScrollSpeedOverride(scrollValues);
+    } else if (std::strcmp(argv[i], "-i") == 0) {
+      // User-tunable drag-release "inertia" DISTANCE thresholds, in
+      // pixels -- the counterpart to "-u" (SPEED) above, added
+      // 2026-08-21 after a direct user clarification that "-u" alone
+      // doesn't cover what felt off: "-uオプションはマウスホイールの
+      // 回転角度とスクロール速度との関係。それは解決済みだが、今イチ
+      // なのはマウスドラッグを解除したときのカーソル移動幅とスクロール
+      // 速度との関係" -- see fm::applyReleaseDistanceOverride()'s own
+      // comment for exactly how these values replace
+      // levelForReleaseDistance()'s own built-in doubling/divisor/bias
+      // formula. `thresholds[k-1]` is the minimum release-drag pixel
+      // distance needed to reach level k -- e.g. "-i 20 40 80 160 320
+      // 480 640 800 960 1120" (10 values) means a release under 20px
+      // doesn't coast at all, 20-39px lands on level 1, ..., 1120px+
+      // reaches the fastest level. Same "consume every following
+      // plain-digit argument" parsing as "-u" above.
+      std::vector<long> distanceValues;
+      while (i + 1 < argc && *argv[i + 1] && std::all_of(argv[i + 1], argv[i + 1] + std::strlen(argv[i + 1]),
+                                                          [](unsigned char c) { return std::isdigit(c); })) {
+        distanceValues.push_back(std::atol(argv[++i]));
+      }
+      if (distanceValues.empty()) {
+        std::cerr << "usilic: -i requires one or more pixel-distance values (e.g. -i 20 40 80 160 320).\n";
+        return 1;
+      }
+      int tunableLevels = static_cast<int>(fm::kScrollSpeedLevels.size()) - 1;
+      if (static_cast<int>(distanceValues.size()) > tunableLevels) {
+        std::cerr << "usilic: -i only tunes " << tunableLevels << " levels; the extra "
+                   << (distanceValues.size() - tunableLevels) << " trailing value(s) will be ignored.\n";
+      }
+      fm::applyReleaseDistanceOverride(distanceValues);
     } else positionalArgs.push_back(argv[i]);
   }
   if (forceCui && forceGui) {

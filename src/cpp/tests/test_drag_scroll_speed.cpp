@@ -1,6 +1,7 @@
 #include "drag_scroll_speed.hpp"
 #include "doctest.h"
 
+using fm::applyReleaseDistanceOverride;
 using fm::applyScrollSpeedOverride;
 using fm::kScrollSpeedLevels;
 using fm::levelForReleaseDistance;
@@ -179,4 +180,48 @@ TEST_CASE("applyScrollSpeedOverride: empty values is a no-op") {
     CHECK(kScrollSpeedLevels[i].microseconds == original[i].microseconds);
     CHECK(kScrollSpeedLevels[i].busyIterations == original[i].busyIterations);
   }
+}
+
+// applyReleaseDistanceOverride() -- the "-i" CLI flag (2026-08-21, a
+// direct user clarification that "-u" only tunes per-level SPEED, not
+// which level a given release DISTANCE selects in the first place:
+// "-uオプションはマウスホイールの回転角度とスクロール速度との関係。
+// それは解決済みだが、今イチなのはマウスドラッグを解除したときの
+// カーソル移動幅とスクロール速度との関係"). Mutates the same kind of
+// shared global state applyScrollSpeedOverride() does -- every case
+// below resets it back to empty (the built-in-formula default)
+// afterward for the same reason (not leaking into other test cases).
+TEST_CASE("applyReleaseDistanceOverride: explicit thresholds replace the built-in formula entirely, no "
+          "kReleaseLevelBias stacked on top") {
+  applyReleaseDistanceOverride({20, 40, 80, 160, 320, 480, 640, 800, 960, 1120});
+  CHECK(levelForReleaseDistance(10, 20) == 0);    // below the first threshold: not a flick at all
+  CHECK(levelForReleaseDistance(20, 20) == 1);    // exactly at threshold 1
+  CHECK(levelForReleaseDistance(39, 20) == 1);    // still level 1, just under threshold 2
+  CHECK(levelForReleaseDistance(40, 20) == 2);    // exactly at threshold 2
+  CHECK(levelForReleaseDistance(1120, 20) == 10);  // exactly at the last threshold
+  CHECK(levelForReleaseDistance(5000, 20) == 10);  // far past the last threshold -- still clamps, doesn't grow past it
+  applyReleaseDistanceOverride({});
+}
+
+TEST_CASE("applyReleaseDistanceOverride: cellHeightPixels is ignored once an override is active -- thresholds "
+          "are raw pixels, not cellHeight-relative like the built-in formula") {
+  applyReleaseDistanceOverride({100});
+  CHECK(levelForReleaseDistance(150, 10) == levelForReleaseDistance(150, 500));
+  applyReleaseDistanceOverride({});
+}
+
+TEST_CASE("applyReleaseDistanceOverride: fewer thresholds than kScrollSpeedLevels' own tunable count still "
+          "clamps sensibly at the highest reachable level") {
+  applyReleaseDistanceOverride({50});
+  CHECK(levelForReleaseDistance(10, 20) == 0);
+  CHECK(levelForReleaseDistance(50, 20) == 1);
+  CHECK(levelForReleaseDistance(100000, 20) == 1);  // only one threshold given -- level 1 is as high as it gets
+  applyReleaseDistanceOverride({});
+}
+
+TEST_CASE("applyReleaseDistanceOverride: empty thresholds falls back to the built-in formula, unaffected") {
+  int before = levelForReleaseDistance(350, 20);
+  applyReleaseDistanceOverride({100, 200});  // set, then clear -- must not leave any residual effect
+  applyReleaseDistanceOverride({});
+  CHECK(levelForReleaseDistance(350, 20) == before);
 }

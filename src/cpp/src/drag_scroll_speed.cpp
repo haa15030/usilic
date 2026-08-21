@@ -64,10 +64,25 @@ void applyScrollSpeedOverride(const std::vector<long> &values) {
   }
 }
 
+// See applyReleaseDistanceOverride()'s own header comment. Empty by
+// default (built-in formula active); set once at startup by "-i", same
+// lifetime/ownership shape as kScrollSpeedLevels itself.
+std::vector<long> gReleaseDistanceOverride;
+
+void applyReleaseDistanceOverride(const std::vector<long> &thresholds) { gReleaseDistanceOverride = thresholds; }
+
 int levelForReleaseDistance(int pixels, int cellHeightPixels) {
-  int height = std::max(cellHeightPixels, 1);
   int magnitude = std::abs(pixels);
   int maxLevel = static_cast<int>(kScrollSpeedLevels.size()) - 1;
+  if (!gReleaseDistanceOverride.empty()) {
+    int level = 0;
+    for (long threshold : gReleaseDistanceOverride) {
+      if (magnitude < threshold) break;
+      level++;
+    }
+    return std::min(level, maxLevel);
+  }
+  int height = std::max(cellHeightPixels, 1);
   if (magnitude < height / 4) return 0;
   // Levels 1-4 (this table's own originally usleep-calibrated,
   // precisely-timed tier -- see kScrollSpeedLevels' own comment) keep

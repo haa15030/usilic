@@ -73,7 +73,48 @@ void applyScrollSpeedOverride(const std::vector<long> &values);
 // cellHeightPixels so the same physical flick feels similarly fast
 // regardless of font size. Direction is the caller's job (sign of the
 // same summed distance) -- this function only looks at magnitude.
+//
+// When applyReleaseDistanceOverride() below has set explicit
+// thresholds, those are used verbatim instead of this built-in
+// doubling/divisor/bias formula -- see its own comment.
 int levelForReleaseDistance(int pixels, int cellHeightPixels);
+
+// The DISTANCE-side counterpart to applyScrollSpeedOverride() above --
+// deliberately a separate function/CLI flag (2026-08-21, "-i", a
+// direct user clarification after "-u"'s own per-level SPEED tuning
+// was mistaken for covering this too: "-uオプションはマウスホイールの
+// 回転角度とスクロール速度との関係。それは解決済みだが、今イチなのは
+// マウスドラッグを解除したときのカーソル移動幅とスクロール速度との
+// 関係"). "-u" only tunes how FAST each already-selected level moves;
+// this tunes WHICH level a given release distance selects in the
+// first place -- levelForReleaseDistance()'s own built-in curve
+// (doubling for levels 1-4, then dividing by kUpperTierGrowthDivisor
+// for 5+, plus a flat +kReleaseLevelBias shift, all hardcoded
+// constants tuned once against exactly one real machine/hand) is
+// exactly the "cursor movement width <-> resulting speed" mapping the
+// report says doesn't match, losing the drag's own felt "勢い"
+// (momentum) at release.
+//
+// `thresholds[k-1]` is the MINIMUM pixel magnitude a release needs to
+// reach level k (1-indexed, same convention as kScrollSpeedLevels/
+// applyScrollSpeedOverride() -- index 0 is never a threshold, level 0
+// always means "below thresholds[0], not a flick at all"). Magnitude
+// below thresholds[0] returns level 0; at or above the last given
+// threshold returns however many thresholds were reached, capped at
+// kScrollSpeedLevels.size()-1 same as the built-in formula. When set
+// (non-empty), REPLACES levelForReleaseDistance()'s own formula
+// entirely (no separate kReleaseLevelBias shift on top -- the given
+// thresholds already encode wherever the caller wants each level to
+// land, stacking a second adjustment on top would just make the
+// values harder to reason about). No-op (falls back to the built-in
+// formula) if `thresholds` is empty. Unlike applyScrollSpeedOverride()'s
+// own per-value skip-if-<=0, every value here is used as given --
+// there's no sub-microsecond-granularity concern to work around on the
+// distance side, so a caller-provided 0 or negative threshold is
+// taken at face value (each threshold must be strictly increasing to
+// behave sensibly, but that's the caller's own responsibility, same as
+// choosing sensible values for "-u").
+void applyReleaseDistanceOverride(const std::vector<long> &thresholds);
 
 // Scales a per-PIXEL ScrollStep (see kScrollSpeedLevels, calibrated
 // for GraphicalDisplay's dot-by-dot renderScrolled()) up to a per-ROW
