@@ -4440,6 +4440,69 @@ TEST_CASE_FIXTURE(Fixture, "^Xc shows the directory path (not \"(ls)\") in the t
   CHECK(row.find(tail) != std::string::npos);
 }
 
+// 2026-08-22 fix, a real reference screenshot (=ed, an actual legacy
+// binary run) contradicting the port's own behavior (=ei): unlike
+// ordinary `ls` browsing, the cursor row shows NO highlight at all
+// right after arming -- Standout is reserved entirely for genuinely
+// marked entries. See ContentView::setCursorRowAlsoHighlighted()'s
+// own comment.
+TEST_CASE_FIXTURE(Fixture, "^Xc: the cursor row itself shows no Standout while armed and nothing is "
+                           "marked yet") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  int nameCol = app.directoryMode().entries()[idx].nameStartColumn;
+  CHECK(display.standoutAt(idx, nameCol));  // ordinary `ls` browsing: the cursor row IS highlighted
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm CP
+  CHECK_FALSE(display.standoutAt(idx, nameCol));  // armed: no highlight until something is actually marked
+}
+
+TEST_CASE_FIXTURE(Fixture, "^Xc: marking an entry while armed still highlights it (only the mark matters, "
+                           "not cursor position)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  int nameCol = app.directoryMode().entries()[idx].nameStartColumn;
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm CP
+
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  CHECK(display.standoutAt(idx, nameCol));  // marked -- highlighted even though cursor highlighting is suppressed
+
+  app.handleCommand(Command::MoveDown);
+  CHECK(display.standoutAt(idx, nameCol));       // still marked, still highlighted after the cursor moves off
+  int newIdx = indexOf(app.directoryMode().selectedEntry()->name);
+  int newNameCol = app.directoryMode().entries()[newIdx].nameStartColumn;
+  CHECK_FALSE(display.standoutAt(newIdx, newNameCol));  // the NEW cursor row itself is still not highlighted
+}
+
+// 2026-08-22 addition, a real user report ("CPでは^Gが利かない"): ^G
+// used to fall straight through to ordinary directoryMode_.goBack()
+// without even looking at pendingCpMvRm_, so it either did nothing
+// useful or navigated away while STILL leaving the arm (and its own
+// "CP" label / suppressed cursor highlight) active.
+TEST_CASE_FIXTURE(Fixture, "^G cancels a pending CP/MV/RM arm instead of navigating, and restores the "
+                           "cursor row's own highlight") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  int nameCol = app.directoryMode().entries()[idx].nameStartColumn;
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  CHECK_FALSE(display.standoutAt(idx, nameCol));  // armed: no cursor highlight
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());  // didn't navigate anywhere
+  CHECK(display.rowText(23).substr(0, 2) != "CP");          // the arm (and its "CP" label) is gone
+  CHECK(display.standoutAt(idx, nameCol));                  // ordinary cursor highlight is back
+
+  // The arm is really gone, not just visually -- ^X^M now has nothing
+  // to consume.
+  CHECK_FALSE(app.handleCommand(Command::StartDestinationPrompt));
+}
+
 // 2026-08-21 addition: '.'/','  as direct "mark, then move" macros --
 // a real user report + demonstrated reference (=ed-=eh): "コピーした
 // いディレクトリを選択しようにも[return]でそこへ移動してしまっては

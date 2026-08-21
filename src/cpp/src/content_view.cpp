@@ -928,6 +928,8 @@ void ContentView::setModeLineFieldsProvider(ModeLineFieldsProvider provider) {
 
 void ContentView::setMarkedPredicate(std::function<bool(int)> predicate) { markedPredicate_ = std::move(predicate); }
 
+void ContentView::setCursorRowAlsoHighlighted(bool enabled) { cursorRowAlsoHighlighted_ = enabled; }
+
 void ContentView::setModeLineRow(std::optional<int> row) { modeLineRow_ = row; }
 
 std::string ContentView::truncateFieldByKind(const std::string &text, TrailingKind kind, int budget) const {
@@ -1540,7 +1542,9 @@ void ContentView::redraw() {
     if (row < rowOffset) continue;  // blank padding above the content, bottom-anchored only
     int idx = topIndex_ + (row - rowOffset);
     if (idx < static_cast<int>(lines_.size())) {
-      renderLine(lines_[idx], idx == highlighted || (markedPredicate_ && markedPredicate_(idx)));
+      bool cursorRow = idx == highlighted && cursorRowAlsoHighlighted_;
+      bool markedRow = markedPredicate_ && markedPredicate_(idx);
+      renderLine(lines_[idx], cursorRow || markedRow);
       renderedAny = true;
     }
   }

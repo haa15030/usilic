@@ -744,6 +744,21 @@ class ContentView {
   // marking, GrepMode, etc.).
   void setMarkedPredicate(std::function<bool(int index)> predicate);
 
+  // While true (the default), the cursor row is ALWAYS drawn Standout
+  // even with nothing marked -- every existing caller's ordinary
+  // convention. Set false for DirectoryMode's CP/MV/RM-armed browsing
+  // (Application::startCopyPrompt()/startMovePrompt()/startRemovePrompt()):
+  // 2026-08-22 fix, a real reference screenshot (=ed, an actual legacy
+  // binary run) directly contradicting the port's own behavior (=ei):
+  // "（ls）と違って最初は何も選択していないためハイライト表示も無く"
+  // -- unlike ordinary `ls` browsing, legacy's own M_cp/M_mv/M_rm
+  // sub-mode shows NO highlight at all until something is actually
+  // marked (the reference's own cursor row shows only a plain text-
+  // cursor block, not full-row reverse); Standout there is reserved
+  // entirely for genuinely marked entries (setMarkedPredicate()'s own
+  // result), independent of where the cursor happens to sit.
+  void setCursorRowAlsoHighlighted(bool enabled);
+
   // Overrides which screen row the mode-line draws on, decoupling it
   // from the default row0_+height_ -- nullopt (the default) keeps
   // every existing caller's behavior unchanged. Added for Shell's own
@@ -867,6 +882,7 @@ class ContentView {
   // first renderModeLine() call with a non-empty `trailing` field.
   int lastModeLineTrailingEndColumn_ = -1;
   std::function<bool(int)> markedPredicate_;
+  bool cursorRowAlsoHighlighted_ = true;
 
   int row0_ = 0, height_ = 0;
   ModeLineFieldsProvider modeLineFieldsProvider_;

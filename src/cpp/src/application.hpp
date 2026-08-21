@@ -1447,6 +1447,9 @@ class Application {
   // startCopyPrompt()/startMovePrompt()/startRemovePrompt() most
   // recently armed -- see PendingCpMvRmOperation's own comment.
   bool startDestinationPrompt();
+  // ^G while an operation is armed (before ^X^M) -- see its own
+  // definition comment.
+  bool cancelPendingCpMvRm();
   bool startExitPrompt();
   bool startDuPrompt();
   // K-57/K-58 (^X^Ka/^Xa, M_arc/M_arc2, "ARC: Expand archive"):

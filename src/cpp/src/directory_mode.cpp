@@ -205,6 +205,11 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   // `ls` (e.g. navigating to a different directory) has already made
   // stale.
   clearPendingOperationLabel();
+  // Same restore cancelPendingCpMvRm()/startDestinationPrompt() do on
+  // their own un-arm paths -- a stale arm cleared here (navigating to a
+  // different directory) must not leave the cursor row's own highlight
+  // still suppressed.
+  view_.setCursorRowAlsoHighlighted(true);
   view_.setLines(std::move(lines));
 
   // K-48 (^X^D, "DIR: Select directory name")'s own data source --

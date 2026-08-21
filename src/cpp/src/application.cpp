@@ -2084,6 +2084,13 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Directory && directoryMode_.hasSearchAnnotation()) {
         return lastDirectorySearchKind_ == DirectorySearchKind::Cut ? returnToCutResults() : returnToGrepResults();
       }
+      // ^G while a CP/MV/RM operation is armed -- see
+      // cancelPendingCpMvRm()'s own comment ("CPでは^Gが利かない").
+      // Checked ahead of the plain goBack() fallback, same as
+      // hasSearchAnnotation() just above.
+      if (currentMode_ == ApplicationMode::Directory && pendingCpMvRm_) {
+        return cancelPendingCpMvRm();
+      }
       return directoryMode_.goBack();
     // ':'/';' -- literally Back+MoveDown+Enter / Back+MoveUp+Enter.
     // 2026-08-16: a real user report ("「;」「:」の機能が逆") showed the
@@ -3905,6 +3912,10 @@ bool Application::startCopyPrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::CopyDestination, interactive, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("CP");
+  // No cursor-row highlight while armed -- see ContentView::
+  // setCursorRowAlsoHighlighted()'s own comment (=ed reference: legacy
+  // shows none at all here, until something is actually marked).
+  directoryView_.setCursorRowAlsoHighlighted(false);
   directoryView_.redraw();  // paints the "CP" label now -- see setPendingOperationLabel()'s own comment
   return true;
 }
@@ -3913,6 +3924,7 @@ bool Application::startMovePrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::MoveDestination, interactive, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("MV");
+  directoryView_.setCursorRowAlsoHighlighted(false);
   directoryView_.redraw();
   return true;
 }
@@ -3926,6 +3938,27 @@ bool Application::startRemovePrompt(bool interactive) {
   if (currentMode_ != ApplicationMode::Directory) return false;
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::RemoveConfirm, interactive, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("RM");
+  directoryView_.setCursorRowAlsoHighlighted(false);
+  directoryView_.redraw();
+  return true;
+}
+
+// K-71-adjacent (^G while a CP/MV/RM operation is armed): a real user
+// report ("CPでは^Gが利かない") -- ^G's normal Directory-mode handling
+// (directoryMode_.goBack(), navigate up/back) never even looked at
+// pendingCpMvRm_, so pressing it while armed either did nothing useful
+// or silently navigated away while STILL leaving the arm (and its own
+// "CP" label / suppressed cursor highlight) active. Checked ahead of
+// the normal Back handling in handleCommand()'s own Command::Back case
+// (matching that switch's existing "special case before the generic
+// directoryMode_.goBack() fallback" precedent, e.g. hasSearchAnnotation()
+// just above it) -- cancels the arm and restores ordinary browsing,
+// without navigating anywhere (legacy's own ^G-out-of-M_cp/M_mv/M_rm
+// doesn't change directory either).
+bool Application::cancelPendingCpMvRm() {
+  pendingCpMvRm_.reset();
+  directoryMode_.clearPendingOperationLabel();
+  directoryView_.setCursorRowAlsoHighlighted(true);
   directoryView_.redraw();
   return true;
 }
@@ -3944,6 +3977,7 @@ bool Application::startDestinationPrompt() {
   PendingCpMvRmOperation pending = *pendingCpMvRm_;
   pendingCpMvRm_.reset();
   directoryMode_.clearPendingOperationLabel();
+  directoryView_.setCursorRowAlsoHighlighted(true);
   if (pending.directory != directoryMode_.currentDirectory() || directoryMode_.targetEntries().empty()) {
     directoryView_.redraw();  // paints the label's removal now, matching startCopyPrompt()'s own redraw()
     return false;
