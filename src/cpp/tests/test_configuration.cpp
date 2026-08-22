@@ -29,6 +29,38 @@ TEST_CASE("built-in defaults: LOCATE's UpdateDb role uses the platform-appropria
 #endif
 }
 
+// 2026-08-22 addition (docs/CHANGES.md item 406): unwired by default
+// (every other test in this file constructs a bare Configuration and
+// never calls this setter) -- LocateUserDb/LocateUserDbBuild simply
+// stay unconfigured, matching setFallbackShellArgv()'s own "caller
+// resolves the filesystem detail" boundary right above it.
+TEST_CASE("built-in defaults: LocateUserDb/LocateUserDbBuild stay unconfigured until "
+          "setUserLocateDatabasePath() is called") {
+  Configuration config;
+  CHECK(config.commandFor(ConfiguredRole::LocateUserDb).argv.empty());
+  CHECK(config.commandFor(ConfiguredRole::LocateUserDbBuild).argv.empty());
+}
+
+TEST_CASE("setUserLocateDatabasePath: wires LocateUserDb to `locate -d <path>` and LocateUserDbBuild to a "
+          "find+locate.mklocatedb pipeline writing to <path> -- macOS only") {
+  Configuration config;
+  config.setUserLocateDatabasePath("/tmp/example/locate.db");
+#ifdef __APPLE__
+  CHECK(config.commandFor(ConfiguredRole::LocateUserDb).argv ==
+        std::vector<std::string>{"locate", "-d", "/tmp/example/locate.db"});
+  std::vector<std::string> buildArgv = config.commandFor(ConfiguredRole::LocateUserDbBuild).argv;
+  REQUIRE(buildArgv.size() == 3);
+  CHECK(buildArgv[0] == "sh");
+  CHECK(buildArgv[1] == "-c");
+  CHECK(buildArgv[2].find("/usr/libexec/locate.mklocatedb") != std::string::npos);
+  CHECK(buildArgv[2].find("/tmp/example/locate.db") != std::string::npos);
+  CHECK(buildArgv[2].find("chmod 600") != std::string::npos);
+#else
+  CHECK(config.commandFor(ConfiguredRole::LocateUserDb).argv.empty());
+  CHECK(config.commandFor(ConfiguredRole::LocateUserDbBuild).argv.empty());
+#endif
+}
+
 TEST_CASE("built-in defaults: the ARCHIVE table's compiled-in suffixes resolve without any rc text") {
   Configuration config;
   ArchiveKind kind = ArchiveKind::None;

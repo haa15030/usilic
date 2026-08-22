@@ -57,6 +57,19 @@ enum class ConfiguredRole {
   Rpm,
   Rpm2Cpio,
   DebExtract,
+  // LOCATE's own personal database (2026-08-22 addition, docs/CHANGES.md
+  // item 406 -- see setUserLocateDatabasePath()'s own comment): macOS
+  // only. The system-wide database (ConfiguredRole::UpdateDb/Locate) is
+  // built by `locate.updatedb` running as `nobody`, which can't read
+  // INTO the user's own home directory at all on modern macOS (new
+  // accounts default to `750`, no "other" access) -- so a plain `.txt`
+  // sitting directly under `~` never gets indexed no matter how often
+  // the system database is refreshed. These two roles build/search a
+  // second, personal database instead, run entirely under the real
+  // user's own account (no root needed), covering exactly the blind
+  // spot the system one has.
+  LocateUserDb,       // search: `locate -d <personal db path>`
+  LocateUserDbBuild,  // build: a `find`+`locate.mklocatedb` pipeline, macOS only
 };
 
 // Parses usilicrc (tcbrc) and answers configuration lookups via
@@ -200,6 +213,22 @@ class Configuration {
   // fallback and supplies it here. Not calling this at all leaves
   // shellArgv() empty when no SHELL directive was present.
   void setFallbackShellArgv(std::vector<std::string> argv);
+
+  // Wires ConfiguredRole::LocateUserDb/LocateUserDbBuild's default
+  // commands to `path` (main.cpp's own `usilicDir + "locate.db"`,
+  // called right after loadRcText() -- same "caller resolves the
+  // filesystem detail, Configuration just stores it" boundary as
+  // setFallbackShellArgv() above, and for the same reason: Configuration
+  // itself never calls getenv()/touches the filesystem). Not called at
+  // all (as in every existing test that constructs a bare Configuration
+  // without wiring this) leaves both roles unconfigured -- commandFor()
+  // returns an empty ProgramCommand, and LocateMode already treats an
+  // empty argv as "this feature is unavailable", so the personal
+  // database is silently a no-op rather than a hard requirement.
+  // Linux-only builds (`#else` branch): a no-op -- see the enum's own
+  // comment on why this is macOS-specific (a direct user decision:
+  // "macOS限定項目は、すでにGUIもあるので同様でいい").
+  void setUserLocateDatabasePath(const std::string &path);
 
   // -- role-based built-in commands (ls/du/cp/mv/rm/groff/man/... ) --
   // Only Cp/Mv/Rm can be overridden by a usilicrc directive (CP/MV/RM

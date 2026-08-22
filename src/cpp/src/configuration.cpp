@@ -157,6 +157,27 @@ std::optional<SuffixLine> parseSuffixLine(const std::string &trimmedLine, std::v
   return result;
 }
 
+#ifdef __APPLE__
+// setUserLocateDatabasePath()'s own quoting for `path` (an absolute
+// filesystem path, not attacker-controlled, but still single-quoted
+// defensively -- a stray `'` in it would otherwise break the `sh -c`
+// script it's embedded into). Same POSIX single-quote-escaping shape
+// as application.cpp's own shellQuoteArg() (a separate translation
+// unit, not shared -- this file already has its own small local
+// helpers for the same reason, see parseSuffixLine() above).
+std::string shellQuoteSinglePath(const std::string &path) {
+  std::string quoted = "'";
+  for (char c : path) {
+    if (c == '\'')
+      quoted += "'\\''";
+    else
+      quoted += c;
+  }
+  quoted += "'";
+  return quoted;
+}
+#endif
+
 }  // namespace
 
 Configuration::Configuration() {
@@ -522,6 +543,34 @@ std::vector<std::string> Configuration::shellArgv() const {
 }
 
 void Configuration::setFallbackShellArgv(std::vector<std::string> argv) { fallbackShellArgv_ = std::move(argv); }
+
+void Configuration::setUserLocateDatabasePath(const std::string &path) {
+#ifdef __APPLE__
+  roleCommands_[ConfiguredRole::LocateUserDb] = {{"locate", "-d", path}, std::nullopt};
+  // Faithfully mirrors /usr/libexec/locate.updatedb's own real pipeline
+  // (`find -s $SEARCHPATHS ... -or -print | $mklocatedb -presort > $tmp`,
+  // then `install $tmp $FCODES`) -- just scoped to $HOME instead of "/",
+  // and run under the real user's own account instead of `su -fm nobody`
+  // (the whole point: `nobody` can't even list a `750` home directory,
+  // see the enum's own comment). `-s` matches locate.updatedb's own
+  // flag (sorted output, required by `-presort`). Builds into a `.tmp`
+  // sibling and `mv`s it into place atomically, same as locate.updatedb's
+  // own `install $tmp $FCODES` -- so a concurrent LocateUserDb search
+  // never reads a half-written database. `chmod 600` last: the database
+  // is a flat list of every path under $HOME (readable metadata even for
+  // files the reader couldn't open), and ~/.usilic/ itself is `755` (an
+  // earlier, unrelated default -- see main()'s own usilicDir mkdir(2)
+  // comment), so this file needs its own explicit restriction rather
+  // than inheriting the directory's.
+  std::string tmpPath = path + ".tmp";
+  std::string script = "find -s \"$HOME\" -print 2>/dev/null | /usr/libexec/locate.mklocatedb -presort > " +
+                        shellQuoteSinglePath(tmpPath) + " && mv -f " + shellQuoteSinglePath(tmpPath) + " " +
+                        shellQuoteSinglePath(path) + " && chmod 600 " + shellQuoteSinglePath(path);
+  roleCommands_[ConfiguredRole::LocateUserDbBuild] = {{"sh", "-c", script}, std::nullopt};
+#else
+  (void)path;  // see the enum's own comment -- Linux-only builds leave both roles unconfigured
+#endif
+}
 
 ProgramCommand Configuration::commandFor(ConfiguredRole role) const {
   auto it = roleCommands_.find(role);

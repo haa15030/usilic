@@ -10240,3 +10240,37 @@ startCutPrompt()(^Jc/^J^C、Directoryから明示的に新規のディレクト�
 早期リターン条件にPromptKind::CutPatternを追加し、GrepPatternと同じ扱いにしました。これにより、CUTの直接入力候補一覧から^Gした場合も、呼び出し時点で記録済みの起動元のモード(Directory上の^J^BならDirectory)へ直接戻るようになりました。
 
 `make test` 818/818件・18915アサーション全通過(新規doctest1件、旧来のフォールバック挙動に依存していた既存テスト1件を修正)。`make usilic`クリーンビルド確認済みです。今回はこのセッション環境のPTYハーネスが起動直後に安定して反応しなくなる現象(usilicではなくこのツール実行環境固有の問題と見られます)に阻まれ、実PTYでの生バイト列確認は行えませんでした。returnFromListBrowser()のコード読解と新規doctestによる確認に留まっているため、念のため実機でのご確認をお願いします。
+
+<LOCATEについて、ホームディレクトリ配下の.txtファイルにマッチしないのでgeminiに聞いたらこんな回答があった。
+「~/.locate」は「~/.usilic」へ読み替えたとしてusilicにそのまま組み込んだ場合、副作用があるかどうか教えて。
+'/Users/haa15030/Documents/macOSでiCloud Driveのデータベースが構築されない.pdf'
+
+>PDFとご質問の内容を確認しました。まず前提の診断から。
+
+実は今回の「ホームディレクトリ直下の.txtが引っかからない」件は、iCloud Driveの問題ではなさそうです。~/tonymacx86.txt等、実際にホーム直下に平文の.txtファイルが多数存在するのを確認しましたが、これらはDocuments/Desktop(iCloud対象)ではなくホーム直下そのものです。そして~自身のパーミッションがdrwxr-x---(750、staffグループまでで"other"には一切権限無し)でした。locate.updatedbはnobodyユーザーとして走り、nobodyはstaffグループに属さないため"other"扱いになり、ホームディレクトリの中を覗くことすら出来ません。これはmacOSがCatalina以降、新規ユーザーのホームディレクトリを標準で750にするようになった仕様で、iCloud固有の話より手前の、より根本的な原因です(iCloud Drive自体――~/Library/Mobile Documents――は個別にさらにdr-x------でも塞がれているので、Geminiの指摘自体は別途正しいです)。
+
+ご質問への回答: Geminiの「自分のユーザー権限で専用DBを構築する」という手法自体は、この750問題も一緒に解決します(nobodyを経由しないので権限の壁に関係なくなるため)。「~/.usilic」への読み替えは自然で問題ありませんが、組み込む場合の副作用は主に3点です。
+
+1. プライバシー範囲が大きく広がる: find $HOMEで自分の権限で走らせると、~/Library配下(ブラウザプロファイル、~/.ssh等)まで無差別にパス名がDBへ載ります。~/.usilicは現在755(DB内のファイルも644想定)なので、このマシンの他ユーザーからパス一覧が読めてしまう――単一ユーザー機なら実害は薄いですが、0600相当への配慮は要ります。
+2. 既存のlocateロールとの共存設計: 今の^Jlはシステムdb(/var/db/locate.database)を素のlocateで引いているだけなので、個人DBを追加するなら「両方検索してマージ」か「個人DBに全面置き換え」かを決める必要があります(後者だと/usr等システム領域がヒットしなくなる)。
+3. macOS限定機能になる: Linuxのupdatedbは通常root+cronでホームディレクトリも問題なく拾えるため、この機能は#ifdef __APPLE__で分岐する話になります(既存のUpdateDbロール選択と同じ作法)。
+
+逆に良い副作用として、個人DBはsudo不要になるため、config.cpp側で「sudoは別途フラグすべき設計判断として意図的に組み込んでいない」としていた懸念が解消され、^Jlの更新が初めて自己完結する、という利点もあります。
+
+実装するなら、対象範囲(ホーム全体 or 特定フォルダのみ)・マージ方式・パーミッションの3点だけ先に決めれば着手できます。進めますか？
+
+<1.複数ユーザーなんて最初から想定していないので問題無い。
+2.両方検索してマージを希望。
+3.macOS限定項目は、すでにGUIもあるので同様でいい。
+
+ただ2.のマージでもsudoは必要ない？
+
+>修正・検証・コミット・プッシュ済みです(項目406)。
+
+マージでもsudoは必要ありません。検索(locate)は元々読み取り専用でsudo無関係、個人用DBの構築(find+locate.mklocatedb、自分の一般ユーザー権限で実行)も元々sudo不要です。変わらずsudoが要るのは既存のシステム全体DBの更新(/usr/libexec/locate.updatedb)だけで、これは本ポートが意図的にsudoでラップしていない従来通りの制約です(config.cpp自身のコメント参照)。つまり今回追加した個人用DBの半分は、むしろ「sudo無しで完結する初めての更新経路」という利点になります。
+
+ConfiguredRoleにLocateUserDb(検索、locate -d <個人DB>)とLocateUserDbBuild(構築、macOS限定)を追加し、Configuration::setUserLocateDatabasePath()(main()側でusilicDir + "locate.db"を渡すだけの薄いセッター、Configuration自身はgetenv()もファイルシステムも直接触らない既存の境界を踏襲)が両ロールのデフォルトコマンドを組み立てるようにしました。構築コマンドは/usr/libexec/locate.updatedb自身の実際のパイプラインをそのまま$HOMEに絞って再現し(atomic install + chmod 600)、LocateMode::search()はシステムDBとLocateUserDbの両方を検索して重複除去しつつマージ、LocateMode::startUpdateDb()は両方の構築コマンドを1つのsh -cにまとめて1つのdetached childとして起動する設計にしました(Application側の既存の単一pid待機の仕組みは一切変更していません)。
+
+再調査したところ、実は今回の「ホーム直下の.txtが引っかからない」件はiCloud Driveの問題ではなく、~自体のパーミッション(750、新規macOSユーザーの標準)によりnobodyがホームディレクトリの中を覗くことすら出来ないのが直接の原因でした。今回の個人用DBはnobodyを経由しないため、この根本原因も一緒に解決しています。
+
+`make test` 825/825件・18941アサーション全通過(新規doctest8件)。`make usilic`クリーンビルド確認済みです。さらに実機の$HOMEに対し本番と全く同じシェルパイプラインを実際に実行し(scratch領域へ出力、~/.usilic/自体は変更せず)、locate -d <個人DB> tonymacx86.txt/log.txtがいずれもホーム直下の実ファイルを正しく返すことを確認しました(修正前はシステムDBだけでは検索不可)。実行時間は実機で約6秒でした。

@@ -36,6 +36,15 @@ class LocateMode {
   // command couldn't be run (locate not configured/installed) or
   // query is empty. A successful search with zero matches is not a
   // failure -- results() is simply empty afterward.
+  //
+  // 2026-08-22 addition (docs/CHANGES.md item 406, a direct user
+  // request: "両方検索してマージを希望"): if ConfiguredRole::
+  // LocateUserDb is also configured (macOS, see startUpdateDb()'s own
+  // comment), its own results are appended after the system database's
+  // own, de-duplicated -- a path present in both only appears once,
+  // system-database order winning ties. The personal database not
+  // existing yet (before its first build) is treated the same as "zero
+  // matches", not a failure -- see LocateMode::search()'s own comment.
   bool search(const std::string &query);
 
   // Starts `updatedb` (to refresh the locate database, K-39, ^Jl) in
@@ -52,6 +61,19 @@ class LocateMode {
   // runDetached()); the caller polls ChildProcess::hasExited() on the
   // returned pid alongside its own keyboard input loop. Returns -1 if
   // the command couldn't be launched at all (not configured/installed).
+  // 2026-08-22 addition (docs/CHANGES.md item 406): if
+  // ConfiguredRole::LocateUserDbBuild is also configured (macOS,
+  // Configuration::setUserLocateDatabasePath() -- unconfigured in
+  // every existing test, so this is a pure no-op there), its build
+  // command is chained after the system update's own, both inside ONE
+  // detached `sh -c` child -- so this still returns exactly one pid
+  // and Application::awaitingLocateUpdateDb()/pollLocateUpdateDbCompletion()
+  // need no changes at all. Chained with `;`, not `&&`: the personal
+  // database still gets (re)built even when the system update fails
+  // outright (e.g. no prior manual `sudo`, see ConfiguredRole::
+  // UpdateDb's own comment on why this port never wraps that in sudo
+  // itself) -- the two databases are independent, one failing is not a
+  // reason to skip the other.
   pid_t startUpdateDb();
 
   const std::string &query() const;

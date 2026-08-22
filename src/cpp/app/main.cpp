@@ -2613,6 +2613,14 @@ int main(int argc, char **argv) {
   std::string rcText = readFileIfExists(usilicDir + "usilicrc");
   if (!rcText.empty()) configuration.loadRcText(rcText, /*fileManagerMode=*/true);
 
+  // LOCATE's personal database (2026-08-22 addition, docs/CHANGES.md
+  // item 406): see ConfiguredRole's own enum comment and Configuration::
+  // setUserLocateDatabasePath()'s own comment for why this exists (the
+  // system-wide database is built by `nobody`, which can't read INTO a
+  // modern-macOS `750` home directory at all). No-op on non-Apple
+  // builds -- see that same setter's #else branch.
+  configuration.setUserLocateDatabasePath(usilicDir + "locate.db");
+
   std::string historyText;  // stays empty (see hasSavedHistory below) when consultHistoryOnStart is false
   if (consultHistoryOnStart) {
     historyText = readFileIfExists(usilicDir + "history");

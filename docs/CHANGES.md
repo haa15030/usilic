@@ -4297,6 +4297,68 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      trailing2の後ろがスペースで埋め尽くされていることを確認)。
      `make usilic`クリーンビルド成功。
 
+406. **LOCATEがホームディレクトリ直下の`.txt`等にマッチしない件を
+    調査・修正 ― 個人用データベース(`~/.usilic/locate.db`)を新設し、
+    システム全体のデータベースと検索時にマージするよう対応**
+   - **報告**: ホームディレクトリ配下の`.txt`ファイルがLOCATEで
+     見つからないとの報告。ユーザーがGeminiに相談したところ、
+     「macOSの`locate.updatedb`は`nobody`ユーザーとしてバックグラウンド
+     実行されるため、iCloud Driveの実体(`~/Library/Mobile Documents/`)
+     を読み込めず、専用データベースを自分の権限で構築する必要がある」
+     という回答(PDF添付)が得られ、「`~/.locate`」を「`~/.usilic`」へ
+     読み替えてusilicに組み込んだ場合の副作用を尋ねられた。
+   - **再調査で判明した実際の原因**: 実機を調べたところ、報告に
+     合致する`.txt`(`~/tonymacx86.txt`等)はiCloud Drive
+     (`~/Documents`等)ではなくホームディレクトリ直下に平文で
+     存在していた。そして`~`自体のパーミッションが`drwxr-x---`
+     (750、"other"に権限無し)だった――これはmacOS Catalina以降、
+     新規ユーザーのホームディレクトリに標準で付与される値。
+     `locate.updatedb`は`nobody`ユーザーとして走り、`nobody`は
+     `staff`グループに属さないため"other"扱いとなり、**ホーム
+     ディレクトリの中を覗くことすら出来ない**。つまりGeminiが
+     指摘したiCloud Drive固有の問題(`~/Library/Mobile Documents`
+     が個別に`dr-x------`で塞がれている件、これ自体は別途正しい)
+     より手前の、より根本的な原因だった。
+   - **ユーザーとの合意事項**: (1)このMacは複数ユーザー運用を想定
+     しないため個人用データベースファイルのworld-readableは問題視
+     しない、(2)システムDBと個人用DBは両方検索してマージする、
+     (3)macOS限定機能でよい(GUIも既にmacOS限定のため同様の扱い)。
+     マージにあたり「sudoが必要か」との質問には、検索(`locate`)は
+     常にsudo不要、個人用DBの構築(`find`+`locate.mklocatedb`、
+     自分の一般ユーザー権限で実行)も元々sudo不要――既存のシステム
+     全体DBの更新(`/usr/libexec/locate.updatedb`)だけが従来通り
+     sudoを要する(本ポートは意図的にsudoでラップしていない、
+     `ConfiguredRole::UpdateDb`自身のコメント参照)、という整理で
+     回答した。
+   - **実装**: `ConfiguredRole`に`LocateUserDb`(検索、`locate -d
+     <個人DB>`)と`LocateUserDbBuild`(構築、macOS限定)を追加。
+     `Configuration::setUserLocateDatabasePath()`(新設、
+     `setFallbackShellArgv()`と同じ「Configurationはgetenv()も
+     ファイルシステムも直接触らない」境界に従い、`main()`側で
+     `usilicDir + "locate.db"`を渡して呼ぶだけの薄いセッター)が
+     両ロールのデフォルトコマンドを組み立てる。構築コマンドは
+     `/usr/libexec/locate.updatedb`自身の実際のパイプライン
+     (`find -s $SEARCHPATHS ... | $mklocatedb -presort > $tmp`→
+     `install`)を`$HOME`に絞って忠実に再現(`find -s "$HOME"
+     -print 2>/dev/null | /usr/libexec/locate.mklocatedb -presort
+     > <db>.tmp && mv -f <db>.tmp <db> && chmod 600 <db>`、`.tmp`
+     +`mv`によるatomic install、`chmod 600`は`~/.usilic/`自体が
+     `755`のため個別に施す)。`LocateMode::search()`はシステムDB
+     とLocateUserDbの両方を検索し重複除去してマージ(個人DBが
+     検索対象ファイル未構築でも`locate`の「0件」と同じ扱いにし、
+     stderrは`/dev/null`へ)。`LocateMode::startUpdateDb()`は両方の
+     構築コマンドを`;`区切りで1つの`sh -c`にまとめて1つのdetached
+     childとして起動する設計に変更(`Application`側の既存の単一pid
+     await/pollの仕組みを一切変更せずに済む)。
+   - **検証**: `make test` 825/825件・18941アサーション全通過
+     (新規doctest8件: マージ・重複除去・片方のみ設定・DB未構築時の
+     扱い・チェイン起動の4パターンをフェイクスクリプトで決定的に
+     検証)。`make usilic`クリーンビルド確認済み。さらに実機の
+     `$HOME`に対し、本番と全く同じシェルパイプラインを実際に
+     実行(scratch領域へ出力、`~/.usilic/`は変更せず)し、
+     `locate -d <個人DB> tonymacx86.txt`/`log.txt`がいずれも
+     ホーム直下の実ファイルを正しく返すことを確認した(修正前は
+     システムDBだけでは検索不可)。実行時間は実機で約6秒。
 
 ## 7. MAN
 
