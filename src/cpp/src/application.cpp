@@ -3242,6 +3242,17 @@ bool Application::returnFromDu() {
 
 bool Application::returnFromShell() {
   currentMode_ = shellReturnMode_;
+  // Restore a suspended promptHistoryRecallKind_ session (see its own
+  // declaration comment) when returning to the SAME ListBrowser
+  // candidate list ^J^W was pressed from -- consumed exactly once.
+  if (shellReturnMode_ == ApplicationMode::ListBrowser && suspendedPromptHistoryRecallKind_) {
+    promptHistoryRecallKind_ = suspendedPromptHistoryRecallKind_;
+    promptHistoryRecallText_ = suspendedPromptHistoryRecallText_;
+    promptHistoryRecallIsDirectEntry_ = suspendedPromptHistoryRecallIsDirectEntry_;
+    suspendedPromptHistoryRecallKind_ = std::nullopt;
+    suspendedPromptHistoryRecallText_.clear();
+    suspendedPromptHistoryRecallIsDirectEntry_ = false;
+  }
   // The mode being returned to (typically a plain directory listing)
   // relies on ContentView's own row-highlight, not a visible cursor,
   // and never calls setVisibleCursor() itself -- without this, -g
@@ -3432,6 +3443,17 @@ bool Application::ensureShellActive() {
   // consumption path) has the identical staleness risk, not just ^J^W.
   // A no-op in the ordinary case (no recall was in progress, this is
   // already std::nullopt) -- so safe to run unconditionally.
+  // Suspend (not just discard) a still-genuinely-open recall session
+  // -- see suspendedPromptHistoryRecallKind_'s own declaration comment
+  // for the full story. currentMode_ == ListBrowser here means
+  // promptHistoryRecallKind_ (if set) belongs to THIS live session,
+  // not a stale leftover from an earlier, already-abandoned one --
+  // returnFromShell() restores it on a plain ^G back out.
+  if (currentMode_ == ApplicationMode::ListBrowser) {
+    suspendedPromptHistoryRecallKind_ = promptHistoryRecallKind_;
+    suspendedPromptHistoryRecallText_ = promptHistoryRecallText_;
+    suspendedPromptHistoryRecallIsDirectEntry_ = promptHistoryRecallIsDirectEntry_;
+  }
   promptHistoryRecallKind_ = std::nullopt;
   promptHistoryRecallText_.clear();
   promptHistoryRecallIsDirectEntry_ = false;
@@ -3439,7 +3461,16 @@ bool Application::ensureShellActive() {
     if (!shell_.start()) return false;
     shellStarted_ = true;
   }
-  shellReturnName_ = previousModeName(currentMode_);
+  // previousModeName() has no ListBrowser case (it's too generic --
+  // CUT/EGREP/FGREP/MAN/LOCATE/RecentFile/.../ShellCommand history all
+  // share it), so this uses the just-suspended PromptKind (via
+  // promptLabelText(), the SAME "CUT"/"EGREP"/etc. mapping the
+  // candidate list's own mode-line already uses) instead, when one was
+  // actually captured above -- otherwise the Shell screen's own "what
+  // will ^G return to" badge showed nothing useful for this case
+  // either (falling to previousModeName()'s default: "").
+  shellReturnName_ =
+      suspendedPromptHistoryRecallKind_ ? promptLabelText(*suspendedPromptHistoryRecallKind_) : previousModeName(currentMode_);
   shellReturnMode_ = currentMode_;
   currentMode_ = ApplicationMode::Shell;
   shell_.scrollback().redraw();

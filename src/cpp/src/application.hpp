@@ -2004,6 +2004,40 @@ class Application {
   // set `i = -2`, defaulting to the top). Reset alongside
   // promptHistoryRecallKind_ at every consumption site.
   bool promptHistoryRecallIsDirectEntry_ = false;
+  // ensureShellActive()/returnFromShell() (2026-08-24 fix, a real
+  // 100%-reproducible report: "（ls）のCLAUDE.md上で^J^B^J^W^G" ->
+  // the candidate list, correctly labeled "CUT" right after ^J^B,
+  // comes back mislabeled "EGREP" after this round-trip): ^J^W
+  // (shellInsertBufferContent(), one of ensureShellActive()'s several
+  // callers) can be pressed WHILE a promptHistoryRecallKind_ session
+  // (e.g. ^J^B's own regex-CUT candidate list, direct-entry) is still
+  // genuinely open -- not abandoned, just "quickly peek at Shell, come
+  // right back via ^G". ensureShellActive() unconditionally clears
+  // promptHistoryRecallKind_ on entry (see its own long comment for
+  // WHY that clearing exists at all -- a real, different bug about a
+  // STALE flag surviving into a later, UNRELATED ^R ShellCommand
+  // session), which is correct for that original scenario but throws
+  // away the CURRENT session's own identity too: listBrowserView_'s
+  // own ModeLineFieldsProvider only shows the real "CUT" name when
+  // promptHistoryRecallKind_ is set (see its own comment on why
+  // ringCategoryLabel() alone can't distinguish CUT's regex variant
+  // from EGREP -- they share RingCategory::RecentEgrepPattern), so an
+  // empty promptHistoryRecallKind_ makes ^G's return trip fall back to
+  // that ring-category-only label, "EGREP", regardless of which one
+  // was actually open. These three fields hold a SUSPENDED copy of
+  // the live ones for the duration of the Shell excursion (see
+  // ensureShellActive()'s own save and returnFromShell()'s own
+  // restore), letting the live ones still be safely wiped (fixing the
+  // original bug) without losing what to resume on a plain ^G back out
+  // with nothing else having happened in between. Deliberately NOT a
+  // full session snapshot (listBrowserCategory_ itself is untouched by
+  // this) -- a nested nested detour INSIDE Shell that itself opens a
+  // different ListBrowser session (e.g. ^R for ShellCommand history)
+  // before the eventual ^G is a known, narrower residual gap this
+  // doesn't cover.
+  std::optional<PromptKind> suspendedPromptHistoryRecallKind_;
+  std::string suspendedPromptHistoryRecallText_;
+  bool suspendedPromptHistoryRecallIsDirectEntry_ = false;
   // 2026-08-11: a real report + direct user clarification -- "検索への
   // 入口がCUTなら出るときもCUTから出るはず" (if the search's own
   // entrance was the candidate list, Back should exit through it too),

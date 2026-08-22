@@ -24,17 +24,22 @@ std::string ModeLine::format(int currentLine, int totalLines) {
 }
 
 // Ported from print_line()'s (disp.c) own len<=0 branch -- the ONLY
-// caller that ever passes a negative len is disp_shell(), so this
-// fixed 6-digit zero-pad ("000002/000002 END") is a SHELL-specific
-// legacy convention, distinct from format()'s own "pad current to
-// TOTAL's own digit width" default every other mode uses. Same TOP/
-// END/% suffix logic as format() (this port's own 2026-07-31 GUI-
-// drag-scroll-driven departure from legacy, applied consistently
-// here too rather than reverting just this one caller to legacy's own
-// plain "END or %, no TOP" shape -- no counter-example against that
-// choice was given).
+// caller that ever passes a negative len is disp_shell(), so a fixed-
+// width zero-pad ("00002/00002 END") is a SHELL-specific legacy
+// convention, distinct from format()'s own "pad current to TOTAL's
+// own digit width" default every other mode uses. Same TOP/END/%
+// suffix logic as format() (this port's own 2026-07-31 GUI-drag-
+// scroll-driven departure from legacy, applied consistently here too
+// rather than reverting just this one caller to legacy's own plain
+// "END or %, no TOP" shape -- no counter-example against that choice
+// was given). Width itself is 5 (2026-08-24, a direct user request:
+// "行数6桁は多過ぎなので5桁でよろしく" -- legacy's own C source
+// (disp.c) actually zero-pads to 6, confirmed by direct read, but the
+// user found that one digit too wide and asked for 5 specifically;
+// deliberately not a straight port of the legacy width either, same
+// spirit as the TOP/END/% departure just above).
 std::string ModeLine::formatFixedWidth(int currentLine, int totalLines) {
-  constexpr std::size_t kWidth = 6;
+  constexpr std::size_t kWidth = 5;
   std::string total = std::to_string(std::max(totalLines, 0));
   std::string current = std::to_string(std::max(currentLine, 0));
   if (total.size() < kWidth) total.insert(0, kWidth - total.size(), '0');

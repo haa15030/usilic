@@ -730,14 +730,16 @@ class ContentView {
   void setModeLineFieldsProvider(ModeLineFieldsProvider provider);
 
   // Opts this view's position field into ModeLine::formatFixedWidth()
-  // (a real, 6-digit zero-padded "NNNNNN/NNNNNN END" counter ported
-  // from print_line()'s own len<=0 branch, disp.c -- SHELL-specific in
-  // legacy: disp_shell() is the only caller that ever passes a
-  // negative len) instead of the default ModeLine::format() (current
-  // padded only to TOTAL's own digit width, e.g. "03/15") every other
-  // mode uses. False (the default) leaves every existing mode
-  // unaffected. 2026-08-24 addition, a direct user request comparing
-  // against this exact legacy behavior.
+  // (a fixed-width, 5-digit zero-padded "NNNNN/NNNNN END" counter
+  // ported from print_line()'s own len<=0 branch, disp.c -- SHELL-
+  // specific in legacy: disp_shell() is the only caller that ever
+  // passes a negative len, though legacy's own C source actually
+  // zero-pads to 6, not 5 -- see formatFixedWidth()'s own comment)
+  // instead of the default ModeLine::format() (current padded only to
+  // TOTAL's own digit width, e.g. "03/15") every other mode uses.
+  // False (the default) leaves every existing mode unaffected.
+  // 2026-08-24 addition, a direct user request comparing against this
+  // exact legacy behavior.
   void setUseFixedWidthPosition(bool enabled);
 
   // Called once per candidate row during redraw() (see its own comment)

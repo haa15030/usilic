@@ -10189,3 +10189,16 @@ SHELL:上記のとおり、「行数/総行 END」を逐次入力形式にして
 **SHELLの「行数/総行 END」逐次入力形式の件**: legacy側のソース(disp.cのprint_line())を直接確認したところ、SHELL専用(disp_shell()のみが使う)の分岐があり、そこでは現在行・総行数の両方を常に固定6桁でゼロ埋めする実装になっていました(他の全モードは総行数側の桁数に現在行を揃えるだけ)。単なる好みではなく確認済みの移植漏れでした。ModeLine::formatFixedWidth()を追加し、SHELLの画面(shell_.scrollback())にのみ適用しました(他モードは影響無し)。現在行までの累積バイト数は、legacy側に対応する実装が見当たらなかったため(このポート独自の新機能)、カーソル行を含むそれ以前の全scrollback行のバイト数を積算してtrailing欄に追加しました。従来trailing欄が担っていた「(zsh)」等のプログラムバジはtrailing2欄へ、戻り先バッジ(CUT等)は新設のtrailing3欄(ArchiveMode向けに既存だった機構)へ、それぞれ1つずつ後ろにずらし、「SHELL」「(6桁ゼロ埋め位置)」「バイト数」「(zsh)」「戻り先バッジ(行末までパディング)」という5フィールド構成にしました。
 
 `make test` 814/814件・18862アサーション全通過(新規doctest3件)。実PTYで実リポジトリに対しCLAUDE.mdを^J^Bでregex-CUT→結果を^J^Wで「wc」に渡す、という報告の再現手順を実行し、「SHELL」「000002/000002 END」「89」「(zsh)」「CUT(行末までパディング)」という構成で正しく表示されることを確認しました(報告の参照例は5桁ゼロ埋めでしたが、legacyソースの実装は6桁固定と確認できたためそちらを採用しています)。`make usilic`クリーンビルド確認済みです。
+
+<新：
+CUT:EGREPへの帰還は100％再現性なのでやってみて。
+（ls）のCLAUDE.md上で^J^B^J^W^G
+SHELL:行数6桁は多過ぎなので5桁でよろしく。
+
+>修正・検証・コミット・プッシュ済みです(項目401追記、402)。
+
+**CUT→EGREP化けの100%再現手順を確認・修正**: 今回の手順(^J^B→何も入力せず即^J^W→^G)で確かに毎回再現しました。前回(項目400)は既にCutモード(分割済みの結果画面)へ入ってから^J^Wしていましたが、今回は候補一覧(regex-CUT、currentMode_はListBrowserのまま)から何も確定せず即^J^Wする一歩手前のタイミングでした。listBrowserView_のモードライン欄はpromptHistoryRecallKind_が設定されていれば正しく"CUT"を表示しますが、未設定だとringCategoryLabel(listBrowserCategory_)にフォールバックします。ところがregex-CUTはEGREP自身と同じRingCategory::RecentEgrepPatternという履歴リングを共有する設計のため、このフォールバックは常に"EGREP"を返してしまいます。そしてensureShellActive()(^J^W等SHELLへ入る全経路が通る関門)がpromptHistoryRecallKind_を無条件でクリアする実装になっていた(これ自体は別の実在したバグへの正しい対処でした)ため、副作用として今回のシナリオの状態も消えてしまっていました。promptHistoryRecallKind_等を即座に破棄せず一時退避してからクリアし、SHELLから戻る際に(戻り先がListBrowserの場合のみ)書き戻すよう修正しました。
+
+**SHELLの位置表示、6桁→5桁**: ご要望通りformatFixedWidth()の固定幅を5桁に変更しました(legacy側ソース自体は6桁のままですが、明示的なご希望によりこちらは5桁を採用します)。
+
+`make test` 815/815件・18874アサーション全通過(新規doctest1件)。実PTYで報告の再現手順(^J^B^J^W^G)を寸分違わず実行し、修正前は"EGREP"に化けていたのが、修正後は候補一覧が"CUT"のまま(候補内容・カーソル位置とも)完全に復元されることを確認しました。`make usilic`クリーンビルド確認済みです。

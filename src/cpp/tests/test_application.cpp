@@ -4298,12 +4298,15 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: shows the running shell program's o
 // 2026-08-24 addition, a direct user request + confirmed legacy
 // source read (disp.c's print_line(), the ONLY caller that ever
 // passes a negative len is disp_shell()): SHELL's own position field
-// is a fixed 6-digit zero-pad ("000002/000002 END"), independent of
-// the total's own digit width, unlike every other mode's
-// ModeLine::format() (which only pads current to match total's own
-// width, e.g. "03/15").
-TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: position is a fixed 6-digit zero-padded counter, matching "
-                           "legacy's own disp_shell()-specific print_line() branch") {
+// is a fixed-width zero-pad ("00002/00002 END"), independent of the
+// total's own digit width, unlike every other mode's ModeLine::format()
+// (which only pads current to match total's own width, e.g. "03/15").
+// Width is 5 -- legacy's own C source actually zero-pads to 6, but a
+// same-day follow-up request ("行数6桁は多過ぎなので5桁でよろしく")
+// asked for 5 instead; see ModeLine::formatFixedWidth()'s own comment.
+TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: position is a fixed 5-digit zero-padded counter, matching "
+                           "legacy's own disp_shell()-specific print_line() branch (width narrowed to 5 "
+                           "per a direct user request, legacy itself uses 6)") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -4321,7 +4324,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: position is a fixed 6-digit zero-pa
 
   int total = static_cast<int>(app.shell().scrollback().lines().size());
   std::string paddedTotal = std::to_string(total);
-  if (paddedTotal.size() < 6) paddedTotal.insert(0, 6 - paddedTotal.size(), '0');
+  if (paddedTotal.size() < 5) paddedTotal.insert(0, 5 - paddedTotal.size(), '0');
   std::string text = app.shell().scrollback().modeLineText();
   CHECK(text.find(paddedTotal + "/" + paddedTotal) != std::string::npos);
 }
@@ -4373,6 +4376,47 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from Cut mode shows \"CUT\
   std::string text = app.shell().scrollback().modeLineText();
   CHECK(text.find("CUT") != std::string::npos);
   CHECK(text.find("usilic v1.5b") == std::string::npos);
+}
+
+// 2026-08-24 fix, a real 100%-reproducible report:
+// "（ls）のCLAUDE.md上で^J^B^J^W^G" -- ^J^B opens the regex-CUT
+// candidate list directly (startRegexPromptList(), currentMode_ ==
+// ListBrowser, correctly labeled "CUT"); ^J^W (still WITHOUT ever
+// typing/submitting a pattern) jumps straight to Shell; ^G back out
+// showed the SAME candidate list mislabeled "EGREP" instead. Root
+// cause: ensureShellActive() unconditionally clears
+// promptHistoryRecallKind_ on entry (a real, different fix for a
+// stale-flag bug, see its own comment) -- listBrowserView_'s own
+// ModeLineFieldsProvider only shows the true "CUT" name when
+// promptHistoryRecallKind_ is set; with it cleared, ^G's return trip
+// fell back to ringCategoryLabel(listBrowserCategory_), which reads
+// "EGREP" for BOTH plain EGREP and CUT's regex variant (they share
+// RingCategory::RecentEgrepPattern -- see startRegexPromptList()'s own
+// comment on why). Fixed by suspending (not discarding)
+// promptHistoryRecallKind_/Text_/IsDirectEntry_ across the Shell
+// excursion and restoring them in returnFromShell().
+TEST_CASE_FIXTURE(Fixture, "CUT (regex, file, ^J^B): a quick ^J^W-then-^G round trip through Shell, with "
+                           "NOTHING ever typed into the candidate list, restores it correctly labeled "
+                           "\"CUT\" -- not mislabeled \"EGREP\" (which shares its own ring)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::StartCutFileRegex));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.activeContentView().modeLineText().find("CUT") != std::string::npos);
+
+  if (!app.handleCommand(Command::ShellInsertBufferContent)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.find("CUT") != std::string::npos);
+  CHECK(text.find("EGREP") == std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): snapshots Shell's scrollback to logFilePath_, viewable via File mode") {
