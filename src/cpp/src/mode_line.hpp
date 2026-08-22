@@ -33,6 +33,16 @@ class ModeLine {
   // "%s/%s END", current zero-padded to total's own digit width (e.g.
   // "03/15 20%").
   static std::string format(int currentLine, int totalLines);
+
+  // Ported from print_line()'s (disp.c) own len<=0 branch -- SHELL-
+  // specific in legacy (disp_shell() is the only caller that ever
+  // passes a negative len): a fixed 6-digit zero-pad
+  // ("000002/000002 END"), independent of totalLines' own digit
+  // width, instead of format()'s default "pad current to TOTAL's own
+  // width". Same TOP/END/% suffix logic as format(). See
+  // ContentView::setUseFixedWidthPosition()'s own comment for how a
+  // view opts into this.
+  static std::string formatFixedWidth(int currentLine, int totalLines);
 };
 
 }  // namespace fm

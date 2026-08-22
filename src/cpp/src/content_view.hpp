@@ -729,6 +729,17 @@ class ContentView {
   using ModeLineFieldsProvider = std::function<ModeLineFields(int cursorIndex)>;
   void setModeLineFieldsProvider(ModeLineFieldsProvider provider);
 
+  // Opts this view's position field into ModeLine::formatFixedWidth()
+  // (a real, 6-digit zero-padded "NNNNNN/NNNNNN END" counter ported
+  // from print_line()'s own len<=0 branch, disp.c -- SHELL-specific in
+  // legacy: disp_shell() is the only caller that ever passes a
+  // negative len) instead of the default ModeLine::format() (current
+  // padded only to TOTAL's own digit width, e.g. "03/15") every other
+  // mode uses. False (the default) leaves every existing mode
+  // unaffected. 2026-08-24 addition, a direct user request comparing
+  // against this exact legacy behavior.
+  void setUseFixedWidthPosition(bool enabled);
+
   // Called once per candidate row during redraw() (see its own comment)
   // to decide whether a row should render highlighted (Standout, the
   // exact same treatment the cursor row itself already gets -- see
@@ -886,6 +897,7 @@ class ContentView {
 
   int row0_ = 0, height_ = 0;
   ModeLineFieldsProvider modeLineFieldsProvider_;
+  bool useFixedWidthPosition_ = false;
   std::optional<int> modeLineRow_;
 };
 

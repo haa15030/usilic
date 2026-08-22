@@ -550,11 +550,34 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // bold, right-aligned program name/version instead of padding;
   // this port's existing `rightWatermark` fallback already implements
   // that same fallback, just needed wiring here too.
-  shell_.scrollback().setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    std::string trailing = "(" + shell_.programName() + ")";
+  // Position field (2026-08-24 addition, a direct user request +
+  // confirmed legacy source read, disp.c's print_line(): SHELL is the
+  // ONLY mode whose disp_shell() ever calls print_line() with a
+  // negative len, taking its own fixed 6-digit zero-pad branch instead
+  // of the generic "pad to total's own width" one -- see
+  // ModeLine::formatFixedWidth()'s own comment) -- see below for the
+  // byte-count field this same request also asked for.
+  shell_.scrollback().setUseFixedWidthPosition(true);
+  shell_.scrollback().setModeLineFieldsProvider([this](int cursorIndex) -> ContentView::ModeLineFields {
+    // Byte count up to (and including) the current line (2026-08-24
+    // addition, a direct user request: "可能なら現在行までのバイト数を
+    // サポートしてほしい") -- no legacy precedent for this one (unlike
+    // the position field above), a genuinely new capability. +1 per
+    // line for the newline byte lost when scrollback_'s own Line::text
+    // was split, matching the same convention every other mode's own
+    // byte-count field (contentByteCount(), HELP's own doctest) uses.
+    std::size_t bytes = 0;
+    const auto &lines = shell_.scrollback().lines();
+    for (int i = 0; i <= cursorIndex && i < static_cast<int>(lines.size()); i++) bytes += lines[i].text.size() + 1;
     bool hasPrev = !shellReturnName_.empty();
-    return {"SHELL", trailing, /*fillTrailingToEdge=*/hasPrev,
-            /*rightWatermark=*/hasPrev ? "" : "usilic v1.5b", /*trailing2=*/shellReturnName_};
+    ContentView::ModeLineFields fields;
+    fields.name = "SHELL";
+    fields.trailing = std::to_string(bytes);
+    fields.fillTrailingToEdge = hasPrev;
+    fields.rightWatermark = hasPrev ? "" : "usilic v1.5b";
+    fields.trailing2 = "(" + shell_.programName() + ")";
+    fields.trailing3 = shellReturnName_;
+    return fields;
   });
   // Mode-line fields for KEY (^H): "KEY" fixed on the left, and
   // whichever mode KEY was invoked from's own name (previousModeName(),
@@ -3476,6 +3499,19 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     // ensureShellActive() first).
     case ApplicationMode::Shell:
       return "SHELL";
+    // Cut/CutContent (2026-08-24 fix, a real report + reference:
+    // "^J^W...→「CUT　　　　　　　　　　　　」" -- CUT/HELP/LOG all
+    // reuse the same CutMode-backed screens, none of which have a
+    // single meaningful "current item" name the way Directory (a
+    // path)/File (a filename)/Man (a page) do -- a literal "CUT",
+    // matching Shell's own literal "SHELL" case just above, was simply
+    // never added when this function's switch was first written. Left
+    // blank before this fix, shellReturnName_'s own "no previous mode
+    // name" fallback (see its own ModeLineFieldsProvider comment) fired
+    // instead, showing "usilic v1.5b" where "CUT" belonged.
+    case ApplicationMode::Cut:
+    case ApplicationMode::CutContent:
+      return "CUT";
     default:
       return "";
   }

@@ -836,7 +836,8 @@ void ContentView::renderLine(const Line &line, bool marked) {
 std::string ContentView::modeLineText() const {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
-  return composeModeLineRow(ModeLine::format(current, total));
+  return composeModeLineRow(useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
+                                                    : ModeLine::format(current, total));
 }
 
 std::string ContentView::scrollModeLineText() const {
@@ -857,7 +858,8 @@ std::string ContentView::scrollModeLineText() const {
   } else {
     current = topIndex_ + 1;  // topIndex_==0 here naturally shows TOP
   }
-  return composeModeLineRow(ModeLine::format(current, total));
+  return composeModeLineRow(useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
+                                                    : ModeLine::format(current, total));
 }
 
 std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() const {
@@ -871,7 +873,8 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
   } else {
     current = topIndex_ + 1;
   }
-  std::string positionText = ModeLine::format(current, total);
+  std::string positionText =
+      useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total) : ModeLine::format(current, total);
 
   std::vector<Display::ModeLineSegment> segments;
   if (!modeLineFieldsProvider_) {
@@ -925,6 +928,8 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
 void ContentView::setModeLineFieldsProvider(ModeLineFieldsProvider provider) {
   modeLineFieldsProvider_ = std::move(provider);
 }
+
+void ContentView::setUseFixedWidthPosition(bool enabled) { useFixedWidthPosition_ = enabled; }
 
 void ContentView::setMarkedPredicate(std::function<bool(int)> predicate) { markedPredicate_ = std::move(predicate); }
 
@@ -1209,7 +1214,8 @@ std::string ContentView::composeModeLineRow(const std::string &positionText) con
 void ContentView::renderModeLine() {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
-  std::string positionText = ModeLine::format(current, total);
+  std::string positionText =
+      useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total) : ModeLine::format(current, total);
   int modeLineRow = modeLineRow_.value_or(row0_ + height_);
 
   display_.moveCursor(modeLineRow, 0);

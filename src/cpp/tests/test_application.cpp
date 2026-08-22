@@ -4295,6 +4295,86 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: shows the running shell program's o
   CHECK(text.find("(" + app.shell().programName() + ")") != std::string::npos);
 }
 
+// 2026-08-24 addition, a direct user request + confirmed legacy
+// source read (disp.c's print_line(), the ONLY caller that ever
+// passes a negative len is disp_shell()): SHELL's own position field
+// is a fixed 6-digit zero-pad ("000002/000002 END"), independent of
+// the total's own digit width, unlike every other mode's
+// ModeLine::format() (which only pads current to match total's own
+// width, e.g. "03/15").
+TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: position is a fixed 6-digit zero-padded counter, matching "
+                           "legacy's own disp_shell()-specific print_line() branch") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+  // scrollback_ itself stays genuinely empty (0 lines) until a real
+  // command actually completes -- the initial prompt handshake alone
+  // doesn't add anything to it (see currentDirectory() above, a
+  // SEPARATE signal used by every other "handshake done" test in this
+  // file).
+  feedText("echo hi");
+  REQUIRE(app.feedShellByte(0x0d, std::nullopt));
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().scrollback().lines().empty(); }));
+
+  int total = static_cast<int>(app.shell().scrollback().lines().size());
+  std::string paddedTotal = std::to_string(total);
+  if (paddedTotal.size() < 6) paddedTotal.insert(0, 6 - paddedTotal.size(), '0');
+  std::string text = app.shell().scrollback().modeLineText();
+  CHECK(text.find(paddedTotal + "/" + paddedTotal) != std::string::npos);
+}
+
+// Same request as the position-field test above: "現在行までのバイト数
+// をサポートしてほしい" -- no legacy precedent for this one (a
+// genuinely new capability), computed as the cumulative byte size of
+// every scrollback line up to (and including) the cursor's own line.
+TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: shows the cumulative byte count up to the current line") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+  feedText("echo hi");
+  REQUIRE(app.feedShellByte(0x0d, std::nullopt));
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().scrollback().lines().empty(); }));
+
+  const auto &lines = app.shell().scrollback().lines();
+  int cursor = app.shell().scrollback().cursorIndex();
+  REQUIRE(cursor >= 0);
+  std::size_t expectedBytes = 0;
+  for (int i = 0; i <= cursor && i < static_cast<int>(lines.size()); i++) expectedBytes += lines[i].text.size() + 1;
+  std::string text = app.shell().scrollback().modeLineText();
+  CHECK(text.find(std::to_string(expectedBytes)) != std::string::npos);
+}
+
+// 2026-08-24 fix, a real report: entering SHELL from Cut mode (^J^W)
+// showed "usilic v1.5b" instead of "CUT" as the return-target badge --
+// previousModeName() (shellReturnName_'s own source) had no `case
+// Cut:`/`case CutContent:` at all, silently falling through to its
+// `default: return "";` -- an EMPTY shellReturnName_ is what triggers
+// the "usilic v1.5b" watermark fallback the provider already had for
+// legacy's own "no previous mode" case.
+TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from Cut mode shows \"CUT\" as the return-target "
+                           "trailing field, not the \"usilic v1.5b\" no-previous-mode fallback") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("cpmv");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  if (!app.handleCommand(Command::ShellInsertBufferContent)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+  std::string text = app.shell().scrollback().modeLineText();
+  CHECK(text.find("CUT") != std::string::npos);
+  CHECK(text.find("usilic v1.5b") == std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): snapshots Shell's scrollback to logFilePath_, viewable via File mode") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
