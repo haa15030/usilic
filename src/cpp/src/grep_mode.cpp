@@ -5,6 +5,7 @@
 #include <sstream>
 
 #include "child_process.hpp"
+#include "unicode_normalize.hpp"
 
 namespace fm {
 
@@ -18,8 +19,6 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   ProgramCommand cmd =
       configuration_.commandFor(syntax == GrepSyntax::Fixed ? ConfiguredRole::Fgrep : ConfiguredRole::Egrep);
   if (cmd.argv.empty()) return false;
-  std::vector<std::string> argv = cmd.argv;
-  argv.push_back(pattern);
 
   std::string inputText;
   for (const auto &line : sourceLines) {
@@ -27,13 +26,34 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
     inputText += '\n';
   }
 
+  // 2026-08-23 addition (docs/CHANGES.md item 407, a real user report:
+  // FGREP found "口座テスト" but not "マイナカード" against the SAME
+  // directory listing) -- see unicodeNormalizationCandidates()'s own
+  // comment for why a real filename's bytes can be either Unicode
+  // normalization form regardless of what a normal IME types. `pattern`
+  // as typed is always tried FIRST (so an already-matching search costs
+  // nothing extra and, more importantly, so `pattern_`/history below
+  // still records exactly what the user typed either way); only tries
+  // NFC/NFD as a fallback when the literal bytes alone don't match.
   ChildProcess::Options options;
   options.input = &inputText;
-  ChildProcess::Result result = ChildProcess::run(argv, options);
-  // Exit 0 = matches found, exit 1 = ran fine but found none -- both
-  // are a successful search. Anything else (bad pattern, exec
-  // failure, signaled) is a real failure.
-  if (result.exitStatus < 0 || result.exitStatus > 1) return false;
+  ChildProcess::Result result;
+  bool ranAtLeastOnce = false;
+  for (const auto &candidate : unicodeNormalizationCandidates(pattern)) {
+    std::vector<std::string> argv = cmd.argv;
+    argv.push_back(candidate);
+    result = ChildProcess::run(argv, options);
+    ranAtLeastOnce = true;
+    // Exit 0 = matches found, exit 1 = ran fine but found none -- both
+    // are a successful RUN (not necessarily a successful search: exit
+    // 1 falls through to the next candidate, if any). Anything else
+    // (bad pattern, exec failure, signaled) is a real failure -- bail
+    // out immediately rather than trying further candidates with a
+    // command that's already shown it can't run at all.
+    if (result.exitStatus < 0 || result.exitStatus > 1) return false;
+    if (result.exitStatus == 0) break;  // found matches with this candidate -- stop here
+  }
+  if (!ranAtLeastOnce) return false;
 
   matches_.clear();
   std::istringstream stream(result.output);

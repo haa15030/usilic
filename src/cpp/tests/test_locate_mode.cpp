@@ -39,6 +39,22 @@ fs::path writeFakeLocate(const fs::path &dir, const std::string &name, const std
   return script;
 }
 
+// Simulates `locate`'s own byte-literal argv matching (2026-08-23
+// addition, docs/CHANGES.md item 407): echoes `resultPath` only when
+// argv[1] is byte-EXACTLY `expectedQuery`, exits 1 (real `locate`'s
+// own "found nothing" exit code) otherwise -- so a test can assert
+// LocateMode actually tried a SPECIFIC Unicode-normalization candidate
+// of the query, not just that it eventually found something by luck.
+fs::path writeConditionalFakeLocate(const fs::path &dir, const std::string &name, const std::string &expectedQuery,
+                                     const std::string &resultPath) {
+  fs::path script = dir / name;
+  std::ofstream out(script);
+  out << "#!/bin/sh\n";
+  out << "if [ \"$1\" = '" << expectedQuery << "' ]; then echo '" << resultPath << "'; else exit 1; fi\n";
+  std::filesystem::permissions(script, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  return script;
+}
+
 fs::path makeTempDir() {
   char tmpl[] = "/tmp/locatemode_testXXXXXX";
   char *result = mkdtemp(tmpl);
@@ -182,6 +198,39 @@ TEST_CASE_FIXTURE(Fixture, "search: LocateUserDb's own database not existing yet
 
   REQUIRE(mode.search("anything"));
   CHECK(mode.results() == std::vector<std::string>{"/a"});
+}
+
+// 2026-08-23 fix (docs/CHANGES.md item 407): LOCATE shells out to the
+// real `locate` for both roles, which does the exact same byte-literal
+// substring matching fgrep/egrep do -- see test_grep_mode.cpp's own
+// identically-shaped test and unicodeNormalizationCandidates()'s own
+// comment for the full account (a real user report: a genuine iCloud
+// Drive file, decomposed on disk, wasn't found by a normally-
+// precomposed query). Uses writeConditionalFakeLocate() (rather than
+// the real `locate`) so this doesn't depend on the fixed macOS-only
+// NFC/NFD byte sequences the query actually gets normalized to --
+// this test only needs to confirm SOME normalization retry happens
+// and its result gets merged in, not which exact bytes CFStringNormalize()
+// produces.
+TEST_CASE_FIXTURE(Fixture, "search (2026-08-23 fix, item 407): retries the query in its other Unicode "
+                           "normalization form when the literal bytes as typed find nothing, and merges "
+                           "that result in") {
+#ifdef __APPLE__
+  fs::path root = makeTempDir();
+  // "ド" (U+30C9) precomposed -- what this test pretends the user typed.
+  std::string typedQuery = "\xe3\x83\x89";
+  // "ド" decomposed: "ト" (U+30C8) + combining dakuten (U+3099) -- the
+  // OTHER form unicodeNormalizationCandidates() should also try.
+  std::string decomposedForm = "\xe3\x83\x88\xe3\x82\x99";
+  configuration.setCommandForTest(
+      fm::ConfiguredRole::Locate,
+      {{writeConditionalFakeLocate(root, "sys.sh", decomposedForm, "/found/via-nfd").string()}, std::nullopt});
+
+  REQUIRE(mode.search(typedQuery));
+  CHECK(mode.results() == std::vector<std::string>{"/found/via-nfd"});
+#else
+  MESSAGE("unicodeNormalizationCandidates() is a documented no-op off macOS -- nothing to retry there, skipping");
+#endif
 }
 
 TEST_CASE_FIXTURE(Fixture, "startUpdateDb: with both UpdateDb and LocateUserDbBuild configured, chains them "

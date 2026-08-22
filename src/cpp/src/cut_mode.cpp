@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "child_process.hpp"
+#include "unicode_normalize.hpp"
 
 namespace fm {
 
@@ -20,8 +21,6 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
   ProgramCommand cmd =
       configuration_.commandFor(syntax == GrepSyntax::Fixed ? ConfiguredRole::Fgrep : ConfiguredRole::Egrep);
   if (cmd.argv.empty()) return false;
-  std::vector<std::string> argv = cmd.argv;
-  argv.push_back(pattern);
 
   std::string inputText;
   for (const auto &line : sourceLines) {
@@ -29,10 +28,24 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
     inputText += '\n';
   }
 
+  // 2026-08-23 addition (docs/CHANGES.md item 407): same reasoning as
+  // GrepMode::search()'s own identical fix -- see
+  // unicodeNormalizationCandidates()'s own comment. CUT's fixed/regex
+  // split shells out to the exact same fgrep/egrep, so it has the
+  // exact same byte-literal-matching blind spot.
   ChildProcess::Options options;
   options.input = &inputText;
-  ChildProcess::Result result = ChildProcess::run(argv, options);
-  if (result.exitStatus < 0 || result.exitStatus > 1) return false;
+  ChildProcess::Result result;
+  bool ranAtLeastOnce = false;
+  for (const auto &candidate : unicodeNormalizationCandidates(pattern)) {
+    std::vector<std::string> argv = cmd.argv;
+    argv.push_back(candidate);
+    result = ChildProcess::run(argv, options);
+    ranAtLeastOnce = true;
+    if (result.exitStatus < 0 || result.exitStatus > 1) return false;
+    if (result.exitStatus == 0) break;  // found matches with this candidate -- stop here
+  }
+  if (!ranAtLeastOnce) return false;
 
   std::vector<int> matchLines;
   std::istringstream stream(result.output);

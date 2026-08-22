@@ -4,25 +4,16 @@
 #include <unordered_set>
 
 #include "child_process.hpp"
+#include "unicode_normalize.hpp"
 
 namespace fm {
 
 namespace {
 
-// Runs `role`'s command with `query` appended (same shape as the
-// system ConfiguredRole::Locate always used) and returns its output
-// lines. `errorsToDevNull`: the personal database's own search
-// (ConfiguredRole::LocateUserDb) needs this before its first ever
-// build -- `locate -d <not-yet-built path>` fails with a real
-// "No such file or directory" on stderr every time otherwise, which
-// would otherwise flash onto the real terminal (ChildProcess::run()
-// leaves stderr inherited by default, see its own class comment) on
-// every LOCATE search until the user has pressed ^Jl's update once.
-// The system role never hits this (its database is macOS/Linux's own
-// pre-existing one, present or not regardless of this port), so it
-// stays on the default (inherited stderr) for that role.
-std::vector<std::string> runLocateRole(const Configuration &configuration, ConfiguredRole role,
-                                        const std::string &query, bool errorsToDevNull) {
+// Runs `role`'s command once, with `query` appended, and returns its
+// output lines (deduplicating nothing itself -- callers merge).
+std::vector<std::string> runLocateRoleOnce(const Configuration &configuration, ConfiguredRole role,
+                                            const std::string &query, bool errorsToDevNull) {
   ProgramCommand command = configuration.commandFor(role);
   if (command.argv.empty()) return {};
   std::vector<std::string> argv = command.argv;
@@ -44,6 +35,28 @@ std::vector<std::string> runLocateRole(const Configuration &configuration, Confi
   while (std::getline(stream, line))
     if (!line.empty()) lines.push_back(line);
   return lines;
+}
+
+// Runs `role` once per Unicode-normalization candidate of `query` (see
+// unicodeNormalizationCandidates()'s own comment -- 2026-08-23
+// addition, docs/CHANGES.md item 407, a real user report: LOCATE
+// missed a real iCloud Drive file whose name, decomposed on disk,
+// didn't byte-match the normally-precomposed query the same IME typed
+// for it into FGREP, which hit the identical blind spot), merging all
+// candidates' results (unlike GrepMode/CutMode's own "first candidate
+// that matches wins" -- here a `locate` database entry might
+// legitimately match under one candidate but not another even for
+// files the query doesn't relate to at all, so a straight union is
+// simpler and cheap: at most 3 fast `locate` invocations per role).
+std::vector<std::string> runLocateRole(const Configuration &configuration, ConfiguredRole role,
+                                        const std::string &query, bool errorsToDevNull) {
+  std::vector<std::string> merged;
+  std::unordered_set<std::string> seen;
+  for (const auto &candidate : unicodeNormalizationCandidates(query)) {
+    for (auto &path : runLocateRoleOnce(configuration, role, candidate, errorsToDevNull))
+      if (seen.insert(path).second) merged.push_back(std::move(path));
+  }
+  return merged;
 }
 
 }  // namespace

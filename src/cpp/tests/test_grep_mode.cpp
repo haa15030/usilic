@@ -81,3 +81,44 @@ TEST_CASE_FIXTURE(Fixture, "search: a second search replaces the previous result
   CHECK(mode.pattern() == "a");
   CHECK(mode.matches().size() == 3);  // alpha, beta, gamma all contain "a"
 }
+
+// 2026-08-23 fix (docs/CHANGES.md item 407, a real user report:
+// "口座テスト"はFGREPでヒットするのに"マイナカード"はしない, both
+// typed via the same IME into the same prompt against the same
+// directory listing). Root cause: the real file "マイナカード表.png"
+// stores its "ド" DECOMPOSED on disk (NFD: "ト" U+30C8 + a combining
+// dakuten U+3099), while a normal IME always emits the single
+// PRECOMPOSED codepoint (NFC, U+30C9) for "ド" -- a byte-literal
+// fgrep never matches across that boundary even though the two forms
+// are Unicode-canonically identical and render pixel-identical.
+// "口座テスト" only happened to work because none of its characters
+// are decomposable (no dakuten/handakuten kana), so its NFC and NFD
+// forms are byte-identical -- see unicodeNormalizationCandidates()'s
+// own comment for the full account, including why APFS genuinely
+// stores files in EITHER form on the SAME machine (it's
+// normalization-preserving, not -forcing).
+TEST_CASE_FIXTURE(Fixture, "search (Fixed/fgrep, 2026-08-23 fix, item 407): matches a filename whose "
+                           "Unicode-decomposed (NFD) bytes differ from the normally-precomposed (NFC) "
+                           "query an IME actually types") {
+  // "マイナカード表.png" with "ド" stored decomposed -- byte-for-byte
+  // how the real file on the reporting user's machine was confirmed
+  // stored on disk.
+  std::string nfdFilename =
+      "\xe3\x83\x9e\xe3\x82\xa4\xe3\x83\x8a\xe3\x82\xab\xe3\x83\xbc\xe3\x83\x88\xe3\x82\x99\xe8\xa1\xa8.png";
+  // The same word, as any normal IME actually types it -- precomposed.
+  std::string nfcQuery = "\xe3\x83\x9e\xe3\x82\xa4\xe3\x83\x8a\xe3\x82\xab\xe3\x83\xbc\xe3\x83\x89";
+  std::vector<std::string> lines = {nfdFilename};
+#ifdef __APPLE__
+  REQUIRE(mode.search(lines, nfcQuery, GrepSyntax::Fixed));
+  CHECK(mode.pattern() == nfcQuery);  // history/display still shows exactly what was typed
+  REQUIRE(mode.matches().size() == 1);
+  CHECK(mode.matches()[0].text == nfdFilename);  // the line's ORIGINAL bytes, not a normalized copy
+#else
+  // unicodeNormalizationCandidates() is a documented no-op off macOS
+  // (see its own comment: APFS's normalization-preserving behavior,
+  // and CFStringNormalize() itself, are both macOS-specific) -- this
+  // cross-form match isn't expected to work there. Every other test in
+  // this file (plain byte-identical patterns) is unaffected.
+  CHECK_FALSE(mode.search(lines, nfcQuery, GrepSyntax::Fixed));
+#endif
+}

@@ -274,3 +274,33 @@ TEST_CASE_FIXTURE(Fixture, "pushSplit: nests on top of an existing splitSelected
   CHECK(mode.pattern() == "^=== chapter");  // back to the original top level
   CHECK_FALSE(mode.canGoBack());
 }
+
+// 2026-08-23 fix (docs/CHANGES.md item 407): CUT's fixed/regex split
+// shells out to the exact same fgrep/egrep GrepMode::search() does, so
+// it has the exact same byte-literal-matching blind spot -- see that
+// file's own identically-shaped test (and unicodeNormalizationCandidates()'s
+// own comment) for the full account.
+TEST_CASE_FIXTURE(Fixture, "split (Fixed/fgrep, 2026-08-23 fix, item 407): matches a delimiter line whose "
+                           "Unicode-decomposed (NFD) bytes differ from the normally-precomposed (NFC) "
+                           "pattern an IME actually types") {
+  // "ド" (U+30C9) stored decomposed: "ト" (U+30C8) + combining dakuten (U+3099).
+  std::string nfdDelimiter = "\xe3\x83\x88\xe3\x82\x99===";
+  std::string nfcPattern = "\xe3\x83\x89===";  // same word, precomposed -- what an IME actually types
+  auto lines = toStyled({nfdDelimiter, "content"});
+#ifdef __APPLE__
+  REQUIRE(mode.split(lines, nfcPattern, GrepSyntax::Fixed));
+  CHECK(mode.pattern() == nfcPattern);
+  REQUIRE(mode.segments().size() == 1);
+  CHECK(mode.segments()[0].label == nfdDelimiter);  // the ORIGINAL line's bytes, not a normalized copy
+#else
+  // See test_grep_mode.cpp's own identical #else branch -- macOS-only
+  // fix. Unlike GrepMode::search(), CutMode::split() still returns
+  // true with zero delimiter matches (a single unlabeled segment
+  // spanning everything -- see its own "matchLines.empty()" branch),
+  // so the observable difference here is the segment count/label, not
+  // the return value.
+  REQUIRE(mode.split(lines, nfcPattern, GrepSyntax::Fixed));
+  REQUIRE(mode.segments().size() == 1);
+  CHECK(mode.segments()[0].label.empty());  // no delimiter matched -- one big unlabeled segment
+#endif
+}
