@@ -4591,6 +4591,14 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
   // cutReturnMode_ is left untouched for Directory (its class default
   // is already ApplicationMode::Directory, matching startCutFilePrompt()'s
   // own identical reasoning, see its comment).
+  // cutOrigin_ (2026-08-24 fix, see executeCut()'s own "reuse File"
+  // branch comment): a genuine, freshly-armed Directory-origin request
+  // needs to say so explicitly HERE, at arm time -- not left for
+  // executeCut() to infer from currentMode_ alone at submission time,
+  // which is exactly what let a ^R-recalled File-origin pattern get
+  // silently reinterpreted as Directory-origin once ^G had already
+  // moved currentMode_ back to Directory in between.
+  if (currentMode_ == ApplicationMode::Directory) cutOrigin_ = CutOrigin::Directory;
   // Regex ("^J^C", "Select string"): opens directly into the candidate
   // list, same as EGREP -- see startGrepPrompt()/startRegexPromptList()'s
   // own comment for why (a 2026-08-05 user report specifically named
@@ -5883,6 +5891,35 @@ bool Application::executeCut(const std::string &pattern) {
     // split() returns before its own redraw(), so nothing ever renders
     // using a "wasted" assignment here.
     cutOrigin_ = CutOrigin::File;
+    ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
+  } else if (cutOrigin_ == CutOrigin::File && !fileMode_.currentFile().empty()) {
+    // 2026-08-24 fix, a real report + direct follow-up question
+    // ("戻り値が正常化さえ実現すれば直る問題じゃないの？" -- once ^G
+    // correctly lands back on Directory again, isn't THIS what fixes
+    // it too?): reached via ^R recalling a pattern that was originally
+    // used for a File-origin search (^Jb/^J^B), NOT a fresh file-
+    // selector pick (fileSourcePath is empty) -- e.g. the user backed
+    // all the way out to Directory (correctly, per cutReturnMode_) and
+    // THEN pressed ^R from there. currentMode_==Directory at THIS
+    // exact moment used to make the branch below fire, silently
+    // reinterpreting the recalled pattern as "search the directory
+    // LISTING instead" -- technically consistent with currentMode_,
+    // but not what "resuming/reapplying a File search" means, and the
+    // user was right that this doesn't actually need any NEW per-
+    // pattern origin bookkeeping in the history ring: cutOrigin_ and
+    // fileMode_.currentFile() are BOTH still sitting there, completely
+    // unchanged, the whole time between the original search and this
+    // ^R recall -- nothing has touched either since (a genuinely fresh
+    // Directory-origin arm, startCutPrompt() from Directory, is now
+    // what explicitly flips cutOrigin_ to Directory ahead of time, see
+    // its own comment -- so reaching here with cutOrigin_ still File
+    // unambiguously means "no fresh Directory search has been armed
+    // since," not "this happens to be Directory right now"). Reusing
+    // them directly, instead of re-deriving from currentMode_, is the
+    // actual fix.
+    std::vector<StyledLine> sourceLines;
+    sourceLines.reserve(fileView_.lines().size());
+    for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
   } else if (currentMode_ == ApplicationMode::Directory) {
     // 2026-08-11: CUT run directly over the directory listing (^J^C

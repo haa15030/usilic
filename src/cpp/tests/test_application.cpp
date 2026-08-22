@@ -1609,6 +1609,47 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin): mode-line shows the
   CHECK(text.find((root / "log.txt").string()) != std::string::npos);
 }
 
+// 2026-08-24 fix, a direct user follow-up question ("戻り値が正常化
+// さえ実現すれば直る問題じゃないの？"): ^R-recalling a pattern
+// originally used for a File-origin CUT, from Directory mode (having
+// already backed all the way out via ^G), used to silently re-target
+// the DIRECTORY LISTING instead of the same file -- currentMode_==
+// Directory at recall time was enough to make executeCut() take its
+// Directory branch, discarding the fact that cutOrigin_/
+// fileMode_.currentFile() were both still correctly sitting there
+// unchanged. Fixed by making a FRESH Directory-origin arm
+// (startCutPrompt() from Directory) explicitly set cutOrigin_ itself,
+// so reaching executeCut() with cutOrigin_ still File unambiguously
+// means "no fresh Directory search since" -- reuse that file instead.
+TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin, regex ^J^B): ^R-recalling the pattern still "
+                           "re-targets the SAME file, not the directory listing") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::StartCutFileRegex));  // ^J^B -- the exact variant the report used
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 3);  // see the earlier "splits the SELECTED entry" test
+
+  // Regex (direct-entry) CUT's own LIFO stack (see PendingCpMvRmOperation-
+  // style comments elsewhere: "検索への入口がCUTなら出るときもCUTから
+  // 出るはず"): the FIRST ^G returns to the candidate list itself, not
+  // straight to Directory -- matching the report's own literal
+  // "^G→^R" (a single ^G before ^R), not "^G^G→^R".
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R: restarts the SAME candidate list as a real history view
+  REQUIRE(app.handleCommand(Command::Enter));  // select "marker" (the only/newest entry)
+
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 3);  // same real split as before, not "1/1, no match"
+  CHECK(app.cutMode().segments()[0].label == "marker one");  // log.txt's own content, not a directory listing
+}
+
 TEST_CASE_FIXTURE(Fixture, "CUT (regular file): Back returns to Directory mode, matching where it was entered from") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
