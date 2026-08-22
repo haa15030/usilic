@@ -348,11 +348,15 @@ const KeyTableEntry kKeyTable[] = {
     {"^Xe", "Execute recorded macro", {kLeaderX, 'e'}},
     {"^Xs", "Restart SHELL", {kLeaderX, 's'}},
     {"^Xa", "ARC: expand archive", {kLeaderX, 'a'}},
-    // ^X^K-leader (same no-space rationale as ^J-leader above)
-    {"^X^Kc", "CP with SHELL window", {kLeaderX, 0x0b, 'c'}},
-    {"^X^Km", "MV with SHELL window", {kLeaderX, 0x0b, 'm'}},
-    {"^X^Kr", "RM with SHELL window", {kLeaderX, 0x0b, 'r'}},
-    {"^X^Ka", "ARC: expand with SHELL window", {kLeaderX, 0x0b, 'a'}},
+    // ^X^K-leader (same no-space rationale as ^J-leader above). CP/MV/
+    // RM/ARC's own "with SHELL window" variants (^X^Kc/^X^Km/^X^Kr/
+    // ^X^Ka, K-51/K-53/K-55/K-57) were REMOVED here (2026-08-23, a
+    // direct user request) -- once CP/MV/RM's execution was unified to
+    // always run via the real SHELL session (items 396, this one for
+    // ARC), the "without SHELL window" plain ^X?/^Xa variants became
+    // functionally IDENTICAL to their ^X^K? siblings, leaving two
+    // key sequences for the exact same behavior. ^Xc/^Xm/^Xr/^Xa are
+    // now the ONLY entry points.
     {"^X^Ke", "ERROR", {kLeaderX, 0x0b, 'e'}},
     {"^X^Kl", "LOG: SHELL output", {kLeaderX, 0x0b, 'l'}},
     // ^O-leader (same no-space rationale as ^J-leader above). ^Og
@@ -779,11 +783,27 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       name = std::filesystem::path(fileMode_.currentFile()).filename().string();
     }
     std::string trailing = std::to_string(contentByteCount(cutContentView_));
+    std::string label;
     if (const CutSegment *segment = cutMode_.selectedSegment()) {
-      std::string label = segment->label;
-      std::size_t start = label.find_first_not_of(' ');
-      if (start != std::string::npos) trailing += "  " + label.substr(start);
+      std::size_t start = segment->label.find_first_not_of(' ');
+      if (start != std::string::npos) label = segment->label.substr(start);
     }
+    // HELP (2026-08-23 fix, a real report + reference: "HELP" "01/48
+    // TOP" "2194" "1.  Introdduction                  ") -- the byte
+    // count and the current chapter's own label are two SEPARATE
+    // fields (trailing/trailing2, the same pair FileMode's byte-size/
+    // directory split already uses), the label padded to the row's
+    // edge, not one string concatenated together as this provider used
+    // to do for every origin (a real screenshot at the time this was
+    // first written showed them on the same ROW, which was true of
+    // either shape -- this is the confirmed follow-up). Every other
+    // origin (a real File/Directory-origin CUT) is left exactly as it
+    // was: unaffected, not independently confirmed to want the same
+    // two-field treatment.
+    if (cutOrigin_ == CutOrigin::Help) {
+      return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", label};
+    }
+    if (!label.empty()) trailing += "  " + label;
     return {name, trailing, /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", /*trailing2=*/""};
   });
   // Mode-line fields for cutView_ itself (the segment-LABEL list, one
@@ -814,6 +834,25 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     std::string name = (cutOrigin_ == CutOrigin::Help)  ? "HELP"
                         : (cutOrigin_ == CutOrigin::Log) ? "LOG"
                                                           : "CUT";
+    // HELP's own top-level (non-nested) mode line (2026-08-23 fix, a
+    // real report + reference: "HELP" "01/26 TOP" "<byte count>"
+    // "/Users/.../    ") -- replaces the "no concrete value exists
+    // yet" placeholder this provider originally shipped with (see the
+    // class comment just above). Byte count is the whole HELP.jp
+    // content's own size (helpText_.size(), matching every other
+    // mode's "file's byte size" convention -- cutContentView_ itself
+    // only ever holds ONE segment's content, not the whole file, so it
+    // can't supply this the way it supplies its own per-segment byte
+    // count); the directory is wherever HELP was entered from --
+    // directoryMode_.currentDirectory(), the SAME value the real
+    // Directory-origin CUT branch below already uses -- padded to the
+    // row's edge like every other two-field trailing pair in this
+    // port (see cutContentView_'s own identical 2026-08-23 fix just
+    // above).
+    if (cutOrigin_ == CutOrigin::Help && !cutMode_.parentPattern()) {
+      return {name, std::to_string(helpText_.size()), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
+              directoryMode_.currentDirectory()};
+    }
     std::string trailing;
     if (auto parent = cutMode_.parentPattern()) {
       trailing = "CUT:" + *parent;
@@ -1563,14 +1602,9 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     leaderXKPending_ = false;
     if (special) return false;
     switch (byte) {
-      case 'c':  // ^X ^K c : CP with SHELL window (K-51)
-        return handleCommand(Command::StartCopyInteractive);
-      case 'm':  // ^X ^K m : MV with SHELL window (K-53)
-        return handleCommand(Command::StartMoveInteractive);
-      case 'r':  // ^X ^K r : RM with SHELL window (K-55)
-        return handleCommand(Command::StartRemoveInteractive);
-      case 'a':  // ^X ^K a : ARC expand, with SHELL window (K-57)
-        return handleCommand(Command::StartArchiveExtractInteractive);
+      // 'c'/'m'/'r'/'a' (CP/MV/RM/ARC "with SHELL window", K-51/53/55/
+      // 57) REMOVED here (2026-08-23, see kKeyTable's own comment) --
+      // ^Xc/^Xm/^Xr/^Xa are now the only entry points.
       case 'e':  // ^X ^K e : ERROR (K-67)
         return handleCommand(Command::ShowErrorLog);
       case 'l':  // ^X ^K l : LOG (K-68)
@@ -2200,12 +2234,6 @@ bool Application::handleCommand(Command command) {
       return startMovePrompt();
     case Command::StartRemove:
       return startRemovePrompt();
-    case Command::StartCopyInteractive:
-      return startCopyPrompt(/*interactive=*/true);
-    case Command::StartMoveInteractive:
-      return startMovePrompt(/*interactive=*/true);
-    case Command::StartRemoveInteractive:
-      return startRemovePrompt(/*interactive=*/true);
     case Command::StartDestinationPrompt:
       return startDestinationPrompt();
     case Command::SaveBufferToFile:
@@ -2228,9 +2256,7 @@ bool Application::handleCommand(Command command) {
     case Command::RestartShell:
       return shellRestart();
     case Command::StartArchiveExtract:
-      return startArchivePrompt(/*interactive=*/false);
-    case Command::StartArchiveExtractInteractive:
-      return startArchivePrompt(/*interactive=*/true);
+      return startArchivePrompt();
     case Command::ShowErrorLog:
       return executeShowErrorLog();
     case Command::ShowShellLog:
@@ -3101,7 +3127,20 @@ bool Application::returnFromCut() {
     return startRegexPromptList(PromptKind::CutPattern);
   }
   currentMode_ = cutReturnMode_;
-  if (cutReturnMode_ == ApplicationMode::Directory) {
+  // cutOrigin_ == Directory only (2026-08-23 fix, a real report:
+  // "^J^H→...→続いて^G^G→戻り値不良「CUT: ^  [0-9]+¥.」（「usilic
+  // 1.5b」が正解）") -- this function is shared by every CutMode-backed
+  // screen that can return to Directory, not just a real user-
+  // initiated ^J^C search. HELP (cutOrigin_==Help, kHelpPattern's own
+  // section-heading regex) and LOG (cutOrigin_==Log) both reuse the
+  // exact same CutMode/split() machinery internally, but backing out
+  // of either isn't "you just ran a CUT search" -- leaving a
+  // "CUT: <internal pattern>" breadcrumb in the Directory listing's
+  // search annotation afterward is exactly the bug, not a display
+  // glitch (setSearchAnnotation()'s own value is what a subsequent
+  // redraw actually paints, so this WAS the wrong data, not a stale
+  // frame). Only a genuine Directory-origin CUT sets it.
+  if (cutReturnMode_ == ApplicationMode::Directory && cutOrigin_ == CutOrigin::Directory) {
     directoryMode_.setSearchAnnotation("CUT: " + cutMode_.pattern());
     lastDirectorySearchKind_ = DirectorySearchKind::Cut;
   }
@@ -3953,9 +3992,9 @@ bool Application::cycleCharset() {
 // check here anymore -- that's checked at ^X^M time instead, since
 // marking can legitimately still be empty right when the operation is
 // armed (the whole point of decoupling the two steps).
-bool Application::startCopyPrompt(bool interactive) {
+bool Application::startCopyPrompt() {
   if (currentMode_ != ApplicationMode::Directory) return false;
-  pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::CopyDestination, interactive, directoryMode_.currentDirectory()};
+  pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::CopyDestination, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("CP");
   // No cursor-row highlight while armed -- see ContentView::
   // setCursorRowAlsoHighlighted()'s own comment (=ed reference: legacy
@@ -3965,9 +4004,9 @@ bool Application::startCopyPrompt(bool interactive) {
   return true;
 }
 
-bool Application::startMovePrompt(bool interactive) {
+bool Application::startMovePrompt() {
   if (currentMode_ != ApplicationMode::Directory) return false;
-  pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::MoveDestination, interactive, directoryMode_.currentDirectory()};
+  pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::MoveDestination, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("MV");
   directoryView_.setCursorRowAlsoHighlighted(false);
   directoryView_.redraw();
@@ -3979,9 +4018,9 @@ bool Application::startMovePrompt(bool interactive) {
 // confirmation prompt itself (a deliberately simplified stand-in for
 // m_dest()'s T_rm branch, which checks a single typed 'y' the same
 // way, see class comment) is shown by startDestinationPrompt() (^X^M).
-bool Application::startRemovePrompt(bool interactive) {
+bool Application::startRemovePrompt() {
   if (currentMode_ != ApplicationMode::Directory) return false;
-  pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::RemoveConfirm, interactive, directoryMode_.currentDirectory()};
+  pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::RemoveConfirm, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("RM");
   directoryView_.setCursorRowAlsoHighlighted(false);
   directoryView_.redraw();
@@ -4027,7 +4066,6 @@ bool Application::startDestinationPrompt() {
     directoryView_.redraw();  // paints the label's removal now, matching startCopyPrompt()'s own redraw()
     return false;
   }
-  cpMvRmInteractive_ = pending.interactive;
   // Position text ("06/22 END", matching the underlying listing's own
   // current cursor position) -- 2026-08-21 fix, part of the same "no
   // 'Destination ? ' text at all" report (see drawPromptLabel()'s own
@@ -4076,8 +4114,8 @@ bool Application::startDuPrompt() {
   return true;
 }
 
-// K-57/K-58: see the class's own declaration comment.
-bool Application::startArchivePrompt(bool interactive) {
+// K-58: see the class's own declaration comment.
+bool Application::startArchivePrompt() {
   if (currentMode_ == ApplicationMode::Archive) {
     if (archiveMode_.targetEntries().empty()) return false;
   } else if (currentMode_ == ApplicationMode::Directory) {
@@ -4091,7 +4129,6 @@ bool Application::startArchivePrompt(bool interactive) {
   } else {
     return false;
   }
-  archiveExtractInteractive_ = interactive;
   activatePrompt(PromptKind::ArchiveDestination, "");
   return true;
 }
@@ -5939,12 +5976,12 @@ bool Application::executeLocate(const std::string &query) {
 // only distinction (bringing the session to the foreground
 // unconditionally vs. only when needed) collapses to "always show it",
 // a disclosed simplification favoring the LOG/freeze-safety guarantee
-// over replicating that one cosmetic difference. cpMvRmInteractive_ is
-// still consumed below (K-51/K-52 remain distinct key bindings/
-// Commands) even though it no longer changes how this actually runs.
+// over replicating that one cosmetic difference. K-51's own key
+// binding (^X^Kc, "with SHELL window") was REMOVED entirely
+// (2026-08-23, a direct user request once this unification made it a
+// functionally identical duplicate of ^Xc) -- ^Xc is now the only
+// entry point.
 bool Application::executeCopy(const std::string &destination) {
-  cpMvRmInteractive_ = false;  // consumed exactly once, regardless of outcome below
-
   std::vector<std::string> targets = collectTargetPaths();
   if (targets.empty() || destination.empty()) {
     directoryView_.redraw();
@@ -5962,8 +5999,6 @@ bool Application::executeCopy(const std::string &destination) {
 
 // Same 2026-08-22 redesign as executeCopy() -- see its own comment.
 bool Application::executeMove(const std::string &destination) {
-  cpMvRmInteractive_ = false;
-
   std::vector<std::string> targets = collectTargetPaths();
   if (targets.empty() || destination.empty()) {
     directoryView_.redraw();
@@ -5989,8 +6024,6 @@ bool Application::executeMove(const std::string &destination) {
 // directory once done (startCpMvRmShellRun()'s own empty-destination
 // branch).
 bool Application::executeRemove(const std::string &confirmation) {
-  cpMvRmInteractive_ = false;
-
   std::vector<std::string> targets = collectTargetPaths();
   if (targets.empty() || confirmation != "y") {
     directoryView_.redraw();
@@ -6069,6 +6102,24 @@ void Application::pollPendingCpMvRmShellRun() {
   directoryView_.redraw();
 }
 
+// Same non-blocking "let the run loop's own existing tick drive the
+// wait" shape as pollPendingCpMvRmShellRun() -- see its own comment.
+// No exit-code check/destination-landing needed here (never requested
+// for ARC): just restore whichever mode this extraction was launched
+// from and redraw.
+void Application::pollPendingArchiveExtractShellRun() {
+  if (!pendingArchiveExtractShellRun_) return;
+  if (!shell_.alive()) {
+    pendingArchiveExtractShellRun_.reset();
+    return;
+  }
+  if (shell_.promptGeneration() == pendingArchiveExtractShellRun_->promptGenerationBefore) return;
+  ApplicationMode returnMode = pendingArchiveExtractShellRun_->returnMode;
+  pendingArchiveExtractShellRun_.reset();
+  currentMode_ = returnMode;
+  activeView().redraw();
+}
+
 // docs/HISTORY.md:1840 ("chown実行後のRM、MVではファイルが選べない...
 // その旨何らかのメッセージ表示があれば親切"): legacy's own is_write()
 // check (menu.c's m_cr()) silently refuses to even MARK a permission-
@@ -6118,13 +6169,20 @@ bool Application::executeDu(const std::string &path) {
   return true;
 }
 
-// K-57/K-58: see startArchivePrompt()'s own comment for the two entry
-// points this re-derives at submit time (currentMode_ can't have
-// changed while the prompt was up).
+// K-58: see startArchivePrompt()'s own comment. 2026-08-23 redesign,
+// same reasoning as executeCopy()'s own (see its comment) and the
+// same direct user request extending it to ARC: K-57 (^X^Ka, "with
+// SHELL window") is gone, so this is the only entry point now, and it
+// always runs via shell_'s own real, persistent SHELL session
+// (startArchiveExtractShellRun(), mirroring startCpMvRmShellRun())
+// instead of ChildProcess::run()/runInteractive() -- the extraction's
+// own tar/unzip output genuinely lives in shell_'s scrollback (LOG-
+// visible) this way, matching CP/MV/RM. Unlike CP/MV/RM there's no
+// destination-directory landing (never requested for ARC) -- once the
+// shell's prompt reappears, pollPendingArchiveExtractShellRun() just
+// restores whichever mode (Directory or Archive) this was launched
+// from and redraws.
 bool Application::executeArchiveExtract(const std::string &destination) {
-  bool interactive = archiveExtractInteractive_;
-  archiveExtractInteractive_ = false;  // consumed exactly once, regardless of outcome below
-
   std::string archivePath;
   ArchiveKind kind = ArchiveKind::None;
   std::vector<std::string> members;
@@ -6153,16 +6211,15 @@ bool Application::executeArchiveExtract(const std::string &destination) {
     return false;
   }
 
-  // K-57 ("with SHELL window"): runs interactively, with the real
-  // tar/unzip output visible live on the real terminal -- same
-  // ChildProcess::runInteractive() shape CP/MV/RM's own ^X^Kc/^X^Km/
-  // ^X^Kr already use (see CpMvRmMode::runInteractive()'s own
-  // comment on why this class, despite its name, is what actually
-  // owns the KeyInput reference this needs). K-58 (the default):
-  // captured silently.
-  bool ok = interactive ? cpMvRmMode_.runInteractive(argv) == 0 : cpMvRmMode_.run(argv).ok;
-  activeView().redraw();
-  return ok;
+  ApplicationMode returnMode = currentMode_;
+  if (!ensureShellActive()) {
+    activeView().redraw();
+    return false;
+  }
+  pendingArchiveExtractShellRun_ = PendingArchiveExtractShellRun{shell_.promptGeneration(), returnMode};
+  shell_.commandLine().setText(shellQuoteArgv(argv));
+  shell_.submitLine();
+  return true;
 }
 
 // Ported from mode.c's M_lfile/M_ldir handling: resolves the typed

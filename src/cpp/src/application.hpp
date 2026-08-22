@@ -189,18 +189,12 @@ enum class Command {
   // itself.
   MarkAll,
   ClearAllMarks,
-  // K-51/K-53/K-55 (^X^Kc/^X^Km/^X^Kr, "with SHELL window"): same CP/
-  // MV/RM operation as StartCopy/StartMove/StartRemove, but the real
-  // command's own output is shown live on the real terminal (via
-  // ChildProcess::runInteractive(), same shape as ExecMode/
-  // ProgramMode) instead of being silently captured -- see
-  // CpMvRmMode::copyToInteractive()'s own comment. Reuses the SAME
-  // prompt kinds/text-entry flow as the non-interactive commands;
-  // only the final execution step differs (executeCopy()/etc. check
-  // cpMvRmInteractive_).
-  StartCopyInteractive,
-  StartMoveInteractive,
-  StartRemoveInteractive,
+  // K-51/K-53/K-55/K-57 (^X^Kc/^X^Km/^X^Kr/^X^Ka, "with SHELL window")
+  // REMOVED 2026-08-23 (a direct user request, once CP/MV/RM/ARC's
+  // execution was unified to always run via the real SHELL session --
+  // see executeCopy()'s own comment for CP/MV/RM, executeArchiveExtract()'s
+  // for ARC -- these became functionally identical duplicates of
+  // StartCopy/StartMove/StartRemove/StartArchiveExtract).
   // K-17 (^X^W, M_w4): writes the active view's full content to
   // wFilePath_ (see the constructor's own comment) -- ported from
   // menu.c's own `send_pp(hp->bp->pp, "a")` (append mode).
@@ -266,10 +260,11 @@ enum class Command {
   // starts a fresh one. See Application::shellRestart()'s own
   // comment.
   RestartShell,
-  // K-58/K-57 (^Xa / ^X^Ka, ARC "Expand archive" without/with SHELL
-  // window). See Application::startArchivePrompt()'s own comment.
+  // K-58 (^Xa, ARC "Expand archive") -- K-57 (^X^Ka, "with SHELL
+  // window") REMOVED 2026-08-23, see StartCopyInteractive's own
+  // former comment (now this enum's own comment near ClearAllMarks).
+  // See Application::startArchivePrompt()'s own comment.
   StartArchiveExtract,
-  StartArchiveExtractInteractive,
   // K-67 (^X^Ke, M_error, "ERROR"): opens errorLogPath_ in File mode.
   // K-68 (^X^Kl, M_log, "LOG: SHELL output"): snapshots Shell::
   // scrollback() to logFilePath_, then opens THAT in File mode. See
@@ -1096,6 +1091,9 @@ class Application {
   // this method only handles noticing COMPLETION (shell_.promptGeneration()
   // advancing) and landing back in Directory mode afterward.
   void pollPendingCpMvRmShellRun();
+  // Same shape as pollPendingCpMvRmShellRun() (see its own comment),
+  // for executeArchiveExtract()'s own shell_-injected run.
+  void pollPendingArchiveExtractShellRun();
 
   // True once an exit has been confirmed (StartExit's prompt was
   // submitted with a leading 'y') -- a future real run loop's signal
@@ -1455,9 +1453,9 @@ class Application {
   // succeeds (no mode restriction -- legacy's own M_ascii has none
   // either, unlike most other K-? commands in this port).
   bool cycleCharset();
-  bool startCopyPrompt(bool interactive = false);
-  bool startMovePrompt(bool interactive = false);
-  bool startRemovePrompt(bool interactive = false);
+  bool startCopyPrompt();
+  bool startMovePrompt();
+  bool startRemovePrompt();
   // K-71 (^X^M, M_dest): shows the prompt for whichever operation
   // startCopyPrompt()/startMovePrompt()/startRemovePrompt() most
   // recently armed -- see PendingCpMvRmOperation's own comment.
@@ -1467,8 +1465,9 @@ class Application {
   bool cancelPendingCpMvRm();
   bool startExitPrompt();
   bool startDuPrompt();
-  // K-57/K-58 (^X^Ka/^Xa, M_arc/M_arc2, "ARC: Expand archive"):
-  // starts the "Destination ?" prompt (HELP.jp 2.11). Two entry
+  // K-58 (^Xa, M_arc2, "ARC: Expand archive") -- K-57 (^X^Ka, "with
+  // SHELL window") removed 2026-08-23, see kKeyTable's own comment.
+  // Starts the "Destination ?" prompt (HELP.jp 2.11). Two entry
   // points, both valid per HELP.jp's own text:
   //   - From Directory mode, the selected entry must itself be a
   //     recognized archive suffix (same programForSuffix() check
@@ -1482,7 +1481,7 @@ class Application {
   // False (refused) from every other mode, or if neither condition
   // above holds (e.g. Directory mode with a non-archive file
   // selected).
-  bool startArchivePrompt(bool interactive = false);
+  bool startArchivePrompt();
   // Builds the extraction argv for `kind` (Tar/Zip only in this first
   // slice -- Lha's own extraction syntax differs from the `lha p`
   // extract-to-stdout command extractSelected() uses, and Rpm/Deb
@@ -1730,16 +1729,6 @@ class Application {
   // executeCut() as soon as it's consumed, so the very next CUT (of
   // either variant) doesn't accidentally reuse a stale path.
   std::string cutFileSourcePath_;
-  // Set by startCopyPrompt(true)/startMovePrompt(true)/
-  // startRemovePrompt(true) (K-51/K-53/K-55's "with SHELL window"
-  // entry points), consumed once by executeCopy()/executeMove()/
-  // executeRemove() to pick the interactive CpMvRmMode method instead
-  // of the plain captured one.
-  bool cpMvRmInteractive_ = false;
-  // Set by startArchivePrompt(true) (K-57's "with SHELL window" entry
-  // point), consumed once by executeArchiveExtract() the same way
-  // cpMvRmInteractive_ is.
-  bool archiveExtractInteractive_ = false;
   bool shellStarted_ = false;
   std::string helpText_;
   // Which top-level Cut/CutContent split is currently active -- only
@@ -1826,7 +1815,6 @@ class Application {
   // this and discards a stale arm rather than using it.
   struct PendingCpMvRmOperation {
     PromptKind kind;
-    bool interactive;
     std::string directory;
   };
   std::optional<PendingCpMvRmOperation> pendingCpMvRm_;
@@ -1846,6 +1834,17 @@ class Application {
     std::string sourceDirectory;
   };
   std::optional<PendingCpMvRmShellRun> pendingCpMvRmShellRun_;
+  // executeArchiveExtract()'s own version of PendingCpMvRmShellRun
+  // (2026-08-23, same redesign as CP/MV/RM's, see executeCopy()'s own
+  // comment, extended to ARC on a direct user request): simpler than
+  // CP/MV/RM's -- no destination-landing navigation (never requested
+  // for ARC), just restoring whichever mode (Directory or Archive) the
+  // extraction was launched from once shell_'s prompt reappears.
+  struct PendingArchiveExtractShellRun {
+    int promptGenerationBefore;
+    ApplicationMode returnMode;
+  };
+  std::optional<PendingArchiveExtractShellRun> pendingArchiveExtractShellRun_;
   // Shared by submitPrompt() (text typed live) and
   // openSelectedListEntry()'s own prompt-recall branch (text picked
   // from ^R's history list instead) -- see startPromptHistoryRecall()'s

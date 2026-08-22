@@ -1298,6 +1298,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     // needing to press anything.
     app.pollLocateUpdateDbCompletion();
     app.pollPendingCpMvRmShellRun();
+    app.pollPendingArchiveExtractShellRun();
     syncMouseTracking();
     bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
 
@@ -1575,6 +1576,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // into the LOCATE prompt every frame, same as -c's own poll loop.
     app.pollLocateUpdateDbCompletion();
     app.pollPendingCpMvRmShellRun();
+    app.pollPendingArchiveExtractShellRun();
 
     // Set true below whenever something was actually consumed this
     // iteration (a click, a key, a drag/coast step) -- used to skip

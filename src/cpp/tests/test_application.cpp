@@ -83,6 +83,18 @@ bool pumpCpMvRmToCompletion(Application &app) {
   });
 }
 
+// executeArchiveExtract() (2026-08-23 redesign, see its own comment):
+// same async-completion story as CP/MV/RM's own pump helper above, but
+// the return mode can be either Directory or Archive (whichever the
+// extraction was launched from) -- "not Shell anymore" is the
+// completion signal here instead of a fixed target mode.
+bool pumpArchiveExtractToCompletion(Application &app) {
+  return pumpUntil(app, [&]() {
+    app.pollPendingArchiveExtractShellRun();
+    return app.currentMode() != fm::ApplicationMode::Shell;
+  });
+}
+
 struct Fixture {
   fs::path root;
   RecordingDisplay display{24, 80};
@@ -2594,7 +2606,11 @@ TEST_CASE_FIXTURE(Fixture, "ARC nested: opening a fresh top-level archive clears
   CHECK(app.currentMode() == ApplicationMode::Directory);  // one Back reaches Directory directly -- no stale chain
 }
 
-// -- ARC extraction to a real destination (K-57/K-58, ^X^Ka/^Xa) --
+// -- ARC extraction to a real destination (K-58, ^Xa -- K-57/^X^Ka
+// "with SHELL window" REMOVED 2026-08-23, a direct user request once
+// executeArchiveExtract() was unified to always run via shell_'s own
+// real SHELL session, same redesign as CP/MV/RM's, see its own
+// comment) --
 
 TEST_CASE_FIXTURE(Fixture, "ARC extract (^Xa, K-58, Directory mode): extracts the WHOLE archive to the destination") {
   REQUIRE(app.start(path()));
@@ -2606,23 +2622,10 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract (^Xa, K-58, Directory mode): extracts th
   CHECK(app.promptActive());
   feedText((root / "arcdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
 
   CHECK(fs::exists(root / "arcdest" / "arcsrc" / "inner.txt"));
   CHECK(fs::exists(root / "archive.tar"));  // untouched by extraction
-}
-
-TEST_CASE_FIXTURE(Fixture, "ARC extract (^X^Ka, K-57 \"with SHELL window\"): also extracts the whole archive") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("archive.tar");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
-  REQUIRE(app.feedByte('a', std::nullopt));   // a
-  feedText((root / "arcdest").string());
-  CHECK(app.feedByte(0x0d, std::nullopt));
-
-  CHECK(fs::exists(root / "arcdest" / "arcsrc" / "inner.txt"));
 }
 
 TEST_CASE_FIXTURE(Fixture, "ARC extract from within Archive mode's own TOC: marking a specific entry extracts only it") {
@@ -2644,6 +2647,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract from within Archive mode's own TOC: mark
   REQUIRE(app.feedByte('a', std::nullopt));   // a
   feedText((root / "arcdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
 
   CHECK(fs::exists(root / "arcdest" / "arcsrc" / "inner.txt"));
   CHECK(app.currentMode() == ApplicationMode::Archive);  // extraction doesn't leave the TOC screen
@@ -4690,20 +4694,6 @@ TEST_CASE_FIXTURE(Fixture, "^Space marks a row Standout even when the cursor lat
   CHECK(display.standoutAt(idx, nameCol));  // still Standout -- marked, not just "was the cursor row"
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^K c / ^X ^K m / ^X ^K r (K-51/K-53/K-55) each arm the same "
-                           "operation, ^X ^M still shows the prompt") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" onto a real entry
-  REQUIRE(app.handleCommand(Command::MoveDown));
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
-  CHECK(app.feedByte('c', std::nullopt));
-  CHECK_FALSE(app.promptActive());
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  CHECK(app.feedByte(0x0d, std::nullopt));    // ^M
-  CHECK(app.promptActive());
-}
-
 TEST_CASE_FIXTURE(Fixture, "^X ^M with nothing armed is a no-op (not e.g. some stale prompt kind)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
@@ -4725,25 +4715,6 @@ TEST_CASE_FIXTURE(Fixture, "^X ^M discards a stale arm from before navigating to
 
   CHECK_FALSE(app.handleCommand(Command::StartDestinationPrompt));
   CHECK_FALSE(app.promptActive());
-}
-
-TEST_CASE_FIXTURE(Fixture, "CP (^X^Kc, K-51 \"with SHELL window\"): still creates a real copy at the destination") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("cpmv_a.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
-  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M -- show the prompt
-  feedText((root / "cpmvdest").string());
-  CHECK(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(pumpCpMvRmToCompletion(app));
-
-  CHECK(fs::exists(root / "cpmvdest" / "cpmv_a.txt"));
-  CHECK(fs::exists(root / "cpmv_a.txt"));  // untouched by a copy
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCopy): refused outside Directory mode") {
@@ -6616,6 +6587,40 @@ TEST_CASE_FIXTURE(Fixture, "HELP: Back returns to wherever the user was, not alw
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);  // back to File mode, not Directory
+}
+
+TEST_CASE_FIXTURE(Fixture, "HELP (cutView_, the TOC level): mode-line shows the whole HELP text's own byte "
+                           "size and the originating directory, padded to the row's edge (2026-08-23 fix, a "
+                           "real report + reference: \"HELP\" \"01/26 TOP\" \"<byte count>\" \"/path/    \")") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.find(std::to_string(testHelpText().size())) != std::string::npos);
+  CHECK(text.find(path()) != std::string::npos);
+}
+
+// 2026-08-23 fix, a real report: "^J^H→...→続いて^G^G→戻り値不良
+// 「CUT: ^  [0-9]+¥.」（「usilic 1.5b」が正解）" -- returnFromCut() is
+// shared by every CutMode-backed screen that can return to Directory,
+// not just a real user-initiated ^J^C search; HELP reuses the exact
+// same machinery internally (kHelpPattern's own section-heading
+// regex), and backing all the way out of it used to leave that
+// internal pattern behind as a "CUT: <pattern>" search annotation.
+TEST_CASE_FIXTURE(Fixture, "HELP: backing all the way out to Directory does NOT leave a stale \"CUT: "
+                           "<internal pattern>\" search annotation behind") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+
+  CHECK(app.activeContentView().modeLineText().find("CUT:") == std::string::npos);
+  CHECK(display.rowText(23).find("usilic v1.5b") != std::string::npos);  // the normal watermark is back, not squeezed out
 }
 
 TEST_CASE_FIXTURE(Fixture, "HELP: invoked mid-CUT preserves the real session; Back restores it") {

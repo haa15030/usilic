@@ -1192,6 +1192,71 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
       正常に動作することをPTYで確認済み(GUIの体感速度差そのものは
       この環境から検証できないため、doctestでのロジック検証に留めた)。
 
+399. **HELP(^J^H)のモードライン3箇所の不具合を修正: TOC画面のバイト数・
+    パス欠落、チャプター画面のパディング欠落、^G^Gで戻った先の
+    ディレクトリ画面に残るCUT内部パターンの漏れ**
+   - **報告**: 「HELP:^J^H→モードラインに必要な隙間およびパディングが
+     無い（下はお手本）。「HELP」「01/26 TOP」「バイト数」
+     「/Users/haa15030/git/usilic/    」続いて[return]→同じく「HELP」
+     「01/48 TOP」「2194」「1.  Introdduction                  」
+     続いて^G^G→戻り値不良「CUT: ^  [0-9]+¥.    」（「usilic 1.5b」
+     が正解）」
+   - HELPはCutMode(CUT機能)の内部実装を流用しており(`cutOrigin_==
+     CutOrigin::Help`)、モードライン周りの不具合もその共有部分に
+     起因していた。
+   - **1点目、TOC画面(`cutView_`、チャプター一覧)にバイト数・パスが
+     無い**: このプロバイダは元々「HELP用の確定した値がまだ無いため
+     空のまま」という2026-08-04時点の未確定フォローアップ扱いだった
+     (コード内コメントに明記)。今回のユーザー提供の具体的な参照値で
+     確定したため実装: バイト数はHELP.jpの全内容のサイズ
+     (`helpText_.size()`、他モードの「ファイル自身のバイト数」慣習に
+     合わせた)、パスはHELPを開始した時点のディレクトリ
+     (`directoryMode_.currentDirectory()`、`cutOrigin_==Directory`の
+     既存分岐と同じ値の使い回し)とし、行末までパディングする
+     (`fillTrailingToEdge=true`)よう変更。
+   - **2点目、チャプター画面(`cutContentView_`)のパディング欠落**:
+     バイト数とチャプターラベルが、`trailing`一つのフィールドに
+     "  "(半角スペース2つ)で連結された1本の文字列として実装されて
+     いた(2026-08-04時点の実装、当時の参照スクリーンショットが
+     「同じ行に両方出る」ことしか確認できておらず、2フィールドとして
+     行末までパディングする形までは未確定だった)。今回の具体的な
+     参照文字列(末尾に多数の空白)で、他モードのバイト数/パス分割
+     (`trailing`/`trailing2`)と同じ2フィールド構成であることが
+     確定したため、`trailing`をバイト数のみに、`trailing2`をラベルに
+     分離し、`fillTrailingToEdge=true`で行末までパディングするよう
+     変更。いずれもHELP(`cutOrigin_==Help`)専用の分岐として追加し、
+     実CUT検索(`cutOrigin_==Directory`等)の既存フォーマットは変更
+     していない。
+   - **3点目、^G^Gで戻った先のディレクトリ画面に「CUT: ^  [0-9]+¥.」が
+     残る**: HELPから完全に抜けてDirectoryモードへ戻る処理
+     (`returnFromCut()`)は、実CUT検索(^J^C)・HELP・LOG(ESC l)の
+     いずれからも共有される汎用関数だが、「Directoryモードへ戻る際は
+     無条件で"CUT: <パターン>"という検索アノテーションを
+     `directoryMode_`に設定する」処理が、`cutReturnMode_==Directory`
+     でありさえすれば発火する実装になっていた。HELPが内部的に使う
+     分割パターン(`kHelpPattern`、チャプター見出しの正規表則)は
+     ユーザーが実際に検索した文字列ではないため、これがそのまま
+     "CUT: <正規表現>"としてDirectory一覧のモードライン(検索
+     アノテーション欄、通常は"usilic v1.5b"の透かしが出る場所)に
+     漏れ出ていた。表示のズレではなく、実際に間違ったデータが
+     `setSearchAnnotation()`へ書き込まれていたことが原因(次の
+     redraw()が実際にその値を描画するため)。`cutOrigin_==
+     CutOrigin::Directory`(実際にDirectoryから起動したCUT検索の
+     場合のみ)という条件を追加し、HELP/LOG起源では検索アノテーション
+     を一切触らないよう修正。
+   - **検証**: `make test`(新規doctest2件: TOC画面のバイト数/パス表示
+     確認、^G^G後にCUT:アノテーションが残らずusilic v1.5bの透かしが
+     復活することの確認)含め全811件・18835アサーション全通過。実PTY
+     で実リポジトリ(`~/git/usilic`、書き込み無し・閲覧のみ)に対し、
+     `^J^H`→TOC画面のモードラインが「HELP」「01/26 TOP」「35252」
+     「/Users/haa15030/git/usilic/」(行末までパディング)になること、
+     `[return]`→チャプター画面が「HELP」「01/48 TOP」「2194」
+     「1.  Introduction」(行末までパディング、バイト数がユーザー
+     報告の参照値と一致)になること、`^G`→TOC画面へ復帰、`^G`→
+     Directory画面が「/Users/haa15030/git/usilic/」「01/22 TOP」
+     「1377」「(ls)」「usilic v1.5b」(CUT:漏れ無し)に正しく戻る
+     ことを、それぞれ生バイト列レベルで確認した。`make usilic`
+     クリーンビルド確認済み。
 
 ## 3. FGREP / EGREP
 
@@ -8146,6 +8211,53 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      動かなかったのが、修正後はコピー元ディレクトリへ(カーソル位置
      含め)正しく戻ることを生バイト列レベルで確認した。`make usilic`
      クリーンビルド確認済み。
+
+398. **CP/MV/RM/ARCの「with SHELL window」変種(^X^Kc/^X^Km/^X^Kr/^X^Ka、
+    K-51/K-53/K-55/K-57)を削除、ARC展開(^Xa)もCP/MV/RMと同じ実SHELL
+    セッション注入方式へ統一**
+   - **報告**: 「CP/MV/RM/ARC:usilic-cpmvrm-exitはそれでいい。SHELLでの
+     実行が速すぎて^X?と^X^K?との違いが見えない件は、^X?だけを残した
+     上で常時実行過程表示としたい。ファイルが一つだけなら瞬時でも、
+     多くなれば違う。それまではSHELLでの実行に気づかないとしても
+     それだけの話なので反映して欲しい。」
+     「KEY:上に伴い「CP(/MV/RM/ARC) with SHELL window...」を削除
+     よろしく。」
+   - **背景**: 項目396でCP/MV/RMの^Xc(K-52)を^X^Kc(K-51)と同じ実SHELL
+     セッション注入方式に統一した結果、両者は実行方式として完全に
+     同一になっていた(legacy側の唯一の違いだった「前面に出すタイミング」
+     も項目396で「常に表示」に単純化済み)。つまり^X^Kc等は既に
+     ^Xc等の完全な重複でしかなくなっていたため、削除して整理する。
+   - **修正**:
+     - `kKeyTable`から`^X^Kc`/`^X^Km`/`^X^Kr`/`^X^Ka`の4エントリを削除
+       (`^X^Ke`(ERROR)・`^X^Kl`(LOG)は存置)。`leaderXKPending_`の
+       ディスパッチスイッチからも対応する`case 'c'/'m'/'r'/'a'`を削除。
+     - `Command::StartCopyInteractive`/`StartMoveInteractive`/
+       `StartRemoveInteractive`/`StartArchiveExtractInteractive`を
+       enumから削除、対応する`handleCommand()`ケースも削除。
+     - `startCopyPrompt()`/`startMovePrompt()`/`startRemovePrompt()`/
+       `startArchivePrompt()`の`bool interactive`引数を削除(常に
+       非対話呼び出しに統一、実行方式自体はすでに項目396で統一済み
+       のため意味を持たなくなっていた)。`cpMvRmInteractive_`・
+       `archiveExtractInteractive_`フィールド、
+       `PendingCpMvRmOperation::interactive`フィールドも削除。
+     - ARC展開(`executeArchiveExtract()`)を、CP/MV/RMの項目396と同じ
+       設計(`shell_.commandLine().setText()`+`submitLine()`で実
+       SHELLセッションへコマンドラインを注入、Shellモードへ切り替え、
+       完了を`Shell::promptGeneration()`の変化で非同期検知)へ再設計。
+       CP/MV/RMと異なり移動先ディレクトリへの自動着地は要求されて
+       いないため、新設`PendingArchiveExtractShellRun`(`promptGenerationBefore`
+       と`returnMode`のみを持つ、CP/MV/RM用より単純な構造)と
+       `pollPendingArchiveExtractShellRun()`(`-c`/`-g`両メインループの
+       `pollPendingCpMvRmShellRun()`のすぐ隣に追加)で、完了検知後は
+       単に呼び出し元のモード(Directory または Archive)へ戻すだけに
+       した。これによりtar/unzipの実行過程も`shell_`のscrollback
+       (LOG)に実際に記録されるようになった(項目396と同じ理由で、
+       従来の`ChildProcess::run()`/`runInteractive()`はshell_を一切
+       経由しないため)。
+   - **検証**: `make test`(削除された`^X^K`系テスト2件・K-57専用
+     テスト1件を、既存の`^Xa`系テストへの`pumpArchiveExtractToCompletion()`
+     追加という形に整理・統合)含め全811件・18835アサーション全通過。
+     `make usilic`クリーンビルド確認済み。
 
 ## 12. SHELL
 
