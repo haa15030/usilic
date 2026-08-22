@@ -8110,6 +8110,43 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      されることを確認し、項目394の修正が退行していないことも
      確認した。`make usilic`クリーンビルド確認済み。
 
+397. **CPの完了後にコピー先ディレクトリへ着地した(ls)画面で、^Gを
+    押してもコピー先から動かない(コピー元へ戻れない)不具合を修正**
+   - **報告**: 「DIR:戻り値表示のないモードだが、起動直後以外は^Gでの
+     戻り先は一つ前のディレクトリのはず。現状おおむねそうなっては
+     いるもののCPで/tmpへのコピーを終えた後の（ls）では^Gで/tmpから
+     変わらない。（ls）上の^Gは一律DIRのHISTORY直近ディレクトリへ
+     戻るようにしてほしい。」
+   - **原因**: `^G`(`DirectoryMode::goBack()`)は、`ModeStack`に
+     積まれた「戻り先」フレームをpopして動作する。通常の
+     Enter-サブディレクトリへの降下や`goToParent()`(`../`)は
+     いずれも`DirectoryMode::descendTo()`(現在ディレクトリを
+     フレームとして`ModeStack`へpushしてから`enterDirectory()`を
+     呼ぶ、という2段構え)経由なので、そのあと`^G`で元へ戻れる。
+     ところが項目396で追加した、CP/MV/RM完了後のコピー先着地処理
+     (`Application::pollPendingCpMvRmShellRun()`)は
+     `directoryMode_.enterDirectory(run.destination)`を直接呼んで
+     いた──`enterDirectory()`自体は(意図的に)`ModeStack`に一切
+     触れない一覧再読み込みの純粋なプリミティブで、履歴の push は
+     常に呼び出し側の責務、という既存の設計だったため、コピー先への
+     「移動」が`ModeStack`に一切記録されず、`^G`にはコピー元へ戻る
+     ためのフレームが無かった。
+   - **修正**: これまで`private`だった`DirectoryMode::descendTo()`を
+     `public`化し、`pollPendingCpMvRmShellRun()`の成功時の着地処理を
+     `enterDirectory(run.destination)`直接呼び出しから
+     `descendTo(run.destination)`経由に変更(失敗時のソースディレク
+     トリへのフォールバックは、単なる同一ディレクトリの再読み込み
+     なので`enterDirectory()`のまま変更なし)。これにより通常の
+     ディレクトリ降下と全く同じ経路で履歴フレームが積まれ、`^G`で
+     コピー元へ戻れるようになった。
+   - **検証**: `make test`(新規doctest1件: CP完了→コピー先着地の
+     直後に`^G`を押すとコピー元ディレクトリへ戻ることの確認)含め
+     全812件・18849アサーション通過。実PTYで、`^Xc`→コピー先`/tmp`
+     指定→完了後の(ls)着地→`^G`を実行し、修正前はコピー先のまま
+     動かなかったのが、修正後はコピー元ディレクトリへ(カーソル位置
+     含め)正しく戻ることを生バイト列レベルで確認した。`make usilic`
+     クリーンビルド確認済み。
+
 ## 12. SHELL
 
 5. **Ubuntu実機での`tcb .`セグフォ、SHELLモード初期化まわりの表示バグ数件**

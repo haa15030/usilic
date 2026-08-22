@@ -4831,6 +4831,32 @@ TEST_CASE_FIXTURE(Fixture, "CP: a successful copy navigates the view to the dest
   CHECK(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
 }
 
+// 2026-08-23 fix, a real report: "CPで/tmpへのコピーを終えた後の
+// （ls）では^Gで/tmpから変わらない" -- landing in the destination used
+// to call DirectoryMode::enterDirectory() directly, which (by design)
+// never touches ModeStack, so ^G had no frame to pop back to the
+// SOURCE directory with. Now goes through descendTo() instead (same
+// history-pushing path ordinary Enter-into-subdirectory navigation
+// uses), so ^G afterward works exactly like any other descent.
+TEST_CASE_FIXTURE(Fixture, "CP: after landing in the destination directory, ^G goes back to the source "
+                           "directory (2026-08-23 fix)") {
+  REQUIRE(app.start(path()));
+  std::string sourceDir = path();
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
+  REQUIRE(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.directoryMode().currentDirectory() == sourceDir);
+}
+
 // 2026-08-22 regression, a real report + screenshot (=en): copying to a
 // destination typed WITHOUT a trailing slash (e.g. "/tmp", exactly as
 // a user would naturally type it) used to pass that raw string straight

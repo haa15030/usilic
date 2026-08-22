@@ -127,6 +127,19 @@ class DirectoryMode {
   // pointlessly.
   bool goToParent();
 
+  // Shared by openSelected()/goToParent() (^G-navigable descent, NOT
+  // a bare reload of the same directory): saves the current cursor
+  // position, pushes a ModeStack frame remembering where to come back
+  // to, and enters `target` -- undoing the push on failure. Made
+  // public (2026-08-23 fix, a real report: "CPで/tmpへのコピーを
+  // 終えた後の（ls）では^Gで/tmpから変わらない") so Application's own
+  // CP/MV/RM-completion destination landing (pollPendingCpMvRmShellRun())
+  // goes through the SAME history-pushing path ordinary navigation
+  // does, instead of calling enterDirectory() directly -- which loads
+  // a NEW listing but (by design, see its own comment) never touches
+  // modeStack_ itself, leaving ^G with nothing to pop back to.
+  bool descendTo(const std::string &target);
+
   // ^G: pops the most recent ModeStack frame (if any) and returns to
   // it, restoring its cursor position from History. Returns false if
   // the stack is empty (nothing to go back to). A popped FLOOR frame
@@ -273,10 +286,6 @@ class DirectoryMode {
   // "./"/"../" are never valid CP/MV/RM targets -- see toggleMark()'s
   // own comment.
   bool isSelfOrParentEntry(int index) const;
-  // Shared by openSelected()/goToParent(): saves the current cursor
-  // position, pushes a ModeStack frame remembering where to come back
-  // to, and enters `target` -- undoing the push on failure.
-  bool descendTo(const std::string &target);
   void saveCurrentCursorPosition();
   static std::string parentDirectory(const std::string &dir);
 

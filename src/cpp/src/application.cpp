@@ -6051,12 +6051,20 @@ void Application::pollPendingCpMvRmShellRun() {
     }
   }
   // Land in the destination directory only on success, and only when
-  // it resolves to something real (enterDirectory() is a safe no-op-
-  // on-failure otherwise -- e.g. a single-file copy where
-  // `destination` was a new FILENAME, not a directory); RM (empty
-  // destination), any failed run, and any CP/MV whose destination
-  // didn't pan out all fall back to reloading sourceDirectory.
-  if (!ok || run.destination.empty() || !directoryMode_.enterDirectory(run.destination))
+  // it resolves to something real (descendTo() is a safe no-op-on-
+  // failure otherwise -- e.g. a single-file copy where `destination`
+  // was a new FILENAME, not a directory); RM (empty destination), any
+  // failed run, and any CP/MV whose destination didn't pan out all
+  // fall back to reloading sourceDirectory. Uses descendTo() (which
+  // ALSO pushes a ModeStack frame), not a bare enterDirectory() call
+  // -- a real report: "CPで/tmpへのコピーを終えた後の（ls）では^Gで
+  // /tmpから変わらない", traced to enterDirectory() alone never
+  // touching modeStack_ (by design, see its own comment), so ^G had no
+  // frame to pop back to sourceDirectory with. descendTo() pushes that
+  // frame first, exactly like ordinary Enter-into-subdirectory/
+  // goToParent() navigation does, so ^G afterward behaves the same as
+  // any other descent.
+  if (!ok || run.destination.empty() || !directoryMode_.descendTo(run.destination))
     directoryMode_.enterDirectory(run.sourceDirectory);
   directoryView_.redraw();
 }
