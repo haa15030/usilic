@@ -584,6 +584,38 @@ TEST_CASE_FIXTURE(Fixture, "returnFromListBrowser (2026-08-12 fix): ^G from the 
   CHECK_FALSE(app.directoryMode().hasSearchAnnotation());  // NOT still showing "EGREP: plain"
 }
 
+// 2026-08-22 fix, item 405 -- docs/HISTORY.md:10208, a direct user
+// report: "（ls）のCLAUDE.md上で^J^B→...引き続き^G→...（ls）からCUTの
+// 正規表現検索文字列一覧モードを起動してるんで戻り値の通り（ls）へ戻
+// らないと". returnFromListBrowser()'s 2026-08-12 "^G from the direct-
+// entry candidate list returns straight to where it was invoked from"
+// fix was scoped to PromptKind::GrepPattern only at the time, with a
+// note deferring CutPattern "for now" since CUT hadn't been exercised
+// enough yet to know if the same gap mattered there. It does: CUT's
+// own ^J^B/^J^C open into the exact same kind of direct-entry candidate
+// list via startRegexPromptList(PromptKind::CutPattern) (see
+// startCutFilePrompt()/startCutPrompt()'s own calls), so ^G with
+// nothing typed/selected fell through to the same "reopen a blank
+// editable prompt" fallback GrepPattern used to, instead of landing
+// back on the plain Directory listing the search was launched from.
+TEST_CASE_FIXTURE(Fixture, "returnFromListBrowser (2026-08-22 fix, item 405): ^G from CUT's own regex "
+                           "direct-entry candidate list (^J^B on a selected file), with nothing typed or "
+                           "selected, returns straight to the Directory listing it was invoked from -- "
+                           "not a reopened blank CUT prompt") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::StartCutFileRegex));  // ^J^B on log.txt, cursor still in Directory
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK_FALSE(app.promptActive());  // direct entry into the list itself, not a live editable prompt yet
+
+  REQUIRE(app.handleCommand(Command::Back));  // ^G, nothing typed/selected
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK_FALSE(app.promptActive());  // NOT a reopened blank CUT prompt
+  CHECK_FALSE(app.directoryMode().hasSearchAnnotation());
+}
+
 TEST_CASE_FIXTURE(Fixture, "listBrowserView_'s own ModeLineFieldsProvider (2026-08-12 fix): the truncated "
                            "destination-directory field is right-justified to the SCREEN's own edge, not "
                            "drawn immediately after the candidate-preview text's own gap -- a real report + "
@@ -5777,13 +5809,24 @@ TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt (REGEX, ^J^C/StartCutRegex) rec
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
   // StartCutRegex (2026-08-05: opens directly into the candidate list,
-  // not a blank prompt -- see startCutPrompt()'s own comment) -- ^G
-  // from there is how a fresh pattern gets typed.
+  // not a blank prompt -- see startCutPrompt()'s own comment) --
+  // typing directly into the still-showing list (a live-editable
+  // combobox, same as EGREP's own candidate list -- see
+  // feedRegexListByte()'s own comment) is how a fresh pattern gets
+  // typed; ^G no longer reopens a blank prompt here (2026-08-22 fix,
+  // item 405: extended returnFromListBrowser()'s 2026-08-12 GrepPattern
+  // fix to CutPattern too, so ^G instead returns straight to where
+  // this was invoked from).
   REQUIRE(app.handleCommand(Command::StartCutRegex));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(app.handleCommand(Command::Back));
   feedText("pla.n");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // records "pla.n" into RecentEgrepPattern
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  // Regex direct-entry CUT's own LIFO stack (cutReturnsToCandidateList_,
+  // see its own declaration comment): the FIRST Back returns to the
+  // candidate list itself, the SECOND reaches File.
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 

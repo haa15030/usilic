@@ -3318,10 +3318,7 @@ bool Application::returnFromListBrowser() {
   if (promptHistoryRecallKind_) {
     PromptKind kind = *promptHistoryRecallKind_;
     // EGREP's own candidate list (2026-08-12 fix, direct user
-    // instruction, scoped to GrepPattern only -- CUT's regex variant
-    // keeps the old behavior below "for now", per that same
-    // instruction: "まだCUTの試用まではしていないので不具合があれば
-    // 対処すればいい"): ^G here must NOT reopen a blank editable
+    // instruction). ^G here must NOT reopen a blank editable
     // prompt. Per docs/HISTORY.md:1538 -- the entire reason ^J^S opens
     // DIRECTLY into the candidate list instead of a blank prompt in
     // the first place (startRegexPromptList()'s own history) is that
@@ -3340,6 +3337,18 @@ bool Application::returnFromListBrowser() {
     // keeps resuming whatever was already typed, unaffected, since
     // that's a completely different scenario (recall while editing,
     // not "the list IS the entry point").
+    // CutPattern (2026-08-22 fix, item 405 -- docs/HISTORY.md:10208, a
+    // direct user report: "（ls）のCLAUDE.md上で^J^B...戻り値の通り
+    // （ls）へ戻らないと"): originally scoped to GrepPattern only, per
+    // a 2026-08-12 note deferring CUT's own regex variant ("まだCUTの
+    // 試用まではしていないので不具合があれば対処すればいい" -- CUT
+    // hadn't been exercised enough yet to know if this same gap
+    // mattered there too). It does: ^J^B/^J^C open directly into this
+    // same kind of candidate list (see startRegexPromptList()'s own
+    // comment -- CUT-regex reuses it wholesale), so the identical "^G
+    // must return straight to where this was invoked from, not reopen
+    // a blank editable prompt" reasoning applies unchanged. Folded in
+    // now that a real report confirmed the gap.
     // RecentFile/RecentDirectory (2026-08-18 fix, a direct user report +
     // screenshots =cx/=cy): these two are ALWAYS directEntry (see
     // startPromptHistoryRecall()'s own comment -- there's no separate
@@ -3355,7 +3364,8 @@ bool Application::returnFromListBrowser() {
     // of the plain "(ls)"-showing screen the excursion actually started
     // from ("(ls)から^X^Dしてるんで(ls)へ戻らないと"). Folded into the
     // same early-return branch as GrepPattern's own identical fix.
-    if ((kind == PromptKind::GrepPattern || kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory) &&
+    if ((kind == PromptKind::GrepPattern || kind == PromptKind::CutPattern || kind == PromptKind::RecentFile ||
+         kind == PromptKind::RecentDirectory) &&
         promptHistoryRecallIsDirectEntry_) {
       // RecentFile/RecentDirectory + listBrowserChronological_
       // (2026-08-18, a direct user correction backed by a real,

@@ -3330,6 +3330,61 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      自体が最初から付かなくなったため)ことも確認した。`make usilic`
      クリーンビルド確認済み。
 
+405. **CUT(regex, ^J^B/^J^C)の直接入力候補一覧から何も入力・選択せず
+    ^Gした場合、呼び出し元(Directory等)へ直接戻らずブランクの
+    CUTプロンプトが再表示されてしまう件を修正(項目402で「今回は
+    EGREPのみ」と明言していたスコープ外だった部分、docs/HISTORY.md:
+    10208)**
+   - **報告**: 「（ls）のCLAUDE.md上で^J^B→...引き続き^G→HISTORY.md:
+     9539と同じ症状なんだが、（ls）からCUTの正規表現検索文字列一覧
+     モードを起動してるんで戻り値の通り（ls）へ戻らないと」。
+   - **原因**: `returnFromListBrowser()`には、直接入力(^J^S/^J^C等)で
+     開いた候補一覧から^Gした場合に「ブランクな編集可能プロンプトを
+     再表示する」旧来のフォールバック挙動を回避し、呼び出し元の
+     モードへ直接戻る早期リターン分岐が既にあった(項目289/項目
+     294相当、2026-08-12)。しかしこの分岐は`PromptKind::GrepPattern`
+     (EGREP)のみを対象にしており、コード中のコメントで「CUTの正規
+     表現版は今回は従来動作のまま――『まだCUTの試用まではして
+     いないので不具合があれば対処すればいい』という指示のため」と
+     明記されたまま、CUT側(`PromptKind::CutPattern`)には一度も
+     拡張されていなかった。CUTの^J^B/^J^Cも`startRegexPromptList
+     (PromptKind::CutPattern)`という全く同じ直接入力候補一覧の仕組み
+     を再利用しているため、同じ穴が残っていた。項目398〜404はいずれも
+     この`returnFromListBrowser()`の分岐そのものには触れていなかった
+     (項目402はSHELLへの一時退避に伴う`promptHistoryRecallKind_`の
+     退避/復元、項目403・404はCUT結果画面・^R再検索側の別の不具合)。
+   - **修正**: `returnFromListBrowser()`の早期リターン条件に
+     `PromptKind::CutPattern`を追加(既存の`GrepPattern`/`RecentFile`/
+     `RecentDirectory`と並列)。これにより、CUTの直接入力候補一覧から
+     ^Gした場合も、呼び出し時点で記録済みの`promptHistoryRecallReturnMode_`
+     (起動元のモード、Directory上の`^J^B`ならDirectory)へ直接戻る
+     ようになり、Directoryへ戻る場合は既存の同分岐がアノテーションも
+     クリアする。
+   - **既存テストへの影響**: `^R at the CUT prompt (REGEX,
+     ^J^C/StartCutRegex) recalls from RecentEgrepPattern`が、この
+     修正前の「^Gでブランクプロンプトが再表示される」挙動を前提に
+     「候補一覧を開く→即^G→ブランクプロンプトに新規パターンを
+     直接入力→Enter」という手順で新規パターンを登録していたため
+     修正後に失敗した。EGREP側が項目289で既に確立していた「候補
+     一覧はそのまま生きた編集可能コンボボックスなので、^Gを挟まず
+     候補一覧の上から直接タイプすればよい」という作法に合わせて
+     修正(`^J^C`→候補一覧のまま`feedText`→Enter)。CUTの直接入力
+     regex検索が成功すると`cutReturnsToCandidateList_`が立つため、
+     Cutモードから元のFileモードへ戻るには^Gが2回必要になる点も
+     合わせて修正。
+   - **検証**: `make test` 818/818件・18915アサーション全通過(新規
+     doctest1件、既存1件を上記の通り修正)。`make usilic`クリーン
+     ビルド確認済み。今回はこのセッション環境のPTYハーネスが起動
+     直後に安定して反応しなくなる現象(usilic側の不具合ではなく、
+     このツール実行環境固有の問題と見られる)に阻まれ、実PTYでの
+     生バイト列確認は行えなかった――`returnFromListBrowser()`の
+     コード読解(`promptHistoryRecallReturnMode_`が`startPromptHistoryRecall()`
+     呼び出し時点の`currentMode_`をそのまま捕捉していること、項目
+     402のEGREP版と全く同じ経路を通ることの確認)と、上記doctest
+     (Directory上で`^J^B`→即^G→`currentMode()==Directory`かつ
+     `promptActive()==false`かつアノテーション無し、を検証)による
+     確認に留まる。念のため実機でのご確認をお願いしたい。
+
 ## 5. DU
 
 175. **2026-08-05(続き): `config.sh`のDUオプション修正の途中で発覚した
