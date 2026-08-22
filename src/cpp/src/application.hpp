@@ -2061,6 +2061,28 @@ class Application {
   bool pendingSearchFromDirectEntryList_ = false;
   bool grepReturnsToCandidateList_ = false;
   bool cutReturnsToCandidateList_ = false;
+  // returnToCutResults()/returnFromCut() (2026-08-24 fix, a real
+  // report: "^G連打→戻り値「CUT: ^##」との行き来ループ→（ls）へ戻ら
+  // ず" -- mashing ^G loops forever between the annotated Directory
+  // listing and the Cut results screen, never settling on a plain
+  // (ls)). CUT's own class comment explains why returnFromCut() is a
+  // single function that ALWAYS both leaves Cut mode AND (re)writes
+  // the "CUT: pattern" annotation, unlike GREP's own two-function
+  // split (openSelectedGrepMatch() always sets it once, on a genuinely
+  // NEW match; returnFromGrep() always CLEARS it, since reaching that
+  // function means "backing out for real," see its own comment) -- but
+  // that reasoning only covers CUT's OWN first exit after a fresh
+  // search. It doesn't cover a SECOND ^G that RE-ENTERS the results
+  // via returnToCutResults() (the annotation's own click-back target)
+  // and then leaves AGAIN through this same returnFromCut() -- which
+  // unconditionally re-writes the identical annotation every time,
+  // so the next ^G on Directory re-enters again, forever. Set by
+  // returnToCutResults() right before showing the resumed results
+  // screen; consulted (and cleared, one-shot) by returnFromCut() to
+  // CLEAR the annotation instead of rewriting it on this specific
+  // "leaving a RESUMED session" trip, mirroring returnFromGrep()'s own
+  // behavior exactly.
+  bool cutResultsResumed_ = false;
   // See startShellHistoryRecall()'s own comment.
   bool shellHistoryRecallActive_ = false;
   std::string shellHistoryRecallText_;

@@ -1281,6 +1281,16 @@ TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): submitting a pattern from Dire
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Cut);
   CHECK(app.cutMode().segments().size() == 4);  // still intact, not re-split
+
+  // 2026-08-24 fix, a real report: "^G連打→戻り値「CUT: ^##」との
+  // 行き来ループ→（ls）へ戻らず" -- a THIRD ^G (leaving this RESUMED
+  // results screen) used to rewrite the SAME "CUT: cpmv" annotation
+  // yet again instead of clearing it, so a fourth ^G would just
+  // re-enter Cut mode again, forever. It must now clear the
+  // annotation and land on a genuinely plain (ls).
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.activeContentView().modeLineText().find("CUT:") == std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the ^J^C candidate list shows the real mode name and "
@@ -1576,6 +1586,27 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, K-35/^Jb): splits the SELECTED en
   REQUIRE(app.cutMode().segments().size() == 3);
   CHECK(app.cutMode().segments()[0].label == "marker one");
   CHECK(app.fileMode().currentFile() == (root / "log.txt").string());  // loaded behind the scenes
+}
+
+// 2026-08-24 fix, a real report + reference: "CUT" "01/13 TOP" "435"
+// "/Users/.../CLAUDE.md         " -- this provider used to have no
+// byte-count field at all for File/Directory-origin CUT, just the
+// path/pattern alone.
+TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin): mode-line shows the whole file's own byte "
+                           "size (not just its path)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  auto expectedBytes = std::filesystem::file_size(root / "log.txt");
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.find(std::to_string(expectedBytes)) != std::string::npos);
+  CHECK(text.find((root / "log.txt").string()) != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "CUT (regular file): Back returns to Directory mode, matching where it was entered from") {

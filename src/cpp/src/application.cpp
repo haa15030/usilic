@@ -876,13 +876,25 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       return {name, std::to_string(helpText_.size()), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
               directoryMode_.currentDirectory()};
     }
+    // Byte count (2026-08-24 fix, a real report + reference:
+    // "CUT" "01/13 TOP" "435" "/Users/.../CLAUDE.md         " -- this
+    // provider used to have no byte-count field at all, just the path/
+    // pattern alone in `trailing`. File/Directory origins split a real,
+    // already-loaded ContentView (fileView_/directoryView_ -- executeCut()
+    // routes a File-origin split through FileMode internally even
+    // though this screen never actually SHOWS fileView_, so it's still
+    // holding the right content), so their byte count is the SAME
+    // contentByteCount() every other mode's own byte-size field already
+    // uses. A nested re-split (parentPattern set) and Log both keep the
+    // old single-field shape -- no confirmed reference for either yet.
+    if (!cutMode_.parentPattern() && (cutOrigin_ == CutOrigin::File || cutOrigin_ == CutOrigin::Directory)) {
+      std::string path = (cutOrigin_ == CutOrigin::File) ? fileMode_.currentFile() : directoryMode_.currentDirectory();
+      std::size_t bytes = contentByteCount(cutOrigin_ == CutOrigin::File ? fileView_ : directoryView_);
+      return {name, std::to_string(bytes), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", path};
+    }
     std::string trailing;
     if (auto parent = cutMode_.parentPattern()) {
       trailing = "CUT:" + *parent;
-    } else if (cutOrigin_ == CutOrigin::File) {
-      trailing = fileMode_.currentFile();
-    } else if (cutOrigin_ == CutOrigin::Directory) {
-      trailing = directoryMode_.currentDirectory();
     } else if (cutOrigin_ == CutOrigin::Log) {
       trailing = logFilePath_;
     }
@@ -3150,6 +3162,21 @@ bool Application::returnFromCut() {
     return startRegexPromptList(PromptKind::CutPattern);
   }
   currentMode_ = cutReturnMode_;
+  // cutResultsResumed_ (2026-08-24 fix, see its own declaration
+  // comment): leaving a RESUMED results screen (reached via
+  // returnToCutResults(), i.e. the user clicked back INTO an already-
+  // annotated Directory listing) clears the annotation instead of
+  // rewriting it -- otherwise ^G never actually escapes back to a
+  // plain (ls), looping between the two screens forever. Checked
+  // before the cutOrigin_==Directory write below, and unconditional on
+  // it (a resumed session is, by construction, always the
+  // Directory/cutOrigin_==Directory case to begin with).
+  if (cutResultsResumed_) {
+    cutResultsResumed_ = false;
+    if (cutReturnMode_ == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
+    activeView().redraw();
+    return true;
+  }
   // cutOrigin_ == Directory only (2026-08-23 fix, a real report:
   // "^J^H→...→続いて^G^G→戻り値不良「CUT: ^  [0-9]+¥.」（「usilic
   // 1.5b」が正解）") -- this function is shared by every CutMode-backed
@@ -3178,6 +3205,7 @@ bool Application::returnFromCut() {
 // need to re-run the split.
 bool Application::returnToCutResults() {
   currentMode_ = ApplicationMode::Cut;
+  cutResultsResumed_ = true;  // see its own declaration comment -- consumed once by the next returnFromCut()
   cutView_.redraw();
   return true;
 }
