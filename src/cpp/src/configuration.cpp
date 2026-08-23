@@ -66,12 +66,35 @@ std::optional<std::string> trimCommentAndLeadingWs(const std::string &rawLine) {
 
 // Ported from save_child()'s per-token loop: a '...'- or "..."-quoted
 // span (taken verbatim up to the next occurrence of the SAME quote
-// character, no escaping), or a bare space-delimited token.
+// character, no escaping), or a bare whitespace-delimited token.
+//
+// 2026-08-24 fix (docs/CHANGES.md item 417): only ' ' was ever treated
+// as a delimiter here, never '\t' -- but usilicrc itself (both this
+// repo's own shipped template and every real user config) separates
+// FILE/EXEC/ARCHIVE directive fields with actual TAB characters, not
+// spaces (confirmed with `sed -n 'l'` against a real ~/.usilic/
+// usilicrc: "\t.mp4\topen\t-a\tIINA$"). A tab-separated line with no
+// spaces at all became ONE single token (embedded tabs and all),
+// which parseSuffixLine()'s `allTokens.size() < 2` guard then silently
+// discarded as "suffix with no command at all" -- the ENTIRE directive
+// vanished from Configuration with no error, no message, nothing. A
+// direct user report caught this concretely: an EXEC entry for `.mp4`
+// (`open -a IINA`, added to work around a SEPARATE issue, see item
+// 416) never fired at all -- Enter on a `.mp4` file just fell through
+// to plain content viewing, exactly the "silently missing directive"
+// symptom this bug produces. Every OTHER directive keyword's own
+// helpers (trimCommentAndLeadingWs()/firstToken(), just above) already
+// treat ' '/'\t' as equivalent whitespace -- tokenize() was the one
+// holdout. Fixed by treating '\t' as an ordinary delimiter alongside
+// ' ' in both the skip-leading-whitespace and read-until-whitespace
+// loops below (quoted spans are unaffected either way, matching
+// legacy's own save_child() semantics -- a quoted token can still
+// contain a literal tab if someone genuinely wants one).
 std::vector<std::string> tokenize(const std::string &s) {
   std::vector<std::string> out;
   std::size_t i = 0;
   while (i < s.size()) {
-    while (i < s.size() && s[i] == ' ') i++;
+    while (i < s.size() && (s[i] == ' ' || s[i] == '\t')) i++;
     if (i >= s.size()) break;
     if (s[i] == '\'' || s[i] == '"') {
       char quote = s[i];
@@ -82,7 +105,7 @@ std::vector<std::string> tokenize(const std::string &s) {
       if (i < s.size()) i++;  // skip the closing quote
     } else {
       std::size_t start = i;
-      while (i < s.size() && s[i] != ' ') i++;
+      while (i < s.size() && s[i] != ' ' && s[i] != '\t') i++;
       out.push_back(s.substr(start, i - start));
     }
   }

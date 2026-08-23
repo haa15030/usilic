@@ -112,6 +112,36 @@ TEST_CASE("FILE/EXEC directives: quoted and bare tokens, and EXEC sets isExec") 
   CHECK(config.isExec("index.html"));
 }
 
+// 2026-08-24 fix (docs/CHANGES.md item 417): a real user's own
+// ~/.usilic/usilicrc (and this repo's own shipped src/usilicrc
+// template) separates directive fields with actual TAB characters,
+// not spaces -- unlike every fixture string above, which (like every
+// other test in this file) used plain spaces and so never exercised
+// this. tokenize() only treated ' ' as a delimiter, so a tab-only
+// line collapsed into ONE token (embedded tabs and all), silently
+// failing parseSuffixLine()'s `size() < 2` guard -- the entire
+// directive vanished with no error. Caught via a direct user report:
+// an EXEC entry for `.mp4` (`open -a IINA`) never fired at all.
+TEST_CASE("FILE/EXEC directives: TAB-separated fields (usilicrc's real, actual format) parse "
+          "identically to space-separated ones") {
+  Configuration config;
+  std::string rc =
+      "FILE\n"
+      "\t.pdf\txpdf\t-remote\n"
+      "EXEC\n"
+      "\t.mp4\topen\t-a\tIINA\n";
+  REQUIRE(config.loadRcText(rc, true));
+
+  auto pdf = config.programForSuffix("report.pdf");
+  REQUIRE(pdf.has_value());
+  CHECK(pdf->argv == std::vector<std::string>{"xpdf", "-remote"});
+
+  auto mp4 = config.programForSuffix("movie.mp4");
+  REQUIRE(mp4.has_value());
+  CHECK(mp4->argv == std::vector<std::string>{"open", "-a", "IINA"});
+  CHECK(config.isExec("movie.mp4"));
+}
+
 TEST_CASE("a usilicrc suffix entry wins over a built-in one of equal length") {
   Configuration config;
   REQUIRE(config.loadRcText("FILE\n .zip myunzipper -v\n", true));
