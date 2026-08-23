@@ -4173,11 +4173,25 @@ bool Application::startRemovePrompt() {
 // just above it) -- cancels the arm and restores ordinary browsing,
 // without navigating anywhere (legacy's own ^G-out-of-M_cp/M_mv/M_rm
 // doesn't change directory either).
+// 2026-08-24 fix, a direct user report + their own suggested fix:
+// marking a file, arming CP (^Xc), marking another via '.', then
+// cancelling with ^G left the FIRST file's mark visibly stuck
+// (reverse-video) even after the cursor moved several rows away --
+// "^Gのあとls再実行でいいんじゃない？" (why not just re-run `ls` after
+// ^G?). Exactly right: a successful CP/MV/RM already clears marks via
+// its own post-operation reload (DirectoryMode::enterDirectory()'s own
+// documented behavior, "marks are scoped to the listing they were made
+// in"), so a CANCELLED one leaving them behind was the inconsistent
+// case, not the reload-clears-marks behavior itself. refresh() (added
+// in item 408/409 for ^J^K/"./") already re-runs `ls` while preserving
+// the cursor's own position (by entry name) -- reusing it here both
+// clears the stale marks AND makes the separate, now-redundant
+// clearPendingOperationLabel()/redraw() calls unnecessary (enterDirectory()
+// itself already calls the former; refresh() itself already redraws).
 bool Application::cancelPendingCpMvRm() {
   pendingCpMvRm_.reset();
-  directoryMode_.clearPendingOperationLabel();
   directoryView_.setCursorRowAlsoHighlighted(true);
-  directoryView_.redraw();
+  directoryMode_.refresh();
   return true;
 }
 

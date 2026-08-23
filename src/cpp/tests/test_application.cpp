@@ -4808,6 +4808,30 @@ TEST_CASE_FIXTURE(Fixture, "^G cancels a pending CP/MV/RM arm instead of navigat
   CHECK_FALSE(app.handleCommand(Command::StartDestinationPrompt));
 }
 
+// 2026-08-24 fix, a direct user report + their own suggested fix:
+// arm CP (^Xc), mark a file with '.' (which also advances the cursor),
+// then cancel with ^G -- the marked file's own highlight stayed stuck
+// (reverse-video) even after moving the cursor several rows further
+// away. "^Gのあとls再実行でいいんじゃない？" (why not just re-run `ls`
+// after ^G?) -- exactly right: a SUCCESSFUL CP/MV/RM already clears
+// marks via its own post-operation reload (enterDirectory()'s own
+// documented "marks are scoped to the listing they were made in"), so
+// a CANCELLED one leaving marks behind was the inconsistent case.
+// cancelPendingCpMvRm() now calls DirectoryMode::refresh() (added in
+// item 408/409 for ^J^K/"./"), which re-lists (clearing marks as a
+// natural side effect) while preserving the cursor's own position.
+TEST_CASE_FIXTURE(Fixture, "^G cancels a pending CP/MV/RM arm AND clears any marks made while it was armed") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::StartCopy));  // ^Xc: arm CP FIRST, matching the report's own repro order
+  REQUIRE(app.feedByte('.', std::nullopt));        // '.': mark cpmv_a.txt, cursor advances to the next entry
+  REQUIRE(app.directoryMode().isMarked(idx));
+
+  REQUIRE(app.handleCommand(Command::Back));  // ^G cancels the arm
+  CHECK_FALSE(app.directoryMode().isMarked(idx));  // the mark made while armed is gone too, not just the arm itself
+}
+
 // 2026-08-21 addition: '.'/','  as direct "mark, then move" macros --
 // a real user report + demonstrated reference (=ed-=eh): "コピーした
 // いディレクトリを選択しようにも[return]でそこへ移動してしまっては
