@@ -90,6 +90,7 @@ PROGRAM
 	lv
 	lv -Oe
 	lv -Ir
+	qlmanage -p
 
 EDITOR
 # Format: `editor'

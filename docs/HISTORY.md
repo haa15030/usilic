@@ -10434,3 +10434,21 @@ usilic-1.5b:~%
 **^J^W後のキー誤配送(こちらが本質的な原因)**: ^S(FGREP)でプロンプト編集中のまま^J^Wを押すと、promptKind_(どのプロンプトが編集中かを示す状態)がクリアされないままcurrentMode_だけSHELLへ切り替わっていました。dispatchByte()はpromptKind_が有効なら最優先でfeedPromptByte()へ回すため、以降のキー入力(catコマンドのEnterも含む)はすべて画面に見えない古いFGREPプロンプトへ誤配送され続けていました。「SHELLプロンプトにcatが見えるのに実行されない」「Enterするとなぜか元のモード名に戻る」という一連の症状は、すべてこの1つの根本原因で説明できました。項目402のListBrowser向け仕組みと同じ「退避してから復元」パターンをpromptKind_自身にも新設して解決しています。
 
 `make test` 841/841件・19090アサーション全通過。`make usilic`クリーンビルド確認済みです。
+
+<HISTORY.mdだけどさ。どこをどう直したのか、簡潔かつ適切な解説を読むのも楽しみの一つなんだが、それをそのまま記録してくれればいい。
+例えば上の「修正・検証...」から始まり「...確認済みです。」で終わる解説は2095バイトなのにHISTORY.mdの該当箇所は2619、つまり500バイト分も加筆されている。
+jsonlに保存されるのはどっちなの？　前者だと思うんだが。
+その意味でも加筆はやめてほしい。よろしく。
+
+usilicの話。
+Finderのクイックルック機能ってusilicから呼び出せない？
+
+>`qlmanage -p <path>` can pop up the real Quick Look preview window from the command line — usilicから`system("qlmanage -p " + shellQuote(path) + " >/dev/null 2>&1 &")`のような形で外部プログラム(EXEC/PROGRAMリスト相当)として呼べます。ただしQuick Lookは元々マウス操作前提のGUIウィンドウ(Spaceキーで閉じる)なので、フォーカスの奪い合いなどusilicのターミナルUIとは相性が悪い場面もありそうです。まずはPROGRAMリストに`qlmanage -p`を1エントリ追加するだけの軽い実装で試してみる、というのが手頃な第一歩だと思いますが、いかがでしょう。
+
+<やってみて。
+
+>^Jp/^J^Pの`PROGRAM`リストに`qlmanage -p`を追加しました(`src/usilicrc`の雛形と、実際に使われている`~/.usilic/usilicrc`の両方)。
+
+`PROGRAM`機能は`less`/`vi`と同じ、raw modeを抜けて実端末を継承したままforeground実行→終了後raw mode復帰、という仕組みなので、`qlmanage -p <file>`(macOS標準Quick Look本体)もそのまま収まると分かりました。直接起動して、プロセスがforegroundでブロックし続け`kill`で正常終了することは確認済みですが、usilic自体を通したPTY自動テストがこのセッションでは動かないため、実際に^Jp/^J^Pから選んでQuick Lookウィンドウが開閉するところまでは確認できていません。実機でお試しいただけますか。
+
+(HISTORY.mdの件も別途修正・コミット・プッシュ済みです)

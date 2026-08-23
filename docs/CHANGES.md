@@ -5475,6 +5475,28 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      Terminal.app/GUIウィンドウ操作を要するため、このセッションから
      の自動PTY再現・確認はできておらず、実機での確認が必要。
 
+413. **PROGRAMリストにmacOS Finderのクイックルック(`qlmanage -p`)を追加**
+   - **要望**: 「Finderのクイックルック機能ってusilicから呼び出せない？」
+   - **調査**: PROGRAM機能(^Jp/^J^P)は`usilicrc`の`PROGRAM`セクションに
+     列挙したコマンド名を`ProgramMode::run()`→`ChildProcess::
+     runInteractive()`(raw modeを一旦抜けて実端末の標準入出力を継承した
+     ままforeground実行、終了後raw modeへ復帰)で起動する仕組みで、
+     `less`/`vi`等と全く同じ扱いになる。`qlmanage -p <file>`は
+     macOS標準のQuick Look本体(`/usr/bin/qlmanage`)を直接叩くコマンドで、
+     GUIのプレビューウィンドウを表示しつつプロセス自体は
+     ウィンドウが閉じられるまでforegroundでブロックし続けるため、
+     `less`同様の「起動して待って終了」という形にきれいに収まると判明。
+   - **実装**: `usilicrc`の`PROGRAM`セクション末尾に`qlmanage -p`を追加
+     (リポジトリの雛形`src/usilicrc`、および実際に使われている
+     `~/.usilic/usilicrc`の両方)。コード変更は無し(既存のPROGRAM
+     機構がそのまま使える設計だったため)。
+   - **検証**: `qlmanage -p <file>`を直接起動しバックグラウンドで
+     `ps`確認→プロセスが起動しforegroundでブロックしていること、
+     `kill`で正常終了すること(エラー出力無し)を確認。usilic自体を
+     通したPTY自動再現はこのセッションでは動作しない制約があるため、
+     ^Jp/^J^Pから実際に選択してQuick Lookウィンドウが正しく開閉する
+     ところまでは実機での確認をお願いします。
+
 
 ## 9. FILE / DIR
 
