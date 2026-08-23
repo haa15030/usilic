@@ -84,18 +84,30 @@ enum class Command {
   StartLocate,
   LocateUpdateDb,
   StartShell,
+  // '.' -- a real user request, tied directly to the ^X^M CP/MV/RM
+  // flow (^Xc/^Xm/^Xr arm an operation, then the user marks targets
+  // before ^X^M): originally "「.」（現在行をマークしたのち下へ(「,」
+  // は上へ)のマクロ）" (mark-then-advance/retreat, see MarkAndAdvance/
+  // MarkAndRetreat's own comment below for that original pair, now
+  // relocated to '['/']'). 2026-08-23 (docs/CHANGES.md item 415, the
+  // Space-QuickLook experiment's own follow-up): a direct user
+  // request repurposed '.' itself to plain toggle-no-move ("代わりに
+  // '.'を選択/解除のトグル（行の移動は無し）としたい") once Space
+  // stopped doing the marking job in armed CP/MV/RM/ARC (see
+  // Command::QuickLook's own comment) -- '.' and ^Space (0x80) are now
+  // two keys for this exact same ToggleMark action.
   ToggleMark,
-  // '.'/',' macros -- a real user request, tied directly to the ^X^M
-  // CP/MV/RM flow (^Xc/^Xm/^Xr arm an operation, then the user marks
-  // targets before ^X^M): "コピーしたいディレクトリを選択しようにも
-  // [return]でそこへ移動してしまってはどうにもならない" -- toggles the
-  // current entry's mark (same as ToggleMark/^Space) and then advances
-  // the cursor, letting the user mark a run of entries with one key
-  // repeated instead of ^Space+^N alternating. Ported from the
-  // reference/legacy usage the user demonstrated directly (=ed-=eh):
-  // "「.」（現在行をマークしたのち下へ(「,」は上へ)のマクロ）".
-  MarkAndAdvance,  // '.'
-  MarkAndRetreat,  // ','
+  // '['/']' macros (RELOCATED 2026-08-23 from '.'/',' -- see
+  // ToggleMark's own comment on why those two were freed up; the
+  // user's own words: "代わりのマクロとしては暫定'['および']'にして
+  // みて"): toggles the current entry's mark (same as ToggleMark) and
+  // then advances/retreats the cursor, letting the user mark a run of
+  // entries with one key repeated instead of ToggleMark+^N
+  // alternating. Original request this pair was ported from: "コピー
+  // したいディレクトリを選択しようにも[return]でそこへ移動してしまっ
+  // てはどうにもならない".
+  MarkAndAdvance,  // ']'
+  MarkAndRetreat,  // '['
   StartCopy,
   StartMove,
   StartRemove,
@@ -300,17 +312,34 @@ enum class Command {
   // own comment.
   StartKey,
   // EXPERIMENTAL (2026-08-23, a direct user request to try overloading
-  // plain Space -- NOT part of legacy/usilicrc's own key table, and
-  // deliberately scoped narrowly enough to revert easily if it proves
-  // confusing in practice): in Directory mode with no CP/MV/RM
-  // operation armed, plain Space launches `qlmanage -p` (macOS Quick
-  // Look) directly on the entry under the cursor -- no PROGRAM prompt,
-  // matching Finder's own "select a file, hit Space" gesture. See
-  // dispatchByte()'s own comment on the exact space/PageDown/
-  // MarkAndAdvance three-way split this introduces (applied there,
-  // not in the static resolveCommand(), which stays a pure byte->
-  // Command mapping), and Application::executeQuickLook()'s own
-  // comment for the command itself.
+  // plain Space -- NOT part of legacy/usilicrc's own key table). First
+  // cut (docs/CHANGES.md item 414) scoped this to Directory mode only,
+  // and used armed CP/MV/RM as a signal to mean "advance the
+  // selection" (MarkAndAdvance) instead. A direct follow-up
+  // ("[space]によるクイックルックは採用でいいと思う...ただしハイライト
+  // 表示での[space]は、やはりCP/MV/RM（とARC）で混乱を招く") kept the
+  // Quick Look half but dropped the CP/MV/RM overload entirely --
+  // marking moved to '.'/ToggleMark and '['/']' instead (see their own
+  // comments) -- and WIDENED the scope ("LOCATE、FGREP等、ハイライト
+  // 状態のレギュラーファイルならどこでも発動できる方針で"): Space now
+  // launches `qlmanage -p` (macOS Quick Look) directly on whatever
+  // real regular file/directory is under the cursor, no PROGRAM
+  // prompt, matching Finder's own "select a file, hit Space" gesture
+  // -- in Directory mode, Locate results, and a Grep results screen
+  // whose ORIGIN was Directory mode (grepReturnMode_, since each
+  // matched line there still corresponds 1:1 to a real directory
+  // entry -- a Grep run against a FILE's own content has no such
+  // per-line file identity and is deliberately NOT covered).
+  // Archive/ArchiveContent (virtual, not-yet-extracted entries), Du
+  // (directory SIZE rows, not "regular files"), and ListBrowser's
+  // RecentFile/RecentDirectory candidates (real paths in principle,
+  // but Space is ALREADY meaningfully bound there -- "start editing
+  // the candidate, beginning with a literal space" -- see
+  // feedRegexListByte()'s own comment) are all deliberately excluded
+  // -- see Application::executeQuickLook()'s own comment for exactly
+  // which modes/how each path is resolved, and dispatchByte()'s own
+  // comment for where this override actually lives (not the static
+  // resolveCommand(), which stays a pure byte->Command mapping).
   QuickLook
 };
 

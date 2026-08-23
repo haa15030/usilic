@@ -1291,10 +1291,11 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
     case 0x08:  // ^H (M_key, K-2, "KEY") -- see startKey()'s own comment
       return Command::StartKey;
     case 0x80:  // ^Space (M_mark) -- KeyInput reports a literal NUL/Ctrl-Space as 0x80, see its class comment
+    case '.':   // 2026-08-23: same plain toggle, no move -- see ToggleMark's own comment
       return Command::ToggleMark;
-    case '.':  // mark current entry, then move down -- see Command::MarkAndAdvance's own comment
+    case ']':  // mark current entry, then move down -- see Command::MarkAndAdvance's own comment
       return Command::MarkAndAdvance;
-    case ',':  // mark current entry, then move up
+    case '[':  // mark current entry, then move up
       return Command::MarkAndRetreat;
     case 0x12:  // ^R (M_hist) -- see ToggleHistoryView's own comment
       return Command::ToggleHistoryView;
@@ -1374,12 +1375,16 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // of them for one experimental feature. Only overrides the PLAIN,
   // unprefixed ' ' byte reaching this exact dispatch point (not ^F/^V/
   // the real PageDown key, which still reach resolveCommand()'s
-  // ordinary PageDown case below unchanged, so a long Directory
-  // listing always still has a way to page through it).
-  if (byte == ' ' && !special && currentMode_ == ApplicationMode::Directory) {
-    if (pendingCpMvRm_) return handleCommand(Command::MarkAndAdvance);
-    if (directoryMode_.selectedEntry()) return handleCommand(Command::QuickLook);
-  }
+  // ordinary PageDown case below unchanged, so a long listing always
+  // still has a way to page through it). Unconditional now (an
+  // earlier cut branched on pendingCpMvRm_ to mean "advance the CP/MV/
+  // RM selection" instead -- REMOVED 2026-08-23, a direct user
+  // follow-up: "ハイライト表示での[space]は、やはりCP/MV/RM（とARC）
+  // で混乱を招く" -- Space means Quick Look everywhere it applies, full
+  // stop; marking is '.'/'['/']' exclusively now, see their own
+  // comments, so there's no longer any mode-conditional meaning here
+  // to get confused about).
+  if (byte == ' ' && !special && handleCommand(Command::QuickLook)) return true;
 
   return handleCommand(resolveCommand(byte, special));
 }
@@ -6250,21 +6255,78 @@ bool Application::executeProgram(const std::string &command) {
 // comment). Deliberately bypasses executeProgram()'s whole
 // isRecognizedProgram()/programPromptDirectory_/prompt machinery --
 // there's no user-typed command line here, just one hardcoded
-// `qlmanage -p <path>` built directly from the cursor's own entry, so
-// none of that applies. Builds the full absolute path itself (rather
-// than cdWrap()'s "cd into the directory first" trick) since there's
-// no reason to route through the shell's cwd for a single already-known
-// path.
+// `qlmanage -p <path>` built directly from whatever real filesystem
+// path is under the cursor, so none of that applies. Builds the full
+// absolute path itself (rather than cdWrap()'s "cd into the directory
+// first" trick) since there's no reason to route through the shell's
+// cwd for a single already-known path.
+//
+// Resolves that path per-mode (2026-08-23 widening, see the
+// enumerator's own comment for the exact request this answers):
+//   - Directory: the entry under the cursor.
+//   - Locate: LocateMode's own selected result -- already a bare
+//     absolute path, `locate`(1)'s own output format.
+//   - Grep, but ONLY when grepReturnMode_ == Directory: a Grep run
+//     against a FILE's own content has matched LINES, not distinct
+//     files, so there's no per-match path to resolve there -- but a
+//     Grep run against a Directory LISTING (FGREP/EGREP over `ls`
+//     itself) has each match's sourceLineIndex line up 1:1 with
+//     directoryMode_.entries() (see executeGrep()'s own comment: the
+//     lines fed to GrepMode::search() for a Directory origin are read
+//     straight from directoryView_, built in the exact same loop as
+//     entries_ itself, see DirectoryMode::enterDirectory()).
+// Deliberately NOT covered: Archive/ArchiveContent (a member's own
+// "path" is virtual -- nothing on disk to hand qlmanage until it's
+// actually extracted); Du (each row is a directory's aggregate SIZE,
+// not really "a regular file" the way the user's own request was
+// phrased); and ListBrowser's RecentFile/RecentDirectory candidates,
+// even though selectedItem() there IS already a bare real path --
+// those two categories are the "live combobox" ones (see
+// feedRegexListByte()'s own comment), where plain Space is already
+// meaningfully bound to "start editing the candidate text, beginning
+// with a literal space character" (useful since real paths can
+// contain one); Quick Look would silently steal that. This dispatch
+// point (dispatchByte()'s tail) is never even reached for those two
+// categories in the first place -- feedRegexListByte() intercepts
+// first, higher up in dispatchByte() -- so there was never a real
+// conflict to resolve here, just a scope this port chose not to grow
+// into.
 bool Application::executeQuickLook() {
-  if (currentMode_ != ApplicationMode::Directory) return false;
-  const DirectoryEntry *entry = directoryMode_.selectedEntry();
-  if (!entry) return false;
-  std::string path = directoryMode_.currentDirectory();
-  if (!path.empty() && path.back() != '/') path += '/';
-  path += entry->name;
+  std::string path;
+  if (currentMode_ == ApplicationMode::Directory) {
+    const DirectoryEntry *entry = directoryMode_.selectedEntry();
+    if (!entry) return false;
+    path = directoryMode_.currentDirectory();
+    if (!path.empty() && path.back() != '/') path += '/';
+    path += entry->name;
+  } else if (currentMode_ == ApplicationMode::Locate) {
+    const std::string *result = locateMode_.selectedResult();
+    if (!result) return false;
+    path = *result;
+  } else if (currentMode_ == ApplicationMode::Grep && grepReturnMode_ == ApplicationMode::Directory) {
+    const GrepMatch *match = grepMode_.selectedMatch();
+    const auto &entries = directoryMode_.entries();
+    if (!match || match->sourceLineIndex < 0 ||
+        static_cast<std::size_t>(match->sourceLineIndex) >= entries.size())
+      return false;
+    path = directoryMode_.currentDirectory();
+    if (!path.empty() && path.back() != '/') path += '/';
+    path += entries[match->sourceLineIndex].name;
+  } else {
+    return false;
+  }
+
+  // Trims a directory's own trailing "/" (DirectoryEntry::name's own
+  // convention) before splitting, so the recorded label is "cpmv_a"-
+  // style basename, not empty (std::filesystem::path::filename() on a
+  // trailing-slash path returns "").
+  std::string trimmed = path;
+  if (!trimmed.empty() && trimmed.back() == '/') trimmed.pop_back();
+  std::size_t slash = trimmed.find_last_of('/');
+  std::string label = (slash == std::string::npos) ? trimmed : trimmed.substr(slash + 1);
 
   display_.flush();
-  programMode_.run("qlmanage -p " + shellQuoteArg(path), "qlmanage -p " + entry->name);
+  programMode_.run("qlmanage -p " + shellQuoteArg(path), "qlmanage -p " + label);
   activeView().redraw();
   return true;
 }

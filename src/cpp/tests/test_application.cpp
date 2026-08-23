@@ -2183,16 +2183,16 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^G cancels the prompt without running anyth
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-// -- Command::QuickLook (EXPERIMENTAL, 2026-08-23): plain Space in
-// Directory mode -- see that enumerator's own comment and
-// dispatchByte()'s. setForegroundLauncher() intercepts the command
-// string instead of letting ProgramMode::run() actually fork/exec
-// `qlmanage -p` (which would pop a real Quick Look window and hang
-// the test waiting for it to be dismissed) -- same technique
-// test_program_mode.cpp's own launcher tests already use.
+// -- Command::QuickLook (EXPERIMENTAL, 2026-08-23): plain Space --
+// see that enumerator's own comment and dispatchByte()'s.
+// setForegroundLauncher() intercepts the command string instead of
+// letting ProgramMode::run() actually fork/exec `qlmanage -p` (which
+// would pop a real Quick Look window and hang the test waiting for it
+// to be dismissed) -- same technique test_program_mode.cpp's own
+// launcher tests already use.
 
-TEST_CASE_FIXTURE(Fixture, "Space (unarmed Directory mode): runs `qlmanage -p` on the entry under the "
-                           "cursor via ProgramMode, instead of paging") {
+TEST_CASE_FIXTURE(Fixture, "Space (Directory mode): runs `qlmanage -p` on the entry under the cursor via "
+                           "ProgramMode, instead of paging") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -2212,27 +2212,33 @@ TEST_CASE_FIXTURE(Fixture, "Space (unarmed Directory mode): runs `qlmanage -p` o
   CHECK(entries.back() == "qlmanage -p plain.txt");  // the SHORT recordedCommand, not the quoted one
 }
 
-TEST_CASE_FIXTURE(Fixture, "Space (Directory mode, CP armed): marks the entry under the cursor and "
-                           "advances, instead of Quick Look or paging") {
+// 2026-08-23 follow-up: an earlier cut made Space mean "advance the
+// CP/MV/RM selection" while armed instead of Quick Look -- a direct
+// user report ("ハイライト表示での[space]は、やはりCP/MV/RM（とARC）
+// で混乱を招く") dropped that overload entirely. Space means Quick
+// Look UNCONDITIONALLY now; marking while armed is '.'/'['/']'
+// exclusively (see their own tests, just above the PROGRAM section).
+TEST_CASE_FIXTURE(Fixture, "Space (Directory mode, CP armed): STILL runs Quick Look, not marking -- the "
+                           "armed-selection overload was removed") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartCopy));  // arms pendingCpMvRm_
 
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
-  bool launcherCalled = false;
-  app.programMode().setForegroundLauncher([&](const std::string &) {
-    launcherCalled = true;
+  std::string receivedCommand;
+  app.programMode().setForegroundLauncher([&](const std::string &command) {
+    receivedCommand = command;
     return true;
   });
 
   CHECK(app.feedByte(' ', std::nullopt));
-  CHECK_FALSE(launcherCalled);  // Quick Look never ran
-  CHECK(app.directoryMode().isMarked(idx));  // marked, same as '.'/ToggleMark
-  CHECK(indexOf(app.directoryMode().selectedEntry()->name) != idx);  // and cursor advanced
+  CHECK(receivedCommand == "qlmanage -p '" + path() + "plain.txt'");
+  CHECK_FALSE(app.directoryMode().isMarked(idx));  // NOT marked -- Space no longer does that
 }
 
-TEST_CASE_FIXTURE(Fixture, "Space (outside Directory mode): still plain PageDown, unchanged") {
+TEST_CASE_FIXTURE(Fixture, "Space (File mode): plain PageDown, unchanged -- not one of the covered modes "
+                           "(a single already-open file, no per-line file identity)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -2247,6 +2253,121 @@ TEST_CASE_FIXTURE(Fixture, "Space (outside Directory mode): still plain PageDown
   app.feedByte(' ', std::nullopt);
   CHECK_FALSE(launcherCalled);
   CHECK(app.currentMode() == ApplicationMode::File);
+}
+
+// 2026-08-23 widening (docs/CHANGES.md item 415, a direct user
+// request: "LOCATE、FGREP等、ハイライト状態のレギュラーファイルなら
+// どこでも発動できる方針で"): LOCATE results are bare real paths.
+TEST_CASE_FIXTURE(Fixture, "Space (Locate mode): runs `qlmanage -p` on the highlighted result") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText(path() + "plain.txt");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not installed or no database available -- skipping");
+    return;
+  }
+  if (app.currentMode() != ApplicationMode::Locate || !app.locateMode().selectedResult()) {
+    MESSAGE("locate found no results for this fixture's own temp path -- skipping");
+    return;
+  }
+  std::string expected = *app.locateMode().selectedResult();
+
+  std::string receivedCommand;
+  app.programMode().setForegroundLauncher([&](const std::string &command) {
+    receivedCommand = command;
+    return true;
+  });
+  CHECK(app.feedByte(' ', std::nullopt));
+  CHECK(receivedCommand == "qlmanage -p '" + expected + "'");
+}
+
+// Grep's own coverage is split across TWO tests -- see
+// Application::executeQuickLook()'s own comment for why only a
+// Directory-ORIGIN Grep (matched rows == real directory entries) is
+// covered; a File-origin Grep (matched LINES within one already-known
+// file) deliberately is not.
+TEST_CASE_FIXTURE(Fixture, "Space (Grep mode, Directory origin): runs `qlmanage -p` on the directory "
+                           "entry the highlighted match came from") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  std::string receivedCommand;
+  app.programMode().setForegroundLauncher([&](const std::string &command) {
+    receivedCommand = command;
+    return true;
+  });
+  CHECK(app.feedByte(' ', std::nullopt));
+  CHECK(receivedCommand == "qlmanage -p '" + path() + "plain.txt'");
+}
+
+TEST_CASE_FIXTURE(Fixture, "Space (Grep mode, File origin): plain PageDown -- a match here is a LINE within "
+                           "the one already-open file, not a distinct file of its own") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("hello");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  bool launcherCalled = false;
+  app.programMode().setForegroundLauncher([&](const std::string &) {
+    launcherCalled = true;
+    return true;
+  });
+  app.feedByte(' ', std::nullopt);
+  CHECK_FALSE(launcherCalled);
+}
+
+// ListBrowser is deliberately NOT covered at all, even for RecentFile/
+// RecentDirectory (whose candidates ARE bare real paths) -- see
+// Application::executeQuickLook()'s own comment: those two categories
+// are the "live combobox" ones (feedRegexListByte()'s own routing,
+// checked BEFORE this dispatch point is ever reached), where plain
+// Space is already meaningfully "start editing, beginning with a
+// literal space character". Both a path-shaped category (RecentFile)
+// and a non-path one (ProgramCommand) are checked here, since the
+// REASON differs (live-combobox routing vs. simply not a filesystem
+// path) even though the observable result -- plain PageDown -- is the
+// same for both.
+TEST_CASE_FIXTURE(Fixture, "Space (ListBrowser, RecentFile): plain PageDown -- Space is already the "
+                           "live-combobox \"start editing\" key there, not overridden") {
+  history.pushRecent(RingCategory::RecentFile, (root / "target.txt").string());
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  bool launcherCalled = false;
+  app.programMode().setForegroundLauncher([&](const std::string &) {
+    launcherCalled = true;
+    return true;
+  });
+  app.feedByte(' ', std::nullopt);
+  CHECK_FALSE(launcherCalled);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Space (ListBrowser, a non-path category like ProgramCommand): plain PageDown") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("echo hi");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  REQUIRE(app.feedByte(0x10, std::nullopt));  // ^P: ^J^P, StartProgramList -- opens the PROGRAM candidate list
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  bool launcherCalled = false;
+  app.programMode().setForegroundLauncher([&](const std::string &) {
+    launcherCalled = true;
+    return true;
+  });
+  app.feedByte(' ', std::nullopt);
+  CHECK_FALSE(launcherCalled);
 }
 
 // -- feedByte: ^Jl / ^J^L leader sequences for LOCATE --
@@ -4891,56 +5012,68 @@ TEST_CASE_FIXTURE(Fixture, "^G cancels a pending CP/MV/RM arm AND clears any mar
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::StartCopy));  // ^Xc: arm CP FIRST, matching the report's own repro order
-  REQUIRE(app.feedByte('.', std::nullopt));        // '.': mark cpmv_a.txt, cursor advances to the next entry
+  REQUIRE(app.feedByte(']', std::nullopt));        // ']': mark cpmv_a.txt, cursor advances to the next entry
   REQUIRE(app.directoryMode().isMarked(idx));
 
   REQUIRE(app.handleCommand(Command::Back));  // ^G cancels the arm
   CHECK_FALSE(app.directoryMode().isMarked(idx));  // the mark made while armed is gone too, not just the arm itself
 }
 
-// 2026-08-21 addition: '.'/','  as direct "mark, then move" macros --
-// a real user report + demonstrated reference (=ed-=eh): "コピーした
-// いディレクトリを選択しようにも[return]でそこへ移動してしまっては
-// どうにもならない...まずはマクロとしての「,」「.」をサポートして
-// 欲しい". See Command::MarkAndAdvance's own comment for why this is a
-// direct toggleMark()+move binding rather than a replay of legacy's
-// own literal Enter-based M-4/M-5 macro.
-TEST_CASE_FIXTURE(Fixture, "'.': marks the current entry, then moves the cursor down") {
+// 2026-08-21 addition, RELOCATED 2026-08-23 from '.'/',' to '['/']'
+// (see Command::MarkAndAdvance's own comment on why -- Space took over
+// the marking job in armed CP/MV/RM for a while, then handed it back
+// here once Space turned out to cause more confusion than it saved):
+// '['/']' as direct "mark, then move" macros -- a real user report +
+// demonstrated reference (=ed-=eh): "コピーしたいディレクトリを選択
+// しようにも[return]でそこへ移動してしまってはどうにもならない...
+// まずはマクロとしての「,」「.」をサポートして欲しい". See
+// Command::MarkAndAdvance's own comment for why this is a direct
+// toggleMark()+move binding rather than a replay of legacy's own
+// literal Enter-based M-4/M-5 macro.
+TEST_CASE_FIXTURE(Fixture, "']': marks the current entry, then moves the cursor down") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
-  CHECK(app.feedByte('.', std::nullopt));
+  CHECK(app.feedByte(']', std::nullopt));
   CHECK(app.directoryMode().isMarked(idx));
   CHECK(app.directoryMode().selectedEntry()->name != "cpmv_a.txt");  // cursor advanced
 }
 
-TEST_CASE_FIXTURE(Fixture, "',': marks the current entry, then moves the cursor up") {
+TEST_CASE_FIXTURE(Fixture, "'[': marks the current entry, then moves the cursor up") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::MoveDown));  // step onto the NEXT entry, so ',' has somewhere to retreat to
+  REQUIRE(app.handleCommand(Command::MoveDown));  // step onto the NEXT entry, so '[' has somewhere to retreat to
   REQUIRE(indexOf(app.directoryMode().selectedEntry()->name) == idx + 1);
 
-  CHECK(app.feedByte(',', std::nullopt));
-  CHECK(app.directoryMode().isMarked(idx + 1));      // the entry ',' was pressed on got marked
+  CHECK(app.feedByte('[', std::nullopt));
+  CHECK(app.directoryMode().isMarked(idx + 1));      // the entry '[' was pressed on got marked
   CHECK(indexOf(app.directoryMode().selectedEntry()->name) == idx);  // cursor retreated back onto cpmv_a.txt
 }
 
-TEST_CASE_FIXTURE(Fixture, "'.'/',' toggle: pressing '.' twice on the same row unmarks it again") {
+// 2026-08-23: '.' itself (RELOCATED from ToggleMark's own ^Space) --
+// a direct user request once Space stopped doing the marking job (see
+// Command::QuickLook's own comment): "代わりに'.'を選択/解除のトグル
+// （行の移動は無し）としたい". Unlike '['/']' above, '.' never moves
+// the cursor -- pressing it twice on the SAME row (no MoveUp/MoveDown
+// needed in between, unlike the old mark-then-advance macros) toggles
+// the mark back off.
+TEST_CASE_FIXTURE(Fixture, "'.': toggles the current entry's mark, with NO cursor movement") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
   CHECK(app.feedByte('.', std::nullopt));
   CHECK(app.directoryMode().isMarked(idx));
-  app.handleCommand(Command::MoveUp);  // back onto cpmv_a.txt
+  CHECK(app.directoryMode().selectedEntry()->name == "cpmv_a.txt");  // cursor did NOT move
   CHECK(app.feedByte('.', std::nullopt));
-  CHECK_FALSE(app.directoryMode().isMarked(idx));  // toggled back off
+  CHECK_FALSE(app.directoryMode().isMarked(idx));  // toggled back off, still no movement
+  CHECK(app.directoryMode().selectedEntry()->name == "cpmv_a.txt");
 }
 
-// '.'/',' must be inert outside Directory/Archive (toggleMark()'s own
-// mode gate) -- e.g. typing a literal '.' while viewing a file's
+// '.'/'['/']' must be inert outside Directory/Archive (toggleMark()'s
+// own mode gate) -- e.g. typing a literal '.' while viewing a file's
 // content must not silently do nothing DIFFERENT from before this
 // feature existed (still a no-op, just routed through a new Command).
 TEST_CASE_FIXTURE(Fixture, "'.' is a no-op outside Directory/Archive mode") {

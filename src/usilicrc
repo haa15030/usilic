@@ -44,13 +44,19 @@ EXEC
 # format: `suffix' `program' (option)
 #
 # The `program' will be launched with argument of the file that has the `suffix'.
+#
+# macOS note: a bare app name (e.g. `IINA') is usually NOT a real
+# command -- GUI .app bundles aren't on $PATH, so this fails silently
+# (`execvp' just can't find it). Use macOS's own `open -a AppName'
+# bridge instead, e.g.:
+#	.mp4	open	-a	IINA
 
 	.html	lynx
 	.htm	lynx
 	.info	info	-f
 	.info.gz info	-f
-	.dvi	xdvi			
-#	.dvi	dviout			
+	.dvi	xdvi
+#	.dvi	dviout
 
 GREP
 # format: `string'
