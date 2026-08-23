@@ -308,12 +308,12 @@ bool DirectoryMode::openSelected() {
   // comment) doubles as a re-list even when "landing" somewhere
   // already showing -- re-running `ls` here is exactly how a stale
   // size/mtime column (e.g. right after overwriting a file in place
-  // via CP) gets refreshed without navigating away and back.
-  // enterDirectory() has no "already showing this path" short-circuit
-  // of its own (see its own comment), so this is a genuine `ls`
-  // re-run, not a no-op -- and no ModeStack frame is pushed (unlike
-  // descendTo()'s own use below), since this isn't a navigation.
-  if (entry->name == "./") return enterDirectory(currentDirectory_);
+  // via CP) gets refreshed without navigating away and back. See
+  // refresh()'s own comment for why this calls it (rather than
+  // enterDirectory() directly) -- a same-day follow-up correction:
+  // consulting saved history position snapped the cursor to a stale
+  // row instead of keeping it where the user currently was.
+  if (entry->name == "./") return refresh();
 
   std::string target;
   if (entry->name == "../") {
@@ -324,6 +324,22 @@ bool DirectoryMode::openSelected() {
     target += entry->name;
   }
   return descendTo(target);
+}
+
+bool DirectoryMode::refresh() {
+  const DirectoryEntry *before = selectedEntry();
+  std::string selectedName = before ? before->name : std::string();
+  if (!enterDirectory(currentDirectory_, /*consultHistory=*/false)) return false;
+  if (!selectedName.empty()) {
+    for (std::size_t i = 0; i < entries_.size(); i++) {
+      if (entries_[i].name == selectedName) {
+        view_.setCursorIndex(static_cast<int>(i));
+        view_.redraw();
+        break;
+      }
+    }
+  }
+  return true;
 }
 
 bool DirectoryMode::goToParent() {

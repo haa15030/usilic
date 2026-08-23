@@ -7369,3 +7369,4 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a press past the end of the entry'
   CHECK_FALSE(app.handleMouseClick(idx, end));  // exactly at the end -- past the last real character
   CHECK(app.directoryMode().selectedEntry()->name != "plain.txt");
 }
+

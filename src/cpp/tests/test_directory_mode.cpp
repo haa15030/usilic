@@ -301,6 +301,38 @@ TEST_CASE_FIXTURE(Fixture, "openSelected on './' re-runs `ls`, picking up a chan
   CHECK(nowPresent);
 }
 
+// 2026-08-24 fix, a direct user correction to the SAME-day "./" fix
+// above: the first version called enterDirectory() directly, whose
+// default consultHistory=true snapped the cursor to a STALE row saved
+// from some earlier, unrelated visit instead of keeping it on whatever
+// the user currently had selected -- "現在行位置が更新されない...
+// ^P^P^P...^J^K（マイナカード表.pngに戻る）" (moving three rows away,
+// then refreshing, jumped BACK to the old position instead of staying
+// put). refresh() (this test) fixes it by capturing the selected
+// entry's NAME before re-listing and restoring the cursor to whichever
+// row has that same name afterward, ignoring saved history entirely.
+TEST_CASE_FIXTURE(Fixture, "refresh(): keeps the cursor on the SAME entry (by name) across the re-list, not "
+                           "wherever saved history says it was") {
+  REQUIRE(mode.enterDirectory(path()));
+  int idx = -1;
+  for (std::size_t i = 0; i < mode.entries().size(); i++)
+    if (mode.entries()[i].name == "subdir1/") idx = static_cast<int>(i);
+  REQUIRE(idx >= 0);
+  view.setCursorIndex(idx);
+
+  // Simulate a saved history position pointing somewhere ELSE entirely
+  // (row 0, "./") -- refresh() must NOT consult it.
+  history.setPosition(fm::PositionCategory::Directory, path(), {0, 0, 0, -1});
+
+  REQUIRE(mode.refresh());
+  CHECK(mode.currentDirectory() == path());
+  int newIdx = -1;
+  for (std::size_t i = 0; i < mode.entries().size(); i++)
+    if (mode.entries()[i].name == "subdir1/") newIdx = static_cast<int>(i);
+  REQUIRE(newIdx >= 0);
+  CHECK(view.cursorIndex() == newIdx);  // still on "subdir1/", not row 0
+}
+
 TEST_CASE_FIXTURE(Fixture, "goToParent: jumps to the parent directory without moving the cursor onto '../' first (K-19, ^O^K)") {
   REQUIRE(mode.enterDirectory(path() + "subdir2/"));
   view.setCursorIndex(0);  // deliberately NOT on "../" -- goToParent() shouldn't need it

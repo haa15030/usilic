@@ -165,6 +165,67 @@ TEST_CASE("submitLine(): no leftover blank/duplicate-text line between the froze
   shell.terminate();
 }
 
+// 2026-08-24 fix, a real user report: a long CP/MV/ARC-injected
+// command line (a full path plus a multi-byte Japanese filename easily
+// exceeds the terminal width, far more readily than anything a user
+// would hand-type) was silently cut off mid-line in the live SHELL
+// scrollback -- LOG mode (which reads pipeBuffer_'s own already-
+// wrapped output) was unaffected, since freezePromptLine()'s own line
+// never went through pipeBuffer_ at all. ContentView::renderLine()
+// itself has no wrapping of its own (see its own "line-truncation
+// precedent" comment -- every OTHER scrollback line already arrives
+// pre-wrapped to fit `columns_` via pipeBuffer_.wrapLine()), so a
+// single overlong Line, however correct its OWN stored text was, still
+// got clipped at RENDER time. Uses a narrow terminal (30 columns) so a
+// short, deterministic Japanese string reliably needs more than one
+// row -- proof the fix actually re-wraps (matching pipeBuffer_'s own
+// established wrapping), not just that the data was always intact.
+TEST_CASE("submitLine(): a long command line with multi-byte characters wraps across multiple scrollback "
+          "lines instead of being cut off (the OLD single-Line-no-matter-how-long shape would have left "
+          "exactly one shellCommand-tagged line here, too wide for a 30-column row to render in full)") {
+  RecordingDisplay d(24, 30);
+  ShellOptions options;
+  options.argv = {"bash", "--norc", "--noprofile"};
+  options.promptMark = "<usilic-test-mark-wrap>";
+  options.programName = "usilictest";
+  options.rows = 24;
+  options.columns = 30;
+  Shell shell(d, options);
+
+  if (!shell.start()) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(shell, [&] { return !shell.currentDirectory().empty(); }));
+
+  // "マイナカード表" -- 7 double-width characters, 14 columns; combined
+  // with "usilictest:<dir>% echo " (well over 16 columns on its own),
+  // guaranteed to exceed this test's own 30-column width.
+  std::string longArg = "\xe3\x83\x9e\xe3\x82\xa4\xe3\x83\x8a\xe3\x82\xab\xe3\x83\xbc\xe3\x83\x89\xe8\xa1\xa8";
+  std::string command = "echo " + longArg;
+  typeAscii(shell.commandLine(), command);
+  shell.submitLine();
+
+  REQUIRE(pumpUntil(shell, [&] {
+    int n = 0;
+    for (const auto &line : shell.scrollback().lines())
+      if (line.shellCommand == command) n++;
+    return n > 0;
+  }));
+
+  std::vector<int> frozenIdx;
+  const auto &lines = shell.scrollback().lines();
+  for (int i = 0; i < static_cast<int>(lines.size()); i++)
+    if (lines[i].shellCommand == command) frozenIdx.push_back(i);
+
+  REQUIRE(frozenIdx.size() > 1);  // genuinely wrapped, not one long line
+  std::string joined;
+  for (int i : frozenIdx) joined += lines[i].text;
+  CHECK(joined.find(longArg) != std::string::npos);  // the full argument survived, split across rows but not lost
+
+  shell.terminate();
+}
+
 // The remaining tests exercise Shell's parsing/decision logic
 // directly -- either via processOutputBytes() with synthetic bytes
 // built to exactly match buildSetupCommand()'s own PS1 format (there

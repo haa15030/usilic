@@ -117,6 +117,23 @@ class DirectoryMode {
   // empty.
   bool openSelected();
 
+  // Re-runs `ls` on the CURRENT directory in place -- not a
+  // navigation (no ModeStack frame, no history consultation), just a
+  // refresh, for openSelected()'s own "./" case and Application::
+  // goToFileSelector()'s own already-there Directory case (2026-08-23
+  // additions, both ported from the same real user report). Restores
+  // the cursor to whichever entry has the SAME NAME as whatever was
+  // selected before the refresh (falling back to row 0 if that name
+  // is gone, e.g. renamed/deleted by whatever external change
+  // triggered the refresh) -- a direct user correction: consulting
+  // saved history position here (enterDirectory()'s own default)
+  // jumped the cursor to a STALE row from some earlier, unrelated
+  // visit instead of keeping the user right where they currently
+  // were ("現在行位置が更新されない...^P^P^P...^J^K（マイナカード表.
+  // pngに戻る）" -- moving three rows away, then refreshing, snapped
+  // back to the old position instead of staying put).
+  bool refresh();
+
   // K-19 (^O^K, M_m): jumps straight to the parent of currentDirectory(),
   // pushing a ModeStack frame the same way openSelected() does for a
   // "../" entry -- this is that exact same navigation, just reachable

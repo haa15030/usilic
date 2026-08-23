@@ -571,9 +571,30 @@ void Shell::flushNewScrollbackLines() {
 // command produces naturally appends AFTER it via the normal
 // flushNewScrollbackLines() path, same as legacy's chain growing past
 // the prompt node once the command starts producing output.
+// 2026-08-24 fix, a real user report: a long CP/MV/ARC-injected
+// command line (a full path plus a multi-byte Japanese filename easily
+// exceeds `columns_`, far more readily than anything a user would
+// hand-type) was silently CUT OFF mid-line in the live SHELL scrollback
+// (LOG mode, which reads pipeBuffer_'s own already-wrapped output, was
+// unaffected -- this line never went through pipeBuffer_ at all, see
+// below). ContentView's own row rendering has no wrapping of its own
+// -- every OTHER scrollback line reaches it already wrapped to fit
+// `columns_` by pipeBuffer_.wrapLine() (see flushNewScrollbackLines()'s
+// own comment), which this function bypassed entirely by building one
+// long ContentView::Line directly. Routes the same text through a
+// throwaway PipeBuffer instance instead, purely to reuse its already-
+// correct (and already-tested elsewhere) UTF-8/EUC-aware width-wrapping
+// -- cheaper than re-implementing character-boundary-safe wrapping a
+// second time here. `command` (for ^P/^N-cursor resubmission, see this
+// function's own class comment) is attached to EVERY wrapped segment,
+// not just the first, so resubmission works regardless of which
+// visual row the cursor happens to land on.
 void Shell::freezePromptLine(const std::string &command) {
+  PipeBuffer wrapper(options_.encoding, columns_, /*maxBytes=*/1 << 20);
+  wrapper.feed(promptPlain_ + command + "\n");
+  wrapper.flush();
   std::vector<ContentView::Line> newLines(scrollback_.lines());
-  newLines.push_back({promptPlain_ + command, command, std::nullopt, {}});
+  for (const auto &wrapped : wrapper.lines()) newLines.push_back({wrapped.text, command, std::nullopt, {}});
   scrollback_.setLines(std::move(newLines));
   scrollback_.goToBottom();
 }

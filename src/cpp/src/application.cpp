@@ -2734,12 +2734,17 @@ bool Application::goToFileSelector() {
   // 着地済みとは言え何もしないわけではなく、lsの再実行も兼ねている"),
   // e.g. after overwriting a file in place (CP onto an existing name)
   // and wanting the listing's stale size/mtime column refreshed
-  // without navigating away and back. Re-runs enterDirectory() on the
-  // SAME path currentDirectory_ already holds -- it has no "already
-  // showing this path" short-circuit (see its own comment), so this
-  // is a genuine `ls` re-run, not a no-op.
+  // without navigating away and back. DirectoryMode::refresh()
+  // (2026-08-23, same day, a direct follow-up correction: the first
+  // version of this fix called enterDirectory() directly, which
+  // consulted SAVED history position and snapped the cursor to a
+  // stale row from some earlier visit instead of keeping the user
+  // where they currently were -- "現在行位置が更新されない...^P^P^P
+  // ...^J^K（マイナカード表.pngに戻る）") re-runs `ls` on the SAME
+  // path AND restores the cursor to whichever row still has the same
+  // entry name.
   if (currentMode_ == ApplicationMode::Directory) {
-    if (!directoryMode_.enterDirectory(directoryMode_.currentDirectory())) return false;
+    if (!directoryMode_.refresh()) return false;
     display_.hideVisibleCursor();
     directoryView_.redraw();
     return true;
