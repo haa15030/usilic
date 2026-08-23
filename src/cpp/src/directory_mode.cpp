@@ -301,7 +301,19 @@ bool DirectoryMode::descendTo(const std::string &target) {
 bool DirectoryMode::openSelected() {
   const DirectoryEntry *entry = selectedEntry();
   if (!entry || !entry->isDirectory) return false;
-  if (entry->name == "./") return false;
+  // "./" (2026-08-23 fix, a direct user report): used to be a hard
+  // no-op. Legacy's own equivalent (and this port's own ^J^K/
+  // GoToFileSelector, already fixed the same way when already IN
+  // Directory mode -- see Application::goToFileSelector()'s own
+  // comment) doubles as a re-list even when "landing" somewhere
+  // already showing -- re-running `ls` here is exactly how a stale
+  // size/mtime column (e.g. right after overwriting a file in place
+  // via CP) gets refreshed without navigating away and back.
+  // enterDirectory() has no "already showing this path" short-circuit
+  // of its own (see its own comment), so this is a genuine `ls`
+  // re-run, not a no-op -- and no ModeStack frame is pushed (unlike
+  // descendTo()'s own use below), since this isn't a navigation.
+  if (entry->name == "./") return enterDirectory(currentDirectory_);
 
   std::string target;
   if (entry->name == "../") {

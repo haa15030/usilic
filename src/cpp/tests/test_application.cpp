@@ -3591,8 +3591,24 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^K dispatches GoToFileSelector") {
   CHECK(app.directoryMode().currentDirectory() == path());
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): refused outside File mode") {
+// 2026-08-23 fix, a direct user report: already being IN the (ls)
+// listing this key would otherwise land you on used to make it a
+// hard no-op -- legacy's own equivalent doubles as a re-list even
+// when already there (e.g. right after overwriting a file in place
+// via CP, to refresh the stale size/mtime column without navigating
+// away and back).
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from Directory mode, re-runs `ls` on the SAME "
+                           "directory instead of being a no-op") {
   REQUIRE(app.start(path()));
+  CHECK(app.handleCommand(Command::GoToFileSelector));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): refused outside File/Directory/etc modes") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  REQUIRE(app.currentMode() == ApplicationMode::Key);
   CHECK_FALSE(app.handleCommand(Command::GoToFileSelector));
 }
 
@@ -4954,6 +4970,85 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCopy): refused outside Directory 
 
   CHECK_FALSE(app.handleCommand(Command::StartCopy));
   CHECK_FALSE(app.promptActive());
+}
+
+// 2026-08-23 addition, a direct user request: "旧版で多用していた
+// キーアサイン" (a legacy key binding used constantly). Ported from
+// key.c's read_m(): `case K_w: if (f_M==T_cp||f_M==T_mv||f_M==T_arc||
+// f_M==T_arc3) { ...insert `old`... }` -- legacy's `lp->old` (menu.c
+// sets it to `lp->dir` right before every directory change) is exactly
+// what this port's RecentDirectory ring already tracks: the SECOND-
+// TO-LAST entry, once the destination prompt is open, is whichever
+// directory was current immediately before the one CP was armed from.
+TEST_CASE_FIXTURE(Fixture, "^W (CopyDestination prompt): inserts the previous directory") {
+  REQUIRE(app.start(path()));
+  // Navigate into subdir/, then back -- RecentDirectory ring now ends
+  // [..., subdir/, path()], matching legacy's lp->old/lp->dir pair.
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.directoryMode().currentDirectory() == path() + "subdir/");
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.directoryMode().currentDirectory() == path());
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  feedText("garbage-to-be-cleared");
+
+  CHECK(app.feedByte(0x17, std::nullopt));  // ^W
+  CHECK(app.promptText() == path() + "subdir/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "^W: a no-op (beeps, doesn't insert anything) outside CP/MV/ARC destination prompts") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  feedText("pattern");
+  CHECK(app.feedByte(0x17, std::nullopt));  // swallowed like any other unrecognized control byte, not inserted
+  CHECK(app.promptText() == "pattern");
+}
+
+// 2026-08-23 addition, a direct user request: "'/Users/h'と打った
+// ところで^I（tab）を打っても何も起きない。基本的にディレクトリ
+// および ファイル名入力途中の^Iはマッチする対象があれば補完して
+// 欲しい" -- CopyDestination is exactly as much "a path in full" as
+// PathInput already was (see the ^I handling's own updated comment);
+// MoveDestination/ArchiveDestination/DuPath share the identical `if`
+// condition and completeFilesystemPath() call, so this one case is
+// representative of all four.
+TEST_CASE_FIXTURE(Fixture, "^I (CopyDestination prompt): completes a partial filesystem path") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  feedText(path() + "subd");  // "subd" uniquely prefixes "subdir/" among root's own children
+
+  CHECK(app.feedByte(0x09, std::nullopt));  // ^I
+  CHECK(app.promptText() == path() + "subdir/");
+}
+
+// 2026-08-23 fix, a direct user report: "FGREPのモードラインで戻り値
+// の位置が(fgrep)と逆". trailing2/trailing3 were swapped relative to
+// every other mode sharing this exact "program badge + return-
+// destination" shape (SHELL's own item-401 fix: trailing2="(zsh)"
+// badge, trailing3=return-target badge, always right-edge-padded --
+// see grepView_'s own updated provider comment).
+TEST_CASE_FIXTURE(Fixture, "FGREP results: mode line shows the program badge \"(fgrep)\" right after the "
+                           "byte count, and the return-directory path LAST") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  std::string row = display.rowText(23);
+  std::size_t badgePos = row.find("(fgrep)");
+  std::size_t pathPos = row.find(path());
+  REQUIRE(badgePos != std::string::npos);
+  REQUIRE(pathPos != std::string::npos);
+  CHECK(badgePos < pathPos);  // badge comes BEFORE the return-destination path, not after
+  CHECK(row.substr(pathPos + path().size()).find_first_not_of(' ') == std::string::npos);  // right-edge padded
 }
 
 TEST_CASE_FIXTURE(Fixture, "CP: marking two files (in either order relative to arming) then copying them "

@@ -267,6 +267,40 @@ TEST_CASE_FIXTURE(Fixture, "openSelected on '../' navigates to the parent direct
   CHECK(mode.currentDirectory() == path());
 }
 
+// 2026-08-23 fix, a direct user report: openSelected() on "./" used to
+// be a hard `return false` no-op. Legacy's own equivalent doubles as a
+// re-list even when "landing" somewhere already showing -- e.g. right
+// after overwriting a file in place (CP onto an existing name) and
+// wanting the listing's stale size column refreshed without
+// navigating away and back. Creates a NEW file AFTER the initial `ls`
+// (so it's genuinely absent from the in-memory entries_ until a
+// re-list happens) to prove this is a real `ls` re-run, not a no-op
+// that happens to already show correct data.
+TEST_CASE_FIXTURE(Fixture, "openSelected on './' re-runs `ls`, picking up a change made after the initial listing") {
+  REQUIRE(mode.enterDirectory(path()));
+  int before = static_cast<int>(mode.entries().size());
+
+  { std::ofstream(path() + "brand_new.txt") << "x"; }
+
+  bool found = false;
+  for (std::size_t i = 0; i < mode.entries().size(); i++) {
+    if (mode.entries()[i].name == "./") {
+      view.setCursorIndex(static_cast<int>(i));
+      found = true;
+      break;
+    }
+  }
+  REQUIRE(found);
+
+  REQUIRE(mode.openSelected());
+  CHECK(mode.currentDirectory() == path());  // still the SAME directory -- a refresh, not a navigation
+  CHECK(static_cast<int>(mode.entries().size()) == before + 1);
+  bool nowPresent = false;
+  for (const auto &entry : mode.entries())
+    if (entry.name == "brand_new.txt") nowPresent = true;
+  CHECK(nowPresent);
+}
+
 TEST_CASE_FIXTURE(Fixture, "goToParent: jumps to the parent directory without moving the cursor onto '../' first (K-19, ^O^K)") {
   REQUIRE(mode.enterDirectory(path() + "subdir2/"));
   view.setCursorIndex(0);  // deliberately NOT on "../" -- goToParent() shouldn't need it

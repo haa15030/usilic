@@ -10340,3 +10340,28 @@ PNGファイル(実際のusilic画面のスクリーンショット)を確認し
 修正: 新設unicodeNormalizationCandidates()(macOSのCoreFoundation CFStringNormalize()を利用)が、与えられた文字列自身・NFC形・NFD形を重複除去した候補リストとして返すようにしました。GrepMode::search()/CutMode::split()(fgrep/egrepを実際にサブプロセス起動)は検索文字列側の候補を順に試し、最初にマッチが見つかった時点で確定します(ls出力側のバイト列は一切変更しません)。LocateModeは候補ごとにlocateを実行し、結果を全てマージします(ファイルがどちらの形式で保存されているか予測できないため)。
 
 `make test` 828/828件・18952アサーション全通過(新規doctest3件)。`make usilic`クリーンビルド確認済みです。さらに実際の`~/git/usilic/src`ディレクトリと実ファイル(「マイナカード表.png」)に対しGrepModeを直接実行し、修正前は0件、修正後は正しく1件ヒットすることを実際のファイルシステムバイト列で確認しました。
+
+<確認OK。
+副産物がいくつかある。
+テストに使用した日本語ファイルをiCloudDriveからコピーする際、旧版で多用していたキーアサインがあるのでサポートしてほしい。過程を記すとこんな感じ。
+
+usilicを引数「~/git/usilic/src」で起動したのちLOCATE経由でiCloudDriveへ。CPでコピー先を入力する際、その場で^Wとやると一つ前の履歴（git/usilic/src）が文字列入力欄へ挿入される。特に履歴を通じコピー先へ移動後、コピー元へ戻ったところで^W、は頻繁に使用するので新版にも入れて欲しい。
+
+次に、今はまだ^Wが無いと気づいたのち、それならと'/Users/h'と打ったところで^I（tab）を打っても何も起きない。基本的にディレクトリおよびファイル名入力途中の^Iはマッチする対象があれば補完して欲しい。
+
+さらにコピー後、マッチしない症状のスクショを同名ファイルへ記録した際、（ls）画面の同ファイルは当然元のサイズのままだったため更新すべく^J^Kしても何も変わらない。
+ディレクトリ上の^J^K（カレントディレクトリへ）はすでに着地済みとは言え何もしないわけではなく、lsの再実行も兼ねているので反映よろしく。同機能は「./」を[return]でも発動して欲しい。
+
+FGREPのモードラインで戻り値の位置が(fgrep)と逆（さっきのスクショ参照）。
+
+>修正・検証・コミット・プッシュ済みです(項目408)。4件まとめて対応しました。
+
+**^W(移動先入力欄で一つ前のディレクトリを挿入)**: legacy tcbのkey.c(read_m())にあった`case K_w: if (f_M==T_cp||f_M==T_mv||f_M==T_arc||f_M==T_arc3) {...^U^K+oldを再生...}`を調査しました。legacyの`lp->old`(menu.cが新しいディレクトリへ移動する直前に必ず`lp->old = lp->dir`しているフィールド、shellでいうOLDPWDに相当)は、本ポートのRecentDirectoryリング(ls成功のたびに必ずpush_backする生の時系列ログ)がそのまま代替できると判明しました――移動先入力欄が開いている時点でのリングの最後から2番目の要素が、常にlegacyのlp->oldと一致します。CopyDestination/MoveDestination/ArchiveDestinationのときだけ働く^Wハンドラを追加し、入力欄をクリアしつつ挿入するようにしました。
+
+**^I(パス補完)**: Tab補完の条件がPathInput/ProgramCommandだけに限定されていました。completeFilesystemPath()自体はもともと完全に汎用だったため、CopyDestination/MoveDestination/ArchiveDestination/DuPathを条件に追加するだけで対応できました。
+
+**^J^K/「./」のリフレッシュ**: Application::goToFileSelector()はcurrentMode_==Directoryのケースが未対応で暗黙にreturn falseしていました。DirectoryMode::openSelected()も"./"の場合を明示的にreturn falseする専用分岐を持っていました。両方とも、同じディレクトリへenterDirectory()を再実行するよう修正しました(enterDirectory()自体に「同じパスならスキップ」という早期リターンは無いため、これは実際のls再実行になります)。
+
+**FGREPモードライン順序**: trailing2(プログラムバッジ「(fgrep)」の位置)とtrailing3(戻り先パス)が、SHELL(項目401)等の既存の規則――プログラムバッジがtrailing2、戻り先バッジ/パスがtrailing3(常に行末までパディング)――と逆になっていました。中身を入れ替えて修正しました。
+
+`make test` 834/834件・19007アサーション全通過(新規doctest8件)。`make usilic`クリーンビルド確認済みです。

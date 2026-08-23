@@ -534,6 +534,35 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ファイルだらけの実ディレクトリへ実際に踏み込む数少ない経路
      だったため、たまたまこの経路で最初に踏まれただけ)。
 
+408. **^J^K(GoToFileSelector)/「./」の[return]が、すでにカレント
+    ディレクトリに着地済みの場合に無反応だった件を修正(項目407検証中
+    の副産物として報告された4件のうち1件、詳細はCP/MV/RM/ARCの節の
+    項目408本体を参照)**
+   - **報告**: 「コピー後、更新すべく^J^Kしても何も変わらない。
+     ディレクトリ上の^J^K(カレントディレクトリへ)はすでに着地
+     済みとは言え何もしないわけではなく、lsの再実行も兼ねている
+     ので反映よろしく。同機能は『./』を[return]でも発動して欲しい」。
+   - **原因**: `Application::goToFileSelector()`は`currentMode_==
+     Directory`のケースが未対応で暗黙に`return false`していた。
+     `DirectoryMode::openSelected()`も`entry->name=="./"`の場合を
+     明示的に`return false`する専用分岐を持っていた(CP先で
+     上書き保存した直後など、外部でファイル内容が変わっていても
+     一覧のサイズ/mtime列が更新されない原因)。
+   - **修正**: `goToFileSelector()`に`currentMode_==Directory`の
+     分岐を追加し、`directoryMode_.enterDirectory(directoryMode_.
+     currentDirectory())`で同じディレクトリへの`ls`再実行を行う
+     ようにした(`enterDirectory()`自体に「同じパスならスキップ」
+     という早期リターンは無いため、これは実際の再実行になる)。
+     `openSelected()`の`"./"`分岐も同様に
+     `return enterDirectory(currentDirectory_);`へ変更(ModeStack
+     フレームは積まない――ナビゲーションではなくその場での更新
+     のため)。
+   - **検証**: `make test` 834/834件・19007アサーション全通過
+     (新規doctest2件: `openSelected()`で`ls`実行後に新規ファイルを
+     作成→「./」選択で新規ファイルが一覧に反映されることを確認、
+     `goToFileSelector()`がDirectoryモードから同一パスへ再度
+     `enterDirectory()`することを確認)。`make usilic`クリーン
+     ビルド確認済み。
 
 ## 2. KEY(キー一覧 / HELP)
 
@@ -2421,6 +2450,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      一致のため、Unicode正規化形式(NFC/NFD)の違いにより実在する
      ファイル名にマッチしないことがある不具合を修正。詳細は項目407
      (LOCATEの節)参照。
+
+     (2026-08-23追記2): FGREP/EGREP結果画面のモードラインで、
+     プログラムバッジ「(fgrep)」と戻り先ディレクトリパスの位置が
+     (SHELL等、他モードの規則と比べ)逆になっていた不具合も修正。
+     詳細は項目408(CP/MV/RM/ARCの節)参照。
 
 
 ## 4. CUT
@@ -8559,6 +8593,41 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      テスト1件を、既存の`^Xa`系テストへの`pumpArchiveExtractToCompletion()`
      追加という形に整理・統合)含め全811件・18835アサーション全通過。
      `make usilic`クリーンビルド確認済み。
+
+408. **CP/MV/ARCの移動先入力欄で^Wによる「一つ前のディレクトリ」挿入と
+    ^Iによるパス補完をサポート(項目407検証中の副産物として報告された
+    4件の要望・不具合のうち2件)**
+   - **報告**: 「iCloud Driveからテスト用ファイルをコピーする際、旧版で
+     多用していたキーアサインがある」として、legacy tcbのkey.c
+     (`read_m()`)で`case K_w: if (f_M==T_cp||f_M==T_mv||f_M==T_arc||
+     f_M==T_arc3) { ...^U^K+oldを再生... }`として実装されていた
+     「移動先入力欄で^Wすると一つ前のディレクトリが挿入される」機能を
+     このポートにも入れてほしいとの要望。あわせて、`/Users/h`まで
+     打って^I(TAB)しても補完されないとの報告。
+   - **^W(項目1)**: legacyの`lp->old`(menu.cが新しいディレクトリへ
+     移動する直前に必ず`lp->old = lp->dir`しているフィールド、
+     shellでいう`OLDPWD`に相当)を、本ポートの`RecentDirectory`
+     リング(`DirectoryMode::enterDirectory()`が成功する`ls`のたびに
+     必ず`push_back`する生の時系列ログ)がそのまま代替できると判明
+     ―― 移動先入力欄が開いている時点でのリングの最後から2番目の
+     要素が、常にlegacyの`lp->old`と一致する。`feedPromptByte()`に
+     `promptKind_`が`CopyDestination`/`MoveDestination`/
+     `ArchiveDestination`のときだけ働く`^W`ハンドラを追加、
+     `promptEditor_.setText()`で入力欄をクリアしつつ挿入する
+     (legacyの`^U^K`+タイプ、と同じ結果を1回の呼び出しで実現)。
+   - **^I(項目2)**: `feedPromptByte()`のTab補完条件が`PathInput`/
+     `ProgramCommand`だけに限定されていた。`completeFilesystemPath()`
+     自体はもともと完全に汎用(部分文字列+基準ディレクトリを渡すだけ)
+     だったため、`CopyDestination`/`MoveDestination`/`ArchiveDestination`/
+     `DuPath`(いずれも「パスをまるごと入力する」という点で`PathInput`
+     と同種)を条件に追加するだけで対応できた。
+   - **検証**: `make test` 834/834件・19007アサーション全通過(新規
+     doctest4件)。`make usilic`クリーンビルド確認済み。
+
+     (2026-08-23追記、同じ報告に含まれていた残り2件はそれぞれ別の
+     節に記録: 「^J^K/「./」の[return]がカレントディレクトリで
+     何もしない件」は項目1(File-selector)、「FGREPのモードライン
+     フィールド順序」は項目3(FGREP/EGREP)参照。)
 
 ## 12. SHELL
 

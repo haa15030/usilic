@@ -24,6 +24,7 @@ constexpr int kControlS = 0x13;        // ^S
 constexpr int kControlC = 0x03;        // ^C
 constexpr int kControlG = 0x07;        // ^G
 constexpr int kControlQ = 0x11;        // ^Q
+constexpr int kControlW = 0x17;        // ^W
 constexpr int kCarriageReturn = 0x0d;  // ^M
 // Trailing-directory truncation (2026-08-12 fix): shared by both
 // drawPromptLabel() (the active-editing mode line) and
@@ -931,20 +932,26 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     const auto &cmd = configuration_.commandFor(fixed ? ConfiguredRole::Fgrep : ConfiguredRole::Egrep);
     std::string program = cmd.argv.empty() ? "" : cmd.argv.front();
     std::string badge = program.empty() ? "" : "(" + program + ")";
-    std::string trailing2 = (grepReturnMode_ == ApplicationMode::Directory) ? directoryMode_.currentDirectory() : "";
-    // trailing2 here is a PATH (the directory the search ran from), not
-    // a typed search string -- see ContentView::TrailingKind's own
-    // comment for why paths (Path) opt out of QueryEcho's 16-char tail
-    // cap.
-    ContentView::ModeLineFields fields{name,
-                                        std::to_string(grepView_.totalByteCount()),
-                                        /*fillTrailingToEdge=*/!trailing2.empty(),
-                                        /*rightWatermark=*/"",
-                                        trailing2,
-                                        /*trailingPlain=*/false,
-                                        /*trailing2RightJustified=*/false,
-                                        /*trailing2Kind=*/ContentView::TrailingKind::Path};
-    fields.trailing3 = badge;
+    std::string path = (grepReturnMode_ == ApplicationMode::Directory) ? directoryMode_.currentDirectory() : "";
+    // 2026-08-23 fix, a direct user report ("FGREPのモードラインで
+    // 戻り値の位置が(fgrep)と逆"): trailing2/trailing3 were swapped
+    // relative to every other mode sharing this exact "program badge +
+    // return-destination" shape (SHELL's own item-401 fix: trailing2=
+    // "(zsh)" program badge, trailing3=return-target badge, always
+    // right-edge-padded automatically -- see trailing3's own comment).
+    // The program badge belongs right after the byte count (trailing2,
+    // matching MAN's own plain "(man)" in that exact slot too), the
+    // return-destination path belongs LAST (trailing3). NOT run through
+    // truncatedTrailingPath() here -- trailing3 has no truncation
+    // option of its own (see its own comment: shown in full if there's
+    // room, dropped entirely otherwise), which is what the OLD
+    // trailing2Kind::Path setting on this same path ALSO did (opted
+    // OUT of the generic 16-char tail cap specifically to show the
+    // full path) -- pre-truncating here would have been a real, if
+    // narrower, behavior regression from that.
+    ContentView::ModeLineFields fields{name, std::to_string(grepView_.totalByteCount()),
+                                        /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", badge};
+    fields.trailing3 = path;
     return fields;
   });
   // grepView_'s own empty-result placeholder ("<pattern>: No String",
@@ -2720,6 +2727,23 @@ bool Application::goToFileSelector() {
   // 使えない。特にLOCATE一覧=buでの^J^Kを試したい"), same shape as the
   // ListBrowser/RecentFile case just above: reads the highlighted
   // result's own path, nothing needs to have been opened first.
+  // Directory (2026-08-23 addition, a direct user report: already
+  // being IN the (ls) listing this key would otherwise land you on
+  // isn't a reason for it to do nothing -- legacy's own equivalent
+  // doubles as a re-list even when you're already there ("すでに
+  // 着地済みとは言え何もしないわけではなく、lsの再実行も兼ねている"),
+  // e.g. after overwriting a file in place (CP onto an existing name)
+  // and wanting the listing's stale size/mtime column refreshed
+  // without navigating away and back. Re-runs enterDirectory() on the
+  // SAME path currentDirectory_ already holds -- it has no "already
+  // showing this path" short-circuit (see its own comment), so this
+  // is a genuine `ls` re-run, not a no-op.
+  if (currentMode_ == ApplicationMode::Directory) {
+    if (!directoryMode_.enterDirectory(directoryMode_.currentDirectory())) return false;
+    display_.hideVisibleCursor();
+    directoryView_.redraw();
+    return true;
+  }
   std::string sourceFile;
   if (currentMode_ == ApplicationMode::ListBrowser) {
     if (listBrowserCategory_ != RingCategory::RecentFile) return false;
@@ -4923,6 +4947,30 @@ bool Application::feedPromptByte(int byte) {
     startPromptHistoryRecall();
     return true;
   }
+  // K-51/52/57/58 (^W, "insert the previous directory"): 2026-08-23
+  // addition, a direct user request -- "旧版で多用していたキーアサイン"
+  // (a legacy key binding they used constantly). Ported from key.c's
+  // own read_m(): `case K_w: if (f_M==T_cp||f_M==T_mv||f_M==T_arc||
+  // f_M==T_arc3) { ...insert `old`... }` -- legacy's `lp->old` is
+  // "whatever directory was current immediately before THIS one"
+  // (menu.c sets `lp->old = lp->dir` right before every directory
+  // change), which this port's RecentDirectory ring already tracks
+  // for free: every successful DirectoryMode::enterDirectory() appends
+  // the new directory (see its own comment), so by the time this
+  // CP/MV/ARC destination prompt is open, the ring's LAST entry is the
+  // CURRENT directory (where the operation was armed) and the SECOND-
+  // TO-LAST is exactly legacy's `lp->old`. Legacy replays "^U^K<old>"
+  // (clear the field, then type it) -- setText() does both steps in
+  // one call, landing the cursor at the end so the inserted path can
+  // still be edited/extended (matching the user's own described use:
+  // insert, then keep typing a subdirectory/filename onto the end).
+  if (byte == kControlW && (promptKind_ == PromptKind::CopyDestination ||
+                             promptKind_ == PromptKind::MoveDestination ||
+                             promptKind_ == PromptKind::ArchiveDestination)) {
+    const auto &recentDirs = history_.recentEntries(RingCategory::RecentDirectory);
+    if (recentDirs.size() >= 2) promptEditor_.setText(recentDirs[recentDirs.size() - 2]);
+    return true;
+  }
   // K-65 (^I): PathInput's own buffer IS a path in full, so the whole
   // text gets completed. PROGRAM (2026-08-17 addition, screenshot =ce:
   // "'less '^Iでは反応無し") is different -- its buffer is a full shell
@@ -4935,7 +4983,18 @@ bool Application::feedPromptByte(int byte) {
   // common owner to hang a shared helper off of). MAN/LOCATE/GREP/etc
   // still have nothing meaningful to complete (a page name/query/
   // pattern isn't a filesystem path at all), so still excluded.
-  if (byte == 0x09 && (promptKind_ == PromptKind::PathInput || promptKind_ == PromptKind::ProgramCommand)) {
+  // CopyDestination/MoveDestination/ArchiveDestination/DuPath
+  // (2026-08-23 addition, a direct user request: "基本的にディレクトリ
+  // およびファイル名入力途中の^Iはマッチする対象があれば補完して
+  // 欲しい") -- these are exactly as much "a path in full" as
+  // PathInput is, just reached via a different key (^Xc/^Xm/^Xa/^Jd
+  // rather than ^X^F/^X^D); completeFilesystemPath() itself is already
+  // completely generic (partial string + current directory in, longest
+  // common completion out), nothing about it was PathInput-specific.
+  if (byte == 0x09 &&
+      (promptKind_ == PromptKind::PathInput || promptKind_ == PromptKind::ProgramCommand ||
+       promptKind_ == PromptKind::CopyDestination || promptKind_ == PromptKind::MoveDestination ||
+       promptKind_ == PromptKind::ArchiveDestination || promptKind_ == PromptKind::DuPath)) {
     const std::string &text = promptEditor_.text();
     int cursor = promptEditor_.cursorBytePos();
     std::string partial = text;
