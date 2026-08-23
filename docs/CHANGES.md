@@ -22578,6 +22578,68 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      根本の非互換性が解消された場合、この行自体の要否を再検討する
      必要がある。
 
+420. **`docs/BUILD.md`を新設(コンパイル環境0からusilicバイナリ完成
+    までの手順を整理)、あわせて`.devcontainer/Dockerfile`に
+    SDL2/SDL2_ttf/pkg-configが抜けていた不具合を発見・修正**
+   - **要望**: 「今回のコンパイルでは新たに`brew install sdl2`/
+     `brew install sdl2_ttf`が必要だった。そもそものコンパイル環境
+     から始まってusilicバイナリ作成までを完了するのに必要な
+     ファイルとインストール方法の説明もマニュアルには加えたい。」
+     (項目419のmpi実機でのSDL2_ttfリンクエラー調査の直後)。
+   - **調査**: このセッションの開発機(Apple Silicon)の`brew list`/
+     `brew deps`を実際に確認し、macOSで最終的に必要になる
+     パッケージを洗い出した(Xcode Command Line Tools本体に
+     `clang++`/`make`/`git`/ncursesヘッダが同梱される点、
+     `pkg-config`コマンド自体は`pkgconf`という別名のformulaが
+     提供している点を含む)。あわせて`src/cpp/Makefile`と
+     `graphical_display.cpp`を確認したところ、`SDL2`/`SDL2_ttf`の
+     ヘッダは`#ifdef`ガード無しで無条件includeされており、
+     `make usilic`/`make test`のどちらも`src/`以下の全`.cpp`を
+     常にコンパイルする作りだと判明。**GUIモード(`-g`)を一切
+     使わないCUI専用ビルドでも、コンパイルを通すためだけに
+     SDL2/SDL2_ttfのヘッダ/ライブラリが必須**という、見落とし
+     やすい依存関係だった。
+   - **`.devcontainer/Dockerfile`の不具合発見**: 上記の依存関係を
+     踏まえてLinux向け手順を書こうとしたところ、このリポジトリ
+     自身の`.devcontainer/Dockerfile`(Ubuntu 26.04ベース)の
+     `apt-get install`一覧に`libsdl2-dev`/`libsdl2-ttf-dev`/
+     `pkg-config`がそもそも含まれていない、すなわち**このDocker
+     イメージで`make usilic`を実行するとヘッダ不足でコンパイル自体
+     が失敗する状態**だったと判明(このDockerfileはリポジトリが
+     `tcb`から`usilic`へ再編される際にそのまま引き継がれたもので、
+     C++移植がGUIモードへ拡張されて以降、更新されていなかったと
+     見られる)。
+   - **修正・検証**: `Dockerfile`のパッケージ一覧に`pkg-config`/
+     `libsdl2-dev`/`libsdl2-ttf-dev`を追加。実際に`docker build`で
+     イメージを構築し、ホストのbind mountを一切経由せず(既存の
+     `tcb-dev`コンテナはこのリポジトリではなく旧`tcb`リポジトリ
+     向けのものだったため、混同を避けて新規にビルド)、コンテナ内で
+     リポジトリを`/tmp`へ複製・`build/`を削除してから
+     `make usilic`を実行し、修正前は存在しなかったはずの実行可能な
+     ELFバイナリ(`\x7fELF`マジックバイトを確認)が生成されることを
+     確認した。`make test`は850件中15件が別要因(この環境の`man`
+     コマンドが存在しないページに対しても正常終了扱いになる等、
+     `man`実装依存の既存の環境差)で失敗したが、これは今回の
+     SDL2/pkg-config不足とは無関係な既知の環境依存であり、
+     `make usilic`(バイナリ作成そのもの)自体は問題無く成功して
+     いる。
+   - **`docs/BUILD.md`新設**: 上記の調査結果に基づき、まっさらな
+     macOS/Linuxマシンから`usilic`バイナリの完成までを一通り
+     カバーする手順書を新設。共通で必要なもの(C++17コンパイラ・
+     make・git・ncurses・pkg-config・SDL2/SDL2_ttf)の説明、
+     macOS(Xcode CLT→Homebrew→`brew install pkgconf sdl2
+     sdl2_ttf`)、Linux(`apt-get install`一覧)、Docker
+     (`.devcontainer`、bind mount経由でのビルド実行が危険である
+     旨の警告を含む)、ビルドターゲット早見表(`make usilic`/
+     `make test`/`make clean`/`make install`)を記載。項目419
+     (Intel MacのXcode新リンカ対応)は既に`Makefile`側で自動対応
+     済みのため追加操作は不要である旨も明記した。
+   - **検証**: 上記Dockerビルドでの実機検証(`make usilic`成功、
+     ELFバイナリ生成確認)。この項目自体は`Dockerfile`と
+     `docs/BUILD.md`(ドキュメント)のみの変更でmacOS側のソース
+     コードには手を入れていないため、macOS側の`make test`
+     852/852件全通過(項目419で確認済み)への影響は無い。
+
 
 ## 25. Git / リポジトリ運用
 

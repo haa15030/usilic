@@ -4,9 +4,23 @@
 # ubuntu:24.04 (直近のLTS) に変更して使う。
 FROM ubuntu:26.04
 
+# pkg-config/libsdl2-dev/libsdl2-ttf-dev (2026-08-24 addition, docs/
+# CHANGES.md item 420): src/cpp/src/graphical_display.cpp (the -g GUI
+# Display backend) unconditionally #includes <SDL2/SDL.h>/<SDL2/
+# SDL_ttf.h> with no #ifdef guard, and src/cpp/Makefile compiles every
+# .cpp under src/ into both `make usilic` and `make test` regardless
+# of target -- so even a headless container that will never actually
+# open a GUI window still needs these to COMPILE at all, not just to
+# run -g mode. Missing before this fix; a real user report tracing
+# through docs/BUILD.md's own macOS Homebrew instructions surfaced
+# that this container's own package list had never been updated to
+# match.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libncurses-dev \
+    pkg-config \
+    libsdl2-dev \
+    libsdl2-ttf-dev \
     git \
     curl \
     ca-certificates \

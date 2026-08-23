@@ -1,0 +1,124 @@
+# usilic (C++版) ビルド手順
+
+`src/cpp/`以下のC++移植版usilicを、何も入っていないまっさらな
+macOS/Linuxマシンから実際にビルドできるようになるまでの手順。
+
+「なぜこれが要るのか」を各所に書いてあるのは、パッケージの
+過不足で無反応/謎のリンクエラーになったときに原因を追いやすく
+するため(2026-08-24、Intel Mac実機での`SDL2_ttf`リンクエラー
+[docs/CHANGES.md項目419]の調査を機に整備)。
+
+## 必要なもの(共通)
+
+- C++17対応コンパイラ(`clang++`または`g++`)と`make`
+- `git`
+- `ncurses`のヘッダ/ライブラリ(`terminal_display.cpp`が
+  `setupterm`/`tputs`/`tgoto`等のterminfo APIを使用)
+- `pkg-config`
+- `SDL2`と`SDL2_ttf`のヘッダ/ライブラリ
+
+`SDL2`/`SDL2_ttf`は本来GUIモード(`-g`、`GraphicalDisplay`)専用の
+はずだが、`src/cpp/Makefile`は`src/`以下の`.cpp`を`make usilic`/
+`make test`どちらでも無条件に全部ビルドする作りで、
+`graphical_display.cpp`自身も`<SDL2/SDL.h>`/`<SDL2/SDL_ttf.h>`を
+`#ifdef`無しで無条件includeしている。**つまりCUIしか使わない場合
+でも、コンパイルを通すためだけにSDL2/SDL2_ttfのヘッダ/ライブラリが
+必須になる**(GUIウィンドウを一度も開かない場合でも)。
+
+## macOS
+
+1. Xcode Command Line Tools(`clang++`/`make`/`git`、および
+   `ncurses`のヘッダ/ライブラリもSDKに同梱):
+   ```
+   xcode-select --install
+   ```
+2. [Homebrew](https://brew.sh)(未導入の場合):
+   ```
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+3. `pkg-config`(`pkgconf`パッケージが提供)、`SDL2`、`SDL2_ttf`:
+   ```
+   brew install pkgconf sdl2 sdl2_ttf
+   ```
+4. クローンしてビルド:
+   ```
+   git clone https://github.com/haa15030/usilic.git
+   cd usilic/src/cpp
+   make usilic     # build/usilic ができる
+   make test       # 単体テスト一式(doctest)を実行
+   ```
+5. (任意)`/usr/local/bin/U`としてインストール(`INSTALL_NAME`が
+   `usilic`ではなく`U`なのは、`src/install.sh`が入れる旧C版
+   `/usr/local/bin/usilic`と衝突しないよう、日常的に試すための
+   短い専用名としてユーザー自身が選んだもの):
+   ```
+   sudo make install
+   ```
+
+### Intel Mac(Sequoia)固有の注意点
+
+Xcode 15以降のデフォルトリンカ(通称ld-prime)が、Homebrew製の
+一部dylib構成(`sdl2_ttf`が`sdl2`ではなく`sdl2-compat`を参照する
+構成など)で「ライブラリもリンクコマンドも正しいのにシンボルが
+見つからない」という既知の非互換を起こすことがある
+(docs/CHANGES.md項目419で実際に発生・特定)。対策として
+`Makefile`のDarwin向け`LDLIBS`に`-Wl,-ld_classic`(旧リンカの
+強制指定)を組み込み済みなので、**上記の手順通りに`make`すれば
+追加の対応は不要**。万一同種のリンクエラーが再発した場合は、
+`pkg-config --cflags --libs sdl2 SDL2_ttf`の出力・`file`/
+`lipo -info`でのアーキテクチャ・`nm -gU`でのシンボルの実
+エクスポート状況、の3点を順に確認するとよい(docs/CHANGES.md
+項目419の調査ログに実例あり)。
+
+### Apple Silicon + Homebrewが`/opt/homebrew`の場合
+
+`/opt/homebrew/lib`はデフォルトのリンカ検索パスに含まれないが、
+`pkg-config`経由でSDL2/SDL2_ttfの`-I`/`-L`は自動的に解決される
+ため、追加の`CFLAGS`/`LDFLAGS`指定は不要(2026-07-16に検証済み、
+CLAUDE.mdの経緯記録も参照)。
+
+## Linux (Ubuntu/Debian系)
+
+```
+sudo apt-get update
+sudo apt-get install -y build-essential libncurses-dev pkg-config \
+    libsdl2-dev libsdl2-ttf-dev git
+
+git clone https://github.com/haa15030/usilic.git
+cd usilic/src/cpp
+make usilic
+make test
+```
+
+## Docker(`.devcontainer/`)
+
+このリポジトリの`.devcontainer/Dockerfile`(Ubuntu 26.04ベース)
+には上記Linux手順のパッケージが最初から含まれている
+(2026-08-24、`libsdl2-dev`/`libsdl2-ttf-dev`/`pkg-config`を追加
+[docs/CHANGES.md項目420] -- それ以前はSDL2関連が抜けており、
+`make usilic`がヘッダ不足でコンパイルすら通らない状態だった)。
+実際に`docker build`したイメージへ、ホストのbind mountを経由せず
+リポジトリを`git clone`し直した上で`make usilic`/`make test`が
+成功することを検証済み。
+
+**注意(重要)**: ホストのMac上のリポジトリをこのDockerコンテナへ
+bind mountして使う場合、コンテナ内で`make`/`make clean`を実行
+すると、共有された`build/`ディレクトリにLinux版バイナリが
+書き込まれ、Mac側の`build/usilic`(Mach-O)を壊す(あるいは
+`rm -rf build`でMac側ごと削除する)。コンテナ内でのビルド確認は
+リポジトリをコンテナ内の別パス(例: `/tmp/usilic`)へコピーまたは
+`git clone`し直した上で行うこと。Mac側で確認済みのバイナリを
+そのまま使い続けたい場合は、コンテナ内で`make`系コマンドを一切
+実行しないこと。
+
+## ビルドターゲット早見表
+
+| コマンド | 内容 |
+|---|---|
+| `make usilic` | `build/usilic`(実行可能バイナリ)を生成 |
+| `make test` | `build/run_tests`を生成し、そのまま実行(doctest) |
+| `make clean` | `build/`を削除 |
+| `sudo make install` | `build/usilic`を`/usr/local/bin/U`へインストール |
+
+`make`(ターゲット省略)は`Makefile`内で最初に書かれている`test`が
+実行される(`usilic`ではない)ので注意。

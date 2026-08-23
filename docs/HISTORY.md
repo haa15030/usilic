@@ -10625,3 +10625,17 @@ c++ -std=c++17 -Wall -Wextra -g -I/usr/local/include/SDL2 -I/usr/local/include -
 Intel限定に絞る確実で安価な判定方法が無いため、Darwin全体に無条件で適用しています。この開発機(Apple Silicon)でも`make clean`からのフルリビルド+`make test`で回帰が無いことを確認済みです(`-ld_classic`は将来のXcodeで削除予定と警告が出ますが、リンク自体はエラー無く成功します)。
 
 mpi側でも`git pull`して`make`し直せば直るはずです。お手数をおかけしました。
+
+<今回のコンパイルでは新たに下記が必要だった。
+brew install sdl2
+brew install sdl2_ttf
+そもそものコンパイル環境から始まってusilicバイナリ作成までを完了するのに必要なファイルとインストール方法の説明もマニュアルには加えたい。
+それってわかる？　
+
+>分かります、追加・検証・コミット・プッシュ済みです(項目420)。
+
+`docs/BUILD.md`を新設し、まっさらなmacOS/Linuxマシンから`usilic`バイナリの完成までの手順を一通りまとめました。
+
+調査の過程で、SDL2/SDL2_ttfはGUIモード(-g)専用のはずが、`graphical_display.cpp`が`#ifdef`ガード無しで無条件includeしているため、**CUI専用ビルドでもコンパイルを通すだけのために必須**という見落としやすい依存だと判明しました。あわせて、このリポジトリ自身の`.devcontainer/Dockerfile`にも`libsdl2-dev`/`libsdl2-ttf-dev`/`pkg-config`が最初から抜けており、実は今のままではDocker環境で`make usilic`すらコンパイルできない状態だったことも発見・修正しました(実際にDockerイメージをビルドし直し、ホストのファイルには一切触れない形でコンテナ内リポジトリコピーに対し`make usilic`を実行、ELFバイナリの生成を確認済みです)。
+
+macOS側は`brew install pkgconf sdl2 sdl2_ttf`(pkg-configコマンドは`pkgconf`という別名のformulaが提供)、Linux側は`apt-get install build-essential libncurses-dev pkg-config libsdl2-dev libsdl2-ttf-dev git`で揃います。詳細は`docs/BUILD.md`をご覧ください。項目419のIntel Mac向けリンカ対応は既に`Makefile`側で自動適用されるので、手順としては追加の対応は不要です。
