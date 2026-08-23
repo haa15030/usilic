@@ -1365,6 +1365,22 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     return dispatchLeaderByte(byte, special);
   }
 
+  // EXPERIMENTAL space override (2026-08-23, see Command::QuickLook's
+  // own comment): applied here rather than inside resolveCommand()
+  // itself, which stays the same pure/static byte->Command mapping
+  // its own doc comment and test_application.cpp's ~20 no-instance
+  // `Application::resolveCommand(...)` calls already assume -- adding
+  // instance-state reads there would make it non-static and break all
+  // of them for one experimental feature. Only overrides the PLAIN,
+  // unprefixed ' ' byte reaching this exact dispatch point (not ^F/^V/
+  // the real PageDown key, which still reach resolveCommand()'s
+  // ordinary PageDown case below unchanged, so a long Directory
+  // listing always still has a way to page through it).
+  if (byte == ' ' && !special && currentMode_ == ApplicationMode::Directory) {
+    if (pendingCpMvRm_) return handleCommand(Command::MarkAndAdvance);
+    if (directoryMode_.selectedEntry()) return handleCommand(Command::QuickLook);
+  }
+
   return handleCommand(resolveCommand(byte, special));
 }
 
@@ -2295,6 +2311,8 @@ bool Application::handleCommand(Command command) {
     case Command::MarkAndRetreat:
       if (!toggleMark()) return false;
       return handleCommand(Command::MoveUp);
+    case Command::QuickLook:
+      return executeQuickLook();
     case Command::StartCopy:
       return startCopyPrompt();
     case Command::StartMove:
@@ -6224,6 +6242,29 @@ bool Application::executeProgram(const std::string &command) {
 
   display_.flush();
   programMode_.run(toRun, command);
+  activeView().redraw();
+  return true;
+}
+
+// Command::QuickLook (EXPERIMENTAL, see that enumerator's own
+// comment). Deliberately bypasses executeProgram()'s whole
+// isRecognizedProgram()/programPromptDirectory_/prompt machinery --
+// there's no user-typed command line here, just one hardcoded
+// `qlmanage -p <path>` built directly from the cursor's own entry, so
+// none of that applies. Builds the full absolute path itself (rather
+// than cdWrap()'s "cd into the directory first" trick) since there's
+// no reason to route through the shell's cwd for a single already-known
+// path.
+bool Application::executeQuickLook() {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  const DirectoryEntry *entry = directoryMode_.selectedEntry();
+  if (!entry) return false;
+  std::string path = directoryMode_.currentDirectory();
+  if (!path.empty() && path.back() != '/') path += '/';
+  path += entry->name;
+
+  display_.flush();
+  programMode_.run("qlmanage -p " + shellQuoteArg(path), "qlmanage -p " + entry->name);
   activeView().redraw();
   return true;
 }

@@ -5497,6 +5497,55 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ^Jp/^J^Pから実際に選択してQuick Lookウィンドウが正しく開閉する
      ところまでは実機での確認をお願いします。
 
+414. **EXPERIMENTAL: 素の[space]をDirectory modeでクイックルック直行/
+   CP・MV・RM選択キーとしてオーバーロード**
+   - **要望**: 「`qlmanage -p`は面倒なのでお試しで仕様をちょっと変えて
+     みたい。[space]は現在ページ送りだが、Finder同様クイックルックへ
+     直行というのは？さらにCP/MV/RMでの選択はマクロキーしかないので
+     [space]を選択キーとした場合、クイックルックがらみの混乱がどの
+     程度かを試してみたいので」
+   - **設計**: 項目413で追加した`qlmanage -p`をPROGRAM経由で毎回
+     手打ちするのは面倒、という前提から、Directory modeに限定して
+     素の[space]の意味を状況依存で3通りに分岐する実験的な変更。
+     - CP/MV/RMがarmed(`pendingCpMvRm_`が値を持つ、すなわち^Xc/^Xm/^Xr
+       済みで宛先プロンプト入力中)の間: `.`(MarkAndAdvance、マーク+
+       カーソル前進)と同じ動作。CP/MV/RMの選択が既存のマクロキー
+       (`,`/`.`)や^Spaceに限られている、という要望の後半部分に対応。
+     - armedでない、かつカーソル位置に実体(`selectedEntry()`)がある:
+       `qlmanage -p '<カーソル行のフルパス>'`をPROGRAMプロンプトを
+       経由せず直接`ProgramMode::run()`で起動(Finderの「選んでスペース」
+       ジェスチャーを直接再現)。
+     - 上記いずれにも該当しない(Directory mode以外、entriesが無い等):
+       従来通りPageDown。
+   - **ページ送り手段の温存**: ^F/^V、および実端末のPageDownキーは
+     この変更の対象外(元々別の`case`のまま)。長い`ls`一覧でも
+     ページ送りの手段が完全に失われることはない。
+   - **実装**: `resolveCommand()`はstatic(かつ`test_application.cpp`
+     に約20箇所ある、インスタンス無しの`Application::resolveCommand(...)`
+     呼び出し前提のテストがある)なので、状態(`currentMode_`/
+     `pendingCpMvRm_`/`directoryMode_`)を読む必要があるこの分岐は
+     `resolveCommand()`の内側ではなく、呼び出し元の`dispatchByte()`
+     側に実装(`resolveCommand()`自体は変更無し、既存のpure関数のまま)。
+     新規`Command::QuickLook`と`Application::executeQuickLook()`
+     (カーソル行のフルパスを`shellQuoteArg()`でクォートして
+     `qlmanage -p`を組み立て、`programMode_.run()`へ渡すだけの
+     薄い実装、`executeProgram()`の`isRecognizedProgram()`許可リスト等は
+     経由しない)を追加。
+   - **既知の制限(実験段階として意図的に未対応)**: KEY-mode(^H)の
+     自己参照キー一覧(`kKeyTable`)の`space`の説明は「Page down」の
+     まま(Directory modeでの新しい意味は反映していない)。あくまで
+     「混乱の程度を試す」段階のため、最小限の変更に留めた。
+   - **検証**: `make test`で新規3件(setForegroundLauncher()で実際の
+     `qlmanage`起動を横取りし、コマンド文字列とShellCommand履歴への
+     記録内容を確認/CP armed時にQuickLookは一切発動せずToggleMark
+     相当(マーク+前進)が起きることを確認/Directory mode以外では
+     従来通りPageDownのままであることを確認。「カーソル位置に実体が
+     無い」ケースは`ls -al`が常に`.`/`..`を含むため実質到達不能と
+     判明し、当初用意した4件目のテストは削除)を含め844/844件・19116
+     アサーション全通過。`make usilic`クリーンビルド確認済み
+     (`qlmanage`自体の実機での対話的な動作確認は前項目と同様、
+     引き続き実機でお願いします)。
+
 
 ## 9. FILE / DIR
 

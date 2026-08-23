@@ -298,7 +298,20 @@ enum class Command {
   // and then executes that entry's own key sequence, matching
   // HELP.jp 2.2's documented behavior. See Application::startKey()'s
   // own comment.
-  StartKey
+  StartKey,
+  // EXPERIMENTAL (2026-08-23, a direct user request to try overloading
+  // plain Space -- NOT part of legacy/usilicrc's own key table, and
+  // deliberately scoped narrowly enough to revert easily if it proves
+  // confusing in practice): in Directory mode with no CP/MV/RM
+  // operation armed, plain Space launches `qlmanage -p` (macOS Quick
+  // Look) directly on the entry under the cursor -- no PROGRAM prompt,
+  // matching Finder's own "select a file, hit Space" gesture. See
+  // dispatchByte()'s own comment on the exact space/PageDown/
+  // MarkAndAdvance three-way split this introduces (applied there,
+  // not in the static resolveCommand(), which stays a pure byte->
+  // Command mapping), and Application::executeQuickLook()'s own
+  // comment for the command itself.
+  QuickLook
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -1537,6 +1550,13 @@ class Application {
   // (constructor) -- see their own call-site comments.
   bool isRecognizedProgram(const std::string &firstWord) const;
   static std::string cdWrap(const std::string &dir, const std::string &command);
+  // Command::QuickLook -- see that enumerator's own comment. Runs
+  // `qlmanage -p '<path>'` on directoryMode_.selectedEntry() directly
+  // via programMode_ (bypassing the PROGRAM prompt/isRecognizedProgram()
+  // allow-list entirely, since this is a single hardcoded command, not
+  // user-typed input). Returns false (no-op) outside Directory mode or
+  // with no entry under the cursor.
+  bool executeQuickLook();
   bool executeLocate(const std::string &query);
   bool executeCopy(const std::string &destination);
   bool executeMove(const std::string &destination);

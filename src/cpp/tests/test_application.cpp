@@ -2183,6 +2183,72 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^G cancels the prompt without running anyth
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
+// -- Command::QuickLook (EXPERIMENTAL, 2026-08-23): plain Space in
+// Directory mode -- see that enumerator's own comment and
+// dispatchByte()'s. setForegroundLauncher() intercepts the command
+// string instead of letting ProgramMode::run() actually fork/exec
+// `qlmanage -p` (which would pop a real Quick Look window and hang
+// the test waiting for it to be dismissed) -- same technique
+// test_program_mode.cpp's own launcher tests already use.
+
+TEST_CASE_FIXTURE(Fixture, "Space (unarmed Directory mode): runs `qlmanage -p` on the entry under the "
+                           "cursor via ProgramMode, instead of paging") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  std::string receivedCommand;
+  app.programMode().setForegroundLauncher([&](const std::string &command) {
+    receivedCommand = command;
+    return true;
+  });
+
+  CHECK(app.feedByte(' ', std::nullopt));
+  CHECK(receivedCommand == "qlmanage -p '" + path() + "plain.txt'");
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // never switches mode, same as PROGRAM
+
+  const auto &entries = history.recentEntries(RingCategory::ShellCommand);
+  REQUIRE_FALSE(entries.empty());
+  CHECK(entries.back() == "qlmanage -p plain.txt");  // the SHORT recordedCommand, not the quoted one
+}
+
+TEST_CASE_FIXTURE(Fixture, "Space (Directory mode, CP armed): marks the entry under the cursor and "
+                           "advances, instead of Quick Look or paging") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCopy));  // arms pendingCpMvRm_
+
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  bool launcherCalled = false;
+  app.programMode().setForegroundLauncher([&](const std::string &) {
+    launcherCalled = true;
+    return true;
+  });
+
+  CHECK(app.feedByte(' ', std::nullopt));
+  CHECK_FALSE(launcherCalled);  // Quick Look never ran
+  CHECK(app.directoryMode().isMarked(idx));  // marked, same as '.'/ToggleMark
+  CHECK(indexOf(app.directoryMode().selectedEntry()->name) != idx);  // and cursor advanced
+}
+
+TEST_CASE_FIXTURE(Fixture, "Space (outside Directory mode): still plain PageDown, unchanged") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  bool launcherCalled = false;
+  app.programMode().setForegroundLauncher([&](const std::string &) {
+    launcherCalled = true;
+    return true;
+  });
+  app.feedByte(' ', std::nullopt);
+  CHECK_FALSE(launcherCalled);
+  CHECK(app.currentMode() == ApplicationMode::File);
+}
+
 // -- feedByte: ^Jl / ^J^L leader sequences for LOCATE --
 //
 // These genuinely exercise the real `locate`(1) command (matching
