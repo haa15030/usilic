@@ -954,12 +954,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     if (grepReturnMode_ == ApplicationMode::Directory) {
       path = directoryMode_.currentDirectory();
     } else if (grepReturnMode_ == ApplicationMode::CutContent) {
-      std::string label;
-      if (const CutSegment *segment = cutMode_.selectedSegment()) {
-        std::size_t start = segment->label.find_first_not_of(' ');
-        if (start != std::string::npos) label = segment->label.substr(start);
-      }
-      path = "CUT:" + label;
+      path = cutContentReturnLabel();
     } else if (grepReturnMode_ == ApplicationMode::File) {
       path = fileMode_.currentFile();
     }
@@ -3350,6 +3345,25 @@ bool Application::returnFromShell() {
   // it must persist across incidental redraws to begin with).
   display_.hideVisibleCursor();
   activeView().redraw();
+  // Restore a suspended DIRECTLY-active prompt (promptKind_, see
+  // suspendedActivePromptKind_'s own declaration comment) -- AFTER
+  // activeView().redraw() just above, not before: activatePrompt()
+  // draws the prompt's own row 24 overlay, and every other prompt-
+  // showing call site in this port already relies on activatePrompt()
+  // being the LAST thing drawn so it lands on TOP of the underlying
+  // content -- doing this earlier would have had the plain content
+  // view's own mode line (same row) painted right back over it.
+  // Unlike the ListBrowser candidate-list case above, this isn't
+  // scoped to a specific shellReturnMode_: a directly-active prompt
+  // (GrepPattern from a bare ^S, etc.) can be resumed regardless of
+  // which mode it was overlaid on, since activatePrompt() itself
+  // doesn't touch currentMode_ (already set to shellReturnMode_
+  // above).
+  if (suspendedActivePromptKind_) {
+    activatePrompt(*suspendedActivePromptKind_, suspendedActivePromptText_);
+    suspendedActivePromptKind_ = std::nullopt;
+    suspendedActivePromptText_.clear();
+  }
   return true;
 }
 
@@ -3554,6 +3568,20 @@ bool Application::ensureShellActive() {
   promptHistoryRecallKind_ = std::nullopt;
   promptHistoryRecallText_.clear();
   promptHistoryRecallIsDirectEntry_ = false;
+  // See suspendedActivePromptKind_'s own declaration comment: a leader
+  // command (^J^W) jumping straight to Shell from a DIRECTLY-active
+  // editable prompt (promptKind_ != None, e.g. mid-typing an FGREP
+  // pattern) never went through that prompt's own normal exit points,
+  // leaving promptKind_ stuck -- dispatchByte()'s own top-level check
+  // routes every subsequent byte through feedPromptByte() instead of
+  // feedShellByte() as long as it stays set. Suspended, not just
+  // cleared, so a plain ^G back out of Shell resumes editing exactly
+  // where the user left off.
+  if (promptKind_ != PromptKind::None) {
+    suspendedActivePromptKind_ = promptKind_;
+    suspendedActivePromptText_ = promptEditor_.text();
+    promptKind_ = PromptKind::None;
+  }
   if (!shellStarted_) {
     if (!shell_.start()) return false;
     shellStarted_ = true;
@@ -3643,6 +3671,15 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     default:
       return "";
   }
+}
+
+std::string Application::cutContentReturnLabel() const {
+  std::string label;
+  if (const CutSegment *segment = cutMode_.selectedSegment()) {
+    std::size_t start = segment->label.find_first_not_of(' ');
+    if (start != std::string::npos) label = segment->label.substr(start);
+  }
+  return "CUT:" + label;
 }
 
 // K-17 (^X^W, M_w4): ported from menu.c's own `send_pp(hp->bp->pp,
@@ -5862,9 +5899,28 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // rather than the destination path.
   bool showsBadge =
       (kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory) && listBrowserChronological_;
-  std::string destinationDirectory = showsBadge ? promptLabelText(kind) : previousModeName(destinationMode);
+  // CutContent (2026-08-24 fix, a direct user report: FGREP typed
+  // directly from within a HELP chapter's own content -- BEFORE ever
+  // submitting/leaving the prompt -- showed the bare "CUT" here, not
+  // "CUT:1.  Introduction" like the reference; previousModeName()
+  // itself has no per-instance state to draw a segment label from
+  // (see its own comment), so this reuses cutContentReturnLabel()
+  // instead, the SAME helper grepView_'s own post-submission mode
+  // line already uses for the identical scenario).
+  std::string destinationDirectory = showsBadge                                  ? promptLabelText(kind)
+                                      : destinationMode == ApplicationMode::CutContent ? cutContentReturnLabel()
+                                                                                        : previousModeName(destinationMode);
   if (!destinationDirectory.empty()) {
-    std::string tail = truncatedTrailingPath(destinationDirectory);
+    // CutContent (2026-08-24, same fix as above): NOT run through
+    // truncatedTrailingPath() -- its 16-char TAIL cap is meant for
+    // long PATHS, where the tail end is the meaningful part; applied
+    // to "CUT:<label>" it instead ate the "CUT:" prefix itself (e.g.
+    // "CUT:1.  Introduction" -> "...1.  Introduction"), losing exactly
+    // the piece cutContentReturnLabel() exists to add. Matches
+    // grepView_'s own post-submission trailing3 field, which skips
+    // the same cap for the identical reason (see its own comment).
+    std::string tail = (destinationMode == ApplicationMode::CutContent) ? destinationDirectory
+                                                                         : truncatedTrailingPath(destinationDirectory);
     // Badge (2026-08-18 fix, a direct user correction + screenshot =db:
     // "戻り値のDIRは左詰めでよろしく"): the DIR/FILE badge above is a
     // short, fixed-width category marker, not a path -- right-

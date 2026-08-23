@@ -10415,3 +10415,22 @@ CP/MV/RM:「マイナカード表.png」をマークしたのち^G^P^P^P→（ls
 **^J^Wの書き出し内容**: ご指摘の通りでした。shellInsertBufferContent()(^J^W)はactiveView()(=currentMode_に対応するView)の内容を書き出す設計ですが、Grepモードでのactiveview()はgrepView_――マッチした行だけのフィルタ済みビューであり、独立した「Grepモード自身のコンテンツ」という概念は本来存在しません。currentMode_==Grepの場合はgrepReturnMode_(検索が実際に走った元のモード)を実効モードとして代わりに使うよう変更しました(ファイル名決定・書き出し内容の両方)。これによりHELPチャプターからのFGREP結果画面で^J^Wすると、マッチ行だけでなく元のチャプター全体(背景に見えているページ)がcatされるようになりました。「なぜかHELP」という副次症状の直接の原因は特定できませんでしたが、書き出し元がgrepView_(マッチ結果のみの断片的な内容)からcutContentView_(実際のチャプター全体)へ変わったことで、間接的に解消されている可能性があります。
 
 `make test` 839/839件・19058アサーション全通過(新規doctest3件)。`make usilic`クリーンビルド確認済みです。
+
+<「バイト数」はOK。戻り値は「CUT:1.  Introduction     」ではなくて「　　　　　　　　CUT」のまま。
+^J^WはHELPに戻っているようでいて（モードラインがHELPなので）実はSHELLにいるらしい。流れを追ってみると、
+^J^W→SHELLプロンプト「cat /tmp/.usilic.98234/w.3」→[return]→なぜかHELP、に見えたのはモードラインがHELPだから→[space]→背景はIntroductionのままバイト数「2194」の上の行に文字列「cat /tmp/.usilic.98234/w.3」が出現→[return]→SHELL画面が出現→
+
+-- ここから↓
+usilic-1.5b:~% cat /tmp/.usilic.98234/w.3　
+cat: /tmp/.usilic.98234/w.3　: No such file or directory
+usilic-1.5b:~%                                                                  
+「SHELL」「00128/00128 END」「6443」「(zsh)」「CUT   」（戻り値は本来上記CUT:1.……）
+-- ここまで↑
+
+>修正・検証・コミット・プッシュ済みです(項目412)。ご指摘の2件はそれぞれ別の不具合でした。
+
+**戻り値フィールド(未確定のプロンプト自体)**: 項目411で直したのはFGREP実行**後**のモードライン(grepView_のプロバイダ)だけで、まだEnterで確定していないプロンプト編集中に表示される「CUT:」等の戻り先フィールドはdrawPromptLabel()という完全に別のコード経路で、CutContent起源を一切考慮していませんでした。selectedSegment()のラベルから先頭の空白を除いて「CUT:」を前置するcutContentReturnLabel()を新設し、grepView_のプロバイダ(項目411分)とdrawPromptLabel()の両方から共有するよう整理しました。また、この値をtruncatedTrailingPath()(長いパスを末尾16文字に切り詰める既存の共通処理)に無条件でかけていたため、「CUT:1.  Introduction」(20文字)が末尾16文字だけに切り詰められ「CUT:」の接頭辞ごと消えていました。grepView_のtrailing3フィールドが同じ理由で既にこの切り詰めを除外していたのに倣い、CutContent起源はtruncatedTrailingPath()を通さないよう修正しました。
+
+**^J^W後のキー誤配送(より深刻な方)**: ^S(FGREP開始)でプロンプト編集中のまま^J^Wを押すと、promptKind_(どのプロンプトが編集中かを示す状態)がクリアされないままcurrentMode_だけSHELLへ切り替わっていました。dispatchByte()はpromptKind_!=Noneを見ると常にfeedPromptByte()へ最優先で回すため、以降のキー入力(catコマンドのEnter含む)はすべて画面には見えない古いFGREPプロンプトへ誤配送され続けていました。「SHELLプロンプトにcatコマンドが見えるのに実際にはSHELLで実行されていない」「Enterするとなぜか元のモード名に見える」等の一連の不可解な症状は、すべてこの1つの根本原因(誤配送)から説明できました。修正はensureShellActive()でpromptKind_がNoneでなければ内容ごと一時退避してNoneにクリアし、returnFromShell()で(画面再描画の**後**に)activatePrompt()で復元する、という構成にしました。項目402のListBrowser向けsuspendedPromptHistoryRecallKind_と同じ「退避してから復元」というパターンをpromptKind_自身にも新設した形です。
+
+`make test` 841/841件・19090アサーション全通過(新規doctest3件)。`make usilic`クリーンビルド確認済みです。

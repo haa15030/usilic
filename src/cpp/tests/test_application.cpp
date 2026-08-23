@@ -6990,6 +6990,88 @@ TEST_CASE_FIXTURE(Fixture, "FGREP from within a HELP chapter's own content: mode
   CHECK(display.rowText(23).find("CUT:11. Section One") != std::string::npos);
 }
 
+// 2026-08-24 fix (same report, its OWN follow-up correction): the
+// FIRST version of this fix only touched grepView_'s own POST-
+// submission mode line -- but the user's actual repro hits ^J^W WHILE
+// STILL TYPING the pattern, before ever pressing Enter, i.e. while
+// drawPromptLabel()'s own prompt-time "destinationDirectory" field is
+// what's on screen (a SEPARATE mechanism, computed via
+// previousModeName(grepReturnMode_) -- which has no per-instance CUT
+// segment state, so it only ever gave the bare "CUT"). Now uses
+// cutContentReturnLabel() there too, the same helper.
+TEST_CASE_FIXTURE(Fixture, "FGREP prompt (not yet submitted) from within a HELP chapter: the prompt row's "
+                           "own return-destination field already shows \"CUT:<chapter label>\", not the "
+                           "bare \"CUT\"") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.handleCommand(Command::Enter));  // "11. Section One"
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));  // ^S -- prompt now active, currentMode_ still CutContent
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+  REQUIRE(app.promptActive());
+
+  CHECK(display.rowText(23).find("CUT:11. Section One") != std::string::npos);
+}
+
+// 2026-08-24 fix, a real report + the user's own careful trace: ^J^W
+// pressed WHILE an editable prompt (FGREP, mid-pattern, not yet
+// submitted) is still active jumps to Shell correctly, but
+// dispatchByte()'s own top-level routing checks `promptKind_ !=
+// PromptKind::None` BEFORE `currentMode_ == Shell` -- promptKind_
+// staying stuck at GrepPattern meant every byte typed at the live
+// SHELL prompt afterward kept being silently re-routed through
+// feedPromptByte() instead of feedShellByte(), including a bare
+// Enter (which re-submitted the STALE FGREP pattern via
+// executeGrep(), which unconditionally overwrites currentMode_ back
+// out of Shell entirely) -- exactly the user's own "^J^WはHELPに
+// 戻っているようでいて...実はSHELLにいる" confusion.
+TEST_CASE_FIXTURE(Fixture, "^J^W pressed while an editable FGREP prompt is still active (not yet submitted) "
+                           "correctly hands SUBSEQUENT keystrokes to the real SHELL, not back to the stale "
+                           "prompt") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.handleCommand(Command::Enter));  // "11. Section One"
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));  // ^S
+  feedText("content");
+  REQUIRE(app.promptActive());
+
+  bool ok = app.feedByte(0x0a, std::nullopt);  // ^J
+  ok = app.feedByte(0x17, std::nullopt) && ok;  // ^W -- shellInsertBufferContent(), while the prompt is STILL active
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+  CHECK_FALSE(app.promptActive());  // promptKind_ must be cleared, not left stuck
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));  // handshake complete
+
+  // The critical assertion: a bare Enter now reaches the REAL shell
+  // (submitting the pre-filled "cat <w.N>" command), not
+  // feedPromptByte()'s own submitPrompt() (which would re-run the
+  // stale "content" FGREP search and snap currentMode_ back out of
+  // Shell entirely).
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Shell);  // still in Shell -- NOT bounced back to Grep/CutContent
+
+  bool sawCatOutput = pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("Section one content") != std::string::npos) return true;
+    return false;
+  });
+  CHECK(sawCatOutput);  // the real `cat` command actually ran
+
+  // ^G restores the suspended FGREP prompt, still mid-pattern.
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
+  CHECK(app.promptActive());
+  CHECK(app.promptText() == "content");
+}
+
 // 2026-08-24 fix, a direct user report + their own diagnosis:
 // "^J^Wは現在表示データのcatだが、FGREPの守備範囲はモードラインだけ
 // なので同モードの^J^Wは本来意味が無い...見た目で言えば背景の

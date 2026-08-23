@@ -1365,6 +1365,17 @@ class Application {
   // string of their own) falls back to "", which simply omits the
   // trailing field rather than guessing.
   std::string previousModeName(ApplicationMode mode) const;
+  // "CUT:<current segment's own label>" (leading spaces stripped),
+  // e.g. "CUT:1.  Introduction" -- a more specific return-destination
+  // description for CutContent than previousModeName()'s own bare
+  // "CUT" can give (that function has no per-instance state to draw
+  // from, just a mode enum). Mirrors cutContentView_'s own established
+  // "CUT:<label>" mode-line convention (see its provider's own
+  // comment) -- shared here (2026-08-24) by grepView_'s own return-
+  // destination field AND drawPromptLabel()'s own prompt-time
+  // "destinationDirectory" field, both of which used to fall back to
+  // the bare, less specific previousModeName(CutContent) instead.
+  std::string cutContentReturnLabel() const;
   // The label shown for each RingCategory in the LIST-based history
   // pickers' own mode-line trailing field -- see
   // listBrowserView_.setModeLineFieldsProvider()'s own comment
@@ -2038,6 +2049,32 @@ class Application {
   std::optional<PromptKind> suspendedPromptHistoryRecallKind_;
   std::string suspendedPromptHistoryRecallText_;
   bool suspendedPromptHistoryRecallIsDirectEntry_ = false;
+  // A DIFFERENT, simpler case than the three fields just above: those
+  // three are for the ListBrowser CANDIDATE-LIST scenario
+  // (promptHistoryRecallKind_); these two are for promptKind_ itself
+  // -- a DIRECTLY-active, still-being-typed editable prompt (e.g.
+  // GrepPattern from a bare ^S, mid-pattern) that a leader command
+  // (^J^W, shellInsertBufferContent()) jumps straight to Shell FROM,
+  // bypassing the prompt's own normal exit points (submitPrompt()/
+  // cancelPrompt()/startPromptHistoryRecall() -- the only three
+  // existing places promptKind_ ever gets cleared). 2026-08-24 fix, a
+  // real report: dispatchByte()'s own top-level routing checks
+  // `promptKind_ != PromptKind::None` BEFORE `currentMode_ == Shell`
+  // (see its own comment on the ordering) -- leaving promptKind_
+  // stuck at GrepPattern after jumping to Shell meant every byte
+  // typed at the live SHELL prompt afterward (starting with the very
+  // next keystroke) kept being routed through feedPromptByte() instead
+  // of feedShellByte(), silently re-editing/re-submitting the STALE
+  // FGREP pattern -- including a bare Enter, which re-ran the search
+  // (executeGrep() unconditionally overwrites currentMode_, snapping
+  // back out of Shell entirely) instead of running the shell command
+  // the user was actually looking at ("^J^WはHELPに戻っているようで
+  // いて...実はSHELLにいるらしい"). Suspended (not just discarded) so
+  // a plain ^G back out resumes editing exactly where the user left
+  // off, matching promptHistoryRecallKind_'s own established pattern
+  // just above.
+  std::optional<PromptKind> suspendedActivePromptKind_;
+  std::string suspendedActivePromptText_;
   // 2026-08-11: a real report + direct user clarification -- "検索への
   // 入口がCUTなら出るときもCUTから出るはず" (if the search's own
   // entrance was the candidate list, Back should exit through it too),

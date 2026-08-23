@@ -1358,6 +1358,71 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (詳細はFGREP/EGREPの節・SHELLの節にも同項目番号でクロス
      リファレンスあり)
 
+412. **項目411のFGREP戻り値フィールド修正が実際には効いていなかった件
+    (プロンプト入力中の別フィールドを見ていた)、および^J^Wをプロンプト
+    編集中に押すと以降のキー入力がすべて古いプロンプトへ誤配送される
+    深刻な不具合を修正**
+   - **報告**: 「戻り値は『CUT:1.  Introduction     』ではなくて
+     『　　　　　　　　CUT』のまま」。続けて「^J^WはHELPに戻っている
+     ようでいて（モードラインがHELPなので）実はSHELLにいるらしい。
+     流れを追ってみると、^J^W→SHELLプロンプト『cat...w.3』→[return]
+     →なぜかHELP、に見えたのはモードラインがHELPだから→[space]→
+     背景はIntroductionのままバイト数『2194』の上の行に文字列
+     『cat...w.3』が出現→[return]→SHELL画面が出現」、その後の実際の
+     SHELL画面で`cat: ...w.3　: No such file or directory`(全角
+     スペースが誤って付与されている)、戻り先バッジも「CUT」のまま。
+   - **戻り値フィールド(項目1)**: 項目411の修正は`grepView_`の
+     **検索実行後**のモードラインしか直していなかった。しかし
+     ユーザーの実際の操作は「^Sでプロンプトを開いた直後、まだ
+     Enterで確定する前」の状態であり、この時点で表示されるのは
+     `drawPromptLabel()`自身の`destinationDirectory`という**別の**
+     フィールド(`previousModeName(destinationMode)`を素通しで
+     使っていた、こちらは何のセグメント情報も持たない)だった。
+     項目411で新設した`cutContentReturnLabel()`ヘルパーをこちらにも
+     適用。さらに、このフィールドには既存の`truncatedTrailingPath()`
+     (末尾16文字にトリムする、本来は長いパス向けの処理)が無条件で
+     適用されており、「CUT:1.  Introduction」(20文字)に適用すると
+     まさに知りたい「CUT:」の接頭辞が真っ先に切り捨てられてしまう
+     ため、`destinationMode==CutContent`の場合はこのトリムをスキップ
+     するよう修正(`grepView_`のtrailing3が同じ理由で既にトリムを
+     スキップしていたのと同じ扱いに揃えた)。
+   - **^J^W後のキー誤配送(項目2、より深刻)**: `dispatchByte()`の
+     ルーティングは`promptKind_ != PromptKind::None`を`currentMode_
+     == Shell`より**先に**チェックする設計になっている。ところが
+     `shellInsertBufferContent()`(^J^W)は、プロンプト編集中
+     (`promptKind_`がまだ`GrepPattern`等のまま)に呼ばれても
+     `promptKind_`を一切クリアしていなかった。そのため`ensureShellActive()`
+     が`currentMode_`を`Shell`へ切り替えた**後**も`promptKind_`は
+     `GrepPattern`のまま残り続け、以降にタイプされたバイトは(最初の
+     1バイト目から)すべて`feedShellByte()`ではなく`feedPromptByte()`
+     経由で古いFGREPプロンプトへ誤って送られ続けていた。特に
+     [return]は`submitPrompt()`経由で古い検索パターンを**再実行**
+     してしまい、`executeGrep()`が無条件に`currentMode_`を書き換える
+     ため、SHELLへ切り替わったはずの状態が静かに巻き戻されていた
+     ――ユーザーが観察した「実はSHELLにいるらしいがモードラインは
+     HELP」という一見矛盾した現象や、[space]が全角スペースとして
+     コマンドラインへ紛れ込んだ現象(実際にはIME入力中のスペースが
+     古いプロンプトへ誤配送され続けていたための副産物)は、すべて
+     この1つの根本原因から説明が付く。
+   - **修正**: `promptHistoryRecallKind_`(項目402)と同じ「一時退避
+     してから復元」というパターンを、`promptKind_`自身にも新設
+     (`suspendedActivePromptKind_`/`Text_`)。`ensureShellActive()`が
+     `promptKind_ != None`を検知したら、種別と入力途中のテキストを
+     退避してから`PromptKind::None`へクリアするようにし、
+     `returnFromShell()`側で(^Gで戻った際)`activeView().redraw()`の
+     **後に**(描画順序が重要――先に呼ぶと直後の`activeView().redraw()`
+     で上書きされてしまう)`activatePrompt()`で編集途中のまま復元
+     するようにした。
+   - **検証**: `make test` 841/841件・19090アサーション全通過(新規
+     doctest3件: プロンプト編集中(未確定)の戻り値フィールドが
+     「CUT:11. Section One」を切り詰めずに表示することを確認、
+     プロンプト編集中に^J^Wした直後に[return]が実際のSHELLコマンド
+     ―事前入力された`cat`―へ正しく届き、`currentMode_`がSHELLの
+     ままであること(=古い検索が再実行されて巻き戻る不具合が
+     再発しないこと)を実bashで確認、続けて^Gで元のFGREPプロンプトが
+     入力途中の文字列ごと正しく復元されることを確認)。`make usilic`
+     クリーンビルド確認済み。
+
 ## 3. FGREP / EGREP
 
 171. **2026-08-05(続き): `^J^S`(EGREP)/`^J^C`(CUT正規表現)の入口を
@@ -2530,6 +2595,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (2026-08-24追記): 戻り先フィールドがDirectory起源の検索でしか
      埋まらず、File/CutContent起源(HELPチャプター内容からのFGREP等)
      では常に空欄だった不具合も修正。詳細は項目411(KEY/HELPの節)
+     参照。
+
+     (2026-08-24追記2): 項目411の上記修正は検索実行**後**の
+     モードラインしか直しておらず、プロンプト編集中(まだEnterで
+     確定する前)に表示される別フィールド(`drawPromptLabel()`自身の
+     `destinationDirectory`)は直っていなかった件、およびプロンプト
+     編集中に^J^Wを押すと以降のキー入力がすべて古いプロンプトへ
+     誤配送される深刻な不具合も修正。詳細は項目412(KEY/HELPの節)
      参照。
 
 
@@ -10565,6 +10638,14 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      モードから呼ばれた際、フィルタ済みのマッチ行だけを書き出して
      いた不具合も修正(検索の実際の起源(`grepReturnMode_`)を実効
      モードとして使うよう変更)。詳細は項目411(KEY/HELPの節)参照。
+
+     (2026-08-24追記2): ^J^Wを編集中のプロンプト(未確定のFGREP等)
+     から押すと、`promptKind_`がクリアされないままSHELLへ切り替わり、
+     以降のキー入力が(`dispatchByte()`のルーティング順序により)
+     すべて古いプロンプトへ誤配送され続ける深刻な不具合を修正
+     (`promptHistoryRecallKind_`(項目402)と同じ「一時退避してから
+     復元」というパターンを`promptKind_`自身にも新設)。詳細は項目412
+     (KEY/HELPの節)参照。
 
 ## 13. LIST(TAB補完)
 
