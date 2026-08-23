@@ -218,6 +218,32 @@ class GraphicalDisplay : public Display {
   // Application::consumeGuiModeToggleRequest() already uses.
   bool pumpEvents();
 
+  // Returns and clears whether pumpEvents() saw an SDL_WINDOWEVENT_
+  // EXPOSED since the last call (2026-08-24, docs/CHANGES.md item 422,
+  // a real user report against the new `make app` .app bundle: "アプリ
+  // 起動時のイントロ動作だけで以後は何も起きない" -- a solid BLACK
+  // window that stayed black forever, reproduced directly: `sample`
+  // showed the run loop idling normally in pumpEvents()/usleep(), not
+  // hung, and re-running the SAME binary as a bare `./usilic -g`
+  // (not through the bundle) rendered correctly every time, while
+  // launching the bundle via `open`/double-click was intermittent).
+  // Root cause: runGuiPhase()'s own `anyEventThisFrame` optimization
+  // (added to stop redraw() firing 60x/sec while idle, see its own
+  // comment) skips redraw() entirely on any frame where nothing was
+  // "consumed" -- but the very first frame's own initial redraw can
+  // race against the window actually being mapped/composited by
+  // WindowServer, a race this port's own first look never needed to
+  // handle since a bare-executable launch (no proper .app bundle) has
+  // a much simpler, faster LaunchServices bootstrap than a real
+  // bundle's (RunningBoard registration, ViewBridge, etc. -- all
+  // visible in a real `log show` capture of a stuck instance). If that
+  // race is lost, NOTHING ever synthesizes a follow-up redraw, since
+  // one was never needed before -- SDL_WINDOWEVENT_EXPOSED is
+  // AppKit/WindowServer's own "this window needs (re)painting" signal
+  // for exactly this situation, and nothing in pumpEvents() ever
+  // looked at SDL_WINDOWEVENT at all before this fix.
+  bool consumeNeedsRedraw();
+
   struct MouseClick {
     int row;
     int column;

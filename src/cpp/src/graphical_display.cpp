@@ -395,6 +395,13 @@ struct GraphicalDisplay::Impl {
   // to the normal content dragQueue/hoverQueue, since SDL_MOUSEMOTION
   // itself carries no memory of where the ORIGINAL button-down was.
   bool scrollbarDragActive = false;
+  // consumeNeedsRedraw()'s own backing flag -- see its declaration
+  // comment (graphical_display.hpp). Starts true so the very first
+  // frame after construction still redraws even if SDL_WINDOWEVENT_
+  // EXPOSED never fires for some reason (belt and suspenders, not
+  // load-bearing for the actual fix -- the fix is EXPOSED setting it
+  // true again on every subsequent occurrence).
+  bool needsRedraw = true;
   // handCursorActive: tracks whether the open-hand cursor (handCursor
   // below) is currently showing, for dragging CONTENT itself (the
   // "cat's paw" scroll gesture). pointingCursor: SDL's own system
@@ -1242,6 +1249,24 @@ bool GraphicalDisplay::pumpEvents() {
       case SDL_QUIT:
         stillOpen = false;
         break;
+      // See consumeNeedsRedraw()'s own declaration comment (2026-08-24
+      // fix, docs/CHANGES.md item 422) -- SDL_WINDOWEVENT_EXPOSED is
+      // WindowServer's own "this window needs to be (re)painted" signal
+      // (fires after the window is first mapped, after being uncovered
+      // by another window, etc.); SDL_WINDOWEVENT_SHOWN (fires once,
+      // right after SDL_CreateWindow's own SDL_WINDOW_SHOWN takes
+      // effect) is included too since a bundle-launched app's window
+      // can plausibly need its very first paint retried even before
+      // anything has had a chance to cover/uncover it yet. Every OTHER
+      // SDL_WINDOWEVENT subtype (resize, focus, moved, ...) is
+      // deliberately left alone here -- this case exists purely to fix
+      // the "first frame lost" race, not to become a general resize/
+      // focus handler (window size itself is already read fresh every
+      // frame elsewhere, per this loop's own surrounding comments).
+      case SDL_WINDOWEVENT:
+        if (event.window.event == SDL_WINDOWEVENT_EXPOSED || event.window.event == SDL_WINDOWEVENT_SHOWN)
+          impl_->needsRedraw = true;
+        break;
       case SDL_MOUSEBUTTONDOWN: {
         // See Impl::everInteracted's own comment -- any button press
         // (even one this switch otherwise ignores below) counts as
@@ -1363,6 +1388,12 @@ bool GraphicalDisplay::pumpEvents() {
     }
   }
   return stillOpen;
+}
+
+bool GraphicalDisplay::consumeNeedsRedraw() {
+  bool value = impl_->needsRedraw;
+  impl_->needsRedraw = false;
+  return value;
 }
 
 std::optional<GraphicalDisplay::MouseClick> GraphicalDisplay::consumeMouseClick() {

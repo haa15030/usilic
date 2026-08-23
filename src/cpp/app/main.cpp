@@ -1590,6 +1590,22 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // doesn't change what gets rendered, only how often a genuinely
     // unchanged frame gets re-rendered.
     bool anyEventThisFrame = false;
+    // 2026-08-24 fix (docs/CHANGES.md item 422, see GraphicalDisplay::
+    // consumeNeedsRedraw()'s own declaration comment for the full
+    // story): a real user report against `make app`'s new .app bundle
+    // -- launched via Finder/`open`, the window sometimes stayed solid
+    // black forever, no crash, no hang (confirmed via `sample`, the
+    // run loop was idling normally). Root cause was this exact
+    // anyEventThisFrame optimization: the very first frame's own
+    // redraw can race against the window actually being mapped by
+    // WindowServer (slower/more involved for a real bundle than a bare
+    // executable's simpler LaunchServices bootstrap), and once that
+    // first frame is lost, nothing else in this loop ever forces
+    // another one without a live click/key/drag. Folded in here,
+    // first, so it's just one more "did something happen" source this
+    // frame -- the exact same anyEventThisFrame gate below already
+    // does the right thing once this is true.
+    if (gui.consumeNeedsRedraw()) anyEventThisFrame = true;
 
     while (auto click = gui.consumeMouseClick()) {
       anyEventThisFrame = true;
