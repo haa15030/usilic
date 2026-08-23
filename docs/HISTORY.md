@@ -10521,3 +10521,107 @@ LOCATE結果、およびDirectory一覧に対するFGREP/EGREPのマッチ一覧
 - FGREP/EGREP(Directory起源): 従来は[return]すると(ls)の該当行へカーソルが移動するだけで、実際に開く/EXECするにはもう一度[return]が必要でした。着地先のエントリがEXEC対象なら、同じ1回の[return]でEXECも発動するようにしました(着地自体は従来通り)。ファイル内容に対するGrepは対象外です(1行=1ファイルという対応が無いため)。
 
 `make test`は新規2件を含め852/852件・19185アサーション全通過、`make usilic`クリーンビルドも確認済みです。
+
+<core-i5のSquoiaマシンでgit pull→cd src/cpp→make clean→make
+いくつかエラー。
+brew install sdl2
+brew install sdl2_ttf
+を経て再度makeするとldでエラー。
+      ...
+  "_TTF_FontHeight", referenced from:
+      fm::GraphicalDisplay::create(int, int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, int) in graphical_display-105c04.o
+  "_TTF_GlyphIsProvided", referenced from:
+      fm::(anonymous namespace)::glyphProvidedByFont(TTF_Font*, unsigned int) in graphical_display-105c04.o
+  "_TTF_Init", referenced from:
+      fm::GraphicalDisplay::create(int, int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, int) in graphical_display-105c04.o
+  "_TTF_OpenFont", referenced from:
+      fm::GraphicalDisplay::create(int, int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, int) in graphical_display-105c04.o
+      fm::(anonymous namespace)::loadCjkFallbackFont(int) in graphical_display-105c04.o
+  "_TTF_Quit", referenced from:
+      fm::GraphicalDisplay::create(int, int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, int) in graphical_display-105c04.o
+      fm::GraphicalDisplay::create(int, int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, int) in graphical_display-105c04.o
+      fm::GraphicalDisplay::create(int, int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, int) in graphical_display-105c04.o
+      fm::GraphicalDisplay::create(int, int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, int) in graphical_display-105c04.o
+      fm::GraphicalDisplay::~GraphicalDisplay() in graphical_display-105c04.o
+  "_TTF_RenderUTF8_Blended", referenced from:
+      fm::GraphicalDisplay::renderCell(int, int) in graphical_display-105c04.o
+      fm::GraphicalDisplay::renderCursor() in graphical_display-105c04.o
+      fm::GraphicalDisplay::renderTextRun(int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, fm::GraphicalDisplay::Color, int, std::__1::vector<fm::Display::AttributeRun, std::__1::allocator<fm::Display::AttributeRun>> const&) in graphical_display-105c04.o
+  "_TTF_SetFontHinting", referenced from:
+      fm::GraphicalDisplay::renderCell(int, int) in graphical_display-105c04.o
+      fm::GraphicalDisplay::renderCursor() in graphical_display-105c04.o
+      fm::GraphicalDisplay::renderTextRun(int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, fm::GraphicalDisplay::Color, int, std::__1::vector<fm::Display::AttributeRun, std::__1::allocator<fm::Display::AttributeRun>> const&) in graphical_display-105c04.o
+  "_TTF_SetFontSize", referenced from:
+      fm::GraphicalDisplay::matchWindowSize(int, int) in graphical_display-105c04.o
+      fm::GraphicalDisplay::matchWindowSize(int, int) in graphical_display-105c04.o
+  "_TTF_SetFontStyle", referenced from:
+      fm::GraphicalDisplay::renderCell(int, int) in graphical_display-105c04.o
+      fm::GraphicalDisplay::renderCursor() in graphical_display-105c04.o
+      fm::GraphicalDisplay::renderTextRun(int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, fm::GraphicalDisplay::Color, int, std::__1::vector<fm::Display::AttributeRun, std::__1::allocator<fm::Display::AttributeRun>> const&) in graphical_display-105c04.o
+      fm::GraphicalDisplay::renderScrolled(std::__1::vector<fm::Display::ScrolledLine, std::__1::allocator<fm::Display::ScrolledLine>> const&, int, int, std::__1::vector<fm::Display::ModeLineSegment, std::__1::allocator<fm::Display::ModeLineSegment>> const&) in graphical_display-105c04.o
+      fm::GraphicalDisplay::renderScrolled(std::__1::vector<fm::Display::ScrolledLine, std::__1::allocator<fm::Display::ScrolledLine>> const&, int, int, std::__1::vector<fm::Display::ModeLineSegment, std::__1::allocator<fm::Display::ModeLineSegment>> const&) in graphical_display-105c04.o
+  "_TTF_SizeUTF8", referenced from:
+      fm::GraphicalDisplay::create(int, int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, int) in graphical_display-105c04.o
+      fm::GraphicalDisplay::create(int, int, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, int) in graphical_display-105c04.o
+      fm::GraphicalDisplay::matchWindowSize(int, int) in graphical_display-105c04.o
+ld: symbol(s) not found for architecture x86_64
+clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+make: *** [build/run_tests] Error 1
+mpi:cpp haa15030$ 
+
+>Let's get the exact diagnostic info before touching the shared `Makefile` — the failure pattern (headers found, only `SDL2_ttf`'s linker symbols missing) suggests `pkg-config`'s combined `sdl2 SDL2_ttf` query isn't returning `-lSDL2_ttf`, but I don't want to guess blindly at a fix that affects every platform's build.
+
+ではmpi実機で以下4つを実行して、出力をそのまま貼り付けてください。
+
+```
+pkg-config --cflags --libs sdl2 SDL2_ttf
+pkg-config --libs SDL2_ttf
+brew --prefix sdl2_ttf
+ls $(brew --prefix sdl2_ttf)/lib/pkgconfig/
+```
+
+<mpi:cpp haa15030$ pkg-config --cflags --libs sdl2 SDL2_ttf
+-I/usr/local/include/SDL2 -I/usr/local/include -D_THREAD_SAFE -I/usr/local/Cellar/harfbuzz/14.3.1/include/harfbuzz -I/usr/local/Cellar/glib/2.88.3/include/glib-2.0 -I/usr/local/Cellar/glib/2.88.3/lib/glib-2.0/include -I/usr/local/opt/gettext/include -I/usr/local/Cellar/pcre2/10.47_1/include -I/usr/local/opt/graphite2/include -I/usr/local/opt/freetype/include/freetype2 -I/usr/local/opt/libpng/include/libpng16 -L/usr/local/Cellar/sdl2_ttf/2.24.0/lib -lSDL2_ttf -L/usr/local/lib -lSDL2main -lSDL2 -Wl,-framework,Cocoa
+mpi:cpp haa15030$ pkg-config --libs sdl2_ttf
+-L/usr/local/Cellar/sdl2_ttf/2.24.0/lib -lSDL2_ttf -L/usr/local/lib -lSDL2main -lSDL2 -Wl,-framework,Cocoa
+mpi:cpp haa15030$ brew --prefix sdl2_ttf
+/usr/local/opt/sdl2_ttf
+mpi:cpp haa15030$ ls $(brew --prefix sdl2_ttf)/lib/pkgconfig/
+SDL2_ttf.pc
+mpi:cpp haa15030$ 
+
+>実行結果ありがとうございます。pkg-configの手動実行では`-lSDL2_ttf`が正しく出力されているので、`Makefile`のpkg-config呼び出し自体は壊れていないはずです。となると、実際に`make`が発行したリンクコマンド自体が違う可能性があります。
+
+お手数ですが、mpi実機で以下を実行して、実際にmakeが打ったコマンド行(`clang++ ...`で始まる行)を含めて貼ってもらえますか？
+
+```
+cd ~/git/usilic/src/cpp
+make clean
+make usilic 2>&1 | tee /tmp/build.log
+grep -n "SDL2_ttf" /tmp/build.log | head -5
+```
+
+<mpi:cpp haa15030$ grep -n "SDL2_ttf" /tmp/build.log | head -5
+2:c++ -std=c++17 -Wall -Wextra -g -I/usr/local/include/SDL2 -I/usr/local/include -D_THREAD_SAFE -I/usr/local/Cellar/harfbuzz/14.3.1/include/harfbuzz -I/usr/local/Cellar/glib/2.88.3/include/glib-2.0 -I/usr/local/Cellar/glib/2.88.3/lib/glib-2.0/include -I/usr/local/opt/gettext/include -I/usr/local/Cellar/pcre2/10.47_1/include -I/usr/local/opt/graphite2/include -I/usr/local/opt/freetype/include/freetype2 -I/usr/local/opt/libpng/include/libpng16 -Isrc src/application.cpp src/archive_mode.cpp src/archive_reader.cpp src/charset.cpp src/child_process.cpp src/configuration.cpp src/content_view.cpp src/cp_mv_rm_mode.cpp src/cut_mode.cpp src/delegating_display.cpp src/directory_mode.cpp src/drag_scroll_speed.cpp src/du_mode.cpp src/edit_mode.cpp src/exec_mode.cpp src/file_mode.cpp src/gnome_terminal_appearance.cpp src/graphical_display.cpp src/grep_mode.cpp src/history.cpp src/key_input.cpp src/line_editor.cpp src/list_browser_mode.cpp src/locate_mode.cpp src/mac_font_resolver.cpp src/man_mode.cpp src/mode_line.cpp src/mode_stack.cpp src/mouse_sgr.cpp src/path_resolver.cpp src/pipe_buffer.cpp src/program_mode.cpp src/shell.cpp src/terminal_display.cpp src/unicode_normalize.cpp src/utf8.cpp src/mac_cursor.mm app/main.cpp -o build/usilic -lncurses -L/usr/local/Cellar/sdl2_ttf/2.24.0/lib -lSDL2_ttf -L/usr/local/lib -lSDL2main -lSDL2 -Wl,-framework,Cocoa -framework CoreText -framework CoreFoundation -framework Cocoa
+mpi:cpp haa15030$ 
+
+>`nm`で`_TTF_Init`は実際にエクスポートされており、パスも一致、アーキテクチャも合っています。ここまで来ると、これはSDL2_ttf側の問題ではなく、**Xcode 15以降のmacOSに搭載された新リンカ(`ld-prime`)がHomebrew製の一部dylib(特に`sdl2-compat`のようなSDL3上のシンボル再エクスポート構成)を正しく解決できない**という既知の不具合の可能性が高いです。Intel Mac(mpi)のSequoiaはこのld-primeを既定で使っている可能性があります。
+
+試しに、実際のリンクコマンドの末尾に`-Wl,-ld_classic`(旧リンカを強制指定)を付けて再リンクしてみてもらえますか？
+
+```
+cd ~/git/usilic/src/cpp
+c++ -std=c++17 -Wall -Wextra -g -I/usr/local/include/SDL2 -I/usr/local/include -D_THREAD_SAFE -I/usr/local/Cellar/harfbuzz/14.3.1/include/harfbuzz -I/usr/local/Cellar/glib/2.88.3/include/glib-2.0 -I/usr/local/Cellar/glib/2.88.3/lib/glib-2.0/include -I/usr/local/opt/gettext/include -I/usr/local/Cellar/pcre2/10.47_1/include -I/usr/local/opt/graphite2/include -I/usr/local/opt/freetype/include/freetype2 -I/usr/local/opt/libpng/include/libpng16 -Isrc src/application.cpp src/archive_mode.cpp src/archive_reader.cpp src/charset.cpp src/child_process.cpp src/configuration.cpp src/content_view.cpp src/cp_mv_rm_mode.cpp src/cut_mode.cpp src/delegating_display.cpp src/directory_mode.cpp src/drag_scroll_speed.cpp src/du_mode.cpp src/edit_mode.cpp src/exec_mode.cpp src/file_mode.cpp src/gnome_terminal_appearance.cpp src/graphical_display.cpp src/grep_mode.cpp src/history.cpp src/key_input.cpp src/line_editor.cpp src/list_browser_mode.cpp src/locate_mode.cpp src/mac_font_resolver.cpp src/man_mode.cpp src/mode_line.cpp src/mode_stack.cpp src/mouse_sgr.cpp src/path_resolver.cpp src/pipe_buffer.cpp src/program_mode.cpp src/shell.cpp src/terminal_display.cpp src/unicode_normalize.cpp src/utf8.cpp src/mac_cursor.mm app/main.cpp -o /tmp/usilic_test -lncurses -L/usr/local/Cellar/sdl2_ttf/2.24.0/lib -lSDL2_ttf -L/usr/local/lib -lSDL2main -lSDL2 -Wl,-framework,Cocoa -framework CoreText -framework CoreFoundation -framework Cocoa -Wl,-ld_classic
+```
+
+(既存の`build/usilic`は上書きしないよう出力先を`/tmp/usilic_test`にしています。)
+
+<コンパイル成功。
+
+>修正・検証・コミット・プッシュ済みです(項目419)。
+
+原因はSDL2_ttf自体でもリンクコマンドの誤りでもなく、Xcode 15以降のデフォルトリンカ(ld-prime)がHomebrew製dylibの一部構成(`sdl2_ttf`の依存先が`sdl2`ではなく`sdl2-compat`というSDL3上の互換シムである点など)で既知の非互換を起こすケースでした。`Makefile`のDarwin向け`LDLIBS`に`-Wl,-ld_classic`(旧リンカを強制指定)を追加しました。
+
+Intel限定に絞る確実で安価な判定方法が無いため、Darwin全体に無条件で適用しています。この開発機(Apple Silicon)でも`make clean`からのフルリビルド+`make test`で回帰が無いことを確認済みです(`-ld_classic`は将来のXcodeで削除予定と警告が出ますが、リンク自体はエラー無く成功します)。
+
+mpi側でも`git pull`して`make`し直せば直るはずです。お手数をおかけしました。

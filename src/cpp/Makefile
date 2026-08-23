@@ -21,6 +21,31 @@ CXXFLAGS ?= -std=c++17 -Wall -Wextra -g $(SDL_CFLAGS)
 LDLIBS   ?= -lncurses $(SDL_LIBS)
 ifeq ($(shell uname), Darwin)
 LDLIBS += -framework CoreText -framework CoreFoundation -framework Cocoa
+# 2026-08-24 fix (docs/CHANGES.md item 419): a real user report on an
+# Intel Mac (Sequoia, fresh `brew install sdl2 sdl2_ttf`) -- `ld`
+# reported every `TTF_*` symbol from SDL2_ttf as "not found for
+# architecture x86_64" despite the library itself being confirmed
+# x86_64 (`file`/`lipo -info`), correctly on the link line at the
+# right path (`nm -gU` confirmed `_TTF_Init` genuinely exported from
+# exactly that .dylib), and the compile succeeding fine beforehand
+# (only SDL2_ttf's OWN symbols were missing, not SDL2's). This matches
+# a known Xcode 15+ "ld-prime" (the new default linker)
+# incompatibility with certain Homebrew dylib chains -- confirmed by
+# reproducing the exact failure, then having the user re-link the
+# EXACT SAME command with `-Wl,-ld_classic` appended, which fixed it
+# immediately. Verified NOT to regress Apple Silicon (this port's own
+# primary dev machine): a full clean rebuild with `-ld_classic` added
+# still linked successfully (`ld` only emits its own "-ld_classic is
+# deprecated" warning, not an error) -- so this is added
+# unconditionally for Darwin rather than gated to Intel specifically,
+# since there's no cheap, reliable way to detect "this machine's Xcode
+# actually needs the workaround" short of trying the link and seeing
+# if it fails. `-ld_classic` has no Linux equivalent (that OS was
+# never affected), hence staying inside this ifeq block. NOTE: Apple's
+# own linker already warns `-ld_classic` will be removed in a future
+# Xcode release -- if that happens, revisit whether the underlying
+# Homebrew/ld-prime incompatibility has been fixed upstream by then.
+LDLIBS += -Wl,-ld_classic
 endif
 
 SRC_DIR   = src

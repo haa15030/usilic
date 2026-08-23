@@ -22534,6 +22534,50 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      再インストール、C++版(`src/cpp/build/usilic`)と並べて同じ
      ディレクトリで両方がバイト数付きで表示されることを確認した。
 
+419. **Intel Mac(Sequoia)での`make`(GUI/`-g`ビルド)がSDL2_ttfの
+    リンクエラーで失敗する不具合を修正 -- Xcode新リンカ(ld-prime)の
+    既知の非互換性**
+   - **報告**: mpi(Intel Mac core-i5)で`git pull`→`make clean`→
+     `make`。`brew install sdl2`/`brew install sdl2_ttf`を経て
+     再度`make`すると、`TTF_Init`等SDL2_ttfのシンボルすべてが
+     「symbol(s) not found for architecture x86_64」でリンク失敗。
+   - **切り分け**: ユーザーとの対話形式で1つずつ可能性を消していった。
+     - `pkg-config --cflags --libs sdl2 SDL2_ttf`を手動実行 →
+       `-lSDL2_ttf`を含む正しい出力(Makefileの`SDL_LIBS`自体は健全)。
+     - `make`が実際に発行したリンクコマンド(`/tmp/build.log`から
+       抽出)を確認 → `-L/usr/local/Cellar/sdl2_ttf/2.24.0/lib
+       -lSDL2_ttf`が正しい位置に存在。
+     - `file`/`lipo -info`で該当`.dylib`のアーキテクチャを確認 →
+       x86_64(`uname -m`と一致、アーキテクチャ不一致ではない)。
+     - `nm -gU`で`_TTF_Init`が実際にエクスポートされているか確認 →
+       エクスポートされている(ライブラリ自体は壊れていない)。
+     - ここまでで「ライブラリもリンクコマンドも正しいのにリンカが
+       見つけられない」という状況になり、Xcode 15以降のデフォルト
+       リンカ(通称ld-prime)がHomebrew製dylibの一部の構成
+       (`sdl2_ttf`の依存先が`sdl2`ではなく`sdl2-compat`(SDL3上の
+       互換シム)である点など)で既知の非互換を起こすケースを疑い、
+       実際のリンクコマンドの末尾に`-Wl,-ld_classic`(旧リンカを
+       強制指定)を追加して再リンクを依頼したところ、即座に成功した。
+   - **修正**: `Makefile`のDarwin向け`LDLIBS`分岐に`-Wl,-ld_classic`
+     を追加。Linuxには対応する概念が無い(この問題自体がmacOS固有)
+     ため、既存の`ifeq ($(shell uname), Darwin)`ブロック内に限定。
+     Intel限定にする確実で安価な判定方法が無い(実際にリンクして
+     みないと発生するかどうか分からない)ため、Darwin全体に無条件で
+     適用する方針とした。
+   - **検証**: このセッションの開発機(Apple Silicon)で`make clean`
+     からのフルリビルドを実施し、`-ld_classic`追加後も
+     (「-ld_classicは将来のリリースで削除される」という`ld`自身の
+     非推奨警告が出るのみで)エラー無くリンクできることを確認、
+     `make test` 852/852件・19185アサーション全通過。Apple Silicon
+     側への回帰が無いことを確認済み。mpi(Intel Mac)側では、上記の
+     `-Wl,-ld_classic`付き手動リンクコマンドがそのままこのユーザーの
+     環境での実地確認そのものであり、`make`本体での再確認は次回
+     以降にお願いします。
+   - **既知の制限**: `-ld_classic`はApple自身が将来のXcodeで削除予定と
+     明言している暫定的な回避策。将来のHomebrew/Xcodeアップデートで
+     根本の非互換性が解消された場合、この行自体の要否を再検討する
+     必要がある。
+
 
 ## 25. Git / リポジトリ運用
 
