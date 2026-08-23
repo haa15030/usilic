@@ -862,19 +862,27 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // real report + reference: "HELP" "01/26 TOP" "<byte count>"
     // "/Users/.../    ") -- replaces the "no concrete value exists
     // yet" placeholder this provider originally shipped with (see the
-    // class comment just above). Byte count is the whole HELP.jp
-    // content's own size (helpText_.size(), matching every other
-    // mode's "file's byte size" convention -- cutContentView_ itself
-    // only ever holds ONE segment's content, not the whole file, so it
-    // can't supply this the way it supplies its own per-segment byte
-    // count); the directory is wherever HELP was entered from --
-    // directoryMode_.currentDirectory(), the SAME value the real
-    // Directory-origin CUT branch below already uses -- padded to the
-    // row's edge like every other two-field trailing pair in this
-    // port (see cutContentView_'s own identical 2026-08-23 fix just
-    // above).
+    // class comment just above); the directory is wherever HELP was
+    // entered from -- directoryMode_.currentDirectory(), the SAME
+    // value the real Directory-origin CUT branch below already uses --
+    // padded to the row's edge like every other two-field trailing
+    // pair in this port (see cutContentView_'s own identical
+    // 2026-08-23 fix just above).
+    //
+    // Byte count corrected 2026-08-24, a direct user report: this
+    // showed helpText_.size() (the WHOLE HELP.jp file), reasoned at
+    // the time as necessary because "cutView_ itself only ever holds
+    // ONE segment's content, not the whole file" -- backwards: this
+    // provider IS registered on cutView_ itself, and at TOC time
+    // cutView_'s own lines() ARE the rendered table of contents, not
+    // any segment of the underlying file -- contentByteCount(cutView_)
+    // (the SAME "byte count of whatever's actually on screen"
+    // convention the File/Directory-origin branch below already uses)
+    // gives exactly that, matching the user's own reference value
+    // (413, the TOC listing's own size, not HELP.jp's much larger
+    // total).
     if (cutOrigin_ == CutOrigin::Help && !cutMode_.parentPattern()) {
-      return {name, std::to_string(helpText_.size()), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
+      return {name, std::to_string(contentByteCount(cutView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
               directoryMode_.currentDirectory()};
     }
     // Byte count (2026-08-24 fix, a real report + reference:
@@ -932,7 +940,29 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     const auto &cmd = configuration_.commandFor(fixed ? ConfiguredRole::Fgrep : ConfiguredRole::Egrep);
     std::string program = cmd.argv.empty() ? "" : cmd.argv.front();
     std::string badge = program.empty() ? "" : "(" + program + ")";
-    std::string path = (grepReturnMode_ == ApplicationMode::Directory) ? directoryMode_.currentDirectory() : "";
+    // 2026-08-24 fix, a direct user report ("HELPの1.Introductionページ
+    // 上で^S→戻り値不良、正しくは「CUT:1.  Introduction」"): this only
+    // ever populated the return-destination field for Directory-origin
+    // searches, leaving it blank for every other grepReturnMode_ (File,
+    // CutContent -- e.g. FGREP run from within a HELP chapter's own
+    // content, or any other CUT segment's content). CutContent mirrors
+    // cutContentView_'s own "CUT:<segment label>" convention (same
+    // leading-space-stripped segment->label, see its own comment);
+    // File mirrors cutView_'s own File-origin path field just above
+    // (fileMode_.currentFile()).
+    std::string path;
+    if (grepReturnMode_ == ApplicationMode::Directory) {
+      path = directoryMode_.currentDirectory();
+    } else if (grepReturnMode_ == ApplicationMode::CutContent) {
+      std::string label;
+      if (const CutSegment *segment = cutMode_.selectedSegment()) {
+        std::size_t start = segment->label.find_first_not_of(' ');
+        if (start != std::string::npos) label = segment->label.substr(start);
+      }
+      path = "CUT:" + label;
+    } else if (grepReturnMode_ == ApplicationMode::File) {
+      path = fileMode_.currentFile();
+    }
     // 2026-08-23 fix, a direct user report ("FGREPのモードラインで
     // 戻り値の位置が(fgrep)と逆"): trailing2/trailing3 were swapped
     // relative to every other mode sharing this exact "program badge +
@@ -3738,14 +3768,28 @@ bool Application::shellInsertName() {
 // ordering.
 bool Application::shellInsertBufferContent() {
   if (shell_.busy()) return false;
+  // Grep (2026-08-24 fix, a direct user report + their own diagnosis:
+  // "^J^Wは現在表示データのcatだが、FGREPの守備範囲はモードラインだけ
+  // なので同モードの^J^Wは本来意味が無い...見た目で言えば背景の
+  // Introductionページがcatされるのが自然"): FGREP/EGREP results are
+  // themselves just a filtered VIEW over whatever screen the search
+  // actually ran FROM (grepReturnMode_) -- there's no independent
+  // "Grep mode content" of its own worth writing out (unlike every
+  // other mode this function already treats as a real, standalone
+  // source). Substituting grepReturnMode_ here treats it as fully
+  // transparent for BOTH naming and content, so ^J^W from a Grep
+  // results screen behaves exactly as if it had been pressed from
+  // whatever's actually visible behind it (e.g. the ORIGINAL HELP
+  // chapter page, not just the handful of matched snippet lines).
+  ApplicationMode effectiveMode = (currentMode_ == ApplicationMode::Grep) ? grepReturnMode_ : currentMode_;
   std::string modeName;
-  if (currentMode_ == ApplicationMode::Directory) {
+  if (effectiveMode == ApplicationMode::Directory) {
     std::string dir = directoryMode_.currentDirectory();
     if (!dir.empty() && dir.back() == '/') dir.pop_back();  // filename() of a "/"-terminated path is empty otherwise
     modeName = std::filesystem::path(dir).filename().string();
-  } else if (currentMode_ == ApplicationMode::File) {
+  } else if (effectiveMode == ApplicationMode::File) {
     modeName = std::filesystem::path(fileMode_.currentFile()).filename().string();
-  } else if (currentMode_ == ApplicationMode::ArchiveContent) {
+  } else if (effectiveMode == ApplicationMode::ArchiveContent) {
     // 2026-08-19 addition, a direct user report/screenshot (=di):
     // "=di→^J^W→/Users/haa15030/.usilic/saved/国際報道２０２６...ts" --
     // ArchiveContent was still falling through to the w.N fallback
@@ -3760,7 +3804,7 @@ bool Application::shellInsertBufferContent() {
       modeName = std::filesystem::path(entry->name).filename().string();
     }
   }
-  ContentView &source = activeView();
+  ContentView &source = viewForMode(effectiveMode);
   std::string savePath;
   if (!modeName.empty()) {
     // <homeDirectory>/.usilic/saved/ (2026-08-19 fix, a direct user

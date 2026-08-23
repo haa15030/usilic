@@ -6947,17 +6947,86 @@ TEST_CASE_FIXTURE(Fixture, "HELP: Back returns to wherever the user was, not alw
   CHECK(app.currentMode() == ApplicationMode::File);  // back to File mode, not Directory
 }
 
-TEST_CASE_FIXTURE(Fixture, "HELP (cutView_, the TOC level): mode-line shows the whole HELP text's own byte "
-                           "size and the originating directory, padded to the row's edge (2026-08-23 fix, a "
-                           "real report + reference: \"HELP\" \"01/26 TOP\" \"<byte count>\" \"/path/    \")") {
+TEST_CASE_FIXTURE(Fixture, "HELP (cutView_, the TOC level): mode-line shows the TOC LISTING's own byte size "
+                           "(what's actually on screen), not HELP.jp's much larger total, plus the "
+                           "originating directory, padded to the row's edge (2026-08-23 fix, a real report + "
+                           "reference: \"HELP\" \"01/26 TOP\" \"<byte count>\" \"/path/    \"; corrected "
+                           "2026-08-24 -- a direct user report the FIRST version showed the whole file's own "
+                           "size instead of the TOC's, e.g. \"413\" expected, the much larger whole-file size "
+                           "shown instead)") {
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
   CHECK(app.currentMode() == ApplicationMode::Cut);
 
+  std::size_t tocBytes = app.activeContentView().totalByteCount();
+  CHECK(tocBytes != testHelpText().size());  // the TOC listing is a strict subset of the whole file
   std::string text = app.activeContentView().modeLineText();
-  CHECK(text.find(std::to_string(testHelpText().size())) != std::string::npos);
+  CHECK(text.find(std::to_string(tocBytes)) != std::string::npos);
   CHECK(text.find(path()) != std::string::npos);
+}
+
+// 2026-08-24 fix, a direct user report ("HELPの1. Introductionページ
+// 上で^S→戻り値不良、正しくは「CUT:1.  Introduction」"): grepView_'s
+// own return-destination field only ever populated for
+// grepReturnMode_==Directory, leaving it blank for every other origin
+// (File, CutContent -- e.g. FGREP run from within a HELP chapter's own
+// content). CutContent mirrors cutContentView_'s own "CUT:<segment
+// label>" convention.
+TEST_CASE_FIXTURE(Fixture, "FGREP from within a HELP chapter's own content: mode line shows \"CUT:<chapter "
+                           "label>\" as the return-destination field, not blank") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.handleCommand(Command::Enter));  // select "11. Section One"
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("content");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  CHECK(display.rowText(23).find("CUT:11. Section One") != std::string::npos);
+}
+
+// 2026-08-24 fix, a direct user report + their own diagnosis:
+// "^J^Wは現在表示データのcatだが、FGREPの守備範囲はモードラインだけ
+// なので同モードの^J^Wは本来意味が無い...見た目で言えば背景の
+// Introductionページがcatされるのが自然". FGREP/EGREP results are
+// just a filtered VIEW over whatever the search ran FROM
+// (grepReturnMode_) -- catting grepView_'s own matched-only lines lost
+// everything that didn't match. shellInsertBufferContent() now
+// substitutes grepReturnMode_ for currentMode_==Grep, both for naming
+// AND content, so ^J^W from a Grep results screen writes the ORIGIN's
+// full content instead.
+TEST_CASE_FIXTURE(Fixture, "^J^W from a Grep results screen writes the ORIGIN's own full content, not just "
+                           "the matched lines") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.handleCommand(Command::Enter));  // "11. Section One"
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("line A");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.activeContentView().lines().size() == 1);  // only "line A" matched, not "line B"
+
+  if (!app.handleCommand(Command::ShellInsertBufferContent)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+
+  std::string commandText = app.shell().commandLine().text();  // "cat <path>"
+  REQUIRE(commandText.substr(0, 4) == "cat ");
+  std::ifstream in(commandText.substr(4));
+  REQUIRE(in.good());
+  std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content.find("line A") != std::string::npos);
+  CHECK(content.find("line B") != std::string::npos);  // the FULL chapter, not just the matched line
 }
 
 // 2026-08-23 fix, a real report: "^J^H→...→続いて^G^G→戻り値不良

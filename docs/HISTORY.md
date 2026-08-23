@@ -10401,3 +10401,17 @@ CP/MV/RM:「マイナカード表.png」をマークしたのち^G^P^P^P→（ls
 ご提案の通り、cancelPendingCpMvRm()から前回(項目408/409)新設したDirectoryMode::refresh()(カーソル位置をエントリ名で保持したままlsを再実行)を呼ぶよう変更しました。enterDirectory()が元々行うmarkedIndices_.clear()の副作用でマークも自然に消えます(専用の「キャンセル時はマークもクリア」という特別処理を新設する必要は無く、既存の「新しい一覧はマークを持ち越さない」という設計をそのまま活かせました)。従来個別に呼んでいたclearPendingOperationLabel()/redraw()もrefresh()内で両方とも実施済みのため削除しました。
 
 `make test` 837/837件・19027アサーション全通過(新規doctest1件)。`make usilic`クリーンビルド確認済みです。
+
+<HELP:^J^H→モードラインの「バイト数」がファイル全体の値（本来はCUT一覧分の413）→[return]^S→戻り値不良。正しくは「CUT:1.  Introduction       」→^J^W→SHELLプロンプト「cat /tmp/.usilic.77840/w.1」→[return]→なぜかHELP。
+
+^J^Wは現在表示データのcatだが、FGREPの守備範囲はモードラインだけなので同モードの^J^Wは本来意味が無い。HELPへの帰還もそれゆえかもしれないが、見た目で言えば背景のIntroductionページがcatされるのが自然なので反映してみて。
+
+>修正・検証・コミット・プッシュ済みです(項目411)。3件まとめて対応しました。
+
+**TOCバイト数**: cutView_のHELP起源分岐がhelpText_.size()(HELP.jp全体のサイズ)を表示していました。項目399時点では「cutView_は1セグメント分の内容しか持たない」という誤った前提で実装されていましたが、このプロバイダはcutView_自身に登録されているため、TOC画面表示時点でのcutView_のlines()はまさにTOC一覧そのもの――contentByteCount(cutView_)(項目403で導入済みの「画面に実際に表示されている内容のバイト数」という規約)がそのまま使えると判明しました。
+
+**FGREP戻り値フィールド**: grepView_のモードラインプロバイダはgrepReturnMode_==Directoryの場合のみ戻り先パスフィールドを埋めており、File/CutContent起源(HELPチャプター内容からのFGREP等)では常に空欄でした。CutContent起源はcutContentView_自身の「CUT:<セグメントラベル>」という既存の規約をそのまま踏襲、File起源はcutView_のFile起源分岐と同じfileMode_.currentFile()を使うよう追加しました。
+
+**^J^Wの書き出し内容**: ご指摘の通りでした。shellInsertBufferContent()(^J^W)はactiveView()(=currentMode_に対応するView)の内容を書き出す設計ですが、Grepモードでのactiveview()はgrepView_――マッチした行だけのフィルタ済みビューであり、独立した「Grepモード自身のコンテンツ」という概念は本来存在しません。currentMode_==Grepの場合はgrepReturnMode_(検索が実際に走った元のモード)を実効モードとして代わりに使うよう変更しました(ファイル名決定・書き出し内容の両方)。これによりHELPチャプターからのFGREP結果画面で^J^Wすると、マッチ行だけでなく元のチャプター全体(背景に見えているページ)がcatされるようになりました。「なぜかHELP」という副次症状の直接の原因は特定できませんでしたが、書き出し元がgrepView_(マッチ結果のみの断片的な内容)からcutContentView_(実際のチャプター全体)へ変わったことで、間接的に解消されている可能性があります。
+
+`make test` 839/839件・19058アサーション全通過(新規doctest3件)。`make usilic`クリーンビルド確認済みです。
