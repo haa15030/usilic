@@ -2870,8 +2870,28 @@ int main(int argc, char **argv) {
   // do this resolution -- it only normalizes the trailing slash -- so
   // relative-path callers elsewhere (tests, CP/MV/RM path prompts)
   // keep working with whatever they already pass.
+  // 2026-08-24 fix (docs/CHANGES.md item 421, found while verifying
+  // the new `make app` .app-bundle packaging, not literally requested
+  // but directly in service of "click-to-launch works nicely"):
+  // LaunchServices spawns a double-clicked .app bundle with the
+  // process's CWD at bare "/" (confirmed directly -- a real
+  // screenshot of the packaged bundle's first launch showed the root
+  // filesystem's own root-owned entries). A real Terminal session's
+  // CWD is never meaningfully "/" in practice (nobody navigates there
+  // to work), so an argument-less launch landing on literal "/" is a
+  // reliable enough signal that this ISN'T a real chosen working
+  // directory -- $HOME is used instead, matching what any ordinary
+  // Finder-launched file browser would default to. An EXPLICIT `usilic
+  // /` (or `usilic .` from an actual root-CWD shell) is untouched --
+  // this only substitutes the bare, argument-less "." case.
+  std::string cwdFallback = ".";
+  if (positionalArgs.empty()) {
+    std::error_code cwdEc;
+    std::filesystem::path cwd = std::filesystem::current_path(cwdEc);
+    if (!cwdEc && cwd == std::filesystem::path("/") && homeEnv) cwdFallback = homeEnv;
+  }
   std::string startDirectory =
-      std::filesystem::absolute(!positionalArgs.empty() ? positionalArgs[0] : ".").lexically_normal().string();
+      std::filesystem::absolute(!positionalArgs.empty() ? positionalArgs[0] : cwdFallback).lexically_normal().string();
   // History-based cursor restoration (see DirectoryMode::enterDirectory()'s
   // own comment) only applies to an argument-LESS launch -- legacy's
   // own "resume last session" case. An explicit path argument

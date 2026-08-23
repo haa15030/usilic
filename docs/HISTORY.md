@@ -10639,3 +10639,26 @@ brew install sdl2_ttf
 調査の過程で、SDL2/SDL2_ttfはGUIモード(-g)専用のはずが、`graphical_display.cpp`が`#ifdef`ガード無しで無条件includeしているため、**CUI専用ビルドでもコンパイルを通すだけのために必須**という見落としやすい依存だと判明しました。あわせて、このリポジトリ自身の`.devcontainer/Dockerfile`にも`libsdl2-dev`/`libsdl2-ttf-dev`/`pkg-config`が最初から抜けており、実は今のままではDocker環境で`make usilic`すらコンパイルできない状態だったことも発見・修正しました(実際にDockerイメージをビルドし直し、ホストのファイルには一切触れない形でコンテナ内リポジトリコピーに対し`make usilic`を実行、ELFバイナリの生成を確認済みです)。
 
 macOS側は`brew install pkgconf sdl2 sdl2_ttf`(pkg-configコマンドは`pkgconf`という別名のformulaが提供)、Linux側は`apt-get install build-essential libncurses-dev pkg-config libsdl2-dev libsdl2-ttf-dev git`で揃います。詳細は`docs/BUILD.md`をご覧ください。項目419のIntel Mac向けリンカ対応は既に`Makefile`側で自動適用されるので、手順としては追加の対応は不要です。
+
+<今のusilicを、ターミナル起動に加え、/Applicationのアプリのようにアイコンをクリックして起動する形にはできる？
+
+>できます — しかもかなり近いところまで来ています。
+
+実は`usilic`は現状、macOSで**引数無しで起動すると自動的にGUIモード(SDL2の独立ウィンドウ、ターミナル不要)がデフォルトになる**設計に既になっています(2026-08-21の対応)。なので残る作業は実質、この既存バイナリを`.app`バンドル(`Info.plist`+アイコン+`Contents/MacOS/`配下へバイナリ配置)で包むだけで、Finderからダブルクリック起動が可能になります。ターミナルからの`U`起動(`-c`でCUIも選べる)はそのまま影響を受けません。
+
+主なトレードオフは、コード署名/公証をしない限りGatekeeperが初回起動時に警告を出す(右クリック→開く、で回避可能)ことくらいです。作ってみましょうか？
+
+<やってみて。
+
+>実装・検証・コミット・プッシュ済みです(項目421)。
+
+`make app`で`build/usilic.app`を生成できるようにしました。`usilic`は元々引数無し起動だとmacOSでGUIモードがデフォルトになる設計だったので、`build/usilic`をそのまま`.app`バンドルへ包むだけでFinderからのダブルクリック起動に対応できました(GUI側の追加実装は不要でした)。
+
+検証の過程で2つ落とし穴がありました。
+
+1. 単体実行ファイル用のad-hoc署名をそのままバンドルにコピーすると、`spctl -a`がrejectedになる不具合。`make app`の末尾でバンドル全体を再度ad-hoc署名し直す(`codesign --force --deep -s -`)ことで解消しました。
+2. 実際に`open build/usilic.app`して起動確認したところ、Finderが設定する作業ディレクトリ`/`をそのまま起動先ディレクトリとして採用してしまい、ルート直下(`root wheel`所有)の一覧が表示される不具合を発見。引数無し起動かつCWDが厳密に`/`の場合のみ`$HOME`へフォールバックするよう`main()`を修正し、修正前後のスクリーンショット比較で`$HOME`の一覧に変わることを確認しました。
+
+`build/usilic.app`をFinderで`/Applications`やDockへドラッグすれば、通常のアプリと同じ感覚でアイコンクリック起動できます。ターミナルからの`U`起動は影響を受けません。手順は`docs/BUILD.md`に追記済みです。
+
+`make test`852/852件全通過、`make usilic`クリーンビルドも確認済みです。ad-hoc署名のみのため、他のMacへコピーした場合はGatekeeperの初回確認(右クリック→開く)が必要になることがあります(個人利用のため有償のDeveloper ID署名/公証は未対応)。アイコンは未設定(汎用アイコンのまま)なので、欲しければ別途`.icns`を作って追加できます。

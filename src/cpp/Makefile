@@ -83,7 +83,7 @@ TESTS    = $(wildcard $(TEST_DIR)/*.cpp)
 INSTALL_NAME = U
 INSTALL_DIR  = /usr/local/bin
 
-.PHONY: test usilic install clean
+.PHONY: test usilic install clean app
 
 test: $(BUILD_DIR)/run_tests
 	$(BUILD_DIR)/run_tests
@@ -93,6 +93,45 @@ usilic: $(BUILD_DIR)/usilic
 install: $(BUILD_DIR)/usilic
 	install -d $(INSTALL_DIR)
 	install -m 755 $(BUILD_DIR)/usilic $(INSTALL_DIR)/$(INSTALL_NAME)
+
+# macOS .app bundle (2026-08-24, docs/CHANGES.md item 421, a direct
+# user request: "アイコンをクリックして起動する形にはできる？"):
+# wraps the SAME build/usilic binary `make usilic` already produces --
+# no separate build, no wrapper script. Works because argv-less
+# `usilic` already defaults to GUI mode on macOS (see main.cpp's own
+# `#ifdef __APPLE__ forceGui = true` comment, item ~2026-08-21) --
+# LaunchServices double-clicking an app bundle invokes
+# Contents/MacOS/usilic with no arguments, landing on that exact same
+# default path, so this bundle needed no new app-side code at all.
+# `packaging/Info.plist` is the only checked-in input; the bundle
+# itself lands under $(BUILD_DIR) (already gitignored) since it's a
+# build artifact, not source. No custom icon yet -- Finder falls back
+# to a generic executable icon; see packaging/README's own note if
+# one gets added later. Darwin-only in practice (an .app bundle is a
+# macOS-specific concept) but the rule itself is just file copying, so
+# left unguarded rather than wrapped in another ifeq.
+APP_BUNDLE = $(BUILD_DIR)/usilic.app
+
+app: $(APP_BUNDLE)
+
+$(APP_BUNDLE): $(BUILD_DIR)/usilic packaging/Info.plist
+	mkdir -p $(APP_BUNDLE)/Contents/MacOS
+	cp packaging/Info.plist $(APP_BUNDLE)/Contents/Info.plist
+	cp $(BUILD_DIR)/usilic $(APP_BUNDLE)/Contents/MacOS/usilic
+ifeq ($(shell uname), Darwin)
+	# Re-signs the WHOLE bundle (Info.plist + executable together) with
+	# a fresh ad-hoc signature -- `make usilic`'s own binary already
+	# carries the Xcode toolchain's own linker-applied ad-hoc signature
+	# (needed just to RUN at all on Apple Silicon), but that signature
+	# was computed for a bare executable, not this bundle shape; left
+	# as-is, `codesign -dv`/`spctl` on the assembled .app both flag
+	# "code has no resources but signature indicates they must be
+	# present" -- confirmed by trying it. `--force` replaces the
+	# inherited one; `--deep` reaches the nested executable; `-s -`
+	# is codesign's own "ad-hoc" (no real identity) shorthand, same
+	# trust level the bare binary already had.
+	codesign --force --deep -s - $(APP_BUNDLE)
+endif
 
 $(BUILD_DIR)/run_tests: $(SRCS) $(TESTS) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -I$(TEST_DIR) -I$(SRC_DIR) $(SRCS) $(TESTS) -o $@ $(LDLIBS)

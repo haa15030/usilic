@@ -111,11 +111,46 @@ bind mountして使う場合、コンテナ内で`make`/`make clean`を実行
 そのまま使い続けたい場合は、コンテナ内で`make`系コマンドを一切
 実行しないこと。
 
+## macOS: Finderからアイコンクリックで起動する(`.app`バンドル)
+
+```
+cd usilic/src/cpp
+make app        # build/usilic.app ができる
+open build/usilic.app   # 動作確認(実際にウィンドウが開く)
+```
+
+`usilic`は引数無し起動だとmacOSでは元々GUIモード(SDL2の独立
+ウィンドウ、ターミナル不要)がデフォルトになる設計になっている
+ため、`make usilic`が作る`build/usilic`をそのまま`.app`バンドルへ
+包むだけで、Finderからのダブルクリック起動に対応できる
+(2026-08-24、docs/CHANGES.md項目421)。GUI側の追加実装は不要
+だった。
+
+`build/usilic.app`をFinderで`/Applications`や`Dock`へドラッグ
+すれば、以後は通常のアプリと同じ感覚でアイコンクリック起動できる。
+ターミナルからの`U`起動(`-c`でCUIも選択可)は影響を受けない。
+
+**署名について**: `make app`は末尾で`.app`バンドル全体を
+ad-hoc署名し直す(`codesign --force --deep -s -`、単体実行
+ファイル用の署名をバンドル構造にそのまま流用すると
+`spctl -a`がrejectedになるため必須)。有償のDeveloper ID証明書
+による署名・公証(notarization)は行っていないため、他のMacへ
+コピーした場合や`com.apple.quarantine`属性が付いた場合は、
+初回起動時にGatekeeperの確認(右クリック→「開く」)が必要になる
+ことがある。ローカルでビルドしたものをそのまま使う分には
+この確認は出ない(quarantine属性が付かないため)。
+
+アイコンは未設定(Finderの汎用実行ファイルアイコンのまま)。
+`.icns`を`src/cpp/packaging/`へ追加し`Info.plist`の
+`CFBundleIconFile`を設定すれば、以後の`make app`で自動的に
+反映される。
+
 ## ビルドターゲット早見表
 
 | コマンド | 内容 |
 |---|---|
 | `make usilic` | `build/usilic`(実行可能バイナリ)を生成 |
+| `make app` | `build/usilic.app`(Finderから起動できる`.app`バンドル、macOS用)を生成 |
 | `make test` | `build/run_tests`を生成し、そのまま実行(doctest) |
 | `make clean` | `build/`を削除 |
 | `sudo make install` | `build/usilic`を`/usr/local/bin/U`へインストール |
