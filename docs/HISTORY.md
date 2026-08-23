@@ -10509,3 +10509,15 @@ sh: line 1: 88975 Abort trap: 6           qlmanage -p '/Users/haa15030/Movies/�
 修正は`tokenize()`にタブも区切り文字として認識させるだけの1行変更です。`make test`850/850件・19163アサーション全通過、`make usilic`クリーンビルドも確認済みです。`.mp4`→[return]での`open -a IINA`起動そのものは実機で確認をお願いします。
 
 **[space]のクラッシュの件**: これはusilic側の問題ではなさそうです。メッセージの`sh: line 1: ... qlmanage -p ...`が示す通り、クラッシュしているのは`qlmanage`プロセス自身(内部で未捕捉のNSExceptionでabort)で、usilicが起動した子プロセスが落ちただけです。`qlmanage -p`はFinder本体のクイックルックとは別の簡易CLIで、動画系の生成プラグインが特定のmp4に対して落ちることが知られています。usilic自体はこの種のクラッシュを検知して普通に処理を続ける設計なので、usilicがフリーズ・クラッシュすることはありません。実用上は、動画ファイルは[space](クイックルック)ではなく今回直った[return]のEXEC(`open -a IINA`)経由で開く運用が現実的だと思います。
+
+<EXECって（ls）上だけだっけ？
+LOCATE、FGREP等「.mp4」マッチ一覧上でも可能でよろしく。
+
+>実装・テスト・コミット・プッシュ済みです(項目418)。
+
+LOCATE結果、およびDirectory一覧に対するFGREP/EGREPのマッチ一覧、両方でEXECが発動するようにしました。
+
+- LOCATE: `.mp4`等のマッチを[return]すると、従来は無条件でFile modeの通常表示に落ちていましたが、EXECを先にチェックしてLOCATE結果一覧に留まる(Directory modeのEXECが(ls)に留まるのと同じ扱い)ようにしました。
+- FGREP/EGREP(Directory起源): 従来は[return]すると(ls)の該当行へカーソルが移動するだけで、実際に開く/EXECするにはもう一度[return]が必要でした。着地先のエントリがEXEC対象なら、同じ1回の[return]でEXECも発動するようにしました(着地自体は従来通り)。ファイル内容に対するGrepは対象外です(1行=1ファイルという対応が無いため)。
+
+`make test`は新規2件を含め852/852件・19185アサーション全通過、`make usilic`クリーンビルドも確認済みです。

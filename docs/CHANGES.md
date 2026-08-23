@@ -2605,6 +2605,12 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      誤配送される深刻な不具合も修正。詳細は項目412(KEY/HELPの節)
      参照。
 
+     (2026-08-23追記3): Directory起源のFGREP/EGREPマッチ一覧で、
+     EXEC対象(`.mp4`等)のエントリを[return]しても(ls)へ着地する
+     だけでEXEC自体は発動していなかった不具合を修正(従来は着地後に
+     もう一度[return]する必要があった)。詳細は項目418(PROGRAM/EXEC
+     の節)参照。
+
 
 ## 4. CUT
 
@@ -4602,6 +4608,11 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      を直接実行し、修正前は0件、修正後は正しく1件ヒットすることを
      実際のファイルシステムバイト列で確認した。
 
+     (2026-08-23追記): LOCATE結果でEXEC対象(`.mp4`等)のエントリを
+     [return]しても常にFile modeでの通常表示に落ちておりEXECが
+     一切発動していなかった不具合を修正。詳細は項目418(PROGRAM/EXEC
+     の節)参照。
+
 ## 7. MAN
 
 290. **2026-08-13(続き): PROGRAM(K-41/K-42)・MAN(K-43/K-44)を実装、
@@ -5664,6 +5675,45 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      報告は無い)。実用上の回避策としては、動画ファイルは
      クイックルック([space])ではなく項目416で修正したEXEC
      (`open -a IINA`、[return])経由で開く運用が実際的と考える。
+
+418. **EXECの適用範囲をLOCATE結果・FGREP/EGREP(Directory起源)の
+    マッチ一覧にも拡大**
+   - **要望**: 「EXECって（ls）上だけだっけ？　LOCATE、FGREP等
+     『.mp4』マッチ一覧上でも可能でよろしく。」
+   - **調査**: `openSelectedEntry()`(Directory modeの[return]ハンドラ)
+     は`configuration_.isExec(path)`を最初にチェックしてから
+     アーカイブ判定・通常のFile mode表示にフォールバックする設計
+     だったが、`openSelectedLocateResult()`(LOCATE)は
+     `configuration_.isExec()`を一切見ておらず常に
+     `fileMode_.loadFile()`へ、`openSelectedGrepMatch()`(FGREP/
+     EGREP)はそもそも「元のDirectory一覧の該当行へカーソルを移動
+     するだけ(その場では何も開かない)」という別設計だった
+     (ディレクトリ起源のGrepで[return]を押すと(ls)へ戻ってカーソルが
+     該当行に乗るだけで、実際に開く/EXECするには**もう一度**
+     [return]が必要、という2段階の挙動)。
+   - **修正**:
+     - `openSelectedLocateResult()`: `fileMode_.loadFile()`より前に
+       `isExec()`チェックを追加。`.mp4`等のマッチであれば
+       `execMode_.run()`を実行し、LOCATE結果一覧に留まる
+       (Directory modeでのEXECが(ls)に留まるのと同じ扱い)。
+     - `openSelectedGrepMatch()`: `grepReturnMode_==Directory`の
+       分岐内で、着地先のエントリ(`sourceLineIndex`から
+       `directoryMode_.entries()`を引く、`executeQuickLook()`と同じ
+       対応関係を利用)がディレクトリでなくEXEC対象であれば、
+       (ls)へ着地する処理はそのまま行いつつ`execMode_.run()`も
+       追加で実行する形にした。これにより、Directory起源のFGREP/
+       EGREPマッチ一覧から`.mp4`エントリを[return]した際、従来通り
+       (ls)の該当行へ着地しつつ、同じ1回の[return]でEXECも発動する
+       ようになった(ファイル内容に対するGrep、すなわち
+       `grepReturnMode_==File`等は対象外のまま — 1行=1ファイルという
+       対応がそもそも存在しないため)。
+   - **検証**: `make test`で新規doctest2件(LOCATE結果でのEXEC発動+
+     LOCATE mode留まり確認、FGREPマッチでのEXEC発動+従来通り(ls)へ
+     着地することの確認。いずれも既存のDirectory mode向けEXECテスト
+     と同じ「`sh -c 'echo EXECRAN >> "$0"'`をマーカーファイルへ実行し
+     ファイル内容で発動を確認」という無害な手法を踏襲)を含め
+     852/852件・19185アサーション全通過。`make usilic`クリーン
+     ビルド確認済み。
 
 
 ## 9. FILE / DIR

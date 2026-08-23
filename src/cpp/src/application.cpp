@@ -2701,6 +2701,18 @@ bool Application::openSelectedLocateResult() {
     directoryView_.redraw();
     return true;
   }
+  // EXEC (2026-08-24 addition, a direct user request: "LOCATE、FGREP
+  // 等「.mp4」マッチ一覧上でも可能で"): mirrors openSelectedEntry()'s
+  // own EXEC-takes-priority-over-plain-viewing precedence -- a suffix-
+  // mapped result (e.g. `.mp4` -> `open -a IINA`, see item 416) hands
+  // off entirely and returns to the LOCATE results list unchanged,
+  // same as EXEC from Directory mode returns to (ls) unchanged,
+  // instead of always falling into fileMode_.loadFile() below.
+  if (configuration_.isExec(*path)) {
+    if (auto command = configuration_.programForSuffix(*path)) execMode_.run(*command, *path);
+    locateView_.redraw();
+    return true;
+  }
   if (!fileMode_.loadFile(*path)) return false;
   currentMode_ = ApplicationMode::File;
   // 2026-08-14 fix (two direct user corrections against the previous
@@ -3157,6 +3169,25 @@ bool Application::openSelectedGrepMatch() {
     std::string label = (grepSyntax_ == GrepSyntax::Fixed) ? "FGREP" : "EGREP";
     directoryMode_.setSearchAnnotation(label + ": " + grepMode_.pattern());
     lastDirectorySearchKind_ = DirectorySearchKind::Grep;
+    // EXEC (2026-08-24 addition, same user request as
+    // openSelectedLocateResult()'s own comment): a match here already
+    // corresponds to a real directory entry (see executeQuickLook()'s
+    // own comment on sourceLineIndex lining up 1:1 with
+    // directoryMode_.entries()) -- if it's a suffix-mapped EXEC file,
+    // fire it immediately instead of requiring a second Enter after
+    // landing back on the (ls) row above.
+    const auto &entries = directoryMode_.entries();
+    if (match->sourceLineIndex >= 0 && static_cast<std::size_t>(match->sourceLineIndex) < entries.size()) {
+      const DirectoryEntry &entry = entries[match->sourceLineIndex];
+      if (!entry.isDirectory) {
+        std::string path = directoryMode_.currentDirectory();
+        if (!path.empty() && path.back() != '/') path += '/';
+        path += entry.name;
+        if (configuration_.isExec(path)) {
+          if (auto command = configuration_.programForSuffix(path)) execMode_.run(*command, path);
+        }
+      }
+    }
   }
   display_.hideVisibleCursor();
   target.redraw();

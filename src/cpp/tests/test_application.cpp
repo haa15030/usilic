@@ -1205,6 +1205,33 @@ TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match returns to Directory mode wit
   CHECK(app.activeContentView().modeLineText().find("FGREP: plain.txt") != std::string::npos);
 }
 
+// 2026-08-24 addition (docs/CHANGES.md item 418, a direct user
+// request: "LOCATE、FGREP等「.mp4」マッチ一覧上でも可能で"): a match
+// here already corresponds to a real directory entry, so an
+// EXEC-mapped suffix should fire on this SAME Enter, not require a
+// second one after landing back on the (ls) row. Uses the same
+// harmless "sh -c echo >> marker" EXEC trick as the Directory-mode
+// EXEC tests just below (see their own section header).
+TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match for an EXEC-mapped suffix runs EXEC immediately, in "
+                           "addition to the usual jump-back-to-(ls) landing") {
+  configuration.loadRcText("EXEC\n .marker sh -c 'echo EXECRAN >> \"$0\"'\n", true);
+  { std::ofstream(root / "target.marker") << "original\n"; }
+  REQUIRE(app.start(path()));
+  int expectedIdx = indexOf("target.marker");
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("target.marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  CHECK(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // still just lands back on (ls), same as before
+  CHECK(app.activeContentView().cursorIndex() == expectedIdx);
+
+  std::ifstream in(root / "target.marker");
+  std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content.find("EXECRAN") != std::string::npos);  // AND EXEC actually ran
+}
+
 TEST_CASE_FIXTURE(Fixture, "GREP: Back from the \"FGREP: pattern\"-annotated Directory listing returns to "
                            "the still-intact grep results, even with an empty ModeStack (2026-08-11 fix: "
                            "a real report found ^G did nothing here since there was no directory to pop "
@@ -2687,6 +2714,39 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a File result sets name=\"LOCATE\" 
 
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Locate);
+}
+
+// 2026-08-24 addition (docs/CHANGES.md item 418, a direct user
+// request: "LOCATE、FGREP等「.mp4」マッチ一覧上でも可能で"): mirrors
+// the Directory-mode EXEC tests below (same harmless "sh -c echo >>
+// marker" trick) -- a suffix-mapped LOCATE result should run EXEC
+// directly instead of always falling into plain FileMode viewing.
+TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a result for an EXEC-mapped suffix runs EXEC, staying in "
+                           "Locate mode (not File mode)") {
+  configuration.loadRcText("EXEC\n .marker sh -c 'echo EXECRAN >> \"$0\"'\n", true);
+  fs::path target = root / "target.marker";
+  { std::ofstream(target) << "original\n"; }
+  fs::path fakeLocate = root / "fake_locate.sh";
+  {
+    std::ofstream script(fakeLocate);
+    script << "#!/bin/sh\necho '" << target.string() << "'\n";
+  }
+  std::filesystem::permissions(fakeLocate, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate.string()}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  REQUIRE(app.locateMode().results() == std::vector<std::string>{target.string()});
+
+  CHECK(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Locate);  // stayed here, unlike a plain (non-EXEC) file result
+
+  std::ifstream in(target);
+  std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content.find("EXECRAN") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "LOCATE: starting a nested search from within locate results fails") {
