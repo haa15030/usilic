@@ -2360,13 +2360,38 @@ bool runEditorInLaunchingTerminal(const std::vector<std::string> &argv, fm::Grap
 // once before ever entering runTerminalPhase() -- see its own call
 // site comment for why THAT one insists on a match first).
 bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::TerminalDisplay &terminalDisplay,
-                      std::optional<TerminalAppearance> appearance = std::nullopt) {
+                      fm::History &history, std::optional<TerminalAppearance> appearance = std::nullopt) {
   std::string fontPath = resolveGuiFontPath(appearance);
+  // Saved window size/font (2026-08-24, item 427) -- ONLY applied when
+  // `appearance` is unset: with `appearance` set, this call is the
+  // "実はすでにGUI" launch-time overlay (tryEnterGuiPhase()'s own
+  // doc comment), which deliberately matches the REAL calling
+  // terminal's OWN current geometry/font -- a stale saved GUI size
+  // must never override that. Unset covers both remaining callers
+  // (^Og manual mid-session entry, and main()'s own forceGui fallback
+  // for when no real terminal exists to match at all, e.g. the .app
+  // bundle launch item 423/424 fixed) -- for those, there IS no
+  // competing "real terminal geometry" to prefer, so the user's own
+  // last-adjusted GUI window naturally wins instead of the hardcoded
+  // 16pt/current-terminal-size default.
+  fm::History::GuiPreferences savedGui = history.guiPreferences();
+  int rows = display.rows(), columns = display.columns();
+  int fontPointSize = 16;  // GraphicalDisplay::create()'s own default
+  if (!appearance) {
+    if (savedGui.rows > 0 && savedGui.columns > 0) {
+      rows = savedGui.rows;
+      columns = savedGui.columns;
+    }
+    if (savedGui.fontPointSize > 0) fontPointSize = savedGui.fontPointSize;
+  }
   std::unique_ptr<fm::GraphicalDisplay> gui =
-      fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(display.rows(), display.columns(), fontPath);
+      fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(rows, columns, fontPath, fontPointSize);
   if (!gui) return false;  // no usable font, or window/renderer creation failed -- stay in terminal mode
 
   if (appearance && appearance->hasColors) gui->setColors(appearance->foreground, appearance->background);
+  else if (!appearance && savedGui.hasColors)
+    gui->setColors(fm::GraphicalDisplay::Color{savedGui.fgR, savedGui.fgG, savedGui.fgB},
+                    fm::GraphicalDisplay::Color{savedGui.bgR, savedGui.bgG, savedGui.bgB});
 
   gui->open();
   display.setBackend(*gui);
@@ -2419,6 +2444,31 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
 
   app.programMode().setForegroundLauncher(nullptr);  // back to plain ChildProcess::runInteractive() in terminal mode
   app.editMode().setForegroundLauncher(nullptr);
+
+  // Save whatever the user actually ended up with (item 427) --
+  // BEFORE gui.reset() destroys the window/font this reads from.
+  // Captured unconditionally (not gated on `!appearance`): even a
+  // "実はすでにGUI" overlay session can pick up a live Cmd+K/Cmd+=/
+  // Cmd+- adjustment (item 426), and there's no reason THAT
+  // deliberate a choice shouldn't carry forward the same as a plain
+  // ^Og session's would -- only the READ side above needs the
+  // appearance-match-wins-over-a-stale-save distinction, since that's
+  // about what the NEXT session should start from, not what THIS one
+  // ended at. Actually written to disk by main()'s own end-of-process
+  // history.serialize() call, same as every other History field.
+  {
+    fm::History::GuiPreferences prefs;
+    prefs.fontPointSize = gui->fontPointSize();
+    prefs.rows = gui->rows();
+    prefs.columns = gui->columns();
+    fm::GraphicalDisplay::Color fg = gui->foregroundColor();
+    fm::GraphicalDisplay::Color bg = gui->backgroundColor();
+    prefs.hasColors = true;
+    prefs.fgR = fg.r; prefs.fgG = fg.g; prefs.fgB = fg.b;
+    prefs.bgR = bg.r; prefs.bgG = bg.g; prefs.bgB = bg.b;
+    history.setGuiPreferences(prefs);
+  }
+
   display.setBackend(terminalDisplay);
   gui.reset();  // closes the real window
   if (!app.wantsExit()) app.handleResize();  // redraw the terminal, which SDL's window never touched
@@ -2973,7 +3023,7 @@ int main(int argc, char **argv) {
       // or the window's close button), so falling through to the
       // ordinary terminal-first loop below afterward is correct either
       // way -- same as if the user had pressed ^Og once by hand.
-      if (!tryEnterGuiPhase(app, display, *terminalDisplay)) {
+      if (!tryEnterGuiPhase(app, display, *terminalDisplay, history)) {
         std::cerr << "usilic: -g requested but no usable GUI (no font found, or no display) "
                      "-- falling back to terminal mode.\n";
       }
@@ -2981,7 +3031,7 @@ int main(int argc, char **argv) {
     while (!app.wantsExit()) {
       if (!runTerminalPhase(app, keyInput, display, forceCui)) break;
       if (app.wantsExit()) break;
-      tryEnterGuiPhase(app, display, *terminalDisplay);  // ^Og fallback -- unmatched terminal or no display server
+      tryEnterGuiPhase(app, display, *terminalDisplay, history);  // ^Og fallback -- unmatched terminal or no display server
     }
   }
 

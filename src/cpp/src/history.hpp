@@ -186,6 +186,32 @@ class History {
   std::optional<Charset::Encoding> savedCharset() const;
   void setSavedCharset(Charset::Encoding encoding);
 
+  // GUI window state (2026-08-24, docs/CHANGES.md item 427) -- a
+  // real user question ("前回GUIウィンドウ情報を記憶してもあまり役に
+  // 立たないと思う...その場での取得が可能ならusilicrcへの設定を行う
+  // （終了時にでも）") following up on items 425/426 (live drag-resize
+  // and Cmd+=/Cmd+-/Cmd+K live font/color adjustment). Deliberately
+  // NOT a plain struct-of-getters like GraphicalDisplay::Color would
+  // suggest -- this class already avoids depending on any specific
+  // Display backend (GraphicalDisplay is SDL2-specific; History is
+  // not), so GuiPreferences is its own small POD type using plain
+  // ints/unsigned chars instead of GraphicalDisplay::Color. main.cpp
+  // converts at the boundary (GraphicalDisplay::Color <->
+  // GuiPreferences' own fgR/fgG/fgB) the same way it already converts
+  // Configuration/Display types elsewhere. 0/false-valued fields mean
+  // "nothing saved yet" (a fresh history, or an old history file
+  // written before this item) -- callers fall back to
+  // GraphicalDisplay::create()'s own compiled-in defaults exactly the
+  // same way savedCharset()'s nullopt already does for charset.
+  struct GuiPreferences {
+    int fontPointSize = 0;      // 0 == unset
+    int rows = 0, columns = 0;  // 0 == unset (either always both-set or both-unset)
+    bool hasColors = false;
+    unsigned char fgR = 0, fgG = 0, fgB = 0, bgR = 0, bgG = 0, bgB = 0;
+  };
+  GuiPreferences guiPreferences() const;
+  void setGuiPreferences(const GuiPreferences &preferences);
+
   const SessionState &sessionState() const;
   void setSessionState(SessionState state);
 
@@ -214,6 +240,7 @@ class History {
   int retentionCount_;
   bool smoothScrollEnabled_ = false;
   int lsMode_ = 0;
+  GuiPreferences guiPreferences_;
   std::optional<Charset::Encoding> savedCharset_;
   SessionState sessionState_;
 

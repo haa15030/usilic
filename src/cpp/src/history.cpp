@@ -217,6 +217,8 @@ int History::lsMode() const { return lsMode_; }
 void History::setLsMode(int mode) { lsMode_ = mode; }
 std::optional<Charset::Encoding> History::savedCharset() const { return savedCharset_; }
 void History::setSavedCharset(Charset::Encoding encoding) { savedCharset_ = encoding; }
+History::GuiPreferences History::guiPreferences() const { return guiPreferences_; }
+void History::setGuiPreferences(const GuiPreferences &preferences) { guiPreferences_ = preferences; }
 
 const History::SessionState &History::sessionState() const { return sessionState_; }
 void History::setSessionState(SessionState state) { sessionState_ = std::move(state); }
@@ -384,6 +386,26 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     // 13.
     savedCharset_ = environmentCharsetExplicitlySet ? std::nullopt
                                                      : std::make_optional(decodeCharsetCode(charsetCode));
+    // GuiPreferences (2026-08-24, item 427) -- appended AFTER the three
+    // original fields above (hs/ls/charsetCode, part of the on-disk
+    // format inherited from legacy tcb's own trailer) rather than
+    // inserted among them, so an old history file (or, in principle,
+    // legacy tcb itself reading a file this class wrote) simply sees
+    // these extra tokens as absent -- toks.size() guards below default
+    // every GuiPreferences field to its own "unset" value (0/false)
+    // exactly like charsetCode's own missing-token default above.
+    GuiPreferences prefs;
+    if (toks.size() > 3) prefs.fontPointSize = std::atoi(toks[3].c_str());
+    if (toks.size() > 4) prefs.rows = std::atoi(toks[4].c_str());
+    if (toks.size() > 5) prefs.columns = std::atoi(toks[5].c_str());
+    if (toks.size() > 6) prefs.hasColors = std::atoi(toks[6].c_str()) != 0;
+    if (toks.size() > 7) prefs.fgR = static_cast<unsigned char>(std::atoi(toks[7].c_str()));
+    if (toks.size() > 8) prefs.fgG = static_cast<unsigned char>(std::atoi(toks[8].c_str()));
+    if (toks.size() > 9) prefs.fgB = static_cast<unsigned char>(std::atoi(toks[9].c_str()));
+    if (toks.size() > 10) prefs.bgR = static_cast<unsigned char>(std::atoi(toks[10].c_str()));
+    if (toks.size() > 11) prefs.bgG = static_cast<unsigned char>(std::atoi(toks[11].c_str()));
+    if (toks.size() > 12) prefs.bgB = static_cast<unsigned char>(std::atoi(toks[12].c_str()));
+    guiPreferences_ = prefs;
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -453,8 +475,16 @@ std::string History::serialize(const std::string &programName, const std::string
 
   out += std::string(1, kFormFeed) + " TCB\n";
   int charsetCode = savedCharset_ ? encodeCharsetCode(*savedCharset_) : 0;
+  // GuiPreferences fields appended after charsetCode -- see
+  // loadHistoryText()'s own matching comment for why (on-disk format
+  // compatibility, not just symmetry).
   out += std::to_string(smoothScrollEnabled_ ? 1 : 0) + " " + std::to_string(lsMode_) + " " +
-         std::to_string(charsetCode) + "\n";
+         std::to_string(charsetCode) + " " + std::to_string(guiPreferences_.fontPointSize) + " " +
+         std::to_string(guiPreferences_.rows) + " " + std::to_string(guiPreferences_.columns) + " " +
+         std::to_string(guiPreferences_.hasColors ? 1 : 0) + " " + std::to_string(guiPreferences_.fgR) + " " +
+         std::to_string(guiPreferences_.fgG) + " " + std::to_string(guiPreferences_.fgB) + " " +
+         std::to_string(guiPreferences_.bgR) + " " + std::to_string(guiPreferences_.bgG) + " " +
+         std::to_string(guiPreferences_.bgB) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }

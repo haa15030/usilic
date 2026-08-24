@@ -104,6 +104,16 @@ class GraphicalDisplay : public Display {
   // immediately by itself.
   void setColors(Color foreground, Color background);
 
+  // Read-back accessors (2026-08-24, docs/CHANGES.md item 427) -- added
+  // so a caller can persist whatever the user actually ended up with
+  // (via setColors()/the "実はすでにGUI" terminal-color match, or a
+  // live Cmd+K/Cmd+=/Cmd+- adjustment, item 426) back to History::
+  // GuiPreferences at session end, without this class needing to know
+  // anything about History or usilicrc itself.
+  Color foregroundColor() const;
+  Color backgroundColor() const;
+  int fontPointSize() const;
+
   // Moves the window to an absolute SCREEN position (top-left-origin
   // pixel coordinates, matching both SDL2's own cross-platform
   // convention and what AppleScript's "bounds of front window"

@@ -1636,6 +1636,14 @@ void GraphicalDisplay::setColors(Color foreground, Color background) {
   impl_->bg = SDL_Color{background.r, background.g, background.b, 255};
 }
 
+GraphicalDisplay::Color GraphicalDisplay::foregroundColor() const {
+  return Color{impl_->fg.r, impl_->fg.g, impl_->fg.b};
+}
+GraphicalDisplay::Color GraphicalDisplay::backgroundColor() const {
+  return Color{impl_->bg.r, impl_->bg.g, impl_->bg.b};
+}
+int GraphicalDisplay::fontPointSize() const { return impl_->currentFontPointSize; }
+
 namespace {
 
 // Estimated macOS title bar height (points) for a normal titled,
