@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <map>
+#include <tuple>
 #include <vector>
 
 #include <SDL2/SDL.h>
@@ -260,6 +262,34 @@ TTF_Font *loadCjkFallbackFont(int pointSize) {
   return nullptr;
 }
 
+// Glyph texture cache (2026-08-24, docs/CHANGES.md item 428) -- see
+// cachedGlyphTexture()'s own comment (below Impl's definition, since it
+// needs GraphicalDisplay::Impl) for the full story on why this exists.
+// `font` is stored/compared as an opaque identity (impl_->font vs
+// impl_->fallbackFont), matching exactly the two TTF_Font* values that
+// can ever be passed in -- never dereferenced through this key, so it
+// stays valid to compare even across a TTF_SetFontSize() call that
+// mutates the pointed-to font in place (which is exactly why
+// clearGlyphCache() must still be called whenever that happens: the
+// pointer would keep comparing equal to old entries that are no longer
+// the right PIXELS for that pointer's new size).
+struct GlyphCacheKey {
+  std::string glyph;
+  const void *font;
+  int style;
+  int hinting;
+  unsigned char r, g, b;
+  bool narrow;  // whether boostGlyphAlpha() was applied -- affects the cached pixels
+  bool operator<(const GlyphCacheKey &other) const {
+    return std::tie(glyph, font, style, hinting, r, g, b, narrow) <
+           std::tie(other.glyph, other.font, other.style, other.hinting, other.r, other.g, other.b, other.narrow);
+  }
+};
+struct CachedGlyph {
+  SDL_Texture *texture = nullptr;
+  int w = 0, h = 0;
+};
+
 }  // namespace
 
 struct GraphicalDisplay::Impl {
@@ -454,8 +484,97 @@ struct GraphicalDisplay::Impl {
   SDL_Cursor *pointingCursor = nullptr;
   bool pointingCursorActive = false;
 
+  // See cachedGlyphTexture()'s own comment (right below this struct)
+  // for the full story -- keyed/cleared such that every entry always
+  // matches the CURRENT font/size/colors exactly.
+  std::map<GlyphCacheKey, CachedGlyph> glyphCache;
+
   Cell &cellAt(int row, int col) { return grid[row * columns + col]; }
 };
+
+namespace {
+
+// Returns a cached glyph texture (rasterizing and uploading it to the
+// GPU only on first use), or nullptr if TTF_RenderUTF8_Blended()
+// itself failed. Shared by renderCell()/renderCursor()/renderTextRun()
+// -- all three previously called TTF_RenderUTF8_Blended()+
+// SDL_CreateTextureFromSurface() (CPU rasterization via FreeType, then
+// a fresh GPU texture upload) for literally every glyph, on literally
+// every single frame, even for a cell whose content hasn't changed at
+// all since the previous frame. On this project's own Apple Silicon
+// dev machine this stays fast enough to be invisible, but a real mpi
+// (Intel Mac, i5-9400 + integrated graphics) report of general GUI
+// sluggishness -- and specifically inertial-scroll motion that looks
+// choppy/"line-by-line" despite the underlying pixelOffset math being
+// genuinely continuous, sub-row, arbitrary-position (2026-08-24) --
+// points squarely at this: renderScrolled() alone redraws EVERY
+// visible row on EVERY ~16ms coast physics slice, so a full-screen
+// scroll could mean thousands of individual texture creates+uploads+
+// destroys per second. A weaker/older GPU stalling on that volume of
+// churn would produce exactly the reported symptom (large, infrequent
+// jumps between the few real frames that DO complete) even though the
+// app's own internal state advances smoothly frame to frame. Caching
+// by (glyph string, font identity, style, hinting, color, narrow-
+// glyph-alpha-boost flag) -- everything that actually affects the
+// resulting pixels -- means a steady-state scroll (the same visible
+// characters sliding row to row) reuses the SAME already-uploaded
+// textures instead of re-rasterizing them from scratch every frame.
+//
+// TTF_SetFontStyle()/TTF_SetFontHinting() are only called on a cache
+// MISS now (immediately before the real TTF_RenderUTF8_Blended() call
+// they used to always precede) -- correct, not just faster, since
+// those calls only affect the NEXT render through that font object;
+// once a glyph is cached, style/hinting are already baked into its
+// stored texture and never need re-asserting to reuse it.
+// `ImplT` (deduced, always GraphicalDisplay::Impl in practice) rather
+// than naming GraphicalDisplay::Impl directly: it's a private nested
+// type, and template argument deduction is the standard way a free
+// function in this same file can still operate on it without needing
+// friend access -- access control applies to explicitly NAMING a
+// private member, not to a deduced template parameter.
+template <typename ImplT>
+SDL_Texture *cachedGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &glyph, int style, int hinting,
+                                 SDL_Color color, bool narrow, int &outW, int &outH) {
+  GlyphCacheKey key{glyph, font, style, hinting, color.r, color.g, color.b, narrow};
+  auto it = impl.glyphCache.find(key);
+  if (it != impl.glyphCache.end()) {
+    outW = it->second.w;
+    outH = it->second.h;
+    return it->second.texture;
+  }
+  TTF_SetFontStyle(font, style);
+  TTF_SetFontHinting(font, hinting);
+  SDL_Surface *surface = TTF_RenderUTF8_Blended(font, glyph.c_str(), color);
+  if (!surface) return nullptr;
+  if (narrow) boostGlyphAlpha(surface, kNarrowGlyphAlphaGamma);
+  SDL_Texture *texture = SDL_CreateTextureFromSurface(impl.renderer, surface);
+  outW = surface->w;
+  outH = surface->h;
+  SDL_FreeSurface(surface);
+  impl.glyphCache.emplace(std::move(key), CachedGlyph{texture, outW, outH});
+  return texture;
+}
+
+// Destroys every cached texture and empties the cache -- MUST be
+// called whenever the pixels a cached entry represents could go stale
+// while its key would still compare equal: specifically, every
+// TTF_SetFontSize() call (adjustFontSize()/matchWindowSize(), both of
+// which mutate impl_->font/fallbackFont IN PLACE at the same pointer
+// value cachedGlyphTexture()'s own key uses as the font identity --
+// see GlyphCacheKey's own comment), and the destructor (textures must
+// be destroyed while impl_->renderer is still valid, so this runs
+// before SDL_DestroyRenderer()). A color change (setColors()/
+// cycleColorPreset()) does NOT need this: color is already part of the
+// cache key, so old-color entries simply go unused rather than wrong.
+template <typename ImplT>
+void clearGlyphCache(ImplT &impl) {
+  for (auto &[key, cached] : impl.glyphCache) {
+    if (cached.texture) SDL_DestroyTexture(cached.texture);
+  }
+  impl.glyphCache.clear();
+}
+
+}  // namespace
 
 GraphicalDisplay::GraphicalDisplay() : impl_(std::make_unique<Impl>()) {}
 
@@ -671,6 +790,7 @@ GraphicalDisplay::~GraphicalDisplay() {
   SDL_PumpEvents();
   if (impl_->handCursor) SDL_FreeCursor(impl_->handCursor);
   if (impl_->pointingCursor) SDL_FreeCursor(impl_->pointingCursor);
+  clearGlyphCache(*impl_);  // must run while impl_->renderer is still valid -- see its own comment
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);
   if (impl_->fallbackFont) TTF_CloseFont(impl_->fallbackFont);
@@ -889,7 +1009,6 @@ void GraphicalDisplay::renderCell(int row, int col) {
   bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
-  TTF_SetFontStyle(renderFont, style);
   // 2026-08-11: TTF_HINTING_LIGHT (item 263) turned out font-dependent
   // too -- a real report showed it fully fixed the default profile's
   // "MS Gothic" pairing (confirmed via fontTools: msgothic.ttc's gasp
@@ -909,8 +1028,11 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // the closer structural match to how -c actually rasterizes text,
   // for any font. Applied only to narrow (half-width) glyphs, matching
   // the original report's scope; wide (CJK) glyphs keep normal
-  // hinting.
-  TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE);
+  // hinting. (TTF_SetFontStyle()/TTF_SetFontHinting() themselves moved
+  // into cachedGlyphTexture(), called below -- see its own comment;
+  // `style`/`isWide` are still computed here since the cache key needs
+  // them.)
+  int hinting = isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE;
 
   // An EMPTY glyph string (as opposed to an actual " " space
   // character) has zero advance width, so TTF_RenderUTF8_Blended()
@@ -920,20 +1042,16 @@ void GraphicalDisplay::renderCell(int row, int col) {
   // there's an actual cell-width run for the underline to be drawn
   // across.
   const std::string &renderGlyph = cell.glyph.empty() ? std::string(" ") : cell.glyph;
-  SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, renderGlyph.c_str(), fg);
-  if (!surface) return;
-  if (!isWide) boostGlyphAlpha(surface, kNarrowGlyphAlphaGamma);
-  SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
+  int w = 0, h = 0;
+  SDL_Texture *texture = cachedGlyphTexture(*impl_, renderFont, renderGlyph, style, hinting, fg, !isWide, w, h);
   if (texture) {
     // Fit to the cell grid (isWide ? 2 : 1 cells) via fitGlyphRect()
     // -- see its own comment for why this shrinks-and-centers instead
     // of stretching to the fallback font's (mismatched) natural size.
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
-    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, surface->w, surface->h);
+    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h);
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
-    SDL_DestroyTexture(texture);
   }
-  SDL_FreeSurface(surface);
 }
 
 // Draws a visible text cursor at (impl_->visibleCursorRow,
@@ -1011,22 +1129,18 @@ void GraphicalDisplay::renderCursor() {
   bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
-  TTF_SetFontStyle(renderFont, style);
   // Same half-width-hinting adjustment as renderCell() -- see its own
-  // comment.
-  TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE);
+  // comment. (TTF_SetFontStyle()/TTF_SetFontHinting() themselves moved
+  // into cachedGlyphTexture(), called below -- see its own comment.)
+  int hinting = isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE;
 
-  SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, cell.glyph.c_str(), impl_->bg);
-  if (!surface) return;
-  if (!isWide) boostGlyphAlpha(surface, kNarrowGlyphAlphaGamma);
-  SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
+  int w = 0, h = 0;
+  SDL_Texture *texture = cachedGlyphTexture(*impl_, renderFont, cell.glyph, style, hinting, impl_->bg, !isWide, w, h);
   if (texture) {
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
-    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, surface->w, surface->h);
+    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h);
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
-    SDL_DestroyTexture(texture);
   }
-  SDL_FreeSurface(surface);
 }
 
 void GraphicalDisplay::flush() {
@@ -1262,6 +1376,10 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
   impl_->currentFontPointSize = newPointSize;
   impl_->cellWidth = cellWidth;
   impl_->cellHeight = cellHeight;
+  // The font object was just resized in place (TTF_SetFontSize() above)
+  // -- every cached texture is now the WRONG pixel size for it. See
+  // clearGlyphCache()'s own comment.
+  clearGlyphCache(*impl_);
   // Same window-sizing formula setSize() already uses: rows/columns
   // stay fixed, only the pixel size changes. This SDL_SetWindowSize()
   // call will itself re-fire SDL_WINDOWEVENT_RESIZED, but since the new
@@ -1928,6 +2046,17 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
         1, (impl_->baseFontPointSize * cellHeight + impl_->baseFontMetricCellHeight / 2) / impl_->baseFontMetricCellHeight);
     TTF_SetFontSize(impl_->font, newPointSize);
     if (impl_->fallbackFont) TTF_SetFontSize(impl_->fallbackFont, newPointSize);
+    // Keep fontPointSize()'s own read-back (item 427, used to persist
+    // the live GUI state to History::GuiPreferences at session end)
+    // accurate for THIS launch path too -- previously left at whatever
+    // create() was originally called with, never updated here even
+    // though this is exactly where the real, final point size gets
+    // decided for a "実はすでにGUI" overlay session.
+    impl_->currentFontPointSize = newPointSize;
+    // The font object was just resized in place -- every cached
+    // texture is now the WRONG pixel size for it. See
+    // clearGlyphCache()'s own comment.
+    clearGlyphCache(*impl_);
   }
   impl_->cellWidth = cellWidth;
   impl_->cellHeight = cellHeight;
@@ -2116,25 +2245,24 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       int style = TTF_STYLE_NORMAL;
       if (wantBold) style |= TTF_STYLE_BOLD;
       if (wantUnderline) style |= TTF_STYLE_UNDERLINE;
-      TTF_SetFontStyle(renderFont, style);
       // Same half-width-hinting adjustment as renderCell() -- see its
       // own comment (item 264, replacing item 263's TTF_HINTING_LIGHT).
-      TTF_SetFontHinting(renderFont, isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE);
-      SDL_Surface *surface = TTF_RenderUTF8_Blended(renderFont, glyph.c_str(), sdlFg);
-      if (surface) {
-        // Same alpha-gamma boost as renderCell() -- see boostGlyphAlpha()'s own comment (item 265).
-        if (!isWide) boostGlyphAlpha(surface, kNarrowGlyphAlphaGamma);
-        SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
-        if (texture) {
-          // Fit to `width` cells via fitGlyphRect() -- see
-          // renderCell()'s own comment on why this shrinks-and-
-          // centers instead of stretching.
-          SDL_Rect dst = fitGlyphRect(Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
-                                       width * impl_->cellWidth, impl_->cellHeight, surface->w, surface->h);
-          SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
-          SDL_DestroyTexture(texture);
-        }
-        SDL_FreeSurface(surface);
+      // (TTF_SetFontStyle()/TTF_SetFontHinting() themselves moved into
+      // cachedGlyphTexture(), called below -- see its own comment. This
+      // is the hottest of the 3 call sites cachedGlyphTexture() serves:
+      // every visible row, every ~16ms coast physics slice during an
+      // active scroll -- see cachedGlyphTexture()'s own comment on the
+      // mpi/i5-9400 sluggishness report that motivated adding it.)
+      int hinting = isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE;
+      int w = 0, h = 0;
+      SDL_Texture *texture = cachedGlyphTexture(*impl_, renderFont, glyph, style, hinting, sdlFg, !isWide, w, h);
+      if (texture) {
+        // Fit to `width` cells via fitGlyphRect() -- see
+        // renderCell()'s own comment on why this shrinks-and-
+        // centers instead of stretching.
+        SDL_Rect dst = fitGlyphRect(Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
+                                     width * impl_->cellWidth, impl_->cellHeight, w, h);
+        SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
       }
     }
     x += width;
