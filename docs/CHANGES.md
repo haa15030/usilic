@@ -18983,6 +18983,53 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      アサーション全通過。`make usilic`/`make app`クリーンビルド
      確認済み。
 
+425. **GUIウィンドウをドラッグでリサイズ可能にした(`SDL_WINDOW_RESIZABLE`
+     +行/列の動的再計算)**
+   - **経緯**: 項目424まででGUI(`.app`バンドル起動含む)がひとまず
+     正しく動くようになったのを受け、ユーザーから「GUI稼働中、
+     ウィンドウのサイズ・色・フォント等の変更はできるの？もしできない
+     なら前回GUIウィンドウ情報を記憶してもあまり役に立たないと思う」
+     との質問があった。ウィンドウが`SDL_WINDOW_RESIZABLE`無しで
+     作られておりドラッグでのリサイズ自体がそもそも不可能だった
+     ことを確認し、(1)ウィンドウのリサイズ対応、(2)色・フォント
+     サイズを稼働中に変更するキー操作、(3)終了時のusilicrcへの
+     保存、の3点を提案。ユーザーから「(1)(2)(3)がコーディング可能
+     ならやってみて」と了承を得たため着手(本項目は(1)のみ、
+     (2)(3)は別項目で追って対応)。
+   - **実装**: `GraphicalDisplay::create()`の`SDL_CreateWindow()`に
+     `SDL_WINDOW_RESIZABLE`フラグを追加(従来は無く、ウィンドウ縁を
+     ドラッグしても一切反応しなかった)。生成直後に
+     `SDL_SetWindowMinimumSize()`で最低10列×4行分の画素サイズを
+     下限として設定(極端に潰すと中身が読めなくなる/0除算等の
+     退化状態を避けるため)。`pumpEvents()`の`SDL_WINDOWEVENT`
+     分岐に`SDL_WINDOWEVENT_RESIZED`のケースを追加し、新しい
+     ウィンドウ画素サイズを受け取る新規`handleWindowResized()`
+     (既存の`cellWidth`/`cellHeight`は変えずに割り算で新しい
+     `rows`/`columns`を算出、グリッドを再確保)を呼ぶようにした。
+     既存の`matchWindowSize()`(「実はGUI」オーバーレイ機能が外部
+     ターミナルの実サイズ変化を追いかける用途、rows/columnsは
+     固定してセルサイズの方を再計算する)とは正反対の変換方向のため、
+     流用ではなく別メソッドとして新設した。項目422の
+     `consumeNeedsRedraw()`と同じ「set→consume」方式で
+     `consumeSizeChanged()`を追加し、`main.cpp`の`runGuiPhase()`側
+     (`consumeNeedsRedraw()`の直後)で、実端末のSIGWINCH時に
+     `keyInput.consumeResizeSignal()`から`app.handleResize()`を
+     呼んでいるのと全く同じ形で配線した(`Application::
+     handleResize()`自体は`Display`の現在の`rows()`/`columns()`を
+     読むだけの既存ロジックであり、呼び出し側を合わせるだけで
+     良かった)。
+   - **検証**: `make test` 852/852件・19185アサーション全通過
+     (回帰無し)。`make app`でバンドルを再構築し、`osascript`の
+     `tell application "Finder" to open`で実際にダブルクリック
+     相当の起動を行った上で、System Events経由でウィンドウを
+     (a)大きく(+400×+300px)、(b)最小サイズ付近まで小さく
+     (300×200px指定、実際は`SDL_SetWindowMinimumSize()`の下限で
+     クランプ)、それぞれ変形させてスクリーンショットで確認。
+     (a)では拡大直後に一覧の表示行数が実際に増え、(b)では極小
+     サイズでもクラッシュ・文字化けせず中身が正しく再描画される
+     ことを確認した(いずれもプロセスが生きたまま、`ps`でも生存を
+     確認済み)。
+
 ## 20. C++移植基盤(クラス移植・Applicationへの配線)
 
 16. **2026-07-21: ④C++移植に本格着手(ユーザー判断で①完了を待たず前倒し)、

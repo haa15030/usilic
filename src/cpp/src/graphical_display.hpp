@@ -244,6 +244,18 @@ class GraphicalDisplay : public Display {
   // looked at SDL_WINDOWEVENT at all before this fix.
   bool consumeNeedsRedraw();
 
+  // Returns and clears whether pumpEvents() recomputed rows()/
+  // columns() since the last call, because the user (or the OS)
+  // actually resized the window (2026-08-24, docs/CHANGES.md item
+  // 425, a direct user request -- the window is created with
+  // SDL_WINDOW_RESIZABLE now, see create()'s own comment). Callers
+  // should treat this exactly like a real terminal's SIGWINCH: call
+  // Application::handleResize() so content reflows against the new
+  // geometry -- runGuiPhase() (app/main.cpp) does exactly that, the
+  // same shape runTerminalPhase()'s own keyInput.consumeResizeSignal()
+  // check already has.
+  bool consumeSizeChanged();
+
   struct MouseClick {
     int row;
     int column;
@@ -428,6 +440,16 @@ class GraphicalDisplay : public Display {
 
   struct Impl;
   std::unique_ptr<Impl> impl_;
+
+  // pumpEvents()'s own SDL_WINDOWEVENT_RESIZED handler (2026-08-24,
+  // item 425): given the window's own NEW pixel size, recomputes
+  // rows()/columns() at the CURRENT cell size (unlike matchWindowSize(),
+  // which does the opposite -- see its own comment), reallocates the
+  // grid, and sets consumeSizeChanged()'s backing flag. A no-op when
+  // the recomputed row/column count doesn't actually change (e.g. a
+  // resize event fired for a reason other than an actual grid-relevant
+  // size change, or one setSize()/matchWindowSize() themselves caused).
+  void handleWindowResized(int newPixelWidth, int newPixelHeight);
 
   void putByte(unsigned char c);
   void commitGlyph(const std::string &utf8Bytes, int width);

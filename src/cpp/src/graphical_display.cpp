@@ -402,6 +402,13 @@ struct GraphicalDisplay::Impl {
   // load-bearing for the actual fix -- the fix is EXPOSED setting it
   // true again on every subsequent occurrence).
   bool needsRedraw = true;
+  // consumeSizeChanged()'s own backing flag (2026-08-24, item 425) --
+  // set by pumpEvents()'s SDL_WINDOWEVENT_RESIZED handling (the user
+  // dragging the window's own edge), consumed by runGuiPhase() to
+  // call Application::handleResize() the same way a real terminal's
+  // SIGWINCH does -- see consumeSizeChanged()'s own declaration
+  // comment (graphical_display.hpp).
+  bool sizeChanged = false;
   // handCursorActive: tracks whether the open-hand cursor (handCursor
   // below) is currently showing, for dragging CONTENT itself (the
   // "cat's paw" scroll gesture). pointingCursor: SDL's own system
@@ -535,10 +542,20 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // SDL_WINDOW_HIDDEN, not SDL_WINDOW_SHOWN -- see open()'s own
   // comment for why the window is deliberately left unshown until
   // open() is called, not here.
+  // SDL_WINDOW_RESIZABLE (2026-08-24, docs/CHANGES.md item 425, a
+  // direct user request): dragging the window's own edge now works --
+  // see pumpEvents()'s own SDL_WINDOWEVENT_RESIZED handling (below in
+  // this file) for what actually happens when it fires. Deliberately
+  // NOT the same as matchWindowSize()'s own resize semantics (that
+  // one keeps rows/columns FIXED and rescales the cell/font size to
+  // fit an externally-dictated pixel size, for the "実はすでにGUI"
+  // overlay's own use) -- a user dragging this window's edge expects
+  // MORE ROWS/COLUMNS to become visible, at the SAME cell size, the
+  // conventional resize behavior any terminal emulator already has.
   SDL_Window *window = SDL_CreateWindow(
       "usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
       cellWidth * columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth, cellHeight * rows + Impl::kMarginY * 2,
-      SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
+      SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
   if (!window) {
     if (fallbackFont) TTF_CloseFont(fallbackFont);
     TTF_CloseFont(font);
@@ -546,6 +563,12 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
     SDL_Quit();
     return nullptr;
   }
+  // A floor, not a real limit -- just enough to keep the mode line's
+  // own fixed-width fields (byte count, position, etc.) from being
+  // dragged into total unreadable overlap; still comfortably smaller
+  // than any realistic use. 10 columns x 4 rows, in cells.
+  SDL_SetWindowMinimumSize(window, cellWidth * 10 + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
+                            cellHeight * 4 + Impl::kMarginY * 2);
   SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
   if (!renderer) {
     SDL_DestroyWindow(window);
@@ -1161,6 +1184,32 @@ void GraphicalDisplay::setSize(int rows, int columns) {
                        impl_->cellHeight * rows + Impl::kMarginY * 2);
 }
 
+// See its own declaration comment (graphical_display.hpp) for the
+// full story -- the INVERSE of setSize()/matchWindowSize() above:
+// those two go FROM a target rows/columns TO a pixel size; this one
+// goes FROM an already-changed pixel size (a live user drag-resize)
+// TO a new rows/columns, at the SAME cell size, deliberately not
+// touching cellWidth/cellHeight or the font at all.
+void GraphicalDisplay::handleWindowResized(int newPixelWidth, int newPixelHeight) {
+  if (!impl_->window || impl_->cellWidth <= 0 || impl_->cellHeight <= 0) return;
+  int contentWidth = newPixelWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth;
+  int contentHeight = newPixelHeight - Impl::kMarginY * 2;
+  int newColumns = std::max(1, contentWidth / impl_->cellWidth);
+  int newRows = std::max(1, contentHeight / impl_->cellHeight);
+  if (newRows == impl_->rows && newColumns == impl_->columns) return;  // nothing to do
+  impl_->rows = newRows;
+  impl_->columns = newColumns;
+  impl_->grid.assign(static_cast<std::size_t>(newRows) * newColumns, Cell{});
+  impl_->sizeChanged = true;
+  impl_->needsRedraw = true;  // the freshly-resized grid starts fully blank -- force a full repaint
+}
+
+bool GraphicalDisplay::consumeSizeChanged() {
+  bool value = impl_->sizeChanged;
+  impl_->sizeChanged = false;
+  return value;
+}
+
 std::string GraphicalDisplay::keySequence(Key) const { return ""; }
 
 bool GraphicalDisplay::outputEnabled() const { return impl_->outputEnabled; }
@@ -1258,14 +1307,25 @@ bool GraphicalDisplay::pumpEvents() {
       // effect) is included too since a bundle-launched app's window
       // can plausibly need its very first paint retried even before
       // anything has had a chance to cover/uncover it yet. Every OTHER
-      // SDL_WINDOWEVENT subtype (resize, focus, moved, ...) is
-      // deliberately left alone here -- this case exists purely to fix
-      // the "first frame lost" race, not to become a general resize/
-      // focus handler (window size itself is already read fresh every
-      // frame elsewhere, per this loop's own surrounding comments).
+      // SDL_WINDOWEVENT subtype except RESIZED (focus, moved, ...) is
+      // deliberately left alone here.
+      //
+      // SDL_WINDOWEVENT_RESIZED (2026-08-24 addition, docs/CHANGES.md
+      // item 425, a direct user request -- the window is now created
+      // with SDL_WINDOW_RESIZABLE, see create()'s own comment): fires
+      // with the window's own NEW pixel size already in event.window.
+      // data1/data2 whenever it actually changes size, whether by the
+      // user dragging an edge or a programmatic SDL_SetWindowSize()
+      // call (setSize()/matchWindowSize() both already trigger one on
+      // themselves too -- handleWindowResized() below is written to
+      // no-op harmlessly when the recomputed row/column count doesn't
+      // actually change, so this doesn't fight either of those).
       case SDL_WINDOWEVENT:
-        if (event.window.event == SDL_WINDOWEVENT_EXPOSED || event.window.event == SDL_WINDOWEVENT_SHOWN)
+        if (event.window.event == SDL_WINDOWEVENT_EXPOSED || event.window.event == SDL_WINDOWEVENT_SHOWN) {
           impl_->needsRedraw = true;
+        } else if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+          handleWindowResized(event.window.data1, event.window.data2);
+        }
         break;
       case SDL_MOUSEBUTTONDOWN: {
         // See Impl::everInteracted's own comment -- any button press

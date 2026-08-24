@@ -1606,6 +1606,22 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // frame -- the exact same anyEventThisFrame gate below already
     // does the right thing once this is true.
     if (gui.consumeNeedsRedraw()) anyEventThisFrame = true;
+    // 2026-08-24 addition (docs/CHANGES.md item 425, a direct user
+    // request: window resize/color/font weren't live-adjustable at
+    // all): the window is now created SDL_WINDOW_RESIZABLE
+    // (GraphicalDisplay::create()'s own comment) -- a live drag-resize
+    // recomputes rows()/columns() (GraphicalDisplay::
+    // handleWindowResized()) the moment pumpEvents() sees
+    // SDL_WINDOWEVENT_RESIZED, same as this loop's own
+    // consumeNeedsRedraw() check just above; app.handleResize() here
+    // is the exact same call runTerminalPhase()'s own
+    // keyInput.consumeResizeSignal() branch already makes for a real
+    // terminal's SIGWINCH -- it reads the Display's current rows()/
+    // columns() itself, already updated by the time this runs.
+    if (gui.consumeSizeChanged()) {
+      app.handleResize();
+      anyEventThisFrame = true;
+    }
 
     while (auto click = gui.consumeMouseClick()) {
       anyEventThisFrame = true;
