@@ -57,11 +57,39 @@ class TerminalDisplay : public Display {
 
   // Real construction path: queries $TERM via setupterm() and the
   // controlling tty's window size via ioctl(TIOCGWINSZ). Ported from
-  // tc_load()/get_winsize() (tc.c/vt.c). Exits the process on failure
-  // (no TERM set, or a terminfo entry missing cursor_address), matching
-  // legacy behavior exactly -- both were already fatal startup errors
-  // there.
-  static std::unique_ptr<TerminalDisplay> fromEnvironment();
+  // tc_load()/get_winsize() (tc.c/vt.c). By default, exits the process
+  // on failure (no TERM set, an unrecognized terminal, or a terminfo
+  // entry missing cursor_address), matching legacy behavior exactly --
+  // all three were already fatal startup errors there, back when this
+  // was the ONLY possible display backend.
+  //
+  // `exitOnFailure = false` (2026-08-24 fix, docs/CHANGES.md item 423,
+  // a direct user report: a real double-click on `make app`'s new
+  // .app bundle did nothing at all -- confirmed via a temporary
+  // stderr-to-file redirect that this exact fprintf+exit(1) was firing
+  // on "TERM environment variable is not set", every single time):
+  // this class's own legacy-inherited assumption -- "a real terminal
+  // MUST exist, or the whole program can't run" -- stopped being true
+  // the moment GUI mode (GraphicalDisplay, SDL2-backed) existed, since
+  // that backend needs no terminfo/tty of its own at all. A process
+  // launched via LaunchServices/Finder (not from any shell) has NO
+  // controlling terminal and, critically, no $TERM in its environment
+  // either -- unlike this port's own `open`-from-a-shell testing,
+  // which happened to inherit the invoking shell's $TERM and never hit
+  // this path, masking the bug for a long time. Passed `false` from
+  // main() specifically when it already knows (from argv/-c/-g/
+  // platform-default logic, decided BEFORE this call) that the session
+  // is GUI-only and will never actually render through this backend's
+  // real terminal capabilities -- returns a degraded, empty-
+  // capabilities placeholder instead of exiting, with the same 80x24
+  // fallback geometry windowSize()'s own "no real window size
+  // available" case already uses elsewhere in this file. A genuine
+  // CUI-only launch (forceCui, or the non-macOS platform default) is
+  // completely unaffected -- still defaults to `true`, still exits
+  // with the same diagnostic message, since THERE a working real
+  // terminal genuinely is required and "silently proceed with no
+  // capabilities" would just trade one confusing failure for another.
+  static std::unique_ptr<TerminalDisplay> fromEnvironment(bool exitOnFailure = true);
 
   void write(const std::string &text) override;
   void putChar(int c) override;

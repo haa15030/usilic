@@ -10676,3 +10676,109 @@ macOS側は`brew install pkgconf sdl2 sdl2_ttf`(pkg-configコマンドは`pkgcon
 **修正**: `SDL_WINDOWEVENT_EXPOSED`/`SDL_WINDOWEVENT_SHOWN`を受けたら再描画フラグを立てるようにし、通常のクリック/キー入力と同じ扱いで再描画されるようにしました。
 
 `open build/usilic.app`を5回連続実行して確認したところ、修正前は不安定(真っ黒になることがある)だったのが、修正後は5回とも正しく描画されることを確認しています。`make test`852/852件全通過、`make usilic`/`make app`クリーンビルドも確認済みです。お手数ですが、実機でも再度試してみてもらえますか。
+
+<変化無しだが、「Unix実行ファイル」の方はちゃんと起動するので今はこれでいい。
+興味本位で聞きたいのは、右クリックすると「このアプリケーションで開く」→「ターミナル（デフォルト）」とあって実際にターミナルが開いたのち、重ね打ちのGUI画面になるんだが、「アプリケーション」版はどうなの？　最初から重ね打ち画面が出るわけ？
+
+>修正の効果が実機で確認できなかったとのこと、申し訳ないです(こちら側の5回連続テストでは毎回直っていたので意外ですが、環境差の可能性があります)。実行ファイル版で問題なければ、そちらは深追いせず一旦保留にしましょう。
+
+ご質問の件、おっしゃる通りの動きになるはずです。
+
+`.app`版は最初から重ね打ち画面が出ます。理由は、Finderが裸のUnix実行ファイルを開く際は「ターミナルで実行する」という関連付けを使うため、実際にTerminal.appのウィンドウが一つ開き、その中でusilicが起動します。usilicには起動時に「自分は本物のTerminal.app/iTerm2の中で動いているか」を検出し、検出できればそのターミナルウィンドウの色・フォント・位置に合わせてGUIウィンドウをぴったり重ねる、という隠し機能(コード内では「実はすでにGUI」と呼んでいます)が入っており、これが今おっしゃった「ターミナルが開いたのち重ね打ちのGUI画面になる」という挙動の正体です。
+
+一方`.app`バンドルはFinder(LaunchServices)が`Contents/MacOS/usilic`を直接起動する仕組みなので、そもそも本物のターミナルが一度も開きません。この検出機能は「重ねる相手の本物のターミナルウィンドウ」が存在して初めて動くので、`.app`版では発動しようがなく、代わりに(引数無し起動はmacOSでは常にGUIがデフォルトという別の仕組みで)最初から普通のGUIウィンドウが単体で開く、という違いになります。
+
+<それならいい意味の副産物はある。クイックルックのたびに裏画面（GUI起動を行ったCUIターミナル）が前面に来てしまうのでそれは解消されるかも。
+今はこれでいい、とさっきは言ったけど、結果は見てみたいのでもう少し調べてみて。よろしく。
+
+>いい落ち — その「重ね打ちさせない」という副産物、確かにありそうです。それは後で改めて。
+
+黒画面の件、もう少し調べてみました。
+
+**追加で分かったこと**: `open`コマンドでの起動は(今回も)5回中5回とも正常に描画されました。一方、Finderの「開く」動作をAppleScript経由で模したところ(`tell application "Finder" to open`)、今度は黒画面ではなく**プロセスがほぼ即座に(0.5秒未満で)終了**するという、また別の症状が出ました。ただしクラッシュレポートは一切生成されておらず、ログもごく初期の1行(`Retrieve User by ID`)で止まっていて、これは実際のダブルクリックというよりAppleScriptの`open`動詞自体の古い実装由来の癖である可能性が高く、今回の本題(黒画面)とは別物の可能性があります。
+
+**すみません、1つ確認させてください**: 直された`.app`を試した際、`git pull`してから`make app`を再実行してビルドし直したものでしたか？`build/`はgit管理外なので、もし前回ビルドした`.app`をそのまま再度クリックしていた場合、修正前のバイナリのままなので当然「変化無し」になります。お手数ですが、
+
+```
+cd ~/git/usilic/src/cpp
+git pull
+make app
+```
+
+としてから、`build/usilic.app`を改めてダブルクリックして試していただけますか？
+
+(余談: 作業中にFinder操作の自動化を試したところ、「"Visual Studio Code"が"Finder"を制御するアクセスを要求しています」という許可ダイアログが出たままになっています。これは私からは許可/拒否どちらも操作していないので、ご確認いただけると助かります。)
+
+<今、許可はしておいた。
+git pullはgit/usilic/じゃなくてcpp/でやるの？
+
+>`cpp/`の中でも大丈夫です。gitはサブディレクトリの中からでも自動的にリポジトリのルート(`~/git/usilic/`)を見つけて動くので、`cd ~/git/usilic/src/cpp && git pull`のままで問題なく最新のコミットが取り込まれます。
+
+ただ分かりやすさで言えば`~/git/usilic/`で`git pull`する方が素直です。どちらでも結果は同じです。
+
+```
+cd ~/git/usilic
+git pull
+cd src/cpp
+make app
+```
+
+これで`build/usilic.app`が最新の修正込みで作り直されます。その後ダブルクリックで試してみてください。
+
+<やはり起動しない。しかも黒アイコンの-g起動後は画面が明らかに違う=ep（下が-g）。
+'/Users/haa15030/Desktop/=ep.png'
+
+それからmpiでmake時はldでこんなのが出た。
+
+>1つの返信に2つの話が混ざっているようです。すみませんが、mpiでの`ld`エラーの実際のメッセージ本文が届いていないようなので、そちらを貼り直していただけますか(コピー漏れかもしれません)。
+
+`.app`起動の件、再ビルド後も直っていないとのこと了解しました。こちらの`open`コマンド経由の自動テストでは(この同じマシン上で)何度やっても再現しないため、実際のダブルクリックとの間に何か違いがありそうです。
+
+お手数ですが、次に黒画面になったその場で、ターミナルから以下を実行して結果を貼ってもらえますか(黒いウィンドウを閉じずに、そのまま実行してください)。
+
+```
+ps aux | grep -i "MacOS/usilic" | grep -v grep
+```
+
+出てきたPID(数字)を使って、続けて:
+
+```
+sample <PID> 3 -file /tmp/usilic_sample.txt
+cat /tmp/usilic_sample.txt
+```
+
+これで実際に起きていることの手がかりが直接取れるはずです。
+
+<そもそも黒画面が出ない（何も起きない）。
+ldは貼り忘れ。
+ld: warning: -ld_classic is deprecated and will be removed in a future release
+mkdir -p build/usilic.app/Contents/MacOS
+cp packaging/Info.plist build/usilic.app/Contents/Info.plist
+cp build/usilic build/usilic.app/Contents/MacOS/usilic
+# Re-signs the WHOLE bundle (Info.plist + executable together) with
+# a fresh ad-hoc signature -- `make usilic`'s own binary already
+# carries the Xcode toolchain's own linker-applied ad-hoc signature
+# (needed just to RUN at all on Apple Silicon), but that signature
+# was computed for a bare executable, not this bundle shape; left
+# as-is, `codesign -dv`/`spctl` on the assembled .app both flag
+# "code has no resources but signature indicates they must be
+# present" -- confirmed by trying it. `--force` replaces the
+# inherited one; `--deep` reaches the nested executable; `-s -`
+# is codesign's own "ad-hoc" (no real identity) shorthand, same
+# trust level the bare binary already had.
+codesign --force --deep -s - build/usilic.app
+mpi:cpp haa15030$ 
+
+>直りました — 検証・コミット・プッシュ済みです(項目423)。真因はSDL_WINDOWEVENT_EXPOSEDとは別物でした。
+
+「そもそも黒画面が出ない」という一言のおかげで疑いが確信に変わりました。`open`コマンドでの起動と実際のFinderダブルクリックの違いをさらに追った結果、`tell application "Finder" to open`(実際のダブルクリックにより近い、シェルを一切経由しない起動)は一貫して即座に(1秒未満で)プロセスが終了することを再現できました。`log stream`ではこちらのデバッグ出力が一切見えなかったため、`main()`冒頭で自分のstderrを直接ファイルへリダイレクトする一時的な計装を入れて再試行したところ、原因が判明しました。
+
+**`usilic: TERM environment variable is not set.`** というメッセージの直後にプロセスが終了していました。
+
+`TerminalDisplay::fromEnvironment()`という初期化関数が、`$TERM`環境変数が無い場合に無条件で`exit(1)`する作りになっていました。Finder(LaunchServices)経由で起動された`.app`は、それを起動したシェルというもの自体が存在しないため、`$TERM`が全く設定されません。GUI専用起動は本来この関数の実端末機能を一切使わないにも関わらず、この初期化だけが無条件に先に実行され、GUIウィンドウを開く前にプロセスごと終了していました。こちらの`open`コマンド経由のテストがずっと成功していたのは、`open`が呼び出し元シェル(`$TERM`が設定済み)の環境を一部引き継ぐためで、これが不具合を長らく覆い隠していました。
+
+`$TERM`が無い場合、GUI専用起動のときだけ`exit(1)`する代わりに「実際には使われないプレースホルダ」を返すよう修正しました(通常のターミナル起動やCUI明示指定は従来通りの挙動のままです)。
+
+修正前は8/8回確実に即座終了していた`tell application "Finder" to open`による起動を、修正後に10回連続実行したところ**10/10回とも正常にウィンドウが開く**ことをスクリーンショットで確認しました。`make test`852/852件全通過、`make usilic`/`make app`クリーンビルドも確認済みです。
+
+mpiの`ld`ログの件は、項目419の「-ld_classicは将来削除予定」という警告メッセージと`make app`自体の通常の成功ログでした。エラーではなく、mpi側でも`make usilic`/`make app`が正常に成功している証拠です。ご安心ください。

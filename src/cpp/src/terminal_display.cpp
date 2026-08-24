@@ -78,9 +78,19 @@ TerminalDisplay::TerminalDisplay(TerminalCapabilities caps, int rows, int column
   g_active = this;
 }
 
-std::unique_ptr<TerminalDisplay> TerminalDisplay::fromEnvironment() {
+std::unique_ptr<TerminalDisplay> TerminalDisplay::fromEnvironment(bool exitOnFailure) {
+  // See this function's own declaration comment (terminal_display.hpp)
+  // for exitOnFailure's full story. All three failure points below
+  // share the same fallback: print nothing (a degraded placeholder
+  // isn't a user-facing error when the caller already knows it won't
+  // be used for real rendering) and return the same 80x24 empty-
+  // capabilities stub windowSize()'s own "no real size available"
+  // case already defaults to elsewhere in this file.
+  auto degraded = [] { return std::make_unique<TerminalDisplay>(TerminalCapabilities{}, 80, 24); };
+
   const char *term = std::getenv("TERM");
   if (!term) {
+    if (!exitOnFailure) return degraded();
     std::fprintf(stderr, "usilic: TERM environment variable is not set.\n");
     std::exit(1);
   }
@@ -91,6 +101,7 @@ std::unique_ptr<TerminalDisplay> TerminalDisplay::fromEnvironment() {
   int state = 0;
   setupterm(nullptr, 1, &state);
   if (state != 1) {
+    if (!exitOnFailure) return degraded();
     std::fprintf(stderr, "usilic: Invalid terminal.\n");
     std::exit(1);
   }
@@ -121,6 +132,7 @@ std::unique_ptr<TerminalDisplay> TerminalDisplay::fromEnvironment() {
   caps.keyPageDown = capOrEmpty(key_npage);
 
   if (caps.cursorAddress.empty()) {
+    if (!exitOnFailure) return degraded();
     std::fprintf(stderr, "usilic: Invalid terminal.\n");
     std::exit(1);
   }

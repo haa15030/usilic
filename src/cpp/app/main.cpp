@@ -2543,7 +2543,14 @@ int main(int argc, char **argv) {
   // was previously unconditional.
   bool consultHistoryOnStart = positionalArgs.empty();
 
-  std::unique_ptr<fm::TerminalDisplay> terminalDisplay = fm::TerminalDisplay::fromEnvironment();
+  // exitOnFailure=!forceGui (2026-08-24 fix, docs/CHANGES.md item 423):
+  // see TerminalDisplay::fromEnvironment()'s own declaration comment
+  // for the full story -- forceGui/forceCui are already fully resolved
+  // by this point (the platform-default block above), so a GUI-only
+  // session (no real terminal needed at all) tolerates a missing/
+  // unusable $TERM instead of exiting before ever reaching
+  // tryEnterGuiPhase().
+  std::unique_ptr<fm::TerminalDisplay> terminalDisplay = fm::TerminalDisplay::fromEnvironment(!forceGui);
   terminalDisplay->setOutputEnabled(true);  // fromEnvironment() leaves this off by default -- see its own comment
   fm::DelegatingDisplay display(*terminalDisplay);  // see file comment's own GUI-mode section
 
