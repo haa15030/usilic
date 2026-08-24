@@ -533,6 +533,13 @@ class GraphicalDisplay : public Display {
   // own native size, so there is no longer any overflow/gap tradeoff
   // to accept at all.
   void drawIdleScrollbarImage();
+  // The scrollbar strip's own left edge, anchored to the window's
+  // ACTUAL current pixel width (SDL_GetWindowSize()) rather than
+  // derived from kMarginX + columns*cellWidth as every call site here
+  // used to compute it independently -- see this method's own .cpp
+  // comment for why the two can disagree (matchWindowSize()'s "実は
+  // すでにGUI" overlay path, a real mpi report 2026-08-24).
+  int scrollbarStripLeft() const;
 };
 
 }  // namespace fm

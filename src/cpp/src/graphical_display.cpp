@@ -1552,7 +1552,7 @@ bool GraphicalDisplay::pumpEvents() {
         // MouseClick path below unchanged (no right-click behavior is
         // defined for the scrollbar; this just avoids silently
         // dropping the event).
-        int scrollbarStripX = Impl::kMarginX + impl_->columns * impl_->cellWidth;
+        int scrollbarStripX = scrollbarStripLeft() - Impl::kMarginX;
         if (event.button.button == SDL_BUTTON_LEFT && event.button.x >= scrollbarStripX) {
           impl_->scrollbarDragActive = true;
           SDL_CaptureMouse(SDL_TRUE);
@@ -1957,6 +1957,30 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   // since both directions are an equally acceptable few-px mismatch.
   int cellWidth = (contentWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth + impl_->columns / 2) / impl_->columns;
   int cellHeight = (contentHeight - Impl::kMarginY * 2 + impl_->rows / 2) / impl_->rows;
+  // cellWidth's own nearest-integer rounding above (see the big comment
+  // a few lines down on cellHeight's identical rounding) can round UP
+  // enough that the grid's own right edge (kMarginX + columns*
+  // cellWidth) reaches past scrollbarStripLeft() (contentWidth -
+  // kScrollbarWidth, flush against the window's real right edge as of
+  // 2026-08-24 -- see its own comment). scrollbarStripLeft()'s own fix
+  // (docs/HISTORY.md 2026-08-24 mpi report, item 429) already keeps
+  // the scrollbar strip itself fully inside the real window when that
+  // happens -- but a FOLLOW-UP real mpi report ("横が惜しい", same
+  // day) found the character GRID still extends into that same
+  // reserved strip, since this method never adjusted cellWidth to
+  // account for the scrollbar's now-correct position: the rightmost
+  // column(s) of real text render UNDERNEATH the scrollbar's own
+  // bitmap/thumb (drawn afterward in flush(), so it paints over the
+  // grid), effectively hiding those characters. Shrinking cellWidth
+  // (never growing it) until the grid plus its own left margin plus
+  // the scrollbar's own reserved width fit inside contentWidth
+  // guarantees the two can never overlap, at the cost of the grid
+  // possibly finishing a few px short of the scrollbar strip (a plain
+  // background gap) rather than covering it -- the same "gap over
+  // corruption" tradeoff scrollbarStripLeft() itself already made.
+  while (cellWidth > 1 && Impl::kMarginX + impl_->columns * cellWidth + Impl::kScrollbarWidth > contentWidth) {
+    cellWidth--;
+  }
   if (cellWidth <= 0 || cellHeight <= 0) return;
   // Read from the STABLE base fields (Impl::baseFontMetricCellWidth/
   // Height, captured once in create()), NOT impl_->cellWidth/cellHeight
@@ -2308,6 +2332,54 @@ int GraphicalDisplay::textRunDisplayWidth(const std::string &text) const {
 // near-full-height TRACK with it; a small thumb-sized rect, the
 // mode-line's own bar height, doesn't have the same "wall of color"
 // problem.)
+// Anchors the scrollbar strip to the window's own ACTUAL current
+// pixel width (SDL_GetWindowSize()), not to kMarginX + columns*
+// cellWidth as every call site here (this method, drawIdleScrollbarImage(),
+// and the SDL_MOUSEBUTTONDOWN scrollbar-hit-test) used to compute
+// independently. The two normally agree, because create()/the manual-
+// resize path (item 425) both size the window FROM that exact same
+// formula -- but matchWindowSize() (the "実はすでにGUI" overlay launch,
+// this class's own real-terminal-pixel-match feature) instead forces
+// the window to the real terminal's own measured OUTER pixel size,
+// with no awareness of kScrollbarWidth's reservation at all. A real
+// mpi report (docs/HISTORY.md 2026-08-24, "見た目、最初から細い") and
+// live measurement found cellWidth's own nearest-integer rounding
+// (matchWindowSize()'s own comment) can round UP just enough that
+// kMarginX*2 + columns*cellWidth + kScrollbarWidth exceeds the
+// window's real matched contentWidth by MORE than kScrollbarWidth
+// itself (585 real vs 597 needed on that profile -- columns=80,
+// cellWidth=7) -- SDL never draws outside the window's own bounds, so
+// nearly the WHOLE reserved scrollbar strip silently fell off the
+// right edge, leaving only a few px of it actually visible. Anchoring
+// from the window's own real width instead guarantees the full
+// kScrollbarWidth always lands inside the window, at the cost of the
+// character grid possibly falling a few px short of the strip on an
+// overflowing profile -- a plain background gap, far less harmful
+// than losing the scrollbar to invisibility.
+// No trailing `- Impl::kMarginX` gap here (removed 2026-08-24, a real
+// mpi report comparing the "実はすでにGUI" overlay side-by-side
+// against the M1 machine's own real terminal, mpi4.png vs mini.png:
+// mpi's scrollbar sat a visible few-px gap short of the window's true
+// right edge, while the real terminal's own native scrollbar -- and
+// mini's own overlay, matching it -- sits flush, no gap at all). An
+// EARLIER version of this method (and drawScrollbar()'s own now-
+// removed comment) added that gap deliberately, from a 2026-08-09
+// request ("位置だけは元からあるスクロールバーと同じにしたい") -- but
+// for the overlay's own "張りぼて" (decoy) idle image specifically,
+// ANY visible gap defeats the whole point: it must land pixel-for-
+// pixel where the real terminal's own scrollbar already sits, not
+// just "close," or the illusion breaks the moment a real terminal
+// window is compared directly against it (exactly what this report
+// caught). Since this method is shared by the idle image, the real
+// thumb, and the click hit-test alike, flush-to-edge now applies
+// uniformly rather than only to the overlay path.
+int GraphicalDisplay::scrollbarStripLeft() const {
+  int windowWidth = 0, windowHeight = 0;
+  SDL_GetWindowSize(impl_->window, &windowWidth, &windowHeight);
+  (void)windowHeight;
+  return windowWidth - Impl::kScrollbarWidth;
+}
+
 void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int contentRows) {
   if (contentRows <= 0) return;
   int trackHeight = contentRows * impl_->cellHeight;
@@ -2330,18 +2402,9 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   // whole strip, no visual edge against the mode-line/content area at
   // all) rather than the full width.
   constexpr int kThumbInset = 1;
-  // The extra trailing `+ Impl::kMarginX`: this class's own window-
-  // sizing formula (`kMarginX*2 + columns*cellWidth + kScrollbarWidth`,
-  // used throughout this file) reserves the scrollbar strip BEFORE a
-  // trailing kMarginX-wide gap of plain background between it and the
-  // window's own true right edge -- a real terminal's own native
-  // scrollbar instead sits flush against that true right edge, no
-  // trailing gap. A real user request (2026-08-09, made while briefly
-  // trying a real NSScroller widget instead of this hand-drawn thumb,
-  // but restated as still wanting to apply once that attempt was
-  // reverted: "位置だけは元からあるスクロールバーと同じにしたい")
-  // asked for this shift explicitly.
-  int thumbX = Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX + kThumbInset;
+  // See scrollbarStripLeft()'s own comment: flush against the window's
+  // real right edge, no trailing gap (2026-08-24).
+  int thumbX = scrollbarStripLeft() + kThumbInset;
   int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
   int thumbTop = Impl::kMarginY + thumbY;
 
@@ -2414,10 +2477,10 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
     SDL_FreeSurface(surface);
   };
 
-  // Same trailing `+ Impl::kMarginX` shift as drawScrollbar()'s own
-  // thumbX -- see its comment. Keeps this idle-state composite aligned
-  // with where the real thumb sits once it takes over.
-  int stripX = Impl::kMarginX + impl_->columns * impl_->cellWidth + Impl::kMarginX;
+  // Same scrollbarStripLeft() drawScrollbar()'s own thumbX now uses --
+  // see its comment. Keeps this idle-state composite aligned with
+  // where the real thumb sits once it takes over.
+  int stripX = scrollbarStripLeft();
 
   // kDefaultIdleImageYOffset: a real report (2026-08-09, screenshots,
   // "2ミリほど下がるけど下にはみ出さない") found the (then single-image)
@@ -2475,7 +2538,35 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
   // cellHeight to account for stepping from contentRows back to the
   // full row count, MINUS yOffset) -- no separate tunable knob needed;
   // USILICIDLEIMAGEYOFFSET alone now drives both ends symmetrically.
-  int trackBottom = Impl::kMarginY + impl_->rows * impl_->cellHeight - yOffset;
+  //
+  // `Impl::kMarginY + rows*cellHeight` (the ORIGINAL formula here) is
+  // only the window's own DESIGNED height, matching its actual real
+  // pixel height solely because create()/the manual-resize path (item
+  // 425) both size the window FROM that exact same formula -- exactly
+  // the same assumption scrollbarStripLeft()'s own comment already
+  // found broken for WIDTH under matchWindowSize() (the "実はすでに
+  // GUI" overlay, real mpi report 2026-08-24). The SAME class of bug
+  // applies here: matchWindowSize() forces the window to the real
+  // terminal's own measured pixel HEIGHT, and cellHeight's own nearest-
+  // integer rounding (matchWindowSize()'s own comment) can land far
+  // enough from the true fractional value that rows*cellHeight
+  // overshoots the real available height -- a live mpi report (a
+  // profile where this composite rendered as only its own top slice,
+  // near the window's top edge, with nothing below it down to the mode
+  // line) confirmed the middle/bottom slices were being positioned
+  // below the window's own real bottom edge, off-screen, because this
+  // formula assumed more vertical room than the real matched window
+  // actually has. Anchored from the window's own ACTUAL current pixel
+  // height (SDL_GetWindowSize(), mirroring scrollbarStripLeft()'s own
+  // fix) instead, so trackBottom can never land past the real window's
+  // own bottom edge -- identical to the old formula whenever the
+  // window's real height does equal kMarginY*2+rows*cellHeight (the
+  // normal create()/manual-resize case), only differing under
+  // matchWindowSize()'s own real-terminal pixel match.
+  int windowWidthNow = 0, windowHeightNow = 0;
+  SDL_GetWindowSize(impl_->window, &windowWidthNow, &windowHeightNow);
+  (void)windowWidthNow;
+  int trackBottom = (windowHeightNow - Impl::kMarginY) - yOffset;
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     FILE *f = std::fopen(dbg, "a");
     if (f) {
@@ -2483,8 +2574,8 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
       int contentRows = std::max(impl_->rows - 1, 0);
       std::fprintf(f,
                     "---drawIdleScrollbarImage--- rows=%d cellHeight=%d yOffset=%d trackTop=%d "
-                    "trackBottom=%d windowHeight=%d modeLineRowTop=%d\n",
-                    impl_->rows, impl_->cellHeight, yOffset, trackTop, trackBottom, windowHeight,
+                    "trackBottom=%d windowHeight=%d actualWindowHeight=%d modeLineRowTop=%d\n",
+                    impl_->rows, impl_->cellHeight, yOffset, trackTop, trackBottom, windowHeight, windowHeightNow,
                     Impl::kMarginY + contentRows * impl_->cellHeight);
       std::fclose(f);
     }
