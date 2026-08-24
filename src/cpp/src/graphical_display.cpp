@@ -287,6 +287,19 @@ struct GraphicalDisplay::Impl {
   // drifting further off with each call.
   int baseFontPointSize = 16;
   int baseFontMetricCellWidth = 0, baseFontMetricCellHeight = 0;
+  // The font's CURRENT live point size (2026-08-24, item 426) -- unlike
+  // baseFontPointSize (never overwritten after create(), matchWindowSize()
+  // relies on it staying the font's true original), this one DOES move as
+  // adjustFontSize() is called (Cmd+=/Cmd+-/Cmd+0), so that repeated
+  // presses step from wherever the user last left it, not back from the
+  // original every time. Starts equal to baseFontPointSize in create().
+  int currentFontPointSize = 16;
+  // Which of Impl::kColorPresets (below) cycleColorPreset() last applied
+  // -- -1 means "still on create()'s own hardcoded default / whatever
+  // setColors() was last called with directly (e.g. the 「実はすでにGUI」
+  // launch-time terminal-color match)", so the FIRST Cmd+K press lands on
+  // preset 0 rather than skipping it.
+  int colorPresetIndex = -1;
   // Real terminal emulator windows (Terminal.app, iTerm, GNOME
   // Terminal...) all reserve a modest border of window background
   // around the character grid rather than butting text right up
@@ -607,6 +620,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->cellWidth = cellWidth;
   display->impl_->cellHeight = cellHeight;
   display->impl_->baseFontPointSize = fontPointSize;
+  display->impl_->currentFontPointSize = fontPointSize;
   display->impl_->baseFontMetricCellWidth = cellWidth;
   display->impl_->baseFontMetricCellHeight = cellHeight;
   display->impl_->rows = rows;
@@ -1210,6 +1224,84 @@ bool GraphicalDisplay::consumeSizeChanged() {
   return value;
 }
 
+void GraphicalDisplay::adjustFontSize(int deltaPoints) {
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) { std::fprintf(f, "adjustFontSize(%d) called, current=%d base=%d\n", deltaPoints, impl_->currentFontPointSize, impl_->baseFontPointSize); std::fclose(f); }
+  }
+  if (!impl_->window || !impl_->font) return;
+  // See its own declaration comment (graphical_display.hpp) for why 0
+  // means "reset", not "no-op": Cmd+0 is the reset gesture, bound here
+  // rather than a separate method to keep the three-key group (Cmd+=/
+  // Cmd+-/Cmd+0) sharing one clamp-and-remeasure implementation.
+  int newPointSize = (deltaPoints == 0) ? impl_->baseFontPointSize
+                                         : std::clamp(impl_->currentFontPointSize + deltaPoints, 6, 72);
+  if (newPointSize == impl_->currentFontPointSize) return;
+  TTF_SetFontSize(impl_->font, newPointSize);
+  if (impl_->fallbackFont) TTF_SetFontSize(impl_->fallbackFont, newPointSize);
+  // Re-measure from the NOW-resized font, mirroring create()'s own "M"
+  // + CJK-fallback-glyph measurement (see its own comment for why both
+  // are needed) -- TTF_SetFontSize() changes the font's own glyph
+  // metrics, so the OLD cellWidth/cellHeight no longer describe it.
+  int cellWidth = 0, cellHeight = 0;
+  if (TTF_SizeUTF8(impl_->font, "M", &cellWidth, &cellHeight) != 0 || cellWidth <= 0 || cellHeight <= 0) {
+    // Roll back rather than leave the font and impl_->cellWidth/
+    // cellHeight disagreeing about the point size.
+    TTF_SetFontSize(impl_->font, impl_->currentFontPointSize);
+    if (impl_->fallbackFont) TTF_SetFontSize(impl_->fallbackFont, impl_->currentFontPointSize);
+    return;
+  }
+  cellHeight = std::max(cellHeight, TTF_FontHeight(impl_->font));
+  if (impl_->fallbackFont) {
+    int cjkWidth = 0, cjkHeight = 0;
+    if (TTF_SizeUTF8(impl_->fallbackFont, "\xE5\x9B\xBD" /* "国" */, &cjkWidth, &cjkHeight) == 0) {
+      cellWidth = std::max(cellWidth, (cjkWidth + 1) / 2);
+      cellHeight = std::max(cellHeight, cjkHeight);
+    }
+  }
+  impl_->currentFontPointSize = newPointSize;
+  impl_->cellWidth = cellWidth;
+  impl_->cellHeight = cellHeight;
+  // Same window-sizing formula setSize() already uses: rows/columns
+  // stay fixed, only the pixel size changes. This SDL_SetWindowSize()
+  // call will itself re-fire SDL_WINDOWEVENT_RESIZED, but since the new
+  // window size is derived from cellWidth/cellHeight*rows/columns
+  // exactly, handleWindowResized() recomputes the SAME rows/columns and
+  // takes its own "nothing to do" early return -- no feedback loop.
+  SDL_SetWindowSize(impl_->window, cellWidth * impl_->columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
+                     cellHeight * impl_->rows + Impl::kMarginY * 2);
+  SDL_SetWindowMinimumSize(impl_->window, cellWidth * 10 + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
+                            cellHeight * 4 + Impl::kMarginY * 2);
+  impl_->needsRedraw = true;
+}
+
+namespace {
+// Cmd+K color presets (2026-08-24, item 426) -- a small fixed set
+// covering the obvious "looks like a real terminal profile" options a
+// user would otherwise have to hand-edit usilicrc for: this class's own
+// default (light gray on black), a green-on-black "CRT" look (a common
+// real terminal profile preset, e.g. Terminal.app's own "Pro"/"Homebrew"
+// profiles), amber-on-black (ditto, an old-amber-phosphor-monitor
+// look), and black-on-white (a light-background profile, the opposite
+// of the other three). Not exhaustive by design -- setColors() remains
+// available for anything more specific (the "実はすでにGUI" launch-time
+// terminal-color match already calls it directly with an arbitrary
+// queried color, bypassing this list entirely).
+constexpr GraphicalDisplay::Color kColorPresetFg[] = {
+    {220, 220, 220}, {80, 250, 80}, {255, 176, 0}, {20, 20, 20},
+};
+constexpr GraphicalDisplay::Color kColorPresetBg[] = {
+    {0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {245, 245, 245},
+};
+constexpr int kColorPresetCount = 4;
+}  // namespace
+
+void GraphicalDisplay::cycleColorPreset() {
+  impl_->colorPresetIndex = (impl_->colorPresetIndex + 1) % kColorPresetCount;
+  setColors(kColorPresetFg[impl_->colorPresetIndex], kColorPresetBg[impl_->colorPresetIndex]);
+  impl_->needsRedraw = true;
+}
+
 std::string GraphicalDisplay::keySequence(Key) const { return ""; }
 
 bool GraphicalDisplay::outputEnabled() const { return impl_->outputEnabled; }
@@ -1401,8 +1493,46 @@ bool GraphicalDisplay::pumpEvents() {
         break;
       }
       case SDL_KEYDOWN: {
+        if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+          FILE *f = std::fopen(dbg, "a");
+          if (f) { std::fprintf(f, "SDL_KEYDOWN sym=%d mod=%d GUI=%d CTRL=%d\n", event.key.keysym.sym, event.key.keysym.mod, (event.key.keysym.mod & KMOD_GUI) != 0, (event.key.keysym.mod & KMOD_CTRL) != 0); std::fclose(f); }
+        }
         if (auto special = translateScancode(event.key.keysym.sym)) {
           impl_->keyQueue.push_back(KeyEvent{0, special});
+          break;
+        }
+        // Cmd+=/Cmd+-/Cmd+0 (font size) and Cmd+K (color preset) --
+        // 2026-08-24, item 426: intercepted and consumed HERE, before
+        // ANY translation into a KeyEvent, so Application never sees
+        // them at all (the same separation this file already keeps
+        // between window-level mouse gestures and application-level
+        // input) -- they're window/rendering adjustments, not usilic
+        // commands, so they must never reach feedByte() and risk
+        // colliding with a real per-mode binding for '='/'-'/'0'/'k'.
+        // KMOD_GUI is SDL's name for the Cmd key on macOS (Windows/Super
+        // key elsewhere); checked before KMOD_CTRL below since the two
+        // are mutually exclusive on a real keyboard and Cmd is this
+        // pair's own natural home (matching the browser/editor Cmd+Plus/
+        // Cmd+Minus/Cmd+0 zoom convention the comment on adjustFontSize()
+        // explains). SDLK_EQUALS covers plain "=" AND Shift+"=" ("+" on
+        // a US keyboard, the key users actually reach for) since SDL
+        // reports the same keysym for both; SDLK_KP_PLUS/KP_MINUS cover
+        // a numeric keypad the same way.
+        if (event.key.keysym.mod & KMOD_GUI) {
+          SDL_Keycode sym = event.key.keysym.sym;
+          // SDLK_KP_EQUALS is included alongside SDLK_EQUALS/KP_PLUS --
+          // confirmed by direct testing (USILICGUIDEBUG dump) that
+          // synthetic keystroke injection (AppleScript's `keystroke "="
+          // using {command down}`, used to test this binding at all
+          // since this sandbox has no real keyboard) delivers THIS
+          // keysym while Cmd is held, not plain SDLK_EQUALS -- some
+          // macOS keyboard-layout/modifier interaction remaps it. Real
+          // physical keyboards may or may not share this quirk; kept
+          // for robustness either way now that it's known to happen.
+          if (sym == SDLK_EQUALS || sym == SDLK_KP_PLUS || sym == SDLK_KP_EQUALS) adjustFontSize(1);
+          else if (sym == SDLK_MINUS || sym == SDLK_KP_MINUS) adjustFontSize(-1);
+          else if (sym == SDLK_0 || sym == SDLK_KP_0) adjustFontSize(0);
+          else if (sym == SDLK_k) cycleColorPreset();
           break;
         }
         // Control-key combos (Ctrl+A..Ctrl+_) arrive as SDLK_a.. with

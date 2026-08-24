@@ -451,6 +451,33 @@ class GraphicalDisplay : public Display {
   // size change, or one setSize()/matchWindowSize() themselves caused).
   void handleWindowResized(int newPixelWidth, int newPixelHeight);
 
+  // pumpEvents()'s own SDL_KEYDOWN handler for Cmd+=/Cmd+-/Cmd+0
+  // (2026-08-24, docs/CHANGES.md item 426, following up on item 425 --
+  // same user request, sub-parts (2)/(3)): live-adjusts the font point
+  // size by `deltaPoints` (clamped to a sane [6,72] range), re-measures
+  // cellWidth/cellHeight from the NEWLY-sized font (mirroring create()'s
+  // own "M" + CJK-fallback-glyph measurement, since a font's own advance
+  // widths don't scale perfectly linearly with point size), and resizes
+  // the window via the SAME formula setSize() already uses -- rows/
+  // columns stay FIXED, only the window's pixel size and the font/cell
+  // size inside it change (matching a browser's Cmd+Plus/Cmd+Minus zoom
+  // convention: more/less text size, not more/less content). deltaPoints
+  // of 0 means "reset to the launch-time size" (Impl::baseFontPointSize),
+  // bound to Cmd+0. A no-op if no window/font exists yet, or the target
+  // size is unchanged (already at the clamped floor/ceiling, or already
+  // at the reset target).
+  void adjustFontSize(int deltaPoints);
+
+  // pumpEvents()'s own SDL_KEYDOWN handler for Cmd+K (2026-08-24, item
+  // 426, sub-part (2)): cycles impl_->fg/bg through a small fixed set of
+  // presets (Impl::kColorPresets) -- the same setColors() the "実は
+  // すでにGUI" launch-time terminal-color-matching path already uses,
+  // just driven by a key instead of an AppleScript query. Takes effect
+  // on the next render like setColors() itself; this method also sets
+  // needsRedraw so that next render actually happens promptly instead of
+  // waiting for unrelated input.
+  void cycleColorPreset();
+
   void putByte(unsigned char c);
   void commitGlyph(const std::string &utf8Bytes, int width);
   void renderCellBackground(int row, int col);
