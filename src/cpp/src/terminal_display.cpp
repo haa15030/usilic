@@ -83,10 +83,24 @@ std::unique_ptr<TerminalDisplay> TerminalDisplay::fromEnvironment(bool exitOnFai
   // for exitOnFailure's full story. All three failure points below
   // share the same fallback: print nothing (a degraded placeholder
   // isn't a user-facing error when the caller already knows it won't
-  // be used for real rendering) and return the same 80x24 empty-
-  // capabilities stub windowSize()'s own "no real size available"
-  // case already defaults to elsewhere in this file.
-  auto degraded = [] { return std::make_unique<TerminalDisplay>(TerminalCapabilities{}, 80, 24); };
+  // be used for real rendering) and return an empty-capabilities stub
+  // sized to a conventional 80-column x 24-row terminal -- NOT
+  // windowSize()'s own 80x30 "no real size available" fallback
+  // elsewhere in this file (an earlier version of this comment
+  // wrongly claimed they matched): that one is rows=80/cols=30, a
+  // legacy-matched oddity confirmed harmless specifically because
+  // every real terminal sets TIOCSWINSZ at startup, making it
+  // essentially unreachable -- this path is NOT unreachable (it is
+  // the primary path for a $TERM-less GUI launch), and its own
+  // rows/columns feed straight into GraphicalDisplay::create()'s
+  // initial window size, so it needs an actually sane value, not a
+  // "doesn't matter, never hit" placeholder. The constructor takes
+  // (caps, rows, columns) -- rows FIRST -- getting this backwards
+  // here once already produced a real, reported symptom: every ls
+  // line rendering truncated right after the permission/owner/size
+  // columns because the window was accidentally only 24 columns WIDE
+  // (rows=80, columns=24) instead of 24 rows TALL, 80 columns wide.
+  auto degraded = [] { return std::make_unique<TerminalDisplay>(TerminalCapabilities{}, 24, 80); };
 
   const char *term = std::getenv("TERM");
   if (!term) {

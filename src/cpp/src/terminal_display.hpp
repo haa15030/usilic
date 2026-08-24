@@ -81,9 +81,11 @@ class TerminalDisplay : public Display {
   // platform-default logic, decided BEFORE this call) that the session
   // is GUI-only and will never actually render through this backend's
   // real terminal capabilities -- returns a degraded, empty-
-  // capabilities placeholder instead of exiting, with the same 80x24
-  // fallback geometry windowSize()'s own "no real window size
-  // available" case already uses elsewhere in this file. A genuine
+  // capabilities placeholder instead of exiting, sized to a
+  // conventional 80-column x 24-row terminal (see fromEnvironment()'s
+  // own .cpp-side comment on why this is its own value, deliberately
+  // NOT reusing windowSize()'s different 80x30 fallback elsewhere in
+  // this file). A genuine
   // CUI-only launch (forceCui, or the non-macOS platform default) is
   // completely unaffected -- still defaults to `true`, still exits
   // with the same diagnostic message, since THERE a working real
