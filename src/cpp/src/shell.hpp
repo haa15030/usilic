@@ -159,6 +159,40 @@ class Shell {
   LineEditor &commandLine();
   ContentView &scrollback();
 
+  // 2026-08-25 bug fix (a real, carefully-reproduced report: "③を
+  // 飛び越えて②へ" -- the NEWEST scrollback entry could never be
+  // reached via ^P at all, the very first press always skipped straight
+  // past it to the one before). scrollback_'s own cursorIndex_ rests at
+  // lines().size()-1 (the newest entry) whenever nothing has actively
+  // browsed away from it -- Application's own `browsingHistory` local
+  // (computed as cursorIndex() != lines().size()-1) can't tell "resting
+  // here, never browsed" apart from "browsing, and currently ON this
+  // exact entry", since both are the SAME cursorIndex_ value. The
+  // practical result: the FIRST ^P press from rest calls moveUp(),
+  // which unconditionally decrements past the newest entry rather than
+  // just landing ON it -- so the single most useful history entry (the
+  // one just run) could never be re-selected via keyboard at all, and
+  // with only ONE scrollback entry total, moveUp() from index 0 (its
+  // own floor) is a pure no-op, reading as "^P doesn't do anything".
+  // This flag makes "actively browsing" its own independent state,
+  // decoupled from the raw index: Application's ^P handler sets it via
+  // beginHistoryBrowsing() on the FIRST press (landing ON the current
+  // -- already correct -- rest position, no index change at all) and
+  // only calls scrollback().moveUp() on SUBSEQUENT presses while
+  // already true. exitHistoryBrowsing() (bundling the flag reset with
+  // the goToBottom() call that already accompanied every "return to
+  // live editing" trigger -- new output arriving, a fresh command
+  // submitted, Enter re-running a selected line and falling through, or
+  // any other key snapping the view back first) keeps the invariant
+  // enforced at every exit point instead of each call site needing to
+  // remember it separately.
+  bool historyBrowsing() const { return historyBrowsing_; }
+  void beginHistoryBrowsing() { historyBrowsing_ = true; }
+  void exitHistoryBrowsing() {
+    historyBrowsing_ = false;
+    scrollback_.goToBottom();
+  }
+
   // Enter: decides whether the current command line's trailing
   // pipeline stage matches a configured interactive PROGRAM (via
   // programLauncher_, if set) and hands off, or otherwise writes the
@@ -313,6 +347,7 @@ class Shell {
   std::string pendingLine_;  // appendBodyByte()'s own line-assembly buffer, see its comment
   bool sawBareCr_ = false;   // appendBodyByte()'s own CR-vs-CRLF lookahead flag
   ContentView scrollback_;
+  bool historyBrowsing_ = false;  // see historyBrowsing()'s own declaration comment
   LineEditor commandLine_;
   std::size_t linesConsumed_ = 0;  // how many of pipeBuffer_.lines() are already in scrollback_
   // The command text submitToPty()'s own submitLine() just wrote,

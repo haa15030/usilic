@@ -216,6 +216,43 @@ bool Shell::start() {
       // value once the shell is actually up.
       setenv("COLUMNS", "1024", 1);
     }
+    // 2026-08-25 (a direct user request): ported from tcb.c's own
+    // ENV_PROG convention (progname.h's PROGNAME_UPPER, "USILIC" for
+    // this build, "U" for the legacy one after its own 2026-08-25
+    // rename) -- a real usilic INVOKED FROM WITHIN this shell (e.g.
+    // "usilic ." typed at the prompt, or a pipe into it) checks this
+    // at its own startup to detect "I'm running inside an already-
+    // live usilic's SHELL mode" and, if so, hands its arguments off to
+    // THIS process instead of opening an independent second session
+    // (see Application::pollShellHandoff()'s own comment for the
+    // receiving half). Just a boolean marker (legacy's own value here
+    // is a version string, likewise never parsed for content) -- only
+    // presence is checked.
+    setenv("USILIC", "1", 1);
+    // 2026-08-25 (a direct user follow-up, ported into BOTH this
+    // binary AND legacy's own tcb/src/shell.c's start_shell() -- see
+    // main.cpp's own checkInvalidTerminalMarker() for the receiving
+    // half): USILIC above only ever proves "I'm inside a live usilic
+    // SHELL specifically" -- typing the OTHER binary's name (legacy
+    // "U") at THIS shell's prompt sees no such env var at all and
+    // falls through to launching a genuinely independent full session
+    // instead (a real report: "うっかり'usilic .'とやってしまうと例の
+    // 縦長usilicが出てしまう" -- and the reverse, U typed inside a live
+    // usilic SHELL). A first attempt at solving this cross-binary case
+    // via an unusual pty baud rate (a real termios field, otherwise
+    // completely inert for a *pseudo* terminal) turned out NOT to
+    // survive in practice -- a real PTY capture found zsh's own
+    // interactive startup silently resets it back to a normal speed
+    // before the first prompt even appears, disproving the assumption
+    // that a shell's line editor never touches that field. A second,
+    // shared, binary-agnostic env var is far simpler and, unlike
+    // termios state, is never touched by the shell itself at all: SET
+    // by BOTH binaries' own Shell start (this call, and start_shell()'s
+    // identical one), CHECKED by BOTH binaries' own main() alongside
+    // their own USILIC/U -- present but the binary's OWN var absent
+    // means "I'm in someone ELSE's live SHELL", refuse to launch a
+    // confusing independent session ("Invalid Terminal") instead.
+    setenv("TCB_LIVE_SHELL", "1", 1);
     auto cargv = toArgv(options_.argv);
     execvp(cargv[0], cargv.data());
     _exit(127);  // execvp() failed -- never fall through and keep running as usilic
@@ -536,7 +573,7 @@ void Shell::flushNewScrollbackLines() {
     newLines.push_back({plines[i].text, std::nullopt, std::nullopt, {}});
   linesConsumed_ = plines.size();
   scrollback_.setLines(std::move(newLines));
-  scrollback_.goToBottom();
+  exitHistoryBrowsing();  // new output arriving means "back to live", see its own declaration comment
   // Belt-and-suspenders, not load-bearing (2026-08-04): now that
   // scrollback_.setBottomAnchored(true) (see the constructor's own
   // comment) keeps the last real content line permanently pinned
@@ -596,7 +633,7 @@ void Shell::freezePromptLine(const std::string &command) {
   std::vector<ContentView::Line> newLines(scrollback_.lines());
   for (const auto &wrapped : wrapper.lines()) newLines.push_back({wrapped.text, command, std::nullopt, {}});
   scrollback_.setLines(std::move(newLines));
-  scrollback_.goToBottom();
+  exitHistoryBrowsing();  // a freshly-submitted command means "back to live", see its own declaration comment
 }
 
 // Clears every piece of per-session state before start() spawns a new

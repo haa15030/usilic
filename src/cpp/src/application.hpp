@@ -1189,6 +1189,29 @@ class Application {
   // for executeArchiveExtract()'s own shell_-injected run.
   void pollPendingArchiveExtractShellRun();
 
+  // 2026-08-25 (a direct user request, ported from tcb.c's own
+  // from_main()/from_shell() -- see main.cpp's own tryHandoffToParentShell()
+  // for the child-process half): while Shell mode is live, checks
+  // whether a real usilic INVOKED FROM WITHIN this shell (e.g. a plain
+  // "usilic ." typed at the prompt, or a pipe into it -- Shell::start()'s
+  // own setenv("USILIC", ...) is what makes that child detect it should
+  // hand off here instead of opening an independent session) has left
+  // a rendezvous file/socket at
+  // /tmp/.usilic-shell/s.<uid>.<shell_.childPid()> -- the SAME path
+  // both ends compute independently (the child via getppid(), this
+  // side via shell_.childPid(), no prior negotiation needed). If so,
+  // switches THIS session's own display accordingly (Directory for a
+  // path, an ordinary fileMode_.loadFile() for a plain file -- exactly
+  // the same call openSelectedEntry() makes for a normal Directory-
+  // listing Enter, see its own 2026-08-25 correction comment -- or a
+  // stdin-pager load via FileMode::loadStream(), the same lazy-loading
+  // machinery startPagerStdin() uses, for a piped source) and returns
+  // true. A plain no-op (false, nothing touched) whenever
+  // Shell mode isn't active/alive, or no rendezvous is waiting yet --
+  // cheap enough to call unconditionally once per main-loop iteration,
+  // matching pollPendingCpMvRmShellRun()'s own polling convention.
+  bool pollShellHandoff();
+
   // True once an exit has been confirmed (StartExit's prompt was
   // submitted with a leading 'y') -- a future real run loop's signal
   // to stop calling feedByte() and unwind. Application itself never

@@ -4394,10 +4394,20 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^P/^N move scrollback_'s own curs
     return false;
   }));
 
+  // 2026-08-25 update (a real, carefully-reproduced report: "③を飛び
+  // 越えて②へ" -- see Shell::historyBrowsing()'s own declaration
+  // comment): the FIRST ^P from rest now lands ON the current --
+  // already correct -- newest entry (cursorIndex_ UNCHANGED, only the
+  // independent historyBrowsing() flag flips true) instead of
+  // immediately skipping past it; only a SECOND press actually moves.
   int bottom = app.shell().scrollback().cursorIndex();
-  CHECK(app.feedShellByte(0x10, std::nullopt));  // ^P
-  CHECK(app.shell().scrollback().cursorIndex() == bottom - 1);
+  CHECK(app.feedShellByte(0x10, std::nullopt));  // ^P (1st): enters browsing, no move
+  CHECK(app.shell().scrollback().cursorIndex() == bottom);
+  CHECK(app.shell().historyBrowsing());
   CHECK(app.currentMode() == ApplicationMode::Shell);  // navigating history does NOT leave Shell mode
+
+  CHECK(app.feedShellByte(0x10, std::nullopt));  // ^P (2nd): now actually moves up
+  CHECK(app.shell().scrollback().cursorIndex() == bottom - 1);
 
   CHECK(app.feedShellByte(0x0e, std::nullopt));  // ^N
   CHECK(app.shell().scrollback().cursorIndex() == bottom);
@@ -4536,7 +4546,11 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: typing while browsing history snaps the curso
     return false;
   }));
 
-  app.feedShellByte(0x10, std::nullopt);  // ^P: now browsing, not at the bottom
+  // 2026-08-25 update (see the ^P/^N test's own comment above): the
+  // FIRST ^P now only enters browsing mode without moving cursorIndex_
+  // -- a SECOND press is needed here to actually move off the bottom.
+  app.feedShellByte(0x10, std::nullopt);  // ^P (1st): enters browsing, no move
+  app.feedShellByte(0x10, std::nullopt);  // ^P (2nd): now browsing, not at the bottom
   int bottom = static_cast<int>(app.shell().scrollback().lines().size()) - 1;
   REQUIRE(app.shell().scrollback().cursorIndex() != bottom);
 

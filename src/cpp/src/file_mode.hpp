@@ -185,6 +185,27 @@ class FileMode {
   // NEXT loadFile()/loadStream() call, never by reaching EOF.
   bool isPagerMode() const { return pagerMode_; }
 
+  // 2026-08-25 (a direct user request, corrected same-day after a
+  // re-check against the real legacy binary -- see
+  // Application::pollShellHandoff()'s own comment on why a plain FILE
+  // handoff no longer sets this at all): a standalone CLI pager launch
+  // (real terminal, no live parent usilic) has no previous mode at all,
+  // so ^G/'q' stay exactly as documented (^G inert, 'q' exits the whole
+  // process, the "usilic v1.5b" rightWatermark fallback shown, all
+  // confirmed against the real legacy binary). A SHELL-mode re-exec
+  // handoff of PIPED STDIN specifically (the one remaining pagerMode_
+  // case that still sets this true) DOES have a previous mode -- the
+  // live SHELL session it was typed into -- so ^G/'q' return there
+  // instead of doing nothing/quitting, and the mode-line shows a
+  // highlighted (reverse-video, NOT the bold rightWatermark) "SHELL" in
+  // trailing3 instead (a direct user correction: "戻り値がハイライト
+  // 表示の「SHELL」であるべき" -- rightWatermark's bold styling was the
+  // wrong slot for this). False by default, reset by every
+  // loadFile()/loadStream() call -- pollShellHandoff()'s own piped-
+  // stdin branch is the ONLY caller that ever sets it true.
+  void setPagerReturnsToShell(bool value) { pagerReturnsToShell_ = value; }
+  bool pagerReturnsToShell() const { return pagerReturnsToShell_; }
+
  private:
   std::vector<ContentView::Line> readAndWrap(const std::string &path) const;
   // Shared by loadStream()/ensureLoadedThrough(): reads from streamFd_
@@ -213,9 +234,24 @@ class FileMode {
   // path (or nothing, for stdin) with no size/directory trailing
   // fields, unlike an ordinary loadFile()-opened file.
   bool pagerMode_ = false;
+  bool pagerReturnsToShell_ = false;
   int streamFd_ = -1;
   bool streamOwnsFd_ = false;
   bool streamAtEof_ = false;
+  // 2026-08-25 (a direct user correction): the pager mode-line's own
+  // trailing byte-count field used to sum displayed-line text up
+  // through the CURSOR's line, mirroring Shell's own identical field --
+  // but Shell's version only ever LOOKS that way because its cursor
+  // always sits at the newest line as output streams in; this port's
+  // own lazy-loaded pager can sit anywhere (a real report: paging back
+  // UP after loading further down must NOT shrink the count -- "ページ
+  // 戻しが起きたとしても...バイト数は変わらない"). The officially
+  // settled spec ("実際に読み込まれたバイト数としたい") is simpler and
+  // has nothing to do with the cursor at all: the raw byte total
+  // readMoreIntoPipe() has actually pulled from streamFd_ so far,
+  // monotonically increasing, tracked there directly (see its own
+  // comment) rather than reconstructed from displayed line lengths.
+  std::size_t streamBytesRead_ = 0;
   std::unique_ptr<PipeBuffer> streamPipe_;
 };
 

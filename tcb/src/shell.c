@@ -1860,6 +1860,27 @@ int start_shell(int shell_pid, int disp_pid, FILE **ofpp, FILE **ifpp, char *mes
 	 * (the value will be reset in output_shell()) 
 	 */
 	setenv("COLUMNS", "1024", 1);
+      /* 2026-08-25 (a direct user request, ported into BOTH this
+       * binary AND the C++ usilic port's own shell.cpp Shell::start()
+       * -- see main()'s own "Invalid Terminal" check for the receiving
+       * half): ENV_PROG's own SHELL-relaunch protection (this
+       * function's caller in tcb.c, "err[1]") only ever fires SAME-
+       * binary-to-same-binary -- typing the OTHER binary's name (the
+       * C++ port's own "usilic") at THIS shell's prompt sees no such
+       * env var at all and falls through to launching a genuinely
+       * independent full session instead. TCB_LIVE_SHELL is a SECOND,
+       * shared, binary-agnostic marker set unconditionally by BOTH
+       * binaries' own shell-start code, checked by BOTH binaries' own
+       * main() alongside their own ENV_PROG/USILIC -- present but this
+       * binary's OWN var absent means "I'm in the OTHER binary's live
+       * SHELL", refuse to launch a confusing independent session
+       * instead. (An earlier attempt used an unusual pty baud rate
+       * instead -- reverted: a real PTY capture found zsh's own
+       * interactive startup silently resets it before the first
+       * prompt even appears, disproving the assumption that a shell's
+       * line editor never touches that field; an env var, unlike
+       * termios state, is never touched by the shell itself at all.) */
+      setenv("TCB_LIVE_SHELL", "1", 1);
       execvp(*chp->argv, chp->argv);
       exit(0);
     }

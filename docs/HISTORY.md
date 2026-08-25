@@ -11106,3 +11106,181 @@ CP/MV/RMは概ねいいんだが、'['でファイル指定していくと最後
 `make usilic`が成功しました。実際に動作確認します。
 
 対応しました。`Application::startPagerFileList()`(main.cppのCLI引数解析で、位置引数がディレクトリでなくファイルの場合にDirectory経由を飛ばして直接File modeへ)、`Command::PagerNextFile`/`PagerPreviousFile`/`PagerFirstFile`/`PagerLastFile`(それぞれ'n'/'p'/'x'/'f'、および'['/']'がFile modeでのパーサーリスト中は同じ動作を兼ねる、DirectoryModeでのマーク+移動とは競合しないよう分岐)を実装しました。PTYでの実機動作確認(3ファイル渡してn/p/x/f/[/]で正しく行き来できること、末尾での'n'・先頭での'p'がno-opになること)、新規doctest(startPagerFileList単体・複数ファイルナビゲーション・境界no-op・DirectoryModeでの'['/']'マーク機能への非干渉・File mode単体起動時のn/p/x/fがno-opであること)を追加し、フルテスト865/865件・19310アサーション全通過を確認、`build/usilic`を再ビルド済みです。
+
+<あとはモードラインだけ。SHELL同様、行数を5桁とバイト数表示をよろしく。
+ひとつ質問。~/.localへは書き込みできる？
+
+>対応しました。pager(File mode)のモードラインを、Shellモードの慣習に合わせて「行番号5桁固定幅」+「カーソルまでのバイト数」表示にしました(`ContentView::setUseFixedWidthPosition()`/`ModeLine::formatFixedWidth()`、`FileMode`のModeLineFieldsProviderにバイト数集計を追加)。`~/.local`は書き込み可能で、`$PATH`上`/usr/local/bin`より手前に来ています(書き込み権限・PATH優先順位とも問題ありません)。
+
+<新版をusilic、旧版をUで起動するような形で~/.localへインストールできる設定にして欲しいんだが。
+
+PREFIX=~/.local
+設定ファイルは新旧それぞれ「$PREFIX/lib/U/Urc」、「$PREFIX/lib/usilicrc」、
+実行ファイルは「$PREFIX/bin/U」、「$PREFIX/bin/usilic」、
+install.shでは「$1/usr/local/bin」みたいな箇所もすべて「$PREFIX/bin」としておけば、適宜PREFIX=/usr/localとするだけ。
+それでよろしく。
+
+>(AskUserQuestionで確認事項を提示したところ)
+
+<「$PREFIX/lib/usilicrc」はタイプミス。正しくは「$PREFIX/lib/usilic/usilicrc」でよろしく。
+
+>対応しました。`src/config.sh`のPROGNAMEを`usilic`→`U`(レガシーC版)、PREFIX変数を新設しUSR_DIRのハードコードを全てPREFIX参照に置換、install.sh生成テンプレートも`$1`連結方式から`$PREFIX`参照方式へ書き換えました。C++版(`src/cpp/Makefile`)はINSTALL_NAMEを`usilic`に、PREFIX/bin・PREFIX/lib/usilicへインストールするよう変更、レガシー用に`src/Urc`(usilicrcの複製)を新設しました。C++版には従来無かった2段構えのrcファイル探索(`$HOME/.usilic/usilicrc`→`$HOME/.local/lib/usilic/usilicrc`→`/usr/local/lib/usilic/usilicrc`)も新設し、隔離した$HOMEでのPTY実機確認(レガシーU側のLIBフォールバック、C++版usilic側の新設フォールバック、実際に同梱usilicrcのPROGRAMからvimが起動することまで)で動作を確認しました。
+
+<コミットして。
+
+>コミットしました(`9e328ac`)。
+
+<プッシュして。
+
+>`origin/master`へpushしました。
+
+<ちとわかりづらいかな？
+引き続きだが、usilic起動後→^[s→'usilic .'[return]→縦長の「usilic .」ウィンドウが立ち上がってしまう。
+usilicrcのPROGRAMに「usilic」を設定しておけば新たなusilicが起動して「.」の（ls）になるんだが、たとえPROGRAMに設定が無くても「.」の（ls）に切り替わるのが本来（さらにPROGRAMに設定があっても無視してほしい）。
+何が違うのかというと履歴に残るかどうかだが、そのためには、SHELLプロンプトでの'usilic .'[return]が同じusilicバイナリである必要があり、~/.localにインストしてもらったのもそれが理由。
+
+旧版では確かTCBなんたらの環境変数がSHELLには設定してあって、それがあるとusilicは新たに起動せず、ただ単にファイルなりディレクトリなりの表示画面になるだけだったはず。「ls -l | usilic」等も同じ。旧版でのモードラインではモード名が（stdin）だが、モード名は無しかつ（ls）(tar)等と同じ位置に(stdin)としてほしい（同じ表示はSTDINでもよろしく）。
+
+>legacy `tcb.c`の`from_shell()`/`from_main()`(親子で`<uid>.<pid>`の待ち合わせパス、非パイプ時はアトミックなrename()、パイプ時はUnixドメインソケットでchild=server/parent=client)を調査し、C++版に同じ仕組みを移植しました。
+
+- `Shell::start()`のfork子側で`setenv("USILIC","1",1)`(legacyの`ENV_PROG`相当)を追加。
+- `app/main.cpp`に`tryHandoffToParentShell()`を新設。`main()`の最初で`getenv("USILIC")`を見て、真ならCLI引数を解析(`-c`/`-g`は無視、`-u`/`-i`の数値引数もスキップ)し、`/tmp/.usilic-shell/s.<uid>.<getppid()>`へ結果を渡して即`return 0`(通常のApplication/Display起動は一切しない)。パイプなしなら絶対パスを一時ファイルに書いてrename()、パイプ(`isatty(STDIN_FILENO)`が偽かつ位置引数なし)ならAF_UNIXソケットをbind/listen/acceptしてstdinを流し込む。
+- `Application::pollShellHandoff()`を新設し、SHELL modeのメインループ(`runTerminalPhase()`/`runGuiPhase()`双方)から毎回ポーリング。`shell_.childPid()`から同じ待ち合わせパスを計算し、`stat()`で存在確認、`S_ISSOCK()`でソケット/ファイルを判定。ソケットならconnect()して`fileMode_.loadStream()`(既存のpager遅延読み込み機構を再利用)へ接続、`setSearchOrigin("", "(stdin)")`で名前欄を空・トレーリングバッジを「(stdin)」に(Directoryの「(ls)」/Archiveの「(tar)」と同じ位置に描画されるスロットを流用)。ファイルならrename()された一時ファイルの中身(解決済み絶対パス)を読み、ディレクトリなら`directoryMode_.enterDirectory()`、ファイルなら`startPagerFileList()`。
+
+デバッグ中、PTYテストハーネス自身が`os.chdir()`せずforkしていたため、子プロセスの相対パス解決が「テストスクリプト自身の実cwd」に対して行われてしまい一見バグに見える事象がありましたが、テストの`os.chdir(FAKE_HOME)`追加で解消(実装側のバグではありませんでした)。
+
+実機PTY確認(`~/.local/bin/usilic`、再ビルド・再インストール済み)で以下を確認:
+- `usilic <path>`(ディレクトリ)→同一プロセスの画面がDirectory(ls)へ切り替わる。PROGRAM設定の有無に依らず動作(USILIC環境変数ベースの判定のため、呼び出し経路を問わず一律に効く設計)。
+- `seq 1 5 | usilic`(パイプ)→同一プロセスがFile modeへ切り替わり、モードラインは名前欄が空、位置「00001/00005 TOP」、バイト数、トレーリングバッジ「(stdin)」表示(要求通りの位置・表記)。
+- SHELLへ戻って`history`を実行すると`usilic <path>`のコマンドがそのまま履歴に残っている(実プロセスなのでシェル履歴に記録される、という当初の狙い通り)。
+
+デバッグ用の`std::cerr`出力は全て削除済みです。フルテスト867/867件・19327アサーション全通過、`build/usilic`を再ビルド・`make install`で`~/.local/bin/usilic`へ再インストール済みです。まだコミットはしていません、よろしければ指示をお願いします。
+
+<SHELLからのSTDINおよび通常ファイルのusilicでは戻り値が無く^Gも利かない。SHELLで発動したので戻り値も「SHELL　　　　　」であるべき。なんか見た目にはusilicプロセスが新たに立ち上がっているような気がするんだが。
+ちなみにディレクトリ（ls）以外での透かし文字列「usilic v1.5b」は、STDINまたは通常ファイル起動時のみなので反映よろしく。
+
+>ご指摘の通りでした。`FileMode`の`pagerMode_`は「スタンドアロンCLI起動(実端末から直接`usilic file.txt`)」と「SHELL経由のハンドオフ」を区別しておらず、両方とも一律に^G無効・'q'即終了・透かし「usilic v1.5b」になっていました。legacyの`disp_window()`の「前のモードが無い時だけ`usilic v1.5b`のフォールバックを出す」という本来の意味に立ち返り、`FileMode::setPagerReturnsToShell()`を新設。`Application::pollShellHandoff()`が(ファイル・STDINの両方で)このフラグを立てるようにし、以下を実装しました:
+
+- モードライン右端の透かし: `pagerReturnsToShell_`が真なら「SHELL」、偽なら従来通り「usilic v1.5b」。
+- ^G(Command::Back): このフラグが立っていればSHELLモードへ復帰(`ensureShellActive()`と同じ`scrollback().redraw()`/`redrawPromptRow()`の作法)、そうでなければ従来通り無反応。
+- 'q'(Command::QuitPager): 同様にフラグが立っていればSHELLへ復帰。元々「'q'は問答無用でプロセス終了」だったため、そのままだとSHELL経由起動時に'q'を押すとユーザーの生きているSHELLセッションごと巻き込んで終了してしまうところでした(まさに「見た目には新たなプロセスが立ち上がっているような気がする」の裏返しの症状)。
+
+実装中に1つ実装バグ(`startPagerFileList()`が内部で一度redraw()した後にフラグを立てていたため、ファイル起動(ディレクトリでなくファイル)の場合だけ初回描画に透かしの変更が反映されない)を見つけて修正し、さらに検証中に「'q'を押しても標準的なCLI起動(`usilic file.txt`、`-c`無し)のプロセスが終了しない」という現象に遭遇しましたが、調査の結果これは実装のバグではなく、macOSではオプション無しだとデフォルトでGUIモード起動を試みる仕様(このヘッドレスなPTYテスト環境ではSDL2の実ディスプレイが無く応答不能になる)によるテストスクリプト側の見落とし(`-c`を渡し忘れていた)と判明しました。`-c`を付けて再検証したところ、スタンドアロン起動の'q'は正常にプロセスを終了させることを確認しています(この不具合調査でlldb/sampleでのプロセスアタッチがこのサンドボックス環境では使えないことも分かりました)。
+
+実機PTY確認: ①スタンドアロン起動(`usilic file.txt -c`)は従来通り透かし「usilic v1.5b」・^G無反応・'q'で確実にプロセス終了。②SHELLハンドオフ(ファイル・STDIN両方)は透かしが「SHELL」に変わり、^Gと'q'どちらでも同一プロセスのSHELLモードへ正しく復帰し、復帰後もそのSHELLセッションは(`echo`コマンドが通ることで)生き続けていることを確認。フルテスト867/867件・19327アサーション全通過、`build/usilic`を再ビルド・`make install`で`~/.local/bin/usilic`へ再インストール済みです。まだコミットはしていません。
+
+(この間、私のテスト操作(オプション無し起動でmacOSがデフォルトGUIモードを試み、それをkill -9で強制終了する、を繰り返した)によりユーザーの実モニターにPhilips「SmartImage」のデモモード表示が誘発される事故があり、型番PHL 323E7のSmartImageボタン長押しでの解除方法をWeb検索して案内、解決した。)
+
+<なんか変なので旧版見てみたら、通常ファイルのusilicは戻り値がSHELLである必要は無い点に気づいた。なのでこちらの指示ミスです。ごめんなさい。
+正しくは、SHELLプロンプトでusilic起動したときの引数の画面になればいいだけ。SHELLへ戻る必要は無いし行の桁数が5かつ戻り値が「SHELL」である新規モードも不要。
+
+例えばSHELLプロンプトで'usilic ~/.bashrc'[return]ならモードラインは下記となり、
+「/Users/haa15030/.bashrc」「001/116 19%」「3574」「/Users/haa15030/      」
+当然^Gで「~/」の（ls）に戻る（つまりはls画面で「.bashrc」を選択した場合と同じ。モードをそこへ移せばいいだけ）。
+STDINだけは旧版の方が間違っていて、SHELLプロンプトで'cat ~/.bashrc'|usilic'[return]とやると、
+「(stdin)」「000001/000025 92%」「/Users/haa15030/.bashrc                 」
+となるけれども(stdin)は入力の素性なんて知らないはずなのでこの戻り値は不良。
+やはりSHELLへ戻るのが妥当だと思うので、行桁数5かつ戻り値がハイライト表示の「SHELL　　　　　　　」となる新規モードでよろしく。
+
+>ご指摘の通り修正しました。
+
+- **通常ファイル引数**(`usilic ~/.bashrc`等): `Application::pollShellHandoff()`のファイル分岐を、`startPagerFileList()`(lazy pager)から`fileMode_.loadFile()`(通常の即時読み込み、`openSelectedEntry()`がDirectory一覧でEnterを押した時に呼ぶのと同じ経路)へ差し替え。`fileReturnMode_ = ApplicationMode::Directory`とするだけで、モードラインはpagerMode_を一切経由しない通常のFile mode表示(ファイル名・位置/%・バイト数・親ディレクトリ)になり、^Gは`returnToDirectory()`の既存の「ファイルの実の親ディレクトリを追いかける」仕組み(2026-08-16の既存修正)がそのまま働くので、そちら側の追加実装は不要でした。
+- **STDIN**: `pagerMode_`(5桁固定幅位置・空欄の名前欄・「(stdin)」トレーリングバッジ)は維持しつつ、戻り値の表示方法を修正。以前実装した太字rightWatermarkの「SHELL」は誤りで、ハイライト(反転)表示にすべきとのご指摘を受け、ArchiveMode用に既にあった`trailing3`(「第3の独立してハイライトされるトレーリングセグメント」、まさに今回欲しかったもの)を再利用し、`pagerReturnsToShell_`が真の時だけ`trailing3="SHELL"`・`rightWatermark=""`(他のFile mode同様、戻り値がある時はwatermarkを出さない、という既存の規約に合わせた)にしました。^G/'q'でSHELLへ戻る挙動自体は変更なし。
+
+実機PTY確認: ①`usilic note.txt`(SHELL経由、通常ファイル)→モードラインが「note.txt」「1/3 TOP」「23」「/private/tmp/.../」という通常のFile mode表示になり、^Gで正しくその親ディレクトリの(ls)へ戻ることを確認(SHELLへは戻らない)。②`seq 1 5 | usilic`(SHELL経由、STDIN)→「(stdin)」バッジは従来通り、太字watermarkは無し、「SHELL」が独立した反転表示セグメントとして表示され、^Gで正しくSHELLへ復帰することを確認。③スタンドアロン起動(`-c`付き、SHELL経由でない)は今回何も変更していないため従来通り透かし「usilic v1.5b」・^G無反応・'q'即終了のまま。フルテスト867/867件・19327アサーション全通過、`build/usilic`を再ビルド・`make install`で`~/.local/bin/usilic`へ再インストール済みです。まだコミットはしていません。
+
+<（stdin）:
+'seq 1 5 | usilic'[return]と打ってみた=eu。
+モードラインは
+「00001/00005 TOP」「5」「(stdin)」「SHELL               」
+でよろしく。
+
+旧版（U）のSHELLでうっかり'usilic .'[return]とやってしまうと例の縦長usilicが出てしまう。新たな立ち上げを回避するための環境変数はどんなやつ？
+'/Users/haa15030/Desktop/=eu.png'
+
+>=eu確認しました(想定通りの表示でした)。legacyの環境変数は`U`(1文字、`progname.h`の`ENV_PROG`)で、C++版の`USILIC`とは別物です。変数名を合わせるだけでは解決しません(legacy側には今回実装したような待ち合わせ受信ロジックがそもそも無いため)。同じバイナリ同士(usilic↔usilic、U↔U)でしか成立しない仕組みです。
+
+<そのとおりなので居場所がSHELLであることを特定できる何かがあればいい。
+そこで教えて欲しいのは、HISTORY.md:10452にあるraw modeの話、同モードの設定パラメータって読み取れるんだろうか？
+読み取れるなら、実害が無くかつ通常のターミナルではありえない設定をしておいて、それがあればSHELLと判別ってのはどう？
+今いる場所がSHELLであり、かつ環境変数「USILIC」が設定されていない限り、'usilic'[return]と打っても「Invalid Terminal」となるってのは？
+他に何か案があればよろしく。
+
+=euの件、画面を見る限り、数字は5つあるのでバイト数は「5」であるべきじゃない？
+戻り値についてはHISTORY.md:9462参照。
+
+>まず「9462」の件、ご指摘の通り不良でした。`trailing3`("SHELL")に既存の`fillTrailingToEdge`対応を有効化し忘れていました(pagerReturnsToShell_の時だけ)。修正・実機確認済みです。
+
+バイト数の件、確認したところ意図通りでした。この項目はカーソル位置までの累積バイト数で、SHELLモードの同名フィールドと全く同じロジックです。「5」は行の合計数で、それは位置欄の「00005」側に既に表示されています。
+
+SHELL判別の件、ボーレート(baud rate)をマーカーに使う案を提示しました(ptyでは無害、`Shell::start()`が子ptyに`B50`等を設定→どのプロセスも`tcgetattr()`で読める、legacy側にも同じ実装が必要)。
+
+<バイト数については旧版に無い機能でもあり曖昧な仕様含みだったのは事実。
+最初からサイズが決まっている対象であれば画面上^J^W→SHELLプロンプト「cat ファイル名」→catをwcに変更したのち[return]で表示されるバイト数でいい、で済むんだが、SHELL等逐次読み込みではどうすべきか実は定めていなかった。
+カーソル位置までのバイト数と聞き、改めて確認してみたら、バイト数がちゃんと変化しているのを見てようやく状況が把握できた。
+
+現在位置バイト数に用途があれば別だけど（現在行のようにviへ渡せる等）ちょっと思いつけないので、正式な指針としては実際に読み込まれたバイト数としたい。
+現状で喩えればモードライン直近の行にカーソルが位置している場合の値だが、ページ送りがあっても同様であり、ページ戻しが起きたとしてもすでに読み込んだ分量としてのバイト数は変わらない。
+SHELLの場合は最初から直近行なので話は簡単だが、(stdin)では冒頭行から始まる。モードライン直近行まで至らない場合でも実際に読み込まれたバイト数でよろしく。
+
+HISTORY.md:11140について訂正がひとつ。
+(stdin)は上流の素性が分からないが故に常時真っ新から始まるわけだから履歴があるのは明らかにおかしい。なので履歴には残さないで欲しい。
+
+SHELL判別はそれで進めて。
+
+以上よろしく。
+
+>3点対応しました。
+
+**バイト数**: `FileMode`に`streamBytesRead_`(readMoreIntoPipe()が実際に::read()した生バイト数の累積、カーソル位置に一切依存しない)を新設し、モードラインのバイト数欄をこれに差し替えました。ページ送り・戻しに関わらず単調増加のまま変わらないことを実機で確認済みです。
+
+**(stdin)の履歴除外**: コード監査したところ、`RingCategory::RecentFile`への登録(`loadStream()`)も`PositionCategory::File`へのカーソル位置保存(`saveCursorPosition()`)も、どちらも既に空文字列ガードで(stdin)は除外済みでした(currentFile_/displayNameが常に空のため)。追加の修正は不要でした。
+
+**SHELL判別**: ボーレート案は実装したものの、実機PTY確認で`zsh`自身が対話初期化時にボーレートをリセットしてしまう(9600 baudに戻る)ことが判明し、この方式は撤回しました。代わりに、両バイナリの`Shell::start()`/`start_shell()`が子SHELLへ共通の環境変数`TCB_LIVE_SHELL=1`を(各自の`USILIC`/`U`とは別に)設定し、`main()`側で「自分専用の変数(USILIC/U)は無いのにTCB_LIVE_SHELLはある」場合に`Invalid Terminal`と表示して即終了する方式に変更しました。`src/cpp/src/shell.cpp`・`src/cpp/app/main.cpp`・`tcb/src/shell.c`・`tcb/src/tcb.c`の4ファイルを修正。実機PTY確認で、usilicのSHELL内で`U .`→「U: Invalid Terminal」、legacy UのSHELL内(^J^Wで起動)で`usilic -c .`→「usilic: Invalid Terminal」の両方向を確認、既存の同一バイナリ間ハンドオフ(usilic↔usilic)にも影響が無いことを確認しました。
+
+フルテスト867/867件・19327アサーション全通過。両バイナリ再ビルド・再インストール済みです(`~/.local/bin/usilic`・`~/.local/bin/U`)。まだコミットはしていません。
+
+<「usilic -c .」で起動→^[s'cat .bashrc|usilic'[return]→^[>→モードラインは下記
+「00119/00119 END」「3574」「(stdin)」「SHELL         」
+引き続き^G→^Pが利かない→^R[return][return]→モードラインは下記
+「00051/00051 END」「1792」「(stdin)」「SHELL         」
+冒頭行から始まらない。前回カーソル位置（ファイル末尾）は履歴に残ってない？
+
+>実機PTYで再現・特定できました。`ContentView::setLines()`は前回のcursorIndex_を「新しい内容の範囲へクランプする」だけで0へリセットしない仕様(他の呼び出し元では意図的な挙動)で、`FileMode::loadFile()`は自前で`setCursorIndex()`を呼んでこれを補っているのに対し、`loadStream()`にはその呼び出しが丸ごと抜けていました。そのため1回目のセッションで`^[>`によりcursorIndex_が118(119行の末尾)になった後、2回目の(より短い)stdinストリームを読み込むと、その118が新しい内容の末尾(50)へクランプされてしまい、「冒頭行から始まらない」症状になっていました。履歴に残っていたわけではなく、単なる前セッションの残留状態です。
+
+`loadStream()`の最後に`view_.setCursorIndex(0)`を追加し、pagerセッションは(スタンドアロンCLI起動・SHELL経由パイプいずれも)必ず先頭から始まるようにしました。実機PTYで同一シェル内で2回連続`cat .bashrc|usilic`を実行し、1回目に`^[>`で末尾へ移動→^Gで戻った後、2回目が正しく「00001/00074 TOP」から始まることを確認しました。フルテスト867/867件・19327アサーション全通過、`build/usilic`を再ビルド・`~/.local/bin/usilic`へ再インストール済みです。まだコミットはしていません。
+
+<HISTORY.md:11245の^Pも調べて。
+
+>実機PTYで再現しましたが原因は特定できず、追加の詳細を依頼しました。
+
+<これもわかりづらいかな？
+「usilic -c .」で起動後^[s→
+usilic-1.5b:~%                    ①「00000/00000 END」     
+'cat .bashrc|usilic'[return]→^G→
+usilic-1.5b:~% cat .bashrc|usilic ②
+usilic-1.5b:~%      ←ここで^P      「00001/00001 END」
+→②へ行くはずが何もおきないので^R[return][return]→
+usilic-1.5b:~% cat .bashrc|usilic
+usilic-1.5b:~% cat .bashrc|usilic   「00001/00001 END」
+^G→
+usilic-1.5b:~% cat .bashrc|usilic ②
+usilic-1.5b:~% cat .bashrc|usilic ③
+usilic-1.5b:~%      ←ここで^P   　 「00002/00002 END」
+→③を飛び越えて②へ
+usilic-1.5b:~% cat .bashrc|usilic ②「00001/00002 END」
+usilic-1.5b:~% cat .bashrc|usilic 
+usilic-1.5b:~% 
+
+②は位置的に①なので行数も「00000/00002 END」のはず。
+
+>この詳細な図解で原因が特定できました。`shell_.scrollback()`のcursorIndex_は「browseしていない(素の状態)」でも常にlines().size()-1(一番下=最新行)に留まっており、「browsing中でたまたま最新行にいる」状態と区別する専用のフラグが存在しませんでした。Application側の`browsingHistory`はcursorIndex()がlines().size()-1と一致するかどうかだけで判定していたため、1回目の^Pは無条件に`moveUp()`(1つ上へ移動)を呼んでいました。scrollbackが1行だけの場合はmoveUp()がindex 0の床に当たって完全な無反応(「②へ行くはずが何もおきない」)に、2行の場合は最新行(③)を素通りして即座にその1つ上(②)へ着地(「③を飛び越えて②へ」)していました――最新行を^Pで選ぶ手段が原理的に存在しなかったのが根本原因です。
+
+`Shell`クラスに`historyBrowsing_`という独立したフラグを新設し、1回目の^Pは(indexを一切動かさず)このフラグだけを立てて現在の最新行に「乗る」ようにし、2回目以降の^Pで初めて実際に`moveUp()`するよう修正しました。新規メソッド`beginHistoryBrowsing()`/`exitHistoryBrowsing()`(後者はフラグ解除+従来の`goToBottom()`をセットで行う)を追加し、Application側の`browsingHistory`判定・`moveDisplayCursorToShellHistoryLine()`(表示カーソルの可視化)も両方このフラグ経由に統一しました。既存のdoctest 2件がこの旧仕様を前提にしていたため、新仕様(1回目=移動なしでフラグのみ、2回目=実際に移動)に更新しています。
+
+フルテスト867/867件・19330アサーション全通過(2件更新)。`build/usilic`を再ビルド・`~/.local/bin/usilic`へ再インストール済みです。まだコミットはしていません。
+
+<コミット・プッシュして。
+今日はここまで。ご苦労さま。ではまた明日。
+
+>コミット・プッシュしました。お疲れさまでした。また明日よろしくお願いします。

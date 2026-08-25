@@ -139,7 +139,9 @@
 #include <poll.h>
 #include <sstream>
 #include <string>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -1299,6 +1301,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     app.pollLocateUpdateDbCompletion();
     app.pollPendingCpMvRmShellRun();
     app.pollPendingArchiveExtractShellRun();
+    app.pollShellHandoff();
     syncMouseTracking();
     bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
 
@@ -1577,6 +1580,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     app.pollLocateUpdateDbCompletion();
     app.pollPendingCpMvRmShellRun();
     app.pollPendingArchiveExtractShellRun();
+    app.pollShellHandoff();
 
     // Set true below whenever something was actually consumed this
     // iteration (a click, a key, a drag/coast step) -- used to skip
@@ -2475,9 +2479,146 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   return true;
 }
 
+// 2026-08-25 (a direct user request): the child-process half of the
+// SHELL-mode re-exec handoff -- see Shell::start()'s own
+// setenv("USILIC", ...) comment for how this gets detected, and
+// Application::pollShellHandoff() for the parent-process half that
+// actually receives this. Ported from tcb.c's own from_shell() (a
+// real legacy source investigation, 2026-08-25, confirmed against the
+// real binary): a plain `usilic <path>` (or a pipe into it) typed at
+// a live usilic's own SHELL-mode prompt should switch THAT already-
+// running session's own display instead of opening a second,
+// independent one.
+//
+// Protocol (deliberately simpler than legacy's own mode-byte+cwd+name
+// binary format -- this port has no cross-version wire compatibility
+// to preserve): the rendezvous path is
+// /tmp/.usilic-shell/s.<uid>.<the shell's own pid> -- getppid() from
+// HERE, since THIS process's own parent IS the shell it was typed
+// into, the SAME pid the live usilic session already knows as
+// app.shell().childPid() -- both ends compute this independently from
+// already-shared values (uid, that one pid), no prior negotiation
+// needed, exactly mirroring from_shell()'s own <uid>.<getppid()> Unix
+// path.
+//   - No pipe (a plain path argument, or none at all -- meaning "the
+//     shell's own cwd", equivalent to a bare `usilic` typed at the
+//     prompt): writes the single resolved absolute path to a temp
+//     file, then rename()s it into place atomically, so the parent's
+//     own poll (Application::pollShellHandoff()) only ever sees a
+//     fully-written file, never a partial one.
+//   - A pipe (stdin isn't a tty, no positional argument -- matching
+//     legacy's own `!name && (!f||f=='p')` from_shell() branch
+//     exactly): binds a real AF_UNIX/SOCK_STREAM socket at that SAME
+//     path instead, listen()s, and blocks in accept() -- the parent
+//     connects as the CLIENT once it notices the path exists (see
+//     pollShellHandoff()'s own comment), and this process streams its
+//     own stdin through to it until EOF.
+// 2026-08-25 (a direct user request, ported into BOTH this binary AND
+// legacy's own tcb/src/tcb.c's main() -- see Shell::start()'s own
+// setenv("TCB_LIVE_SHELL",...) comment for the marker-SETTING half in
+// shell.cpp, and tcb.c's own identical check for legacy's side):
+// getenv("USILIC") alone only ever proves "I'm inside a live USILIC
+// SHELL specifically" -- typing the OTHER binary's name (legacy "U")
+// inside a live USILIC SHELL sees no such env var at all and falls
+// through to launching a confusing, genuinely independent full session
+// instead. TCB_LIVE_SHELL is a SECOND, shared, binary-agnostic env var
+// BOTH binaries' own Shell start sets unconditionally -- present but
+// USILIC specifically absent means "I'm in someone ELSE's live SHELL",
+// so this prints a real error instead of ever reaching normal startup,
+// exactly the "居場所がSHELLであり、かつ環境変数「USILIC」が設定されて
+// いない限り...「Invalid Terminal」となる" the user asked for. (An
+// earlier attempt used an unusual pty baud rate instead of a second
+// env var -- reverted, see Shell::start()'s own comment on why: a
+// real PTY capture found zsh's own interactive startup silently resets
+// it before the first prompt even appears.) A completely ordinary
+// standalone launch (a real terminal, never any usilic/U SHELL at all)
+// has neither env var set and reaches neither branch here, unaffected.
+void checkInvalidTerminalMarker() {
+  if (std::getenv("USILIC")) return;
+  if (!std::getenv("TCB_LIVE_SHELL")) return;
+  std::cerr << "usilic: Invalid Terminal\n";
+  std::exit(1);
+}
+
+// Returns true if a handoff was attempted at all (regardless of
+// success) -- main() returns immediately either way once
+// getenv("USILIC") says "your real work belongs to the parent, not
+// you": no normal Application/Display startup ever happens here.
+bool tryHandoffToParentShell(int argc, char **argv) {
+  if (!std::getenv("USILIC")) return false;
+
+  std::vector<std::string> positional;
+  for (int i = 1; i < argc; i++) {
+    std::string arg = argv[i];
+    if (arg == "-c" || arg == "-g") continue;
+    if (arg == "-u" || arg == "-i") {
+      while (i + 1 < argc && *argv[i + 1] &&
+             std::all_of(argv[i + 1], argv[i + 1] + std::strlen(argv[i + 1]),
+                         [](unsigned char c) { return std::isdigit(c); }))
+        i++;
+      continue;
+    }
+    positional.push_back(arg);
+  }
+
+  std::string handoffDir = "/tmp/.usilic-shell";
+  ::mkdir(handoffDir.c_str(), 0755);
+  std::string path =
+      handoffDir + "/s." + std::to_string(::getuid()) + "." + std::to_string(::getppid());
+
+  bool pipedStdin = positional.empty() && !::isatty(STDIN_FILENO);
+  if (pipedStdin) {
+    int sfd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sfd < 0) return true;
+    ::unlink(path.c_str());  // clears any stale rendezvous left by a crashed earlier attempt
+    sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    std::strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
+    if (::bind(sfd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0 || ::listen(sfd, 1) < 0) {
+      ::close(sfd);
+      ::unlink(path.c_str());
+      return true;
+    }
+    int client = ::accept(sfd, nullptr, nullptr);  // blocks until the parent notices and connects
+    ::close(sfd);
+    ::unlink(path.c_str());
+    if (client < 0) return true;
+    char buf[8192];
+    ssize_t n;
+    while ((n = ::read(STDIN_FILENO, buf, sizeof(buf))) > 0) {
+      ssize_t off = 0;
+      while (off < n) {
+        ssize_t w = ::write(client, buf + off, static_cast<std::size_t>(n - off));
+        if (w <= 0) { n = 0; break; }
+        off += w;
+      }
+    }
+    ::close(client);
+    return true;
+  }
+
+  std::string resolved;
+  if (!positional.empty()) {
+    resolved = std::filesystem::absolute(positional.front()).lexically_normal().string();
+  } else {
+    std::error_code ec;
+    resolved = std::filesystem::current_path(ec).string();
+  }
+  std::string tmpPath = path + ".tmp." + std::to_string(::getpid());
+  std::ofstream out(tmpPath, std::ios::binary);
+  if (out) {
+    out << resolved << "\n";
+    out.close();
+    ::rename(tmpPath.c_str(), path.c_str());
+  }
+  return true;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
+  checkInvalidTerminalMarker();
+  if (tryHandoffToParentShell(argc, argv)) return 0;
   loadScrollDebugLevelFromEnvironment();
 
   // -c/-g: temporary, hand-debugging convenience (see CLAUDE.md) --

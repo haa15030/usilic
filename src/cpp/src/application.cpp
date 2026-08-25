@@ -10,7 +10,12 @@
 #include <set>
 #include <sstream>
 #include <fcntl.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
 #include <unistd.h>
+
+#include <cstring>
 
 #include "child_process.hpp"
 #include "mode_line.hpp"
@@ -1986,23 +1991,30 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   // semantics needed here (used elsewhere for plain list navigation),
   // so ^P/^N end up needing no bespoke state of their own at all.
   if (byte == 0x10) {  // ^P
-    shell_.scrollback().moveUp();
+    // 2026-08-25 bug fix (a real, carefully-reproduced report: "③を
+    // 飛び越えて②へ" -- see Shell::historyBrowsing()'s own declaration
+    // comment for the full diagnosis): the FIRST ^P press from rest
+    // must land ON the current -- already correct -- newest entry
+    // instead of immediately moving PAST it, so this only calls
+    // moveUp() once ALREADY browsing; the first press just flips the
+    // (now independent, no-longer-index-derived) flag.
+    if (!shell_.historyBrowsing()) shell_.beginHistoryBrowsing();
+    else shell_.scrollback().moveUp();
     shell_.redrawPromptRow();  // moveUp() can blank commandLineRow() -- see its own comment
     moveDisplayCursorToShellHistoryLine();
     return true;
   }
   if (byte == 0x0e) {  // ^N
+    // No equivalent first-press special case needed here: resting
+    // (not browsing) already leaves scrollback_'s own cursorIndex_ at
+    // its floor for moveDown() (lines().size()-1), so an unconditional
+    // call already beeps correctly with nothing to move down INTO.
     shell_.scrollback().moveDown();
     shell_.redrawPromptRow();
     moveDisplayCursorToShellHistoryLine();
     return true;
   }
-  // !empty() guard: with no lines at all yet, lines().size()-1
-  // underflows to -1, which cursorIndex()'s default of 0 never equals
-  // -- falsely reading as "browsing" and indexing lines()[0] on an
-  // empty vector below.
-  bool browsingHistory = !shell_.scrollback().lines().empty() &&
-                          shell_.scrollback().cursorIndex() != static_cast<int>(shell_.scrollback().lines().size()) - 1;
+  bool browsingHistory = shell_.historyBrowsing();
   if (byte == kCarriageReturn) {
     if (browsingHistory) {
       // Ported from shell.c's own '\r' case: re-run the highlighted
@@ -2018,7 +2030,7 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
         shell_.commandLine().setText(*line.shellCommand);
         shell_.submitLine();
       } else {
-        shell_.scrollback().goToBottom();
+        shell_.exitHistoryBrowsing();
         shell_.redrawPromptRow();  // see the browsingHistory guard below's own comment
       }
       return true;
@@ -2035,11 +2047,12 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   // K_c case, which has no such guard either. redrawPromptRow() (not
   // just commandLine_.redraw(), which Tab/backspace/insertByte below
   // already call on their own) is needed here specifically because
-  // goToBottom() itself just ran a full scrollback_ redraw that can
-  // blank the prompt PREFIX text -- see redrawPromptRow()'s own
-  // comment for the full story (a real user report, 2026-08-02).
+  // exitHistoryBrowsing()'s own goToBottom() just ran a full
+  // scrollback_ redraw that can blank the prompt PREFIX text -- see
+  // redrawPromptRow()'s own comment for the full story (a real user
+  // report, 2026-08-02).
   if (browsingHistory && byte != kControlC) {
-    shell_.scrollback().goToBottom();
+    shell_.exitHistoryBrowsing();
     shell_.redrawPromptRow();
   }
   if (byte == 0x12) {  // ^R -- see startShellHistoryRecall()'s own comment
@@ -2149,10 +2162,15 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
 // redraw()'s OWN incidental moveCursor() calls last landed (a real
 // user report: "-gのSHELLでは...一瞬出て消えるパターン").
 void Application::moveDisplayCursorToShellHistoryLine() {
-  const auto &lines = shell_.scrollback().lines();
-  bool browsingHistory =
-      !lines.empty() && shell_.scrollback().cursorIndex() != static_cast<int>(lines.size()) - 1;
-  if (!browsingHistory) return;
+  // 2026-08-25 fix: see Shell::historyBrowsing()'s own declaration
+  // comment -- the OLD computed check here (cursorIndex() != the
+  // resting/newest index) meant the FIRST ^P press, which correctly
+  // now enters browsing mode WITHOUT moving cursorIndex_ (see
+  // Application's own ^P handler), still couldn't show the visible
+  // cursor on that newest line at all -- the STATE fix alone wasn't
+  // enough, since this is the ONE place that actually draws the
+  // "you're browsing here" feedback the user needs to see.
+  if (!shell_.historyBrowsing()) return;
   int row = shell_.scrollback().cursorDisplayRow();
   if (row >= 0) display_.setVisibleCursor(row, 0);
 }
@@ -2328,8 +2346,28 @@ bool Application::handleCommand(Command command) {
         // no-op here, checked first, rather than falling through to
         // returnToDirectory() below and revealing some OTHER
         // directory's listing that was never really "where this file
-        // came from".
-        if (fileMode_.isPagerMode()) return false;
+        // came from". EXCEPT (2026-08-25, a direct user follow-up
+        // report: "戻り値が無く^Gも利かない...戻り値も「SHELL」で
+        // あるべき") a SHELL-mode re-exec handoff (see
+        // Application::pollShellHandoff()'s own comment) DOES have a
+        // previous mode -- the live SHELL session it was typed into --
+        // so returning there via fileMode_.pagerReturnsToShell() is the
+        // one carve-out from the inert-^G rule above; mirrors
+        // ensureShellActive()'s own currentMode_/scrollback()/
+        // redrawPromptRow() tail exactly, minus the shellReturnMode_/
+        // shellReturnName_ bookkeeping (untouched since Shell mode was
+        // never actually left -- pollShellHandoff() only ever swapped
+        // currentMode_ away from it, so those already hold whatever
+        // they held before the handoff happened).
+        if (fileMode_.isPagerMode()) {
+          if (fileMode_.pagerReturnsToShell()) {
+            currentMode_ = ApplicationMode::Shell;
+            shell_.scrollback().redraw();
+            shell_.redrawPromptRow();
+            return true;
+          }
+          return false;
+        }
         // 2026-08-14 fix: see fileReturnMode_'s own declaration
         // comment -- a file reached via LOCATE returns to LOCATE's
         // own results list first (matching the user's own explicit
@@ -2590,6 +2628,18 @@ bool Application::handleCommand(Command command) {
       // Directory mode has its own confirmed-exit path (StartExit,
       // ^X^C) and doesn't want a bare 'q' to bypass it.
       if (currentMode_ == ApplicationMode::Directory) return false;
+      // 2026-08-25 (same user follow-up report as Command::Back's own
+      // File-mode branch above): a SHELL-handoff-launched pager must
+      // NOT kill the whole process on 'q' -- that would tear down the
+      // user's own live SHELL session, exactly the "looks like a brand
+      // new usilic process" symptom this entire feature exists to
+      // avoid. Returns to Shell instead, identically to ^G there.
+      if (currentMode_ == ApplicationMode::File && fileMode_.pagerReturnsToShell()) {
+        currentMode_ = ApplicationMode::Shell;
+        shell_.scrollback().redraw();
+        shell_.redrawPromptRow();
+        return true;
+      }
       requestImmediateExit();
       return true;
     case Command::ToggleScrollMode: {
@@ -6755,6 +6805,84 @@ void Application::pollPendingArchiveExtractShellRun() {
   pendingArchiveExtractShellRun_.reset();
   currentMode_ = returnMode;
   activeView().redraw();
+}
+
+bool Application::pollShellHandoff() {
+  if (currentMode_ != ApplicationMode::Shell || !shell_.alive()) return false;
+  std::string path = "/tmp/.usilic-shell/s." + std::to_string(::getuid()) + "." + std::to_string(shell_.childPid());
+  struct stat st;
+  if (::stat(path.c_str(), &st) != 0) return false;
+
+  if (S_ISSOCK(st.st_mode)) {
+    // Piped stdin (`ls -l | usilic` typed at the SHELL prompt): the
+    // CHILD is the socket server (see main.cpp's own
+    // tryHandoffToParentShell() comment) -- this side connects as the
+    // client and streams the piped bytes through fileMode_.loadStream()
+    // exactly the same lazy-loading path startPagerStdin() already
+    // uses for a real fd 0, just fed from this connected socket fd
+    // instead (::read() on either behaves identically). setSearchOrigin()
+    // AFTER loadStream() (which clears it, same as loadFile() does) --
+    // "" keeps the name field blank (a direct user request: "モード名は
+    // 無し"), "(stdin)" becomes the trailing2 badge, drawn in the SAME
+    // slot Directory's "(ls)"/Archive's "(tar)" occupy (a direct user
+    // request: "（ls）(tar)等と同じ位置に") -- see FileMode's own
+    // ModeLineFieldsProvider (pagerMode_ branch) for where this trailing2
+    // actually gets read back out.
+    int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return false;
+    sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    std::strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
+    if (::connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
+      ::close(fd);
+      return false;
+    }
+    currentMode_ = ApplicationMode::File;
+    fileReturnMode_ = ApplicationMode::Shell;
+    fileMode_.loadStream(fd, /*ownsFd=*/true, "", display_.rows() * 2);
+    fileMode_.setSearchOrigin("", "(stdin)");
+    fileMode_.setPagerReturnsToShell(true);  // see its own declaration comment: ^G/'q' return to Shell, not inert/exit
+    activeView().redraw();
+    return true;
+  }
+
+  // Plain path (directory or file), or no argument at all (meaning
+  // "the shell's own cwd" -- see tryHandoffToParentShell()'s own
+  // comment): a single line, written to a temp file and rename()d into
+  // place atomically by the child, so this read only ever sees a
+  // fully-written file, never a partial one.
+  std::ifstream in(path);
+  std::string resolved;
+  std::getline(in, resolved);
+  in.close();
+  ::unlink(path.c_str());
+  if (resolved.empty()) return false;
+
+  if (std::filesystem::is_directory(resolved)) {
+    currentMode_ = ApplicationMode::Directory;
+    return directoryMode_.enterDirectory(resolved, /*consultHistory=*/false);
+  }
+  // 2026-08-25 correction (a direct user follow-up, having re-checked
+  // the real legacy binary): a plain FILE argument does NOT need any
+  // pager machinery, SHELL-return plumbing, or the 5-digit/"SHELL"
+  // mode-line treatment at all -- "SHELLプロンプトでusilic起動した
+  // ときの引数の画面になればいいだけ...つまりはls画面で「.bashrc」を
+  // 選択した場合と同じ。モードをそこへ移せばいいだけ". So this uses
+  // fileMode_.loadFile() (the ordinary EAGER load, same call
+  // openSelectedEntry() makes for a plain Directory-listing Enter) and
+  // fileReturnMode_ = Directory, exactly the established convention --
+  // NOT startPagerFileList()'s lazy/streaming loadStream() path (that
+  // one stays reserved for the genuinely different standalone-CLI-
+  // launch and piped-stdin cases, see loadStream()'s own comment). ^G
+  // afterward reaches returnToDirectory(), whose own existing "follow
+  // the file's real parent directory" fix (see its own 2026-08-16
+  // comment) already re-enters the right containing directory on its
+  // own -- no extra directoryMode_ setup needed here at all.
+  if (!fileMode_.loadFile(resolved)) return false;
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;
+  activeView().redraw();  // one-time call outside the normal per-keypress redraw cycle, see startPagerFileList()'s own comment
+  return true;
 }
 
 // docs/HISTORY.md:1840 ("chown実行後のRM、MVではファイルが選べない...

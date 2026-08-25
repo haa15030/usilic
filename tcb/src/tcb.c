@@ -308,6 +308,27 @@ int main(int argc, char *argv[])
   *pathname = '\0';
   if (!getenv(ENV_VT) && tcgetattr(0, &otty) < 0) f.tcb |= 0x20;
   f.shell = getenv(ENV_PROG) != NULL;
+  /* 2026-08-25 (a direct user request, ported into BOTH this binary AND
+   * the C++ usilic port's own app/main.cpp checkInvalidTerminalMarker()
+   * -- see shell.c's start_shell() for the marker-SETTING half): the
+   * ENV_PROG env var above only ever proves "I'm inside a live SHELL of
+   * THIS SAME binary" -- typing the OTHER binary's name (the C++ port's
+   * own "usilic") inside a live U SHELL sees no such env var at all and
+   * falls through to launching a genuinely independent full session
+   * instead. TCB_LIVE_SHELL is a SECOND, shared, binary-agnostic marker
+   * set unconditionally by BOTH binaries' own shell-start code, checked
+   * by BOTH binaries' own main() alongside their own ENV_PROG/USILIC --
+   * present but THIS binary's own ENV_PROG absent means "I'm in the
+   * OTHER binary's live SHELL", print a real error instead of ever
+   * reaching normal startup. (An earlier attempt used an unusual pty
+   * baud rate instead -- reverted: a real PTY capture found zsh's own
+   * interactive startup silently resets it before the first prompt
+   * even appears; an env var, unlike termios state, is never touched
+   * by the shell itself at all.) */
+  if (!f.shell && getenv("TCB_LIVE_SHELL")) {
+    fprintf(stderr, "%s: Invalid Terminal\n", tcb);
+    exit(1);
+  }
   if (argc == 1) {
     if (f.shell)
       if (f.tcb & 0x20) from_shell(NULL, 0, 0, tmp);

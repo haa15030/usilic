@@ -30,33 +30,94 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
   // file's byte size plus its containing directory on the right.
   // Registered once here rather than re-set on every loadFile() call
   // since it's a live callback into currentFile_, not a snapshot.
-  view_.setModeLineFieldsProvider([this](int cursorIndex) -> ContentView::ModeLineFields {
+  view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     // pagerMode_ (2026-08-25, loadStream()'s own comment): a CLI pager
     // launch shows a genuinely different, simpler mode-line -- the
     // full path verbatim (or nothing at all, for stdin) as `name`, no
-    // directory trailing2 field at all, and the "usilic v1.5b"
-    // rightWatermark fallback (legacy's own disp_window() shows this
-    // whenever there's no "previous mode" text to put in that slot --
-    // exactly the pager-launch case, which has no previous mode; every
-    // OTHER File-mode entry below always has one, which is why
-    // rightWatermark stays empty there). name/no-trailing2/watermark
-    // confirmed directly against the real legacy binary (PTY capture
-    // of a pager-launched file). The position field and this trailing
-    // byte-count, however, are a direct 2026-08-25 follow-up request
-    // ("SHELL同様、行数を5桁とバイト数表示をよろしく") reusing Shell's
-    // own two additions verbatim (setUseFixedWidthPosition(true), set
-    // by loadStream() below -- see its own comment -- and a running
-    // byte-count-through-the-cursor-line total, same +1-per-line
-    // convention for the lost newline as Shell's own identical field)
-    // rather than replicating legacy's own pager mode-line exactly (no
-    // byte count at all there, confirmed by the same PTY capture) --
-    // an intentional, requested deviation, not an oversight.
+    // directory trailing2 field at all, and a rightWatermark fallback
+    // (legacy's own disp_window() shows this whenever there's no
+    // "previous mode" text to put in that slot; every OTHER File-mode
+    // entry below always has one, which is why rightWatermark stays
+    // empty there). name/no-trailing2/watermark confirmed directly
+    // against the real legacy binary (PTY capture of a pager-launched
+    // file). The position field and this trailing byte-count, however,
+    // are a direct 2026-08-25 follow-up request ("SHELL同様、行数を5桁
+    // とバイト数表示をよろしく") reusing Shell's own setUseFixedWidthPosition(true)
+    // setup (set by loadStream() below -- see its own comment) rather
+    // than replicating legacy's own pager mode-line exactly (no byte
+    // count at all there, confirmed by the same PTY capture) -- an
+    // intentional, requested deviation, not an oversight.
+    //
+    // 2026-08-25 correction (a direct user follow-up, having re-checked
+    // the real legacy binary): pagerMode_/this whole branch is reached
+    // ONLY by a genuine CLI pager launch (main.cpp's own positional-
+    // file-argument/piped-stdin startup) or a SHELL-handoff PIPE
+    // (Application::pollShellHandoff()'s own socket branch) -- a
+    // SHELL-handoff of a plain FILE argument no longer reaches here at
+    // all (pollShellHandoff() now calls the ordinary fileMode_.loadFile()
+    // instead of loadStream(), so it falls through to the plain
+    // Directory-reached-file branch below, unchanged, matching "SHELL
+    // プロンプトでusilic起動したときの引数の画面になればいいだけ...
+    // つまりはls画面で「.bashrc」を選択した場合と同じ").
     if (pagerMode_) {
-      std::size_t bytes = 0;
-      const auto &contentLines = view_.lines();
-      for (int i = 0; i <= cursorIndex && i < static_cast<int>(contentLines.size()); i++)
-        bytes += contentLines[i].text.size() + 1;
-      return {currentFile_, std::to_string(bytes), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"usilic v1.5b"};
+      // 2026-08-25 correction (a direct user follow-up): this field
+      // used to sum displayed-line text through the CURSOR's line,
+      // mirroring Shell's own identical field -- but Shell's version
+      // only looks that way because its cursor always sits at the
+      // newest line as output streams in. This port's own pager cursor
+      // can sit anywhere (e.g. after paging down then back up), and the
+      // settled spec has nothing to do with the cursor at all: "実際に
+      // 読み込まれたバイト数としたい...ページ戻しが起きたとしても
+      // すでに読み込んだ分量としてのバイト数は変わらない" -- the raw
+      // total streamBytesRead_ has actually pulled from the stream so
+      // far (see its own declaration comment), monotonically
+      // increasing regardless of scroll position.
+      std::size_t bytes = streamBytesRead_;
+      // pagerReturnsToShell_ (2026-08-25, its own declaration comment):
+      // now ONLY ever true for a SHELL-handoff PIPE (see above) -- a
+      // standalone CLI pager launch (file or stdin, from a real
+      // terminal) has no previous mode at all, so rightWatermark stays
+      // "usilic v1.5b" (legacy's own no-previous-mode fallback) exactly
+      // as before. A SHELL-handoff pipe DOES have one -- the live SHELL
+      // session -- but a direct user correction rejected reusing
+      // rightWatermark's BOLD styling for that ("戻り値がハイライト
+      // 表示の「SHELL」となる...でよろしく" -- HIGHLIGHTED/reverse-video,
+      // not bold): trailing3 (see its own declaration comment; already
+      // exactly "a third independently-highlighted trailing segment",
+      // just previously only ever used by ArchiveMode) is the existing
+      // mechanism that actually renders that way, so this uses THAT
+      // instead, leaving rightWatermark empty here -- matching every
+      // OTHER File-mode entry's "has a previous mode, so no watermark"
+      // convention (see this whole comment's own opening paragraph).
+      //
+      // searchOriginDetail_ (2026-08-25, Application::pollShellHandoff()'s
+      // own comment): empty for an ordinary CLI pager launch (unaffected,
+      // no trailing2 shown there, matching the real legacy PTY capture);
+      // set to "(stdin)" specifically for a SHELL-mode piped handoff, in
+      // the same trailing2 slot Directory's "(ls)"/Archive's "(tar)"
+      // badges occupy -- a direct user request, UNCHANGED by the above
+      // correction (only the return-value display itself moved).
+      ContentView::ModeLineFields fields;
+      fields.name = currentFile_;
+      fields.trailing = std::to_string(bytes);
+      fields.rightWatermark = pagerReturnsToShell_ ? "" : "usilic v1.5b";
+      fields.trailing2 = searchOriginDetail_;
+      fields.trailing3 = pagerReturnsToShell_ ? "SHELL" : "";
+      // 2026-08-25 fix (a direct user report citing HISTORY.md:9462,
+      // "基本的に右端まで埋まっていないモードラインは全部不良"): trailing3
+      // ALREADY has fillTrailingToEdge support (see its own declaration
+      // comment, added earlier for ArchiveMode) -- just never turned on
+      // here, so "SHELL" stopped short of the row's right edge instead
+      // of being padded like every other mode's own last field. Scoped
+      // to pagerReturnsToShell_ specifically (not unconditional): the
+      // standalone-launch case has no trailing3 at all and relies on
+      // rightWatermark's own separate moveCursor()-to-the-edge placement
+      // instead, which already reaches the edge on its own -- turning
+      // this on there too would newly reverse-video-fill the PLAIN gap
+      // between the byte count and "usilic v1.5b" that was never part of
+      // this report and never confirmed as wanted.
+      fields.fillTrailingToEdge = pagerReturnsToShell_;
+      return fields;
     }
     if (currentFile_.empty()) return {};
     std::filesystem::path path(currentFile_);
@@ -151,6 +212,7 @@ bool FileMode::loadFile(const std::string &path) {
   view_.setCursorHighlightEnabled(false);
   closeStream();  // defensive: an ordinary eager load must never leave a stale stream dangling
   pagerMode_ = false;
+  pagerReturnsToShell_ = false;  // defensive, see its own declaration comment; unused while pagerMode_ is false anyway
   view_.setUseFixedWidthPosition(false);  // see loadStream()'s own comment; every other File-mode entry stays plain
 
   view_.setLines(readAndWrap(path));
@@ -255,6 +317,7 @@ void FileMode::readMoreIntoPipe(int targetLineCount) {
       break;
     }
     streamPipe_->feed(std::string(buf, static_cast<std::size_t>(n)));
+    streamBytesRead_ += static_cast<std::size_t>(n);  // see its own declaration comment: the settled "actual bytes read" spec
   }
 }
 
@@ -269,6 +332,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   closeStream();
   view_.setCursorHighlightEnabled(false);
   pagerMode_ = true;
+  pagerReturnsToShell_ = false;  // see its own declaration comment; pollShellHandoff() flips this after this call
   // 2026-08-25 (a direct user request: "SHELL同様、行数を5桁とバイト
   // 数表示をよろしく") -- reuses Shell's own identical setup
   // (Application::startShell()'s own setUseFixedWidthPosition(true)
@@ -279,6 +343,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   streamFd_ = fd;
   streamOwnsFd_ = ownsFd;
   streamAtEof_ = false;
+  streamBytesRead_ = 0;  // see its own declaration comment -- a fresh stream starts this back at 0
   streamPipe_ = std::make_unique<PipeBuffer>(encoding_, width_, 256L * 1024 * 1024);
   currentFile_ = displayName;
   searchOriginLabel_.clear();
@@ -286,6 +351,30 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   if (!displayName.empty()) history_.pushRecent(RingCategory::RecentFile, displayName);
   readMoreIntoPipe(std::max(initialLineBudget, 1));
   view_.setLines(convertPipeLines());
+  // 2026-08-25 bug fix (a real report): ContentView::setLines() only
+  // CLAMPS the previous cursorIndex_ into the new content's bounds --
+  // it does NOT reset it to 0 (correct for callers that WANT to
+  // preserve a cursor position across a same-content refresh, see its
+  // own comment) -- so a SECOND loadStream() call (e.g. a fresh
+  // `cat x|usilic` typed again at the SAME live SHELL prompt) silently
+  // inherited whatever cursorIndex_ the FIRST session's own navigation
+  // left behind. A real repro: session 1 pressed ESC-> (go to bottom)
+  // on a 119-line stream, landing cursorIndex_ at 118; session 2's own
+  // stream only had 51 lines, so THAT inherited 118 got clamped down
+  // to 50 -- the new content's own last line -- instead of starting
+  // at 0, making a brand-new (stdin) session open already scrolled to
+  // its own end ("冒頭行から始まらない"). loadFile() above already
+  // gets this right via its own explicit setCursorIndex() call
+  // (history-restored or 0) -- loadStream() never had the equivalent.
+  // Every pager launch (standalone CLI, or a SHELL-handoff pipe) is
+  // unconditionally a fresh start, matching the CUI's own convention
+  // and the direct principle established for (stdin) specifically:
+  // "常時真っ新から始まる" -- so this is always 0, never a restored
+  // History position (pager sessions never save/restore cursor
+  // position via History at all -- see loadFile()'s own currentFile_-
+  // keyed lookup, which never applies here since currentFile_ is
+  // either a throwaway CLI path or permanently empty for stdin).
+  view_.setCursorIndex(0);
   return true;
 }
 
