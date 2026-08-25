@@ -14,6 +14,18 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
   // ContentView::setMarkedPredicate()'s own comment for the real report
   // this fixes (marking previously had zero visual feedback at all).
   view_.setMarkedPredicate([this](int index) { return isMarked(index); });
+  // Initial (not CP/MV/RM-armed) state: marks render Underline, kept
+  // distinct from the cursor row's own ordinary Standout -- see
+  // ContentView::setMarkedRowUsesUnderline()'s own comment for the real
+  // report this fixes ('['-marking a run of entries leaves the cursor
+  // resting one row past the last one actually marked, and that resting
+  // row used to read as "also marked" purely because it shared the same
+  // Standout box). Application::startCopyPrompt()/startMovePrompt()/
+  // startRemovePrompt() flip this back to false (and
+  // setCursorRowAlsoHighlighted() to false) once armed, matching
+  // legacy's own reference screenshot for THAT screen instead; the
+  // return-to-Directory paths flip both back to this initial pair.
+  view_.setMarkedRowUsesUnderline(true);
   // Mode-line fields, ported from disp_window()'s own field layout for
   // the T_dir/file-selector case (name0[i]=='/' && *prev0==K_z keeps
   // the whole absolute path as-is, see its comment): the current

@@ -5,8 +5,11 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <limits>
 #include <set>
 #include <sstream>
+#include <fcntl.h>
 #include <unistd.h>
 
 #include "child_process.hpp"
@@ -263,8 +266,8 @@ const KeyTableEntry kKeyTable[] = {
     {"^space", "Toggle mark (CP/MV/RM/ARC)", {0x80}},
     {"^R", "Toggle chronological HISTORY view (current list browser)", {0x12}},
     {"^L", "Redraw screen", {0x0c}},
-    {"^T", "TCB banner", {0x14}},
-    {"q", "Exit tcb (pager)", {'q'}},
+    {"^T", "USILIC banner", {0x14}},
+    {"q", "Exit usilic (pager)", {'q'}},
     // Macros (usilicrc M-0..M-7, see this table's own comment above)
     {";", "Back, cursor up, select (M-0)", {kControlG, 0x10, kCarriageReturn}, true},
     {":", "Back, cursor down, select (M-1)", {kControlG, 0x0e, kCarriageReturn}, true},
@@ -290,9 +293,17 @@ const KeyTableEntry kKeyTable[] = {
     // -- the same OBSERVABLE macro behavior the reference demo showed,
     // achieved without reconstructing legacy's context-sensitive Enter.
     // No longer isMacro (a real single-key binding now, not a
-    // synthesized multi-byte replay).
-    {",", "Mark current entry, then cursor up (CP/MV/RM/ARC)", {','}},
-    {".", "Mark current entry, then cursor down (CP/MV/RM/ARC)", {'.'}},
+    // synthesized multi-byte replay). 2026-08-23 (docs/CHANGES.md item
+    // 415, see Command::ToggleMark's own comment for the full story):
+    // '.' itself was repurposed to a plain toggle with no cursor move,
+    // and the mark-then-advance/retreat pair this comment block
+    // originally described moved from ','/'.' to '['/']' -- these
+    // three entries (below) were updated to match; this history
+    // comment is left as-is above since it still explains *why* '.'
+    // exists as a real binding at all, just not its current mapping.
+    {".", "Toggle mark on current entry, no cursor move (CP/MV/RM/PROGRAM/ARC)", {'.'}},
+    {"[", "Mark current entry, then cursor up (CP/MV/RM/PROGRAM/ARC)", {'['}},
+    {"]", "Mark current entry, then cursor down (CP/MV/RM/PROGRAM/ARC)", {']'}},
     {"<", "Select, back, cursor up, select (M-6)", {kCarriageReturn, kControlG, 0x10, kCarriageReturn}, true},
     {">", "Select, back, cursor down, select (M-7)", {kCarriageReturn, kControlG, 0x0e, kCarriageReturn}, true},
     // ESC-leader: "^[" (not the spelled-out word "ESC"), matching
@@ -1209,6 +1220,73 @@ bool Application::start(const std::string &directory, bool consultHistory) {
   return directoryMode_.enterDirectory(directory, consultHistory);
 }
 
+bool Application::startPagerFileList(const std::vector<std::string> &paths) {
+  if (paths.empty()) return false;
+  // ::open() rather than FileMode::loadFile() (2026-08-25): a CLI
+  // pager launch loads lazily -- see FileMode::loadStream()'s own
+  // comment -- so this hands loadStream() an already-open fd instead
+  // of eagerly reading the whole file the way loadFile() does.
+  int fd = ::open(paths.front().c_str(), O_RDONLY);
+  if (fd < 0) return false;
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;  // unused while fileMode_.hasActiveStream() (Back is a no-op then,
+                                                  // see its own handleCommand() branch), kept for consistency
+  fileMode_.loadStream(fd, /*ownsFd=*/true, paths.front(), display_.rows() * 2);
+  pagerFileList_ = paths;
+  pagerFileIndex_ = 0;
+  // Unlike start()'s own DirectoryMode::enterDirectory() (which redraws
+  // itself), FileMode::loadStream()/loadFile() don't -- every OTHER
+  // caller reaches them from within a keypress's own handleCommand(),
+  // whose surrounding main-loop iteration already redraws once
+  // afterward regardless. This is main.cpp's own ONE-TIME startup call,
+  // outside that loop entirely, so nothing would ever paint the first
+  // frame without this explicit call (2026-08-25, a real PTY capture
+  // caught exactly that: the loaded file's content and mode-line were
+  // both correct in memory, but the terminal kept showing whatever
+  // blank initial frame TerminalDisplay's own setup left behind).
+  activeView().redraw();
+  return true;
+}
+
+bool Application::startPagerStdin() {
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;
+  pagerFileList_.clear();
+  pagerFileIndex_ = 0;
+  // fd 0 itself, NOT owned (closing it mid-process is not this
+  // class's business) -- see FileMode::loadStream()'s own comment on
+  // why this never conflicts with keyboard input (KeyInput reads from
+  // a separately-opened "/dev/tty").  No displayName (legacy shows a
+  // blank name field for a piped source, confirmed via PTY capture).
+  bool ok = fileMode_.loadStream(0, /*ownsFd=*/false, "", display_.rows() * 2);
+  activeView().redraw();  // see startPagerFileList()'s own comment on why this is needed here
+  return ok;
+}
+
+bool Application::navigateToPagerFile(int newIndex) {
+  if (currentMode_ != ApplicationMode::File) return false;
+  if (newIndex < 0 || newIndex >= static_cast<int>(pagerFileList_.size())) return false;
+  if (newIndex == pagerFileIndex_) return false;
+  // Same "leaving a file" bookkeeping every OTHER File-mode exit does
+  // (goBack(), JumpNext/Previous's own Back step, etc.) -- see
+  // FileMode::saveCursorPosition()'s own comment.
+  fileMode_.saveCursorPosition();
+  int fd = ::open(pagerFileList_[newIndex].c_str(), O_RDONLY);
+  if (fd < 0) return false;
+  fileMode_.loadStream(fd, /*ownsFd=*/true, pagerFileList_[newIndex], display_.rows() * 2);
+  pagerFileIndex_ = newIndex;
+  // 2026-08-25 bug fix: unlike ContentView's own move/scroll methods
+  // (which redraw() themselves internally), FileMode::loadStream()/
+  // loadFile() don't -- a real PTY capture found this specific path
+  // (n/p/x/f/'['/']' while already viewing a pager file) silently
+  // updated fileMode_'s own internal state (confirmed via direct
+  // inspection: currentFile() DID change) with NO visible screen
+  // change at all, since nothing else in this call chain happened to
+  // trigger one either.
+  activeView().redraw();
+  return true;
+}
+
 // Ported from get_m()'s switch(m), cross-checked directly against
 // usilicrc's own K-? default bindings (2026-07-31 correction -- an
 // earlier version of this comment claimed 'j'/'k' aliased ^N/^P into
@@ -1305,6 +1383,14 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::ShowTcbBanner;
     case 'q':  // M_quit -- usilicrc scopes this to pager contexts; see handleCommand()'s own gate
       return Command::QuitPager;
+    case 'n':  // see Command::PagerNextFile's own comment
+      return Command::PagerNextFile;
+    case 'p':
+      return Command::PagerPreviousFile;
+    case 'x':
+      return Command::PagerFirstFile;
+    case 'f':
+      return Command::PagerLastFile;
     default:
       return Command::None;
   }
@@ -2129,6 +2215,28 @@ bool Application::handleCommand(Command command) {
   // this again via executeEdit()/reportEditError()) still shows
   // its OWN message afterward, unaffected.
   directoryMode_.clearEditError();
+  // 2026-08-25 (see FileMode::ensureLoadedThrough()'s own comment): a
+  // CLI pager-launched file/stdin stream only ever has enough content
+  // loaded to satisfy scrolling up to now -- topping it back up to
+  // roughly two screens past the current viewport's own top, before
+  // EVERY command (not just movement ones specifically -- a no-op cost
+  // when nothing new is actually needed, see ensureLoadedThrough()'s
+  // own early "already have enough" return), keeps ordinary forward
+  // scrolling (MoveDown/ScrollLineDown/PageDown/GoToBottom alike, and
+  // any future command that reads further) from ever visibly
+  // outrunning what's been read so far. hasActiveStream() is false for
+  // every OTHER File-mode entry point (an ordinary loadFile()-opened
+  // file already has everything), so this is inert there.
+  if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
+    // GoToBottom needs the WHOLE remaining stream read through to its
+    // real EOF first (same as `less`'s own G command on a still-
+    // growing file/pipe: it blocks until the source actually ends) --
+    // otherwise "bottom" would just mean "wherever loading happened to
+    // stop," not the stream's true end.
+    int target = command == Command::GoToBottom ? std::numeric_limits<int>::max() - 1
+                                                  : activeView().topIndex() + display_.rows() * 2;
+    fileMode_.ensureLoadedThrough(target);
+  }
   switch (command) {
     // setHoverIndex(nullopt) BEFORE each move, not after (2026-08-05
     // fix): a real user report -- after resting the mouse over a row
@@ -2210,6 +2318,18 @@ bool Application::handleCommand(Command command) {
       }
       if (currentMode_ == ApplicationMode::Grep) return returnFromGrep();
       if (currentMode_ == ApplicationMode::File) {
+        // 2026-08-25: a CLI pager-launched file/stdin (see
+        // startPagerFileList()/startPagerStdin()'s own comments) has
+        // no Directory (or any other mode) to fall back into at all --
+        // confirmed directly against the real legacy binary (PTY
+        // capture): pressing ^G there produces no visible change
+        // whatsoever, matching "この時はKEYで表示されるモードのみ
+        // 使用できます" (HELP.jp's own Introduction chapter). A plain
+        // no-op here, checked first, rather than falling through to
+        // returnToDirectory() below and revealing some OTHER
+        // directory's listing that was never really "where this file
+        // came from".
+        if (fileMode_.isPagerMode()) return false;
         // 2026-08-14 fix: see fileReturnMode_'s own declaration
         // comment -- a file reached via LOCATE returns to LOCATE's
         // own results list first (matching the user's own explicit
@@ -2311,11 +2431,26 @@ bool Application::handleCommand(Command command) {
     case Command::ToggleMark:
       return toggleMark();
     case Command::MarkAndAdvance:
+      // Doubles as PagerNextFile while a pager file list is active in
+      // File mode -- see Command::PagerNextFile's own comment. Checked
+      // first since MarkAndAdvance's own toggleMark()/MoveDown pair is
+      // Directory/Archive-only anyway (toggleMark() itself already
+      // gates on that, see its own body) and would just no-op there.
+      if (currentMode_ == ApplicationMode::File) return navigateToPagerFile(pagerFileIndex_ + 1);
       if (!toggleMark()) return false;
       return handleCommand(Command::MoveDown);
     case Command::MarkAndRetreat:
+      if (currentMode_ == ApplicationMode::File) return navigateToPagerFile(pagerFileIndex_ - 1);
       if (!toggleMark()) return false;
       return handleCommand(Command::MoveUp);
+    case Command::PagerNextFile:
+      return navigateToPagerFile(pagerFileIndex_ + 1);
+    case Command::PagerPreviousFile:
+      return navigateToPagerFile(pagerFileIndex_ - 1);
+    case Command::PagerFirstFile:
+      return navigateToPagerFile(0);
+    case Command::PagerLastFile:
+      return navigateToPagerFile(static_cast<int>(pagerFileList_.size()) - 1);
     case Command::QuickLook:
       return executeQuickLook();
     case Command::StartCopy:
@@ -4269,6 +4404,10 @@ bool Application::startCopyPrompt() {
   // setCursorRowAlsoHighlighted()'s own comment (=ed reference: legacy
   // shows none at all here, until something is actually marked).
   directoryView_.setCursorRowAlsoHighlighted(false);
+  // Armed screen keeps Standout-for-marks (matches the =ed reference) --
+  // see ContentView::setMarkedRowUsesUnderline()'s own comment for why
+  // this is the one screen that stays on the OLD scheme.
+  directoryView_.setMarkedRowUsesUnderline(false);
   directoryView_.redraw();  // paints the "CP" label now -- see setPendingOperationLabel()'s own comment
   return true;
 }
@@ -4278,6 +4417,7 @@ bool Application::startMovePrompt() {
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::MoveDestination, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("MV");
   directoryView_.setCursorRowAlsoHighlighted(false);
+  directoryView_.setMarkedRowUsesUnderline(false);
   directoryView_.redraw();
   return true;
 }
@@ -4292,6 +4432,7 @@ bool Application::startRemovePrompt() {
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::RemoveConfirm, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("RM");
   directoryView_.setCursorRowAlsoHighlighted(false);
+  directoryView_.setMarkedRowUsesUnderline(false);
   directoryView_.redraw();
   return true;
 }
@@ -4326,6 +4467,7 @@ bool Application::startRemovePrompt() {
 bool Application::cancelPendingCpMvRm() {
   pendingCpMvRm_.reset();
   directoryView_.setCursorRowAlsoHighlighted(true);
+  directoryView_.setMarkedRowUsesUnderline(true);
   directoryMode_.refresh();
   return true;
 }
@@ -4345,6 +4487,7 @@ bool Application::startDestinationPrompt() {
   pendingCpMvRm_.reset();
   directoryMode_.clearPendingOperationLabel();
   directoryView_.setCursorRowAlsoHighlighted(true);
+  directoryView_.setMarkedRowUsesUnderline(true);
   if (pending.directory != directoryMode_.currentDirectory() || directoryMode_.targetEntries().empty()) {
     directoryView_.redraw();  // paints the label's removal now, matching startCopyPrompt()'s own redraw()
     return false;
@@ -4882,28 +5025,49 @@ bool Application::startManList() {
 // deliberately narrower than that function's full set (ListBrowser/
 // Locate) since those weren't part of what was tested/requested here.
 bool Application::startProgramPrompt() {
-  std::string sourceFile;
-  if (currentMode_ == ApplicationMode::Directory) {
-    const DirectoryEntry *entry = directoryMode_.selectedEntry();
-    if (entry && !entry->isDirectory) {
-      sourceFile = directoryMode_.currentDirectory();
-      if (!sourceFile.empty() && sourceFile.back() != '/') sourceFile += '/';
-      sourceFile += entry->name;
-    }
-  } else if (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut ||
-             currentMode_ == ApplicationMode::CutContent) {
-    sourceFile = fileMode_.currentFile();
-  }
-
   std::string seed;
   bool cursorAtStart = false;
   programPromptDirectory_.clear();
-  if (!sourceFile.empty()) {
-    std::filesystem::path path(sourceFile);
-    programPromptDirectory_ = path.parent_path().string();
-    seed = path.filename().string();
-    cursorAtStart = true;
+
+  if (currentMode_ == ApplicationMode::Directory) {
+    // Marked entries (targetEntries(), same source CP/MV/RM's own
+    // collectTargetPaths() reads) take priority over the single
+    // cursor entry -- 2026-08-25, a direct user request tying this
+    // pre-fill into the same dired-style marking workflow ('.'/'['/
+    // ']') already wired up for CP/MV/RM. All marks live in the SAME
+    // listing (markedIndices_ is cleared on enterDirectory()), so one
+    // shared directory for all of them is always correct. Directories
+    // are filtered out, matching the pre-existing single-entry
+    // behavior below (an arbitrary PROGRAM command on a directory
+    // isn't a meaningful pre-fill). The single-name case is kept
+    // BYTE-IDENTICAL to the pre-2026-08-25 behavior (bare, unquoted
+    // filename -- see the "bare name, not the full path" tests) by
+    // special-casing it separately from the multi-name join below,
+    // which needs shellQuoteArgv() so a marked name containing a
+    // space can't merge with its neighbor.
+    std::vector<std::string> names;
+    for (const auto &entry : directoryMode_.targetEntries())
+      if (!entry.isDirectory) names.push_back(entry.name);
+    if (names.size() == 1) {
+      programPromptDirectory_ = directoryMode_.currentDirectory();
+      seed = names.front();
+      cursorAtStart = true;
+    } else if (names.size() > 1) {
+      programPromptDirectory_ = directoryMode_.currentDirectory();
+      seed = shellQuoteArgv(names);
+      cursorAtStart = true;
+    }
+  } else if (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut ||
+             currentMode_ == ApplicationMode::CutContent) {
+    std::string sourceFile = fileMode_.currentFile();
+    if (!sourceFile.empty()) {
+      std::filesystem::path path(sourceFile);
+      programPromptDirectory_ = path.parent_path().string();
+      seed = path.filename().string();
+      cursorAtStart = true;
+    }
   }
+
   activatePrompt(PromptKind::ProgramCommand, seed, "", cursorAtStart);
   return true;
 }
@@ -6323,26 +6487,40 @@ bool Application::executeProgram(const std::string &command) {
 // conflict to resolve here, just a scope this port chose not to grow
 // into.
 bool Application::executeQuickLook() {
-  std::string path;
+  std::vector<std::string> paths;
   if (currentMode_ == ApplicationMode::Directory) {
-    const DirectoryEntry *entry = directoryMode_.selectedEntry();
-    if (!entry) return false;
-    path = directoryMode_.currentDirectory();
-    if (!path.empty() && path.back() != '/') path += '/';
-    path += entry->name;
+    // Marked entries (targetEntries(), the same source CP/MV/RM/
+    // PROGRAM's own target-gathering reads -- see collectTargetPaths()/
+    // startProgramPrompt()) take priority over the single cursor entry.
+    // 2026-08-25, tying Quick Look into the same dired-style marking
+    // workflow ('.'/'['/']'). targetEntries() itself falls back to just
+    // the lone cursor entry when nothing is marked, so the pre-existing
+    // single-file behavior (and the tests below) is unchanged whenever
+    // there's no mark. `qlmanage -p` accepts multiple paths natively
+    // (shows them as a browsable gallery), so no further branching is
+    // needed once `paths` is built.
+    std::string dir = directoryMode_.currentDirectory();
+    for (const auto &entry : directoryMode_.targetEntries()) {
+      std::string p = dir;
+      if (!p.empty() && p.back() != '/') p += '/';
+      p += entry.name;
+      paths.push_back(p);
+    }
+    if (paths.empty()) return false;
   } else if (currentMode_ == ApplicationMode::Locate) {
     const std::string *result = locateMode_.selectedResult();
     if (!result) return false;
-    path = *result;
+    paths.push_back(*result);
   } else if (currentMode_ == ApplicationMode::Grep && grepReturnMode_ == ApplicationMode::Directory) {
     const GrepMatch *match = grepMode_.selectedMatch();
     const auto &entries = directoryMode_.entries();
     if (!match || match->sourceLineIndex < 0 ||
         static_cast<std::size_t>(match->sourceLineIndex) >= entries.size())
       return false;
-    path = directoryMode_.currentDirectory();
-    if (!path.empty() && path.back() != '/') path += '/';
-    path += entries[match->sourceLineIndex].name;
+    std::string p = directoryMode_.currentDirectory();
+    if (!p.empty() && p.back() != '/') p += '/';
+    p += entries[match->sourceLineIndex].name;
+    paths.push_back(p);
   } else {
     return false;
   }
@@ -6350,14 +6528,19 @@ bool Application::executeQuickLook() {
   // Trims a directory's own trailing "/" (DirectoryEntry::name's own
   // convention) before splitting, so the recorded label is "cpmv_a"-
   // style basename, not empty (std::filesystem::path::filename() on a
-  // trailing-slash path returns "").
-  std::string trimmed = path;
-  if (!trimmed.empty() && trimmed.back() == '/') trimmed.pop_back();
-  std::size_t slash = trimmed.find_last_of('/');
-  std::string label = (slash == std::string::npos) ? trimmed : trimmed.substr(slash + 1);
+  // trailing-slash path returns ""). Single-path label format
+  // ("qlmanage -p <basename>") is unchanged from before; multi-path
+  // just appends each further basename, space-separated.
+  std::string label = "qlmanage -p";
+  for (const auto &path : paths) {
+    std::string trimmed = path;
+    if (!trimmed.empty() && trimmed.back() == '/') trimmed.pop_back();
+    std::size_t slash = trimmed.find_last_of('/');
+    label += " " + (slash == std::string::npos ? trimmed : trimmed.substr(slash + 1));
+  }
 
   display_.flush();
-  programMode_.run("qlmanage -p " + shellQuoteArg(path), "qlmanage -p " + label);
+  programMode_.run("qlmanage -p " + shellQuoteArgv(paths), label);
   activeView().redraw();
   return true;
 }

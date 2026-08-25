@@ -5,7 +5,33 @@
 # file, and the (uppercased) environment variable names ($PROGNAME,
 # ${PROGNAME}CHARSET, ${PROGNAME}VT). Source files/Makefile build targets
 # still say "tcb" internally -- only the runtime-visible name changes.
-PROGNAME=usilic
+#
+# 2026-08-25: "U" (not "usilic") -- a direct user request to install
+# this legacy build ALONGSIDE the C++ port (src/cpp/), which now owns
+# the "usilic" name (see its own Makefile's INSTALL_NAME). Renaming
+# PROGNAME here is the single point that keeps everything consistent:
+# the installed binary becomes $PREFIX/bin/U, its own rc file
+# $PREFIX/lib/U/Urc, its runtime dirs ~/.U//tmp/.U, and its env vars
+# UCHARSET/UVT/U (previously USILICCHARSET/USILICVT/USILIC) -- all
+# still "this same tcb/usilic program", just addressed as "U" now that
+# a newer implementation has taken over the primary name.
+PROGNAME=U
+
+# 2026-08-25 (a direct user request): a single PREFIX controls every
+# installed path below (BIN/LIB/MAN, and this script's own generated
+# install.sh) -- override by exporting PREFIX before running this
+# script, e.g. `PREFIX=/usr/local ./config.sh` for the traditional
+# system-wide location (needs sudo for the install.sh step then).
+# Defaults to ~/.local (XDG-ish per-user install, no sudo needed) --
+# see src/cpp/Makefile's own PREFIX for the C++ port's identical
+# convention. Baked into config.h's compile-time LIB constant below,
+# so the BUILT BINARY's own rc/HELP fallback lookup only matches
+# reality if install.sh (generated further down) is later run with
+# this SAME PREFIX -- the generated script's own default already
+# matches this run's PREFIX for exactly that reason; only an
+# install.sh-time override needs to stay consistent with whatever
+# PREFIX config.sh itself last used.
+PREFIX=${PREFIX:-$HOME/.local}
 
 # This script lives at src/config.sh; the legacy C source it configures
 # was archived to tcb/src/ (a sibling of src/) when the repo was
@@ -35,8 +61,7 @@ if [ `uname` = Linux ]; then	# Linux
 #    else
 #	JMAN=/usr/man/ja_JP.ujis/man1
 #    fi
-    USR_DIR=/usr
-    USR_DIR=/usr/local
+    USR_DIR=$PREFIX
 #    USR_DIR=/tmp/usr/local
 #    MAN=/tmp/usr/man/man1
     PERM='-m 644'
@@ -49,8 +74,7 @@ else
         exit 0
     else
 	if [ `uname` = Darwin ]; then	# macOS
-	    USR_DIR=/usr/local
-	    MAN=/usr/local/share/man/man1
+	    USR_DIR=$PREFIX
 	    PERM='-m 644'
 	    echo '# Makefile for macOS (Darwin) version' > .config
 	    echo 'LIBS=	-lncurses'>> .config
@@ -73,7 +97,7 @@ else
 	    DU="du -a -A"
 	else
 	if [ `uname` = CYGWIN_98-4.10 ]; then	# cygwin
-	    USR_DIR=/usr/local
+	    USR_DIR=$PREFIX
 	    MAN=/usr/man/man1
 	    PERM='-m 644'
 	    echo 'LIBS= -lncurses'>> .config
@@ -220,27 +244,38 @@ else
 fi
 
 cat > install.sh <<EOF
+# 2026-08-25: PREFIX (a shell variable, not a positional \$1 argument
+# prepended to already-resolved paths, per a direct user request)
+# defaults to THIS run's own $PREFIX -- the exact value config.sh just
+# baked into the BUILT BINARY's own compile-time rc/HELP fallback path
+# (config.h's LIB constant), so running this script with no override
+# always matches what the binary itself will look for. Override with
+# e.g. \`PREFIX=/usr/local ./install.sh\` only if you ALSO re-ran
+# config.sh with that same PREFIX first -- an install.sh-only override
+# relocates where files are copied to, not where the already-built
+# binary looks for them.
+PREFIX=\${PREFIX:-$PREFIX}
 cd $CSRC; make; cd -
 echo 'Installing $PROGNAME:'
-mkdir -p \$1$BIN
-mkdir -p \$1$LIB
-mkdir -p \$1$MAN
-echo "install $COPY -m 755 $CSRC/$PROGNAME \$1$BIN/$PROGNAME"
-install $COPY -m 755 $CSRC/$PROGNAME \$1$BIN/$PROGNAME
-echo "install $COPY -m 644 ${PROGNAME}rc \$1$LIB"
-install $COPY -m 644 ${PROGNAME}rc \$1$LIB
-echo "install $COPY -m 644 doc/HELP \$1$LIB"
-install $COPY -m 644 doc/HELP \$1$LIB
-echo "install $COPY -m 644 doc/HELP.jp \$1$LIB"
-install $COPY -m 644 doc/HELP.jp \$1$LIB
-echo "install $COPY $PERM doc/tcb.1.gz \$1$MAN"
-install $COPY $PERM doc/tcb.1.gz \$1$MAN
+mkdir -p \$PREFIX/bin
+mkdir -p \$PREFIX/lib/$PROGNAME
+mkdir -p \$PREFIX/man/man1
+echo "install $COPY -m 755 $CSRC/$PROGNAME \$PREFIX/bin/$PROGNAME"
+install $COPY -m 755 $CSRC/$PROGNAME \$PREFIX/bin/$PROGNAME
+echo "install $COPY -m 644 ${PROGNAME}rc \$PREFIX/lib/$PROGNAME"
+install $COPY -m 644 ${PROGNAME}rc \$PREFIX/lib/$PROGNAME
+echo "install $COPY -m 644 doc/HELP \$PREFIX/lib/$PROGNAME"
+install $COPY -m 644 doc/HELP \$PREFIX/lib/$PROGNAME
+echo "install $COPY -m 644 doc/HELP.jp \$PREFIX/lib/$PROGNAME"
+install $COPY -m 644 doc/HELP.jp \$PREFIX/lib/$PROGNAME
+echo "install $COPY $PERM doc/tcb.1.gz \$PREFIX/man/man1"
+install $COPY $PERM doc/tcb.1.gz \$PREFIX/man/man1
 EOF
 if [ -n "$JMAN" ] && [ -d "$JMAN" ]; then
 cat >> install.sh <<EOF
-mkdir -p \$1$JMAN
-echo "install $COPY $PERM doc/tcb.1.gz \$1$JMAN"
-install $COPY $PERM doc/tcb.1.gz \$1$JMAN
+mkdir -p \$PREFIX/$JMAN
+echo "install $COPY $PERM doc/tcb.1.gz \$PREFIX/$JMAN"
+install $COPY $PERM doc/tcb.1.gz \$PREFIX/$JMAN
 EOF
 fi
 

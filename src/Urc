@@ -1,0 +1,369 @@
+# tcbrc  version 1.5b-1  20 Mar 2000
+# -------------------------------------------------------------
+# All blank lines or strings begin with the character '#' will be ignored.
+# Lines begin with one of the following strings are available.  Other lines 
+# begin with any character except for '#', Space, Tab, and '\n' will cause 
+# an error. 
+#
+# ARCHIVE, FILE, EXEC, GREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
+# HISTORY, WAIT, SCROLL, LS, CP, MV, RM, KEY, F-?, M-?, P-?, K-?
+# -------------------------------------------------------------
+
+ARCHIVE
+# Format: `suffix0' `suffix1'
+#
+# Tcb will display the content of the file that has the `suffix0' with the
+# setting of `suffix1' defined in str.c of source file.
+#
+#  `suffix1' `program' (option)
+#  .tar	     tar       tvf",
+#  .tgz	     gzip      -dc | tar tvf -",
+#  .tar.bz2  bzip2     -dc | tar tvf -",
+#  .lzh	     lha",
+#  .zip	     unzip     -l",
+#  .rpm	     rpm       -qplv",
+#  .deb	     dpkg-deb  -c",
+#
+	.taz	.tgz
+	.tar.z	.tgz
+	.tar.gz	.tgz
+	.jar	.zip
+	
+FILE
+# format: `suffix' `program' (option)
+#
+# The `program' will display the content of the regular-file that has the 
+# `suffix' as a plain text.
+
+	.gz	gzip	-dc
+	.bz2	bzip2	-dc
+	.z	gzip	-dc			
+#	.dvi	dvi2tty
+
+EXEC
+# format: `suffix' `program' (option)
+#
+# The `program' will be launched with argument of the file that has the `suffix'.
+#
+# macOS note: a bare app name (e.g. `IINA') is usually NOT a real
+# command -- GUI .app bundles aren't on $PATH, so this fails silently
+# (`execvp' just can't find it). Use macOS's own `open -a AppName'
+# bridge instead, e.g.:
+#	.mp4	open	-a	IINA
+
+	.html	lynx
+	.htm	lynx
+	.info	info	-f
+	.info.gz info	-f
+	.dvi	xdvi
+#	.dvi	dviout
+
+GREP
+# format: `string'
+#
+# The `string' that will be used in EGREP or CUT.
+# (String contains a space character must be enclosed within parentheses "".)
+
+	\/\*[a-z]*\*\/				 # tcb source
+	^					 # ~/.tcb/history 
+	"^  [0-9][0-9]+\."			 # ^J^B for HELP
+	"^  [0-9]+\."				 # ^J^C for HELP
+	^Question				 # Linux-FAQ
+	"^Subject: "				 # Mailing list
+	^[0-9]*\.				 # FAQ etc.
+	"^[A-Z][A-Z]+"			 # MAN
+	"diff \-"				 # diff file
+	~$					 # backup file
+
+PROGRAM
+# Format: `program' (option)
+#
+# The `program' that will be launched by PROGRAM.
+
+	jed
+	emacs
+	emacs -nw
+	xemacs
+	vi
+	less
+	dviout
+	xdvi
+	lynx
+	mule
+	mule -nw
+	info
+	top
+	lv
+	lv -Oe
+	lv -Ir
+	qlmanage -p
+
+EDITOR
+# Format: `editor'
+#
+# The `editor' will be launched by EDIT.
+
+	vi
+#	jed
+
+BUFFER
+# Format: `size'
+#
+# The maximun `size' of the buffer (a unit is MB) which will be
+# allocated for the regular-file or archive.
+
+	8
+
+CODE
+# Format: `code0' `code1' ...
+#
+# If a regular-file that has no above suffixes contains a control
+# character under 0x20 excluding the ones set in here, it will be
+# assumed as a binary file.  Tcb(1) will execute file(1) and
+# display the code and the file-type. (If `code0' is equal to 0,
+# this setting will be ignored.)
+
+# ^A(TAGS)  \b  \t  \n  \f  \r  ^N(SO)  ^O(SI)  ^Z(EOF)  ^[(ESC)  ^_(info)
+   1         8   9  10  12  13  14      15      26       27       31
+
+SHELL
+# Format: `shell'
+#
+# SHELL-mode will be launched with `shell'.  (When the environment
+# variable ``SHELL'' is set to neither ``bash'' nor ``tcsh'', 
+# this setting (bash(1) or tcsh(1) can be set) is needed.)
+
+	bash
+#	tcsh
+
+HISTORY
+# Format: `line'
+#
+# It determines the maximum `line' that will be saved to the HISTORY
+# list.  When the value of total-lines are equal to this line, 
+# the oldest line will be deleted.
+
+	500
+
+WAIT
+# Format: `wait' 
+# 
+# Built-in or keyboard macro will be executed at intervals of `wait'
+# (a unit is 10 msec).
+
+	1
+
+LS
+# Format: `flag' 
+# 
+# The `flag' for switching display-mode of file-selector. (can be
+# switched by ^Ol.)  When the `flag' set, file-selector will display
+# only filename.
+
+	0
+
+SCROLL
+# Format: `flag' 
+# 
+# The `flag' for switching scroll-mode. (can be switched by ^Oh.)
+# When the `flag' set, tcb window will scroll within the range above
+# bottom line.
+
+	0
+
+CP
+# Format: `cp' (option)
+#
+# Command of CP mode. (default : cp -vRi) 
+#
+#	cp -vR
+
+MV
+# Format: `mv' (option)
+#
+# Command of MV mode. (default : mv -vi) 
+#
+#	mv -v
+
+RM
+# Format: `rm' (option) 
+#
+# Command of RM mode. (default : rm -vri) 
+#
+#	rm -vr
+
+KEY
+# Customizing keys described in the KEY mode.
+#
+# (1) ... Mode No. used in `mode.h' of source file.
+# (2) ... Any keys except for ESC can be set to `F-?' (from F-0 to F-9) 
+	  up to 2-stroke.
+# (3) ... Though up to 2-stroke, only `F-?' or ESC can be used as the
+#	  first key.  (Since K-54 and K-65 are also the first key,
+#	  set either `F-?' or ESC.)
+# (4) ... The string enclosed in "" will be used in KEY-mode.  The comannd
+          enclosed within parentheses '' in the line of K-43 will be 
+	  executed at SHELL-prompt. 
+# (5) ... Setting of `F-?' isn't one of the following keys can't be 
+#	  executed from the command-line such as the SHELL-prompt.
+#	  (Following keys aren't used for the keys of `Command-line' 
+#	  described in the HELP-mode.)
+#
+#         	C-j, C-o, C-t, C-x, C-[
+#
+# (6) ... Built-in macro definition (M-0 ... M-19).  Enclose in "" the 
+#	  string which you want to use in `Command-line'.  The keys of (7) 
+#	  will launch execution of the definition.
+# (7) ... Keys will launch execution of the definition of (6).
+# (8) ... Mark for the content of Setting.
+# (9) ... Setting can be used by `tcb' executed as `pager'.
+#
+# Notations :
+#	  C-x ... Ctrl+'x'
+#	  \cX ... Ctrl+'x'
+# 	  ESC ... C-[
+# 	  SPC ... Space
+
+# <-- (2) -->             
+F-?	<-- (8)
+	C-x	# ^X							F-0
+	C-j	# ^J							F-1
+	C-x C-k # ^X^K							F-2
+	C-o     # ^O							F-3
+		#							F-4
+		#							F-5
+		#							F-6
+		#							F-7
+		#							F-8
+		#							F-9
+
+#  <-- (3) -->  <-- (4) -->                 		           <-- (1) -->
+K-?	<-- (8)
+	C-t	"TCB"	# ^T						K-0
+  	F-1 C-h	"HELP"	# ^J^H		<-- (5)				K-1
+	C-g	"Return to previous mode"	# ^G			K-2
+	C-l	"Redisplay current window (clear "Exit" message)" # ^L	K-3
+ 	SPC	"Move window one page down"	# Space			K-4
+	b	"Move window one page up"	# b			K-5
+ 	C-f	"Move window one page down"	# ^F			K-6
+	C-b	"Move window one page up"	# ^B			K-7
+	j	"Move window one line down"	# j			K-8
+	k	"Move window one line up"	# k			K-9
+	C-n	"Move cursor one line down"	# ^N			K-10
+	C-p	"Move cursor one line up"	# ^P			K-11
+	ESC <	"Go to beginning of buffer"	# ^[<			K-12
+	ESC >	"Go to end of buffer"	# ^[>				K-13
+	ESC	"Go to the N-th line"	# ^[N				K-14
+	C-SPC	"Set mark"	# ^SPC					K-15
+	F-0 F-0	"Get mark"	# ^X^X	 				K-16
+	F-0 C-w	"Save buffer to ~/.tcb/w.tcb"	# ^X^W			K-17
+	F-1 C-k	"Go to file-selector"	# ^J^K				K-18
+	F-3 C-k	"Go to parent directory"	# ^O^K			K-19
+	F-1	"Go to the N-th directory"	# ^JN			K-20
+	F-1 F-1	"Go to previous regular file"	# ^J^J			K-21
+	C-m	"Read content of file to buffer"	# ^M		K-22
+	F-3 C-m	"Read per line"	# ^O^M					K-23
+	ESC C-m	"Read as is"	# ^[^M					K-24
+	F-3 h	"Switch scroll mode"	# ^Oh				K-25
+	F-3 l	"Switch format of `ls' output"	# ^Ol			K-26
+	F-3 a	"Switch ascii mode"	# ^Oa				K-27
+	F-2 d	"Switch kanji code of display"	# ^X^Kd			K-28
+	F-3 C-c	"Copy string"	# ^O^C					K-29
+	F-3 C-y	"Paste string (Command-line)"	# ^O^Y			K-30
+	C-s	"FGREP   : Input string"	# ^S			K-31
+	F-1 C-s	"EGREP   : Select string"	# ^J^S			K-32
+	F-1 c	"CUT     : Input string (buffer)"	# ^Jc 		K-33
+	F-1 C-c	"CUT     : Select string (buffer)"	# ^J^C		K-34
+	F-1 b	"CUT     : Input string (regular file)"	# ^Jb		K-35
+	F-1 C-b	"CUT     : Select string (regular file)"	# ^J^B	K-36
+	F-1 d	"DU      : Execute `du'"	# ^Jd			K-37
+	F-1 C-d	"DU      : Redisplay window"	# ^J^D			K-38
+	F-1 l	"LOCATE  : Execute `locate'"	# ^Jl			K-39
+	F-1 C-l	"LOCATE  : Redisplay window"	# ^J^L			K-40
+	F-1 p	"PROGRAM : Input program name"	# ^Jp			K-41
+	F-1 C-p	"PROGRAM : Select program name"	# ^J^P			K-42
+	F-1 m	"MAN     : Input manual page"	# ^Jm			K-43
+	F-1 C-m	"MAN     : Select manual page"	# ^J^M			K-44
+	F-0 f	"FILE    : Input file name"	# ^Xf			K-45
+	F-0 C-f	"FILE    : Select file name"	# ^X^F			K-46
+	F-0 d	"DIR     : Input directory name"	# ^Xd		K-47
+	F-0 C-d	"DIR     : Select directory name"	# ^X^D		K-48
+	C-r	"HISTORY : History"	# ^R				K-49
+	F-1 C-r	"COMMAND : Select program executed at SHELL"# ^J^R	K-50
+	F-2 c	"CP      : Copy file with SHELL window"	# ^X^Kc		K-51
+	F-0 c	"CP      : Without SHELL window"	# ^Xc		K-52
+	F-2 m	"MV      : Move file with SHELL window"	# ^X^Km		K-53
+	F-0 m	"MV      : Without SHELL window"	# ^Xm		K-54
+	F-2 r	"RM      : Delete file with SHELL window"	# ^X^Kr K-55
+	F-0 r	"RM      : Without SHELL window"	# ^Xr		K-56
+	F-2 a	"ARC     : Expand archive"	# ^X^Ka			K-57
+	F-0 a	"ARC     : Without SHELL window"	# ^Xa		K-58
+	ESC s	"SHELL   : Go to SHELL"	# ^[s				K-59
+	F-0 s	"SHELL   : Restart SHELL"	# ^Xs			K-60
+	F-1 .	"SHELL   : Change current directory"	# ^J.		K-61
+	F-1 ,	"SHELL   : Execute `ls -l \cM'"	# ^J,			K-62
+#	F-1 ,	"SHELL   : Execute `top \cM'"	# ^J,
+	F-1 w	"SHELL   : Display access-name"	# ^Jw			K-63
+	F-1 C-w	"SHELL   : Display content of buffer"	# ^J^W		K-64
+	C-i	"LIST    : Complete file name"	# ^I			K-65
+	F-1 e	"EDIT    : Edit regular-file"	# ^Je			K-66
+	F-2 e	"ERROR   : Standard error"	# ^X^Ke			K-67
+	F-2 l	"LOG     : SHELL output"	# ^X^Kl			K-68
+	F-0 C-c	"EXIT    : Exit tcb"	# ^X^C				K-69
+	q	"Exit tcb (pager)"	# q				K-70
+	F-0 C-m	"Input destination (CP, MV, RM, ARC)"	# ^X^M		K-71
+	F-0 C-y	"Mark all (CP, MV, RM, ARC)"	# ^X^Y			K-72
+	F-0 C-n	"Clear all (CP, MV, RM, ARC)"	# ^X^N			K-73
+	F-0 (	"Begin macro definition"	# ^X(			K-74
+	F-0 )	"End macro definition"	# ^X)				K-75
+	F-0 e	"Execute macro definition"	# ^Xe			K-76
+
+#	<-- (6) -->
+M-?	<-- (8)
+P-?	<-- (9)
+	K-2 K-11 K-22			# (;) ^G ^P ^M			M-0
+P-?
+	K-2 K-10 K-22			# (:) ^G ^N ^M			M-1
+	K-2 K-2 K-11 K-22 K-22		# (+) ^G ^G ^P ^M ^M		M-2
+	K-2 K-2 K-10 K-22 K-22		# (*) ^G ^G ^N ^M ^M		M-3
+	K-22 K-11			# (,) ^M ^P			M-4
+	K-22 K-10			# (.) ^M ^N			M-5
+	K-22 K-2 K-11 K-22		# (<) ^M ^G ^N ^M		M-6
+	K-22 K-2 K-10 K-22		# (>) ^M ^G ^N ^M		M-7
+	K-45 "~/.tcb/tcbrc\cM" \
+	K-32 "\cU^[A-Z]+\cM"		# (ESC t) ^Xf "..." ^J^S "..."	M-8
+	K-68 K-33 "usilic v1.5b\cM"	# (ESC l) ^X^Kl ^Jc "usilic v..."	M-9
+					# 				M-10
+					# 				M-11
+					# 				M-12
+					# 				M-13
+					# 				M-14
+					# 				M-15
+					# 				M-16
+					# 				M-17
+					# 				M-18
+					# 				M-19
+
+# <-- (7) -->
+K-?
+	;	"Go to previous line"			# (M-0)		K-80
+	:	"Go to next line"			# (M-1)		K-81
+	+	"Go to upper specific line"		# (M-2)		K-82
+	*	"Go to lower specific line"		# (M-3)		K-83
+	,	"Mark and move cursor one line up"	# (M-4)		K-84
+	.	"Mark and move cursor one line down"	# (M-5)		K-85
+	<	"Mark and go to upper specific line"	# (M-6)		K-86
+	>	"Mark and go to lower specific line"	# (M-7)		K-87
+	ESC t	"Search section name in ~/.tcb/tcbrc"	# (M-8)		K-88
+	ESC l	"Output from SHELL-prompt"		# (M-9)		K-88
+							# (M-10)	K-90
+							# (M-11)	K-91
+							# (M-12)	K-92
+							# (M-13)	K-93
+							# (M-14)	K-94
+							# (M-15)	K-95
+							# (M-16)	K-96
+							# (M-17)	K-97
+							# (M-18)	K-98
+							# (M-19)	K-99
+

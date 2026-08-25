@@ -2163,6 +2163,77 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^Jp starts with an EMPTY prompt when a dire
   CHECK(app.promptText().empty());
 }
 
+// 2026-08-25 (a direct user request tying PROGRAM into the same
+// dired-style marking workflow '.'/'['/']' already wired up for
+// CP/MV/RM): marking exactly ONE entry must still pre-fill the SAME
+// bare, unquoted name as the no-marks cursor-only case above -- this
+// is the backward-compatibility guard for startProgramPrompt()'s
+// names.size()==1 branch, kept byte-identical to the pre-2026-08-25
+// behavior on purpose.
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: marking exactly one entry pre-fills the SAME bare unquoted name as "
+                           "the no-marks case (single-mark stays byte-identical to the old behavior)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));  // '.' / ^Space -- exactly one mark
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  CHECK(app.promptText() == "plain.txt");  // bare, NOT "'plain.txt'"
+}
+
+// 2026-08-25: marking more than one entry pre-fills ALL of them,
+// space-separated and shell-quoted (so a marked name containing a
+// space can't merge with its neighbor), in listing order -- same
+// target-gathering (targetEntries()) CP/MV/RM's own collectTargetPaths()
+// already reads.
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: marking more than one entry pre-fills ALL marked bare names, "
+                           "space-separated and shell-quoted, in listing order") {
+  REQUIRE(app.start(path()));
+  int plainIdx = indexOf("plain.txt");
+  int logIdx = indexOf("log.txt");
+  REQUIRE(plainIdx >= 0);
+  REQUIRE(logIdx >= 0);
+  int idxA = std::min(plainIdx, logIdx);
+  int idxB = std::max(plainIdx, logIdx);
+  std::string nameA = (idxA == plainIdx) ? "plain.txt" : "log.txt";
+  std::string nameB = (idxA == plainIdx) ? "log.txt" : "plain.txt";
+
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  std::string expected = "'" + nameA + "' '" + nameB + "'";
+  CHECK(app.promptText() == expected);
+  feedText("cat ");
+  CHECK(app.promptText() == "cat " + expected);  // cursor started at position 0, same prepend convention
+}
+
+// 2026-08-25: marked directories are excluded from the pre-fill, same
+// as the pre-existing lone-cursor-on-a-directory case above -- if
+// every mark happens to be a directory, the prompt falls all the way
+// back to empty (an arbitrary PROGRAM command on a directory isn't a
+// meaningful pre-fill).
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: a mix of marked files and a marked directory only pre-fills the "
+                           "file(s), excluding the directory") {
+  REQUIRE(app.start(path()));
+  int plainIdx = indexOf("plain.txt");
+  int subdirIdx = indexOf("subdir/");
+  REQUIRE(plainIdx >= 0);
+  REQUIRE(subdirIdx >= 0);
+  int idxA = std::min(plainIdx, subdirIdx);
+  int idxB = std::max(plainIdx, subdirIdx);
+
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  CHECK(app.promptText() == "plain.txt");  // bare -- only one real file among the two marks
+}
+
 // The real end-to-end proof: usilic itself never chdir()s (see
 // executePathInput()'s own comment), so a bare pre-filled filename
 // only resolves correctly if executeProgram() actually `cd`s into the
@@ -2237,6 +2308,42 @@ TEST_CASE_FIXTURE(Fixture, "Space (Directory mode): runs `qlmanage -p` on the en
   const auto &entries = history.recentEntries(RingCategory::ShellCommand);
   REQUIRE_FALSE(entries.empty());
   CHECK(entries.back() == "qlmanage -p plain.txt");  // the SHORT recordedCommand, not the quoted one
+}
+
+// 2026-08-25 (a direct user request tying Quick Look into the same
+// dired-style marking workflow already wired up for CP/MV/RM/PROGRAM):
+// with more than one entry marked, Space passes ALL of them to
+// `qlmanage -p` at once (real qlmanage(1) shows multiple paths as a
+// browsable gallery) instead of just the cursor entry.
+TEST_CASE_FIXTURE(Fixture, "Space (Directory mode, multiple marks): runs `qlmanage -p` on ALL marked "
+                           "entries at once, not just the entry under the cursor") {
+  REQUIRE(app.start(path()));
+  int plainIdx = indexOf("plain.txt");
+  int logIdx = indexOf("log.txt");
+  REQUIRE(plainIdx >= 0);
+  REQUIRE(logIdx >= 0);
+  int idxA = std::min(plainIdx, logIdx);
+  int idxB = std::max(plainIdx, logIdx);
+  std::string nameA = (idxA == plainIdx) ? "plain.txt" : "log.txt";
+  std::string nameB = (idxA == plainIdx) ? "log.txt" : "plain.txt";
+
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  std::string receivedCommand;
+  app.programMode().setForegroundLauncher([&](const std::string &command) {
+    receivedCommand = command;
+    return true;
+  });
+
+  CHECK(app.feedByte(' ', std::nullopt));
+  CHECK(receivedCommand == "qlmanage -p '" + path() + nameA + "' '" + path() + nameB + "'");
+
+  const auto &entries = history.recentEntries(RingCategory::ShellCommand);
+  REQUIRE_FALSE(entries.empty());
+  CHECK(entries.back() == "qlmanage -p " + nameA + " " + nameB);  // SHORT label, bare names
 }
 
 // 2026-08-23 follow-up: an earlier cut made Space mean "advance the
@@ -5112,6 +5219,43 @@ TEST_CASE_FIXTURE(Fixture, "'[': marks the current entry, then moves the cursor 
   CHECK(indexOf(app.directoryMode().selectedEntry()->name) == idx);  // cursor retreated back onto cpmv_a.txt
 }
 
+// 2026-08-25, a direct user report: repeatedly pressing '[' to mark a
+// run of entries leaves the cursor resting ONE ROW PAST the last entry
+// actually marked (MarkAndRetreat marks, THEN moves) -- and since the
+// plain (not CP/MV/RM-armed) ls-listing always shows the cursor row
+// with Standout regardless of marking, that resting row used to LOOK
+// marked (same reverse-video box) even though it is NOT in
+// targetEntries() and would NOT be passed to CP/MV/RM/PROGRAM/Quick
+// Look. Fixed by giving genuinely marked rows their own Underline
+// channel (ContentView::setMarkedRowUsesUnderline(), enabled for this
+// plain-browsing view specifically -- see DirectoryMode's own
+// constructor comment) instead of folding them into the cursor's own
+// Standout: the two are now simultaneously visible and distinguishable.
+TEST_CASE_FIXTURE(Fixture, "'[' marking: the row the cursor ends up resting on (never actually marked) "
+                           "shows Standout but NOT Underline, while the marked row(s) show Underline but "
+                           "NOT Standout") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::MoveDown));  // step onto the NEXT entry, so '[' has somewhere to retreat to
+  int markIdx = indexOf(app.directoryMode().selectedEntry()->name);
+  REQUIRE(markIdx == idx + 1);
+
+  CHECK(app.feedByte('[', std::nullopt));  // marks markIdx, cursor retreats back onto idx
+  REQUIRE(app.directoryMode().isMarked(markIdx));
+  REQUIRE_FALSE(app.directoryMode().isMarked(idx));
+  REQUIRE(indexOf(app.directoryMode().selectedEntry()->name) == idx);
+
+  int markNameCol = app.directoryMode().entries()[markIdx].nameStartColumn;
+  int cursorNameCol = app.directoryMode().entries()[idx].nameStartColumn;
+
+  CHECK(display.underlineAt(markIdx, markNameCol));       // genuinely marked -- Underline
+  CHECK_FALSE(display.standoutAt(markIdx, markNameCol));  // NOT Standout (not the cursor row)
+
+  CHECK(display.standoutAt(idx, cursorNameCol));         // cursor's own ordinary highlight -- Standout
+  CHECK_FALSE(display.underlineAt(idx, cursorNameCol));  // NOT actually marked -- no Underline
+}
+
 // 2026-08-23: '.' itself (RELOCATED from ToggleMark's own ^Space) --
 // a direct user request once Space stopped doing the marking job (see
 // Command::QuickLook's own comment): "代わりに'.'を選択/解除のトグル
@@ -5201,24 +5345,36 @@ TEST_CASE_FIXTURE(Fixture, "^Xc's \"CP\" label clears on navigating to a differe
 
 // docs/HISTORY.md's own real report continued: marking (^Space) itself
 // had zero visual feedback either -- toggleMark() only ever mutated a
-// std::set the render path never consulted. Marked rows now render
-// Standout the same way the cursor row already does (see ContentView::
-// setMarkedPredicate()'s own comment), independent of cursor position.
-TEST_CASE_FIXTURE(Fixture, "^Space marks a row Standout even when the cursor later moves off it") {
+// std::set the render path never consulted. Marked rows render
+// something visible independent of cursor position (see ContentView::
+// setMarkedPredicate()'s own comment). UPDATED 2026-08-25 (see
+// ContentView::setMarkedRowUsesUnderline()'s own comment): the plain
+// (not CP/MV/RM-armed) ls-listing view now renders a genuinely marked
+// row Underline rather than Standout, so it stays visually distinct
+// from the cursor row's own ordinary Standout; FURTHER updated the
+// same day (a direct follow-up report: Standout+Underline combined on
+// the SAME row is hard to read, the reverse-video background makes the
+// underline itself hard to see) so that marking takes priority
+// outright on a row that's both -- Underline only, never both
+// attributes on the same row.
+TEST_CASE_FIXTURE(Fixture, "^Space marks a row Underline even when the cursor later moves off it, and "
+                           "marking wins outright over Standout on the cursor's own row") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   // DirectoryMode's own highlightStartColumn (permissions/date prefix
-  // before the filename, see its own comment) means Standout starts at
-  // the filename, not column 0 -- same convention the cursor row's own
-  // highlight already follows.
+  // before the filename, see its own comment) means Standout/Underline
+  // start at the filename, not column 0 -- same convention the cursor
+  // row's own highlight already follows.
   int nameCol = app.directoryMode().entries()[idx].nameStartColumn;
   REQUIRE(app.handleCommand(Command::ToggleMark));
-  CHECK(display.standoutAt(idx, nameCol));  // marked AND still the cursor row
+  CHECK(display.underlineAt(idx, nameCol));       // marked -- Underline
+  CHECK_FALSE(display.standoutAt(idx, nameCol));  // marking wins outright: no Standout even on the cursor row
 
   app.handleCommand(Command::MoveDown);
   CHECK(app.directoryMode().selectedEntry()->name != "cpmv_a.txt");  // cursor moved off it
-  CHECK(display.standoutAt(idx, nameCol));  // still Standout -- marked, not just "was the cursor row"
+  CHECK(display.underlineAt(idx, nameCol));       // still Underline -- marked, not just "was the cursor row"
+  CHECK_FALSE(display.standoutAt(idx, nameCol));  // no longer the cursor row, so no Standout anymore
 }
 
 TEST_CASE_FIXTURE(Fixture, "^X ^M with nothing armed is a no-op (not e.g. some stale prompt kind)") {
@@ -7804,3 +7960,145 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a press past the end of the entry'
   CHECK(app.directoryMode().selectedEntry()->name != "plain.txt");
 }
 
+
+// -- Application::startPagerFileList() / Command::PagerNextFile etc. --
+// 2026-08-25 (a direct user request, "旧版にない機能として...less同様
+// 'n''p''x''f'"): main.cpp's own "通常ファイル引数" launch path --
+// previously entirely unhandled (every positional CLI argument was
+// always treated as a directory) -- now opens a plain FILE argument
+// directly in File mode, and two or more such arguments as a
+// navigable "pager file list". See Command::PagerNextFile's own
+// declaration comment for the full design (mnemonics, key choices).
+
+TEST_CASE_FIXTURE(Fixture, "startPagerFileList: refused for an empty list") {
+  CHECK_FALSE(app.startPagerFileList({}));
+}
+
+TEST_CASE_FIXTURE(Fixture, "startPagerFileList: refused if the first file can't be loaded") {
+  CHECK_FALSE(app.startPagerFileList({(root / "does-not-exist.txt").string()}));
+}
+
+TEST_CASE_FIXTURE(Fixture, "startPagerFileList: a single path loads it in File mode, same as an "
+                           "ordinary Directory-mode Enter") {
+  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "startPagerFileList: n/p/x/f navigate a 3-file list, with no wrap-around "
+                           "at either end") {
+  std::string a = (root / "plain.txt").string();
+  std::string b = (root / "log.txt").string();
+  std::string c = (root / "subdir" / "sub.txt").string();
+  REQUIRE(app.startPagerFileList({a, b, c}));
+  CHECK(app.fileMode().currentFile() == a);
+
+  CHECK(app.feedByte('n', std::nullopt));
+  CHECK(app.fileMode().currentFile() == b);
+  CHECK(app.feedByte('n', std::nullopt));
+  CHECK(app.fileMode().currentFile() == c);
+  CHECK_FALSE(app.feedByte('n', std::nullopt));  // already the last file -- no-op, not a wrap to the first
+  CHECK(app.fileMode().currentFile() == c);
+
+  CHECK(app.feedByte('p', std::nullopt));
+  CHECK(app.fileMode().currentFile() == b);
+  CHECK(app.feedByte('p', std::nullopt));
+  CHECK(app.fileMode().currentFile() == a);
+  CHECK_FALSE(app.feedByte('p', std::nullopt));  // already the first file -- no-op
+  CHECK(app.fileMode().currentFile() == a);
+
+  CHECK(app.feedByte('f', std::nullopt));  // jump to the last file
+  CHECK(app.fileMode().currentFile() == c);
+  CHECK(app.feedByte('x', std::nullopt));  // jump to the first file
+  CHECK(app.fileMode().currentFile() == a);
+}
+
+TEST_CASE_FIXTURE(Fixture, "startPagerFileList: '[' and ']' double as PagerPreviousFile/PagerNextFile "
+                           "while a pager list is active") {
+  std::string a = (root / "plain.txt").string();
+  std::string b = (root / "log.txt").string();
+  REQUIRE(app.startPagerFileList({a, b}));
+
+  CHECK(app.feedByte(']', std::nullopt));
+  CHECK(app.fileMode().currentFile() == b);
+  CHECK(app.feedByte('[', std::nullopt));
+  CHECK(app.fileMode().currentFile() == a);
+}
+
+// 2026-08-25 bug fix: unlike ContentView's own move/scroll methods
+// (which redraw() internally), FileMode::loadStream() doesn't --
+// navigateToPagerFile() used to update fileMode_'s own internal state
+// correctly (confirmed via currentFile()) while leaving the SCREEN
+// showing the previous file's content, since nothing else in that call
+// chain happened to trigger a redraw either. Checked via the actual
+// rendered row text, not just currentFile(), so a regression here
+// (someone removing navigateToPagerFile()'s own activeView().redraw()
+// call) would be caught even if the internal-state-only assertions
+// above still passed.
+TEST_CASE_FIXTURE(Fixture, "startPagerFileList: navigating actually updates the RENDERED screen, not "
+                           "just fileMode()'s internal currentFile()") {
+  std::string a = (root / "plain.txt").string();  // "hello\nworld\n"
+  std::string b = (root / "log.txt").string();    // "marker one\n..."
+  REQUIRE(app.startPagerFileList({a, b}));
+  CHECK(display.rowText(0).substr(0, 5) == "hello");
+
+  REQUIRE(app.feedByte('n', std::nullopt));
+  CHECK(display.rowText(0).substr(0, 10) == "marker one");
+
+  REQUIRE(app.feedByte('p', std::nullopt));
+  CHECK(display.rowText(0).substr(0, 5) == "hello");
+}
+
+// 2026-08-25 bug fix: a real PTY capture found ^G revealing an EMPTY
+// Directory listing on a pager-launched file/stdin ONCE THE STREAM HAD
+// FULLY FINISHED LOADING (a short `ls -l /tmp | usilic` reaches real
+// EOF almost immediately) -- Command::Back's own File-mode branch had
+// been gated on FileMode::hasActiveStream(), which turns false exactly
+// at that point (see its own comment), instead of the EOF-independent
+// FileMode::isPagerMode(). This fixture's own plain.txt is tiny enough
+// to reach real EOF on the very first loadStream() call, reproducing
+// the same "already fully loaded" condition directly.
+TEST_CASE_FIXTURE(Fixture, "startPagerFileList: ^G stays a no-op even AFTER the file has fully loaded "
+                           "(reached real EOF), not just while still streaming") {
+  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
+  REQUIRE(app.fileMode().streamAtEof());  // tiny file -- confirms this test actually reproduces the EOF case
+  REQUIRE_FALSE(app.fileMode().hasActiveStream());  // the exact condition that broke the old gate
+
+  CHECK_FALSE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);  // did NOT fall through to an empty Directory
+}
+
+TEST_CASE_FIXTURE(Fixture, "'[' and ']' keep their ordinary Directory-mode marking behavior when NOT "
+                           "in File mode with a pager list active (no regression)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  CHECK(app.feedByte(']', std::nullopt));
+  CHECK(app.directoryMode().isMarked(idx));  // ordinary marking, not pager navigation
+}
+
+TEST_CASE_FIXTURE(Fixture, "n/p/x/f are no-ops in File mode reached via an ordinary Directory-mode "
+                           "Enter (no pager list active)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string before = app.fileMode().currentFile();
+
+  CHECK_FALSE(app.feedByte('n', std::nullopt));
+  CHECK_FALSE(app.feedByte('p', std::nullopt));
+  CHECK_FALSE(app.feedByte('x', std::nullopt));
+  CHECK_FALSE(app.feedByte('f', std::nullopt));
+  CHECK(app.fileMode().currentFile() == before);
+}
+
+TEST_CASE_FIXTURE(Fixture, "n/p/x/f are no-ops in Directory mode (not File mode at all)") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.feedByte('n', std::nullopt));
+  CHECK_FALSE(app.feedByte('p', std::nullopt));
+  CHECK_FALSE(app.feedByte('x', std::nullopt));
+  CHECK_FALSE(app.feedByte('f', std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}

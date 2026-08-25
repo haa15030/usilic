@@ -2671,7 +2671,20 @@ int main(int argc, char **argv) {
   // materializeArchiveTempFile()'s own comment).
   std::string pidTempDirectory = "/tmp/.usilic." + std::to_string(::getpid());
   ::mkdir(pidTempDirectory.c_str(), S_IRWXU);
-  std::string tempRootDirectory = positionalArgs.empty() ? "" : pidTempDirectory;
+  // 2026-08-25 (a direct user request): a piped stdin launch (no
+  // positional arguments at all, checked here via isatty() the same
+  // way the pager-launch branch further down does -- see
+  // isPipedStdin's own declaration there) is content-bearing exactly
+  // like an argument launch, even though positionalArgs itself is
+  // empty ("見た目引数「無し」でも作業ファイルは「有り」と同じ...
+  // ^Tで表示される作業ファイルもみな/tmp/〜"): ERROR/SHELL get the
+  // SAME per-process pidTempDirectory treatment as a real file/
+  // directory argument, not the persistent shared usilicDir a bare
+  // interactive no-argument launch keeps (this comment block's own
+  // 2026-08-18 reasoning above still applies to a genuine bare
+  // launch -- only the stdin-pipe case is added here).
+  bool hasRealContentArgument = !positionalArgs.empty() || !::isatty(STDIN_FILENO);
+  std::string tempRootDirectory = hasRealContentArgument ? pidTempDirectory : "";
   std::string workRootDirectory = pidTempDirectory;
   // ^T's own new "Boot options" field (see executeShowTcbBanner()'s own
   // comment): the literal argv[1..] this process was launched with, in
@@ -2699,7 +2712,22 @@ int main(int argc, char **argv) {
   const char *charsetEnv = std::getenv("USILICCHARSET");
   configuration.setEnvironmentCharset(charsetEnv ? std::optional<std::string>(charsetEnv) : std::nullopt);
 
+  // 2026-08-25 (a direct user request): $HOME/.usilic/usilicrc (a
+  // user's own customized copy) takes priority as before; if that
+  // doesn't exist yet, falls back to the SHIPPED default `make
+  // install` places at $(PREFIX)/lib/usilic/usilicrc -- mirrors
+  // legacy's own two-tier set_tcbrc() lookup (str.c: $HOME/.usilic/
+  // then LIB/usilicrc) exactly, just without a config.sh-style
+  // compile-time LIB constant to bake the second tier into, so both
+  // plausible PREFIX values (~/.local, the new default; /usr/local,
+  // the traditional one) are tried in turn instead. Previously this
+  // port had NO fallback at all -- a fresh install with no
+  // hand-created ~/.usilic/usilicrc silently ran on built-in defaults
+  // only, never actually reading the usilicrc `make install` just
+  // copied into place.
   std::string rcText = readFileIfExists(usilicDir + "usilicrc");
+  if (rcText.empty() && homeEnv) rcText = readFileIfExists(std::string(homeEnv) + "/.local/lib/usilic/usilicrc");
+  if (rcText.empty()) rcText = readFileIfExists("/usr/local/lib/usilic/usilicrc");
   if (!rcText.empty()) configuration.loadRcText(rcText, /*fileManagerMode=*/true);
 
   // LOCATE's personal database (2026-08-22 addition, docs/CHANGES.md
@@ -2740,35 +2768,43 @@ int main(int argc, char **argv) {
 
   // Ported from str.c's set_help(): English (HELP) vs a genuine
   // Japanese translation (HELP.jp), chosen by charset the same way
-  // legacy does. USILICHELP names the ASCII/English file directly, no
-  // installed-package LIB-path convention for THIS PORT's own build
-  // exists yet (same gap usilicrc's own LIB fallback has, see above).
-  // When unset, fall back to /usr/local/lib/usilic/HELP -- the exact
-  // path legacy's own config.sh (`LIB=$USR_DIR/lib/$PROGNAME`) already
-  // installs to for a PROGNAME=usilic build (confirmed present via a
-  // real user's own machine, 2026-08-02: this port's own project name
-  // IS "usilic", so re-using that exact convention -- rather than
-  // inventing a new one -- is the natural default, and happens to
-  // already be populated wherever the legacy C side of this same
-  // project was ever installed under that name). If unset AND that
-  // fallback path doesn't exist either, or the file can't be read,
-  // HELP (^J^H) is simply unavailable (Command::StartHelp fails
-  // cleanly) rather than this being a hard startup error.
-  std::string helpPath;
+  // legacy does. USILICHELP (when set) names the ASCII/English file
+  // directly -- no jp/plain fallback list, used AS GIVEN.
+  //
+  // 2026-08-25 update: this port now has its OWN `make install`
+  // (src/cpp/Makefile), which lands HELP/HELP.jp under
+  // $(PREFIX)/lib/usilic/ -- PREFIX defaulting to ~/.local, same
+  // convention src/config.sh's own legacy build install uses (see
+  // that Makefile's own comment). The candidate list here tries that
+  // exact default location FIRST, falling back to /usr/local/lib/usilic/HELP
+  // (a `make install PREFIX=/usr/local` install, or -- historically --
+  // wherever the legacy C build happened to be installed under the
+  // "usilic" name before its own 2026-08-25 rename to "U"; that
+  // coincidental reuse no longer applies now that the two builds have
+  // distinct install trees, but the same fallback VALUE still works
+  // for a real /usr/local install of THIS port). If none of the
+  // candidates exist or are readable, HELP (^J^H) is simply
+  // unavailable (Command::StartHelp fails cleanly) rather than this
+  // being a hard startup error.
+  std::vector<std::string> helpPathCandidates;
   if (const char *helpPathEnv = std::getenv("USILICHELP")) {
-    helpPath = helpPathEnv;
+    helpPathCandidates.push_back(helpPathEnv);
   } else {
-    helpPath = "/usr/local/lib/usilic/HELP";
+    if (homeEnv) helpPathCandidates.push_back(std::string(homeEnv) + "/.local/lib/usilic/HELP");
+    helpPathCandidates.push_back("/usr/local/lib/usilic/HELP");
   }
-  if (encoding != fm::Charset::Encoding::Ascii) {
-    std::string jpText = readFileIfExists(helpPath + ".jp");
-    if (!jpText.empty()) {
-      app.loadHelpText(jpText);
+  for (const std::string &helpPath : helpPathCandidates) {
+    std::string text;
+    if (encoding != fm::Charset::Encoding::Ascii) {
+      text = readFileIfExists(helpPath + ".jp");
+      if (text.empty()) text = readFileIfExists(helpPath);
     } else {
-      app.loadHelpText(readFileIfExists(helpPath));
+      text = readFileIfExists(helpPath);
     }
-  } else {
-    app.loadHelpText(readFileIfExists(helpPath));
+    if (!text.empty()) {
+      app.loadHelpText(text);
+      break;
+    }
   }
 
   // "実はすでにGUI" (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30
@@ -2979,22 +3015,83 @@ int main(int argc, char **argv) {
     std::filesystem::path cwd = std::filesystem::current_path(cwdEc);
     if (!cwdEc && cwd == std::filesystem::path("/") && homeEnv) cwdFallback = homeEnv;
   }
-  std::string startDirectory =
-      std::filesystem::absolute(!positionalArgs.empty() ? positionalArgs[0] : cwdFallback).lexically_normal().string();
-  // History-based cursor restoration (see DirectoryMode::enterDirectory()'s
-  // own comment) only applies to an argument-LESS launch -- legacy's
-  // own "resume last session" case. An explicit path argument
-  // (including ".") always starts at the top of that directory's
-  // listing, regardless of any position saved from an earlier,
-  // unrelated visit (a real report: launching with "." landed on a
-  // stale mid-list row instead of the top). consultHistoryOnStart
-  // itself is declared earlier now (see its own comment) so the
-  // startup load further up can share it too.
-  if (!app.start(startDirectory, consultHistoryOnStart)) {
-    display.close();
-    keyInput.close();
-    std::cerr << "usilic: cannot list " << startDirectory << "\n";
-    return 1;
+  // 2026-08-25 (a direct user request, "いまだ手つかずの通常ファイル
+  // 引数"): a positional argument that is a plain FILE, not a
+  // directory, used to be silently mistreated as one (fed straight
+  // into app.start() below, which lists it as if it were a
+  // directory -- previously the only path this function had). Now
+  // resolved to absolute paths up front (still lexically_normal(),
+  // matching the directory case's own established convention) and
+  // checked with std::filesystem::is_directory(): any positional
+  // argument that ISN'T a directory (a real file, or a typo that
+  // doesn't exist at all -- left for Application::startPagerFileList()
+  // itself to report, same as a bad directory argument already falls
+  // through to the "cannot list" error below) routes into
+  // startPagerFileList() instead of Directory mode. Two or more such
+  // arguments is the genuinely NEW case (legacy never supported this
+  // at all): a navigable "pager file list", see Command::PagerNextFile's
+  // own comment for the n/p/x/f and '['/']' navigation keys this wires
+  // up.
+  std::vector<std::string> filePaths;
+  for (char *arg : positionalArgs) {
+    std::string resolved = std::filesystem::absolute(arg).lexically_normal().string();
+    if (!std::filesystem::is_directory(resolved)) filePaths.push_back(resolved);
+  }
+  bool isFileLaunch = !filePaths.empty() && filePaths.size() == positionalArgs.size();
+  // 2026-08-25 (a direct user follow-up, "less同様1ページ分しか読み
+  // 込まない。その点STDINと同じなのでついでにそれもサポートして"): a
+  // piped stdin (no positional arguments at all, and fd 0 isn't a real
+  // tty) is the OTHER pager-launch shape, sharing startPagerFileList()'s
+  // own lazy-loading machinery (FileMode::loadStream()) via a separate
+  // Application::startPagerStdin() -- see its own comment.
+  bool isPipedStdin = positionalArgs.empty() && !::isatty(STDIN_FILENO);
+  // Neither pager launch shape gets a background Directory listing at
+  // all (2026-08-25, a real PTY capture of the legacy binary: pressing
+  // ^G in ITS OWN pager mode produces no visible change whatsoever --
+  // there is no "previous mode" to fall back into, matching HELP.jp's
+  // own "この時はKEYで表示されるモードのみ使用できます"). An EARLIER
+  // version of this fix called app.start() first regardless, so ^G
+  // would reveal the first file's own containing directory -- a
+  // deliberate, reasonable-sounding improvement over legacy that
+  // turned out NOT to match what was actually being asked for here;
+  // reverted in favor of matching the reference exactly. See
+  // Command::Back's own File-mode branch (fileMode_.hasActiveStream()
+  // check) for where ^G's own no-op now lives.
+  if (isFileLaunch) {
+    if (!app.startPagerFileList(filePaths)) {
+      display.close();
+      keyInput.close();
+      std::cerr << "usilic: cannot open " << filePaths.front() << "\n";
+      return 1;
+    }
+  } else if (isPipedStdin) {
+    if (!app.startPagerStdin()) {
+      display.close();
+      keyInput.close();
+      std::cerr << "usilic: cannot read from stdin\n";
+      return 1;
+    }
+  } else {
+    std::string startDirectory =
+        std::filesystem::absolute(!positionalArgs.empty() ? std::filesystem::path(positionalArgs[0])
+                                                            : std::filesystem::path(cwdFallback))
+            .lexically_normal()
+            .string();
+    // History-based cursor restoration (see DirectoryMode::enterDirectory()'s
+    // own comment) only applies to an argument-LESS launch -- legacy's
+    // own "resume last session" case. An explicit path argument
+    // (including ".") always starts at the top of that directory's
+    // listing, regardless of any position saved from an earlier,
+    // unrelated visit (a real report: launching with "." landed on a
+    // stale mid-list row instead of the top). consultHistoryOnStart
+    // itself is declared earlier now (see its own comment) so the
+    // startup load further up can share it too.
+    if (!app.start(startDirectory, consultHistoryOnStart)) {
+      display.close();
+      keyInput.close();
+      std::cerr << "usilic: cannot list " << startDirectory << "\n";
+      return 1;
+    }
   }
 
   if (guiOwnsWholeSession) {

@@ -106,8 +106,30 @@ enum class Command {
   // alternating. Original request this pair was ported from: "コピー
   // したいディレクトリを選択しようにも[return]でそこへ移動してしまっ
   // てはどうにもならない".
-  MarkAndAdvance,  // ']'
-  MarkAndRetreat,  // '['
+  MarkAndAdvance,  // ']' -- also PagerNextFile's own alias while a pager
+                   // file list is active in File mode, see its comment
+  MarkAndRetreat,  // '[' -- also PagerPreviousFile's own alias, same as above
+  // 2026-08-25 (a direct user request, "旧版にない機能として...less同様
+  // 'n''p''x''f'"): navigates a File-mode "pager file list" -- the set
+  // of paths usilic was launched with on the command line (2 or more
+  // positional file arguments; startPagerFileList()'s own comment).
+  // Mnemonics: n/p step one file forward/back (like less's own :n/:p),
+  // x/f jump to the first/last file (x matches less's own :x "examine
+  // the first file"; f -- "final" -- has no less equivalent, a genuine
+  // usilic-only addition per the user's own request for a symmetric
+  // counterpart). ']'/'[' (MarkAndAdvance/MarkAndRetreat above) double
+  // as the SAME next/previous action while in File mode with a pager
+  // list active -- see their own handleCommand() branch -- following
+  // the same up/down convention DirectoryMode's own marking already
+  // established for that pair, rather than reusing ';'/':' (already
+  // bound to the UNRELATED JumpNext/JumpPrevious "Back+move+select"
+  // macros, see resolveCommand()'s own comment). A no-op everywhere
+  // else (no pager list active, or fewer than 2 files), same as '.'/
+  // '['/']' being inert outside Directory/Archive.
+  PagerNextFile,      // 'n', and ']' while a pager list is active
+  PagerPreviousFile,  // 'p', and '[' while a pager list is active
+  PagerFirstFile,     // 'x'
+  PagerLastFile,      // 'f'
   StartCopy,
   StartMove,
   StartRemove,
@@ -1033,6 +1055,36 @@ class Application {
   // argument-less launch (legacy's own "resume last session" case).
   bool start(const std::string &directory, bool consultHistory = true);
 
+  // 2026-08-25 (a direct user request): opens `paths` directly in File
+  // mode, bypassing the Directory-mode Enter-key flow entirely -- for
+  // a CLI launch given one or more plain FILE arguments (main.cpp's
+  // own "通常ファイル引数" case, previously entirely unhandled: every
+  // positional argument used to be treated as a directory regardless).
+  // Call start() FIRST (main.cpp's own convention: the first path's
+  // containing directory, so ^G/Back has a real, useful Directory
+  // listing to fall back into -- same shape a Directory-mode Enter
+  // into any of these files would already leave behind) -- this
+  // method only loads paths.front() into File mode and, if paths has
+  // more than one entry, records the rest as a navigable "pager file
+  // list" (see Command::PagerNextFile's own comment for the
+  // navigation keys). False if the first file can't be loaded --
+  // matches start()'s own "false if the initial listing/load fails"
+  // convention, letting main.cpp print the same kind of startup error
+  // and exit. Precondition: `paths` is not empty (an empty list is a
+  // caller bug, not a runtime condition to report a false return for).
+  bool startPagerFileList(const std::vector<std::string> &paths);
+  // 2026-08-25 (a direct user request: "STDINと同じなのでついでに
+  // それもサポートして"): the piped-input counterpart to
+  // startPagerFileList() above -- `usilic` with NO positional
+  // arguments and a non-tty stdin (main.cpp's own isatty() check).
+  // Reads fd 0 directly via FileMode::loadStream() (never closed --
+  // see its own comment on why this can't conflict with keyboard
+  // input), with no display name (legacy shows a blank name field for
+  // a piped source). False only if loadStream() itself would be (in
+  // practice always true; kept bool for symmetry with start()/
+  // startPagerFileList()'s own convention).
+  bool startPagerStdin();
+
   // Resolves a single, non-leader-prefixed keypress to a Command.
   // Ported from the movement/Enter/^G/^S slice of get_m()'s
   // switch(m) -- see the table in the .cpp for exact byte/SpecialKey
@@ -1360,6 +1412,14 @@ class Application {
   ContentView &viewForMode(ApplicationMode mode);
   void layoutViews();
   std::vector<std::string> collectTargetPaths() const;
+  // Shared by Command::PagerNextFile/PagerPreviousFile/PagerFirstFile/
+  // PagerLastFile and '['/']' while in File mode (see the Command
+  // enum's own comment) -- loads pagerFileList_[newIndex] and updates
+  // pagerFileIndex_. False (a pure no-op, current file untouched) if
+  // newIndex is out of bounds, already the current index, or the file
+  // at that index fails to load -- matching less's own ":n"/":p" at
+  // the ends of the list ("No next/previous file"), not a wrap-around.
+  bool navigateToPagerFile(int newIndex);
   bool startListBrowser(RingCategory category);
   // See ToggleHistoryView's own comment.
   bool toggleListBrowserHistory();
@@ -1747,6 +1807,16 @@ class Application {
   // has no idea this Application-level field exists, same boundary
   // FileMode::setSearchOrigin() already respects).
   ApplicationMode fileReturnMode_ = ApplicationMode::Directory;
+  // startPagerFileList()'s own "pager file list" -- the full set of
+  // paths usilic was launched with on the command line (2+ positional
+  // file arguments). Empty whenever no such launch happened (every
+  // ordinary File-mode entry via Directory's own Enter key), in which
+  // case Command::PagerNextFile/etc. are all no-ops -- see their own
+  // declaration comment. pagerFileIndex_ is paths.front()'s own index
+  // (always 0) right after startPagerFileList(), and tracks whichever
+  // entry is currently loaded as navigateToPagerFile() moves it.
+  std::vector<std::string> pagerFileList_;
+  int pagerFileIndex_ = 0;
   ApplicationMode shellReturnMode_ = ApplicationMode::Directory;
   // The previous mode's own "name" field (e.g. DirectoryMode::
   // currentDirectory(), FileMode::currentFile()), snapshotted at the

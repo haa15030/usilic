@@ -16,9 +16,9 @@ PROT=	code.P mode.P tc.P tcb.P
 .c.o:
 	$(CC) -c $(CFLAGS) $<
 
-default: usilic
+default: U
 
-usilic:	$(PROT) $(OBJS)
+U:	$(PROT) $(OBJS)
 	$(CC) $(LDFLAGS) -o $@  $(OBJS) $(LIBS)
 
 tcb.P:	alloc.c child.c code.c disp.c fork.c init.c \
@@ -41,4 +41,4 @@ debug:
 	ln -sf ../config.h debug
 
 clean:
-	rm -rf usilic $(OBJS) $(PROT) *~ debug
+	rm -rf U $(OBJS) $(PROT) *~ debug

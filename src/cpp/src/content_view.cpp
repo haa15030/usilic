@@ -535,8 +535,9 @@ void ContentView::goToBottom() {
   redraw();
 }
 
-void ContentView::renderLine(const Line &line, bool marked) {
+void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked) {
   marked = marked && cursorHighlightEnabled_;
+  underlineMarked = underlineMarked && cursorHighlightEnabled_;
   int highlightStart = std::max(0, line.highlightStartColumn.value_or(0));
   bool standoutOn = false, boldOn = false, underlineOn = false;
   auto setAttr = [&](bool &state, bool on, Display::Attribute onAttr, Display::Attribute offAttr) {
@@ -559,9 +560,18 @@ void ContentView::renderLine(const Line &line, bool marked) {
   // `markedNow` starts true only if highlightStart is 0 (the common
   // case, and every caller but DirectoryMode's ls-listing) -- see
   // Line::highlightStartColumn's own comment. It flips on exactly once
-  // the loop below reaches column highlightStart.
+  // the loop below reaches column highlightStart. underlineMarkedNow
+  // mirrors it exactly, for the SEPARATE Underline channel (see
+  // setMarkedRowUsesUnderline()'s own comment) -- in practice
+  // DirectoryMode's ls-listing (the only current underlineMarked
+  // caller) always has highlightStart > 0, so this starts false and
+  // only flips at the highlightStart crossing point below, same as
+  // markedNow; kept symmetric here regardless for any future caller
+  // with highlightStart <= 0.
   bool markedNow = marked && highlightStart <= 0;
+  bool underlineMarkedNow = underlineMarked && highlightStart <= 0;
   setStandout(markedNow);
+  setUnderline(underlineMarkedNow);
   int col = 0;
   // 2026-08-13 fix: a real report (LOCATE results, screenshots =am/=an)
   // -- long absolute paths landing EXACTLY at the terminal's own width
@@ -598,7 +608,12 @@ void ContentView::renderLine(const Line &line, bool marked) {
   // by handleResize()'s own File-mode-reflow tests (cursorHighlightEnabled_
   // false there, see FileMode's own class comment), which intentionally
   // rely on full-width wrapped lines rendering their LAST column.
-  int maxCol = marked ? std::max(0, display_.columns() - 1) : display_.columns();
+  // underlineMarked included here too (not just marked): the same
+  // auto-wrap hazard this reservation exists to avoid applies to ANY
+  // attribute-toggling escape sequence near the terminal's last
+  // column, not specifically Standout's own codes.
+  int maxCol =
+      (marked || underlineMarked) ? std::max(0, display_.columns() - 1) : display_.columns();
   // Middle-ellipsis truncation (2026-08-14): a direct user report --
   // LOCATE results sharing one long common prefix all rendered
   // IDENTICAL visible text once naively cut off at the terminal's own
@@ -779,7 +794,9 @@ void ContentView::renderLine(const Line &line, bool marked) {
     if (col >= maxCol) break;
     if (col == highlightStart) {
       markedNow = marked;
+      underlineMarkedNow = underlineMarked;
       setStandout(markedNow);
+      setUnderline(underlineMarkedNow);
     }
     // Tab specifically excluded from the control-byte check below --
     // ported from disp.c's own "convert '\t' to ' '" comment (its
@@ -934,6 +951,8 @@ void ContentView::setUseFixedWidthPosition(bool enabled) { useFixedWidthPosition
 void ContentView::setMarkedPredicate(std::function<bool(int)> predicate) { markedPredicate_ = std::move(predicate); }
 
 void ContentView::setCursorRowAlsoHighlighted(bool enabled) { cursorRowAlsoHighlighted_ = enabled; }
+
+void ContentView::setMarkedRowUsesUnderline(bool enabled) { markedRowUsesUnderline_ = enabled; }
 
 void ContentView::setModeLineRow(std::optional<int> row) { modeLineRow_ = row; }
 
@@ -1550,7 +1569,21 @@ void ContentView::redraw() {
     if (idx < static_cast<int>(lines_.size())) {
       bool cursorRow = idx == highlighted && cursorRowAlsoHighlighted_;
       bool markedRow = markedPredicate_ && markedPredicate_(idx);
-      renderLine(lines_[idx], cursorRow || markedRow);
+      // See setMarkedRowUsesUnderline()'s own comment: when enabled, a
+      // genuinely marked row gets its OWN Underline channel instead of
+      // being folded into the cursor row's Standout, so the two stay
+      // distinguishable. 2026-08-25 follow-up (a direct user report:
+      // Standout+Underline combined on the SAME row is hard to read --
+      // the reverse-video background makes the underline itself hard to
+      // see): marking now takes priority outright on a row that's both
+      // -- Underline only, no Standout -- rather than showing both SGR
+      // attributes at once. Disabled (the default), this collapses back
+      // to the exact pre-2026-08-25 single-boolean call.
+      if (markedRowUsesUnderline_) {
+        renderLine(lines_[idx], cursorRow && !markedRow, markedRow);
+      } else {
+        renderLine(lines_[idx], cursorRow || markedRow);
+      }
       renderedAny = true;
     }
   }

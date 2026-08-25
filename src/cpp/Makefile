@@ -72,16 +72,22 @@ endif
 APP_SRCS = $(wildcard $(APP_DIR)/*.cpp)
 TESTS    = $(wildcard $(TEST_DIR)/*.cpp)
 
-# Installed name is deliberately NOT "usilic" -- /usr/local/bin/usilic
-# is already occupied by the legacy C build (src/install.sh's own
-# `install ... tcb $(DESTDIR)/usr/local/bin/usilic`, predating this
-# C++ port entirely), which stays there untouched since it's still in
-# daily use and this C++ port isn't yet at feature parity with it.
-# "U" was the user's own choice (2026-07-31) for a short, easy-to-type
-# name for trying the C++ build day-to-day without colliding with the
-# legacy binary.
-INSTALL_NAME = U
-INSTALL_DIR  = /usr/local/bin
+# 2026-08-25 (a direct user request, reversing the roles this comment
+# used to describe): this C++ port now owns the "usilic" name outright
+# -- the legacy C build installs as "U" instead (src/config.sh's own
+# PROGNAME=U, see its comment), freeing "usilic" up here. PREFIX
+# defaults to ~/.local (no sudo needed; already on PATH ahead of
+# /usr/local/bin on this machine) -- override for the traditional
+# system-wide location with e.g. `make install PREFIX=/usr/local`
+# (needs sudo then). Mirrors src/config.sh's own identical PREFIX
+# convention for the legacy build, including the SAME
+# $(PREFIX)/lib/<name>/<name>rc layout (usilicrc here, Urc there) --
+# see Application's own usilicrcPath_ fallback (application.cpp) for
+# where this installed copy actually gets read from at runtime.
+PREFIX      ?= $(HOME)/.local
+INSTALL_NAME = usilic
+INSTALL_DIR  = $(PREFIX)/bin
+LIB_DIR      = $(PREFIX)/lib/usilic
 
 .PHONY: test usilic install clean app
 
@@ -93,6 +99,10 @@ usilic: $(BUILD_DIR)/usilic
 install: $(BUILD_DIR)/usilic
 	install -d $(INSTALL_DIR)
 	install -m 755 $(BUILD_DIR)/usilic $(INSTALL_DIR)/$(INSTALL_NAME)
+	install -d $(LIB_DIR)
+	install -m 644 ../usilicrc $(LIB_DIR)/usilicrc
+	install -m 644 ../doc/HELP $(LIB_DIR)/HELP
+	install -m 644 ../doc/HELP.jp $(LIB_DIR)/HELP.jp
 
 # macOS .app bundle (2026-08-24, docs/CHANGES.md item 421, a direct
 # user request: "アイコンをクリックして起動する形にはできる？"):

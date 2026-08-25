@@ -772,6 +772,30 @@ class ContentView {
   // result), independent of where the cursor happens to sit.
   void setCursorRowAlsoHighlighted(bool enabled);
 
+  // While false (the default -- every existing caller's behavior,
+  // unchanged), a genuinely marked row (setMarkedPredicate()'s own
+  // result) renders the SAME Standout reverse-video box the cursor row
+  // itself gets, so the two are visually indistinguishable. Set true
+  // for DirectoryMode's PLAIN (not CP/MV/RM-armed) ls-listing view:
+  // 2026-08-25, a direct user report -- marking a run of entries with
+  // '[' repeatedly leaves the cursor resting one row PAST the last one
+  // actually marked (MarkAndRetreat marks, THEN moves), and since the
+  // cursor row always shows Standout regardless of marking, that final
+  // resting row reads as "also selected" when it is, in fact, not in
+  // targetEntries() at all ("それはCP等へ渡す分ではなく（ls）の
+  // ターゲットに過ぎない"). With this enabled, a genuinely marked row
+  // draws Underline instead of Standout, and the cursor row keeps its
+  // own ordinary Standout independent of marking -- the two states
+  // stay simultaneously visible and distinguishable (a row that is
+  // BOTH the cursor AND marked shows both). Not used for the CP/MV/RM-
+  // armed screen (setCursorRowAlsoHighlighted(false) above already
+  // solves that screen's own version of this ambiguity a different
+  // way, by suppressing the cursor's OWN highlight instead -- matched
+  // against a real legacy reference screenshot, so left as Standout-
+  // for-marks there rather than changed to Underline too), nor for
+  // ArchiveMode's marking (no equivalent report there yet).
+  void setMarkedRowUsesUnderline(bool enabled);
+
   // Overrides which screen row the mode-line draws on, decoupling it
   // from the default row0_+height_ -- nullopt (the default) keeps
   // every existing caller's behavior unchanged. Added for Shell's own
@@ -787,7 +811,15 @@ class ContentView {
   void setModeLineRow(std::optional<int> row);
 
  private:
-  void renderLine(const Line &line, bool marked);
+  // underlineMarked (2026-08-25): a SEPARATE attribute channel from
+  // `marked`/Standout -- see setMarkedRowUsesUnderline()'s own comment
+  // for why a genuinely marked row and the plain cursor row need to be
+  // visually distinguishable, not both collapsed into the same
+  // reverse-video box. Only ever true for callers that opted in via
+  // setMarkedRowUsesUnderline(true) (DirectoryMode's plain browsing
+  // view); every other caller always passes false here, so this is a
+  // pure addition with no effect on existing behavior.
+  void renderLine(const Line &line, bool marked, bool underlineMarked = false);
   void renderModeLine();
   // See ModeLineFields::splitLayoutWhenCrowded's own comment. Called by
   // renderModeLine() INSTEAD OF its usual fitModeLineFields()/
@@ -896,6 +928,7 @@ class ContentView {
   int lastModeLineTrailingEndColumn_ = -1;
   std::function<bool(int)> markedPredicate_;
   bool cursorRowAlsoHighlighted_ = true;
+  bool markedRowUsesUnderline_ = false;
 
   int row0_ = 0, height_ = 0;
   ModeLineFieldsProvider modeLineFieldsProvider_;

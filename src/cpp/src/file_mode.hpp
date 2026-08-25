@@ -1,11 +1,13 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "charset.hpp"
 #include "content_view.hpp"
 #include "history.hpp"
+#include "pipe_buffer.hpp"
 
 namespace fm {
 
@@ -126,8 +128,77 @@ class FileMode {
   // call (see its own comment).
   void setSearchOrigin(const std::string &label, const std::string &detail);
 
+  // 2026-08-25 (a direct user request comparing against both legacy
+  // and less(1)): a CLI pager launch (main.cpp's own "通常ファイル
+  // 引数"/stdin-pipe case, see Application::startPagerStream()'s own
+  // comment) must NOT read its whole input upfront the way loadFile()
+  // above does -- confirmed directly against the real legacy binary
+  // (PTY capture, both a plain file argument AND a piped `seq 1
+  // 100000`): the position counter only ever reaches ~23-25 total
+  // lines (this port's own default viewport height) until the user
+  // actually scrolls further, at which point more gets read. Critical
+  // for a piped source specifically (an infinite/very long stream
+  // must never be fully buffered before the first screen can even
+  // draw), and matched for a real FILE argument too for behavioral
+  // parity with what was actually observed.
+  //
+  // `fd`: an already-open, readable file descriptor -- EITHER a
+  // regular file (Application::startPagerStream()'s own ::open() call)
+  // or fd 0 itself for a piped stdin (KeyInput reads keyboard input
+  // from a separately-opened "/dev/tty", never fd 0 -- see its own
+  // class comment -- so fd 0 is entirely free to be consumed as pager
+  // content here without any conflict). `ownsFd`: whether THIS call
+  // should ::close() it once EOF is reached or a new load/loadFile()
+  // replaces it (false for stdin -- closing fd 0 mid-process is not
+  // this class's business). `displayName`: the mode-line's own name
+  // field verbatim (the full path for a file argument, empty for
+  // stdin -- see the constructor's own ModeLineFieldsProvider comment
+  // for why this differs from loadFile()'s bare-filename convention);
+  // ALSO the RecentFile history key, skipped entirely when empty (no
+  // stable path to remember for a pipe). `initialLineBudget`: how many
+  // lines to read up front (Application passes the current viewport
+  // height plus a small margin).
+  bool loadStream(int fd, bool ownsFd, const std::string &displayName, int initialLineBudget);
+  // Reads more from the still-open stream if `targetLineIndex` is at
+  // or past the currently-loaded end and the stream hasn't hit EOF --
+  // called by Application right before delegating a scroll/movement
+  // command to the view, ONLY while hasActiveStream() is true (every
+  // OTHER File-mode entry point -- loadFile() above -- has nothing to
+  // stream, so this is always a no-op there). False (a pure no-op)
+  // once EOF is reached or no stream is active at all.
+  bool ensureLoadedThrough(int targetLineIndex);
+  bool hasActiveStream() const { return streamFd_ >= 0; }
+  bool streamAtEof() const { return streamAtEof_; }
+  // 2026-08-25 bug fix: `hasActiveStream()` above turns false once the
+  // stream reaches real EOF (streamFd_ resets to -1, see
+  // readMoreIntoPipe()'s own comment) -- correct for gating "is there
+  // more to read", but WRONG for "was this file/stdin opened via a CLI
+  // pager launch at all", which needs to keep answering true for as
+  // long as the SAME loadStream() call's content is still on screen
+  // (a real PTY bug: pressing ^G on an already-fully-read piped source
+  // -- e.g. a short `ls -l /tmp | usilic` -- fell straight through to
+  // returnToDirectory() and showed an empty Directory listing, since
+  // hasActiveStream() had already gone false by the time ^G was
+  // pressed). Use THIS for anything that needs to know "is this
+  // pager-launched content" independent of read progress (Command::Back's
+  // own File-mode branch); pagerMode_ itself is only ever reset by the
+  // NEXT loadFile()/loadStream() call, never by reaching EOF.
+  bool isPagerMode() const { return pagerMode_; }
+
  private:
   std::vector<ContentView::Line> readAndWrap(const std::string &path) const;
+  // Shared by loadStream()/ensureLoadedThrough(): reads from streamFd_
+  // in bounded chunks, feeding each into streamPipe_, until either
+  // streamPipe_->lines() reaches targetLineCount or EOF is hit (which
+  // also flush()es streamPipe_, finalizing any still-pending trailing
+  // partial line, and closes streamFd_ if streamOwnsFd_).
+  void readMoreIntoPipe(int targetLineCount);
+  std::vector<ContentView::Line> convertPipeLines() const;
+  // Resets any prior stream state (closing an owned fd) -- called at
+  // the top of loadStream() (a second CLI-launched file replacing the
+  // first, e.g. Command::PagerNextFile) and of loadFile() (defensive:
+  // an ordinary eager load should never leave a stale stream dangling).
+  void closeStream();
 
   ContentView &view_;
   History &history_;
@@ -136,6 +207,16 @@ class FileMode {
   std::string currentFile_;
   std::string searchOriginLabel_;
   std::string searchOriginDetail_;
+  // pagerMode_ (2026-08-25): set by loadStream(), cleared by
+  // loadFile() -- see the constructor's own ModeLineFieldsProvider
+  // comment for why a pager-launched file's mode-line shows the full
+  // path (or nothing, for stdin) with no size/directory trailing
+  // fields, unlike an ordinary loadFile()-opened file.
+  bool pagerMode_ = false;
+  int streamFd_ = -1;
+  bool streamOwnsFd_ = false;
+  bool streamAtEof_ = false;
+  std::unique_ptr<PipeBuffer> streamPipe_;
 };
 
 }  // namespace fm

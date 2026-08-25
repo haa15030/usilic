@@ -12,6 +12,12 @@ tcb/*.P
 tcb/src/tcb
 tcb/src/tcb.exe
 tcb/src/usilic
+# "U" (2026-08-25): src/config.sh's own PROGNAME, renamed from "usilic"
+# so this legacy build installs alongside the C++ port (src/cpp/, which
+# now owns the "usilic" name) without colliding -- see config.sh's own
+# comment. "usilic" above is kept too, for any older checkout/build
+# that hasn't re-run config.sh yet.
+tcb/src/U
 tcb/src/config.h
 tcb/src/config.h.old
 # progname.h is generated fresh by every `make` invocation (see
