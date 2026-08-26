@@ -4677,24 +4677,32 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^J d (DU) works too, exercising a
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ESC-leader (e.g. ESC < / GoToTop) also works from within Shell "
-                           "now, exercising the ONE remaining leader that used to be deliberately excluded "
-                           "(2026-08-17 fix, reversing an earlier deliberate exclusion -- a real user report "
-                           "found this was the same 'fixed in feedPromptByte() but never mirrored into "
-                           "feedShellByte()' gap as the ^A/^E/^B/^F/^D fix just above)") {
+// 2026-08-26 correction (a real report: running `df`/`ls` then ESC-<
+// unexpectedly landed in Directory's own (ls) instead of staying in
+// SHELL): the ORIGINAL version of this test (2026-08-17) explicitly
+// validated "ESC-< leaves Shell, matching ^J/^X's own precedent" as
+// the deliberately-designed behavior -- a direct user follow-up
+// confirmed that precedent should NOT extend to GoToTop/GoToBottom/
+// PageUp specifically (plain activeView()-generic scroll commands with
+// no Directory-specific meaning at all, unlike ^X^F/^X^D's own
+// genuine need for Directory state), so these three now stay in Shell,
+// operating on scrollback_ itself instead.
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ESC-< (GoToTop) stays in Shell mode, scrolling scrollback_ "
+                           "itself, unlike ^J/^X which still leave Shell") {
   REQUIRE(app.start(path()));
-  int idx = indexOf("subdir/");
-  REQUIRE(idx >= 0);
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(idx != 0);
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
     return;
   }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+  feedText("echo hi");
+  REQUIRE(app.feedShellByte(0x0d, std::nullopt));
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().scrollback().lines().empty(); }));
+
   CHECK(app.feedShellByte(0x1b, std::nullopt));  // ESC
   CHECK(app.feedShellByte('<', std::nullopt));   // < : GoToTop (M_head)
-  CHECK(app.currentMode() == ApplicationMode::Directory);  // left Shell, matching ^J/^X's own precedent
-  CHECK(indexOf(app.directoryMode().selectedEntry()->name) == 0);
+  CHECK(app.currentMode() == ApplicationMode::Shell);  // stays in Shell now
+  CHECK(app.shell().scrollback().cursorIndex() == 0);
 }
 
 TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: an unrecognized ESC-sequence still leaves Shell as a side "
@@ -4810,7 +4818,12 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: position is a fixed 5-digit zero-pa
   REQUIRE(app.feedShellByte(0x0d, std::nullopt));
   REQUIRE(pumpUntil(app, [&] { return !app.shell().scrollback().lines().empty(); }));
 
-  int total = static_cast<int>(app.shell().scrollback().lines().size());
+  // 2026-08-26 update: the displayed total is now real lines().size()+1
+  // (the live prompt row itself counts as its own line -- see
+  // ContentView::setCountLivePromptAsLine()'s own declaration comment),
+  // not lines().size() alone -- resting here (not browsing), current
+  // reads the same "+1" total too.
+  int total = static_cast<int>(app.shell().scrollback().lines().size()) + 1;
   std::string paddedTotal = std::to_string(total);
   if (paddedTotal.size() < 5) paddedTotal.insert(0, 5 - paddedTotal.size(), '0');
   std::string text = app.shell().scrollback().modeLineText();
@@ -4819,9 +4832,16 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: position is a fixed 5-digit zero-pa
 
 // Same request as the position-field test above: "現在行までのバイト数
 // をサポートしてほしい" -- no legacy precedent for this one (a
-// genuinely new capability), computed as the cumulative byte size of
-// every scrollback line up to (and including) the cursor's own line.
-TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: shows the cumulative byte count up to the current line") {
+// genuinely new capability). 2026-08-26 correction (a real, carefully-
+// verified report: "④の「68」も...加算されていないのでバグ。正しい
+// 表記は②③④とも「102」のはず"): this used to sum only through the
+// CURSOR's own line, so browsing back through history via ^P made the
+// displayed count silently shrink -- now unconditionally the total
+// byte size of EVERY scrollback line, matching FileMode's own
+// identically-named field's settled "actual bytes accumulated so far,
+// never decreasing" spec (HISTORY.md:11323).
+TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: shows the total byte count of all scrollback lines, unaffected "
+                           "by browsing history backward") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -4832,13 +4852,16 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: shows the cumulative byte count up 
   REQUIRE(app.feedShellByte(0x0d, std::nullopt));
   REQUIRE(pumpUntil(app, [&] { return !app.shell().scrollback().lines().empty(); }));
 
-  const auto &lines = app.shell().scrollback().lines();
-  int cursor = app.shell().scrollback().cursorIndex();
-  REQUIRE(cursor >= 0);
   std::size_t expectedBytes = 0;
-  for (int i = 0; i <= cursor && i < static_cast<int>(lines.size()); i++) expectedBytes += lines[i].text.size() + 1;
+  for (const auto &line : app.shell().scrollback().lines()) expectedBytes += line.text.size() + 1;
+  REQUIRE(expectedBytes > 0);
   std::string text = app.shell().scrollback().modeLineText();
   CHECK(text.find(std::to_string(expectedBytes)) != std::string::npos);
+
+  // Browsing backward via ^P must NOT shrink the displayed count.
+  REQUIRE(app.feedShellByte(0x10, std::nullopt));
+  std::string textAfterBrowsing = app.shell().scrollback().modeLineText();
+  CHECK(textAfterBrowsing.find(std::to_string(expectedBytes)) != std::string::npos);
 }
 
 // 2026-08-24 fix, a real report: entering SHELL from Cut mode (^J^W)

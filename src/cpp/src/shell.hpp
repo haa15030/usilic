@@ -186,10 +186,45 @@ class Shell {
   // any other key snapping the view back first) keeps the invariant
   // enforced at every exit point instead of each call site needing to
   // remember it separately.
+  // 2026-08-26 (a direct user follow-up, resolved via a two-round
+  // Socratic exchange -- see ContentView::setCountLivePromptAsLine()'s
+  // own declaration comment for the full reasoning): the live prompt
+  // row's own "+1" only belongs in the position field while actually
+  // resting there, never while browsing a REAL scrollback_ line -- so
+  // every place this class's own historyBrowsing_ flips is exactly
+  // where scrollback_'s own atLivePromptLine (the ContentView-side
+  // half of the same concept) must flip too, kept in lockstep here
+  // rather than relying on some OTHER caller to remember it separately.
   bool historyBrowsing() const { return historyBrowsing_; }
-  void beginHistoryBrowsing() { historyBrowsing_ = true; }
+  // 2026-08-26 bug fix: beginHistoryBrowsing() previously only flipped
+  // state, trusting the caller's OWN subsequent redrawPromptRow()/
+  // moveDisplayCursorToShellHistoryLine() calls (Application's ^P
+  // handler) to make the change visible -- but NEITHER of those touch
+  // the mode line at all (redrawPromptRow() repaints only the live
+  // prompt row itself; moveDisplayCursorToShellHistoryLine() only moves
+  // the terminal's own blinking cursor), so the FIRST ^P press's own
+  // "+1" position change (see setAtLivePromptLine()'s own comment) sat
+  // computed-but-unpainted until some LATER, unrelated redraw finally
+  // caught up -- a real PTY capture found it only appeared one keypress
+  // late. redraw() here makes this self-contained instead of relying on
+  // the caller to know that.
+  void beginHistoryBrowsing() {
+    historyBrowsing_ = true;
+    scrollback_.setAtLivePromptLine(false);
+    scrollback_.redraw();
+  }
+  // 2026-08-26 bug fix (found alongside beginHistoryBrowsing()'s own,
+  // same real PTY capture): goToBottom() below redraws INTERNALLY (see
+  // its own comment) -- ordering setAtLivePromptLine(true) AFTER it, as
+  // this originally did, meant that internal redraw still ran against
+  // the STALE atLivePromptLine_==false, painting the "still browsing"
+  // position text one call too early. Flipped first here so the SAME
+  // redraw goToBottom() already does paints the correct, final value on
+  // its own -- no separate redraw() call needed after, unlike
+  // beginHistoryBrowsing() above.
   void exitHistoryBrowsing() {
     historyBrowsing_ = false;
+    scrollback_.setAtLivePromptLine(true);
     scrollback_.goToBottom();
   }
 

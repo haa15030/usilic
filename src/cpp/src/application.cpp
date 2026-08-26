@@ -575,17 +575,45 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // ModeLine::formatFixedWidth()'s own comment) -- see below for the
   // byte-count field this same request also asked for.
   shell_.scrollback().setUseFixedWidthPosition(true);
-  shell_.scrollback().setModeLineFieldsProvider([this](int cursorIndex) -> ContentView::ModeLineFields {
-    // Byte count up to (and including) the current line (2026-08-24
-    // addition, a direct user request: "可能なら現在行までのバイト数を
-    // サポートしてほしい") -- no legacy precedent for this one (unlike
-    // the position field above), a genuinely new capability. +1 per
-    // line for the newline byte lost when scrollback_'s own Line::text
-    // was split, matching the same convention every other mode's own
-    // byte-count field (contentByteCount(), HELP's own doctest) uses.
+  // 2026-08-26 addition (a direct user request, refined twice: "プロン
+  // プトがすでに1行使ってるんで「00001/00001 END」が自然では" ->
+  // "あなたの理論が正しければ...そもそも間違い" pointed out the
+  // narrower original fix was self-inconsistent): the live prompt row
+  // always counts as its own extra line on top of real scrollback_
+  // content, not just when that content is empty. See
+  // ContentView::setCountLivePromptAsLine()'s own declaration comment
+  // for why this is scoped to Shell's scrollback_ specifically, not
+  // the shared default; setAtLivePromptLine() itself is toggled
+  // dynamically by Shell's own beginHistoryBrowsing()/
+  // exitHistoryBrowsing() (see their own declaration comments), not
+  // set again here.
+  shell_.scrollback().setCountLivePromptAsLine(true);
+  shell_.scrollback().setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    // Byte count (2026-08-24 addition, a direct user request: "可能なら
+    // 現在行までのバイト数をサポートしてほしい") -- no legacy precedent
+    // for this one, a genuinely new capability.
+    //
+    // 2026-08-26 correction (a direct user follow-up, pointing back at
+    // FileMode's own identically-named field and its OWN settled spec,
+    // HISTORY.md:11323's own "実際に読み込まれたバイト数としたい...
+    // ページ戻しが起きたとしてもすでに読み込んだ分量としてのバイト数は
+    // 変わらない"): this field used to sum only through the CURSOR's
+    // line (0..cursorIndex), so browsing BACK through history via ^P
+    // made the displayed count silently shrink -- a real, carefully-
+    // verified report ("④の「68」も...加算されていないのでバグ。正しい
+    // 表記は②③④とも「102」のはず") confirmed this reads as a bug for
+    // the exact same reason FileMode's pager byte count was fixed the
+    // same way: both fields exist to answer "how much has genuinely
+    // accumulated so far", not "how much precedes wherever the cursor
+    // happens to be right now" -- so this now always sums ALL of
+    // scrollback_'s own lines, unconditionally, matching FileMode's own
+    // monotonically-increasing convention and no longer depending on
+    // the cursorIndex parameter at all. +1 per line for the newline
+    // byte lost when scrollback_'s own Line::text was split, matching
+    // the same convention every other mode's own byte-count field
+    // (contentByteCount(), HELP's own doctest) uses.
     std::size_t bytes = 0;
-    const auto &lines = shell_.scrollback().lines();
-    for (int i = 0; i <= cursorIndex && i < static_cast<int>(lines.size()); i++) bytes += lines[i].text.size() + 1;
+    for (const auto &line : shell_.scrollback().lines()) bytes += line.text.size() + 1;
     bool hasPrev = !shellReturnName_.empty();
     ContentView::ModeLineFields fields;
     fields.name = "SHELL";
@@ -1925,7 +1953,24 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   // code path that this doesn't touch.)
   bool shellLeaderPending = leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_ || escPending_;
   if (!special && (shellLeaderPending || byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape)) {
-    if (shellLeaderPending) {
+    // 2026-08-26 bug fix (a real report: running `df`/`ls` then ESC-<
+    // unexpectedly landed in Directory's own (ls) instead of staying in
+    // SHELL): ESC-</ESC->/ESC-v (GoToTop/GoToBottom/PageUp) are plain
+    // activeView()-generic scroll commands with no Directory-specific
+    // meaning at all -- they're perfectly well-defined against Shell's
+    // OWN scrollback_ (see Command::GoToTop's own handler, just
+    // activeView().goToTop()) -- but the blanket pre-switch below
+    // (added for ^X^F/^X^D-style commands that genuinely DO need
+    // Directory state first) ran unconditionally for EVERY completed
+    // leader sequence regardless of which one, so activeView() had
+    // already become Directory's own view by the time these actually
+    // ran, scrolling THAT instead and leaving Shell as an unwanted side
+    // effect. Excluded here, narrowly, rather than trying to enumerate
+    // every OTHER leader command that might are might not need the
+    // switch -- this only touches the THREE bytes confirmed to have
+    // this exact problem.
+    bool isShellSafeNavigation = escPending_ && (byte == '<' || byte == '>' || byte == 'v');
+    if (shellLeaderPending && !isShellSafeNavigation) {
       // Completing a sequence -- switch back to whichever mode SHELL
       // was entered from BEFORE dispatching, exactly as if the user
       // had pressed ^G first (matching legacy, and matching KEY
@@ -1957,7 +2002,30 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     }
   }
 
-  if (byte == kControlG) return returnFromShell();
+  // 2026-08-26 bug fix (a real report: running `df`/`ls` then a
+  // generic macro built from ^G -- "<"/">"/etc, see resolveCommand()'s
+  // own K-22/K-11-style bindings -- unexpectedly landed in Directory
+  // mode's (ls) instead of staying in SHELL): unlike every OTHER key
+  // (see the "any other key while browsing snaps back" block below),
+  // ^G here used to leave Shell mode UNCONDITIONALLY, without first
+  // checking historyBrowsing() -- so a macro like "<" ("Select, back,
+  // cursor up, select", meant for cycling backward through a LIST in
+  // whatever mode it's pressed in) ran its own embedded ^G as "leave
+  // Shell entirely" instead of "back out of history-browsing, stay in
+  // Shell" the way a plain ^G press from a genuinely non-Shell list
+  // browsing context would. Only actually calls returnFromShell() once
+  // NOT browsing -- matching every other key's own snap-back-first
+  // convention -- so a first ^G cancels browsing (like Escape/Back
+  // conventionally cancels the innermost context first), and a SECOND
+  // one (now resting) is what actually leaves Shell.
+  if (byte == kControlG) {
+    if (shell_.historyBrowsing()) {
+      shell_.exitHistoryBrowsing();
+      shell_.redrawPromptRow();
+      return true;
+    }
+    return returnFromShell();
+  }
   // K-0 (^T, ShowTcbBanner): 2026-08-18 fix, a direct user report
   // ("SHELLで^Tが利かない"). ^T isn't a leader byte (kLeaderJ/X/O/ESC
   // above) -- resolveCommand() maps it directly, unprefixed, for every
@@ -2005,11 +2073,26 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     return true;
   }
   if (byte == 0x0e) {  // ^N
-    // No equivalent first-press special case needed here: resting
-    // (not browsing) already leaves scrollback_'s own cursorIndex_ at
-    // its floor for moveDown() (lines().size()-1), so an unconditional
-    // call already beeps correctly with nothing to move down INTO.
-    shell_.scrollback().moveDown();
+    // 2026-08-26 bug fix (a real, carefully-reproduced report: "②へ
+    // 行ったきり^Nでも③へ戻らない"): while ^P's own 2026-08-25 fix
+    // above correctly lands the FIRST press ON the newest entry
+    // without moving cursorIndex_ off its resting floor, ^N had no
+    // symmetric way back OUT once there -- scrollback_'s own
+    // moveDown() only moves WITHIN lines_, so once already at its
+    // last index (the newest entry, exactly where a single scrollback
+    // line -- one command, unwrapped -- leaves you sitting after just
+    // ONE ^P press) it's permanently a no-op beep, with no path back
+    // to the LIVE prompt row at all (that row isn't itself a member of
+    // lines_ -- see the class's own scrollback_/commandLine_ split).
+    // Mirrors ^P's own fix: at the bottom AND still browsing means
+    // "nothing left to move down INTO, so leave browsing instead" --
+    // exitHistoryBrowsing() is the exact same call Enter's own
+    // non-command fallback and the "any other key" snap-back already
+    // use for that same transition.
+    const auto &lines = shell_.scrollback().lines();
+    bool atBottom = !lines.empty() && shell_.scrollback().cursorIndex() == static_cast<int>(lines.size()) - 1;
+    if (shell_.historyBrowsing() && atBottom) shell_.exitHistoryBrowsing();
+    else shell_.scrollback().moveDown();
     shell_.redrawPromptRow();
     moveDisplayCursorToShellHistoryLine();
     return true;
@@ -2616,11 +2699,32 @@ bool Application::handleCommand(Command command) {
     case Command::GoToTop:
       activeView().setHoverIndex(std::nullopt);
       activeView().goToTop();
+      // 2026-08-26 bug fix (found alongside the ESC-</ESC-> SHELL-exit
+      // report just above): this generic command moves scrollback_'s
+      // own cursorIndex_ directly, bypassing Shell's OWN ^P/^N-specific
+      // historyBrowsing()/atLivePromptLine tracking entirely (see
+      // Shell::historyBrowsing()'s own declaration comment) -- so the
+      // position field kept showing the STALE "resting" total/current
+      // (still true from before) even though cursorIndex_ had genuinely
+      // moved to line 0. beginHistoryBrowsing() doesn't move
+      // cursorIndex_ itself (goToTop() above already did) -- it only
+      // syncs the flags and redraws, so calling it AFTER is exactly the
+      // missing synchronization step, harmless as a no-op when
+      // currentMode_ isn't Shell (checked first).
+      if (currentMode_ == ApplicationMode::Shell) shell_.beginHistoryBrowsing();
       activeView().syncVisibleCursor();
       return true;
     case Command::GoToBottom:
       activeView().setHoverIndex(std::nullopt);
       activeView().goToBottom();
+      // See Command::GoToTop's own identical 2026-08-26 comment just
+      // above: reaching the BOTTOM of scrollback_ is exactly what
+      // Shell's own exitHistoryBrowsing() already means ("back to the
+      // live prompt", see its own declaration comment) -- its own
+      // goToBottom() call is a harmless no-op redundant with the one
+      // just above (cursorIndex_ already there), the actual missing
+      // piece being atLivePromptLine's own flag sync.
+      if (currentMode_ == ApplicationMode::Shell) shell_.exitHistoryBrowsing();
       activeView().syncVisibleCursor();
       return true;
     case Command::QuitPager:
@@ -3758,6 +3862,36 @@ bool Application::startShell() {
 
 bool Application::ensureShellActive() {
   if (currentMode_ == ApplicationMode::Shell) return true;
+  // 2026-08-26 fix (a real, carefully-reproduced report): reaching
+  // Shell via THIS generic path (^[s/^J^W/etc, as opposed to
+  // Command::Back's own dedicated ^G/'q' pager-return handling) while
+  // currently viewing a SHELL-handoff-originated (stdin)/file pager
+  // session must NOT fall through to shellReturnMode_ = currentMode_
+  // below -- that pager session is a throwaway, ephemeral view of
+  // already-injected content (see FileMode::pagerReturnsToShell()'s
+  // own comment), not a real navigable mode with content that's safe
+  // to record as a return target. Left unhandled, this ping-pongs
+  // forever: ^[s here would set shellReturnMode_=File, so a LATER
+  // plain ^G (Shell's own separate, unrelated "leave shell" binding,
+  // never touched by any of the pager-specific work) would return to
+  // that SAME still-configured pager, whose own pagerReturnsToShell_
+  // then sends the NEXT ^G right back to Shell again -- an infinite
+  // SHELL<->(stdin) loop (plus the "usilic v1.5b" watermark
+  // incorrectly showing there instead of the "SHELL" trailing3, since
+  // repeatedly re-entering by this route re-triggers pollShellHandoff()
+  // against the same stale rendezvous data). Per a direct user
+  // proposal ("(stdin)の存在は画面を離れた時点で消失でいい" -- the
+  // session should simply cease to exist the moment its screen is
+  // left, by ANY means, not just ^G): switch straight into Shell here,
+  // identical to what Command::Back's own ^G already does from this
+  // exact state, WITHOUT ever recording a return path -- there is
+  // nothing left to come back to.
+  if (currentMode_ == ApplicationMode::File && fileMode_.pagerReturnsToShell()) {
+    currentMode_ = ApplicationMode::Shell;
+    shell_.scrollback().redraw();
+    shell_.redrawPromptRow();
+    return true;
+  }
   // 2026-08-12 fix: a real report -- start usilic, ^J^S (EGREP
   // candidate list), ^J^W (now reachable from there thanks to today's
   // earlier feedRegexListByte()/feedPromptByte() leader-dispatch fix),
@@ -3853,7 +3987,11 @@ bool Application::shellRestart() {
   shellStarted_ = false;
   if (!shell_.start()) return false;
   shellStarted_ = true;
-  if (currentMode_ != ApplicationMode::Shell) {
+  // See ensureShellActive()'s own identical 2026-08-26 comment: a
+  // SHELL-handoff-originated pager session must never become a
+  // recorded return target either, for the same reason.
+  if (currentMode_ != ApplicationMode::Shell &&
+      !(currentMode_ == ApplicationMode::File && fileMode_.pagerReturnsToShell())) {
     shellReturnName_ = previousModeName(currentMode_);
     shellReturnMode_ = currentMode_;
   }

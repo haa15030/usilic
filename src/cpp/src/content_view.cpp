@@ -853,6 +853,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
 std::string ContentView::modeLineText() const {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
+  applyLivePromptLineAdjustment(total, current);
   return composeModeLineRow(useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
                                                     : ModeLine::format(current, total));
 }
@@ -875,6 +876,7 @@ std::string ContentView::scrollModeLineText() const {
   } else {
     current = topIndex_ + 1;  // topIndex_==0 here naturally shows TOP
   }
+  applyLivePromptLineAdjustment(total, current);
   return composeModeLineRow(useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
                                                     : ModeLine::format(current, total));
 }
@@ -890,6 +892,7 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
   } else {
     current = topIndex_ + 1;
   }
+  applyLivePromptLineAdjustment(total, current);
   std::string positionText =
       useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total) : ModeLine::format(current, total);
 
@@ -947,6 +950,14 @@ void ContentView::setModeLineFieldsProvider(ModeLineFieldsProvider provider) {
 }
 
 void ContentView::setUseFixedWidthPosition(bool enabled) { useFixedWidthPosition_ = enabled; }
+void ContentView::setCountLivePromptAsLine(bool enabled) { countLivePromptAsLine_ = enabled; }
+void ContentView::setAtLivePromptLine(bool atLivePromptLine) { atLivePromptLine_ = atLivePromptLine; }
+
+void ContentView::applyLivePromptLineAdjustment(int &total, int &current) const {
+  if (!countLivePromptAsLine_) return;
+  total += 1;
+  if (atLivePromptLine_) current = total;
+}
 
 void ContentView::setMarkedPredicate(std::function<bool(int)> predicate) { markedPredicate_ = std::move(predicate); }
 
@@ -1233,6 +1244,7 @@ std::string ContentView::composeModeLineRow(const std::string &positionText) con
 void ContentView::renderModeLine() {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
+  applyLivePromptLineAdjustment(total, current);
   std::string positionText =
       useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total) : ModeLine::format(current, total);
   int modeLineRow = modeLineRow_.value_or(row0_ + height_);

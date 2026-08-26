@@ -742,6 +742,35 @@ class ContentView {
   // exact legacy behavior.
   void setUseFixedWidthPosition(bool enabled);
 
+  // 2026-08-26 addition (a direct user request, refined twice in the
+  // same conversation): the live prompt row is ALWAYS visibly
+  // occupying a line on screen, on top of whatever real scrollback_
+  // content exists -- so total should always be lines_.size()+1, not
+  // just lines_.size(), and `current` should read as that same total
+  // (the live prompt's own trailing position) whenever nothing is
+  // actively being browsed. An EARLIER, narrower version of this fix
+  // only special-cased a genuinely EMPTY scrollback_ ("00000/00000"
+  // -> "00001/00001" before the first command), reasoning "プロンプト
+  // がすでに1行使ってるんで「00001/00001 END」が自然では" -- but a
+  // direct user follow-up ("あなたの理論が正しければ...①で表示される
+  // 「00001/00001 END」がそもそも間違い") pointed out that same
+  // reasoning, applied consistently, means a single REAL scrollback
+  // line should show "00002/00002" (1 real + 1 live prompt), not
+  // "00001/00001" -- the narrower fix was inconsistent with its own
+  // justification. Two flags: `enabled` (set once, permanently, in
+  // Shell's own constructor alongside setUseFixedWidthPosition(true))
+  // turns this whole treatment on for Shell's scrollback_ specifically
+  // -- NOT the shared default, since a genuinely empty FILE-mode pager
+  // (an actual 0-byte source) has no equivalent "live prompt row" to
+  // justify the same treatment; `atLivePromptLine` is the DYNAMIC half,
+  // toggled by Shell itself in lockstep with historyBrowsing() (see
+  // its own declaration comment) -- true whenever resting at the live
+  // prompt (the default), false the instant browsing moves cursorIndex_
+  // into real content, so `current` reads the REAL cursorIndex_+1
+  // there instead of the live prompt's own trailing position.
+  void setCountLivePromptAsLine(bool enabled);
+  void setAtLivePromptLine(bool atLivePromptLine);
+
   // Called once per candidate row during redraw() (see its own comment)
   // to decide whether a row should render highlighted (Standout, the
   // exact same treatment the cursor row itself already gets -- see
@@ -821,6 +850,14 @@ class ContentView {
   // pure addition with no effect on existing behavior.
   void renderLine(const Line &line, bool marked, bool underlineMarked = false);
   void renderModeLine();
+  // Shared by every position-field computation (modeLineText(),
+  // renderModeLine(), scrollModeLineText(), scrollModeLineSegments()):
+  // applies setCountLivePromptAsLine()'s own +1-for-the-live-prompt-row
+  // adjustment in one place instead of four. See its own declaration
+  // comment for the full reasoning; a no-op (both refs left untouched)
+  // when countLivePromptAsLine_ is false, which is every OTHER
+  // ContentView instance's own default.
+  void applyLivePromptLineAdjustment(int &total, int &current) const;
   // See ModeLineFields::splitLayoutWhenCrowded's own comment. Called by
   // renderModeLine() INSTEAD OF its usual fitModeLineFields()/
   // withTruncatedFields() path once that path's own naive width check
@@ -933,6 +970,8 @@ class ContentView {
   int row0_ = 0, height_ = 0;
   ModeLineFieldsProvider modeLineFieldsProvider_;
   bool useFixedWidthPosition_ = false;
+  bool countLivePromptAsLine_ = false;  // see setCountLivePromptAsLine()'s own declaration comment
+  bool atLivePromptLine_ = true;        // see setAtLivePromptLine()'s own declaration comment
   std::optional<int> modeLineRow_;
 };
 
