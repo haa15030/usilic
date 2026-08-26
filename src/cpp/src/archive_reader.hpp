@@ -109,4 +109,37 @@ class RpmReader : public ArchiveReader {
                       std::vector<ArchiveEntry> &) const override {}
 };
 
+// 2026-08-26 addition (a direct user request, testing a real .rar
+// fixture): parses `lsar -l <archive>` output (see its own
+// declaration comment on why lsar/unar, not the proprietary `unrar`).
+// No legacy precedent (RAR postdates this project's original C era).
+// locateContent() uses the SAME sequential-walk approach as
+// ZipReader/LhaReader (see ZipReader::locateContent()'s own comment)
+// -- `unar -f -o - -q <archive>` extracts every entry to stdout,
+// concatenated in the SAME order lsar -l lists them (verified
+// directly: the extracted stream's own total byte count exactly
+// matches the sum of every listed file's own size, and the very
+// first bytes match the first listed file's own known content).
+class RarReader : public ArchiveReader {
+ public:
+  std::vector<ArchiveEntry> parseListing(const std::string &listing) const override;
+  void locateContent(const unsigned char *data, std::size_t size,
+                      std::vector<ArchiveEntry> &entries) const override;
+};
+
+// 2026-08-26 addition (a direct user request, testing a real .7z
+// fixture): parses `7z l <archive>` output. No legacy precedent (7z
+// postdates this project's original C era). locateContent() uses the
+// SAME sequential-walk approach as ZipReader/LhaReader/RarReader --
+// `7z x -so <archive>` extracts every entry to stdout, concatenated in
+// the SAME order `7z l` lists them (verified the same way RarReader's
+// own comment describes: total byte count and first-file content both
+// match).
+class SevenZipReader : public ArchiveReader {
+ public:
+  std::vector<ArchiveEntry> parseListing(const std::string &listing) const override;
+  void locateContent(const unsigned char *data, std::size_t size,
+                      std::vector<ArchiveEntry> &entries) const override;
+};
+
 }  // namespace fm

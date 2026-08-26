@@ -163,6 +163,33 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       fields.fillTrailingToEdge = true;
       fields.rightWatermark = "";
     }
+    // arcExtractSourceAnnotation_ (2026-08-26, see its own declaration
+    // comment): independent of the two branches above (showEditError_/
+    // pendingOperationLabel_ never coincide with this -- it's only ever
+    // set right after a successful archive extraction lands here, at
+    // which point neither of those is active) -- trailing2 stays the
+    // normal "(ls)" badge, only trailing3 (and, to make room for it,
+    // fillTrailingToEdge/rightWatermark) changes, matching ArchiveMode's
+    // own identical trailing2+trailing3 badge/path pairing.
+    if (!arcExtractSourceAnnotation_.empty()) {
+      fields.trailing3 = "ARC: " + arcExtractSourceAnnotation_;
+      fields.fillTrailingToEdge = true;
+      fields.rightWatermark = "";
+    }
+    // splitLayoutWhenCrowded (2026-08-27 addition, a direct user
+    // report/callback to their own earlier HISTORY.md:9608 proposal,
+    // which archiveContentView_'s own provider already adopted --
+    // see its own comment in application.cpp): a real CJK filename
+    // long enough to crowd out the byte-count field used to just
+    // silently vanish here via fitModeLineFields()'s own ordinary
+    // all-or-nothing tiers, unlike ArchiveMode's content view, which
+    // already gets the "center the position+bytes, split the
+    // remaining space between name and trailing2" treatment for
+    // exactly this case. DirectoryMode's own `(ls)` listing can hit
+    // the identical crowding (any real file/directory NAME can be
+    // arbitrarily long, not just an archive entry's), so it gets the
+    // same treatment now.
+    fields.splitLayoutWhenCrowded = true;
     return fields;
   });
 }
@@ -233,6 +260,11 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   // `ls` (e.g. navigating to a different directory) has already made
   // stale.
   clearPendingOperationLabel();
+  // See setArcExtractSourceAnnotation()'s own comment: a fresh `ls`
+  // (any real navigation away from the directory a successful archive
+  // extraction just landed on) invalidates it, same lifetime as the
+  // CP/MV/RM arm label just above.
+  arcExtractSourceAnnotation_.clear();
   // Same restore cancelPendingCpMvRm()/startDestinationPrompt() do on
   // their own un-arm paths -- a stale arm cleared here (navigating to a
   // different directory) must not leave the cursor row's own highlight
@@ -274,6 +306,10 @@ void DirectoryMode::clearEditError() { showEditError_ = false; }
 void DirectoryMode::setPendingOperationLabel(const std::string &label) { pendingOperationLabel_ = label; }
 
 void DirectoryMode::clearPendingOperationLabel() { pendingOperationLabel_.clear(); }
+
+void DirectoryMode::setArcExtractSourceAnnotation(const std::string &archivePath) {
+  arcExtractSourceAnnotation_ = archivePath;
+}
 
 const std::string &DirectoryMode::currentDirectory() const { return currentDirectory_; }
 const std::vector<DirectoryEntry> &DirectoryMode::entries() const { return entries_; }

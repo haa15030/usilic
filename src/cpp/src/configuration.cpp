@@ -269,6 +269,12 @@ Configuration::Configuration() {
   roleCommands_[ConfiguredRole::Rpm] = {{"rpm"}, std::nullopt};
   roleCommands_[ConfiguredRole::Rpm2Cpio] = {{"rpm2cpio"}, std::nullopt};
   roleCommands_[ConfiguredRole::DebExtract] = {{"ar", "p"}, std::nullopt};
+  // unar (not the proprietary `unrar`) -- see ConfiguredRole::RarExtract's
+  // own declaration comment. "-o -" extracts to stdout, "-q" suppresses
+  // the per-entry progress text unar otherwise interleaves with the
+  // actual extracted bytes.
+  roleCommands_[ConfiguredRole::RarExtract] = {{"unar", "-f", "-o", "-", "-q"}, std::nullopt};
+  roleCommands_[ConfiguredRole::SevenZipExtract] = {{"7z", "x", "-so"}, std::nullopt};
 
   // Ported from str.c's compiled-in ARCHIVE[] table, verbatim
   // suffix->command mappings.
@@ -284,6 +290,14 @@ Configuration::Configuration() {
   addBuiltinArchive(".tgz", ArchiveKind::Tar, {{"tar", "tvf", "-"}, std::vector<std::string>{"gzip", "-dc"}});
   addBuiltinArchive(".tar.bz2", ArchiveKind::Tar,
                      {{"tar", "tvf", "-"}, std::vector<std::string>{"bzip2", "-dc"}});
+  // 2026-08-26 addition (a direct user request, testing real .xz/.rar/
+  // .7z fixtures dropped into src/): same shape as .tgz/.tar.bz2 just
+  // above -- xz -dc decompresses to a plain tar stream, TarReader
+  // parses that exactly like any other tar listing. No legacy
+  // precedent (xz postdates this project's original C era by well
+  // over a decade).
+  addBuiltinArchive(".tar.xz", ArchiveKind::Tar,
+                     {{"tar", "tvf", "-"}, std::vector<std::string>{"xz", "-dc"}});
   // Legacy's own compiled-in table lists just ".lzh lha" (no explicit
   // listing flag) -- ported verbatim rather than guessed at, since no
   // `lha` binary was available anywhere in this project's history to
@@ -293,6 +307,13 @@ Configuration::Configuration() {
   addBuiltinArchive(".zip", ArchiveKind::Zip, {{"unzip", "-l"}, std::nullopt});
   addBuiltinArchive(".rpm", ArchiveKind::Rpm, {{"rpm", "-qplv"}, std::nullopt});
   addBuiltinArchive(".deb", ArchiveKind::Deb, {{"ar", "tv"}, std::nullopt});
+  // 2026-08-26 additions (same direct user request as .tar.xz above,
+  // real .rar/.7z fixtures dropped into src/). No legacy precedent --
+  // both formats postdate this project's original C era. `lsar`/`unar`
+  // (The Unarchiver's CLI tools) rather than the proprietary `unrar`,
+  // see RarReader/ConfiguredRole::RarExtract's own comments on why.
+  addBuiltinArchive(".rar", ArchiveKind::Rar, {{"lsar", "-l"}, std::nullopt});
+  addBuiltinArchive(".7z", ArchiveKind::SevenZip, {{"7z", "l"}, std::nullopt});
 }
 
 std::optional<ProgramCommand> Configuration::findBuiltinArchiveAlias(const std::string &searchText) const {

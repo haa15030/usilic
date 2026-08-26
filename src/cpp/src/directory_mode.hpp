@@ -298,12 +298,45 @@ class DirectoryMode {
   // armed.
   void clearPendingOperationLabel();
 
+  // Shows "ARC: <archivePath>" as a highlighted trailing3 field
+  // (2026-08-26, a direct user request/spec for landing here after a
+  // successful ^X^M/^X a archive extraction, see Application::
+  // pollPendingArchiveExtractShellRun()'s own comment) -- purely
+  // informational ("where this directory's newly-extracted content
+  // came from"), cleared the same way setPendingOperationLabel()'s own
+  // arm is: by enterDirectory() itself, so it doesn't linger once the
+  // user navigates on to somewhere else.
+  void setArcExtractSourceAnnotation(const std::string &archivePath);
+  // 2026-08-27 addition, a direct user proposal ("ディレクトリ（ls）の
+  // 戻り値に「ARC:」等モードへの帰還があるときは^J^Jルーチンへ移行
+  // じゃまずいの？"): lets Application::handleCommand(Command::Back)
+  // check for this annotation the SAME way it already checks
+  // hasSearchAnnotation() just above (that precedent routes Back to
+  // returnToGrepResults()/returnToCutResults() instead of the generic
+  // ModeStack-based goBack() -- this is the identical shape, just
+  // routing to goToRecentFile()/^J^J instead, since a ModeStack frame
+  // can't represent "go back to Archive mode" at all, see
+  // pollPendingArchiveExtractShellRun()'s own comment).
+  bool hasArcExtractSourceAnnotation() const { return !arcExtractSourceAnnotation_.empty(); }
+
+  // Records the CURSOR's own row against currentDirectory_ in History
+  // (PositionCategory::Directory), the same bookkeeping descendTo()/
+  // goBack() already do internally before navigating away -- exposed
+  // publicly (2026-08-27, a real report: "^J^K→カーソル位置が
+  // 「usilicrc」じゃない") for Application::openSelectedEntry(),
+  // which switches to File/Archive/Exec mode WITHOUT going through
+  // either of those (it's not directory-to-directory navigation), so
+  // the row the user had selected right before opening a file was
+  // never actually saved -- a later goToFileSelector()/plain
+  // enterDirectory() back into this same directory then had nothing
+  // but a stale, possibly much older saved position to restore.
+  void saveCurrentCursorPosition();
+
  private:
   DirectoryEntry parseLsLine(const std::string &line) const;
   // "./"/"../" are never valid CP/MV/RM targets -- see toggleMark()'s
   // own comment.
   bool isSelfOrParentEntry(int index) const;
-  void saveCurrentCursorPosition();
   static std::string parentDirectory(const std::string &dir);
 
   ContentView &view_;
@@ -319,6 +352,7 @@ class DirectoryMode {
   bool showEditError_ = false;
   std::string editErrorMessage_ = "Invalid mode";
   std::string pendingOperationLabel_;
+  std::string arcExtractSourceAnnotation_;
 };
 
 }  // namespace fm

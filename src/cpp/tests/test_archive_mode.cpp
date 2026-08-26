@@ -47,6 +47,17 @@ struct Fixture {
     std::string zipPath = (root / "archive.zip").string();
     std::string zipCmd = "cd '" + root.string() + "' && zip -qr archive.zip src";
     REQUIRE(std::system(zipCmd.c_str()) == 0);
+
+    // 2026-08-26 addition: unlike RAR (no creation tool available, only
+    // the extraction side -- see RarReader's own test file for why that
+    // format's tests stop at the ArchiveReader level, matching the
+    // established Rpm/Deb precedent of no ArchiveMode-level fixture at
+    // all), `7z` itself can BOTH create and extract, so a real .7z
+    // fixture here follows the exact same "build it live with the real
+    // CLI" convention as tar/zip just above.
+    std::string sevenZipPath = (root / "archive.7z").string();
+    std::string sevenZipCmd = "cd '" + root.string() + "' && 7z a -bd -bb0 archive.7z src >/dev/null";
+    REQUIRE(std::system(sevenZipCmd.c_str()) == 0);
   }
 
   ~Fixture() { fs::remove_all(root); }
@@ -81,6 +92,14 @@ TEST_CASE_FIXTURE(Fixture, "loadArchive: mode line shows the listing's own total
 
 TEST_CASE_FIXTURE(Fixture, "loadArchive: lists a real .zip file's contents") {
   REQUIRE(mode.loadArchive(path("archive.zip")));
+  bool sawHello = false;
+  for (const auto &e : mode.entries())
+    if (e.name.find("hello.txt") != std::string::npos) sawHello = true;
+  CHECK(sawHello);
+}
+
+TEST_CASE_FIXTURE(Fixture, "loadArchive: lists a real .7z file's contents") {
+  REQUIRE(mode.loadArchive(path("archive.7z")));
   bool sawHello = false;
   for (const auto &e : mode.entries())
     if (e.name.find("hello.txt") != std::string::npos) sawHello = true;
@@ -171,6 +190,25 @@ TEST_CASE_FIXTURE(Fixture, "extractSelected: recovers a real file's exact conten
   REQUIRE(content.has_value());
   std::string text(content->begin(), content->end());
   CHECK(text == "world\n");
+}
+
+TEST_CASE_FIXTURE(Fixture, "extractSelected: recovers a real file's exact content from a .7z") {
+  REQUIRE(mode.loadArchive(path("archive.7z")));
+  bool found = false;
+  for (std::size_t i = 0; i < mode.entries().size(); i++) {
+    if (mode.entries()[i].name.find("hello.txt") != std::string::npos &&
+        !mode.entries()[i].isDirectory) {
+      view.setCursorIndex(static_cast<int>(i));
+      found = true;
+      break;
+    }
+  }
+  REQUIRE(found);
+
+  auto content = mode.extractSelected();
+  REQUIRE(content.has_value());
+  std::string text(content->begin(), content->end());
+  CHECK(text == "hello\n");
 }
 
 TEST_CASE_FIXTURE(Fixture, "extractSelected: a directory entry has no extractable content") {

@@ -21,6 +21,10 @@ std::unique_ptr<ArchiveReader> readerFor(ArchiveKind kind) {
       return std::make_unique<LhaReader>();
     case ArchiveKind::Rpm:
       return std::make_unique<RpmReader>();
+    case ArchiveKind::Rar:
+      return std::make_unique<RarReader>();
+    case ArchiveKind::SevenZip:
+      return std::make_unique<SevenZipReader>();
     case ArchiveKind::Bzip2:
     case ArchiveKind::None:
       return nullptr;
@@ -36,6 +40,14 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
   // same fix as DirectoryMode's own (see ContentView::
   // setMarkedPredicate()'s own comment).
   view_.setMarkedPredicate([this](int index) { return isMarked(index); });
+  // 2026-08-26 fix, a real report ("選択ファイルがアンダーライン表示に
+  // ならない"): DirectoryMode's own constructor also pairs
+  // setMarkedPredicate() with setMarkedRowUsesUnderline(true) (see its
+  // own comment) to keep a marked row visually distinct from the
+  // cursor row's own plain Standout -- this call was simply missing
+  // here, an oversight from when ArchiveMode's marking support was
+  // first ported.
+  view_.setMarkedRowUsesUnderline(true);
   // Mode-line fields (2026-08-19 REDESIGN, a direct user correction:
   // "旧ARCのモードラインはお手本じゃなく、正しくは「ARC」「01/14
   // TOP」「1774」「(tar)」「/Users/haa15030/git/usilic/src/utf8.tar」
@@ -98,6 +110,18 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/badge};
     fields.trailing3 = currentArchive_;
+    // showEditError_ (2026-08-26, see reportError()'s own comment):
+    // same "replace just the name field with an underlined message,
+    // padded so nothing after it shifts" convention DirectoryMode's own
+    // provider established (directory_mode.cpp) for CP/MV/RM's
+    // "Permission denied"/"Invalid mode" -- reused here verbatim for
+    // ARC's own destination-validation errors (^X^M/^X a).
+    if (showEditError_) {
+      std::string message = editErrorMessage_;
+      if (message.size() < fields.name.size()) message.resize(fields.name.size(), ' ');
+      fields.name = message;
+      fields.nameUnderlined = true;
+    }
     return fields;
   });
 }
@@ -157,9 +181,20 @@ bool ArchiveMode::loadArchive(const std::string &path) {
   lines.reserve(entries_.size());
   std::size_t sizeWidth = 0;
   for (const auto &entry : entries_) sizeWidth = std::max(sizeWidth, std::to_string(entry.size).size());
+  // highlightStartColumn (2026-08-26 addition, a direct user request:
+  // "ハイライト表示を（ls）同様ファイル・ディレクトリ名のみにして欲し
+  // い（それより左側が画面ドラッグ可能領域"): formatEntryLine() always
+  // lays a line out as `sizeWidth` right-justified digits + a fixed
+  // 2-char gap + the name, so the name's own start column is just
+  // sizeWidth + 2 -- matching DirectoryMode's own identical use of this
+  // same Line field (see its own declaration comment) to scope the
+  // cursor's reverse-video to the name, leaving the size column itself
+  // as a plain, non-highlighted (and via handleMouseClick()'s new
+  // isColumnWithinLineScope() check, click-through/drag-only) margin.
+  int nameStartColumn = static_cast<int>(sizeWidth) + 2;
   // ellipsisEligible=true: see Line::ellipsisEligible's own comment.
   for (const auto &entry : entries_)
-    lines.push_back({formatEntryLine(entry, sizeWidth), std::nullopt, std::nullopt, {}, true});
+    lines.push_back({formatEntryLine(entry, sizeWidth), std::nullopt, nameStartColumn, {}, true});
   view_.setLines(std::move(lines));
 
   if (auto pos = history_.positionFor(PositionCategory::Screen, currentArchive_)) {
@@ -219,6 +254,22 @@ std::optional<std::vector<unsigned char>> ArchiveMode::extractSelected() {
       // archive file bytes.
       ConfiguredRole role =
           (archiveKind_ == ArchiveKind::Zip) ? ConfiguredRole::UnzipExtract : ConfiguredRole::LhaExtract;
+      ProgramCommand extractCommand = configuration_.commandFor(role);
+      if (extractCommand.argv.empty()) return std::nullopt;
+      std::vector<std::string> argv = extractCommand.argv;
+      argv.push_back(currentArchive_);
+      ChildProcess::Result result = ChildProcess::run(argv);
+      if (!result.ok) return std::nullopt;
+      data.assign(result.output.begin(), result.output.end());
+      break;
+    }
+    case ArchiveKind::Rar:
+    case ArchiveKind::SevenZip: {
+      // Same "extract-to-stdout, walk the concatenated output" approach
+      // as Zip/Lha just above -- see RarReader/SevenZipReader's own
+      // doc comments for how each was verified against a real archive.
+      ConfiguredRole role = (archiveKind_ == ArchiveKind::Rar) ? ConfiguredRole::RarExtract
+                                                                : ConfiguredRole::SevenZipExtract;
       ProgramCommand extractCommand = configuration_.commandFor(role);
       if (extractCommand.argv.empty()) return std::nullopt;
       std::vector<std::string> argv = extractCommand.argv;
@@ -292,5 +343,12 @@ std::vector<ArchiveEntry> ArchiveMode::targetEntries() const {
   if (const ArchiveEntry *entry = selectedEntry()) result.push_back(*entry);
   return result;
 }
+
+void ArchiveMode::reportError(const std::string &message) {
+  editErrorMessage_ = message;
+  showEditError_ = true;
+}
+
+void ArchiveMode::clearEditError() { showEditError_ = false; }
 
 }  // namespace fm

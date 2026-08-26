@@ -657,15 +657,13 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   // reflow tests) deliberately rely on; forcing columns()-1 here
   // unconditionally regressed that.
   int ellipsisBudget = cursorHighlightEnabled_ ? std::max(0, display_.columns() - 1) : maxCol;
-  // widthAware (2026-08-19 fix, widened 2026-08-21): gated on "no
-  // highlightStartColumn" -- Directory's ls-listing and GrepMode's
-  // match highlighting, the two real users of that field, need `col`
-  // to stay a precise BYTE offset for their own byte-range comparisons
-  // below, so they keep the original per-byte loop regardless. Every
-  // OTHER plain line -- LOCATE/DU/Archive results AND ordinary FileMode
-  // content alike, WITH or without line.attributes -- walks `col` as a
-  // real display-column count instead, consuming each UTF-8 sequence as
-  // one unit (via Utf8::sequence_length()) and advancing by its own
+  // This width-aware walk (2026-08-19 fix, widened 2026-08-21 and
+  // 2026-08-26 -- see this loop's own 2026-08-26 comment below for why
+  // it's no longer gated on highlightStartColumn at all) applies to
+  // EVERY Line uniformly now: LOCATE/DU/Archive results, DirectoryMode's
+  // ls-listing, ordinary FileMode content, all of it walks `col` as a
+  // real display-column count, consuming each UTF-8 sequence as one
+  // unit (via Utf8::sequence_length()) and advancing by its own
   // Utf8::display_width(). This part is NOT limited to results-list
   // Lines: FileMode's own content arrives from PipeBuffer::wrapLine(),
   // which ALREADY pre-wraps every line to fit exactly `width_` DISPLAY
@@ -698,10 +696,9 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   // highlightStartColumn -- see Line::attributes' own comment), folding
   // it into this same width-aware walk (attribute matching now keyed on
   // the loop's own byte index `idx`, same convention AttributeRun
-  // already uses) is unconditionally safe: DirectoryMode/GrepMode's
-  // highlightStartColumn lines are untouched, and FileMode's attributed
-  // lines now get the identical character-safe, already-width-correct
-  // treatment plain FileMode lines already had.
+  // already uses) is unconditionally safe: FileMode's attributed lines
+  // get the identical character-safe, already-width-correct treatment
+  // plain FileMode lines already had.
   //
   // ellipsisEligible (2026-08-20 addition, same report as the comment
   // above -- docs/HISTORY.md's own long lines showed their MIDDLE
@@ -718,17 +715,51 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   // sets this true; FileMode's own (already width-wrapped) lines fall
   // through unedited into the widthAware walk below, which simply stops
   // at maxCol -- a character-safe plain cutoff, not an elision.
-  bool widthAware = !line.highlightStartColumn.has_value();
+  //
+  // 2026-08-26 fix, a real report (ArchiveMode's own utf8.tar fixture:
+  // "utf8.tarの一覧表示が画面の2/3ほどで途切れる"): this used to be
+  // `bool widthAware = !line.highlightStartColumn.has_value();`, so
+  // ArchiveMode's entries -- which set BOTH ellipsisEligible (this
+  // function's own widthAware CJK-safe truncation, see its comment)
+  // AND, as of this same day's click-to-select fix, highlightStartColumn
+  // (DirectoryMode's own name-only-highlight convention) -- fell
+  // through to the OLD raw-byte-counted branch below instead, which has
+  // no notion of display width at all: a CJK filename (3 bytes/2
+  // columns) hit the ~79-BYTE budget at roughly 2/3 of the terminal's
+  // own real column width, reproducing the exact "内容一覧は^Olでも
+  // 2/3くらいまでしか表示されていない" bug this same widthAware path
+  // was originally built to fix (see its own comment above), just for a
+  // NEW caller. DirectoryMode's ls-listing/the WORK/arc.N banner (the
+  // only other two highlightStartColumn setters, see Line::
+  // highlightStartColumn's own comment) never had ellipsisEligible set,
+  // so they never hit the old truncation bug themselves -- but their
+  // own highlight-start byte offset (always a plain-ASCII prefix, e.g.
+  // "  1234  " before a name) is folded into THIS loop's existing
+  // byte-index `idx` below instead of needing a separate byte-counted
+  // walk at all, so there's no longer any real caller left needing the
+  // old branch -- removed rather than kept as unreachable dead code.
   std::string ellipsisText;
   const std::string *renderedText = &line.text;
-  if (widthAware && line.ellipsisEligible && static_cast<int>(line.text.size()) > ellipsisBudget) {
+  if (line.ellipsisEligible && static_cast<int>(line.text.size()) > ellipsisBudget) {
     ellipsisText = middleEllipsisTruncateByWidth(line.text, ellipsisBudget);
     renderedText = &ellipsisText;
   }
-  if (widthAware) {
+  {
     const std::string &text = *renderedText;
     std::size_t idx = 0;
     while (idx < text.size()) {
+      // highlightStartColumn's own transition point (DirectoryMode's
+      // ls-listing/the WORK/arc.N banner, see this function's own
+      // comment above) -- `highlightStart` is always a byte offset into
+      // a plain-ASCII prefix for every real caller, so comparing it
+      // directly against this loop's own running byte offset `idx` is
+      // exact, with no display-width conversion needed here.
+      if (line.highlightStartColumn.has_value() && static_cast<int>(idx) == highlightStart) {
+        markedNow = marked;
+        underlineMarkedNow = underlineMarked;
+        setStandout(markedNow);
+        setUnderline(underlineMarkedNow);
+      }
       unsigned char c = static_cast<unsigned char>(text[idx]);
       int len = Utf8::sequence_length(c);
       len = std::min(len, static_cast<int>(text.size() - idx));
@@ -749,9 +780,8 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
         setUnderline(wantUnderline);
       }
       if (len <= 1) {
-        // Same tab/control-byte handling as the byte-based loop below,
-        // just column-counted by 1 (an ASCII byte is always 1 display
-        // column) instead of by raw byte offset.
+        // A single-byte (ASCII-range) unit is always exactly 1 display
+        // column wide, so `col` advances by 1 here regardless.
         if (col >= maxCol) break;
         if (c == '\t') {
           display_.putChar(' ');
@@ -782,72 +812,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
     setStandout(false);
     setBold(false);
     setUnderline(false);
-    return;
   }
-  // Reached only by highlightStartColumn lines now (2026-08-21) --
-  // Directory's ls-listing and GrepMode's match highlighting, neither
-  // of which ever sets line.attributes (see Line::attributes' own
-  // comment), so the bold/underline matching this loop used to also
-  // carry here was unreachable dead code; removed rather than left
-  // stale (see widthAware's own comment for where that matching moved).
-  for (unsigned char c : *renderedText) {
-    if (col >= maxCol) break;
-    if (col == highlightStart) {
-      markedNow = marked;
-      underlineMarkedNow = underlineMarked;
-      setStandout(markedNow);
-      setUnderline(underlineMarkedNow);
-    }
-    // Tab specifically excluded from the control-byte check below --
-    // ported from disp.c's own "convert '\t' to ' '" comment (its
-    // count_h()/count_i() column-counting pass does the same
-    // substitution before anything reaches the display layer). A raw
-    // tab byte reaching THIS layer used to get the SAME reverse-video
-    // glyph treatment as any other control byte -- found via a real
-    // user report (2026-08-02, screenshot): plain `ls` output (which
-    // real shells tab-align columns in, not space-align) showed
-    // visible reverse-video boxes between filenames in SHELL's own
-    // scrollback. PipeBuffer's own wrapLine() now expands tabs to the
-    // right number of spaces BEFORE they ever reach a Line (see its
-    // own comment) for content that passes through it, but this is a
-    // second, simpler safety net here for any OTHER caller building a
-    // Line directly with a literal '\t' in it (e.g. DuMode::
-    // formatEntryLine()'s own size/path column separator) -- legacy's
-    // own conversion is a bare 1-for-1 swap, not real tab-stop math,
-    // so matching that exactly (a single space, not a computed
-    // column-aligning run) is deliberate here, not a simplification.
-    if (c == '\t') {
-      display_.putChar(' ');
-      col++;
-      continue;
-    }
-    // K_dl (0x7f, DEL) and plain control bytes (< 0x20) are shown
-    // reverse-video as letter+'@', the same convention LineEditor's
-    // renderVisible() uses -- ported from put_str()'s control-
-    // character handling (K_a0's hex-dump-mode variant is excluded,
-    // see the class comment).
-    bool isControl = c && (c < ' ' || c == 0x7f);
-    if (isControl) {
-      // Show the control-byte marker distinctly from whatever
-      // background is currently active (plain text, or this line's
-      // own current marking -- markedNow, not marked, now that a line
-      // can be partially marked), then restore it -- unlike legacy's
-      // f_grep-conditional dance for the same idea (see the ported-
-      // from comment in the header), this is derived structurally
-      // (toggle away from the current state, then back) so it stays
-      // correct regardless of whether the line is marked.
-      setStandout(!markedNow);
-      int shown = (c == 0x7f) ? c - 0x80 : c;
-      display_.putChar(shown + '@');
-      setStandout(markedNow);
-    } else {
-      display_.putChar(c);
-    }
-    col++;
-  }
-  setStandout(false);
-  setBold(false);
-  setUnderline(false);
 }
 
 std::string ContentView::modeLineText() const {
@@ -901,7 +866,8 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
     segments.push_back({positionText, true});
     return segments;
   }
-  ModeLineFields fields = withTruncatedFields(modeLineFieldsProvider_(cursorIndex_), positionText);
+  ModeLineFields fields = withTruncatedTrailing3(
+      withTruncatedFields(modeLineFieldsProvider_(cursorIndex_), positionText), positionText);
   FieldFit fit = fitModeLineFields(fields, positionText);
   int cols = display_.columns();
   int drawnLen = 0;
@@ -1157,6 +1123,35 @@ ContentView::ModeLineFields ContentView::withTruncatedFields(ModeLineFields fiel
   return fields;
 }
 
+// 2026-08-27 fix, a real report + PTY reproduction (a long real
+// $HOME-rooted destination path -- "~/.usilic/saved/" -- combined with
+// ArchiveMode's own "ARC: <archive path>" trailing3 landing on
+// DirectoryMode via setArcExtractSourceAnnotation(), see its own
+// comment): trailing3 previously had NO truncation option at all here
+// (unlike name/trailing/trailing2, all handled above) -- renderModeLine()'s
+// own "show it if there's room, otherwise drop it entirely" policy (see
+// its own comment) meant a trailing3 just slightly too long to fit
+// vanished COMPLETELY ("戻り値=空白"), even though a short destination
+// like "/tmp/" left plenty of room for the exact same annotation.
+// Middle-ellipsis-truncating it here (same shape as trailing2's own
+// PathMiddle handling just above) means it's now ALWAYS shown --
+// truncated when the row is crowded, same as everything else -- rather
+// than an all-or-nothing coin flip depending purely on how long the
+// OTHER fields around it happen to be.
+ContentView::ModeLineFields ContentView::withTruncatedTrailing3(ModeLineFields fields,
+                                                                  const std::string &positionText) const {
+  int cols = display_.columns();
+  if (cols <= 0 || fields.trailing3.empty()) return fields;
+  int base = static_cast<int>(positionText.size());
+  if (!fields.name.empty()) base += static_cast<int>(fields.name.size()) + 1;
+  if (!fields.trailing.empty()) base += static_cast<int>(fields.trailing.size()) + 1;
+  if (!fields.trailing2.empty()) base += static_cast<int>(fields.trailing2.size()) + 1;
+  int budget = cols - base - 1;  // 1 for the gap before trailing3 itself
+  if (static_cast<int>(fields.trailing3.size()) <= budget) return fields;
+  fields.trailing3 = budget >= 4 ? middleEllipsisTruncate(fields.trailing3, budget) : std::string();
+  return fields;
+}
+
 ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &fields,
                                                        const std::string &positionText) const {
   int cols = display_.columns();
@@ -1200,7 +1195,8 @@ ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &field
 
 std::string ContentView::composeModeLineRow(const std::string &positionText) const {
   if (!modeLineFieldsProvider_) return positionText;
-  ModeLineFields fields = withTruncatedFields(modeLineFieldsProvider_(cursorIndex_), positionText);
+  ModeLineFields fields = withTruncatedTrailing3(
+      withTruncatedFields(modeLineFieldsProvider_(cursorIndex_), positionText), positionText);
   FieldFit fit = fitModeLineFields(fields, positionText);
 
   std::string row = positionText;
@@ -1287,7 +1283,7 @@ void ContentView::renderModeLine() {
     }
   }
 
-  ModeLineFields fields = withTruncatedFields(rawFields, positionText);
+  ModeLineFields fields = withTruncatedTrailing3(withTruncatedFields(rawFields, positionText), positionText);
   FieldFit fit = fitModeLineFields(fields, positionText);
   int cols = display_.columns();
 

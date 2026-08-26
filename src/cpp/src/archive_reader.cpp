@@ -464,4 +464,160 @@ std::vector<ArchiveEntry> RpmReader::parseListing(const std::string &listing) co
   return entries;
 }
 
+// Ported from a real `lsar -l` capture (see the class's own
+// declaration comment) -- no legacy precedent, RAR postdates this
+// project's original C era entirely. Real output shape:
+//
+//   /path/to/archive.rar: RAR
+//        Flags  File size   Ratio  Mode  Date       Time   Name
+//        =====  ==========  =====  ====  ========== =====  ====
+//     0. -----       12292  91.6%  Nr29  2009-10-03 00:23  Extra/.DS_Store
+//   422. D----           0  -----  None  2009-10-03 00:18  a/directory/
+//   (Flags: D=Directory, R=Resource fork, L=Link, E=Encrypted, ...)
+//   (Mode: Nr29=Normal v2.9)
+//
+// Fields are whitespace-separated, not fixed-width columns (unlike
+// SevenZipReader's own listing) -- index/flags/size/ratio/mode/date/
+// time are seven tokens walked past positionally (same "skip N
+// whitespace-delimited fields" idiom TarReader/ZipReader/LhaReader
+// already use above), with everything remaining on the line (spaces
+// included) taken as NAME.
+std::vector<ArchiveEntry> RarReader::parseListing(const std::string &listing) const {
+  std::vector<ArchiveEntry> entries;
+  bool inTable = false;
+  for (const auto &line : splitLines(listing)) {
+    std::size_t firstNonSpace = line.find_first_not_of(' ');
+    if (firstNonSpace == std::string::npos) continue;
+    if (!inTable) {
+      // The "=====  ==========  ..." rule line is the ONLY one (before
+      // real entries start) whose first non-space character is '='.
+      if (line[firstNonSpace] == '=') inTable = true;
+      continue;
+    }
+    if (line[firstNonSpace] == '(') break;  // "(Flags: ...)"/"(Mode: ...)" footer notes
+
+    std::size_t i = firstNonSpace;
+    while (i < line.size() && line[i] != ' ') i++;  // index + '.'
+    while (i < line.size() && line[i] == ' ') i++;
+    std::size_t flagsStart = i;
+    while (i < line.size() && line[i] != ' ') i++;  // flags (e.g. "-----"/"D----")
+    std::string flags = line.substr(flagsStart, i - flagsStart);
+    while (i < line.size() && line[i] == ' ') i++;
+    long size = 0;
+    while (i < line.size() && std::isdigit(static_cast<unsigned char>(line[i]))) {
+      size = size * 10 + (line[i] - '0');
+      i++;
+    }
+    // 5 iterations, not 4, to actually skip all 4 remaining fields
+    // (ratio%, mode, date, time): `i` enters this loop already sitting
+    // ON the space right after SIZE's digits (a field BOUNDARY, not a
+    // field START), so the first iteration's own "skip non-space" step
+    // is a no-op and only its "skip space" half does real work -- it
+    // just walks from the boundary to ratio's own start without
+    // consuming ratio itself. Each SUBSEQUENT iteration then consumes
+    // exactly one field (its own "skip non-space" eats the field a
+    // PRIOR iteration's "skip space" half walked onto). Net effect:
+    // consuming 4 real fields takes 5 loop passes, not 4 -- confirmed
+    // by a real failing test (name field arrived as "00:23  Extra/..."
+    // -- the TIME field was left glued to name -- before this fix).
+    for (int field = 0; field < 5; field++) {  // ratio%, mode, date, time
+      while (i < line.size() && line[i] != ' ') i++;
+      while (i < line.size() && line[i] == ' ') i++;
+    }
+    if (i >= line.size()) continue;
+
+    ArchiveEntry entry;
+    entry.name = line.substr(i);
+    entry.size = size;
+    entry.isDirectory = flags.find('D') != std::string::npos;
+    entries.push_back(std::move(entry));
+  }
+  return entries;
+}
+
+// See the class's own declaration comment for why this sequential
+// walk is valid here (verified against a real archive: extracted total
+// byte count and first-file content both matched the listing exactly).
+void RarReader::locateContent(const unsigned char *data, std::size_t size,
+                               std::vector<ArchiveEntry> &entries) const {
+  const unsigned char *end = data + size;
+  long pos = 0;
+  for (auto &entry : entries) {
+    if (entry.isDirectory) continue;
+    entry.contentOffset = pos;
+    long remaining = entry.size;
+    while (remaining && data + pos < end) { pos++; remaining--; }
+    if (data + pos == end) entry.contentTruncated = true;
+  }
+}
+
+// Ported from a real `7z l` capture (see the class's own declaration
+// comment) -- no legacy precedent, 7z postdates this project's
+// original C era entirely. Real output shape:
+//
+//    Date      Time    Attr         Size   Compressed  Name
+//  ------------------- ----- ------------ ------------  ------------------------
+//  2016-02-01 09:02:00 D....            0            0  config
+//  2015-01-03 17:56:26 ....A         1142      2735622  7-Zip Extra License.txt
+//  2016-02-03 01:09:59 ....A        26626               changelog.txt
+//  ------------------- ----- ------------ ------------  ------------------------
+//  2016-02-03 01:13:20           35479286      5787093  53 files, 5 folders
+//
+// UNLIKE RarReader's own whitespace-tokenized fields, this format uses
+// genuinely FIXED-WIDTH columns (confirmed directly against the rule
+// line's own dash-run lengths: date+time 19 chars, then a 1-space gap,
+// attr 5 chars, gap, size 12 chars, gap, compressed 12 chars, THEN a
+// 2-space gap before name starts at column 53) -- a compressed-size
+// column can be entirely BLANK for later members of a solid block
+// (see "changelog.txt" above), so this can't safely tokenize by
+// whitespace runs the way RarReader does; fixed offsets are the only
+// reliable way to find where NAME actually starts.
+std::vector<ArchiveEntry> SevenZipReader::parseListing(const std::string &listing) const {
+  constexpr std::size_t kAttrStart = 20;
+  constexpr std::size_t kSizeStart = 26;
+  constexpr std::size_t kSizeEnd = 38;
+  constexpr std::size_t kNameStart = 53;
+
+  std::vector<ArchiveEntry> entries;
+  int ruleLinesSeen = 0;
+  for (const auto &line : splitLines(listing)) {
+    if (line.size() >= 19 && line[0] == '-' && line.find_first_not_of("- ") == std::string::npos) {
+      if (++ruleLinesSeen >= 2) break;  // closing rule -- stop before the "N files, M folders" footer
+      continue;
+    }
+    if (ruleLinesSeen < 1) continue;  // still in the "7-Zip [64]..."/column-header preamble
+    if (line.size() <= kNameStart) continue;
+
+    std::string attr = line.substr(kAttrStart, kSizeStart - 1 - kAttrStart);
+    long size = 0;
+    for (std::size_t i = kSizeStart; i < kSizeEnd && i < line.size(); i++) {
+      if (line[i] == ' ') continue;
+      size = size * 10 + (line[i] - '0');
+    }
+
+    ArchiveEntry entry;
+    entry.name = line.substr(kNameStart);
+    entry.size = size;
+    entry.isDirectory = !attr.empty() && attr[0] == 'D';
+    entries.push_back(std::move(entry));
+  }
+  return entries;
+}
+
+// See the class's own declaration comment for why this sequential
+// walk is valid here (verified against a real archive: extracted total
+// byte count and first-file content both matched the listing exactly).
+void SevenZipReader::locateContent(const unsigned char *data, std::size_t size,
+                                    std::vector<ArchiveEntry> &entries) const {
+  const unsigned char *end = data + size;
+  long pos = 0;
+  for (auto &entry : entries) {
+    if (entry.isDirectory) continue;
+    entry.contentOffset = pos;
+    long remaining = entry.size;
+    while (remaining && data + pos < end) { pos++; remaining--; }
+    if (data + pos == end) entry.contentTruncated = true;
+  }
+}
+
 }  // namespace fm

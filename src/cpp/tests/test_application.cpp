@@ -1530,7 +1530,11 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W (SHELL: insert buffer content) 
   // own comment. Directory mode's own current directory's basename
   // (the Fixture's own temp root dir's name here).
   std::string savePath = (root / ".usilic" / "saved" / root.filename()).string();
-  CHECK(app.shell().commandLine().text() == "cat " + savePath);
+  // Single-quoted (2026-08-27 fix, a real report + repro: a real
+  // archive entry's own basename can contain shell glob metacharacters
+  // like "[...]", which zsh/bash otherwise try to expand -- "no matches
+  // found" -- see shellInsertBufferContent()'s own comment).
+  CHECK(app.shell().commandLine().text() == "cat '" + savePath + "'");
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W also works from CUT's plain prompt (2026-08-12 fix, same "
@@ -2892,6 +2896,37 @@ int archiveIndexOf(Application &app, const std::string &needle) {
 }
 }  // namespace
 
+// 2026-08-26 fix, a real report ("内容一覧上の選択ファイルがアンダー
+// ライン表示にならない"): ArchiveMode's own constructor was missing
+// setMarkedRowUsesUnderline(true), the exact same pairing
+// DirectoryMode's own constructor makes right alongside
+// setMarkedPredicate() (see its own comment) -- a marked entry's own
+// Standout was indistinguishable from the cursor row's ordinary
+// Standout, same class of bug the '[' marking test above already
+// covers for DirectoryMode.
+TEST_CASE_FIXTURE(Fixture, "ARC: a marked entry shows Underline, not just Standout, distinct from the "
+                           "cursor row's own plain Standout") {
+  REQUIRE(app.start(path()));
+  int dirIdx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
+  int markIdx = archiveIndexOf(app, "inner.txt");
+  REQUIRE(markIdx >= 0);
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.archiveMode().isMarked(markIdx));
+  REQUIRE(app.handleCommand(Command::MoveDown));  // step off the marked row
+
+  int nameCol = app.activeContentView().lines()[markIdx].highlightStartColumn.value_or(0);
+  CHECK(display.underlineAt(markIdx, nameCol));
+  CHECK_FALSE(display.standoutAt(markIdx, nameCol));
+}
+
 TEST_CASE_FIXTURE(Fixture, "ARC: Enter on an archive file switches to Archive mode, not File") {
   REQUIRE(app.start(path()));
   int idx = indexOf("archive.tar");
@@ -2941,6 +2976,46 @@ TEST_CASE_FIXTURE(Fixture, "ARC: Enter on a file entry inside the archive extrac
   for (const auto &line : app.activeContentView().lines()) expectedBytes += line.text.size() + 1;
   REQUIRE(expectedBytes > 0);
   CHECK(modeLine.find(std::to_string(expectedBytes)) != std::string::npos);
+}
+
+// 2026-08-26 fix, a real report ("一覧から選んだファイル内容がハイ
+// ライト表示（←不要）かつ80桁分しか表示されない"): openSelectedArchiveEntry()
+// was missing setCursorHighlightEnabled(false) (every other plain-
+// content view -- FileMode/ManMode/CutMode's own -- turns this off,
+// see file_mode.cpp's own constructor comment) and never wrapped
+// content wider than the terminal at all (a raw std::getline() split,
+// unlike FileMode's own readAndWrap() via PipeBuffer).
+TEST_CASE_FIXTURE(Fixture, "ARC: entry content view has cursor highlight disabled and wraps long lines, "
+                           "matching FileMode's own plain-pager convention") {
+  fs::path wideDir = root / "widearc";
+  fs::create_directory(wideDir);
+  std::string longLine(200, 'x');
+  { std::ofstream(wideDir / "wide.txt") << longLine << "\n"; }
+  std::string tarCmd = "cd '" + root.string() + "' && tar cf widearc.tar widearc";
+  REQUIRE(std::system(tarCmd.c_str()) == 0);
+
+  REQUIRE(app.start(path()));
+  int idx = indexOf("widearc.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("wide.txt") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.archiveMode().selectedEntry() != nullptr);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::ArchiveContent);
+
+  CHECK_FALSE(app.activeContentView().cursorHighlightEnabled());
+  // The 200 'x' content line must be wrapped across multiple display
+  // lines, not silently cut off at the terminal's own width -- every
+  // 'x' from the original content must still be present somewhere.
+  std::size_t totalX = 0;
+  for (const auto &line : app.activeContentView().lines())
+    totalX += static_cast<std::size_t>(std::count(line.text.begin(), line.text.end(), 'x'));
+  CHECK(totalX == 200);
+  CHECK(app.activeContentView().lines().size() > 1);
 }
 
 TEST_CASE_FIXTURE(Fixture, "ARC: Back from ArchiveContent returns to Archive, Back from Archive returns to Directory") {
@@ -3086,6 +3161,63 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract (^Xa, K-58, Directory mode): extracts th
   CHECK(fs::exists(root / "archive.tar"));  // untouched by extraction
 }
 
+// 2026-08-27 addition, a direct user proposal ("ディレクトリ（ls）の
+// 戻り値に「ARC:」等モードへの帰還があるときは^J^Jルーチンへ移行
+// じゃまずいの？"): a successful extraction lands in Directory mode
+// showing "ARC: <archivePath>" as its own trailing3 -- ^G there used
+// to just pop the ordinary ModeStack (landing on whichever plain
+// directory Archive mode was entered FROM, not the archive itself,
+// since a ModeStack frame can't represent "go back to Archive mode"
+// at all). Now routes to goToRecentFile() (^J^J's own routine)
+// instead whenever this annotation is showing, reaching the archive
+// directly.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(Back): from Directory mode showing the \"ARC: ...\" annotation, "
+                           "goes straight back to Archive mode instead of popping the ordinary ModeStack") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.archiveMode().selectedEntry() != nullptr);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  feedText((root / "arcdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().hasArcExtractSourceAnnotation());
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Archive);
+  CHECK(app.archiveMode().currentArchive() == path() + "archive.tar");
+
+  // 2026-08-27 follow-up, a real report + repro ("^G連打で行き来
+  // ループとなる"): a SECOND Back (now from Archive mode) used to just
+  // flip back to Directory mode with directoryMode_'s own state left
+  // UNTOUCHED (still showing "arcdest", the extraction destination,
+  // annotation and all) -- meaning THIS press landed right back on the
+  // exact same "ARC: ..." screen the first Back left, so a THIRD Back
+  // would just bounce to Archive again: an infinite ping-pong that
+  // never reached archive.tar's own real containing directory
+  // (path()). returnFromArchive() now follows the archive's real
+  // parent directory the same way returnToDirectory() already does
+  // for FileMode (see its own comment) -- this Back reaches path()
+  // directly, with the annotation gone (a fresh enterDirectory() call
+  // clears it, see its own comment), so a hypothetical third Back
+  // would NOT bounce back to Archive again.
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());
+  CHECK_FALSE(app.directoryMode().hasArcExtractSourceAnnotation());
+}
+
 TEST_CASE_FIXTURE(Fixture, "ARC extract from within Archive mode's own TOC: marking a specific entry extracts only it") {
   REQUIRE(app.start(path()));
   int idx = indexOf("archive.tar");
@@ -3108,7 +3240,165 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract from within Archive mode's own TOC: mark
   REQUIRE(pumpArchiveExtractToCompletion(app));
 
   CHECK(fs::exists(root / "arcdest" / "arcsrc" / "inner.txt"));
-  CHECK(app.currentMode() == ApplicationMode::Archive);  // extraction doesn't leave the TOC screen
+  // 2026-08-26 change, a direct user spec ("①モードラインが...（ls）
+  // へ移動"): a successful extraction now lands in Directory mode AT
+  // the destination (matching CP/MV's own long-established
+  // descendTo()-based landing, see pollPendingArchiveExtractShellRun()'s
+  // own comment) instead of returning to the ARC TOC screen.
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == (root / "arcdest").string() + "/");
+  // "ARC: " prefix only, not the full path -- 2026-08-27 fix (see
+  // ContentView::withTruncatedTrailing3()'s own comment) now middle-
+  // ellipsis-truncates an overlong trailing3 rather than showing it in
+  // full or dropping it outright, so the full string isn't guaranteed
+  // to appear verbatim once a real (fixture-length-dependent) tmp path
+  // is involved.
+  CHECK(app.activeContentView().modeLineText().find("ARC: ") != std::string::npos);
+}
+
+// 2026-08-26 fix, a real report ("展開先を選ぶための^X^Mが利かない"):
+// legacy's menu.c folds M_arc/M_arc2 (^X^Ka/^Xa) into the exact same
+// category as M_cp/M_mv/M_rm, sharing ONE M_dest (^X^M) destination-
+// confirm step across all four -- this port's own ^X a already opens
+// the SAME destination prompt in one step (see startArchivePrompt()'s
+// own comment), but ^X^M itself was never ALSO wired to reach it,
+// unlike ^X^Y/^X^N (mark all / clear all), which already are
+// explicitly "(CP, MV, RM, ARC)". Mirrors the "^X a" test just above,
+// using "^X^M" instead.
+TEST_CASE_FIXTURE(Fixture, "ARC extract: ^X^M (not just ^X a) also opens the destination prompt from within "
+                           "Archive mode's own TOC") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.archiveMode().selectedEntry() != nullptr);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M
+  REQUIRE(app.promptActive());
+  feedText((root / "arcdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
+
+  CHECK(fs::exists(root / "arcdest" / "arcsrc" / "inner.txt"));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // see the ^X a test just above's own 2026-08-26 comment
+}
+
+// 2026-08-27 addition, a direct user report (a callback to their own
+// earlier HISTORY.md:9608 proposal): a real CJK filename long enough
+// to crowd FileMode's own mode line -- name (the file's own basename)
+// + trailing2 (its containing directory) together leaving no room for
+// the byte-count trailing field -- used to just silently drop it
+// entirely (fitModeLineFields()'s own ordinary all-or-nothing tiers),
+// unlike ArchiveMode's content view, which already gets the "center
+// position+bytes, split name/trailing2" splitLayoutWhenCrowded
+// treatment for exactly this case (see file_mode.cpp's own provider
+// comment).
+TEST_CASE_FIXTURE(Fixture, "FILE: a real CJK filename long enough to crowd the mode line still shows the "
+                           "byte count, via the same splitLayoutWhenCrowded treatment ArchiveMode's content "
+                           "view already gets") {
+  fs::path longDir = root / "longnamedir";
+  fs::create_directory(longDir);
+  std::string longName =
+      "\xE3\x81\x93\xE3\x82\x8C\xE3\x81\xAF\xE9\x9D\x9E\xE5\xB8\xB8\xE3\x81\xAB\xE9\x95\xB7\xE3"
+      "\x81\x84\xE3\x83\x95\xE3\x82\xA1\xE3\x82\xA4\xE3\x83\xAB\xE5\x90\x8D\xE3\x81\xA7\xE3\x81\x99"
+      "\xE3\x81\x93\xE3\x82\x8C\xE3\x81\xAF\xE9\x9D\x9E\xE5\xB8\xB8\xE3\x81\xAB\xE9\x95\xB7\xE3\x81"
+      "\x84\xE3\x83\x95\xE3\x82\xA1\xE3\x82\xA4\xE3\x83\xAB\xE5\x90\x8D\xE3\x81\xA7\xE3\x81\x99.txt";
+  { std::ofstream(longDir / longName) << "content\n"; }
+
+  REQUIRE(app.start(path()));
+  int idx = indexOf("longnamedir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().selectedEntry() != nullptr);
+  while (app.directoryMode().selectedEntry()->name.find(".txt") == std::string::npos)
+    REQUIRE(app.handleCommand(Command::MoveDown));
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  std::string row = display.rowText(23);
+  std::string byteCount = std::to_string(app.activeContentView().totalByteCount());
+  CHECK(row.find(byteCount) != std::string::npos);
+}
+
+// 2026-08-26 addition, a direct (provisional) user spec covering the
+// OTHER two destination shapes ^X^M/^X a can receive besides a real,
+// existing directory (see executeArchiveExtract()'s own comment) --
+// both were previously silent no-ops ("何も起きない").
+
+TEST_CASE_FIXTURE(Fixture, "ARC extract: an empty destination defaults to <homeDirectory>/.usilic/saved/, "
+                           "auto-created if missing") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.archiveMode().selectedEntry() != nullptr);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE_FALSE(fs::exists(root / ".usilic" / "saved"));  // doesn't exist yet -- must be auto-created
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  REQUIRE(app.promptActive());
+  CHECK(app.feedByte(0x0d, std::nullopt));  // ^M alone -- no destination typed at all
+  REQUIRE(pumpArchiveExtractToCompletion(app));
+
+  CHECK(fs::exists(root / ".usilic" / "saved" / "arcsrc" / "inner.txt"));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  // "ARC: " prefix only -- see the ^X a test's own identical 2026-08-27
+  // comment above.
+  CHECK(app.activeContentView().modeLineText().find("ARC: ") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "ARC extract: a destination that doesn't exist reports \"<path>: No such "
+                           "directory\" in the mode line instead of silently doing nothing") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.archiveMode().selectedEntry() != nullptr);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  // A short, fixed, definitely-nonexistent absolute path -- not one of
+  // this fixture's own tmp paths -- deliberately kept SHORT so the
+  // resulting message still fits renderModeLine()'s ordinary sequential
+  // layout (see "Invalid mode"/"Permission denied"'s own tests, same
+  // convention); a REAL full tmp-root path here would be long enough to
+  // trip splitLayoutWhenCrowded()'s "too crowded" fallback layout
+  // instead, which elides/repositions the message unpredictably --
+  // besides being irrelevant to what this test is actually checking.
+  std::string typo = "/usilic-test-no-such-dir";
+  REQUIRE_FALSE(fs::exists(typo));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  REQUIRE(app.promptActive());
+  feedText(typo);
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // rejected -- no shell command launched
+
+  CHECK(app.currentMode() == ApplicationMode::Archive);  // stays put, doesn't even reach Shell
+  std::string expected = typo + ": No such directory";
+  CHECK(display.rowText(23).substr(0, expected.size()) == expected);
+  CHECK(display.underlineAt(23, 0));
+  CHECK_FALSE(fs::exists(typo));  // definitely not auto-created (unlike the empty-destination default above)
 }
 
 TEST_CASE_FIXTURE(Fixture, "ARC extract: refused outside Directory/Archive mode") {
@@ -3345,8 +3635,8 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on the WORK line opens w
   CHECK(app.activeContentView().cursorIndex() == workRow);
 }
 
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on an arc.N line opens it as a DIRECTORY; ^G is a "
-                           "harmless no-op (no stack frame was pushed to open it)") {
+TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on an arc.N line opens it as a DIRECTORY; ^G falls "
+                           "back to goToRecentDirectory() since no stack frame was pushed to open it") {
   REQUIRE(app.start(path()));
   // Allocate arc.1 the same way the sibling "ARC nested" tests do:
   // descend one level into the Fixture's own outer.tar/level1.tar chain.
@@ -3373,8 +3663,14 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on an arc.N line opens i
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory().find("arc.1") != std::string::npos);
 
-  CHECK_FALSE(app.handleCommand(Command::Back));  // no stack frame pushed -- a harmless no-op
-  CHECK(app.currentMode() == ApplicationMode::Directory);  // unchanged, no crash/garbling
+  // 2026-08-27 change, a direct user proposal: Back with an empty
+  // ModeStack no longer dead-ends -- it now falls back to
+  // goToRecentDirectory() (RingCategory::RecentDirectory's own most
+  // recently visited DIFFERENT directory), so this succeeds and lands
+  // somewhere real instead of staying put as a no-op.
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // no crash/garbling
+  CHECK(app.directoryMode().currentDirectory().find("arc.1") == std::string::npos);  // actually moved
 }
 
 // 2026-08-18 fix (a real report, =cq): the WORK/arc.N lines were
@@ -3633,7 +3929,9 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W, K-64): writes the bu
   // own temp root dir's name here) -- see shellInsertBufferContent()'s
   // own comment for why "usilic"/"CLAUDE.md"-style basenames, not w.N.
   std::string savePath = (root / ".usilic" / "saved" / root.filename()).string();
-  CHECK(app.shell().commandLine().text() == "cat " + savePath);
+  // Single-quoted -- see the ^J^S candidate-list test above's own
+  // 2026-08-27 comment.
+  CHECK(app.shell().commandLine().text() == "cat '" + savePath + "'");
 
   std::ifstream in(savePath);
   REQUIRE(in.good());
@@ -3667,7 +3965,9 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W) also works from WITH
   }
   CHECK(app.currentMode() == ApplicationMode::Shell);
   std::string wPath = (root / ".usilic" / "w.1").string();
-  CHECK(app.shell().commandLine().text() == "cat " + wPath);
+  // Single-quoted -- see the ^J^S candidate-list test above's own
+  // 2026-08-27 comment.
+  CHECK(app.shell().commandLine().text() == "cat '" + wPath + "'");
 
   // The written buffer is the candidate LIST's own content (one
   // pattern per line), not the directory listing underneath it.
@@ -3945,6 +4245,86 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^K dispatches GoToFileSelector") {
   CHECK(app.directoryMode().currentDirectory() == path());
 }
 
+// 2026-08-27 addition, a direct user request ("^J^J: 履歴直近ファイル
+// へ戻る...^J^K同様どこでもキーなので反映よろしく"): unlike ^J^K
+// (goToFileSelector(), which needs per-mode branching to even know
+// what its OWN target is), ^J^J reads History::recentEntries(
+// RingCategory::RecentFile) directly, so it's meaningful from
+// literally anywhere -- these tests cover the exact motivating
+// scenario: opening an archive, descending several plain directories
+// away from it (where ^G alone can no longer reach the archive, only
+// the immediate parent directory), then using ^J^J to jump straight
+// back.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): jumps back to an archive after descending several "
+                           "PLAIN directories away from it, where ^G alone can no longer reach it") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+  REQUIRE(app.archiveMode().currentArchive() == path() + "archive.tar");
+
+  // Leave the archive and descend into two ORDINARY directories --
+  // ^G from the second one only reaches the first (the ordinary
+  // ModeStack/directory-stack mechanism), never back to the archive.
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().descendTo(path() + "subdir"));
+  REQUIRE(app.directoryMode().currentDirectory() == path() + "subdir/");
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  CHECK(app.feedByte(0x0a, std::nullopt));    // ^J again
+  CHECK(app.currentMode() == ApplicationMode::Archive);
+  CHECK(app.archiveMode().currentArchive() == path() + "archive.tar");
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): also reaches an ordinary (non-archive) file, "
+                           "matching openSelectedListEntry()'s own RecentFile handling") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+
+  CHECK(app.handleCommand(Command::GoToRecentFile));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == path() + "plain.txt");
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): false when nothing has ever been opened this "
+                           "session yet") {
+  REQUIRE(app.start(path()));
+  CHECK_FALSE(app.handleCommand(Command::GoToRecentFile));
+}
+
+// 2026-08-27 addition, a direct user proposal ("「スタックが空」で
+// ^Gの時は、DIR直近履歴へ戻るルーチンへ移行ってのは？（以後は
+// ループ）"): once the ModeStack is exhausted, Back no longer dead-
+// ends -- it falls back to goToRecentDirectory() (RingCategory::
+// RecentDirectory's own most recently visited DIFFERENT directory),
+// which -- since entering a directory always re-pushes it onto that
+// same ring -- naturally keeps alternating between the last two
+// distinct directories on each further Back press, with no dedicated
+// "how far back" state needed.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(Back): once the ModeStack is empty, falls back to "
+                           "goToRecentDirectory() and keeps toggling between the last two directories") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descendTo(subdir/) -- pushes ONE ModeStack frame
+  REQUIRE(app.directoryMode().currentDirectory() == path() + "subdir/");
+
+  REQUIRE(app.handleCommand(Command::Back));  // pops that one frame -- ordinary goBack(), stack now empty
+  REQUIRE(app.directoryMode().currentDirectory() == path());
+
+  CHECK(app.handleCommand(Command::Back));  // stack empty -- falls back to goToRecentDirectory()
+  CHECK(app.directoryMode().currentDirectory() == path() + "subdir/");
+  CHECK(app.handleCommand(Command::Back));  // toggles back again
+  CHECK(app.directoryMode().currentDirectory() == path());
+}
+
 // 2026-08-23 fix, a direct user report: already being IN the (ls)
 // listing this key would otherwise land you on used to make it a
 // hard no-op -- legacy's own equivalent doubles as a re-list even
@@ -3964,6 +4344,66 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): refused outside Fil
   REQUIRE(app.handleCommand(Command::StartKey));
   REQUIRE(app.currentMode() == ApplicationMode::Key);
   CHECK_FALSE(app.handleCommand(Command::GoToFileSelector));
+}
+
+// 2026-08-27 addition, a real report: pressing ^J^K FROM Shell mode
+// used to land on shellReturnMode_ (whatever mode Shell was entered
+// from) instead of doing what ^J^K actually promises -- feedShellByte()'s
+// own blanket pre-switch (see its own comment) ran BEFORE
+// goToFileSelector() ever saw currentMode_==Shell, so its per-mode
+// branches (none of which included Shell) silently did nothing while
+// that clobbered currentMode_ stuck around as a side effect. Both the
+// pre-switch exclusion (isShellSafeGoToFileSelector) and
+// goToFileSelector()'s own new Shell branch are needed together --
+// this test only passes with both in place.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector) / ^J^K: from Shell mode, goes to a real `ls` "
+                           "listing of the SHELL's own actual working directory, not shellReturnMode_") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/ first
+  REQUIRE(app.directoryMode().currentDirectory() == path() + "subdir/");
+
+  bool shellOk = app.feedByte(0x18, std::nullopt);  // ^X
+  shellOk = shellOk && app.feedByte('s', std::nullopt);  // s -- RestartShell (K-60), works from any mode
+  if (!shellOk || app.currentMode() != ApplicationMode::Shell) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  // cd to a directory DIFFERENT from subdir/ (shellReturnMode_'s own
+  // directory) -- the whole point of this test is distinguishing "the
+  // SHELL's real cwd" from "wherever Shell happened to be entered
+  // from", which the pre-2026-08-27 bug conflated.
+  app.shell().commandLine().setText("cd '" + root.string() + "'");
+  app.shell().submitLine();
+  REQUIRE(pumpUntil(app, [&] { return app.shell().currentDirectory() == root.string(); }));
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  CHECK(app.feedByte(0x0b, std::nullopt));    // ^K
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == root.string() + "/");
+}
+
+// 2026-08-27 addition, a real report ("^J^K→カーソル位置が
+// 「usilicrc」じゃない"): opening a file (Enter, NOT descendTo()/
+// goBack()) never saved the cursor's own row for this directory, so a
+// later goToFileSelector() call landing back here via plain
+// enterDirectory() had nothing but a stale/missing saved position to
+// restore.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from File mode, restores the cursor to the SAME "
+                           "row the file was opened from, even though opening a file isn't descendTo()/"
+                           "goBack() navigation") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.directoryMode().selectedEntry()->name == "plain.txt");
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::GoToFileSelector));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().selectedEntry() != nullptr);
+  CHECK(app.directoryMode().selectedEntry()->name == "plain.txt");
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works from Cut mode (2026-08-16 fix: a "
@@ -7554,9 +7994,10 @@ TEST_CASE_FIXTURE(Fixture, "^J^W from a Grep results screen writes the ORIGIN's 
   }
   REQUIRE(app.currentMode() == ApplicationMode::Shell);
 
-  std::string commandText = app.shell().commandLine().text();  // "cat <path>"
-  REQUIRE(commandText.substr(0, 4) == "cat ");
-  std::ifstream in(commandText.substr(4));
+  std::string commandText = app.shell().commandLine().text();  // "cat '<path>'"
+  REQUIRE(commandText.substr(0, 5) == "cat '");
+  REQUIRE(commandText.back() == '\'');
+  std::ifstream in(commandText.substr(5, commandText.size() - 6));
   REQUIRE(in.good());
   std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   CHECK(content.find("line A") != std::string::npos);
@@ -7928,7 +8369,8 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a second click on the already-sele
   CHECK(app.fileMode().currentFile() == path() + "plain.txt");
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleMouseClick: false outside the viewport or outside Directory/LOCATE modes") {
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: false outside the viewport or outside Directory/Archive/LOCATE "
+                           "modes") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(app.handleMouseClick(999, 0));  // way past any real row
 
@@ -7937,6 +8379,48 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: false outside the viewport or outs
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
   CHECK_FALSE(app.handleMouseClick(0, 0));  // File mode still isn't covered (see class comment)
+}
+
+// 2026-08-26 addition: mirrors the Directory-mode click tests above
+// exactly, for ArchiveMode's own listing (a direct user request:
+// "内容一覧画面で左クリックで選べるようにして欲しいのとハイライト表示
+// を（ls）同様ファイル・ディレクトリ名のみにして欲しい").
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: ARC listing -- a click selects, a second click on the "
+                           "already-selected row opens it") {
+  REQUIRE(app.start(path()));
+  int dirIdx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
+  int idx = archiveIndexOf(app, "inner.txt");
+  REQUIRE(idx >= 0);
+  int col = app.activeContentView().lines()[idx].highlightStartColumn.value_or(0) + 1;
+
+  REQUIRE(app.handleMouseClick(idx, col));  // first click: select
+  CHECK(app.currentMode() == ApplicationMode::Archive);  // selecting alone doesn't open it
+  CHECK(app.archiveMode().selectedEntry()->name.find("inner.txt") != std::string::npos);
+
+  REQUIRE(app.handleMouseClick(idx, col));  // second click on the same row: open
+  CHECK(app.currentMode() == ApplicationMode::ArchiveContent);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: ARC listing -- a press left of the entry's own highlighted span "
+                           "is a no-op, leaving that margin free as a screen-drag region (same convention as "
+                           "Directory mode's own ls-style margin)") {
+  REQUIRE(app.start(path()));
+  int dirIdx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
+  int idx = archiveIndexOf(app, "inner.txt");
+  REQUIRE(idx >= 0);
+  int start = app.activeContentView().lines()[idx].highlightStartColumn.value_or(0);
+  REQUIRE(start > 0);  // the size column margin is always real width here
+
+  CHECK_FALSE(app.handleMouseClick(idx, start - 1));  // one column left of the highlighted span
+  CHECK(app.currentMode() == ApplicationMode::Archive);
 }
 
 // 2026-08-14 addition: mirrors the Directory-mode click tests above

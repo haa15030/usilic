@@ -927,6 +927,15 @@ class ContentView {
   // (despite the name no longer being only about trailing2) since it's
   // still the one shared funnel point every render path already calls.
   ModeLineFields withTruncatedFields(ModeLineFields fields, const std::string &positionText) const;
+  // Separate from withTruncatedFields() itself (called right after it,
+  // at each of that function's own 3 call sites) rather than folded
+  // in: withTruncatedFields() has several early `return fields;` points
+  // of its own already, and trailing3's own budget genuinely depends on
+  // trailing2's FINAL (already-truncated) width, so it has to run
+  // strictly after that function is completely done, not threaded
+  // through its own middle. See its own definition comment for the
+  // real report this fixes.
+  ModeLineFields withTruncatedTrailing3(ModeLineFields fields, const std::string &positionText) const;
 
   // Shared by withTruncatedFields()'s own `trailing` and `trailing2`
   // elision (2026-08-17 addition, see TrailingKind's own comment):

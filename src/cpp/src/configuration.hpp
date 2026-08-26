@@ -15,7 +15,11 @@ namespace fm {
 // enum here since the numbers themselves carried no meaning). Lets a
 // caller pick the matching already-ported ArchiveReader subclass
 // (TarReader/LhaReader/ZipReader/RpmReader) for a given suffix.
-enum class ArchiveKind { None, Tar, Lha, Zip, Bzip2, Rpm, Deb };
+// Rar/SevenZip (2026-08-26 additions): no legacy numbering to preserve
+// (both formats postdate this project's original C era) -- appended
+// rather than interleaved, so existing values keep their numeric
+// identity.
+enum class ArchiveKind { None, Tar, Lha, Zip, Bzip2, Rpm, Deb, Rar, SevenZip };
 
 // A program to run, in the shape ChildProcess::run()/runPipeline()
 // already expect: argv is the final (or only) stage; pipedFromArgv,
@@ -70,6 +74,15 @@ enum class ConfiguredRole {
   // spot the system one has.
   LocateUserDb,       // search: `locate -d <personal db path>`
   LocateUserDbBuild,  // build: a `find`+`locate.mklocatedb` pipeline, macOS only
+  // 2026-08-26 additions (a direct user request, testing real .rar/.7z
+  // fixtures dropped into src/): no legacy precedent for either format
+  // (both postdate this project's original C era). RarExtract runs
+  // `unar`(The Unarchiver)'s own extract-to-stdout mode -- NOT the
+  // proprietary `unrar` binary, which isn't freely redistributable and
+  // wasn't installed on this dev machine either; `unar` is a common,
+  // brew-installable substitute that reads the same RAR format.
+  RarExtract,
+  SevenZipExtract,
 };
 
 // Parses usilicrc (tcbrc) and answers configuration lookups via

@@ -331,6 +331,7 @@ const KeyTableEntry kKeyTable[] = {
     // the wide gap the space produced before startKey()'s fixed
     // column padding was the whole reason for this change.
     {"^J^K", "Go to file-selector", {kLeaderJ, 0x0b}},
+    {"^J^J", "Go to most recent file/archive", {kLeaderJ, kLeaderJ}},
     {"^J^S", "EGREP", {kLeaderJ, kControlS}},
     {"^Jc", "CUT (fixed string, buffer)", {kLeaderJ, 'c'}},
     {"^J^C", "CUT (regex, buffer)", {kLeaderJ, kControlC}},
@@ -1683,6 +1684,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     switch (byte) {
       case 0x0b:  // ^J ^K : Go to file-selector (K-18)
         return handleCommand(Command::GoToFileSelector);
+      case kLeaderJ:  // ^J ^J : go to the most recent RecentFile entry -- see Command::GoToRecentFile's own comment
+        return handleCommand(Command::GoToRecentFile);
       case kControlS:  // ^J ^S : EGREP
         return handleCommand(Command::StartEgrep);
       case 'c':  // ^J c : CUT (fixed string, buffer)
@@ -1969,7 +1972,26 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     // every OTHER leader command that might are might not need the
     // switch -- this only touches the THREE bytes confirmed to have
     // this exact problem.
-    bool isShellSafeNavigation = escPending_ && (byte == '<' || byte == '>' || byte == 'v');
+    // 2026-08-27 addition, a real report: ^J^K (GoToFileSelector) from
+    // within SHELL landed on `shellReturnMode_` (whatever mode SHELL
+    // was entered FROM) instead of doing what ^J^K actually promises
+    // ("go to a real `ls` listing of the CURRENT [directory]") -- the
+    // blanket pre-switch below ran BEFORE goToFileSelector() ever got
+    // a chance to see currentMode_==Shell, so by the time it checked,
+    // currentMode_ was already shellReturnMode_ and its own generic
+    // per-mode branches (none of which include Shell) just silently
+    // did nothing, LEAVING that clobbered currentMode_ in place as an
+    // unwanted side effect -- exactly the same class of bug the
+    // ESC-</ESC->/ESC-v exclusion just above already fixed once for a
+    // different trio of commands (see its own comment's "accepted...
+    // for a genuine typo" tradeoff, which turns out to also cover any
+    // OTHER valid sequence whose handler doesn't itself support being
+    // reached from Shell -- broader than originally scoped). Excluded
+    // here so goToFileSelector() sees the real currentMode_==Shell and
+    // can handle it explicitly (see its own new Shell branch).
+    bool isShellSafeGoToFileSelector = leaderJPending_ && byte == 0x0b;
+    bool isShellSafeNavigation =
+        (escPending_ && (byte == '<' || byte == '>' || byte == 'v')) || isShellSafeGoToFileSelector;
     if (shellLeaderPending && !isShellSafeNavigation) {
       // Completing a sequence -- switch back to whichever mode SHELL
       // was entered from BEFORE dispatching, exactly as if the user
@@ -2316,6 +2338,7 @@ bool Application::handleCommand(Command command) {
   // this again via executeEdit()/reportEditError()) still shows
   // its OWN message afterward, unaffected.
   directoryMode_.clearEditError();
+  archiveMode_.clearEditError();  // ArchiveMode's own identical mechanism -- see its own declaration comment
   // 2026-08-25 (see FileMode::ensureLoadedThrough()'s own comment): a
   // CLI pager-launched file/stdin stream only ever has enough content
   // loaded to satisfy scrolling up to now -- topping it back up to
@@ -2499,7 +2522,31 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Directory && pendingCpMvRm_) {
         return cancelPendingCpMvRm();
       }
-      return directoryMode_.goBack();
+      // arcExtractSourceAnnotation_ ("ARC: <path>", 2026-08-27 addition,
+      // a direct user proposal): same shape as hasSearchAnnotation()
+      // just above -- checked ahead of the generic ModeStack-based
+      // goBack() -- but routes to goToRecentFile() (^J^J) instead of a
+      // dedicated returnTo*() function, since a ModeStack frame can't
+      // represent "go back to Archive mode" at all (see
+      // pollPendingArchiveExtractShellRun()'s own comment on why
+      // descendTo() only ever pushes a frame back to the plain
+      // directory Archive mode was entered FROM, never to Archive
+      // itself). RecentFile's own most recent entry is still the
+      // archive at this exact point (nothing else has opened a file
+      // since landing here), so this reaches it directly.
+      if (currentMode_ == ApplicationMode::Directory && directoryMode_.hasArcExtractSourceAnnotation()) {
+        return goToRecentFile();
+      }
+      if (directoryMode_.goBack()) return true;
+      // 2026-08-27 addition, a direct user proposal ("「スタックが空」
+      // で^Gの時は、DIR直近履歴へ戻るルーチンへ移行ってのは？（以後は
+      // ループ）"): ModeStack exhausted (goBack() just returned false)
+      // -- rather than a dead end, fall back to RecentDirectory's own
+      // most-recently-visited DIFFERENT directory (see
+      // goToRecentDirectory()'s own comment for why this naturally
+      // loops/toggles on its own, no extra state needed).
+      if (currentMode_ == ApplicationMode::Directory) return goToRecentDirectory();
+      return false;
     // ':'/';' -- literally Back+MoveDown+Enter / Back+MoveUp+Enter.
     // 2026-08-16: a real user report ("「;」「:」の機能が逆") showed the
     // 2026-08-03 "confirmed directly by the user" mapping had these two
@@ -2597,6 +2644,8 @@ bool Application::handleCommand(Command command) {
       return goToParentFromFileOrArchive();
     case Command::GoToFileSelector:
       return goToFileSelector();
+    case Command::GoToRecentFile:
+      return goToRecentFile();
     case Command::JumpToPathPrefix:
       return jumpToPathPrefix();
     case Command::RestartShell:
@@ -2801,6 +2850,17 @@ bool Application::openSelectedEntry() {
   if (!entry) return false;
   if (entry->isDirectory) return directoryMode_.openSelected();
 
+  // 2026-08-27 addition, a real report ("^J^K→カーソル位置が
+  // 「usilicrc」じゃない"): every OTHER way of leaving this directory
+  // (descendTo()/goBack()) already saves the cursor's own row first --
+  // opening a plain FILE never did, since it isn't directory-to-
+  // directory navigation, leaving whatever LATER re-entered this
+  // directory (goToFileSelector()'s own enterDirectory(parent) call,
+  // or any other plain re-visit) with only a stale/missing saved
+  // position to restore instead of "right where the user just was".
+  // See DirectoryMode::saveCurrentCursorPosition()'s own comment.
+  directoryMode_.saveCurrentCursorPosition();
+
   std::string path = directoryMode_.currentDirectory();
   if (!path.empty() && path.back() != '/') path += '/';
   path += entry->name;
@@ -2865,11 +2925,32 @@ bool Application::openSelectedArchiveEntry() {
   auto content = archiveMode_.extractSelected();
   if (!content) return false;
 
+  // 2026-08-26 fix, a real report ("一覧から選んだファイル内容がハイ
+  // ライト表示（←不要）かつ80桁分しか表示されない"):
+  //   - setCursorHighlightEnabled(false) was simply missing here --
+  //     every other plain-content view (FileMode/ManMode/CutMode's own
+  //     content view) turns this off (see file_mode.cpp's own
+  //     constructor comment); this one still had ContentView's default
+  //     (on), so the current-line row showed FileMode's own reverse-
+  //     video cursor bar even though there's nothing to "select" in a
+  //     read-only extracted-content pager.
+  //   - the raw std::getline() split below never wrapped a line wider
+  //     than the terminal at all, unlike FileMode's own readAndWrap()
+  //     (PipeBuffer::feed()/flush()) -- renderLine()'s own maxCol
+  //     truncation then just cut every long line off at the screen's
+  //     real width instead of continuing it onto a following display
+  //     row, reading as "80桁分しか表示されない". Routed through the
+  //     exact same PipeBuffer FileMode uses (this is unstyled raw
+  //     archive-entry content, so no charset/overstrike concerns beyond
+  //     what PipeBuffer already handles for any other plain file).
   std::string text(content->begin(), content->end());
-  std::istringstream stream(text);
+  PipeBuffer pipe(encoding_, std::max(1, display_.columns()), 64L * 1024 * 1024);
+  pipe.feed(text);
+  pipe.flush();
   std::vector<ContentView::Line> lines;
-  std::string line;
-  while (std::getline(stream, line)) lines.push_back({line, std::nullopt, std::nullopt, {}});
+  lines.reserve(pipe.lines().size());
+  for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt, std::nullopt, styled.attributes});
+  archiveContentView_.setCursorHighlightEnabled(false);
   archiveContentView_.setLines(std::move(lines));
   archiveContentView_.setCursorIndex(0);
   archiveContentView_.redraw();
@@ -3098,6 +3179,28 @@ bool Application::goToFileSelector() {
     directoryView_.redraw();
     return true;
   }
+  // Shell (2026-08-27 addition, a direct user report -- see
+  // feedShellByte()'s own isShellSafeGoToFileSelector comment for why
+  // this needed a pre-switch exclusion too before currentMode_==Shell
+  // could ever reach here at all): "go to a real `ls` listing" from
+  // SHELL means the SHELL's own actual working directory (shell_.
+  // currentDirectory(), tracked from its own prompt), not a "current
+  // file"'s containing directory the way every other branch below
+  // means it -- there's no "current file" concept in Shell at all.
+  if (currentMode_ == ApplicationMode::Shell) {
+    std::string dir = shell_.currentDirectory();
+    if (dir.empty()) return false;
+    // See this function's own identical comment on the File/Cut/
+    // CutContent branch below for why previousDirectory is captured
+    // BEFORE enterDirectory() overwrites currentDirectory_.
+    std::string previousDirectory = directoryMode_.currentDirectory();
+    if (!directoryMode_.enterDirectory(dir)) return false;
+    if (!previousDirectory.empty()) directoryMode_.resetNavigationToFloor(previousDirectory);
+    currentMode_ = ApplicationMode::Directory;
+    display_.hideVisibleCursor();
+    directoryView_.redraw();
+    return true;
+  }
   std::string sourceFile;
   if (currentMode_ == ApplicationMode::ListBrowser) {
     if (listBrowserCategory_ != RingCategory::RecentFile) return false;
@@ -3285,25 +3388,67 @@ bool Application::openSelectedListEntry() {
     currentMode_ = ApplicationMode::Directory;
     return true;
   }
-  if (listBrowserCategory_ == RingCategory::RecentFile) {
-    // 2026-08-20 fix, a real report + screenshot (=dq): opening an
-    // archive (utf8.tar) straight from ^X^F's own candidate list always
-    // fell through to FileMode's raw-byte view (missing the "(tar)"
-    // badge, showing the tar file's own binary header bytes as if it
-    // were plain text) -- unlike openSelectedEntry() (Directory mode's
-    // own Enter key), this branch called fileMode_.loadFile()
-    // unconditionally, never trying archiveMode_.loadArchive() first.
-    // Mirrors openSelectedEntry()'s own archive-first, file-as-fallback
-    // order exactly.
-    if (archiveMode_.loadArchive(*item)) {
-      archiveParentStack_.clear();
-      currentMode_ = ApplicationMode::Archive;
-      return true;
-    }
-    if (!fileMode_.loadFile(*item)) return false;
-    currentMode_ = ApplicationMode::File;
-    fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
+  if (listBrowserCategory_ == RingCategory::RecentFile) return openRecentFileEntry(*item);
+  return false;
+}
+
+// Extracted from openSelectedListEntry()'s own RecentFile branch
+// (2026-08-27, to share it with goToRecentFile()/Command::
+// GoToRecentFile too -- see its own declaration comment). 2026-08-20
+// fix, a real report + screenshot (=dq): opening an archive
+// (utf8.tar) straight from ^X^F's own candidate list always fell
+// through to FileMode's raw-byte view (missing the "(tar)" badge,
+// showing the tar file's own binary header bytes as if it were plain
+// text) -- unlike openSelectedEntry() (Directory mode's own Enter
+// key), this used to call fileMode_.loadFile() unconditionally, never
+// trying archiveMode_.loadArchive() first. Mirrors openSelectedEntry()'s
+// own archive-first, file-as-fallback order exactly.
+bool Application::openRecentFileEntry(const std::string &path) {
+  if (archiveMode_.loadArchive(path)) {
+    archiveParentStack_.clear();
+    currentMode_ = ApplicationMode::Archive;
     return true;
+  }
+  if (!fileMode_.loadFile(path)) return false;
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;  // see its own declaration comment
+  return true;
+}
+
+// ^J^J: see Command::GoToRecentFile's own declaration comment. Unlike
+// goToFileSelector() (^J^K), this needs no per-mode branching at all
+// -- it reads History::recentEntries(RingCategory::RecentFile) (^X^F's
+// own backing store) directly, so it's meaningful from literally any
+// mode/screen, not just the handful goToFileSelector() special-cases.
+// False when the ring is empty (nothing has ever been opened via
+// Enter/^X^F this session) or the most recent entry no longer opens
+// (deleted/moved since).
+bool Application::goToRecentFile() {
+  const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentFile);
+  if (recent.empty()) return false;
+  return openRecentFileEntry(recent.back());
+}
+
+// Command::Back's own empty-ModeStack fallback (2026-08-27 addition,
+// a direct user proposal) -- see its own call site comment. Walks
+// RingCategory::RecentDirectory (^X^D's own backing store) backward
+// for the most recent entry that ISN'T the CURRENT directory (the
+// ring's own last entry is always wherever enterDirectory() just
+// landed, i.e. here -- picking that would be a self-referential
+// no-op). Deliberately uses enterDirectory(), not descendTo(): no
+// ModeStack frame is pushed, so the stack STAYS empty and this same
+// fallback fires again on the NEXT empty-stack Back press too --
+// since entering a directory always re-pushes it onto RecentDirectory
+// (see enterDirectory()'s own history_.pushRecent() call), two
+// directories visited this way naturally keep trading places at the
+// ring's own tail, which is what "loops thereafter" means here: an
+// emergent toggle from the ring's own structure, no separate
+// walk-position state needed.
+bool Application::goToRecentDirectory() {
+  const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentDirectory);
+  for (auto it = recent.rbegin(); it != recent.rend(); ++it) {
+    if (*it == directoryMode_.currentDirectory()) continue;
+    return directoryMode_.enterDirectory(*it);
   }
   return false;
 }
@@ -3652,6 +3797,33 @@ bool Application::returnFromArchive() {
     // or our own still-on-disk temp file) -- but if something removed
     // it out from under us, fail safe by falling through to Directory
     // below rather than leaving the screen showing stale content.
+  }
+  // 2026-08-27 fix, a real report + repro ("^G連打で行き来ループとなる
+  // ...^J^Jは帰還後の^Gは在籍ディレクトリに設定できない？"): this used
+  // to just flip currentMode_ and redraw directoryView_ AS-IS, trusting
+  // directoryMode_'s own currentDirectory_ to already be the archive's
+  // containing directory -- true for a normal Directory-descent-then-
+  // Enter session, but NOT for an archive reached via goToRecentFile()
+  // (^J^J, or Command::Back's own new hasArcExtractSourceAnnotation()
+  // routing -- see its own comment) from somewhere else entirely (e.g.
+  // an archive-extraction destination like ~/.usilic/saved/): that
+  // directory's OWN "ARC: <archivePath>" annotation was still showing,
+  // so returning to Archive then pressing Back AGAIN just found the
+  // SAME annotation still there and bounced straight back to Archive
+  // again -- an infinite ping-pong between the two screens, never
+  // reaching the archive's actual containing directory. Same fix
+  // returnToDirectory() already established for the identical FileMode
+  // class of bug (2026-08-16, see its own comment) -- follow the
+  // archive's real parent directory via enterDirectory(), a no-op
+  // whenever directoryMode_ already correctly shows it (the ordinary
+  // Directory-then-Enter case).
+  std::filesystem::path archivePath(archiveMode_.currentArchive());
+  std::string parent = archivePath.parent_path().string();
+  if (!parent.empty() && parent.back() != '/') parent += '/';
+  if (!parent.empty() && parent != directoryMode_.currentDirectory()) {
+    std::string previousDirectory = directoryMode_.currentDirectory();
+    if (directoryMode_.enterDirectory(parent) && !previousDirectory.empty())
+      directoryMode_.resetNavigationToFloor(previousDirectory);
   }
   currentMode_ = ApplicationMode::Directory;
   directoryView_.redraw();
@@ -4242,7 +4414,17 @@ bool Application::shellInsertBufferContent() {
   for (const auto &line : source.lines()) out << line.text << "\n";
   out.close();
   if (!ensureShellActive()) return false;
-  shell_.commandLine().setText("cat " + savePath);
+  // 2026-08-27 fix, a real report + repro ("↑「[」等がエスケープされ
+  // てない"): savePath (built from a real archive entry's own basename,
+  // e.g. this fixture's own "…[二][字]…") went straight into the
+  // command line unquoted -- the exact same class of bug
+  // escapeArchiveMemberPattern() just fixed for tar/unzip's own member
+  // arguments (see its own comment), just here it's a raw SHELL COMMAND
+  // STRING rather than an argv list, so single-quoting (shellQuoteArg(),
+  // already used everywhere else this file builds one -- see its own
+  // comment) is the right tool, not backslash-escaping individual glob
+  // characters.
+  shell_.commandLine().setText("cat " + shellQuoteArg(savePath));
   shell_.commandLine().redraw();
   return true;
 }
@@ -4669,6 +4851,20 @@ bool Application::cancelPendingCpMvRm() {
 // surviving navigation to an unrelated directory must not silently act
 // on whatever happens to be under the cursor there instead.
 bool Application::startDestinationPrompt() {
+  // 2026-08-26 fix, a real report ("展開先を選ぶための^X^Mが利かない"):
+  // legacy's menu.c folds M_arc/M_arc2 (^X^Ka/^Xa) into the exact same
+  // `is_comm(np->Mb, 1)` category as M_cp/M_mv/M_rm, sharing ONE
+  // M_dest (^X^M) confirm step across all four operations -- this
+  // port's own ^X a (startArchivePrompt(), K-58) already opens the
+  // destination prompt in a single step rather than legacy's separate
+  // arm-then-confirm dance, but ^X^M itself was never ALSO wired to
+  // reach it, unlike ^X^Y/^X^N (mark all / clear all) just above,
+  // which already are explicitly "(CP, MV, RM, ARC)". Archive mode
+  // has no pendingCpMvRm_-style arm state to confirm here (there's
+  // nothing else it could mean), so this dispatches straight to the
+  // same startArchivePrompt() ^X a already calls, before the
+  // Directory-only CP/MV/RM logic below even runs.
+  if (currentMode_ == ApplicationMode::Archive) return startArchivePrompt();
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (!pendingCpMvRm_) return false;
   PendingCpMvRmOperation pending = *pendingCpMvRm_;
@@ -4747,17 +4943,48 @@ bool Application::startArchivePrompt() {
   return true;
 }
 
+// 2026-08-27 addition, a real report + PTY reproduction ("^X^Mの③が
+// 変化無し（何も起きない）" -- traced independently of the prompt/
+// destination logic entirely, by running `tar xf`/`unzip` directly
+// against the real utf8.tar fixture outside usilic altogether): BOTH
+// `tar`/`unzip`'s own member-name arguments are shell-glob PATTERNS
+// (bsdtar's own man page: "Patterns are shell-style globbing patterns
+// as documented in tcsh(1)"; unzip behaves identically -- confirmed
+// directly), not literal-string matches. A real archive entry whose
+// own name genuinely CONTAINS glob metacharacters (this fixture's own
+// "utf8/...[二][字]...ts" -- ordinary bracketed annotations in a real
+// TV-listing-style filename, nothing exotic) gets its own `[...]`
+// misparsed as a glob character CLASS instead of literal brackets,
+// so neither tool can ever find "the entry named exactly this" no
+// matter how faithfully the name round-trips from the listing --
+// confirmed independently of any encoding concern (both the raw
+// listing-output bytes AND a manually NFC-normalized copy of the same
+// name still failed identically; only backslash-escaping the actual
+// glob metacharacters fixed it). Backslash-escaping every metacharacter
+// tcsh's own glob syntax recognizes (`\*?[]{}` -- see tcsh(1)) turns
+// the pattern back into an exact literal match, verified directly
+// against both tools this same way.
+std::string Application::escapeArchiveMemberPattern(const std::string &name) {
+  std::string escaped;
+  escaped.reserve(name.size());
+  for (char c : name) {
+    if (c == '\\' || c == '*' || c == '?' || c == '[' || c == ']' || c == '{' || c == '}') escaped += '\\';
+    escaped += c;
+  }
+  return escaped;
+}
+
 std::vector<std::string> Application::buildArchiveExtractArgv(const std::string &archivePath, ArchiveKind kind,
                                                                 const std::vector<std::string> &members,
                                                                 const std::string &destination) const {
   if (kind == ArchiveKind::Tar) {
     std::vector<std::string> argv = {"tar", "xf", archivePath, "-C", destination};
-    for (const auto &m : members) argv.push_back(m);
+    for (const auto &m : members) argv.push_back(escapeArchiveMemberPattern(m));
     return argv;
   }
   if (kind == ArchiveKind::Zip) {
     std::vector<std::string> argv = {"unzip", "-o", archivePath};
-    for (const auto &m : members) argv.push_back(m);
+    for (const auto &m : members) argv.push_back(escapeArchiveMemberPattern(m));
     argv.push_back("-d");
     argv.push_back(destination);
     return argv;
@@ -6929,9 +7156,17 @@ void Application::pollPendingCpMvRmShellRun() {
 
 // Same non-blocking "let the run loop's own existing tick drive the
 // wait" shape as pollPendingCpMvRmShellRun() -- see its own comment.
-// No exit-code check/destination-landing needed here (never requested
-// for ARC): just restore whichever mode this extraction was launched
-// from and redraw.
+// 2026-08-26 addition (a direct user spec): now ALSO lands in the
+// destination directory on success, the exact same descendTo()-then-
+// annotate shape pollPendingCpMvRmShellRun() uses for CP/MV (see its
+// own comment for why descendTo(), not a bare enterDirectory()) --
+// previously this never checked success/failure at all, just restored
+// whichever mode the extraction was launched from. executeArchiveExtract()
+// already validated the destination exists as a real directory before
+// ever getting here, so failure here should be rare (a genuinely
+// corrupt/unreadable archive failing the real tar/unzip invocation
+// itself) -- that case still falls back to `returnMode`, same as
+// before this change.
 void Application::pollPendingArchiveExtractShellRun() {
   if (!pendingArchiveExtractShellRun_) return;
   if (!shell_.alive()) {
@@ -6939,9 +7174,26 @@ void Application::pollPendingArchiveExtractShellRun() {
     return;
   }
   if (shell_.promptGeneration() == pendingArchiveExtractShellRun_->promptGenerationBefore) return;
-  ApplicationMode returnMode = pendingArchiveExtractShellRun_->returnMode;
+  PendingArchiveExtractShellRun run = *pendingArchiveExtractShellRun_;
   pendingArchiveExtractShellRun_.reset();
-  currentMode_ = returnMode;
+
+  bool ok = false;
+  const auto &lines = shell_.scrollback().lines();
+  static const std::size_t kMarkerLen = std::char_traits<char>::length(kCpMvRmExitMarker);
+  for (auto it = lines.rbegin(); it != lines.rend(); ++it) {
+    if (it->text.compare(0, kMarkerLen, kCpMvRmExitMarker) == 0) {
+      ok = (it->text.substr(kMarkerLen) == "0");
+      break;
+    }
+  }
+
+  if (ok && directoryMode_.descendTo(run.destination)) {
+    currentMode_ = ApplicationMode::Directory;
+    directoryMode_.setArcExtractSourceAnnotation(run.archivePath);
+    directoryView_.redraw();
+    return;
+  }
+  currentMode_ = run.returnMode;
   activeView().redraw();
 }
 
@@ -7108,8 +7360,40 @@ bool Application::executeArchiveExtract(const std::string &destination) {
     // File-selector example.
   }
 
-  std::vector<std::string> argv = buildArchiveExtractArgv(archivePath, kind, members, destination);
-  if (argv.empty() || destination.empty()) {
+  // 2026-08-26 addition, a direct (provisional) user spec covering all
+  // three destination shapes ^X^M/^X a can actually receive:
+  //   - empty: previously a silent no-op ("何も起きない") -- now
+  //     defaults to <homeDirectory>/.usilic/saved/ (auto-created if
+  //     missing, the SAME directory shellInsertBufferContent()'s own
+  //     ^J^W save-to-file feature already established, see its own
+  //     comment for that precedent), so extracting with no typed
+  //     destination lands the entry at .usilic/saved/<archive-relative-
+  //     path> (tar/unzip preserve that path themselves once pointed at
+  //     this directory, no extra per-entry logic needed here).
+  //   - a real, existing directory: used as typed, unchanged from
+  //     before.
+  //   - anything else (a typo, a path that was never created): also
+  //     previously a silent no-op -- now rejected outright with a
+  //     "<path>: No such directory" mode-line message (Archive or
+  //     Directory's own reportError(), matching CP/MV/RM's own
+  //     "Permission denied" convention, see checkTargetsWritable()'s
+  //     own comment) before ever launching a shell command.
+  std::string resolvedDestination = destination;
+  if (resolvedDestination.empty()) {
+    resolvedDestination = std::filesystem::path(usilicrcPath_).parent_path().string() + "/saved";
+    std::error_code ec;
+    std::filesystem::create_directories(resolvedDestination, ec);
+  }
+  if (!std::filesystem::is_directory(resolvedDestination)) {
+    std::string message = resolvedDestination + ": No such directory";
+    if (currentMode_ == ApplicationMode::Archive) archiveMode_.reportError(message);
+    else directoryMode_.reportError(message);
+    activeView().redraw();
+    return false;
+  }
+
+  std::vector<std::string> argv = buildArchiveExtractArgv(archivePath, kind, members, resolvedDestination);
+  if (argv.empty()) {
     activeView().redraw();
     return false;
   }
@@ -7119,8 +7403,9 @@ bool Application::executeArchiveExtract(const std::string &destination) {
     activeView().redraw();
     return false;
   }
-  pendingArchiveExtractShellRun_ = PendingArchiveExtractShellRun{shell_.promptGeneration(), returnMode};
-  shell_.commandLine().setText(shellQuoteArgv(argv));
+  pendingArchiveExtractShellRun_ =
+      PendingArchiveExtractShellRun{shell_.promptGeneration(), returnMode, resolvedDestination, archivePath};
+  shell_.commandLine().setText(shellQuoteArgv(argv) + "; echo " + kCpMvRmExitMarker + "$?");
   shell_.submitLine();
   return true;
 }
@@ -7394,6 +7679,23 @@ bool Application::handleMouseClick(int row, int column) {
     if (idx == directoryView_.cursorIndex()) return openSelectedEntry();
     directoryView_.setCursorIndex(idx);
     directoryView_.redraw();
+    return true;
+  }
+  if (currentMode_ == ApplicationMode::Archive) {
+    // Same left-margin drag-region carve-out as DirectoryMode's own
+    // branch just above (2026-08-26 addition, a direct user request:
+    // "内容一覧画面で左クリックで選べるようにして...ハイライト表示を
+    // （ls）同様ファイル・ディレクトリ名のみに") -- formatEntryLine()'s
+    // own right-justified size column plus its 2-space gap is exactly
+    // this format's equivalent of ls's own permission/size/date margin,
+    // now marked via Line::highlightStartColumn (see loadArchive()'s
+    // own comment) the same way DirectoryMode's entries already are.
+    int idx = archiveView_.lineIndexAtRow(row);
+    if (idx < 0) return false;
+    if (!archiveView_.isColumnWithinLineScope(idx, column)) return false;
+    if (idx == archiveView_.cursorIndex()) return openSelectedArchiveEntry();
+    archiveView_.setCursorIndex(idx);
+    archiveView_.redraw();
     return true;
   }
   if (currentMode_ == ApplicationMode::Locate) {

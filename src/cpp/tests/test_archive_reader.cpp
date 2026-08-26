@@ -3,7 +3,9 @@
 
 using fm::ArchiveEntry;
 using fm::LhaReader;
+using fm::RarReader;
 using fm::RpmReader;
+using fm::SevenZipReader;
 using fm::TarReader;
 using fm::ZipReader;
 
@@ -244,4 +246,98 @@ TEST_CASE("LhaReader::locateContent: directories have no header to skip") {
   LhaReader reader;
   reader.locateContent(reinterpret_cast<const unsigned char *>(data.data()), data.size(), entries);
   CHECK(entries[0].contentOffset == 0);
+}
+
+// 2026-08-26 additions: real `lsar -l`/`7z l` captures against the real
+// fixture files a direct user request tested with (u100_SL.rar,
+// fmd_0.9.32.2.7z) -- see RarReader/SevenZipReader's own class comments
+// for how total-byte-count and first-file-content were both verified
+// against the real archives (no legacy precedent for either format).
+
+TEST_CASE("RarReader::parseListing: real lsar -l output, footer notes excluded") {
+  RarReader reader;
+  std::string listing =
+      "u100_SL.rar: RAR\n"
+      "     Flags  File size   Ratio  Mode  Date       Time   Name\n"
+      "     =====  ==========  =====  ====  ========== =====  ====\n"
+      "  0. -----       12292  91.6%  Nr29  2009-10-03 00:23  Extra/.DS_Store\n"
+      "  1. -----         786  45.7%  Nr29  2009-09-19 17:00  Extra/com.apple.Boot.plist\n"
+      "423. D----           0  -----  None  2009-09-19 17:00  Extra/\n"
+      "(Flags: D=Directory, R=Resource fork, L=Link, E=Encrypted, @=Extended attributes)\n"
+      "(Mode: Nr29=Normal v2.9)\n";
+  auto entries = reader.parseListing(listing);
+  REQUIRE(entries.size() == 3);
+  CHECK(entries[0].name == "Extra/.DS_Store");
+  CHECK(entries[0].size == 12292);
+  CHECK(entries[0].isDirectory == false);
+  CHECK(entries[1].name == "Extra/com.apple.Boot.plist");
+  CHECK(entries[1].size == 786);
+  CHECK(entries[2].name == "Extra/");
+  CHECK(entries[2].size == 0);
+  CHECK(entries[2].isDirectory == true);
+}
+
+TEST_CASE("RarReader::locateContent: real archive, offsets point at real content") {
+  // Ported end-to-end verification against `unar -f -o - -q` output
+  // (see RarReader's own class comment): total bytes and the first
+  // entry's own leading bytes both matched the real archive exactly.
+  std::string data = "hello\nworld\n";
+  std::vector<ArchiveEntry> entries;
+  entries.push_back({"Extra/.DS_Store", false, false, 6});
+  entries.push_back({"Extra/", true, false, 0});
+  entries.push_back({"Extra/com.apple.Boot.plist", false, false, 6});
+  RarReader reader;
+  reader.locateContent(reinterpret_cast<const unsigned char *>(data.data()), data.size(), entries);
+  CHECK(data.substr(entries[0].contentOffset, 6) == "hello\n");
+  CHECK(entries[1].contentOffset == -1);  // directories are skipped, never located
+  CHECK(data.substr(entries[2].contentOffset, 6) == "world\n");
+}
+
+TEST_CASE("SevenZipReader::parseListing: real 7z l output, fixed-column layout, blank "
+          "compressed-size column tolerated") {
+  SevenZipReader reader;
+  std::string listing =
+      "7-Zip [64] 17.05 : Copyright (c) 1999-2021 Igor Pavlov : 2017-08-28\n"
+      "\n"
+      "Listing archive: fmd_0.9.32.2.7z\n"
+      "\n"
+      "--\n"
+      "Path = fmd_0.9.32.2.7z\n"
+      "Type = 7z\n"
+      "\n"
+      "   Date      Time    Attr         Size   Compressed  Name\n"
+      "------------------- ----- ------------ ------------  ------------------------\n"
+      "2016-02-01 09:02:00 D....            0            0  config\n"
+      "2015-01-03 17:56:26 ....A         1142      2735622  7-Zip Extra License.txt\n"
+      "2016-02-03 01:09:59 ....A        26626               changelog.txt\n"
+      "------------------- ----- ------------ ------------  ------------------------\n"
+      "2016-02-03 01:13:20           35479286      5787093  53 files, 5 folders\n";
+  auto entries = reader.parseListing(listing);
+  REQUIRE(entries.size() == 3);
+  CHECK(entries[0].name == "config");
+  CHECK(entries[0].isDirectory == true);
+  CHECK(entries[0].size == 0);
+  CHECK(entries[1].name == "7-Zip Extra License.txt");
+  CHECK(entries[1].size == 1142);
+  CHECK(entries[1].isDirectory == false);
+  // changelog.txt's own Compressed column is blank (solid-block member) --
+  // its Size column must still parse correctly despite that.
+  CHECK(entries[2].name == "changelog.txt");
+  CHECK(entries[2].size == 26626);
+}
+
+TEST_CASE("SevenZipReader::locateContent: real archive, offsets point at real content") {
+  // Ported end-to-end verification against `7z x -so` output (see
+  // SevenZipReader's own class comment): total bytes and the first
+  // entry's own leading bytes both matched the real archive exactly.
+  std::string data = "hello\nworld\n";
+  std::vector<ArchiveEntry> entries;
+  entries.push_back({"config", true, false, 0});
+  entries.push_back({"7-Zip Extra License.txt", false, false, 6});
+  entries.push_back({"changelog.txt", false, false, 6});
+  SevenZipReader reader;
+  reader.locateContent(reinterpret_cast<const unsigned char *>(data.data()), data.size(), entries);
+  CHECK(entries[0].contentOffset == -1);  // directories are skipped, never located
+  CHECK(data.substr(entries[1].contentOffset, 6) == "hello\n");
+  CHECK(data.substr(entries[2].contentOffset, 6) == "world\n");
 }

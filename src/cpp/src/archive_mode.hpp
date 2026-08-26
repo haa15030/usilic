@@ -111,6 +111,16 @@ class ArchiveMode {
   // there are no marks and no valid selection.
   std::vector<ArchiveEntry> targetEntries() const;
 
+  // Shows `message` in place of the "ARC" name field, underlined --
+  // 2026-08-26, mirroring DirectoryMode::reportError()'s own identical
+  // mechanism verbatim (see its own comment), for ^X^M/^X a's own
+  // destination-validation errors (e.g. "<path>: No such directory").
+  void reportError(const std::string &message);
+  // Clears whatever reportError() set. Called by Application::
+  // handleCommand() once per dispatched command, alongside
+  // directoryMode_.clearEditError() -- see its own call site comment.
+  void clearEditError();
+
  private:
   static std::string formatEntryLine(const ArchiveEntry &entry, std::size_t sizeWidth);
 
@@ -129,6 +139,8 @@ class ArchiveMode {
   std::string archiveCommand_;
   std::vector<ArchiveEntry> entries_;
   std::set<int> markedIndices_;
+  bool showEditError_ = false;
+  std::string editErrorMessage_;
 };
 
 }  // namespace fm

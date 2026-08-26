@@ -267,6 +267,26 @@ enum class Command {
   // (this port has no legacy binary to compare cursor-positioning
   // behavior against, see goToFileSelector()'s own comment on scope).
   GoToFileSelector,
+  // ^J^J (2026-08-27, a direct user request: "履歴直近ファイルへ戻る
+  // ...^J^K同様どこでもキーなので反映よろしく"): opens the MOST
+  // RECENT entry in the RecentFile ring (History::recentEntries(
+  // RingCategory::RecentFile).back()) -- ^X^F's own backing store,
+  // see its own comment -- reusing the exact same archive-first,
+  // file-as-fallback logic openSelectedListEntry()'s own RecentFile
+  // branch already established. Unlike ^J^K (which computes ITS OWN
+  // target from whatever mode-specific "current file" is available,
+  // so needs per-mode branching to even know what to open), this
+  // reads history_ directly and is meaningful from every mode --
+  // no per-mode gate at all, see goToRecentFile()'s own comment. The
+  // motivating report: after ^X^M/^X a lands in Directory mode at an
+  // archive extraction's own destination (see startArchivePrompt()'s
+  // own 2026-08-26 comment) and the user descends further from there,
+  // ^G only pops the ordinary directory stack (back to the parent
+  // directory), never back to the archive itself -- but the archive
+  // is still RecentFile's own most recent entry, so ^J^J reaches it
+  // directly regardless of how many plain directories were entered
+  // since.
+  GoToRecentFile,
   // ^J0..^J9 (legacy's M_cd leader, `menu.c`'s m_dir() default case,
   // T_0..T_9): a direct user request (2026-08-19/20, "^J?（?は数字）は
   // 単なる文字列上も含めたまさにどこでも機能代表格なのでおよそ「/」が
@@ -1414,6 +1434,13 @@ class Application {
   bool goToParentFromFileOrArchive();
   bool jumpToPathPrefix();
   bool openSelectedListEntry();
+  // Shared by openSelectedListEntry()'s own RecentFile branch and
+  // goToRecentFile() (^J^J) -- see their own comments.
+  bool openRecentFileEntry(const std::string &path);
+  bool goToRecentFile();
+  // Command::Back's own empty-ModeStack fallback -- see its own call
+  // site comment and this function's own definition comment.
+  bool goToRecentDirectory();
   bool toggleMark();
   bool returnToDirectory();
   bool openSelectedGrepMatch();
@@ -1630,6 +1657,12 @@ class Application {
   std::vector<std::string> buildArchiveExtractArgv(const std::string &archivePath, ArchiveKind kind,
                                                     const std::vector<std::string> &members,
                                                     const std::string &destination) const;
+  // Backslash-escapes tar/unzip's own glob metacharacters (`\*?[]{}`)
+  // in a real archive entry name so it's matched as a literal member
+  // name, not (mis)parsed as a shell-style glob pattern -- see
+  // buildArchiveExtractArgv()'s own call site comment for the real
+  // report this fixes.
+  static std::string escapeArchiveMemberPattern(const std::string &name);
   bool startPathInputPrompt(bool isDirectory);
   // K-65 (^I, M_list, "LIST: Complete file name"): lists filesystem
   // entries under the directory implied by `partial` (resolved
@@ -1989,13 +2022,18 @@ class Application {
   std::optional<PendingCpMvRmShellRun> pendingCpMvRmShellRun_;
   // executeArchiveExtract()'s own version of PendingCpMvRmShellRun
   // (2026-08-23, same redesign as CP/MV/RM's, see executeCopy()'s own
-  // comment, extended to ARC on a direct user request): simpler than
-  // CP/MV/RM's -- no destination-landing navigation (never requested
-  // for ARC), just restoring whichever mode (Directory or Archive) the
-  // extraction was launched from once shell_'s prompt reappears.
+  // comment). 2026-08-26 addition (a direct user spec): now DOES land
+  // in the destination directory on success, same as CP/MV's own
+  // PendingCpMvRmShellRun -- `destination`/`archivePath` are what
+  // pollPendingArchiveExtractShellRun() needs for descendTo() and the
+  // "ARC: <archivePath>" annotation it sets there; `returnMode` is
+  // still the fallback for a genuinely failed extraction (see its own
+  // comment).
   struct PendingArchiveExtractShellRun {
     int promptGenerationBefore;
     ApplicationMode returnMode;
+    std::string destination;
+    std::string archivePath;
   };
   std::optional<PendingArchiveExtractShellRun> pendingArchiveExtractShellRun_;
   // Shared by submitPrompt() (text typed live) and

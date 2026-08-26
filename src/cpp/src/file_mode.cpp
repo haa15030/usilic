@@ -160,15 +160,25 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     // (trailing2 = the containing directory PATH, not a typed search
     // string) uses Path instead, for the full available width rather
     // than QueryEcho's fixed 16-char tail cap.
-    return {name,
-            trailing,
-            /*fillTrailingToEdge=*/true,
-            /*rightWatermark=*/"",
-            trailing2,
-            /*trailingPlain=*/false,
-            /*trailing2RightJustified=*/false,
-            /*trailing2Kind=*/searchOriginLabel_.empty() ? ContentView::TrailingKind::Path
-                                                          : ContentView::TrailingKind::PathMiddle};
+    ContentView::ModeLineFields fields{name,
+                                        trailing,
+                                        /*fillTrailingToEdge=*/true,
+                                        /*rightWatermark=*/"",
+                                        trailing2,
+                                        /*trailingPlain=*/false,
+                                        /*trailing2RightJustified=*/false,
+                                        /*trailing2Kind=*/searchOriginLabel_.empty() ? ContentView::TrailingKind::Path
+                                                                                     : ContentView::TrailingKind::PathMiddle};
+    // splitLayoutWhenCrowded (2026-08-27 addition, a direct user
+    // report/callback to their own earlier HISTORY.md:9608 proposal,
+    // which archiveContentView_'s own provider already adopted -- see
+    // its own comment in application.cpp): a real CJK filename long
+    // enough to crowd out the byte-count field used to just silently
+    // drop it entirely via fitModeLineFields()'s own ordinary all-or-
+    // nothing tiers, same class of bug DirectoryMode's own `(ls)`
+    // listing just got this identical fix for.
+    fields.splitLayoutWhenCrowded = true;
+    return fields;
   });
 }
 
