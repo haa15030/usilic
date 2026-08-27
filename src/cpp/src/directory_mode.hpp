@@ -318,6 +318,19 @@ class DirectoryMode {
   // can't represent "go back to Archive mode" at all, see
   // pollPendingArchiveExtractShellRun()'s own comment).
   bool hasArcExtractSourceAnnotation() const { return !arcExtractSourceAnnotation_.empty(); }
+  // 2026-08-27 addition, a direct user report + their own proposed fix
+  // ("①のあと「ＢＳ世界の〜」を閲覧したりutf8/へ降りたりした時点で
+  // ARC履歴は抹消し"): descending into a subdirectory already reaches
+  // enterDirectory() (which clears this annotation on its own, see
+  // setArcExtractSourceAnnotation()'s own comment), but OPENING A FILE
+  // never does -- Application::returnToDirectory()'s own "follow the
+  // file's real parent directory" fix is a no-op exactly when the file
+  // was opened from the CURRENTLY-showing directory (the common case
+  // here), so the annotation would otherwise survive a file visit
+  // indefinitely. Application::openSelectedEntry() calls this
+  // explicitly for that reason, right before leaving to open whatever
+  // was selected (file/EXEC/archive alike).
+  void clearArcExtractSourceAnnotation() { arcExtractSourceAnnotation_.clear(); }
 
   // Records the CURSOR's own row against currentDirectory_ in History
   // (PositionCategory::Directory), the same bookkeeping descendTo()/

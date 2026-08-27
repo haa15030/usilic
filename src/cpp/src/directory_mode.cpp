@@ -268,8 +268,17 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   // Same restore cancelPendingCpMvRm()/startDestinationPrompt() do on
   // their own un-arm paths -- a stale arm cleared here (navigating to a
   // different directory) must not leave the cursor row's own highlight
-  // still suppressed.
+  // still suppressed. 2026-08-27: setMarkedRowUsesUnderline(true) added
+  // alongside it, for the exact same reason -- startCopyPrompt()/etc.'s
+  // own destination-prompt-active phase suppresses both together (see
+  // its own comment), and a SUCCESSFUL CP/MV/RM landing here (via
+  // descendTo()/enterDirectory() from Application::
+  // pollPendingCpMvRmShellRun()) is one of the paths that must restore
+  // it, same as the cancel path already does explicitly -- centralized
+  // here instead, since every one of these paths converges on
+  // enterDirectory() regardless.
   view_.setCursorRowAlsoHighlighted(true);
+  view_.setMarkedRowUsesUnderline(true);
   view_.setLines(std::move(lines));
 
   // K-48 (^X^D, "DIR: Select directory name")'s own data source --
@@ -331,6 +340,31 @@ std::string DirectoryMode::parentDirectory(const std::string &dir) {
 
 bool DirectoryMode::descendTo(const std::string &target) {
   saveCurrentCursorPosition();
+  // 2026-08-27 fix, a real report + repro ("①→'/tmp'[return]→「/tmp/
+  // （ls）」②→^G→「~/.usilic/（ls）」→^G→「/tmp/（ls）」にならない
+  // （~/git/usilic/src/（ls）」"): ^J^K's own resetNavigationToFloor()
+  // establishes a perpetual 2-way toggle pair via ModeStack::pushFloor()
+  // (goBack()'s own floor-popping logic re-pushes it SWAPPED each time,
+  // rather than a one-shot pop -- see its own comment). Landing here
+  // (CP/MV/ARC-extraction, or any other descendTo() caller) used to
+  // ALWAYS push a plain frame on TOP of whatever was already on the
+  // stack, floor included -- fine for an ORDINARY multi-level descent
+  // (a real stack of places to unwind through), but wrong when a floor
+  // is already active: popping that plain frame (the first ^G) landed
+  // correctly back where the descent started, but a SECOND ^G then
+  // popped the STALE floor sitting beneath it, teleporting to whatever
+  // long-irrelevant previousDirectory the ORIGINAL ^J^K jump recorded,
+  // instead of continuing to toggle with `target` (the place just
+  // reached). Mirrors goBack()'s own floor-swap here too: descending
+  // FROM a floor replaces it with a fresh one (target <-> here) rather
+  // than stacking on top of it, so the toggle stays anchored to the two
+  // most recently visited real places.
+  if (const ModeStackFrame *top = modeStack_.top(); top && modeStack_.isFloor(*top)) {
+    std::string previous = currentDirectory_;
+    if (!enterDirectory(target)) return false;
+    modeStack_.pushFloor(target, previous, nullptr, 0);
+    return true;
+  }
   ModeStackFrame frame;
   frame.directory = currentDirectory_;
   frame.name = currentDirectory_;

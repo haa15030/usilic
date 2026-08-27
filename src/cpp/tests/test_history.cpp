@@ -67,6 +67,52 @@ TEST_CASE("ring history: pushRecent DOES suppress a back-to-back repeat of the i
   CHECK(entries[0] == "a");
 }
 
+// 2026-08-27 addition, a direct user report ("旧では同時にDIR履歴にも
+// 所在地記載がなされる...^Tに限らずLOCATE、DUその他（ls）経由でない
+// ファイルアクセスであっても在籍値のDIR履歴同時記帳は反映して欲し
+// い"): pushRecent(RecentFile, ...) now also derives and pushes the
+// file's own containing directory into RecentDirectory, matching
+// legacy's simultaneous recording -- see pushRecent()'s own comment.
+TEST_CASE("ring history: pushRecent(RecentFile, ...) also pushes the containing directory into "
+          "RecentDirectory") {
+  History h(10);
+  h.pushRecent(RingCategory::RecentFile, "/a/b/file.txt");
+
+  const auto &dirs = h.recentEntries(RingCategory::RecentDirectory);
+  REQUIRE(dirs.size() == 1);
+  CHECK(dirs.back() == "/a/b/");
+}
+
+// The archive case (a RecentFile entry that's itself an archive, not a
+// plain file) works identically -- pushRecent() doesn't distinguish.
+TEST_CASE("ring history: pushRecent(RecentFile, ...) for an archive path also pushes its containing "
+          "directory") {
+  History h(10);
+  h.pushRecent(RingCategory::RecentFile, "/a/archive.tar");
+
+  const auto &dirs = h.recentEntries(RingCategory::RecentDirectory);
+  REQUIRE(dirs.size() == 1);
+  CHECK(dirs.back() == "/a/");
+}
+
+// Ordinary `ls`-then-Enter browsing already reaches RecentDirectory
+// separately (DirectoryMode::enterDirectory()'s own pushRecent() call,
+// which fires BEFORE a subsequently-opened file's own RecentFile push)
+// -- this derived push must not create a duplicate back-to-back entry
+// in that already-common case (pushRecent()'s own existing dedup, "if
+// the new entry equals the ring's own last entry, don't push," handles
+// this for free, but this locks in that it actually does).
+TEST_CASE("ring history: pushRecent(RecentFile, ...)'s derived directory push doesn't duplicate an "
+          "already-current RecentDirectory entry") {
+  History h(10);
+  h.pushRecent(RingCategory::RecentDirectory, "/a/b/");  // ordinary `ls` navigation already recorded this
+  h.pushRecent(RingCategory::RecentFile, "/a/b/file.txt");  // opening a file there
+
+  const auto &dirs = h.recentEntries(RingCategory::RecentDirectory);
+  REQUIRE(dirs.size() == 1);  // NOT duplicated
+  CHECK(dirs.back() == "/a/b/");
+}
+
 TEST_CASE("ring history: evicts the single oldest entry once at the retention cap") {
   History h(3);
   h.pushRecent(RingCategory::ShellCommand, "cmd1");
@@ -163,7 +209,15 @@ TEST_CASE("serialize() then loadHistoryText() round-trips every category") {
   CHECK(loaded.recentEntries(RingCategory::ShellCommand).size() == 1);
   CHECK(loaded.recentEntries(RingCategory::ShellCommand)[0] == "ls -la");
   CHECK(loaded.recentEntries(RingCategory::RecentFile)[0] == "/a/b.txt");
-  CHECK(loaded.recentEntries(RingCategory::RecentDirectory)[0] == "/a/b/");
+  // 2026-08-27: pushRecent(RecentFile, ...) now also derives and pushes
+  // the file's own containing directory into RecentDirectory (see its
+  // own comment) -- "/a/b.txt"'s parent "/a/" lands here FIRST, then
+  // this test's own explicit "/a/b/" push right after it, so the ring
+  // now legitimately holds two entries; checking .back() (the most
+  // recent, explicit one) rather than [0] keeps this test about what it
+  // was actually testing (RecentDirectory's own serialization
+  // round-trip), not this unrelated derived side effect.
+  CHECK(loaded.recentEntries(RingCategory::RecentDirectory).back() == "/a/b/");
   CHECK(loaded.recentEntries(RingCategory::RecentManPage)[0] == "ls(1)");
   CHECK(loaded.recentEntries(RingCategory::RecentLocateQuery)[0] == "*.cpp");
   CHECK(loaded.recentEntries(RingCategory::RecentFgrepPattern)[0] == "TODO");

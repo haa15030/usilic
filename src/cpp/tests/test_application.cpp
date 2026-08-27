@@ -2356,13 +2356,23 @@ TEST_CASE_FIXTURE(Fixture, "Space (Directory mode, multiple marks): runs `qlmana
 // で混乱を招く") dropped that overload entirely. Space means Quick
 // Look UNCONDITIONALLY now; marking while armed is '.'/'['/']'
 // exclusively (see their own tests, just above the PROGRAM section).
-TEST_CASE_FIXTURE(Fixture, "Space (Directory mode, CP armed): STILL runs Quick Look, not marking -- the "
-                           "armed-selection overload was removed") {
+// 2026-08-27 update: the 2026-08-27 CP/MV/RM redesign (see
+// Application::startCopyPrompt()'s own comment) removed the "armed but
+// still browsing" state this test used to arm via StartCopy WITHOUT
+// marking anything first (that call would now just no-op) -- marking
+// an entry and pressing ^Xc jumps straight into the destination TEXT
+// PROMPT, where Space would simply be typed as a literal character,
+// not dispatched as a command at all. The still-real, still-worth-
+// testing part of the original report survives without any CP
+// involvement: marking an entry (via '.'/'['/']') must never make
+// Space stop meaning Quick Look on it.
+TEST_CASE_FIXTURE(Fixture, "Space (Directory mode, entry marked but CP not invoked): STILL runs Quick Look, "
+                           "not marking") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCopy));  // arms pendingCpMvRm_
 
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
 
   std::string receivedCommand;
   app.programMode().setForegroundLauncher([&](const std::string &command) {
@@ -2372,7 +2382,7 @@ TEST_CASE_FIXTURE(Fixture, "Space (Directory mode, CP armed): STILL runs Quick L
 
   CHECK(app.feedByte(' ', std::nullopt));
   CHECK(receivedCommand == "qlmanage -p '" + path() + "plain.txt'");
-  CHECK_FALSE(app.directoryMode().isMarked(idx));  // NOT marked -- Space no longer does that
+  CHECK(app.directoryMode().isMarked(idx));  // mark UNCHANGED (still marked from above) -- Space doesn't toggle it
 }
 
 TEST_CASE_FIXTURE(Fixture, "Space (File mode): plain PageDown, unchanged -- not one of the covered modes "
@@ -3218,6 +3228,108 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back): from Directory mode showing the
   CHECK_FALSE(app.directoryMode().hasArcExtractSourceAnnotation());
 }
 
+// 2026-08-27 fix, a real report + repro ("^X^M[return]①→^G（=^J^J）
+// →カーソル位置が「utf8/ＢＳ世界の〜」じゃない（←直前の選択が同ファ
+// イルなので同じ位置でないと）"): extracting straight from Archive
+// mode (^X a) never saved the archive's own cursor position before
+// leaving for the destination shell run -- ArchiveMode::loadArchive()'s
+// own position lookup then had nothing fresher than whatever (if
+// anything) was saved from some earlier, unrelated visit, so a ^G back
+// via goToRecentFile() (^J^J) landed on a stale/default row instead of
+// the entry that was actually selected when extraction was invoked.
+// Fixed in both openSelectedArchiveEntry() and executeArchiveExtract()
+// -- see their own comments.
+TEST_CASE_FIXTURE(Fixture, "ARC extract (^Xa from Archive mode): ^G back via the \"ARC: ...\" annotation "
+                           "restores the cursor to the entry that was actually extracted, not row 0") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
+  // Move OFF row 0 ("arcsrc/") onto "arcsrc/inner.txt" -- if the
+  // position were never saved and defaulted back to row 0, this test
+  // would fail to notice the bug at all.
+  while (app.archiveMode().selectedEntry() != nullptr &&
+         app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.archiveMode().selectedEntry() != nullptr);
+  std::string targetName = app.archiveMode().selectedEntry()->name;
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  fs::create_directory(root / "arcdest3");  // executeArchiveExtract() rejects a destination that doesn't exist yet
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  feedText((root / "arcdest3").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().hasArcExtractSourceAnnotation());
+
+  CHECK(app.handleCommand(Command::Back));  // ^G -- routes via goToRecentFile() back to Archive
+  CHECK(app.currentMode() == ApplicationMode::Archive);
+  REQUIRE(app.archiveMode().selectedEntry() != nullptr);
+  CHECK(app.archiveMode().selectedEntry()->name == targetName);
+}
+
+// 2026-08-27 fix, a real report + repro ("~/.usilic/saved/（ls）で
+// 「ＢＳ世界の〜」を選択→^G連打で（ls）との行き来無限ループ。直しても
+// らったはずなのに再発している") + the user's own proposed fix ("①の
+// あと「ＢＳ世界の〜」を閲覧したり...した時点でARC履歴は抹消し、以後
+// はそれぞれDIR/FILEの履歴に従う"): the "ARC: ..." annotation used to
+// survive opening a FILE from the destination listing (only a fresh
+// enterDirectory() call -- i.e. descending into a SUBDIRECTORY --
+// cleared it), so the NEXT ^G back in that same directory still routed
+// to goToRecentFile() (^J^J), which reopens that exact same file
+// (RecentFile's own most-recent entry) -- which THEN ^G's back to the
+// directory again, forever. Fixed via DirectoryMode::
+// clearArcExtractSourceAnnotation(), called from
+// Application::openSelectedEntry() the moment a file (not a
+// subdirectory) is opened.
+TEST_CASE_FIXTURE(Fixture, "ARC extract destination: opening a FILE there clears the \"ARC: ...\" annotation, "
+                           "preventing a ^G ping-pong loop between it and the file just opened") {
+  // A flat archive (a single top-level FILE, no subdirectory) so the
+  // extraction destination's listing shows the file directly -- matching
+  // the real report's own repro shape.
+  fs::create_directory(root / "flatsrc");
+  { std::ofstream(root / "flatsrc" / "flat.txt") << "flat content\n"; }
+  REQUIRE(std::system(("cd '" + (root / "flatsrc").string() + "' && tar cf ../flat.tar flat.txt").c_str()) == 0);
+
+  REQUIRE(app.start(path()));
+  int idx = indexOf("flat.tar");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+
+  fs::create_directory(root / "flatdest");  // executeArchiveExtract() rejects a destination that doesn't exist yet
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('a', std::nullopt));   // a -- nothing marked: extracts the WHOLE (single-file) archive
+  feedText((root / "flatdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().hasArcExtractSourceAnnotation());
+
+  int fileIdx = indexOf("flat.txt");
+  REQUIRE(fileIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != fileIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // open flat.txt -- must clear the annotation
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  CHECK_FALSE(app.directoryMode().hasArcExtractSourceAnnotation());
+
+  REQUIRE(app.handleCommand(Command::Back));  // back to the destination directory (annotation already gone)
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == (root / "flatdest").string() + "/");
+
+  // A SECOND Back must NOT bounce back into flat.txt again (the old
+  // ping-pong bug: annotation still set -> goToRecentFile() -> reopens
+  // flat.txt -> Back -> annotation still set -> ... forever).
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() != ApplicationMode::File);
+}
+
 TEST_CASE_FIXTURE(Fixture, "ARC extract from within Archive mode's own TOC: marking a specific entry extracts only it") {
   REQUIRE(app.start(path()));
   int idx = indexOf("archive.tar");
@@ -3453,9 +3565,7 @@ TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): a failed CP does NOT land in er
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm CP (K-52)
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M -- show the prompt
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- ^Xc: shows the destination prompt immediately (K-52)
   // A destination whose PARENT doesn't exist either -- cp fails and
   // writes a diagnostic to stderr (unlike a merely-missing leaf name,
   // which cp happily creates).
@@ -3549,10 +3659,10 @@ TEST_CASE_FIXTURE(Fixture, "LOG (ESC l): splits the current SHELL log on \"usili
 // ERROR/SHELL/WORK) and confirms the two removed fields (the "usilic
 // v1.5b" heading text and the history file path) are genuinely gone,
 // not just renamed.
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): shows a status screen with the new Boot options/Startup "
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): shows a status screen with the new Boot options/Startup "
                            "file/ERROR/SHELL/WORK field layout") {
   REQUIRE(app.start(path()));
-  CHECK(app.feedByte(0x14, std::nullopt));  // ^T
+  CHECK(app.feedByte(0x09, std::nullopt));  // ^I
   CHECK(app.currentMode() == ApplicationMode::File);
 
   std::string joined;
@@ -3574,23 +3684,24 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): shows a status screen with the
   // (temp root == <homeDirectory>/.usilic) and the empty-Boot-options
   // case in the same pass.
 
-  // "usilic", NOT "tcb" -- FileMode's own mode-line name field is the
-  // loaded file's bare basename (see executeShowTcbBanner()'s own
-  // comment on why this is the whole mechanism behind the requested
-  // "^T's own mode name is usilic").
-  CHECK(app.activeContentView().modeLineText().substr(0, 6) == "usilic");
+  // "INFO" (2026-08-27 rename, a direct user report: the previous
+  // "usilic" name -- FileMode's own default, the loaded file's bare
+  // basename -- read as though a real ordinary file literally named
+  // "~/.usilic/usilic" were being viewed; setSearchOrigin("INFO", ...)
+  // overrides it, see executeShowTcbBanner()'s own comment).
+  CHECK(app.activeContentView().modeLineText().substr(0, 4) == "INFO");
 }
 
 // A real work file (K-17) and a real nested-archive descent (K-57/K-58
 // style, via descendToNestedArchive()) both allocate into the SAME
 // tempRootDirectory_ -- this confirms ^T's WORK/arc.N lists actually
 // grow to reflect them, not just that the labels exist.
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): WORK and arc.N lists grow as w.N/arc.N are actually used") {
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): WORK and arc.N lists grow as w.N/arc.N are actually used") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   REQUIRE(app.feedByte(0x17, std::nullopt));  // ^W -- allocates w.1
 
-  CHECK(app.feedByte(0x14, std::nullopt));  // ^T
+  CHECK(app.feedByte(0x09, std::nullopt));  // ^I
   std::string joined;
   for (const auto &line : app.activeContentView().lines()) joined += line.text + "\n";
   CHECK(joined.find((root / ".usilic" / "w.1").string()) != std::string::npos);
@@ -3600,7 +3711,7 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): WORK and arc.N lists grow as w
 // [戻り値「usilic」画面へ]" annotation on the WORK/arc.N lines --
 // flagged as deferred in item 338, implemented now via
 // Application::openSelectedBannerEntry().
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on the WORK line opens w.1 as a FILE; ^G returns to "
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the WORK line opens w.1 as a FILE; ^G returns to "
                            "the banner itself (not the original directory)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
@@ -3621,8 +3732,9 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on the WORK line opens w
   // own raw containing directory (FileMode's own default trailing2) as
   // the "戻り値" field, which is misleading here: ^G doesn't lead to a
   // directory listing of that path at all, it goes straight back to
-  // this banner -- setSearchOrigin("usilic") now reflects that.
-  CHECK(app.activeContentView().modeLineText().find("usilic") != std::string::npos);
+  // this banner -- setSearchOrigin("INFO", ...) (2026-08-27: renamed
+  // from "usilic") now reflects that.
+  CHECK(app.activeContentView().modeLineText().find("INFO") != std::string::npos);
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);
@@ -3635,7 +3747,7 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on the WORK line opens w
   CHECK(app.activeContentView().cursorIndex() == workRow);
 }
 
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on an arc.N line opens it as a DIRECTORY; ^G falls "
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on an arc.N line opens it as a DIRECTORY; ^G falls "
                            "back to goToRecentDirectory() since no stack frame was pushed to open it") {
   REQUIRE(app.start(path()));
   // Allocate arc.1 the same way the sibling "ARC nested" tests do:
@@ -3681,7 +3793,7 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on an arc.N line opens i
 // leak into whatever gets loaded next (a plain file here; the sibling
 // WORK-selection test above already covers "a w.N reopened FROM the
 // banner" specifically).
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): the WORK/arc.N candidate list is actually highlighted (was "
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the WORK/arc.N candidate list is actually highlighted (was "
                            "invisible before this fix), and loading an ordinary file afterward turns it back off") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::ShowTcbBanner));
@@ -3711,7 +3823,7 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): the WORK/arc.N candidate list 
 // tempRootDirectory_ reorg in item 338 -- the banner was never
 // actually part of the multi-instance conflict that reorg was fixing
 // (unlike ERROR/SHELL, it's never written to in the background).
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): the banner's own backing file lives under "
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the banner's own backing file lives under "
                            "<homeDirectory>/.usilic, not tempRootDirectory_") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::ShowTcbBanner));
@@ -3724,7 +3836,7 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): the banner's own backing file 
 // DirectoryMode's own `ls -l` rows (nameStartColumn). Every line's
 // Line::highlightStartColumn should now land exactly where the value
 // text starts, matching DirectoryMode's own established convention.
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): highlightStartColumn lands right after the \"<label> : \" "
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): highlightStartColumn lands right after the \"<label> : \" "
                            "separator on every line, not at column 0") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::ShowTcbBanner));
@@ -3741,7 +3853,7 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): highlightStartColumn lands rig
 // landing on "ERROR"/"SHELL"/"Startup file" (highlighted identically,
 // per the fix just above) reasonably expected Enter to open THOSE
 // too.
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on the ERROR/SHELL/Startup file lines opens each as a "
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the ERROR/SHELL/Startup file lines opens each as a "
                            "FILE too (previously only WORK/arc.N responded to Enter at all)") {
   { std::ofstream(root / ".usilic" / "error") << "boom\n"; }
   { std::ofstream(root / ".usilic" / "shell") << "$ echo hi\n"; }
@@ -3774,11 +3886,64 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): Enter on the ERROR/SHELL/Start
   CHECK(app.fileMode().currentFile() == (root / ".usilic" / "shell").string());
 }
 
+// 2026-08-27 fix, a real report ("^T→「/tmp/.usilic.NNNNN/shell」
+// [return]→反応なし（ファイルコピーがSHELLで行われたのに）"): unlike
+// the test just above (which pre-creates the shell log file directly
+// via ofstream, sidestepping the actual bug), a REAL shell session's
+// own output was never written to logFilePath_ on disk at all unless
+// refreshShellLogFile() had separately been called first (^X^Kl/ESC l)
+// -- Enter on the SHELL line used to just fail silently in that case.
+// openSelectedBannerEntry() now calls refreshShellLogFile() itself
+// first, so it always reflects the session's current scrollback.
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the SHELL line opens the real shell log even if "
+                           "it was never explicitly dumped first (^X^Kl/ESC l)") {
+  REQUIRE(app.start(path()));
+  bool shellOk = app.feedByte(0x18, std::nullopt);       // ^X
+  shellOk = shellOk && app.feedByte('s', std::nullopt);  // s -- RestartShell (K-60)
+  if (!shellOk || app.currentMode() != ApplicationMode::Shell) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  app.shell().commandLine().setText("echo hi-from-shell-log-test");
+  app.shell().submitLine();
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("hi-from-shell-log-test") != std::string::npos) return true;
+    return false;
+  }));
+  REQUIRE_FALSE(fs::exists(root / ".usilic" / "shell"));  // never explicitly dumped -- doesn't exist on disk yet
+
+  REQUIRE(app.handleCommand(Command::Back));  // back to Directory, same as the sibling test's own setup shape
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+
+  const auto &lines = app.activeContentView().lines();
+  int shellRow = -1;
+  for (std::size_t i = 0; i < lines.size(); i++) {
+    const std::string &suffix = "shell";
+    if (lines[i].text.size() >= suffix.size() &&
+        lines[i].text.compare(lines[i].text.size() - suffix.size(), suffix.size(), suffix) == 0) {
+      shellRow = static_cast<int>(i);
+      break;
+    }
+  }
+  REQUIRE(shellRow >= 0);
+  app.activeContentView().setCursorIndex(shellRow);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / ".usilic" / "shell").string());
+  CHECK(fs::exists(root / ".usilic" / "shell"));  // refreshShellLogFile() created it on demand
+
+  bool foundContent = false;
+  for (const auto &line : app.activeContentView().lines())
+    if (line.text.find("hi-from-shell-log-test") != std::string::npos) foundContent = true;
+  CHECK(foundContent);
+}
+
 // 2026-08-18 fix, a direct user report: launched via "-c ~/git/usilic"
 // then ^T showed "/Users/haa15030/.usilic" (the banner's OWN synthetic
 // file's containing directory) as the trailing "戻り値" field instead
 // of the real directory ^G actually returns to.
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): the trailing \"戻り値\" field shows the REAL directory ^G "
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the trailing \"戻り値\" field shows the REAL directory ^G "
                            "returns to, not the banner file's own containing directory") {
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
@@ -3793,19 +3958,26 @@ TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): the trailing \"戻り値\" fie
   CHECK(modeLine.find(".usilic") == std::string::npos);
 }
 
-// 2026-08-18 fix, a direct user report: "SHELLで^Tが利かない" -- ^T
-// isn't a leader byte, so it fell through feedShellByte()'s own
-// dispatch entirely and was silently swallowed as ordinary command-
-// line input instead of opening the banner.
-TEST_CASE_FIXTURE(Fixture, "TCB banner (^T, K-0): reachable from SHELL mode too, not just Directory/File/etc") {
+// 2026-08-18: ^T used to get a dedicated feedShellByte() special-case
+// so it could reach the banner even from SHELL mode ("SHELLで^Tが利か
+// ない"). 2026-08-27: rebound to ^I -- a direct user request, since the
+// mode's own "usilic" name (FileMode's default, the loaded file's bare
+// basename) read as though a real ordinary file literally named
+// "~/.usilic/usilic" were being viewed; renamed to "INFO" and moved off
+// ^T. That old special-case is deliberately NOT carried over to ^I:
+// Tab already has real, expected meaning inside an active SHELL session
+// (shell_.onTab(), real bash completion) that must not be hijacked, so
+// INFO is simply unreachable from Shell mode now -- this locks in that
+// Tab still does completion there, not a mode switch.
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): NOT reachable from SHELL mode -- ^I/Tab there still means "
+                           "real shell completion, not a mode switch") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartShell));
   REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
   REQUIRE(app.currentMode() == ApplicationMode::Shell);
 
-  REQUIRE(app.feedShellByte(0x14, std::nullopt));  // bare ^T
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(app.fileMode().currentFile() == (root / ".usilic" / "usilic").string());
+  CHECK(app.feedShellByte(0x09, std::nullopt));  // bare ^I/Tab
+  CHECK(app.currentMode() == ApplicationMode::Shell);  // stayed in Shell -- did NOT open the banner
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^O a (K-27) cycles the charset Ascii -> Euc -> Utf8 -> Ascii") {
@@ -4183,6 +4355,26 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from File mode, jum
   CHECK(app.directoryMode().currentDirectory() == subdir.string() + "/");
 }
 
+// 2026-08-27 addition, a direct user report ("^J^K: ARCで利かない"):
+// goToFileSelector()'s own sourceFile dispatch never had an Archive/
+// ArchiveContent branch at all, unlike every other excursion mode
+// (File/Cut/CutContent/ListBrowser/Locate, all covered above). Now
+// reads archiveMode_.currentArchive(), same shape as the File-mode
+// test just above.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works from Archive mode, jumping to the "
+                           "archive's own containing directory") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+  REQUIRE(app.archiveMode().currentArchive() == path() + "archive.tar");
+
+  CHECK(app.handleCommand(Command::GoToFileSelector));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());
+}
+
 // 2026-08-15 addition: a direct user report ("^Gで一つ前のディレクト
 // リ...へ戻らない（(ls)での^Gは一つ前と行き来）", screenshots =bd/
 // =bf/=bg) -- ^X^D/^R's own RecentDirectory branch already establishes
@@ -4299,6 +4491,41 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): false when nothing ha
   CHECK_FALSE(app.handleCommand(Command::GoToRecentFile));
 }
 
+// 2026-08-27 addition, a direct user request ("^G同様、今と直近を
+// 行き来して欲しい"): this used to always jump to RecentFile's own
+// literal last entry, even if that's the EXACT file/archive already
+// being viewed -- pressing ^J^J a SECOND time (right after the first
+// hop landed on it) just reopened the same thing again instead of
+// toggling back to whatever was open before it, unlike
+// goToRecentDirectory()'s own pre-existing skip-current walk. Now
+// mirrors that walk here too.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): a SECOND press while already viewing the first "
+                           "hop's target toggles back, instead of reopening the same file again") {
+  REQUIRE(app.start(path()));
+  int idxA = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // open plain.txt (A)
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.handleCommand(Command::Back));
+
+  int idxB = indexOf("log.txt");
+  // GoToTop first: "log.txt" sorts BEFORE "plain.txt" in `ls`'s own
+  // alphabetical order, and the cursor rests on plain.txt's own row
+  // after the Back above -- MoveDown alone can only search forward, so
+  // without this the loop below would never terminate.
+  REQUIRE(app.handleCommand(Command::GoToTop));
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // open log.txt (B) -- RecentFile ring: [..., plain.txt, log.txt]
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.fileMode().currentFile() == path() + "log.txt");
+
+  REQUIRE(app.handleCommand(Command::GoToRecentFile));  // first hop: B -> A (plain.txt)
+  REQUIRE(app.fileMode().currentFile() == path() + "plain.txt");
+
+  CHECK(app.handleCommand(Command::GoToRecentFile));  // second hop, while viewing A -- must toggle to B, not reopen A
+  CHECK(app.fileMode().currentFile() == path() + "log.txt");
+}
+
 // 2026-08-27 addition, a direct user proposal ("「スタックが空」で
 // ^Gの時は、DIR直近履歴へ戻るルーチンへ移行ってのは？（以後は
 // ループ）"): once the ModeStack is exhausted, Back no longer dead-
@@ -4323,6 +4550,35 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back): once the ModeStack is empty, fa
   CHECK(app.directoryMode().currentDirectory() == path() + "subdir/");
   CHECK(app.handleCommand(Command::Back));  // toggles back again
   CHECK(app.directoryMode().currentDirectory() == path());
+}
+
+// 2026-08-27 fix, a real report ("^Gだが無反応な時がある。状況は覚え
+// てないがDIR履歴が複数あるのは確認"): goToRecentDirectory() used to
+// RETURN on the very first ring entry different from currentDirectory(),
+// whether or not enterDirectory() on it actually succeeded -- a STALE
+// entry (a directory since deleted) made this a dead end ("無反応")
+// even with a perfectly good, still-existing, genuinely different
+// entry sitting right behind it in the ring. Engineered here: the ring
+// ends up as [root/, subdir/, root/, deleteme/, root/] with deleteme/
+// removed from disk before the final Back -- the walk's first non-
+// current candidate (deleteme/) now fails and must be skipped in favor
+// of subdir/ two entries further back, instead of giving up.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(Back): goToRecentDirectory() skips a ring entry that no longer "
+                           "exists on disk, instead of giving up on the first one tried") {
+  REQUIRE(app.start(path()));  // ring: [root/]
+  REQUIRE(app.directoryMode().descendTo((root / "subdir").string()));  // ring: [root/, subdir/]
+  REQUIRE(app.handleCommand(Command::Back));                           // ring: [root/, subdir/, root/]
+  REQUIRE(app.directoryMode().currentDirectory() == path());
+
+  fs::create_directory(root / "deleteme");
+  REQUIRE(app.directoryMode().descendTo((root / "deleteme").string()));  // ring: [..., root/, deleteme/]
+  REQUIRE(app.handleCommand(Command::Back));                             // ring: [..., deleteme/, root/]; stack empty
+  REQUIRE(app.directoryMode().currentDirectory() == path());
+
+  fs::remove(root / "deleteme");  // now a dangling ring entry
+
+  CHECK(app.handleCommand(Command::Back));  // stack empty -- goToRecentDirectory() must skip deleteme/ and reach subdir/
+  CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
 }
 
 // 2026-08-23 fix, a direct user report: already being IN the (ls)
@@ -5501,166 +5757,162 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(MarkAll/ClearAllMarks): refused outsid
   CHECK_FALSE(app.handleCommand(Command::ClearAllMarks));
 }
 
-// 2026-08-21 change (a real user report, =ec screenshot: an empty "CP"
-// text-input box appearing the instant ^Xc was pressed, before any
-// file had even been marked): ^Xc/^Xm/^Xr now only ARM the operation --
-// see Application::PendingCpMvRmOperation's own comment -- and ^X^M
-// (K-71, M_dest) is what actually shows the prompt, matching legacy's
-// own two-step M_cp/M_mv/M_rm -> M_dest flow.
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X c / ^X m / ^X r only ARM the operation -- no prompt until ^X ^M") {
+// 2026-08-27 redesign, a direct user report ("ファイル選択後の冗長性
+// ...さらに^X^Mとやるのがめんどくさい") + their own proposed fix
+// ("真っ新（ls）時は発動しない"): superseding the 2026-08-21 two-step
+// arm-then-^X^M design these tests used to cover (^Xc/^Xm/^Xr used to
+// ARM unconditionally, showing a "CP"/"MV"/"RM" Standout label and
+// waiting for a separate ^X^M) -- with NOTHING marked, ^Xc/^Xm/^Xr are
+// now a complete no-op: no arm, no label, nothing on screen changes,
+// exactly as if the key had never been pressed. See
+// Application::startCopyPrompt()'s own comment.
+TEST_CASE_FIXTURE(Fixture, "^Xc/^Xm/^Xr with nothing marked: a complete no-op, no prompt, nothing armed") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" (never valid targets) onto a real entry
-  REQUIRE(app.handleCommand(Command::MoveDown));
-  app.feedByte(0x18, std::nullopt);
-  CHECK(app.feedByte('c', std::nullopt));
-  CHECK_FALSE(app.promptActive());
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  CHECK(app.feedByte(0x0d, std::nullopt));    // ^M
-  CHECK(app.promptActive());
-}
-
-// 2026-08-21 addition, a real follow-up report ("^Xc,m,r等反応無し"):
-// arming used to be completely silent (no prompt shown until ^X^M), so
-// a keypress that had, in fact, registered was indistinguishable on
-// screen from one that hadn't. ^Xc/^Xm/^Xr now show "CP"/"MV"/"RM"
-// Standout in the mode line's name slot (the SAME slot/rendering
-// reportEditError()'s "Invalid mode" uses, just Standout instead of
-// Underline -- see DirectoryMode's own mode-line-provider comment)
-// while armed, clearing once ^X^M consumes the arm.
-TEST_CASE_FIXTURE(Fixture, "^Xc shows \"CP\" Standout in the mode line's name slot while armed, clearing "
-                           "once ^X^M shows the real prompt") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" onto a real entry
+  REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" onto a real entry, but never marked
   REQUIRE(app.handleCommand(Command::MoveDown));
   std::string beforeRow = display.rowText(23);
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm CP
-  std::string expected = "CP";
-  CHECK(display.rowText(23).substr(0, expected.size()) == expected);
-  CHECK(display.standoutAt(23, 0));
-  CHECK_FALSE(display.underlineAt(23, 0));  // Standout, not the reportEditError()-style Underline
+  app.feedByte(0x18, std::nullopt);
+  CHECK_FALSE(app.feedByte('c', std::nullopt));
+  CHECK_FALSE(app.promptActive());
+  CHECK(display.rowText(23) == beforeRow);  // nothing changed on screen at all
+  // Nothing armed either -- a stray ^X^M has nothing to consume.
+  CHECK_FALSE(app.handleCommand(Command::StartDestinationPrompt));
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M -- consumes the arm, shows the real prompt
-  CHECK(app.promptActive());
-  CHECK(app.feedByte(0x07, std::nullopt));  // ^G -- cancel back out to plain Directory mode
-  CHECK(display.rowText(23) == beforeRow);  // the "CP" label is gone; ordinary directory path is back
+  CHECK_FALSE(app.handleCommand(Command::StartMove));
+  CHECK_FALSE(app.promptActive());
+  CHECK_FALSE(app.handleCommand(Command::StartRemove));
+  CHECK_FALSE(app.promptActive());
 }
 
-// 2026-08-21 addition, a real user report ("=eiは（ls）からなので戻り
-// 値はディレクトリ名では？"): the "CP" override above lost the one
-// place the directory path used to be visible -- the mode line's
-// trailing badge showed "(ls)" instead while armed. Corrected
-// 2026-08-22 after a direct side-by-side comparison against the
-// reference screenshots (=ed/=ee, an actual legacy binary run): legacy
-// shows the FULL path (not "..."-truncated the way drawPromptLabel()'s
-// OWN destination-path convention truncates elsewhere), right-padded
-// with spaces to the row's edge, with the bare "CP" label (no padding)
-// and NO "usilic v1.5b" watermark -- this port's own first attempt at
-// this field got the truncation/padding/watermark details wrong even
-// though the underlying "show the path, not (ls)" idea was right.
-TEST_CASE_FIXTURE(Fixture, "^Xc shows the FULL directory path (not \"(ls)\", not truncated) padded to the "
-                           "row's edge while armed, with a bare \"CP\" label and no watermark") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm CP
-
-  std::string expected = "CP " + fm::ModeLine::format(1, static_cast<int>(app.directoryMode().entries().size())) + " " +
-                          std::to_string(app.activeContentView().totalByteCount()) + " " +
-                          app.directoryMode().currentDirectory();
-  expected.resize(80, ' ');
-  CHECK(display.rowText(23) == expected);
-  CHECK(display.rowText(23).find("(ls)") == std::string::npos);
-  CHECK(display.rowText(23).find("usilic v1.5b") == std::string::npos);
-  CHECK(display.rowText(23).find("...") == std::string::npos);  // full path, not truncated
-}
-
-// 2026-08-22 fix, a real reference screenshot (=ed, an actual legacy
-// binary run) contradicting the port's own behavior (=ei): unlike
-// ordinary `ls` browsing, the cursor row shows NO highlight at all
-// right after arming -- Standout is reserved entirely for genuinely
-// marked entries. See ContentView::setCursorRowAlsoHighlighted()'s
-// own comment.
-TEST_CASE_FIXTURE(Fixture, "^Xc: the cursor row itself shows no Standout while armed and nothing is "
-                           "marked yet") {
+// 2026-08-27 redesign: marking now doubles as the activation gate --
+// ANY marked entry makes ^Xc arm AND immediately show the destination
+// prompt in the SAME keystroke, no separate ^X^M needed anymore (the
+// "CP" Standout label is now part of the already-active prompt row
+// itself, see startDestinationPrompt()'s own drawPromptLabel() call,
+// rather than a separate, waiting-for-^X^M display).
+TEST_CASE_FIXTURE(Fixture, "^Xc with one entry marked: shows the destination prompt immediately, no ^X^M "
+                           "needed, and ^G cancels back to plain Directory mode unchanged") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  int nameCol = app.directoryMode().entries()[idx].nameStartColumn;
-  CHECK(display.standoutAt(idx, nameCol));  // ordinary `ls` browsing: the cursor row IS highlighted
-
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm CP
-  CHECK_FALSE(display.standoutAt(idx, nameCol));  // armed: no highlight until something is actually marked
-}
-
-TEST_CASE_FIXTURE(Fixture, "^Xc: marking an entry while armed still highlights it (only the mark matters, "
-                           "not cursor position)") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("cpmv_a.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  int nameCol = app.directoryMode().entries()[idx].nameStartColumn;
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte('c', std::nullopt));   // c -- arm CP
+  std::string beforeRow = display.rowText(23);
 
   REQUIRE(app.handleCommand(Command::ToggleMark));
-  CHECK(display.standoutAt(idx, nameCol));  // marked -- highlighted even though cursor highlighting is suppressed
+  CHECK_FALSE(app.promptActive());  // marking alone doesn't show anything yet
 
-  app.handleCommand(Command::MoveDown);
-  CHECK(display.standoutAt(idx, nameCol));       // still marked, still highlighted after the cursor moves off
-  int newIdx = indexOf(app.directoryMode().selectedEntry()->name);
-  int newNameCol = app.directoryMode().entries()[newIdx].nameStartColumn;
-  CHECK_FALSE(display.standoutAt(newIdx, newNameCol));  // the NEW cursor row itself is still not highlighted
-}
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- ^Xc: arms AND shows the prompt in one step
+  CHECK(app.promptActive());
+  CHECK(display.rowText(23).substr(0, 2) == "CP");  // "CP" is part of the now-active prompt row itself
+  CHECK(display.standoutAt(23, 0));
 
-// 2026-08-22 addition, a real user report ("CPでは^Gが利かない"): ^G
-// used to fall straight through to ordinary directoryMode_.goBack()
-// without even looking at pendingCpMvRm_, so it either did nothing
-// useful or navigated away while STILL leaving the arm (and its own
-// "CP" label / suppressed cursor highlight) active.
-TEST_CASE_FIXTURE(Fixture, "^G cancels a pending CP/MV/RM arm instead of navigating, and restores the "
-                           "cursor row's own highlight") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("cpmv_a.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  int nameCol = app.directoryMode().entries()[idx].nameStartColumn;
-  REQUIRE(app.handleCommand(Command::StartCopy));
-  CHECK_FALSE(display.standoutAt(idx, nameCol));  // armed: no cursor highlight
-
-  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.feedByte(0x07, std::nullopt));  // ^G -- cancel back out (feedPromptByte()'s own path, not Command::Back)
+  CHECK_FALSE(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == path());  // didn't navigate anywhere
-  CHECK(display.rowText(23).substr(0, 2) != "CP");          // the arm (and its "CP" label) is gone
-  CHECK(display.standoutAt(idx, nameCol));                  // ordinary cursor highlight is back
-
-  // The arm is really gone, not just visually -- ^X^M now has nothing
-  // to consume.
-  CHECK_FALSE(app.handleCommand(Command::StartDestinationPrompt));
+  CHECK(display.rowText(23) == beforeRow);
 }
 
-// 2026-08-24 fix, a direct user report + their own suggested fix:
-// arm CP (^Xc), mark a file with '.' (which also advances the cursor),
-// then cancel with ^G -- the marked file's own highlight stayed stuck
-// (reverse-video) even after moving the cursor several rows further
-// away. "^Gのあとls再実行でいいんじゃない？" (why not just re-run `ls`
-// after ^G?) -- exactly right: a SUCCESSFUL CP/MV/RM already clears
-// marks via its own post-operation reload (enterDirectory()'s own
-// documented "marks are scoped to the listing they were made in"), so
-// a CANCELLED one leaving marks behind was the inconsistent case.
-// cancelPendingCpMvRm() now calls DirectoryMode::refresh() (added in
-// item 408/409 for ^J^K/"./"), which re-lists (clearing marks as a
-// natural side effect) while preserving the cursor's own position.
-TEST_CASE_FIXTURE(Fixture, "^G cancels a pending CP/MV/RM arm AND clears any marks made while it was armed") {
+// 2026-08-27 fix, a real report ("残留ハイライトを消去かつ全アンダー
+// ラインを全ハイライトにしてみて（何もせずに^Gで全アンダーライン復
+// 活）"): while the destination prompt is active, the cursor's own
+// resting row must show NO Standout (unlike ordinary browsing), and a
+// GENUINELY marked row must show Standout instead of its ordinary
+// Underline -- the legacy-accurate convention startCopyPrompt()/
+// startMovePrompt()/startRemovePrompt() restore via
+// setCursorRowAlsoHighlighted(false)/setMarkedRowUsesUnderline(false),
+// with both flipped back to true once the prompt is dismissed (either
+// by cancelling, checked here, or by a successful completion, which
+// enterDirectory() itself restores -- see its own comment).
+TEST_CASE_FIXTURE(Fixture, "^Xc: while the destination prompt is active, marked rows show Standout (not "
+                           "Underline) and the cursor's own row shows no Standout; ^G restores the ordinary "
+                           "scheme") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::StartCopy));  // ^Xc: arm CP FIRST, matching the report's own repro order
-  REQUIRE(app.feedByte(']', std::nullopt));        // ']': mark cpmv_a.txt, cursor advances to the next entry
+  REQUIRE(app.handleCommand(Command::MoveDown));  // step onto the next entry, so '[' has somewhere to retreat to
+  int markIdx = indexOf(app.directoryMode().selectedEntry()->name);
+  REQUIRE(markIdx == idx + 1);
+
+  CHECK(app.feedByte('[', std::nullopt));  // marks markIdx, cursor retreats back onto idx
+  REQUIRE(app.directoryMode().isMarked(markIdx));
+  REQUIRE(indexOf(app.directoryMode().selectedEntry()->name) == idx);
+
+  int markNameCol = app.directoryMode().entries()[markIdx].nameStartColumn;
+  int cursorNameCol = app.directoryMode().entries()[idx].nameStartColumn;
+  // Before ^Xc: the ordinary browsing scheme (established precedent).
+  CHECK(display.underlineAt(markIdx, markNameCol));
+  CHECK(display.standoutAt(idx, cursorNameCol));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  CHECK(app.promptActive());
+  CHECK(display.standoutAt(markIdx, markNameCol));       // marked row: Standout now, not Underline
+  CHECK_FALSE(display.underlineAt(markIdx, markNameCol));
+  CHECK_FALSE(display.standoutAt(idx, cursorNameCol));   // cursor's own row: no highlight at all while the prompt is active
+
+  CHECK(app.feedByte(0x07, std::nullopt));  // ^G cancels the prompt
+  // 2026-08-27 (same day) reversal, a direct user report: marks now
+  // SURVIVE a cancelled CP/MV/RM (see cancelPrompt()'s own comment) --
+  // only the display flags flip back, markedIndices_ is untouched.
+  CHECK(app.directoryMode().isMarked(markIdx));
+  // The ordinary scheme (Underline for the still-marked row, Standout
+  // for the cursor's own row) is back.
+  CHECK(display.underlineAt(markIdx, markNameCol));
+  CHECK_FALSE(display.standoutAt(markIdx, markNameCol));
+  CHECK(display.standoutAt(idx, cursorNameCol));
+}
+
+// Same one-step activation for MV/RM -- identical gate to CP's, see
+// startMovePrompt()/startRemovePrompt()'s own comments.
+TEST_CASE_FIXTURE(Fixture, "^Xm/^Xr with one entry marked: also show their own prompt immediately") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.handleCommand(Command::StartMove));
+  CHECK(app.promptActive());
+  CHECK(app.feedByte(0x07, std::nullopt));  // ^G cancel
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.directoryMode().isMarked(idx));  // cancelling leaves it marked -- see the next test's own comment
+
+  REQUIRE(app.handleCommand(Command::StartRemove));  // the SAME still-standing mark, not re-marked
+  CHECK(app.promptActive());
+  CHECK(display.rowText(23).find("Delete ? ") != std::string::npos);
+}
+
+// 2026-08-24 fix: cancelling an ARMED CP/MV/RM used to clear any marks
+// made while armed too -- cancelPendingCpMvRm() called
+// DirectoryMode::refresh() (a real `ls` re-run) specifically for this
+// ("^Gのあとls再実行でいいんじゃない？"). The 2026-08-27 one-step
+// redesign (see startCopyPrompt()'s own comment) broke this in a
+// different way twice over: first by simply losing the restore
+// (pendingCpMvRm_ is consumed atomically now, so cancelPendingCpMvRm()
+// itself is unreachable), then -- after a same-day fix routed
+// cancelPrompt() to call directoryMode_.refresh() directly, restoring
+// the 2026-08-24 mark-CLEARING behavior -- a direct user report caught
+// this as a NEW regression from THEIR perspective: "注意深く選んだ
+// マークがうっかり^Gでパーみたいな切ない事態を避けるため。意図的には
+// ^X^Nで全クリア可能なのでマークは残して欲しい". The 2026-08-24
+// rationale doesn't actually transfer to this one-step design -- that
+// fix was about a STALE ARM's marks lingering after navigating away
+// from a separate, now-eliminated "waiting" sub-mode; here there's no
+// such in-between state to leave stale, so cancelPrompt() now restores
+// only the two display flags, leaving markedIndices_ untouched -- ^X^N
+// (ClearAllMarks) is the one deliberate way to actually clear marks.
+TEST_CASE_FIXTURE(Fixture, "^G-cancelling the CP prompt leaves marks made before arming intact, matching "
+                           "the pre-redesign arm's own ^G behavior for STALE arms only -- not a live cancel") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
   REQUIRE(app.directoryMode().isMarked(idx));
 
-  REQUIRE(app.handleCommand(Command::Back));  // ^G cancels the arm
-  CHECK_FALSE(app.directoryMode().isMarked(idx));  // the mark made while armed is gone too, not just the arm itself
+  REQUIRE(app.handleCommand(Command::StartCopy));  // mark FIRST, then arm -- shows the prompt immediately
+  REQUIRE(app.feedByte(0x07, std::nullopt));       // ^G cancels the prompt
+
+  CHECK(app.directoryMode().isMarked(idx));  // still marked -- see comment above
 }
 
 // 2026-08-21 addition, RELOCATED 2026-08-23 from '.'/',' to '['/']'
@@ -5781,8 +6033,7 @@ TEST_CASE_FIXTURE(Fixture, "^X^M's destination prompt shows plain (non-Standout)
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
-  REQUIRE(app.handleCommand(Command::StartCopy));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  REQUIRE(app.handleCommand(Command::StartCopy));  // shows the destination prompt immediately (2026-08-27 redesign)
 
   std::string row = display.rowText(23);
   std::size_t pos = row.find("Destination ? ");
@@ -5797,27 +6048,10 @@ TEST_CASE_FIXTURE(Fixture, "^X^M's confirm prompt shows \"Delete ? \" for RM, no
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
-  REQUIRE(app.handleCommand(Command::StartRemove));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  REQUIRE(app.handleCommand(Command::StartRemove));  // shows the confirm prompt immediately (2026-08-27 redesign)
 
   CHECK(display.rowText(23).find("Delete ? ") != std::string::npos);
   CHECK(display.rowText(23).find("Destination ? ") == std::string::npos);
-}
-
-// A stale arm's label must not keep showing after navigating away
-// either -- see DirectoryMode::enterDirectory()'s own comment.
-TEST_CASE_FIXTURE(Fixture, "^Xc's \"CP\" label clears on navigating to a different directory, even without "
-                           "ever pressing ^X ^M") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCopy));  // arm CP
-  CHECK(display.rowText(23).substr(0, 2) == "CP");
-
-  int idx = indexOf("subdir/");
-  REQUIRE(idx >= 0);
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));  // navigate into subdir/
-
-  CHECK(display.rowText(23).substr(0, 2) != "CP");
 }
 
 // docs/HISTORY.md's own real report continued: marking (^Space) itself
@@ -5861,21 +6095,17 @@ TEST_CASE_FIXTURE(Fixture, "^X ^M with nothing armed is a no-op (not e.g. some s
   CHECK_FALSE(app.promptActive());
 }
 
-// A stale arm must not silently act on whatever's under the cursor in
-// an unrelated directory the user navigated to afterward -- see
-// PendingCpMvRmOperation's own comment.
-TEST_CASE_FIXTURE(Fixture, "^X ^M discards a stale arm from before navigating to a different directory") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartRemove));  // arm RM in the starting directory
-  int idx = indexOf("subdir/");
-  REQUIRE(idx >= 0);
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));  // navigate into subdir/ -- the arm was for the PARENT directory
-  REQUIRE(app.currentMode() == ApplicationMode::Directory);
-
-  CHECK_FALSE(app.handleCommand(Command::StartDestinationPrompt));
-  CHECK_FALSE(app.promptActive());
-}
+// 2026-08-27 note: the "arm in one directory, navigate away, THEN press
+// ^X^M" scenario this test used to cover (a stale arm from before
+// navigating) is no longer reachable via any single keystroke sequence
+// under the one-step redesign -- pendingCpMvRm_ is now always armed AND
+// consumed atomically within the same StartCopy/StartMove/StartRemove
+// call (see Application::startCopyPrompt()'s own comment), with no
+// window in between where the user could navigate away first. The
+// underlying defensive check in startDestinationPrompt() (`pending.
+// directory != directoryMode_.currentDirectory()`) still exists but is
+// now unreachable through normal use, so this test was removed rather
+// than adapted.
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCopy): refused outside Directory mode") {
   REQUIRE(app.start(path()));
@@ -5907,8 +6137,8 @@ TEST_CASE_FIXTURE(Fixture, "^W (CopyDestination prompt): inserts the previous di
   REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.directoryMode().currentDirectory() == path());
 
-  REQUIRE(app.handleCommand(Command::StartCopy));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  REQUIRE(app.handleCommand(Command::ToggleMark));  // mark whatever the cursor rests on -- irrelevant to this test
+  REQUIRE(app.handleCommand(Command::StartCopy));   // shows the destination prompt immediately (2026-08-27 redesign)
   feedText("garbage-to-be-cleared");
 
   CHECK(app.feedByte(0x17, std::nullopt));  // ^W
@@ -5936,8 +6166,7 @@ TEST_CASE_FIXTURE(Fixture, "^I (CopyDestination prompt): completes a partial fil
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
-  REQUIRE(app.handleCommand(Command::StartCopy));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  REQUIRE(app.handleCommand(Command::StartCopy));  // shows the destination prompt immediately (2026-08-27 redesign)
   feedText(path() + "subd");  // "subd" uniquely prefixes "subdir/" among root's own children
 
   CHECK(app.feedByte(0x09, std::nullopt));  // ^I
@@ -5967,10 +6196,13 @@ TEST_CASE_FIXTURE(Fixture, "FGREP results: mode line shows the program badge \"(
   CHECK(row.substr(pathPos + path().size()).find_first_not_of(' ') == std::string::npos);  // right-edge padded
 }
 
-TEST_CASE_FIXTURE(Fixture, "CP: marking two files (in either order relative to arming) then copying them "
-                           "creates real copies at the destination") {
+// 2026-08-27 update: marking now doubles as CP's own activation gate
+// (see Application::startCopyPrompt()'s own comment), so both files
+// must be marked BEFORE ^Xc now -- arming with nothing marked yet is a
+// no-op under the redesign, unlike the pre-2026-08-27 "arm first,
+// mark after" order this test used to exercise.
+TEST_CASE_FIXTURE(Fixture, "CP: marking two files then copying them creates real copies at the destination") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCopy));  // arm CP BEFORE marking, matching legacy's own M_cp order
 
   int idxA = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
@@ -5980,7 +6212,7 @@ TEST_CASE_FIXTURE(Fixture, "CP: marking two files (in either order relative to a
   while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
+  REQUIRE(app.handleCommand(Command::StartCopy));  // shows the destination prompt immediately
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
   REQUIRE(pumpCpMvRmToCompletion(app));
@@ -6012,7 +6244,6 @@ TEST_CASE_FIXTURE(Fixture, "CP: copying a marked DIRECTORY creates the directory
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartCopy));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
   REQUIRE(pumpCpMvRmToCompletion(app));
@@ -6033,12 +6264,38 @@ TEST_CASE_FIXTURE(Fixture, "CP: a successful copy navigates the view to the dest
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartCopy));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
   REQUIRE(pumpCpMvRmToCompletion(app));
 
   CHECK(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
+}
+
+// 2026-08-27 fix, a real report + repro ("'saved'[return]→「saved/
+// （ls）」にならない（~/usilic/（ls）のままかつカーソル位置が
+// 「tcb-h.h」でなく最上行）"): a RELATIVE destination (just "cpmvdest",
+// not an absolute path) used to fail to land the view there at all --
+// the shell's own `cp` succeeded (its real session cwd tracks the
+// source directory), but pollPendingCpMvRmShellRun()'s own
+// descendTo(run.destination) handed the literal relative text straight
+// to enterDirectory(), which runs `ls` via ChildProcess::run() against
+// the USILIC PROCESS's cwd, not the shell's -- almost always failing,
+// silently falling back to re-listing the source directory. Now
+// resolves a relative destination against sourceDirectory first.
+TEST_CASE_FIXTURE(Fixture, "CP: a RELATIVE destination (not just an absolute one) also navigates the view "
+                           "there, resolved against the source directory") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  feedText("cpmvdest");  // relative -- cpmvdest already exists as a subdirectory of root, see Fixture's own setup
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
+
+  CHECK(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
+  CHECK(fs::exists(root / "cpmvdest" / "cpmv_a.txt"));
 }
 
 // 2026-08-23 fix, a real report: "CPで/tmpへのコピーを終えた後の
@@ -6057,7 +6314,6 @@ TEST_CASE_FIXTURE(Fixture, "CP: after landing in the destination directory, ^G g
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartCopy));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
   REQUIRE(pumpCpMvRmToCompletion(app));
@@ -6090,7 +6346,6 @@ TEST_CASE_FIXTURE(Fixture, "CP: a destination typed without a trailing slash sti
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartCopy));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "linkdest").string());  // no trailing slash -- exactly how a user would type it
   CHECK(app.feedByte(0x0d, std::nullopt));
   REQUIRE(pumpCpMvRmToCompletion(app));
@@ -6111,7 +6366,6 @@ TEST_CASE_FIXTURE(Fixture, "CP: a failed copy leaves the view on the (unchanged)
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartCopy));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
   // Submitting only injects the command and switches to Shell mode --
   // it doesn't know cp/"false" will fail until the shell actually runs
@@ -6131,7 +6385,6 @@ TEST_CASE_FIXTURE(Fixture, "MV: moving a marked file removes the source and crea
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartMove));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText((root / "cpmvdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
   REQUIRE(pumpCpMvRmToCompletion(app));
@@ -6147,7 +6400,6 @@ TEST_CASE_FIXTURE(Fixture, "RM: confirming with 'y' actually deletes the marked 
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartRemove));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText("y");
   CHECK(app.feedByte(0x0d, std::nullopt));
   REQUIRE(pumpCpMvRmToCompletion(app));
@@ -6162,7 +6414,6 @@ TEST_CASE_FIXTURE(Fixture, "RM: anything other than exactly 'y' leaves the file 
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartRemove));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText("n");
   CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
 
@@ -6176,7 +6427,6 @@ TEST_CASE_FIXTURE(Fixture, "CP/MV/RM: ^G cancels the prompt without touching the
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartRemove));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   feedText("y");
   CHECK(app.feedByte(0x07, std::nullopt));
 
@@ -6205,7 +6455,6 @@ TEST_CASE_FIXTURE(Fixture, "RM: a target that's disappeared out from under the o
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
   REQUIRE(app.handleCommand(Command::StartRemove));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
 
   fs::remove(root / "cpmv_b.txt");
 
@@ -6767,7 +7016,6 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: swallowed (no ListBrowser, no
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
   REQUIRE(app.handleCommand(Command::StartCopy));
-  REQUIRE(app.handleCommand(Command::StartDestinationPrompt));
   REQUIRE(app.promptActive());
 
   REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R -- CopyDestination has no history integration in this slice
@@ -8262,20 +8510,17 @@ TEST_CASE_FIXTURE(Fixture, "recording: a real leaderX command (^Xc etc) IS recor
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" onto a real entry, BEFORE recording starts
   REQUIRE(app.handleCommand(Command::MoveDown));
+  REQUIRE(app.handleCommand(Command::ToggleMark));  // mark BEFORE recording starts too (2026-08-27 CP redesign)
   app.feedByte(0x18, std::nullopt);
   app.feedByte('(', std::nullopt);
 
   app.feedByte(0x18, std::nullopt);  // ^X
-  app.feedByte('c', std::nullopt);   // c : a real CP arm, not macro control
-  CHECK_FALSE(app.promptActive());   // ^Xc only arms now, see PendingCpMvRmOperation's own comment
+  app.feedByte('c', std::nullopt);   // c : a real CP command, not macro control
+  CHECK(app.promptActive());  // ^Xc shows the destination prompt immediately now (2026-08-27 redesign)
   // Both bytes of this real ^Xc sequence are recorded, unlike the
   // ^X(/^X)/^Xe control sequences.
   CHECK(app.recordedMacroLength() == 2);
 
-  app.feedByte(0x18, std::nullopt);  // ^X
-  app.feedByte(0x0d, std::nullopt);  // ^M : show the prompt
-  CHECK(app.promptActive());
-  CHECK(app.recordedMacroLength() == 4);
   app.feedByte(0x07, std::nullopt);  // ^G : cancel the prompt
 }
 

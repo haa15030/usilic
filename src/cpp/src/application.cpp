@@ -271,7 +271,14 @@ const KeyTableEntry kKeyTable[] = {
     {"^space", "Toggle mark (CP/MV/RM/ARC)", {0x80}},
     {"^R", "Toggle chronological HISTORY view (current list browser)", {0x12}},
     {"^L", "Redraw screen", {0x0c}},
-    {"^T", "USILIC banner", {0x14}},
+    // 2026-08-27 rename, a direct user request: was "^T"/"USILIC
+    // banner" -- the mode line's own `name` field showed "usilic" (the
+    // synthetic file's own basename, see bannerFilePath()'s comment),
+    // which read as though a real, ordinary file literally named
+    // "~/.usilic/usilic" were being viewed. Renamed to "INFO" (see
+    // executeShowTcbBanner()'s own setSearchOrigin() calls) and
+    // rebound to ^I so the mode-line's own name is unambiguous.
+    {"^I", "INFO", {0x09}},
     {"q", "Exit usilic (pager)", {'q'}},
     // Macros (usilicrc M-0..M-7, see this table's own comment above)
     {";", "Back, cursor up, select (M-0)", {kControlG, 0x10, kCarriageReturn}, true},
@@ -1413,7 +1420,7 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::ToggleHistoryView;
     case 0x0c:  // ^L (M_clear)
       return Command::Redraw;
-    case 0x14:  // ^T (M_tcb, K-0, "TCB")
+    case 0x09:  // ^I (M_tcb, K-0, "TCB"/now "INFO") -- 2026-08-27 rebind from ^T, see kKeyTable's own comment
       return Command::ShowTcbBanner;
     case 'q':  // M_quit -- usilicrc scopes this to pager contexts; see handleCommand()'s own gate
       return Command::QuitPager;
@@ -2048,24 +2055,16 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     }
     return returnFromShell();
   }
-  // K-0 (^T, ShowTcbBanner): 2026-08-18 fix, a direct user report
-  // ("SHELLで^Tが利かない"). ^T isn't a leader byte (kLeaderJ/X/O/ESC
-  // above) -- resolveCommand() maps it directly, unprefixed, for every
-  // OTHER mode -- so it fell all the way through this function to the
-  // plain command-line-editing fallback at the bottom, silently
-  // inserted (or dropped, being a control byte) into the shell command
-  // line instead of doing anything banner-related. Mirrors the leader-
-  // sequence handling above: switch back to whichever mode SHELL was
-  // entered from FIRST (executeShowTcbBanner() unconditionally sets
-  // fileReturnMode_ to Directory afterward regardless of where ^T was
-  // pressed from, matching every other entry point -- SHELL isn't a
-  // special case there, see its own comment), then redraw before
-  // dispatching in case it fails and leaves this screen showing.
-  if (byte == 0x14) {
-    currentMode_ = shellReturnMode_;
-    activeView().redraw();
-    return handleCommand(Command::ShowTcbBanner);
-  }
+  // K-0 (^T, ShowTcbBanner) used to get the same "unprefixed key falls
+  // through this function's own command-line-editing fallback" special-
+  // case fix ^X^F/etc already needed elsewhere (2026-08-18, "SHELLで
+  // ^Tが利かない"). 2026-08-27: rebound to ^I (see kKeyTable's own
+  // comment on the rename to "INFO") -- REMOVED here rather than moved,
+  // since ^I/Tab already has real, expected meaning inside an active
+  // SHELL session (shell_.onTab(), just below) that must not be
+  // hijacked. INFO is simply not reachable from Shell mode anymore, a
+  // deliberate trade-off (real bash completion clearly matters more
+  // here than one more way to reach a banner screen).
   // ^P/^N and Enter-while-browsing below are ported from legacy's
   // shell.c M_kup/M_kdn: a cursor moves directly through scrollback_'s
   // OWN lines_ (the same unified prompt+output history real content
@@ -2860,6 +2859,17 @@ bool Application::openSelectedEntry() {
   // position to restore instead of "right where the user just was".
   // See DirectoryMode::saveCurrentCursorPosition()'s own comment.
   directoryMode_.saveCurrentCursorPosition();
+  // 2026-08-27 fix, a real report + repro ("~/.usilic/saved/（ls）で
+  // 「ＢＳ世界の〜」を選択→^G連打で（ls）との行き来無限ループ"): see
+  // DirectoryMode::clearArcExtractSourceAnnotation()'s own comment for
+  // why opening a file specifically needs this explicit call (unlike
+  // descending into a subdirectory, which already reaches it via
+  // enterDirectory()). Without this, the annotation stayed live after
+  // viewing the file, so the NEXT ^G (back in this directory) still
+  // routed to goToRecentFile() (^J^J) -- which reopens this exact same
+  // file (RecentFile's own most-recent entry), which THEN ^G's back
+  // here again, forever.
+  directoryMode_.clearArcExtractSourceAnnotation();
 
   std::string path = directoryMode_.currentDirectory();
   if (!path.empty() && path.back() != '/') path += '/';
@@ -2916,6 +2926,17 @@ bool Application::openSelectedEntry() {
 // extraction -- ArchiveMode::extractSelected() already distinguishes
 // none of these from the others, so neither does this.
 bool Application::openSelectedArchiveEntry() {
+  // 2026-08-27 fix, a real report + repro ("^X^M[return]①→^G（=^J^J）
+  // →カーソル位置が「utf8/ＢＳ世界の〜」じゃない"): descendToNestedArchive()
+  // already saves the cursor position before leaving (its own call,
+  // just below), but the plain extract-and-view branch never did --
+  // ArchiveMode::loadArchive()'s own history_.positionFor() lookup then
+  // had nothing fresher than whatever was saved (if anything) from
+  // BEFORE this entry was ever selected, landing the cursor somewhere
+  // stale on return. Saved unconditionally here, before either branch,
+  // same placement as DirectoryMode::saveCurrentCursorPosition()'s own
+  // call in Application::openSelectedEntry().
+  archiveMode_.saveCursorPosition();
   if (const ArchiveEntry *entry = archiveMode_.selectedEntry(); entry && !entry->isDirectory) {
     ArchiveKind nestedKind = ArchiveKind::None;
     if (configuration_.programForSuffix(entry->name, &nestedKind) && nestedKind != ArchiveKind::None)
@@ -3214,6 +3235,15 @@ bool Application::goToFileSelector() {
   } else if (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut ||
              currentMode_ == ApplicationMode::CutContent) {
     sourceFile = fileMode_.currentFile();
+  } else if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent) {
+    // 2026-08-27 addition, a direct user report ("^J^K: ARCで利かない"):
+    // this else-if chain never had an Archive/ArchiveContent branch at
+    // all, unlike goToParentFromFileOrArchive() (^O^K) just below, which
+    // already covers both the same way for the analogous "go one level
+    // further" key. currentArchive() is the archive FILE itself (its
+    // parent_path() below is the directory that contains it), matching
+    // every other branch's own "source is a file path" convention.
+    sourceFile = archiveMode_.currentArchive();
   } else {
     return false;
   }
@@ -3426,7 +3456,30 @@ bool Application::openRecentFileEntry(const std::string &path) {
 bool Application::goToRecentFile() {
   const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentFile);
   if (recent.empty()) return false;
-  return openRecentFileEntry(recent.back());
+  // 2026-08-27 addition, a direct user request ("^G同様、今と直近を
+  // 行き来して欲しい"): goToRecentDirectory() (^G's own empty-stack
+  // fallback, just below) already walks its ring backward skipping
+  // entries equal to "where I already am," landing on the first
+  // genuinely different one -- this never did, so pressing ^J^J while
+  // ALREADY viewing the ring's own most recent entry (the ordinary
+  // case right after using ^J^J once, since opening anything re-pushes
+  // it to the ring's own tail) just reopened that SAME file/archive
+  // again instead of toggling back to whatever was open before it,
+  // unlike ^G's own mirror-image behavior. Outside File/Archive/
+  // ArchiveContent (nothing "currently open" to compare against) this
+  // is unchanged -- always the ring's own last entry.
+  std::string current;
+  if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent)
+    current = archiveMode_.currentArchive();
+  else if (currentMode_ == ApplicationMode::File)
+    current = fileMode_.currentFile();
+  // Keeps walking past a FAILED entry too (see goToRecentDirectory()'s
+  // own identical 2026-08-27 fix), not just a same-as-current one.
+  for (auto it = recent.rbegin(); it != recent.rend(); ++it) {
+    if (!current.empty() && *it == current) continue;
+    if (openRecentFileEntry(*it)) return true;
+  }
+  return false;
 }
 
 // Command::Back's own empty-ModeStack fallback (2026-08-27 addition,
@@ -3446,9 +3499,19 @@ bool Application::goToRecentFile() {
 // walk-position state needed.
 bool Application::goToRecentDirectory() {
   const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentDirectory);
+  // 2026-08-27 fix, a real report ("^Gだが無反応な時がある。状況は
+  // 覚えてないがDIR履歴が複数あるのは確認"): this used to RETURN on the
+  // very first entry different from currentDirectory(), whether or not
+  // enterDirectory() on it actually succeeded -- a stale entry (a
+  // directory since deleted, e.g. an old ARC extraction temp dir/arc.N
+  // slot cleaned up since) made this a dead end, "無反応", even though
+  // an OLDER, still-valid, genuinely different entry might sit right
+  // behind it in the ring. Now keeps walking past a failed attempt too,
+  // not just a same-as-current one, same fix applied to goToRecentFile()'s
+  // own identical walk just above.
   for (auto it = recent.rbegin(); it != recent.rend(); ++it) {
     if (*it == directoryMode_.currentDirectory()) continue;
-    return directoryMode_.enterDirectory(*it);
+    if (directoryMode_.enterDirectory(*it)) return true;
   }
   return false;
 }
@@ -4627,13 +4690,18 @@ bool Application::executeShowTcbBanner() {
   // own directory) is never where ^G above actually returns to (see
   // the comment just above); setSearchOrigin() already exists exactly
   // for "override the destination shown here" (LOCATE's own File
-  // results use it identically), reused here with the literal name
-  // this screen already shows ("usilic") so only trailing2 visibly
-  // changes. directoryMode_.currentDirectory() is right regardless of
-  // which mode ^T was actually pressed from, since fileReturnMode_
-  // above is unconditionally Directory and nothing along that path
-  // touches DirectoryMode's own state.
-  fileMode_.setSearchOrigin("usilic", directoryMode_.currentDirectory());
+  // results use it identically). directoryMode_.currentDirectory() is
+  // right regardless of which mode ^I was actually pressed from, since
+  // fileReturnMode_ above is unconditionally Directory and nothing
+  // along that path touches DirectoryMode's own state.
+  // 2026-08-27 rename, a direct user report: the label ("usilic",
+  // matching bannerFilePath()'s own basename) doubled as this screen's
+  // mode-line `name` field too (see FileMode's own ModeLineFieldsProvider
+  // comment: a non-empty searchOriginLabel_ overrides `name` outright,
+  // not just trailing2) -- reading as though a real ordinary file
+  // literally named "~/.usilic/usilic" were being viewed. Now "INFO",
+  // matching the rebound key's own kKeyTable label.
+  fileMode_.setSearchOrigin("INFO", directoryMode_.currentDirectory());
   return true;
 }
 
@@ -4707,9 +4775,20 @@ bool Application::openSelectedBannerEntry() {
   // only the destination half of the mode line actually changes.
   for (const std::string &fixedPath : {usilicrcPath_, errorLogPath_, logFilePath_}) {
     if (!endsWith(fixedPath)) continue;
+    // 2026-08-27 fix, a real report ("^T→「/tmp/.usilic.NNNNN/shell」
+    // [return]→反応なし（ファイルコピーがSHELLで行われたのに）"):
+    // unlike usilicrcPath_/errorLogPath_ (real files usilic itself
+    // writes as it goes), logFilePath_ is only ever a SNAPSHOT --
+    // refreshShellLogFile() (see its own comment) is what actually
+    // dumps Shell::scrollback() to it, otherwise it doesn't exist on
+    // disk at all yet even though the shell session's own in-memory
+    // scrollback (e.g. this very CP's own output) has real content.
+    // executeShowShellLog()/executeStartLog() already refresh it first
+    // for exactly this reason; this entry point never did.
+    if (fixedPath == logFilePath_) refreshShellLogFile();
     fileMode_.saveCursorPosition();
     if (!fileMode_.loadFile(fixedPath)) return false;
-    fileMode_.setSearchOrigin(std::filesystem::path(fixedPath).filename().string(), "usilic");
+    fileMode_.setSearchOrigin(std::filesystem::path(fixedPath).filename().string(), "INFO");  // 2026-08-27 rename
     fileReturnMode_ = ApplicationMode::File;
     // loadFile() already redrew once internally, using the DEFAULT mode
     // line (searchOrigin was still empty at that point -- it's only set
@@ -4724,7 +4803,7 @@ bool Application::openSelectedBannerEntry() {
     if (!endsWith(workPath)) continue;
     fileMode_.saveCursorPosition();
     if (!fileMode_.loadFile(workPath)) return false;
-    fileMode_.setSearchOrigin(std::filesystem::path(workPath).filename().string(), "usilic");
+    fileMode_.setSearchOrigin(std::filesystem::path(workPath).filename().string(), "INFO");  // 2026-08-27 rename
     fileReturnMode_ = ApplicationMode::File;
     fileView_.redraw();  // see the fixedPath loop's own identical comment above
     return true;
@@ -4759,52 +4838,77 @@ bool Application::cycleCharset() {
 // sub-mode -- 2026-08-21 change (a real user report, =ec screenshot):
 // this used to activate the destination prompt immediately, which
 // showed an empty text-input box before the user had even marked
-// anything. Now it only arms the operation (see PendingCpMvRmOperation's
-// own comment); startDestinationPrompt() (^X^M) is what shows the
-// actual prompt, once the user has finished marking (^Space/^X^Y/^X^N)
-// in the ordinary `ls`-style listing. No targetEntries()-emptiness
-// check here anymore -- that's checked at ^X^M time instead, since
-// marking can legitimately still be empty right when the operation is
-// armed (the whole point of decoupling the two steps).
+// anything. It then armed-and-waited for a separate ^X^M press once
+// marking was done (see PendingCpMvRmOperation's own comment).
+// 2026-08-27 redesign, a direct user report ("ファイル選択後の冗長性
+// ...さらに^X^Mとやるのがめんどくさい") + their own proposed fix
+// ("真っ新（ls）時は発動しない"/"項目を一つでも選択すれば発動→その
+// まま文字列入力へ"): marking now doubles as the activation gate
+// itself, not just a precondition checked later at ^X^M time --
+// nothing marked (a "真っ新" listing) is a plain no-op below, exactly
+// as if the key had never been pressed, while ANY marked entry arms
+// AND immediately calls startDestinationPrompt() in the same
+// keystroke, skipping the now-redundant separate ^X^M entirely.
+// Deliberately checks markedCount() here, NOT targetEntries() (whose
+// own cursor-fallback -- see its class comment -- would otherwise make
+// "nothing marked" indistinguishable from "one item marked", defeating
+// the whole point of this gate).
 bool Application::startCopyPrompt() {
   if (currentMode_ != ApplicationMode::Directory) return false;
+  if (directoryMode_.markedCount() == 0) return false;
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::CopyDestination, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("CP");
-  // No cursor-row highlight while armed -- see ContentView::
-  // setCursorRowAlsoHighlighted()'s own comment (=ed reference: legacy
-  // shows none at all here, until something is actually marked).
+  // 2026-08-27 fix, a real report ("残留ハイライトを消去かつ全アンダー
+  // ラインを全ハイライトにしてみて"): restores the pre-redesign legacy
+  // convention (=ed reference screenshot) that this whole destination-
+  // prompt-active phase shows NO cursor-row highlight and renders
+  // GENUINELY marked rows via Standout instead of Underline -- lost
+  // when the 2026-08-27 one-step redesign collapsed arm+prompt into one
+  // call, since startDestinationPrompt() itself used to unconditionally
+  // restore both flags to true the instant it ran (correct for the OLD
+  // two-step flow, where that always meant "leaving the armed state
+  // behind," but wrong once arm+prompt happen atomically -- it just
+  // undid this same suppression before a single frame could ever show
+  // it). startDestinationPrompt() no longer does that restore
+  // unconditionally -- see its own comment. activatePrompt() (called
+  // from within startDestinationPrompt() below) only ever draws the
+  // PROMPT row itself (drawPromptLabel()/promptEditor_.redraw()) -- it
+  // never repaints the listing's own content rows, so an explicit
+  // redraw() here is what actually paints the two flags' new effect;
+  // without it, the content rows would just keep showing whatever the
+  // LAST real redraw (from marking) already painted, silently making
+  // this whole fix invisible.
   directoryView_.setCursorRowAlsoHighlighted(false);
-  // Armed screen keeps Standout-for-marks (matches the =ed reference) --
-  // see ContentView::setMarkedRowUsesUnderline()'s own comment for why
-  // this is the one screen that stays on the OLD scheme.
   directoryView_.setMarkedRowUsesUnderline(false);
-  directoryView_.redraw();  // paints the "CP" label now -- see setPendingOperationLabel()'s own comment
-  return true;
+  directoryView_.redraw();
+  return startDestinationPrompt();
 }
 
 bool Application::startMovePrompt() {
   if (currentMode_ != ApplicationMode::Directory) return false;
+  if (directoryMode_.markedCount() == 0) return false;
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::MoveDestination, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("MV");
-  directoryView_.setCursorRowAlsoHighlighted(false);
+  directoryView_.setCursorRowAlsoHighlighted(false);  // see startCopyPrompt()'s own comment
   directoryView_.setMarkedRowUsesUnderline(false);
   directoryView_.redraw();
-  return true;
+  return startDestinationPrompt();
 }
 
 // Ported from M_rm (^Xr) entering the marking/browsing sub-mode -- see
-// startCopyPrompt()'s own comment for the 2026-08-21 change. The
-// confirmation prompt itself (a deliberately simplified stand-in for
-// m_dest()'s T_rm branch, which checks a single typed 'y' the same
-// way, see class comment) is shown by startDestinationPrompt() (^X^M).
+// startCopyPrompt()'s own comment for the 2026-08-21/2026-08-27
+// changes. The confirmation prompt itself (a deliberately simplified
+// stand-in for m_dest()'s T_rm branch, which checks a single typed 'y'
+// the same way, see class comment) is shown by startDestinationPrompt().
 bool Application::startRemovePrompt() {
   if (currentMode_ != ApplicationMode::Directory) return false;
+  if (directoryMode_.markedCount() == 0) return false;
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::RemoveConfirm, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("RM");
-  directoryView_.setCursorRowAlsoHighlighted(false);
+  directoryView_.setCursorRowAlsoHighlighted(false);  // see startCopyPrompt()'s own comment
   directoryView_.setMarkedRowUsesUnderline(false);
   directoryView_.redraw();
-  return true;
+  return startDestinationPrompt();
 }
 
 // K-71-adjacent (^G while a CP/MV/RM operation is armed): a real user
@@ -4870,9 +4974,20 @@ bool Application::startDestinationPrompt() {
   PendingCpMvRmOperation pending = *pendingCpMvRm_;
   pendingCpMvRm_.reset();
   directoryMode_.clearPendingOperationLabel();
-  directoryView_.setCursorRowAlsoHighlighted(true);
-  directoryView_.setMarkedRowUsesUnderline(true);
+  // 2026-08-27 fix, see startCopyPrompt()'s own comment: this used to
+  // restore both flags to true UNCONDITIONALLY right here, correct for
+  // the old two-step flow (this function was only ever reached via a
+  // SEPARATE ^X^M keystroke, always "leaving the armed/suppressed state
+  // behind" whichever way it went) but wrong now that startCopyPrompt()/
+  // etc. call straight into this in the SAME keystroke -- restoring
+  // unconditionally here undid the suppression before a single frame
+  // could ever show it. Only restored on the ABORT path below now; the
+  // success path leaves both suppressed for the whole prompt-active
+  // duration, restored when the prompt is later dismissed (cancelPrompt()'s
+  // own CP/MV/RM branch, or the post-operation reload either way reaches).
   if (pending.directory != directoryMode_.currentDirectory() || directoryMode_.targetEntries().empty()) {
+    directoryView_.setCursorRowAlsoHighlighted(true);
+    directoryView_.setMarkedRowUsesUnderline(true);
     directoryView_.redraw();  // paints the label's removal now, matching startCopyPrompt()'s own redraw()
     return false;
   }
@@ -5945,6 +6060,33 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
 }
 
 void Application::cancelPrompt() {
+  // 2026-08-27: cancelling the CP/MV/RM destination prompt used to
+  // reach cancelPendingCpMvRm() (which calls directoryMode_.refresh(),
+  // a real `ls` re-run that also WIPES marks -- the 2026-08-24 fix,
+  // "^Gのあとls再実行でいいんじゃない？"), but pendingCpMvRm_ is now
+  // consumed atomically before the prompt is even shown (see
+  // startCopyPrompt()'s own comment), so that path is unreachable and
+  // this generic cancel took over instead. A first attempt at
+  // restoring the OLD behavior here (calling refresh() directly) was
+  // itself a real regression the user caught immediately: "注意深く選
+  // んだマークがうっかり^Gでパーみたいな切ない事態を避けるため。意図
+  // 的には^X^Nで全クリア可能なのでマークは残して欲しい" -- i.e. the
+  // 2026-08-24 rationale doesn't actually apply anymore once ^G no
+  // longer leaves a SEPARATE "armed" sub-mode behind (that fix was
+  // about a STALE arm's marks lingering after navigating away from it;
+  // here there's no in-between state to leave stale). So: restore ONLY
+  // the two display flags (no visible difference from refresh()'s own
+  // restore of the same two) WITHOUT wiping markedIndices_ -- marks
+  // survive a cancelled CP/MV/RM now, exactly like ^X^N (ClearAllMarks)
+  // remains the one deliberate way to actually clear them.
+  if (promptKind_ == PromptKind::CopyDestination || promptKind_ == PromptKind::MoveDestination ||
+      promptKind_ == PromptKind::RemoveConfirm) {
+    promptKind_ = PromptKind::None;
+    directoryView_.setCursorRowAlsoHighlighted(true);
+    directoryView_.setMarkedRowUsesUnderline(true);
+    directoryView_.redraw();
+    return;
+  }
   promptKind_ = PromptKind::None;
   activeView().redraw();
 }
@@ -7033,20 +7175,43 @@ bool Application::executeLocate(const std::string &query) {
 // (2026-08-23, a direct user request once this unification made it a
 // functionally identical duplicate of ^Xc) -- ^Xc is now the only
 // entry point.
+// 2026-08-27 fix, a real report + repro ("'saved'[return]→「saved/
+// （ls）」にならない（~/usilic/（ls）のままかつカーソル位置が
+// 「tcb-h.h」でなく最上行）"): a RELATIVE destination (e.g. "saved", as
+// opposed to "/tmp") used to be handed straight to the injected shell
+// command line as-is -- Shell::start() never chdir()s to match
+// directoryMode_'s own currentDirectory_ (it just inherits usilic's own
+// process cwd via fork()), so a bare relative destination resolved
+// wherever the shell session's REAL cwd happened to be, not "this
+// directory" as obviously intended, and the actual cp/mv silently
+// landed nowhere near the source (or failed outright). Resolved here
+// against currentDirectory() BEFORE building argv, so both the real
+// shell command AND pollPendingCpMvRmShellRun()'s own later UI-landing
+// step (which also needs an absolute path, see its own comment) always
+// see the same unambiguous absolute path regardless of the shell's own
+// cwd.
+std::string Application::resolveCpMvDestination(const std::string &destination) const {
+  if (destination.empty() || destination.front() == '/') return destination;
+  std::string base = directoryMode_.currentDirectory();
+  if (!base.empty() && base.back() != '/') base += '/';
+  return base + destination;
+}
+
 bool Application::executeCopy(const std::string &destination) {
   std::vector<std::string> targets = collectTargetPaths();
   if (targets.empty() || destination.empty()) {
     directoryView_.redraw();
     return false;
   }
+  std::string resolvedDestination = resolveCpMvDestination(destination);
   std::vector<std::string> argv = configuration_.commandFor(ConfiguredRole::Cp).argv;
   if (argv.empty()) {
     directoryView_.redraw();
     return false;
   }
   for (const auto &target : targets) argv.push_back(target);
-  argv.push_back(destination);
-  return startCpMvRmShellRun(argv, destination, directoryMode_.currentDirectory());
+  argv.push_back(resolvedDestination);
+  return startCpMvRmShellRun(argv, resolvedDestination, directoryMode_.currentDirectory());
 }
 
 // Same 2026-08-22 redesign as executeCopy() -- see its own comment.
@@ -7057,14 +7222,15 @@ bool Application::executeMove(const std::string &destination) {
     return false;
   }
   if (!checkTargetsWritable(targets)) return false;
+  std::string resolvedDestination = resolveCpMvDestination(destination);
   std::vector<std::string> argv = configuration_.commandFor(ConfiguredRole::Mv).argv;
   if (argv.empty()) {
     directoryView_.redraw();
     return false;
   }
   for (const auto &target : targets) argv.push_back(target);
-  argv.push_back(destination);
-  return startCpMvRmShellRun(argv, destination, directoryMode_.currentDirectory());
+  argv.push_back(resolvedDestination);
+  return startCpMvRmShellRun(argv, resolvedDestination, directoryMode_.currentDirectory());
 }
 
 // Ported from m_dest()'s T_rm branch: `confirmation` must be exactly
@@ -7148,7 +7314,9 @@ void Application::pollPendingCpMvRmShellRun() {
   // frame to pop back to sourceDirectory with. descendTo() pushes that
   // frame first, exactly like ordinary Enter-into-subdirectory/
   // goToParent() navigation does, so ^G afterward behaves the same as
-  // any other descent.
+  // any other descent. run.destination is always either empty (RM) or
+  // already an ABSOLUTE path -- executeCopy()/executeMove() resolve it
+  // before it ever reaches here (see their own 2026-08-27 comment).
   if (!ok || run.destination.empty() || !directoryMode_.descendTo(run.destination))
     directoryMode_.enterDirectory(run.sourceDirectory);
   directoryView_.redraw();
@@ -7397,6 +7565,15 @@ bool Application::executeArchiveExtract(const std::string &destination) {
     activeView().redraw();
     return false;
   }
+
+  // 2026-08-27 fix, same report as openSelectedArchiveEntry()'s own
+  // comment ("カーソル位置が「utf8/ＢＳ世界の〜」じゃない"): extracting
+  // straight from Archive mode (^X^M/^X a) leaves via a shell run, not
+  // openSelectedArchiveEntry(), so it needs this same save on its own
+  // -- otherwise a later goToRecentFile() (^J^J) back to this archive
+  // restores whatever position was saved from some earlier, unrelated
+  // visit instead of where the extraction was actually invoked from.
+  if (currentMode_ == ApplicationMode::Archive) archiveMode_.saveCursorPosition();
 
   ApplicationMode returnMode = currentMode_;
   if (!ensureShellActive()) {

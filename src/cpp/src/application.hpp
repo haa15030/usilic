@@ -1703,6 +1703,9 @@ class Application {
   // with no entry under the cursor.
   bool executeQuickLook();
   bool executeLocate(const std::string &query);
+  // Shared by executeCopy()/executeMove() -- see its own definition
+  // comment.
+  std::string resolveCpMvDestination(const std::string &destination) const;
   bool executeCopy(const std::string &destination);
   bool executeMove(const std::string &destination);
   bool executeRemove(const std::string &confirmation);

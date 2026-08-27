@@ -201,6 +201,28 @@ void History::pushRecent(RingCategory category, const std::string &name) {
   if (!ring.empty() && ring.back() == name) return;
   ring.push_back(name);
   if (static_cast<int>(ring.size()) > retentionCount_) ring.pop_front();
+
+  // 2026-08-27 addition, a direct user report ("旧では同時にDIR履歴に
+  // も所在地記載がなされる...^Tに限らずLOCATE、DUその他（ls）経由でな
+  // いファイルアクセスであっても在籍値のDIR履歴同時記帳は反映して欲
+  // しい"): legacy records a file's own containing directory into DIR
+  // history at the same time it records the file itself, regardless of
+  // how that file was reached -- ordinary `ls`-then-Enter browsing
+  // already reaches RecentDirectory separately (DirectoryMode::
+  // enterDirectory()'s own pushRecent() call, which fires BEFORE this
+  // one in that case, so the dedup check above just no-ops here), but
+  // ^T's fixed-file entries, LOCATE results, etc. never go through
+  // enterDirectory() at all -- their own containing directory was never
+  // recorded, leaving goToRecentDirectory()'s (^G's empty-stack
+  // fallback) own walk with nothing to find even though the user HAD
+  // just been "at" that directory in every meaningful sense. Recursing
+  // back into this same function (not a bare rings_[...] push) reuses
+  // the identical dedup/retention-cap logic above for the derived
+  // directory push too.
+  if (category == RingCategory::RecentFile) {
+    std::string::size_type slash = name.find_last_of('/');
+    if (slash != std::string::npos) pushRecent(RingCategory::RecentDirectory, name.substr(0, slash + 1));
+  }
 }
 
 const std::deque<std::string> &History::recentEntries(RingCategory category) const {

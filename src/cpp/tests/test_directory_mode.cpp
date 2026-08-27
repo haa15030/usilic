@@ -464,6 +464,40 @@ TEST_CASE_FIXTURE(Fixture, "resetNavigationToFloor + goBack: toggles back and fo
   CHECK(mode.canGoBack());  // never exhausts -- a genuine toggle, not a one-shot pop
 }
 
+// 2026-08-27 fix, a real report + repro ("^T^J^K→...→①→'/tmp'[return]
+// →「/tmp/（ls）」→^G→「~/.usilic/（ls）」→^G→「/tmp/（ls）」になら
+// ない（~/git/usilic/src/（ls）」"): descendTo() (CP/MV/ARC-extraction
+// landing, or any other real "go here and remember where I came from"
+// navigation) used to ALWAYS push a plain frame on top of whatever was
+// already on the stack, floor included -- popping that plain frame (a
+// first ^G) correctly returned to wherever the descent started, but a
+// SECOND ^G then popped the STALE floor sitting beneath it, teleporting
+// to the floor's own long-irrelevant previousDirectory (from whatever
+// ^J^K jump originally established it) instead of continuing to toggle
+// with the just-visited destination. Fixed by having descendTo()
+// REPLACE an active floor with a fresh one (destination <-> here),
+// mirroring goBack()'s own floor-swap-on-pop behavior, rather than
+// stacking on top of it.
+TEST_CASE_FIXTURE(Fixture, "descendTo() while a floor is active replaces it, so ^G keeps toggling with the "
+                           "just-visited destination instead of resurrecting the OLD floor pair") {
+  REQUIRE(mode.enterDirectory(path()));
+  REQUIRE(mode.enterDirectory(std::string(path()) + "subdir1"));  // simulates ^J^K's own landing spot
+  mode.resetNavigationToFloor(path());                            // floor: subdir1 <-> path() (the ^J^K pair)
+
+  REQUIRE(mode.descendTo(std::string(path()) + "subdir2"));  // simulates a CP/MV/ARC landing elsewhere
+  CHECK(mode.currentDirectory() == std::string(path()) + "subdir2/");
+
+  REQUIRE(mode.goBack());
+  CHECK(mode.currentDirectory() == std::string(path()) + "subdir1/");  // back to subdir1 -- NOT path()
+
+  REQUIRE(mode.goBack());
+  CHECK(mode.currentDirectory() == std::string(path()) + "subdir2/");  // toggles back to subdir2 -- NOT path()
+
+  REQUIRE(mode.goBack());
+  CHECK(mode.currentDirectory() == std::string(path()) + "subdir1/");  // keeps toggling indefinitely
+  CHECK(mode.canGoBack());
+}
+
 // "./"/"../" are always entries[0]/entries[1] (ls -alF's own leading
 // order) -- every test below now uses real-file indices (2+) instead,
 // see the dedicated "./"/"../" exclusion tests further down for that
