@@ -1,9 +1,10 @@
-// glibc needs _XOPEN_SOURCE for posix_openpt/grantpt/unlockpt/ptsname;
-// _DEFAULT_SOURCE keeps other glibc extensions (e.g. NSIG) visible
-// alongside it. Gated to Linux only -- macOS/BSD libc expose both
-// without this, and defining _XOPEN_SOURCE there can instead hide
-// their own BSD extensions. Same rationale as tcb.h's own version of
-// this guard (see tcb/src/tcb.h).
+// glibcは、posix_openpt/grantpt/unlockpt/ptsnameのために
+// _XOPEN_SOURCEを必要とする。_DEFAULT_SOURCEは、それと一緒に他の
+// glibc拡張(例えばNSIG)を見えるままにする。Linux専用にゲートされ
+// ている――macOS/BSDのlibcはこれ無しでも両方を公開しており、そこで
+// _XOPEN_SOURCEを定義すると、代わりにそれら自身のBSD拡張を隠して
+// しまうことがある。このガードのtcb.h自身のバージョンと同じ理由
+// (tcb/src/tcb.h参照)。
 #ifdef __linux__
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
@@ -49,28 +50,31 @@ std::string baseName(const std::string &argv0) {
 
 bool isBashProgram(const std::string &argv0) { return baseName(argv0) == "bash"; }
 
-// zsh has been macOS's own default login shell since Catalina (2019)
-// -- a real gap found via actual hands-on use (2026-08-01): the setup
-// command below used to lump "not bash" into one tcsh/csh-syntax
-// branch (`set prompt = "..."`), which zsh does NOT understand (that
-// `set VAR = value` form is tcsh/csh-specific; zsh's `set` builtin is
-// for shell OPTIONS, not variable assignment). Sent to a real zsh,
-// that line silently fails to set PROMPT at all, leaving the user's
-// OWN real, fully-themed interactive prompt (oh-my-zsh/powerlevel10k/
-// starship/etc, with whatever ANSI color codes and Unicode glyphs it
-// uses) as what's actually displayed -- which this port's Shell
-// (built assuming plain, synthetic prompt text) has no way to parse
-// or safely render, producing exactly the garbled scrollback and
-// "controlCode as a highlighted box" symptoms reported.
+// zshは、Catalina(2019)以来macOS自身のデフォルトのログインシェル
+// である――実地での実際の使用を通じて発見された実際のギャップ
+// (2026-08-01): 下の設定コマンドは以前、「bashではない」を1つの
+// tcsh/csh構文の分岐(`set prompt = "..."`)へまとめていたが、zshは
+// それを理解「しない」(その`set VAR = value`という形はtcsh/csh
+// 専用。zsh自身の`set`組み込みコマンドはシェル「オプション」用で
+// あり、変数代入用ではない)。本物のzshに送られると、その行は
+// PROMPTの設定に全く黙って失敗し、ユーザー「自身の」本物の、完全
+// にテーマ化されたインタラクティブなプロンプト(oh-my-zsh/
+// powerlevel10k/starship等、それが使うどんなANSIカラーコードや
+// Unicodeグリフでも)が実際に表示されるものとして残ってしまう
+// ――これは、この移植のShell(プレーンな、合成されたプロンプト
+// テキストを想定して構築されている)がパースしたり安全に描画したり
+// する方法を持たず、まさに報告された文字化けしたスクロールバック
+// と「controlCodeがハイライトされた箱として」という症状を生み
+// 出す。
 bool isZshProgram(const std::string &argv0) { return baseName(argv0) == "zsh"; }
 
-// Portable pty acquisition (POSIX/Unix98 API), ported near-verbatim
-// from sub.c's open_pty() -- see CLAUDE.md history for why this
-// replaced the original BSD /dev/ptyp0.."/dev/ptysf" device-node
-// scanning approach (didn't exist on modern Linux or macOS at all).
-// Unlike open_pty(), this always keeps the master fd open (legacy's
-// f_open==0 "just reserve it" mode had no caller left that used it by
-// the time Shell was written).
+// 移植可能なpty取得(POSIX/Unix98のAPI)、sub.cのopen_pty()からほぼ
+// 逐語のまま移植――これがなぜ元々のBSDの/dev/ptyp0..
+// "/dev/ptysf"というデバイスノードの走査アプローチ(現代のLinuxや
+// macOSには全く存在しなかった)を置き換えたのかについてはCLAUDE.md
+// の履歴参照。open_pty()とは異なり、これは常にマスターfdを開いた
+// ままにする(legacyのf_open==0という「単に予約するだけ」モードは、
+// Shellが書かれた時点でそれを使う呼び出し元がもう残っていなかった)。
 int openPty(std::string &slavePathOut) {
   int fd = posix_openpt(O_RDWR | O_NOCTTY);
   if (fd < 0) return -1;
@@ -98,72 +102,78 @@ Shell::Shell(Display &display, const ShellOptions &options)
   markerPrefix_ = options_.promptMark + options_.programName + ":";
   viewportRows_ = options_.rows;
   columns_ = options_.columns;
-  // Ported from key.c's stand_str(): its own early-return
-  // (`f_M == M_shell`) means legacy NEVER draws the whole-line
-  // reverse-video cursor highlight for SHELL's own scrollback
-  // browsing (^P/^N through past commands, M_kup/M_kdn) the way it
-  // does for ordinary lists -- confirmed by a real side-by-side
-  // screenshot comparison against legacy (2026-08-04) showing a plain
-  // terminal cursor there, not a highlighted bar, matching how
-  // FileMode already disables this for the same reason (see its own
-  // comment). Application's own ^P/^N handlers move the display's
-  // real cursor to ContentView::cursorDisplayRow() instead, so
-  // "current line" is still visible while browsing -- just as a
-  // normal text cursor, not a colored highlight.
+  // key.cのstand_str()からの移植: それ自身の早期return
+  // (`f_M == M_shell`)は、legacyが通常の一覧に対して行うのと同じ
+  // 方法で、SHELL自身のスクロールバック閲覧(^P/^Nで過去のコマンド
+  // を巡る、M_kup/M_kdn)に対して行全体の反転表示カーソルハイライト
+  // を決して描画しないことを意味する――legacyに対する実際の並べた
+  // スクリーンショット比較(2026-08-04)によって、そこで(ハイライト
+  // されたバーではなく)プレーンな端末カーソルが表示されることが
+  // 確認された。FileModeが同じ理由で既にこれを無効にしているのに
+  // 合わせている(自身のコメント参照)。Application自身の^P/^N
+  // ハンドラは、代わりにディスプレイの実際のカーソルをContentView::
+  // cursorDisplayRow()へ動かすので、閲覧中も「現在の行」は依然と
+  // して可視のままである――色付きのハイライトではなく、単に通常の
+  // テキストカーソルとして。
   scrollback_.setCursorHighlightEnabled(false);
   if (!options_.argv.empty()) {
     isBash_ = isBashProgram(options_.argv[0]);
     isZsh_ = isZshProgram(options_.argv[0]);
   }
-  // Three DISTINCT, permanently FIXED rows (2026-08-04 revision):
-  // scrollback_'s own CONTENT area is height_ = viewportRows_-2 rows
-  // tall (0..viewportRows_-3), the live prompt (commandLineRow(), see
-  // its own comment) is the fixed row viewportRows_-2 right after it,
-  // and the mode-line is pinned to the TRUE last row viewportRows_-1
-  // via setModeLineRow(). scrollback_.setBottomAnchored(true) is what
-  // makes this work with a genuinely FIXED prompt row: with it, fewer-
-  // than-height_ lines render flush against the BOTTOM of the content
-  // area (blank padding rows above them) instead of the ContentView
-  // default of flush-against-the-TOP -- so the last real content line
-  // is ALWAYS immediately above viewportRows_-2, whether scrollback_
-  // has 1 line or 100, and the prompt never needs to move at all.
+  // 3つの明確な、永続的に「固定された」行(2026-08-04の改訂):
+  // scrollback_自身の「内容」領域はheight_ = viewportRows_-2行の
+  // 高さ(0..viewportRows_-3)、生きたプロンプト
+  // (commandLineRow()、自身のコメント参照)はそのすぐ後の固定行
+  // viewportRows_-2、そしてモードラインはsetModeLineRow()経由で
+  // 「本当の」最終行viewportRows_-1に固定される。
+  // scrollback_.setBottomAnchored(true)が、これを本当に「固定
+  // された」プロンプト行と一緒に機能させるものである: これが
+  // あれば、height_未満の行は、ContentViewのデフォルトの上端に
+  // 密着する代わりに、内容領域の「下端」に密着して描画される
+  // (その上に空白のパディング行)――そのため最後の本物の内容行は、
+  // scrollback_が1行だろうと100行だろうと、常にviewportRows_-2の
+  // すぐ上にあり、プロンプトは全く動く必要が無い。
   //
-  // This replaces TWO earlier iterations, each fixing a real bug the
-  // previous one didn't fully solve:
-  //   1. (2026-08-02) commandLine_ overlaid scrollback_'s own LAST
-  //      CONTENT row directly (back when height_ was viewportRows_-1,
-  //      no reserved row at all) -- reasoned at the time as "matching
-  //      legacy, where the live prompt IS simply the last line of
-  //      scrollback". Real output arriving after a command was
-  //      submitted legitimately wanted that same row too, and
-  //      whichever of the two redrew last silently clobbered the
-  //      other (confirmed via real escape-sequence tracing, 2026-08-03:
-  //      every command's last output line got overwritten by the
-  //      reappearing prompt in -c, and the reverse in -g).
-  //   2. (2026-08-03) Reserved a reliably separate row for the prompt,
-  //      but made it CONTENT-RELATIVE (grew as scrollback_ did,
-  //      settling at viewportRows_-2 only once content filled the
-  //      content area) to match legacy's own visible behavior (prompt
-  //      immediately after whatever came before it, not a fixed row
-  //      with an unnatural gap while scrollback_ was still short).
-  //      This introduced its OWN class of bug: nothing kept
-  //      commandLine_'s cached row or the prompt's own on-screen text
-  //      in sync as scrollback_ kept growing across several separate
-  //      pty reads before the next real prompt was detected -- a real
-  //      user report (2026-08-03/04): "ls[Enter]→一瞬プロンプト表示→
-  //      ls結果表示→一瞬プロンプト表示後消失". Two follow-up patches
-  //      (re-syncing commandLine_'s field on every flush, then also
-  //      re-asserting redrawPromptRow() on every flush) each closed
-  //      part of the gap but the user's own next report ("降下中がNG。
-  //      着地後はOK") confirmed the underlying churn -- the prompt's
-  //      row genuinely changing, repeatedly, mid-command -- was still
-  //      there, just less visible.
-  // Bottom-anchoring content instead removes the DYNAMIC positioning
-  // entirely: the prompt's row is a compile-time-obvious constant
-  // again (like iteration 1), but scrollback_ itself -- not Shell --
-  // now guarantees content and prompt never collide (unlike iteration
-  // 1) and never requires re-syncing anything as content grows (unlike
-  // iteration 2), because there is nothing left TO re-sync.
+  // これは2つの以前の反復を置き換える。それぞれが、以前のものが
+  // 完全には解決しなかった実際のバグを修正している:
+  //   1. (2026-08-02) commandLine_は、scrollback_自身の最後の
+  //      「内容」行を直接オーバーレイしていた(height_が
+  //      viewportRows_-1で、予約された行が全く無かった当時)
+  //      ――当時は「legacyに合わせている、そこでは生きたプロンプト
+  //      は単にスクロールバックの最後の行「である」」と理由付け
+  //      られていた。コマンドが送信された後に届く実際の出力も
+  //      正当にその同じ行を欲しがり、2つのうちどちらが最後に再描画
+  //      したかによって、黙ってもう一方を壊していた(実際のエス
+  //      ケープシーケンスの追跡で確認済み、2026-08-03: 全てのコマン
+  //      ドの最後の出力行が、-cでは再度現れるプロンプトによって、
+  //      -gではその逆で、上書きされていた)。
+  //   2. (2026-08-03) プロンプトのために確実に別の行を予約したが、
+  //      それを「内容相対」にした(scrollback_が成長するにつれて
+  //      大きくなり、内容領域を内容が満たした時点でだけ
+  //      viewportRows_-2に落ち着く)。これは、legacy自身の可視の
+  //      挙動(プロンプトはその前に来たものの直後、scrollback_が
+  //      まだ短い間の不自然な隙間のある固定行ではない)に合わせる
+  //      ためだった。これはそれ自身の種類のバグを引き起こした:
+  //      次の本物のプロンプトが検出される前に、scrollback_が複数
+  //      の別々のpty読み込みにわたって成長し続けている間、
+  //      commandLine_のキャッシュされた行やプロンプト自身の画面上
+  //      のテキストを同期させ続けるものが何も無かった――実際の
+  //      ユーザー報告(2026-08-03/04): "ls[Enter]→一瞬プロンプト
+  //      表示→ls結果表示→一瞬プロンプト表示後消失"。2回の追加修正
+  //      (全てのフラッシュでcommandLine_のフィールドを再同期し、
+  //      その後全てのフラッシュでredrawPromptRow()も再度主張する)
+  //      は、それぞれギャップの一部を閉じたが、ユーザー自身の次の
+  //      報告("降下中がNG。着地後はOK")が、根底にある churn――
+  //      プロンプトの行が実際に、繰り返し、コマンドの途中で変わる
+  //      こと――が依然としてそこにあり、単に見えにくくなっただけ
+  //      であることを確認した。
+  // 代わりに内容を下端固定にすることは、動的な位置決めを完全に
+  // 取り除く: プロンプトの行は再び(反復1のように)コンパイル時に
+  // 明白な定数だが、scrollback_自体が――Shellではなく――今や、
+  // (反復1とは異なり)内容とプロンプトが決して衝突しないことを保証
+  // し、(反復2とは異なり)内容が成長するにつれて何かを再同期する
+  // 必要が全く無い。再同期「すべき」ものがもう何も残っていない
+  // ため。
   scrollback_.setViewport(0, std::max(1, viewportRows_ - 2));
   scrollback_.setModeLineRow(viewportRows_ - 1);
   scrollback_.setBottomAnchored(true);
@@ -188,14 +198,14 @@ bool Shell::start() {
   }
 
   if (pid == 0) {
-    // Child: become the shell. Ported from start_shell()'s fork
-    // branch. Not ported: the original's rendezvous-file pid handoff
-    // (writing its own getpid() to a temp file for the parent to poll
-    // for and read back) -- fork()'s return value already gives the
-    // parent the child pid directly and synchronously, making that
-    // dance pure legacy cruft rather than something this design still
-    // needs (this parent isn't itself the result of a double-fork, so
-    // there's no "lost the real pid" problem to work around).
+    // 子: シェルになる。start_shell()のfork分岐からの移植。移植
+    // されていない: 元々のランデブーファイルによるpidの引き渡し
+    // (親がポーリングして読み戻せるよう、自身のgetpid()を一時
+    // ファイルへ書き込む)――fork()の戻り値が既に、親へ子のpidを
+    // 直接、同期的に与えるので、その一連の動作は、この設計が依然
+    // として必要とするものではなく、純粋なlegacyの残骸である
+    // (この親自体が二重forkの結果ではないので、回避すべき「本物
+    // のpidを失った」という問題が無い)。
     close(master);
     setsid();
     int slaveFd = open(slavePath.c_str(), O_RDWR);
@@ -209,93 +219,98 @@ bool Shell::start() {
     close(slaveFd);
     resetSignalsToDefault();
     if (isBash_) {
-      // Suppresses bash's own "erase and redraw using COLUMNS bytes
-      // of padding" prompt-redisplay logic before Shell has had a
-      // chance to report the real terminal width -- ported from
-      // start_shell(); onResize()/buildSetupCommand() set the real
-      // value once the shell is actually up.
+      // Shellが実際の端末幅を報告する機会を持つ前に、bash自身の
+      // 「COLUMNSバイト分のパディングで消去して再描画する」という
+      // プロンプト再表示ロジックを抑制する――start_shell()からの
+      // 移植。onResize()/buildSetupCommand()は、シェルが実際に起動
+      // した時点で実際の値を設定する。
       setenv("COLUMNS", "1024", 1);
     }
-    // 2026-08-25 (a direct user request): ported from tcb.c's own
-    // ENV_PROG convention (progname.h's PROGNAME_UPPER, "USILIC" for
-    // this build, "U" for the legacy one after its own 2026-08-25
-    // rename) -- a real usilic INVOKED FROM WITHIN this shell (e.g.
-    // "usilic ." typed at the prompt, or a pipe into it) checks this
-    // at its own startup to detect "I'm running inside an already-
-    // live usilic's SHELL mode" and, if so, hands its arguments off to
-    // THIS process instead of opening an independent second session
-    // (see Application::pollShellHandoff()'s own comment for the
-    // receiving half). Just a boolean marker (legacy's own value here
-    // is a version string, likewise never parsed for content) -- only
-    // presence is checked.
+    // 2026-08-25(直接のユーザー依頼): tcb.c自身のENV_PROG慣習
+    // (progname.hのPROGNAME_UPPER、このビルドでは「USILIC」、
+    // legacyのものはそれ自身の2026-08-25の改名の後「U」)からの
+    // 移植――このshellの「内側から」呼び出された本物のusilic
+    // (例えばプロンプトに入力された「usilic .」、またはそれへの
+    // パイプ)は、それ自身の起動時にこれをチェックして「自分は
+    // 既に生きているusilicのSHELLモードの内側で動いている」ことを
+    // 検出し、もしそうなら、独立した2つ目のセッションを開く代わり
+    // に、この引数を「この」プロセスへ引き渡す(受け取る側について
+    // はApplication::pollShellHandoff()自身のコメント参照)。単なる
+    // 真偽値のマーカー(legacy自身のここでの値はバージョン文字列
+    // で、同様に内容としては決してパースされない)――存在だけが
+    // チェックされる。
     setenv("USILIC", "1", 1);
-    // 2026-08-25 (a direct user follow-up, ported into BOTH this
-    // binary AND legacy's own tcb/src/shell.c's start_shell() -- see
-    // main.cpp's own checkInvalidTerminalMarker() for the receiving
-    // half): USILIC above only ever proves "I'm inside a live usilic
-    // SHELL specifically" -- typing the OTHER binary's name (legacy
-    // "U") at THIS shell's prompt sees no such env var at all and
-    // falls through to launching a genuinely independent full session
-    // instead (a real report: "うっかり'usilic .'とやってしまうと例の
-    // 縦長usilicが出てしまう" -- and the reverse, U typed inside a live
-    // usilic SHELL). A first attempt at solving this cross-binary case
-    // via an unusual pty baud rate (a real termios field, otherwise
-    // completely inert for a *pseudo* terminal) turned out NOT to
-    // survive in practice -- a real PTY capture found zsh's own
-    // interactive startup silently resets it back to a normal speed
-    // before the first prompt even appears, disproving the assumption
-    // that a shell's line editor never touches that field. A second,
-    // shared, binary-agnostic env var is far simpler and, unlike
-    // termios state, is never touched by the shell itself at all: SET
-    // by BOTH binaries' own Shell start (this call, and start_shell()'s
-    // identical one), CHECKED by BOTH binaries' own main() alongside
-    // their own USILIC/U -- present but the binary's OWN var absent
-    // means "I'm in someone ELSE's live SHELL", refuse to launch a
-    // confusing independent session ("Invalid Terminal") instead.
+    // 2026-08-25(直接のユーザーによる追加依頼、この「両方の」
+    // バイナリとlegacy自身のtcb/src/shell.cのstart_shell()の両方へ
+    // 移植された――受け取る側についてはmain.cpp自身の
+    // checkInvalidTerminalMarker()参照): 上のUSILICは、「自分は
+    // 特に生きているusilicのSHELLの内側にいる」ことだけを証明する
+    // ――「この」shellのプロンプトで「別の」バイナリの名前
+    // (legacyの「U」)を入力すると、そのような環境変数は全く見えず、
+    // 代わりに本当に独立した完全なセッションを起動することへ落ちて
+    // しまう(実際の報告: "うっかり'usilic .'とやってしまうと例の
+    // 縦長usilicが出てしまう"――そしてその逆、生きているusilicの
+    // SHELLの内側でUを入力する)。この、バイナリをまたぐケースを
+    // 珍しいptyのボーレート(本物のtermiosフィールドで、それ以外
+    // では「疑似」端末に対して完全に無効)経由で解決しようとした
+    // 最初の試みは、実際には生き残らないことが判明した――実際の
+    // PTYキャプチャが、zsh自身の対話的な起動が、最初のプロンプトが
+    // 現れる前に、黙ってそれを通常の速度に戻してしまうことを発見
+    // し、シェルの行エディタがそのフィールドに決して触れないという
+    // 前提を反証した。2つ目の、共有される、バイナリに依存しない
+    // 環境変数ははるかに単純で、termiosの状態とは異なり、シェル
+    // 自体によって全く触れられることが決して無い: 両方のバイナリ
+    // 自身のShell起動(この呼び出しと、start_shell()の同一のもの)
+    // によって「設定され」、両方のバイナリ自身のmain()によって、
+    // それ自身のUSILIC/Uと並んでチェックされる――存在するが、
+    // バイナリ「自身の」変数が無いことは、「自分は誰か「他の」人の
+    // 生きたSHELLの中にいる」ことを意味し、代わりに紛らわしい独立
+    // したセッションの起動を拒否する("Invalid Terminal")。
     setenv("TCB_LIVE_SHELL", "1", 1);
     auto cargv = toArgv(options_.argv);
     execvp(cargv[0], cargv.data());
-    _exit(127);  // execvp() failed -- never fall through and keep running as usilic
+    _exit(127);  // execvp()が失敗した――決してそのまま通り抜けてusilicとして動作し続けない
   }
 
   childPid_ = pid;
   masterFd_ = master;
   fcntl(masterFd_, F_SETFL, fcntl(masterFd_, F_GETFL) | O_NONBLOCK);
 
-  // Disable ECHO (and ECHONL) before the setup command below is sent
-  // -- otherwise the KERNEL's own line-discipline echo of that
-  // multi-line burst can reach waitForHandshake()'s scan buffer near-
-  // instantly, well before the child shell has actually read and
-  // EXECUTED any of it (writing to a pty and the child reading from
-  // it are two independent, racing operations; only the kernel echo
-  // is synchronous with the write itself). Since the old sentinel
-  // command (a silent `:` no-op) produced no output of its own,
-  // waitForHandshake() had no way to tell "the sentinel TEXT is
-  // visible" apart from "the shell has actually GOTTEN to and run the
-  // sentinel line" -- it could and did report success from echo alone
-  // while the real shell was still seconds away from even starting
-  // its setup, and every prompt it went on to draw for each
-  // intervening setup line (in the shell's own STOCK format, since
-  // PROMPT/PS1 hadn't taken effect yet) then leaked into scrollback_
-  // as ordinary post-handshake content instead of being swept up by
-  // this function's own "discard everything through the sentinel"
-  // logic below. A real user report (2026-08-02, screenshot): right
-  // after SHELL started, before any real command had been run, several
-  // blank lines and a stray "user@host dir %"-style prompt fragment
-  // already sat in scrollback above where the real first prompt
-  // should have been -- reproduced and confirmed via a PTY test that
-  // dumped the raw byte stream and found the shell's own STOCK-format
-  // prompt text present well before setup had genuinely finished.
-  // buildSetupCommand()'s sentinel is now a real `echo` the shell
-  // itself must actually reach and execute to produce, which combined
-  // with ECHO being off here means the ONLY way that sentinel text can
-  // reach this read loop is genuine, sequential shell execution --
-  // exactly what this function's existing "discard up to the
-  // sentinel" logic was always designed to rely on. The shell's own
-  // line editor (bash's readline / zsh's ZLE) reconfigures the pty's
-  // echo/canonical settings for itself once it starts controlling
-  // interactive input/redraw, so this early override doesn't linger
-  // into normal post-setup interactive use.
+  // 下の設定コマンドが送信される前にECHO(とECHONL)を無効にする
+  // ――そうしないと、その複数行のまとまった送信に対するカーネル
+  // 自身の行規律のエコーが、子シェルが実際にそのどれかを読んで
+  // 「実行する」よりもずっと前に、ほぼ即座にwaitForHandshake()の
+  // 走査バッファへ到達してしまう(ptyへの書き込みと子がそこから
+  // 読むことは2つの独立した、競合する操作である。カーネルのエコー
+  // だけが書き込み自体と同期している)。古い番兵コマンド(無音の
+  // `:`という何もしないコマンド)はそれ自身の出力を全く生み出さな
+  // かったので、waitForHandshake()には「番兵『テキスト』が見えて
+  // いる」ことと「シェルが実際に番兵行に『到達し』実行した」こと
+  // を区別する方法が無かった――それは、本物のシェルがまだそのセッ
+  // トアップを開始するまで何秒もある時点で、エコーだけから成功を
+  // 報告することができ、実際にそうしていた。そして、その途中の
+  // 各セットアップ行に対してそれが描き続けたプロンプト(PROMPT/PS1
+  // がまだ効いていないので、シェル自身の「素の」フォーマットで)は
+  // その後、この関数自身の下の「番兵までの全てを捨てる」ロジックに
+  // 拾われる代わりに、通常のハンドシェイク後の内容としてscrollback_
+  // に漏れ出していた。実際のユーザー報告(2026-08-02、スクリーン
+  // ショット): SHELLが起動した直後、実際のコマンドが1つも実行され
+  // ないうちに、複数の空行と、はぐれた「user@host dir %」スタイル
+  // のプロンプトの断片が、本物の最初のプロンプトがあるべき場所より
+  // 上に、既にスクロールバックに座っていた――生のバイトストリーム
+  // をダンプし、セットアップが本当に終わるずっと前にシェル自身の
+  // 「素の」フォーマットのプロンプトテキストが存在することを発見
+  // した、PTYテストで再現・確認済み。buildSetupCommand()の番兵は
+  // 今や、シェル自身が実際に到達し実行しなければそれを生み出せない
+  // 本物の`echo`であり、ここでのECHOがオフであることと組み合わさる
+  // ことで、その番兵テキストがこの読み取りループへ到達できる唯一の
+  // 方法が、本物の、逐次的なシェルの実行であることを意味する
+  // ――まさに、この関数の既存の「番兵まで捨てる」ロジックが常に
+  // それに頼るよう設計されていたものである。シェル自身の行エディタ
+  // (bashのreadline/zshのZLE)は、対話的な入力/再描画を制御し始める
+  // と、ptyのエコー/canonicalの設定を自身のために再構成するので、
+  // この早期の上書きは通常のセットアップ後の対話的な使用には
+  // 残らない。
   struct termios setupTio;
   if (tcgetattr(masterFd_, &setupTio) == 0) {
     setupTio.c_lflag &= ~(ECHO | ECHONL);
@@ -329,19 +344,19 @@ void Shell::terminate() {
     }
     if (!reaped && kill(childPid_, 0) == 0) {
       kill(childPid_, SIGKILL);
-      // Bounded WNOHANG polling here too, not a blocking waitpid --
-      // found via a real bash test hanging indefinitely on macOS: the
-      // shell child (session leader of the pty) was occasionally
-      // still observed mid-exit (ps STAT "E", "trying to exit") well
-      // after SIGKILL, for reasons that didn't reproduce in an
-      // isolated repro of just the fork/signal/wait sequence alone --
-      // most likely some pty-controlling-terminal teardown edge case
-      // specific to running inside the larger test binary. Whatever
-      // the exact cause, a teardown path that can block its caller
-      // forever is worse than the rare leaked zombie this leaves
-      // behind (reaped by init once this process itself exits) if the
-      // kernel is unusually slow to finish reaping even after
-      // SIGKILL.
+      // ここでも、ブロッキングなwaitpidではなく、制限されたWNOHANG
+      // ポーリング――macOSで実際のbashテストが無期限にハングする
+      // ことを通じて発見された: シェルの子(ptyのセッションリーダー)
+      // は、SIGKILLのずっと後になっても、時々依然として終了途中
+      // (psのSTAT「E」、「終了しようとしている」)として観測された。
+      // 理由は、単独のfork/signal/waitシーケンスだけの孤立した再現
+      // では再現しなかった――おそらく、より大きなテストバイナリの
+      // 内側で実行することに特有の、ptyを制御している端末の後始末
+      // の何らかの端のケース。正確な原因が何であれ、呼び出し元を
+      // 永遠にブロックし得る後始末経路は、カーネルがSIGKILLの後で
+      // すら異常に回収を終えるのが遅い場合にこれが残す稀な放置
+      // ゾンビ(このプロセス自体が終了した時点でinitに回収される)
+      // よりも悪い。
       for (int i = 0; i < 100 && !reaped; i++) {
         if (waitpid(childPid_, &status, WNOHANG) > 0) reaped = true;
         else usleep(10000);
@@ -365,23 +380,24 @@ bool Shell::onPtyReadable() {
     processOutputBytes(std::string(buf, static_cast<std::size_t>(n)));
     return true;
   }
-  if (n == 0) return false;  // EOF: the shell child exited
-  if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;  // no data right now
+  if (n == 0) return false;  // EOF: シェルの子が終了した
+  if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return true;  // 今のところデータが無い
   return false;
 }
 
-// Ported from output_shell()'s main read loop (the errp[]/f.i_err/
-// f.i_errp/f.n_err byte-by-byte state machine), reworked as a
-// buffered substring match instead: markerPrefix_ (promptMark +
-// programName + ":", i.e. PS1's literal fixed prefix) is matched a
-// byte at a time against markerMatchPos_; once fully matched, bytes
-// are buffered into promptTailBuffer_ until promptMark reappears
-// (closing the PS1 = mark+program+":"+"\w\$ "+mark cycle), at which
-// point handlePromptDetected() fires with everything in between (the
-// shell's own \w-expanded cwd plus its trailing "$ "/"# "). A partial
-// match that turns out to be a false alarm is replayed byte-for-byte
-// as ordinary content instead of being lost, matching legacy's own
-// rollback behavior for the same case.
+// output_shell()のメインの読み取りループ(errp[]/f.i_err/
+// f.i_errp/f.n_errのバイトごとの状態機械)からの移植で、代わりに
+// バッファされた部分文字列のマッチとして作り直されている:
+// markerPrefix_(promptMark + programName + ":"、つまりPS1のリテラ
+// ルな固定接頭辞)は、markerMatchPos_に対してバイトごとにマッチ
+// される。完全にマッチした時点で、バイトはpromptMarkが再び現れる
+// (PS1 = mark+program+":"+"\w\$ "+markという周期を閉じる)まで
+// promptTailBuffer_にバッファされ、その時点でhandlePromptDetected()
+// が、間にあった全て(シェル自身の\wで展開されたcwdにその末尾の
+// "$ "/"# "を加えたもの)と共に発火する。誤報であることが判明した
+// 部分マッチは、失われるのではなくバイトごとにそのまま普通の内容
+// として再生される。同じケースに対するlegacy自身の巻き戻し挙動に
+// 合わせている。
 void Shell::processOutputBytes(const std::string &bytes) {
   const std::string &mark = options_.promptMark;
   for (unsigned char c : bytes) {
@@ -396,10 +412,10 @@ void Shell::processOutputBytes(const std::string &bytes) {
         promptTailBuffer_.clear();
         handlePromptDetected(tail);
       } else if (promptTailBuffer_.size() > 4096) {
-        // Safety valve: no closing mark showed up in a plausible
-        // amount of output. Give up on this being a real prompt and
-        // replay the buffered bytes as ordinary content rather than
-        // buffering forever.
+        // 安全弁: もっともらしい量の出力の中に閉じるマークが現れ
+        // なかった。これが本物のプロンプトであることを諦め、永遠
+        // にバッファし続けるのではなく、バッファされたバイトを
+        // 通常の内容として再生する。
         for (unsigned char b : promptTailBuffer_) appendBodyByte(b);
         promptTailBuffer_.clear();
         inPromptTail_ = false;
@@ -419,9 +435,9 @@ void Shell::processOutputBytes(const std::string &bytes) {
       continue;
     }
 
-    // Mismatch: the tentative match so far was a false alarm --
-    // replay it as ordinary content, then retry the current byte from
-    // position 0 (it may itself start a fresh match).
+    // 不一致: これまでの仮のマッチは誤報だった――それを通常の内容
+    // として再生し、その後現在のバイトを位置0から再試行する
+    // (それ自体が新しいマッチを始めるかもしれない)。
     for (unsigned char b : markerMatchBuffer_) appendBodyByte(b);
     markerMatchBuffer_.clear();
     markerMatchPos_ = 0;
@@ -441,7 +457,7 @@ void Shell::processOutputBytes(const std::string &bytes) {
   flushNewScrollbackLines();
 }
 
-// See the class's own declaration comment.
+// クラス自身の宣言コメント参照。
 bool Shell::consumeEscapeByte(unsigned char c) {
   switch (escapeState_) {
     case EscapeKind::None:
@@ -454,65 +470,70 @@ bool Shell::consumeEscapeByte(unsigned char c) {
       } else if (c == ']') {
         escapeState_ = EscapeKind::Osc;
       } else {
-        // A simple two-byte escape (ESC + one byte -- e.g. ESC =/>/M
-        // for keypad/cursor modes). Slightly over-eager for the rarer
-        // three-byte forms (e.g. ESC ( B charset designation), which
-        // would leave one real byte ('B') incorrectly swallowed too --
-        // an accepted, disclosed tradeoff: those don't show up in
-        // practice from a real interactive shell's OWN output, unlike
-        // CSI/OSC/bracketed-paste, which do on every session.
+        // 単純な2バイトのエスケープ(ESC + 1バイト――例えばテン
+        // キー/カーソルモード用のESC =/>/M)。より稀な3バイトの形
+        // (例えばESC ( Bという文字集合の指定)に対してはやや性急
+        // すぎ、1つの本物のバイト('B')も誤って飲み込んでしまう
+        // ――受け入れられた、公開されたトレードオフ: それらは、
+        // 全てのセッションで現れるCSI/OSC/bracketed-pasteとは異な
+        // り、実際の対話的なシェル自身の出力からは実際には現れない。
         escapeState_ = EscapeKind::None;
       }
       return true;
     case EscapeKind::Csi:
-      // Parameter bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F)
-      // keep the sequence going; a final byte (0x40-0x7E) ends it.
+      // パラメータバイト(0x30-0x3F)と中間バイト(0x20-0x2F)は
+      // シーケンスを続けさせる。最終バイト(0x40-0x7E)がそれを
+      // 終える。
       if (c >= 0x40 && c <= 0x7e) escapeState_ = EscapeKind::None;
       return true;
     case EscapeKind::Osc:
       if (c == 0x07) {
-        escapeState_ = EscapeKind::None;  // BEL terminator
+        escapeState_ = EscapeKind::None;  // BEL終端子
       } else if (c == 0x1b) {
-        escapeState_ = EscapeKind::OscEscPending;  // possibly the start of an ST (ESC \) terminator
+        escapeState_ = EscapeKind::OscEscPending;  // ST(ESC \)終端子の開始かもしれない
       }
       return true;
     case EscapeKind::OscEscPending:
-      // Whether this byte is the '\' completing a real ST or not,
-      // either way the OSC sequence is done being scanned past.
+      // このバイトが本物のSTを完成させる'\'であってもなくても、
+      // いずれにせよOSCシーケンスの走査は終わっている。
       escapeState_ = EscapeKind::None;
       return true;
   }
   return false;
 }
 
-// A real bug found via actual zsh use (2026-08-01): zsh's own ZLE
-// commonly echoes a command by drawing one character, then a literal
-// backspace, then the FULL final text -- e.g. typing "unset ..." over
-// the wire arrives as "u\x08unset ..." (draw 'u', erase it, redraw
-// the whole word) -- a completely invisible no-op on a real terminal
-// (backspace just moves the cursor back one column before the redraw
-// overwrites it), but appendBodyByte() was feeding the raw backspace
-// BYTE itself into PipeBuffer as literal content, which has no cursor
-// concept at all: it just showed up as a visible reverse-video
-// control-character glyph in the middle of otherwise-clean text.
-// pendingLine_ is a small line-assembly buffer THIS class owns
-// (separate from PipeBuffer's own internal line-splitting, which
-// still only ever sees complete, backspace/CR-resolved lines) so
-// backspace/bare-CR can be resolved BEFORE anything reaches
-// PipeBuffer, the same way a real terminal's own line buffer would:
-//   - backspace (0x08): drop the last byte already buffered for the
-//     current line (a plain ASCII-scoped pop -- not UTF-8-aware --
-//     since this exists specifically for ZLE's OWN redraw of this
-//     port's own synthetic, ASCII-only setup commands, not general
-//     multibyte content).
-//   - bare CR (\r NOT immediately followed by \n): a real "return to
-//     column 0, about to overwrite" -- discards whatever's buffered
-//     for the current line so far, same net effect as backspacing it
-//     all away, without needing to guess how many columns wide it was.
-//   - CR immediately followed by LF: an ordinary CRLF line ending,
-//     the \r itself contributes nothing and is dropped.
-//   - anything else: appended normally; a trailing '\n' flushes the
-//     now-complete line to pipeBuffer_.feed() in one call.
+// 実際のzsh使用を通じて発見された実際のバグ(2026-08-01): zsh
+// 自身のZLEは、一般に、1文字を描き、その後リテラルなバックスペー
+// スを、その後「完全な」最終テキストを描くことで、コマンドをエコー
+// する――例えば"unset ..."を入力すると、回線越しに"u\x08unset ..."
+// として届く('u'を描き、それを消し、単語全体を再描画する)――本物
+// の端末では完全に不可視の何もしないもの(バックスペースは、再描画
+// がそれを上書きする前に、単にカーソルを1列後ろへ動かすだけ)だが、
+// appendBodyByte()は、カーソルという概念を全く持たないPipeBuffer
+// に、生のバックスペース「バイト」自体をリテラルな内容として供給
+// していた: それは単に、それ以外はクリーンなテキストの真ん中に、
+// 可視の反転表示の制御文字グリフとして現れていた。pendingLine_は、
+// この「クラス」が所有する小さな行組み立てバッファである(PipeBuffer
+// 自身の内部の行分割とは別――それは依然として完全な、バックスペース/
+// CRが解決された行しか見ない)。そのため、バックスペース/素のCRは、
+// PipeBufferに何かが到達する「前に」、本物の端末自身の行バッファが
+// そうするのと同じ方法で解決できる:
+//   - バックスペース(0x08): 現在の行のために既にバッファされて
+//     いる最後のバイトを落とす(プレーンなASCII範囲でのpop――
+//     UTF-8を認識しない。これは特にZLE自身によるこの移植自身の
+//     合成された、ASCII専用のセットアップコマンドの再描画のために
+//     存在するのであり、一般的なマルチバイトの内容のためではない
+//     ため)。
+//   - 素のCR(\rの直後に\nが「続かない」): 本物の「列0へ戻り、
+//     まさに上書きしようとしている」――それが何列幅だったかを
+//     推測する必要無く、それを全てバックスペースで消し去るのと
+//     同じ正味の効果で、現在の行のためにこれまでバッファされて
+//     いたものを何であれ捨てる。
+//   - CRの直後にLFが続く: 通常のCRLFの行末、\r自体は何も貢献せず
+//     落とされる。
+//   - それ以外の何か: 通常通り追加される。末尾の'\n'は、今や完成
+//     した行を、1回の呼び出しでpipeBuffer_.feed()へフラッシュ
+//     する。
 void Shell::appendBodyByte(unsigned char c) {
   if (sawBareCr_) {
     sawBareCr_ = false;
@@ -540,11 +561,12 @@ void Shell::appendBodyByte(unsigned char c) {
   }
 }
 
-// A partial (not yet newline-terminated) line accumulated in
-// pendingLine_ needs to reach pipeBuffer_ too whenever the caller is
-// about to consult pipeBuffer_.lines()/flush() -- otherwise up to one
-// whole in-progress line of real output would simply vanish. Shared
-// by handlePromptDetected()'s own pipeBuffer_.flush() call.
+// pendingLine_に蓄積された部分的な(まだ改行で終端されていない)行
+// も、呼び出し元がpipeBuffer_.lines()/flush()をまさに参照しようと
+// している時は常にpipeBuffer_へ到達する必要がある――そうしないと、
+// 実際の出力の丸ごと1行分の進行中の内容が単に消えてしまう。
+// handlePromptDetected()自身のpipeBuffer_.flush()呼び出しで共有
+// される。
 void Shell::flushPendingLine() {
   if (pendingLine_.empty()) return;
   pipeBuffer_.feed(pendingLine_);
@@ -555,13 +577,13 @@ void Shell::flushNewScrollbackLines() {
   const auto &plines = pipeBuffer_.lines();
   if (plines.size() <= linesConsumed_) return;
   std::size_t start = linesConsumed_;
-  // pendingEchoFilter_'s own comment: drop exactly the first new line
-  // if it's the shell's own line-editor echo of the command just
-  // submitted (either the literal text, bash-style, or a bare blank
-  // line, zsh-style) -- checked/cleared here, the first point after
-  // submission where any new line becomes visible at all, so it never
-  // matters how many separate pty reads the echo happened to arrive
-  // across.
+  // pendingEchoFilter_自身のコメント参照: それがちょうど送信された
+  // ばかりのコマンドに対するシェル自身の行エディタのエコー
+  // (リテラルなテキストのbashスタイル、または裸の空行のzsh
+  // スタイルのどちらか)であれば、まさに最初の新しい行を落とす
+  // ――ここでチェック/クリアされる。送信後、何であれ新しい行が
+  // そもそも可視になる最初の地点なので、エコーがいくつの別々のpty
+  // 読み込みにまたがって届いたかは決して問題にならない。
   if (pendingEchoFilter_) {
     const std::string &first = plines[start].text;
     if (first == *pendingEchoFilter_ || first.empty()) start++;
@@ -573,59 +595,64 @@ void Shell::flushNewScrollbackLines() {
     newLines.push_back({plines[i].text, std::nullopt, std::nullopt, {}});
   linesConsumed_ = plines.size();
   scrollback_.setLines(std::move(newLines));
-  exitHistoryBrowsing();  // new output arriving means "back to live", see its own declaration comment
-  // Belt-and-suspenders, not load-bearing (2026-08-04): now that
-  // scrollback_.setBottomAnchored(true) (see the constructor's own
-  // comment) keeps the last real content line permanently pinned
-  // immediately above commandLineRow()'s own now-FIXED row, content
-  // growth here can no longer collide with or overwrite the prompt no
-  // matter how many separate flushes a command's output arrives
-  // across -- the two EARLIER, now-obsolete bugs these two calls were
-  // originally added to work around (commandLine_'s cached field going
-  // stale, then the prompt's own on-screen text getting silently
-  // overwritten by a later content redraw) can't recur structurally.
-  // Kept anyway: harmless (commandLineRow() is now a pure constant, so
-  // updateCommandLineField() just recomputes the same value; a
-  // repeated identical redrawPromptRow() is a handful of writes plus
-  // one flush -- see its own comment) and keeps this function self-
-  // contained rather than relying on callers elsewhere to redraw the
-  // prompt at the right moment.
+  exitHistoryBrowsing();  // 新しい出力の到着は「生きた状態へ戻る」ことを意味する、自身の宣言コメント参照
+  // 念のための保険であり、必須ではない(2026-08-04): 今や
+  // scrollback_.setBottomAnchored(true)(コンストラクタ自身の
+  // コメント参照)が、最後の本物の内容行を、commandLineRow()自身の
+  // 今や「固定された」行のすぐ上に永続的に固定し続けるので、ここ
+  // での内容の成長は、コマンドの出力がいくつの別々のフラッシュに
+  // またがって届こうと、もはやプロンプトと衝突したり上書きしたり
+  // することができない――この2つの呼び出しが元々回避するために
+  // 追加された、2つの「以前の」、今は時代遅れのバグ(commandLine_
+  // のキャッシュされたフィールドが古びること、その後プロンプト
+  // 自身の画面上のテキストが後の内容の再描画によって黙って上書き
+  // されること)は、構造的に再発し得ない。それでも保持されている:
+  // 無害であり(commandLineRow()は今や純粋な定数なので、
+  // updateCommandLineField()は単に同じ値を再計算するだけである。
+  // 繰り返される同一のredrawPromptRow()は、一握りの書き込みと1回の
+  // flushである――自身のコメント参照)、この関数を、他所の呼び出し
+  // 元が正しい瞬間にプロンプトを再描画することに頼るのではなく、
+  // 自己完結させたままにする。
   updateCommandLineField();
   redrawPromptRow();
 }
 
-// Appends a PERMANENT record of the just-submitted prompt+command as
-// its own scrollback_ line (with `command` attached via Line::
-// shellCommand for later resubmission) -- ported from legacy's own
-// data model: shell.c's PP chain has no separate "live prompt widget"
-// at all, the prompt row IS just another node in the SAME linked list
-// as every other line of scrollback, which is exactly what lets
-// M_kup/M_kdn move a cursor directly onto a past prompt and re-run it
-// via '\r' (see this class's own comment on ^P/^N, and Application::
-// feedShellByte()'s Enter handling). Called from submitLine() BEFORE
-// the command is actually sent, so the frozen line's own position in
-// scrollback_ matches the moment it was submitted -- any output the
-// command produces naturally appends AFTER it via the normal
-// flushNewScrollbackLines() path, same as legacy's chain growing past
-// the prompt node once the command starts producing output.
-// 2026-08-24 fix, a real user report: a long CP/MV/ARC-injected
-// command line (a full path plus a multi-byte Japanese filename easily
-// exceeds `columns_`, far more readily than anything a user would
-// hand-type) was silently CUT OFF mid-line in the live SHELL scrollback
-// (LOG mode, which reads pipeBuffer_'s own already-wrapped output, was
-// unaffected -- this line never went through pipeBuffer_ at all, see
-// below). ContentView's own row rendering has no wrapping of its own
-// -- every OTHER scrollback line reaches it already wrapped to fit
-// `columns_` by pipeBuffer_.wrapLine() (see flushNewScrollbackLines()'s
-// own comment), which this function bypassed entirely by building one
-// long ContentView::Line directly. Routes the same text through a
-// throwaway PipeBuffer instance instead, purely to reuse its already-
-// correct (and already-tested elsewhere) UTF-8/EUC-aware width-wrapping
-// -- cheaper than re-implementing character-boundary-safe wrapping a
-// second time here. `command` (for ^P/^N-cursor resubmission, see this
-// function's own class comment) is attached to EVERY wrapped segment,
-// not just the first, so resubmission works regardless of which
-// visual row the cursor happens to land on.
+// ちょうど送信されたばかりのプロンプト+コマンドの「永続的な」
+// 記録を、それ自身のscrollback_の行として(後で再送信できるよう
+// Line::shellCommand経由で`command`を付けて)追加する――legacy自身
+// のデータモデルからの移植: shell.cのPPの連鎖には別々の「生きた
+// プロンプトウィジェット」が全く無く、プロンプト行は他のスクロー
+// ルバックの行と全く「同じ」連結リストの単なるもう1つのノードに
+// 過ぎない。これがまさに、M_kup/M_kdnがカーソルを直接過去のプロン
+// プトへ動かし、'\r'経由でそれを再実行できるようにしているものと
+// 同じである(^P/^Nに関するこのクラス自身のコメント、そして
+// Application::feedShellByte()のEnter処理参照)。コマンドが実際に
+// 送信される「前に」submitLine()から呼ばれるので、凍結された行
+// 自身のscrollback_内の位置は、それが送信された瞬間に一致する
+// ――コマンドが生み出すどんな出力も、コマンドが出力を生み出し
+// 始めた時点でlegacyの連鎖がプロンプトノードを越えて成長するのと
+// 同様に、通常のflushNewScrollbackLines()経路経由で自然にその
+// 「後に」追加される。
+// 2026-08-24の修正、実際のユーザー報告: 長い、CP/MV/ARCによって
+// 注入されたコマンド行(完全なパスに複数バイトの日本語ファイル名を
+// 加えたものは、ユーザーが手で入力するどんなものよりもずっと簡単
+// に`columns_`を超える)が、生きたSHELLのスクロールバックで、行の
+// 途中で黙って切り詰められていた(pipeBuffer_自身の既に折り返された
+// 出力を読むLOGモードは影響を受けなかった――この行は下参照の通り
+// pipeBuffer_を全く通っていなかった)。ContentView自身の行の描画は
+// それ自体の折り返しを持たない――他の全てのスクロールバックの行は、
+// pipeBuffer_.wrapLine()によって既に`columns_`に収まるよう折り
+// 返された状態でそれに到達する(flushNewScrollbackLines()自身の
+// コメント参照)が、この関数はそれを完全に迂回し、1つの長い
+// ContentView::Lineを直接構築していた。代わりに、同じテキストを
+// 使い捨てのPipeBufferインスタンス経由でルーティングする。純粋に
+// その既に正しい(そして既に他所でテスト済みの)UTF-8/EUCを認識
+// する幅折り返しを再利用するため――ここで文字境界を安全にする
+// 折り返しを2度目に再実装するより安価である。`command`(^P/^N
+// カーソルによる再送信のため、この関数自身のクラスコメント参照)
+// は、最初のものだけでなく「全ての」折り返されたセグメントに付け
+// られるので、カーソルがたまたまどの視覚的な行に着地しようと再
+// 送信が動作する。
 void Shell::freezePromptLine(const std::string &command) {
   PipeBuffer wrapper(options_.encoding, columns_, /*maxBytes=*/1 << 20);
   wrapper.feed(promptPlain_ + command + "\n");
@@ -633,26 +660,27 @@ void Shell::freezePromptLine(const std::string &command) {
   std::vector<ContentView::Line> newLines(scrollback_.lines());
   for (const auto &wrapped : wrapper.lines()) newLines.push_back({wrapped.text, command, std::nullopt, {}});
   scrollback_.setLines(std::move(newLines));
-  exitHistoryBrowsing();  // a freshly-submitted command means "back to live", see its own declaration comment
+  exitHistoryBrowsing();  // 新しく送信されたコマンドは「生きた状態へ戻る」ことを意味する、自身の宣言コメント参照
 }
 
-// Clears every piece of per-session state before start() spawns a new
-// child -- ported from legacy's own do_shell(): once the underlying
-// shell process (and, with it, output_shell()'s own relay process)
-// has died, the NEXT entry into SHELL allocates a genuinely fresh PP
-// chain (print_shell()'s own "SHELL version..." banner line + first
-// empty prompt) rather than continuing to append to the old one. A
-// real user request (2026-08-02): "exit[Enter]でSHELLが終了し、再起動
-// では再び冒頭行から始まる...このほうがSHELLの存在意義がはっきり
-// する" -- the user explicitly preferred this over the port's own
-// design (Shell as a single long-lived session surviving across ^G)
-// once they compared it against the legacy CUI side by side, precisely
-// because it makes clear SHELL is a thin, purpose-built launcher for
-// file operations/commands, not a persistent terminal replacement.
-// Without this, calling start() again after terminate() would spawn a
-// new child while every other member here (scrollback_'s lines_,
-// pipeBuffer_'s partially-wrapped state, the markerPrefix_ match
-// state, etc.) still held onto the dead session's own leftovers.
+// start()が新しい子を生成する前に、セッションごとの状態の全ての
+// 部分をクリアする――legacy自身のdo_shell()からの移植: 基礎となる
+// シェルプロセス(そしてそれと共にoutput_shell()自身の中継プロセス)
+// が死んだ時点で、SHELLへの「次の」入場は、古いものへ追記し続け
+// るのではなく、本当に新しいPPの連鎖(print_shell()自身の
+// "SHELL version..."バナー行+最初の空のプロンプト)を割り当てる。
+// 実際のユーザー依頼(2026-08-02): "exit[Enter]でSHELLが終了し、
+// 再起動では再び冒頭行から始まる...このほうがSHELLの存在意義が
+// はっきりする"――ユーザーは、legacyのCUIと並べて比較した後、
+// これをこの移植自身の設計(^Gをまたいで生き残る単一の長命な
+// セッションとしてのShell)より明確に好んだ。まさに、それがSHELL
+// を、永続的な端末の代替ではなく、ファイル操作/コマンドのための
+// 薄い、目的に特化した起動器であることを明確にするためである。
+// これが無いと、terminate()の後に再びstart()を呼ぶと、ここの他の
+// 全てのメンバー(scrollback_のlines_、pipeBuffer_の部分的に折り
+// 返された状態、markerPrefix_のマッチの状態等)が依然として死んだ
+// セッション自身の残骸を保持したまま、新しい子を生成することに
+// なる。
 void Shell::resetSessionState() {
   pipeBuffer_ = PipeBuffer(options_.encoding, columns_, options_.scrollbackBudget);
   pendingLine_.clear();
@@ -673,35 +701,35 @@ int Shell::promptGeneration() const { return promptGeneration_; }
 
 void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
   promptGeneration_++;
-  // The shell's own \w (bash) / %~ (csh) expansion, followed by its
-  // literal prompt character ('$'/'#'/'%') and one space -- strip
-  // that trailing two bytes to recover a clean directory string. This
-  // is a textual heuristic on the shell's own rendered prompt text
-  // (there's no side channel to ask the shell for its cwd directly),
-  // same approach legacy's write_shell() took -- but built with
-  // std::string instead of write_shell()'s fixed buffer + strcpy,
-  // which is what made that function's overlapping-copy bug possible
-  // in the first place (see CLAUDE.md history).
+  // シェル自身の\w(bash)/%~(csh)展開に、そのリテラルなプロンプト
+  // 文字('$'/'#'/'%')と1つの空白が続く――クリーンなディレクトリ
+  // 文字列を取り戻すため、その末尾の2バイトを取り除く。これは、
+  // シェル自身の描画されたプロンプトテキストに対するテキストの
+  // ヒューリスティックである(シェルに直接cwdを尋ねる裏チャネルは
+  // 無い)。legacyのwrite_shell()が取ったのと同じアプローチだが、
+  // write_shell()の固定バッファ+strcpy(そもそもそれが、あの関数の
+  // 重複コピーのバグを可能にしたもの、CLAUDE.mdの履歴参照)の
+  // 代わりにstd::stringで構築されている。
   std::string dir = tailBeforeMark;
   if (dir.size() >= 2 && dir.back() == ' ' &&
       (dir[dir.size() - 2] == '$' || dir[dir.size() - 2] == '#' || dir[dir.size() - 2] == '%')) {
     dir.erase(dir.size() - 2);
   }
-  // 2026-08-17 fix: zsh's default PS1 (`%~`) -- and bash's `\w` too --
-  // abbreviate the cwd with a leading '~' whenever it's $HOME itself or
-  // a subdirectory of it (e.g. "~" or "~/git/usilic"), which used to be
-  // stored into currentDirectory_ completely unexpanded. A real report
-  // ("SHELLで'less CLA'^I（補完が利かない）", comparing directly against
-  // legacy's own working completion) traced back to setCompletionProvider()'s
-  // completeFilesystemPath() calling std::filesystem::directory_iterator()
-  // on this raw "~"-prefixed string, which isn't a real filesystem path
-  // (tilde expansion is a SHELL convention, never something the OS or
-  // std::filesystem understands) -- silently returning zero candidates
-  // every time the shell's cwd was anywhere under $HOME, which in
-  // practice is nearly always. Expanded here, the one place every
-  // consumer of currentDirectory_ (completion, the mode-line's own
-  // trailing2 display, directoryChangedCallback_) already funnels
-  // through.
+  // 2026-08-17の修正: zshのデフォルトPS1(`%~`)――そしてbashの
+  // `\w`も――は、cwdがそれ自体$HOMEであるかそのサブディレクトリで
+  // ある時は常に、それを先頭の'~'で省略する(例えば「~」や
+  // 「~/git/usilic」)。これは以前、完全に展開されないままcurrentDirectory_
+  // に保存されていた。実際の報告("SHELLで'less CLA'^I（補完が利か
+  // ない）"、legacy自身の動作する補完と直接比較して)が、
+  // setCompletionProvider()のcompleteFilesystemPath()が、この生の
+  // 「~」接頭辞付きの文字列に対してstd::filesystem::
+  // directory_iterator()を呼んでいたことを突き止めた。それは本物の
+  // ファイルシステムパスではない(チルダ展開はシェルの慣習であり、
+  // OSやstd::filesystemが理解するものでは決してない)――シェルのcwd
+  // が$HOMEの下のどこか(実際にはほぼ常にそうである)にある時は常に、
+  // 黙って0個の候補を返していた。ここで展開され、currentDirectory_
+  // の全ての消費者(補完、モードライン自身のtrailing2表示、
+  // directoryChangedCallback_)が既に漏斗のように通る唯一の場所。
   if (const char *home = std::getenv("HOME"); home && *home) {
     std::string homeStr = home;
     if (dir == "~") {
@@ -719,18 +747,18 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
   pipeBuffer_.flush();
   flushNewScrollbackLines();
 
-  // 2026-08-17 change: the visible prompt prefix is "usilic-1.5b:",
-  // NOT options_.programName (still just "usilic") -- programName
-  // itself is left untouched since it also feeds markerPrefix_ (the
-  // internal PTY-output detection sentinel, an unrelated concept from
-  // what's actually drawn on screen) and Shell::programName() (the
-  // mode-line's own "(zsh)"/"(bash)" badge, the CHILD shell's name,
-  // not this program's). Requested directly, and bold now covers the
-  // whole "usilic-1.5b:" including the colon (previously only the
-  // name itself was bold, leaving the colon plain) so the LOG feature
-  // (docs/CHANGES.md, LOG section) can later distinguish a prompt line
-  // recorded to the log from a user manually typing the same plain-text
-  // string at a prompt.
+  // 2026-08-17の変更: 可視のプロンプト接頭辞は「usilic-1.5b:」で
+  // あり、options_.programName(依然として単に「usilic」)では
+  // 「ない」――programName自体は手を付けられないままにされている。
+  // それはmarkerPrefix_(内部のPTY出力検出の番兵、画面に実際に
+  // 描かれるものとは無関係な概念)とShell::programName()(モード
+  // ラインの「(zsh)」/「(bash)」バッジ、この移植ではなく「子」の
+  // シェルの名前)にも供給されるため。直接依頼された通り、太字は
+  // 今やコロンを含む「usilic-1.5b:」全体を覆う(以前は名前自体だけ
+  // が太字で、コロンはプレーンなままだった)。これにより、LOG機能
+  // (docs/CHANGES.md、LOGセクション)は後で、ログに記録された
+  // プロンプト行を、ユーザーがプロンプトで同じプレーンテキストの
+  // 文字列を手で入力したものと区別できる。
   static const std::string kPromptDisplayName = "usilic-1.5b";
   promptPlain_ = kPromptDisplayName + ":" + tailBeforeMark;
   updateCommandLineField();
@@ -741,27 +769,28 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
   redrawPromptRow();
 }
 
-// Right after SHELL starts (or scrollback_ is otherwise short of a
-// full viewport), ANY scrollback_ mutation -- freezePromptLine(),
-// moveUp()/moveDown() (^P/^N), goToBottom() -- runs a FULL
-// ContentView::redraw() that unconditionally clears every row from 0
-// to height_-1, including commandLineRow() (scrollback_'s own LAST
-// content row, which is exactly where the live prompt lives) --
-// ContentView has no line to draw there once lines_.size() is less
-// than a full viewport, so that row is simply left blank. A plain
-// commandLine_.redraw() only repaints the EDITABLE FIELD portion
-// (from promptCol onward, see updateCommandLineField()) -- the bold
-// PROMPT PREFIX TEXT ITSELF is drawn separately, once, only inside
-// handlePromptDetected(), so nothing else was ever re-issuing it. A
-// real user report (2026-08-02): "最初の起動直後および^Pで SHELLプロン
-// プトが消える" -- reproduced via PTY for both cases: right after
-// ensureShellActive()'s own scrollback_.redraw() call ran AFTER the
-// prompt had already been drawn during the handshake, and after ^P's
-// moveUp() (which now drives scrollback_'s own cursor directly, see
-// Application::feedShellByte()'s own comment) triggered the same
-// full redraw with a short scrollback. Every call site that follows a
-// scrollback_ mutation with a bare commandLine_.redraw() needed to
-// become this instead.
+// SHELLが起動した直後(またはそれ以外の理由でscrollback_が完全な
+// ビューポートに満たない間)、どんなscrollback_の変更(freezePromptLine()、
+// moveUp()/moveDown()(^P/^N)、goToBottom())も、行0からheight_-1
+// までの全ての行を無条件にクリアする「完全な」ContentView::
+// redraw()を実行する。これにはcommandLineRow()(scrollback_自身の
+// 最後の内容行、まさに生きたプロンプトが住む場所)も含まれる
+// ――lines_.size()が完全なビューポート未満になった時点で、
+// ContentViewはそこに描くべき行を持たないので、その行は単に空白の
+// ままにされる。プレーンなcommandLine_.redraw()は、「編集可能な
+// フィールド」の部分だけを塗り直す(promptCol以降、
+// updateCommandLineField()参照)――太字の「プロンプト接頭辞
+// テキスト自体」は、handlePromptDetected()の内側でだけ、別に、
+// 一度だけ描画されるので、他の何もそれを再発行することは決して
+// 無かった。実際のユーザー報告(2026-08-02): "最初の起動直後
+// および^Pで SHELLプロンプトが消える"――両方のケースがPTY経由で
+// 再現された: ensureShellActive()自身のscrollback_.redraw()呼び出し
+// が、プロンプトがハンドシェイク中に既に描画された「後」に実行
+// された直後、そして^Gのmoveup()(今はscrollback_自身のカーソルを
+// 直接駆動する、Application::feedShellByte()自身のコメント参照)
+// が、短いスクロールバックで同じ完全な再描画を引き起こした後。
+// scrollback_の変更の後に素のcommandLine_.redraw()を行う全ての
+// 呼び出し箇所は、代わりにこれになる必要があった。
 void Shell::redrawPromptRow() {
   int promptRow = commandLineRow();
   display_.moveCursor(promptRow, 0);
@@ -778,12 +807,12 @@ void Shell::updateCommandLineField() {
 }
 
 int Shell::commandLineRow() const {
-  // A fixed constant again (2026-08-04 revision) -- see the
-  // constructor's own comment for why this is safe now: scrollback_'s
-  // own bottom-anchoring guarantees the last real content line is
-  // ALWAYS immediately above this row, so nothing here needs to track
-  // how much content currently exists the way the previous (2026-08-03)
-  // content-relative revision did.
+  // 再び固定された定数(2026-08-04の改訂)――なぜこれが今安全なのか
+  // についてはコンストラクタ自身のコメント参照: scrollback_自身の
+  // 下端固定は、最後の本物の内容行が常にこの行のすぐ上にあること
+  // を保証するので、以前の(2026-08-03の)内容相対の改訂がそうして
+  // いたように、現在どれだけの内容が存在するかを追跡する必要が
+  // ここには全く無い。
   if (viewportRows_ <= 1) return 0;
   return viewportRows_ - 2;
 }
@@ -802,91 +831,94 @@ int Shell::displayWidth(const std::string &text) const {
   return width;
 }
 
-// Ported from output_shell()'s PS1/eos setup line. Not ported: the
-// PAGER export (legacy pointed it at the tcb binary itself, via
-// s_S(S_tcb), to integrate with tcb's own internal pager mode -- no
-// equivalent exists yet in this C++ port for it to point at, so it's
-// omitted rather than pointing at something meaningless; revisit once
-// a pager mode exists).
-// Ported from output_shell()'s PS1/eos setup line -- but ALL of its
-// statements below, including the sentinel echo, are chained into
-// ONE logical shell command via backslash-newline continuation,
-// matching legacy's own single semicolon-chained line (shell.c),
-// rather than being sent as several independent \n-terminated
-// commands (as an earlier version of this method did). The two
-// historical bugs that shaped this method turned out to sit on
-// different axes and both had to be satisfied at once:
-//   - A real bug found via actual zsh use (2026-08-01): a single
-//     PHYSICAL line long enough to exceed ~80 columns (mark+
-//     programName+the whole assignment easily does) WRAPS before the
-//     shell's own line editor (zsh's ZLE, bash's readline too) ever
-//     gets to execute it, and a wrapped input line's own redraw logic
-//     moves the cursor around and selectively overwrites what's
-//     already on screen -- fundamentally incompatible with this
-//     class's own byte consumer (appendBodyByte() -> PipeBuffer),
-//     which only understands "append this byte," with no concept of
-//     cursor movement/overwrite. Symptom: doubled-up command-text
-//     fragments (e.g. "uunset", "tt PROMPT") in scrollback.
-//   - A real user report (2026-08-02, screenshot): right after SHELL
-//     started, before any real command had been run, several blank
-//     lines and a stray "user@host dir %"-style prompt fragment
-//     already sat in scrollback above where the real first prompt
-//     should have been. Root cause: sending each statement as its own
-//     separate \n-terminated command makes each one a fully separate
-//     INTERACTIVE command, and an interactive shell draws a fresh
-//     prompt after every one of them -- including the early ones,
-//     before PROMPT/PS1 below has taken effect, so those used the
-//     shell's own stock/unmodified prompt format.
-//     processOutputBytes()'s markerPrefix_ scan only recognizes
-//     prompts in THIS class's own mark+prog+":" format, so every one
-//     of those early wrong-format prompt draws fell through and
-//     leaked into scrollback as literal text instead of being
-//     recognized and consumed as a prompt.
-// Backslash-continuation resolves both at once: each individual
-// PHYSICAL line stays short (first bug avoided), and the shell reads
-// the whole thing as ONE logical command before executing any of it
-// or drawing a fresh prompt (second bug avoided) -- exactly one
-// prompt redraw happens for the entire setup, and it happens only
-// after PROMPT/PS1 has already taken effect.
+// output_shell()のPS1/eosセットアップ行からの移植。移植されて
+// いない: PAGERのexport(legacyはそれを、s_S(S_tcb)経由でtcb
+// バイナリ自体へ向け、tcb自身の内部ページャーモードと統合していた
+// ――このC++移植には、それが向かうべき等価物がまだ存在しないので、
+// 意味の無いものへ向けるのではなく省略されている。ページャーモード
+// が存在するようになったら再検討する)。
+// output_shell()のPS1/eosセットアップ行からの移植だが、下の番兵の
+// echoを含む「全ての」文が、(この方法の以前のバージョンがそうして
+// いたようないくつかの独立した\n終端のコマンドとして送られるので
+// はなく)legacy自身の単一のセミコロンで連結された行(shell.c)に
+// 合わせて、バックスラッシュ改行の継続を介して「1つの」論理的な
+// シェルコマンドへ連結される。この方法を形作った2つの歴史的な
+// バグは、異なる軸に位置していることが判明し、両方を同時に満たさ
+// なければならなかった:
+//   - 実際のzsh使用を通じて発見された実際のバグ(2026-08-01):
+//     約80桁を超えるほど長い単一の「物理」行(mark+programName+
+//     代入全体は簡単にそうなる)は、シェル自身の行エディタ(zshの
+//     ZLE、bashのreadlineも)がそれを実行するに至る「前に」
+//     「折り返される」。そして折り返された入力行自身の再描画ロジ
+//     ックはカーソルを動かし、既に画面上にあるものを選択的に上書
+//     きする――「このバイトを追加する」ことだけを理解し、カーソル
+//     移動/上書きという概念を全く持たない、このクラス自身のバイト
+//     消費者(appendBodyByte() -> PipeBuffer)とは根本的に非互換
+//     である。症状: スクロールバック内の重複したコマンドテキスト
+//     の断片(例えば「uunset」、「tt PROMPT」)。
+//   - 実際のユーザー報告(2026-08-02、スクリーンショット): SHELLが
+//     起動した直後、実際のコマンドが1つも実行されないうちに、
+//     複数の空行と、はぐれた「user@host dir %」スタイルのプロンプ
+//     トの断片が、本物の最初のプロンプトがあるべき場所より上に
+//     既にスクロールバックに座っていた。根本原因: 各文をそれ自身
+//     の別々の\n終端のコマンドとして送ることは、それぞれを完全に
+//     別々の「対話的な」コマンドにし、対話的なシェルはそれらの
+//     全ての後に新しいプロンプトを描く――下のPROMPT/PS1がまだ効い
+//     ていない初期のものも含めて。そのためそれらはシェル自身の
+//     素の/変更されていないプロンプトフォーマットを使っていた。
+//     processOutputBytes()のmarkerPrefix_の走査は、「この」クラス
+//     自身のmark+prog+":"フォーマットのプロンプトだけを認識する
+//     ので、それらの初期の間違ったフォーマットのプロンプトの描画
+//     はそれぞれ、プロンプトとして認識され消費される代わりに、
+//     通り抜けてリテラルなテキストとしてスクロールバックへ漏れ
+//     出していた。
+// バックスラッシュによる継続は両方を一度に解決する: 個々の「物理」
+// 行はそれぞれ短いままであり(最初のバグを回避)、シェルはそれの
+// どれかを実行したり新しいプロンプトを描いたりする前に、それ全体
+// を「1つの」論理的なコマンドとして読む(2番目のバグを回避)
+// ――セットアップ全体に対して正確に1回のプロンプト再描画が起き、
+// それはPROMPT/PS1が既に効いた後にだけ起きる。
 std::string Shell::buildSetupCommand() const {
   const std::string &mark = options_.promptMark;
   const std::string &prog = options_.programName;
-  // A real `echo` here, not the silent `:` no-op this used to be --
-  // see start()'s own comment (where ECHO is now disabled on the pty
-  // before this is sent) for why: with kernel input-echo off, the
-  // sentinel text can now ONLY reach waitForHandshake()'s read loop by
-  // the shell actually EXECUTING this line and printing it as real
-  // output, which is exactly the guarantee "discard everything through
-  // the sentinel" needs to safely sweep up every earlier setup
-  // statement's own (possibly stale-prompt-format) output too. `$$`
-  // (the shell's own PID, always equal to childPid_ since this child
-  // is fork/exec'd directly with no intermediate wrapper) rather than
-  // childPid_'s digits spelled out literally -- a real user report
-  // (2026-08-02, screenshot) traced a persistent leaked "#eos<pid>#"
-  // line in scrollback right after SHELL started back to exactly this:
-  // if the shell hasn't yet reasserted its own control over the pty's
-  // echo/canonical settings (start()'s ECHO-disable happens once,
-  // early, and evidently doesn't always survive the child's own
-  // startup), the literal, unexpanded COMMAND TEXT sent here --
-  // "echo '#eos12345#'" -- gets echoed back BEFORE the shell ever
-  // executes it, and that echoed text itself already contains the
-  // exact sentinel substring "#eos12345#" (just wrapped in `echo '...'`
-  // rather than being real output). waitForHandshake()'s scan matches
-  // on this far-too-early false positive instead of the shell's own
-  // later, genuine output. Spelled out with `$$` instead, the RAW
-  // command text sent here literally contains "#eos$$#" -- no run of
-  // digits at all -- so it can never accidentally contain the fully-
-  // expanded sentinel string itself; only the shell's OWN evaluation
-  // of `$$` (which happens only once this line is actually executed,
-  // by definition after everything before it in the same chained
-  // command) can produce a match. Double-quoted rather than single-
-  // quoted specifically so `$$` still expands (`#` inside stays safe
-  // from comment-parsing either way, being mid-word inside quotes).
+  // ここでは本物の`echo`であり、これが以前そうだった無音の`:`という
+  // 何もしないコマンドではない――理由については(これが送られる前に
+  // ptyでECHOが今は無効にされている場所である)start()自身のコメント
+  // 参照: カーネルの入力エコーがオフの状態では、番兵のテキストが
+  // waitForHandshake()の読み取りループへ到達できる方法は、シェルが
+  // 実際にこの行を「実行し」それを本物の出力として印字することだけ
+  // であり、それこそがまさに「番兵までの全てを捨てる」が、それ以前
+  // の全てのセットアップ文自身の(古びたプロンプトフォーマットかも
+  // しれない)出力も安全に拾い上げるために必要な保証である。
+  // childPid_の桁をリテラルに綴り出すのではなく`$$`(シェル自身の
+  // PID、この子は中間のラッパー無しで直接fork/execされるので、常に
+  // childPid_と等しい)を使う――実際のユーザー報告(2026-08-02、
+  // スクリーンショット)が、SHELLが起動した直後にスクロールバック
+  // に残る、しつこく漏れ続ける「#eos<pid>#」という行を、まさに
+  // これへ辿り着いた: シェルがまだptyのecho/canonicalの設定に対する
+  // 自身の制御を再主張していない場合(start()のECHO無効化は一度、
+  // 早期に起こり、明らかに子自身の起動を常に生き延びるわけではない)、
+  // ここで送られるリテラルな、展開されていないコマンドテキスト
+  // ――「echo '#eos12345#'」――は、シェルがそれを実行する「前に」
+  // エコーバックされ、そのエコーされたテキスト自体が既に、正確な
+  // 番兵の部分文字列「#eos12345#」を(本物の出力としてではなく
+  // 単に`echo '...'`に包まれた形で)含んでいる。waitForHandshake()
+  // の走査は、シェル自身の後の、本物の出力の代わりに、この、早すぎ
+  // る誤検出にマッチしてしまう。代わりに`$$`で綴ることで、ここで
+  // 送られる「生の」コマンドテキストはリテラルに「#eos$$#」を含む
+  // ――数字の連続は全く無い――ので、それが完全に展開された番兵の
+  // 文字列自体を偶然含むことは決して無い。シェル「自身の」`$$`の
+  // 評価(この行が実際に実行された時点でだけ起き、定義上、同じ連結
+  // されたコマンド内でそれより前にある全ての後になる)だけがマッチ
+  // を生み出せる。シングルクオートではなく特にダブルクオートで
+  // 囲む。それにより`$$`は依然として展開される(内側の`#`は、
+  // クオートの中の単語の途中にあるので、どちらにせよコメントの
+  // パースからは安全なままである)。
   std::string eos = "echo \"#eos$$#\"";
-  // Joins statements into one logical command: " ; \<newline>" between
-  // each pair (statement separator + line continuation, so the shell
-  // keeps reading instead of executing/prompting after each physical
-  // line) and a plain newline after the last one to actually submit it.
+  // 文を1つの論理的なコマンドへ結合する: 各ペアの間に" ; \<改行>"
+  // (文の区切り+行の継続。これによりシェルは各物理行の後に実行/
+  // プロンプトするのではなく読み続ける)、そして最後の文の後には、
+  // 実際にそれを送信するためのプレーンな改行。
   auto chain = [](const std::vector<std::string> &statements) {
     std::string result;
     for (std::size_t i = 0; i < statements.size(); i++) {
@@ -906,29 +938,31 @@ std::string Shell::buildSetupCommand() const {
     });
   }
   if (isZsh_) {
-    // zsh's OWN prompt-expansion sequences (%~ for cwd, %# for the
-    // trailing '#'-if-root/'%'-otherwise prompt character) are the
-    // SAME ones already used below for the tcsh/csh fallback -- those
-    // aren't csh-specific syntax, just prompt-expansion tokens zsh
-    // happens to share with tcsh. What zsh does NOT share is tcsh's
-    // `set VAR = value` assignment form (zsh's own `set` builtin is
-    // for shell OPTIONS, not variables) -- so this needs its own
-    // branch for the ASSIGNMENT syntax alone. precmd_functions=() and
-    // RPROMPT='' silence any theme's own dynamic prompt hooks (oh-my-
-    // zsh/powerlevel10k/starship precmd hooks, right-side prompt
-    // text) that would otherwise still inject ANSI/Unicode content
-    // around this synthetic prompt, matching bash's `unset
-    // PROMPT_COMMAND` above. IGNORE_EOF is zsh's `set -o ignoreeof`
-    // equivalent (^D shouldn't be able to kill the shell child out
-    // from under this port). PROMPT_EOL_MARK='' disables zsh's own
-    // "previous output didn't end with a newline" indicator (its
-    // real, documented default behavior -- a reverse-video '%'
-    // padded to the terminal width -- found via actual use: even
-    // with consumeEscapeByte() now stripping the raw ANSI codes
-    // around it, the '%' GLYPH ITSELF is real printable content, not
-    // an escape sequence, so stripping alone can't remove it; turning
-    // the feature off at the source is simpler than trying to also
-    // recognize and hide zsh's own specific eol-mark text).
+    // zsh自身のプロンプト展開シーケンス(cwd用の%~、末尾のroot
+    // なら'#'/それ以外なら'%'というプロンプト文字用の%#)は、下の
+    // tcsh/cshフォールバックで既に使われているのと「同じ」もので
+    // ある――それらはcsh固有の構文ではなく、単にzshがたまたま
+    // tcshと共有しているプロンプト展開トークンである。zshが共有
+    //「しない」のは、tcshの`set VAR = value`という代入の形(zsh
+    // 自身の`set`組み込みコマンドはシェル「オプション」用であり、
+    // 変数用ではない)である――そのため、これは「代入」構文だけの
+    // ためにそれ自身の分岐を必要とする。precmd_functions=()と
+    // RPROMPT=''は、上のbashの`unset PROMPT_COMMAND`に合わせて、
+    // そうしないとこの合成プロンプトの周りにANSI/Unicodeの内容を
+    // 依然として注入するであろう、どんなテーマ自身の動的なプロンプ
+    // トフック(oh-my-zsh/powerlevel10k/starshipのprecmdフック、
+    // 右側のプロンプトテキスト)も黙らせる。IGNORE_EOFはzshの
+    // `set -o ignoreeof`の等価物である(^Dはこの移植の足元でシェル
+    // の子を殺せてはならない)。PROMPT_EOL_MARK=''は、zsh自身の
+    // 「直前の出力が改行で終わらなかった」という指標(その実際の、
+    // 文書化されたデフォルトの挙動――端末幅にパディングされた反転
+    // 表示の'%')を無効にする――実際の使用を通じて発見された:
+    // consumeEscapeByte()が今その周りの生のANSIコードを取り除いて
+    // いても、'%'という「グリフ自体」は、エスケープシーケンスでは
+    // なく実際の印字可能な内容なので、取り除くだけではそれを削除
+    // できない。その機能を発生源で無効にする方が、zsh自身の特定の
+    // eolマークのテキストを認識して隠すことも試みるよりも単純で
+    // ある。
     return chain({
         "unset PROMPT_COMMAND 2>/dev/null",
         "precmd_functions=()",
@@ -941,15 +975,16 @@ std::string Shell::buildSetupCommand() const {
         eos,
     });
   }
-  // csh/tcsh fallback -- unlike bash/zsh above, NOT verified against a
-  // real csh/tcsh session (no evidence either was ever exercised in
-  // practice); kept as the pre-existing best-effort default rather
-  // than guessed at further. Uses the same real-`echo` sentinel and
-  // same chained-into-one-command approach as bash/zsh above now (a
-  // bare "#eos<pid>#" comment line would print nothing at all with
-  // ECHO disabled -- see start()'s own comment -- and csh/tcsh's `#`
-  // is unconditionally a comment character, so it couldn't lean on a
-  // `:`-style no-op prefix either way).
+  // csh/tcshのフォールバック――上のbash/zshとは異なり、実際の
+  // csh/tcshセッションに対して検証されていない(どちらかが実際に
+  // 行使されたことがある証拠は無い)。これ以上推測するのではなく、
+  // 既存のベストエフォートのデフォルトとして保たれている。今、
+  // 上のbash/zshと同じ本物の`echo`の番兵と同じ1コマンドへの連結
+  // アプローチを使う(裸の「#eos<pid>#」というコメント行は、ECHOが
+  // 無効な状態では全く何も印字しないだろう――start()自身のコメント
+  // 参照――そしてcsh/tcshの`#`は無条件にコメント文字なので、
+  // どちらにせよ`:`スタイルの何もしない接頭辞に頼ることもできな
+  // かった)。
   return chain({
       "set prompt = \"" + mark + prog + ":%~%# " + mark + "\"",
       "set ignoreeof",
@@ -957,62 +992,64 @@ std::string Shell::buildSetupCommand() const {
   });
 }
 
-// One-shot startup handshake: discard everything up through our own
-// "#eos<pid>#" sentinel, exactly like output_shell()'s pre-main-loop
-// scan -- the terminal emulator (e.g. GNOME Terminal/VTE's
-// /etc/profile.d/vte.sh) may have already auto-drawn the shell's very
-// first prompt, using its OWN prompt-hook mechanism as it stood
-// *before* the setup command above unset/cleared it, before the
-// shell ever reads that command; without skipping past it, that
-// leftover output would otherwise be misparsed as real prompt/
-// content bytes by the main loop. See CLAUDE.md history for why a
-// bare '#' isn't enough (it can turn up by coincidence in that
-// leftover output) -- this pid-based sentinel is unique enough to
-// avoid that for every shell family buildSetupCommand() now echoes it
-// for (bash/zsh/csh-tcsh all alike), not just bash.
+// 一度きりの起動時ハンドシェイク: output_shell()のメインループ前
+// の走査とまさに同様、自身の「#eos<pid>#」番兵までの全てを捨てる
+// ――端末エミュレータ(例えばGNOME Terminal/VTEの
+// /etc/profile.d/vte.sh)は、シェルがその設定コマンドを読む前に、
+// 上の設定コマンドがそれをunset/クリアする「前に」立っていた
+// それ自身のプロンプトフックの仕組みを使って、既にシェルのまさに
+// 最初のプロンプトを自動で描いていたかもしれない。それを飛び越えて
+// スキップしないと、その残された出力は、そうしないとメインループ
+// によって本物のプロンプト/内容のバイトとして誤ってパースされて
+// しまう。なぜ裸の'#'では不十分なのか(それはその残された出力に
+// 偶然現れることがある)についてはCLAUDE.mdの履歴参照――このpidに
+// 基づく番兵は、bashだけでなく、buildSetupCommand()が今それを
+// echoする全てのシェルの系統(bash/zsh/csh-tcsh全て同様)に対して
+// それを避けるのに十分ユニークである。
 //
-// A real bug found via actual zsh use (2026-08-01): once the sentinel
-// is found, everything read here up to THAT POINT is correctly
-// discarded (never reaches appendBodyByte()) -- but a single read()
-// often returns the sentinel and the start of the very NEXT real
-// prompt in the SAME chunk (the shell doesn't pause between finishing
-// the setup line and drawing its next prompt). The old code discarded
-// the WHOLE scan buffer unconditionally on a match, silently dropping
-// that trailing real content -- often the leading ESC byte of the
-// next prompt's own escape sequences, leaving just the REST of a
-// sequence (e.g. "[27m" with no ESC in front) to flow into
-// processOutputBytes() as literal garbage text. The bytes after the
-// sentinel are fed through normally instead of discarded -- but see
-// below for why "found the sentinel" alone isn't yet "safe to feed
-// what follows."
+// 実際のzsh使用を通じて発見された実際のバグ(2026-08-01): 番兵が
+// 見つかった時点で、ここでその「地点」までに読まれた全ては正しく
+// 捨てられる(appendBodyByte()に決して到達しない)――しかし1回の
+// read()は、しばしば番兵と、まさに「次の」本物のプロンプトの開始を
+// 「同じ」チャンクで返す(シェルはセットアップ行を終えることと
+// 次のプロンプトを描くことの間で一時停止しない)。古いコードは
+// マッチ時に走査バッファ「全体」を無条件に捨てており、その末尾の
+// 本物の内容――しばしば次のプロンプト自身のエスケープシーケンス
+// の先頭のESCバイト――を黙って落とし、シーケンスの「残り」だけ
+// (例えば前にESCの無い「[27m」)をリテラルなゴミテキストとして
+// processOutputBytes()へ流していた。番兵の後のバイトは、捨てられる
+// のではなく通常通り供給される――しかし、なぜ「番兵を見つけた」
+// ことだけではまだ「その後に続くものを供給しても安全」ではないの
+// かについては下参照。
 //
-// A real user report (2026-08-02, screenshot): even after the sentinel
-// itself became a real, shell-emitted `echo` (see buildSetupCommand()'s
-// own comment) and ECHO was disabled on the pty (see start()'s own
-// comment), a short leaked fragment (zsh's own "> " PS2 continuation-
-// prompt indicator, from ZLE still mid-read of the backslash-continued
-// setup command at the exact moment its OWN read() call returned) could
-// still occasionally end up in scrollback_ right after SHELL started.
-// The sentinel's own echo proves the shell has EXECUTED the setup
-// command, but says nothing about whether every byte the shell is
-// about to write as a RESULT of that (its real first prompt, in the
-// now-correctly-configured mark+prog+":" format) has already arrived
-// in this read loop's buffer -- reads and writes on the two ends of a
-// pty are independent, racing operations. Rather than trust the first
-// read() that contains the sentinel, this now keeps draining
-// (bounded by the same maxAttempts loop) until a full 20ms poll
-// interval passes with nothing more arriving (a "settle" gap, cheap to
-// detect since the shell's own post-setup burst is always contiguous
-// and fast), and then looks for markerPrefix_ (mark+prog+":", the
-// fixed, unmistakable prefix of the REAL prompt this class already
-// knows how to recognize during normal operation) within everything
-// that arrived after the sentinel -- feeding only from THAT point
-// onward, so any stray PS2/other fragment between the sentinel and the
-// real prompt is discarded rather than leaking into scrollback as
-// literal text. If markerPrefix_ never turns up before the settle gap
-// (e.g. an unexpected prompt format), everything after the sentinel is
-// fed through unfiltered, same as this function did before this fix --
-// not a regression, just no longer the ONLY behavior.
+// 実際のユーザー報告(2026-08-02、スクリーンショット): 番兵自体が
+// 本物の、シェルが発する`echo`になり(buildSetupCommand()自身の
+// コメント参照)、ptyでECHOが無効にされた(start()自身のコメント
+// 参照)後でさえ、短い漏れた断片(zsh自身の「> 」PS2継続プロンプト
+// 表示、ZLEがバックスラッシュ継続されたセットアップコマンドを
+// それ自身のread()呼び出しが返ったまさにその瞬間にまだ読み込み中
+// だったことによる)が、SHELLが起動した直後、依然として時々
+// scrollback_に入り込んでしまうことがあった。番兵自身のechoは
+// シェルがセットアップコマンドを「実行した」ことを証明するが、
+// シェルがその「結果として」(今や正しく設定されたmark+prog+":"
+// フォーマットでの、本物の最初のプロンプト)書こうとしている全ての
+// バイトが、この読み取りループのバッファに既に到着しているかどう
+// かについては何も言わない――ptyの両端での読み取りと書き込みは
+// 独立した、競合する操作である。番兵を含む最初のread()を信頼する
+// のではなく、これは今、それ以上何も届かないまま20msのポーリング
+// 間隔が丸ごと過ぎるまで(「落ち着く」隙間、シェル自身のセット
+// アップ後のまとまった送信は常に連続的で速いので検出は安価である)、
+// (同じmaxAttemptsループによって制限されて)排出し続け、その後
+// markerPrefix_(mark+prog+":"、通常の動作中にこのクラスが既に
+// 認識する方法を知っている「本物の」プロンプトの、固定された、
+// 見間違えようのない接頭辞)を、番兵の後に届いた全てのものの中で
+// 探す――「その」地点以降からだけ供給するので、番兵と本物の
+// プロンプトの間のはぐれたPS2/他の断片は、リテラルなテキストとして
+// スクロールバックへ漏れ出すのではなく捨てられる。markerPrefix_が
+// 落ち着く隙間より前に一度も現れなければ(例えば予期しないプロンプ
+// トフォーマット)、番兵の後の全ては、この修正の前にこの関数が
+// していたのと同じように、フィルタされずに供給される――退行では
+// なく、単に「唯一の」挙動ではなくなっただけである。
 bool Shell::waitForHandshake() {
   std::string sentinel = "#eos" + std::to_string(childPid_) + "#";
   std::string scan;
@@ -1029,7 +1066,7 @@ bool Shell::waitForHandshake() {
       return false;
     }
     if (rc == 0) {
-      if (sentinelFound) break;  // settle gap: the post-sentinel burst has finished arriving
+      if (sentinelFound) break;  // 落ち着く隙間: 番兵後のまとまった送信が届き終わった
       continue;
     }
     if (pfd.revents & (POLLHUP | POLLERR)) return false;
@@ -1072,11 +1109,11 @@ void Shell::submitLine() {
   if (!trimmed.empty()) {
     freezePromptLine(trimmed);
 
-    // Trailing pipeline stage's program token (split on '|', take the
-    // last stage, then its first whitespace-delimited word). Ported
-    // from input_shell()'s command-dispatch logic; the PROGRAM-table
-    // lookup itself (find_prog()) is not ported here -- see the class
-    // comment.
+    // 末尾のパイプライン段のプログラムトークン('|'で分割し、
+    // 最後の段を取り、その最初の空白区切りの単語を取る)。
+    // input_shell()のコマンドディスパッチロジックからの移植。
+    // PROGRAMテーブルの検索自体(find_prog())はここでは移植されて
+    // いない――クラスコメント参照。
     std::size_t pipePos = trimmed.find_last_of('|');
     std::string lastStage = (pipePos == std::string::npos) ? trimmed : trimmed.substr(pipePos + 1);
     std::size_t s = lastStage.find_first_not_of(' ');
@@ -1086,7 +1123,7 @@ void Shell::submitLine() {
 
     bool handled = programLauncher_ && !programToken.empty() && programLauncher_(programToken, trimmed);
     if (!handled) {
-      pendingEchoFilter_ = trimmed;  // see its own comment -- consumed by flushNewScrollbackLines()
+      pendingEchoFilter_ = trimmed;  // 自身のコメント参照――flushNewScrollbackLines()によって消費される
       writeToPty(trimmed + "\n");
       if (historyRecorder_) historyRecorder_(trimmed);
     }
@@ -1109,7 +1146,7 @@ void Shell::onTab() {
   std::string partial = text.substr(wordStart, static_cast<std::size_t>(cursor) - wordStart);
 
   auto candidates = completionProvider_(partial);
-  if (candidates.size() != 1) return;  // ambiguous/none: a future PathCompleter's job to resolve
+  if (candidates.size() != 1) return;  // 曖昧/無し: 将来のPathCompleterが解決する仕事
   const std::string &full = candidates[0];
   if (full.size() <= partial.size()) return;
   commandLine_.paste(full.substr(partial.size()));
@@ -1132,22 +1169,23 @@ void Shell::writeToPty(const std::string &bytes) {
       continue;
     }
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
-      // masterFd_ is non-blocking (see start()), and right after
-      // fork() the pty's input queue can reject writes outright until
-      // the child has actually opened the slave side -- found via a
-      // real bash test hanging/failing start() outright: the initial
-      // PS1 setup command silently lost every byte to this exact
-      // race, so bash came up with its stock prompt and the "#eos
-      // <pid>#" handshake sentinel never appeared. Wait briefly for
-      // the pty to accept more and retry, rather than silently
-      // dropping the rest of the write on the first transient EAGAIN.
+      // masterFd_はノンブロッキングであり(start()参照)、fork()の
+      // 直後、子が実際にスレーブ側を開くまで、ptyの入力キューは
+      // 書き込みを完全に拒否することがある――実際のbashテストが
+      // start()を完全にハング/失敗させることを通じて発見された:
+      // 最初のPS1セットアップコマンドが、まさにこの競合で全ての
+      // バイトを黙って失い、bashはその素のプロンプトのまま起動し、
+      // 「#eos<pid>#」ハンドシェイクの番兵は一度も現れなかった。
+      // 最初の一時的なEAGAINで書き込みの残りを黙って落とすのでは
+      // なく、ptyがもっと受け入れるようになるのを短く待って再試行
+      // する。
       struct pollfd pfd {
         masterFd_, POLLOUT, 0
       };
       poll(&pfd, 1, 100);
       continue;
     }
-    break;  // a real write error -- give up
+    break;  // 本物の書き込みエラー――諦める
   }
 }
 
@@ -1176,7 +1214,7 @@ bool Shell::busy() const { return busy_; }
 void Shell::onResize(int rows, int columns) {
   viewportRows_ = rows;
   columns_ = columns;
-  scrollback_.setViewport(0, std::max(1, rows - 2));  // see the constructor's own comment
+  scrollback_.setViewport(0, std::max(1, rows - 2));  // コンストラクタ自身のコメント参照
   scrollback_.setModeLineRow(rows - 1);
   updateCommandLineField();
   if (masterFd_ >= 0) {
