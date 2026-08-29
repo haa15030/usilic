@@ -31,51 +31,54 @@
 
 namespace fm {
 
-// Application-level command, already resolved from a raw keypress --
-// what get_m()'s giant switch(m) case label meant, without any of the
-// byte/escape-sequence recognition that produced it (KeyInput's job)
-// or any of the ~50 case labels this port hasn't reached yet.
+// アプリケーションレベルのコマンド、既に生のキー入力から解決済み
+// ――get_m()の巨大なswitch(m)のcaseラベルが意味していたものを、
+// それを生み出したバイト/エスケープシーケンスの認識(KeyInputの
+// 仕事)や、この移植がまだ到達していない約50個のcaseラベルの
+// どれも無しで。
 enum class Command {
   None,
   MoveUp,
   MoveDown,
-  // "Move window one line up/down" (usilicrc's own K-8/K-9 description,
-  // bound to 'j'/'k' -- see ContentView::scrollLineDown()'s own
-  // comment for exactly how this differs from MoveUp/MoveDown, which
-  // usilicrc separately describes as "move CURSOR one line" and binds
-  // to ^N/^P instead).
+  // 「ウィンドウを1行上下へ動かす」(usilicrc自身のK-8/K-9の説明、
+  // 'j'/'k'に紐付く――usilicrcが別に「カーソルを1行動かす」と説明
+  // し、代わりに^N/^Pに紐付けているMoveUp/MoveDownと、正確にどう
+  // 異なるかについてはContentView::scrollLineDown()自身のコメント
+  // 参照)。
   ScrollLineDown,
   ScrollLineUp,
   PageUp,
   PageDown,
   Enter,
   Back,
-  // ';'/':' -- confirmed directly by the user (2026-08-03, after an
-  // initial wrong guess that this was some kind of "related file"
-  // jump): these are literally shorthand for Back+MoveDown+Enter and
-  // Back+MoveUp+Enter respectively, not a distinct feature of their
-  // own. Kept as their own Command values (rather than expanding
-  // dispatchByte() inline) so handleCommand()'s existing single place
-  // for "what does this Command actually do" stays the only place
-  // that needs to know the 3-step composition -- matches this port's
-  // existing pattern for other composite actions (e.g.
-  // StartFileInput/StartDirectoryInput sharing startPathInputPrompt()).
-  // 2026-08-16: reachable from ':' , not ';' -- see resolveCommand()'s
-  // own comment for why (a real user correction swapping which
-  // character maps to which of these two, not a change to either
-  // command's own Back+Move+Enter body).
+  // ';'/':' -- ユーザーによって直接確認済み(2026-08-03、最初は
+  // これが何らかの「関連ファイル」ジャンプだという誤った推測が
+  // あった後): これらは文字通りそれぞれBack+MoveDown+Enterと
+  // Back+MoveUp+Enterの略記であり、それら自身の独立した機能では
+  // ない。(dispatchByte()をインラインで展開するのではなく)それ
+  // 自身のCommand値として保たれている。これにより、handleCommand()
+  // の既存の「このCommandは実際に何をするか」という単一の場所が、
+  // この3段階の合成を知る必要のある唯一の場所であり続ける――他の
+  // 複合アクション(例えばStartFileInput/StartDirectoryInputが
+  // startPathInputPrompt()を共有する)に対するこの移植の既存の
+  // パターンに合わせている。2026-08-16: ';'ではなく':'から到達
+  // 可能(理由についてはresolveCommand()自身のコメント参照――実際の
+  // ユーザーによる訂正で、これら2つのどちらの文字がどちらへ対応
+  // するかが入れ替わった。どちらのコマンド自身のBack+Move+Enter
+  // の本体への変更でもない)。
   JumpNext,      // ':' : Back, MoveDown, Enter
   JumpPrevious,  // ';' : Back, MoveUp, Enter
   StartFgrep,
   StartEgrep,
   StartCutFixed,
   StartCutRegex,
-  // K-35/K-36 (^Jb / ^J^B, M_fcut2/M_fcut -- CUT's "regular file"
-  // variant): same idea as StartCutFixed/StartCutRegex, but reachable
-  // from Directory mode on the SELECTED entry directly, without first
-  // opening it in File mode (CutMode's own class comment already
-  // flagged this exact shortcut as unwired future work). See
-  // startCutFilePrompt()'s own comment.
+  // K-35/K-36(^Jb / ^J^B、M_fcut2/M_fcut――CUTの「通常ファイル」
+  // バリアント): StartCutFixed/StartCutRegexと同じ発想だが、まず
+  // Fileモードでそれを開くことなく、Directoryモードから「選択
+  // された」エントリに対して直接到達可能(CutMode自身のクラス
+  // コメントが既にまさにこのショートカットを配線されていない
+  // 将来の課題として印を付けていた)。startCutFilePrompt()自身の
+  // コメント参照。
   StartCutFileFixed,
   StartCutFileRegex,
   StartMan,
@@ -85,82 +88,85 @@ enum class Command {
   StartLocate,
   LocateUpdateDb,
   StartShell,
-  // '.' -- a real user request, tied directly to the ^X^M CP/MV/RM
-  // flow (^Xc/^Xm/^Xr arm an operation, then the user marks targets
-  // before ^X^M): originally "「.」（現在行をマークしたのち下へ(「,」
-  // は上へ)のマクロ）" (mark-then-advance/retreat, see MarkAndAdvance/
-  // MarkAndRetreat's own comment below for that original pair, now
-  // relocated to '['/']'). 2026-08-23 (docs/CHANGES.md item 415, the
-  // Space-QuickLook experiment's own follow-up): a direct user
-  // request repurposed '.' itself to plain toggle-no-move ("代わりに
-  // '.'を選択/解除のトグル（行の移動は無し）としたい") once Space
-  // stopped doing the marking job in armed CP/MV/RM/ARC (see
-  // Command::QuickLook's own comment) -- '.' and ^Space (0x80) are now
-  // two keys for this exact same ToggleMark action.
+  // '.' -- 実際のユーザー依頼、^X^M CP/MV/RMフロー(^Xc/^Xm/^Xrが
+  // 操作を準備し、その後ユーザーが^X^Mの前に対象をマークする)に
+  // 直接結び付いている: 元々は"「.」（現在行をマークしたのち下へ
+  // (「,」は上へ)のマクロ）"(マークしてから前進/後退、この元々の
+  // ペアについては下のMarkAndAdvance/MarkAndRetreat自身のコメント
+  // 参照。今は'['/']'へ再配置されている)。2026-08-23
+  // (docs/CHANGES.md項目415、Space-QuickLook実験自身の追加依頼):
+  // 直接のユーザー依頼が、SpaceがCP/MV/RM/ARCの準備済み状態での
+  // マーキングの仕事をやめた後(Command::QuickLook自身のコメント
+  // 参照)、'.'自体を単純な移動無しのトグルへ再利用した("代わりに
+  // '.'を選択/解除のトグル（行の移動は無し）としたい")――'.'と
+  // ^Space(0x80)は今やまさにこの同じToggleMarkアクションに対する
+  // 2つのキーである。
   ToggleMark,
-  // '['/']' macros (RELOCATED 2026-08-23 from '.'/',' -- see
-  // ToggleMark's own comment on why those two were freed up; the
-  // user's own words: "代わりのマクロとしては暫定'['および']'にして
-  // みて"): toggles the current entry's mark (same as ToggleMark) and
-  // then advances/retreats the cursor, letting the user mark a run of
-  // entries with one key repeated instead of ToggleMark+^N
-  // alternating. Original request this pair was ported from: "コピー
+  // '['/']'マクロ(2026-08-23に'.'/','から「再配置」された――なぜ
+  // その2つが解放されたのかについてはToggleMark自身のコメント参照。
+  // ユーザー自身の言葉: "代わりのマクロとしては暫定'['および']'に
+  // してみて"): 現在のエントリのマークを(ToggleMarkと同様に)切り
+  // 替え、その後カーソルを前進/後退させる。これにより、ユーザーは
+  // ToggleMark+^Nを交互に使う代わりに、1つのキーを繰り返して一連の
+  // エントリをマークできる。このペアが移植された元々の依頼: "コピー
   // したいディレクトリを選択しようにも[return]でそこへ移動してしまっ
   // てはどうにもならない".
-  MarkAndAdvance,  // ']' -- also PagerNextFile's own alias while a pager
-                   // file list is active in File mode, see its comment
-  MarkAndRetreat,  // '[' -- also PagerPreviousFile's own alias, same as above
-  // 2026-08-25 (a direct user request, "旧版にない機能として...less同様
-  // 'n''p''x''f'"): navigates a File-mode "pager file list" -- the set
-  // of paths usilic was launched with on the command line (2 or more
-  // positional file arguments; startPagerFileList()'s own comment).
-  // Mnemonics: n/p step one file forward/back (like less's own :n/:p),
-  // x/f jump to the first/last file (x matches less's own :x "examine
-  // the first file"; f -- "final" -- has no less equivalent, a genuine
-  // usilic-only addition per the user's own request for a symmetric
-  // counterpart). ']'/'[' (MarkAndAdvance/MarkAndRetreat above) double
-  // as the SAME next/previous action while in File mode with a pager
-  // list active -- see their own handleCommand() branch -- following
-  // the same up/down convention DirectoryMode's own marking already
-  // established for that pair, rather than reusing ';'/':' (already
-  // bound to the UNRELATED JumpNext/JumpPrevious "Back+move+select"
-  // macros, see resolveCommand()'s own comment). A no-op everywhere
-  // else (no pager list active, or fewer than 2 files), same as '.'/
-  // '['/']' being inert outside Directory/Archive.
-  PagerNextFile,      // 'n', and ']' while a pager list is active
-  PagerPreviousFile,  // 'p', and '[' while a pager list is active
+  MarkAndAdvance,  // ']' -- Fileモードでページャーのファイル一覧が
+                   // 有効な間はPagerNextFile自身のエイリアスでもある、
+                   // 自身のコメント参照
+  MarkAndRetreat,  // '[' -- 同様に、PagerPreviousFile自身のエイリアスでもある
+  // 2026-08-25(直接のユーザー依頼、"旧版にない機能として...less同様
+  // 'n''p''x''f'"): Fileモードの「ページャーファイル一覧」――
+  // usilicがコマンドラインで起動された時の一連のパス(2つ以上の
+  // 位置ファイル引数。startPagerFileList()自身のコメント参照)――
+  // を移動する。ニーモニック: n/pは1ファイル前後へ移動する(less
+  // 自身の:n/:pのように)。x/fは最初/最後のファイルへジャンプする
+  // (xはless自身の:x「最初のファイルを調べる」に一致する。f――
+  // 「final」――にはlessの等価物は無く、対称な対応物というユーザー
+  // 自身の依頼による純粋なusilic限定の追加)。']'/'['(上の
+  // MarkAndAdvance/MarkAndRetreat)は、ページャー一覧が有効な状態で
+  // Fileモードにいる間、「同じ」次/前のアクションを兼ねる――自身の
+  // handleCommand()の分岐参照――DirectoryMode自身のマーキングが
+  // そのペアに対して既に確立した同じ上下の慣習に従っており、
+  // (既に無関係なJumpNext/JumpPreviousの「Back+move+select」マクロ
+  // に紐付いている、resolveCommand()自身のコメント参照)';'/':'を
+  // 再利用するのではない。他のどこでも(ページャー一覧が有効でない、
+  // またはファイルが2個未満)何もしない。'.'/[/]'がDirectory/
+  // Archiveの外側では無効なのと同様。
+  PagerNextFile,      // 'n'、そしてページャー一覧が有効な間は']'も
+  PagerPreviousFile,  // 'p'、そしてページャー一覧が有効な間は'['も
   PagerFirstFile,     // 'x'
   PagerLastFile,      // 'f'
   StartCopy,
   StartMove,
   StartRemove,
-  // K-71 (^X^M, M_dest): shows the destination/confirm prompt for
-  // whichever of StartCopy/StartMove/StartRemove (or their Interactive
-  // siblings below) most recently armed an operation -- see
-  // PendingCpMvRmOperation's own comment.
+  // K-71(^X^M、M_dest): StartCopy/StartMove/StartRemove(または下の
+  // それらの対話的な兄弟)のうち最も最近操作を準備したものに対して、
+  // 移動先/確認プロンプトを表示する――PendingCpMvRmOperation自身の
+  // コメント参照。
   StartDestinationPrompt,
   StartExit,
   StartDu,
   StartDirectoryHistory,
   StartCommandHistory,
-  // K-49 (plain ^R, M_hist, " HISTORY"): NOT a way to jump to a
-  // DIFFERENT category from outside a list browser (an earlier
-  // version of this port mistook it for exactly that, aliasing it to
-  // StartDirectoryHistory -- wrong, per a direct 2026-08-04 user
-  // clarification and a re-read of menu.c's m_list(), which is purely
-  // context-sensitive: `is_name(ap->name, M_lfile) -> T_hfile`, etc).
-  // Toggles the CURRENTLY-OPEN ListBrowser (whichever RingCategory --
-  // FILE/DIR/MAN/LOCATE/FGREP/EGREP/COMMAND) between its two display
-  // modes: normal (sorted alphabetically, de-duplicated -- de-dup
-  // already came for free from History::pushRecent()'s own
-  // first-occurrence-wins policy, but sorting did not) and
-  // "HISTORY" (raw chronological access order, oldest at the top,
-  // NEWEST AT THE BOTTOM ROW -- confirmed directly by the user: "FILE
-  // （DIR）は今までアクセスしたファイル（ディレクトリ）をソートした
-  // のち重複を排除した一覧、HISTORYはアクセスした順（最下行が最
-  // 新）"). A no-op (returns false) outside ListBrowser mode, matching
-  // m_list()'s own `echo_mess(S_errf)` when ^R doesn't apply to the
-  // current context -- see Application::toggleListBrowserHistory().
+  // K-49(素の^R、M_hist、" HISTORY"): リストブラウザの外側から
+  // 「別の」カテゴリへジャンプする方法では「ない」(この移植の以前
+  // のバージョンはまさにそれだと誤解し、StartDirectoryHistoryへ
+  // エイリアスしていた――直接の2026-08-04のユーザーによる明確化と、
+  // 純粋に文脈に依存するmenu.cのm_list()の読み直しによると誤り:
+  // `is_name(ap->name, M_lfile) -> T_hfile`等)。「現在開いている」
+  // ListBrowser(どのRingCategoryであれ――FILE/DIR/MAN/LOCATE/
+  // FGREP/EGREP/COMMAND)を、その2つの表示モードの間で切り替える:
+  // 通常(アルファベット順にソート、重複排除――重複排除は
+  // History::pushRecent()自身の最初の出現優先ポリシーから既に無料
+  // で得られていたが、ソートは得られていなかった)と「HISTORY」
+  // (生の時系列アクセス順、最古が上、「最新は最下行」――ユーザーに
+  // よって直接確認済み: "FILE（DIR）は今までアクセスしたファイル
+  // （ディレクトリ）をソートしたのち重複を排除した一覧、HISTORYは
+  // アクセスした順（最下行が最新）")。ListBrowserモードの外側では
+  // 何もしない(falseを返す)。^Rが現在の文脈に当てはまらない時の
+  // m_list()自身の`echo_mess(S_errf)`に合わせている――Application::
+  // toggleListBrowserHistory()参照。
   ToggleHistoryView,
   StartEdit,
   StartHelp,
@@ -168,239 +174,249 @@ enum class Command {
   StopMacroRecord,
   PlayMacro,
   ToggleGuiMode,
-  // K-3 (^L, M_clear): force a full redraw of the active view.
+  // K-3(^L、M_clear): アクティブなビューの完全な再描画を強制する。
   Redraw,
-  // K-12/K-13 (ESC< / ESC>, M_head/M_tail): jump to the first/last
-  // line -- ContentView::goToTop()/goToBottom() already existed but
-  // were never wired to a key (a real report: usilicrc's own KEY-mode
-  // help screen, compared line-by-line against this port's key table,
-  // caught several such already-implemented-but-unwired/never-ported
-  // bindings at once -- see CLAUDE.md).
+  // K-12/K-13(ESC< / ESC>、M_head/M_tail): 最初/最後の行へジャンプ
+  // する――ContentView::goToTop()/goToBottom()は既に存在していたが
+  // 一度もキーに配線されていなかった(実際の報告: usilicrc自身の
+  // KEYモードのヘルプ画面を、この移植のキーテーブルと1行ずつ比較
+  // したところ、このような既に実装済みだが配線されていない/決して
+  // 移植されていないキー割り当てをいくつも一度に発見した――
+  // CLAUDE.md参照)。
   GoToTop,
   GoToBottom,
-  // K-70 ('q', M_quit): exits immediately (no y/n confirmation,
-  // unlike StartExit/^X^C) -- usilicrc documents this as pager-only
-  // ("Exit tcb (pager)"), so handleCommand() only honors it outside
-  // Directory mode, matching that scoping (a bare 'q' in Directory
-  // mode remains a no-op, same as before this was added).
+  // K-70('q'、M_quit): (StartExit/^X^Cとは異なり)y/nの確認無しで
+  // 即座に終了する――usilicrcはこれをページャー専用("Exit tcb
+  // (pager)")として文書化しているので、handleCommand()はDirectory
+  // モードの外側でだけこれを尊重し、そのスコープに合わせている
+  // (Directoryモードでの素の'q'は、これが追加される前と同様、
+  // 何もしないままである)。
   QuitPager,
-  // K-25 (^Oh, M_hs): toggles Display::smoothScrollEnabled() --
-  // ported from usilicrc's own SCROLL section ("When the flag is set,
-  // tcb window will scroll within the range above bottom line" --
-  // exactly Display's hardware scroll-region path, which already
-  // excludes the mode-line row, see moveUp()/moveDown()'s own
-  // comments). Display::setSmoothScrollEnabled()/History's own
-  // smoothScrollEnabled_ field already existed (parsed from/
-  // serialized to the history file's TCB trailer line) but neither
-  // was ever wired to a key OR applied to the Display at startup --
-  // both gaps fixed together here, since a toggle key is meaningless
-  // if the persisted value it toggles never actually reaches the
-  // Display in the first place.
+  // K-25(^Oh、M_hs): Display::smoothScrollEnabled()を切り替える
+  // ――usilicrc自身のSCROLLセクション("When the flag is set, tcb
+  // window will scroll within the range above bottom line"――まさに
+  // moveUp()/moveDown()自身のコメントにあるように既にモードライン
+  // 行を除外しているDisplayのハードウェアスクロール領域経路)から
+  // の移植。Display::setSmoothScrollEnabled()/History自身の
+  // smoothScrollEnabled_フィールドは既に存在していた(履歴ファイル
+  // のTCBトレーラー行からパース/そこへシリアライズされる)が、
+  // どちらも一度もキーに配線されておらず、起動時にDisplayへ適用
+  // されてもいなかった――両方のギャップがここで一緒に修正されて
+  // いる。トグルキーは、それが切り替える永続化された値がそもそも
+  // 実際にDisplayに到達しないなら意味を成さないため。
   ToggleScrollMode,
-  // K-45/K-47 (^Xf / ^Xd, M_lfile2/M_ldir2 -- "Input file/directory
-  // name"): prompts for a path and opens it, landing in File or
-  // Directory mode depending on what PathResolver says it actually
-  // is. Two distinct keys/commands (matching usilicrc's own two K-
-  // numbers, and two likely-different prompt labels down the line)
-  // but one shared execution path, since resolving "what kind of
-  // thing is this path" doesn't depend on which key started the
-  // prompt -- see startPathInputPrompt()'s own comment. The "Select"
-  // counterparts (K-46/K-48, ^X^F/^X^D, M_lfile/M_ldir) are a LIST-
-  // based completion picker, not a plain text prompt, and are NOT
-  // covered here -- future work, see CLAUDE.md.
+  // K-45/K-47(^Xf / ^Xd、M_lfile2/M_ldir2――「Input file/directory
+  // name」): パスを尋ねてそれを開き、PathResolverが実際にそれが
+  // 何であると言うかに応じてFileまたはDirectoryモードに着地する。
+  // (usilicrc自身の2つのK番号、そして今後おそらく異なる2つの
+  // プロンプトラベルに合わせて)2つの別々のキー/コマンドだが、
+  // 「このパスがどんな種類のものか」を解決することはどちらのキー
+  // がプロンプトを開始したかに依存しないので、1つの共有された
+  // 実行経路である――startPathInputPrompt()自身のコメント参照。
+  // 「Select」の対応物(K-46/K-48、^X^F/^X^D、M_lfile/M_ldir)は、
+  // 単なるテキストプロンプトではなく「一覧」ベースの補完ピッカー
+  // であり、ここではカバーされていない――将来の課題、CLAUDE.md
+  // 参照。
   StartFileInput,
   StartDirectoryInput,
-  // K-26 (^Ol, M_ls): toggles DirectoryMode::filenameOnlyMode() --
-  // ported from usilicrc's own LS section ("When the flag is set,
-  // file-selector will display only filename"). Gated to Directory
-  // mode only, matching K-26's own "file-selector" scoping (no
-  // meaning in File/Man/etc content views). Persisted the same way as
-  // ToggleScrollMode/K-25.
+  // K-26(^Ol、M_ls): DirectoryMode::filenameOnlyMode()を切り替える
+  // ――usilicrc自身のLSセクション("When the flag is set, file-
+  // selector will display only filename")からの移植。Directory
+  // モードだけにゲートされており、K-26自身の「file-selector」
+  // スコープに合わせている(File/Man等の内容ビューでは意味を成さ
+  // ない)。ToggleScrollMode/K-25と同じ方法で永続化される。
   ToggleLsMode,
-  // K-72/K-73 (^X^Y / ^X^N, "Mark all"/"Clear all" for CP/MV/RM/ARC):
-  // bulk variants of ToggleMark -- mark every entry in the current
-  // listing, or drop every mark, in one keystroke instead of pressing
-  // ^Space on each one. Same Directory-mode-only scoping as ToggleMark
-  // itself.
+  // K-72/K-73(^X^Y / ^X^N、CP/MV/RM/ARC向け「Mark all」/
+  // 「Clear all」): ToggleMarkの一括版――^Spaceを1つずつ押す代わりに、
+  // 1回のキー入力で現在の一覧の全エントリをマークするか、全マーク
+  // を落とす。ToggleMark自体と同じDirectoryモード限定のスコープ。
   MarkAll,
   ClearAllMarks,
-  // K-51/K-53/K-55/K-57 (^X^Kc/^X^Km/^X^Kr/^X^Ka, "with SHELL window")
-  // REMOVED 2026-08-23 (a direct user request, once CP/MV/RM/ARC's
-  // execution was unified to always run via the real SHELL session --
-  // see executeCopy()'s own comment for CP/MV/RM, executeArchiveExtract()'s
-  // for ARC -- these became functionally identical duplicates of
-  // StartCopy/StartMove/StartRemove/StartArchiveExtract).
-  // K-17 (^X^W, M_w4): writes the active view's full content to
-  // wFilePath_ (see the constructor's own comment) -- ported from
-  // menu.c's own `send_pp(hp->bp->pp, "a")` (append mode).
+  // K-51/K-53/K-55/K-57(^X^Kc/^X^Km/^X^Kr/^X^Ka、"with SHELL
+  // window")は2026-08-23に削除された(直接のユーザー依頼、CP/MV/
+  // RM/ARCの実行が常に本物のSHELLセッション経由で実行されるよう
+  // 統一された時点で――CP/MV/RMについてはexecuteCopy()自身のコメ
+  // ント、ARCについてはexecuteArchiveExtract()自身のコメント参照
+  // ――これらは、StartCopy/StartMove/StartRemove/
+  // StartArchiveExtractと機能的に同一の重複になった)。
+  // K-17(^X^W、M_w4): アクティブなビューの完全な内容をwFilePath_
+  // へ書き込む(コンストラクタ自身のコメント参照)――menu.c自身の
+  // `send_pp(hp->bp->pp, "a")`(追記モード)からの移植。
   SaveBufferToFile,
-  // K-61/K-62 (^J. / ^J,, M_chdir2/M_chdir): switches to Shell mode
-  // (starting it if not already running) and immediately submits a
-  // generated command -- ported from menu.c's own m_w() (M_chdir2/
-  // M_chdir cases): "cd '<directory>'" (the CURRENT DirectoryMode
-  // directory, matching legacy's own lp->dir) for K-61, the literal
-  // "ls -l" usilicrc's own K-62 description names for K-62. Both
-  // auto-submit (legacy's own generated strings end in \r) --
-  // K-63/K-64 below deliberately don't.
+  // K-61/K-62(^J. / ^J,、M_chdir2/M_chdir): Shellモードへ切り替え
+  // (まだ実行されていなければ起動する)、生成されたコマンドを即座に
+  // 送信する――menu.c自身のm_w()(M_chdir2/M_chdirケース)からの
+  // 移植: K-61には"cd '<directory>'"(legacy自身のlp->dirに合わせた
+  // 「現在の」DirectoryModeのディレクトリ)、K-62には
+  // usilicrc自身のK-62の説明が名付けるリテラルの"ls -l"。両方とも
+  // 自動送信される(legacy自身の生成される文字列は\rで終わる)
+  // ――下のK-63/K-64は意図的にそうしない。
   ShellChangeDirectory,
   ShellRunLsL,
-  // K-63/K-64 (^Jw / ^J^W, M_w/M_w2): switches to Shell mode and
-  // PRE-FILLS (does NOT submit) the command line -- ported from
-  // menu.c's own m_w() (M_w/M_w2 cases). K-63 inserts "echo <name>"
-  // (the currently selected/open item's name -- legacy writes it to
-  // a temp file first only to sidestep 1990s shell-quoting concerns
-  // that don't apply to this port's in-memory LineEditor, see
-  // shellInsertName()'s own comment). K-64 inserts "cat <wFilePath_>"
-  // after actually writing the active view's full content there
-  // (same target file as K-17/SaveBufferToFile) -- unlike K-63,
-  // there's no way around a real file here: `cat` needs one to read.
+  // K-63/K-64(^Jw / ^J^W、M_w/M_w2): Shellモードへ切り替え、
+  // コマンド行を「事前に埋める」(送信は「しない」)――menu.c自身の
+  // m_w()(M_w/M_w2ケース)からの移植。K-63は"echo <name>"(現在
+  // 選択/開かれている項目の名前――legacyはまず一時ファイルに
+  // それを書き込むが、それは単に、この移植のインメモリの
+  // LineEditorには当てはまらない1990年代のシェルクオートの懸念を
+  // 回避するためである。shellInsertName()自身のコメント参照)を
+  // 挿入する。K-64は、実際にアクティブなビューの完全な内容をそこへ
+  // (K-17/SaveBufferToFileと同じ対象ファイルへ)書き込んだ後、
+  // "cat <wFilePath_>"を挿入する――K-63とは異なり、ここには本物の
+  // ファイルを回避する方法が無い: `cat`は読むために1つ必要とする。
   ShellInsertName,
   ShellInsertBufferContent,
-  // K-19 (^O^K, M_m): jumps to the parent of the current directory.
-  // See DirectoryMode::goToParent()'s own comment.
+  // K-19(^O^K、M_m): 現在のディレクトリの親へジャンプする。
+  // DirectoryMode::goToParent()自身のコメント参照。
   GoToParentDirectory,
-  // K-18 (^J^K, "Go to file-selector"): from File mode, jumps straight
-  // to a real `ls` listing of the CURRENT file's own containing
-  // directory -- see Application::goToFileSelector()'s own comment. A
-  // direct user request ("検索ファイル所在地へ降りるためのキー
-  // アサインも実はあるので反映してほしい（^J^K）"), added 2026-08-14;
-  // not legacy-source-verified beyond usilicrc's own K-18 line itself
-  // (this port has no legacy binary to compare cursor-positioning
-  // behavior against, see goToFileSelector()'s own comment on scope).
+  // K-18(^J^K、「Go to file-selector」): Fileモードから、「現在の」
+  // ファイル自身の含むディレクトリの本物の`ls`一覧へ直接ジャンプ
+  // する――Application::goToFileSelector()自身のコメント参照。
+  // 直接のユーザー依頼("検索ファイル所在地へ降りるためのキー
+  // アサインも実はあるので反映してほしい（^J^K）")、2026-08-14に
+  // 追加。usilicrc自身のK-18行そのもの以上にはlegacyソースで検証
+  // されていない(この移植には、カーソル位置決めの挙動を比較する
+  // べきlegacyバイナリが無い、範囲についてはgoToFileSelector()
+  // 自身のコメント参照)。
   GoToFileSelector,
-  // ^J^J (2026-08-27, a direct user request: "履歴直近ファイルへ戻る
-  // ...^J^K同様どこでもキーなので反映よろしく"): opens the MOST
-  // RECENT entry in the RecentFile ring (History::recentEntries(
-  // RingCategory::RecentFile).back()) -- ^X^F's own backing store,
-  // see its own comment -- reusing the exact same archive-first,
-  // file-as-fallback logic openSelectedListEntry()'s own RecentFile
-  // branch already established. Unlike ^J^K (which computes ITS OWN
-  // target from whatever mode-specific "current file" is available,
-  // so needs per-mode branching to even know what to open), this
-  // reads history_ directly and is meaningful from every mode --
-  // no per-mode gate at all, see goToRecentFile()'s own comment. The
-  // motivating report: after ^X^M/^X a lands in Directory mode at an
-  // archive extraction's own destination (see startArchivePrompt()'s
-  // own 2026-08-26 comment) and the user descends further from there,
-  // ^G only pops the ordinary directory stack (back to the parent
-  // directory), never back to the archive itself -- but the archive
-  // is still RecentFile's own most recent entry, so ^J^J reaches it
-  // directly regardless of how many plain directories were entered
-  // since.
+  // ^J^J(2026-08-27、直接のユーザー依頼: "履歴直近ファイルへ戻る
+  // ...^J^K同様どこでもキーなので反映よろしく"): RecentFileリング
+  // の「最も最近の」エントリ(History::recentEntries(
+  // RingCategory::RecentFile).back())を開く――^X^F自身の裏付けと
+  // なるストア、自身のコメント参照――openSelectedListEntry()自身の
+  // RecentFile分岐が既に確立したのとまさに同じアーカイブ優先、
+  // ファイルをフォールバックとするロジックを再利用する。
+  // (それ自身の対象を、利用可能などんなモード固有の「現在の
+  // ファイル」からでも計算する、つまり何を開くべきかを知るためだけ
+  // にモードごとの分岐が必要な)^J^Kとは異なり、これはhistory_を
+  // 直接読み、全てのモードから意味を持つ――モードごとのゲートは
+  // 全く無い、goToRecentFile()自身のコメント参照。動機となった
+  // 報告: ^X^M/^X aがアーカイブ展開自身の移動先でDirectoryモードに
+  // 着地し(startArchivePrompt()自身の2026-08-26のコメント参照)、
+  // ユーザーがそこからさらに降りると、^Gは通常のディレクトリ
+  // スタックだけをpopし(親ディレクトリへ戻る)、アーカイブ自体へは
+  // 決して戻らない――しかしアーカイブは依然としてRecentFile自身の
+  // 最も最近のエントリなので、^J^Jは、それ以来何個の素のディレク
+  // トリに入場したかに関わらず、直接それに到達する。
   GoToRecentFile,
-  // ^J0..^J9 (legacy's M_cd leader, `menu.c`'s m_dir() default case,
-  // T_0..T_9): a direct user request (2026-08-19/20, "^J?（?は数字）は
-  // 単なる文字列上も含めたまさにどこでも機能代表格なのでおよそ「/」が
-  // ある場所では無条件に（戻り値も不要）所定の（ls）へ移行して欲しい")
-  // after first verifying on legacy (PTY-confirmed: ^J0/^J1/^J2 from a
-  // nested cwd correctly chdir to "/"/"/Users/"/"/Users/haa15030/").
-  // Truncates whatever path string is "in play" for the current screen
-  // to the (digit+1)-th '/' from the left and jumps STRAIGHT into
-  // Directory mode showing that `ls` -- no "preview, then restore on
-  // ^G" step, matching the user's own "無条件に(戻り値も不要)" framing
-  // (an intentional, hard cut-over, not a peek). See
-  // Application::jumpToPathPrefix()'s own comment for exactly which
-  // per-mode "path string" each currentMode_ maps to and why this is
-  // modeled directly on goToFileSelector()/goToParentFromFileOrArchive()'s
-  // already-established "compute a path from whichever excursion mode
-  // is active, enterDirectory() there, switch currentMode_" shape
-  // (same "K-18/K-19 generalized beyond legacy's own Directory-only
-  // m_dir()" precedent) rather than reusing m_dir()'s own single `dir`
-  // local, which this port has no equivalent single source of truth
-  // for. pendingPathPrefixDigit_ carries the digit from
-  // dispatchLeaderByte()'s own leaderJPending_ switch through to
-  // jumpToPathPrefix() (Command values carry no payload in this port).
+  // ^J0..^J9(legacyのM_cdリーダー、`menu.c`のm_dir()のデフォルト
+  // ケース、T_0..T_9): まずlegacyで検証した(PTYで確認済み: 深く
+  // ネストされたcwdから^J0/^J1/^J2は正しく"/"/"/Users/"/
+  // "/Users/haa15030/"へchdirする)後の、直接のユーザー依頼
+  // (2026-08-19/20、"^J?（?は数字）は単なる文字列上も含めたまさに
+  // どこでも機能代表格なのでおよそ「/」がある場所では無条件に
+  // （戻り値も不要）所定の（ls）へ移行して欲しい")。現在の画面に
+  // 対して「有効な」どんなパス文字列であれ、左から(数字+1)番目の
+  // '/'まで切り詰め、その`ls`を表示するDirectoryモードへ「直接」
+  // ジャンプする――ユーザー自身の"無条件に(戻り値も不要)"という
+  // 位置付け(覗き見ではなく、意図的な、後戻り無しの切り替え)に
+  // 合わせて、「プレビューし、^Gで復元する」というステップは無い。
+  // 各currentMode_が正確にどのモードごとの「パス文字列」へ対応する
+  // か、そしてなぜこれがm_dir()自身の単一の`dir`ローカル変数(この
+  // 移植にはそれに相当する単一の信頼できる情報源が無い)を再利用
+  // するのではなく、goToFileSelector()/goToParentFromFileOrArchive()
+  // が既に確立した「アクティブな寄り道モードが何であれそこから
+  // パスを計算し、そこでenterDirectory()し、currentMode_を切り替
+  // える」という形(同じ「K-18/K-19をlegacy自身のDirectory専用の
+  // m_dir()を超えて一般化する」という前例)を直接モデルにしている
+  // かについてはApplication::jumpToPathPrefix()自身のコメント参照。
+  // pendingPathPrefixDigit_は、dispatchLeaderByte()自身の
+  // leaderJPending_スイッチから、数字をjumpToPathPrefix()まで
+  // 運ぶ(この移植ではCommandの値はペイロードを運ばない)。
   JumpToPathPrefix,
-  // K-60 (^Xs, M_hup): kills the current SHELL child (if any) and
-  // starts a fresh one. See Application::shellRestart()'s own
-  // comment.
+  // K-60(^Xs、M_hup): 現在のSHELLの子(もしあれば)を殺し、新しい
+  // ものを起動する。Application::shellRestart()自身のコメント参照。
   RestartShell,
-  // K-58 (^Xa, ARC "Expand archive") -- K-57 (^X^Ka, "with SHELL
-  // window") REMOVED 2026-08-23, see StartCopyInteractive's own
-  // former comment (now this enum's own comment near ClearAllMarks).
-  // See Application::startArchivePrompt()'s own comment.
+  // K-58(^Xa、ARC「Expand archive」)――K-57(^X^Ka、「with SHELL
+  // window」)は2026-08-23に削除された。StartCopyInteractive自身の
+  // 以前のコメント(今はClearAllMarks付近のこのenum自身のコメント)
+  // 参照。Application::startArchivePrompt()自身のコメント参照。
   StartArchiveExtract,
-  // K-67 (^X^Ke, M_error, "ERROR"): opens errorLogPath_ in File mode.
-  // K-68 (^X^Kl, M_log, "LOG: SHELL output"): snapshots Shell::
-  // scrollback() to logFilePath_, then opens THAT in File mode. See
-  // Application::executeShowErrorLog()/executeShowShellLog()'s own
-  // comments.
+  // K-67(^X^Ke、M_error、「ERROR」): errorLogPath_をFileモードで
+  // 開く。K-68(^X^Kl、M_log、「LOG: SHELL output」): Shell::
+  // scrollback()をlogFilePath_へスナップショットし、「それ」を
+  // Fileモードで開く。Application::executeShowErrorLog()/
+  // executeShowShellLog()自身のコメント参照。
   ShowErrorLog,
   ShowShellLog,
-  // ESC l ("LOG"): see Application::executeStartLog()'s own comment.
+  // ESC l("LOG"): Application::executeStartLog()自身のコメント参照。
   StartLog,
-  // K-0 (^T, M_tcb, "TCB"): shows a status/about screen. See
-  // Application::executeShowTcbBanner()'s own comment.
+  // K-0(^T、M_tcb、「TCB」): ステータス/バージョン情報画面を表示
+  // する。Application::executeShowTcbBanner()自身のコメント参照。
   ShowTcbBanner,
-  // K-27 (^Oa, M_ascii, "Switch ascii mode"): cycles the active
-  // charset Ascii -> Euc -> Utf8 -> Ascii. See
-  // Application::cycleCharset()'s own comment.
+  // K-27(^Oa、M_ascii、「Switch ascii mode」): アクティブな文字コード
+  // をAscii -> Euc -> Utf8 -> Asciiと巡回させる。
+  // Application::cycleCharset()自身のコメント参照。
   CycleCharset,
-  // K-46 (^X^F, "FILE: Select file name"): opens a ListBrowser over
-  // RingCategory::RecentFile. K-48 (^X^D, "DIR: Select directory
-  // name") reuses the ALREADY-EXISTING StartDirectoryHistory, so
-  // needs no command of its own. (Correction, 2026-08-04: an earlier
-  // version of this comment additionally claimed StartDirectoryHistory
-  // was "^R's own command" -- wrong, see ToggleHistoryView's own
-  // comment for why plain ^R is unrelated to which RingCategory is
-  // being browsed.)
+  // K-46(^X^F、「FILE: Select file name」): RingCategory::RecentFile
+  // に対するListBrowserを開く。K-48(^X^D、「DIR: Select directory
+  // name」)は「既存の」StartDirectoryHistoryを再利用するので、
+  // それ自身のコマンドは不要。(訂正、2026-08-04: このコメントの
+  // 以前のバージョンは、さらにStartDirectoryHistoryが「^R自身の
+  // コマンド」だと主張していた――誤り。素の^RがどのRingCategoryが
+  // 閲覧されているかと無関係である理由についてはToggleHistoryView
+  // 自身のコメント参照。)
   StartFileHistory,
-  // K-2 (^H, M_key, "KEY"): shows a browsable table of this port's
-  // own key bindings (mirroring dispatchByte()'s/resolveCommand()'s
-  // actual switch statements -- NOT parsed from usilicrc's own KEY
-  // section, see startKey()'s own comment on why). Enter on a
-  // highlighted entry returns to whichever mode KEY was invoked from
-  // and then executes that entry's own key sequence, matching
-  // HELP.jp 2.2's documented behavior. See Application::startKey()'s
-  // own comment.
+  // K-2(^H、M_key、「KEY」): この移植自身のキー割り当ての閲覧可能な
+  // 表を表示する(dispatchByte()/resolveCommand()の実際のswitch文を
+  // 反映する――usilicrc自身のKEYセクションからパースされたもの
+  // ではない、理由についてはstartKey()自身のコメント参照)。ハイ
+  // ライトされたエントリでのEnterは、KEYが呼び出された元のモードへ
+  // 戻り、その後そのエントリ自身のキーシーケンスを実行する。
+  // HELP.jp 2.2の文書化された挙動に合わせている。
+  // Application::startKey()自身のコメント参照。
   StartKey,
-  // EXPERIMENTAL (2026-08-23, a direct user request to try overloading
-  // plain Space -- NOT part of legacy/usilicrc's own key table). First
-  // cut (docs/CHANGES.md item 414) scoped this to Directory mode only,
-  // and used armed CP/MV/RM as a signal to mean "advance the
-  // selection" (MarkAndAdvance) instead. A direct follow-up
-  // ("[space]によるクイックルックは採用でいいと思う...ただしハイライト
-  // 表示での[space]は、やはりCP/MV/RM（とARC）で混乱を招く") kept the
-  // Quick Look half but dropped the CP/MV/RM overload entirely --
-  // marking moved to '.'/ToggleMark and '['/']' instead (see their own
-  // comments) -- and WIDENED the scope ("LOCATE、FGREP等、ハイライト
-  // 状態のレギュラーファイルならどこでも発動できる方針で"): Space now
-  // launches `qlmanage -p` (macOS Quick Look) directly on whatever
-  // real regular file/directory is under the cursor, no PROGRAM
-  // prompt, matching Finder's own "select a file, hit Space" gesture
-  // -- in Directory mode, Locate results, and a Grep results screen
-  // whose ORIGIN was Directory mode (grepReturnMode_, since each
-  // matched line there still corresponds 1:1 to a real directory
-  // entry -- a Grep run against a FILE's own content has no such
-  // per-line file identity and is deliberately NOT covered).
-  // Archive/ArchiveContent (virtual, not-yet-extracted entries), Du
-  // (directory SIZE rows, not "regular files"), and ListBrowser's
-  // RecentFile/RecentDirectory candidates (real paths in principle,
-  // but Space is ALREADY meaningfully bound there -- "start editing
-  // the candidate, beginning with a literal space" -- see
-  // feedRegexListByte()'s own comment) are all deliberately excluded
-  // -- see Application::executeQuickLook()'s own comment for exactly
-  // which modes/how each path is resolved, and dispatchByte()'s own
-  // comment for where this override actually lives (not the static
-  // resolveCommand(), which stays a pure byte->Command mapping).
+  // 実験的(2026-08-23、単なるSpaceの意味を上乗せしてみるという
+  // 直接のユーザー依頼――legacy/usilicrc自身のキーテーブルの一部
+  // ではない)。最初の一切れ(docs/CHANGES.md項目414)はこれを
+  // Directoryモードだけにスコープし、準備済みのCP/MV/RMを代わりに
+  // 「選択を進める」(MarkAndAdvance)という合図として使っていた。
+  // 直接の追加依頼("[space]によるクイックルックは採用でいいと思う
+  // ...ただしハイライト表示での[space]は、やはりCP/MV/RM（とARC）
+  // で混乱を招く")が、Quick Lookの半分は保ったがCP/MV/RMの意味の
+  // 上乗せは完全に取り除いた――マーキングは代わりに'.'/ToggleMark
+  // と'['/']'へ移動した(それら自身のコメント参照)――そしてスコープ
+  // を「広げた」("LOCATE、FGREP等、ハイライト状態のレギュラー
+  // ファイルならどこでも発動できる方針で"): Spaceは今や、PROGRAM
+  // プロンプト無しに、カーソルの下にある実際のレギュラーファイル/
+  // ディレクトリに対して直接`qlmanage -p`(macOSのQuick Look)を
+  // 起動する。Finder自身の「ファイルを選択し、Spaceを押す」という
+  // ジェスチャーに合わせている――Directoryモード、Locate結果、
+  // そして「起源」がDirectoryモードだったGrep結果画面
+  // (grepReturnMode_、そこでの各マッチした行は依然として本物の
+  // ディレクトリエントリと1:1で対応するため――ファイル自身の内容に
+  // 対するGrep実行にはそのような行ごとのファイルアイデンティティ
+  // が無く、意図的にカバーされていない)。Archive/ArchiveContent
+  // (仮想の、まだ展開されていないエントリ)、Du(ディレクトリの
+  // 「サイズ」行、「レギュラーファイル」ではない)、そしてListBrowser
+  // のRecentFile/RecentDirectory候補(原則として実際のパスだが、
+  // Spaceは既にそこで意味のある形で紐付いている――「リテラルな
+  // 空白から始めて候補の編集を開始する」――feedRegexListByte()
+  // 自身のコメント参照)は全て意図的に除外されている――正確にどの
+  // モード/各パスがどう解決されるかについてはApplication::
+  // executeQuickLook()自身のコメント参照、そしてこの上書きが実際
+  // にどこに存在するか(純粋なバイト->Commandの対応付けのままで
+  // ある静的なresolveCommand()ではない)についてはdispatchByte()
+  // 自身のコメント参照。
   QuickLook,
-  // ^O^C (M_copy, "COPY"): freezes the current content area into
-  // CopyMode -- see startCopy()'s own comment. Named EnterCopyMode
-  // rather than the more obvious "StartCopy" because that name is
-  // already taken (above: ^Xc, the unrelated CP/MV/RM file-copy
-  // operation, legacy's own M_cp).
+  // ^O^C(M_copy、「COPY」): 現在のコンテンツ領域をCopyModeへ凍結
+  // する――startCopy()自身のコメント参照。より明白な「StartCopy」
+  // ではなくEnterCopyModeと名付けられている。その名前は既に(上の
+  // ^Xc、無関係なCP/MV/RMファイルコピー操作、legacy自身のM_cp)
+  // 使われているため。
   EnterCopyMode,
-  // ^O^Y (M_paste): inserts CopyMode's shared clipboardText() at the
-  // active prompt's cursor -- see handleCommand()'s own Paste case.
+  // ^O^Y(M_paste): アクティブなプロンプトのカーソルに、CopyModeの
+  // 共有されたclipboardText()を挿入する――handleCommand()自身の
+  // Pasteケース参照。
   PasteClipboard
 };
 
-// Which *Mode is currently on screen. Ported from legacy's np->M (a
-// T_* mode constant); scoped down to exactly the modes this slice
-// knows about. Cut and CutContent are two distinct screens for one
-// legacy mode (M_cut): Cut shows the list of segment labels,
-// CutContent shows one selected segment's actual lines -- see the
-// class comment on why CutMode itself doesn't merge them.
+// 現在どの「*Mode」が画面上にあるか。legacyのnp->M(T_*モード定数)
+// からの移植。この一切れが知っているモードだけに絞られている。
+// CutとCutContentは1つのlegacyモード(M_cut)に対する2つの別々の
+// 画面である: Cutはセグメントラベルの一覧を表示し、CutContentは
+// 選択された1つのセグメントの実際の行を表示する――CutMode自体が
+// なぜそれらを統合しないのかについてはクラスコメント参照。
 enum class ApplicationMode {
   Directory,
   File,
@@ -415,922 +431,982 @@ enum class ApplicationMode {
   Du,
   ListBrowser,
   Key,
-  // COPY (M_copy/^O^C, see copy_mode.hpp): a frozen text-selection
-  // overlay reachable from any other mode, ported from code.c's
-  // make_map(). Deliberately last in this enum (same reasoning as
-  // Key's own position): every existing exhaustive switch over
-  // ApplicationMode predates this value and falls through to a
-  // `default:`, so adding it here can't silently change any of their
-  // existing behavior.
+  // COPY(M_copy/^O^C、copy_mode.hpp参照): code.cのmake_map()から
+  // 移植された、他のどのモードからでも到達可能な凍結されたテキスト
+  // 選択のオーバーレイ。このenumの中で意図的に最後にある(Key自身の
+  // 位置と同じ理由): ApplicationModeに対する既存の全ての網羅的な
+  // switchはこの値より前に書かれており、`default:`へ落ちるので、
+  // ここでこれを追加しても、それらの既存の挙動を黙って変えることは
+  // できない。
   Copy
 };
 
-// The top-level controller: owns the ModeStack(s) and every *Mode
-// instance, maps keypresses to Command, and dispatches each Command
-// to whichever *Mode is current. Ported from menu.c's get_m() (the
-// keystroke-to-command switch) + m_cr() (the "Enter was pressed, do
-// the right thing" routing) + m_bl() (^G) + m_row()/m_page() (cursor
-// movement) + m_grep()/m_cut() (^S/^J^S/^Jc/^J^C entering search/cut)
-// + menu()/init_menu() (the outer run loop and startup) -- together
-// the ~3300-line mode.c/menu.c "Mode" layer this whole project has
-// been building toward one class at a time. This is an early slice of
-// it (Directory + File navigation, plus FGREP/EGREP search and CUT),
-// see "Deliberately excluded" below for what's intentionally not here
-// yet.
+// 最上位のコントローラ: ModeStack(複数)と全ての*Modeインスタンスを
+// 所有し、キー入力をCommandへ対応付け、各Commandを現在の*Modeへ
+// ディスパッチする。menu.cのget_m()(キー入力からコマンドへの
+// switch)+m_cr()(「Enterが押されたので正しいことをする」ルー
+// ティング)+m_bl()(^G)+m_row()/m_page()(カーソル移動)+
+// m_grep()/m_cut()(^S/^J^S/^Jc/^J^Cで検索/切り出しへ入場)+
+// menu()/init_menu()(外側の実行ループと起動)からの移植――合わせて、
+// このプロジェクト全体が1クラスずつ積み上げてきた、約3300行の
+// mode.c/menu.cの「Mode」レイヤーである。これはその初期の一切れ
+// (Directory + Fileのナビゲーション、加えてFGREP/EGREP検索とCUT)
+// であり、意図的にまだここに無いものについては下の「意図的に除外」
+// 参照。
 //
-// This is NOT a literal port. Legacy's get_m()/m_cr()/m_bl()/m_grep()/
-// m_cut() are one intertwined state machine over a dozen shared
-// mutable structs (HEAP/ARRAY/FLAG/NUM/LINE/RV/PN/CHILD, see
-// CLAUDE.md and every already-ported *Mode class's own header for why
-// this project keeps choosing not to carry that forward) -- here the
-// equivalent state is just currentMode_ (an enum), a couple of small
-// prompt/leader-key bookkeeping fields, and each owned ContentView's
-// own already-encapsulated cursor state. In particular:
-//   - Legacy's single shared PP buffer (the 12-slot hp->base[] pool
-//     DirectoryMode's own header flagged as an unsolved gap) is
-//     resolved here by giving Directory, File, Grep, Cut, and
-//     CutContent each their own ContentView, all wrapping the same
-//     Display. Switching modes is just "stop calling redraw() on one
-//     view, start calling it on another" -- a view not currently
-//     shown keeps its lines/cursor state exactly as it was, in
-//     memory, with nothing to save or restore. This is why returning
-//     from File/Grep/Cut/CutContent to whatever was active before
-//     doesn't need a ModeStack push at all (see handleCommand()'s
-//     Back case): the prior mode's own state never left.
-//   - TWO separate ModeStack instances are owned here, not one:
-//     modeStack_ (DirectoryMode's own directory-to-directory descent,
-//     ported in its first slice) and cutModeStack_ (CutMode's own
-//     nested-resplit bookkeeping). They are NOT shared, despite both
-//     being "just a ModeStack" -- confirmed during this class's design
-//     that sharing one instance between them would be a real bug:
-//     CutMode::canGoBack()/goBack() only check "is the stack
-//     non-empty" / "does the popped frame have a cutBuffer", so if a
-//     directory-navigation frame happened to be sitting on top of a
-//     SHARED stack when the user was mid-CUT, goBack() would silently
-//     pop and discard that directory frame while returning false
-//     (frame->cutBuffer null) -- corrupting DirectoryMode's own
-//     history for a completely unrelated excursion. Giving each class
-//     its own ModeStack instance, despite the duplication, avoids
-//     this cross-contamination entirely at the wiring layer without
-//     touching either already-shipped class.
-//   - Legacy's `^J` is a genuine two-byte leader key (^Jw, ^Jc, ^Jl,
-//     ^Jm, ^J^S, ^J^C, ...), not a synonym for Enter/^M -- a subtlety
-//     this class's very first slice got wrong (an earlier revision
-//     folded 0x0a into the Enter case for convenience; fixed once
-//     EGREP's ^J^S binding made the conflict concrete). resolveCommand()
-//     stays a pure single-byte function; the stateful leader-byte
-//     accumulation across two feedByte() calls lives in feedByte()
-//     itself, the one piece of this class that has to remember
-//     anything between keystrokes besides which mode is active.
-//   - Legacy's search-pattern text entry (read_m()'s klen/prompt
-//     machinery once np->M == M_fgrep/M_egrep/M_cut/M_cut2) is
-//     represented here by a small explicit prompt state (promptKind_)
-//     plus an owned LineEditor -- feedByte() routes raw bytes to the
-//     editor instead of resolveCommand() while a prompt is active,
-//     submitting on ^M and cancelling on ^G, mirroring get_m()'s own
-//     read_m()-vs-dispatch split without needing read_m()'s hand-
-//     rolled klen/cname table (LineEditor already owns text editing;
-//     Application only decides when input goes there instead of
-//     through Command dispatch). GREP and CUT share one promptKind_/
-//     LineEditor pair, distinguished by which PromptKind is pending
-//     and (for CUT) whether currentMode_ was File (fresh split) or
-//     CutContent (resplitting a segment) when the prompt started --
-//     see startCutPrompt()/executeCut(). MAN's name prompt uses the
-//     same mechanism but needs no such per-mode branching: unlike
-//     GREP/CUT it doesn't read the current view's content at all
-//     (m_man() clears the prompt to empty rather than pre-filling it
-//     from the current selection, confirmed by tracing *lp->arg =
-//     K_z in m_man() -- the name is always freshly typed), so it can
-//     be started from -- and returns to -- whichever mode was active,
-//     tracked the same way grepReturnMode_/cutReturnMode_ are.
-//   - PROGRAM (M_prog/M_prog2, ^J^P/^Jp) doesn't switch
-//     ApplicationMode at ALL, unlike every other prompt-driven action
-//     above: tracing mode.c's M_prog case (the m_cr()-equivalent that
-//     runs once the typed command line is submitted) shows it just
-//     runs the command in the foreground and returns to whatever
-//     screen was already showing -- there's no new persistent screen
-//     the way GREP/CUT/MAN each create one. This also means
-//     ProgramMode needs a live KeyInput (to actually leave/re-enter
-//     raw termio around the child process, unlike every other *Mode
-//     this class owns) -- so, uniquely, Application takes a
-//     KeyInput& constructor parameter instead of only ever receiving
-//     already-resolved bytes; see ProgramMode's own class comment for
-//     why that reference has to be the SAME KeyInput instance
-//     actually controlling the real tty, not a throwaway one
-//     Application could construct for itself. Legacy's own program-
-//     name validation (find_prog(): the typed line's first word must
-//     be a strncmp-prefix match of some PROGRAM directive's own first
-//     word) is replicated in executeProgram() against
-//     Configuration::programSeedCommands().
-//   - LOCATE (M_locate/M_locate2, ^J^L/^Jl) is the simplest of the
-//     prompt-driven actions: like MAN it needs nothing from the
-//     current view and always starts an empty prompt, but like GREP
-//     it DOES refuse re-entry from within its own results screen
-//     (m_locate()'s own is_name(ap->name, M_locate) guard) -- so it
-//     tracks a return mode the same way GREP/CUT/MAN do, but is the
-//     only one of the four with both properties at once. See
-//     "Deliberately excluded" for the one piece of m_locate() this
-//     slice does NOT carry over.
-//   - Archive browsing (T_tar/T_lha/T_unzip/T_rpm/T_deb) and EXEC
-//     (T_exec, a suffix-mapped external viewer -- e.g. a configured
-//     PDF reader) are NEITHER prompt-driven, unlike every action
-//     above -- both are auto-detected the same way
-//     DirectoryMode::openSelected() already auto-detects "is the
-//     selection a directory": openSelectedEntry() checks
-//     Configuration::isExec() on the selected path FIRST (tracing
-//     child.c's is_child() shows a suffix's own `f.exec` flag is
-//     checked before the archive-suffix table, giving EXEC priority
-//     -- though in practice Configuration's suffixEntries_ already
-//     makes this a non-issue: it's ONE unified longest-suffix-wins
-//     table where each entry is either archive-flagged or exec-
-//     flagged, never both, so ArchiveMode::loadArchive() naturally
-//     can't succeed on an exec-mapped suffix regardless of check
-//     order -- checking isExec() first just avoids a wasted
-//     loadArchive() attempt), running ExecMode::run() and returning
-//     to Directory mode unchanged if so (do_exec()'s own behavior:
-//     hand the whole file off to an external program, no new screen,
-//     matching PROGRAM/EDIT's shape more than Archive's). Only if NOT
-//     exec-mapped does openSelectedEntry() try
-//     ArchiveMode::loadArchive() next, falling back to
-//     FileMode::loadFile() only if that too fails (loadArchive()
-//     itself reports "not a configured archive suffix" and "listing
-//     command failed" identically, both simply false -- a real
-//     fidelity gap flagged rather than glossed over: legacy would
-//     presumably surface a specific error for a real archive suffix
-//     whose listing command failed, whereas this falls through to
-//     plain-text viewing instead). Archive results in a second screen
-//     the same shape as Cut's: Archive (the entry listing, ArchiveMode's
-//     own ContentView) and ArchiveContent (one extracted entry's
-//     bytes, shown as plain text lines -- no PipeBuffer charset/
-//     overstrike processing the way FileMode gets, since
-//     ArchiveMode::extractSelected() only ever hands back raw bytes).
-//     Like CutContent, opening ArchiveContent needs no ModeStack push
-//     (ArchiveMode owns no stack of its own either); Back from
-//     ArchiveContent returns to Archive, Back from Archive returns to
-//     Directory, both plain toggles. EXEC is wired ONLY into
-//     openSelectedEntry() (Directory mode's Enter key) in this slice,
-//     the same boundary Archive detection already drew -- DU/LOCATE
-//     result entries open directly via FileMode::loadFile() with no
-//     suffix dispatch of their own kind, unchanged by this addition
-//     (see their own bullets above).
-//   - SHELL (M_shell, ^[s -- ESC then 's') is structurally the odd one
-//     out among everything above: unlike GREP/CUT/MAN/PROGRAM/LOCATE,
-//     which are all "type into promptEditor_, submit, get a Command-
-//     driven result screen", Shell already owns its OWN LineEditor
-//     (commandLine()) and ContentView (scrollback()) and drives them
-//     directly against a real pty -- Application's job here is purely
-//     routing bytes to Shell's own API while ApplicationMode::Shell is
-//     active (feedShellByte()), not reimplementing any editing/
-//     display logic of its own (see Shell's own class comment for
-//     why: this project already dissolved the legacy three-process/
-//     eight-pipe IPC design when Shell itself was ported). Once
-//     started, the pty-backed child process is intentionally left
-//     running in the background across Back/^G -- switching away from
-//     Shell only changes which ContentView Application is redrawing
-//     (shell_.scrollback() is returned directly from activeView()'s
-//     Shell case, not copied into an Application-owned ContentView
-//     the way every other mode's screen is), matching how a real
-//     terminal multiplexer pane keeps running while unfocused. There
-//     is no way to actually terminate the shell in this slice (no
-//     M_exit yet, see below) beyond Shell's own destructor when
-//     Application itself is destroyed.
-//     ^[s isn't one of Display's 6 recognized escape sequences, so
-//     KeyInput::readEscapeSequence() -- which exists specifically to
-//     consume and match ESC-prefixed terminal capability sequences --
-//     originally had no defined way to hand the trailing 's' byte
-//     back to a caller when nothing matched (a real, previously-
-//     documented gap). This class's own ESC-leader handling (mirroring
-//     the ^J-leader mechanism) always worked correctly when fed the
-//     raw bytes directly (0x1b then 's'), which is how it's tested
-//     here; the gap was on KeyInput's side, closed by adding
-//     KeyInput::lastEscapeBytes() (see its own class comment) -- the
-//     real run loop (app/main.cpp) now feeds ESC + whatever
-//     lastEscapeBytes() captured through feedByte() exactly the way a
-//     live keypress would arrive, so ^[s works over a real terminal
-//     too.
-//   - CP/MV/RM (^Xc/^Xm/^Xr -- a THIRD leader key, ^X this time,
-//     alongside ^J and ESC) reuses DirectoryMode's marking
-//     (toggleMark()/targetEntries(), see its own header) and the
-//     already-shipped CpMvRmMode as-is, so this slice's only real new
-//     code is the prompt plumbing: CP/MV ask for a destination path
-//     (PromptKind::CopyDestination/MoveDestination), RM asks for a
-//     literal "y" confirmation (PromptKind::RemoveConfirm) -- a
-//     deliberately simplified stand-in for m_dest()/m_yn()'s much
-//     more elaborate per-entry validation (tilde/double-slash
-//     cleanup, MustBeDirectory/MissingIsWritable destination checks
-//     folded per-entry, ARC members mixed into the same dispatch).
-//     ^Space (M_mark) toggles the mark at the cursor -- KeyInput's own
-//     documented convention reports a literal NUL/Ctrl-Space as byte
-//     0x80 (see its class comment), which is what resolveCommand()
-//     matches. On success, the directory listing is reloaded
-//     (DirectoryMode::enterDirectory() on the current directory) so
-//     the screen reflects what cp/mv/rm actually did; marks are
-//     cleared as a side effect of that reload, matching
-//     DirectoryMode's own documented behavior, so there's no separate
-//     clearMarks() call needed here.
-//   - Exiting (M_exit, ^X^C) reuses the SAME prompt mechanism as
-//     RM's confirmation: tracing m_cr()'s M_exit case shows the
-//     confirm-and-quit logic is genuinely this simple --
-//     `if (*rvp->str == 'y') return -T_exit;` -- everything else in
-//     m_exit() itself (the function, confusingly, not the same thing
-//     as the M_exit case above) is stack-unwind bookkeeping for
-//     legacy's shared-buffer-pool architecture that this port's
-//     per-mode ContentViews never needed in the first place (same
-//     reasoning as every other "NOT a literal port" note above).
-//     Unlike RM, StartExit is reachable from any mode (no
-//     targetEntries()-empty guard) and doesn't touch the filesystem
-//     or reload anything on success -- it just sets a flag
-//     (wantsExit()) for a future real run loop to notice and stop.
-//     Application still has no run loop of its own (see below); this
-//     slice only gives one somewhere to break out TO.
-//   - DU (M_du/M_du2, ^Jd/^J^D) is prompt-driven like GREP/CUT/MAN/
-//     LOCATE, but PRE-FILLS the prompt with the current directory
-//     (tracing m_cr()'s `case T_du: strcpy(rvp->str, ap->du);` --
-//     unlike every prompt above, which starts empty) rather than
-//     requiring it typed fresh; the user can just press ^M to accept
-//     the default or edit first. Directory-only entry (m_du() itself
-//     doesn't gate on the current mode, but this slice narrows scope
-//     the same way CP/MV/RM did). Unlike every other result screen,
-//     Enter on a DU entry DOES drill in -- to DirectoryMode if the
-//     entry is a directory, FileMode if it's a file -- since
-//     DuMode's own class comment explicitly leaves that hand-off to
-//     Mode/Application ("the decision of whether opening a DU entry
-//     lands in DirectoryMode or FileMode"). Both ^Jd/^J^D are treated
-//     identically here (always a fresh `du`), deferring M_du2's own
-//     "reuse the existing DU buffer without re-running `du`" shortcut
-//     the same way LOCATE's analogous ^Jl shortcut was deferred.
-//   - The history/list browser (m_list(), ^R=M_hist/^J^R=M_cmd/
-//     ^I=M_list) turned out to be the most heavily simplified action
-//     in this whole port: tracing m_list() shows it picks from NINE
-//     different History/Configuration-backed categories depending on
-//     which prompt context was active when the key was pressed
+// これは逐語的な移植ではない。legacyのget_m()/m_cr()/m_bl()/
+// m_grep()/m_cut()は、十数個の共有される可変構造体
+// (HEAP/ARRAY/FLAG/NUM/LINE/RV/PN/CHILD、このプロジェクトがなぜ
+// それを前へ運ぶことを繰り返し選ばないのかについてはCLAUDE.mdと
+// 既に移植済みの各*Modeクラス自身のヘッダー参照)にまたがる1つの
+// 絡み合った状態機械である――ここでの等価な状態は、単に
+// currentMode_(1つのenum)、いくつかの小さなプロンプト/リーダー
+// キーの記帳用フィールド、そして所有される各ContentView自身の
+// 既にカプセル化されたカーソル状態だけである。特に:
+//   - legacyの単一の共有PPバッファ(DirectoryMode自身のヘッダーが
+//     未解決のギャップとして印を付けた、12スロットのhp->base[]
+//     プール)は、ここでは、Directory、File、Grep、Cut、CutContent
+//     それぞれに、全て同じDisplayを包む、それ自身のContentViewを
+//     与えることで解決されている。モードの切り替えは単に「あるビュー
+//     でredraw()を呼ぶのを止め、別のビューでそれを呼び始める」
+//     だけ――現在表示されていないビューは、そのlines/カーソル状態
+//     をメモリ内に正確に以前のまま保ち、保存も復元も不要である。
+//     これが、File/Grep/Cut/CutContentから、以前アクティブだった
+//     ものへ戻る際にModeStackのpushが全く不要な理由である
+//     (handleCommand()のBackケース参照): 以前のモード自身の状態は
+//     決して離れなかった。
+//   - ここでは1つではなく「2つの」別々のModeStackインスタンスが
+//     所有されている: modeStack_(DirectoryMode自身のディレクトリ
+//     からディレクトリへの降下、その最初の一切れで移植された)と
+//     cutModeStack_(CutMode自身のネストされた再分割の記帳)。
+//     両方とも「単なるModeStack」であるにも関わらず、それらは共有
+//     されて「いない」――このクラスの設計中に、それらの間で1つの
+//     インスタンスを共有することが本物のバグになることが確認され
+//     た: CutMode::canGoBack()/goBack()は「スタックが空でないか」/
+//     「popされたフレームがcutBufferを持つか」だけをチェックする
+//     ので、ユーザーがCUTの途中にいる時、たまたま「共有された」
+//     スタックの上にディレクトリナビゲーションのフレームが座って
+//     いた場合、goBack()はそのディレクトリフレームを黙ってpopして
+//     捨てながらfalseを返してしまう(frame->cutBufferがnull)
+//     ――完全に無関係な寄り道のためにDirectoryMode自身の履歴を
+//     破損させてしまう。重複はあるものの、各クラスにそれ自身の
+//     ModeStackインスタンスを与えることで、既に出荷済みのどちらの
+//     クラスにも触れることなく、配線層でこの相互汚染を完全に回避
+//     する。
+//   - legacyの`^J`は本物の2バイトのリーダーキー(^Jw、^Jc、^Jl、
+//     ^Jm、^J^S、^J^C、...)であり、Enter/^Mの同義語ではない
+//     ――このクラスのまさに最初の一切れが間違えた微妙な点である
+//     (以前の改訂は、便宜上0x0aをEnterのケースへ折り込んでいた。
+//     EGREPの^J^S紐付けが衝突を具体化した時点で修正された)。
+//     resolveCommand()は純粋な単一バイトの関数のままである。2回の
+//     feedByte()呼び出しにまたがる状態を持つリーダーバイトの蓄積は
+//     feedByte()自体にあり、このクラスの中で、どのモードがアクティ
+//     ブかに加えてキー入力の間で何かを覚えておかなければならない
+//     唯一の部分である。
+//   - legacyの検索パターンのテキスト入力(np->M ==
+//     M_fgrep/M_egrep/M_cut/M_cut2の時のread_m()のklen/プロンプト
+//     機構)は、ここでは、小さな明示的なプロンプト状態
+//     (promptKind_)と、所有されるLineEditorによって表現されて
+//     いる――feedByte()は、プロンプトが有効な間は生のバイトを
+//     resolveCommand()ではなくエディタへルーティングし、^Mで
+//     送信、^Gでキャンセルする。get_m()自身のread_m()対ディス
+//     パッチという分割を、read_m()の手作りのklen/cnameテーブルを
+//     必要とせずに反映している(LineEditorが既にテキスト編集を
+//     所有しており、Applicationは、入力がCommandディスパッチを
+//     通る代わりにいつそこへ行くかを決めるだけ)。GREPとCUTは1つの
+//     promptKind_/LineEditorのペアを共有し、どのPromptKindが保留
+//     中かと、(CUTに対しては)プロンプトが始まった時currentMode_
+//     がFile(新規の分割)だったかCutContent(セグメントの再分割)
+//     だったかによって区別される――startCutPrompt()/executeCut()
+//     参照。MANの名前プロンプトは同じ機構を使うが、そのような
+//     モードごとの分岐を全く必要としない: GREP/CUTとは異なり、
+//     現在のビューの内容を全く読まない(m_man()はm_man()内の
+//     *lp->arg = K_zを辿ることで確認できるように、現在の選択から
+//     事前に埋めるのではなく、プロンプトを空へクリアする――名前は
+//     常に新しく入力される)ので、grepReturnMode_/cutReturnMode_が
+//     追跡されるのと同じ方法で、アクティブだったモードのどれから
+//     でも開始でき、そこへ戻ることができる。
+//   - PROGRAM(M_prog/M_prog2、^J^P/^Jp)は、上の他の全てのプロンプト
+//     駆動のアクションとは異なり、ApplicationModeを全く切り替え
+//     「ない」: mode.cのM_progケース(入力されたコマンド行が送信
+//     された時点で実行されるm_cr()相当のもの)を辿ると、それは単に
+//     フォアグラウンドでコマンドを実行し、既に表示されていた画面へ
+//     戻ることが分かる――GREP/CUT/MANがそれぞれ1つを作るような、
+//     新しい永続的な画面は無い。これはまた、ProgramModeが(この
+//     クラスが所有する他の全ての*Modeとは異なり、子プロセスの周りで
+//     生のtermioを実際に離脱/再入場するために)生きたKeyInputを
+//     必要とすることを意味する――そのためApplicationは、独自に、
+//     常に既に解決済みのバイトを受け取るのではなく、KeyInput&の
+//     コンストラクタ引数を取る。その参照が、Applicationが自分の
+//     ために構築できる使い捨てのものではなく、実際に本物のttyを
+//     制御している「同じ」KeyInputインスタンスでなければならない
+//     理由についてはProgramMode自身のクラスコメント参照。legacy
+//     自身のプログラム名の検証(find_prog(): 入力された行の最初の
+//     単語は、何らかのPROGRAMディレクティブ自身の最初の単語との
+//     strncmp接頭辞一致でなければならない)は、Configuration::
+//     programSeedCommands()に対してexecuteProgram()内で複製されて
+//     いる。
+//   - LOCATE(M_locate/M_locate2、^J^L/^Jl)は、プロンプト駆動の
+//     アクションの中で最も単純なもの: MANと同様、現在のビューから
+//     何も必要とせず常に空のプロンプトを始めるが、GREPと同様、
+//     自身の結果画面「内から」の再入場を拒否「する」
+//     (m_locate()自身のis_name(ap->name, M_locate)ガード)――
+//     そのため、GREP/CUT/MANと同じ方法で戻りモードを追跡するが、
+//     4つの中で唯一両方の性質を同時に持つものである。この一切れが
+//     引き継が「ない」m_locate()の1つの部分については「意図的に
+//     除外」参照。
+//   - アーカイブ閲覧(T_tar/T_lha/T_unzip/T_rpm/T_deb)とEXEC
+//     (T_exec、suffixで対応付けられた外部ビューア――例えば設定
+//     されたPDFリーダー)は、上の全てのアクションとは異なり、
+//     どちらもプロンプト駆動では「ない」――両方とも
+//     DirectoryMode::openSelected()が既に「選択がディレクトリか」
+//     を自動検出しているのと同じ方法で自動検出される:
+//     openSelectedEntry()は、まず選択されたパスに対して
+//     Configuration::isExec()をチェックする(child.cのis_child()を
+//     辿ると、suffix自身の`f.exec`フラグがアーカイブsuffixテーブル
+//     より前にチェックされ、EXECに優先順位を与えていることが分か
+//     る――ただし実際にはConfiguration自身のsuffixEntries_が既に
+//     これを問題無くしている: それは、各エントリがアーカイブ扱い
+//     かexec扱いのどちらかであり、両方ではない、1つの統合された
+//     最長suffix優先のテーブルなので、ArchiveMode::loadArchive()は
+//     チェックの順序に関わらず、自然にexec対応付けられたsuffixで
+//     成功できない――isExec()を先にチェックすることは、単に無駄な
+//     loadArchive()の試みを避けるだけである)。そうであれば
+//     ExecMode::run()を実行し、変更せずにDirectoryモードへ戻る
+//     (do_exec()自身の挙動: ファイル全体を外部プログラムへ引き
+//     渡す、新しい画面は無い、ArchiveよりむしろPROGRAM/EDITの形に
+//     合わせている)。exec対応付けられて「いない」場合にだけ、
+//     openSelectedEntry()は次にArchiveMode::loadArchive()を試み、
+//     それも失敗した場合にだけFileMode::loadFile()へフォールバック
+//     する(loadArchive()自体は「設定済みのアーカイブsuffixではない」
+//     と「一覧表示コマンドが失敗した」を同一に報告する。どちらも
+//     単純にfalse――見過ごされるのではなく印を付けられた実際の
+//     忠実度のギャップ: legacyはおそらく、一覧表示コマンドが失敗した
+//     本物のアーカイブsuffixに対して特定のエラーを表面化させる
+//     だろうが、これは代わりにプレーンテキスト閲覧へ落ちる)。
+//     アーカイブは、Cutのものと同じ形の2番目の画面になる: Archive
+//     (エントリ一覧、ArchiveMode自身のContentView)とArchiveContent
+//     (1つの展開されたエントリのバイト、プレーンなテキスト行として
+//     表示される――FileModeが受け取るようなPipeBufferの文字コード/
+//     オーバーストライク処理は無い。ArchiveMode::extractSelected()
+//     は常に生のバイトを返すだけであるため)。CutContentと同様、
+//     ArchiveContentを開くのにModeStackのpushは不要である
+//     (ArchiveModeもそれ自身のスタックを全く所有しない)。
+//     ArchiveContentからのBackはArchiveへ、ArchiveからのBackは
+//     Directoryへ戻る。両方とも単純なトグルである。EXECは、この
+//     一切れではopenSelectedEntry()(Directoryモードのenterキー)
+//     にだけ配線されており、Archive検出が既に描いたのと同じ境界
+//     である――DU/LOCATEの結果エントリは、それら自身の種類の
+//     suffixディスパッチ無しに、直接FileMode::loadFile()経由で
+//     開かれ、この追加によって変更されない(上のそれら自身の項目
+//     参照)。
+//   - SHELL(M_shell、^[s――ESCの後に's')は、上の全てのものの中で
+//     構造的に特異である: 全て「promptEditor_へ入力し、送信し、
+//     Command駆動の結果画面を得る」であるGREP/CUT/MAN/PROGRAM/
+//     LOCATEとは異なり、Shellは既にそれ自身の「独自の」LineEditor
+//     (commandLine())とContentView(scrollback())を所有しており、
+//     それらを本物のptyに対して直接駆動する――ここでのApplication
+//     の仕事は、ApplicationMode::Shellがアクティブな間、それ自体の
+//     編集/表示ロジックを再実装するのではなく、バイトをShell自身の
+//     APIへ純粋にルーティングすることだけである
+//     (feedShellByte())(理由についてはShell自身のクラスコメント
+//     参照: このプロジェクトは、Shell自体が移植された時点で既に
+//     legacyの3プロセス/8パイプIPC設計を解消している)。一度開始
+//     されると、pty駆動の子プロセスは、Back/^Gをまたいで意図的に
+//     バックグラウンドで実行され続ける――Shellから離れることは、
+//     Applicationがどのcontentviewを再描画しているかだけを変える
+//     (shell_.scrollback()は、他の全てのモードの画面のように
+//     Application所有のContentViewへコピーされるのではなく、
+//     activeView()のShellケースから直接返される)。本物のターミナル
+//     マルチプレクサのペインが、フォーカスされていない間も実行され
+//     続けるのと同じである。この一切れでは、Application自体が破棄
+//     される時のShell自身のデストラクタを超えて、実際にshellを
+//     終了させる方法は無い(まだM_exitは無い、下参照)。
+//     ^[sはDisplayの6個の認識されるエスケープシーケンスのどれでも
+//     ないので、(特にESC接頭辞の端末capabilityシーケンスを消費して
+//     マッチさせるために存在する)KeyInput::readEscapeSequence()は、
+//     元々、何もマッチしなかった時に末尾の's'バイトを呼び出し元へ
+//     返す定義された方法を持たなかった(実際の、以前から文書化
+//     されていたギャップ)。このクラス自身のESCリーダー処理(^J
+//     リーダー機構を反映している)は、(0x1bの後's')生のバイトを
+//     直接与えられた場合は常に正しく動作していた。それがここでの
+//     テスト方法である。ギャップはKeyInput側にあり、KeyInput::
+//     lastEscapeBytes()(自身のクラスコメント参照)を追加すること
+//     で解決された――本物の実行ループ(app/main.cpp)は今や、
+//     lastEscapeBytes()が捕捉したものが何であれ、実際のキー入力が
+//     到着するのとまさに同じ方法でESC+それをfeedByte()経由で送る
+//     ので、^[sは本物の端末でも動作する。
+//   - CP/MV/RM(^Xc/^Xm/^Xr――今回は^J/ESCと並ぶ「3つ目の」リーダー
+//     キー、^X)は、DirectoryModeのマーキング
+//     (toggleMark()/targetEntries()、自身のヘッダー参照)と既に
+//     出荷済みのCpMvRmModeをそのまま再利用するので、この一切れの
+//     唯一の本当に新しいコードはプロンプトの配管である: CP/MVは
+//     移動先パスを尋ね(PromptKind::CopyDestination/
+//     MoveDestination)、RMはリテラルな「y」の確認を尋ねる
+//     (PromptKind::RemoveConfirm)――m_dest()/m_yn()のはるかに
+//     手の込んだエントリごとの検証(チルダ/二重スラッシュの整理、
+//     エントリごとに折り込まれるMustBeDirectory/
+//     MissingIsWritableの移動先チェック、同じディスパッチに混ぜ
+//     込まれるARCメンバー)に対する、意図的に単純化された代役で
+//     ある。^Space(M_mark)はカーソルでのマークを切り替える
+//     ――KeyInput自身の文書化された慣習は、リテラルなNUL/
+//     Ctrl-Spaceをバイト0x80として報告し(自身のクラスコメント
+//     参照)、それをresolveCommand()がマッチさせる。成功時、
+//     ディレクトリ一覧は(現在のディレクトリに対する
+//     DirectoryMode::enterDirectory())再読み込みされ、画面が
+//     cp/mv/rmが実際に行ったことを反映する。マークは、
+//     DirectoryMode自身の文書化された挙動に合わせて、その再読み込み
+//     の副作用としてクリアされるので、ここで別途clearMarks()
+//     呼び出しは不要である。
+//   - 終了(M_exit、^X^C)は、RMの確認と「同じ」プロンプト機構を
+//     再利用する: m_cr()のM_exitケースを辿ると、確認して終了する
+//     ロジックが本当にこれだけ単純であることが分かる――
+//     `if (*rvp->str == 'y') return -T_exit;`――m_exit()自体
+//     (紛らわしいが、上のM_exitケースと同じものではなく関数)の
+//     他の全ては、この移植のモードごとのContentViewがそもそも
+//     一度も必要としなかった、legacyの共有バッファプールアーキ
+//     テクチャのためのスタック巻き戻しの記帳である(上の他の全ての
+//     「逐語的な移植ではない」という注記と同じ理由)。RMとは異なり、
+//     StartExitはどのモードからでも到達可能(targetEntries()が空
+//     というガードは無い)であり、成功時にファイルシステムに触れる
+//     ことも何かを再読み込みすることも無い――将来の本物の実行
+//     ループが気付いて止まるためのフラグ(wantsExit())を設定する
+//     だけである。Applicationには依然としてそれ自身の実行ループが
+//     無い(下参照)。この一切れは、単にそこへ抜け出す先を与える
+//     だけである。
+//   - DU(M_du/M_du2、^Jd/^J^D)は、GREP/CUT/MAN/LOCATEと同様プロン
+//     プト駆動だが、新しく入力することを要求するのではなく、現在の
+//     ディレクトリでプロンプトを「事前に埋める」(m_cr()の
+//     `case T_du: strcpy(rvp->str, ap->du);`を辿る――空で始まる
+//     上の全てのプロンプトとは異なる)。ユーザーは単に^Mを押して
+//     デフォルトを受け入れるか、先に編集できる。Directory限定の
+//     入場(m_du()自体は現在のモードでゲートしないが、この一切れ
+//     はCP/MV/RMが行ったのと同じ方法でスコープを狭める)。他の全て
+//     の結果画面とは異なり、DUのエントリでのEnterは実際に降りて
+//     いく――エントリがディレクトリならDirectoryModeへ、ファイル
+//     ならFileModeへ――DuMode自身のクラスコメントが明示的にその
+//     引き渡しをMode/Applicationに任せているため
+//     (「DUのエントリを開くことがDirectoryModeとFileModeのどちら
+//     に着地するかの決定」)。^Jd/^J^Dの両方ともここでは同一に扱わ
+//     れる(常に新しい`du`)。M_du2自身の「`du`を再実行せず既存の
+//     DUバッファを再利用する」ショートカットは、LOCATEの類似の
+//     ^Jlショートカットが延期されたのと同じ方法で延期されている。
+//   - 履歴/リストブラウザ(m_list()、^R=M_hist/^J^R=M_cmd/
+//     ^I=M_list)は、この移植全体の中で最も大きく単純化された
+//     アクションであることが判明した: m_list()を辿ると、キーが
+//     押された時どのプロンプト文脈がアクティブだったかに応じて、
+//     9個の異なるHistory/Configurationに裏付けられたカテゴリ
 //     (T_hfile/T_hdir/T_hman/T_hlocate/T_hfgrep/T_hegrep/T_list/
-//     T_cmd/T_hist) -- context-tracking this whole port's Application-
-//     level design otherwise avoids needing. This slice wires only
-//     the two least ambiguous, most directly useful cases, both
-//     Directory-mode-only: ^R browses History::RingCategory::
-//     RecentDirectory (newest first), ^J^R browses ::ShellCommand.
-//     ListBrowserMode (already a thin, generic "show strings, track a
-//     selection" class, see its own header) needed no changes at all
-//     -- Application just needed a `History &history_` reference of
-//     its own (new; every other *Mode needing History gets it via its
-//     own constructor instead) to call recentEntries() directly, since
-//     populating this list isn't any single *Mode's job. Enter on a
-//     RecentDirectory entry drills into DirectoryMode (the same shape
-//     as DU's directory entries); Enter on a ShellCommand entry is a
-//     no-op in this slice (pre-filling Shell's command line with it,
-//     the obvious next step, needs Shell to already be started, which
-//     adds a real state-management question -- what happens if it
-//     isn't -- deliberately left open rather than guessed at).
-//   - EDIT (M_edit, ^Je -- confirmed against src/usilicrc's own KEY
-//     table: "F-1 e ... EDIT ... K-66", the same F-1-means-^J-leader
-//     notation ^Jd/^Jl/^Jp/^Jm etc. already use) is, like PROGRAM,
-//     NOT prompt-driven and doesn't switch ApplicationMode at all --
-//     tracing menu.c's M_edit case shows it runs immediately against
-//     whatever's already on screen (m_edit()'s do_edit() call), no
-//     text entry involved. Narrowed to exactly two contexts in this
-//     slice: Directory (edits the highlighted entry directly, using
-//     the same currentDirectory()+"/"+entry->name path-building
-//     openSelectedEntry() already uses, refusing if it's a directory
-//     -- an explicit improvement over do_edit(), which doesn't check
-//     this at all and would just hand a directory path to the
-//     editor) and File (edits the currently displayed file at its
-//     cursor line). Both call EditMode::edit() with the SAME
-//     KeyInput& PROGRAM already required, for the same reason
-//     (leaving/re-entering real raw termio around the child editor).
-//     do_edit()'s own line-number argument (`pnp->line`) turns out,
-//     on closer reading, to be the file's own per-line line-number
-//     field (`rvp->pp->f.line`) when invoked from FILE mode, but
-//     merely the cursor's ROW WITHIN THE DIRECTORY LISTING when
-//     invoked from directory-listing context -- i.e. legacy passes a
-//     directory-listing row number as if it were a line number inside
-//     an entirely different file being opened, which doesn't mean
-//     anything. This slice deliberately does NOT carry that over:
-//     Directory-mode edits always open at line 1; only File mode's
-//     ContentView::cursorIndex()+1 is used as a real line number.
-//     EditMode::edit()'s own bool return (did the file's content
-//     actually change) is used to decide whether to reload FileMode's
-//     displayed content afterward (do_edit()'s own st_ctime check,
-//     ported using last_write_time() instead -- see EditMode's own
-//     class comment for why); a Directory-mode edit never triggers a
-//     re-`ls` (do_edit() itself doesn't touch the listing buffer
-//     either, only the "next" viewing slot).
-//   - HELP (M_help/T_help, ^J^H -- confirmed against src/usilicrc's
-//     own KEY table: "F-1 C-h ... HELP ... K-1") turned out, on
-//     tracing menu.c's init_bp() default-case handling of M_help/
-//     T_help, to not be its own display mechanism at all: legacy
-//     hands the help text's PATH straight to init_cut2() with a fixed
-//     section-header regex ("^  [1-6][1-6]+\\.") and sets np->M =
-//     T_cut -- i.e. HELP genuinely IS a CUT split (a table of numbered
-//     sections to pick from), just with a fixed source and pattern
-//     instead of a typed one. Confirmed directly with the user this
-//     is intentional, not an implementation shortcut to route around:
-//     HELP doubling as a live, hands-on demonstration of CUT itself
-//     is part of the point. So HELP reuses the SAME CutMode instance
-//     real user CUT sessions use, via a new CutMode::pushSplit()
-//     (factored out of splitSelected()'s own push-then-split shape,
-//     see its own comment) -- if a real CUT session happens to already
-//     be active (currentMode_ is Cut/CutContent with a genuine prior
-//     split()), pushSplit() preserves it on CutMode's own ModeStack
-//     exactly the way a nested splitSelected() resplit would, so ^G
-//     out of HELP naturally resumes it via the SAME canGoBack()/
-//     goBack() path Back already checks first for Cut. If NO real CUT
-//     was active, startHelp() calls split() directly instead (nothing
-//     worth preserving) and sets cutReturnMode_ to wherever the user
-//     was, the same "leave Cut back to..." anchor a real top-level CUT
-//     already uses -- HELP is reachable from any mode, matching
-//     legacy's own init_bp() default case having no mode-context
-//     guard for M_help/T_help. The distinction between "this is a real
-//     CUT" and "this is HELP" is tracked with one new field
-//     (cutOrigin_, File or Help) updated only at the two plain split()
-//     call sites (startCutPrompt(), startHelp()'s non-preserving
-//     branch) -- pushSplit() call sites don't touch it, since a pushed
-//     level is by construction nested and already excluded from
-//     resize reflow below regardless of origin.
-//   - HELP's own text is loaded via loadHelpText(text) (mirroring
-//     Configuration::loadRcText()/History::loadHistoryText()'s
-//     "caller does the file I/O, this class just takes the text" rule
-//     -- Application still does no hidden file reads of its own) and
-//     re-wrapped through the exact same Charset::Encoding/PipeBuffer
-//     pipeline FileMode/ManMode's own readAndWrap()/runAndWrap() use
-//     (wrapHelpText(), a new private helper) -- which is also why this
-//     class now stores `encoding_` directly (no other member needed
-//     it before this). src/doc/HELP vs HELP.jp (English vs a genuine
-//     Japanese translation, not just a re-encoding -- confirmed by
-//     reading both: HELP.jp's raw bytes are actual EUC-JP Japanese
-//     text) is main.cpp's choice to make, the same "caller resolves
-//     the actual path" boundary usilicrc/history already draw --
-//     Application only ever sees whichever text it was handed.
-//   - Recorded macros (p_km, ^X(/^X)/^Xe -- see src/usilicrc's own
-//     "Begin/End/Execute macro definition" KEY entries) are ONE of
-//     TWO genuinely different legacy macro mechanisms; the other
-//     (p_bm, usilicrc's preset M-0..M-19 macros, defined via an
-//     entire user-configurable key-remapping directive format --
-//     F-?/K-?/M-? -- letting any physical key be rebound to any
-//     internal command) is a MUCH larger, separate feature this port
-//     has no supporting infrastructure for at all (Application's
-//     Command dispatch is still a fixed, hardcoded table) and is
-//     deliberately NOT attempted here -- confirmed explicitly with the
-//     user rather than silently dropped, see CLAUDE.md. Tracing
-//     key.c's set_km() shows p_km records whatever read_m() itself
-//     RETURNS each call (a resolved M_*/T_* command number during
-//     normal dispatch, or a literal typed character while a text
-//     prompt is active -- read_m() unifies both into one return
-//     channel depending on its own current mode) -- NOT the raw
-//     keyboard bytes read before interpretation. This port's closest
-//     analogous unit is "whatever byte(s) were fed to feedByte()",
-//     one layer earlier than read_m()'s own return value, but
-//     equivalent in effect: replaying the same byte(s) through
-//     feedByte() again deterministically reproduces the same leader-
-//     accumulation/prompt-routing/dispatch sequence, so recording at
-//     the byte layer needs no separate handling for "was this byte a
-//     resolved command or prompt text" the way legacy's own single-
-//     int-array a_km[] implicitly relies on read_m()'s dual return
-//     meaning to paper over. The one piece of care this needs: the
-//     ^X( / ^X) / ^Xe sequences that start/stop/play a recording must
-//     NOT themselves end up IN the recording (legacy's own set_km()
-//     doesn't append M_ms/M_me to a_km[] either) -- feedByte() holds
-//     the leading ^X byte of a leaderX sequence back in
-//     pendingLeaderXByte_ until the second byte resolves, THEN
-//     commits both bytes together only if the resolution wasn't
-//     itself StartMacroRecord/StopMacroRecord/PlayMacro (^J/ESC
-//     leader sequences need no such holdback: macro control lives
-//     exclusively under ^X, so every ^J/ESC byte can be committed
-//     immediately without knowing how its sequence will resolve).
-//     playRecordedMacro() replays each recorded byte through a private
-//     dispatchByte() (feedByte()'s own former body, now renamed and
-//     wrapped) rather than feedByte() itself, so a macro triggered
-//     from inside another recording session's own bytes is never
-//     accidentally self-recorded -- deliberately NOT replicating
-//     set_km()'s own M_mm "endless loop" self-appending quirk (a
-//     macro-calls-itself auto-repeat feature the legacy comment itself
-//     flags as unusual), which this port doesn't support.
-//   - GUI mode (docs/ideas/IDEAS.md's "cat's-paw" hidden mode, not
-//     part of legacy tcb at all -- an entirely new feature request)
-//     has exactly two pieces of surface here, both DELIBERATELY kept
-//     ignorant of SDL2/GraphicalDisplay specifics -- that whole
-//     concrete-backend question belongs to a real run loop (app/
-//     main.cpp), the same boundary this class already draws around
-//     TerminalDisplay:
-//       1. ^Og (a NEW leader, ^O -- F-3 in legacy's own KEY table,
-//          unused by this port until now) toggles GUI mode.
-//          ToggleGuiMode doesn't touch currentMode_/any *Mode at all;
-//          it just raises a flag (guiModeToggleRequested_) a run loop
-//          polls via consumeGuiModeToggleRequest() (same "flag, not a
-//          direct callback" shape as wantsExit()) and decides what
-//          "toggle" actually means (which concrete Display backend is
-//          active, whether a GraphicalDisplay/window already exists,
-//          swapping the run loop's own input source between real tty
-//          bytes and translated SDL events) entirely on its own.
-//          Tentative binding, confirmed with the user as a placeholder
-//          to revise once actually tried (IDEAS.md itself didn't
-//          remember the real key).
-//       2. handleMouseClick(row, column) -- IDEAS.md's own description
-//          ("click the already-highlighted file to view it") read
-//          together with ordinary file-manager convention: a click on
-//          a DIFFERENT row just selects it (moves the cursor there,
-//          matching keyboard Up/Down); a click on the ALREADY-selected
-//          row opens it (same as Enter). Directory-mode-only at first,
-//          matching IDEAS.md's own example scenario (the ls
-//          file-selector screen); LOCATE results joined it 2026-08-14
-//          (a direct user request, see handleMouseClick()'s own
-//          comment) -- File/Man/other content views could reasonably
-//          want click-to-scroll-there too, still deferred.
-//          Row/column are DISPLAY coordinates (ContentView::
-//          lineIndexAtRow()'s own coordinate space, the same one
-//          moveCursor() uses) -- translating an actual pixel click
-//          into a row/column cell is GraphicalDisplay's job, not
-//          Application's. Right-click (a PROGRAM-list context menu,
-//          per IDEAS.md) and the inertial "cat's paw" drag physics
-//          itself are BOTH explicitly out of scope for this first
-//          slice (confirmed with the user) -- this wires plain click-
-//          to-select/open only, so the rendering/interaction FEEL can
-//          be evaluated before building the fancier parts on top.
-//   - handleResize() (terminal resize, T_winch in legacy) is the one
-//     piece of state Application reaches for that isn't reached via
-//     KeyInput/Command dispatch at all -- tracing menu.c's T_winch
-//     case shows legacy handles a resize completely differently
-//     depending on WHAT'S on screen: directory/list-buffer-backed
-//     modes (T_dir, is_list()/is_str()) just free the buffer to force
-//     a full re-list/re-fetch on next redraw (their content isn't
-//     width-wrapped paragraph text in the first place -- it's one
-//     line per ls/tar/grep/locate/du/history entry, so there's
-//     nothing to re-wrap), archive listings similarly regenerate via
-//     alloc_head(), and everything else (the free-text-viewing
-//     default case) goes through alloc_winch() -- reconstruct the
-//     raw bytes from the currently-loaded PP list, discard the old
-//     (wrong-width) line-wrapped buffer, and re-run the exact same
-//     wrap function used at initial load against the NEW width. This
-//     slice ports that same three-way split, using Display&
-//     (display_, a new member -- no other *Mode class needed direct
-//     Display access before this) to read the post-resize rows()/
-//     columns() back rather than trusting separately-passed
-//     parameters: EVERY owned ContentView's viewport is resized
-//     (matching the T_dir/is_list/archive "no content reflow needed,
-//     just refresh geometry" treatment -- correct for Directory/Grep/
-//     Locate/Archive/Du/ListBrowser, since none of their content is
-//     width-wrapped from a paragraph source), while File and Man mode
-//     (the two modes actually built on PipeBuffer's width-wrapping,
-//     matching legacy's alloc_winch() default case) get
-//     FileMode::reflow()/ManMode::reflow() called INSTEAD of -- not in
-//     addition to -- the plain viewport resize, since reflow() already
-//     replaces their ContentView's lines outright. See their own class
-//     comments for why neither is a literal alloc_winch() port
-//     (re-reading the file / re-running `man` rather than reflowing
-//     from an in-memory raw-byte cache that doesn't exist in this
-//     port, and preserving the CURRENT session's cursor via a clamp
-//     rather than legacy's row-index-based set_rv() recompute).
-//     Cut/CutContent get the SAME reflow-instead-of-plain-resize
-//     treatment, but ONLY when canGoBack()==false (a genuine top-level
-//     split, not a nested resplit -- see the "Deliberately excluded"
-//     bullet below for the nested case): the fresh source lines to
-//     re-split come from fileMode_.reflow()+fileView_.lines() when
-//     cutOrigin_==File, or wrapHelpText() when cutOrigin_==Help, then
-//     cutMode_.split() is re-run with its own already-remembered
-//     pattern()/cutSyntax_ -- the selected segment's INDEX is
-//     preserved (clamped), and for CutContent specifically,
-//     openSelectedSegment() is called again afterward to re-populate
-//     cutContentView_ with that (hopefully still the same) segment's
-//     freshly-rewrapped content.
-//     Shell's pty is resized unconditionally regardless of
-//     currentMode_ (Shell::onResize(), already fully built -- this
-//     slice's only Shell-related change is actually calling it): a
-//     real terminal resize is a property of the one physical terminal
-//     every mode shares, not just whichever mode happens to be
-//     visible, matching how a real terminal multiplexer resizes
-//     background panes too.
+//     T_cmd/T_hist)から選んでいることが分かる――そうでなければ
+//     この移植全体のApplicationレベルの設計が避けている文脈追跡
+//     である。この一切れは、最も曖昧でなく、最も直接的に有用な
+//     2つのケースだけを配線する。両方ともDirectoryモード限定:
+//     ^RはHistory::RingCategory::RecentDirectoryを閲覧する(最新
+//     優先)。^J^Rは::ShellCommandを閲覧する。ListBrowserMode
+//     (既に薄い、汎用的な「文字列を表示し、選択を追跡する」クラス、
+//     自身のヘッダー参照)は全く変更を必要としなかった――
+//     Applicationは単に、recentEntries()を直接呼ぶために、それ
+//     自身の`History &history_`参照(新規。Historyを必要とする
+//     他の全ての*Modeは、代わりにそれ自身のコンストラクタ経由で
+//     それを得る)を必要としただけである。この一覧を埋めることは、
+//     どの単一の*Modeの仕事でもないため。RecentDirectoryエントリ
+//     でのEnterはDirectoryModeへ降りていく(DUのディレクトリ
+//     エントリと同じ形)。ShellCommandエントリでのEnterは、この
+//     一切れでは何もしない(それでShellのコマンド行を事前に埋める
+//     という明白な次のステップは、Shellが既に開始されていることを
+//     必要とし、それが本物の状態管理上の疑問――開始されていない
+//     場合はどうなるか――を加える。推測するのではなく意図的に
+//     未解決のままにされている)。
+//   - EDIT(M_edit、^Je――src/usilicrc自身のKEYテーブルに対して
+//     確認済み: "F-1 e ... EDIT ... K-66"、^Jd/^Jl/^Jp/^Jm等が
+//     既に使っているのと同じF-1は^Jリーダーを意味するという表記)
+//     は、PROGRAMと同様、プロンプト駆動ではなく、ApplicationMode
+//     を全く切り替えない――menu.cのM_editケースを辿ると、それは
+//     既に画面上にあるものに対して即座に実行される
+//     (m_edit()のdo_edit()呼び出し)ことが分かる。テキスト入力は
+//     関与しない。この一切れでは正確に2つの文脈に絞られている:
+//     Directory(openSelectedEntry()が既に使っているのと同じ
+//     currentDirectory()+"/"+entry->nameというパス構築を使って、
+//     ハイライトされたエントリを直接編集する。それがディレクトリ
+//     なら拒否する――これを全くチェックせず、単にディレクトリ
+//     パスをエディタへ渡してしまうdo_edit()に対する明示的な改善)
+//     とFile(カーソル行で現在表示されているファイルを編集する)。
+//     両方とも、(子エディタの周りで本物の生のtermioを離脱/再入場
+//     するという)同じ理由で、PROGRAMが既に必要としているのと
+//     「同じ」KeyInput&を使ってEditMode::edit()を呼ぶ。do_edit()
+//     自身の行番号引数(`pnp->line`)は、より詳しく読むと、FILE
+//     モードから呼ばれた時はファイル自身の行ごとの行番号フィール
+//     ド(`rvp->pp->f.line`)だが、ディレクトリ一覧の文脈から呼ば
+//     れた時は単にディレクトリ一覧「内の」カーソルの行であること
+//     が分かる――つまりlegacyは、開かれている完全に別のファイル
+//     内の行番号であるかのように、ディレクトリ一覧の行番号を渡し
+//     ており、それは何も意味しない。この一切れは意図的にそれを
+//     引き継が「ない」: Directoryモードの編集は常に1行目で開く。
+//     Fileモードだけが、本物の行番号としてContentView::
+//     cursorIndex()+1を使う。EditMode::edit()自身のbool戻り値
+//     (ファイルの内容が実際に変わったか)は、その後FileModeの
+//     表示されている内容を再読み込みするかどうかを決めるために
+//     使われる(do_edit()自身のst_ctimeチェック、代わりに
+//     last_write_time()を使って移植された――理由についてはEditMode
+//     自身のクラスコメント参照)。Directoryモードの編集は、決して
+//     再`ls`を引き起こさない(do_edit()自体も一覧表示バッファには
+//     触れず、「次の」閲覧スロットだけに触れる)。
+//   - HELP(M_help/T_help、^J^H――src/usilicrc自身のKEYテーブルに
+//     対して確認済み: "F-1 C-h ... HELP ... K-1")は、menu.cの
+//     init_bp()のM_help/T_helpに対するデフォルトケースの処理を
+//     辿ると、そもそもそれ自身の表示機構では全く「ない」ことが
+//     判明した: legacyは、固定の節見出し正規表現
+//     ("^  [1-6][1-6]+\\.")付きで、ヘルプテキストの「パス」を
+//     init_cut2()へそのまま渡し、np->M = T_cutを設定する――つまり
+//     HELPは本当に「CUTの分割」(選ぶべき番号付き節の表)であり、
+//     単にタイプされたものの代わりに固定のソースとパターンを持つ
+//     だけである。これが意図的であり、迂回するための実装上の
+//     ショートカットではないことをユーザーと直接確認済み: HELPが
+//     CUT自体の生きた、手を動かしたデモンストレーションを兼ねる
+//     ことは要点の一部である。そのためHELPは、新しいCutMode::
+//     pushSplit()(splitSelected()自身のpushしてから分割するという
+//     形から括り出された、自身のコメント参照)経由で、実際の
+//     ユーザーのCUTセッションが使うのと「同じ」CutModeインスタンス
+//     を再利用する――本物のCUTセッションがたまたま既にアクティブ
+//     な場合(currentMode_が、本物の以前のsplit()を伴うCut/
+//     CutContent)、pushSplit()はそれを、ネストされたsplitSelected()
+//     の再分割がそうするのとまさに同じ方法でCutMode自身の
+//     ModeStackに保存するので、HELPからの^Gは、Backが既にCutに
+//     対してまずチェックするのと「同じ」canGoBack()/goBack()経路
+//     経由で自然にそれを再開する。本物のCUTがアクティブでなかった
+//     場合、startHelp()は代わりに直接split()を呼び(保存する価値の
+//     あるものは無い)、cutReturnMode_をユーザーがいた場所に設定
+//     する。本物のトップレベルのCUTが既に使っている同じ「Cutから
+//     戻る先...」のアンカーである――HELPはどのモードからでも
+//     到達可能で、legacy自身のinit_bp()のデフォルトケースが
+//     M_help/T_helpに対してモード文脈のガードを持たないことに
+//     合わせている。「これは本物のCUT」と「これはHELP」の区別は、
+//     2つのプレーンなsplit()呼び出し箇所(startCutPrompt()、
+//     startHelp()の保存しない分岐)でだけ更新される1つの新しい
+//     フィールド(cutOrigin_、FileまたはHelp)で追跡される――
+//     pushSplit()の呼び出し箇所はそれに触れない。pushされた階層は
+//     構築上ネストされており、起源に関わらず既に下のリサイズの
+//     再折り返しから除外されているため。
+//   - HELP自身のテキストはloadHelpText(text)経由で読み込まれる
+//     (Configuration::loadRcText()/History::loadHistoryText()の
+//     「呼び出し元がファイルI/Oを行い、このクラスは単にテキストを
+//     受け取る」というルールを反映している――Applicationは依然と
+//     して自力での隠れたファイル読み込みを一切行わない)。そして
+//     FileMode/ManMode自身のreadAndWrap()/runAndWrap()が使うのと
+//     まさに同じCharset::Encoding/PipeBufferパイプライン
+//     (wrapHelpText()、新しいプライベートヘルパー)を通して再度
+//     折り返される――これが、このクラスが今`encoding_`を直接保存
+//     する理由でもある(これより前は他のどのメンバーもそれを必要と
+//     しなかった)。src/doc/HELP対HELP.jp(英語対、単なる再符号化
+//     ではない本物の日本語訳――両方を読んで確認済み: HELP.jpの
+//     生のバイトは実際のEUC-JPの日本語テキストである)は、
+//     usilicrc/historyが既に描いている「呼び出し元が実際のパスを
+//     解決する」という境界と同じで、main.cppが行う選択である――
+//     Applicationは、渡されたテキストが何であれ、常にそれだけを
+//     見る。
+//   - 記録されたマクロ(p_km、^X(/^X)/^Xe――src/usilicrc自身の
+//     「Begin/End/Execute macro definition」KEYエントリ参照)は、
+//     本物の2つの異なるlegacyマクロ機構のうち「1つ」である。
+//     もう1つ(p_bm、usilicrcのプリセットM-0..M-19マクロ、F-?/
+//     K-?/M-?という、あらゆる物理キーをあらゆる内部コマンドへ
+//     再紐付けできる、ユーザーが設定可能な完全なキー再割り当て
+//     ディレクティブフォーマット経由で定義される)は、この移植が
+//     支援するインフラを全く持たない、はるかに大きな、別の機能
+//     であり(Applicationのコマンドディスパッチは依然として固定の、
+//     ハードコードされたテーブルである)、ここでは意図的に試みら
+//     れて「いない」――黙って落とすのではなく、ユーザーと明示的に
+//     確認済み、CLAUDE.md参照。key.cのset_km()を辿ると、p_kmは、
+//     呼び出しごとにread_m()自体が「返す」もの(通常のディスパッチ
+//     中に解決されたM_*/T_*コマンド番号、またはテキストプロンプト
+//     が有効な間のリテラルにタイプされた文字――read_m()は、それ
+//     自身の現在のモードに応じて、両方を1つの戻り値チャネルへ統一
+//     する)を記録することが分かる――解釈される前の生のキーボード
+//     バイトでは「ない」。この移植の最も近い等価な単位は
+//     「feedByte()に何のバイトが供給されたか」であり、read_m()
+//     自身の戻り値より1層前だが、効果としては等価である: 同じ
+//     バイトを再びfeedByte()経由で再生すると、決定的に同じリー
+//     ダーの蓄積/プロンプトルーティング/ディスパッチの順序を再現
+//     するので、バイト層での記録は、legacy自身の単一のint配列
+//     a_km[]がread_m()の二重の戻り値の意味に黙って頼って取り
+//     繕っている「このバイトは解決済みのコマンドだったのか
+//     プロンプトのテキストだったのか」という別の処理を必要と
+//     しない。これが必要とする唯一の注意点: 記録を開始/停止/再生
+//     する^X( / ^X) / ^Xeのシーケンス自体は、記録「の中に」入って
+//     はならない(legacy自身のset_km()も、M_ms/M_meをa_km[]へ
+//     追加しない)――feedByte()は、leaderXシーケンスの先頭の^X
+//     バイトを、2番目のバイトが解決するまでpendingLeaderXByte_に
+//     保持しておき、「その後」解決自体がStartMacroRecord/
+//     StopMacroRecord/PlayMacroでなかった場合にだけ両方のバイトを
+//     一緒に確定する(^J/ESCリーダーシーケンスにはそのような保留
+//     は不要である: マクロ制御は排他的に^Xの下に住むので、全ての
+//     ^J/ESCバイトは、そのシーケンスがどう解決されるかを知らずに
+//     即座に確定できる)。playRecordedMacro()は、記録された各
+//     バイトを、feedByte()自体ではなく、プライベートな
+//     dispatchByte()(feedByte()自身の以前の本体、今は名前を変更
+//     されラップされている)経由で再生する。そのため、別の記録
+//     セッション自身のバイトの内側からトリガーされたマクロが、
+//     誤って自己記録されることは決して無い――set_km()自身の
+//     M_mmの「無限ループ」の自己追加の癖(マクロが自分自身を呼ぶ
+//     自動繰り返し機能、legacyのコメント自体がそれを普通ではない
+//     と印を付けている)は意図的に複製されていない。この移植は
+//     それをサポートしない。
+//   - GUIモード(docs/ideas/IDEAS.mdの「猫の手」隠しモード、legacy
+//     のtcbには全く存在しない――完全に新しい機能要望)は、ここには
+//     正確に2つの表面を持ち、両方とも意図的にSDL2/GraphicalDisplay
+//     の詳細については無知のままにされている――その具体的な
+//     バックエンドという問題全体は、本物の実行ループ(app/main.cpp)
+//     に属する。このクラスが既にTerminalDisplayの周りに描いている
+//     のと同じ境界:
+//       1. ^Og(新しいリーダー、^O――legacy自身のKEYテーブルの
+//          F-3、この移植ではこれまで未使用)はGUIモードを切り替
+//          える。ToggleGuiModeはcurrentMode_/どの*Modeにも全く
+//          触れない。単に実行ループが
+//          consumeGuiModeToggleRequest()経由でポーリングするフラグ
+//          (guiModeToggleRequested_)を上げるだけである
+//          (wantsExit()と同じ「直接のコールバックではなくフラグ」
+//          という形)。そして実行ループは、「切り替え」が実際に何を
+//          意味するか(どの具体的なDisplayバックエンドがアクティブ
+//          か、GraphicalDisplay/ウィンドウが既に存在するか、実行
+//          ループ自身の入力ソースを本物のttyバイトと変換された
+//          SDLイベントの間で入れ替える)を完全に自力で決める。
+//          暫定的な紐付けで、実際に試した後に見直すプレースホル
+//          ダーとしてユーザーと確認済み(IDEAS.md自体は本物のキー
+//          を覚えていなかった)。
+//       2. handleMouseClick(row, column)――IDEAS.md自身の説明
+//          ("click the already-highlighted file to view it")を、
+//          通常のファイルマネージャの慣習と合わせて読む: 「別の」
+//          行へのクリックは単にそれを選択する(そこへカーソルを
+//          動かす、キーボードのUp/Downに合わせている)。「既に」
+//          選択されている行へのクリックはそれを開く(Enterと同じ)。
+//          最初はDirectoryモード限定で、IDEAS.md自身の例のシナリオ
+//          (lsのファイルセレクタ画面)に合わせている。LOCATE結果は
+//          2026-08-14にそれに加わった(直接のユーザー依頼、
+//          handleMouseClick()自身のコメント参照)――File/Man/他の
+//          内容ビューも合理的にクリックしてそこへスクロールする
+//          ことを望むかもしれないが、まだ延期されている。行/列は
+//          「表示」座標である(ContentView::lineIndexAtRow()自身の
+//          座標空間、moveCursor()が使うのと同じもの)――実際の
+//          ピクセルクリックを行/列のセルへ変換することは
+//          GraphicalDisplayの仕事であり、Applicationのものでは
+//          ない。右クリック(IDEAS.mdによればPROGRAM一覧のコンテキ
+//          ストメニュー)と慣性の効く「猫の手」ドラッグの物理演算
+//          自体は、両方ともこの最初の一切れに対して明示的にスコープ
+//          外である(ユーザーと確認済み)――これは単なるクリックして
+//          選択/開くだけを配線するので、その上により手の込んだ
+//          部分を構築する前に、描画/操作の「感触」を評価できる。
+//   - handleResize()(端末のリサイズ、legacyでのT_winch)は、
+//     KeyInput/Commandディスパッチを全く経由せずにApplicationが
+//     手を伸ばす唯一の状態である――menu.cのT_winchケースを辿ると、
+//     legacyは、画面に「何が」あるかに応じて、リサイズを完全に
+//     異なる方法で扱うことが分かる: ディレクトリ/リストバッファに
+//     裏付けられたモード(T_dir、is_list()/is_str())は、単に次の
+//     再描画時に完全な再一覧/再取得を強制するためにバッファを解放
+//     するだけである(それらの内容はそもそも幅で折り返された段落
+//     テキストではない――ls/tar/grep/locate/du/historyのエントリ
+//     ごとに1行なので、再折り返しすべきものが何も無い)。アーカイブ
+//     の一覧も同様にalloc_head()経由で再生成される。そして他の
+//     全て(自由なテキスト閲覧のデフォルトケース)はalloc_winch()を
+//     通る――現在読み込まれているPPリストから生のバイトを再構築し、
+//     古い(幅が間違った)行折り返し済みバッファを捨て、初期読み
+//     込み時に使われたのとまさに同じ折り返し関数を、「新しい」幅に
+//     対して再実行する。この一切れは、その同じ3方向の分割を移植
+//     しており、別々に渡されたパラメータを信頼するのではなく、
+//     リサイズ後のrows()/columns()を読み戻すためにDisplay&
+//     (display_、新しいメンバー――これより前は他のどの*Modeクラス
+//     もDisplayへの直接アクセスを必要としなかった)を使う: 「全ての」
+//     所有されるContentViewのビューポートがリサイズされる
+//     (T_dir/is_list/アーカイブの「内容の再折り返しは不要、単に
+//     幾何形状を更新するだけ」という扱いに合わせている――Directory/
+//     Grep/Locate/Archive/Du/ListBrowserに対して正しい。それらの
+//     内容はどれも段落のソースから幅で折り返されていないため)。
+//     一方FileとManモード(実際にPipeBufferの幅折り返しの上に構築
+//     されている2つのモード、legacyのalloc_winch()デフォルト
+//     ケースに合わせている)は、プレーンなビューポートのリサイズ
+//     に「加えて」ではなく「代わりに」FileMode::reflow()/
+//     ManMode::reflow()が呼ばれる。reflow()は既にそれらの
+//     ContentViewの行を完全に置き換えるため。どちらも逐語的な
+//     alloc_winch()の移植ではない理由(この移植には存在しない
+//     インメモリの生バイトキャッシュから再折り返しするのではなく
+//     ファイルを再読み込み/`man`を再実行すること、そしてlegacyの
+//     行インデックスベースのset_rv()の再計算ではなく制限による
+//     「現在の」セッションのカーソルの保存)についてはそれら自身の
+//     クラスコメント参照。
+//     Cut/CutContentは、同じ「プレーンなリサイズの代わりに
+//     reflow」という扱いを受けるが、それはcanGoBack()==falseの
+//     場合「だけ」である(本物のトップレベルの分割であり、ネスト
+//     された再分割ではない――ネストされた場合については下の
+//     「意図的に除外」の項目参照): 再分割すべき新しいソース行は、
+//     cutOrigin_==Fileの時はfileMode_.reflow()+fileView_.lines()
+//     から、cutOrigin_==Helpの時はwrapHelpText()から来る。その後
+//     cutMode_.split()が、それ自身の既に記憶されている
+//     pattern()/cutSyntax_で再実行される――選択されたセグメントの
+//     「インデックス」は(制限されて)保持され、CutContentに特有に、
+//     openSelectedSegment()がその後再度呼ばれ、(望むべくは依然
+//     として同じ)そのセグメントの新しく再折り返しされた内容で
+//     cutContentView_を再度埋める。
+//     Shellのptyは、currentMode_に関わらず無条件にリサイズされる
+//     (Shell::onResize()、既に完全に構築済み――この一切れの唯一の
+//     Shell関連の変更は実際にそれを呼ぶことである): 本物の端末の
+//     リサイズは、たまたま可視のモードだけではなく、全モードが
+//     共有する1つの物理的な端末の性質である。本物の端末マルチプ
+//     レクサがバックグラウンドのペインもリサイズするのと同じで
+//     ある。
 //
-// Deliberately excluded (future work, not this slice):
-//   - The other 7 of m_list()'s 9 categories (T_hfile/T_hdir/T_hman/
-//     T_hlocate/T_hfgrep/T_hegrep/T_list -- the Configuration-seed-
-//     backed one, GREP/PROGRAM patterns rather than a History ring)
-//     and M_list's own plain ^I/Tab binding (context-dependent in
-//     legacy, and Tab already means something different in Shell mode
-//     here -- see feedShellByte()): each is the same shape of
-//     addition as ^R/^J^R above (pick a category, show it, decide
-//     what Enter does), deferred to keep this slice reviewable.
-//     Recording entries into these rings at all (e.g. every
-//     DirectoryMode::enterDirectory() call feeding
-//     RingCategory::RecentDirectory via History::pushRecent()) isn't
-//     wired yet either -- History itself is fully capable of it
-//     (pushRecent(), already exercised by History's own tests), this
-//     slice just doesn't call it from Application, so recentEntries()
-//     will be empty until something else populates it (this session's
-//     own tests call pushRecent() directly to exercise the browsing
-//     side independently).
-//   - error/log screens (M_error/M_log): unlike help (see below), these
-//     have no dedicated *Mode class of their own yet at all; wiring
-//     them in is the same shape of change (extend Command/
-//     ApplicationMode, extend feedByte()'s leader table, extend
-//     handleCommand()) repeated per mode, deferred to keep each slice
-//     reviewable.
-//   - DuMode's own chdir()-free design means the legacy behavior of
-//     actually changing the process's working directory while
-//     measuring isn't replicated (see DuMode's own class comment);
-//     Enter on a directory DU entry uses DirectoryMode::enterDirectory()
-//     with an absolute path instead, consistent with this port's
-//     standing "no hidden global state" rule.
-//   - The ^X^Kc/^X^Km/^X^Kr synonyms for CP/MV/RM (a second, longer
-//     leader sequence get_m() accepts for the same three actions,
-//     setting an extra `fp->comm` flag whose effect wasn't traced) and
-//     ^X^Ka/^Xa (M_arc/M_arc2, the archive-CREATION action -- see
-//     below, a different "ARC" from archive-browsing): only ^Xc/^Xm/
-//     ^Xr are wired in this slice.
-//   - CpMvRmMode's own already-documented exclusions (interactive `-i`
-//     confirmation at the OS level, entries living inside an archive
-//     or a `du`-measured subdirectory): unchanged by this slice,
-//     still out of scope for the same reasons its own header gives.
-//   - mode.c's M_prog case falls back to launching SHELL mode with
-//     the typed line pre-filled when the first word ISN'T a
-//     recognized PROGRAM-list entry (`m = -M_shell`) -- executeProgram()
-//     still just reports failure instead of that handoff, even though
-//     SHELL itself is wired in now; connecting the two is its own
-//     small future change (SHELL's own command line would need to be
-//     pre-filled with the typed text), not bundled into either slice.
-//   - Shell's own further hookups this slice leaves unset:
+// 意図的に除外(将来の課題、この一切れではない):
+//   - m_list()の9個のカテゴリのうち残りの7個(T_hfile/T_hdir/
+//     T_hman/T_hlocate/T_hfgrep/T_hegrep/T_list――Configurationの
+//     シードに裏付けられたもの、Historyのリングではなく
+//     GREP/PROGRAMパターン)と、M_list自身の素の^I/Tabの紐付け
+//     (legacyでは文脈依存であり、ここではShellモードでTabは既に
+//     別のことを意味する――feedShellByte()参照): それぞれが上の
+//     ^R/^J^Rと同じ形の追加(カテゴリを選び、それを表示し、Enterが
+//     何をするか決める)であり、この一切れをレビュー可能に保つため
+//     延期されている。これらのリングにエントリを記録すること自体
+//     (例えば全てのDirectoryMode::enterDirectory()呼び出しが
+//     History::pushRecent()経由でRingCategory::RecentDirectoryへ
+//     供給する)も、まだ配線されていない――History自体はそれを
+//     完全に行える(pushRecent()、既にHistory自身のテストで行使
+//     されている)が、この一切れはApplicationからそれを呼ばない
+//     ので、何か他のものがそれを埋めるまでrecentEntries()は空の
+//     ままになる(このセッション自身のテストは、閲覧側を独立に
+//     行使するためpushRecent()を直接呼ぶ)。
+//   - エラー/ログ画面(M_error/M_log): ヘルプ(下参照)とは異なり、
+//     これらはそれ自身の専用の*Modeクラスをまだ全く持たない。
+//     それらを配線することは、モードごとに繰り返される同じ形の
+//     変更(Command/ApplicationModeを拡張し、feedByte()のリーダー
+//     テーブルを拡張し、handleCommand()を拡張する)であり、各
+//     一切れをレビュー可能に保つため延期されている。
+//   - DuMode自身のchdir()を使わない設計は、測定中に実際にプロセス
+//     の作業ディレクトリを変更するlegacyの挙動が複製されていない
+//     ことを意味する(DuMode自身のクラスコメント参照)。ディレク
+//     トリのDUエントリでのEnterは、代わりに絶対パス付きの
+//     DirectoryMode::enterDirectory()を使う。この移植の恒久的な
+//     「隠れたグローバル状態は無し」というルールと一貫している。
+//   - CP/MV/RMに対する^X^Kc/^X^Km/^X^Kr同義語(get_m()が同じ3つの
+//     アクションに対して受け入れる、2つ目の、より長いリーダー
+//     シーケンス。効果が追跡されなかった追加の`fp->comm`フラグを
+//     設定する)と^X^Ka/^Xa(M_arc/M_arc2、アーカイブ「作成」
+//     アクション――下参照、アーカイブ閲覧とは異なる「ARC」):
+//     この一切れでは^Xc/^Xm/^Xrだけが配線される。
+//   - CpMvRmMode自身の既に文書化された除外(OSレベルでの対話的な
+//     `-i`確認、アーカイブ内または`du`で測定されたサブディレクトリ
+//     内に住むエントリ): この一切れによって変更されておらず、
+//     それ自身のヘッダーが与える同じ理由で依然としてスコープ外
+//     である。
+//   - mode.cのM_progケースは、最初の単語が認識されるPROGRAM一覧
+//     エントリで「ない」場合、入力された行が事前に埋められた状態
+//     でSHELLモードの起動へフォールバックする(`m = -M_shell`)
+//     ――executeProgram()は、SHELL自体が今は配線されているにも
+//     関わらず、依然としてその引き渡しの代わりに単に失敗を報告
+//     する。2つを繋ぐことはそれ自身の小さな将来の変更であり
+//     (SHELL自身のコマンド行が入力されたテキストで事前に埋められ
+//     る必要がある)、どちらの一切れにもまとめられていない。
+//   - この一切れが未設定のままにするShell自身のさらなる接続:
 //     setHistoryRecorder()/setDirectoryChangedCallback()/
-//     setProgramLauncher()/setCompletionProvider() -- all optional,
-//     all deferred (History integration, cwd-follows-shell behavior,
-//     PROGRAM handoff from within SHELL, and TAB completion
-//     candidates are each their own follow-up, not required for a
-//     working SHELL mode). Scrollback/command-line paging via arrow
-//     Up/Down or PageUp/PageDown while in Shell mode is likewise not
-//     wired (feedShellByte() only handles Left/Right cursor movement
-//     among SpecialKeys).
-//   - do_prog()'s post-run staleness check (re-stat the file being
-//     viewed; if it changed while the program ran, force a reload):
-//     not replicated here either -- a real gap, flagged rather than
-//     silently glossed over, deferred until this slice's minimal
-//     "just run it" behavior needs to grow that far.
-//   - LOCATE's own ^Jl shortcut (m_locate()'s M_locate2 case): when a
-//     previous locate result buffer already exists, ^Jl re-displays
-//     it directly (skipping the prompt entirely) instead of asking
-//     for a fresh query -- ^J^L always prompts fresh either way. This
-//     slice treats both bindings identically (always a fresh prompt),
-//     deferring the "remember and redisplay the last result set
-//     without re-running the search" shortcut. Deciding what to do
-//     with a selected result (handing off to DirectoryMode or
-//     FileMode) is likewise out of scope, matching LocateMode's own
-//     class comment; Enter on a locate result is a no-op in this
-//     slice, same as GREP.
-//   - GREP's own further actions: opening/jumping to a matched line's
-//     original context, nested search (searching within results),
-//     highlighting the matched substring, and recording the pattern
-//     into History's hfgrep/hegrep rings -- all explicitly out of
-//     GrepMode's own scope too (see its class comment); Enter on a
-//     grep result is a no-op in this slice.
-//   - CUT's own ^Jb/^J^B "split without first opening the file view"
-//     shortcut from a directory listing, and LOG mode's built-in
-//     prompt-marker split: both explicitly out of CutMode's own scope
-//     too (see its class comment) -- CUT can only be started from
-//     File mode (a fresh split) or CutContent (a nested resplit) in
-//     this slice. Recording cut patterns into History is likewise out
-//     of scope, same boundary GrepMode already draws.
-//   - m_exit()'s superuser-safety check (`is_inter(NULL, -1, 0)`,
-//     guarding against exiting mid-su or similar): not replicated,
-//     see the class comment's own note on this. StartExit is
-//     unconditionally reachable.
-//   - A real terminal run loop (legacy's menu()): reading bytes from
-//     a live KeyInput, translating escape sequences, and looping
-//     until exit -- now has somewhere to break out to (wantsExit()),
-//     but still isn't built here. feedByte()/handleCommand() are the
-//     tested, terminal-independent primitives such a loop would call.
-//   - ARC-creation (^X^Ka/^Xa, M_arc/M_arc2, m_arc()): a DIFFERENT,
-//     unrelated "ARC" from the archive-browsing one above -- menu.c's
-//     m_arc() here is the archive-CREATION action grouped alongside
-//     CP/MV/RM, not T_tar/etc's archive-browsing/viewing. Unlike
-//     CP/MV/RM, this has no ported class yet at all, so it isn't
-//     wired regardless of leader-key scope.
-//   - File-jump (M_jump, ^X^X -- swap between the cursor position and
-//     the last ^Space-marked position): not part of the commands this
-//     slice maps.
-//   - p_bm (usilicrc's preset M-0..M-19 macros, and the entire F-?/
-//     K-?/M-? user-configurable key-remapping directive format they
-//     depend on): a genuinely separate, much larger feature from p_km
-//     (see its own section above) -- confirmed explicitly with the
-//     user to defer to a future slice rather than attempt alongside
-//     p_km, given this port's Command dispatch has no configurable-
-//     keybinding infrastructure at all yet to build it on.
-//   - Nested Cut/CutContent resplits are NOT reflowed on resize
-//     (revised from an earlier, broader version of this bullet that
-//     excluded ALL of Cut/CutContent -- see CLAUDE.md history for
-//     why): TOP-LEVEL Cut/CutContent (canGoBack()==false) DOES now
-//     reflow on resize, both for a real File-mode-originated CUT and
-//     for HELP -- only a NESTED resplit
-//     (splitSelected(), canGoBack()==true) still doesn't, since
-//     correctly reflowing a nested level would mean walking back up
-//     the WHOLE ModeStack chain to the true root and re-deriving
-//     every intermediate split from scratch, not just re-running the
-//     current level's own split() -- CutMode's own class comment
-//     already treats "what the parent split looked like at
-//     splitSelected() time" as a one-shot snapshot at each nesting
-//     level, and this port doesn't yet walk that chain to refresh it.
-//     A nested resplit's ContentView viewport still resizes; its line
-//     content stays wrapped at whatever width was active when its own
-//     split()/splitSelected() last ran.
-//   - EDIT from any mode besides Directory/File (Grep/Cut/CutContent/
-//     Man/Locate/Archive/ArchiveContent/Du/ListBrowser/Shell): legacy's
-//     own refuse-list only blocks archive/cut/split viewing contexts
-//     outright (T_tar/T_lha/T_unzip/T_rpm/T_deb/T_buff/T_cut/T_split)
-//     plus a content-based guard for synthetic non-file entries (a
-//     GREP-result "arg" containing '(', an empty/space-led name) --
-//     this slice narrows further, to exactly Directory/File, deferring
-//     the finer-grained legacy guard logic (and whether e.g. editing
-//     the source file behind a GREP match or a LOCATE result even
-//     makes sense without more path-resolution machinery than either
-//     mode currently exposes) to a future slice.
+//     setProgramLauncher()/setCompletionProvider()――全てオプ
+//     ションで、全て延期されている(History統合、cwdがshellに追従
+//     する挙動、SHELL内からのPROGRAM引き渡し、TAB補完候補は、
+//     それぞれが独自の追加課題であり、動作するSHELLモードには
+//     必要ない)。Shellモードにいる間の矢印Up/DownまたはPageUp/
+//     PageDown経由のスクロールバック/コマンド行のページングも
+//     同様に配線されていない(feedShellByte()はSpecialKeysの中
+//     ではLeft/Rightのカーソル移動だけを扱う)。
+//   - do_prog()の実行後の陳腐化チェック(閲覧中のファイルを再度
+//     statする。プログラムの実行中にそれが変わっていれば強制的に
+//     再読み込みする): これもここでは複製されていない――黙って
+//     見過ごされるのではなく印を付けられた実際のギャップであり、
+//     この一切れの最小限の「単に実行する」という挙動がそこまで
+//     育つ必要が出るまで延期されている。
+//   - LOCATE自身の^Jlショートカット(m_locate()のM_locate2ケース):
+//     以前のlocate結果バッファが既に存在する場合、^Jlは、新しい
+//     クエリを尋ねる代わりに、それを(プロンプトを完全にスキップ
+//     して)直接再表示する――^J^Lはいずれにせよ常に新しく尋ねる。
+//     この一切れは両方の紐付けを同一に扱う(常に新しいプロンプト)。
+//     「検索を再実行せずに最後の結果セットを覚えて再表示する」
+//     ショートカットは延期される。選択された結果に対して何をする
+//     か(DirectoryModeまたはFileModeへの引き渡し)を決めることも、
+//     LocateMode自身のクラスコメントに合わせて同様にスコープ外
+//     である。この一切れではlocate結果でのEnterは何もしない
+//     (GREPと同様)。
+//   - GREP自身のさらなるアクション: マッチした行の元の文脈を開く/
+//     ジャンプする、ネストされた検索(結果内での検索)、マッチした
+//     部分文字列のハイライト、そしてパターンをHistoryの
+//     hfgrep/hegrepリングへ記録すること――全て、GrepMode自身の
+//     スコープの明示的な外側でもある(クラスコメント参照)。この
+//     一切れではgrep結果でのEnterは何もしない。
+//   - CUT自身の、ディレクトリ一覧から「まずファイルビューを開かず
+//     に分割する」^Jb/^J^Bショートカットと、LOGモードの組み込みの
+//     プロンプトマーカー分割: 両方とも、CutMode自身のスコープの
+//     明示的な外側でもある(クラスコメント参照)――この一切れでは、
+//     CUTはFileモード(新規の分割)またはCutContent(ネストされた
+//     再分割)からだけ開始できる。切り出しパターンをHistoryへ記録
+//     することも同様にスコープ外、GrepModeが既に描いているのと
+//     同じ境界。
+//   - m_exit()のスーパーユーザー安全チェック(`is_inter(NULL, -1,
+//     0)`、su途中またはそれに類する状況での終了を防ぐ): 複製され
+//     ていない、これについてのクラスコメント自身の注記参照。
+//     StartExitは無条件に到達可能である。
+//   - 本物の端末実行ループ(legacyのmenu()): 生きたKeyInputから
+//     バイトを読み、エスケープシーケンスを翻訳し、終了までループ
+//     する――今は抜け出す先(wantsExit())があるが、依然としてここ
+//     では構築されていない。feedByte()/handleCommand()は、その
+//     ようなループが呼ぶであろう、テスト済みの、端末に依存しない
+//     基本要素である。
+//   - ARC作成(^X^Ka/^Xa、M_arc/M_arc2、m_arc()): 上のアーカイブ
+//     閲覧のものとは「異なる」、無関係な「ARC」――ここでのmenu.cの
+//     m_arc()は、T_tar等のアーカイブ閲覧/表示ではなく、CP/MV/RMと
+//     一緒にグループ化されたアーカイブ「作成」アクションである。
+//     CP/MV/RMとは異なり、これにはまだ移植されたクラスが全く無い
+//     ので、リーダーキーのスコープに関わらず配線されていない。
+//   - ファイルジャンプ(M_jump、^X^X――カーソル位置と最後に
+//     ^Spaceでマークされた位置の間を入れ替える): この一切れが
+//     マップするコマンドの一部ではない。
+//   - p_bm(usilicrcのプリセットM-0..M-19マクロ、そしてそれらが
+//     依存する、F-?/K-?/M-?というユーザーが設定可能なキー再割り
+//     当てディレクティブフォーマット全体): p_km(上の自身の節参照)
+//     とは本当に別の、はるかに大きな機能である――この移植の
+//     Commandディスパッチには、それを構築すべき設定可能なキー
+//     紐付けのインフラがまだ全く無いことを踏まえ、p_kmと一緒に
+//     試みるのではなく将来の一切れへ延期することをユーザーと明示
+//     的に確認済み。
+//   - ネストされたCut/CutContentの再分割は、リサイズ時に再折り
+//     返し「されない」(このCut/CutContent全体を除外していた、
+//     この項目の以前の、より広いバージョンから改訂された――理由に
+//     ついてはCLAUDE.mdの履歴参照): 「トップレベルの」
+//     Cut/CutContent(canGoBack()==false)は、実際のFileモード
+//     起源のCUTとHELPの両方に対して、今はリサイズ時に再折り返し
+//     «する»――「ネストされた」再分割(splitSelected()、
+//     canGoBack()==true)だけが依然としてそうしない。ネストされた
+//     階層を正しく再折り返しするには、現在の階層自身のsplit()を
+//     単に再実行するだけでなく、本当のルートまでModeStackの連鎖
+//     全体を遡って歩き、全ての中間の分割をゼロから再導出する必要
+//     があるため――CutMode自身のクラスコメントは、既に「
+//     splitSelected()の時点で親の分割がどう見えたか」を、各ネスト
+//     階層での1回きりのスナップショットとして扱っており、この移植
+//     はまだそれを更新するためにその連鎖を歩かない。ネストされた
+//     再分割のContentViewのビューポートは依然としてリサイズされる。
+//     その行の内容は、それ自身のsplit()/splitSelected()が最後に
+//     実行された時にアクティブだった幅で折り返されたままである。
+//   - Directory/File以外のどのモードからのEDITも(Grep/Cut/
+//     CutContent/Man/Locate/Archive/ArchiveContent/Du/ListBrowser/
+//     Shell): legacy自身の拒否リストは、アーカイブ/切り出し/分割の
+//     閲覧文脈(T_tar/T_lha/T_unzip/T_rpm/T_deb/T_buff/T_cut/
+//     T_split)だけを完全にブロックし、加えて合成された非ファイル
+//     エントリ('('を含むGREP結果の「arg」、空/空白で始まる名前)に
+//     対する内容ベースのガードを持つ――この一切れはさらに狭め、
+//     正確にDirectory/Fileだけにし、より細かいlegacyのガードロジ
+//     ック(そして例えばGREPマッチやLOCATE結果の背後のソース
+//     ファイルを編集することが、どちらのモードも現在公開している
+//     以上のパス解決の仕組み無しに意味を成すかどうか)を将来の
+//     一切れへ延期している。
 class Application {
  public:
-  // `keyInput` must be the same instance actually controlling the
-  // real tty's raw/cooked mode (see class comment) -- Application
-  // only ever forwards it to ProgramMode, never reads from it itself.
-  // `shellOptions` seeds Shell's argv/promptMark/programName/
-  // scrollbackBudget; rows/columns/encoding are overwritten from
-  // `display`/`encoding` regardless of what's passed in, so the
-  // Shell session always matches this Application's own geometry and
-  // charset instead of needing them specified twice.
-  // homeDirectory: forwarded to the owned PathResolver (K-45/K-47's
-  // ^Xf/^Xd path prompts, see StartFileInput's own comment) -- no
-  // hidden getenv("HOME") call here, matching PathResolver's own "no
-  // hidden global state" rule (already established for Configuration/
-  // Shell/etc); the caller (main()) reads the real environment. Also
-  // the fallback root for usilicrcPath_/historyFilePath_/(and, absent
-  // an explicit tempRootDirectory below) error/shell/work/arc, all
-  // under `<homeDirectory>/.usilic`.
-  // tempRootDirectory (2026-08-18 addition, see tempRootDirectory_'s
-  // own comment): where to root error/shell specifically. Defaulted to
-  // "" (falls back to `<homeDirectory>/.usilic`, this class's sole
-  // behavior before 2026-08-18) so existing callers that don't care
-  // about multi-instance isolation -- every test fixture -- don't need
-  // updating.
-  // workRootDirectory (2026-08-18 follow-up addition, see
-  // workRootDirectory_'s own comment): where to root work/arc
-  // specifically -- SEPARATE from tempRootDirectory above (a direct
-  // user request: WORK should always live under a process-private
-  // `/tmp/.usilic.<pid>` and be cleaned up on exit, regardless of
-  // launch mode, while ERROR/SHELL should only do that for an
-  // argument-launched run and otherwise stay at the persistent
-  // `<homeDirectory>/.usilic` tempRootDirectory above already falls
-  // back to). Defaulted to "" for the exact same reason
-  // tempRootDirectory is -- falls back to the same
-  // `<homeDirectory>/.usilic` existing test fixtures already assume
-  // for work/arc paths.
-  // bootOptions (2026-08-18 addition): ^T's own new "Boot options"
-  // field, verbatim. Defaulted to "" (matches a bare no-argument
-  // launch's own empty display, see executeShowTcbBanner()'s comment).
+  // `keyInput`は、実際に本物のttyのraw/cookedモードを制御している
+  // 同じインスタンスでなければならない(クラスコメント参照)――
+  // Applicationは常にそれをProgramModeへ転送するだけで、自身では
+  // 決してそれから読み取らない。`shellOptions`はShellの
+  // argv/promptMark/programName/scrollbackBudgetの種になる。
+  // rows/columns/encodingは、渡されたものが何であれ`display`/
+  // `encoding`から上書きされるので、Shellセッションは、それらを
+  // 2回指定する必要無く、常にこのApplication自身の幾何形状と
+  // 文字コードに一致する。
+  // homeDirectory: 所有されるPathResolver(K-45/K-47の^Xf/^Xdパス
+  // プロンプト、StartFileInput自身のコメント参照)へ転送される
+  // ――ここには隠れたgetenv("HOME")呼び出しは無く、PathResolver
+  // 自身の(Configuration/Shell等に対して既に確立されている)
+  // 「隠れたグローバル状態は無し」というルールに合わせている。
+  // 呼び出し元(main())が実際の環境を読む。また、usilicrcPath_/
+  // historyFilePath_/(そして、下の明示的なtempRootDirectoryが
+  // 無ければ)error/shell/work/arcのフォールバックのルートでもある。
+  // 全て`<homeDirectory>/.usilic`の下。
+  // tempRootDirectory(2026-08-18の追加、tempRootDirectory_自身の
+  // コメント参照): error/shellを特に何を根としてルートするか。
+  // デフォルトは""(`<homeDirectory>/.usilic`へフォールバックする、
+  // 2026-08-18より前のこのクラスの唯一の挙動)なので、複数インス
+  // タンスの分離を気にしない既存の呼び出し元――全てのテスト
+  // フィクスチャ――は更新の必要が無い。
+  // workRootDirectory(2026-08-18の追加依頼、workRootDirectory_
+  // 自身のコメント参照): work/arcを特に何を根としてルートするか
+  // ――上のtempRootDirectoryとは「別」(直接のユーザー依頼: 起動
+  // モードに関わらず、WORKは常にプロセス専用の
+  // `/tmp/.usilic.<pid>`の下に住み終了時に片付けられるべきだが、
+  // ERROR/SHELLは、引数起動された実行に対してだけそうすべきで、
+  // それ以外では上のtempRootDirectoryが既にフォールバックする
+  // 永続的な`<homeDirectory>/.usilic`のままであるべき)。
+  // tempRootDirectoryとまさに同じ理由でデフォルトは""――
+  // work/arcパスに対して既存のテストフィクスチャが既に想定して
+  // いるのと同じ`<homeDirectory>/.usilic`へフォールバックする。
+  // bootOptions(2026-08-18の追加): ^T自身の新しい「Boot options」
+  // フィールド、そのまま。デフォルトは""(素の引数無し起動自身の
+  // 空の表示に一致する、executeShowTcbBanner()のコメント参照)。
   Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
               Charset::Encoding encoding, int width, ShellOptions shellOptions = ShellOptions{},
               std::string homeDirectory = "", std::string tempRootDirectory = "", std::string workRootDirectory = "",
               std::string bootOptions = "");
 
-  // Lists `directory` (DirectoryMode::enterDirectory()) and makes it
-  // the active mode. Ported from init_menu()'s initial directory
-  // load. False if the initial `ls` fails.
+  // `directory`を一覧表示し(DirectoryMode::enterDirectory())、
+  // それをアクティブなモードにする。init_menu()の初期ディレクト
+  // リ読み込みからの移植。初期の`ls`が失敗すればfalse。
   //
-  // consultHistory forwards straight to enterDirectory()'s own
-  // parameter (see its comment): main() passes false whenever it was
-  // launched with an explicit path argument, true only for an
-  // argument-less launch (legacy's own "resume last session" case).
+  // consultHistoryはそのままenterDirectory()自身の引数へ転送され
+  // る(自身のコメント参照): main()は、明示的なパス引数付きで起動
+  // された場合は常にfalseを渡し、引数無しの起動(legacy自身の
+  // 「最後のセッションを再開する」ケース)にだけtrueを渡す。
   bool start(const std::string &directory, bool consultHistory = true);
 
-  // 2026-08-25 (a direct user request): opens `paths` directly in File
-  // mode, bypassing the Directory-mode Enter-key flow entirely -- for
-  // a CLI launch given one or more plain FILE arguments (main.cpp's
-  // own "通常ファイル引数" case, previously entirely unhandled: every
-  // positional argument used to be treated as a directory regardless).
-  // Call start() FIRST (main.cpp's own convention: the first path's
-  // containing directory, so ^G/Back has a real, useful Directory
-  // listing to fall back into -- same shape a Directory-mode Enter
-  // into any of these files would already leave behind) -- this
-  // method only loads paths.front() into File mode and, if paths has
-  // more than one entry, records the rest as a navigable "pager file
-  // list" (see Command::PagerNextFile's own comment for the
-  // navigation keys). False if the first file can't be loaded --
-  // matches start()'s own "false if the initial listing/load fails"
-  // convention, letting main.cpp print the same kind of startup error
-  // and exit. Precondition: `paths` is not empty (an empty list is a
-  // caller bug, not a runtime condition to report a false return for).
+  // 2026-08-25(直接のユーザー依頼): `paths`をDirectoryモードの
+  // Enterキーフローを完全に迂回して直接Fileモードで開く――1つ以上
+  // の素のFILE引数を与えられたCLI起動のため(main.cpp自身の
+  // 「通常ファイル引数」ケース、以前は完全に未対応だった: 位置
+  // 引数は全て、内容に関わらずディレクトリとして扱われていた)。
+  // まず「先に」start()を呼ぶこと(main.cpp自身の慣習: 最初のパス
+  // の含むディレクトリ。これにより、これらのファイルのどれかへの
+  // Directoryモードのenterが既に残していくのと同じ形で、^G/Back
+  // に、フォールバックすべき本物の、有用なDirectory一覧がある)
+  // ――このメソッドは単にpaths.front()をFileモードへ読み込み、
+  // pathsが2個以上のエントリを持つ場合、残りを移動可能な「ページ
+  // ャーファイル一覧」として記録する(ナビゲーションキーについては
+  // Command::PagerNextFile自身のコメント参照)。最初のファイルが
+  // 読み込めなければfalse――start()自身の「初期の一覧表示/読み
+  // 込みが失敗すればfalse」という慣習に合わせている。main.cppが
+  // 同じ種類の起動エラーを表示して終了できるように。前提条件:
+  // `paths`は空でない(空の一覧は、falseを返して報告すべき実行時
+  // 条件ではなく、呼び出し元のバグである)。
   bool startPagerFileList(const std::vector<std::string> &paths);
-  // 2026-08-25 (a direct user request: "STDINと同じなのでついでに
-  // それもサポートして"): the piped-input counterpart to
-  // startPagerFileList() above -- `usilic` with NO positional
-  // arguments and a non-tty stdin (main.cpp's own isatty() check).
-  // Reads fd 0 directly via FileMode::loadStream() (never closed --
-  // see its own comment on why this can't conflict with keyboard
-  // input), with no display name (legacy shows a blank name field for
-  // a piped source). False only if loadStream() itself would be (in
-  // practice always true; kept bool for symmetry with start()/
-  // startPagerFileList()'s own convention).
+  // 2026-08-25(直接のユーザー依頼: "STDINと同じなのでついでに
+  // それもサポートして"): 上のstartPagerFileList()のパイプ入力版
+  // ――位置引数が「無く」、標準入力がttyでない(main.cpp自身の
+  // isatty()チェック)`usilic`。FileMode::loadStream()経由でfd 0
+  // を直接読む(決して閉じられない――これがなぜキーボード入力と
+  // 衝突しないのかについては自身のコメント参照)。表示名は無い
+  // (legacyはパイプされたソースに対して空の名前フィールドを表示
+  // する)。loadStream()自体がそうなる場合にだけfalse(実際には
+  // 常にtrue。start()/startPagerFileList()自身の慣習との対称性
+  // のためboolのまま)。
   bool startPagerStdin();
 
-  // Resolves a single, non-leader-prefixed keypress to a Command.
-  // Ported from the movement/Enter/^G/^S slice of get_m()'s
-  // switch(m) -- see the table in the .cpp for exact byte/SpecialKey
-  // mappings and their legacy provenance. `special` is whatever
-  // KeyInput::readEscapeSequence() returned after an ESC byte, or
-  // nullopt for an ordinary byte. Does NOT recognize ^J-leader
-  // sequences (e.g. ^J^S for EGREP, ^Jc/^J^C for CUT) -- those need
-  // state across two calls, which this pure function deliberately
-  // can't hold; use feedByte() for real key-by-key input, which
-  // handles both.
+  // 単一の、リーダー接頭辞の無いキー入力をCommandへ解決する。
+  // get_m()のswitch(m)の移動/Enter/^G/^Sの一切れからの移植――
+  // 正確なバイト/SpecialKeyの対応付けとそのlegacyの出所について
+  // は.cpp内の表参照。`special`は、KeyInput::readEscapeSequence()
+  // がESCバイトの後に返したもの、または通常のバイトに対しては
+  // nullopt。^Jリーダーのシーケンス(例えばEGREP用の^J^S、CUT用の
+  // ^Jc/^J^C)は認識「しない」――それらは2回の呼び出しにまたがる
+  // 状態を必要とし、この純粋関数は意図的にそれを保持できない。
+  // 本物のキーごとの入力にはfeedByte()を使うこと。それは両方を
+  // 扱う。
   static Command resolveCommand(int byte, std::optional<KeyInput::SpecialKey> special);
 
-  // Executes command against whichever *Mode is current. Returns
-  // false when the command was a no-op given the current state (e.g.
-  // Back with nothing to go back to, Enter on an empty listing) --
-  // mirrors get_m()'s handlers, which likewise silently no-op rather
-  // than erroring on such cases.
+  // 現在の*Modeが何であれ、それに対してcommandを実行する。現在の
+  // 状態を踏まえてコマンドが何もしなかった場合(例えば戻る先が無い
+  // Back、空の一覧でのEnter)はfalseを返す――同様にそのようなケース
+  // でエラーにするのではなく黙って何もしないget_m()のハンドラを
+  // 反映している。
   bool handleCommand(Command command);
 
-  // The real entry point for driving this class byte-by-byte (what a
-  // KeyInput-backed run loop would call): handles ^J-leader
-  // accumulation and prompt text entry, falling through to
-  // resolveCommand()+handleCommand() for everything else. Returns
-  // false only when the resulting action (if any) was itself a
-  // no-op; a byte consumed into leader/prompt state with the action
-  // still pending returns true. While a macro recording is active
-  // (see class comment's own p_km section), also appends this byte
-  // (or holds it in pendingLeaderXByte_) to recordedMacro_.
+  // このクラスをバイトごとに駆動するための本物のエントリポイント
+  // (KeyInputに裏付けられた実行ループが呼ぶであろうもの): ^J
+  // リーダーの蓄積とプロンプトのテキスト入力を処理し、他の全てに
+  // 対してはresolveCommand()+handleCommand()へ落ちる。結果として
+  // 起きたアクション(もしあれば)自体が何もしなかった場合にだけ
+  // falseを返す。アクションがまだ保留中のまま、リーダー/プロンプト
+  // 状態へ消費されたバイトはtrueを返す。マクロの記録がアクティブな
+  // 間(クラスコメント自身のp_km節参照)、このバイトを
+  // recordedMacro_へも追加する(またはpendingLeaderXByte_に保持
+  // する)。
   bool feedByte(int byte, std::optional<KeyInput::SpecialKey> special);
 
   bool isRecordingMacro() const;
   std::size_t recordedMacroLength() const;
 
-  // Routes a byte while ApplicationMode::Shell is current: ^G leaves
-  // (see class comment on why the pty session itself isn't torn
-  // down), ^M submits the command line, Tab asks Shell's completion
-  // hook (unset in this slice, so effectively a no-op), ^C forwards
-  // straight to the pty, DEL/^H backspaces, Left/Right move the
-  // command-line cursor, everything else is inserted as ordinary
-  // text. Exposed publicly (rather than folded silently into
-  // feedByte()) so a caller -- or a test -- can drive Shell input
-  // without needing to first get Application into Shell mode via a
-  // real ^[s sequence.
+  // ApplicationMode::Shellが現在の間、バイトをルーティングする:
+  // ^Gは離脱する(なぜpty自身のセッションが取り壊されないかについ
+  // てはクラスコメント参照)、^Mはコマンド行を送信する、TabはShell
+  // の補完フックを尋ねる(この一切れでは未設定なので事実上何も
+  // しない)、^Cはptyへそのまま転送される、DEL/^Hはバックスペース
+  // する、Left/Rightはコマンド行のカーソルを動かす、他の全ては
+  // 通常のテキストとして挿入される。(feedByte()に黙って折り込む
+  // のではなく)公開されているので、呼び出し元――またはテスト――は、
+  // まずApplicationを本物の^[sシーケンス経由でShellモードにする
+  // ことなく、Shellへの入力を駆動できる。
   bool feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special);
 
   bool promptActive() const;
-  // See its own definition comment (application.cpp): promptActive()
-  // plus the RecentFile/RecentDirectory direct-entry recall state --
-  // for hover/incidental-redraw suppression callers, not a general-
-  // purpose "is this a real live text prompt" check (that's still
-  // promptActive() alone).
+  // 自身の定義コメント(application.cpp)参照: promptActive()に
+  // 加えて、RecentFile/RecentDirectoryの直接エントリ呼び出し状態
+  // ――ホバー/たまたまの再描画を抑制する呼び出し元向けであり、
+  // 汎用的な「これは本物の生きたテキストプロンプトか」というチェ
+  // ック(それは依然としてpromptActive()単独である)ではない。
   bool redrawSensitivePromptOrRecallActive() const;
   const std::string &promptText() const;
 
-  // 2026-08-14: a real report ("④の^[不具合は-gで起きる模様。^Jl後の
-  // ^Gも受け付けない。-cでは問題なし") traced runLocateUpdateDb()'s
-  // OWN internal poll(STDIN_FILENO,...) loop back to the exact
-  // architectural boundary this class otherwise always respects (see
-  // its own class comment on staying "single-threaded/synchronous
-  // throughout" and backend-agnostic): that loop blocked INSIDE one
-  // Application call, so -g's own SDL event pump (app/main.cpp's
-  // runGuiPhase()) never got to run again until the loop returned --
-  // meaning a real ^G click/keypress in the GUI window was queued by
-  // SDL but never actually processed, since gui.pumpEvents() was never
-  // called again while stuck in there. -c's own terminal run loop
-  // happened to still work because STDIN_FILENO IS the real keyboard
-  // there, so the poll() inside the blocked call could still see ^G
-  // directly -- but that was incidental, not by design, and broke the
-  // very "backend-agnostic" property this class otherwise guarantees.
-  // Redesigned so runLocateUpdateDb() itself returns immediately after
-  // launching the detached updatedb (see its own comment) -- these two
-  // methods let EITHER run loop's own OWN existing per-iteration tick
-  // (both already loop frequently regardless of backend) drive the
-  // wait instead, the same "flag checked externally" shape wantsExit()/
-  // promptActive() themselves already use.
+  // 2026-08-14: 実際の報告("④の^[不具合は-gで起きる模様。^Jl後の
+  // ^Gも受け付けない。-cでは問題なし")が、runLocateUpdateDb()自身の
+  // 内部のpoll(STDIN_FILENO,...)ループを、このクラスがそうでなけ
+  // れば常に尊重するまさにそのアーキテクチャ上の境界(全体を通じて
+  // 「単一スレッド/同期的」であり続け、バックエンドに依存しないと
+  // いうことについては自身のクラスコメント参照)まで辿った: その
+  // ループは「1回の」Application呼び出しの「内側で」ブロックして
+  // いたので、そのループが返るまで-g自身のSDLイベントポンプ
+  // (app/main.cppのrunGuiPhase())は二度と実行されなかった――つまり
+  // GUIウィンドウでの実際の^Gクリック/キー入力はSDLによってキュー
+  // に入れられたが、その中で詰まっている間gui.pumpEvents()が二度と
+  // 呼ばれないので、実際には処理されなかった。-c自身の端末実行
+  // ループはたまたま依然として動いていた。そこではSTDIN_FILENOが
+  // 「本物の」キーボードであるため、ブロックされた呼び出しの内側の
+  // poll()は依然として直接^Gを見ることができた――しかしそれは意図
+  // 的なものではなく偶然であり、このクラスがそうでなければ保証
+  // している「バックエンドに依存しない」という性質そのものを壊し
+  // ていた。runLocateUpdateDb()自体が、切り離されたupdatedbを起動
+  // した直後に即座に返るよう再設計された(自身のコメント参照)
+  // ――これら2つのメソッドは、代わりに「どちらの」実行ループ自身の
+  // 既存の反復ごとのティック(バックエンドに関わらず両方とも既に
+  // 頻繁にループする)にその待機を駆動させる。wantsExit()/
+  // promptActive()自体が既に使っている「外部からチェックされる
+  // フラグ」という同じ形。
   bool awaitingLocateUpdateDb() const;
-  // Call once per run-loop iteration, unconditionally (cheap no-op
-  // when nothing is pending) -- checks ChildProcess::hasExited() on
-  // the running updatedb and, once it's done, transitions to
-  // startLocatePrompt() itself. ^G is NOT handled here: it arrives as
-  // an ordinary byte through feedByte()/dispatchByte()'s own new
-  // top-level awaitingLocateUpdateDb() gate (checked before even
-  // promptKind_), so both run loops get it for free through the exact
-  // same call they already make for every other keystroke.
+  // 実行ループの反復ごとに1回、無条件に呼ぶこと(何も保留していな
+  // ければ安価な何もしない呼び出し)――実行中のupdatedbに対して
+  // ChildProcess::hasExited()をチェックし、それが完了したら、
+  // startLocatePrompt()自体へ遷移する。^Gはここでは扱われ「ない」:
+  // それは、feedByte()/dispatchByte()自身の新しいトップレベルの
+  // awaitingLocateUpdateDb()ゲート(promptKind_よりも前にチェック
+  // される)経由で、通常のバイトとして到着するので、両方の実行
+  // ループは、他の全てのキー入力に対して既に行っているのとまさに
+  // 同じ呼び出しを通じて、無料でそれを得る。
   void pollLocateUpdateDbCompletion();
 
-  // Call once per run-loop iteration, unconditionally (cheap no-op
-  // when pendingCpMvRmShellRun_ is unset) -- same "flag checked
-  // externally, driven by the run loop's own existing tick" shape as
-  // pollLocateUpdateDbCompletion() just above (see its own comment for
-  // why: an unbounded blocking wait inside a single Application call
-  // was already tried and rejected for LOCATE's updatedb, for the
-  // identical reason it would be wrong here too -- it would starve -g's
-  // own GUI event pump). While pending, shell_'s own scrollback keeps
-  // updating live on every iteration for free, via the SAME
-  // watchShellPty polling both run loops already do whenever
-  // currentMode()==Shell (see executeCopy()'s own class comment) --
-  // this method only handles noticing COMPLETION (shell_.promptGeneration()
-  // advancing) and landing back in Directory mode afterward.
+  // 実行ループの反復ごとに1回、無条件に呼ぶこと(pendingCpMvRmShellRun_
+  // が未設定なら安価な何もしない呼び出し)――すぐ上の
+  // pollLocateUpdateDbCompletion()と同じ「実行ループ自身の既存の
+  // ティックによって駆動され、外部からチェックされるフラグ」という
+  // 形(理由については自身のコメント参照: 単一のApplication呼び
+  // 出しの内側での無制限のブロッキング待機は、LOCATEのupdatedbに
+  // 対して既に試され、拒否された。ここでも誤りである理由は同一
+  // ――それは-g自身のGUIイベントポンプを飢えさせてしまう)。保留中
+  // の間、shell_自身のスクロールバックは、currentMode()==Shellの
+  // 時に両方の実行ループが既に行っているのと「同じ」watchShellPty
+  // のポーリング経由で、反復ごとに無料でライブに更新され続ける
+  // (executeCopy()自身のクラスコメント参照)――このメソッドは
+  // 「完了」に気付く(shell_.promptGeneration()が進む)ことと、
+  // その後Directoryモードへ着地することだけを扱う。
   void pollPendingCpMvRmShellRun();
-  // Same shape as pollPendingCpMvRmShellRun() (see its own comment),
-  // for executeArchiveExtract()'s own shell_-injected run.
+  // pollPendingCpMvRmShellRun()と同じ形(自身のコメント参照)、
+  // executeArchiveExtract()自身のshell_で注入された実行のため。
   void pollPendingArchiveExtractShellRun();
 
-  // 2026-08-25 (a direct user request, ported from tcb.c's own
-  // from_main()/from_shell() -- see main.cpp's own tryHandoffToParentShell()
-  // for the child-process half): while Shell mode is live, checks
-  // whether a real usilic INVOKED FROM WITHIN this shell (e.g. a plain
-  // "usilic ." typed at the prompt, or a pipe into it -- Shell::start()'s
-  // own setenv("USILIC", ...) is what makes that child detect it should
-  // hand off here instead of opening an independent session) has left
-  // a rendezvous file/socket at
-  // /tmp/.usilic-shell/s.<uid>.<shell_.childPid()> -- the SAME path
-  // both ends compute independently (the child via getppid(), this
-  // side via shell_.childPid(), no prior negotiation needed). If so,
-  // switches THIS session's own display accordingly (Directory for a
-  // path, an ordinary fileMode_.loadFile() for a plain file -- exactly
-  // the same call openSelectedEntry() makes for a normal Directory-
-  // listing Enter, see its own 2026-08-25 correction comment -- or a
-  // stdin-pager load via FileMode::loadStream(), the same lazy-loading
-  // machinery startPagerStdin() uses, for a piped source) and returns
-  // true. A plain no-op (false, nothing touched) whenever
-  // Shell mode isn't active/alive, or no rendezvous is waiting yet --
-  // cheap enough to call unconditionally once per main-loop iteration,
-  // matching pollPendingCpMvRmShellRun()'s own polling convention.
+  // 2026-08-25(直接のユーザー依頼、tcb.c自身のfrom_main()/
+  // from_shell()からの移植――子プロセス側についてはmain.cpp自身の
+  // tryHandoffToParentShell()参照): Shellモードが生きている間、
+  // この「shellの内側から」呼び出された本物のusilic(例えばプロン
+  // プトに入力された素の「usilic .」、またはそれへのパイプ――
+  // Shell::start()自身のsetenv("USILIC", ...)が、その子プロセスに
+  // 独立したセッションを開く代わりにここへ引き渡すべきと検出させる
+  // もの)が、/tmp/.usilic-shell/s.<uid>.<shell_.childPid()>に
+  // ランデブーファイル/ソケットを残したかどうかをチェックする――
+  // どちらの端も独立に計算する「同じ」パス(子はgetppid()経由、
+  // こちら側はshell_.childPid()経由。事前の交渉は不要)。もし
+  // あれば、それに応じてこのセッション自身の表示を切り替え(パス
+  // に対してはDirectory、素のファイルに対しては通常の
+  // fileMode_.loadFile()――通常のDirectory一覧のEnterに対して
+  // openSelectedEntry()が行うのとまさに同じ呼び出し、自身の
+  // 2026-08-25の訂正コメント参照――またはパイプされたソースに
+  // 対しては、startPagerStdin()が使うのと同じ遅延読み込みの仕組み
+  // であるFileMode::loadStream()経由のstdinページャーの読み込み)、
+  // trueを返す。Shellモードがアクティブ/生きていない場合、または
+  // まだランデブーが待っていない場合は単純に何もしない(false、
+  // 何も触れられない)――pollPendingCpMvRmShellRun()自身のポーリン
+  // グの慣習に合わせて、メインループの反復ごとに無条件に呼ぶのに
+  // 十分安価である。
   bool pollShellHandoff();
 
-  // True once an exit has been confirmed (StartExit's prompt was
-  // submitted with a leading 'y') -- a future real run loop's signal
-  // to stop calling feedByte() and unwind. Application itself never
-  // reads this; nothing else changes when it flips.
+  // 終了が確認された(StartExitのプロンプトが先頭'y'で送信された)
+  // 時点でtrue――将来の本物の実行ループへの、feedByte()の呼び出しを
+  // 止めて巻き戻すべきという合図。Application自体は決してこれを
+  // 読まない。それが切り替わった時他に何も変わらない。
   bool wantsExit() const;
 
-  // Sets wantsExit() true directly, bypassing StartExit's y/n
-  // confirmation prompt entirely. Added for the GUI-launched session's
-  // own simpler exit gesture (ESC ESC Enter, see app/main.cpp's
-  // runGuiPhase()) -- requested in place of the confirmation prompt
-  // for that context, not a replacement for it elsewhere (the
-  // terminal phase's ^X^C+y flow is untouched).
+  // wantsExit()を直接trueに設定し、StartExitのy/n確認プロンプトを
+  // 完全に迂回する。GUI起動されたセッション自身のより単純な終了
+  // ジェスチャー(ESC ESC Enter、app/main.cppのrunGuiPhase()参照)
+  // のために追加された――その文脈のために確認プロンプトの代わりに
+  // 依頼されたもので、他所でのその置き換えではない(端末フェーズの
+  // ^X^C+yフローは変更されていない)。
   void requestImmediateExit();
 
-  // True if ^Og was pressed since the last call (consumes the flag,
-  // same shape as KeyInput::consumeResizeSignal()) -- a run loop's
-  // signal to toggle GUI mode. See class comment's own GUI-mode
-  // section for why Application knows nothing about what "toggle"
-  // actually does.
+  // 前回の呼び出し以降に^Ogが押されていればtrue(フラグを消費する。
+  // KeyInput::consumeResizeSignal()と同じ形)――GUIモードを切り替え
+  // るべきという実行ループへの合図。「切り替え」が実際に何をする
+  // かについてApplicationが何も知らない理由についてはクラス
+  // コメント自身のGUIモード節参照。
   bool consumeGuiModeToggleRequest();
 
-  // A mouse click at DISPLAY row/column (see class comment's own GUI-
-  // mode section for this coordinate space and current Directory-
-  // mode-only scope). Selects the entry at that row, or -- if it was
-  // already the selected one -- opens it (same as Enter). False if
-  // outside Directory mode or the click landed outside any real row.
+  // 「表示」行/列でのマウスクリック(この座標空間と現在の
+  // Directoryモード限定のスコープについてはクラスコメント自身の
+  // GUIモード節参照)。その行のエントリを選択するか、それが既に
+  // 選択されていたものだった場合は――それを開く(Enterと同じ)。
+  // Directoryモードの外側、またはクリックがどの本物の行の外側にも
+  // 着地した場合はfalse。
   bool handleMouseClick(int row, int column);
 
-  // A terminal resize was detected (a real run loop's signal, after
-  // KeyInput::consumeResizeSignal() has already updated Display's own
-  // geometry -- this reads rows()/columns() back off `display`, not
-  // off separate parameters, so it can never see a stale size).
-  // Ported from menu.c's T_winch handling: resizes every owned
-  // ContentView's viewport and the prompt field to the new geometry,
-  // re-wraps File/Man mode's content at the new width if either is
-  // currently active (FileMode::reflow()/ManMode::reflow()), and does
-  // the same for a TOP-LEVEL Cut/CutContent split (real CUT or HELP --
-  // see the class comment's own HELP section) -- Directory/Grep/
-  // Locate/Archive/Du/ListBrowser content isn't width-wrapped
-  // paragraph text the way File/Man/top-level-Cut's is, matching
-  // legacy's own T_dir/is_list/is_str non-reflow treatment, so their
-  // lines are left as-is beyond the viewport resize; a NESTED Cut
-  // resplit is left as-is too (see class comment). Propagates the new
-  // size to Shell's pty UNCONDITIONALLY (even if Shell isn't the
-  // visible mode right now -- a real terminal resize affects the one
-  // physical terminal every mode shares, matching how a real terminal
-  // multiplexer resizes background panes too), and redraws whatever's
-  // currently on screen.
+  // 端末のリサイズが検出された(本物の実行ループの合図、
+  // KeyInput::consumeResizeSignal()がDisplay自身の幾何形状を既に
+  // 更新した後――これは別々のパラメータからではなく、`display`
+  // からrows()/columns()を読み戻すので、決して古びたサイズを
+  // 見ることはできない)。menu.cのT_winch処理からの移植: 所有される
+  // 全てのContentViewのビューポートとプロンプトフィールドを新しい
+  // 幾何形状にリサイズし、File/Manモードのどちらかが現在アクティブ
+  // であればその内容を新しい幅で再折り返しし(FileMode::reflow()/
+  // ManMode::reflow())、「トップレベルの」Cut/CutContentの分割
+  // (本物のCUTまたはHELP――クラスコメント自身のHELP節参照)に対し
+  // ても同じことをする――Directory/Grep/Locate/Archive/Du/
+  // ListBrowserの内容は、File/Man/トップレベルCutのものとは異なり、
+  // 幅で折り返された段落テキストではない。legacy自身の
+  // T_dir/is_list/is_strの再折り返ししない扱いに合わせているので、
+  // それらの行はビューポートのリサイズを超えてはそのまま残される。
+  // 「ネストされた」Cutの再分割もそのまま残される(クラスコメント
+  // 参照)。新しいサイズは(今Shellが可視のモードでなくても)
+  // 無条件にShellのptyへ伝播される(本物の端末のリサイズは、全
+  // モードが共有する1つの物理的な端末に影響する。本物の端末マルチ
+  // プレクサがバックグラウンドのペインもリサイズするのと同じ)。
+  // そして現在画面上にあるものが何であれ再描画する。
   void handleResize();
 
-  // Called by the main loop whenever Shell::onPtyReadable() reports
-  // EOF (the child process, typically via `exit`, has ended on its
-  // own). See the definition's own comment.
+  // Shell::onPtyReadable()がEOFを報告するたびに(子プロセスが、
+  // 典型的には`exit`経由で、自力で終了した)メインループによって
+  // 呼ばれる。定義自身のコメント参照。
   void handleShellChildExited();
 
-  // Supplies HELP's (^J^H) text -- mirroring Configuration::
-  // loadRcText()/History::loadHistoryText()'s "caller does the file
-  // I/O" rule, see the class comment's own HELP section. Must be
-  // called before ^J^H can do anything; false (and HELP stays
-  // unavailable, StartHelp simply fails) if text is empty.
+  // HELP(^J^H)のテキストを供給する――Configuration::loadRcText()/
+  // History::loadHistoryText()の「呼び出し元がファイルI/Oを行う」
+  // というルールを反映している、クラスコメント自身のHELP節参照。
+  // ^J^Hが何かをできるようになる前に呼ばれなければならない。
+  // textが空の場合はfalse(HELPは利用不可能なまま、StartHelpは
+  // 単に失敗する)。
   bool loadHelpText(const std::string &text);
 
   ApplicationMode currentMode() const;
-  // The currently active charset, live-updated by cycleCharset()
-  // (K-27, ^Oa). main.cpp reads this at shutdown for History::
-  // setSavedCharset() instead of its own startup-time-only local, so
-  // a mid-session charset switch actually persists across runs --
-  // see main.cpp's own call site comment.
+  // cycleCharset()(K-27、^Oa)によってライブ更新される、現在
+  // アクティブな文字コード。main.cppは、独自の起動時のみのローカル
+  // 変数の代わりに、シャットダウン時にHistory::setSavedCharset()の
+  // ためにこれを読む。そのためセッション途中の文字コードの切り替え
+  // が実際に複数回の実行をまたいで永続化される――main.cpp自身の
+  // 呼び出し箇所のコメント参照。
   Charset::Encoding encoding() const;
 
-  // True whenever the NEXT byte fed to feedByte() would be consumed
-  // as part of a pending multi-key sequence (ESC-prefix, ^J-leader)
-  // or as literal text into an active prompt/entry widget, rather
-  // than interpreted as a plain top-level navigation command. Added
-  // for runGuiPhase()'s w/s inertial-scroll-trigger interception (see
-  // CLAUDE.md's 2026-07-31 note): 'w'/'s' must fall through to
-  // feedByte() untouched in any of these states -- typing "ESC s" for
-  // StartShell, or typing a literal "w"/"s" into an FGREP/path prompt
-  // -- rather than being hijacked for scrolling. Combined with a
-  // currentMode() != Shell check at the call site (typing must always
-  // reach the shell's own command line).
+  // feedByte()に供給される「次の」バイトが、プレーンなトップ
+  // レベルのナビゲーションコマンドとして解釈されるのではなく、
+  // 保留中の複数キーシーケンス(ESC接頭辞、^Jリーダー)の一部として、
+  // またはアクティブなプロンプト/入力ウィジェットへのリテラルな
+  // テキストとして消費されるであろう時は常にtrue。runGuiPhase()の
+  // w/s慣性スクロールトリガーの割り込み(CLAUDE.mdの2026-07-31の
+  // 記録参照)のために追加された: 'w'/'s'は、これらの状態のどれで
+  // あっても、スクロールのために乗っ取られるのではなく、
+  // feedByte()へ手を付けられずに落ちなければならない――StartShell
+  // のために「ESC s」を入力すること、またはFGREP/パスプロンプトへ
+  // リテラルな「w」/「s」を入力すること。呼び出し箇所での
+  // currentMode() != Shellのチェックと組み合わされる(タイピングは
+  // 常にshell自身のコマンド行に到達しなければならない)。
   bool awaitingSequenceOrPromptByte() const;
   DirectoryMode &directoryMode();
   FileMode &fileMode();
@@ -1347,52 +1423,56 @@ class Application {
   EditMode &editMode();
   ExecMode &execMode();
 
-  // Originally added 2026-07-30 as demo-support only (a drag-scroll
-  // feasibility sample, see GraphicalDisplay's own class comment) --
-  // exposes whichever ContentView is currently on screen so a
-  // prototype run loop can render/scroll its full content directly,
-  // bypassing Command dispatch entirely. Promoted to a real,
-  // permanent API 2026-08-29: startCopy() (see its own comment) uses
-  // this exact same "whatever's currently on screen, mode-agnostic"
-  // property as COPY's own snapshot source, which is genuinely a
-  // first-class use, not another prototype -- ContentView::lines()
-  // plus this accessor turned out to be sufficient for a mode-
-  // agnostic COPY with no per-mode integration at all (see
-  // requirements.md's own C++移植側の該当構造の調査結果 in
-  // .steering/20260829-copy-mode/).
+  // 元々は2026-07-30に、単なるデモサポートとして追加された
+  // (ドラッグスクロールの実現可能性サンプル、GraphicalDisplay自身
+  // のクラスコメント参照)――プロトタイプの実行ループが、Command
+  // ディスパッチを完全に迂回して、現在画面上にあるContentViewが
+  // 何であれ、その完全な内容を直接描画/スクロールできるように、
+  // それを公開する。2026-08-29に本物の、永続的なAPIへ昇格された:
+  // startCopy()(自身のコメント参照)は、まさにこの同じ「現在画面
+  // 上にあるものが何であれ、モードに依存しない」という性質を、
+  // COPY自身のスナップショットのソースとして使う。これは本当に
+  // 一級の用途であり、別のプロトタイプではない――ContentView::
+  // lines()にこのアクセサを加えたものが、モードごとの統合を全く
+  // 必要としない、モードに依存しないCOPYに対して十分であることが
+  // 判明した(.steering/20260829-copy-mode/内のrequirements.md自身
+  // のC++移植側の該当構造の調査結果参照)。
   ContentView &activeContentView();
 
  private:
-  // One recorded byte, for p_km (see class comment) -- feedByte()'s
-  // own former body, renamed dispatchByte(), does the actual work;
-  // feedByte() itself just wraps it with recording bookkeeping.
+  // p_kmのための、1つの記録されたバイト(クラスコメント参照)――
+  // feedByte()自身の以前の本体、名前を変更されdispatchByte()、が
+  // 実際の仕事を行う。feedByte()自体は単に記録の記帳でそれを包む
+  // だけである。
   struct RecordedStep {
     int byte;
     std::optional<KeyInput::SpecialKey> special;
   };
   bool dispatchByte(int byte, std::optional<KeyInput::SpecialKey> special);
-  // GrepPattern/CutPattern's own "Select string" ListBrowser (see
-  // startRegexPromptList()'s own comment): a curated set of bytes
-  // stays list-navigation-only, everything else transitions into an
-  // editable prompt pre-filled with the highlighted candidate's own
-  // text -- see its own definition comment for the full design.
+  // GrepPattern/CutPattern自身の「Select string」ListBrowser
+  // (startRegexPromptList()自身のコメント参照): 精選された一組の
+  // バイトはリストナビゲーション専用のままであり、他の全ては、
+  // ハイライトされた候補自身のテキストで事前に埋められた編集可能
+  // なプロンプトへ遷移する――完全な設計については自身の定義コメン
+  // ト参照。
   bool feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey> special);
-  // ^O^C's own small key vocabulary while ApplicationMode::Copy is
-  // active -- see startCopy()'s own comment. NOT routed through
-  // resolveCommand()'s global byte->Command table: this port's own
-  // Left/Right-arrow=Up/Down convention there (see its own comment)
-  // and ^B/^F's own page-scroll binding both predate a genuine
-  // horizontal text cursor, so CopyMode gets a fully self-contained
-  // dispatch instead of overloading either.
+  // ApplicationMode::Copyがアクティブな間の、^O^C自身の小さなキー
+  // 語彙――startCopy()自身のコメント参照。resolveCommand()の汎用
+  // バイト->Commandテーブルを経由「しない」: そこでのこの移植自身
+  // のLeft/Right矢印=Up/Downの慣習(自身のコメント参照)と^B/^F
+  // 自身のページスクロールの紐付けは、両方とも本物の水平方向の
+  // テキストカーソルより前からあるので、CopyModeはどちらかを流用
+  // する代わりに完全に自己完結したディスパッチを得る。
   bool feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> special);
-  // The ESC/^J/^X/^X^K/^O leader-key state machine, factored out of
-  // dispatchByte() so feedShellByte() can also reach it -- see its own
-  // comment (2026-08-02 user report: legacy lets ^J/^X/^O leaders work
-  // directly from within SHELL, e.g. ^X^F/^X^C, which this port
-  // silently swallowed as raw shell input before this existed).
+  // ESC/^J/^X/^X^K/^Oのリーダーキー状態機械、feedShellByte()も
+  // それに到達できるよう、dispatchByte()から括り出されている
+  // ――自身のコメント参照(2026-08-02のユーザー報告: legacyは
+  // ^J/^X/^Oのリーダーが、SHELLの内側から直接動作することを許す
+  // (例えば^X^F/^X^C)。これは、この機能が存在する前は、この移植が
+  // 生のshell入力として黙って飲み込んでいたものである)。
   bool dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKey> special);
-  // ^P/^N's own plain-text-cursor replacement for SHELL scrollback_'s
-  // whole-line highlight -- see its own definition comment.
+  // SHELLのscrollback_の行全体のハイライトに対する^P/^N自身の
+  // プレーンなテキストカーソルの代替――自身の定義コメント参照。
   void moveDisplayCursorToShellHistoryLine();
   bool startMacroRecording();
   bool stopMacroRecording();
@@ -1401,63 +1481,66 @@ class Application {
   bool openSelectedEntry();
   bool openSelectedSegment();
   bool openSelectedArchiveEntry();
-  // Nested-archive support (docs/ideas/IDEAS.md's own original
-  // motivating example for the whole C++ port: "アーカイブの中に
-  // さらにアーカイブファイルがあっても、それを選んで再度ARCモードに
-  // 入る(どこまで潜っても同様に動く)ことができない" -- legacy itself
-  // never supported this either, see menu.c's T_tar/etc handling,
-  // which only ever extracts to a destination or shows raw bytes;
-  // this is new functionality this port adds, not a port of existing
-  // behavior). ArchiveMode itself stays a single-archive-at-a-time
-  // class by design (see its own class comment) -- coordinating the
-  // "currently open chain of archives" is Application's job, the same
-  // boundary already drawn for every other mode hand-off.
+  // 入れ子のアーカイブサポート(docs/ideas/IDEAS.md自身の、C++移植
+  // 全体のための元々の動機となった例: "アーカイブの中にさらに
+  // アーカイブファイルがあっても、それを選んで再度ARCモードに入る
+  // (どこまで潜っても同様に動く)ことができない"――legacy自体も
+  // これを一度もサポートしたことが無い、menu.cのT_tar等の処理
+  // 参照。それは常に移動先へ展開するか生のバイトを表示するだけで
+  // ある。これはこの移植が追加する新機能であり、既存の挙動の移植
+  // ではない)。ArchiveMode自体は、設計上、一度に1つのアーカイブ
+  // だけを扱うクラスのままである(自身のクラスコメント参照)――
+  // 「現在開いているアーカイブの連鎖」を調整することはApplication
+  // の仕事であり、他の全てのモードの引き渡しに対して既に描かれた
+  // のと同じ境界である。
   //
-  // ArchiveMode::loadArchive() needs a real file path (it shells out
-  // to tar/unzip/etc, which don't read from a memory buffer), so
-  // entering a nested archive means materializing its extracted bytes
-  // (already available via ArchiveMode::extractSelected(), no new
-  // extraction logic needed) to a real temporary file first, then
-  // loading THAT path exactly the same way the top-level archive was
-  // loaded. archiveParentStack_ remembers each level's path (real
-  // file for the outermost archive, one of these temp files for every
-  // level below it) so returnFromArchive() can climb back out one
-  // level at a time instead of always returning straight to
-  // Directory.
+  // ArchiveMode::loadArchive()は本物のファイルパスを必要とする
+  // (メモリバッファから読まないtar/unzip等をシェルアウトする)ので、
+  // 入れ子のアーカイブに入場することは、まずその展開されたバイト
+  // (既にArchiveMode::extractSelected()経由で利用可能、新しい展開
+  // ロジックは不要)を本物の一時ファイルに実体化し、その後トップ
+  // レベルのアーカイブが読み込まれたのとまさに同じ方法で「その」
+  // パスを読み込むことを意味する。archiveParentStack_は各階層の
+  // パスを記憶する(最も外側のアーカイブに対しては本物のファイル、
+  // それより下の各階層に対してはこれらの一時ファイルの1つ)ので、
+  // returnFromArchive()は、常にDirectoryへ直接戻るのではなく、
+  // 一度に1階層ずつ登り返すことができる。
   bool descendToNestedArchive(const ArchiveEntry &entry);
-  // Writes `bytes` to a fresh file under `dir` (a NEW directory per
-  // call, avoiding basename collisions between sibling entries at
-  // different nesting levels that happen to share a name), named after
-  // entry.name's own basename (preserving its suffix, since
-  // programForSuffix() dispatches on that). `dir` is the caller's own
-  // concern -- descendToNestedArchive() passes allocateArcDirectory()'s
-  // result (2026-08-18: used to mkdtemp() a bare `/tmp/usilic-arcXXXXXX`
-  // itself; now consumes an arc.N slot instead, see that function's own
-  // comment), executeShowTcbBanner() passes tempRootDirectory_ directly
-  // (its own single fixed file is NOT part of the arc.N sequence -- it
-  // isn't archive extraction, and would otherwise show up recursively
-  // inside its own listing). Left for the OS to clean up on reboot/
-  // tmp-cleaner sweep, same as this project's already-documented,
-  // already-accepted tolerance for /tmp/.tcb's own unswept scratch
-  // files (CLAUDE.md) -- not deleted eagerly because a parent frame
-  // still on archiveParentStack_ may need to reload it later in the
-  // same session. Empty string on failure (directory creation/ofstream
-  // failure).
+  // `bytes`を`dir`の下の新しいファイル(呼び出しごとに新しい
+  // ディレクトリ。異なるネスト階層で名前がたまたま同じ兄弟エントリ
+  // の間でベース名の衝突を避ける)へ、entry.name自身のベース名に
+  // ちなんで(programForSuffix()がそれでディスパッチするので、
+  // suffixを保持したまま)書き込む。`dir`は呼び出し元自身の関心事
+  // である――descendToNestedArchive()はallocateArcDirectory()の
+  // 結果を渡し(2026-08-18: 以前は素の
+  // `/tmp/usilic-arcXXXXXX`自体をmkdtemp()していたが、今は代わり
+  // にarc.Nスロットを消費する、その関数自身のコメント参照)、
+  // executeShowTcbBanner()はtempRootDirectory_を直接渡す(それ
+  // 自身の単一の固定ファイルはarc.Nの連番の一部では「ない」――
+  // それはアーカイブ展開ではなく、そうしないとそれ自身の一覧内に
+  // 再帰的に現れてしまう)。/tmp/.tcb自身の掃除されない作業ファイル
+  // (CLAUDE.md)に対するこのプロジェクトの既に文書化され、既に
+  // 受け入れられている許容と同様、再起動時/tmpクリーナーの掃除で
+  // OSが片付けるに任される――archiveParentStack_にまだ乗っている
+  // 親フレームが、同じセッション内で後でそれを再読み込みする必要
+  // があるかもしれないので、積極的には削除されない。失敗時
+  // (ディレクトリ作成/ofstreamの失敗)は空文字列。
   std::string materializeArchiveTempFile(const std::string &dir, const std::string &entryName,
                                           const std::vector<unsigned char> &bytes);
-  // K-17 (^X^W)/K-64 (^J^W)'s shared allocator: returns a fresh
-  // `tempRootDirectory_ + "/w." + N` path, advancing nextWorkFileNumber_
-  // and recording it in allocatedWorkFiles_ (^T's own "WORK" list). Does
-  // NOT create the file itself -- callers open it with whichever mode
-  // (std::ios::app/trunc) their own use needs.
+  // K-17(^X^W)/K-64(^J^W)の共有アロケータ: 新しい
+  // `tempRootDirectory_ + "/w." + N`パスを返し、
+  // nextWorkFileNumber_を進め、それをallocatedWorkFiles_(^T自身の
+  // 「WORK」一覧)に記録する。ファイル自体は作成「しない」――呼び
+  // 出し元は、それ自身の用途が必要とするモード(std::ios::
+  // app/trunc)でそれを開く。
   std::string allocateWorkFilePath();
-  // Nested-archive descent's own allocator (K-57/K-58's own
-  // descendToNestedArchive(), NOT the banner's fixed single file --
-  // see materializeArchiveTempFile()'s own comment): returns a fresh
-  // `tempRootDirectory_ + "/arc." + N` directory path (not yet created
-  // on disk -- materializeArchiveTempFile()'s own caller creates it),
-  // advancing nextArchiveNumber_ and recording it in allocatedArcDirs_
-  // (^T's own "arc.N" list).
+  // 入れ子アーカイブの降下自身のアロケータ(K-57/K-58自身の
+  // descendToNestedArchive()向け、バナーの固定単一ファイル向けで
+  // はない――materializeArchiveTempFile()自身のコメント参照): 新しい
+  // `tempRootDirectory_ + "/arc." + N`ディレクトリパス(まだディスク
+  // 上には作成されていない――materializeArchiveTempFile()自身の
+  // 呼び出し元がそれを作成する)を返し、nextArchiveNumber_を進め、
+  // それをallocatedArcDirs_(^T自身の「arc.N」一覧)に記録する。
   std::string allocateArcDirectory();
   bool openSelectedDuEntry();
   bool openSelectedLocateResult();
@@ -1465,12 +1548,13 @@ class Application {
   bool goToParentFromFileOrArchive();
   bool jumpToPathPrefix();
   bool openSelectedListEntry();
-  // Shared by openSelectedListEntry()'s own RecentFile branch and
-  // goToRecentFile() (^J^J) -- see their own comments.
+  // openSelectedListEntry()自身のRecentFile分岐とgoToRecentFile()
+  // (^J^J)で共有される――それら自身のコメント参照。
   bool openRecentFileEntry(const std::string &path);
   bool goToRecentFile();
-  // Command::Back's own empty-ModeStack fallback -- see its own call
-  // site comment and this function's own definition comment.
+  // Command::Back自身の、空のModeStackに対するフォールバック
+  // ――自身の呼び出し箇所のコメントとこの関数自身の定義コメント
+  // 参照。
   bool goToRecentDirectory();
   bool toggleMark();
   bool returnToDirectory();
@@ -1489,44 +1573,48 @@ class Application {
   bool returnFromDu();
   bool returnFromListBrowser();
   bool returnFromKey();
-  // ^O^C (M_copy, "COPY"): snapshots activeContentView().lines() into
-  // copyMode_ and switches to ApplicationMode::Copy. See CopyMode's
-  // own class comment for why the snapshot state itself lives there,
-  // not here. False (no-op) if already in Copy mode.
+  // ^O^C(M_copy、「COPY」): activeContentView().lines()を
+  // copyMode_へスナップショットし、ApplicationMode::Copyへ切り
+  // 替える。なぜスナップショット状態自体がここではなくそこに住む
+  // のかについてはCopyMode自身のクラスコメント参照。既にCopyモード
+  // の場合はfalse(何もしない)。
   bool startCopy();
-  // Any exit key from Copy mode (this port's own convention: ^G only,
-  // unlike legacy's own "any key outside a small movement whitelist,
-  // then replay that key" -- see design.md's own note on why this
-  // port follows the uniform Command::Back convention every other
-  // sub-mode here already uses instead of legacy's per-function
-  // replay mechanism). Restores copyReturnMode_ and redraws its own
-  // ContentView, which was never touched while in Copy mode.
+  // Copyモードからのどんな終了キーも(この移植自身の慣習: ^Gのみ。
+  // 「小さな移動許可リストの外側のどんなキーでも、そのキーを再生
+  // する」というlegacy自身のものとは異なる――この移植が、legacyの
+  // 関数ごとの再生機構の代わりに、ここの他の全てのサブモードが
+  // 既に使っている統一されたCommand::Backの慣習に従う理由について
+  // はdesign.md自身の注記参照)。copyReturnMode_を復元し、Copy
+  // モードにいる間一度も触れられなかったそれ自身のContentViewを
+  // 再描画する。
   bool returnFromCopy();
   ContentView &activeView();
   ContentView &viewForMode(ApplicationMode mode);
   void layoutViews();
   std::vector<std::string> collectTargetPaths() const;
-  // Shared by Command::PagerNextFile/PagerPreviousFile/PagerFirstFile/
-  // PagerLastFile and '['/']' while in File mode (see the Command
-  // enum's own comment) -- loads pagerFileList_[newIndex] and updates
-  // pagerFileIndex_. False (a pure no-op, current file untouched) if
-  // newIndex is out of bounds, already the current index, or the file
-  // at that index fails to load -- matching less's own ":n"/":p" at
-  // the ends of the list ("No next/previous file"), not a wrap-around.
+  // Fileモードにいる間のCommand::PagerNextFile/PagerPreviousFile/
+  // PagerFirstFile/PagerLastFileと'['/']'で共有される(Command
+  // enum自身のコメント参照)――pagerFileList_[newIndex]を読み込み、
+  // pagerFileIndex_を更新する。newIndexが範囲外、既に現在の
+  // インデックス、またはそのインデックスのファイルが読み込みに
+  // 失敗した場合はfalse(純粋に何もしない、現在のファイルには
+  // 手を付けない)――一覧の端でのless自身の":n"/":p"
+  // ("No next/previous file")に合わせている、循環はしない。
   bool navigateToPagerFile(int newIndex);
   bool startListBrowser(RingCategory category);
-  // See ToggleHistoryView's own comment.
+  // ToggleHistoryView自身のコメント参照。
   bool toggleListBrowserHistory();
   std::vector<std::string> sortedUniqueRecentEntries(RingCategory category) const;
-  // K-2 (^H, M_key, "KEY"): see startKey()'s own definition comment.
+  // K-2(^H、M_key、「KEY」): startKey()自身の定義コメント参照。
   bool startKey();
-  // Enter while in Key mode: returns to keyReturnMode_ FIRST (matching
-  // HELP.jp 2.2's own documented order -- "KEYを呼び出したモードに
-  // 戻ったのち，対応するキー定義を実行します"), THEN feeds the
-  // selected entry's own byte sequence through feedByte(), one byte
-  // at a time, so it's dispatched exactly as if the user had typed it
-  // live in that mode (naturally re-entering leader-key states for
-  // multi-byte sequences, same as a real keypress would).
+  // Keyモードにいる間のEnter: まずkeyReturnMode_へ戻り(HELP.jp
+  // 2.2自身の文書化された順序――"KEYを呼び出したモードに戻った
+  // のち，対応するキー定義を実行します"――に合わせている)、
+  // 「その後」、選択されたエントリ自身のバイトシーケンスを、
+  // ユーザーがそのモードで生きたままそれを入力したかのように正確
+  // にディスパッチされるよう、feedByte()経由で1バイトずつ供給する
+  // (マルチバイトシーケンスに対して、本物のキー入力がそうする
+  // ように、自然にリーダーキーの状態へ再入場する)。
   bool executeSelectedKeyBinding();
 
   bool startGrepPrompt(GrepSyntax syntax);
@@ -1538,194 +1626,204 @@ class Application {
   bool startProgramList();
   bool startLocatePrompt();
   bool runLocateUpdateDb();
-  // >0 while a detached `updatedb` launched by runLocateUpdateDb() is
-  // still running (see awaitingLocateUpdateDb()'s own comment); -1
-  // otherwise. Not KeyInput-related at all anymore -- the earlier
-  // poll()-based version's own keyInput_ member is gone along with it.
+  // runLocateUpdateDb()が起動した切り離された`updatedb`がまだ実行
+  // 中の間は>0(awaitingLocateUpdateDb()自身のコメント参照)、それ
+  // 以外は-1。もはやKeyInputとは全く関係が無い――以前のpoll()
+  // ベースのバージョン自身のkeyInput_メンバーは、それと一緒に無く
+  // なっている。
   pid_t locateUpdateDbPid_ = -1;
   bool startShell();
-  // Shared by startShell() and K-61/K-62/K-63/K-64: gets Shell mode
-  // on screen (starting the shell process if needed) WITHOUT
-  // startShell()'s own "already in Shell mode" refusal -- unlike a
-  // plain ESC-s/^Xs entry, these four keys are meant to work whether
-  // or not Shell was already active (legacy's own m_w() call site has
-  // no such mode-guard either, only the separate is_inter() busy
-  // check).
+  // startShell()とK-61/K-62/K-63/K-64で共有される: startShell()
+  // 自身の「既にShellモード」という拒否無しに、Shellモードを画面
+  // に表示する(必要ならshellプロセスを起動する)――素のESC-s/^Xsの
+  // 入場とは異なり、これら4つのキーは、Shellが既にアクティブで
+  // あったかどうかに関わらず動作することを意図している(legacy
+  // 自身のm_w()の呼び出し箇所にも、そのようなモードガードは無く、
+  // 別のis_inter()のbusyチェックだけがある)。
   bool ensureShellActive();
-  // Snapshot of whichever *Mode's own "current name" accessor matches
-  // `mode`, for shellReturnName_ (see its own comment). Only the
-  // modes that already have such an accessor AND are plausible entry
-  // points into Shell are covered (Directory/File/Man/Archive/
-  // ArchiveContent/Du); everything else (Grep/Cut/CutContent/Locate/
-  // ListBrowser -- none of which currently expose a single "name"
-  // string of their own) falls back to "", which simply omits the
-  // trailing field rather than guessing.
+  // shellReturnName_のための、`mode`に一致するどの*Mode自身の
+  // 「現在の名前」アクセサでも、そのスナップショット(自身のコメン
+  // ト参照)。既にそのようなアクセサを持ち「かつ」Shellへの妥当な
+  // 入口であるモード(Directory/File/Man/Archive/ArchiveContent/
+  // Du)だけがカバーされている。他の全て(Grep/Cut/CutContent/
+  // Locate/ListBrowser――それ自身の単一の「名前」文字列を現在
+  // 公開しているものは1つも無い)は、推測するのではなくtrailing
+  // フィールドを単に省略する""へフォールバックする。
   std::string previousModeName(ApplicationMode mode) const;
-  // "CUT:<current segment's own label>" (leading spaces stripped),
-  // e.g. "CUT:1.  Introduction" -- a more specific return-destination
-  // description for CutContent than previousModeName()'s own bare
-  // "CUT" can give (that function has no per-instance state to draw
-  // from, just a mode enum). Mirrors cutContentView_'s own established
-  // "CUT:<label>" mode-line convention (see its provider's own
-  // comment) -- shared here (2026-08-24) by grepView_'s own return-
-  // destination field AND drawPromptLabel()'s own prompt-time
-  // "destinationDirectory" field, both of which used to fall back to
-  // the bare, less specific previousModeName(CutContent) instead.
+  // "CUT:<現在のセグメント自身のラベル>"(先頭の空白は取り除か
+  // れる)、例えば"CUT:1.  Introduction"――previousModeName()自身
+  // の裸の「CUT」(その関数は描画すべきインスタンスごとの状態を
+  // 持たず、単なるモードのenumだけである)よりも、CutContentに
+  // 対するより具体的な戻り先の説明。cutContentView_自身の確立
+  // された「CUT:<ラベル>」モードライン慣習(自身のプロバイダの
+  // コメント参照)を反映している――ここで(2026-08-24)
+  // grepView_自身の戻り先フィールドと、drawPromptLabel()自身の
+  // プロンプト時の「destinationDirectory」フィールドの両方に
+  // よって共有される。両方とも、以前は代わりに裸の、より具体的で
+  // ないpreviousModeName(CutContent)へフォールバックしていた。
   std::string cutContentReturnLabel() const;
-  // The label shown for each RingCategory in the LIST-based history
-  // pickers' own mode-line trailing field -- see
-  // listBrowserView_.setModeLineFieldsProvider()'s own comment
-  // (constructor).
+  // 「一覧」ベースの履歴ピッカー自身のモードラインのtrailingフィー
+  // ルドに、各RingCategoryに対して表示されるラベル――
+  // listBrowserView_.setModeLineFieldsProvider()自身のコメント
+  // (コンストラクタ)参照。
   std::string ringCategoryLabel(RingCategory category) const;
-  // K-60 (^Xs, M_hup): kills the current SHELL child (if any, via
-  // Shell::terminate()'s SIGHUP+wait) and starts a fresh one, entering
-  // Shell mode. Ported from menu.c's own M_hup case: legacy's
-  // is_inter(F12,...) SIGHUPs both the shell and its IPC relay process
-  // and blocks until both die, which Shell::terminate() already does
-  // the equivalent of in this port's simpler single-process pty
-  // design (see Shell's own class comment on why there's no relay
-  // process here). Refused, like legacy's own is_inter(NULL,...)
-  // guard, while a handed-off interactive PROGRAM is still running
-  // (Shell::busy()) -- restarting the pty out from under something
-  // like `less` currently controlling it would strand that child.
+  // K-60(^Xs、M_hup): 現在のSHELLの子(もしあれば、
+  // Shell::terminate()のSIGHUP+wait経由)を殺し、新しいものを起動
+  // し、Shellモードに入場する。menu.c自身のM_hupケースからの移植:
+  // legacyのis_inter(F12,...)はshellとそのIPC中継プロセスの両方に
+  // SIGHUPを送り両方が死ぬまでブロックする。これは、この移植の
+  // より単純な単一プロセスのpty設計(なぜここに中継プロセスが無い
+  // かについてはShell自身のクラスコメント参照)では、
+  // Shell::terminate()が既にそれと等価なことを行う。legacy自身の
+  // is_inter(NULL,...)ガードと同様、引き渡された対話的なPROGRAM
+  // がまだ実行中の間(Shell::busy())は拒否される――現在それを
+  // 制御している`less`のようなものの足元でptyを再起動すると、
+  // その子を取り残してしまう。
   bool shellRestart();
   bool saveBufferToFile();
   bool shellChangeDirectory();
   bool shellRunLsL();
   bool shellInsertName();
   bool shellInsertBufferContent();
-  // K-67 (^X^Ke): opens errorLogPath_ in File mode. Not prompt-driven
-  // -- an immediate action, like Directory mode's own archive
-  // auto-detection. False if the file doesn't exist yet (nothing
-  // logged there this session) or can't be opened.
+  // K-67(^X^Ke): errorLogPath_をFileモードで開く。プロンプト駆動
+  // ではない――Directoryモード自身のアーカイブ自動検出のような即時
+  // アクション。まだファイルが存在しない(今回のセッションで何も
+  // ログされていない)、または開けない場合はfalse。
   bool executeShowErrorLog();
-  // K-68 (^X^Kl): writes Shell::scrollback()'s CURRENT lines to
-  // logFilePath_ (truncating any previous snapshot), then opens that
-  // file in File mode. This is a snapshot on demand, not a
-  // continuous tee of Shell's pty output the way legacy's own
-  // write(sfd,...) is (see shell.c's read_line()) -- building that
-  // would mean plumbing a log-file fd through Shell's byte-by-byte
-  // output processing for a payoff (seeing output that's since
-  // scrolled off-screen or been cleared) this simpler snapshot
-  // already delivers for the common case of "what did the shell just
-  // print." False if Shell was never started (nothing to snapshot)
-  // or the file can't be written/opened.
+  // K-68(^X^Kl): Shell::scrollback()の「現在の」行をlogFilePath_
+  // へ(以前のスナップショットを切り詰めて)書き込み、その後その
+  // ファイルをFileモードで開く。これはlegacy自身の
+  // write(sfd,...)(shell.cのread_line()参照)のような、Shellのpty
+  // 出力の継続的な複写ではなく、要求に応じたスナップショットで
+  // ある――それを構築することは、それ以来画面外へスクロールした
+  // かクリアされた出力を見るという見返りのために、ログファイルの
+  // fdをShellのバイトごとの出力処理に配管することを意味するが、
+  // このより単純なスナップショットは既に「shellがちょうど何を
+  // 印字したか」というよくあるケースに対してそれを届けている。
+  // Shellが一度も起動されていない(スナップショットすべきものが
+  // 無い)、またはファイルが書き込み/開けない場合はfalse。
   bool executeShowShellLog();
-  // Shared by executeShowShellLog()/executeStartLog() -- see its own
-  // definition comment (application.cpp).
+  // executeShowShellLog()/executeStartLog()で共有される――自身の
+  // 定義コメント(application.cpp)参照。
   bool refreshShellLogFile();
-  // ESC l ("LOG"): see its own definition comment (application.cpp).
+  // ESC l("LOG"): 自身の定義コメント(application.cpp)参照。
   bool executeStartLog();
-  // K-0 (^T): builds a short status/about screen -- version, the
-  // usilicrc/history file paths (str.c's print_tcb() shows the SAME
-  // two fields, "Startup file"/"History file"), user@host, and the
-  // ERROR/LOG paths (K-67/K-68) -- and opens it via File mode.
-  // Deliberately narrower than legacy's own print_tcb(): "Startup
-  // mode" (file manager vs pager) and "Command line" (the invoking
-  // argv) are both omitted -- this port has no pager-only launch path
-  // yet (main.cpp always calls Application::start() into Directory
-  // mode regardless of argument), and Application doesn't currently
-  // receive its own argv at all, so there's nothing genuine to report
-  // for either field rather than a guessed/hardcoded placeholder.
-  // Written to a throwaway mkdtemp() temp file (materializeArchiveTempFile()'s
-  // own pattern) since FileMode::loadFile() needs a real path and
-  // this text has no other natural on-disk home the way ERROR/LOG do.
+  // K-0(^T): 短いステータス/バージョン情報画面を構築する――
+  // バージョン、usilicrc/historyファイルのパス(str.cのprint_tcb()
+  // が「同じ」2つのフィールド、「Startup file」/「History file」を
+  // 表示する)、user@host、そしてERROR/LOGのパス(K-67/K-68)――
+  // そしてそれをFileモード経由で開く。
+  // legacy自身のprint_tcb()より意図的に狭い: 「Startup mode」
+  // (ファイルマネージャ対ページャー)と「Command line」(呼び出し
+  // 元のargv)は両方とも省略されている――この移植にはまだページャー
+  // 専用の起動経路が無く(main.cppは引数に関わらず常に
+  // Application::start()をDirectoryモードへ呼ぶ)、Applicationは
+  // 現在それ自身のargvを全く受け取らないので、推測された/ハード
+  // コードされたプレースホルダーではなく、どちらのフィールドに
+  // 対しても報告すべき本物のものが無い。materializeArchiveTempFile()
+  // 自身のパターンで、使い捨てのmkdtemp()一時ファイルへ書き込まれ
+  // る。FileMode::loadFile()は本物のパスを必要とし、このテキストは
+  // ERROR/LOGのような他の自然なディスク上の住処を持たないため。
   bool executeShowTcbBanner();
-  // The ^T banner's own synthetic backing file lives under
-  // "<homeDirectory>/.usilic/usilic" -- NOT tempRootDirectory_
-  // (2026-08-18 fix, a real report: unlike ERROR/SHELL/WORK/ARC, the
-  // banner is never written to in the background/continuously, so it
-  // was never actually part of the multi-instance conflict item 338's
-  // PID-based reorg was fixing; forcing it through tempRootDirectory_
-  // anyway just leaked "/tmp/.usilic.<pid>/" into its own mode line as
-  // a misleadingly return-destination-looking field). Shares
-  // usilicrcPath_'s own directory rather than a dedicated member.
+  // ^Tバナー自身の合成された裏付けファイルは
+  // "<homeDirectory>/.usilic/usilic"の下に住む――tempRootDirectory_
+  // では「ない」(2026-08-18の修正、実際の報告: ERROR/SHELL/WORK/
+  // ARCとは異なり、バナーはバックグラウンドで/継続的に書き込まれ
+  // ることが決して無いので、それは項目338のPIDベースの再編成が
+  // 修正していた複数インスタンスの衝突の一部では実際には全く無
+  // かった。それでもtempRootDirectory_を無理に通すと、単にそれ
+  // 自身のモードラインに、紛らわしく戻り先のように見えるフィール
+  // ドとして「/tmp/.usilic.<pid>/」を漏らすだけだった)。専用の
+  // メンバーではなく、usilicrcPath_自身のディレクトリを共有する。
   std::string bannerFilePath() const;
-  // K-0/^T's own WORK/ARC candidate-list selection (2026-08-18): the
-  // original spec's own mockup annotated the WORK/arc.N lines with
-  // "[hit highlighted string][returns to the usilic screen]" -- see
-  // its own definition comment for the design.
+  // K-0/^T自身のWORK/ARC候補一覧の選択(2026-08-18): 元の仕様自身の
+  // モックアップは、WORK/arc.N行に
+  // "[hit highlighted string][returns to the usilic screen]"と注釈
+  // を付けていた――設計については自身の定義コメント参照。
   bool openSelectedBannerEntry();
-  // K-27 (^Oa): ported from key.c's own key_getch() comment ("was a
-  // straight 2-way ASCII<->EUC toggle; cycle through all three now
-  // instead of leaving UTF-8 users stuck toggling between ASCII and
-  // EUC with no way back to UTF-8" -- that fix already happened on
-  // the legacy C side, this just ports the resulting 3-way cycle).
-  // Updates encoding_ and propagates it to every already-ported class
-  // that owns its own copy (FileMode/ManMode/Shell/promptEditor_ --
-  // see each one's own setEncoding() comment on what it does and
-  // doesn't retroactively affect), then reflows whatever's currently
-  // on screen (File/Man mode) so the effect is immediately visible
-  // instead of only applying to the NEXT file/page opened. Always
-  // succeeds (no mode restriction -- legacy's own M_ascii has none
-  // either, unlike most other K-? commands in this port).
+  // K-27(^Oa): key.c自身のkey_getch()のコメントからの移植
+  // ("was a straight 2-way ASCII<->EUC toggle; cycle through all
+  // three now instead of leaving UTF-8 users stuck toggling between
+  // ASCII and EUC with no way back to UTF-8"――その修正は既にlegacy
+  // のC側で起きており、これは単にその結果の3方向の巡回を移植する
+  // だけ)。encoding_を更新し、それ自身のコピーを所有する既に
+  // 移植済みの全てのクラス(FileMode/ManMode/Shell/promptEditor_
+  // ――それが何を、遡って何に影響しない/影響するかについてはそれ
+  // ぞれ自身のsetEncoding()コメント参照)へ伝播し、その後現在画面
+  // 上にあるもの(File/Manモード)を再折り返しするので、次に開かれる
+  // ファイル/ページにだけ適用されるのではなく、効果が即座に見える。
+  // 常に成功する(モード制限は無い――legacy自身のM_asciiも、この
+  // 移植の他のほとんどのK-?コマンドとは異なり、それを持たない)。
   bool cycleCharset();
   bool startCopyPrompt();
   bool startMovePrompt();
   bool startRemovePrompt();
-  // K-71 (^X^M, M_dest): shows the prompt for whichever operation
-  // startCopyPrompt()/startMovePrompt()/startRemovePrompt() most
-  // recently armed -- see PendingCpMvRmOperation's own comment.
+  // K-71(^X^M、M_dest): startCopyPrompt()/startMovePrompt()/
+  // startRemovePrompt()のうち最も最近準備した操作に対してプロンプ
+  // トを表示する――PendingCpMvRmOperation自身のコメント参照。
   bool startDestinationPrompt();
-  // ^G while an operation is armed (before ^X^M) -- see its own
-  // definition comment.
+  // 操作が(^X^Mより前に)準備されている間の^G――自身の定義コメント
+  // 参照。
   bool cancelPendingCpMvRm();
   bool startExitPrompt();
   bool startDuPrompt();
-  // K-58 (^Xa, M_arc2, "ARC: Expand archive") -- K-57 (^X^Ka, "with
-  // SHELL window") removed 2026-08-23, see kKeyTable's own comment.
-  // Starts the "Destination ?" prompt (HELP.jp 2.11). Two entry
-  // points, both valid per HELP.jp's own text:
-  //   - From Directory mode, the selected entry must itself be a
-  //     recognized archive suffix (same programForSuffix() check
-  //     openSelectedEntry() already uses at the top level) -- the
-  //     WHOLE archive gets extracted.
-  //   - From Archive mode (already browsing an archive's TOC, whether
-  //     top-level or nested), targetEntries() must be non-empty (the
-  //     marked entries, or the current selection if nothing's marked
-  //     -- see ArchiveMode::toggleMark()'s own comment) -- only those
-  //     specific entries get extracted.
-  // False (refused) from every other mode, or if neither condition
-  // above holds (e.g. Directory mode with a non-archive file
-  // selected).
+  // K-58(^Xa、M_arc2、「ARC: Expand archive」)――K-57(^X^Ka、
+  // "with SHELL window")は2026-08-23に削除された、kKeyTable自身の
+  // コメント参照。「Destination ?」プロンプト(HELP.jp 2.11)を
+  // 開始する。2つの入口、両方ともHELP.jp自身のテキストによれば
+  // 有効:
+  //   - Directoryモードから、選択されたエントリ自体が認識される
+  //     アーカイブsuffixでなければならない(openSelectedEntry()が
+  //     トップレベルで既に使っているのと同じprogramForSuffix()
+  //     チェック)――「アーカイブ全体」が展開される。
+  //   - Archiveモード(既にアーカイブの目次を閲覧中、トップレベル
+  //     でもネストされていても)から、targetEntries()が空でない
+  //     必要がある(マークされたエントリ、または何もマークされて
+  //     いなければ現在の選択――ArchiveMode::toggleMark()自身の
+  //     コメント参照)――それらの特定のエントリだけが展開される。
+  // 他の全てのモードから、または上のどちらの条件も成り立たない
+  // (例えばDirectoryモードで非アーカイブファイルが選択されている)
+  // 場合はfalse(拒否)。
   bool startArchivePrompt();
-  // Builds the extraction argv for `kind` (Tar/Zip only in this first
-  // slice -- Lha's own extraction syntax differs from the `lha p`
-  // extract-to-stdout command extractSelected() uses, and Rpm/Deb
-  // already have no locateContent() support at all, see ArchiveMode's
-  // own class comment; extending this to those formats is future
-  // work, not guessed at here). `members` empty means "the whole
-  // archive"; non-empty means "just these entries" (tar/unzip both
-  // accept trailing member-name arguments for exactly this). Empty
-  // result for an unsupported kind.
+  // `kind`(この最初の一切れではTarとZipだけ――Lha自身の展開構文は
+  // extractSelected()が使う`lha p`の標準出力への展開コマンドとは
+  // 異なり、Rpm/Debには既にlocateContent()サポートが全く無い、
+  // ArchiveMode自身のクラスコメント参照。これらのフォーマットへ
+  // 拡張することは将来の課題であり、ここで推測されてはいない)の
+  // ための展開argvを構築する。`members`が空は「アーカイブ全体」を
+  // 意味する。空でなければ「これらのエントリだけ」を意味する
+  // (tar/unzipは両方とも、まさにこのために末尾のメンバー名の
+  // 引数を受け付ける)。サポートされていないkindに対しては空の
+  // 結果。
   std::vector<std::string> buildArchiveExtractArgv(const std::string &archivePath, ArchiveKind kind,
                                                     const std::vector<std::string> &members,
                                                     const std::string &destination) const;
-  // Backslash-escapes tar/unzip's own glob metacharacters (`\*?[]{}`)
-  // in a real archive entry name so it's matched as a literal member
-  // name, not (mis)parsed as a shell-style glob pattern -- see
-  // buildArchiveExtractArgv()'s own call site comment for the real
-  // report this fixes.
+  // 実際のアーカイブエントリ名の中のtar/unzip自身のglobメタ文字
+  // (`\*?[]{}`)をバックスラッシュエスケープし、それがシェルスタイル
+  // のglobパターンとして(誤って)パースされるのではなく、リテラル
+  // なメンバー名としてマッチされるようにする――これが修正する実際
+  // の報告についてはbuildArchiveExtractArgv()自身の呼び出し箇所の
+  // コメント参照。
   static std::string escapeArchiveMemberPattern(const std::string &name);
   bool startPathInputPrompt(bool isDirectory);
-  // K-65 (^I, M_list, "LIST: Complete file name"): lists filesystem
-  // entries under the directory implied by `partial` (resolved
-  // against `baseDirectory` when `partial` isn't itself absolute or
-  // ~-rooted) whose name starts with the remaining prefix. Each
-  // returned candidate is the FULL completion (partial's own
-  // directory portion + matched name), not just the matched suffix --
-  // matching Shell::completionProvider_'s own contract (see its
-  // declaration comment): the caller only acts when there's exactly
-  // one candidate, splicing in the part past what was already typed.
-  // Directories get a trailing '/' (this port's established ls -F
-  // convention, e.g. DirectoryEntry::name) so a single unambiguous
-  // directory match can be Tab-completed again immediately for the
-  // next path segment. Shared by Shell's own Tab-completion (wired in
-  // the constructor) and the FILE/DIR PathInput prompt's own Tab
-  // handling in feedPromptByte() -- deliberately NOT wired to every
-  // other prompt kind (MAN/PROGRAM/LOCATE/GREP names aren't
-  // filesystem paths at all) in this first slice; see class comment's
-  // own scope notes for the general pattern.
+  // K-65(^I、M_list、「LIST: Complete file name」): `partial`
+  // (`partial`自体が絶対でも~始まりでもない場合は`baseDirectory`
+  // に対して解決される)が暗示するディレクトリの下にある、名前が
+  // 残りの接頭辞で始まるファイルシステムエントリを一覧表示する。
+  // 返される各候補は、マッチした接尾辞だけではなく、完全な補完
+  // (partial自身のディレクトリ部分+マッチした名前)である――
+  // Shell::completionProvider_自身の契約(宣言コメント参照)に
+  // 合わせている: 呼び出し元は、候補がちょうど1つの時にだけ行動
+  // し、既に入力された部分を過ぎた部分を繋ぎ込む。ディレクトリは
+  // 末尾に'/'を得る(この移植の確立されたls -Fの慣習、例えば
+  // DirectoryEntry::name)ので、単一の曖昧でないディレクトリの
+  // マッチは、次のパスセグメントのために即座に再度Tab補完できる。
+  // Shell自身のTab補完(コンストラクタで配線される)とFILE/DIRの
+  // PathInputプロンプト自身のfeedPromptByte()でのTab処理で共有
+  // される――この最初の一切れでは、意図的に他の全てのプロンプトの
+  // 種類(MAN/PROGRAM/LOCATE/GREPの名前はそもそもファイルシステム
+  // パスではない)には配線されていない。一般的なパターンについては
+  // クラスコメント自身の範囲の注記参照。
   std::vector<std::string> completeFilesystemPath(const std::string &partial,
                                                     const std::string &baseDirectory) const;
   bool feedPromptByte(int byte);
@@ -1735,29 +1833,30 @@ class Application {
   bool executeCut(const std::string &pattern);
   bool executeMan(const std::string &name);
   bool executeProgram(const std::string &command);
-  // Shared by executeProgram() and setProgramLauncher()'s own lambda
-  // (constructor) -- see their own call-site comments.
+  // executeProgram()とsetProgramLauncher()自身のラムダ(コンストラ
+  // クタ)で共有される――それら自身の呼び出し箇所のコメント参照。
   bool isRecognizedProgram(const std::string &firstWord) const;
   static std::string cdWrap(const std::string &dir, const std::string &command);
-  // Command::QuickLook -- see that enumerator's own comment. Runs
-  // `qlmanage -p '<path>'` on directoryMode_.selectedEntry() directly
-  // via programMode_ (bypassing the PROGRAM prompt/isRecognizedProgram()
-  // allow-list entirely, since this is a single hardcoded command, not
-  // user-typed input). Returns false (no-op) outside Directory mode or
-  // with no entry under the cursor.
+  // Command::QuickLook――その列挙子自身のコメント参照。programMode_
+  // 経由で、directoryMode_.selectedEntry()に対して直接
+  // `qlmanage -p '<path>'`を実行する(これは単一のハードコードされた
+  // コマンドであり、ユーザーが入力したものではないので、PROGRAM
+  // プロンプト/isRecognizedProgram()の許可リストを完全に迂回する)。
+  // Directoryモードの外側、またはカーソルの下にエントリが無い場合は
+  // false(何もしない)を返す。
   bool executeQuickLook();
   bool executeLocate(const std::string &query);
-  // Shared by executeCopy()/executeMove() -- see its own definition
-  // comment.
+  // executeCopy()/executeMove()で共有される――自身の定義コメント
+  // 参照。
   std::string resolveCpMvDestination(const std::string &destination) const;
   bool executeCopy(const std::string &destination);
   bool executeMove(const std::string &destination);
   bool executeRemove(const std::string &confirmation);
-  // Shared by executeMove()/executeRemove() -- see its own definition
-  // comment (docs/HISTORY.md:1840).
+  // executeMove()/executeRemove()で共有される――自身の定義コメント
+  // (docs/HISTORY.md:1840)参照。
   bool checkTargetsWritable(const std::vector<std::string> &targets);
-  // Shared tail of executeCopy()/executeMove()/executeRemove() -- see
-  // executeCopy()'s own comment.
+  // executeCopy()/executeMove()/executeRemove()の共有される末尾
+  // ――executeCopy()自身のコメント参照。
   bool startCpMvRmShellRun(const std::vector<std::string> &argv, const std::string &destination,
                             const std::string &sourceDirectory);
   bool executeExit(const std::string &confirmation);
@@ -1768,88 +1867,89 @@ class Application {
   bool startHelp();
   std::vector<StyledLine> wrapHelpText(int width) const;
 
-  Display &display_;  // handleResize()'s own rows()/columns() lookup -- no other member currently needs this
-  PathResolver pathResolver_;  // ^Xf/^Xd path prompts, see the constructor's own homeDirectory comment
-  // 2026-08-18 addition (screenshot =cm, a real report of two
-  // concurrently-running argument-launched instances clobbering each
-  // other's ERROR/SHELL/WORK/ARC files since they all used to share one
-  // fixed path under homeDirectory): the root directory error/shell/
-  // work/arc files are allocated under. `/tmp/.usilic.<pid>` for an
-  // argument-launched (multi-instance-capable) run, or
-  // `<homeDirectory>/.usilic` for a bare no-argument "resume last
-  // session" run (legacy's own single-instance assumption still holds
-  // there) -- see main()'s own comment for exactly how this is chosen
-  // and the directory created. usilicrcPath_/historyFilePath_ below are
-  // deliberately NOT rooted here -- see their own comment.
+  Display &display_;  // handleResize()自身のrows()/columns()の参照――現在他のどのメンバーもこれを必要としない
+  PathResolver pathResolver_;  // ^Xf/^Xdパスプロンプト、コンストラクタ自身のhomeDirectoryコメント参照
+  // 2026-08-18の追加(スクリーンショット=cm、2つの同時実行される
+  // 引数起動されたインスタンスが、以前はhomeDirectoryの下の1つの
+  // 固定パスを共有していたので互いのERROR/SHELL/WORK/ARCファイル
+  // を壊し合っていたという実際の報告): error/shell/work/arcファイル
+  // が割り当てられるルートディレクトリ。引数起動(複数インスタンス
+  // 対応)の実行に対しては`/tmp/.usilic.<pid>`、素の引数無し
+  // 「最後のセッションを再開」実行に対しては`<homeDirectory>/.usilic`
+  // (legacy自身の単一インスタンスの前提は依然としてそこで成り立つ)
+  // ――これが正確にどう選ばれ、ディレクトリが作成されるかについては
+  // main()自身のコメント参照。下のusilicrcPath_/historyFilePath_は、
+  // 意図的にここには根を持たない――それら自身のコメント参照。
   std::string tempRootDirectory_;
-  // 2026-08-18 follow-up addition: SEPARATE from tempRootDirectory_
-  // above -- a direct user correction to the 2026-08-18 reorg just
-  // above. That reorg rooted error/shell/work/arc together, but a
-  // bare no-argument launch's own "resume last session" ERROR/SHELL
-  // logs are meant to persist across restarts (same reasoning
-  // usilicrcPath_/historyFilePath_ below already got exempted for),
-  // while WORK (^X^W/K-64's own w.N scratch buffers) is genuinely
-  // per-session throwaway content regardless of launch mode and should
-  // be cleaned up on exit either way. tempRootDirectory_ above keeps
-  // its OWN existing error/shell-only meaning (PID-scoped only for an
-  // argument-launched run); this is ALWAYS `/tmp/.usilic.<pid>`
-  // (main()'s own cleanup on exit, see its own comment, relies on that
-  // being unconditional) for work/arc specifically -- see
-  // allocateWorkFilePath()/allocateArcDirectory()'s own use of this
-  // instead of tempRootDirectory_.
+  // 2026-08-18の追加依頼: 上のtempRootDirectory_とは「別」――すぐ上
+  // の2026-08-18の再編成への直接のユーザーによる訂正。その再編成は
+  // error/shell/work/arcを一緒に根付けたが、素の引数無し起動自身の
+  // 「最後のセッションを再開」ERROR/SHELLログは再起動をまたいで
+  // 永続化されることを意図している(下のusilicrcPath_/
+  // historyFilePath_が既に免除された理由と同じ)一方、WORK
+  // (^X^W/K-64自身のw.N作業バッファ)は、起動モードに関わらず本当に
+  // セッションごとの使い捨ての内容であり、どちらにせよ終了時に
+  // 片付けられるべきである。上のtempRootDirectory_は、それ自身の
+  // 既存のerror/shell専用の意味(引数起動された実行に対してだけ
+  // PIDスコープ)を保つ。これは、特にwork/arcに対しては常に
+  // `/tmp/.usilic.<pid>`である(main()自身の終了時の片付け、自身の
+  // コメント参照、はそれが無条件であることに依存している)――
+  // allocateWorkFilePath()/allocateArcDirectory()自身が
+  // tempRootDirectory_の代わりにこれを使っていることを参照。
   std::string workRootDirectory_;
-  // ^T's own new "Boot options" field (see executeShowTcbBanner()'s own
-  // comment) -- the literal argv[1..] this process was launched with
-  // (flags and the directory argument, in their original order, ~
-  // expanded), or empty for a bare no-argument launch. Computed once in
-  // main() (the only place argv is available) and just carried here.
+  // ^T自身の新しい「Boot options」フィールド(executeShowTcbBanner()
+  // 自身のコメント参照)――このプロセスが起動された時の元々の
+  // argv[1..]そのもの(フラグとディレクトリ引数、元の順序で、~は
+  // 展開済み)、または素の引数無し起動に対しては空。main()(argvが
+  // 利用可能な唯一の場所)で一度計算され、単にここへ運ばれる。
   std::string bootOptions_;
-  // K-17 (^X^W)/K-64 (^J^W)'s shared "current" write-buffer-to-a-file
-  // target -- see allocateWorkFilePath()'s own comment for the
-  // allocation policy (^X^W reuses this, ^J^W always advances it).
-  // Empty until the first allocation.
+  // K-17(^X^W)/K-64(^J^W)の共有される「現在の」ファイルへの書き込み
+  // バッファの対象――割り当てポリシーについてはallocateWorkFilePath()
+  // 自身のコメント参照(^X^Wはこれを再利用し、^J^Wは常にそれを進め
+  // る)。最初の割り当てまでは空。
   std::string currentWorkFilePath_;
-  int nextWorkFileNumber_ = 0;  // last-allocated w.N suffix; 0 = none yet
-  // Every w.N path ever allocated this session, oldest first -- ^T's
-  // own "WORK" field lists all of them (see executeShowTcbBanner()'s
-  // own comment), not just the current one.
+  int nextWorkFileNumber_ = 0;  // 最後に割り当てられたw.N接尾辞。0=まだ無し
+  // このセッションで割り当てられた全てのw.Nパス、最古優先――^T自身
+  // の「WORK」フィールドは、現在のものだけでなく、それら全てを一覧
+  // 表示する(executeShowTcbBanner()自身のコメント参照)。
   std::vector<std::string> allocatedWorkFiles_;
-  int nextArchiveNumber_ = 0;  // last-allocated arc.N suffix; 0 = none yet
-  // Every arc.N directory ever allocated this session (nested-archive
-  // descent only, see materializeArchiveTempFile()'s own comment --
-  // NOT the banner's own single fixed temp file), oldest first -- ^T's
-  // own "arc.N" list entries.
+  int nextArchiveNumber_ = 0;  // 最後に割り当てられたarc.N接尾辞。0=まだ無し
+  // このセッションで割り当てられた全てのarc.Nディレクトリ(入れ子
+  // アーカイブの降下のみ、materializeArchiveTempFile()自身のコメン
+  // ト参照――バナー自身の単一の固定一時ファイルではない)、最古優先
+  // ――^T自身の「arc.N」一覧のエントリ。
   std::vector<std::string> allocatedArcDirs_;
-  // K-67 (^X^Ke, M_error, "ERROR"): where CpMvRmMode routes non-
-  // interactive child processes' stderr (see the constructor's own
-  // comment and CpMvRmMode's own errorLogPath_ parameter). Ported
-  // from str.c's S_error path (`~/.tcb/error`), rooted under
-  // tempRootDirectory_ (2026-08-18, see its own comment) rather than
-  // always `~/.usilic/error` the way this port originally had it.
+  // K-67(^X^Ke、M_error、「ERROR」): CpMvRmModeが非対話的な子プロ
+  // セスの標準エラーをルーティングする先(コンストラクタ自身の
+  // コメントとCpMvRmMode自身のerrorLogPath_引数参照)。str.cの
+  // S_errorパス(`~/.tcb/error`)からの移植で、この移植が元々そう
+  // していたような常に`~/.usilic/error`ではなく、tempRootDirectory_
+  // (2026-08-18、自身のコメント参照)の下に根付けられている。
   std::string errorLogPath_;
-  // K-68 (^X^Kl, M_log, "LOG: SHELL output"): NOT a continuous tee of
-  // Shell's pty output the way legacy's own write(sfd,...) is (see
-  // shellLog()'s own comment on this simplification) -- a snapshot of
-  // Shell::scrollback()'s current lines, written out on demand when
-  // K-68 is actually pressed. Ported from str.c's S_log path
-  // (`~/.tcb/shell`), rooted under tempRootDirectory_ (2026-08-18, see
-  // its own comment).
+  // K-68(^X^Kl、M_log、「LOG: SHELL output」): legacy自身の
+  // write(sfd,...)のような、Shellのpty出力の継続的な複写では「
+  // ない」(この単純化についてはshellLog()自身のコメント参照)
+  // ――K-68が実際に押された時に要求に応じて書き出される、
+  // Shell::scrollback()の現在の行のスナップショット。str.cの
+  // S_logパス(`~/.tcb/shell`)からの移植で、tempRootDirectory_
+  // (2026-08-18、自身のコメント参照)の下に根付けられている。
   std::string logFilePath_;
-  // K-0's own banner text (see executeShowTcbBanner()'s own comment)
-  // reports Startup file verbatim -- str.c's print_tcb() shows the
-  // same field. Deliberately still rooted at `<homeDirectory>/.usilic`
-  // even for an argument-launched (multi-instance) run: usilicrc is
-  // read-only config, and historyFilePath_ is a genuinely cross-session
-  // accumulating ring neither of which a per-PID directory would make
-  // sense for -- see tempRootDirectory_'s own comment, and the
-  // 2026-08-17 report this whole redesign responds to ("^Tで表示され
-  // るファイルはusilicrc以外使えない" -- of everything ^T shows,
-  // usilicrc is the one exception that's fine to keep sharing).
+  // K-0自身のバナーテキスト(executeShowTcbBanner()自身のコメント
+  // 参照)は、Startup fileをそのまま報告する――str.cのprint_tcb()は
+  // 同じフィールドを表示する。引数起動(複数インスタンス)の実行
+  // でさえ、意図的に依然として`<homeDirectory>/.usilic`に根付けら
+  // れている: usilicrcは読み取り専用の設定であり、historyFilePath_
+  // は本当にセッションをまたいで蓄積するリングであり、どちらに
+  // とってもPIDごとのディレクトリは意味を成さない――tempRootDirectory_
+  // 自身のコメントと、この再設計全体が応えている2026-08-17の報告
+  // ("^Tで表示されるファイルはusilicrc以外使えない"――^Tが表示
+  // する全てのもののうち、usilicrcが共有し続けても問題無い唯一の
+  // 例外である)参照。
   std::string usilicrcPath_;
   std::string historyFilePath_;
-  Charset::Encoding encoding_;  // wrapHelpText()'s own PipeBuffer construction -- no other member currently needs this
-  const Configuration &configuration_;  // executeProgram()'s own PROGRAM-list lookup, see find_prog() note above
-  History &history_;  // startListBrowser()'s own recentEntries() lookup -- no other member currently needs this
+  Charset::Encoding encoding_;  // wrapHelpText()自身のPipeBuffer構築――現在他のどのメンバーもこれを必要としない
+  const Configuration &configuration_;  // executeProgram()自身のPROGRAM一覧の参照、上のfind_prog()の注記参照
+  History &history_;  // startListBrowser()自身のrecentEntries()の参照――現在他のどのメンバーもこれを必要としない
   ModeStack modeStack_;
   ModeStack cutModeStack_;
   ContentView directoryView_;
@@ -1863,13 +1963,14 @@ class Application {
   ContentView archiveContentView_;
   ContentView duView_;
   ContentView listBrowserView_;
-  // K-2 (^H): backing view for startKey()'s static binding table --
-  // no dedicated *Mode class, since the table itself is static (no
-  // runtime parsing/state beyond which line is currently selected,
-  // which ContentView already tracks). See startKey()'s own comment.
+  // K-2(^H): startKey()の静的な紐付けテーブルの裏付けとなるビュー
+  // ――専用の*Modeクラスは無い。テーブル自体が静的であるため
+  // (ContentViewが既に追跡している「どの行が現在選択されているか」
+  // 以上の実行時のパース/状態は無い)。startKey()自身のコメント
+  // 参照。
   ContentView keyView_;
-  // ^O^C (COPY): backing view for CopyMode's own frozen snapshot -- see
-  // startCopy()'s own comment.
+  // ^O^C(COPY): CopyMode自身の凍結されたスナップショットの裏付け
+  // となるビュー――startCopy()自身のコメント参照。
   ContentView copyView_;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
@@ -1880,11 +1981,11 @@ class Application {
   ProgramMode programMode_;
   LocateMode locateMode_;
   ArchiveMode archiveMode_;
-  // Nested-archive descent -- see descendToNestedArchive()'s own
-  // comment. archiveParentStack_[i] is the path to reload (real file
-  // for the outermost archive, one of materializeArchiveTempFile()'s
-  // own freshly mkdtemp()'d temp files below it) to climb back up to
-  // nesting level i.
+  // 入れ子アーカイブの降下――descendToNestedArchive()自身のコメント
+  // 参照。archiveParentStack_[i]は、ネスト階層iまで登り返すために
+  // 再読み込みすべきパスである(最も外側のアーカイブに対しては本物
+  // のファイル、それより下ではmaterializeArchiveTempFile()自身が
+  // 新しくmkdtemp()した一時ファイルの1つ)。
   std::vector<std::string> archiveParentStack_;
   Shell shell_;
   CpMvRmMode cpMvRmMode_;
@@ -1899,127 +2000,135 @@ class Application {
   ApplicationMode cutReturnMode_ = ApplicationMode::Directory;
   ApplicationMode manReturnMode_ = ApplicationMode::Directory;
   ApplicationMode locateReturnMode_ = ApplicationMode::Directory;
-  // 2026-08-14: unlike grepReturnMode_/cutReturnMode_/etc (which track
-  // where a PROMPT should return to), this tracks where FILE mode's
-  // OWN ^G (Command::Back) should go -- a real user correction
-  // ("戻り値は通常ファイル...なので^G→(ls)はおかしい。LOCATEの検索
-  // 結果一覧へ戻るわけだし") found openSelectedLocateResult()'s File
-  // branch always fell through to returnToDirectory()'s hardcoded
-  // ApplicationMode::Directory, even though a file reached via LOCATE
-  // could be anywhere on the filesystem, unrelated to whatever
-  // directory was active before the search. Explicitly reset to
-  // Directory at every OTHER loadFile()-then-File-mode call site (see
-  // each one's own "see its own declaration comment" marker) rather
-  // than relying on FileMode::loadFile() itself to clear it (FileMode
-  // has no idea this Application-level field exists, same boundary
-  // FileMode::setSearchOrigin() already respects).
+  // 2026-08-14: grepReturnMode_/cutReturnMode_等(プロンプトが戻る
+  // べき先を追跡する)とは異なり、これは「FILEモード自身の」^G
+  // (Command::Back)がどこへ行くべきかを追跡する――直接のユーザー
+  // による訂正("戻り値は通常ファイル...なので^G→(ls)はおかしい。
+  // LOCATEの検索結果一覧へ戻るわけだし")が、
+  // openSelectedLocateResult()のFile分岐が、LOCATE経由で到達した
+  // ファイルがファイルシステムのどこにでもあり得て、検索前に
+  // アクティブだったディレクトリとは無関係であるにも関わらず、
+  // 常にreturnToDirectory()のハードコードされた
+  // ApplicationMode::Directoryへ落ちていたことを発見した。
+  // FileMode::loadFile()自体にそれをクリアさせるのではなく(FileMode
+  // はこのApplicationレベルのフィールドが存在することを全く知ら
+  // ない。FileMode::setSearchOrigin()が既に尊重しているのと同じ
+  // 境界)、他の全てのloadFile()の後にFileモードが続く呼び出し
+  // 箇所(それぞれの「自身の宣言コメント参照」というマーカー参照)
+  // で明示的にDirectoryへリセットされる。
   ApplicationMode fileReturnMode_ = ApplicationMode::Directory;
-  // 2026-08-28 addition, a direct user report ("CLAUDE.mdで^Iしてる
-  // 以上CLAUDE.mdに戻らないと"): executeShowTcbBanner() always hardcodes
-  // fileReturnMode_ = Directory (see its own declaration comment above),
-  // so ^G from the banner always fell through to returnToDirectory(),
-  // which (for the banner's own synthetic file specifically) leaves
-  // directoryMode_ untouched rather than reloading whichever REAL file
-  // (if any) was actually being viewed when ^I was pressed. Empty means
-  // "^I was invoked directly from Directory mode (or this trip is a
-  // return-to-banner hop from one of the banner's own WORK/arc.N
-  // children, see executeShowTcbBanner()'s own comment) -- ^G keeps the
-  // existing Directory-return behavior"; non-empty means "^I was
-  // pressed while actually viewing this real file -- ^G should reload
-  // and return to IT instead". Consumed (cleared) the moment ^G actually
-  // uses it, see its own Command::Back branch.
+  // 2026-08-28の追加、直接のユーザー報告("CLAUDE.mdで^Iしてる
+  // 以上CLAUDE.mdに戻らないと"): executeShowTcbBanner()は常に
+  // fileReturnMode_ = Directoryをハードコードする(上の自身の宣言
+  // コメント参照)ので、バナーからの^Gは常にreturnToDirectory()へ
+  // 落ち、それは(特にバナー自身の合成されたファイルに対しては)、
+  // ^Iが押された時実際に閲覧されていた「本物の」ファイル(もし
+  // あれば)を再読み込みするのではなく、directoryMode_に手を付けず
+  // 残す。空は「^IがDirectoryモードから直接呼び出された(または
+  // この旅がバナー自身のWORK/arc.Nの子の1つからバナーへ戻るホップ
+  // である、executeShowTcbBanner()自身のコメント参照)――^Gは既存
+  // のDirectory復帰の挙動を保つ」を意味する。空でなければ「^Iは
+  // この本物のファイルを実際に閲覧している間に押された――^Gは
+  // 代わりにそれを再読み込みしてそれへ戻るべき」を意味する。^Gが
+  // 実際にそれを使う瞬間に消費される(クリアされる)、自身の
+  // Command::Back分岐参照。
   std::string infoPreviousFilePath_;
-  // startPagerFileList()'s own "pager file list" -- the full set of
-  // paths usilic was launched with on the command line (2+ positional
-  // file arguments). Empty whenever no such launch happened (every
-  // ordinary File-mode entry via Directory's own Enter key), in which
-  // case Command::PagerNextFile/etc. are all no-ops -- see their own
-  // declaration comment. pagerFileIndex_ is paths.front()'s own index
-  // (always 0) right after startPagerFileList(), and tracks whichever
-  // entry is currently loaded as navigateToPagerFile() moves it.
+  // startPagerFileList()自身の「ページャーファイル一覧」――usilicが
+  // コマンドラインで起動された時の一連のパス全体(2個以上の位置
+  // ファイル引数)。そのような起動が一度も起きていなければ空
+  // (Directory自身のEnterキー経由の全ての通常のFileモードの
+  // エントリ)。その場合Command::PagerNextFile等は全て何もしない
+  // ――それら自身の宣言コメント参照。pagerFileIndex_は、
+  // startPagerFileList()の直後はpaths.front()自身のインデックス
+  // (常に0)であり、navigateToPagerFile()がそれを動かすにつれ、
+  // 現在読み込まれているエントリを追跡する。
   std::vector<std::string> pagerFileList_;
   int pagerFileIndex_ = 0;
   ApplicationMode shellReturnMode_ = ApplicationMode::Directory;
-  // The previous mode's own "name" field (e.g. DirectoryMode::
-  // currentDirectory(), FileMode::currentFile()), snapshotted at the
-  // moment Shell mode is entered -- see previousModeName()'s own
-  // comment. Ported from legacy's do_shell(prev, ...): menu.c's own
-  // M_shell case (ESC-s) copies `ap->name` (the SAME string every
-  // mode's own mode-line[1] "name" field is built from, see
-  // disp_window()) into a local `name` buffer and passes it straight
-  // through to do_shell() as `prev`, which shell.c carries all the
-  // way to disp_window(..., T_shell, name="SHELL", prev, ...) as the
-  // mode-line[6] "previous-mode" trailing field. A real user report
-  // (2026-08-01) confirms this reads as "whatever name identified the
-  // screen you came from" -- current directory when entering from
-  // Directory mode, but the filename when entering from File mode,
-  // NOT always "current directory" as this port first assumed.
+  // 前のモード自身の「名前」フィールド(例えばDirectoryMode::
+  // currentDirectory()、FileMode::currentFile())、Shellモードに
+  // 入場する瞬間にスナップショットされる――previousModeName()
+  // 自身のコメント参照。legacyのdo_shell(prev, ...)からの移植:
+  // menu.c自身のM_shellケース(ESC-s)は、`ap->name`(全モード自身の
+  // mode-line[1]の「name」フィールドが構築される元になる「同じ」
+  // 文字列、disp_window()参照)をローカルな`name`バッファへコピー
+  // し、それをそのまま`prev`としてdo_shell()へ渡す。それを
+  // shell.cは、mode-line[6]の「前モード」のtrailingフィールドと
+  // して、disp_window(..., T_shell, name="SHELL", prev, ...)まで
+  // ずっと運ぶ。実際のユーザー報告(2026-08-01)が、これが「あなた
+  // が来た画面を識別していた名前が何であれ」として読めることを
+  // 確認した――Directoryモードから入場した時は現在のディレクトリ
+  // だが、Fileモードから入場した時はファイル名であり、この移植が
+  // 最初に想定していたように常に「現在のディレクトリ」ではない。
   std::string shellReturnName_;
-  // Set by startProgramPrompt() (^Jp) when it pre-fills the prompt with
-  // a highlighted/open file's own BARE filename (see its own comment):
-  // the file's containing directory, so executeProgram() can `cd` there
-  // before running the command -- usilic itself never chdir()s (see
-  // executePathInput()'s own comment on why), so a bare filename typed
-  // alongside a program name (e.g. "less CLAUDE.md") would otherwise
-  // resolve against whatever directory the process happened to launch
-  // in, not wherever the user is actually browsing. Empty when
-  // startProgramPrompt() found no file context (falls back to the
-  // pre-existing behavior: an empty prompt, no `cd` prefix). Consumed
-  // (cleared) by executeProgram() exactly once per submission.
+  // startProgramPrompt()(^Jp)が、ハイライト/開かれているファイル
+  // 自身の裸のファイル名でプロンプトを事前に埋める時に設定される
+  // (自身のコメント参照): ファイルの含むディレクトリで、
+  // executeProgram()がコマンドを実行する前にそこへ`cd`できる
+  // ようにする――usilic自体は決してchdir()しない(理由については
+  // executePathInput()自身のコメント参照)ので、プログラム名と
+  // 並んで入力された裸のファイル名(例えば「less CLAUDE.md」)は、
+  // そうしないと、ユーザーが実際に閲覧している場所ではなく、その
+  // プロセスがたまたま起動したディレクトリに対して解決されて
+  // しまう。startProgramPrompt()がファイルの文脈を見つけなかった
+  // 場合は空(既存の挙動へフォールバックする: 空のプロンプト、
+  // `cd`接頭辞無し)。送信ごとに正確に一度、executeProgram()に
+  // よって消費される(クリアされる)。
   std::string programPromptDirectory_;
   ApplicationMode listBrowserReturnMode_ = ApplicationMode::Directory;
   RingCategory listBrowserCategory_ = RingCategory::RecentDirectory;
-  // See ToggleHistoryView's own comment. Reset to false every fresh
-  // startListBrowser() entry; flipped by toggleListBrowserHistory().
+  // ToggleHistoryView自身のコメント参照。新しいstartListBrowser()
+  // の入場のたびにfalseへリセットされ、toggleListBrowserHistory()
+  // によって切り替えられる。
   bool listBrowserChronological_ = false;
   ApplicationMode keyReturnMode_ = ApplicationMode::Directory;
   ApplicationMode copyReturnMode_ = ApplicationMode::Directory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;
-  // Non-empty between startCutFilePrompt() and the CutPattern prompt's
-  // submit (K-35/K-36's "regular file" variant): the path to load and
-  // split instead of the currently-displayed buffer. Cleared by
-  // executeCut() as soon as it's consumed, so the very next CUT (of
-  // either variant) doesn't accidentally reuse a stale path.
+  // startCutFilePrompt()とCutPatternプロンプトの送信(K-35/K-36の
+  // 「通常ファイル」バリアント)の間は空でない: 現在表示されている
+  // バッファの代わりに読み込んで分割すべきパス。消費されるとすぐ
+  // executeCut()によってクリアされるので、まさに次のCUT(どちらの
+  // バリアントであれ)が誤って古びたパスを再利用しない。
   std::string cutFileSourcePath_;
   bool shellStarted_ = false;
   std::string helpText_;
-  // Which top-level Cut/CutContent split is currently active -- only
-  // meaningful (and only consulted by handleResize()) when
-  // !cutMode_.canGoBack(); a pushSplit() (nested) level doesn't touch
-  // this, see the class comment's own HELP section.
-  enum class CutOrigin { File, Help, Directory, Log };  // Log: ESC l, see executeStartLog()'s own comment
+  // 現在どのトップレベルのCut/CutContentの分割がアクティブか
+  // ――!cutMode_.canGoBack()の場合にだけ意味を持つ(そしてhandleResize()
+  // にだけ参照される)。pushSplit()(ネストされた)階層はこれに
+  // 触れない、クラスコメント自身のHELP節参照。
+  enum class CutOrigin { File, Help, Directory, Log };  // Log: ESC l、executeStartLog()自身のコメント参照
   CutOrigin cutOrigin_ = CutOrigin::File;
 
-  // Which search set DirectoryMode's current search annotation (see
-  // its own setSearchAnnotation() comment) -- the annotation text
-  // alone doesn't distinguish "FGREP:/EGREP:" from "CUT:" structurally
-  // enough to know which results screen Command::Back should route
-  // to, so this is set alongside every setSearchAnnotation() call.
+  // DirectoryModeの現在の検索注釈(自身のsetSearchAnnotation()
+  // コメント参照)をどの検索が設定したか――注釈のテキストだけでは、
+  // Command::Backがどの結果画面へルーティングすべきかを知るのに
+  // 構造的に十分なほど「FGREP:/EGREP:」と「CUT:」を区別しないので、
+  // これは全てのsetSearchAnnotation()呼び出しと並んで設定される。
   enum class DirectorySearchKind { Grep, Cut };
   DirectorySearchKind lastDirectorySearchKind_ = DirectorySearchKind::Grep;
 
   bool recordingMacro_ = false;
   std::vector<RecordedStep> recordedMacro_;
-  // Holds a leaderX sequence's leading ^X byte back until the second
-  // byte resolves, so a StartMacroRecord/StopMacroRecord/PlayMacro
-  // resolution can be excluded from recordedMacro_ entirely (both
-  // bytes at once) -- see class comment.
+  // leaderXシーケンスの先頭の^Xバイトを、2番目のバイトが解決する
+  // まで保持しておくので、StartMacroRecord/StopMacroRecord/
+  // PlayMacroの解決を、recordedMacro_から完全に(両方のバイトを
+  // 一度に)除外できる――クラスコメント参照。
   std::optional<RecordedStep> pendingLeaderXByte_;
 
-  bool leaderJPending_ = false;  // saw ^J, waiting for the byte that completes a two-byte command
-  // The digit dispatchLeaderByte()'s own leaderJPending_ switch just
-  // saw after ^J (Command::JumpToPathPrefix's own payload -- Command
-  // values carry no data of their own in this port, so this is the
-  // established way a leader-digit command hands its argument to the
-  // handleCommand() switch: see Command::JumpToPathPrefix's own
-  // comment). Only meaningful for the single handleCommand() call
-  // immediately following the byte that set it.
+  bool leaderJPending_ = false;  // ^Jを見た、2バイトのコマンドを完成させるバイトを待っている
+  // ^Jの後にdispatchLeaderByte()自身のleaderJPending_スイッチが
+  // ちょうど見た数字(Command::JumpToPathPrefix自身のペイロード
+  // ――この移植ではCommandの値はそれ自身のデータを運ばないので、
+  // これは、リーダー数字コマンドがその引数をhandleCommand()の
+  // switchへ渡す確立された方法である: Command::JumpToPathPrefix
+  // 自身のコメント参照)。それを設定したバイトのすぐ後の、単一の
+  // handleCommand()呼び出しに対してだけ意味を持つ。
   int pendingPathPrefixDigit_ = 0;
-  bool escPending_ = false;      // saw ESC (0x1b), waiting for the byte that completes ^[s -- see class comment
-  bool leaderXPending_ = false;  // saw ^X, waiting for the byte that completes ^Xc/^Xm/^Xr/^X^C (exit shares ^X too)
-  bool leaderXKPending_ = false;  // saw ^X^K (usilicrc's own F-2), waiting for the byte completing ^X^Kc/m/r
-  bool leaderOPending_ = false;  // saw ^O, waiting for the byte that completes ^Og
+  bool escPending_ = false;      // ESC(0x1b)を見た、^[sを完成させるバイトを待っている――クラスコメント参照
+  bool leaderXPending_ = false;  // ^Xを見た、^Xc/^Xm/^Xr/^X^Cを完成させるバイトを待っている(exitも^Xを共有する)
+  bool leaderXKPending_ = false;  // ^X^K(usilicrc自身のF-2)を見た、^X^Kc/m/rを完成させるバイトを待っている
+  bool leaderOPending_ = false;  // ^Oを見た、^Ogを完成させるバイトを待っている
   bool wantsExit_ = false;
   bool guiModeToggleRequested_ = false;
 
@@ -2035,67 +2144,72 @@ class Application {
     RemoveConfirm,
     ExitConfirm,
     DuPath,
-    PathInput,  // K-45/K-47's shared prompt kind, see Command::StartFileInput's own comment
-    ArchiveDestination,  // K-57/K-58's own Destination prompt, see startArchivePrompt()'s own comment
-    // K-46/K-48 (^X^F/^X^D, "Select file/directory name"): 2026-08-17
-    // addition -- see startListBrowser()'s own comment for why these
-    // two needed adding here at all (a real report + legacy key.c read
-    // found T_hfile/T_hdir share the exact same f_enter=1 "enter
-    // string at mode-line" group as T_hfgrep/T_hegrep/T_hman, i.e. the
-    // history list is a live-editable combobox like those, not a
-    // pure-navigate picker the way this port originally built it).
+    PathInput,  // K-45/K-47の共有されるプロンプトの種類、Command::StartFileInput自身のコメント参照
+    ArchiveDestination,  // K-57/K-58自身のDestinationプロンプト、startArchivePrompt()自身のコメント参照
+    // K-46/K-48(^X^F/^X^D、「Select file/directory name」):
+    // 2026-08-17の追加――なぜこの2つがそもそもここに追加される必要
+    // があったのかについてはstartListBrowser()自身のコメント参照
+    // (実際の報告+legacyのkey.cの読み込みが、T_hfile/T_hdirが
+    // T_hfgrep/T_hegrep/T_hmanとまさに同じf_enter=1「モードライン
+    // で文字列を入力する」グループを共有していること、つまり履歴
+    // 一覧はそれらと同じ生きた編集可能なコンボボックスであり、この
+    // 移植が元々構築したような純粋な閲覧ピッカーではないことを
+    // 発見した)。
     RecentFile,
     RecentDirectory
   };
-  // ^Xc/^Xm/^Xr (K-52/K-54/K-56) and their ^X^K "with SHELL window"
-  // siblings (K-51/K-53/K-55) used to activate the destination/confirm
-  // prompt immediately -- a real user report (=ec screenshot: an empty
-  // "CP" text-input box appearing the instant ^Xc was pressed, before
-  // any file had even been marked) asked for legacy's own two-step
-  // M_cp/M_mv/M_rm -> M_dest (^X^M, K-71) flow instead: ^Xc/^Xm/^Xr now
-  // only remember WHICH operation is armed (this struct), the user
-  // marks files in the ordinary `ls`-style listing exactly as before
-  // (^Space/^X^Y/^X^N, unchanged -- unlike legacy, marking was already
-  // decoupled from a separate "you are now in CP-mode" browsing state
-  // in this port, so no new mode was needed for that part), and
-  // startDestinationPrompt() (^X^M) is what actually shows the prompt.
-  // `directory` guards against a stale arm surviving navigation to an
-  // unrelated directory (marks themselves already clear on
-  // DirectoryMode::enterDirectory(), but targetEntries() falls back to
-  // "whatever's under the cursor" when nothing is marked -- silently
-  // acting on that in a directory the user never intended would be a
-  // real footgun, especially for RM); startDestinationPrompt() checks
-  // this and discards a stale arm rather than using it.
+  // ^Xc/^Xm/^Xr(K-52/K-54/K-56)とその^X^K「with SHELL window」の
+  // 兄弟(K-51/K-53/K-55)は、以前は移動先/確認プロンプトを即座に
+  // 有効化していた――実際のユーザー報告(=ecのスクリーンショット:
+  // ファイルがまだ何もマークされていないうちから、^Xcが押された
+  // 瞬間に空の「CP」テキスト入力ボックスが現れる)が、代わりに
+  // legacy自身の2段階のM_cp/M_mv/M_rm -> M_dest(^X^M、K-71)フロー
+  // を求めた: ^Xc/^Xm/^Xrは今や、「どの」操作が準備されているか
+  // だけを覚えており(この構造体)、ユーザーは以前と全く同じように
+  // 通常の`ls`スタイルの一覧でファイルをマークし(^Space/^X^Y/
+  // ^X^N、変更なし――legacyとは異なり、マーキングはこの移植では
+  // 既に「今はCPモードにいる」という別の閲覧状態から切り離されて
+  // いたので、その部分のために新しいモードは不要だった)、
+  // startDestinationPrompt()(^X^M)が、実際にプロンプトを表示する
+  // ものである。`directory`は、無関係なディレクトリへのナビゲート
+  // を古びた準備状態が生き残ることを防ぐ(マーク自体は既に
+  // DirectoryMode::enterDirectory()でクリアされるが、targetEntries()
+  // は、何もマークされていない時「カーソルの下にあるもの」へ
+  // フォールバックする――ユーザーが決して意図しなかったディレクト
+  // リでそれに対して黙って行動することは、特にRMにとって本物の
+  // 落とし穴になる)。startDestinationPrompt()はこれをチェックし、
+  // 古びた準備状態を使うのではなく捨てる。
   struct PendingCpMvRmOperation {
     PromptKind kind;
     std::string directory;
   };
   std::optional<PendingCpMvRmOperation> pendingCpMvRm_;
-  // executeCopy()/executeMove()/executeRemove() (2026-08-22 redesign,
-  // see their own comment): once the cp/mv/rm command line has been
-  // injected into shell_'s real, persistent SHELL session and
-  // submitted, this remembers what to do once it finishes -- detected
-  // by shell_.promptGeneration() advancing past promptGenerationBefore
-  // (see pollPendingCpMvRmShellRun()). `destination` is empty for RM
-  // (no destination concept); `sourceDirectory` is always the
-  // directory the operation was launched from, the fallback landing
-  // spot if `destination` doesn't resolve to a real, browsable
-  // directory (or for RM, where it's the ONLY landing spot).
+  // executeCopy()/executeMove()/executeRemove()(2026-08-22の再設計、
+  // それら自身のコメント参照): cp/mv/rmコマンド行がshell_の本物の、
+  // 永続的なSHELLセッションへ注入され送信された後、これは、それが
+  // 完了した時点で何をすべきかを覚えている――
+  // shell_.promptGeneration()がpromptGenerationBeforeを超えて進む
+  // ことで検出される(pollPendingCpMvRmShellRun()参照)。
+  // `destination`はRMに対しては空(移動先という概念が無い)。
+  // `sourceDirectory`は常に操作が起動されたディレクトリであり、
+  // `destination`が本物の、閲覧可能なディレクトリへ解決しない
+  // 場合のフォールバックの着地場所である(またはRMに対しては、
+  // それが「唯一の」着地場所である)。
   struct PendingCpMvRmShellRun {
     int promptGenerationBefore;
     std::string destination;
     std::string sourceDirectory;
   };
   std::optional<PendingCpMvRmShellRun> pendingCpMvRmShellRun_;
-  // executeArchiveExtract()'s own version of PendingCpMvRmShellRun
-  // (2026-08-23, same redesign as CP/MV/RM's, see executeCopy()'s own
-  // comment). 2026-08-26 addition (a direct user spec): now DOES land
-  // in the destination directory on success, same as CP/MV's own
-  // PendingCpMvRmShellRun -- `destination`/`archivePath` are what
-  // pollPendingArchiveExtractShellRun() needs for descendTo() and the
-  // "ARC: <archivePath>" annotation it sets there; `returnMode` is
-  // still the fallback for a genuinely failed extraction (see its own
-  // comment).
+  // executeArchiveExtract()自身のPendingCpMvRmShellRunのバージョン
+  // (2026-08-23、CP/MV/RMのものと同じ再設計、executeCopy()自身の
+  // コメント参照)。2026-08-26の追加(直接のユーザー仕様): 今は
+  // CP/MV自身のPendingCpMvRmShellRunと同様、成功時に移動先ディレ
+  // クトリに着地する「ようになった」――`destination`/`archivePath`
+  // は、pollPendingArchiveExtractShellRun()がdescendTo()とそこで
+  // 設定する「ARC: <archivePath>」注釈のために必要とするもの。
+  // `returnMode`は依然として、本当に失敗した展開に対するフォール
+  // バックである(自身のコメント参照)。
   struct PendingArchiveExtractShellRun {
     int promptGenerationBefore;
     ApplicationMode returnMode;
@@ -2103,293 +2217,313 @@ class Application {
     std::string archivePath;
   };
   std::optional<PendingArchiveExtractShellRun> pendingArchiveExtractShellRun_;
-  // Shared by submitPrompt() (text typed live) and
-  // openSelectedListEntry()'s own prompt-recall branch (text picked
-  // from ^R's history list instead) -- see startPromptHistoryRecall()'s
-  // own comment. Factored out so both paths dispatch on PromptKind
-  // identically rather than duplicating the switch.
+  // submitPrompt()(生きたまま入力されたテキスト)と
+  // openSelectedListEntry()自身のプロンプト呼び戻し分岐(代わりに
+  // ^Rの履歴一覧から選ばれたテキスト)で共有される――
+  // startPromptHistoryRecall()自身のコメント参照。両方の経路が
+  // switchを複製するのではなくPromptKindに対して同一にディスパッチ
+  // するよう括り出されている。
   bool executePromptSubmission(PromptKind kind, const std::string &text);
-  // K-49 (^R) pressed WHILE a supported prompt (MAN/LOCATE/FGREP/
-  // EGREP name/query/pattern) is active: see its own definition
-  // comment for the full design. False (byte silently swallowed, not
-  // inserted as literal text) for prompt kinds with no history of
-  // their own yet -- matching m_list()'s own echo_mess(S_errf) for a
-  // context ^R doesn't apply to, same spirit as ToggleHistoryView's
-  // own outside-ListBrowser no-op.
+  // サポートされているプロンプト(MAN/LOCATE/FGREP/EGREPの名前/
+  // クエリ/パターン)がアクティブな「間」にK-49(^R)が押された:
+  // 完全な設計については自身の定義コメント参照。まだそれ自身の
+  // 履歴を持たないプロンプトの種類に対してはfalse(バイトは黙って
+  // 飲み込まれ、リテラルなテキストとしては挿入されない)――^Rが
+  // 当てはまらない文脈に対するm_list()自身のecho_mess(S_errf)に
+  // 合わせている、ToggleHistoryView自身のListBrowser外での何も
+  // しない挙動と同じ精神。
   bool startPromptHistoryRecall(bool directEntry = false);
-  // ^R-in-Archive/ArchiveContent (2026-08-20 addition, see its own call
-  // sites' comments): true while browsing the RecentFile ring but
-  // reached via ^R FROM Archive/ArchiveContent specifically, rather
-  // than the ordinary ^X^F/^R-from-File/Directory route to the SAME
-  // ring -- both startPromptHistoryRecall() (the initial list) and
-  // toggleListBrowserHistory() (the ^R-while-already-browsing
-  // chronological toggle) check this before showing items, so the
-  // archive filter stays applied no matter how the list got rebuilt.
+  // ^RがArchive/ArchiveContentの中で(2026-08-20の追加、自身の
+  // 呼び出し箇所のコメント参照): RecentFileリングを閲覧している
+  // 間だが、同じリングへの通常の^X^F/^Rを介したFile/Directoryから
+  // の経路ではなく、特に^R経由でArchive/ArchiveContentから到達
+  // した場合にtrue――startPromptHistoryRecall()(最初の一覧)と
+  // toggleListBrowserHistory()(既に閲覧中の間の^Rによる時系列
+  // トグル)の両方がアイテムを表示する前にこれをチェックするので、
+  // 一覧がどう再構築されようとアーカイブフィルタは適用され続ける。
   bool archiveHistoryFilterActive() const;
-  // K-32/K-34 (^J^S EGREP, ^J^C CUT's regex variant): opens DIRECTLY
-  // into the candidate-pattern list, skipping the blank prompt step
-  // entirely -- see startGrepPrompt()/startCutPrompt()'s own comment
-  // for why (confirmed against real legacy-tcb behavior, not just a
-  // usilicrc wording nuance) and startRegexPromptList()'s own
-  // definition comment for how it reuses startPromptHistoryRecall()
-  // wholesale.
+  // K-32/K-34(^J^S EGREP、^J^C CUTの正規表現バリアント): 空の
+  // プロンプトのステップを完全にスキップして「直接」候補パターン
+  // 一覧を開く――理由についてはstartGrepPrompt()/startCutPrompt()
+  // 自身のコメント参照(単なるusilicrcの文言のニュアンスではなく、
+  // 実際のlegacy-tcbの挙動に対して確認済み)、そしてそれが
+  // startPromptHistoryRecall()をどう丸ごと再利用するかについては
+  // startRegexPromptList()自身の定義コメント参照。
   bool startRegexPromptList(PromptKind kind);
-  // K-49 (^R) pressed at the live SHELL prompt (integration point 3 of
-  // the ^R design -- see CLAUDE.md item 162/163): opens a sorted
-  // RecentEntries(ShellCommand) ListBrowser, same underlying data
-  // ^J^R's own "COMMAND" picker already uses. Deliberately a SEPARATE
-  // flag (shellHistoryRecallActive_) rather than reusing
-  // promptHistoryRecallKind_ (SHELL isn't a PromptKind -- it's its own
-  // ApplicationMode with its own feedShellByte() input path) or
-  // folding into ^J^R's existing openSelectedListEntry() handling for
-  // RingCategory::ShellCommand (that stays a deliberate no-op on Enter,
-  // per its own "in this slice" test -- this is a DIFFERENT feature
-  // that happens to share the same ring). Confirmed directly with the
-  // user (2026-08-05): selecting an entry INSERTS it into the command
-  // line for review/editing, it does NOT auto-run -- unlike MAN/
-  // LOCATE/FGREP's own recall (side-effect-free actions), a picked
-  // SHELL command could be destructive (rm, mv, ...), so silently
-  // re-running an old one without a chance to look at it first would
-  // be a real safety regression, not just a UX quirk.
+  // 生きたSHELLプロンプトでK-49(^R)が押された(^R設計の統合ポイント
+  // 3――CLAUDE.mdの項目162/163参照): ^J^R自身の「COMMAND」ピッカーが
+  // 既に使っているのと同じ基礎データである、ソートされた
+  // RecentEntries(ShellCommand)のListBrowserを開く。意図的に
+  // promptHistoryRecallKind_を再利用するのではなく別のフラグ
+  // (shellHistoryRecallActive_)にしている(SHELLはPromptKindでは
+  // ない――それはそれ自身のfeedShellByte()入力経路を持つそれ自身の
+  // ApplicationModeである)、またはRingCategory::ShellCommandに
+  // 対する^J^Rの既存のopenSelectedListEntry()処理に折り込むのでも
+  // ない(それは、それ自身の「この一切れでは」テストに従って、
+  // Enterで意図的に何もしないままである――これは、たまたま同じ
+  // リングを共有する「別の」機能である)。ユーザーと直接確認済み
+  // (2026-08-05): エントリを選択することは、それをレビュー/編集の
+  // ためコマンド行へ「挿入する」だけであり、自動実行は「しない」
+  // ――副作用の無いアクションであるMAN/LOCATE/FGREP自身の呼び戻し
+  // とは異なり、選ばれたSHELLコマンドは破壊的である可能性がある
+  // (rm、mv、...)ので、先にそれを見る機会無しに古いものを黙って
+  // 再実行することは、単なるUXの癖ではなく、本物の安全性の退行に
+  // なるだろう。
   bool startShellHistoryRecall();
-  // Shared trailer for every startXxxPrompt(): sets promptKind_, draws
-  // that kind's own label onto the mode-line row (see
-  // promptLabelText()'s own comment), and starts promptEditor_ with
-  // initialText. A real user report (2026-08-02) found NO prompt
-  // anywhere showed any visible indication of what it was asking for
-  // (FGREP? EXIT y/n? DU path?) -- every startXxxPrompt() previously
-  // did its own promptKind_=/setText()/redraw() trio with no label at
-  // all, matching legacy's OWN mode-line[1] "name" field being
-  // silently left unported this whole project.
-  // positionText (2026-08-12 fix, default ""/not shown): a direct
-  // user correction -- "[bs]→「1/10 TOP」が消滅" (backspacing an
-  // existing candidate straight into editing dropped its own "which
-  // of N candidates" position, which had been visible the whole time
-  // the candidate list was just being browsed). feedRegexListByte()'s
-  // own edit-transition passes ModeLine::format(cursorIndex+1, count)
-  // through here so drawPromptLabel() can keep showing it; every other
-  // activatePrompt() call site (plain FGREP/MAN/LOCATE/.../ArchiveDestination
-  // prompts, none of which originate from a numbered list) leaves it
-  // at the default.
-  // cursorAtStart (2026-08-17 addition, PROGRAM's own IDEAS.md:218 fix):
-  // when true, positions the cursor at the very BEGINNING of
-  // `initialText` instead of setText()'s own default (the end) -- for
-  // startProgramPrompt()'s own "CLAUDE.md" pre-fill, where the cursor
-  // needs to sit on the FIRST character so typing a program name
-  // ("less ") prepends naturally, forming "less CLAUDE.md". Every
-  // existing call site leaves this at its default (false, unchanged
-  // end-of-text cursor placement).
+  // 全てのstartXxxPrompt()で共有される末尾処理: promptKind_を設定
+  // し、その種類自身のラベルをモードラインの行に描き
+  // (promptLabelText()自身のコメント参照)、initialTextで
+  // promptEditor_を開始する。実際のユーザー報告(2026-08-02)が、
+  // どのプロンプトも、どこにも、それが何を尋ねているか(FGREP?
+  // EXIT y/n? DUパス?)の可視の指標を全く表示していないことを
+  // 発見した――以前は全てのstartXxxPrompt()が、それ自身の
+  // promptKind_=/setText()/redraw()の3つ組を、ラベル無しで行って
+  // いた。このプロジェクト全体を通じて、legacy「自身の」
+  // mode-line[1]の「name」フィールドが黙って移植されないままに
+  // なっていたのに合わせている。
+  // positionText(2026-08-12の修正、デフォルトは""/表示されない):
+  // 直接のユーザーによる訂正――"[bs]→「1/10 TOP」が消滅"(既存の
+  // 候補をそのまま編集へバックスペースすると、候補一覧がちょうど
+  // 閲覧されている間ずっと可視だった、自身の「N個の候補のうち
+  // どれか」という位置を失う)。feedRegexListByte()自身の編集への
+  // 遷移が、drawPromptLabel()がそれを表示し続けられるよう、ここへ
+  // ModeLine::format(cursorIndex+1, count)を渡す。他の全ての
+  // activatePrompt()の呼び出し箇所(プレーンなFGREP/MAN/LOCATE/
+  // .../ArchiveDestinationのプロンプト、どれも番号付きの一覧から
+  // 発生しない)はこれをデフォルトのままにする。
+  // cursorAtStart(2026-08-17の追加、PROGRAM自身のIDEAS.md:218の
+  // 修正): trueの場合、setText()自身のデフォルト(末尾)ではなく、
+  // カーソルを`initialText`のまさに「先頭」に位置決めする――
+  // startProgramPrompt()自身の「CLAUDE.md」の事前入力のため。
+  // そこではカーソルが「最初の」文字に座る必要がある。プログラム
+  // 名("less ")を入力すると自然に前に追加され、「less CLAUDE.md」
+  // が形成されるように。既存の全ての呼び出し箇所はこれをデフォル
+  // ト(false、変更されていない末尾のカーソル配置)のままにする。
   void activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText = "",
                        bool cursorAtStart = false);
-  // The label text shown for each PromptKind -- ported from legacy's
-  // own s_P(P_mode)[...] mode-name strings (disp_window()'s mode-
-  // line[1] "name" field, e.g. " EXIT", " FGREP") for the ordinary
-  // cases, PLUS M_exit's own disp.c special case
-  // (sprintf(line, "%s (y/n) ?  ", s_S(S_errg))) folded into ONE
-  // combined string here rather than replicating legacy's separate
-  // name+position-field split -- this port has no equivalent second
-  // field to put "(y/n) ?" into once promptEditor_ already owns the
-  // rest of the row, and a single combined label communicates the
-  // same thing with far less mechanism.
+  // 各PromptKindに対して表示されるラベルテキスト――通常のケース
+  // に対してはlegacy自身のs_P(P_mode)[...]のモード名文字列
+  // (disp_window()のmode-line[1]の「name」フィールド、例えば
+  // " EXIT"、" FGREP")からの移植、「加えて」M_exit自身のdisp.cの
+  // 特別なケース(sprintf(line, "%s (y/n) ?  ",
+  // s_S(S_errg)))が、legacyの別々のname+positionフィールドの分割
+  // を複製するのではなく、ここで「1つの」結合された文字列に折り
+  // 込まれている――この移植には、promptEditor_が既に行の残りを
+  // 所有している時点で「(y/n) ?」を入れる等価な2番目のフィールド
+  // が無く、単一の結合されたラベルは、はるかに少ない仕組みで
+  // 同じことを伝える。
   std::string promptLabelText(PromptKind kind) const;
-  // Draws promptLabelText(kind) in reverse video at the mode-line
-  // row's own left edge, then narrows promptEditor_'s own field to
-  // start right after it (see activatePrompt()'s own comment). Split
-  // out from activatePrompt() only so a future resize-while-prompting
-  // fix (not attempted here, see this port's own known-limitations
-  // notes) has an obvious single place to re-call.
+  // promptLabelText(kind)をモードラインの行自身の左端に反転表示で
+  // 描き、その後promptEditor_自身のフィールドをその直後から始まる
+  // よう狭める(activatePrompt()自身のコメント参照)。将来のプロン
+  // プト中のリサイズの修正(ここでは試みられていない、この移植
+  // 自身の既知の制限の注記参照)が再呼び出しすべき明白な単一の
+  // 場所を持てるよう、単にactivatePrompt()から分離されている。
   //
-  // staticMessage (2026-08-13, default ""/unused): a direct user
-  // request -- LOCATE's own updatedb progress indicator ("Updating
-  // database...") needed to appear at exactly this same "right after
-  // the label" position, underlined, WHILE a blocking ChildProcess
-  // call runs (no promptEditor_ involved at all, nothing editable).
-  // The first version of this hand-rolled its own copy of this
-  // function's label-drawing logic directly in runLocateUpdateDb() --
-  // a real follow-up report ("モードライン共有ルーチンはできない？")
-  // pointed out that was exactly the kind of one-off duplication
-  // item 291's own mode-line audit had just finished eliminating
-  // elsewhere. When non-empty, this draws staticMessage underlined at
-  // the SAME column promptEditor_'s own field would otherwise start at
-  // (labelWidth) and skips the promptEditor_.setField()/trailing-
-  // reservation logic entirely (there's no editable field or
-  // destination-directory trailing to reserve room for here -- this
-  // isn't a real prompt, just a transient status line reusing the
-  // prompt row's own label-drawing).
+  // staticMessage(2026-08-13、デフォルト""/未使用): 直接のユーザー
+  // 依頼――LOCATE自身のupdatedb進捗表示("Updating database...")
+  // は、ブロッキングなChildProcess呼び出しが実行されている「間」
+  // (promptEditor_は全く関与せず、編集可能なものは何も無い)、
+  // まさにこの同じ「ラベルの直後」の位置に、下線付きで現れる必要
+  // があった。これの最初のバージョンは、runLocateUpdateDb()の中に
+  // 直接、この関数のラベル描画ロジックの独自のコピーを手作りして
+  // いた――実際の追加報告("モードライン共有ルーチンはできない？")
+  // が、それがまさに項目291自身のモードライン監査が他所でちょうど
+  // 排除し終えたばかりの類の1回限りの重複であることを指摘した。
+  // 空でない場合、これはstaticMessageを、promptEditor_自身の
+  // フィールドがそうでなければ始まるであろうのと「同じ」列
+  // (labelWidth)に下線付きで描き、promptEditor_.setField()/
+  // trailingの予約ロジックを完全にスキップする(ここには余地を
+  // 確保すべき編集可能なフィールドも移動先ディレクトリのtrailing
+  // も無い――これは本物のプロンプトではなく、プロンプト行自身の
+  // ラベル描画を再利用する一時的なステータス行に過ぎない)。
   void drawPromptLabel(PromptKind kind, const std::string &positionText = "", const std::string &staticMessage = "");
-  // K-46/K-48's (^X^F/^X^D) own READ-ONLY (not-yet-editing) candidate
-  // list: 2026-08-18 fix, a real report + reference screenshot (=cw)
-  // -- the highlighted candidate needs to look like a plain,
-  // non-highlighted editable field FROM THE START (matching what it
-  // switches to the instant real editing begins, via drawPromptLabel()
-  // itself), not just once the first byte is typed. Reuses
-  // drawPromptLabel() itself (same layout, same auto-wrap-safe fill)
-  // plus a non-editing-state promptEditor_ redraw to show the
-  // currently-selected candidate's text in that field -- called after
-  // every render of listBrowserView_ that could change what's
-  // selected (startPromptHistoryRecall()'s own initial show, and
-  // MoveUp()/MoveDown() while browsing), and a no-op for every other
-  // PromptKind/mode.
+  // K-46/K-48(^X^F/^X^D)自身の読み取り専用(まだ編集していない)
+  // 候補一覧: 2026-08-18の修正、実際の報告+参照スクリーンショット
+  // (=cw)――ハイライトされた候補は、最初のバイトが入力された時点
+  // だけでなく、「最初から」プレーンな、ハイライトされていない
+  // 編集可能なフィールドのように見える必要がある(drawPromptLabel()
+  // 自体経由で、本物の編集が始まった瞬間にそれが切り替わる先に
+  // 合わせている)。drawPromptLabel()自体(同じレイアウト、同じ
+  // 自動折り返し安全な埋め)に加えて、現在選択されている候補の
+  // テキストをそのフィールドに表示する非編集状態のpromptEditor_
+  // の再描画を再利用する――選択されているものを変え得る
+  // listBrowserView_の全ての描画の後(startPromptHistoryRecall()
+  // 自身の最初の表示、閲覧中のMoveUp()/MoveDown())に呼ばれ、他の
+  // 全てのPromptKind/モードに対しては何もしない。
   void refreshDirectEntryModeLine();
   PromptKind promptKind_ = PromptKind::None;
-  // See activatePrompt()'s own comment.
+  // activatePrompt()自身のコメント参照。
   bool promptCandidateListActive_ = false;
-  // 2026-08-28 redesign (docs/HISTORY.md, "9個のバラバラなメンバ変数に
-  // 分散しており...直したつもりの箇所が別の箇所の前提を壊す" -- a
-  // direct user diagnosis of this exact class of bug, echoed across
-  // several same-day reports): what used to be FOUR separate members
-  // (promptHistoryRecallKind_/Text_/ReturnMode_/IsDirectEntry_),
-  // independently set and reset by different call sites, consolidated
-  // into one struct so "is this session open at all" and "what does it
-  // remember" can never drift apart -- the exact failure mode that hit
-  // repeatedly this session (a code path clearing/setting only SOME of
-  // the four, leaving the rest stale). Set only while a ^R-triggered
-  // prompt-history ListBrowser is open (see startPromptHistoryRecall()'s
-  // own comment): which prompt to resume, what had already been typed
-  // there before ^R was pressed (restored verbatim on Back/^G -- ^R
-  // shouldn't silently discard partial input), and which ApplicationMode
-  // was active underneath the prompt (prompts overlay the CURRENT mode
-  // rather than owning one of their own, so this has to be saved/
-  // restored across the ListBrowser interlude the same way
-  // listBrowserReturnMode_ is for the plain ^X^F/^X^D case).
-  // nullopt outside a recall session -- this one optional's has_value()
-  // is now the SOLE authority on "is this session open", replacing four
-  // separately-checked conditions.
+  // 2026-08-28の再設計(docs/HISTORY.md、"9個のバラバラなメンバ変数
+  // に分散しており...直したつもりの箇所が別の箇所の前提を壊す"
+  // ――このまさに種類のバグの直接のユーザーによる診断で、同日の
+  // 複数の報告にまたがって反響した): 以前は4つの別々のメンバー
+  // (promptHistoryRecallKind_/Text_/ReturnMode_/IsDirectEntry_)で
+  // あり、異なる呼び出し箇所によって独立に設定/リセットされて
+  // いたものが、「このセッションはそもそも開いているのか」と
+  // 「それは何を覚えているのか」が決してずれ得ないよう、1つの
+  // 構造体に統合されている――今回のセッションで繰り返し当たった
+  // まさにその失敗モード(あるコードパスが、4つのうち「一部だけ」
+  // をクリア/設定し、残りを古びたままにする)。^R起動のプロンプト
+  // 履歴ListBrowserが開いている間だけ設定される
+  // (startPromptHistoryRecall()自身のコメント参照): どのプロンプト
+  // を再開すべきか、^Rが押される前にそこに既に何が入力されていたか
+  // (Back/^Gで逐語的に復元される――^Rは黙って部分的な入力を捨てる
+  // べきではない)、そしてプロンプトの下でどのApplicationModeが
+  // アクティブだったか(プロンプトは、それ自身のモードを所有する
+  // のではなく「現在の」モードに重ねられるので、これは、
+  // listBrowserReturnMode_が素の^X^F/^X^Dのケースに対してそうする
+  // のと同じ方法で、ListBrowserの合間をまたいで保存/復元されなけ
+  // ればならない)。呼び戻しセッションの外側ではnullopt――この
+  // 1つのoptionalのhas_value()が、今や「このセッションは開いて
+  // いるか」に対する唯一の権威であり、4つの別々にチェックされる
+  // 条件を置き換える。
   struct PromptHistoryContext {
     PromptKind kind;
     ApplicationMode returnMode = ApplicationMode::Directory;
     std::string textBeforeRecall;
-    // True only when this ListBrowser interlude was reached via
-    // startRegexPromptList() (^J^S/^J^C's own "opens directly into the
-    // candidate list" entry, see its own comment) rather than a real ^R
-    // recall of PAST typed patterns -- legacy's mode.c distinguishes
-    // these as genuinely different screens (T_hfgrep/T_hegrep for ^R vs
-    // plain M_fgrep/M_locate/M_cut2 for direct entry): a real ^R recall
-    // always shows the fixed literal "HISTORY" name (see
-    // startPromptHistoryRecall()'s own 2026-08-05 comment on why that's
-    // correct there) and starts on the NEWEST entry (bottom); direct
-    // entry shows the actual mode name (e.g. "CUT") plus the
-    // destination directory highlighted on the right, and starts on
-    // the TOP entry (a real report + legacy source read, 2026-08-11:
-    // T_hfgrep/T_hegrep explicitly set `row = nrow - 1`, but
-    // M_fgrep/M_locate/M_cut2 just set `i = -2`, defaulting to the
-    // top).
+    // このListBrowserの合間が、過去に入力されたパターンへの本物の
+    // ^R呼び戻しではなく、startRegexPromptList()(^J^S/^J^C自身の
+    // 「候補一覧へ直接開く」入場、自身のコメント参照)経由で到達
+    // された場合にだけtrue――legacyのmode.cは、これらを本当に
+    // 異なる画面として区別している(^Rに対してはT_hfgrep/
+    // T_hegrep、直接入場に対しては素のM_fgrep/M_locate/M_cut2):
+    // 本物の^R呼び戻しは常に固定のリテラルな「HISTORY」という名前
+    // を表示し(なぜそれがそこで正しいのかについては
+    // startPromptHistoryRecall()自身の2026-08-05のコメント参照)、
+    // 最新のエントリ(下端)から始まる。直接入場は実際のモード名
+    // (例えば「CUT」)に加えて右側にハイライトされた移動先ディレク
+    // トリを表示し、「上端の」エントリから始まる(実際の報告+
+    // legacyソースの読み込み、2026-08-11: T_hfgrep/T_hegrepは
+    // 明示的に`row = nrow - 1`を設定するが、M_fgrep/M_locate/
+    // M_cut2は単に`i = -2`を設定し、上端をデフォルトにする)。
     bool isDirectEntry = false;
   };
   std::optional<PromptHistoryContext> promptHistoryContext_;
-  // ensureShellActive()/returnFromShell() (2026-08-24 fix, a real
-  // 100%-reproducible report: "（ls）のCLAUDE.md上で^J^B^J^W^G" ->
-  // the candidate list, correctly labeled "CUT" right after ^J^B,
-  // comes back mislabeled "EGREP" after this round-trip): ^J^W
-  // (shellInsertBufferContent(), one of ensureShellActive()'s several
-  // callers) can be pressed WHILE a promptHistoryContext_ session
-  // (e.g. ^J^B's own regex-CUT candidate list, direct-entry) is still
-  // genuinely open -- not abandoned, just "quickly peek at Shell, come
-  // right back via ^G". ensureShellActive() unconditionally clears
-  // promptHistoryContext_ on entry (see its own long comment for
-  // WHY that clearing exists at all -- a real, different bug about a
-  // STALE flag surviving into a later, UNRELATED ^R ShellCommand
-  // session), which is correct for that original scenario but throws
-  // away the CURRENT session's own identity too: listBrowserView_'s
-  // own ModeLineFieldsProvider only shows the real "CUT" name when
-  // promptHistoryContext_ is set (see its own comment on why
-  // ringCategoryLabel() alone can't distinguish CUT's regex variant
-  // from EGREP -- they share RingCategory::RecentEgrepPattern), so an
-  // empty promptHistoryContext_ makes ^G's return trip fall back to
-  // that ring-category-only label, "EGREP", regardless of which one
-  // was actually open. This holds a SUSPENDED copy of the live one for
-  // the duration of the Shell excursion (see ensureShellActive()'s own
-  // save and returnFromShell()'s own restore), letting the live one
-  // still be safely wiped (fixing the original bug) without losing
-  // what to resume on a plain ^G back out with nothing else having
-  // happened in between. Deliberately NOT a full session snapshot
-  // (listBrowserCategory_ itself is untouched by this) -- a nested
-  // detour INSIDE Shell that itself opens a different ListBrowser
-  // session (e.g. ^R for ShellCommand history) before the eventual ^G
-  // is a known, narrower residual gap this doesn't cover.
+  // ensureShellActive()/returnFromShell()(2026-08-24の修正、実際の
+  // 100%再現する報告: "（ls）のCLAUDE.md上で^J^B^J^W^G"――^J^Bの
+  // 直後は正しく「CUT」とラベル付けされていた候補一覧が、この
+  // 往復の後は「EGREP」と誤ってラベル付けされて戻ってくる):
+  // ^J^W(shellInsertBufferContent()、ensureShellActive()の複数ある
+  // 呼び出し元の1つ)は、promptHistoryContext_のセッション(例えば
+  // ^J^B自身の正規表現CUT候補一覧、直接入場)がまだ本当に開いている
+  // 「間」でも押され得る――放棄されるのではなく、単に「Shellを
+  // 素早く覗いて、^G経由ですぐ戻ってくる」だけである。
+  // ensureShellActive()は入場時に無条件にpromptHistoryContext_を
+  // クリアする(そもそもなぜそのクリアが存在するのかについては
+  // 自身の長いコメント参照――後の、無関係な^R ShellCommandセッション
+  // に古びたフラグが生き残るという、実際の、別のバグについて)。
+  // これは元々のそのシナリオに対しては正しいが、「現在の」セッ
+  // ション自身のアイデンティティも捨ててしまう:
+  // listBrowserView_自身のModeLineFieldsProviderは、
+  // promptHistoryContext_が設定されている時だけ本物の「CUT」という
+  // 名前を表示する(なぜringCategoryLabel()単独ではCUTの正規表現
+  // バリアントをEGREPと区別できないのかについては自身のコメント
+  // 参照――それらはRingCategory::RecentEgrepPatternを共有する)ので、
+  // 空のpromptHistoryContext_は、実際にどちらが開いていたかに
+  // 関わらず、^Gの帰り旅を、そのリングカテゴリのみのラベル
+  // 「EGREP」へフォールバックさせてしまう。これは、Shellへの寄り道
+  // の間、生きているものの「一時停止された」コピーを保持し
+  // (ensureShellActive()自身の保存とreturnFromShell()自身の復元
+  // 参照)、その間に他に何も起きなかった場合の素の^Gでの帰りに
+  // 何を再開すべきかを失うことなく、生きているものが依然として
+  // 安全に消去される(元々のバグを修正する)ことを可能にする。
+  // 意図的に完全なセッションのスナップショットでは「ない」
+  // (listBrowserCategory_自体はこれによって手を付けられない)
+  // ――Shellの「内側の」ネストされた寄り道であって、それ自体が
+  // 最終的な^Gの前に別のListBrowserセッション(例えばShellCommand
+  // 履歴に対する^R)を開くものは、これがカバーしない、既知の、
+  // より狭い残存ギャップである。
   std::optional<PromptHistoryContext> suspendedPromptHistoryContext_;
-  // A DIFFERENT, simpler case than the three fields just above: those
-  // three are for the ListBrowser CANDIDATE-LIST scenario
-  // (promptHistoryRecallKind_); these two are for promptKind_ itself
-  // -- a DIRECTLY-active, still-being-typed editable prompt (e.g.
-  // GrepPattern from a bare ^S, mid-pattern) that a leader command
-  // (^J^W, shellInsertBufferContent()) jumps straight to Shell FROM,
-  // bypassing the prompt's own normal exit points (submitPrompt()/
-  // cancelPrompt()/startPromptHistoryRecall() -- the only three
-  // existing places promptKind_ ever gets cleared). 2026-08-24 fix, a
-  // real report: dispatchByte()'s own top-level routing checks
-  // `promptKind_ != PromptKind::None` BEFORE `currentMode_ == Shell`
-  // (see its own comment on the ordering) -- leaving promptKind_
-  // stuck at GrepPattern after jumping to Shell meant every byte
-  // typed at the live SHELL prompt afterward (starting with the very
-  // next keystroke) kept being routed through feedPromptByte() instead
-  // of feedShellByte(), silently re-editing/re-submitting the STALE
-  // FGREP pattern -- including a bare Enter, which re-ran the search
-  // (executeGrep() unconditionally overwrites currentMode_, snapping
-  // back out of Shell entirely) instead of running the shell command
-  // the user was actually looking at ("^J^WはHELPに戻っているようで
-  // いて...実はSHELLにいるらしい"). Suspended (not just discarded) so
-  // a plain ^G back out resumes editing exactly where the user left
-  // off, matching promptHistoryRecallKind_'s own established pattern
-  // just above.
+  // すぐ上の3つのフィールドとは異なる、より単純なケース: それらの
+  // 3つはListBrowserの「候補一覧」のシナリオ
+  // (promptHistoryRecallKind_)向けである。これらの2つはpromptKind_
+  // 自体――「直接」アクティブな、まだ入力中の編集可能なプロンプト
+  // (例えば素の^SからのGrepPattern、パターンの途中)――向けであり、
+  // リーダーコマンド(^J^W、shellInsertBufferContent())が、
+  // プロンプト自身の通常の終了地点(submitPrompt()/cancelPrompt()/
+  // startPromptHistoryRecall()――promptKind_が消去される、既存の
+  // 唯一の3つの場所)を迂回して、そこから直接Shellへジャンプする。
+  // 2026-08-24の修正、実際の報告:
+  // dispatchByte()自身のトップレベルのルーティングは、
+  // `currentMode_ == Shell`「より前に」`promptKind_ !=
+  // PromptKind::None`をチェックする(順序については自身のコメント
+  // 参照)――Shellへジャンプした後promptKind_をGrepPatternに詰まった
+  // ままにすることは、その後に生きたSHELLプロンプトへ入力される
+  // 全てのバイト(まさに次のキー入力から)が、feedShellByte()の
+  // 代わりにfeedPromptByte()経由でルーティングされ続け、黙って
+  // 古びたFGREPパターンを再編集/再送信することを意味していた
+  // ――ユーザーが実際に見ていたshellコマンドを実行する代わりに
+  // 検索を再実行する(executeGrep()は無条件にcurrentMode_を上書き
+  // し、Shellから完全にスナップして抜け出す)素のEnterを含めて
+  // ("^J^WはHELPに戻っているようでいて...実はSHELLにいるらしい")。
+  // (単に捨てられるのではなく)一時停止されるので、素の^Gで戻ると、
+  // すぐ上のpromptHistoryRecallKind_自身の確立されたパターンに
+  // 合わせて、ユーザーが残していったまさにその場所での編集が再開
+  // される。
   std::optional<PromptKind> suspendedActivePromptKind_;
   std::string suspendedActivePromptText_;
-  // 2026-08-11: a real report + direct user clarification -- "検索への
-  // 入口がCUTなら出るときもCUTから出るはず" (if the search's own
-  // entrance was the candidate list, Back should exit through it too),
-  // i.e. a proper LIFO stack: Directory -> candidate list -> results,
-  // and ^G pops ONE level at a time, not straight back to Directory.
-  // promptHistoryRecallIsDirectEntry_ itself gets cleared the instant
-  // feedRegexListByte()/openSelectedListEntry() consume it (well
-  // before the search actually runs), so its value is captured here
-  // FIRST and carried through to executeGrep()/executeCut() on
-  // success, which transfer it into grepReturnsToCandidateList_/
-  // cutReturnsToCandidateList_ -- consulted (and cleared, one-shot)
-  // by returnFromGrep()/returnFromCut() to decide whether Back
-  // reopens the candidate list (via startRegexPromptList() again)
-  // instead of returning straight to grepReturnMode_/cutReturnMode_.
-  // A SECOND round-trip (re-edit the pattern from that reopened list,
-  // submit again) sets the flag fresh again, so this naturally chains
-  // for as many search/edit cycles as the user does -- the only way
-  // to reach Directory is explicitly cancelling FROM the candidate
-  // list itself (returnFromListBrowser()'s own unrelated, pre-existing
-  // ^G-cancel path).
+  // 2026-08-11: 実際の報告+直接のユーザーによる明確化――"検索への
+  // 入口がCUTなら出るときもCUTから出るはず"(検索自身の入口が
+  // 候補一覧だったなら、Backもそこを通って出るべき)、つまり正しい
+  // LIFOスタック: Directory -> 候補一覧 -> 結果、そして^Gは、
+  // Directoryへ直接ではなく、一度に「1階層ずつ」popする。
+  // promptHistoryRecallIsDirectEntry_自体は、feedRegexListByte()/
+  // openSelectedListEntry()がそれを消費した瞬間(検索が実際に実行
+  // されるずっと前)にクリアされるので、その値は「まず」ここで
+  // 捕捉され、成功時にexecuteGrep()/executeCut()を通して運ばれ、
+  // それらがそれを
+  // grepReturnsToCandidateList_/cutReturnsToCandidateList_へ移す
+  // ――returnFromGrep()/returnFromCut()によって、Backが
+  // grepReturnMode_/cutReturnMode_へ直接戻る代わりに候補一覧を
+  // (再びstartRegexPromptList()経由で)再度開くべきかどうかを決める
+  // ために参照される(そして一度きりでクリアされる)。2回目の往復
+  // (その再度開かれた一覧からパターンを再編集し、再度送信する)は、
+  // フラグを新たに再度設定するので、これは自然に、ユーザーが行う
+  // だけの数の検索/編集の周期を連鎖させる――Directoryへ到達する
+  // 唯一の方法は、候補一覧自体から明示的にキャンセルすること
+  // (returnFromListBrowser()自身の無関係な、既存の^Gキャンセル
+  // 経路)である。
   bool pendingSearchFromDirectEntryList_ = false;
   bool grepReturnsToCandidateList_ = false;
   bool cutReturnsToCandidateList_ = false;
-  // returnToCutResults()/returnFromCut() (2026-08-24 fix, a real
-  // report: "^G連打→戻り値「CUT: ^##」との行き来ループ→（ls）へ戻ら
-  // ず" -- mashing ^G loops forever between the annotated Directory
-  // listing and the Cut results screen, never settling on a plain
-  // (ls)). CUT's own class comment explains why returnFromCut() is a
-  // single function that ALWAYS both leaves Cut mode AND (re)writes
-  // the "CUT: pattern" annotation, unlike GREP's own two-function
-  // split (openSelectedGrepMatch() always sets it once, on a genuinely
-  // NEW match; returnFromGrep() always CLEARS it, since reaching that
-  // function means "backing out for real," see its own comment) -- but
-  // that reasoning only covers CUT's OWN first exit after a fresh
-  // search. It doesn't cover a SECOND ^G that RE-ENTERS the results
-  // via returnToCutResults() (the annotation's own click-back target)
-  // and then leaves AGAIN through this same returnFromCut() -- which
-  // unconditionally re-writes the identical annotation every time,
-  // so the next ^G on Directory re-enters again, forever. Set by
-  // returnToCutResults() right before showing the resumed results
-  // screen; consulted (and cleared, one-shot) by returnFromCut() to
-  // CLEAR the annotation instead of rewriting it on this specific
-  // "leaving a RESUMED session" trip, mirroring returnFromGrep()'s own
-  // behavior exactly.
+  // returnToCutResults()/returnFromCut()(2026-08-24の修正、実際の
+  // 報告: "^G連打→戻り値「CUT: ^##」との行き来ループ→（ls）へ戻ら
+  // ず"――^Gを連打すると、注釈付きのDirectory一覧とCut結果画面の
+  // 間で永遠にループし、決してプレーンな(ls)には落ち着かない)。
+  // CUT自身のクラスコメントは、なぜreturnFromCut()が、GREP自身の
+  // 2関数分割(openSelectedGrepMatch()は、本当に「新しい」マッチの
+  // 時に常に一度それを設定する。returnFromGrep()は、その関数へ
+  // 到達することが「本当に後退する」ことを意味するので常にそれを
+  // 「クリアする」、自身のコメント参照)とは異なり、常にCutモード
+  // を離れ「かつ」「CUT: pattern」注釈を(再)書き込む単一の関数で
+  // あるかを説明している――しかしその理由は、新しい検索の後のCUT
+  // 「自身の」最初の終了だけをカバーする。それは、
+  // returnToCutResults()(注釈自身のクリックバックの対象)経由で
+  // 結果に「再入場」し、その後この同じreturnFromCut()を通して
+  // 「再び」離れる、「2回目の」^Gをカバーしない――それは無条件に
+  // 毎回同一の注釈を再書き込みするので、Directoryでの次の^Gは
+  // 永遠に再度入場する。returnToCutResults()によって、再開された
+  // 結果画面を表示する直前に設定される。returnFromCut()によって、
+  // この特定の「再開されたセッションを離れる」旅では、注釈を書き
+  // 換えるのではなく「クリアする」ために参照される(そして一度
+  // きりでクリアされる)。returnFromGrep()自身の挙動を正確に反映
+  // している。
   bool cutResultsResumed_ = false;
-  // See startShellHistoryRecall()'s own comment.
+  // startShellHistoryRecall()自身のコメント参照。
   bool shellHistoryRecallActive_ = false;
   std::string shellHistoryRecallText_;
-  // Which of the two keys (K-45 ^Xf vs K-47 ^Xd) started the current
-  // PathInput prompt -- see startPathInputPrompt()'s own comment for
-  // why EXECUTION stays unified (PathResolver decides file-vs-
-  // directory from the typed path itself) while the mode-line LABEL
-  // still needs to match legacy's own separate " FILE"/" DIR" text for
-  // whichever key was actually pressed (a real side-by-side screenshot
-  // comparison against legacy, 2026-08-03, found this port always
-  // showing "FILE/DIR" regardless of which key started the prompt).
+  // 2つのキー(K-45 ^Xf対K-47 ^Xd)のどちらが現在のPathInput
+  // プロンプトを開始したか――なぜ「実行」は統一されたまま
+  // (PathResolverが、入力されたパス自体からファイルかディレクトリ
+  // かを決める)である一方、モードラインの「ラベル」は依然として、
+  // 実際に押されたキーがどちらであれ、legacy自身の別々の
+  // " FILE"/" DIR"というテキストに一致する必要があるのかについては
+  // startPathInputPrompt()自身のコメント参照(legacyに対する実際の
+  // 並べたスクリーンショット比較、2026-08-03が、この移植が、
+  // プロンプトを開始したキーに関わらず常に「FILE/DIR」を表示して
+  // いることを発見した)。
   bool pathInputIsDirectory_ = false;
 };
 
