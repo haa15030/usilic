@@ -21,10 +21,10 @@ struct KeyInput::RawState {
 
 namespace {
 
-// Single active KeyInput, mirroring TerminalDisplay's g_active: real
-// POSIX signal handlers are plain `void(int)` function pointers with
-// nowhere to carry instance data, and usilic has only ever run as one
-// foreground input handler at a time.
+// アクティブなKeyInputは1つだけ、TerminalDisplayのg_activeと同じ
+// 考え方: 本物のPOSIXシグナルハンドラは素の`void(int)`関数ポインタ
+// であり、インスタンスデータを運ぶ場所が無い。usilicはフォアグラウンド
+// の入力ハンドラを常に一度に1つしか動かしたことが無い。
 KeyInput *g_active = nullptr;
 volatile std::sig_atomic_t g_resizePending = 0;
 volatile int g_foregroundChildPid = 0;
@@ -33,12 +33,13 @@ void handleWinch(int) {
   std::signal(SIGWINCH, handleWinch);
   g_resizePending = 1;
   if (g_foregroundChildPid && !kill(g_foregroundChildPid, 0)) {
-    // Ported from key_winch()'s `vt_mode('w')`: legacy's 'W' flag
-    // recorded "a resize happened while the SHELL's child is alive"
-    // for the SHELL class (not yet ported) to notice and forward.
-    // There's nowhere to forward that to yet, so this is currently a
-    // no-op beyond the kill() liveness probe it was already doing;
-    // left as a hook point (see the class comment on excluded scope).
+    // key_winch()の`vt_mode('w')`からの移植: legacyの'W'フラグは
+    // 「SHELLの子プロセスが生きている間にリサイズが起きた」ことを
+    // 記録し、SHELLクラス(まだ移植されていない)がそれに気づいて
+    // 転送するためのものだった。今のところそれを転送する先が無い
+    // ため、これは現状、既に行っているkill()による生存確認以上の
+    // ことはしない――フック地点として残してある(除外されている
+    // スコープについてはクラスコメント参照)。
   }
 }
 
@@ -55,12 +56,12 @@ void handleCont(int) {
   if (g_active) g_active->reenterRawMode();
 }
 
-// Duplicated, not shared with terminal_display.cpp's windowSize():
-// both classes independently need to query the controlling terminal's
-// size for their own reasons (Display for its initial geometry at
-// construction; KeyInput here for handling a live resize signal), and
-// the ioctl call itself is a stable ~10-line OS primitive not worth
-// forcing an artificial coupling between the two classes over.
+// 重複させてあり、terminal_display.cppのwindowSize()とは共有して
+// いない: どちらのクラスも、それぞれ独自の理由(Displayは構築時の
+// 初期ジオメトリのため、こちらのKeyInputはライブのリサイズシグナル
+// を処理するため)で、独立して制御端末のサイズを問い合わせる必要が
+// ある。ioctl呼び出し自体は安定した約10行のOSプリミティブであり、
+// これのために2クラス間に人工的な結合を強いる価値は無い。
 bool queryWindowSize(int fd, int *rows, int *columns) {
   struct winsize ws;
   ws.ws_row = 0;
@@ -100,15 +101,15 @@ int KeyInput::readByte() {
   unsigned char c;
   ssize_t n = read(fd_, &c, 1);
   if (n <= 0) return 0;
-  // Ctrl-Space arrives as a literal NUL on many terminals; 0 is
-  // already "nothing read" above, so report it via the same 0x80
-  // sentinel legacy vt_getch() used (K_at).
+  // 多くの端末でCtrl-Spaceはリテラルなnullとして届く。0は既に上で
+  // 「何も読めなかった」を意味するため、legacyのvt_getch()が使って
+  // いたのと同じ0x80という番兵(K_at)経由でそれを報告する。
   return c ? c : 0x80;
 }
 
 void KeyInput::open(const std::string &ttyPath) {
   int fd = ::open(ttyPath.c_str(), O_RDONLY);
-  fd_ = (fd < 0) ? 2 : fd;  // legacy vt_init(1): fall back to stderr's fd
+  fd_ = (fd < 0) ? 2 : fd;  // legacyのvt_init(1): 標準エラーのfdへフォールバック
   if (!isatty(fd_)) {
     std::fprintf(stderr, "usilic: Invalid terminal.\n");
     if (fd_ != 2) ::close(fd_);
@@ -168,11 +169,12 @@ std::optional<KeyInput::SpecialKey> KeyInput::readEscapeSequence() {
     return std::nullopt;
   }
 
-  // Ported quirk: every sequence is assumed to share Up's (seqs[0])
-  // length -- read exactly that many more bytes after the already-
-  // consumed leading ESC. This matches read_esc() exactly (it uses
-  // strlen(ks[0]) the same way) rather than reading each candidate's
-  // own length, so it's carried forward as-is, not fixed here.
+  // 移植された癖: 全てのシーケンスがUp(seqs[0])と同じ長さを共有
+  // していると仮定される――既に消費済みの先頭ESCの後、ちょうどその
+  // 分だけ追加でバイトを読む。これはread_esc()と正確に一致している
+  // (そちらも同じようにstrlen(ks[0])を使っている)。各候補自身の
+  // 長さを読むのではなく、そのままここへ持ち越してあり、修正して
+  // いない。
   int remaining = static_cast<int>(seqs[0].size()) - 1;
   std::string esc(1, static_cast<char>(0x1b));
   for (int i = 0; i < remaining; i++) {
@@ -180,8 +182,8 @@ std::optional<KeyInput::SpecialKey> KeyInput::readEscapeSequence() {
     if (!c) break;
     esc.push_back(static_cast<char>(c));
   }
-  lastEscapeBytes_ = esc.substr(1);  // bytes after ESC, whatever was actually captured -- see lastEscapeBytes()
-  if (esc.size() < 2) return std::nullopt;  // bare ESC, nothing followed
+  lastEscapeBytes_ = esc.substr(1);  // ESCの後のバイト、実際に捕捉された内容そのまま――lastEscapeBytes()参照
+  if (esc.size() < 2) return std::nullopt;  // 裸のESC、何も続かなかった
 
   int matched = -1;
   for (int i = 0; i < 6; i++) {
@@ -192,7 +194,7 @@ std::optional<KeyInput::SpecialKey> KeyInput::readEscapeSequence() {
     }
   }
   if (matched < 0) return std::nullopt;
-  if (matched >= 4) readByte();  // PageUp/PageDown: discard trailing byte (e.g. '~')
+  if (matched >= 4) readByte();  // PageUp/PageDown: 末尾のバイト(例えば'~')を捨てる
   return kSpecialOrder[matched];
 }
 
