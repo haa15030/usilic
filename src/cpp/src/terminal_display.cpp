@@ -15,14 +15,15 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-// <term.h> #defines `columns` and `lines` as macros (CUR Numbers[0]/[2],
-// terminfo's own numeric-capability accessors) -- textually corrupts
-// any later use of those identifiers as ordinary variable/parameter/
-// method names in this file (this is why the legacy tc.c named its
-// analogous accessors tc_row()/tc_col() rather than anything spelled
-// "rows"/"columns"). Undefine both immediately after the term.h
-// include so the rest of this file -- including the Display::columns()
-// override -- can use those names normally.
+// <term.h>は`columns`と`lines`をマクロとして#defineしている
+// (CUR Numbers[0]/[2]、terminfo自身の数値capabilityアクセサ)――
+// このファイルでのそれらの識別子の、通常の変数/引数/メソッド名
+// としてのそれ以降の使用を、テキスト的に壊してしまう(これが
+// legacyのtc.cが、"rows"/"columns"というつづりの何かではなく
+// tc_row()/tc_col()という名前で対応するアクセサを名付けた理由)。
+// term.hのincludeの直後に両方をundefすることで、Display::
+// columns()のオーバーライドを含む、このファイルの残りの部分が
+// それらの名前を普通に使えるようにする。
 #undef columns
 #undef lines
 
@@ -30,14 +31,14 @@ namespace fm {
 
 namespace {
 
-// tputs()'s per-character output callback has to be a plain function
-// pointer (no captures), so the "which display is this for, and is
-// its output currently enabled" state has to live outside the
-// callback itself. This mirrors the legacy tc.c exactly: it had the
-// same constraint and solved it the same way, with a single global
-// `vt` pointer checked via vt_mode('D') inside outc(). usilic has
-// only ever run as a single foreground display at a time, so this
-// carries no new limitation.
+// tputs()の1文字ごとの出力コールバックは(キャプチャ無しの)プレーンな
+// 関数ポインタでなければならないので、「これはどのディスプレイの
+// ためのものか、その出力は現在有効か」という状態はコールバック自体の
+// 外側に置かねばならない。これはlegacyのtc.cを正確に反映している:
+// それは同じ制約を持ち、outc()内でvt_mode('D')経由でチェックされる
+// 単一のグローバル`vt`ポインタという同じ方法で解決していた。usilic
+// は一度に単一の前面ディスプレイとしてしか動作したことがないので、
+// これは新たな制約を持ち込まない。
 TerminalDisplay *g_active = nullptr;
 
 int outc(int c) {
@@ -51,11 +52,11 @@ int windowSize(int *rowsp, int *colsp) {
   ws.ws_row = 0;
   int fd = open("/dev/tty", O_RDONLY);
   if (fd < 0 || ioctl(fd, TIOCGWINSZ, &ws) < 0) {
-    // Matches legacy get_winsize()'s fallback exactly (including the
-    // row/column values looking swapped -- this was investigated and
-    // confirmed harmless in practice: every real terminal sets
-    // TIOCSWINSZ at startup, so this path is essentially untaken. See
-    // CLAUDE.md's UTF-8 Step 3.5 history for the prior investigation).
+    // legacyのget_winsize()のフォールバックに(行/列の値が入れ替わって
+    // 見えることも含めて)正確に一致している――これは調査済みで、実際
+    // には無害であることが確認されている: 本物の端末は全て起動時に
+    // TIOCSWINSZを設定するので、この経路は本質的に通られない。以前の
+    // 調査についてはCLAUDE.mdのUTF-8 Step 3.5の履歴参照。
     *rowsp = 80;
     *colsp = 30;
   } else if (!ws.ws_row) {
@@ -79,27 +80,27 @@ TerminalDisplay::TerminalDisplay(TerminalCapabilities caps, int rows, int column
 }
 
 std::unique_ptr<TerminalDisplay> TerminalDisplay::fromEnvironment(bool exitOnFailure) {
-  // See this function's own declaration comment (terminal_display.hpp)
-  // for exitOnFailure's full story. All three failure points below
-  // share the same fallback: print nothing (a degraded placeholder
-  // isn't a user-facing error when the caller already knows it won't
-  // be used for real rendering) and return an empty-capabilities stub
-  // sized to a conventional 80-column x 24-row terminal -- NOT
-  // windowSize()'s own 80x30 "no real size available" fallback
-  // elsewhere in this file (an earlier version of this comment
-  // wrongly claimed they matched): that one is rows=80/cols=30, a
-  // legacy-matched oddity confirmed harmless specifically because
-  // every real terminal sets TIOCSWINSZ at startup, making it
-  // essentially unreachable -- this path is NOT unreachable (it is
-  // the primary path for a $TERM-less GUI launch), and its own
-  // rows/columns feed straight into GraphicalDisplay::create()'s
-  // initial window size, so it needs an actually sane value, not a
-  // "doesn't matter, never hit" placeholder. The constructor takes
-  // (caps, rows, columns) -- rows FIRST -- getting this backwards
-  // here once already produced a real, reported symptom: every ls
-  // line rendering truncated right after the permission/owner/size
-  // columns because the window was accidentally only 24 columns WIDE
-  // (rows=80, columns=24) instead of 24 rows TALL, 80 columns wide.
+  // exitOnFailureの完全な経緯についてはこの関数自身の宣言コメント
+  // (terminal_display.hpp)参照。下の3つの失敗地点は全て同じ
+  // フォールバックを共有する: 何も表示せず(呼び出し元が既にそれが
+  // 実際の描画に使われないと分かっている場合、劣化したプレース
+  // ホルダーはユーザー向けのエラーではない)、慣習的な80桁x24行の
+  // 端末サイズの、空のcapabilitiesスタブを返す――このファイルの他所
+  // にあるwindowSize()自身の80x30「実際のサイズが得られない」
+  // フォールバックとは「異なる」(このコメントの以前のバージョンは
+  // 誤ってそれらが一致すると主張していた): あちらはrows=80/
+  // cols=30で、特に本物の端末は全て起動時にTIOCSWINSZを設定する
+  // ため本質的に到達不能であることが確認された、legacyに合わせた
+  // 奇妙さである――こちらの経路は到達不能では「ない」($TERM無しの
+  // GUI起動に対する主要な経路である)、そしてこちら自身のrows/
+  // columnsはGraphicalDisplay::create()の初期ウィンドウサイズへ
+  // 直接流れ込むので、「気にしない、決して当たらない」プレース
+  // ホルダーではなく、実際に正気な値が必要である。コンストラクタは
+  // (caps, rows, columns)を取る――rowsが「先」――これを一度、
+  // ここで逆にしてしまったことが、既に実際に報告された症状を
+  // 生み出した: 全てのlsの行の描画が、権限/所有者/サイズの各列の
+  // 直後で切り詰められた。ウィンドウが誤って、24行の縦幅、80桁の
+  // 横幅ではなく、24桁「幅」しか無かった(rows=80, columns=24)ため。
   auto degraded = [] { return std::make_unique<TerminalDisplay>(TerminalCapabilities{}, 24, 80); };
 
   const char *term = std::getenv("TERM");
@@ -108,7 +109,7 @@ std::unique_ptr<TerminalDisplay> TerminalDisplay::fromEnvironment(bool exitOnFai
     std::fprintf(stderr, "usilic: TERM environment variable is not set.\n");
     std::exit(1);
   }
-  // Ported from tc_load()'s TERM overrides.
+  // tc_load()のTERMオーバーライドからの移植。
   if (!std::strcmp(term, "screen")) setenv("TERM", "vt100", 1);
   else if (!std::strcmp(term, "cygwin")) setenv("TERM", "kterm", 1);
 
@@ -167,8 +168,8 @@ void TerminalDisplay::write(const std::string &text) {
 }
 
 void TerminalDisplay::putChar(int c) {
-  // Ctrl-G (BEL) always rings, even while output is otherwise
-  // suppressed -- ported from tc_putchar()'s K_g special case.
+  // Ctrl-G(BEL)は、出力が他の点では抑制されている間でも常に鳴る
+  // ――tc_putchar()のK_g特別扱いからの移植。
   if (c == 7) {
     std::putchar(c);
     std::fflush(stdout);
@@ -224,12 +225,12 @@ void TerminalDisplay::clearToEndOfLine() {
 }
 
 void TerminalDisplay::scrollForward() {
-  // Legacy tc_sf()/tc_sr() have no explicit outputEnabled early-return
-  // (unlike most other primitives) -- they relied solely on outc()'s
-  // own per-character check. This class guards explicitly instead (see
-  // display.hpp's note on outputEnabled()): tightens that
-  // inconsistency without changing observable behavior, since outc()
-  // would have suppressed the same bytes either way.
+  // legacyのtc_sf()/tc_sr()には(他のほとんどのプリミティブとは
+  // 異なり)明示的なoutputEnabledの早期returnが無い――それらは
+  // outc()自身の1文字ごとのチェックだけに依存していた。このクラスは
+  // 代わりに明示的にガードする(display.hppのoutputEnabled()に関する
+  // 注記参照): outc()はいずれにせよ同じバイトを抑制していたはずな
+  // ので、観測可能な挙動を変えることなくその不整合を締める。
   if (!outputEnabled_) return;
   tputs(caps_.scrollForward.c_str(), 1, outc);
 }
@@ -316,44 +317,44 @@ void TerminalDisplay::open() {
 }
 
 void TerminalDisplay::close() {
-  // Legacy tc.c captured exit_ca_mode (te) into Tc.te but never once
-  // called it -- usilic always left the terminal's alternate screen
-  // active on exit. This is a deliberate correction, not a straight
-  // port: a Display that opens the alternate screen should also be
-  // the one to leave it.
+  // legacyのtc.cはexit_ca_mode(te)をTc.teへ取り込んでいたが一度も
+  // それを呼んでいなかった――usilicは終了時に常に端末の代替画面を
+  // 有効なままにしていた。これは単純な移植ではなく意図的な修正
+  // である: 代替画面を開くDisplayは、それを離れるのもそのDisplay
+  // であるべきだ。
   if (!outputEnabled_ || caps_.exitAltScreen.empty()) return;
   tputs(caps_.exitAltScreen.c_str(), 1, outc);
   std::fflush(stdout);
 }
 
-// See Display::leaveForExternalProgram()'s own comment for the full
-// story (docs/HISTORY.md:9023, ported from legacy vt.c's vt_init(-2)
-// case): applyScrollRegion() constrains the scroll region to
-// rows_-2 (or rows_-1 under smooth scroll) for usilic's OWN drawing,
-// reserving the last row for the mode line -- an external program
-// (`less`, a PROGRAM-list entry) inherits that same real terminal and
-// has no idea usilic ever narrowed it, so it needs the FULL screen
-// back for the duration of its own run.
+// 完全な経緯についてはDisplay::leaveForExternalProgram()自身の
+// コメント参照(docs/HISTORY.md:9023、legacyのvt.cのvt_init(-2)
+// ケースからの移植): applyScrollRegion()は、モードラインのために
+// 最後の1行を確保するため、usilic自身の描画向けにスクロール領域を
+// rows_-2(またはスムーズスクロール下ではrows_-1)に制限する――
+// 外部プログラム(`less`、PROGRAM一覧のエントリ)は、その同じ本物の
+// 端末を引き継ぐが、usilicがそれを狭めたことなど全く知らないので、
+// その実行中は「画面全体」を取り戻す必要がある。
 void TerminalDisplay::leaveForExternalProgram() {
   if (!outputEnabled_ || caps_.changeScrollRegion.empty()) return;
   tputs(tgoto(caps_.changeScrollRegion.c_str(), rows_ - 1, 0), 1, outc);
   std::fflush(stdout);
 }
 
-// The other half of the pair above: re-constrains the scroll region
-// back to usilic's own normal (smooth-scroll-dependent) range once
-// control returns -- just applyScrollRegion() itself, already
-// computing exactly that from smoothScroll_/rows_.
+// 上のペアのもう半分: 制御が戻った時に、スクロール領域をusilic
+// 自身の通常の(スムーズスクロールに依存する)範囲へ再度制限する
+// ――単にapplyScrollRegion()自体が、既にsmoothScroll_/rows_から
+// まさにそれを計算している。
 void TerminalDisplay::reenterFromExternalProgram() { applyScrollRegion(); }
 
-// See ContentView::renderLine()'s own identical byte-range logic
-// (col < run.start || col >= run.end) -- this class's own convention
-// (byte offset == screen column, see ContentView's own class comment)
-// applies here too. Writes byte-by-byte (rather than one write() call
-// for the whole line) so Bold/Underline can toggle exactly at each
-// run's own boundary, same shape modeLineSegments' own Standout
-// toggling below already uses for its own (single, whole-segment)
-// runs.
+// ContentView::renderLine()自身の同一のバイト範囲ロジック
+// (col < run.start || col >= run.end)参照――このクラス自身の慣習
+// (バイトオフセット == 画面の列、ContentView自身のクラスコメント
+// 参照)はここでも当てはまる。行全体に対して1回のwrite()呼び出しを
+// 行うのではなく、バイトごとに書き込むことで、Bold/Underlineが
+// 各runの境界ちょうどで切り替わるようにする――下のmodeLineSegments
+// 自身のStandout切り替えが自身の(単一の、行全体の)runに対して既に
+// 使っているのと同じ形。
 void TerminalDisplay::writeAttributedLine(const std::string &text, const std::vector<Display::AttributeRun> &runs) {
   bool boldOn = false, underlineOn = false;
   for (std::size_t col = 0; col < text.size(); col++) {
@@ -379,7 +380,7 @@ void TerminalDisplay::writeAttributedLine(const std::string &text, const std::ve
 
 void TerminalDisplay::renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                                       const std::vector<ModeLineSegment> &modeLineSegments) {
-  (void)pixelOffsetY;  // no sub-row addressing on a real terminal -- see this method's own header comment
+  (void)pixelOffsetY;  // 本物の端末では行未満の細かいアドレス指定は無い――このメソッド自身のヘッダーコメント参照
   if (!outputEnabled_) return;
   int contentRows = std::max(rows_ - 1, 0);
   for (int row = 0; row < contentRows; row++) {
@@ -393,11 +394,11 @@ void TerminalDisplay::renderScrolled(const std::vector<ScrolledLine> &lines, int
     }
   }
   if (rows_ > 0) {
-    // Per-segment Standout runs, same as ContentView::renderModeLine()
-    // itself -- see Display::ModeLineSegment's own comment for why (a
-    // non-standout segment, the plain gaps between fields, is written
-    // with no attribute at all, same as renderModeLine()'s own plain
-    // putChar(' ') between drawSegment() calls).
+    // ContentView::renderModeLine()自身と同じ、セグメントごとの
+    // Standout run――理由についてはDisplay::ModeLineSegment自身の
+    // コメント参照(非standoutなセグメント、フィールド間のプレーンな
+    // ギャップは、renderModeLine()自身のdrawSegment()呼び出しの間の
+    // プレーンなputChar(' ')と同様、属性を全く付けずに書かれる)。
     moveCursor(contentRows, 0);
     clearToEndOfLine();
     for (const auto &segment : modeLineSegments) {
