@@ -13,108 +13,115 @@
 
 namespace fm {
 
-// Options for a Shell session. Namespace-scope (not nested inside
-// Shell) for the same reason ChildProcessOptions is: a nested
-// struct's default member initializers aren't visible yet when the
-// enclosing class parses a member function's default argument that
-// references them -- see child_process.hpp's comment on
-// ChildProcessOptions for the full story (a real bug, not
-// theoretical, was caused by getting this wrong once already in this
-// project).
+// Shellセッションのオプション。(Shell内部にネストされるのではなく)
+// 名前空間スコープなのは、ChildProcessOptionsと同じ理由による:
+// ネストされた構造体のデフォルトメンバ初期化子は、それを参照する
+// メンバ関数のデフォルト引数を囲むクラスがパースする時点でまだ
+// 見えていない――完全な経緯についてはchild_process.hppの
+// ChildProcessOptionsに関するコメント参照(理論上の話ではなく、
+// このプロジェクトで一度これを誤ったことによる実際のバグが
+// 起きた)。
 struct ShellOptions {
-  // Program + argv to exec onto the pty (e.g. {"bash"} or
-  // {"/bin/tcsh"}). Deliberately not resolved here from $SHELL or a
-  // tcbrc CHILD/SHELL directive -- which program to run is
-  // Configuration's job (see child.c's save_child()/get_child()),
-  // matching how ChildProcess never decides its own argv either.
+  // ptyへexecされるプログラム + argv(例えば{"bash"}や
+  // {"/bin/tcsh"})。ここで$SHELLやtcbrcのCHILD/SHELLディレクティブ
+  // から解決するのは意図的にしていない――どのプログラムを実行するか
+  // はConfigurationの仕事である(child.cのsave_child()/get_child()
+  // 参照)。ChildProcessが自身のargvを決して自分で決めないのと
+  // 同じに合わせている。
   std::vector<std::string> argv = {"/bin/sh"};
-  // Unique-enough sentinel woven into PS1 so Shell can recognize its
-  // own prompt lines in the byte stream (legacy: s_S(S_mark)). Two
-  // Shell instances (or a Shell and something else printing to the
-  // same pty) must not share one process's mark, since PS1 itself
-  // embeds it twice -- see buildSetupCommand()'s comment.
+  // Shellがバイトストリーム内で自身のプロンプト行を認識できるように
+  // PS1に織り込まれる、十分にユニークな番兵(legacy: s_S(S_mark))。
+  // PS1自体がそれを2回埋め込むので、2つのShellインスタンス(または
+  // Shellと同じptyへ何か他のものが出力するもの)は1つのプロセスの
+  // マークを共有してはならない――buildSetupCommand()のコメント参照。
   std::string promptMark = "<usilic>";
-  // Woven into PS1 between the two promptMark occurrences (legacy:
-  // getenv(ENV_PROG), i.e. this program's own name) -- purely
-  // decorative/diagnostic text in the prompt, not used for matching.
+  // 2つのpromptMarkの出現の間にPS1へ織り込まれる(legacy:
+  // getenv(ENV_PROG)、つまりこのプログラム自身の名前)――プロンプト
+  // 内の純粋に装飾的/診断的なテキストで、マッチングには使われない。
   std::string programName = "usilic";
   Charset::Encoding encoding = Charset::Encoding::Ascii;
   int rows = 24;
   int columns = 80;
-  // Total scrollback content budget in bytes, forwarded to the
-  // internal PipeBuffer (legacy: no equivalent -- the linked-list
-  // scrollback just grew unbounded). PipeBuffer::overBudget() lets a
-  // caller notice and e.g. warn/trim, matching the same knob
-  // PipeBuffer already exposes for file/pipe content.
+  // 内部のPipeBufferへ転送される、バイト単位でのスクロールバック
+  // 内容の合計予算(legacy: 対応物無し――連結リストのスクロール
+  // バックは単に無制限に成長した)。PipeBuffer::overBudget()により
+  // 呼び出し元は気付いて例えば警告/削減でき、PipeBufferがファイル/
+  // パイプの内容に対して既に公開しているのと同じつまみに合わせて
+  // いる。
   long scrollbackBudget = 1 << 20;
 };
 
-// A SHELL-mode session: a pty-backed interactive child shell (bash/
-// csh/...), its scrollback of completed prompt+output lines, and the
-// in-progress command line being edited. Ported from shell.c's
-// make_shell()/start_shell()/output_shell()/input_shell()/
-// read_line()/write_shell(), and sub.c's open_pty() (kept
-// near-verbatim -- see openPty() in shell.cpp).
+// SHELLモードのセッション: pty駆動の対話的な子シェル(bash/
+// csh/...)、完了したプロンプト+出力行のスクロールバック、そして
+// 編集中の入力途中のコマンド行。shell.cのmake_shell()/
+// start_shell()/output_shell()/input_shell()/read_line()/
+// write_shell()、そしてsub.cのopen_pty()(ほぼ逐語のまま――
+// shell.cppのopenPty()参照)からの移植。
 //
-// This is NOT a literal port. Legacy SHELL mode is three cooperating
-// processes -- the main tcb process, a second "display" process
-// forked purely to keep draining the pty while the main process
-// blocks on a keypress, and the shell itself -- talking over eight
-// hand-rolled pipes with SIGALRM abused as a message-bus doorbell
-// (write_comm()/read_comm()/wait_comm() for synchronous requests,
-// a second async push channel for "a new prompt appeared"). None of
-// that exists here: with poll()/select() available, one process can
-// multiplex the pty fd and the keyboard fd directly, so the entire
-// IPC protocol -- and the duplicated PP/RV scrollback struct it was
-// shuttling field-by-field across processes -- simply isn't needed.
-// What's left, once that dissolves, is comparatively small: pty
-// process lifecycle, recognizing the shell's own prompt in its
-// output, tracking its reported cwd, and routing each incoming byte
-// to either the scrollback or the live command line.
+// これは逐語的な移植ではない。legacyのSHELLモードは3つの協調する
+// プロセス――メインのtcbプロセス、メインプロセスがキー入力を待って
+// ブロックしている間ptyの排出を続けるためだけにforkされた2つ目の
+// 「表示」プロセス、そしてシェル自身――が、SIGALRMをメッセージ
+// バスの呼び鈴として乱用した8個の手作りパイプ(同期リクエストの
+// ためのwrite_comm()/read_comm()/wait_comm()、「新しいプロンプト
+// が現れた」ための2つ目の非同期プッシュチャネル)でやり取りする
+// ものである。ここにはそれは全く存在しない: poll()/select()が
+// 利用可能なので、1つのプロセスがptyのfdとキーボードのfdを直接
+// 多重化でき、そのため、それがプロセス間をフィールドごとに運んで
+// いた重複したPP/RVスクロールバック構造体を含む、IPCプロトコル
+// 全体が単純に不要になる。それが解消された後に残るものは比較的
+// 小さい: ptyプロセスのライフサイクル、その出力中のシェル自身の
+// プロンプトの認識、報告されたcwdの追跡、そして入ってくる各バイト
+// をスクロールバックか生きたコマンド行のどちらかへルーティング
+// すること。
 //
-// Deliberately excluded (belongs to other already-ported or future
-// classes, not Shell):
-//   - Generic line-wrap/tab/overstrike-bold/underline parsing of pty
-//     output: PipeBuffer's job. Shell owns one internally and feeds
-//     it non-prompt bytes rather than reimplementing read_line()'s
-//     ff.bs/ff.md/ff.us state machine.
-//   - Scrollback storage and scroll mechanics (single-line/page
-//     up/down, hardware-scroll-vs-redraw): ContentView's job. Shell
-//     owns one internally instead of shell.c's own PP/RV linked list
-//     plus next_line()/shell_row()/shell_page().
-//   - Single-line editing mechanics (insert/delete/cursor movement/
-//     kill-yank/UTF-8 column tracking): LineEditor's job. Shell owns
-//     one internally for the in-progress command line; callers
-//     forward ordinary keys straight to commandLine() rather than
-//     Shell re-exposing insert/backspace/etc. itself.
-//   - Raw keyboard byte reading, escape-sequence decoding, SIGWINCH
-//     detection: already KeyInput's job. Shell only reacts to a
-//     resize once the caller has decided one happened (onResize()),
-//     and only receives ordinary command-line bytes/Enter/Tab once
-//     the caller has decided a raw byte isn't some other special key.
-//   - TAB-completion candidate generation (make_list()): explicitly
-//     deferred to a future PathCompleter class, same as LineEditor's
-//     own exclusion. Shell only knows how to ask a caller-supplied
-//     provider and splice the answer back in.
-//   - Command/directory history storage (save_history()/save_str()):
-//     a future History class's job; Shell calls a caller-supplied
-//     recorder callback rather than owning the storage.
-//   - Actually running an external interactive PROGRAM (do_prog()'s
-//     suspend-raw-mode/run-in-foreground/"Hit any key" dance):
-//     Mode/Application's job, same split ChildProcess's own header
-//     already draws for the non-interactive case. Shell only decides
-//     *that* the typed command's trailing pipeline stage matches a
-//     configured PROGRAM (via a caller-supplied predicate) and hands
-//     off -- see submitLine(). The caller must remember the f_wait
-//     lesson (CLAUDE.md history: an unconditional "Hit any key" pause
-//     after running the program silently eats the user's very next
-//     keystroke) when it implements that handoff; Shell itself has
-//     nothing further to do once it's handed off.
-//   - Cross-process single-instance socket/file handoff (from_main()):
-//     an Application/session-singleton concern, not Shell's.
-//   - Screen rendering primitives: Display's job, reached only
-//     through the owned ContentView/LineEditor, same as everywhere
-//     else in this codebase.
+// 意図的に除外(Shellではなく他の既に移植済みまたは将来のクラスに
+// 属する):
+//   - ptyの出力の汎用的な折り返し/タブ/オーバーストライク太字/
+//     下線のパース: PipeBufferの仕事。Shellは内部に1つ所有し、
+//     read_line()のff.bs/ff.md/ff.usステートマシンを再実装する
+//     のではなく、プロンプトでないバイトをそれへ供給する。
+//   - スクロールバックの保存とスクロール機構(1行/ページ単位の
+//     上下、ハードウェアスクロール対再描画): ContentViewの仕事。
+//     Shellは、shell.c自身のPP/RV連結リストとnext_line()/
+//     shell_row()/shell_page()の代わりに、内部に1つ所有する。
+//   - 1行編集の機構(挿入/削除/カーソル移動/kill-yank/UTF-8列
+//     追跡): LineEditorの仕事。Shellは、入力途中のコマンド行の
+//     ために内部に1つ所有する。呼び出し元は、Shellが自身で
+//     insert/backspace等を再度公開するのではなく、通常のキーを
+//     commandLine()へ直接転送する。
+//   - 生のキーボードバイトの読み取り、エスケープシーケンスの
+//     デコード、SIGWINCHの検出: 既にKeyInputの仕事。Shellは、
+//     呼び出し元がリサイズが起きたと判断した後にだけそれに反応
+//     し(onResize())、呼び出し元が生のバイトが他の特別なキー
+//     ではないと判断した後にだけ通常のコマンドライン用のバイト/
+//     Enter/Tabを受け取る。
+//   - TAB補完の候補生成(make_list()): LineEditor自身の除外と
+//     同様、将来のPathCompleterクラスへ明示的に委ねられる。
+//     Shellは、呼び出し元が提供するプロバイダに問い合わせて
+//     答えを繋ぎ戻す方法だけを知っている。
+//   - コマンド/ディレクトリ履歴の保存(save_history()/
+//     save_str()): 将来のHistoryクラスの仕事。Shellは、保存を
+//     自分で所有するのではなく、呼び出し元が提供する記録用の
+//     コールバックを呼ぶ。
+//   - 外部の対話的PROGRAMを実際に実行すること(do_prog()の
+//     raw-mode一時中断/フォアグラウンドで実行/「Hit any key」
+//     という一連の動作): Mode/Applicationの仕事、ChildProcess
+//     自身のヘッダーが非対話的なケースに対して既に描いているのと
+//     同じ分割。Shellは、入力されたコマンドの末尾のパイプライン
+//     段が(呼び出し元が提供する述語経由で)設定済みのPROGRAMに
+//     一致することだけを「決め」、引き渡す――submitLine()参照。
+//     呼び出し元は、その引き渡しを実装する際、f_waitの教訓
+//     (CLAUDE.mdの履歴: プログラム実行後の無条件の「Hit any
+//     key」の一時停止は、ユーザーの次のキー入力を黙って食べて
+//     しまう)を覚えておかなければならない。一度引き渡した後、
+//     Shell自身はそれ以上することが何も無い。
+//   - プロセス間の単一インスタンスのソケット/ファイルの引き渡し
+//     (from_main()): Application/セッションシングルトンの関心事
+//     であり、Shellのものではない。
+//   - 画面描画のプリミティブ: Displayの仕事。このコードベースの
+//     他の全ての場所と同じく、所有されているContentView/
+//     LineEditorを通じてのみ到達される。
 class Shell {
  public:
   Shell(Display &display, const ShellOptions &options);
@@ -123,248 +130,258 @@ class Shell {
   Shell(const Shell &) = delete;
   Shell &operator=(const Shell &) = delete;
 
-  // -- pty/child process lifecycle --
-  // Opens a pty, forks, execs options.argv onto the slave side, and
-  // sends the PS1/prompt-marker setup command. False on any failure
-  // (pty allocation, fork, or the shell exiting before the initial
-  // handshake completes); Shell is left inert and start() may be
-  // retried.
+  // -- pty/子プロセスのライフサイクル --
+  // ptyを開き、forkし、スレーブ側へoptions.argvをexecし、PS1/
+  // プロンプトマーカーの設定コマンドを送る。何らかの失敗(pty
+  // 割り当て、fork、または最初のハンドシェイクが完了する前に
+  // シェルが終了する)ではfalse。Shellは不活性のままになり、
+  // start()はリトライしてよい。
   bool start();
   bool alive() const;
-  // The current child's pid, or -1 if not started -- exposed purely
-  // so a caller (e.g. K-60/RestartShell's own tests) can confirm a
-  // restart produced a genuinely new process, not the same one reused.
+  // 現在の子のpid、開始されていなければ-1――純粋に、呼び出し元
+  // (例えばK-60/RestartShell自身のテスト)が、再起動が同じ
+  // プロセスの再利用ではなく本当に新しいプロセスを生み出したことを
+  // 確認できるように公開されている。
   int childPid() const;
-  // SIGHUP + wait for the child to die, close the pty. Idempotent;
-  // also called from the destructor. Ported from start_shell()'s
-  // no-`mess` (shutdown) branch and output_shell()'s shell_hup/case
-  // -1 teardown, collapsed into one path since there's no longer a
-  // separate display process to tear down independently.
+  // SIGHUP + 子が死ぬのを待ち、ptyを閉じる。冪等。デストラクタから
+  // も呼ばれる。start_shell()の`mess`無し(シャットダウン)分岐と
+  // output_shell()のshell_hup/case -1の後始末からの移植で、独立して
+  // 後始末すべき別の表示プロセスがもう存在しないので1つの経路へ
+  // 折りたたまれている。
   void terminate();
 
-  // The pty master fd, for the owner's poll()/select() loop. -1 if
-  // not started.
+  // ptyのマスターfd、所有者のpoll()/select()ループのため。開始
+  // されていなければ-1。
   int ptyFd() const;
 
-  // -- pty output --
-  // Call when ptyFd() is readable. Does one non-blocking read and
-  // processes whatever arrived; returns false on EOF/error (the
-  // shell child exited or the pty is gone). Thin glue over
-  // processOutputBytes() -- kept separate so tests can exercise the
-  // parsing logic with synthetic byte sequences, without a real pty.
+  // -- ptyの出力 --
+  // ptyFd()が読み取り可能な時に呼ぶ。1回の非ブロッキングread()を
+  // 行い、届いたものを処理する。EOF/エラー(シェルの子が終了した、
+  // またはptyが無くなった)ではfalseを返す。processOutputBytes()の
+  // 薄い接着剤――テストが本物のptyなしで合成バイト列を使ってパース
+  // ロジックを行使できるよう、別々に保たれている。
   bool onPtyReadable();
   void processOutputBytes(const std::string &bytes);
 
-  // -- command line --
+  // -- コマンド行 --
   LineEditor &commandLine();
   ContentView &scrollback();
 
-  // 2026-08-25 bug fix (a real, carefully-reproduced report: "③を
-  // 飛び越えて②へ" -- the NEWEST scrollback entry could never be
-  // reached via ^P at all, the very first press always skipped straight
-  // past it to the one before). scrollback_'s own cursorIndex_ rests at
-  // lines().size()-1 (the newest entry) whenever nothing has actively
-  // browsed away from it -- Application's own `browsingHistory` local
-  // (computed as cursorIndex() != lines().size()-1) can't tell "resting
-  // here, never browsed" apart from "browsing, and currently ON this
-  // exact entry", since both are the SAME cursorIndex_ value. The
-  // practical result: the FIRST ^P press from rest calls moveUp(),
-  // which unconditionally decrements past the newest entry rather than
-  // just landing ON it -- so the single most useful history entry (the
-  // one just run) could never be re-selected via keyboard at all, and
-  // with only ONE scrollback entry total, moveUp() from index 0 (its
-  // own floor) is a pure no-op, reading as "^P doesn't do anything".
-  // This flag makes "actively browsing" its own independent state,
-  // decoupled from the raw index: Application's ^P handler sets it via
-  // beginHistoryBrowsing() on the FIRST press (landing ON the current
-  // -- already correct -- rest position, no index change at all) and
-  // only calls scrollback().moveUp() on SUBSEQUENT presses while
-  // already true. exitHistoryBrowsing() (bundling the flag reset with
-  // the goToBottom() call that already accompanied every "return to
-  // live editing" trigger -- new output arriving, a fresh command
-  // submitted, Enter re-running a selected line and falling through, or
-  // any other key snapping the view back first) keeps the invariant
-  // enforced at every exit point instead of each call site needing to
-  // remember it separately.
-  // 2026-08-26 (a direct user follow-up, resolved via a two-round
-  // Socratic exchange -- see ContentView::setCountLivePromptAsLine()'s
-  // own declaration comment for the full reasoning): the live prompt
-  // row's own "+1" only belongs in the position field while actually
-  // resting there, never while browsing a REAL scrollback_ line -- so
-  // every place this class's own historyBrowsing_ flips is exactly
-  // where scrollback_'s own atLivePromptLine (the ContentView-side
-  // half of the same concept) must flip too, kept in lockstep here
-  // rather than relying on some OTHER caller to remember it separately.
+  // 2026-08-25のバグ修正(実際の、注意深く再現された報告: "③を
+  // 飛び越えて②へ"――「最新の」スクロールバックエントリは^P経由
+  // では全く到達できず、最初の一押しが常にそれを飛び越して直前の
+  // ものへ行ってしまっていた)。scrollback_自身のcursorIndex_は、
+  // 何もそこから積極的に閲覧して離れていない限り常に
+  // lines().size()-1(最新のエントリ)に留まる――Application自身の
+  // `browsingHistory`ローカル変数(cursorIndex() != lines().size()-1
+  // として計算される)は、両方とも「同じ」cursorIndex_の値なので、
+  // 「ここに留まっている、一度も閲覧していない」を「閲覧中で、
+  // 現在まさにこのエントリの『上』にいる」と区別できない。実際の
+  // 結果: 休止状態からの最初の^P押しはmoveUp()を呼び、それは
+  // 最新のエントリの「上に」着地するのではなく無条件でそれを
+  // 通り越して減算する――そのため、たった1つの最も有用な履歴
+  // エントリ(ちょうど実行したばかりのもの)は、キーボード経由では
+  // 一度も再選択できなかった。しかもスクロールバックエントリが
+  // 合計1つしか無い場合、インデックス0(その底)からのmoveUp()は
+  // 純粋に何もせず、「^Pは何もしない」ように読める。このフラグは、
+  // 生のインデックスから切り離された、「積極的に閲覧中」という
+  // それ自身の独立した状態を作る: Applicationの^Pハンドラは、
+  // (現在の――既に正しい――休止位置の上に着地するだけで、インデック
+  // ス変更は全く無い)最初の押しでbeginHistoryBrowsing()経由でこれを
+  // 設定し、既にtrueである状態での後続の押しでだけ
+  // scrollback().moveUp()を呼ぶ。exitHistoryBrowsing()(フラグの
+  // リセットを、既に全ての「生きた編集への復帰」のトリガー――新しい
+  // 出力の到着、新しいコマンドの送信、Enterによる選択された行の
+  // 再実行とそのままの続行、またはビューを先に元へスナップさせる
+  // 他の任意のキー――に伴っていたgoToBottom()呼び出しと束ねる)は、
+  // 各呼び出し箇所がそれぞれ個別に覚えておく必要がある代わりに、
+  // 全ての出口地点でこの不変条件を確実に守らせる。
+  // 2026-08-26(直接のユーザーによる追加、2ラウンドのソクラテス式
+  // 対話を経て解決――完全な理由についてはContentView::
+  // setCountLivePromptAsLine()自身の宣言コメント参照): 生きた
+  // プロンプト行自身の「+1」は、実際にそこに留まっている間だけ
+  // 位置フィールドに属し、「本物の」scrollback_の行を閲覧している
+  // 間は決して属さない――そのため、このクラス自身のhistoryBrowsing_
+  // が切り替わる全ての場所は、まさにscrollback_自身の
+  // atLivePromptLine(同じ概念のContentView側の半分)も切り替わる
+  // べき場所であり、他の「別の」呼び出し元がそれを個別に覚えて
+  // おくことに頼るのではなく、ここで歩調を合わせて保たれる。
   bool historyBrowsing() const { return historyBrowsing_; }
-  // 2026-08-26 bug fix: beginHistoryBrowsing() previously only flipped
-  // state, trusting the caller's OWN subsequent redrawPromptRow()/
-  // moveDisplayCursorToShellHistoryLine() calls (Application's ^P
-  // handler) to make the change visible -- but NEITHER of those touch
-  // the mode line at all (redrawPromptRow() repaints only the live
-  // prompt row itself; moveDisplayCursorToShellHistoryLine() only moves
-  // the terminal's own blinking cursor), so the FIRST ^P press's own
-  // "+1" position change (see setAtLivePromptLine()'s own comment) sat
-  // computed-but-unpainted until some LATER, unrelated redraw finally
-  // caught up -- a real PTY capture found it only appeared one keypress
-  // late. redraw() here makes this self-contained instead of relying on
-  // the caller to know that.
+  // 2026-08-26のバグ修正: beginHistoryBrowsing()は以前、状態を
+  // 切り替えるだけで、呼び出し元「自身」の後続のredrawPromptRow()/
+  // moveDisplayCursorToShellHistoryLine()呼び出し(Applicationの^P
+  // ハンドラ)がその変化を可視化することに頼っていた――しかしそれら
+  // の「どちらも」全くモードラインに触れない
+  // (redrawPromptRow()は生きたプロンプト行自体だけを塗り直す。
+  // moveDisplayCursorToShellHistoryLine()は端末自身の点滅する
+  // カーソルを動かすだけ)ので、最初の^P押し自身の「+1」位置変更
+  // (setAtLivePromptLine()自身のコメント参照)は、何か「後の」、
+  // 無関係な再描画がようやく追いついてくるまで、計算済みだが
+  // 描画されないまま座っていた――実際のPTYキャプチャは、それが
+  // 1回キー入力が遅れてから現れることを発見した。ここでのredraw()
+  // は、呼び出し元がそれを知っていることに頼るのではなく、これを
+  // 自己完結させる。
   void beginHistoryBrowsing() {
     historyBrowsing_ = true;
     scrollback_.setAtLivePromptLine(false);
     scrollback_.redraw();
   }
-  // 2026-08-26 bug fix (found alongside beginHistoryBrowsing()'s own,
-  // same real PTY capture): goToBottom() below redraws INTERNALLY (see
-  // its own comment) -- ordering setAtLivePromptLine(true) AFTER it, as
-  // this originally did, meant that internal redraw still ran against
-  // the STALE atLivePromptLine_==false, painting the "still browsing"
-  // position text one call too early. Flipped first here so the SAME
-  // redraw goToBottom() already does paints the correct, final value on
-  // its own -- no separate redraw() call needed after, unlike
-  // beginHistoryBrowsing() above.
+  // 2026-08-26のバグ修正(beginHistoryBrowsing()自身のものと一緒に
+  // 発見、同じ実際のPTYキャプチャ): 下のgoToBottom()は「内部で」
+  // 再描画する(自身のコメント参照)――これが元々そうしていたように、
+  // setAtLivePromptLine(true)をそれの「後に」順序付けると、その
+  // 内部の再描画は依然として古びたatLivePromptLine_==falseに
+  // 対して実行され、「まだ閲覧中」の位置テキストを1回早く塗って
+  // しまう。ここでは先に切り替えるので、goToBottom()が既に行う
+  // その「同じ」再描画が、自力で正しい、最終的な値を塗る――上の
+  // beginHistoryBrowsing()とは異なり、後に別のredraw()呼び出しは
+  // 不要。
   void exitHistoryBrowsing() {
     historyBrowsing_ = false;
     scrollback_.setAtLivePromptLine(true);
     scrollback_.goToBottom();
   }
 
-  // Enter: decides whether the current command line's trailing
-  // pipeline stage matches a configured interactive PROGRAM (via
-  // programLauncher_, if set) and hands off, or otherwise writes the
-  // line straight to the pty and records it via historyRecorder_ (if
-  // set). Clears the command line either way. Ported from
-  // input_shell()'s '\r' case (the pipe-splitting/find_prog() lookup
-  // logic itself; do_prog() and the PROGRAM table lookup are not
-  // ported here, see the class comment).
+  // Enter: 現在のコマンド行の末尾のパイプライン段が、(設定されて
+  // いれば)programLauncher_経由で設定済みの対話的PROGRAMと一致
+  // するかを決めて引き渡すか、それ以外の場合は行をptyへそのまま
+  // 書き込み、(設定されていれば)historyRecorder_経由でそれを記録
+  // する。どちらの場合でもコマンド行はクリアされる。input_shell()
+  // の'\r'ケース(パイプ分割/find_prog()検索ロジック自体。
+  // do_prog()とPROGRAMテーブル検索はここでは移植されていない、
+  // クラスコメント参照)からの移植。
   void submitLine();
 
-  // Redraws the live prompt row (commandLineRow()): the bold prompt
-  // prefix text (promptDecorated_) followed by commandLine_'s own
-  // editable field. Needed anywhere AFTER a scrollback_ mutation that
-  // could have blanked that row -- see the definition's own comment.
+  // 生きたプロンプト行(commandLineRow())を再描画する: 太字の
+  // プロンプト接頭辞テキスト(promptDecorated_)に続けて
+  // commandLine_自身の編集可能フィールド。その行を空白にした
+  // かもしれないscrollback_の変更「後」ならどこでも必要
+  // ――定義自身のコメント参照。
   void redrawPromptRow();
 
-  // TAB: asks completionProvider_ (if set) for candidates matching
-  // the partial word ending at the cursor, and splices a single
-  // unambiguous match back into the command line. Multiple/zero
-  // candidates are left for a future PathCompleter to resolve (this
-  // deliberately does not reimplement make_list()'s cycle-through-
-  // candidates UI) -- see the class comment.
+  // TAB: (設定されていれば)completionProvider_に、カーソルで
+  // 終わる部分的な単語に一致する候補を尋ね、単一の曖昧でない
+  // 一致をコマンド行へ繋ぎ戻す。複数/0個の候補は、将来の
+  // PathCompleterが解決するために残される(これは意図的に
+  // make_list()の候補を順に巡るUIを再実装していない)――クラス
+  // コメント参照。
   void onTab();
   void setCompletionProvider(
       std::function<std::vector<std::string>(const std::string &partialWord)> provider);
 
-  // Writes a raw byte straight to the pty, bypassing the command-line
-  // editor entirely -- for forwarding e.g. Ctrl-C to interrupt
-  // whatever the shell is currently running in the foreground. The
-  // caller decides which keys route here vs. to commandLine().
+  // 生のバイトをコマンド行エディタを完全に迂回してptyへ直接
+  // 書き込む――例えばCtrl-Cを転送して、シェルが現在フォアグラウンド
+  // で実行しているものを中断させるため。どのキーがここへ、どれが
+  // commandLine()へルーティングされるかは呼び出し元が決める。
   void sendControlByte(unsigned char byte);
 
-  // -- directory tracking --
-  // Fires whenever a newly-detected prompt's directory differs from
-  // the previous one. Ported from write_shell()'s prompt-string
-  // directory extraction, exposed as a callback instead of a direct
-  // chdir() of the whole process -- other code that cares (a file
-  // browser mode, say) should react to this, not have Shell silently
-  // mutate global process state.
+  // -- ディレクトリ追跡 --
+  // 新しく検出されたプロンプトのディレクトリが前のものと異なる
+  // 時に常に発火する。write_shell()のプロンプト文字列からの
+  // ディレクトリ抽出からの移植で、プロセス全体の直接のchdir()
+  // ではなくコールバックとして公開されている――それを気にする
+  // 他のコード(例えばファイルブラウザモード)は、Shellが黙って
+  // グローバルなプロセス状態を変異させるのではなく、これに反応
+  // すべきである。
   void setDirectoryChangedCallback(std::function<void(const std::string &directory)> callback);
   const std::string &currentDirectory() const;
 
-  // The running shell child's own basename (e.g. "bash", "zsh"),
-  // matching legacy's own disp_shell() mode-line "arg" field
-  // (sprintf("%c(%s)", K_z, chp->argv[0]), see shell.c) -- a real user
-  // report (2026-08-02) comparing side by side against the legacy
-  // build found this field missing from this port's own SHELL mode-
-  // line entirely. Empty before start() (or if options_.argv is
-  // somehow empty, which ShellOptions' own default never leaves it).
+  // 実行中のシェルの子自身のベース名(例えば"bash"、"zsh")。
+  // legacy自身のdisp_shell()モードラインの"arg"フィールド
+  // (sprintf("%c(%s)", K_z, chp->argv[0])、shell.c参照)に
+  // 合わせている――実際のユーザー報告(2026-08-02)がlegacy
+  // ビルドと並べて比較し、このフィールドがこの移植自身のSHELL
+  // モードラインから完全に欠けていることを発見した。start()の
+  // 前(またはoptions_.argvが何らかの理由で空の場合。ShellOptions
+  // 自身のデフォルトは決してそれを空のままにしない)は空。
   std::string programName() const;
 
-  // -- PROGRAM handoff / history --
-  // Returns true if it ran (and is now responsible for) the given
-  // trailing-pipeline-stage program token; false to have Shell write
-  // the line to the pty as plain text instead.
+  // -- PROGRAMの引き渡し/履歴 --
+  // 与えられた末尾のパイプライン段のプログラムトークンを実行した
+  // (そして今それに責任を持つ)場合はtrueを返す。falseの場合は
+  // 代わりにShellがその行をプレーンテキストとしてptyへ書き込む。
   void setProgramLauncher(
       std::function<bool(const std::string &programToken, const std::string &fullLine)> launcher);
   void setHistoryRecorder(std::function<void(const std::string &line)> recorder);
-  // Whether a handed-off interactive PROGRAM is still running --
-  // caller-driven (Shell has no way to know on its own once it hands
-  // off), used to let other modes refuse actions while true. Ported
-  // from is_inter().
+  // 引き渡された対話的PROGRAMがまだ実行中かどうか――呼び出し元が
+  // 駆動する(Shellは一度引き渡した後は自力で知る方法が無い)。
+  // trueの間、他のモードにアクションを拒否させるために使われる。
+  // is_inter()からの移植。
   void setBusy(bool busy);
   bool busy() const;
 
-  // -- resize --
-  // Propagates a new terminal size to the pty (TIOCSWINSZ) and to the
-  // owned ContentView's viewport/LineEditor's field width. Ported
-  // from the vt_mode('W') handling in input_shell()'s init case.
+  // -- リサイズ --
+  // 新しい端末サイズをpty(TIOCSWINSZ)と、所有するContentViewの
+  // ビューポート/LineEditorのフィールド幅へ伝播する。
+  // input_shell()のinitケースにあるvt_mode('W')の処理からの移植。
   void onResize(int rows, int columns);
 
-  // K-27 (^Oa): updates the encoding used by displayWidth() (input-
-  // echo/prompt-redraw width calculations, see add_buff()'s own
-  // history in CLAUDE.md) and commandLine_'s own LineEditor encoding.
-  // Does NOT retroactively re-decode scrollback() lines already
-  // received from the pty under the OLD encoding -- Shell keeps no
-  // raw-byte history to re-run that decoding from, only the
-  // already-decoded ContentView::Line text (a real, disclosed
-  // limitation: switching charset mid-SHELL-session only affects
-  // output from that point forward, matching the practical scope of
-  // what legacy's own vt_charset() toggle affects too).
+  // K-27(^Oa): displayWidth()(入力エコー/プロンプト再描画の幅
+  // 計算、CLAUDE.md内のadd_buff()自身の履歴参照)とcommandLine_
+  // 自身のLineEditorエンコーディングが使うエンコーディングを更新
+  // する。「古い」エンコーディングの下でptyから既に受け取った
+  // scrollback()の行を遡って再デコードは「しない」――Shellは、
+  // 既にデコード済みのContentView::Lineテキスト以外に、その
+  // デコードを再実行するための生バイトの履歴を全く保持していない
+  // (実際の、公開された制限: SHELLセッションの途中で文字コードを
+  // 切り替えると、その時点以降の出力にのみ影響する。legacy自身の
+  // vt_charset()トグルが影響する実用的な範囲にも合わせている)。
   void setEncoding(Charset::Encoding encoding);
 
-  // Increments every time handlePromptDetected() recognizes a fresh
-  // prompt -- including the very first one right after start(). Lets a
-  // caller that just injected a command via commandLine()/submitLine()
-  // (without itself typing/waiting interactively, e.g. Application's
-  // CP/MV/RM-via-SHELL handoff) detect "the shell is ready for another
-  // command" by snapshotting this value beforehand and polling for it
-  // to change, without Shell needing to know anything about what that
-  // caller is waiting for.
+  // handlePromptDetected()が新しいプロンプトを認識するたびに増加
+  // する――start()の直後の最初のものを含む。(対話的にそれ自身で
+  // 入力/待機することなく、例えばApplicationのCP/MV/RM経由の
+  // SHELL引き渡しのように)commandLine()/submitLine()経由でちょうど
+  // コマンドを注入した呼び出し元が、この値を事前にスナップショット
+  // し、それが変わるのをポーリングすることで「シェルが次のコマンド
+  // の準備ができている」ことを検出できるようにする。Shellは、その
+  // 呼び出し元が何を待っているかについて何も知る必要が無い。
   int promptGeneration() const;
 
  private:
   void handlePromptDetected(const std::string &tailBeforeMark);
   void appendBodyByte(unsigned char c);
-  void flushPendingLine();  // see appendBodyByte()'s own comment on pendingLine_
-  // Real-terminal ANSI/VT100 escape sequences (SGR color codes,
-  // bracketed-paste-mode enable/disable, etc -- anything starting
-  // with a raw ESC byte) from the child's OWN output, consumed and
-  // discarded here BEFORE they ever reach appendBodyByte()/
-  // PipeBuffer. Found necessary via actual hands-on use with a real
-  // interactive shell (2026-08-01): PipeBuffer's job is charset/tab/
-  // overstrike-bold processing for PLAIN FILE content, with zero
-  // concept of "this byte sequence is invisible terminal control
-  // data, not text" -- every real shell emits at least SOME of these
-  // even with a plain, uncolored synthetic prompt (bracketed paste
-  // mode alone is a zsh 5.x+ default), and feeding them through
-  // uninterpreted corrupts both the visible text (raw escape bytes
-  // shown as literal characters) and PipeBuffer's own width-wrapping
-  // math (which counts every byte as a visible column). Returns true
-  // if `c` was consumed as part of (starting, continuing, or
-  // completing) an escape sequence -- the caller should NOT also pass
-  // it to appendBodyByte() in that case. This is a strip, not a
-  // render: color/attribute information itself is discarded, not
-  // reproduced -- a deliberate, disclosed scope choice (building a
-  // real ANSI-to-Display::Attribute translator is future work, not
-  // needed just to stop the corruption).
+  void flushPendingLine();  // pendingLine_に関するappendBodyByte()自身のコメント参照
+  // 子自身の出力からの、本物の端末のANSI/VT100エスケープシーケンス
+  // (SGRカラーコード、bracketed paste modeの有効化/無効化など――
+  // 生のESCバイトで始まる何でも)を、それらがappendBodyByte()/
+  // PipeBufferに到達する「前に」ここで消費し捨てる。実際の対話的な
+  // シェルでの実地の使用を通じて必要だと判明した(2026-08-01):
+  // PipeBufferの仕事は「プレーンなファイル」の内容に対する文字コード
+  // /タブ/オーバーストライク太字の処理であり、「このバイト列は
+  // テキストではなく不可視の端末制御データである」という概念は
+  // 全く無い――本物のシェルは全て、プレーンな、色の付いていない
+  // 合成プロンプトであっても少なくとも「いくつかは」これらを発する
+  // (bracketed paste modeだけでもzsh 5.x+のデフォルト)。それらを
+  // 解釈せずに通すと、可視のテキスト(生のエスケープバイトが文字通り
+  // の文字として表示される)とPipeBuffer自身の幅折り返し計算(全ての
+  // バイトを可視の列として数える)の両方を壊してしまう。`c`が
+  // エスケープシーケンスの(開始、継続、または完了)の一部として
+  // 消費された場合はtrueを返す――その場合、呼び出し元はそれを
+  // appendBodyByte()へも渡す「べきではない」。これは取り除きであり
+  // 描画ではない: 色/属性情報自体は再現されず、捨てられる――意図的
+  // な、公開された範囲の選択(本物のANSIからDisplay::Attributeへの
+  // 変換器を構築するのは将来の課題であり、破損を止めるためだけには
+  // 必要ない)。
   bool consumeEscapeByte(unsigned char c);
   void flushNewScrollbackLines();
   void freezePromptLine(const std::string &command);
   void resetSessionState();
   void writeToPty(const std::string &bytes);
   void updateCommandLineField();
-  // The row commandLine_'s own live prompt/input occupies: a fixed
-  // constant again, viewportRows_-2 (2026-08-04 revision -- see the
-  // constructor's own comment for the full history, including the two
-  // earlier iterations this replaces and exactly why each still wasn't
-  // right). scrollback_'s own content area is permanently ONE row
-  // shorter than the viewport (viewportRows_-2, not viewportRows_-1),
-  // freeing up a genuinely dedicated row for the prompt that never
-  // collides with either real scrollback content (scrollback_'s own
-  // setBottomAnchored(true) guarantees the last content line is always
-  // immediately above this row, however little content exists) or
-  // scrollback_'s own mode-line (pinned to the true last row,
-  // viewportRows_-1, via setModeLineRow()). Shared so the formula
-  // lives in exactly one place.
+  // commandLine_自身の生きたプロンプト/入力が占める行: 今回もまた
+  // 固定定数、viewportRows_-2(2026-08-04の改訂――完全な経緯、これが
+  // 置き換える以前の2回の反復とそれぞれがなぜまだ正しくなかった
+  // かについては、コンストラクタ自身のコメント参照)。scrollback_
+  // 自身の内容領域は、恒久的にビューポートより「1行」短い
+  // (viewportRows_-1ではなくviewportRows_-2)。これにより、
+  // (scrollback_自身のsetBottomAnchored(true)が、内容がどれほど
+  // 少なくても最後の内容行が常にこの行のすぐ上にあることを保証する)
+  // 本物のスクロールバックの内容とも、(setModeLineRow()経由で本当の
+  // 最終行、viewportRows_-1に固定されている)scrollback_自身の
+  // モードラインとも決して衝突しない、本当に専用の行がプロンプトの
+  // ために解放される。この式がちょうど1箇所にだけ存在するように
+  // 共有されている。
   int commandLineRow() const;
   int displayWidth(const std::string &text) const;
   std::string buildSetupCommand() const;
@@ -376,48 +393,49 @@ class Shell {
   int masterFd_ = -1;
   int childPid_ = -1;
   bool isBash_ = true;
-  bool isZsh_ = false;  // see isZshProgram()'s own comment on why this needs its own branch, not just "not bash"
+  bool isZsh_ = false;  // これがなぜ単に「bashではない」ではなく自身の分岐を必要とするかについてはisZshProgram()自身のコメント参照
 
   PipeBuffer pipeBuffer_;
-  std::string pendingLine_;  // appendBodyByte()'s own line-assembly buffer, see its comment
-  bool sawBareCr_ = false;   // appendBodyByte()'s own CR-vs-CRLF lookahead flag
+  std::string pendingLine_;  // appendBodyByte()自身の行組み立てバッファ、自身のコメント参照
+  bool sawBareCr_ = false;   // appendBodyByte()自身のCR対CRLFの先読みフラグ
   ContentView scrollback_;
-  bool historyBrowsing_ = false;  // see historyBrowsing()'s own declaration comment
+  bool historyBrowsing_ = false;  // historyBrowsing()自身の宣言コメント参照
   LineEditor commandLine_;
-  std::size_t linesConsumed_ = 0;  // how many of pipeBuffer_.lines() are already in scrollback_
-  // The command text submitToPty()'s own submitLine() just wrote,
-  // still awaiting flushNewScrollbackLines()'s ONE-TIME check for a
-  // leftover shell-line-editor echo artifact -- nullopt once that
-  // check has run (whether or not it actually found and dropped
-  // anything). ECHO is disabled on this pty (see start()'s own
-  // comment) specifically so commandLine_'s own local echo is the only
-  // rendering of what's typed, but bash's readline and zsh's zle both
-  // still echo SOMETHING of their own when fed a whole line at once
-  // (found via real side-by-side testing, 2026-08-03: bash echoes the
-  // literal submitted text back as its own extra line, zsh instead
-  // emits a single bare blank line) -- independent of the raw tty
-  // ECHO flag, since both line editors manage their own on-screen
-  // rendering for interactive editing rather than relying on the tty
-  // driver's echo. flushNewScrollbackLines() uses this to recognize
-  // and drop exactly that one leftover line, matching legacy's own
-  // clean output (its screenshots show neither a blank line nor
-  // duplicated command text after submitting a command).
+  std::size_t linesConsumed_ = 0;  // pipeBuffer_.lines()のうち既にscrollback_にある数
+  // submitToPty()自身のsubmitLine()がちょうど書き込んだコマンド
+  // テキストで、flushNewScrollbackLines()の、残されたシェルの行
+  // エディタのエコーの痕跡に対する「一度きりの」チェックをまだ
+  // 待っている――そのチェックが実行された後は(実際に何かを見つけて
+  // 落としたかどうかに関わらず)nullopt。このptyではECHOが無効化
+  // されている(start()自身のコメント参照)。それは特に、
+  // commandLine_自身のローカルエコーが、入力されたものの唯一の
+  // 描画であるようにするためだが、bashのreadlineとzshのzleは、
+  // 両方とも、行全体を一度に与えられた時、自分自身の「何か」を
+  // それでもエコーする(実際の並べたテストで発見、2026-08-03:
+  // bashは送信したテキストそのものを自身の余分な行として
+  // エコーバックし、zshは代わりに単一の裸の空行を発する)――生の
+  // ttyのECHOフラグとは独立している。どちらの行エディタも、tty
+  // ドライバのエコーに頼るのではなく、対話的な編集のために自分自身
+  // の画面上の描画を管理しているため。flushNewScrollbackLines()は
+  // これを使って、その残された1行をちょうど認識して落とす。legacy
+  // 自身のクリーンな出力(そのスクリーンショットは、コマンド送信後、
+  // 空行も重複したコマンドテキストも示していない)に合わせている。
   std::optional<std::string> pendingEchoFilter_;
 
-  std::string markerPrefix_;  // promptMark + programName + ":" -- see buildSetupCommand()
+  std::string markerPrefix_;  // promptMark + programName + ":" -- buildSetupCommand()参照
   std::size_t markerMatchPos_ = 0;
-  std::string markerMatchBuffer_;  // bytes tentatively matched against markerPrefix_ so far
+  std::string markerMatchBuffer_;  // これまでのところmarkerPrefix_に対して仮に一致しているバイト
   bool inPromptTail_ = false;
   std::string promptTailBuffer_;
 
-  // consumeEscapeByte()'s own state -- which KIND of escape sequence
-  // (if any) is currently being scanned past.
+  // consumeEscapeByte()自身の状態――現在どの「種類」のエスケープ
+  // シーケンス(もしあれば)を通り越して走査中か。
   enum class EscapeKind { None, JustEsc, Csi, Osc, OscEscPending };
   EscapeKind escapeState_ = EscapeKind::None;
 
   int viewportRows_ = 0, columns_ = 0;
-  std::string promptPlain_;  // current prompt text, no embedded escape codes (for width calc)
-  std::string promptDecorated_;  // same text, with the bold escape codes -- see redrawPromptRow()
+  std::string promptPlain_;  // 現在のプロンプトテキスト、埋め込みエスケープコード無し(幅計算用)
+  std::string promptDecorated_;  // 同じテキストに太字のエスケープコードを付けたもの――redrawPromptRow()参照
 
   std::string currentDirectory_;
   bool busy_ = false;
