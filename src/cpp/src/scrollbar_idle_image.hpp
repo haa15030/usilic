@@ -2,48 +2,49 @@
 
 namespace fm {
 
-// Real -c-terminal scrollbar chrome, embedded as three separate raw
-// 24-bit BMP slices (top cap, stretchable middle track, bottom cap) --
-// a real -c-terminal window's own scrollbar (17px wide, matching
-// kScrollbarWidth), cropped 2026-08-10 by the user from an earlier
-// full-height capture, specifically to solve a problem the ORIGINAL
-// single-image version (2026-08-07, see git history for that one) had
-// no good answer for: that image was captured at ONE profile's own
-// real pixel height and pasted at native size unscaled (a real, explicit
-// user call, 2026-08-09: "原寸大で貼ってみて欲しい" -- uniformly
-// stretching/clamping the WHOLE image to fit other profiles own different
-// content heights was tried and rejected, since it distorts the thumb
-// and the track's own rounded ends along with everything else). This
-// three-slice version solves the SAME "fits any profile's own content
-// height exactly" problem a completely different way, borrowed from
-// ordinary 9-slice/3-slice UI scaling: only the plain, textureless
-// MIDDLE slice (no thumb, no rounded corner, nothing whose shape would
-// look wrong stretched) is ever resized, while the top and bottom
-// slices -- the only parts with real detail worth preserving -- are
-// always drawn at their own native, undistorted pixel size. See
-// GraphicalDisplay::drawIdleScrollbarImage()'s own comment for exactly
-// how the three are composited to fill whatever vertical span the
-// current window's own row count needs.
+// 本物の-c端末のスクロールバーの見た目、3つの独立した生の24ビットBMP
+// スライス(上端キャップ、伸縮可能な中央のトラック、下端キャップ)
+// として埋め込んである――本物の-c端末ウィンドウ自身のスクロールバー
+// (幅17px、kScrollbarWidthと一致)から、2026-08-10にユーザーが以前の
+// フルハイトのキャプチャから切り出したもので、具体的には「元の」
+// 単一画像バージョン(2026-08-07、そちらについてはgit履歴参照)が
+// うまい答えを持たなかった問題を解決するため: あの画像は「ある1つの」
+// プロファイル自身の実際のピクセル高さでキャプチャされ、拡大縮小
+// 無しの原寸大で貼り付けられていた(実際の、明示的なユーザーの判断、
+// 2026-08-09: 「原寸大で貼ってみて欲しい」――画像「全体」を他の
+// プロファイル自身の異なるコンテンツ高さに合わせて一律に伸縮/
+// クランプすることも試したが、他の全てと一緒につまみ(thumb)や
+// トラック自身の丸い両端まで歪んでしまうため却下された)。この3
+// スライス版は、通常の9スライス/3スライスUIスケーリングから借用した
+// 全く別の方法で、「どのプロファイル自身のコンテンツ高さにもぴったり
+// 合う」という同じ問題を解決する: リサイズされるのは、素の、模様の
+// 無い「中央」スライス(つまみも丸い角も無く、伸縮しても形がおかしく
+// 見えるものが何も無い)だけであり、上端と下端のスライス――保存する
+// 価値のある実際のディテールを持つ唯一の部分――は常にそれぞれの
+// ネイティブな、歪みの無いピクセルサイズで描画される。3つが実際に
+// どう合成されて現在のウィンドウ自身の行数が必要とする垂直方向の
+// 幅を埋めるかについては、GraphicalDisplay::drawIdleScrollbarImage()
+// 自身のコメント参照。
 //
-// Embedded (not loaded from a runtime file path) via SDL2's own native
-// BMP reader (SDL_LoadBMP_RW(SDL_RWFromConstMem(...))) for the same
-// reasons as the original single-image version: no new library
-// dependency, no filesystem path to resolve at runtime. This is a
-// literal decorative paste, not a live-tracking scrollbar render --
-// see GraphicalDisplay::flush()'s own comment on why ("張りぼて",
-// docs/HISTORY.md 2026-08-07).
+// (実行時のファイルパスから読み込むのではなく)SDL2自身のネイティブ
+// なBMPリーダー(SDL_LoadBMP_RW(SDL_RWFromConstMem(...)))経由で
+// 埋め込んである。理由は元の単一画像バージョンと同じ: 新しい
+// ライブラリ依存が不要、実行時に解決すべきファイルシステムパスも
+// 不要。これは文字通りの装飾的な貼り付けであり、ライブに追従する
+// スクロールバー描画ではない――理由についてはGraphicalDisplay::
+// flush()自身のコメント参照(「張りぼて」、docs/HISTORY.md
+// 2026-08-07)。
 //
-// Regenerate any one slice by re-cropping just that piece from a fresh
-// screenshot (top: the track's own top edge through the thumb/grip
-// area; middle: any plain stretch of empty track, no thumb or
-// corner; bottom: the track's own bottom edge) and converting it the
-// same way:
+// どれか1つのスライスを再生成するには、新しいスクリーンショットから
+// その部分だけを切り出し直し(上端: トラック自身の上端からつまみ/
+// グリップ領域まで。中央: つまみも角も無い、空のトラックの任意の
+// 平坦な部分。下端: トラック自身の下端)、同じ方法で変換する:
 //   python3 -c "
 //from PIL import Image
 //Image.open('<crop>.jpg').convert('RGB').save('/tmp/scrollbar_idle_<slice>.bmp')
 //"
-// then re-run the byte-array generation script (see git history for
-// this file's own generation, docs/HISTORY.md 2026-08-10).
+// その後バイト配列生成スクリプトを再実行する(このファイル自身の
+// 生成についてはgit履歴参照、docs/HISTORY.md 2026-08-10)。
 constexpr int kScrollbarIdleTopWidth = 17;
 constexpr int kScrollbarIdleTopHeight = 34;
 constexpr unsigned char kScrollbarIdleTopBmp[1822] = {
