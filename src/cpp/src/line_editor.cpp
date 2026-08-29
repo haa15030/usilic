@@ -15,11 +15,11 @@ LineEditor::LineEditor(Display &display, Charset::Encoding encoding)
 
 void LineEditor::setEncoding(Charset::Encoding encoding) {
   encoding_ = encoding;
-  // A charset change mid-typing is an edge case legacy didn't handle
-  // either (there was no way to change charset via a key while a
-  // partial UTF-8 sequence was buffered) -- abandon any partial
-  // sequence rather than risk misinterpreting it under the new
-  // encoding.
+  // 入力途中での文字コード変更は、legacyもやはり扱っていなかった
+  // 端のケースである(部分的なUTF-8シーケンスがバッファされている間に
+  // キーで文字コードを変える方法は無かった)――新しいエンコーディング
+  // の下でそれを誤って解釈するリスクを負うより、部分シーケンスは
+  // 放棄する。
   pendingUtf8_.clear();
 }
 
@@ -43,10 +43,11 @@ const std::string &LineEditor::text() const { return buffer_; }
 
 int LineEditor::cursorBytePos() const { return cursorPos_; }
 
-// -- UTF-8 / EUC byte<->column helpers --
-// Ported from key.c's char_bytes_before()/b2col()/utf8_total_width()/
-// utf8_right_shift() (see the class comment on why they're each
-// written once here instead of once per call site as in legacy).
+// -- UTF-8 / EUCのバイト<->カラムヘルパー --
+// key.cのchar_bytes_before()/b2col()/utf8_total_width()/
+// utf8_right_shift()からの移植(legacyのように呼び出し箇所ごとに
+// 一度ずつではなく、ここで一度だけ書いてある理由についてはクラス
+// コメント参照)。
 
 int LineEditor::charBytesBefore(int pos) const {
   if (encoding_ != Charset::Encoding::Utf8)
@@ -104,22 +105,20 @@ int LineEditor::rightShift(const std::string &text, int fieldWidth) const {
   return pos;
 }
 
-// Keeps the viewport stable unless the cursor would fall outside it,
-// in which case it scrolls the minimum amount (one character at a
-// time) needed to bring the cursor back into view. Every editing
-// method funnels through this single rule via redraw() -- legacy
-// instead had ^E/^U/^Y/paste/insert always jump to a fresh right-
-// aligned view (via need_scroll()) while ^B/^F scrolled incrementally,
-// two different behaviors that also happened to be reimplemented
-// slightly differently at each of their nine call sites. Unifying
-// them here means Home/End/kill/yank/paste/typing all converge on the
-// same, single, correct answer without needing any special-casing:
-// e.g. moving the cursor to 0 naturally pulls shift_ down to 0 too
-// (the first branch below), and moving it to the buffer's end
-// naturally grows shift_ until the tail fits (the loop) -- which
-// lands on the same shift a direct rightShift() computation would,
-// just derived via the general rule instead of a Home/End-specific
-// one.
+// カーソルがビューポートからはみ出さない限りビューポートを安定
+// させ、はみ出す場合は、カーソルを再び見える状態に戻すのに必要な
+// 最小量(一度に1文字ずつ)だけスクロールする。編集用の各メソッドは
+// 全て、redraw()経由でこの単一のルールへ収束する――legacyでは
+// 代わりに、^E/^U/^Y/paste/insertは(need_scroll()経由で)常に新しく
+// 右揃えのビューへ飛ぶ一方、^B/^Fは段階的にスクロールしていた。
+// この2つの異なる挙動は、たまたまそれぞれ9箇所の呼び出し箇所ごとに
+// 少しずつ違う形で再実装されてもいた。ここで統一することで、
+// Home/End/kill/yank/paste/入力の全てが、特別扱いを一切必要とせず
+// 同じ、単一の、正しい答えへ収束する: 例えばカーソルを0へ動かすと、
+// 自然にshift_も0へ引き下げられ(下の最初の分岐)、カーソルをバッファ
+// の末尾へ動かすと、末尾が収まるまで自然にshift_が増える(ループ)
+// ――これは、Home/End専用のものではなく一般ルール経由で導出される
+// だけで、直接rightShift()を計算するのと同じshiftへ着地する。
 void LineEditor::adjustViewport() {
   if (totalWidth(buffer_) <= width_) {
     shift_ = 0;
@@ -145,12 +144,12 @@ void LineEditor::renderVisible(const std::string &visible, int startBytePos) {
   }
   for (; i < len; i++) {
     unsigned char c = static_cast<unsigned char>(visible[i]);
-    // K_dl (0x7f, DEL) and K_at (0x80) are legacy sentinel values
-    // repurposed to mean "show this byte reverse-video". K_at
-    // collides with the single most common UTF-8 continuation byte
-    // (see CLAUDE.md history item 15, the print_buff() bugfix this
-    // is ported from) -- only special-case 0x80 outside UTF-8 mode,
-    // carrying that fix forward rather than reintroducing the bug.
+    // K_dl(0x7f、DEL)とK_at(0x80)は、「このバイトを反転表示で示す」
+    // という意味に転用されたlegacyの番兵値である。K_atは、最も一般的
+    // な単一のUTF-8継続バイトと衝突する(これが移植元であるCLAUDE.md
+    // の作業ログ15番、print_buff()のバグ修正参照)――0x80の特別扱いは
+    // UTF-8モード以外でのみ行い、そのバグを再導入するのではなくこの
+    // 修正を持ち越す。
     if (c && (c < ' ' || c == 0x7f || (encoding_ != Charset::Encoding::Utf8 && c == 0x80))) {
       int shown = (c == 0x7f) ? c - 0x80 : (c == 0x80 ? 0 : c);
       display_.setAttribute(Display::Attribute::Standout);
@@ -184,18 +183,18 @@ void LineEditor::redraw() {
     visible = buffer_.substr(shift_, pos - shift_);
   }
 
-  display_.setAttribute(Display::Attribute::StandoutOff);  // ported from key_eeol()'s vt_endstand()
+  display_.setAttribute(Display::Attribute::StandoutOff);  // key_eeol()のvt_endstand()からの移植
   display_.moveCursor(row_, col0_);
   display_.write(std::string(width_, ' '));
   display_.moveCursor(row_, col0_);
   renderVisible(visible, shift_);
 
-  // setVisibleCursor(), not moveCursor(): this IS the meaningful
-  // editing caret (as opposed to every OTHER moveCursor() call in this
-  // method, which only positions where the next glyph gets written) --
-  // see Display::setVisibleCursor()'s own comment for why -g needs
-  // this distinction to keep the cursor from getting silently dragged
-  // elsewhere by a later, unrelated redraw.
+  // moveCursor()ではなくsetVisibleCursor(): これこそが意味のある
+  // 編集用キャレットである(このメソッド内の他の全てのmoveCursor()
+  // 呼び出しが、次のグリフが書き込まれる場所を位置決めするだけなのと
+  // は対照的)――なぜ-gがこの区別を必要とし、後の無関係な再描画に
+  // よってカーソルが静かに他の場所へ引きずられないようにするかに
+  // ついてはDisplay::setVisibleCursor()自身のコメント参照。
   display_.setVisibleCursor(row_, col0_ + byteToColumn(shift_, cursorPos_));
   display_.flush();
 }
@@ -205,7 +204,7 @@ void LineEditor::insertText(const std::string &bytesIn) {
   std::string toInsert = bytesIn;
   int overflow = static_cast<int>(buffer_.size() + toInsert.size()) - (kMaxLength - 1);
   if (overflow > 0) {
-    display_.putChar(7);  // BEL, ported from vt_putchar(K_g)
+    display_.putChar(7);  // BEL、vt_putchar(K_g)からの移植
     if (overflow >= static_cast<int>(toInsert.size())) return;
     toInsert.resize(toInsert.size() - overflow);
   }
@@ -220,12 +219,12 @@ void LineEditor::insertByte(unsigned char byte) {
     return;
   }
   if (pendingUtf8_.empty()) {
-    // First byte of a (possibly multi-byte) sequence; reserve so the
-    // length check below has something to compare against.
+    // (複数バイトかもしれない)シーケンスの最初のバイト。下の長さ
+    // チェックが比較対象を持てるようにしておく。
   }
   pendingUtf8_.push_back(static_cast<char>(byte));
   int want = Charset::sequence_length(static_cast<unsigned char>(pendingUtf8_[0]));
-  if (static_cast<int>(pendingUtf8_.size()) < want) return;  // wait for more bytes
+  if (static_cast<int>(pendingUtf8_.size()) < want) return;  // さらにバイトを待つ
   std::string complete = pendingUtf8_;
   pendingUtf8_.clear();
   insertText(complete);
