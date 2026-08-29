@@ -8,39 +8,40 @@
 
 namespace fm {
 
-// Raw keyboard input: reading bytes from the controlling tty, raw/
-// cooked termios mode switching, escape-sequence recognition for
-// special keys (arrows/page up/down), terminal-resize (SIGWINCH) and
-// job-control (SIGTTOU/SIGCONT) signal handling, and raw-byte macro
-// playback. Ported from key.c's read_m()/read_esc() and vt.c's
-// vt_getch()/vt_init() (the raw-termios half of vt_init(); the
-// alternate-screen/attribute half belongs to Display, see
-// display.hpp).
+// 生のキーボード入力: 制御端末からバイトを読む、raw/cooked termio
+// モードの切り替え、特殊キー(矢印/ページアップ/ダウン)のための
+// エスケープシーケンス認識、端末サイズ変更(SIGWINCH)とジョブ
+// コントロール(SIGTTOU/SIGCONT)のシグナル処理、生バイトマクロの
+// 再生。key.cのread_m()/read_esc()と、vt.cのvt_getch()/vt_init()
+// (vt_init()のraw termio半分。代替スクリーン/属性半分はDisplayに
+// 属する、display.hpp参照)からの移植。
 //
-// Deliberately excluded (belongs to future classes, not KeyInput):
-//   - SIGSEGV (crash recovery) / SIGTERM / SIGHUP (session cleanup):
-//     Application lifecycle, not keyboard input. Legacy's
-//     save_signal() installed all of these plus KeyInput's signals in
-//     one function; that responsibility is split here.
-//   - Mapping a raw key or resolved SpecialKey to a mode command
-//     number (the M_*/T_* dispatch inside legacy's read_m()): Mode/
-//     Application's job. KeyInput only reports what was pressed.
-//   - edit_line()/make_list() (the command-line text-editing widget):
-//     LineEditor's job.
-//   - stand_str() (file-name highlight rendering): ContentView's/
-//     Display's job.
-//   - Recorded-command keyboard macros (legacy's `p_km`, recorded via
-//     M_ms/M_mm/M_me): tracing the legacy code shows these record
-//     and replay *resolved M_*/T_* command numbers*, not raw key
-//     bytes -- playback bypasses re-dispatch entirely and hands the
-//     resolved value straight back to read_m()'s caller. That's a
-//     Mode/Application-level concern (recording what the dispatcher
-//     decided), not something KeyInput -- which only ever sees bytes
-//     -- can meaningfully own. What *is* ported here is the other,
-//     genuinely different mechanism: usilicrc's preset M-0..M-19
-//     macros (legacy's `p_bm`), which replay as raw bytes fed back
-//     through the same low-level read path a live keypress would use
-//     -- see playRawMacro().
+// 意図的に除外(将来のクラスの仕事であり、KeyInputのものではない):
+//   - SIGSEGV(クラッシュ回復)/SIGTERM/SIGHUP(セッションのクリーン
+//     アップ): キーボード入力ではなくApplicationのライフサイクル。
+//     legacyのsave_signal()は、これら全てとKeyInputのシグナルを
+//     1つの関数の中でまとめて設定していた。その責務はここで分割
+//     されている。
+//   - 生のキーまたは解決済みのSpecialKeyを、モードのコマンド番号
+//     へマッピングすること(legacyのread_m()内のM_*/T_*ディスパッチ):
+//     Mode/Applicationの仕事。KeyInputは何が押されたかを報告する
+//     だけ。
+//   - edit_line()/make_list()(コマンドライン用テキスト編集
+//     ウィジェット): LineEditorの仕事。
+//   - stand_str()(ファイル名ハイライト描画): ContentView/Displayの
+//     仕事。
+//   - 記録されたコマンドのキーボードマクロ(legacyの`p_km`、M_ms/
+//     M_mm/M_me経由で記録される): legacyのコードを追うと、これらは
+//     生のキーバイトではなく「解決済みのM_*/T_*コマンド番号」を
+//     記録・再生していることが分かる――再生は再ディスパッチを完全に
+//     バイパスし、解決済みの値をread_m()の呼び出し元へ直接手渡す。
+//     それはMode/Applicationレベルの関心事(ディスパッチャが決定した
+//     ことを記録する)であり、バイトしか見ないKeyInputが意味のある
+//     形で所有できるものではない。ここで実際に移植されているのは、
+//     もう一方の、本当に異なる仕組みである: usilicrcのあらかじめ
+//     用意されたM-0..M-19マクロ(legacyの`p_bm`)で、これは実際の
+//     キー入力が使うのと同じ低レベルの読み込み経路へ生バイトとして
+//     戻して再生される――playRawMacro()参照。
 class KeyInput {
  public:
   enum class SpecialKey { Up, Down, Right, Left, PageUp, PageDown };
@@ -48,162 +49,162 @@ class KeyInput {
   explicit KeyInput(Display &display);
   virtual ~KeyInput();
 
-  // The controlling tty fd opened by open(), or -1 if not open --
-  // for a caller's own poll()/select() loop that needs to multiplex
-  // this alongside other fds (e.g. a Shell session's own pty), the
-  // same reason ChildProcess/Shell already expose their own fds
-  // rather than only offering blocking reads. readByte() itself
-  // always reads correctly from this fd regardless of platform.
+  // open()が開いた制御端末のfd、開いていなければ-1――他のfd
+  // (例えばShellセッション自身のpty)と一緒にこれを多重化する必要が
+  // ある呼び出し側自身のpoll()/select()ループのためのもの。
+  // ChildProcess/Shellが、ブロッキング読み込みだけを提供するのでは
+  // なく既に自前のfdを公開しているのと同じ理由。readByte()自体は、
+  // プラットフォームに関わらず常にこのfdから正しく読み込む。
   //
-  // Caveat found while building the real run loop (app/main.cpp):
-  // poll()ing this exact fd (opened via open("/dev/tty", O_RDONLY))
-  // unconditionally reports POLLNVAL on macOS/Darwin, even though the
-  // fd is genuinely open and reads from it work fine -- confirmed by
-  // isolated testing against a real pty, and confirmed NOT present on
-  // Linux, where it polls correctly. A caller polling this fd on
-  // Darwin should poll STDIN_FILENO instead when stdin is known to be
-  // the same controlling terminal (true for any real interactive
-  // session, which is the only context this matters for) -- see
-  // app/main.cpp's own comment for where this is actually worked
-  // around.
+  // 実際の実行ループ(app/main.cpp)を構築中に見つかった注意点:
+  // このfd(open("/dev/tty", O_RDONLY)経由で開いたもの)をそのまま
+  // poll()すると、fdが実際には開いておりそこからの読み込みも問題
+  // なく動作するにもかかわらず、macOS/Darwinでは無条件にPOLLNVALが
+  // 報告される――実際のpty相手の分離テストで確認済みで、Linuxでは
+  // 発生せず正しくpollされることも確認済み。stdinが同じ制御端末で
+  // あると分かっている場合(本物の対話的セッションでは常にそうで
+  // あり、これが問題になるのはその文脈だけ)、Darwin上でこのfdを
+  // pollする呼び出し側は代わりにSTDIN_FILENOをpollすべきである
+  // ――実際にどこでこれが回避されているかについてはapp/main.cpp
+  // 自身のコメント参照。
   int fd() const;
 
-  // -- raw byte reading --
-  // Reads one raw byte, from a queued playRawMacro() sequence if one
-  // is active, otherwise from the controlling tty (blocking up to the
-  // VTIME timeout set by open()/setPolling()). Returns 0 on timeout/
-  // EOF/error. A literal NUL byte read from the tty (Ctrl-Space on
-  // many terminals) is reported as 0x80, matching legacy vt_getch()'s
-  // K_at sentinel -- callers already have to special-case this
-  // exactly as legacy callers did; it's not a new ambiguity.
+  // -- 生バイトの読み込み --
+  // 生バイトを1個読む。playRawMacro()でキューされたシーケンスが
+  // アクティブならそこから、そうでなければ制御端末から
+  // (open()/setPolling()で設定されたVTIMEタイムアウトまでブロック
+  // する)。タイムアウト/EOF/エラー時は0を返す。端末から読まれた
+  // リテラルなNULバイト(多くの端末でのCtrl-Space)は、legacyの
+  // vt_getch()のK_at番兵と同じく0x80として報告される――呼び出し側は
+  // 既に、legacyの呼び出し側が行っていたのと全く同じようにこれを
+  // 特別扱いする必要があり、これは新たな曖昧さではない。
   //
-  // Checks a playRawMacro() queue before the real tty -- which is
-  // also how tests exercise readEscapeSequence()'s real matching
-  // logic end to end without a real tty (queue bytes via
-  // playRawMacro(), no fake tty or subclass needed). Also virtual, so
-  // a caller can substitute an entirely different byte source if it
-  // ever needs to. (Legacy solved the "swap the byte source"
-  // problem -- for its own, unrelated keyboard-macro-playback
-  // feature -- by casting a 2-argument function to a 0-argument
-  // function-pointer type and relying on whatever garbage was in the
-  // unused argument registers; that was undefined behavior and
-  // caused a real, previously-fixed segfault, see CLAUDE.md history
-  // item 9. Neither playRawMacro() nor this being virtual reproduces
-  // that hazard.)
+  // 本物の端末より先にplayRawMacro()のキューを確認する――これは
+  // また、テストが本物の端末無しにreadEscapeSequence()の実際の
+  // マッチングロジックをエンドツーエンドで検証する方法でもある
+  // (playRawMacro()でバイトをキューするだけで、偽の端末やサブ
+  // クラスは不要)。これは仮想関数でもあり、呼び出し側が必要なら
+  // 全く別のバイト源に差し替えられる。(legacyは、自身の無関係な
+  // キーボードマクロ再生機能のために「バイト源を差し替える」という
+  // 問題を、2引数の関数を0引数の関数ポインタ型へキャストし、未使用の
+  // 引数レジスタに残っていたゴミ値に頼るという方法で解決していた。
+  // それは未定義動作であり、実際に、以前修正済みのセグフォルトを
+  // 引き起こした。CLAUDE.mdの作業ログ9番参照。playRawMacro()も
+  // これが仮想関数であることも、その危険を再現しない。)
   virtual int readByte();
 
-  // -- raw/cooked mode, tty lifecycle --
-  // Opens ttyPath and switches it to raw mode (no ICANON/ECHO/ISIG,
-  // VMIN=0, VTIME=1 decisecond). Ported from vt_init(1)'s termios half.
+  // -- raw/cookedモード、ttyのライフサイクル --
+  // ttyPathを開き、raw modeへ切り替える(ICANON/ECHO/ISIG無し、
+  // VMIN=0、VTIME=1デシ秒)。vt_init(1)のtermios半分からの移植。
   void open(const std::string &ttyPath);
-  // Restores the tty to the mode it was in before open() and closes
-  // it. Ported from vt_init(-1)'s termios half.
+  // ttyをopen()以前のモードへ戻し、閉じる。vt_init(-1)のtermios
+  // 半分からの移植。
   void close();
-  // Restores the tty to the mode it was in before open(), but leaves
-  // it open -- for temporarily dropping out of raw mode (e.g. to run
-  // an external program) and returning later via reenterRawMode().
-  // Ported from vt_init(-2)'s termios half.
+  // ttyをopen()以前のモードへ戻すが、開いたままにする――一時的に
+  // raw modeから抜け(例えば外部プログラムを実行するため)、後で
+  // reenterRawMode()経由で戻るためのもの。vt_init(-2)のtermios
+  // 半分からの移植。
   void leaveRawMode();
-  // Re-applies raw mode after a SIGCONT (job-control resume) or after
-  // leaveRawMode(). Ported from vt_init(-9)/(3).
+  // SIGCONT(ジョブコントロールによる再開)の後、またはleaveRawMode()
+  // の後にraw modeを再適用する。vt_init(-9)/(3)からの移植。
   void reenterRawMode();
-  // Toggles the read timeout between polling (VTIME=1, the default)
-  // and blocking (VTIME=0), used while replaying a macro at full
-  // speed. Ported from vt_init(3)/(-3).
+  // 読み込みタイムアウトを、ポーリング(VTIME=1、既定)とブロッキング
+  // (VTIME=0、マクロをフル速度で再生する間に使う)の間で切り替える。
+  // vt_init(3)/(-3)からの移植。
   void setPolling(bool polling);
 
-  // -- escape-sequence recognition --
-  // Call immediately after readByte() has returned ESC (0x1b). Reads
-  // and consumes whatever further bytes are needed to identify one of
-  // Display's 6 key sequences, returning which one matched, or
-  // nullopt if the ESC wasn't followed by a recognized sequence
-  // (including a bare ESC with nothing following). Ported from
-  // read_esc(), with one deliberate correction: legacy's is_esc()
-  // returned the plain int 0 both when nothing matched AND when Up
-  // (index 0) matched, and its caller could not tell those apart --
-  // an unrecognized escape sequence was silently treated as Up on any
-  // terminal that defines a key_up capability (virtually all of
-  // them). std::optional makes "no match" and "matched Up" distinct
-  // by construction.
+  // -- エスケープシーケンス認識 --
+  // readByte()がESC(0x1b)を返した直後に呼ぶ。Displayの6つのキー
+  // シーケンスのどれか1つを識別するのに必要な、それ以降のバイトを
+  // 読んで消費し、どれが一致したかを返す。ESCの後に認識可能な
+  // シーケンスが続かなかった場合(何も続かない裸のESCも含む)は
+  // nulloptを返す。read_esc()からの移植だが、1点意図的に修正して
+  // ある: legacyのis_esc()は、何も一致しなかった場合とUp(インデックス
+  // 0)が一致した場合の両方で素のint値0を返し、呼び出し側にはその
+  // 区別がつかなかった――key_upという能力を定義しているあらゆる
+  // 端末(事実上全て)で、認識されないエスケープシーケンスが静かに
+  // Upとして扱われていた。std::optionalは、構造として「一致無し」と
+  // 「Upに一致」を別物にする。
   std::optional<SpecialKey> readEscapeSequence();
 
-  // The bytes read after ESC by the most recent readEscapeSequence()
-  // call (excluding ESC itself), regardless of whether they matched a
-  // known sequence -- including the empty string for a bare ESC with
-  // nothing following. This is the fix for a gap Application's own
-  // class comment previously documented: readEscapeSequence() exists
-  // to consume and match Display's known terminal-capability
-  // sequences, with no way for a caller to recover an unmatched
-  // trailing byte to check against its OWN application-level ESC-
-  // leader bindings (e.g. usilic's ^[s for SHELL, ^[ isn't a Display
-  // Key at all). A caller doing that now reads readEscapeSequence()'s
-  // nullopt return, then checks lastEscapeBytes() for its own
-  // bindings before giving up.
+  // 直近のreadEscapeSequence()呼び出しがESCの後に読んだバイト
+  // (ESC自体は含まない)、既知のシーケンスに一致したかどうかに
+  // 関わらず――何も続かない裸のESCに対する空文字列も含む。これは
+  // Application自身のクラスコメントが以前文書化していたギャップの
+  // 修正である: readEscapeSequence()はDisplayの既知の端末機能
+  // シーケンスを消費・照合するために存在するが、呼び出し側が、
+  // 自分「自身」のアプリケーションレベルのESCリーダーバインディング
+  // (例えばusilicのSHELL用^[s、^[自体はDisplayのKeyでは全く無い)
+  // と照合するために一致しなかった末尾バイトを回収する手段が無
+  // かった。それを行う呼び出し側は、今ではreadEscapeSequence()の
+  // nullopt返り値を読み、諦める前にlastEscapeBytes()で自分自身の
+  // バインディングを確認する。
   //
-  // One inherited quirk this doesn't paper over: readEscapeSequence()
-  // reads a *fixed* number of bytes after ESC (Up's own key-sequence
-  // length, a deliberately-preserved read_esc() quirk -- see its own
-  // comment), not "however many the actual pressed sequence needs".
-  // For a genuine one-byte binding like ^[s, that means the fixed-
-  // length read can, if the user types fast enough that a real
-  // subsequent keystroke arrives within the same VTIME window,
-  // capture that keystroke too as a second byte here alongside 's' --
-  // a caller matching against a single leading byte (as this port's
-  // Application does) is unaffected, but should be aware a second,
-  // unrelated byte can occasionally ride along.
+  // これでも取り繕われていない、受け継がれた1つの癖: readEscapeSequence()
+  // は、ESCの後「固定」数のバイトを読む(Up自身のキーシーケンス長、
+  // 意図的に保持されているread_esc()の癖――自身のコメント参照)。
+  // 「実際に押されたシーケンスが必要とする分だけ」ではない。^[sの
+  // ような本物の1バイトバインディングの場合、これは、ユーザーが
+  // 十分速く入力して本物の次のキー入力が同じVTIMEウィンドウ内に
+  // 届いた場合、その固定長の読み込みが、's'と一緒にその2バイト目
+  // としてそのキー入力も捕捉してしまいうることを意味する――
+  // (この移植のApplicationがそうしているように)単一の先頭バイトと
+  // 照合する呼び出し側には影響しないが、無関係な2バイト目が時折
+  // 便乗してくることがあると承知しておくべきである。
   const std::string &lastEscapeBytes() const;
 
-  // -- signals --
-  // Installs SIGWINCH/SIGTTOU/SIGCONT handlers for this instance (the
-  // single active KeyInput -- usilic has only ever run as one
-  // foreground input handler at a time, same assumption
-  // TerminalDisplay makes for its own signal-adjacent global, see its
-  // outc() comment). Ported from the subset of save_signal() that's
-  // KeyInput's concern (see class comment for what's deliberately
-  // left out).
+  // -- シグナル --
+  // このインスタンス(アクティブなKeyInputは1つだけ――usilicは
+  // フォアグラウンドの入力ハンドラを常に一度に1つしか動かしたこと
+  // が無い、TerminalDisplayが自身のシグナル隣接のグローバル状態に
+  // ついて置いているのと同じ前提、そちらのoutc()のコメント参照)の
+  // ために、SIGWINCH/SIGTTOU/SIGCONTハンドラを設定する。
+  // save_signal()のうちKeyInputの関心事である部分からの移植
+  // (意図的に除外されているものについてはクラスコメント参照)。
   void installSignalHandlers();
 
-  // True if a SIGWINCH arrived since the last call (consumes the
-  // flag). Also re-queries the controlling terminal's size and calls
-  // display_.setSize() with it. Ported from read_m()'s `Key.f.winch`
-  // check plus vt_winsize().
+  // 前回の呼び出し以降にSIGWINCHが届いていればtrue(そのフラグを
+  // 消費する)。制御端末のサイズも再問い合わせし、それを使って
+  // display_.setSize()を呼ぶ。read_m()の`Key.f.winch`チェックと
+  // vt_winsize()からの移植。
   bool consumeResizeSignal();
 
-  // Records which child pid should be SIGCONT'd if a SIGTTOU suspend
-  // happens while it's the SHELL's foreground process. Ported from
-  // tc_cursor()/key_winch()'s spid bookkeeping (see display.hpp for
-  // why that logic doesn't belong on Display despite the misleading
-  // legacy name vt_cursor()).
+  // それがSHELLのフォアグラウンドプロセスである間にSIGTTOUによる
+  // サスペンドが起きた場合、どの子プロセスのpidにSIGCONTを送るべきか
+  // を記録する。tc_cursor()/key_winch()のspid管理からの移植
+  // (legacyの紛らわしい名前vt_cursor()にもかかわらず、そのロジックが
+  // なぜDisplayに属さないかについてはdisplay.hpp参照)。
   void setForegroundChildPid(int pid);
 
-  // Whether an error message is currently pending display -- affects
-  // whether a SIGTTOU suspends just this process or the whole process
-  // group. Ported from key_ttou()'s `s_S(S_error)` check; exposed as
-  // a plain setter instead of a hidden Configuration/session-state
-  // lookup so KeyInput doesn't need to know about that class.
+  // エラーメッセージが現在表示待ちかどうか――SIGTTOUがこのプロセス
+  // だけをサスペンドするか、プロセスグループ全体をサスペンドするか
+  // に影響する。key_ttou()の`s_S(S_error)`チェックからの移植。隠れた
+  // Configuration/セッション状態の参照ではなく素のsetterとして公開
+  // してあるので、KeyInputはそのクラスについて知る必要が無い。
   void setErrorPending(bool pending);
 
-  // Called (if set) whenever SIGTTOU or SIGCONT fires, with this
-  // process's pid -- ported from key_ttou()/key_cont()'s
-  // `if (s_S(S_pid)) print_pid(getpid())` reporting hook, exposed as
-  // a callback instead of a direct sub.c dependency.
+  // SIGTTOUまたはSIGCONTが発生するたびに、(設定されていれば)この
+  // プロセスのpidと共に呼ばれる――key_ttou()/key_cont()の
+  // `if (s_S(S_pid)) print_pid(getpid())`という報告フックからの
+  // 移植で、sub.cへの直接依存の代わりにコールバックとして公開して
+  // ある。
   void setPidReporter(std::function<void(int pid)> reporter);
 
-  // -- raw-byte macro playback --
-  // Queues `bytes` to be returned one at a time by subsequent
-  // readByte() calls in place of real tty input, until exhausted.
-  // Ported from read_m()'s `p_bm` playback (usilicrc's preset M-0..
-  // M-19 macros) -- see the class comment for why the *other* legacy
-  // macro mechanism (`p_km`, recorded command playback) isn't ported
-  // here.
+  // -- 生バイトマクロの再生 --
+  // `bytes`をキューし、以降のreadByte()呼び出しが、尽きるまで本物の
+  // tty入力の代わりにそれを1バイトずつ返すようにする。read_m()の
+  // `p_bm`再生(usilicrcのあらかじめ用意されたM-0..M-19マクロ)からの
+  // 移植――legacyの「もう一方の」マクロの仕組み(`p_km`、記録済み
+  // コマンドの再生)がここで移植されていない理由についてはクラス
+  // コメント参照。
   void playRawMacro(const std::string &bytes);
   bool isPlayingRawMacro() const;
 
-  // Called by the process-wide SIGTTOU/SIGCONT trampolines installed
-  // by installSignalHandlers() (which, being real signal handlers,
-  // can only reach this instance through the single-active-KeyInput
-  // pointer, not as ordinary private member calls) -- not intended
-  // for other callers.
+  // installSignalHandlers()が設定する、プロセス全体のSIGTTOU/SIGCONT
+  // トランポリン(本物のシグナルハンドラであるため、通常のprivate
+  // メンバ呼び出しとしてではなく、アクティブなKeyInputは1つだけと
+  // いうポインタ経由でのみこのインスタンスへ到達できる)から呼ばれる
+  // ――他の呼び出し元向けではない。
   void reportPid();
   bool errorPending() const;
 
@@ -211,7 +212,7 @@ class KeyInput {
   Display &display_;
   int fd_ = -1;
   struct RawState;
-  RawState *raw_;  // pimpl: keeps <termios.h> out of this header
+  RawState *raw_;  // pimpl: このヘッダーから<termios.h>を締め出す
 
   std::string macroQueue_;
   std::size_t macroPos_ = 0;
