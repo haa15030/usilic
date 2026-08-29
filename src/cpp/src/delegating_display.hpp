@@ -7,31 +7,31 @@
 
 namespace fm {
 
-// A Display that does nothing itself except forward every call to
-// whichever REAL backend it's currently pointed at -- exists purely
-// so ^Og's "seamlessly swap between TerminalDisplay and
-// GraphicalDisplay mid-session" (see docs/ideas/IDEAS.md and
-// Application's own class comment) doesn't require Application, every
-// *Mode class, ContentView, and LineEditor to each be rebuilt against
-// a new Display reference: they're all constructed ONCE against a
-// single DelegatingDisplay (owned by app/main.cpp) at startup, and
-// swapping which real backend is active is just one setBackend() call
-// on this one object, invisible to everyone already holding a
-// `Display &`.
+// それ自体は何もせず、その時点で指している「本物の」バックエンドへ
+// 全ての呼び出しを転送するだけのDisplay――存在意義は純粋に、^Ogの
+// 「セッション途中でTerminalDisplayとGraphicalDisplayをシームレスに
+// 切り替える」機能(docs/ideas/IDEAS.mdとApplication自身のクラス
+// コメント参照)のために、Application・全`*Mode`クラス・ContentView・
+// LineEditorをそれぞれ新しいDisplay参照に対して再構築する必要を
+// 無くすため: それらは全て、起動時にただ1つのDelegatingDisplay
+// (app/main.cppが所有)に対して一度だけ構築され、どちらの本物の
+// バックエンドがアクティブかを切り替える操作は、このオブジェクト
+// 1つに対するsetBackend()呼び出し1回だけで済み、既に`Display &`を
+// 保持している全ての側からは見えない。
 //
-// This is NOT a literal port of anything (no such indirection exists
-// or is needed in legacy tcb, which never had more than one Display
-// implementation). The alternative -- tearing down and reconstructing
-// the entire Application object (and all its owned ContentViews)
-// against a new Display every time GUI mode is toggled -- would lose
-// or need to painstakingly re-thread every mode's in-memory state
-// (the current directory listing, an open file's cursor position, a
-// live Shell session's pty, ...) across the swap; this way, none of
-// that state ever needs to move at all.
+// これは何かの逐語的な移植ではない(legacyのtcbにはこの種の間接層は
+// 存在しないし必要も無い、そもそもDisplayの実装が複数存在したことが
+// 無いため)。代替案――GUIモードが切り替わるたびにApplicationオブジェ
+// クト全体(とその所有する全ContentView)を新しいDisplayに対して
+// 解体・再構築する――だと、切り替えのたびに各モードのメモリ上の状態
+// (現在のディレクトリ一覧、開いているファイルのカーソル位置、
+// 稼働中のShellセッションのpty、等)を失うか、苦労して糸を通し直す
+// 必要が生じる。この方式なら、そうした状態は一切移動する必要が無い。
 //
-// Deliberately excluded: this class has no opinion about WHICH
-// backend should be active or when to switch -- that's app/main.cpp's
-// job entirely (see its own comment on the ^Og run-loop handling).
+// 意図的に除外: このクラスは「どの」バックエンドがアクティブで
+// あるべきか、いつ切り替えるべきかについて一切意見を持たない――
+// それは完全にapp/main.cppの仕事(^Ogの実行ループ処理についての
+// そちら自身のコメント参照)。
 class DelegatingDisplay : public Display {
  public:
   // backend must outlive this object, or until a later setBackend()

@@ -8,57 +8,58 @@
 
 namespace fm {
 
-// AttributeRun itself now lives in display.hpp (Display::AttributeRun,
-// aliased back to plain fm::AttributeRun there) -- see its own comment
-// for why (renderScrolled()'s new ScrolledLine needed it, and
-// pipe_buffer.hpp already depends on display.hpp, not the reverse).
+// AttributeRun自体は現在display.hppにある(Display::AttributeRun、
+// そちらでプレーンなfm::AttributeRunへ別名を戻している)――理由は
+// そちら自身のコメント参照(renderScrolled()の新しいScrolledLineが
+// これを必要とし、pipe_buffer.hppは既にdisplay.hppに依存している
+// ので逆向きにはできない)。
 
 struct StyledLine {
   std::string text;
   std::vector<AttributeRun> attributes;
-  bool endsWithNewline = true;  // false: wrapped because it hit `width`, not a real line break
+  bool endsWithNewline = true;  // false: 本物の改行ではなく`width`に達したことによる折り返し
 };
 
-// Turns raw bytes (file/pipe content) into width-wrapped, charset-
-// normalized, attribute-annotated lines. Ported from alloc.c's
-// alloc_pipe() (the width-wrap/tab/overstrike-detection state
-// machine) and linein() (per-chunk charset detection/conversion,
-// which now just calls the already-ported Charset class instead of
-// alloc_pipe()'s own init_code()/toeuc()/jistoeuc()/euctoutf8_buf()
-// calls).
+// 生のバイト列(ファイル/パイプの内容)を、幅で折り返し済み・文字
+// コード正規化済み・属性付与済みの行へ変換する。alloc.cの
+// alloc_pipe()(幅折り返し/タブ/オーバーストライク検出のステート
+// マシン)とlinein()(チャンクごとの文字コード検出/変換、こちらは
+// 今ではalloc_pipe()自身のinit_code()/toeuc()/jistoeuc()/
+// euctoutf8_buf()呼び出しの代わりに、既に移植済みのCharsetクラスを
+// 呼ぶだけになっている)からの移植。
 //
-// This is NOT a literal port. Legacy's alloc_pipe() did two
-// unrelated things in one function: build the PP list AND drive the
-// display directly as data streamed in (vt_move()/put_str()/
-// print_line() calls interleaved with the parsing, for the "watch a
-// long pipe's output arrive progressively" use case). PipeBuffer only
-// does the first half -- feed() takes bytes, lines() returns what's
-// been parsed so far. A future Mode/Application class drives the
-// "show it as it arrives" behavior itself, by calling feed() in a
-// loop and pushing lines() into a ContentView + redraw() after each
-// call -- keeping "parse bytes into lines" and "show lines on
-// screen" as separate concerns, matching the same split already
-// established between Buffer-shaped classes and ContentView/Display.
+// これは逐語的な移植ではない。legacyのalloc_pipe()は1つの関数の中で
+// 2つの無関係なことを行っていた: PPリストの構築、そしてデータが
+// ストリーミングされてくるのに合わせて画面を直接駆動すること
+// (「長いパイプの出力が徐々に届くのを見る」というユースケースの
+// ために、パースと絡み合ったvt_move()/put_str()/print_line()呼び
+// 出し)。PipeBufferは前半だけを行う――feed()はバイト列を受け取り、
+// lines()はここまでにパースされた内容を返す。「届くたびに表示する」
+// という挙動自体は、将来のMode/Applicationクラスが、feed()をループで
+// 呼び、呼び出しのたびにlines()をContentViewへ積んで+redraw()する
+// ことで駆動する――「バイト列を行へパースする」ことと「行を画面に
+// 表示する」ことを別の関心事のまま保ち、Buffer系クラスとContentView/
+// Displayの間で既に確立されている分離と同じ形にする。
 //
-// Deliberately excluded (see the class's individual method comments
-// for exactly where): the K_a0 hex-dump-mode formatting (ContentView
-// already excludes this for the same "depends on Buffer-side
-// preprocessing that doesn't exist" reason -- this class doesn't
-// produce it either), the "show non-ASCII bytes as <XX> hex when in
-// pure ASCII display mode" feature, and A_md3 (a single-backspace
-// overstrike whose repeated byte is non-ASCII) -- legacy's own
-// CLAUDE.md history already flagged A_md3 as never-reproduced-in-a-
-// real-file and left unfixed even there; ported here as the same
-// known, intentional gap rather than a new one.
+// 意図的に除外(具体的な箇所は個々のメソッドコメント参照): K_a0の
+// 16進ダンプモードのフォーマット(ContentViewも同じ「存在しない
+// Buffer側の前処理に依存する」という理由で既にこれを除外している
+// ――このクラスもそれを生成しない)、「純粋ASCII表示モード時に
+// 非ASCIIバイトを<XX>形式の16進として表示する」機能、そして
+// A_md3(繰り返しバイトが非ASCIIであるような単一バックスペースの
+// オーバーストライク)――legacy自身のCLAUDE.mdの作業ログで、A_md3は
+// 実ファイルで一度も再現したことが無く、そちらでも未修正のまま
+// 残されているとの印が既に付いている。ここでも新たなギャップとして
+// ではなく、同じ既知の意図的なギャップとして移植している。
 class PipeBuffer {
  public:
-  // width: wrap column (legacy: vt_col(0)). maxBytes: total content
-  // budget across all lines (legacy: `bsize`); overBudget() goes true
-  // once exceeded, matching alloc_pipe()'s "not enough buffer" abort.
+  // width: 折り返し列(legacy: vt_col(0))。maxBytes: 全行を通じての
+  // コンテンツ総予算(legacy: `bsize`)。超過するとoverBudget()がtrueに
+  // なり、alloc_pipe()の「バッファ不足」中断と同じ挙動になる。
   PipeBuffer(Charset::Encoding encoding, int width, long maxBytes);
 
   void feed(const std::string &bytes);
-  // Finalizes whatever partial line is still pending (end of input).
+  // まだ保留中の途中までの行を確定させる(入力の終わり)。
   void flush();
 
   const std::vector<StyledLine> &lines() const;
@@ -77,8 +78,8 @@ class PipeBuffer {
   long usedBytes_ = 0;
   bool overBudget_ = false;
 
-  std::string rawPending_;      // bytes not yet charset-converted (no '\n' found yet)
-  std::string wrapText_;        // current output line under construction
+  std::string rawPending_;      // まだ文字コード変換されていないバイト('\n'がまだ見つかっていない)
+  std::string wrapText_;        // 構築中の現在の出力行
   std::vector<AttributeRun> wrapAttrs_;
   int wrapCol_ = 0;
 
