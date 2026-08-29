@@ -10,22 +10,23 @@ namespace fm {
 
 namespace {
 
-// Finder-style truncation for renderLine()'s own plain-line case (see
-// its own call site comment): keep a prefix and a suffix, elide the
-// middle with "...", instead of simply cutting the tail off. Byte-
-// indexed (matching renderLine()'s own `col`, which counts bytes not
-// display columns) but walks via Utf8::sequence_length() so a multi-
-// byte UTF-8 character is never split across the cut.
+// renderLine()自身のプレーンな行のケース(自身の呼び出し箇所の
+// コメント参照)向けのFinderスタイルの切り詰め: 単に末尾を切り落と
+// すのではなく、接頭辞と接尾辞を保ち、中間を"..."で省略する。
+// バイトインデックス(renderLine()自身の`col`に一致。それは画面の
+// 列ではなくバイトを数える)だが、マルチバイトUTF-8文字が切断箇所
+// をまたいで分割されないよう、Utf8::sequence_length()経由で歩く。
 //
-// 2026-08-16 fix: originally biased 1/3 head, 2/3 tail (LOCATE's
-// absolute paths sharing one long common prefix needed the DIFFERING
-// suffix to stay visible), but a real report + screenshot (=bu) found
-// this put the "..." too far toward the LEFT to read comfortably --
-// "「...」の位置を行中央付近にしてほしい". A roughly even (1/2, 1/2)
-// split still keeps enough of the tail to disambiguate entries sharing
-// a long prefix (the original motivating case) while looking visually
-// centered, matching legacy's own equivalent fix in alloc.c's
-// alloc_str()/alloc_pp() (same day, same "..." near the middle request).
+// 2026-08-16の修正: 元々は頭部1/3、末尾2/3に偏っていた(LOCATEの
+// 絶対パスは1つの長い共通接頭辞を共有するので、「異なる」接尾辞が
+// 見え続ける必要があった)が、実際の報告+スクリーンショット(=bu)
+// が、これは「...」を快適に読むには左に寄せすぎていることを発見
+// した――"「...」の位置を行中央付近にしてほしい"。ほぼ均等な
+// (1/2、1/2)分割は、(元々の動機となったケースである)長い接頭辞を
+// 共有するエントリを区別するのに十分な末尾を保ちつつ、視覚的に
+// 中央に見える。legacy自身のalloc.cのalloc_str()/alloc_pp()での
+// 等価な修正(同日、同じ「...」を中央近くにという依頼)に合わせて
+// いる。
 std::string middleEllipsisTruncate(const std::string &text, int maxBytes) {
   static const std::string kEllipsis = "...";
   int budget = maxBytes - static_cast<int>(kEllipsis.size());
@@ -55,75 +56,80 @@ std::string middleEllipsisTruncate(const std::string &text, int maxBytes) {
     tailStart = b;
   }
 
-  if (tailStart <= headEnd) return text;  // too narrow to usefully elide -- let the plain cutoff below handle it
+  if (tailStart <= headEnd) return text;  // 有効に省略するには狭すぎる――下のプレーンな切り落としに任せる
   return text.substr(0, static_cast<std::size_t>(headEnd)) + kEllipsis + text.substr(static_cast<std::size_t>(tailStart));
 }
 
-// Display-WIDTH-based sibling of middleEllipsisTruncate() above (2026-08-19
-// fix, a direct user report -- ARC's own content listing: "内容一覧は
-// ^Olでも2/3くらいまでしか表示されていないので右端までよろしく"), used
-// ONLY by renderLine()'s own new widthAware rendering path below --
-// DELIBERATELY a separate function, not a modification of the byte-based
-// one above: withTruncatedFields()'s own mode-line name/trailing2
-// truncation also calls middleEllipsisTruncate() (a completely different
-// caller, several call-sites away), and its own surrounding budget math
-// AND fitModeLineFields()'s own downstream "does this actually fit"
-// tiers are BOTH byte-length based throughout -- an earlier version of
-// this fix changed middleEllipsisTruncate() itself to be width-based,
-// which silently broke that caller: a CJK-heavy name is truncated to a
-// SHORT display width but can come back with MORE bytes than before
-// (a 2-column CJK character costs 3 bytes), so fitModeLineFields()'s own
-// byte-length "does it fit" check saw an even-longer string than the
-// untruncated original and fell through every tier to hiding the WHOLE
-// mode line (confirmed via a real reproduction: opening a CJK-named file
-// from inside a tar archive left the mode line reading bare "1/1 END",
-// nothing else). For CJK-heavy text (a 3-byte UTF-8 character is only 2
-// DISPLAY columns wide), a byte budget is up to 3x stingier than the
-// real available screen width -- exactly the "stops at 2/3 width"
-// symptom the ARC report was about; `maxWidth` here is a genuine
-// display-column budget, boundaries found via Utf8::sequence_length()
-// (never splits a multi-byte character), head/tail accumulated by
-// Utf8::display_width() per character instead of raw byte length.
-int totalDisplayWidth(const std::string &text);  // defined below; needed here for this function's own early-exit
+// 上のmiddleEllipsisTruncate()の、画面「幅」ベースの兄弟
+// (2026-08-19の修正、直接のユーザー報告――ARC自身の内容一覧:
+// "内容一覧は^Olでも2/3くらいまでしか表示されていないので右端まで
+// よろしく")。下のrenderLine()自身の新しいwidthAware描画経路
+// だけに使われる――意図的に別の関数であり、上のバイトベースの
+// ものの修正ではない: withTruncatedFields()自身のモードラインの
+// name/trailing2の切り詰めもmiddleEllipsisTruncate()を呼ぶ
+// (完全に別の、いくつもの呼び出し箇所離れた呼び出し元)。そして
+// その自身の周囲の予算計算「と」fitModeLineFields()自身の下流の
+// 「実際にこれは収まるか」階層は「両方とも」全体にわたってバイト
+// 長ベースである――この修正の以前のバージョンは
+// middleEllipsisTruncate()自体を幅ベースへ変更してしまい、その
+// 呼び出し元を黙って壊していた: CJK重めの名前は短い画面幅へ切り
+// 詰められるが、(2列幅のCJK文字は3バイトかかる)以前より「多く
+// の」バイト数で戻ってくることがあり得るので、fitModeLineFields()
+// 自身のバイト長による「収まるか」チェックは、切り詰められていない
+// 元のものよりさらに長い文字列を見て、モードライン「全体」を隠す
+// までの全ての階層を通り抜けてしまっていた(実際の再現で確認済み:
+// tarアーカイブ内からCJK名のファイルを開くと、モードラインが
+// 素の「1/1 END」だけを読み、他には何も無くなった)。CJK重めの
+// テキスト(3バイトのUTF-8文字は「画面上では」たった2列)に対して
+// は、バイト予算は実際に利用可能な画面幅より最大3倍厳しい――まさに
+// ARCの報告が指していた「2/3幅で止まる」という症状。ここでの
+// `maxWidth`は本物の画面列の予算であり、境界はUtf8::
+// sequence_length()経由で見つけられ(マルチバイト文字を決して
+// 分割しない)、頭部/末尾は生のバイト長ではなく文字ごとの
+// Utf8::display_width()によって累積される。
+int totalDisplayWidth(const std::string &text);  // 下で定義されている。この関数自身の早期returnのためにここで必要
 
 std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth) {
-  // 2026-08-28 fix, a direct user report ("CLAUDE.md" itself came back
-  // ellipsis-mangled, "CLA....md", even though it's short enough to fit
-  // untouched): every existing caller before renderSplitModeLine()'s
-  // own 2026-08-28 flexible-budget fix always passed a string ALREADY
-  // confirmed too long to fit (this function had no early-exit of its
-  // own, and none of the truncation logic below actually checks
-  // whether truncation is even necessary) -- correct under the OLD
-  // "both sides always exactly at their forced half" shape, but the new
-  // flexible allocation can now hand a SHORT side exactly its own real
-  // width as maxWidth, which needs to come back unchanged, not ellipsis-
-  // truncated to the same total length via mangled content.
+  // 2026-08-28の修正、直接のユーザー報告(「CLAUDE.md」自体が、
+  // そのままで収まるほど短いにも関わらず、省略記号で「CLA....md」
+  // に破壊されて戻ってきた): renderSplitModeLine()自身の
+  // 2026-08-28の柔軟な予算の修正より前の全ての既存の呼び出し元は、
+  // 常に既に収まらないことが確認された文字列を渡していた(この
+  // 関数には自身の早期returnが無く、下の切り詰めロジックのどれも
+  // 実際に切り詰めがそもそも必要かどうかをチェックしない)――
+  // 古い「両側とも常にちょうど強制された半分」という形の下では
+  // 正しかったが、新しい柔軟な割り当ては今や、短い側にそれ自身の
+  // 実際の幅をちょうどmaxWidthとして渡すことがあり、それは変更
+  // されずに戻ってくる必要があり、破損した内容によって同じ合計
+  // 長さへ省略記号で切り詰められてはならない。
   if (totalDisplayWidth(text) <= maxWidth) return text;
   static const std::string kEllipsis = "...";
-  int budget = maxWidth - static_cast<int>(kEllipsis.size());  // "..." itself is 3 plain ASCII columns
+  int budget = maxWidth - static_cast<int>(kEllipsis.size());  // 「...」自体はプレーンなASCIIで3列
   if (budget <= 0) return text.substr(0, static_cast<std::size_t>(std::max(0, maxWidth)));
 
-  // boundaries[k]/boundaries[k+1] bracket the k-th GRAPHEME CLUSTER's own
-  // byte span; widths[k] is that cluster's own total display width.
+  // boundaries[k]/boundaries[k+1]はk番目の「書記素クラスタ」自身の
+  // バイト範囲を括る。widths[k]はそのクラスタ自身の合計画面幅。
   //
-  // 2026-08-20 fix, a direct user report ("=dz...7行目・10行目の■"):
-  // a standalone 0-width combining mark (dakuten/handakuten, see
-  // GraphicalDisplay::commitGlyph()'s own composeDakutenCodepoint()
-  // comment for the -g rendering half of this same class of bug) used
-  // to get its own SEPARATE boundaries/widths entry here, one per raw
-  // UTF-8 character regardless of width. Since a 0-width entry never
-  // makes `tailWidth + widths[k] > tailBudget` true on its own, the
-  // TAIL-side backwards walk below could include a trailing mark
-  // (effectively free) while the very next (base) character it
-  // depends on blew the budget and got excluded -- landing tailStart
-  // between a base and its own mark, so the truncated string started
-  // with an orphaned mark and no base to attach to (GraphicalDisplay
-  // then had nothing to compose it onto, falling back to an isolated
-  // tofu-box glyph). Consuming any 0-width marks that immediately
-  // follow a character into THAT character's own single cluster
-  // entry means a truncation boundary can now only ever land between
-  // whole clusters, never inside one -- matching how a real grapheme-
-  // cluster-aware string API would treat "base+mark" as one unit.
+  // 2026-08-20の修正、直接のユーザー報告("=dz...7行目・10行目の■"):
+  // 単独の幅0の結合マーク(濁点/半濁点、この同じ種類のバグの-g描画
+  // 側についてはGraphicalDisplay::commitGlyph()自身の
+  // composeDakutenCodepoint()コメント参照)は、以前ここで、幅に
+  // 関わらず生のUTF-8文字ごとに1つの、それ自身の「別々の」
+  // boundaries/widthsエントリを得ていた。幅0のエントリは単独では
+  // 決して`tailWidth + widths[k] > tailBudget`をtrueにしないので、
+  // 下の「末尾」側の後方への歩みは、それが依存する「次の」(基底)
+  // 文字が予算を吹き飛ばして除外されている一方で、末尾のマーク
+  // (実質無料)を含めてしまうことがあった――tailStartが基底と
+  // それ自身のマークの間に着地してしまい、切り詰められた文字列が
+  // 孤児となったマークで始まり、それが付くべき基底が無い状態に
+  // なった(GraphicalDisplayはそれを合成する対象を何も持たず、
+  // 孤立した豆腐箱のグリフへフォールバックしていた)。ある文字の
+  // 直後に続く幅0のマークを「その」文字自身の単一のクラスタ
+  // エントリへ吸収することで、切り詰めの境界は今や決して1つの
+  // クラスタの「中」に着地することはなく、常にクラスタとクラスタ
+  // の「間」にだけ着地するようになる――本物の書記素クラスタを認識
+  // する文字列APIが「基底+マーク」を1つの単位として扱うのと同じに
+  // 合わせている。
   std::vector<int> boundaries;
   std::vector<int> widths;
   boundaries.push_back(0);
@@ -161,15 +167,15 @@ std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth)
     tailStart = boundaries[k];
   }
 
-  if (tailStart <= headEnd) return text;  // too narrow to usefully elide -- let the plain cutoff below handle it
+  if (tailStart <= headEnd) return text;  // 有効に省略するには狭すぎる――下のプレーンな切り落としに任せる
   return text.substr(0, static_cast<std::size_t>(headEnd)) + kEllipsis + text.substr(static_cast<std::size_t>(tailStart));
 }
 
-// Sum of Utf8::display_width() across every character in `text` -- for
-// right-aligning an ALREADY width-truncated string (renderSplitModeLine()'s
-// own trailing2) to a real screen column, where byte length (text.size())
-// would under-shoot for any CJK content (see middleEllipsisTruncateByWidth()'s
-// own comment on the same byte-vs-width distinction).
+// `text`の全文字にわたるUtf8::display_width()の合計――「既に」幅で
+// 切り詰められた文字列(renderSplitModeLine()自身のtrailing2)を
+// 実際の画面の列へ右揃えするため。バイト長(text.size())は、CJKの
+// 内容に対しては不足してしまう(同じバイト対幅の区別については
+// middleEllipsisTruncateByWidth()自身のコメント参照)。
 int totalDisplayWidth(const std::string &text) {
   int width = 0;
   int i = 0;
@@ -203,52 +209,54 @@ void ContentView::setLines(std::vector<Line> lines) {
   lines_ = std::move(lines);
   if (cursorIndex_ >= static_cast<int>(lines_.size()))
     cursorIndex_ = std::max(0, static_cast<int>(lines_.size()) - 1);
-  // topIndex_, like hoverIndex_ below, is stale scroll-position state
-  // left over from whatever content THIS view was showing before --
-  // meaningless (and actively harmful) once that content is replaced
-  // wholesale. Added after a real user report/reproduction: cpp/(7
-  // entries) -> Enter into src/(74 entries) -> scroll several lines
-  // down (leaving src/'s OWN topIndex_ well into double digits) ->
-  // back up to cpp/ again. cursorIndex_ itself gets correctly re-
-  // clamped/restored (both here and by the caller's own subsequent
-  // setCursorIndex() call, e.g. DirectoryMode::enterDirectory()'s
-  // history-position restore), but the OLD, much-larger topIndex_
-  // from src/ survived into cpp/'s own redraw() -- clampViewport()'s
-  // own "topIndex_ > cursorIndex_ ? snap down" branch only fires when
-  // topIndex_ is GREATER than the (now-clamped, in-range) cursorIndex_,
-  // which a merely-still-in-bounds stale topIndex_ doesn't necessarily
-  // trip, so cpp/'s listing rendered scrolled almost to its own end
-  // (showing only its last couple of entries) despite all 7 entries
-  // easily fitting in one screen. Resetting to 0 here means every
-  // fresh setLines() starts from a clean, correct scroll position,
-  // with the caller's own setCursorIndex() (if any) free to scroll it
-  // back down again via the normal clampViewport() path if the
-  // restored cursor position genuinely needs it.
+  // topIndex_は、下のhoverIndex_と同様、この「ビューが」以前表示
+  // していたものが何であれそこから残った古びたスクロール位置の
+  // 状態である――その内容が丸ごと置き換えられた時点で意味を成さ
+  // ない(そして積極的に有害である)。実際のユーザー報告/再現の後
+  // に追加された: cpp/(7エントリ) → Enterでsrc/(74エントリ)へ →
+  // 数行下へスクロール(src/「自身の」topIndex_を2桁台に大きく
+  // 進める) → 再びcpp/へ戻る。cursorIndex_自体は(ここと、その後の
+  // 呼び出し元自身のsetCursorIndex()呼び出し、例えばDirectoryMode::
+  // enterDirectory()の履歴位置復元の両方によって)正しく再制限/
+  // 復元されるが、src/からの古い、はるかに大きいtopIndex_はcpp/
+  // 自身のredraw()に生き残ってしまった――clampViewport()自身の
+  // 「topIndex_ > cursorIndex_なら下へスナップ」分岐は、topIndex_
+  // が(今や制限済みの、範囲内の)cursorIndex_より「大きい」場合に
+  // だけ発火し、単に依然として範囲内にある古びたtopIndex_は必ずしも
+  // それを引き起こさないので、cpp/の一覧は、全7エントリが1画面に
+  // 楽々収まるにも関わらず、ほぼ自身の末尾までスクロールされて
+  // (最後の数エントリだけを表示して)描画された。ここで0へリセット
+  // することは、全ての新しいsetLines()がクリーンで正しいスクロール
+  // 位置から始まることを意味し、呼び出し元自身のsetCursorIndex()
+  // (もしあれば)は、復元されたカーソル位置が本当にそれを必要と
+  // する場合、通常のclampViewport()経路経由で自由に再度下へ
+  // スクロールできる。
   topIndex_ = 0;
-  // hoverIndex_ (a separate, purely visual override -- see its own
-  // setter comment) can't be trusted to mean anything once the actual
-  // content underneath it has been replaced wholesale: it was still an
-  // index into the OLD lines_, and even when it happens to also be a
-  // valid index into the NEW lines_ (the common case, since most lists
-  // aren't drastically shorter), it's pointing at unrelated content by
-  // coincidence, not by intent. Added after a real user report: after
-  // descending into a subdirectory, hovering the mouse there, then
-  // going back up (^G) to the parent, the row that ended up visibly
-  // highlighted was wherever the LAST hover in the CHILD directory
-  // happened to land -- not the actual cursor position (which itself
-  // was correct, confirmed via the mode-line's own current/total
-  // figures, but visually overridden by this stale hoverIndex_ per
-  // redraw()'s own `hoverIndex_.has_value() ? *hoverIndex_ :
-  // cursorIndex_` priority). Clearing it here, in the single place
-  // ALL content replacement funnels through (DirectoryMode::
-  // enterDirectory(), FileMode::loadFile()/reflow(), every other
-  // Mode's own search/listing refresh), is far more robust than
-  // trying to remember a setHoverIndex(nullopt) call at each of those
-  // individual call sites (which is exactly the narrower approach
-  // Application::handleCommand()'s Move/Page/GoTo/Redraw dispatch
-  // already takes for KEYBOARD navigation -- see its own comment --
-  // but that only ever covered moving within the SAME content, never
-  // content being replaced outright).
+  // hoverIndex_(別の、純粋に視覚的な上書き――自身のセッターの
+  // コメント参照)は、その下の実際の内容が丸ごと置き換えられた
+  // 時点で、何かを意味すると信頼することはできない: それは依然と
+  // して「古い」lines_へのインデックスであり、たまたま「新しい」
+  // lines_への有効なインデックスでもある場合(ほとんどの一覧は
+  // 劇的に短くはならないので、よくあるケース)でさえ、それは
+  // 意図してではなく偶然に無関係な内容を指している。実際のユーザー
+  // 報告の後に追加された: サブディレクトリへ降りて、そこでマウス
+  // をホバーし、その後親へ戻る(^G)と、最終的に目に見えてハイ
+  // ライトされた行は、「子」ディレクトリでの最後のホバーがたまたま
+  // 着地した場所であり――実際のカーソル位置(それ自体はモードライン
+  // 自身のcurrent/total数値経由で確認済みの通り正しかったが、
+  // redraw()自身の`hoverIndex_.has_value() ? *hoverIndex_ :
+  // cursorIndex_`という優先順位により、この古びたhoverIndex_に
+  // よって視覚的に上書きされていた)ではなかった。全ての内容の
+  // 置き換えが漏斗のように通る単一の場所(DirectoryMode::
+  // enterDirectory()、FileMode::loadFile()/reflow()、他の全ての
+  // モード自身の検索/一覧リフレッシュ)でここでこれをクリアする
+  // ことは、それらの個々の呼び出し箇所それぞれでsetHoverIndex
+  // (nullopt)呼び出しを覚えておこうとする(Application::
+  // handleCommand()のMove/Page/GoTo/Redrawディスパッチが「キー
+  // ボード」ナビゲーションに対して既に取っている、まさにその
+  // より狭いアプローチ――自身のコメント参照――だが、それは「同じ」
+  // 内容の中を動くことだけをカバーし、内容が完全に置き換えられる
+  // ことは決してカバーしない)よりも、はるかに堅牢である。
   hoverIndex_ = std::nullopt;
   clampViewport();
 }
@@ -267,7 +275,7 @@ int ContentView::lineIndexAtRow(int displayRow) const {
   int row = displayRow - row0_;
   if (row < 0 || row >= height_) return -1;
   int rowOffset = bottomAnchorRowOffset();
-  if (row < rowOffset) return -1;  // a blank padding row, bottom-anchored only
+  if (row < rowOffset) return -1;  // 空白パディングの行、下端固定の場合のみ
   int idx = topIndex_ + (row - rowOffset);
   if (idx < 0 || idx >= static_cast<int>(lines_.size())) return -1;
   return idx;
@@ -286,22 +294,18 @@ int ContentView::cursorDisplayRow() const {
 }
 
 void ContentView::syncVisibleCursor() {
-  // cursorAtModeLineTrailingEnd_ (2026-08-12 fix): see its own setter
-  // comment. Checked FIRST, ahead of the normal highlighted-content-
-  // row logic below -- a direct user correction: "『候補一覧のハイ
-  // ライト行末尾へ正しくカーソルを移動する設計』が有効なのはハイ
-  // ライト行を選択する場合の話で文字入力はモードラインで行われる
-  // ので最下行の文字列末尾にないとおかしい" (that "cursor moves to
-  // the end of the highlighted content row" design is right for
-  // SELECTING a highlighted row, but text INPUT happens in the mode
-  // line, so the cursor belongs at the end of the candidate's own text
-  // THERE instead). Confirmed via a real macOS report: ATOK's own
-  // input-mode indicator icon (which macOS draws directly under the
-  // system's actual current text-insertion caret) was appearing over
-  // the TOP content row instead of the mode line -- independent,
-  // OS-level proof that the caret this port was telling the terminal
-  // about really was in the wrong place, not just a cosmetic
-  // preference.
+  // cursorAtModeLineTrailingEnd_(2026-08-12の修正): 自身のセッター
+  // コメント参照。下の通常のハイライトされた内容行のロジックより
+  // 「先に」チェックされる――直接のユーザーによる訂正:
+  // "『候補一覧のハイライト行末尾へ正しくカーソルを移動する設計』
+  // が有効なのはハイライト行を選択する場合の話で文字入力はモード
+  // ラインで行われるので最下行の文字列末尾にないとおかしい"。
+  // 実際のmacOS報告で確認済み: ATOK自身の入力モード表示アイコン
+  // (macOSがシステムの実際の現在のテキスト挿入キャレットの真下に
+  // 描画する)が、モードラインではなく「最上部」の内容行の上に
+  // 現れていた――この移植が端末に伝えていたキャレットが、単なる
+  // 見た目の好みではなく実際に間違った場所にあったことの、独立した
+  // OSレベルの証拠。
   if (cursorAtModeLineTrailingEnd_ && lastModeLineTrailingEndColumn_ >= 0) {
     display_.setVisibleCursor(modeLineRow_.value_or(row0_ + height_), lastModeLineTrailingEndColumn_);
     return;
@@ -315,42 +319,43 @@ void ContentView::syncVisibleCursor() {
     display_.hideVisibleCursor();
     return;
   }
-  // cursorHighlightEnabled_ (2026-08-05 fix): the SGR reverse-video run
-  // renderLine() draws for the current row is what's SUPPOSED to show
-  // "you are here" here, so this branch used to just hideVisibleCursor()
-  // the terminal's own separate block cursor out of the way -- but
-  // TerminalDisplay::hideVisibleCursor() is a no-op (there's no ANSI
-  // "hide cursor" sequence wired up there, see its own comment), so on
-  // the real terminal backend that call did nothing at all: a real user
-  // report found the actual block cursor just sitting wherever the last
-  // screen write happened to land (typically the mode-line's own right-
-  // aligned category badge, e.g. after item 166/167's "CUT"/"FGREP"
-  // watermark), and on an EMPTY list (nothing for renderLine() to
-  // highlight at all -- see redraw()'s own "--" placeholder comment)
-  // there was no reverse-video row to compete with it either, so the
-  // current position wasn't visually indicated by anything. Moving it
-  // explicitly to the highlighted row's own right edge keeps the real
-  // cursor visually attached to the current selection instead of
-  // wandering off to whatever was drawn most recently.
+  // cursorHighlightEnabled_(2026-08-05の修正): renderLine()が現在の
+  // 行に対して描くSGR反転表示のrunこそが、ここで「あなたはここに
+  // いる」を示す「べき」ものなので、この分岐は以前、端末自身の
+  // 別のブロックカーソルを単にhideVisibleCursor()で邪魔にならない
+  // ようにしていた――しかしTerminalDisplay::hideVisibleCursor()は
+  // 何もしない(そこにはANSIの「カーソルを隠す」シーケンスが配線
+  // されていない、自身のコメント参照)ので、本物の端末バックエンド
+  // ではその呼び出しは全く何もしていなかった: 実際のユーザー報告
+  // が、実際のブロックカーソルが、最後の画面書き込みがたまたま
+  // 着地した場所(通常はモードライン自身の右揃えのカテゴリバッジ、
+  // 例えば項目166/167の「CUT」/「FGREP」の透かしの後)に単に座って
+  // いることを発見した。そして「空の」一覧(renderLine()がハイライト
+  // すべきものが全く無い――redraw()自身の「--」プレースホルダーの
+  // コメント参照)では、それと競合する反転表示の行も無かったので、
+  // 現在の位置は何によっても視覚的に示されていなかった。それを
+  // 明示的にハイライトされた行自身の右端へ動かすことで、実際の
+  // カーソルは、最近描画された何かへさまよい出るのではなく、
+  // 現在の選択に視覚的に付いたままになる。
   int row = cursorDisplayRow();
   if (row < 0) {
     display_.hideVisibleCursor();
     return;
   }
-  // 2026-08-28 fix, a real report ("ブロックカーソル位置が文字列の
+  // 2026-08-28の修正、実際の報告("ブロックカーソル位置が文字列の
   // 末尾に来ている...日本語ファイルを含む文字列に対して、ベタな文字
   // 列数（UTF8一文字=3バイトを考慮してない）として扱われているため
   // 見た目の文字列末尾にその分の空白が挿入された位置にブロックカー
-  // ソルが来てしまう"): this used to be lines_[cursorIndex_].text.size()
-  // -- a raw BYTE count, not a display-column count, so a multi-byte
-  // UTF-8 name (any CJK filename included) placed the real terminal
-  // caret far past the text's own visible end, out in blank padding.
-  // Per the user's own proposed fix ("同カーソルは文字列末尾ではなく
-  // 冒頭に表示して欲しい。そうすればutf8を含むかどうかは無視できる"):
-  // the column of the row's own highlighted/selectable text (0 for a
-  // line with none, e.g. the empty-list placeholder) sidesteps the
-  // whole byte-vs-column problem entirely, since it never needs to
-  // measure the text's own width at all.
+  // ソルが来てしまう"): これは以前lines_[cursorIndex_].text.size()
+  // だった――画面の列数ではなく生の「バイト」数だったので、マルチ
+  // バイトのUTF-8名(CJKファイル名を含む)は、実際の端末のキャレット
+  // を、テキスト自身の可視の末尾をはるかに過ぎた、空白のパディング
+  // の中に置いてしまっていた。ユーザー自身が提案した修正
+  // ("同カーソルは文字列末尾ではなく冒頭に表示して欲しい。そうすれば
+  // utf8を含むかどうかは無視できる")の通り: その行自身のハイライト
+  // される/選択可能なテキストの列(そのようなものが無い行、例えば
+  // 空一覧のプレースホルダーに対しては0)は、テキスト自身の幅を
+  // 全く測る必要が無いので、バイト対列の問題全体を完全に回避する。
   int width = 0;
   if (cursorIndex_ >= 0 && cursorIndex_ < static_cast<int>(lines_.size()))
     width = std::max(0, lines_[cursorIndex_].highlightStartColumn.value_or(0));
@@ -376,15 +381,15 @@ bool ContentView::stepTopIndex(int direction) {
   return true;
 }
 
-// Non-mutating peek at exactly the same boundary condition
-// stepTopIndex() itself enforces -- added 2026-08-10 so a caller can
-// check "is there room to move THIS way at all" BEFORE committing to a
-// pixel-offset move, rather than only discovering the boundary AFTER
-// pixelOffset has already accumulated a full cellHeight's worth (see
-// main.cpp's own coast-loop call site comment for the real bug this
-// fixes: a few frames of blank space briefly visible past the actual
-// top/bottom row during inertial coasting, "空行を表示したのち一行分
-// 戻って正規画面になる").
+// stepTopIndex()自体が課しているのとまさに同じ境界条件への、変更
+// を伴わない覗き見――2026-08-10に追加され、pixelOffsetが既にセル
+// の高さ1つ分をまるまる蓄積した「後で」境界を発見するのではなく、
+// ピクセルオフセットの移動を確定する「前に」呼び出し元が
+// 「そもそもこの方向へ動く余地があるか」をチェックできるように
+// する(これが修正する実際のバグについてはmain.cpp自身の惰性
+// ループの呼び出し箇所のコメント参照: 慣性で惰性している間、実際
+// の上端/下端の行を過ぎて数フレームの空白が短く見える、
+// "空行を表示したのち一行分戻って正規画面になる")。
 bool ContentView::canStepTopIndex(int direction) const {
   if (height_ <= 0 || lines_.empty()) return false;
   int maxTop = std::max(0, static_cast<int>(lines_.size()) - height_);
@@ -408,10 +413,11 @@ void ContentView::setPositionTextOverride(std::optional<std::string> text) { pos
 
 void ContentView::setBottomAnchored(bool enabled) { bottomAnchored_ = enabled; }
 
-// Shared by redraw()/lineIndexAtRow() so both agree on where content
-// starts when bottom-anchored -- see setBottomAnchored()'s own
-// comment. 0 when top-anchored (the default) or when there's enough
-// content to fill the viewport either way (nothing to pad).
+// redraw()/lineIndexAtRow()で共有され、両方とも下端固定の時に内容
+// がどこから始まるかについて一致するようにする――setBottomAnchored()
+// 自身のコメント参照。上端固定(デフォルト)の場合、またはどちらに
+// せよビューポートを満たすのに十分な内容がある(パディング不要)
+// 場合は0。
 int ContentView::bottomAnchorRowOffset() const {
   if (!bottomAnchored_) return 0;
   int visibleCount = std::min(static_cast<int>(lines_.size()) - topIndex_, height_);
@@ -443,9 +449,9 @@ void ContentView::moveUp() {
   if (cursorIndex_ < topIndex_) {
     topIndex_ = cursorIndex_;
     if (display_.smoothScrollEnabled()) {
-      // Ported from sr_row(): scroll the viewport down by one
-      // terminal row (revealing a new line above) and draw just that
-      // line, instead of redrawing the whole page.
+      // sr_row()からの移植: ページ全体を再描画する代わりに、端末の
+      // 行を1行分下へスクロールして(上に新しい行を明かす)、その
+      // 行だけを描く。
       display_.moveCursor(row0_, 0);
       display_.scrollReverse();
       renderLine(lines_[topIndex_], topIndex_ == cursorIndex_);
@@ -466,8 +472,8 @@ void ContentView::moveDown() {
   if (cursorIndex_ >= topIndex_ + height_) {
     topIndex_++;
     if (display_.smoothScrollEnabled()) {
-      // Ported from sf_row(): scroll the viewport up by one terminal
-      // row (revealing a new line below) and draw just that line.
+      // sf_row()からの移植: 端末の行を1行分上へスクロールして
+      // (下に新しい行を明かす)、その行だけを描く。
       int bottomRow = row0_ + height_ - 1;
       display_.moveCursor(bottomRow, 0);
       display_.scrollForward();
@@ -496,10 +502,11 @@ void ContentView::scrollLineDown() {
   topIndex_++;
   cursorIndex_ = std::min(topIndex_ + height_ - 1, static_cast<int>(lines_.size()) - 1);
   if (display_.smoothScrollEnabled()) {
-    // Same sf_row()-style single-row hardware scroll moveDown()'s own
-    // fast path uses -- see its comment; the only difference here is
-    // this always runs (no "only if the cursor would leave the
-    // viewport" guard), matching scrollLineDown() always scrolling.
+    // moveDown()自身の高速経路が使うのと同じsf_row()スタイルの
+    // 1行単位のハードウェアスクロール――自身のコメント参照。ここ
+    // での唯一の違いは、これが常に実行される(「カーソルがビュー
+    // ポートから出る場合にのみ」というガードが無い)ことで、
+    // scrollLineDown()が常にスクロールすることに合わせている。
     int bottomRow = row0_ + height_ - 1;
     display_.moveCursor(bottomRow, 0);
     display_.scrollForward();
@@ -526,8 +533,8 @@ void ContentView::scrollLineUp() {
   topIndex_--;
   cursorIndex_ = topIndex_;
   if (display_.smoothScrollEnabled()) {
-    // Same sr_row()-style single-row hardware scroll moveUp()'s own
-    // fast path uses -- see its comment.
+    // moveUp()自身の高速経路が使うのと同じsr_row()スタイルの1行
+    // 単位のハードウェアスクロール――自身のコメント参照。
     display_.moveCursor(row0_, 0);
     display_.scrollReverse();
     renderLine(lines_[topIndex_], topIndex_ == cursorIndex_);
@@ -583,196 +590,201 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   auto setStandout = [&](bool on) {
     setAttr(standoutOn, on, Display::Attribute::Standout, Display::Attribute::StandoutOff);
   };
-  // Line::attributes' own Bold/Underline byte-ranges (2026-08-05, see
-  // its own comment) -- independent of setStandout() above (a marked/
-  // reverse-video line can still carry its own bold/underline runs
-  // underneath, same as any other terminal app combining SGR codes).
+  // Line::attributes自身の太字/下線のバイト範囲(2026-08-05、自身の
+  // コメント参照)――上のsetStandout()とは独立している(マーク/反転
+  // 表示された行でも、他のどんな端末アプリがSGRコードを組み合わせ
+  // るのと同様に、その下に自身の太字/下線のrunを運べる)。
   auto setBold = [&](bool on) { setAttr(boldOn, on, Display::Attribute::Bold, Display::Attribute::BoldOff); };
   auto setUnderline = [&](bool on) {
     setAttr(underlineOn, on, Display::Attribute::Underline, Display::Attribute::UnderlineOff);
   };
 
-  // `markedNow` starts true only if highlightStart is 0 (the common
-  // case, and every caller but DirectoryMode's ls-listing) -- see
-  // Line::highlightStartColumn's own comment. It flips on exactly once
-  // the loop below reaches column highlightStart. underlineMarkedNow
-  // mirrors it exactly, for the SEPARATE Underline channel (see
-  // setMarkedRowUsesUnderline()'s own comment) -- in practice
-  // DirectoryMode's ls-listing (the only current underlineMarked
-  // caller) always has highlightStart > 0, so this starts false and
-  // only flips at the highlightStart crossing point below, same as
-  // markedNow; kept symmetric here regardless for any future caller
-  // with highlightStart <= 0.
+  // `markedNow`は、highlightStartが0の場合(よくあるケースで、
+  // DirectoryModeのls一覧以外の全ての呼び出し元)にだけtrueで始まる
+  // ――Line::highlightStartColumn自身のコメント参照。それは、下の
+  // ループが列highlightStartに到達した時点で一度だけ切り替わる。
+  // underlineMarkedNowは、(setMarkedRowUsesUnderline()自身のコメント
+  // 参照)「別の」Underlineチャネルに対して、それを正確に反映する
+  // ――実際にはDirectoryModeのls一覧(現在唯一のunderlineMarkedの
+  // 呼び出し元)は常にhighlightStart > 0を持つので、これはfalseで
+  // 始まり、markedNowと同様、下のhighlightStartを横切る地点でだけ
+  // 切り替わる。highlightStart <= 0を持ち得る将来の呼び出し元の
+  // ために、それでもここでは対称に保たれている。
   bool markedNow = marked && highlightStart <= 0;
   bool underlineMarkedNow = underlineMarked && highlightStart <= 0;
   setStandout(markedNow);
   setUnderline(underlineMarkedNow);
   int col = 0;
-  // 2026-08-13 fix: a real report (LOCATE results, screenshots =am/=an)
-  // -- long absolute paths landing EXACTLY at the terminal's own width
-  // (80 columns) left the reverse-video highlight visually one row
-  // off (row N's highlight appearing to land on row N+1), and the
-  // FOLLOWING row's Enter became unresponsive. Root-caused via a PTY
-  // reproduction + temporary instrumentation: ContentView's own
-  // cursorIndex_/topIndex_/marked computation was confirmed correct at
-  // every step (logged and matched the mode-line's own position text
-  // exactly) -- the bug was downstream, in the raw terminal bytes.
-  // Writing a character to the terminal's LAST column triggers most
-  // terminals' own auto-wrap (the real cursor silently advances to the
-  // next row's start), which this class's own escape-sequence emission
-  // (setStandout(false)/etc. at the end of THIS function, see below)
-  // doesn't know happened -- those trailing "turn the attribute back
-  // off" codes end up applied at the START of the NEXT row instead of
-  // at the END of THIS one, since non-printing SGR codes don't
-  // themselves trigger a wrap and so land wherever the cursor already
-  // silently moved to. Confirmed by reproducing with both long
-  // (80-column, bug present) and short (<80-column, bug absent) real
-  // `locate` results in the same session. Capping at columns()-1
-  // (reserving the very last column, a standard terminal-programming
-  // convention for exactly this reason) avoids the wrap outright,
-  // matching legacy's own line-truncation precedent elsewhere (see
-  // CLAUDE.md history item 5's Step 5) -- this is the shared,
-  // centralized fix point every renderLine() caller benefits from at
-  // once, not a per-Mode workaround.
-  // Only applied when THIS call might toggle Standout on at all
-  // (`marked`, fixed for the whole call -- not `markedNow`, which can
-  // still flip mid-line via highlightStart): a plain marked=false line
-  // never calls setStandout(true), so its own trailing resets are
-  // already no-ops regardless of any auto-wrap, and truncating it too
-  // would be a pure regression with no corresponding fix -- confirmed
-  // by handleResize()'s own File-mode-reflow tests (cursorHighlightEnabled_
-  // false there, see FileMode's own class comment), which intentionally
-  // rely on full-width wrapped lines rendering their LAST column.
-  // underlineMarked included here too (not just marked): the same
-  // auto-wrap hazard this reservation exists to avoid applies to ANY
-  // attribute-toggling escape sequence near the terminal's last
-  // column, not specifically Standout's own codes.
+  // 2026-08-13の修正: 実際の報告(LOCATEの結果、スクリーンショット
+  // =am/=an)――端末自身の幅(80桁)にちょうど着地する長い絶対パスが、
+  // 反転表示ハイライトを視覚的に1行ずれさせ(行Nのハイライトが行
+  // N+1に着地しているように見える)、「後続の」行のEnterが反応しな
+  // くなった。PTYでの再現+一時的な計測により根本原因を特定: ContentView
+  // 自身のcursorIndex_/topIndex_/markedの計算は、全ての段階で正しい
+  // ことが確認された(記録され、モードライン自身の位置テキストに
+  // 正確に一致した)――バグはその下流の、生の端末バイトの中にあった。
+  // 端末の「最後の」列へ文字を書くことは、ほとんどの端末自身の自動
+  // 折り返し(実際のカーソルが黙って次の行の先頭へ進む)を引き起こす
+  // が、このクラス自身のエスケープシーケンス発行(この関数の末尾の
+  // setStandout(false)等、下参照)はそれが起きたことを知らない――
+  // それらの末尾の「属性を元に戻す」コードは、「この」行の「末尾」
+  // ではなく「次の」行の「先頭」に適用されてしまう。非印字のSGR
+  // コードはそれ自体折り返しを引き起こさないので、カーソルが既に
+  // 黙って移動した先にそのまま着地するため。同じセッションで、
+  // 長い(80桁、バグあり)と短い(80桁未満、バグなし)両方の実際の
+  // `locate`結果で再現して確認済み。columns()-1で上限を設ける
+  // (まさにこの理由による、標準的な端末プログラミングの慣習である、
+  // 最後の1列を予約する)ことで折り返しを完全に回避する。legacy
+  // 自身の他所での行切り詰めの前例(CLAUDE.mdの履歴項目5のStep5
+  // 参照)に合わせている――これは、モードごとの回避策ではなく、
+  // renderLine()の全呼び出し元が一度に恩恵を受ける、共有された、
+  // 一元化された修正地点である。
+  // これは、この呼び出しが「そもそも」Standoutをオンに切り替える
+  // 可能性がある場合にだけ適用される(`marked`、呼び出し全体で
+  // 固定。highlightStart経由で行の途中で切り替わり得る`markedNow`
+  // ではない): プレーンなmarked=falseの行は決してsetStandout(true)
+  // を呼ばないので、その末尾のリセットは、どんな自動折り返しに
+  // 関わらず既に何もしておらず、それも切り詰めることは対応する
+  // 修正の無い純粋な退行になる――handleResize()自身のFileモード
+  // 再折り返しのテスト(そこではcursorHighlightEnabled_がfalse、
+  // FileMode自身のクラスコメント参照)によって確認済み。それらは
+  // 意図的に、フル幅で折り返された行がその最後の列を描画すること
+  // に依存している。underlineMarkedもここに含まれる(markedだけで
+  // はなく): この予約が回避するために存在する同じ自動折り返しの
+  // 危険は、Standout自身のコードに限らず、端末の最後の列付近の
+  // どんな属性を切り替えるエスケープシーケンスにも当てはまるため。
   int maxCol =
       (marked || underlineMarked) ? std::max(0, display_.columns() - 1) : display_.columns();
-  // Middle-ellipsis truncation (2026-08-14): a direct user report --
-  // LOCATE results sharing one long common prefix all rendered
-  // IDENTICAL visible text once naively cut off at the terminal's own
-  // width, making individual entries impossible to tell apart
-  // ("行末が同じで区別できない"), matching macOS Finder's own
-  // convention for long filenames ("macOSのFinderと同じく行の中央を
-  // 「...」として行末まで表示して欲しい" -- elide the MIDDLE, keep
-  // both the start and the end visible). Scoped to lines with NO
-  // highlightStartColumn/attributes (plain, unstyled text) -- the
-  // only shape this port's own results-list Lines actually use
-  // (LocateMode/DuMode/etc never set either): rewriting a highlighted
-  // SUBSTRING's own byte-offset-indexed attribute ranges through a
-  // middle-elided string is a genuinely different, harder problem
-  // this doesn't attempt to solve here -- Directory's own ls-listing
-  // highlightStartColumn, GrepMode's match highlighting, etc. keep
-  // their existing simple right-truncation (the loop's own `col >=
-  // maxCol` break below) unchanged.
-  // 2026-08-14 fix: the ellipsis budget below is columns()-1 whenever
-  // Standout can toggle on THIS view at all (cursorHighlightEnabled_),
-  // rather than reusing maxCol's own marked-dependent value directly --
-  // a real report ("ハイライト時は「...bat Uninstaller.app/...」だった
-  // のが「...obat Uninstaller.app/...」", reproduced by pressing ^N to
-  // move off the row, then confirmed to flip back by re-hovering it
-  // with the mouse) traced to exactly this: maxCol is marked-dependent
-  // (columns()-1 vs. columns(), see its own comment just above) for a
-  // reason that has nothing to do with ellipsis truncation (avoiding an
-  // unrelated auto-wrap bug that only matters when Standout gets
-  // toggled). Since ellipsis truncation runs on marked=false plain
-  // lines just as often as marked=true ones (LOCATE/DU results scroll
-  // past the cursor constantly), reusing maxCol made the SAME row's own
-  // rendered text visibly shift by one character depending purely on
-  // whether it happened to be the highlighted row at that instant -- a
-  // genuine, user-visible flicker, not two independently-valid
-  // renderings. Gated on cursorHighlightEnabled_ (not unconditional):
-  // when it's false, `marked` is always false for every row regardless
-  // of cursor position (see this function's own opening line), so
-  // there's no flicker to fix and maxCol already equals the full
-  // columns() -- exactly the full-width rendering
-  // "redraw: an UNMARKED line exactly as wide as the terminal still
-  // renders its own last column" (and handleResize()'s own File-mode-
-  // reflow tests) deliberately rely on; forcing columns()-1 here
-  // unconditionally regressed that.
+  // 中間省略記号の切り詰め(2026-08-14): 直接のユーザー報告――1つの
+  // 長い共通の接頭辞を共有するLOCATE結果は、端末自身の幅で素朴に
+  // 切り落とされると全て「同一の」可視テキストとして描画され、
+  // 個々のエントリを区別できなくしていた("行末が同じで区別でき
+  // ない")。macOS Finder自身の長いファイル名の慣習に合わせている
+  // ("macOSのFinderと同じく行の中央を「...」として行末まで表示して
+  // 欲しい"――「中間」を省略し、開始と終わりの両方を可視のまま
+  // 保つ)。highlightStartColumn/attributesが「無い」行(プレーン
+  // な、スタイル無しのテキスト)にスコープされている――これは、
+  // この移植自身の結果一覧のLineが実際に使う唯一の形である
+  // (LocateMode/DuMode等はどちらも決して設定しない): ハイライト
+  // された「部分文字列」自身のバイトオフセットでインデックスされた
+  // 属性範囲を、中間が省略された文字列を通して書き換えることは、
+  // 本当に別の、より難しい問題であり、ここではそれを解決しようと
+  // していない――Directory自身のls一覧のhighlightStartColumn、
+  // GrepModeのマッチのハイライト等は、既存の単純な右切り詰め
+  // (下のループ自身の`col >= maxCol`break)を変更せずに保つ。
+  // 2026-08-14の修正: 下の省略記号の予算は、maxCol自身のmarked
+  // 依存の値を直接再利用するのではなく、Standoutがこの「ビュー」
+  // 上でそもそも切り替わり得る限り(cursorHighlightEnabled_)常に
+  // columns()-1である――実際の報告("ハイライト時は「...bat
+  // Uninstaller.app/...」だったのが「...obat Uninstaller.app/...」"、
+  // ^Nを押して行から離れることで再現し、マウスで再度ホバーすると
+  // 戻ることを確認)が、まさにこれを突き止めた: maxColは、省略記号
+  // の切り詰めとは全く関係が無い理由(Standoutが切り替わる時にだけ
+  // 重要になる、無関係な自動折り返しバグを避ける)でmarkedに依存
+  // している(columns()-1対columns()、すぐ上の自身のコメント参照)。
+  // 省略記号の切り詰めはmarked=trueの行と同じくらい頻繁にmarked=false
+  // のプレーンな行に対しても実行される(LOCATE/DU結果はカーソルを
+  // 常に通り過ぎてスクロールする)ので、maxColを再利用すると、
+  // 「同じ」行自身の描画されたテキストが、その瞬間にたまたま
+  // ハイライトされた行だったかどうかだけによって、目に見えて1文字
+  // ずれてしまう――2つの独立に有効な描画ではなく、本物の、ユーザー
+  // に見えるちらつきである。cursorHighlightEnabled_によってゲート
+  // されている(無条件ではない): それがfalseの時、`marked`はカーソル
+  // 位置に関わらず全ての行で常にfalseである(この関数自身の冒頭の
+  // 行参照)ので、修正すべきちらつきは無く、maxColは既に完全な
+  // columns()に等しい――これはまさに、「redraw: 端末とちょうど
+  // 同じ幅のマークされていない行は依然としてその最後の列を描画
+  // する」(そしてhandleResize()自身のFileモード再折り返しの
+  // テスト)が意図的に依存しているフル幅の描画である。ここで
+  // 無条件にcolumns()-1を強制すると、それを退行させてしまう。
   int ellipsisBudget = cursorHighlightEnabled_ ? std::max(0, display_.columns() - 1) : maxCol;
-  // This width-aware walk (2026-08-19 fix, widened 2026-08-21 and
-  // 2026-08-26 -- see this loop's own 2026-08-26 comment below for why
-  // it's no longer gated on highlightStartColumn at all) applies to
-  // EVERY Line uniformly now: LOCATE/DU/Archive results, DirectoryMode's
-  // ls-listing, ordinary FileMode content, all of it walks `col` as a
-  // real display-column count, consuming each UTF-8 sequence as one
-  // unit (via Utf8::sequence_length()) and advancing by its own
-  // Utf8::display_width(). This part is NOT limited to results-list
-  // Lines: FileMode's own content arrives from PipeBuffer::wrapLine(),
-  // which ALREADY pre-wraps every line to fit exactly `width_` DISPLAY
-  // columns -- for CJK-heavy text that's routinely well over `width_`
-  // *bytes* (a 2-column character costs 3 bytes), so the plain byte-
-  // counted loop used to cut it off far short of its own true (already
-  // width-correct) end, and -- worse -- could stop mid-character,
-  // sending a truncated UTF-8 sequence straight to the terminal (a real
-  // report + raw-byte capture: a lone lead byte 0xe3 immediately
-  // followed by a cursor-move escape, no continuation bytes at all).
-  // The original 2026-08-19 fix only widened the gate for highlight-
-  // free, ATTRIBUTE-free lines, leaving FileMode's own bold/underline
-  // (nroff-overstrike, e.g. HELP.jp's section headings) lines on the
-  // old byte-counted loop -- exactly the same class of bug survived
-  // there for any CJK-heavy bold/underlined line, undetected until a
-  // real report (2026-08-21, -g mode, HELP chapter 4 screenshots =eb/
-  // =ea): mid-drag rendering (a separate code path, see renderScrolled()'s
-  // own comment) never showed it, but the moment the normal flush()/
-  // commitGlyph() pipeline ran again on release, GraphicalDisplay::
-  // putByte()'s own pendingUtf8 buffer -- left holding a dangling
-  // partial sequence from the byte-counted loop's mid-character break,
-  // since moveCursor() never resets it between rows -- silently spliced
-  // the next row's first byte(s) onto those stale leftover bytes,
-  // committing one garbage glyph at column 0 of the FOLLOWING row (the
-  // small black-square/hatched-box marks in =ea, always on a wrapped
-  // continuation row, i.e. exactly the rows most likely to have just
-  // finished a line elsewhere in the paragraph mid-character). Since
-  // FileMode is the only caller of `line.attributes` at all (confirmed:
-  // no other Mode ever sets it, and it's never set alongside
-  // highlightStartColumn -- see Line::attributes' own comment), folding
-  // it into this same width-aware walk (attribute matching now keyed on
-  // the loop's own byte index `idx`, same convention AttributeRun
-  // already uses) is unconditionally safe: FileMode's attributed lines
-  // get the identical character-safe, already-width-correct treatment
-  // plain FileMode lines already had.
+  // この幅を意識した歩み(2026-08-19の修正、2026-08-21と2026-08-26
+  // に広げられた――なぜこれがもはや全くhighlightStartColumnに
+  // ゲートされていないのかについては下のこのループ自身の2026-08-26
+  // のコメント参照)は、今や全てのLineに一様に適用される: LOCATE/
+  // DU/Archiveの結果、DirectoryModeのls一覧、通常のFileModeの内容、
+  // その全てが、各UTF-8シーケンスを(Utf8::sequence_length()経由で)
+  // 1単位として消費し、それ自身のUtf8::display_width()分だけ進む、
+  // 本物の画面列数として`col`を歩く。この部分は結果一覧のLineに
+  // 限定されない: FileMode自身の内容はPipeBuffer::wrapLine()から
+  // 到着する。それは既に全ての行を、ちょうど`width_`「画面」列に
+  // 収まるよう事前に折り返している――CJK重めのテキストに対しては、
+  // それは日常的に`width_`「バイト」をはるかに超える(2列の文字は
+  // 3バイトかかる)ので、プレーンなバイトを数えるループは以前、
+  // それを本来の(既に幅として正しい)末尾よりはるかに手前で切って
+  // しまい、さらに悪いことに、文字の途中で止まり、切り詰められた
+  // UTF-8シーケンスをそのまま端末へ送ってしまうことがあった(実際
+  // の報告+生バイトのキャプチャ: 単独の先導バイト0xe3の直後に
+  // カーソル移動のエスケープが続き、継続バイトが全く無い)。元々の
+  // 2026-08-19の修正は、ハイライトが無く「属性も」無い行に対して
+  // だけゲートを広げ、FileMode自身の太字/下線(nroffオーバー
+  // ストライク、例えばHELP.jpの節見出し)の行を古いバイトを数える
+  // ループのままにしていた――まさに同じ種類のバグが、CJK重めの
+  // 太字/下線付きの行に対してそこに生き残っており、実際の報告
+  // (2026-08-21、-gモード、HELP第4章のスクリーンショット=eb/=ea)
+  // まで発見されなかった: ドラッグ中の描画(別のコードパス、
+  // renderScrolled()自身のコメント参照)ではそれは決して見えな
+  // かったが、解放時に通常のflush()/commitGlyph()パイプラインが
+  // 再び実行された瞬間、(moveCursor()が行の間でそれをリセットしな
+  // いので)バイトを数えるループの文字途中での中断から宙ぶらりんの
+  // 部分シーケンスを保持したままだったGraphicalDisplay::putByte()
+  // 自身のpendingUtf8バッファが、その古びた残りのバイトへ「次の」
+  // 行の最初のバイトを黙って継ぎ足し、「後続」行の列0に1つのゴミ
+  // グリフを確定していた(=eaの小さな黒い四角/ハッチングされた
+  // 箱の跡、常に折り返された継続行の上、つまりまさに、段落の他所
+  // で文字の途中で1行を終えたばかりである可能性が最も高い行)。
+  // FileModeが`line.attributes`の唯一の呼び出し元である(確認済み:
+  // 他のモードは決してそれを設定せず、highlightStartColumnと一緒に
+  // 設定されることも決してない――Line::attributes自身のコメント
+  // 参照)ので、それをこの同じ幅を意識した歩みに折り込む(属性の
+  // マッチングは今やループ自身のバイトインデックス`idx`をキーと
+  // する。AttributeRunが既に使っているのと同じ慣習)ことは無条件に
+  // 安全である: FileModeの属性付きの行は、プレーンなFileModeの行が
+  // 既に受けている、文字として安全な、既に幅として正しい扱いを
+  // 全く同じように受ける。
   //
-  // ellipsisEligible (2026-08-20 addition, same report as the comment
-  // above -- docs/HISTORY.md's own long lines showed their MIDDLE
-  // replaced with "..." in -g specifically, while GraphicalDisplay's
-  // separate momentum-scroll render path showed the same lines in
-  // full): the Finder-style middle-ellipsis SUBSTITUTION below is a
-  // separate, narrower concern from widthAware walking itself --
-  // appropriate for LOCATE/DU/Archive's own discrete, unwrapped
-  // name/path Lines (the original 2026-08-14 report this was built
-  // for), but wrong for ordinary continuous prose/log content, where
-  // eliding the middle destroys real information a reader expects to
-  // find by scrolling, not by an artificial "keep both ends" cut. Only
-  // LocateMode/DuMode/ArchiveMode's own results-list Line construction
-  // sets this true; FileMode's own (already width-wrapped) lines fall
-  // through unedited into the widthAware walk below, which simply stops
-  // at maxCol -- a character-safe plain cutoff, not an elision.
+  // ellipsisEligible(2026-08-20の追加、上と同じ報告――
+  // docs/HISTORY.md自身の長い行が、特に-gでその「中間」が"..."に
+  // 置き換わっているのを示していた一方、GraphicalDisplayの別の
+  // 慣性スクロール描画経路は同じ行を完全に表示していた): 下の
+  // Finderスタイルの中間省略記号の「置き換え」は、幅を意識した
+  // 歩み自体とは別の、より狭い関心事である――LOCATE/DU/Archive
+  // 自身の離散的な、折り返されていないname/path Line(この機能が
+  // 構築された元々の2026-08-14の報告)に対しては適切だが、中間を
+  // 省略することが、人為的な「両端を保つ」という切り方ではなく、
+  // 読者がスクロールして見つけることを期待している実際の情報を
+  // 破壊してしまう、通常の連続した散文/ログの内容に対しては誤り
+  // である。LocateMode/DuMode/ArchiveMode自身の結果一覧のLine構築
+  // だけがこれをtrueに設定する。FileMode自身の(既に幅で折り返
+  // された)行は、下の幅を意識した歩みへ変更されずに落ち、それは
+  // 単にmaxColで止まる――省略ではなく、文字として安全なプレーンな
+  // 切り落としである。
   //
-  // 2026-08-26 fix, a real report (ArchiveMode's own utf8.tar fixture:
-  // "utf8.tarの一覧表示が画面の2/3ほどで途切れる"): this used to be
-  // `bool widthAware = !line.highlightStartColumn.has_value();`, so
-  // ArchiveMode's entries -- which set BOTH ellipsisEligible (this
-  // function's own widthAware CJK-safe truncation, see its comment)
-  // AND, as of this same day's click-to-select fix, highlightStartColumn
-  // (DirectoryMode's own name-only-highlight convention) -- fell
-  // through to the OLD raw-byte-counted branch below instead, which has
-  // no notion of display width at all: a CJK filename (3 bytes/2
-  // columns) hit the ~79-BYTE budget at roughly 2/3 of the terminal's
-  // own real column width, reproducing the exact "内容一覧は^Olでも
-  // 2/3くらいまでしか表示されていない" bug this same widthAware path
-  // was originally built to fix (see its own comment above), just for a
-  // NEW caller. DirectoryMode's ls-listing/the WORK/arc.N banner (the
-  // only other two highlightStartColumn setters, see Line::
-  // highlightStartColumn's own comment) never had ellipsisEligible set,
-  // so they never hit the old truncation bug themselves -- but their
-  // own highlight-start byte offset (always a plain-ASCII prefix, e.g.
-  // "  1234  " before a name) is folded into THIS loop's existing
-  // byte-index `idx` below instead of needing a separate byte-counted
-  // walk at all, so there's no longer any real caller left needing the
-  // old branch -- removed rather than kept as unreachable dead code.
+  // 2026-08-26の修正、実際の報告(ArchiveMode自身のutf8.tar
+  // フィクスチャ: "utf8.tarの一覧表示が画面の2/3ほどで途切れる"):
+  // これは以前`bool widthAware =
+  // !line.highlightStartColumn.has_value();`だったので、
+  // ellipsisEligible(この関数自身の幅を意識したCJK安全な切り詰め、
+  // 自身のコメント参照)と、同日のクリックして選択の修正時点での
+  // highlightStartColumn(DirectoryMode自身の名前のみハイライトの
+  // 慣習)の「両方を」設定するArchiveModeのエントリは、代わりに
+  // 画面幅という概念を全く持たない、古い生のバイトを数える分岐に
+  // 落ちてしまっていた: CJKファイル名(3バイト/2列)は、端末自身の
+  // 実際の列幅のおおよそ2/3で約79「バイト」の予算に達し、まさに
+  // この同じ幅を意識した経路が元々修正するために構築された
+  // "内容一覧は^Olでも2/3くらいまでしか表示されていない"バグ
+  // (上の自身のコメント参照)を、単に「新しい」呼び出し元に対して
+  // 再現していた。DirectoryModeのls一覧/WORK/arc.Nバナー(他の
+  // 唯一2つのhighlightStartColumnの設定者、Line::
+  // highlightStartColumn自身のコメント参照)は、決してellipsisEligible
+  // が設定されていなかったので、それら自身は古い切り詰めのバグに
+  // 一度も当たらなかった――しかし、それら自身のハイライト開始の
+  // バイトオフセット(常にプレーンなASCIIの接頭辞、例えば名前の
+  // 前の「  1234  」)は、別のバイトを数える歩みを全く必要とする
+  // 代わりに、この「同じ」ループの既存のバイトインデックス`idx`
+  // (下)に折り込まれるので、もはや古い分岐を必要とする実際の
+  // 呼び出し元は残っていない――到達不能なデッドコードとして残す
+  // のではなく削除された。
   std::string ellipsisText;
   const std::string *renderedText = &line.text;
   if (line.ellipsisEligible && static_cast<int>(line.text.size()) > ellipsisBudget) {
@@ -783,12 +795,12 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
     const std::string &text = *renderedText;
     std::size_t idx = 0;
     while (idx < text.size()) {
-      // highlightStartColumn's own transition point (DirectoryMode's
-      // ls-listing/the WORK/arc.N banner, see this function's own
-      // comment above) -- `highlightStart` is always a byte offset into
-      // a plain-ASCII prefix for every real caller, so comparing it
-      // directly against this loop's own running byte offset `idx` is
-      // exact, with no display-width conversion needed here.
+      // highlightStartColumn自身の遷移地点(DirectoryModeのls一覧/
+      // WORK/arc.Nバナー、この関数自身の上のコメント参照)――
+      // `highlightStart`は、実際の全呼び出し元に対して常にプレーン
+      // なASCIIの接頭辞へのバイトオフセットなので、それをこの
+      // ループ自身の実行中のバイトオフセット`idx`と直接比較する
+      // ことは正確であり、ここでは画面幅への変換は不要である。
       if (line.highlightStartColumn.has_value() && static_cast<int>(idx) == highlightStart) {
         markedNow = marked;
         underlineMarkedNow = underlineMarked;
@@ -798,12 +810,12 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
       unsigned char c = static_cast<unsigned char>(text[idx]);
       int len = Utf8::sequence_length(c);
       len = std::min(len, static_cast<int>(text.size() - idx));
-      // Bold/underline matching, folded in here 2026-08-21 (see this
-      // function's own widthAware comment) -- keyed on `idx`, the
-      // loop's own running BYTE offset, matching AttributeRun{start,end}'s
-      // byte-offset convention exactly (unlike `col`, which is a
-      // display-column count in this branch and would misalign against
-      // CJK-heavy content).
+      // 太字/下線のマッチング、2026-08-21にここへ折り込まれた
+      // (この関数自身のwidthAwareのコメント参照)――ループ自身の
+      // 実行中の「バイト」オフセットである`idx`をキーとしており、
+      // AttributeRun{start,end}のバイトオフセットの慣習に正確に
+      // 一致する(この分岐では画面列数であり、CJK重めの内容に対
+      // しては位置がずれてしまう`col`とは異なる)。
       if (!line.attributes.empty()) {
         bool wantBold = false, wantUnderline = false, wantStandout = false;
         for (const AttributeRun &run : line.attributes) {
@@ -814,24 +826,25 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
         }
         setBold(wantBold);
         setUnderline(wantUnderline);
-        // 2026-08-29 addition (CopyMode's own selection highlight, see
-        // copy_mode.hpp): the only OTHER source of Standout on this row
-        // is markedNow (highlightStartColumn's open-ended "from here to
-        // EOL" convention, already updated for this same idx by the
-        // transition check above) -- OR them so a bounded AttributeRun
-        // range and a whole-row mark can coexist without either
-        // clobbering the other. No existing caller sets both
-        // line.attributes and highlightStartColumn on the same Line
-        // (confirmed above: FileMode is the only attributes_ setter and
-        // never sets highlightStartColumn), and no existing caller uses
-        // Standout-typed AttributeRuns at all, so for every Line that
-        // predates this addition wantStandout is always false here and
-        // this reduces to the prior no-op behavior exactly.
+        // 2026-08-29の追加(CopyMode自身の選択ハイライト、
+        // copy_mode.hpp参照): この行におけるStandoutの唯一「他の」
+        // 源はmarkedNow(highlightStartColumnの、「ここから行末まで」
+        // という制限のない慣習で、上の遷移チェックによって既にこの
+        // 同じidxに対して更新済み)である――それらをORすることで、
+        // 有界なAttributeRunの範囲と行全体のマークが、互いを壊す
+        // ことなく共存できる。既存の呼び出し元でline.attributesと
+        // highlightStartColumnを同じLineに両方設定するものは無く
+        // (上で確認済み: FileModeがattributes_の唯一の設定者であり、
+        // 決してhighlightStartColumnを設定しない)、既存の呼び出し
+        // 元でStandout型のAttributeRunを使うものも全く無いので、
+        // この追加より前の全てのLineに対しては、ここでwantStandout
+        // は常にfalseであり、これは正確に以前の何もしない挙動に
+        // 帰着する。
         setStandout(markedNow || wantStandout);
       }
       if (len <= 1) {
-        // A single-byte (ASCII-range) unit is always exactly 1 display
-        // column wide, so `col` advances by 1 here regardless.
+        // 1バイト(ASCII範囲)の単位は常にちょうど画面1列幅なので、
+        // ここでは`col`はいずれにせよ1ずつ進む。
         if (col >= maxCol) break;
         if (c == '\t') {
           display_.putChar(' ');
@@ -847,12 +860,13 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
         idx += 1;
       } else {
         int width = Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + idx, len);
-        // Never let a wide (2-column) character straddle the reserved
-        // true-last-column boundary -- `col >= maxCol` alone isn't
-        // enough here since a 2-wide char starting at maxCol-1 would
-        // still pass that check yet finish AT maxCol, exactly the
-        // auto-wrap hazard renderLine()'s own maxCol reservation
-        // (see its comment above) exists to avoid.
+        // 幅広(2列)の文字が、予約された本当の最後の列の境界を
+        // またぐことを決して許さない――ここでは`col >= maxCol`だけ
+        // では不十分である。maxCol-1で始まる2幅の文字はそのチェック
+        // を通過してしまうが、ちょうどmaxColで終わってしまい、
+        // まさにrenderLine()自身のmaxColの予約(上の自身のコメント
+        // 参照)が避けるために存在する自動折り返しの危険そのもの
+        // になる。
         if (col + std::max(width, 0) > maxCol) break;
         for (int b = 0; b < len; b++) display_.putChar(static_cast<unsigned char>(text[idx + static_cast<std::size_t>(b)]));
         col += width;
@@ -881,16 +895,17 @@ std::string ContentView::scrollModeLineText() const {
   if (total <= 0) {
     current = 0;
   } else if (bottomVisible >= total) {
-    // Scrolled (or coasted) all the way to the end -- topIndex_ itself
-    // caps out at total-height_, so it can never reach `total` on its
-    // own the way cursorIndex_ can in modeLineText(); checking
-    // bottomVisible instead is what makes coasting to the bottom show
-    // END, matching a real report that it stayed stuck on a
-    // percentage there while plain 'j'/'s' navigation (modeLineText())
-    // correctly reached END.
+    // 末尾まで(または惰性で)スクロールされた――topIndex_自体は
+    // total-height_で頭打ちになるので、modeLineText()でcursorIndex_
+    // ができるように自力で`total`に到達することは決してできない。
+    // 代わりにbottomVisibleをチェックすることが、末尾まで惰性で
+    // 行くとENDを表示するようにするものである。プレーンな'j'/'s'
+    // ナビゲーション(modeLineText())が正しくENDに到達していたのに
+    // 対し、そこでパーセンテージのまま止まっていたという実際の
+    // 報告に合わせている。
     current = total;
   } else {
-    current = topIndex_ + 1;  // topIndex_==0 here naturally shows TOP
+    current = topIndex_ + 1;  // ここでtopIndex_==0は自然にTOPを表示する
   }
   applyLivePromptLineAdjustment(total, current);
   return composeModeLineRow(positionTextOverride_ ? *positionTextOverride_
@@ -905,7 +920,7 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
   if (total <= 0) {
     current = 0;
   } else if (bottomVisible >= total) {
-    current = total;  // see scrollModeLineText()'s own comment on why this check, not topIndex_ itself
+    current = total;  // なぜこのチェックであってtopIndex_自体ではないのかについてはscrollModeLineText()自身のコメント参照
   } else {
     current = topIndex_ + 1;
   }
@@ -931,24 +946,25 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
   }
   segments.push_back({positionText, true});
   drawnLen += static_cast<int>(positionText.size());
-  // 2026-08-11 fix: see renderModeLine()'s own identical fix -- each
-  // field's own emptiness now gates only itself, so trailing2 no
-  // longer silently disappears whenever trailing itself is empty.
+  // 2026-08-11の修正: renderModeLine()自身の同一の修正参照――各
+  // フィールド自身の空かどうかは今やそれ自身だけをゲートするので、
+  // trailingが空だからといってtrailing2がもはや黙って消えなく
+  // なった。
   if (fit.showTrailing && !fields.trailing.empty()) {
     segments.push_back({" ", false});
     drawnLen += 1;
     std::string trailing = fields.trailing;
-    // See renderModeLine()'s own identical trailing2 handling -- the
-    // edge-padding applies to trailing2 (the last segment) when
-    // present, not to trailing itself.
+    // renderModeLine()自身の同一のtrailing2処理参照――端へのパディ
+    // ングは、存在する場合はtrailing自体ではなくtrailing2(最後の
+    // セグメント)に適用される。
     if (fields.fillTrailingToEdge && fields.trailing2.empty()) {
-      // See renderModeLine()'s own identical padding -- keeps the
-      // highlight reaching the screen's right edge in the modes that
-      // want that, same as the flat-string version does.
+      // renderModeLine()自身の同一のパディング参照――平坦な文字列
+      // バージョンと同様、それを望むモードにおいて、ハイライトが
+      // 画面の右端に到達するのを保つ。
       int remaining = cols - drawnLen - static_cast<int>(trailing.size());
       if (remaining > 0) trailing += std::string(remaining, ' ');
     }
-    segments.push_back({trailing, !fields.trailingPlain});  // see ModeLineFields::trailingPlain's own comment
+    segments.push_back({trailing, !fields.trailingPlain});  // ModeLineFields::trailingPlain自身のコメント参照
     drawnLen += static_cast<int>(trailing.size());
   }
   if (fit.showTrailing2 && !fields.trailing2.empty()) {
@@ -993,7 +1009,7 @@ void ContentView::setModeLineRow(std::optional<int> row) { modeLineRow_ = row; }
 std::string ContentView::truncateFieldByKind(const std::string &text, TrailingKind kind, int budget) const {
   if (budget <= 0) return "";
   if (static_cast<int>(text.size()) <= budget) return text;
-  if (budget < 4) return "";  // no room even for "..." + one real character
+  if (budget < 4) return "";  // 「...」+実際の文字1つにすら余地が無い
   if (kind == TrailingKind::PathMiddle) return middleEllipsisTruncate(text, budget);
   int tailChars = kind == TrailingKind::QueryEcho ? std::min(16, budget - 3) : budget - 3;
   return "..." + text.substr(text.size() - static_cast<std::size_t>(tailChars));
@@ -1003,89 +1019,92 @@ ContentView::ModeLineFields ContentView::withTruncatedFields(ModeLineFields fiel
                                                                   const std::string &positionText) const {
   int cols = display_.columns();
   if (cols <= 0) return fields;
-  // 2026-08-15 fix: name itself can be arbitrarily long (e.g.
-  // DirectoryMode::currentDirectory() after Application::
-  // goToFileSelector() jumps straight into a deeply-nested path) --
-  // a real report + screenshot (=ba, "モードラインが不調（←ディレクト
-  // リ名長過ぎ？」) found an over-long name corrupted the whole mode-
-  // line row instead of just failing to fit (fitModeLineFields()'s own
-  // tiers never drop name at all, so it was drawn in full regardless
-  // of width). Truncated here, in the one place ALL THREE mode-line
-  // render paths already funnel every field through -- reserves room
-  // for AT LEAST the position text (the one field this port never
-  // drops), same budget-then-truncate shape as trailing2 below.
+  // 2026-08-15の修正: name自体は任意に長くなり得る(例えば
+  // Application::goToFileSelector()が深くネストされたパスへ直接
+  // ジャンプした後のDirectoryMode::currentDirectory())――実際の
+  // 報告+スクリーンショット(=ba、"モードラインが不調（←ディレクト
+  // リ名長過ぎ？」)が、長すぎるnameが、単に収まらないだけではなく
+  // モードラインの行全体を壊していることを発見した
+  // (fitModeLineFields()自身の階層は決してnameを落とさないので、
+  // 幅に関わらず完全に描画されていた)。全「3つの」モードライン
+  // 描画経路が既に全フィールドを通す唯一の場所であるここで切り
+  // 詰められる――少なくとも位置テキスト(この移植が決して落とさない
+  // 唯一のフィールド)のための余地を確保する。下のtrailing2と同じ、
+  // 予算を決めてから切り詰めるという形。
   //
-  // 2026-08-15 fix: the first version of this only reserved room for
-  // position, greedily truncating name to fill the ENTIRE remainder --
-  // a real report + screenshot (=bd, a deep directory's own mode line
-  // missing BOTH "(ls)" and the "usilic v1.5b" rightWatermark, unlike
-  // the reference =be) found that left zero room for trailing/
-  // rightWatermark, so fitModeLineFields()'s own later tiers correctly
-  // (by their own logic) decided neither fit anymore and dropped both.
-  // Reserves room for trailing and rightWatermark too when computing
-  // name's own budget, so a short, high-value pair like "(ls)"/
-  // "usilic v1.5b" survives alongside a truncated name instead of
-  // being silently squeezed out. trailing2 isn't reserved for here --
-  // its own budget logic just below already decides independently
-  // whether it fits in whatever's left.
+  // 2026-08-15の修正: これの最初のバージョンはpositionのための
+  // 余地だけを確保し、残り「全て」を埋めるようnameを貪欲に切り
+  // 詰めていた――実際の報告+スクリーンショット(=bd、深いディレク
+  // トリ自身のモードラインが、参照の=beとは異なり、「(ls)」と
+  // 「usilic v1.5b」のrightWatermarkの「両方」を欠いていた)が、
+  // それがtrailing/rightWatermarkの余地をゼロにしてしまい、
+  // fitModeLineFields()自身の後の階層が(それ自身のロジックに
+  // よって)正しく、もはやどちらも収まらないと判断して両方を落と
+  // していたことを発見した。nameの自身の予算を計算する際、
+  // trailingとrightWatermarkの余地も確保するので、「(ls)」/
+  // 「usilic v1.5b」のような短い、価値の高いペアは、黙って絞り
+  // 出されるのではなく、切り詰められたnameと一緒に生き残る。
+  // trailing2はここでは確保されない――下のそれ自身の予算ロジック
+  // が、残っているものに収まるかどうかを既に独立して決めている。
   //
-  // Each field is reserved for only if it's individually short
-  // (<= kReservableFieldLength) -- a real regression found this same
-  // reservation, applied unconditionally, made a doctest fixture's own
-  // "CUT" name vanish entirely: the ^J^C candidate list's own
-  // `trailing` is a 70-character candidate-preview string that was
-  // NEVER going to fit alongside name+position regardless (and
-  // fitModeLineFields()'s own EXISTING tiers already correctly drop it
-  // in that case -- see the 2026-08-11 fix), but reserving room for
-  // its full length here starved name down to 2 characters before that
-  // logic ever got a chance to run. "(ls)" (4)/byte counts (~10)/
-  // "usilic v1.5b" (12) all comfortably clear this cap; an arbitrary
-  // long preview/annotation does not, and is deliberately left for
-  // fitModeLineFields()'s own tiers to decide instead.
+  // 各フィールドは、それが個別に短い場合(<= kReservableFieldLength)
+  // にだけ確保される――実際の退行が、この同じ確保を無条件に適用
+  // すると、あるdoctestフィクスチャ自身の「CUT」の名前が完全に
+  // 消えてしまうことを発見した: ^J^C候補一覧自身の`trailing`は
+  // 70文字の候補プレビュー文字列であり、いずれにせよname+position
+  // と一緒には決して収まらなかった(そしてfitModeLineFields()自身の
+  // 「既存の」階層が既にその場合それを正しく落とす――2026-08-11の
+  // 修正参照)が、ここでその完全な長さのための余地を確保すると、
+  // そのロジックが実行される機会を得るより前に、nameを2文字にまで
+  // 飢えさせてしまっていた。「(ls)」(4)/バイト数(約10)/
+  // 「usilic v1.5b」(12)は全て快適にこの上限をクリアする。任意の
+  // 長いプレビュー/注釈はクリアせず、代わりに意図的に
+  // fitModeLineFields()自身の階層に決めさせるために残される。
   constexpr int kReservableFieldLength = 20;
-  // +1: the gap between name and position itself (renderModeLine()
-  // always draws this once both are shown, same as every other tier
-  // in this function already accounts for via rowLen()'s own "+1").
+  // +1: name自体とpositionの間のギャップ(この関数の他の全ての
+  // 階層が既にrowLen()自身の「+1」経由で計上しているのと同様、
+  // renderModeLine()は両方が表示される時常にこれを描く)。
   int reserved = 1;
-  // Trailing is drawn as " " + trailing (renderModeLine()'s own
-  // drawnLen tracking): 1 separator + its own length.
+  // trailingは" " + trailing(renderModeLine()自身のdrawnLen追跡)
+  // として描かれる: 1つの区切り+それ自身の長さ。
   if (!fields.trailing.empty() && static_cast<int>(fields.trailing.size()) <= kReservableFieldLength) {
     reserved += 1 + static_cast<int>(fields.trailing.size());
   }
-  // rightWatermark is drawn as " " + rightWatermark + " " (see its own
-  // renderModeLine() call site: `watermark = " " + rightWatermark +
-  // " "`) -- TWO extra spaces, not one. A real regression (this
-  // reservation initially used just "1 +", one short) found the
-  // watermark still silently dropped by renderModeLine()'s own
-  // `drawnLen + watermark.size() <= cols` check even after this fix's
-  // first attempt, landing exactly 1 column short.
+  // rightWatermarkは" " + rightWatermark + " "として描かれる(自身
+  // のrenderModeLine()呼び出し箇所参照: `watermark = " " +
+  // rightWatermark + " "`)――1つではなく「2つ」の追加の空白。
+  // 実際の退行(この確保は最初「1 +」だけを使っており、1つ足り
+  // なかった)が、この修正の最初の試みの後でも、透かしがまだ
+  // renderModeLine()自身の`drawnLen + watermark.size() <= cols`
+  // チェックによって黙って落とされ、ちょうど1列足りない状態に
+  // 着地していることを発見した。
   if (!fields.rightWatermark.empty() && static_cast<int>(fields.rightWatermark.size()) <= kReservableFieldLength) {
     reserved += 2 + static_cast<int>(fields.rightWatermark.size());
   }
-  // trailing2 as well (e.g. DirectoryMode's own "(ls)" fallback,
-  // always populated even without a search annotation) -- a real
-  // regression found reserving for trailing/rightWatermark alone still
-  // wasn't enough: trailing2's OWN downstream truncation logic (just
-  // below) tries to fit it into whatever budget REMAINS after name,
-  // but that budget had already been fully spent reserving exactly
-  // enough for trailing+rightWatermark and nothing more, so a short
-  // trailing2 like "(ls)" pushed the total back over budget anyway,
-  // silently dropping the watermark again via the SAME downstream
-  // `drawnLen + watermark.size() <= cols` check. Not reserved for if
-  // it's the one being middle-ellipsis-truncated (FileMode's own long
-  // LOCATE-path annotation) -- those are long by construction, well
-  // past kReservableFieldLength, so they're excluded the same way an
-  // overly-long trailing already is.
+  // trailing2も同様(例えばDirectoryMode自身の「(ls)」フォール
+  // バック、検索注釈が無くても常に埋められる)――実際の退行が、
+  // trailing/rightWatermarkだけを確保するのではまだ不十分である
+  // ことを発見した: trailing2「自身の」下流の切り詰めロジック
+  // (すぐ下)は、nameの後に「残る」どんな予算にでもそれを収めよう
+  // とするが、その予算は既に、trailing+rightWatermarkに丁度十分な
+  // だけを確保するために完全に使い切られていたので、「(ls)」の
+  // ような短いtrailing2でも合計がいずれにせよ予算を再び超えてしま
+  // い、同じ下流の`drawnLen + watermark.size() <= cols`チェック
+  // 経由で再び透かしを黙って落としていた。それが中間省略記号で
+  // 切り詰められる対象(FileMode自身の長いLOCATEパス注釈)である
+  // 場合は確保されない――それらは構築上長く、kReservableFieldLength
+  // をはるかに超えるので、既に長すぎるtrailingが除外されるのと
+  // 同じ方法で除外される。
   if (!fields.trailing2.empty() && static_cast<int>(fields.trailing2.size()) <= kReservableFieldLength) {
     reserved += 1 + static_cast<int>(fields.trailing2.size());
   }
   int positionBudget = cols - static_cast<int>(positionText.size()) - reserved;
   if (positionBudget < 0) {
-    // Not enough room even reserving for trailing/rightWatermark too --
-    // fall back to the ORIGINAL, unconditional guarantee (name fits
-    // alongside AT LEAST position); fitModeLineFields()'s own tiers
-    // still decide whether trailing/trailing2 actually get shown from
-    // here.
+    // trailing/rightWatermarkも確保してなお余地が足りない――「元々
+    // の」、無条件の保証(nameは「少なくとも」positionと一緒に収まる)
+    // へフォールバックする。fitModeLineFields()自身の階層が、ここ
+    // から、trailing/trailing2が実際に表示されるかどうかを依然として
+    // 決める。
     positionBudget = cols - static_cast<int>(positionText.size()) - 1;
   }
   if (positionBudget < 0) positionBudget = 0;
@@ -1094,19 +1113,21 @@ ContentView::ModeLineFields ContentView::withTruncatedFields(ModeLineFields fiel
                                        : fields.name.substr(0, static_cast<std::size_t>(positionBudget));
   }
 
-  // 2026-08-17 addition: truncate `trailing` itself when it opts into
-  // truncation (trailingKind != Tag), instead of leaving it entirely to
-  // fitModeLineFields()'s own all-or-nothing tiers below -- a real
-  // reproduction (=bw) found listBrowserView_'s own FILE/DIR/COMMAND
-  // picker `trailing` (a long absolute path, no trailing2 involved)
-  // vanishing ENTIRELY once it exceeded the column budget, because
-  // `trailing` had no truncation option at all before this (unlike
-  // `name`/`trailing2`, both truncated above/below). Every OTHER
-  // provider leaves trailingKind at its default (Tag), so this block is
-  // a no-op for them. Reserves room for trailing2 too (the same
-  // kReservableFieldLength heuristic name's own reservation above
-  // already uses) purely as a safety margin -- no current provider
-  // combines a truncatable `trailing` with a non-empty `trailing2`.
+  // 2026-08-17の追加: `trailing`自体が切り詰めを選択している場合
+  // (trailingKind != Tag)、それを完全に下のfitModeLineFields()
+  // 自身のall-or-nothingの階層に任せるのではなく、切り詰める
+  // ――実際の再現(=bw)が、`trailing`が以前これに対して全く切り
+  // 詰めのオプションを持たなかった(上下で切り詰められる`name`/
+  // `trailing2`とは異なり)ため、listBrowserView_自身のFILE/DIR/
+  // COMMANDピッカーの`trailing`(長い絶対パス、trailing2は関与
+  // しない)が、列の予算を超えた時点で「完全に」消えてしまうこと
+  // を発見した。他の「全ての」プロバイダはtrailingKindをデフォルト
+  // (Tag)のままにするので、このブロックはそれらに対しては何もし
+  // ない。純粋に安全マージンとして、trailing2の余地も確保する
+  // (上のnameの自身の確保が既に使っているのと同じ
+  // kReservableFieldLengthのヒューリスティック)――現在切り詰め
+  // 可能な`trailing`と空でない`trailing2`を組み合わせるプロバイダ
+  // は無い。
   if (fields.trailingKind != TrailingKind::Tag && !fields.trailing.empty()) {
     int base = static_cast<int>(positionText.size());
     if (!fields.name.empty()) base += static_cast<int>(fields.name.size()) + 1;
@@ -1122,48 +1143,50 @@ ContentView::ModeLineFields ContentView::withTruncatedFields(ModeLineFields fiel
   int base = static_cast<int>(positionText.size());
   if (!fields.name.empty()) base += static_cast<int>(fields.name.size()) + 1;
   int trailingLen = fields.trailing.empty() ? 0 : static_cast<int>(fields.trailing.size()) + 1;
-  int budgetWith = cols - base - trailingLen - 1;      // room for trailing2 alongside trailing
-  int budgetWithout = cols - base - 1;                 // room for trailing2 if trailing were dropped
+  int budgetWith = cols - base - trailingLen - 1;      // trailingと一緒のtrailing2のための余地
+  int budgetWithout = cols - base - 1;                 // trailingが落とされた場合のtrailing2のための余地
   int trailing2Len = static_cast<int>(fields.trailing2.size());
 
-  if (trailing2Len <= budgetWith) return fields;  // already fits fully alongside trailing -- nothing to do
+  if (trailing2Len <= budgetWith) return fields;  // trailingと一緒に既に完全に収まる――何もすることは無い
 
-  // 2026-08-14 fix: was tail-only ("..." + the very end), which loses
-  // the HEAD entirely (e.g. FileMode::setSearchOrigin()'s full
-  // absolute path lost its "/Applications/..." start). A direct user
-  // request ("戻り値も検索一覧同様「/Applications/Adobe Acrob...
-  // source/.../HKSCS.txt」形式で") asked for the SAME middle-ellipsis
-  // convention LOCATE's own results-list rows already use (head...tail,
-  // see middleEllipsisTruncate()'s own comment) here too -- both ends
-  // of a full path carry real information (where it lives, what it's
-  // named), unlike this function's own trailing/trailing2 CHOICE logic
-  // just above, which is about which FIELD to keep, not how to elide
-  // one.
+  // 2026-08-14の修正: 以前は末尾のみ("..." + まさに末端)で、
+  // 「頭部」を完全に失っていた(例えばFileMode::setSearchOrigin()の
+  // 完全な絶対パスは「/Applications/...」の先頭を失っていた)。
+  // 直接のユーザー依頼("戻り値も検索一覧同様「/Applications/Adobe
+  // Acrob...source/.../HKSCS.txt」形式で")が、ここでもLOCATE自身の
+  // 結果一覧の行が既に使っているのと「同じ」中間省略記号の慣習
+  // (head...tail、middleEllipsisTruncate()自身のコメント参照)を
+  // 求めた――完全なパスの両端は、この関数自身のすぐ上の
+  // trailing/trailing2の「選択」ロジック(1つを省略する方法では
+  // なく、どちらのフィールドを保つかについてのもの)とは異なり、
+  // 実際の情報(どこに住んでいるか、何と名付けられているか)を
+  // 運ぶ。
   //
-  // 2026-08-15 fix: that middle-ellipsis switch turned out to be too
-  // broad -- applied here UNCONDITIONALLY, it also changed every OTHER
-  // mode's own trailing2 (e.g. DirectoryMode::searchAnnotation_), which
-  // a direct user policy statement clarified should stay tail-only:
-  // "なおLOCATE以外では、右下端の戻り値が長すぎる場合「...16文字」で
-  // よろしく". Now gated on fields.trailing2Kind (2026-08-17: was
-  // trailing2MiddleEllipsis, see TrailingKind's own comment) -- FileMode's
-  // own LOCATE-origin case opts in explicitly; every other provider
-  // keeps the ORIGINAL tail-only behavior (the QueryEcho default),
-  // capped at the SAME 16 characters truncatedTrailingPath() already
-  // established elsewhere (but still budget-aware: never shows MORE
-  // than what actually fits, unlike that helper's own fixed-width
-  // version used where the string is pre-truncated before it ever
-  // reaches a ModeLineFields). Delegates to truncateFieldByKind() (see
-  // its own comment), the same helper the new `trailing`-truncation
-  // block above now shares.
+  // 2026-08-15の修正: その中間省略記号への切り替えは広すぎること
+  // が判明した――ここで「無条件に」適用されると、他の「全ての」
+  // モード自身のtrailing2(例えばDirectoryMode::searchAnnotation_)
+  // も変えてしまい、それは直接のユーザーポリシー声明が末尾のみで
+  // あるべきと明確化していた: "なおLOCATE以外では、右下端の戻り値
+  // が長すぎる場合「...16文字」でよろしく"。今はfields.trailing2Kind
+  // によってゲートされている(2026-08-17: 以前は
+  // trailing2MiddleEllipsis、TrailingKind自身のコメント参照)――
+  // FileMode自身のLOCATE起源のケースはそれを明示的に選択する。
+  // 他の全てのプロバイダは「元々の」末尾のみの挙動(QueryEchoの
+  // デフォルト)を保ち、他所でtruncatedTrailingPath()が既に確立
+  // したのと同じ16文字に制限される(ただし依然として予算を意識
+  // する: そのヘルパー自身の固定幅バージョン(文字列がModeLineFields
+  // に到達する前に事前に切り詰められる場所で使われる)とは異なり、
+  // 実際に収まる以上のものは決して表示しない)。truncateFieldByKind()
+  // (自身のコメント参照)に委ねる。上の新しい`trailing`切り詰め
+  // ブロックが今共有しているのと同じヘルパー。
   auto truncate = [&](int budget) -> std::string {
     return truncateFieldByKind(fields.trailing2, fields.trailing2Kind, budget);
   };
 
   if (trailing2Len <= budgetWithout && !fields.trailing.empty()) {
-    // Dropping trailing lets trailing2 show in FULL -- worth it, same
-    // preference the 2026-08-11 GREP fix established (a long candidate
-    // preview vs. a short destination directory).
+    // trailingを落とすとtrailing2を「完全に」表示できる――価値が
+    // ある。2026-08-11のGREPの修正が確立したのと同じ優先順位
+    // (長い候補プレビュー対短い移動先ディレクトリ)。
     fields.trailing.clear();
     return fields;
   }
@@ -1180,21 +1203,22 @@ ContentView::ModeLineFields ContentView::withTruncatedFields(ModeLineFields fiel
   return fields;
 }
 
-// 2026-08-27 fix, a real report + PTY reproduction (a long real
-// $HOME-rooted destination path -- "~/.usilic/saved/" -- combined with
-// ArchiveMode's own "ARC: <archive path>" trailing3 landing on
-// DirectoryMode via setArcExtractSourceAnnotation(), see its own
-// comment): trailing3 previously had NO truncation option at all here
-// (unlike name/trailing/trailing2, all handled above) -- renderModeLine()'s
-// own "show it if there's room, otherwise drop it entirely" policy (see
-// its own comment) meant a trailing3 just slightly too long to fit
-// vanished COMPLETELY ("戻り値=空白"), even though a short destination
-// like "/tmp/" left plenty of room for the exact same annotation.
-// Middle-ellipsis-truncating it here (same shape as trailing2's own
-// PathMiddle handling just above) means it's now ALWAYS shown --
-// truncated when the row is crowded, same as everything else -- rather
-// than an all-or-nothing coin flip depending purely on how long the
-// OTHER fields around it happen to be.
+// 2026-08-27の修正、実際の報告+PTY再現(長い、実際の$HOME起点の
+// 移動先パス――「~/.usilic/saved/」――が、setArcExtractSourceAnnotation()
+// 経由でDirectoryModeに着地するArchiveMode自身の「ARC: <アーカイブ
+// パス>」trailing3と組み合わさった、自身のコメント参照): trailing3
+// は以前ここに全く切り詰めのオプションが無かった(上で扱われる
+// name/trailing/trailing2とは異なる)――renderModeLine()自身の
+// 「余地があれば表示、そうでなければ完全に落とす」ポリシー(自身
+// のコメント参照)は、収まるにはほんの少し長すぎるtrailing3が、
+// 「/tmp/」のような短い移動先ならまさに同じ注釈に十分な余地を
+// 残しているにも関わらず、完全に消えてしまう(「戻り値=空白」)
+// ことを意味していた。ここでそれを中間省略記号で切り詰める
+// (すぐ上のtrailing2自身のPathMiddle処理と同じ形)ことは、それが
+// 今や「常に」表示される――他の全てと同様、行が混雑している時は
+// 切り詰められる――ことを意味し、周囲の「他の」フィールドがたま
+// たまどれだけ長いかだけに依存する、全か無かのコイントスではなく
+// なる。
 ContentView::ModeLineFields ContentView::withTruncatedTrailing3(ModeLineFields fields,
                                                                   const std::string &positionText) const {
   int cols = display_.columns();
@@ -1203,7 +1227,7 @@ ContentView::ModeLineFields ContentView::withTruncatedTrailing3(ModeLineFields f
   if (!fields.name.empty()) base += static_cast<int>(fields.name.size()) + 1;
   if (!fields.trailing.empty()) base += static_cast<int>(fields.trailing.size()) + 1;
   if (!fields.trailing2.empty()) base += static_cast<int>(fields.trailing2.size()) + 1;
-  int budget = cols - base - 1;  // 1 for the gap before trailing3 itself
+  int budget = cols - base - 1;  // trailing3自体の前のギャップのための1
   if (static_cast<int>(fields.trailing3.size()) <= budget) return fields;
   fields.trailing3 = budget >= 4 ? middleEllipsisTruncate(fields.trailing3, budget) : std::string();
   return fields;
@@ -1220,31 +1244,31 @@ ContentView::FieldFit ContentView::fitModeLineFields(const ModeLineFields &field
     return len;
   };
   if (cols <= 0 || rowLen(true, true, true) <= cols) return {true, true, true};
-  // 2026-08-11 fix: `trailing` and `trailing2` used to be dropped
-  // together as one all-or-nothing unit whenever the combined width
-  // overflowed -- a real report found the ^J^C candidate list's own
-  // long regex-pattern preview (`trailing`) pushing the row over the
-  // column budget, which silently dropped trailing2 (the destination
-  // directory) too even though trailing2 ALONE would easily have
-  // fit. `trailing` (a short decorative tag like "(fgrep)" for every
-  // OTHER provider, or here a long, less essential live-preview) is
-  // now dropped first, keeping trailing2 (the more load-bearing
-  // context -- a directory path) visible whenever there's room for it
-  // on its own.
+  // 2026-08-11の修正: `trailing`と`trailing2`は以前、合計幅が
+  // 溢れるたびに1つのall-or-nothingの単位として一緒に落とされて
+  // いた――実際の報告が、^J^C候補一覧自身の長い正規表現パターンの
+  // プレビュー(`trailing`)が行を列の予算を超えて押し出し、
+  // trailing2(移動先ディレクトリ)単独なら簡単に収まったはずなのに
+  // それも黙って落としてしまうことを発見した。`trailing`(他の
+  // 全てのプロバイダに対しては「(fgrep)」のような短い装飾的な
+  // タグ、あるいはここでは長い、それほど重要でないライブプレビュー)
+  // が今は先に落とされ、trailing2(より重要な文脈――ディレクトリ
+  // パス)は、それ単独で収まる余地がある限り可視のままになる。
   if (rowLen(true, false, true) <= cols) return {true, false, true};
-  // 2026-08-14 fix: the tier above assumes dropping `trailing` alone
-  // is always enough once `trailing2` fits on its own -- true for
-  // GREP's own case (a long preview vs. a short destination
-  // directory), but FALSE whenever trailing2 itself is the long field
-  // (e.g. FileMode's directory, or its new LOCATE-path annotation --
-  // see FileMode::setSearchAnnotation()) and trailing is short (e.g.
-  // FileMode's byte count). A real report ("モードラインにバイト数
-  // 「397723」...が無い") found exactly this: a long directory alone
-  // still didn't fit, so BOTH tiers above failed and the fallback below
-  // dropped trailing (the byte count) too, even though trailing ALONE
-  // would easily have fit without trailing2 in the way. Tried before
-  // giving up entirely, so a short, useful trailing is shown whenever
-  // it's the long trailing2 that's actually the problem.
+  // 2026-08-14の修正: 上の階層は、`trailing2`が単独で収まる時点で
+  // `trailing`だけを落とせば常に十分だと想定している――GREP自身の
+  // ケース(長いプレビュー対短い移動先ディレクトリ)では真だが、
+  // trailing2自体が長いフィールドである(例えばFileModeの
+  // ディレクトリ、またはその新しいLOCATEパス注釈――FileMode::
+  // setSearchAnnotation()参照)かつtrailingが短い(例えばFileMode
+  // のバイト数)場合は「偽」である。実際の報告("モードラインに
+  // バイト数「397723」...が無い")がまさにこれを発見した: 長い
+  // ディレクトリ単独でもまだ収まらないので、上の「両方の」階層が
+  // 失敗し、下のフォールバックはtrailing(バイト数)も落として
+  // しまっていた。trailing単独ならtrailing2が邪魔をしなければ
+  // 簡単に収まったはずなのに。完全に諦める前に試すことで、実際に
+  // 問題なのが長いtrailing2である場合には、短い、有用なtrailingが
+  // 表示される。
   if (rowLen(true, true, false) <= cols) return {true, true, false};
   if (rowLen(true, false, false) <= cols) return {true, false, false};
   return {false, false, false};
@@ -1257,43 +1281,45 @@ std::string ContentView::composeModeLineRow(const std::string &positionText) con
   FieldFit fit = fitModeLineFields(fields, positionText);
 
   std::string row = positionText;
-  // 2026-08-11 fix: trailing2 used to be nested inside `!fields.
-  // trailing.empty()`, so a field with a non-empty trailing2 but an
-  // EMPTY trailing (e.g. the ^J^C candidate list's own provider, whose
-  // `trailing` is the currently-highlighted item and can legitimately
-  // be empty on an empty ring while trailing2 -- the destination
-  // directory -- still has something to show) silently dropped
-  // trailing2 entirely. Each field's own emptiness now gates only
-  // itself.
+  // 2026-08-11の修正: trailing2は以前`!fields.trailing.empty()`の
+  // 中にネストされていたので、空でないtrailing2を持つが「空の」
+  // trailingを持つフィールド(例えば^J^C候補一覧自身のプロバイダ、
+  // その`trailing`は現在ハイライトされている項目であり、空のリング
+  // では正当に空であり得る一方、trailing2――移動先ディレクトリ
+  // ――は依然として表示すべき何かを持つ)は、trailing2を完全に
+  // 黙って落としてしまっていた。各フィールド自身の空かどうかは今や
+  // それ自身だけをゲートする。
   if (fit.showTrailing && !fields.trailing.empty()) row += " " + fields.trailing;
   if (fit.showTrailing2 && !fields.trailing2.empty()) row += " " + fields.trailing2;
-  // See ModeLineFields::trailing3's own comment -- always appended when
-  // present (no fit-tier gating, matching renderModeLine()'s own
-  // permissive drop-if-no-room policy; this plain-string consumer has no
-  // column budget of its own to check against here).
+  // ModeLineFields::trailing3自身のコメント参照――存在する場合は
+  // 常に追加される(fit階層によるゲートは無く、renderModeLine()
+  // 自身の寛容な「余地が無ければ落とす」ポリシーに合わせている。
+  // このプレーンな文字列の消費者は、ここでチェックすべき自身の
+  // 列の予算を持たない)。
   if (!fields.trailing3.empty()) row += " " + fields.trailing3;
   if (fit.showName && !fields.name.empty()) row = fields.name + " " + row;
   return row;
 }
 
-// Ported from print_line()'s current-line/total-line/percent display
-// (see ModeLine's own class comment for why only this sliver of
-// disp_window() moved into this class). row0_+height_ is always the
-// one screen row every mode's viewport leaves unused for exactly this
-// purpose (see Application::resize()'s "contentHeight = rows()-1"), so
-// no bounds check is needed here beyond what setViewport()'s caller
-// already guarantees.
+// print_line()の現在行/合計行/パーセント表示からの移植(disp_window()
+// のこの一片だけがこのクラスへ移された理由についてはModeLine自身の
+// クラスコメント参照)。row0_+height_は、まさにこの目的のために全て
+// のモードのビューポートが未使用のままにしておく1つの画面の行に
+// 常になっている(Application::resize()の「contentHeight =
+// rows()-1」参照)ので、setViewport()の呼び出し元が既に保証している
+// もの以上の境界チェックはここでは不要である。
 //
-// Draws name/position/trailing as SEPARATE reverse-video runs with a
-// single plain (non-standout) space between each, rather than one
-// continuous run over composeModeLineRow()'s combined string --
-// ported from disp_window() itself calling vt_stand()/vt_endstand()
-// around each field individually (put_str() for the name, then its
-// own pair inside print_line() for the position, see disp.c). A real
-// side-by-side comparison against CUI screenshots caught this: this
-// port's first attempt drew the fully-composed string as one run,
-// which reads as a single unbroken highlight bar -- CUI's mode-line
-// visibly has small black (unhighlighted) gaps between fields.
+// name/position/trailingを、composeModeLineRow()の結合された文字列
+// の上の1つの連続したrunではなく、それぞれの間に単一のプレーンな
+// (非standoutな)空白を挟んだ、「別々の」反転表示のrunとして描く
+// ――disp_window()自体が各フィールドを個別にvt_stand()/
+// vt_endstand()で囲んで呼んでいた(nameに対してはput_str()、
+// positionに対してはprint_line()内のそれ自身のペア、disp.c参照)
+// ことからの移植。実際の並べたCUIスクリーンショットとの比較が
+// これを捉えた: この移植の最初の試みは、完全に組み立てられた
+// 文字列を1つのrunとして描いており、それは1つの途切れないハイ
+// ライトバーとして読める――CUIのモードラインは、フィールドの間に
+// 目に見える小さな黒い(ハイライトされていない)ギャップを持つ。
 void ContentView::renderModeLine() {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
@@ -1306,23 +1332,24 @@ void ContentView::renderModeLine() {
   display_.moveCursor(modeLineRow, 0);
   display_.clearToEndOfLine();
 
-  // 2026-08-28 fix, a direct user report ("~/.usilic/usilicrcのGREP
+  // 2026-08-28の修正、直接のユーザー報告("~/.usilic/usilicrcのGREP
   // セクションに実際にある^L(0x0C、historyファイル内のモード区切り
-  // 用)がHISTORY一覧画面で「ハイライトのLが無い」"): item 283's own
-  // fix (see its own comment in this file, the trailingPlain branch)
-  // only patched THAT one rendering path -- this generic drawSegment()
-  // (used for every OTHER field renderModeLine()/renderSplitModeLine()
-  // draws, including the SAME candidate string when
-  // promptHistoryRecallKind_'s own !directEntry ("HISTORY" chronological
-  // toggle) branch explicitly sets trailingPlain=false) still put raw
-  // control bytes straight through, letting a real terminal's own
-  // cursor-moving reaction to them (e.g. ^L, form-feed, commonly means
-  // "clear/next page") corrupt whatever followed. Applying the exact
-  // same substitution here too, even though this whole segment is
-  // already Standout throughout (so there's no separate "make it stand
-  // out" visual need the way trailingPlain's otherwise-plain
-  // surrounding text has) -- safety against a raw byte reaching the
-  // terminal is the actual point.
+  // 用)がHISTORY一覧画面で「ハイライトのLが無い」"): 項目283自身の
+  // 修正(このファイル内の自身のコメント、trailingPlain分岐参照)は
+  // 「その」1つの描画経路だけを修正していた――この汎用的な
+  // drawSegment()(renderModeLine()/renderSplitModeLine()が描く他の
+  // 全てのフィールドに使われる。promptHistoryRecallKind_自身の
+  // !directEntry(「HISTORY」時系列トグル)分岐が明示的に
+  // trailingPlain=falseを設定する場合の同じ候補文字列を含む)は、
+  // 依然として生の制御バイトをそのまま通しており、それに対する
+  // 本物の端末自身のカーソル移動の反応(例えば^L、フォームフィード、
+  // 一般に「消去/次のページ」を意味する)が、それに続くものを
+  // 破壊するに任せていた。まさに同じ置き換えをここでも適用する。
+  // このセグメント全体が既に至る所Standoutである(なので
+  // trailingPlainのその他の点ではプレーンな周囲のテキストが持つ
+  // ような、別の「目立たせる」視覚的な必要性は無い)にも関わらず
+  // ――生のバイトが端末に到達することへの安全対策こそが実際の
+  // 要点である。
   auto drawSegment = [&](const std::string &text) {
     display_.setAttribute(Display::Attribute::Standout);
     for (unsigned char c : text) {
@@ -1331,7 +1358,7 @@ void ContentView::renderModeLine() {
     }
     display_.setAttribute(Display::Attribute::StandoutOff);
   };
-  // See ModeLineFields::nameUnderlined's own comment.
+  // ModeLineFields::nameUnderlined自身のコメント参照。
   auto drawUnderlineSegment = [&](const std::string &text) {
     display_.setAttribute(Display::Attribute::Underline);
     for (unsigned char c : text) display_.putChar(c);
@@ -1344,11 +1371,12 @@ void ContentView::renderModeLine() {
   }
 
   ModeLineFields rawFields = modeLineFieldsProvider_(cursorIndex_);
-  // See ModeLineFields::splitLayoutWhenCrowded's/renderSplitModeLine()'s
-  // own comments. Checked against the RAW (untruncated) fields, not
-  // withTruncatedFields()'s output -- a naive sum of the actual field
-  // lengths is exactly what decides whether the normal layout would
-  // have needed to start dropping fields in the first place.
+  // ModeLineFields::splitLayoutWhenCrowded/renderSplitModeLine()自身
+  // のコメント参照。withTruncatedFields()の出力ではなく「生の」
+  // (切り詰められていない)フィールドに対してチェックされる――実際
+  // のフィールドの長さの素朴な合計こそが、そもそも通常のレイアウト
+  // がフィールドを落とし始める必要があったかどうかを決めるもので
+  // ある。
   if (rawFields.splitLayoutWhenCrowded) {
     int cols = display_.columns();
     int naiveLen = static_cast<int>(positionText.size());
@@ -1374,87 +1402,91 @@ void ContentView::renderModeLine() {
   }
   drawSegment(positionText);
   drawnLen += static_cast<int>(positionText.size());
-  // 2026-08-11 fix: trailing2 used to be nested inside `!fields.
-  // trailing.empty()`, silently dropping it whenever trailing itself
-  // was empty (e.g. the ^J^C candidate list's own provider, whose
-  // `trailing` -- the currently-highlighted item -- can legitimately
-  // be empty on an empty ring while trailing2, the destination
-  // directory, still has something to show). Each field's own
-  // emptiness now gates only itself.
+  // 2026-08-11の修正: trailing2は以前`!fields.trailing.empty()`の
+  // 中にネストされており、trailing自体が空の時はそれを黙って落とし
+  // ていた(例えば^J^C候補一覧自身のプロバイダ、その`trailing`
+  // ――現在ハイライトされている項目――は空のリングでは正当に空で
+  // あり得る一方、trailing2、移動先ディレクトリは依然として表示
+  // すべき何かを持つ)。各フィールド自身の空かどうかは今やそれ
+  // 自身だけをゲートする。
   if (fit.showTrailing && !fields.trailing.empty()) {
     display_.putChar(' ');
     drawnLen += 1;
     std::string trailing = fields.trailing;
-    // Edge-padding (see below) applies to trailing2 when present (the
-    // LAST field actually drawn) -- see ModeLineFields::trailing2's
-    // own comment for why `trailing` itself is never padded once
-    // trailing2 exists (padding it too would erase the plain gap
-    // between the two that trailing2 exists to create in the first
-    // place).
-    // 2026-08-19 fix: also defers to trailing3 (see its own comment)
-    // when present, same reasoning as trailing2's own identical defer
-    // just below -- unreachable for ArchiveMode today (trailing2 and
-    // trailing3 are always set together there) but kept consistent so
-    // a future trailing2-less, trailing3-only provider doesn't silently
-    // lose its own edge-fill to `trailing` eating the whole row first.
+    // 端へのパディング(下参照)は、存在する場合はtrailing2(実際に
+    // 描画される「最後の」フィールド)に適用される――一度trailing2
+    // が存在すれば`trailing`自体が決してパディングされない理由に
+    // ついてはModeLineFields::trailing2自身のコメント参照(それも
+    // パディングすると、そもそもtrailing2が作るために存在する2つ
+    // の間のプレーンなギャップを消してしまう)。
+    // 2026-08-19の修正: 存在する場合、すぐ下のtrailing2自身の同一
+    // の譲歩と同じ理由で、trailing3(自身のコメント参照)にも譲る
+    // ――今日のArchiveModeでは到達不能(そこではtrailing2と
+    // trailing3は常に一緒に設定される)だが、将来のtrailing2無し、
+    // trailing3のみのプロバイダが、自身の端埋めを`trailing`が
+    // 行全体を先に食べてしまうことで黙って失わないよう、一貫性を
+    // 保つために保持されている。
     if (fields.fillTrailingToEdge && fields.trailing2.empty() && fields.trailing3.empty()) {
-      // Ported from disp_window()'s own `for (...) prev[i] = ' '`
-      // loop: pad with spaces (still inside this field's own standout
-      // run) so the highlight reaches the screen's right edge instead
-      // of stopping right after the text -- see ModeLineFields'
-      // fillTrailingToEdge comment for which modes want this.
-      // Capped at cols-1, NOT cols (2026-08-18 fix, a real report:
-      // RecentFile/RecentDirectory's own candidate-list mode line, the
-      // first caller with no rightWatermark to incidentally mask this,
-      // still looked unfilled on a real Terminal.app despite
-      // byte-for-byte-correct output -- confirmed via a `script`-
-      // captured raw session). Same root cause as renderLine()'s own
-      // 2026-08-13 fix just above in this file (see its own long
-      // comment): writing a Standout-marked character to the
-      // terminal's true LAST column triggers auto-wrap, silently
-      // moving the real cursor to a row that doesn't exist (this is
-      // ROW 24, the very bottom of the screen, deliberately OUTSIDE
-      // the DECSTBM scroll region set to rows 1-23) -- real terminals
-      // handle "wrap past the bottom-right corner, outside the scroll
-      // region" inconsistently, and Terminal.app's own handling here
-      // apparently defers repainting the row until some LATER,
-      // unrelated write nudges it (matching the exact symptom: fixed
-      // the instant ANY further key -- even one that redraws nothing
-      // else -- was pressed). DirectoryMode's own "(ls)" trailing field
-      // already uses this same fillTrailingToEdge path and hits the
-      // identical last-column write, but is masked by its own
-      // rightWatermark ("usilic v1.5b") being drawn immediately after,
-      // which repositions the cursor via its own moveCursor() call
-      // regardless of where auto-wrap silently left it -- coincidental
-      // cover, not a real fix, which is exactly why only the
-      // watermark-less RecentFile/RecentDirectory case ever surfaced
-      // this. Leaving the true last column unfilled is the same
-      // pragmatic tradeoff renderLine() already made deliberately (see
-      // its own comment) rather than one this function invents fresh.
+      // disp_window()自身の`for (...) prev[i] = ' '`ループからの
+      // 移植: (依然としてこのフィールド自身のstandout run内で)
+      // 空白でパディングし、テキストのすぐ後で止まるのではなく
+      // ハイライトが画面の右端に到達するようにする――どのモードが
+      // これを望むかについてはModeLineFieldsのfillTrailingToEdge
+      // コメント参照。
+      // cols-1で上限を設ける。colsでは「ない」(2026-08-18の修正、
+      // 実際の報告: RecentFile/RecentDirectory自身の候補一覧の
+      // モードライン。これをたまたま覆い隠すrightWatermarkを持たない
+      // 最初の呼び出し元は、バイト単位で正しい出力にも関わらず、
+      // 実際のTerminal.appでは依然として埋まっていないように
+      // 見えた――`script`でキャプチャした生のセッションで確認済み)。
+      // このファイル内のすぐ上のrenderLine()自身の2026-08-13の修正
+      // (自身の長いコメント参照)と同じ根本原因: 端末の本当の
+      // 「最後の」列へStandoutでマークされた文字を書くと自動折り
+      // 返しが引き起こされ、実際のカーソルが存在しない行(これは
+      // 行24、画面のまさに最下部で、1-23行に設定されたDECSTBM
+      // スクロール領域の意図的に外側)へ黙って移動してしまう
+      // ――本物の端末は「右下端を越えて折り返す、スクロール領域の
+      // 外側」を一貫性なく処理し、ここでのTerminal.app自身の処理は
+      // どうやら、何か「後の」、無関係な書き込みがそれを促すまで、
+      // その行の再描画を先延ばしにしているようだ(まさにその症状に
+      // 一致する: 他に何も再描画しないキーであっても、さらなる
+      // キー入力が押された瞬間に直った)。DirectoryMode自身の
+      // 「(ls)」trailingフィールドは、既にこの同じfillTrailingToEdge
+      // 経路を使っており、同一の最終列への書き込みに当たっている
+      // が、その直後に描画される自身のrightWatermark("usilic
+      // v1.5b")によって覆い隠されている。それは、自動折り返しが
+      // 黙ってどこへカーソルを残したかに関わらず、自身の
+      // moveCursor()呼び出し経由でカーソルを再配置するため――偶然の
+      // 覆い隠しであり、本当の修正ではない。これが、透かしの無い
+      // RecentFile/RecentDirectoryのケースだけがこれを表面化させた
+      // まさにその理由である。本当の最後の列を埋めないままにする
+      // ことは、この関数が新たに考案したものではなく、renderLine()
+      // が既に意図的に行った同じ実用的なトレードオフである(自身の
+      // コメント参照)。
       int remaining = (cols - 1) - drawnLen - static_cast<int>(trailing.size());
       if (remaining > 0) trailing += std::string(remaining, ' ');
     }
-    // See ModeLineFields::trailingPlain's own comment. 2026-08-12 fix:
-    // this used to putChar() every byte completely raw, including
-    // literal control bytes embedded in a candidate pattern (e.g.
-    // usilicrc's own "^  [0-9]\x08[0-9]+\." GREP pattern, ^H = 0x08) --
-    // a real terminal receiving a raw 0x08 actually MOVES THE CURSOR
-    // BACK one column instead of printing anything, so the bytes that
-    // followed silently overwrote what was already there (a real
-    // report/screenshot showed "[0-9]\x08[0-9]+." rendering as the
-    // garbled "[0-9[0-9]+.", the "]" clobbered by the backspace's own
-    // cursor movement plus the next "[" overwriting on top of it).
-    // Fixed the same way renderLine() (this same class, just above)
-    // already handles control bytes in ordinary CONTENT rows --
-    // reverse-video letter+'@' -- for consistency within this port
-    // (legacy's own reference rendering uses a different, literal
-    // "^"+letter two-character convention here, but this port has
-    // already deliberately diverged to the single-reversed-glyph
-    // convention everywhere else a control byte can appear -- LineEditor::
-    // renderVisible(), renderLine() itself -- so matching THOSE, not
-    // legacy verbatim, keeps this one candidate-preview text
-    // rendering identically wherever it's shown instead of picking up
-    // a third, one-off convention).
+    // ModeLineFields::trailingPlain自身のコメント参照。2026-08-12の
+    // 修正: これは以前、候補パターンに埋め込まれたリテラルな制御
+    // バイト(例えばusilicrc自身の"^  [0-9]\x08[0-9]+\."というGREP
+    // パターン、^H = 0x08)を含む全てのバイトを完全に生のまま
+    // putChar()していた――生の0x08を受け取った本物の端末は、何かを
+    // 印字する代わりに実際にカーソルを1列「後ろへ動かす」ので、
+    // その後に続くバイトは、既にそこにあったものを黙って上書きして
+    // いた(実際の報告/スクリーンショットが"[0-9]\x08[0-9]+."が
+    // 文字化けした"[0-9[0-9]+."として描画されることを示した。「]」
+    // がバックスペース自身のカーソル移動によって壊され、さらに次の
+    // 「[」がその上に上書きされる)。renderLine()(この同じクラス、
+    // すぐ上)が通常の「内容」行で既に制御バイトを扱っているのと
+    // 同じ方法――反転表示の文字+'@'――で修正されている。この移植
+    // 内での一貫性のため(legacy自身の参照描画は、ここでは異なる、
+    // リテラルな「^」+文字の2文字の慣習を使うが、この移植は、制御
+    // バイトが現れ得る他の全ての場所――LineEditor::renderVisible()、
+    // renderLine()自体――で、既に意図的に単一の反転グリフの慣習へ
+    // 逸脱している。そのため、legacyそのままではなく「それら」に
+    // 合わせることで、この1つの候補プレビューテキストが、3つ目の
+    // 一回限りの慣習を拾い上げるのではなく、表示される場所に関わら
+    // ず同一に描画される)。
     if (fields.trailingPlain) {
       for (unsigned char c : trailing) {
         if (c == '\t') {
@@ -1475,26 +1507,26 @@ void ContentView::renderModeLine() {
       drawSegment(trailing);
     }
     drawnLen += static_cast<int>(trailing.size());
-    // See setCursorAtModeLineTrailingEnd()'s own comment: cached here
-    // (not recomputed by syncVisibleCursor() itself) so it always
-    // matches EXACTLY what was actually drawn -- trailing only ends up
-    // padded to the row's own edge above when trailing2 is empty (see
-    // the fillTrailingToEdge check just above), which never applies to
-    // the ^J^S/^J^C candidate list this exists for (it always has a
-    // non-empty trailing2, the destination directory), so drawnLen
-    // here is genuinely "right after the candidate's own text", not
-    // "the row's full width".
+    // setCursorAtModeLineTrailingEnd()自身のコメント参照: ここで
+    // キャッシュされる(syncVisibleCursor()自体によって再計算され
+    // ない)ので、常に実際に描画されたものと「正確に」一致する
+    // ――trailingは、trailing2が空の場合にだけ、上で行自身の端まで
+    // パディングされる結果になる(すぐ上のfillTrailingToEdgeの
+    // チェック参照)。これはこれが存在する対象である^J^S/^J^C候補
+    // 一覧には決して当てはまらない(それは常に空でないtrailing2、
+    // 移動先ディレクトリを持つ)ので、ここでのdrawnLenは、「行の
+    // 全幅」ではなく、本当に「候補自身のテキストのすぐ後」である。
     lastModeLineTrailingEndColumn_ = drawnLen;
   }
   if (fit.showTrailing2 && !fields.trailing2.empty()) {
     std::string trailing2 = fields.trailing2;
-    // trailing2RightJustified (2026-08-12 fix): see its own comment.
-    // Moves the cursor straight to the edge-aligned start column
-    // instead of drawing sequentially right after `trailing`'s own
-    // gap -- the candidate-preview text's own length varies from
-    // search to search, so a purely-sequential trailing2 (this port's
-    // ORIGINAL, still-default behavior for every OTHER provider) drifts
-    // left and right with it instead of staying pinned to the edge.
+    // trailing2RightJustified(2026-08-12の修正): 自身のコメント
+    // 参照。`trailing`自身のギャップのすぐ後に順次描画する代わりに、
+    // カーソルを端揃えの開始列へ直接移動する――候補プレビュー
+    // テキスト自身の長さは検索ごとに変わるので、純粋に順次的な
+    // trailing2(この移植の「元々の」、他の全てのプロバイダに対して
+    // 依然としてデフォルトの挙動)は、端に固定されたままである
+    // 代わりに、それと一緒に左右に漂ってしまう。
     if (fields.trailing2RightJustified) {
       display_.moveCursor(modeLineRow, cols - static_cast<int>(trailing2.size()));
       drawSegment(trailing2);
@@ -1502,16 +1534,17 @@ void ContentView::renderModeLine() {
     } else {
       display_.putChar(' ');
       drawnLen += 1;
-      // 2026-08-19 fix, same shape as trailing's own "only pad if
-      // trailing2 is ALSO empty" gate just above: trailing3 (see its
-      // own comment) can now exist as a genuine field AFTER trailing2,
-      // so edge-padding here defers to IT when present -- otherwise
-      // trailing2 (e.g. ArchiveMode's own "(tar)" badge) silently ate
-      // the ENTIRE rest of the row, leaving no room for trailing3 (the
-      // path) to ever be drawn at all (a real regression caught by this
-      // file's own doctest: modeLineText() still reported the path via
-      // composeModeLineRow()'s unconditional append, but the real
-      // renderModeLine() row never showed it).
+      // 2026-08-19の修正、すぐ上のtrailing自身の「trailing2も
+      // 空の場合にだけパディングする」ゲートと同じ形: trailing3
+      // (自身のコメント参照)は今やtrailing2の「後の」本物の
+      // フィールドとして存在し得るので、ここでの端へのパディング
+      // は、それが存在する時はそれに譲る――そうしないと、trailing2
+      // (例えばArchiveMode自身の「(tar)」バッジ)が行の残り「全て」
+      // を黙って食べてしまい、trailing3(パス)が全く描画される余地
+      // を残さなくなる(このファイル自身のdoctestが捉えた実際の
+      // 退行: modeLineText()はcomposeModeLineRow()の無条件の追加
+      // 経由でパスを依然として報告していたが、実際のrenderModeLine()
+      // の行は決してそれを表示していなかった)。
       if (fields.fillTrailingToEdge && fields.trailing3.empty()) {
         int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
         if (remaining > 0) trailing2 += std::string(remaining, ' ');
@@ -1520,16 +1553,18 @@ void ContentView::renderModeLine() {
       drawnLen += static_cast<int>(trailing2.size());
     }
   }
-  // See ModeLineFields::trailing3's own comment. No right-justify/
-  // truncation options (unlike trailing/trailing2 above) -- just "show
-  // it after its own plain gap if there's room, otherwise drop it".
-  // fillTrailingToEdge IS honored here though (2026-08-19 follow-up, a
-  // real report =dj: "戻り値が右端まで埋まってない" -- trailing3 is now
-  // the actual LAST field drawn for ArchiveMode's own listing, same
-  // "pad the row to the edge" treatment trailing/trailing2 already give
-  // whichever of THEM is last when trailing3 is empty; same cols-1 cap
-  // as those two, for the identical auto-wrap-past-the-true-last-column
-  // reason documented on trailing's own fillTrailingToEdge block above).
+  // ModeLineFields::trailing3自身のコメント参照。(上のtrailing/
+  // trailing2とは異なり)右揃え/切り詰めのオプションは無い――単に
+  // 「余地があれば自身のプレーンなギャップの後に表示し、そうでな
+  // ければ落とす」。ただしfillTrailingToEdgeはここで尊重される
+  // (2026-08-19の追加依頼、実際の報告=dj: "戻り値が右端まで埋まっ
+  // てない"――trailing3は今やArchiveMode自身の一覧表示に対して
+  // 実際に描画される「最後の」フィールドであり、trailing3が空の
+  // 時に「それらの」うちどちらであれ最後のものにtrailing/trailing2
+  // が既に与えている「行を端までパディングする」扱いと同じ。
+  // 上のtrailing自身のfillTrailingToEdgeブロックで文書化されて
+  // いるのと同一の、本当の最終列を越える自動折り返しの理由による、
+  // その2つと同じcols-1の上限)。
   if (!fields.trailing3.empty()) {
     std::string trailing3 = fields.trailing3;
     int candidateLen = 1 + static_cast<int>(trailing3.size());
@@ -1545,17 +1580,17 @@ void ContentView::renderModeLine() {
     }
   }
 
-  // Ported from disp_window()'s own fallback: when there's no
-  // "previous mode" text to show (mode-line[6] -- see
-  // ModeLineFields::rightWatermark's own comment for exactly which
-  // modes this is), the program name and version are right-aligned in
-  // BOLD (not reverse-video) at the screen's own right edge instead --
-  // confirmed against a real CUI screenshot showing "usilic v1.5b"
-  // there on the directory-listing screen specifically (not file
-  // view, where fillTrailingToEdge above already fills the row and
-  // naturally leaves no room, matching legacy: prev0 is non-empty
-  // there so this whole fallback branch never runs in the C source
-  // either).
+  // disp_window()自身のフォールバックからの移植: 「前モード」の
+  // テキストが表示すべきものとして無い場合(mode-line[6]――正確に
+  // これがどのモードなのかについてはModeLineFields::rightWatermark
+  // 自身のコメント参照)、代わりにプログラム名とバージョンが、
+  // 画面自身の右端に(反転表示ではなく)「太字」で右揃えされる
+  // ――特にディレクトリ一覧画面でそこに「usilic v1.5b」を表示する
+  // 実際のCUIスクリーンショットに対して確認済み(ファイルビューで
+  // はない。そこでは上のfillTrailingToEdgeが既に行を満たしており、
+  // 自然に余地を残さない。legacyに合わせている: そこではprev0が
+  // 空でないので、この全体のフォールバック分岐はC言語のソースでも
+  // 決して実行されない)。
   if (!fields.rightWatermark.empty()) {
     std::string watermark = " " + fields.rightWatermark + " ";
     if (cols > 0 && drawnLen + static_cast<int>(watermark.size()) <= cols) {
@@ -1567,57 +1602,60 @@ void ContentView::renderModeLine() {
   }
 }
 
-// See ModeLineFields::splitLayoutWhenCrowded's own comment for why this
-// exists and when renderModeLine() reaches for it instead of the usual
-// fitModeLineFields()/withTruncatedFields() tiers. Direct user proposal
-// (report =dh follow-up): "『「1/1 END」「111」』をまずは中央へ→残りの
-// エリア半分ずつを「モード名」「戻り値」で分け合った上でそれぞれ...".
-// `positionText`+`trailing` are centered as a pair (own plain gap
-// between the two, same convention as every other field pair in
-// renderModeLine()); name is drawn from column 0 and trailing2 from the
-// right edge, each independently Finder-style middle-ellipsis truncated
-// to whatever width is actually left once the centered pair claims its
-// own space -- unlike fitModeLineFields()'s all-or-nothing drop, this
-// guarantees SOME of both name and trailing2 stays visible instead of
-// one vanishing entirely, and never drops `trailing` (the byte count)
-// at all, which is exactly what the old tiers did whenever name+
-// trailing2 together didn't fit (the report this exists for).
+// これが存在する理由と、renderModeLine()が、通常の
+// fitModeLineFields()/withTruncatedFields()の階層の代わりにいつ
+// これへ手を伸ばすかについてはModeLineFields::splitLayoutWhenCrowded
+// 自身のコメント参照。直接のユーザー提案(報告=dhの追加依頼):
+// "『「1/1 END」「111」』をまずは中央へ→残りのエリア半分ずつを
+// 「モード名」「戻り値」で分け合った上でそれぞれ...". `positionText`
+// +`trailing`はペアとして中央に置かれる(2つの間に自身のプレーンな
+// ギャップ、renderModeLine()の他の全てのフィールドのペアと同じ
+// 慣習)。nameは列0から、trailing2は右端から描かれ、それぞれ独立に
+// Finderスタイルの中間省略記号で、中央のペアが自身の空間を確保した
+// 後に実際に残っている幅まで切り詰められる――fitModeLineFields()の
+// all-or-nothingの落とし方とは異なり、これは、片方が完全に消える
+// のではなく、nameとtrailing2の「両方」の一部が可視のままである
+// ことを保証し、name+trailing2が一緒になって収まらない時に古い
+// 階層がまさに行っていた(これが存在する理由の報告)、`trailing`
+// (バイト数)を全く落とすことを決してしない。
 //
-// Uses middleEllipsisTruncateByWidth() (2026-08-20 fix, a real report
-// "モード名...が短め" -- a CJK-heavy name came back noticeably shorter
-// than its own leftBudget column count): leftBudget/rightBudget below
-// are genuine screen-COLUMN counts, but the original version of this
-// function truncated with the byte-based middleEllipsisTruncate() --
-// safe for withTruncatedFields()'s own callers (see that function's own
-// comment on why it stays byte-based), but WRONG here, where a 33-
-// column budget was being spent as if it were 33 BYTES, letting through
-// only ~11 CJK characters (3 bytes each) instead of the ~16 the real
-// column budget allows. This function never feeds its output back into
-// fitModeLineFields()'s own byte-length tiers (unlike withTruncatedFields()'s
-// callers) -- it draws directly with explicit column positions computed
-// right here -- so switching to the width-based sibling is safe.
+// middleEllipsisTruncateByWidth()を使う(2026-08-20の修正、実際の
+// 報告"モード名...が短め"――CJK重めの名前が、自身のleftBudgetの
+// 列数よりも目に見えて短く戻ってきた): 下のleftBudget/rightBudget
+// は本物の画面「列」数だが、この関数の元のバージョンはバイト
+// ベースのmiddleEllipsisTruncate()で切り詰めていた――
+// withTruncatedFields()自身の呼び出し元にとっては安全(なぜそれが
+// バイトベースのままなのかについてはその関数自身のコメント参照)
+// だが、ここでは「誤り」であり、33列の予算が33「バイト」であるか
+// のように使われてしまい、実際の列予算が許す約16文字ではなく、
+// (それぞれ3バイトの)約11個のCJK文字しか通していなかった。この
+// 関数は、その出力を(withTruncatedFields()の呼び出し元とは異なり)
+// 決してfitModeLineFields()自身のバイト長の階層へ戻して供給しない
+// ――それはここで直接計算された明示的な列位置で直接描画する――
+// ので、幅ベースの兄弟へ切り替えることは安全である。
 void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::string &positionText) {
   int modeLineRow = modeLineRow_.value_or(row0_ + height_);
   int cols = display_.columns();
   if (cols <= 0) return;
 
-  // 2026-08-28 fix, a direct user report ("~/.usilic/usilicrcのGREP
+  // 2026-08-28の修正、直接のユーザー報告("~/.usilic/usilicrcのGREP
   // セクションに実際にある^L(0x0C、historyファイル内のモード区切り
-  // 用)がHISTORY一覧画面で「ハイライトのLが無い」"): item 283's own
-  // fix (see its own comment in this file, the trailingPlain branch)
-  // only patched THAT one rendering path -- this generic drawSegment()
-  // (used for every OTHER field renderModeLine()/renderSplitModeLine()
-  // draws, including the SAME candidate string when
-  // promptHistoryRecallKind_'s own !directEntry ("HISTORY" chronological
-  // toggle) branch explicitly sets trailingPlain=false) still put raw
-  // control bytes straight through, letting a real terminal's own
-  // cursor-moving reaction to them (e.g. ^L, form-feed, commonly means
-  // "clear/next page") corrupt whatever followed. Applying the exact
-  // same substitution here too, even though this whole segment is
-  // already Standout throughout (so there's no separate "make it stand
-  // out" visual need the way trailingPlain's otherwise-plain
-  // surrounding text has) -- safety against a raw byte reaching the
-  // terminal is the actual point.
+  // 用)がHISTORY一覧画面で「ハイライトのLが無い」"): 項目283自身の
+  // 修正(このファイル内の自身のコメント、trailingPlain分岐参照)は
+  // 「その」1つの描画経路だけを修正していた――この汎用的な
+  // drawSegment()(renderModeLine()/renderSplitModeLine()が描く他の
+  // 全てのフィールドに使われる。promptHistoryRecallKind_自身の
+  // !directEntry(「HISTORY」時系列トグル)分岐が明示的に
+  // trailingPlain=falseを設定する場合の同じ候補文字列を含む)は、
+  // 依然として生の制御バイトをそのまま通しており、それに対する
+  // 本物の端末自身のカーソル移動の反応(例えば^L、フォームフィード、
+  // 一般に「消去/次のページ」を意味する)が、それに続くものを
+  // 破壊するに任せていた。まさに同じ置き換えをここでも適用する。
+  // このセグメント全体が既に至る所Standoutである(なので
+  // trailingPlainのその他の点ではプレーンな周囲のテキストが持つ
+  // ような、別の「目立たせる」視覚的な必要性は無い)にも関わらず
+  // ――生のバイトが端末に到達することへの安全対策こそが実際の
+  // 要点である。
   auto drawSegment = [&](const std::string &text) {
     display_.setAttribute(Display::Attribute::Standout);
     for (unsigned char c : text) {
@@ -1630,28 +1668,29 @@ void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::s
   std::string center = positionText;
   if (!fields.trailing.empty()) center += " " + fields.trailing;
   int centerLen = static_cast<int>(center.size());
-  // 2026-08-28 fix, a direct user report + own explicit spec ("戻り値＋
-  // モード名エリアがいずれも長過ぎ名称の時に限り中央に...残りを半々で
-  // いいけれども今回は「CLAUDE.md」だけなので臨機応変で"): centerStart
-  // used to be TRUE mathematical centering ((cols-centerLen)/2),
-  // independent of how long name/trailing2 actually were -- so a SHORT
-  // name (e.g. "CLAUDE.md") still only got its own fixed half (roughly
-  // centerStart-1 columns), leaving the REST of that half as dead,
-  // unused blank space, while trailing2 (the genuinely long side)
-  // stayed capped at the OTHER fixed half regardless, truncated more
-  // tightly than the real available width required. `available` is the
-  // combined name+trailing2 budget once the centered pair and its two
-  // gaps are accounted for; whichever side's OWN real width fits within
-  // half of it gets exactly that (no more), and the OTHER side gets
-  // whatever's left over -- ONLY when BOTH sides genuinely need more
-  // than half does this fall back to an even split. centerStart is
-  // THEN derived from leftBudget (not the other way around, see below),
-  // so the centered pair visually shifts toward whichever side is
-  // short -- still centered in the true 50/50 case, but no longer
-  // independent of it (this is what keeps trailing2's own right-
-  // justified draw position, computed from ITS width alone further
-  // down, from ever overlapping the centered pair: leftBudget+
-  // centerLen+rightBudget+2 gaps == cols exactly, by construction).
+  // 2026-08-28の修正、直接のユーザー報告+自身の明示的な仕様
+  // ("戻り値＋モード名エリアがいずれも長過ぎ名称の時に限り中央に
+  // ...残りを半々でいいけれども今回は「CLAUDE.md」だけなので臨機
+  // 応変で"): centerStartは以前、name/trailing2が実際にどれだけ
+  // 長いかとは独立に、真の数学的な中央((cols-centerLen)/2)だった
+  // ――そのため短いname(例えば「CLAUDE.md」)は、それでも自身の
+  // 固定された半分(おおよそcenterStart-1列)しか得られず、その
+  // 半分の「残り」は死んだ、未使用の空白として残る一方、trailing2
+  // (本当に長い側)は、実際に利用可能な幅が必要とするよりもきつく
+  // 切り詰められて、いずれにせよ「別の」固定された半分に制限され
+  // たままだった。`available`は、中央のペアとその2つのギャップが
+  // 計上された後の、name+trailing2の合わせた予算である。どちらの
+  // 側であれ、その側「自身の」実際の幅がその半分に収まる方が、
+  // (それ以上ではなく)ちょうどその分を得て、「もう一方の」側が
+  // 残りを得る――「両方の」側が本当に半分以上を必要とする場合に
+  // だけ、これは均等分割へフォールバックする。centerStartは
+  // 「その後」leftBudgetから導出される(下参照、逆ではない)ので、
+  // 中央のペアは視覚的にどちらか短い側へ寄る――真の50/50のケース
+  // では依然として中央にあるが、もはやそれとは独立ではない(これが、
+  // ITS幅だけからさらに下で計算されるtrailing2自身の右揃えの描画
+  // 位置が、中央のペアと決して重なることが無いようにするもので
+  // ある: 構築上、leftBudget+centerLen+rightBudget+2ギャップ ==
+  // colsに正確になる)。
   int available = std::max(0, cols - centerLen - 2);
   int nameWidth = totalDisplayWidth(fields.name);
   int trailing2Width = totalDisplayWidth(fields.trailing2);
@@ -1666,7 +1705,7 @@ void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::s
     leftBudget = available / 2;
     rightBudget = available - leftBudget;
   }
-  int centerStart = leftBudget + 1;  // +1: the plain gap before the center block
+  int centerStart = leftBudget + 1;  // +1: 中央ブロックの前のプレーンなギャップ
 
   std::string name = middleEllipsisTruncateByWidth(fields.name, leftBudget);
   std::string trailing2 = middleEllipsisTruncateByWidth(fields.trailing2, rightBudget);
@@ -1682,9 +1721,9 @@ void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::s
     drawSegment(fields.trailing);
   }
   if (!trailing2.empty()) {
-    // cols - display WIDTH (not byte length -- see this function's own
-    // comment) so a CJK-heavy trailing2 lands flush against the true
-    // right edge instead of stopping short by (bytes-width) columns.
+    // cols - 画面「幅」(バイト長ではない――この関数自身のコメント
+    // 参照)。CJK重めのtrailing2が(バイト-幅)列分手前で止まる
+    // のではなく、本当の右端にぴったり着地するように。
     int trailing2Start = std::max(0, cols - totalDisplayWidth(trailing2));
     display_.moveCursor(modeLineRow, trailing2Start);
     drawSegment(trailing2);
@@ -1699,23 +1738,25 @@ void ContentView::redraw() {
   for (int row = 0; row < height_; row++) {
     display_.moveCursor(row0_ + row, 0);
     display_.clearToEndOfLine();
-    if (row < rowOffset) continue;  // blank padding above the content, bottom-anchored only
+    if (row < rowOffset) continue;  // 内容の上の空白パディング、下端固定の場合のみ
     int idx = topIndex_ + (row - rowOffset);
     if (idx < static_cast<int>(lines_.size())) {
-      // See Line::neverHighlighted's own comment: this row opts out of
-      // Standout/Underline entirely, regardless of cursor/mark state.
+      // Line::neverHighlighted自身のコメント参照: この行は、
+      // カーソル/マーク状態に関わらず、Standout/Underlineを完全に
+      // 拒否する。
       bool cursorRow = idx == highlighted && cursorRowAlsoHighlighted_ && !lines_[idx].neverHighlighted;
       bool markedRow = markedPredicate_ && markedPredicate_(idx) && !lines_[idx].neverHighlighted;
-      // See setMarkedRowUsesUnderline()'s own comment: when enabled, a
-      // genuinely marked row gets its OWN Underline channel instead of
-      // being folded into the cursor row's Standout, so the two stay
-      // distinguishable. 2026-08-25 follow-up (a direct user report:
-      // Standout+Underline combined on the SAME row is hard to read --
-      // the reverse-video background makes the underline itself hard to
-      // see): marking now takes priority outright on a row that's both
-      // -- Underline only, no Standout -- rather than showing both SGR
-      // attributes at once. Disabled (the default), this collapses back
-      // to the exact pre-2026-08-25 single-boolean call.
+      // setMarkedRowUsesUnderline()自身のコメント参照: 有効な場合、
+      // 実際にマークされた行は、カーソル行のStandoutに折り込まれる
+      // のではなく、それ自身の「独立した」Underlineチャネルを得る
+      // ので、2つは区別可能なままである。2026-08-25の追加依頼
+      // (直接のユーザー報告: 同じ行にStandout+Underlineを組み合わ
+      // せると読みにくい――反転表示の背景がUnderline自体を見にくく
+      // する): 両方が当てはまる行では、両方のSGR属性を同時に表示
+      // するのではなく、マーキングが今は完全に優先される――
+      // Underlineのみ、Standoutは無し。無効な場合(デフォルト)、
+      // これは2026-08-25より前のまさに単一のboolean呼び出しに
+      // 戻る。
       if (markedRowUsesUnderline_) {
         renderLine(lines_[idx], cursorRow && !markedRow, markedRow);
       } else {
@@ -1724,18 +1765,19 @@ void ContentView::redraw() {
       renderedAny = true;
     }
   }
-  // 2026-08-05 fix: with zero lines the loop above never calls
-  // renderLine() at all (idx < lines_.size() is never true) -- a real
-  // user report found this left an EMPTY highlighted list (e.g. ^R with
-  // no history yet) with no on-screen indication of "you are here"
-  // whatsoever, compounded by the terminal's own real block cursor
-  // wandering off to wherever the mode-line was last drawn (see
-  // syncVisibleCursor()'s own comment). This placeholder row stands in
-  // for "the (nonexistent) current entry", at the same row a first real
-  // entry would occupy -- whether it's ALSO fully reverse-video like a
-  // real entry depends on emptyPlaceholderMarked_ (default true; see
-  // setEmptyPlaceholder()'s own comment for why grepView_ turns this
-  // off).
+  // 2026-08-05の修正: 行が0の場合、上のループは全くrenderLine()を
+  // 呼ばない(idx < lines_.size()は決してtrueにならない)――実際の
+  // ユーザー報告が、これが「空の」ハイライトされた一覧(例えば
+  // まだ履歴の無い^R)を、端末自身の実際のブロックカーソルが
+  // モードラインが最後に描かれた場所へさまよい出ることによって
+  // 悪化した(syncVisibleCursor()自身のコメント参照)、「あなたは
+  // ここにいる」という画面上の指標が全く無い状態のままにしていた
+  // ことを発見した。このプレースホルダーの行は、最初の本物の
+  // エントリが占めるであろうのと同じ行で、「(存在しない)現在の
+  // エントリ」の代わりを務める――それが本物のエントリのように
+  // 「完全に」反転表示でも「ある」かどうかは、emptyPlaceholderMarked_
+  // (デフォルトtrue、なぜgrepView_がこれをオフにするのかについては
+  // setEmptyPlaceholder()自身のコメント参照)による。
   if (!renderedAny && cursorHighlightEnabled_ && height_ > rowOffset) {
     display_.moveCursor(row0_ + rowOffset, 0);
     renderLine(emptyPlaceholderLine_, emptyPlaceholderMarked_);
