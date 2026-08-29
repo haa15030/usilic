@@ -10,185 +10,190 @@ namespace fm {
 DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &history,
                               const Configuration &configuration)
     : view_(view), modeStack_(modeStack), history_(history), configuration_(configuration) {
-  // Marked rows render Standout even off the cursor -- see
-  // ContentView::setMarkedPredicate()'s own comment for the real report
-  // this fixes (marking previously had zero visual feedback at all).
+  // マークされた行は、カーソルが外れていてもStandoutで描画される
+  // ――これが修正する実際の報告についてはContentView::
+  // setMarkedPredicate()自身のコメント参照(マーキングは以前、視覚的
+  // フィードバックが全く無かった)。
   view_.setMarkedPredicate([this](int index) { return isMarked(index); });
-  // Initial (not CP/MV/RM-armed) state: marks render Underline, kept
-  // distinct from the cursor row's own ordinary Standout -- see
-  // ContentView::setMarkedRowUsesUnderline()'s own comment for the real
-  // report this fixes ('['-marking a run of entries leaves the cursor
-  // resting one row past the last one actually marked, and that resting
-  // row used to read as "also marked" purely because it shared the same
-  // Standout box). Application::startCopyPrompt()/startMovePrompt()/
-  // startRemovePrompt() flip this back to false (and
-  // setCursorRowAlsoHighlighted() to false) once armed, matching
-  // legacy's own reference screenshot for THAT screen instead; the
-  // return-to-Directory paths flip both back to this initial pair.
+  // 初期状態(CP/MV/RM準備前): マークはUnderlineで描画され、カーソル行
+  // 自身の通常のStandoutとは区別される――これが修正する実際の報告に
+  // ついてはContentView::setMarkedRowUsesUnderline()自身のコメント
+  // 参照('['で一連のエントリをマークすると、カーソルは実際にマーク
+  // された最後の行から1行過ぎたところに留まり、その留まった行は、
+  // 単に同じStandoutの箱を共有していたという理由だけで「これも
+  // マークされている」ように見えてしまっていた)。Application::
+  // startCopyPrompt()/startMovePrompt()/startRemovePrompt()は、準備
+  // された時点でこれをfalseへ切り替える(setCursorRowAlsoHighlighted()
+  // もfalseへ)。「その」画面に対するlegacy自身の参照スクリーン
+  // ショットに合わせるため。Directoryへの復帰経路は両方をこの初期の
+  // 組に戻す。
   view_.setMarkedRowUsesUnderline(true);
-  // Mode-line fields, ported from disp_window()'s own field layout for
-  // the T_dir/file-selector case (name0[i]=='/' && *prev0==K_z keeps
-  // the whole absolute path as-is, see its comment): the current
-  // directory's full path on the left, and the listing command (e.g.
-  // "(ls)") on the right -- NOT the selected entry's name, which was
-  // this port's own invented design before this was corrected to
-  // match the real CUI. The right-edge "usilic v1.5b" watermark
-  // (rightWatermark, see its own comment on ModeLineFields) is the
-  // OTHER thing legacy shows on this screen specifically -- confirmed
-  // by a real CUI screenshot, and by prev0 genuinely being the "no
-  // previous-mode text" sentinel for T_dir in the C source (unlike
-  // File mode, which populates that slot with real content instead).
-  // "1.5b" mirrors tcb/src/version.h's own version tag -- this is the
-  // same project, same version epoch, just a different implementation
-  // language, so there's no reason to invent a separate number here.
-  // Registered once here rather than re-set on every enterDirectory()
-  // call since it's a live callback into currentDirectory_/
-  // configuration_, not a snapshot.
-  // 2026-08-15 addition: `trailing` changed from the "(ls)" program
-  // indicator to the listing's own total byte count, matching the
-  // SAME convention every other mode's own trailing field already
-  // uses (contentByteCount()/ContentView::totalByteCount(), see its
-  // own comment) -- a direct user request ("全モードのモードラインに
-  // 「画面TOPからENDまでのバイト数」を追加してほしい") specifically
-  // named Directory as one of the modes still missing this. All THREE
-  // of trailing/trailing2/rightWatermark were already spoken for here
-  // (byte count makes a fourth concept with nowhere obvious to go), so
-  // "(ls)" now lives in trailing2 instead, as a fallback shown only
-  // when searchAnnotation_ isn't set -- a search annotation (which
-  // mode a LOCATE/GREP/CUT search actually came from) is more
-  // situationally useful than the program name, which is almost always
-  // just "(ls)" anyway. A judgment call, not legacy-source-verified
-  // (this port has no legacy binary to compare a byte-count-showing
-  // Directory screen against); flagged for correction if this doesn't
-  // match what was actually meant.
+  // モードラインフィールド、disp_window()自身のT_dir/file-selector
+  // ケース向けフィールドレイアウト(name0[i]=='/' && *prev0==K_zが
+  // 絶対パス全体をそのまま保つ、そのコメント参照)からの移植: 左側に
+  // 現在のディレクトリの完全なパス、右側に一覧表示コマンド(例:
+  // "(ls)")――選択されたエントリの名前では「ない」。これは、実際の
+  // CUIに合わせるよう修正される前の、この移植独自の考案された設計
+  // だった。右端の「usilic v1.5b」透かし(rightWatermark、
+  // ModeLineFields自身のコメント参照)は、legacyがこの画面で特に
+  // 表示する「もう一つ」のもの――実際のCUIスクリーンショットで確認
+  // 済み、かつC言語のソースにおいてprev0がT_dirに対して本当に「前の
+  // モードのテキストが無い」番兵であること(実際の内容でそのスロット
+  // を埋めるFileモードとは異なる)による。「1.5b」はtcb/src/
+  // version.h自身のバージョンタグを反映している――これは同じ
+  // プロジェクト、同じバージョンの時代であり、単に実装言語が違う
+  // だけなので、ここで別の番号を考案する理由は無い。ここで一度だけ
+  // 登録され、enterDirectory()を呼ぶたびに再設定はされない。
+  // currentDirectory_/configuration_への生きたコールバックであり、
+  // スナップショットではないため。
+  // 2026-08-15の追加: `trailing`が、"(ls)"プログラム表示から一覧
+  // 自体の合計バイト数へ変更された。他の全モード自身のtrailing
+  // フィールドが既に使っている「同じ」慣習に合わせている
+  // (contentByteCount()/ContentView::totalByteCount()、自身のコメント
+  // 参照)――直接のユーザー依頼("全モードのモードラインに「画面TOP
+  // からENDまでのバイト数」を追加してほしい")が、特にDirectoryを
+  // まだこれが欠けているモードの1つとして挙げていた。trailing/
+  // trailing2/rightWatermarkの「3つ全て」がここで既に使われていた
+  // (バイト数は、明白な行き先の無い4つ目の概念になってしまう)ので、
+  // "(ls)"は代わりに今trailing2に住んでいる。searchAnnotation_が
+  // 設定されていない時だけ表示されるフォールバックとして――
+  // 検索注釈(LOCATE/GREP/CUT検索が実際にどのモードから来たか)は、
+  // ほぼ常に単に「(ls)」であるプログラム名よりも状況に応じて有用
+  // である。これは判断であり、legacyソースで検証されたものではない
+  // (この移植には、バイト数を表示するDirectory画面と比較すべき
+  // legacyバイナリが無い)。実際に意図されたものと一致しなければ
+  // 修正するよう印を付けてある。
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     const auto &ls = configuration_.commandFor(ConfiguredRole::Ls);
     std::string program = ls.argv.empty() ? "" : ls.argv.front();
     std::string programBadge = program.empty() ? "" : "(" + program + ")";
     std::string trailing2 = searchAnnotation_.empty() ? programBadge : searchAnnotation_;
-    // fillTrailingToEdge stays keyed on searchAnnotation_ specifically
-    // (NOT trailing2's own emptiness, which is now ALWAYS non-empty
-    // once "(ls)" is filling in as its fallback) -- a real regression
-    // found "(ls)" itself getting padded all the way to the row's
-    // right edge, which left renderModeLine()'s own drawnLen tracking
-    // already AT the column count by the time it got to rightWatermark,
-    // silently dropping "usilic v1.5b" via that function's own
-    // `drawnLen + watermark.size() <= cols` check -- exactly the
-    // "usilic v1.5b" half of the =bd/=be report this round was
-    // supposed to fix, not preserve.
+    // fillTrailingToEdgeは、trailing2自身の空かどうか(「(ls)」が
+    // フォールバックとして埋まるようになった今では常に非空である)
+    // ではなく、特にsearchAnnotation_に紐付けたままにしてある――
+    // 実際の退行として、「(ls)」自体が行の右端まで丸ごとパディング
+    // されてしまい、renderModeLine()自身のdrawnLen追跡がrightWatermark
+    // に到達する時点で既に列数「そのもの」になってしまい、その関数
+    // 自身の`drawnLen + watermark.size() <= cols`チェックによって
+    // 「usilic v1.5b」が黙って落とされていた――まさにこのラウンドが
+    // 修正すべきだった=bd/=be報告の「usilic v1.5b」側の半分であり、
+    // 保存すべきものではなかった。
     ContentView::ModeLineFields fields{currentDirectory_, std::to_string(view_.totalByteCount()),
                                         /*fillTrailingToEdge=*/!searchAnnotation_.empty(), "usilic v1.5b", trailing2};
-    // See reportEditError()'s/clearEditError()'s own comments -- NOT
-    // cleared here on read. A real user report (2026-08-17, GUI mode
-    // only: "-cはOKだが-gだといつもの一瞬出て消える症状") found that
-    // clearing it here (an earlier version of this code) made it
-    // vanish almost instantly under -g specifically: -g's run loop
-    // calls redraw() far more often than a keypress alone warrants
-    // (mouse-hover tracking, the ~60Hz idle loop, ...), so a
-    // read-once-and-clear flag got consumed by one of THOSE incidental
-    // reads before the message was ever actually visible on screen --
-    // -c never has this problem since nothing there calls redraw()
-    // except in direct response to a keypress. Cleared instead by
-    // clearEditError(), called once at the top of Application::
-    // handleCommand() for every dispatched command -- so this message
-    // now persists through any number of incidental redraws exactly the
-    // way legacy's own echo_mess() does, and only actually goes away
-    // once the user does something else.
+    // reportEditError()/clearEditError()自身のコメント参照――読み取り
+    // 時にここではクリアされ「ない」。実際のユーザー報告
+    // (2026-08-17、GUIモードのみ: "-cはOKだが-gだといつもの一瞬出て
+    // 消える症状")によると、ここでクリアする(このコードの以前の
+    // バージョン)と、-g特有で、これがほぼ即座に消えてしまった:
+    // -gの実行ループは、単なるキー入力だけで正当化されるよりも
+    // はるかに頻繁にredraw()を呼ぶ(マウスホバー追跡、約60Hzの
+    // アイドルループ、...)ので、一度読んでクリアするフラグは、
+    // メッセージが実際に画面上に表示される前に、それら「たまたまの」
+    // 読み取りの1つに消費されてしまった――そこで何もキー入力への
+    // 直接の反応以外でredraw()を呼ばない-cでは、これは決して問題に
+    // ならない。代わりに、Application::handleCommand()の先頭で、
+    // ディスパッチされる全てのコマンドに対して1回呼ばれる
+    // clearEditError()によってクリアされる――これにより、この
+    // メッセージは、legacy自身のecho_mess()とまさに同じ方法で、
+    // 何度たまたま再描画されても持続し、ユーザーが何か他のことを
+    // した時にだけ実際に消える。
     //
-    // Only `name`/`nameUnderlined` are overridden -- an earlier version
-    // returned a fresh, mostly-default-constructed ModeLineFields here
-    // instead, which silently dropped the byte count/"(ls)"/"usilic
-    // v1.5b" fields (all still computed above) for the error message's
-    // own duration -- a real report + screenshots (=cg/=ch) comparing
-    // the mode line before/after showed those fields visibly missing.
-    // Only the ONE field the user actually asked to be replaced
-    // ("左端モード名...だけを丸々消してメッセージを表示させたら？")
-    // changes now; everything else keeps rendering normally underneath.
+    // `name`/`nameUnderlined`だけが上書きされる――以前のバージョンは
+    // 代わりに、ここで新しい、ほとんどデフォルト構築されたままの
+    // ModeLineFieldsを返しており、それはエラーメッセージ自身の表示
+    // 期間中、(上で計算された)バイト数/"(ls)"/"usilic v1.5b"の各
+    // フィールドを黙って失っていた――実際の報告+スクリーンショット
+    // (=cg/=ch)が、前後のモードラインを比較して、それらのフィールド
+    // が目に見えて欠けていることを示した。ユーザーが実際に置き換え
+    // るよう頼んだ「1つだけの」フィールド("左端モード名...だけを
+    // 丸々消してメッセージを表示させたら？")だけが今変わる。他の
+    // 全ては下でそのまま普通に描画され続ける。
     if (showEditError_) {
-      // Padded (with trailing spaces, underlined along with the message
-      // itself) to the width of the directory name it replaces, rather
-      // than left at its own natural length -- a follow-up report found
-      // that a shorter replacement string shifted every field after it
-      // (the position/byte-count/trailing badges) left by the
-      // difference, even though those fields' own *content* was by then
-      // already correctly preserved (see the long comment block above).
-      // Guarded against currentDirectory_ being shorter than the
-      // message itself (e.g. "/"), in which case no padding is added
-      // and the shift is unavoidable.
+      // (末尾に空白を付けて、メッセージ自身と一緒に下線を引かれ)
+      // それ自身の自然な長さのままにしておくのではなく、それが
+      // 置き換えるディレクトリ名の幅までパディングされる――後続の
+      // 報告により、短い置換文字列がそれ以降の全フィールド(位置/
+      // バイト数/trailingの各バッジ)をその差分だけ左へずらして
+      // しまうことが分かった。それらのフィールド自身の「内容」は
+      // その時点で既に正しく保持されていたにも関わらず(上の長い
+      // コメントブロック参照)。currentDirectory_がメッセージ自身
+      // より短い場合(例: "/")に対して保護されており、その場合は
+      // パディングは追加されず、ずれは避けられない。
       std::string message = editErrorMessage_;
       if (message.size() < fields.name.size()) message.resize(fields.name.size(), ' ');
       fields.name = message;
       fields.nameUnderlined = true;
     } else if (!pendingOperationLabel_.empty()) {
-      // "CP"/"MV"/"RM" in place of the directory path, plain Standout
-      // (renderModeLine()'s own default for `name` -- NOT nameUnderlined,
-      // which is reserved for the showEditError_ status-message
-      // convention above; this is a MODE indicator, not an error) --
-      // 2026-08-21 addition, a real user report ("^Xc,m,r等反応無し")
-      // after the same day's ^X^M flow change (see Application::
-      // startCopyPrompt()'s own comment): arming used to be completely
-      // silent (no prompt shown until ^X^M), so a keypress that had, in
-      // fact, registered looked indistinguishable from one that hadn't.
-      // Set by Application::startCopyPrompt()/startMovePrompt()/
-      // startRemovePrompt() via setPendingOperationLabel(), cleared by
-      // clearPendingOperationLabel() once startDestinationPrompt() (^X^M)
-      // consumes the arm (success OR failure/staleness) -- and here too,
-      // by enterDirectory() itself, so a stale arm left over from
-      // navigating away doesn't keep showing a label for an operation
-      // that's no longer actually armed (see PendingCpMvRmOperation's
-      // own comment for why the arm itself doesn't survive that either).
+      // ディレクトリパスの代わりに"CP"/"MV"/"RM"、プレーンな
+      // Standout(renderModeLine()自身の`name`向けデフォルト――上の
+      // showEditError_のステータスメッセージ慣習のために予約されて
+      // いるnameUnderlinedでは「ない」。これはエラーではなく「モード」
+      // 表示である)――2026-08-21の追加、実際のユーザー報告
+      // ("^Xc,m,r等反応無し")、同日の^X^Mフロー変更後
+      // (Application::startCopyPrompt()自身のコメント参照): 準備は
+      // 以前は完全に無音だった(^X^Mまでプロンプトが表示されなかった)
+      // ので、実際には登録されていたキー入力が、登録されなかった
+      // ものと見分けが付かなかった。Application::startCopyPrompt()/
+      // startMovePrompt()/startRemovePrompt()がsetPendingOperationLabel()
+      // 経由で設定し、startDestinationPrompt()(^X^M)が準備を消費
+      // (成功「または」失敗/陳腐化)した時にclearPendingOperationLabel()
+      // によってクリアされる――そしてここでも、enterDirectory()
+      // 自身によって。他所へナビゲートしたことで残った古びた準備
+      // 状態が、もはや実際には準備されていない操作のラベルを表示し
+      // 続けることがないように(その準備状態自体もそれを生き残らない
+      // 理由についてはPendingCpMvRmOperation自身のコメント参照)。
       //
-      // Bare, UNPADDED "CP"/"MV"/"RM" -- 2026-08-22 correction, a direct
-      // user comparison against a real reference screenshot (=ed):
-      // legacy's own armed mode line concatenates fields at their
-      // natural width (a short "CP" label simply leaves the fields
-      // after it starting earlier than the unarmed layout would), unlike
-      // showEditError_'s own padding above (which deliberately
-      // preserves alignment with the SURROUNDING unarmed layout it
-      // temporarily replaces -- a different, narrower goal that doesn't
-      // apply here).
+      // 裸の、パディングされていない"CP"/"MV"/"RM"――2026-08-22の
+      // 修正、実際のユーザーによる本物の参照スクリーンショット(=ed)
+      // との直接比較: legacy自身の準備済みモードラインは、フィールド
+      // を自然な幅でそのまま連結する(短い"CP"ラベルは、単にそれ以降
+      // のフィールドを、準備されていないレイアウトより早い位置から
+      // 始めさせるだけ)。これは、それが一時的に置き換える「周囲の」
+      // 準備されていないレイアウトとの整列を意図的に保つ
+      // showEditError_自身のパディング(ここには当てはまらない、別の
+      // より狭い目的)とは異なる。
       fields.name = pendingOperationLabel_;
-      // The FULL directory path, not truncated -- 2026-08-21 addition
-      // (a direct user report, "=eiは（ls）からなので戻り値はディレク
-      // トリ名では？"), corrected 2026-08-22 (another direct comparison
-      // against =ed/=ee: legacy shows the path in full, right-padded
-      // with spaces to the row's own right edge, not "...”-truncated to
-      // a short tail the way drawPromptLabel()'s OWN destination-path
-      // convention does elsewhere). fillTrailingToEdge below both pads
-      // this to the edge AND (per its own established behavior, see
-      // renderModeLine()'s own comment) squeezes rightWatermark out for
-      // lack of room -- explicitly cleared here too, rather than left to
-      // rely on that as an incidental side effect.
+      // 切り詰められていない「完全な」ディレクトリパス――2026-08-21の
+      // 追加(直接のユーザー報告、"=eiは（ls）からなので戻り値は
+      // ディレクトリ名では？")、2026-08-22に修正(=ed/=eeとの別の
+      // 直接比較: legacyはパスを、drawPromptLabel「自身」の他所での
+      // 移動先パス慣習が行うような短い末尾への「...」切り詰めではなく、
+      // 行自身の右端まで空白で右パディングして全体を表示する)。下の
+      // fillTrailingToEdgeは、これを端までパディングし「かつ」
+      // (それ自身の確立された挙動通り、renderModeLine()自身のコメント
+      // 参照)スペース不足のためrightWatermarkを押し出す――これも
+      // たまたまの副作用として頼るのではなく、ここで明示的にクリア
+      // される。
       fields.trailing2 = currentDirectory_;
       fields.fillTrailingToEdge = true;
       fields.rightWatermark = "";
     }
-    // arcExtractSourceAnnotation_ (2026-08-26, see its own declaration
-    // comment): independent of the two branches above (showEditError_/
-    // pendingOperationLabel_ never coincide with this -- it's only ever
-    // set right after a successful archive extraction lands here, at
-    // which point neither of those is active) -- trailing2 stays the
-    // normal "(ls)" badge, only trailing3 (and, to make room for it,
-    // fillTrailingToEdge/rightWatermark) changes, matching ArchiveMode's
-    // own identical trailing2+trailing3 badge/path pairing.
+    // arcExtractSourceAnnotation_(2026-08-26、自身の宣言コメント
+    // 参照): 上の2つの分岐(showEditError_/pendingOperationLabel_)
+    // からは独立している(これらとこれが同時に起こることは決して
+    // 無い――これは、成功したアーカイブ展開がここへ着地した直後に
+    // だけ設定され、その時点ではそれらのどちらも有効ではない)――
+    // trailing2は通常の"(ls)"バッジのままで、trailing3(と、その
+    // ためのスペースを作るためのfillTrailingToEdge/rightWatermark)
+    // だけが変わる。ArchiveMode自身の同一のtrailing2+trailing3の
+    // バッジ/パスの組み合わせに合わせている。
     if (!arcExtractSourceAnnotation_.empty()) {
       fields.trailing3 = "ARC: " + arcExtractSourceAnnotation_;
       fields.fillTrailingToEdge = true;
       fields.rightWatermark = "";
     }
-    // splitLayoutWhenCrowded (2026-08-27 addition, a direct user
-    // report/callback to their own earlier HISTORY.md:9608 proposal,
-    // which archiveContentView_'s own provider already adopted --
-    // see its own comment in application.cpp): a real CJK filename
-    // long enough to crowd out the byte-count field used to just
-    // silently vanish here via fitModeLineFields()'s own ordinary
-    // all-or-nothing tiers, unlike ArchiveMode's content view, which
-    // already gets the "center the position+bytes, split the
-    // remaining space between name and trailing2" treatment for
-    // exactly this case. DirectoryMode's own `(ls)` listing can hit
-    // the identical crowding (any real file/directory NAME can be
-    // arbitrarily long, not just an archive entry's), so it gets the
-    // same treatment now.
+    // splitLayoutWhenCrowded(2026-08-27の追加、直接のユーザー報告/
+    // 自身の以前のHISTORY.md:9608提案への呼び戻し。これは
+    // archiveContentView_自身のプロバイダが既に採用している――
+    // application.cppの自身のコメント参照): バイト数フィールドを
+    // 押し出すほど長い実際のCJKファイル名は、ArchiveModeのcontent
+    // viewが既にこのまさにその場合に対して受けている「位置+バイト数
+    // を中央に置き、残りのスペースをnameとtrailing2で分割する」処理
+    // とは異なり、fitModeLineFields()自身の通常のall-or-nothing階層
+    // を介してここで黙って消えていた。DirectoryMode自身の`(ls)`一覧
+    // は同一の混雑に遭遇し得る(アーカイブエントリのものだけでなく、
+    // 実際のファイル/ディレクトリの「名前」は任意に長くなり得る)
+    // ので、今は同じ処理を受ける。
     fields.splitLayoutWhenCrowded = true;
     return fields;
   });
@@ -198,19 +203,20 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   ProgramCommand ls = configuration_.commandFor(ConfiguredRole::Ls);
   if (ls.argv.empty()) return false;
 
-  // Trailing-slash normalization, done HERE (before the `ls` argv is
-  // built) rather than only at the end of this function where
-  // currentDirectory_ itself gets it -- 2026-08-22 fix, a real report +
-  // screenshot (=en): BSD `ls` (macOS) treats a symlink-to-directory
-  // argument WITHOUT a trailing slash as "describe the symlink itself"
-  // (matching `ls -d`), not "list its contents", unlike GNU/Linux `ls`
-  // which always dereferences regardless -- `/tmp` itself is exactly
-  // such a symlink (-> `/private/tmp`) on macOS. executeCopy()/
-  // executeMove()'s own destination-navigation (enterDirectory(destination))
-  // passes whatever the user actually typed in the prompt verbatim,
-  // which had no reason to already end in "/" -- typing "/tmp" and
-  // landing there afterward showed only `/tmp`'s own symlink line
-  // ("1/1 END"), not its real contents.
+  // 末尾スラッシュの正規化。currentDirectory_自身がそれを受け取る
+  // この関数の末尾だけではなく「ここで」(`ls`のargvが構築される前に)
+  // 行う――2026-08-22の修正、実際の報告+スクリーンショット(=en):
+  // BSDの`ls`(macOS)は、末尾スラッシュ「無し」のディレクトリへの
+  // シンボリックリンク引数を、常にデリファレンスするGNU/Linuxの`ls`
+  // とは異なり、(`ls -d`と同様に)「その内容を一覧表示する」ではなく
+  // 「シンボリックリンク自体を記述する」として扱う――`/tmp`自体が、
+  // macOSではまさにそのようなシンボリックリンク(-> `/private/tmp`)
+  // である。executeCopy()/executeMove()自身の移動先ナビゲーション
+  // (enterDirectory(destination))は、ユーザーがプロンプトに実際に
+  // 入力したものをそのまま渡すが、それが既に「/」で終わっている
+  // 理由は無かった――「/tmp」と入力し、その後そこへ着地すると、
+  // `/tmp`自身のシンボリックリンク行("1/1 END")だけが表示され、
+  // その実際の内容は表示されなかった。
   std::string normalizedPath = path;
   if (!normalizedPath.empty() && normalizedPath.back() != '/') normalizedPath += '/';
 
@@ -218,12 +224,11 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   argv.push_back(normalizedPath);
 
   ChildProcess::Options options;
-  // Ported from fork_bin()'s LC_ALL=C forcing for exactly this
-  // reason: parseLsLine()'s month-name anchor only recognizes English
-  // abbreviations (see its own comment, ported from scroll.c's
-  // get_col()). Without this, a non-English locale's `ls` falls back
-  // to the last-space heuristic and mis-splits any filename
-  // containing a space.
+  // fork_bin()のLC_ALL=C強制からの、まさにこの理由での移植:
+  // parseLsLine()の月名アンカーは英語の略称しか認識しない(自身の
+  // コメント参照、scroll.cのget_col()からの移植)。これが無いと、
+  // 英語以外のロケールの`ls`は最後の空白によるヒューリスティックへ
+  // フォールバックし、空白を含むファイル名を誤って分割してしまう。
   options.forceCLocale = true;
   ChildProcess::Result result = ChildProcess::run(argv, options);
   if (!result.ok) return false;
@@ -234,7 +239,7 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   std::string line;
   while (std::getline(stream, line)) {
     if (line.empty()) continue;
-    if (line.rfind("total ", 0) == 0) continue;  // `ls -l`'s block-count summary line, not an entry
+    if (line.rfind("total ", 0) == 0) continue;  // `ls -l`のブロック数合計行、エントリではない
     DirectoryEntry entry = parseLsLine(line);
     ContentView::Line contentLine;
     contentLine.text = filenameOnlyMode_ ? entry.name : line;
@@ -243,49 +248,49 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
     entries.push_back(std::move(entry));
   }
 
-  // Trailing-slash normalization only (NOT canonicalization -- no
-  // symlink resolution, no relative-to-absolute conversion): matches
-  // the CUI mode-line's own directory display convention (see
-  // CLAUDE.md's real-screenshot comparison). Reuses normalizedPath
-  // (computed above, before the `ls` argv was built) rather than
-  // re-deriving the same normalization a second time.
+  // 末尾スラッシュの正規化のみ(正規化「ではない」――シンボリック
+  // リンクの解決も、相対から絶対への変換も無い): CUIモードライン
+  // 自身のディレクトリ表示慣習に合わせている(CLAUDE.mdの実際の
+  // スクリーンショット比較参照)。normalizedPath(上で、`ls`のargvが
+  // 構築される前に計算済み)を再利用し、同じ正規化を2回導出しない。
   currentDirectory_ = normalizedPath;
-  searchAnnotation_.clear();  // a fresh `ls` invalidates the old search -- see setSearchAnnotation()'s own comment
+  searchAnnotation_.clear();  // 新しい`ls`は古い検索を無効にする――setSearchAnnotation()自身のコメント参照
   entries_ = std::move(entries);
-  markedIndices_.clear();  // marks are scoped to the listing they were made in; a fresh `ls` invalidates them
-  // A CP/MV/RM arm is scoped to the directory it was made in too (see
-  // Application::PendingCpMvRmOperation's own comment) -- clearing the
-  // LABEL here as well (not just Application's own state) keeps the
-  // mode line from continuing to show "CP"/etc. for an arm that a fresh
-  // `ls` (e.g. navigating to a different directory) has already made
-  // stale.
+  markedIndices_.clear();  // マークはそれが行われた一覧にスコープされる。新しい`ls`はそれらを無効にする
+  // CP/MV/RMの準備状態も、それが行われたディレクトリにスコープされて
+  // いる(Application::PendingCpMvRmOperation自身のコメント参照)――
+  // ここでも(Application自身の状態だけでなく)「ラベル」をクリア
+  // することで、新しい`ls`(例えば別のディレクトリへのナビゲート)が
+  // 既に陳腐化させた準備状態に対して、モードラインが"CP"等を表示し
+  // 続けないようにする。
   clearPendingOperationLabel();
-  // See setArcExtractSourceAnnotation()'s own comment: a fresh `ls`
-  // (any real navigation away from the directory a successful archive
-  // extraction just landed on) invalidates it, same lifetime as the
-  // CP/MV/RM arm label just above.
+  // setArcExtractSourceAnnotation()自身のコメント参照: 新しい`ls`
+  // (成功したアーカイブ展開がちょうど着地したディレクトリからの
+  // 実際の離脱ナビゲート)はこれを無効にする。すぐ上のCP/MV/RM
+  // 準備状態ラベルと同じ寿命。
   arcExtractSourceAnnotation_.clear();
-  // Same restore cancelPendingCpMvRm()/startDestinationPrompt() do on
-  // their own un-arm paths -- a stale arm cleared here (navigating to a
-  // different directory) must not leave the cursor row's own highlight
-  // still suppressed. 2026-08-27: setMarkedRowUsesUnderline(true) added
-  // alongside it, for the exact same reason -- startCopyPrompt()/etc.'s
-  // own destination-prompt-active phase suppresses both together (see
-  // its own comment), and a SUCCESSFUL CP/MV/RM landing here (via
-  // descendTo()/enterDirectory() from Application::
-  // pollPendingCpMvRmShellRun()) is one of the paths that must restore
-  // it, same as the cancel path already does explicitly -- centralized
-  // here instead, since every one of these paths converges on
-  // enterDirectory() regardless.
+  // cancelPendingCpMvRm()/startDestinationPrompt()が自身の準備解除
+  // 経路で行うのと同じ復元――ここでクリアされる古びた準備状態
+  // (別のディレクトリへのナビゲート)は、カーソル行自身のハイライト
+  // を抑制されたままにしてはならない。2026-08-27:
+  // setMarkedRowUsesUnderline(true)が、まさに同じ理由でこれと並んで
+  // 追加された――startCopyPrompt()等自身の移動先プロンプトが有効な
+  // フェーズは両方を一緒に抑制する(自身のコメント参照)。そして
+  // ここへの「成功した」CP/MV/RMの着地(Application::
+  // pollPendingCpMvRmShellRun()からのdescendTo()/enterDirectory()経由)
+  // は、取り消し経路が既に明示的に行っているのと同様に、それを復元
+  // しなければならない経路の1つである――これらの経路はいずれにせよ
+  // 全てenterDirectory()に収束するので、代わりにここで一元化されて
+  // いる。
   view_.setCursorRowAlsoHighlighted(true);
   view_.setMarkedRowUsesUnderline(true);
   view_.setLines(std::move(lines));
 
-  // K-48 (^X^D, "DIR: Select directory name")'s own data source --
-  // every successfully-listed directory counts as "accessed" (HELP.jp
-  // 2.9's own broad wording), matching History::pushRecent()'s
-  // existing first-occurrence-wins/capped-size behavior (see its own
-  // comment) -- no extra bookkeeping needed here.
+  // K-48(^X^D、「DIR: Select directory name」)自身のデータソース
+  // ――正常に一覧表示された全てのディレクトリは「アクセス済み」と
+  // 数える(HELP.jp 2.9自身の広い表現)。History::pushRecent()の既存の
+  // 「最初の出現優先/上限付きサイズ」挙動(自身のコメント参照)に
+  // 合わせている――ここで追加の記帳は不要。
   history_.pushRecent(RingCategory::RecentDirectory, currentDirectory_);
 
   auto pos = consultHistory ? history_.positionFor(PositionCategory::Directory, currentDirectory_) : std::nullopt;
@@ -340,25 +345,26 @@ std::string DirectoryMode::parentDirectory(const std::string &dir) {
 
 bool DirectoryMode::descendTo(const std::string &target) {
   saveCurrentCursorPosition();
-  // 2026-08-27 fix, a real report + repro ("①→'/tmp'[return]→「/tmp/
+  // 2026-08-27の修正、実際の報告+再現("①→'/tmp'[return]→「/tmp/
   // （ls）」②→^G→「~/.usilic/（ls）」→^G→「/tmp/（ls）」にならない
-  // （~/git/usilic/src/（ls）」"): ^J^K's own resetNavigationToFloor()
-  // establishes a perpetual 2-way toggle pair via ModeStack::pushFloor()
-  // (goBack()'s own floor-popping logic re-pushes it SWAPPED each time,
-  // rather than a one-shot pop -- see its own comment). Landing here
-  // (CP/MV/ARC-extraction, or any other descendTo() caller) used to
-  // ALWAYS push a plain frame on TOP of whatever was already on the
-  // stack, floor included -- fine for an ORDINARY multi-level descent
-  // (a real stack of places to unwind through), but wrong when a floor
-  // is already active: popping that plain frame (the first ^G) landed
-  // correctly back where the descent started, but a SECOND ^G then
-  // popped the STALE floor sitting beneath it, teleporting to whatever
-  // long-irrelevant previousDirectory the ORIGINAL ^J^K jump recorded,
-  // instead of continuing to toggle with `target` (the place just
-  // reached). Mirrors goBack()'s own floor-swap here too: descending
-  // FROM a floor replaces it with a fresh one (target <-> here) rather
-  // than stacking on top of it, so the toggle stays anchored to the two
-  // most recently visited real places.
+  // （~/git/usilic/src/（ls）」"): ^J^K自身のresetNavigationToFloor()
+  // は、ModeStack::pushFloor()経由で永続的な2方向のトグルペアを
+  // 確立する(goBack()自身のfloor-pop処理は、1回きりのpopではなく、
+  // 毎回入れ替えて再度pushする――自身のコメント参照)。ここへの着地
+  // (CP/MV/アーカイブ展開、または他のdescendTo()呼び出し元)は、
+  // 以前は「常に」、floorを含む既にスタックにあったものの「上に」、
+  // プレーンなフレームをpushしていた――「通常の」複数段階の降下
+  // (巻き戻すべき場所の本物のスタック)に対しては問題ないが、floorが
+  // 既に有効な場合は誤り: そのプレーンなフレームをpopする(最初の
+  // ^G)と、降下が始まった場所へ正しく戻るが、「2回目の」^Gは
+  // その下に座っている「古びた」floorをpopしてしまい、`target`
+  // (ちょうど到達した場所)とのトグルを続ける代わりに、元の^J^Kの
+  // ジャンプが記録した、ずっと無関係になったpreviousDirectoryへ
+  // どこであれテレポートしてしまう。ここでもgoBack()自身のfloor
+  // 入れ替えを反映している: floorから降下することは、それを積み
+  // 重ねるのではなく、新しいもの(target <-> ここ)に置き換える。
+  // これにより、トグルは最も最近訪れた2つの実際の場所に固定された
+  // ままになる。
   if (const ModeStackFrame *top = modeStack_.top(); top && modeStack_.isFloor(*top)) {
     std::string previous = currentDirectory_;
     if (!enterDirectory(target)) return false;
@@ -371,9 +377,9 @@ bool DirectoryMode::descendTo(const std::string &target) {
   modeStack_.push(std::move(frame));
 
   if (!enterDirectory(target)) {
-    // Couldn't descend (permission denied, race with deletion, ...):
-    // undo the push and stay put, matching legacy's own
-    // access(p, R_OK)-fails-stay-in-T_dir behavior.
+    // 降下できなかった(権限拒否、削除との競合、...): pushを取り消し
+    // その場に留まる。legacy自身のaccess(p, R_OK)失敗時にT_dirに
+    // 留まる挙動に合わせている。
     modeStack_.pop();
     return false;
   }
@@ -383,18 +389,18 @@ bool DirectoryMode::descendTo(const std::string &target) {
 bool DirectoryMode::openSelected() {
   const DirectoryEntry *entry = selectedEntry();
   if (!entry || !entry->isDirectory) return false;
-  // "./" (2026-08-23 fix, a direct user report): used to be a hard
-  // no-op. Legacy's own equivalent (and this port's own ^J^K/
-  // GoToFileSelector, already fixed the same way when already IN
-  // Directory mode -- see Application::goToFileSelector()'s own
-  // comment) doubles as a re-list even when "landing" somewhere
-  // already showing -- re-running `ls` here is exactly how a stale
-  // size/mtime column (e.g. right after overwriting a file in place
-  // via CP) gets refreshed without navigating away and back. See
-  // refresh()'s own comment for why this calls it (rather than
-  // enterDirectory() directly) -- a same-day follow-up correction:
-  // consulting saved history position snapped the cursor to a stale
-  // row instead of keeping it where the user currently was.
+  // "./"(2026-08-23の修正、直接のユーザー報告): 以前は完全な
+  // 何もしない状態だった。legacy自身の等価物(そしてこの移植自身の
+  // ^J^K/GoToFileSelectorは、既にDirectoryモード「内」にいる時、
+  // 既に同じ方法で修正済み――Application::goToFileSelector()自身の
+  // コメント参照)は、既に表示中のどこかへ「着地」する場合でも
+  // 再一覧表示を兼ねる――ここで`ls`を再実行することは、まさに、
+  // (例えばCPでファイルをその場で上書きした直後の)古びたサイズ/
+  // mtime列を、離れて戻ることなくリフレッシュする方法である。
+  // これが(enterDirectory()を直接呼ぶのではなく)refresh()を呼ぶ
+  // 理由については自身のコメント参照――同日の後続の修正: 保存済み
+  // 履歴位置を参照すると、ユーザーが現在いる場所に留める代わりに
+  // カーソルが古びた行へスナップしてしまった。
   if (entry->name == "./") return refresh();
 
   std::string target;
@@ -426,7 +432,7 @@ bool DirectoryMode::refresh() {
 
 bool DirectoryMode::goToParent() {
   std::string target = parentDirectory(currentDirectory_);
-  if (target == currentDirectory_) return false;  // already at root ("/"), matching legacy's own no-op there
+  if (target == currentDirectory_) return false;  // 既にルート("/")にいる、legacy自身のそこでの何もしない挙動に合わせている
   return descendTo(target);
 }
 
@@ -439,9 +445,9 @@ bool DirectoryMode::goBack() {
     if (frame->previousDirectory.empty()) return false;
     std::string target = frame->previousDirectory;
     if (!enterDirectory(target)) return false;
-    // Swap directory/previousDirectory and re-push -- see this
-    // function's own declaration comment on why (a genuine toggle, not
-    // a one-shot pop).
+    // directory/previousDirectoryを入れ替えて再度push――理由は
+    // この関数自身の宣言コメント参照(1回きりのpopではなく本当の
+    // トグル)。
     modeStack_.pushFloor(target, frame->directory, nullptr, 0);
     return true;
   }
@@ -459,27 +465,27 @@ void DirectoryMode::saveCurrentCursorPosition() {
   History::CursorPosition pos;
   pos.row = view_.cursorIndex();
   pos.totalRows = static_cast<int>(entries_.size());
-  pos.top = 0;  // ContentView recomputes a visible viewport from cursorIndex on restore; not load-bearing here
+  pos.top = 0;  // ContentViewは復元時にcursorIndexから可視ビューポートを再計算する。ここでは重要ではない
   pos.lineNumber = -1;
   history_.setPosition(PositionCategory::Directory, currentDirectory_, pos);
 }
 
-// Ported from scroll.c's get_col(): `ls -alF` output's date field
-// ("Mon DD HH:MM " for recent files, "Mon DD  YYYY " for older ones)
-// is always exactly 13 bytes from the month abbreviation to the start
-// of the filename, and the month abbreviation is a reliable,
-// locale-independent anchor (given forceCLocale above) -- unlike
-// naively taking the last space in the line, which breaks the moment
-// the filename itself contains a space (e.g. a Finder/QuickTime
-// export like "2024-09-14 12.13.08.mp4"). Falls back to the last
-// space if no recognizable date field is found (matching get_col()'s
-// own fallback, e.g. for non-`ls -alF`-shaped lines).
+// scroll.cのget_col()からの移植: `ls -alF`出力の日付フィールド
+// (最近のファイルは「Mon DD HH:MM 」、古いものは「Mon DD  YYYY 」)
+// は、月の略称からファイル名の開始位置まで常にちょうど13バイトで
+// あり、月の略称は(上のforceCLocaleがあれば)信頼できる、ロケールに
+// 依存しないアンカーである――行の最後の空白を単純に取るのとは
+// 異なり、それはファイル名自体に空白が含まれた瞬間に壊れる(例えば
+// 「2024-09-14 12.13.08.mp4」のようなFinder/QuickTimeの書き出し)。
+// 認識可能な日付フィールドが見つからない場合は最後の空白へ
+// フォールバックする(get_col()自身のフォールバックに合わせている、
+// 例えば`ls -alF`の形をしていない行に対して)。
 DirectoryEntry DirectoryMode::parseLsLine(const std::string &line) const {
   static const char *kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
   std::string searchable = line;
-  std::size_t arrow = searchable.find(" -> ");  // symlink target -- not part of the name
+  std::size_t arrow = searchable.find(" -> ");  // シンボリックリンクの参照先――名前の一部ではない
   if (arrow != std::string::npos) searchable.erase(arrow);
 
   std::size_t nameStart = std::string::npos;
@@ -502,31 +508,32 @@ DirectoryEntry DirectoryMode::parseLsLine(const std::string &line) const {
 
   DirectoryEntry entry;
   entry.lsLine = line;
-  // searchable (arrow-stripped), not the raw `line` -- a symlink's " ->
-  // target" portion belongs in lsLine (the raw display row) but NOT in
-  // `name` (used to build real filesystem paths, e.g. openSelectedEntry()'s
-  // own `path += entry->name`), which the original `line.substr()` here
-  // never accounted for.
+  // searchable(矢印除去済み)を使う。生の`line`ではない――シンボリック
+  // リンクの「 -> target」部分は、lsLine(生の表示行)には属するが、
+  // (openSelectedEntry()自身の`path += entry->name`など、本物の
+  // ファイルシステムパスを構築するために使われる)`name`には属さない。
+  // これはここでの元の`line.substr()`では全く考慮されていなかった。
   if (nameStart < searchable.size()) entry.name = searchable.substr(nameStart);
   entry.isDirectory = !line.empty() && line[0] == 'd';
-  // 2026-08-17 fix: `ls -alF`'s own trailing type-indicator character
-  // ('*' executable, '@' symlink, '=' socket, '%' whiteout, '|' FIFO --
-  // '/' for directories is handled separately below) used to stay
-  // embedded in `name` verbatim, silently breaking every path built
-  // from a non-directory entry with one of these types. Harmless for a
-  // DIRECTORY's own trailing '/' (opendir()/stat() treat "dir" and
-  // "dir/" identically, and openSelected() actually DEPENDS on it
-  // staying present -- see its own `entry->name == "./"` checks -- so
-  // directories are deliberately left untouched here). A real
-  // reproduction (^J^L search -> open a LOCATE result -> ^J^K, landing
-  // in a directory full of executables -- exactly how a real
-  // .app/Contents bundle looks, which no synthetic test fixture in
-  // this port ever chmod +x's) found Enter on ANY such entry silently
-  // doing nothing: the constructed path (".../LicensingSettings.xml*")
-  // doesn't exist on disk, so fileMode_.loadFile() failed and
-  // openSelectedEntry() returned false with no visible change --
-  // exactly the "^J^Kを使うと以後反応しなくなる" symptom reported,
-  // previously misdiagnosed as broader state corruption.
+  // 2026-08-17の修正: `ls -alF`自身の末尾タイプ表示文字
+  // ('*'実行可能、'@'シンボリックリンク、'='ソケット、'%'ホワイト
+  // アウト、'|' FIFO――ディレクトリの'/'は下で別途扱われる)は、以前
+  // `name`にそのまま埋め込まれたままになっており、これらのタイプの
+  // いずれかを持つ非ディレクトリエントリから構築された全てのパスを
+  // 黙って壊していた。ディレクトリ自身の末尾'/'は無害である
+  // (opendir()/stat()は"dir"と"dir/"を同一に扱い、openSelected()は
+  // 実際にそれが残っていることに「依存している」――自身の
+  // `entry->name == "./"`チェック参照――なのでディレクトリはここで
+  // 意図的に手を付けられずに残される)。実際の再現(^J^Lで検索 →
+  // LOCATE結果を開く → ^J^K、実行可能ファイルだらけのディレクトリへ
+  // 着地する――本物の.app/Contentsバンドルがまさにそう見える。この
+  // 移植のどの合成テストフィクスチャもchmod +xすることは無い)で、
+  // そのようなエントリの「どれ」に対してもEnterが黙って何もしない
+  // ことが判明した: 構築されたパス(".../LicensingSettings.xml*")は
+  // ディスク上に存在しないので、fileMode_.loadFile()は失敗し、
+  // openSelectedEntry()は目に見える変化なくfalseを返していた――
+  // まさに報告された「^J^Kを使うと以後反応しなくなる」という症状で
+  // あり、以前はより広範な状態破損として誤診断されていた。
   if (!entry.isDirectory && !entry.name.empty()) {
     char last = entry.name.back();
     if (last == '*' || last == '@' || last == '=' || last == '%' || last == '|') entry.name.pop_back();
@@ -535,12 +542,13 @@ DirectoryEntry DirectoryMode::parseLsLine(const std::string &line) const {
   return entry;
 }
 
-// "./"/"../" are never markable -- 2026-08-22 fix, a real user report
-// ("CP:「./」「../」は選択から除外してほしい"): CP/MV/RM's own targets
-// come straight from whatever's marked (or, with nothing marked, the
-// cursor's own entry -- see targetEntries()'s own comment below), and
-// "cp -R ." / "rm -r .." are exactly the kind of accident this guard
-// exists to make structurally impossible, not just unlikely.
+// "./"/"../"は決してマーク可能ではない――2026-08-22の修正、実際の
+// ユーザー報告("CP:「./」「../」は選択から除外してほしい"): CP/MV/RM
+// 自身の対象は、マークされているもの(または、何もマークされて
+// いなければカーソル自身のエントリ――下のtargetEntries()自身の
+// コメント参照)から直接来る。"cp -R ." / "rm -r .."は、まさに
+// このガードが「構造的に」不可能にすることを目的としている類の
+// 事故であり、単に「起こりにくい」だけではない。
 bool DirectoryMode::isSelfOrParentEntry(int index) const {
   if (index < 0 || index >= static_cast<int>(entries_.size())) return false;
   return entries_[index].name == "./" || entries_[index].name == "../";
@@ -573,13 +581,13 @@ void DirectoryMode::markAll() {
 std::vector<DirectoryEntry> DirectoryMode::targetEntries() const {
   std::vector<DirectoryEntry> result;
   if (!markedIndices_.empty()) {
-    for (int idx : markedIndices_) result.push_back(entries_[idx]);  // std::set iterates in ascending order
+    for (int idx : markedIndices_) result.push_back(entries_[idx]);  // std::setは昇順で走査する
     return result;
   }
-  // Same "./"/"../" exclusion as toggleMark()/markAll() above, for the
-  // cursor-fallback case (nothing explicitly marked) -- markedIndices_
-  // itself can never contain either anymore, but the cursor can still
-  // simply be resting on one.
+  // 上のtoggleMark()/markAll()と同じ"./"/"../"除外を、カーソル
+  // フォールバックの場合(何も明示的にマークされていない)に対して
+  // 行う――markedIndices_自体はもうどちらも含み得ないが、カーソルは
+  // 依然として単純にどちらかの上に留まっていることがあり得る。
   if (const DirectoryEntry *entry = selectedEntry()) {
     if (entry->name != "./" && entry->name != "../") result.push_back(*entry);
   }
