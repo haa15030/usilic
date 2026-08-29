@@ -5,82 +5,81 @@
 
 namespace fm {
 
-// Runs an external program and captures its output. Ported from
-// fork.c's repeated pipe()/fork()/dup2()/execvp() dance -- every one
-// of fork_key()/fork_bin()/fork_chp()/fork_arc()'s several pipeline
-// stages independently hand-wrote the same handful of syscalls, with
-// enough small variations (single command vs. two-stage pipeline,
-// LC_ALL=C forcing, stdin-from-a-buffer) that ChildProcess exists to
-// implement once instead of eight times.
+// 外部プログラムを実行しその出力を捕捉する。fork.cの繰り返される
+// pipe()/fork()/dup2()/execvp()の手順からの移植――fork_key()/
+// fork_bin()/fork_chp()/fork_arc()の複数のパイプライン段階それぞれが、
+// 少しずつの違い(単一コマンド vs 2段階パイプライン、LC_ALL=Cの強制、
+// バッファからの標準入力)がありつつも、同じひとにぎりのシステム
+// コールを独立に手書きしていた。ChildProcessは、それを8回ではなく
+// 1回だけ実装するために存在する。
 //
-// The legacy code's own history is a good argument for this: the
-// "child falls through and keeps running as tcb after execvp()
-// fails" bug (fork_bin(), fixed with an added exit(0)) and the
-// overlapping-strcpy family of bugs were each found independently at
-// one of these hand-written call sites; a single, tested
-// implementation means a fix here covers all of them at once, and a
-// newly-added call site can't reintroduce a variant of the same bug.
+// legacyのコード自身の歴史がこれの良い論拠になっている: 「execvp()
+// 失敗後、子プロセスがそのまま処理を続けtcbとして動き続けてしまう」
+// バグ(fork_bin()、exit(0)の追加で修正)や、strcpyの重なりに起因する
+// 一連のバグは、それぞれこれらの手書きの呼び出し箇所のどれかで独立に
+// 発見された。単一の、テスト済みの実装があれば、ここでの修正が
+// 一度に全てをカバーし、新しく追加された呼び出し箇所が同種のバグの
+// 別バリアントを再導入することもできなくなる。
 //
-// Deliberately excluded (belongs to a future class, not here):
-//   - Which program handles a given file, and tcbrc's CHILD/EXEC/
-//     EDITOR/SHELL directive parsing (child.c's save_child()/
-//     get_child()/is_child() and friends): squarely Configuration's
-//     job (parsing tcbrc) combined with Mode's (deciding T_roff/
-//     T_tar/T_exec dispatch from a suffix match) -- ChildProcess only
-//     runs an already-decided argv, it doesn't decide what that argv
-//     should be.
-//   - Long-lived/interactive child processes with a live PTY (SHELL
-//     mode): a fundamentally different shape (streaming, bidirectional,
-//     terminal-attached, needs its own pty so tcb can keep drawing
-//     around it) -- Shell's job. runInteractive() below is a much
-//     narrower case that doesn't need this: a one-shot foreground
-//     program (mode.c's do_prog(), e.g. a PROGRAM-mode command like
-//     `less somefile`) that inherits the REAL terminal's stdio
-//     directly (no pty, no piping/capturing) while tcb itself is
-//     temporarily out of the way (raw mode left via KeyInput, no
-//     drawing happening) -- there's no "keep tcb's own UI alive
-//     alongside it" requirement the way SHELL mode has.
-//   - The keyboard-interrupt-while-reading and growable-linked-list-
-//     of-chunks buffering in alloc_buff(): the former is a UI concern
-//     (ChildProcess itself has nowhere to check the keyboard from,
-//     nor should it), the latter was a 1990s workaround for not
-//     having a growable container -- std::string already grows
-//     itself.
-// Options for a ChildProcess call. Deliberately defined at namespace
-// scope rather than nested inside ChildProcess: a nested struct's
-// default member initializers aren't visible yet when the enclosing
-// class parses a member function's default argument that references
-// them (a real two-pass class-parsing quirk -- nesting this struct
-// and writing `= false`/`= nullptr` below fails to compile, with
-// "default member initializer ... needed within definition of
-// enclosing class ... outside of member functions"). Keeping Options
-// out here lets it have normal default member initializers, so a
-// bare `Options options;` (no braces) is safe by construction instead
-// of leaving forceCLocale/input/stderrLogPath as indeterminate
-// garbage -- which is exactly what happened when an earlier version
-// of this class worked around the compile error by deleting the
-// initializers instead of moving the struct out: `Options options;`
-// in a test case left stderrLogPath as a garbage non-null pointer,
-// and prepareChild() dereferencing it crashed the forked child with
-// SIGSEGV.
+// 意図的に除外(将来のクラスの仕事であり、ここではない):
+//   - あるファイルをどのプログラムが扱うか、およびtcbrcのCHILD/EXEC/
+//     EDITOR/SHELLディレクティブのパース(child.cのsave_child()/
+//     get_child()/is_child()等): これはまさしくConfigurationの仕事
+//     (tcbrcのパース)とModeの仕事(拡張子マッチからT_roff/T_tar/
+//     T_execのディスパッチを決定する)の組み合わせ――ChildProcessは
+//     既に決定済みのargvを実行するだけで、そのargvが何であるべきか
+//     を決めることはしない。
+//   - 生きたPTYを持つ長寿命/対話的な子プロセス(SHELLモード): 根本的に
+//     異なる形(ストリーミング、双方向、端末に接続、tcbがその周りで
+//     描画を続けられるよう自前のptyが必要)――Shellの仕事。下の
+//     runInteractive()はこれを必要としないずっと狭いケースである:
+//     本物の端末のstdioを直接継承する(ptyもパイプ/捕捉も無し)一方、
+//     tcb自身は一時的に退いている(KeyInput経由でraw modeを退出、
+//     描画は起きていない)、使い切りのフォアグラウンドプログラム
+//     (mode.cのdo_prog()、例えば`less somefile`のようなPROGRAM
+//     モードのコマンド)――SHELLモードが持つような「並行してtcb
+//     自身のUIも生かし続ける」という要求は無い。
+//   - alloc_buff()にあった、読み込み中のキーボード割り込みと、
+//     伸長可能なチャンクの連結リストによるバッファリング: 前者は
+//     UIの関心事(ChildProcess自体にはそもそもキーボードを確認する
+//     手立てが無いし、そうすべきでもない)、後者は伸長可能な
+//     コンテナが無かった時代の1990年代の回避策――std::stringは
+//     既に自分で伸長する。
+// ChildProcess呼び出し用のオプション。意図的にChildProcessの内側に
+// ネストさせず、名前空間スコープで定義してある: ネストした構造体の
+// デフォルトメンバ初期化子は、外側のクラスがそれを参照するメンバ
+// 関数のデフォルト引数をパースする時点ではまだ見えない(実際に
+// 起きた、クラス解析が2パスであることに起因する癖――この構造体を
+// ネストしたまま下で`= false`/`= nullptr`と書くとコンパイルが通ら
+// ず、「default member initializer ... needed within definition of
+// enclosing class ... outside of member functions」というエラーに
+// なる)。Optionsをここに外出しすることで、通常通りのデフォルトメンバ
+// 初期化子を持てるようになり、素の`Options options;`(波括弧無し)が、
+// forceCLocale/input/stderrLogPathを不定のゴミ値のまま残すのではなく
+// 構造的に安全になる――これはまさに、このクラスの以前のバージョンが
+// この構造体を外に出す代わりに初期化子を削除してコンパイルエラーを
+// 回避しようとした際に実際に起きたことである: あるテストケースの
+// `Options options;`はstderrLogPathをゴミのnullでないポインタのまま
+// 残し、prepareChild()がそれを参照外しした際にfork後の子プロセスが
+// SIGSEGVでクラッシュした。
 struct ChildProcessOptions {
-  // Force LC_ALL=C in the child only. Ported from fork_bin()'s
-  // T_dir case: `ls`'s date column is parsed byte-by-byte
-  // downstream (get_col()), and a localized month name would throw
-  // off every column position after it.
+  // 子プロセス内でのみLC_ALL=Cを強制する。fork_bin()のT_dirケース
+  // からの移植: `ls`の日付列は後段でバイト単位にパースされる
+  // (get_col())ため、ロケール化された月名だと、それ以降の全ての
+  // カラム位置が狂ってしまう。
   bool forceCLocale = false;
-  // If set, written to the child's stdin before anything is read
-  // from its stdout (via a small dedicated writer process, so a
-  // large input can't deadlock against a full output pipe -- the
-  // same reason legacy's own fork_arc()/fork_chp() write pipeline
-  // input this way rather than as a same-process blocking write).
+  // 設定されていれば、子プロセスの標準出力から何かが読まれる前に、
+  // それが子プロセスの標準入力へ書き込まれる(小さな専用のwriter
+  // プロセス経由――そうすることで、大きな入力が満杯の出力パイプに
+  // 対してデッドロックすることがない。legacy自身のfork_arc()/
+  // fork_chp()が、同一プロセス内でのブロッキング書き込みではなく
+  // この方式でパイプライン入力を書いているのと同じ理由)。
   const std::string *input = nullptr;
-  // If set, the child's stderr is appended to this file instead of
-  // inheriting the parent's. Ported from dup_error(); exposed as a
-  // plain path instead of a hidden Configuration lookup so this
-  // class doesn't need to know about that one, matching how
-  // KeyInput exposed setPidReporter() instead of calling sub.c
-  // directly.
+  // 設定されていれば、子プロセスの標準エラーは親のものを継承する
+  // 代わりにこのファイルへ追記される。dup_error()からの移植。
+  // 隠れたConfiguration参照ではなく素のパスとして公開してあるのは、
+  // このクラスがそちらについて知る必要をなくすため――KeyInputが
+  // sub.cを直接呼ぶ代わりにsetPidReporter()を公開したのと同じ考え方。
   const std::string *stderrLogPath = nullptr;
 };
 
@@ -88,53 +87,53 @@ class ChildProcess {
  public:
   struct Result {
     std::string output;
-    bool ok = false;       // spawned and exited normally with status 0
-    int exitStatus = -1;   // raw exit code; -1 if it never exited normally
+    bool ok = false;       // 起動され、ステータス0で正常終了した
+    int exitStatus = -1;   // 生の終了コード。正常終了しなかった場合は-1
   };
 
   using Options = ChildProcessOptions;
 
   static Result run(const std::vector<std::string> &argv, const Options &options = {});
 
-  // Two-stage pipeline: argv1 | argv2, capturing argv2's stdout.
-  // Ported from fork_arc()'s .deb/.tgz decompression chains and
-  // fork_chp()'s filter chains (e.g. `ar p file data.tar.gz | tar
-  // xvf -`).
+  // 2段階パイプライン: argv1 | argv2、argv2の標準出力を捕捉する。
+  // fork_arc()の.deb/.tgz展開チェーンと、fork_chp()のフィルタ
+  // チェーン(例えば`ar p file data.tar.gz | tar xvf -`)からの移植。
   static Result runPipeline(const std::vector<std::string> &argv1,
                              const std::vector<std::string> &argv2,
                              const Options &options = {});
 
-  // Runs argv in the foreground with the real terminal's stdin/
-  // stdout/stderr inherited directly (no pipes, no captured output) --
-  // for a one-shot interactive program that needs real terminal
-  // access (e.g. `less`/`vi` launched from PROGRAM mode). Ported from
-  // do_prog()'s fork()/execlp()/wait() (the plain child-management
-  // half; leaving/re-entering raw termio around the call is the
-  // caller's job via KeyInput, matching how this class never touches
-  // terminal modes itself elsewhere either). Returns the exit status,
-  // or -1 if the child couldn't be spawned or never exited normally.
+  // argvを、本物の端末の標準入力/標準出力/標準エラーを直接継承した
+  // フォアグラウンドで実行する(パイプ無し、出力の捕捉無し)――本物の
+  // 端末アクセスが必要な使い切りの対話的プログラム(例えばPROGRAM
+  // モードから起動する`less`/`vi`)のためのもの。do_prog()の
+  // fork()/execlp()/wait()(素の子プロセス管理を行う半分。呼び出しの
+  // 前後でraw termioを退出/再突入するのは、KeyInput経由での呼び出し
+  // 側の仕事――このクラスが他の場所でも端末モードに一切触れないのと
+  // 同じ)からの移植。終了ステータスを返す。子プロセスを起動でき
+  // なかった、または正常終了しなかった場合は-1。
   static int runInteractive(const std::vector<std::string> &argv);
 
-  // Launches argv in the background: forked and exec'd like every
-  // other call above, but returns immediately without waiting for it
-  // to finish or capturing its output -- for a one-shot maintenance
-  // command (e.g. `updatedb`, which can genuinely run for minutes on a
-  // real filesystem) whose caller wants to keep polling its OWN input
-  // loop alongside it (Application::runLocateUpdateDb()) rather than
-  // block synchronously the way run() does. stdout/stderr are
-  // redirected to /dev/null (nothing is left around to read them, and
-  // this class's own captured-Result shape doesn't apply once the
-  // caller has already moved on). Returns the child's pid, or -1 if it
-  // couldn't be spawned. Pair with hasExited() to reap it once done.
+  // argvをバックグラウンドで起動する: 上の他の呼び出しと同様にfork
+  // されexecされるが、完了を待つことも出力を捕捉することもせず
+  // すぐに戻る――呼び出し側が(Application::runLocateUpdateDb()の
+  // ように)run()のように同期的にブロックするのではなく、自分自身の
+  // 入力ループと並行してポーリングし続けたい使い切りの保守コマンド
+  // (例えば`updatedb`、実際のファイルシステム上では文字通り数分
+  // かかりうる)のためのもの。標準出力/標準エラーは/dev/nullへ
+  // リダイレクトされる(それらを読むために残しておくものは無く、
+  // 呼び出し側が既に先へ進んでしまった後では、このクラス自身の
+  // 捕捉済みResultという形は当てはまらない)。子プロセスのpidを
+  // 返す。起動できなかった場合は-1。完了したら回収するために
+  // hasExited()と組み合わせて使う。
   static pid_t runDetached(const std::vector<std::string> &argv);
 
-  // Non-blocking check (waitpid(pid, ..., WNOHANG)) of whether a
-  // runDetached() child has exited yet -- reaps it (avoiding a zombie)
-  // the moment it's confirmed to have. Safe to call repeatedly,
-  // including after the child has already been reaped (waitpid then
-  // fails with ECHILD, which this treats the same as "exited" rather
-  // than as an error the caller needs to distinguish -- there's
-  // nothing left to poll for either way).
+  // runDetached()の子プロセスが既に終了しているかどうかの
+  // ノンブロッキングチェック(waitpid(pid, ..., WNOHANG))――終了して
+  // いると確認できた瞬間にそれを回収する(ゾンビ化を避ける)。既に
+  // 回収済みの後を含め、繰り返し呼んでも安全(その場合waitpidは
+  // ECHILDで失敗するが、これは呼び出し側が区別すべきエラーとしてで
+  // はなく「終了済み」と同じ扱いにする――どちらにせよポーリングする
+  // 対象は何も残っていないため)。
   static bool hasExited(pid_t pid);
 };
 
