@@ -20,36 +20,36 @@ int Utf8::display_width(const unsigned char *cp, int len) {
   else cpt = ((cp[0] & 0x07) << 18) | ((cp[1] & 0x3f) << 12)
            | ((cp[2] & 0x3f) << 6) | (cp[3] & 0x3f);
 
-  // zero-width combining marks
+  // 幅ゼロの結合文字
   //
-  // U+3099/U+309A (2026-08-20 fix, root-caused via a real
-  // USILICGUIDEBUG grid-dump capture: "ワート゛ニュース" -- the
-  // combining dakuten/handakuten mark rendering as its own separate
-  // glyph instead of merging with the preceding kana, in -g's ARC
-  // content listing): these two codepoints ARE the actual combining
-  // dakuten/handakuten marks macOS's NFD-decomposed filenames use
-  // (e.g. "ワールド" stored on disk as "ワールト"+U+3099), but they
-  // live in the Hiragana block (0x3040-0x309F), NOT the generic
-  // "Combining Diacritical Marks" block (0x0300-0x036F) the range
-  // above already covers -- so they fell all the way through to the
-  // "East Asian Wide" bucket below (0x2e80-0xa4cf swallows this whole
-  // block too) and got rendered as an independent width-2 glyph next
-  // to their base character instead of being merged via
-  // GraphicalDisplay::commitGlyph()'s own width==0 special case
-  // (already correct once display_width() actually reports 0 here --
-  // see that function's own 2026-08-20 comment, added the same day
-  // this was tracked down, for the OTHER half of this fix). `-c`
-  // never showed this because it just passes raw UTF-8 bytes through
-  // to a real terminal emulator, which does its own independent
-  // Unicode text shaping regardless of what this port's own width
-  // math thinks; `-g` renders every glyph itself from this port's own
-  // Cell grid, so an incorrect classification here directly corrupts
-  // the visible output. NOT ported back to legacy's code.c (which has
-  // this exact same gap in its own, separately-maintained
-  // utf8_width()) -- unreported there, and legacy has no -g/pixel
-  // rendering path where this class of bug can surface the same way
-  // (see the class of `-c`-masks-it reasoning just above); left as a
-  // known related finding rather than an unrequested legacy edit.
+  // U+3099/U+309A(2026-08-20修正、実際のUSILICGUIDEBUGグリッドダンプ
+  // 採取で根本原因を特定: 「ワート゛ニュース」――結合濁点/半濁点記号が
+  // 直前の仮名と結合せず、それ自身が独立したグリフとして描画されて
+  // しまう、-gのARC内容一覧での不具合): この2つのコードポイントは、
+  // macOSのNFD分解されたファイル名が実際に使う結合濁点/半濁点記号
+  // そのものである(例えば「ワールド」がディスク上では「ワールト」+
+  // U+3099として保存される)。しかしこれらはひらがなブロック
+  // (0x3040-0x309F)に属しており、上の範囲が既にカバーしている汎用の
+  // 「Combining Diacritical Marks」ブロック(0x0300-0x036F)には属さ
+  // ない――そのためすり抜けて下の「East Asian Wide」バケツ
+  // (0x2e80-0xa4cfはこのブロック全体も飲み込んでしまう)まで落ちてしまい、
+  // GraphicalDisplay::commitGlyph()自身のwidth==0特別扱い(display_width()
+  // がここで実際に0を報告しさえすれば既に正しく動く――そちらの関数
+  // 自身の2026-08-20のコメント、この修正のもう半分としてこの原因が
+  // 特定されたのと同じ日に追加、参照)経由で基底文字と結合される
+  // 代わりに、基底文字の隣に独立した幅2のグリフとして描画されて
+  // いた。`-c`ではこれが一度も表面化しなかった理由は、生のUTF-8
+  // バイト列を本物のターミナルエミュレータへそのまま渡すだけで、
+  // そちらがこの移植自身の幅計算とは無関係に独自のUnicodeテキスト
+  // 整形を行うため。`-g`はこの移植自身のCellグリッドから全グリフを
+  // 自前で描画するため、ここでの分類ミスが直接目に見える出力を
+  // 壊す。legacyのcode.c(そちらも独立して保守されている
+  // utf8_width()に全く同じギャップを抱えている)へは移植し返して
+  // いない――そちらでは報告されておらず、legacyにはこの種のバグが
+  // 同じように表面化しうる-g/ピクセル描画経路自体が存在しない
+  // (すぐ上の「`-c`だと覆い隠される」という理屈の一種)。未依頼の
+  // legacy側編集としてではなく、既知の関連する発見として記録するに
+  // とどめている。
   if ((cpt >= 0x0300 && cpt <= 0x036f)
       || (cpt == 0x3099 || cpt == 0x309a)
       || (cpt >= 0x1ab0 && cpt <= 0x1aff)
@@ -58,8 +58,8 @@ int Utf8::display_width(const unsigned char *cp, int len) {
       || (cpt >= 0xfe20 && cpt <= 0xfe2f))
     return 0;
 
-  // East Asian Wide / Fullwidth (CJK, Hangul, fullwidth forms,
-  // common symbols/emoji)
+  // East Asian Wide / Fullwidth(CJK、ハングル、全角形式、
+  // 一般的な記号/絵文字)
   if ((cpt >= 0x1100 && cpt <= 0x115f)
       || (cpt >= 0x2e80 && cpt <= 0xa4cf && cpt != 0x303f)
       || (cpt >= 0xac00 && cpt <= 0xd7a3)
@@ -72,24 +72,23 @@ int Utf8::display_width(const unsigned char *cp, int len) {
       || (cpt >= 0x2600 && cpt <= 0x27bf))
     return 2;
 
-  // "Ambiguous" East Asian Width (Unicode's own category A): neither
-  // clearly narrow nor clearly wide by the standard alone, but
-  // conventionally rendered WIDE when set alongside CJK text, which
-  // is the only context this whole class exists for. Added
-  // 2026-07-30 after a real report of GraphicalDisplay progressively
-  // misaligning a Japanese filename's characters starting exactly at
-  // a "▽" (U+25BD) -- confirmed (byte-for-byte, via a standalone
-  // decode check) that the filename's UTF-8 was completely valid, so
-  // the corruption traced back to THIS function under-counting a
-  // character actually used in real content, not to any decoding bug.
-  // Narrowed to just the two ranges that were actually present in the
-  // reported filenames (the Geometric Shapes block -- ▽ △ ○ ● etc.,
-  // common as bullet/marker glyphs in Japanese text -- and the CJK-
-  // style curly quotation marks) rather than the full Unicode
-  // "Ambiguous" set (which also includes things like Latin-1
-  // punctuation and Cyrillic that should stay narrow even in this
-  // context) -- deliberately conservative rather than reclassifying
-  // everything Unicode calls "Ambiguous".
+  // Unicode独自のカテゴリA「Ambiguous(曖昧)」East Asian Width:
+  // 規格単独では明確に狭いとも明確に広いとも言えないが、CJKテキストと
+  // 並べて置かれた場合は慣習的に「広い」と描画される――このクラス
+  // 全体が存在するのはまさにこの文脈のためだけである。2026-07-30
+  // 追加、GraphicalDisplayが日本語ファイル名の文字を、ちょうど
+  // "▽"(U+25BD)から始まって徐々にずらして描画してしまうという実際の
+  // 報告を受けて。(単体でのデコードチェックによりバイト単位で)
+  // ファイル名のUTF-8が完全に正しいことを確認済みだったため、この
+  // 崩れはデコードのバグではなく、この関数が実際のコンテンツで使われ
+  // ている文字の幅を過小に数えていたことに起因すると特定した。
+  // Unicodeの「Ambiguous」集合全体(そちらにはこの文脈でも狭いままで
+  // あるべきラテン1の句読点やキリル文字なども含まれる)ではなく、
+  // 報告されたファイル名に実際に含まれていた2つの範囲(記号ブロック
+  // ――▽ △ ○ ● 等、日本語テキストでの箇条書き/マーカー用グリフ
+  // として一般的、およびCJKスタイルの曲線的な引用符)だけに絞って
+  // いる――Unicodeが「Ambiguous」と呼ぶもの全てを再分類するのでは
+  // なく、意図的に控えめにしてある。
   if ((cpt >= 0x2018 && cpt <= 0x201f)   // ‘ ’ ‚ ‛ “ ” „ ‟
       || (cpt >= 0x25a0 && cpt <= 0x25ff))  // Geometric Shapes (■ □ ▲ △ ▽ ● ○ ★ ☆ ...)
     return 2;
