@@ -9,88 +9,90 @@
 
 namespace fm {
 
-// Capability strings as terminfo reports them for the current $TERM.
-// An empty string means "this terminal doesn't support the
-// capability" -- callers must already tolerate that (mirrors legacy
-// tc.c, which null-checked Tc.sc/Tc.rc/Tc.cs before using them).
-// Field names follow the termcap two-letter names tc.c used, in
-// comments, so this can be cross-checked against that file directly.
+// 現在の$TERMに対してterminfoが報告する能力文字列。空文字列は「この
+// 端末はこの能力に対応していない」を意味する――呼び出し側は既に
+// それを許容できなければならない(legacyのtc.cが使用前に
+// Tc.sc/Tc.rc/Tc.csをnullチェックしていたのと同じ)。フィールド名は
+// tc.cが使っていたtermcapの2文字名にコメントで合わせてあるので、
+// そのファイルと直接突き合わせて確認できる。
 struct TerminalCapabilities {
   std::string clearScreen;                    // cl
   std::string clearToEndOfLine;                // ce
-  std::string cursorAddress;                   // cm (required; see fromEnvironment())
+  std::string cursorAddress;                   // cm(必須。fromEnvironment()参照)
   std::string cursorLeft;                       // le
   std::string standoutOn, standoutOff;          // so, se
-  std::string underlineOn, underlineOff;        // us, ue (fall back to so/se)
+  std::string underlineOn, underlineOff;        // us, ue(so/seへフォールバック)
   std::string boldOn, boldOff;                  // md, me
-  std::string saveCursor, restoreCursor;        // sc, rc (optional)
-  std::string changeScrollRegion;               // cs (optional)
+  std::string saveCursor, restoreCursor;        // sc, rc(省略可)
+  std::string changeScrollRegion;               // cs(省略可)
   std::string scrollForward, scrollReverse;     // sf, sr
   std::string enterAltScreen, exitAltScreen;    // ti, te
   std::string keyUp, keyDown, keyLeft, keyRight; // ku, kd, kr, kl
   std::string keyPageUp, keyPageDown;            // kP, kN
 };
 
-// termcap/terminfo-backed Display, using the same tputs/tgoto/
-// setupterm approach as the legacy tc.c. Ported faithfully; behavior
-// differences from the legacy C are called out explicitly in comments
-// (there are a few small, deliberate ones -- see close(), and the
-// output-enabled guard note on display.hpp).
+// legacyのtc.cと同じtputs/tgoto/setupterm方式を使った、termcap/
+// terminfoベースのDisplay。忠実に移植済み。legacyのCとの挙動の違いは
+// コメントで明示的に述べてある(いくつか小さな、意図的なものがある
+// ――close()と、display.hppのoutput-enabledガードについての注記
+// 参照)。
 //
-// Testing note: there's no headless way to exercise real terminal I/O
-// from a unit test (tputs/setupterm need an actual terminfo database
-// and, for meaningful output, a real tty -- the legacy tc.c was never
-// unit-tested either, only verified via PTY scripts). To keep the
-// parts that CAN be tested honestly separated from the parts that
-// can't: every method that performs real I/O guards on
-// outputEnabled() as its very first statement, so constructing a
-// TerminalDisplay via the injectable constructor below (outputEnabled
-// defaults to false) makes every I/O method a guaranteed no-op --
-// safe to call from a test without touching stdout or any ncurses
-// global state. That lets tests exercise the pure state (attribute/
-// key capability lookup, geometry, the enabled/smooth-scroll flags
-// themselves) with real confidence, while the actual escape-sequence
-// output is build-verified only, same as the legacy code's coverage.
+// テストに関する注記: ユニットテストから本物の端末I/Oをヘッドレスに
+// 実行する方法は無い(tputs/setuptermは、実際のterminfoデータベース
+// と、意味のある出力のためには本物のttyを必要とする――legacyの
+// tc.cも一度もユニットテストされたことは無く、PTYスクリプトでのみ
+// 検証されていた)。「テストできる」部分と「できない」部分を誠実に
+// 分離しておくために: 実際にI/Oを行う各メソッドは、その一番最初の
+// 文としてoutputEnabled()をガードするので、下の注入可能なコンストラ
+// クタ(outputEnabledは既定でfalse)経由でTerminalDisplayを構築すれば、
+// 全てのI/Oメソッドが確実に何もしなくなる――標準出力にもncursesの
+// どのグローバル状態にも触れずにテストから安全に呼び出せる。これに
+// より、テストは純粋な状態(属性/キー能力の検索、ジオメトリ、有効/
+// スムーズスクロールのフラグ自体)を確かな自信を持って検証でき、
+// 実際のエスケープシーケンス出力の方は、legacyコードのカバレッジと
+// 同様、ビルドによる検証のみとなる。
 class TerminalDisplay : public Display {
  public:
   TerminalDisplay(TerminalCapabilities caps, int rows, int columns);
 
-  // Real construction path: queries $TERM via setupterm() and the
-  // controlling tty's window size via ioctl(TIOCGWINSZ). Ported from
-  // tc_load()/get_winsize() (tc.c/vt.c). By default, exits the process
-  // on failure (no TERM set, an unrecognized terminal, or a terminfo
-  // entry missing cursor_address), matching legacy behavior exactly --
-  // all three were already fatal startup errors there, back when this
-  // was the ONLY possible display backend.
+  // 実際の構築経路: setupterm()経由で$TERMを、ioctl(TIOCGWINSZ)経由で
+  // 制御端末のウィンドウサイズを問い合わせる。tc_load()/
+  // get_winsize()(tc.c/vt.c)からの移植。既定では、失敗時(TERM未設定、
+  // 未認識の端末、またはcursor_addressを欠くterminfoエントリ)に
+  // プロセスを終了する。legacyの挙動と正確に一致しており、これが
+  // 「唯一」可能なdisplayバックエンドだった当時、この3つはいずれも
+  // そこで既に致命的な起動エラーだった。
   //
-  // `exitOnFailure = false` (2026-08-24 fix, docs/CHANGES.md item 423,
-  // a direct user report: a real double-click on `make app`'s new
-  // .app bundle did nothing at all -- confirmed via a temporary
-  // stderr-to-file redirect that this exact fprintf+exit(1) was firing
-  // on "TERM environment variable is not set", every single time):
-  // this class's own legacy-inherited assumption -- "a real terminal
-  // MUST exist, or the whole program can't run" -- stopped being true
-  // the moment GUI mode (GraphicalDisplay, SDL2-backed) existed, since
-  // that backend needs no terminfo/tty of its own at all. A process
-  // launched via LaunchServices/Finder (not from any shell) has NO
-  // controlling terminal and, critically, no $TERM in its environment
-  // either -- unlike this port's own `open`-from-a-shell testing,
-  // which happened to inherit the invoking shell's $TERM and never hit
-  // this path, masking the bug for a long time. Passed `false` from
-  // main() specifically when it already knows (from argv/-c/-g/
-  // platform-default logic, decided BEFORE this call) that the session
-  // is GUI-only and will never actually render through this backend's
-  // real terminal capabilities -- returns a degraded, empty-
-  // capabilities placeholder instead of exiting, sized to a
-  // conventional 80-column x 24-row terminal (see fromEnvironment()'s
-  // own .cpp-side comment on why this is its own value, deliberately
-  // NOT reusing windowSize()'s different 80x30 fallback elsewhere in
-  // this file). A genuine
-  // CUI-only launch (forceCui, or the non-macOS platform default) is
-  // completely unaffected -- still defaults to `true`, still exits
-  // with the same diagnostic message, since THERE a working real
-  // terminal genuinely is required and "silently proceed with no
-  // capabilities" would just trade one confusing failure for another.
+  // `exitOnFailure = false`(2026-08-24修正、docs/CHANGES.md 423番、
+  // 実際のユーザー報告: `make app`が作る新しい.appバンドルを実際に
+  // ダブルクリックしても全く何も起きなかった――標準エラーを一時的に
+  // ファイルへリダイレクトして確認したところ、まさにこの
+  // fprintf+exit(1)が「TERM environment variable is not set」で
+  // 毎回発火していた): このクラス自身のlegacyから受け継いだ前提
+  // ――「本物の端末が必ず存在する、さもなければプログラム全体が
+  // 動けない」――は、GUIモード(GraphicalDisplay、SDL2ベース)が
+  // 存在するようになった瞬間に成り立たなくなった。そちらのバック
+  // エンドはterminfo/ttyを自前で全く必要としないため。
+  // LaunchServices/Finder経由で(どのシェルからでもなく)起動された
+  // プロセスには制御端末が「無く」、さらに致命的なことに、その環境に
+  // $TERMも無い――この移植自身のシェルからの`open`によるテストは、
+  // たまたま呼び出し元シェルの$TERMを継承していてこの経路に一度も
+  // 到達せず、長らくこのバグを覆い隠していたのとは対照的。main()から
+  // `false`が渡されるのは、具体的には、そのセッションがGUI専用であり、
+  // このバックエンドの本物の端末機能を実際に通して描画することは
+  // 決して無いと(この呼び出しより前に決定される、argv/-c/-g/
+  // プラットフォームの既定ロジックから)既に分かっている場合――
+  // その場合は終了する代わりに、劣化した、空の能力を持つ
+  // プレースホルダを返し、慣習的な80カラム×24行の端末としてサイズ
+  // 設定される(なぜこれがこの独自の値で、このファイルの他の場所に
+  // ある windowSize()の異なる80x30フォールバックを意図的に再利用
+  // していないのかについてはfromEnvironment()自身の.cpp側コメント
+  // 参照)。純粋にCUI専用の起動(forceCui、または非macOSプラット
+  // フォームの既定)には全く影響しない――依然として既定は`true`の
+  // ままで、依然として同じ診断メッセージと共に終了する。そちらでは
+  // 動作する本物の端末が本当に必要であり、「能力無しで静かに続行
+  // する」は1つの分かりにくい失敗を別の失敗に置き換えるだけになる
+  // ため。
   static std::unique_ptr<TerminalDisplay> fromEnvironment(bool exitOnFailure = true);
 
   void write(const std::string &text) override;
@@ -101,11 +103,11 @@ class TerminalDisplay : public Display {
   void cursorLeft() override;
   void saveCursor() override;
   void restoreCursor() override;
-  // Just moveCursor(row, col) -- see Display::setVisibleCursor()'s own
-  // comment for why a real terminal doesn't need to track this
-  // separately.
+  // 単にmoveCursor(row, col)を呼ぶだけ――本物の端末がこれを別途
+  // 追跡する必要が無い理由についてはDisplay::setVisibleCursor()
+  // 自身のコメント参照。
   void setVisibleCursor(int row, int col) override;
-  void hideVisibleCursor() override;  // no-op, see Display's own comment
+  void hideVisibleCursor() override;  // 何もしない、Display自身のコメント参照
 
   void clearScreen() override;
   void clearToEndOfLine() override;
@@ -133,26 +135,25 @@ class TerminalDisplay : public Display {
   void leaveForExternalProgram() override;
   void reenterFromExternalProgram() override;
 
-  // See Display::renderScrolled()'s own comment: a real, row-granular
-  // implementation (pixelOffsetY has no effect beyond its sign, since
-  // a terminal has no sub-row addressing), kept correct and usable
-  // even though the real-terminal drag-scroll fallback in main.cpp
-  // currently drives ContentView::redraw() directly instead of
-  // calling this.
+  // Display::renderScrolled()自身のコメント参照: 本物の、行単位の
+  // 実装(端末にはサブ行アドレス指定が無いため、pixelOffsetYはその
+  // 符号以外には効果を持たない)。main.cpp内の実端末ドラッグスクロール
+  // フォールバックが現在はこれを呼ぶ代わりに直接ContentView::redraw()
+  // を駆動しているにもかかわらず、正しく使える状態のまま保たれている。
   void renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                        const std::vector<Display::ModeLineSegment> &modeLineSegments) override;
 
-  // Row/column arguments for the change-scroll-region capability,
-  // given the current size and smooth-scroll setting. Pure (no I/O).
-  // Not part of Display's abstract interface -- exposed publicly here
-  // mainly so it can be unit-tested directly without needing a real
-  // terminal. Ported from the row arithmetic legacy callers repeated
-  // at every vt_cs() call site (see display.hpp).
+  // 現在のサイズとスムーズスクロール設定を踏まえた、スクロール領域
+  // 変更能力のための行/列引数。純粋(I/Oなし)。Displayの抽象
+  // インターフェースの一部ではない――主に、本物の端末を必要とせず
+  // これを直接ユニットテストできるよう、ここで公開してある。legacyの
+  // 呼び出し元が、あらゆるvt_cs()の呼び出し箇所で繰り返していた行の
+  // 算術からの移植(display.hpp参照)。
   std::pair<int, int> scrollRegionArgs() const;
 
  private:
   void applyScrollRegion();
-  // See its own .cpp comment.
+  // 自身の.cppのコメント参照。
   void writeAttributedLine(const std::string &text, const std::vector<Display::AttributeRun> &runs);
 
   TerminalCapabilities caps_;
