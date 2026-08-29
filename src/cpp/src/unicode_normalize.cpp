@@ -10,11 +10,11 @@ namespace fm {
 
 namespace {
 
-// Same shape as mac_font_resolver.cpp's own CoreFoundation round-trip
-// (CFStringRef in, resized std::string out) -- separate translation
-// unit, not shared, same as every other small local helper already
-// duplicated across this codebase (see e.g. locate_mode.cpp's own
-// shellQuoteArgForUpdateDb()).
+// mac_font_resolver.cpp自身のCoreFoundation往復処理(CFStringRefを
+// 受け取り、サイズ調整済みstd::stringを返す)と同じ形――別の翻訳単位
+// であり共有はしていない、このコードベース全体で既に重複している他の
+// 小さなローカルヘルパー(例えばlocate_mode.cpp自身の
+// shellQuoteArgForUpdateDb())と同じパターン。
 std::string normalize(const std::string &utf8, CFStringNormalizationForm form) {
   CFStringRef cf = CFStringCreateWithBytes(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(utf8.data()),
                                             static_cast<CFIndex>(utf8.size()), kCFStringEncodingUTF8, false);
@@ -55,12 +55,12 @@ std::vector<std::string> unicodeNormalizationCandidates(const std::string &text)
 
 namespace fm {
 
-// See the header's own comment -- this bug's root cause (APFS's
-// normalization-PRESERVING behavior) is macOS-specific; ext4/most
-// Linux filesystems don't exhibit the same "either form, coexisting"
-// property in practice, and CFStringNormalize() itself is a
-// CoreFoundation API with no portable equivalent linked into this
-// build (matching mac_font_resolver.cpp's own #else stub convention).
+// ヘッダー自身のコメント参照――このバグの根本原因(APFSの正規化を
+// 「保持」する挙動)はmacOS固有である。ext4を含むほとんどのLinux
+// ファイルシステムは実際には同じ「どちらの形式も共存しうる」という
+// 性質を示さず、CFStringNormalize()自体もこのビルドに移植可能な
+// 同等品が無いCoreFoundation APIである(mac_font_resolver.cpp自身の
+// #elseスタブの慣習と同じ)。
 std::vector<std::string> unicodeNormalizationCandidates(const std::string &text) { return {text}; }
 
 }  // namespace fm

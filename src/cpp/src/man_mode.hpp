@@ -11,52 +11,53 @@
 
 namespace fm {
 
-// MAN-page mode (T_man): runs `man <name>` and displays its output.
-// Ported from init.c's init_man()/fork_man() -- which turns out to
-// just run `man`(1) and pipe its output through the exact same
-// nroff-overstrike-bold-detection/charset-conversion/line-wrapping
-// machinery as viewing a plain text file (alloc_pipe(), already
-// ported as PipeBuffer) -- man pages use the same backspace-overstrike
-// convention as e.g. this repo's own doc/README.jp (see PipeBuffer's
-// own class comment and CLAUDE.md history item 8). This makes ManMode
-// structurally identical to FileMode, just sourcing its bytes from a
-// command's captured output instead of a file read -- see the .cpp.
+// MANページモード(T_man): `man <name>`を実行しその出力を表示する。
+// init.cのinit_man()/fork_man()からの移植――蓋を開けてみればこれは
+// 単に`man`(1)を実行し、その出力を、プレーンテキストファイルを
+// 閲覧する場合と全く同じnroffオーバーストライク太字検出/文字コード
+// 変換/折り返しの仕組み(alloc_pipe()、既にPipeBufferとして移植済み)
+// に通しているだけだった――manページは、例えばこのリポジトリ自身の
+// doc/README.jpと同じバックスペース・オーバーストライクの慣習を
+// 使っている(PipeBuffer自身のクラスコメントとCLAUDE.mdの作業ログ
+// 8番参照)。これによりManModeは構造的にFileModeと同一になり、違いは
+// ファイル読み込みではなくコマンドの捕捉した出力からバイト列を得る
+// 点だけである――詳細は.cpp参照。
 //
-// Deliberately excluded (future work, not this slice): the
-// `ENVVAR=value manpage` prefix fork_man() special-cased (setting one
-// environment variable before running `man`, e.g. for MANSECTION) --
-// narrow enough, and this project has no evidence it was ever
-// exercised in practice, that guessing at a clean API for it now
-// would be speculative; a plain page name is what's supported here.
+// 意図的に除外(将来の課題、この段階では対象外): fork_man()が特別
+// 扱いしていた`ENVVAR=value manpage`という接頭辞形式(`man`実行前に
+// 環境変数を1つ設定する、例えばMANSECTION用)――かなり限定的な用途で
+// あり、このプロジェクトには実際に使われていたという証拠が無いため、
+// 今きれいなAPIを推測で作るのは憶測に過ぎる。ここで対応しているのは
+// 素のページ名のみ。
 class ManMode {
  public:
   ManMode(ContentView &view, History &history, const Configuration &configuration, Charset::Encoding encoding,
           int width);
 
-  // Runs `man name` and displays the result, restoring a remembered
-  // cursor position from History if one exists for this exact page
-  // (stored under PositionCategory::ManPage, legacy's own `ll.p.man`
-  // category). False if the command failed to run (no such man page,
-  // `man` not configured/installed).
+  // `man name`を実行し結果を表示する。このページに対して記憶済みの
+  // カーソル位置がHistoryにあればそれを復元する
+  // (PositionCategory::ManPage、legacy自身の`ll.p.man`カテゴリの
+  // 下に保存)。コマンドの実行に失敗した場合(該当するmanページが
+  // 無い、`man`が未設定/未インストール)はfalse。
   bool loadPage(const std::string &name);
 
   const std::string &currentPage() const;
   void saveCursorPosition();
 
-  // K-27 (^Oa): see FileMode::setEncoding()'s own comment -- the same
-  // shape here (affects the NEXT loadPage()/reflow(), not whatever's
-  // already displayed).
+  // K-27 (^Oa): FileMode::setEncoding()自身のコメント参照――ここでも
+  // 同じ形(影響するのは「次の」loadPage()/reflow()であり、既に
+  // 表示されている内容ではない)。
   void setEncoding(Charset::Encoding encoding);
 
-  // Re-runs `man currentPage()` and re-wraps its output at newWidth,
-  // for a terminal resize. See FileMode::reflow()'s own comment for
-  // the shared design (not a literal alloc_winch() port, current-
-  // session cursor preserved via clamp rather than a History lookup)
-  // -- the one difference here is that, since there's no cached raw
-  // `man` output to reflow from, this genuinely re-invokes `man`
-  // itself rather than re-reading a file, a real (flagged) cost this
-  // doesn't try to hide. False (a no-op) if no page is currently
-  // loaded, or if re-running `man` fails.
+  // `man currentPage()`を再実行し、その出力をnewWidthで再度折り返す。
+  // 端末サイズ変更用。共有している設計についてはFileMode::reflow()
+  // 自身のコメント参照(alloc_winch()の逐語的な移植ではなく、
+  // 現在セッションのカーソルはHistory参照ではなくクランプで保持)
+  // ――ここでの唯一の違いは、再度折り返す元となるキャッシュ済みの
+  // 生の`man`出力が無いため、ファイルを再読み込みするのではなく本当に
+  // `man`自体を再実行する点で、これは隠そうとしていない実際の
+  // (明示された)コストである。現在ページが読み込まれていない場合、
+  // または`man`の再実行に失敗した場合はfalse(何もしない)。
   bool reflow(int newWidth);
 
  private:

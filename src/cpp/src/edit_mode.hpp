@@ -9,62 +9,65 @@
 
 namespace fm {
 
-// EDITOR launch (mode.c's do_edit()): opens a file in the configured
-// EDITOR at a given line number, with real terminal access, and
-// reports whether the file changed so the caller knows to reload it.
+// EDITOR起動(mode.cのdo_edit()): 設定済みのEDITORで、指定行番号の
+// 位置からファイルを開き、実端末アクセスを与え、ファイルが変更
+// されたかどうかを報告して呼び出し側が再読み込みすべきか分かる
+// ようにする。
 //
-// This is NOT a literal port. do_edit() hand-rolls the same fork()/
-// execvp()/wait() + raw-termio-leave/re-enter sequence do_prog() and
-// do_exec() also each hand-roll independently -- now
-// ChildProcess::runInteractive() (added for ProgramMode) plus
-// KeyInput's existing leaveRawMode()/reenterRawMode(). Building the
-// argv itself is already Configuration::editorArgv()'s job (it
-// builds the real "+<lineNumber>" argument directly, replacing
-// legacy's fixed-width "+??????????" placeholder-patched-in-place
-// trick -- see Configuration's own class comment), so this class is
-// mostly just: run it, then check whether the file's content changed.
+// これは逐語的な移植ではない。do_edit()はdo_prog()やdo_exec()も
+// それぞれ独立して手作りしているのと同じfork()/execvp()/wait() +
+// raw termioの退出/再突入の手順を、これまた手作りしていた――今では
+// ChildProcess::runInteractive()(ProgramMode用に追加)とKeyInputの
+// 既存のleaveRawMode()/reenterRawMode()を使う。argv自体の組み立ては
+// 既にConfiguration::editorArgv()の仕事(そちらが本物の
+// "+<lineNumber>"引数を直接組み立てる。legacyの固定幅
+// "+??????????"というプレースホルダをその場でパッチするトリックの
+// 置き換え――Configuration自身のクラスコメント参照)なので、この
+// クラスの仕事はほぼ「実行し、その後ファイルの内容が変わったか
+// 確認する」だけである。
 //
-// Deliberately excluded (future work, not this slice):
-//   - The mode-context guards on when editing is even allowed
-//     (do_edit()'s "not while viewing an archive/cut/split buffer",
-//     "path must be absolute in file-manager mode" checks):
-//     Mode/Application's job to enforce before calling edit() at all,
-//     the same hand-off boundary every other *Mode class in this
-//     port already draws.
-//   - The SIGCONT pid-reporting handler: same exclusion FileMode's
-//     sibling ProgramMode already documents, for the same reason.
+// 意図的に除外(将来の課題、この段階では対象外):
+//   - そもそも編集が許されるかどうかのモード文脈上のガード
+//     (do_edit()の「アーカイブ/cut/split中のバッファ閲覧中は不可」
+//     「file-manager modeではパスが絶対パスでなければならない」と
+//     いったチェック): edit()を呼ぶ前にそれを強制するのは
+//     Mode/Applicationの仕事、この移植の他の全`*Mode`クラスが既に
+//     引いているのと同じ引き渡しの境界。
+//   - SIGCONTによるpid報告ハンドラ: FileModeの兄弟にあたる
+//     ProgramModeが既に文書化しているのと同じ理由による同じ除外。
 class EditMode {
  public:
   EditMode(KeyInput &keyInput, const Configuration &configuration);
 
-  // Opens path in the configured EDITOR (Configuration::editorArgv())
-  // at lineNumber. Returns true if the file's last-write time changed
-  // while editing (the caller should reload it), false if unchanged
-  // or the file couldn't be queried before or after. Ported from
-  // do_edit()'s st_ctime comparison via stat(), but using
-  // std::filesystem::last_write_time() instead of a raw ctime field
-  // for two reasons: ctime also changes on metadata-only changes
-  // (permissions, etc.) that aren't really "the content changed",
-  // which is what this check is actually meant to answer; and plain
-  // stat()'s st_mtime truncates to whole seconds, which is coarse
-  // enough that a fast edit (a scripted EDITOR, or simply a quick
-  // real one) can complete within the same second it started in and
-  // go undetected -- last_write_time() carries the filesystem's real
-  // sub-second precision instead.
+  // 設定済みのEDITOR(Configuration::editorArgv())でpathを
+  // lineNumberの位置から開く。編集中にファイルの最終書き込み時刻が
+  // 変わっていればtrue(呼び出し側は再読み込みすべき)、変わって
+  // いない、または編集の前後どちらかでファイルを問い合わせできな
+  // かった場合はfalse。do_edit()のstat()経由のst_ctime比較からの
+  // 移植だが、生のctimeフィールドではなくstd::filesystem::
+  // last_write_time()を使っている理由は2つ: ctimeはメタデータのみの
+  // 変更(パーミッション等)でも変化してしまい、それはこのチェックが
+  // 本当に答えたい「内容が変わったか」ではないこと。また素の
+  // stat()のst_mtimeは秒単位に切り捨てられるため粗すぎて、素早い
+  // 編集(スクリプト化されたEDITOR、あるいは単に素早い本物の編集)が
+  // 開始と同じ秒内に完了してしまうと検出漏れになりうる――
+  // last_write_time()はファイルシステムが持つ実際のサブ秒精度を
+  // そのまま運ぶ。
   bool edit(const std::string &path, int lineNumber);
 
-  // Overrides HOW edit() actually runs the editor's argv, the same
-  // "settable callback, not a subclass/flag" shape ProgramMode::
-  // setForegroundLauncher() already established (see its own
-  // comment): when set and it returns true, edit() trusts it handled
-  // the whole foreground handoff itself and skips
-  // ChildProcess::runInteractive()/leaveRawMode()/reenterRawMode()
-  // entirely; false falls back to that normal path unchanged. Exists
-  // for the same one caller ProgramMode's version does -- main.cpp's
-  // GUI-mode run loop, wired for the exact same reason (a `vi`/EDITOR
-  // launch has the identical "this process's own inherited stdio
-  // isn't what's actually on screen once GraphicalDisplay owns the
-  // window" problem PROGRAM-mode commands do).
+  // edit()が実際にエディタのargvを「どう」実行するかを上書きする。
+  // ProgramMode::setForegroundLauncher()が既に確立したのと同じ
+  // 「サブクラス/フラグではなく設定可能なコールバック」という形
+  // (そちら自身のコメント参照): 設定済みでtrueを返した場合、edit()は
+  // フォアグラウンドへの受け渡し全体をそちらが処理し終えたと信頼し、
+  // ChildProcess::runInteractive()/leaveRawMode()/reenterRawMode()を
+  // 一切スキップする。falseなら通常のその経路へそのままフォール
+  // バックする。ProgramMode版と全く同じ唯一の呼び出し元のために
+  // 存在する――main.cppのGUIモード実行ループで、全く同じ理由
+  // (`vi`/EDITOR起動は、GraphicalDisplayがウィンドウを所有している
+  // 状況では「このプロセス自身が継承したstdioは実際に画面に出ている
+  // ものではない」というPROGRAMモードのコマンドと全く同じ問題を
+  // 抱えている)で配線されている。
   void setForegroundLauncher(std::function<bool(const std::vector<std::string> &argv)> launcher);
 
  private:

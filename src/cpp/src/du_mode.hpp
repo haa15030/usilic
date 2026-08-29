@@ -15,38 +15,37 @@ struct DuEntry {
   bool isDirectory = false;
 };
 
-// Disk-usage mode (T_du): runs `du` over a directory and displays
-// each file/subdirectory's size. Ported from mode.c's T_du case --
-// which itself is mostly path-string bookkeeping (deciding whether
-// the result lands back in T_dir or T_file, chdir()ing, formatting
-// the mode-line breadcrumb) around a `du` invocation that already had
-// a real command line resolved elsewhere (menu.c's `M_du` prompt
-// entry, not covered by this class -- see below). DuMode is, like
-// FileMode/ArchiveMode, mostly wiring: Configuration already resolves
-// the `du` command line (commandFor(ConfiguredRole::Du)), ChildProcess
-// already runs it, so this class's only real job is parsing `du`'s
-// tab-separated "<size>\t<path>" output into entries and displaying
-// them.
+// ディスク使用量モード(T_du): あるディレクトリに対して`du`を実行し、
+// 各ファイル/サブディレクトリのサイズを表示する。mode.cのT_duケース
+// からの移植――そのケース自体は、`du`呼び出し(実際のコマンドラインは
+// 別の場所で既に解決済み、menu.cの`M_du`プロンプト入力、このクラスの
+// 対象外――後述)を取り巻く、ほとんどがパス文字列の管理(結果を
+// T_dirに戻すかT_fileに戻すかの決定、chdir()、モードラインのパンくず
+// のフォーマット)である。DuModeは、FileMode/ArchiveModeと同様、
+// ほとんどが配線作業に過ぎない: Configurationが既に`du`のコマンド
+// ラインを解決し(commandFor(ConfiguredRole::Du))、ChildProcessが
+// 既にそれを実行するので、このクラスの本当の仕事は`du`のタブ区切り
+// "<size>\t<path>"出力をエントリへパースして表示することだけである。
 //
-// Deliberately excluded (future work, not this slice):
-//   - The M_du prompt (typing/confirming which directory to measure)
-//     and the decision of whether opening a DU entry lands in
-//     DirectoryMode or FileMode: Mode/Application's job, the same
-//     hand-off boundary every other *Mode class in this port already
-//     draws.
-//   - chdir()/cwd bookkeeping: legacy's T_du case chdir()s the whole
-//     process as a side effect of measuring a directory; not
-//     reproduced here (no hidden global state -- see e.g.
-//     Configuration/Shell's own class comments for this project's
-//     standing rule on this).
+// 意図的に除外(将来の課題、この段階では対象外):
+//   - M_duプロンプト(どのディレクトリを計測するか入力/確認する)と、
+//     DUのエントリを開いた結果がDirectoryModeとFileModeのどちらへ
+//     着地するかの決定: Mode/Applicationの仕事、この移植の他の全
+//     `*Mode`クラスが既に引いているのと同じ引き渡しの境界。
+//   - chdir()/カレントディレクトリの管理: legacyのT_duケースは、
+//     ディレクトリを計測する副作用としてプロセス全体をchdir()する。
+//     ここでは再現していない(隠れたグローバル状態を持たない――
+//     この点についてのこのプロジェクトの一貫した方針は例えば
+//     Configuration/Shell自身のクラスコメント参照)。
 class DuMode {
  public:
   DuMode(ContentView &view, History &history, const Configuration &configuration);
 
-  // Runs `du` on path (via Configuration::commandFor(Du) + real
-  // filesystem type checks for isDirectory) and displays the results,
-  // restoring a remembered cursor position from History if one exists
-  // for this exact path. False if the command failed to run.
+  // path に対して`du`を実行し(Configuration::commandFor(Du) +
+  // isDirectory判定のための実際のファイルシステム種別チェック経由)、
+  // 結果を表示する。このパスに対して記憶済みのカーソル位置が
+  // Historyにあればそれを復元する。コマンドの実行に失敗した場合は
+  // false。
   bool loadUsage(const std::string &path);
 
   const std::string &currentPath() const;
