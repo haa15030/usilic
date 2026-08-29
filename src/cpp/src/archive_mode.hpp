@@ -12,113 +12,117 @@
 
 namespace fm {
 
-// Archive-browsing mode: lists an archive's contents (.tar/.tgz/
-// .tar.bz2/.zip/.lha/.rpm/.deb) and extracts a selected entry's raw
-// bytes. Ported from mode.c's T_tar/T_lha/T_unzip/T_rpm/T_deb cases
-// reaching into init.c's init_arc() (which itself calls fork_arc() to
-// run the listing command, then alloc.c's alloc_head()/alloc_tar()/
-// alloc_lha()/alloc_unzip() to parse it) -- but this is genuinely just
-// glue over already-ported classes, not a fresh port: Configuration
-// already resolves which command lists/decompresses a given suffix
-// (programForSuffix(), including the ARCHIVE-directive pipe-splitting
-// for .tgz/.tar.bz2), ChildProcess already runs it (run()/
-// runPipeline()), and the ArchiveReader family already parses the
-// listing text and locates entry content in raw bytes. ArchiveMode's
-// only real job is wiring those three together and feeding the result
-// to ContentView -- the same shape as FileMode wiring PipeBuffer to
-// ContentView.
+// アーカイブ閲覧モード: アーカイブの内容(.tar/.tgz/.tar.bz2/.zip/
+// .lha/.rpm/.deb)を一覧表示し、選択されたエントリの生バイト列を
+// 抽出する。mode.cのT_tar/T_lha/T_unzip/T_rpm/T_dephケースが、
+// init.cのinit_arc()(それ自体はfork_arc()を呼んで一覧コマンドを
+// 実行し、続いてalloc.cのalloc_head()/alloc_tar()/alloc_lha()/
+// alloc_unzip()でそれをパースする)へ手を伸ばす形からの移植――
+// ただしこれは実質的には既に移植済みのクラス群の上に乗るだけの
+// 配線であり、新規の移植ではない: Configurationは既に、与えられた
+// 拡張子に対しどのコマンドで一覧表示/展開するかを解決し
+// (programForSuffix()、.tgz/.tar.bz2用のARCHIVEディレクティブによる
+// パイプ分割も含む)、ChildProcessは既にそれを実行し(run()/
+// runPipeline())、ArchiveReader系クラス群は既に一覧テキストをパース
+// し生バイト列内でエントリの内容を位置特定する。ArchiveModeの本当の
+// 仕事は、それら3つを配線しContentViewへ結果を渡すことだけ――
+// FileModeがPipeBufferをContentViewへ配線しているのと同じ形。
 //
-// Deliberately excluded (future work, not this slice):
-//   - RPM/.deb content extraction: RpmReader::locateContent() is
-//     intentionally a no-op (see archive_reader.hpp) -- an RPM
-//     entry's content isn't a byte range in the .rpm file the way
-//     tar/zip/lha entries are, it needs rpm2cpio re-invoked against
-//     the whole archive. A .deb's listing is the OUTER `ar` container
-//     (control.tar.gz/data.tar.gz/debian-binary) rather than the
-//     inner payload, so reaching a real file inside it needs a
-//     multi-stage pipeline (`ar p | gzip -dc | tar xf -`) this slice
-//     doesn't build. extractSelected() returns nullopt for both.
-//   - Nested archives (opening an archive found inside another
-//     archive's extracted content) and handing extracted content off
-//     to FileMode/further viewing: Mode/Application's job to
-//     coordinate, same boundary DirectoryMode/FileMode already
-//     documented for their own hand-offs.
-//   - Actually decompressing to a real temporary file for huge
-//     archives that don't fit comfortably in memory: this slice reads
-//     the whole archive file into memory for locateContent(), matching
-//     ArchiveReader's own existing API shape (data+size, not a stream).
+// 意図的に除外(将来の課題、この段階では対象外):
+//   - RPM/.debの内容抽出: RpmReader::locateContent()は意図的に何も
+//     しない(archive_reader.hpp参照)――RPMのエントリの内容は、
+//     tar/zip/lhaのエントリのように.rpmファイル内のバイト範囲では
+//     なく、アーカイブ全体に対してrpm2cpioを再度呼び出す必要が
+//     ある。.debの一覧は「外側の」`ar`コンテナ(control.tar.gz/
+//     data.tar.gz/debian-binary)であって内側のペイロードでは
+//     ないため、その中の実ファイルへ到達するには、この段階では
+//     まだ構築していない多段パイプライン(`ar p | gzip -dc | tar
+//     xf -`)が必要になる。extractSelected()はどちらに対しても
+//     nulloptを返す。
+//   - ネストしたアーカイブ(あるアーカイブの展開済み内容の中に
+//     見つかったアーカイブを開く)と、展開済みの内容をFileModeや
+//     さらなる閲覧へ引き渡すこと: 調整するのはMode/Applicationの
+//     仕事、DirectoryMode/FileModeが自身の引き渡しについて既に
+//     文書化しているのと同じ境界。
+//   - メモリに快適に収まらない巨大なアーカイブのために、実際の
+//     一時ファイルへ展開すること: この段階ではlocateContent()の
+//     ためにアーカイブファイル全体をメモリへ読み込む。ArchiveReader
+//     自身の既存のAPIの形(ストリームではなくdata+size)に合わせて
+//     いる。
 class ArchiveMode {
  public:
   ArchiveMode(ContentView &view, History &history, const Configuration &configuration);
 
-  // Resolves path's listing (and, for piped formats like .tgz, its
-  // decompression stage) via Configuration::programForSuffix(), runs
-  // it, and parses the result with the matching ArchiveReader
-  // subclass. Restores a remembered cursor position from History if
-  // one exists for this exact path (stored under
-  // PositionCategory::Screen -- the catch-all category legacy itself
-  // used for archive-listing cursor memory, see History's own class
-  // comment). False if path's suffix isn't a configured archive
-  // format, or the listing command failed.
+  // Configuration::programForSuffix()経由でpathの一覧表示コマンド
+  // (.tgzのようなパイプ形式ならその展開段階も)を解決し、それを実行
+  // して、結果を対応するArchiveReaderのサブクラスでパースする。
+  // このパスに対して記憶済みのカーソル位置がHistoryにあればそれを
+  // 復元する(PositionCategory::Screenの下に保存――legacy自身が
+  // アーカイブ一覧のカーソル記憶に使っていた雑多カテゴリ、History
+  // 自身のクラスコメント参照)。pathの拡張子が設定済みのアーカイブ
+  // フォーマットでない場合、または一覧表示コマンドが失敗した場合は
+  // false。
   bool loadArchive(const std::string &path);
 
   const std::string &currentArchive() const;
-  // The concrete format of currentArchive() (None before any
-  // loadArchive() call) -- exposed for K-57/K-58 (^X^Ka/^Xa, "ARC:
-  // Expand archive"), which needs to know the format to build the
-  // right extraction command (Application's job, see its own
-  // descendToNestedArchive()/K-57 comments -- ArchiveMode itself only
-  // exposes the format, it doesn't run any extraction-to-destination
-  // command of its own).
+  // currentArchive()の具体的なフォーマット(loadArchive()呼び出し前は
+  // None)――K-57/K-58(^X^Ka/^Xa、「ARC: Expand archive」)のために
+  // 公開されている。そちらは、正しい抽出コマンドを組み立てるために
+  // フォーマットを知る必要がある(Applicationの仕事、そちら自身の
+  // descendToNestedArchive()/K-57のコメント参照――ArchiveMode自体は
+  // フォーマットを公開するだけで、宛先への抽出コマンドを自分で実行
+  // することはしない)。
   ArchiveKind archiveKind() const;
   const std::vector<ArchiveEntry> &entries() const;
   const ArchiveEntry *selectedEntry() const;
 
-  // Extracts the selected entry's content: for .tar, by parsing real
-  // tar headers directly in the raw archive file's bytes; for .zip/
-  // .lha, by running the format's extract-to-stdout command
-  // (`unzip -p`/`lha p`) and locating the entry within its
-  // decompressed output instead (see the .cpp for why these two
-  // formats need different data sources). nullopt if there's no
-  // selection, the selection is a directory entry, the format doesn't
-  // support this at all (RPM/.deb, see the class comment), or reading/
-  // running the underlying command failed.
+  // 選択されたエントリの内容を抽出する: .tarの場合は、生のアーカイブ
+  // ファイルのバイト列内にある本物のtarヘッダーを直接パースする
+  // ことで。.zip/.lhaの場合は、代わりにそのフォーマットの標準出力へ
+  // 抽出するコマンド(`unzip -p`/`lha p`)を実行し、その展開済み出力
+  // の中でエントリを位置特定することで(この2つのフォーマットが
+  // なぜ異なるデータ源を必要とするかは.cpp参照)。選択が無い、選択が
+  // ディレクトリエントリである、そのフォーマットがこれに全く対応
+  // していない(RPM/.deb、クラスコメント参照)、または基盤となる
+  // コマンドの読み込み/実行に失敗した場合はnullopt。
   std::optional<std::vector<unsigned char>> extractSelected();
 
   void saveCursorPosition();
 
-  // -- selection marking (K-57/K-58, ^X^Ka/^Xa's own "mark specific
-  // entries to extract" mode -- HELP.jp 2.11's own example marks two
-  // TOC entries with ^M before giving a Destination) --
-  // Mirrors DirectoryMode::toggleMark()/isMarked()/clearMarks()/
-  // markAll()/targetEntries() exactly (this port's own established
-  // ^Space-based simplification of legacy's real per-mode marking
-  // mechanism -- see DirectoryMode's own class comment on why marks
-  // here are indices into entries_, scoped to the CURRENT listing,
-  // not legacy's pp->split in-place marking). Cleared whenever
-  // loadArchive() loads a new listing (including a nested-archive
-  // descent -- marks from the parent archive's TOC don't carry over).
+  // -- 選択マーキング(K-57/K-58、^X^Ka/^Xa自身の「抽出する特定の
+  // エントリをマークする」モード――HELP.jp 2.11自身の例では、
+  // Destinationを与える前に^Mで2つのTOCエントリをマークする) --
+  // DirectoryMode::toggleMark()/isMarked()/clearMarks()/markAll()/
+  // targetEntries()を正確に踏襲している(この移植自身が確立した、
+  // legacyの実際のモードごとのマーキング機構を^Spaceベースで簡略化
+  // したもの――ここでのマークがentries_へのインデックスであり、
+  // legacyのpp->splitによるその場でのマーキングではなく「現在の」
+  // 一覧に限定されている理由はDirectoryMode自身のクラスコメント
+  // 参照)。loadArchive()が新しい一覧を読み込むたびに(ネストした
+  // アーカイブへの降下を含む――親アーカイブのTOCからのマークは
+  // 引き継がれない)クリアされる。
   void toggleMark(int index);
   bool isMarked(int index) const;
   std::size_t markedCount() const;
   void clearMarks();
   void markAll();
 
-  // Marked entries in listing order, or -- if nothing is explicitly
-  // marked -- just the single currently-selected entry (same
-  // "acts on whatever's under the cursor" convention
-  // DirectoryMode::targetEntries() already established). Empty if
-  // there are no marks and no valid selection.
+  // 一覧順でのマーク済みエントリ、またはもし何も明示的にマークされて
+  // いなければ現在選択中の1エントリだけ(DirectoryMode::
+  // targetEntries()が既に確立しているのと同じ「カーソル下にあるものに
+  // 対して作用する」という慣習)。マークが無く、有効な選択も無い
+  // 場合は空。
   std::vector<ArchiveEntry> targetEntries() const;
 
-  // Shows `message` in place of the "ARC" name field, underlined --
-  // 2026-08-26, mirroring DirectoryMode::reportError()'s own identical
-  // mechanism verbatim (see its own comment), for ^X^M/^X a's own
-  // destination-validation errors (e.g. "<path>: No such directory").
+  // 「ARC」という名前フィールドの代わりに`message`を下線付きで表示
+  // する――2026-08-26、DirectoryMode::reportError()自身の全く同じ
+  // 仕組みをそのまま踏襲(そちら自身のコメント参照)、^X^M/^X aの
+  // 宛先検証エラー(例えば「<path>: No such directory」)のためのもの。
   void reportError(const std::string &message);
-  // Clears whatever reportError() set. Called by Application::
-  // handleCommand() once per dispatched command, alongside
-  // directoryMode_.clearEditError() -- see its own call site comment.
+  // reportError()が設定したものをクリアする。Application::
+  // handleCommand()により、ディスパッチされたコマンドごとに1回、
+  // directoryMode_.clearEditError()と並んで呼ばれる――そちら自身の
+  // 呼び出し箇所のコメント参照。
   void clearEditError();
 
  private:
@@ -130,12 +134,12 @@ class ArchiveMode {
 
   std::string currentArchive_;
   ArchiveKind archiveKind_ = ArchiveKind::None;
-  // The actually-configured program name (e.g. "tar"/"unzip"/"lha"/
-  // "rpm") for archiveKind_ -- see the mode-line provider's own
-  // "(<command>)" badge comment. Read from ProgramCommand::argv.front()
-  // at loadArchive() time (same source loadArchive() itself already
-  // consults to run the command), matching DirectoryMode's own "(ls)"
-  // badge convention exactly.
+  // archiveKind_に対して実際に設定されているプログラム名(例えば
+  // "tar"/"unzip"/"lha"/"rpm")――モードラインプロバイダ自身の
+  // "(<command>)"バッジのコメント参照。loadArchive()の時点で
+  // ProgramCommand::argv.front()から読む(コマンドを実行するために
+  // loadArchive()自身が既に参照しているのと同じ情報源)。DirectoryMode
+  // 自身の"(ls)"バッジの慣習と全く同じ。
   std::string archiveCommand_;
   std::vector<ArchiveEntry> entries_;
   std::set<int> markedIndices_;
