@@ -15,107 +15,115 @@ namespace fm {
 
 FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encoding, int width)
     : view_(view), history_(history), encoding_(encoding), width_(width) {
-  // Ported from put_str()'s own f_mark logic (see
-  // ContentView::setCursorHighlightEnabled()'s comment): plain file
-  // content never gets a whole-line reverse-video cursor highlight in
-  // the real CUI, unlike Directory mode's listing (which this port
-  // had already been highlighting, correctly, well before this flag
-  // existed) -- confirmed by a real CUI/GUI side-by-side screenshot.
+  // put_str()自身のf_markロジックからの移植(ContentView::
+  // setCursorHighlightEnabled()のコメント参照): 実際のCUIでは、
+  // Directoryモードの一覧(この移植は、このフラグが存在するずっと
+  // 前から既に正しくハイライトしていた)とは異なり、プレーンな
+  // ファイル内容は行全体の反転表示カーソルハイライトを決して受けない
+  // ――実際のCUI/GUIの並べたスクリーンショットで確認済み。
   view_.setCursorHighlightEnabled(false);
 
-  // Mode-line fields, ported from disp_window()'s own field layout for
-  // the pager case (name0 not starting with '/' takes the "copy as-
-  // is" branch, see its comment): the bare filename on the left (NOT
-  // the full path -- that's what the CUI actually shows), and the
-  // file's byte size plus its containing directory on the right.
-  // Registered once here rather than re-set on every loadFile() call
-  // since it's a live callback into currentFile_, not a snapshot.
+  // モードラインフィールド、disp_window()自身のページャーケース向け
+  // フィールドレイアウト('/'で始まらないname0は「そのままコピー」の
+  // 分岐を取る、そのコメント参照)からの移植: 左側に(実際にCUIが表示
+  // するものである)裸のファイル名――完全なパスでは「ない」――、
+  // 右側にファイルのバイトサイズとそれを含むディレクトリ。
+  // loadFile()を呼ぶたびに再設定するのではなく、ここで一度だけ
+  // 登録される。currentFile_への生きたコールバックであり、
+  // スナップショットではないため。
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    // pagerMode_ (2026-08-25, loadStream()'s own comment): a CLI pager
-    // launch shows a genuinely different, simpler mode-line -- the
-    // full path verbatim (or nothing at all, for stdin) as `name`, no
-    // directory trailing2 field at all, and a rightWatermark fallback
-    // (legacy's own disp_window() shows this whenever there's no
-    // "previous mode" text to put in that slot; every OTHER File-mode
-    // entry below always has one, which is why rightWatermark stays
-    // empty there). name/no-trailing2/watermark confirmed directly
-    // against the real legacy binary (PTY capture of a pager-launched
-    // file). The position field and this trailing byte-count, however,
-    // are a direct 2026-08-25 follow-up request ("SHELL同様、行数を5桁
-    // とバイト数表示をよろしく") reusing Shell's own setUseFixedWidthPosition(true)
-    // setup (set by loadStream() below -- see its own comment) rather
-    // than replicating legacy's own pager mode-line exactly (no byte
-    // count at all there, confirmed by the same PTY capture) -- an
-    // intentional, requested deviation, not an oversight.
+    // pagerMode_(2026-08-25、loadStream()自身のコメント参照): CLI
+    // ページャーの起動は、本当に異なる、より単純なモードラインを
+    // 表示する――`name`として完全なパスをそのまま(stdinの場合は
+    // 何も無い)、ディレクトリのtrailing2フィールドは全く無し、
+    // そしてrightWatermarkフォールバック(legacy自身の
+    // disp_window()は、そのスロットに置くべき「前モード」テキストが
+    // 無い時は常にこれを表示する。下の他の全てのFileモードの
+    // エントリは常にそれを持っているので、rightWatermarkはそこでは
+    // 空のままである)。name/trailing2なし/透かしは、実際のlegacy
+    // バイナリに対して直接確認済み(ページャー起動されたファイルの
+    // PTYキャプチャ)。しかし位置フィールドとこの末尾バイト数は、
+    // 直接の2026-08-25の追加依頼("SHELL同様、行数を5桁とバイト数
+    // 表示をよろしく")であり、legacy自身のページャーのモードライン
+    // を正確に複製する(そこには全くバイト数が無い、同じPTY
+    // キャプチャで確認済み)のではなく、Shell自身の
+    // setUseFixedWidthPosition(true)の設定(下のloadStream()で設定
+    // される――自身のコメント参照)を再利用している――これは意図的な、
+    // 依頼された逸脱であり、見落としではない。
     //
-    // 2026-08-25 correction (a direct user follow-up, having re-checked
-    // the real legacy binary): pagerMode_/this whole branch is reached
-    // ONLY by a genuine CLI pager launch (main.cpp's own positional-
-    // file-argument/piped-stdin startup) or a SHELL-handoff PIPE
-    // (Application::pollShellHandoff()'s own socket branch) -- a
-    // SHELL-handoff of a plain FILE argument no longer reaches here at
-    // all (pollShellHandoff() now calls the ordinary fileMode_.loadFile()
-    // instead of loadStream(), so it falls through to the plain
-    // Directory-reached-file branch below, unchanged, matching "SHELL
-    // プロンプトでusilic起動したときの引数の画面になればいいだけ...
-    // つまりはls画面で「.bashrc」を選択した場合と同じ").
+    // 2026-08-25の修正(実際のlegacyバイナリを再確認した上での、
+    // 直接のユーザーによる追加): pagerMode_/このブランチ全体は、
+    // 本物のCLIページャー起動(main.cpp自身の位置引数のファイル/
+    // パイプされたstdinの起動)またはSHELL引き渡しのPIPE
+    // (Application::pollShellHandoff()自身のソケット分岐)によって
+    // だけ到達される――素のFILE引数のSHELL引き渡しは、もはや全く
+    // ここに到達しない(pollShellHandoff()は今はloadStream()の代わりに
+    // 通常のfileMode_.loadFile()を呼ぶので、下の、変更されていない
+    // プレーンなDirectoryから到達したファイルの分岐に落ちる。
+    // "SHELLプロンプトでusilic起動したときの引数の画面になれば
+    // いいだけ...つまりはls画面で「.bashrc」を選択した場合と同じ"
+    // に合わせている)。
     if (pagerMode_) {
-      // 2026-08-25 correction (a direct user follow-up): this field
-      // used to sum displayed-line text through the CURSOR's line,
-      // mirroring Shell's own identical field -- but Shell's version
-      // only looks that way because its cursor always sits at the
-      // newest line as output streams in. This port's own pager cursor
-      // can sit anywhere (e.g. after paging down then back up), and the
-      // settled spec has nothing to do with the cursor at all: "実際に
-      // 読み込まれたバイト数としたい...ページ戻しが起きたとしても
-      // すでに読み込んだ分量としてのバイト数は変わらない" -- the raw
-      // total streamBytesRead_ has actually pulled from the stream so
-      // far (see its own declaration comment), monotonically
-      // increasing regardless of scroll position.
+      // 2026-08-25の修正(直接のユーザーによる追加): このフィールドは
+      // 以前、Shell自身の同一のフィールドを反映して、表示されている
+      // 行のテキストを「カーソルの」行まで合計していた――しかし
+      // Shellのバージョンがそう見えるのは、出力がストリームで入って
+      // くる際にそのカーソルが常に最新の行に座っているからに過ぎ
+      // ない。この移植自身のページャーカーソルはどこにでも座り得る
+      // (例えば下にページングした後上に戻った場合)し、確定した仕様
+      // はカーソルとは全く関係が無い: "実際に読み込まれたバイト数
+      // としたい...ページ戻しが起きたとしてもすでに読み込んだ分量
+      // としてのバイト数は変わらない"――生の合計streamBytesRead_は、
+      // これまでにストリームから実際に引き出した量である(自身の
+      // 宣言コメント参照)。スクロール位置に関わらず単調増加する。
       std::size_t bytes = streamBytesRead_;
-      // pagerReturnsToShell_ (2026-08-25, its own declaration comment):
-      // now ONLY ever true for a SHELL-handoff PIPE (see above) -- a
-      // standalone CLI pager launch (file or stdin, from a real
-      // terminal) has no previous mode at all, so rightWatermark stays
-      // "usilic v1.5b" (legacy's own no-previous-mode fallback) exactly
-      // as before. A SHELL-handoff pipe DOES have one -- the live SHELL
-      // session -- but a direct user correction rejected reusing
-      // rightWatermark's BOLD styling for that ("戻り値がハイライト
-      // 表示の「SHELL」となる...でよろしく" -- HIGHLIGHTED/reverse-video,
-      // not bold): trailing3 (see its own declaration comment; already
-      // exactly "a third independently-highlighted trailing segment",
-      // just previously only ever used by ArchiveMode) is the existing
-      // mechanism that actually renders that way, so this uses THAT
-      // instead, leaving rightWatermark empty here -- matching every
-      // OTHER File-mode entry's "has a previous mode, so no watermark"
-      // convention (see this whole comment's own opening paragraph).
+      // pagerReturnsToShell_(2026-08-25、自身の宣言コメント):
+      // 今は「SHELL引き渡しのPIPE」(上参照)に対してだけtrueになる
+      // ――独立したCLIページャー起動(ファイルまたはstdin、本物の
+      // 端末から)は前モードが全く無いので、rightWatermarkは以前
+      // 通り正確に"usilic v1.5b"(legacy自身の前モードなしの
+      // フォールバック)のままである。SHELL引き渡しのパイプは
+      // 「1つ」持っている――生きたSHELLセッション――が、直接の
+      // ユーザーによる訂正は、それにrightWatermarkの太字スタイルを
+      // 再利用することを拒否した("戻り値がハイライト表示の「SHELL」
+      // となる...でよろしく"――太字ではなくハイライト/反転表示):
+      // trailing3(自身の宣言コメント参照。既にまさに「3番目の
+      // 独立してハイライトされる末尾セグメント」であり、以前は
+      // ArchiveModeだけが使っていた)が、実際にその方法で描画する
+      // 既存の仕組みなので、これは代わりに「それ」を使い、ここでは
+      // rightWatermarkを空のままにする――他の全てのFileモードの
+      // エントリの「前モードがあるので透かしは無い」慣習(このコメント
+      // 全体自身の冒頭の段落参照)に合わせている。
       //
-      // searchOriginDetail_ (2026-08-25, Application::pollShellHandoff()'s
-      // own comment): empty for an ordinary CLI pager launch (unaffected,
-      // no trailing2 shown there, matching the real legacy PTY capture);
-      // set to "(stdin)" specifically for a SHELL-mode piped handoff, in
-      // the same trailing2 slot Directory's "(ls)"/Archive's "(tar)"
-      // badges occupy -- a direct user request, UNCHANGED by the above
-      // correction (only the return-value display itself moved).
+      // searchOriginDetail_(2026-08-25、Application::
+      // pollShellHandoff()自身のコメント参照): 通常のCLIページャー
+      // 起動では空(影響なし、そこではtrailing2は表示されない、
+      // 実際のlegacyのPTYキャプチャに合わせている)。SHELLモードの
+      // パイプ引き渡しに特有の"(stdin)"に設定される。Directoryの
+      // "(ls)"/Archiveの"(tar)"バッジが占めているのと同じtrailing2
+      // スロットに――直接のユーザー依頼であり、上の修正によって
+      // 「変更されていない」(戻り値の表示自体だけが移動した)。
       ContentView::ModeLineFields fields;
       fields.name = currentFile_;
       fields.trailing = std::to_string(bytes);
       fields.rightWatermark = pagerReturnsToShell_ ? "" : "usilic v1.5b";
       fields.trailing2 = searchOriginDetail_;
       fields.trailing3 = pagerReturnsToShell_ ? "SHELL" : "";
-      // 2026-08-25 fix (a direct user report citing HISTORY.md:9462,
-      // "基本的に右端まで埋まっていないモードラインは全部不良"): trailing3
-      // ALREADY has fillTrailingToEdge support (see its own declaration
-      // comment, added earlier for ArchiveMode) -- just never turned on
-      // here, so "SHELL" stopped short of the row's right edge instead
-      // of being padded like every other mode's own last field. Scoped
-      // to pagerReturnsToShell_ specifically (not unconditional): the
-      // standalone-launch case has no trailing3 at all and relies on
-      // rightWatermark's own separate moveCursor()-to-the-edge placement
-      // instead, which already reaches the edge on its own -- turning
-      // this on there too would newly reverse-video-fill the PLAIN gap
-      // between the byte count and "usilic v1.5b" that was never part of
-      // this report and never confirmed as wanted.
+      // 2026-08-25の修正(HISTORY.md:9462を引用した直接のユーザー
+      // 報告、"基本的に右端まで埋まっていないモードラインは全部
+      // 不良"): trailing3は「既に」fillTrailingToEdgeサポートを
+      // 持っている(自身の宣言コメント参照、以前ArchiveMode向けに
+      // 追加された)――ここでは単に一度も有効にされていなかった
+      // ので、"SHELL"は他の全モード自身の最後のフィールドのように
+      // パディングされる代わりに、行の右端の手前で止まっていた。
+      // pagerReturnsToShell_に特有にスコープされている(無条件では
+      // ない): 独立起動のケースはtrailing3を全く持たず、代わりに
+      // rightWatermark自身の別のmoveCursor()による端への配置に
+      // 依存しており、それは既に自力で端に到達している――そこでも
+      // これを有効にすると、この報告の対象では決してなく、望まれた
+      // ものとして確認もされていない、バイト数と"usilic v1.5b"の
+      // 間のプレーンなギャップを新たに反転表示で埋めてしまうことに
+      // なる。
       fields.fillTrailingToEdge = pagerReturnsToShell_;
       return fields;
     }
@@ -126,60 +134,64 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
 
     std::error_code ec;
     auto size = std::filesystem::file_size(path, ec);
-    // The byte size and the directory are TWO SEPARATE ModeLineFields::
-    // trailing/trailing2 segments, not one string -- added 2026-08-10.
-    // An EARLIER version of this fix tried to solve a real request
-    // ("「1108009」と「/Users/.../」の間...「CLAUDE.md」と
-    // 「00036/13736  0%」みたいにして欲しい") by just widening the
-    // space INSIDE one single highlighted string, which (confirmed by
-    // comparing the actual pixel colors of the two reference
-    // screenshots) still left it as one unbroken reverse-video run --
-    // the requested look has a genuine PLAIN (non-highlighted) gap
-    // between "CLAUDE.md" and "00034/13761  0%", which only two
-    // independently-standout'd segments (see trailing2's own comment)
-    // can reproduce; a single string with extra spaces in it can't,
-    // since drawSegment() highlights everything it's given uniformly.
-    // The size itself stays a plain, ungrouped std::to_string() (a
-    // separate, earlier misreading already established and reverted
-    // that "ファイルサイズは「1108009」のままでいい").
+    // バイトサイズとディレクトリは、1つの文字列ではなく、2つの
+    // 「別々の」ModeLineFields::trailing/trailing2セグメントである
+    // ――2026-08-10に追加。この修正の「以前の」バージョンは、実際の
+    // 依頼("「1108009」と「/Users/.../」の間...「CLAUDE.md」と
+    // 「00036/13736  0%」みたいにして欲しい")を、単に1つのハイライト
+    // された文字列「内」の空白を広げることで解決しようとしたが、
+    // (2つの参照スクリーンショットの実際のピクセル色を比較して確認
+    // 済みの通り)それは依然として1つの途切れない反転表示の連続の
+    // ままだった――要求された見た目は、"CLAUDE.md"と"00034/13761
+    // 0%"の間に、本物のプレーンな(ハイライトされていない)ギャップ
+    // があり、それを再現できるのは2つの独立してstandout化された
+    // セグメント(trailing2自身のコメント参照)だけである。余分な
+    // 空白を含む1つの文字列ではできない。drawSegment()は与えられた
+    // 全てを一様にハイライトするため。サイズ自体は、プレーンな、
+    // グループ化されていないstd::to_string()のままである
+    // (別の、以前の誤読が既に確立し撤回した"ファイルサイズは
+    // 「1108009」のままでいい")。
     std::string trailing = ec ? directory : std::to_string(size);
-    // searchOriginLabel_/searchOriginDetail_ (see setSearchOrigin()'s
-    // own comment) take over the name/trailing2 fields whenever set --
-    // same substitution DirectoryMode's own provider makes for
-    // searchAnnotation_ vs. its "usilic v1.5b" rightWatermark, just
-    // spanning two fields here instead of one.
+    // searchOriginLabel_/searchOriginDetail_(setSearchOrigin()自身の
+    // コメント参照)は、設定されている時は常にname/trailing2
+    // フィールドを乗っ取る――DirectoryMode自身のプロバイダが
+    // searchAnnotation_対"usilic v1.5b"のrightWatermarkに対して
+    // 行っているのと同じ置き換えで、単にここでは1つではなく2つの
+    // フィールドにまたがっているだけ。
     std::string name = searchOriginLabel_.empty() ? path.filename().string() : searchOriginLabel_;
-    // searchAnnotation_ (2026-08-28 addition, see setSearchAnnotation()'s
-    // own comment): a THIRD tier, below searchOriginLabel_/Detail_ (which
-    // still win outright when both are somehow set -- LOCATE/INFO's own
-    // "this isn't really about the file's own name" framing takes
-    // priority) -- unlike those two, this leaves `name` alone, only
-    // substituting for the plain "containing directory" trailing2
-    // fallback, mirroring DirectoryMode::searchAnnotation_'s identical
-    // name/trailing2 split.
+    // searchAnnotation_(2026-08-28の追加、setSearchAnnotation()自身の
+    // コメント参照): searchOriginLabel_/Detail_(両方が何らかの形で
+    // 設定されている場合、依然として完全に優先する――LOCATE/INFO
+    // 自身の「これは本当にはファイル自身の名前についてのものでは
+    // ない」という位置付けが優先される)より下の「3番目の」階層
+    // ――それら2つとは異なり、これは`name`には手を付けず、プレーンな
+    // 「含むディレクトリ」のtrailing2フォールバックを置き換える
+    // だけ。DirectoryMode::searchAnnotation_の同一のname/trailing2
+    // 分割を反映している。
     std::string trailing2 =
         ec ? "" : (searchOriginLabel_.empty() ? (searchAnnotation_.empty() ? directory : searchAnnotation_) : searchOriginDetail_);
-    // File mode's trailing field is legacy's padded-to-edge style, see
-    // ModeLineFields::fillTrailingToEdge's own comment. No
-    // rightWatermark here -- see its own comment on why File mode
-    // never shows it. trailing2Kind=PathMiddle for both LOCATE
-    // (searchOriginLabel_ set) and searchAnnotation_ -- see
-    // ContentView::TrailingKind's own comment for why this is the one
-    // exception to every other provider's tail-only truncation; the
-    // fallback (plain containing directory PATH) uses Path instead, for
-    // the full available width.
-    // searchAnnotation_ (2026-08-28 fix, a direct user report + example:
-    // "「- レガシーC実装...src/config.sh」...使えるだけ使う": QueryEcho's
-    // own fixed 16-char tail cap truncated the matched line's text far
-    // more tightly than the available width actually required -- a
-    // short name like "CLAUDE.md" leaves plenty of room this field
-    // should actually use. PathMiddle is budget-aware (middleEllipsisTruncate()
-    // sizes to whatever's ACTUALLY left, via withTruncatedFields()'s own
-    // pipeline) and already keeps both ends of the text, matching the
-    // exact "- レガシーC実装...src/config.sh" shape requested -- and
-    // splitLayoutWhenCrowded below (already unconditionally on for this
-    // provider) is what kicks in automatically on the OTHER side, if
-    // name+trailing2 together ever genuinely don't both fit.
+    // Fileモードのtrailingフィールドは、legacyの端まで埋める
+    // スタイル、ModeLineFields::fillTrailingToEdge自身のコメント
+    // 参照。ここにはrightWatermarkは無い――Fileモードが決してそれを
+    // 表示しない理由は自身のコメント参照。trailing2Kind=PathMiddle
+    // は、LOCATE(searchOriginLabel_設定時)とsearchAnnotation_の
+    // 両方に対して――これが他の全プロバイダの末尾のみの切り詰めに
+    // 対する唯一の例外である理由はContentView::TrailingKind自身の
+    // コメント参照。フォールバック(プレーンな含むディレクトリの
+    // PATH)は代わりにPathを使い、利用可能な幅全体を使う。
+    // searchAnnotation_(2026-08-28の修正、直接のユーザー報告+例:
+    // "「- レガシーC実装...src/config.sh」...使えるだけ使う":
+    // QueryEcho自身の固定16文字の末尾上限は、実際に利用可能な幅が
+    // 必要とするよりもはるかにきつく、一致した行のテキストを切り
+    // 詰めていた――"CLAUDE.md"のような短い名前は、このフィールドが
+    // 実際に使うべき十分な余地を残す。PathMiddleは予算を認識する
+    // (middleEllipsisTruncate()は、withTruncatedFields()自身の
+    // パイプライン経由で、実際に「残っているもの」に合わせてサイズを
+    // 決める)し、既に依頼されたまさにその"- レガシーC実装...
+    // src/config.sh"の形に合わせてテキストの両端を保持している
+    // ――そして下のsplitLayoutWhenCrowded(このプロバイダに対して
+    // 既に無条件で有効)は、name+trailing2が一緒になって本当に
+    // 両方収まらない場合に、「反対側」で自動的に発動するものである。
     ContentView::ModeLineFields fields{name,
                                         trailing,
                                         /*fillTrailingToEdge=*/true,
@@ -190,14 +202,14 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
                                         /*trailing2Kind=*/(searchOriginLabel_.empty() && searchAnnotation_.empty())
                                             ? ContentView::TrailingKind::Path
                                             : ContentView::TrailingKind::PathMiddle};
-    // splitLayoutWhenCrowded (2026-08-27 addition, a direct user
-    // report/callback to their own earlier HISTORY.md:9608 proposal,
-    // which archiveContentView_'s own provider already adopted -- see
-    // its own comment in application.cpp): a real CJK filename long
-    // enough to crowd out the byte-count field used to just silently
-    // drop it entirely via fitModeLineFields()'s own ordinary all-or-
-    // nothing tiers, same class of bug DirectoryMode's own `(ls)`
-    // listing just got this identical fix for.
+    // splitLayoutWhenCrowded(2026-08-27の追加、直接のユーザー報告/
+    // 自身の以前のHISTORY.md:9608提案への呼び戻し。archiveContentView_
+    // 自身のプロバイダが既に採用している――application.cppの自身の
+    // コメント参照): 実際の、バイト数フィールドを押し出すほど長い
+    // CJKファイル名は、以前はfitModeLineFields()自身の通常のall-or-
+    // nothing階層を介してそれを丸ごと黙って落としていた。
+    // DirectoryMode自身の`(ls)`一覧がまさにこの同一の修正を受けた
+    // のと同じ種類のバグ。
     fields.splitLayoutWhenCrowded = true;
     return fields;
   });
@@ -217,10 +229,10 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
 
   std::vector<ContentView::Line> lines;
   lines.reserve(pipe.lines().size());
-  // styled.attributes (2026-08-05): PipeBuffer's own overstrike
-  // detection (nroff-style bold/underline) already produces this --
-  // previously discarded here, the one and only place FileMode turns
-  // PipeBuffer's StyledLines into what actually reaches the screen.
+  // styled.attributes(2026-08-05): PipeBuffer自身のオーバーストライク
+  // 検出(nroffスタイルの太字/下線)は既にこれを生成している――以前は
+  // ここで捨てられていた。FileModeがPipeBufferのStyledLinesを実際に
+  // 画面へ届くものへ変換する、唯一の場所。
   for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt, std::nullopt, styled.attributes});
   return lines;
 }
@@ -230,31 +242,32 @@ bool FileMode::loadFile(const std::string &path) {
   if (!probe) return false;
   probe.close();
 
-  // Reset to the plain-pager default on EVERY load (2026-08-18): the
-  // constructor's own setCursorHighlightEnabled(false) only covers the
-  // state before the FIRST load. Application::executeShowTcbBanner()
-  // turns this back ON right after its own loadFile() call (the ^T
-  // screen's WORK/arc.N lines need a visible highlight to be
-  // selectable at all -- a real report, =cq, found them impossible to
-  // pick without one), so this reset is what keeps that flag from
-  // leaking into the NEXT ordinary file loaded afterward (including a
-  // w.N entry re-opened FROM the banner via openSelectedBannerEntry()
-  // itself, which goes through this exact same loadFile()).
+  // 「毎回の」読み込みでプレーンなページャーのデフォルトへリセット
+  // する(2026-08-18): コンストラクタ自身のsetCursorHighlightEnabled
+  // (false)は「最初の」読み込みより前の状態しかカバーしない。
+  // Application::executeShowTcbBanner()は、自身のloadFile()呼び出し
+  // の直後にこれを再びONへ切り替える(^T画面のWORK/arc.N行は、
+  // 選択可能であるために可視のハイライトを必要とする――実際の報告
+  // =cqが、それ無しでは選ぶことが不可能であることを見つけた)ので、
+  // このリセットが、そのフラグが後で読み込まれる「次の」通常の
+  // ファイルへ漏れ出す(バナーからopenSelectedBannerEntry()経由で
+  // 再度開かれるw.Nエントリ自身を含む、まさにこの同じloadFile()を
+  // 通る)ことを防ぐものである。
   view_.setCursorHighlightEnabled(false);
-  closeStream();  // defensive: an ordinary eager load must never leave a stale stream dangling
+  closeStream();  // 防御的措置: 通常の即時読み込みは、古びたストリームをぶら下げたままにしてはならない
   pagerMode_ = false;
-  pagerReturnsToShell_ = false;  // defensive, see its own declaration comment; unused while pagerMode_ is false anyway
-  view_.setUseFixedWidthPosition(false);  // see loadStream()'s own comment; every other File-mode entry stays plain
+  pagerReturnsToShell_ = false;  // 防御的措置、自身の宣言コメント参照。pagerMode_がfalseの間はいずれにせよ未使用
+  view_.setUseFixedWidthPosition(false);  // loadStream()自身のコメント参照。他の全てのFileモードのエントリはプレーンなまま
 
   view_.setLines(readAndWrap(path));
   currentFile_ = path;
-  // a fresh load invalidates the old search -- see setSearchOrigin()'s own comment
+  // 新しい読み込みは古い検索を無効にする――setSearchOrigin()自身のコメント参照
   searchOriginLabel_.clear();
   searchOriginDetail_.clear();
-  searchAnnotation_.clear();  // see setSearchAnnotation()'s own comment
-  // K-46 (^X^F, "FILE: Select file name")'s own data source -- see
-  // DirectoryMode::enterDirectory()'s identical pushRecent() call for
-  // K-48's own RecentDirectory counterpart.
+  searchAnnotation_.clear();  // setSearchAnnotation()自身のコメント参照
+  // K-46(^X^F、「FILE: Select file name」)自身のデータソース――
+  // K-48自身のRecentDirectoryの対応物に対するDirectoryMode::
+  // enterDirectory()の同一のpushRecent()呼び出し参照。
   history_.pushRecent(RingCategory::RecentFile, currentFile_);
   if (auto pos = history_.positionFor(PositionCategory::File, currentFile_)) {
     int idx = pos->row;
@@ -266,13 +279,13 @@ bool FileMode::loadFile(const std::string &path) {
     view_.setCursorIndex(0);
   }
   view_.redraw();
-  // A real cursor at the current line, since plain file content has
-  // no whole-line highlight to indicate it otherwise (see
-  // ContentView::syncVisibleCursor()'s own comment) -- a 2026-08-04
-  // user request: the current line still needs to be visibly and
-  // programmatically knowable in both -c/-g (launching an editor at
-  // the current line, and a future COPY mode's row+column selection,
-  // both rely on a real cursor position).
+  // 現在の行に本物のカーソルを置く。プレーンなファイル内容には
+  // それ以外にそれを示す行全体のハイライトが無いため
+  // (ContentView::syncVisibleCursor()自身のコメント参照)――
+  // 2026-08-04のユーザー依頼: 現在の行は、-c/-gの両方で目に見える
+  // 形かつプログラムから知ることができる必要が依然としてある
+  // (現在の行でエディタを起動すること、および将来のCOPYモードの
+  // 行+列選択は、両方とも本物のカーソル位置に依存する)。
   view_.syncVisibleCursor();
   return true;
 }
@@ -323,35 +336,36 @@ void FileMode::closeStream() {
 
 void FileMode::readMoreIntoPipe(int targetLineCount) {
   if (streamAtEof_ || streamFd_ < 0) return;
-  // A deliberately SMALL read buffer (2026-08-25, tuned against a real
-  // PTY capture): read() returns at most this many bytes per call, and
-  // the loop below only checks streamPipe_->lines().size() BETWEEN
-  // calls, not mid-chunk -- a large buffer on short-line content (e.g.
-  // `seq`'s own output) could overshoot the requested targetLineCount
-  // by far more than intended in a single gulp (confirmed: an 8192-byte
-  // buffer pulled in ~1859 lines on the first call alone, against an
-  // intended ~48-line initial page). 256 bytes keeps that overshoot
-  // small regardless of line length, at the cost of more read() calls
-  // for the same total bytes -- a negligible cost next to the actual
-  // point of this method (never blocking on more than roughly one
-  // screen's worth of input at a time, matching legacy's own observed
-  // ~23-25-line initial load).
+  // 意図的に「小さい」読み込みバッファ(2026-08-25、実際のPTY
+  // キャプチャに対して調整済み): read()は1回の呼び出しで最大この
+  // バイト数を返し、下のループは呼び出しの「間」でだけ
+  // streamPipe_->lines().size()をチェックし、チャンクの途中では
+  // チェックしない――短い行の内容(例えば`seq`自身の出力)に対する
+  // 大きなバッファは、1回の一飲みで、要求されたtargetLineCountを
+  // 意図していたよりもはるかに超過してしまう可能性がある(確認済み:
+  // 8192バイトのバッファは、意図された約48行の初期ページに対して、
+  // 最初の1回の呼び出しだけで約1859行を引き込んだ)。256バイトは、
+  // 行の長さに関わらずその超過を小さく保つ。同じ合計バイト数に対する
+  // より多くのread()呼び出しというコストを払って――このメソッドの
+  // 実際の目的(一度に、legacy自身が観測した約23〜25行の初期読み込み
+  // に合わせて、おおよそ画面1枚分より多い入力でブロックしない)に
+  // 対しては無視できるコストである。
   char buf[256];
   while (static_cast<int>(streamPipe_->lines().size()) < targetLineCount) {
     ssize_t n = ::read(streamFd_, buf, sizeof(buf));
     if (n < 0) {
       if (errno == EINTR) continue;
-      break;  // a real read error -- treat like EOF rather than looping forever
+      break;  // 本物のread失敗――永遠にループするのではなくEOFのように扱う
     }
     if (n == 0) {
       streamAtEof_ = true;
-      streamPipe_->flush();  // finalizes any still-pending trailing partial line
+      streamPipe_->flush();  // まだ保留中の末尾の部分行を確定する
       if (streamOwnsFd_) ::close(streamFd_);
       streamFd_ = -1;
       break;
     }
     streamPipe_->feed(std::string(buf, static_cast<std::size_t>(n)));
-    streamBytesRead_ += static_cast<std::size_t>(n);  // see its own declaration comment: the settled "actual bytes read" spec
+    streamBytesRead_ += static_cast<std::size_t>(n);  // 自身の宣言コメント参照: 確定した「実際に読み込まれたバイト数」の仕様
   }
 }
 
@@ -366,18 +380,18 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   closeStream();
   view_.setCursorHighlightEnabled(false);
   pagerMode_ = true;
-  pagerReturnsToShell_ = false;  // see its own declaration comment; pollShellHandoff() flips this after this call
-  // 2026-08-25 (a direct user request: "SHELL同様、行数を5桁とバイト
-  // 数表示をよろしく") -- reuses Shell's own identical setup
-  // (Application::startShell()'s own setUseFixedWidthPosition(true)
-  // call) for the SAME fixed 5-digit zero-padded "NNNNN/NNNNN END"
-  // position format, instead of the variable-width default every
-  // other File-mode entry uses.
+  pagerReturnsToShell_ = false;  // 自身の宣言コメント参照。pollShellHandoff()はこの呼び出しの後にこれを切り替える
+  // 2026-08-25(直接のユーザー依頼: "SHELL同様、行数を5桁とバイト
+  // 数表示をよろしく")――他の全てのFileモードのエントリが使う
+  // 可変幅のデフォルトの代わりに、同じ固定5桁ゼロパディングの
+  // "NNNNN/NNNNN END"位置フォーマットのために、Shell自身の同一の
+  // 設定(Application::startShell()自身のsetUseFixedWidthPosition
+  // (true)呼び出し)を再利用する。
   view_.setUseFixedWidthPosition(true);
   streamFd_ = fd;
   streamOwnsFd_ = ownsFd;
   streamAtEof_ = false;
-  streamBytesRead_ = 0;  // see its own declaration comment -- a fresh stream starts this back at 0
+  streamBytesRead_ = 0;  // 自身の宣言コメント参照――新しいストリームはこれを0から再開する
   streamPipe_ = std::make_unique<PipeBuffer>(encoding_, width_, 256L * 1024 * 1024);
   currentFile_ = displayName;
   searchOriginLabel_.clear();
@@ -385,29 +399,31 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   if (!displayName.empty()) history_.pushRecent(RingCategory::RecentFile, displayName);
   readMoreIntoPipe(std::max(initialLineBudget, 1));
   view_.setLines(convertPipeLines());
-  // 2026-08-25 bug fix (a real report): ContentView::setLines() only
-  // CLAMPS the previous cursorIndex_ into the new content's bounds --
-  // it does NOT reset it to 0 (correct for callers that WANT to
-  // preserve a cursor position across a same-content refresh, see its
-  // own comment) -- so a SECOND loadStream() call (e.g. a fresh
-  // `cat x|usilic` typed again at the SAME live SHELL prompt) silently
-  // inherited whatever cursorIndex_ the FIRST session's own navigation
-  // left behind. A real repro: session 1 pressed ESC-> (go to bottom)
-  // on a 119-line stream, landing cursorIndex_ at 118; session 2's own
-  // stream only had 51 lines, so THAT inherited 118 got clamped down
-  // to 50 -- the new content's own last line -- instead of starting
-  // at 0, making a brand-new (stdin) session open already scrolled to
-  // its own end ("冒頭行から始まらない"). loadFile() above already
-  // gets this right via its own explicit setCursorIndex() call
-  // (history-restored or 0) -- loadStream() never had the equivalent.
-  // Every pager launch (standalone CLI, or a SHELL-handoff pipe) is
-  // unconditionally a fresh start, matching the CUI's own convention
-  // and the direct principle established for (stdin) specifically:
-  // "常時真っ新から始まる" -- so this is always 0, never a restored
-  // History position (pager sessions never save/restore cursor
-  // position via History at all -- see loadFile()'s own currentFile_-
-  // keyed lookup, which never applies here since currentFile_ is
-  // either a throwaway CLI path or permanently empty for stdin).
+  // 2026-08-25のバグ修正(実際の報告): ContentView::setLines()は、
+  // 以前のcursorIndex_を新しい内容の範囲内に「収める」だけである
+  // ――それを0にリセットは「しない」(同じ内容のリフレッシュを
+  // またいでカーソル位置を保存「したい」呼び出し元に対しては正しい、
+  // 自身のコメント参照)――そのため2回目のloadStream()呼び出し
+  // (例えば、同じ生きたSHELLプロンプトで再度入力された新しい
+  // `cat x|usilic`)は、「最初の」セッション自身のナビゲーションが
+  // 残していったcursorIndex_を何であれ黙って引き継いでいた。実際の
+  // 再現: セッション1が119行のストリームでESC->(末尾へ)を押し、
+  // cursorIndex_が118に着地した。セッション2自身のストリームは
+  // わずか51行しか無かったので、その引き継がれた118は、0から始まる
+  // 代わりに、新しい内容自身の最後の行である50まで切り詰められ、
+  // 真新しい(stdin)セッションが既にその末尾までスクロールされた
+  // 状態で開いてしまう("冒頭行から始まらない")。上のloadFile()は、
+  // 自身の明示的なsetCursorIndex()呼び出し(履歴から復元、または0)
+  // 経由で既にこれを正しく行っている――loadStream()にはその対応物が
+  // 一度も無かった。全てのページャー起動(独立したCLI、またはSHELL
+  // 引き渡しのパイプ)は無条件で新しい開始であり、CUI自身の慣習と、
+  // (stdin)に特有に確立された直接の原則に合わせている:
+  // "常時真っ新から始まる"――なのでこれは常に0であり、決して復元
+  // されたHistory位置ではない(ページャーセッションはHistory経由の
+  // カーソル位置の保存/復元を全く行わない――loadFile()自身の
+  // currentFile_をキーとする検索を参照。currentFile_はCLIの使い
+  // 捨てパスか、stdinに対して永続的に空かのどちらかであるため、
+  // ここでは決して当てはまらない)。
   view_.setCursorIndex(0);
   return true;
 }
@@ -415,9 +431,9 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
 bool FileMode::ensureLoadedThrough(int targetLineIndex) {
   if (streamAtEof_ || streamFd_ < 0) return false;
   int before = static_cast<int>(streamPipe_->lines().size());
-  if (targetLineIndex < before) return false;  // already have enough loaded
+  if (targetLineIndex < before) return false;  // 既に十分読み込まれている
   readMoreIntoPipe(targetLineIndex + 1);
-  if (static_cast<int>(streamPipe_->lines().size()) == before) return false;  // nothing new arrived
+  if (static_cast<int>(streamPipe_->lines().size()) == before) return false;  // 新しいものは何も届かなかった
   view_.setLines(convertPipeLines());
   return true;
 }
