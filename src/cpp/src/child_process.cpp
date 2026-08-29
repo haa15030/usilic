@@ -19,16 +19,16 @@ std::vector<char *> toArgv(const std::vector<std::string> &args) {
   return argv;
 }
 
-// Every forked child resets signal disposition to default first, so
-// it doesn't inherit whatever handler policy the parent (tcb itself)
-// has installed -- ported from load_signal(), called at the top of
-// every fork.c child branch.
+// forkされた子プロセスは全て、まずシグナルの処理方針を既定値へ
+// リセットする。これにより、親(tcb自身)がインストールしたどんな
+// ハンドラ方針も継承しない――load_signal()からの移植で、fork.cの
+// 全ての子プロセス分岐の先頭で呼ばれる。
 void resetSignalsToDefault() {
   for (int i = 1; i < NSIG; i++) std::signal(i, SIG_DFL);
 }
 
-// Ported from dup_error(): append the child's stderr to a log file
-// instead of inheriting the parent's.
+// dup_error()からの移植: 子プロセスの標準エラーを、親のものを継承
+// する代わりにログファイルへ追記する。
 void redirectStderr(const std::string &path) {
   int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
   if (fd < 0) return;
@@ -36,9 +36,10 @@ void redirectStderr(const std::string &path) {
   close(fd);
 }
 
-// Child-side setup shared by run() and runPipeline()'s second stage:
-// reset signals, optionally force LC_ALL=C, optionally redirect
-// stderr, then wire outFd to stdout (and inFd to stdin, if given).
+// run()とrunPipeline()の第2段階が共有する子プロセス側の準備処理:
+// シグナルをリセットし、必要ならLC_ALL=Cを強制し、必要なら標準
+// エラーをリダイレクトし、それからoutFdを標準出力へ(inFdが与え
+// られていれば標準入力へも)つなぐ。
 void prepareChild(int outFd, int inFd, const ChildProcess::Options &options) {
   resetSignalsToDefault();
   if (options.forceCLocale) setenv("LC_ALL", "C", 1);
@@ -55,15 +56,15 @@ std::string readAll(int fd) {
   return out;
 }
 
-// Forks a small dedicated process that writes `input` to `fd` and
-// exits -- writing from the same process that's also about to block
-// reading the child's stdout would risk deadlock once the input is
-// larger than the pipe buffer (the child can't drain its own stdin
-// if nothing is reading its stdout yet, and the parent can't finish
-// writing stdin if it's waiting to write more than the pipe can hold
-// before it starts reading stdout). Legacy's own fork_arc()/
-// fork_chp() sidestep this the same way, with an extra fork() purely
-// for the write side of a pipeline.
+// `input`を`fd`へ書き込んで終了する、小さな専用プロセスをforkする
+// ――これから子プロセスの標準出力を読むためにブロックしようとして
+// いるのと同じプロセスから書き込むと、入力がパイプバッファより
+// 大きくなった時点でデッドロックの危険がある(子プロセスは、まだ
+// 誰もその標準出力を読んでいなければ自身の標準入力を排出できず、
+// 親は、標準出力を読み始める前にパイプが保持できる以上を書こうと
+// 待っていると標準入力の書き込みを終えられない)。legacy自身の
+// fork_arc()/fork_chp()も、パイプラインの書き込み側専用の追加の
+// fork()で、同じようにこれを回避している。
 pid_t spawnWriter(int fd, const std::string &input) {
   pid_t pid = fork();
   if (pid == 0) {
@@ -112,7 +113,7 @@ ChildProcess::Result ChildProcess::run(const std::vector<std::string> &argv,
     if (options.input) close(inPv[0]);
     auto cargv = toArgv(argv);
     execvp(cargv[0], cargv.data());
-    _exit(127);  // execvp() failed -- never fall through and keep running as tcb
+    _exit(127);  // execvp()失敗――そのまま処理を続けtcbとして動き続けることは絶対に無い
   }
 
   close(outPv[1]);
@@ -150,7 +151,7 @@ ChildProcess::Result ChildProcess::runPipeline(const std::vector<std::string> &a
     }
   }
 
-  // Stage 1: argv1, stdout -> midPv, stdin <- inPv (if input given).
+  // 第1段階: argv1、標準出力 -> midPv、標準入力 <- inPv(inputが与えられていれば)。
   pid_t pid1 = fork();
   if (pid1 == 0) {
     close(outPv[0]); close(outPv[1]);
@@ -169,24 +170,25 @@ ChildProcess::Result ChildProcess::runPipeline(const std::vector<std::string> &a
   close(midPv[1]);
   if (options.input) close(inPv[0]);
 
-  // Stage 2: argv2, stdin <- midPv, stdout -> outPv.
+  // 第2段階: argv2、標準入力 <- midPv、標準出力 -> outPv。
   pid_t pid2 = fork();
   if (pid2 == 0) {
     prepareChild(outPv[1], midPv[0], options);
     close(outPv[1]);
     close(midPv[0]);
-    // pid2 was forked before the parent got around to closing its own
-    // outPv[0] (the read end of *this same* output pipe) and, when
-    // there's piped-in input, inPv[1] (the input pipe's write end) --
-    // both are still open in the parent at this point and so land in
-    // pid2 as an inherited copy across fork(). Left open across the
-    // exec below, that stray inPv[1] copy is enough to keep the input
-    // pipe's write-end refcount above zero forever: stage 1 (reading
-    // inPv[0] as its stdin) then never sees EOF and hangs, even after
-    // every other write-end (the writer process, pid1 itself, the
-    // parent) has closed its own copy. Found via a hung test run once
-    // the unrelated Options-initialization SIGSEGV (see child_process.hpp)
-    // was fixed and this code path could finally run to completion.
+    // pid2は、親が自身のoutPv[0](「この同じ」出力パイプの読み込み側)
+    // と、パイプ入力がある場合はinPv[1](入力パイプの書き込み側)を
+    // 閉じ終える前にforkされている――どちらもこの時点では親でまだ
+    // 開いたままであり、そのためfork()をまたいで継承されたコピーと
+    // してpid2の中にも入り込んでしまう。下のexecをまたいで開いた
+    // ままにしておくと、その迷子のinPv[1]コピーだけで、入力パイプの
+    // 書き込み側の参照カウントを永遠にゼロより上に保つのに十分と
+    // なる: すると第1段階(inPv[0]を自身の標準入力として読む)は
+    // 決してEOFを見ず、他の全ての書き込み側(writerプロセス、
+    // pid1自身、親)が自分のコピーを閉じた後でさえハングしてしまう。
+    // 無関係だったOptions初期化のSIGSEGV(child_process.hpp参照)が
+    // 修正され、このコード経路がついに最後まで実行できるようになった
+    // 際、ハングしたテスト実行経由で発見された。
     close(outPv[0]);
     if (options.input) close(inPv[1]);
     auto cargv = toArgv(argv2);
@@ -221,7 +223,7 @@ int ChildProcess::runInteractive(const std::vector<std::string> &argv) {
     resetSignalsToDefault();
     auto cargv = toArgv(argv);
     execvp(cargv[0], cargv.data());
-    _exit(127);  // execvp() failed -- never fall through and keep running as usilic
+    _exit(127);  // execvp()失敗――そのまま処理を続けusilicとして動き続けることは絶対に無い
   }
 
   return reapStatus(pid);
@@ -243,7 +245,7 @@ pid_t ChildProcess::runDetached(const std::vector<std::string> &argv) {
     }
     auto cargv = toArgv(argv);
     execvp(cargv[0], cargv.data());
-    _exit(127);  // execvp() failed -- never fall through and keep running as usilic
+    _exit(127);  // execvp()失敗――そのまま処理を続けusilicとして動き続けることは絶対に無い
   }
 
   return pid;
@@ -252,7 +254,7 @@ pid_t ChildProcess::runDetached(const std::vector<std::string> &argv) {
 bool ChildProcess::hasExited(pid_t pid) {
   if (pid <= 0) return true;
   int status = 0;
-  return waitpid(pid, &status, WNOHANG) != 0;  // >0: reaped just now; -1 (e.g. already reaped): treat as done
+  return waitpid(pid, &status, WNOHANG) != 0;  // >0: たった今回収した; -1(例えば既に回収済み): 完了扱いにする
 }
 
 }  // namespace fm
