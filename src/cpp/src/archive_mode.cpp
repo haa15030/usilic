@@ -36,73 +36,76 @@ std::unique_ptr<ArchiveReader> readerFor(ArchiveKind kind) {
 
 ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuration &configuration)
     : view_(view), history_(history), configuration_(configuration) {
-  // Marked rows render Standout even off the cursor -- same gap and
-  // same fix as DirectoryMode's own (see ContentView::
-  // setMarkedPredicate()'s own comment).
+  // マークされた行は、カーソルが外れていてもStandoutで描画される
+  // ――DirectoryMode自身と同じギャップ、同じ修正(ContentView::
+  // setMarkedPredicate()自身のコメント参照)。
   view_.setMarkedPredicate([this](int index) { return isMarked(index); });
-  // 2026-08-26 fix, a real report ("選択ファイルがアンダーライン表示に
-  // ならない"): DirectoryMode's own constructor also pairs
-  // setMarkedPredicate() with setMarkedRowUsesUnderline(true) (see its
-  // own comment) to keep a marked row visually distinct from the
-  // cursor row's own plain Standout -- this call was simply missing
-  // here, an oversight from when ArchiveMode's marking support was
-  // first ported.
+  // 2026-08-26の修正、実際の報告("選択ファイルがアンダーライン表示に
+  // ならない"): DirectoryMode自身のコンストラクタも、マークされた行を
+  // カーソル行自身のプレーンなStandoutと視覚的に区別しておくために
+  // setMarkedPredicate()とsetMarkedRowUsesUnderline(true)を組にして
+  // いる(自身のコメント参照)――この呼び出しは単にここに欠けていた、
+  // ArchiveModeのマーキングサポートが最初に移植された時の見落とし
+  // である。
   view_.setMarkedRowUsesUnderline(true);
-  // Mode-line fields (2026-08-19 REDESIGN, a direct user correction:
+  // モードラインフィールド(2026-08-19の再設計、直接のユーザー訂正:
   // "旧ARCのモードラインはお手本じゃなく、正しくは「ARC」「01/14
   // TOP」「1774」「(tar)」「/Users/haa15030/git/usilic/src/utf8.tar」
-  // でよろしく"): `name` is the fixed literal "ARC" (matching
-  // Directory/File's own "DIR"/"FILE"-style mode-name convention, NOT
-  // the archive's own basename as an earlier version here showed) --
-  // trailing is still the listing's own total byte count (2026-08-15
-  // addition, unchanged).
+  // でよろしく"): `name`は固定リテラルの"ARC"(Directory/File自身の
+  // "DIR"/"FILE"スタイルのモード名慣習に合わせている。以前ここでの
+  // バージョンが表示していたアーカイブ自身のベース名では「ない」)
+  // ――trailingは依然として一覧自身の合計バイト数(2026-08-15の追加、
+  // 変更なし)。
   //
-  // trailing2 (2026-08-19 FOLLOW-UP fix, same day: "戻り値が非ハイ
-  // ライト" -- a real report + screenshot found the archive's own path,
-  // originally placed in rightWatermark below, drawn in plain BOLD text
-  // instead of the reverse-video every OTHER highlighted field here
-  // uses): rightWatermark is legacy's OWN "no previous-mode text to
-  // show, so print the program name/version instead" fallback (see its
-  // own struct comment) -- deliberately non-reverse-video THERE because
-  // it's static branding, not real destination info. The archive's own
-  // path is real, meaningful "戻り値" content (same category as every
-  // OTHER mode's own highlighted trailing2), so it belongs in a
-  // highlighted field instead.
+  // trailing2(2026-08-19の追加修正、同日: "戻り値が非ハイライト"
+  // ――実際の報告+スクリーンショットにより、下のrightWatermarkに
+  // 元々置かれていたアーカイブ自身のパスが、ここの他の全ての
+  // ハイライトされたフィールドが使う反転表示ではなく、プレーンな
+  // 太字テキストで描画されていることが判明した): rightWatermarkは、
+  // legacy「自身」の「表示すべき前モードのテキストが無いので、
+  // 代わりにプログラム名/バージョンを表示する」フォールバック
+  // (自身の構造体コメント参照)である――それが「そこで」意図的に
+  // 反転表示ではないのは、それが静的なブランディングであり、実際の
+  // 移動先情報ではないため。アーカイブ自身のパスは実際の、意味のある
+  // 「戻り値」の内容である(他の全モード自身のハイライトされた
+  // trailing2と同じカテゴリ)ので、代わりにハイライトされたフィールド
+  // に属する。
   //
-  // trailing2/trailing3 split (2026-08-19, SAME-DAY second follow-up:
-  // "「(tar)」と「/Users/.../utf8.tar」の間に空白が無い"): the FIRST
-  // attempt at this fix combined the "(<command>)" badge and the path
-  // into ONE trailing2 string ("(tar) " + path). That string DID
-  // contain a real ASCII space, but renderModeLine() draws a single
-  // field as one uninterrupted Standout run (see its own comment on
-  // why -- CUI's mode-line needs BLACK GAPS BETWEEN fields, not within
-  // one), so the embedded space rendered as a same-color reverse-video
-  // blank -- invisible against its own dark background, unlike the
-  // genuine box breaks between every OTHER field pair here. Splitting
-  // the badge (trailing2, matching DirectoryMode's own identical
-  // "(ls)" convention) and the path (trailing3, see its own comment)
-  // into two SEPARATE fields gives them a real plain-mode gap via
-  // renderModeLine()'s own existing per-field rendering, no new
-  // rendering logic needed.
+  // trailing2/trailing3の分割(2026-08-19、同日2回目の追加修正:
+  // "「(tar)」と「/Users/.../utf8.tar」の間に空白が無い"): この修正の
+  // 「最初の」試みは、"(<command>)"バッジとパスを、1つのtrailing2
+  // 文字列("(tar) " + path)へ結合した。その文字列は「本物の」ASCII
+  // 空白を含んでいたが、renderModeLine()は1つのフィールドを1つの
+  // 途切れない反転表示の連続として描画する(理由は自身のコメント参照
+  // ――CUIのモードラインはフィールドの「間」に黒いギャップを必要と
+  // し、1つの中にではない)ので、埋め込まれた空白は同色の反転表示の
+  // 空白として描画された――ここの他の全てのフィールドのペアの間の
+  // 本物の箱の区切りとは異なり、自身の暗い背景に対して見えない。
+  // バッジ(trailing2、DirectoryMode自身の同一の"(ls)"慣習に合わせて
+  // いる)とパス(trailing3、自身のコメント参照)を2つの「別々の」
+  // フィールドに分割することで、renderModeLine()自身の既存の
+  // フィールドごとの描画を通じて、それらに本物のプレーンモードの
+  // ギャップを与えられる。新しい描画ロジックは不要。
   //
-  // fillTrailingToEdge (2026-08-19, twice same day): initially set to
-  // false here, since at THAT point trailing3 didn't support edge-fill
-  // yet and leaving this true would have padded trailing2 ("(tar)")
-  // all the way to the row's right edge, pushing trailing3 (the path)
-  // off-screen. A real follow-up report (=dj: "戻り値が右端まで埋まっ
-  // てない") wanted the path itself filled to the edge, same as every
-  // other mode's own last trailing field -- trailing3 now honors
-  // fillTrailingToEdge too (see its own renderModeLine() comment), so
-  // this is back to true.
+  // fillTrailingToEdge(2026-08-19、同日2回): ここでは最初falseに
+  // 設定されていた。「その」時点ではtrailing3はまだ端までの埋め
+  // つぶしをサポートしておらず、これをtrueのままにしておくと
+  // trailing2("(tar)")が行の右端まで丸ごとパディングされ、trailing3
+  // (パス)を画面外へ押し出してしまうため。実際の追加報告(=dj:
+  // "戻り値が右端まで埋まってない")は、他の全モード自身の最後の
+  // trailingフィールドと同じように、パス自体を端まで埋めることを
+  // 望んだ――trailing3も今はfillTrailingToEdgeを尊重する(自身の
+  // renderModeLine()コメント参照)ので、これはtrueに戻された。
   //
-  // archiveCommand_ (the actually-configured program, e.g.
-  // "(tar)"/"(unzip)"/"(lha)"/"(rpm)", set at loadArchive() time, see
-  // its own comment). For a NESTED archive, currentArchive_ is
-  // Application::descendToNestedArchive()'s own mkdtemp()-generated
-  // temp path rather than anything meaningful to a human, same known
-  // tradeoff the OLD basename-only `name` field used to accept for the
-  // exact same reason; not solved here since the user's own report was
-  // specifically about a top-level (non-nested) archive.
+  // archiveCommand_(実際に設定されているプログラム、例えば
+  // "(tar)"/"(unzip)"/"(lha)"/"(rpm)"、loadArchive()の時点で設定
+  // される、自身のコメント参照)。「入れ子の」アーカイブの場合、
+  // currentArchive_は、人間にとって意味のある何かではなく、
+  // Application::descendToNestedArchive()自身のmkdtemp()が生成した
+  // 一時パスである。まさに同じ理由で、古いベース名のみの`name`
+  // フィールドが受け入れていたのと同じ既知のトレードオフであり、
+  // ここでは解決されていない。ユーザー自身の報告が特にトップ
+  // レベル(入れ子でない)アーカイブについてのものだったため。
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (currentArchive_.empty()) return {};
     std::string badge = archiveCommand_.empty() ? "" : "(" + archiveCommand_ + ")";
@@ -110,12 +113,12 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/badge};
     fields.trailing3 = currentArchive_;
-    // showEditError_ (2026-08-26, see reportError()'s own comment):
-    // same "replace just the name field with an underlined message,
-    // padded so nothing after it shifts" convention DirectoryMode's own
-    // provider established (directory_mode.cpp) for CP/MV/RM's
-    // "Permission denied"/"Invalid mode" -- reused here verbatim for
-    // ARC's own destination-validation errors (^X^M/^X a).
+    // showEditError_(2026-08-26、reportError()自身のコメント参照):
+    // DirectoryMode自身のプロバイダがCP/MV/RMの「Permission denied」/
+    // 「Invalid mode」向けに確立した(directory_mode.cpp)、「name
+    // フィールドだけを、以降が何もずれないようパディングされた下線
+    // 付きメッセージに置き換える」という同じ慣習――ここでARC自身の
+    // 移動先検証エラー(^X^M/^X a)向けに逐語的に再利用されている。
     if (showEditError_) {
       std::string message = editErrorMessage_;
       if (message.size() < fields.name.size()) message.resize(fields.name.size(), ' ');
@@ -126,18 +129,18 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
   });
 }
 
-// 2026-08-19 REDESIGN, a direct user correction: "パーミッションも=dd
-// の一文字（d、-）も不要だが、「utf8/」は縦一列に揃えてほしい". The
-// leading isDirectory 'd'/'-' marker is dropped entirely, and `size` is
-// now right-justified to `sizeWidth` (the widest size actually present
-// in THIS listing, computed once by the caller across every entry --
-// see loadArchive()'s own comment) instead of the OLD "size + a single
-// literal '\t'" shape -- ContentView::renderLine() only ever converts a
-// raw '\t' byte to ONE plain space (see its own comment), not real
-// tab-stop math, so names never actually lined up in a column despite
-// looking like they might. A fixed two-space gap after the padded size
-// keeps every entry's name starting at the exact same column,
-// regardless of how many digits its own size happens to have.
+// 2026-08-19の再設計、直接のユーザー訂正: "パーミッションも=dd
+// の一文字（d、-）も不要だが、「utf8/」は縦一列に揃えてほしい"。先頭の
+// isDirectoryを表す'd'/'-'マーカーは完全に取り除かれ、`size`は今や
+// 古い「サイズ + リテラル1文字の'\t'」という形ではなく、
+// `sizeWidth`(この一覧に実際に存在する最も広いサイズ、呼び出し元が
+// 全エントリにわたって一度計算する――loadArchive()自身のコメント
+// 参照)に右揃えされる――ContentView::renderLine()は、生の'\t'バイト
+// を(本物のタブストップ計算ではなく)常に「1つの」プレーンな空白に
+// 変換するだけ(自身のコメント参照)なので、そろっているように見えて
+// も、名前は実際には決して列として揃っていなかった。パディングされた
+// サイズの後の固定2文字の空白は、それぞれのサイズが何桁であっても、
+// 全エントリの名前が全く同じ列から始まるようにする。
 std::string ArchiveMode::formatEntryLine(const ArchiveEntry &entry, std::size_t sizeWidth) {
   std::string sizeText = std::to_string(entry.size);
   std::string line(sizeWidth > sizeText.size() ? sizeWidth - sizeText.size() : 0, ' ');
@@ -157,8 +160,9 @@ bool ArchiveMode::loadArchive(const std::string &path) {
 
   ChildProcess::Result result;
   if (command->pipedFromArgv) {
-    // Piped formats (e.g. .tgz: gzip -dc <file> | tar tvf -) read the
-    // archive file as the FIRST stage's input, not the second's.
+    // パイプ形式(例えば.tgz: gzip -dc <file> | tar tvf -)は、
+    // アーカイブファイルを2番目ではなく「最初の」段階の入力として
+    // 読む。
     std::vector<std::string> firstStage = *command->pipedFromArgv;
     firstStage.push_back(path);
     result = ChildProcess::runPipeline(firstStage, command->argv);
@@ -175,24 +179,25 @@ bool ArchiveMode::loadArchive(const std::string &path) {
   archiveKind_ = kind;
   archiveCommand_ = command->argv.empty() ? "" : command->argv.front();
   entries_ = std::move(entries);
-  markedIndices_.clear();  // marks are scoped to the listing they were made in, matching DirectoryMode's own convention
+  markedIndices_.clear();  // マークはそれが行われた一覧にスコープされる、DirectoryMode自身の慣習に合わせている
 
   std::vector<ContentView::Line> lines;
   lines.reserve(entries_.size());
   std::size_t sizeWidth = 0;
   for (const auto &entry : entries_) sizeWidth = std::max(sizeWidth, std::to_string(entry.size).size());
-  // highlightStartColumn (2026-08-26 addition, a direct user request:
+  // highlightStartColumn(2026-08-26の追加、直接のユーザー依頼:
   // "ハイライト表示を（ls）同様ファイル・ディレクトリ名のみにして欲し
-  // い（それより左側が画面ドラッグ可能領域"): formatEntryLine() always
-  // lays a line out as `sizeWidth` right-justified digits + a fixed
-  // 2-char gap + the name, so the name's own start column is just
-  // sizeWidth + 2 -- matching DirectoryMode's own identical use of this
-  // same Line field (see its own declaration comment) to scope the
-  // cursor's reverse-video to the name, leaving the size column itself
-  // as a plain, non-highlighted (and via handleMouseClick()'s new
-  // isColumnWithinLineScope() check, click-through/drag-only) margin.
+  // い（それより左側が画面ドラッグ可能領域"): formatEntryLine()は
+  // 常に、`sizeWidth`桁の右揃え数字 + 固定2文字の空白 + 名前として
+  // 行をレイアウトするので、名前自身の開始列は単にsizeWidth + 2で
+  // ある――DirectoryMode自身が、カーソルの反転表示を名前だけに
+  // スコープするために、この同じLineフィールド(自身の宣言コメント
+  // 参照)を同一に使っているのに合わせている。サイズの列自体は、
+  // プレーンな、ハイライトされない(そしてhandleMouseClick()の新しい
+  // isColumnWithinLineScope()チェック経由で、クリックスルー/ドラッグ
+  // 専用の)余白のままにする。
   int nameStartColumn = static_cast<int>(sizeWidth) + 2;
-  // ellipsisEligible=true: see Line::ellipsisEligible's own comment.
+  // ellipsisEligible=true: Line::ellipsisEligible自身のコメント参照。
   for (const auto &entry : entries_)
     lines.push_back({formatEntryLine(entry, sizeWidth), std::nullopt, nameStartColumn, {}, true});
   view_.setLines(std::move(lines));
@@ -231,13 +236,13 @@ std::optional<std::vector<unsigned char>> ArchiveMode::extractSelected() {
   std::vector<unsigned char> data;
   switch (archiveKind_) {
     case ArchiveKind::Tar: {
-      // tar entries sit at real, parseable header offsets within the
-      // raw .tar file itself (TarReader::locateContent() walks real
-      // tar headers) -- no decompression needed for a plain .tar
-      // (a .tgz/.tar.bz2's ARCHIVE-directive pipedFromArgv already
-      // decompressed it before TarReader ever saw the listing, but
-      // extraction here only handles the plain-.tar case; see the
-      // class comment).
+      // tarのエントリは、生の.tarファイル自体の中の、実際にパース
+      // 可能なヘッダーオフセットに座っている(TarReader::
+      // locateContent()は本物のtarヘッダーを辿る)――素の.tarには
+      // 展開は不要(.tgz/.tar.bz2のARCHIVEディレクティブの
+      // pipedFromArgvは、TarReaderが一覧を見る前に既にそれを展開
+      // 済みだが、ここでの展開は素の.tarのケースだけを扱う。クラス
+      // コメント参照)。
       std::ifstream in(currentArchive_, std::ios::binary);
       if (!in) return std::nullopt;
       data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
@@ -245,13 +250,13 @@ std::optional<std::vector<unsigned char>> ArchiveMode::extractSelected() {
     }
     case ArchiveKind::Zip:
     case ArchiveKind::Lha: {
-      // Unlike tar, zip/lha entries are individually compressed
-      // within the raw archive, so -- matching legacy's own
-      // alloc_unzip()/alloc_lha() design (see ZipReader/LhaReader's
-      // own doc comments) -- locateContent() here is meant to walk
-      // the DECOMPRESSED, concatenated output of the format's
-      // extract-to-stdout command (`unzip -p`/`lha p`), not the raw
-      // archive file bytes.
+      // tarとは異なり、zip/lhaのエントリは生のアーカイブ内で個別に
+      // 圧縮されているので――legacy自身のalloc_unzip()/alloc_lha()
+      // 設計に合わせている(ZipReader/LhaReader自身のドキュメント
+      // コメント参照)――ここでのlocateContent()は、生のアーカイブ
+      // ファイルのバイト列ではなく、その形式の標準出力への展開
+      // コマンド(`unzip -p`/`lha p`)の「展開された、連結された」
+      // 出力を辿ることを意図している。
       ConfiguredRole role =
           (archiveKind_ == ArchiveKind::Zip) ? ConfiguredRole::UnzipExtract : ConfiguredRole::LhaExtract;
       ProgramCommand extractCommand = configuration_.commandFor(role);
@@ -265,9 +270,10 @@ std::optional<std::vector<unsigned char>> ArchiveMode::extractSelected() {
     }
     case ArchiveKind::Rar:
     case ArchiveKind::SevenZip: {
-      // Same "extract-to-stdout, walk the concatenated output" approach
-      // as Zip/Lha just above -- see RarReader/SevenZipReader's own
-      // doc comments for how each was verified against a real archive.
+      // すぐ上のZip/Lhaと同じ「標準出力へ展開し、連結された出力を
+      // 辿る」アプローチ――それぞれが実際のアーカイブに対してどう
+      // 検証されたかについてはRarReader/SevenZipReader自身の
+      // ドキュメントコメント参照。
       ConfiguredRole role = (archiveKind_ == ArchiveKind::Rar) ? ConfiguredRole::RarExtract
                                                                 : ConfiguredRole::SevenZipExtract;
       ProgramCommand extractCommand = configuration_.commandFor(role);
@@ -280,13 +286,13 @@ std::optional<std::vector<unsigned char>> ArchiveMode::extractSelected() {
       break;
     }
     default:
-      // Rpm: no content-location support at all (see RpmReader).
-      // Deb: its listing is the OUTER `ar` container (control.tar.gz/
-      // data.tar.gz/debian-binary), not the inner payload -- reaching
-      // an actual file inside data.tar.gz needs a multi-stage
-      // extraction (`ar p file.deb data.tar.gz | gzip -dc | tar xf -`)
-      // this slice doesn't build; left as future work rather than
-      // guessed at.
+      // Rpm: 内容位置特定サポートが全く無い(RpmReader参照)。
+      // Deb: その一覧は「外側の」`ar`コンテナ(control.tar.gz/
+      // data.tar.gz/debian-binary)であり、内側のペイロードではない
+      // ――data.tar.gz内の実際のファイルに到達するには複数段階の
+      // 展開(`ar p file.deb data.tar.gz | gzip -dc | tar xf -`)が
+      // 必要で、この一切れではそれを構築しない。推測で済ませるので
+      // はなく将来の課題として残す。
       return std::nullopt;
   }
 
@@ -298,7 +304,7 @@ std::optional<std::vector<unsigned char>> ArchiveMode::extractSelected() {
   std::size_t start = static_cast<std::size_t>(entry.contentOffset);
   if (start > data.size()) return std::nullopt;
   std::size_t len = static_cast<std::size_t>(entry.size);
-  if (start + len > data.size()) len = data.size() - start;  // matches contentTruncated
+  if (start + len > data.size()) len = data.size() - start;  // contentTruncatedと整合させる
 
   return std::vector<unsigned char>(data.begin() + static_cast<long>(start),
                                      data.begin() + static_cast<long>(start + len));
@@ -337,7 +343,7 @@ void ArchiveMode::markAll() {
 std::vector<ArchiveEntry> ArchiveMode::targetEntries() const {
   std::vector<ArchiveEntry> result;
   if (!markedIndices_.empty()) {
-    for (int idx : markedIndices_) result.push_back(entries_[idx]);  // std::set iterates in ascending order
+    for (int idx : markedIndices_) result.push_back(entries_[idx]);  // std::setは昇順で走査する
     return result;
   }
   if (const ArchiveEntry *entry = selectedEntry()) result.push_back(*entry);
