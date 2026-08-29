@@ -9,9 +9,9 @@ namespace fm {
 namespace {
 
 const std::vector<std::string> &directiveKeywords() {
-  // Ported from str.c's tcbrc[] table, same order (the order itself
-  // has no semantic meaning -- directives may appear in usilicrc in
-  // any order -- but is kept for easy cross-reference against str.c).
+  // str.cのtcbrc[]テーブルからの移植、同じ順序(順序自体には意味は
+  // 無い――ディレクティブはusilicrc内でどの順序でも現れてよい――
+  // が、str.cとの照合を容易にするために保持されている)。
   static const std::vector<std::string> kKeywords = {
       "ARCHIVE", "FILE", "EXEC",   "EDITOR", "SHELL", "GREP", "PROGRAM", "BUFFER", "CODE",
       "HISTORY", "WAIT", "SCROLL", "LS",     "KEY",   "CP",   "MV",      "RM",
@@ -34,10 +34,10 @@ std::vector<std::string> splitLines(const std::string &text) {
   return lines;
 }
 
-// A line that's blank, comment-only, or starts with whitespace is a
-// "continuation" of the current section rather than a new directive
-// keyword -- ported from init_config()'s `strchr(s_S(S_nop), *str)`
-// check, s_S(S_nop) being the literal "# \t\n".
+// 空白、コメントのみ、または空白文字で始まる行は、新しいディレク
+// ティブキーワードではなく、現在のセクションの「継続」である
+// ――init_config()の`strchr(s_S(S_nop), *str)`チェックからの移植、
+// s_S(S_nop)はリテラルの"# \t\n"である。
 bool isContinuationLine(const std::string &line) {
   if (line.empty()) return true;
   char c = line[0];
@@ -49,12 +49,12 @@ std::string firstToken(const std::string &line) {
   return (end == std::string::npos) ? line : line.substr(0, end);
 }
 
-// Ported from get_cp(): truncate at the first '#' (comment), then
-// strip leading spaces/tabs. Returns nullopt for an empty result
-// (blank or comment-only line). Note (matching legacy exactly, not a
-// simplification): a '#' inside a quoted token is NOT protected here
-// -- that only matters for the KEY section's get_str(), which this
-// class doesn't parse (see the class comment).
+// get_cp()からの移植: 最初の'#'(コメント)で切り詰め、その後先頭の
+// 空白/タブを取り除く。結果が空(空白行またはコメントのみの行)の
+// 場合はnulloptを返す。注記(単純化ではなく、legacyに正確に合わせ
+// ている): クオートされたトークン内の'#'はここでは保護され「ない」
+// ――それはKEYセクションのget_str()にとってのみ重要であり、それは
+// このクラスがパースしない(クラスコメント参照)。
 std::optional<std::string> trimCommentAndLeadingWs(const std::string &rawLine) {
   std::string line = rawLine;
   std::size_t hash = line.find('#');
@@ -64,32 +64,33 @@ std::optional<std::string> trimCommentAndLeadingWs(const std::string &rawLine) {
   return line.substr(start);
 }
 
-// Ported from save_child()'s per-token loop: a '...'- or "..."-quoted
-// span (taken verbatim up to the next occurrence of the SAME quote
-// character, no escaping), or a bare whitespace-delimited token.
+// save_child()のトークンごとのループからの移植: '...'または
+// "..."でクオートされた範囲(同じクオート文字の次の出現まで逐語的
+// に取られる、エスケープ無し)、または裸の空白区切りのトークン。
 //
-// 2026-08-24 fix (docs/CHANGES.md item 417): only ' ' was ever treated
-// as a delimiter here, never '\t' -- but usilicrc itself (both this
-// repo's own shipped template and every real user config) separates
-// FILE/EXEC/ARCHIVE directive fields with actual TAB characters, not
-// spaces (confirmed with `sed -n 'l'` against a real ~/.usilic/
-// usilicrc: "\t.mp4\topen\t-a\tIINA$"). A tab-separated line with no
-// spaces at all became ONE single token (embedded tabs and all),
-// which parseSuffixLine()'s `allTokens.size() < 2` guard then silently
-// discarded as "suffix with no command at all" -- the ENTIRE directive
-// vanished from Configuration with no error, no message, nothing. A
-// direct user report caught this concretely: an EXEC entry for `.mp4`
-// (`open -a IINA`, added to work around a SEPARATE issue, see item
-// 416) never fired at all -- Enter on a `.mp4` file just fell through
-// to plain content viewing, exactly the "silently missing directive"
-// symptom this bug produces. Every OTHER directive keyword's own
-// helpers (trimCommentAndLeadingWs()/firstToken(), just above) already
-// treat ' '/'\t' as equivalent whitespace -- tokenize() was the one
-// holdout. Fixed by treating '\t' as an ordinary delimiter alongside
-// ' ' in both the skip-leading-whitespace and read-until-whitespace
-// loops below (quoted spans are unaffected either way, matching
-// legacy's own save_child() semantics -- a quoted token can still
-// contain a literal tab if someone genuinely wants one).
+// 2026-08-24の修正(docs/CHANGES.md項目417): ここでは' 'だけが区切り
+// として扱われており、'\t'は決して扱われていなかった――しかし
+// usilicrc自体(このリポジトリ自身が同梱するテンプレートと、実際の
+// 全ユーザー設定の両方)は、FILE/EXEC/ARCHIVEディレクティブのフィー
+// ルドを空白ではなく実際のTAB文字で区切っている(実際の
+// ~/.usilic/usilicrcに対して`sed -n 'l'`で確認済み:
+// "\t.mp4\topen\t-a\tIINA$")。空白が全く無いタブ区切りの行は、
+// (埋め込まれたタブも全て込みで)「1つの」単一のトークンになって
+// しまい、それをparseSuffixLine()の`allTokens.size() < 2`ガードが
+// 「コマンドが全く無いsuffix」として黙って捨てていた――ディレク
+// ティブ「全体」が、エラーもメッセージも何も無く、Configurationから
+// 消えていた。直接のユーザー報告がこれを具体的に捉えた: `.mp4`用の
+// EXECエントリ(`open -a IINA`、別の問題を回避するために追加された、
+// 項目416参照)が全く発火しなかった――`.mp4`ファイルへのEnterは、
+// この「黙って消える」バグがまさに生み出す症状の通り、単にプレーン
+// な内容表示へ落ちていった。他の全てのディレクティブキーワード
+// 自身のヘルパー(trimCommentAndLeadingWs()/firstToken()、すぐ上)
+// は既に' '/'\t'を同等の空白として扱っている――tokenize()だけが
+// 例外だった。下の、先頭の空白をスキップするループと、空白まで
+// 読むループの両方で、'\t'を' 'と並ぶ通常の区切りとして扱うことで
+// 修正した(クオートされた範囲はどちらにせよ影響を受けない。legacy
+// 自身のsave_child()の意味論に合わせている――クオートされたトークン
+// は、本当にそれを望む人がいれば依然としてリテラルなタブを含める)。
 std::vector<std::string> tokenize(const std::string &s) {
   std::vector<std::string> out;
   std::size_t i = 0;
@@ -102,7 +103,7 @@ std::vector<std::string> tokenize(const std::string &s) {
       std::size_t start = i;
       while (i < s.size() && s[i] != quote) i++;
       out.push_back(s.substr(start, i - start));
-      if (i < s.size()) i++;  // skip the closing quote
+      if (i < s.size()) i++;  // 閉じるクオートをスキップする
     } else {
       std::size_t start = i;
       while (i < s.size() && s[i] != ' ' && s[i] != '\t') i++;
@@ -112,10 +113,10 @@ std::vector<std::string> tokenize(const std::string &s) {
   return out;
 }
 
-// Consumes continuation lines until a non-blank/non-comment data line
-// is found (returning its trimmed text and leaving `i` just past it),
-// or a directive keyword line / EOF is reached (returning nullopt,
-// `i` left pointing at that keyword line or == lines.size()).
+// 空白でも無くコメントのみでも無いデータ行が見つかるまで(そのトリ
+// ムされたテキストを返し、`i`をその直後に残す)、またはディレクティ
+// ブキーワード行/EOFに到達するまで(nulloptを返し、`i`はそのキー
+// ワード行を指すか、lines.size()と等しいまま残す)継続行を消費する。
 std::optional<std::string> nextDataLine(const std::vector<std::string> &lines, std::size_t &i) {
   while (i < lines.size() && isContinuationLine(lines[i])) {
     auto trimmed = trimCommentAndLeadingWs(lines[i]);
@@ -125,9 +126,9 @@ std::optional<std::string> nextDataLine(const std::vector<std::string> &lines, s
   return std::nullopt;
 }
 
-// Ported from get_val(): like nextDataLine(), but skips data lines
-// that don't start with a decimal digit, and truncates the result at
-// the first space/tab (so "27 trailing junk" becomes "27").
+// get_val()からの移植: nextDataLine()と似ているが、10進数字で
+// 始まらないデータ行をスキップし、結果を最初の空白/タブで切り
+// 詰める(なので"27 trailing junk"は"27"になる)。
 std::optional<std::string> nextDigitToken(const std::vector<std::string> &lines, std::size_t &i) {
   while (i < lines.size() && isContinuationLine(lines[i])) {
     auto trimmed = trimCommentAndLeadingWs(lines[i]);
@@ -140,22 +141,22 @@ std::optional<std::string> nextDigitToken(const std::vector<std::string> &lines,
   return std::nullopt;
 }
 
-// Ported from save_child()'s pipe-splitting: at most one '|' is
-// allowed; the part before it becomes an upstream pipeline stage, the
-// part after (reattached to the same suffix) is the main command.
+// save_child()のパイプ分割からの移植: '|'は最大1個まで許される。
+// その前の部分は上流のパイプライン段になり、後の部分(同じsuffix
+// に再度紐付けられる)がメインのコマンドになる。
 struct SuffixLine {
   std::string suffix;
   ProgramCommand command;
 };
 
 std::optional<SuffixLine> parseSuffixLine(const std::string &trimmedLine, std::vector<std::string> &errors) {
-  // Tokenize the WHOLE line (quote-aware) before splitting off the
-  // suffix -- the suffix token itself can be quoted too (save_child()
-  // doesn't special-case its first token's extraction), so splitting
-  // on the first raw space first (as an earlier version of this
-  // function did) breaks on lines like `'.pdf' 'xpdf' '-remote'`.
+  // suffixを切り分ける前に行「全体」をトークン化する(クオートを
+  // 認識する)――suffixトークン自体もクオートされ得る(save_child()
+  // はその最初のトークンの抽出を特別扱いしない)ので、(この関数の
+  // 以前のバージョンがそうしていたように)最初に生の空白で分割する
+  // と、`'.pdf' 'xpdf' '-remote'`のような行で壊れる。
   auto allTokens = tokenize(trimmedLine);
-  if (allTokens.size() < 2) return std::nullopt;  // suffix with no command at all
+  if (allTokens.size() < 2) return std::nullopt;  // コマンドが全く無いsuffix
   std::string suffix = allTokens[0];
   std::vector<std::string> rest(allTokens.begin() + 1, allTokens.end());
 
@@ -181,13 +182,14 @@ std::optional<SuffixLine> parseSuffixLine(const std::string &trimmedLine, std::v
 }
 
 #ifdef __APPLE__
-// setUserLocateDatabasePath()'s own quoting for `path` (an absolute
-// filesystem path, not attacker-controlled, but still single-quoted
-// defensively -- a stray `'` in it would otherwise break the `sh -c`
-// script it's embedded into). Same POSIX single-quote-escaping shape
-// as application.cpp's own shellQuoteArg() (a separate translation
-// unit, not shared -- this file already has its own small local
-// helpers for the same reason, see parseSuffixLine() above).
+// setUserLocateDatabasePath()自身の`path`(絶対ファイルシステムパス、
+// 攻撃者が制御できるものではないが、それでも防御的にシングルクオート
+// される――さもないとその中の迷った`'`は、それが埋め込まれる
+// `sh -c`スクリプトを壊してしまう)向けのクオート処理。
+// application.cpp自身のshellQuoteArg()(別の翻訳単位で、共有されて
+// いない――このファイルは、同じ理由(parseSuffixLine()の上参照)で
+// 既に自身の小さなローカルヘルパーを持っている)と同じPOSIXの
+// シングルクオートエスケープの形。
 std::string shellQuoteSinglePath(const std::string &path) {
   std::string quoted = "'";
   for (char c : path) {
@@ -204,56 +206,60 @@ std::string shellQuoteSinglePath(const std::string &path) {
 }  // namespace
 
 Configuration::Configuration() {
-  // config.h's compiled-in default was "du -ab" (all-files, byte-
-  // exact) -- GNU-only, so it failed to even start on macOS's BSD du
-  // (see CLAUDE.md's "今後の大きな方向性" section, 2026-07-22 entry).
-  // "-a" (all-files) is POSIX/portable, but "-b" (byte-exact) isn't,
-  // and dropping it entirely would leave each platform's own default
-  // block size (512 bytes on BSD, 1024 on GNU) silently disagreeing --
-  // "-k" (kilobyte blocks) is POSIX-portable *and* gives DuMode a
-  // single, consistent unit to parse on both platforms, so it's used
-  // here instead of trying to keep byte-exact sizing on just one of
-  // them.
+  // config.hの組み込みデフォルトは"du -ab"(全ファイル、バイト単位
+  // で正確)だった――GNU専用なので、macOSのBSD版duではそもそも起動
+  // すらできなかった(CLAUDE.mdの「今後の大きな方向性」節、
+  // 2026-07-22の項目参照)。"-a"(全ファイル)はPOSIX/移植可能だが、
+  // "-b"(バイト単位で正確)はそうではなく、それを丸ごと落とすと
+  // 各プラットフォーム自身のデフォルトのブロックサイズ(BSDでは
+  // 512バイト、GNUでは1024バイト)が黙って食い違ったままになって
+  // しまう――"-k"(キロバイトブロック)はPOSIXで移植可能「かつ」
+  // DuModeに両プラットフォームでパースするための単一の、一貫した
+  // 単位を与えるので、それら片方だけでバイト単位の正確なサイズを
+  // 保とうとする代わりにここで使われている。
   roleCommands_[ConfiguredRole::Du] = {{"du", "-ak"}, std::nullopt};
-  // ls's exact configured default isn't given directly in config.h
-  // (only DU/CP/MV/RM/CHARSET/TMP/LIB are) -- inferred from
-  // get_col()'s (scroll.c) own documented assumption that `ls`
-  // output is in `ls -alF` format (see CLAUDE.md history item 13).
+  // lsの正確な設定デフォルトはconfig.hに直接与えられていない
+  // (DU/CP/MV/RM/CHARSET/TMP/LIBだけがある)――get_col()(scroll.c)
+  // 自身の、`ls`出力が`ls -alF`フォーマットであるという文書化された
+  // 前提から推測されている(CLAUDE.mdの履歴項目13参照)。
   roleCommands_[ConfiguredRole::Ls] = {{"ls", "-alF"}, std::nullopt};
-  roleCommands_[ConfiguredRole::Cp] = {{"cp", "-vRi"}, std::nullopt};   // config.h's CP default
-  roleCommands_[ConfiguredRole::Mv] = {{"mv", "-vi"}, std::nullopt};    // config.h's MV default
-  roleCommands_[ConfiguredRole::Rm] = {{"rm", "-vri"}, std::nullopt};   // config.h's RM default
-  // groff's real legacy default involves runtime groff-version
-  // sniffing (to pick -R vs -Tutf8-style flags) not reproduced here;
-  // this is a reasonable fixed default, not a literal port.
+  roleCommands_[ConfiguredRole::Cp] = {{"cp", "-vRi"}, std::nullopt};   // config.hのCPデフォルト
+  roleCommands_[ConfiguredRole::Mv] = {{"mv", "-vi"}, std::nullopt};    // config.hのMVデフォルト
+  roleCommands_[ConfiguredRole::Rm] = {{"rm", "-vri"}, std::nullopt};   // config.hのRMデフォルト
+  // groffの実際のlegacyデフォルトは、実行時のgroffバージョンの探り
+  // (-Rか-Tutf8スタイルのフラグかを選ぶための)を含んでおり、ここ
+  // では再現されていない。これは妥当な固定のデフォルトであり、
+  // 逐語的な移植ではない。
   roleCommands_[ConfiguredRole::Groff] = {{"groff", "-Tutf8"}, std::nullopt};
   roleCommands_[ConfiguredRole::Man] = {{"man"}, std::nullopt};
   roleCommands_[ConfiguredRole::Locate] = {{"locate"}, std::nullopt};
-  // K-39 (^Jl, "LOCATE: Execute `locate'") per docs/ideas/IDEAS.md's
-  // LOCATE section: legacy has no updatedb-refresh feature at all
-  // (m_locate() just re-runs/redisplays a search) -- this role and
-  // LocateMode::updateDb() are a new feature added on top, not a
-  // port. Linux's plain `updatedb` default. macOS has no bare
-  // `updatedb` on PATH at all -- the equivalent program is
-  // `/usr/libexec/locate.updatedb` (see CLAUDE.md history item 7).
-  // 2026-08-13 correction: an earlier version of this comment called
-  // that difference a "known, deliberately unaddressed gap", treating
-  // it the same as DU's own untracked macOS flag mismatch -- a direct
-  // user correction pointed out that reasoning was wrong: "updatedbの
-  // 機能を果たすプログラムがあるのになぜスコープ外なの？" (there IS a
-  // program that does what updatedb does on this platform, so why
-  // treat it as out of scope?) -- the role exists to run "whatever
-  // program fulfills this FUNCTION on the current platform", not to
-  // literally match the string "updatedb". Branched via #ifdef
-  // __APPLE__, matching this port's own existing convention for
-  // Mac-only paths (see mac_font_resolver.cpp/mac_cursor.mm). Still
-  // typically needs root to actually write /var/db/locate.database --
-  // deliberately NOT wrapped in `sudo` here (an interactive password
-  // prompt from a child process this port spawns is a real, separate
-  // design/security question flagged back to the user rather than
-  // guessed at); running this as a non-root user will still likely
-  // fail with a permission error, just a real one from the correct
-  // binary instead of "command not found".
+  // K-39(^Jl、「LOCATE: Execute `locate'」)、docs/ideas/IDEAS.mdの
+  // LOCATE節に基づく: legacyにはupdatedbリフレッシュ機能が全く無い
+  // (m_locate()は単に検索を再実行/再表示するだけ)――このroleと
+  // LocateMode::updateDb()は、移植ではなく、その上に追加された
+  // 新機能である。Linuxの素の`updatedb`デフォルト。macOSにはPATH上
+  // に裸の`updatedb`が全く無い――等価なプログラムは
+  // `/usr/libexec/locate.updatedb`である(CLAUDE.mdの履歴項目7
+  // 参照)。2026-08-13の訂正: このコメントの以前のバージョンは、
+  // その違いをDU自身の追跡されていないmacOSフラグの不一致と同じ
+  // ものとして扱い、「既知の、意図的に対応していないギャップ」と
+  // 呼んでいた――直接のユーザーによる訂正が、その推論が誤っている
+  // ことを指摘した: "updatedbの機能を果たすプログラムがあるのに
+  // なぜスコープ外なの？"(このプラットフォームでupdatedbが行う
+  // ことを行うプログラムは「存在する」のに、なぜそれをスコープ外
+  // として扱うのか?)――このroleは、文字列"updatedb"に逐語的に
+  // 一致させるためではなく、「現在のプラットフォームでこの『機能』
+  // を果たすプログラムが何であれ」実行するために存在する。#ifdef
+  // __APPLEを介して分岐しており、この移植自身の既存のMac専用パスの
+  // 慣習(mac_font_resolver.cpp/mac_cursor.mm参照)に合わせている。
+  // それでも通常、/var/db/locate.databaseへ実際に書き込むには
+  // rootが必要である――ここでは意図的に`sudo`で包んでいない
+  // (この移植が生成する子プロセスからの対話的なパスワードプロンプ
+  // トは、推測で済ませるのではなくユーザーへ差し戻すべき、本物の、
+  // 別の設計/セキュリティ上の疑問である)。これをroot以外のユーザー
+  // として実行すると、依然としておそらく権限エラーで失敗する。ただ
+  // それは「command not found」ではなく、正しいバイナリからの本物の
+  // エラーというだけである。
 #ifdef __APPLE__
   roleCommands_[ConfiguredRole::UpdateDb] = {{"/usr/libexec/locate.updatedb"}, std::nullopt};
 #else
@@ -269,15 +275,15 @@ Configuration::Configuration() {
   roleCommands_[ConfiguredRole::Rpm] = {{"rpm"}, std::nullopt};
   roleCommands_[ConfiguredRole::Rpm2Cpio] = {{"rpm2cpio"}, std::nullopt};
   roleCommands_[ConfiguredRole::DebExtract] = {{"ar", "p"}, std::nullopt};
-  // unar (not the proprietary `unrar`) -- see ConfiguredRole::RarExtract's
-  // own declaration comment. "-o -" extracts to stdout, "-q" suppresses
-  // the per-entry progress text unar otherwise interleaves with the
-  // actual extracted bytes.
+  // unar(独占的な`unrar`ではない)――ConfiguredRole::RarExtract自身の
+  // 宣言コメント参照。"-o -"は標準出力へ展開し、"-q"はunarがさもな
+  // ければ実際に展開されるバイト列と混ぜてしまうエントリごとの進捗
+  // テキストを抑制する。
   roleCommands_[ConfiguredRole::RarExtract] = {{"unar", "-f", "-o", "-", "-q"}, std::nullopt};
   roleCommands_[ConfiguredRole::SevenZipExtract] = {{"7z", "x", "-so"}, std::nullopt};
 
-  // Ported from str.c's compiled-in ARCHIVE[] table, verbatim
-  // suffix->command mappings.
+  // str.cの組み込みARCHIVE[]テーブルからの移植、逐語的な
+  // suffix->commandの対応付け。
   auto addBuiltinArchive = [&](const std::string &suffix, ArchiveKind kind, ProgramCommand command) {
     SuffixEntry e;
     e.suffix = suffix;
@@ -290,38 +296,40 @@ Configuration::Configuration() {
   addBuiltinArchive(".tgz", ArchiveKind::Tar, {{"tar", "tvf", "-"}, std::vector<std::string>{"gzip", "-dc"}});
   addBuiltinArchive(".tar.bz2", ArchiveKind::Tar,
                      {{"tar", "tvf", "-"}, std::vector<std::string>{"bzip2", "-dc"}});
-  // 2026-08-26 addition (a direct user request, testing real .xz/.rar/
-  // .7z fixtures dropped into src/): same shape as .tgz/.tar.bz2 just
-  // above -- xz -dc decompresses to a plain tar stream, TarReader
-  // parses that exactly like any other tar listing. No legacy
-  // precedent (xz postdates this project's original C era by well
-  // over a decade).
+  // 2026-08-26の追加(直接のユーザー依頼、src/へ投入された実際の
+  // .xz/.rar/.7zフィクスチャでテスト): すぐ上の.tgz/.tar.bz2と同じ
+  // 形――xz -dcが素のtarストリームへ展開し、TarReaderがそれを他の
+  // どんなtar一覧とも全く同じようにパースする。legacyの先例は無い
+  // (xzはこのプロジェクトのオリジナルC時代を10年以上過ぎてから
+  // 登場した)。
   addBuiltinArchive(".tar.xz", ArchiveKind::Tar,
                      {{"tar", "tvf", "-"}, std::vector<std::string>{"xz", "-dc"}});
-  // Legacy's own compiled-in table lists just ".lzh lha" (no explicit
-  // listing flag) -- ported verbatim rather than guessed at, since no
-  // `lha` binary was available anywhere in this project's history to
-  // verify the real invocation against (see CLAUDE.md history item 22,
-  // LhaReader's own synthetic-fixture exception for the same reason).
+  // legacy自身の組み込みテーブルは単に".lzh lha"(明示的な一覧表示
+  // フラグ無し)を列挙している――これに対して実際の呼び出しを検証
+  // すべき`lha`バイナリがこのプロジェクトの歴史のどこにも利用可能
+  // でなかった(同じ理由によるCLAUDE.mdの履歴項目22、LhaReader自身
+  // の合成フィクスチャの例外参照)ので、推測ではなく逐語的に移植
+  // されている。
   addBuiltinArchive(".lzh", ArchiveKind::Lha, {{"lha"}, std::nullopt});
   addBuiltinArchive(".zip", ArchiveKind::Zip, {{"unzip", "-l"}, std::nullopt});
   addBuiltinArchive(".rpm", ArchiveKind::Rpm, {{"rpm", "-qplv"}, std::nullopt});
   addBuiltinArchive(".deb", ArchiveKind::Deb, {{"ar", "tv"}, std::nullopt});
-  // 2026-08-26 additions (same direct user request as .tar.xz above,
-  // real .rar/.7z fixtures dropped into src/). No legacy precedent --
-  // both formats postdate this project's original C era. `lsar`/`unar`
-  // (The Unarchiver's CLI tools) rather than the proprietary `unrar`,
-  // see RarReader/ConfiguredRole::RarExtract's own comments on why.
+  // 2026-08-26の追加(上の.tar.xzと同じ直接のユーザー依頼、src/へ
+  // 投入された実際の.rar/.7zフィクスチャ)。legacyの先例は無い――
+  // 両フォーマットともこのプロジェクトのオリジナルC時代を完全に
+  // 過ぎてから登場した。独占的な`unrar`ではなく`lsar`/`unar`
+  // (The Unarchiverのコマンドラインツール)。理由についてはRarReader
+  // /ConfiguredRole::RarExtract自身のコメント参照。
   addBuiltinArchive(".rar", ArchiveKind::Rar, {{"lsar", "-l"}, std::nullopt});
   addBuiltinArchive(".7z", ArchiveKind::SevenZip, {{"7z", "l"}, std::nullopt});
 }
 
 std::optional<ProgramCommand> Configuration::findBuiltinArchiveAlias(const std::string &searchText) const {
-  // Ported from conf_arc()'s tcbrc-driven branch: a user ARCHIVE line
-  // is "<new-suffix> <search-text>", matched against the compiled-in
-  // table by prefix-matching searchText against each built-in entry's
-  // own "<suffix> <argv...>" formatted line. Not a from-scratch
-  // command definition -- purely an alias onto an existing built-in.
+  // conf_arc()のtcbrc駆動の分岐からの移植: ユーザーのARCHIVE行は
+  // 「<新しいsuffix> <検索テキスト>」であり、各組み込みエントリ
+  // 自身の「<suffix> <argv...>」形式の行に対してsearchTextを前方
+  // 一致させることで、組み込みテーブルと照合される。ゼロからの
+  // コマンド定義ではなく、既存の組み込みへの純粋なエイリアスである。
   for (const auto &entry : builtinArchiveEntries_) {
     std::string formatted = entry.suffix;
     if (entry.command.pipedFromArgv) {
@@ -352,7 +360,7 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
       return false;
     }
     int index = static_cast<int>(it - keywords.begin());
-    i++;  // consume the keyword line itself
+    i++;  // キーワード行自体を消費する
 
     switch (index) {
       case 0: {  // ARCHIVE
@@ -369,7 +377,7 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
             e.suffix = newSuffix;
             e.command = *aliased;
             for (const auto &builtin : builtinArchiveEntries_) {
-              // Recover the aliased entry's ArchiveKind too.
+              // エイリアス先のエントリのArchiveKindも復元する。
               if (builtin.command.argv == aliased->argv &&
                   builtin.command.pipedFromArgv == aliased->pipedFromArgv) {
                 e.archiveKind = builtin.archiveKind;
@@ -414,36 +422,39 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         break;
       }
       case 5: {  // GREP
-        // Ported from conf_grep(): for a QUOTED pattern, everything up
-        // to the matching closing quote (already handled below); for
-        // an UNQUOTED one, `while (*cp != ' ' && *cp != '\t') cp++;`
-        // truncates at the first space OR TAB. This port previously
-        // only had the quoted branch and used an unquoted line's data
-        // WHOLESALE, unmodified -- missing this truncation entirely.
-        // usilicrc's own GREP section right-aligns each pattern's `#
-        // comment' with a run of tabs (e.g. "\/\*[a-z]*\*\/\t\t\t\t #
-        // tcb source"), and nextDataLine()/trimCommentAndLeadingWs()
-        // (a faithful port of the separate, generic get_cp(), used
-        // for OTHER config sections too) only strips the comment and
-        // LEADING whitespace -- exactly matching get_cp()'s own real
-        // behavior, trailing whitespace included, which is fine for
-        // every OTHER section (tokenize() strips it) but NOT fine
-        // here, since an unquoted GREP pattern is used as -one wholesale
-        // string with no further tokenization. Without this
-        // truncation, every unquoted seed pattern carried its own
-        // trailing tab run as literal bytes, corrupting both the
-        // ^J^S/^J^C candidate list's own mode-line layout (the tabs'
-        // real terminal tab-stop jumps threw off column alignment,
-        // pushing the destination-directory field far to the right and
-        // even wrapping) and, once such a candidate's text seeded an
-        // actual editable prompt (feedRegexListByte()'s own edit-
-        // transition), its embedded tab bytes rendered as reversed
-        // "IIII"-style control-character glyphs (LineEditor::
-        // renderVisible()'s own reversed `c + '@'` convention: TAB
-        // 0x09 + 0x40 = 'I') the moment editing began -- a real report
-        // (screenshots ㊹/㊺) where this was mistaken for a NEW display
-        // bug ("文字を入力したとたんハイライトIIIIが出る") rather than
-        // pre-corrupted seed data becoming visible for the first time.
+        // conf_grep()からの移植: 「クオートされた」パターンに対して
+        // は、一致する閉じクオートまでの全て(既に下で処理済み)。
+        // 「クオートされていない」ものに対しては、
+        // `while (*cp != ' ' && *cp != '\t') cp++;`が最初の空白
+        // 「または」タブで切り詰める。この移植は以前クオートされた
+        // 分岐しか持っておらず、クオートされていない行のデータを
+        // 変更せず「丸ごと」使っていた――この切り詰めが完全に欠けて
+        // いた。usilicrc自身のGREPセクションは、各パターンの
+        // 「#コメント」を一連のタブで右揃えする(例えば
+        // "\/\*[a-z]*\*\/\t\t\t\t # tcb source")。そして
+        // nextDataLine()/trimCommentAndLeadingWs()(別の、汎用的な
+        // get_cp()の忠実な移植で、他のconfigセクションでも使われる)
+        // はコメントと「先頭の」空白だけを取り除く――get_cp()自身の
+        // 実際の挙動に正確に一致しており、末尾の空白を含む。これは
+        // 他の全てのセクション(tokenize()がそれを取り除く)にとっては
+        // 問題無いが、クオートされていないGREPパターンは、それ以上
+        // トークン化されない「1つの」丸ごとの文字列として使われる
+        // ので、ここでは問題「がある」。この切り詰めが無いと、全ての
+        // クオートされていないシードパターンが、それ自身の末尾のタブ
+        // 列をリテラルなバイトとして運んでいた。これは、^J^S/^J^C
+        // 候補一覧自身のモードラインレイアウト(タブの本物の端末の
+        // タブストップジャンプが列の整列を狂わせ、移動先ディレクトリ
+        // フィールドを右へ大きく押しやり、折り返しさえ引き起こして
+        // いた)と、そのような候補のテキストが実際の編集可能な
+        // プロンプトの種になった(feedRegexListByte()自身の編集への
+        // 遷移)時点で、その埋め込まれたタブバイトが編集開始の瞬間に
+        // 反転表示の「IIII」スタイルの制御文字グリフ(LineEditor::
+        // renderVisible()自身の反転された`c + '@'`慣習: TAB 0x09 +
+        // 0x40 = 'I')として描画される、両方を壊していた――実際の
+        // 報告(スクリーンショット㊹/㊺)は、これを、事前に破損した
+        // シードデータが初めて可視化されたのではなく、「新しい」
+        // 表示バグ("文字を入力したとたんハイライトIIIIが出る")だと
+        // 誤解していた。
         while (auto data = nextDataLine(lines, i)) {
           std::string pattern = *data;
           if (!pattern.empty() && (pattern[0] == '\'' || pattern[0] == '"')) {
@@ -514,13 +525,14 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         break;
       }
       case 13: {
-        // KEY -- deliberately not parsed (see class comment). Its own
-        // sub-grammar has unindented marker lines within the section
-        // (F-0/K-?/M-?/P-? and similar) that the generic
-        // isContinuationLine() indentation check would misread as the
-        // next top-level directive, so skip by exact keyword match
-        // instead: consume everything up to the next line whose first
-        // token exactly equals one of the 17 known directive keywords.
+        // KEY――意図的にパースされない(クラスコメント参照)。それ
+        // 自身のサブ文法は、セクション内にインデントされていない
+        // マーカー行(F-0/K-?/M-?/P-?等)を持っており、汎用の
+        // isContinuationLine()のインデントチェックはそれを次の
+        // トップレベルディレクティブと誤読してしまう。そのため代わり
+        // に正確なキーワード一致でスキップする: 最初のトークンが
+        // 17個の既知のディレクティブキーワードのどれかに正確に等しい
+        // 次の行までの全てを消費する。
         while (i < lines.size()) {
           if (std::find(keywords.begin(), keywords.end(), firstToken(lines[i])) != keywords.end()) break;
           i++;
@@ -591,28 +603,30 @@ void Configuration::setFallbackShellArgv(std::vector<std::string> argv) { fallba
 void Configuration::setUserLocateDatabasePath(const std::string &path) {
 #ifdef __APPLE__
   roleCommands_[ConfiguredRole::LocateUserDb] = {{"locate", "-d", path}, std::nullopt};
-  // Faithfully mirrors /usr/libexec/locate.updatedb's own real pipeline
-  // (`find -s $SEARCHPATHS ... -or -print | $mklocatedb -presort > $tmp`,
-  // then `install $tmp $FCODES`) -- just scoped to $HOME instead of "/",
-  // and run under the real user's own account instead of `su -fm nobody`
-  // (the whole point: `nobody` can't even list a `750` home directory,
-  // see the enum's own comment). `-s` matches locate.updatedb's own
-  // flag (sorted output, required by `-presort`). Builds into a `.tmp`
-  // sibling and `mv`s it into place atomically, same as locate.updatedb's
-  // own `install $tmp $FCODES` -- so a concurrent LocateUserDb search
-  // never reads a half-written database. `chmod 600` last: the database
-  // is a flat list of every path under $HOME (readable metadata even for
-  // files the reader couldn't open), and ~/.usilic/ itself is `755` (an
-  // earlier, unrelated default -- see main()'s own usilicDir mkdir(2)
-  // comment), so this file needs its own explicit restriction rather
-  // than inheriting the directory's.
+  // /usr/libexec/locate.updatedb自身の実際のパイプライン
+  // (`find -s $SEARCHPATHS ... -or -print | $mklocatedb -presort >
+  // $tmp`、続いて`install $tmp $FCODES`)を忠実に反映する――ただし
+  // "/"ではなく$HOMEにスコープされ、`su -fm nobody`ではなく実際の
+  // ユーザー自身のアカウントで実行される(要点: `nobody`は`750`の
+  // ホームディレクトリすら一覧できない、enum自身のコメント参照)。
+  // `-s`はlocate.updatedb自身のフラグ(ソート済み出力、`-presort`
+  // が要求する)に一致する。`.tmp`の兄弟ファイルへ構築し、
+  // locate.updatedb自身の`install $tmp $FCODES`と同様、それを
+  // アトミックに`mv`で所定の場所へ移す――そのため並行するLocateUserDb
+  // 検索が、書きかけのデータベースを読むことは決してない。最後に
+  // `chmod 600`: データベースは$HOME下の全パスの平坦な一覧(読み取り
+  // 側が開けなかったファイルであってもメタデータは読める)であり、
+  // ~/.usilic/自体は`755`(以前の、無関係なデフォルト――main()自身の
+  // usilicDirのmkdir(2)コメント参照)なので、このファイルはディレク
+  // トリのものを継承するのではなく、それ自身の明示的な制限を必要
+  // とする。
   std::string tmpPath = path + ".tmp";
   std::string script = "find -s \"$HOME\" -print 2>/dev/null | /usr/libexec/locate.mklocatedb -presort > " +
                         shellQuoteSinglePath(tmpPath) + " && mv -f " + shellQuoteSinglePath(tmpPath) + " " +
                         shellQuoteSinglePath(path) + " && chmod 600 " + shellQuoteSinglePath(path);
   roleCommands_[ConfiguredRole::LocateUserDbBuild] = {{"sh", "-c", script}, std::nullopt};
 #else
-  (void)path;  // see the enum's own comment -- Linux-only builds leave both roles unconfigured
+  (void)path;  // enum自身のコメント参照――Linux専用ビルドは両方のroleを未設定のままにする
 #endif
 }
 
@@ -650,9 +664,10 @@ Charset::Encoding Configuration::defaultCharset() const {
     if (v == "jis") return Charset::Encoding::Jis;
     if (v == "utf8" || v == "utf-8") return Charset::Encoding::Utf8;
   }
-  // Unset, empty, or unrecognized: the documented compiled-in default
-  // (config.h's CHARSET="utf-8"), never a silent fallback to Euc --
-  // see the class comment on CLAUDE.md history item 13.
+  // 未設定、空、または認識できない: 文書化された組み込みデフォルト
+  // (config.hのCHARSET="utf-8")であり、Eucへの黙ったフォール
+  // バックは決してしない――クラスコメントのCLAUDE.mdの履歴項目13
+  // 参照。
   return Charset::Encoding::Utf8;
 }
 
