@@ -1,30 +1,30 @@
 #pragma once
 
-// "fm" (file manager) -- deliberately not the product name, since the
-// name itself is expected to change (see CLAUDE.md/IDEAS.md).
+// "fm"(file manager) -- 製品名そのものではなく意図的にこの名前にして
+// いる。名前自体は今後変わる予定のため(CLAUDE.md/IDEAS.md参照)。
 namespace fm {
 
-// UTF-8 byte-length / display-width helpers.
+// UTF-8のバイト長/表示幅ヘルパー。
 //
-// Ported from src/code.c's utf8_seqlen()/utf8_width(), which were added
-// during the C source's UTF-8 support work (see CLAUDE.md). That project
-// hit the same bug class repeatedly: code that conflated "byte count" and
-// "display column count" for multi-byte characters. Keeping both concepts
-// as clearly separate, explicitly named functions (rather than a single
-// "count()" that guesses) is intentional -- callers must pick the one they
-// actually need.
+// Cソース側のUTF-8対応作業(CLAUDE.md参照)で追加されたsrc/code.cの
+// utf8_seqlen()/utf8_width()からの移植。あちらのプロジェクトでは、
+// マルチバイト文字の「バイト数」と「表示カラム数」を混同するという
+// 同種のバグを何度も踏んだ。両者を明確に別の、名前で意味が分かる関数
+// として分離しているのは意図的なもの――呼び出し側は自分が本当に
+// 必要な方を選ばなければならない(どちらか勝手に推測する単一の
+// "count()"にはしない)。
 class Utf8 {
  public:
-  // Byte length (1-4) of the UTF-8 sequence starting with lead byte c.
-  // A stray/invalid continuation byte returns 1 so callers never
-  // desync/run past a buffer even on malformed input.
+  // 先頭バイトcで始まるUTF-8シーケンスのバイト長(1〜4)。
+  // 迷子/不正な継続バイトの場合は1を返すため、不正な入力に対しても
+  // 呼び出し側がバッファをはみ出したりずれたりすることはない。
   static int sequence_length(unsigned char c);
 
-  // Display width (0, 1, or 2 columns) of the codepoint encoded by the
-  // len-byte UTF-8 sequence at cp. Pragmatic subset of the East Asian
-  // Wide/Fullwidth ranges (enough for Japanese/CJK text, tcb's primary
-  // use case) plus a few zero-width combining-mark ranges; not a
-  // complete Unicode East-Asian-Width table.
+  // cpにあるlenバイトのUTF-8シーケンスが表すコードポイントの表示幅
+  // (0、1、または2カラム)。East Asian Wide/Fullwidth範囲の実用上
+  // 十分な部分集合(日本語/CJKテキストというtcbの主用途には足りる)に、
+  // いくつかの幅ゼロの結合文字範囲を加えたもの。完全なUnicode
+  // East-Asian-Widthテーブルではない。
   static int display_width(const unsigned char *cp, int len);
 };
 

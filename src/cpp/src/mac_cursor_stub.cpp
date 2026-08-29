@@ -1,11 +1,11 @@
 #include "mac_cursor.hpp"
 
-// Compiled instead of mac_cursor.mm on non-Darwin platforms (see the
-// Makefile's own Darwin-only substitution) -- NSCursor/AppKit simply
-// don't exist elsewhere. GraphicalDisplay::setHandCursor() checks
-// CursorImage::width before using the result, so an empty (all-default)
-// CursorImage here is a harmless "extraction unavailable" signal that
-// leaves the cursor whatever it already was.
+// 非Darwin環境ではmac_cursor.mmの代わりにこちらがコンパイルされる
+// (MakefileのDarwin限定の差し替えを参照) -- NSCursor/AppKitは他の
+// プラットフォームには存在しないため。GraphicalDisplay::setHandCursor()は
+// 結果を使う前にCursorImage::widthを確認するので、ここで返す空
+// (全項目デフォルト)のCursorImageは「抽出不可」を示す無害な信号となり、
+// カーソルは元のままになる。
 
 namespace fm {
 

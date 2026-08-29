@@ -4,26 +4,27 @@
 
 namespace fm {
 
-// Resolves a font's PostScript/family name (e.g. "MS-Gothic", exactly
-// what Terminal.app's AppleScript "font name" property reports) to an
-// actual loadable font FILE path, via macOS's CoreText framework
-// (CTFontDescriptorCreateWithNameAndSize + kCTFontURLAttribute) --
-// the only reliable way to go from a font NAME to a FILE on macOS;
-// there's no filesystem naming convention that maps one to the other
-// (verified directly: "MS-Gothic" -> "/Users/.../Library/Fonts/
-// msgothic.ttc", a per-user-installed font, not something a fixed
-// candidate path list could ever have covered). Added 2026-07-31 --
-// main.cpp's own resolveGuiFontPath() comment previously documented
-// font-NAME matching as deliberately out of scope for exactly this
-// reason (needs a real font-lookup API, not just a string), at a real
-// report that the GUI window wasn't honoring the calling terminal's
-// configured font (e.g. "ＭＳゴシック14" for full Japanese coverage).
+// フォントのPostScript名/ファミリー名(例: "MS-Gothic"、Terminal.appの
+// AppleScript "font name"プロパティがそのまま報告する形式)を、macOSの
+// CoreTextフレームワーク(CTFontDescriptorCreateWithNameAndSize +
+// kCTFontURLAttribute)経由で実際に読み込み可能なフォント「ファイル」
+// パスへ解決する――これがmacOS上でフォント「名前」からフォント
+// 「ファイル」へたどり着く唯一の確実な方法であり、両者を対応付ける
+// ファイルシステム上の命名規則は存在しない(実際に確認済み:
+// "MS-Gothic" -> "/Users/.../Library/Fonts/msgothic.ttc"、
+// ユーザーごとにインストールされるフォントであり、固定の候補パス
+// 一覧では絶対にカバーできない)。2026-07-31追加――main.cppの
+// resolveGuiFontPath()自身のコメントには、以前から「フォント名による
+// マッチングはまさにこの理由(文字列比較ではなく本物のフォント検索APIが
+// 必要)により意図的にスコープ外」と書かれていたが、実際にGUIウィンドウ
+// が呼び出し元ターミナルの設定フォント(日本語をフルカバーするための
+// 「ＭＳゴシック14」等)を反映しないという実報告を受けて追加した。
 //
-// Returns "" if resolution fails for any reason (font not installed,
-// CoreText API failure), or unconditionally on non-macOS platforms
-// (see the .cpp's #ifdef __APPLE__) -- callers must fall back to
-// their own candidate-path list either way, this is never a hard
-// requirement.
+// 何らかの理由で解決に失敗した場合(フォント未インストール、CoreText
+// APIの失敗)、またはmacOS以外のプラットフォームでは無条件に(.cpp側の
+// #ifdef __APPLE__参照)、空文字列""を返す――呼び出し側はいずれの場合も
+// 自前の候補パス一覧へフォールバックする必要があり、これは絶対的な
+// 保証ではない。
 std::string resolveMacFontPath(const std::string &fontName, double pointSize);
 
 }  // namespace fm

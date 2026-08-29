@@ -14,11 +14,11 @@ int ProgramMode::run(const std::string &command, const std::string &recordedComm
   if (foregroundLauncher_ && foregroundLauncher_(command)) {
     status = 0;
   } else {
-    // See Display::leaveForExternalProgram()'s own comment
-    // (docs/HISTORY.md:9023): a straight port of leaveRawMode()/
-    // reenterRawMode() alone dropped legacy vt_init(-2)/(2)'s OTHER
-    // half (resetting/re-constraining the scroll region), the actual
-    // root cause of "first `less` renders broken, `vi` never does."
+    // Display::leaveForExternalProgram()自身のコメント
+    // (docs/HISTORY.md:9023)参照: leaveRawMode()/reenterRawMode()を
+    // そのまま移植しただけでは、legacyのvt_init(-2)/(2)のもう半分
+    // (スクロール領域のリセット/再制限)が欠落しており、それが
+    // 「最初の`less`だけ表示が崩れ、`vi`は崩れない」の真の原因だった。
     display_.leaveForExternalProgram();
     keyInput_.leaveRawMode();
     status = ChildProcess::runInteractive({"sh", "-c", command});

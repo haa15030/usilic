@@ -27,7 +27,7 @@ void ModeStack::pushFloor(const std::string &directory, const std::string &previ
   floor.name = directory;
   floor.directory = directory;
   floor.previousDirectory = previousDirectory;
-  floor.modeLineArg = kFloorMarker;  // ported from save_stack_dir()'s `arg = strdup(str)` (same sentinel string)
+  floor.modeLineArg = kFloorMarker;  // save_stack_dir()の`arg = strdup(str)`からの移植(同じ番兵文字列)
   floor.view = std::move(view);
   frames_.push_back(std::move(floor));
 }

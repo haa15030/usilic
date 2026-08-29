@@ -5,36 +5,35 @@
 
 namespace fm {
 
-// Candidate byte-forms of `text` to try when doing a byte-literal
-// substring match (FGREP/EGREP/CUT's own fgrep/egrep subprocess calls,
-// LOCATE's own `locate` calls) against real filenames -- `text` itself
-// first, then its NFC and/or NFD forms if they differ, de-duplicated.
+// `text`に対して(FGREP/EGREP/CUT自身のfgrep/egrepサブプロセス呼び出し、
+// LOCATE自身の`locate`呼び出しで)実ファイル名とのバイトリテラル部分
+// 一致を試す際に使う候補バイト表現――まず`text`自身、続いて異なる
+// 場合はそのNFC形/NFD形を、重複排除した上で返す。
 //
-// 2026-08-23 addition, a real user report: FGREP found "口座テスト"
-// but not "マイナカード", both typed via the same IME into the same
-// prompt, searching the same directory listing. The difference: the
-// actual file "マイナカード表.png" stores its "ド" DECOMPOSED (NFD:
-// "ト" + a combining dakuten, U+3099) on disk, while a normal IME
-// always emits the single PRECOMPOSED codepoint (NFC) for "ド" -- the
-// two are Unicode-canonically identical and render pixel-identical,
-// but a literal byte-for-byte substring match (exactly what
-// fgrep/egrep/locate all do) never matches across that boundary.
-// "口座テスト" happened to match anyway only because none of its
-// characters are decomposable (no dakuten/handakuten kana in it), so
-// its NFC and NFD forms are byte-identical -- a coincidence, not
-// evidence the underlying mechanism handles Japanese correctly in
-// general (see docs/CHANGES.md/HISTORY.md for the full investigation,
-// including the earlier -- separate, still valid -- TCC/iCloud-Drive-
-// access finding this is NOT a duplicate of).
+// 2026-08-23追加、実際のユーザー報告: FGREPで"口座テスト"は見つかった
+// が"マイナカード"は見つからなかった。どちらも同じIMEで同じプロンプトに
+// 入力し、同じディレクトリ一覧を検索していた。違いはこうだった:
+// 実際のファイル"マイナカード表.png"はディスク上で「ド」を分解形
+// (NFD: 「ト」+結合濁点U+3099)で保存しているのに対し、通常のIMEは
+// 「ド」に対して常に単一の合成済みコードポイント(NFC)を出力する――
+// 両者はUnicode正規化上は同一で見た目も画素単位で同じだが、
+// (fgrep/egrep/locateがまさに行う)バイト単位のリテラル部分一致では、
+// この境界をまたいで一致することは決してない。"口座テスト"がたまたま
+// 一致したのは、その中に分解可能な文字(濁点/半濁点付きの仮名)が
+// 一つも無く、NFC形とNFD形がバイト単位で同一だったからに過ぎない――
+// これは偶然であり、この仕組みが日本語全般を正しく扱えている証拠には
+// ならない(詳しい調査経緯はdocs/CHANGES.md/HISTORY.md参照。これとは
+// 別に、以前見つけた――今も有効な――TCC/iCloud Driveアクセスの問題と
+// 重複するものではないことも含む)。
 //
-// APFS (unlike the older HFS+) is normalization-PRESERVING, not
-// normalization-FORCING: a file's actual on-disk byte-form depends
-// entirely on whatever created it, and BOTH forms genuinely coexist on
-// the same machine (confirmed directly: two screenshot files sitting
-// right next to each other, one NFD, one NFC). There is no single
-// "always normalize to X" fix that covers every file -- trying the
-// query in every plausible form and taking the first that matches
-// does.
+// APFS(旧HFS+とは異なり)は正規化を「強制」ではなく「保持」する
+// 方式である: ファイルの実際のディスク上バイト表現は、それを作成した
+// ものが何かに完全に依存し、同じマシン上に両方の形式が実際に共存し
+// うる(実際に確認済み: 一方がNFD、もう一方がNFCのスクリーンショット
+// ファイルが2つ、すぐ隣同士に並んでいた)。「常にXへ正規化する」という
+// 単一の修正で全ファイルをカバーすることはできない――クエリを
+// あらゆる有り得る形式で試し、最初に一致したものを採用する、という
+// この方式がそれを実現する。
 std::vector<std::string> unicodeNormalizationCandidates(const std::string &text);
 
 }  // namespace fm

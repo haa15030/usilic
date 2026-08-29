@@ -18,7 +18,7 @@ bool EditMode::edit(const std::string &path, int lineNumber) {
   if (ec) return false;
 
   if (foregroundLauncher_ && foregroundLauncher_(argv)) {
-    // handled entirely by the launcher
+    // launcher側で全て処理済み
   } else {
     keyInput_.leaveRawMode();
     ChildProcess::runInteractive(argv);
