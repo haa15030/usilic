@@ -15,9 +15,8 @@ int nextCharBoundary(const std::string &text, int byteOffset) {
 }
 
 int prevCharBoundary(const std::string &text, int byteOffset) {
-  // Walk from 0 and remember the boundary just before byteOffset --
-  // same reasoning as snapToCharBoundary(): no backwards UTF-8 walk
-  // without a forward scan.
+  // 0から歩いてbyteOffsetの直前の境界を記憶しておく――前方スキャン
+  // 無しにUTF-8を逆方向に歩くことはできないため。
   int i = 0, prev = 0;
   while (i < byteOffset && i < static_cast<int>(text.size())) {
     prev = i;
@@ -38,9 +37,9 @@ int displayColumnFor(const std::string &text, int byteOffset) {
   return col;
 }
 
-// Inverse of displayColumnFor(): the byte offset whose display column
-// is closest to (without exceeding) `targetColumn`, for preserving
-// horizontal position across an up/down row change.
+// displayColumnFor()の逆: 表示カラムが`targetColumn`を超えない範囲で
+// 最も近いバイトオフセット。上下移動をまたいで水平位置を保持する
+// ために使う。
 int byteOffsetForDisplayColumn(const std::string &text, int targetColumn) {
   int col = 0, i = 0;
   while (i < static_cast<int>(text.size())) {
