@@ -5,40 +5,41 @@
 
 namespace fm {
 
-// Widened from 7 usable levels to 10 (2026-07-30) after a real-machine
-// report that the curve "changed abruptly three levels up from the
-// minimum" -- the old table jumped straight from a precisely-timed
-// 35ms usleep() (level 2) to an UNCALIBRATED 400,000-iteration busy
-// spin (level 3), with no way to know how those two actually compare
-// in wall-clock time on any given machine without running it for
-// real. Widening adds two more usleep() steps (still exactly timed,
-// no ambiguity) before the busy-loop range starts, and more, more
-// evenly-spaced busy-loop steps within it -- but the busy-loop values
-// themselves are still hand-picked, not measured against real
-// hardware (this whole project's sandbox has no way to do that,
-// see CLAUDE.md's repeated notes on the same limitation for GUI
-// verification generally). USILICSCROLLDEBUG (see app/main.cpp's
-// loadScrollDebugLevelFromEnvironment()) exists specifically so this
-// can be tuned further against a real machine, one level at a time,
-// without needing an actual flick/repeated keypress fast enough to
-// reliably land on the level under test.
+// 実機での報告(「最低速から3段上あたりで急に変化する」)を受けて、
+// 使用可能な7段階から10段階へ拡張(2026-07-30)――旧テーブルは、
+// 正確に計時された35msのusleep()(レベル2)から、キャリブレーション
+// されていない40万回反復のビジースピン(レベル3)へ一気に飛んで
+// おり、実際にどのマシンで実行してみるまでその2つが実時間でどう
+// 比較されるか知る手立てが無かった。拡張により、ビジーループの
+// 範囲が始まる前にusleep()のステップを2つ追加し(依然として正確に
+// 計時されており曖昧さは無い)、その範囲内でもより均等に間隔を
+// 空けたビジーループのステップを増やした――ただしビジーループの
+// 値自体は依然として手で選んだものであり、実ハードウェアに対して
+// 計測されたものではない(このプロジェクトのサンドボックス全体に、
+// それを行う手立てが無い。GUI検証全般についての同じ制約について
+// 繰り返し述べているCLAUDE.mdの記述参照)。USILICSCROLLDEBUG
+// (app/main.cppのloadScrollDebugLevelFromEnvironment()参照)は、
+// テスト対象のレベルに確実に着地できるだけの速さの実際のフリック/
+// 繰り返しキー入力を必要とせずに、これを実機に対して1段階ずつ
+// さらに調整できるよう、まさにこのために存在する。
 //
-// 2026-08-21: replaced with the user's own real-machine-tuned values
-// ("-u 90000 20000 10000 5000 3000 2000 1000 500 200 100", provided
-// directly after hands-on testing via that CLI override -- see
-// applyScrollSpeedOverride()'s own comment for exactly how "-u"
-// applies these) -- baked in as the new compiled-in DEFAULT (still
-// further overridable via "-u" at any time, same as before) rather
-// than left as something every real run has to pass by hand. All 10
-// levels are usleep-driven now (busyLoop=false throughout): the same
-// "every targeted level converts to usleep, even ones that used to
-// default to busy-loop" rule applyScrollSpeedOverride() already
-// applies to a runtime "-u" override is now simply true of the
-// compiled-in table itself, since these ARE that override's own
-// values.
+// 2026-08-21: ユーザー自身が実機で調整した値
+// ("-u 90000 20000 10000 5000 3000 2000 1000 500 200 100"、その
+// CLIオーバーライド経由で実際に手を動かしてテストした後に直接
+// 提供されたもの――「-u」がこれらをどう適用するかの詳細は
+// applyScrollSpeedOverride()自身のコメント参照)へ置き換えた――
+// あらゆる実行のたびに手で渡さなければならないものとして残すのでは
+// なく、新しいコンパイル時「既定値」として焼き込んだ(これまで通り
+// いつでも「-u」でさらに上書き可能)。10段階全てが今ではusleep駆動
+// である(全体を通じてbusyLoop=false): applyScrollSpeedOverride()が
+// 実行時の「-u」オーバーライドに対して既に適用している「対象となった
+// 全てのレベルはusleepへ変換される、以前既定でビジーループだった
+// ものも含めて」というルールが、今では単純にコンパイル時テーブル
+// 自体についても成り立つ――これらの値がまさにそのオーバーライド
+// 自身の値そのものであるため。
 std::vector<ScrollStep> kScrollSpeedLevels = {
-    {false, 0, 0},          // 0: unused, "not coasting"
-    {false, 90000, 0},      // 1: slowest
+    {false, 0, 0},          // 0: 未使用、「慣性で動いていない」
+    {false, 90000, 0},      // 1: 最も遅い
     {false, 20000, 0},      // 2
     {false, 10000, 0},      // 3
     {false, 5000, 0},       // 4
@@ -47,50 +48,53 @@ std::vector<ScrollStep> kScrollSpeedLevels = {
     {false, 1000, 0},       // 7
     {false, 500, 0},        // 8
     {false, 200, 0},        // 9
-    {false, 100, 0},        // 10: fastest
+    {false, 100, 0},        // 10: 最速
 };
 
 void applyScrollSpeedOverride(const std::vector<long> &values) {
-  // Start at index 1: index 0 is the inert "not coasting" placeholder
-  // (also !busyLoop, but never an active speed -- see kScrollSpeedLevels'
-  // own comment), not a real tunable level. Unlike the first cut of
-  // this function, values are assigned to indices 1..values.size()
-  // UNCONDITIONALLY -- including levels that default to busy-loop
-  // (5+) -- converting each one to usleep-driven as it's overridden
-  // (busyLoop set false, that level's own microseconds set from the
-  // caller's value). Found necessary after a real user report that
-  // "-u 10000 20000 30000" (3 values, only reaching the pre-existing
-  // usleep range of levels 1-4) produced no perceptible change: the
-  // user specifically wants a 5-level, all-usleep, precisely-timed
-  // curve ("usleep最低速から5段上まで"), and the busy-loop levels'
-  // whole reason for existing (OS sleep granularity can't reliably
-  // hit sub-few-ms delays, see kScrollSpeedLevels' own comment) is a
-  // concern only for the DEFAULT table, not a hard rule -- a caller
-  // who explicitly asks for a 5th precisely-timed step, knowing the
-  // usleep-granularity tradeoff, gets exactly that. Levels beyond
-  // values.size() are left at their compiled-in default (busy-loop or
-  // not, whichever they already were).
+  // インデックス1から始める: インデックス0は不活性な「慣性で動いて
+  // いない」プレースホルダ(こちらも!busyLoopだが、アクティブな
+  // 速度になることは決して無い――kScrollSpeedLevels自身のコメント
+  // 参照)であり、実際に調整可能なレベルではない。この関数の最初の
+  // 版とは異なり、値はインデックス1..values.size()へ「無条件に」
+  // 割り当てられる――既定でビジーループである(5以降の)レベルも
+  // 含む――上書きされるたびにそれぞれをusleep駆動へ変換する
+  // (busyLoopをfalseに設定し、そのレベル自身のmicrosecondsを呼び
+  // 出し側の値から設定する)。「-u 10000 20000 30000」(3つの値、
+  // 既存のusleep範囲であるレベル1-4にしか届かない)が知覚できる
+  // 変化を生まなかったという実際のユーザー報告を受けて、これが必要
+  // だと判明した: ユーザーは具体的に、5段階全てusleepの正確に計時
+  // されたカーブ(「usleep最低速から5段上まで」)を望んでおり、
+  // ビジーループのレベルがそもそも存在する理由(OSのsleep粒度は
+  // 数ミリ秒未満の遅延を確実には出せない、kScrollSpeedLevels自身の
+  // コメント参照)は「既定」テーブルだけの懸念であって、絶対的な
+  // ルールではない――usleepの粒度上のトレードオフを承知の上で
+  // 明示的に5番目の正確に計時されたステップを求める呼び出し側には、
+  // まさにそれが与えられる。values.size()を超えるレベルは、
+  // コンパイル時の既定(ビジーループかどうかは、それぞれが既に
+  // そうだった通り)のまま残る。
   for (size_t i = 1; i < kScrollSpeedLevels.size() && i - 1 < values.size(); i++) {
     long value = values[i - 1];
-    if (value <= 0) continue;  // non-positive: leave this level at its compiled-in default, see header comment
+    if (value <= 0) continue;  // 0以下: このレベルはコンパイル時の既定のまま残す、ヘッダーのコメント参照
     kScrollSpeedLevels[i].busyLoop = false;
     kScrollSpeedLevels[i].microseconds = value;
   }
 }
 
-// See applyReleaseDistanceOverride()'s own header comment. 2026-08-21:
-// starts pre-populated with the user's own real-machine-tuned values
-// ("-i 1 2 4 8 16 30 40 50 60 70", provided directly after hands-on
-// testing) instead of empty -- the same "bake the CLI override's own
-// values in as the new compiled-in default" treatment
-// kScrollSpeedLevels' own comment describes for "-u". The built-in
-// levelForReleaseDistance() formula this replaces is effectively
-// unreachable via any startup path now (still real code, still
-// reachable by explicitly passing an empty vector here, e.g. a future
-// "-i" spelling meant to mean "reset to built-in" -- not currently
-// wired to any CLI flag, since "-i" itself always requires at least
-// one value, same parsing shape as "-u"). Still further overridable
-// via "-i" at any time, same as kScrollSpeedLevels/"-u".
+// applyReleaseDistanceOverride()自身のヘッダーコメント参照。
+// 2026-08-21: 空ではなく、ユーザー自身が実機で調整した値
+// ("-i 1 2 4 8 16 30 40 50 60 70"、実際に手を動かしてテストした後に
+// 直接提供されたもの)であらかじめ埋められた状態で始まる――「-u」に
+// ついてkScrollSpeedLevels自身のコメントが説明しているのと同じ
+// 「CLIオーバーライド自身の値を新しいコンパイル時既定として焼き
+// 込む」という扱い。これが置き換える組み込みのlevelForReleaseDistance()
+// の式は、今ではどの起動経路からも実質的に到達不能になっている
+// (依然として本物のコードであり、ここへ明示的に空のベクタを渡せば
+// 到達可能――例えば将来の「組み込みへリセットする」を意味する「-i」
+// の綴り方だが、現時点ではどのCLIフラグにも配線されていない。「-i」
+// 自体は「-u」と同じパース形式で常に少なくとも1つの値を要求する
+// ため)。kScrollSpeedLevels/「-u」と同様、いつでも「-i」でさらに
+// 上書き可能。
 std::vector<long> gReleaseDistanceOverride = {1, 2, 4, 8, 16, 30, 40, 50, 60, 70};
 
 void applyReleaseDistanceOverride(const std::vector<long> &thresholds) { gReleaseDistanceOverride = thresholds; }
@@ -108,34 +112,34 @@ int levelForReleaseDistance(int pixels, int cellHeightPixels) {
   }
   int height = std::max(cellHeightPixels, 1);
   if (magnitude < height / 4) return 0;
-  // Levels 1-4 (this table's own originally usleep-calibrated,
-  // precisely-timed tier -- see kScrollSpeedLevels' own comment) keep
-  // doubling per level (height*1, *2, *4, *8); level 5 onward (the
-  // tier that was always an uncalibrated busy-loop) grows more gently
-  // -- starting 2026-08-06 after a real user report that even a hard,
-  // fast flick's coast still visibly "dropped" speed at release: the
-  // raw doubling curve made the fastest raw levels require
-  // magnitude*'s of several HUNDRED times cellHeightPixels within just
-  // kReleaseWindow (150ms) -- e.g. level 10 needed
-  // 256*cellHeightPixels, thousands of real pixels in 150ms, an
-  // unreachable release velocity for an actual human hand -- so no
-  // realistic flick, however hard, could ever land past roughly the
-  // middle of the table. Tuned twice already, both still 2026-08-06:
-  // +50% (kUpperTierGrowthDivisor 2) still couldn't reach top speed on
-  // a real hard flick; +25% (divisor 4) DID reach top speed but a
-  // real-hardware follow-up report found it now felt UNDER-
-  // differentiated ("同期感が今ひとつ" -- flick effort no longer felt
-  // proportional to resulting speed) -- the same narrow band that
-  // makes max speed reachable also makes most any moderately-hard
-  // flick land near the top, losing the wide, gradual feel levels 1-4
-  // (still doubling) have. +33% (divisor 3) is the midpoint between
-  // those two data points: still comfortably reachable (top speed
-  // needs magnitude >= 378 at cellHeightPixels=20, vs. divisor 4's
-  // 312 and divisor 2's 540) while widening each level's own bucket
-  // back out somewhat for more perceptible steps. Levels 1-4's
-  // doubling logic is untouched throughout all of this (the same user
-  // separately confirmed that part already felt right after
-  // kReleaseLevelBias below was added).
+  // レベル1-4(このテーブル自身の、元々usleepでキャリブレーション
+  // された、正確に計時された階層――kScrollSpeedLevels自身のコメント
+  // 参照)はレベルごとに倍化し続ける(height*1、*2、*4、*8)。レベル5
+  // 以降(常にキャリブレーションされていないビジーループだった階層)
+  // はより緩やかに成長する――2026-08-06、強く速いフリックのコースト
+  // でさえ離した瞬間に目に見えて速度が「落ちる」という実際のユーザー
+  // 報告を受けて開始: 素の倍化カーブでは、最速の生のレベルが
+  // kReleaseWindow(150ms)というわずかな時間内にcellHeightPixelsの
+  // 「数百」倍もの大きさを要求していた――例えばレベル10は
+  // 256*cellHeightPixelsを必要とし、150msで実際の数千ピクセルという、
+  // 実際の人間の手では到達不能なリリース速度だった――そのため、
+  // どれだけ強くても現実的なフリックがテーブルのおおよそ中程を
+  // 超えて着地することは決して無かった。既に2回調整済み、どちらも
+  // 2026-08-06のこと: +50%(kUpperTierGrowthDivisor 2)ではまだ
+  // 実際の強いフリックで最高速に届かなかった。+25%(除数4)は最高速
+  // に「届いた」が、実機での追加報告により、今度は差が「無さすぎる」
+  // (「同期感が今ひとつ」――フリックの力の入れ具合が、もはや結果の
+  // 速度に比例していると感じられない)と分かった――最高速へ到達
+  // 可能にする同じ狭い帯が、ほとんどどんな中程度に強いフリックも
+  // 最高値付近に着地させてしまい、レベル1-4(依然として倍化)が
+  // 持っている、広く緩やかな感触を失わせていた。+33%(除数3)は、
+  // その2つのデータ点の中間点である: 依然として無理なく到達可能
+  // (最高速にはcellHeightPixels=20においてmagnitude >= 378が必要、
+  // 除数4の312、除数2の540と比較)でありながら、各レベル自身の
+  // バケツを幾分か再び広げてより知覚しやすい段差を作る。この一連の
+  // 調整全体を通して、レベル1-4の倍化ロジックには一切触れていない
+  // (同じユーザーが、下のkReleaseLevelBiasが追加された後、その部分
+  // は既に正しく感じられると別途確認済み)。
   constexpr int kUpperTierGrowthDivisor = 3;
   int level = 1;
   int threshold = height;
@@ -143,23 +147,23 @@ int levelForReleaseDistance(int pixels, int cellHeightPixels) {
     level++;
     threshold += (level <= 4) ? threshold : threshold / kUpperTierGrowthDivisor;
   }
-  // +kReleaseLevelBias, a flat shift toward faster (2026-08-06, the
-  // user's own proposed fix): after two failed attempts at a deeper
-  // root-cause diagnosis for "coast speed at release feels too slow"
-  // (boosting every level's own per-dot speed via -u didn't help --
-  // ruling out "the chosen level is just configured too slow" --
-  // and reordering the coast physics loop to remove an initial-dot
-  // startup pause didn't help either -- ruling out "there's a dead
-  // pause before the first visible dot"), with no way to test real
-  // mouse-drag data from this sandbox to dig further, the user
-  // proposed simply shifting the DISTANCE-TO-LEVEL mapping itself by
-  // a couple of levels toward faster as a pragmatic compensation,
-  // regardless of the exact underlying reason typical flicks land on
-  // a lower level than they feel like they should. Only applied to
-  // an already-coasting result (level 0, "too small to count as a
-  // flick at all," is untouched -- deliberately still requires a real
-  // flick before this bias ever applies) and clamped to maxLevel so
-  // it can never select a level past the end of the table.
+  // +kReleaseLevelBias、速い方への一律シフト(2026-08-06、ユーザー
+  // 自身が提案した修正): 「離した時のコースト速度が遅すぎる」ことの
+  // より深い根本原因診断を2回試みて失敗した後(-u経由で各レベル自身の
+  // 1ドットあたりの速度を上げても効果無し――「選ばれたレベルが単に
+  // 遅く設定されすぎている」を除外――そして、コーストの物理ループを
+  // 並べ替えて最初のドットの起動時の一時停止を取り除いても効果無し
+  // ――「最初の目に見えるドットの前に死んだ一時停止がある」を除外)、
+  // このサンドボックスから実際のマウスドラッグのデータをテストして
+  // さらに掘り下げる手立てが無いため、ユーザーは、典型的なフリックが
+  // 感覚的にそうあるべきと感じるより低いレベルへ着地する正確な
+  // 根本理由が何であれ、単に距離→レベルのマッピング自体を実用的な
+  // 補正として速い方へ2段階分シフトすることを提案した。既に慣性で
+  // 動いている結果にのみ適用される(レベル0、「そもそもフリックと
+  // 数えるには小さすぎる」は変更しない――このバイアスが適用される
+  // 前には、意図的に依然として本物のフリックが必要)。また、テーブル
+  // の末尾を超えるレベルを決して選ばないようmaxLevelでクランプ
+  // される。
   constexpr int kReleaseLevelBias = 2;
   return std::min(level + kReleaseLevelBias, maxLevel);
 }
