@@ -10,8 +10,9 @@ namespace fm {
 
 namespace {
 
-// Runs `role`'s command once, with `query` appended, and returns its
-// output lines (deduplicating nothing itself -- callers merge).
+// `role`のコマンドを、`query`を末尾に追加して一度だけ実行し、その
+// 出力行を返す(重複除去はここでは一切行わない――呼び出し元がマージ
+// する)。
 std::vector<std::string> runLocateRoleOnce(const Configuration &configuration, ConfiguredRole role,
                                             const std::string &query, bool errorsToDevNull) {
   ProgramCommand command = configuration.commandFor(role);
@@ -22,11 +23,12 @@ std::vector<std::string> runLocateRoleOnce(const Configuration &configuration, C
   ChildProcessOptions options;
   if (errorsToDevNull) options.stderrLogPath = &kDevNull;
   ChildProcess::Result result = ChildProcess::run(argv, options);
-  // Real `locate` exits 1 when it simply found nothing (or, for
-  // LocateUserDb before its first build, when the database file
-  // doesn't exist yet); only treat a genuine failure to run (or a real
-  // error exit) as this search failing, same convention as GrepMode/
-  // CutMode's own fgrep/egrep exit-status handling.
+  // 本物の`locate`は、単に何も見つからなかった時に終了コード1を返す
+  // (あるいはLocateUserDbについては、初回のビルド前にデータベース
+  // ファイルがまだ存在しない時にも)――実行そのものの本当の失敗
+  // (あるいは本物のエラー終了)だけを、この検索の失敗として扱う。
+  // GrepMode/CutMode自身のfgrep/egrepの終了ステータスの扱いと
+  // 同じ規約である。
   if (result.exitStatus < 0 || result.exitStatus > 1) return {};
 
   std::vector<std::string> lines;
@@ -37,17 +39,18 @@ std::vector<std::string> runLocateRoleOnce(const Configuration &configuration, C
   return lines;
 }
 
-// Runs `role` once per Unicode-normalization candidate of `query` (see
-// unicodeNormalizationCandidates()'s own comment -- 2026-08-23
-// addition, docs/CHANGES.md item 407, a real user report: LOCATE
-// missed a real iCloud Drive file whose name, decomposed on disk,
-// didn't byte-match the normally-precomposed query the same IME typed
-// for it into FGREP, which hit the identical blind spot), merging all
-// candidates' results (unlike GrepMode/CutMode's own "first candidate
-// that matches wins" -- here a `locate` database entry might
-// legitimately match under one candidate but not another even for
-// files the query doesn't relate to at all, so a straight union is
-// simpler and cheap: at most 3 fast `locate` invocations per role).
+// `query`のUnicode正規化の候補ごとに`role`を一度ずつ実行し
+// (unicodeNormalizationCandidates()自身のコメント参照――2026-08-23
+// 追加、docs/CHANGES.md項目407、実際のユーザー報告: LOCATEが、
+// ディスク上では分解済みだった実在のiCloud Driveのファイルを見逃した
+// ――同じIMEがFGREPへ入力した際に通常の合成済みだったqueryとバイト
+// レベルで一致しなかったためで、これは全く同じ盲点にぶつかっていた)、
+// 全ての候補の結果をマージする(GrepMode/CutMode自身の「最初にマッチ
+// した候補が勝つ」方式とは異なる――ここでは`locate`のデータベース
+// エントリが、queryとは全く無関係なファイルについても、ある候補では
+// 正当にマッチしても別の候補ではマッチしないことがあり得るので、
+// 単純な和集合の方が簡潔で安上がりである: roleごとに高速な`locate`
+// の呼び出しは最大でも3回で済む)。
 std::vector<std::string> runLocateRole(const Configuration &configuration, ConfiguredRole role,
                                         const std::string &query, bool errorsToDevNull) {
   std::vector<std::string> merged;
@@ -70,12 +73,12 @@ bool LocateMode::search(const std::string &query) {
   std::vector<std::string> results = runLocateRole(configuration_, ConfiguredRole::Locate, query, false);
   bool systemConfigured = !configuration_.commandFor(ConfiguredRole::Locate).argv.empty();
   std::vector<std::string> userResults = runLocateRole(configuration_, ConfiguredRole::LocateUserDb, query, true);
-  // Neither database configured at all: same "couldn't run" failure
-  // search() always returned for a missing ConfiguredRole::Locate,
-  // unchanged from before this function also learned about
-  // LocateUserDb -- LocateUserDb being unconfigured (every existing
-  // test, and every non-macOS build) never turns a real Locate failure
-  // into a false success.
+  // どちらのデータベースも全く設定されていない: この関数がLocateUserDb
+  // についても知る前から、ConfiguredRole::Locateが無い場合にsearch()が
+  // 常に返していたのと同じ「実行できなかった」失敗である――変更無し。
+  // LocateUserDbが未設定であること(既存の全テスト、そして非macOS
+  // ビルドの全て)が、本物のLocateの失敗を偽の成功に変えてしまうことは
+  // 決して無い。
   if (!systemConfigured && configuration_.commandFor(ConfiguredRole::LocateUserDb).argv.empty()) return false;
 
   if (!userResults.empty()) {
@@ -89,9 +92,9 @@ bool LocateMode::search(const std::string &query) {
 
   std::vector<ContentView::Line> lines;
   lines.reserve(results_.size());
-  // ellipsisEligible=true: see Line::ellipsisEligible's own comment --
-  // each result is one discrete path, exactly the "Finder-style middle
-  // ellipsis" case that feature was designed for.
+  // ellipsisEligible=true: Line::ellipsisEligible自身のコメント参照
+  // ――各結果は個々の独立したパスであり、まさにこの機能が想定して
+  // 設計された「Finder風の中間省略」のケースそのものである。
   for (const auto &path : results_) lines.push_back({path, std::nullopt, std::nullopt, {}, true});
   view_.setLines(std::move(lines));
   view_.setCursorIndex(0);
@@ -101,9 +104,9 @@ bool LocateMode::search(const std::string &query) {
 
 namespace {
 
-// Same POSIX single-quote-escaping shape as application.cpp's own
-// shellQuoteArg()/configuration.cpp's own shellQuoteSinglePath() --
-// separate translation units, not shared, same as those two.
+// application.cpp自身のshellQuoteArg()/configuration.cpp自身の
+// shellQuoteSinglePath()と同じPOSIXシングルクォートのエスケープ形式
+// ――その2つと同様、別々の翻訳単位であり共有はしていない。
 std::string shellQuoteArgForUpdateDb(const std::string &arg) {
   std::string quoted = "'";
   for (char c : arg) {
@@ -133,16 +136,17 @@ pid_t LocateMode::startUpdateDb() {
   if (systemCommand.argv.empty() && userCommand.argv.empty()) return -1;
   if (userCommand.argv.empty()) return ChildProcess::runDetached(systemCommand.argv);
   if (systemCommand.argv.empty()) return ChildProcess::runDetached(userCommand.argv);
-  // Both configured (macOS, Configuration::setUserLocateDatabasePath()
-  // called): chain into ONE detached child -- see this function's own
-  // header comment for why (Application's single-pid await/poll
-  // machinery needs no changes). userCommand.argv is already its own
-  // `{"sh", "-c", "<script>"}` (Configuration::setUserLocateDatabasePath())
-  // -- quoting and re-joining it as three separate words inside this
-  // OUTER `sh -c` and letting that outer shell parse+exec them is
-  // exactly equivalent to running it directly, the same trick
-  // Application::shellQuoteArgv() callers already rely on elsewhere in
-  // this port to safely reconstruct a command line from an argv.
+  // 両方設定されている場合(macOS、Configuration::
+  // setUserLocateDatabasePath()が呼ばれている): 1つの切り離された子
+  // プロセスへ連結する――理由はこの関数自身のヘッダーコメント参照
+  // (Applicationの単一pidの待機/ポーリングの仕組みに変更が要らない
+  // ため)。userCommand.argvは既にそれ自身の`{"sh", "-c", "<script>"}`
+  // である(Configuration::setUserLocateDatabasePath())――これを
+  // この「外側」の`sh -c`の中で3つの別々の単語としてクォートし
+  // 繋ぎ直し、その外側のシェルにパース+実行させることは、直接実行
+  // するのと全く等価である。これは、このポートの他の場所で
+  // Application::shellQuoteArgv()の呼び出し元が既に頼っているのと
+  // 同じ、argvからコマンドラインを安全に再構築するトリックである。
   std::string combined = shellQuoteArgvForUpdateDb(systemCommand.argv) + " ; " + shellQuoteArgvForUpdateDb(userCommand.argv);
   return ChildProcess::runDetached({"sh", "-c", combined});
 }
