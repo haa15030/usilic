@@ -11,227 +11,237 @@
 
 namespace fm {
 
-// File-viewing mode: displays a regular file's content. Ported from
-// mode.c's T_file case reaching into init.c's init_bin() (the
-// read_buff()/check_type()/set_pp() chain) -- but only the "plain
-// text file" path. Legacy's T_file handling is itself a small wrapper
-// around a much bigger shared machine also used by M_error/M_log/
-// M_tcb/M_du (check_type()'s content-sniffing, deciding whether to
-// hand off to an external `file`(1)/roff/archive handler, and a
-// binary-content hex-dump display mode) -- none of that content-type
-// dispatch is ported here; see the class comment on scope.
+// ファイル閲覧モード: 通常ファイルの内容を表示する。mode.cのT_file
+// ケースが、init.cのinit_bin()(read_buff()/check_type()/set_pp()の
+// 連鎖)へ手を伸ばす形からの移植――ただし「プレーンテキストファイル」
+// の経路のみ。legacyのT_file処理自体、M_error/M_log/M_tcb/M_duも
+// 使うもっと大きな共有機構(check_type()の内容判定、外部の
+// `file`(1)/roff/アーカイブハンドラへ引き渡すかどうかの決定、
+// バイナリ内容の16進ダンプ表示モード)の小さなラッパーに過ぎない
+// ――その内容種別ディスパッチはここでは一切移植していない。
+// スコープについてはクラスコメント参照。
 //
-// This is NOT a literal port of init_bin()/check_type()/set_pp().
-// Those together re-derive charset detection/conversion, tab
-// expansion, and nroff-overstrike bold/underline detection from
-// scratch inline. All of that already has a clean, tested home in the
-// already-ported PipeBuffer class -- FileMode is genuinely just: read
-// the file's raw bytes, feed them to PipeBuffer, hand PipeBuffer's
-// wrapped/converted lines to ContentView. No charset/overstrike logic
-// is reimplemented here.
+// これはinit_bin()/check_type()/set_pp()の逐語的な移植ではない。
+// それらは合わさって、文字コード判定/変換、タブ展開、nroff
+// オーバーストライクの太字/下線検出を、その場でゼロから再導出
+// していた。それら全ては既に、既に移植済みのPipeBufferクラスという
+// きれいな、テスト済みの居場所を持っている――FileModeは本当に
+// ただ: ファイルの生バイトを読み、PipeBufferへ渡し、PipeBufferの
+// 折り返し/変換済みの行をContentViewへ渡すだけ。文字コード/
+// オーバーストライクのロジックはここでは一切再実装していない。
 //
-// Deliberately excluded (future work, not this slice):
-//   - Content-type sniffing / dispatch (check_type()'s decision to
-//     hand a file off to an external program, roff rendering, or
-//     archive auto-detection instead of displaying it as plain text):
-//     Mode/Application's job, built on top of Configuration's
-//     programForSuffix()/archiveHandler-style lookups (already
-//     ported) once that dispatch layer exists.
-//   - Binary-content hex-dump display: legacy's C_bin case. PipeBuffer
-//     already documents this exclusion for the same reason (depends
-//     on Buffer-side preprocessing that doesn't exist yet); a binary
-//     file's raw bytes are simply displayed as-is here, same as
-//     PipeBuffer's own passthrough behavior for undetectable content.
-//   - M_error/M_log/M_tcb/M_du's alternate data sources (a log file,
-//     the About banner, `du` output): those aren't "view a regular
-//     file" at all, just code paths that happened to share
-//     init_bin()'s C implementation.
-//   - Scrolling/paging: not this class's job at all -- callers drive
-//     the same ContentView reference directly (moveUp()/moveDown()/
-//     pageUp()/pageDown(), etc, already ported), matching how
-//     DirectoryMode also doesn't wrap ContentView's own navigation.
-//   - Returning to whatever mode was active before (DirectoryMode, or
-//     a future caller): FileMode doesn't touch ModeStack itself, same
-//     as DirectoryMode doesn't know how to return to ITS caller
-//     either -- coordinating "T_dir opened this, so ^G should go back
-//     to T_dir" across two mode classes is Mode/Application's job,
-//     not either mode class's own.
+// 意図的に除外(将来の課題、この段階では対象外):
+//   - 内容種別の判定/ディスパッチ(check_type()の、プレーンテキスト
+//     として表示する代わりに外部プログラム、roff描画、またはアーカイブ
+//     自動検出へファイルを引き渡すという決定): Mode/Applicationの
+//     仕事、そのディスパッチ層が存在するようになった時点で、
+//     Configurationのprogramomforsuffix()/archiveHandler風の検索
+//     (既に移植済み)の上に構築される。
+//   - バイナリ内容の16進ダンプ表示: legacyのC_binケース。PipeBufferは
+//     既に同じ理由(まだ存在しないBuffer側の前処理に依存する)で
+//     この除外を文書化済み。バイナリファイルの生バイトは、
+//     判定不能なコンテンツに対するPipeBuffer自身のパススルー挙動と
+//     同じく、ここでは単にそのまま表示される。
+//   - M_error/M_log/M_tcb/M_duの代替データ源(ログファイル、About
+//     バナー、`du`出力): それらは「通常ファイルを閲覧する」ことでは
+//     全く無く、たまたまinit_bin()のC実装を共有していただけのコード
+//     経路である。
+//   - スクロール/ページング: これは全くこのクラスの仕事ではない
+//     ――呼び出し側は同じContentView参照を直接駆動する(moveUp()/
+//     moveDown()/pageUp()/pageDown()等、既に移植済み)、DirectoryMode
+//     もContentView自身のナビゲーションを包んでいないのと同じ。
+//   - 以前アクティブだったモード(DirectoryMode、または将来の
+//     呼び出し元)へ戻ること: FileModeはModeStackに一切触れない。
+//     DirectoryModeも「自分自身の」呼び出し元へどう戻るか知らない
+//     のと同じ――「T_dirがこれを開いたので、^Gはそこへ戻るべき」を
+//     2つのモードクラスをまたいで調整するのはMode/Applicationの
+//     仕事であり、どちらのモードクラス自身の仕事でもない。
 class FileMode {
  public:
   FileMode(ContentView &view, History &history, Charset::Encoding encoding, int width);
 
-  // Reads path's full contents, converts/wraps them via PipeBuffer,
-  // and displays them, restoring a remembered cursor position from
-  // History if one exists for this exact path. False if the file
-  // can't be read (missing, permission denied, ...).
+  // pathの全内容を読み、PipeBuffer経由で変換/折り返しし、表示する。
+  // このパスに対して記憶済みのカーソル位置がHistoryにあればそれを
+  // 復元する。ファイルが読めない場合(存在しない、権限が無い、等)は
+  // false。
   bool loadFile(const std::string &path);
 
   const std::string &currentFile() const;
 
-  // K-27 (^Oa, M_ascii, "Switch ascii mode"): changes the encoding
-  // used by the NEXT loadFile()/reflow() call -- doesn't retroactively
-  // re-decode whatever's already displayed on its own. A caller
-  // switching charset mid-session should follow this with
-  // reflow(width) to actually re-wrap the CURRENTLY open file under
-  // the new encoding (Application's job -- see its own cycleCharset()).
+  // K-27(^Oa、M_ascii、「Switch ascii mode」): 「次の」loadFile()/
+  // reflow()呼び出しで使われるエンコーディングを変更する――既に
+  // 表示されているものを自動的に遡って再デコードすることはしない。
+  // セッション途中で文字コードを切り替える呼び出し側は、これに
+  // 続けてreflow(width)を呼び、「現在」開いているファイルを新しい
+  // エンコーディングで実際に再折り返しすべき(Applicationの仕事――
+  // そちら自身のcycleCharset()参照)。
   void setEncoding(Charset::Encoding encoding);
 
-  // Records the current cursor position into History under the
-  // current file's path. Ported from legacy's save on leaving T_file
-  // (mode.c/menu.c's save_ll()) -- exposed as an explicit method
-  // rather than an automatic side effect of scrolling, since only the
-  // caller knows when "leaving" actually happens (matching
-  // DirectoryMode's identical saveCurrentCursorPosition() pattern,
-  // called from openSelected()/goBack() there).
+  // 現在のカーソル位置を、現在のファイルのパスの下でHistoryへ記録
+  // する。T_fileを離れる際のlegacyの保存(mode.c/menu.cのsave_ll())
+  // からの移植――スクロールの自動的な副作用としてではなく、明示的な
+  // メソッドとして公開してある。「離れる」ことが実際にいつ起きるかは
+  // 呼び出し側だけが知っているため(DirectoryModeの全く同じ
+  // saveCurrentCursorPosition()パターン、そちらではopenSelected()/
+  // goBack()から呼ばれる、と同じ)。
   void saveCursorPosition();
 
-  // Re-reads the current file and re-wraps it at newWidth, for a
-  // terminal resize. Ported from alloc.c's alloc_winch() -- but NOT a
-  // literal port: alloc_winch() reflows from the ALREADY-LOADED PP
-  // list's own raw bytes, without touching the filesystem again; this
-  // simply re-invokes the same read-and-wrap path loadFile() already
-  // uses, at the new width, since there's no separate raw-bytes cache
-  // to reflow from otherwise (a real, flagged difference -- content
-  // that changed on disk between the initial load and this resize
-  // will be picked up too, unlike legacy's own strictly-in-memory
-  // reflow). Unlike loadFile(), does NOT consult History for a
-  // remembered position -- the whole point of a resize-triggered
-  // reflow is to preserve wherever the user's cursor already was in
-  // THIS session, not jump back to a stale saved position -- so the
-  // current cursor index is simply clamped to the new line count
-  // instead (legacy's own set_rv()-after-alloc_winch() amounts to the
-  // same row-index-based clamp in practice, not a semantic/identity-
-  // based anchor). False (a no-op) if no file is currently loaded.
+  // 端末サイズ変更のために、現在のファイルを再度読み、newWidthで
+  // 再度折り返す。alloc.cのalloc_winch()からの移植――ただし逐語的な
+  // 移植ではない: alloc_winch()は、ファイルシステムに再度触れる
+  // ことなく、「既に読み込み済みの」PPリスト自身の生バイトから
+  // 再折り返しする。これは単に、loadFile()が既に使っているのと
+  // 同じ読み込み+折り返しの経路を、新しい幅で再度呼び出す――他に
+  // 再折り返しする元となる別個の生バイトキャッシュが無いため(実際の、
+  // 明示された違いである――初回読み込みとこのリサイズの間にディスク
+  // 上で変更された内容も、legacy自身の厳密にメモリ内だけの再折り返し
+  // とは異なり、拾われることになる)。loadFile()とは異なり、記憶済み
+  // の位置についてHistoryを参照「しない」――リサイズ契機の再折り返し
+  // の目的全体は、ユーザーのカーソルが「この」セッションで既にどこに
+  // あったかを保つことであり、古い保存済み位置へ飛び戻ることではない
+  // ――そのため現在のカーソルインデックスは単に新しい行数へクランプ
+  // されるだけになる(legacy自身のalloc_winch()後のset_rv()も、
+  // 実際には意味/同一性ベースの基準ではなく、同じ行インデックス
+  // ベースのクランプに相当する)。現在ファイルが読み込まれていない
+  // 場合はfalse(何もしない)。
   bool reflow(int newWidth);
 
-  // Overrides BOTH the mode-line's name field (normally the bare
-  // filename) and its trailing2 field (normally the file's containing
-  // directory, see the constructor's own comment) -- added for
-  // Application::openSelectedLocateResult()'s File branch: a file
-  // reached via LOCATE isn't necessarily anywhere near the directory
-  // you were just browsing, so the plain containing-directory display
-  // is less useful there than the search that actually found it (a
-  // real user report: "旧版と違うので注意" -- legacy's own "戻り値"
-  // field for this case). `label` becomes the name (e.g. "LOCATE",
-  // matching that search's own results-screen name -- a direct user
-  // correction, screenshot =aw: "「LOCATE: .txt」はモード名ではなく
-  // 戻り値、モード名は「LOCATE」で" clarified that the search's own
-  // label belongs in the NAME slot here, not prefixed onto detail).
-  // `detail` becomes trailing2 verbatim (Finder-style middle-ellipsis
-  // truncated to fit -- see ContentView::withTruncatedFields()'s
-  // own comment -- matching a direct user request: "戻り値も検索一覧
-  // 同様「/Applications/Adobe Acrob...source/.../HKSCS.txt」形式で"
-  // -- the SAME truncation convention LOCATE's own results-list rows
-  // already use, since a file's full absolute path is exactly the kind
-  // of "long shared prefix, differing tail" text that convention
-  // exists for). Cleared automatically at the top of every loadFile()
-  // call (see its own comment).
+  // モードラインの名前フィールド(通常は素のファイル名)と、その
+  // trailing2フィールド(通常はファイルが属するディレクトリ、
+  // コンストラクタ自身のコメント参照)の「両方」を上書きする――
+  // Application::openSelectedLocateResult()のFile分岐のために追加:
+  // LOCATE経由で到達したファイルは、ちょうど今閲覧していたディレクト
+  // リの近くにあるとは限らないため、そこでは素の所属ディレクトリ
+  // 表示より、実際にそれを見つけた検索の方が有用である(実際の
+  // ユーザー報告: 「旧版と違うので注意」――legacy自身のこのケースの
+  // 「戻り値」フィールド)。`label`は名前になる(例えば"LOCATE"、
+  // その検索自身の結果画面名と一致させる――ユーザーからの直接の
+  // 訂正、スクリーンショット=aw: 「『LOCATE: .txt』はモード名では
+  // なく戻り値、モード名は『LOCATE』で」により、検索自身のラベルは
+  // detailへの接頭辞としてではなく、ここでは「名前」スロットに属する
+  // ことが明確になった)。`detail`はtrailing2へそのまま入る
+  // (Finder風の中間省略で収まるよう切り詰め――ContentView::
+  // withTruncatedFields()自身のコメント参照――ユーザーからの直接の
+  // 依頼と一致: 「戻り値も検索一覧同様『/Applications/Adobe
+  // Acrob...source/.../HKSCS.txt』形式で」――LOCATE自身の結果一覧の
+  // 行が既に使っているのと「同じ」切り詰めの慣習。ファイルの完全な
+  // 絶対パスは、まさにその慣習が存在する対象である「長い共通接頭辞、
+  // 異なる末尾」というテキストそのものであるため)。全てのloadFile()
+  // 呼び出しの先頭で自動的にクリアされる(自身のコメント参照)。
   void setSearchOrigin(const std::string &label, const std::string &detail);
 
-  // 2026-08-28 addition, a direct user report ("これでは^Gで（ls）に
-  // 戻ってしまう。検索結果一覧へ戻るのが筋なので戻り値は「EGREP: ^-」
-  // であるべき"): mirrors DirectoryMode::setSearchAnnotation() exactly
-  // (same name, same "landed HERE via Enter on a GREP match, not a
-  // direct search of this content" meaning) -- unlike setSearchOrigin()
-  // above (which replaces BOTH name and trailing2, for LOCATE/INFO's
-  // "this isn't really about the file's own name" framing), this
-  // touches trailing2 ONLY: the file's own name (e.g. "CLAUDE.md")
-  // stays exactly as-is, only the return-destination field changes, the
-  // same split DirectoryMode's own name/searchAnnotation_ already keeps.
+  // 2026-08-28追加、実際のユーザー報告(「これでは^Gで（ls）に戻って
+  // しまう。検索結果一覧へ戻るのが筋なので戻り値は『EGREP: ^-』で
+  // あるべき」): DirectoryMode::setSearchAnnotation()を正確に踏襲
+  // している(同じ名前、同じ「直接この内容を検索したのではなく、
+  // GREPの一致に対するEnter経由で『ここへ』着地した」という意味)
+  // ――上のsetSearchOrigin()(名前とtrailing2の「両方」を、
+  // LOCATE/INFOの「これは本当にはファイル自身の名前についての話では
+  // ない」という枠組みのために置き換える)とは異なり、これは
+  // trailing2「だけ」に触れる: ファイル自身の名前(例えば
+  // "CLAUDE.md")はそのまま正確に残り、戻り先フィールドだけが変わる。
+  // DirectoryMode自身のname/searchAnnotation_が既に保っているのと
+  // 同じ分離。
   void setSearchAnnotation(const std::string &text);
   bool hasSearchAnnotation() const { return !searchAnnotation_.empty(); }
 
-  // 2026-08-25 (a direct user request comparing against both legacy
-  // and less(1)): a CLI pager launch (main.cpp's own "通常ファイル
-  // 引数"/stdin-pipe case, see Application::startPagerStream()'s own
-  // comment) must NOT read its whole input upfront the way loadFile()
-  // above does -- confirmed directly against the real legacy binary
-  // (PTY capture, both a plain file argument AND a piped `seq 1
-  // 100000`): the position counter only ever reaches ~23-25 total
-  // lines (this port's own default viewport height) until the user
-  // actually scrolls further, at which point more gets read. Critical
-  // for a piped source specifically (an infinite/very long stream
-  // must never be fully buffered before the first screen can even
-  // draw), and matched for a real FILE argument too for behavioral
-  // parity with what was actually observed.
+  // 2026-08-25(legacyとless(1)の両方と比較した、ユーザーからの直接の
+  // 依頼): CLIページャ起動(main.cpp自身の「通常ファイル引数」/
+  // stdin-pipeケース、Application::startPagerStream()自身のコメント
+  // 参照)は、上のloadFile()のように入力全体を事前に読み込んでは
+  // ならない――実際のlegacyバイナリに対して直接確認済み(PTY採取、
+  // 素のファイル引数とパイプされた`seq 1 100000`の両方): 位置カウンタ
+  // は、ユーザーが実際にさらにスクロールするまでは約23-25行(この
+  // 移植自身の既定のビューポート高さ)にしか届かず、その時点でさらに
+  // 読み込まれる。パイプされた入力源では特に重要(無限/非常に長い
+  // ストリームは、最初の画面すら描画できる前に全部バッファされて
+  // しまってはならない)であり、実際に観察された挙動との一致のため
+  // 本物のFILE引数についても同じにしてある。
   //
-  // `fd`: an already-open, readable file descriptor -- EITHER a
-  // regular file (Application::startPagerStream()'s own ::open() call)
-  // or fd 0 itself for a piped stdin (KeyInput reads keyboard input
-  // from a separately-opened "/dev/tty", never fd 0 -- see its own
-  // class comment -- so fd 0 is entirely free to be consumed as pager
-  // content here without any conflict). `ownsFd`: whether THIS call
-  // should ::close() it once EOF is reached or a new load/loadFile()
-  // replaces it (false for stdin -- closing fd 0 mid-process is not
-  // this class's business). `displayName`: the mode-line's own name
-  // field verbatim (the full path for a file argument, empty for
-  // stdin -- see the constructor's own ModeLineFieldsProvider comment
-  // for why this differs from loadFile()'s bare-filename convention);
-  // ALSO the RecentFile history key, skipped entirely when empty (no
-  // stable path to remember for a pipe). `initialLineBudget`: how many
-  // lines to read up front (Application passes the current viewport
-  // height plus a small margin).
+  // `fd`: 既に開かれた、読み込み可能なファイル記述子――通常のファイル
+  // (Application::startPagerStream()自身の::open()呼び出し)か、
+  // パイプされた標準入力のためのfd 0自体のどちらか(KeyInputは
+  // キーボード入力を、fd 0では絶対になく別途開いた"/dev/tty"から読む
+  // ――自身のクラスコメント参照――そのためfd 0はここでページャの
+  // 内容として消費するのに全く衝突無く自由に使える)。`ownsFd`:
+  // EOFに達するか新しいload/loadFile()がそれを置き換えた時に、
+  // 「この」呼び出しが::close()すべきかどうか(標準入力の場合は
+  // false――プロセスの途中でfd 0を閉じるのはこのクラスの仕事ではない)。
+  // `displayName`: モードライン自身の名前フィールドにそのまま入る
+  // (ファイル引数なら完全パス、標準入力なら空――これがloadFile()の
+  // 素のファイル名の慣習とどう違うかについてはコンストラクタ自身の
+  // ModeLineFieldsProviderのコメント参照)。同時にRecentFile履歴の
+  // キーでもあり、空の場合は完全にスキップされる(パイプには記憶
+  // すべき安定したパスが無いため)。`initialLineBudget`: 事前に何行
+  // 読むか(Applicationは現在のビューポート高さに少し余裕を足した
+  // ものを渡す)。
   bool loadStream(int fd, bool ownsFd, const std::string &displayName, int initialLineBudget);
-  // Reads more from the still-open stream if `targetLineIndex` is at
-  // or past the currently-loaded end and the stream hasn't hit EOF --
-  // called by Application right before delegating a scroll/movement
-  // command to the view, ONLY while hasActiveStream() is true (every
-  // OTHER File-mode entry point -- loadFile() above -- has nothing to
-  // stream, so this is always a no-op there). False (a pure no-op)
-  // once EOF is reached or no stream is active at all.
+  // `targetLineIndex`が現在読み込み済みの末尾以上で、かつストリームが
+  // まだEOFに達していなければ、まだ開いているストリームからさらに
+  // 読み込む――Applicationが、スクロール/移動コマンドをビューへ委譲
+  // する直前に、hasActiveStream()がtrueである間「だけ」呼ぶ(他の
+  // 全てのFile mode入口――上のloadFile()――にはストリーミングする
+  // ものが無いので、そちらでは常に何もしない)。EOFに達した後、
+  // またはそもそもストリームがアクティブでない場合はfalse(純粋に
+  // 何もしない)。
   bool ensureLoadedThrough(int targetLineIndex);
   bool hasActiveStream() const { return streamFd_ >= 0; }
   bool streamAtEof() const { return streamAtEof_; }
-  // 2026-08-25 bug fix: `hasActiveStream()` above turns false once the
-  // stream reaches real EOF (streamFd_ resets to -1, see
-  // readMoreIntoPipe()'s own comment) -- correct for gating "is there
-  // more to read", but WRONG for "was this file/stdin opened via a CLI
-  // pager launch at all", which needs to keep answering true for as
-  // long as the SAME loadStream() call's content is still on screen
-  // (a real PTY bug: pressing ^G on an already-fully-read piped source
-  // -- e.g. a short `ls -l /tmp | usilic` -- fell straight through to
-  // returnToDirectory() and showed an empty Directory listing, since
-  // hasActiveStream() had already gone false by the time ^G was
-  // pressed). Use THIS for anything that needs to know "is this
-  // pager-launched content" independent of read progress (Command::Back's
-  // own File-mode branch); pagerMode_ itself is only ever reset by the
-  // NEXT loadFile()/loadStream() call, never by reaching EOF.
+  // 2026-08-25のバグ修正: 上の`hasActiveStream()`は、ストリームが
+  // 本当のEOFに達すると(streamFd_が-1にリセットされる、
+  // readMoreIntoPipe()自身のコメント参照)falseになる――「まだ読む
+  // ものがあるか」を判定するのには正しいが、「このファイル/標準入力
+  // はそもそもCLIページャ起動で開かれたものか」の判定には「間違って
+  // いる」。後者は、「同じ」loadStream()呼び出しの内容が画面に表示
+  // され続けている限りtrueを返し続ける必要がある(実際のPTYバグ:
+  // 既に完全に読み終わったパイプ入力源(例えば短い`ls -l /tmp |
+  // usilic`)に対して^Gを押すと、hasActiveStream()が^Gが押された
+  // 時点で既にfalseになっていたため、そのままreturnToDirectory()へ
+  // 落ちてしまい、空のディレクトリ一覧が表示されていた)。読み込みの
+  // 進み具合とは無関係に「これはページャ起動されたコンテンツか」を
+  // 知る必要があるものは「これ」を使うこと(Command::Back自身の
+  // File-modeの分岐)。pagerMode_自体は、EOFに達したことでは決して
+  // リセットされず、「次の」loadFile()/loadStream()呼び出しでのみ
+  // リセットされる。
   bool isPagerMode() const { return pagerMode_; }
 
-  // 2026-08-25 (a direct user request, corrected same-day after a
-  // re-check against the real legacy binary -- see
-  // Application::pollShellHandoff()'s own comment on why a plain FILE
-  // handoff no longer sets this at all): a standalone CLI pager launch
-  // (real terminal, no live parent usilic) has no previous mode at all,
-  // so ^G/'q' stay exactly as documented (^G inert, 'q' exits the whole
-  // process, the "usilic v1.5b" rightWatermark fallback shown, all
-  // confirmed against the real legacy binary). A SHELL-mode re-exec
-  // handoff of PIPED STDIN specifically (the one remaining pagerMode_
-  // case that still sets this true) DOES have a previous mode -- the
-  // live SHELL session it was typed into -- so ^G/'q' return there
-  // instead of doing nothing/quitting, and the mode-line shows a
-  // highlighted (reverse-video, NOT the bold rightWatermark) "SHELL" in
-  // trailing3 instead (a direct user correction: "戻り値がハイライト
-  // 表示の「SHELL」であるべき" -- rightWatermark's bold styling was the
-  // wrong slot for this). False by default, reset by every
-  // loadFile()/loadStream() call -- pollShellHandoff()'s own piped-
-  // stdin branch is the ONLY caller that ever sets it true.
+  // 2026-08-25(ユーザーからの直接の依頼、実際のlegacyバイナリへの
+  // 再確認の後、同日中に修正――素のFILEの受け渡しがなぜもはやこれを
+  // 全く設定しないかについてはApplication::pollShellHandoff()自身の
+  // コメント参照): 独立したCLIページャ起動(本物の端末、生きた親
+  // usilicは無し)には前のモードが全く無いので、^G/'q'は文書通りの
+  // まま(^Gは無効、'q'はプロセス全体を終了、「usilic v1.5b」という
+  // rightWatermarkフォールバックが表示される――全て実際のlegacy
+  // バイナリに対して確認済み)。「パイプされた標準入力」の
+  // SHELLモードによる再exec受け渡しは具体的には(これをtrueに設定
+  // し続ける、pagerMode_の残る唯一のケース)前のモード――それが
+  // 入力されたその生きたSHELLセッション――を「持っている」ので、
+  // ^G/'q'は何もしない/終了する代わりにそこへ戻り、モードラインは
+  // 代わりにtrailing3にハイライト表示(反転表示、太字のrightWatermark
+  // ではなく)の「SHELL」を表示する(ユーザーからの直接の訂正:
+  // 「戻り値がハイライト表示の『SHELL』であるべき」――rightWatermark
+  // の太字スタイルはこれには間違ったスロットだった)。既定はfalseで、
+  // 全てのloadFile()/loadStream()呼び出しでリセットされる――
+  // pollShellHandoff()自身のパイプされた標準入力の分岐だけが、
+  // これをtrueに設定する唯一の呼び出し元である。
   void setPagerReturnsToShell(bool value) { pagerReturnsToShell_ = value; }
   bool pagerReturnsToShell() const { return pagerReturnsToShell_; }
 
  private:
   std::vector<ContentView::Line> readAndWrap(const std::string &path) const;
-  // Shared by loadStream()/ensureLoadedThrough(): reads from streamFd_
-  // in bounded chunks, feeding each into streamPipe_, until either
-  // streamPipe_->lines() reaches targetLineCount or EOF is hit (which
-  // also flush()es streamPipe_, finalizing any still-pending trailing
-  // partial line, and closes streamFd_ if streamOwnsFd_).
+  // loadStream()/ensureLoadedThrough()が共有する: streamFd_から
+  // 有限サイズのチャンクで読み込み、それぞれをstreamPipe_へ供給
+  // する。streamPipe_->lines()がtargetLineCountに達するか、EOFに
+  // 当たる(これはstreamPipe_をflush()もし、まだ保留中の末尾の
+  // 途中の行を確定させ、streamOwnsFd_ならstreamFd_を閉じる)まで
+  // 続ける。
   void readMoreIntoPipe(int targetLineCount);
   std::vector<ContentView::Line> convertPipeLines() const;
-  // Resets any prior stream state (closing an owned fd) -- called at
-  // the top of loadStream() (a second CLI-launched file replacing the
-  // first, e.g. Command::PagerNextFile) and of loadFile() (defensive:
-  // an ordinary eager load should never leave a stale stream dangling).
+  // 以前のストリーム状態を全てリセットする(所有しているfdを閉じる)
+  // ――loadStream()の先頭(2つ目のCLI起動されたファイルが1つ目を
+  // 置き換える場合、例えばCommand::PagerNextFile)と、loadFile()の
+  // 先頭(防御的に: 通常の即時読み込みが古いストリームを宙ぶらりんの
+  // まま残すことは決して無いようにする)で呼ばれる。
   void closeStream();
 
   ContentView &view_;
@@ -241,34 +251,36 @@ class FileMode {
   std::string currentFile_;
   std::string searchOriginLabel_;
   std::string searchOriginDetail_;
-  // See setSearchAnnotation()'s own comment. Cleared on every fresh
-  // loadFile() (a new file/reload invalidates whatever search landed us
-  // on the PREVIOUS one), matching searchOriginLabel_/Detail_'s own
-  // clearing just above in that same function.
+  // setSearchAnnotation()自身のコメント参照。新しいloadFile()のたび
+  // にクリアされる(新しいファイル/再読み込みは、「前の」ファイルへ
+  // 着地させた検索が何であれ、それを無効にする)。同じ関数内ですぐ
+  // 上にあるsearchOriginLabel_/Detail_自身のクリアと同じ。
   std::string searchAnnotation_;
-  // pagerMode_ (2026-08-25): set by loadStream(), cleared by
-  // loadFile() -- see the constructor's own ModeLineFieldsProvider
-  // comment for why a pager-launched file's mode-line shows the full
-  // path (or nothing, for stdin) with no size/directory trailing
-  // fields, unlike an ordinary loadFile()-opened file.
+  // pagerMode_(2026-08-25): loadStream()が設定し、loadFile()が
+  // クリアする――ページャ起動されたファイルのモードラインが、
+  // 通常のloadFile()で開かれたファイルとは異なり、サイズ/ディレクト
+  // リのtrailingフィールド無しで完全パス(標準入力の場合は何も無し)
+  // を表示する理由についてはコンストラクタ自身のModeLineFieldsProvider
+  // のコメント参照。
   bool pagerMode_ = false;
   bool pagerReturnsToShell_ = false;
   int streamFd_ = -1;
   bool streamOwnsFd_ = false;
   bool streamAtEof_ = false;
-  // 2026-08-25 (a direct user correction): the pager mode-line's own
-  // trailing byte-count field used to sum displayed-line text up
-  // through the CURSOR's line, mirroring Shell's own identical field --
-  // but Shell's version only ever LOOKS that way because its cursor
-  // always sits at the newest line as output streams in; this port's
-  // own lazy-loaded pager can sit anywhere (a real report: paging back
-  // UP after loading further down must NOT shrink the count -- "ページ
-  // 戻しが起きたとしても...バイト数は変わらない"). The officially
-  // settled spec ("実際に読み込まれたバイト数としたい") is simpler and
-  // has nothing to do with the cursor at all: the raw byte total
-  // readMoreIntoPipe() has actually pulled from streamFd_ so far,
-  // monotonically increasing, tracked there directly (see its own
-  // comment) rather than reconstructed from displayed line lengths.
+  // 2026-08-25(ユーザーからの直接の訂正): ページャのモードライン
+  // 自身のtrailingバイト数フィールドは、以前は表示済みの行テキストを
+  // 「カーソル」の行まで合計していた。Shell自身の全く同じフィールド
+  // を踏襲したものだったが、Shell版がそう「見える」のは、その
+  // カーソルが出力がストリーミングされてくるにつれ常に最新の行に
+  // 位置しているからに過ぎない――この移植自身の遅延読み込み型
+  // ページャは、カーソルがどこにでも位置しうる(実際の報告: さらに
+  // 下まで読み込んだ後に「上」へページを戻しても、カウントは
+  // 「縮小してはならない」――「ページ戻しが起きたとしても...
+  // バイト数は変わらない」)。正式に定まった仕様(「実際に読み込まれた
+  // バイト数としたい」)はもっと単純で、カーソルとは全く無関係:
+  // readMoreIntoPipe()がこれまでに実際にstreamFd_から引き出した
+  // 生バイトの合計であり、単調増加し、表示済みの行の長さから再構成
+  // するのではなく、そこで直接追跡される(自身のコメント参照)。
   std::size_t streamBytesRead_ = 0;
   std::unique_ptr<PipeBuffer> streamPipe_;
 };
