@@ -8,145 +8,143 @@
 #include "content_view.hpp"
 #include "grep_mode.hpp"
 #include "mode_stack.hpp"
-#include "pipe_buffer.hpp"  // StyledLine -- see split()'s own comment
+#include "pipe_buffer.hpp"  // StyledLine -- split()自身のコメント参照
 
 namespace fm {
 
-// One delimiter-bounded segment: [startLine, endLine) into the lines
-// split() was given. label is the delimiter line itself (the line
-// the search pattern matched on) -- per the user's own description of
-// this feature (confirmed directly, since the legacy C source alone
-// left this genuinely ambiguous -- see the class comment), the
-// pattern is typically constant across matches (e.g. LOG mode always
-// splits on the literal "tcb(usilic)-1.5b" shell prompt marker) while
-// the FULL LINE it appears on varies (the prompt line also carries
-// e.g. the command that follows), which is what makes a list of
-// labels actually useful for picking a segment.
+// 1つの、デリミタで区切られた区間: split()に与えられた行群への
+// [startLine, endLine)。labelはデリミタ行そのもの(検索パターンが
+// マッチした行)――この機能についてのユーザー自身の説明による
+// (legacyのCソースだけではこれが本当に曖昧なままだったため、直接
+// 確認済み――クラスコメント参照): パターン自体は各マッチで通常
+// 一定である(例えばLOGモードは常にリテラルな"tcb(usilic)-1.5b"
+// というシェルプロンプトのマーカーで分割する)一方、それが現れる
+// 「行全体」は様々である(プロンプト行には例えばそれに続くコマンドも
+// 含まれる)。だからこそ、ラベルの一覧が区間を選ぶ際に実際に役立つ。
 struct CutSegment {
   std::string label;
   int startLine = 0;
-  int endLine = 0;  // exclusive
+  int endLine = 0;  // 排他的(この行は含まない)
 };
 
-// CUT mode (^Jc/^J^C in file-content view, ^Jb/^J^B in a directory
-// listing without first opening the file, and LOG's own built-in
-// use): splits a buffer's lines into segments at each line matching a
-// search pattern, and displays a list of segment labels (the matched
-// delimiter lines) to pick from. Ported from mode.c's M_cut/T_cut/
-// T_split handling in spirit, not literally -- see below.
+// CUTモード(ファイル内容表示中の^Jc/^J^C、ファイルを開かずに
+// ディレクトリ一覧から直接の^Jb/^J^B、およびLOG自身の組み込み用途):
+// バッファの各行を、検索パターンにマッチする行ごとに区間へ分割し、
+// 区間ラベル(マッチしたデリミタ行)の一覧を選択肢として表示する。
+// mode.cのM_cut/T_cut/T_split処理から精神を移植、逐語的にではない
+// ――詳細は下記。
 //
-// The legacy C source alone (mode.c/menu.c's heavily cascading
-// M_egrep/T_hfgrep/T_hegrep/M_fgrep/M_cut/M_cut2 switch fallthrough,
-// see menu.c's get_m()) does not by itself make clear whether the
-// text typed into the CUT prompt is a search pattern, a save-as
-// filename, or something else -- confirmed directly with the user
-// rather than guessed at: it's a search pattern (fixed string via
-// ^Jc/^Jb, or regex via ^J^C/^J^B), used to split the current
-// buffer's content at each matching line, with a list of those
-// matching lines offered as segment labels to pick from.
+// legacyのCソースだけ(mode.c/menu.cの深く連鎖するM_egrep/T_hfgrep/
+// T_hegrep/M_fgrep/M_cut/M_cut2のswitchフォールスルー、menu.cの
+// get_m()参照)では、CUTのプロンプトに入力するテキストが検索パターン
+// なのか、別名保存用のファイル名なのか、それとも他の何かなのかが
+// それ自体からは明確でない――憶測ではなくユーザーに直接確認済み:
+// それは検索パターン(^Jc/^Jb経由なら固定文字列、^J^C/^J^B経由なら
+// 正規表現)であり、現在のバッファの内容を、マッチする行ごとに分割
+// するのに使われ、それらのマッチした行の一覧が、区間を選ぶための
+// ラベルとして提供される。
 //
-// This is NOT a literal port. Given that description, CUT's matching
-// mechanism is identical to GrepMode's (both are, at bottom, "run the
-// real fgrep/egrep binary over these lines and get back matching line
-// numbers" -- ported from the same fork_grep() legacy uses for both
-// features) -- CutMode duplicates that small amount of matching logic
-// rather than taking a GrepMode dependency, since GrepMode's own
-// ContentView is for displaying MATCHED LINES themselves, not segment
-// labels, and forcing CutMode to own an unused second ContentView just
-// to reuse GrepMode's search() would be more awkward than the
-// duplication it would save.
+// これは逐語的な移植ではない。この説明を踏まえると、CUTのマッチング
+// の仕組みはGrepModeのものと同一である(どちらも、突き詰めれば
+// 「これらの行に対して本物のfgrep/egrepバイナリを実行し、一致した
+// 行番号を受け取る」――legacyが両機能に使っているのと同じ
+// fork_grep()からの移植)――CutModeは、GrepModeへの依存を持つ代わりに
+// その少量のマッチングロジックを重複させている。GrepMode自身の
+// ContentViewは、区間ラベルではなく「マッチした行そのもの」を
+// 表示するためのものであり、GrepMode自身のsearch()を再利用する
+// ためだけにCutModeへ使われない2つ目のContentViewを持たせるのは、
+// それによって節約できる重複よりも不格好になるため。
 //
-// Deliberately excluded (future work, not this slice):
-//   - The ^Jb/^J^B "split without first opening the file view"
-//     shortcut and LOG mode's own built-in prompt-marker split:
-//     both are just split() called with a specific pattern from a
-//     specific source -- Mode/Application's job to wire up once a
-//     directory-listing/log-viewing orchestrator exists, not
-//     CutMode's own concern (matching how FileMode doesn't know who
-//     opens it either).
-//   - Recording cut/search patterns into History: same boundary
-//     GrepMode already draws.
+// 意図的に除外(将来の課題、この段階では対象外):
+//   - ^Jb/^J^Bの「まずファイルビューを開かずに分割する」ショート
+//     カットと、LOGモード自身の組み込みのプロンプトマーカー分割:
+//     どちらも、特定の情報源から特定のパターンでsplit()を呼んで
+//     いるだけ――ディレクトリ一覧/ログ閲覧のオーケストレータが
+//     存在するようになった時点で配線するのはMode/Applicationの
+//     仕事であり、CutMode自身の関心事ではない(FileModeが誰が自分を
+//     開いたか知らないのと同じ)。
+//   - cut/検索パターンをHistoryへ記録すること: GrepModeが既に引いて
+//     いるのと同じ境界。
 //
-// Nested/recursive splitting (splitSelected()/goBack()) IS in scope,
-// per the user's own follow-up request: applying split() again to an
-// already-split segment's own content is well-defined the same way
-// opening an archive found inside another archive's extracted content
-// is ("the same operation, one level deeper") -- the only new thing
-// needed is somewhere to remember "go back up one level", which is
-// exactly ModeStack's job, the same way DirectoryMode already uses it
-// for its own recursive directory descent.
+// ネスト/再帰的な分割(splitSelected()/goBack())は「対象内」――
+// ユーザー自身の追加依頼による: 既に分割済みの区間自身の内容へ
+// もう一度split()を適用するのは、あるアーカイブの中に見つかった
+// アーカイブを開くのと同じ意味で(「同じ操作を1段深く」)well-defined
+// である――必要な新しいことは、「1段上へ戻る」ことをどこかに覚えて
+// おくことだけであり、それはまさにModeStackの仕事、DirectoryModeが
+// 既に自身の再帰的なディレクトリ降下のためにそれを使っているのと
+// 同じ。
 class CutMode {
  public:
   CutMode(ContentView &view, ModeStack &modeStack, const Configuration &configuration);
 
-  // Splits sourceLines into segments at each line matching pattern
-  // (via the real fgrep/egrep binary, same mechanism as GrepMode --
-  // see the class comment), and displays the segment labels. False
-  // only if the search command itself couldn't be run, or pattern is
-  // empty. Content before the first match (if any) becomes its own
-  // unlabeled leading segment rather than being silently dropped; no
-  // matches at all means the whole input is one segment. Does not
-  // touch ModeStack -- this is the top-level entry point; use
-  // splitSelected() to recurse into an already-split segment.
+  // sourceLinesを、patternにマッチする行ごとに区間へ分割し(本物の
+  // fgrep/egrepバイナリ経由、GrepModeと同じ仕組み――クラスコメント
+  // 参照)、区間ラベルを表示する。検索コマンド自体が実行できなかった
+  // 場合、またはpatternが空の場合のみfalse。最初のマッチより前の
+  // 内容(あれば)は、静かに捨てられるのではなく、それ自身のラベル
+  // 無しの先頭区間になる。マッチが全く無ければ、入力全体が1つの
+  // 区間になる。ModeStackには触れない――これはトップレベルの
+  // エントリポイントである。既に分割済みの区間へ再帰するには
+  // splitSelected()を使う。
   //
-  // StyledLine, not plain std::string (2026-08-05): sourceLines now
-  // carries PipeBuffer's own Bold/Underline AttributeRuns alongside
-  // each line's text, so CutContent's own displayed segment content
-  // (segmentContent(), below) can show the SAME nroff-style overstrike
-  // decoration FileMode already does (see ContentView::Line::attributes'
-  // own comment) instead of silently losing it -- HELP.jp's own section
-  // headings are bold via this exact mechanism. Grep matching itself
-  // (fgrep/egrep run over the plain text) is unaffected -- only .text
-  // is fed to the child process, matching legacy's own behavior of
-  // matching against the DE-OVERSTRUCK text.
+  // 素のstd::stringではなくStyledLine(2026-08-05): sourceLinesは
+  // 今では各行のテキストと一緒にPipeBuffer自身のBold/Underline
+  // AttributeRunも運ぶため、CutContent自身の表示される区間内容
+  // (下のsegmentContent())が、静かに失うのではなく、FileModeが既に
+  // 行っているのと「同じ」nroff風のオーバーストライク装飾を表示
+  // できる――HELP.jp自身の節見出しはまさにこの仕組みで太字になって
+  // いる。grepのマッチング自体(素のテキストに対して実行される
+  // fgrep/egrep)には影響しない――子プロセスへ渡されるのは.textだけで、
+  // legacy自身の「オーバーストライクを取り除いたテキストに対して
+  // マッチングする」という挙動と同じ。
   bool split(const std::vector<StyledLine> &sourceLines, const std::string &pattern, GrepSyntax syntax);
 
   const std::string &pattern() const;
   const std::vector<CutSegment> &segments() const;
   const CutSegment *selectedSegment() const;
 
-  // The lines making up `segment`, sliced from the sourceLines
-  // split() was called with -- attributes included, see split()'s own
-  // comment.
+  // `segment`を構成する行群、split()に渡されたsourceLinesから
+  // 切り出したもの――属性も含む、split()自身のコメント参照。
   std::vector<StyledLine> segmentContent(const CutSegment &segment) const;
 
-  // Re-splits the currently selected segment's own content by a new
-  // pattern, pushing the current split state onto ModeStack first so
-  // goBack() can return to it. False (no state change) if there's no
-  // selection or the new split itself fails.
+  // 現在選択中の区間自身の内容を、新しいパターンで再分割する。その前に
+  // 現在の分割状態をModeStackへpushし、goBack()でそこへ戻れるように
+  // する。選択が無い、または新しい分割自体が失敗した場合はfalse
+  // (状態は変化しない)。
   bool splitSelected(const std::string &pattern, GrepSyntax syntax);
 
-  // Like splitSelected(), but splits an arbitrary, EXTERNALLY-supplied
-  // sourceLines instead of "the currently selected segment's own
-  // content" -- splitSelected()'s own implementation is now just this
-  // plus segmentContent(*selectedSegment()) as the source. Added for
-  // HELP (^J^H): since CutMode is a single shared instance reused for
-  // both real user CUT sessions and the HELP screen (both are, at
-  // bottom, "split some text at a header pattern and let the user
-  // pick a section" -- ported from the same init_cut2() legacy calls
-  // for both, per menu.c's M_help/T_help case), pushSplit() lets HELP
-  // show its OWN independent content via a fresh top-level split
-  // without clobbering whatever real CUT session might already be in
-  // progress -- goBack() (already existing) returns to it exactly as
-  // it would for any other nested resplit, with no HELP-specific code
-  // needed in CutMode itself at all.
+  // splitSelected()と似ているが、「現在選択中の区間自身の内容」では
+  // なく、任意の「外部から」与えられたsourceLinesを分割する――
+  // splitSelected()自身の実装は、今ではこれに
+  // segmentContent(*selectedSegment())をソースとして渡したものに
+  // すぎない。HELP(^J^H)のために追加された: CutModeは、本物の
+  // ユーザーのCUTセッションとHELP画面の両方で再利用される単一の共有
+  // インスタンスであるため(どちらも、突き詰めれば「あるテキストを
+  // 見出しパターンで分割し、ユーザーに節を選ばせる」――menu.cの
+  // M_help/T_helpケースにより、legacyが両方に同じinit_cut2()を呼んで
+  // いることからの移植)、pushSplit()により、HELPは、既に進行中かも
+  // しれない本物のCUTセッションを踏みつぶすことなく、新しいトップ
+  // レベルの分割経由で自分「自身」の独立した内容を表示できる――
+  // (既に存在する)goBack()は、他のどのネストした再分割の場合とも
+  // 全く同じようにそこへ戻り、CutMode自体にHELP専用のコードは一切
+  // 不要である。
   bool pushSplit(const std::vector<StyledLine> &sourceLines, const std::string &pattern, GrepSyntax syntax);
 
-  // Returns to the split state saved by the most recent
-  // splitSelected() call. False if already at the top level (nothing
-  // to go back to).
+  // 直近のsplitSelected()呼び出しで保存された分割状態へ戻る。既に
+  // トップレベルにいる場合(戻る先が無い)はfalse。
   bool goBack();
   bool canGoBack() const;
 
-  // The pattern that was active ONE level up (i.e. before the most
-  // recent splitSelected()/pushSplit() call), or nullopt at the top
-  // level. Non-destructive peek at modeStack_'s own top frame -- for
-  // the mode-line's own "CUT:<parent pattern>" trailing field on a
-  // nested split (2026-08-05 user-confirmed example: split "man",
-  // select a match, split it again by "tcb" -> mode-line trailing
-  // reads "CUT:man", the PARENT level's pattern, not "tcb" itself --
-  // a breadcrumb identifying which outer split this nested list lives
-  // inside, not a description of the current level).
+  // 「1段上」でアクティブだったパターン(つまり直近のsplitSelected()/
+  // pushSplit()呼び出しより前のもの)、トップレベルではnullopt。
+  // modeStack_自身の先頭フレームを破壊せずに覗き見る――ネストした
+  // 分割におけるモードライン自身の「CUT:<親のパターン>」トレーリング
+  // フィールドのためのもの(2026-08-05にユーザーが確認した例: "man"で
+  // 分割し、マッチを選択し、それを"tcb"でさらに分割 -> モードライン
+  // のトレーリングは"tcb"自身ではなく「親」レベルのパターンである
+  // "CUT:man"と表示される――現在のレベルの説明ではなく、このネスト
+  // した一覧がどの外側の分割の中にあるかを示すパンくず)。
   std::optional<std::string> parentPattern() const;
 
  private:
