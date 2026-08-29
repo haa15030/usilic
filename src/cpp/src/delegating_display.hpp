@@ -34,9 +34,10 @@ namespace fm {
 // そちら自身のコメント参照)。
 class DelegatingDisplay : public Display {
  public:
-  // backend must outlive this object, or until a later setBackend()
-  // replaces it -- DelegatingDisplay never owns/destroys a backend
-  // itself (matching how it doesn't own the initial one either).
+  // backendは、このオブジェクトより長生きしなければならない、あるいは
+  // 後のsetBackend()がそれを置き換えるまでは――DelegatingDisplayは
+  // backendを自分では決して所有/破棄しない(最初のものも所有しない
+  // のと同じ)。
   explicit DelegatingDisplay(Display &backend);
 
   void setBackend(Display &backend);

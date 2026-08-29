@@ -544,7 +544,7 @@ void Shell::appendBodyByte(unsigned char c) {
       return;
     }
     pendingLine_.clear();
-    // fall through: `c` itself still needs handling below
+    // フォールスルー: `c`自体はまだ以下で処理する必要がある
   }
   if (c == '\r') {
     sawBareCr_ = true;

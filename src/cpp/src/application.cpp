@@ -258,7 +258,7 @@ struct KeyTableEntry {
 };
 
 const KeyTableEntry kKeyTable[] = {
-    // Cursor / paging / misc (no leader)
+    // カーソル/ページング/その他(リーダーキー無し)
     {"j", "Move window down", {'j'}},
     {"k", "Move window up", {'k'}},
     {"^N", "Move cursor down", {0x0e}},
@@ -284,7 +284,7 @@ const KeyTableEntry kKeyTable[] = {
     // なくなるよう^Iに割り当て直した。
     {"^I", "INFO", {0x09}},
     {"q", "Exit usilic (pager)", {'q'}},
-    // Macros (usilicrc M-0..M-7, see this table's own comment above)
+    // マクロ(usilicrc M-0..M-7、このテーブル自身の上のコメント参照)
     {";", "Back, cursor up, select (M-0)", {kControlG, 0x10, kCarriageReturn}, true},
     {":", "Back, cursor down, select (M-1)", {kControlG, 0x0e, kCarriageReturn}, true},
     {"+", "Back twice, cursor up, select twice (M-2)", {kControlG, kControlG, 0x10, kCarriageReturn, kCarriageReturn}, true},

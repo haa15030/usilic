@@ -52,12 +52,12 @@ class Display {
 
   virtual ~Display() = default;
 
-  // -- raw output --
+  // -- 生の出力 --
   virtual void write(const std::string &text) = 0;
   virtual void putChar(int c) = 0;
   virtual void flush() = 0;
 
-  // -- cursor --
+  // -- カーソル --
   virtual void moveCursor(int row, int col) = 0;
   virtual void cursorLeft() = 0;
   virtual void saveCursor() = 0;     // no-op if the terminal lacks this
@@ -113,13 +113,13 @@ class Display {
   // ため、クリアすべきものが何も無い。
   virtual void hideVisibleCursor() = 0;
 
-  // -- erasing / scrolling --
+  // -- 消去 / スクロール --
   virtual void clearScreen() = 0;
   virtual void clearToEndOfLine() = 0;
   virtual void scrollForward() = 0;
   virtual void scrollReverse() = 0;
 
-  // -- attributes --
+  // -- 属性 --
   virtual void setAttribute(Attribute attr) = 0;
   // その属性の生のエスケープ文字列、他の場所で組み立てたテキストへ
   // インラインで埋め込む必要がある呼び出し側のため(legacyでの使用例:
@@ -128,7 +128,7 @@ class Display {
   // している)。端末がその属性に対応していなければ空文字列を返す。
   virtual std::string attributeEscape(Attribute attr) const = 0;
 
-  // -- terminal geometry --
+  // -- 端末のジオメトリ --
   virtual int rows() const = 0;
   virtual int columns() const = 0;
   virtual void setSize(int rows, int columns) = 0;
@@ -283,11 +283,11 @@ class Display {
                                const std::vector<ModeLineSegment> &modeLineSegments) = 0;
 };
 
-// See Display::AttributeRun's own comment: kept as a bare fm::AttributeRun
-// alias so every existing caller (ContentView::Line::attributes,
-// PipeBuffer::StyledLine::attributes, CutMode/GrepMode's own overstrike
-// plumbing) keeps compiling unchanged after AttributeRun's own
-// definition moved here from pipe_buffer.hpp.
+// Display::AttributeRun自身のコメント参照: 素のfm::AttributeRun
+// エイリアスとして残してあるので、既存の呼び出し元すべて
+// (ContentView::Line::attributes、PipeBuffer::StyledLine::attributes、
+// CutMode/GrepMode自身のオーバーストライク配管)が、AttributeRun自身の
+// 定義がpipe_buffer.hppからここへ移った後もそのままコンパイルできる。
 using AttributeRun = Display::AttributeRun;
 
 }  // namespace fm

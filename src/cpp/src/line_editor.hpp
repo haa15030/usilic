@@ -51,7 +51,7 @@ class LineEditor {
   // このフィールドが画面上のどこにあり、幅がいくつか(カラム数)。
   void setField(int row, int col0, int width);
 
-  // -- content --
+  // -- 内容 --
   void setText(const std::string &text);
   const std::string &text() const;
   int cursorBytePos() const;

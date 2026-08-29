@@ -2,13 +2,14 @@
 
 #include "mac_cursor.hpp"
 
-// See mac_cursor.hpp's own comment for the full history/reasoning.
-// Renders NSCursor.openHandCursor's NSImage into an off-screen
-// NSBitmapImageRep at its own native pixel size, then copies the raw
-// RGBA bytes out -- this is the standard "render an NSImage into a
-// bitmap I can read" recipe (an NSImage itself may be resolution-
-// independent/vector-backed, e.g. PDF-backed for system cursors, so it
-// has no bitmapData of its own to read directly).
+// 全体の経緯/理由についてはmac_cursor.hpp自身のコメント参照。
+// NSCursor.openHandCursorのNSImageを、それ自身のネイティブなピクセル
+// サイズでオフスクリーンのNSBitmapImageRepへレンダリングし、その後
+// 生のRGBAバイトをコピーして取り出す――これは「NSImageを、自分で
+// 読めるビットマップへレンダリングする」という標準的な手順である
+// (NSImage自体は解像度に依存しない/ベクター由来であることがあり、
+// 例えばシステムカーソルはPDF由来であるため、直接読めるbitmapDataを
+// それ自身は持たない)。
 
 namespace fm {
 

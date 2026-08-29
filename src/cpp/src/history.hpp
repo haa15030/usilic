@@ -146,11 +146,11 @@ class History {
 
   explicit History(int retentionCount = 200);
 
-  // -- cursor position memory --
+  // -- カーソル位置の記憶 --
   std::optional<CursorPosition> positionFor(PositionCategory category, const std::string &name) const;
   void setPosition(PositionCategory category, const std::string &name, CursorPosition position);
 
-  // -- plain name sets (first-occurrence-wins, unbounded, insertion order) --
+  // -- プレーンな名前の集合(先勝ち、無制限、挿入順) --
   bool containsName(NameSetCategory category, const std::string &name) const;
   void rememberName(NameSetCategory category, const std::string &name);
   const std::vector<std::string> &namesIn(NameSetCategory category) const;
