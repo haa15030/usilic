@@ -10,10 +10,9 @@ std::string ModeLine::format(int currentLine, int totalLines) {
   std::string current = std::to_string(std::max(currentLine, 0));
   if (current.size() < total.size()) current.insert(0, total.size() - current.size(), '0');
 
-  // Checked before the TOP case so a single-line list (currentLine ==
-  // totalLines == 1) reads END, not TOP -- "you've seen everything"
-  // takes priority over "you're at the start" when they're the same
-  // line.
+  // TOPの判定より先にチェックすることで、1行しかない一覧
+  // (currentLine == totalLines == 1)ではTOPではなくENDと表示される
+  // ――同じ行である場合、「先頭にいる」より「すべて見終えた」が優先。
   if (currentLine >= totalLines) return current + "/" + total + " END";
   if (currentLine <= 1) return current + "/" + total + " TOP";
 
@@ -23,21 +22,20 @@ std::string ModeLine::format(int currentLine, int totalLines) {
   return current + "/" + total + " " + percentBuf;
 }
 
-// Ported from print_line()'s (disp.c) own len<=0 branch -- the ONLY
-// caller that ever passes a negative len is disp_shell(), so a fixed-
-// width zero-pad ("00002/00002 END") is a SHELL-specific legacy
-// convention, distinct from format()'s own "pad current to TOTAL's
-// own digit width" default every other mode uses. Same TOP/END/%
-// suffix logic as format() (this port's own 2026-07-31 GUI-drag-
-// scroll-driven departure from legacy, applied consistently here too
-// rather than reverting just this one caller to legacy's own plain
-// "END or %, no TOP" shape -- no counter-example against that choice
-// was given). Width itself is 5 (2026-08-24, a direct user request:
-// "行数6桁は多過ぎなので5桁でよろしく" -- legacy's own C source
-// (disp.c) actually zero-pads to 6, confirmed by direct read, but the
-// user found that one digit too wide and asked for 5 specifically;
-// deliberately not a straight port of the legacy width either, same
-// spirit as the TOP/END/% departure just above).
+// print_line()(disp.c)自身のlen<=0分岐からの移植――負のlenを渡す
+// 唯一の呼び出し元はdisp_shell()なので、固定幅ゼロ埋め
+// ("00002/00002 END")はSHELL固有のlegacy由来の慣習であり、他の全
+// モードが使うformat()自身の「currentをTOTAL自身の桁数に合わせて
+// パディングする」既定とは別物。TOP/END/%の接尾辞ロジックはformat()
+// と同じ(この移植自身の2026-07-31のGUIドラッグスクロール由来の
+// legacyからの逸脱を、この呼び出し元1箇所だけlegacy自身の素の
+// 「ENDか%のみ、TOP無し」の形に戻すのではなく、ここでも一貫して
+// 適用している――この選択に反する反例は出ていない)。幅自体は5
+// (2026-08-24、ユーザーからの直接依頼: 「行数6桁は多過ぎなので
+// 5桁でよろしく」――legacy自身のCソース(disp.c)は実際には6桁に
+// ゼロ埋めしていると直接確認済みだが、ユーザーはそれを1桁広すぎると
+// 感じ、具体的に5桁を依頼した。幅についてもlegacyをそのまま移植せず
+// 意図的に変えている、すぐ上のTOP/END/%の逸脱と同じ精神)。
 std::string ModeLine::formatFixedWidth(int currentLine, int totalLines) {
   constexpr std::size_t kWidth = 5;
   std::string total = std::to_string(std::max(totalLines, 0));

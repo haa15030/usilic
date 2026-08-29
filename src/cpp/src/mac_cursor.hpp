@@ -4,10 +4,11 @@
 
 namespace fm {
 
-// Extracted pixel data + click-point ("hotspot") of a real macOS system
-// cursor, RGBA8888 top-left-origin, sized rgba.size() == width*height*4.
-// width==0 means extraction failed (caller should leave the cursor
-// unchanged rather than build a garbage SDL_Cursor from it).
+// 実際のmacOSシステムカーソルから抽出したピクセルデータ+クリック
+// 位置("hotspot")、RGBA8888・左上原点、サイズはrgba.size() ==
+// width*height*4。width==0は抽出失敗を意味する(呼び出し側はそこから
+// ゴミのSDL_Cursorを組み立てるのではなく、カーソルを変更せずそのまま
+// にすべき)。
 struct CursorImage {
   std::vector<unsigned char> rgba;
   int width = 0;
@@ -16,42 +17,42 @@ struct CursorImage {
   int hotspotY = 0;
 };
 
-// Extracts the REAL macOS "open hand" cursor's (NSCursor.openHand)
-// pixels at runtime, so the caller can wrap them in an SDL_Cursor
-// (SDL_CreateColorCursor) and drive it through SDL's own SDL_SetCursor()
-// tracking -- added 2026-08-10, replacing an EARLIER version of this
-// file that called [[NSCursor openHandCursor] set] directly. That
-// direct approach displayed correctly on mouse-down but reverted to
-// the plain arrow the instant a drag actually started moving (a real
-// report: "画面ドラッグを開始したとたんに矢印に戻る"): SDL's own Cocoa
-// backend re-asserts ITS OWN tracked SDL_Cursor on every mouse-motion
-// event, which stomps any cursor set through a side channel SDL
-// doesn't know about. setPointingCursor() (graphical_display.cpp)
-// never had this problem because SDL_CreateSystemCursor()+SDL_SetCursor()
-// keeps SDL's own tracked state in sync. Routing the open-hand cursor
-// through the same SDL_SetCursor() path fixes it the same way, while
-// still showing the exact real system image (extracted live from the
-// running OS) rather than a hand-drawn approximation -- two rounds of
-// hand-drawn attempts (a blocky rectangle, then a rounded capsule)
-// were both real user rejections ("ロボットの手みたいなやつは却下",
-// then "さっき却下のロボット指よりもひどくなった"), and a same-day
-// sharp catch established that the reference cursor being compared
-// against (the system pointing-hand) was itself a real, undrawn OS
-// asset the whole time (confirmed live on this machine:
-// /System/Library/Frameworks/ApplicationServices.framework/.../
-// HIServices.framework/.../Resources/cursors/pointinghand/ is a real
-// directory, same as .../cursors/openhand/).
+// 実際のmacOSの「開いた手」カーソル(NSCursor.openHand)のピクセルを
+// 実行時に抽出し、呼び出し側がそれをSDL_Cursor(SDL_CreateColorCursor)
+// に包んでSDL自身のSDL_SetCursor()追跡機構経由で駆動できるようにする
+// ――2026-08-10追加、[[NSCursor openHandCursor] set]を直接呼んでいた
+// 「以前の」このファイルのバージョンを置き換えるもの。あの直接的な
+// 方式はマウスダウン時には正しく表示されるが、実際にドラッグが動き
+// 始めた瞬間に普通の矢印へ戻ってしまっていた(実際の報告:
+// 「画面ドラッグを開始したとたんに矢印に戻る」): SDLのCocoaバックエンド
+// 自身が、マウス移動イベントのたびに「自分が追跡しているSDL_Cursor」
+// を再アサートするため、SDLが関知しない裏経路で設定したカーソルは
+// 踏みつぶされてしまう。setPointingCursor()(graphical_display.cpp)は
+// SDL_CreateSystemCursor()+SDL_SetCursor()がSDL自身の追跡状態と
+// 同期を保つため、この問題を一度も抱えたことが無かった。開いた手の
+// カーソルも同じSDL_SetCursor()経路に乗せることで同じように修正しつつ、
+// 手描きの近似ではなく実際のシステム画像そのもの(稼働中のOSから
+// その場で抽出)を表示できる――2回にわたる手描きの試み(角ばった
+// 四角形、続いて角丸のカプセル)はどちらも実際にユーザーから却下
+// されており("ロボットの手みたいなやつは却下"、続いて「さっき却下の
+// ロボット指よりもひどくなった」)、同日中の鋭い指摘により、比較対象
+// としていた基準カーソル(システムの指差しの手)自体、ずっと本物の、
+// 描き起こしではないOS資産だったことが判明した(このマシン上で実際に
+// 確認済み: /System/Library/Frameworks/ApplicationServices.framework/
+// .../HIServices.framework/.../Resources/cursors/pointinghand/は
+// 実在するディレクトリであり、.../cursors/openhand/も同様)。
 //
-// Deliberately extracts pixels at runtime rather than embedding a copy
-// of Apple's cursor.pdf (or any rasterization of it) anywhere in this
-// repository -- redistributing a copy of Apple's own UI asset in a
-// third-party repo (eventually public on GitHub) was judged a
-// licensing concern (2026-08-10); reading/reproducing it live from the
-// running OS at each launch avoids that entirely.
+// Appleのcursor.pdf(またはそのラスタライズ版)のコピーをこのリポジトリの
+// どこかに埋め込むのではなく、意図的に実行時にピクセルを抽出している
+// ――サードパーティのリポジトリ(いずれGitHub上で公開される)にApple
+// 自身のUI資産のコピーを再配布するのはライセンス上の懸念があると
+// 判断したため(2026-08-10)。起動のたびに稼働中のOSからその場で
+// 読み取り・再現することで、これを完全に回避している。
 //
-// A no-op stub returning an empty (width==0) CursorImage on any other
-// platform (see mac_cursor_stub.cpp, compiled instead of mac_cursor.mm
-// there) -- NSCursor/AppKit simply don't exist elsewhere.
+// 他のあらゆるプラットフォームでは、空(width==0)のCursorImageを
+// 返す何もしないスタブになる(mac_cursor_stub.cpp参照、そちらでは
+// mac_cursor.mmの代わりにこれがコンパイルされる)――NSCursor/AppKitは
+// 他のプラットフォームには単純に存在しないため。
 CursorImage extractOpenHandCursorImage();
 
 }  // namespace fm

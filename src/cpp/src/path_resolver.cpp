@@ -19,24 +19,25 @@ ResolvedPath PathResolver::resolve(const std::string &rawPath, const std::string
     if (tilde != std::string::npos) path = homeDirectory_ + path.substr(tilde + 1);
   }
 
-  // A later embedded absolute path overrides everything typed before
-  // it, matching emacs' read-file-name/expand-file-name convention --
-  // a real report: typing "/tmp" right after an already-filled-in
-  // absolute path (e.g. ^X^D's directory prompt pre-filled with
-  // "/Users/.../usilic/") produces ".../usilic//tmp" as the buffer's
-  // raw text, and Enter should still land in /tmp's own listing, not
-  // try (and fail) to open a literal "usilic/tmp" subdirectory. Only
-  // fires on an actual doubled "//" (a fresh '/' typed while the
-  // buffer already ends in '/'), so an ordinary relative continuation
-  // like "usilic/tmp" (single slash) is left untouched. rfind (not
-  // find) picks the LAST such reset, so a second later absolute
-  // override wins over an earlier one.
+  // 後から埋め込まれた絶対パスは、それより前に入力された全てを
+  // 上書きする――emacsのread-file-name/expand-file-nameの慣習と
+  // 同じ。実際の報告: 既に絶対パスが入力済み(例えば^X^Dのディレクトリ
+  // プロンプトに"/Users/.../usilic/"が事前入力されている状態)の直後に
+  // "/tmp"と入力すると、バッファの生テキストとしては".../usilic//tmp"
+  // になるが、Enterを押した際はリテラルな"usilic/tmp"というサブ
+  // ディレクトリを(失敗しつつ)開こうとするのではなく、/tmp自身の
+  // 一覧へ着地すべきである。実際に"//"が二重になった場合(バッファが
+  // 既に'/'で終わっている状態で新たに'/'が入力された場合)にのみ
+  // 発動するため、"usilic/tmp"(スラッシュ1個)のような普通の相対的
+  // 続きの入力には手を触れない。find ではなく rfind を使うことで
+  // 「最後の」そのようなリセット箇所を選ぶため、後から入力された
+  // 2つ目の絶対パスによる上書きが、先に入力された分より優先される。
   std::size_t lastDoubleSlash = path.rfind("//");
   if (lastDoubleSlash != std::string::npos) path = path.substr(lastDoubleSlash + 1);
 
-  // Still relative (no leading '/', and not ~-expanded above): join
-  // onto baseDirectory, if the caller gave one -- see this parameter's
-  // own declaration comment.
+  // まだ相対パスのまま(先頭が'/'でなく、上の~展開も効いていない)
+  // 場合: 呼び出し側がbaseDirectoryを渡していればそこへ結合する
+  // ――このパラメータ自身の宣言コメント参照。
   if (!path.empty() && path.front() != '/' && !baseDirectory.empty()) {
     std::string base = baseDirectory;
     if (base.back() != '/') base += '/';

@@ -10,52 +10,54 @@ struct ResolvedPath {
   bool exists = false;
 };
 
-// Resolves a raw, possibly user-typed path string into a clean,
-// classified form: ~/~user expansion, ./ and ../ segment cleanup, and
-// trailing-slash normalization for real directories. Ported from
-// mode.c's M_ldir/M_lfile/M_ldir2/M_lfile2/T_locate case -- the glue
-// that decides whether a typed path (or a selected LOCATE result)
-// should land in DirectoryMode or FileMode.
+// 生の(ユーザーが入力したかもしれない)パス文字列を、整形・分類済みの
+// 形へ解決する: ~/~user展開、./および../セグメントの整理、実在する
+// ディレクトリに対する末尾スラッシュの正規化。mode.cのM_ldir/M_lfile/
+// M_ldir2/M_lfile2/T_locateのケースからの移植――入力されたパス
+// (または選択されたLOCATE結果)がDirectoryModeとFileModeのどちらへ
+// 着地すべきかを決めるための接着剤。
 //
-// This is NOT a literal port of sub.c's erase_dot() (the "./"/"../"
-// segment cleanup). erase_dot() is a hand-rolled, fiddly memmove-based
-// lexical path normalizer -- exactly the kind of hand-rolled algorithm
-// this project replaces with the standard library equivalent when one
-// exists (matching e.g. LIST's BST becoming std::map): here, that's
-// std::filesystem::path::lexically_normal().
+// これはsub.cのerase_dot()("./"/"../"セグメントの整理)の逐語的な
+// 移植ではない。erase_dot()は手作りの、こまごまとしたmemmoveベースの
+// 字句的パス正規化器である――このプロジェクトが、標準ライブラリの
+// 同等品が存在する場合に手作りアルゴリズムを置き換えている、まさに
+// その典型例だ(例: LISTのBSTがstd::mapになったのと同種)。ここでは
+// それがstd::filesystem::path::lexically_normal()にあたる。
 //
-// Deliberately excluded (future work, not this slice):
-//   - Deciding what to DO with a resolved path (entering DirectoryMode
-//     vs. FileMode, pushing a ModeStack frame): Mode/Application's
-//     job, the same hand-off boundary every other class in this port
-//     already draws.
-//   - Symlink resolution / realpath()-style canonicalization:
-//     lexically_normal() is purely textual (matching erase_dot()'s
-//     own purely-textual approach) and does not consult the
-//     filesystem for "." components composed across a symlink
-//     boundary the way a true realpath() would.
+// 意図的に除外(将来の課題、この段階では対象外):
+//   - 解決済みのパスを「どうするか」の決定(DirectoryModeへ入るか
+//     FileModeへ入るか、ModeStackフレームをpushするか): Mode/
+//     Applicationの仕事、この移植の他の全クラスが既に引いているのと
+//     同じ引き渡しの境界。
+//   - シンボリックリンク解決/realpath()風の正規化: lexically_normal()
+//     は純粋にテキストベース(erase_dot()自身の純粋にテキストベースの
+//     方式と同じ)であり、本物のrealpath()のようにシンボリックリンク
+//     境界をまたいで構成された"."要素についてファイルシステムに
+//     問い合わせることはしない。
 class PathResolver {
  public:
-  // homeDirectory: the caller-supplied $HOME (no hidden getenv() call
-  // here, matching this project's standing "no hidden global state"
-  // rule already established for Configuration/Shell/etc).
+  // homeDirectory: 呼び出し側が渡す$HOME(ここで隠れたgetenv()呼び出し
+  // は行わない、Configuration/Shell等で既に確立されているこの
+  // プロジェクトの「隠れたグローバル状態を持たない」という一貫した
+  // 方針に合わせている)。
   explicit PathResolver(std::string homeDirectory);
 
-  // baseDirectory: joined in front of rawPath when rawPath is neither
-  // absolute nor ~-prefixed, e.g. resolve("plain.txt", "/tmp/sub") ->
-  // "/tmp/sub/plain.txt". Empty (the default) preserves this class's
-  // original behavior of leaving a relative path exactly as typed
-  // (resolved against the PROCESS's own cwd once exists()/
-  // is_directory() run, not any notion of "the directory currently
-  // browsed on screen" -- usilic never chdir()s, see main.cpp/
-  // Application, so those two are NOT the same thing). Added after a
-  // real user report (2026-08-01): "^Xd/^Xfではディレクトリ/
-  // ファイル名入力ができず" turned out to be exactly this -- typing a
-  // RELATIVE path after navigating away from wherever the process
-  // happened to be launched FROM silently failed to resolve (exists
-  // came back false, so executePathInput() just redrew the unchanged
-  // screen with no visible error), which reads as "input doesn't
-  // work" even though the prompt's own text-entry was never broken.
+  // baseDirectory: rawPathが絶対パスでも~始まりでもない場合に、その
+  // 前へ結合される。例: resolve("plain.txt", "/tmp/sub") ->
+  // "/tmp/sub/plain.txt"。空(既定値)にすると、このクラスの本来の
+  // 挙動である「相対パスを入力された通りそのまま残す」動作になる
+  // (exists()/is_directory()を実行する時点での「プロセス自身の」
+  // カレントディレクトリを基準に解決される――「今画面上で閲覧中の
+  // ディレクトリ」という概念とは違う。usilicは決してchdir()しない
+  // ため(main.cpp/Application参照)、この2つは同じものではない)。
+  // 実際のユーザー報告(2026-08-01)を受けて追加: 「^Xd/^Xfでは
+  // ディレクトリ/ファイル名入力ができず」の原因はまさにこれだった
+  // ――プロセスがたまたま起動された場所から別の場所へ移動した後に
+  // 相対パスを入力すると、解決に静かに失敗していた(exists()がfalseを
+  // 返すため、executePathInput()は目に見えるエラーも出さずに画面を
+  // そのまま再描画するだけだった)。これはプロンプト自身のテキスト
+  // 入力自体が壊れているわけでは無いのに、「入力が効かない」ように
+  // 見えてしまう。
   ResolvedPath resolve(const std::string &rawPath, const std::string &baseDirectory = "") const;
 
  private:

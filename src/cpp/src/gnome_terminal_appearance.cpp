@@ -23,12 +23,12 @@ std::optional<GsettingsColor> parseGsettingsRgbColor(const std::string &raw) {
   if (std::sscanf(s.c_str(), "rgb(%d,%d,%d)", &r, &g, &b) == 3)
     return GsettingsColor{clampByte(r), clampByte(g), clampByte(b)};
 
-  // Confirmed live 2026-07-31 (see queryGnomeTerminalColors()'s own
-  // verification note): a real gsettings on Ubuntu 26.04 returns
-  // "#RRGGBB" hex, not the "rgb(r,g,b)" decimal form a web search
-  // (Gemini) had suggested -- GLib/GTK's own color-serialization
-  // format apparently varies by version, so both are handled here
-  // rather than trusting the one that was merely reported secondhand.
+  // 2026-07-31に実機で確認済み(queryGnomeTerminalColors()自身の検証
+  // メモ参照): Ubuntu 26.04上の実際のgsettingsは、Web検索(Gemini)が
+  // 提案していた"rgb(r,g,b)"という10進形式ではなく"#RRGGBB"の16進で
+  // 返す――GLib/GTK自身の色シリアライズ形式はバージョンによって
+  // 異なるようなので、伝聞で報告されただけの方式を鵜呑みにせず、
+  // ここで両方に対応している。
   if (s.size() == 7 && s[0] == '#') {
     unsigned int hex = 0;
     if (std::sscanf(s.c_str() + 1, "%6x", &hex) == 1)
