@@ -10,31 +10,29 @@
 
 namespace fm {
 
-// Named cursor-position memory categories -- ported from LL's file/
-// dir/man/mode fields (tcb.h). "Screen" is legacy's mode-keyed
-// catch-all bucket (every screen that isn't naturally keyed by a
-// pathname -- LOCATE/EGREP results, DU, the PROGRAM/MAN menus
-// themselves, split-buffer identity, etc.), not just a literal
-// display "mode".
+// 名前付きのカーソル位置記憶カテゴリ――LLのfile/dir/man/modeフィールド
+// (tcb.h)からの移植。「Screen」はlegacyのモードをキーとした雑多な
+// 受け皿(パス名で自然にキーできないあらゆる画面――LOCATE/EGREP結果、
+// DU、PROGRAM/MANメニュー自体、split-bufferの識別、等)であり、
+// 文字通りの表示「mode」だけを指すものではない。
 enum class PositionCategory { File, Directory, ManPage, Screen };
 
-// Plain first-occurrence-wins name sets -- ported from LL's grep/cmd
-// fields as used by read_list()/write_list() specifically (the CUT
-// and COMMAND sections of the history file). Deliberately distinct
-// from Configuration's own GREP/PROGRAM seed lists, which are a
-// different, editable feature that happens to reuse the same LIST/STR
-// C structs in legacy but is never itself written to the history
-// file -- see the class comment for why this class doesn't try to
-// unify the two.
+// 単純な、最初の出現が勝つ名前集合――LLのgrep/cmdフィールドが
+// read_list()/write_list()で具体的に(履歴ファイルのCUT章とCOMMAND章)
+// 使われている形からの移植。Configuration自身のGREP/PROGRAMシード
+// リストとは意図的に別物――そちらは、legacyでは同じLIST/STRという
+// C構造体をたまたま再利用しているだけの、別の・編集可能な機能であり、
+// 履歴ファイルへ書き込まれることは無い――このクラスがなぜ両者を
+// 統一しようとしないかについてはクラスコメント参照。
 enum class NameSetCategory {
-  CutPattern,        // " CUT" section: patterns used for CUT-mode extraction
-  CommandModeLabel,  // " COMMAND" section: COMMAND-mode screen labels
+  CutPattern,        // " CUT"章: CUTモードの抽出に使われたパターン
+  CommandModeLabel,  // " COMMAND"章: COMMANDモードの画面ラベル
 };
 
-// "Recently visited N" ring histories -- ported from SS's hist/hfile/
-// hdir/hman/hlocate/hfgrep/hegrep fields.
+// 「最近訪れたN件」のリング履歴――SSのhist/hfile/hdir/hman/hlocate/
+// hfgrep/hegrepフィールドからの移植。
 enum class RingCategory {
-  ShellCommand,        // " HISTORY": run shell commands / cd's / PROGRAM-mode commands
+  ShellCommand,        // " HISTORY": 実行したシェルコマンド/cd/PROGRAMモードのコマンド
   RecentFile,          // " FILE_HISTORY"
   RecentDirectory,     // " DIR_HISTORY"
   RecentManPage,       // " MAN_HISTORY"
@@ -43,82 +41,85 @@ enum class RingCategory {
   RecentEgrepPattern,  // " EGREP_HISTORY"
 };
 
-// Persists cursor-position memory, recency lists, and a few
-// session-level settings across runs. Ported from sub.c's
-// read_list()/write_list() (the ~/.usilic/history file format) and
-// the LIST (BST)/STR (linked-list) trees they populate via
-// save_list()/load_list()/save_str()/save_history()/free_history().
+// カーソル位置の記憶、最近使ったものの一覧、いくつかのセッション
+// レベルの設定を、実行をまたいで永続化する。sub.cのread_list()/
+// write_list()(~/.usilic/historyファイル形式)と、それらが
+// save_list()/load_list()/save_str()/save_history()/free_history()
+// 経由で組み立てるLIST(二分探索木)/STR(連結リスト)の木からの移植。
 //
-// This is NOT a literal port. Several structural changes:
-//   - File I/O is not done here, same split as Configuration's
-//     loadRcText(): loadHistoryText()/serialize() take/return already
-//     read/to-be-written text. Locating the file, the `.old` backup-
-//     then-overwrite dance, and falling back to `.old` when the
-//     primary looks truncated or corrupt are the caller's job (a
-//     future Application class) -- this keeps parsing itself
-//     unit-testable without a real $HOME. loadHistoryText() still
-//     reports whether the text ends with the expected EOF sentinel
-//     (see isComplete() below) so the caller can decide whether a
-//     `.old` fallback is warranted, preserving legacy's corruption
-//     signal without needing this class to touch the filesystem.
-//   - LIST's binary search tree and STR's singly linked list are
-//     genuinely just string-keyed maps and ordered string sequences
-//     respectively (see sub.c: load_list() walks *both* children
-//     unconditionally rather than using the sort order to prune,
-//     making it an O(n) walk in tree's clothing; save_str()'s "tree"
-//     usage in this file is always degenerate, name-only). Replaced
-//     with std::map<std::string, CursorPosition> and
-//     std::vector<std::string>/std::deque<std::string>, matching
-//     the same "replace a hand-rolled data structure with the
-//     standard one that does the same job" choice made for
-//     ContentView's PP linked list and ArchiveEntry's fields.
-//   - No F6/F10-style sentinel-pointer calling conventions (legacy's
-//     save_history(F6, ...) overloading a real STR* parameter with a
-//     magic (void*)-6 to mean "actually, configure the global
-//     retention limit instead"). The retention count is a plain
-//     constructor parameter, sourced from
-//     Configuration::historyRetentionCount() by the caller.
-//   - The retention count is applied directly and consistently. A
-//     real, newly-found bug in the legacy C is deliberately NOT
-//     reproduced here: save_history()'s F6 branch has two identical
-//     `if (hist == F6)` conditions in a row, the second of which is
-//     unreachable dead code (the first always wins). init_menu()
-//     relies on that second branch to *read back* the configured
-//     retention count, but since it's unreachable, the read-back
-//     always yields the hardcoded default of 200 -- so a custom
-//     `HISTORY` value in usilicrc was silently discarded and reset to
-//     200 on every single run of the legacy binary. Since
-//     Configuration already hands this class a clean integer
-//     directly, there's no equivalent round-trip to get wrong.
-//   - Charset restore precedence is explicit, not a hidden
-//     env_charset() global check. loadHistoryText() takes
-//     environmentCharsetExplicitlySet as a plain parameter (the
-//     caller passes Configuration::charsetExplicitlySet()) rather
-//     than reaching for that global itself -- this is the read-side
-//     half of the CLAUDE.md history item 13 / item 3-Step-6 fix;
-//     Configuration's own port already covers the "was
-//     USILICCHARSET explicitly exported" half.
+// これは逐語的な移植ではない。いくつかの構造上の変更点:
+//   - ここではファイルI/Oを行わない、Configurationのloadrcの分離
+//     (loadRcText())と同じ: loadHistoryText()/serialize()は、既に
+//     読み込み済み/これから書き込むテキストを受け取る/返すだけ。
+//     ファイルの場所を特定すること、`.old`バックアップしてから
+//     上書きするという一連の動作、主ファイルが切り詰められている/
+//     壊れているように見える場合に`.old`へフォールバックすること
+//     は、呼び出し側(将来のApplicationクラス)の仕事――これにより、
+//     本物の$HOME無しでもパース自体をユニットテストできる状態を
+//     保っている。loadHistoryText()は、テキストが(下のisComplete()
+//     参照)期待されるEOF番兵で終わっているかどうかは引き続き報告
+//     するので、呼び出し側は`.old`へのフォールバックが妥当かどうか
+//     判断でき、このクラスがファイルシステムに触れる必要無く
+//     legacyの破損シグナルを保っている。
+//   - LISTの二分探索木とSTRの単方向連結リストは、実際にはそれぞれ
+//     単に文字列をキーとするマップと、順序付き文字列列に過ぎない
+//     (sub.c参照: load_list()はソート順を使って枝刈りするのではなく
+//     「両方の」子を無条件に走査しており、木の見た目をしたO(n)の
+//     走査になっている。このファイルでのsave_str()の「木」の使い方は
+//     常に退化しており、名前だけのもの)。std::map<std::string,
+//     CursorPosition>とstd::vector<std::string>/
+//     std::deque<std::string>へ置き換えてある。ContentViewのPP
+//     連結リストやArchiveEntryのフィールドに対して行ったのと同じ
+//     「手作りのデータ構造を、同じ仕事をする標準のものへ置き換える」
+//     という選択と同じ。
+//   - F6/F10風の番兵ポインタによる呼び出し規約(legacyの
+//     save_history(F6, ...)が、本物のSTR*パラメータをマジックな
+//     (void*)-6でオーバーロードし「実はグローバルな保持上限の方を
+//     設定せよ」を意味させていたもの)は無い。保持数は素の
+//     コンストラクタパラメータであり、呼び出し側が
+//     Configuration::historyRetentionCount()から取得する。
+//   - 保持数は直接、一貫して適用される。legacyのCで新たに見つかった
+//     実際のバグは、意図的にここでは再現していない: save_history()の
+//     F6分岐には`if (hist == F6)`という同一の条件が2つ連続しており、
+//     2つ目は到達不能なデッドコードである(1つ目が常に勝つ)。
+//     init_menu()は、設定済みの保持数を「読み戻す」ためにその2つ目の
+//     分岐に依存しているが、それが到達不能なため、読み戻しは常に
+//     ハードコードされた既定値200を返していた――そのため、usilicrc
+//     内のカスタムな`HISTORY`値は、legacyバイナリを実行するたびに
+//     毎回静かに捨てられ200へリセットされていた。Configurationが
+//     既にこのクラスへきれいな整数を直接渡すので、間違えようのある
+//     同等の往復処理は存在しない。
+//   - 文字コードの復元優先順位は、隠れたenv_charset()グローバル
+//     チェックではなく明示的である。loadHistoryText()は
+//     environmentCharsetExplicitlySetを素のパラメータとして受け取る
+//     (呼び出し側がConfiguration::charsetExplicitlySet()を渡す)。
+//     それ自体がそのグローバルへ手を伸ばすのではない――これは
+//     CLAUDE.mdの作業ログ13番/3番ステップ6の修正の読み込み側半分
+//     であり、Configuration自身の移植は既に「USILICCHARSETが明示的に
+//     exportされていたか」という半分をカバーしている。
 //
-// Deliberately excluded (belongs to other classes):
-//   - Rendering any of this as an on-screen "recent files/dirs/..."
-//     menu: a future Buffer/ContentView rendering concern, not
-//     persistence.
-//   - Configuration's own editable GREP/PROGRAM seed lists (legacy's
-//     rprog/rgrep SS fields and the delete-from-menu machinery that
-//     rebuilds them): confirmed, by reading sub.c directly, that
-//     those two fields never appear in read_list()/write_list() at
-//     all -- not this class's concern even though the underlying C
-//     structs are shared in legacy.
-//   - Actually running programs/shells that generate history entries
-//     (ChildProcess/Shell/future Mode): this class only records that
-//     something happened, via calls from those subsystems.
-//   - Resolving a program name string back into a real, runnable
-//     command: SessionState::pendingCutProgram is stored as a plain
-//     string (legacy: `lp->cut.chp->argv[0]`, re-resolved via
-//     get_child() on load and check_ext() on save) -- resolving it
-//     through Configuration is the caller's job, keeping History
-//     decoupled from Configuration the same way ChildProcess/Shell
-//     don't reach into Configuration themselves either.
+// 意図的に除外(他のクラスの仕事):
+//   - これらのいずれかを画面上の「最近使ったファイル/ディレクトリ
+//     /...」メニューとして描画すること: 将来のBuffer/ContentView
+//     描画の関心事であり、永続化の話ではない。
+//   - Configuration自身の編集可能なGREP/PROGRAMシードリスト
+//     (legacyのrprog/rgrepというSSフィールドと、それらを再構築する
+//     メニューからの削除の仕組み): sub.cを直接読んで確認済みだが、
+//     この2つのフィールドはread_list()/write_list()には全く現れ
+//     ない――基盤となるC構造体はlegacyでは共有されていても、これは
+//     このクラスの関心事ではない。
+//   - 履歴エントリを生成する実際のプログラム/シェルの実行
+//     (ChildProcess/Shell/将来のMode): このクラスは、それらの
+//     サブシステムからの呼び出し経由で、何かが起きたことを記録
+//     するだけ。
+//   - プログラム名の文字列を実際に実行可能なコマンドへ再解決する
+//     こと: SessionState::pendingCutProgramは素の文字列として
+//     保存される(legacy: `lp->cut.chp->argv[0]`、読み込み時に
+//     get_child()経由で、保存時にcheck_ext()経由で再解決される)
+//     ――Configuration経由でそれを解決するのは呼び出し側の仕事で
+//     あり、ChildProcess/Shellも自分自身ではConfigurationへ手を
+//     伸ばさないのと同じように、HistoryをConfigurationから切り離した
+//     ままにしている。
 class History {
  public:
   struct CursorPosition {
@@ -128,19 +129,19 @@ class History {
     int lineNumber = -1;
   };
 
-  // The "Current buffer" line: where the previous session left off.
-  // Field names mirror legacy's LINE struct (dir/old/arg/prev) plus
-  // the CUT-mode buffer, not renamed further since these are already
-  // reasonably self-descriptive and this project's own LINE-adjacent
-  // code (Shell, etc.) doesn't otherwise touch this struct.
+  // 「現在のバッファ」行: 前回のセッションがどこで終わったか。
+  // フィールド名はlegacyのLINE構造体(dir/old/arg/prev)にCUTモード
+  // バッファを加えたものをそのまま踏襲している。これ以上改名して
+  // いないのは、既に十分に自己説明的であり、このプロジェクト自身の
+  // LINEに隣接するコード(Shell等)も他にこの構造体には触れないため。
   struct SessionState {
     std::string previousDirectory;    // LINE::old
     std::string currentDirectory;     // LINE::dir
     std::string modeLineArg;          // LINE::arg
     std::string previousScreenMarker; // LINE::prev
-    std::string lastOpenName;         // the name being viewed when the session ended
-    std::string pendingCutBuffer;     // CUT::str -- in-progress CUT-mode extraction text
-    std::string pendingCutProgram;    // CUT::chp's program name, unresolved (see class comment)
+    std::string lastOpenName;         // セッション終了時に閲覧していた名前
+    std::string pendingCutBuffer;     // CUT::str -- 進行中のCUTモード抽出テキスト
+    std::string pendingCutProgram;    // CUT::chpのプログラム名、未解決(クラスコメント参照)
   };
 
   explicit History(int retentionCount = 200);
@@ -154,58 +155,60 @@ class History {
   void rememberName(NameSetCategory category, const std::string &name);
   const std::vector<std::string> &namesIn(NameSetCategory category) const;
 
-  // -- ring histories --
-  // Pushes name, evicting the single oldest entry if the ring is
-  // already at the retention count. Suppresses only an IMMEDIATE
-  // repeat of the single most-recently-pushed name (ring.back()==
-  // name) -- ported exactly from find_hist()'s own walk, which
-  // compares against the LAST node only, not the whole list (a
-  // 2026-08-04 correction: an earlier version of this comment/
-  // implementation claimed whole-ring first-occurrence-wins dedup,
-  // which was a mis-port). Re-visiting an OLDER entry (not the one
-  // immediately before it) genuinely re-appends it, duplicates and
-  // all -- e.g. A, B, A yields the raw ring [A, B, A]. This is by
-  // design: this ring IS the raw, chronological access log ("HISTORY"
-  // -- see Application::toggleListBrowserHistory()'s own comment);
-  // callers that want a sorted, de-duplicated "unique recent items"
-  // view (e.g. Application::startListBrowser()'s FILE/DIR picker) do
-  // their own de-duplication over recentEntries() at display time.
+  // -- リング履歴 --
+  // nameをpushし、リングが既に保持数に達していれば最も古い1件を
+  // 追い出す。抑制するのは、直近にpushされた1件との「直接の」重複
+  // (ring.back()==name)だけである――find_hist()自身の走査(リスト
+  // 全体ではなく「最後の」ノードとだけ比較する)から正確に移植して
+  // ある(2026-08-04の訂正: このコメント/実装の以前のバージョンは
+  // リング全体での最初の出現が勝つ重複排除だと主張していたが、それは
+  // 誤った移植だった)。(直前の1件ではない)より古いエントリを再訪
+  // すると、本当に重複ごと再度追加される――例えばA、B、Aは生の
+  // リング[A, B, A]になる。これは意図的な設計である: このリングは
+  // 生の、時系列のアクセスログ("HISTORY"――Application::
+  // toggleListBrowserHistory()自身のコメント参照)そのものである。
+  // ソート済みで重複排除された「重複の無い最近の項目」ビューを
+  // 望む呼び出し側(例えばApplication::startListBrowser()の
+  // FILE/DIRピッカー)は、表示時にrecentEntries()に対して自分で
+  // 重複排除を行う。
   void pushRecent(RingCategory category, const std::string &name);
-  const std::deque<std::string> &recentEntries(RingCategory category) const;  // oldest .. newest
+  const std::deque<std::string> &recentEntries(RingCategory category) const;  // 古い順..新しい順
   int retentionCount() const;
 
-  // -- session-level trailer settings --
+  // -- セッションレベルのトレーラ設定 --
   bool smoothScrollEnabled() const;
   void setSmoothScrollEnabled(bool enabled);
   int lsMode() const;
   void setLsMode(int mode);
-  // nullopt if unset (fresh history) or if the environment charset
-  // won precedence on load (see loadHistoryText()) -- callers should
-  // fall back to their own documented default (Utf8) in either case,
-  // never to Euc; see the class comment on CLAUDE.md history item 13.
+  // 未設定(新規の履歴)の場合、または読み込み時に環境の文字コードが
+  // 優先された場合(loadHistoryText()参照)はnullopt――呼び出し側は
+  // どちらの場合でも、Eucへではなく自分自身の文書化された既定値
+  // (Utf8)へフォールバックすべき。CLAUDE.mdの作業ログ13番についての
+  // クラスコメント参照。
   std::optional<Charset::Encoding> savedCharset() const;
   void setSavedCharset(Charset::Encoding encoding);
 
-  // GUI window state (2026-08-24, docs/CHANGES.md item 427) -- a
-  // real user question ("前回GUIウィンドウ情報を記憶してもあまり役に
+  // GUIウィンドウの状態(2026-08-24、docs/CHANGES.md 427番)――実際の
+  // ユーザーの質問(「前回GUIウィンドウ情報を記憶してもあまり役に
   // 立たないと思う...その場での取得が可能ならusilicrcへの設定を行う
-  // （終了時にでも）") following up on items 425/426 (live drag-resize
-  // and Cmd+=/Cmd+-/Cmd+K live font/color adjustment). Deliberately
-  // NOT a plain struct-of-getters like GraphicalDisplay::Color would
-  // suggest -- this class already avoids depending on any specific
-  // Display backend (GraphicalDisplay is SDL2-specific; History is
-  // not), so GuiPreferences is its own small POD type using plain
-  // ints/unsigned chars instead of GraphicalDisplay::Color. main.cpp
-  // converts at the boundary (GraphicalDisplay::Color <->
-  // GuiPreferences' own fgR/fgG/fgB) the same way it already converts
-  // Configuration/Display types elsewhere. 0/false-valued fields mean
-  // "nothing saved yet" (a fresh history, or an old history file
-  // written before this item) -- callers fall back to
-  // GraphicalDisplay::create()'s own compiled-in defaults exactly the
-  // same way savedCharset()'s nullopt already does for charset.
+  // （終了時にでも）」)、項目425/426(ライブなドラッグリサイズと
+  // Cmd+=/Cmd+-/Cmd+Kによるライブなフォント/色調整)の続きとして。
+  // GraphicalDisplay::Colorが示唆するような素のgetter構造体には
+  // 意図的にしていない――このクラスは既に特定のDisplayバックエンド
+  // への依存を避けている(GraphicalDisplayはSDL2固有、Historyは
+  // そうではない)ので、GuiPreferencesはGraphicalDisplay::Colorの
+  // 代わりに素のint/unsigned charを使う、それ自身の小さなPOD型で
+  // ある。main.cppが、他の場所で既にConfiguration/Display型を変換
+  // しているのと同じように、境界で(GraphicalDisplay::Color <->
+  // GuiPreferences自身のfgR/fgG/fgB)変換する。0/false値のフィールド
+  // は「まだ何も保存されていない」(新規の履歴、またはこの項目より
+  // 前に書かれた古い履歴ファイル)を意味する――呼び出し側は、
+  // savedCharset()のnulloptが文字コードについて既に行っているのと
+  // 全く同じように、GraphicalDisplay::create()自身のコンパイル時
+  // 既定値へフォールバックする。
   struct GuiPreferences {
-    int fontPointSize = 0;      // 0 == unset
-    int rows = 0, columns = 0;  // 0 == unset (either always both-set or both-unset)
+    int fontPointSize = 0;      // 0 == 未設定
+    int rows = 0, columns = 0;  // 0 == 未設定(常に両方設定済みか両方未設定のどちらか)
     bool hasColors = false;
     unsigned char fgR = 0, fgG = 0, fgB = 0, bgR = 0, bgG = 0, bgB = 0;
   };
@@ -215,18 +218,18 @@ class History {
   const SessionState &sessionState() const;
   void setSessionState(SessionState state);
 
-  // -- serialization --
-  // environmentCharsetExplicitlySet: pass
-  // Configuration::charsetExplicitlySet() -- when true, the trailer's
-  // saved charset is parsed but not applied (savedCharset() stays
-  // nullopt), matching legacy's `if (!env_charset(-1)) vt_charset(...)`
-  // restore-precedence check.
+  // -- シリアライズ --
+  // environmentCharsetExplicitlySet: Configuration::
+  // charsetExplicitlySet()を渡す――trueの場合、トレーラの保存済み
+  // 文字コードはパースされるが適用されない(savedCharset()はnullopt
+  // のまま)。legacyの`if (!env_charset(-1)) vt_charset(...)`という
+  // 復元優先順位チェックと同じ。
   bool loadHistoryText(const std::string &text, bool environmentCharsetExplicitlySet);
-  // True once loadHistoryText() has seen the trailing EOF sentinel
-  // that legacy's read_list() checks for before trusting the file
-  // (ported from its `fseek(fp,-8,2); ... strchr(str, K_z)` check) --
-  // false after a failed/partial load, signaling the caller that a
-  // `.old` backup fallback may be warranted.
+  // loadHistoryText()が、legacyのread_list()がファイルを信頼する前に
+  // チェックする末尾のEOF番兵(その`fseek(fp,-8,2); ...
+  // strchr(str, K_z)`チェックからの移植)を見た時点でtrueになる――
+  // 失敗した/部分的な読み込みの後はfalseになり、呼び出し側に
+  // `.old`バックアップへのフォールバックが妥当かもしれないと知らせる。
   bool isComplete() const;
   const std::vector<std::string> &errors() const;
 
