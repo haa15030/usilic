@@ -9,80 +9,85 @@
 
 namespace fm {
 
-// SDL2/SDL2_ttf-backed Display: renders the exact same character-cell
-// grid TerminalDisplay writes to a real terminal into a real GUI
-// window instead, pixel by pixel. Ported from nothing in legacy tcb
-// (there is no GUI mode there at all) -- this exists purely to back
-// docs/ideas/IDEAS.md's "cat's-paw" hidden GUI mode request, confirmed
-// with the user to build in scoped slices: THIS class is slice one
-// (a real window showing the same content, nothing more) -- the
-// inertial "cat's paw" scroll physics and the mouse right-click
-// PROGRAM-list menu are explicitly NOT here yet (see Application's
-// own class comment for exactly what ^Og/handleMouseClick() cover in
-// this slice).
+// SDL2/SDL2_ttf駆動のDisplay: TerminalDisplayが本物の端末へ書く
+// のと全く同じ文字セルのグリッドを、代わりに本物のGUIウィンドウへ
+// ピクセル単位で描画する。legacyのtcbには移植元が全く無い(そこには
+// GUIモードが全く存在しない)――これは純粋にdocs/ideas/IDEAS.mdの
+// 「猫の手」隠しGUIモード要望を実現するために存在し、ユーザーとの
+// 間で、スコープを絞った一切れずつ構築することが確認済み:
+// 「この」クラスは一切れ目(同じ内容を表示する本物のウィンドウ、
+// それ以上ではない)――慣性の効く「猫の手」スクロール物理演算と
+// マウス右クリックのPROGRAM一覧メニューは明示的にまだここには
+// 無い(この一切れで^Og/handleMouseClick()が正確に何をカバーする
+// かについてはApplication自身のクラスコメント参照)。
 //
-// This is NOT a literal port of anything, since nothing to port from
-// exists -- but it deliberately reuses as much already-ported
-// machinery as it can: fm::Utf8::sequence_length()/display_width()
-// (already built for exactly this "a multi-byte character spans more
-// than one byte but not necessarily more than one column" problem,
-// see its own class comment) decode the same UTF-8 byte stream
-// write()/putChar() receive elsewhere, since unlike TerminalDisplay
-// (which just forwards raw bytes to a real terminal that decodes UTF-8
-// itself), this class owns pixel rendering directly and has to decode
-// UTF-8 itself to know which glyph to draw and how many cells wide it
-// is.
+// これは移植元が全く存在しないので何かの逐語的な移植ではない――
+// しかし、既に移植済みの仕組みをできる限り多く意図的に再利用して
+// いる: fm::Utf8::sequence_length()/display_width()(まさにこの
+// 「マルチバイト文字は複数バイトにまたがるが必ずしも複数列にまた
+// がるとは限らない」という問題のために既に構築されている、自身の
+// クラスコメント参照)は、write()/putChar()が他所で受け取るのと
+// 同じUTF-8バイトストリームをデコードする。TerminalDisplay(生の
+// バイトを、それ自身でUTF-8をデコードする本物の端末へ単に転送する
+// だけ)とは異なり、このクラスはピクセル描画を直接所有し、どの
+// グリフを描くべきか、それが何セル幅かを知るためにUTF-8を自分で
+// デコードしなければならないため。
 //
-// Deliberately kept ignorant of KeyInput/Application entirely (no
-// #include, no dependency): keyEvents() returns this class's OWN
-// small KeyEvent shape (a byte, or one of Display::Key's existing 6
-// values -- already part of this class's own inherited interface, no
-// new enum needed) rather than KeyInput::SpecialKey, so translating
-// that into an actual Application::feedByte() call is app/main.cpp's
-// job (which already depends on both KeyInput and Display) -- the
-// same boundary this whole port draws everywhere else (Display never
-// depends on KeyInput, KeyInput never depends on Application).
+// KeyInput/Applicationについては意図的に無知のままにしてある
+// (#includeも依存も無い): keyEvents()は、KeyInput::SpecialKeyでは
+// なく、このクラス「自身」の小さなKeyEvent形(バイト、または
+// Display::Keyの既存の6つの値のどれか――既にこのクラス自身の
+// 継承されたインターフェースの一部であり、新しいenumは不要)を
+// 返すので、それを実際のApplication::feedByte()呼び出しへ変換
+// するのはapp/main.cppの仕事である(それは既にKeyInputとDisplayの
+// 両方に依存している)――この移植全体が他の場所でどこでも描いて
+// いるのと同じ境界(DisplayはKeyInputに決して依存せず、KeyInputは
+// Applicationに決して依存しない)。
 //
-// Deliberately excluded (future work, not this slice):
-//   - The inertial "cat's paw" drag-scroll physics and cursor-shape
-//     change: this class only ever draws a static character grid: no
-//     sub-cell/partial-row pixel scrolling, no mouse-drag tracking, no
-//     custom cursor bitmap. A future class built on top of this one's
-//     raw pixel access (not yet exposed) would add that.
-//   - The mouse right-click PROGRAM-list context menu: right-clicks
-//     are detected (rightButton on MouseClick) but Application has
-//     nothing wired to do with one yet (see its own class comment).
-//   - Live OS-level window resize (dragging the window's own resize
-//     handle): setSize() exists and correctly resizes the window/grid
-//     if called, but nothing calls it in response to an SDL_WINDOWEVENT
-//     yet -- the window's size is fixed at whatever rows/columns it
-//     was constructed with (inherited from the terminal session's own
-//     size at the moment ^Og switches, matching "seamless" continuity)
-//     for this slice.
-//   - Copy/paste, IME composition, and anything else a real terminal
-//     emulator eventually grows: out of scope for a first slice
-//     focused on proving out the basic look-and-feel.
+// 意図的に除外(将来の課題、この一切れではない):
+//   - 慣性の効く「猫の手」ドラッグスクロールの物理演算とカーソル
+//     形状の変更: このクラスは常に静的な文字グリッドを描画する
+//     だけ: セル未満/行の一部だけのピクセルスクロールは無い、
+//     マウスドラッグの追跡は無い、カスタムカーソルのビットマップ
+//     は無い。この1つの上に構築される将来のクラス(まだ公開され
+//     ていない生のピクセルアクセス)がそれを追加するだろう。
+//   - マウス右クリックのPROGRAM一覧コンテキストメニュー:
+//     右クリックは検出される(MouseClickのrightButton)が、
+//     Applicationはそれに対してまだ何も配線されていない
+//     (自身のクラスコメント参照)。
+//   - ライブなOSレベルのウィンドウリサイズ(ウィンドウ自身の
+//     リサイズハンドルをドラッグする): setSize()は存在し、
+//     呼ばれればウィンドウ/グリッドを正しくリサイズするが、
+//     SDL_WINDOWEVENTに応答してそれを呼ぶものはまだ何も無い
+//     ――この一切れでは、ウィンドウのサイズは、それが構築された
+//     時のrows/columnsに固定される(^Og切り替えの瞬間の端末
+//     セッション自身のサイズを継承し、「シームレスな」継続性に
+//     合わせている)。
+//   - コピー/ペースト、IME入力、そして本物の端末エミュレータが
+//     いずれ育てる他の何でも: 基本的な見た目と使い心地を実証する
+//     ことに焦点を当てた最初の一切れの範囲外。
 class GraphicalDisplay : public Display {
  public:
-  // fontPath must be a real, readable TTF/TTC font file (a monospace
-  // face -- this class does not verify that, a proportional font will
-  // just render with misaligned columns). Resolving an actual system
-  // font path is the caller's job (main.cpp), matching this port's
-  // standing "no hidden global state" rule already applied to
-  // Configuration/History/HELP text -- this class never searches the
-  // filesystem on its own. fontPointSize defaults to 16 (this class's
-  // own long-standing hardcoded value, kept as the default for the
-  // ^Og-triggered manual GUI entry, which has no real terminal font
-  // size to match); the "実はすでにGUI" launch-time entry (see
-  // main.cpp's queryTerminalAppColors()) passes the calling terminal's
-  // own queried size instead -- a mismatched size is what made the
-  // GUI window visibly LARGER than the terminal it was replacing (see
-  // CLAUDE.md's 2026-07-30 notes), since row/column count alone
-  // doesn't determine a window's pixel size, cell size does too.
-  // Returns nullptr (rather than throwing or exiting) if SDL2/
-  // SDL2_ttf initialization, window/renderer creation, or font
-  // loading fails, so a caller can fall back to staying in terminal
-  // mode instead of crashing.
+  // fontPathは本物の、読み取り可能なTTF/TTCフォントファイル(等幅
+  // フォント――このクラスはそれを検証せず、プロポーショナル
+  // フォントは単に列がずれて描画される)でなければならない。実際の
+  // システムフォントパスを解決するのは呼び出し元(main.cpp)の仕事
+  // であり、Configuration/History/HELPテキストに既に適用されている
+  // この移植の恒久的な「隠れたグローバル状態は無し」というルールに
+  // 合わせている――このクラスは自力でファイルシステムを検索しない。
+  // fontPointSizeはデフォルトで16(このクラス自身の長年ハード
+  // コードされてきた値、合わせるべき本物の端末フォントサイズが
+  // 無い^Og起動の手動GUI入場に対するデフォルトとして維持される)。
+  // 「実はすでにGUI」の起動時の入場(main.cppのqueryTerminalAppColors()
+  // 参照)は代わりに呼び出し元の端末自身が問い合わせたサイズを渡す
+  // ――サイズの不一致こそが、GUIウィンドウを、それが置き換えていた
+  // 端末より目に見えて「大きく」してしまった原因である
+  // (CLAUDE.mdの2026-07-30の記録参照)。行/列数だけではウィンドウの
+  // ピクセルサイズは決まらず、セルサイズも決めるため。SDL2/
+  // SDL2_ttfの初期化、ウィンドウ/レンダラーの作成、またはフォントの
+  // 読み込みが失敗した場合(例外を投げたり終了したりするのではなく)
+  // nullptrを返すので、呼び出し元はクラッシュする代わりに端末
+  // モードに留まることへフォールバックできる。
   static std::unique_ptr<GraphicalDisplay> create(int rows, int columns, const std::string &fontPath,
                                                     int fontPointSize = 16);
 
@@ -91,79 +96,78 @@ class GraphicalDisplay : public Display {
   struct Color {
     unsigned char r = 0, g = 0, b = 0;
   };
-  // Overrides the default foreground/background colors (220,220,220
-  // on black) -- added for the "launch already looking like the
-  // calling terminal" feature (docs/ideas/IDEAS.md's "実はすでにGUI"
-  // request, see CLAUDE.md's 2026-07-30 notes): when the real
-  // terminal's own colors can be queried (currently only macOS
-  // Terminal.app, via AppleScript -- see main.cpp), the caller applies
-  // them here before the first render so the window matches instead
-  // of using this class's own hardcoded defaults, rather than trying
-  // to make GraphicalDisplay itself terminal-aware. Takes effect on
-  // the next render (flush()/renderScrolled()); doesn't repaint
-  // immediately by itself.
+  // デフォルトの前景色/背景色(黒地に220,220,220)を上書きする――
+  // 「呼び出し元の端末のように既に見える状態で起動する」機能
+  // (docs/ideas/IDEAS.mdの「実はすでにGUI」要望、CLAUDE.mdの
+  // 2026-07-30の記録参照)のために追加された: 本物の端末自身の色を
+  // 問い合わせできる場合(現在はAppleScript経由のmacOSの
+  // Terminal.appだけ――main.cpp参照)、呼び出し元は、
+  // GraphicalDisplay自体を端末を認識するようにしようとするのでは
+  // なく、このクラス自身のハードコードされたデフォルトを使う
+  // 代わりに、最初の描画の前にここでそれらを適用する。次の描画
+  // (flush()/renderScrolled())で反映される。それ自体では即座には
+  // 再描画しない。
   void setColors(Color foreground, Color background);
 
-  // Read-back accessors (2026-08-24, docs/CHANGES.md item 427) -- added
-  // so a caller can persist whatever the user actually ended up with
-  // (via setColors()/the "実はすでにGUI" terminal-color match, or a
-  // live Cmd+K/Cmd+=/Cmd+- adjustment, item 426) back to History::
-  // GuiPreferences at session end, without this class needing to know
-  // anything about History or usilicrc itself.
+  // 読み戻しアクセサ(2026-08-24、docs/CHANGES.md項目427)――呼び
+  // 出し元が、(setColors()/「実はすでにGUI」の端末色一致、または
+  // 生きたCmd+K/Cmd+=/Cmd+-の調整、項目426経由で)ユーザーが実際に
+  // 落ち着いたものが何であれ、このクラスがHistoryやusilicrc自体に
+  // ついて何も知る必要無く、セッション終了時にHistory::
+  // GuiPreferencesへ永続化できるように追加された。
   Color foregroundColor() const;
   Color backgroundColor() const;
   int fontPointSize() const;
 
-  // Moves the window to an absolute SCREEN position (top-left-origin
-  // pixel coordinates, matching both SDL2's own cross-platform
-  // convention and what AppleScript's "bounds of front window"
-  // reports for a real terminal app -- see main.cpp's
-  // queryTerminalAppWindowBounds()). Added for the "実はすでにGUI"
-  // launch feature (docs/ideas/IDEAS.md): overlaying the GUI window
-  // exactly where the calling terminal's own window already sits, so
-  // switching backends is invisible to the user rather than the
-  // window jumping to wherever SDL_WINDOWPOS_CENTERED happens to put
-  // it (a real user request, 2026-08-03, following up on the margin
-  // fix with "テキスト表示ウィンドウに重ねる形でGUIウィンドウ版を
-  // 表示したい"). A no-op if the window hasn't been created.
+  // ウィンドウを絶対的な「画面」位置(左上原点のピクセル座標、
+  // SDL2自身のクロスプラットフォームの慣習と、AppleScriptの
+  // 「bounds of front window」が本物の端末アプリに対して報告する
+  // ものの両方に合わせている――main.cppのqueryTerminalAppWindowBounds()
+  // 参照)へ移動する。「実はすでにGUI」の起動機能(docs/ideas/IDEAS.md)
+  // のために追加された: GUIウィンドウを、呼び出し元の端末自身の
+  // ウィンドウが既に座っているまさにその場所に重ねることで、
+  // バックエンドの切り替えがウィンドウをSDL_WINDOWPOS_CENTEREDが
+  // たまたま置く場所へ飛ばすのではなく、ユーザーには見えないように
+  // する(実際のユーザー依頼、2026-08-03、マージン修正への追加依頼
+  // として"テキスト表示ウィンドウに重ねる形でGUIウィンドウ版を
+  // 表示したい")。ウィンドウが作成されていなければ何もしない。
   void setWindowPosition(int x, int y);
 
-  // `width, height` is in the SAME "outer frame, title bar included"
-  // convention setWindowPosition() takes -- NOT SDL's own native
-  // content-area convention; converted internally the same way. See
-  // the .cpp's own comment for why (matching a real terminal window's
-  // own measured pixel size exactly, for the "実はすでにGUI" overlay
-  // launch), overriding this class's own cellWidth*columns+margins+
-  // scrollbar-width formula. A no-op if the window hasn't been
-  // created.
+  // `width, height`は、setWindowPosition()が取るのと「同じ」
+  // 「外枠、タイトルバー込み」の慣習である――SDL自身のネイティブな
+  // コンテンツ領域の慣習では「ない」。内部で同じ方法で変換される。
+  // 理由(「実はすでにGUI」オーバーレイ起動のために、本物の端末
+  // ウィンドウ自身の実測されたピクセルサイズに正確に合わせる)に
+  // ついては.cpp自身のコメント参照。このクラス自身の
+  // cellWidth*columns+マージン+スクロールバー幅の式を上書きする。
+  // ウィンドウが作成されていなければ何もしない。
   void setWindowSize(int width, int height);
 
-  // Like setWindowSize(), but ALSO recomputes cellWidth/cellHeight
-  // (overriding create()'s own font-metric-based computation) so the
-  // known rows/columns count exactly fills the given outer dimensions
-  // -- see the .cpp's own comment for why (a real terminal's line
-  // spacing can't be reliably derived from font metrics alone across
-  // different fonts/sizes, but IS exactly recoverable arithmetically
-  // once the real terminal's own outer pixel size is already known,
-  // as it is for the "実はすでにGUI" overlay launch). A no-op if the
-  // window hasn't been created.
+  // setWindowSize()と同様だが、「さらに」cellWidth/cellHeightを
+  // (create()自身のフォントメトリクスに基づく計算を上書きして)
+  // 再計算し、既知のrows/columns数が与えられた外側の寸法にちょうど
+  // 収まるようにする――理由(本物の端末の行間隔は、異なるフォント/
+  // サイズにわたってフォントメトリクスだけからは信頼できる形で
+  // 導出できないが、「実はすでにGUI」オーバーレイ起動のように、
+  // 本物の端末自身の外側のピクセルサイズが既に分かっている場合、
+  // 算術的に正確に復元「できる」)については.cpp自身のコメント
+  // 参照。ウィンドウが作成されていなければ何もしない。
   void matchWindowSize(int outerWidth, int outerHeight);
 
-  // Hides/shows this window without destroying it (SDL_HideWindow()/
-  // SDL_ShowWindow()) -- used by the PROGRAM-mode-in-the-launching-
-  // terminal feature (main.cpp's runProgramInLaunchingTerminal()) to
-  // get this window out of the way for the duration of a delegated
-  // PROGRAM command (`less`, `vi`, ...), then bring it back once that
-  // real terminal command finishes. A no-op if the window hasn't been
-  // created.
+  // このウィンドウを破棄せずに隠す/表示する(SDL_HideWindow()/
+  // SDL_ShowWindow())――起動元端末内でのPROGRAMモード機能
+  // (main.cppのrunProgramInLaunchingTerminal())が、委譲された
+  // PROGRAMコマンド(`less`、`vi`、...)の実行中このウィンドウを
+  // 邪魔にならないようにし、その本物の端末コマンドが終了したら
+  // 戻すために使う。ウィンドウが作成されていなければ何もしない。
   void setVisible(bool visible);
 
-  // Brings this window to the front and gives it input focus
-  // (SDL_RaiseWindow()) -- used by the same feature once the delegated
-  // PROGRAM command finishes, so control visibly returns to this
-  // window rather than leaving focus wherever the OS happens to leave
-  // it after the real terminal was raised. A no-op if the window
-  // hasn't been created.
+  // このウィンドウを前面に持ってきて入力フォーカスを与える
+  // (SDL_RaiseWindow())――委譲されたPROGRAMコマンドが終了した後、
+  // 制御が、本物の端末が前面化された後OSがたまたまフォーカスを
+  // 置く場所ではなく、目に見える形でこのウィンドウへ戻るように、
+  // 同じ機能によって使われる。ウィンドウが作成されていなければ
+  // 何もしない。
   void raise();
 
   void write(const std::string &text) override;
@@ -189,189 +193,198 @@ class GraphicalDisplay : public Display {
   int columns() const override;
   void setSize(int rows, int columns) override;
 
-  // Always returns "" -- a GraphicalDisplay is never the target of
-  // KeyInput::readEscapeSequence() (real terminal-capability-sequence
-  // matching only applies to a real tty byte stream); GUI-mode
-  // keyboard input goes through keyEvents() instead (see class
-  // comment), not this method at all.
+  // 常に""を返す――GraphicalDisplayはKeyInput::readEscapeSequence()
+  // の対象には決してならない(本物の端末capabilityシーケンスの
+  // マッチングは、本物のttyバイトストリームにだけ当てはまる)。
+  // GUIモードのキーボード入力は、このメソッドを全く経由せず、
+  // 代わりにkeyEvents()を経由する(クラスコメント参照)。
   std::string keySequence(Key key) const override;
 
   bool outputEnabled() const override;
   void setOutputEnabled(bool enabled) override;
 
-  // Stored/returned like TerminalDisplay's own (default false); when
-  // enabled, scrollForward()/scrollReverse() do a real one-row shift
-  // of the character grid rather than requiring a full redraw() --
-  // implemented properly despite not being needed for THIS slice's
-  // own static-content use, since it costs nothing extra once the
-  // grid is already row-addressable.
+  // TerminalDisplay自身のものと同じように保存/返却される
+  // (デフォルトfalse)。有効な場合、scrollForward()/
+  // scrollReverse()は、完全なredraw()を要求するのではなく、
+  // 文字グリッドの本物の1行シフトを行う――「この」一切れ自身の
+  // 静的な内容の用途には必要ないにも関わらず、グリッドが既に行
+  // アドレス可能である以上、追加コストが全くかからないので、
+  // きちんと実装されている。
   bool smoothScrollEnabled() const override;
   void setSmoothScrollEnabled(bool enabled) override;
 
   void open() override;
   void close() override;
 
-  // No-ops: -g has no scroll-region concept at all (see Display::
-  // leaveForExternalProgram()'s own comment) -- its own PROGRAM launch
-  // path (runProgramInLaunchingTerminal()) uses an entirely separate
-  // real terminal window this class never touches.
+  // 何もしない: -gにはスクロール領域という概念が全く無い
+  // (Display::leaveForExternalProgram()自身のコメント参照)――
+  // それ自身のPROGRAM起動経路(runProgramInLaunchingTerminal())は、
+  // このクラスが決して触れない、全く別の本物の端末ウィンドウを
+  // 使う。
   void leaveForExternalProgram() override {}
   void reenterFromExternalProgram() override {}
 
-  // -- GUI-specific, not part of Display's abstract interface --
+  // -- GUI固有、Displayの抽象インターフェースの一部ではない --
 
-  // Pumps pending SDL events for this window, queuing whatever mouse
-  // clicks and key presses arrived (drained via consumeMouseClick()/
-  // consumeKeyEvent()). Returns false once the window's own close
-  // button was clicked (SDL_QUIT) -- a run loop's signal to fall back
-  // to terminal mode, the same "flag a run loop polls" shape
-  // Application::consumeGuiModeToggleRequest() already uses.
+  // このウィンドウの保留中のSDLイベントをポンプし、届いたマウス
+  // クリックとキー入力を何であれキューに入れる(consumeMouseClick()/
+  // consumeKeyEvent()経由で排出される)。ウィンドウ自身のクローズ
+  // ボタンがクリックされたら(SDL_QUIT)falseを返す――端末モードへ
+  // フォールバックせよという実行ループへの合図であり、
+  // Application::consumeGuiModeToggleRequest()が既に使っているのと
+  // 同じ「実行ループがポーリングするフラグ」の形。
   bool pumpEvents();
 
-  // Returns and clears whether pumpEvents() saw an SDL_WINDOWEVENT_
-  // EXPOSED since the last call (2026-08-24, docs/CHANGES.md item 422,
-  // a real user report against the new `make app` .app bundle: "アプリ
-  // 起動時のイントロ動作だけで以後は何も起きない" -- a solid BLACK
-  // window that stayed black forever, reproduced directly: `sample`
-  // showed the run loop idling normally in pumpEvents()/usleep(), not
-  // hung, and re-running the SAME binary as a bare `./usilic -g`
-  // (not through the bundle) rendered correctly every time, while
-  // launching the bundle via `open`/double-click was intermittent).
-  // Root cause: runGuiPhase()'s own `anyEventThisFrame` optimization
-  // (added to stop redraw() firing 60x/sec while idle, see its own
-  // comment) skips redraw() entirely on any frame where nothing was
-  // "consumed" -- but the very first frame's own initial redraw can
-  // race against the window actually being mapped/composited by
-  // WindowServer, a race this port's own first look never needed to
-  // handle since a bare-executable launch (no proper .app bundle) has
-  // a much simpler, faster LaunchServices bootstrap than a real
-  // bundle's (RunningBoard registration, ViewBridge, etc. -- all
-  // visible in a real `log show` capture of a stuck instance). If that
-  // race is lost, NOTHING ever synthesizes a follow-up redraw, since
-  // one was never needed before -- SDL_WINDOWEVENT_EXPOSED is
-  // AppKit/WindowServer's own "this window needs (re)painting" signal
-  // for exactly this situation, and nothing in pumpEvents() ever
-  // looked at SDL_WINDOWEVENT at all before this fix.
+  // pumpEvents()が前回の呼び出し以降にSDL_WINDOWEVENT_EXPOSEDを
+  // 見たかどうかを返してクリアする(2026-08-24、docs/CHANGES.md
+  // 項目422、新しい`make app`の.appバンドルに対する実際のユーザー
+  // 報告: "アプリ起動時のイントロ動作だけで以後は何も起きない"
+  // ――永遠に黒いままの真っ黒なウィンドウ、直接再現済み:
+  // `sample`は、実行ループがpumpEvents()/usleep()で通常通り
+  // アイドル状態であり、ハングしていないことを示し、同じバイナリを
+  // (バンドル経由ではなく)裸の`./usilic -g`として再実行すると毎回
+  // 正しく描画された一方、`open`/ダブルクリック経由でバンドルを
+  // 起動すると断続的だった)。根本原因: runGuiPhase()自身の
+  // `anyEventThisFrame`最適化(アイドル中にredraw()が60回/秒発火
+  // するのを止めるために追加された、自身のコメント参照)は、何も
+  // 「消費」されなかったフレームでは常にredraw()を丸ごとスキップ
+  // する――しかし、まさに最初のフレーム自身の初期redraw()は、
+  // ウィンドウが実際にWindowServerによってマップ/合成されることと
+  // 競合し得る。この移植自身の最初の見た目は、裸の実行ファイルの
+  // 起動(適切な.appバンドルでは無い)は、本物のバンドルの
+  // (RunningBoard登録、ViewBridge等――全て、詰まったインスタンスの
+  // 実際の`log show`キャプチャで見える)よりもはるかに単純で速い
+  // LaunchServicesのブートストラップを持つため、この競合を扱う
+  // 必要が一度も無かった。その競合に負けると、以前は一度も必要
+  // なかったので、後続のredraw()を合成するものが「何も」無い
+  // ――SDL_WINDOWEVENT_EXPOSEDは、まさにこの状況のための
+  // AppKit/WindowServer自身の「このウィンドウは(再)描画される
+  // 必要がある」という合図であり、この修正の前は、pumpEvents()
+  // 内の何もSDL_WINDOWEVENTを全く見ていなかった。
   bool consumeNeedsRedraw();
 
-  // Returns and clears whether pumpEvents() recomputed rows()/
-  // columns() since the last call, because the user (or the OS)
-  // actually resized the window (2026-08-24, docs/CHANGES.md item
-  // 425, a direct user request -- the window is created with
-  // SDL_WINDOW_RESIZABLE now, see create()'s own comment). Callers
-  // should treat this exactly like a real terminal's SIGWINCH: call
-  // Application::handleResize() so content reflows against the new
-  // geometry -- runGuiPhase() (app/main.cpp) does exactly that, the
-  // same shape runTerminalPhase()'s own keyInput.consumeResizeSignal()
-  // check already has.
+  // pumpEvents()が、ユーザー(またはOS)が実際にウィンドウを
+  // リサイズしたことで前回の呼び出し以降にrows()/columns()を
+  // 再計算したかどうかを返してクリアする(2026-08-24、
+  // docs/CHANGES.md項目425、直接のユーザー依頼――ウィンドウは
+  // 今はSDL_WINDOW_RESIZABLEで作成される、create()自身のコメント
+  // 参照)。呼び出し元はこれを本物の端末のSIGWINCHと全く同じように
+  // 扱うべきである: Application::handleResize()を呼んで、新しい
+  // 幾何形状に対して内容を再折り返しする――runGuiPhase()
+  // (app/main.cpp)はまさにそれを行う。runTerminalPhase()自身の
+  // keyInput.consumeResizeSignal()チェックが既に持っているのと
+  // 同じ形。
   bool consumeSizeChanged();
 
   struct MouseClick {
     int row;
     int column;
-    bool rightButton = false;  // captured now, unused until a future slice wires a context menu
+    bool rightButton = false;  // 今は捕捉されているが、将来の一切れがコンテキストメニューを配線するまで未使用
   };
-  // Returns and clears the next queued mouse click (pixel position
-  // already translated into the same display row/column coordinate
-  // space moveCursor() uses), or nullopt if none is pending.
+  // 次にキューに入っているマウスクリック(ピクセル位置は既に、
+  // moveCursor()が使うのと同じ表示の行/列座標空間へ変換済み)を
+  // 返してクリアする。何も保留していなければnullopt。
   std::optional<MouseClick> consumeMouseClick();
 
   struct HoverEvent {
     int row;
     int column;
   };
-  // Returns and clears the next queued plain mouse-motion sample (no
-  // button held -- see pumpEvents()'s own SDL_MOUSEMOTION case), or
-  // nullopt if none is pending. Added after a real user report
-  // (2026-08-02, comparing side by side against the real-terminal
-  // mouse-tracking path's own applyHoverRowAndRedraw()/motionOnly
-  // handling in main.cpp): plain hover-follow (highlighting whatever
-  // row the pointer rests over, no click needed) worked over a real
-  // terminal's own SGR mouse reporting but was never wired for GUI
-  // mode at all -- SDL_MOUSEMOTION events were previously queued (as
-  // DragEvent::Motion) ONLY while the left button was held, so a bare
-  // hover was silently dropped outright.
+  // 次にキューに入っている、単なるマウス移動のサンプル(ボタンが
+  // 押されていない――pumpEvents()自身のSDL_MOUSEMOTIONケース参照)
+  // を返してクリアする。何も保留していなければnullopt。実際の
+  // ユーザー報告(2026-08-02、main.cpp内の本物の端末のマウス追跡
+  // 経路自身のapplyHoverRowAndRedraw()/motionOnly処理と並べて比較
+  // して)の後に追加された: 単なるホバー追従(クリック不要で、
+  // ポインタが留まっている行を何であれハイライトする)は、本物の
+  // 端末自身のSGRマウス報告では動作していたが、GUIモードでは全く
+  // 配線されていなかった――SDL_MOUSEMOTIONイベントは、以前は左
+  // ボタンが押されている「間だけ」(DragEvent::Motionとして)キュー
+  // に入れられていたので、単なるホバーは完全に黙って捨てられて
+  // いた。
   std::optional<HoverEvent> consumeHoverEvent();
 
   struct KeyEvent {
-    int byte = 0;                    // valid when special is nullopt
-    std::optional<Key> special;      // one of Display::Key's own 6 values, when this was an arrow/page key
-    // No modifier tracking: originally had a `shift` field (whether
-    // Shift was held with Up/Down) for the keyboard-driven inertial-
-    // scroll trigger, removed 2026-07-31 when that trigger moved to
-    // plain 'w'/'s' bytes instead (the user's own preference -- a
-    // single keystroke is easier to reach for repeatedly than holding
-    // a modifier -- see CLAUDE.md's 2026-07-31 note), which need no
-    // modifier state at all.
+    int byte = 0;                    // specialがnulloptの時に有効
+    std::optional<Key> special;      // これが矢印/ページキーだった場合、Display::Key自身の6つの値のどれか
+    // 修飾キーの追跡は無い: 元々はキーボード駆動の慣性スクロールの
+    // トリガーのために`shift`フィールド(Up/DownとShiftが一緒に
+    // 押されているか)を持っていたが、そのトリガーが代わりにプレーンな
+    // 'w'/'s'バイトへ移った時(2026-07-31)に取り除かれた(ユーザー
+    // 自身の好み――修飾キーを押さえておくより、単一のキー入力の方が
+    // 繰り返し届きやすい――CLAUDE.mdの2026-07-31の記録参照)。それは
+    // 修飾キーの状態を全く必要としない。
   };
-  // Returns and clears the next queued key press, or nullopt if none
-  // is pending. Ordinary characters (including multi-byte UTF-8 text
-  // typed via an input method) arrive as one KeyEvent per byte with
-  // `special` unset, matching how KeyInput::readByte() and
-  // Application::feedByte() already expect to consume input one byte
-  // at a time regardless of source.
+  // 次にキューに入っているキー入力を返してクリアする。何も保留して
+  // いなければnullopt。通常の文字(入力方式経由で入力されたマルチ
+  // バイトUTF-8テキストを含む)は、`special`が未設定の、バイト
+  // ごとに1つのKeyEventとして届く。KeyInput::readByte()と
+  // Application::feedByte()が、ソースに関わらず一度に1バイトずつ
+  // 入力を消費することを既に期待しているのに合わせている。
   std::optional<KeyEvent> consumeKeyEvent();
 
-  // -- drag-scroll PROTOTYPE support (2026-07-30, feasibility sample) --
-  // Added specifically to answer "can dot-level inertial drag-scroll
-  // be built at all" before committing further to the rest of GUI
-  // mode -- see app/main.cpp's runDragScrollDemo() for the actual
-  // drag/inertia/row-commit logic that USES these. Deliberately a
-  // separate, self-contained rendering path from write()/putChar()/
-  // moveCursor() (the normal Display interface ContentView drives):
-  // real production integration (a proper "scroll the active
-  // ContentView smoothly" API) is a decision for AFTER this sample is
-  // evaluated, not assumed here.
+  // -- ドラッグスクロールのプロトタイプサポート(2026-07-30、
+  // 実現可能性サンプル) --
+  // GUIモードの残りの部分へさらに踏み込む前に、「ドット単位の
+  // 慣性ドラッグスクロールはそもそも構築できるのか」に答える
+  // ために特別に追加された――これらを「使う」実際のドラッグ/
+  // 慣性/行確定ロジックについてはapp/main.cppのrunDragScrollDemo()
+  // 参照。write()/putChar()/moveCursor()(ContentViewが駆動する
+  // 通常のDisplayインターフェース)とは意図的に別の、自己完結した
+  // 描画経路: 実際の本番統合(適切な「アクティブなContentViewを
+  // なめらかにスクロールする」API)は、このサンプルが評価された
+  // 「後」の決定事項であり、ここでは想定していない。
   struct MouseMotion {
-    int deltaY = 0;  // pixels moved (SDL's own relative motion) since the last queued event
+    int deltaY = 0;  // 前回キューに入れられたイベント以降に動いたピクセル数(SDL自身の相対移動)
   };
-  // Returns and clears the next queued left-button-down/up transition
-  // or motion sample. Motion is only queued while the button is held
-  // (SDL_CaptureMouse-backed, so motion is tracked even if the cursor
-  // leaves the window mid-drag).
+  // 次にキューに入っている左ボタンの押下/解放の遷移、または移動
+  // サンプルを返してクリアする。移動はボタンが押されている間だけ
+  // キューに入れられる(SDL_CaptureMouse駆動、なのでドラッグの
+  // 途中でカーソルがウィンドウを離れても移動は追跡される)。
   enum class DragEventType { ButtonDown, ButtonUp, Motion };
   struct DragEvent {
     DragEventType type;
-    int deltaY = 0;  // valid for Motion
+    int deltaY = 0;  // Motionに対して有効
   };
   std::optional<DragEvent> consumeDragEvent();
 
-  // Mouse scroll-wheel ticks, queued from SDL_MOUSEWHEEL -- see
-  // app/main.cpp's own wheel-consumption comment for what this is
-  // used for (a per-tick, gradually-decelerating alternative to the
-  // w/s coast-level keys' own "opposite direction resets straight to
-  // level 1" jump, added at the user's own 2026-08-05 request: "s→w
-  // だと高速度からsだと減速じゃなくて逆方向へ最低速" -- reversing mid-
-  // coast with w/s is an abrupt floor-speed jump in the new direction,
-  // not a deceleration). `deltaY` is SDL's own wheel.y, sign-corrected
-  // for SDL_MOUSEWHEEL_FLIPPED so its sign always tracks the same
-  // FIXED physical gesture direction regardless of the OS-level
-  // "natural scrolling" setting (SDL's own documented meaning of the
-  // correction) -- this struct does NOT decide which physical
-  // direction means "reveal earlier" vs "reveal later" content; that
-  // app-semantic mapping is main.cpp's own call (its wheel-consumption
-  // loop), and was flipped there 2026-08-06 after real-hardware
-  // testing showed the naive mapping was backwards for this project's
-  // own natural-scrolling-enabled test machine -- see that comment,
-  // not this one, for the current sign convention.
+  // SDL_MOUSEWHEELからキューに入れられる、マウスのスクロール
+  // ホイールのティック――これが何に使われるかについてはapp/main.cpp
+  // 自身のホイール消費コメント参照(w/sの惰性レベルキー自身の
+  // 「逆方向は即座にレベル1へリセットする」というジャンプに対する、
+  // ティックごとに徐々に減速する代替。ユーザー自身の2026-08-05の
+  // 依頼で追加された: "s→wだと高速度からsだと減速じゃなくて逆方向
+  // へ最低速"――w/sで惰性の途中に方向を反転させると、減速ではなく
+  // 新しい方向への急激な最低速へのジャンプになる)。`deltaY`は
+  // SDL自身のwheel.yで、SDL_MOUSEWHEEL_FLIPPEDに対して符号補正
+  // されており、その符号は、OSレベルの「ナチュラルスクロール」
+  // 設定に関わらず、常に同じ「固定された」物理的なジェスチャー
+  // 方向を追跡する(SDL自身が文書化しているその補正の意味)――
+  // この構造体は、どちらの物理的方向が「より前を明かす」対「より
+  // 後を明かす」内容を意味するかを「決めない」。そのアプリ意味上の
+  // 対応付けはmain.cpp自身の判断(そのホイール消費ループ)であり、
+  // 実機テストが、この移植自身のナチュラルスクロール有効なテスト
+  // マシンに対して素朴な対応付けが逆であることを示した後、
+  // 2026-08-06にそこで反転された――現在の符号の慣習については、
+  // ここではなくそのコメント参照。
   struct WheelEvent {
     int deltaY = 0;
   };
   std::optional<WheelEvent> consumeWheelEvent();
 
-  // A left-button press/drag/release that STARTED inside the
-  // scrollbar strip reserved on the right edge (see drawScrollbar()'s
-  // own comment) -- queued instead of MouseClick/DragEvent for
-  // exactly that press, so dragging the thumb doesn't ALSO trigger
-  // content selection or content drag-scrolling. Added 2026-08-07 at
-  // the user's own request: now that the scrollbar is actually
-  // visible, it needs real functionality (jump to the dragged-to
-  // position), not just be a passive indicator. `y` is the absolute
-  // window-coordinate pixel position (not relative deltaY like
-  // DragEvent's own Motion) -- main.cpp maps it directly to a target
-  // topIndex via marginYPixels()/cellHeightPixels(), since dragging a
-  // scrollbar thumb is an ABSOLUTE "go here" gesture, not a relative
-  // "move by this much" one.
+  // 右端に予約されたスクロールバー帯の「内側で」始まった左ボタンの
+  // 押下/ドラッグ/解放(drawScrollbar()自身のコメント参照)――つまみ
+  // をドラッグすることが内容の選択や内容のドラッグスクロールも
+  // 「同時に」引き起こさないよう、まさにその押下に対してMouseClick/
+  // DragEventの代わりにキューに入れられる。2026-08-07にユーザー
+  // 自身の依頼で追加された: スクロールバーが実際に見えるように
+  // なった今、それは単なる受動的な指標ではなく、実際の機能(ドラッグ
+  // 先の位置へジャンプする)が必要である。`y`は絶対的なウィンドウ
+  // 座標のピクセル位置(DragEvent自身のMotionのような相対的な
+  // deltaYではない)――スクロールバーのつまみをドラッグすることは、
+  // 相対的な「これだけ動かす」ジェスチャーではなく絶対的な「ここへ
+  // 行く」ジェスチャーであるため、main.cppはそれをmarginYPixels()/
+  // cellHeightPixels()経由で目標のtopIndexへ直接マップする。
   enum class ScrollbarEventType { ButtonDown, Motion, ButtonUp };
   struct ScrollbarEvent {
     ScrollbarEventType type;
@@ -379,70 +392,77 @@ class GraphicalDisplay : public Display {
   };
   std::optional<ScrollbarEvent> consumeScrollbarEvent();
 
-  // Caches the current scroll position so flush() (the static, non-
-  // scrolling render path) can draw a REAL, always-current thumb via
-  // drawScrollbar() instead of a decorative placeholder -- an earlier
-  // version pasted a static embedded screenshot here instead
-  // (scrollbar_idle_image.hpp, since removed) specifically BECAUSE
-  // flush() has no scroll-position parameters of its own (Display's
-  // generic interface, shared with TerminalDisplay, has no such
-  // concept) and threading real ContentView topIndex/totalLines
-  // through it directly would need a Display-interface change (see
-  // this method's own git history for that deferred alternative).
-  // This sidesteps that: a real report (2026-08-09, "マウス操作ON/OFF
-  // のたびに矩形つまみと張りぼて画像を切り替えるのは無意味な気がする。
-  // つまみが消えてしまうので継続操作もできないし") found the swap
-  // itself actively harmful -- the decorative image doesn't track
-  // position, so it was impossible to see (and grab) where the thumb
-  // currently was between drags. Call every runGuiPhase() iteration
-  // (main.cpp), the same "call unconditionally, cheap" pattern
-  // syncScrollbar() used before it was reverted -- BEFORE any redraw()
-  // that might run that same iteration, so flush() always sees fresh
-  // values when it does.
+  // 現在のスクロール位置をキャッシュし、flush()(静的な、スクロール
+  // しない描画経路)が、装飾的なプレースホルダーの代わりに、
+  // drawScrollbar()経由で「本物の」常に最新のつまみを描画できる
+  // ようにする――以前のバージョンは代わりにここに静的な埋め込み
+  // スクリーンショットを貼っていた(scrollbar_idle_image.hpp、
+  // 以来削除済み)。それは特に、flush()が自身のスクロール位置
+  // パラメータを持たず(TerminalDisplayと共有されるDisplayの汎用
+  // インターフェースには、そのような概念が無い)、本物の
+  // ContentViewのtopIndex/totalLinesを直接それへ通すには
+  // Displayインターフェースの変更が必要になる(この延期された
+  // 代替案についてはこのメソッド自身のgit履歴参照)からである。
+  // これはそれを回避する: 実際の報告(2026-08-09、"マウス操作ON/OFF
+  // のたびに矩形つまみと張りぼて画像を切り替えるのは無意味な気が
+  // する。つまみが消えてしまうので継続操作もできないし")が、
+  // その切り替え自体が積極的に有害であることを発見した――装飾
+  // 画像は位置を追跡しないので、つまみがドラッグの合間に現在どこ
+  // にあるかを見る(そして掴む)ことが不可能だった。全ての
+  // runGuiPhase()の反復(main.cpp)で呼ぶこと。syncScrollbar()が
+  // 撤回される前に使っていたのと同じ「無条件に呼ぶ、安価」という
+  // パターン――同じ反復で実行されるかもしれないどんなredraw()より
+  // も「前に」呼ぶこと。そうすればflush()は実行される時に常に
+  // 新鮮な値を見る。
   void updateScrollPosition(int topIndex, int totalLines, int contentRows);
 
-  // The fixed top-edge margin in pixels (see Impl::kMarginY's own
-  // comment) -- exposed alongside the already-public cellHeightPixels()
-  // so main.cpp's ScrollbarEvent handling can convert an absolute
-  // window Y back into "how far down the content area" without
-  // needing to know GraphicalDisplay's own Impl internals.
+  // ピクセル単位の固定された上端マージン(Impl::kMarginY自身の
+  // コメント参照)――main.cppのScrollbarEvent処理が、
+  // GraphicalDisplay自身のImplの内部を知る必要無く、絶対的な
+  // ウィンドウYを「コンテンツ領域のどれだけ下か」へ変換できる
+  // ように、既に公開されているcellHeightPixels()と並んで公開
+  // されている。
   int marginYPixels() const;
 
-  // See Display::renderScrolled()'s own comment for the general
-  // contract (this is that method's real, pixel-granular
-  // implementation). The caller is responsible for committing a real
-  // topIndex change and resetting pixelOffsetY once a full row's
-  // worth has accumulated (see main.cpp's commitRowCrossings()).
-  // `modeLineSegments` is drawn fresh every call into the fixed
-  // bottom row -- each segment its own reverse-video run (or, for a
-  // non-standout gap segment, left as plain background), matching
-  // ContentView::renderModeLine()'s own per-field look rather than
-  // one uninterrupted highlight bar (see Display::ModeLineSegment's
-  // own comment for the real bug this fixes). Content itself never
-  // scrolls into that row (see this method's own comment in the .cpp
-  // for why it used to).
+  // 一般的な契約についてはDisplay::renderScrolled()自身のコメント
+  // 参照(これはそのメソッドの実際の、ピクセル単位の実装である)。
+  // 呼び出し元は、1行分が積み上がった時点で本物のtopIndexの変更を
+  // 確定し、pixelOffsetYをリセットする責任を負う(main.cppの
+  // commitRowCrossings()参照)。`modeLineSegments`は、呼び出しの
+  // たびに固定された最下行へ新しく描画される――各セグメントは
+  // それ自身の反転表示のrun(または、非standoutなギャップの
+  // セグメントに対しては、プレーンな背景のままにされる)であり、
+  // 1つの途切れないハイライトバーではなく、ContentView::
+  // renderModeLine()自身のフィールドごとの見た目に合わせている
+  // (これが修正する実際のバグについてはDisplay::ModeLineSegment
+  // 自身のコメント参照)。内容自体は決してその行へスクロールして
+  // 入らない(なぜ以前そうしていたかについてはこのメソッド自身の
+  // .cpp内のコメント参照)。
   void renderScrolled(const std::vector<Display::ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                        const std::vector<Display::ModeLineSegment> &modeLineSegments) override;
 
   int cellHeightPixels() const;
 
-  // Swaps the window's cursor between the default arrow and the REAL
-  // macOS open-hand cursor's pixels (extracted at runtime from
-  // NSCursor.openHand via mac_cursor.hpp, then driven through SDL's
-  // own SDL_SetCursor() like an ordinary SDL_Cursor -- see the .cpp's
-  // own comment for why a real system cursor's pixels, not a
-  // hand-drawn SDL_CreateColorCursor bitmap, and not a raw
-  // [NSCursor set] call either, after two rejected hand-drawn attempts
-  // and one cursor-reverts-mid-drag bug) while dragging CONTENT (the
-  // "cat's paw" scroll gesture) -- NOT SDL's system SDL_SYSTEM_CURSOR_HAND
-  // (a pointing index finger), which this method used before 2026-08-10
-  // and which setPointingCursor() below now covers instead.
+  // ウィンドウのカーソルを、デフォルトの矢印と、本物のmacOSの
+  // 開いた手のカーソルのピクセル(mac_cursor.hpp経由でNSCursor.
+  // openHandから実行時に抽出され、通常のSDL_Cursorのように
+  // SDL自身のSDL_SetCursor()経由で駆動される――手描きの
+  // SDL_CreateColorCursorビットマップではなく、生の[NSCursor set]
+  // 呼び出しでもなく、本物のシステムカーソルのピクセルを使う理由
+  // (2回却下された手描きの試みと、1回のドラッグ途中でカーソルが
+  // 元に戻ってしまうバグの後)については.cpp自身のコメント参照)
+  // の間で切り替える。これは、「内容を」ドラッグしている間
+  // (「猫の手」スクロールジェスチャー)に使う――このメソッドが
+  // 2026-08-10より前に使っていたSDLのシステムSDL_SYSTEM_CURSOR_HAND
+  // (指差しの人差し指)では「ない」。それは今下のsetPointingCursor()
+  // が代わりにカバーする。
   void setHandCursor(bool active);
 
-  // SDL's system pointing-hand (index finger) cursor -- reserved for
-  // gestures more like operating a control than grabbing content: see
-  // its own .cpp comment for the scrollbar-drag call site and the
-  // (not yet wired) future hover-over-selectable-content one.
+  // SDLのシステムの指差し(人差し指)カーソル――内容を掴むという
+  // よりコントロールを操作することに近いジェスチャーのために予約
+  // されている: スクロールバードラッグの呼び出し箇所と、(まだ
+  // 配線されていない)将来の選択可能な内容の上でのホバーについては
+  // 自身の.cppコメント参照。
   void setPointingCursor(bool active);
 
  private:
@@ -451,41 +471,44 @@ class GraphicalDisplay : public Display {
   struct Impl;
   std::unique_ptr<Impl> impl_;
 
-  // pumpEvents()'s own SDL_WINDOWEVENT_RESIZED handler (2026-08-24,
-  // item 425): given the window's own NEW pixel size, recomputes
-  // rows()/columns() at the CURRENT cell size (unlike matchWindowSize(),
-  // which does the opposite -- see its own comment), reallocates the
-  // grid, and sets consumeSizeChanged()'s backing flag. A no-op when
-  // the recomputed row/column count doesn't actually change (e.g. a
-  // resize event fired for a reason other than an actual grid-relevant
-  // size change, or one setSize()/matchWindowSize() themselves caused).
+  // pumpEvents()自身のSDL_WINDOWEVENT_RESIZEDハンドラ(2026-08-24、
+  // 項目425): ウィンドウ自身の新しいピクセルサイズを与えられて、
+  // (逆のことを行うmatchWindowSize()とは異なり――自身のコメント
+  // 参照)現在のセルサイズでrows()/columns()を再計算し、グリッドを
+  // 再割り当てし、consumeSizeChanged()の裏付けとなるフラグを設定
+  // する。再計算された行/列数が実際には変わらない場合(例えば、
+  // 実際のグリッドに関係するサイズ変更以外の理由でリサイズ
+  // イベントが発火した、またはsetSize()/matchWindowSize()自身が
+  // 引き起こしたもの)は何もしない。
   void handleWindowResized(int newPixelWidth, int newPixelHeight);
 
-  // pumpEvents()'s own SDL_KEYDOWN handler for Cmd+=/Cmd+-/Cmd+0
-  // (2026-08-24, docs/CHANGES.md item 426, following up on item 425 --
-  // same user request, sub-parts (2)/(3)): live-adjusts the font point
-  // size by `deltaPoints` (clamped to a sane [6,72] range), re-measures
-  // cellWidth/cellHeight from the NEWLY-sized font (mirroring create()'s
-  // own "M" + CJK-fallback-glyph measurement, since a font's own advance
-  // widths don't scale perfectly linearly with point size), and resizes
-  // the window via the SAME formula setSize() already uses -- rows/
-  // columns stay FIXED, only the window's pixel size and the font/cell
-  // size inside it change (matching a browser's Cmd+Plus/Cmd+Minus zoom
-  // convention: more/less text size, not more/less content). deltaPoints
-  // of 0 means "reset to the launch-time size" (Impl::baseFontPointSize),
-  // bound to Cmd+0. A no-op if no window/font exists yet, or the target
-  // size is unchanged (already at the clamped floor/ceiling, or already
-  // at the reset target).
+  // pumpEvents()自身の、Cmd+=/Cmd+-/Cmd+0のためのSDL_KEYDOWN
+  // ハンドラ(2026-08-24、docs/CHANGES.md項目426、項目425への
+  // 追加依頼――同じユーザー依頼のサブパート(2)/(3)): フォント
+  // ポイントサイズを`deltaPoints`だけ生きたまま調整し(妥当な
+  // [6,72]範囲に制限される)、新しくサイズ変更されたフォントから
+  // cellWidth/cellHeightを再計測し(フォント自身の送り幅はポイント
+  // サイズに完全に線形にはスケールしないので、create()自身の
+  // 「M」+CJKフォールバックグリフの計測を反映している)、
+  // setSize()が既に使っているのと「同じ」式でウィンドウをリサイズ
+  // する――rows/columnsは「固定」のままで、ウィンドウのピクセル
+  // サイズとその中のフォント/セルサイズだけが変わる(ブラウザの
+  // Cmd+Plus/Cmd+Minusのズームの慣習に合わせている: 内容の多少では
+  // なく文字サイズの大小)。deltaPoints が0の場合は「起動時のサイズ
+  // へリセット」を意味し(Impl::baseFontPointSize)、Cmd+0に紐付いて
+  // いる。まだウィンドウ/フォントが存在しない場合、または目標
+  // サイズが変わらない場合(既に制限された下限/上限にある、または
+  // 既にリセットの目標値にある)は何もしない。
   void adjustFontSize(int deltaPoints);
 
-  // pumpEvents()'s own SDL_KEYDOWN handler for Cmd+K (2026-08-24, item
-  // 426, sub-part (2)): cycles impl_->fg/bg through a small fixed set of
-  // presets (Impl::kColorPresets) -- the same setColors() the "実は
-  // すでにGUI" launch-time terminal-color-matching path already uses,
-  // just driven by a key instead of an AppleScript query. Takes effect
-  // on the next render like setColors() itself; this method also sets
-  // needsRedraw so that next render actually happens promptly instead of
-  // waiting for unrelated input.
+  // pumpEvents()自身の、Cmd+KのためのSDL_KEYDOWNハンドラ
+  // (2026-08-24、項目426、サブパート(2)): impl_->fg/bgを、小さな
+  // 固定セットのプリセット(Impl::kColorPresets)を通じて巡回させる
+  // ――「実はすでにGUI」の起動時の端末色一致経路が既に使っている
+  // のと同じsetColors()で、単にAppleScriptの問い合わせの代わりに
+  // キーで駆動されるだけ。setColors()自体と同様に次の描画で反映
+  // される。このメソッドはneedsRedrawも設定するので、次の描画は、
+  // 無関係な入力を待つのではなく実際に即座に起こる。
   void cycleColorPreset();
 
   void putByte(unsigned char c);
@@ -493,52 +516,56 @@ class GraphicalDisplay : public Display {
   void renderCellBackground(int row, int col);
   void renderCell(int row, int col);
   void renderCursor();
-  // `startCol` (added 2026-08-07 for the mode-line segment rewrite --
-  // see renderScrolled()'s own mode-line block) shifts where drawing
-  // begins; every existing caller keeps passing 0 (a whole content
-  // row always starts at the left edge) via the default.
+  // `startCol`(モードラインセグメントの書き直しのために2026-08-07に
+  // 追加――renderScrolled()自身のモードラインブロック参照)は
+  // 描画の開始位置をずらす。既存の呼び出し元は全て、デフォルトの
+  // 0を渡し続ける(コンテンツ行全体は常に左端から始まる)。
   void renderTextRun(int y, const std::string &line, Color fg, int startCol = 0,
                       const std::vector<Display::AttributeRun> &attributes = {});
-  // Sums the on-screen column width of `text` the same way
-  // renderTextRun() advances `x` internally (multi-byte UTF-8 aware,
-  // via the same fm::Utf8 helpers) -- used by the mode-line segment
-  // loop to know how many columns each segment's own highlight rect
-  // should span and where the NEXT segment's startCol begins, without
-  // duplicating renderTextRun()'s own glyph-walk a second time.
+  // renderTextRun()が内部で`x`を進めるのと同じ方法(同じfm::Utf8
+  // ヘルパー経由で、マルチバイトUTF-8を認識)で`text`の画面上の
+  // 列幅を合計する――モードラインセグメントのループが、各
+  // セグメント自身のハイライト矩形が何列にわたるべきか、そして
+  // 「次の」セグメントのstartColがどこから始まるかを、
+  // renderTextRun()自身のグリフの歩みを2度目に重複させることなく
+  // 知るために使われる。
   int textRunDisplayWidth(const std::string &text) const;
-  // See renderScrolled()'s own call site comment. `effectiveTop` is a
-  // continuous (fractional) topIndex -- topIndex adjusted by
-  // pixelOffsetY/cellHeight -- so the thumb moves smoothly in sync
-  // with sub-row scroll position, not just snapping once per full row.
+  // renderScrolled()自身の呼び出し箇所のコメント参照。
+  // `effectiveTop`は連続的な(小数の)topIndexである――pixelOffsetY/
+  // cellHeightで調整されたtopIndex――つまみが、1行につき1回
+  // スナップするだけではなく、行未満のスクロール位置と同期して
+  // なめらかに動くようにする。
   void drawScrollbar(double effectiveTop, int totalLines, int contentRows);
-  // Composites the three embedded real -c-terminal scrollbar slices
-  // (scrollbar_idle_image.hpp's own class comment -- top cap, a
-  // stretchable plain middle, bottom cap) into the reserved strip so
-  // the decoration always exactly fills the CURRENT profile's own
-  // content height, no overflow/gap tradeoff -- called by flush() only
-  // until the first real mouse interaction (see Impl::everInteracted's
-  // own comment for why, and for what replaces this afterward).
+  // 埋め込まれた3つの本物の-c端末のスクロールバーの断片
+  // (scrollbar_idle_image.hpp自身のクラスコメント――上端キャップ、
+  // 伸縮可能なプレーンな中間部、下端キャップ)を予約された帯へ
+  // 合成し、その装飾が常に「現在の」プロファイル自身のコンテンツ
+  // 高さにちょうど収まり、はみ出し/隙間のトレードオフが無いよう
+  // にする――最初の本物のマウス操作までの間だけflush()によって
+  // 呼ばれる(理由と、その後何がこれに取って代わるかについては
+  // Impl::everInteracted自身のコメント参照)。
   //
-  // Added 2026-08-10, replacing an EARLIER single-image version (which
-  // pasted one full screenshot at its own captured profile's native
-  // pixel size, unscaled, deliberately overflowing/leaving a gap on
-  // other profiles -- a real 2026-08-09 request had explicitly asked
-  // for exactly that native-size, no-clamping tradeoff after a
-  // uniform whole-image stretch/clamp attempt was tried and rejected
-  // for distorting the thumb and rounded track ends). This 3-slice
-  // version resolves the SAME problem a different way -- ordinary
-  // 9-slice/3-slice UI scaling -- by only ever stretching the ONE
-  // slice with no detail worth preserving (the plain middle track),
-  // while the two detailed end slices still draw undistorted at their
-  // own native size, so there is no longer any overflow/gap tradeoff
-  // to accept at all.
+  // 2026-08-10に追加、「以前の」単一画像バージョン(それ自身が
+  // 撮影したプロファイルのネイティブなピクセルサイズで、スケール
+  // せずに1枚の完全なスクリーンショットを貼り、他のプロファイルでは
+  // 意図的にはみ出す/隙間を残していた――実際の2026-08-09の依頼が、
+  // 画像全体を均一に伸縮/切り詰めする試みが試され、つまみと丸い
+  // トラック端を歪めるとして却下された後、まさにそのネイティブ
+  // サイズの、切り詰め無しというトレードオフを明示的に求めていた)
+  // を置き換える。この3断片バージョンは同じ問題を別の方法
+  // ――通常の9スライス/3スライスのUIスケーリング――で解決する。
+  // 保存する価値のある細部の無い1つの断片(プレーンな中間の
+  // トラック)だけを常に伸縮させる一方、2つの詳細な端の断片は
+  // それら自身のネイティブサイズで歪みなく描画され続けるので、
+  // 受け入れるべきはみ出し/隙間のトレードオフはもはや全く無い。
   void drawIdleScrollbarImage();
-  // The scrollbar strip's own left edge, anchored to the window's
-  // ACTUAL current pixel width (SDL_GetWindowSize()) rather than
-  // derived from kMarginX + columns*cellWidth as every call site here
-  // used to compute it independently -- see this method's own .cpp
-  // comment for why the two can disagree (matchWindowSize()'s "実は
-  // すでにGUI" overlay path, a real mpi report 2026-08-24).
+  // スクロールバー帯自身の左端は、ここの全ての呼び出し箇所が
+  // 以前それぞれ独立に計算していたkMarginX + columns*cellWidthから
+  // 導出するのではなく、ウィンドウの「実際の」現在のピクセル幅
+  // (SDL_GetWindowSize())に固定されている――2つが食い違い得る
+  // 理由(matchWindowSize()の「実はすでにGUI」オーバーレイ経路、
+  // 実際のmpi報告2026-08-24)についてはこのメソッド自身の.cpp
+  // コメント参照。
   int scrollbarStripLeft() const;
 };
 
