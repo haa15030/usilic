@@ -8,62 +8,59 @@
 
 namespace fm {
 
-enum class GrepSyntax { Fixed, Regex };  // fgrep (fixed string) vs egrep (extended regex)
+enum class GrepSyntax { Fixed, Regex };  // fgrep(固定文字列) vs egrep(拡張正規表現)
 
 struct GrepMatch {
-  int sourceLineIndex = -1;  // 0-based index into the lines search() was given
+  int sourceLineIndex = -1;  // search()に渡された行群への0始まりインデックス
   std::string text;
 };
 
-// Search mode (FGREP/EGREP): searches a set of lines for a pattern and
-// displays the matching lines. Ported from fork.c's fork_grep() --
-// which, perhaps surprisingly, is not a hand-rolled matching loop at
-// all: it forks a real `fgrep`/`egrep` binary, writes the searched
-// buffer's lines to its stdin, and captures matching lines back from
-// its stdout. GrepMode is a near-direct port of exactly that shape,
-// now that ChildProcess (piped stdin, already built) and
-// Configuration (the fgrep/egrep command lines, already built) exist
-// to do it cleanly: search() runs the real binary via
-// ChildProcess::run() with `-n` (already baked into Configuration's
-// Fgrep/Egrep role commands) so each output line is
-// "<1-based line number>:<matched text>", letting matches be mapped
-// straight back to their original line index.
+// 検索モード(FGREP/EGREP): 行の集合をパターンで検索し、一致した行を
+// 表示する。fork.cのfork_grep()からの移植――意外にも、これは手作りの
+// マッチングループでは全く無い: 実物の`fgrep`/`egrep`バイナリを
+// forkし、検索対象バッファの各行をその標準入力へ書き込み、一致した
+// 行を標準出力から捕捉する。ChildProcess(パイプ経由の標準入力、
+// 既に構築済み)とConfiguration(fgrep/egrepのコマンドライン、既に
+// 構築済み)が今や存在し、それをきれいに行えるので、GrepModeはまさに
+// その形をほぼそのまま移植したもの: search()は`-n`(Configurationの
+// Fgrep/Egrepロールコマンドに既に焼き込み済み)付きでChildProcess::
+// run()経由により本物のバイナリを実行し、各出力行が
+// "<1始まりの行番号>:<一致テキスト>"となるため、一致箇所を元の行
+// インデックスへそのまま対応付けられる。
 //
-// This is NOT a literal port of mode()'s M_egrep/M_fgrep/T_grep
-// handling. Legacy's version is entangled with the two-parallel-stack
-// coordination ModeStack's own class comment already explained
-// deferring (the "steal a STACK frame's contents to seed a GREP node"
-// dance) -- GrepMode itself has no opinion on what happens when a
-// match is opened or the search is dismissed; see the class comment
-// on scope.
+// これはmode()のM_egrep/M_fgrep/T_grep処理の逐語的な移植ではない。
+// legacy版は、ModeStack自身のクラスコメントで既に説明・先送りした
+// 2本並行スタックの協調処理(「STACKフレームの中身を奪ってGREP
+// ノードの種にする」という一連の動作)と絡み合っている――GrepMode
+// 自体は、一致箇所が開かれた時や検索が破棄された時に何が起きるかに
+// ついて一切意見を持たない。スコープについてはクラスコメント参照。
 //
-// Deliberately excluded (future work, not this slice):
-//   - Nested search (searching within an already-filtered result
-//     set) and the ModeStack/GREP-chain coordination for returning to
-//     whatever was being viewed before the search: Mode/Application's
-//     job, the same boundary DirectoryMode/FileMode/ArchiveMode
-//     already draw for their own hand-offs -- GrepMode doesn't touch
-//     ModeStack or History at all.
-//   - Highlighting the matched substring within a line (legacy's
-//     T_grep rendering bolds the actual match): ContentView's
-//     per-character attribute runs don't exist yet (already flagged
-//     as a gap in ContentView's own class comment); this class just
-//     shows the matched lines plainly.
-//   - Recording search patterns into History's hfgrep/hegrep rings:
-//     Mode/Application's job (the same as it is for GrepMode's
-//     sibling classes not touching History for anything beyond
-//     cursor-position categories they directly own).
+// 意図的に除外(将来の課題、この段階では対象外):
+//   - ネストした検索(既に絞り込み済みの結果集合の中をさらに検索
+//     する)と、検索前に見ていたものへ戻るためのModeStack/GREP連鎖の
+//     協調処理: Mode/Applicationの仕事、DirectoryMode/FileMode/
+//     ArchiveModeが自分自身の引き渡しについて既に引いているのと
+//     同じ境界――GrepModeはModeStackにもHistoryにも一切触れない。
+//   - 行内で一致した部分文字列のハイライト(legacyのT_grep描画は
+//     実際の一致箇所を太字にする): ContentViewの文字単位の属性範囲は
+//     まだ存在しない(ContentView自身のクラスコメントで既にギャップ
+//     として印を付けてある)――このクラスは一致した行をただ素の
+//     まま表示するだけ。
+//   - 検索パターンをHistoryのhfgrep/hegrep ringへ記録すること:
+//     Mode/Applicationの仕事(GrepModeの兄弟クラスが、自分が直接
+//     所有するカーソル位置カテゴリ以外の点でHistoryに一切触れない
+//     のと同じ)。
 class GrepMode {
  public:
   GrepMode(ContentView &view, const Configuration &configuration);
 
-  // Searches sourceLines for pattern using the real fgrep/egrep
-  // binary (Configuration::commandFor(Fgrep/Egrep) + ChildProcess,
-  // feeding sourceLines as piped stdin). Displays matches (possibly
-  // zero -- grep exiting "no matches found" is not a search failure).
-  // False only if the search command itself couldn't be run (missing
-  // binary, bad pattern the tool itself rejected, ...) or pattern is
-  // empty.
+  // sourceLinesを本物のfgrep/egrepバイナリ(Configuration::
+  // commandFor(Fgrep/Egrep) + ChildProcess、sourceLinesをパイプ経由の
+  // 標準入力として与える)でpatternについて検索する。一致結果を表示
+  // する(0件のこともある――grepが「一致無し」で終了するのは検索の
+  // 失敗ではない)。falseになるのは、検索コマンド自体が実行できな
+  // かった場合(バイナリが無い、ツール自身が拒否した不正なパターン、
+  // 等)、またはpatternが空の場合のみ。
   bool search(const std::vector<std::string> &sourceLines, const std::string &pattern, GrepSyntax syntax);
 
   const std::string &pattern() const;

@@ -5,34 +5,35 @@
 
 namespace fm {
 
-// Pure parsing helpers for GNOME Terminal's own `gsettings`/dconf
-// output formats, plus a `fc-match`-based font NAME -> file PATH
-// resolver -- the Linux counterpart to mac_font_resolver.hpp, added
-// 2026-07-31 after the user found (via a web search) that GNOME
-// Terminal's font/color/profile settings ARE queryable from the
-// command line after all, contrary to an earlier answer in this
-// project that assumed no such mechanism existed on Linux. Split out
-// from app/main.cpp's own queryTerminalAppColors() (the macOS/
-// AppleScript equivalent, which inlines its own numeric-only sscanf
-// parsing) specifically because gsettings' output needs real STRING
-// parsing (quoted strings, "rgb(r,g,b)", Pango font descriptions) --
-// there is no live GNOME Terminal reachable from this project's own
-// development sandbox to verify any of this end-to-end against, so
-// these are pure functions precisely so doctest can be the actual
-// verification instead.
+// GNOME Terminal自身の`gsettings`/dconf出力形式の純粋なパース
+// ヘルパー、および`fc-match`ベースのフォント「名前」→ファイル
+// 「パス」解決器――mac_font_resolver.hppのLinux版に相当し、
+// 2026-07-31追加。ユーザーが(Web検索により)、GNOME Terminalの
+// フォント/色/プロファイル設定が結局はコマンドラインから問い合わせ
+// 可能であることを発見したことを受けて追加した。このプロジェクトの
+// 以前の回答は、Linux上にはそのような仕組みが存在しないと思い込んで
+// いたが、それとは異なる。app/main.cpp自身のqueryTerminalAppColors()
+// (macOS/AppleScript版、そちらは数値のみのsscanfパースを自前で
+// インライン化している)から分離しているのは、まさにgsettingsの
+// 出力が本物の「文字列」パース(クォート付き文字列、"rgb(r,g,b)"、
+// Pangoフォント記述)を必要とするため――このプロジェクト自身の開発
+// サンドボックスからは実際に稼働しているGNOME Terminalに到達できず
+// これをエンドツーエンドで検証できないため、これらを純粋関数にして
+// あるのはまさに、doctestが実際の検証手段になれるようにするため
+// である。
 
 struct GsettingsColor {
   unsigned char r = 0, g = 0, b = 0;
 };
 
-// Parses gsettings' own color format, e.g. "'rgb(255,255,255)'"
-// (gsettings wraps string-typed values in single quotes; a trailing
-// newline from the subprocess's own output is tolerated too) OR the
-// "#RRGGBB" hex form a real gsettings on Ubuntu 26.04 was confirmed
-// (2026-07-31, live in this project's own dev container after
-// installing gnome-terminal to register its schema) to actually
-// return instead -- see the .cpp for why both are handled. Returns
-// nullopt if the string matches neither.
+// gsettings自身の色形式、例えば"'rgb(255,255,255)'"(gsettingsは
+// 文字列型の値をシングルクォートで囲む。サブプロセス自身の出力末尾の
+// 改行も許容する)、あるいは実際のUbuntu 26.04上のgsettingsが代わりに
+// 返すことが確認された(2026-07-31、このプロジェクト自身の開発
+// コンテナ上でgnome-terminalをインストールしそのスキーマを登録した
+// 上でその場で確認)"#RRGGBB"の16進形式、のどちらかをパースする
+// ――両方に対応している理由は.cpp参照。どちらにも一致しない文字列
+// ならnulloptを返す。
 std::optional<GsettingsColor> parseGsettingsRgbColor(const std::string &raw);
 
 struct ParsedFontDescription {
@@ -40,43 +41,44 @@ struct ParsedFontDescription {
   int pointSize;
 };
 
-// Parses a Pango font description string (what GNOME Terminal's own
-// "font" gsettings key, and org.gnome.desktop.interface's
-// "monospace-font-name" key, both store) -- e.g. "Ubuntu Mono 11" or
-// "Monospace Bold 12" -- into a family name and point size. The size
-// is Pango's own convention: the LAST whitespace-separated token that
-// parses as an integer; everything before it (including any style
-// keywords like "Bold") is kept together as `family`, since
-// fc-match/resolveLinuxFontPath() below is given the family string
-// as-is and lets fontconfig's own matching handle style keywords the
-// same way a real Pango-based renderer would. fallbackPointSize is
-// used verbatim if no trailing integer is found. Also strips
-// gsettings' own wrapping single quotes if present (see
-// stripGsettingsQuotedString()), so this can be fed gsettings' raw
-// output directly.
+// Pangoフォント記述文字列(GNOME Terminal自身の"font" gsettingsキー、
+// およびorg.gnome.desktop.interfaceの"monospace-font-name"キー、
+// どちらもこの形式で保存する)――例えば"Ubuntu Mono 11"や
+// "Monospace Bold 12"――をファミリー名とポイントサイズへパースする。
+// サイズはPango自身の慣習に従う: 空白区切りされたトークンのうち、
+// 整数としてパースできる「最後」のもの。それより前の全て("Bold"
+// のようなスタイルキーワードを含む)はまとめて`family`として保持
+// する。これは、下にあるfc-match/resolveLinuxFontPath()にファミリー
+// 文字列がそのまま渡され、本物のPangoベースのレンダラーと同じ形で
+// fontconfig自身のマッチングにスタイルキーワードの処理を任せる
+// ためである。末尾に整数が見つからない場合、fallbackPointSizeを
+// そのまま使う。gsettings自身が付ける囲みのシングルクォートが
+// あれば、それも取り除く(stripGsettingsQuotedString()参照)ので、
+// gsettingsの生の出力をそのまま渡すことができる。
 ParsedFontDescription parsePangoFontDescription(const std::string &raw, int fallbackPointSize);
 
-// Strips gsettings' own wrapping single quotes around a string-typed
-// value (e.g. "'some value'\n" -> "some value") and any trailing
-// whitespace/newline -- the generic shape virtually every gsettings
-// string-type query returns (profile IDs, font names, ...).
+// gsettings自身が文字列型の値の周りに付ける囲みのシングルクォート
+// (例えば"'some value'\n" -> "some value")と、末尾の空白/改行を
+// 取り除く――事実上あらゆるgsettingsの文字列型クエリ(プロファイル
+// ID、フォント名、等)が返す汎用的な形。
 std::string stripGsettingsQuotedString(const std::string &raw);
 
-// Resolves a font family name to an actual loadable font FILE path
-// via fontconfig's `fc-match` command-line tool (part of the
-// `fontconfig` package, a near-universal dependency on any desktop
-// Linux distro since GTK/Pango themselves depend on it -- confirmed
-// present in this project's own Ubuntu 26.04 dev container even
-// though gnome-terminal itself isn't installed there). This is the
-// Linux equivalent of mac_font_resolver.hpp's CTFontDescriptor-based
-// resolution; unlike CoreText, fc-match is a plain subprocess call,
-// so this doesn't need any special linking. Returns "" if fc-match
-// isn't installed, the font name doesn't resolve, or (implicitly, on
-// any non-Linux platform where this would still compile and run) the
-// tool simply isn't found -- ChildProcess::run() already reports that
-// as `!ok` uniformly across platforms, so there's no #ifdef guard
-// here the way mac_font_resolver.cpp needs one for CoreText's
-// framework-only API.
+// フォントファミリー名を、fontconfigの`fc-match`コマンドラインツール
+// (`fontconfig`パッケージの一部、GTK/Pango自身がそれに依存している
+// ため、デスクトップ向けLinuxディストリビューションではほぼ普遍的な
+// 依存関係――このプロジェクト自身のUbuntu 26.04開発コンテナには
+// gnome-terminal自体はインストールされていないにもかかわらず存在
+// することを確認済み)経由で実際に読み込み可能なフォント「ファイル」
+// パスへ解決する。これはmac_font_resolver.hppのCTFontDescriptor
+// ベースの解決処理に相当するLinux版であり、CoreTextとは異なり
+// fc-matchは単なるサブプロセス呼び出しなので、特別なリンクは一切
+// 不要である。fc-matchが未インストール、フォント名が解決できない、
+// または(暗黙的に、これでもコンパイル・実行はできてしまう非Linux
+// プラットフォーム上で)ツールが単に見つからない場合は""を返す
+// ――ChildProcess::run()は既にそれをプラットフォームを問わず一律に
+// `!ok`として報告するので、mac_font_resolver.cppがCoreTextの
+// フレームワーク専用APIのために必要としているような#ifdefガードは
+// ここには存在しない。
 std::string resolveLinuxFontPath(const std::string &fontName);
 
 }  // namespace fm
