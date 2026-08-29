@@ -29,12 +29,12 @@ const std::vector<StyledLine> &PipeBuffer::lines() const { return lines_; }
 
 bool PipeBuffer::overBudget() const { return overBudget_; }
 
-// Consumes complete raw lines (up to and including each '\n') out of
-// rawPending_, charset-converting and width-wrapping each one.
-// Anything after the last '\n' stays in rawPending_ for the next
-// feed() call -- this is what lets feed() be called with arbitrarily
-// small chunks (e.g. as bytes arrive from a live pipe) without ever
-// charset-detecting or wrapping a line before it's fully received.
+// rawPending_から完全な生の行(各'\n'を含むところまで)を消費し、
+// それぞれを文字コード変換・幅折り返しする。最後の'\n'より後は
+// 次のfeed()呼び出しのためにrawPending_へ残る――これにより、feed()
+// を(例えばライブのパイプからバイトが届くたびのような)任意に
+// 小さなチャンクで呼んでも、行が完全に受信される前に文字コード
+// 判定や折り返しを行ってしまうことが決して無い。
 void PipeBuffer::processPending() {
   std::size_t start = 0;
   while (true) {
@@ -47,12 +47,13 @@ void PipeBuffer::processPending() {
   rawPending_.erase(0, start);
 }
 
-// Ported from linein()'s charset detection/conversion, now built on
-// the already-ported Charset class instead of linein()'s own
-// init_code()/toeuc()/jistoeuc()/euctoutf8_buf() calls. MIME-encoded
-// (base64/quoted-printable) content isn't handled -- Charset itself
-// doesn't support it (see charset.hpp: excluded when that class was
-// designed, per the user's "そんな機能すら覚えてない" call).
+// linein()の文字コード判定/変換からの移植で、今ではlinein()自身の
+// init_code()/toeuc()/jistoeuc()/euctoutf8_buf()呼び出しの代わりに、
+// 既に移植済みのCharsetクラスの上に構築されている。MIMEエンコード
+// (base64/quoted-printable)されたコンテンツは扱わない――Charset
+// 自体がそれに対応していない(charset.hpp参照: そのクラスを設計
+// した時点で、ユーザーの「そんな機能すら覚えてない」という判断に
+// より除外済み)。
 std::string PipeBuffer::convertChunk(const std::string &rawChunk) {
   if (encoding_ == Charset::Encoding::Ascii) return rawChunk;
 
@@ -75,7 +76,7 @@ std::string PipeBuffer::convertChunk(const std::string &rawChunk) {
       euc = rawChunk;
       break;
     default:
-      return rawChunk;  // Ascii/Utf8/Binary: passthrough
+      return rawChunk;  // Ascii/Utf8/Binary: そのまま通す
   }
 
   if (encoding_ == Charset::Encoding::Utf8) {
@@ -91,8 +92,8 @@ int PipeBuffer::byteLengthAt(const std::string &s, int pos) const {
   unsigned char c = static_cast<unsigned char>(s[pos]);
   if (encoding_ == Charset::Encoding::Utf8) return Charset::sequence_length(c);
   if (encoding_ == Charset::Encoding::Euc) {
-    if (c == 0x8e) return 2;    // SS2 half-width kana
-    if (c >= 0xa1) return 2;    // regular 2-byte EUC pair
+    if (c == 0x8e) return 2;    // SS2半角カナ
+    if (c >= 0xa1) return 2;    // 通常の2バイトEUCペア
     return 1;
   }
   return 1;
@@ -103,26 +104,26 @@ int PipeBuffer::widthAt(const std::string &s, int pos, int charBytes) const {
     return Charset::display_width(reinterpret_cast<const unsigned char *>(s.data()) + pos, charBytes);
   if (encoding_ == Charset::Encoding::Euc && charBytes == 2 &&
       static_cast<unsigned char>(s[pos]) == 0x8e)
-    return 1;  // half-width kana: 2 bytes, but only 1 column wide
-  return charBytes;  // EUC 2-byte kanji: 2 bytes = 2 columns; ASCII: 1 byte = 1 column
+    return 1;  // 半角カナ: 2バイトだが幅は1カラムだけ
+  return charBytes;  // EUC 2バイト漢字: 2バイト=2カラム、ASCII: 1バイト=1カラム
 }
 
-// Ported from alloc_pipe()'s per-character loop (tab/width wrapping)
-// and save_attr() (overstrike detection), restructured around a
-// forward-looking check ("does the *next* thing look like an
-// overstruck character?") instead of legacy's reactive one ("I just
-// saw a backspace, was the previous character part of one?"), which
-// lets each detected run be emitted in a single step instead of
-// needing to patch an already-emitted position. Ported patterns:
-//   "_\bX"     -> underline (legacy A_us)
-//   "__\b\bX"  -> underline, wide source variant (legacy A_us2)
-//   "X\bX"     -> bold, X is a 1-byte (ASCII) character (legacy A_md)
-//   "X\b\bX"   -> bold, X is a 2-column-wide character -- 2-byte EUC
-//                 kanji or (in UTF-8 mode) a multi-byte CJK
-//                 character (legacy A_md2, including the UTF-8 fix
-//                 from CLAUDE.md history item 8)
-// legacy's A_md3 ("X\bY" where Y is a single non-ASCII byte) is not
-// ported -- see the class comment.
+// alloc_pipe()の文字ごとのループ(タブ/幅の折り返し)とsave_attr()
+// (オーバーストライク検出)からの移植で、legacyの反応的なチェック
+// (「今バックスペースを見た、直前の文字はその一部だったか?」)では
+// なく、前方を見るチェック(「『次』のものはオーバーストライク文字
+// のように見えるか?」)を軸に再構成してある。これにより、既に出力
+// 済みの位置を後からパッチする必要無く、検出した各範囲を1ステップで
+// 出力できる。移植されているパターン:
+//   "_\bX"     -> 下線(legacyのA_us)
+//   "__\b\bX"  -> 下線、幅広の元データバリアント(legacyのA_us2)
+//   "X\bX"     -> 太字、Xは1バイト(ASCII)文字(legacyのA_md)
+//   "X\b\bX"   -> 太字、Xは幅2カラムの文字――2バイトEUC漢字、または
+//                 (UTF-8モードでは)マルチバイトCJK文字
+//                 (legacyのA_md2、CLAUDE.mdの作業ログ8番のUTF-8修正
+//                 を含む)
+// legacyのA_md3("X\bY"でYが単一の非ASCIIバイト)は移植していない
+// ――クラスコメント参照。
 void PipeBuffer::wrapLine(const std::string &convertedLine) {
   int n = static_cast<int>(convertedLine.size());
   int i = 0;
@@ -145,22 +146,22 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     }
 
     if (c == '\t') {
-      // Expanded to `step` literal spaces here, NOT kept as a raw tab
-      // byte -- ported from disp.c's own "convert '\t' to ' '"
-      // comment (its own count_h()/count_i() column-counting pass
-      // does the same substitution before anything reaches the
-      // display layer). ContentView::renderLine() treats any byte
-      // < 0x20 as a control code needing reverse-video display (the
-      // K_at/K_dl convention, see its own comment) -- a raw tab byte
-      // surviving into wrapText_ used to hit that same path, showing
-      // as a visible reverse-video glyph instead of whitespace. Found
-      // via a real user report (2026-08-02, screenshot): plain `ls`
-      // column output (which real shells tab-align, not space-align)
-      // showed small reverse-video boxes between filenames in SHELL's
-      // own scrollback specifically (the one place in this port that
-      // feeds fully raw, uncooked real-command output through this
-      // same PipeBuffer FileMode/ManMode otherwise only see
-      // post-processed file text from).
+      // ここで`step`個のリテラルな空白へ展開し、生のタブバイトの
+      // ままには「しない」――disp.c自身の「'\t'を' 'へ変換する」
+      // というコメント(そちら自身のcount_h()/count_i()による列数
+      // カウント処理も、何かがdisplay層へ到達する前に同じ置換を
+      // 行っている)からの移植。ContentView::renderLine()は0x20未満
+      // のバイトを、反転表示が必要な制御コードとして扱う(K_at/K_dl
+      // の慣習、自身のコメント参照)――生のタブバイトがwrapText_まで
+      // 生き残ると、以前は同じ経路に当たってしまい、空白ではなく
+      // 目に見える反転表示のグリフとして表示されていた。実際の
+      // ユーザー報告(2026-08-02、スクリーンショット)により発見:
+      // 素の`ls`の列出力(実際のシェルは空白ではなくタブで揃える)
+      // が、まさにSHELL自身のスクロールバック(この移植の中で唯一、
+      // 完全に生の、加工されていない実コマンドの出力をこの同じ
+      // PipeBufferへ流している箇所――FileMode/ManModeは他ではいずれも
+      // 後処理済みのファイルテキストしか見ない)で、ファイル名の間に
+      // 小さな反転表示の箱として表示されていた。
       int step = 8 - (wrapCol_ % 8);
       if (wrapCol_ + step > width_) step = width_ - wrapCol_;
       step = std::max(0, step);
@@ -217,7 +218,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     }
 
     int charBytes = byteLengthAt(convertedLine, i);
-    if (i + charBytes > n) charBytes = n - i;  // truncated sequence at chunk end
+    if (i + charBytes > n) charBytes = n - i;  // チャンク末尾で切り詰められたシーケンス
     int w = widthAt(convertedLine, i, charBytes);
     if (wrapCol_ + w > width_) { finalize(false); continue; }
     wrapText_.append(convertedLine, i, charBytes);
