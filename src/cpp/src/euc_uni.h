@@ -1,11 +1,12 @@
 /*
- * Auto-generated EUC-JP (JIS X 0208) -> Unicode codepoint table, ported
- * unchanged from tcb/src/euc_uni.h (see that file's header for how it
- * was generated). Used by Charset::euc_to_utf8() to redisplay legacy
- * EUC-JP files correctly under a UTF-8 terminal.
+ * 自動生成されたEUC-JP(JIS X 0208)->Unicodeコードポイントテーブル、
+ * tcb/src/euc_uni.hから変更無しで移植(生成方法についてはそのファイル
+ * 自身のヘッダー参照)。Charset::euc_to_utf8()が、UTF-8端末上でも
+ * legacyのEUC-JPファイルを正しく再表示するために使う。
  *
- * Indexed as euc_jisx0208_uni[lead - 0xa1][trail - 0xa1]; an entry of
- * 0 means that byte pair isn't an assigned JIS X 0208 character.
+ * euc_jisx0208_uni[lead - 0xa1][trail - 0xa1]としてインデックスされる;
+ * エントリが0であれば、そのバイトペアは割り当てられたJIS X 0208文字
+ * ではないことを意味する。
  */
 #include <cstdint>
 
