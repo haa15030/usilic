@@ -6,71 +6,74 @@
 
 namespace fm {
 
-// One entry parsed from an archive's text listing (a "tar tvf"/
-// "unzip -l"/"rpm -qplv" style line), plus (for formats that support
-// it) where its content begins in the archive's raw bytes.
+// アーカイブのテキスト一覧("tar tvf"/"unzip -l"/"rpm -qplv"風の行)
+// からパースされた1エントリと、(対応するフォーマットの場合)その
+// 内容がアーカイブの生バイト列のどこから始まるか。
 struct ArchiveEntry {
   std::string name;
   bool isDirectory = false;
-  bool isSpecialDevice = false;  // tar/rpm device-file entries: no real size
+  bool isSpecialDevice = false;  // tar/rpmのデバイスファイルエントリ: 実際のサイズを持たない
   long size = 0;
 
-  // Set by locateContent(). -1 means "not yet located" (or the
-  // format doesn't support it at all, see RpmReader).
+  // locateContent()が設定する。-1は「まだ位置特定されていない」
+  // (またはそのフォーマットが全く対応していない、RpmReader参照)を
+  // 意味する。
   long contentOffset = -1;
-  // True if the archive's raw bytes end before this entry's declared
-  // size is fully covered (a truncated/incomplete read) -- ported
-  // from alloc_tar()/alloc_lha()/alloc_unzip()'s `split = -2` sentinel.
+  // このエントリの申告サイズが完全にはカバーされる前に、アーカイブの
+  // 生バイト列が終わってしまっている(切り詰められた/不完全な読み
+  // 込み)場合にtrue――alloc_tar()/alloc_lha()/alloc_unzip()の
+  // `split = -2`という番兵からの移植。
   bool contentTruncated = false;
 };
 
-// Parses an archive format's text listing into entries, and (for
-// formats that support it) locates each entry's content within the
-// archive's raw bytes. Ported from alloc.c's alloc_head() (the
-// per-format listing-line parser) and alloc_tar()/alloc_lha()/
-// alloc_unzip() (the per-format raw-byte content locators).
+// あるアーカイブフォーマットのテキスト一覧をエントリ群へパースし、
+// (対応するフォーマットの場合)各エントリの内容をアーカイブの生
+// バイト列内で位置特定する。alloc.cのalloc_head()(フォーマットごとの
+// 一覧行パーサ)と、alloc_tar()/alloc_lha()/alloc_unzip()(フォーマット
+// ごとの生バイト内容位置特定処理)からの移植。
 //
-// Deliberately excluded (belongs to a future ChildProcess class, not
-// here): actually running `tar`/`unzip`/`lha`/`rpm` and capturing
-// their output, and the archive-format-specific decompression
-// pipelines (e.g. a .deb's data.tar.gz needing `ar p | gzip -dc`
-// first) -- ported from fork.c's fork_arc(), which interleaves
-// dense, multi-level fork()/pipe() plumbing with format selection.
-// That process-management concern is entirely orthogonal to what
-// THIS class does (pure parsing of text/bytes already obtained by
-// some means), and inventing a ChildProcess-shaped API here without
-// that class actually existing yet would be speculative. Callers
-// today are expected to obtain `listing` and `data` themselves and
-// hand them to this class.
+// 意図的に除外(将来のChildProcessクラスの仕事であり、ここではない):
+// 実際に`tar`/`unzip`/`lha`/`rpm`を実行してその出力を捕捉すること、
+// およびアーカイブフォーマット固有の展開パイプライン(例えば.debの
+// data.tar.gzはまず`ar p | gzip -dc`が必要)――これらはfork.cの
+// fork_arc()からの移植で、そちらは密なマルチレベルのfork()/pipe()の
+// 配管とフォーマット選択が絡み合っている。そのプロセス管理の関心事は、
+// 「この」クラスがすること(何らかの手段で既に得られたテキスト/
+// バイト列の純粋なパース)とは全く直交しており、そのクラスがまだ
+// 実際には存在しないのにここでChildProcess風のAPIを考案するのは
+// 憶測になってしまう。現時点での呼び出し側は、自分で`listing`と
+// `data`を取得し、このクラスへ渡すことが期待されている。
 //
-// Data model change from the legacy C: alloc_head() formatted each
-// entry into a single display string (permission-style prefix + a
-// fixed-width size field + the filename at a hardcoded byte offset,
-// 20), and later alloc_tar()/alloc_lha()/alloc_unzip() re-extracted
-// the filename by slicing that SAME formatted string back apart
-// (`&pp->cs[20]`) to know what to search for in the raw bytes -- a
-// format-then-reparse round trip that only existed because PP had
-// just one string field to hold everything. ArchiveEntry stores name
-// and size as their own distinct fields from the start, so
-// locateContent() uses entry.name directly; there's no display
-// string to build or re-parse here at all (formatting entries for
-// on-screen display is ContentView's job, given these entries).
+// legacyのCからのデータモデルの変更: alloc_head()は各エントリを
+// 単一の表示用文字列(パーミッション風の接頭辞+固定幅のサイズ
+// フィールド+ハードコードされたバイトオフセット20の位置にある
+// ファイル名)へフォーマットし、後でalloc_tar()/alloc_lha()/
+// alloc_unzip()が、生バイト列の中で何を検索すべきか知るために、
+// その「同じ」フォーマット済み文字列を(`&pp->cs[20]`で)再び
+// 切り出してファイル名を再抽出していた――これは、PPが全てを保持
+// するための文字列フィールドを1つしか持っていなかったために存在
+// していた「フォーマットしてから再パースする」往復に過ぎない。
+// ArchiveEntryは最初からnameとsizeをそれぞれ別個のフィールドとして
+// 保持するので、locateContent()はentry.nameを直接使う。ここでは
+// 表示用文字列を組み立てることも再パースすることも全く不要である
+// (これらのエントリが与えられた上で画面表示用にフォーマットする
+// のはContentViewの仕事)。
 class ArchiveReader {
  public:
   virtual ~ArchiveReader() = default;
 
   virtual std::vector<ArchiveEntry> parseListing(const std::string &listing) const = 0;
 
-  // entries must already have .size set (from parseListing()) --
-  // this only fills in .contentOffset/.contentTruncated.
+  // entriesは既に.sizeが(parseListing()により)設定済みでなければ
+  // ならない――これは.contentOffset/.contentTruncatedだけを埋める。
   virtual void locateContent(const unsigned char *data, std::size_t size,
                               std::vector<ArchiveEntry> &entries) const = 0;
 };
 
-// .tar and .deb (a .deb's data.tar.gz payload, once decompressed, is
-// itself a tar stream -- legacy's alloc_head()/alloc_tar() shared the
-// same T_tar/T_deb branch for exactly this reason, see init.c's
-// T_tar/T_deb case both calling alloc_tar()).
+// .tarと.deb(.debのdata.tar.gzペイロードは、展開すればそれ自体が
+// tarストリームである――legacyのalloc_head()/alloc_tar()がまさに
+// この理由で同じT_tar/T_deb分岐を共有していた。init.cのT_tar/T_deb
+// ケースがどちらもalloc_tar()を呼んでいるのを参照)。
 class TarReader : public ArchiveReader {
  public:
   std::vector<ArchiveEntry> parseListing(const std::string &listing) const override;
@@ -85,11 +88,11 @@ class ZipReader : public ArchiveReader {
                       std::vector<ArchiveEntry> &entries) const override;
 };
 
-// Ported from documented header-format comments in alloc.c (a real
-// `lha` binary wasn't available to capture live sample output while
-// porting this -- see cpp/tests/test_archive_reader.cpp for the
-// synthetic fixture used instead, built to match the documented
-// column layout).
+// alloc.c内の文書化されたヘッダー形式コメントからの移植(これを移植
+// する際、実際の`lha`バイナリが手元に無く実際のサンプル出力を採取
+// できなかった――代わりに使った、文書化された列レイアウトに合わせて
+// 作った合成フィクスチャについてはcpp/tests/test_archive_reader.cpp
+// 参照)。
 class LhaReader : public ArchiveReader {
  public:
   std::vector<ArchiveEntry> parseListing(const std::string &listing) const override;
@@ -97,11 +100,12 @@ class LhaReader : public ArchiveReader {
                       std::vector<ArchiveEntry> &entries) const override;
 };
 
-// Listing only. Legacy never implemented content-location for RPM
-// (init.c's T_rpm case calls none of alloc_tar/alloc_lha/alloc_unzip)
-// -- an RPM entry can't be viewed without re-invoking rpm2cpio on the
-// whole archive, which is squarely the not-yet-built ChildProcess's
-// job, not something to fake a byte-offset for here.
+// 一覧のみ。legacyはRPMについて内容の位置特定を一度も実装しなかった
+// (init.cのT_rpmケースはalloc_tar/alloc_lha/alloc_unzipのどれも
+// 呼んでいない)――RPMのエントリは、アーカイブ全体に対してrpm2cpioを
+// 再度呼び出さない限り閲覧できず、それはまさにまだ実装されていない
+// ChildProcessの仕事であり、ここでバイトオフセットを偽装するような
+// ものではない。
 class RpmReader : public ArchiveReader {
  public:
   std::vector<ArchiveEntry> parseListing(const std::string &listing) const override;
@@ -109,17 +113,17 @@ class RpmReader : public ArchiveReader {
                       std::vector<ArchiveEntry> &) const override {}
 };
 
-// 2026-08-26 addition (a direct user request, testing a real .rar
-// fixture): parses `lsar -l <archive>` output (see its own
-// declaration comment on why lsar/unar, not the proprietary `unrar`).
-// No legacy precedent (RAR postdates this project's original C era).
-// locateContent() uses the SAME sequential-walk approach as
-// ZipReader/LhaReader (see ZipReader::locateContent()'s own comment)
-// -- `unar -f -o - -q <archive>` extracts every entry to stdout,
-// concatenated in the SAME order lsar -l lists them (verified
-// directly: the extracted stream's own total byte count exactly
-// matches the sum of every listed file's own size, and the very
-// first bytes match the first listed file's own known content).
+// 2026-08-26追加(ユーザーからの直接依頼、実際の.rarフィクスチャで
+// テスト): `lsar -l <archive>`の出力をパースする(プロプライエタリな
+// `unrar`ではなくlsar/unarを使う理由についてはこのクラス自身の宣言
+// コメント参照)。legacyの前例は無い(RARはこのプロジェクトの本来の
+// C時代より後に登場した)。locateContent()はZipReader/LhaReaderと
+// 「同じ」逐次走査方式を使う(ZipReader::locateContent()自身の
+// コメント参照)――`unar -f -o - -q <archive>`は全エントリを、
+// lsar -lが一覧表示するのと「同じ」順序で連結して標準出力へ抽出する
+// (直接確認済み: 抽出されたストリーム自身の総バイト数が、一覧に
+// 載っている全ファイル自身のサイズの合計と厳密に一致し、先頭バイト
+// も一覧の最初のファイル自身の既知の内容と一致する)。
 class RarReader : public ArchiveReader {
  public:
   std::vector<ArchiveEntry> parseListing(const std::string &listing) const override;
@@ -127,14 +131,14 @@ class RarReader : public ArchiveReader {
                       std::vector<ArchiveEntry> &entries) const override;
 };
 
-// 2026-08-26 addition (a direct user request, testing a real .7z
-// fixture): parses `7z l <archive>` output. No legacy precedent (7z
-// postdates this project's original C era). locateContent() uses the
-// SAME sequential-walk approach as ZipReader/LhaReader/RarReader --
-// `7z x -so <archive>` extracts every entry to stdout, concatenated in
-// the SAME order `7z l` lists them (verified the same way RarReader's
-// own comment describes: total byte count and first-file content both
-// match).
+// 2026-08-26追加(ユーザーからの直接依頼、実際の.7zフィクスチャで
+// テスト): `7z l <archive>`の出力をパースする。legacyの前例は無い
+// (7zはこのプロジェクトの本来のC時代より後に登場した)。
+// locateContent()はZipReader/LhaReader/RarReaderと「同じ」逐次走査
+// 方式を使う――`7z x -so <archive>`は全エントリを、`7z l`が一覧
+// 表示するのと「同じ」順序で連結して標準出力へ抽出する(RarReader
+// 自身のコメントが説明するのと同じ方法で確認済み: 総バイト数と
+// 最初のファイルの内容の両方が一致する)。
 class SevenZipReader : public ArchiveReader {
  public:
   std::vector<ArchiveEntry> parseListing(const std::string &listing) const override;
