@@ -21,21 +21,21 @@ namespace fm {
 namespace {
 
 struct Cell {
-  std::string glyph;       // UTF-8 bytes for this cell's glyph, empty = blank
+  std::string glyph;       // このセルのグリフのUTF-8バイト、空=空白
   bool bold = false;
   bool underline = false;
   bool standout = false;
-  bool continuation = false;  // the "shadow" second cell of a 2-column-wide glyph -- not drawn on its own
+  bool continuation = false;  // 2列幅のグリフの「影」となる2つ目のセル――それ自体では描画されない
 };
 
-// Decodes the leading UTF-8 sequence in `utf8Bytes` (already segmented
-// to the right length by fm::Utf8::sequence_length() elsewhere) to a
-// single Unicode scalar. Returns 0 for an empty string. Deliberately a
-// small local decoder rather than an addition to fm::Utf8 (which only
-// ever needed byte-length/display-width, not the actual codepoint) --
-// this is the one place in the whole port that needs to ask a font
-// "do you have a glyph for THIS specific character," see
-// glyphProvidedByFont() below.
+// `utf8Bytes`の先頭のUTF-8シーケンス(他所でfm::Utf8::
+// sequence_length()によって既に正しい長さに分割済み)を、単一の
+// Unicodeスカラーへデコードする。空文字列に対しては0を返す。
+// fm::Utf8への追加ではなく、意図的に小さなローカルデコーダにして
+// ある(それはバイト長/画面幅だけを必要とし、実際のコードポイント
+// を必要としたことは一度も無かった)――これは、この移植全体の中で、
+// フォントに「この特定の文字のグリフを持っているか」を尋ねる必要
+// がある唯一の場所である。下のglyphProvidedByFont()参照。
 unsigned int decodeUtf8Codepoint(const std::string &utf8Bytes) {
   if (utf8Bytes.empty()) return 0;
   auto b = [&](std::size_t i) -> unsigned int { return static_cast<unsigned char>(utf8Bytes[i]); };
@@ -46,20 +46,20 @@ unsigned int decodeUtf8Codepoint(const std::string &utf8Bytes) {
     return ((lead & 0x0F) << 12) | ((b(1) & 0x3F) << 6) | (b(2) & 0x3F);
   if ((lead & 0xF8) == 0xF0 && utf8Bytes.size() >= 4)
     return ((lead & 0x07) << 18) | ((b(1) & 0x3F) << 12) | ((b(2) & 0x3F) << 6) | (b(3) & 0x3F);
-  return lead;  // malformed/truncated -- fall back to the raw lead byte, matches TTF's own "just render something"
+  return lead;  // 不正な形/切り詰められている――生の先導バイトへフォールバックする、TTF自身の「とにかく何か描画する」に合わせている
 }
 
 bool glyphProvidedByFont(TTF_Font *font, unsigned int codepoint) {
-  if (!font || codepoint == 0 || codepoint > 0xFFFF) return false;  // TTF_GlyphIsProvided is UCS-2 only
+  if (!font || codepoint == 0 || codepoint > 0xFFFF) return false;  // TTF_GlyphIsProvidedはUCS-2のみ対応
   return TTF_GlyphIsProvided(font, static_cast<Uint16>(codepoint)) != 0;
 }
 
-// The inverse of decodeUtf8Codepoint() -- needed by
-// composeDakutenCodepoint() below (composeGraphemeCluster()'s own
-// caller re-encodes the composed scalar back into a cell's `glyph`
-// string). Every codepoint this port ever composes this way is <=
-// 0xFFFF (BMP-only Hiragana/Katakana), so the 4-byte case is dead in
-// practice but included for completeness/symmetry with the decoder.
+// decodeUtf8Codepoint()の逆――下のcomposeDakutenCodepoint()が必要
+// とする(composeGraphemeCluster()自身の呼び出し元が、合成された
+// スカラーをセルの`glyph`文字列へ再エンコードし直す)。この移植が
+// この方法で合成するコードポイントは全て0xFFFF以下(BMPのみの
+// ひらがな/カタカナ)なので、4バイトのケースは実際には到達しないが、
+// デコーダとの完全性/対称性のために含まれている。
 std::string encodeUtf8Codepoint(unsigned int codepoint) {
   std::string out;
   if (codepoint < 0x80) {
@@ -80,46 +80,49 @@ std::string encodeUtf8Codepoint(unsigned int codepoint) {
   return out;
 }
 
-// 2026-08-20 addition, a direct user follow-up after the U+3099/U+309A
-// display_width() fix ("=dsよりはマシだが=dvには負ける...自前描画なら
-// 何とかなる？"): merging a combining dakuten/handakuten mark into the
-// PREVIOUS cell's `glyph` string as raw, still-decomposed UTF-8 bytes
-// (commitGlyph()'s existing width==0 branch) makes that cell hold a
-// TWO-codepoint string ("ト"+U+3099), which TTF_RenderUTF8_Blended()
-// then has to shape correctly for it to look like one fused "ド" --
-// but SDL_ttf/FreeType do simple linear glyph layout, not real Unicode
-// text shaping (no GPOS mark-attachment positioning the way CoreText,
-// -c's own real terminal emulator, already does), so the mark's own
-// advance/position isn't guaranteed to land exactly on top of the base
-// glyph. Since -g owns its rendering entirely (unlike -c, which just
-// hands raw bytes to a real shaping engine), the fix available here is
-// to sidestep shaping altogether: precompose the pair into its single
-// NFC codepoint (e.g. "ト"+U+3099 -> "ド" U+30C9) BEFORE storing it in
-// the cell, so the cell ends up holding one perfectly ordinary kana
-// character with normal glyph metrics -- rendered exactly like any
-// other single character, no combining-mark shaping involved at all.
-// A closed, unchanging table (every Hiragana/Katakana dakuten/
-// handakuten pair Unicode defines a canonical NFC composition for --
-// this is NOT general Unicode normalization, just this one finite,
-// well-known correspondence) rather than pulling in a full
-// normalization library for one narrow case. Falls back to the OLD
-// raw-append behavior (returns 0, caller keeps its prior behavior) for
-// any base/mark combination outside this table -- still zero-width
-// per display_width(), just not something this port knows how to
-// precompose, so the decomposed form (imperfect shaping, but not
-// visibly a separate glyph either, per Utf8::display_width()'s own
-// 0-width classification) is the best available fallback.
+// 2026-08-20の追加、U+3099/U+309Aのdisplay_width()の修正の後の
+// 直接のユーザーによる追加依頼("=dsよりはマシだが=dvには負ける
+// ...自前描画なら何とかなる？"): 結合する濁点/半濁点マークを、
+// 生の、まだ分解されたままのUTF-8バイトとして「前の」セルの
+// `glyph`文字列に統合すること(commitGlyph()の既存のwidth==0分岐)
+// は、そのセルに「2コードポイント」の文字列("ト"+U+3099)を保持
+// させ、それをTTF_RenderUTF8_Blended()が、1つの融合した「ド」の
+// ように見せるために正しくシェイピングしなければならない――しかし
+// SDL_ttf/FreeTypeは単純な線形のグリフレイアウトを行うだけで、
+// (-c自身の本物の端末エミュレータであるCoreTextが既に行っている
+// ようなGPOSマーク付着の位置決めが無い)本物のUnicodeテキスト
+// シェイピングは行わないので、マーク自身の送り幅/位置が、基底
+// グリフのちょうど上に着地することは保証されない。-gは自身の
+// 描画を完全に所有している(生のバイトを本物のシェイピングエンジン
+// へ渡すだけの-cとは異なる)ので、ここで利用可能な修正は、シェイ
+// ピングを完全に回避することである: セルに格納する「前に」、その
+// ペアを単一のNFCコードポイントへ事前合成する(例えば"ト"+U+3099
+// -> "ド" U+30C9)。そうすればセルは、通常のグリフメトリクスを
+// 持つ、完全に普通の1つの仮名文字を最終的に保持することになる
+// ――結合マークのシェイピングが全く関与せず、他のどんな単一の
+// 文字ともまさに同じように描画される。1つのケースだけのために
+// 完全な正規化ライブラリを持ち込むのではなく、閉じた、変化しない
+// 表(Unicodeが正規のNFC合成を定義している、全てのひらがな/
+// カタカナの濁点/半濁点のペア――これは汎用のUnicode正規化では
+// なく、単にこの1つの有限の、よく知られた対応関係である)。この
+// 表の外側のどんな基底/マークの組み合わせに対しても、古い生の
+// 追記の挙動へフォールバックする(0を返し、呼び出し元はその以前の
+// 挙動を保つ)――display_width()によれば依然として幅0だが、この
+// 移植が事前合成する方法を知らない何かであり、そのため分解された
+// 形(不完全なシェイピングだが、Utf8::display_width()自身の幅0の
+// 分類によれば見た目に別のグリフでもない)が、利用可能な最善の
+// フォールバックである。
 unsigned int composeDakutenCodepoint(unsigned int base, unsigned int mark) {
   if (mark != 0x3099 && mark != 0x309a) return 0;
   bool handakuten = mark == 0x309a;
-  // う/ウ -> ゔ/ヴ (dakuten only; no handakuten form exists)
+  // う/ウ -> ゔ/ヴ(濁点のみ、半濁点の形は存在しない)
   if (!handakuten && base == 0x3046) return 0x3094;
   if (!handakuten && base == 0x30a6) return 0x30f4;
-  // か-gyou through と-gyou (dakuten only; no handakuten forms exist),
-  // Hiragana then Katakana (Katakana codepoints are a fixed +0x60
-  // offset from their Hiragana counterparts throughout this range,
-  // consistent enough to check post-offset below rather than list
-  // every Katakana codepoint a second time).
+  // か行からと行まで(濁点のみ、半濁点の形は存在しない)、ひらがな
+  // の後カタカナ(カタカナのコードポイントは、この範囲全体を通じて
+  // 対応するひらがなから固定+0x60のオフセットであり、下でオフセット
+  // 後にチェックするだけで十分一貫している。全カタカナコードポイント
+  // を二重に列挙する必要はない)。
   if (!handakuten) {
     static const unsigned int kDakutenOnlyBases[] = {0x304b, 0x304d, 0x304f, 0x3051, 0x3053, 0x3055, 0x3057,
                                                        0x3059, 0x305b, 0x305d, 0x305f, 0x3061, 0x3064, 0x3066,
@@ -128,16 +131,16 @@ unsigned int composeDakutenCodepoint(unsigned int base, unsigned int mark) {
       if (base == hiraganaBase || base == hiraganaBase + 0x60) return base + 1;
     }
   }
-  // は-gyou (both dakuten AND handakuten forms exist), Hiragana then
-  // Katakana (same +0x60 offset).
+  // は行(濁点と半濁点の両方の形が存在する)、ひらがなの後カタカナ
+  // (同じ+0x60オフセット)。
   static const unsigned int kHaGyouBases[] = {0x306f, 0x3072, 0x3075, 0x3078, 0x307b};
   for (unsigned int hiraganaBase : kHaGyouBases) {
     if (base == hiraganaBase || base == hiraganaBase + 0x60) return base + (handakuten ? 2 : 1);
   }
-  // Rare/obsolete Katakana (dakuten only): ワヰヱヲ -> ヷヸヹヺ, and the
-  // Katakana/Hiragana iteration marks ヽ/ゝ -> ヾ/ゞ. NOT a fixed
-  // offset from their base (outside the contiguous block the other
-  // cases share), so listed explicitly.
+  // 稀な/廃れたカタカナ(濁点のみ): ワヰヱヲ -> ヷヸヹヺ、そしてカタ
+  // カナ/ひらがなの繰り返し記号ヽ/ゝ -> ヾ/ゞ。それらの基底から
+  // 固定オフセットでは「ない」(他のケースが共有する連続したブロッ
+  // クの外側)ので、明示的に列挙されている。
   if (!handakuten) {
     switch (base) {
       case 0x30ef: return 0x30f7;  // ワ -> ヷ
@@ -152,22 +155,24 @@ unsigned int composeDakutenCodepoint(unsigned int base, unsigned int mark) {
   return 0;
 }
 
-// Computes where to draw a glyph surface within its allocated
-// boxX/boxY..maxW/maxH cell(s), UNIFORMLY scaled down (never up, and
-// never independently in X vs Y) if it would otherwise overflow, then
-// centered. Replaces an earlier version that stretched the surface's
-// own natural size to EXACTLY fill maxW/maxH -- non-uniform stretching
-// distorts a glyph's aspect ratio, and a CJK fallback font's natural
-// glyph proportions don't necessarily match cellWidth*2 x cellHeight
-// (measured from the PRIMARY font's Latin "M"), so that stretch was
-// warping recognizable kanji/kana into different-looking, still-wrong
-// shapes (confirmed from a real report: the SPECIFIC way Japanese
-// filenames were garbled changed after adding that stretch, rather
-// than being fixed by it). Scaling only ever shrinks (never enlarges
-// a naturally-small glyph, which would blur it) and always preserves
-// aspect ratio, so a glyph either renders crisp at its natural size
-// (the common case, if it already fits) or shrinks uniformly with
-// letterboxing -- never distorted.
+// グリフのサーフェスを、割り当てられたboxX/boxY..maxW/maxHのセル
+// (複数)の中のどこに描くかを計算する。それがそうでなければ溢れて
+// しまう場合、「一様に」(決して拡大せず、決してXとYで独立には
+// ならないよう)縮小し、その後中央に置く。maxW/maxHをちょうど
+// 満たすようサーフェス自身の自然なサイズを引き伸ばしていた以前の
+// バージョンを置き換える――不均一な引き伸ばしはグリフのアスペクト
+// 比を歪める。そしてCJKフォールバックフォントの自然なグリフの比率
+// は、必ずしも(主フォントのラテン文字「M」から測定される)
+// cellWidth*2 x cellHeightに一致するとは限らないので、その引き
+// 伸ばしは、認識可能な漢字/仮名を、違う見た目の、依然として間違った
+// 形へ歪めていた(実際の報告から確認済み: 日本語のファイル名が
+// 文字化けする「具体的な」方法が、その引き伸ばしを追加した後に
+// 変わったのであって、それによって修正されたのではなかった)。
+// スケーリングは常に縮小だけを行い(自然に小さいグリフを拡大する
+// ことは決して無く、それはそれをぼかしてしまう)、常にアスペクト
+// 比を保つので、グリフは(既に収まる、よくあるケースでは)自然な
+// サイズで鮮明に描画されるか、レターボックス付きで一様に縮小され
+// る――決して歪まない。
 SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int surfaceH) {
   float scale = std::min(1.0f, std::min(static_cast<float>(maxW) / std::max(surfaceW, 1),
                                          static_cast<float>(maxH) / std::max(surfaceH, 1)));
@@ -176,29 +181,31 @@ SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int 
   return SDL_Rect{boxX + (maxW - drawW) / 2, boxY + (maxH - drawH) / 2, drawW, drawH};
 }
 
-// 2026-08-11: darkens a freshly-rendered glyph surface's partially-
-// covered (anti-aliased edge) pixels, to make thin strokes read as
-// visually heavier without touching the font's hinting or style --
-// item 264's TTF_HINTING_NONE experiment turned out to be moot for
-// "SF Mono Regular" specifically: inspecting the font file directly
-// (fontTools) showed it has NO fpgm/prep tables and 0 bytes of
-// instructions across every glyph, so there was never a native hint
-// program for TTF_HINTING_NORMAL/LIGHT/NONE to select between in the
-// first place -- consistent with a real report that toggling hinting
-// mode produced no visible change for this font at all.
+// 2026-08-11: 新しく描画されたグリフのサーフェスの、部分的に覆わ
+// れた(アンチエイリアスされた端の)ピクセルを暗くし、フォントの
+// ヒンティングやスタイルに触れることなく、細いストロークをより
+// 視覚的に重く読ませる――項目264のTTF_HINTING_NONEの実験は、
+// 「SF Mono Regular」に対しては特に的外れであることが判明した:
+// フォントファイルを直接調べる(fontTools)と、fpgm/prepテーブルが
+// 全く「無く」、全グリフを通じて命令が0バイトであることが分かった
+// ので、そもそもTTF_HINTING_NORMAL/LIGHT/NONEの間で選択すべき
+// ネイティブのヒントプログラムが一度も存在しなかった――ヒンティン
+// グモードを切り替えてもこのフォントには全く見た目の変化が無い
+// という実際の報告と一致する。
 //
-// TTF_RenderUTF8_Blended() returns a surface whose RGB is the flat
-// foreground color everywhere; only the alpha channel varies, encoding
-// how much of each pixel the glyph outline covers (0 = background,
-// 255 = fully inside the stroke, partial values = the antialiased
-// edge). Raising alpha through a gamma curve (alpha' = 255 *
-// (alpha/255)^gamma, gamma < 1) pushes partially-covered edge pixels
-// toward fully-opaque, which is the same idea professional rasterizers
-// call "stem darkening" -- a deliberate boost to compensate for
-// unhinted small text reading as too thin, applied as a pixel-level
-// post-process instead of relying on any hint program (native or
-// FreeType's autohinter), so it works identically regardless of
-// whether the font has one.
+// TTF_RenderUTF8_Blended()は、RGBがどこでも平坦な前景色である
+// サーフェスを返す。アルファチャネルだけが変化し、各ピクセルを
+// グリフの輪郭がどれだけ覆っているかを符号化する(0=背景、255=
+// ストロークの内側に完全にある、部分的な値=アンチエイリアスされた
+// 端)。ガンマカーブを通してアルファを上げる(alpha' = 255 *
+// (alpha/255)^gamma、gamma < 1)ことは、部分的に覆われた端の
+// ピクセルを完全に不透明な方向へ押し上げる。これは、プロの
+// ラスタライザが「ステムダークニング」と呼ぶのと同じ発想である
+// ――ヒントされていない小さなテキストが薄すぎて読めることを補償
+// するための意図的な増強で、(ネイティブでもFreeTypeのオートヒン
+// タでも)どんなヒントプログラムに頼るのでもなく、ピクセルレベルの
+// 後処理として適用される。そのため、フォントがそれを持っているか
+// どうかに関わらず、同一に機能する。
 void boostGlyphAlpha(SDL_Surface *surface, double gamma) {
   if (!surface) return;
   if (SDL_MUSTLOCK(surface) && SDL_LockSurface(surface) != 0) return;
@@ -215,34 +222,36 @@ void boostGlyphAlpha(SDL_Surface *surface, double gamma) {
   if (SDL_MUSTLOCK(surface)) SDL_UnlockSurface(surface);
 }
 
-// Gamma < 1 boosts partial-coverage alpha upward (darkens); picked by
-// eye as a starting point, not measured against a specific target --
-// see boostGlyphAlpha()'s own comment.
+// gamma < 1は部分的な被覆のアルファを上向きに(暗く)増強する。
+// 特定の目標に対して測定されたのではなく、開始点として目分量で
+// 選ばれた――boostGlyphAlpha()自身のコメント参照。
 constexpr double kNarrowGlyphAlphaGamma = 0.65;
 
-// Best-effort search for a CJK-capable font to fall back to when the
-// PRIMARY font (resolved by main.cpp -- Menlo/Monaco/DejaVu/Liberation
-// by default, none of which cover Japanese kana/kanji) is missing a
-// glyph. Added after a real-machine report of Japanese filenames
-// rendering as a string of "tofu" placeholder boxes (confirmed from
-// the reporting screenshot itself -- not generic mojibake/wrong-byte
-// decoding, just missing glyph coverage in whichever font main.cpp
-// happened to load).
+// 「主」フォント(main.cppによって解決される――デフォルトでは
+// Menlo/Monaco/DejaVu/Liberationであり、どれも日本語の仮名/漢字を
+// カバーしない)にグリフが欠けている時にフォールバックすべき、
+// CJK対応フォントのベストエフォートの探索。実機での、日本語の
+// ファイル名が「豆腐」プレースホルダーの箱の連続として描画される
+// という報告の後に追加された(その報告のスクリーンショット自体
+// から確認済み――一般的な文字化け/誤ったバイトのデコードではなく、
+// main.cppがたまたま読み込んだフォントに単にグリフのカバレッジが
+// 欠けていた)。
 //
-// Tries each candidate path in order, keeping the first one that both
-// (a) loads at all and (b) actually has a glyph for U+3042 ('あ',
-// hiragana -- picked because hiragana coverage reliably implies kanji
-// coverage too in any font that bothers to ship Japanese support at
-// all, but the reverse isn't true: some CJK fonts cover Han ideographs
-// shared with Chinese without covering kana, which alone wouldn't fix
-// the reported filenames). The exact file names/paths for Apple's
-// Hiragino family have shifted across macOS versions and this project
-// has no way to verify them against a real machine (same sandbox
-// limitation noted throughout this port's GUI work) -- several
-// plausible candidates are listed for exactly that reason, and a
-// match failing here just means no CJK fallback (impl_->fallbackFont
-// stays nullptr), not a startup failure; ordinary ASCII text is
-// completely unaffected either way.
+// 各候補のパスを順に試し、(a)そもそも読み込めて「かつ」(b)実際に
+// U+3042('あ'、ひらがな――ひらがなのカバレッジは、そもそも日本語
+// サポートをわざわざ同梱するどんなフォントでも確実に漢字のカバレ
+// ッジも意味するが、逆は真ではない: 一部のCJKフォントは、仮名を
+// カバーせずに中国語と共有される漢の表意文字をカバーする。それ
+// だけでは報告されたファイル名は直らない、という理由で選ばれた)
+// に対するグリフを持つ最初のものを保つ。Appleのヒラギノファミリー
+// の正確なファイル名/パスはmacOSのバージョンをまたいで変化して
+// おり、このプロジェクトにはそれらを実機に対して検証する方法が
+// 無い(この移植のGUI作業全体を通じて記録されている同じサンド
+// ボックスの制限)――まさにその理由でいくつかのもっともらしい
+// 候補が列挙されている。ここでのマッチの失敗は、単にCJKフォール
+// バックが無い(impl_->fallbackFontはnullptrのまま)ことを意味する
+// だけで、起動の失敗ではない。通常のASCIIテキストはどちらにせよ
+// 全く影響を受けない。
 TTF_Font *loadCjkFallbackFont(int pointSize) {
   static const char *const candidates[] = {
       "/System/Library/Fonts/ヒラギノ角ゴシック W4.ttc",
@@ -262,24 +271,25 @@ TTF_Font *loadCjkFallbackFont(int pointSize) {
   return nullptr;
 }
 
-// Glyph texture cache (2026-08-24, docs/CHANGES.md item 428) -- see
-// cachedGlyphTexture()'s own comment (below Impl's definition, since it
-// needs GraphicalDisplay::Impl) for the full story on why this exists.
-// `font` is stored/compared as an opaque identity (impl_->font vs
-// impl_->fallbackFont), matching exactly the two TTF_Font* values that
-// can ever be passed in -- never dereferenced through this key, so it
-// stays valid to compare even across a TTF_SetFontSize() call that
-// mutates the pointed-to font in place (which is exactly why
-// clearGlyphCache() must still be called whenever that happens: the
-// pointer would keep comparing equal to old entries that are no longer
-// the right PIXELS for that pointer's new size).
+// グリフのテクスチャキャッシュ(2026-08-24、docs/CHANGES.md項目428)
+// ――これが存在する理由の完全な経緯についてはcachedGlyphTexture()
+// 自身のコメント(GraphicalDisplay::Implを必要とするので、Implの
+// 定義の下)参照。`font`は不透明な識別子として保存/比較される
+// (impl_->font対impl_->fallbackFont)。渡され得る2つのTTF_Font*の
+// 値に正確に一致する――このキーを通じて決して逆参照されないので、
+// ポインタが指すフォントをその場で変異させるTTF_SetFontSize()
+// 呼び出しをまたいでも、比較として有効なままである(これがまさに、
+// それが起きるたびにclearGlyphCache()が依然として呼ばれなければ
+// ならない理由である: そのポインタは、そのポインタの新しいサイズ
+// にとって「もはや正しいピクセルではない」古いエントリと比較して
+// 等しいままになってしまう)。
 struct GlyphCacheKey {
   std::string glyph;
   const void *font;
   int style;
   int hinting;
   unsigned char r, g, b;
-  bool narrow;  // whether boostGlyphAlpha() was applied -- affects the cached pixels
+  bool narrow;  // boostGlyphAlpha()が適用されたかどうか――キャッシュされるピクセルに影響する
   bool operator<(const GlyphCacheKey &other) const {
     return std::tie(glyph, font, style, hinting, r, g, b, narrow) <
            std::tie(other.glyph, other.font, other.style, other.hinting, other.r, other.g, other.b, other.narrow);
@@ -296,107 +306,115 @@ struct GraphicalDisplay::Impl {
   SDL_Window *window = nullptr;
   SDL_Renderer *renderer = nullptr;
   TTF_Font *font = nullptr;
-  TTF_Font *fallbackFont = nullptr;  // see loadCjkFallbackFont()'s own comment; nullptr if none was found
+  TTF_Font *fallbackFont = nullptr;  // loadCjkFallbackFont()自身のコメント参照。見つからなければnullptr
 
   int rows = 0, columns = 0;
   int cellWidth = 0, cellHeight = 0;
-  // The font's own TRUE, never-overwritten native metrics -- captured
-  // ONCE in create(), from the SAME measurement create()'s own
-  // cellWidth/cellHeight locals are seeded from (before matchWindowSize()
-  // ever runs and starts overwriting the ABOVE cellWidth/cellHeight with
-  // the real terminal's own arithmetic-derived target values instead).
-  // Added 2026-08-10 alongside matchWindowSize()'s own font-rescaling
-  // (see its own comment) specifically so that method can always
-  // compute "how far has the target size drifted from the font's
-  // ORIGINAL native size" from a stable baseline, even across multiple
-  // calls (a live font-size change mid-session, `^Og` re-entry, etc.)
-  // -- reading the ABOVE cellWidth/cellHeight for this instead would
-  // compound: after the FIRST matchWindowSize() call already replaced
-  // them with a target value, a SECOND call would then be scaling
-  // relative to the PREVIOUS target, not the font's real original size,
-  // drifting further off with each call.
+  // フォント自身の「本当の」、決して上書きされないネイティブな
+  // メトリクス――create()内で「一度だけ」、create()自身のcellWidth/
+  // cellHeightのローカル変数の種になっているのと「同じ」計測から
+  // 捕捉される(matchWindowSize()が実行され、代わりに本物の端末
+  // 自身の算術的に導出された目標値で上のcellWidth/cellHeightを
+  // 上書きし始める前に)。matchWindowSize()自身のフォント再スケー
+  // リング(自身のコメント参照)と並んで2026-08-10に追加された。
+  // 特に、そのメソッドが、複数回の呼び出し(セッション途中での
+  // ライブなフォントサイズ変更、`^Og`の再入場等)にわたっても、
+  // 安定した基準線から常に「目標サイズがフォントの『元々の』
+  // ネイティブサイズからどれだけずれたか」を計算できるようにする
+  // ためである――代わりにこのために上のcellWidth/cellHeightを
+  // 読むと、複合してしまう: 最初のmatchWindowSize()呼び出しが
+  // 既にそれらを目標値で置き換えた後、2回目の呼び出しはその後、
+  // フォントの本当の元々のサイズではなく「前の」目標に対して
+  // 相対的にスケーリングし、呼び出しごとにさらにずれていく。
   int baseFontPointSize = 16;
   int baseFontMetricCellWidth = 0, baseFontMetricCellHeight = 0;
-  // The font's CURRENT live point size (2026-08-24, item 426) -- unlike
-  // baseFontPointSize (never overwritten after create(), matchWindowSize()
-  // relies on it staying the font's true original), this one DOES move as
-  // adjustFontSize() is called (Cmd+=/Cmd+-/Cmd+0), so that repeated
-  // presses step from wherever the user last left it, not back from the
-  // original every time. Starts equal to baseFontPointSize in create().
+  // フォントの「現在の」生きたポイントサイズ(2026-08-24、項目426)
+  // ――baseFontPointSize(create()の後は決して上書きされない。
+  // matchWindowSize()は、それがフォントの本当の元々のもののまま
+  // であることに頼っている)とは異なり、これはadjustFontSize()
+  // (Cmd+=/Cmd+-/Cmd+0)が呼ばれるにつれて「動く」。そのため、
+  // 繰り返しの押下は、毎回元々のものからではなく、ユーザーが最後に
+  // 残した場所から進む。create()ではbaseFontPointSizeと等しい値で
+  // 始まる。
   int currentFontPointSize = 16;
-  // Which of Impl::kColorPresets (below) cycleColorPreset() last applied
-  // -- -1 means "still on create()'s own hardcoded default / whatever
-  // setColors() was last called with directly (e.g. the 「実はすでにGUI」
-  // launch-time terminal-color match)", so the FIRST Cmd+K press lands on
-  // preset 0 rather than skipping it.
+  // 下のImpl::kColorPresetsのうちどれをcycleColorPreset()が最後に
+  // 適用したか――-1は「依然としてcreate()自身のハードコードされた
+  // デフォルト/setColors()が最後に直接何で呼ばれたか(例えば
+  // 「実はすでにGUI」の起動時の端末色一致)のまま」を意味するので、
+  // 最初のCmd+K押下はプリセット0を飛ばすのではなくそこに着地する。
   int colorPresetIndex = -1;
-  // Real terminal emulator windows (Terminal.app, iTerm, GNOME
-  // Terminal...) all reserve a modest border of window background
-  // around the character grid rather than butting text right up
-  // against the window edge -- this class originally didn't, so a
-  // window that otherwise looked identical still read as visibly
-  // "off" side by side with a real terminal (a real user report,
-  // 2026-08-03, via a Gemini-drafted technical answer the user asked
-  // to have implemented as written: reserve margin pixels on every
-  // side, grow the window by that amount, and offset every draw
-  // position by it). Fixed pixel values (not e.g. a fraction of
-  // cellWidth/cellHeight) because that's what a real terminal's own
-  // margin is -- it doesn't visibly grow or shrink with font size.
-  // 10, not Gemini's originally-suggested 15: a real side-by-side
-  // screenshot comparison (2026-08-03 follow-up, "余白はやや広め")
-  // measured the real Terminal.app window's own margin directly
-  // (pixel-scanning the screenshot itself, since this sandbox has no
-  // screen-capture access to measure a live window) -- about 9px
-  // between the title bar's bottom edge and the first text row, about
-  // 11px between the window's left edge and the first column -- close
-  // enough to treat as one shared value rather than separate X/Y ones.
+  // 本物の端末エミュレータのウィンドウ(Terminal.app、iTerm、
+  // GNOME Terminal...)は全て、文字グリッドの周りに、テキストを
+  // ウィンドウの端にぴったり突き当てるのではなく、ウィンドウの
+  // 背景の控えめな境界を確保する――このクラスは元々そうしていな
+  // かったので、それ以外は同一に見えるウィンドウでも、本物の端末
+  // と並べると依然として目に見えて「おかしい」と読めていた
+  // (実際のユーザー報告、2026-08-03、ユーザーが書かれた通りに実装
+  // するよう依頼したGeminiが起草した技術的な回答経由: 全ての側に
+  // マージンのピクセルを確保し、その分だけウィンドウを大きくし、
+  // 全ての描画位置をそれだけずらす)。固定のピクセル値(例えば
+  // cellWidth/cellHeightの分数ではなく)である理由は、それが本物の
+  // 端末自身のマージンがそうであるものだからである――それはフォント
+  // サイズと共に目に見えて大きくなったり小さくなったりしない。
+  // Geminiが元々提案した15ではなく10: 実際の並べたスクリーン
+  // ショット比較(2026-08-03の追加依頼、"余白はやや広め")が、
+  // 本物のTerminal.appウィンドウ自身のマージンを直接測定した
+  // (このサンドボックスには生きたウィンドウを測定する画面キャプ
+  // チャのアクセスが無いので、スクリーンショット自体をピクセル
+  // スキャンした)――タイトルバーの下端と最初のテキスト行の間が
+  // 約9px、ウィンドウの左端と最初の列の間が約11px――別々のX/Y値
+  // ではなく1つの共有された値として扱うのに十分近い。
   static constexpr int kMarginX = 10;
   static constexpr int kMarginY = 10;
-  // Reserved strip on the right edge for the scrollbar overlay (see
-  // renderScrolled()'s own drawScrollbar() call) -- 2026-08-07, first
-  // slice of the feature IDEAS.md recorded 2026-08-03 (docs/HISTORY.md
-  // line 521's own request to start it): a real side-by-side
-  // screenshot comparison found the GUI window narrower than the real
-  // terminal it's meant to overlay by roughly a scrollbar's width once
-  // the real terminal's own native scrollbar was accounted for.
-  // UNLIKE kMarginX/Y above (pixel-scanned from a real screenshot),
-  // this value was originally a rough, unmeasured placeholder (15).
-  // Corrected 2026-08-09 to 17: the embedded reference screenshot this
-  // project captured early on (scrollbar_idle_image.hpp, since removed
-  // -- see updateScrollPosition()'s own comment) was a real -c
-  // terminal scrollbar crop measuring exactly 17px wide
-  // (kScrollbarIdleImageWidth, that file's own constant); a completely
-  // independent same-day measurement (querying `+[NSScroller
-  // scrollerWidthForControlSize:scrollerStyle:]` directly, during a
-  // later, since-reverted attempt at a real NSScroller widget) returned
-  // the SAME 17pt on this machine. Two independent real measurements
-  // agreeing is a much stronger basis than the original guess. A real
-  // user request (2026-08-09, "今の張りぼて画像は縮小されていて本来は
-  // Home brewくらいなので、つまみ幅も同じくらいにして...色々使ってから
-  // 正式に決めたい") asked for the thumb width to match that original,
-  // un-shrunk reference size -- treated as provisional (their own
-  // words), not a final measurement, pending more real-world use.
+  // スクロールバーのオーバーレイのために右端に予約された帯
+  // (renderScrolled()自身のdrawScrollbar()呼び出し参照)――
+  // 2026-08-07、IDEAS.mdが2026-08-03に記録した機能の最初の一切れ
+  // (docs/HISTORY.mdの521行目自身の、それを始めるという依頼):
+  // 実際の並べたスクリーンショット比較が、本物の端末自身のネイティ
+  // ブなスクロールバーを計上すると、GUIウィンドウがそれがオーバー
+  // レイすることを意図している本物の端末より、おおよそスクロール
+  // バー1本分狭いことを発見した。上のkMarginX/Y(実際のスクリーン
+  // ショットからピクセルスキャンされた)とは「異なり」、この値は
+  // 元々、大まかな、測定されていないプレースホルダー(15)だった。
+  // 2026-08-09に17へ修正された: このプロジェクトが初期に撮影した
+  // 埋め込みの参照スクリーンショット(scrollbar_idle_image.hpp、
+  // 以来削除済み――updateScrollPosition()自身のコメント参照)は、
+  // ちょうど17px幅と測定される本物の-c端末のスクロールバーの切り
+  // 抜きだった(kScrollbarIdleImageWidth、そのファイル自身の定数)。
+  // 完全に独立した同日の計測(後の、以来撤回された本物のNSScroller
+  // ウィジェットの試みの間、`+[NSScroller
+  // scrollerWidthForControlSize:scrollerStyle:]`を直接問い合わせる)
+  // が、このマシンで「同じ」17ptを返した。2つの独立した実測値が
+  // 一致することは、元の推測よりもはるかに強い根拠である。実際の
+  // ユーザー依頼(2026-08-09、"今の張りぼて画像は縮小されていて
+  // 本来はHome brewくらいなので、つまみ幅も同じくらいにして...
+  // 色々使ってから正式に決めたい")が、つまみの幅をその元の、縮小
+  // されていない参照サイズに合わせるよう求めた――暫定として扱わ
+  // れており(ユーザー自身の言葉)、より多くの実運用を待つ、最終的
+  // な計測ではない。
   static constexpr int kScrollbarWidth = 17;
-  // Cached by updateScrollPosition() (called every runGuiPhase()
-  // iteration, main.cpp) so flush() can draw a real, always-current
-  // thumb via drawScrollbar() instead of the removed decorative
-  // placeholder -- see updateScrollPosition()'s own comment.
+  // updateScrollPosition()(main.cppの全てのrunGuiPhase()の反復で
+  // 呼ばれる)によってキャッシュされ、flush()が、削除された装飾的
+  // なプレースホルダーの代わりに、drawScrollbar()経由で本物の、
+  // 常に最新のつまみを描画できるようにする――
+  // updateScrollPosition()自身のコメント参照。
   int scrollTopIndex = 0, scrollTotalLines = 0, scrollContentRows = 0;
-  // False from window creation until the FIRST mouse interaction of
-  // any kind (set true in pumpEvents(), never reset back to false) --
-  // a real request (2026-08-09, restoring the idle image removed one
-  // round earlier: "-g起動後、マウスに触れるまでは画像が必要（一度でも
-  // 触れればつまみが永続的に表示され、以後は画像も不要となる）") wants
-  // the "実はすでにGUI" illusion's own reasoning applied one level
-  // deeper than before: it only matters up to the moment the user
-  // actually starts operating the window (a real mouse touch is
-  // unambiguous proof of that), not merely "at launch" as the earlier,
-  // now-reverted always-image-until-drag version treated it. Before
-  // that first touch, flush() pastes the static reference image
-  // (indistinguishable from -- because it IS -- a real captured
-  // terminal scrollbar); after it, flush() switches permanently to the
-  // real, always-current thumb (drawScrollbar()), matching
-  // renderScrolled()'s own active-drag rendering.
+  // ウィンドウの作成から、何であれ「最初の」マウス操作まではfalse
+  // (pumpEvents()でtrueに設定され、決してfalseに戻されない)――
+  // 実際の依頼(2026-08-09、1回前のラウンドで削除されたアイドル
+  // 画像の復元: "-g起動後、マウスに触れるまでは画像が必要（一度
+  // でも触れればつまみが永続的に表示され、以後は画像も不要と
+  // なる）")が、「実はすでにGUI」の幻想自身の理由付けを、以前より
+  // もう1段階深く適用することを望んだ: それは、ユーザーが実際に
+  // ウィンドウの操作を始める瞬間まで(本物のマウスタッチはその
+  // 明確な証拠である)重要なだけであり、以前の、今は撤回された
+  // 「ドラッグまで常に画像」バージョンがそれを扱っていたような
+  // 単なる「起動時」ではない。その最初のタッチの前は、flush()は
+  // 静的な参照画像を貼り付ける((それは本物のキャプチャされた
+  // 端末のスクロールバー「である」ため)それと区別が付かない)。
+  // その後、flush()は永続的に本物の、常に最新のつまみ
+  // (drawScrollbar())へ切り替わる。renderScrolled()自身のアクティ
+  // ブなドラッグの描画に合わせている。
   bool everInteracted = false;
   std::vector<Cell> grid;
 
@@ -407,20 +425,20 @@ struct GraphicalDisplay::Impl {
   int savedRow = 0, savedCol = 0;
   bool standoutActive = false, boldActive = false, underlineActive = false;
 
-  // The LOGICAL cursor position renderCursor() actually draws --
-  // deliberately separate from cursorRow/cursorCol above (which is
-  // purely "where does the next byte get written", constantly moved
-  // around by ContentView::redraw()'s own per-row/mode-line writes).
-  // Only setVisibleCursor() touches this; see Display::
-  // setVisibleCursor()'s own comment for why the split exists.
-  // hasVisibleCursor starts false so nothing is drawn before any
-  // caller has explicitly asked for a cursor (avoids a stray block at
-  // the default (0,0) the moment a window opens, before e.g. SHELL or
-  // a prompt has positioned one anywhere meaningful).
+  // renderCursor()が実際に描く「論理的な」カーソル位置――上の
+  // cursorRow/cursorCol(純粋に「次のバイトがどこに書かれるか」で
+  // あり、ContentView::redraw()自身の行ごと/モードラインの書き込み
+  // によって絶えず動かされる)とは意図的に別である。
+  // setVisibleCursor()だけがこれに触れる。なぜこの分割が存在する
+  // のかについてはDisplay::setVisibleCursor()自身のコメント参照。
+  // hasVisibleCursorはfalseで始まる。そのため、どの呼び出し元も
+  // カーソルを明示的に求める前は何も描画されない(ウィンドウが開いた
+  // 瞬間、例えばSHELLやプロンプトがどこか意味のある場所に1つを位置
+  // 決めする前に、デフォルトの(0,0)にはぐれた箱が出るのを避ける)。
   bool hasVisibleCursor = false;
   int visibleCursorRow = 0, visibleCursorCol = 0;
 
-  std::string pendingUtf8;  // bytes of an incomplete multi-byte sequence, see putByte()
+  std::string pendingUtf8;  // 不完全なマルチバイトシーケンスのバイト、putByte()参照
 
   bool outputEnabled = true;
   bool smoothScroll = false;
@@ -431,62 +449,65 @@ struct GraphicalDisplay::Impl {
   std::deque<HoverEvent> hoverQueue;
   std::deque<WheelEvent> wheelQueue;
   std::deque<ScrollbarEvent> scrollbarQueue;
-  // True from a left-button-down that started inside the scrollbar
-  // strip until the matching button-up -- see ScrollbarEvent's own
-  // comment. Distinguishes a MOTION event that should be routed to
-  // scrollbarQueue (started as a thumb drag) from one that should go
-  // to the normal content dragQueue/hoverQueue, since SDL_MOUSEMOTION
-  // itself carries no memory of where the ORIGINAL button-down was.
+  // スクロールバーの帯の内側で始まった左ボタン押下から、対応する
+  // ボタン解放までtrue――ScrollbarEvent自身のコメント参照。
+  // SDL_MOUSEMOTION自体は「元々の」ボタン押下がどこだったかの
+  // 記憶を全く運ばないので、scrollbarQueueへルーティングされる
+  // べきMOTIONイベント(つまみのドラッグとして始まった)と、通常の
+  // 内容のdragQueue/hoverQueueへ行くべきものとを区別する。
   bool scrollbarDragActive = false;
-  // consumeNeedsRedraw()'s own backing flag -- see its declaration
-  // comment (graphical_display.hpp). Starts true so the very first
-  // frame after construction still redraws even if SDL_WINDOWEVENT_
-  // EXPOSED never fires for some reason (belt and suspenders, not
-  // load-bearing for the actual fix -- the fix is EXPOSED setting it
-  // true again on every subsequent occurrence).
+  // consumeNeedsRedraw()自身の裏付けとなるフラグ――その宣言コメント
+  // (graphical_display.hpp)参照。trueで始まるので、SDL_WINDOWEVENT_
+  // EXPOSEDが何らかの理由で決して発火しなくても、構築後のまさに
+  // 最初のフレームは依然として再描画される(念のための保険であり、
+  // 実際の修正にとって必須ではない――修正は、後続の全ての発生の
+  // たびにEXPOSEDがこれを再びtrueに設定することである)。
   bool needsRedraw = true;
-  // consumeSizeChanged()'s own backing flag (2026-08-24, item 425) --
-  // set by pumpEvents()'s SDL_WINDOWEVENT_RESIZED handling (the user
-  // dragging the window's own edge), consumed by runGuiPhase() to
-  // call Application::handleResize() the same way a real terminal's
-  // SIGWINCH does -- see consumeSizeChanged()'s own declaration
-  // comment (graphical_display.hpp).
+  // consumeSizeChanged()自身の裏付けとなるフラグ(2026-08-24、
+  // 項目425)――pumpEvents()のSDL_WINDOWEVENT_RESIZED処理(ユーザー
+  // がウィンドウ自身の端をドラッグする)によって設定され、
+  // runGuiPhase()によって、本物の端末のSIGWINCHがそうするのと同じ
+  // 方法でApplication::handleResize()を呼ぶために消費される――
+  // consumeSizeChanged()自身の宣言コメント(graphical_display.hpp)
+  // 参照。
   bool sizeChanged = false;
-  // handCursorActive: tracks whether the open-hand cursor (handCursor
-  // below) is currently showing, for dragging CONTENT itself (the
-  // "cat's paw" scroll gesture). pointingCursor: SDL's own system
-  // pointing-hand (index finger), used for scrollbar-thumb dragging --
-  // see setPointingCursor()'s own comment. Split into two cursors
-  // 2026-08-10 after a real request ("画面ドラッグでは手の形をこれに
-  // して欲しい...現状の人差し指は、スクロールバーのドラッグ...のみ
-  // での表示よろしく") pointed out that a single "pointing hand for
-  // every drag" cursor didn't distinguish the two gestures the way a
-  // real trackpad/mouse OS convention does (open hand while panning
-  // content, pointing hand only for a clickable control like a
-  // scrollbar).
+  // handCursorActive: 「内容自体」をドラッグする(「猫の手」スクロ
+  // ールジェスチャー)ための、開いた手のカーソル(下のhandCursor)が
+  // 現在表示されているかどうかを追跡する。pointingCursor: SDLの
+  // システムの指差し(人差し指)カーソルで、スクロールバーのつまみの
+  // ドラッグに使われる――setPointingCursor()自身のコメント参照。
+  // 実際の依頼("画面ドラッグでは手の形をこれにして欲しい...現状の
+  // 人差し指は、スクロールバーのドラッグ...のみでの表示よろしく")
+  // が、単一の「あらゆるドラッグに指差しの手」というカーソルは、
+  // 本物のトラックパッド/マウスのOSの慣習(内容をパンしている間は
+  // 開いた手、スクロールバーのようなクリック可能なコントロールに
+  // 対してだけ指差しの手)が行うようには2つのジェスチャーを区別
+  // しないことを指摘した後、2026-08-10に2つのカーソルへ分割された。
   //
-  // handCursor: an SDL_Cursor built (lazily, on first use) from the
-  // REAL macOS open-hand cursor's pixels (mac_cursor.hpp's
-  // extractOpenHandCursorImage()), driven through SDL_SetCursor() just
-  // like pointingCursor below -- NOT a raw [[NSCursor openHandCursor]
-  // set] call. An earlier version of this field called that directly
-  // and skipped SDL entirely; it displayed correctly on mouse-down but
-  // reverted to the plain arrow the instant a drag actually started
-  // moving (a real report: "画面ドラッグを開始したとたんに矢印に戻る"),
-  // because SDL's own Cocoa backend re-asserts ITS OWN tracked
-  // SDL_Cursor on every mouse-motion event, stomping any cursor set
-  // through a side channel SDL doesn't know about. Routing it through
-  // SDL_SetCursor() like pointingCursor fixes that the same way
-  // pointingCursor never had the problem in the first place -- see
-  // setHandCursor()'s own comment.
+  // handCursor: 本物のmacOSの開いた手のカーソルのピクセル
+  // (mac_cursor.hppのextractOpenHandCursorImage())から(遅延的に、
+  // 最初の使用時に)構築されるSDL_Cursorであり、下のpointingCursor
+  // と全く同じようにSDL_SetCursor()経由で駆動される――生の
+  // [[NSCursor openHandCursor] set]呼び出しでは「ない」。このフィー
+  // ルドの以前のバージョンはそれを直接呼び、SDLを完全に飛ばして
+  // いた。それはマウスダウン時には正しく表示されたが、ドラッグが
+  // 実際に動き始めた瞬間にプレーンな矢印に戻ってしまった(実際の
+  // 報告: "画面ドラッグを開始したとたんに矢印に戻る")。SDL自身の
+  // Cocoaバックエンドが、マウス移動イベントのたびに「それ自身が」
+  // 追跡しているSDL_Cursorを再主張し、SDLが知らない裏チャネル経由
+  // で設定されたどんなカーソルも踏みつぶしてしまうためである。
+  // pointingCursorと同様SDL_SetCursor()経由でそれをルーティング
+  // することは、pointingCursorがそもそも一度もその問題を持たなか
+  // ったのと同じ方法でそれを修正する――setHandCursor()自身の
+  // コメント参照。
   bool handCursorActive = false;
   SDL_Cursor *handCursor = nullptr;
   SDL_Cursor *pointingCursor = nullptr;
   bool pointingCursorActive = false;
 
-  // See cachedGlyphTexture()'s own comment (right below this struct)
-  // for the full story -- keyed/cleared such that every entry always
-  // matches the CURRENT font/size/colors exactly.
+  // 完全な経緯についてはcachedGlyphTexture()自身のコメント(この
+  // 構造体のすぐ下)参照――全てのエントリが常に「現在の」フォント/
+  // サイズ/色に正確に一致するよう、キー付け/クリアされている。
   std::map<GlyphCacheKey, CachedGlyph> glyphCache;
 
   Cell &cellAt(int row, int col) { return grid[row * columns + col]; }
@@ -494,44 +515,48 @@ struct GraphicalDisplay::Impl {
 
 namespace {
 
-// Returns a cached glyph texture (rasterizing and uploading it to the
-// GPU only on first use), or nullptr if TTF_RenderUTF8_Blended()
-// itself failed. Shared by renderCell()/renderCursor()/renderTextRun()
-// -- all three previously called TTF_RenderUTF8_Blended()+
-// SDL_CreateTextureFromSurface() (CPU rasterization via FreeType, then
-// a fresh GPU texture upload) for literally every glyph, on literally
-// every single frame, even for a cell whose content hasn't changed at
-// all since the previous frame. On this project's own Apple Silicon
-// dev machine this stays fast enough to be invisible, but a real mpi
-// (Intel Mac, i5-9400 + integrated graphics) report of general GUI
-// sluggishness -- and specifically inertial-scroll motion that looks
-// choppy/"line-by-line" despite the underlying pixelOffset math being
-// genuinely continuous, sub-row, arbitrary-position (2026-08-24) --
-// points squarely at this: renderScrolled() alone redraws EVERY
-// visible row on EVERY ~16ms coast physics slice, so a full-screen
-// scroll could mean thousands of individual texture creates+uploads+
-// destroys per second. A weaker/older GPU stalling on that volume of
-// churn would produce exactly the reported symptom (large, infrequent
-// jumps between the few real frames that DO complete) even though the
-// app's own internal state advances smoothly frame to frame. Caching
-// by (glyph string, font identity, style, hinting, color, narrow-
-// glyph-alpha-boost flag) -- everything that actually affects the
-// resulting pixels -- means a steady-state scroll (the same visible
-// characters sliding row to row) reuses the SAME already-uploaded
-// textures instead of re-rasterizing them from scratch every frame.
+// キャッシュされたグリフのテクスチャを返す(最初の使用時にだけ
+// ラスタライズしGPUへアップロードする)。TTF_RenderUTF8_Blended()
+// 自体が失敗した場合はnullptr。renderCell()/renderCursor()/
+// renderTextRun()で共有される――以前は3つとも、前のフレームから
+// 内容が全く変わっていないセルに対してでさえ、文字通り全てのグリフ
+// に対して、文字通り全ての単一のフレームで、TTF_RenderUTF8_Blended()
+// +SDL_CreateTextureFromSurface()(FreeType経由のCPUラスタライズ、
+// その後新しいGPUテクスチャのアップロード)を呼んでいた。この
+// プロジェクト自身のApple Siliconの開発マシンでは、これは不可視で
+// あるほど十分速いままだが、実際のmpi(Intel Mac、i5-9400+統合
+// グラフィックス)からの、一般的なGUIのもっさり感――特に、その基礎
+// となるpixelOffsetの計算が本当に連続的で、行未満で、任意の位置
+// であるにも関わらず(2026-08-24)、ぎこちない/「行単位」に見える
+// 慣性スクロールの動き――の報告は、まさにここを指している:
+// renderScrolled()単独で、約16msの惰性物理演算の一切れごとに
+// 可視の全ての行を再描画するので、全画面のスクロールは、1秒あた
+// り何千もの個別のテクスチャの生成+アップロード+破棄を意味する
+// ことがある。より弱い/古いGPUがその量のchurnで詰まると、アプリ
+// 自身の内部状態はフレームからフレームへなめらかに進んでいるに
+// も関わらず、まさに報告された症状(実際に完了する数少ないフレー
+// ムの間の、大きな、稀なジャンプ)を生み出すだろう。(グリフ文字列、
+// フォントの識別子、スタイル、ヒンティング、色、細いグリフの
+// アルファ増強フラグ)によるキャッシュ――結果のピクセルに実際に
+// 影響する全て――は、定常状態のスクロール(同じ可視の文字が行から
+// 行へ滑る)が、毎フレームゼロから再ラスタライズするのではなく、
+// 「同じ」既にアップロード済みのテクスチャを再利用することを
+// 意味する。
 //
-// TTF_SetFontStyle()/TTF_SetFontHinting() are only called on a cache
-// MISS now (immediately before the real TTF_RenderUTF8_Blended() call
-// they used to always precede) -- correct, not just faster, since
-// those calls only affect the NEXT render through that font object;
-// once a glyph is cached, style/hinting are already baked into its
-// stored texture and never need re-asserting to reuse it.
-// `ImplT` (deduced, always GraphicalDisplay::Impl in practice) rather
-// than naming GraphicalDisplay::Impl directly: it's a private nested
-// type, and template argument deduction is the standard way a free
-// function in this same file can still operate on it without needing
-// friend access -- access control applies to explicitly NAMING a
-// private member, not to a deduced template parameter.
+// TTF_SetFontStyle()/TTF_SetFontHinting()は、今はキャッシュ
+// 「ミス」時にだけ呼ばれる(それらが常にその前に呼ばれていた
+// 本物のTTF_RenderUTF8_Blended()呼び出しの直前)――単に速いだけで
+// なく正しい。それらの呼び出しは、そのフォントオブジェクトを通じた
+// 「次の」描画にだけ影響するため。一度グリフがキャッシュされると、
+// スタイル/ヒンティングは既にその保存されたテクスチャに焼き込まれ
+// ており、それを再利用するために再主張する必要は無い。
+// `ImplT`(推論される、実際には常にGraphicalDisplay::Impl)は、
+// GraphicalDisplay::Implを直接名指しするのではない: それはプライ
+// ベートなネストされた型であり、テンプレート引数の推論が、この
+// 同じファイル内のフリー関数が、friendアクセスを必要とせずにそれ
+// に対して操作できる標準的な方法である――アクセス制御は、プライ
+// ベートなメンバーを明示的に「名指しする」ことに適用され、推論
+// されたテンプレートパラメータには適用されない。
 template <typename ImplT>
 SDL_Texture *cachedGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &glyph, int style, int hinting,
                                  SDL_Color color, bool narrow, int &outW, int &outH) {
@@ -555,17 +580,19 @@ SDL_Texture *cachedGlyphTexture(ImplT &impl, TTF_Font *font, const std::string &
   return texture;
 }
 
-// Destroys every cached texture and empties the cache -- MUST be
-// called whenever the pixels a cached entry represents could go stale
-// while its key would still compare equal: specifically, every
-// TTF_SetFontSize() call (adjustFontSize()/matchWindowSize(), both of
-// which mutate impl_->font/fallbackFont IN PLACE at the same pointer
-// value cachedGlyphTexture()'s own key uses as the font identity --
-// see GlyphCacheKey's own comment), and the destructor (textures must
-// be destroyed while impl_->renderer is still valid, so this runs
-// before SDL_DestroyRenderer()). A color change (setColors()/
-// cycleColorPreset()) does NOT need this: color is already part of the
-// cache key, so old-color entries simply go unused rather than wrong.
+// 全てのキャッシュされたテクスチャを破棄し、キャッシュを空にする
+// ――キャッシュされたエントリが表すピクセルが、そのキーが依然として
+// 等しいと比較されるにも関わらず古びる可能性がある時は常に呼ばれ
+// 「なければならない」: 具体的には、全てのTTF_SetFontSize()呼び
+// 出し(adjustFontSize()/matchWindowSize()、どちらも
+// cachedGlyphTexture()自身のキーがフォントの識別子として使うのと
+// 同じポインタの値でimpl_->font/fallbackFontをその場で変異させる
+// ――GlyphCacheKey自身のコメント参照)と、デストラクタ(テクスチャは
+// impl_->rendererがまだ有効な間に破棄されなければならないので、
+// これはSDL_DestroyRenderer()の前に実行される)。色の変更
+// (setColors()/cycleColorPreset())はこれを必要としない: 色は既に
+// キャッシュキーの一部なので、古い色のエントリは単に間違って使わ
+// れるのではなく単に使われなくなるだけである。
 template <typename ImplT>
 void clearGlyphCache(ImplT &impl) {
   for (auto &[key, cached] : impl.glyphCache) {
@@ -581,14 +608,16 @@ GraphicalDisplay::GraphicalDisplay() : impl_(std::make_unique<Impl>()) {}
 std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns, const std::string &fontPath,
                                                              int fontPointSize) {
   if (rows <= 0 || columns <= 0) return nullptr;
-  // Without this hint, SDL_RenderCopy() scales textures with nearest-
-  // neighbor sampling. fitGlyphRect() scales almost every glyph bitmap
-  // by some small fractional factor (the font-rendered pixel size
-  // essentially never lands exactly on the target cell box), so nearest-
-  // neighbor turns FreeType's already-antialiased glyph into visibly
-  // blocky/staircased edges -- this is what read as "not vector, thin
-  // half-width text" next to -c's smooth CoreText rendering. "linear"
-  // makes SDL_RenderCopy's scaling smooth instead.
+  // このヒントが無いと、SDL_RenderCopy()は最近傍サンプリングで
+  // テクスチャをスケーリングする。fitGlyphRect()はほぼ全てのグリフ
+  // のビットマップを何らかの小さな分数の係数でスケーリングする
+  // (フォントで描画されたピクセルサイズは、本質的に目標のセルの
+  // 箱にちょうど着地することは無い)ので、最近傍は、FreeTypeの既に
+  // アンチエイリアスされたグリフを、目に見えてブロック状/階段状の
+  // 端に変えてしまう――これが、-cのなめらかなCoreText描画と並べた
+  // 時に「ベクターではない、細い半角のテキスト」として読めていた
+  // ものである。「linear」は、代わりにSDL_RenderCopyのスケーリング
+  // をなめらかにする。
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
   if (SDL_Init(SDL_INIT_VIDEO) != 0) return nullptr;
   if (TTF_Init() != 0) {
@@ -609,81 +638,85 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
     SDL_Quit();
     return nullptr;
   }
-  // TTF_SizeUTF8()'s height above is "M"'s own tight glyph bounding
-  // box (ascent+descent for THAT specific glyph only) -- narrower than
-  // the font's actual recommended LINE height (ascent+|descent|+line
-  // gap across the whole font, the metric a real terminal emulator
-  // uses for line spacing). A real side-by-side screenshot comparison
-  // (2026-08-08, "行間が狭い", -c/-g windows placed next to each
-  // other) confirmed this window's line spacing visibly tighter than
-  // the real terminal's own. TTF_FontHeight() returns that proper
-  // line-height metric directly; take the larger of the two (rather
-  // than replacing outright) so an unusual font where TTF_FontHeight()
-  // somehow reports smaller than a single glyph's own bounding box
-  // still can't clip that glyph.
+  // 上のTTF_SizeUTF8()の高さは「M」自身のタイトなグリフの外接箱
+  // (その特定のグリフだけのascent+descent)である――フォントの実際
+  // の推奨「行」高さ(フォント全体を通じたascent+|descent|+行間、
+  // 本物の端末エミュレータが行間隔に使うメトリクス)よりも狭い。
+  // 実際の並べたスクリーンショット比較(2026-08-08、"行間が狭い"、
+  // -c/-gのウィンドウを隣り合わせに置いた)が、このウィンドウの
+  // 行間隔が本物の端末自身のものより目に見えて詰まっていることを
+  // 確認した。TTF_FontHeight()はその適切な行高さのメトリクスを
+  // 直接返す。(完全に置き換えるのではなく)2つのうち大きい方を
+  // 取る。そうすれば、TTF_FontHeight()が何らかの理由で単一のグリフ
+  // 自身の外接箱より小さく報告する珍しいフォントでも、そのグリフ
+  // を切り取ってしまうことはない。
   cellHeight = std::max(cellHeight, TTF_FontHeight(font));
 
-  // Loaded and measured BEFORE the window/cell grid are sized (not
-  // lazily later) so the grid can be grown to fit both fonts up
-  // front, rather than scaling either font's glyphs at render time to
-  // fit a grid sized for the OTHER one. An earlier version did the
-  // latter (uniform shrink-to-fit, added after a non-uniform-stretch
-  // attempt visibly distorted CJK glyph shapes) but that still showed
-  // up as a real report of "half-missing" Japanese characters --
-  // shrinking a fallback-font glyph down to a primary-font-sized cell
-  // can still clip/thin out fine strokes badly enough to look
-  // incomplete. Growing the grid instead means BOTH fonts always draw
-  // at their own natural, undistorted, unclipped size.
+  // ウィンドウ/セルグリッドがサイズ決定される「前に」(後で遅延的
+  // にではなく)読み込み、計測される。これにより、「別の」フォント
+  // 用にサイズ決めされたグリッドに合わせるために、どちらかの
+  // フォントのグリフを描画時にスケーリングするのではなく、両方の
+  // フォントに合うようグリッドを前もって大きくできる。以前の
+  // バージョンは後者を行っていた(一様に縮小して合わせる、非一様
+  // な引き伸ばしの試みが目に見えてCJKグリフの形を歪めた後に追加
+  // された)が、それでも「半分欠けた」日本語文字の実際の報告として
+  // 現れた――フォールバックフォントのグリフを主フォントサイズの
+  // セルへ縮小することは、依然として細いストロークを、不完全に
+  // 見えるほど酷く切り取ったり細くしたりし得る。代わりにグリッド
+  // を大きくすることは、両方のフォントが常にそれ自身の自然な、
+  // 歪んでいない、切り取られていないサイズで描かれることを意味
+  // する。
   TTF_Font *fallbackFont = loadCjkFallbackFont(fontPointSize);
   if (fallbackFont) {
     int cjkWidth = 0, cjkHeight = 0;
-    if (TTF_SizeUTF8(fallbackFont, "\xE5\x9B\xBD" /* "国", a representative kanji */, &cjkWidth, &cjkHeight) == 0) {
-      // A CJK glyph occupies 2 columns (see commitGlyph()'s
-      // continuation-cell convention), so half its natural width is
-      // what one column needs to hold; round up so it's never
-      // slightly too narrow.
+    if (TTF_SizeUTF8(fallbackFont, "\xE5\x9B\xBD" /* "国"、代表的な漢字 */, &cjkWidth, &cjkHeight) == 0) {
+      // CJKのグリフは2列を占める(commitGlyph()の継続セルの慣習
+      // 参照)ので、その自然な幅の半分が1列が保持する必要のあるもの
+      // である。決してわずかに狭すぎないよう切り上げる。
       cellWidth = std::max(cellWidth, (cjkWidth + 1) / 2);
       cellHeight = std::max(cellHeight, cjkHeight);
     }
   }
 
-  // Escape hatch if the TTF_FontHeight()-based fix above still doesn't
-  // fully close the gap to a real terminal's own line spacing for a
-  // particular font (line-height conventions vary more by font/app
-  // than the title-bar-height case above did) -- same "tunable via
-  // env var instead of another code-and-rebuild round" pattern as
-  // USILICTITLEBARHEIGHT/USILICSCROLLBARSCALE. Overrides the fully-
-  // computed cellHeight (post CJK-fallback-max) outright when set.
+  // 上のTTF_FontHeight()ベースの修正が、特定のフォントに対して
+  // 本物の端末自身の行間隔とのギャップをまだ完全には埋めない場合
+  // の逃げ道(行高さの慣習は、上のタイトルバーの高さのケースより
+  // フォント/アプリによって大きく異なる)――
+  // USILICTITLEBARHEIGHT/USILICSCROLLBARSCALEと同じ「もう1回の
+  // コード変更+再ビルドのラウンドではなく環境変数経由で調整可能」
+  // というパターン。設定されると、完全に計算されたcellHeight
+  // (CJKフォールバックの最大値の後)を完全に上書きする。
   if (const char *env = std::getenv("USILICLINEHEIGHT")) {
     int parsed = std::atoi(env);
     if (parsed > 0) cellHeight = parsed;
   }
 
-  // SDL_WINDOW_ALLOW_HIGHDPI: without it, on a Retina/HiDPI display
-  // SDL creates the window's actual drawable at LOGICAL point
-  // resolution, and the OS compositor upscales that lower-resolution
-  // framebuffer to fill the real physical pixels -- exactly the kind
-  // of soft/blurry text a real report described ("文字がぼやけ気味"),
-  // and uniform across every draw call in this file (confirmed by
-  // reading both renderCell() and renderTextRun(): they're otherwise
-  // near-identical TTF_RenderUTF8_Blended()+fitGlyphRect() call
-  // sequences, so a text-crispness difference between them isn't a
-  // per-path rendering bug -- this compositor-level upscale is a
-  // window/renderer-wide effect neither path could individually cause
-  // or avoid).
-  // SDL_WINDOW_HIDDEN, not SDL_WINDOW_SHOWN -- see open()'s own
-  // comment for why the window is deliberately left unshown until
-  // open() is called, not here.
-  // SDL_WINDOW_RESIZABLE (2026-08-24, docs/CHANGES.md item 425, a
-  // direct user request): dragging the window's own edge now works --
-  // see pumpEvents()'s own SDL_WINDOWEVENT_RESIZED handling (below in
-  // this file) for what actually happens when it fires. Deliberately
-  // NOT the same as matchWindowSize()'s own resize semantics (that
-  // one keeps rows/columns FIXED and rescales the cell/font size to
-  // fit an externally-dictated pixel size, for the "実はすでにGUI"
-  // overlay's own use) -- a user dragging this window's edge expects
-  // MORE ROWS/COLUMNS to become visible, at the SAME cell size, the
-  // conventional resize behavior any terminal emulator already has.
+  // SDL_WINDOW_ALLOW_HIGHDPI: これが無いと、Retina/HiDPIディスプレイ
+  // では、SDLはウィンドウの実際の描画領域を「論理的な」ポイント解像
+  // 度で作成し、OSのコンポジタがその低解像度のフレームバッファを
+  // 実際の物理ピクセルを満たすようアップスケールする――実際の報告
+  // が説明した("文字がぼやけ気味")まさにその種の柔らかい/ぼやけた
+  // テキストであり、このファイル内の全ての描画呼び出しにわたって
+  // 一様である(renderCell()とrenderTextRun()の両方を読んで確認済み:
+  // それらは他の点ではほぼ同一のTTF_RenderUTF8_Blended()+
+  // fitGlyphRect()の呼び出しの並びなので、それらの間のテキストの
+  // 鮮明さの違いは経路ごとの描画のバグではない――このコンポジタ
+  // レベルのアップスケールは、どちらの経路も個別には引き起こしたり
+  // 避けたりできない、ウィンドウ/レンダラー全体の効果である)。
+  // SDL_WINDOW_SHOWNではなくSDL_WINDOW_HIDDEN――なぜウィンドウが、
+  // ここではなくopen()が呼ばれるまで意図的に表示されないままにさ
+  // れるのかについてはopen()自身のコメント参照。
+  // SDL_WINDOW_RESIZABLE(2026-08-24、docs/CHANGES.md項目425、直接
+  // のユーザー依頼): ウィンドウ自身の端をドラッグすることが今は
+  // 動作する――それが発火した時実際に何が起こるかについては、この
+  // ファイル内の下にあるpumpEvents()自身のSDL_WINDOWEVENT_RESIZED
+  // 処理参照。matchWindowSize()自身のリサイズの意味論(「実はすでに
+  // GUI」オーバーレイ自身の用途のために、rows/columnsを「固定」の
+  // ままにし、外部から指示されたピクセルサイズに合わせてセル/
+  // フォントサイズを再スケーリングする)とは意図的に「異なる」
+  // ――ユーザーがこのウィンドウの端をドラッグする時、同じセルサイズ
+  // で「より多くの」行/列が見えるようになることを期待する。どんな
+  // 端末エミュレータも既に持っている通常のリサイズの挙動である。
   SDL_Window *window = SDL_CreateWindow(
       "usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
       cellWidth * columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth, cellHeight * rows + Impl::kMarginY * 2,
@@ -695,10 +728,10 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
     SDL_Quit();
     return nullptr;
   }
-  // A floor, not a real limit -- just enough to keep the mode line's
-  // own fixed-width fields (byte count, position, etc.) from being
-  // dragged into total unreadable overlap; still comfortably smaller
-  // than any realistic use. 10 columns x 4 rows, in cells.
+  // 実質的な上限ではなく下限――モードライン自身の固定幅のフィールド
+  // (バイト数、位置、等)が完全に判読不能な重なりへ引きずり込まれる
+  // のを防ぐのにちょうど十分な程度であり、それでもどんな現実的な
+  // 使用よりも余裕を持って小さい。セル単位で10列x4行。
   SDL_SetWindowMinimumSize(window, cellWidth * 10 + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
                             cellHeight * 4 + Impl::kMarginY * 2);
   SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
@@ -710,15 +743,15 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
     SDL_Quit();
     return nullptr;
   }
-  // The window was created in logical POINTS (cellWidth*columns etc,
-  // used throughout this file for all cell/row/col pixel math); the
-  // renderer's actual drawable is now in physical PIXELS (2x/3x on a
-  // Retina display, thanks to ALLOW_HIGHDPI above). Scaling the
-  // renderer by drawable/window keeps every existing pixel coordinate
-  // in this file meaning "one logical point" while SDL internally
-  // renders at the higher physical resolution -- the standard SDL2
-  // pattern for adding HiDPI support without rewriting all downstream
-  // pixel math to a different unit.
+  // ウィンドウは論理的な「ポイント」(cellWidth*columns等、このファイル
+  // 全体でセル/行/列のピクセル計算に使われている単位)で作成された;
+  // レンダラーの実際の描画領域は今や物理的な「ピクセル」(上のALLOW_
+  // HIGHDPIのおかげでRetinaディスプレイでは2倍/3倍)である。レンダラーを
+  // drawable/windowの比率でスケーリングすることで、このファイル内の
+  // 既存のピクセル座標が全て「1論理ポイント」を意味したまま、SDLが
+  // 内部的にはより高い物理解像度でレンダリングする――下流のピクセル
+  // 計算を別の単位に書き換えることなくHiDPI対応を追加する、標準的な
+  // SDL2のパターン。
   int windowWidthPoints = 0, windowHeightPoints = 0;
   int drawableWidthPixels = 0, drawableHeightPixels = 0;
   SDL_GetWindowSize(window, &windowWidthPoints, &windowHeightPoints);
@@ -727,10 +760,10 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
     SDL_RenderSetScale(renderer, static_cast<float>(drawableWidthPixels) / windowWidthPoints,
                         static_cast<float>(drawableHeightPixels) / windowHeightPoints);
 
-  // std::unique_ptr<GraphicalDisplay>(new ...): the constructor is
-  // private (callers must go through this factory, matching
-  // TerminalDisplay::fromEnvironment()'s own shape), so make_unique
-  // can't reach it from outside the class.
+  // std::unique_ptr<GraphicalDisplay>(new ...): コンストラクタは
+  // privateであり(呼び出し元はこのファクトリを経由する必要がある、
+  // TerminalDisplay::fromEnvironment()自身の形と一致)、make_uniqueは
+  // クラスの外からはそこへ到達できない。
   std::unique_ptr<GraphicalDisplay> display(new GraphicalDisplay());
   display->impl_->window = window;
   display->impl_->renderer = renderer;
@@ -746,51 +779,52 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->columns = columns;
   display->impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
   SDL_StartTextInput();
-  // Deliberately NOT shown/raised here (a previous version called
-  // SDL_RaiseWindow() right after SDL_CreateWindow(SDL_WINDOW_SHOWN,
-  // ...) at this exact point) -- see open()'s own comment for why
-  // showing the window is now deferred there instead.
+  // ここでは意図的に表示/前面化しない(以前のバージョンは、まさに
+  // この箇所でSDL_CreateWindow(SDL_WINDOW_SHOWN, ...)の直後に
+  // SDL_RaiseWindow()を呼んでいた)――なぜウィンドウの表示が代わりに
+  // open()の方へ先送りされるようになったのかについてはopen()自身の
+  // コメント参照。
   return display;
 }
 
 GraphicalDisplay::~GraphicalDisplay() {
-  // Matches create()'s own SDL_StartTextInput() call (needed so
-  // SDL_TEXTINPUT events, including multi-byte UTF-8 typed via an
-  // input method, arrive at all -- see pumpEvents()'s own comment).
-  // Without a matching SDL_StopTextInput() before the window/renderer
-  // are torn down, macOS's Input Method Kit framework is left holding
-  // a reference to a text-input client that's about to disappear out
-  // from under it -- a real 2026-08-04 user report (screenshot) showed
-  // this printed to the terminal right after a -g session exited:
-  // "error messaging the mach port for IMKCFRunLoopWakeUpReliable".
-  // Benign (no crash, no functional effect either way -- this is an
-  // OS-level diagnostic, not anything usilic itself detects or acts
-  // on) but noisy; SDL_StopTextInput() here is the documented fix for
-  // exactly this IMK teardown-ordering complaint.
+  // create()自身のSDL_StartTextInput()呼び出しに対応する(input methodで
+  // 入力されたマルチバイトUTF-8を含む、SDL_TEXTINPUTイベントがそもそも
+  // 届くために必要――pumpEvents()自身のコメント参照)。ウィンドウ/
+  // レンダラーが破棄される前に対応するSDL_StopTextInput()が無いと、
+  // macOSのInput Method Kitフレームワークは、まさに足元から消えようと
+  // しているtext-inputクライアントへの参照を持ったままになる――実際の
+  // 2026-08-04のユーザー報告(スクリーンショット)は、-gセッション終了
+  // 直後に端末へこう出力されるのを示した: "error messaging the mach
+  // port for IMKCFRunLoopWakeUpReliable"。無害(クラッシュも機能面への
+  // 影響もどちらも無い――これはOSレベルの診断メッセージであり、usilic
+  // 自身が検知・対処するものではない)だがうるさい; ここでの
+  // SDL_StopTextInput()は、まさにこのIMK破棄順序に関する不満への文書化
+  // された修正である。
   //
-  // A 2026-08-05 follow-up report found the message still appeared,
-  // but specifically when exiting via a KEYBOARD gesture typed while
-  // the window had active text-input focus (ESC-ESC-Enter or ^X^C+y)
-  // -- as opposed to, say, the window's own close button, a plain
-  // mouse action. SDL_StopTextInput() alone only queues the
-  // deactivation with SDL/Cocoa; it doesn't force it to actually run
-  // before SDL_Quit()/window teardown proceeds immediately afterward.
-  // If the OS's Input Method Kit hadn't fully processed that
-  // notification yet -- more likely right after it was just actively
-  // handling live keyboard/IME input than after an idle mouse click --
-  // that's a plausible reason it would still complain. SDL_PumpEvents()
-  // gives SDL's own event/run-loop machinery one more explicit pass to
-  // actually deliver that notification before this destructor
-  // continues into destroying the window. Still not independently
-  // verified in this sandbox (no OS-level log capture available, same
-  // limitation noted throughout this port's other GUI-teardown work)
-  // -- please retest specifically via ESC-ESC-Enter and ^X^C+y after
-  // rebuilding.
+  // 2026-08-05の追跡報告では、メッセージが依然として出るが、特に
+  // ウィンドウがtext-inputフォーカスをアクティブに持っている間に打たれた
+  // 「キーボード」ジェスチャ(ESC-ESC-Enterまたは^X^C+y)経由で終了した
+  // 場合に出る――と分かった――ウィンドウ自身の閉じるボタンや、単なる
+  // マウス操作の場合とは対照的に。SDL_StopTextInput()だけでは、SDL/
+  // Cocoaへの無効化をキューに積むだけで、その直後すぐに続く
+  // SDL_Quit()/ウィンドウ破棄が進む前に、それを実際に実行させる強制力
+  // は無い。もしOSのInput Method Kitがその通知をまだ完全に処理して
+  // いなかったなら――アイドルなマウスクリックの後よりも、まさに生の
+  // キーボード/IME入力を能動的に処理していた直後の方がありそうな話
+  // だが――それが依然として文句を言う、もっともらしい理由になる。
+  // SDL_PumpEvents()は、このデストラクタがウィンドウの破棄へ進む前に、
+  // その通知を実際に配送するための、SDL自身のイベント/実行ループの
+  // 仕組みへもう一巡分の明示的な機会を与える。このサンドボックスでは
+  // 依然として独立に検証できていない(OSレベルのログ収集が利用できない、
+  // このポート作業の他のGUI破棄関連の箇所全体で述べてきたのと同じ制約)
+  // ――ビルドし直した後、特にESC-ESC-Enterと^X^C+y経由で再テストして
+  // ほしい。
   SDL_StopTextInput();
   SDL_PumpEvents();
   if (impl_->handCursor) SDL_FreeCursor(impl_->handCursor);
   if (impl_->pointingCursor) SDL_FreeCursor(impl_->pointingCursor);
-  clearGlyphCache(*impl_);  // must run while impl_->renderer is still valid -- see its own comment
+  clearGlyphCache(*impl_);  // impl_->rendererがまだ有効なうちに実行する必要がある――それ自身のコメント参照
   if (impl_->renderer) SDL_DestroyRenderer(impl_->renderer);
   if (impl_->window) SDL_DestroyWindow(impl_->window);
   if (impl_->fallbackFont) TTF_CloseFont(impl_->fallbackFont);
@@ -811,34 +845,34 @@ void GraphicalDisplay::putByte(unsigned char c) {
     int len = Utf8::sequence_length(static_cast<unsigned char>(impl_->pendingUtf8[0]));
     if (static_cast<int>(impl_->pendingUtf8.size()) >= len) {
       int width = Utf8::display_width(reinterpret_cast<const unsigned char *>(impl_->pendingUtf8.data()), len);
-      // 2026-08-20 fix, found via temporary per-glyph USILICGUIDEBUG
-      // tracing added while chasing why the width==0 combining-mark
-      // merge in commitGlyph() (both the original 09c6981 fix and this
-      // same day's composeDakutenCodepoint() follow-up) never actually
-      // fired: this `std::max(width, 1)` clamp was ERASING the 0
-      // before commitGlyph() ever saw it -- the trace showed U+3099
-      // arriving there as `width=1`, not `width=0`, despite
-      // Utf8::display_width() itself correctly returning 0 (confirmed
-      // independently, both via a standalone doctest and a standalone
-      // throwaway program run directly on the real archive's own raw
-      // bytes). commitGlyph() already has its own `std::max(width, 1)`
-      // clamp on its NORMAL (non-zero-width) path, applied AFTER its
-      // width==0 special case already had a chance to run -- clamping
-      // again HERE, before that check ever sees the value, made the
-      // whole width==0 branch permanently unreachable from this call
-      // site (the only one that ever passes a real computed width;
-      // the other two commitGlyph() call sites always pass a literal
-      // 1 for plain ASCII/control bytes, never 0, so this bug was
-      // invisible from testing calls). Passing `width` straight
-      // through restores the signal commitGlyph() was always designed
-      // to act on.
+      // 2026-08-20修正、commitGlyph()内のwidth==0の結合文字マージ
+      // (元の09c6981修正と、同日のcomposeDakutenCodepoint()による
+      // 追従の両方)がなぜ実際には一度も発火しなかったのか追跡する
+      // ために追加した、一時的なグリフ単位のUSILICGUIDEBUGトレース
+      // で発見: このstd::max(width, 1)によるクランプが、commitGlyph()
+      // がそれを見る前に0を「消して」いた――トレースはU+3099がそこへ
+      // `width=1`として届いていることを示した、`width=0`ではなく、
+      // Utf8::display_width()自身は正しく0を返しているにもかかわらず
+      // (単体のdoctestと、実際のアーカイブ自身の生バイトに対して直接
+      // 実行した使い捨てのスタンドアロンプログラムの両方で独立に確認
+      // 済み)。commitGlyph()は既に、そのNORMAL(非ゼロ幅)経路に自分
+      // 自身のstd::max(width, 1)クランプを持っており、それはwidth==0
+      // の特殊ケースが実行される機会を既に得た「後」に適用される――
+      // その判定がその値を見るより前の「ここで」再度クランプすること
+      // で、width==0の分岐全体が、この呼び出し箇所からは永久に到達
+      // 不能になっていた(実際に計算されたwidthを渡す唯一の箇所;他の
+      // 2つのcommitGlyph()呼び出し箇所は、プレーンなASCII/制御バイト
+      // に対して常にリテラルの1を渡し、0を渡すことは無いため、この
+      // バグはテスト用の呼び出しからは見えなかった)。widthをそのまま
+      // 素通しすることで、commitGlyph()が元々作用するよう設計されて
+      // いた信号を復元する。
       commitGlyph(impl_->pendingUtf8, width);
       impl_->pendingUtf8.clear();
     }
     return;
   }
 
-  if (c == 7) return;  // BEL -- no visual/audible bell in this slice, see class comment
+  if (c == 7) return;  // BEL――このスライスでは視覚的/音によるベルは無い、クラスコメント参照
 
   int len = Utf8::sequence_length(c);
   if (len > 1) {
@@ -846,7 +880,7 @@ void GraphicalDisplay::putByte(unsigned char c) {
     return;
   }
   if (c < 0x20 || c == 0x7f) {
-    commitGlyph(" ", 1);  // control-byte placeholder -- see class comment
+    commitGlyph(" ", 1);  // 制御バイトのプレースホルダー――クラスコメント参照
     return;
   }
   commitGlyph(std::string(1, static_cast<char>(c)), 1);
@@ -854,46 +888,47 @@ void GraphicalDisplay::putByte(unsigned char c) {
 
 void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   if (impl_->cursorRow < 0 || impl_->cursorRow >= impl_->rows) return;
-  if (impl_->cursorCol < 0 || impl_->cursorCol >= impl_->columns) return;  // clip past the right edge
+  if (impl_->cursorCol < 0 || impl_->cursorCol >= impl_->columns) return;  // 右端を超えた分を切り捨てる
 
-  // Zero-width combining character (Utf8::display_width()'s own
-  // "combining characters (0幅)" case -- dakuten/handakuten marks
-  // U+3099/U+309A chief among them, common in macOS's own NFD-
-  // decomposed filenames, e.g. "デスクトップ" stored on disk as
-  // "テ"+U+3099+"スクトッフ"+U+309A+"...") -- 2026-08-20 fix, a real
-  // report + screenshot (=dl): "久々に-g起動したら重ね打ちじゃなく
-  // なってる", showing exactly this ("テ゛スクトッフ゜" instead of
-  // "デスクトップ" in a real directory listing). Every call site below
-  // used to unconditionally advance the cursor by `std::max(width, 1)`
-  // -- even a genuinely 0-width mark got its OWN fresh cell, so it drew
-  // as an independent, un-stacked glyph next to its base character
-  // instead of combining with it.
+  // 幅ゼロの結合文字(Utf8::display_width()自身の「結合文字(0幅)」
+  // ケース――中でも主なのが濁点/半濁点記号のU+3099/U+309Aで、macOS
+  // 自身のNFD分解されたファイル名でよく見られる、例えば「デスクトップ」
+  // はディスク上では「テ」+U+3099+「スクトッフ」+U+309A+「...」として
+  // 保存されている) -- 2026-08-20修正、実際の報告+スクリーンショット
+  // (=dl): "久々に-g起動したら重ね打ちじゃなくなってる"、実際のディレ
+  // クトリ一覧でまさにこれ(「デスクトップ」ではなく「テ゛スクトッフ゜」)
+  // が表示されているのを示していた。下の各呼び出し箇所は
+  // 以前は無条件でカーソルをstd::max(width, 1)分進めていた――純粋に
+  // 幅0のマークでさえ自分「専用」のまっさらなセルを得ていたため、
+  // 基底文字と結合する代わりに、それに隣接する独立した重ならない
+  // グリフとして描画されていた。
   if (width == 0 && impl_->cursorCol > 0) {
     int prevCol = impl_->cursorCol - 1;
-    // A wide (CJK) character's own continuation shadow cell carries no
-    // real glyph of its own (see the width==2 branch below) -- the
-    // actual glyph this mark should attach to is one column further
-    // back in that case.
+    // ワイド(CJK)文字自身の継続用シャドウセルは、それ自身の実際の
+    // グリフを持たない(下のwidth==2の分岐参照)――その場合、この
+    // マークが付くべき実際のグリフはさらに1列前にある。
     if (impl_->cellAt(impl_->cursorRow, prevCol).continuation && prevCol > 0) prevCol--;
     Cell &target = impl_->cellAt(impl_->cursorRow, prevCol);
-    // 2026-08-20 follow-up (a direct user report comparing screenshots:
-    // "=dsよりはマシだが=dvには負ける...自前描画なら何とかなる？" --
-    // still visibly not quite fused, next to -c's own perfect result):
-    // the FIRST version of this fix just appended the mark's raw UTF-8
-    // bytes here, leaving the cell's glyph as a still-decomposed TWO-
-    // codepoint string for TTF_RenderUTF8_Blended() to shape -- but
-    // SDL_ttf/FreeType do simple linear glyph layout, not real Unicode
-    // text shaping (no GPOS mark-attachment positioning the way -c's
-    // real terminal emulator's shaping engine already does), so the
-    // mark's own advance/position isn't guaranteed to land exactly on
-    // the base glyph. composeDakutenCodepoint() sidesteps shaping
-    // entirely by precomposing the pair into its single NFC codepoint
-    // first (e.g. "ト"+U+3099 -> "ド"), so the cell ends up holding one
-    // perfectly ordinary character -- rendered with normal glyph
-    // metrics, no combining-mark shaping involved at all. Falls back
-    // to the old raw-append behavior for any pair outside that finite,
-    // well-known table (still 0-width per display_width(), just not a
-    // composition this port's own table knows).
+    // 2026-08-20の追従(スクリーンショットを比較した直接のユーザー
+    // 報告: "=dsよりはマシだが=dvには負ける...自前描画なら何とかなる？"
+    // ――-c自身の完璧な結果と並べると、依然として見た目にはあまり
+    // 融合しきっていない): この修正の「最初の」版は、単にここで
+    // マークの生のUTF-8バイトを追加するだけで、セルのグリフを、
+    // TTF_RenderUTF8_Blended()がシェーピングすべき、依然として分解
+    // されたままの「2」コードポイントの文字列として残していた――
+    // だがSDL_ttf/FreeTypeは単純な線形グリフレイアウトを行うだけで、
+    // 本当のUnicodeテキストシェーピングは行わない(-cの本物の端末
+    // エミュレータのシェーピングエンジンが既にやっているような
+    // GPOSマーク付加位置調整は無い)ため、マーク自身の送り幅/位置が
+    // 基底グリフにぴったり乗る保証は無い。composeDakutenCodepoint()
+    // は、そのペアをまず単一のNFCコードポイントへ事前合成すること
+    // (例えば「ト」+U+3099 -> 「ド」)で、シェーピングそのものを完全に
+    // 回避する。そうすればセルは最終的に、通常のグリフのメトリクス
+    // で描画される、完全に普通の1文字を保持することになり、結合
+    // マークのシェーピングは一切関与しない。その有限で既知のテーブル
+    // の外にあるペアについては、古い生の追加による挙動にフォール
+    // バックする(display_width()による幅は依然として0のままだが、
+    // このポート自身のテーブルが知らない合成というだけ)。
     unsigned int composed = composeDakutenCodepoint(decodeUtf8Codepoint(target.glyph), decodeUtf8Codepoint(utf8Bytes));
     if (composed) target.glyph = encodeUtf8Codepoint(composed);
     else target.glyph += utf8Bytes;
@@ -918,27 +953,26 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   impl_->cursorCol += std::max(width, 1);
 }
 
-// Paints just this cell's background rectangle -- split out from the
-// glyph drawing below (and run as its own full pass over every cell
-// in flush(), before any glyph pass runs) so that a wide glyph's
-// SECOND (continuation) cell never paints its background AFTER the
-// glyph from the cell to its left has already been drawn there. The
-// two used to be interleaved column-by-column in a single pass, which
-// meant: home cell's glyph is drawn spanning both columns (by design,
-// via fitGlyphRect()'s maxW = cellWidth*2) -- then the very next
-// renderCell() call, for the continuation cell, unconditionally
-// painted a background rect over ITS column before returning,
-// silently erasing the right half of the glyph just drawn. This
-// looked exactly like the reported "half-missing"/squished CJK
-// characters (every double-width glyph missing its right half), and
-// survived both the display_width() fix and the font-selection fix
-// because it's a pure draw-ORDER bug, unrelated to either -- found by
-// noticing GraphicalDisplay::renderScrolled() (used only while
-// dragging/coasting, and unaffected by this bug since it fills the
-// WHOLE screen's background exactly once per frame rather than per
-// cell) rendered the identical content correctly, per a real report
-// that clicking and holding the mouse "fixed" the garbling until
-// release.
+// このセルの背景の矩形だけを描く――下のグリフ描画から分離してある
+// (そしてflush()内で、どのグリフ描画パスよりも前に、全セルにわたる
+// それ自身の完全なパスとして実行される)ことで、ワイドグリフの
+// 「2番目」(継続)のセルが、その左のセルからのグリフが既にそこへ
+// 描画された「後」に自分の背景を塗ってしまうことが決して無いように
+// する。以前はこの2つが単一のパスで列ごとに交互に行われており、
+// それは: 基準セルのグリフが両方の列にまたがって描画される(設計通り、
+// fitGlyphRect()のmaxW = cellWidth*2経由)――ところがその直後の
+// renderCell()の呼び出し(継続セル用)が、返る前に無条件で「自分の」
+// 列に背景の矩形を塗ってしまい、たった今描いたばかりのグリフの右半分
+// を黙って消していた、ということを意味していた。これはまさに報告
+// されていた「半分欠けた」/潰れたCJK文字(全ての倍幅グリフがその右
+// 半分を欠いている)そのものに見え、display_width()の修正とフォント
+// 選択の修正の両方を生き延びていた、なぜならそれはどちらとも無関係な、
+// 純粋な描画「順序」のバグだったから――GraphicalDisplay::
+// renderScrolled()(ドラッグ/慣性スクロール中にのみ使われ、セルごとで
+// はなくフレームごとに画面「全体」の背景を一度だけ塗るためこのバグの
+// 影響を受けない)が同一の内容を正しくレンダリングしていることに気づく
+// ことで発見された、マウスをクリックして押さえている間は文字化けが
+// 「直る」という実際の報告に基づく。
 void GraphicalDisplay::renderCellBackground(int row, int col) {
   if (!impl_->outputEnabled) return;
   const Cell &cell = impl_->cellAt(row, col);
@@ -959,141 +993,146 @@ void GraphicalDisplay::renderCell(int row, int col) {
   SDL_Color bg = impl_->bg;
   if (cell.standout) std::swap(fg, bg);
 
-  // A blank cell (empty/space glyph) still needs to fall through to
-  // the real TTF_RenderUTF8_Blended() call below when underlined --
-  // SDL_ttf draws the underline decoration spanning the glyph's own
-  // advance width independently of whether that glyph has any visible
-  // ink, so rendering " " with TTF_STYLE_UNDERLINE set genuinely does
-  // produce a surface containing just the underline stroke. Skipping
-  // this early-return ONLY for underlined blanks (not e.g. bold ones,
-  // where there's nothing bold about invisible ink to draw) keeps the
-  // original performance intent (most blank cells have nothing to
-  // render at all) while fixing a real gap: a real report + screenshot
-  // (=ci) found the space between "Invalid"/"mode" in DirectoryMode's
-  // own underlined error message (ModeLineFields::nameUnderlined) had
-  // NO underline under it in -g specifically, breaking what should
-  // read as one continuous line -- this early-return, unconditional
-  // for ANY blank cell regardless of attributes, was silently dropping
-  // it before ever reaching the underline-style code just below.
+  // 空白セル(空/スペースのグリフ)は、下線が付いている場合は、それ
+  // でも下の本物のTTF_RenderUTF8_Blended()呼び出しへフォールスルー
+  // する必要がある――SDL_ttfは、そのグリフに何か目に見えるインクが
+  // あるかどうかとは無関係に、グリフ自身の送り幅にわたって下線の
+  // 装飾を描くため、TTF_STYLE_UNDERLINEを設定して" "を描画すると、
+  // 本当に下線のストロークだけを含むサーフェスが生成される。この
+  // 早期returnを、下線付きの空白「だけ」スキップする(例えば太字の
+  // 場合はスキップしない、見えないインクを太字にする意味は無いため)
+  // ことで、元々の性能上の意図(ほとんどの空白セルは描画すべきものが
+  // 全く無い)を保ちつつ、実際に見つかった隙間を修正する: 実際の報告+
+  // スクリーンショット(=ci)により、DirectoryMode自身の下線付き
+  // エラーメッセージ(ModeLineFields::nameUnderlined)中の"Invalid"/
+  // "mode"の間のスペースの下に、-g特有で下線が「無い」ことが判明し、
+  // 本来1本の連続した線として読めるはずのものを分断していた――属性
+  // に関わらず「あらゆる」空白セルに対して無条件だったこの早期return
+  // が、まさに下のunderlineスタイルのコードへ到達する前に、それを
+  // 黙って落としていた。
   bool blank = cell.glyph.empty() || cell.glyph == " ";
   if (cell.continuation || (blank && !cell.underline)) return;
 
-  // Whether this glyph occupies one cell or two (a CJK/full-width
-  // character, see commitGlyph()'s continuation-cell convention).
+  // このグリフが1セル分か2セル分か(CJK/全角文字、commitGlyph()の
+  // 継続セルの規約参照)。
   bool isWide = (col + 1 < impl_->columns) && impl_->cellAt(row, col + 1).continuation;
 
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (cell.underline) style |= TTF_STYLE_UNDERLINE;
 
-  // Fall back to a CJK-capable font (see loadCjkFallbackFont()'s own
-  // comment) for whatever glyphs the primary font is missing --
-  // without this, any character the primary font lacks renders as a
-  // blank "tofu" placeholder box instead (confirmed from a real
-  // report: Japanese filenames rendering as a string of boxes).
+  // メインフォントに欠けているグリフについては、CJK対応フォント
+  // (loadCjkFallbackFont()自身のコメント参照)へフォールバックする
+  // ――これが無いと、メインフォントに無い文字はどれも、代わりに空の
+  // 「豆腐」プレースホルダーの箱として描画されてしまう(実際の報告
+  // から確認済み: 日本語のファイル名が箱の連続として描画される)。
   //
-  // For a WIDE cell specifically, the fallback is preferred even when
-  // the primary (Latin monospace) font ALSO happens to provide a
-  // glyph: Menlo, e.g., ships its own narrow glyphs for U+25BD (▽)
-  // and the curly quotes U+201C/U+201D -- the exact "ambiguous width"
-  // characters fm::Utf8::display_width() classifies as 2 columns wide
-  // in a CJK context (see CLAUDE.md's 2026-07-30 note on why). Drawing
-  // Menlo's narrow, differently-proportioned glyph into a slot every
-  // surrounding cell already treats as double-width looks visually
-  // inconsistent with its CJK neighbors -- confirmed via
-  // TTF_GlyphIsProvided() that Menlo.ttc really does claim these three
-  // codepoints, which a real report's persistent (post-item-72)
-  // garbling around exactly these characters traces back to.
+  // 特に「ワイド」セルについては、メイン(ラテン等幅)フォントが
+  // たまたまグリフを「も」提供している場合でも、フォールバックの方が
+  // 優先される: 例えばMenloは、U+25BD(▽)と曲線的な引用符U+201C/
+  // U+201Dについて自身の狭いグリフを同梱している――これはまさに、
+  // fm::Utf8::display_width()がCJKの文脈では2列幅として分類する
+  // 「曖昧な幅」の文字である(理由についてはCLAUDE.mdの2026-07-30の
+  // 記述参照)。周囲のあらゆるセルが既に倍幅として扱っているスロット
+  // に、Menloの狭く比率の異なるグリフを描画すると、CJKの隣人たちと
+  // 見た目に一貫性が無くなる――TTF_GlyphIsProvided()経由で、Menlo.ttc
+  // が本当にこの3つのコードポイントを持つと主張していることを確認
+  // 済みで、実際の報告にあった(項目72以降も続く)まさにこれらの文字
+  // まわりの文字化けはここに由来する。
   unsigned int codepoint = decodeUtf8Codepoint(cell.glyph);
   TTF_Font *renderFont = impl_->font;
   bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
-  // 2026-08-11: TTF_HINTING_LIGHT (item 263) turned out font-dependent
-  // too -- a real report showed it fully fixed the default profile's
-  // "MS Gothic" pairing (confirmed via fontTools: msgothic.ttc's gasp
-  // table is {24: GASP_GRIDFIT, 65535: GASP_GRIDFIT|GASP_DOGRAY}, an
-  // exact ppem=24 threshold matching the report's own "24pt fixes it,
-  // 18pt doesn't"), but made NO visible difference for RedSands' "SF
-  // Mono Regular" pairing. SF Mono's own file (SFNSMono.ttf) has NO
-  // gasp table at all -- consistent with modern Apple system fonts
-  // generally shipping unhinted, since CoreText's own rasterizer
-  // (what -c actually renders through) has not used TrueType grid-
-  // fitting since early Mac OS X, relying purely on antialiased/
-  // subpixel-positioned outlines regardless of point size. TTF_HINTING_
-  // LIGHT still runs FreeType's autohinter (a synthetic hint program
-  // this font was never designed to need), which doesn't reproduce
-  // that "no grid-fitting at all" behavior -- TTF_HINTING_NONE (skip
-  // hinting entirely, scale the raw outline and just antialias it) is
-  // the closer structural match to how -c actually rasterizes text,
-  // for any font. Applied only to narrow (half-width) glyphs, matching
-  // the original report's scope; wide (CJK) glyphs keep normal
-  // hinting. (TTF_SetFontStyle()/TTF_SetFontHinting() themselves moved
-  // into cachedGlyphTexture(), called below -- see its own comment;
-  // `style`/`isWide` are still computed here since the cache key needs
-  // them.)
+  // 2026-08-11: TTF_HINTING_LIGHT(項目263)もフォント依存だと判明した
+  // ――実際の報告により、デフォルトプロファイルの「MS Gothic」の組み
+  // 合わせでは完全に直る(fontTools経由で確認済み: msgothic.ttcのgasp
+  // テーブルは{24: GASP_GRIDFIT, 65535: GASP_GRIDFIT|GASP_DOGRAY}であり、
+  // 報告自身の"24ptで直るが18ptでは直らない"に正確に一致するppem=24
+  // という閾値)が、RedSandsの「SF Mono Regular」の組み合わせでは目に
+  // 見える違いを何も生まなかった。SF Mono自身のファイル
+  // (SFNSMono.ttf)にはgaspテーブルが全く無い――現代のAppleシステム
+  // フォントが一般にヒント無しで出荷されるのと符合する、なぜなら
+  // CoreText自身のラスタライザ(-cが実際にそれを通してレンダリング
+  // しているもの)は、初期のMac OS X以来TrueTypeのグリッドフィッティング
+  // を使っておらず、ポイントサイズに関わらず純粋にアンチエイリアス/
+  // サブピクセル配置されたアウトラインだけに頼っているため。
+  // TTF_HINTING_LIGHTは、それでもFreeTypeの自動ヒンタ(このフォントが
+  // 必要とするよう設計されたことのない合成ヒントプログラム)を実行
+  // してしまい、その「グリッドフィッティングが全く無い」挙動を再現
+  // しない――TTF_HINTING_NONE(ヒンティングを完全にスキップし、生の
+  // アウトラインをスケールしてアンチエイリアスするだけ)の方が、どの
+  // フォントについても、-cが実際にテキストをラスタライズする方法に
+  // 構造的により近い。元の報告の範囲に合わせ、狭い(半角)グリフだけに
+  // 適用する; ワイド(CJK)グリフは通常のヒンティングを維持する。
+  // (TTF_SetFontStyle()/TTF_SetFontHinting()自体は、下で呼ばれる
+  // cachedGlyphTexture()の中へ移動した――それ自身のコメント参照;
+  // `style`/`isWide`は、キャッシュキーがそれらを必要とするため、
+  // 依然としてここで計算している。)
   int hinting = isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE;
 
-  // An EMPTY glyph string (as opposed to an actual " " space
-  // character) has zero advance width, so TTF_RenderUTF8_Blended()
-  // would produce a zero-width surface with nothing for the underline
-  // decoration to span even after the blank-cell early-return above
-  // was relaxed for underlined cells -- substitute a real space so
-  // there's an actual cell-width run for the underline to be drawn
-  // across.
+  // 「空」のグリフ文字列は(実際の" "スペース文字とは違い)送り幅が
+  // ゼロなので、上の空白セルの早期returnが下線付きセルについて緩和
+  // された後でも、TTF_RenderUTF8_Blended()は下線の装飾がまたがる対象
+  // が何も無い、幅ゼロのサーフェスを生成してしまう――下線を描く対象
+  // となる実際のセル幅分の走りができるよう、本物のスペースに置き
+  // 換える。
   const std::string &renderGlyph = cell.glyph.empty() ? std::string(" ") : cell.glyph;
   int w = 0, h = 0;
   SDL_Texture *texture = cachedGlyphTexture(*impl_, renderFont, renderGlyph, style, hinting, fg, !isWide, w, h);
   if (texture) {
-    // Fit to the cell grid (isWide ? 2 : 1 cells) via fitGlyphRect()
-    // -- see its own comment for why this shrinks-and-centers instead
-    // of stretching to the fallback font's (mismatched) natural size.
+    // fitGlyphRect()経由でセルグリッド(isWide ? 2 : 1セル)に合わせる
+    // ――なぜこれがフォールバックフォントの(不一致な)本来のサイズへ
+    // 引き伸ばすのではなく、縮小して中央寄せするのかについてはそれ
+    // 自身のコメント参照。
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
     SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h);
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
   }
 }
 
-// Draws a visible text cursor at (impl_->visibleCursorRow,
-// impl_->visibleCursorCol) -- the LOGICAL cursor position set by
-// setVisibleCursor(), NOT impl_->cursorRow/cursorCol (which is purely
-// putByte()'s own "where does the next glyph go" bookkeeping, moved
-// around by every incidental write -- see Display::
-// setVisibleCursor()'s own comment for the full story on why these
-// two had to be split apart).
+// (impl_->visibleCursorRow, impl_->visibleCursorCol)に、目に見える
+// テキストカーソルを描く――setVisibleCursor()が設定する「論理的」な
+// カーソル位置であり、impl_->cursorRow/cursorColでは「ない」(こちら
+// は純粋にputByte()自身の「次のグリフはどこへ行くか」という記録で
+// あり、あらゆる副次的な書き込みによって動き回る――なぜこの2つを
+// 分離しなければならなかったのかの全ての経緯についてはDisplay::
+// setVisibleCursor()自身のコメント参照)。
 //
-// A first version of this method (2026-08-04) read impl_->cursorRow/
-// cursorCol directly, reasoning that -c's real hardware cursor already
-// visibly lands wherever the last moveCursor() call left it, so -g
-// should just match that. That held for -c's own event-driven run
-// loop (one input processed per iteration, nothing else touches the
-// screen afterward) but not for -g's: runGuiPhase() polls at a steady
-// ~60Hz and, within the SAME frame a caller like Shell's ^P/^N history
-// browsing explicitly moved the cursor to a specific line, its own
-// tail-end unconditionally re-runs a full ContentView::redraw() (whose
-// internal per-row/mode-line moveCursor() calls are pure glyph-
-// placement, landing wherever the mode-line text last ended) --
-// silently dragging the "cursor" back to the bottom row a frame later.
-// A real 2026-08-04 user report described exactly this: "-gのSHELLでは
-// プロンプトと同じく一瞬出て消えるパターン...モードラインの行数は
-// 追随するも位置は最下行のまま". Reading a SEPARATE piece of state
-// that only setVisibleCursor() ever touches means incidental redraws
-// physically cannot move it, regardless of a particular frame's call
-// ordering -- the same "XOR block cursor kept as its own routine,
-// decoupled from the main redraw" idea the user described from their
-// own past GUI work (cb), adapted to reuse this port's authoritative
-// Cell grid instead of needing true pixel XOR: erasing/redrawing the
-// cursor is just re-rendering that one cell normally from Cell state,
-// which a literal raster XOR toggle only ever approximated.
+// このメソッドの最初の版(2026-08-04)は、-cの本物のハードウェア
+// カーソルは既に、最後のmoveCursor()呼び出しが残した場所に目に見える
+// 形で乗っているのだから、-gもそれに合わせるだけでよいという理屈で、
+// impl_->cursorRow/cursorColを直接読んでいた。それは-c自身のイベント
+// 駆動の実行ループ(1回のイテレーションにつき1つの入力が処理され、
+// その後は他の何も画面に触れない)については成り立ったが、-gについて
+// は成り立たなかった: runGuiPhase()は一定の約60Hzでポーリングして
+// おり、Shellの^P/^N履歴ブラウズのような呼び出し元がカーソルを特定の
+// 行へ明示的に動かしたのと「同じ」フレーム内で、その末尾が無条件に
+// ContentView::redraw()を丸ごと再実行する(その内部の行ごと/モード
+// ライン用のmoveCursor()呼び出しは純粋なグリフ配置であり、モードライン
+// のテキストが最後に終わった場所に着地する)――1フレーム後には黙って
+// 「カーソル」を最下行へ引き戻してしまう。実際の2026-08-04のユーザー
+// 報告はまさにこれを説明していた: "-gのSHELLではプロンプトと同じく
+// 一瞬出て消えるパターン...モードラインの行数は追随するも位置は
+// 最下行のまま"。setVisibleCursor()だけが触れる「別個の」状態を読む
+// ことは、特定のフレームでの呼び出し順序に関わらず、副次的な再描画が
+// それを物理的に動かせないことを意味する――ユーザー自身の過去のGUI
+// 作業(cb)から説明された「メインの再描画から切り離された、それ自身の
+// ルーチンとして保たれるXORブロックカーソル」というのと同じ発想を、
+// 本物のピクセルXORを必要とする代わりに、このポート自身が正本とする
+// Cellグリッドを再利用するよう適合させたもの: カーソルの消去/再描画は
+// 単にそのセルをCellの状態から普通に再レンダリングするだけであり、
+// 文字通りのラスターXORのトグルはそれを近似していたに過ぎない。
 //
-// Renders as a solid block in the foreground color (matching a real
-// terminal's default block-cursor look) with whatever glyph already
-// occupies that cell redrawn on top in the background color, so text
-// under the cursor stays legible instead of being hidden -- the same
-// idea Cell::standout/renderCell() already use for reverse-video, just
-// forced on for this one cell regardless of its own standout state
-// (a cursor should always read as "the cursor", even sitting on top of
-// the mode-line's own already-reverse-video text).
+// (実際の端末のデフォルトのブロックカーソルの見た目に合わせて)前景色
+// の塗りつぶしたブロックとして描画し、そのセルに既に載っているどんな
+// グリフも背景色で上に重ねて再描画することで、カーソルの下のテキスト
+// が隠されるのではなく読めるままになる――これはCell::standout/
+// renderCell()が反転表示に既に使っているのと同じ発想であり、この1
+// セルについてだけ、その自身のstandout状態に関わらず強制的に有効に
+// しているだけ(モードライン自身の既に反転表示済みのテキストの上に
+// 乗っている時でさえ、カーソルは常に「カーソル」として読めるべき
+// である)。
 void GraphicalDisplay::renderCursor() {
   if (!impl_->outputEnabled) return;
   if (!impl_->hasVisibleCursor) return;
@@ -1101,11 +1140,10 @@ void GraphicalDisplay::renderCursor() {
   int col = impl_->visibleCursorCol;
   if (row < 0 || row >= impl_->rows || col < 0 || col >= impl_->columns) return;
 
-  // If the cursor landed on the "shadow" second cell of a wide (CJK)
-  // glyph, draw over the glyph's actual home cell instead and span
-  // both columns -- matches how a real terminal's block cursor covers
-  // a whole wide character rather than looking like it clipped it in
-  // half.
+  // カーソルがワイド(CJK)グリフの「シャドウ」の2番目のセルに着地
+  // した場合、代わりにグリフの実際の基準セルの上に、両方の列にまた
+  // がるよう描く――実際の端末のブロックカーソルが、半分に切り取った
+  // ように見えるのではなく、倍幅文字全体を覆うのに合わせている。
   int homeCol = col;
   if (impl_->cellAt(row, col).continuation && col > 0) homeCol = col - 1;
   bool isWide = (homeCol + 1 < impl_->columns) && impl_->cellAt(row, homeCol + 1).continuation;
@@ -1122,16 +1160,16 @@ void GraphicalDisplay::renderCursor() {
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (cell.underline) style |= TTF_STYLE_UNDERLINE;
 
-  // Same primary/fallback-font glyph-coverage decision as renderCell()
-  // -- see its own comment.
+  // renderCell()と同じメイン/フォールバックフォントのグリフ有無の
+  // 判定――それ自身のコメント参照。
   unsigned int codepoint = decodeUtf8Codepoint(cell.glyph);
   TTF_Font *renderFont = impl_->font;
   bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
   if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
     renderFont = impl_->fallbackFont;
-  // Same half-width-hinting adjustment as renderCell() -- see its own
-  // comment. (TTF_SetFontStyle()/TTF_SetFontHinting() themselves moved
-  // into cachedGlyphTexture(), called below -- see its own comment.)
+  // renderCell()と同じ半角用ヒンティングの調整――それ自身のコメント
+  // 参照。(TTF_SetFontStyle()/TTF_SetFontHinting()自体は、下で呼ばれる
+  // cachedGlyphTexture()の中へ移動した――それ自身のコメント参照。)
   int hinting = isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE;
 
   int w = 0, h = 0;
@@ -1169,12 +1207,12 @@ void GraphicalDisplay::flush() {
   for (int row = 0; row < impl_->rows; row++)
     for (int col = 0; col < impl_->columns; col++) renderCell(row, col);
 
-  // Static reference image until the first real mouse touch, the real
-  // always-current thumb from then on -- see Impl::everInteracted's
-  // own comment. effectiveTop is a plain int here when the real thumb
-  // path runs (no active sub-row pixel offset outside renderScrolled()'s
-  // own drag/coast path), unlike renderScrolled()'s own fractional
-  // effectiveTop.
+  // 最初の実際のマウス操作までは静的な参照画像、それ以降は実際の
+  // 常に最新のつまみ――Impl::everInteractedそれ自身のコメント参照。
+  // 本物のつまみの経路が実行される時、effectiveTopはここでは単なる
+  // intである(renderScrolled()自身のドラッグ/慣性経路の外では、行内
+  // の副ピクセルオフセットは働いていない)、renderScrolled()自身の
+  // 小数のeffectiveTopとは異なり。
   if (!impl_->everInteracted) {
     drawIdleScrollbarImage();
   } else {
@@ -1183,22 +1221,23 @@ void GraphicalDisplay::flush() {
 
   renderCursor();
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
-    // Same env var as the grid dump above: also save the actual
-    // rendered pixels (read back from the renderer itself, not a
-    // screen capture -- works without Screen Recording permission and
-    // without a real visible window) as "<value>.bmp", overwritten
-    // each flush() so it always holds the latest frame. This is what
-    // let a real rendering bug (renderCellBackground()'s continuation-
-    // cell fill erasing the right half of wide glyphs, see its own
-    // comment) get confirmed from within this sandbox at all, since
-    // screencapture itself was unavailable here.
-    // Sized from the renderer's own OUTPUT (physical pixels, which can
-    // now be larger than columns*cellWidth/rows*cellHeight's logical
-    // POINTS since SDL_WINDOW_ALLOW_HIGHDPI -- see create()'s own
-    // comment) rather than the logical cell grid: SDL_RenderReadPixels()
-    // reads the actual drawable, and a destination surface sized for
-    // the smaller logical dimensions would overflow/truncate against
-    // its own pitch on a HiDPI display.
+    // 上のグリッドダンプと同じ環境変数: 実際にレンダリングされた
+    // ピクセルも(スクリーンキャプチャではなく、レンダラー自身から
+    // 読み戻す――Screen Recording権限も実際に見えるウィンドウも無く
+    // 動く)"<value>.bmp"として保存し、flush()のたびに上書きするので
+    // 常に最新のフレームを保持する。これがあったからこそ、実際の描画
+    // バグ(renderCellBackground()の継続セルの塗りつぶしがワイドグリフ
+    // の右半分を消していた件、それ自身のコメント参照)を、そもそも
+    // このサンドボックス内から確認できた、screencapture自体がここでは
+    // 利用できなかったため。
+    // 論理的なセルグリッドではなく、レンダラー自身の「出力」(物理
+    // ピクセル、SDL_WINDOW_ALLOW_HIGHDPI以降は
+    // columns*cellWidth/rows*cellHeightの論理的な「ポイント」より
+    // 大きくなり得る――create()自身のコメント参照)からサイズを決めて
+    // いる: SDL_RenderReadPixels()は実際の描画領域を読むので、より
+    // 小さい論理的な寸法向けにサイズを決めた出力先サーフェスは、
+    // HiDPIディスプレイ上ではその自身のpitchに対してオーバーフロー/
+    // 切り詰めが起きてしまう。
     int outputWidthPixels = 0, outputHeightPixels = 0;
     SDL_GetRendererOutputSize(impl_->renderer, &outputWidthPixels, &outputHeightPixels);
     SDL_Surface *shot =
@@ -1213,15 +1252,16 @@ void GraphicalDisplay::flush() {
 }
 
 void GraphicalDisplay::moveCursor(int row, int col) {
-  // Defensive reset (2026-08-21, alongside the ContentView::renderLine()
-  // fix a real report traced this to -- see its own widthAware comment):
-  // a byte sequence mid-assembly in pendingUtf8 must never survive a
-  // cursor jump to a new position. Without this, some OTHER caller
-  // breaking off mid-multibyte-sequence (as renderLine()'s old byte-
-  // counted loop used to for attributed CJK lines) would leave stray
-  // bytes here that silently spliced onto the FIRST byte written at the
-  // new position, corrupting a single glyph there instead of just
-  // dropping the incomplete character that was actually abandoned.
+  // 防御的なリセット(2026-08-21、実際の報告がこれの原因だと突き止めた
+  // ContentView::renderLine()の修正と併せて――それ自身のwidthAware
+  // コメント参照): pendingUtf8内の組み立て途中のバイト列は、新しい
+  // 位置へのカーソルジャンプを絶対に生き延びてはならない。これが無い
+  // と、マルチバイトシーケンスの途中で打ち切る他の呼び出し元(属性付き
+  // のCJK行についてrenderLine()の古いバイト数カウント方式のループが
+  // かつてそうしていたように)が、ここに余ったバイトを残してしまい、
+  // それが新しい位置で書かれる「最初の」バイトへ黙って継ぎ足され、
+  // 実際に放棄されたはずの不完全な文字を単に捨てる代わりに、そこの
+  // 1つのグリフを壊してしまう。
   impl_->pendingUtf8.clear();
   impl_->cursorRow = row;
   impl_->cursorCol = col;
@@ -1291,12 +1331,13 @@ void GraphicalDisplay::setAttribute(Attribute attr) {
   }
 }
 
-// No real escape-sequence concept exists for a pixel-rendered window
-// (legacy's only use was splicing raw termcap codes into a bash PS1
-// string so bash itself would print them -- meaningless without a
-// real terminal interpreting them), so this is always empty -- a
-// documented, flagged gap (Shell's prompt loses its bold markers
-// while GUI mode is active), not a silent omission.
+// ピクセルでレンダリングされるウィンドウにはエスケープシーケンスという
+// 概念そのものが実在しない(legacyでの唯一の用途は、生のtermcapコード
+// をbashのPS1文字列へ継ぎ込んで、bash自身にそれを出力させることだった
+// ――本物の端末がそれを解釈しなければ意味を成さない)ので、これは常に
+// 空文字列である――文書化され、明記された欠落(GUIモードが有効な間、
+// Shellのプロンプトは太字マーカーを失う)であり、黙って省略している
+// わけではない。
 std::string GraphicalDisplay::attributeEscape(Attribute) const { return ""; }
 
 int GraphicalDisplay::rows() const { return impl_->rows; }
@@ -1312,24 +1353,24 @@ void GraphicalDisplay::setSize(int rows, int columns) {
                        impl_->cellHeight * rows + Impl::kMarginY * 2);
 }
 
-// See its own declaration comment (graphical_display.hpp) for the
-// full story -- the INVERSE of setSize()/matchWindowSize() above:
-// those two go FROM a target rows/columns TO a pixel size; this one
-// goes FROM an already-changed pixel size (a live user drag-resize)
-// TO a new rows/columns, at the SAME cell size, deliberately not
-// touching cellWidth/cellHeight or the font at all.
+// 全ての経緯についてはそれ自身の宣言側のコメント(graphical_display.hpp)
+// 参照――上のsetSize()/matchWindowSize()の「逆」: あの2つは目標の
+// rows/columnsから「出発して」ピクセルサイズへ「至る」;こちらは
+// 既に変化したピクセルサイズ(ユーザーによる実際のドラッグリサイズ)
+// から「出発して」、同じセルサイズのまま新しいrows/columnsへ「至る」、
+// cellWidth/cellHeightやフォントには意図的に一切触れない。
 void GraphicalDisplay::handleWindowResized(int newPixelWidth, int newPixelHeight) {
   if (!impl_->window || impl_->cellWidth <= 0 || impl_->cellHeight <= 0) return;
   int contentWidth = newPixelWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth;
   int contentHeight = newPixelHeight - Impl::kMarginY * 2;
   int newColumns = std::max(1, contentWidth / impl_->cellWidth);
   int newRows = std::max(1, contentHeight / impl_->cellHeight);
-  if (newRows == impl_->rows && newColumns == impl_->columns) return;  // nothing to do
+  if (newRows == impl_->rows && newColumns == impl_->columns) return;  // 何もすることが無い
   impl_->rows = newRows;
   impl_->columns = newColumns;
   impl_->grid.assign(static_cast<std::size_t>(newRows) * newColumns, Cell{});
   impl_->sizeChanged = true;
-  impl_->needsRedraw = true;  // the freshly-resized grid starts fully blank -- force a full repaint
+  impl_->needsRedraw = true;  // リサイズしたばかりのグリッドは完全に空白から始まる――全画面再描画を強制する
 }
 
 bool GraphicalDisplay::consumeSizeChanged() {
@@ -1344,23 +1385,25 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
     if (f) { std::fprintf(f, "adjustFontSize(%d) called, current=%d base=%d\n", deltaPoints, impl_->currentFontPointSize, impl_->baseFontPointSize); std::fclose(f); }
   }
   if (!impl_->window || !impl_->font) return;
-  // See its own declaration comment (graphical_display.hpp) for why 0
-  // means "reset", not "no-op": Cmd+0 is the reset gesture, bound here
-  // rather than a separate method to keep the three-key group (Cmd+=/
-  // Cmd+-/Cmd+0) sharing one clamp-and-remeasure implementation.
+  // なぜ0が「no-op」ではなく「リセット」を意味するのかについては
+  // それ自身の宣言側のコメント(graphical_display.hpp)参照: Cmd+0は
+  // リセットのジェスチャであり、3つのキーの組(Cmd+=/Cmd+-/Cmd+0)が
+  // 1つのクランプ+再計測の実装を共有し続けられるよう、別のメソッドに
+  // せずここに紐付けてある。
   int newPointSize = (deltaPoints == 0) ? impl_->baseFontPointSize
                                          : std::clamp(impl_->currentFontPointSize + deltaPoints, 6, 72);
   if (newPointSize == impl_->currentFontPointSize) return;
   TTF_SetFontSize(impl_->font, newPointSize);
   if (impl_->fallbackFont) TTF_SetFontSize(impl_->fallbackFont, newPointSize);
-  // Re-measure from the NOW-resized font, mirroring create()'s own "M"
-  // + CJK-fallback-glyph measurement (see its own comment for why both
-  // are needed) -- TTF_SetFontSize() changes the font's own glyph
-  // metrics, so the OLD cellWidth/cellHeight no longer describe it.
+  // 今リサイズされたばかりのフォントから再計測する、create()自身の
+  // 「M」+CJKフォールバックグリフの計測に倣う(両方が必要な理由に
+  // ついてはそれ自身のコメント参照)――TTF_SetFontSize()はフォント
+  // 自身のグリフのメトリクスを変えるので、「旧」cellWidth/cellHeight
+  // はもうそれを説明しない。
   int cellWidth = 0, cellHeight = 0;
   if (TTF_SizeUTF8(impl_->font, "M", &cellWidth, &cellHeight) != 0 || cellWidth <= 0 || cellHeight <= 0) {
-    // Roll back rather than leave the font and impl_->cellWidth/
-    // cellHeight disagreeing about the point size.
+    // フォントとimpl_->cellWidth/cellHeightがポイントサイズについて
+    // 食い違ったままにするのではなく、巻き戻す。
     TTF_SetFontSize(impl_->font, impl_->currentFontPointSize);
     if (impl_->fallbackFont) TTF_SetFontSize(impl_->fallbackFont, impl_->currentFontPointSize);
     return;
@@ -1376,16 +1419,18 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
   impl_->currentFontPointSize = newPointSize;
   impl_->cellWidth = cellWidth;
   impl_->cellHeight = cellHeight;
-  // The font object was just resized in place (TTF_SetFontSize() above)
-  // -- every cached texture is now the WRONG pixel size for it. See
-  // clearGlyphCache()'s own comment.
+  // フォントオブジェクトは(上のTTF_SetFontSize()により)たった今
+  // その場でリサイズされた――キャッシュされているテクスチャは全て
+  // 今やそれに対して「間違った」ピクセルサイズになっている。
+  // clearGlyphCache()自身のコメント参照。
   clearGlyphCache(*impl_);
-  // Same window-sizing formula setSize() already uses: rows/columns
-  // stay fixed, only the pixel size changes. This SDL_SetWindowSize()
-  // call will itself re-fire SDL_WINDOWEVENT_RESIZED, but since the new
-  // window size is derived from cellWidth/cellHeight*rows/columns
-  // exactly, handleWindowResized() recomputes the SAME rows/columns and
-  // takes its own "nothing to do" early return -- no feedback loop.
+  // setSize()が既に使っているのと同じウィンドウサイズの計算式:
+  // rows/columnsは固定のまま、ピクセルサイズだけが変わる。この
+  // SDL_SetWindowSize()呼び出し自体がSDL_WINDOWEVENT_RESIZEDを再度
+  // 発火させるが、新しいウィンドウサイズはcellWidth/cellHeight*
+  // rows/columnsからちょうど導かれているため、handleWindowResized()
+  // は「同じ」rows/columnsを再計算し、それ自身の「何もすることが
+  // 無い」早期returnを取る――フィードバックループにはならない。
   SDL_SetWindowSize(impl_->window, cellWidth * impl_->columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
                      cellHeight * impl_->rows + Impl::kMarginY * 2);
   SDL_SetWindowMinimumSize(impl_->window, cellWidth * 10 + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
@@ -1394,17 +1439,17 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
 }
 
 namespace {
-// Cmd+K color presets (2026-08-24, item 426) -- a small fixed set
-// covering the obvious "looks like a real terminal profile" options a
-// user would otherwise have to hand-edit usilicrc for: this class's own
-// default (light gray on black), a green-on-black "CRT" look (a common
-// real terminal profile preset, e.g. Terminal.app's own "Pro"/"Homebrew"
-// profiles), amber-on-black (ditto, an old-amber-phosphor-monitor
-// look), and black-on-white (a light-background profile, the opposite
-// of the other three). Not exhaustive by design -- setColors() remains
-// available for anything more specific (the "実はすでにGUI" launch-time
-// terminal-color match already calls it directly with an arbitrary
-// queried color, bypassing this list entirely).
+// Cmd+Kのカラープリセット(2026-08-24、項目426) -- そうでなければ
+// ユーザーがusilicrcを手で編集しなければならなかったであろう、明らか
+// に「本物の端末のプロファイルらしい」選択肢をカバーする、小さな
+// 固定の集合: このクラス自身のデフォルト(黒地に薄いグレー)、緑地に
+// 黒の「CRT」風の見た目(よくある実際の端末プロファイルのプリセット、
+// 例えばTerminal.app自身の「Pro」/「Homebrew」プロファイル)、黒地に
+// アンバー(同様に、古いアンバー燐光モニタ風の見た目)、そして白地に
+// 黒(明るい背景のプロファイル、他の3つとは逆)。設計上網羅的ではない
+// ――より具体的な何かのためにはsetColors()が引き続き利用可能である
+// (「実はすでにGUI」の起動時の端末色マッチは、既にこのリストを完全に
+// バイパスして、任意の問い合わせた色でそれを直接呼んでいる)。
 constexpr GraphicalDisplay::Color kColorPresetFg[] = {
     {220, 220, 220}, {80, 250, 80}, {255, 176, 0}, {20, 20, 20},
 };
@@ -1428,54 +1473,57 @@ void GraphicalDisplay::setOutputEnabled(bool enabled) { impl_->outputEnabled = e
 bool GraphicalDisplay::smoothScrollEnabled() const { return impl_->smoothScroll; }
 void GraphicalDisplay::setSmoothScrollEnabled(bool enabled) { impl_->smoothScroll = enabled; }
 
-// Shows (and raises/focuses) the window created hidden by create() --
-// deliberately split from create() itself so a caller that needs to
-// position/resize the window FIRST (setWindowPosition()/
-// matchWindowSize(), the "実はすでにGUI" overlay launch) can do so
-// while it's still invisible, then reveal it already in its final
-// place. A previous version showed (SDL_WINDOW_SHOWN) and raised the
-// window immediately inside create(), before the overlay launch call
-// site had a chance to reposition/resize it -- a real report
-// (2026-08-09: "横幅が狭いは解消されたものの重ね打ち画面が出る前に
-// 一旦は狭い画面が表示されてしまうので重ね打ちだとわかってしまう")
-// confirmed this as a visible flash: the font-metric-sized, centered
-// window from create() briefly on screen, then jumping to match the
-// real terminal's position/size a moment later -- exactly the kind of
-// seam this whole feature exists to avoid. The plain `-g` and `^Og`
-// call sites (no real terminal to match, nothing to reposition first)
-// still call open() unconditionally right after create() too, so
-// their own visible behavior is unchanged by this split.
+// create()が非表示で作成したウィンドウを表示する(そして前面化/
+// フォーカスする)――create()自身から意図的に分離してあるのは、
+// ウィンドウを「先に」配置/リサイズする必要のある呼び出し元
+// (setWindowPosition()/matchWindowSize()、「実はすでにGUI」オーバー
+// レイの起動)が、それがまだ見えない間にそれを行い、それから既に
+// 最終的な場所にある状態でそれを見せられるようにするため。以前の
+// バージョンは、オーバーレイの起動元がそれを再配置/リサイズする
+// 機会を得る前に、create()の内部で即座にウィンドウを表示
+// (SDL_WINDOW_SHOWN)し前面化していた――実際の報告(2026-08-09:
+// "横幅が狭いは解消されたものの重ね打ち画面が出る前に一旦は狭い画面
+// が表示されてしまうので重ね打ちだとわかってしまう")が、これが目に
+// 見えるちらつきであることを確認した: create()由来のフォントの
+// メトリクスに基づくサイズの中央寄せウィンドウが一瞬画面に映り、
+// それから少し後に本物の端末の位置/サイズに合わせて飛ぶ――まさに
+// この機能全体が存在する目的である、避けるべき「継ぎ目」そのもの。
+// 単純な`-g`と`^Og`の呼び出し元(合わせるべき本物の端末は無く、先に
+// 再配置すべきものも無い)は、依然としてcreate()の直後に無条件で
+// open()を呼んでいるので、それら自身の目に見える挙動はこの分離に
+// よって変わらない。
 //
-// SDL_RaiseWindow() itself is unchanged from create()'s own previous
-// call -- see the removed comment there (still applicable): without
-// it, a real 2026-08-03 report found a merely-shown window doesn't
-// reliably steal input focus from whichever window was already
-// focused on every platform/WM.
+// SDL_RaiseWindow()自体はcreate()自身の以前の呼び出しから変わって
+// いない――そこにあった(今は削除された)コメント参照(依然として
+// 当てはまる): これが無いと、実際の2026-08-03の報告により、単に
+// 表示されただけのウィンドウは、プラットフォーム/WMによっては、
+// それまでフォーカスされていたどのウィンドウからも確実には入力
+// フォーカスを奪えないことが判明した。
 void GraphicalDisplay::open() {
   if (!impl_->window) return;
-  // Clear to the already-set bg color (setColors(), called by the
-  // overlay launch call site before this) and present once BEFORE
-  // showing the window -- SDL_CreateRenderer() never implicitly
-  // clears its own buffer, so without this the window's first-ever
-  // visible frame would be whatever undefined content happened to be
-  // sitting in the renderer's backbuffer (typically solid black, but
-  // not guaranteed) rather than the real terminal's own matched
-  // background -- a smaller version of the exact "briefly shows the
-  // wrong thing before snapping to correct" seam this whole open()
-  // split (see its own comment) exists to close. The real character
-  // grid itself isn't drawn here (flush() runs that; content isn't
-  // even wired to this backend yet at this point in the "実はすでに
-  // GUI" launch, see main()'s own call-site comment) -- only the
-  // background color, which is enough to avoid a jarring flash and is
-  // all a real terminal's own idle background looks like anyway in
-  // the instant before the first prompt/listing paints.
+  // 既に設定済みの背景色(setColors()、これより前にオーバーレイの
+  // 起動元によって呼ばれている)でクリアし、ウィンドウを表示する
+  // 「前」に一度presentする――SDL_CreateRenderer()は自分自身のバッファ
+  // を暗黙にクリアすることは決して無いので、これが無いと、ウィンドウ
+  // の生まれて初めての可視フレームは、本物の端末に合わせた背景では
+  // なく、たまたまレンダラーのバックバッファに乗っていた未定義の
+  // 何か(典型的には真っ黒だが保証は無い)になってしまう――このopen()
+  // の分離全体(それ自身のコメント参照)が塞ごうとしている、まさに
+  // その「正しい状態に落ち着く前に一瞬間違ったものを見せる」継ぎ目の
+  // 小さな版。実際の文字グリッド自体はここでは描画されない
+  // (flush()がそれを実行する; 「実はすでにGUI」の起動のこの時点では、
+  // コンテンツはまだこのバックエンドへ結線すらされていない、main()
+  // 自身の呼び出し箇所のコメント参照)――背景色だけであり、それは
+  // 耳障りなちらつきを避けるには十分であり、しかも最初のプロンプト/
+  // 一覧が描かれる瞬間の前には、本物の端末自身のアイドル時の背景も
+  // どのみちそう見えるだけのものである。
   SDL_SetRenderDrawColor(impl_->renderer, impl_->bg.r, impl_->bg.g, impl_->bg.b, 255);
   SDL_RenderClear(impl_->renderer);
   SDL_RenderPresent(impl_->renderer);
   SDL_ShowWindow(impl_->window);
   SDL_RaiseWindow(impl_->window);
 }
-void GraphicalDisplay::close() {}  // torn down by the destructor instead, see its own comment
+void GraphicalDisplay::close() {}  // 代わりにデストラクタで破棄される、それ自身のコメント参照
 
 namespace {
 
@@ -1508,28 +1556,30 @@ bool GraphicalDisplay::pumpEvents() {
       case SDL_QUIT:
         stillOpen = false;
         break;
-      // See consumeNeedsRedraw()'s own declaration comment (2026-08-24
-      // fix, docs/CHANGES.md item 422) -- SDL_WINDOWEVENT_EXPOSED is
-      // WindowServer's own "this window needs to be (re)painted" signal
-      // (fires after the window is first mapped, after being uncovered
-      // by another window, etc.); SDL_WINDOWEVENT_SHOWN (fires once,
-      // right after SDL_CreateWindow's own SDL_WINDOW_SHOWN takes
-      // effect) is included too since a bundle-launched app's window
-      // can plausibly need its very first paint retried even before
-      // anything has had a chance to cover/uncover it yet. Every OTHER
-      // SDL_WINDOWEVENT subtype except RESIZED (focus, moved, ...) is
-      // deliberately left alone here.
+      // consumeNeedsRedraw()自身の宣言側のコメント参照(2026-08-24の
+      // 修正、docs/CHANGES.md項目422) -- SDL_WINDOWEVENT_EXPOSEDは
+      // WindowServer自身の「このウィンドウは(再)描画される必要がある」
+      // という信号である(ウィンドウが最初にマップされた後、他の
+      // ウィンドウで覆われていたのが外れた後、等に発火する);
+      // SDL_WINDOWEVENT_SHOWN(SDL_CreateWindow自身のSDL_WINDOW_SHOWN
+      // が効果を発揮した直後に一度だけ発火する)も含まれている、
+      // バンドルから起動されたアプリのウィンドウは、何かに覆われたり
+      // 覆いが外れたりする機会をまだ得る前でさえ、まさに最初の描画を
+      // やり直す必要があり得るため。RESIZED以外の他の全ての
+      // SDL_WINDOWEVENTのサブタイプ(フォーカス、移動、...)は、ここ
+      // では意図的に手を付けないままにしてある。
       //
-      // SDL_WINDOWEVENT_RESIZED (2026-08-24 addition, docs/CHANGES.md
-      // item 425, a direct user request -- the window is now created
-      // with SDL_WINDOW_RESIZABLE, see create()'s own comment): fires
-      // with the window's own NEW pixel size already in event.window.
-      // data1/data2 whenever it actually changes size, whether by the
-      // user dragging an edge or a programmatic SDL_SetWindowSize()
-      // call (setSize()/matchWindowSize() both already trigger one on
-      // themselves too -- handleWindowResized() below is written to
-      // no-op harmlessly when the recomputed row/column count doesn't
-      // actually change, so this doesn't fight either of those).
+      // SDL_WINDOWEVENT_RESIZED(2026-08-24の追加、docs/CHANGES.md
+      // 項目425、直接のユーザー依頼――ウィンドウは今やSDL_WINDOW_
+      // RESIZABLEで作成される、create()自身のコメント参照): ユーザー
+      // が端をドラッグした場合でも、プログラムによる
+      // SDL_SetWindowSize()呼び出しによる場合でも、実際にサイズが
+      // 変わるたびに、ウィンドウ自身の「新しい」ピクセルサイズが既に
+      // event.window.data1/data2に入った状態で発火する
+      // (setSize()/matchWindowSize()の両方も既にそれ自身でこれを
+      // 1つ発火させる――下のhandleWindowResized()は、再計算された
+      // 行/列数が実際には変わらない場合には無害にno-opするよう書か
+      // れているので、これはそのどちらとも競合しない)。
       case SDL_WINDOWEVENT:
         if (event.window.event == SDL_WINDOWEVENT_EXPOSED || event.window.event == SDL_WINDOWEVENT_SHOWN) {
           impl_->needsRedraw = true;
@@ -1538,20 +1588,20 @@ bool GraphicalDisplay::pumpEvents() {
         }
         break;
       case SDL_MOUSEBUTTONDOWN: {
-        // See Impl::everInteracted's own comment -- any button press
-        // (even one this switch otherwise ignores below) counts as
-        // "touched" and permanently flips flush() over from the
-        // static idle image to the real thumb.
+        // Impl::everInteracted自身のコメント参照――どんなボタン押下
+        // (この後のswitchで無視される種類であっても)も「触れられた」
+        // と数え、flush()を静的なアイドル画像から実際のつまみへ
+        // 恒久的に切り替える。
         impl_->everInteracted = true;
         if (event.button.button != SDL_BUTTON_LEFT && event.button.button != SDL_BUTTON_RIGHT) break;
-        // A left press that starts inside the scrollbar strip is a
-        // thumb-drag gesture, not a content click/drag -- routed to
-        // scrollbarQueue instead, so it neither selects/opens a file
-        // (MouseClick) nor starts a content drag-scroll (DragEvent).
-        // Right-clicks in that strip fall through to the normal
-        // MouseClick path below unchanged (no right-click behavior is
-        // defined for the scrollbar; this just avoids silently
-        // dropping the event).
+        // スクロールバーの帯の中で始まる左クリックの押下は、つまみの
+        // ドラッグのジェスチャであり、コンテンツのクリック/ドラッグ
+        // ではない――代わりにscrollbarQueueへ回されるので、ファイルの
+        // 選択/オープン(MouseClick)にもコンテンツのドラッグスクロール
+        // (DragEvent)の開始にもならない。その帯での右クリックは、下の
+        // 通常のMouseClickの経路へそのまま流れる(スクロールバーに
+        // 右クリックの挙動は定義されていない;これは単にイベントを
+        // 黙って落とすのを避けているだけ)。
         int scrollbarStripX = scrollbarStripLeft() - Impl::kMarginX;
         if (event.button.button == SDL_BUTTON_LEFT && event.button.x >= scrollbarStripX) {
           impl_->scrollbarDragActive = true;
@@ -1559,17 +1609,17 @@ bool GraphicalDisplay::pumpEvents() {
           impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::ButtonDown, event.button.y});
           break;
         }
-        // max(0, ...) before dividing: a click that lands within the
-        // margin border itself (see kMarginX/kMarginY's own comment)
-        // would otherwise subtract past zero and, on most platforms,
-        // truncate toward zero rather than floor -- clamping treats
-        // the whole margin as "the nearest edge cell" instead of
-        // wrapping to a bogus row/column.
+        // 割る前にmax(0, ...): 余白の境界自体の中に着地したクリック
+        // (kMarginX/kMarginY自身のコメント参照)は、そうしないとゼロ
+        // を超えて引き算されてしまい、ほとんどのプラットフォームでは
+        // floorではなくゼロ方向へ切り捨てられてしまう――クランプする
+        // ことで、おかしな行/列に回り込む代わりに、余白全体を「最も
+        // 近い端のセル」として扱う。
         int col = std::max(0, event.button.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
         int row = std::max(0, event.button.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
         impl_->mouseQueue.push_back(MouseClick{row, col, event.button.button == SDL_BUTTON_RIGHT});
         if (event.button.button == SDL_BUTTON_LEFT) {
-          SDL_CaptureMouse(SDL_TRUE);  // keep tracking motion even if the drag leaves the window
+          SDL_CaptureMouse(SDL_TRUE);  // ドラッグがウィンドウを離れても動きの追跡を続ける
           impl_->dragQueue.push_back(DragEvent{DragEventType::ButtonDown, 0});
         }
         break;
@@ -1592,18 +1642,20 @@ bool GraphicalDisplay::pumpEvents() {
         } else if (event.motion.state & SDL_BUTTON_LMASK) {
           impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
         } else if (SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_FOCUS) {
-          // Gated on keyboard/input focus (NOT SDL_WINDOW_MOUSE_FOCUS,
-          // which would be true for ANY window the cursor happens to
-          // be over, active or not -- the whole point of this check).
-          // SDL delivers SDL_MOUSEMOTION for whichever window is under
-          // the cursor regardless of which window is actually active,
-          // unlike a real terminal's own SGR mouse reporting (which a
-          // background/unfocused terminal simply never receives at
-          // all). A real report + screenshot: "ウィンドウが非アクティブ
-          // （左上の赤黄緑がみな灰色）なのにマウスがウィンドウ内に入る
-          // とカーソルが追随" -- the cursor-follow highlight was
-          // tracking the mouse even while this window sat behind
-          // another, unfocused one.
+          // キーボード/入力フォーカスで判定している(SDL_WINDOW_MOUSE_
+          // FOCUSでは「ない」、それだと、アクティブかどうかに関わらず、
+          // たまたまカーソルが上に乗っているどのウィンドウについても
+          // trueになってしまう――まさにこのチェックの意味そのもの)。
+          // SDLは、実際にどのウィンドウがアクティブかに関わらず、
+          // カーソルの下にあるウィンドウへSDL_MOUSEMOTIONを配送する、
+          // 本物の端末自身のSGRマウスレポート(バックグラウンド/
+          // フォーカスされていない端末はそもそも一切受け取らない)と
+          // は異なり。実際の報告+スクリーンショット: "ウィンドウが
+          // 非アクティブ（左上の赤黄緑がみな灰色）なのにマウスが
+          // ウィンドウ内に入るとカーソルが追随" -- カーソル追随の
+          // ハイライトは、このウィンドウが他のフォーカスされていない
+          // ウィンドウの後ろに座っている間でさえ、マウスを追跡して
+          // いた。
           int col = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
           int row = std::max(0, event.motion.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
           impl_->hoverQueue.push_back(HoverEvent{row, col});
@@ -1619,52 +1671,55 @@ bool GraphicalDisplay::pumpEvents() {
           impl_->keyQueue.push_back(KeyEvent{0, special});
           break;
         }
-        // Cmd+=/Cmd+-/Cmd+0 (font size) and Cmd+K (color preset) --
-        // 2026-08-24, item 426: intercepted and consumed HERE, before
-        // ANY translation into a KeyEvent, so Application never sees
-        // them at all (the same separation this file already keeps
-        // between window-level mouse gestures and application-level
-        // input) -- they're window/rendering adjustments, not usilic
-        // commands, so they must never reach feedByte() and risk
-        // colliding with a real per-mode binding for '='/'-'/'0'/'k'.
-        // KMOD_GUI is SDL's name for the Cmd key on macOS (Windows/Super
-        // key elsewhere); checked before KMOD_CTRL below since the two
-        // are mutually exclusive on a real keyboard and Cmd is this
-        // pair's own natural home (matching the browser/editor Cmd+Plus/
-        // Cmd+Minus/Cmd+0 zoom convention the comment on adjustFontSize()
-        // explains). SDLK_EQUALS covers plain "=" AND Shift+"=" ("+" on
-        // a US keyboard, the key users actually reach for) since SDL
-        // reports the same keysym for both; SDLK_KP_PLUS/KP_MINUS cover
-        // a numeric keypad the same way.
+        // Cmd+=/Cmd+-/Cmd+0(フォントサイズ)とCmd+K(カラープリセット)
+        // -- 2026-08-24、項目426: KeyEventへの「あらゆる」変換より前に
+        // 「ここで」横取りして消費するので、Applicationはそれらを
+        // 一切見ることがない(このファイルがウィンドウレベルのマウス
+        // ジェスチャとアプリケーションレベルの入力の間で既に保っている
+        // のと同じ分離)――それらはウィンドウ/レンダリングの調整で
+        // あり、usilicのコマンドではないので、feedByte()へ絶対に届いて
+        // '='/'-'/'0'/'k'に対する実際のモードごとのキー割り当てと衝突
+        // する危険を冒してはならない。KMOD_GUIはmacOSにおけるCmdキーの
+        // SDLでの呼び名である(他ではWindows/Superキー);下のKMOD_CTRL
+        // より先にチェックしているのは、この2つは実際のキーボードでは
+        // 互いに排他的であり、Cmdがこのペア自身の自然な居場所である
+        // ため(adjustFontSize()のコメントが説明する、ブラウザ/エディタ
+        // のCmd+Plus/Cmd+Minus/Cmd+0のズームの慣習に合わせている)。
+        // SDLK_EQUALSは、素の"="と、Shift+"="(USキーボードでの"+"、
+        // ユーザーが実際に手を伸ばすキー)の両方をカバーする、SDLが
+        // 両者について同じkeysymを報告するため;SDLK_KP_PLUS/KP_MINUS
+        // は数値キーパッドについて同様にカバーする。
         if (event.key.keysym.mod & KMOD_GUI) {
           SDL_Keycode sym = event.key.keysym.sym;
-          // SDLK_KP_EQUALS is included alongside SDLK_EQUALS/KP_PLUS --
-          // confirmed by direct testing (USILICGUIDEBUG dump) that
-          // synthetic keystroke injection (AppleScript's `keystroke "="
-          // using {command down}`, used to test this binding at all
-          // since this sandbox has no real keyboard) delivers THIS
-          // keysym while Cmd is held, not plain SDLK_EQUALS -- some
-          // macOS keyboard-layout/modifier interaction remaps it. Real
-          // physical keyboards may or may not share this quirk; kept
-          // for robustness either way now that it's known to happen.
+          // SDLK_KP_EQUALSがSDLK_EQUALS/KP_PLUSと並んで含まれている
+          // ――直接のテスト(USILICGUIDEBUGのダンプ)により、合成的な
+          // キー入力の注入(AppleScriptの`keystroke "=" using {command
+          // down}`、このサンドボックスには本物のキーボードが無いため
+          // このキー割り当てをそもそもテストするのに使っている)が、
+          // Cmdが押されている間、素のSDLK_EQUALSではなく「この」
+          // keysymを配送することが確認された――何らかのmacOSのキー
+          // ボードレイアウト/修飾キーの相互作用がそれを付け替えている。
+          // 本物の物理キーボードがこの癖を共有するかどうかは分からない;
+          // 起きることが分かっている以上、どちらにしても頑健性のために
+          // 残してある。
           if (sym == SDLK_EQUALS || sym == SDLK_KP_PLUS || sym == SDLK_KP_EQUALS) adjustFontSize(1);
           else if (sym == SDLK_MINUS || sym == SDLK_KP_MINUS) adjustFontSize(-1);
           else if (sym == SDLK_0 || sym == SDLK_KP_0) adjustFontSize(0);
           else if (sym == SDLK_k) cycleColorPreset();
           break;
         }
-        // Control-key combos (Ctrl+A..Ctrl+_) arrive as SDLK_a.. with
-        // KMOD_CTRL set, not as SDL_TEXTINPUT -- translate those here;
-        // everything else (plain characters, including multi-byte
-        // UTF-8 via an input method) arrives via SDL_TEXTINPUT below
-        // instead, matching how a real terminal separates control
-        // bytes from printable text.
+        // コントロールキーの組み合わせ(Ctrl+A..Ctrl+_)は、SDL_TEXTINPUT
+        // としてではなく、KMOD_CTRLが立ったSDLK_a..として届く――それら
+        // はここで変換する;他の全て(input method経由のマルチバイト
+        // UTF-8を含む、プレーンな文字)は代わりに下のSDL_TEXTINPUT経由
+        // で届く、本物の端末が制御バイトと表示可能テキストを分離して
+        // いるのに合わせている。
         if (event.key.keysym.mod & KMOD_CTRL) {
           SDL_Keycode sym = event.key.keysym.sym;
           if (sym >= SDLK_a && sym <= SDLK_z) {
             impl_->keyQueue.push_back(KeyEvent{(sym - SDLK_a) + 1, std::nullopt});
           } else if (sym == SDLK_LEFTBRACKET) {
-            impl_->keyQueue.push_back(KeyEvent{0x1b, std::nullopt});  // Ctrl+[ == ESC
+            impl_->keyQueue.push_back(KeyEvent{0x1b, std::nullopt});  // Ctrl+[ は ESC と同じ
           }
           break;
         }
@@ -1679,13 +1734,14 @@ bool GraphicalDisplay::pumpEvents() {
         break;
       }
       case SDL_MOUSEWHEEL: {
-        impl_->everInteracted = true;  // see Impl::everInteracted's own comment
-        // SDL_MOUSEWHEEL_FLIPPED means the OS-level "natural scrolling"
-        // preference is on (confirmed default on macOS trackpads) --
-        // SDL reports the raw hardware delta either way and leaves
-        // sign correction to the caller, so this negation is required,
-        // not optional, for wheel direction to match what the user's
-        // own OS scroll-direction setting says "up" means.
+        impl_->everInteracted = true;  // Impl::everInteracted自身のコメント参照
+        // SDL_MOUSEWHEEL_FLIPPEDは、OSレベルの「ナチュラルスクロール」
+        // 設定が有効であることを意味する(macOSのトラックパッドでは
+        // デフォルトで有効と確認済み)――SDLはどちらの場合でも生の
+        // ハードウェアのデルタを報告し、符号の補正は呼び出し元に
+        // 任せているので、ホイールの方向をユーザー自身のOSのスクロール
+        // 方向設定が言う「上」に一致させるには、この符号反転は任意
+        // ではなく必須である。
         int deltaY = event.wheel.y;
         if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) deltaY = -deltaY;
         if (deltaY != 0) impl_->wheelQueue.push_back(WheelEvent{deltaY});
@@ -1764,34 +1820,33 @@ int GraphicalDisplay::fontPointSize() const { return impl_->currentFontPointSize
 
 namespace {
 
-// Estimated macOS title bar height (points) for a normal titled,
-// closable, resizable window. Used ONLY as a fallback when
-// SDL_GetWindowBordersSize() itself fails, which a real report
-// (2026-08-08, "変化無し" -- the border-size-based correction produced
-// NO visible change at all on real hardware) points to as the actual,
-// silent root cause: SDL2's own documented behavior is that a failed
-// SDL_GetWindowBordersSize() call leaves the output at 0/0/0/0, and
-// this project's own web research turned up exactly this as a known
-// Cocoa/macOS limitation ("the -1 return value on macOS Cocoa
-// indicates that the window border size information is either not
-// supported on that platform") -- confirmed directly on this machine
-// too (a standalone driver calling SDL_GetWindowBordersSize() printed
-// `rc=-1 ... error=That operation is not supported`). Falling back to
-// 0 (this function's first version) silently skipped the whole
-// correction -- exactly the "no change" symptom reported. This
-// constant keeps the SAME two call sites (setWindowPosition()/
-// setWindowSize()) working even when the "authoritative" OS query
-// itself doesn't.
+// 通常のタイトル付き、閉じられる、リサイズ可能なウィンドウについての、
+// macOSのタイトルバーの高さ(ポイント)の推定値。SDL_GetWindowBordersSize()
+// 自体が失敗した時の「フォールバックとしてのみ」使う、実際の報告
+// (2026-08-08、"変化無し"――境界サイズに基づく補正が実機で目に見える
+// 変化を全く生まなかった)が、これを実際の、静かな根本原因として指し
+// 示している: SDL2自身の文書化された挙動は、SDL_GetWindowBordersSize()
+// 呼び出しが失敗すると出力を0/0/0/0のままにするというもので、この
+// プロジェクト自身のweb調査でも、まさにこれが既知のCocoa/macOSの制約
+// (「macOS Cocoaにおける-1という返り値は、そのプラットフォームでは
+// ウィンドウの境界サイズ情報がサポートされていないことを示す」)として
+// 出てきた――このマシン上でも直接確認済み(SDL_GetWindowBordersSize()
+// を呼ぶ単体のドライバは`rc=-1 ... error=That operation is not
+// supported`と出力した)。0にフォールバックする(この関数の最初の版)
+// と、補正全体を黙ってスキップしてしまう――まさに報告された「変化
+// 無し」という症状そのもの。この定数は、「権威ある」はずのOSへの
+// 問い合わせ自体が機能しない場合でも、同じ2つの呼び出し箇所
+// (setWindowPosition()/setWindowSize())が動作し続けるようにする。
 //
-// The literal value isn't from Apple documentation; nothing in this
-// sandbox can measure a real macOS title bar directly -- it's been
-// tuned entirely from real user feedback: 28 (initial estimate) ->
-// "縦が2,3ドット長い" (still ~2-3pt too SMALL, making the window that
-// much too tall overall) -> 31 -> confirmed exactly right at 32 via
-// USILICTITLEBARHEIGHT=32 (the env var override, same pattern as
-// USILICSCROLLBARSCALE/-u elsewhere in this file/main.cpp, added
-// specifically so this kind of tuning doesn't need a fresh
-// code-and-rebuild round each time).
+// リテラルの値はAppleのドキュメントから来たものではない;この
+// サンドボックス内では何も本物のmacOSのタイトルバーを直接計測できない
+// ――完全に実際のユーザーのフィードバックから調整されたものである:
+// 28(最初の見積もり)-> "縦が2,3ドット長い"(まだ2〜3pt「小さすぎ」で、
+// ウィンドウ全体をその分だけ高くしすぎている)-> 31 ->
+// USILICTITLEBARHEIGHT=32経由で32がちょうど正しいと確認済み(環境変数
+// によるオーバーライド、このファイル/main.cppの他の箇所にある
+// USILICSCROLLBARSCALE/-uと同じパターン、この種の調整のたびに新たな
+// コード変更+再ビルドが要らないように、まさにそのために追加した)。
 constexpr int kDefaultTitleBarHeight = 32;
 
 int estimatedTitleBarHeight() {
@@ -1802,16 +1857,17 @@ int estimatedTitleBarHeight() {
   return kDefaultTitleBarHeight;
 }
 
-// Shared by setWindowPosition()/setWindowSize() -- both need the same
-// top-border (title bar) height to convert between AppleScript's
-// "bounds of window" (outer frame) coordinate convention and SDL's
-// own (content area) one. Prefers the real, OS-reported value
-// (SDL_GetWindowBordersSize()) when it's actually available, falling
-// back to estimatedTitleBarHeight() otherwise (see its own comment).
-// left/bottom/right are effectively always 0 on macOS (no visible
-// side/bottom chrome on a normal titled window beyond the title bar
-// itself), but still queried/returned for completeness and so a
-// future non-macOS Display backend isn't silently wrong here either.
+// setWindowPosition()/setWindowSize()で共有される――どちらも、
+// AppleScriptの「bounds of window」(外枠)の座標の慣習とSDL自身の
+// (コンテンツ領域)のそれとの間を変換するのに、同じ上部境界(タイトル
+// バー)の高さを必要とする。実際に利用可能な場合は、OSが報告する
+// 本物の値(SDL_GetWindowBordersSize())を優先し、そうでなければ
+// estimatedTitleBarHeight()にフォールバックする(それ自身のコメント
+// 参照)。left/bottom/rightは、macOSでは実質的に常に0である(通常の
+// タイトル付きウィンドウには、タイトルバー自体を超える目に見える
+// 側面/下部のクロームは無い)が、完全性のため、そして将来の非macOSな
+// Displayバックエンドがここでも黙って間違ったままにならないよう、
+// それでも問い合わせ/返却する。
 struct WindowBorders {
   int top = 0, left = 0, bottom = 0, right = 0;
 };
@@ -1829,25 +1885,24 @@ WindowBorders realOrEstimatedWindowBorders(SDL_Window *window) {
 
 }  // namespace
 
-// `x, y` is expected in the SAME "outer frame, title bar included"
-// coordinate convention AppleScript's "bounds of window" uses (see
-// queryTerminalAppWindowBounds()'s own comment in main.cpp) -- NOT
-// SDL_SetWindowPosition()'s own native convention. SDL's own
-// documented behavior is that position/size describe the window's
-// CONTENT area, with OS-drawn decorations (the title bar) added
-// OUTSIDE/ABOVE that -- passing the outer-frame `y` straight through
-// unmodified (the previous version of this function) would place this
-// window's CONTENT top where the real terminal's OUTER top (title
-// bar) sits, making this window's own title bar float
-// title-bar-height above where the real terminal's title bar actually
-// is (a real report, 2026-08-07, screenshots ⑮⑯: "表示開始位置の縦
-// 方向へのズレが共通してある", the same magnitude regardless of which
-// Terminal.app profile/color scheme was used, consistent with a fixed
-// geometric offset rather than anything profile-specific). Corrected
-// by adding this window's own top border (title bar) height -- see
-// realOrEstimatedWindowBorders()'s own comment on why that isn't
-// simply SDL_GetWindowBordersSize()'s raw result -- to `y` before
-// handing it to SDL.
+// `x, y`は、AppleScriptの「bounds of window」が使うのと同じ「外枠、
+// タイトルバーを含む」座標の慣習であることが期待されている
+// (main.cppのqueryTerminalAppWindowBounds()自身のコメント参照)――
+// SDL_SetWindowPosition()自身のネイティブな慣習では「ない」。SDL
+// 自身の文書化された挙動は、position/sizeはウィンドウの「コンテンツ」
+// 領域を表し、OSが描く装飾(タイトルバー)はその「外側/上に」追加
+// される、というものである――外枠基準の`y`をそのまま変更せず渡す
+// (この関数の以前の版)と、このウィンドウの「コンテンツ」の上端が、
+// 本物の端末の「外枠」の上端(タイトルバー)がある場所に置かれてしまい、
+// このウィンドウ自身のタイトルバーが、本物の端末のタイトルバーが実際
+// にある場所より、タイトルバーの高さ分だけ浮いてしまう(実際の報告、
+// 2026-08-07、スクリーンショット⑮⑯: "表示開始位置の縦方向へのズレが
+// 共通してある"、どのTerminal.appのプロファイル/配色を使ってもマグニ
+// チュードが同じで、プロファイル固有の何かというより固定的な幾何学的
+// オフセットと一致する)。このウィンドウ自身の上部境界(タイトルバー)
+// の高さを`y`に足す(なぜそれが単純にSDL_GetWindowBordersSize()の
+// 生の結果ではないのかについてはrealOrEstimatedWindowBorders()自身の
+// コメント参照)ことで、SDLに渡す前に補正する。
 void GraphicalDisplay::setWindowPosition(int x, int y) {
   if (!impl_->window) return;
   WindowBorders borders = realOrEstimatedWindowBorders(impl_->window);
@@ -1856,41 +1911,40 @@ void GraphicalDisplay::setWindowPosition(int x, int y) {
   SDL_SetWindowPosition(impl_->window, x, y);
 }
 
-// `width, height` is expected in the SAME "outer frame, title bar
-// included" convention setWindowPosition() takes (see its own
-// comment) -- NOT SDL_SetWindowSize()'s own native convention, which
-// (like SetWindowPosition) describes the CONTENT area only. A first
-// version of this function passed `width`/`height` straight through
-// unconverted, which -- combined with setWindowPosition()'s correct
-// title-bar-height addition to `y` -- made this window's OUTER frame
-// end up title-bar-height TALLER than the real terminal's own outer
-// frame (a real report, 2026-08-08, screenshot: "ウィンドウ操作部の
-// 分だけ縦長かつ表示行数が少なめ"): setting the CONTENT height to the
-// real terminal's OUTER height (title bar included) makes this
-// window's content area itself already title-bar-height taller than
-// it needs to be, so the whole window (that oversized content area,
-// plus this window's OWN title bar on top of it) ends up one full
-// title-bar-height taller overall. Corrected the same way
-// setWindowPosition() converts its own coordinate: subtract the
-// border sizes from realOrEstimatedWindowBorders() (see its own
-// comment) from the given outer dimensions before handing them to
-// SDL, converting outer-frame size to the content-area size SDL
-// actually wants.
+// `width, height`は、setWindowPosition()が取るのと同じ「外枠、タイトル
+// バーを含む」慣習であることが期待されている(それ自身のコメント参照)
+// ――SDL_SetWindowSize()自身のネイティブな慣習では「ない」、こちら
+// は(SetWindowPositionと同様に)「コンテンツ」領域だけを表す。この
+// 関数の最初の版は`width`/`height`を変換せずそのまま渡していた、
+// これは――setWindowPosition()による`y`への正しいタイトルバー高さの
+// 加算と組み合わさって――このウィンドウの「外枠」を、本物の端末自身
+// の外枠より、タイトルバーの高さ分だけ「高く」してしまっていた
+// (実際の報告、2026-08-08、スクリーンショット: "ウィンドウ操作部の
+// 分だけ縦長かつ表示行数が少なめ"): コンテンツの高さを本物の端末の
+// 外枠の高さ(タイトルバーを含む)に設定すると、このウィンドウの
+// コンテンツ領域自体が既に、必要な高さよりタイトルバーの高さ分だけ
+// 高くなってしまい、結果としてウィンドウ全体(そのサイズ過剰な
+// コンテンツ領域に、その上に乗るこのウィンドウ「自身の」タイトル
+// バーが加わったもの)が、全体としてタイトルバー1つ分丸ごと高くなって
+// しまう。setWindowPosition()がそれ自身の座標を変換するのと同じ方法
+// で補正する: SDLに渡す前に、与えられた外枠寸法からrealOrEstimated
+// WindowBorders()(それ自身のコメント参照)の境界サイズを差し引き、
+// 外枠サイズをSDLが実際に求めているコンテンツ領域サイズへ変換する。
 //
-// Beyond that conversion, this still overrides whatever this class's
-// own cellWidth*columns+margins+scrollbar-width formula computed --
-// the same 2026-08-07 report found that formula's own computed width
-// consistently a point or two narrower than the real terminal across
-// every profile tried (Basic/Homebrew/Ocean/Red Sands/Man Page).
-// Rather than chase the exact source of that small, cross-profile-
-// constant discrepancy (font-metric rounding in cellWidth, or a fixed
-// margin/scrollbar-width constant off by a point or two), matching
-// the real terminal's own already-measured size directly is both
-// simpler and guaranteed exact, at the cost of a possible sliver of
-// empty background (or, in the unlikely case the real terminal is
-// somehow the SMALLER of the two, a point or two of content clipped
-// at the right/bottom edge) -- imperceptible next to the alternative
-// of a visibly mismatched window size.
+// その変換に加えて、これは依然として、このクラス自身のcellWidth*
+// columns+margins+scrollbar-widthという計算式が計算したものを何で
+// あれ上書きする――同じ2026-08-07の報告により、その計算式自身が
+// 計算する幅は、試した全てのプロファイル(Basic/Homebrew/Ocean/Red
+// Sands/Man Page)にわたって、本物の端末より常に1〜2ポイント狭いこと
+// が判明した。その小さな、プロファイルを問わず一定の食い違いの正確な
+// 発生源(cellWidthでのフォントメトリクスの丸め、あるいは1〜2ポイント
+// ずれた固定のmargin/scrollbar-width定数)を追いかけるより、本物の
+// 端末自身の既に計測済みのサイズに直接合わせる方が、単純でもあり、
+// 確実に正確でもある、その代償として、わずかな空白の背景の帯(あるいは、
+// 万が一本物の端末の方がなぜか小さい場合には、右/下端で1〜2ポイントの
+// コンテンツが切り取られること)が生じ得るが――目に見えて食い違った
+// ウィンドウサイズという代替案の隣に置けば、知覚できないほどのもの
+// である。
 void GraphicalDisplay::setWindowSize(int width, int height) {
   if (!impl_->window) return;
   WindowBorders borders = realOrEstimatedWindowBorders(impl_->window);
@@ -1899,203 +1953,215 @@ void GraphicalDisplay::setWindowSize(int width, int height) {
   if (width > 0 && height > 0) SDL_SetWindowSize(impl_->window, width, height);
 }
 
-// Overrides both the SDL window's outer size AND this class's own
-// cellWidth/cellHeight, so that columns*cellWidth+margins+scrollbar-
-// width and rows*cellHeight+margins exactly fill the given outer
-// dimensions -- a more direct fix for the same "行間が狭い" line-
-// spacing mismatch the TTF_FontHeight()-based cellHeight computation
-// in create() (and USILICLINEHEIGHT) were added for. A real report
-// (2026-08-08, font sizes 13/13/14/18/14pt across 5 different real
-// Terminal.app profiles, "フォントの大きさによる。同サイズから適正値
-// を一律に算出できればUSILICLINEHEIGHTは不要かと") found the needed
-// correction scales with font size in a way no single fixed
-// constant -- or even TTF_FontHeight() vs the raw glyph metrics --
-// reliably captures across different fonts/sizes. Since the「実は
-// すでにGUI」launch already KNOWS the real terminal's exact outer
-// pixel dimensions (via AppleScript bounds) and the exact row/column
-// count it needs to display, this derives cellWidth/cellHeight
-// DIRECTLY from that arithmetic instead of estimating from font
-// metrics at all, guaranteeing a pixel-exact match regardless of
-// which font/size the real terminal happens to be using. The window's
-// own outer size is set from the RAW (unrounded) target dimensions
-// rather than recomputed from the (integer-divided, so possibly
-// rounded-down-by-a-pixel-or-two) cellWidth/cellHeight, so the outer
-// frame still matches exactly even if that leaves a pixel or two of
-// slack at the content's own right/bottom edge -- imperceptible next
-// to a mismatched overall window size.
+// SDLウィンドウの外枠サイズと、このクラス自身のcellWidth/cellHeight
+// の両方を上書きし、columns*cellWidth+margins+scrollbar-widthと
+// rows*cellHeight+marginsが、与えられた外枠寸法をちょうど埋めるように
+// する――create()内のTTF_FontHeight()ベースのcellHeight計算(と
+// USILICLINEHEIGHT)が追加された、同じ「行間が狭い」という行間隔の
+// 不一致に対する、より直接的な修正。実際の報告(2026-08-08、5つの
+// 異なる本物のTerminal.appプロファイルにわたるフォントサイズ13/13/
+// 14/18/14pt、"フォントの大きさによる。同サイズから適正値を一律に
+// 算出できればUSILICLINEHEIGHTは不要かと")により、必要な補正はフォント
+// サイズに応じてスケールするが、その様子は単一の固定定数――あるいは
+// TTF_FontHeight()と生のグリフメトリクスの比較でさえも――異なる
+// フォント/サイズにわたって確実には捉えられないことが判明した。
+// 「実はすでにGUI」の起動は、本物の端末の正確な外枠のピクセル寸法
+// (AppleScriptのboundsを介して)と、表示する必要がある正確な行/列数
+// を既に「知っている」ので、これはフォントメトリクスから見積もる
+// のを一切やめて、その算術から「直接」cellWidth/cellHeightを導出し、
+// 本物の端末がたまたま使っているフォント/サイズが何であれ、ピクセル
+// 単位で正確な一致を保証する。ウィンドウ自身の外枠サイズは、(整数
+// 除算されるため、1〜2ピクセル切り捨てられている可能性のある)
+// cellWidth/cellHeightから再計算するのではなく、生の(丸めていない)
+// 目標寸法から設定される、そのためコンテンツ自身の右/下端に1〜2
+// ピクセルの遊びが残っても、外枠は依然として正確に一致する――全体の
+// ウィンドウサイズが食い違うことに比べれば知覚できないほどのもの
+// である。
 //
-// Font-metric-based cellWidth/cellHeight (create()'s own computation)
-// remains the right fallback for launches with no real terminal to
-// match against (plain `-g`, or `^Og` mid-session) -- this method is
-// only called from the "実はすでにGUI" overlay path, where a real
-// target size is always available.
+// フォントメトリクスに基づくcellWidth/cellHeight(create()自身の
+// 計算)は、合わせるべき本物の端末が無い起動(素の`-g`、あるいは
+// セッション途中の`^Og`)についての正しいフォールバックであり続ける
+// ――このメソッドは「実はすでにGUI」オーバーレイの経路からのみ呼ば
+// れ、そこでは本物の目標サイズが常に利用可能である。
 void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   if (!impl_->window || impl_->rows <= 0 || impl_->columns <= 0) return;
   WindowBorders borders = realOrEstimatedWindowBorders(impl_->window);
   int contentWidth = outerWidth - (borders.left + borders.right);
   int contentHeight = outerHeight - (borders.top + borders.bottom);
   if (contentWidth <= 0 || contentHeight <= 0) return;
-  // Rounded to the NEAREST integer cell size, not floored -- a real
-  // report (2026-08-09, screenshot "⑰", Man Page profile, 48 rows)
-  // showed the previous plain-truncating division (contentHeight/rows)
-  // reappearing as the exact same class of bug this whole "実はすでに
-  // GUI" feature's setWindowSize() originally fixed (docs/HISTORY.md
-  // 2026-08-07 "⑯": the real terminal visibly peeking out below this
-  // window because it's shorter) -- because the window's own size is
-  // now always derived FROM cellHeight (see below), truncating (always
-  // rounding cellHeight DOWN) always makes the resulting grid, and so
-  // the window itself, shorter than contentHeight by the division's
-  // full remainder (up to rows-1px, not "at most one cell" as an
-  // earlier version of this comment assumed -- confirmed live: 48 rows
-  // left a 45px gap). Rounding to nearest instead minimizes |rows*
-  // cellHeight - contentHeight| directly (the best any single uniform
-  // integer cell height can do), bounding the mismatch to roughly half
-  // that (~rows/2 px worst case, and often far less in practice -- the
-  // real Man Page numbers above round 13.9375 up to 14, landing the
-  // window a mere 3px TALLER than the real terminal instead of 45px
-  // SHORTER). Ties round up (`+denom/2` before truncating), fine here
-  // since both directions are an equally acceptable few-px mismatch.
+  // 切り捨てではなく「最も近い」整数のセルサイズに丸める――実際の
+  // 報告(2026-08-09、スクリーンショット「⑰」、Man Pageプロファイル、
+  // 48行)により、以前の単純な切り捨て除算(contentHeight/rows)が、
+  // この「実はすでにGUI」機能のsetWindowSize()がそもそも修正した
+  // まさに同じ種類のバグ(docs/HISTORY.md 2026-08-07「⑯」: 本物の
+  // 端末がこのウィンドウより短いために下にはみ出て見える)として再発
+  // していることが判明した――ウィンドウ自身のサイズは今や常に
+  // cellHeightから導かれるため(下記参照)、切り捨て(cellHeightを
+  // 常に「下」へ丸める)は、結果として得られるグリッド、ひいては
+  // ウィンドウ自体を、その除算の余りの全量(このコメントの以前の版が
+  // 想定していた「最大でも1セル分」ではなく、rows-1pxまで――実測で
+  // 確認済み: 48行で45pxの隙間が生じた)だけcontentHeightより短くして
+  // しまう。代わりに最も近い値に丸めることで、|rows*cellHeight -
+  // contentHeight|を直接最小化し(単一の一様な整数セル高さで達成できる
+  // 最善)、食い違いをおおよそその半分に収める(最悪でも約rows/2px、
+  // 実際にはそれよりずっと小さいことが多い――上記の実際のMan Pageの
+  // 数値は13.9375を14に切り上げ、結果として本物の端末より45px「短く」
+  // ではなく、わずか3px「高く」ウィンドウが着地する)。同点は切り上げる
+  // (切り捨てる前に`+denom/2`)、ここではどちらの方向へずれても等しく
+  // 許容できる数ピクセルの食い違いに過ぎないので問題ない。
   int cellWidth = (contentWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth + impl_->columns / 2) / impl_->columns;
   int cellHeight = (contentHeight - Impl::kMarginY * 2 + impl_->rows / 2) / impl_->rows;
-  // cellWidth's own nearest-integer rounding above (see the big comment
-  // a few lines down on cellHeight's identical rounding) can round UP
-  // enough that the grid's own right edge (kMarginX + columns*
-  // cellWidth) reaches past scrollbarStripLeft() (contentWidth -
-  // kScrollbarWidth, flush against the window's real right edge as of
-  // 2026-08-24 -- see its own comment). scrollbarStripLeft()'s own fix
-  // (docs/HISTORY.md 2026-08-24 mpi report, item 429) already keeps
-  // the scrollbar strip itself fully inside the real window when that
-  // happens -- but a FOLLOW-UP real mpi report ("横が惜しい", same
-  // day) found the character GRID still extends into that same
-  // reserved strip, since this method never adjusted cellWidth to
-  // account for the scrollbar's now-correct position: the rightmost
-  // column(s) of real text render UNDERNEATH the scrollbar's own
-  // bitmap/thumb (drawn afterward in flush(), so it paints over the
-  // grid), effectively hiding those characters. Shrinking cellWidth
-  // (never growing it) until the grid plus its own left margin plus
-  // the scrollbar's own reserved width fit inside contentWidth
-  // guarantees the two can never overlap, at the cost of the grid
-  // possibly finishing a few px short of the scrollbar strip (a plain
-  // background gap) rather than covering it -- the same "gap over
-  // corruption" tradeoff scrollbarStripLeft() itself already made.
+  // 上のcellWidth自身の最も近い整数への丸め(cellHeightの同一の丸め
+  // についての数行下の大きなコメント参照)は、グリッド自身の右端
+  // (kMarginX + columns*cellWidth)がscrollbarStripLeft()(contentWidth
+  // - kScrollbarWidth、2026-08-24以降、ウィンドウの実際の右端に
+  // ぴったり付く――それ自身のコメント参照)を超えるほど「上」に丸め
+  // てしまうことがある。scrollbarStripLeft()自身の修正(docs/
+  // HISTORY.md 2026-08-24のmpi報告、項目429)は、それが起きた時、
+  // スクロールバーの帯自体を本物のウィンドウの内側に完全に収める
+  // ことは既に行っているが――「追跡の」実際のmpi報告("横が惜しい"、
+  // 同日)により、このメソッドがスクロールバーの今や正しくなった
+  // 位置を考慮してcellWidthを調整することが一切無いため、文字の
+  // 「グリッド」がその同じ予約済みの帯の中まで依然として伸びている
+  // ことが判明した: 実際のテキストの一番右の列(複数)が、スクロール
+  // バー自身のビットマップ/つまみ(flush()内で後から描画されるため、
+  // グリッドの上に塗られる)の「下に」レンダリングされ、事実上それら
+  // の文字を隠してしまう。cellWidthを(決して大きくせず)小さくして
+  // いき、グリッドとそれ自身の左マージンとスクロールバー自身の予約
+  // 幅を合わせたものがcontentWidthの中に収まるようにすることで、
+  // 両者が決して重ならないことを保証する、その代償として、グリッド
+  // がスクロールバーの帯を覆う代わりに、そこから数pxだけ手前で終わる
+  // (単なる背景の隙間になる)ことがあり得る――scrollbarStripLeft()
+  // 自身が既に選んだのと同じ「文字化けより隙間」というトレードオフ
+  // である。
   while (cellWidth > 1 && Impl::kMarginX + impl_->columns * cellWidth + Impl::kScrollbarWidth > contentWidth) {
     cellWidth--;
   }
   if (cellWidth <= 0 || cellHeight <= 0) return;
-  // Read from the STABLE base fields (Impl::baseFontMetricCellWidth/
-  // Height, captured once in create()), NOT impl_->cellWidth/cellHeight
-  // -- the latter get overwritten with the real terminal's own target
-  // values a few lines below, so on a SECOND matchWindowSize() call
-  // (a live font-size change mid-session, `^Og` re-entry, etc.) they'd
-  // no longer hold the font's own true native metric at all. See
-  // Impl::baseFontMetricCellWidth's own comment for the full reasoning.
+  // (create()で一度だけ取得される)安定したベースのフィールド
+  // (Impl::baseFontMetricCellWidth/Height)から読み取る、
+  // impl_->cellWidth/cellHeightからでは「ない」――後者は数行下で
+  // 本物の端末自身の目標値によって上書きされてしまうので、
+  // 「2回目」のmatchWindowSize()呼び出し(セッション途中でのフォント
+  // サイズの生の変更、`^Og`の再入場、等)では、もはやフォント自身の
+  // 本当のネイティブメトリクスを一切保持していないことになる。
+  // 全体の理屈についてはImpl::baseFontMetricCellWidth自身のコメント
+  // 参照。
   int fontMetricCellWidth = impl_->baseFontMetricCellWidth;
   int fontMetricCellHeight = impl_->baseFontMetricCellHeight;
-  // BOTH cellWidth and cellHeight are now the PLAIN ARITHMETIC values,
-  // UNFLOORED -- height's own font-metric floor (originally added for
-  // a real report, 2026-08-08, two of five real terminal profiles at
-  // 13pt: "garbled/overlapping text, adjacent rows visibly smeared
-  // into each other") was removed 2026-08-10, the same day and for the
-  // same reason width's own floor already was (see the class-wide
-  // reasoning below, ported from that fix): a real report (screenshots,
-  // pixel-measured: 1119x813 for -g vs 1119x690 for -c, SAME 22-line
-  // content, at a real terminal profile's line-spacing set to 0.8x)
-  // found -g refusing to shrink below its own font-metric floor while
-  // -c's real line spacing shrank normally, making -g visibly TALLER
-  // ("縦長") than the real terminal it's supposed to overlay -- the
-  // exact same class of divergence the width floor caused for 24pt
-  // "Novel", just triggered by a sub-1.0 line-spacing MULTIPLIER
-  // instead of a large font SIZE this time (both ultimately mean "the
-  // real terminal's own actual per-row/per-column pixel measurement
-  // differs from this class's own font-metric-based estimate of it").
+  // cellWidthとcellHeightの「両方」が、今や単純な算術値であり、下限
+  // でクランプされて「いない」――height自身のフォントメトリクスに
+  // よる下限(元々は実際の報告、2026-08-08、5つの本物の端末プロファ
+  // イルのうち2つが13ptで「文字化け/重なり、隣り合う行が互いに目に
+  // 見えてにじむ」ため追加された)は、2026-08-10、width自身の下限が
+  // 既にそうされたのと同じ日、同じ理由で削除された(その修正から
+  // 移植した、クラス全体にわたる理屈は下記参照): 実際の報告
+  // (スクリーンショット、ピクセルで計測: -gが1119x813、-cが1119x690、
+  // 「同じ」22行のコンテンツ、実際の端末プロファイルの行間隔を0.8倍に
+  // 設定)により、-cの実際の行間隔が正常に縮む一方で、-gが自分自身の
+  // フォントメトリクスによる下限より縮むことを拒んでおり、-gが
+  // オーバーレイするはずの本物の端末より目に見えて「縦長」になって
+  // いることが判明した――24ptの「Novel」でwidthの下限が引き起こした
+  // のとまさに同じ種類の食い違いだが、今回は大きなフォント「サイズ」
+  // ではなく1.0未満の行間隔の「倍率」によって引き起こされている
+  // (どちらも突き詰めれば「本物の端末自身の実際の行ごと/列ごとの
+  // ピクセル計測値が、このクラス自身のフォントメトリクスに基づく
+  // それの見積もりと異なる」ことを意味する)。
   //
-  // Whether removing the floor risks reintroducing the ORIGINAL 13pt
-  // "smeared" bug this floor was added for was checked before doing
-  // this, not assumed: renderCell()'s own fitGlyphRect() (used for
-  // EVERY glyph drawn, confirmed by re-reading it here again) always
-  // uniformly downscales a glyph surface larger than its own cell
-  // (scale = min(1.0, maxW/glyphW, maxH/glyphH) -- applies to height
-  // exactly like it does to width, never upscales, never clips) --
-  // meaning a smaller-than-font-metric cellHeight shrinks each row's
-  // own glyphs to fit their own row's box, it does not let them bleed
-  // into an ADJACENT row's box the way un-uniform positioning could.
-  // The original 13pt report's real root cause was very likely the
-  // SAME class of window/grid SIZE MISMATCH item 241's width bug (and
-  // this file's own matching comment on it) turned out to be, not
-  // literal unsafe glyph overflow -- matching the real terminal's own
-  // measured pixel height EXACTLY (this class's own established
-  // "誤差ゼロ" standard, item 227) removes that mismatch by
-  // construction, the same way it already did for width.
+  // 下限を取り除くことが、この下限が追加された「元々の」13ptの
+  // 「にじみ」バグを再発させる危険を冒すかどうかは、想定するのでは
+  // なく、これを行う前に確認済み: renderCell()自身のfitGlyphRect()
+  // (描画される「あらゆる」グリフに使われる、ここで改めて読み直して
+  // 確認済み)は、自身のセルより大きなグリフのサーフェスを常に一様に
+  // 縮小する(scale = min(1.0, maxW/glyphW, maxH/glyphH)――widthに対して
+  // と全く同じようにheightにも適用され、拡大は決してせず、切り取りも
+  // 決してしない)――つまり、フォントメトリクスより小さいcellHeightは、
+  // 各行自身のグリフをその行自身のボックスに収まるよう縮小するので
+  // あって、一様でない位置決めがそうし得るように「隣接する」行のボックス
+  // へにじみ出させることはない。元々の13ptの報告の実際の根本原因は、
+  // 文字通りの危険なグリフのオーバーフローではなく、項目241のwidthの
+  // バグ(とこのファイル自身のそれに対応するコメント)が判明したのと
+  // 「まさに同じ」種類のウィンドウ/グリッドのサイズの食い違いで
+  // あった可能性が非常に高い――本物の端末自身の計測済みのピクセルの
+  // 高さに「正確に」合わせることで(このクラス自身が既に確立した
+  // 「誤差ゼロ」の基準、項目227)、widthについて既にそうしたのと
+  // 同じ方法で、その食い違いを構造的に取り除く。
   //
-  // Re-render the font itself at (approximately) the RIGHT size for
-  // this target cellHeight, rather than leaving it fixed at create()'s
-  // own original fontPointSize -- added 2026-08-10, a real report
-  // ("18ドットだと行が重なる...24ドットにしてみて文字が細すぎるから
-  // だとわかった。-gだとベクトルフォントにならないのはなぜ？") caught
-  // by comparing -g against -c at two sizes: -g's text looked
-  // noticeably THINNER/more aliased than -c's real terminal rendering
-  // at 24pt, and outright illegible at 18pt -- NOT a hinting/AA
-  // setting difference, but this exact method's own doing: every
-  // matchWindowSize() call before this one changed impl_->cellWidth/
-  // cellHeight (the LAYOUT grid the WINDOW is sized from) but left the
-  // FONT itself untouched at its original create()-time point size, so
-  // whenever the target cell size (now always the real terminal's own
-  // exact arithmetic-derived value, items 254/258) differed EVEN
-  // SLIGHTLY from that original size, fitGlyphRect() (renderCell()'s
-  // own glyph-fit helper) had to bitmap-rescale an already-rasterized
-  // glyph texture via SDL_RenderCopy -- a blurry/thin raster resize,
-  // not a real vector re-render at the correct size, and MUCH more
-  // frequently needed now that items 254/258 stopped flooring
-  // cellWidth/cellHeight up to the font's own native size (which used
-  // to make scale==1.0, i.e. no rescaling at all, essentially always).
-  // TTF_SetFontSize() (SDL_ttf 2.0.18+) re-renders the font's own
-  // internal glyph cache at a NEW point size natively -- scaling from
-  // Impl::baseFontPointSize/baseFontMetricCellHeight (the font's own
-  // STABLE, never-overwritten original measurement, not the
-  // now-target-holding impl_->cellHeight) keeps this accurate across
-  // repeated calls the same way fontMetricCellWidth/Height's own read
-  // above does. Height (not width) drives the ratio because line-
-  // height is the more reliable/conventional metric most fonts scale
-  // point size from; the resulting native width won't necessarily
-  // land exactly on the target cellWidth too, but fitGlyphRect() still
-  // catches that small residual safely, just far less drastically than
-  // before. A no-op (skipped entirely) when the target already matches
-  // the font's own current native size, avoiding a redundant
-  // TTF_SetFontSize() call (not free -- it rebuilds the font's glyph
-  // cache) on every single matchWindowSize() call when nothing about
-  // the font size actually needs to change.
+  // create()自身の元々のfontPointSizeに固定したままにするのではなく、
+  // この目標cellHeightに(おおよそ)「正しい」サイズでフォント自体を
+  // 再レンダリングする――2026-08-10追加、2つのサイズで-gと-cを比較
+  // することで捕まえた実際の報告("18ドットだと行が重なる...24ドット
+  // にしてみて文字が細すぎるからだとわかった。-gだとベクトルフォント
+  // にならないのはなぜ？"): -gのテキストは24ptにおける-cの実際の
+  // 端末のレンダリングより明らかに「薄く」/よりエイリアシングして
+  // 見え、18ptでは全く判読不能だった――ヒンティング/AAの設定の違い
+  // ではなく、まさにこのメソッド自身が原因だった: これより前は、
+  // どのmatchWindowSize()呼び出しもimpl_->cellWidth/cellHeight
+  // (「ウィンドウ」のサイズがそこから決まるレイアウトグリッド)を
+  // 変えていたが、「フォント」自体は元々のcreate()時点のポイント
+  // サイズのまま手を付けずにいた、そのため、目標のセルサイズ(今や
+  // 常に本物の端末自身の正確な算術的に導出された値、項目254/258)
+  // がその元々のサイズと「わずかにでも」異なるたびに、fitGlyphRect()
+  // (renderCell()自身のグリフ合わせ用ヘルパー)は、既にラスタライズ
+  // 済みのグリフのテクスチャをSDL_RenderCopy経由でビットマップとして
+  // 再スケールせざるを得なかった――正しいサイズでの本物のベクトル
+  // 再レンダリングではなく、ぼやけた/薄いラスターのリサイズであり、
+  // 項目254/258がcellWidth/cellHeightをフォント自身のネイティブ
+  // サイズまで下限でクランプするのをやめた今(以前はそれがscale==1.0
+  // に、つまり実質的に常に再スケール無しになっていた)、はるかに
+  // 頻繁に必要になっている。TTF_SetFontSize()(SDL_ttf 2.0.18+)は
+  // フォント自身の内部グリフキャッシュをネイティブに新しいポイント
+  // サイズで再レンダリングする――Impl::baseFontPointSize/
+  // baseFontMetricCellHeight(フォント自身の安定した、決して上書き
+  // されない元々の計測値、今や目標を保持しているimpl_->cellHeight
+  // ではなく)からスケーリングすることで、上のfontMetricCellWidth/
+  // Height自身の読み取りと同じ方法で、繰り返しの呼び出しにわたって
+  // これを正確に保つ。widthではなくheightが比率を駆動するのは、
+  // 行の高さの方が、ほとんどのフォントがポイントサイズをスケール
+  // する元にする、より信頼できる/慣習的なメトリクスであるため;
+  // 結果として得られるネイティブなwidthは必ずしも目標のcellWidthに
+  // ぴったり乗るとは限らないが、fitGlyphRect()は依然としてその小さな
+  // 残差を安全に吸収する、ただし以前よりはるかに劇的でなくなって
+  // いるだけである。目標が既にフォント自身の現在のネイティブサイズ
+  // と一致している場合はno-op(完全にスキップ)であり、フォントの
+  // サイズについて実際には何も変える必要がない、まさにその
+  // matchWindowSize()呼び出しのたびに、無駄なTTF_SetFontSize()呼び
+  // 出し(タダではない――フォントのグリフキャッシュを再構築する)を
+  // 避ける。
   int newPointSize = impl_->baseFontPointSize;
   if (fontMetricCellHeight > 0 && cellHeight != fontMetricCellHeight) {
     newPointSize = std::max(
         1, (impl_->baseFontPointSize * cellHeight + impl_->baseFontMetricCellHeight / 2) / impl_->baseFontMetricCellHeight);
     TTF_SetFontSize(impl_->font, newPointSize);
     if (impl_->fallbackFont) TTF_SetFontSize(impl_->fallbackFont, newPointSize);
-    // Keep fontPointSize()'s own read-back (item 427, used to persist
-    // the live GUI state to History::GuiPreferences at session end)
-    // accurate for THIS launch path too -- previously left at whatever
-    // create() was originally called with, never updated here even
-    // though this is exactly where the real, final point size gets
-    // decided for a "実はすでにGUI" overlay session.
+    // fontPointSize()自身の読み戻し(項目427、セッション終了時に
+    // 実行中のGUI状態をHistory::GuiPreferencesへ永続化するのに使わ
+    // れる)を、この起動経路についても正確に保つ――以前は、ここでは
+    // 一切更新されず、create()が元々どんな値で呼ばれたかそのまま
+    // 残っていた、これがまさに「実はすでにGUI」オーバーレイセッション
+    // について本物の最終的なポイントサイズが決まる場所であるにも
+    // 関わらず。
     impl_->currentFontPointSize = newPointSize;
-    // The font object was just resized in place -- every cached
-    // texture is now the WRONG pixel size for it. See
-    // clearGlyphCache()'s own comment.
+    // フォントオブジェクトはたった今その場でリサイズされた――キャッシュ
+    // されているテクスチャは全て今やそれに対して「間違った」ピクセル
+    // サイズになっている。clearGlyphCache()自身のコメント参照。
     clearGlyphCache(*impl_);
   }
   impl_->cellWidth = cellWidth;
   impl_->cellHeight = cellHeight;
   int width = contentWidth;
   int height = contentHeight;
-  // Same opt-in USILICGUIDEBUG file flush() already uses, reused here
-  // for exactly the same reason: this sandbox
-  // has no real Terminal.app window to compare against, so root-
-  // causing a real-hardware report (this exact dump is what found the
-  // 45px-remainder bug above, "Man Pageが余白大", 2026-08-08) can't be
-  // done blind -- kept in place so any FUTURE mismatch report can be
-  // diffed against real numbers immediately too. flooredCellWidth/
-  // flooredCellHeight are computed here PURELY for this diagnostic
-  // line (to see how far the font-metric estimate would have
-  // diverged) -- neither drives any decision above anymore.
+  // flush()が既に使っているのと同じオプトインのUSILICGUIDEBUGファイル
+  // を、まさに同じ理由で再利用する: このサンドボックスには比較対象
+  // となる本物のTerminal.appウィンドウが無いので、実機の報告の根本
+  // 原因を突き止める(上の45px残差のバグ、"Man Pageが余白大"、
+  // 2026-08-08を見つけたのはまさにこのダンプである)ことは、当てず
+  // っぽうではできない――将来のどんな食い違いの報告についても、
+  // すぐに本物の数値と突き合わせられるよう、そのまま残してある。
+  // flooredCellWidth/flooredCellHeightは、「純粋に」この診断行のため
+  // だけにここで計算される(フォントメトリクスによる見積もりがどれ
+  // だけ食い違っていたかを見るため)――どちらももう上のどの判断も
+  // 駆動していない。
   int flooredCellWidth = std::max(cellWidth, fontMetricCellWidth);
   int flooredCellHeight = std::max(cellHeight, fontMetricCellHeight);
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
@@ -2129,36 +2195,36 @@ void GraphicalDisplay::raise() {
   SDL_RaiseWindow(impl_->window);
 }
 
-// The REAL macOS system open-hand cursor, extracted live from
-// NSCursor.openHand (mac_cursor.hpp's extractOpenHandCursorImage())
-// and wrapped in an SDL_Cursor -- not a hand-drawn SDL_CreateColorCursor
-// bitmap, and NOT a raw [[NSCursor openHandCursor] set] call either
-// (an earlier version of this function did that and it reverted to
-// the plain arrow the instant a drag started moving -- see
-// mac_cursor.hpp's own comment for the full story of why routing
-// through SDL_SetCursor(), like setPointingCursor() below already
-// does, was the fix). Two earlier, since-abandoned attempts at
-// drawing this shape ourselves (a flat-rectangle silhouette, then a
-// rounded-capsule one) were both real rejections ("ロボットの手みたい
-// なやつは却下", then "さっき却下のロボット指よりもひどくなった") --
-// a same-day sharp catch explained why neither could ever look right:
-// the pointing-hand cursor this project ALREADY shows for scrollbar
-// dragging (setPointingCursor() below) was never actually drawn by
-// this project or by SDL2 either -- it's macOS's own real system
-// cursor asset (SDL_SYSTEM_CURSOR_HAND maps directly to
-// `[NSCursor pointingHandCursor]` on macOS, confirmed by reading
-// SDL2's own upstream source, src/video/cocoa/SDL_cocoamouse.m), so
-// any hand-drawn approximation sitting next to it was always going to
-// look inferior by comparison. Extracting NSCursor.openHand's own
-// pixels (confirmed to exist as a real, well-formed vector cursor on
-// this machine: /System/Library/Frameworks/ApplicationServices.
-// framework/Versions/A/Frameworks/HIServices.framework/Versions/A/
-// Resources/cursors/openhand/cursor.pdf) via a tiny Objective-C++
-// (.mm) bridge (mac_cursor.mm) shows the exact same real asset instead
-// -- reconsidered from the earlier "avoid .mm" preference (the
-// scrollbar's own NSScroller work) specifically because the payoff
-// here is concrete and already demonstrated, unlike that more
-// speculative attempt.
+// NSCursor.openHand(mac_cursor.hppのextractOpenHandCursorImage())から
+// 生きたまま抽出し、SDL_Cursorに包んだ「本物の」macOSシステムの
+// open-handカーソル――手描きのSDL_CreateColorCursorビットマップでは
+// なく、生の[[NSCursor openHandCursor] set]呼び出しでもない(この
+// 関数の以前の版はそれを行っていたが、ドラッグが動き始めた瞬間に
+// ただの矢印に戻ってしまった――下のsetPointingCursor()が既に行って
+// いるように、SDL_SetCursor()を経由することがなぜ修正になったのかの
+// 全ての経緯についてはmac_cursor.hpp自身のコメント参照)。この形を
+// 自分たちで描こうとした、それ以来放棄された2回の以前の試み(まず
+// フラットな長方形のシルエット、次に角の丸いカプセル型)は、どちら
+// も実際に却下された("ロボットの手みたいなやつは却下"、それから
+// "さっき却下のロボット指よりもひどくなった")――同日の鋭い指摘が、
+// なぜどちらも決して正しく見えるはずがなかったのかを説明した: この
+// プロジェクトがスクロールバーのドラッグについて「既に」表示している
+// pointing-handカーソル(下のsetPointingCursor())は、そもそもこの
+// プロジェクトによってもSDL2によっても実際には描かれたことが無かった
+// ――それはmacOS自身の本物のシステムカーソルの資産である
+// (SDL_SYSTEM_CURSOR_HANDはmacOSでは`[NSCursor pointingHandCursor]`
+// に直接マップされる、SDL2自身の上流のソース、
+// src/video/cocoa/SDL_cocoamouse.mを読んで確認済み)、なので、その
+// 隣に座るどんな手描きの近似も、比較すれば常に見劣りするはずだった。
+// 代わりに、小さなObjective-C++(.mm)のブリッジ(mac_cursor.mm)経由で
+// NSCursor.openHand自身のピクセルを抽出する(このマシン上に、本物の
+// 整形式のベクターカーソルとして存在することを確認済み:
+// /System/Library/Frameworks/ApplicationServices.framework/Versions/A/
+// Frameworks/HIServices.framework/Versions/A/Resources/cursors/
+// openhand/cursor.pdf)ことで、まさに同じ本物の資産を代わりに見せる
+// ――以前の「.mmは避ける」という好み(スクロールバー自身のNSScroller
+// の作業)からは考え直したものだが、それはこの投機的な試みとは異なり、
+// ここでの見返りが具体的で既に実証済みであるという特有の理由による。
 void GraphicalDisplay::setHandCursor(bool active) {
   if (active == impl_->handCursorActive) return;
   impl_->handCursorActive = active;
@@ -2180,18 +2246,19 @@ void GraphicalDisplay::setHandCursor(bool active) {
   }
 }
 
-// SDL's own system pointing-hand (index finger) -- what setHandCursor()
-// used to show for EVERY drag gesture, before a real request
-// (2026-08-10, see setHandCursor()'s own comment) split content-
-// dragging off to the real macOS open-hand cursor instead. Reserved
-// now for gestures that really are more like clicking/operating a
-// control than grabbing content: scrollbar-thumb dragging (see its
-// own call site in main.cpp) -- and, per that same request ("可能なら
-// ファイルおよび文字列選択でのスコープ範囲内...のみでの表示"), a
-// future hover-over-selectable-content indicator, not yet wired here
-// (no continuous hover-vs-selectable-region tracking exists yet to
-// drive it -- left for a follow-up, see CLAUDE.md's own note on this
-// request for the reasoning).
+// SDL自身のシステムのpointing-hand(人差し指)――実際の依頼
+// (2026-08-10、setHandCursor()自身のコメント参照)がコンテンツの
+// ドラッグを代わりに本物のmacOSのopen-handカーソルへ分離する前に、
+// setHandCursor()が「あらゆる」ドラッグジェスチャについて表示して
+// いたもの。今は、コンテンツを掴むというより本当にコントロールを
+// クリック/操作するような感じのジェスチャのために予約されている:
+// スクロールバーのつまみのドラッグ(main.cppにあるそれ自身の呼び出し
+// 箇所参照)――そして、同じ依頼("可能ならファイルおよび文字列選択
+// でのスコープ範囲内...のみでの表示")によれば、将来の選択可能な
+// コンテンツにホバーした時のインジケータも、まだここには結線されて
+// いない(それを駆動する、継続的なホバー対選択可能領域の追跡が
+// まだ存在しない――追って対応、この依頼についての理屈はCLAUDE.md
+// 自身の記述参照)。
 void GraphicalDisplay::setPointingCursor(bool active) {
   if (active == impl_->pointingCursorActive) return;
   impl_->pointingCursorActive = active;
@@ -2203,13 +2270,14 @@ void GraphicalDisplay::setPointingCursor(bool active) {
   }
 }
 
-// Draws one already-UTF-8-decoded-per-glyph line of text starting at
-// pixel position (0, y), used by both renderScrolled()'s per-content-
-// line loop and its mode-line row below -- factored out so the mode-
-// line (added 2026-07-31) doesn't need a third copy of the glyph-walk/
-// font-fallback/fitGlyphRect() dance renderCell() already has its own
-// (necessarily separate, see renderScrolled()'s own class comment on
-// why this whole path is self-contained).
+// 既にグリフごとにUTF-8デコード済みの1行のテキストを、ピクセル位置
+// (0, y)から描画する、renderScrolled()の1コンテンツ行ごとのループと
+// その下のモードライン行の両方が使う――モードライン(2026-07-31追加)
+// が、renderCell()が既に自分自身で持っているグリフ走査/フォント
+// フォールバック/fitGlyphRect()のダンスの3つ目のコピーを必要としな
+// いよう括り出してある(必然的に別物になっている、なぜこの経路全体
+// が自己完結しているのかについてはrenderScrolled()自身のクラス
+// コメント参照)。
 void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, int startCol,
                                       const std::vector<Display::AttributeRun> &attributes) {
   SDL_Color sdlFg{fg.r, fg.g, fg.b, 255};
@@ -2222,68 +2290,72 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     int width = std::max(1, Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + pos), len));
     std::string glyph = line.substr(pos, len);
     if (glyph != " " && lead >= 0x20) {
-      // 2026-08-21 fix, a direct user report ("マウスの左クリック
-      // （画面ドラッグスタンバイ状態）中だと文字装飾が利かず" -- HELP's
-      // own bold/underlined words, e.g. "tcb", "``TCB''", render plain
-      // during an active drag/coast): see this function's own
-      // TTF_SetFontStyle() comment just below for the root cause this
-      // addresses (this used to always render NORMAL, no per-glyph
-      // style info reaching this function at all). Same byte-offset-
-      // range matching ContentView::renderLine()/TerminalDisplay::
-      // writeAttributedLine() already use (`pos < run.start ||
-      // pos >= run.end` -- this class's own convention throughout is
-      // byte offset == screen column for plain ASCII HELP text, the
-      // only content ever styled this way).
+      // 2026-08-21修正、直接のユーザー報告("マウスの左クリック（画面
+      // ドラッグスタンバイ状態）中だと文字装飾が利かず"――HELP自身の
+      // 太字/下線付きの単語、例えば"tcb"、"``TCB''"が、ドラッグ/慣性
+      // スクロールが有効な間はプレーンにレンダリングされる):これが
+      // 対処する根本原因については、すぐ下のこの関数自身の
+      // TTF_SetFontStyle()のコメント参照(以前は常にNORMALをレンダ
+      // リングしており、グリフごとのスタイル情報がこの関数へ一切
+      // 届いていなかった)。ContentView::renderLine()/TerminalDisplay::
+      // writeAttributedLine()が既に使っているのと同じバイトオフセット
+      // 範囲でのマッチング(`pos < run.start || pos >= run.end`――この
+      // クラス自身の慣習は全体を通じて、プレーンなASCIIのHELPテキスト
+      // (このように装飾される唯一のコンテンツ)についてはバイト
+      // オフセット==画面上の列である)。
       bool wantBold = false, wantUnderline = false;
       for (const auto &run : attributes) {
         if (static_cast<int>(pos) < run.start || static_cast<int>(pos) >= run.end) continue;
         if (run.attribute == Display::Attribute::Bold) wantBold = true;
         else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
       }
-      // See renderCell()'s own comment on why a fallback font is
-      // consulted here too -- including the `isWide` check below,
-      // ADDED 2026-08-10 (a real report, "慣性スクロール中は日本語も
-      // ビットマップになる"): this function was missing renderCell()'s
-      // own `isWide && fallbackHasIt` preference, using the PRIMARY
-      // (Latin) font instead of the CJK fallback for the small set of
-      // "ambiguous width" codepoints the primary font ALSO happens to
-      // claim (▽ U+25BD, curly quotes U+201C/U+201D -- see renderCell()'s
-      // own comment for why classifying these as CJK-fallback-only
-      // matters: Menlo's own narrow glyphs for them look visually
-      // inconsistent, and stretched into a full 2-column box via
-      // fitGlyphRect() far MORE drastically than a properly-proportioned
-      // CJK glyph would need, reading as noticeably blurrier/more
-      // "bitmap" -- exactly the reported symptom, and specific to the
-      // SCROLLING render path since only THIS function had the gap).
+      // なぜここでもフォールバックフォントが参照されるのかについては
+      // renderCell()自身のコメント参照――下の`isWide`のチェックを
+      // 含め、2026-08-10追加(実際の報告、"慣性スクロール中は日本語
+      // もビットマップになる"): この関数には、メインフォント(ラテン)
+      // が「たまたま」主張してもいる、小さな「曖昧な幅」のコードポイ
+      // ントの集合(▽ U+25BD、曲線的な引用符U+201C/U+201D――これらを
+      // CJKフォールバック専用として分類することがなぜ重要かについて
+      // はrenderCell()自身のコメント参照:Menlo自身のそれらについての
+      // 狭いグリフは見た目に一貫性が無く、fitGlyphRect()経由で2列分の
+      // ボックス全体に引き伸ばされると、適切な比率のCJKグリフが必要
+      // とするよりはるかに劇的に、目に見えて「よりぼやけた」/
+      // より「ビットマップ」らしく見える――まさに報告された症状で
+      // あり、「この」関数だけにその隙間があったため、スクロール中
+      // の描画経路に特有のものだった)について、CJKフォールバックの
+      // 代わりにメイン(ラテン)フォントを使ってしまう、
+      // renderCell()自身の`isWide && fallbackHasIt`という優先ルール
+      // が、この関数には欠けていた。
       TTF_Font *renderFont = impl_->font;
       unsigned int codepoint = decodeUtf8Codepoint(glyph);
       bool isWide = width >= 2;
       bool fallbackHasIt = glyphProvidedByFont(impl_->fallbackFont, codepoint);
       if ((isWide && fallbackHasIt) || (!glyphProvidedByFont(impl_->font, codepoint) && fallbackHasIt))
         renderFont = impl_->fallbackFont;
-      // Same style computation as renderCell()'s own (`if (cell.bold)
-      // style |= TTF_STYLE_BOLD;` etc.) -- this function previously
-      // always rendered TTF_STYLE_NORMAL regardless of `attributes`
-      // (see this function's own 2026-08-21 fix comment above, right
-      // where wantBold/wantUnderline get computed).
+      // renderCell()自身のもの(`if (cell.bold) style |= TTF_STYLE_BOLD;`
+      // 等)と同じスタイルの計算――この関数は以前は`attributes`に
+      // 関わらず常にTTF_STYLE_NORMALをレンダリングしていた(この関数
+      // 自身の上の2026-08-21修正のコメント、wantBold/wantUnderlineが
+      // 計算されるまさにその箇所参照)。
       int style = TTF_STYLE_NORMAL;
       if (wantBold) style |= TTF_STYLE_BOLD;
       if (wantUnderline) style |= TTF_STYLE_UNDERLINE;
-      // Same half-width-hinting adjustment as renderCell() -- see its
-      // own comment (item 264, replacing item 263's TTF_HINTING_LIGHT).
-      // (TTF_SetFontStyle()/TTF_SetFontHinting() themselves moved into
-      // cachedGlyphTexture(), called below -- see its own comment. This
-      // is the hottest of the 3 call sites cachedGlyphTexture() serves:
-      // every visible row, every ~16ms coast physics slice during an
-      // active scroll -- see cachedGlyphTexture()'s own comment on the
-      // mpi/i5-9400 sluggishness report that motivated adding it.)
+      // renderCell()と同じ半角用ヒンティングの調整――それ自身のコメント
+      // 参照(項目264、項目263のTTF_HINTING_LIGHTを置き換えたもの)。
+      // (TTF_SetFontStyle()/TTF_SetFontHinting()自体は、下で呼ばれる
+      // cachedGlyphTexture()の中へ移動した――それ自身のコメント参照。
+      // これはcachedGlyphTexture()が担う3つの呼び出し箇所の中で最も
+      // ホットなものである: アクティブなスクロール中の、見えている
+      // 全ての行、約16msごとの慣性物理演算のスライス毎に呼ばれる――
+      // それを追加する動機となったmpi/i5-9400のもっさり感の報告に
+      // ついてはcachedGlyphTexture()自身のコメント参照。)
       int hinting = isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE;
       int w = 0, h = 0;
       SDL_Texture *texture = cachedGlyphTexture(*impl_, renderFont, glyph, style, hinting, sdlFg, !isWide, w, h);
       if (texture) {
-        // Fit to `width` cells via fitGlyphRect() -- see
-        // renderCell()'s own comment on why this shrinks-and-
-        // centers instead of stretching.
+        // fitGlyphRect()経由で`width`セルに合わせる――なぜこれが
+        // 引き伸ばすのではなく縮小して中央寄せするのかについては
+        // renderCell()自身のコメント参照。
         SDL_Rect dst = fitGlyphRect(Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
                                      width * impl_->cellWidth, impl_->cellHeight, w, h);
         SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
@@ -2307,72 +2379,73 @@ int GraphicalDisplay::textRunDisplayWidth(const std::string &text) const {
   return width;
 }
 
-// First slice of the scrollbar overlay (docs/HISTORY.md line 521 /
-// IDEAS.md's 2026-08-03 entry) -- only shown WHILE actively dragging/
-// coasting, since this is only ever called from renderScrolled() (the
-// scroll-specific render path); the static (non-scrolling) case needs
-// a Display-interface extension, see this function's own caller
-// comment. This matches -c's own reference behavior too, confirmed
-// from a real screenshot (2026-08-07): a static, non-scrolling -c
-// window shows no scrollbar at all either.
+// スクロールバーオーバーレイの最初のスライス(docs/HISTORY.md
+// 521行目/IDEAS.mdの2026-08-03の項目)――ドラッグ/慣性スクロールが
+// 実際に有効な「間だけ」表示される、これがrenderScrolled()(スクロール
+// 専用の描画経路)からのみ呼ばれるため;静的な(スクロールしていない)
+// 場合にはDisplayインターフェースの拡張が必要、この関数自身の呼び
+// 出し元のコメント参照。これは-c自身のリファレンスの挙動とも一致する、
+// 実際のスクリーンショット(2026-08-07)から確認済み: 静的な、
+// スクロールしていない-cのウィンドウもスクロールバーを一切表示
+// しない。
 //
-// Visual style: solid impl_->fg (2026-08-07, replacing the previous
-// translucent neutral-gray-thumb/no-track version), same color and
-// full opacity as the mode-line's own reverse-video bar (see
-// renderModeLine()/the mode-line-drawing block below) -- the user's
-// own reasoning: matching the mode-line specifically (rather than
-// picking yet another fixed gray) means the scrollbar automatically
-// looks right under ANY color theme, not just this project's default
-// green-on-black. Plain rectangle, no rounded corners this time --
-// the mode-line bar itself is a plain rectangle, and the user asked
-// for "the same shape, a rectangle of the same width" once the color
-// was going to match it anyway. (The FIRST attempt at using impl_->fg,
-// 2026-08-07 earlier the same day, was rejected for reading as "a
-// solid saturated-green block" -- but that version filled a
-// near-full-height TRACK with it; a small thumb-sized rect, the
-// mode-line's own bar height, doesn't have the same "wall of color"
-// problem.)
-// Anchors the scrollbar strip to the window's own ACTUAL current
-// pixel width (SDL_GetWindowSize()), not to kMarginX + columns*
-// cellWidth as every call site here (this method, drawIdleScrollbarImage(),
-// and the SDL_MOUSEBUTTONDOWN scrollbar-hit-test) used to compute
-// independently. The two normally agree, because create()/the manual-
-// resize path (item 425) both size the window FROM that exact same
-// formula -- but matchWindowSize() (the "実はすでにGUI" overlay launch,
-// this class's own real-terminal-pixel-match feature) instead forces
-// the window to the real terminal's own measured OUTER pixel size,
-// with no awareness of kScrollbarWidth's reservation at all. A real
-// mpi report (docs/HISTORY.md 2026-08-24, "見た目、最初から細い") and
-// live measurement found cellWidth's own nearest-integer rounding
-// (matchWindowSize()'s own comment) can round UP just enough that
-// kMarginX*2 + columns*cellWidth + kScrollbarWidth exceeds the
-// window's real matched contentWidth by MORE than kScrollbarWidth
-// itself (585 real vs 597 needed on that profile -- columns=80,
-// cellWidth=7) -- SDL never draws outside the window's own bounds, so
-// nearly the WHOLE reserved scrollbar strip silently fell off the
-// right edge, leaving only a few px of it actually visible. Anchoring
-// from the window's own real width instead guarantees the full
-// kScrollbarWidth always lands inside the window, at the cost of the
-// character grid possibly falling a few px short of the strip on an
-// overflowing profile -- a plain background gap, far less harmful
-// than losing the scrollbar to invisibility.
-// No trailing `- Impl::kMarginX` gap here (removed 2026-08-24, a real
-// mpi report comparing the "実はすでにGUI" overlay side-by-side
-// against the M1 machine's own real terminal, mpi4.png vs mini.png:
-// mpi's scrollbar sat a visible few-px gap short of the window's true
-// right edge, while the real terminal's own native scrollbar -- and
-// mini's own overlay, matching it -- sits flush, no gap at all). An
-// EARLIER version of this method (and drawScrollbar()'s own now-
-// removed comment) added that gap deliberately, from a 2026-08-09
-// request ("位置だけは元からあるスクロールバーと同じにしたい") -- but
-// for the overlay's own "張りぼて" (decoy) idle image specifically,
-// ANY visible gap defeats the whole point: it must land pixel-for-
-// pixel where the real terminal's own scrollbar already sits, not
-// just "close," or the illusion breaks the moment a real terminal
-// window is compared directly against it (exactly what this report
-// caught). Since this method is shared by the idle image, the real
-// thumb, and the click hit-test alike, flush-to-edge now applies
-// uniformly rather than only to the overlay path.
+// 見た目のスタイル: 単色のimpl_->fg(2026-08-07、以前の半透明の
+// ニュートラルグレーのつまみ/トラック無しの版を置き換えたもの)、
+// モードライン自身の反転表示のバー(renderModeLine()/下のモードライン
+// 描画のブロック参照)と同じ色、同じ不透明度――ユーザー自身の理屈:
+// 特にモードラインに合わせる(また別の固定のグレーを選ぶのではなく)
+// ことで、このプロジェクトのデフォルトの緑地に黒だけでなく、「どんな」
+// カラーテーマの下でも自動的に正しく見える。今回は角の丸みは無く
+// プレーンな長方形――モードラインのバー自体がプレーンな長方形であり、
+// どのみち色がそれに合わせられることになった以上、ユーザーは「同じ形、
+// 同じ幅の長方形」を求めた。(impl_->fgを使う「最初の」試み、同日の
+// 2026-08-07の少し前は、「単色の彩度の高い緑のブロック」に見えると
+// して却下された――しかしその版はほぼ全高の「トラック」をそれで
+// 塗りつぶしていた;モードライン自身のバーの高さの、小さなつまみ
+// サイズの矩形には、同じ「色の壁」問題は無い。)
+// スクロールバーの帯を、ここにあるすべての呼び出し箇所(このメソッド、
+// drawIdleScrollbarImage()、そしてSDL_MOUSEBUTTONDOWNのスクロールバー
+// あたり判定)がかつて個別に計算していたkMarginX + columns*cellWidth
+// にではなく、ウィンドウ自身の「現在の」実際のピクセル幅
+// (SDL_GetWindowSize())に固定する。この2つは通常は一致する、なぜ
+// ならcreate()/手動リサイズの経路(項目425)はどちらもまさにその同じ
+// 計算式「から」ウィンドウのサイズを決めるため――しかしmatchWindowSize()
+// (「実はすでにGUI」オーバーレイの起動、このクラス自身の本物の端末
+// のピクセルに合わせる機能)は、代わりに、kScrollbarWidthの予約領域を
+// 一切意識せずに、ウィンドウを本物の端末自身の計測された外枠のピクセル
+// サイズへ強制する。実際のmpi報告(docs/HISTORY.md 2026-08-24、"見た目、
+// 最初から細い")と実測により、cellWidth自身の最も近い整数への丸め
+// (matchWindowSize()自身のコメント)が、kMarginX*2 + columns*cellWidth
+// + kScrollbarWidthが、ウィンドウの実際に合わせたcontentWidthを、
+// kScrollbarWidth自体より「多く」超えるほどちょうど「上」に丸めて
+// しまうことがあると判明した(そのプロファイルでは実際585対必要な597
+// ――columns=80、cellWidth=7)――SDLはウィンドウ自身の境界の外には
+// 決して描画しないので、予約されたスクロールバーの帯のほぼ「全体」が
+// 黙って右端の外へ落ち、実際に見えるのはそのうちのわずか数pxだけに
+// なっていた。代わりにウィンドウ自身の実際の幅から固定することで、
+// 完全なkScrollbarWidthが常にウィンドウの内側に着地することを保証
+// する、その代償として、はみ出るプロファイルでは、文字グリッドが
+// その帯より数pxだけ手前で終わることがあり得る――単なる背景の隙間
+// であり、スクロールバーが見えなくなることに比べればはるかに害が
+// 少ない。
+// ここでは末尾の`- Impl::kMarginX`の隙間は無い(2026-08-24削除、
+// 「実はすでにGUI」オーバーレイをM1マシン自身の本物の端末と並べて
+// 比較した実際のmpi報告、mpi4.png対mini.png: mpiのスクロールバーは
+// ウィンドウの本当の右端より目に見えて数pxの隙間を残して座っていた
+// のに対し、本物の端末自身のネイティブなスクロールバー――そしてそれ
+// に合わせたmini自身のオーバーレイ――は隙間無くぴったり座っていた)。
+// このメソッドの「以前の」版(とdrawScrollbar()自身の今は削除された
+// コメント)は、その隙間を、2026-08-09の依頼("位置だけは元からある
+// スクロールバーと同じにしたい")から意図的に加えていた――しかし
+// オーバーレイ自身の「張りぼて」(見せかけ)のアイドル画像について
+// 特に言えば、「どんな」目に見える隙間も、その目的全体を台無しに
+// する: それは本物の端末自身のスクロールバーが既に座っている場所に、
+// 単に「近い」のではなくピクセル単位で正確に着地しなければならない、
+// さもないと、本物の端末のウィンドウと直接比較された瞬間に幻想が
+// 崩れる(まさにこの報告が捕まえたもの)。このメソッドはアイドル画像、
+// 実際のつまみ、そしてクリックのあたり判定に同様に共有されているので、
+// 今や端にぴったり付けることは、オーバーレイの経路だけではなく一様
+// に適用される。
 int GraphicalDisplay::scrollbarStripLeft() const {
   int windowWidth = 0, windowHeight = 0;
   SDL_GetWindowSize(impl_->window, &windowWidth, &windowHeight);
@@ -2384,10 +2457,10 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   if (contentRows <= 0) return;
   int trackHeight = contentRows * impl_->cellHeight;
 
-  // totalLines <= contentRows means the whole document already fits
-  // on screen at once -- the thumb fills the entire track (nothing to
-  // scroll to), matching a real scrollbar's own convention rather
-  // than dividing by a non-positive range below.
+  // totalLines <= contentRowsは、文書全体が既に一度に画面に収まる
+  // ことを意味する――つまみはトラック全体を埋める(スクロールする
+  // 先が無い)、下で非正の範囲で割るのではなく、本物のスクロールバー
+  // 自身の慣習に合わせる。
   int scrollableLines = std::max(totalLines - contentRows, 0);
   double visibleFraction = (totalLines > 0) ? std::min(1.0, static_cast<double>(contentRows) / totalLines) : 1.0;
   int thumbHeight = std::max(static_cast<int>(trackHeight * visibleFraction), std::min(trackHeight, 20));
@@ -2395,79 +2468,83 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   int thumbY = (scrollableLines > 0)
                    ? std::clamp(static_cast<int>(maxThumbY * (effectiveTop / scrollableLines)), 0, maxThumbY)
                    : 0;
-  // Widened again, 2->1 (2026-08-07, a real side-by-side comparison
-  // against a normal Directory-mode selection highlight bar -- "ハイ
-  // ライトとの比較ではつまみ部の幅がやや狭い"): still a 1px margin on
-  // each side within the reserved strip (kThumbInset 0 would use the
-  // whole strip, no visual edge against the mode-line/content area at
-  // all) rather than the full width.
+  // 再び広げた、2->1(2026-08-07、通常のDirectoryモードの選択
+  // ハイライトバーとの実際の並列比較――"ハイライトとの比較ではつまみ
+  // 部の幅がやや狭い"): それでも予約された帯の中の左右それぞれに
+  // 1pxの余白を残す(kThumbInset 0だと帯全体を使ってしまい、モード
+  // ライン/コンテンツ領域に対する目に見える縁が全く無くなる)、
+  // 全幅を使うのではなく。
   constexpr int kThumbInset = 1;
-  // See scrollbarStripLeft()'s own comment: flush against the window's
-  // real right edge, no trailing gap (2026-08-24).
+  // scrollbarStripLeft()自身のコメント参照: ウィンドウの実際の右端に
+  // ぴったり付ける、末尾の隙間は無い(2026-08-24)。
   int thumbX = scrollbarStripLeft() + kThumbInset;
   int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
   int thumbTop = Impl::kMarginY + thumbY;
 
-  // Plain rectangle -- FINAL, per the user's own explicit 2026-08-07
-  // call ("つまみは矩形採用で完了"). A same-day rounded-pill revival
-  // (briefly reintroduced here, verified via a synthetic standalone
-  // render) was based on a misreading: the user's own question at the
-  // time ("矩形描画だけだと丸みを帯びたつまみ部が描けないのでは...
-  // SDL描画でもできるの？") was about the SEPARATE, not-yet-built idle-
-  // state decoration discussed alongside it, not about revisiting this
-  // already-settled ACTIVE thumb -- reverted back to a plain rect once
-  // that was clarified. Left unrounded going forward; this thumb's
-  // shape is not to be revisited again without a new, explicit
-  // request.
+  // プレーンな長方形――「最終」、ユーザー自身の明示的な2026-08-07の
+  // 判断による("つまみは矩形採用で完了")。同日の角丸ピル形状の復活
+  // (ここに一時的に再導入され、合成的な単体レンダリングで検証された)
+  // は、誤読に基づいていた: その時のユーザー自身の質問("矩形描画
+  // だけだと丸みを帯びたつまみ部が描けないのでは...SDL描画でも
+  // できるの？")は、それと並んで議論されていた、別の、まだ作られて
+  // いないアイドル状態の装飾についてのものであり、この既に決着済みの
+  // 「アクティブな」つまみを見直すことについてではなかった――それが
+  // 明らかになった時点で、プレーンな矩形に戻した。今後は角丸にせず
+  // 据え置く;このつまみの形は、新たな明示的な依頼が無い限り、再び
+  // 見直されるべきではない。
   SDL_Rect thumb{thumbX, thumbTop, thumbWidth, thumbHeight};
   SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
   SDL_RenderFillRect(impl_->renderer, &thumb);
 }
 
-// Caches the current scroll position -- see this method's own header
-// comment for why flush() needs this at all (it has no scroll-position
-// parameters of its own, unlike renderScrolled()) -- only used once
-// Impl::everInteracted is true (see its own comment); before that,
-// flush() calls drawIdleScrollbarImage() below instead. A same-day
-// real report ("マウス操作ON/OFFのたびに矩形つまみと張りぼて画像を
-// 切り替えるのは無意味な気がする。つまみが消えてしまうので継続操作も
-// できない") found unconditionally swapping between the two on every
-// drag start/stop (this method's own first version) actively harmful;
-// gating the swap on a one-time "has the user ever touched it" flag
-// instead keeps the illusion intact up to the moment it stops
-// mattering (the user's own words, restoring this image one round
-// later: "「実はすでにGUI」が意味を持つのは最初だけ"), then never
-// switches back.
+// 現在のスクロール位置をキャッシュする――flush()がそもそもなぜこれを
+// 必要とするのかについては、このメソッド自身のヘッダコメント参照
+// (renderScrolled()とは異なり、flush()自身はスクロール位置の
+// パラメータを持たない)――Impl::everInteractedがtrueになった後
+// にのみ使われる(それ自身のコメント参照);それより前は、flush()
+// は代わりに下のdrawIdleScrollbarImage()を呼ぶ。同日の実際の報告
+// ("マウス操作ON/OFFのたびに矩形つまみと張りぼて画像を切り替える
+// のは無意味な気がする。つまみが消えてしまうので継続操作もできない")
+// により、ドラッグの開始/停止のたびに無条件でこの2つを切り替える
+// こと(このメソッドの最初の版)が実際に有害だと判明した;代わりに
+// 「ユーザーがこれまでに一度でも触れたか」という一回限りのフラグで
+// 切り替えを制御することで、意味が無くなる瞬間まで幻想を保ったまま
+// にし(ユーザー自身の言葉、1ラウンド後にこの画像を復元しながら:
+// "「実はすでにGUI」が意味を持つのは最初だけ")、その後は二度と
+// 戻らない。
 void GraphicalDisplay::updateScrollPosition(int topIndex, int totalLines, int contentRows) {
   impl_->scrollTopIndex = topIndex;
   impl_->scrollTotalLines = totalLines;
   impl_->scrollContentRows = contentRows;
 }
 
-// Composites the three embedded slices (scrollbar_idle_image.hpp's own
-// class comment explains why three, not one) to fill the SAME vertical
-// span drawScrollbar()'s real track occupies (Impl::kMarginY to
-// Impl::kMarginY + contentRows*cellHeight, contentRows == rows-1 since
-// the last row is reserved for the mode line -- its own trackHeight
-// formula) -- unlike the original single-image version, this ALWAYS exactly fills
-// the current profile's own content height, no overflow/gap tradeoff
-// to accept anymore: only the plain, textureless middle slice (drawn
-// via a dst rect taller than its own native size, letting SDL_RenderCopy
-// scale it) ever gets resized, while the top/bottom slices -- the only
-// parts with real detail (the thumb/grip area, the rounded track end)
-// -- always draw at their own native, undistorted pixel size.
+// 埋め込まれた3つのスライス(なぜ1つではなく3つなのかについては
+// scrollbar_idle_image.hpp自身のクラスコメントで説明)を合成し、
+// drawScrollbar()の実際のトラックが占めるのと「同じ」垂直方向の範囲
+// (Impl::kMarginYからImpl::kMarginY + contentRows*cellHeightまで、
+// 最後の行はモードラインのために予約されているためcontentRows ==
+// rows-1――それ自身のtrackHeightの計算式)を埋める――元の単一画像版
+// とは異なり、これは現在のプロファイル自身のコンテンツ高さを「常に」
+// 正確に埋める、もはやオーバーフロー/隙間のトレードオフを受け入れる
+// 必要は無い: プレーンで模様の無い中間のスライス(自身のネイティブ
+// サイズより高いdstの矩形経由で描画され、SDL_RenderCopyにそれを
+// スケーリングさせる)だけがサイズ変更され、一方上部/下部のスライス
+// ――本物の細部(つまみ/グリップの領域、丸みを帯びたトラックの端)
+// を持つ唯一の部分――は常にそれ自身のネイティブな、歪みの無い
+// ピクセルサイズで描画される。
 //
-// drawSlice(): a small local helper (not its own method -- used only
-// here, three times) matching the mechanics of the original 2026-08-07
-// single-image version: embedded BMP bytes decoded fresh every call
-// (matching this file's existing per-frame-texture style, see
-// renderCell()'s own glyph texture) via SDL2's native BMP reader, no
-// runtime file path or new library dependency.
+// drawSlice(): 小さなローカルのヘルパー(それ自身のメソッドではない
+// ――ここでだけ、3回使われる)、元の2026-08-07の単一画像版の仕組みに
+// 合わせている: 埋め込まれたBMPのバイト列を、SDL2のネイティブなBMP
+// リーダー経由で呼び出しのたびに新たにデコードする(このファイルの
+// 既存のフレームごとのテクスチャというスタイルに合わせている、
+// renderCell()自身のグリフのテクスチャ参照)、実行時のファイルパスも
+// 新しいライブラリ依存も無い。
 void GraphicalDisplay::drawIdleScrollbarImage() {
   auto drawSlice = [&](const unsigned char *bmp, size_t bmpSize, const SDL_Rect &dst) {
     SDL_RWops *rw = SDL_RWFromConstMem(bmp, static_cast<int>(bmpSize));
     if (!rw) return;
-    SDL_Surface *surface = SDL_LoadBMP_RW(rw, 1);  // 1 == SDL closes/frees rw for us
+    SDL_Surface *surface = SDL_LoadBMP_RW(rw, 1);  // 1 == rwの close/free はSDLが代わりに行う
     if (!surface) return;
     SDL_Texture *texture = SDL_CreateTextureFromSurface(impl_->renderer, surface);
     if (texture) {
@@ -2477,92 +2554,95 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
     SDL_FreeSurface(surface);
   };
 
-  // Same scrollbarStripLeft() drawScrollbar()'s own thumbX now uses --
-  // see its comment. Keeps this idle-state composite aligned with
-  // where the real thumb sits once it takes over.
+  // drawScrollbar()自身のthumbXが今使っているのと同じ
+  // scrollbarStripLeft()――そのコメント参照。このアイドル状態の合成
+  // を、実際のつまみが引き継いだ時にそれが座る場所と揃えたままにする。
   int stripX = scrollbarStripLeft();
 
-  // kDefaultIdleImageYOffset: a real report (2026-08-09, screenshots,
-  // "2ミリほど下がるけど下にはみ出さない") found the (then single-image)
-  // decoration pasted a few mm LOWER than it should sit -- plausibly
-  // the embedded screenshot's own top edge already includes a few
-  // pixels of the real scrollbar's own rounded/faded top-of-track
-  // appearance above its visually "solid" portion, so pasting it
-  // starting exactly at kMarginY reads as sitting that much lower than
-  // a real terminal's own scrollbar, which has no such lead-in. -11
-  // was confirmed exactly on real hardware
-  // ("USILICIDLEIMAGEYOFFSET=-11でピッタリ") for that original single
-  // image; applied to this 3-slice composite's own TOP edge (the top
-  // slice is a direct re-crop of that same original image's own top
-  // region, so the same lead-in reasoning still applies) -- AND,
-  // symmetrically, to the BOTTOM edge too (see trackBottom's own
-  // comment below for the real-hardware data that confirmed this).
-  // USILICIDLEIMAGEYOFFSET (same "tunable knob instead of another
-  // code-and-rebuild round" pattern as USILICTITLEBARHEIGHT/
-  // USILICSCROLLBARSCALE) still overrides this default outright, kept
-  // for the same reason those other knobs are: display/font/profile
-  // variation this sandbox can't itself verify against.
+  // kDefaultIdleImageYOffset: 実際の報告(2026-08-09、スクリーンショット、
+  // "2ミリほど下がるけど下にはみ出さない")により、(当時は単一画像
+  // だった)装飾が本来座るべき位置より数mm「低く」貼られていることが
+  // 判明した――埋め込まれたスクリーンショット自身の上端が、目に見え
+  // て「実体のある」部分より上に、既に本物のスクロールバー自身の
+  // 丸みを帯びた/薄れたトラック上端の見た目を数ピクセル含んでいる
+  // 可能性が高く、そのためそれをちょうどkMarginYから始めて貼ると、
+  // そのような導入部を持たない本物の端末自身のスクロールバーより、
+  // その分だけ低く座っているように読める。-11は、その元々の単一画像
+  // について実機で正確に確認済み("USILICIDLEIMAGEYOFFSET=-11で
+  // ピッタリ")である;この3スライス合成自身の「上」端に適用される
+  // (上部スライスは、同じ元の画像自身の上部領域の直接の再切り出し
+  // なので、同じ導入部の理屈が依然として当てはまる)――そして対称的
+  // に「下」端にも(これを確認した実機のデータについては下の
+  // trackBottom自身のコメント参照)。USILICIDLEIMAGEYOFFSET
+  // (USILICTITLEBARHEIGHT/USILICSCROLLBARSCALEと同じ「もう一度の
+  // コード変更+再ビルドの代わりに調整可能なつまみ」というパターン)
+  // は、それでもこのデフォルトを完全に上書きする、これらの他のつまみ
+  // と同じ理由で残されている: このサンドボックス自体では検証できない
+  // ディスプレイ/フォント/プロファイルのばらつき。
   constexpr int kDefaultIdleImageYOffset = -11;
   int yOffset = kDefaultIdleImageYOffset;
   if (const char *env = std::getenv("USILICIDLEIMAGEYOFFSET")) {
     yOffset = std::atoi(env);
   }
   int trackTop = Impl::kMarginY + yOffset;
-  // trackBottom -- two real reports (screenshots, 2026-08-10) got this
-  // wrong in two different ways before landing here:
-  //   1. An EARLIER version computed trackBottom from trackTop (i.e.
-  //      applying yOffset there too), dragging the bottom slice up by
-  //      the same amount the top slice is nudged for its own gradient
-  //      lead-in -- wrong, "bar-3位置が高め".
-  //   2. The NEXT version anchored trackBottom to the track's plain
-  //      unshifted bottom edge (Impl::kMarginY + contentRows*cellHeight,
-  //      contentRows == rows-1 since the last row is reserved for the
-  //      mode line -- matching drawScrollbar()'s own trackHeight
-  //      formula) with no correction at all -- still wrong, "さっきより
-  //      2,3ドット高い", meaning bar-3.jpg's own bottom edge ALSO has a
-  //      few pixels of real-scrollbar lead-in below its visually
-  //      "solid" portion, the same class of thing yOffset already
-  //      corrects for at the top.
-  // A real USILICIDLEBOTTOMOFFSET tuning session across TWO very
-  // different profiles (a small-font one needing +30, and 24pt "Novel"
-  // -- cellHeight 19 vs 29 respectively -- needing +40) revealed the
-  // correction is not a fixed pixel count at all: it's exactly
-  // `cellHeight - yOffset` in BOTH cases (19-(-11)=30, 29-(-11)=40, an
-  // exact match, not a coincidence -- the two ends of the original
-  // source screenshot most likely have matching-magnitude lead-in
-  // margins, so shifting the WHOLE composite kMarginY+rows*cellHeight
-  // range outward by |yOffset| at both ends, symmetrically, is exactly
-  // what both real data points independently confirm). This makes
-  // trackBottom simply `Impl::kMarginY + rows*cellHeight - yOffset`
-  // (equivalently: the mode-line row's own top edge, PLUS one more
-  // cellHeight to account for stepping from contentRows back to the
-  // full row count, MINUS yOffset) -- no separate tunable knob needed;
-  // USILICIDLEIMAGEYOFFSET alone now drives both ends symmetrically.
+  // trackBottom -- ここに落ち着くまでに、2つの実際の報告
+  // (スクリーンショット、2026-08-10)がこれを2つの異なる方法で間違え
+  // ていた:
+  //   1. 「以前の」版はtrackBottomをtrackTopから計算していた(つまり
+  //      そこでもyOffsetを適用していた)、これは、上部スライスがそれ
+  //      自身のグラデーションの導入部のためにずらされているのと同じ
+  //      量だけ、下部スライスを上へ引きずってしまう――間違い、
+  //      "bar-3位置が高め"。
+  //   2. 「次の」版は、trackBottomを、トラックのプレーンなずらして
+  //      いない下端(Impl::kMarginY + contentRows*cellHeight、最後の
+  //      行はモードラインのために予約されているためcontentRows ==
+  //      rows-1――drawScrollbar()自身のtrackHeightの計算式と一致)
+  //      に、一切補正せずに固定していた――それでも間違い、"さっきより
+  //      2,3ドット高い"、つまりbar-3.jpg自身の下端「も」、目に見えて
+  //      「実体のある」部分の下に、本物のスクロールバーの導入部を
+  //      数ピクセル持っている、yOffsetが上端で既に補正しているのと
+  //      同じ種類のものである。
+  // 2つの非常に異なるプロファイル(小さいフォントの方は+30が必要、
+  // 24ptの「Novel」――それぞれcellHeight 19対29――は+40が必要)に
+  // わたる実際のUSILICIDLEBOTTOMOFFSETの調整セッションにより、その
+  // 補正は固定のピクセル数では全くなく、両方の場合において厳密に
+  // `cellHeight - yOffset`であることが明らかになった(19-(-11)=30、
+  // 29-(-11)=40、正確な一致であり、偶然ではない――元のソースの
+  // スクリーンショットの両端は、おそらく同じ大きさの導入部の余白を
+  // 持っており、そのため合成全体のkMarginY+rows*cellHeightという
+  // 範囲を、両端対称に|yOffset|だけ外側へずらすことが、まさに両方の
+  // 実データが独立に裏付けていることになる)。これにより、trackBottom
+  // は単純に`Impl::kMarginY + rows*cellHeight - yOffset`になる
+  // (同じことだが: モードライン行自身の上端に、contentRowsから完全な
+  // 行数へ戻す分のcellHeightをもう1つ足し、yOffsetを引いたもの)
+  // ――別の調整可能なつまみは不要;USILICIDLEIMAGEYOFFSETだけが今や
+  // 両端を対称に駆動する。
   //
-  // `Impl::kMarginY + rows*cellHeight` (the ORIGINAL formula here) is
-  // only the window's own DESIGNED height, matching its actual real
-  // pixel height solely because create()/the manual-resize path (item
-  // 425) both size the window FROM that exact same formula -- exactly
-  // the same assumption scrollbarStripLeft()'s own comment already
-  // found broken for WIDTH under matchWindowSize() (the "実はすでに
-  // GUI" overlay, real mpi report 2026-08-24). The SAME class of bug
-  // applies here: matchWindowSize() forces the window to the real
-  // terminal's own measured pixel HEIGHT, and cellHeight's own nearest-
-  // integer rounding (matchWindowSize()'s own comment) can land far
-  // enough from the true fractional value that rows*cellHeight
-  // overshoots the real available height -- a live mpi report (a
-  // profile where this composite rendered as only its own top slice,
-  // near the window's top edge, with nothing below it down to the mode
-  // line) confirmed the middle/bottom slices were being positioned
-  // below the window's own real bottom edge, off-screen, because this
-  // formula assumed more vertical room than the real matched window
-  // actually has. Anchored from the window's own ACTUAL current pixel
-  // height (SDL_GetWindowSize(), mirroring scrollbarStripLeft()'s own
-  // fix) instead, so trackBottom can never land past the real window's
-  // own bottom edge -- identical to the old formula whenever the
-  // window's real height does equal kMarginY*2+rows*cellHeight (the
-  // normal create()/manual-resize case), only differing under
-  // matchWindowSize()'s own real-terminal pixel match.
+  // `Impl::kMarginY + rows*cellHeight`(ここでの「元の」計算式)は、
+  // ウィンドウ自身の「設計上の」高さに過ぎず、それが実際の本物の
+  // ピクセル高さと一致するのは、もっぱらcreate()/手動リサイズの経路
+  // (項目425)がどちらもまさにその同じ計算式「から」ウィンドウの
+  // サイズを決めているためである――scrollbarStripLeft()自身のコメント
+  // が、matchWindowSize()(「実はすでにGUI」オーバーレイ、実際のmpi
+  // 報告2026-08-24)の下でwidthについて既に破綻していると見つけた
+  // のとまさに同じ想定である。「同じ」種類のバグがここにも当てはまる:
+  // matchWindowSize()はウィンドウを本物の端末自身の計測されたピクセル
+  // の「高さ」へ強制し、cellHeight自身の最も近い整数への丸め
+  // (matchWindowSize()自身のコメント)は、真の小数値から十分離れた
+  // ところに着地することがあり、rows*cellHeightが実際に利用可能な
+  // 高さを超えてしまう――実際のmpi報告(この合成が、ウィンドウの上端
+  // 付近に、それ自身の上部スライスだけとしてレンダリングされ、その
+  // 下からモードラインまで何も無くなっていたプロファイル)により、
+  // このメソッドがより多くの垂直方向の余地を想定していたために、
+  // 中間/下部のスライスが、ウィンドウ自身の実際の下端より下、画面外
+  // に配置されていたことが確認された。代わりに、ウィンドウ自身の
+  // 「現在の」実際のピクセル高さ(SDL_GetWindowSize()、
+  // scrollbarStripLeft()自身の修正に倣う)から固定することで、
+  // trackBottomが本物のウィンドウ自身の下端を決して超えないように
+  // する――ウィンドウの実際の高さがkMarginY*2+rows*cellHeightと
+  // 一致する場合(通常のcreate()/手動リサイズの場合)は古い計算式と
+  // 同一であり、matchWindowSize()自身の本物の端末とのピクセルの
+  // 一致の下でのみ異なる。
   int windowWidthNow = 0, windowHeightNow = 0;
   SDL_GetWindowSize(impl_->window, &windowWidthNow, &windowHeightNow);
   (void)windowWidthNow;
@@ -2588,11 +2668,12 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
                       kScrollbarIdleBottomHeight};
   drawSlice(kScrollbarIdleBottomBmp, sizeof(kScrollbarIdleBottomBmp), bottomDst);
 
-  // The gap between the top and bottom slices, filled by stretching
-  // the plain middle slice to whatever height is needed -- negative
-  // (top/bottom slices would overlap) only for a pathologically short
-  // window (well under the two slices' own combined 68px), not a real
-  // profile in practice, so simply skipped rather than clamped.
+  // 上部スライスと下部スライスの間の隙間を、必要などんな高さにでも
+  // プレーンな中間スライスを引き伸ばして埋める――負になる(上部/
+  // 下部スライスが重なってしまう)のは、病的に短いウィンドウ(2つの
+  // スライスを合わせた68pxをゆうに下回る)についてだけで、実際の
+  // プロファイルではあり得ないので、クランプするのではなく単純に
+  // スキップする。
   int middleTop = trackTop + kScrollbarIdleTopHeight;
   int middleHeight = (trackBottom - kScrollbarIdleBottomHeight) - middleTop;
   if (middleHeight > 0) {
@@ -2601,26 +2682,29 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
   }
 }
 
-// Drag-scroll prototype rendering -- see class comment and header
-// comment on why this is a self-contained path, not layered on
-// write()/putChar()/moveCursor(). Renders each of `lines` (already
-// UTF-8-decoded per-glyph via the same fm::Utf8 helpers putByte()
-// uses) at its own computed pixel Y position, offset by pixelOffsetY,
-// including ONE extra row beyond whichever edge is being revealed.
+// ドラッグスクロールのプロトタイプの描画――なぜこれがwrite()/
+// putChar()/moveCursor()の上に重ねるのではなく自己完結した経路なのか
+// についてはクラスコメントとヘッダのコメント参照。`lines`(putByte()
+// が使うのと同じfm::Utf8のヘルパー経由で、既にグリフごとにUTF-8
+// デコード済み)の各要素を、それ自身の計算されたピクセルY位置に、
+// pixelOffsetYだけずらして、どちらの端が現れつつあるかに応じて
+// 1行余分に含めてレンダリングする。
 //
-// The bottom row is reserved for `modeLineText` (ContentView's own
-// "current/total NN%" formatting, see ModeLine) and is NEVER part of
-// the scrolled content -- content only ever occupies impl_->rows - 1
-// rows here (rowCount below is sized accordingly), matching every
-// ContentView's own viewport height (Application::resize()'s
-// "contentHeight = rows()-1"). Before this, the content loop spanned
-// the FULL window height, so dragging/coasting scrolled straight
-// through where the mode-line belongs (a known gap noted in CLAUDE.md
-// well before the mode-line existed to collide with). The mode-line
-// itself is redrawn fresh every call (not offset by pixelOffsetY --
-// it's a fixed row) so it live-updates during a drag/coast, which was
-// the ORIGINAL motivation for wanting mode-line support at all (see
-// CLAUDE.md's 2026-07-30 notes on reflecting scroll state there).
+// 最下行は`modeLineText`(ContentView自身の「現在/合計 NN%」という
+// フォーマット、ModeLine参照)のために予約されており、スクロール
+// されるコンテンツの一部には決してならない――ここではコンテンツは
+// impl_->rows - 1行だけを占める(下のrowCountはそれに応じたサイズ)、
+// あらゆるContentView自身のビューポートの高さ(Application::resize()の
+// "contentHeight = rows()-1")と一致する。これより前は、コンテンツの
+// ループはウィンドウの高さ「全体」にわたっていたため、ドラッグ/
+// 慣性スクロールは、モードラインがあるべき場所をそのままスクロール
+// して突き抜けていた(モードラインが存在してそれと衝突するようになる
+// はるか前から、CLAUDE.mdに記されていた既知の隙間)。モードライン
+// 自体は呼び出しのたびに新たに再描画される(pixelOffsetYではずらされ
+// ない――固定の行である)ので、ドラッグ/慣性スクロール中もライブに
+// 更新される、これがそもそもモードライン対応を求めた「元々の」動機
+// だった(そこでスクロール状態を反映することについてはCLAUDE.mdの
+// 2026-07-30の記述参照)。
 void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &lines, int topIndex, int pixelOffsetY,
                                        const std::vector<Display::ModeLineSegment> &modeLineSegments) {
   if (!impl_->outputEnabled) return;
@@ -2632,28 +2716,29 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
 
   int contentRows = std::max(impl_->rows - 1, 0);
 
-  // Clip content rendering strictly to the margin boundary (2026-08-07,
-  // a real user report): without this, SDL's default clip is the
-  // whole render target, so a partially-scrolled row's glyphs (which
-  // can legitimately extend to negative y or past the content/mode-
-  // line boundary mid-scroll, see the loop below) rendered straight
-  // through the thin kMarginY border with no stable edge -- the user
-  // initially read this as "the top row disappears too early" before
-  // realizing, comparing side-by-side against the real terminal, that
-  // what they were actually seeing was content bleeding INTO what
-  // should have been a fixed, never-scrolled margin, with no visible
-  // boundary to signal that. Setting an explicit clip rect here makes
-  // the margin a real, stable edge -- content is now guaranteed to
-  // never render above/left of it or past the content/mode-line
-  // boundary, regardless of pixelOffsetY.
+  // コンテンツの描画をマージンの境界に厳密にクリップする
+  // (2026-08-07、実際のユーザー報告): これが無いと、SDLのデフォルトの
+  // クリップは描画対象全体になるため、部分的にスクロールした行の
+  // グリフ(スクロール途中では、正当に負のyへ、あるいはコンテンツ/
+  // モードラインの境界を超えて伸びることがある、下のループ参照)は、
+  // 安定した縁が無いまま、薄いkMarginYの境界をそのまま突き抜けて
+  // レンダリングされていた――ユーザーは最初これを「上端の行が早く
+  // 消えすぎる」と読んでいたが、実際の端末と並べて比較した結果、
+  // 実際に目にしていたのは、本来は固定された、決してスクロールされ
+  // ないはずのマージンへコンテンツがにじみ出ていたことであり、それを
+  // 知らせる目に見える境界が無かったのだと気づいた。ここで明示的な
+  // クリップの矩形を設定することで、マージンを本物の安定した縁に
+  // する――コンテンツは今や、pixelOffsetYに関わらず、その上/左に、
+  // あるいはコンテンツ/モードラインの境界を超えて、決してレンダリング
+  // されないことが保証される。
   SDL_Rect contentClip{Impl::kMarginX, Impl::kMarginY, impl_->columns * impl_->cellWidth,
                         contentRows * impl_->cellHeight};
   SDL_RenderSetClipRect(impl_->renderer, &contentClip);
 
-  // One extra row above when revealing upward (pixelOffsetY > 0,
-  // content shifting down), one extra row below when revealing
-  // downward (pixelOffsetY < 0, content shifting up) -- see header
-  // comment for the sign convention.
+  // 上方向に現れる時(pixelOffsetY > 0、コンテンツが下へずれる)は
+  // 上に1行余分に、下方向に現れる時(pixelOffsetY < 0、コンテンツが
+  // 上へずれる)は下に1行余分に――符号の慣習についてはヘッダの
+  // コメント参照。
   int firstRow = (pixelOffsetY > 0) ? topIndex - 1 : topIndex;
   int rowCount = contentRows + 1;
 
@@ -2661,30 +2746,30 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
     int lineIndex = firstRow + i;
     if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) continue;
     int y = i * impl_->cellHeight + pixelOffsetY - ((pixelOffsetY > 0) ? impl_->cellHeight : 0);
-    if (y <= -impl_->cellHeight || y >= contentRows * impl_->cellHeight) continue;  // fully off-screen (or into the mode-line row)
+    if (y <= -impl_->cellHeight || y >= contentRows * impl_->cellHeight) continue;  // 完全に画面外(あるいはモードラインの行に入り込む)
     renderTextRun(y, lines[lineIndex].text, Color{impl_->fg.r, impl_->fg.g, impl_->fg.b}, 0,
                   lines[lineIndex].attributes);
   }
 
-  SDL_RenderSetClipRect(impl_->renderer, nullptr);  // mode-line row below (and any future margin decoration) isn't bound by this
+  SDL_RenderSetClipRect(impl_->renderer, nullptr);  // 下のモードライン行(と将来のどんなマージン装飾)もこれには縛られない
 
-  // See drawScrollbar()'s own comment -- effectiveTop is topIndex
-  // adjusted by the current sub-row pixelOffsetY so the thumb tracks
-  // smoothly instead of jumping once per full row crossing.
+  // drawScrollbar()自身のコメント参照――effectiveTopは、つまみが
+  // 完全な1行を超えるたびに飛ぶのではなく滑らかに追従するよう、
+  // 現在の行内の副次的なpixelOffsetYで補正されたtopIndexである。
   double effectiveTop = topIndex - static_cast<double>(pixelOffsetY) / std::max(impl_->cellHeight, 1);
   drawScrollbar(effectiveTop, static_cast<int>(lines.size()), contentRows);
 
   if (impl_->rows > 0) {
-    // Drawn as SEPARATE per-segment reverse-video runs, not one
-    // continuous bar across the whole row -- see Display::
-    // ModeLineSegment's own comment for the real screenshot bug this
-    // fixes (this used to fill+draw the whole composed string as one
-    // uninterrupted highlight, unlike ContentView::renderModeLine()'s
-    // own per-field gaps). A non-standout segment (the plain single-
-    // space gaps composeModeLineSegments() inserts between fields)
-    // draws no fill at all, leaving the already-cleared background
-    // showing through -- exactly the small black gap the reference
-    // screenshot shows.
+    // 行全体にわたる1つの連続したバーとしてではなく、セグメントごと
+    // に「別々の」反転表示の走りとして描く――これが修正する実際の
+    // スクリーンショットのバグについてはDisplay::ModeLineSegment
+    // 自身のコメント参照(以前は、ContentView::renderModeLine()自身の
+    // フィールドごとの隙間とは異なり、組み立てられた文字列全体を
+    // 1つの途切れないハイライトとして塗りつぶし+描画していた)。
+    // 反転表示でないセグメント(composeModeLineSegments()がフィールド
+    // の間に挿入する、プレーンな半角スペース1つ分の隙間)は塗りつぶし
+    // を一切描かず、既にクリアされた背景をそのまま透けて見せる――
+    // まさに参照スクリーンショットが示す小さな黒い隙間である。
     int modeLineY = contentRows * impl_->cellHeight;
     int col = 0;
     for (const auto &segment : modeLineSegments) {
@@ -2700,18 +2785,19 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
     }
   }
 
-  // Same USILICGUIDEBUG pixel-dump flush() itself has (see its own
-  // comment on why: SDL_RenderReadPixels() works headlessly, without
-  // Screen Recording permission or a real visible window, so it was
-  // built specifically for verifying rendering bugs from within a
-  // sandbox that has no other way to see the real pixels). Extended
-  // here (2026-08-07) since renderScrolled() is a fully separate
-  // render path with its own SDL_RenderPresent() -- flush()'s own
-  // dump never fires during an active drag/coast at all, which meant
-  // the scrollbar/mode-line-segment work earlier this same session had
-  // no way to be verified this way despite the mechanism already
-  // existing. ".scrolled.bmp" suffix (vs. flush()'s own plain ".bmp")
-  // so the two don't overwrite each other.
+  // flush()自身が持っているのと同じUSILICGUIDEBUGのピクセルダンプ
+  // (なぜかについてはそれ自身のコメント参照: SDL_RenderReadPixels()
+  // はScreen Recording権限も実際に見えるウィンドウも無く、ヘッドレスに
+  // 動作するので、実際のピクセルを見る他の方法が無いサンドボックス
+  // 内から描画のバグを検証するために特別に作られた)。renderScrolled()
+  // はそれ自身のSDL_RenderPresent()を持つ完全に別の描画経路なので、
+  // ここでも拡張された(2026-08-07)――flush()自身のダンプは、ドラッグ/
+  // 慣性スクロールが有効な間は一切発火せず、これは、この仕組みが
+  // 既に存在していたにも関わらず、同じセッションの少し前のスクロール
+  // バー/モードラインのセグメント作業を、この方法で検証する手段が
+  // 無かったことを意味していた。(flush()自身のプレーンな".bmp"に
+  // 対して)".scrolled.bmp"という接尾辞にすることで、2つが互いを
+  // 上書きしないようにしている。
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     int outputWidthPixels = 0, outputHeightPixels = 0;
     SDL_GetRendererOutputSize(impl_->renderer, &outputWidthPixels, &outputHeightPixels);
