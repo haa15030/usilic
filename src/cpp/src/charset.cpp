@@ -9,7 +9,7 @@ namespace fm {
 
 namespace {
 
-// --- byte-class predicates, ported from tcb.h's is_sjis_1_byte() etc. ---
+// --- バイト種別の判定関数群、tcb.hのis_sjis_1_byte()等からの移植 ---
 bool is_sjis_1_byte(unsigned char n) {
   return (n >= 0x81 && n <= 0x9f) || (n >= 0xe0 && n <= 0xea);
 }
@@ -23,8 +23,8 @@ bool is_euc_2_byte(unsigned char n) { return n >= 0xa1; }
 constexpr unsigned char kBackspace = 0x08;
 constexpr unsigned char kTab = 0x09;
 constexpr unsigned char kNewline = 0x0a;
-constexpr unsigned char kShiftOut = 0x0e;  // SO: half-width kana on
-constexpr unsigned char kShiftIn = 0x0f;   // SI: half-width kana off
+constexpr unsigned char kShiftOut = 0x0e;  // SO: 半角カナ開始
+constexpr unsigned char kShiftIn = 0x0f;   // SI: 半角カナ終了
 constexpr unsigned char kEsc = 0x1b;
 
 bool is_well_formed_utf8(const unsigned char *buf, int size) {
@@ -33,7 +33,7 @@ bool is_well_formed_utf8(const unsigned char *buf, int size) {
     if (buf[i] < 0x80) { i += 1; continue; }
     if (buf[i] < 0xc2 || buf[i] > 0xf4) return false;
     int len = Utf8::sequence_length(buf[i]);
-    if (i + len > size) break;  // truncated tail, tolerated
+    if (i + len > size) break;  // 末尾が切り詰められている、許容する
     for (int j = 1; j < len; j++)
       if ((buf[i + j] & 0xc0) != 0x80) return false;
     f_multi = 1;
@@ -65,8 +65,8 @@ Charset::Encoding Charset::detect(const unsigned char *buf, int size,
 
   int kn_sjis = 0, kn_euc = 0;
   int c1 = 0;
-  bool saw_esc_jis = false;   // legacy c5: saw ESC $ B/@, waiting for ESC ( B/J
-  bool saw_shift_out = false; // legacy c4: saw SO, waiting for SI
+  bool saw_esc_jis = false;   // legacyのc5: ESC $ B/@を見た、ESC ( B/Jを待っている
+  bool saw_shift_out = false; // legacyのc4: SOを見た、SIを待っている
   bool f_bin = false;
   const unsigned char *end = buf + size;
 
@@ -161,19 +161,18 @@ std::vector<unsigned char> Charset::sjis_to_euc(const unsigned char *buf, int le
   return out;
 }
 
-// ISO-2022-JP state machine states (numbered to match the legacy
-// conv_jis()'s jisp->f.s, minus the quoted-printable/MIME-only
-// branches which never applied without MIME decoding in the first
-// place):
+// ISO-2022-JPのステートマシンの状態(legacyのconv_jis()のjisp->f.s
+// に番号を合わせてある。quoted-printable/MIME専用の分岐は、そもそも
+// MIMEデコード無しには適用されなかったため除いてある):
 //   0    ASCII
-//   1, 8 just saw ESC, waiting for '$' or '('
-//   2    saw ESC $, waiting for 'B'/'@' (-> enter 2-byte JIS, state 3)
-//   3    2-byte JIS mode (each byte gets the high bit set for EUC)
-//   4    (unused entry point kept for state-number parity with the
-//        legacy table; not reachable via the ESC-only paths kept here)
-//   5    saw ESC (, waiting for 'B'/'J' (-> ASCII) or 'I' (-> state 7)
-//   6    saw SO, waiting for the next byte to become a half-width kana
-//   7    half-width kana mode (SS2-prefix each byte for EUC)
+//   1, 8 ESCを見た直後、'$'か'('を待っている
+//   2    ESC $を見た、'B'/'@'を待っている(-> 2バイトJISへ入る、状態3)
+//   3    2バイトJISモード(各バイトはEUC用に最上位ビットを立てる)
+//   4    (legacyのテーブルとの状態番号の対応のために残してある未使用の
+//        入口。ここに残っているESCのみの経路からは到達不能)
+//   5    ESC (を見た、'B'/'J'(-> ASCII)または'I'(-> 状態7)を待っている
+//   6    SOを見た、次のバイトが半角カナになるのを待っている
+//   7    半角カナモード(各バイトにEUC用のSS2接頭辞を付ける)
 std::vector<unsigned char> Charset::jis_to_euc(const unsigned char *buf, int len) {
   std::vector<unsigned char> out;
   out.reserve(len * 2);
