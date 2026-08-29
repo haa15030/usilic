@@ -19,30 +19,31 @@ std::vector<std::string> splitLines(const std::string &text) {
   return lines;
 }
 
-// Ported from alloc.c's alloc_head() T_tar/T_deb case: locates the
-// SIZE field and filename start in one `ls -l`-ish tar-listing line.
-// tar tvf has two, differently-shaped layouts depending on which tar
-// wrote it -- GNU tar prints a combined "owner/group" field (with a
-// '/'); BSD tar (macOS) prints owner and group as two separate
-// fields, with no '/' anywhere in that region. This scans backward
-// from the end of the line looking for that '/' first, and only
-// falls back to a fixed 4-field skip from the start (mode, links,
-// owner, group) if it never finds one.
+// alloc.cのalloc_head() T_tar/T_debケースからの移植: 1つのtar一覧の
+// `ls -l`風の行の中で、SIZEフィールドとファイル名の開始位置を特定
+// する。tar tvfは、それを書いたtarによって形が異なる2つのレイアウト
+// を持つ――GNU tarは('/'を含む)結合された「owner/group」フィールド
+// を印字する。BSD tar(macOS)はownerとgroupを別々の2つのフィールド
+// として印字し、その領域には'/'が全く無い。これは行の末尾から
+// 逆方向にその'/'を探し、それが一度も見つからなかった場合にだけ、
+// 先頭からの固定4フィールドのスキップ(mode、links、owner、group)
+// へフォールバックする。
 ArchiveEntry parseTarLine(const std::string &rawLine) {
   ArchiveEntry entry;
 
   std::string line = rawLine;
   auto arrow = line.find(" -> ");
-  if (arrow != std::string::npos) line.resize(arrow);  // strip "-> symlink-target"
+  if (arrow != std::string::npos) line.resize(arrow);  // "-> symlink-target"を取り除く
 
   int n = static_cast<int>(line.size());
   int ce = n - 1;
   int cs = 0;
 
-  // mode links owner group SIZE mon day time/year name -- the BSD tar
-  // (macOS) fallback shape, factored out since both the ce==0 case
-  // below AND the GNU-branch's own false-positive recovery (see its
-  // comment) need to run this exact same 4-field skip.
+  // mode links owner group SIZE mon day time/year name -- BSD tar
+  // (macOS)のフォールバックの形。下のce==0のケースと、GNU分岐自身の
+  // 誤検出からの回復(自身のコメント参照)の両方が、まさにこの同じ
+  // 4フィールドのスキップを実行する必要があるので、独立した関数へ
+  // 括り出されている。
   auto skipBsdFields = [n, &line]() {
     int c = 0, k = 0;
     while (k < 4 && c < n) {
@@ -58,27 +59,28 @@ ArchiveEntry parseTarLine(const std::string &rawLine) {
   for (int i = 0;; i++) {
     for (; ce > 0; ce--)
       if (line[ce] == ' ' || (i && line[ce] == '/')) break;
-    if (i == 0) cs = ce + 1;  // filename starts right after the last space
+    if (i == 0) cs = ce + 1;  // ファイル名は最後の空白の直後から始まる
     if (i && line[ce] == '/') {
-      // GNU format: walk forward from "owner/group" to the size field.
-      // 2026-08-19 fix, a real report + reproduction (a tar of a
-      // directory whose OWN name reappears as a path prefix on every
-      // entry, e.g. "utf8/foo.txt") -- the backward scan above has no
-      // way to tell a genuine GNU "owner/group" separator apart from a
-      // '/' that's simply part of the FILENAME itself (any entry
-      // nested under a subdirectory has one). A false-positive match
-      // sends this loop walking forward through arbitrary filename
-      // bytes looking for a digit-then-space/comma pattern that may
-      // not exist anywhere ahead of it -- previously an unconditional
-      // `while (true)` with no bound once `ce`/`p` both reached `n`
-      // (neither scan below advances further, and `p < n` stays false
-      // forever), spinning at 100% CPU instead of erroring out. Bounded
-      // now: on running off the end without ever finding a valid size
-      // field, this was never real GNU-format "owner/group" data to
-      // begin with -- fall back to the same reliable BSD field-skip
-      // the ce==0 branch below already uses (this system's own `tar
-      // tvf` output IS BSD-format; false positives only ever originate
-      // from a filename's own '/', never a genuine format mismatch).
+      // GNUフォーマット: "owner/group"からsizeフィールドへ前方へ歩く。
+      // 2026-08-19の修正、実際の報告+再現(自身の名前が全エントリの
+      // パス接頭辞として再度現れるディレクトリのtar、例えば
+      // "utf8/foo.txt")――上の逆方向走査には、本物のGNU
+      // 「owner/group」区切りと、単に「ファイル名自体」の一部である
+      // '/'(サブディレクトリの下にネストされたエントリは全てそれを
+      // 持つ)とを区別する方法が無い。誤検出のマッチは、このループを
+      // 任意のファイル名のバイト列の中を前方へ、その先のどこにも
+      // 存在しないかもしれない「数字の後に空白/カンマ」というパター
+      // ンを探して歩かせる――以前は、`ce`/`p`の両方が`n`に達した時点で
+      // (下のどちらの走査もそれ以上進まず、`p < n`は永遠にfalseの
+      // まま)制限の無い無条件の`while (true)`であり、エラーで抜ける
+      // のではなくCPU100%で回転していた。今は境界がある: 有効な
+      // sizeフィールドを一度も見つけないまま末尾を走り抜けた場合、
+      // これはそもそも本物のGNUフォーマットの「owner/group」データ
+      // では「なかった」――下のce==0分岐が既に使っているのと同じ
+      // 信頼できるBSDフィールドスキップへフォールバックする(この
+      // システム自身の`tar tvf`出力はBSDフォーマット「である」。誤
+      // 検出は常にファイル名自身の'/'から生じるだけで、本物のフォー
+      // マットの不一致からは決して生じない)。
       bool foundSize = false;
       while (ce < n) {
         while (ce < n && line[ce] != ' ') ce++;
@@ -109,25 +111,25 @@ ArchiveEntry parseTarLine(const std::string &rawLine) {
     ce++;
   }
 
-  // Re-derive the filename start FORWARD from here (2026-08-19 fix,
-  // found via the same reproduction as the GNU-branch hang above --
-  // real filenames can and do contain literal spaces, e.g.
-  // "utf8/報道ステーション 速報 森保監督..."). The `cs` computed at
-  // i==0 above scans BACKWARD from the end of the line for the LAST
-  // space, which is wrong whenever the filename itself contains one --
-  // it lands mid-filename instead of at its true start, truncating the
-  // displayed name (confirmed: this exact entry rendered as "森保監督
-  // か会見…" instead of "utf8/報道ステーション　速報 森保監督が
-  // 会見…", missing everything up through the embedded space). Exactly
-  // 3 space-delimited fields (month, day, time-or-year) always sit
-  // between the size field and the filename in both BSD and GNU tar's
-  // `tar tvf` output, so counting FORWARD from the size field just
-  // parsed -- a position already known to be correct -- past those 3
-  // fields reaches the true filename start regardless of what the
-  // filename itself contains. Only overrides `cs` when the line
-  // actually has 3 more fields to skip; an unexpectedly short/malformed
-  // line keeps the i==0 backward-scan guess instead of trusting a
-  // partial forward count.
+  // ファイル名の開始位置を、ここから「前方へ」再導出する(2026-08-19
+  // の修正、上のGNU分岐のハングと同じ再現で発見――実際のファイル名
+  // には、リテラルな空白が含まれ「得る」し実際に含まれることがある、
+  // 例えば"utf8/報道ステーション 速報 森保監督...")。上のi==0で計算
+  // される`cs`は、行の末尾から「後方へ」最後の空白を探して走査する
+  // が、ファイル名自体にそれが含まれている場合はいつでも誤りである
+  // ――それは、真の開始位置ではなくファイル名の途中に着地し、表示
+  // される名前を切り詰めてしまう(確認済み: このまさにこのエントリ
+  // は"utf8/報道ステーション　速報 森保監督が会見…"ではなく
+  // "森保監督か会見…"として描画され、埋め込まれた空白までの全てが
+  // 欠けていた)。BSDとGNU両方のtarの`tar tvf`出力では、正確に3つの
+  // 空白区切りフィールド(月、日、時刻または年)が常にsizeフィールド
+  // とファイル名の間に座っているので、ちょうどパースしたばかりの
+  // sizeフィールド――既に正しいと分かっている位置――から「前方へ」
+  // それら3フィールド分数えることで、ファイル名自体が何を含んで
+  // いても真のファイル名開始位置に到達する。行が実際にスキップす
+  // べき3つ以上のフィールドを持つ場合にだけ`cs`を上書きする。予期
+  // せず短い/不正な形の行は、部分的な前方カウントを信頼するのでは
+  // なくi==0の後方走査による推測を維持する。
   {
     int fs = ce;
     for (int k = 0; k < 3 && fs < n; k++) {
@@ -152,8 +154,8 @@ std::vector<ArchiveEntry> TarReader::parseListing(const std::string &listing) co
   return entries;
 }
 
-// Octal ASCII field (tar's own numeric encoding for size/mode/etc, up
-// to `len` digit bytes, space/NUL-terminated).
+// 8進数ASCIIフィールド(tar自身のsize/mode等の数値符号化、最大
+// `len`桁バイト、空白/NULで終端)。
 long parseTarOctalField(const unsigned char *p, int len) {
   long v = 0;
   for (int i = 0; i < len; i++) {
@@ -164,64 +166,68 @@ long parseTarOctalField(const unsigned char *p, int len) {
   return v;
 }
 
-// Ported from find_tar_header(): tar headers are always 512-byte
-// aligned from the start of the archive, so only alignment-matching
-// positions are checked -- otherwise a hidden entry whose header text
-// merely *contains* `name` as a substring (e.g. macOS's "._name"
-// AppleDouble sidecar, which "tar tvf" doesn't list but is a real
-// header in the byte stream) can be mistaken for it. See CLAUDE.md
-// history item 4 for the original bug this fixed.
+// find_tar_header()からの移植: tarのヘッダーは、アーカイブの先頭から
+// 常に512バイト境界に整列しているので、その整列に一致する位置だけが
+// チェックされる――そうしないと、ヘッダーのテキストが`name`を単に
+// 部分文字列として「含んでいる」だけの隠しエントリ(例えばmacOSの
+// "._name" AppleDoubleサイドカー、"tar tvf"は一覧に載せないが、
+// バイトストリーム中の本物のヘッダーである)がそれと誤認されて
+// しまう。これが修正した元のバグについてはCLAUDE.mdの履歴項目4
+// 参照。
 //
-// 2026-08-19 REDESIGN (report =dj/=dk: "サイズ111...以外内容が表示
-// されない" -- every entry EXCEPT the one whose name happens to contain
-// no dakuten/handakuten kana came back blank). The PREVIOUS version of
-// this function (added the same day, for a different report -- "何も
-// 無し", PAX 100-byte name overflow) matched candidate headers by
-// comparing their OWN name (classic field, or a PAX record's "path="
-// value) byte-for-byte against `entries_[i].name`. That name comes from
-// TarReader::parseListing()'s own text-based parse of `tar tvf`'s
-// STDOUT -- and on macOS, `tar tvf` silently re-encodes CJK dakuten/
-// handakuten characters (e.g. "デ"/"が") from the archive's own
-// precomposed NFC form (what's actually stored in the PAX "path="
-// record's raw bytes) into DECOMPOSED NFD form for its own human-
-// readable listing output (base kana codepoint + a separate combining
-// U+3099/U+309A mark, 3 bytes longer per such character than the NFC
-// original). Confirmed directly: dumping the raw PAX bytes for
-// "...データセンター建設が争点に..." showed "デ"=e3 83 87 (NFC, one
-// codepoint) and "が"=e3 81 8c (NFC) -- while `tar tvf`'s own stdout
-// for the exact same entry showed "テ"+U+3099 and "か"+U+3099 (NFD,
-// two codepoints each). A name with ZERO such characters (this
-// report's one working entry, "...ウクライナを支える...") round-trips
-// identically either way, which is why only it worked.
+// 2026-08-19の再設計(報告=dj/=dk: "サイズ111...以外内容が表示
+// されない"――名前がたまたま濁点/半濁点付きの仮名を含まないもの
+// 以外の全エントリが空で返ってきていた)。この関数の「以前の」
+// バージョン(同日、別の報告――"何も無し"、PAXの100バイト名前
+// オーバーフロー――のために追加された)は、候補となるヘッダーを、
+// それら自身の名前(古典的なフィールド、またはPAXレコードの
+// "path="値)を`entries_[i].name`とバイト単位で比較することで一致
+// させていた。その名前は、TarReader::parseListing()自身のテキスト
+// ベースの`tar tvf`の標準出力のパースから来ている――そしてmacOSでは、
+// `tar tvf`は、CJKの濁点/半濁点付き文字(例えば「デ」/「が」)を、
+// アーカイブ自身の合成済みNFC形式(PAXの"path="レコードの生バイト
+// に実際に格納されているもの)から、それ自身の人間が読める一覧出力
+// のために分解済みNFD形式(基底の仮名のコードポイント+別々の結合
+// U+3099/U+309Aマーク、そのような文字1つにつきNFC版より3バイト長い)
+// へ黙って再符号化する。直接確認済み: "...データセンター建設が争点
+// に..."の生のPAXバイトをダンプすると"デ"=e3 83 87(NFC、1コード
+// ポイント)、"が"=e3 81 8c(NFC)が見えた――一方、同じエントリに
+// 対する`tar tvf`自身の標準出力は"テ"+U+3099と"か"+U+3099(NFD、
+// それぞれ2コードポイント)を見せていた。そのような文字を「1つも
+// 含まない」名前(この報告の唯一動いていたエントリ、"...ウクライナ
+// を支える...")は、どちらの方法でもラウンドトリップが同一になる。
+// これがそれだけが動いていた理由である。
 //
-// Rather than pull in a Unicode normalization library just to reconcile
-// two representations of the same name, this drops name-matching
-// (and PAX path extraction) entirely: `tar tvf`'s own listing order is
-// the archive's real physical order (that's what "listing an archive"
-// means), and the ONLY entries missing from it are exactly these "._"
-// AppleDouble sidecars -- reliably identifiable by their own literal
-// ASCII ".", "_" prefix bytes regardless of anything Unicode (checked
-// on the REAL header, i.e. after resolving any PAX record in front of
-// it, since bsdtar always keeps the true "._"-prefixed start of even a
-// PAX-overflowed name in the header's own truncated/placeholder name
-// field). So this now just walks forward header by header, skipping
-// PAX records (jumping straight past their own declared data length)
-// and any resulting real header whose name starts with "._", and
-// returns the position of the first one that ISN'T a sidecar --
-// entries_ and the raw archive agree on order, so that's guaranteed to
-// be the entry this call was actually asked to find.
-// Whether a real header's own classic (100-byte, NUL-terminated) name
-// field is an AppleDouble sidecar -- i.e. its BASENAME, not necessarily
-// the field's own first two bytes, starts with "._". Two shapes were
-// both observed directly in real archives: a short name that never
-// needed PAX overflow keeps its full "dir/._name" path in the classic
-// field (e.g. this port's own synthetic test fixture's "src/._world.txt"),
-// while a long name that DID overflow into a PAX record had bsdtar's
-// own placeholder classic-field value drop the leading directory
-// component entirely, leaving just "._<truncated name>" with no prefix
-// at all (this port's own real utf8.tar reproduction archive). Scanning
-// for the LAST '/' within the field handles both: no '/' at all is a
-// no-op (the whole field is already the basename).
+// 同じ名前の2つの表現を突き合わせるためだけにUnicode正規化ライブ
+// ラリを引き込むのではなく、これは名前マッチング(とPAXパス抽出)を
+// 完全に捨てる: `tar tvf`自身の一覧順序はアーカイブの本物の物理的
+// 順序である(それが「アーカイブを一覧表示する」ことの意味だ)。
+// そしてそこから欠けている唯一のエントリは、まさにこれらの
+// "._"AppleDoubleサイドカーである――Unicodeに関係なく、それら自身の
+// リテラルなASCIIの"."、"_"接頭辞バイトによって確実に識別できる
+// (「本物の」ヘッダー、つまりその前にあるPAXレコードを解決した後
+// でチェックされる。bsdtarは、PAXオーバーフローした名前であって
+// さえ、ヘッダー自身の切り詰められた/プレースホルダーの名前
+// フィールドに、"._"接頭辞付きの真の開始部分を常に保持するため)。
+// そのためこれは今、ヘッダーをヘッダーごとに前方へ歩き、PAXレコード
+// (それら自身の宣言されたデータ長を丸ごと飛び越える)と、名前が
+// "._"で始まる結果として得られる本物のヘッダーをスキップし、
+// サイドカー「ではない」最初のものの位置を返す――entries_と生の
+// アーカイブは順序について一致しているので、それはこの呼び出しが
+// 実際に見つけるよう頼まれたエントリであることが保証されている。
+// 本物のヘッダー自身の古典的な(100バイト、NUL終端の)名前フィール
+// ドがAppleDoubleサイドカーかどうか――つまり、そのフィールド自身の
+// 最初の2バイトとは限らず、その「ベース名」が"._"で始まるか。実際の
+// アーカイブで直接観測された2つの形があった: PAXオーバーフローを
+// 一度も必要としなかった短い名前は、古典的フィールドに完全な
+// "dir/._name"パスを保持する(例えばこの移植自身の合成テスト
+// フィクスチャの"src/._world.txt")。一方、PAXレコードへ実際に
+// オーバーフローした長い名前は、bsdtar自身のプレースホルダーの
+// 古典的フィールド値が先頭のディレクトリ部分を完全に落とし、
+// 接頭辞が全く無い単なる"._<切り詰められた名前>"だけを残す(この
+// 移植自身の実際のutf8.tar再現アーカイブ)。フィールド内の「最後の」
+// '/'を探すことで両方を扱える: '/'が全く無ければ何もしない
+// (フィールド全体が既にベース名である)。
 bool isSidecarHeader(const unsigned char *header, const unsigned char *end) {
   const unsigned char *limit = std::min(header + 100, end);
   const unsigned char *nameEnd = header;
@@ -242,7 +248,7 @@ const unsigned char *findTarHeader(const unsigned char *cp, const unsigned char 
       const unsigned char *paxData = p + 512;
       header = (paxSize > 0 && paxData + paxSize <= end)
                    ? paxData + ((static_cast<std::size_t>(paxSize) + 511) / 512) * 512
-                   : p + 512;  // malformed PAX record -- best effort, just move past it
+                   : p + 512;  // 不正な形のPAXレコード――ベストエフォート、単に通り過ぎる
     }
     if (header >= end || !isSidecarHeader(header, end)) return header;
     long entrySize = parseTarOctalField(header + 124, 12);
@@ -255,7 +261,7 @@ const unsigned char *findTarHeader(const unsigned char *cp, const unsigned char 
 void TarReader::locateContent(const unsigned char *data, std::size_t size,
                                std::vector<ArchiveEntry> &entries) const {
   if (entries.empty() || !size) return;
-  const unsigned char *end = data + size - 1;  // ported from alloc_tar()'s `end--`
+  const unsigned char *end = data + size - 1;  // alloc_tar()の`end--`からの移植
   const unsigned char *cp = data;
 
   for (auto &entry : entries) {
@@ -270,29 +276,26 @@ void TarReader::locateContent(const unsigned char *data, std::size_t size,
   }
 }
 
-// Ported from alloc.c's alloc_head() T_unzip case, with two
-// corrections found while testing this against real `unzip -l`
-// output:
+// alloc.cのalloc_head() T_unzipケースからの移植、これを実際の
+// `unzip -l`出力に対してテストしていて見つかった2つの訂正付き:
 //
-// 1. Directory detection: legacy re-used a mode-letter check
-//    ('d'/'l' at the start of the formatted display line) that's
-//    meaningful for tar/rpm's ls-style output but never true for
-//    `unzip -l` lines (which have no such column at all). Detecting
-//    a directory by its name ending in '/' instead -- the same
-//    technique legacy already used for LHA (see alloc_head()'s
-//    T_lha case) -- is simple, correct, and consistent with the
-//    sibling reader.
+// 1. ディレクトリの検出: legacyは、tar/rpmのls風の出力に対しては
+//    意味があるが`unzip -l`の行(そのような列が全く無い)に対して
+//    は決して真にならないモード文字のチェック('d'/'l'が整形された
+//    表示行の先頭にあるか)を再利用していた。代わりに名前が'/'で
+//    終わることでディレクトリを検出する――legacyが既にLHAに対して
+//    使っている(alloc_head()のT_lhaケース参照)のと同じ技法――は、
+//    単純で、正しく、姉妹のリーダーとも一貫している。
 //
-// 2. The footer summary line (e.g. "       12          2 files",
-//    printed after the closing "---------" rule) has the exact same
-//    shape as a real entry line (leading spaces, then digits) and
-//    was being parsed as a bogus entry with an empty name -- legacy
-//    has this same weakness (its version produces a bogus entry
-//    with garbage/empty content in the same spot). unzip -l's
-//    listing has exactly two "---------" rule lines (opening and
-//    closing the entry block); this stops at the second one instead
-//    of only recognizing rule lines individually, so the footer
-//    after it is never reached at all.
+// 2. フッターの要約行(例えば「       12          2 files」、
+//    閉じる「---------」のルールの後に印字される)は、実際のエント
+//    リ行(先頭の空白、続いて数字)とまさに同じ形をしており、空の
+//    名前を持つ偽のエントリとしてパースされてしまっていた――legacy
+//    には同じ弱点がある(そのバージョンは同じ箇所でゴミ/空の内容を
+//    持つ偽のエントリを生成する)。unzip -lの一覧は、正確に2つの
+//    「---------」ルール行(エントリブロックを開くものと閉じるもの)
+//    を持つ。これは、ルール行を個別に認識するのではなく2つ目の
+//    ところで止まるので、その後のフッターに全く到達しない。
 std::vector<ArchiveEntry> ZipReader::parseListing(const std::string &listing) const {
   std::vector<ArchiveEntry> entries;
   int ruleLinesSeen = 0;
@@ -300,10 +303,10 @@ std::vector<ArchiveEntry> ZipReader::parseListing(const std::string &listing) co
     std::size_t i = 0;
     while (i < rawLine.size() && rawLine[i] == ' ') i++;
     if (i < rawLine.size() && rawLine[i] == '-') {
-      if (++ruleLinesSeen >= 2) break;  // closing rule -- stop before the footer
+      if (++ruleLinesSeen >= 2) break;  // 閉じるルール――フッターの前で止まる
       continue;
     }
-    if (ruleLinesSeen < 1) continue;  // still in the "Archive:"/column-header preamble
+    if (ruleLinesSeen < 1) continue;  // まだ「Archive:」/列ヘッダーの前置き部分
     if (i >= rawLine.size() || !std::isdigit(static_cast<unsigned char>(rawLine[i]))) continue;
 
     long size = 0;
@@ -311,7 +314,7 @@ std::vector<ArchiveEntry> ZipReader::parseListing(const std::string &listing) co
       size = size * 10 + (rawLine[i] - '0');
       i++;
     }
-    // Skip the DATE and TIME columns to reach NAME.
+    // NAMEに到達するためDATEとTIMEの列をスキップする。
     for (int field = 0; field < 2; field++) {
       while (i < rawLine.size() && rawLine[i] == ' ') i++;
       while (i < rawLine.size() && rawLine[i] != ' ') i++;
@@ -327,11 +330,10 @@ std::vector<ArchiveEntry> ZipReader::parseListing(const std::string &listing) co
   return entries;
 }
 
-// Ported from alloc_unzip(): the raw bytes are the decompressed
-// concatenation of every entry's content, in listing order (matching
-// what `unzip -p <archive>`, extracting every member to stdout back
-// to back, actually produces) -- no per-entry header to search for,
-// unlike tar.
+// alloc_unzip()からの移植: 生のバイト列は、一覧順での、全エントリの
+// 内容の展開済みの連結である(`unzip -p <archive>`が、全メンバーを
+// 標準出力へ次々と展開することで実際に生み出すものに一致する)
+// ――tarとは異なり、探すべきエントリごとのヘッダーは無い。
 void ZipReader::locateContent(const unsigned char *data, std::size_t size,
                                std::vector<ArchiveEntry> &entries) const {
   const unsigned char *end = data + size;
@@ -345,32 +347,32 @@ void ZipReader::locateContent(const unsigned char *data, std::size_t size,
   }
 }
 
-// Ported from alloc.c's alloc_head() T_lha case. Unverified against a
-// real `lha` binary's actual output (none was available while
-// porting this) -- built to match the documented header-format
-// comment in the legacy source ("PERMSSN UID GID SIZE RATIO STAMP
-// NAME" / "----- ... -----"), and the parsing structure (find the
-// ratio marker '%'/'*', walk forward past it to NAME, walk backward
-// from it to SIZE) is carried over mechanically either way, so it
-// should hold regardless of the exact column widths.
+// alloc.cのalloc_head() T_lhaケースからの移植。実際の`lha`バイナリの
+// 実際の出力に対して未検証(これを移植している間、利用可能なものが
+// 無かった)――legacyソース内の文書化されたヘッダーフォーマットの
+// コメント("PERMSSN UID GID SIZE RATIO STAMP NAME" /
+// "----- ... -----")に合わせて構築されており、パース構造(比率
+// マーカー'%'/'*'を見つけ、そこから前方へNAMEまで歩き、そこから
+// 後方へSIZEまで歩く)は、いずれにせよ機械的に引き継がれているので、
+// 正確な列幅に関わらず成り立つはずである。
 std::vector<ArchiveEntry> LhaReader::parseListing(const std::string &listing) const {
   std::vector<ArchiveEntry> entries;
   for (const auto &line : splitLines(listing)) {
     int n = static_cast<int>(line.size());
     int marker = 0;
     while (marker < n && marker < 40 && line[marker] != '%' && line[marker] != '*') marker++;
-    if (marker >= 40 || marker >= n) continue;  // header/rule line, not an entry
+    if (marker >= 40 || marker >= n) continue;  // ヘッダー/ルール行、エントリではない
 
-    // Walk forward from the ratio marker, across STAMP (date + time),
-    // to NAME.
+    // 比率マーカーから前方へ、STAMP(日付+時刻)を越えて、NAMEまで
+    // 歩く。
     int ce = marker;
     for (int field = 0; field < 4; field++) {
       while (ce < n && line[ce] != ' ') ce++;
       while (ce < n && line[ce] == ' ') ce++;
     }
 
-    // Walk backward from the ratio marker, across 2 fields (GID,
-    // UID), to SIZE.
+    // 比率マーカーから後方へ、2フィールド(GID、UID)を越えて、SIZE
+    // まで歩く。
     int cs = marker;
     for (int field = 0; field < 2; field++) {
       while (cs > 0 && line[cs] == ' ') cs--;
@@ -393,9 +395,9 @@ std::vector<ArchiveEntry> LhaReader::parseListing(const std::string &listing) co
   return entries;
 }
 
-// Ported from alloc_lha(): each entry is preceded by a 3-line header
-// ("::::::::" / filename / "::::::::") in the raw byte stream,
-// except directories, which have none.
+// alloc_lha()からの移植: 生のバイトストリームでは、各エントリの
+// 前に3行のヘッダー("::::::::"/ファイル名/"::::::::")がある。
+// ディレクトリだけは例外で、それが全く無い。
 void LhaReader::locateContent(const unsigned char *data, std::size_t size,
                                std::vector<ArchiveEntry> &entries) const {
   const unsigned char *end = data + size;
@@ -416,16 +418,17 @@ void LhaReader::locateContent(const unsigned char *data, std::size_t size,
   }
 }
 
-// Ported from alloc.c's alloc_head() T_rpm case, with one correction:
-// legacy skipped only 3 space-delimited fields (mode, links, owner)
-// before checking for a numeric SIZE field, landing on GROUP instead
-// -- which is never numeric, so legacy's size was always 0 for every
-// RPM entry. Confirmed against a real `rpm -qplv` line captured while
-// porting this ("-rw-r--r--    1 root     root    6 Jul 28 01:01
-// /usr/share/testpkg/file1.txt"): mode/links/owner/group are 4
-// fields, matching the same layout TarReader's BSD-format branch
-// already skips correctly. Skipping 4 fields here instead of 3 fixes
-// it.
+// alloc.cのalloc_head() T_rpmケースからの移植、1つの訂正付き:
+// legacyは数値のSIZEフィールドをチェックする前に3つの空白区切り
+// フィールド(mode、links、owner)だけをスキップしており、代わりに
+// GROUPに着地していた――それは決して数値ではないので、legacyの
+// sizeは全てのRPMエントリに対して常に0だった。これを移植している
+// 間に取得した実際の`rpm -qplv`の行("-rw-r--r--    1 root
+// root    6 Jul 28 01:01 /usr/share/testpkg/file1.txt")に対して
+// 確認済み: mode/links/owner/groupは4フィールドであり、TarReaderの
+// BSDフォーマット分岐が既に正しくスキップしているのと同じ
+// レイアウトに一致する。ここで3ではなく4フィールドをスキップする
+// ことでそれを修正する。
 std::vector<ArchiveEntry> RpmReader::parseListing(const std::string &listing) const {
   std::vector<ArchiveEntry> entries;
   for (const auto &rawLine : splitLines(listing)) {
@@ -464,9 +467,9 @@ std::vector<ArchiveEntry> RpmReader::parseListing(const std::string &listing) co
   return entries;
 }
 
-// Ported from a real `lsar -l` capture (see the class's own
-// declaration comment) -- no legacy precedent, RAR postdates this
-// project's original C era entirely. Real output shape:
+// 実際の`lsar -l`のキャプチャからの移植(クラス自身の宣言コメント
+// 参照)――legacyの先例は無い、RARはこのプロジェクトのオリジナルC
+// 時代を完全に過ぎてから登場したもの。実際の出力の形:
 //
 //   /path/to/archive.rar: RAR
 //        Flags  File size   Ratio  Mode  Date       Time   Name
@@ -476,12 +479,12 @@ std::vector<ArchiveEntry> RpmReader::parseListing(const std::string &listing) co
 //   (Flags: D=Directory, R=Resource fork, L=Link, E=Encrypted, ...)
 //   (Mode: Nr29=Normal v2.9)
 //
-// Fields are whitespace-separated, not fixed-width columns (unlike
-// SevenZipReader's own listing) -- index/flags/size/ratio/mode/date/
-// time are seven tokens walked past positionally (same "skip N
-// whitespace-delimited fields" idiom TarReader/ZipReader/LhaReader
-// already use above), with everything remaining on the line (spaces
-// included) taken as NAME.
+// フィールドは(SevenZipReader自身の一覧とは異なり)固定幅の列では
+// なく空白区切りである――index/flags/size/ratio/mode/date/timeは、
+// 位置的に通り過ぎて歩く7個のトークンである(上でTarReader/
+// ZipReader/LhaReaderが既に使っているのと同じ「N個の空白区切り
+// フィールドをスキップする」というイディオム)。行に残っている
+// 全て(空白も含む)がNAMEとして取られる。
 std::vector<ArchiveEntry> RarReader::parseListing(const std::string &listing) const {
   std::vector<ArchiveEntry> entries;
   bool inTable = false;
@@ -489,18 +492,18 @@ std::vector<ArchiveEntry> RarReader::parseListing(const std::string &listing) co
     std::size_t firstNonSpace = line.find_first_not_of(' ');
     if (firstNonSpace == std::string::npos) continue;
     if (!inTable) {
-      // The "=====  ==========  ..." rule line is the ONLY one (before
-      // real entries start) whose first non-space character is '='.
+      // "=====  ==========  ..."のルール行は、(本物のエントリが
+      // 始まる前で)最初の非空白文字が'='である唯一の行である。
       if (line[firstNonSpace] == '=') inTable = true;
       continue;
     }
-    if (line[firstNonSpace] == '(') break;  // "(Flags: ...)"/"(Mode: ...)" footer notes
+    if (line[firstNonSpace] == '(') break;  // "(Flags: ...)"/"(Mode: ...)"のフッターの注記
 
     std::size_t i = firstNonSpace;
     while (i < line.size() && line[i] != ' ') i++;  // index + '.'
     while (i < line.size() && line[i] == ' ') i++;
     std::size_t flagsStart = i;
-    while (i < line.size() && line[i] != ' ') i++;  // flags (e.g. "-----"/"D----")
+    while (i < line.size() && line[i] != ' ') i++;  // flags(例えば"-----"/"D----")
     std::string flags = line.substr(flagsStart, i - flagsStart);
     while (i < line.size() && line[i] == ' ') i++;
     long size = 0;
@@ -508,18 +511,20 @@ std::vector<ArchiveEntry> RarReader::parseListing(const std::string &listing) co
       size = size * 10 + (line[i] - '0');
       i++;
     }
-    // 5 iterations, not 4, to actually skip all 4 remaining fields
-    // (ratio%, mode, date, time): `i` enters this loop already sitting
-    // ON the space right after SIZE's digits (a field BOUNDARY, not a
-    // field START), so the first iteration's own "skip non-space" step
-    // is a no-op and only its "skip space" half does real work -- it
-    // just walks from the boundary to ratio's own start without
-    // consuming ratio itself. Each SUBSEQUENT iteration then consumes
-    // exactly one field (its own "skip non-space" eats the field a
-    // PRIOR iteration's "skip space" half walked onto). Net effect:
-    // consuming 4 real fields takes 5 loop passes, not 4 -- confirmed
-    // by a real failing test (name field arrived as "00:23  Extra/..."
-    // -- the TIME field was left glued to name -- before this fix).
+    // 残りの4フィールド(ratio%、mode、date、time)を実際にスキップ
+    // するには4回ではなく5回の反復が必要: `i`はこのループに入る
+    // 時点で既にSIZEの桁のすぐ後の空白の「上に」座っている(フィー
+    // ルドの「開始」ではなく「境界」)ので、最初の反復自身の「非空白
+    // をスキップする」ステップは何もせず、その「空白をスキップする」
+    // 半分だけが実際の仕事をする――それは単に境界からratio自身の
+    // 開始位置まで歩くだけで、ratio自体は消費しない。それ以降の
+    // 「各」反復は正確に1フィールドずつ消費する(それ自身の「非空白
+    // をスキップする」が、「前の」反復の「空白をスキップする」半分
+    // が歩いて乗った先のフィールドを食べる)。正味の効果: 4つの
+    // 本物のフィールドを消費するには4回ではなく5回のループが必要
+    // ――実際に失敗するテスト(この修正の前、name フィールドが
+    // "00:23  Extra/..."として届いていた――TIMEフィールドがnameに
+    // くっついたままだった)で確認済み。
     for (int field = 0; field < 5; field++) {  // ratio%, mode, date, time
       while (i < line.size() && line[i] != ' ') i++;
       while (i < line.size() && line[i] == ' ') i++;
@@ -535,9 +540,9 @@ std::vector<ArchiveEntry> RarReader::parseListing(const std::string &listing) co
   return entries;
 }
 
-// See the class's own declaration comment for why this sequential
-// walk is valid here (verified against a real archive: extracted total
-// byte count and first-file content both matched the listing exactly).
+// この逐次的な走査がここで有効な理由についてはクラス自身の宣言
+// コメント参照(実際のアーカイブに対して検証済み: 展開された合計
+// バイト数と最初のファイルの内容の両方が一覧と正確に一致した)。
 void RarReader::locateContent(const unsigned char *data, std::size_t size,
                                std::vector<ArchiveEntry> &entries) const {
   const unsigned char *end = data + size;
@@ -551,9 +556,9 @@ void RarReader::locateContent(const unsigned char *data, std::size_t size,
   }
 }
 
-// Ported from a real `7z l` capture (see the class's own declaration
-// comment) -- no legacy precedent, 7z postdates this project's
-// original C era entirely. Real output shape:
+// 実際の`7z l`のキャプチャからの移植(クラス自身の宣言コメント
+// 参照)――legacyの先例は無い、7zはこのプロジェクトのオリジナルC
+// 時代を完全に過ぎてから登場したもの。実際の出力の形:
 //
 //    Date      Time    Attr         Size   Compressed  Name
 //  ------------------- ----- ------------ ------------  ------------------------
@@ -563,15 +568,16 @@ void RarReader::locateContent(const unsigned char *data, std::size_t size,
 //  ------------------- ----- ------------ ------------  ------------------------
 //  2016-02-03 01:13:20           35479286      5787093  53 files, 5 folders
 //
-// UNLIKE RarReader's own whitespace-tokenized fields, this format uses
-// genuinely FIXED-WIDTH columns (confirmed directly against the rule
-// line's own dash-run lengths: date+time 19 chars, then a 1-space gap,
-// attr 5 chars, gap, size 12 chars, gap, compressed 12 chars, THEN a
-// 2-space gap before name starts at column 53) -- a compressed-size
-// column can be entirely BLANK for later members of a solid block
-// (see "changelog.txt" above), so this can't safely tokenize by
-// whitespace runs the way RarReader does; fixed offsets are the only
-// reliable way to find where NAME actually starts.
+// RarReader自身の空白でトークン化されたフィールドとは「異なり」、
+// このフォーマットは本当に「固定幅」の列を使う(ルール行自身の
+// ダッシュの連続の長さに対して直接確認済み: date+timeが19文字、
+// 続いて1文字幅のギャップ、attrが5文字、ギャップ、sizeが12文字、
+// ギャップ、compressedが12文字、「その後」nameが列53から始まる
+// 前に2文字幅のギャップ)――compressed-size列は、ソリッドブロック
+// の後の方のメンバーに対しては完全に「空白」になり得る(上の
+// "changelog.txt"参照)ので、これはRarReaderのやり方のように空白の
+// 連続で安全にトークン化はできない。固定オフセットが、NAMEが実際
+// にどこから始まるかを見つける唯一の信頼できる方法である。
 std::vector<ArchiveEntry> SevenZipReader::parseListing(const std::string &listing) const {
   constexpr std::size_t kAttrStart = 20;
   constexpr std::size_t kSizeStart = 26;
@@ -582,10 +588,10 @@ std::vector<ArchiveEntry> SevenZipReader::parseListing(const std::string &listin
   int ruleLinesSeen = 0;
   for (const auto &line : splitLines(listing)) {
     if (line.size() >= 19 && line[0] == '-' && line.find_first_not_of("- ") == std::string::npos) {
-      if (++ruleLinesSeen >= 2) break;  // closing rule -- stop before the "N files, M folders" footer
+      if (++ruleLinesSeen >= 2) break;  // 閉じるルール――「N files, M folders」フッターの前で止まる
       continue;
     }
-    if (ruleLinesSeen < 1) continue;  // still in the "7-Zip [64]..."/column-header preamble
+    if (ruleLinesSeen < 1) continue;  // まだ「7-Zip [64]...」/列ヘッダーの前置き部分
     if (line.size() <= kNameStart) continue;
 
     std::string attr = line.substr(kAttrStart, kSizeStart - 1 - kAttrStart);
@@ -604,9 +610,9 @@ std::vector<ArchiveEntry> SevenZipReader::parseListing(const std::string &listin
   return entries;
 }
 
-// See the class's own declaration comment for why this sequential
-// walk is valid here (verified against a real archive: extracted total
-// byte count and first-file content both matched the listing exactly).
+// この逐次的な走査がここで有効な理由についてはクラス自身の宣言
+// コメント参照(実際のアーカイブに対して検証済み: 展開された合計
+// バイト数と最初のファイルの内容の両方が一覧と正確に一致した)。
 void SevenZipReader::locateContent(const unsigned char *data, std::size_t size,
                                     std::vector<ArchiveEntry> &entries) const {
   const unsigned char *end = data + size;
