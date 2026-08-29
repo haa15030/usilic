@@ -134,6 +134,22 @@ class RecordingDisplay : public Display {
 
  private:
   void putAdvance(int c) {
+    // 2026-08-28 fix, a real regression this exposed (ContentView::
+    // syncVisibleCursor()'s own 2026-08-28 fix moving the tracked
+    // cursor to a row's own highlightStartColumn instead of its raw
+    // byte length -- see its own comment): BEL (0x07, e.g.
+    // ContentView::moveDown()'s own "can't move further" feedback,
+    // `display_.putChar(7)`) is a CONTROL character, not a printable
+    // one -- a real terminal just sounds a beep, it doesn't overwrite
+    // whatever's under the cursor or advance it. This mock used to
+    // treat every byte as printable, silently writing BEL into
+    // screen_/clobbering whatever attribute (e.g. a just-set Underline)
+    // happened to be sitting at the CURRENT cursor position -- harmless
+    // before this port's cursor tracking usually parked well past any
+    // real content (so the BEL write landed out of bounds and was
+    // skipped by the check below), but a real bug in this test double
+    // once tracking started landing on genuinely in-bounds columns.
+    if (c == 7) return;
     // Bounds-checked against the actually-allocated grid (screen_'s own
     // row width), NOT cols_ -- setSize() (see its own comment) only
     // ever updates cols_ to change what columns() reports, deliberately

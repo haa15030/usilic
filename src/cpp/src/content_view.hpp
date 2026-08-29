@@ -136,6 +136,23 @@ class ContentView {
     // ellipsis is genuinely the right call, the original 2026-08-14
     // report this feature was built for).
     bool ellipsisEligible = false;
+
+    // 2026-08-28 addition, a direct user report ("Boot optionsは文字列
+    //選択の場面ではないがブロックカーソル位置は「WORK : 」と同じで
+    // よろしく"): this line never participates in cursor-row/marked-row
+    // SGR highlighting at all (Standout/Underline), even when
+    // cursorIndex_ lands on it or markedPredicate_ says so -- for
+    // executeShowTcbBanner()'s own "Boot options" line specifically,
+    // which isn't a selectable item (see openSelectedBannerEntry()'s
+    // own comment) and must never LOOK like one, but still wants the
+    // real terminal caret positioned at the SAME column WORK/ERROR/
+    // etc.'s own highlightStartColumn uses (matching their shared
+    // "front of the value" convention) rather than pushed out past its
+    // own (variable-length, unlike WORK's typically-empty) value text
+    // the way the OLDER "point highlightStartColumn past the text"
+    // suppression trick required. Defaults to false for every other
+    // caller (unaffected).
+    bool neverHighlighted = false;
   };
 
   explicit ContentView(Display &display);
@@ -333,6 +350,19 @@ class ContentView {
   // DirectoryMode leaves it at the default.
   void setCursorHighlightEnabled(bool enabled);
   bool cursorHighlightEnabled() const;
+
+  // See contentCursorColumn_'s own comment (CopyMode's positional
+  // caret, only meaningful while cursorHighlightEnabled() is false).
+  void setContentCursorColumn(int column);
+
+  // Overrides the position field ("N/M"/"TOP"/"END") every mode-line
+  // rendering path otherwise derives from cursorIndex_/lines_.size()
+  // -- added 2026-08-29 for CopyMode, whose mode-line shows legacy's
+  // own fixed "---" placeholder there (disp.c's own `case M_copy:
+  // strcpy(line, "---")`) regardless of where its own cursor currently
+  // sits. std::nullopt (the default) restores the normal computed
+  // text; every other caller leaves this unset and is unaffected.
+  void setPositionTextOverride(std::optional<std::string> text);
 
   // Text/formatting redraw() shows on an otherwise-empty list (see
   // redraw()'s own comment) -- default "--", FULLY reverse-video/
@@ -729,6 +759,15 @@ class ContentView {
   using ModeLineFieldsProvider = std::function<ModeLineFields(int cursorIndex)>;
   void setModeLineFieldsProvider(ModeLineFieldsProvider provider);
 
+  // Evaluates the current provider (with this view's own cursorIndex_)
+  // right now, once -- for a caller (Application::startCopy()) that
+  // needs to freeze a SNAPSHOT of what this view's mode-line currently
+  // shows before switching away from it, rather than reacting to it
+  // live on every future draw the way every other caller of this
+  // class does. A default-constructed ModeLineFields (empty name/
+  // trailing) if no provider is set.
+  ModeLineFields currentModeLineFields() const;
+
   // Opts this view's position field into ModeLine::formatFixedWidth()
   // (a fixed-width, 5-digit zero-padded "NNNNN/NNNNN END" counter
   // ported from print_line()'s own len<=0 branch, disp.c -- SHELL-
@@ -968,6 +1007,17 @@ class ContentView {
   Line emptyPlaceholderLine_ = Line{"--", std::nullopt, std::nullopt, {}};
   bool emptyPlaceholderMarked_ = true;
   bool cursorAtModeLineTrailingEnd_ = false;
+  // 2026-08-29 addition (CopyMode, see copy_mode.hpp): when
+  // cursorHighlightEnabled_ is false, syncVisibleCursor() previously
+  // always parked the real terminal caret at column 0 -- correct for
+  // every prior caller (LineEditor manages its own column separately),
+  // but wrong for CopyMode, which needs the caret to track an actual
+  // column within its frozen text snapshot. setContentCursorColumn()
+  // overrides that column; unused (stays 0, the prior behavior exactly)
+  // by every other caller.
+  int contentCursorColumn_ = 0;
+  // See setPositionTextOverride()'s own comment.
+  std::optional<std::string> positionTextOverride_;
   // Set by renderModeLine() itself (see its own comment on why it's
   // cached from there instead of recomputed here) -- -1 until the
   // first renderModeLine() call with a non-empty `trailing` field.

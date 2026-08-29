@@ -470,6 +470,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       duView_(display),
       listBrowserView_(display),
       keyView_(display),
+      copyView_(display),
       promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
       fileMode_(fileView_, history, encoding, width),
@@ -489,7 +490,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       duMode_(duView_, history, configuration),
       listBrowserMode_(listBrowserView_),
       editMode_(keyInput, configuration),
-      execMode_(keyInput) {
+      execMode_(keyInput),
+      copyMode_(copyView_) {
   layoutViews();
   // K-65 (^I): real filesystem-backed completion for Shell's own
   // command line, resolved relative to whatever directory Shell last
@@ -704,9 +706,9 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // "destination directory as trailing2" shape, which makes no sense
     // for a screen that opens paths directly rather than running a
     // search that returns somewhere.
-    if (promptHistoryRecallKind_ &&
-        (*promptHistoryRecallKind_ == PromptKind::RecentFile || *promptHistoryRecallKind_ == PromptKind::RecentDirectory)) {
-      std::string name = listBrowserChronological_ ? "HISTORY" : promptLabelText(*promptHistoryRecallKind_);
+    if (promptHistoryContext_ &&
+        (promptHistoryContext_->kind == PromptKind::RecentFile || promptHistoryContext_->kind == PromptKind::RecentDirectory)) {
+      std::string name = listBrowserChronological_ ? "HISTORY" : promptLabelText(promptHistoryContext_->kind);
       // fillTrailingToEdge=true (2026-08-18 fix, a real report+
       // screenshot =cr: "一文字も入力されていないと不良のまま" --
       // item 348's drawPromptLabel() fill-to-edge fix only covers the
@@ -721,12 +723,12 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       // Standout run, all the way to the edge -- the exact same
       // mechanism DirectoryMode's "(ls)" trailing field already uses.
       return {name, trailing, /*fillTrailingToEdge=*/true,
-              /*rightWatermark=*/listBrowserChronological_ ? promptLabelText(*promptHistoryRecallKind_) : "",
+              /*rightWatermark=*/listBrowserChronological_ ? promptLabelText(promptHistoryContext_->kind) : "",
               /*trailing2=*/"", /*trailingPlain=*/false, /*trailing2RightJustified=*/false,
               /*trailing2Kind=*/ContentView::TrailingKind::QueryEcho,
               /*trailingKind=*/ContentView::TrailingKind::PathMiddle};
     }
-    if (promptHistoryRecallKind_) {
+    if (promptHistoryContext_) {
       // 2026-08-11 fix: a real report + legacy source read (mode.c's
       // T_hfgrep/T_hegrep vs plain M_fgrep/M_locate/M_cut2) -- direct
       // entry (^J^S/^J^C, startRegexPromptList()) is NOT the same
@@ -737,17 +739,49 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       // destination directory highlighted on the right (when this
       // search returns to Directory mode) instead of the fixed literal
       // "HISTORY" name + unhighlighted mode-name badge a real ^R uses.
-      if (promptHistoryRecallIsDirectEntry_) {
-        PromptKind kind = *promptHistoryRecallKind_;
-        bool destinationIsDirectory =
-            (kind == PromptKind::GrepPattern && grepReturnMode_ == ApplicationMode::Directory) ||
-            (kind == PromptKind::CutPattern && cutReturnMode_ == ApplicationMode::Directory);
-        std::string trailing2 = destinationIsDirectory ? truncatedTrailingPath(directoryMode_.currentDirectory()) : "";
+      // !listBrowserChronological_ (2026-08-29 fix, a direct user
+      // report with exact before/after field values -- "モード名：
+      // 「EGREP」[HISTORY]、戻り値：「...usilic/CLAUDE.md」[EGREP]"):
+      // isDirectEntry alone stays true for the entire lifetime of a
+      // GrepPattern/CutPattern candidate-list session, including AFTER
+      // ^R has toggled it into the chronological usage-history view
+      // (2026-08-28's own fix made that toggle work functionally, see
+      // toggleListBrowserHistory()'s own comment, but never updated
+      // THIS rendering branch to stop treating it as still "direct
+      // entry" once toggled) -- so this branch (destination-path style)
+      // kept being taken even in chronological mode, instead of falling
+      // through to the "HISTORY" branch below (name="HISTORY",
+      // rightWatermark=promptLabelText(kind), matching legacy's own
+      // T_hfgrep/T_hegrep shape and exactly what RecentFile/
+      // RecentDirectory's OWN sibling branch above already does via its
+      // own `listBrowserChronological_ ? "HISTORY" : ...` check).
+      if (promptHistoryContext_->isDirectEntry && !listBrowserChronological_) {
+        PromptKind kind = promptHistoryContext_->kind;
+        // 2026-08-28 fix, a direct user report ("CLAUDE.md上で^J^S→
+        // モードラインに戻り値がない"): this used to only ever show a
+        // destination when returning to Directory mode -- exactly the
+        // narrow special-case drawPromptLabel()'s own destinationMode
+        // switch (see its comment: "Restricting to 'only when the
+        // destination is Directory' was equally arbitrary") was already
+        // corrected away from, just never mirrored here. previousModeName()
+        // already handles File (returns the real file path) generically,
+        // matching what this SAME screen shows once real editing starts
+        // (drawPromptLabel(), via refreshDirectEntryModeLine()/
+        // activatePrompt() -- see previousModeName()'s own File-mode
+        // comment) -- reusing it here keeps the read-only candidate-list
+        // screen and the live-editing screen consistent instead of one
+        // showing a destination the other omits.
+        ApplicationMode destinationMode = ApplicationMode::Directory;
+        if (kind == PromptKind::GrepPattern) destinationMode = grepReturnMode_;
+        else if (kind == PromptKind::CutPattern) destinationMode = cutReturnMode_;
+        else destinationMode = currentMode_;
+        std::string destinationName = previousModeName(destinationMode);
+        std::string trailing2 = destinationName.empty() ? "" : truncatedTrailingPath(destinationName);
         return {promptLabelText(kind), trailing, /*fillTrailingToEdge=*/!trailing2.empty(),
                 /*rightWatermark=*/"", trailing2, /*trailingPlain=*/true, /*trailing2RightJustified=*/true};
       }
       return {"HISTORY", trailing, /*fillTrailingToEdge=*/false,
-              /*rightWatermark=*/promptLabelText(*promptHistoryRecallKind_), /*trailing2=*/"",
+              /*rightWatermark=*/promptLabelText(promptHistoryContext_->kind), /*trailing2=*/"",
               /*trailingPlain=*/false, /*trailing2RightJustified=*/false,
               /*trailing2Kind=*/ContentView::TrailingKind::QueryEcho,
               /*trailingKind=*/ContentView::TrailingKind::PathMiddle};
@@ -1008,7 +1042,14 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     } else if (grepReturnMode_ == ApplicationMode::CutContent) {
       path = cutContentReturnLabel();
     } else if (grepReturnMode_ == ApplicationMode::File) {
-      path = fileMode_.currentFile();
+      // 2026-08-28 correction, a direct user follow-up with exact
+      // before/after mode-line values ("/Users/.../CLAUDE.md"(不良) vs
+      // "EGREP: ^-"(正解)): the file's own path duplicates what's
+      // already implicit (you're browsing results FROM that file); the
+      // search's own label+pattern is the piece this field is actually
+      // for, matching openSelectedGrepMatch()'s own identical
+      // correction on landing (see its own comment).
+      path = name + ": " + grepMode_.pattern();
     }
     // 2026-08-23 fix, a direct user report ("FGREPのモードラインで
     // 戻り値の位置が(fgrep)と逆"): trailing2/trailing3 were swapped
@@ -1026,8 +1067,15 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // OUT of the generic 16-char tail cap specifically to show the
     // full path) -- pre-truncating here would have been a real, if
     // narrower, behavior regression from that.
+    // 2026-08-28 fix, a direct user report ("戻り値に右端までのパディ
+    // ングがない", referencing HISTORY.md:9473's general rule: "基本
+    // 的に右端まで埋まっていないモードラインは全部不良"): this was
+    // explicitly false, unlike every other mode's provider -- trailing3
+    // (the return-destination path) is the LAST field drawn here, so
+    // it's the one renderModeLine()'s own fillTrailingToEdge logic pads
+    // to the true right edge, same mechanism as trailing2 elsewhere.
     ContentView::ModeLineFields fields{name, std::to_string(grepView_.totalByteCount()),
-                                        /*fillTrailingToEdge=*/false, /*rightWatermark=*/"", badge};
+                                        /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", badge};
     fields.trailing3 = path;
     return fields;
   });
@@ -1172,35 +1220,30 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     return fields;
   });
 
-  // usilicrc's own GREP section (2026-08-05 fix): a real CUI screenshot
-  // and direct legacy-tcb PTY testing (fresh $HOME, no ~/.tcb/history at
-  // all) confirmed that ^J^S (EGREP) and ^J^C (CUT's regex variant)
-  // open directly into a non-empty candidate list even on a completely
-  // fresh install -- the exact 10 patterns from usilicrc's own GREP
-  // section ("The `string' that will be used in EGREP or CUT", e.g.
-  // "diff \-", "^Question", "^Subject: "). Configuration::
-  // grepSeedPatterns() already parsed this section (with its own
-  // doctest coverage) but nothing ever consumed it -- seeding
-  // RecentEgrepPattern with it here means ^R at any EGREP/CUT-regex
-  // prompt shows these defaults even before the user has ever typed a
-  // real pattern, matching legacy and directly addressing a user
-  // report ("EGREPのデフォルト履歴リストは入れておく必要がある" --
-  // CUT's regex variant sharing EGREP's own ring, per item 167/168,
-  // needs that ring to actually HAVE a default list in it to make the
-  // shared-spec claim visible, not just structurally true). Seeded
-  // unconditionally at construction (not "only if empty"): an
-  // argument-launched run's history_ is always empty at this point
-  // regardless (main.cpp's own consultHistoryOnStart gate -- see its
-  // comment -- skips loading ~/.usilic/history for those runs, matching
-  // legacy's own ~/.tcb/history skip confirmed by the same PTY test),
-  // and a no-argument run's already-loaded real history simply gets
-  // these appended after it chronologically. This doesn't reproduce
-  // legacy's own "^" config-line marking exactly where real history
-  // gets interleaved among the seeds (this port's ring is a simpler
-  // flat chronological deque) -- a known, deliberate simplification.
-  for (const auto &seed : configuration_.grepSeedPatterns()) {
-    history_.pushRecent(RingCategory::RecentEgrepPattern, seed);
-  }
+  // usilicrc's own GREP section (2026-08-05 fix, REVISED 2026-08-28):
+  // a real CUI screenshot and direct legacy-tcb PTY testing confirmed
+  // that ^J^S (EGREP) and ^J^C (CUT's regex variant) open directly into
+  // a non-empty candidate list even on a completely fresh install --
+  // the exact 10 patterns from usilicrc's own GREP section. The
+  // ORIGINAL fix (2026-08-05) made that true by unconditionally
+  // pushing every seed into RecentEgrepPattern at construction --
+  // simple, but it conflated two things legacy itself keeps separate
+  // (tcb/src/str.c's own conf_grep(): usilicrc's patterns load into a
+  // static LIST *lg, entirely distinct from hp->ss.p.hegrep, the ring
+  // save_history() only grows when a search is actually SUBMITTED,
+  // menu.c:833). Pushing seeds into RecentEgrepPattern made ^R (M_hist,
+  // legacy's OWN "actual usage history" view) show these static
+  // patterns too, even on a session where nothing has ever been
+  // searched -- a real user report ("登録済みのパターンは履歴では
+  // なく検索に使用するための文字列候補に過ぎない...初めて発動した
+  // EGREPで検索文字列一覧が出た時点では、いくら^Rしたって『No String』
+  // なのは当たり前") caught this conflation directly. Seeding removed
+  // here; grepSeedPatterns() is now merged in only where the DIRECT-
+  // ENTRY candidate list is actually built (see startPromptHistoryRecall()'s
+  // own sortDirectEntryList branch), leaving RecentEgrepPattern itself
+  // as genuine usage history only -- matching legacy's own lg/hegrep
+  // split, and empty until a real search happens, exactly as ^R there
+  // should show.
 }
 
 std::string Application::ringCategoryLabel(RingCategory category) const {
@@ -1253,6 +1296,7 @@ void Application::layoutViews() {
   duView_.setViewport(0, contentHeight);
   listBrowserView_.setViewport(0, contentHeight);
   keyView_.setViewport(0, contentHeight);
+  copyView_.setViewport(0, contentHeight);
   promptEditor_.setField(display_.rows() - 1, 0, std::max(1, display_.columns()));
 }
 
@@ -1457,6 +1501,12 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   }
   if (promptKind_ != PromptKind::None) return feedPromptByte(byte);
   if (currentMode_ == ApplicationMode::Shell) return feedShellByte(byte, special);
+  // COPY (^O^C): its own small, self-contained key vocabulary (see
+  // feedCopyByte()'s own comment) -- checked this early, same
+  // precedence as Shell above, so none of resolveCommand()'s ordinary
+  // page/scroll bindings or the ^O-leader table below accidentally
+  // fire while this overlay is active.
+  if (currentMode_ == ApplicationMode::Copy) return feedCopyByte(byte, special);
   // GrepPattern/CutPattern/ManName's own "Select ..." list (see
   // startRegexPromptList()'s own comment): unlike every other
   // ListBrowser use (FILE/DIR/SHELL/PROGRAM pickers, all pure
@@ -1481,10 +1531,10 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // f_enter=1 switch case too (see startListBrowser()'s own comment) --
   // this port had them on the OLD, plain "navigate only" ListBrowserMode
   // path instead of this live-editable one, unlike GREP/CUT/MAN.
-  if (currentMode_ == ApplicationMode::ListBrowser && promptHistoryRecallKind_ &&
-      (*promptHistoryRecallKind_ == PromptKind::GrepPattern || *promptHistoryRecallKind_ == PromptKind::CutPattern ||
-       *promptHistoryRecallKind_ == PromptKind::ManName || *promptHistoryRecallKind_ == PromptKind::RecentFile ||
-       *promptHistoryRecallKind_ == PromptKind::RecentDirectory)) {
+  if (currentMode_ == ApplicationMode::ListBrowser && promptHistoryContext_ &&
+      (promptHistoryContext_->kind == PromptKind::GrepPattern || promptHistoryContext_->kind == PromptKind::CutPattern ||
+       promptHistoryContext_->kind == PromptKind::ManName || promptHistoryContext_->kind == PromptKind::RecentFile ||
+       promptHistoryContext_->kind == PromptKind::RecentDirectory)) {
     return feedRegexListByte(byte, special);
   }
 
@@ -1582,16 +1632,39 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
       // screen showed an unconditional chronological "HISTORY" view
       // through the OLD pre-drawPromptLabel() rendering path instead of
       // the real toggle (=cz, "文字列入力エリアが無い" -- this detour
-      // never goes through refreshDirectEntryModeLine() at all). Scoped
-      // to RecentFile/RecentDirectory only (toggleListBrowserHistory()'s
-      // own guard already no-ops for every other PromptKind here, so
-      // GrepPattern/CutPattern/ManName's existing "^R while browsing
-      // restarts the candidate list via the very same detour" behavior
-      // -- unreported, presumably harmless, not this bug -- is left
-      // completely unchanged rather than risked).
+      // never goes through refreshDirectEntryModeLine() at all).
+      // Originally scoped to RecentFile/RecentDirectory only, on the
+      // assumption GrepPattern/CutPattern/ManName's existing "^R while
+      // browsing restarts the candidate list via the very same detour"
+      // was "unreported, presumably harmless, not this bug". A direct
+      // user report + precise repro (2026-08-28, "CLAUDE.md画面で
+      // ^J^S^R"...^Gして...行数情報も無い) proved otherwise for
+      // GrepPattern specifically: the exact same corruption
+      // (promptHistoryRecallIsDirectEntry_ silently clobbered back to
+      // false) breaks its own subsequent ^G identically (landing on a
+      // stray editable EGREP prompt drawn over the wrong screen, rather
+      // than back where the search actually started).
+      // toggleListBrowserHistory() now does a REAL sorted<->chronological
+      // toggle for GrepPattern/CutPattern too (2026-08-28, a direct user
+      // follow-up: "前回使用した正規表現は何だっけ？...EGREPの検索文字
+      // 列一覧からも発動してくれないと困る" -- ^R here is genuinely
+      // useful, not just harmless, since this port's own sorted-de-
+      // duplicated direct-entry view and the raw chronological log are
+      // two real, different things for GREP/CUT too -- see that
+      // function's own updated comment). Extended to CutPattern as well
+      // here: re-checked the existing "CUT ^R-recalling the pattern
+      // still re-targets the SAME file" test against this real toggle
+      // (rather than the old corrupting detour) and it still passes --
+      // the just-submitted pattern is already present in BOTH the
+      // sorted and chronological views by the time ^R is pressed there
+      // (pushed to the ring at submission time, before the LIFO ^G ever
+      // happens), so which view is showing doesn't matter for that
+      // test's own Enter-selects-it assertion.
       case 0x12:
-        if (promptHistoryRecallKind_ && (*promptHistoryRecallKind_ == PromptKind::RecentFile ||
-                                          *promptHistoryRecallKind_ == PromptKind::RecentDirectory)) {
+        if (promptHistoryContext_ && (promptHistoryContext_->kind == PromptKind::RecentFile ||
+                                       promptHistoryContext_->kind == PromptKind::RecentDirectory ||
+                                       promptHistoryContext_->kind == PromptKind::GrepPattern ||
+                                       promptHistoryContext_->kind == PromptKind::CutPattern)) {
           isNav = true;
         }
         break;
@@ -1604,25 +1677,24 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   }
   if (special) return false;  // an unhandled special key -- nothing meaningful to feed as text
 
-  PromptKind kind = *promptHistoryRecallKind_;
+  PromptKind kind = promptHistoryContext_->kind;
   const std::string *selected = listBrowserMode_.selectedItem();
-  std::string seed = selected ? *selected : promptHistoryRecallText_;
-  // Captured BEFORE promptHistoryRecallKind_/etc. below stop this being
-  // "the candidate list" at all -- see activatePrompt()'s own comment
-  // (a direct user correction: "[bs]→「1/10 TOP」が消滅", i.e. this
-  // position indicator, visible the whole time the list was just being
-  // browsed, shouldn't vanish the instant editing starts).
+  std::string seed = selected ? *selected : promptHistoryContext_->textBeforeRecall;
+  // Captured BEFORE promptHistoryContext_ is cleared below stops this
+  // being "the candidate list" at all -- see activatePrompt()'s own
+  // comment (a direct user correction: "[bs]→「1/10 TOP」が消滅", i.e.
+  // this position indicator, visible the whole time the list was just
+  // being browsed, shouldn't vanish the instant editing starts).
   std::string positionText;
   int candidateCount = static_cast<int>(listBrowserMode_.items().size());
   if (candidateCount > 0) positionText = ModeLine::format(listBrowserView_.cursorIndex() + 1, candidateCount);
-  promptHistoryRecallKind_ = std::nullopt;
   // See pendingSearchFromDirectEntryList_'s own comment: captured
   // BEFORE clearing, so executeGrep()/executeCut() can still see it
   // once this edit actually gets submitted.
-  pendingSearchFromDirectEntryList_ = promptHistoryRecallIsDirectEntry_;
-  promptHistoryRecallIsDirectEntry_ = false;
-  promptHistoryRecallText_.clear();
-  currentMode_ = promptHistoryRecallReturnMode_;
+  pendingSearchFromDirectEntryList_ = promptHistoryContext_->isDirectEntry;
+  ApplicationMode returnMode = promptHistoryContext_->returnMode;
+  promptHistoryContext_ = std::nullopt;
+  currentMode_ = returnMode;
   // 2026-08-11 fix: this used to redraw activeView() (the DESTINATION
   // Directory/File view), replacing the candidate list on screen with
   // the full underlying listing the instant editing started -- a real
@@ -1631,11 +1703,11 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   // the live-editable COMBOBOX legacy's own M_egrep/M_cut screen is:
   // the candidate list stays fully visible, with only the mode line's
   // own row turning into an editable field over the currently-selected
-  // candidate. currentMode_ is still switched to promptHistoryRecallReturnMode_
-  // right above (executeCut()/executeGrep() need it correct at submit
-  // time), but nothing redraws that mode's own view until the prompt
-  // resolves (promptActive() gates every other redraw() call -- see
-  // e.g. runGuiPhase()'s own !app.promptActive() check), so leaving
+  // candidate. currentMode_ is still switched to returnMode right
+  // above (executeCut()/executeGrep() need it correct at submit time),
+  // but nothing redraws that mode's own view until the prompt resolves
+  // (promptActive() gates every other redraw() call -- see e.g.
+  // runGuiPhase()'s own !app.promptActive() check), so leaving
   // listBrowserView_'s own content on screen here is safe.
   listBrowserView_.redraw();
   activatePrompt(kind, seed, positionText);
@@ -1847,6 +1919,20 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::GoToParentDirectory);
       case kCarriageReturn:  // ^O ^M : "Read per line" (K-23, M_fp)
         return handleCommand(Command::Enter);
+      // ^O^C / ^O^Y (M_copy/M_paste): usilicrc's own K-29/K-30 entries
+      // ("F-3 C-c \"Copy string\"" / "F-3 C-y \"Paste string (Command-
+      // line)\"") are the actual documented bindings -- str.c's
+      // COMPILED-IN default table (`key_c[M_copy] = (K_o<<8)+'c'`,
+      // `key_c[M_paste] = (K_o<<8)+'p'`) is superseded by usilicrc at
+      // load time exactly like every other K-nn binding in this port,
+      // and this port ships usilicrc's OWN bindings, not the raw C
+      // defaults -- confirmed by a real user report after the first
+      // version of this used ^Oc/^Op instead ("ペーストの方法が
+      // わからない。旧では...^O^Yでペーストなんだが").
+      case 0x03:  // ^O ^C (K-29)
+        return handleCommand(Command::EnterCopyMode);
+      case 0x19:  // ^O ^Y (K-30)
+        return handleCommand(Command::PasteClipboard);
       default:
         return false;  // unrecognized ^O-sequence in this slice
     }
@@ -2317,6 +2403,8 @@ ContentView &Application::viewForMode(ApplicationMode mode) {
       return listBrowserView_;
     case ApplicationMode::Key:
       return keyView_;
+    case ApplicationMode::Copy:
+      return copyView_;
     case ApplicationMode::Directory:
     default:
       return directoryView_;
@@ -2426,6 +2514,7 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::File) return openSelectedBannerEntry();
       return false;
     case Command::Back:
+      if (currentMode_ == ApplicationMode::Copy) return returnFromCopy();
       if (currentMode_ == ApplicationMode::Key) return returnFromKey();
       if (currentMode_ == ApplicationMode::ListBrowser) return returnFromListBrowser();
       if (currentMode_ == ApplicationMode::Du) return returnFromDu();
@@ -2481,6 +2570,22 @@ bool Application::handleCommand(Command command) {
         // correctly reaches locateReturnMode_ via returnFromLocate()'s
         // own existing, untouched logic).
         if (fileReturnMode_ == ApplicationMode::Locate) return returnFromFileToLocate();
+        // 2026-08-28 addition, see openSelectedGrepMatch()'s own File
+        // branch comment: a file reached via a GREP match (not opened
+        // directly) returns to the search's own results list first,
+        // matching the Locate precedent just above.
+        // fileMode_.hasSearchAnnotation() gate (2026-08-28 fix, a real
+        // report: "^Gの連打で無限ループ"): fileReturnMode_ alone stayed
+        // Grep forever once set, but returnFromGrep()'s own "backing out
+        // without picking anything" path already clears the annotation
+        // (mirroring DirectoryMode's identical hasSearchAnnotation()-
+        // gated routing, which never had this bug for exactly this
+        // reason) -- without ALSO checking the annotation here, a
+        // SECOND ^G (now plain File, annotation cleared, but
+        // fileReturnMode_ still stuck at Grep) kept bouncing back to
+        // returnToGrepResults() instead of falling through to
+        // returnToDirectory() below, forever.
+        if (fileReturnMode_ == ApplicationMode::Grep && fileMode_.hasSearchAnnotation()) return returnToGrepResults();
         // 2026-08-18: a w.N entry opened via openSelectedBannerEntry()
         // (K-0/^T's own candidate-list selection) -- routes straight
         // back to the banner itself rather than returnToDirectory()'s
@@ -2491,6 +2596,22 @@ bool Application::handleCommand(Command command) {
         // DIFFERENT file from the banner and isn't covered by that
         // exclusion, so it needs this separate branch here instead).
         if (fileReturnMode_ == ApplicationMode::File) return executeShowTcbBanner();
+        // 2026-08-28 addition, see infoPreviousFilePath_'s own
+        // declaration comment: ^G from the banner ITSELF (not one of
+        // its own WORK/arc.N children, which the fileReturnMode_==File
+        // branch just above already handles) reloads whichever real
+        // file was actually being viewed when ^I was pressed, instead
+        // of always falling through to returnToDirectory()'s generic
+        // "back to the directory" handling.
+        if (fileMode_.currentFile() == bannerFilePath() && !infoPreviousFilePath_.empty()) {
+          std::string target = infoPreviousFilePath_;
+          infoPreviousFilePath_.clear();
+          if (fileMode_.loadFile(target)) {
+            currentMode_ = ApplicationMode::File;
+            fileReturnMode_ = ApplicationMode::Directory;
+            return true;
+          }
+        }
         return returnToDirectory();
       }
       // 2026-08-11 fix: a real report -- after openSelectedGrepMatch()
@@ -2669,6 +2790,17 @@ bool Application::handleCommand(Command command) {
       return startRegexPromptList(PromptKind::RecentFile);
     case Command::StartKey:
       return startKey();
+    case Command::EnterCopyMode:
+      return startCopy();
+    // ^O^Y: only meaningful while an editable prompt is actually up
+    // (the sole PASTE destination -- see copy_mode.hpp's own class
+    // comment on why clipboardText() is always plain text). A no-op
+    // (not a crash) with no prompt active, matching this port's own
+    // convention for keys with no meaning in the current context.
+    case Command::PasteClipboard:
+      if (!promptActive()) return false;
+      promptEditor_.paste(copyMode_.clipboardText());
+      return true;
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
@@ -3379,20 +3511,19 @@ bool Application::jumpToPathPrefix() {
 bool Application::openSelectedListEntry() {
   const std::string *item = listBrowserMode_.selectedItem();
   if (!item) return false;
-  if (promptHistoryRecallKind_) {
+  if (promptHistoryContext_) {
     // Restore the ORIGINAL underlying mode first (prompts overlay
     // whatever was active when they started, and the corresponding
     // execute*() functions -- see e.g. executeGrep()'s own
     // grepReturnMode_ read -- assume that's still current, exactly as
     // it is for a live-typed submitPrompt() call), THEN dispatch the
     // picked text through the exact same path a live Enter would.
-    PromptKind kind = *promptHistoryRecallKind_;
+    PromptKind kind = promptHistoryContext_->kind;
     std::string text = *item;
-    promptHistoryRecallKind_ = std::nullopt;
     // See pendingSearchFromDirectEntryList_'s own comment.
-    pendingSearchFromDirectEntryList_ = promptHistoryRecallIsDirectEntry_;
-    promptHistoryRecallIsDirectEntry_ = false;
-    currentMode_ = promptHistoryRecallReturnMode_;
+    pendingSearchFromDirectEntryList_ = promptHistoryContext_->isDirectEntry;
+    currentMode_ = promptHistoryContext_->returnMode;
+    promptHistoryContext_ = std::nullopt;
     return executePromptSubmission(kind, text);
   }
   if (shellHistoryRecallActive_) {
@@ -3685,9 +3816,48 @@ bool Application::openSelectedGrepMatch() {
         }
       }
     }
+  } else if (grepReturnMode_ == ApplicationMode::File) {
+    // 2026-08-28 addition, a direct user report + precise repro
+    // ("CLAUDE.mdを開いた状態で^J^S...[return]で最上行を選択→戻り値が
+    // 「~/git/usilic/」のまま。検索結果一覧へ戻るのが筋"): mirrors the
+    // Directory branch above, just landing on fileView_ instead of
+    // directoryView_ -- see FileMode::setSearchAnnotation()'s own
+    // comment for why this is a SEPARATE mechanism from setSearchOrigin()
+    // (leaves the file's own name alone). fileReturnMode_ = Grep (a NEW
+    // value, see its own Command::Back handling) so ^G from here re-
+    // enters the results list instead of falling through to
+    // returnToDirectory().
+    // 2026-08-28 correction, a direct user follow-up with exact before/
+    // after mode-line values ("EGREP: ^-"(不良) vs "- レガシーC実装...
+    // src/config.sh"(正解)): the trailing2 value here was WRONG -- the
+    // match's own LINE TEXT is the useful, non-redundant info once
+    // you've actually landed on it (you already know you searched
+    // "^-"), not a repeat of the "EGREP: pattern" label -- THAT belongs
+    // on the results-list screen instead (grepView_'s own provider, see
+    // its own identical correction).
+    fileMode_.setSearchAnnotation(match->text);
+    fileReturnMode_ = ApplicationMode::Grep;
   }
-  display_.hideVisibleCursor();
-  target.redraw();
+  // 2026-08-28 fix, a direct user report ("検索前には画面にあった
+  // ブロックカーソルが検索一覧のどれかを[return]後の画面では表示
+  // されない...どれがマッチ行かわかりづらい"): hideVisibleCursor()
+  // was unconditional here, matching the Directory case (whose own
+  // full-row highlight already marks the current entry, no terminal
+  // caret needed -- see returnToDirectory()'s identical hide) but wrong
+  // for File/CutContent, plain content views with NO other highlight of
+  // their own (see FileMode::loadFile()'s own "no whole-line highlight
+  // to indicate it otherwise" comment) -- redraw() alone doesn't turn
+  // the caret back on for these either, since cursorHighlightEnabled_
+  // defaults off for ordinary content (loadFile()'s own comment), so
+  // without an explicit syncVisibleCursor() call here the match line
+  // was left with no visible marker at all.
+  if (grepReturnMode_ == ApplicationMode::Directory) {
+    display_.hideVisibleCursor();
+    target.redraw();
+  } else {
+    target.redraw();
+    target.syncVisibleCursor();
+  }
   return true;
 }
 
@@ -3706,6 +3876,20 @@ bool Application::returnFromGrep() {
   if (grepReturnsToCandidateList_) {
     grepReturnsToCandidateList_ = false;
     currentMode_ = grepReturnMode_;
+    // 2026-08-28 fix, a real report + precise repro ("履歴Gが不良...
+    // ②のはずが上記①"): this branch returns early, before the
+    // annotation-clearing code below ever runs -- File's own
+    // searchAnnotation_ (set by openSelectedGrepMatch() when a match
+    // was picked) stayed set across this whole detour through the
+    // candidate list, so the NEXT time File mode's own view got shown
+    // (after backing out of the re-opened candidate list too) it still
+    // displayed the stale match annotation, indistinguishable from
+    // freshly landing on the match again (screen "①") instead of the
+    // plain file ("②") a fresh Back-out-of-grep should reach. Directory
+    // has no equivalent gap here (DirectoryMode::enterDirectory() itself
+    // clears searchAnnotation_ on any fresh `ls`, see its own comment),
+    // which is why only the File branch needed this.
+    if (grepReturnMode_ == ApplicationMode::File) fileMode_.setSearchAnnotation("");
     return startRegexPromptList(PromptKind::GrepPattern);
   }
   currentMode_ = grepReturnMode_;
@@ -3721,6 +3905,7 @@ bool Application::returnFromGrep() {
   // longer describes what just happened and needs to be cleared, not
   // carried forward a second time.
   if (grepReturnMode_ == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
+  else if (grepReturnMode_ == ApplicationMode::File) fileMode_.setSearchAnnotation("");
   activeView().redraw();
   return true;
 }
@@ -3902,16 +4087,12 @@ bool Application::returnFromDu() {
 
 bool Application::returnFromShell() {
   currentMode_ = shellReturnMode_;
-  // Restore a suspended promptHistoryRecallKind_ session (see its own
+  // Restore a suspended promptHistoryContext_ session (see its own
   // declaration comment) when returning to the SAME ListBrowser
   // candidate list ^J^W was pressed from -- consumed exactly once.
-  if (shellReturnMode_ == ApplicationMode::ListBrowser && suspendedPromptHistoryRecallKind_) {
-    promptHistoryRecallKind_ = suspendedPromptHistoryRecallKind_;
-    promptHistoryRecallText_ = suspendedPromptHistoryRecallText_;
-    promptHistoryRecallIsDirectEntry_ = suspendedPromptHistoryRecallIsDirectEntry_;
-    suspendedPromptHistoryRecallKind_ = std::nullopt;
-    suspendedPromptHistoryRecallText_.clear();
-    suspendedPromptHistoryRecallIsDirectEntry_ = false;
+  if (shellReturnMode_ == ApplicationMode::ListBrowser && suspendedPromptHistoryContext_) {
+    promptHistoryContext_ = suspendedPromptHistoryContext_;
+    suspendedPromptHistoryContext_ = std::nullopt;
   }
   // The mode being returned to (typically a plain directory listing)
   // relies on ContentView's own row-highlight, not a visible cursor,
@@ -3966,8 +4147,8 @@ void Application::handleShellChildExited() {
 }
 
 bool Application::returnFromListBrowser() {
-  if (promptHistoryRecallKind_) {
-    PromptKind kind = *promptHistoryRecallKind_;
+  if (promptHistoryContext_) {
+    PromptKind kind = promptHistoryContext_->kind;
     // EGREP's own candidate list (2026-08-12 fix, direct user
     // instruction). ^G here must NOT reopen a blank editable
     // prompt. Per docs/HISTORY.md:1538 -- the entire reason ^J^S opens
@@ -4017,7 +4198,7 @@ bool Application::returnFromListBrowser() {
     // same early-return branch as GrepPattern's own identical fix.
     if ((kind == PromptKind::GrepPattern || kind == PromptKind::CutPattern || kind == PromptKind::RecentFile ||
          kind == PromptKind::RecentDirectory) &&
-        promptHistoryRecallIsDirectEntry_) {
+        promptHistoryContext_->isDirectEntry) {
       // RecentFile/RecentDirectory + listBrowserChronological_
       // (2026-08-18, a direct user correction backed by a real,
       // freshly-built legacy binary check -- "^X^D→^R→^G(DIR一覧から
@@ -4038,35 +4219,44 @@ bool Application::returnFromListBrowser() {
       // legacy two-^G shape; a second ^G then falls through to this
       // same branch again with listBrowserChronological_ already false,
       // taking the normal exit path below.
-      if ((kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory) && listBrowserChronological_) {
+      // GrepPattern/CutPattern (2026-08-29 fix, a direct user report
+      // with exact before/after field values -- "^G:「CLUADE.md」
+      // [EGREP]" -- ^G from EGREP's own chronological view skipped
+      // straight to the origin File/Directory instead of first popping
+      // back to the candidate list): 2026-08-28's own ^R fix made the
+      // toggle itself work for these two kinds (see
+      // toggleListBrowserHistory()'s own comment) but never extended
+      // THIS "pop the toggle first" check to match -- same two-^G shape
+      // applies here for the identical reason.
+      if ((kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory || kind == PromptKind::GrepPattern ||
+           kind == PromptKind::CutPattern) &&
+          listBrowserChronological_) {
         return toggleListBrowserHistory();
       }
-      promptHistoryRecallKind_ = std::nullopt;
-      promptHistoryRecallIsDirectEntry_ = false;
-      promptHistoryRecallText_.clear();
-      currentMode_ = promptHistoryRecallReturnMode_;
+      ApplicationMode returnMode = promptHistoryContext_->returnMode;
+      promptHistoryContext_ = std::nullopt;
+      currentMode_ = returnMode;
       // 2026-08-12 fix, a direct user correction: "戻り値が(ls)なら
       // ちゃんとそこ（(ls)でEGREPしたので当然(ls)のはず）へ戻って
-      // ほしい" -- landing back on promptHistoryRecallReturnMode_
-      // alone isn't enough when this candidate list was reached via
-      // item 275's own LIFO return from Grep results: THAT return
-      // path leaves currentMode_ as Directory but does NOT clear
-      // directoryMode_'s own stale "EGREP: pattern" annotation (only
-      // openSelectedGrepMatch() sets it, nothing along that path
-      // clears it), so landing here still showed the annotated screen
-      // (indistinguishable from having just picked a match again)
-      // instead of the TRUE plain "(ls)" the whole excursion actually
-      // started from. Mirrors returnFromGrep()'s own identical
-      // clearing for the exact same reason -- see its own comment.
-      if (promptHistoryRecallReturnMode_ == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
+      // ほしい" -- landing back on returnMode alone isn't enough when
+      // this candidate list was reached via item 275's own LIFO return
+      // from Grep results: THAT return path leaves currentMode_ as
+      // Directory but does NOT clear directoryMode_'s own stale "EGREP:
+      // pattern" annotation (only openSelectedGrepMatch() sets it,
+      // nothing along that path clears it), so landing here still
+      // showed the annotated screen (indistinguishable from having
+      // just picked a match again) instead of the TRUE plain "(ls)"
+      // the whole excursion actually started from. Mirrors
+      // returnFromGrep()'s own identical clearing for the exact same
+      // reason -- see its own comment.
+      if (returnMode == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
       activeView().redraw();
       return true;
     }
-    std::string text = promptHistoryRecallText_;
-    promptHistoryRecallKind_ = std::nullopt;
-    promptHistoryRecallIsDirectEntry_ = false;
-    promptHistoryRecallText_.clear();
-    currentMode_ = promptHistoryRecallReturnMode_;
+    std::string text = promptHistoryContext_->textBeforeRecall;
+    ApplicationMode returnMode = promptHistoryContext_->returnMode;
+    promptHistoryContext_ = std::nullopt;
+    currentMode_ = returnMode;
     activeView().redraw();
     activatePrompt(kind, text);  // resumes with whatever had already been typed before ^R
     return true;
@@ -4134,7 +4324,7 @@ bool Application::ensureShellActive() {
   // the ListBrowser's own mode line reading "EGREP" instead of
   // "PROGRAM", and selecting an entry ran an EGREP search using the
   // shell command text as the pattern ("cat .../w.usilic|sort") instead
-  // of inserting it into the command line. Root cause: promptHistoryRecallKind_
+  // of inserting it into the command line. Root cause: promptHistoryContext_
   // (set by the ORIGINAL ^J^S's startPromptHistoryRecall(), meant to be
   // consumed exactly once -- either by feedRegexListByte()'s own "start
   // editing" transition or by openSelectedListEntry()'s submission) was
@@ -4144,7 +4334,7 @@ bool Application::ensureShellActive() {
   // through running the shell command, so when startShellHistoryRecall()
   // later opened its OWN, unrelated ListBrowser session (for
   // RingCategory::ShellCommand), dispatchByte()'s top-level check
-  // (`currentMode_==ListBrowser && promptHistoryRecallKind_ && (...==
+  // (`currentMode_==ListBrowser && promptHistoryContext_ && (...==
   // GrepPattern || ...==CutPattern)`) still matched on the STALE flag
   // and routed every byte through feedRegexListByte() -- the EGREP/CUT
   // candidate-list combobox logic -- instead of ordinary ListBrowser
@@ -4163,19 +4353,15 @@ bool Application::ensureShellActive() {
   // A no-op in the ordinary case (no recall was in progress, this is
   // already std::nullopt) -- so safe to run unconditionally.
   // Suspend (not just discard) a still-genuinely-open recall session
-  // -- see suspendedPromptHistoryRecallKind_'s own declaration comment
+  // -- see suspendedPromptHistoryContext_'s own declaration comment
   // for the full story. currentMode_ == ListBrowser here means
-  // promptHistoryRecallKind_ (if set) belongs to THIS live session,
+  // promptHistoryContext_ (if set) belongs to THIS live session,
   // not a stale leftover from an earlier, already-abandoned one --
   // returnFromShell() restores it on a plain ^G back out.
   if (currentMode_ == ApplicationMode::ListBrowser) {
-    suspendedPromptHistoryRecallKind_ = promptHistoryRecallKind_;
-    suspendedPromptHistoryRecallText_ = promptHistoryRecallText_;
-    suspendedPromptHistoryRecallIsDirectEntry_ = promptHistoryRecallIsDirectEntry_;
+    suspendedPromptHistoryContext_ = promptHistoryContext_;
   }
-  promptHistoryRecallKind_ = std::nullopt;
-  promptHistoryRecallText_.clear();
-  promptHistoryRecallIsDirectEntry_ = false;
+  promptHistoryContext_ = std::nullopt;
   // See suspendedActivePromptKind_'s own declaration comment: a leader
   // command (^J^W) jumping straight to Shell from a DIRECTLY-active
   // editable prompt (promptKind_ != None, e.g. mid-typing an FGREP
@@ -4202,9 +4388,28 @@ bool Application::ensureShellActive() {
   // actually captured above -- otherwise the Shell screen's own "what
   // will ^G return to" badge showed nothing useful for this case
   // either (falling to previousModeName()'s default: "").
-  shellReturnName_ =
-      suspendedPromptHistoryRecallKind_ ? promptLabelText(*suspendedPromptHistoryRecallKind_) : previousModeName(currentMode_);
-  shellReturnMode_ = currentMode_;
+  // 2026-08-28 fix, a real report + repro ("INFO画面で^J.→SHELLの戻り
+  // 値が「~/.usilic/usilic」...→^G→INFO（←戻らなくていい）") + the
+  // user's own general policy ("基本的にINFOへは戻らなくていい。例外
+  // はusilicrc、ERROR、SHELL、WORKの対象ファイルを選んだ場合または
+  // INFOでFGREP/EGREP/CUTを実行した場合のみ"): those four exceptions
+  // never reach here at all (they're File-mode Enter-driven via
+  // openSelectedBannerEntry(), or prompt-driven, neither of which goes
+  // through ensureShellActive()) -- so ANY real SHELL excursion
+  // launched from INFO (^J., ^J^W, ^[s, ...) unconditionally falls
+  // outside that exception list. Skips INFO entirely and returns to
+  // whatever INFO itself would have (fileReturnMode_ is unconditionally
+  // Directory there, see executeShowTcbBanner()'s own comment) --
+  // mirrors the pagerReturnsToShell() special case above in spirit
+  // (don't record an ephemeral screen as a return target), but unlike
+  // that one, ^G still lands somewhere real (Directory), not a re-entry
+  // into Shell with nothing to return to at all.
+  ApplicationMode effectiveReturnMode = currentMode_;
+  if (currentMode_ == ApplicationMode::File && fileMode_.currentFile() == bannerFilePath())
+    effectiveReturnMode = ApplicationMode::Directory;
+  shellReturnName_ = suspendedPromptHistoryContext_ ? promptLabelText(suspendedPromptHistoryContext_->kind)
+                                                     : previousModeName(effectiveReturnMode);
+  shellReturnMode_ = effectiveReturnMode;
   currentMode_ = ApplicationMode::Shell;
   shell_.scrollback().redraw();
   shell_.redrawPromptRow();
@@ -4224,11 +4429,16 @@ bool Application::shellRestart() {
   shellStarted_ = true;
   // See ensureShellActive()'s own identical 2026-08-26 comment: a
   // SHELL-handoff-originated pager session must never become a
-  // recorded return target either, for the same reason.
+  // recorded return target either, for the same reason. 2026-08-28: nor
+  // must INFO (bannerFilePath()) -- see ensureShellActive()'s own
+  // identical comment on that fix.
   if (currentMode_ != ApplicationMode::Shell &&
       !(currentMode_ == ApplicationMode::File && fileMode_.pagerReturnsToShell())) {
-    shellReturnName_ = previousModeName(currentMode_);
-    shellReturnMode_ = currentMode_;
+    ApplicationMode effectiveReturnMode = currentMode_;
+    if (currentMode_ == ApplicationMode::File && fileMode_.currentFile() == bannerFilePath())
+      effectiveReturnMode = ApplicationMode::Directory;
+    shellReturnName_ = previousModeName(effectiveReturnMode);
+    shellReturnMode_ = effectiveReturnMode;
   }
   currentMode_ = ApplicationMode::Shell;
   shell_.scrollback().redraw();
@@ -4241,7 +4451,17 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     case ApplicationMode::Directory:
       return directoryMode_.currentDirectory();
     case ApplicationMode::File:
-      return fileMode_.currentFile();
+      // 2026-08-28 fix, a real report ("SHELLの戻り値が「~/.usilic/
+      // usilic」"): every OTHER caller of this File case is viewing a
+      // real file, where showing its own path is exactly right -- but
+      // for the INFO banner specifically (a synthetic file, see
+      // bannerFilePath()'s own comment), FileMode's own mode-line
+      // provider already knows to show "INFO" instead (searchOriginLabel_,
+      // set by executeShowTcbBanner()'s own setSearchOrigin() call) --
+      // this SEPARATE display path (SHELL's/KEY's own "戻り値" trailing
+      // field) never got the same awareness, showing the raw synthetic
+      // path instead.
+      return fileMode_.currentFile() == bannerFilePath() ? "INFO" : fileMode_.currentFile();
     case ApplicationMode::Man:
       return manMode_.currentPage();
     case ApplicationMode::Archive:
@@ -4610,6 +4830,38 @@ std::string Application::bannerFilePath() const {
 }
 
 bool Application::executeShowTcbBanner() {
+  // 2026-08-28 fix, a real report + repro ("「~/.usilic/（ls）」で
+  // usilicrcを選択→^I→^G→usilicrcへ戻らない"): every OTHER Directory-
+  // to-File transition saves the cursor's own row first (openSelectedEntry()'s
+  // own 2026-08-27 fix has the identical shape/comment); this entry
+  // point never did, so History::positionFor(Directory, ...) on the way
+  // back had nothing fresher than some earlier, unrelated visit to
+  // restore. Unconditional (not gated on currentMode_==Directory): safe
+  // regardless of which mode ^I was actually pressed from, since
+  // DirectoryMode's own currentDirectory_ doesn't change just because a
+  // DIFFERENT mode happens to be active, and fileReturnMode_ below is
+  // unconditionally Directory anyway.
+  directoryMode_.saveCurrentCursorPosition();
+  // 2026-08-28 addition, see infoPreviousFilePath_'s own declaration
+  // comment: remember whichever real file (if any) was actively being
+  // VIEWED (not just cursor-highlighted in a directory listing) when ^I
+  // was pressed, so ^G from the banner can reload and return to it
+  // instead of always falling back to the directory. Skipped when this
+  // call is itself a "return to banner from one of its own WORK/arc.N
+  // children" hop (fileReturnMode_ == File at entry, see
+  // openSelectedBannerEntry()'s own fileReturnMode_ = File comment) --
+  // that hop's own currentFile() is a throwaway banner child, not the
+  // real file worth remembering, and infoPreviousFilePath_ (set by the
+  // ORIGINAL ^I press before any of this nesting started) must survive
+  // that round trip unchanged.
+  if (fileReturnMode_ != ApplicationMode::File) {
+    if (currentMode_ == ApplicationMode::File && fileMode_.currentFile() != bannerFilePath()) {
+      fileMode_.saveCursorPosition();
+      infoPreviousFilePath_ = fileMode_.currentFile();
+    } else {
+      infoPreviousFilePath_.clear();
+    }
+  }
   constexpr int kLabelWidth = 12;  // "Boot options"/"Startup file" own width -- every other label right-justifies to this
   auto field = [](const std::string &label) {
     std::string padded = label;
@@ -4617,6 +4869,43 @@ bool Application::executeShowTcbBanner() {
     return padded + " : ";
   };
   std::string continuationIndent(kLabelWidth + 3, ' ');  // aligns under field()'s own " : "-following column
+
+  // 2026-08-28 addition, a direct user report ("選べない項目は...装飾
+  // 無しでよろしく"): "Boot options" (never openable, literal argv
+  // text, see openSelectedBannerEntry()'s own comment) and an empty
+  // "WORK :" (no path at all yet, K-17/K-64 never used this session)
+  // used to get the SAME highlight as every genuinely openable line.
+  // ERROR/SHELL are DELIBERATELY NOT included here even though their
+  // own file may not exist/have real content yet -- see the touch()
+  // calls just below and openSelectedBannerEntry()'s own "No String"
+  // handling: a same-day follow-up report flagged that suppressing
+  // their highlight too risked reading as "this path IS the final,
+  // authoritative value" rather than "nothing here yet", so those two
+  // stay uniformly openable-looking and instead show real (if empty)
+  // content on demand. One bool per line, built in the SAME order as
+  // the banner text below.
+  std::vector<bool> openable;
+  openable.push_back(false);  // "Boot options" -- literal argv text, never a path
+  openable.push_back(true);   // "Startup file" -- usilicrc, always real
+  openable.push_back(true);   // "ERROR" -- touched below, see its own comment
+  openable.push_back(true);   // "SHELL" -- touched below, see its own comment
+  for (std::size_t i = 0; i < (allocatedWorkFiles_.empty() ? std::size_t{1} : allocatedWorkFiles_.size()); i++)
+    openable.push_back(!allocatedWorkFiles_.empty());
+  for (std::size_t i = 0; i < allocatedArcDirs_.size(); i++) openable.push_back(true);
+
+  // 2026-08-28 addition, a direct user proposal ("最初にそれら（/tmp/
+  // .usilic.NNNNN/shell等）をtouchしておき、実際にアクセスしてアン
+  // ダーライン「No String」を表示する仕様に変更してほしい"): ERROR/
+  // SHELL may not have any real content yet (nothing logged/no shell
+  // session started this instance) -- touched here (created empty if
+  // missing, left alone if already real) so openSelectedBannerEntry()'s
+  // own loadFile() always succeeds for these two rather than failing
+  // silently; its own "loaded content is empty -> show No String"
+  // handling (see its own comment) covers the rest.
+  {
+    std::ofstream errorTouch(errorLogPath_, std::ios::app);
+    std::ofstream shellTouch(logFilePath_, std::ios::app);
+  }
 
   std::ostringstream banner;
   banner << field("Boot options") << bootOptions_ << "\n";
@@ -4670,7 +4959,25 @@ bool Application::executeShowTcbBanner() {
   // here.
   {
     std::vector<ContentView::Line> lines = fileView_.lines();
-    for (auto &line : lines) line.highlightStartColumn = static_cast<int>(continuationIndent.size());
+    for (std::size_t i = 0; i < lines.size(); i++) {
+      // highlightStartColumn is ALWAYS the row's own "front of the
+      // value" column (continuationIndent.size()), openable or not --
+      // 2026-08-28 fix, a real report ("Boot optionsは...ブロックカー
+      // ソル位置は「WORK : 」と同じでよろしく"): an EARLIER attempt at
+      // this pointed a non-openable row's highlightStartColumn PAST its
+      // own text end instead, which also happened to move the real
+      // terminal CARET there (syncVisibleCursor() uses this same
+      // field) -- fine for "WORK :" when empty (nothing follows the
+      // label, so both columns coincide) but wrong for "Boot options"
+      // (bootOptions_ can be a real, long string), landing the caret
+      // far past where WORK's own convention puts it. Line::
+      // neverHighlighted (not this column) is what actually suppresses
+      // the SGR highlight now, so the two concerns -- "where does the
+      // caret sit" and "does this row ever visibly highlight" -- are
+      // independent.
+      lines[i].highlightStartColumn = static_cast<int>(continuationIndent.size());
+      lines[i].neverHighlighted = !(i < openable.size() && openable[i]);
+    }
     fileView_.setLines(std::move(lines));
   }
   currentMode_ = ApplicationMode::File;
@@ -4701,7 +5008,33 @@ bool Application::executeShowTcbBanner() {
   // not just trailing2) -- reading as though a real ordinary file
   // literally named "~/.usilic/usilic" were being viewed. Now "INFO",
   // matching the rebound key's own kKeyTable label.
-  fileMode_.setSearchOrigin("INFO", directoryMode_.currentDirectory());
+  // 2026-08-28 fix, a direct user report ("CLAUDE.mdから来たのに戻り値
+  // が「~/git/usilic/」のまま。^GでCLAUDE.mdには戻るので戻り値の修正
+  // だけよろしく"): ^G's actual DESTINATION already follows
+  // infoPreviousFilePath_ (see its own declaration comment) when set,
+  // but this DISPLAYED trailing field still unconditionally showed
+  // directoryMode_.currentDirectory() regardless -- the two had drifted
+  // apart. Now mirrors whichever one ^G will actually use.
+  fileMode_.setSearchOrigin(
+      "INFO", infoPreviousFilePath_.empty() ? directoryMode_.currentDirectory() : infoPreviousFilePath_);
+  // 2026-08-28 fix, a real report + repro ("usilic -c ~/git/usilic→^I
+  // →名前欄が「INFO」ではなく「usilic」、戻り値が「~/.usilic/」の
+  // まま"): loadFile() above already redrew ONCE internally, using
+  // FileMode's own DEFAULT mode line -- searchOriginLabel_/
+  // searchOriginDetail_ were still empty at that point (loadFile()
+  // itself clears them, see its own comment), so that first frame fell
+  // back to `name = path.filename().string()` (bannerFilePath()'s own
+  // basename, "usilic") and `trailing2 = directory` (bannerFilePath()'s
+  // own containing directory, "~/.usilic/") -- exactly the two wrong
+  // values reported. Nothing redrew again afterward to replace that
+  // stale frame with the corrected one now that setSearchOrigin() has
+  // actually run. This is the EXACT same gap openSelectedBannerEntry()
+  // was already fixed for on 2026-08-18 (see its own comment) -- just
+  // never applied here too. A real interactive run shows this
+  // immediately (no later keypress-triggered redraw happens to paper
+  // over it); this port's own tests never caught it because feedByte()
+  // there is followed by an unconditional redraw either way.
+  fileView_.redraw();
   return true;
 }
 
@@ -4788,6 +5121,22 @@ bool Application::openSelectedBannerEntry() {
     if (fixedPath == logFilePath_) refreshShellLogFile();
     fileMode_.saveCursorPosition();
     if (!fileMode_.loadFile(fixedPath)) return false;
+    // 2026-08-28 addition, a direct user proposal ("最初にそれら
+    // （/tmp/.usilic.NNNNN/shell等）をtouchしておき、実際にアクセス
+    // してアンダーライン「No String」を表示する仕様に変更してほし
+    // い"): executeShowTcbBanner() now touches errorLogPath_/logFilePath_
+    // upfront so they always exist and stay uniformly highlighted/
+    // openable-looking (see its own comment) -- but ERROR before
+    // anything's ever been logged, or SHELL before any real output, are
+    // genuinely EMPTY files. Shown as "No String" (underlined), the
+    // SAME convention GrepMode::search()/ContentView::setEmptyPlaceholder()
+    // already established for "nothing here" rather than a blank
+    // screen that could be mistaken for real (if boring) content.
+    if (fileView_.lines().empty()) {
+      static const std::string kNoString = "No String";
+      fileView_.setLines({ContentView::Line{
+          kNoString, std::nullopt, std::nullopt, {AttributeRun{0, static_cast<int>(kNoString.size()), Display::Attribute::Underline}}}});
+    }
     fileMode_.setSearchOrigin(std::filesystem::path(fixedPath).filename().string(), "INFO");  // 2026-08-27 rename
     fileReturnMode_ = ApplicationMode::File;
     // loadFile() already redrew once internally, using the DEFAULT mode
@@ -5186,18 +5535,17 @@ std::vector<std::string> Application::sortedUniqueRecentEntries(RingCategory cat
 bool Application::startListBrowser(RingCategory category) {
   // 2026-08-15 fix: a real report + screenshot (=bf/=bg, ^X^D showing
   // a garbled trailing2 fragment from an unrelated earlier LOCATE
-  // path) traced back to promptHistoryRecallKind_/
-  // promptHistoryRecallIsDirectEntry_ being left set by an EARLIER,
-  // unrelated GREP/CUT/MAN direct-entry candidate-list session that
-  // never fully resolved (e.g. backed out via ^G partway through) --
-  // listBrowserView_'s own ModeLineFieldsProvider checks
-  // `if (promptHistoryRecallKind_)` to decide whether THIS is a
+  // path) traced back to promptHistoryContext_ being left set by an
+  // EARLIER, unrelated GREP/CUT/MAN direct-entry candidate-list session
+  // that never fully resolved (e.g. backed out via ^G partway through)
+  // -- listBrowserView_'s own ModeLineFieldsProvider checks
+  // `if (promptHistoryContext_)` to decide whether THIS is a
   // direct-entry regex list (name/trailing2 shaped very differently)
   // or a plain MAN/PROGRAM/COMMAND picker, and a stale
   // leftover value from a completely different feature made it take
   // the wrong branch. startListBrowser() is the single shared entry
   // point for every PLAIN picker (never itself a direct-entry regex
-  // list), so clearing both here guarantees a fresh, correct state
+  // list), so clearing it here guarantees a fresh, correct state
   // regardless of what an earlier, unrelated session left behind.
   // (2026-08-17: RecentFile/RecentDirectory -- ^X^F/^X^D -- no longer
   // reach this function at all, see Command::StartFileHistory/
@@ -5207,8 +5555,7 @@ bool Application::startListBrowser(RingCategory category) {
   // live-editable combobox too, not a plain picker. Only
   // Command::StartCommandHistory -- RingCategory::ShellCommand -- still
   // calls this.)
-  promptHistoryRecallKind_ = std::nullopt;
-  promptHistoryRecallIsDirectEntry_ = false;
+  promptHistoryContext_ = std::nullopt;
   listBrowserCategory_ = category;
   listBrowserReturnMode_ = currentMode_;
   listBrowserChronological_ = false;
@@ -5236,19 +5583,33 @@ bool Application::startListBrowser(RingCategory category) {
 bool Application::toggleListBrowserHistory() {
   if (currentMode_ != ApplicationMode::ListBrowser) return false;
   // A prompt-triggered recall (startPromptHistoryRecall()) has no
-  // separate "sorted" view to toggle INTO in the first place -- see
-  // its own comment on why (no non-h ring exists in legacy for any of
-  // these categories) -- so a second ^R here is simply a no-op,
-  // rather than incorrectly re-sorting a screen whose mode-line would
-  // then still misleadingly read "HISTORY". RecentFile/RecentDirectory
-  // (2026-08-17 addition) are the one exception among promptHistoryRecallKind_
-  // holders: unlike GREP/CUT/MAN/LOCATE/PROGRAM, legacy's own T_hfile/
-  // T_hdir DO have a separate sorted ring (that same comment's own
-  // parenthetical), now reached via this same direct-entry machinery
-  // for the typing capability, but still expected to support the
-  // ordinary sorted<->chronological ^R toggle underneath.
-  if (promptHistoryRecallKind_ && *promptHistoryRecallKind_ != PromptKind::RecentFile &&
-      *promptHistoryRecallKind_ != PromptKind::RecentDirectory) {
+  // separate "sorted" view to toggle INTO in the first place in
+  // LEGACY -- see its own comment on why (no non-h ring exists in
+  // legacy for any of these categories) -- so a second ^R used to be a
+  // no-op here for everything except RecentFile/RecentDirectory (2026-
+  // 08-17 addition): unlike GREP/CUT/MAN/LOCATE/PROGRAM, legacy's own
+  // T_hfile/T_hdir DO have a separate sorted ring.
+  // GrepPattern/CutPattern extended in (2026-08-28), a direct user
+  // request ("前回使用した正規表現は何だっけ？...EGREPの検索文字列
+  // 一覧からも発動してくれないと困る"): the "no separate sorted ring in
+  // legacy" reasoning above is true of LEGACY, but doesn't actually
+  // apply to what THIS PORT shows for GREP/CUT's own direct-entry list
+  // -- its "sorted, de-duplicated" seed+recent view is itself already a
+  // port-specific addition on top of legacy's plain chronological ring
+  // (2026-08-05, "同ファイルを読み込んだ後もソートしてほしい"), so the
+  // same two genuinely different views RecentFile/RecentDirectory
+  // toggle between (sorted-unique vs. raw chronological-with-
+  // duplicates) exist for GREP/CUT too, just as legitimately worth
+  // toggling to answer "what did I search for last" (chronological
+  // order, newest last) as they are for FILE/DIR. ManName/LocateQuery/
+  // ProgramCommand are NOT extended -- no equivalent report for those
+  // yet, and unlike GREP/CUT they were never given this port's own
+  // sorted-de-duplicated direct-entry variant in the first place (see
+  // sortDirectEntryList's own scoping comment), so there's no second
+  // view to toggle to.
+  if (promptHistoryContext_ && promptHistoryContext_->kind != PromptKind::RecentFile &&
+      promptHistoryContext_->kind != PromptKind::RecentDirectory &&
+      promptHistoryContext_->kind != PromptKind::GrepPattern && promptHistoryContext_->kind != PromptKind::CutPattern) {
     return false;
   }
   listBrowserChronological_ = !listBrowserChronological_;
@@ -5260,6 +5621,16 @@ bool Application::toggleListBrowserHistory() {
     items.assign(recent.begin(), recent.end());
   } else {
     items = sortedUniqueRecentEntries(listBrowserCategory_);
+    // See startPromptHistoryRecall()'s own identical merge -- toggling
+    // BACK from the chronological usage-history view to the sorted
+    // candidate view must show the same seed-merged content the
+    // original direct-entry list did, not just whatever's actually
+    // been searched so far.
+    if (listBrowserCategory_ == RingCategory::RecentEgrepPattern) {
+      std::set<std::string> merged(items.begin(), items.end());
+      merged.insert(configuration_.grepSeedPatterns().begin(), configuration_.grepSeedPatterns().end());
+      items.assign(merged.begin(), merged.end());
+    }
   }
   // See archiveHistoryFilterActive()'s own comment -- keeps the filter
   // applied across a ^R chronological toggle too, not just the initial
@@ -5327,7 +5698,15 @@ bool Application::startKey() {
   }
   keyView_.setLines(std::move(lines));
   keyView_.setCursorIndex(0);
-  keyReturnMode_ = currentMode_;
+  // 2026-08-28: same policy as ensureShellActive()'s own identical fix
+  // -- KEY isn't one of the user's own listed INFO-return exceptions
+  // ("usilicrc、ERROR、SHELL、WORKの対象ファイルを選んだ場合または
+  // INFOでFGREP/EGREP/CUTを実行した場合のみ"), so opening it from INFO
+  // shouldn't return there either -- falls back to Directory instead
+  // (what INFO itself would have returned to).
+  keyReturnMode_ = (currentMode_ == ApplicationMode::File && fileMode_.currentFile() == bannerFilePath())
+                       ? ApplicationMode::Directory
+                       : currentMode_;
   currentMode_ = ApplicationMode::Key;
   keyView_.redraw();
   return true;
@@ -5337,6 +5716,155 @@ bool Application::returnFromKey() {
   currentMode_ = keyReturnMode_;
   activeView().redraw();
   return true;
+}
+
+// ^O^C (M_copy, "COPY", usilicrc K-29): ported from code.c's
+// make_map() -- see CopyMode's own class comment for why its state
+// (cursor/selection/clipboard) lives entirely in that class rather
+// than here. Freezes activeContentView().lines() (starting the cursor
+// at the origin's own currently-highlighted row -- code.c's own `row =
+// rvp->row`, right after taking the snapshot -- confirmed by a real
+// user report the first version of this got wrong: "^Oc→ブロック
+// カーソル位置が...→正しくは直前のハイライト行位置").
+//
+// The mode-line while in Copy is a FIXED shape, not a frozen copy of
+// whatever the origin's own ModeLineFields happened to be (an earlier
+// version of this tried the latter and produced NO visible change at
+// all entering Copy from Directory mode -- a real user report: "^Oc→
+// モードライン不良（変化無し）。正しくは「COPY」「---」「/path/」"):
+// name is always the literal "COPY" (disp.c's own mp[M_copy] label,
+// str.c: `{" COPY", M_copy}`), position is always legacy's own fixed
+// "---" placeholder (disp.c: `case M_copy: strcpy(line, "---")`), and
+// trailing carries the origin's own identifying value (its `name`
+// field -- a directory/file path for Directory/File mode, a category
+// label for ListBrowser, etc.) so it's still visible WHERE this
+// snapshot came from, filled to the screen's own right edge like any
+// other single-value mode-line (matches the user's own expected
+// trailing whitespace after the path).
+bool Application::startCopy() {
+  if (currentMode_ == ApplicationMode::Copy) return false;
+  ContentView &origin = activeContentView();
+  ContentView::ModeLineFields frozen = origin.currentModeLineFields();
+  copyReturnMode_ = currentMode_;
+  currentMode_ = ApplicationMode::Copy;
+  // Suspend (not discard) a DIRECTLY-active prompt -- ^O^C is reachable
+  // from mid-typing an FGREP/EGREP/CUT/etc. pattern (feedPromptByte()
+  // forwards every ^O-leader sequence to dispatchLeaderByte(), see its
+  // own comment), and dispatchByte()'s own top-level check routes every
+  // byte to feedPromptByte() as long as promptKind_ stays set --
+  // leaving it set here would make feedCopyByte() below unreachable.
+  // Exact same suspend/restore pair ensureShellActive()/returnFromShell()
+  // already use for the identical reason (see suspendedActivePromptKind_'s
+  // own declaration comment); reused rather than duplicated because
+  // this is genuinely the same general mechanism ("suspend the live
+  // prompt across a modal excursion"), not a Shell-specific one.
+  if (promptKind_ != PromptKind::None) {
+    suspendedActivePromptKind_ = promptKind_;
+    suspendedActivePromptText_ = promptEditor_.text();
+    promptKind_ = PromptKind::None;
+  }
+  // Set BEFORE loadSnapshot() (not after): loadSnapshot()'s own
+  // render() is what actually calls setContentCursorColumn() (placing
+  // the REAL terminal caret) as its last step -- a real user report
+  // ("^Oc→ブロックカーソル位置がモードラインの透かし文字...") traced
+  // back to an earlier version of this calling copyView_.redraw()
+  // AGAIN here, AFTER loadSnapshot() had already positioned the caret
+  // correctly, which redraws the mode line (drawing text moves the
+  // real cursor as a side effect, same as every other ContentView
+  // draw) and leaves the caret sitting wherever THAT draw ended
+  // instead, since redraw() itself never calls syncVisibleCursor()
+  // while cursorHighlightEnabled() is false (see its own comment).
+  // Setting the provider first means loadSnapshot()'s own single
+  // redraw() already shows the right mode line, so no second redraw
+  // is needed at all.
+  copyView_.setPositionTextOverride("---");
+  copyView_.setModeLineFieldsProvider([name = frozen.name](int) -> ContentView::ModeLineFields {
+    return {"COPY", name, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", /*trailing2=*/""};
+  });
+  copyMode_.loadSnapshot(origin.lines(), origin.cursorIndex());
+  return true;
+}
+
+// Any exit key from Copy mode -- see feedCopyByte()'s own comment for
+// why this port uses a plain ^G rather than legacy's own "any
+// non-whitelisted key, then replay it" mechanic. The origin
+// ContentView was never touched while in Copy mode, so restoring
+// currentMode_ and redrawing it is enough to bring back exactly what
+// was showing before ^O^C (mirrors returnFromKey()'s own reasoning) --
+// PLUS restoring a prompt suspended by startCopy() above, same order
+// (redraw the content view FIRST, then activatePrompt() on top) and
+// same reasoning as returnFromShell()'s own identical restore step.
+bool Application::returnFromCopy() {
+  currentMode_ = copyReturnMode_;
+  activeView().redraw();
+  if (suspendedActivePromptKind_) {
+    activatePrompt(*suspendedActivePromptKind_, suspendedActivePromptText_);
+    suspendedActivePromptKind_ = std::nullopt;
+    suspendedActivePromptText_.clear();
+  }
+  return true;
+}
+
+// COPY's own small key vocabulary while ApplicationMode::Copy is
+// active. Ported from code.c's own key_copy[] whitelist (M_up/M_dn/
+// M_mark/M_head/M_tail/M_forw/M_back/M_kforw/M_kback/M_prev/M_next/
+// M_clear) in SPIRIT, not literally: this port maps its own smallest
+// set of already-meaningful bytes onto CopyMode's own move*()/
+// toggleMark() methods (see feedCopyByte()'s own declaration comment
+// in application.hpp for why this doesn't reuse resolveCommand()'s
+// global table), and exits on a plain ^G instead of replaying an
+// arbitrary terminating key back into the origin mode -- see
+// returnFromCopy()'s own comment.
+bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  if (special) {
+    switch (*special) {
+      case KeyInput::SpecialKey::Up:
+        copyMode_.moveUp();
+        return true;
+      case KeyInput::SpecialKey::Down:
+        copyMode_.moveDown();
+        return true;
+      case KeyInput::SpecialKey::Left:
+        copyMode_.moveLeft();
+        return true;
+      case KeyInput::SpecialKey::Right:
+        copyMode_.moveRight();
+        return true;
+      default:
+        return true;  // absorbed -- PageUp/PageDown etc. have no meaning here
+    }
+  }
+  switch (byte) {
+    case kControlG:
+      return returnFromCopy();
+    case 0x10:  // ^P
+      copyMode_.moveUp();
+      return true;
+    case 0x0e:  // ^N
+      copyMode_.moveDown();
+      return true;
+    case 0x02:  // ^B
+      copyMode_.moveLeft();
+      return true;
+    case 0x06:  // ^F
+      copyMode_.moveRight();
+      return true;
+    case 0x01:  // ^A: beginning of line (same meaning as everywhere else in this port)
+      copyMode_.moveToLineStart();
+      return true;
+    case 0x05:  // ^E: end of line
+      copyMode_.moveToLineEnd();
+      return true;
+    case 0x80:  // ^Space (M_mark)
+    case '.':   // matches this port's own ToggleMark alias elsewhere (Command::ToggleMark's
+                // own comment) -- an unrelated feature (CP/MV/RM entry marking), but the same
+                // "toggle a mark here" mnemonic, and this dispatch never falls through to that
+                // global Command anyway, so there's no real collision.
+      copyMode_.toggleMark();
+      return true;
+    default:
+      return true;  // absorbed -- every other key is a no-op while in Copy mode
+  }
 }
 
 // See this class's own declaration comment (application.hpp) for the
@@ -6098,9 +6626,9 @@ void Application::cancelPrompt() {
 // regardless of how the currently-displayed RecentFile list got
 // (re)built.
 bool Application::archiveHistoryFilterActive() const {
-  return promptHistoryRecallKind_ == PromptKind::RecentFile &&
-         (promptHistoryRecallReturnMode_ == ApplicationMode::Archive ||
-          promptHistoryRecallReturnMode_ == ApplicationMode::ArchiveContent);
+  return promptHistoryContext_ && promptHistoryContext_->kind == PromptKind::RecentFile &&
+         (promptHistoryContext_->returnMode == ApplicationMode::Archive ||
+          promptHistoryContext_->returnMode == ApplicationMode::ArchiveContent);
 }
 
 // K-49 (^R) pressed while a prompt is active: ported from menu.c's
@@ -6194,10 +6722,7 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
     default:
       return false;
   }
-  promptHistoryRecallKind_ = promptKind_;
-  promptHistoryRecallText_ = promptEditor_.text();
-  promptHistoryRecallReturnMode_ = currentMode_;
-  promptHistoryRecallIsDirectEntry_ = directEntry;
+  promptHistoryContext_ = PromptHistoryContext{promptKind_, currentMode_, promptEditor_.text(), directEntry};
   promptKind_ = PromptKind::None;
   listBrowserCategory_ = category;
   // 2026-08-12 fix: see ContentView::setCursorAtModeLineTrailingEnd()'s
@@ -6246,6 +6771,21 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   std::vector<std::string> items;
   if (sortDirectEntryList) {
     items = sortedUniqueRecentEntries(category);
+    // usilicrc's own GREP section (2026-08-28, see Application's own
+    // constructor comment for the full story): RecentEgrepPattern no
+    // longer gets seeded at construction, so the seeds have to be
+    // merged in HERE instead, at the one place that builds the DIRECT-
+    // ENTRY candidate list -- ^R's own chronological branch (the
+    // `else` below) deliberately does NOT do this, since it's meant to
+    // show genuine usage history only. CutPattern's regex variant
+    // shares this same ring (category == RecentEgrepPattern there too,
+    // see startPromptHistoryRecall()'s own switch), so it's covered by
+    // the same category check without needing a separate branch.
+    if (category == RingCategory::RecentEgrepPattern) {
+      std::set<std::string> merged(items.begin(), items.end());
+      merged.insert(configuration_.grepSeedPatterns().begin(), configuration_.grepSeedPatterns().end());
+      items.assign(merged.begin(), merged.end());
+    }
   } else {
     const std::deque<std::string> &recent = history_.recentEntries(category);
     items.assign(recent.begin(), recent.end());
@@ -6487,37 +7027,26 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // with exactly ONE gap column after each field, not two).
   if (!positionText.empty()) {
     display_.moveCursor(row, labelWidth);
-    // Split at the internal space -- ModeLine::format()'s own "1/1
-    // END"/"01/10 TOP"/"42%" shape always has the fraction ("1/1")
-    // and the position word ("END"/"TOP"/a percentage) as two pieces
-    // joined by exactly one space (2026-08-18 fix, a real report:
-    // "「DIR」「1/1」「END」の間にも隙間を入れて欲しい" -- drawing
-    // positionText as a single Standout run left that internal space
-    // ALSO reversed, reading as one solid block rather than two
-    // separate fields the way "DIR" and "1/1 END" already are).
-    // Scoped to drawPromptLabel() only (not ModeLine::format() itself,
-    // which every OTHER mode line's renderModeLine() call also
-    // shares) -- this doesn't touch any other screen's positionText
-    // rendering. Total column math is unchanged: fraction.size() + 1
-    // (this gap) + suffix.size() + 1 (gap before the next field) ==
-    // positionText.size() + 1, the same total the single-run version
-    // below used to advance labelWidth by.
-    std::size_t splitAt = positionText.find(' ');
-    std::string fraction = splitAt == std::string::npos ? positionText : positionText.substr(0, splitAt);
-    std::string suffix = splitAt == std::string::npos ? std::string() : positionText.substr(splitAt + 1);
+    // 2026-08-28 reversal, a direct user correction (HISTORY.md:9539/
+    // 9545 was a misreading -- "ENDが％でなかったことによる思い込み"):
+    // the 2026-08-18 fix this replaces split positionText ("1/1 END"/
+    // "01/10 TOP") at its own internal space into two separately-gapped
+    // Standout runs, on the belief that "「DIR」「1/1」「END」の間にも
+    // 隙間を入れて欲しい" asked for THAT internal gap too, not just the
+    // one between the label ("DIR") and positionText as a whole. A later
+    // report ("「01/10」「TOP」...区切りは不要") plus this correction
+    // clarified the ORIGINAL request only ever meant the ONE gap right
+    // after the label (already handled above, unconditionally, before
+    // this block even runs) -- positionText itself should always be ONE
+    // continuous Standout run, "一律「1/1 END」", matching every other
+    // mode line's own renderModeLine() convention (which never split it
+    // either -- this splitting was always scoped to drawPromptLabel()
+    // alone, see the git history for the removed comment's own note).
     display_.setAttribute(Display::Attribute::Standout);
-    for (unsigned char c : fraction) display_.putChar(c);
+    for (unsigned char c : positionText) display_.putChar(c);
     display_.setAttribute(Display::Attribute::StandoutOff);
-    labelWidth += static_cast<int>(fraction.size());
-    if (!suffix.empty()) {
-      display_.putChar(' ');  // explicit plain gap -- see this function's own 2026-08-18 comment above
-      labelWidth += 1;
-      display_.setAttribute(Display::Attribute::Standout);
-      for (unsigned char c : suffix) display_.putChar(c);
-      display_.setAttribute(Display::Attribute::StandoutOff);
-      labelWidth += static_cast<int>(suffix.size());
-    }
-    display_.putChar(' ');  // explicit plain gap before the next field -- see the same comment above
+    labelWidth += static_cast<int>(positionText.size());
+    display_.putChar(' ');  // explicit plain gap before the next field
     labelWidth += 1;
   }
   // CopyDestination/MoveDestination/RemoveConfirm's own "Destination ?
@@ -6643,7 +7172,9 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     // returnFromListBrowser() itself already relies on -- reusing it here
     // instead of hand-rolling a separate variable.
     case PromptKind::RecentFile:
-    case PromptKind::RecentDirectory: destinationMode = promptHistoryRecallReturnMode_; break;
+    case PromptKind::RecentDirectory:
+      destinationMode = promptHistoryContext_ ? promptHistoryContext_->returnMode : ApplicationMode::Directory;
+      break;
     default: break;
   }
   // 2026-08-18: a same-day attempt excluded RecentFile/RecentDirectory
@@ -6694,8 +7225,34 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     // the piece cutContentReturnLabel() exists to add. Matches
     // grepView_'s own post-submission trailing3 field, which skips
     // the same cap for the identical reason (see its own comment).
-    std::string tail = (destinationMode == ApplicationMode::CutContent) ? destinationDirectory
-                                                                         : truncatedTrailingPath(destinationDirectory);
+    // 2026-08-28 fix, a direct user report + precise repro clarifying an
+    // earlier, too-broad attempt at this same fix ("^Uを投入したとたん
+    // に１文字左へ寄る症状。そこだけ直せばいいのでは" -- confirming the
+    // READ-ONLY candidate list, going through ContentView::renderModeLine()'s
+    // OWN truncateFieldByKind()/withTruncatedFields() pipeline, was
+    // ALREADY correct; only THIS function's own separate, hand-rolled
+    // column math had the bug): trailingReserve above already reserves
+    // kTrailingPathGap (1 column) for a gap after the editable field,
+    // but truncatedTrailingPath()'s fixed 16-char tail (+3 for "...")
+    // exactly consumes the ENTIRE remaining budget on its own (19 of
+    // the 19 columns between the editable field's own right edge and
+    // the true last column, 79, which -- per the established auto-wrap-
+    // avoidance rule just below -- can never be written to either),
+    // leaving zero room for the reserved gap. One character shorter (15
+    // tail chars, an 18-char truncated result) is exactly what
+    // renderModeLine()'s own budget-aware truncateFieldByKind()
+    // (`tailChars = min(16, budget - 3)`) already arrives at for this
+    // same available width -- this mirrors that outcome directly rather
+    // than inventing a new number.
+    std::string tail;
+    if (destinationMode == ApplicationMode::CutContent) {
+      tail = destinationDirectory;
+    } else if (static_cast<int>(destinationDirectory.size()) <= kTrailingPathTailChars) {
+      tail = destinationDirectory;
+    } else {
+      constexpr int kPromptTrailingTailChars = kTrailingPathTailChars - 1;  // 15, see this block's own comment
+      tail = "..." + destinationDirectory.substr(destinationDirectory.size() - kPromptTrailingTailChars);
+    }
     // Badge (2026-08-18 fix, a direct user correction + screenshot =db:
     // "戻り値のDIRは左詰めでよろしく"): the DIR/FILE badge above is a
     // short, fixed-width category marker, not a path -- right-
@@ -6719,6 +7276,22 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
                           // very last column unmarked" tradeoff.
                           : display_.columns() - 1 - static_cast<int>(tail.size());
     if (col > labelWidth) {
+      // 2026-08-28 fix, a direct user report (same repro as `tail`'s
+      // own comment just above): shrinking `tail` alone freed up a real
+      // gap column, but nothing ever explicitly WROTE a plain space
+      // into it -- every OTHER gap in this function is punched through
+      // the base Standout fill with an explicit plain putChar(' '), but
+      // this one, whenever `col` landed past labelWidth+editableWidth
+      // (which the shrink above now guarantees for a long/truncated
+      // tail), was simply never visited at all, so it silently kept
+      // whatever the base fill at the very top of this function already
+      // wrote there (Standout ON) -- reading as part of one continuous
+      // reversed block instead of a real gap.
+      if (!showsBadge && col > labelWidth + editableWidth) {
+        display_.moveCursor(row, labelWidth + editableWidth);
+        display_.setAttribute(Display::Attribute::StandoutOff);
+        for (int c = labelWidth + editableWidth; c < col; c++) display_.putChar(' ');
+      }
       display_.moveCursor(row, col);
       display_.setAttribute(Display::Attribute::Standout);
       for (unsigned char c : tail) display_.putChar(c);
@@ -6731,8 +7304,8 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
 
 void Application::refreshDirectEntryModeLine() {
   if (currentMode_ != ApplicationMode::ListBrowser) return;
-  if (!promptHistoryRecallKind_ || !promptHistoryRecallIsDirectEntry_) return;
-  PromptKind kind = *promptHistoryRecallKind_;
+  if (!promptHistoryContext_ || !promptHistoryContext_->isDirectEntry) return;
+  PromptKind kind = promptHistoryContext_->kind;
   if (kind != PromptKind::RecentFile && kind != PromptKind::RecentDirectory) return;
   int candidateCount = static_cast<int>(listBrowserMode_.items().size());
   std::string positionText = candidateCount > 0 ? ModeLine::format(listBrowserView_.cursorIndex() + 1, candidateCount) : "";
@@ -7935,7 +8508,7 @@ bool Application::promptActive() const { return promptKind_ != PromptKind::None;
 // hover-consume gate -- each has the exact same class of gap for this
 // one state, matching the shape of the ^Xf precedent fix.
 bool Application::redrawSensitivePromptOrRecallActive() const {
-  return promptKind_ != PromptKind::None || promptHistoryRecallKind_.has_value();
+  return promptKind_ != PromptKind::None || promptHistoryContext_.has_value();
 }
 const std::string &Application::promptText() const { return promptEditor_.text(); }
 

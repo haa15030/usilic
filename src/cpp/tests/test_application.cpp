@@ -197,28 +197,77 @@ struct Fixture {
 // initializer list), so seeding-at-construction can never be observed
 // through Fixture regardless of what rc text it loads.)
 
-TEST_CASE("Application construction: RecentEgrepPattern is seeded from usilicrc's GREP section, so ^R at "
-          "an EGREP/CUT-regex prompt shows real CUI defaults even before any pattern has ever been typed "
-          "(a real user report + direct legacy-tcb PTY testing with a fresh, argument-launched $HOME found "
-          "this exact list -- e.g. \"diff \\-\", \"^Question\", \"^Subject: \" -- appearing immediately)") {
-  RecordingDisplay display{24, 80};
-  KeyInput keyInput{display};
-  History history;
-  Configuration configuration;
+// 2026-08-28 redesign, a direct user report ("登録済みのパターンは
+// 履歴ではなく検索に使用するための文字列候補に過ぎない"): usilicrc's
+// GREP section is a static CANDIDATE list (legacy's own str.c conf_grep()
+// loads it into a separate LIST *lg, distinct from hp->ss.p.hegrep --
+// the ring save_history() only grows when a search is actually
+// SUBMITTED, menu.c:833). Pre-seeding RecentEgrepPattern itself (the
+// OLD 2026-08-05 fix this replaces) conflated the two, so ^R (which
+// legacy's own M_hist shows as the genuine USAGE history) displayed
+// these static seeds even on a session where nothing has ever been
+// searched. Now: RecentEgrepPattern itself stays empty until a real
+// search happens, but the seeds still appear in the DIRECT-ENTRY
+// candidate list (^J^S itself), merged in at display time -- see
+// Configuration::grepSeedPatterns()'s own callers.
+TEST_CASE_FIXTURE(Fixture, "usilicrc's GREP seed patterns appear in the ^J^S direct-entry candidate list, "
+                           "but do NOT seed RecentEgrepPattern itself (so ^R's own usage-history view stays "
+                           "genuinely empty until a real search has been submitted)") {
   configuration.loadRcText("GREP\n \"diff \\-\"\n ^Question\n \"^Subject: \"\n", true);
+  REQUIRE(app.start(path()));
 
-  fs::path root = makeTempDir();
-  fs::create_directory(root / ".usilic");
-  Application app{display, keyInput, history, configuration, Charset::Encoding::Ascii, 80, testShellOptions(),
-                   root.string()};
-  (void)app;
+  // history_ itself: no seeding at construction.
+  CHECK(history.recentEntries(RingCategory::RecentEgrepPattern).empty());
 
-  const auto &seeded = history.recentEntries(RingCategory::RecentEgrepPattern);
-  REQUIRE(seeded.size() == 3);
-  CHECK(seeded[0] == "diff \\-");
-  CHECK(seeded[1] == "^Question");
-  CHECK(seeded[2] == "^Subject: ");
-  fs::remove_all(root);
+  // The ^J^S candidate list still shows the seeds (real CUI defaults,
+  // matching the original 2026-08-05 report this test used to cover).
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  const auto &items = app.listBrowserMode().items();
+  CHECK(std::find(items.begin(), items.end(), "diff \\-") != items.end());
+  CHECK(std::find(items.begin(), items.end(), "^Question") != items.end());
+  CHECK(std::find(items.begin(), items.end(), "^Subject: ") != items.end());
+}
+
+// 2026-08-28: ^R (real usage history, toggleListBrowserHistory()'s
+// chronological branch) with usilicrc GREP seeds present but NOTHING
+// ever actually searched yet -- must come back empty (the seeds are
+// candidates to search WITH, not history of searches already done),
+// shown via the existing "No String" empty-placeholder convention
+// (listBrowserView_.setEmptyPlaceholder(), already wired since
+// 2026-08-13 -- this redesign just makes RecentEgrepPattern itself
+// genuinely empty here for the first time, so that existing mechanism
+// now actually applies).
+TEST_CASE_FIXTURE(Fixture, "^R usage-history view is genuinely empty (\"No String\") when usilicrc has GREP "
+                           "seeds but nothing has ever actually been searched") {
+  configuration.loadRcText("GREP\n \"diff \\-\"\n ^Question\n \"^Subject: \"\n", true);
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.feedByte(0x12, std::nullopt));  // ^R: toggle to chronological usage history
+  CHECK(app.listBrowserMode().items().empty());
+  CHECK(display.rowText(0).find("No String") != std::string::npos);  // content row, not the mode line
+}
+
+// 2026-08-28: once a real search IS submitted, ^R's own chronological
+// view shows exactly that one submitted pattern -- not the seeds too.
+TEST_CASE_FIXTURE(Fixture, "^R usage-history view shows ONLY an actually-submitted search, not usilicrc's own "
+                           "GREP seeds") {
+  configuration.loadRcText("GREP\n \"diff \\-\"\n ^Question\n \"^Subject: \"\n", true);
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U: start editing, clear the pre-filled seed
+  feedText("plain\\.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.handleCommand(Command::Back));  // -> back to candidate list (LIFO)
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.feedByte(0x12, std::nullopt));  // ^R: toggle to chronological usage history
+  const auto &items = app.listBrowserMode().items();
+  REQUIRE(items.size() == 1);
+  CHECK(items[0] == "plain\\.txt");
 }
 
 // -- resolveCommand: the new keystroke->Command table --
@@ -522,6 +571,35 @@ TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: ^N/^P still navigate the EGREP ca
   CHECK(app.activeContentView().cursorIndex() == startIndex);
 }
 
+// 2026-08-28 fix, a direct user report ("CLAUDE.md上で^J^S→モードライン
+// に戻り値がない"): listBrowserView_'s own ModeLineFieldsProvider only
+// ever showed a trailing2 destination when grepReturnMode_ was
+// Directory -- the exact same narrow special-case drawPromptLabel()'s
+// own destinationMode logic had already been corrected away from (see
+// its own comment: "Restricting to 'only when the destination is
+// Directory' was equally arbitrary"), just never mirrored to this read-
+// only candidate-list screen. previousModeName(File) already returns
+// the real file path generically, so reusing it here fixes this without
+// a new File-specific branch.
+TEST_CASE_FIXTURE(Fixture, "EGREP direct-entry candidate list: shows a trailing2 destination even when "
+                           "returning to FILE mode, not just Directory") {
+  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> EGREP direct entry
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  // Tail-truncated to 16 chars by truncatedTrailingPath() when longer
+  // (the fixture's own temp path always is) -- "plain.txt" itself, the
+  // last 9 chars, is always within that tail regardless of the full
+  // path's own length.
+  CHECK(display.rowText(23).find("plain.txt") != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "startPromptHistoryRecall (2026-08-12 fix): the EGREP/CUT candidate list's own "
                            "visible caret sits at the END of the mode line's own trailing field (the "
                            "candidate text shown there), not at the highlighted content row -- a direct "
@@ -630,6 +708,11 @@ TEST_CASE_FIXTURE(Fixture, "listBrowserView_'s own ModeLineFieldsProvider (2026-
   std::string row = display.rowText(23);
   std::string dir = app.directoryMode().currentDirectory();
   std::string expectedTail = dir;
+  // Still the usual 16 here (unlike drawPromptLabel()'s own field,
+  // 2026-08-28 fix): this is listBrowserView_'s own SEPARATE
+  // ModeLineFieldsProvider, rendered through renderModeLine()'s own
+  // budget-aware truncateFieldByKind() pipeline (unaffected by that
+  // fix, which only touches drawPromptLabel()'s hand-rolled column math).
   if (expectedTail.size() > 16) expectedTail = "..." + expectedTail.substr(expectedTail.size() - 16);
   // Ends at the VERY LAST column, not somewhere in the middle of the row.
   CHECK(row.substr(row.size() - expectedTail.size()) == expectedTail);
@@ -840,7 +923,7 @@ TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the editable field'
 }
 
 TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the reserved trailing area actually shows the "
-                           "destination directory (right-justified, \"...\"-truncated to its last 16 "
+                           "destination directory (right-justified, \"...\"-truncated to its last 15 "
                            "characters when longer) for FGREP/EGREP/CUT prompts returning to Directory mode "
                            "-- a real report (\"FGREPで戻り先が無い\", and for EGREP, the destination "
                            "vanishing the instant editing starts) found this space left blank before") {
@@ -848,7 +931,12 @@ TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the reserved traili
   REQUIRE(app.handleCommand(Command::StartFgrep));
   std::string dir = app.directoryMode().currentDirectory();
   std::string expectedTail = dir;
-  if (expectedTail.size() > 16) expectedTail = "..." + expectedTail.substr(expectedTail.size() - 16);
+  // 15, not the usual 16 (2026-08-28 fix): drawPromptLabel() reserves
+  // one fewer tail character here specifically, to leave room for both
+  // the mandatory gap after the editable field AND the "never write the
+  // true last column" rule within its own fixed trailingReserve budget
+  // -- see its own comment.
+  if (expectedTail.size() > 16) expectedTail = "..." + expectedTail.substr(expectedTail.size() - 15);
   const std::string &row = display.rowText(23);
   // Ends 1 column short of the true right edge, not AT it (2026-08-18
   // auto-wrap fix, see drawPromptLabel()'s own comment) -- the true
@@ -869,7 +957,12 @@ TEST_CASE_FIXTURE(Fixture, "drawPromptLabel (2026-08-13 generalization): LOCATE/
   REQUIRE(app.start(path()));
   std::string dir = app.directoryMode().currentDirectory();
   std::string expectedTail = dir;
-  if (expectedTail.size() > 16) expectedTail = "..." + expectedTail.substr(expectedTail.size() - 16);
+  // 15, not the usual 16 (2026-08-28 fix): drawPromptLabel() reserves
+  // one fewer tail character here specifically, to leave room for both
+  // the mandatory gap after the editable field AND the "never write the
+  // true last column" rule within its own fixed trailingReserve budget
+  // -- see its own comment.
+  if (expectedTail.size() > 16) expectedTail = "..." + expectedTail.substr(expectedTail.size() - 15);
 
   REQUIRE(app.handleCommand(Command::StartLocate));
   {
@@ -1248,6 +1341,192 @@ TEST_CASE_FIXTURE(Fixture, "GREP: Back from the \"FGREP: pattern\"-annotated Dir
   CHECK(app.currentMode() == ApplicationMode::Grep);
   REQUIRE(app.grepMode().matches().size() == 1);  // the original search results, not re-run
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
+}
+
+// 2026-08-28 fix, a direct user report + precise repro ("CLAUDE.mdを
+// 開いた状態で^J^S...[return]で最上行を選択→戻り値が「~/git/usilic/」
+// のまま...これでは^Gで（ls）に戻ってしまう。検索結果一覧へ戻るのが
+// 筋なので戻り値は「EGREP: ^-」であるべき"), refined by a same-day
+// follow-up with exact before/after mode-line values ("EGREP: ^-"(不良,
+// on the LANDED-on-match screen specifically) vs "- レガシーC実装...
+// src/config.sh"(正解) -- the match's own line text, not the search
+// label, since the label is redundant once you're actually looking at
+// the match; the label belongs on the RESULTS-list screen instead, see
+// the grepView_ trailing3 test elsewhere): the File-mode counterpart to
+// the Directory-mode test just above -- before this fix,
+// openSelectedGrepMatch()'s special handling (annotation + routing ^G
+// back to the results list) only existed for the Directory case, so a
+// match reached via a File-mode-originated search landed back on the
+// file with its PLAIN mode line (no annotation) and Back went straight
+// to returnToDirectory() (the (ls) listing), skipping the results
+// screen the Directory case already preserves correctly.
+TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match (search run from File mode) returns to the file with the "
+                           "MATCHED LINE'S OWN TEXT as trailing2 (name unchanged), and Back returns to the "
+                           "grep results instead of the directory listing") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("hello");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 1);
+  std::string matchedText = app.grepMode().matches()[0].text;
+
+  CHECK(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());  // the file's own name, unchanged
+  CHECK(app.activeContentView().modeLineText().find(matchedText) != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("FGREP: hello") == std::string::npos);
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Grep);  // NOT Directory -- see this test's own comment
+  REQUIRE(app.grepMode().matches().size() == 1);       // the original search results, not re-run
+
+  // 2026-08-28 fix, a real report ("^Gの連打で無限ループ"): a further
+  // Back from here used to bounce right back to Grep forever (annotation
+  // cleared but fileReturnMode_ stayed stuck at Grep) -- now correctly
+  // reaches File (plain), then Directory, and stays there.
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK_FALSE(app.fileMode().hasSearchAnnotation());
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  app.handleCommand(Command::Back);  // one more, for good measure (a legitimate no-op here) -- must NOT loop back to Grep
+  CHECK(app.currentMode() != ApplicationMode::Grep);
+}
+
+// 2026-08-28 fix, a real report + precise repro ("履歴Gが不良...②の
+// はずが上記①"): a search reached via the ^J^S candidate list (NOT a
+// plain StartFgrep, which skips the candidate list and goes straight to
+// an editable prompt -- see the test just above) sets
+// grepReturnsToCandidateList_, so returnFromGrep()'s OWN early-return
+// branch (re-entering the candidate list instead of jumping straight to
+// File) used to skip the annotation-clearing code entirely -- File's
+// own stale match annotation (from openSelectedGrepMatch()) survived
+// the whole candidate-list detour, so the NEXT time File's plain view
+// got shown it still read as "landed on the match" instead of "backed
+// all the way out", extending the ^G chain by one confusing extra hop.
+TEST_CASE_FIXTURE(Fixture, "GREP (search reached via the ^J^S candidate list, File origin): repeated Back "
+                           "correctly reaches the PLAIN file (no stale annotation) after re-entering the "
+                           "candidate list, not a second landing on the match") {
+  history.pushRecent(RingCategory::RecentEgrepPattern, "x");
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> EGREP direct entry (candidate list)
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U -> starts editing
+  feedText("hello");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  REQUIRE(app.handleCommand(Command::Enter));  // select the top match
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.fileMode().hasSearchAnnotation());  // "①"
+
+  REQUIRE(app.handleCommand(Command::Back));  // -> "③" (results)
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  REQUIRE(app.handleCommand(Command::Back));  // -> "④" (candidate list re-entered)
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.handleCommand(Command::Back));  // -> should be "②" (plain file), NOT "①" again
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK_FALSE(app.fileMode().hasSearchAnnotation());
+}
+
+// 2026-08-28 fix, same follow-up report as the test just above ("EGREP」
+// 「01/29 TOP」「2616」「(egrep)」「/Users/.../CLAUDE.md」"(不良) vs
+// "...「EGREP: ^-」"(正解)): the RESULTS-list screen's own trailing3 --
+// the mirror image of the fix just above -- shows the search's own
+// label+pattern here instead (this screen doesn't have a single "the
+// match" yet, so the file path was the previously-established
+// 2026-08-24 fix's choice; the user's follow-up reconsidered this in
+// light of the landed-screen fix, and asked for the label here instead).
+TEST_CASE_FIXTURE(Fixture, "GREP results screen (grepView_, File origin): trailing3 shows \"FGREP: pattern\", "
+                           "not the origin file's raw path") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("hello");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  const std::string &row = display.rowText(23);
+  CHECK(row.find("FGREP: hello") != std::string::npos);
+  CHECK(row.find((root / "plain.txt").string()) == std::string::npos);
+}
+
+// 2026-08-28 fix, a direct user report + precise before/after mode-line
+// values ("「^-」「...usilic/CLAUDE.md」"(不良、隙間無し) vs "「^-」
+// 「...usilic/CLAUDE.md」"(正解、1桁の隙間あり)), refined by a same-day
+// follow-up ("^Uを投入したとたんに１文字左へ寄る症状。そこだけ直せば
+// いいのでは" -- confirming the READ-ONLY candidate list, rendered via
+// ContentView::renderModeLine()'s own budget-aware truncation, was
+// already correct; only drawPromptLabel()'s own separate, hand-rolled
+// column math -- reached via ^U's transition into live editing -- had
+// the bug): the trailing destination field must leave a real gap after
+// the editable field, not sit flush against it, while STILL never
+// writing to the row's true last column (79).
+TEST_CASE_FIXTURE(Fixture, "EGREP candidate list, ^U into edit mode (File origin, long path): the trailing "
+                           "destination field leaves a real gap after the editable field, and still never "
+                           "writes to the true last column") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> EGREP direct entry
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U
+  feedText("^-");
+  const std::string &row = display.rowText(23);
+  std::size_t dots = row.find("...");
+  REQUIRE(dots != std::string::npos);
+  CHECK(row[dots - 1] == ' ');                                       // a real gap column right before the trailing field
+  CHECK_FALSE(display.standoutAt(23, static_cast<int>(dots) - 1));   // and it's plain, not Standout
+  CHECK_FALSE(display.standoutAt(23, 79));                            // the true last column: never written to
+}
+
+// 2026-08-28 fix, a direct user report ("検索前には画面にあったブロック
+// カーソルが検索一覧のどれかを[return]後の画面では表示されない...どれ
+// がマッチ行かわかりづらい"): openSelectedGrepMatch() unconditionally
+// called hideVisibleCursor(), correct for the Directory case (whose own
+// full-row highlight already marks the current entry) but wrong for
+// File, which has no other highlight of its own and relies entirely on
+// the terminal's real caret to show the current line.
+TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match (search run from File mode) leaves the terminal's block "
+                           "cursor VISIBLE, on the matched line -- not hidden the way the Directory case is") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("world");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 1);
+
+  CHECK(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK_FALSE(display.visibleCursorHidden());
+  CHECK(display.cursorRow() == app.activeContentView().cursorDisplayRow());
 }
 
 TEST_CASE_FIXTURE(Fixture, "GREP: a second Back (out of the grep results reached via the first Back) "
@@ -2930,7 +3209,14 @@ TEST_CASE_FIXTURE(Fixture, "ARC: a marked entry shows Underline, not just Stando
   }
   REQUIRE(app.handleCommand(Command::ToggleMark));
   REQUIRE(app.archiveMode().isMarked(markIdx));
-  REQUIRE(app.handleCommand(Command::MoveDown));  // step off the marked row
+  // 2026-08-28 note: this archive fixture has only 2 entries, and
+  // markIdx is the LAST one -- MoveDown() here can't actually advance
+  // (ContentView::moveDown()'s own "already at bottom" case just beeps,
+  // see its own comment), so the cursor stays ON markIdx. Still a valid
+  // check: it confirms marking wins outright over the cursor row's own
+  // plain Standout even when they're the SAME row (see redraw()'s own
+  // "cursorRow && !markedRow" comment).
+  REQUIRE(app.handleCommand(Command::MoveDown));
 
   int nameCol = app.activeContentView().lines()[markIdx].highlightStartColumn.value_or(0);
   CHECK(display.underlineAt(markIdx, nameCol));
@@ -3836,16 +4122,53 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the banner's own backing file
 // DirectoryMode's own `ls -l` rows (nameStartColumn). Every line's
 // Line::highlightStartColumn should now land exactly where the value
 // text starts, matching DirectoryMode's own established convention.
-TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): highlightStartColumn lands right after the \"<label> : \" "
-                           "separator on every line, not at column 0") {
+// 2026-08-28 follow-up: highlightStartColumn is now the SAME "front of
+// the value" column (15) on EVERY line, openable or not -- Line::
+// neverHighlighted (not this column) is what actually suppresses the
+// SGR highlight for "Boot options"/an empty "WORK :" now, so the real
+// terminal caret (syncVisibleCursor() uses this same column) lands at
+// a consistent position regardless of a non-openable row's own
+// (possibly much longer, e.g. bootOptions_) text -- a direct user
+// report: "Boot optionsは...ブロックカーソル位置は「WORK : 」と同じ
+// でよろしく" caught the OLDER "point past this row's own text end"
+// technique moving the caret inconsistently far right specifically for
+// "Boot options" (which, unlike WORK, usually has real text after its
+// own label).
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): highlightStartColumn lands at the SAME \"front of the "
+                           "value\" column on every line; neverHighlighted (not the column) is what actually "
+                           "suppresses \"Boot options\"/an empty \"WORK :\"'s own SGR highlight") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::ShowTcbBanner));
   const auto &lines = app.activeContentView().lines();
-  REQUIRE_FALSE(lines.empty());
-  for (const auto &line : lines) {
-    REQUIRE(line.highlightStartColumn.has_value());
-    CHECK(*line.highlightStartColumn == 15);  // kLabelWidth(12) + " : "(3)
+  // Boot options / Startup file / ERROR / SHELL / WORK (fresh fixture: no
+  // w.N ever allocated, so WORK's own line has nothing after it) -- see
+  // executeShowTcbBanner()'s own `openable` comment for why Boot options
+  // and an empty WORK are the only two non-openable lines here.
+  REQUIRE(lines.size() >= 5);
+  for (std::size_t i = 0; i < 5; i++) {
+    REQUIRE(lines[i].highlightStartColumn.has_value());
+    CHECK(*lines[i].highlightStartColumn == 15);  // kLabelWidth(12) + " : "(3) -- every line, uniformly
   }
+  CHECK(lines[0].neverHighlighted);         // "Boot options" -- never openable
+  CHECK(lines[4].neverHighlighted);         // "WORK :" with nothing after it
+  for (std::size_t i : {1, 2, 3}) CHECK_FALSE(lines[i].neverHighlighted);  // Startup file / ERROR / SHELL
+}
+
+// 2026-08-28 addition, same report: confirms the ACTUAL RENDERED
+// result, not just the Line data -- "Boot options" (the cursor's own
+// initial row, right when INFO first opens) shows no Standout ANYWHERE
+// on the row (neverHighlighted suppresses it even though it IS the
+// cursor row), while the real terminal caret still lands at column 15
+// (the SAME column WORK/ERROR/etc. use), not off at the end of
+// whatever bootOptions_ happens to contain.
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): \"Boot options\" (the cursor's own initial row) shows no "
+                           "Standout at all when rendered, but the real caret still lands at column 15") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.activeContentView().cursorIndex() == 0);  // "Boot options" -- the cursor's own initial row
+  for (int col = 0; col < 80; col++) CHECK_FALSE(display.standoutAt(0, col));
+  CHECK(display.cursorRow() == 0);
+  CHECK(display.cursorCol() == 15);  // matches WORK/ERROR/etc.'s own front-of-value column, not bootOptions_'s end
 }
 
 // 2026-08-18 fix, a direct user report: "ハイライト上の[return]が反応
@@ -3939,6 +4262,54 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the SHELL line opens
   CHECK(foundContent);
 }
 
+// 2026-08-28 addition, a direct user proposal ("最初にそれら（/tmp/
+// .usilic.NNNNN/shell等）をtouchしておき、実際にアクセスしてアン
+// ダーライン「No String」を表示する仕様に変更してほしい"): ERROR/
+// SHELL before either has any REAL content yet (nothing logged/no
+// shell session started) are still shown highlighted/openable-looking
+// (touched empty by executeShowTcbBanner(), see its own comment) --
+// selecting one now succeeds (unlike before this fix, which failed
+// silently) and shows "No String" (underlined), not a blank screen.
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on ERROR/SHELL before either has real content shows "
+                           "underlined \"No String\", not a blank screen or a silent no-op") {
+  REQUIRE(app.start(path()));
+  REQUIRE_FALSE(fs::exists(root / ".usilic" / "error"));  // nothing logged yet
+  REQUIRE_FALSE(fs::exists(root / ".usilic" / "shell"));  // no shell session started yet
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  CHECK(fs::exists(root / ".usilic" / "error"));  // touched immediately, see executeShowTcbBanner()'s own comment
+  CHECK(fs::exists(root / ".usilic" / "shell"));
+
+  const auto &lines = app.activeContentView().lines();
+  auto rowEndingWith = [&](const std::string &suffix) {
+    for (std::size_t i = 0; i < lines.size(); i++) {
+      if (lines[i].text.size() >= suffix.size() &&
+          lines[i].text.compare(lines[i].text.size() - suffix.size(), suffix.size(), suffix) == 0)
+        return static_cast<int>(i);
+    }
+    return -1;
+  };
+
+  int errorRow = rowEndingWith((root / ".usilic" / "error").string());
+  REQUIRE(errorRow >= 0);
+  app.activeContentView().setCursorIndex(errorRow);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(fs::exists(root / ".usilic" / "error"));  // touched by executeShowTcbBanner(), now real (if empty)
+  REQUIRE(app.activeContentView().lines().size() == 1);
+  CHECK(app.activeContentView().lines()[0].text == "No String");
+  REQUIRE_FALSE(app.activeContentView().lines()[0].attributes.empty());
+  CHECK(app.activeContentView().lines()[0].attributes[0].attribute == fm::Display::Attribute::Underline);
+  REQUIRE(app.handleCommand(Command::Back));  // back to the banner itself
+
+  int shellRow = rowEndingWith((root / ".usilic" / "shell").string());
+  REQUIRE(shellRow >= 0);
+  app.activeContentView().setCursorIndex(shellRow);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.activeContentView().lines().size() == 1);
+  CHECK(app.activeContentView().lines()[0].text == "No String");
+}
+
 // 2026-08-18 fix, a direct user report: launched via "-c ~/git/usilic"
 // then ^T showed "/Users/haa15030/.usilic" (the banner's OWN synthetic
 // file's containing directory) as the trailing "戻り値" field instead
@@ -3956,6 +4327,130 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the trailing \"戻り値\" fi
   std::string modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find((root / "subdir").string()) != std::string::npos);
   CHECK(modeLine.find(".usilic") == std::string::npos);
+}
+
+// 2026-08-28 fix, a real report + repro ("usilic -c ~/git/usilic→^I→
+// 名前欄が「INFO」ではなく「usilic」、戻り値が「~/.usilic/」のまま"):
+// loadFile() (inside executeShowTcbBanner(), before setSearchOrigin()
+// ever runs) already redraws ONCE internally using FileMode's own
+// DEFAULT mode line -- searchOriginLabel_/searchOriginDetail_ are still
+// empty at that exact point (loadFile() itself clears them), so that
+// stale first frame falls back to the loaded temp file's own raw
+// basename ("usilic") and containing directory ("~/.usilic/"). Nothing
+// redrew again afterward to overwrite it with the corrected values now
+// that setSearchOrigin() has actually run -- openSelectedBannerEntry()
+// was already fixed for the identical gap on 2026-08-18 (see its own
+// comment); executeShowTcbBanner() itself never got the same fix.
+// Deliberately checks the REAL RENDERED row (display.rowText(), what a
+// real terminal actually shows), NOT modeLineText() (a pull-based
+// computation that's always fresh regardless of whether anything ever
+// redrew) -- the sibling test just above, using modeLineText(), could
+// never have caught this class of bug at all.
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the REAL RENDERED mode line shows \"INFO\"/the actual "
+                           "start directory immediately, not a stale first frame") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  std::string row = display.rowText(23);
+  CHECK(row.substr(0, 4) == "INFO");
+  CHECK(row.find(path()) != std::string::npos);
+  CHECK(row.find(".usilic") == std::string::npos);
+}
+
+// 2026-08-28 follow-up, a direct user report ("ケース１が直ってない
+// （２はOK）"): the sibling test just above (cursor left at its
+// DirectoryMode default, row 0) passed once fileView_.redraw() was
+// added after setSearchOrigin() -- but selecting a REAL entry first
+// (moving the cursor off row 0) before pressing ^I still showed the
+// stale first frame in the user's own real testing. Reproduces that
+// exact shape to find out whether it's a genuinely different bug or
+// the same one from an angle the sibling test didn't cover.
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the REAL RENDERED mode line is still correct after "
+                           "selecting a real entry FIRST, not just from Directory mode's own default row 0") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.directoryMode().selectedEntry()->name == "plain.txt");
+
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  std::string row = display.rowText(23);
+  CHECK(row.substr(0, 4) == "INFO");
+  CHECK(row.find(path()) != std::string::npos);
+  CHECK(row.find(".usilic") == std::string::npos);
+}
+
+// 2026-08-28 fix, a real report + repro ("「~/.usilic/（ls）」で
+// usilicrcを選択→^I→^G→usilicrcへ戻らない"): executeShowTcbBanner()
+// never saved DirectoryMode's own cursor position first, unlike every
+// other Directory-to-File transition (see its own comment).
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): ^G restores the cursor to whichever Directory row it was "
+                           "on before ^I, not a stale/default position") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().selectedEntry()->name == "plain.txt");
+}
+
+// 2026-08-28 fix, a real report ("CLAUDE.mdで^Iしてる以上CLAUDE.mdに
+// 戻らないと"): unlike the test just above (cursor merely highlighting
+// plain.txt in the Directory listing, never opened), this covers ^I
+// pressed while a real file is ACTUALLY OPEN in File mode -- ^G from the
+// banner must reload and return to THAT file, not just the directory
+// with it highlighted. Before this fix, fileReturnMode_ was hardcoded
+// to Directory regardless of what was active before ^I, so ^G always
+// fell through to returnToDirectory() (Directory mode, cursor restored
+// to plain.txt's row -- indistinguishable from the test above, but NOT
+// what the user actually wanted: back INSIDE plain.txt's own content).
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): ^G returns to the REAL FILE that was actually open (not just "
+                           "Directory with it highlighted) when ^I was pressed from File mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string openedFile = app.fileMode().currentFile();
+  REQUIRE(app.activeContentView().cursorIndex() >= 0);
+  app.handleCommand(Command::MoveDown);  // move the cursor within the file so restoration is actually checkable
+  int cursorBeforeInfo = app.activeContentView().cursorIndex();
+
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() != openedFile);  // now viewing the banner itself, not plain.txt
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == openedFile);
+  CHECK(app.activeContentView().cursorIndex() == cursorBeforeInfo);
+}
+
+// 2026-08-28 fix, a real report + repro ("INFO画面で^J.→SHELLの戻り値
+// が「~/.usilic/usilic」...→^G→INFO（←戻らなくていい）") + the user's
+// own general policy ("基本的にINFOへは戻らなくていい。例外は
+// usilicrc、ERROR、SHELL、WORKの対象ファイルを選んだ場合またはINFOで
+// FGREP/EGREP/CUTを実行した場合のみ"): a real SHELL excursion (^J.,
+// ^J^W, ^[s, ^Xs, ...) isn't one of those exceptions -- ensureShellActive()
+// now skips INFO entirely and falls back to Directory (what INFO itself
+// would have returned to), matching pagerReturnsToShell()'s own
+// "don't record an ephemeral screen as a return target" precedent.
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): a real SHELL excursion from here (^J.) does NOT return to "
+                           "INFO on ^G -- lands in Directory instead") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte('.', std::nullopt));   // . -- ^J. : SHELL, change current directory
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+
+  REQUIRE(app.handleCommand(Command::Back));  // ^G
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // NOT back to INFO/File
 }
 
 // 2026-08-18: ^T used to get a dedicated feedShellByte() special-case
@@ -7408,12 +7903,14 @@ TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): the mode line already fills t
   // already been fixed for once before).
   CHECK(display.standoutAt(23, 78));
   CHECK_FALSE(display.standoutAt(23, 79));
-  // "DIR" / "1/1" / "END" each their own Standout run, with a plain
-  // gap between every pair (a real report: "「DIR」「1/1」「END」の
-  // 間にも隙間を入れて欲しい") -- labelWidth = 3("DIR")+1 = 4, so
-  // "1/1" spans cols 4-6, gap at 7, "END" spans cols 8-10.
-  CHECK_FALSE(display.standoutAt(23, 3));  // gap: DIR | 1/1
-  CHECK_FALSE(display.standoutAt(23, 7));  // gap: 1/1 | END
+  // "DIR" then ONE continuous "1/1 END" Standout run (2026-08-28
+  // reversal of an earlier same-shape fix -- a direct user correction,
+  // "一律「1/1 END」でよろしく", see application.cpp's own
+  // drawPromptLabel() comment): labelWidth = 3("DIR")+1 = 4, so the gap
+  // is at col 3 only -- "1/1 END" (cols 4-10) is one unbroken run, the
+  // internal space (col 7) included.
+  CHECK_FALSE(display.standoutAt(23, 3));  // gap: DIR | 1/1 END
+  CHECK(display.standoutAt(23, 7));        // WITHIN "1/1 END" -- no internal gap
   // The candidate path itself (labelWidth=12 onward) is now plain,
   // like the live editable field it visually matches -- NOT reversed
   // the way a plain ModeLineFieldsProvider `trailing` field would be.
@@ -8866,5 +9363,342 @@ TEST_CASE_FIXTURE(Fixture, "n/p/x/f are no-ops in Directory mode (not File mode 
   CHECK_FALSE(app.feedByte('p', std::nullopt));
   CHECK_FALSE(app.feedByte('x', std::nullopt));
   CHECK_FALSE(app.feedByte('f', std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+// 2026-08-28 fix, a direct user report ("'^-'[return]→戻り値に右端まで
+// のパディングがない", referencing HISTORY.md:9473's general rule):
+// grepView_'s own ModeLineFieldsProvider explicitly passed
+// fillTrailingToEdge=false (unlike every other mode's provider),
+// leaving a real, visible non-Standout gap between trailing3 (the
+// return-destination path) and the row's true right edge.
+TEST_CASE_FIXTURE(Fixture, "EGREP results screen (grepView_): the mode line fills to the right edge with "
+                           "Standout, matching HISTORY.md:9473's general rule (was fillTrailingToEdge=false)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> EGREP direct entry
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  feedText("^-");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter -> submit search
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  const std::string &row = display.rowText(23);
+  std::size_t lastContent = row.find_last_not_of(' ');
+  REQUIRE(lastContent != std::string::npos);
+  // From just after the last real character out to (but not including)
+  // the true right edge, this used to be a real, visible non-Standout
+  // gap -- now Standout-filled, matching every other mode's own fill
+  // convention (see drawPromptLabel()'s own "1 column short of the true
+  // right edge" precedent, HISTORY.md:9479, for why column 79 itself
+  // stays deliberately non-Standout).
+  for (int col = static_cast<int>(lastContent) + 1; col < 79; col++) {
+    CAPTURE(col);
+    CHECK(display.standoutAt(23, col));
+  }
+  CHECK_FALSE(display.standoutAt(23, 79));
+}
+
+// 2026-08-28 fix, a direct user report + own explicit spec ("戻り値＋
+// モード名エリアがいずれも長過ぎ名称の時に限り中央に...残りを半々でいい
+// けれども今回は「CLAUDE.md」だけなので臨機応変で"): when landing on a
+// match crowds the mode line into renderSplitModeLine()'s fallback
+// layout, a SHORT name (e.g. "CLAUDE.md") must show in full (not
+// truncated to its own forced half) and the freed-up space must go to
+// the genuinely long trailing2 (the matched line's own text) instead of
+// sitting unused.
+TEST_CASE_FIXTURE(Fixture, "GREP: split mode-line layout (crowded File-mode landing) gives a SHORT name its "
+                           "full width, not its own forced half, and gives trailing2 the freed-up space") {
+  { std::ofstream(root / "CLAUDE.md") << "hello\n- Legacy C implementation description here matching tcb/src/config.sh\nworld\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("CLAUDE.md");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("Legacy");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  const std::string &row = display.rowText(23);
+  CHECK(row.substr(0, 9) == "CLAUDE.md");  // full name, not ellipsis-truncated to share a forced half
+  // The match text itself is still long enough to need SOME truncation
+  // even after freeing up name's own unused half -- but both its own
+  // head and tail should now survive (Finder-style middle-ellipsis),
+  // unlike the OLD forced-half budget which cut it back much further.
+  CHECK(row.find("- Legacy C implementation") != std::string::npos);
+  CHECK(row.find("tcb/src/config.sh") != std::string::npos);
+}
+
+// 2026-08-28 fix, a direct user report + precise repro ("CLAUDE.md画面
+// で^J^S^R...^G→EGREPなのに検索文字列一覧が無く（←FGREP風）行数情報も
+// 無い"): plain ^R while still just BROWSING the EGREP direct-entry
+// candidate list (nothing typed yet) used to be mistaken for a typed
+// character -- see feedRegexListByte()'s own 0x12 case comment -- which
+// silently clobbered promptHistoryRecallIsDirectEntry_ back to false,
+// so the SUBSEQUENT ^G landed on a stray editable EGREP prompt drawn
+// over File mode's plain view instead of back where the search actually
+// started. A same-day follow-up report ("前回使用した正規表現は何
+// だっけ？...EGREPの検索文字列一覧からも発動してくれないと困る")
+// clarified plain ^R here shouldn't just be neutralized -- it's
+// supposed to do the SAME real sorted<->chronological toggle
+// RecentFile/RecentDirectory's own ^R already does, just reached
+// safely now (via isNav/resolveCommand/toggleListBrowserHistory()),
+// not through the corrupting "start editing" detour.
+TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: plain ^R while still just BROWSING the EGREP candidate list "
+                           "(nothing typed yet) does a REAL sorted<->chronological toggle (not the old "
+                           "corrupting detour), and a later Back still correctly returns to File mode") {
+  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
+  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(*app.listBrowserMode().selectedItem() == "one");  // sorted, direct-entry default: TOP (oldest)
+
+  CHECK(app.feedByte(0x12, std::nullopt));  // ^R: real toggle now
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  // 2026-08-29 fix, a direct user report with exact before/after field
+  // values: name DOES switch to "HISTORY" once chronological (matching
+  // RecentFile/RecentDirectory's own identical swap) -- the isDirectEntry
+  // branch is only for the READ-ONLY-but-not-yet-toggled state; once
+  // listBrowserChronological_ flips, this falls through to the same
+  // "HISTORY" + rightWatermark=promptLabelText(kind) shape a real ^R
+  // mid-typing recall already used.
+  CHECK(display.rowText(23).find("HISTORY") != std::string::npos);
+  CHECK(*app.listBrowserMode().selectedItem() == "two");  // chronological: newest (last-pushed) selected
+
+  // 2026-08-29 fix: the FIRST ^G pops the toggle back to sorted (still
+  // ListBrowser), matching RecentFile/RecentDirectory's own established
+  // two-^G shape -- only the SECOND ^G actually leaves.
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(*app.listBrowserMode().selectedItem() == "one");  // back to sorted, TOP entry
+
+  CHECK(app.handleCommand(Command::Back));  // second ^G
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK_FALSE(app.promptActive());  // NOT a stray editable EGREP prompt left drawn over File's own view
+  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+}
+
+// 2026-08-28: a direct user report ("^H(bs)が利いてしまって「^[A-Z[A-Z]+」
+// になるバグ" on usilicrc's own real "^[A-Z][A-Z]+" MAN seed pattern) --
+// investigated using the REAL usilicrc GREP seed list (not synthetic
+// "one"/"two"/"three") to match the exact reported string. Backspace
+// while browsing correctly removes only the last byte ("+"), matching
+// the existing synthetic-content test just above -- could not reproduce
+// the reported "]" also disappearing this way; left as a passing
+// regression check pending a more specific repro (e.g. via the ^R
+// chronological view specifically, see this session's HISTORY.md).
+TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: backspace on the real usilicrc MAN seed pattern candidate "
+                           "\"^[A-Z][A-Z]+\" removes only the last byte") {
+  for (const std::string &pattern : {"/\\*[a-z]*\\*/", "^", "^  [0-9][0-9]+\\.", "^  [0-9]+\\.", "^Question",
+                                      "^Subject: ", "^[0-9]*\\.", "^[A-Z][A-Z]+", "diff \\-", "~$"}) {
+    history.pushRecent(RingCategory::RecentEgrepPattern, pattern);
+  }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  while (*app.listBrowserMode().selectedItem() != "^[A-Z][A-Z]+") {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  std::string highlighted = *app.listBrowserMode().selectedItem();
+  REQUIRE(highlighted == "^[A-Z][A-Z]+");
+
+  CHECK(app.feedByte(0x08, std::nullopt));  // ^H
+  CHECK(app.promptText() == "^[A-Z][A-Z]");  // only the trailing "+" removed
+}
+
+// 2026-08-28: a direct user report referencing HISTORY.md:7833/7839
+// (item 283 -- a candidate string with a LITERAL embedded control byte,
+// e.g. from a corrupted/hand-edited usilicrc entry): investigated
+// whether that fix (renderModeLine()'s trailingPlain path showing
+// control bytes as reversed char+0x40, matching renderLine()'s own
+// convention) also holds once ^H itself (as a KEYPRESS) transitions the
+// highlighted candidate into a real editable LineEditor. It does --
+// LineEditor::renderVisible() already had this exact convention (ported
+// from vt_putchar(), predating item 283), and correctly removes only
+// the LAST byte on backspace regardless of an embedded control byte
+// elsewhere in the string.
+TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: a candidate string containing a literal embedded control byte "
+                           "(^H/0x08) still backspaces correctly (only the last byte removed) once ^H itself "
+                           "transitions it into editing") {
+  std::string pattern = "^[A-Z]";
+  pattern += static_cast<char>(0x08);
+  pattern += "[A-Z]+";
+  history.pushRecent(RingCategory::RecentEgrepPattern, pattern);
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(*app.listBrowserMode().selectedItem() == pattern);
+
+  REQUIRE(app.feedByte(0x08, std::nullopt));  // ^H (backspace) -- transitions into editing
+  CHECK(app.promptText() == pattern.substr(0, pattern.size() - 1));
+}
+
+// 2026-08-28 fix, a direct user report: "~/.usilic/usilicrcのGREP
+// セクションに実際にある^L(0x0C、~/.usilic/history内のモード区切り用)
+// がHISTORY一覧画面で「ハイライトのLが無い」" -- unlike the direct-entry
+// candidate list (trailingPlain=true, already safe since item 283), the
+// "HISTORY" chronological view (reached via a REAL ^R recall while
+// already editing, trailingPlain=false) drew its own candidate text
+// through renderModeLine()'s generic drawSegment(), which put raw
+// control bytes straight through -- a real terminal's own reaction to
+// ^L (commonly "clear/next page") would corrupt whatever followed.
+TEST_CASE_FIXTURE(Fixture, "^R real recall (HISTORY chronological view): a candidate string containing a "
+                           "literal embedded control byte (^L/0x0C) renders as reversed 'L', not a raw byte "
+                           "that could corrupt a real terminal") {
+  std::string pattern = "^";
+  pattern += static_cast<char>(0x0c);
+  // RecentFgrepPattern, NOT RecentEgrepPattern -- StartFgrep (used
+  // below for the "plain prompt" flow the ^R-mid-typing scenario
+  // needs, see its own comment) reads grepSyntax_==Fixed's own ring;
+  // pushing to the wrong ring here left listBrowserMode().selectedItem()
+  // returning nullopt, silently dereferenced by an earlier version of
+  // this test -- undefined behavior that surfaced as a delayed SIGSEGV
+  // well after every assertion had already reported as passed.
+  history.pushRecent(RingCategory::RecentFgrepPattern, pattern);
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));  // plain prompt, not direct-entry
+  feedText("x");
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R: real mid-typing recall (directEntry=false)
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().selectedItem() != nullptr);
+  REQUIRE(*app.listBrowserMode().selectedItem() == pattern);
+
+  const std::string &row = display.rowText(23);
+  CHECK(row.find(static_cast<char>(0x0c)) == std::string::npos);  // no raw control byte reaches the display
+  CHECK(row.find("^L") != std::string::npos);                     // shown as the reversed-letter convention
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): reachable from Directory mode, freezes the exact same content "
+                           "on screen, and a plain ^G returns to Directory with the screen fully "
+                           "restored and the origin mode's own state untouched") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  int selectedBefore = indexOf(app.directoryMode().selectedEntry()->name);
+  std::vector<std::string> rowsBefore;
+  for (int i = 0; i < 24; i++) rowsBefore.push_back(display.rowText(i));
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte(0x03, std::nullopt));   // ^O^C
+  CHECK(app.currentMode() == ApplicationMode::Copy);
+  for (int i = 0; i < 23; i++) CHECK(display.rowText(i) == rowsBefore[i]);  // exact text, styling aside
+
+  // 2026-08-29 fix, a direct user report against the real binary:
+  // ("^Oc→モードライン不良（変化無し）。正しくは「COPY」「---」
+  // 「/path/」" and "^Oc→ブロックカーソル位置が...正しくは直前の
+  // ハイライト行位置") -- the mode-line must actually change (fixed
+  // "COPY"/"---" plus the origin's own path as the value, NOT a frozen
+  // copy of whatever Directory's own mode-line already showed), and
+  // the cursor must start on the row that was highlighted before ^O^C,
+  // not row 0.
+  const std::string &modeLine = display.rowText(23);
+  CHECK(modeLine.substr(0, 4) == "COPY");
+  CHECK(modeLine.find("---") != std::string::npos);
+  CHECK(modeLine.find(path()) != std::string::npos);
+  CHECK(selectedBefore > 0);  // a meaningful test of this needs a non-zero starting row
+  CHECK(display.cursorRow() == selectedBefore);
+
+  CHECK(app.handleCommand(Command::Back));  // ^G
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(indexOf(app.directoryMode().selectedEntry()->name) == selectedBefore);  // untouched by CopyMode
+  for (int i = 0; i < 24; i++) CHECK(display.rowText(i) == rowsBefore[i]);      // screen fully restored
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): also reachable from File mode, GrepPattern's own candidate "
+                           "list (ListBrowser), and a plain ListBrowser session (SHELL command "
+                           "history) -- confirming this is genuinely mode-agnostic, not wired "
+                           "per-mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Copy);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Copy);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.handleCommand(Command::StartCommandHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Copy);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): a live selection renders as an actual reverse-video (Standout) "
+                           "run over exactly the marked range on the real screen") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);
+  const std::string &row0 = display.rowText(0);
+  REQUIRE(row0.size() >= 3);
+  for (int i = 0; i < 2; i++) app.feedByte(0x06, std::nullopt);  // ^F x2: column 2
+  app.feedByte(0x80, std::nullopt);                              // ^Space: mark start
+  for (int i = 0; i < 2; i++) app.feedByte(0x06, std::nullopt);  // extend to column 4
+  CHECK(display.standoutAt(0, 1) == false);
+  CHECK(display.standoutAt(0, 2) == true);
+  CHECK(display.standoutAt(0, 3) == true);
+  CHECK(display.standoutAt(0, 4) == false);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^C/^O^Y (COPY/PASTE) round trip: select a substring of a File-mode "
+                           "buffer, leave COPY, open an FGREP prompt, and ^O^Y inserts exactly that "
+                           "substring at the cursor") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(display.rowText(0).substr(0, 5) == "hello");  // plain.txt's own known content
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);
+  app.feedByte(0x80, std::nullopt);                              // mark start at column 0
+  for (int i = 0; i < 5; i++) app.feedByte(0x06, std::nullopt);  // extend over "hello"
+  app.feedByte(0x80, std::nullopt);                              // mark end
+  CHECK(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.handleCommand(Command::StartFgrep));  // plain prompt, not direct-entry
+  REQUIRE(app.promptActive());
+  feedText("x");
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte(0x19, std::nullopt));   // ^O^Y
+  CHECK(app.promptText() == "xhello");
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^Y (PASTE) with no active prompt is a harmless no-op, not a crash") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  CHECK_FALSE(app.feedByte(0x19, std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }

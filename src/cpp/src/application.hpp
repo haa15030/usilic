@@ -20,6 +20,7 @@
 #include "history.hpp"
 #include "key_input.hpp"
 #include "line_editor.hpp"
+#include "copy_mode.hpp"
 #include "list_browser_mode.hpp"
 #include "locate_mode.hpp"
 #include "man_mode.hpp"
@@ -382,7 +383,16 @@ enum class Command {
   // which modes/how each path is resolved, and dispatchByte()'s own
   // comment for where this override actually lives (not the static
   // resolveCommand(), which stays a pure byte->Command mapping).
-  QuickLook
+  QuickLook,
+  // ^O^C (M_copy, "COPY"): freezes the current content area into
+  // CopyMode -- see startCopy()'s own comment. Named EnterCopyMode
+  // rather than the more obvious "StartCopy" because that name is
+  // already taken (above: ^Xc, the unrelated CP/MV/RM file-copy
+  // operation, legacy's own M_cp).
+  EnterCopyMode,
+  // ^O^Y (M_paste): inserts CopyMode's shared clipboardText() at the
+  // active prompt's cursor -- see handleCommand()'s own Paste case.
+  PasteClipboard
 };
 
 // Which *Mode is currently on screen. Ported from legacy's np->M (a
@@ -404,7 +414,15 @@ enum class ApplicationMode {
   Shell,
   Du,
   ListBrowser,
-  Key
+  Key,
+  // COPY (M_copy/^O^C, see copy_mode.hpp): a frozen text-selection
+  // overlay reachable from any other mode, ported from code.c's
+  // make_map(). Deliberately last in this enum (same reasoning as
+  // Key's own position): every existing exhaustive switch over
+  // ApplicationMode predates this value and falls through to a
+  // `default:`, so adding it here can't silently change any of their
+  // existing behavior.
+  Copy
 };
 
 // The top-level controller: owns the ModeStack(s) and every *Mode
@@ -1329,14 +1347,19 @@ class Application {
   EditMode &editMode();
   ExecMode &execMode();
 
-  // Demo-support (2026-07-30 drag-scroll feasibility sample, see
-  // GraphicalDisplay's own class comment) -- exposes whichever
-  // ContentView is currently on screen so a prototype run loop can
-  // render/scroll its full content directly, bypassing Command
-  // dispatch entirely. NOT meant as a permanent API: a real
-  // integration would fold validated scroll behavior into ContentView
-  // itself (or Application's own Command handling) once this sample
-  // is evaluated, not keep reaching in from outside like this.
+  // Originally added 2026-07-30 as demo-support only (a drag-scroll
+  // feasibility sample, see GraphicalDisplay's own class comment) --
+  // exposes whichever ContentView is currently on screen so a
+  // prototype run loop can render/scroll its full content directly,
+  // bypassing Command dispatch entirely. Promoted to a real,
+  // permanent API 2026-08-29: startCopy() (see its own comment) uses
+  // this exact same "whatever's currently on screen, mode-agnostic"
+  // property as COPY's own snapshot source, which is genuinely a
+  // first-class use, not another prototype -- ContentView::lines()
+  // plus this accessor turned out to be sufficient for a mode-
+  // agnostic COPY with no per-mode integration at all (see
+  // requirements.md's own C++移植側の該当構造の調査結果 in
+  // .steering/20260829-copy-mode/).
   ContentView &activeContentView();
 
  private:
@@ -1354,6 +1377,14 @@ class Application {
   // editable prompt pre-filled with the highlighted candidate's own
   // text -- see its own definition comment for the full design.
   bool feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey> special);
+  // ^O^C's own small key vocabulary while ApplicationMode::Copy is
+  // active -- see startCopy()'s own comment. NOT routed through
+  // resolveCommand()'s global byte->Command table: this port's own
+  // Left/Right-arrow=Up/Down convention there (see its own comment)
+  // and ^B/^F's own page-scroll binding both predate a genuine
+  // horizontal text cursor, so CopyMode gets a fully self-contained
+  // dispatch instead of overloading either.
+  bool feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> special);
   // The ESC/^J/^X/^X^K/^O leader-key state machine, factored out of
   // dispatchByte() so feedShellByte() can also reach it -- see its own
   // comment (2026-08-02 user report: legacy lets ^J/^X/^O leaders work
@@ -1458,6 +1489,19 @@ class Application {
   bool returnFromDu();
   bool returnFromListBrowser();
   bool returnFromKey();
+  // ^O^C (M_copy, "COPY"): snapshots activeContentView().lines() into
+  // copyMode_ and switches to ApplicationMode::Copy. See CopyMode's
+  // own class comment for why the snapshot state itself lives there,
+  // not here. False (no-op) if already in Copy mode.
+  bool startCopy();
+  // Any exit key from Copy mode (this port's own convention: ^G only,
+  // unlike legacy's own "any key outside a small movement whitelist,
+  // then replay that key" -- see design.md's own note on why this
+  // port follows the uniform Command::Back convention every other
+  // sub-mode here already uses instead of legacy's per-function
+  // replay mechanism). Restores copyReturnMode_ and redraws its own
+  // ContentView, which was never touched while in Copy mode.
+  bool returnFromCopy();
   ContentView &activeView();
   ContentView &viewForMode(ApplicationMode mode);
   void layoutViews();
@@ -1824,6 +1868,9 @@ class Application {
   // runtime parsing/state beyond which line is currently selected,
   // which ContentView already tracks). See startKey()'s own comment.
   ContentView keyView_;
+  // ^O^C (COPY): backing view for CopyMode's own frozen snapshot -- see
+  // startCopy()'s own comment.
+  ContentView copyView_;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;
@@ -1845,6 +1892,7 @@ class Application {
   ListBrowserMode listBrowserMode_;
   EditMode editMode_;
   ExecMode execMode_;
+  CopyMode copyMode_;
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
@@ -1866,6 +1914,21 @@ class Application {
   // has no idea this Application-level field exists, same boundary
   // FileMode::setSearchOrigin() already respects).
   ApplicationMode fileReturnMode_ = ApplicationMode::Directory;
+  // 2026-08-28 addition, a direct user report ("CLAUDE.mdで^Iしてる
+  // 以上CLAUDE.mdに戻らないと"): executeShowTcbBanner() always hardcodes
+  // fileReturnMode_ = Directory (see its own declaration comment above),
+  // so ^G from the banner always fell through to returnToDirectory(),
+  // which (for the banner's own synthetic file specifically) leaves
+  // directoryMode_ untouched rather than reloading whichever REAL file
+  // (if any) was actually being viewed when ^I was pressed. Empty means
+  // "^I was invoked directly from Directory mode (or this trip is a
+  // return-to-banner hop from one of the banner's own WORK/arc.N
+  // children, see executeShowTcbBanner()'s own comment) -- ^G keeps the
+  // existing Directory-return behavior"; non-empty means "^I was
+  // pressed while actually viewing this real file -- ^G should reload
+  // and return to IT instead". Consumed (cleared) the moment ^G actually
+  // uses it, see its own Command::Back branch.
+  std::string infoPreviousFilePath_;
   // startPagerFileList()'s own "pager file list" -- the full set of
   // paths usilic was launched with on the command line (2+ positional
   // file arguments). Empty whenever no such launch happened (every
@@ -1910,6 +1973,7 @@ class Application {
   // startListBrowser() entry; flipped by toggleListBrowserHistory().
   bool listBrowserChronological_ = false;
   ApplicationMode keyReturnMode_ = ApplicationMode::Directory;
+  ApplicationMode copyReturnMode_ = ApplicationMode::Directory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;
   // Non-empty between startCutFilePrompt() and the CutPattern prompt's
@@ -2170,68 +2234,80 @@ class Application {
   PromptKind promptKind_ = PromptKind::None;
   // See activatePrompt()'s own comment.
   bool promptCandidateListActive_ = false;
-  // Set only while a ^R-triggered prompt-history ListBrowser is open
-  // (see startPromptHistoryRecall()'s own comment): which prompt to
-  // resume, what had already been typed there before ^R was pressed
-  // (restored verbatim on Back/^G -- ^R shouldn't silently discard
-  // partial input), and which ApplicationMode was active underneath
-  // the prompt (prompts overlay the CURRENT mode rather than owning
-  // one of their own, so this has to be saved/restored across the
-  // ListBrowser interlude the same way listBrowserReturnMode_ is for
-  // the plain ^X^F/^X^D case). nullopt outside a recall session.
-  std::optional<PromptKind> promptHistoryRecallKind_;
-  std::string promptHistoryRecallText_;
-  ApplicationMode promptHistoryRecallReturnMode_ = ApplicationMode::Directory;
-  // True only when this ListBrowser interlude was reached via
-  // startRegexPromptList() (^J^S/^J^C's own "opens directly into the
-  // candidate list" entry, see its own comment) rather than a real ^R
-  // recall of PAST typed patterns -- legacy's mode.c distinguishes
-  // these as genuinely different screens (T_hfgrep/T_hegrep for ^R vs
-  // plain M_fgrep/M_locate/M_cut2 for direct entry): a real ^R recall
-  // always shows the fixed literal "HISTORY" name (see
-  // startPromptHistoryRecall()'s own 2026-08-05 comment on why that's
-  // correct there) and starts on the NEWEST entry (bottom); direct
-  // entry shows the actual mode name (e.g. "CUT") plus the destination
-  // directory highlighted on the right, and starts on the TOP entry
-  // (a real report + legacy source read, 2026-08-11: T_hfgrep/T_hegrep
-  // explicitly set `row = nrow - 1`, but M_fgrep/M_locate/M_cut2 just
-  // set `i = -2`, defaulting to the top). Reset alongside
-  // promptHistoryRecallKind_ at every consumption site.
-  bool promptHistoryRecallIsDirectEntry_ = false;
+  // 2026-08-28 redesign (docs/HISTORY.md, "9個のバラバラなメンバ変数に
+  // 分散しており...直したつもりの箇所が別の箇所の前提を壊す" -- a
+  // direct user diagnosis of this exact class of bug, echoed across
+  // several same-day reports): what used to be FOUR separate members
+  // (promptHistoryRecallKind_/Text_/ReturnMode_/IsDirectEntry_),
+  // independently set and reset by different call sites, consolidated
+  // into one struct so "is this session open at all" and "what does it
+  // remember" can never drift apart -- the exact failure mode that hit
+  // repeatedly this session (a code path clearing/setting only SOME of
+  // the four, leaving the rest stale). Set only while a ^R-triggered
+  // prompt-history ListBrowser is open (see startPromptHistoryRecall()'s
+  // own comment): which prompt to resume, what had already been typed
+  // there before ^R was pressed (restored verbatim on Back/^G -- ^R
+  // shouldn't silently discard partial input), and which ApplicationMode
+  // was active underneath the prompt (prompts overlay the CURRENT mode
+  // rather than owning one of their own, so this has to be saved/
+  // restored across the ListBrowser interlude the same way
+  // listBrowserReturnMode_ is for the plain ^X^F/^X^D case).
+  // nullopt outside a recall session -- this one optional's has_value()
+  // is now the SOLE authority on "is this session open", replacing four
+  // separately-checked conditions.
+  struct PromptHistoryContext {
+    PromptKind kind;
+    ApplicationMode returnMode = ApplicationMode::Directory;
+    std::string textBeforeRecall;
+    // True only when this ListBrowser interlude was reached via
+    // startRegexPromptList() (^J^S/^J^C's own "opens directly into the
+    // candidate list" entry, see its own comment) rather than a real ^R
+    // recall of PAST typed patterns -- legacy's mode.c distinguishes
+    // these as genuinely different screens (T_hfgrep/T_hegrep for ^R vs
+    // plain M_fgrep/M_locate/M_cut2 for direct entry): a real ^R recall
+    // always shows the fixed literal "HISTORY" name (see
+    // startPromptHistoryRecall()'s own 2026-08-05 comment on why that's
+    // correct there) and starts on the NEWEST entry (bottom); direct
+    // entry shows the actual mode name (e.g. "CUT") plus the
+    // destination directory highlighted on the right, and starts on
+    // the TOP entry (a real report + legacy source read, 2026-08-11:
+    // T_hfgrep/T_hegrep explicitly set `row = nrow - 1`, but
+    // M_fgrep/M_locate/M_cut2 just set `i = -2`, defaulting to the
+    // top).
+    bool isDirectEntry = false;
+  };
+  std::optional<PromptHistoryContext> promptHistoryContext_;
   // ensureShellActive()/returnFromShell() (2026-08-24 fix, a real
   // 100%-reproducible report: "（ls）のCLAUDE.md上で^J^B^J^W^G" ->
   // the candidate list, correctly labeled "CUT" right after ^J^B,
   // comes back mislabeled "EGREP" after this round-trip): ^J^W
   // (shellInsertBufferContent(), one of ensureShellActive()'s several
-  // callers) can be pressed WHILE a promptHistoryRecallKind_ session
+  // callers) can be pressed WHILE a promptHistoryContext_ session
   // (e.g. ^J^B's own regex-CUT candidate list, direct-entry) is still
   // genuinely open -- not abandoned, just "quickly peek at Shell, come
   // right back via ^G". ensureShellActive() unconditionally clears
-  // promptHistoryRecallKind_ on entry (see its own long comment for
+  // promptHistoryContext_ on entry (see its own long comment for
   // WHY that clearing exists at all -- a real, different bug about a
   // STALE flag surviving into a later, UNRELATED ^R ShellCommand
   // session), which is correct for that original scenario but throws
   // away the CURRENT session's own identity too: listBrowserView_'s
   // own ModeLineFieldsProvider only shows the real "CUT" name when
-  // promptHistoryRecallKind_ is set (see its own comment on why
+  // promptHistoryContext_ is set (see its own comment on why
   // ringCategoryLabel() alone can't distinguish CUT's regex variant
   // from EGREP -- they share RingCategory::RecentEgrepPattern), so an
-  // empty promptHistoryRecallKind_ makes ^G's return trip fall back to
+  // empty promptHistoryContext_ makes ^G's return trip fall back to
   // that ring-category-only label, "EGREP", regardless of which one
-  // was actually open. These three fields hold a SUSPENDED copy of
-  // the live ones for the duration of the Shell excursion (see
-  // ensureShellActive()'s own save and returnFromShell()'s own
-  // restore), letting the live ones still be safely wiped (fixing the
-  // original bug) without losing what to resume on a plain ^G back out
-  // with nothing else having happened in between. Deliberately NOT a
-  // full session snapshot (listBrowserCategory_ itself is untouched by
-  // this) -- a nested nested detour INSIDE Shell that itself opens a
-  // different ListBrowser session (e.g. ^R for ShellCommand history)
-  // before the eventual ^G is a known, narrower residual gap this
-  // doesn't cover.
-  std::optional<PromptKind> suspendedPromptHistoryRecallKind_;
-  std::string suspendedPromptHistoryRecallText_;
-  bool suspendedPromptHistoryRecallIsDirectEntry_ = false;
+  // was actually open. This holds a SUSPENDED copy of the live one for
+  // the duration of the Shell excursion (see ensureShellActive()'s own
+  // save and returnFromShell()'s own restore), letting the live one
+  // still be safely wiped (fixing the original bug) without losing
+  // what to resume on a plain ^G back out with nothing else having
+  // happened in between. Deliberately NOT a full session snapshot
+  // (listBrowserCategory_ itself is untouched by this) -- a nested
+  // detour INSIDE Shell that itself opens a different ListBrowser
+  // session (e.g. ^R for ShellCommand history) before the eventual ^G
+  // is a known, narrower residual gap this doesn't cover.
+  std::optional<PromptHistoryContext> suspendedPromptHistoryContext_;
   // A DIFFERENT, simpler case than the three fields just above: those
   // three are for the ListBrowser CANDIDATE-LIST scenario
   // (promptHistoryRecallKind_); these two are for promptKind_ itself

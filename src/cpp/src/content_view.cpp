@@ -84,7 +84,21 @@ std::string middleEllipsisTruncate(const std::string &text, int maxBytes) {
 // display-column budget, boundaries found via Utf8::sequence_length()
 // (never splits a multi-byte character), head/tail accumulated by
 // Utf8::display_width() per character instead of raw byte length.
+int totalDisplayWidth(const std::string &text);  // defined below; needed here for this function's own early-exit
+
 std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth) {
+  // 2026-08-28 fix, a direct user report ("CLAUDE.md" itself came back
+  // ellipsis-mangled, "CLA....md", even though it's short enough to fit
+  // untouched): every existing caller before renderSplitModeLine()'s
+  // own 2026-08-28 flexible-budget fix always passed a string ALREADY
+  // confirmed too long to fit (this function had no early-exit of its
+  // own, and none of the truncation logic below actually checks
+  // whether truncation is even necessary) -- correct under the OLD
+  // "both sides always exactly at their forced half" shape, but the new
+  // flexible allocation can now hand a SHORT side exactly its own real
+  // width as maxWidth, which needs to come back unchanged, not ellipsis-
+  // truncated to the same total length via mangled content.
+  if (totalDisplayWidth(text) <= maxWidth) return text;
   static const std::string kEllipsis = "...";
   int budget = maxWidth - static_cast<int>(kEllipsis.size());  // "..." itself is 3 plain ASCII columns
   if (budget <= 0) return text.substr(0, static_cast<std::size_t>(std::max(0, maxWidth)));
@@ -295,7 +309,7 @@ void ContentView::syncVisibleCursor() {
   if (!cursorHighlightEnabled_) {
     int row = cursorDisplayRow();
     if (row >= 0) {
-      display_.setVisibleCursor(row, 0);
+      display_.setVisibleCursor(row, contentCursorColumn_);
       return;
     }
     display_.hideVisibleCursor();
@@ -323,9 +337,23 @@ void ContentView::syncVisibleCursor() {
     display_.hideVisibleCursor();
     return;
   }
-  int width = static_cast<int>(emptyPlaceholderLine_.text.size());  // redraw()'s own empty-list placeholder
+  // 2026-08-28 fix, a real report ("ブロックカーソル位置が文字列の
+  // 末尾に来ている...日本語ファイルを含む文字列に対して、ベタな文字
+  // 列数（UTF8一文字=3バイトを考慮してない）として扱われているため
+  // 見た目の文字列末尾にその分の空白が挿入された位置にブロックカー
+  // ソルが来てしまう"): this used to be lines_[cursorIndex_].text.size()
+  // -- a raw BYTE count, not a display-column count, so a multi-byte
+  // UTF-8 name (any CJK filename included) placed the real terminal
+  // caret far past the text's own visible end, out in blank padding.
+  // Per the user's own proposed fix ("同カーソルは文字列末尾ではなく
+  // 冒頭に表示して欲しい。そうすればutf8を含むかどうかは無視できる"):
+  // the column of the row's own highlighted/selectable text (0 for a
+  // line with none, e.g. the empty-list placeholder) sidesteps the
+  // whole byte-vs-column problem entirely, since it never needs to
+  // measure the text's own width at all.
+  int width = 0;
   if (cursorIndex_ >= 0 && cursorIndex_ < static_cast<int>(lines_.size()))
-    width = static_cast<int>(lines_[cursorIndex_].text.size());
+    width = std::max(0, lines_[cursorIndex_].highlightStartColumn.value_or(0));
   display_.setVisibleCursor(row, width);
 }
 
@@ -370,6 +398,13 @@ std::optional<int> ContentView::hoverIndex() const { return hoverIndex_; }
 
 void ContentView::setCursorHighlightEnabled(bool enabled) { cursorHighlightEnabled_ = enabled; }
 bool ContentView::cursorHighlightEnabled() const { return cursorHighlightEnabled_; }
+
+void ContentView::setContentCursorColumn(int column) {
+  contentCursorColumn_ = column;
+  if (!cursorHighlightEnabled_) syncVisibleCursor();
+}
+
+void ContentView::setPositionTextOverride(std::optional<std::string> text) { positionTextOverride_ = std::move(text); }
 
 void ContentView::setBottomAnchored(bool enabled) { bottomAnchored_ = enabled; }
 
@@ -770,14 +805,29 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
       // display-column count in this branch and would misalign against
       // CJK-heavy content).
       if (!line.attributes.empty()) {
-        bool wantBold = false, wantUnderline = false;
+        bool wantBold = false, wantUnderline = false, wantStandout = false;
         for (const AttributeRun &run : line.attributes) {
           if (static_cast<int>(idx) < run.start || static_cast<int>(idx) >= run.end) continue;
           if (run.attribute == Display::Attribute::Bold) wantBold = true;
           else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
+          else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
         }
         setBold(wantBold);
         setUnderline(wantUnderline);
+        // 2026-08-29 addition (CopyMode's own selection highlight, see
+        // copy_mode.hpp): the only OTHER source of Standout on this row
+        // is markedNow (highlightStartColumn's open-ended "from here to
+        // EOL" convention, already updated for this same idx by the
+        // transition check above) -- OR them so a bounded AttributeRun
+        // range and a whole-row mark can coexist without either
+        // clobbering the other. No existing caller sets both
+        // line.attributes and highlightStartColumn on the same Line
+        // (confirmed above: FileMode is the only attributes_ setter and
+        // never sets highlightStartColumn), and no existing caller uses
+        // Standout-typed AttributeRuns at all, so for every Line that
+        // predates this addition wantStandout is always false here and
+        // this reduces to the prior no-op behavior exactly.
+        setStandout(markedNow || wantStandout);
       }
       if (len <= 1) {
         // A single-byte (ASCII-range) unit is always exactly 1 display
@@ -819,8 +869,9 @@ std::string ContentView::modeLineText() const {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
   applyLivePromptLineAdjustment(total, current);
-  return composeModeLineRow(useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
-                                                    : ModeLine::format(current, total));
+  return composeModeLineRow(positionTextOverride_ ? *positionTextOverride_
+                             : useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
+                                                       : ModeLine::format(current, total));
 }
 
 std::string ContentView::scrollModeLineText() const {
@@ -842,8 +893,9 @@ std::string ContentView::scrollModeLineText() const {
     current = topIndex_ + 1;  // topIndex_==0 here naturally shows TOP
   }
   applyLivePromptLineAdjustment(total, current);
-  return composeModeLineRow(useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
-                                                    : ModeLine::format(current, total));
+  return composeModeLineRow(positionTextOverride_ ? *positionTextOverride_
+                             : useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
+                                                       : ModeLine::format(current, total));
 }
 
 std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() const {
@@ -858,8 +910,9 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
     current = topIndex_ + 1;
   }
   applyLivePromptLineAdjustment(total, current);
-  std::string positionText =
-      useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total) : ModeLine::format(current, total);
+  std::string positionText = positionTextOverride_ ? *positionTextOverride_
+                              : useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
+                                                        : ModeLine::format(current, total);
 
   std::vector<Display::ModeLineSegment> segments;
   if (!modeLineFieldsProvider_) {
@@ -913,6 +966,10 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
 
 void ContentView::setModeLineFieldsProvider(ModeLineFieldsProvider provider) {
   modeLineFieldsProvider_ = std::move(provider);
+}
+
+ContentView::ModeLineFields ContentView::currentModeLineFields() const {
+  return modeLineFieldsProvider_ ? modeLineFieldsProvider_(cursorIndex_) : ModeLineFields{};
 }
 
 void ContentView::setUseFixedWidthPosition(bool enabled) { useFixedWidthPosition_ = enabled; }
@@ -1241,16 +1298,37 @@ void ContentView::renderModeLine() {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
   applyLivePromptLineAdjustment(total, current);
-  std::string positionText =
-      useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total) : ModeLine::format(current, total);
+  std::string positionText = positionTextOverride_ ? *positionTextOverride_
+                              : useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
+                                                        : ModeLine::format(current, total);
   int modeLineRow = modeLineRow_.value_or(row0_ + height_);
 
   display_.moveCursor(modeLineRow, 0);
   display_.clearToEndOfLine();
 
+  // 2026-08-28 fix, a direct user report ("~/.usilic/usilicrcのGREP
+  // セクションに実際にある^L(0x0C、historyファイル内のモード区切り
+  // 用)がHISTORY一覧画面で「ハイライトのLが無い」"): item 283's own
+  // fix (see its own comment in this file, the trailingPlain branch)
+  // only patched THAT one rendering path -- this generic drawSegment()
+  // (used for every OTHER field renderModeLine()/renderSplitModeLine()
+  // draws, including the SAME candidate string when
+  // promptHistoryRecallKind_'s own !directEntry ("HISTORY" chronological
+  // toggle) branch explicitly sets trailingPlain=false) still put raw
+  // control bytes straight through, letting a real terminal's own
+  // cursor-moving reaction to them (e.g. ^L, form-feed, commonly means
+  // "clear/next page") corrupt whatever followed. Applying the exact
+  // same substitution here too, even though this whole segment is
+  // already Standout throughout (so there's no separate "make it stand
+  // out" visual need the way trailingPlain's otherwise-plain
+  // surrounding text has) -- safety against a raw byte reaching the
+  // terminal is the actual point.
   auto drawSegment = [&](const std::string &text) {
     display_.setAttribute(Display::Attribute::Standout);
-    for (unsigned char c : text) display_.putChar(c);
+    for (unsigned char c : text) {
+      bool isControl = c && (c < ' ' || c == 0x7f);
+      display_.putChar(isControl ? static_cast<unsigned char>((c == 0x7f ? c - 0x80 : c) + '@') : c);
+    }
     display_.setAttribute(Display::Attribute::StandoutOff);
   };
   // See ModeLineFields::nameUnderlined's own comment.
@@ -1523,23 +1601,72 @@ void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::s
   int cols = display_.columns();
   if (cols <= 0) return;
 
+  // 2026-08-28 fix, a direct user report ("~/.usilic/usilicrcのGREP
+  // セクションに実際にある^L(0x0C、historyファイル内のモード区切り
+  // 用)がHISTORY一覧画面で「ハイライトのLが無い」"): item 283's own
+  // fix (see its own comment in this file, the trailingPlain branch)
+  // only patched THAT one rendering path -- this generic drawSegment()
+  // (used for every OTHER field renderModeLine()/renderSplitModeLine()
+  // draws, including the SAME candidate string when
+  // promptHistoryRecallKind_'s own !directEntry ("HISTORY" chronological
+  // toggle) branch explicitly sets trailingPlain=false) still put raw
+  // control bytes straight through, letting a real terminal's own
+  // cursor-moving reaction to them (e.g. ^L, form-feed, commonly means
+  // "clear/next page") corrupt whatever followed. Applying the exact
+  // same substitution here too, even though this whole segment is
+  // already Standout throughout (so there's no separate "make it stand
+  // out" visual need the way trailingPlain's otherwise-plain
+  // surrounding text has) -- safety against a raw byte reaching the
+  // terminal is the actual point.
   auto drawSegment = [&](const std::string &text) {
     display_.setAttribute(Display::Attribute::Standout);
-    for (unsigned char c : text) display_.putChar(c);
+    for (unsigned char c : text) {
+      bool isControl = c && (c < ' ' || c == 0x7f);
+      display_.putChar(isControl ? static_cast<unsigned char>((c == 0x7f ? c - 0x80 : c) + '@') : c);
+    }
     display_.setAttribute(Display::Attribute::StandoutOff);
   };
 
   std::string center = positionText;
   if (!fields.trailing.empty()) center += " " + fields.trailing;
   int centerLen = static_cast<int>(center.size());
-  // True horizontal centering (not just "cols/2 either side") so the
-  // centered pair actually LOOKS centered regardless of how the two
-  // side budgets end up splitting -- matches "まずは中央へ" literally.
-  int centerStart = std::max(0, (cols - centerLen) / 2);
-
-  int leftBudget = std::max(0, centerStart - 1);      // -1: the plain gap before the center block
-  int rightStart = centerStart + centerLen + 1;        // +1: the plain gap after the center block
-  int rightBudget = std::max(0, cols - rightStart);
+  // 2026-08-28 fix, a direct user report + own explicit spec ("戻り値＋
+  // モード名エリアがいずれも長過ぎ名称の時に限り中央に...残りを半々で
+  // いいけれども今回は「CLAUDE.md」だけなので臨機応変で"): centerStart
+  // used to be TRUE mathematical centering ((cols-centerLen)/2),
+  // independent of how long name/trailing2 actually were -- so a SHORT
+  // name (e.g. "CLAUDE.md") still only got its own fixed half (roughly
+  // centerStart-1 columns), leaving the REST of that half as dead,
+  // unused blank space, while trailing2 (the genuinely long side)
+  // stayed capped at the OTHER fixed half regardless, truncated more
+  // tightly than the real available width required. `available` is the
+  // combined name+trailing2 budget once the centered pair and its two
+  // gaps are accounted for; whichever side's OWN real width fits within
+  // half of it gets exactly that (no more), and the OTHER side gets
+  // whatever's left over -- ONLY when BOTH sides genuinely need more
+  // than half does this fall back to an even split. centerStart is
+  // THEN derived from leftBudget (not the other way around, see below),
+  // so the centered pair visually shifts toward whichever side is
+  // short -- still centered in the true 50/50 case, but no longer
+  // independent of it (this is what keeps trailing2's own right-
+  // justified draw position, computed from ITS width alone further
+  // down, from ever overlapping the centered pair: leftBudget+
+  // centerLen+rightBudget+2 gaps == cols exactly, by construction).
+  int available = std::max(0, cols - centerLen - 2);
+  int nameWidth = totalDisplayWidth(fields.name);
+  int trailing2Width = totalDisplayWidth(fields.trailing2);
+  int leftBudget, rightBudget;
+  if (nameWidth <= available / 2) {
+    leftBudget = nameWidth;
+    rightBudget = available - leftBudget;
+  } else if (trailing2Width <= available / 2) {
+    rightBudget = trailing2Width;
+    leftBudget = available - rightBudget;
+  } else {
+    leftBudget = available / 2;
+    rightBudget = available - leftBudget;
+  }
+  int centerStart = leftBudget + 1;  // +1: the plain gap before the center block
 
   std::string name = middleEllipsisTruncateByWidth(fields.name, leftBudget);
   std::string trailing2 = middleEllipsisTruncateByWidth(fields.trailing2, rightBudget);
@@ -1575,8 +1702,10 @@ void ContentView::redraw() {
     if (row < rowOffset) continue;  // blank padding above the content, bottom-anchored only
     int idx = topIndex_ + (row - rowOffset);
     if (idx < static_cast<int>(lines_.size())) {
-      bool cursorRow = idx == highlighted && cursorRowAlsoHighlighted_;
-      bool markedRow = markedPredicate_ && markedPredicate_(idx);
+      // See Line::neverHighlighted's own comment: this row opts out of
+      // Standout/Underline entirely, regardless of cursor/mark state.
+      bool cursorRow = idx == highlighted && cursorRowAlsoHighlighted_ && !lines_[idx].neverHighlighted;
+      bool markedRow = markedPredicate_ && markedPredicate_(idx) && !lines_[idx].neverHighlighted;
       // See setMarkedRowUsesUnderline()'s own comment: when enabled, a
       // genuinely marked row gets its OWN Underline channel instead of
       // being folded into the cursor row's Standout, so the two stay

@@ -149,17 +149,37 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     // searchAnnotation_ vs. its "usilic v1.5b" rightWatermark, just
     // spanning two fields here instead of one.
     std::string name = searchOriginLabel_.empty() ? path.filename().string() : searchOriginLabel_;
-    std::string trailing2 = ec ? "" : (searchOriginLabel_.empty() ? directory : searchOriginDetail_);
+    // searchAnnotation_ (2026-08-28 addition, see setSearchAnnotation()'s
+    // own comment): a THIRD tier, below searchOriginLabel_/Detail_ (which
+    // still win outright when both are somehow set -- LOCATE/INFO's own
+    // "this isn't really about the file's own name" framing takes
+    // priority) -- unlike those two, this leaves `name` alone, only
+    // substituting for the plain "containing directory" trailing2
+    // fallback, mirroring DirectoryMode::searchAnnotation_'s identical
+    // name/trailing2 split.
+    std::string trailing2 =
+        ec ? "" : (searchOriginLabel_.empty() ? (searchAnnotation_.empty() ? directory : searchAnnotation_) : searchOriginDetail_);
     // File mode's trailing field is legacy's padded-to-edge style, see
     // ModeLineFields::fillTrailingToEdge's own comment. No
     // rightWatermark here -- see its own comment on why File mode
-    // never shows it. trailing2Kind=PathMiddle only when reached via
-    // LOCATE (searchOriginLabel_ set) -- see ContentView::TrailingKind's
-    // own comment for why this is the one exception to every other
-    // provider's tail-only truncation; the not-via-LOCATE case
-    // (trailing2 = the containing directory PATH, not a typed search
-    // string) uses Path instead, for the full available width rather
-    // than QueryEcho's fixed 16-char tail cap.
+    // never shows it. trailing2Kind=PathMiddle for both LOCATE
+    // (searchOriginLabel_ set) and searchAnnotation_ -- see
+    // ContentView::TrailingKind's own comment for why this is the one
+    // exception to every other provider's tail-only truncation; the
+    // fallback (plain containing directory PATH) uses Path instead, for
+    // the full available width.
+    // searchAnnotation_ (2026-08-28 fix, a direct user report + example:
+    // "「- レガシーC実装...src/config.sh」...使えるだけ使う": QueryEcho's
+    // own fixed 16-char tail cap truncated the matched line's text far
+    // more tightly than the available width actually required -- a
+    // short name like "CLAUDE.md" leaves plenty of room this field
+    // should actually use. PathMiddle is budget-aware (middleEllipsisTruncate()
+    // sizes to whatever's ACTUALLY left, via withTruncatedFields()'s own
+    // pipeline) and already keeps both ends of the text, matching the
+    // exact "- レガシーC実装...src/config.sh" shape requested -- and
+    // splitLayoutWhenCrowded below (already unconditionally on for this
+    // provider) is what kicks in automatically on the OTHER side, if
+    // name+trailing2 together ever genuinely don't both fit.
     ContentView::ModeLineFields fields{name,
                                         trailing,
                                         /*fillTrailingToEdge=*/true,
@@ -167,8 +187,9 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
                                         trailing2,
                                         /*trailingPlain=*/false,
                                         /*trailing2RightJustified=*/false,
-                                        /*trailing2Kind=*/searchOriginLabel_.empty() ? ContentView::TrailingKind::Path
-                                                                                     : ContentView::TrailingKind::PathMiddle};
+                                        /*trailing2Kind=*/(searchOriginLabel_.empty() && searchAnnotation_.empty())
+                                            ? ContentView::TrailingKind::Path
+                                            : ContentView::TrailingKind::PathMiddle};
     // splitLayoutWhenCrowded (2026-08-27 addition, a direct user
     // report/callback to their own earlier HISTORY.md:9608 proposal,
     // which archiveContentView_'s own provider already adopted -- see
@@ -230,6 +251,7 @@ bool FileMode::loadFile(const std::string &path) {
   // a fresh load invalidates the old search -- see setSearchOrigin()'s own comment
   searchOriginLabel_.clear();
   searchOriginDetail_.clear();
+  searchAnnotation_.clear();  // see setSearchAnnotation()'s own comment
   // K-46 (^X^F, "FILE: Select file name")'s own data source -- see
   // DirectoryMode::enterDirectory()'s identical pushRecent() call for
   // K-48's own RecentDirectory counterpart.
@@ -276,6 +298,8 @@ void FileMode::setSearchOrigin(const std::string &label, const std::string &deta
   searchOriginLabel_ = label;
   searchOriginDetail_ = detail;
 }
+
+void FileMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
 
 void FileMode::setEncoding(Charset::Encoding encoding) { encoding_ = encoding; }
 

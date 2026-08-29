@@ -128,6 +128,19 @@ class FileMode {
   // call (see its own comment).
   void setSearchOrigin(const std::string &label, const std::string &detail);
 
+  // 2026-08-28 addition, a direct user report ("これでは^Gで（ls）に
+  // 戻ってしまう。検索結果一覧へ戻るのが筋なので戻り値は「EGREP: ^-」
+  // であるべき"): mirrors DirectoryMode::setSearchAnnotation() exactly
+  // (same name, same "landed HERE via Enter on a GREP match, not a
+  // direct search of this content" meaning) -- unlike setSearchOrigin()
+  // above (which replaces BOTH name and trailing2, for LOCATE/INFO's
+  // "this isn't really about the file's own name" framing), this
+  // touches trailing2 ONLY: the file's own name (e.g. "CLAUDE.md")
+  // stays exactly as-is, only the return-destination field changes, the
+  // same split DirectoryMode's own name/searchAnnotation_ already keeps.
+  void setSearchAnnotation(const std::string &text);
+  bool hasSearchAnnotation() const { return !searchAnnotation_.empty(); }
+
   // 2026-08-25 (a direct user request comparing against both legacy
   // and less(1)): a CLI pager launch (main.cpp's own "通常ファイル
   // 引数"/stdin-pipe case, see Application::startPagerStream()'s own
@@ -228,6 +241,11 @@ class FileMode {
   std::string currentFile_;
   std::string searchOriginLabel_;
   std::string searchOriginDetail_;
+  // See setSearchAnnotation()'s own comment. Cleared on every fresh
+  // loadFile() (a new file/reload invalidates whatever search landed us
+  // on the PREVIOUS one), matching searchOriginLabel_/Detail_'s own
+  // clearing just above in that same function.
+  std::string searchAnnotation_;
   // pagerMode_ (2026-08-25): set by loadStream(), cleared by
   // loadFile() -- see the constructor's own ModeLineFieldsProvider
   // comment for why a pager-launched file's mode-line shows the full

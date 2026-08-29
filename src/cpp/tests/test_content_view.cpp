@@ -38,10 +38,12 @@ TEST_CASE("redraw: an empty list (e.g. ^R with no history yet) shows a highlight
   CHECK(d.rowText(0).substr(0, 2) == "--");
   CHECK(d.standoutAt(0, 0) == true);
   // The terminal's own real cursor now sits at the placeholder's own
-  // right edge too, not hidden/left dangling -- see syncVisibleCursor().
+  // left edge too, not hidden/left dangling -- see syncVisibleCursor()
+  // (2026-08-28: left edge, not the raw byte-length right edge -- see
+  // its own comment).
   CHECK_FALSE(d.visibleCursorHidden());
   CHECK(d.cursorRow() == 0);
-  CHECK(d.cursorCol() == 2);  // "--".size()
+  CHECK(d.cursorCol() == 0);  // highlightStartColumn.value_or(0) -- no highlighted sub-range set here
 }
 
 TEST_CASE("redraw: an empty list does NOT show the \"--\" placeholder when cursor highlighting is "
@@ -95,6 +97,60 @@ TEST_CASE("Line::attributes: Bold/Underline byte-ranges render as their own SGR 
   // Bold/Underline combine with Standout, they don't replace it.
   CHECK(d.standoutAt(0, 6) == true);
   CHECK(d.standoutAt(0, 17) == true);
+}
+
+TEST_CASE("Line::attributes: a Standout-typed AttributeRun reverse-videos just its own byte range, "
+          "on a line that is NOT the cursor/marked row (2026-08-29, CopyMode's own selection highlight "
+          "-- see copy_mode.hpp) -- distinct from the whole-row reverse-video markedNow/highlightStartColumn "
+          "already drives") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  ContentView::Line line;
+  line.text = "plain SELECT plain";
+  //           0123456789...
+  line.attributes = {{6, 12, fm::Display::Attribute::Standout}};  // "SELECT"
+  v.setLines({line, ContentView::Line{"other", std::nullopt, std::nullopt, {}}});
+  v.setCursorIndex(1);  // move the cursor OFF line 0, so line 0 is not markedNow at all
+  v.redraw();
+  CHECK(d.standoutAt(0, 5) == false);   // space before "SELECT"
+  CHECK(d.standoutAt(0, 6) == true);    // 'S'
+  CHECK(d.standoutAt(0, 11) == true);   // 'T'
+  CHECK(d.standoutAt(0, 12) == false);  // space after "SELECT"
+}
+
+TEST_CASE("Line::attributes: a Standout-typed AttributeRun on the cursor/marked row ORs with the "
+          "row's own whole-line reverse-video instead of turning it off outside the run's own range "
+          "(2026-08-29)") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  ContentView::Line line;
+  line.text = "plain SELECT plain";
+  line.attributes = {{6, 12, fm::Display::Attribute::Standout}};
+  v.setLines({line});
+  v.redraw();  // cursor defaults to line 0 -- this line IS markedNow
+  CHECK(d.standoutAt(0, 0) == true);   // whole row already reverse-video via markedNow
+  CHECK(d.standoutAt(0, 6) == true);   // still true inside the AttributeRun's own range
+  CHECK(d.standoutAt(0, 12) == true);  // still true past it (markedNow alone covers this)
+}
+
+TEST_CASE("ContentView::setContentCursorColumn: overrides the real terminal caret's column while "
+          "cursorHighlightEnabled() is false (2026-08-29, CopyMode's positional caret). redraw() itself "
+          "never calls syncVisibleCursor() while highlighting is disabled (that's every existing caller's "
+          "own job, e.g. LineEditor positions its own caret after its OWN redraw()) -- so, like every "
+          "such existing caller, CopyMode must call this once per cursor move/redraw to actually place "
+          "the terminal caret; this test exercises exactly that call, not an automatic effect of redraw().") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setLines({ContentView::Line{"abcdefgh", std::nullopt, std::nullopt, {}}});
+  v.setCursorHighlightEnabled(false);
+  v.redraw();
+  v.setContentCursorColumn(4);
+  CHECK(d.cursorCol() == 4);
+  v.setContentCursorColumn(2);
+  CHECK(d.cursorCol() == 2);  // updates again on a later call, not just the first
 }
 
 TEST_CASE("Line::attributes: a CJK-heavy attributed line is walked by DISPLAY WIDTH, not raw byte "
@@ -263,10 +319,13 @@ TEST_CASE("cursorDisplayRow: accounts for bottom-anchoring the same way lineInde
   CHECK(v.cursorDisplayRow() == 4);  // "line1" renders at row 4 when bottom-anchored, see its own test
 }
 
-TEST_CASE("syncVisibleCursor: moves the display's visible cursor to the highlighted row's own right edge "
+TEST_CASE("syncVisibleCursor: moves the display's visible cursor to the highlighted row's own left edge "
           "when highlighting is enabled (the default) -- 2026-08-05 fix, see its own comment: "
           "TerminalDisplay::hideVisibleCursor() is a no-op, so the OLD behavior here (hiding) left the "
-          "real terminal cursor wherever the mode-line was last drawn instead") {
+          "real terminal cursor wherever the mode-line was last drawn instead. 2026-08-28 fix, a real "
+          "report: the right edge used the line's own raw BYTE length, landing far past a multi-byte "
+          "(CJK) name's own real visual end -- now the row's own highlightStartColumn (0 here, no "
+          "highlighted sub-range set), sidestepping the whole byte-vs-column problem entirely") {
   RecordingDisplay d(10, 20);
   ContentView v(d);
   v.setViewport(0, 5);
@@ -275,7 +334,25 @@ TEST_CASE("syncVisibleCursor: moves the display's visible cursor to the highligh
   v.syncVisibleCursor();
   CHECK_FALSE(d.visibleCursorHidden());
   CHECK(d.cursorRow() == 1);          // row0(0) + cursorIndex(1)
-  CHECK(d.cursorCol() == 5);          // "line1".size()
+  CHECK(d.cursorCol() == 0);          // highlightStartColumn.value_or(0) -- the row's own left edge
+}
+
+// 2026-08-28 addition, same report: confirms the cursor follows a REAL
+// highlightStartColumn (not just the default-0 case above), e.g.
+// DirectoryMode's own nameStartColumn convention.
+TEST_CASE("syncVisibleCursor: follows a real highlightStartColumn (not just the default 0) to the row's "
+          "own selectable text, not its raw byte length") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  std::vector<ContentView::Line> lines = makeLines(3);
+  lines[1].highlightStartColumn = 3;
+  lines[1].text = "abc\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e";  // "abc" + multi-byte UTF-8 (far more bytes than columns)
+  v.setLines(std::move(lines));
+  v.setCursorIndex(1);
+  v.syncVisibleCursor();
+  CHECK_FALSE(d.visibleCursorHidden());
+  CHECK(d.cursorCol() == 3);  // the highlighted text's own start, NOT text.size() (11 bytes)
 }
 
 TEST_CASE("syncVisibleCursor: hides the cursor rather than showing one out of view (scrolled away, "
