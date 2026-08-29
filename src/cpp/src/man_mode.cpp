@@ -8,14 +8,14 @@ namespace fm {
 ManMode::ManMode(ContentView &view, History &history, const Configuration &configuration,
                   Charset::Encoding encoding, int width)
     : view_(view), history_(history), configuration_(configuration), encoding_(encoding), width_(width) {
-  // See FileMode's own identical call for why: plain page content
-  // never gets a whole-line reverse-video cursor highlight in the real
-  // CUI (put_str()'s own f_mark logic) -- a real user report ("選べ
-  // ないのに行がハイライト表示", 2026-08-15) found ManMode had never
-  // been given this call at all, unlike FileMode, so it was still
-  // showing ContentView's own default (true) highlight bar as the
-  // cursor moved through a man page, even though nothing there is
-  // actually "selectable" the way a Directory/LOCATE entry is.
+  // 理由はFileMode自身の全く同じ呼び出し参照: 素のページ内容は実際の
+  // CUI(put_str()自身のf_markロジック)では行全体の反転表示カーソル
+  // ハイライトを一切受けない――実際のユーザー報告(「選べないのに
+  // 行がハイライト表示」、2026-08-15)により、ManModeにはFileMode
+  // とは違ってこの呼び出しが一度も与えられていなかったことが判明し、
+  // manページ内をカーソルが動くたびにContentView自身の既定(true)の
+  // ハイライトバーが表示され続けていた。そこにはDirectory/LOCATEの
+  // 項目のように実際に「選択可能」なものは何も無いにもかかわらず。
   view_.setCursorHighlightEnabled(false);
 }
 
@@ -34,13 +34,14 @@ std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::str
 
   std::vector<ContentView::Line> lines;
   lines.reserve(pipe.lines().size());
-  // styled.attributes (2026-08-15, matching FileMode::readAndWrap()'s
-  // own 2026-08-05 fix -- see its own comment): PipeBuffer's nroff-
-  // overstrike bold/underline detection already produces this; ManMode
-  // never picked up the same fix when FileMode got it, so `man`'s own
-  // bold section headers and underlined cross-references were showing
-  // as plain text (a real user report + side-by-side screenshot
-  // against a real terminal's own `man` rendering, "文字装飾が無い").
+  // styled.attributes(2026-08-15、FileMode::readAndWrap()自身の
+  // 2026-08-05の修正に合わせている――そちら自身のコメント参照):
+  // PipeBufferのnroffオーバーストライク太字/下線検出は既にこれを
+  // 生成している。FileModeがこの修正を受けた時、ManModeは同じ修正を
+  // 一度も取り込んでいなかったため、`man`自身の太字の節見出しや
+  // 下線付きの相互参照が素のテキストとして表示されていた(実際の
+  // ユーザー報告+本物のターミナル自身の`man`表示との比較スクリーン
+  // ショット、「文字装飾が無い」)。
   for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt, std::nullopt, styled.attributes});
   return lines;
 }
@@ -71,7 +72,7 @@ bool ManMode::reflow(int newWidth) {
   width_ = newWidth;
   auto lines = runAndWrap(currentPage_);
   if (!lines) {
-    width_ = savedWidth;  // re-running `man` failed -- leave the current display untouched
+    width_ = savedWidth;  // `man`の再実行に失敗――現在の表示には触れない
     return false;
   }
   int oldCursor = view_.cursorIndex();
