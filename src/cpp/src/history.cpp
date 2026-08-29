@@ -7,10 +7,10 @@ namespace fm {
 
 namespace {
 
-constexpr char kFormFeed = '\x0c';   // legacy K_l: section-label marker
-constexpr char kSubEof = '\x1a';     // legacy K_z: end-of-file sentinel
-constexpr char kSpaceMark = '\x01';  // legacy K_a: encodes a literal space
-constexpr char kCtrlMark = '\x0f';   // legacy K_o: introduces an encoded control byte
+constexpr char kFormFeed = '\x0c';   // legacyのK_l: セクションラベルのマーカー
+constexpr char kSubEof = '\x1a';     // legacyのK_z: ファイル終端の番兵
+constexpr char kSpaceMark = '\x01';  // legacyのK_a: リテラルな空白を符号化する
+constexpr char kCtrlMark = '\x0f';   // legacyのK_o: 符号化された制御バイトを導入する
 
 std::vector<std::string> splitLines(const std::string &text) {
   std::vector<std::string> lines;
@@ -40,23 +40,24 @@ std::vector<std::string> splitWhitespace(const std::string &s) {
   return out;
 }
 
-// Ported from sub.c's sspc(): every field is whitespace-delimited on
-// disk (parsed with plain %s-style tokenizing), so a literal space
-// would corrupt the format -- encoded as kSpaceMark instead. Control
-// bytes are encoded as kCtrlMark followed by (byte + '@'), the same
-// convention used elsewhere in this codebase for making a control
-// byte's value visible/reversible in plain text.
+// sub.cのsspc()からの移植: ディスク上では全てのフィールドが空白で
+// 区切られる(プレーンな%sスタイルのトークン化でパースされる)ので、
+// リテラルな空白はフォーマットを壊してしまう――代わりにkSpaceMark
+// として符号化される。制御バイトは、kCtrlMarkに(バイト + '@')を
+// 続けたものとして符号化される。このコードベースの他所で、制御
+// バイトの値をプレーンテキストで可視/可逆にするために使われている
+// のと同じ慣習。
 //
-// Deviation from legacy: an empty field encodes to a lone kCtrlMark
-// byte (a token legacy's own encoding never otherwise produces --
-// every other use of kCtrlMark is immediately followed by one more
-// byte). Legacy's sscanf("%s ...")-based reader simply cannot
-// represent an empty field at all: a genuinely empty token vanishes
-// entirely under whitespace-delimited tokenizing, silently shifting
-// every subsequent field left by one. That's a real, latent fragility
-// in the original format (str1/argv0, the CUT-buffer fields, are
-// routinely empty in practice) that this port doesn't need to
-// reproduce, since encode/decode are both owned by this same class.
+// legacyからの逸脱: 空のフィールドは、単独のkCtrlMarkバイトへ符号化
+// される(legacy自身の符号化がそれ以外では決して生み出さないトークン
+// ――kCtrlMarkの他の全ての使用は、即座にもう1バイトが続く)。
+// legacyのsscanf("%s ...")ベースの読み取り器は、空のフィールドを
+// 全く表現できない: 本当に空のトークンは、空白区切りのトークン化の
+// 下では完全に消え去り、それ以降の全フィールドを黙って1つ左へ
+// ずらしてしまう。それは元のフォーマットにある実際の、潜在的な
+// 脆弱性(str1/argv0、CUTバッファのフィールドは、実際には日常的に
+// 空である)であり、この移植は再現する必要が無い。符号化/復号化の
+// 両方がこの同じクラスによって所有されているため。
 std::string encodeField(const std::string &s) {
   if (s.empty()) return std::string(1, kCtrlMark);
   std::string out;
@@ -74,7 +75,7 @@ std::string encodeField(const std::string &s) {
   return out;
 }
 
-// Ported from sub.c's rspc(), plus the empty-field sentinel above.
+// sub.cのrspc()に、上の空フィールドの番兵を加えたものからの移植。
 std::string decodeField(const std::string &s) {
   if (s.size() == 1 && s[0] == kCtrlMark) return "";
   std::string out;
@@ -95,9 +96,9 @@ std::string decodeField(const std::string &s) {
   return out;
 }
 
-// Legacy numeric charset codes (tcb.h: C_ascii=300, C_bin=301,
-// C_sjis=302, C_euc=303, C_jis=304, ..., C_utf8=310), used only for
-// the trailer's third field.
+// legacyの数値による文字コードコード(tcb.h: C_ascii=300、
+// C_bin=301、C_sjis=302、C_euc=303、C_jis=304、...、C_utf8=310)、
+// トレーラーの3番目のフィールドにのみ使われる。
 Charset::Encoding decodeCharsetCode(int code) {
   switch (code) {
     case 300:
@@ -113,9 +114,10 @@ Charset::Encoding decodeCharsetCode(int code) {
     case 310:
       return Charset::Encoding::Utf8;
     default:
-      // 0 (field absent/predates this trailer field) or any other
-      // unrecognized value: the documented default, never Euc -- see
-      // the class comment on CLAUDE.md history item 13.
+      // 0(フィールドが無い/このトレーラーフィールドより前の形式)
+      // または他の何らかの認識できない値: 文書化されたデフォルトで
+      // あり、Eucでは決してない――クラスコメントのCLAUDE.mdの
+      // 履歴項目13参照。
       return Charset::Encoding::Utf8;
   }
 }
@@ -170,7 +172,7 @@ bool History::containsName(NameSetCategory category, const std::string &name) co
 void History::rememberName(NameSetCategory category, const std::string &name) {
   auto &names = nameSets_[category];
   for (const auto &n : names)
-    if (n == name) return;  // first-occurrence-wins, ported from save_str()
+    if (n == name) return;  // 最初の出現優先、save_str()からの移植
   names.push_back(name);
 }
 
@@ -181,44 +183,45 @@ const std::vector<std::string> &History::namesIn(NameSetCategory category) const
 }
 
 void History::pushRecent(RingCategory category, const std::string &name) {
-  // Correction (2026-08-04): a closer re-read of sub.c's find_hist()
-  // shows it only ever compares `name` against the LAST node of the
-  // list (the walk `for (...; hist->next; hist = hist->next)` stops
-  // exactly there), not every entry -- so save_history()'s dedup only
-  // suppresses an IMMEDIATE repeat of the single most-recently-added
-  // entry, not a re-visit of any older one. A user clarification
-  // (2026-08-04, in the context of ^R's own "HISTORY" chronological
-  // view) confirmed this matters in practice: revisiting an OLDER
-  // entry (not the immediately-previous one) is expected to genuinely
-  // re-append it, duplicates and all -- e.g. accessing A, then B, then
-  // A again yields the raw log [A, B, A], not [A, B]. The earlier
-  // version of this function (whole-ring, first-occurrence-wins dedup)
-  // was a mis-port of this exact detail. Global "unique names only"
-  // views (e.g. Application::startListBrowser()'s sorted FILE/DIR
-  // picker) now do their own de-duplication at display time instead
-  // of relying on this ring never containing repeats.
+  // 訂正(2026-08-04): sub.cのfind_hist()をより注意深く読み直すと、
+  // それが`name`をリストの「最後の」ノードとだけ比較しており(走査
+  // `for (...; hist->next; hist = hist->next)`はまさにそこで止まる)、
+  // 全てのエントリとではないことが分かる――そのためsave_history()の
+  // 重複排除は、単一の最も最近追加されたエントリの「直接の」繰り返し
+  // だけを抑制し、それより古いものへの再訪問は抑制しない。ユーザーに
+  // よる明確化(2026-08-04、^R自身の「HISTORY」時系列表示の文脈で)が、
+  // これが実際に重要であることを確認した: (直前のものではなく)より
+  // 「古い」エントリへの再訪問は、重複も何もかも含めて本当に再度
+  // 追記されることが期待される――例えばAにアクセスし、次にB、次に
+  // 再びAにアクセスすると、生のログは[A, B]ではなく[A, B, A]になる。
+  // この関数の以前のバージョン(リング全体での、最初の出現優先の
+  // 重複排除)は、まさにこの詳細の誤った移植だった。全域的な「一意な
+  // 名前のみ」のビュー(例えばApplication::startListBrowser()の
+  // ソートされたFILE/DIRピッカー)は、このリングが決して繰り返しを
+  // 含まないことに頼るのではなく、今は表示時に自力で重複排除を行う。
   auto &ring = rings_[category];
   if (!ring.empty() && ring.back() == name) return;
   ring.push_back(name);
   if (static_cast<int>(ring.size()) > retentionCount_) ring.pop_front();
 
-  // 2026-08-27 addition, a direct user report ("旧では同時にDIR履歴に
+  // 2026-08-27の追加、直接のユーザー報告("旧では同時にDIR履歴に
   // も所在地記載がなされる...^Tに限らずLOCATE、DUその他（ls）経由でな
   // いファイルアクセスであっても在籍値のDIR履歴同時記帳は反映して欲
-  // しい"): legacy records a file's own containing directory into DIR
-  // history at the same time it records the file itself, regardless of
-  // how that file was reached -- ordinary `ls`-then-Enter browsing
-  // already reaches RecentDirectory separately (DirectoryMode::
-  // enterDirectory()'s own pushRecent() call, which fires BEFORE this
-  // one in that case, so the dedup check above just no-ops here), but
-  // ^T's fixed-file entries, LOCATE results, etc. never go through
-  // enterDirectory() at all -- their own containing directory was never
-  // recorded, leaving goToRecentDirectory()'s (^G's empty-stack
-  // fallback) own walk with nothing to find even though the user HAD
-  // just been "at" that directory in every meaningful sense. Recursing
-  // back into this same function (not a bare rings_[...] push) reuses
-  // the identical dedup/retention-cap logic above for the derived
-  // directory push too.
+  // しい"): legacyは、ファイルがどのように到達されたかに関わらず、
+  // ファイル自身を記録するのと同時にそのファイル自身の含む
+  // ディレクトリをDIR履歴に記録する――通常の`ls`の後にEnterする
+  // 閲覧は既に別途RecentDirectoryに到達している(DirectoryMode::
+  // enterDirectory()自身のpushRecent()呼び出しが、その場合はこれより
+  // 「前に」発火するので、上の重複排除チェックはここでは単に何も
+  // しない)が、^Tの固定ファイルエントリ、LOCATE結果等は、
+  // enterDirectory()を全く通らない――それら自身の含むディレクトリは
+  // 一度も記録されなかったので、ユーザーがあらゆる意味のある意味で
+  // まさにそのディレクトリに「いた」にも関わらず、
+  // goToRecentDirectory()(^Gの空スタックのフォールバック)自身の
+  // 走査には見つけるものが何も無かった。この同じ関数へ再帰する
+  // (単なるrings_[...]へのpushではなく)ことで、派生したディレクトリ
+  // のpushに対しても、上の同一の重複排除/保持上限ロジックが再利用
+  // される。
   if (category == RingCategory::RecentFile) {
     std::string::size_type slash = name.find_last_of('/');
     if (slash != std::string::npos) pushRecent(RingCategory::RecentDirectory, name.substr(0, slash + 1));
@@ -291,8 +294,8 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     if (toks.size() > 2) state.modeLineArg = decodeField(toks[2]);
     if (toks.size() > 3) state.previousScreenMarker = decodeField(toks[3]);
     if (toks.size() > 4) state.lastOpenName = decodeField(toks[4]);
-    // toks[5], if present, is a reserved field legacy always writes
-    // as literal 0 and discards on read -- not stored.
+    // toks[5]は、もし存在すればlegacyが常にリテラルの0として書き
+    // 込み、読み取り時に捨てる予約フィールド――保存されない。
     if (toks.size() > 6) state.pendingCutBuffer = decodeField(toks[6]);
     if (toks.size() > 7) state.pendingCutProgram = decodeField(toks[7]);
     sessionState_ = std::move(state);
@@ -336,14 +339,14 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     }
   };
   auto readRingSection = [&](RingCategory category) {
-    // Ported from read_str()'s ring-history path (save_history(...,
-    // f_find=0)): entries are pushed in file order with the
-    // retention cap enforced, but WITHOUT the live-push dedup check
-    // (a file written under a since-lowered retention count, or one
-    // with an accidental duplicate line, still round-trips as
-    // written up to the cap) -- see pushRecent()'s own doc comment
-    // for why the public API does dedup and this loader deliberately
-    // doesn't reuse it.
+    // read_str()のリング履歴経路(save_history(..., f_find=0))から
+    // の移植: エントリはファイル順でpushされ、保持上限は適用される
+    // が、稼働中のpush時の重複排除チェックは無い(その後保持数が
+    // 下げられた状態で書かれたファイル、または偶然の重複行を含む
+    // ファイルは、上限までは書かれた通りにラウンドトリップする)
+    // ――公開APIがなぜ重複排除を行い、このローダーが意図的にそれを
+    // 再利用しないのかについてはpushRecent()自身のドキュメント
+    // コメント参照。
     auto &ring = rings_[category];
     while (i < lines.size() && !isSectionBoundary(lines[i])) {
       ring.push_back(decodeField(lines[i]));
@@ -402,20 +405,21 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     if (toks.size() > 2) charsetCode = std::atoi(toks[2].c_str());
     smoothScrollEnabled_ = (hs != 0);
     lsMode_ = ls;
-    // Ported from `if (!env_charset(-1)) vt_charset(...)`: only
-    // apply the saved charset when the environment didn't already
-    // win explicitly. See the class comment / CLAUDE.md history item
-    // 13.
+    // `if (!env_charset(-1)) vt_charset(...)`からの移植: 環境が既に
+    // 明示的に優先していない場合にだけ保存された文字コードを適用
+    // する。クラスコメント/CLAUDE.mdの履歴項目13参照。
     savedCharset_ = environmentCharsetExplicitlySet ? std::nullopt
                                                      : std::make_optional(decodeCharsetCode(charsetCode));
-    // GuiPreferences (2026-08-24, item 427) -- appended AFTER the three
-    // original fields above (hs/ls/charsetCode, part of the on-disk
-    // format inherited from legacy tcb's own trailer) rather than
-    // inserted among them, so an old history file (or, in principle,
-    // legacy tcb itself reading a file this class wrote) simply sees
-    // these extra tokens as absent -- toks.size() guards below default
-    // every GuiPreferences field to its own "unset" value (0/false)
-    // exactly like charsetCode's own missing-token default above.
+    // GuiPreferences(2026-08-24、項目427)――上の3つの元々の
+    // フィールド(hs/ls/charsetCode、legacyのtcb自身のトレーラーから
+    // 継承したディスク上のフォーマットの一部)の「間に」挿入する
+    // のではなく「後に」追加されている。これにより、古い履歴
+    // ファイル(または、原理上、このクラスが書いたファイルを読む
+    // legacyのtcb自身)は、これらの追加トークンを単に無いものとして
+    // 見る――下のtoks.size()によるガードは、上のcharsetCode自身の
+    // トークン欠如時のデフォルトとまさに同じように、全ての
+    // GuiPreferencesフィールドをそれ自身の「未設定」値(0/false)
+    // にデフォルトさせる。
     GuiPreferences prefs;
     if (toks.size() > 3) prefs.fontPointSize = std::atoi(toks[3].c_str());
     if (toks.size() > 4) prefs.rows = std::atoi(toks[4].c_str());
@@ -438,11 +442,12 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
 std::string History::serialize(const std::string &programName, const std::string &timestampText) const {
   std::string out;
   out += "# ~/." + programName + "/history: " + programName + "\n";
-  // "E\bEX\bXI\bIT\bT" is legacy's nroff-style overstrike-bold trick
-  // (each letter doubled around a backspace) so this reads as bold
-  // "EXIT" through an overstrike-aware pager -- kept for on-disk
-  // compatibility/familiarity, though nothing in this class or its
-  // reader depends on it.
+  // "E\bEX\bXI\bIT\bT"はlegacyのnroffスタイルのオーバーストライク
+  // 太字のトリック(各文字がバックスペースを挟んで2重になっている)
+  // であり、これによりオーバーストライク対応のページャーを通すと
+  // 太字の「EXIT」として読める――ディスク上での互換性/馴染みの
+  // ために保持されているが、このクラスやその読み取り器のどちらも
+  // これに依存していない。
   out += std::string("# E\bEX\bXI\bIT\bT: ") + timestampText + "\n";
   out += "# Note: The lines begin with the character \\014 or \\032 mustn't be deleted.\n\n";
 
@@ -457,12 +462,12 @@ std::string History::serialize(const std::string &programName, const std::string
     out += std::string(1, kFormFeed) + label + "\n";
     auto it = positions_.find(category);
     if (it == positions_.end()) return;
-    // Iteration order here is sorted-by-name (std::map), unlike
-    // legacy's own on-disk order (its STR "write order" mirror
-    // list's insertion order, falling back to its LIST BST's sorted
-    // order only when that mirror was empty) -- harmless, since nothing
-    // reading this format back cares about entry order within a
-    // section; see the class comment.
+    // ここでの走査順序は名前でソートされている(std::map)。legacy
+    // 自身のディスク上の順序(そのSTR「書き込み順」ミラーリストの
+    // 挿入順、そのミラーが空の場合にだけそのLIST BSTのソート順へ
+    // フォールバックする)とは異なる――このフォーマットを読み戻す
+    // 何ものも、セクション内のエントリ順序を気にしないので無害。
+    // クラスコメント参照。
     for (const auto &[name, pos] : it->second) {
       out += encodeField(name) + " " + std::to_string(pos.row) + " " + std::to_string(pos.totalRows) + " " +
              std::to_string(pos.top) + " " + std::to_string(pos.lineNumber) + "\n";
@@ -478,7 +483,7 @@ std::string History::serialize(const std::string &programName, const std::string
     out += std::string(1, kFormFeed) + label + "\n";
     auto it = rings_.find(category);
     if (it == rings_.end()) return;
-    for (const auto &name : it->second) out += encodeField(name) + "\n";  // oldest..newest, matches file order
+    for (const auto &name : it->second) out += encodeField(name) + "\n";  // 古い順..新しい順、ファイル順に一致
   };
 
   writePositionSection(" FILE", PositionCategory::File);
@@ -497,9 +502,9 @@ std::string History::serialize(const std::string &programName, const std::string
 
   out += std::string(1, kFormFeed) + " TCB\n";
   int charsetCode = savedCharset_ ? encodeCharsetCode(*savedCharset_) : 0;
-  // GuiPreferences fields appended after charsetCode -- see
-  // loadHistoryText()'s own matching comment for why (on-disk format
-  // compatibility, not just symmetry).
+  // GuiPreferencesのフィールドはcharsetCodeの後に追加されている
+  // ――理由(単なる対称性ではなく、ディスク上のフォーマット互換性)
+  // についてはloadHistoryText()自身の対応するコメント参照。
   out += std::to_string(smoothScrollEnabled_ ? 1 : 0) + " " + std::to_string(lsMode_) + " " +
          std::to_string(charsetCode) + " " + std::to_string(guiPreferences_.fontPointSize) + " " +
          std::to_string(guiPreferences_.rows) + " " + std::to_string(guiPreferences_.columns) + " " +
