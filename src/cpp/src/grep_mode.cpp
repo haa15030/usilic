@@ -26,15 +26,17 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
     inputText += '\n';
   }
 
-  // 2026-08-23 addition (docs/CHANGES.md item 407, a real user report:
-  // FGREP found "口座テスト" but not "マイナカード" against the SAME
-  // directory listing) -- see unicodeNormalizationCandidates()'s own
-  // comment for why a real filename's bytes can be either Unicode
-  // normalization form regardless of what a normal IME types. `pattern`
-  // as typed is always tried FIRST (so an already-matching search costs
-  // nothing extra and, more importantly, so `pattern_`/history below
-  // still records exactly what the user typed either way); only tries
-  // NFC/NFD as a fallback when the literal bytes alone don't match.
+  // 2026-08-23追加(docs/CHANGES.md 407番、実際のユーザー報告: FGREPで
+  // 「口座テスト」は見つかったが、「同じ」ディレクトリ一覧に対して
+  // 「マイナカード」は見つからなかった)――実際のファイル名のバイト
+  // 列が、通常のIMEが何を入力するかに関わらずどちらのUnicode正規化
+  // 形式にもなりうる理由についてはunicodeNormalizationCandidates()
+  // 自身のコメント参照。入力された通りの`pattern`を常に「最初に」
+  // 試す(そうすることで、既に一致する検索には余計なコストが掛から
+  // ず、さらに重要な点として、下の`pattern_`/履歴がどちらの場合でも
+  // ユーザーが実際に入力した通りを記録し続ける)。文字通りのバイト
+  // 列だけでは一致しない場合にのみ、NFC/NFDをフォールバックとして
+  // 試す。
   ChildProcess::Options options;
   options.input = &inputText;
   ChildProcess::Result result;
@@ -44,14 +46,14 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
     argv.push_back(candidate);
     result = ChildProcess::run(argv, options);
     ranAtLeastOnce = true;
-    // Exit 0 = matches found, exit 1 = ran fine but found none -- both
-    // are a successful RUN (not necessarily a successful search: exit
-    // 1 falls through to the next candidate, if any). Anything else
-    // (bad pattern, exec failure, signaled) is a real failure -- bail
-    // out immediately rather than trying further candidates with a
-    // command that's already shown it can't run at all.
+    // 終了コード0=一致あり、終了コード1=正常に実行されたが一致無し
+    // ――どちらも「実行」としては成功(検索として成功とは限らない:
+    // 終了コード1の場合は、あれば次の候補へフォールスルーする)。
+    // それ以外(不正なパターン、exec失敗、シグナルによる終了)は本物の
+    // 失敗――既に全く実行できないと分かっているコマンドで残りの候補を
+    // 試すのではなく、直ちに諦める。
     if (result.exitStatus < 0 || result.exitStatus > 1) return false;
-    if (result.exitStatus == 0) break;  // found matches with this candidate -- stop here
+    if (result.exitStatus == 0) break;  // この候補で一致が見つかった――ここで終了
   }
   if (!ranAtLeastOnce) return false;
 
@@ -74,14 +76,15 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   }
 
   pattern_ = pattern;
-  // Empty-result placeholder (2026-08-12, two rounds of user
-  // correction -- see ContentView::setEmptyPlaceholder()'s own
-  // comment for the full history): "<pattern>: No String", with ONLY
-  // "No String" underlined (not the pattern prefix) and no full
-  // reverse-video "marked" treatment at all (that read as "this is a
-  // selectable string", which it isn't). Set fresh on every search --
-  // legacy has no concept of "the last pattern that found nothing"
-  // persisting once a NEW search runs, and neither should this.
+  // 結果0件時のプレースホルダ(2026-08-12、2回のユーザー訂正を経た
+  // もの――経緯全体はContentView::setEmptyPlaceholder()自身のコメント
+  // 参照): "<pattern>: No String"、下線が付くのは"No String"部分
+  // だけ(パターン部分の接頭辞には付かない)で、反転表示の「選択済み」
+  // 扱いは一切行わない(それだと「これは選択可能な文字列だ」という
+  // 見た目になってしまうが、実際はそうではない)。検索のたびに新しく
+  // 設定する――legacyには「新しい検索が走った後も、最後に何も
+  // 見つからなかったパターン」が居座り続けるという概念は無く、
+  // ここでもそうすべきではない。
   if (matches_.empty()) {
     static const std::string kSuffix = "No String";
     std::string text = pattern_ + ": " + kSuffix;
