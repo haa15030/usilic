@@ -28,11 +28,11 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
     inputText += '\n';
   }
 
-  // 2026-08-23 addition (docs/CHANGES.md item 407): same reasoning as
-  // GrepMode::search()'s own identical fix -- see
-  // unicodeNormalizationCandidates()'s own comment. CUT's fixed/regex
-  // split shells out to the exact same fgrep/egrep, so it has the
-  // exact same byte-literal-matching blind spot.
+  // 2026-08-23追加(docs/CHANGES.md 407番): GrepMode::search()自身の
+  // 全く同じ修正と同じ理屈――unicodeNormalizationCandidates()自身の
+  // コメント参照。CUTの固定/正規表現分割は全く同じfgrep/egrepへ
+  // シェルアウトするので、全く同じバイトリテラルマッチングの死角を
+  // 抱えている。
   ChildProcess::Options options;
   options.input = &inputText;
   ChildProcess::Result result;
@@ -43,7 +43,7 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
     result = ChildProcess::run(argv, options);
     ranAtLeastOnce = true;
     if (result.exitStatus < 0 || result.exitStatus > 1) return false;
-    if (result.exitStatus == 0) break;  // found matches with this candidate -- stop here
+    if (result.exitStatus == 0) break;  // この候補で一致が見つかった――ここで終了
   }
   if (!ranAtLeastOnce) return false;
 
@@ -60,7 +60,7 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
     if (!allDigits) continue;
     matchLines.push_back(std::atoi(numPart.c_str()) - 1);
   }
-  std::sort(matchLines.begin(), matchLines.end());  // grep -n is already ordered; sort defensively
+  std::sort(matchLines.begin(), matchLines.end());  // grep -nは既に順序通りだが、念のためソートしておく
 
   pattern_ = pattern;
   sourceLines_ = sourceLines;
@@ -70,18 +70,18 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
   if (matchLines.empty()) {
     if (total > 0) segments_.push_back({std::string(), 0, total});
   } else {
-    // "--" (2026-08-12 fix, matching ContentView's own established
-    // "empty/unlabeled region" convention -- see setEmptyPlaceholder()'s
-    // own comment): this LEADING segment (everything before the FIRST
-    // match, e.g. a directory listing's own "./" through whatever line
-    // precedes the first "package*" hit) has no delimiter line of its
-    // own to use as a label the way every OTHER segment below does
-    // (`sourceLines_[start].text`, the matching line itself). A real
-    // report + reference screenshot (=ah) found this shown as a
-    // completely BLANK top row instead -- this was left as
-    // std::string() (empty) here from the very first CUT port, and the
-    // gap was flagged as far back as this session's item ㉜/㊱ ("最上行
-    // の「--」...が無い") but never actually fixed until now.
+    // "--"(2026-08-12修正、ContentView自身が既に確立している
+    // 「空/ラベル無し領域」の慣習に合わせている――setEmptyPlaceholder()
+    // 自身のコメント参照): この「先頭」区間(最初のマッチより前の
+    // 全て、例えばディレクトリ一覧自身の"./"から最初の"package*"の
+    // ヒットの直前の行まで)には、下の他の全ての区間のように
+    // (`sourceLines_[start].text`、マッチした行そのもの)ラベルとして
+    // 使える専用のデリミタ行が無い。実際の報告+参考スクリーンショット
+    // (=ah)により、代わりに完全に「空白」の最上行として表示されて
+    // いることが判明した――これは、CUTの最初の移植の時点からここで
+    // std::string()(空)のまま残されており、このギャップはこの
+    // セッションの項目㉜/㊱(「最上行の「--」...が無い」)まで遡って
+    // 既に指摘されていたが、今この時まで実際には修正されていなかった。
     if (matchLines.front() > 0) segments_.push_back({"--", 0, matchLines.front()});
     for (std::size_t i = 0; i < matchLines.size(); i++) {
       int start = matchLines[i];
@@ -130,11 +130,11 @@ bool CutMode::pushSplit(const std::vector<StyledLine> &sourceLines, const std::s
   saved->cursorIndex = view_.cursorIndex();
 
   ModeStackFrame frame;
-  frame.cutBuffer = saved;  // opaque handle, matching ModeStackFrame's CUT::buff mapping
+  frame.cutBuffer = saved;  // 不透明なハンドル、ModeStackFrameのCUT::buffマッピングと同じ
   modeStack_.push(std::move(frame));
 
   if (!split(sourceLines, pattern, syntax)) {
-    modeStack_.pop();  // undo the push, matching DirectoryMode::openSelected()'s failure-undo pattern
+    modeStack_.pop();  // pushを取り消す、DirectoryMode::openSelected()の失敗時取り消しパターンと同じ
     return false;
   }
   return true;
