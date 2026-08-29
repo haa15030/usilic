@@ -4,136 +4,139 @@
 
 namespace fm {
 
-// Release-speed -> per-dot-step delay mapping for the GUI drag-scroll
-// "inertia" (docs/ideas/IDEAS.md's cat's-paw scroll request), modeled
-// directly on the author's own earlier FM-TOWNS app "cb" per the
-// 2026-07-30 correction in CLAUDE.md: cb's speed control used usleep()
-// for the lowest two speeds and a busy-loop spin (iteration count, not
-// a fixed sleep) for everything faster -- because OS sleep granularity
-// can't reliably hit the sub-millisecond per-dot delays the faster
-// levels need. Each ScrollStep here is the delay for ONE DOT of
-// scroll (pixelOffset moving by 1), not a per-frame delay -- this is
-// what makes the mechanism the real thing rather than an approximated
-// "jump and call it a blur": a caller doing many of these steps in a
-// tight loop reproduces the same "next row's glyph image completes
-// exactly as the current row's finishes scrolling out" effect cb had,
-// just driven by GraphicalDisplay::renderScrolled()'s pixel-offset
-// compositing instead of manual VRAM row-shifting.
+// GUIドラッグスクロールの「慣性」(docs/ideas/IDEAS.mdの「猫の手」
+// スクロール要望)における、離した時の速度→1ドット刻みの遅延への
+// マッピング。CLAUDE.mdの2026-07-30の訂正の通り、作者自身の以前の
+// FM-TOWNSアプリ「cb」を直接モデルにしている: cbの速度制御は、
+// 最も遅い2段階にはusleep()を、それより速い全段階にはビジーループ
+// によるスピン(固定sleepではなく反復回数)を使っていた――OSのsleep
+// 粒度は、速い段階が必要とするサブミリ秒単位の1ドットあたりの遅延を
+// 確実には出せないため。ここでの各ScrollStepは1フレームあたりの
+// 遅延ではなく、スクロールの「1ドット」(pixelOffsetが1動く)あたりの
+// 遅延である――これが、この仕組みを「ジャンプさせてぼかしと呼ぶ」
+// 近似ではなく本物にしている点である: 呼び出し側がこれらのステップを
+// 多数、タイトなループで実行すると、cbが持っていた「次の行のグリフ
+// 画像が、現在の行がスクロールし終わるのとちょうど同時に完成する」
+// という効果を、手作業のVRAM行シフトの代わりにGraphicalDisplay::
+// renderScrolled()のピクセルオフセット合成で駆動しながら再現する。
 //
-// Deliberately NOT calibrated to feel identical on every machine: cb's
-// own top speed being faster than legible was itself a property of the
-// i486SX it ran on, not something the original tried to normalize away
-// (per the user's own account, this was well-received, not a bug) --
-// on faster modern hardware the top level(s) are simply faster still,
-// consistent with that heritage rather than something to correct.
+// 意図的にどのマシンでも同じ感触になるようキャリブレーションして
+// いない: cbの最高速度が判読できないほど速かったこと自体、それが
+// 動いていたi486SX固有の性質であり、オリジナル側がそれを均そうと
+// した性質のものではなかった(ユーザー自身の話によれば、これは
+// バグではなく好評だった)――より高速な現代のハードウェアでは、
+// 最高段階はただ単にさらに速くなる。それはその由来と一貫しており、
+// 修正すべきものではない。
 struct ScrollStep {
-  bool busyLoop;        // false: usleep(microseconds) between dots; true: spin busyIterations instead
-  long microseconds;     // used when !busyLoop
-  long busyIterations;   // used when busyLoop
+  bool busyLoop;        // false: ドットの間usleep(microseconds); true: 代わりにbusyIterationsだけスピン
+  long microseconds;     // !busyLoopの時に使う
+  long busyIterations;   // busyLoopの時に使う
 };
 
-// Index 0 is a placeholder ({false,0,0}) and never used as an active
-// speed -- callers use level 0 to mean "not coasting" (see
-// levelForReleaseDistance()), so keeping it as a real (inert) table
-// entry avoids an off-by-one at every call site.
+// インデックス0はプレースホルダ({false,0,0})であり、アクティブな
+// 速度として使われることは決して無い――呼び出し側はレベル0を
+// 「慣性で動いていない」を意味するものとして使う
+// (levelForReleaseDistance()参照)ので、これを実在する(不活性な)
+// テーブルの要素として保持しておくことで、全ての呼び出し箇所での
+// 1個ずれを避けている。
 //
-// Deliberately NOT const (unlike everything else in this file):
-// applyScrollSpeedOverride() below (the "-u" CLI flag, app/main.cpp)
-// mutates this table's entries (including which ones are usleep- vs
-// busy-loop-driven, see its own comment) in place at startup, before
-// any real scrolling happens -- same "tune without a recompile"
-// motivation as USILICSCROLLDEBUG just above, but for the actual
-// delay values rather than which level gets selected.
+// (このファイルの他の全てとは異なり)意図的にconstにしていない:
+// 下のapplyScrollSpeedOverride()(「-u」CLIフラグ、app/main.cpp)が、
+// 実際にスクロールが起きる前の起動時に、このテーブルの要素(どれが
+// usleep駆動でどれがビジーループ駆動かも含む、そちら自身のコメント
+// 参照)をその場で書き換える――すぐ上のUSILICSCROLLDEBUGと同じ
+// 「再コンパイル無しで調整する」という動機によるものだが、こちらは
+// どの段階が選ばれるかではなく実際の遅延値についてのもの。
 extern std::vector<ScrollStep> kScrollSpeedLevels;
 
-// Overrides levels 1..values.size() with `values`, assigned in order
-// starting at level 1 (index 0 is the inert placeholder, never
-// touched). Any targeted level is force-converted to usleep-driven
-// (busyLoop=false, microseconds=value) REGARDLESS of what it
-// defaulted to -- this reaches into the busy-loop range (5+) too, not
-// just the 4 levels that default to usleep -- see applyScrollSpeed
-// Override()'s own .cpp comment for why (a real user's own "-u 90000
-// 70000 50000 30000 10000", 5 values, was the reason this was
-// widened from "only levels 1..4" after the narrower version produced
-// no perceptible change: their actual flicks/drags were landing on
-// levels the first version couldn't reach at all). Levels beyond
-// values.size() are left at their compiled-in default. No-op if
-// `values` is empty. Values <= 0 are skipped (leaving that level's
-// compiled-in default) rather than passed to usleep(), which treats 0
-// as "no delay at all" -- a real level, but one already reachable via
-// the fastest busy-loop levels, not something a caller silently
-// passing a bad/placeholder value should land on by accident.
+// レベル1..values.size()を`values`で上書きする。レベル1から順に
+// 割り当てる(インデックス0は不活性なプレースホルダで一切触れない)。
+// 対象となった各レベルは、元々何であったかに関わらず、無条件に
+// usleep駆動(busyLoop=false、microseconds=value)へ強制変換される
+// ――これはビジーループの範囲(5以降)にも及び、既定でusleepである
+// 4段階だけではない――理由はapplyScrollSpeedOverride()自身の.cpp側
+// コメント参照(実際のユーザー自身の「-u 90000 70000 50000 30000
+// 10000」、5つの値が、より狭い「レベル1..4のみ」版が知覚できる
+// 変化を生まなかった後にこう広げられた理由だった: 実際のフリック/
+// ドラッグが、最初の版では全く手が届かなかったレベルに着地して
+// いた)。values.size()を超えるレベルはコンパイル時の既定値のまま
+// 残る。`values`が空なら何もしない。0以下の値はスキップされる
+// (そのレベルのコンパイル時既定値を残す)――usleep()に渡さない
+// のは、0を「一切遅延無し」として扱うため。それ自体は実在する
+// レベルだが、既に最速のビジーループ段階経由で到達可能なもので
+// あり、呼び出し側が不正な/プレースホルダの値を静かに渡した結果
+// 事故で着地すべきものではないため。
 void applyScrollSpeedOverride(const std::vector<long> &values);
 
-// Maps the summed pixel distance the drag moved in the short window
-// just before release to a discrete level: 0 (too small to count as a
-// flick -- a plain release with no residual motion just stops, same
-// as resting a finger on a real trackpad) through
-// kScrollSpeedLevels.size()-1 (fastest). Thresholds scale with
-// cellHeightPixels so the same physical flick feels similarly fast
-// regardless of font size. Direction is the caller's job (sign of the
-// same summed distance) -- this function only looks at magnitude.
+// ドラッグが離される直前の短い時間窓で移動したピクセル距離の合計を、
+// 離散的なレベルへマッピングする: 0(フリックと数えるには小さすぎる
+// ――残留する動きの無い普通のリリースはそのまま止まる、実際の
+// トラックパッドに指を置いたままにするのと同じ)から
+// kScrollSpeedLevels.size()-1(最速)まで。閾値はcellHeightPixelsに
+// 比例してスケールするため、同じ物理的なフリックはフォントサイズに
+// 関わらず同じように速く感じられる。方向は呼び出し側の仕事(同じ
+// 合計距離の符号)――この関数は大きさだけを見る。
 //
-// When applyReleaseDistanceOverride() below has set explicit
-// thresholds, those are used verbatim instead of this built-in
-// doubling/divisor/bias formula -- see its own comment.
+// 下のapplyReleaseDistanceOverride()が明示的な閾値を設定している
+// 場合、この組み込みの倍化/除数/バイアスの式の代わりに、そちらが
+// そのまま使われる――そちら自身のコメント参照。
 int levelForReleaseDistance(int pixels, int cellHeightPixels);
 
-// The DISTANCE-side counterpart to applyScrollSpeedOverride() above --
-// deliberately a separate function/CLI flag (2026-08-21, "-i", a
-// direct user clarification after "-u"'s own per-level SPEED tuning
-// was mistaken for covering this too: "-uオプションはマウスホイールの
+// 上のapplyScrollSpeedOverride()の「距離」側の対応物――意図的に
+// 別の関数/CLIフラグにしてある(2026-08-21、「-i」、「-u」自身の
+// レベルごとの「速度」調整がこちらもカバーしていると誤解された後の、
+// ユーザーからの直接の明確化: 「-uオプションはマウスホイールの
 // 回転角度とスクロール速度との関係。それは解決済みだが、今イチなのは
 // マウスドラッグを解除したときのカーソル移動幅とスクロール速度との
-// 関係"). "-u" only tunes how FAST each already-selected level moves;
-// this tunes WHICH level a given release distance selects in the
-// first place -- levelForReleaseDistance()'s own built-in curve
-// (doubling for levels 1-4, then dividing by kUpperTierGrowthDivisor
-// for 5+, plus a flat +kReleaseLevelBias shift, all hardcoded
-// constants tuned once against exactly one real machine/hand) is
-// exactly the "cursor movement width <-> resulting speed" mapping the
-// report says doesn't match, losing the drag's own felt "勢い"
-// (momentum) at release.
+// 関係」)。「-u」は、既に選択された各レベルが「どれだけ速く」動く
+// かだけを調整する。こちらは、与えられたリリース距離がそもそも
+// 「どのレベル」を選ぶかを調整する――levelForReleaseDistance()自身の
+// 組み込みの曲線(レベル1〜4は倍化、5以降はkUpperTierGrowthDivisorで
+// 除算、さらに一律+kReleaseLevelBiasのシフト、全て実際のマシン/手
+// 1つに対して一度だけ調整されたハードコードの定数)は、まさに報告が
+// 「合っていない」と指摘した「カーソル移動幅⇔結果の速度」のマッピング
+// であり、離した時のドラッグ自身の感じられる「勢い」(momentum)を
+// 失わせている。
 //
-// `thresholds[k-1]` is the MINIMUM pixel magnitude a release needs to
-// reach level k (1-indexed, same convention as kScrollSpeedLevels/
-// applyScrollSpeedOverride() -- index 0 is never a threshold, level 0
-// always means "below thresholds[0], not a flick at all"). Magnitude
-// below thresholds[0] returns level 0; at or above the last given
-// threshold returns however many thresholds were reached, capped at
-// kScrollSpeedLevels.size()-1 same as the built-in formula. When set
-// (non-empty), REPLACES levelForReleaseDistance()'s own formula
-// entirely (no separate kReleaseLevelBias shift on top -- the given
-// thresholds already encode wherever the caller wants each level to
-// land, stacking a second adjustment on top would just make the
-// values harder to reason about). No-op (falls back to the built-in
-// formula) if `thresholds` is empty. Unlike applyScrollSpeedOverride()'s
-// own per-value skip-if-<=0, every value here is used as given --
-// there's no sub-microsecond-granularity concern to work around on the
-// distance side, so a caller-provided 0 or negative threshold is
-// taken at face value (each threshold must be strictly increasing to
-// behave sensibly, but that's the caller's own responsibility, same as
-// choosing sensible values for "-u").
+// `thresholds[k-1]`は、リリースがレベルkに到達するために必要な
+// 「最小」ピクセル量(1始まり、kScrollSpeedLevels/
+// applyScrollSpeedOverride()と同じ慣習――インデックス0が閾値になる
+// ことは無く、レベル0は常に「thresholds[0]未満、そもそもフリックで
+// はない」を意味する)。大きさがthresholds[0]未満ならレベル0を返す。
+// 最後に与えられた閾値以上なら、到達した閾値の数を返す(組み込みの
+// 式と同様kScrollSpeedLevels.size()-1で頭打ち)。設定されている場合
+// (空でない場合)、levelForReleaseDistance()自身の式を完全に
+// 「置き換える」(その上にさらにkReleaseLevelBiasのシフトを重ねる
+// ことはしない――与えられた閾値には、呼び出し側が各レベルをどこへ
+// 着地させたいかが既にエンコードされており、その上に2つ目の調整を
+// 重ねるとかえって値の意味が追いにくくなるだけ)。`thresholds`が
+// 空なら何もしない(組み込みの式へフォールバックする)。
+// applyScrollSpeedOverride()自身の「値ごとに<=0ならスキップ」とは
+// 異なり、ここでは全ての値が与えられた通りに使われる――距離側には
+// サブマイクロ秒粒度の懸念を回避する必要が無いため、呼び出し側が
+// 与えた0や負の閾値もそのまま額面通り受け取る(意味のある挙動には
+// 各閾値が厳密に増加している必要があるが、それは「-u」に妥当な値を
+// 選ぶのと同様、呼び出し側自身の責任である)。
 void applyReleaseDistanceOverride(const std::vector<long> &thresholds);
 
-// Scales a per-PIXEL ScrollStep (see kScrollSpeedLevels, calibrated
-// for GraphicalDisplay's dot-by-dot renderScrolled()) up to a per-ROW
-// delay for the real-terminal coast (app/main.cpp's runTerminalCoast/
-// runCoastLoop), which has no sub-row addressing at all -- crossing
-// one row there is ONE step, not cellHeightPixels of them, so its
-// delay needs to be roughly dotsPerRow times longer to produce the
-// same rows/second rate the pixel table produces in GUI mode.
-// dotsPerRow defaults to 16, the "characters are 16 dots tall"
-// convention this whole project has used since the original FM-TOWNS
-// "cb" (see CLAUDE.md) -- real font metrics aren't available in a
-// real terminal (no framebuffer access at all, see CLAUDE.md's
-// 2026-07-30 note on why GraphicalDisplay exists), so this is
-// necessarily an approximation. Found and added after the user
-// reported the terminal coast's minimum speed felt far too fast
-// compared to the GUI mouse-drag's own minimum speed, which they
-// called "just right" -- unscaled, level 1's 90ms delay was being
-// spent on a whole row instead of a single dot, i.e. roughly 16x too
-// fast.
+// 1「ピクセル」あたりのScrollStep(kScrollSpeedLevels参照、
+// GraphicalDisplayのドット単位のrenderScrolled()向けに調整済み)を、
+// サブ行アドレス指定が全く無い実端末のコースト(app/main.cppの
+// runTerminalCoast/runCoastLoop)向けの1「行」あたりの遅延へ
+// スケールアップする――そちらでは1行をまたぐことがcellHeightPixels
+// 個のステップではなく「1つの」ステップになるため、GUIモードでの
+// ピクセルテーブルと同じ「1秒あたりの行数」レートを出すには、その
+// 遅延をおおよそdotsPerRow倍長くする必要がある。dotsPerRowの既定は
+// 16、このプロジェクト全体がオリジナルのFM-TOWNS「cb」以来使って
+// いる「文字は16ドットの高さ」という慣習(CLAUDE.md参照)――実際の
+// 端末では本物のフォントメトリクスは入手できない(フレームバッファ
+// アクセスが一切無い、GraphicalDisplayが存在する理由についての
+// CLAUDE.mdの2026-07-30の記述参照)ため、これは必然的に近似である。
+// ユーザーが、端末のコーストの最低速度が、彼らが「ちょうどいい」と
+// 呼んだGUIのマウスドラッグ自身の最低速度と比べてはるかに速く
+// 感じられると報告したのを受けて発見・追加された――スケール前は、
+// レベル1の90msの遅延が、1ドットではなく行全体に費やされて
+// いた。つまりおよそ16倍速すぎた。
 ScrollStep scaledForRow(const ScrollStep &pixelStep, int dotsPerRow = 16);
 
 }  // namespace fm
