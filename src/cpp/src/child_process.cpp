@@ -43,6 +43,12 @@ void redirectStderr(const std::string &path) {
 void prepareChild(int outFd, int inFd, const ChildProcess::Options &options) {
   resetSignalsToDefault();
   if (options.forceCLocale) setenv("LC_ALL", "C", 1);
+  // ChildProcessOptions::forceUtf8CTypeForListing自身のコメント参照。
+  if (options.forceUtf8CTypeForListing) {
+    unsetenv("LC_ALL");
+    setenv("LC_TIME", "C", 1);
+    setenv("LC_CTYPE", "en_US.UTF-8", 1);
+  }
   if (options.stderrLogPath) redirectStderr(*options.stderrLogPath);
   if (inFd >= 0) dup2(inFd, 0);
   dup2(outFd, 1);

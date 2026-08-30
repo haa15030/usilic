@@ -158,6 +158,17 @@ bool ArchiveMode::loadArchive(const std::string &path) {
   auto reader = readerFor(kind);
   if (!reader) return false;
 
+  // 2026-08-30、直接のユーザー報告(Finderからの直接ダブルクリック
+  // 起動限定で再現): ChildProcessOptions::forceUtf8CTypeForListing
+  // 自身のコメント参照――tar(1)/unzip(1)等はLC_CTYPEで非ASCIIバイトを
+  // 表示可能扱いするかどうかを決めており、シェル環境を引き継がない
+  // Finder起動では暗黙のCロケールへ落ちて日本語ファイル名が8進
+  // エスケープされてしまう。パイプ形式(.tgz等)ではChildProcess::
+  // runPipeline()の第2段階(実際にtar tvf -を実行する側、prepareChild()
+  // 経由)だけがこれを必要とする――第1段階(gzip -dc等の展開)は
+  // ファイル名を一切見ないため無関係。
+  ChildProcess::Options options;
+  options.forceUtf8CTypeForListing = true;
   ChildProcess::Result result;
   if (command->pipedFromArgv) {
     // パイプ形式(例えば.tgz: gzip -dc <file> | tar tvf -)は、
@@ -165,11 +176,11 @@ bool ArchiveMode::loadArchive(const std::string &path) {
     // 読む。
     std::vector<std::string> firstStage = *command->pipedFromArgv;
     firstStage.push_back(path);
-    result = ChildProcess::runPipeline(firstStage, command->argv);
+    result = ChildProcess::runPipeline(firstStage, command->argv, options);
   } else {
     std::vector<std::string> argv = command->argv;
     argv.push_back(path);
-    result = ChildProcess::run(argv);
+    result = ChildProcess::run(argv, options);
   }
   if (!result.ok) return false;
 

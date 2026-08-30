@@ -68,6 +68,24 @@ struct ChildProcessOptions {
   // (get_col())ため、ロケール化された月名だと、それ以降の全ての
   // カラム位置が狂ってしまう。
   bool forceCLocale = false;
+  // 2026-08-30、直接のユーザー報告(Finderからの直接ダブルクリック
+  // 起動限定で再現: "utf8/¥345¥233¥275..."のような8進エスケープ
+  // された生バイト列がARCの一覧に出る): old/src/fork.cのfork_arc()
+  // からの移植――tar(1)/unzip(1)は、非ASCIIバイトを表示可能な文字
+  // として扱うかどうかをLC_CTYPEで決める。シェル経由の起動は
+  // LANG/LC_ALL等をシェル自身の環境から引き継ぐが、Finder/Launch
+  // Servicesからの直接起動は最小限の環境(LANG/LC_ALL無し)しか
+  // 渡さないため、子プロセスが暗黙のCロケールへ落ち、ファイル名中の
+  // 非ASCIIバイトを全て8進エスケープしてしまっていた。true の場合、
+  // 子プロセス内でLC_ALLを明示的にunsetenv()した上でLC_CTYPEだけを
+  // UTF-8ロケールへ、LC_TIMEは"C"へ設定する――LC_ALLを何であれ
+  // 設定すると、POSIX的に個々のLC_*カテゴリ設定を無条件に上書きして
+  // しまうため、まず確実にunsetする必要がある(legacy自身のコメント
+  // 参照)。LC_TIMEを"C"に固定するのは、アーカイブのTOC(tar tvf/
+  // unzip -l等)がASCII固定幅の日付欄をバイト単位でパースされる前提
+  // だからで、forceCLocale(ls向け、こちらは全カテゴリをCへ)とは
+  // 別の、より狭い強制。
+  bool forceUtf8CTypeForListing = false;
   // 設定されていれば、子プロセスの標準出力から何かが読まれる前に、
   // それが子プロセスの標準入力へ書き込まれる(小さな専用のwriter
   // プロセス経由――そうすることで、大きな入力が満杯の出力パイプに
