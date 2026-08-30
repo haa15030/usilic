@@ -392,7 +392,18 @@ struct GraphicalDisplay::Impl {
   // されていない参照サイズに合わせるよう求めた――暫定として扱わ
   // れており(ユーザー自身の言葉)、より多くの実運用を待つ、最終的
   // な計測ではない。
-  static constexpr int kScrollbarWidth = 17;
+  // 2026-08-30、直接のユーザー依頼("スクロールバーのつまみ表示幅を
+  // モードラインのハイライト高さにあわせられない？フォントサイズ
+  // 変更に追随させたいので"): 上のコメントに書かれている通り、17は
+  // 元々固定の実測値(本物のTerminal.appの17pt幅)として扱われて
+  // いたが、ユーザー自身の言葉で「暫定」だったもの。cellHeight
+  // (モードライン自身が占める1行分のハイライトの高さでもある)へ
+  // 連動する値に変更し、create()/adjustFontSize()/matchWindowSize()
+  // (cellHeightを設定するこの3箇所全て)でその都度更新する――もはや
+  // コンパイル時定数ではないためstatic constexprではなくインスタンス
+  // フィールドにした。17という初期値そのものに意味は無くなったが、
+  // create()が最初のcellHeightで即座に上書きするので実質無害である。
+  int scrollbarWidth = 17;
   // updateScrollPosition()(main.cppの全てのrunGuiPhase()の反復で
   // 呼ばれる)によってキャッシュされ、flush()が、削除された装飾的
   // なプレースホルダーの代わりに、drawScrollbar()経由で本物の、
@@ -719,7 +730,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // 端末エミュレータも既に持っている通常のリサイズの挙動である。
   SDL_Window *window = SDL_CreateWindow(
       "usilic", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-      cellWidth * columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth, cellHeight * rows + Impl::kMarginY * 2,
+      cellWidth * columns + Impl::kMarginX * 2 + cellHeight, cellHeight * rows + Impl::kMarginY * 2,
       SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
   if (!window) {
     if (fallbackFont) TTF_CloseFont(fallbackFont);
@@ -732,7 +743,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // (バイト数、位置、等)が完全に判読不能な重なりへ引きずり込まれる
   // のを防ぐのにちょうど十分な程度であり、それでもどんな現実的な
   // 使用よりも余裕を持って小さい。セル単位で10列x4行。
-  SDL_SetWindowMinimumSize(window, cellWidth * 10 + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
+  SDL_SetWindowMinimumSize(window, cellWidth * 10 + Impl::kMarginX * 2 + cellHeight,
                             cellHeight * 4 + Impl::kMarginY * 2);
   SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
   if (!renderer) {
@@ -771,6 +782,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   display->impl_->fallbackFont = fallbackFont;
   display->impl_->cellWidth = cellWidth;
   display->impl_->cellHeight = cellHeight;
+  display->impl_->scrollbarWidth = cellHeight;  // Impl::scrollbarWidth自身のコメント参照
   display->impl_->baseFontPointSize = fontPointSize;
   display->impl_->currentFontPointSize = fontPointSize;
   display->impl_->baseFontMetricCellWidth = cellWidth;
@@ -1349,7 +1361,7 @@ void GraphicalDisplay::setSize(int rows, int columns) {
   impl_->columns = columns;
   impl_->grid.assign(static_cast<std::size_t>(rows) * columns, Cell{});
   if (impl_->window)
-    SDL_SetWindowSize(impl_->window, impl_->cellWidth * columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
+    SDL_SetWindowSize(impl_->window, impl_->cellWidth * columns + Impl::kMarginX * 2 + impl_->scrollbarWidth,
                        impl_->cellHeight * rows + Impl::kMarginY * 2);
 }
 
@@ -1361,7 +1373,7 @@ void GraphicalDisplay::setSize(int rows, int columns) {
 // cellWidth/cellHeightやフォントには意図的に一切触れない。
 void GraphicalDisplay::handleWindowResized(int newPixelWidth, int newPixelHeight) {
   if (!impl_->window || impl_->cellWidth <= 0 || impl_->cellHeight <= 0) return;
-  int contentWidth = newPixelWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth;
+  int contentWidth = newPixelWidth - Impl::kMarginX * 2 - impl_->scrollbarWidth;
   int contentHeight = newPixelHeight - Impl::kMarginY * 2;
   int newColumns = std::max(1, contentWidth / impl_->cellWidth);
   int newRows = std::max(1, contentHeight / impl_->cellHeight);
@@ -1419,6 +1431,7 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
   impl_->currentFontPointSize = newPointSize;
   impl_->cellWidth = cellWidth;
   impl_->cellHeight = cellHeight;
+  impl_->scrollbarWidth = cellHeight;  // Impl::scrollbarWidth自身のコメント参照
   // フォントオブジェクトは(上のTTF_SetFontSize()により)たった今
   // その場でリサイズされた――キャッシュされているテクスチャは全て
   // 今やそれに対して「間違った」ピクセルサイズになっている。
@@ -1431,9 +1444,9 @@ void GraphicalDisplay::adjustFontSize(int deltaPoints) {
   // rows/columnsからちょうど導かれているため、handleWindowResized()
   // は「同じ」rows/columnsを再計算し、それ自身の「何もすることが
   // 無い」早期returnを取る――フィードバックループにはならない。
-  SDL_SetWindowSize(impl_->window, cellWidth * impl_->columns + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
+  SDL_SetWindowSize(impl_->window, cellWidth * impl_->columns + Impl::kMarginX * 2 + impl_->scrollbarWidth,
                      cellHeight * impl_->rows + Impl::kMarginY * 2);
-  SDL_SetWindowMinimumSize(impl_->window, cellWidth * 10 + Impl::kMarginX * 2 + Impl::kScrollbarWidth,
+  SDL_SetWindowMinimumSize(impl_->window, cellWidth * 10 + Impl::kMarginX * 2 + impl_->scrollbarWidth,
                             cellHeight * 4 + Impl::kMarginY * 2);
   impl_->needsRedraw = true;
 }
@@ -2016,12 +2029,19 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   // ではなく、わずか3px「高く」ウィンドウが着地する)。同点は切り上げる
   // (切り捨てる前に`+denom/2`)、ここではどちらの方向へずれても等しく
   // 許容できる数ピクセルの食い違いに過ぎないので問題ない。
-  int cellWidth = (contentWidth - Impl::kMarginX * 2 - Impl::kScrollbarWidth + impl_->columns / 2) / impl_->columns;
+  // cellHeightをcellWidthより先に計算するよう並べ替えてある
+  // (2026-08-30、直接のユーザー依頼でscrollbarWidthがImpl::
+  // kScrollbarWidthという固定定数からcellHeight連動の値になった
+  // ため――Impl::scrollbarWidth自身のコメント参照): 以前は逆順で、
+  // cellWidthの式が固定のkScrollbarWidthを差し引くだけで済んでいた
+  // が、今はその「予約されたスクロールバーの帯の幅」自体がこの行で
+  // 求めるcellHeightから決まるため、先に求めておく必要がある。
   int cellHeight = (contentHeight - Impl::kMarginY * 2 + impl_->rows / 2) / impl_->rows;
+  int cellWidth = (contentWidth - Impl::kMarginX * 2 - cellHeight + impl_->columns / 2) / impl_->columns;
   // 上のcellWidth自身の最も近い整数への丸め(cellHeightの同一の丸め
   // についての数行下の大きなコメント参照)は、グリッド自身の右端
   // (kMarginX + columns*cellWidth)がscrollbarStripLeft()(contentWidth
-  // - kScrollbarWidth、2026-08-24以降、ウィンドウの実際の右端に
+  // - scrollbarWidth、2026-08-24以降、ウィンドウの実際の右端に
   // ぴったり付く――それ自身のコメント参照)を超えるほど「上」に丸め
   // てしまうことがある。scrollbarStripLeft()自身の修正(docs/
   // HISTORY.md 2026-08-24のmpi報告、項目429)は、それが起きた時、
@@ -2041,7 +2061,7 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   // (単なる背景の隙間になる)ことがあり得る――scrollbarStripLeft()
   // 自身が既に選んだのと同じ「文字化けより隙間」というトレードオフ
   // である。
-  while (cellWidth > 1 && Impl::kMarginX + impl_->columns * cellWidth + Impl::kScrollbarWidth > contentWidth) {
+  while (cellWidth > 1 && Impl::kMarginX + impl_->columns * cellWidth + cellHeight > contentWidth) {
     cellWidth--;
   }
   if (cellWidth <= 0 || cellHeight <= 0) return;
@@ -2156,6 +2176,7 @@ void GraphicalDisplay::matchWindowSize(int outerWidth, int outerHeight) {
   }
   impl_->cellWidth = cellWidth;
   impl_->cellHeight = cellHeight;
+  impl_->scrollbarWidth = cellHeight;  // Impl::scrollbarWidth自身のコメント参照
   int width = contentWidth;
   int height = contentHeight;
   // flush()が既に使っているのと同じオプトインのUSILICGUIDEBUGファイル
@@ -2457,7 +2478,7 @@ int GraphicalDisplay::scrollbarStripLeft() const {
   int windowWidth = 0, windowHeight = 0;
   SDL_GetWindowSize(impl_->window, &windowWidth, &windowHeight);
   (void)windowHeight;
-  return windowWidth - Impl::kScrollbarWidth;
+  return windowWidth - impl_->scrollbarWidth;
 }
 
 void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int contentRows) {
@@ -2485,7 +2506,7 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   // scrollbarStripLeft()自身のコメント参照: ウィンドウの実際の右端に
   // ぴったり付ける、末尾の隙間は無い(2026-08-24)。
   int thumbX = scrollbarStripLeft() + kThumbInset;
-  int thumbWidth = std::max(Impl::kScrollbarWidth - kThumbInset * 2, 2);
+  int thumbWidth = std::max(impl_->scrollbarWidth - kThumbInset * 2, 2);
   int thumbTop = Impl::kMarginY + thumbY;
 
   // プレーンな長方形――「最終」、ユーザー自身の明示的な2026-08-07の
