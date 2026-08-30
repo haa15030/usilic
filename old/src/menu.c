@@ -66,7 +66,7 @@ static void m_num(NUM *np, int m, HEAP *hp, FILE **pinp, PN *pnp, char full[])
     pnp->row = 0;
   }
   if (f_pipe) {
-    hp->bp->nrow = pnp->nrow; /* ==> (2) */
+    hp->bp->nrow = pnp->nrow; /* ==> (2)参照 */
     pnp->row = 0;
   }
   if (np->Mb == T_split || np->Mb == T_buff) {
@@ -128,7 +128,7 @@ static void m_row(int m, HEAP *hp, RV *rvp, PN *pnp, NUM *np, FILE **pinp)
   move_row(m, rvp, pnp, (hp->bp == &hp->base[4]) ? pinp : &pin0, np->Mb);
   if (hp->bp->nrow < pnp->nrow) hp->bp->nrow = pnp->nrow; /* ==> (2) */
   disp_window(rvp->ps, rvp->pp, np->M, NULL, NULL, NULL, &i);
-  print_intr(NULL, NULL); /* Not enough buffer && T_pipe? && M_tail */ 
+  print_intr(NULL, NULL); /* バッファ不足 && T_pipe? && M_tail */
 }
 
 static int m_page(int m, HEAP *hp, RV *rvp, PN *pnp, NUM *np, FILE **pinp)
@@ -153,7 +153,7 @@ static int m_page(int m, HEAP *hp, RV *rvp, PN *pnp, NUM *np, FILE **pinp)
     }
   }
   disp_window(rvp->ps, rvp->pp, np->M, NULL, NULL, NULL, &i);
-  print_intr(NULL, NULL); /* Not enough buffer && T_pipe? && M_tail */ 
+  print_intr(NULL, NULL); /* バッファ不足 && T_pipe? && M_tail */
   return ((i = pnp->nrow - (vt_row(0) - 1)) > 0) ? i : 0;
 }
 
@@ -219,7 +219,7 @@ static int m_exit(int m, HEAP *hp, LINE *lp, ARRAY *ap, int *f_Mp, int f_comm)
        && !is_name(ap->name, M_du) && !is_name(ap->name, T_pipe2)) 
       || m == M_log || m == M_error) ;
   else if (is_inter(NULL, -1, 0))
-    return echo_mess(S_errf); /* for su etc. */
+    return echo_mess(S_errf); /* su等のため */
   if (f_comm == 2 || m == M_exit) f_comm = 1;
   hp->sp = save_stack(hp->sp, lp, *f_Mp, ap->name, hp->bp, !f_comm);
   strcpy(lp->prev, &ap->name[i]);
@@ -281,11 +281,11 @@ static int m_cut(int m, ARRAY *ap, HEAP *hp, NUM *np, PN *pnp, FILE **pinp, LINE
       *pinp = seek_intr(*pinp, &pnp->nrow);
       if (*pinp) return echo_mess(S_errv);
     }
-    alloc_winch(hp->bp, 1); /* set bp->size for init_cut() */
+    alloc_winch(hp->bp, 1); /* init_cut()のためbp->sizeを設定する */
   }
-  hp->sp = save_stack(hp->sp, lp, np->M, ap->name, hp->bp, 0); /* ==> (8) */ 
+  hp->sp = save_stack(hp->sp, lp, np->M, ap->name, hp->bp, 0); /* ==> (8)参照 */
   if ((i = m == T_fcut) || m == T_fcut2) m = (i) ? M_cut2 : M_cut;
-  else clear_cut(&lp->cut); /* ==> (7) */
+  else clear_cut(&lp->cut); /* ==> (7)参照 */
   if (hp->ll.p.split) hp->ll.p.split = free_list(hp->ll.p.split);
   strcpy(lp->prev, &ap->name[*ap->name == ' ']);
   strcpy(ap->name, s_P(P_mode)[M_cut]);
@@ -415,7 +415,7 @@ static int m_edit(int line, char name[], char arg[], HEAP *hp, NUM *np)
 
   if ((m = do_edit(line, name, arg, np->M))) return m;
   np->Mb = 0;
-  free_bp(&hp->base[1]); /* ==> (3) */
+  free_bp(&hp->base[1]); /* ==> (3)参照 */
   if ((hp->bp && hp->bp < &hp->base[0]) || hp->bp > &hp->base[N_base-1]) {
     free_bp(hp->bp);
     free(hp->bp);
@@ -460,7 +460,7 @@ static int m_shell(int m, HEAP *hp, LINE *lp, NUM *np, ARRAY *ap, PN *pnp, FILE 
 	hp->sp = load_stack(hp->sp, lp, &np->M, ap->name, &hp->bp, hp->base);
     } else {
       if (hp->bp != &hp->base[4]) 
-	clear_stack(hp, lp, ap->name, &np->M, 'P'); /* clear only "(stdin)" */
+	clear_stack(hp, lp, ap->name, &np->M, 'P'); /* "(stdin)"だけをクリアする */
       if (np->Mb != M_du) fp->comm = 0;
     }
     *ap->mess = '\0';
@@ -502,7 +502,7 @@ static int m_shell(int m, HEAP *hp, LINE *lp, NUM *np, ARRAY *ap, PN *pnp, FILE 
       np->Mb = 0;
       break;
     case T_pipe2:
-      if (hp->bp == &hp->base[4]) /* ^O^M or MAN */
+      if (hp->bp == &hp->base[4]) /* ^O^MまたはMAN */
 	hp->sp = load_stack(hp->sp, lp, &np->M, ap->name, &hp->bp, hp->base);
       hp->sp = save_stack(hp->sp, lp, np->M, ap->name, hp->bp, 0);
       sprintf(lp->prev, "%s", &ap->name[*ap->name == ' ']);
@@ -636,7 +636,7 @@ static int m_dest(int m, LINE *lp, RV *rvp, NUM *np, HEAP *hp, ARRAY *ap, FLAG *
 	  }
 	} else if (np->Mb == T_arc || np->Mb == T_arc3) {
 	  if (!getuid()) {
-	    if (stat(tmp, &st) >= 0 && !S_ISDIR(st.st_mode))/* Not directory */
+	    if (stat(tmp, &st) >= 0 && !S_ISDIR(st.st_mode))/* ディレクトリではない */
 	      j = 0;
 	  } else j = is_write(tmp, 1);
 	}
@@ -668,7 +668,7 @@ static int m_dest(int m, LINE *lp, RV *rvp, NUM *np, HEAP *hp, ARRAY *ap, FLAG *
       if (!(hp->w = command(np->Mb, ap->mess, hp->bp, lp, np->klen
 			    , ap->du, &fd))) {
 	tp = fdopen(fd, "r");
-	/* (4) RM at EGREP */
+	/* (4) EGREPでのRM */
 	if ((m = do_rm(&hp->ll, &hp->ss, lp->prev, tp)) == -M_egrep
 	    || m == -T_cmd2)
 	  hp->sp = load_stack(hp->sp, lp, &np->M
@@ -710,7 +710,7 @@ static int m_cr(int m, NUM *np, HEAP *hp, LINE *lp, ARRAY *ap, RV *rvp, FLAG *fp
   int i, j, size;
   u_char *cp;
 
-  if (!*pinp && m == M_fp) { /* ^O^M after ^O^M ^J^C */
+  if (!*pinp && m == M_fp) { /* ^O^M ^J^Cの後の^O^M */
     echo_mess(S_errv);
     return m;
   } else if (m == M_fcut || m == M_fcut2)
@@ -838,14 +838,15 @@ static int m_cr(int m, NUM *np, HEAP *hp, LINE *lp, ARRAY *ap, RV *rvp, FLAG *fp
       break;
     }
   case M_cut: case M_cut2:
-    /* 2026-08-05: M_cut2 (^Jc, FIXED string) was unconditionally
-       sharing M_cut's (^J^C, REGEX) own hegrep ring here, unlike the
-       M_fgrep/T_hfgrep/T_hegrep block just above (line ~831) which
-       DOES branch on fixed-vs-regex for exactly this same choice.
-       A user comparing CUT's fixed/regex split against the already-
-       consistent FGREP/EGREP split found this the confusing odd one
-       out. m still holds its own switch-entry value here (M_cut or
-       M_cut2), not yet overwritten by anything below. */
+    /* 2026-08-05: M_cut2(^Jc、FIXED文字列)は、まさにこの直上の
+       (~831行目の)M_fgrep/T_hfgrep/T_hegrepブロックが、この全く
+       同じ選択についてfixed-vs-regexで実際に分岐しているのとは
+       異なり、ここで無条件にM_cut(^J^C、REGEX)自身のhegrepリング
+       を共有していた。CUTのfixed/regexの分け方を、既に一貫している
+       FGREP/EGREPの分け方と比較していたユーザーが、これを紛らわしい
+       例外として見つけた。mはここではまだ自分自身のswitch-entryの
+       値(M_cutまたはM_cut2)を保持しており、下のどこにもまだ上書き
+       されていない。 */
     if (m == M_cut2)
       hp->ss.p.hfgrep = save_history(hp->ss.p.hfgrep, rvp->str, 1);
     else
@@ -855,13 +856,13 @@ static int m_cr(int m, NUM *np, HEAP *hp, LINE *lp, ARRAY *ap, RV *rvp, FLAG *fp
       if (is_fm())
 	hp->ss.p.grep = save_str(hp->ss.p.grep, rvp->str, pnp);
     }
-    i = *lp->cut.name; /* (7) */
-    hp->sp = load_stack(hp->sp, lp	/* load lp->cut */
+    i = *lp->cut.name; /* (7)参照 */
+    hp->sp = load_stack(hp->sp, lp	/* lp->cutを読み込む */
 			, &np->M, ap->name, &hp->bp, hp->base);
-    j = *lp->cut.name; /* (8) */
+    j = *lp->cut.name; /* (8)参照 */
     hp->sp = save_stack(hp->sp, lp, np->M, ap->name, hp->bp, 1);
     strcpy(lp->cut.str, rvp->str);
-    if (!i && j) *lp->cut.name = '\0'; /* !i : ^J^C, j : ^J^B */
+    if (!i && j) *lp->cut.name = '\0'; /* !i : ^J^C、j : ^J^B */
     np->M = T_cut;
     return 0;
   case T_grep:
@@ -1136,7 +1137,7 @@ static int m_bl(int m, NUM *np, ARRAY *ap, LINE *lp, HEAP *hp, FLAG *fp, FILE **
 	if (fp->winch) {
 	  fp->winch = 0;
 	  continue;
-	} else if (!hp->bp->pp) ; /* (3) */
+	} else if (!hp->bp->pp) ; /* (3)参照 */
 	else if (st.st_ctime == st0.st_ctime && st.st_ino == st0.st_ino)
 	  continue;
 	np->Mb = 0;
@@ -1244,8 +1245,8 @@ static int get_m(HEAP *hp, ARRAY *ap, FLAG *fp, NUM *np, LINE *lp, RV *rvp, FILE
 	continue;
       case M_prev: case M_next: /* k, j */
       case M_up: case M_dn: /* ^P, ^N */
-      case M_kprev: case M_knext: /* left-arrow, right-arrow */
-      case M_kup: case M_kdn: /* up-arrow, down-arrow */
+      case M_kprev: case M_knext: /* 左矢印キー、右矢印キー */
+      case M_kup: case M_kdn: /* 上矢印キー、下矢印キー */
 	m_row(m, hp, rvp, pnp, np, pinp);
 	break;
       case M_forw2: case M_back2:
@@ -1324,11 +1325,11 @@ static int get_m(HEAP *hp, ARRAY *ap, FLAG *fp, NUM *np, LINE *lp, RV *rvp, FILE
 	  i = 0;
 	  if (np->M == T_tar || np->M == T_lha || np->M == T_unzip
 	      || np->M == T_rpm || np->M == T_deb)
-	    hp->bp->pp = alloc_head(NULL, -1, 0, NULL); /* (5) */
+	    hp->bp->pp = alloc_head(NULL, -1, 0, NULL); /* (5)参照 */
  	  else if (!init_col(np->M, NULL, 0)) { 
 	    free_pp(hp->bp->pp);
 	    hp->bp->pp = alloc_pp(hp->bp->buff, -1
-				  , hp->bp->size, NULL, ap->name); /* (6) */
+				  , hp->bp->size, NULL, ap->name); /* (6)参照 */
 	  } else {
 	    i = hp->bp == &hp->base[4];
 	    pnp->nrow = alloc_winch(hp->bp, i);
@@ -1530,7 +1531,7 @@ static int init_menu(HEAP *hp, ARRAY *ap, NUM *np, LINE *lp, FILE **pinp)
     if (j) np->M = T_dir;
     else {
       hp->sp = save_stack_dir(hp->sp, lp->dir, lp->old, &hp->base[1]);
-      load_list(hp->ll.p.dir, lp->dir, &pn);/*load pn if lp->dir exist */
+      load_list(hp->ll.p.dir, lp->dir, &pn);/* lp->dirが存在すればpnを読み込む */
       hp->ss.p.dir = save_str(hp->ss.p.dir, lp->dir, &pn);
       hp->ss.p.hdir = save_history(hp->ss.p.hdir, lp->dir, 1);
       hp->ll.p.dir = save_list(hp->ll.p.dir, lp->dir, &pn);
@@ -1784,14 +1785,14 @@ void menu(char pathname[], FILE *pin)/*usilic*/
    *	6: M_cmd, T_cmd, M_hist, T_hfile, T_hdir, T_hman, T_hlocate
    *	7: M_help
    *	8: M_list, T_list
-   *	9: Header of T_tar, T_lha, T_unzip, T_rpm, T_deb
-   *   10: M_cut	
+   *	9: T_tar, T_lha, T_unzip, T_rpm, T_debのヘッダー
+   *   10: M_cut
    *   11: T_hfgrep, T_hegrep
    *
    *  T_pipe?
    *	 : " "
    *	2: " (stdin)"
-   *	3: pipe or regular-file
+   *	3: pipeまたは通常のファイル
    */
   int i;
   RV rv;
@@ -1826,7 +1827,7 @@ void menu(char pathname[], FILE *pin)/*usilic*/
     n.Mb = 0;
   }
   n.clen = 0;
-  n.error = load_intr(); /* for erre */
+  n.error = load_intr(); /* erreのため */
   do {
     chp = load_chp(l.arg);
     n.nlen = 1;
@@ -1839,7 +1840,7 @@ void menu(char pathname[], FILE *pin)/*usilic*/
       } else if ((n.Mb = n.M) == T_exec) do_exec(a.name, chp);
     } else n.Mb = n.M;
     if (n.M != T_exec) {
-      pn.nrow = h.bp->nrow; /* (2) */
+      pn.nrow = h.bp->nrow; /* (2)参照 */
       if (!h.bp->pp) {
 	make_bp(h.bp, s_S(S_err1), a.name, NULL);
 	pn.nrow = h.bp->nrow = 0;
@@ -1850,25 +1851,25 @@ void menu(char pathname[], FILE *pin)/*usilic*/
       pn.top = pn.row = 0;
     } else {
       n.ll = load_ll(chp, &a, l.prev, &l.cut, &h, &pn, n.M, &pin);
-      if (h.bp->nrow < pn.nrow) h.bp->nrow = pn.nrow; /* ==> (2) */
+      if (h.bp->nrow < pn.nrow) h.bp->nrow = pn.nrow; /* ==> (2)参照 */
     }
     if (n.Mb != T_exec) {
       int j = h.bp == &h.base[4] && pin && pin != F1;
-      /* 2026-08-20 fix, a direct user request (C++版のARCモードライン
-	 再設計、項目364/HISTORY:9565をlegacyへも反映): ARC (T_tar/T_lha/
-	 T_unzip/T_rpm/T_deb) always fell into the `rv.col >= 0' disjunct
-	 below (its own listing highlights a specific column, same as any
-	 other results-style screen), forcing size=-1 -- print_arg()'s
-	 own `size >= 0' check then always failed, so an archive's own
-	 mode-line byte count NEVER showed regardless of the archive's
-	 own actual size, confirmed directly via temporary debug output
-	 (size=-1 logged for every T_tar redraw). That disjunct's own
-	 intent (skip the byte count for GREP/LOCATE-style search-match
-	 rows, where it's not particularly meaningful mid-search) doesn't
-	 apply to ARC's own listing -- ARC's byte count is exactly as
-	 meaningful as T_dir's own "%d (ls)" byte count immediately above
-	 it in print_arg()'s own switch, which has no such suppression at
-	 all. */
+      /* 2026-08-20修正、直接のユーザー依頼(C++版のARCモードライン
+	 再設計、項目364/HISTORY:9565をlegacyへも反映): ARC(T_tar/T_lha/
+	 T_unzip/T_rpm/T_deb)は、常に下の`rv.col >= 0'という選言の枝に
+	 落ちてしまい(それ自身の一覧は、他のあらゆる結果表示風の画面
+	 と同様、特定のカラムをハイライトする)、size=-1を強制していた
+	 ――するとprint_arg()自身の`size >= 0'チェックが常に失敗し、
+	 アーカイブ自身の実際のサイズに関わらず、アーカイブ自身の
+	 mode-lineのバイト数が決して表示されなかった。これは一時的な
+	 デバッグ出力を通じて直接確認済み(T_tarの再描画のたびに
+	 size=-1がログに残っていた)。その選言自身の意図(検索中には
+	 特に意味を持たないGREP/LOCATE風の検索結果行についてバイト数を
+	 スキップする)は、ARC自身の一覧には当てはまらない――ARCの
+	 バイト数は、print_arg()自身のswitchの中でその直前にある
+	 T_dir自身の"%d (ls)"のバイト数と全く同じくらい意味があり、
+	 そちらにはこのような抑制は一切無い。 */
       int f_archive = n.M == T_tar || n.M == T_lha || n.M == T_unzip
 	|| n.M == T_rpm || n.M == T_deb;
       set_rv(&n, &pn, &rv, &h
@@ -1877,15 +1878,15 @@ void menu(char pathname[], FILE *pin)/*usilic*/
 			 || (n.M != T_dir && rv.pp && rv.col >= 0)))
 		? -1 : h.bp->size, h.bp->buff, chp, n.M);
       if (n.M != T_pipe && n.M != T_pipe2 && n.M != T_pipe3)
-	/* mode-line[1] should read "MAN" (the mode), not the man page's
-	   own name -- a.name itself is left untouched since it still
-	   feeds write_list()'s history persistence below. 2026-08-20:
-	   ARC (f_archive, see this same block's own comment above) gets
-	   the identical "ARC" literal treatment -- matching the C++
-	   port's own ArchiveMode, which uses this fixed name for every
-	   archive kind (the "(tar)"/"(lha)"/etc badge in l.arg already
-	   distinguishes which one) rather than the archive's own
-	   basename. */
+	/* mode-line[1]は、マニュアルページ自身の名前ではなく"MAN"
+	   (モード)を表示すべきである――a.name自体は、下のwrite_list()
+	   のhistory永続化に引き続き供給されるため、そのまま触れずに
+	   おく。2026-08-20: ARC(f_archive、このすぐ上の同じブロック
+	   自身のコメント参照)も同一の"ARC"というリテラル扱いを受ける
+	   ――C++移植自身のArchiveModeと一致させている。そちらは、
+	   アーカイブの種類ごとに(どれであるかはl.arg中の"(tar)"/
+	   "(lha)"等のバッジが既に区別している)アーカイブ自身のベース
+	   名ではなく、この固定名を使う。 */
 	n.nlen = disp_window(rv.ps, rv.pp, n.Mb
 			     , (n.M == T_man) ? "MAN" : (f_archive) ? "ARC" : a.name,
 			     l.prev, l.arg, &n.klen);
@@ -1918,10 +1919,10 @@ void menu(char pathname[], FILE *pin)/*usilic*/
       }
       if (*a.name != ' ') {
 	if (*a.name != '/') {
-	  if (strstr(l.arg, s_S(S_man))) { /* T_man */
+	  if (strstr(l.arg, s_S(S_man))) { /* T_manの場合 */
 	    strcpy(l.prev, l.dir);
 	    break;
-	  } else ; /* file in T_tar, T_lha, T_unzip, T_rpm, T_deb */
+	  } else ; /* T_tar、T_lha、T_unzip、T_rpm、T_deb内のファイル */
 	} else if (is_prev(l.prev, M_du)) {
 	  if (n.M == T_dir) *l.prev = K_z;
 	  else strcpy(l.prev, l.dir);
@@ -1945,7 +1946,7 @@ void menu(char pathname[], FILE *pin)/*usilic*/
 	} else continue;
 	*l.cut.str = '\0';
       } while (0);
-    if (*a.name == '/' && *l.arg == K_z) /* != T_man */
+    if (*a.name == '/' && *l.arg == K_z) /* T_manではない */
       l.arg[1] = '\0';
     if (*l.prev == K_z) l.prev[1] = '\0';
     write_list(h.ll, h.ss, &l, a.name);
