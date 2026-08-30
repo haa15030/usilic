@@ -3259,6 +3259,18 @@ bool Application::openSelectedArchiveEntry() {
   archiveContentView_.setLines(std::move(lines));
   archiveContentView_.setCursorIndex(0);
   archiveContentView_.redraw();
+  // 2026-08-30、直接のユーザー報告(GUI、"内容一覧でどれかを選ぶと
+  // 選んだ時点でのブロックカーソルが画面に残留（^P/^Nで解消）"):
+  // FileMode::loadFile()自身のsyncVisibleCursor()呼び出しと同じ理由
+  // ――setCursorHighlightEnabled(false)で行全体のハイライトが無い
+  // 以上、GUIの本物のブロックカーソル(Display::setVisibleCursor()
+  // 経由、renderCursor()自身のコメント参照)だけが現在位置を示す
+  // 唯一の手段である。これが無いと、直前のArchiveモード一覧で表示
+  // されていた古いカーソル位置がGUI側に取り残されたまま(何であれ
+  // 次にカーソルを動かす操作が改めてsyncVisibleCursor()を呼ぶまで、
+  // 例えば^P/^N)、この新しい(たいてい短い)コンテンツの上に何も
+  // 表示するものが無い場所へ浮いて見えてしまっていた。
+  archiveContentView_.syncVisibleCursor();
   currentMode_ = ApplicationMode::ArchiveContent;
   return true;
 }
@@ -3875,6 +3887,12 @@ bool Application::openSelectedSegment() {
   cutContentView_.setLines(std::move(lines));
   cutContentView_.setCursorIndex(0);
   cutContentView_.redraw();
+  // 2026-08-30、直接のユーザー報告(GUI、"内容一覧でどれかを選ぶと
+  // 選んだ時点でのブロックカーソルが画面に残留（^P/^Nで解消）")、
+  // openSelectedArchiveEntry()自身の同一の修正参照(HELP.jpも
+  // CutContent経由で表示される、このメソッド自身のコメント冒頭
+  // 参照――同じ症状がHELPでも起き得る)。
+  cutContentView_.syncVisibleCursor();
   currentMode_ = ApplicationMode::CutContent;
   return true;
 }
