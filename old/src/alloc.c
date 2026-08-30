@@ -28,12 +28,12 @@ static u_char *save_attr(u_char *cp, int attr, int *n_attrp, int *np)
     n += 3;
     break;
   case A_md2:
-    { /* the repeated (overstruck) character after the "^H^H" is 2 bytes
-	 in EUC/SJIS, but euctoutf8_buf() (code.c) has already re-encoded
-	 the line to UTF-8 by the time this runs, so in UTF-8 mode it can
-	 be up to 4 bytes; a hardcoded skip of 2 here split multi-byte
-	 characters (e.g. 3-byte CJK kanji) in half, corrupting them into
-	 "????" on screen. */
+    { /* "^H^H"の後に繰り返される(オーバーストライクされた)文字は、
+	 EUC/SJISでは2バイトだが、これが実行される時点では
+	 euctoutf8_buf()(code.c)が既に行をUTF-8へ再エンコードして
+	 いるため、UTF-8モードでは最大4バイトになり得る; ここで
+	 決め打ちで2をスキップすると、マルチバイト文字(例えば3バイトの
+	 CJK漢字)を半分に分断してしまい、画面上で"????"に壊してしまう。 */
       int w = (vt_charset(0) == C_utf8) ? utf8_seqlen(cp[2]) : 2;
       cp += 2 + w;
       Alloc.attr[n_attr].n = n+2;
@@ -137,7 +137,7 @@ static int linein(FILE *fp, u_char buff[], int *lenp, int *f_binp)
 
   len = *lenp;
   for (c = 0; len < N_buff/2 && c != EOF && c != '\n'; len++) {
-    /* N_buff/2: 1 byte kana ==> 2 byte euc kana */
+    /* N_buff/2: 1バイトのカナ ==> 2バイトのeucカナ */
     if (!(i = fread(&c, 1, 1, fp))) {
       c = EOF;
       len--;
@@ -168,8 +168,8 @@ static int linein(FILE *fp, u_char buff[], int *lenp, int *f_binp)
 	break;
       }
       if (f_nl && !strchr(buff, '\n')) {
-	/* '\n' was erased when init_code() converted */
-	/* `1 byte kana' into `EUC 2 bytes kana' */
+	/* init_code()が`1バイトのカナ'を`EUCの2バイトのカナ'へ */
+	/* 変換した際に'\n'が消されていた */
 	strcat(buff, "\n");
 	len++;
       }
@@ -318,7 +318,7 @@ PP *alloc_pipe(int init, FILE **pinp, int *nrowp, BASE *bp0, int nlen0)/*usilic*
 	  memcpy(pp->cs, cs, h);
 	  pp->f.len = h;
 	} else {
-	  /* length more than vt_col(0) */
+	  /* vt_col(0)より長い */
 	  if ((h = ce - cs - c1) < 0) h = 0;
 	  if (!(pp->cs = malloc(h + 1))) {
 	    if (pp->attr) free(pp->attr);
@@ -341,7 +341,7 @@ PP *alloc_pipe(int init, FILE **pinp, int *nrowp, BASE *bp0, int nlen0)/*usilic*
 	pp->f.nl = j;
 	s_len += h;
 	p_len += sizeof(PP) + ((n_attr) ? sizeof(ATTR) * n_attr : 0);
-	if (s_len > bsize || p_len > bsize) { /* not enouth buffer */
+	if (s_len > bsize || p_len > bsize) { /* バッファが足りない */
 	  if (*pinp != stdin) {
 	    if (*pinp) fclose(*pinp);
 	    killpg(getpgrp(), SIGPIPE);
@@ -356,7 +356,7 @@ PP *alloc_pipe(int init, FILE **pinp, int *nrowp, BASE *bp0, int nlen0)/*usilic*
 	n_attr = 0;
 	f_kanji = 0;
 	if (++*nrowp <= vt_row(0) - 1 && nlen >= 0) {
-	  /* display up to the environment variable ``LINES''  */
+	  /* 環境変数``LINES''まで表示する */
 	  vt_move(*nrowp-1, 0);
 	  vt_eeol();
 	  put_str(pp, 0);
@@ -372,7 +372,7 @@ PP *alloc_pipe(int init, FILE **pinp, int *nrowp, BASE *bp0, int nlen0)/*usilic*
       n++;
     }
     if ((i = f_eof == EOF) || !pp0) {
-      if (!i || (!j && ce == end && len)) { /* end of line is not '\n' */
+      if (!i || (!j && ce == end && len)) { /* 行末が'\n'ではない */
 	if ((pp = calloc(sizeof(PP), 1))) {
 	  if (n_attr) {
 	    Alloc.attr[n_attr++].n = -1;
@@ -525,25 +525,26 @@ PP *alloc_str(STR s0[], int *rowp, int f_grep)/*usilic*/
 	  p[i] = '\0';
 	  pp->f.len = strlen(p);
 	} else {
-	  i = count_k(p, vt_col(0)); /* FGREP_HISTORY etc. */
+	  i = count_k(p, vt_col(0)); /* FGREP_HISTORY等 */
 	  if (strlen(p) > vt_col(0) - i) {
-	    /* Finder-style middle-ellipsis ("head...tail") instead of a
-	       raw head-only chop -- a real report (screenshot =bm/=bn,
-	       ^X^F's "select recent file" list on a >150-byte path) found
-	       this silently truncated to just its first ~80 bytes with no
-	       indication anything was cut, and the tail -- the actual
-	       filename, the most useful part -- was lost entirely. This
-	       matches the C++ port's own middleEllipsisTruncate(), which
-	       already handles this case. Boundary-safety follows the
-	       exact same "+1 byte on a detected split" convention
-	       disp.c's own name/prev truncation already uses elsewhere
-	       (count_k() only reports whether a cut splits a char, not
-	       how many bytes to skip; that existing code has always
-	       assumed 1 byte is enough to clear it, kept consistent here
-	       rather than inventing a different, more "correct" scheme
-	       just for this one call site). Falls back to the original
-	       head-only chop when the available width is too narrow for
-	       a head+"..."+tail to mean anything (rare: needs <8 columns).
+	    /* 素の先頭だけ切り捨てる代わりに、Finder風の中間省略
+	       ("head...tail")にする――実際の報告(スクリーンショット
+	       =bm/=bn、150バイトを超えるパスに対する^X^Fの「最近の
+	       ファイルを選択」一覧)により、これが何も削られた痕跡無く
+	       静かに最初の約80バイトだけに切り詰められ、末尾――実際の
+	       ファイル名、最も有用な部分――が完全に失われていたことが
+	       判明した。これはC++移植自身のmiddleEllipsisTruncate()
+	       (既にこのケースを扱っている)と一致する。境界の安全性は、
+	       disp.c自身のname/prevの切り詰めが他の場所で既に使っている
+	       のと全く同じ「検出された分断に+1バイト」という規約に
+	       従っている(count_k()は、切り詰めが文字を分断するか
+	       どうかしか報告せず、何バイトスキップすべきかは報告しない;
+	       既存のコードは常に1バイトでそれを解消するのに十分だと
+	       仮定しており、この1箇所のためだけに別の、より「正しい」
+	       方式を発明するのではなく、それに合わせてある)。head+
+	       "..."+tailが何か意味を持つには利用可能な幅が狭すぎる場合
+	       (稀: 8カラム未満が必要)は、元の先頭だけの切り捨てへ
+	       フォールバックする。
 	    */
 	    int width = vt_col(0) - i;
 	    if (width < 8) p[width] = '\0';
@@ -562,11 +563,12 @@ PP *alloc_str(STR s0[], int *rowp, int f_grep)/*usilic*/
 	    }
 	  }
 	  pp->f.len = strlen(p);
-	  /* put_str() draws pp->cs, NOT p -- pp->cs was strdup()'d from
-	     the ORIGINAL untruncated sp->name above, so without this the
-	     "..."-elided text computed into p above never actually
-	     reached the screen. Safe to strcpy in place: p only ever
-	     shrinks relative to pp->cs's own allocated length. */
+	  /* put_str()はpではなくpp->csを描画する――pp->csは上で
+	     「元の」切り詰め前のsp->nameからstrdup()されたものなので、
+	     これが無いと上でpへ計算された"..."省略済みのテキストが
+	     実際には画面に届かなかった。その場でstrcpyしても安全:
+	     pはpp->cs自身の確保された長さに対して常に縮む方向にしか
+	     ならない。 */
 	  strcpy((char*)pp->cs, (char*)p);
 	}
 	pp->f.line = (pp->prev) ? pp->prev->f.line + 1 : 1;
@@ -588,7 +590,7 @@ PP *alloc_str(STR s0[], int *rowp, int f_grep)/*usilic*/
 }  
 
 PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*usilic*/
-{  /* edit output from `f(e)grep -b(n)` or `ls -l` */
+{  /* `f(e)grep -b(n)`または`ls -l`の出力を編集する */
   int i, h, len, n_row, n_attr, n, f_M, f_kanji, f_ascii, f_ls, i_dir;
   u_int tell, st_size;
   u_char c, *cs, *cp, *ce, *end;
@@ -606,7 +608,7 @@ PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*usilic*
       tab[3].name = set_help(NULL);
     }
   }
-  if (f_M0 < 0) { /* <== menu.c (6) */
+  if (f_M0 < 0) { /* <== menu.c (6)参照 */
     for (i = 0; i < 4; i++) if (!strcmp(tab[i].name, name)) break;
     if (i == 4 && *name == '/') i++;
     f_M = tab[i].f_M;
@@ -614,18 +616,18 @@ PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*usilic*
   } else {
     f_M = f_M0;
     for (i = 0, buff; i < size; i++) if (!buff[i]) buff[i] = ' ';
-    /* 
-     * When `egrep -n (-b)' outputted following:
+    /*
+     * `egrep -n (-b)'が以下のように出力した場合:
      *   123:...
      *   456:...
-     *   789:... 
-     * CUT will split buffer (file) at the line-number (bytes):
-     *   1 - 122 
+     *   789:...
+     * CUTはバッファ(ファイル)を行番号(バイト数)で分割する:
+     *   1 - 122
      *   123 - 455
      *   456 - 788
      *   789 - st_size
      */
-    st_size = (f_M == M_cut) ? *rowp : 0; /* *rowp: total-lines (bytes) */
+    st_size = (f_M == M_cut) ? *rowp : 0; /* *rowp: 総行数(バイト数) */
   }
   end = buff + size;
   pp = pp0 = pp1 = NULL;
@@ -637,7 +639,7 @@ PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*usilic*
   cs = buff;
   if (f_M == T_dir) {
     if (size) {
-      cs = (u_char*)&strchr(buff, '\n')[1]; /* delete the line "total ..." */
+      cs = (u_char*)&strchr(buff, '\n')[1]; /* "total ..."の行を削除する */
       if (conf_ls(NULL, NULL)) {
 	cp = cs;
 	while (1) {
@@ -668,13 +670,13 @@ PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*usilic*
     } else return NULL;
   }
   for (c = i = n = n_attr = f_kanji = 0, ce = Alloc.line; cs < end; ) {
-    /* skip string `NNNN:' (<== f(e)grep -n ...) */
+    /* 文字列`NNNN:'を読み飛ばす(<== f(e)grep -n ...) */
     if ((f_M == T_cut || f_M == M_cut || f_M == M_key) && i > 10 && !len) {
       for (len = 0; Alloc.line[len] != ':' && len < 10; len++) ;
       if (len == 10) len = 0;
     }
     if ((c = *cs++) != '\n') {
-      if (c == '\t') { /* convert '\t' to ' ' */
+      if (c == '\t') { /* '\t'を' 'へ変換する */
 	if (f_M == M_du)
 	  for (h = 7 - (i & 7); h && i < vt_col(0) + len; h--, i++) 
 	    *ce++ = ' ';
@@ -719,10 +721,10 @@ PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*usilic*
 	n++;
 	continue;
       }
-      while (cs < end && (c = *cs) != '\n') 
-	/* 
-	 * save string of file or directory up to '\n'. 
-	 * (but display with the length of COLUMNS environment variable)
+      while (cs < end && (c = *cs) != '\n')
+	/*
+	 * ファイルまたはディレクトリの文字列を'\n'まで保存する。
+	 * (ただし表示は環境変数COLUMNSの長さで行う)
 	 */
 	*ce++ = *cs++;
       cs++;
@@ -748,21 +750,20 @@ PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*usilic*
 	pp->f.str = 1;
 	strcpy(p, cp);
 	if (f_M == T_locate && strlen(p) > (unsigned)vt_col(0)) {
-	  /* Finder-style middle-ellipsis ("head...tail") for LOCATE
-	     results specifically, same fix as alloc_str()'s own
-	     T_hfile/etc case (see its own comment) -- LOCATE's absolute
-	     paths often share one long common prefix, so the raw
-	     head-only chop below left many results looking identical (a
-	     real report/screenshot =bt: several rows all cut to the
-	     exact same "...ScanSnap.app/Co" prefix, hiding the DIFFERING
-	     filename each actually ends with). Centered near the middle
-	     (roughly half the budget to each side) per a same-day
-	     follow-up report ("「...」の位置を行中央付近にしてほしい"),
-	     matching the C++ port's own middleEllipsisTruncate() same-day
-	     fix. Scoped to T_locate only -- every other f_M value sharing
-	     this function (T_dir/T_cut/M_cut/M_key) keeps the original
-	     head-only behavior, an established, unrelated convention this
-	     round doesn't touch. */
+	  /* LOCATEの結果に特化した、Finder風の中間省略("head...tail")、
+	     alloc_str()自身のT_hfile等のケース(自身のコメント参照)と
+	     同じ修正――LOCATEの絶対パスはしばしば1つの長い共通prefixを
+	     共有するため、下の素の先頭だけの切り捨てだと多くの結果が
+	     同じに見えてしまっていた(実際の報告/スクリーンショット=bt:
+	     複数の行が全く同じ"...ScanSnap.app/Co"というprefixに切られ、
+	     実際にはそれぞれ異なる末尾のファイル名を隠してしまって
+	     いた)。同日のフォローアップ報告("「...」の位置を行中央
+	     付近にしてほしい")に従い、中央付近(左右にほぼ半分ずつの
+	     予算)を中心にしてある――これはC++移植自身の同日の
+	     middleEllipsisTruncate()の修正と一致する。T_locateのみに
+	     絞ってある――この関数を共有する他の全てのf_M値(T_dir/
+	     T_cut/M_cut/M_key)は、この対応が触れていない、確立された
+	     無関係の慣行である元の先頭だけの挙動を保つ。 */
 	  int width = vt_col(0);
 	  int full = strlen(p);
 	  int tailw = (width - 3) / 2;
@@ -776,14 +777,15 @@ PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*usilic*
 	  strcat((char*)tmp, (char*)&p[tailstart]);
 	  strcpy((char*)p, (char*)tmp);
 	  pp->f.len = strlen(p);
-	  /* put_str() draws pp->cs[0..pp->f.len), NOT p -- pp->cs was
-	     strdup()'d from the ORIGINAL untruncated cp above, so without
-	     this the "..."-elided text computed into p above never
-	     actually reached the screen (pp->f.len alone just moved the
-	     cutoff earlier into pp->cs's own still-full-length string,
-	     which looked identical to the old head-only chop). Safe to
-	     strcpy in place: p's ellipsis'd result is always <= pp->cs's
-	     own allocated length (strdup(cp), and p only ever shrinks). */
+	  /* put_str()はpではなくpp->cs[0..pp->f.len)を描画する――pp->cs
+	     は上の「元の」切り詰め前のcpからstrdup()されたものなので、
+	     これが無いと上でpへ計算された"..."省略済みのテキストが
+	     実際には画面に届かなかった(pp->f.len単独では、まだ
+	     フル長のままのpp->cs自身の文字列の中で切れ目を単に早めに
+	     移動させるだけで、古い先頭だけの切り捨てと同じに見えて
+	     しまう)。その場でstrcpyしても安全: pの省略済みの結果は
+	     常にpp->cs自身の確保された長さ以下である(strdup(cp)で
+	     あり、pは縮む方向にしかならない)。 */
 	  strcpy((char*)pp->cs, (char*)p);
 	} else if (f_ascii) {
 	  for (i = n = 0, len = strlen(p); len; len--) {
@@ -798,11 +800,11 @@ PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*usilic*
 	  if (strlen(p) > vt_col(0)) p[vt_col(0)] = '\0';
 	  pp->f.len = strlen(p);
 	  if (vt_charset(0) == C_utf8) {
-	    /* count_k()'s single-byte backoff below assumes a 2-byte
-	       EUC pair; a UTF-8 sequence can be 1-4 bytes, so trimming
-	       only 1 byte can leave a truncated multi-byte character
-	       dangling at the end. Walk from the start and cut at the
-	       last full character boundary at or before pp->f.len. */
+	    /* 下のcount_k()の1バイト分の後退は2バイトのEUCペアを
+	       前提としている; UTF-8シーケンスは1〜4バイトになり得る
+	       ため、1バイトだけ削ると末尾に切り詰められたマルチバイト
+	       文字がぶら下がって残ってしまうことがある。先頭から
+	       たどり、pp->f.len以下の最後の完全な文字境界で切る。 */
 	    int pos = 0, u_len;
 	    while (pos < pp->f.len) {
 	      u_len = utf8_seqlen(p[pos]);
@@ -883,8 +885,8 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
   n_row = 0;
   switch(f_M) {
   case T_lha:
-    /* 
-       skip two lines:
+    /*
+       2行を読み飛ばす:
        "PERMSSN  UID GID    SIZE  RATIO     STAMP    NAME"
        "----------------- ------- ------ ------------ --------------------"
     */
@@ -892,8 +894,8 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
     while (*cp++ != '\n') ;
     break;
   case T_unzip:
-    /* 
-       skip three lines:
+    /*
+       3行を読み飛ばす:
        "Archive:  *.zip"
        " Length    Date    Time    Name"
        " ------    ----    ----    ----"
@@ -937,21 +939,23 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
 	  }
 	  break;
 	} else if (ce == Alloc.line) {
-	  /* Reached the start of the line without ever finding '/': this
-	     isn't GNU tar's "owner/group" format (BSD tar, used by macOS,
-	     has no '/' and prints owner and group as separate fields), so
-	     the backward scan above can never terminate. Without this
-	     fallback it spins forever (100% CPU) and can walk off the
-	     buffer. Recover by locating the size field the BSD way:
-	     mode links owner group SIZE mon day time/year name. */
+	  /* '/'を一度も見つけないまま行の先頭に到達した: これは
+	     GNU tarの"owner/group"形式ではない(macOSが使うBSD
+	     tarには'/'が無く、ownerとgroupを別々のフィールドとして
+	     出力する)ため、上の逆方向のスキャンは決して終了
+	     できない。このフォールバックが無いと、無限にスピン
+	     し(CPU使用率100%)、バッファをはみ出して進んでしまう
+	     ことがある。BSD流の方法でsizeフィールドを見つけて
+	     回復する: mode links owner group SIZE mon day
+	     time/year name。 */
 	  for (ce = Alloc.line, k = 0; k < 4; ce++)
 	    if (*ce == ' ') { while (ce[1] == ' ') ce++; k++; }
 	  break;
 	} else while (*ce == ' ') ce--;
       }
-      if (ce > Alloc.line) { /* get file size */
+      if (ce > Alloc.line) { /* ファイルサイズを取得する */
 	for (k = split = 0; *ce != ' '; ce++) {
-	  if (*ce == ',') split = -1; /* special device */
+	  if (*ce == ',') split = -1; /* 特殊デバイス */
 	  else if (!split) k = k * 10 + *ce - '0';
 	}
 	ce++;
@@ -959,13 +963,13 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
       ce = cs;
       break;
     case T_lha:
-      /* search for string "NNN%" or "******" */
+      /* 文字列"NNN%"または"******"を探す */
       for (ce = Alloc.line, i = 0; *ce != '%' && *ce != '*' && i < 40; i++) 
 	ce++;
-      if (strchr(Alloc.line, '\0')[-1] == '/') split = -1; /* directory */
+      if (strchr(Alloc.line, '\0')[-1] == '/') split = -1; /* ディレクトリ */
       if (i == 40) {
 	/*
-	   within the line:
+	   その行の中で:
 	   "----------------- ------- ------ ------------ --------------------"
 	*/
 	cp = end;
@@ -982,20 +986,20 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
 	while (*cs != ' ') cs--;
       }
       cs++;
-      /* get file size */
+      /* ファイルサイズを取得する */
       for (k = 0; *cs != ' '; cs++) k = k * 10 + *cs - '0';
       break;
     case T_unzip:
       for (cs = Alloc.line; *cs == ' ' && *cs != '-'; cs++) ;
       if (*cs == '-') {
 	/*
-	   within the line:
+	   その行の中で:
 	   "------                    -------"
 	*/
 	cp = end;
 	continue;
       }
-      /* get file size */
+      /* ファイルサイズを取得する */
       for (k = 0; *cs != ' '; cs++) k = k * 10 + *cs - '0';
       for (ce = cs, i = 0; i < 2; i++) {
 	while (*ce == ' ') ce++;
@@ -1014,9 +1018,9 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
 	while (*ce != ' ') ce++; 
 	while (*ce == ' ') ce++; 
       }
-      if (*ce >= '0' && *ce <= '9') { /* get file size */
+      if (*ce >= '0' && *ce <= '9') { /* ファイルサイズを取得する */
 	for (k = split = 0; *ce != ' '; ce++) {
-	  if (*ce == ',') split = -1; /* special device */
+	  if (*ce == ',') split = -1; /* 特殊デバイス */
 	  else if (!split) k = k * 10 + *ce - '0';
 	}
 	ce++;
@@ -1025,13 +1029,13 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
       break;
     }
     if ((pp = calloc(sizeof(PP), 1))) {
-      if ((pp->split = split) < 0) k = 0; /* no size */ 
+      if ((pp->split = split) < 0) k = 0; /* サイズが無い */
       else pp->split = k;
       sprintf(&Alloc.line[9], "%10d ", k);
       cs = &Alloc.line[20];
       while ((*cs = *ce++) != '\n' && *cs) cs++;
       if (*cs == '\n') *cs = '\0';
-      if (*Alloc.line == 'd' || *Alloc.line == 'l')  /* directory or symlink */
+      if (*Alloc.line == 'd' || *Alloc.line == 'l')  /* ディレクトリまたはシンボリックリンク */
 	pp->split = -1;
       if ((pp->cs = strdup(Alloc.line))) {
 	pp->f.len = ((i = strlen(pp->cs)) > vt_col(0)) ? vt_col(0) : i;
@@ -1058,7 +1062,7 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
   }
   if (load_intr() == S_errl)
     save_error("%s: %s.\n", s_S(S_usilic), s_S(S_errl));
-  if (f_M0 < 0) { /* <== SIGWINCH (menu.c:(5)) */
+  if (f_M0 < 0) { /* <== SIGWINCH(menu.c:(5))参照 */
     for (pp = pp0, pp1 = pp2; pp; pp = pp->next, pp1 = pp1->next) {
       pp->tell = pp1->tell;
       pp->split = pp1->split;
@@ -1069,14 +1073,15 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
 }
 
 static u_char *find_tar_header(u_char *cp, u_char *cp0, u_char *end, char name[])
-{ /* Tar headers are always 512-byte aligned from the start of the
-     archive; only test alignment-matching positions, or a hidden
-     entry whose own header text merely *contains* `name` as a
-     substring (e.g. macOS's "._name" AppleDouble sidecar for
-     extended attributes, which "tar tvf" doesn't list but is a real
-     header in the byte stream) can be mistaken for it. */
+{ /* Tarのヘッダーは、アーカイブの先頭から常に512バイト境界に揃って
+     いる; アライメントの合う位置だけをテストする、さもないと、
+     自身のヘッダーテキストが`name`をたまたま部分文字列として
+     「含んでいる」だけの隠れたエントリ(例えば拡張属性のための
+     macOSの"._name" AppleDoubleサイドカー、これは"tar tvf"には
+     一覧表示されないがバイトストリーム中の本物のヘッダーである)
+     と間違えてしまうことがある。 */
   int i = strlen(name);
-  u_char *p = cp0 + (((cp - cp0) + 511) & ~511); /* round up to header */
+  u_char *p = cp0 + (((cp - cp0) + 511) & ~511); /* ヘッダー境界へ切り上げる */
 
   for (; p < end; p += 512)
     if (!strncmp(p, name, i)) return p;
@@ -1095,12 +1100,12 @@ void alloc_tar(u_char cp0[], PP pp0[], int size)/*usilic*/
   end--;
   strcpy(Alloc.line, &pp->cs[20]);
   if ((sp = strchr(Alloc.line, ' '))) *sp = '\0';
-  if (cp < end) /* locate the first entry's header too: it isn't
-		   necessarily the very first physical header (see
-		   find_tar_header()) */
+  if (cp < end) /* 最初のエントリのヘッダーも見つける: それは必ずしも
+		   一番最初の物理的なヘッダーとは限らない
+		   (find_tar_header()参照) */
     cp = find_tar_header(cp, cp0, end, Alloc.line);
   for (; ;) {
-    if ((cp += 512) > end) /* skip header */
+    if ((cp += 512) > end) /* ヘッダーを読み飛ばす */
       cp = end;
     pp->tell = (uintptr_t)cp;
     if (pp->split < 0) pp->split = 0;
@@ -1111,7 +1116,7 @@ void alloc_tar(u_char cp0[], PP pp0[], int size)/*usilic*/
     if (!(pp = pp->next)) break;
     strcpy(Alloc.line, &pp->cs[20]);
     if ((sp = strchr(Alloc.line, ' '))) *sp = '\0';
-    if (cp < end) /* search for next header */
+    if (cp < end) /* 次のヘッダーを探す */
       cp = find_tar_header(cp, cp0, end, Alloc.line);
   }
 }
@@ -1127,7 +1132,7 @@ void alloc_lha(u_char cp0[], PP pp0[], int size)/*usilic*/
     else
       for (i = 0; i < 3; i++)
 	/*
-	  skip three lines:
+	  3行を読み飛ばす:
 	  "::::::::"
 	  "filename"
 	  "::::::::"
@@ -1166,7 +1171,7 @@ char **alloc_arg(char *arg, int *argcp)/*usilic*/
 
   while (*arg == ' ') arg++;
   for (cp = arg; *cp; cp++) if (*cp == '\t') *cp = ' ';
-  for (cp = arg, j = 2; *cp; ) { /* get number of argument */
+  for (cp = arg, j = 2; *cp; ) { /* 引数の個数を取得する */
     if ((c = *cp) == '\042' || c == '\047') 
       for (cp++; *cp && *cp != c; ) cp++; 
     while (*cp && *cp != ' ') cp++;
@@ -1178,7 +1183,7 @@ char **alloc_arg(char *arg, int *argcp)/*usilic*/
     i = 0;
     cp = arg;
     a = NULL;
-    do { /* set arguments for execvp() */
+    do { /* execvp()のための引数を設定する */
       while (*cp == ' ') cp++;
       if ((c = *cp) == '\042' || c == '\047') {
 	for (a = ++cp; *a != c; a++) ;
@@ -1191,7 +1196,7 @@ char **alloc_arg(char *arg, int *argcp)/*usilic*/
       if (!i) {
 	if ((*argv = strdup(cp))) {
 	  if (!argcp && !is_inst(s_S(S_path), *argv)) {
-	    /* argv[0] isn't installed */
+	    /* argv[0]がインストールされていない */
 	    strcpy(arg, *argv);
 	    free(*argv);
 	    free(argv);
@@ -1291,7 +1296,7 @@ u_char *alloc_buff(int *sizep, u_int fd, int f_chkbin)/*usilic*/
   errno = 0;
   tp = NULL;
   if (f_getch) vt_init(-3);
-  do { /* read in N_buff bytes */
+  do { /* N_buffバイトを読み込む */
 #if 0
     if (f_getch && vt_getch()) {
       killpg(getpgrp(), SIGPIPE);
@@ -1325,15 +1330,15 @@ u_char *alloc_buff(int *sizep, u_int fd, int f_chkbin)/*usilic*/
       fsize -= N_buff;
     } else 
       old = ((tp->len = fread(tp->buff, 1, N_buff, fp)) < N_buff) ? NULL : tp;
-    if ((size += tp->len) >= bsize) { /* not enough buffer */
+    if ((size += tp->len) >= bsize) { /* バッファが足りない */
       killpg(getpgrp(), SIGPIPE);
       save_intr(S_err4);
     }
     if (f_chkbin == 1) {
       temp = size;
-      /* seek binary-code in first N_buff bytes */
+      /* 最初のN_buffバイトの中でバイナリコードを探す */
       if ((code = init_code(&size, tp->buff, 1)) < 0) old = NULL;
-        else f_chkbin = -1; /* skip next check */
+        else f_chkbin = -1; /* 次のチェックを読み飛ばす */
       size = temp;
     }
   } while (old && size < bsize);
@@ -1342,7 +1347,7 @@ u_char *alloc_buff(int *sizep, u_int fd, int f_chkbin)/*usilic*/
   else {
     if (!(buff = calloc(1, size+2))) {
       save_intr(S_errl);
-      /* `fp'(:fd) was closed at the end of read_buff() */
+      /* `fp'(:fd)はread_buff()の末尾で閉じられていた */
       fp = fopen(s_S(S_tmp), "w");
       for (tp = tp0, cp = buff; tp; cp += tp->len, tp = tp->next) 
 	fwrite(tp->buff, 1, tp->len, fp);
@@ -1402,9 +1407,9 @@ PP *alloc_sh(u_char *str, int pid0, int c)/*usilic*/
     } else pp->f.line = 1;
     pp->f.nl = c == '\n' || c == '\\';
     if (str == F3) {
-      pp->cs = F3; /* SHELL prompt (virtual line) */
-      if (c == '\\') /* line continuation (prompt over plural line) */
-	pp->prev->split = 1; /* (2) */
+      pp->cs = F3; /* SHELLプロンプト(仮想行) */
+      if (c == '\\') /* 行の継続(複数行にまたがるプロンプト) */
+	pp->prev->split = 1; /* (2)参照 */
     } else {
       c = strlen(str);
       if (str[c-1] == '\n') str[c-1] = '\0';
@@ -1431,7 +1436,7 @@ PP *alloc_sh(u_char *str, int pid0, int c)/*usilic*/
 }  
 
 void make_bp(BASE *bp, char mess[], char *name, char *cp)/*usilic*/
-{ /* alloc string for error-message */
+{ /* エラーメッセージ用の文字列を確保する */
   free_bp(bp);
   strcpy(Alloc.line, mess);
   if (name) { 
@@ -1445,7 +1450,7 @@ void make_bp(BASE *bp, char mess[], char *name, char *cp)/*usilic*/
   }
   if ((bp->buff = strdup(toul(Alloc.line, 1)))) {
     if ((bp->pp = set_pp(bp->buff, strlen(bp->buff), &bp->nrow, 0, 0))) {
-      bp->pp->tell = (uintptr_t)F7; /* mark of error */
+      bp->pp->tell = (uintptr_t)F7; /* エラーの目印 */
       bp->size = -1;
     } else {
       free(bp->buff);
@@ -1497,7 +1502,7 @@ PP *set_pp(u_char *cs, int size, int *rowp, int f_code, int f_bin)/*usilic*/
 	i += 3;
       }
       if (f_bin) ;
-      else if (c == '_') { /* underline */
+      else if (c == '_') { /* underline(下線) */
 	if (ce[1] == K_h) {
 	  c1 = 1;
 	  if (ce[2] != '_') {
@@ -1508,7 +1513,7 @@ PP *set_pp(u_char *cs, int size, int *rowp, int f_code, int f_bin)/*usilic*/
 	  ce = save_attr(ce, A_us2, &n_attr, &n);
 	  continue;
 	}
-      } else if (c == K_h) { /* bold */
+      } else if (c == K_h) { /* bold(太字) */
 	c2 = 1;
 	if (ce[1] != K_h) {
 	  if (ce[1] >= 0x80) ce = save_attr(ce, A_md3, &n_attr, &n);
@@ -1543,7 +1548,7 @@ PP *set_pp(u_char *cs, int size, int *rowp, int f_code, int f_bin)/*usilic*/
 	pp->cs = cs;
 	if (f_code) pp->f.code = 1;
 	else if (n_attr) {
-	  Alloc.attr[n_attr++].n = -1; /* mark end of attribute */
+	  Alloc.attr[n_attr++].n = -1; /* 属性の終わりの目印 */
 	  if ((pp->attr = malloc(sizeof(ATTR) * n_attr)))
 	    memcpy(pp->attr, Alloc.attr, sizeof(ATTR) * n_attr);
 	  else {
@@ -1592,7 +1597,7 @@ PP *set_pp(u_char *cs, int size, int *rowp, int f_code, int f_bin)/*usilic*/
     ce++;
     n++;
   }
-  if (ce > cs && !j && ce == end) { /* end of buffer is not '\n' */
+  if (ce > cs && !j && ce == end) { /* バッファの末尾が'\n'ではない */
     if ((pp = calloc(sizeof(PP), 1))) {
       do {
 	pp->cs = cs;
@@ -1625,7 +1630,7 @@ PP *set_pp(u_char *cs, int size, int *rowp, int f_code, int f_bin)/*usilic*/
 }
 
 PP **set_ppp(void *p, void *p0, int f_set)/*usilic*/
-{ /* replace old line-pointer with adjusted one after resize window */
+{ /* ウィンドウのリサイズ後、古い行ポインタを調整済みのものへ置き換える */
   static PP **ppp, **ppp0;
 
   if (f_set) {
@@ -1639,7 +1644,7 @@ PP **set_ppp(void *p, void *p0, int f_set)/*usilic*/
 }
 
 int alloc_winch(BASE *bp, int f_ppp)/*usilic*/
-{ /* adjust row-pointer after resize window */
+{ /* ウィンドウのリサイズ後に行ポインタを調整する */
   u_char *cp, *buff;
   PP *pp;
   int size, row, f_bin, f_code;
