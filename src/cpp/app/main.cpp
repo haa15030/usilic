@@ -2824,7 +2824,18 @@ int main(int argc, char **argv) {
   // interactive no-argument launch keeps (this comment block's own
   // 2026-08-18 reasoning above still applies to a genuine bare
   // launch -- only the stdin-pipe case is added here).
-  bool hasRealContentArgument = !positionalArgs.empty() || !::isatty(STDIN_FILENO);
+  // 2026-08-30 (直接のユーザー報告): "!::isatty(STDIN_FILENO)"だけでは
+  // Finderからbuild/usilicを直接ダブルクリックした場合(制御端末が
+  // 一切無く、stdin/stdout/stderrが/dev/null相当になる)と、本物の
+  // シェルからパイプされた場合("cat foo | ./build/usilic"、制御端末
+  // 自体は存在する)を区別できない――前者は「パイプされたstdin」
+  // ではなく素のダブルクリック起動であり、区別を誤ると空のSTDIN
+  // ページャモードに落ちてしまう(isPipedStdinの同種の修正参照)。
+  // keyInput.open("/dev/tty")は既に上で試行済みなので、その成否
+  // (fd() >= 0か)をここでも同じ判定に使い、制御端末が無い場合は
+  // 「引数無しの素の起動」の扱いに揃える。
+  bool hasRealContentArgument =
+      !positionalArgs.empty() || (!::isatty(STDIN_FILENO) && keyInput.fd() >= 0);
   std::string tempRootDirectory = hasRealContentArgument ? pidTempDirectory : "";
   std::string workRootDirectory = pidTempDirectory;
   // ^T's own new "Boot options" field (see executeShowUsilicBanner()'s own
@@ -3185,7 +3196,18 @@ int main(int argc, char **argv) {
   // tty) is the OTHER pager-launch shape, sharing startPagerFileList()'s
   // own lazy-loading machinery (FileMode::loadStream()) via a separate
   // Application::startPagerStdin() -- see its own comment.
-  bool isPipedStdin = positionalArgs.empty() && !::isatty(STDIN_FILENO);
+  // 2026-08-30 (直接のユーザー報告、「build/usilicをダブルクリック
+  // すると内容無しのSTDIN」): Finderからの直接ダブルクリック起動は、
+  // 制御端末自体が無く(LaunchServices経由、argc==1でstdin/stdout/
+  // stderrが/dev/null相当)、!::isatty(STDIN_FILENO)だけで判定すると
+  // 「シェルからパイプされたstdin」と誤認され、/dev/nullを読んで
+  // 空のページャ画面になっていた。keyInput.fd() >= 0(上の
+  // keyInput.open("/dev/tty")が制御端末を実際に開けたか)を追加の
+  // 条件にすることで、本物のシェルパイプ("cat foo | ./build/usilic"、
+  // 制御端末自体は健在)とダブルクリック起動(制御端末が存在しない)
+  // を区別する――後者はこの下のelse節、通常のディレクトリ起動に
+  // 落ちる。
+  bool isPipedStdin = positionalArgs.empty() && !::isatty(STDIN_FILENO) && keyInput.fd() >= 0;
   // Neither pager launch shape gets a background Directory listing at
   // all (2026-08-25, a real PTY capture of the legacy binary: pressing
   // ^G in ITS OWN pager mode produces no visible change whatsoever --
@@ -3266,10 +3288,30 @@ int main(int argc, char **argv) {
                      "-- falling back to terminal mode.\n";
       }
     }
-    while (!app.wantsExit()) {
-      if (!runTerminalPhase(app, keyInput, display, forceCui)) break;
-      if (app.wantsExit()) break;
-      tryEnterGuiPhase(app, display, *terminalDisplay, history);  // ^Og fallback -- unmatched terminal or no display server
+    // 2026-08-30 (直接のユーザー報告、「usilicウィンドウの赤(終了)を
+    // クリックすると暴走」): keyInput.fd() < 0は制御端末が一切無い
+    // ことを意味する(Finderからのダブルクリック起動、isPipedStdin/
+    // hasRealContentArgumentの同種の修正参照)。この場合、下の
+    // runTerminalPhase()は自分のpoll()にSTDIN_FILENO(/dev/null相当)
+    // を使い続け、常に即座にPOLLINで戻り、keyInput.readByte()も
+    // fd_<0のため常に0を返す――結果、100msのはずのスリープが一度も
+    // 効かない無制御のビジーループになり、CPUを食い荒らしながら
+    // ウィンドウの無い状態のまま何にも反応しなくなる(赤ボタンで
+    // GUIウィンドウ自体は閉じているが、その後この無限ループに落ちて
+    // いた)。guiOwnsWholeSession(実はすでにGUI、上のコメント参照)が
+    // 「戻る先の端末が無い」場合にrunTerminalPhase()へ一切戻らないのと
+    // 同じ理由で、制御端末が無い場合はここでも同様にループへ入らず、
+    // GUIウィンドウが閉じた時点で素直に終了する。
+    if (forceGui && keyInput.fd() < 0) {
+      // 何もしない: GUIウィンドウは閉じられた(またはそもそも開けな
+      // かった)ので、戻る先の端末が無いままこのままmain()末尾へ進み
+      // 終了する。
+    } else {
+      while (!app.wantsExit()) {
+        if (!runTerminalPhase(app, keyInput, display, forceCui)) break;
+        if (app.wantsExit()) break;
+        tryEnterGuiPhase(app, display, *terminalDisplay, history);  // ^Og fallback -- unmatched terminal or no display server
+      }
     }
   }
 
