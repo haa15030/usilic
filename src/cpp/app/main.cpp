@@ -226,8 +226,17 @@ struct TerminalWindowBounds {
 // box somehow has CoreText-alike tooling or a Mac has fontconfig
 // installed via Homebrew, without needing a compile-time platform
 // branch here at all.
-std::string resolveGuiFontPath(std::optional<TerminalAppearance> appearance = std::nullopt) {
+std::string resolveGuiFontPath(std::optional<TerminalAppearance> appearance = std::nullopt,
+                                const std::string &explicitFontPath = {}) {
   if (const char *env = std::getenv("USILICFONT")) return env;
+  // 2026-08-30、直接のユーザー依頼: "-f <path>"(下のオプション解析
+  // 参照)で明示指定され、History::GuiPreferences.fontPathとして
+  // セッションをまたいで記憶されているフォントパス。Finderからの
+  // ダブルクリック起動は引数もUSILICFONT環境変数も渡せないため、
+  // これが唯一の「白アイコン起動でもフォントを選べる」手段になる。
+  // 自動検出されたappearanceより先にチェックする――ユーザーが明示的
+  // に選んだ以上、実端末の自動マッチより優先されるべきため。
+  if (!explicitFontPath.empty()) return explicitFontPath;
   if (appearance && !appearance->fontName.empty()) {
     std::string resolved = fm::resolveMacFontPath(appearance->fontName, appearance->fontPointSize);
     if (!resolved.empty()) return resolved;
@@ -2365,7 +2374,6 @@ bool runEditorInLaunchingTerminal(const std::vector<std::string> &argv, fm::Grap
 // site comment for why THAT one insists on a match first).
 bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::TerminalDisplay &terminalDisplay,
                       fm::History &history, std::optional<TerminalAppearance> appearance = std::nullopt) {
-  std::string fontPath = resolveGuiFontPath(appearance);
   // Saved window size/font (2026-08-24, item 427) -- ONLY applied when
   // `appearance` is unset: with `appearance` set, this call is the
   // "実はすでにGUI" launch-time overlay (tryEnterGuiPhase()'s own
@@ -2379,6 +2387,11 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // last-adjusted GUI window naturally wins instead of the hardcoded
   // 16pt/current-terminal-size default.
   fm::History::GuiPreferences savedGui = history.guiPreferences();
+  // savedGui.fontPathは`appearance`の有無に関わらず常に使う――
+  // "-f <path>"で明示指定された以上、実端末の自動マッチや保存済み
+  // rows/columns/fontPointSizeとは違い、常にユーザーの意図が最優先
+  // されるべきため(resolveGuiFontPath()自身の優先順位コメント参照)。
+  std::string fontPath = resolveGuiFontPath(appearance, savedGui.fontPath);
   int rows = display.rows(), columns = display.columns();
   int fontPointSize = 16;  // GraphicalDisplay::create()'s own default
   if (!appearance) {
@@ -2633,6 +2646,7 @@ int main(int argc, char **argv) {
   // during this port's development.
   bool forceCui = false;
   bool forceGui = false;
+  std::string explicitFontFlag;  // -f <path> -- see its own parsing comment below
   std::vector<char *> positionalArgs;
   for (int i = 1; i < argc; i++) {
     if (std::strcmp(argv[i], "-c") == 0) forceCui = true;
@@ -2698,6 +2712,19 @@ int main(int argc, char **argv) {
                    << (distanceValues.size() - tunableLevels) << " trailing value(s) will be ignored.\n";
       }
       fm::applyReleaseDistanceOverride(distanceValues);
+    } else if (std::strcmp(argv[i], "-f") == 0) {
+      // 2026-08-30、直接のユーザー依頼: "-g"のGUIウィンドウで使う
+      // フォントファイルへの明示パス。既存の隠しUSILICFONT環境変数
+      // (resolveGuiFontPath()参照)と同じ効果だが、こちらは
+      // History::GuiPreferences.fontPathとしてセッションをまたいで
+      // 記憶される(下のconsultHistoryOnStart由来のhistory書き出し
+      // 参照)ため、Finderからのダブルクリック起動(引数も環境変数も
+      // 渡せない、"白アイコンusilic"起動)でも一度設定すれば効き続ける。
+      if (i + 1 >= argc) {
+        std::cerr << "usilic: -f requires a font file path (e.g. -f /Library/Fonts/MS-Gothic.ttf).\n";
+        return 1;
+      }
+      explicitFontFlag = argv[++i];
     } else positionalArgs.push_back(argv[i]);
   }
   if (forceCui && forceGui) {
@@ -2904,6 +2931,18 @@ int main(int argc, char **argv) {
     }
   }
 
+  // "-f <path>"(上のオプション解析参照)は、読み込んだhistoryの
+  // GuiPreferences.fontPathをここで直ちに上書きする――こうすることで
+  // (1) このセッション自身のGUIフォント解決(resolveGuiFontPath()の
+  // 呼び出し側、savedGui.fontPath参照)にすぐ反映され、(2) 末尾の
+  // consultHistoryOnStart由来のhistory書き出しにも自然に乗る(引数
+  // 無し起動の場合のみ、次回のダブルクリック起動でも効き続ける)。
+  if (!explicitFontFlag.empty()) {
+    fm::History::GuiPreferences prefs = history.guiPreferences();
+    prefs.fontPath = explicitFontFlag;
+    history.setGuiPreferences(prefs);
+  }
+
   // History's own saved charset already defers to the environment
   // when charsetExplicitlySet() is true (loadHistoryText() leaves
   // savedCharset() nullopt in that case) -- see History's own class
@@ -3010,7 +3049,10 @@ int main(int argc, char **argv) {
   auto appearance = forceCui ? std::nullopt : queryRealTerminalAppearance();
   auto bounds = (forceCui || !appearance) ? std::nullopt : queryRealTerminalWindowBounds();
   if (appearance && bounds) {
-    std::string fontPath = resolveGuiFontPath(appearance);
+    // savedGui.fontPathをここでも尊重する理由はtryEnterGuiPhase()自身の
+    // コメントと同じ: "-f <path>"で明示指定された以上、実端末の自動
+    // マッチより優先されるべきため。
+    std::string fontPath = resolveGuiFontPath(appearance, history.guiPreferences().fontPath);
     // 2026-08-11: a real report of FOUR separate rendering-quality
     // experiments (forced bold, TTF_HINTING_LIGHT, TTF_HINTING_NONE,
     // alpha-channel gamma boost) all landing as "変化無し" (no visible
@@ -3301,11 +3343,15 @@ int main(int argc, char **argv) {
     // いた)。guiOwnsWholeSession(実はすでにGUI、上のコメント参照)が
     // 「戻る先の端末が無い」場合にrunTerminalPhase()へ一切戻らないのと
     // 同じ理由で、制御端末が無い場合はここでも同様にループへ入らず、
-    // GUIウィンドウが閉じた時点で素直に終了する。
-    if (forceGui && keyInput.fd() < 0) {
+    // GUIウィンドウが閉じた時点で素直に終了する。forceGuiに限らず
+    // 判定する(-cで強制した場合も同じ無限ビジーループに落ちることを
+    // このバグ修正の動作確認中に実際に踏んだ――制御端末が無い以上、
+    // -c/-g/デフォルトのどれで起動されていようと戻れる端末はどのみち
+    // 無い)。
+    if (keyInput.fd() < 0) {
       // 何もしない: GUIウィンドウは閉じられた(またはそもそも開けな
-      // かった)ので、戻る先の端末が無いままこのままmain()末尾へ進み
-      // 終了する。
+      // かった、あるいは-cで最初からGUIを試みてすらいない)ので、
+      // 戻る先の端末が無いままこのままmain()末尾へ進み終了する。
     } else {
       while (!app.wantsExit()) {
         if (!runTerminalPhase(app, keyInput, display, forceCui)) break;

@@ -1702,7 +1702,14 @@ bool GraphicalDisplay::pumpEvents() {
           // 本物の物理キーボードがこの癖を共有するかどうかは分からない;
           // 起きることが分かっている以上、どちらにしても頑健性のために
           // 残してある。
-          if (sym == SDLK_EQUALS || sym == SDLK_KP_PLUS || sym == SDLK_KP_EQUALS) adjustFontSize(1);
+          // 2026-08-30、直接のユーザー報告: 実物のキーボードでは"Cmd -"
+          // /"Cmd 0"(共にShift不要)は効くのに"Cmd +"(USキーボードで
+          // Shift+"="が必要)だけ反応しなかった――上のAppleScript注入
+          // (SDLK_KP_EQUALS)の癖とは別に、実機ではCmdを押しながら
+          // Shiftも押した状態がSDLK_EQUALSではなくSDLK_PLUSとして
+          // 届いている(macOS側がShift修飾を先に文字へ反映してから
+          // SDLへ渡していると見られる)ため。
+          if (sym == SDLK_EQUALS || sym == SDLK_PLUS || sym == SDLK_KP_PLUS || sym == SDLK_KP_EQUALS) adjustFontSize(1);
           else if (sym == SDLK_MINUS || sym == SDLK_KP_MINUS) adjustFontSize(-1);
           else if (sym == SDLK_0 || sym == SDLK_KP_0) adjustFontSize(0);
           else if (sym == SDLK_k) cycleColorPreset();

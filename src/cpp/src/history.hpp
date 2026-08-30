@@ -211,6 +211,12 @@ class History {
     int rows = 0, columns = 0;  // 0 == 未設定(常に両方設定済みか両方未設定のどちらか)
     bool hasColors = false;
     unsigned char fgR = 0, fgG = 0, fgB = 0, bgR = 0, bgG = 0, bgB = 0;
+    // 2026-08-30、直接のユーザー依頼(-gへの明示的なフォント指定を、
+    // Finderダブルクリック起動(引数もUSILICFONT環境変数も渡せない)
+    // でも効くようにしたい): "-f <path>"で指定されたフォントファイル
+    // パスを、fontPointSize同様セッションをまたいで記憶する。空文字列
+    // == 未設定。
+    std::string fontPath;
   };
   GuiPreferences guiPreferences() const;
   void setGuiPreferences(const GuiPreferences &preferences);

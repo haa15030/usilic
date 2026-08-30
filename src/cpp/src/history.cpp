@@ -431,6 +431,10 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     if (toks.size() > 10) prefs.bgR = static_cast<unsigned char>(std::atoi(toks[10].c_str()));
     if (toks.size() > 11) prefs.bgG = static_cast<unsigned char>(std::atoi(toks[11].c_str()));
     if (toks.size() > 12) prefs.bgB = static_cast<unsigned char>(std::atoi(toks[12].c_str()));
+    // fontPath(2026-08-30、項目444)――同じ理由(古い履歴ファイルとの
+    // 前方互換)で末尾に追加。encodeField()/decodeField()でリテラルな
+    // 空白を含むパスも安全に往復できる。
+    if (toks.size() > 13) prefs.fontPath = decodeField(toks[13]);
     guiPreferences_ = prefs;
   }
 
@@ -511,7 +515,7 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(guiPreferences_.hasColors ? 1 : 0) + " " + std::to_string(guiPreferences_.fgR) + " " +
          std::to_string(guiPreferences_.fgG) + " " + std::to_string(guiPreferences_.fgB) + " " +
          std::to_string(guiPreferences_.bgR) + " " + std::to_string(guiPreferences_.bgG) + " " +
-         std::to_string(guiPreferences_.bgB) + "\n";
+         std::to_string(guiPreferences_.bgB) + " " + encodeField(guiPreferences_.fontPath) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }
