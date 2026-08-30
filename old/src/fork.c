@@ -7,7 +7,8 @@
 #include <sys/wait.h>
 
 static char *w_arg(char arg[], char argv[])
-{ /* set filename for program (dvi2tty etc.) needs a specific suffix (.dvi etc.) */
+{ /* 特定のsuffix(.dvi等)を必要とするプログラム(dvi2tty等)のために
+     ファイル名を設定する */
   static char wa[N_line];
   char *cp, *dp;
 
@@ -22,7 +23,7 @@ u_char *read_buff(int *sizep, u_int fd, int f_chkbin)/*usilic*/
   u_char *buff;
 
 #if 0
-  if (f_chkbin) { /* not file-selector */
+  if (f_chkbin) { /* file-selectorではない */
     echo_mess(2);
     if (!(pid = fork())) {
       signal(SIGPIPE, SIG_DFL);
@@ -69,23 +70,27 @@ u_char *fork_bin(CHILD *chp, int *sizep, int f_M, int f_chkbin)/*usilic*/
   if (!fork()) {
     load_signal();
     dup_error();
-    if (f_M == T_dir) /* `ls' output is parsed byte-by-byte to find where
-			  the filename starts (get_col()); a localized month
-			  name (e.g. "7月") is multibyte in UTF-8, so its byte
-			  length no longer matches its 1-column display width,
-			  throwing off every column position after it and
-			  duplicating the first character of the highlighted
-			  filename on screen. Force the C locale for this
-			  child only, so `ls' always prints ASCII dates. */
+    if (f_M == T_dir) /* `ls'の出力は、ファイル名がどこから始まるかを
+			  見つけるためバイト単位でパースされる
+			  (get_col())――ローカライズされた月名(例えば
+			  "7月")はUTF-8ではマルチバイトなので、その
+			  バイト長はもはや1カラムの表示幅と一致せず、
+			  それ以降の全てのカラム位置を狂わせ、画面上で
+			  ハイライトされたファイル名の先頭文字を重複
+			  させてしまう。この子プロセスに限ってCロケールを
+			  強制し、`ls'が常にASCIIの日付を出力するように
+			  する。 */
       setenv("LC_ALL", "C", 1);
     close(1);
     dup2(pv[1], 1);
     close(pv[1]);
     close(pv[0]);
     execvp(*chp->argv, chp->argv);
-    exit(0); /* was missing: on execvp() failure this child fell through and kept
-		 running as a second, full copy of usilic (same process image, same
-		 open tty fd), racing the real process for every keystroke. */
+    exit(0); /* 抜けていた: execvp()が失敗した場合、この子プロセスは
+		 そのまま素通りしてしまい、usilicの2つ目の完全なコピー
+		 (同じプロセスイメージ、同じ開かれたttyのfd)として
+		 動き続け、あらゆるキー入力を巡って本物のプロセスと
+		 競合していた。 */
   }
   close(pv[1]);
   buff = read_buff(sizep, pv[0], f_chkbin);
@@ -256,42 +261,46 @@ u_char *fork_arc(char name[], int f_M, CHILD *chp0, int *tmp_sizep, int *bp_size
 		    , NULL, s_S(S_rpm), name, NULL); /* `.rpm rpm -qplv' */
     break;
   }
-  if ((n_error = load_intr()) == S_err0) { /* store n_error */
+  if ((n_error = load_intr()) == S_err0) { /* n_errorを保存する */
     tmp_buff = NULL;
     *tmp_sizep = 0;
   } else {
     pipe(pv);
     if (!fork()) {
       load_signal();
-      /* 2026-08-20 fix, a real report + screenshot (utf8.tar's own ARC
-	 listing showing octal-escaped garbage, e.g. "utf8/\345\233..."
-	 instead of real UTF-8 filenames): confirmed directly that the
-	 blanket LC_ALL=C below (kept for its own original, still-valid
-	 reason -- see the comment just below) was ALSO forcing tar(1)'s
-	 own LC_CTYPE to "C", which makes it treat every non-ASCII byte
-	 in a filename as unprintable and octal-escape it -- `tar tvf' on
-	 the exact same archive, run with an empty/"C" environment,
-	 escapes every such byte, while the identical command with only
-	 LC_CTYPE set to a UTF-8 locale (LC_TIME left at "C") prints the
-	 real characters AND keeps the fixed-width English date column
-	 alloc_head() depends on. Splitting LC_ALL into its two relevant
-	 categories -- LC_TIME force to "C" (this comment's own original
-	 reason, unchanged) and LC_CTYPE to a UTF-8 locale ONLY when
-	 usilic itself is configured for UTF-8 (matching vt_charset(0),
-	 the same gate every other UTF-8-specific fix in this codebase
-	 uses -- EUC/SJIS/ASCII users see no behavior change here) --
-	 fixes the filenames without reopening the original date-parsing
-	 crash this code exists to prevent. LC_ALL must NOT also be set
-	 (even to unset it explicitly): POSIX defines LC_ALL, once set,
-	 as overriding every individual LC_* category outright. */
-      unsetenv("LC_ALL"); /* in case the invoking shell's own environment
-			      already had one set -- LC_ALL, if present at
-			      all, overrides the LC_TIME/LC_CTYPE settings
-			      below outright regardless of their own values */
-      setenv("LC_TIME", "C", 1); /* archive TOC (tar tvf/unzip -l/lha/rpm -qplv)
-				    is parsed byte-by-byte by alloc_head() as
-				    ASCII; a localized date (e.g. "7月") breaks
-				    that scan and hangs or segfaults usilic */
+      /* 2026-08-20修正、実際の報告+スクリーンショット(utf8.tar自身の
+	 ARC一覧が、本物のUTF-8ファイル名の代わりに8進エスケープされた
+	 ゴミ、例えば"utf8/\345\233..."を表示していた): 下の一律の
+	 LC_ALL=C(それ自身の元々の、今も有効な理由のために残されている
+	 ――すぐ下のコメント参照)が、tar(1)自身のLC_CTYPEも"C"に
+	 強制してしまっており、そのためファイル名中の非ASCIIバイトを
+	 全て表示不能として扱い8進エスケープしてしまっていることを
+	 直接確認した――同じアーカイブに対する`tar tvf'を、空/"C"の
+	 環境で実行するとそのようなバイトを全てエスケープするが、
+	 LC_CTYPEだけをUTF-8ロケールに設定した(LC_TIMEは"C"のまま)
+	 全く同じコマンドは、本物の文字を表示しつつ、alloc_head()が
+	 依存する固定幅の英語の日付欄も保つ。LC_ALLを、関連する2つの
+	 カテゴリ――LC_TIMEを"C"へ強制する(このコメント自身の元々の
+	 理由、変更無し)と、usilic自身がUTF-8に設定されている時「だけ」
+	 LC_CTYPEをUTF-8ロケールにする(vt_charset(0)に合わせる、この
+	 コードベースの他の全てのUTF-8固有の修正が使うのと同じゲート
+	 ――EUC/SJIS/ASCIIのユーザーにはここでの挙動変化は一切無い)
+	 ――に分割することで、このコードが防ごうとしている元々の日付
+	 パースのクラッシュを再発させることなくファイル名を修正できる。
+	 LC_ALLは(明示的に未設定にすることも含めて)絶対に一緒に設定
+	 してはならない: POSIXはLC_ALLを、一度設定されると個々のLC_*
+	 カテゴリの設定を無条件に上書きするものと定義している。 */
+      unsetenv("LC_ALL"); /* 呼び出し元のシェル自身の環境で既に設定
+			      されている場合に備えて――LC_ALLは、もし
+			      少しでも存在すれば、それ自身の値に関わらず
+			      下のLC_TIME/LC_CTYPEの設定を無条件に上書き
+			      してしまう */
+      setenv("LC_TIME", "C", 1); /* アーカイブのTOC(tar tvf/unzip -l/
+				    lha/rpm -qplv)は、alloc_head()によって
+				    ASCIIとしてバイト単位でパースされる;
+				    ローカライズされた日付(例えば"7月")は
+				    そのスキャンを壊し、usilicをハング
+				    させたりセグフォさせたりする */
       setenv("LC_CTYPE", (vt_charset(0) == C_utf8) ? "en_US.UTF-8" : "C", 1);
       if (chp2) {
 	pipe(&pv[2]);
@@ -332,7 +341,7 @@ u_char *fork_arc(char name[], int f_M, CHILD *chp0, int *tmp_sizep, int *bp_size
     close(pv[1]);
     tmp_buff = read_buff(tmp_sizep, pv[0], 0);
     close(pv[0]);
-    if (n_error) save_intr(n_error); /* restore n_error */
+    if (n_error) save_intr(n_error); /* n_errorを復元する */
   }
   return tmp_buff;
 }
@@ -386,7 +395,7 @@ static u_char *sgets(u_char *buff, int len, u_char *tp)
 }
 
 static int cat_mime(u_char line0[], FILE *fp, FILE *fp1, u_char **tpp)
-{ /* concatenate mime */
+{ /* mimeを連結する */
   static u_char line1[N_pipe];
   u_char *p, *cp0, *cp1, *tp = NULL;
   int i, j, len, f_nl;
@@ -459,7 +468,7 @@ u_char *fork_grep(int *sizep, u_char str[], PP *pp, int f_fgrep)/*usilic*/
       else
 	for (; pp; pp = pp->next) {
 	  if (!pp->f.len) fputc(' ', fp);
-	  else if (!f_bs && pp->attr) /* bold or underline attribute */
+	  else if (!f_bs && pp->attr) /* boldまたはunderlineの属性 */
 	    for (ce = pp->cs + pp->f.len, cp = pp->cs; cp < ce; cp++)
 	      if (*cp == K_h)
 		if (cp[1] == K_h) cp += 3;
@@ -472,7 +481,7 @@ u_char *fork_grep(int *sizep, u_char str[], PP *pp, int f_fgrep)/*usilic*/
 		else fputc(*cp, fp);
 	      else fputc(*cp, fp);
 	  else if (pp->f.nl && pp->f.str)
-	    fwrite(pp->cs, 1, strlen(pp->cs), fp); /* for complete filename */
+	    fwrite(pp->cs, 1, strlen(pp->cs), fp); /* 完全なファイル名のため */
 	  else fwrite(pp->cs, 1, pp->f.len, fp);
 	  fputc('\n', fp);
 	}
@@ -526,9 +535,9 @@ u_char *fork_grep2(int *sizep, u_char *buff, u_char str[], char name[])/*usilic*
   }
   if (f_jis) {
     u_char *p = alloca(strlen(str) * 2);
-    for (i = j = 0; str[i]; i++, j++) { 
-      /* convert EUC to JIS */
-      if ((c = str[i]) >= 0x80) 
+    for (i = j = 0; str[i]; i++, j++) {
+      /* EUCをJISへ変換する */
+      if ((c = str[i]) >= 0x80)
 	switch((c &= ~0x80)) {
 	case '$': case '^': case '[': case ']':
 	case '\\': case '.': case '+': case '*':
