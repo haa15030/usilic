@@ -33,7 +33,7 @@ typedef struct {
 } FLAG;
 
 typedef union {
-  struct { /* for write_shell() (parent process) */
+  struct { /* write_shell()(親プロセス)のため */
     int *crp;
     int *colp, *rowp;
     int *col0p, *colep;
@@ -41,7 +41,7 @@ typedef union {
     int *lenp;
     u_char *dir, *version;
   } w;
-  struct { /* for read_shell() (child process) */
+  struct { /* read_shell()(子プロセス)のため */
     int *row0p, *lenp, *ip;
     RV *rvp;
     PN *pnp;	
@@ -84,7 +84,7 @@ static void write_shell(void *p)
   case 0:
     if (!pv) return;
     read(pv[4], &len, sizeof(int));
-    if (!len) /* <== (4) */
+    if (!len) /* <== (4)参照 */
       f_cr = 1;
     else {
       read(pv[4], dir, len);
@@ -92,29 +92,30 @@ static void write_shell(void *p)
 	if ((cp2 = strstr(dir, ":~"))) {
 	  memmove(&dir[strlen(s_S(S_home))], &cp2[3], strlen(&cp2[3]) + 1);
 	  memcpy(dir, s_S(S_home), strlen(s_S(S_home)));
-	} else { /* cp points inside dir[]; &cp[...] and dir overlap when
-		    cp != dir, so strcpy() here is undefined behavior (and
-		    on macOS, _FORTIFY_SOURCE's __chk_fail_overlap() catches
-		    it and hangs write_shell(), freezing usilic after a CP/MV/RM
-		    completes and it tries to redraw the SHELL prompt) */
+	} else { /* cpはdir[]の内部を指している; cp != dirの時、
+		    &cp[...]とdirは重なるため、ここでのstrcpy()は
+		    未定義動作である(そしてmacOSでは、_FORTIFY_SOURCEの
+		    __chk_fail_overlap()がそれを検知し、write_shell()を
+		    ハングさせ、CP/MV/RMが完了した後にSHELLプロンプトを
+		    再描画しようとするとusilicがフリーズする) */
 	  u_char *sp = &cp[strlen(version) + 1];
 	  memmove(dir, sp, strlen(sp) + 1);
 	}
-	if (!strlen(dir)) ; /* garbage */
+	if (!strlen(dir)) ; /* ゴミ */
 	else {
 	  strcpy(&strchr(dir, '\0')[-2], "/");
-	  chdir(dir); /* go to the directory specified by SHELL-prompt */
-	} 
+	  chdir(dir); /* SHELLプロンプトで指定されたディレクトリへ移動する */
+	}
       }
       read(pv[4], &row, sizeof(int));
       read(pv[4], &col0, sizeof(int));
       read(pv[4], &f_disp, sizeof(int));
-      col = cole = colb = col0; /* (7) */
+      col = cole = colb = col0; /* (7)参照 */
       len = vt_col(0) - col0 - 1;
       if (!f_disp && row > 1 && load_intr() != S_errw) {
 	if (!Shell.f.nobl)
 	  echo_mess(S_errg); /* "Exit" */
-	else echo_mess(-S_errg); /* without BL (0x07) */
+	else echo_mess(-S_errg); /* BL(0x07)無しで */
       }
     }
     write(pv[7], &len, sizeof(int));
@@ -170,7 +171,7 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
       m = T_tag2;
       vt_mode(-'d');
     } else m = T_tag;
-    i = vt_mode('W'); /* 'W' == 1 : resize window */
+    i = vt_mode('W'); /* 'W' == 1 : ウィンドウをリサイズする */
     sprintf(comm, "%d\n%d\n%s\n%d\n%d\n%d\n"
 	    , vt_row(0), vt_col(0), prev, vt_charset(0), vt_mode('H'), i);
     write_comm(pv[1], m, comm, spid);
@@ -181,10 +182,10 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 	if (col_b > vt_col(0)) col_b = vt_col(0); 
 	if (i >= col_b / 4 * 3 + Shell.f.alen)
 	  read_m(NULL, 2, 0, "\r"
-		 , NULL, NULL, NULL, NULL, NULL, NULL); /* (5) */
+		 , NULL, NULL, NULL, NULL, NULL, NULL); /* (5)参照 */
       }
     }
-    print_intr(NULL, NULL); /* S_errm etc. */
+    print_intr(NULL, NULL); /* S_errm等 */
   case 4:
     if (*str) {
       do {
@@ -222,7 +223,7 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 	wait_comm(pv[2], &pos, s.w.rowp, *s.w.col0p, &buff[shift], pp_str);
       }
       if ((!strncmp(w, "cat", 3) || !strncmp(w, "echo", 4))
-	  && strstr(w, s_S(S_w))) { /* ^Jw / ^J^W */
+	  && strstr(w, s_S(S_w))) { /* ^Jwまたは^J^W */
 	ff.skip = 1;
 	strcpy(&buff[ilen], w);
 	*s.w.colp = *s.w.colep = strlen(buff) + *s.w.col0p;
@@ -238,8 +239,8 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 	  *cp = '\0';
 	  ff.w2 = 0;
 	  st_size = 0;
-	  while (1) { /* (11) */
-	    /* prompt for `rm -i' etc. doesn't work until (12) done. */
+	  while (1) { /* (11)参照 */
+	    /* `rm -i'等のプロンプトは(12)が完了するまで動作しない。 */
 	    write_comm(pv[1], T_in, NULL, spid);
 	    if (!wait_comm(pv[2], NULL, NULL, 0, buff, pp_str)) break;
 	    usleep(10000);
@@ -250,7 +251,7 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 	fwrite(w, 1, strlen(w), ofp);
 	fflush(ofp);
 	if (w2) 
-	  while (!access(s_S(S_w), F_OK)) /* (9) */
+	  while (!access(s_S(S_w), F_OK)) /* (9)参照 */
 	    usleep(10000); 
 	if (!strncmp(w, "cd", 2)) *histp = save_history(*histp, w, 1);
       }
@@ -271,7 +272,7 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
     if (!m) {
       write_comm(pv[1], T_in, NULL, spid);
       if (wait_comm(pv[2], NULL, NULL, 0, buff, pp_str)) {
-	/* Interaction */
+	/* 対話処理 */
 	do {
 	  if (vt_mode('W')) {
 	    sprintf(comm, "%d\n%d\n%s\n%d\n%d\n%d\n"
@@ -337,7 +338,7 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 	      continue;
 	    }
 	    f_shell = 5;
-	    fputc(K_u, ofp); /* (10) */
+	    fputc(K_u, ofp); /* (10)参照 */
 	    fflush(ofp);
 	  }
 	  switch(c) {
@@ -355,7 +356,7 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 	    break;
 	  case K_h: /* ^H */
 	    c = K_dl;
-	  case K_dl: /* Back space */
+	  case K_dl: /* バックスペース */
 	  case K_c: /* ^C */
 	  case K_z: /* ^Z */
 	  case K_d: /* ^D */
@@ -399,7 +400,7 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
       m = edit_line(m, M_shell, buff, *s.w.lenp, *s.w.rowp, *s.w.col0p
 		    , s.w.colp, s.w.colep, &shift, NULL);
       if (col_b != *s.w.col0p) {
-	/* set `*s.w.col0p' at (5),(6),(7) */
+	/* (5)、(6)、(7)で`*s.w.col0p'を設定する */
 	col_b = *s.w.col0p - col_b;
 	*s.w.colep += col_b;
 	*s.w.colp += col_b;
@@ -505,7 +506,7 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
       }
       i = strlen(wb);
       vt_move(*s.w.rowp, *s.w.colp);
-      fputc(K_u, ofp); /* (3) */
+      fputc(K_u, ofp); /* (3)参照 */
       fflush(ofp);
       strcpy(&buff[ilen], wb);
       *s.w.colp = *s.w.colep = strlen(buff) + *s.w.col0p;
@@ -561,7 +562,7 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 	  wait_comm(pv[2], NULL, NULL, 0, NULL, NULL);
 	  if (pos != M_tail) {
 	    if (strlen(pp_str) > (i = strlen(s.w.version)) 
-		&& (!strncmp(pp_str, s.w.version, i))) { /* past prompt */
+		&& (!strncmp(pp_str, s.w.version, i))) { /* プロンプトより後 */
 	      if (pp_str[i+1] == '~') i -= strlen(s_S(S_home)) - 2;
 	      strcpy(buff, &(strchr(&pp_str[i+strlen(s.w.dir)], ' '))[1]);
 	      write_comm(pv[1], M_tail, NULL, spid);
@@ -588,12 +589,12 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 		  p = &cp[1];
 		  strcpy(buff, &cp[1]);
 		  for (cp = buff; *cp == ' ' || *cp == '\t'; cp++) ;
-		  /* NOT strcpy(buff, cp) -- cp already points inside buff
-		     here (see the loop above), so source and destination
-		     overlap. macOS's _FORTIFY_SOURCE detects this and
-		     hangs/aborts inside __chk_fail_overlap() (same class
-		     of bug as the write_shell() one fixed earlier).
-		     memmove() has no such restriction. */
+		  /* strcpy(buff, cp)ではないこと――cpはここで既にbuffの
+		     内部を指しているので(上のループ参照)、コピー元と
+		     コピー先が重なる。macOSの_FORTIFY_SOURCEはこれを
+		     検知し、__chk_fail_overlap()の中でハング/abortする
+		     (以前修正したwrite_shell()のものと同じクラスの
+		     バグ)。memmove()にはそのような制約が無い。 */
 		  memmove(buff, cp, strlen((char*)cp) + 1);
 		  if ((cp = strchr(buff, ' '))) *cp = '\0';
 		  if (!strcmp(buff, s_S(S_usilic))) i = -1;
@@ -614,11 +615,12 @@ static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, 
 		else i = (find_prog(prog, buff)) ? 2 : 0;
 	      }
 	      if (i > 0) {
-		/* f_wait=0: skip the "Hit any key" pause -- in SHELL mode the
-		   user naturally keeps typing the next command right away, and
-		   that keystroke was being silently swallowed as the "any key"
-		   acknowledgement (the "1 character lost after quitting less"
-		   bug). do_prog() still restores usilic's raw termio itself. */
+		/* f_wait=0: "Hit any key"の一時停止を読み飛ばす――SHELL
+		   モードでは、ユーザーは自然にすぐ次のコマンドを入力し
+		   続けるので、そのキー入力が「何かキーを」の確認として
+		   静かに飲み込まれてしまっていた("lessを終了した後に
+		   1文字失われる"バグ)。do_prog()は、それでもusilic自身の
+		   raw termioを復元する。 */
 		do_prog(comm, cmdp, histp, 0);
 		strcpy(buff, comm);
 		sprintf(comm, "%d\n%d\n", vt_row(0), vt_col(0));
@@ -693,7 +695,7 @@ static int read_comm(int pfd, char comm[])
 }
 
 static PP *hide_ps(PP *ps)
-{ /* save virtual line (prompt line) */
+{ /* 仮想行(プロンプト行)を保存する */
   while (ps->next) ps = ps->next;
   if (ps->prev) ps->prev->next = NULL;
   else return NULL;
@@ -715,11 +717,11 @@ static void disp_shell(RV *rvp, char name[], u_char prev[], char arg[], int row0
   }
   disp_window(rvp->ps, rvp->pp, T_shell, name, prev, arg, &len);
   if (i) {
-    /* Command-line */
+    /* コマンドライン */
     if (ps) ps->prev->next = ps;
-    if (!rvp->pe->next) { /* bottom page */
+    if (!rvp->pe->next) { /* 最後のページ */
       vt_sc();
-      vt_move(row0, 0); /* row0: cursor position (prompt line) */
+      vt_move(row0, 0); /* row0: カーソル位置(プロンプト行) */
       if (*rvp->str) {
 	i = prompt[Shell.f.clen];
 	prompt[Shell.f.clen] = '\0';
@@ -732,7 +734,7 @@ static void disp_shell(RV *rvp, char name[], u_char prev[], char arg[], int row0
     }
     vt_move(rvp->row, rvp->col);
   } else {
-    /* Interaction */
+    /* 対話処理 */
     for (ps = rvp->ps; ps->next; ps = ps->next) ;
     ps->cs = F3;
   }
@@ -751,10 +753,10 @@ static void shell_row(RV *rvp, PN *pnp, int f_M, u_char buff[])
 {
   PP *ps;
 
-  ps = (!rvp->pp->next) ? hide_ps(rvp->ps) : NULL; /* save virtual line */
+  ps = (!rvp->pp->next) ? hide_ps(rvp->ps) : NULL; /* 仮想行を保存する */
   move_row(f_M, rvp, pnp, NULL, M_shell);
   disp_window(rvp->ps, rvp->pp, M_shell, NULL, NULL, NULL, NULL);
-  if (ps) ps->prev->next = ps; /* load virtual line */
+  if (ps) ps->prev->next = ps; /* 仮想行を読み込む */
 }
 
 static int shell_page(RV *rvp, PN *pnp, int f_M, u_char prompt[], u_char buff[])
@@ -763,8 +765,8 @@ static int shell_page(RV *rvp, PN *pnp, int f_M, u_char prompt[], u_char buff[])
   int i = 0;
 
   if (f_M == M_kback || f_M == M_head) ps = NULL;
-  else if ((i = strlen(prompt))) 
-    ps = hide_ps(rvp->ps); /* save SHELL-prompt line */
+  else if ((i = strlen(prompt)))
+    ps = hide_ps(rvp->ps); /* SHELLプロンプト行を保存する */
   else {
     for (ps = rvp->ps; ps->next; ps = ps->next) ;
     ps->cs = buff;
@@ -772,11 +774,11 @@ static int shell_page(RV *rvp, PN *pnp, int f_M, u_char prompt[], u_char buff[])
   }
   move_page(f_M, rvp, pnp, NULL, M_shell);
   if (i) {
-    ps->prev->next = ps; /* load SHELL-prompt line */
-    if (rvp->pp->next) { /* not end line */
-      if (rvp->pe->next && rvp->pe->next->cs != F3) 
-	; /* not end page */
-      else /* stopped at the end line after saving */
+    ps->prev->next = ps; /* SHELLプロンプト行を読み込む */
+    if (rvp->pp->next) { /* 最終行ではない */
+      if (rvp->pe->next && rvp->pe->next->cs != F3)
+	; /* 最終ページではない */
+      else /* 保存後に最終行で止まった */
 	shell_row(rvp, pnp, M_dn, buff);
     }
   } else if (ps) {
@@ -843,7 +845,7 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
   plen = strlen(prompt);
   if (!plen && n_col == vt_col(0) && (c == '\r' || c == '\n')) {
     *buff = '\0';
-    return '\r'; /* new line was already added at (8), so skip next_line() */
+    return '\r'; /* 新しい行は(8)で既に追加済みなので、next_line()を読み飛ばす */
   }
   if (n_buff >= N_pipe || c == '\n' || (n_col == vt_col(0) && c == '\r')) { 
     int j;
@@ -861,12 +863,12 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
 	strcpy(p2, p);
 	cp = &p[vt_col(0) + j];
 	*cp = '\0';
-	/* set string of prompt to virtual line */
+	/* プロンプトの文字列を仮想行へ設定する */
 	rvp->pp->cs = strdup(p);
 	rvp->pp->f.str = 1;
 	rvp->pp->f.len = strlen(rvp->pp->cs);
 	next_line(rvp, pnp, '\\', 0);
-	/* '\\' : line continuation ==> alloc.c (2) */
+	/* '\\' : 行の継続 ==> alloc.c (2)参照 */
 	if (!fp->bash && cp[-1] == '\r') ff.nl = 1;
 	strcpy(p, p2);
 	memmove(p, &p[vt_col(0) + j], strlen((char*)&p[vt_col(0) + j]) + 1);
@@ -917,13 +919,13 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
 	rvp->pp->f.nl = 1;
       } else c = '\n';
     } else if (n_col == vt_col(0))
-      c = '\r'; /* skip alloc_sh() at next_line() */
+      c = '\r'; /* next_line()でalloc_sh()を読み飛ばす */
     if (plen) {
       if ((p = strchr(prompt, ' ')))
 	p = strchr(&p[1], ' ');
     } else p = NULL;
     if (p) {
-      /* SHELL-prompt */
+      /* SHELLプロンプト */
       p[1] = '\0';
       if ((j = *row0p) < vt_row(0) - 2) {
 	j = ++(*row0p);
@@ -1001,7 +1003,7 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
 	  if ((n_buff -= 3) < 0) n_buff = 0;
 	  buff[n_buff] = '\0';
 	  ff.md = 0;
-	} else ff.md++; /* bold */
+	} else ff.md++; /* bold(太字) */
       else if (ff.md) {
 	if (ff.md == 1)
 	  if (c == ' ') ff.bs = 1;
@@ -1017,16 +1019,16 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
 	  buff[n_buff] = '\0';
 	}
       } else if (c == K_ec && !*prompt) {
-	ff.esc = 1; /* escape sequence */
+	ff.esc = 1; /* エスケープシーケンス */
 	if (!plen) buff[--n_buff] = '\0';
       } else if (ff.esc) {
 	ff.esc = (c < 'A' || c > 'Z') && (c < 'a' || c > 'z');
 	if (!plen) buff[--n_buff] = '\0';
       } else if (vt_charset(0) == C_utf8 && (u8_len || c >= 0x80)) {
-	/* UTF-8 (step 4): buffer a multi-byte sequence across calls
-	   (this function sees one byte per call) and only advance
-	   n_col by its real display width once the sequence
-	   completes, instead of once per byte. */
+	/* UTF-8(ステップ4): 呼び出しをまたいでマルチバイトシーケンス
+	   をバッファし(この関数は呼び出しごとに1バイトずつ見る)、
+	   1バイトごとにではなく、シーケンスが完成した時にだけ、
+	   その本当の表示幅の分だけn_colを進める。 */
 	if (!u8_len) u8_len = utf8_seqlen(c);
 	u8_buf[(u8_i < 4) ? u8_i : 3] = c;
 	if (++u8_i >= u8_len) {
@@ -1050,8 +1052,8 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
       rvp->pp->f.line = rvp->pp->prev->f.line + rvp->pp->prev->f.nl;
       rvp->pp->f.nl = 0;
       n_buff = ff.us = ff.md = 0;
-      /* (8) */
-      c = '\n'; /* add new line at next_line() */
+      /* (8)参照 */
+      c = '\n'; /* next_line()で新しい行を追加する */
     } else
       do {
 	if (pnp->line == 1) return c;
@@ -1060,12 +1062,12 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
 	    vt_move(*row0p, Shell.f.blen);
 	    i = Shell.f.blen + plen - vt_col(0) + vt_col(0) / 4 + 4;
 	    if (vt_charset(0) == C_utf8) {
-	      /* count_k()'s single-byte backoff (below) assumes a 2-byte
-		 EUC pair; a UTF-8 sequence can be 1-4 bytes, so skipping
-		 only 1 byte past a split character can leave a truncated
-		 continuation byte at the front, rendered as "?" by the
-		 terminal. Walk from the start and land on the next full
-		 character boundary at or after i instead. */
+	      /* (下の)count_k()の1バイト分の後退は2バイトのEUCペアを
+		 前提としている; UTF-8シーケンスは1〜4バイトになり得るので、
+		 分断された文字を1バイトだけ飛ばして進むと、先頭に切り詰め
+		 られた継続バイトが残ってしまい、端末によって"?"として描画
+		 されてしまう。代わりに先頭からたどり、i以降の次の完全な
+		 文字境界に着地する。 */
 	      int pos = 0, u_len, j = i;
 	      while (pos < i) {
 		u_len = utf8_seqlen(prompt[pos]);
@@ -1333,7 +1335,7 @@ static void read_shell(void *p)
 	if (pp->cs == F3) break;
 	i += strlen(pp->cs) + 1;
 	strcat(comm, pp->cs);
-	if (pp->split) 	/* (1) <== alloc.c (2) */
+	if (pp->split) 	/* (1) <== alloc.c (2)参照 */
 	  ;
 	else break;
       }
@@ -1411,7 +1413,7 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
       read_shell(&s);
     }
     Shell.f.init = 0;
-    inter = 1; /* ==> (11) */
+    inter = 1; /* ==> (11)参照 */
     strcpy(usilic, getenv(ENV_PROG));
     errp[0] = s_S(S_mark);
     errp[1] = usilic;
@@ -1423,26 +1425,29 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
     chp = get_child(NULL, s_P(P_mode)[M_shell], NULL, NULL, NULL);
     f.bash = !strcmp(chp->argv[0], "bash");
     signal(SIGCHLD, SIG_DFL);
-    while (fgetc(ifp) == EOF) ; /* (12) */
+    while (fgetc(ifp) == EOF) ; /* (12)参照 */
     if (!fork()) {
       if (f.bash) {
-	/* unset PROMPT_COMMAND: overriding PS1 alone isn't enough to get a
-	   prompt usilic's line-by-line SHELL-mode parser can recognize. Many
-	   desktop terminal emulators (e.g. GNOME Terminal/VTE, via
-	   /etc/profile.d/vte.sh) set PROMPT_COMMAND to inject an OSC
-	   escape sequence (reporting cwd as a file:// URI, percent-encoded)
-	   before every prompt. usilic's parser doesn't know this escape
-	   sequence and reads it as literal text, desyncing the line buffer
-	   into a repeating garbage loop -- most visible when the cwd has
-	   non-ASCII characters (e.g. a localized "Pictures" folder name),
-	   which makes the injected escape sequence long enough to spill
-	   across what usilic expects to be a single prompt line. */
-	/* eos: sentinel marking the end of this setup line, matched below.
-	   pid0 makes it unique to this run -- s_S(S_mark) alone isn't
-	   enough since PS1 (built with it, just below) already contains it
-	   twice, so a scan for S_mark stops at that earlier occurrence and
-	   leaks everything after it (echoed PS1 tail, the real first
-	   prompt, ...) into what usilic parses as the first SHELL-prompt line. */
+	/* PROMPT_COMMANDをunsetする: PS1だけを上書きしても、usilicの
+	   1行ずつのSHELLモードパーサが認識できるプロンプトを得るには
+	   不十分である。多くのデスクトップ端末エミュレータ(例えば
+	   /etc/profile.d/vte.sh経由のGNOME Terminal/VTE)は、プロンプト
+	   のたびにOSCエスケープシーケンス(cwdをfile:// URIとして、
+	   パーセントエンコードして報告する)を注入するためPROMPT_COMMAND
+	   を設定する。usilicのパーサはこのエスケープシーケンスを知らず、
+	   それをリテラルなテキストとして読んでしまい、行バッファを
+	   繰り返すゴミのループへdesyncさせてしまう――cwdに非ASCII文字
+	   がある場合(例えばローカライズされた「Pictures」フォルダ名)
+	   に最も顕著で、その場合注入されるエスケープシーケンスが十分
+	   長くなり、usilicが単一のプロンプト行であると期待しているもの
+	   をはみ出してしまう。 */
+	/* eos: この設定行の終わりを示す番兵で、下でマッチさせる。
+	   pid0がこの実行に対して一意にする――s_S(S_mark)単体では、
+	   (このすぐ下でそれを使って組み立てられる)PS1が既にそれを
+	   2回含んでいるため不十分であり、S_markを探すスキャンはその
+	   最初の方の出現で止まってしまい、それ以降(エコーされたPS1の
+	   末尾、本物の最初のプロンプト等)すべてが、usilicが最初の
+	   SHELLプロンプト行としてパースするものへ漏れ込んでしまう。 */
 	char eos[32];
 	sprintf(eos, "#eos%d#", pid0);
 	fprintf(ofp, "unset PROMPT_COMMAND; export PS1=\047%s%s:\\w\\$ %s\047; set -o ignoreeof; export COLUMNS=%d; unset HISTFILE; export PAGER=\047%s -p %d\047\n%s\n"
@@ -1457,14 +1462,13 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
     while ((c = fgetc(ifp)) != '\r') ;
 #else
     if (f.bash) {
-      /* Discard everything up through our own "#eosPID#" sentinel (see
-	 above) instead of a bare '#': between the fork() above and here,
-	 bash may already have auto-drawn its very first prompt using the
-	 ORIGINAL (pre-usilic) PROMPT_COMMAND -- e.g. GNOME Terminal/VTE's
-	 /etc/profile.d/vte.sh, which reports cwd via an OSC escape sequence
-	 -- before it ever reads the setup line sent above, and a bare '#'
-	 can turn up by coincidence inside that leftover output and end
-	 this loop too early. */
+      /* 素の'#'ではなく、(上記の)自分自身の"#eosPID#"番兵に到達する
+	 まですべて捨てる: 上のfork()とここの間に、bashが上で送った
+	 設定行を読む前に、既に「元の」(usilic以前の)PROMPT_COMMAND
+	 (例えばOSCエスケープシーケンス経由でcwdを報告するGNOME
+	 Terminal/VTEの/etc/profile.d/vte.sh)を使って最初のプロンプトを
+	 自動描画してしまっていることがあり、素の'#'がその残りの出力の
+	 中に偶然現れて、このループを早く終わらせてしまうことがある。 */
       char eos[32];
       int mi = 0, ml = sprintf(eos, "#eos%d#", pid0);
       while (mi < ml && (c = fgetc(ifp)) != EOF)
@@ -1481,9 +1485,9 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
     pn.nrow = 2;
     sprintf(str, "%s", s_S(S_lb2));
     bp = calloc(sizeof(BASE), 1);
-    /* virtual line contains the string "SHELL  version ..." */
-    p0 = bp->pp = alloc_sh(str, -pid, '\n'); 
-    /* first SHELL-prompt */
+    /* 仮想行には文字列"SHELL  version ..."が入っている */
+    p0 = bp->pp = alloc_sh(str, -pid, '\n');
+    /* 最初のSHELLプロンプト */
     alloc_sh(F3, 1, '\n');
     *rv.str = '\0';
     rv.row = rv.col = 0;
@@ -1491,7 +1495,7 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
     sprintf(arg, "%c(%s)", K_z, chp->argv[0]);
     len = disp_window(bp->pp, bp->pp, j, name, prev, arg, &i);
     rv.ps = bp->pp;
-    /* set current line to first SHELL-prompt */
+    /* 現在行を最初のSHELLプロンプトに設定する */
     bp->pp = bp->pp->next;
     rv.pp = rv.pe = bp->pp;
     print_line(rv.ps, rv.pp, -strlen(&s_P(P_mode)[M_shell][1]), NULL);
@@ -1529,8 +1533,8 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
 	c1 = 0;
 	continue; /* <== (3) */
       }
-      if (c == ' ' && *prompt && ((c1 = fgetc(ifp)) == '\r' || c1 == K_h)) { 
-	/* " ^M" or " ^H" is the mark for length of winsize.ws_col. (tcsh) */
+      if (c == ' ' && *prompt && ((c1 = fgetc(ifp)) == '\r' || c1 == K_h)) {
+	/* " ^M"や" ^H"はwinsize.ws_colの長さを示す印(tcsh) */
 #ifdef	CHECK_SFD
 	write(sfd, &c1, 1);
 #endif
@@ -1561,7 +1565,7 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
 	}
       }
       if (vt_mode('D') && rv.pp->next) {
-	/* go to the line of SHELL-prompt from current line */
+	/* 現在行からSHELLプロンプトの行へ移動する */
 	print_line(rv.ps, rv.pp, -strlen(&s_P(P_mode)[M_shell][1]), NULL);
 	if (shell_page(&rv, &pn, M_tail, prompt, buff) >= 0) {
 	  vt_move(row0, 0);
@@ -1576,12 +1580,12 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
       }
       if (c != '\r') {
 	if (!*prompt) {
-	  /* detect the string PS1 environment variable */
+	  /* 環境変数PS1の文字列を検出する */
 	  if (c == errp[f.i_errp][f.i_err]) {
 	    err[f.n_err + f.i_err++] = c;
 	    err[f.n_err + f.i_err] = '\0';
 	    if (c != ':') continue;
-	    /* matched to PS1 */
+	    /* PS1にマッチした */
 	    sprintf(prompt, "%s%s%s%s"
 		    , vt_geta(A_md), errp[1], vt_geta(A_me), errp[2]);
 	    c = errp[0][0];
@@ -1597,7 +1601,7 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
 		  continue;
 		} else *p++ = c1;
 	      }
-	      if (j == '\\') { /* code above 0x80 (tcsh) */
+	      if (j == '\\') { /* 0x80以上のコード(tcsh) */
 		fread(nn, 1, 3, ifp);
 		j = (u_char)strtol(nn, NULL, 8);
 	      }
@@ -1611,15 +1615,14 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
 #ifdef	CHECK_SFD
 	      write(sfd, &c, 1);
 #endif
-	      /* read current directory name */
+	      /* カレントディレクトリ名を読む */
 	      ;
 	    }
 	    if (*buff) {
-	      /* 
-	       * force to start a new line when there is any string before 
-	       * SHELL-prompt (`ftp Enter ^D' etc.), with the result that 
-	       * `set Enter' whose output contains PS1 will make 
-	       * a extra new line.
+	      /*
+	       * SHELLプロンプトより前に何か文字列がある場合(`ftp Enter ^D'等)、
+	       * 強制的に改行させる。この結果、出力にPS1を含む`set Enter'は
+	       * 余分な改行を1つ生じることになる。
 	       */
 	      kill(getppid(), SIGALRM);
 	      i = 0;
@@ -1650,8 +1653,8 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
 	    if (f_cr) f_cr = 0;
 	    else {
 	      /*
-	       * inform parent process of SHELL-prompt contains 
-	       * current directory name.
+	       * SHELLプロンプトにカレントディレクトリ名が含まれることを
+	       * 親プロセスへ知らせる。
 	       */
 	      kill(getppid(), SIGALRM);
 	      i = strlen(prompt) + 1;
@@ -1671,14 +1674,14 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
 	    continue;
 	  } else if (f.i_err) {
 	    if (!errp[f.i_errp][f.i_err]) {
-	      /* next checking */
+	      /* 次のチェックへ */
 	      f.n_err += f.i_err;
 	      f.i_err = 0;
 	      f.i_errp++;
 	      c1 = c;
 	      continue;
 	    } else {
-	      /* not SHELL-prompt */
+	      /* SHELLプロンプトではない */
 	      c1 = c; 
 	      for (i = 0; (c = err[i]); i++)
 		row = add_line(row, c, buff, prompt, &rv, &row0, &pn, pv, &f);
@@ -1691,7 +1694,7 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
 	  }
 	}
       }
-      if (pn.line < 0) continue; /* garbage */
+      if (pn.line < 0) continue; /* ゴミ */
 #ifndef CHECK_SFD
       if (c != '\r') write(sfd, &c, 1);
 #endif
@@ -1740,7 +1743,7 @@ int from_main(char name[], char str[], char *mess, FILE **pinp, int *ppidp)/*usi
   switch(m) {
   case T_pipe2:
     fread(ppidp, 1, 4, fp);
-    if (*pinp && *pinp != F1) /* ^O^M or MAN */
+    if (*pinp && *pinp != F1) /* ^O^MまたはMAN */
       alloc_pipe(-1, pinp, NULL, NULL, 0);
     *pinp = fp;
     strcpy(sname, mess);
@@ -1808,7 +1811,7 @@ static int make_shell(FILE **ifpp, FILE **ofpp, int pv[], u_char prev[], int pid
   pipe(&pv[6]);
   input_shell(0, pv, mess, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0);
   if (!(spid = fork())) {
-    usleep(100000); /* following is preceded by pause() of parent process */
+    usleep(100000); /* 以下は親プロセスのpause()より先に実行される */
     output_shell(ifpp, ofpp, prev, pv, pid, (f_comm) ? 2 : 1);
   } else pause();
   start_shell(0, spid, NULL, NULL, NULL, NULL);
@@ -1835,7 +1838,7 @@ int start_shell(int shell_pid, int disp_pid, FILE **ofpp, FILE **ifpp, char *mes
     if (!(pid = fork())) {
       char str[256];
       CHILD *chp = get_child(NULL, s_P(P_mode)[M_shell], NULL, NULL, NULL);
-      /* pty[] already holds the slave device path from open_pty() */
+      /* pty[]にはopen_pty()が返したスレーブデバイスパスが既に入っている */
       fd = open(pty, O_RDWR);
       setsid();
 #ifdef TIOCSCTTY
@@ -1852,34 +1855,33 @@ int start_shell(int shell_pid, int disp_pid, FILE **ofpp, FILE **ifpp, char *mes
       fclose(ofp);
       rename(str, s_S(S_mess));
       for (i = 0; i <= 31; i++) signal(i, SIG_DFL);
-      if (!strcmp(chp->argv[0], "bash")) 
+      if (!strcmp(chp->argv[0], "bash"))
 	/*
-	 * bash inserts string "^H^[^A..." in order to redisplay 
-	 * prompt whose length is equal to COLUMNS environment variable.
-	 * Following setting avoids inserting above string.
-	 * (the value will be reset in output_shell()) 
+	 * bashは、環境変数COLUMNSと同じ長さのプロンプトを再描画するために
+	 * 文字列"^H^[^A..."を挿入する。以下の設定はこの文字列の挿入を
+	 * 回避するためのもの。(この値はoutput_shell()内でリセットされる)
 	 */
 	setenv("COLUMNS", "1024", 1);
-      /* 2026-08-25 (a direct user request, ported into BOTH this
-       * binary AND the C++ usilic port's own shell.cpp Shell::start()
-       * -- see main()'s own "Invalid Terminal" check for the receiving
-       * half): ENV_PROG's own SHELL-relaunch protection (this
-       * function's caller in usilic.c, "err[1]") only ever fires SAME-
-       * binary-to-same-binary -- typing the OTHER binary's name (the
-       * C++ port's own "usilic") at THIS shell's prompt sees no such
-       * env var at all and falls through to launching a genuinely
-       * independent full session instead. USILIC_LIVE_SHELL is a SECOND,
-       * shared, binary-agnostic marker set unconditionally by BOTH
-       * binaries' own shell-start code, checked by BOTH binaries' own
-       * main() alongside their own ENV_PROG/USILIC -- present but this
-       * binary's OWN var absent means "I'm in the OTHER binary's live
-       * SHELL", refuse to launch a confusing independent session
-       * instead. (An earlier attempt used an unusual pty baud rate
-       * instead -- reverted: a real PTY capture found zsh's own
-       * interactive startup silently resets it before the first
-       * prompt even appears, disproving the assumption that a shell's
-       * line editor never touches that field; an env var, unlike
-       * termios state, is never touched by the shell itself at all.) */
+      /* 2026-08-25 (ユーザーからの直接の依頼で、この本体とC++移植版
+       * usilicのshell.cpp Shell::start()の両方に移植した――受信側は
+       * main()の"Invalid Terminal"チェックを参照): ENV_PROGが持つ
+       * SHELL再起動防止機構(この関数の呼び出し元、usilic.cの
+       * "err[1]")は同一バイナリ同士でしか発火しない――このSHELLの
+       * プロンプトで「もう一方の」バイナリ名(C++移植版自身の
+       * "usilic")を入力しても、その環境変数は一切見当たらないため
+       * すり抜けてしまい、本当に独立した別セッションが起動してしまう。
+       * USILIC_LIVE_SHELLは、両方のバイナリのSHELL起動コード自身が
+       * 無条件に設定する、共有・バイナリ非依存の第2の目印であり、
+       * 両方のバイナリのmain()がそれぞれのENV_PROG/USILICと併せて
+       * チェックする――このマーカーはあるのに自分自身のバイナリの
+       * 変数が無い場合は「もう一方のバイナリのライブSHELLの中に
+       * いる」ことを意味するので、紛らわしい独立セッションの起動を
+       * 拒否する。(以前は特殊なptyボーレートを使う方式を試したが
+       * 撤回した――実際のPTYキャプチャで、zshの対話的起動処理が
+       * 最初のプロンプトが現れる前にこの値を黙ってリセットしてしまう
+       * ことが判明し、「シェルのラインエディタはこのフィールドに
+       * 触れない」という前提が誤りだと分かったため。環境変数は
+       * termiosの状態と違い、シェル自身が触ることは一切無い。) */
       setenv("USILIC_LIVE_SHELL", "1", 1);
       execvp(*chp->argv, chp->argv);
       exit(0);
@@ -1910,7 +1912,7 @@ int start_shell(int shell_pid, int disp_pid, FILE **ofpp, FILE **ifpp, char *mes
     if (!access(messp, F_OK)) unlink(messp);
     input_shell(0, NULL, NULL, NULL, NULL, NULL, 
 		NULL, NULL, NULL, NULL, NULL, -1);
-    from_main(NULL, NULL, NULL, NULL, NULL); /* unlink socket */
+    from_main(NULL, NULL, NULL, NULL, NULL); /* ソケットをunlinkする */
   }
   return pid;
 }
@@ -1952,7 +1954,7 @@ int do_shell(u_char prev[], char str[], FILE **pinp, u_char *w, int *ppidp, LIST
     is_inter(pv, pid, spid);
   } else f_shell = (f_comm) ? f_comm : 1;
   getcwd(dir, N_line);
-  print_intr(F8, NULL); /* erase "Exit" */
+  print_intr(F8, NULL); /* "Exit"を消す */
   m = input_shell(spid, w, prev, str, ofp, pinp, prog, 
 		  listp, cmdp, histp, ppidp, f_shell);
   chdir(dir);
