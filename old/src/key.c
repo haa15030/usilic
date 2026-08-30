@@ -61,19 +61,20 @@ static int key_getch(int f_key, u_char cva[])
   return i;
 }
 
-/* key_getch()'s "playback" mode (its else-branch) doesn't touch f_key/cva,
-   so it was called through `getch` -- typedef'd as a 0-argument GETCH --
-   relying on whatever garbage was left in the argument registers to not
-   coincidentally equal 2 or 3 (key_getch's "setup" mode, which dereferences
-   cva). That's UB and was observed to crash: this wrapper matches GETCH's
-   real signature and passes a value guaranteed not to be 2 or 3. */
+/* key_getch()の「再生」モード(そのelse分岐)はf_key/cvaに一切触れない
+   ため、`getch`(0引数のGETCHとしてtypedefされている)経由で呼ばれて
+   いた――引数レジスタにたまたま残っていたゴミが、偶然2や3(cvaを
+   参照するkey_getch自身の「設定」モード)に一致しないことに頼って
+   いる。それは未定義動作であり、実際にクラッシュすることが観測
+   された: このラッパーはGETCHの本物のシグネチャに合わせ、2でも
+   3でもないことが保証された値を渡す。 */
 static int key_getch_play(void)
 {
   return key_getch(1, NULL);
 }
 
 static int set_km(int m, int **p_kmp, int f_M)
-{ /* keyboard macro */
+{ /* キーボードマクロ */
   static int f_me, n_km, a_km[N_macro];
 
   switch(f_M) {
@@ -92,7 +93,7 @@ static int set_km(int m, int **p_kmp, int f_M)
     break;
   case M_mm:
     if (!f_me) {
-      a_km[n_km++] = f_M; /* endless loop */
+      a_km[n_km++] = f_M; /* 終わりの無いループ */
       a_km[n_km] = 0;
       f_me = 1;
     }
@@ -114,7 +115,7 @@ static void key_cont(int dummy)
 {
   signal(SIGCONT, key_cont);
   if (s_S(S_pid)) print_pid(getpid());
-  vt_init(-9); /* check SIGTTOU */
+  vt_init(-9); /* SIGTTOUを確認する */
 }
 
 void key_winch(int spid0)/*usilic*/
@@ -153,7 +154,7 @@ static void stand_str(RV *rvp0, int f_M)
   static RV *rvp;
   static PP p;
   int i, len, n, f_enter, n_attr, f_stand, f_grep;
-  static ATTR pp_attr[N_attr]; /* display control-code (^?) */
+  static ATTR pp_attr[N_attr]; /* 制御コード(^?)を表示する */
 
   if (!vt_mode('D') || rvp0 == F11 || f_M == M_shell 
       || f_M == T_arc3 || f_M == T_input) return;
@@ -219,22 +220,22 @@ static void key_eeol(int row, int col0, int len, int f_exit)
   vt_move(row, col0);
 }
 
-/* UTF-8: on-screen column and byte offset into `buff' coincide for
-   ASCII (1 byte = 1 column) and for EUC's "wide" pairs (always
-   exactly 2 bytes = 2 columns), so this file has always tracked
-   col/cole/shift (and *colp/*colep/*shiftp) as byte offsets and fed
-   them straight to vt_move() as columns too, and compared them
-   directly against the field width `len' (itself a column count) to
-   decide when the field is too full and needs to scroll. A UTF-8
-   character can be 1-4 bytes but only 0-2 columns, breaking both of
-   those: byte length can exceed `len' well before the real on-screen
-   width does (triggering the "please scroll" branch far too early),
-   and the resulting `shift' byte offset -- computed from byte counts
-   -- isn't guaranteed to land on a character boundary, splitting a
-   multi-byte sequence and corrupting the redraw (a stray continuation
-   byte, missing characters). These helpers bridge byte offsets to
-   real screen columns (and back) so the rest of this file's byte-based
-   indexing doesn't need to change. */
+/* UTF-8: 画面上のカラムと`buff'へのバイトオフセットは、ASCII(1バイト
+   =1カラム)とEUCの「ワイド」ペア(常にちょうど2バイト=2カラム)では
+   一致するため、このファイルは常にcol/cole/shift(そして*colp/
+   *colep/*shiftp)をバイトオフセットとして追跡し、それらをそのまま
+   カラムとしてvt_move()へ渡し、フィールドがいっぱいになってスクロール
+   が必要かどうかを判断するために、フィールド幅`len'(それ自体は
+   カラム数)と直接比較してきた。UTF-8文字は1〜4バイトだが画面上では
+   0〜2カラムにしかならず、その両方を壊す: バイト長は、本物の画面上の
+   幅がそうなるよりもずっと早く`len'を超えることがあり(「スクロール
+   してください」の分岐をあまりにも早くトリガーしてしまう)、その結果
+   得られる`shift'バイトオフセット――バイト数から計算される――は、
+   文字の境界に着地することが保証されておらず、マルチバイトシーケンス
+   を分断して再描画を壊してしまう(はぐれた継続バイト、文字の欠落)。
+   これらのヘルパーは、バイトオフセットを本物の画面カラムへ(そして
+   その逆へも)橋渡しするので、このファイルの残りのバイトベースの
+   インデックス付けを変更する必要が無い。 */
 static int char_bytes_before(u_char *buff, int pos)
 {
   int end = pos - 1, start;
@@ -268,9 +269,9 @@ static int utf8_total_width(u_char *buff)
   return total;
 }
 
-/* byte offset that puts the last `len' on-screen columns of `buff'
-   into view (i.e. where "scroll right-aligned to fit `len' columns"
-   should start reading from), always landing on a character start. */
+/* `buff'の画面上の最後の`len'カラムを表示範囲に入れるバイトオフセット
+   (つまり「`len'カラムに収まるよう右寄せでスクロールする」ときに、
+   どこから読み始めるべきか)、常に文字の先頭に着地する。 */
 static int utf8_right_shift(u_char *buff, int len)
 {
   int col = utf8_total_width(buff) - len, pos, sl;
@@ -283,20 +284,20 @@ static int utf8_right_shift(u_char *buff, int len)
   return pos;
 }
 
-/* returns 1 and sets *shiftp to the byte offset to scroll to (and,
-   if colp is non-NULL, *colp to the cursor position that goes with
-   it) if `buff' is wider than `len' columns; returns 0 (leaving
-   *shiftp/*colp untouched) if it already fits. Replaces the various
-   `(shift = cole - col0 - len) > 0' checks scattered through this
-   file, all of which compared a byte count (cole - col0) against a
-   column count (len) -- harmless for ASCII/EUC where the two always
-   match, but wrong for UTF-8 (see the comment above char_bytes_before
-   for the full story). Callers that set `col = col0 + len' right
-   after the old check need *colp too: col/shift are byte offsets
-   (again, see char_bytes_before), so the cursor at the end of a
-   scrolled-into-view UTF-8 buffer sits at col0 + the *byte* length of
-   the visible portion, not col0 + len (a column count) -- using the
-   latter desyncs col from the buffer and corrupts the next insert. */
+/* `buff'が`len'カラムより幅が広い場合、スクロール先のバイトオフセット
+   を*shiftpに設定し(colpが非NULLならそれに伴うカーソル位置も*colpに
+   設定して)1を返す; 既に収まっている場合は(*shiftp/*colpには触れず)
+   0を返す。このファイル中に散らばっていた様々な`(shift = cole - col0
+   - len) > 0'チェック――どれもバイト数(cole - col0)をカラム数(len)と
+   比較していた――を置き換える。この2つが常に一致するASCII/EUCでは
+   無害だが、UTF-8では間違っている(詳しい経緯はchar_bytes_before
+   上のコメント参照)。旧チェックの直後に`col = col0 + len'を設定して
+   いた呼び出し元は*colpも必要とする: col/shiftはバイトオフセットで
+   ある(繰り返しになるがchar_bytes_before参照)ので、表示範囲へ
+   スクロールされたUTF-8バッファの末尾にあるカーソルは、col0 + len
+   (カラム数)ではなく、col0 + 見えている部分の「バイト」長に位置
+   すべきである――後者を使うと、colがバッファとずれてしまい、次の
+   挿入を壊してしまう。 */
 static int need_scroll(u_char *buff, int col0, int cole, int len, int *shiftp, int *colp)
 {
   if (vt_charset(0) == C_utf8) {
@@ -581,7 +582,7 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
     k_wait = conf_wait(NULL, NULL);
     read_esc(-1, key_r, key_c);
 
-    /* copy buffer key */
+    /* コピーバッファのキー */
     key_y[0] = -1;
     key_y[1] = K_a;
     key_y[2] = K_e;
@@ -589,18 +590,18 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
     key_y[4] = K_f;
     key_y[5] = 0;
     
-    /* invalid command-line key */
+    /* コマンドライン上で無効なキー */
     for (i = 0; i < 29; i++)
       switch(i) {
       case 0:
-	key_k[i] = -1; /* return value 0 from ktoc() */
+	key_k[i] = -1; /* ktoc()からの戻り値0 */
 	break;
       case K_j:  /* ^J */	
       case K_o:  /* ^O */
       case K_t:  /* ^T */
       case K_x:  /* ^X */
       case K_ec:  /* ^[ */
-	key_k[i] = -1; /* can be used for `F-?' in usilicrc */
+	key_k[i] = -1; /* usilicrcの`F-?'として使うことができる */
 	break;
       case 28:
 	key_k[i] = 0;
@@ -610,7 +611,7 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
 	break;
       }
 
-    /* cursor key */
+    /* カーソルキー */
     key_r[0] = -1;
     key_r[1] = key_c[M_kup];
     key_r[2] = key_c[M_kdn];
@@ -620,7 +621,7 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
     key_r[6] = key_c[M_kforw];
     key_r[7] = 0;
 
-    /* invalid key in T_input */
+    /* T_input中で無効なキー */
     key_g[0] = -1;
     key_g[1] = M_up;
     key_g[2] = M_dn;
@@ -695,8 +696,8 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
   if (c) {
     int f_stand = 1;
     u_char *p = (rvp->pp && rvp->pp->tell != (uintptr_t)F7) ? rvp->pp->cs : NULL;
-    if (*iname || !p) /* filename with no attribute on the file-list after */
-      f_stand = 0;    /* `Enter' (select file) */
+    if (*iname || !p) /* `Enter'(ファイルを選択)の後のfile-listにある */
+      f_stand = 0;    /* 属性の無いファイル名 */
     if (f_list && f_stand) stand_str(rvp, f_M);
     while (1) {
       c = input_key(f_M, rvp->str, p, klen, (*cname) ? cname : NULL
@@ -927,7 +928,7 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
 	  }
       } while (0);
       if (getch == vt_getch) stand_str(rvp, f_M);
-    } else if (f_M == M_shell && !k) /* check access() ==> shell.c(2) */
+    } else if (f_M == M_shell && !k) /* access()を確認する ==> shell.c(2)参照 */
       return 0;
 #if 1
     if (!access(s_S(S_enter), F_OK)) {
@@ -964,9 +965,9 @@ int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, S
       c = M_clear;
     }
   if (c == M_ascii) {
-    /* was a straight 2-way ASCII<->EUC toggle (pre-UTF-8 code); cycle
-       through all three now instead of leaving UTF-8 users stuck
-       toggling between ASCII and EUC with no way back to UTF-8. */
+    /* 以前はASCII<->EUCの単純な2値トグルだった(UTF-8対応前のコード);
+       UTF-8ユーザーがASCIIとEUCの間をトグルするだけでUTF-8へ戻る
+       手段が無いまま取り残されないよう、今は3つ全てを巡回する。 */
     vt_charset((vt_charset(0) == C_ascii) ? C_euc
 	       : (vt_charset(0) == C_euc) ? C_utf8
 	       : C_ascii);
@@ -1065,18 +1066,18 @@ void make_cmd(STR *sp, LIST **listp)/*usilic*/
     if (sp->name) *listp = save_list(*listp, sp->name, &pn);
 }
 
-/* backslash-escape shell glob/metacharacters in a completed filename
-   before inserting it into the SHELL command line (M_shell only --
-   other make_list() callers are plain path-input fields that never
-   reach a shell, where escaping would be wrong). Matches how
-   bash-completion/zsh/fish etc. complete filenames containing these:
-   without it, a name like "...[二]@20260702....ts" gets inserted
-   verbatim, and unescaped "[...]" is a glob bracket expression to the
-   shell -- one that can fail to match depending on what follows it
-   (see the "202607*" case that behaved differently from
-   "\[二\]202607*" in this session's investigation), leaving the user
-   to track down by hand why a filename that "looks right" on the
-   command line doesn't match anything. */
+/* SHELLのコマンドラインへ挿入する前に、補完済みのファイル名の中の
+   シェルのglob/メタ文字をバックスラッシュでエスケープする(M_shellの
+   場合のみ――他のmake_list()の呼び出し元は、シェルに到達することが
+   一切無い素のパス入力フィールドであり、そこではエスケープは間違い
+   になる)。bash-completion/zsh/fish等がこれらを含むファイル名を
+   補完する方法に合わせている: これが無いと、"...[二]@20260702....ts"
+   のような名前がそのまま挿入されてしまい、エスケープされていない
+   "[...]"はシェルにとってglobの角括弧式である――このセッションの
+   調査で"\[二\]202607*"とは異なる振る舞いをした"202607*"のケース
+   のように、後に続くものによってはマッチに失敗することがある
+   ――ユーザーは、コマンドライン上では「正しく見える」ファイル名が
+   何にもマッチしない理由を、手作業で突き止める羽目になる。 */
 static void esc_shell(u_char dst[], u_char src[])
 {
   static char sp[] = " \t[]{}()<>|&;'\"`$*?!~#\\";
@@ -1212,18 +1213,19 @@ static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, 
   int slen;
 
   if (vt_charset(0) == C_utf8 && (u8_len || (m >= 0x80 && m < 0x100))) {
-    /* Buffer a UTF-8 sequence across calls (this function is fed one
-       byte per call, from edit_line()'s per-keystroke loop). Inserting
-       and drawing it one byte at a time would put a vt_move() between
-       its bytes -- edit_line() moves the cursor right before every
-       call, and this function itself moves it again at the end -- which
-       tears the sequence in two on the wire. Terminals see an
-       incomplete multi-byte sequence interrupted by a cursor-position
-       escape and render the pieces as replacement characters ("?"),
-       even though every byte's *value* was correct all along (this is
-       why read_line()'s own byte log, on the output/echo side, never
-       showed any corruption: the break happens only here, on the
-       keystroke-echo side). */
+    /* 呼び出しをまたいでUTF-8シーケンスをバッファする(この関数は
+       edit_line()のキー入力ごとのループから、呼び出しごとに1バイト
+       ずつ与えられる)。1バイトずつ挿入して描画すると、そのバイトの
+       間にvt_move()が挟まってしまう――edit_line()は呼び出しの直前に
+       毎回カーソルを動かし、この関数自身も末尾でもう一度動かす
+       ――これが配線上でシーケンスを2つに引き裂いてしまう。端末は
+       カーソル位置のエスケープシーケンスに中断された不完全な
+       マルチバイトシーケンスを目にすることになり、各バイトの
+       「値」自体はずっと正しかったにもかかわらず、その断片を
+       置換文字("?")として描画してしまう(これが、read_line()自身の
+       バイトログでは、出力/エコー側で一度も文字化けが見られな
+       かった理由である: この分断はキー入力エコー側であるここでしか
+       起きない)。 */
     if (!u8_len) u8_len = utf8_seqlen(m);
     u8_buf[(u8_i < 4) ? u8_i : 3] = m;
     if (++u8_i < u8_len) return;
@@ -1252,15 +1254,16 @@ static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, 
     *colep += slen;
     vt_move(row, col0 + b2col(buff, *shiftp, *shiftp + *colp - col0));
   } else if (vt_charset(0) == C_utf8) {
-    /* Append (or extend the currently-scrolled view with) the new
-       character. The byte-at-a-time "scroll by exactly 1 byte, save
-       whatever fell off the left edge" dance in the EUC/ASCII branch
-       below assumes 1 byte = 1 column; shifting a UTF-8 buffer by a
-       fixed 1 byte can land mid-character, corrupting the view (a
-       stray continuation byte, dropped characters). Simpler and
-       always correct: append the bytes, then let need_scroll() (the
-       same helper edit_line()'s K_e/K_u/K_y/paste use) recompute the
-       right-aligned shift for the new, longer content from scratch. */
+    /* 新しい文字を末尾に追加する(あるいは現在スクロールされている
+       表示範囲を拡張する)。下のEUC/ASCII分岐にある、1バイトずつ
+       「ちょうど1バイトだけスクロールし、左端からはみ出たものを
+       保存する」というダンスは、1バイト=1カラムを前提としている;
+       UTF-8バッファを固定の1バイトだけシフトすると文字の途中に
+       着地することがあり、表示を壊してしまう(はぐれた継続バイト、
+       文字の欠落)。より単純で常に正しい方法: バイトを末尾に追加
+       してから、need_scroll()(edit_line()のK_e/K_u/K_y/pasteが
+       使うのと同じヘルパー)に、新しい、より長くなったコンテンツ
+       のための右寄せシフトを最初から再計算させる。 */
     int oldlen = strlen((char*)buff);
 
     memcpy(&buff[oldlen], seq, slen);
@@ -1426,9 +1429,9 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	    strcpy(back, &buff[shift]);
 	    cole--;
 	  } else if (vt_charset(0) == C_utf8) {
-	    /* count_k()'s "?2:1" below assumes a fixed-width EUC pair;
-	       a UTF-8 character deleted here can be 1-4 bytes, so find
-	       its real length instead of guessing 2. */
+	    /* 下のcount_k()の"?2:1"は固定幅のEUCペアを前提としている;
+	       ここで削除されるUTF-8文字は1〜4バイトになり得るので、
+	       2と決め打ちせずその本当の長さを調べる。 */
 	    i = char_bytes_before(buff, col - col0);
 	    if (col == cole) buff[cole - col0 - i] = '\0';
 	    else memmove(&buff[col - col0 - i], &buff[col - col0]
@@ -1478,8 +1481,8 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
 	  col++;
 	  cole--;
 	} else if (vt_charset(0) == C_utf8) {
-	  /* the >=0x80 + count_k check below assumes a fixed-width EUC
-	     pair; the character at the cursor here can be 1-4 bytes. */
+	  /* 下の>=0x80 + count_kチェックは固定幅のEUCペアを前提としている;
+	     ここのカーソル位置の文字は1〜4バイトになり得る。 */
 	  i = utf8_seqlen(buff[col - col0]);
 	  memmove(&buff[col - col0], &buff[col - col0 + i]
 		 , strlen((char*)&buff[col - col0 + i]) + 1);
