@@ -49,7 +49,7 @@ static int set_path(char dir[], char name[])
     char *p = alloca(strlen(dir) + strlen(name) + 1);
     strcpy(p, dir);
     strcat(p, name);
-    strcpy(name, p); /* full path */
+    strcpy(name, p); /* フルパス */
   }
   stat(name, &st);
   if ((i = strchr(name, '\0')[-1] == '/') || S_ISDIR(st.st_mode)) {
@@ -274,10 +274,10 @@ int main(int argc, char *argv[])
   };
   /*
    * f.usilic
-   * 	& 0x80	: file manager (with history-list)
-   *	& 0x40	: file manager [directory]
-   *	& 0x20	: pager (stdin)
-   *	& 0x10	: pager [file]
+   * 	& 0x80	: ファイルマネージャ(履歴リスト付き)
+   *	& 0x40	: ファイルマネージャ[directory]
+   *	& 0x20	: ページャ(stdin)
+   *	& 0x10	: ページャ[file]
    *	& 0x08	: -h
    *	& 0x04	: -?
    */
@@ -298,33 +298,38 @@ int main(int argc, char *argv[])
     fprintf(stderr, "%s: %s: %s\n", usilic, tmp, strerror(errno));
     exit(1);
   }
-  /* NOT sprintf(tmp, "%s/s.", tmp) -- output and the %s source argument
-     would be the same buffer, which is undefined behavior. In practice
-     this corrupted tmp down to just "/s." (losing the "/tmp/.usilic" prefix),
-     so from_shell() later tried to fopen() a path at the filesystem root,
-     got EACCES, and fwrite()'d into the resulting NULL FILE*. strcat has
-     no such aliasing since its 2nd argument is a literal, not tmp itself. */
+  /* sprintf(tmp, "%s/s.", tmp)ではないこと――出力と%sソース引数が
+     同じバッファになってしまい、未定義動作である。実際にはこれが
+     tmpを単なる"/s."にまで壊してしまい("/tmp/.usilic"というprefixを
+     失う)、その結果from_shell()が後でファイルシステムのルートに
+     あるパスをfopen()しようとしてEACCESになり、そのNULLになった
+     FILE*へfwrite()していた。strcatは第2引数がtmp自身ではなく
+     リテラルなので、この種のエイリアシングは起きない。 */
   strcat(tmp, "/s.");
   *pathname = '\0';
   if (!getenv(ENV_VT) && tcgetattr(0, &otty) < 0) f.usilic |= 0x20;
   f.shell = getenv(ENV_PROG) != NULL;
-  /* 2026-08-25 (a direct user request, ported into BOTH this binary AND
-   * the C++ usilic port's own app/main.cpp checkInvalidTerminalMarker()
-   * -- see shell.c's start_shell() for the marker-SETTING half): the
-   * ENV_PROG env var above only ever proves "I'm inside a live SHELL of
-   * THIS SAME binary" -- typing the OTHER binary's name (the C++ port's
-   * own "usilic") inside a live U SHELL sees no such env var at all and
-   * falls through to launching a genuinely independent full session
-   * instead. USILIC_LIVE_SHELL is a SECOND, shared, binary-agnostic marker
-   * set unconditionally by BOTH binaries' own shell-start code, checked
-   * by BOTH binaries' own main() alongside their own ENV_PROG/USILIC --
-   * present but THIS binary's own ENV_PROG absent means "I'm in the
-   * OTHER binary's live SHELL", print a real error instead of ever
-   * reaching normal startup. (An earlier attempt used an unusual pty
-   * baud rate instead -- reverted: a real PTY capture found zsh's own
-   * interactive startup silently resets it before the first prompt
-   * even appears; an env var, unlike termios state, is never touched
-   * by the shell itself at all.) */
+  /* 2026-08-25(直接のユーザー依頼、この実行ファイルとC++版usilic
+   * 移植自身のapp/main.cppのcheckInvalidTerminalMarker()の両方へ
+   * 移植した――マーカーを「設定する」側についてはshell.cの
+   * start_shell()参照): 上のENV_PROG環境変数が証明できるのは
+   * 「自分は"この同じ"実行ファイルの生きたSHELLの中にいる」という
+   * ことだけである――生きたUのSHELLの中で「もう一方」の実行ファイル
+   * の名前(C++移植自身の"usilic")をタイプしても、そのような環境
+   * 変数は全く見えず、代わりに本当に独立した完全な新規セッションの
+   * 起動へフォールスルーしてしまう。USILIC_LIVE_SHELLは、両方の
+   * 実行ファイル自身のシェル起動コードが無条件に設定する、共有の、
+   * 実行ファイルに依存しない「2つ目」のマーカーであり、両方の
+   * 実行ファイル自身のmain()が、それぞれ自身のENV_PROG/USILICと
+   * 合わせてチェックする――これが存在するのに"この"実行ファイル
+   * 自身のENV_PROGが無ければ、「自分は"もう一方"の実行ファイルの
+   * 生きたSHELLの中にいる」ということであり、通常の起動へ到達させる
+   * ことなく、本物のエラーを出力する。(以前の試みでは代わりに
+   * 通常とは異なるptyのボーレートを使っていたが、それは元に戻した
+   * ――実際のPTYキャプチャで、zsh自身の対話的な起動が、最初の
+   * プロンプトが現れる前にそれを静かにリセットしてしまうことが
+   * 判明したため; 環境変数はtermiosの状態とは異なり、シェル自身に
+   * よって触られることが全く無い。) */
   if (!f.shell && getenv("USILIC_LIVE_SHELL")) {
     fprintf(stderr, "%s: Invalid Terminal\n", usilic);
     exit(1);
