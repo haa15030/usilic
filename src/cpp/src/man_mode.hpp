@@ -60,6 +60,11 @@ class ManMode {
   // または`man`の再実行に失敗した場合はfalse(何もしない)。
   bool reflow(int newWidth);
 
+  // FileMode::setWidth()自身のコメント参照(2026-08-30、同種のバグ):
+  // Application::handleResize()がManモード以外がアクティブな間も
+  // width_を追随させておくための、redraw無しの軽量な更新。
+  void setWidth(int newWidth) { width_ = newWidth; }
+
  private:
   std::optional<std::vector<ContentView::Line>> runAndWrap(const std::string &name) const;
 

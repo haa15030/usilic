@@ -1,5 +1,6 @@
 #include "file_mode.hpp"
 
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -291,6 +292,45 @@ bool FileMode::loadFile(const std::string &path) {
 }
 
 bool FileMode::reflow(int newWidth) {
+  // 2026-08-30、実際のユーザー報告("フォントはOKだが文字数がおかしい
+  // 、HELPはOKだけどね"): pagerMode_(loadStream()経由、CLI引数での
+  // ファイル起動)の間は、これまでこの下のreadAndWrap()がview_のみを
+  // 新しい幅で再構築し、streamPipe_(readMoreIntoPipe()/
+  // ensureLoadedThrough()が実際に使い続ける、古い幅のまま生き残る
+  // 別のバッファ)を一切更新していなかった。その結果、この直後に
+  // ユーザーがスクロールしてensureLoadedThrough()が一度でも呼ばれる
+  // と、古い幅で追加で読み込まれた行がview_.setLines()経由でここの
+  // 正しい再折り返しを黙って上書きしてしまっていた。
+  if (pagerMode_ && hasActiveStream()) {
+    int oldLineCount = static_cast<int>(streamPipe_->lines().size());
+    if (streamOwnsFd_ && !currentFile_.empty()) {
+      // 本物の(CLI引数の)ファイルは、シーク可能なfdなので最初から
+      // 読み直せる――loadStream()自身のコメント、
+      // Application::startPagerFileList()自身の::open()呼び出し参照。
+      ::close(streamFd_);
+      streamFd_ = ::open(currentFile_.c_str(), O_RDONLY);
+      streamAtEof_ = false;
+      streamBytesRead_ = 0;
+    }
+    // streamOwnsFd_がfalseの場合(本物のstdinパイプ等)は巻き戻せない
+    // ――streamFd_はそのまま、これ以降に新しく読む分だけ新しい幅で
+    // 続きから再開する。既に表示済みだった内容が失われるのは、
+    // フォント/GUIサイズ変更がライブなstdinページャーの最中に起きる
+    // という稀なケースに限られる、既知の割り切り。
+    width_ = newWidth;
+    streamPipe_ = std::make_unique<PipeBuffer>(encoding_, width_, 256L * 1024 * 1024);
+    if (streamFd_ >= 0) readMoreIntoPipe(std::max(oldLineCount, 1));
+    int oldCursor = view_.cursorIndex();
+    view_.setLines(convertPipeLines());
+    int last = static_cast<int>(view_.lines().size()) - 1;
+    if (oldCursor < 0) oldCursor = 0;
+    if (oldCursor > last) oldCursor = (last < 0) ? 0 : last;
+    view_.setCursorIndex(oldCursor);
+    view_.redraw();
+    view_.syncVisibleCursor();
+    return true;
+  }
+
   if (currentFile_.empty()) return false;
   width_ = newWidth;
   int oldCursor = view_.cursorIndex();

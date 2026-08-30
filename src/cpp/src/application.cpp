@@ -8555,6 +8555,21 @@ bool Application::startHelp() {
 // はないのかについてはクラスコメント参照。
 void Application::handleResize() {
   layoutViews();
+  // 2026-08-30、実際のユーザー報告("フォントはOKだが文字数がおかしい
+  // 、HELPはOKだけどね"): 以前はFile/ManモードがそれぞれcurrentMode_
+  // として「今」アクティブな時にだけreflow()(実際の再描画込み)を
+  // 呼んでいたため、GUIのフォント/ウィンドウサイズがDirectoryモード
+  // を見ている間に変わると、それぞれのwidth_はApplication構築時の
+  // 古い値のまま取り残されていた――後でDirectoryからファイルを開いた
+  // loadFile()は、その古いwidth_で折り返してしまう(HELPが無関係
+  // なのは、Application::wrapHelpText()が毎回display_.columns()を
+  // その場で読み直す、全く別の使い捨てPipeBuffer経由だからで見つかった
+  // ――FileMode/ManModeのようなキャッシュされたwidth_を一切持たない)。
+  // setWidth()(redrawを伴わない軽量な更新)は非アクティブな方にも
+  // 無条件に適用し、アクティブな方だけ追加でreflow()自身を呼んで
+  // 実際に再描画する。
+  fileMode_.setWidth(display_.columns());
+  manMode_.setWidth(display_.columns());
   if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns());
   if (currentMode_ == ApplicationMode::Man) manMode_.reflow(display_.columns());
   if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
