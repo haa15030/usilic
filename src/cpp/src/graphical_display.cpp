@@ -15,6 +15,7 @@
 #include "scrollbar_idle_image.hpp"
 #include "mac_cursor.hpp"
 #include "utf8.hpp"
+#include "content_view.hpp"  // middleEllipsisTruncateByWidth() -- renderScrolled()自身のコメント参照
 
 namespace fm {
 
@@ -153,6 +154,42 @@ unsigned int composeDakutenCodepoint(unsigned int base, unsigned int mark) {
     }
   }
   return 0;
+}
+
+// 2026-08-30、直接のユーザー報告(GUI、実際のマウスドラッグ中に濁点
+// が単体グリフとして分離/消失する件、ARCモードで再現、スクリーン
+// ショット=ev/=ew): 上のcomposeDakutenCodepoint()は、Display::write()/
+// putByte()経由の通常のセル単位描画(commitGlyph()自身のコメント
+// 参照)だけが通る――GraphicalDisplay::renderScrolled()(通常の
+// ContentView::redraw()を一切経由しない別の描画経路)自身の
+// renderTextRun()は、生のNFD分解された文字列をコードポイント単位で
+// そのまま描くだけで、この合成を一切行っていなかった。この関数は、
+// commitGlyph()と同じ「基底文字の直後に続く濁点/半濁点マークを
+// その場で吸収する」ロジックを、セル単位ではなく文字列全体に対して
+// 一度だけ適用する――renderScrolled()がrenderTextRun()へ渡す前に
+// 呼ぶ。table外の組み合わせ(composeDakutenCodepoint()が0を返す)は
+// 元のまま(基底とマークを別々に)残す――commitGlyph()自身の
+// フォールバックと同じ。
+std::string composeDakutenInString(const std::string &utf8Text) {
+  std::string out;
+  std::size_t i = 0;
+  while (i < utf8Text.size()) {
+    int len = Utf8::sequence_length(static_cast<unsigned char>(utf8Text[i]));
+    len = std::min<int>(len, static_cast<int>(utf8Text.size() - i));
+    std::string cluster = utf8Text.substr(i, static_cast<std::size_t>(len));
+    i += static_cast<std::size_t>(len);
+    while (i < utf8Text.size()) {
+      int markLen = Utf8::sequence_length(static_cast<unsigned char>(utf8Text[i]));
+      markLen = std::min<int>(markLen, static_cast<int>(utf8Text.size() - i));
+      unsigned int composed =
+          composeDakutenCodepoint(decodeUtf8Codepoint(cluster), decodeUtf8Codepoint(utf8Text.substr(i, static_cast<std::size_t>(markLen))));
+      if (!composed) break;
+      cluster = encodeUtf8Codepoint(composed);
+      i += static_cast<std::size_t>(markLen);
+    }
+    out += cluster;
+  }
+  return out;
 }
 
 // グリフのサーフェスを、割り当てられたboxX/boxY..maxW/maxHのセル
@@ -2782,8 +2819,22 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
     if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) continue;
     int y = i * impl_->cellHeight + pixelOffsetY - ((pixelOffsetY > 0) ? impl_->cellHeight : 0);
     if (y <= -impl_->cellHeight || y >= contentRows * impl_->cellHeight) continue;  // 完全に画面外(あるいはモードラインの行に入り込む)
-    renderTextRun(y, lines[lineIndex].text, Color{impl_->fg.r, impl_->fg.g, impl_->fg.b}, 0,
-                  lines[lineIndex].attributes);
+    // 2026-08-30、直接のユーザー報告(GUI、実際のマウスドラッグ中の
+    // 表示崩れ、composeDakutenInString()/middleEllipsisTruncateByWidth()
+    // 自身のコメント参照): 通常のContentView::renderLine()が既に行って
+    // いる濁点合成と"..."省略切り詰めを、renderTextRun()へ渡す前に
+    // ここで同じ順序(合成してから切り詰め、切り詰め自身の書記素
+    // クラスタ境界判定は合成済みの方がより単純に正しく働く)で適用
+    // する。既に列内に収まっている行(FileMode等、PipeBuffer::
+    // wrapLine()で既に折り返し済み)にはmiddleEllipsisTruncateByWidth()
+    // 自身の早期returnにより実質無害(無変更で返る)。attributes(バイト
+    // オフセット基準)は元の(未合成/未切り詰めの)ものをそのまま
+    // 使う――ContentView::renderLine()自身も「切り詰め済みテキスト+
+    // 元のline.attributes」という同じ組み合わせを使っており、この
+    // 妥協は新しいものではない。
+    std::string composed = composeDakutenInString(lines[lineIndex].text);
+    std::string truncated = middleEllipsisTruncateByWidth(composed, impl_->columns);
+    renderTextRun(y, truncated, Color{impl_->fg.r, impl_->fg.g, impl_->fg.b}, 0, lines[lineIndex].attributes);
   }
 
   SDL_RenderSetClipRect(impl_->renderer, nullptr);  // 下のモードライン行(と将来のどんなマージン装飾)もこれには縛られない

@@ -10,6 +10,16 @@
 
 namespace fm {
 
+// 定義はcontent_view.cpp。文字列`text`を、必要なら先頭/末尾を残して
+// 中間を"..."で置き換え、画面幅`maxWidth`列以内に収める(既に収まって
+// いれば無変更)――ContentView::renderLine()自身が長い行の表示に使う
+// のと同じロジック。GraphicalDisplay::renderScrolled()(graphical_display.cpp、
+// 通常のContentView::redraw()を一切経由しない別の描画経路)からも
+// 同じ切り詰めを適用できるよう公開している――2026-08-30、直接の
+// ユーザー報告(GUI、実際のマウスドラッグ中に「...」省略が反映され
+// ない件)参照。
+std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth);
+
 // スクロール可能なテキスト行の一覧: 1ページずつ描画し、カーソル行を
 // 追跡し、利用可能な場合はDisplayのハードウェアスクロール領域経路
 // を含めて、一覧を通して(1行単位またはページ単位で)スクロールする。

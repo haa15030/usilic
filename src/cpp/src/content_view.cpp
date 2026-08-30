@@ -89,6 +89,36 @@ std::string middleEllipsisTruncate(const std::string &text, int maxBytes) {
 // Utf8::display_width()によって累積される。
 int totalDisplayWidth(const std::string &text);  // 下で定義されている。この関数自身の早期returnのためにここで必要
 
+// `text`の全文字にわたるUtf8::display_width()の合計――「既に」幅で
+// 切り詰められた文字列(renderSplitModeLine()自身のtrailing2)を
+// 実際の画面の列へ右揃えするため。バイト長(text.size())は、CJKの
+// 内容に対しては不足してしまう(同じバイト対幅の区別については
+// middleEllipsisTruncateByWidth()自身のコメント参照)。
+int totalDisplayWidth(const std::string &text) {
+  int width = 0;
+  int i = 0;
+  while (i < static_cast<int>(text.size())) {
+    int len = Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
+    len = std::min(len, static_cast<int>(text.size()) - i);
+    width += Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, len);
+    i += len;
+  }
+  return width;
+}
+
+}  // namespace
+
+// 2026-08-30、直接のユーザー報告(GUI、実際のマウスドラッグ中――特に
+// スクロールが起きようが起きまいが、ドラッグ中は毎フレームこれが
+// 必要になる――ARCモードで再現、スクリーンショット=ev/=ew): 元々
+// 上の匿名namespace限定(ファイル内、renderLine()/renderSplitModeLine()
+// からしか呼べない)だったが、GraphicalDisplay::renderScrolled()
+// (graphical_display.cpp、通常のContentView::redraw()を一切経由
+// しない別の描画経路)からも同じ切り詰めを適用できるよう、公開
+// (fm::)関数へ格上げした。ロジック自体は変更していない――
+// totalDisplayWidth()(直後の匿名namespace内で定義)は、匿名
+// namespaceのメンバーであってもこのファイル内の通常の名前探索で
+// 見えるので、ここが匿名namespaceの外であっても問題無く呼べる。
 std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth) {
   // 2026-08-28の修正、直接のユーザー報告(「CLAUDE.md」自体が、
   // そのままで収まるほど短いにも関わらず、省略記号で「CLA....md」
@@ -170,25 +200,6 @@ std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth)
   if (tailStart <= headEnd) return text;  // 有効に省略するには狭すぎる――下のプレーンな切り落としに任せる
   return text.substr(0, static_cast<std::size_t>(headEnd)) + kEllipsis + text.substr(static_cast<std::size_t>(tailStart));
 }
-
-// `text`の全文字にわたるUtf8::display_width()の合計――「既に」幅で
-// 切り詰められた文字列(renderSplitModeLine()自身のtrailing2)を
-// 実際の画面の列へ右揃えするため。バイト長(text.size())は、CJKの
-// 内容に対しては不足してしまう(同じバイト対幅の区別については
-// middleEllipsisTruncateByWidth()自身のコメント参照)。
-int totalDisplayWidth(const std::string &text) {
-  int width = 0;
-  int i = 0;
-  while (i < static_cast<int>(text.size())) {
-    int len = Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
-    len = std::min(len, static_cast<int>(text.size()) - i);
-    width += Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, len);
-    i += len;
-  }
-  return width;
-}
-
-}  // namespace
 
 ContentView::ContentView(Display &display) : display_(display) {}
 
@@ -919,6 +930,16 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
   int current;
   if (total <= 0) {
     current = 0;
+  } else if (total <= height_) {
+    // 2026-08-30、直接のユーザー報告(GUI、実際のマウスドラッグ中に
+    // 「14/14 END」のような誤った位置表示になる件、ARCモードで再現):
+    // 全内容が既に画面に収まっている場合、topIndex_は常に0で
+    // bottomVisibleは常にtotal以上になるため、下のbottomVisible>=total
+    // 分岐が想定する「末尾までスクロール/惰性で到達した」という前提が
+    // そもそも成立しない(スクロール自体が一切起こり得ない)。この場合は
+    // 代わりに、このフレームの直前/直後の通常描画(modeLineText())と
+    // 一致するよう、cursorIndex_基準で表示する。
+    current = std::min(total, cursorIndex_ + 1);
   } else if (bottomVisible >= total) {
     current = total;  // なぜこのチェックであってtopIndex_自体ではないのかについてはscrollModeLineText()自身のコメント参照
   } else {
@@ -936,8 +957,69 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
   }
   ModeLineFields fields = withTruncatedTrailing3(
       withTruncatedFields(modeLineFieldsProvider_(cursorIndex_), positionText), positionText);
-  FieldFit fit = fitModeLineFields(fields, positionText);
   int cols = display_.columns();
+
+  // 2026-08-30、直接のユーザー報告(GUI、実際のマウスドラッグ中は
+  // モードライン末尾のフィールド――ARCの場合アーカイブパス全体――が
+  // 消える件): renderModeLine()自身のsplitLayoutWhenCrowded分岐
+  // (renderSplitModeLine()参照)をここでも同じ考え方で反映する――
+  // 以前はここが常に下のfitModeLineFields()の「収まらなければ
+  // 丸ごと落とす」という単純な階層だけを使っていた。renderSplitMode
+  // Line()自身は絶対カーソル移動で直接描画するため、その場所計算
+  // (center/leftBudget/rightBudget/centerStart)だけを移植し、
+  // ModeLineSegmentは並び順でしか位置を表現できないので、その間隔を
+  // 非standoutのスペースセグメントとして表現する。
+  if (fields.splitLayoutWhenCrowded) {
+    int naiveLen = static_cast<int>(fields.name.size()) + 1 + static_cast<int>(positionText.size()) +
+                   (fields.trailing.empty() ? 0 : 1 + static_cast<int>(fields.trailing.size())) +
+                   (fields.trailing2.empty() ? 0 : 1 + static_cast<int>(fields.trailing2.size()));
+    if (cols > 0 && naiveLen > cols) {
+      std::string center = positionText;
+      if (!fields.trailing.empty()) center += " " + fields.trailing;
+      int centerLen = static_cast<int>(center.size());
+      int available = std::max(0, cols - centerLen - 2);
+      int nameWidth = totalDisplayWidth(fields.name);
+      int trailing2Width = totalDisplayWidth(fields.trailing2);
+      int leftBudget, rightBudget;
+      if (nameWidth <= available / 2) {
+        leftBudget = nameWidth;
+        rightBudget = available - leftBudget;
+      } else if (trailing2Width <= available / 2) {
+        rightBudget = trailing2Width;
+        leftBudget = available - rightBudget;
+      } else {
+        leftBudget = available / 2;
+        rightBudget = available - leftBudget;
+      }
+      int centerStart = leftBudget + 1;
+      std::string name = middleEllipsisTruncateByWidth(fields.name, leftBudget);
+      std::string trailing2 = middleEllipsisTruncateByWidth(fields.trailing2, rightBudget);
+
+      int col = 0;
+      if (!name.empty()) {
+        segments.push_back({name, true});
+        col += totalDisplayWidth(name);
+      }
+      if (centerStart > col) segments.push_back({std::string(static_cast<std::size_t>(centerStart - col), ' '), false});
+      col = std::max(col, centerStart);
+      segments.push_back({positionText, true});
+      col += static_cast<int>(positionText.size());
+      if (!fields.trailing.empty()) {
+        segments.push_back({" ", false});
+        col += 1;
+        segments.push_back({fields.trailing, true});
+        col += static_cast<int>(fields.trailing.size());
+      }
+      if (!trailing2.empty()) {
+        int trailing2Start = std::max(0, cols - totalDisplayWidth(trailing2));
+        if (trailing2Start > col) segments.push_back({std::string(static_cast<std::size_t>(trailing2Start - col), ' '), false});
+        segments.push_back({trailing2, true});
+      }
+      return segments;
+    }
+  }
+
+  FieldFit fit = fitModeLineFields(fields, positionText);
   int drawnLen = 0;
   if (fit.showName && !fields.name.empty()) {
     segments.push_back({fields.name, true});
