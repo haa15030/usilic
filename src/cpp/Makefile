@@ -113,20 +113,24 @@ install: $(BUILD_DIR)/usilic
 # LaunchServices double-clicking an app bundle invokes
 # Contents/MacOS/usilic with no arguments, landing on that exact same
 # default path, so this bundle needed no new app-side code at all.
-# `packaging/Info.plist` is the only checked-in input; the bundle
-# itself lands under $(BUILD_DIR) (already gitignored) since it's a
-# build artifact, not source. No custom icon yet -- Finder falls back
-# to a generic executable icon; see packaging/README's own note if
-# one gets added later. Darwin-only in practice (an .app bundle is a
+# `packaging/Info.plist`/`packaging/usilic.icns` are the checked-in
+# inputs; the bundle itself lands under $(BUILD_DIR) (already
+# gitignored) since it's a build artifact, not source.
+# `packaging/usilic.icns`(2026-08-30、ユーザー自身が用意した1024x1024
+# のusilic.pngから`sips`+`iconutil`で生成、直接のユーザー依頼)は
+# Contents/Resources/へコピーし、Info.plist自身のCFBundleIconFile
+# キーがそれを指す。Darwin-only in practice (an .app bundle is a
 # macOS-specific concept) but the rule itself is just file copying, so
 # left unguarded rather than wrapped in another ifeq.
 APP_BUNDLE = $(BUILD_DIR)/usilic.app
 
 app: $(APP_BUNDLE)
 
-$(APP_BUNDLE): $(BUILD_DIR)/usilic packaging/Info.plist
+$(APP_BUNDLE): $(BUILD_DIR)/usilic packaging/Info.plist packaging/usilic.icns
 	mkdir -p $(APP_BUNDLE)/Contents/MacOS
+	mkdir -p $(APP_BUNDLE)/Contents/Resources
 	cp packaging/Info.plist $(APP_BUNDLE)/Contents/Info.plist
+	cp packaging/usilic.icns $(APP_BUNDLE)/Contents/Resources/usilic.icns
 	cp $(BUILD_DIR)/usilic $(APP_BUNDLE)/Contents/MacOS/usilic
 ifeq ($(shell uname), Darwin)
 	# Re-signs the WHOLE bundle (Info.plist + executable together) with
