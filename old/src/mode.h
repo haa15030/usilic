@@ -1,4 +1,4 @@
-/* Following mode-No. must be equal to K-No. of usilicrc */
+/* 以下のmode番号は、usilicrcのK-番号と一致していなければならない */
 #define M_help	1
 #define M_bl	2
 #define M_clear	3
@@ -76,7 +76,7 @@
 #define M_me	75
 #define M_mm	76
 #define M_end	77
-/* M-? <== This string musn't be edited. See mode.pl */
+/* M-? <== この文字列は編集してはならない。mode.pl参照 */
 #define M__0	80
 #define M__1	81
 #define M__2	82
@@ -97,7 +97,7 @@
 #define M__17	97
 #define M__18	98
 #define M__19	99
-/* mode[] in str.c needs following No. */
+/* str.cのmode[]は以下の番号を必要とする */
 #define M_usilic	100
 #define M_key	101
 #define M_klt	102
@@ -122,7 +122,7 @@
 #define T_hegrep	121
 #define T_mode	122
 #define T_null	123
-/* Following can be set in any sequence */
+/* 以下は任意の順序で設定してよい */
 #define T_bin	124
 #define T_gz	125
 #define T_buff	126

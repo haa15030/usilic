@@ -32,17 +32,17 @@ CHILD *save_child(CHILD *chp, char *cp0, int f_child, LIST **lpp)/*usilic*/
     }
     chp = calloc(sizeof(CHILD), 1);
     for (n_str = 0; n_str >= 0; n_str++) {
-      /* argv[0] ==> chp->suffix, argv[1..] ==> chp->argv[0..] */
+      /* argv[0] ==> chp->suffix、argv[1..] ==> chp->argv[0..] */
       p3 = NULL;
-      if (f_child == 4 && (!n_str || n_str == 2)) { /* EDITOR (usilicrc) */
+      if (f_child == 4 && (!n_str || n_str == 2)) { /* EDITOR(usilicrc) */
 	if (!n_str)
-	  p3 = strdup(s_P(P_mode)[M_edit]); /* mark of editor */
-	else if (n_str == 2) /* line-No. for editor */
+	  p3 = strdup(s_P(P_mode)[M_edit]); /* エディタの目印 */
+	else if (n_str == 2) /* エディタ用の行番号 */
 	  p3 = strdup("+??????????");
 	i = strlen(p3);
-      } else if (f_child == 5 && n_str != 1) { /* SHELL (usilicrc) */
-	if (!n_str) 
-	  p3 = strdup(s_P(P_mode)[M_shell]); /* mark for shell */
+      } else if (f_child == 5 && n_str != 1) { /* SHELL(usilicrc) */
+	if (!n_str)
+	  p3 = strdup(s_P(P_mode)[M_shell]); /* シェルの目印 */
 	else if (n_str == 2) p3 = strdup("-i");
 	i = (n_str == 3) ? 0 : strlen(p3);
       } else {
@@ -51,8 +51,8 @@ CHILD *save_child(CHILD *chp, char *cp0, int f_child, LIST **lpp)/*usilic*/
 	  argv[0] = strdup("...");
 	  continue;
 	}
-	if (*cp == '#') i = 0; /* comment line */
-        else { /* string enclosed in '' or "" */
+	if (*cp == '#') i = 0; /* コメント行 */
+        else { /* ''または""で囲まれた文字列 */
 	  if ((i = strlen(cp))) {
 	    p3 = malloc(i);
 	    if (*cp == '\047') {
@@ -69,21 +69,21 @@ CHILD *save_child(CHILD *chp, char *cp0, int f_child, LIST **lpp)/*usilic*/
 	  }
 	}
       }
-      if (!i) {	/* no more string */
+      if (!i) {	/* もう文字列が無い */
 	k = !strcmp(argv[0], s_P(P_mode)[M_shell]);
 	chp->f.argc = n_str - 1; /* chp->argv[chp->f.argc] <== filename */
 	chp->argv = calloc(sizeof(char*), chp->f.argc + 2 - k);
-	if (is_fm() && !strcmp(s_S(S_du), argv[1])) 
-	  ; /* need no filename */
+	if (is_fm() && !strcmp(s_S(S_du), argv[1]))
+	  ; /* filenameは不要 */
 	else if (chp2) chp->argv[chp->f.argc + 1] = (char*)chp2;
-	else if (!k) /* area for argument */
+	else if (!k) /* 引数用の領域 */
 	  chp->argv[chp->f.argc] = calloc(1, N_line);
 	for (j = 0; j < chp->f.argc+1; j++) {
 	  if (j) chp->argv[j-1] = strdup(argv[j]);
 	  else chp->suffix = strdup(argv[j]);
 	}
 	if (!is_inst(s_S(S_path), *chp->argv)) {
-	  /* chp->argv[0] isn't installed */
+	  /* chp->argv[0]がインストールされていない */
 	  if (!lpp) lpp = &lp;
 	  if (!load_list(*lpp, chp->argv[0], &pn)) {
 	    *lpp = save_list(*lpp, chp->argv[0], &pn);
@@ -104,7 +104,7 @@ CHILD *save_child(CHILD *chp, char *cp0, int f_child, LIST **lpp)/*usilic*/
 	    chp->f.chp = is_chp(NULL, chp->argv[0]);
 	    break;
 	  case 3:
-	    chp->f.exec = 1; /* EXEC (usilicrc) */
+	    chp->f.exec = 1; /* EXEC(usilicrc) */
 	    break;
 	  }
 	for (i = 0; ; i++) {
@@ -126,7 +126,7 @@ CHILD *save_child(CHILD *chp, char *cp0, int f_child, LIST **lpp)/*usilic*/
 }
 
 CHILD *check_ext(char *name, u_char *split, int size)/*usilic*/
-{ /* check suffix to set program-name */
+{ /* プログラム名を設定するためsuffixを調べる */
   int i, len, size0;
   CHILD *chp, *chp0 = NULL;
   char *cp;
@@ -148,17 +148,17 @@ CHILD *check_ext(char *name, u_char *split, int size)/*usilic*/
 	}
     }
   if (!(chp = chp0)) {
-  /* read `N_man' bytes to check format of manual-page */
+  /* マニュアルページの形式を調べるため`N_man'バイト読む */
     size0 = size;
-    if (split) { /* read memory */
+    if (split) { /* メモリを読む */
       st.st_size = -1;
       if (size > N_man) size = N_man;
-    } else /* read file */
+    } else /* ファイルを読む */
       if (stat(name, &st) < 0 || !st.st_size) split = NULL;
       else {
 	size0 = size = N_man;
 	split = calloc(1, size
-			   +3); /* for man[3] (is_man()) */
+			   +3); /* man[3](is_man())のため */
 	if ((fp = fopen(name, "r"))) {
 	  size = fread(split, 1, size + 3, fp);
 	  fclose(fp);
@@ -180,7 +180,7 @@ CHILD *check_ext(char *name, u_char *split, int size)/*usilic*/
 }
 
 CHILD *init_child(void)/*usilic*/
-{ /* built-in program */
+{ /* 組み込みプログラム */
   int i;
   char **app;
   CHILD *chp;
@@ -209,13 +209,13 @@ CHILD *get_child(CHILD *chp0, char *suffix, char *bin, char *name, CHILD *next)/
     else if (!bin || (bin && !strcmp(*chp->argv, bin)))
       if (!suffix || !strcmp(chp->suffix, suffix)) break;
   }
-  if (chp && name) /* set argument */
+  if (chp && name) /* 引数を設定する */
     strcpy(chp->argv[chp->f.argc], name);
   return chp;
 }
 
 int cat_child(CHILD *chp, char pathname[])/*usilic*/
-{  /* set `filename (program)' to FILE-list */
+{  /* FILE-listへ`filename (program)'を設定する */
   int i;
 
   if (!chp) return 0;
@@ -233,7 +233,7 @@ void free_chp(CHILD *chp)/*usilic*/
 
   f_pipe = !chp->argv[chp->f.argc] 
     && strcmp(chp->suffix, "...")
-    && *chp->suffix != ' '; /* s_P(P_mode)[M_shell] */
+    && *chp->suffix != ' '; /* s_P(P_mode)[M_shell]のこと */
   for (argc = 0; chp->argv[argc]; argc++)
     free(chp->argv[argc]);
   if (f_pipe) free_chp((CHILD*)chp->argv[argc + 1]);

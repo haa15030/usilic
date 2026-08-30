@@ -1,15 +1,16 @@
 /*
- * Auto-generated EUC-JP (JIS X 0208) -> Unicode codepoint table, used
- * by euctoutf8() in code.c (UTF-8 support, step 5) to redisplay
- * legacy EUC-JP files correctly when USILICCHARSET=utf8. Generated with
- * Python's built-in euc-jp codec:
+ * 自動生成されたEUC-JP(JIS X 0208)->Unicodeコードポイントテーブル。
+ * USILICCHARSET=utf8の時にlegacyのEUC-JPファイルを正しく再表示する
+ * ため、code.c内のeuctoutf8()(UTF-8対応、ステップ5)が使う。
+ * Python標準のeuc-jpコーデックで生成:
  *
  *   for lead in range(0xa1, 0xff):
  *     for trail in range(0xa1, 0xff):
- *       ord(bytes([lead, trail]).decode('euc-jp'))  # 0 if unmapped
+ *       ord(bytes([lead, trail]).decode('euc-jp'))  # 未割り当てなら0
  *
- * Indexed as euc_jisx0208_uni[lead - 0xa1][trail - 0xa1]; an entry of
- * 0 means that byte pair isn't an assigned JIS X 0208 character.
+ * euc_jisx0208_uni[lead - 0xa1][trail - 0xa1]としてインデックス
+ * される; エントリが0であれば、そのバイトペアは割り当てられた
+ * JIS X 0208文字ではないことを意味する。
  */
 static const u_short euc_jisx0208_uni[94][94] = {
   {12288,12289,12290,65292,65294,12539,65306,65307,65311,65281,12443,12444,180,65344,168,65342,65507,65343,12541,12542,12445,12446,12291,20189,12293,12294,12295,12540,8213,8208,65295,65340,12316,8214,65372,8230,8229,8216,8217,8220,8221,65288,65289,12308,12309,65339,65341,65371,65373,12296,12297,12298,12299,12300,12301,12302,12303,12304,12305,65291,8722,177,215,247,65309,8800,65308,65310,8806,8807,8734,8756,9794,9792,176,8242,8243,8451,65509,65284,162,163,65285,65283,65286,65290,65312,167,9734,9733,9675,9679,9678,9671},
