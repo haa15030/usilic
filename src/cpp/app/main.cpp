@@ -1551,6 +1551,21 @@ void handleSigintForGuiSession(int) { gGuiSessionSigintReceived = 1; }
 
 void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   bool dragging = false;
+  // 2026-08-30、直接のユーザー報告(GUI、ARCモードで再現させたスクリー
+  // ンショット付き――ただし根本原因はモードを問わない): マウスボタンを
+  // 押した「だけ」で(実際には全く動かしていなくても)dragging=trueに
+  // なり、その間render-mode分岐(下の`if (dragging || ...)`)が
+  // renderScrolled()(通常のContentView::renderLine()を一切経由しない、
+  // 完全に別の描画経路)へ切り替わってしまっていた――「...」省略、
+  // 濁点合成(commitGlyph())、モードラインのsplitLayoutWhenCrowded、
+  // どれもrenderScrolled()側には実装が無いため、末尾切れ表示・濁点が
+  // 単体グリフとして分離/消失・モードラインの位置表示が誤って
+  // 「END」になり末尾フィールドが消える、という3つの症状が同時に
+  // 出ていた。ボタンを押した時点では「素のクリックか本物のドラッグ
+  // か」を区別できないので、実際にMotionイベントが1回でも届くまでは
+  // dragging自体を立てない――buttonHeldPendingDrag(下のDragEvent::
+  // ButtonDown/Motion/ButtonUp参照)。
+  bool buttonHeldPendingDrag = false;
   int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
   int coastLevel = 0;       // 0 == not coasting; otherwise an index into fm::kScrollSpeedLevels
   int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
@@ -1977,29 +1992,50 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       anyEventThisFrame = true;
       switch (drag->type) {
         case fm::GraphicalDisplay::DragEventType::ButtonDown:
-          dragging = true;
+          // dragging自体はまだ立てない――buttonHeldPendingDrag自身の
+          // コメント参照。coastLevel/coastDirection/recentMotion/
+          // setHandCursor(true)は、以前と同じくボタンが押された時点
+          // で即座にリセット/表示して構わない(これらは「本物の
+          // ドラッグかどうか」に関わらず安全な、押した瞬間のフィード
+          // バックのため)。
+          buttonHeldPendingDrag = true;
           coastLevel = 0;  // grabbing mid-coast stops it right where it is
           coastDirection = 0;
           recentMotion.clear();
           gui.setHandCursor(true);
           break;
         case fm::GraphicalDisplay::DragEventType::ButtonUp: {
+          // buttonHeldPendingDrag自身のコメント参照: Motionが一度も
+          // 届かないまま(=素のクリック)ここに来た場合、draggingは
+          // 一度もtrueにならなかったので、pixelOffset/coastLevelは
+          // 既に0のまま一切動いていない――coast解決を一切スキップし、
+          // 単に状態をリセットするだけでよい。
+          bool wasRealDrag = dragging;
           dragging = false;
+          buttonHeldPendingDrag = false;
           gui.setHandCursor(false);
-          auto cutoff = std::chrono::steady_clock::now() - kReleaseWindow;
-          int releaseDistance = 0;
-          for (auto &sample : recentMotion)
-            if (sample.first >= cutoff) releaseDistance += sample.second;
-          coastLevel = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, cellHeight));
-          coastDirection = coastLevel > 0 ? (releaseDistance > 0 ? 1 : -1) : 0;
-          // A release too slow/short to coast (coastLevel resolves to
-          // 0 here) still needs pixelOffset cleared -- see the
-          // key->special branch's comment above for why a leftover
-          // fractional remainder wedges the render-mode check forever.
-          if (coastLevel == 0) pixelOffset = 0;
+          if (wasRealDrag) {
+            auto cutoff = std::chrono::steady_clock::now() - kReleaseWindow;
+            int releaseDistance = 0;
+            for (auto &sample : recentMotion)
+              if (sample.first >= cutoff) releaseDistance += sample.second;
+            coastLevel = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, cellHeight));
+            coastDirection = coastLevel > 0 ? (releaseDistance > 0 ? 1 : -1) : 0;
+            // A release too slow/short to coast (coastLevel resolves to
+            // 0 here) still needs pixelOffset cleared -- see the
+            // key->special branch's comment above for why a leftover
+            // fractional remainder wedges the render-mode check forever.
+            if (coastLevel == 0) pixelOffset = 0;
+          }
           break;
         }
         case fm::GraphicalDisplay::DragEventType::Motion: {
+          // buttonHeldPendingDrag自身のコメント参照: 実際にMotionが
+          // 届いた時点で初めて「本物のドラッグ」と確定させる。
+          if (buttonHeldPendingDrag && !dragging) {
+            dragging = true;
+            buttonHeldPendingDrag = false;
+          }
           // No-op when the content already fits entirely on screen (no
           // row can ever scroll either direction) -- a real report
           // (2026-08-09: "-g git/usilic起動でBasic端末でも一画面に収
