@@ -18,7 +18,7 @@ static void sub_clear(int dummy)
 }
 
 static void sspc(u_char *cp, u_char *np)
-{ /* convert space character for sscanf() */
+{ /* sscanf()のために空白文字を変換する */
   if (np)
     do {
       if (*cp && *cp < ' ') {
@@ -33,7 +33,7 @@ static void sspc(u_char *cp, u_char *np)
 }
 
 void rspc(u_char *cp, u_char *np)/*usilic*/
-{ /* convert space character for sscanf() */
+{ /* sscanf()のために空白文字を変換する */
   if (np)
     do {
       if (*cp == K_o) {
@@ -92,7 +92,7 @@ static int read_str(FILE *fp, u_char str[], STR **spp, LIST **lpp, int f, int m)
 }
 
 static void write_str(FILE *fp, STR *sp, LIST *lp, int f, int m)
-{ /* save strings to ~/.usilic/history in STR-list order */
+{ /* STRリストの順序で~/.usilic/historyへ文字列を保存する */
   char name[N_line];
 
   fprintf(fp, "%c%s\n", K_l, s_P(P_mode)[m]);
@@ -121,7 +121,7 @@ static void delete_str(STR *sp, char name[])
 }
 
 static void get_par(char *dir)
-{ /* set parent directory name to dir[] */
+{ /* 親ディレクトリ名をdir[]へ設定する */
   if (!strcmp(dir, "/")) return;
   for (dir = &strchr(dir, '\0')[-2]; *dir != '/'; dir--) ;
   dir[1] = '\0';
@@ -139,7 +139,7 @@ static void get_time(char str[])
 }
 
 int find_prog(LIST *prog, u_char buff[])/*usilic*/
-{ /* search for buff[] in the program-list of PROGRAM */
+{ /* PROGRAMのprogram-listの中でbuff[]を検索する */
   if (prog) {
     int i;
     char *cp;
@@ -197,7 +197,7 @@ LIST *delete_name(LIST *lp, STR *sp, STR *rsp, FILE *fp)/*usilic*/
   }
   if (i) {
     lp = free_list(lp);
-    while (rsp) { /* build-in */
+    while (rsp) { /* 組み込み */
       if (rsp->name) lp = save_list(lp, rsp->name, &rsp->pn);
       rsp = rsp->next;
     }
@@ -249,7 +249,7 @@ STR *save_history(STR *hist, char name[], int f_find)/*usilic*/
     return NULL;
   }
   count = strlen(name) - 1;
-  if (name[count] == '\r') /* '\r' SHELL-prompt */
+  if (name[count] == '\r') /* '\r'はSHELLプロンプト */
     name[count] = '\0';
   if (f_find && find_hist(hist, name, &count)) return hist;
   if (hist && count == n_history) {
@@ -378,7 +378,7 @@ STACK *save_stack(STACK *sp, LINE *lp, int f_M, char name[], BASE *bp, int f_bp)
 }
 
 STACK *save_stack_dir(STACK *sp, char dir[], char old[], BASE *bp)/*usilic*/
-{ /* save current directory (bottom of the stack) */
+{ /* カレントディレクトリを保存する(スタックの底) */
   char str[3];
 
   sprintf(str, "%c%c", K_z, 0);
@@ -395,7 +395,7 @@ STACK *save_stack_dir(STACK *sp, char dir[], char old[], BASE *bp)/*usilic*/
 }
 
 void get_name(char *pathname)/*usilic*/
-{ /* set regular filename to pathname */
+{ /* 通常のファイル名をpathnameへ設定する */
   char *cp, *cp0 = pathname;
 
   while ((cp = strchr(pathname, '/'))) pathname = &cp[1];
@@ -403,7 +403,7 @@ void get_name(char *pathname)/*usilic*/
 }
 
 int get_dir(char *pathname)/*usilic*/
-{ /* set current directory name to pathname */
+{ /* カレントディレクトリ名をpathnameへ設定する */
   char *cp;
 
   if (!strchr(pathname, '/') || !strcmp(pathname, "/")) return 0;
@@ -413,15 +413,15 @@ int get_dir(char *pathname)/*usilic*/
 }
 
 void erase_dot(char name[])/*usilic*/
-{ /* rid name[] of current ("./") or parent ("../") directory name */
+{ /* name[]からカレント("./")または親("../")ディレクトリ名を取り除く */
   int i, j;
   char *cp, tmp[N_line];
 
   for (cp = name; *cp && (cp = strstr(cp, "./")); )
-    if (cp > name && cp[-1] == '.') { /* skip "../" */
+    if (cp > name && cp[-1] == '.') { /* "../"を読み飛ばす */
       cp++;
       continue;
-    } else if (cp[2]) memmove(cp, &cp[2], strlen(&cp[2]) + 1); /* erase "./" */
+    } else if (cp[2]) memmove(cp, &cp[2], strlen(&cp[2]) + 1); /* "./"を消す */
     else *cp = '\0';
   if ((cp = strstr(name, "../"))) {
     strcpy(tmp, cp);
@@ -453,7 +453,7 @@ void read_list(LL *llp, SS *ssp, LINE *lp, char name[])/*usilic*/
   setjmp(Sub.jb);
   if (Sub.abort) {
     fclose(fp);
-    unlink(s_S(S_hist)); /* rm ~/.usilic/history */
+    unlink(s_S(S_hist)); /* ~/.usilic/historyを削除する */
     *lp->dir = '\0';
     return;
   }
@@ -466,7 +466,7 @@ void read_list(LL *llp, SS *ssp, LINE *lp, char name[])/*usilic*/
     memset(str, 0, 9);
     fseek(fp, -8, 2);
     fread(str, 1, 8, fp);
-    if (!strchr(str, K_z)) { /* ~/.usilic/history doesn't contain `EOF (^Z)' */
+    if (!strchr(str, K_z)) { /* ~/.usilic/historyに`EOF (^Z)'が含まれていない */
       fclose(fp);
       rename(s_hist, s_S(S_hist));
       if (!(fp = fopen(s_S(S_hist), "r"))) return;
@@ -485,7 +485,7 @@ void read_list(LL *llp, SS *ssp, LINE *lp, char name[])/*usilic*/
     *lp->old = '.';
     if (*str1) *str1 = '\0';
   }
-  if (*lp->old == '.') { /* mode-line: ./ (ls) */
+  if (*lp->old == '.') { /* mode-line: ./ (ls)の場合 */
     getcwd(str, N_line);
     if (strchr(str, '\0')[-1] != '/') strcat(str, "/");
     strcpy(lp->old, str);
@@ -536,15 +536,16 @@ void read_list(LL *llp, SS *ssp, LINE *lp, char name[])/*usilic*/
       if (vt_mode('H')) vt_cs(vt_row(0) - 1, 0);
       else vt_cs(vt_row(0) - 2, 0);
       if (!env_charset(-1)) vt_charset((charset) ? charset : C_utf8);
-      /* else: USILICCHARSET was explicitly exported by the user, so it
-	 wins over whatever was saved in ~/.usilic/history last time.
-	 (charset==0 here means the saved history line predates this
-	 field, or is otherwise missing it -- fall back to the
-	 documented UTF-8 default, not EUC.) */
+      /* else: USILICCHARSETがユーザーによって明示的にexportされて
+	 いたので、前回~/.usilic/historyに保存されていたものより
+	 そちらが優先される。(ここでcharset==0は、保存済みの
+	 history行がこのフィールドより前のものであるか、あるいは
+	 何らかの理由でこれが欠けていることを意味する――EUCではなく、
+	 文書化されたUTF-8の既定値へフォールバックする。) */
     }
     f = 1;
   } while (0);
-  if (!f) { /* ~/.usilic/history is broken or old format */
+  if (!f) { /* ~/.usilic/historyが壊れているか古い形式である */
     save_error("%s: %s: %s.\n", s_S(S_usilic), s_S(S_hist), s_S(S_errm));
     kill(getpid(), SIGSEGV);
   }
@@ -559,7 +560,7 @@ void write_list(LL ll, SS ss, LINE *lp, char name[])/*usilic*/
   if (!s_S(S_hist)) return;
   strcpy(str, s_S(S_hist));
   strcat(str, ".old");
-  rename(s_S(S_hist), str); /* backup */
+  rename(s_S(S_hist), str); /* バックアップ */
   if (!(fp = fopen(s_S(S_hist), "w"))) return;
   get_time(str);
   fprintf(fp, "# ~/." PROGNAME "/history: %s\n", getenv(ENV_PROG));
@@ -688,7 +689,7 @@ LIST *save_list(LIST *list, char name[], PN *pnp)/*usilic*/
 }
 
 char *utoa(u_int u)/*usilic*/
-{ /* convert unsigned-int to string */ 
+{ /* unsigned-intを文字列へ変換する */
   char tmp[32];
   static char str[32];
   int i;
@@ -705,7 +706,7 @@ char *utoa(u_int u)/*usilic*/
 }
 
 char *tobo(char str[], int f_nl)/*usilic*/
-{ /* convert str[] to bold attribute */
+{ /* str[]をbold属性へ変換する */
   static char tmp[N_line];
   int i, j;
   
@@ -720,7 +721,7 @@ char *tobo(char str[], int f_nl)/*usilic*/
 }
 
 char *toul(char str[], int f_nl)/*usilic*/
-{ /* convert str[] to underline attribute */
+{ /* str[]をunderline属性へ変換する */
   static char tmp[N_line];
   int i, j;
 
@@ -759,19 +760,18 @@ int ichrstr(char str0[], char c, char *str)/*usilic*/
 
 void print_arg(char arg[], int size, u_char *buff, CHILD *chp, int f_M)/*usilic*/
 {
-  *arg = K_z; /* doesn't display mode-line[4] */
+  *arg = K_z; /* mode-line[4]を表示しない */
   if (chp)
-    /* 2026-08-20 fix (see menu.c's own call-site comment for the
-       size=-1 half of this same report): s_S(S_sh) (the configured
-       SHELL command string) gated the byte count here for every
-       chp-driven mode (ARC chief among them) with no clear connection
-       to archive display at all -- T_dir's/T_man's own nearly
-       identical `size >= 0' branches just below have no such gate.
-       Dropped to match those two, which is also the ONLY way the
-       byte count could ever show at all when no SHELL section is
-       configured in usilicrc (confirmed directly: s_S(S_sh) is NULL
-       in that case, unconditionally suppressing this regardless of a
-       real, valid size). */
+    /* 2026-08-20修正(この同じ報告のsize=-1側についてはmenu.c自身の
+       呼び出し箇所のコメント参照): s_S(S_sh)(設定されたSHELL
+       コマンド文字列)が、アーカイブ表示とは全く明確な関係の無い、
+       chp駆動の全てのモード(その主なものがARC)についてここの
+       バイト数をゲートしていた――すぐ下のT_dir/T_man自身のほぼ
+       同一な`size >= 0'の分岐にはそのようなゲートは無い。この2つに
+       合わせて削除した。これは、usilicrcにSHELLセクションが設定
+       されていない場合に、バイト数がそもそも表示され得る唯一の
+       方法でもある(直接確認済み: その場合s_S(S_sh)はNULLであり、
+       本物の有効なサイズに関わらず無条件にこれを抑制していた)。 */
     if (size >= 0 && f_M != T_pipe5)
       sprintf(arg, " %d (%s)", size, *chp->argv);
     else sprintf(arg, " (%s)", *chp->argv);
@@ -806,8 +806,9 @@ void dup_error()/*usilic*/
 
   if (!s_S(S_error)) return;
   fp = fopen(s_S(S_error), "a");
-  if (!fp) return; /* fileno(NULL) is UB; fopen() can fail (e.g. ENOENT on the
-		       parent dir) and previously wasn't checked here */
+  if (!fp) return; /* fileno(NULL)は未定義動作である; fopen()は失敗し得る
+		       (例えば親ディレクトリのENOENT)が、以前はここで
+		       確認していなかった */
   fd = fileno(fp);
   dup2(fd, 2);
   close(fd);
@@ -827,7 +828,7 @@ void save_error(char *fmt, ...)/*usilic*/
 }
 
 void save_stderr(char *fmt, ...)/*usilic*/
-{ /* print to `stderr' after reset terminal */
+{ /* 端末をリセットした後に`stderr'へ表示する */
   FILE *fp;
   va_list ap;
 
@@ -863,7 +864,7 @@ int load_intr(void)/*usilic*/
 }
 
 char *is_inst(char *path, char *prog)/*usilic*/
-{ /* search `prog' on `path' */
+{ /* `path'の中から`prog'を探す */
   int i;
   char *cp;
   static char str[N_line];
@@ -892,12 +893,12 @@ int is_access(char name[], BASE *bp)/*usilic*/
 {
   struct stat st;
 
-  if (access(name, R_OK|F_OK) < 0) { /* No such file or directory */
+  if (access(name, R_OK|F_OK) < 0) { /* そのようなファイルやディレクトリは無い */
     make_bp(bp, strerror(errno), name, NULL);
     return -1;
   } else {
     stat(name, &st);
-    if (!st.st_size) { /* No size */
+    if (!st.st_size) { /* サイズが無い */
       make_bp(bp, s_S(S_err1), name, NULL);
       return -1;
     }
@@ -1000,14 +1001,15 @@ char *pty_strerror(void)/*usilic*/
 int open_pty(char str[], int f_open)/*usilic*/
 {
   /*
-   * Portable (Linux / macOS / *BSD) pty acquisition using the POSIX
-   * (Unix98) pty API instead of scanning legacy BSD device nodes
-   * such as /dev/ptyp0.."/dev/ptysf", which no longer exist on
-   * modern kernels (and never existed on macOS) without special
-   * kernel configuration.  str[] receives the *slave* device path
-   * (e.g. "/dev/pts/4" on Linux, "/dev/ttys004" on macOS); the
-   * caller opens str[] directly to get the slave side, no more
-   * "flip the 5th character between 'p' and 't'" trick needed.
+   * /dev/ptyp0.."/dev/ptysf"のようなレガシーなBSDデバイスノードを
+   * 走査する代わりに、POSIX(Unix98)のpty APIを使った、移植性の
+   * ある(Linux/macOS/*BSD)pty取得。そのようなデバイスノードは、
+   * 特別なカーネル設定無しでは現代のカーネルにはもう存在しない
+   * (そしてmacOSには元々存在しない)。str[]は*slave*デバイスパス
+   * (Linuxでは例えば"/dev/pts/4"、macOSでは"/dev/ttys004")を
+   * 受け取る; 呼び出し元はstr[]を直接openしてslave側を得ればよく、
+   * もはや「5文字目を'p'と't'の間で切り替える」というトリックは
+   * 不要である。
    */
   int tfd;
   char *slave;
@@ -1039,7 +1041,7 @@ int open_pty(char str[], int f_open)/*usilic*/
 }
 
 u_char *mtoa(int f_M)/*usilic*/
-{ /* exchange order of m.i */
+{ /* m.iの順序を入れ替える */
   union {
     u_char c[4];
     int i;
@@ -1054,7 +1056,7 @@ u_char *mtoa(int f_M)/*usilic*/
 }
 
 void print_buff(u_char buff[], int kanji_s)/*usilic*/
-{ /* display control character with reverse attribute */
+{ /* 制御文字を反転属性で表示する */
   int c, i, len, kanji_e;
   int f_utf8 = vt_charset(0) == C_utf8;
 
@@ -1065,18 +1067,19 @@ void print_buff(u_char buff[], int kanji_s)/*usilic*/
     vt_putchar(' ');
   } else i = 0;
   for (; i < len; i++)
-    /* K_at is 0x80 -- a byte value that never occurs in EUC/ASCII
-       content, safely repurposed as a sentinel meaning "show buff[i]
-       reverse-video as if it were NUL" (see K_dl below, and K_a0's
-       identical story in disp.c's put_str(), fixed for the same
-       reason). 0x80 is the single most common UTF-8 continuation
-       byte, though (e.g. the full-width space "\xe3\x80\x80"'s 2nd
-       and 3rd bytes): in UTF-8 mode this matched real character
-       bytes, silently swapping them for a reverse-video "@" and
-       tearing the character apart on screen (its 1st byte drawn
-       raw, then two bytes replaced, then whatever followed drawn
-       raw again) -- despite `buff' itself holding the correct bytes
-       throughout, which is why this was hard to pin down. */
+    /* K_atは0x80である――EUC/ASCIIのコンテンツには決して現れない
+       バイト値であり、「buff[i]をNULであるかのように反転表示で
+       示す」ことを意味する番兵として安全に使い回されている(下の
+       K_dl、そしてdisp.cのput_str()にある同一の経緯を持つK_a0
+       参照、同じ理由で修正された)。しかし0x80は、断トツで最も
+       よくあるUTF-8の継続バイトである(例えば全角スペース
+       "\xe3\x80\x80"の2バイト目と3バイト目): UTF-8モードでは
+       これが本物の文字バイトに一致してしまい、それらを静かに
+       反転表示の"@"へすり替え、画面上でその文字を引き裂いていた
+       (その1バイト目は生のまま描画され、次の2バイトが置き換え
+       られ、その後に続くものはまた生のまま描画される)――`buff'
+       自身はその間ずっと正しいバイトを保持し続けていたため、
+       これは突き止めるのが難しかった。 */
     if ((c = buff[i]) && (c < ' ' || c == K_dl || (!f_utf8 && c == K_at))) {
       if (c == K_dl) c -= 0x80;
       else if (c == K_at) c = 0;
