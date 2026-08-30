@@ -2405,6 +2405,19 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
       fontPath.empty() ? nullptr : fm::GraphicalDisplay::create(rows, columns, fontPath, fontPointSize);
   if (!gui) return false;  // no usable font, or window/renderer creation failed -- stay in terminal mode
 
+  // 2026-08-30、直接のユーザー依頼: この関数(tryEnterGuiPhase())は
+  // 実際には常にappearance==nulloptで呼ばれる(この関数自身のdoc
+  // コメント、および呼び出し元2箇所の両方参照)――guiOwnsWholeSession
+  // (main()自身の別の、実端末をオーバーレイする経路、matchWindowSize()
+  // 使用)とは異なり、ここは常に実端末の内容を一切引き継がない
+  // 真に新規のウィンドウなので、skipIdleScrollbarPlaceholder()自身の
+  // コメントが説明する「最初のマウス操作までは静的な参照画像」という
+  // 猶予には意味が無い(むしろフォントサイズ次第でズレて見える)。
+  // 万一将来appearanceありで呼ばれることがあっても、その場合だけは
+  // guiOwnsWholeSession同様の理屈が当てはまるはずなので、念のため
+  // !appearanceで絞ってある。
+  if (!appearance) gui->skipIdleScrollbarPlaceholder();
+
   if (appearance && appearance->hasColors) gui->setColors(appearance->foreground, appearance->background);
   else if (!appearance && savedGui.hasColors)
     gui->setColors(fm::GraphicalDisplay::Color{savedGui.fgR, savedGui.fgG, savedGui.fgB},

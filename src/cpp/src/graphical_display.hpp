@@ -109,6 +109,26 @@ class GraphicalDisplay : public Display {
   // 再描画しない。
   void setColors(Color foreground, Color background);
 
+  // 2026-08-30、直接のユーザー依頼: 「白アイコンusilic」(実端末を
+  // オーバーレイしない、新規ウィンドウとして開くtryEnterGuiPhase()
+  // 経由の起動――main.cppのguiOwnsWholeSession自身のコメント参照、
+  // あちらは実端末の実測ピクセルに合わせるmatchWindowSize()を持つ
+  // ため無関係)では、Impl::everInteracted自身のコメントが説明する
+  // 「最初のマウス操作までは静的な参照画像(drawIdleScrollbarImage())」
+  // という猶予が、むしろ逆効果になっていた: その画像はフォント
+  // サイズに関わらず常に同じ固定ピクセル幅の埋め込みBMPなので、
+  // Impl::scrollbarWidthがcellHeightへ連動するようになった今(直前の
+  // コミット参照)、デフォルトのフォントサイズ以外では画像とリアル
+  // タイムのつまみ描画の位置が食い違って見える("張りぼて画像が
+  // ズレる")。ユーザー自身の言葉("白アイコンは最初から新たな
+  // ウィンドウが開くため、最初からスクロールバー表示でいいと思う")
+  // 通り、この猶予自体に意味がある状況(実端末を視覚的に「引き継ぐ」
+  // ふりをする、guiOwnsWholeSession)でだけ残し、真に新規のウィンドウ
+  // ではeverInteractedを最初から立てておくことで、この画像を一切
+  // 経由せず最初のフレームから本物の(常に正しい)drawScrollbar()へ
+  // 直行させる。
+  void skipIdleScrollbarPlaceholder();
+
   // 読み戻しアクセサ(2026-08-24、docs/CHANGES.md項目427)――呼び
   // 出し元が、(setColors()/「実はすでにGUI」の端末色一致、または
   // 生きたCmd+K/Cmd+=/Cmd+-の調整、項目426経由で)ユーザーが実際に
