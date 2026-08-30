@@ -13,7 +13,7 @@
 #include <sys/time.h>
 #include "tc.P"
 #define N_LB (1+2+2+2+2+2+1+2+2+2+2+2+2)
-static struct TC { /* termcap function */
+static struct TC { /* termcap関数 */
   char *cs;
   char *ho, *cm;
   char *cl, *ce;
@@ -221,8 +221,8 @@ static void tc_ks(char *ks[])
 static int tc_mode(int mode)
 {
   static struct {
-    u_int disp	: 1; /* display window */
-    u_int win	: 1; /* SIGWINCH at SHELL */
+    u_int disp	: 1; /* ウィンドウを表示する */
+    u_int win	: 1; /* SHELLでのSIGWINCH */
     u_int hs	: 1;
   } f;
 
