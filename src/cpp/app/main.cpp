@@ -3312,7 +3312,20 @@ int main(int argc, char **argv) {
     // stale mid-list row instead of the top). consultHistoryOnStart
     // itself is declared earlier now (see its own comment) so the
     // startup load further up can share it too.
-    if (!app.start(startDirectory, consultHistoryOnStart)) {
+    // 2026-08-30、直接のユーザー報告("`open -a usilic`で起動すなわち
+    // 引数無しなので前回の履歴を引き継がないと。通常ファイルで終えた
+    // なら次回起動時も同ファイルから"): consultHistoryOnStart(引数
+    // 無し起動)の場合のみ、Application::startResumingSession()自身の
+    // コメントが説明する通り、前回終了時に開いていたもの
+    // (history.sessionState().lastOpenName)がFileモードの通常ファイル
+    // であればそれをそのまま復元する。引数付き起動、またはlastOpenName
+    // がディレクトリ/存在しない/開けない場合は、その内部で従来通りの
+    // start(startDirectory, ...)へフォールバックする。
+    bool started = consultHistoryOnStart
+                       ? app.startResumingSession(history.sessionState().lastOpenName, startDirectory,
+                                                   consultHistoryOnStart)
+                       : app.start(startDirectory, consultHistoryOnStart);
+    if (!started) {
       display.close();
       keyInput.close();
       std::cerr << "usilic: cannot list " << startDirectory << "\n";
@@ -3416,6 +3429,21 @@ int main(int argc, char **argv) {
   // silently overwrite the real no-argument session's own saved state
   // with this unrelated run's in-memory rings.
   if (consultHistoryOnStart) {
+    // 2026-08-30、直接のユーザー報告("通常ファイルで終えたなら次回
+    // 起動時も同ファイルから"): SessionState::lastOpenName(legacyの
+    // LINE::nameの移植)自身はHistory::loadHistoryText()/serialize()
+    // 経由で既に往復可能だったが、実際にApplicationからこれを書く
+    // コードが一度も配線されていなかった――ApplicationのcurrentMode_
+    // に応じて、終了時点で実際に開いていたもの(FileモードならFileMode::
+    // currentFile()、それ以外はDirectoryMode::currentDirectory())を
+    // ここで反映する。他のフィールド(previousDirectory等)は既存の
+    // (読み込み時の)値のまま変更しない。
+    {
+      fm::History::SessionState state = history.sessionState();
+      state.lastOpenName =
+          (app.currentMode() == fm::ApplicationMode::File) ? app.fileMode().currentFile() : app.directoryMode().currentDirectory();
+      history.setSessionState(state);
+    }
     history.setSavedCharset(app.encoding());  // so a future session with no explicit override resumes in this one's charset
     std::string historyPath = usilicDir + "history";
     std::string historyOldPath = usilicDir + "history.old";

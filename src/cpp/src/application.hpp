@@ -1154,6 +1154,28 @@ class Application {
   // 「最後のセッションを再開する」ケース)にだけtrueを渡す。
   bool start(const std::string &directory, bool consultHistory = true);
 
+  // 2026-08-30、直接のユーザー報告("`open -a usilic`で起動すなわち
+  // 引数無しなので前回の履歴を引き継がないと。通常ファイルで終えた
+  // なら次回起動時も同ファイルから"): start()自身の上のコメントが
+  // 「legacy自身の『最後のセッションを再開する』ケース」と書いて
+  // いる通り、引数無し起動はlegacyのinit_menu()同様、前回終了時に
+  // 開いていたもの(`lastOpenName`、History::SessionState自身の
+  // コメント参照)を復元すべきである――しかしそれがDirectoryモード
+  // (単なるディレクトリ一覧行のカーソル位置)にしか及んでおらず、
+  // 通常ファイルを見ていたまま終了した場合にFileモードへ戻る経路が
+  // 一度も配線されていなかった。legacy自身のinit_menu()
+  // (old/src/menu.c、`stat(ap->name, &st)`でDirectory/File判定)と
+  // 同じ判定をここで行う: `lastOpenName`が実在する通常ファイルなら、
+  // その親ディレクトリへ入場した上でFileモードとしてそれを開く
+  // (openSelectedEntry()自身のfileMode_.loadFile()呼び出しと同じ
+  // パターン)。ディレクトリだった/存在しない/開けなかった場合は
+  // 黙って通常のstart(fallbackDirectory, ...)へフォールバックする
+  // ――アーカイブ内部やEXEC起動中のパス等、通常ファイル以外での
+  // 終了はこの対象外(ユーザー自身の要求が明示的に「通常ファイルで
+  // 終えたなら」だったため、意図的にそこまでは追わない)。
+  bool startResumingSession(const std::string &lastOpenName, const std::string &fallbackDirectory,
+                             bool consultHistory = true);
+
   // 2026-08-25(直接のユーザー依頼): `paths`をDirectoryモードの
   // Enterキーフローを完全に迂回して直接Fileモードで開く――1つ以上
   // の素のFILE引数を与えられたCLI起動のため(main.cpp自身の

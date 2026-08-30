@@ -1332,6 +1332,21 @@ bool Application::start(const std::string &directory, bool consultHistory) {
   return directoryMode_.enterDirectory(directory, consultHistory);
 }
 
+bool Application::startResumingSession(const std::string &lastOpenName, const std::string &fallbackDirectory,
+                                        bool consultHistory) {
+  std::error_code ec;
+  if (!lastOpenName.empty() && std::filesystem::is_regular_file(lastOpenName, ec) && !ec) {
+    std::string parent = std::filesystem::path(lastOpenName).parent_path().string();
+    if (parent.empty()) parent = fallbackDirectory;
+    if (directoryMode_.enterDirectory(parent, consultHistory) && fileMode_.loadFile(lastOpenName)) {
+      currentMode_ = ApplicationMode::File;
+      fileReturnMode_ = ApplicationMode::Directory;  // openSelectedEntry()自身のコメント参照
+      return true;
+    }
+  }
+  return start(fallbackDirectory, consultHistory);
+}
+
 bool Application::startPagerFileList(const std::vector<std::string> &paths) {
   if (paths.empty()) return false;
   // FileMode::loadFile()ではなく::open()(2026-08-25): CLIのページャの
