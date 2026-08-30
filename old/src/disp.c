@@ -1,7 +1,7 @@
 #include "usilic.h"
 static void tabtospc(char str[], char tmp[])
-{ /* skip underline or bold attribute */
-  /* convert '\t' to ' ' */
+{ /* underlineまたはboldの属性を読み飛ばす */
+  /* '\t'を' 'へ変換する */
   int c, i = 0, j = 0;
 
   do {
@@ -35,7 +35,7 @@ void put_str(PP *pp, int f_mark)/*usilic*/
   static int attr;
   ATTR *ap;
 
-  if (!pp || pp->cs == F3) /* virtual line */
+  if (!pp || pp->cs == F3) /* 仮想行 */
     return;
   if ((f_code = pp->f.code) || !pp->attr) {
     ap = NULL;
@@ -91,13 +91,13 @@ void put_str(PP *pp, int f_mark)/*usilic*/
 	c2 = '*';
       }
     } else if (c2 == K_a0 && vt_charset(0) != C_utf8) {
-      /* K_a0 (0x00a0) is an internal sentinel byte meaning "show the
-	 next byte as ^X" (see fork.c's f.code dump). It was safe to
-	 repurpose in EUC, where a raw content byte is never 0xa0 (EUC
-	 two-byte sequences start at 0xa1). In UTF-8, 0xa0 is a common,
-	 completely ordinary continuation byte (e.g. the 2nd byte of
-	 U+5831 "報" = E5 A0 B1), so treating it as the sentinel here
-	 was corrupting real characters. */
+      /* K_a0(0x00a0)は「次のバイトを^Xとして表示する」ことを意味する
+	 内部の番兵バイトである(fork.cのf.codeのダンプ参照)。EUCでは
+	 生のコンテンツバイトが0xa0になることは決して無い(EUCの2バイト
+	 シーケンスは0xa1から始まる)ため、これに使い回しても安全だった。
+	 UTF-8では、0xa0はよくある、全く普通の継続バイトである(例えば
+	 U+5831「報」= E5 A0 B1の2バイト目)。そのためここでこれを番兵
+	 として扱うと、本物の文字を壊してしまっていた。 */
       f_ctrl = 1;
       if (f_grep) vt_endstand();
       else vt_stand();
@@ -108,7 +108,7 @@ void put_str(PP *pp, int f_mark)/*usilic*/
       if (c2 == K_h) { 
 	i -= 2;
 	if (i == vt_col(0) - 2) {
-	  vt_rc(); /* `backspace' at the right end of the window */
+	  vt_rc(); /* ウィンドウの右端での`backspace' */
 	  continue;
 	}
       } else if (i == vt_col(0) - 1 && pp->cs[n+1] == K_h) vt_sc();
@@ -131,11 +131,11 @@ void put_str(PP *pp, int f_mark)/*usilic*/
 }
 
 PP *disp_pp(PP *pp, int f_mark)/*usilic*/
-{ /* print line */
+{ /* 行を表示する */
   int i, f_pp, f_rc = 0;
-  
+
   if ((f_pp = (int)pp)) i = 0;
-  else { /* no line */
+  else { /* 行が無い */
     vt_move(0, 0);
     vt_eeol();
     i = 1;
@@ -201,8 +201,8 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
 	while (i && name0[i] != '/') i--;
 	strcpy(name, &name0[i+1]);
       }
-    else if (i) 
-      /* name[0] == ' ': mode-name */
+    else if (i)
+      /* name[0] == ' ': mode名 */
       strcpy(name, (*name0 == ' ') ? &name0[1] : name0);
     else *name = '\0';
     k = vt_col(0) / 4 - 1;
@@ -218,7 +218,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
     case M_cmd: case T_cmd:
     case M_list: case T_list:
     case T_locate:
-      /* enter string at mode-line */
+      /* mode-lineへ文字列を入力する */
       f_enter = 1;
       break;
     case M_man2:
@@ -229,7 +229,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
     case M_prog2:
     case M_lfile2:
     case M_ldir2:
-      /* enter string at mode-line */
+      /* mode-lineへ文字列を入力する */
       f_enter = 2;
       break;
     default:
@@ -251,10 +251,10 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
     llen += 17; /* "000000/000000 END" */
     break;
   default:
-    /* T_man reads the whole man page up front (see init_man()), so its
-       total is known immediately -- it uses the same dynamic-width
-       "N/M" format as fully-loaded content, not the fixed 6-digit
-       width reserved for genuinely still-streaming pipes below. */
+    /* T_manはマニュアルページ全体を前もって読む(init_man()参照)ので、
+       その合計は即座に分かる――これは、下の本当にまだストリーミング
+       中のpipe用に確保された固定6桁幅ではなく、完全に読み込み済みの
+       コンテンツと同じ可変幅の"N/M"形式を使う。 */
     llen += print_line(ps, pp
 		       , (f_M == M_shell || f_M == T_pipe2
 			  || f_M == T_pipe
@@ -267,7 +267,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
     if (f_M == M_exit) j = strlen(line);
     else j = (*arg == K_z && !arg[1]) ? 0 : strlen(arg);
     nlen = strlen(name);
-    /* previous-mode (mode-line [6]) */
+    /* previous-mode(mode-line [6]) */
     tabtospc(prev, prev0);
     if ((len = (f_enter) ? k : vt_col(0) - (nlen + llen + j) + 1) < k) 
       j = k - 1;
@@ -305,19 +305,19 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
     vt_putchar(' ');
   }
   if (f_M != M_exit && f_enter != 2 && arg[1]) {
-    /* print_arg() combines a byte count and a "(mode)" label into one
-       string ("1410 (ls)", "1307 (man)", etc, see its T_dir/T_man
-       cases and the chp branch) -- a real report (screenshot =bh)
-       pointed out this whole string was drawn as a single unbroken
-       reverse-video run, unlike every OTHER pair of mode-line fields
-       here (name/position/prev), which all get a plain non-standout
-       space between them. Split on " (" (the exact separator print_arg()
-       always uses before a label) so the byte count and the label are
-       their own reverse-video runs with a real gap, matching the rest
-       of this function; a bare number with no label (e.g. plain File
-       byte count) or a bare "(label)" with no number (e.g. T_du/T_pipe4)
-       has no " (" to find and falls through to the single-run case
-       unchanged. */
+    /* print_arg()は、バイト数と"(mode)"ラベルを1つの文字列に結合する
+       ("1410 (ls)"、"1307 (man)"等、そのT_dir/T_manのcaseとchpの分岐
+       参照)――実際の報告(スクリーンショット=bh)により、この文字列
+       全体が、ここにある他のmode-lineフィールドの組(name/position/
+       prev、これらは全て、間にstandoutでない素の空白を挟んでいる)
+       とは異なり、途切れの無い1つの反転表示として描画されている
+       ことが指摘された。" ("(print_arg()がラベルの前に常に使う正確な
+       セパレータ)で分割することで、バイト数とラベルが、本当の隙間
+       を挟んだそれぞれ独立の反転表示となり、この関数の他の部分と
+       一致するようにする; ラベルの無い素の数値(例えば単なるFileの
+       バイト数)や、数値の無い素の"(label)"(例えばT_du/T_pipe4)には
+       見つけるべき" ("が無く、単一の反転表示のケースへ変更無く
+       フォールスルーする。 */
     u_char *paren = (u_char *)strchr((char *)&arg[1], '(');
     if (paren && paren > &arg[1] && paren[-1] == ' ') {
       vt_stand();
@@ -366,7 +366,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
       vt_stand();
       p.cs = prev;
       p.f.len = strlen(p.cs);
-      /* for prev[] contains underline or bold attribute */
+      /* prev[]はunderlineまたはboldの属性を含み得るため */
       put_str(&p, 0);
     }
     if (f_mark || f_arc) *lenp = len + 1; 
@@ -383,7 +383,7 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
 }
 
 int print_line(void *ps0, PP *pp, int len, u_char *linep)/*usilic*/
-{ /* print current-line and total-lines at mode-line */
+{ /* mode-lineに現在行と総行数を表示する */
   int c, i, j, k, row, e_row, n_row, f_code;
   u_char str[10], line[32], tmp[32], num[8];
   static int tlen, tcol;
@@ -461,7 +461,7 @@ int print_line(void *ps0, PP *pp, int len, u_char *linep)/*usilic*/
       if (pinp) n_row++;
     }
     if (len <= 0) { 
-      /* always set current-line and total-lines for six-digit number */
+      /* 現在行・総行数を常に6桁の数値として設定する */
       for (j = 6, i = 0; i < j; i++) str[i] = '0';
       str[i] = '\0';
       strcpy(tmp, str);
