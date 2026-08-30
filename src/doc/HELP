@@ -28,35 +28,35 @@
         device in _/_d_e_v_/ is displayed as ``regular-file''.
 
      Other string
-        The outputted messages by _t_c_b(1) are shown within parentheses
+        The outputted messages by _u_s_i_l_i_c(1) are shown within parentheses
         "", the strings inputted from the keyboard excluding ^^MM
         (abbreviation for CCttrrll+mm) are shown within parentheses `' and
         other terms are shown within parentheses ``''.
 
-  _T_c_b(1) can be started with either following mode. (This mode name will
-  be displayed after the string ``Startup mode:'' in the TTCCBB window by
+  _U_s_i_l_i_c(1) can be started with either following mode. (This mode name will
+  be displayed after the string ``Startup mode:'' in the UUSSIILLIICC window by
   typing CCttrrll+tt.)
 
      ppaaggeerr
-        _T_c_b(1) will work as a ppaaggeerr when it is started with a pipe (`ls
-        -l | tcb EEnntteerr' etc.) or a _f_i_l_e (regular-file) argument (`tcb
+        _U_s_i_l_i_c(1) will work as a ppaaggeerr when it is started with a pipe (`ls
+        -l | usilic EEnntteerr' etc.) or a _f_i_l_e (regular-file) argument (`usilic
         file EEnntteerr').  In this mode, you can utilize only modes
         displayed in the KKEEYY window.
 
      ffiillee mmaannaaggeerr
-        When _t_c_b(1) is started with no argument (`tcb EEnntteerr') or a
-        directory name (`tcb . EEnntteerr' etc.), it will work as a ffiillee
+        When _u_s_i_l_i_c(1) is started with no argument (`usilic EEnntteerr') or a
+        directory name (`usilic . EEnntteerr' etc.), it will work as a ffiillee
         mmaannaaggeerr.
 
-        When started with no argument, _t_c_b(1) will save access history's
-        lists to _~_/_._t_c_b_/_h_i_s_t_o_r_y when terminated.  Refer to the EEXXIITT's
+        When started with no argument, _u_s_i_l_i_c(1) will save access history's
+        lists to _~_/_._u_s_i_l_i_c_/_h_i_s_t_o_r_y when terminated.  Refer to the EEXXIITT's
         section for details.
 
   22..  MMooddee
 
-  _T_c_b(1) will display following mmooddee--lliinnee at the bottom of the window.
+  _U_s_i_l_i_c(1) will display following mmooddee--lliinnee at the bottom of the window.
 
-     tcb.1 01/66 43% 2000 (groff) /home/user/sources/tcb-1.5b/doc/
+     usilic.1 01/66 43% 2000 (groff) /home/user/sources/usilic-1.5b/doc/
      ~~~~~ ~~~~~ ~~  ~~~~ ~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
      [[11]]    [[22]]  [[33]]  [[44]]   [[55]]                 [[66]]
 
@@ -74,13 +74,13 @@
 
   [ ^^JJ^^KK ]
 
-  _T_c_b(1) will execute _l_s(1) and display the content of the current
+  _U_s_i_l_i_c(1) will execute _l_s(1) and display the content of the current
   directory.  Once the cursor is on the desired line, its file means can
   be selected by the following keys.
 
      ^^MM (EEnntteerr)
         The line begins with ``-'' (e.g. "-rwxr-xr-x ...") denotes a
-        regular-file.  By hitting this key, _t_c_b(1) will read its content
+        regular-file.  By hitting this key, _u_s_i_l_i_c(1) will read its content
         into a buffer and display it.
 
         ``d'' (e.g. "drwxr-xr-x ...") denotes a directory.  This key
@@ -105,36 +105,36 @@
 
   ^^GG will change the mode to ffiillee--sseelleeccttoorr and ^^JJ^^JJ will change the cur-
   rent mode to the previous regular-file in all the above modes.  ^^XX^^WW
-  will save the content of the current buffer to the file _~_/_._t_c_b_/_w_._t_c_b.
+  will save the content of the current buffer to the file _~_/_._u_s_i_l_i_c_/_w_._u_s_i_l_i_c.
 
-  If a regular-file has one of the following suffixes, _t_c_b(1) will
-  execute the program defined in _t_c_b_r_c described in the FFiillee's section.
+  If a regular-file has one of the following suffixes, _u_s_i_l_i_c(1) will
+  execute the program defined in _u_s_i_l_i_c_r_c described in the FFiillee's section.
   The regular-file written in a ms-macro style such as manual pages will
   be formatted by _g_r_o_f_f(1) even if the file has no specific suffix.
 
      ..ttaarr ..ttggzz ..llzzhh ..zziipp ..rrppmm ..ddeebb
-        _T_c_b(1) will expand an archive file into a buffer and dipslay the
+        _U_s_i_l_i_c(1) will expand an archive file into a buffer and dipslay the
         list of its content.  If the file size is longer than the value
-        of BUFFER defined in _t_c_b_r_c, _t_c_b(1) will abort expanding and
+        of BUFFER defined in _u_s_i_l_i_c_r_c, _u_s_i_l_i_c(1) will abort expanding and
         display the message "NNoott eennoouugghh bbuuffffeerr". (As for ..rrppmm packages,
-        _t_c_b(1) will read its content via _p_i_p_e(2) without expanding into
+        _u_s_i_l_i_c(1) will read its content via _p_i_p_e(2) without expanding into
         a buffer.)
 
      ..ggzz ..ddvvii
-        _T_c_b(1) will execute the other programs such as _g_z_i_p(1) or
+        _U_s_i_l_i_c(1) will execute the other programs such as _g_z_i_p(1) or
         _d_v_i_2_t_t_y(1) to display plain texts.
 
      ..hhttmmll ..iinnffoo
-        _T_c_b(1) will launch the other programs such as _l_y_n_x(1) or _i_n_f_o(1)
-        and will not display the content of the file in the _t_c_b(1)
+        _U_s_i_l_i_c(1) will launch the other programs such as _l_y_n_x(1) or _i_n_f_o(1)
+        and will not display the content of the file in the _u_s_i_l_i_c(1)
         window.
 
-  Once _t_c_b(1) is started, pressing ^^JJ^^KK will bring up the FFiillee--sseelleeccttoorr
+  Once _u_s_i_l_i_c(1) is started, pressing ^^JJ^^KK will bring up the FFiillee--sseelleeccttoorr
   for the current directory.  Pressing ^^JJ and then 00 ... 99 will change
   the current directory to the one specifed by the left side of 0 ...
   9th slash ("/").  For example, in the following directory:
 
-  _/_h_o_m_e_/_u_s_e_r_/_s_r_c_/_t_c_b_-_1_._5_b_/_s_r_c_/
+  _/_h_o_m_e_/_u_s_e_r_/_s_r_c_/_u_s_i_l_i_c_-_1_._5_b_/_s_r_c_/
 
   ^^JJ22 will change the current directory to
 
@@ -143,15 +143,15 @@
   If ^^OO^^KK is pressed instead of ^^JJ22, it will change the current
   directory to the following parent directory:
 
-  _/_h_o_m_e_/_u_s_e_r_/_s_o_u_r_c_e_s_/_t_c_b_-_1_._5_b_/.
+  _/_h_o_m_e_/_u_s_e_r_/_s_o_u_r_c_e_s_/_u_s_i_l_i_c_-_1_._5_b_/.
 
   On the mmooddee--lliinnee, if the cursor is positioned at the end of filename
   which begins with a slash, the above key stroke will change the
   current directory to the corresponding one in the file.  For example,
-  typing `^^XXff/usr/local/lib/tcb/tcbrc EEnntteerr', and then ^^XX^^FF will display
+  typing `^^XXff/usr/local/lib/usilic/usilicrc EEnntteerr', and then ^^XX^^FF will display
   the following directory path in the mmooddee--lliinnee:
 
-  _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_t_c_b_/_t_c_b_r_c.
+  _/_u_s_r_/_l_o_c_a_l_/_l_i_b_/_u_s_i_l_i_c_/_u_s_i_l_i_c_r_c.
 
   By hitting ^^JJ22, the current directory will change to the following:
 
@@ -161,8 +161,8 @@
 
   [ ^^HH ]
 
-  _T_c_b(1) will display key functions defined in _t_c_b_r_c. ("(M)" is a mark
-  of built-in macro defined in ``M-?'' of ``KEY'' in _t_c_b_r_c.)
+  _U_s_i_l_i_c(1) will display key functions defined in _u_s_i_l_i_c_r_c. ("(M)" is a mark
+  of built-in macro defined in ``M-?'' of ``KEY'' in _u_s_i_l_i_c_r_c.)
 
   EEnntteerr on the ^^GG-line will only return to the previous mode.  Other
   lines will return to the mode which has called KKEEYY and then execute
@@ -189,7 +189,7 @@
 
   [ ^^JJcc or ^^JJ^^CC / ^^JJbb or ^^JJ^^BB ]
 
-  _T_c_b(1) will split the content of the current buffer at the line that
+  _U_s_i_l_i_c(1) will split the content of the current buffer at the line that
   contains the string inputted at the mmooddee--lliinnee or selected from the
   list of search-strings and make a table of contents.  When selected
   with ^^JJbb or ^^JJ^^BB at ffiillee--sseelleeccttoorr, regular-file will be split before
@@ -214,7 +214,7 @@
 
      ++  repeat one or more times
 
-  For example, the HHEELLPP splits the content of the file _/_u_s_r_/_l_i_b_/_t_c_b_/_H_E_L_P
+  For example, the HHEELLPP splits the content of the file _/_u_s_r_/_l_i_b_/_u_s_i_l_i_c_/_H_E_L_P
   at the string "^  [0-9]^^HH[0-9]+\.".  The operation can be executed by
   typing following:
 
@@ -228,7 +228,7 @@
   The key `;;' or `::' will move the cursor to the previous or the next
   line.  `++', `**' will move to the specific line after search-string on
   the table of contents. (As for each content of these macro defini-
-  tions, refer to ``P-?'' of _t_c_b_r_c.)
+  tions, refer to ``P-?'' of _u_s_i_l_i_c_r_c.)
 
   If the content of the previous regular-file had been referred by the
   CCUUTT, hitting ^^JJ^^JJ will bring back the table of contents in order to
@@ -238,7 +238,7 @@
 
   [ ^^JJdd or ^^JJ^^DD ]
 
-  _T_c_b(1) will execute _d_u(1) to display the content of the current
+  _U_s_i_l_i_c(1) will execute _d_u(1) to display the content of the current
   directory and its sub directories. (Hit EEnntteerr key on the message which
   will be displayed when _d_u(1) exit.)
   ^^JJ^^DD will not execute _d_u(1) again but change the display back to the
@@ -248,7 +248,7 @@
 
   [ ^^JJll or ^^JJ^^LL ]
 
-  _T_c_b(1) will execute _l_o_c_a_t_e(1) to search for the filename that contains
+  _U_s_i_l_i_c(1) will execute _l_o_c_a_t_e(1) to search for the filename that contains
   the string inputted at the mmooddee--lliinnee.  For example, `.tgz EEnntteerr' will
   display all the filenames contained in the system which have the
   suffix ..ttggzz.  ^^JJ^^LL will not execute _l_o_c_a_t_e(1) again but change the
@@ -263,7 +263,7 @@
 
   [ ^^JJmm or ^^JJ^^MM ]
 
-  _T_c_b(1) will display the manual page inputted at the mmooddee--lliinnee or
+  _U_s_i_l_i_c(1) will display the manual page inputted at the mmooddee--lliinnee or
   selected from the list of previously accessed manual pages. (e.g. To
   refer to the manual page of _c_r_o_n(8), type `^^JJmm 8 cron EEnntteerr'.)
 
@@ -274,21 +274,21 @@
 
   [ ^^JJpp or ^^JJ^^PP ]
 
-  _T_c_b(1) will get out of its window and launch the program selected from
+  _U_s_i_l_i_c(1) will get out of its window and launch the program selected from
   the list of program names.  If the program name inputted with ^^JJpp
-  doesn't exist in the list, _t_c_b(1) will change the mode to the SSHHEELLLL
+  doesn't exist in the list, _u_s_i_l_i_c(1) will change the mode to the SSHHEELLLL
   described later, where the program will be executed.
 
   22..99..  FFIILLEE // DDIIRR
 
   [ ^^XXff or ^^XX^^FF / ^^XXdd or ^^XX^^DD ]
 
-  _T_c_b(1) will read the content of the file inputted at the mmooddee--lliinnee or
+  _U_s_i_l_i_c(1) will read the content of the file inputted at the mmooddee--lliinnee or
   selected from the list of previously accessed files. (^^RR will change
   the mode to the HHIISSTTOORRYY described later.)
 
   In the FFIILLEE list, the filename followed by "(program name)" denotes
-  the program which was used by _t_c_b(1) for display.  The string used at
+  the program which was used by _u_s_i_l_i_c(1) for display.  The string used at
   the CCUUTT will be displayed within parentheses "".
 
   The file selected by ^^OO^^MM or ^^[[^^MM in the ffiillee--sseelleeccttoorr will be assumed
@@ -315,7 +315,7 @@
   and expansion at the ffiillee--sseelleeccttoorr or the DDUU.
 
   In CCPP, MMVV and RRMM, a destination file (or operation at RRMM) can be
-  inputted by marking filenames by ^^MM and then typing ^^XX^^MM.  _T_c_b(1) will
+  inputted by marking filenames by ^^MM and then typing ^^XX^^MM.  _U_s_i_l_i_c(1) will
   execute _c_p(1), _m_v(1) and _r_m(1) with each argument.  RRMM will also
   delete any line at FFIILLEE, DDIIRR, MMAANN, EEGGRREEPP and CCOOMMMMAANNDD. (As _d_u(1) will
   not be executed again after RRMM in DDUU, selecting a deleted file will
@@ -325,32 +325,32 @@
   and _a_r(1).  For the files of unknown content, confirm the content of
   the archive file with ^^OO^^MM before specifying the destination of the
   expansion.  For example, if ^^OO^^MM displayed the content of
-  _t_c_b_-_1_._5_b_._t_a_r_._g_z as follows in the ffiillee--sseelleeccttoorr:
+  _u_s_i_l_i_c_-_1_._5_b_._t_a_r_._g_z as follows in the ffiillee--sseelleeccttoorr:
 
-  "-rw-r--r-- user/users     500 Jan  1 00:00 1998 tcb-1.5b/Makefile"
-  "-rw-r--r-- user/users    2500 Jan  1 00:00 1998 tcb-1.5b/README"
+  "-rw-r--r-- user/users     500 Jan  1 00:00 1998 usilic-1.5b/Makefile"
+  "-rw-r--r-- user/users    2500 Jan  1 00:00 1998 usilic-1.5b/README"
   "........"
 
   When `/tmp EEnntteerr' is given as an answer to the "Destination ?"
   (specifying destination file) question, all the content will be
-  expanded to the directory _/_t_m_p_/_t_c_b_-_1_._5_b_/. (If ``/tmp'' is not a
+  expanded to the directory _/_t_m_p_/_u_s_i_l_i_c_-_1_._5_b_/. (If ``/tmp'' is not a
   directory, it will cause an error.)  ^^WW will display the previous
   directory-name on the line "Destination ?".
 
   AARRCC can only expand the specific files of the archive window.  In the
-  above example, at the following archive window of _t_c_b_-_1_._5_b_._t_a_r_._g_z
+  above example, at the following archive window of _u_s_i_l_i_c_-_1_._5_b_._t_a_r_._g_z
   displayed with ^^MM at the ffiillee--sseelleeccttoorr,
 
-  "-rw-r--r-       500 tcb-1.5b/Makefile"
-  "-rw-r--r-      2500 tcb-1.5b/README"
+  "-rw-r--r-       500 usilic-1.5b/Makefile"
+  "-rw-r--r-      2500 usilic-1.5b/README"
   "........"
 
   after typing ^^XXaa (or ^^XX^^KKaa) in the window and marking the above two
   lines with ^^MM, typing `^^XX^^MM/tmp EEnntteerr' (an answer to "Destination ?")
   will expand them as follows:
 
-  _/_t_m_p_/_t_c_b_-_1_._5_b_/_M_a_k_e_f_i_l_e
-  _/_t_m_p_/_t_c_b_-_1_._5_b_/_R_E_A_D_M_E
+  _/_t_m_p_/_u_s_i_l_i_c_-_1_._5_b_/_M_a_k_e_f_i_l_e
+  _/_t_m_p_/_u_s_i_l_i_c_-_1_._5_b_/_R_E_A_D_M_E
 
   ^^XX^^YY will mark all filenames and ^^XX^^NN will clear all the marks.
   However, they will not work if the intended operation is in conflict
@@ -371,14 +371,14 @@
 
   [ ^^[[ss or ^^XXss or ^^JJ.. or ^^JJ,, or ^^JJww or ^^JJ^^WW ]
 
-  By pressing ^^[[ss, the _t_c_b window will be switched to the virtual
-  terminal of the rogin-_s_h_e_l_l or the _s_h_e_l_l defined in _t_c_b_r_c.  If the
+  By pressing ^^[[ss, the _u_s_i_l_i_c window will be switched to the virtual
+  terminal of the rogin-_s_h_e_l_l or the _s_h_e_l_l defined in _u_s_i_l_i_c_r_c.  If the
   virtual terminal starts to behave erratically, you can restart the
   _s_h_e_l_l by typing ^^XXss.
 
   ^^JJ.. will set the current directory of the SSHHEELLLL-prompt as the position
   of the ffiillee--sseelleeccttoorr.  ^^JJ,, will execute the command enclosed within
-  parentheses `' at K-43 defined in _t_c_b_r_c.
+  parentheses `' at K-43 defined in _u_s_i_l_i_c_r_c.
 
   By pressing ^^JJww or ^^JJ^^WW and then EEnntteerr, the mmooddee--lliinnee [[11]] (access-
   name) or the content of the buffer will be shown.  ^^WW will restart
@@ -390,18 +390,18 @@
 
   For example, after `man bash EEnntteerr' was made at the SSHHEELLLL-prompt, the
   prompt will not return until the end of output since the output from
-  _m_a_n(1) was inputted to _t_c_b(1) via pipe.  The prompt will be back by
+  _m_a_n(1) was inputted to _u_s_i_l_i_c(1) via pipe.  The prompt will be back by
   moving to the end of the file with the key ^^[[>> (moves to the end of
   buffer).
 
-  At any mode other than the SSHHEELLLL, _t_c_b(1) will display the message
+  At any mode other than the SSHHEELLLL, _u_s_i_l_i_c(1) will display the message
   "EExxiitt" (can be clear by ^^LL) when the SSHHEELLLL-prompt returns.
 
   When started with a file argument or a pipe at the SSHHEELLLL-prompt,
-  _t_c_b(1) will display the content with access-name "file" or "(stdin)".
-  (e.g. `tcb . EEnntteerr' will start the ffiillee--sseelleeccttoorr for the current
+  _u_s_i_l_i_c(1) will display the content with access-name "file" or "(stdin)".
+  (e.g. `usilic . EEnntteerr' will start the ffiillee--sseelleeccttoorr for the current
   directory.  Above `man bash EEnntteerr' will be "(stdin)", because the
-  output will be inputted to _t_c_b(1) via a pipe by means of ``PAGER''
+  output will be inputted to _u_s_i_l_i_c(1) via a pipe by means of ``PAGER''
   environment variable.)
 
   In this function, the _s_h_e_l_l process-ID is used for the authentication
@@ -421,12 +421,12 @@
   The commands inputted at the SSHHEELLLL-prompt will be given to the _s_h_e_l_l
   after edited by the keys described in the CCoommmmaanndd--lliinnee of the KKeeyy
   ffuunnccttiioonn's section.  However, on an interactive program such as
-  _f_t_p(1), _t_c_b(1) will exchange the data per one character bases with the
+  _f_t_p(1), _u_s_i_l_i_c(1) will exchange the data per one character bases with the
   _s_h_e_l_l.  In those instances, you can use the keys described in the
   IInntteerraaccttiioonn of the KKeeyy ffuunnccttiioonn's section.
 
   In actuality, you can use the keys of the CCoommmmaanndd--lliinnee on the line
-  begins with the string "ttccbb--11..55bb:...". (i.e. the environment variable
+  begins with the string "uussiilliicc--11..55bb:...". (i.e. the environment variable
   ``PS1''.)  The keys of the IInntteerraaccttiioonn can be used on the other lines.
   Therefore, once you execute a program at the SSHHEELLLL-prompt, the keys
   excluding the IInntteerraaccttiioonn can't be used until the prompt returns. (On
@@ -442,24 +442,24 @@
   [ ^^II or TTaabb ]
 
   By typing ^^II while inputting a string at SSHHEELLLL-prompt or mmooddee--lliinnee,
-  _t_c_b(1) will display a filename that contains the string.  If there are
+  _u_s_i_l_i_c(1) will display a filename that contains the string.  If there are
   more than one corresponding files in the current directory, it will be
   indicated by beep sound.  When it happens, type ^^II again and you will
   get the list of the filenames.
 
-  For example, if _t_c_._c and _t_c_b_._c are included in the directory, _t_c_b(1)
+  For example, if _t_c_._c and _u_s_i_l_i_c_._c are included in the directory, _u_s_i_l_i_c(1)
   will sound beep after typing `^^XXfftc', ^^II because there are more than
-  one match.  By choosing either _t_c_._c or _t_c_b_._c from the list that will
+  one match.  By choosing either _t_c_._c or _u_s_i_l_i_c_._c from the list that will
   be displayed by typing ^^II again, the desired filename will be inserted
   to the cursor position.
 
   At SSHHEELLLL, PPRROOGGRRAAMM and MMAANN, the first string will be assumed as a
   program name and searched through ``PATH'' environment variable
   (directory-list where executable files locate.)  However, if the
-  string is followed by a space character, _t_c_b(1) will complement the
+  string is followed by a space character, _u_s_i_l_i_c(1) will complement the
   filename on the current directory and pass it to the program.
 
-  In the above example, if _t_c_b, _t_c_l_s_h and _t_c_s_h exist on ``PATH'', typing
+  In the above example, if _u_s_i_l_i_c, _t_c_l_s_h and _t_c_s_h exist on ``PATH'', typing
   `tc^^II^^II' will display the list of these executable filenames.  On the
   other hand, ``tc'' will be considered as an executable file when you
   type `tc ^^II^^II'.  The filename will be given to ``tc'' after being
@@ -486,10 +486,10 @@
   [ ^^JJee ]
 
   If the mmooddee--lliinnee [[11]] (access-name) is a regular-file and the mmooddee--lliinnee
-  [[55]] (program-name) is blank, _t_c_b(1) will launch the editor defined in
-  _t_c_b_r_c.
+  [[55]] (program-name) is blank, _u_s_i_l_i_c(1) will launch the editor defined in
+  _u_s_i_l_i_c_r_c.
 
-  _T_c_b(1) will launch the editor to which the current line number ``N''
+  _U_s_i_l_i_c(1) will launch the editor to which the current line number ``N''
   will be given with ``+N'' option.  It is convenient to set the editor
   that has this option.  Default one is _v_i(1).
 
@@ -512,36 +512,36 @@
 
   [ ^^XX^^CC or ^^[[^^[[ ]
 
-  _T_c_b(1) maintains a file-list that contains information on the
+  _U_s_i_l_i_c(1) maintains a file-list that contains information on the
   previously accessed files concerning the cursor position etc..  If you
-  start _t_c_b(1) with no argument and then terminate with EEXXIITT, _t_c_b(1)
-  will save the file-list to _~_/_._t_c_b_/_h_i_s_t_o_r_y and read the list from the
-  file when started next time.  If the content of _~_/_._t_c_b_/_h_i_s_t_o_r_y doesn't
+  start _u_s_i_l_i_c(1) with no argument and then terminate with EEXXIITT, _u_s_i_l_i_c(1)
+  will save the file-list to _~_/_._u_s_i_l_i_c_/_h_i_s_t_o_r_y and read the list from the
+  file when started next time.  If the content of _~_/_._u_s_i_l_i_c_/_h_i_s_t_o_r_y doesn't
   end with a specific code, or when the above process wasn't completed,
-  _t_c_b(1) will read the file _~_/_._t_c_b_/_h_i_s_t_o_r_y_._o_l_d which was used for
+  _u_s_i_l_i_c(1) will read the file _~_/_._u_s_i_l_i_c_/_h_i_s_t_o_r_y_._o_l_d which was used for
   previous startup.
 
-  _T_c_b(1) will also save the content of EERRRROORR and LLOOGG to _~_/_._t_c_b_/_e_r_r_o_r and
-  _~_/_._t_c_b_/_s_h_e_l_l, respectively.  When started with a directory argument or
-  used as a ppaaggeerr, _t_c_b(1) will not access above files.
+  _U_s_i_l_i_c(1) will also save the content of EERRRROORR and LLOOGG to _~_/_._u_s_i_l_i_c_/_e_r_r_o_r and
+  _~_/_._u_s_i_l_i_c_/_s_h_e_l_l, respectively.  When started with a directory argument or
+  used as a ppaaggeerr, _u_s_i_l_i_c(1) will not access above files.
 
   When the message "SSHHEELLLL bbuussyy" described in SSHHEELLLL is displayed, retry
   EEXXIITT.
 
   33..  FFiillee
 
-  _T_c_b(1) will read _~_/_._t_c_b_/_t_c_b_r_c and set environment when started.  If
-  the file doesn't exist, _t_c_b(1) will read _t_c_b_r_c from
-  _/_u_s_r_/_l_i_b_/_t_c_b_/_t_c_b_r_c.  If this file is newer than _~_/_._t_c_b_/_t_c_b_r_c, _t_c_b(1)
-  will display the message "~~//..ttccbb//ttccbbrrcc ignored.""..
+  _U_s_i_l_i_c(1) will read _~_/_._u_s_i_l_i_c_/_u_s_i_l_i_c_r_c and set environment when started.  If
+  the file doesn't exist, _u_s_i_l_i_c(1) will read _u_s_i_l_i_c_r_c from
+  _/_u_s_r_/_l_i_b_/_u_s_i_l_i_c_/_u_s_i_l_i_c_r_c.  If this file is newer than _~_/_._u_s_i_l_i_c_/_u_s_i_l_i_c_r_c, _u_s_i_l_i_c(1)
+  will display the message "~~//..uussiilliicc//uussiilliiccrrcc ignored.""..
 
-  The following is the content defined in _t_c_b_r_c.
+  The following is the content defined in _u_s_i_l_i_c_r_c.
 
      ARCHIVE
         format  : ssuuffffiixx00   ssuuffffiixx11
         example : .tar.gz   .tgz
 
-           _T_c_b(1) will display the content of the file that has the
+           _U_s_i_l_i_c(1) will display the content of the file that has the
            ssuuffffiixx00 with the setting of ssiiffffiixx11 defined in _s_t_r_._c of
            source file.
 
@@ -577,7 +577,7 @@
 
      GREP
         format  : ssttrriinngg
-        example : \/\*tcb\*\/
+        example : \/\*usilic\*\/
 
            The ssttrriinngg list that will be displayed in the EEGGRREEPP or CCUUTT.
 
@@ -606,7 +606,7 @@
 
            If a regular-file that has no above ssuuffffiixxeess contains a
            control character under 0x20 excluding the ones set in here,
-           it will be assumed as a binary file.  _T_c_b(1) will execute
+           it will be assumed as a binary file.  _U_s_i_l_i_c(1) will execute
            _f_i_l_e(1) and display the code and the file-type. (If ccooddee00 is
            set to 0, this setting will be ignored.)
 
@@ -646,7 +646,7 @@
         example : 1
 
            The ffllaagg for switching scroll-mode. (can be switched by ^^OOhh.
-           When the ffllaagg is set, _t_c_b(1) window will scroll excluding the
+           When the ffllaagg is set, _u_s_i_l_i_c(1) window will scroll excluding the
            bottom line.
 
      CP
@@ -674,33 +674,33 @@
   44..  NNoottee
 
      Environment
-        When you start _t_c_b(1) for the first time as a ffiillee mmaannaaggeerr, it
-        will make working directory _~_/_._t_c_b_/ and _/_t_m_p_/_._t_c_b_/ (defined in
+        When you start _u_s_i_l_i_c(1) for the first time as a ffiillee mmaannaaggeerr, it
+        will make working directory _~_/_._u_s_i_l_i_c_/ and _/_t_m_p_/_._u_s_i_l_i_c_/ (defined in
         _c_o_n_f_i_g_._s_h of source file)
 
         If the same user tries to execute more than one ffiillee mmaannaaggeerr
-        with no argument, _t_c_b(1) will exit with the message "AAllrreeaaddyy
+        with no argument, _u_s_i_l_i_c(1) will exit with the message "AAllrreeaaddyy
         rruunnnniinngg".
 
-        ``TCB'' environment variable will be utilized by _t_c_b(1) to
-        determine whether the current terminal is SSHHEELLLL or not.  _T_c_b(1)
+        ``USILIC'' environment variable will be utilized by _u_s_i_l_i_c(1) to
+        determine whether the current terminal is SSHHEELLLL or not.  _U_s_i_l_i_c(1)
         can't be started as a ffiillee mmaannaaggeerr on the terminals where this
         variable is set.
-        When _t_c_b(1) is used as a ppaaggeerr, the output from the program such
+        When _u_s_i_l_i_c(1) is used as a ppaaggeerr, the output from the program such
         as _d_v_i_2_t_t_y(1) or _m_a_n(1) etc. can be displayed once you type
-        `export PAGER=tcb EEnntteerr' on a terminal.  However, this ``PAGER''
+        `export PAGER=usilic EEnntteerr' on a terminal.  However, this ``PAGER''
         environment variable mustn't be changed at SSHHEELLLL.
 
      Mode stack
-        Before entering a new mode, _t_c_b(1) will add the current mode on
+        Before entering a new mode, _u_s_i_l_i_c(1) will add the current mode on
         to the stack. (^^GG will return to the top of the stack.)
 
         These stack entries will be cleared when you select a directory
-        in the ffiillee--sseelleeccttoorr or typing ^^JJ11 etc., and _t_c_b(1) will display
-        the message "ttccbb vv11..55bb" at the mmooddee--lliinnee [[66]] (previous-mode).
-        At the bottom of the stack, _t_c_b(1) will bring back the previous
+        in the ffiillee--sseelleeccttoorr or typing ^^JJ11 etc., and _u_s_i_l_i_c(1) will display
+        the message "uussiilliicc vv11..55bb" at the mmooddee--lliinnee [[66]] (previous-mode).
+        At the bottom of the stack, _u_s_i_l_i_c(1) will bring back the previous
         directory by typing ^^GG.  Before saving the stack content to
-        _~_/_._t_c_b_/_h_i_s_t_o_r_y at EEXXIITT, _t_c_b(1) will also release the stack
+        _~_/_._u_s_i_l_i_c_/_h_i_s_t_o_r_y at EEXXIITT, _u_s_i_l_i_c(1) will also release the stack
         entries until the mmooddee--lliinnee [[11]] (access-name) becomes a regular-
         file or a directory or a manual page.
 
@@ -708,7 +708,7 @@
         stack will not be renewed.  Therefore, line continuation will
         not be displayed correctly in the window displayed by ^^GG.
 
-        If you select a directory at DDUU,, _t_c_b(1) will display the ffiillee--
+        If you select a directory at DDUU,, _u_s_i_l_i_c(1) will display the ffiillee--
         sseelleeccttoorr window.  If you then select a directory, the above
         stack entires will be cleared.  In this case, ^^JJ^^DD will bring
         back the DDUU window.
@@ -741,8 +741,8 @@
         working file that has the buffer content saved by ^^JJ^^WW. (e.g.
         patch file containing ssjjiiss code.)
 
-        As for the setting of ``Internal code'', _t_c_b can be executed
-        with ``TCBCHARSET'' environment of either eeuucc or aasscciiii. (The
+        As for the setting of ``Internal code'', _u_s_i_l_i_c can be executed
+        with ``USILICCHARSET'' environment of either eeuucc or aasscciiii. (The
         value will be set to the value of CHARSET coded in _c_o_n_f_i_g_._s_h of
         source file by default.)  ^^OOaa will exchange the setting after
         startup.
@@ -751,13 +751,13 @@
 
         _s_o_c_k_e_t(2)
            When a program executed at _s_h_e_l_l-prompt redirects its
-           standard output etc. to _t_c_b(1), it will create the _s_o_c_k_e_t(2)
+           standard output etc. to _u_s_i_l_i_c(1), it will create the _s_o_c_k_e_t(2)
            with the name contains precess-ID of _s_h_e_l_l that is the parent
-           process of the _t_c_b(1). (As for _s_h_e_l_l, refer the SSHHEELLLL's
-           section.)  And then if _t_c_b(1) that is the parent process of
+           process of the _u_s_i_l_i_c(1). (As for _s_h_e_l_l, refer the SSHHEELLLL's
+           section.)  And then if _u_s_i_l_i_c(1) that is the parent process of
            _s_h_e_l_l finds the _s_o_c_k_e_t(2), it will read the content of above
            redirection from the _s_o_c_k_e_t(2) and display it with access-
-           name "(stdin)".  If _t_c_b(1) is executed with a _f_i_l_e argument
+           name "(stdin)".  If _u_s_i_l_i_c(1) is executed with a _f_i_l_e argument
            at _s_h_e_l_l-prompt, regular-file which has the same name will be
            used in place of _s_o_c_k_e_t(2).
 

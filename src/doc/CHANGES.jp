@@ -1,23 +1,23 @@
   v1.5b-1: 2000.3.20
 
       + .deb パッケージの参照に ar を使用．
-      + config.sh 内のプログラムおよび tcbrc の ARC の起動オプション設
-        定を str.c へ移動． それに伴い tcbrc の ARC 設定の書式変更．
-      + CP 等の起動オプション設定を tcbrc へ移動．同モード実行時に cp
+      + config.sh 内のプログラムおよび usilicrc の ARC の起動オプション設
+        定を str.c へ移動． それに伴い usilicrc の ARC 設定の書式変更．
+      + CP 等の起動オプション設定を usilicrc へ移動．同モード実行時に cp
         等が 0 で exit しなかった場合のメッセージ表示．
       + 同モード実行中に，入力待ちになった場合は，強制的に SHELL 画面に
         切替．
       + 実行のみの ARC モード (^Xa で起動)．
-      + tcbrc の BUFFER の単位を MB に変更．
+      + usilicrc の BUFFER の単位を MB に変更．
       + CUT モードで，任意のバッファ内容を分割表示できるようにした．
-      + tcbrc の LS フラグセット時の機能を「余分な空白削除」から「ファ
+      + usilicrc の LS フラグセット時の機能を「余分な空白削除」から「ファ
         イル名のみ表示」に変更．
       + MAN を jman (がインストールされている場合) で起動．
       + HELP および MAN の表示モードを ascii モード切り替え (^Oa) に対
         応．
-      + groff のオプションを tcb 起動時に判別．
+      + groff のオプションを usilic 起動時に判別．
       + ユーザー名表示にホスト名を追加．
-      + SHELL プロンプト使用中の EXIT で２度目のチェックで tcb を終了．
+      + SHELL プロンプト使用中の EXIT で２度目のチェックで usilic を終了．
 
       - File-selector 上の ARC モードで tar アーカイブが展開できない．
       - ディレクトリへのシンボリックリンクにアクセスできない．
@@ -33,7 +33,7 @@
       - GNU fileutils のインストール判別．
       - 起動時，ファイル読み込み中にキー入力があると凍結するバグ．
       - euc, sjis 表示コード切り替え (^X^Kd)．
-      - SHELL から tcb をディレクトリ引数起動した際，ディレクトリの内容
+      - SHELL から usilic をディレクトリ引数起動した際，ディレクトリの内容
         が変更されていても，表示内容が更新されない．
       - SHELL プロンプトに "//" の文字列が含まれていると，ファイル補完
         できない．
@@ -45,7 +45,7 @@
       + DU モードで SHELL プロンプトを使用しないよう修正．
       + Interaction モードでの カーソルキーによる行 / ページ単位のスク
         ロール．
-      + tcbrc の K-43 の `command' で指定した command の実行．
+      + usilicrc の K-43 の `command' で指定した command の実行．
       + CP, MV, RM, ARC モードでファイル名を '' で指定．
       + MIME EUC-JP デコード．
 
@@ -54,7 +54,7 @@
       - グラフィックモードおよび端末切替え機能 (root への setuid ビット
         削除)．
       - ファイルの文字コード表示．
-      - tcbrc の `suffix' 設定文字列の大/小文字判別．
+      - usilicrc の `suffix' 設定文字列の大/小文字判別．
 
   v1.4a-5: 1999.3.15
       - `~' で始まるディレクトリ名を含む SHELL プロンプト上で LIST が機
@@ -74,7 +74,7 @@
       - その他のバグ．
 
   v1.4a-3: 1998.11.3
-      + tcb.1 のバグセクション．
+      + usilic.1 のバグセクション．
 
       - アクセスリスト上で RM モードが動作しない．
       - FONT モードで `DEFAULT CHAR' 行のない bdf ファイルが読めない．
@@ -116,7 +116,7 @@
       + config.sh の CHARSET (デフォルト表示モード)．
       + config.sh の TAR, LHA, UNZIP (ARC の tar, lha, unzip オプション
         指定)．
-      + ~/.tcb/list のフォーマットおよびファイル名 (~/.tcb/history へ)
+      + ~/.usilic/list のフォーマットおよびファイル名 (~/.usilic/history へ)
         変更．
       + 行ポインタを確保できない場合はエラーメッセージを表示.
       + gzip+tar アーカイブ解凍時に tar の z オプションを使用しない．
@@ -124,7 +124,7 @@
       - 改行の無いファイルを ^O^M で読み込み中に改行が入るバグ．
       - 画面サイズ変更後カーソル位置が以前の行番号に一致しない．
       - FGREP で '-' を含む文字列が検索できない．
-      - モード名のアクセスリストが ~/.tcb/list へ保存されない (^^;
+      - モード名のアクセスリストが ~/.usilic/list へ保存されない (^^;
       - README から config.sh の LIB 定義の記述削除 (.deb パッケージへ
         の対処)．
 
@@ -132,16 +132,16 @@
       + FreeBSD の cons25 端末に対応．
       + FreeBSD 版での端末切り替えオプション (-1,-2,-3)．
       + グラフィックモード．
-      + モード名のアクセスリストも ~/.tcb/list へ保存．
+      + モード名のアクセスリストも ~/.usilic/list へ保存．
       + `Destination ?' の際に ^W で以前のディレクトリ名を表示．
       + ^O^M (表示分読み込みモード) 後の ^J^C / ^Jc (バッファ分割)．
       + 作業ファイル名変更．
       + perl 版 (^^;
 
       - SIGTTOU シグナル受信時のバグ．
-      - PROGRAM 実行中に tcb が死んだ場合に無限ループするバグ．
+      - PROGRAM 実行中に usilic が死んだ場合に無限ループするバグ．
       - bash の SHELL での ~/.bash_history へのアクセス．
-      - サスペンド時に，プロセス判別用に起動していた tcb．
+      - サスペンド時に，プロセス判別用に起動していた usilic．
       - SIGWINCH シグナルでモードスタックをクリアしないよう修正．
       - SHELL 起動時のゴミ表示．
       - SHELL から ^J? (ディレクトリ移動) で SEGV するバグ．
@@ -175,7 +175,7 @@
         まうバグ．
       - SHELL 内のシグナル送受のコード修正．(^M 連打後，動作がおかしく
         なるバグ)
-      - tcbrc の KEY で４ストロークキーの設定が機能しない．
+      - usilicrc の KEY で４ストロークキーの設定が機能しない．
       - LOG などの ESC シーケンスを含む行で，改行位置がずれるバグ．
       - サイズが変化中のファイル (LOG 等) を ^M で読み込むと凍結．
   v1.3g-1: 1997.5.6
@@ -190,7 +190,7 @@
       + Interaction の ^^, ^\ (ページ送りキー) を ^B, ^F に変更．
       + 行頭以外でも機能キャラクタを入力できるよう修正．
 
-      - tcbrc の PROGRAM の設定で，行内に # がある場合の誤動作．
+      - usilicrc の PROGRAM の設定で，行内に # がある場合の誤動作．
       - 0x20 未満のコードで終るファイルを ^X^M で表示した場合，該当コー
         ドが表示されない．
       - (stdin) の ^J^W で行末に \0 が入る．
@@ -202,7 +202,7 @@
 
       - CUT 表示の 255 バイト長を超える目次文字列で SEGV するバグ．
       - CP 等の実行後 "Exit" メッセージが表示されない．
-      - tcb 起動時の Unknown error．
+      - usilic 起動時の Unknown error．
 
   v1.3f-2: 1997.4.23
       + 引数無しで起動した場合，-l 起動と同じ機能に設定．
@@ -228,17 +228,17 @@
       + HELP の Key の章を最後に移動．
 
       - SHELL を起動すると .bashrc または .cshrc にゴミ拡張子が ...
-        (v1.3e-2 のバグです． EXIT 後 `mv .bashrc.tcb .bashrc' または
-        `mv .cshrc.tcb .cshrc' として下さい)
+        (v1.3e-2 のバグです． EXIT 後 `mv .bashrc.usilic .bashrc' または
+        `mv .cshrc.usilic .cshrc' として下さい)
 
   v1.3e-2: 1997.4.16
       + SHELL プロンプト解放時のメッセージ表示 ("Exit")
       + ~ で始まるファイルを削除できないよう修正．
-      + mode-line のエラーメッセージから "tcb: " 削除．
+      + mode-line のエラーメッセージから "usilic: " 削除．
       + `ls -l' を実行しない cd (^J.)
       + 以前の ^J. ==> ^J,
 
-      - .bashrc 等がホームディレクトリに無い時に tcb を起動すると exit
+      - .bashrc 等がホームディレクトリに無い時に usilic を起動すると exit
         後に PAGER と PS1 環境変数が同ファイルに設定されてしまう．
       - SHELL から ^J0 等でディレクトリを移動すると SEGV するバグ．
 
@@ -247,8 +247,8 @@
         た(^^;)
       + config.sh で TMP (作業ファイル) の入力削除．
       + アーカイブ内の圧縮マニュアルページの参照．
-      + ^R で FILE, DIR, MAN のアクセス履歴表示．(~/.tcb/list へ保存)
-      + tcbrc に履歴保存行数 (HISTORY) 設定追加．
+      + ^R で FILE, DIR, MAN のアクセス履歴表示．(~/.usilic/list へ保存)
+      + usilicrc に履歴保存行数 (HISTORY) 設定追加．
       + エラーメッセージの表示位置を最下行に変更．
       + screen で動作するよう修正．(^O に ^[ の機能を割り当て)
       + CP, MV で処理先ファイルのパーミッションチェック．
@@ -258,7 +258,7 @@
 
       - 末尾が 0x0a でないファイルを SHELL で cat した場合のプロンプト
         誤表示．
-      - rpm 版で /usr/doc/tcb-1.3d-1 の owner がユーザのまま．
+      - rpm 版で /usr/doc/usilic-1.3d-1 の owner がユーザのまま．
       - アーカイブ表示での ARC で F(E)GREP 後に解凍すると SEGV するバ
         グ．
       - DU から CP 等する場合，SHELL 使用中のチェックを行わない．
@@ -278,21 +278,21 @@
         う修正．
       + CP, MV, RM, ARC をスクリプトを介して実行．(ファイル全指定の際の
         1KB 長制限削除)
-      + アーカイブ内のファイルでの CUT 表示で，一時ファイル (tcb.t...)
+      + アーカイブ内のファイルでの CUT 表示で，一時ファイル (usilic.t...)
         を使用しないよう修正．
 
       - 構成ファイル数の多いアーカイブから ARC で特定のファイルだけを展
         開する場合の誤動作．
 
   v1.3c.2: 1997.4.1
-      - プログラム起動時に ~/.tcb/tcbrc を無視, のエラー通知を, キーボ
+      - プログラム起動時に ~/.usilic/usilicrc を無視, のエラー通知を, キーボ
         ード押下による中断として処理してしまうバグ．
       - 表示分 read でファイルを最後まで読まない．
 
   v1.3c.1: 1997.3.30
       + インストールの際にスクリプトファイル (config.sh) を Makefile か
         ら実行．(install.sh 削除)
-      + SHELL をログインシェルで起動するようにした．(tcbrc に bash また
+      + SHELL をログインシェルで起動するようにした．(usilicrc に bash また
         は tcshの指定がある場合はそちらを使用)
       + SHELL からのパイプ出力にソケットを使用．(pty コード, -k オプ
         ション削除)
@@ -306,8 +306,8 @@
       + ' ' の検索を ^Q の後 ' ' で実行．
       + 存在しない反転表示ディレクトリ名上で ^J^K 等した際のエラー表
         示．
-      + /usr/local/lib/tcb/tcbrc の日付が ~/.tcb/tcbrc よりも新しい場
-        合, メッセージを表示して /usr/local/lib/tcb/tcbrc から読み込み．
+      + /usr/local/lib/usilic/usilicrc の日付が ~/.usilic/usilicrc よりも新しい場
+        合, メッセージを表示して /usr/local/lib/usilic/usilicrc から読み込み．
 
       - kon で SHELL プロンプトのゴミ表示．(Linux)
       - HELP で ^X^M で SEGV．
@@ -316,17 +316,17 @@
         作．(FreeBSD)
       - アーカイブ内ファイルの ^[^M で, ファイルの suffix により, mode-
         line に(プログラム名) が表示されてしまう．
-      - ERROR で tcbrc: ... のエラーメッセージが重複しないよう修正．
+      - ERROR で usilicrc: ... のエラーメッセージが重複しないよう修正．
 
   v1.3b.1: 1997.3.23
-      + OS 依存コードを tcb.c へ移動．(main.c 削除)
+      + OS 依存コードを usilic.c へ移動．(main.c 削除)
       + (stdin) 凍結解除オプション．(-k)
       + '\r' を ^M で表示しないよう修正．(改行コード '\r' のファイル用)
       + JIS X 0202 の SO, SI に対応．
-      + tcbrc.j の EDITOR のデフォルトを vim から vi に変更．
-      + tcbrc.j の CODE に ^N, ^O を追加．
-      + ERROR, LOG 保存先を, -l では ~/.tcb/error.bak, ~/.tcb/shell.bak
-        に, それ以外では /tmp/.tcb/tcb.e... /tmp/.tcb/tcb.l... に変更．
+      + usilicrc.j の EDITOR のデフォルトを vim から vi に変更．
+      + usilicrc.j の CODE に ^N, ^O を追加．
+      + ERROR, LOG 保存先を, -l では ~/.usilic/error.bak, ~/.usilic/shell.bak
+        に, それ以外では /tmp/.usilic/usilic.e... /tmp/.usilic/usilic.l... に変更．
 
       - MAN モードを ^G で中断した場合, 0 で exit しない．
       - ^I での実行ファイル検索の際に, PATH 環境変数上の実在しないパス
@@ -335,14 +335,14 @@
       - インストール時に install.sh でエラーが発生しても exit しない．
       - パイプ入力で pager 起動すると画面サイズが termcap の値に設定さ
         れる．
-      - kterm から別の kterm で -l 起動している tcb を検出できない．
+      - kterm から別の kterm で -l 起動している usilic を検出できない．
       - 長いカレントディレクトリ名で SHELL プロンプト誤表示．
       - パイプ入力で pager 起動後, ^C とすると正常に exit できない．
       - gcc-2.7.2.1 でコンパイル時エラー．(FreeBSD)
       - カーソルキーが使えない．(FreeBSD)
 
   v1.3a.2: 1997.3.18
-      + ERROR, LOG 保存先を tmpfile() から ~/.tcb/e.PID, ~/.tcb/s.PID
+      + ERROR, LOG 保存先を tmpfile() から ~/.usilic/e.PID, ~/.usilic/s.PID
         に変更．
       + PROGRAM 実行後スタックを一つ戻して PROGRAM リストから抜けるよう
         修正．
@@ -366,7 +366,7 @@
       + カレントディレクトリへの移動キーを ^] から ^K に変更．
       + PROGRAM でリストに載っていないコマンドを SHELL で実行．
       + ^R で SHELL で実行したコマンド一覧表示 (CMD モード)．
-      + CMD リストを ~/.tcb/list へ保存．
+      + CMD リストを ~/.usilic/list へ保存．
       + ^[^M で 127 と 32 未満のコードをボールドから反転表示へ変更．
       + ^[^M 以外で 127 と 32 未満 で 8, 9, 10 以外のコードを ^? で反転
         表示．
@@ -377,14 +377,14 @@
       + ^Q^? で 127 および 32 以外の機能キャラクタ検索．
       + アーカイブ内容一覧からの ARC で, 特定のファイルだけを解凍する機
         能．
-      + -l 起動時に SIGTERM, SIGHUP で ~/.tcb/list.bak への保存を行い,
-        それが SIGKILL で完了していなかった時は次回の起動時 ~/.tcb/list
-        から, 完了していた場合は ~/.tcb/list.bak から読み込んだ後,
-        ~/.tcb/list にファイル名変更．
-      + SHELL の bash の起動オプションを `-rcfile ~/.tcb/basrc' に変更
+      + -l 起動時に SIGTERM, SIGHUP で ~/.usilic/list.bak への保存を行い,
+        それが SIGKILL で完了していなかった時は次回の起動時 ~/.usilic/list
+        から, 完了していた場合は ~/.usilic/list.bak から読み込んだ後,
+        ~/.usilic/list にファイル名変更．
+      + SHELL の bash の起動オプションを `-rcfile ~/.usilic/basrc' に変更
         (~/.bashrc に環境変数 PS1 が設定されている場合に SHELL が起動で
         きなくなる障害への対処)．
-      + SHELL で tcb をパイプ起動する際にバッググラウンドで起動しないよ
+      + SHELL で usilic をパイプ起動する際にバッググラウンドで起動しないよ
         う修正 (dvi2tty などが起動できない障害回避)
       + 作業ディレクトリ (install.sh の TMP) がない場合は起動毎に作成．
       + コマンドラインの先頭ではスペースまたは \t を入力できないよう修
@@ -411,7 +411,7 @@
       + スクロール時バッファ終端等でのビープ音を削除．
 
   v1.2a.1: 1997.2.15
-      + "tcb: Already running" に端末 No. とプロセス ID を追加．
+      + "usilic: Already running" に端末 No. とプロセス ID を追加．
       + 作業ファイル名変更等．
       + ^V および ^[v のページ送り機能をそれぞれ ^_ および ^^ に割り当
         て．
@@ -429,7 +429,7 @@
         更(/usr/bin/installとの競合回避)．
       + インストーラから groff の項目削除．(/usr/lib/man.config の
         NROFF, JNROFFの設定をそのまま適用)
-      + 同じく tcbrc 参照ディレクトリの項目削除．(install.sh への設定は
+      + 同じく usilicrc 参照ディレクトリの項目削除．(install.sh への設定は
         可能)
       + ^] でモードスタッククリア
 
@@ -448,8 +448,8 @@
       - ERROR に CODE 以外のコードが入ると参照できない．
 
   v1.1e: 1997.1.17
-      + HELP を /usr/local/lib/tcb/help から読み込み．
-      + LIB, TMP 等を install スクリプトで設定し CODE を tcbrc へ移動．
+      + HELP を /usr/local/lib/usilic/help から読み込み．
+      + LIB, TMP 等を install スクリプトで設定し CODE を usilicrc へ移動．
       + ^Jw, ^J^W 用のファイルを作業ディレクトリへ移動．
       + SHELL から復帰後同ファイル削除．
       + pager でサフィックスを認識するようにした．
@@ -459,12 +459,12 @@
       + 作業ファイル名を mktemp で作成．
 
       - ボールド/アンダーライン属性文字が検索できない．
-      - ~/.tcb/list が示す PID を持つプロセスがあると -l 起動ができな
+      - ~/.usilic/list が示す PID を持つプロセスがあると -l 起動ができな
         い．
       - JMAN (config.h) の設定が反映されない．
       - 標準入力で行単位のスクロールで最終行が表示されない．
       - リンク先のないシンボリックリンクが削除できない．
-      - (tcb: Hit any key) のメッセージ後無限ループ．
+      - (usilic: Hit any key) のメッセージ後無限ループ．
 
   v1.1d: 1996.12.22
       - JIS ==> EUC 変換時の bus error．
@@ -489,11 +489,11 @@
       + モード名：BROW ==> CUT，COM  ==> PROGRAM
       + キーアサイン：^Jc ==> ^Jp，^J^C ==> ^J^P，^J^M ==> ^[^M (ベタ表
         示指定)，^J^M ==> ^X^M (Destination 指定)
-      + tcbrc：PROG ==> FILE，COM  ==> PROGRAM，LIST ==> 削除
+      + usilicrc：PROG ==> FILE，COM  ==> PROGRAM，LIST ==> 削除
       + -a オプション削除．
       + str.h ==> config.h
       + 作業ディレクトリを config.h の TMP で指定．
-      + 引数なしで tcb のマニュアルページで起動．
+      + 引数なしで usilic のマニュアルページで起動．
       + ^S ==> FGREP(fgrep), ^J^S ==> EGREP(egrep)．
       + SIGTERM 受信 ==> 保存無し終了．
       + SHELL 画面での ESC シーケンス削除 (ls 等)．
@@ -512,7 +512,7 @@
 
       - SHELL が起動しなくなる．
       - SHELL でカーソルキー使用時の誤動作．
-      - pager で起動すると ~/.tcb の作業ファイルが削除される．
+      - pager で起動すると ~/.usilic の作業ファイルが削除される．
       - zonbie プロセスが残る．
       - PROGRAM および実行のみのファイルからの SEGV でハング．
       - pager で文字列検索後の ^G で内容消去．
@@ -524,7 +524,7 @@
       + CP, MV 等実行後, 以前の画面に復帰．
       + SEGV シグナルトラップ．
 
-      - shutdown(8) からの KILL シグナルで内容が壊れた ~/.tcb/list で発
+      - shutdown(8) からの KILL シグナルで内容が壊れた ~/.usilic/list で発
         生する Segmentation fault 修正．
       - アーカイブ画面でのアクセス名 (mode-line [1]) の誤表示修正．
 

@@ -1,15 +1,15 @@
-  tcb - Text Console Buffer
+  usilic - Text Console Buffer
   version 1.5b-1  20 Mar 2000
   Coded by Taketo Matsubara
 
   11..  IInnttrroodduuccttiioonn
 
-  _T_c_b is a file viewer that works on a text-terminal.  It can be used on
+  _U_s_i_l_i_c is a file viewer that works on a text-terminal.  It can be used on
   LLiinnuuxx or FFrreeeeBBSSDD
 
   22..  EEnnvviirroonnmmeenntt
 
-  _T_c_b has been compiled and run on the following environments:
+  _U_s_i_l_i_c has been compiled and run on the following environments:
 
      LLiinnuuxx
 
@@ -28,13 +28,13 @@
   44..  손손서서
 
   I make my acknowledgement with thanks to following persons who sent me
-  bug reports and suggestions while I have developed _t_c_b.
+  bug reports and suggestions while I have developed _u_s_i_l_i_c.
 
-  Tomio Narita <narita@mt.cs.keio.ac.jp> agreed to add _l_v to _t_c_b's
+  Tomio Narita <narita@mt.cs.keio.ac.jp> agreed to add _l_v to _u_s_i_l_i_c's
   program list.  (Multilingual file viewer _l_v can be get from the WWW
   page `LV Homepage' hhttttpp::////wwwwww..mmtt..ccss..kkeeiioo..aacc..jjpp//ppeerrssoonn//nnaarriittaa//llvv//)
 
-  Emiko Hall <emhall@ilap.com> pointed out the bug that _t_c_b's Japanese
+  Emiko Hall <emhall@ilap.com> pointed out the bug that _u_s_i_l_i_c's Japanese
   manual page can't be displayed on the default environment and reported
   other faults about usage.
 
@@ -51,7 +51,7 @@
 
   55..  NNoottee
 
-  _T_c_b is a free software.  You can redistribute is under the terms of
+  _U_s_i_l_i_c is a free software.  You can redistribute is under the terms of
   the GGNNUU General Public License described _C_O_P_Y_I_N_G.
 
   Taketo Matsubara <<mmooooddyy@@oosskk..33wweebb..nnee..jjpp>>
