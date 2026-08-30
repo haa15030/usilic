@@ -3,7 +3,7 @@
 #include <termios.h>
 static void rv_str(RV *rvp, int f_M)
 {
-  if (f_M == M_shell /* rvp->pp->cs == F3 : virtual line (SHELL prompt) */
+  if (f_M == M_shell /* rvp->pp->cs == F3 : 仮想行(SHELLプロンプト) */
       || !strlen(rvp->str)) return; /* T_file: rvp->str == "" */
   strcpy(rvp->str, &rvp->pp->cs[rvp->col]);
   if (!strlen(rvp->str)) strcpy(rvp->str, " ");
@@ -319,23 +319,24 @@ int get_col(char str[])/*usilic*/
     while (*cp != ' ' && cp > p) cp--;
     col = cp - p + 2;
   } else {
-    /* `str' is normally a line of `ls -alF' output (fork_bin() forces
-       LC_ALL=C for that child, precisely so the date field below is
-       always this fixed English format), and used to be parsed by
-       just taking the LAST space in the whole line as "right before
-       the filename" -- which breaks the moment the filename itself
-       contains a space (a common Finder/QuickTime export pattern
-       like "2024-09-14 12.13.08.mp4"): that internal space becomes
-       the new "last space", silently truncating everything before it
-       off the filename. get_col()'s callers then stat()/access() (or
-       select for RM/MV, mode.c's is_write()) a bogus path and fail
-       with no indication why. "Mon DD HH:MM " (recent files) and
-       "Mon DD  YYYY " (older files) are both exactly 13 bytes from
-       the month abbreviation to the filename, and that abbreviation
-       is a reliable, locale-independent anchor -- unlike a bare
-       space search -- so find it first and only fall back to the
-       old last-space heuristic (e.g. for T_arc3 archive listings,
-       which may not follow `ls -alF' formatting) if it's absent. */
+    /* `str'は通常`ls -alF'出力の1行であり(fork_bin()は、まさに下の
+       日付フィールドが常にこの固定の英語形式になるよう、その子
+       プロセスにLC_ALL=Cを強制する)、以前は行全体の中の「最後の」
+       空白を「ファイル名の直前」として単純に取る方法でパースして
+       いた――これは、ファイル名自体に空白が含まれた瞬間に壊れる
+       (Finder/QuickTimeのエクスポートによくあるパターン、
+       "2024-09-14 12.13.08.mp4"のような): その内部の空白が新しい
+       「最後の空白」になってしまい、ファイル名からそれより前の
+       部分が静かに切り詰められる。get_col()の呼び出し元はその後、
+       出鱈目なパスに対してstat()/access()(あるいはRM/MVでの選択、
+       mode.cのis_write())を行い、理由の手がかりも無いまま失敗する。
+       "Mon DD HH:MM "(最近のファイル)と"Mon DD  YYYY "(古い
+       ファイル)は、どちらも月の略称からファイル名まで正確に13
+       バイトであり、その略称は、素の空白検索とは異なり、
+       信頼できるロケールに依存しない目印である――そのためまず
+       それを探し、それが無い場合(`ls -alF'形式に従わないことが
+       あるT_arc3のアーカイブ一覧等)だけ、旧来の最後の空白による
+       ヒューリスティックへフォールバックする。 */
     for (i = 0, best = NULL; i < 12; i++) {
       char *q = p;
       while ((q = strstr(q, mon[i]))) {
