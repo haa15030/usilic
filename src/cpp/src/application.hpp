@@ -1421,6 +1421,12 @@ class Application {
   // 単に失敗する)。
   bool loadHelpText(const std::string &text);
 
+  // 2026-08-30、直接のユーザー依頼("-gおよびopen -aの時だけ表示される
+  // 章も追加してもらって"): loadHelpText()自身のテキストの「末尾に」、
+  // Display::isGraphical()が真の間だけwrapHelpText()が追加する、GUI
+  // 専用の章。空のまま(呼ばない)なら、GUI専用の章は一切追加されない。
+  bool loadGuiHelpText(const std::string &text);
+
   ApplicationMode currentMode() const;
   // cycleCharset()(K-27、^Oa)によってライブ更新される、現在
   // アクティブな文字コード。main.cppは、独自の起動時のみのローカル
@@ -2129,6 +2135,8 @@ class Application {
   std::string cutFileSourcePath_;
   bool shellStarted_ = false;
   std::string helpText_;
+  // loadGuiHelpText()自身のコメント参照。
+  std::string guiHelpText_;
   // 現在どのトップレベルのCut/CutContentの分割がアクティブか
   // ――!cutMode_.canGoBack()の場合にだけ意味を持つ(そしてhandleResize()
   // にだけ参照される)。pushSplit()(ネストされた)階層はこれに

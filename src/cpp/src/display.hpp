@@ -133,6 +133,16 @@ class Display {
   virtual int columns() const = 0;
   virtual void setSize(int rows, int columns) = 0;
 
+  // 2026-08-30、直接のユーザー依頼(HELP.jp/HELPの書き換え、"-g"/
+  // "open -a"の時だけ表示される章を追加したい): 現在のバックエンドが
+  // GraphicalDisplay(GUI)かどうか。デフォルトはfalse――TerminalDisplay
+  // 自身は一切オーバーライドしない(CUIは常にfalseのまま)。
+  // DelegatingDisplay::isGraphical()はbackend()へ転送するので、
+  // Application側は^Ogによるバックエンド切り替えを何も気にせず
+  // 呼ぶだけで常に「今現在の」正しい値が返る――Application::
+  // wrapHelpText()自身のコメント参照。
+  virtual bool isGraphical() const { return false; }
+
   // 与えられたキーに対して端末が送る生のエスケープシーケンス、将来の
   // KeyInputの生バイトストリームパーサのため。非対応なら空。
   virtual std::string keySequence(Key key) const = 0;

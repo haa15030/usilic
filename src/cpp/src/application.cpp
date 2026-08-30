@@ -8584,7 +8584,13 @@ bool Application::executeEdit() {
 
 std::vector<StyledLine> Application::wrapHelpText(int width) const {
   PipeBuffer pipe(encoding_, width, 16L * 1024 * 1024);
-  pipe.feed(helpText_);
+  // 2026-08-30、直接のユーザー依頼("-gおよびopen -aの時だけ表示される
+  // 章"): display_.isGraphical()は^Ogによるバックエンド切り替えの
+  // たびに変わり得るので、helpText_の構築時ではなく、実際にこの関数が
+  // 呼ばれるたび(startHelp()/handleResize()の両方から)に毎回ここで
+  // 判定する――そうすることで、GUI章の有無が常に「今現在」実際に
+  // 見えているバックエンドと一致する。
+  pipe.feed(display_.isGraphical() ? helpText_ + guiHelpText_ : helpText_);
   pipe.flush();
   return pipe.lines();  // .attributesはそのまま素通しされる――cutMode_.split()自身のコメント参照
 }
@@ -8592,6 +8598,11 @@ std::vector<StyledLine> Application::wrapHelpText(int width) const {
 bool Application::loadHelpText(const std::string &text) {
   helpText_ = text;
   return !helpText_.empty();
+}
+
+bool Application::loadGuiHelpText(const std::string &text) {
+  guiHelpText_ = text;
+  return !guiHelpText_.empty();
 }
 
 // menu.cのM_help/T_helpケースから移植――なぜこれがそれ自身の表示の

@@ -213,6 +213,9 @@ class GraphicalDisplay : public Display {
   int columns() const override;
   void setSize(int rows, int columns) override;
 
+  // Display::isGraphical()自身のコメント参照。
+  bool isGraphical() const override { return true; }
+
   // 常に""を返す――GraphicalDisplayはKeyInput::readEscapeSequence()
   // の対象には決してならない(本物の端末capabilityシーケンスの
   // マッチングは、本物のttyバイトストリームにだけ当てはまる)。

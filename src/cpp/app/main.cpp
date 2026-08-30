@@ -147,6 +147,7 @@
 #include <vector>
 
 #include "application.hpp"
+#include "help_text.hpp"
 #include "child_process.hpp"
 #include "configuration.hpp"
 #include "content_view.hpp"
@@ -3034,25 +3035,25 @@ int main(int argc, char **argv) {
   // candidates exist or are readable, HELP (^J^H) is simply
   // unavailable (Command::StartHelp fails cleanly) rather than this
   // being a hard startup error.
-  std::vector<std::string> helpPathCandidates;
+  // 2026-08-30、直接のユーザー依頼("HELP.jp本体をソースに統合しては
+  // どうか、使用前に読まれて『実はすでにGUI』ネタバレを回避すべく"):
+  // 上のディスク上のHELP/HELP.jp探索は、レガシー版(old/、今も
+  // src/config.shのmake installが同じsrc/doc/HELP(.jp)を使い続けて
+  // いる)専用のものとして残しつつ、C++移植版自身のデフォルトの
+  // ヘルプ本文はhelp_text.hppに埋め込んだ全く新しいテキストへ切り替
+  // えた――src/doc/HELP(.jp)自体はレガシー版のために一切変更して
+  // いない。$USILICHELPが設定されている場合だけは、以前と全く同じ
+  // ようにそのファイルをそのまま読み込む(埋め込みテキストへの
+  // フォールバックはしない、GUI章の自動追加も行わない――
+  // 「そのファイルの内容がそのまま全て」という以前からの前提に
+  // 合わせている)。
   if (const char *helpPathEnv = std::getenv("USILICHELP")) {
-    helpPathCandidates.push_back(helpPathEnv);
+    std::string text = readFileIfExists(helpPathEnv);
+    if (!text.empty()) app.loadHelpText(text);
   } else {
-    if (homeEnv) helpPathCandidates.push_back(std::string(homeEnv) + "/.local/lib/usilic/HELP");
-    helpPathCandidates.push_back("/usr/local/lib/usilic/HELP");
-  }
-  for (const std::string &helpPath : helpPathCandidates) {
-    std::string text;
-    if (encoding != fm::Charset::Encoding::Ascii) {
-      text = readFileIfExists(helpPath + ".jp");
-      if (text.empty()) text = readFileIfExists(helpPath);
-    } else {
-      text = readFileIfExists(helpPath);
-    }
-    if (!text.empty()) {
-      app.loadHelpText(text);
-      break;
-    }
+    bool japanese = (encoding != fm::Charset::Encoding::Ascii);
+    app.loadHelpText(fm::expandHelpMarkup(japanese ? fm::kHelpTextJa : fm::kHelpTextEn));
+    app.loadGuiHelpText(fm::expandHelpMarkup(japanese ? fm::kHelpTextGuiJa : fm::kHelpTextGuiEn));
   }
 
   // "実はすでにGUI" (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30

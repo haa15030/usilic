@@ -96,13 +96,18 @@ test: $(BUILD_DIR)/run_tests
 
 usilic: $(BUILD_DIR)/usilic
 
+# 2026-08-30、直接のユーザー依頼(HELP.jp本体をソースへ統合): HELP/
+# HELP.jpはもはやsrc/help_text.hpp埋め込みテキストがデフォルトなので、
+# $(LIB_DIR)へのインストールは不要になった(main.cpp自身のコメント
+# 参照――$USILICHELPが設定されている場合だけ、指定されたファイルを
+# そのまま読む)。src/doc/HELP(.jp)自体はレガシー版(old/、
+# src/config.shが生成する別のmake installが今も使う)専用として残して
+# あり、このMakefileはそちらには一切触れない。
 install: $(BUILD_DIR)/usilic
 	install -d $(INSTALL_DIR)
 	install -m 755 $(BUILD_DIR)/usilic $(INSTALL_DIR)/$(INSTALL_NAME)
 	install -d $(LIB_DIR)
 	install -m 644 ../usilicrc $(LIB_DIR)/usilicrc
-	install -m 644 ../doc/HELP $(LIB_DIR)/HELP
-	install -m 644 ../doc/HELP.jp $(LIB_DIR)/HELP.jp
 
 # macOS .app bundle (2026-08-24, docs/CHANGES.md item 421, a direct
 # user request: "アイコンをクリックして起動する形にはできる？"):

@@ -66,6 +66,11 @@ class DelegatingDisplay : public Display {
   int columns() const override;
   void setSize(int rows, int columns) override;
 
+  // Display::isGraphical()自身のコメント参照――backend()(現在の実際の
+  // バックエンド)へ転送するので、^Ogによる切り替えを挟んでも常に
+  // 最新の値を返す。
+  bool isGraphical() const override { return backend().isGraphical(); }
+
   std::string keySequence(Key key) const override;
 
   bool outputEnabled() const override;
