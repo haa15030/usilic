@@ -2832,8 +2832,17 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
     // 使う――ContentView::renderLine()自身も「切り詰め済みテキスト+
     // 元のline.attributes」という同じ組み合わせを使っており、この
     // 妥協は新しいものではない。
+    // 2026-08-30、直接のユーザー報告(GUI、マウスクリック開放時に
+    // 切り詰め位置が1文字分ずれて見える件): ContentView::renderLine()
+    // 自身のellipsisBudget(cursorHighlightEnabled_有効時はcolumns()-1、
+    // それ自身のコメント参照)に合わせている――Directory/Archive等の
+    // 一覧系ビュー(cursorHighlightEnabled_が有効、実際にドラッグの
+    // 対象になる主な相手)ではこの-1が既定であり、ここで単なる
+    // impl_->columnsを使うと、ドラッグ中(このrenderScrolled()自身)と
+    // ドラッグ終了直後の通常描画(redraw())とで切り詰め位置が1文字分
+    // ずれ、離した瞬間に末尾付近の文字が入れ替わって見えていた。
     std::string composed = composeDakutenInString(lines[lineIndex].text);
-    std::string truncated = middleEllipsisTruncateByWidth(composed, impl_->columns);
+    std::string truncated = middleEllipsisTruncateByWidth(composed, std::max(0, impl_->columns - 1));
     renderTextRun(y, truncated, Color{impl_->fg.r, impl_->fg.g, impl_->fg.b}, 0, lines[lineIndex].attributes);
   }
 

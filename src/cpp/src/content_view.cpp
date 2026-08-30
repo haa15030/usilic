@@ -1053,11 +1053,38 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
     segments.push_back({" ", false});
     drawnLen += 1;
     std::string trailing2 = fields.trailing2;
-    if (fields.fillTrailingToEdge) {
+    // 2026-08-30、直接のユーザー報告(GUI、実際のドラッグ中はARC自身の
+    // アーカイブパス(trailing3)が丸ごと消える件、renderModeLine()自身の
+    // 同一のtrailing3ゲート参照): trailing3が存在する場合は、この端への
+    // パディングをtrailing3自身に譲る――そうしないとtrailing2がここで
+    // 行の残り全てを食べてしまい、trailing3の描画余地が無くなる。
+    if (fields.fillTrailingToEdge && fields.trailing3.empty()) {
       int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
       if (remaining > 0) trailing2 += std::string(remaining, ' ');
     }
     segments.push_back({trailing2, true});
+    drawnLen += static_cast<int>(trailing2.size());
+  }
+  // 2026-08-30、直接のユーザー報告(GUI、実際のドラッグ中はモードライン
+  // の戻り値(ARCのアーカイブパス等)が表示されない件): 以前はここに
+  // trailing3自体の描画が丸ごと欠けていた――renderModeLine()自身の
+  // ModeLineFields::trailing3向けの処理(自身のコメント参照)と同じ
+  // ロジックをここに移植する: 右揃え/切り詰めのオプションは無く、単に
+  // 「余地があれば自身のプレーンなギャップの後に表示し、そうでなければ
+  // 落とす」。
+  if (!fields.trailing3.empty()) {
+    std::string trailing3 = fields.trailing3;
+    int candidateLen = 1 + static_cast<int>(trailing3.size());
+    if (cols > 0 && drawnLen + candidateLen <= cols) {
+      segments.push_back({" ", false});
+      drawnLen += 1;
+      if (fields.fillTrailingToEdge) {
+        int remaining = (cols - 1) - drawnLen - static_cast<int>(trailing3.size());
+        if (remaining > 0) trailing3 += std::string(remaining, ' ');
+      }
+      segments.push_back({trailing3, true});
+      drawnLen += static_cast<int>(trailing3.size());
+    }
   }
   return segments;
 }
