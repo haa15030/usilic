@@ -1327,9 +1327,51 @@ void Application::layoutViews() {
   promptEditor_.setField(display_.rows() - 1, 0, std::max(1, display_.columns()));
 }
 
+namespace {
+// 2026-08-30、直接のユーザー依頼("仮にmv等でファイルが存在しなくても
+// 在籍していたディレクトリ（が無い場合は親）で起動して欲しい"):
+// pathの親ディレクトリから遡って、最初に実在する祖先ディレクトリを
+// 返す。lastOpenNameは常に絶対パスとして保存される(FileMode::
+// currentFile()/DirectoryMode::currentDirectory()/ArchiveMode::
+// currentArchive()いずれも、std::filesystem::absolute()経由で構築
+// された既存の絶対パスをそのまま使い続けているだけ)想定なので、
+// 念のための保険として相対パスならfallbackへ逃げる(相対パスのまま
+// parent_path()を辿ると空パスで不動点に達し、無限ループの危険は
+// 無いが正しい祖先を指す保証も無いため)。絶対パスなら"/"自身が
+// 必ず実在するのでループは必ず止まる(parent==pになった時点で
+// 不動点=ルートに達したと判定して抜ける、C++17のparent_path()の
+// 仕様通り)。
+std::string nearestExistingAncestorDirectory(const std::string &path, const std::string &fallback) {
+  if (path.empty()) return fallback;
+  std::filesystem::path p = std::filesystem::path(path).parent_path();
+  if (!p.is_absolute()) return fallback;
+  while (true) {
+    std::error_code ec;
+    if (std::filesystem::exists(p, ec) && !ec) return p.string();
+    std::filesystem::path parent = p.parent_path();
+    if (parent == p) break;  // ルートで不動点――これ以上遡れない
+    p = parent;
+  }
+  return fallback;
+}
+}  // namespace
+
 bool Application::start(const std::string &directory, bool consultHistory) {
   currentMode_ = ApplicationMode::Directory;
   return directoryMode_.enterDirectory(directory, consultHistory);
+}
+
+std::string Application::currentResumableName() const {
+  if (currentMode_ == ApplicationMode::File) return fileMode_.currentFile();
+  // archiveParentStack_.empty()の場合だけ保存する理由:
+  // ArchiveMode::currentArchive()は、ネストしたアーカイブへ降下した
+  // 後は本物の実在パスではなく使い捨てのmkdtemp()一時パス(次回起動
+  // 時にはまず存在しない)を指すようになる――descendToNestedArchive()
+  // 自身のコメント参照。ネストしていない(トップレベルのアーカイブを
+  // 見ている)間だけ、currentArchive()は最初にloadArchive()へ渡した
+  // 本物のファイルパスと一致し続け、そのまま安全に保存・復元できる。
+  if (currentMode_ == ApplicationMode::Archive && archiveParentStack_.empty()) return archiveMode_.currentArchive();
+  return directoryMode_.currentDirectory();
 }
 
 bool Application::startResumingSession(const std::string &lastOpenName, const std::string &fallbackDirectory,
@@ -1338,13 +1380,30 @@ bool Application::startResumingSession(const std::string &lastOpenName, const st
   if (!lastOpenName.empty() && std::filesystem::is_regular_file(lastOpenName, ec) && !ec) {
     std::string parent = std::filesystem::path(lastOpenName).parent_path().string();
     if (parent.empty()) parent = fallbackDirectory;
-    if (directoryMode_.enterDirectory(parent, consultHistory) && fileMode_.loadFile(lastOpenName)) {
-      currentMode_ = ApplicationMode::File;
-      fileReturnMode_ = ApplicationMode::Directory;  // openSelectedEntry()自身のコメント参照
+    if (directoryMode_.enterDirectory(parent, consultHistory)) {
+      // loadArchive()を先に試す(loadFile()より先): アーカイブファイル
+      // 自身もstd::filesystem::is_regular_file()には該当するので、
+      // openSelectedEntry()自身の判定順序(アーカイブ判定が通常
+      // ファイルとしての読み込みより優先される)に合わせる。
+      if (archiveMode_.loadArchive(lastOpenName)) {
+        archiveParentStack_.clear();  // openSelectedEntry()自身のコメント参照――全く新しいトップレベルの入場
+        currentMode_ = ApplicationMode::Archive;
+        return true;
+      }
+      if (fileMode_.loadFile(lastOpenName)) {
+        currentMode_ = ApplicationMode::File;
+        fileReturnMode_ = ApplicationMode::Directory;  // openSelectedEntry()自身のコメント参照
+        return true;
+      }
+      // アーカイブとしてもプレーンファイルとしても開けなかった(壊れた
+      // アーカイブ等)――既に入場済みのparentのままDirectoryモードで
+      // 構わない。
       return true;
     }
   }
-  return start(fallbackDirectory, consultHistory);
+  // lastOpenName自体が実在しない(mv/rm等)場合でも、その在籍していた
+  // ディレクトリ(既に無ければ最も近い実在する祖先)で起動する。
+  return start(nearestExistingAncestorDirectory(lastOpenName, fallbackDirectory), consultHistory);
 }
 
 bool Application::startPagerFileList(const std::vector<std::string> &paths) {

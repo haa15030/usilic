@@ -3430,18 +3430,17 @@ int main(int argc, char **argv) {
   // with this unrelated run's in-memory rings.
   if (consultHistoryOnStart) {
     // 2026-08-30、直接のユーザー報告("通常ファイルで終えたなら次回
-    // 起動時も同ファイルから"): SessionState::lastOpenName(legacyの
-    // LINE::nameの移植)自身はHistory::loadHistoryText()/serialize()
-    // 経由で既に往復可能だったが、実際にApplicationからこれを書く
-    // コードが一度も配線されていなかった――ApplicationのcurrentMode_
-    // に応じて、終了時点で実際に開いていたもの(FileモードならFileMode::
-    // currentFile()、それ以外はDirectoryMode::currentDirectory())を
-    // ここで反映する。他のフィールド(previousDirectory等)は既存の
-    // (読み込み時の)値のまま変更しない。
+    // 起動時も同ファイルから"、"utf8.tarの画面（アーカイブ構成ファイル
+    // 一覧）を開いていたら再起動時も同じ画面で"): SessionState::
+    // lastOpenName(legacyのLINE::nameの移植)自身はHistory::
+    // loadHistoryText()/serialize()経由で既に往復可能だったが、実際に
+    // Applicationからこれを書くコードが一度も配線されていなかった。
+    // Application::currentResumableName()自身のコメント参照(File/
+    // トップレベルArchive/それ以外の判定)。他のフィールド
+    // (previousDirectory等)は既存の(読み込み時の)値のまま変更しない。
     {
       fm::History::SessionState state = history.sessionState();
-      state.lastOpenName =
-          (app.currentMode() == fm::ApplicationMode::File) ? app.fileMode().currentFile() : app.directoryMode().currentDirectory();
+      state.lastOpenName = app.currentResumableName();
       history.setSessionState(state);
     }
     history.setSavedCharset(app.encoding());  // so a future session with no explicit override resumes in this one's charset

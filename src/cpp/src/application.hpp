@@ -1156,25 +1156,39 @@ class Application {
 
   // 2026-08-30、直接のユーザー報告("`open -a usilic`で起動すなわち
   // 引数無しなので前回の履歴を引き継がないと。通常ファイルで終えた
-  // なら次回起動時も同ファイルから"): start()自身の上のコメントが
-  // 「legacy自身の『最後のセッションを再開する』ケース」と書いて
-  // いる通り、引数無し起動はlegacyのinit_menu()同様、前回終了時に
-  // 開いていたもの(`lastOpenName`、History::SessionState自身の
-  // コメント参照)を復元すべきである――しかしそれがDirectoryモード
-  // (単なるディレクトリ一覧行のカーソル位置)にしか及んでおらず、
-  // 通常ファイルを見ていたまま終了した場合にFileモードへ戻る経路が
-  // 一度も配線されていなかった。legacy自身のinit_menu()
-  // (old/src/menu.c、`stat(ap->name, &st)`でDirectory/File判定)と
-  // 同じ判定をここで行う: `lastOpenName`が実在する通常ファイルなら、
-  // その親ディレクトリへ入場した上でFileモードとしてそれを開く
-  // (openSelectedEntry()自身のfileMode_.loadFile()呼び出しと同じ
-  // パターン)。ディレクトリだった/存在しない/開けなかった場合は
-  // 黙って通常のstart(fallbackDirectory, ...)へフォールバックする
-  // ――アーカイブ内部やEXEC起動中のパス等、通常ファイル以外での
-  // 終了はこの対象外(ユーザー自身の要求が明示的に「通常ファイルで
-  // 終えたなら」だったため、意図的にそこまでは追わない)。
+  // なら次回起動時も同ファイルから")、および同日の追加依頼
+  // ("utf8.tarの画面（アーカイブ構成ファイル一覧）を開いていたら、
+  // 再起動時も同じ画面でよろしく。仮にmv等でファイルが存在しなくても
+  // 在籍していたディレクトリ（が無い場合は親）で起動して欲しい"):
+  // start()自身の上のコメントが「legacy自身の『最後のセッションを
+  // 再開する』ケース」と書いている通り、引数無し起動はlegacyの
+  // init_menu()同様、前回終了時に開いていたもの(`lastOpenName`、
+  // History::SessionState自身のコメント参照、currentResumableName()
+  // 経由で書き込まれる)を復元すべきである――しかしそれがDirectory
+  // モード(単なるディレクトリ一覧行のカーソル位置)にしか及んで
+  // おらず、通常ファイル/トップレベルのアーカイブ一覧を見ていたまま
+  // 終了した場合にそのモードへ戻る経路が一度も配線されていなかった。
+  // legacy自身のinit_menu()(old/src/menu.c、`stat(ap->name, &st)`で
+  // Directory/File判定)と同じ判定をここで行う: `lastOpenName`が実在
+  // する通常ファイルなら、その親ディレクトリへ入場した上でArchive
+  // (アーカイブとして開けた場合)またはFile(そうでない場合)モード
+  // としてそれを開く(openSelectedEntry()自身のloadArchive()/
+  // fileMode_.loadFile()呼び出しと同じ優先順位・パターン)。
+  // `lastOpenName`自体が実在しない(mv/rm等)場合は、その在籍して
+  // いたディレクトリ(既に無ければ最も近い実在する祖先)で起動する
+  // ――home等へは逃げない。ネストしたアーカイブ内部やEXEC起動中の
+  // パス等、それ以外での終了はこの対象外(currentResumableName()
+  // 自身のコメント参照、ユーザー自身の要求の範囲を超えるため意図的に
+  // 追わない)。
   bool startResumingSession(const std::string &lastOpenName, const std::string &fallbackDirectory,
                              bool consultHistory = true);
+
+  // 現在のモードに応じて、SessionState::lastOpenNameへ保存すべき単一の
+  // パスを返す(main.cpp自身の終了時の呼び出し参照)。startResumingSession()
+  // 自身のコメントで説明した通り、Fileモードとトップレベル(ネストして
+  // いない)Archiveモードだけを扱い、それ以外は単にDirectoryMode::
+  // currentDirectory()を返す。
+  std::string currentResumableName() const;
 
   // 2026-08-25(直接のユーザー依頼): `paths`をDirectoryモードの
   // Enterキーフローを完全に迂回して直接Fileモードで開く――1つ以上
