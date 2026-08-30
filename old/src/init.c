@@ -7,7 +7,7 @@
 
 static struct {
   void (*segv)(int);
-  int abort; /* mark for segmentation fault */
+  int abort; /* segmentation faultの目印 */
   jmp_buf jb;
 } Init;
 
@@ -25,13 +25,13 @@ void init_man(BASE *bp, FILE **pinp, char name[], u_char prev[], char arg[], int
   *pinp = fork_man(name);
   bp->pp = alloc_pipe(T_man, pinp, &bp->nrow, bp, strlen(name));
   bp->nrow = 1;
-  while (*pinp) /* read the whole man page up front, not just one screen */
+  while (*pinp) /* 1画面分だけでなく、マニュアルページ全体を前もって読む */
     alloc_pipe(0, pinp, &bp->nrow, NULL, 0);
   if (!bp->pp) make_bp(bp, s_S(S_err6), NULL, NULL);
-  else { /* alloc_pipe() never maintains bp->size (it's only tracked
-	    for overflow detection internally) -- now that the whole
-	    page is loaded, total it up so the mode-line can show a
-	    real byte count, the same as File/Directory. */
+  else { /* alloc_pipe()はbp->sizeを一切維持しない(内部的にオーバー
+	    フロー検出のためだけに追跡されている)――ページ全体が
+	    読み込まれた今、mode-lineがFile/Directoryと同じように
+	    本物のバイト数を表示できるよう、合計を計算する。 */
     PP *pp;
     int size = 0;
     for (pp = bp->pp; pp; pp = pp->next) size += pp->f.len + 1;
@@ -227,8 +227,8 @@ FILE *init_arc2(BASE *bp, CHILD *arc, char name[], PP *pp, char prev[], char arg
     switch(f_chp) {
     case 2: /* bzip2 */
       chp = get_child(NULL, NULL
-		      , s_S(S_bzip2), NULL, NULL); /* set -d option */
-    case 1: /* gzip etc. */
+		      , s_S(S_bzip2), NULL, NULL); /* -dオプションを設定する */
+    case 1: /* gzip等 */
     case 4: /* lha */
     case 5: /* tar */
       strcpy(chp->argv[chp->f.argc], "-");
@@ -379,7 +379,7 @@ void init_ls(BASE *bp, char name[], int f_M, int f_ls)/*usilic*/
   do {
     switch(f_M) {
     case T_dir:
-      if (!S_ISDIR(st.st_mode)) get_dir(name); /* get current directory name */
+      if (!S_ISDIR(st.st_mode)) get_dir(name); /* カレントディレクトリ名を取得する */
       chdir(name);
       p = alloca(N_line+1);
       getcwd(p, N_line);
