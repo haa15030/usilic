@@ -2487,7 +2487,15 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   // ended at. Actually written to disk by main()'s own end-of-process
   // history.serialize() call, same as every other History field.
   {
-    fm::History::GuiPreferences prefs;
+    // 2026-08-30、直接のユーザー報告("usilic -fしても次のopen -aに
+    // 反映されない"): 以前はここでfm::History::GuiPreferences prefs;
+    // と「新規に」構築していたため、このブロックの直前でfontPathへ
+    // 何を設定していようと(main()冒頭の"-f"マージ処理参照)、GUI
+    // セッションが一度でも終了するたびにデフォルト値の空文字列で
+    // 無条件に上書きされていた。既存のhistory.guiPreferences()から
+    // 読み出すことで、このブロックが実際に更新する意図のフィールド
+    // (fontPointSize/rows/columns/色)以外は保持されるようにする。
+    fm::History::GuiPreferences prefs = history.guiPreferences();
     prefs.fontPointSize = gui->fontPointSize();
     prefs.rows = gui->rows();
     prefs.columns = gui->columns();
