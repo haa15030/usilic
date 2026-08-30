@@ -29,7 +29,7 @@ int is_man(char *man)/*usilic*/
 }
 
 char *type_pipe(char *buff, int size, int code)/*usilic*/
-{ /* print file-type (from pipe) */
+{ /* ファイルの型を表示する(pipeから) */
   CHILD *chp;
   int pv[4];
   char *cp, type[N_line];
@@ -43,7 +43,7 @@ char *type_pipe(char *buff, int size, int code)/*usilic*/
       pipe(&pv[2]);
       if (!fork()) {
 	close(pv[2]);
-	/* check N_pipe bytes */
+	/* N_pipeバイトを確認する */
 	fp = fdopen(pv[3], "w");
 	fwrite(buff, 1, (size > N_pipe) ? N_pipe : size, fp);
 	fclose(fp);
@@ -78,7 +78,7 @@ char *type_pipe(char *buff, int size, int code)/*usilic*/
 }
 
 char *type_file(char *buff, char name[], int code)/*usilic*/
-{ /* print file-type (from file) */
+{ /* ファイルの型を表示する(fileから) */
   CHILD *chp;
   int pv[2];
   char *cp, type[N_line];
@@ -526,13 +526,13 @@ static int conv_euc(int buff_i, int len, u_char *cp, u_char euc[], JIS *dummy)/*
 }
 
 int jistoeuc(int buff_i, u_char jis[], JIS *jisp)/*usilic*/
-{ /* convert jis to euc */
+{ /* jisをeucへ変換する */
   buff_i = conv_jis(-1, buff_i, jis, jis, jisp);
   return buff_i;
 }
 
 int sjistoeuc(int buff_i, u_char **sjisp, int sjis_i, JIS *dummy)/*usilic*/
-{ /* convert sjis to euc */
+{ /* sjisをeucへ変換する */
   u_char *euc;
 
   if ((euc = malloc(buff_i + 1))) {
@@ -547,7 +547,7 @@ int sjistoeuc(int buff_i, u_char **sjisp, int sjis_i, JIS *dummy)/*usilic*/
 }
 
 int euctoeuc(int buff_i, u_char **eucp, int euc_i, JIS *dummy)/*usilic*/
-{ /* convert sjis to euc without allocation of memory */
+{ /* メモリの確保無しでsjisをeucへ変換する */
   u_char *euc;
 
   if ((euc = malloc(buff_i + 1))) {
@@ -564,20 +564,20 @@ int euctoeuc(int buff_i, u_char **eucp, int euc_i, JIS *dummy)/*usilic*/
 #include "euc_uni.h"
 
 /*
- * euctoutf8() (UTF-8 support, step 6): re-encode EUC-JP content
- * (already normalized to EUC by jistoeuc()/sjistoeuc()/euctoeuc()
- * above, or plain EUC to begin with) as UTF-8, using the JIS X 0208
- * table in euc_uni.h. Unlike sjis<->euc<->jis, which all share the
- * same underlying JIS X 0208 character set and so only need a byte
- * arithmetic remap, EUC-JP and UTF-8 encode entirely different
- * (though overlapping) character repertoires under the Unicode
- * standard, so an actual codepoint table is unavoidable.
+ * euctoutf8()(UTF-8対応、ステップ6): euc_uni.hのJIS X 0208テーブルを
+ * 使って、EUC-JPのコンテンツ(上のjistoeuc()/sjistoeuc()/euctoeuc()で
+ * 既にEUCへ正規化済み、あるいは最初から素のEUC)をUTF-8として再
+ * エンコードする。sjis<->euc<->jisはどれも同じJIS X 0208文字集合を
+ * 基盤として共有しており単なるバイト演算の再マップで済むのとは
+ * 異なり、EUC-JPとUTF-8はUnicode標準の下で全く異なる(ただし一部
+ * 重なる)文字レパートリーをエンコードするため、実際のコードポイント
+ * テーブルが避けられない。
  *
- * Called only when vt_charset(0)==C_utf8; without it, a legacy
- * EUC-JP file (e.g. this project's own README.jp from 2003) would
- * be left as raw EUC-JP bytes and rendered as mojibake by a real
- * UTF-8 terminal, since usilic's display layer has a single global
- * charset interpretation rather than per-file charset tracking.
+ * vt_charset(0)==C_utf8の時だけ呼ばれる; これが無いと、legacyの
+ * EUC-JPファイル(例えばこのプロジェクト自身の2003年のREADME.jp)は
+ * 生のEUC-JPバイトのまま残り、usilicの表示層がファイルごとの文字コード
+ * 追跡ではなく単一のグローバルな文字コード解釈を持つため、本物の
+ * UTF-8端末では文字化けとして表示されてしまう。
  */
 static int uni_to_utf8(u_int cp, u_char *out)
 {
@@ -621,7 +621,8 @@ static int euc_to_utf8_core(u_char *euc, int size, u_char *out)
 }
 
 int euctoutf8(int size, u_char **eucp)/*usilic*/
-{ /* for callers (check_type()) that own *eucp and can free/replace it */
+{ /* *eucpを所有していてそれを解放/置換できる呼び出し元
+     (check_type())のため */
   u_char *out;
   int newsize;
 
@@ -633,10 +634,10 @@ int euctoutf8(int size, u_char **eucp)/*usilic*/
 }
 
 int euctoutf8_buf(u_char *buff, int size)/*usilic*/
-{ /* for callers (alloc.c's linein()) that read into a fixed-size
-     shared line buffer instead of a reallocatable pointer. A
-     N_buff/2-byte input can expand at most 1.5x when re-encoded as
-     UTF-8, which always fits back into the N_buff-sized buffer. */
+{ /* 再確保可能なポインタではなく、固定サイズの共有行バッファへ
+     読み込む呼び出し元(alloc.cのlinein())のため。N_buff/2バイトの
+     入力は、UTF-8として再エンコードされる際に最大でも1.5倍にしか
+     ならず、それは常にN_buffサイズのバッファに収まる。 */
   u_char *out;
   int newsize;
 
@@ -648,19 +649,19 @@ int euctoutf8_buf(u_char *buff, int size)/*usilic*/
 }
 
 /*
- * UTF-8 helpers (step 1 of UTF-8 support).
+ * UTF-8のヘルパー(UTF-8対応のステップ1)。
  *
- * utf8_seqlen(): returns the byte length (1-4) of the UTF-8
- * sequence that starts with lead byte c. A stray/invalid
- * continuation byte returns 1 so callers never desync/run past
- * the buffer even on malformed input.
+ * utf8_seqlen(): 先頭バイトcで始まるUTF-8シーケンスのバイト長
+ * (1〜4)を返す。はぐれた/不正な継続バイトの場合は1を返すので、
+ * 不正な入力に対しても呼び出し元がバッファをdesync/はみ出す
+ * ことは決して無い。
  *
- * utf8_width(): returns the display width (0, 1, or 2 columns) of
- * the codepoint encoded by the `len'-byte UTF-8 sequence at *cp.
- * This is a pragmatic subset of the East Asian Wide/Fullwidth
- * ranges (enough for Japanese/CJK text, usilic's primary use case)
- * plus a few zero-width combining-mark ranges; it is not a
- * complete Unicode East-Asian-Width table.
+ * utf8_width(): *cpにある`len'バイトのUTF-8シーケンスがエンコード
+ * するコードポイントの表示幅(0、1、または2カラム)を返す。これは
+ * East Asian Wide/Fullwidth範囲の実用的なサブセット(usilicの主な
+ * 用途である日本語/CJKテキストには十分)に、いくつかの幅ゼロの
+ * 結合文字範囲を加えたものである; 完全なUnicode East-Asian-Width
+ * テーブルではない。
  */
 int utf8_seqlen(u_char c)/*usilic*/
 {
@@ -682,7 +683,7 @@ int utf8_width(u_char *cp, int len)/*usilic*/
   else cpt = ((cp[0] & 0x07) << 18) | ((cp[1] & 0x3f) << 12)
 	   | ((cp[2] & 0x3f) << 6) | (cp[3] & 0x3f);
 
-  /* zero-width combining marks */
+  /* 幅ゼロの結合文字 */
   if ((cpt >= 0x0300 && cpt <= 0x036f)
       || (cpt >= 0x1ab0 && cpt <= 0x1aff)
       || (cpt >= 0x1dc0 && cpt <= 0x1dff)
@@ -690,8 +691,8 @@ int utf8_width(u_char *cp, int len)/*usilic*/
       || (cpt >= 0xfe20 && cpt <= 0xfe2f))
     return 0;
 
-  /* East Asian Wide / Fullwidth (CJK, Hangul, fullwidth forms,
-     common symbols/emoji) */
+  /* East Asian Wide / Fullwidth(CJK、ハングル、全角形、一般的な
+     記号/絵文字) */
   if ((cpt >= 0x1100 && cpt <= 0x115f)
       || (cpt >= 0x2e80 && cpt <= 0xa4cf && cpt != 0x303f)
       || (cpt >= 0xac00 && cpt <= 0xd7a3)
@@ -715,7 +716,7 @@ int count_k(u_char *cp, int ci)/*usilic*/
     int pos = 0, len;
     while (pos < ci) {
       len = utf8_seqlen(cp[pos]);
-      if (pos + len > ci) return 1;	/* ci splits a multi-byte char */
+      if (pos + len > ci) return 1;	/* ciがマルチバイト文字を分断している */
       pos += len;
     }
     return 0;
@@ -749,15 +750,15 @@ static int count_i(u_char *cp, int col)
 }
 
 /*
- * is_utf8() (step 2 of UTF-8 support): pragmatic well-formedness
- * check used to auto-detect UTF-8 file content. Returns true only
- * if every multi-byte lead byte is followed by the right number of
- * valid continuation bytes (0x80-0xbf) and at least one multi-byte
- * sequence was seen (so plain ASCII text, which is valid but
- * ambiguous UTF-8, falls through to the existing C_ascii handling
- * instead of being force-tagged C_utf8). A sequence truncated by
- * the end of `buff' (e.g. a preview-sized read cut mid-character)
- * is tolerated rather than rejected.
+ * is_utf8()(UTF-8対応のステップ2): UTF-8のファイル内容を自動検出
+ * するために使う実用的な整形式チェック。全てのマルチバイト先頭
+ * バイトの後に正しい数の有効な継続バイト(0x80-0xbf)が続いており、
+ * かつ少なくとも1つのマルチバイトシーケンスが見られた場合にのみ
+ * trueを返す(そのため、有効だが曖昧なUTF-8である素のASCIIテキスト
+ * は、強制的にC_utf8とタグ付けされるのではなく、既存のC_ascii処理
+ * へフォールスルーする)。`buff'の末尾で切り詰められたシーケンス
+ * (例えばプレビューサイズの読み込みが文字の途中で切れた場合)は、
+ * 拒否せず許容する。
  */
 static int is_utf8(u_char *buff, int size)
 {
@@ -778,7 +779,7 @@ static int is_utf8(u_char *buff, int size)
 int init_code(int *sizep, u_char *buff, int f_chkbin)/*usilic*/
 {
   int i, code, size, c1, c2, c3, c4, c5, kn[3];
-  int f_bin; /* for an unexpected control-character in JIS-code */
+  int f_bin; /* JISコード中の予期しない制御文字のため */
   u_char *end;
 
   if (vt_charset(0) == C_utf8 && is_utf8(buff, *sizep)) return C_utf8;
@@ -813,7 +814,7 @@ int init_code(int *sizep, u_char *buff, int f_chkbin)/*usilic*/
       c1 = 0;
       continue;
     }
-    if (is_sjiskana(c1)) kn[2]++; /* count sjis-kana */
+    if (is_sjiskana(c1)) kn[2]++; /* sjis-kanaを数える */
     if (buff == end - 1) break;
     c2 = buff[1];
     if (is_sjis_1_byte(c1) && is_sjis_2_byte(c2)) {
@@ -828,7 +829,7 @@ int init_code(int *sizep, u_char *buff, int f_chkbin)/*usilic*/
 	kn[1]++;
 	buff++;
 	i++;
-	if (is_sjiskana(c2)) kn[2]++; /* sjis-kana sequence ? */
+	if (is_sjiskana(c2)) kn[2]++; /* sjis-kanaの並びか? */
       } else if (c1 == K_ec)
 	if (buff >= end - 2) break;
 	else {
@@ -964,7 +965,7 @@ void make_map(RV *rvp, int nlen)/*usilic*/
       }
       break;
     case M_up: /* ^P */
-    case M_kup: /* up-arrow */
+    case M_kup: /* 上矢印キー */
       if (!f_copy && row) vt_move(--row, col);
       ci = count_i(cpp[row], col);
       if (count_k(cpp[row], ci)) {
@@ -975,7 +976,7 @@ void make_map(RV *rvp, int nlen)/*usilic*/
       }
       break;
     case M_dn: /* ^N */
-    case M_kdn: /* down-arrow */
+    case M_kdn: /* 下矢印キー */
       if (!f_copy && row < rowe) vt_move(++row, col);
       ci = count_i(cpp[row], col);
       if (count_k(cpp[row], ci)) {
@@ -1005,7 +1006,7 @@ void make_map(RV *rvp, int nlen)/*usilic*/
       }
       break;
     case K_b + N_char: /* ^B */
-    case M_kprev: /* left-arrow */
+    case M_kprev: /* 左矢印キー */
       if (col) {
 	if (ci && !(col % 8) && cpp[row][ci-1] == '\t') {
 	  ci--;
@@ -1022,7 +1023,7 @@ void make_map(RV *rvp, int nlen)/*usilic*/
       }
       break;
     case K_f + N_char: /* ^F */
-    case M_knext: /* right-arrow */
+    case M_knext: /* 右矢印キー */
       if (cpp[row][ci] == '\t') {
 	for (i = 8, h = col % 8; h; h--) i--;
 	col += i;
@@ -1099,7 +1100,7 @@ void make_map(RV *rvp, int nlen)/*usilic*/
 }
 
 int toeuc(u_char sjis[])/*usilic*/
-{ /* convert sjis to euc without allocation of memory */
+{ /* メモリの確保無しでsjisをeucへ変換する */
   int buff_i;
   u_char *euc, *p;
 
