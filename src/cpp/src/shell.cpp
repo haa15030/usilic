@@ -3,8 +3,8 @@
 // glibc拡張(例えばNSIG)を見えるままにする。Linux専用にゲートされ
 // ている――macOS/BSDのlibcはこれ無しでも両方を公開しており、そこで
 // _XOPEN_SOURCEを定義すると、代わりにそれら自身のBSD拡張を隠して
-// しまうことがある。このガードのtcb.h自身のバージョンと同じ理由
-// (tcb/src/tcb.h参照)。
+// しまうことがある。このガードのusilic.h自身のバージョンと同じ理由
+// (old/src/usilic.h参照)。
 #ifdef __linux__
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
@@ -226,7 +226,7 @@ bool Shell::start() {
       // した時点で実際の値を設定する。
       setenv("COLUMNS", "1024", 1);
     }
-    // 2026-08-25(直接のユーザー依頼): tcb.c自身のENV_PROG慣習
+    // 2026-08-25(直接のユーザー依頼): usilic.c自身のENV_PROG慣習
     // (progname.hのPROGNAME_UPPER、このビルドでは「USILIC」、
     // legacyのものはそれ自身の2026-08-25の改名の後「U」)からの
     // 移植――このshellの「内側から」呼び出された本物のusilic
@@ -241,7 +241,7 @@ bool Shell::start() {
     // チェックされる。
     setenv("USILIC", "1", 1);
     // 2026-08-25(直接のユーザーによる追加依頼、この「両方の」
-    // バイナリとlegacy自身のtcb/src/shell.cのstart_shell()の両方へ
+    // バイナリとlegacy自身のold/src/shell.cのstart_shell()の両方へ
     // 移植された――受け取る側についてはmain.cpp自身の
     // checkInvalidTerminalMarker()参照): 上のUSILICは、「自分は
     // 特に生きているusilicのSHELLの内側にいる」ことだけを証明する
@@ -266,7 +266,7 @@ bool Shell::start() {
     // バイナリ「自身の」変数が無いことは、「自分は誰か「他の」人の
     // 生きたSHELLの中にいる」ことを意味し、代わりに紛らわしい独立
     // したセッションの起動を拒否する("Invalid Terminal")。
-    setenv("TCB_LIVE_SHELL", "1", 1);
+    setenv("USILIC_LIVE_SHELL", "1", 1);
     auto cargv = toArgv(options_.argv);
     execvp(cargv[0], cargv.data());
     _exit(127);  // execvp()が失敗した――決してそのまま通り抜けてusilicとして動作し続けない
@@ -832,8 +832,8 @@ int Shell::displayWidth(const std::string &text) const {
 }
 
 // output_shell()のPS1/eosセットアップ行からの移植。移植されて
-// いない: PAGERのexport(legacyはそれを、s_S(S_tcb)経由でtcb
-// バイナリ自体へ向け、tcb自身の内部ページャーモードと統合していた
+// いない: PAGERのexport(legacyはそれを、s_S(S_usilic)経由でusilic
+// バイナリ自体へ向け、usilic自身の内部ページャーモードと統合していた
 // ――このC++移植には、それが向かうべき等価物がまだ存在しないので、
 // 意味の無いものへ向けるのではなく省略されている。ページャーモード
 // が存在するようになったら再検討する)。

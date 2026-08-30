@@ -4,7 +4,8 @@
 # /tmp/.$PROGNAME runtime directories, the $PROGNAME/${PROGNAME}rc config
 # file, and the (uppercased) environment variable names ($PROGNAME,
 # ${PROGNAME}CHARSET, ${PROGNAME}VT). Source files/Makefile build targets
-# still say "tcb" internally -- only the runtime-visible name changes.
+# say "usilic" internally now (renamed 2026-08-30, formerly "tcb") --
+# this variable only controls the RUNTIME-visible name layered on top.
 #
 # 2026-08-25: "U" (not "usilic") -- a direct user request to install
 # this legacy build ALONGSIDE the C++ port (src/cpp/), which now owns
@@ -13,8 +14,8 @@
 # the installed binary becomes $PREFIX/bin/U, its own rc file
 # $PREFIX/lib/U/Urc, its runtime dirs ~/.U//tmp/.U, and its env vars
 # UCHARSET/UVT/U (previously USILICCHARSET/USILICVT/USILIC) -- all
-# still "this same tcb/usilic program", just addressed as "U" now that
-# a newer implementation has taken over the primary name.
+# still "this same legacy/usilic program", just addressed as "U" now
+# that a newer implementation has taken over the primary name.
 PROGNAME=U
 
 # 2026-08-25 (a direct user request): a single PREFIX controls every
@@ -34,10 +35,11 @@ PROGNAME=U
 PREFIX=${PREFIX:-$HOME/.local}
 
 # This script lives at src/config.sh; the legacy C source it configures
-# was archived to tcb/src/ (a sibling of src/) when the repo was
-# restructured around the claude-code-book chapter8 spec-driven-dev
-# scaffold. Run this from src/ (its own directory).
-CSRC=../tcb/src
+# was archived to old/src/ (a sibling of src/, named tcb/src/ until
+# the 2026-08-30 tcb->usilic rename) when the repo was restructured
+# around the claude-code-book chapter8 spec-driven-dev scaffold. Run
+# this from src/ (its own directory).
+CSRC=../old/src
 
 # Working directory.
 TMP=/tmp/.$PROGNAME
@@ -90,7 +92,7 @@ else
 	    # direct testing, not just documentation). DU mode's own output
 	    # is displayed as opaque text (alloc_pipe(), the same generic
 	    # external-command-output path `ls`'s own output goes through)
-	    # rather than parsed/summed by tcb itself, so exact byte parity
+	    # rather than parsed/summed by usilic itself, so exact byte parity
 	    # with Linux was never actually required -- block-granular
 	    # sizes are a fine, honest platform difference, not a broken
 	    # feature.
@@ -120,12 +122,12 @@ CFLAGS= -Wall -O3 -g
 LDFLAGS= 
 #LDFLAGS= -s
 OBJS=	alloc.o child.o code.o disp.o fork.o init.o \\
-    	key.o menu.o mode.o scroll.o shell.o str.o sub.o tc.o tcb.o vt.o
+    	key.o menu.o mode.o scroll.o shell.o str.o sub.o tc.o usilic.o vt.o
 EOF
 
 cat >> .config <<EOF
 
-PROT=	code.P mode.P tc.P tcb.P
+PROT=	code.P mode.P tc.P usilic.P
 
 .SUFFIXES: .P
 .c.P:
@@ -142,17 +144,17 @@ EOF
 
 if which gmake > /dev/null; then
 cat >> .config <<EOF
-tcb.P:	\${subst .o,.c,\$(OBJS)}
-	@grep -h '\/\*tcb\*\/' \${subst .o,.c,\$(OBJS)}|\\
-	sed -e 's/\/\*tcb\*\//;/' >\$@
+usilic.P:	\${subst .o,.c,\$(OBJS)}
+	@grep -h '\/\*usilic\*\/' \${subst .o,.c,\$(OBJS)}|\\
+	sed -e 's/\/\*usilic\*\//;/' >\$@
 EOF
 else
 cat >> .config <<EOF
-tcb.P:	alloc.c child.c code.c disp.c fork.c init.c \\
-    	key.c menu.c mode.c scroll.c shell.c str.c sub.c tc.c tcb.c vt.c
-	@grep '\/\*tcb\*\/' alloc.c child.c code.c disp.c fork.c init.c \\
-    	key.c menu.c mode.c scroll.c shell.c str.c sub.c tc.c tcb.c vt.c -h|\\
-	sed -e 's/\/\*tcb\*\//;/' >\$@
+usilic.P:	alloc.c child.c code.c disp.c fork.c init.c \\
+    	key.c menu.c mode.c scroll.c shell.c str.c sub.c tc.c usilic.c vt.c
+	@grep '\/\*usilic\*\/' alloc.c child.c code.c disp.c fork.c init.c \\
+    	key.c menu.c mode.c scroll.c shell.c str.c sub.c tc.c usilic.c vt.c -h|\\
+	sed -e 's/\/\*usilic\*\//;/' >\$@
 EOF
 fi
 
@@ -162,7 +164,7 @@ cat >> .config <<EOF
 
 menu.o mode.o: menu.h
 
-tcb.o:	version.h
+usilic.o:	version.h
 
 alloc.o: alloc.h
 
@@ -268,14 +270,14 @@ echo "install $COPY -m 644 doc/HELP \$PREFIX/lib/$PROGNAME"
 install $COPY -m 644 doc/HELP \$PREFIX/lib/$PROGNAME
 echo "install $COPY -m 644 doc/HELP.jp \$PREFIX/lib/$PROGNAME"
 install $COPY -m 644 doc/HELP.jp \$PREFIX/lib/$PROGNAME
-echo "install $COPY $PERM doc/tcb.1.gz \$PREFIX/man/man1"
-install $COPY $PERM doc/tcb.1.gz \$PREFIX/man/man1
+echo "install $COPY $PERM doc/usilic.1.gz \$PREFIX/man/man1"
+install $COPY $PERM doc/usilic.1.gz \$PREFIX/man/man1
 EOF
 if [ -n "$JMAN" ] && [ -d "$JMAN" ]; then
 cat >> install.sh <<EOF
 mkdir -p \$PREFIX/$JMAN
-echo "install $COPY $PERM doc/tcb.1.gz \$PREFIX/$JMAN"
-install $COPY $PERM doc/tcb.1.gz \$PREFIX/$JMAN
+echo "install $COPY $PERM doc/usilic.1.gz \$PREFIX/$JMAN"
+install $COPY $PERM doc/usilic.1.gz \$PREFIX/$JMAN
 EOF
 fi
 

@@ -22,7 +22,7 @@ class Utf8 {
 
   // cpにあるlenバイトのUTF-8シーケンスが表すコードポイントの表示幅
   // (0、1、または2カラム)。East Asian Wide/Fullwidth範囲の実用上
-  // 十分な部分集合(日本語/CJKテキストというtcbの主用途には足りる)に、
+  // 十分な部分集合(日本語/CJKテキストというusilicの主用途には足りる)に、
   // いくつかの幅ゼロの結合文字範囲を加えたもの。完全なUnicode
   // East-Asian-Widthテーブルではない。
   static int display_width(const unsigned char *cp, int len);

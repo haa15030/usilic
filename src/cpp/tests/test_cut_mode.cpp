@@ -40,7 +40,7 @@ std::vector<StyledLine> toStyled(const std::vector<std::string> &lines) {
 
 // A LOG-mode-shaped fixture: repeated prompt lines (the delimiter),
 // each followed by a command and its output -- the exact scenario the
-// user described (the "tcb(usilic)-1.5b" prompt string as the search
+// user described (the "usilic(usilic)-1.5b" prompt string as the search
 // string splitting a shell log into per-command segments).
 std::vector<StyledLine> logLines() {
   return toStyled({

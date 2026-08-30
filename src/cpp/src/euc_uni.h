@@ -1,6 +1,6 @@
 /*
  * 自動生成されたEUC-JP(JIS X 0208)->Unicodeコードポイントテーブル、
- * tcb/src/euc_uni.hから変更無しで移植(生成方法についてはそのファイル
+ * old/src/euc_uni.hから変更無しで移植(生成方法についてはそのファイル
  * 自身のヘッダー参照)。Charset::euc_to_utf8()が、UTF-8端末上でも
  * legacyのEUC-JPファイルを正しく再表示するために使う。
  *

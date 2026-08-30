@@ -9,7 +9,7 @@ namespace fm {
 
 namespace {
 
-// --- バイト種別の判定関数群、tcb.hのis_sjis_1_byte()等からの移植 ---
+// --- バイト種別の判定関数群、usilic.hのis_sjis_1_byte()等からの移植 ---
 bool is_sjis_1_byte(unsigned char n) {
   return (n >= 0x81 && n <= 0x9f) || (n >= 0xe0 && n <= 0xea);
 }

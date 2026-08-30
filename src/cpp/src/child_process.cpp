@@ -20,7 +20,7 @@ std::vector<char *> toArgv(const std::vector<std::string> &args) {
 }
 
 // forkされた子プロセスは全て、まずシグナルの処理方針を既定値へ
-// リセットする。これにより、親(tcb自身)がインストールしたどんな
+// リセットする。これにより、親(usilic自身)がインストールしたどんな
 // ハンドラ方針も継承しない――load_signal()からの移植で、fork.cの
 // 全ての子プロセス分岐の先頭で呼ばれる。
 void resetSignalsToDefault() {
@@ -113,7 +113,7 @@ ChildProcess::Result ChildProcess::run(const std::vector<std::string> &argv,
     if (options.input) close(inPv[0]);
     auto cargv = toArgv(argv);
     execvp(cargv[0], cargv.data());
-    _exit(127);  // execvp()失敗――そのまま処理を続けtcbとして動き続けることは絶対に無い
+    _exit(127);  // execvp()失敗――そのまま処理を続けusilicとして動き続けることは絶対に無い
   }
 
   close(outPv[1]);

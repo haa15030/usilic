@@ -96,7 +96,7 @@ std::string decodeField(const std::string &s) {
   return out;
 }
 
-// legacyの数値による文字コードコード(tcb.h: C_ascii=300、
+// legacyの数値による文字コードコード(usilic.h: C_ascii=300、
 // C_bin=301、C_sjis=302、C_euc=303、C_jis=304、...、C_utf8=310)、
 // トレーラーの3番目のフィールドにのみ使われる。
 Charset::Encoding decodeCharsetCode(int code) {
@@ -391,9 +391,9 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
   if (!expectLabel(" MODE")) return false;
   readPositionSection(PositionCategory::Screen);
 
-  if (!expectLabel(" TCB")) return false;
+  if (!expectLabel(" USILIC")) return false;
   if (i >= lines.size()) {
-    errors_.push_back("truncated at TCB trailer");
+    errors_.push_back("truncated at USILIC trailer");
     return false;
   }
   {
@@ -411,11 +411,11 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     savedCharset_ = environmentCharsetExplicitlySet ? std::nullopt
                                                      : std::make_optional(decodeCharsetCode(charsetCode));
     // GuiPreferences(2026-08-24、項目427)――上の3つの元々の
-    // フィールド(hs/ls/charsetCode、legacyのtcb自身のトレーラーから
+    // フィールド(hs/ls/charsetCode、legacyのusilic自身のトレーラーから
     // 継承したディスク上のフォーマットの一部)の「間に」挿入する
     // のではなく「後に」追加されている。これにより、古い履歴
     // ファイル(または、原理上、このクラスが書いたファイルを読む
-    // legacyのtcb自身)は、これらの追加トークンを単に無いものとして
+    // legacyのusilic自身)は、これらの追加トークンを単に無いものとして
     // 見る――下のtoks.size()によるガードは、上のcharsetCode自身の
     // トークン欠如時のデフォルトとまさに同じように、全ての
     // GuiPreferencesフィールドをそれ自身の「未設定」値(0/false)
@@ -500,7 +500,7 @@ std::string History::serialize(const std::string &programName, const std::string
   writeRingSection(" EGREP_HISTORY", RingCategory::RecentEgrepPattern);
   writePositionSection(" MODE", PositionCategory::Screen);
 
-  out += std::string(1, kFormFeed) + " TCB\n";
+  out += std::string(1, kFormFeed) + " USILIC\n";
   int charsetCode = savedCharset_ ? encodeCharsetCode(*savedCharset_) : 0;
   // GuiPreferencesのフィールドはcharsetCodeの後に追加されている
   // ――理由(単なる対称性ではなく、ディスク上のフォーマット互換性)

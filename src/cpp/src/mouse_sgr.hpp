@@ -25,7 +25,7 @@ struct MouseSgrEvent {
 // なかった」ものとして扱う責任を負う。
 //
 // 2026-07-30の実端末ドラッグスクロール契機(CLAUDE.md参照)のために
-// 新設――legacyのtcbにはマウス入力をパースする仕組みは一切無い。
+// 新設――legacyのusilicにはマウス入力をパースする仕組みは一切無い。
 std::optional<MouseSgrEvent> parseMouseSgr(const std::string &raw);
 
 }  // namespace fm

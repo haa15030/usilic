@@ -186,20 +186,20 @@ enum class Command {
   GoToTop,
   GoToBottom,
   // K-70('q'、M_quit): (StartExit/^X^Cとは異なり)y/nの確認無しで
-  // 即座に終了する――usilicrcはこれをページャー専用("Exit tcb
+  // 即座に終了する――usilicrcはこれをページャー専用("Exit usilic
   // (pager)")として文書化しているので、handleCommand()はDirectory
   // モードの外側でだけこれを尊重し、そのスコープに合わせている
   // (Directoryモードでの素の'q'は、これが追加される前と同様、
   // 何もしないままである)。
   QuitPager,
   // K-25(^Oh、M_hs): Display::smoothScrollEnabled()を切り替える
-  // ――usilicrc自身のSCROLLセクション("When the flag is set, tcb
+  // ――usilicrc自身のSCROLLセクション("When the flag is set, usilic
   // window will scroll within the range above bottom line"――まさに
   // moveUp()/moveDown()自身のコメントにあるように既にモードライン
   // 行を除外しているDisplayのハードウェアスクロール領域経路)から
   // の移植。Display::setSmoothScrollEnabled()/History自身の
   // smoothScrollEnabled_フィールドは既に存在していた(履歴ファイル
-  // のTCBトレーラー行からパース/そこへシリアライズされる)が、
+  // のUSILICトレーラー行からパース/そこへシリアライズされる)が、
   // どちらも一度もキーに配線されておらず、起動時にDisplayへ適用
   // されてもいなかった――両方のギャップがここで一緒に修正されて
   // いる。トグルキーは、それが切り替える永続化された値がそもそも
@@ -341,9 +341,9 @@ enum class Command {
   ShowShellLog,
   // ESC l("LOG"): Application::executeStartLog()自身のコメント参照。
   StartLog,
-  // K-0(^T、M_tcb、「TCB」): ステータス/バージョン情報画面を表示
-  // する。Application::executeShowTcbBanner()自身のコメント参照。
-  ShowTcbBanner,
+  // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
+  // する。Application::executeShowUsilicBanner()自身のコメント参照。
+  ShowUsilicBanner,
   // K-27(^Oa、M_ascii、「Switch ascii mode」): アクティブな文字コード
   // をAscii -> Euc -> Utf8 -> Asciiと巡回させる。
   // Application::cycleCharset()自身のコメント参照。
@@ -851,7 +851,7 @@ enum class ApplicationMode {
 //     と印を付けている)は意図的に複製されていない。この移植は
 //     それをサポートしない。
 //   - GUIモード(docs/ideas/IDEAS.mdの「猫の手」隠しモード、legacy
-//     のtcbには全く存在しない――完全に新しい機能要望)は、ここには
+//     のusilicには全く存在しない――完全に新しい機能要望)は、ここには
 //     正確に2つの表面を持ち、両方とも意図的にSDL2/GraphicalDisplay
 //     の詳細については無知のままにされている――その具体的な
 //     バックエンドという問題全体は、本物の実行ループ(app/main.cpp)
@@ -1138,7 +1138,7 @@ class Application {
   // いるのと同じ`<homeDirectory>/.usilic`へフォールバックする。
   // bootOptions(2026-08-18の追加): ^T自身の新しい「Boot options」
   // フィールド、そのまま。デフォルトは""(素の引数無し起動自身の
-  // 空の表示に一致する、executeShowTcbBanner()のコメント参照)。
+  // 空の表示に一致する、executeShowUsilicBanner()のコメント参照)。
   Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
               Charset::Encoding encoding, int width, ShellOptions shellOptions = ShellOptions{},
               std::string homeDirectory = "", std::string tempRootDirectory = "", std::string workRootDirectory = "",
@@ -1295,7 +1295,7 @@ class Application {
   // executeArchiveExtract()自身のshell_で注入された実行のため。
   void pollPendingArchiveExtractShellRun();
 
-  // 2026-08-25(直接のユーザー依頼、tcb.c自身のfrom_main()/
+  // 2026-08-25(直接のユーザー依頼、usilic.c自身のfrom_main()/
   // from_shell()からの移植――子プロセス側についてはmain.cpp自身の
   // tryHandoffToParentShell()参照): Shellモードが生きている間、
   // この「shellの内側から」呼び出された本物のusilic(例えばプロン
@@ -1515,10 +1515,10 @@ class Application {
   // 結果を渡し(2026-08-18: 以前は素の
   // `/tmp/usilic-arcXXXXXX`自体をmkdtemp()していたが、今は代わり
   // にarc.Nスロットを消費する、その関数自身のコメント参照)、
-  // executeShowTcbBanner()はtempRootDirectory_を直接渡す(それ
+  // executeShowUsilicBanner()はtempRootDirectory_を直接渡す(それ
   // 自身の単一の固定ファイルはarc.Nの連番の一部では「ない」――
   // それはアーカイブ展開ではなく、そうしないとそれ自身の一覧内に
-  // 再帰的に現れてしまう)。/tmp/.tcb自身の掃除されない作業ファイル
+  // 再帰的に現れてしまう)。/tmp/.usilic自身の掃除されない作業ファイル
   // (CLAUDE.md)に対するこのプロジェクトの既に文書化され、既に
   // 受け入れられている許容と同様、再起動時/tmpクリーナーの掃除で
   // OSが片付けるに任される――archiveParentStack_にまだ乗っている
@@ -1709,11 +1709,11 @@ class Application {
   // ESC l("LOG"): 自身の定義コメント(application.cpp)参照。
   bool executeStartLog();
   // K-0(^T): 短いステータス/バージョン情報画面を構築する――
-  // バージョン、usilicrc/historyファイルのパス(str.cのprint_tcb()
+  // バージョン、usilicrc/historyファイルのパス(str.cのprint_usilic()
   // が「同じ」2つのフィールド、「Startup file」/「History file」を
   // 表示する)、user@host、そしてERROR/LOGのパス(K-67/K-68)――
   // そしてそれをFileモード経由で開く。
-  // legacy自身のprint_tcb()より意図的に狭い: 「Startup mode」
+  // legacy自身のprint_usilic()より意図的に狭い: 「Startup mode」
   // (ファイルマネージャ対ページャー)と「Command line」(呼び出し
   // 元のargv)は両方とも省略されている――この移植にはまだページャー
   // 専用の起動経路が無く(main.cppは引数に関わらず常に
@@ -1724,7 +1724,7 @@ class Application {
   // 自身のパターンで、使い捨てのmkdtemp()一時ファイルへ書き込まれ
   // る。FileMode::loadFile()は本物のパスを必要とし、このテキストは
   // ERROR/LOGのような他の自然なディスク上の住処を持たないため。
-  bool executeShowTcbBanner();
+  bool executeShowUsilicBanner();
   // ^Tバナー自身の合成された裏付けファイルは
   // "<homeDirectory>/.usilic/usilic"の下に住む――tempRootDirectory_
   // では「ない」(2026-08-18の修正、実際の報告: ERROR/SHELL/WORK/
@@ -1897,7 +1897,7 @@ class Application {
   // allocateWorkFilePath()/allocateArcDirectory()自身が
   // tempRootDirectory_の代わりにこれを使っていることを参照。
   std::string workRootDirectory_;
-  // ^T自身の新しい「Boot options」フィールド(executeShowTcbBanner()
+  // ^T自身の新しい「Boot options」フィールド(executeShowUsilicBanner()
   // 自身のコメント参照)――このプロセスが起動された時の元々の
   // argv[1..]そのもの(フラグとディレクトリ引数、元の順序で、~は
   // 展開済み)、または素の引数無し起動に対しては空。main()(argvが
@@ -1911,7 +1911,7 @@ class Application {
   int nextWorkFileNumber_ = 0;  // 最後に割り当てられたw.N接尾辞。0=まだ無し
   // このセッションで割り当てられた全てのw.Nパス、最古優先――^T自身
   // の「WORK」フィールドは、現在のものだけでなく、それら全てを一覧
-  // 表示する(executeShowTcbBanner()自身のコメント参照)。
+  // 表示する(executeShowUsilicBanner()自身のコメント参照)。
   std::vector<std::string> allocatedWorkFiles_;
   int nextArchiveNumber_ = 0;  // 最後に割り当てられたarc.N接尾辞。0=まだ無し
   // このセッションで割り当てられた全てのarc.Nディレクトリ(入れ子
@@ -1922,7 +1922,7 @@ class Application {
   // K-67(^X^Ke、M_error、「ERROR」): CpMvRmModeが非対話的な子プロ
   // セスの標準エラーをルーティングする先(コンストラクタ自身の
   // コメントとCpMvRmMode自身のerrorLogPath_引数参照)。str.cの
-  // S_errorパス(`~/.tcb/error`)からの移植で、この移植が元々そう
+  // S_errorパス(`~/.usilic/error`)からの移植で、この移植が元々そう
   // していたような常に`~/.usilic/error`ではなく、tempRootDirectory_
   // (2026-08-18、自身のコメント参照)の下に根付けられている。
   std::string errorLogPath_;
@@ -1931,11 +1931,11 @@ class Application {
   // ない」(この単純化についてはshellLog()自身のコメント参照)
   // ――K-68が実際に押された時に要求に応じて書き出される、
   // Shell::scrollback()の現在の行のスナップショット。str.cの
-  // S_logパス(`~/.tcb/shell`)からの移植で、tempRootDirectory_
+  // S_logパス(`~/.usilic/shell`)からの移植で、tempRootDirectory_
   // (2026-08-18、自身のコメント参照)の下に根付けられている。
   std::string logFilePath_;
-  // K-0自身のバナーテキスト(executeShowTcbBanner()自身のコメント
-  // 参照)は、Startup fileをそのまま報告する――str.cのprint_tcb()は
+  // K-0自身のバナーテキスト(executeShowUsilicBanner()自身のコメント
+  // 参照)は、Startup fileをそのまま報告する――str.cのprint_usilic()は
   // 同じフィールドを表示する。引数起動(複数インスタンス)の実行
   // でさえ、意図的に依然として`<homeDirectory>/.usilic`に根付けら
   // れている: usilicrcは読み取り専用の設定であり、historyFilePath_
@@ -2018,7 +2018,7 @@ class Application {
   // で明示的にDirectoryへリセットされる。
   ApplicationMode fileReturnMode_ = ApplicationMode::Directory;
   // 2026-08-28の追加、直接のユーザー報告("CLAUDE.mdで^Iしてる
-  // 以上CLAUDE.mdに戻らないと"): executeShowTcbBanner()は常に
+  // 以上CLAUDE.mdに戻らないと"): executeShowUsilicBanner()は常に
   // fileReturnMode_ = Directoryをハードコードする(上の自身の宣言
   // コメント参照)ので、バナーからの^Gは常にreturnToDirectory()へ
   // 落ち、それは(特にバナー自身の合成されたファイルに対しては)、
@@ -2026,7 +2026,7 @@ class Application {
   // あれば)を再読み込みするのではなく、directoryMode_に手を付けず
   // 残す。空は「^IがDirectoryモードから直接呼び出された(または
   // この旅がバナー自身のWORK/arc.Nの子の1つからバナーへ戻るホップ
-  // である、executeShowTcbBanner()自身のコメント参照)――^Gは既存
+  // である、executeShowUsilicBanner()自身のコメント参照)――^Gは既存
   // のDirectory復帰の挙動を保つ」を意味する。空でなければ「^Iは
   // この本物のファイルを実際に閲覧している間に押された――^Gは
   // 代わりにそれを再読み込みしてそれへ戻るべき」を意味する。^Gが
@@ -2246,7 +2246,7 @@ class Application {
   // プロンプトのステップを完全にスキップして「直接」候補パターン
   // 一覧を開く――理由についてはstartGrepPrompt()/startCutPrompt()
   // 自身のコメント参照(単なるusilicrcの文言のニュアンスではなく、
-  // 実際のlegacy-tcbの挙動に対して確認済み)、そしてそれが
+  // 実際のlegacy-usilicの挙動に対して確認済み)、そしてそれが
   // startPromptHistoryRecall()をどう丸ごと再利用するかについては
   // startRegexPromptList()自身の定義コメント参照。
   bool startRegexPromptList(PromptKind kind);

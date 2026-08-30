@@ -528,7 +528,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J followed by an unrecognized byte fails 
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^S (StartEgrep) opens directly into the candidate-pattern list, "
                            "not a blank prompt (2026-08-05: \"Select string\" per usilicrc's own K-32 "
-                           "documentation, confirmed against real legacy-tcb PTY behavior)") {
+                           "documentation, confirmed against real legacy-usilic PTY behavior)") {
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
   CHECK(app.feedByte(0x13, std::nullopt));
@@ -2079,7 +2079,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: nested resplit from CutContent, then step back 
 
 TEST_CASE_FIXTURE(Fixture, "CUT: ^Jc pressed WHILE STILL ON THE LABEL LIST (not yet entered into a segment's "
                            "own content) nests correctly too (2026-08-05 fix: a direct user reproduction -- "
-                           "select HELP.jp, ^Jc \"man\", then IMMEDIATELY ^Jc \"tcb\" again without first "
+                           "select HELP.jp, ^Jc \"man\", then IMMEDIATELY ^Jc \"usilic\" again without first "
                            "pressing Enter -- found this silently dropped the second ^Jc's whole keystroke "
                            "sequence into ordinary list navigation instead, since startCutPrompt()'s own guard "
                            "only allowed File/CutContent, not Cut)") {
@@ -2137,8 +2137,8 @@ TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: top-level split shows \"CUT\" an
 
 TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: a NESTED split shows \"CUT:<parent pattern>\" as trailing -- "
                            "the PARENT level's own pattern, not the just-typed one (2026-08-05 user-confirmed "
-                           "example: split \"man\", select a match, re-split it by \"tcb\" -> trailing reads "
-                           "\"CUT:man\", not \"CUT:tcb\")") {
+                           "example: split \"man\", select a match, re-split it by \"usilic\" -> trailing reads "
+                           "\"CUT:man\", not \"CUT:usilic\")") {
   REQUIRE(app.start(path()));
   int rootIdx = indexOf("subdir/");
   while (indexOf(app.directoryMode().selectedEntry()->name) != rootIdx) app.handleCommand(Command::MoveDown);
@@ -3974,7 +3974,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): shows a status screen with th
   // "usilic" name -- FileMode's own default, the loaded file's bare
   // basename -- read as though a real ordinary file literally named
   // "~/.usilic/usilic" were being viewed; setSearchOrigin("INFO", ...)
-  // overrides it, see executeShowTcbBanner()'s own comment).
+  // overrides it, see executeShowUsilicBanner()'s own comment).
   CHECK(app.activeContentView().modeLineText().substr(0, 4) == "INFO");
 }
 
@@ -4004,7 +4004,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the WORK line opens 
   REQUIRE(app.feedByte(0x17, std::nullopt));  // ^W -- allocates w.1
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
 
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   REQUIRE(app.currentMode() == ApplicationMode::File);
   std::string bannerFile = app.fileMode().currentFile();
 
@@ -4048,7 +4048,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on an arc.N line opens 
   }
   REQUIRE(app.handleCommand(Command::Enter));  // descends into level1.tar -- allocates arc.1
 
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   REQUIRE(app.currentMode() == ApplicationMode::File);
   const auto &lines = app.activeContentView().lines();
   int arcRow = -1;
@@ -4082,7 +4082,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on an arc.N line opens 
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the WORK/arc.N candidate list is actually highlighted (was "
                            "invisible before this fix), and loading an ordinary file afterward turns it back off") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   CHECK(app.activeContentView().cursorHighlightEnabled());
   REQUIRE(app.handleCommand(Command::Back));
 
@@ -4112,7 +4112,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the WORK/arc.N candidate list
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the banner's own backing file lives under "
                            "<homeDirectory>/.usilic, not tempRootDirectory_") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   CHECK(app.fileMode().currentFile() == (root / ".usilic" / "usilic").string());
 }
 
@@ -4138,11 +4138,11 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): highlightStartColumn lands at
                            "value\" column on every line; neverHighlighted (not the column) is what actually "
                            "suppresses \"Boot options\"/an empty \"WORK :\"'s own SGR highlight") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   const auto &lines = app.activeContentView().lines();
   // Boot options / Startup file / ERROR / SHELL / WORK (fresh fixture: no
   // w.N ever allocated, so WORK's own line has nothing after it) -- see
-  // executeShowTcbBanner()'s own `openable` comment for why Boot options
+  // executeShowUsilicBanner()'s own `openable` comment for why Boot options
   // and an empty WORK are the only two non-openable lines here.
   REQUIRE(lines.size() >= 5);
   for (std::size_t i = 0; i < 5; i++) {
@@ -4164,7 +4164,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): highlightStartColumn lands at
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): \"Boot options\" (the cursor's own initial row) shows no "
                            "Standout at all when rendered, but the real caret still lands at column 15") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   REQUIRE(app.activeContentView().cursorIndex() == 0);  // "Boot options" -- the cursor's own initial row
   for (int col = 0; col < 80; col++) CHECK_FALSE(display.standoutAt(0, col));
   CHECK(display.cursorRow() == 0);
@@ -4181,7 +4181,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the ERROR/SHELL/Star
   { std::ofstream(root / ".usilic" / "error") << "boom\n"; }
   { std::ofstream(root / ".usilic" / "shell") << "$ echo hi\n"; }
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
 
   const auto &lines = app.activeContentView().lines();
   auto rowEndingWith = [&](const std::string &suffix) {
@@ -4237,7 +4237,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the SHELL line opens
   REQUIRE_FALSE(fs::exists(root / ".usilic" / "shell"));  // never explicitly dumped -- doesn't exist on disk yet
 
   REQUIRE(app.handleCommand(Command::Back));  // back to Directory, same as the sibling test's own setup shape
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
 
   const auto &lines = app.activeContentView().lines();
   int shellRow = -1;
@@ -4267,7 +4267,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the SHELL line opens
 // ダーライン「No String」を表示する仕様に変更してほしい"): ERROR/
 // SHELL before either has any REAL content yet (nothing logged/no
 // shell session started) are still shown highlighted/openable-looking
-// (touched empty by executeShowTcbBanner(), see its own comment) --
+// (touched empty by executeShowUsilicBanner(), see its own comment) --
 // selecting one now succeeds (unlike before this fix, which failed
 // silently) and shows "No String" (underlined), not a blank screen.
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on ERROR/SHELL before either has real content shows "
@@ -4275,8 +4275,8 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on ERROR/SHELL before e
   REQUIRE(app.start(path()));
   REQUIRE_FALSE(fs::exists(root / ".usilic" / "error"));  // nothing logged yet
   REQUIRE_FALSE(fs::exists(root / ".usilic" / "shell"));  // no shell session started yet
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
-  CHECK(fs::exists(root / ".usilic" / "error"));  // touched immediately, see executeShowTcbBanner()'s own comment
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
+  CHECK(fs::exists(root / ".usilic" / "error"));  // touched immediately, see executeShowUsilicBanner()'s own comment
   CHECK(fs::exists(root / ".usilic" / "shell"));
 
   const auto &lines = app.activeContentView().lines();
@@ -4294,7 +4294,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on ERROR/SHELL before e
   app.activeContentView().setCursorIndex(errorRow);
   REQUIRE(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(fs::exists(root / ".usilic" / "error"));  // touched by executeShowTcbBanner(), now real (if empty)
+  CHECK(fs::exists(root / ".usilic" / "error"));  // touched by executeShowUsilicBanner(), now real (if empty)
   REQUIRE(app.activeContentView().lines().size() == 1);
   CHECK(app.activeContentView().lines()[0].text == "No String");
   REQUIRE_FALSE(app.activeContentView().lines()[0].attributes.empty());
@@ -4323,7 +4323,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the trailing \"戻り値\" fi
   REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/
   REQUIRE(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
 
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   std::string modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find((root / "subdir").string()) != std::string::npos);
   CHECK(modeLine.find(".usilic") == std::string::npos);
@@ -4331,7 +4331,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the trailing \"戻り値\" fi
 
 // 2026-08-28 fix, a real report + repro ("usilic -c ~/git/usilic→^I→
 // 名前欄が「INFO」ではなく「usilic」、戻り値が「~/.usilic/」のまま"):
-// loadFile() (inside executeShowTcbBanner(), before setSearchOrigin()
+// loadFile() (inside executeShowUsilicBanner(), before setSearchOrigin()
 // ever runs) already redraws ONCE internally using FileMode's own
 // DEFAULT mode line -- searchOriginLabel_/searchOriginDetail_ are still
 // empty at that exact point (loadFile() itself clears them), so that
@@ -4340,7 +4340,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the trailing \"戻り値\" fi
 // redrew again afterward to overwrite it with the corrected values now
 // that setSearchOrigin() has actually run -- openSelectedBannerEntry()
 // was already fixed for the identical gap on 2026-08-18 (see its own
-// comment); executeShowTcbBanner() itself never got the same fix.
+// comment); executeShowUsilicBanner() itself never got the same fix.
 // Deliberately checks the REAL RENDERED row (display.rowText(), what a
 // real terminal actually shows), NOT modeLineText() (a pull-based
 // computation that's always fresh regardless of whether anything ever
@@ -4349,7 +4349,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the trailing \"戻り値\" fi
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the REAL RENDERED mode line shows \"INFO\"/the actual "
                            "start directory immediately, not a stale first frame") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   std::string row = display.rowText(23);
   CHECK(row.substr(0, 4) == "INFO");
   CHECK(row.find(path()) != std::string::npos);
@@ -4372,7 +4372,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the REAL RENDERED mode line i
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.directoryMode().selectedEntry()->name == "plain.txt");
 
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   std::string row = display.rowText(23);
   CHECK(row.substr(0, 4) == "INFO");
   CHECK(row.find(path()) != std::string::npos);
@@ -4380,7 +4380,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): the REAL RENDERED mode line i
 }
 
 // 2026-08-28 fix, a real report + repro ("「~/.usilic/（ls）」で
-// usilicrcを選択→^I→^G→usilicrcへ戻らない"): executeShowTcbBanner()
+// usilicrcを選択→^I→^G→usilicrcへ戻らない"): executeShowUsilicBanner()
 // never saved DirectoryMode's own cursor position first, unlike every
 // other Directory-to-File transition (see its own comment).
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): ^G restores the cursor to whichever Directory row it was "
@@ -4390,7 +4390,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): ^G restores the cursor to whi
   REQUIRE(idx >= 0);
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   REQUIRE(app.currentMode() == ApplicationMode::File);
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
@@ -4420,7 +4420,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): ^G returns to the REAL FILE t
   app.handleCommand(Command::MoveDown);  // move the cursor within the file so restoration is actually checkable
   int cursorBeforeInfo = app.activeContentView().cursorIndex();
 
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   REQUIRE(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() != openedFile);  // now viewing the banner itself, not plain.txt
 
@@ -4442,7 +4442,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): ^G returns to the REAL FILE t
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): a real SHELL excursion from here (^J.) does NOT return to "
                            "INFO on ^G -- lands in Directory instead") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
   REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
@@ -4670,7 +4670,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ESC< / ESC> jump to the first/last line (M
 
 // 2026-08-14 addition, per direct user instruction ("旧版のKEYには収録
 // し忘れだが「1ページ戻る」は^[wではなくて、emacs同様^[vで反映してほしい"):
-// legacy's own tcb/src/key.c binds bare 'w' page-back and ESC-only to
+// legacy's own old/src/key.c binds bare 'w' page-back and ESC-only to
 // M_head/M_tail's own escPending handler above -- ESC-v/ESC-w aren't
 // in legacy's own table at all (a real, acknowledged omission there,
 // per the user's own framing), so this is a deliberate NEW binding,
@@ -6140,7 +6140,7 @@ TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): snapshots Shell's scrollback to l
   // OWN state machine -- while actively in Shell mode, every byte
   // routes straight to feedShellByte() instead (see dispatchByte()'s
   // very first check), matching real usage: ^X while typing at a live
-  // shell prompt is command-line input, not tcb's own leader key. ^G
+  // shell prompt is command-line input, not usilic's own leader key. ^G
   // back to Directory first, same as a real user would.
   REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
@@ -6768,7 +6768,7 @@ TEST_CASE_FIXTURE(Fixture, "CP: a successful copy navigates the view to the dest
 
 // 2026-08-27 fix, a real report + repro ("'saved'[return]→「saved/
 // （ls）」にならない（~/usilic/（ls）のままかつカーソル位置が
-// 「tcb-h.h」でなく最上行）"): a RELATIVE destination (just "cpmvdest",
+// 「usilic-h.h」でなく最上行）"): a RELATIVE destination (just "cpmvdest",
 // not an absolute path) used to fail to land the view there at all --
 // the shell's own `cp` succeeded (its real session cwd tracks the
 // source directory), but pollPendingCpMvRmShellRun()'s own
@@ -7527,7 +7527,7 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: swallowed (no ListBrowser, no
 // BOTH, which is itself a real legacy bug (menu.c's own `case M_cut:
 // case M_cut2: hp->ss.p.hegrep = save_history(...)` never branches
 // here either, unlike the FGREP/EGREP block just above it in the same
-// switch) -- also fixed in tcb/src/menu.c itself, see that commit. --
+// switch) -- also fixed in old/src/menu.c itself, see that commit. --
 
 TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt (FIXED, ^Jc/StartCutFixed) recalls from RecentFgrepPattern, "
                            "NOT RecentEgrepPattern -- matching FGREP's own fixed-string semantics") {
@@ -7597,8 +7597,8 @@ TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt (REGEX, ^J^C/StartCutRegex) rec
 
 TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: the list is the RAW chronological log, duplicates included "
                            "and NEWEST at the end/selected -- not sorted or de-duplicated (2026-08-05 user "
-                           "reproduction, screenshot ⑪: 11 entries with \"man\"/\"tcb\" each repeated several "
-                           "times, \"tcb\" -- the most recent -- selected)") {
+                           "reproduction, screenshot ⑪: 11 entries with \"man\"/\"usilic\" each repeated several "
+                           "times, \"usilic\" -- the most recent -- selected)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -7610,7 +7610,7 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: the list is the RAW chronolog
   REQUIRE(app.handleCommand(Command::Back));
 
   REQUIRE(app.handleCommand(Command::StartCutFixed));
-  feedText("tcb");
+  feedText("usilic");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.handleCommand(Command::Back));
 
@@ -7621,9 +7621,9 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: the list is the RAW chronolog
 
   REQUIRE(app.handleCommand(Command::StartCutFixed));
   REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
-  REQUIRE(app.listBrowserMode().items().size() == 3);  // man, tcb, man -- raw order, duplicate "man" kept
+  REQUIRE(app.listBrowserMode().items().size() == 3);  // man, usilic, man -- raw order, duplicate "man" kept
   CHECK(app.listBrowserMode().items()[0] == "man");
-  CHECK(app.listBrowserMode().items()[1] == "tcb");
+  CHECK(app.listBrowserMode().items()[1] == "usilic");
   CHECK(app.listBrowserMode().items()[2] == "man");
   CHECK(app.activeContentView().cursorIndex() == 2);  // newest ("man", the last one) selected, not index 0
 
@@ -7770,7 +7770,7 @@ TEST_CASE_FIXTURE(Fixture, "^R directory-name/file-name history: excluded on the
                            "file is regular reading material, the banner is a synthetic index screen this "
                            "shortcut doesn't apply to (bannerFilePath()'s own comment)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::ShowTcbBanner));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
   CHECK_FALSE(app.feedByte(0x12, std::nullopt));  // falls through to toggleListBrowserHistory()'s own no-op
@@ -8001,7 +8001,7 @@ TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): plain ^R while still just BRO
 TEST_CASE_FIXTURE(Fixture, "K-46/K-48 (^X^F/^X^D): ^G while the ^R chronological \"HISTORY\" view is showing pops "
                            "back to the underlying sorted \"DIR\"/\"FILE\" screen FIRST, not straight past it to "
                            "the mode ^X^D/^X^F was launched from -- confirmed against a freshly-built copy of the "
-                           "legacy C binary itself (tcb/src), which shows exactly this two-^G shape for "
+                           "legacy C binary itself (old/src), which shows exactly this two-^G shape for "
                            "^X^D->^R->^G->^G (2026-08-18 fix, a direct user correction: \"^X^D→^R→^G（DIR一覧から"
                            "来たんだからそこへ戻るのも当たり前）...現状そうなっていない（^GでDIR一覧、じゃなくて"
                            "(ls)へ戻る）\" -- the earlier =cx/=cy fix's early-return branch jumped straight to "
@@ -9408,7 +9408,7 @@ TEST_CASE_FIXTURE(Fixture, "EGREP results screen (grepView_): the mode line fill
 // sitting unused.
 TEST_CASE_FIXTURE(Fixture, "GREP: split mode-line layout (crowded File-mode landing) gives a SHORT name its "
                            "full width, not its own forced half, and gives trailing2 the freed-up space") {
-  { std::ofstream(root / "CLAUDE.md") << "hello\n- Legacy C implementation description here matching tcb/src/config.sh\nworld\n"; }
+  { std::ofstream(root / "CLAUDE.md") << "hello\n- Legacy C implementation description here matching old/src/config.sh\nworld\n"; }
   REQUIRE(app.start(path()));
   int idx = indexOf("CLAUDE.md");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -9429,7 +9429,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP: split mode-line layout (crowded File-mode land
   // head and tail should now survive (Finder-style middle-ellipsis),
   // unlike the OLD forced-half budget which cut it back much further.
   CHECK(row.find("- Legacy C implementation") != std::string::npos);
-  CHECK(row.find("tcb/src/config.sh") != std::string::npos);
+  CHECK(row.find("old/src/config.sh") != std::string::npos);
 }
 
 // 2026-08-28 fix, a direct user report + precise repro ("CLAUDE.md画面

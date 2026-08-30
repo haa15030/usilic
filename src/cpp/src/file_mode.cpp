@@ -245,7 +245,7 @@ bool FileMode::loadFile(const std::string &path) {
   // 「毎回の」読み込みでプレーンなページャーのデフォルトへリセット
   // する(2026-08-18): コンストラクタ自身のsetCursorHighlightEnabled
   // (false)は「最初の」読み込みより前の状態しかカバーしない。
-  // Application::executeShowTcbBanner()は、自身のloadFile()呼び出し
+  // Application::executeShowUsilicBanner()は、自身のloadFile()呼び出し
   // の直後にこれを再びONへ切り替える(^T画面のWORK/arc.N行は、
   // 選択可能であるために可視のハイライトを必要とする――実際の報告
   // =cqが、それ無しでは選ぶことが不可能であることを見つけた)ので、

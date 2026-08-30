@@ -144,7 +144,7 @@ class ContentView {
     // よろしく"): この行は、cursorIndex_がそこに着地した場合でも
     // markedPredicate_がそう言った場合でも、カーソル行/マーク行の
     // SGRハイライト(Standout/Underline)に決して全く参加しない――
-    // 特にexecuteShowTcbBanner()自身の「Boot options」行のため。
+    // 特にexecuteShowUsilicBanner()自身の「Boot options」行のため。
     // これは選択可能な項目ではなく(openSelectedBannerEntry()自身の
     // コメント参照)、決してそれのように「見えて」はならないが、
     // それでも実際の端末のキャレットが、古い「highlightStartColumn

@@ -87,7 +87,7 @@ enum class ConfiguredRole {
   SevenZipExtract,
 };
 
-// usilicrc(tcbrc)をパースし、明示的なアクセサメソッド経由で設定の
+// usilicrc(usilicrc)をパースし、明示的なアクセサメソッド経由で設定の
 // 問い合わせに答える。str.cのinit_config()と、そのconf_*()という
 // ディレクティブごとのサブパーサ(conf_arc/conf_bin/conf_grep/
 // conf_prog/conf_bsize/conf_code/conf_history/conf_wait/conf_scroll/
@@ -107,7 +107,7 @@ enum class ConfiguredRole {
 //     1つのフラットな配列」という形の同等物は無い。
 //   - ここではファイルI/Oを行わない。loadRcText()はusilicrcの内容を
 //     既に読み込み済みの文字列として受け取る。ファイルの場所を特定
-//     すること(legacyのset_tcbrc(): $HOME/.usilic/usilicrc、無ければ
+//     すること(legacyのset_usilicrc(): $HOME/.usilic/usilicrc、無ければ
 //     LIB/usilicrc、それも無ければ起動を拒否)は呼び出し側の仕事。
 //     これにより、本物のファイルシステム/$HOME無しでもパース自体を
 //     純粋かつユニットテスト可能に保てる。PipeBuffer/ArchiveReaderが
@@ -117,8 +117,8 @@ enum class ConfiguredRole {
 //     が返したもの(未設定ならnullopt)を素のパラメータとして受け取る、
 //     Shell/ChildProcessがそれぞれのOptionsで使っているのと同じ
 //     パターン。これはCLAUDE.mdの作業ログ13番を直接修正する:
-//     legacyの`if ((tcbcharset = getenv(ENV_CHARSET)))`はNULLかどうか
-//     しかテストしていなかったため、`export TCBCHARSET=`(明示的に
+//     legacyの`if ((usiliccharset = getenv(ENV_CHARSET)))`はNULLかどうか
+//     しかテストしていなかったため、`export USILICCHARSET=`(明示的に
 //     exportされているが空)は、文書化されたUTF-8ではなく静かに
 //     未認識の値の分岐を通ってEUC既定値へ落ちてしまっていた。
 //     ここでは、「明示的に設定されたか」と「その値は何か」という

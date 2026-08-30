@@ -11,7 +11,7 @@
 namespace fm {
 
 // 名前付きのカーソル位置記憶カテゴリ――LLのfile/dir/man/modeフィールド
-// (tcb.h)からの移植。「Screen」はlegacyのモードをキーとした雑多な
+// (usilic.h)からの移植。「Screen」はlegacyのモードをキーとした雑多な
 // 受け皿(パス名で自然にキーできないあらゆる画面――LOCATE/EGREP結果、
 // DU、PROGRAM/MANメニュー自体、split-bufferの識別、等)であり、
 // 文字通りの表示「mode」だけを指すものではない。

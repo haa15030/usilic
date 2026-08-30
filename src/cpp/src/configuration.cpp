@@ -9,7 +9,7 @@ namespace fm {
 namespace {
 
 const std::vector<std::string> &directiveKeywords() {
-  // str.cのtcbrc[]テーブルからの移植、同じ順序(順序自体には意味は
+  // str.cのusilicrc[]テーブルからの移植、同じ順序(順序自体には意味は
   // 無い――ディレクティブはusilicrc内でどの順序でも現れてよい――
   // が、str.cとの照合を容易にするために保持されている)。
   static const std::vector<std::string> kKeywords = {
@@ -325,7 +325,7 @@ Configuration::Configuration() {
 }
 
 std::optional<ProgramCommand> Configuration::findBuiltinArchiveAlias(const std::string &searchText) const {
-  // conf_arc()のtcbrc駆動の分岐からの移植: ユーザーのARCHIVE行は
+  // conf_arc()のusilicrc駆動の分岐からの移植: ユーザーのARCHIVE行は
   // 「<新しいsuffix> <検索テキスト>」であり、各組み込みエントリ
   // 自身の「<suffix> <argv...>」形式の行に対してsearchTextを前方
   // 一致させることで、組み込みテーブルと照合される。ゼロからの
@@ -431,7 +431,7 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         // 変更せず「丸ごと」使っていた――この切り詰めが完全に欠けて
         // いた。usilicrc自身のGREPセクションは、各パターンの
         // 「#コメント」を一連のタブで右揃えする(例えば
-        // "\/\*[a-z]*\*\/\t\t\t\t # tcb source")。そして
+        // "\/\*[a-z]*\*\/\t\t\t\t # usilic source")。そして
         // nextDataLine()/trimCommentAndLeadingWs()(別の、汎用的な
         // get_cp()の忠実な移植で、他のconfigセクションでも使われる)
         // はコメントと「先頭の」空白だけを取り除く――get_cp()自身の

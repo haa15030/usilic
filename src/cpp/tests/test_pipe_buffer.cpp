@@ -80,7 +80,9 @@ TEST_CASE("overBudget() trips once total content exceeds maxBytes") {
 // bold/underline -- see CLAUDE.md history item 8), not hand-written
 // guesses. The heading being decoded is "1. 概要" ("1. Overview")
 // with "1", ".", and the two kanji each individually bolded via
-// backspace overstrike, and the underlined word is "tcb".
+// backspace overstrike, and the underlined word is "tcb" (README.jp's
+// own historical prose still says the legacy program's old name here;
+// deliberately left untouched by the 2026-08-30 tcb->usilic rename).
 
 TEST_CASE("EUC overstrike: ASCII bold via single backspace (real README.jp bytes)") {
   PipeBuffer buf(Charset::Encoding::Euc, 80, 1 << 20);
@@ -116,7 +118,10 @@ TEST_CASE("EUC overstrike: 2-byte kanji bold via double backspace (real README.j
 
 TEST_CASE("EUC overstrike: underline via single backspace + underscore (real README.jp bytes)") {
   PipeBuffer buf(Charset::Encoding::Euc, 80, 1 << 20);
-  // "_" BS "t", "_" BS "c", "_" BS "b" -- underlined "tcb"
+  // "_" BS "t", "_" BS "c", "_" BS "b" -- underlined "tcb" (src/README.jp
+  // still spells the legacy program's old name here; unrelated to the
+  // 2026-08-30 tcb->usilic source-level rename, since README.jp's own
+  // historical prose is deliberately left untouched -- see CLAUDE.md)
   std::string raw = "_" "\x08" "t" "_" "\x08" "c" "_" "\x08" "b" "\n";
   buf.feed(raw);
   REQUIRE(buf.lines().size() == 1);

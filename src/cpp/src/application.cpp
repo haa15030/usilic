@@ -228,7 +228,7 @@ std::string truncateToPathPrefix(const std::string &path, int digit) {
 // 埋まっている10個のキーボードマクロスロット)は下に「含まれている」、
 // それぞれisMacro=trueとフラグ付けされているので、startKey()はlegacy
 // 自身の"(M)"接尾辞をレンダリングできる(legacyのprint_key()、
-// tcb/src/str.c、`if (i >= 80) printf(" (M)")`参照)――このポートには
+// old/src/str.c、`if (i >= 80) printf(" (M)")`参照)――このポートには
 // legacyの独立に割り当てられた20個ではなく、ユーザーが記録可能な
 // マクロスロットが自分自身のもの「1つだけ」しかない(下の
 // StartMacroRecord/PlayMacro、"^X ("/"^X )"/"^X e")ので、これらの
@@ -237,11 +237,12 @@ std::string truncateToPathPrefix(const std::string &path, int digit) {
 // として再現されている(executeSelectedKeyBinding()は、どんなテーブル
 // エントリのバイト列も、既にfeedByte()へ1つずつ再生する――ライブの
 // マクロ再生が使うのとまさに同じ仕組み)。M-8("ESC t"、
-// ~/.tcb/tcbrcのセクション名を検索)は除外されている: 調べてみると、
+// ~/.usilic/usilicrcのセクション名を検索)は除外されている: 調べてみると、
 // これはusilicrc自身のサンプル設定に焼き込まれた、使い捨ての自己言及
-// 的な「デモ」マクロであり、既にリネーム済みのこのusilicrcの中でさえ
-// 古いリネーム前の"~/.tcb/tcbrc"パスをハードコードしている
-// (CLAUDE.mdに記載済み)、ここで再現する価値のある機能ではない。
+// 的な「デモ」マクロであり(2026-08-30のtcb->usilicリネーム以前は、
+// 既にリネーム済みのはずのこのusilicrcの中でさえ、なお古い
+// リネーム前の"~/.tcb/tcbrc"パスをハードコードしたままだった――
+// CLAUDE.mdに記載済み)、ここで再現する価値のある機能ではない。
 // M-9("ESC l")は同じ理由で「かつては」除外されていた――同じ経緯参照
 // ――しかし2026-08-18以降(executeStartLog()自身のコメント参照)、
 // それはデモマクロの再生ではなく、本物の、独立した機能(LOG)になった
@@ -279,7 +280,7 @@ const KeyTableEntry kKeyTable[] = {
     // (合成されたファイル自身のベース名、bannerFilePath()のコメント
     // 参照)を表示しており、それはあたかも実在の、普通のファイルが
     // 文字通り"~/.usilic/usilic"という名前で見られているかのように
-    // 読めた。"INFO"へリネームし(executeShowTcbBanner()自身の
+    // 読めた。"INFO"へリネームし(executeShowUsilicBanner()自身の
     // setSearchOrigin()呼び出し参照)、モードライン自身の名前が曖昧で
     // なくなるよう^Iに割り当て直した。
     {"^I", "INFO", {0x09}},
@@ -942,8 +943,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // 名」という慣習とは異なり、「完全な」パスであることに注意)、
   // あるいは「ネストした」分割(splitSelected()自身の再分割――なぜ
   // それが「親」レベルのパターンなのかについてはCutMode::
-  // parentPattern()自身のコメント参照、例えば"man"のマッチを"tcb"で
-  // 再分割した後の"CUT:man"であり、"CUT:tcb"ではない)については
+  // parentPattern()自身のコメント参照、例えば"man"のマッチを"usilic"で
+  // 再分割した後の"CUT:man"であり、"CUT:usilic"ではない)については
   // "CUT:<親パターン>"。HELP自身の最上位(ネストしていない)trailingは
   // ここでは意図的に空のままにしてある――File起点のケースとは異なり、
   // まだそれについて具体的に確認済みの値が存在しない(他の場所での
@@ -1118,7 +1119,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // は一度に「全て」を体系的にチェックしたことは無かった。`name`は
   // legacy自身のap->nameの永続性を反映している(PROMPT入場時点で
   // m_locate()/m_man()によってモード自身の名前文字列に設定され、結果
-  // 画面がレンダリングされる前に二度と上書きされない――tcb/src/menu.c
+  // 画面がレンダリングされる前に二度と上書きされない――old/src/menu.c
   // のm_locate()を直接読んで確認済み、CUT/GREP自身の、下と上にある
   // リテラルな"CUT"/"EGREP"という名前についても既に独立に確立済み)
   // ――FileModeの素のファイル名のような、コンテンツから導出される
@@ -1143,7 +1144,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // それなりに確信度の高い一次案。
   // 2026-08-16修正: trailing2は空だった(「自然に対応するtrailing2は
   // 無い」という上の今は古くなったコメント参照)――legacy自身の
-  // tcb/src/sub.cのprint_arg()のT_manケースは、同じ日に独立して
+  // old/src/sub.cのprint_arg()のT_manケースは、同じ日に独立して
   // T_dirの"(ls)"と同じ"%d (%s)"というバイト数+ラベルの形を与えられ
   // た(CLAUDE.md項目305/306参照)、なので結局"(man)"が本当の対応物
   // であり、下のDirectoryModeのtrailing/trailing2の分割に合わせている
@@ -1247,13 +1248,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   });
 
   // usilicrc自身のGREPセクション(2026-08-05修正、2026-08-28に改訂):
-  // 実際のCUIスクリーンショットと実際のlegacy-tcbへの直接のPTYテスト
+  // 実際のCUIスクリーンショットと実際のlegacy-usilicへの直接のPTYテスト
   // により、^J^S(EGREP)と^J^C(CUTのregex亜種)は、完全な新規インス
   // トールでも直接、空でない候補リストに入ることが確認された――
   // usilicrc自身のGREPセクションからのまさに10個のパターン。「元々の」
   // 修正(2026-08-05)は、構築時に無条件に全てのシード値をRecentEgrep
   // Patternへ積むことでそれを実現した――単純だが、legacy自身が別々に
-  // 保っている2つのものを混同していた(tcb/src/str.c自身のconf_grep():
+  // 保っている2つのものを混同していた(old/src/str.c自身のconf_grep():
   // usilicrcのパターンは静的なLIST *lgへロードされ、hp->ss.p.hegrep
   // (実際に検索が「投入」された時だけsave_history()が増やすring、
   // menu.c:833)とは完全に別個である)。シード値をRecentEgrepPattern
@@ -1494,8 +1495,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::ToggleHistoryView;
     case 0x0c:  // ^L(M_clear)
       return Command::Redraw;
-    case 0x09:  // ^I(M_tcb、K-0、"TCB"/今は"INFO")――2026-08-27に^Tから割り当て直した、kKeyTable自身のコメント参照
-      return Command::ShowTcbBanner;
+    case 0x09:  // ^I(M_usilic、K-0、"USILIC"/今は"INFO")――2026-08-27に^Tから割り当て直した、kKeyTable自身のコメント参照
+      return Command::ShowUsilicBanner;
     case 'q':  // M_quit――usilicrcはこれをページャの文脈に限定している;handleCommand()自身のゲート参照
       return Command::QuitPager;
     case 'n':  // Command::PagerNextFile自身のコメント参照
@@ -1772,7 +1773,7 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::Enter);
       // ESC v : 1ページ戻る(2026-08-14、直接のユーザーの指示による:
       // "旧版のKEYには収録し忘れだが「1ページ戻る」は^[wではなくて、
-      // emacs同様^[vで反映してほしい")。以前の回で、tcb/src/key.c
+      // emacs同様^[vで反映してほしい")。以前の回で、old/src/key.c
       // 「自身の」これに対する実際のキー割り当ては、ESC-vではなく
       // 素のESC-w(M_kback)であることが判明していた――想定するのでは
       // なく食い違いとしてユーザーへ報告し戻した――そしてこれは、
@@ -2192,7 +2193,7 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     }
     return returnFromShell();
   }
-  // K-0(^T、ShowTcbBanner)は、以前は他の場所で既に必要だった
+  // K-0(^T、ShowUsilicBanner)は、以前は他の場所で既に必要だった
   // ^X^F等と同じ「接頭辞の無いキーがこの関数自身のコマンドライン
   // 編集のフォールバックへ流れ落ちる」という特別扱いの修正を受けて
   // いた(2026-08-18、"SHELLで^Tが利かない")。2026-08-27: ^Iへ割り当て
@@ -2661,7 +2662,7 @@ bool Application::handleCommand(Command command) {
         // たw.Nはバナーとは「異なる」ファイルであり、その除外ではカバー
         // されないので、代わりにここでこの別個の分岐が必要になる)では
         // なく、バナー自体へ直接戻る。
-        if (fileReturnMode_ == ApplicationMode::File) return executeShowTcbBanner();
+        if (fileReturnMode_ == ApplicationMode::File) return executeShowUsilicBanner();
         // 2026-08-28追加、infoPreviousFilePath_自身の宣言コメント参照:
         // (すぐ上のfileReturnMode_==Fileの分岐が既に処理する、それ
         // 自身のWORK/arc.Nの子ではなく)バナー「自体」からの^Gは、常に
@@ -2844,8 +2845,8 @@ bool Application::handleCommand(Command command) {
       return executeShowShellLog();
     case Command::StartLog:
       return executeStartLog();
-    case Command::ShowTcbBanner:
-      return executeShowTcbBanner();
+    case Command::ShowUsilicBanner:
+      return executeShowUsilicBanner();
     case Command::CycleCharset:
       return cycleCharset();
     // 2026-08-17修正(=cn): K-46(^X^F、「Select file name」)――なぜ
@@ -2978,7 +2979,7 @@ bool Application::handleCommand(Command command) {
       activeView().syncVisibleCursor();
       return true;
     case Command::QuitPager:
-      // usilicrcはこれをページャ専用として文書化している("Exit tcb
+      // usilicrcはこれをページャ専用として文書化している("Exit usilic
       // (pager)");Directoryモードにはそれ自身の確認済みの終了経路
       // (StartExit、^X^C)があり、素の'q'にそれを迂回されたくない。
       if (currentMode_ == ApplicationMode::Directory) return false;
@@ -3825,7 +3826,7 @@ bool Application::returnToDirectory() {
   // (親は既にcurrentDirectory_と一致する)についてはno-opなので、
   // これはそこでの既存のカーソル位置の挙動には触れない。
   // 2026-08-18修正: 現在ロードされているファイルが^Tバナー自身の
-  // 合成されたファイル(bannerFilePath()、executeShowTcbBanner()自身の
+  // 合成されたファイル(bannerFilePath()、executeShowUsilicBanner()自身の
   // コメント参照)である時は、すぐ下の「ファイルの実際の親ディレク
   // トリをたどる」修正をスキップする――その修正は^X^F/RecentFile
   // (ユーザーが意図的に選んだ実際のファイル)については正しいが、
@@ -4303,7 +4304,7 @@ bool Application::returnFromListBrowser() {
       // （^GでDIR一覧、じゃなくて(ls)へ戻る）"): ^Rの時系列の
       // 「HISTORY」トグルは、同じ画面上の余談ではなく、通常のソート
       // 済みの「DIR」/「FILE」リストの上に積み重なった、それ自身の
-      // 「ネストした」画面である――tcb/src自身のlegacyバイナリ(まさに
+      // 「ネストした」画面である――old/src自身のlegacyバイナリ(まさに
       // この調査で新規にビルドしたもの)に対して`^X^D`→`^R`→`^G`を
       // 実行して確認済み: 最初の^Gは"DIR 1/1 END ..."の上に戻って
       // 着地し、「2回目の」^Gが実際に"(ls)"に到達するものである。
@@ -4502,7 +4503,7 @@ bool Application::ensureShellActive() {
   // 「どんな」実際のSHELLの外出(^J.、^J^W、^[s、...)も、無条件に
   // その例外リストの外に落ちる。INFOを完全にスキップし、INFO自体が
   // そうしていたであろう場所(fileReturnMode_はそこでは無条件に
-  // Directoryである、executeShowTcbBanner()自身のコメント参照)へ戻る
+  // Directoryである、executeShowUsilicBanner()自身のコメント参照)へ戻る
   // ――上のpagerReturnsToShell()の特別なケースを精神的には反映して
   // いる(一時的な画面を戻り先として記録しない)が、それとは異なり、
   // ^Gは、戻る先が全く無いままShellへ再入場するのではなく、依然として
@@ -4560,7 +4561,7 @@ std::string Application::previousModeName(ApplicationMode mode) const {
       // 正しい――しかし特にINFOバナー(合成されたファイル、
       // bannerFilePath()自身のコメント参照)については、FileMode自身の
       // モードラインのプロバイダは既に代わりに"INFO"を表示することを
-      // 知っている(searchOriginLabel_、executeShowTcbBanner()自身の
+      // 知っている(searchOriginLabel_、executeShowUsilicBanner()自身の
       // setSearchOrigin()呼び出しによって設定される)――この「別の」
       // 表示経路(SHELL/KEY自身の「戻り値」trailingフィールド)は、
       // 一度も同じ認識を得ておらず、代わりに生の合成されたパスを表示
@@ -4882,7 +4883,7 @@ bool Application::executeShowShellLog() {
 // かつては6つの手動ステップだった(^X^Klでスナップショット -> ^Gで
 // Directoryへ戻る -> ログファイルを選ぶ -> ^Jbで開かずに分割 -> パター
 // ンをタイプ -> Enter)ものが、この単一の自動のものへ折り畳まれる、
-// その古い試みのリテラルなデモ文字列"tcb v1.5b"の代わりに、固定の
+// その古い試みのリテラルなデモ文字列"usilic v1.5b"の代わりに、固定の
 // 分割パターンとして"usilic-1.5b:"(項目335自身の新しい太字のSHELL
 // プロンプトのマーカー)を使う。
 bool Application::executeStartLog() {
@@ -4937,7 +4938,7 @@ std::string Application::bannerFilePath() const {
   return std::filesystem::path(usilicrcPath_).parent_path().string() + "/usilic";
 }
 
-bool Application::executeShowTcbBanner() {
+bool Application::executeShowUsilicBanner() {
   // 2026-08-28修正、実際の報告+再現("「~/.usilic/（ls）」でusilicrc
   // を選択→^I→^G→usilicrcへ戻らない"): 他の「全ての」Directoryから
   // Fileへの遷移は、まずカーソル自身の行を保存する(openSelectedEntry()
@@ -5033,7 +5034,7 @@ bool Application::executeShowTcbBanner() {
 
   std::string text = banner.str();
   std::vector<unsigned char> bytes(text.begin(), text.end());
-  // "tcb"ではなく"usilic"(2026-08-18): FileMode自身のモードラインの
+  // "usilic"ではなく"usilic"(2026-08-18): FileMode自身のモードラインの
   // プロバイダは、その`name`フィールドをロードされたファイルの素の
   // ベース名から導出する(それ自身のコメント参照)――これが、専用の
   // ContentView/モードを必要とせずに、依頼された「ここで表示される
@@ -5170,7 +5171,7 @@ bool Application::executeShowTcbBanner() {
 // 最初の行を特別扱いする必要無く、両方の形を一様に処理する。w.N
 // のエントリは「ファイル」として開く(fileReturnMode_ = File、
 // Command::Back自身のFileの分岐に追加された新しいケース、
-// returnToDirectory()ではなくexecuteShowTcbBanner()へまっすぐ
+// returnToDirectory()ではなくexecuteShowUsilicBanner()へまっすぐ
 // ルーティングする――そのswitch自身のコメント参照);arc.Nのエント
 // リは、スタックのフレームを積まない、プレーンなenterDirectory()
 // 経由で「ディレクトリ」として開く(通常の降下の外から到達した時、
@@ -5191,7 +5192,7 @@ bool Application::openSelectedBannerEntry() {
   };
   // Startup file/ERROR/SHELL(2026-08-18修正、直接のユーザー報告:
   // "ハイライト上の[return]が反応しない"――ここでの全ての行は今や
-  // 同じ方法でハイライトされている(executeShowTcbBanner()自身の
+  // 同じ方法でハイライトされている(executeShowUsilicBanner()自身の
   // highlightStartColumnのコメント参照)ので、これら3つのどれかに
   // カーソルを着地させたユーザーは、黙って何もしないのではなく、
   // Enterがそれが名指しするファイルを開くことを合理的に期待する
@@ -5244,7 +5245,7 @@ bool Application::openSelectedBannerEntry() {
     // 2026-08-28追加、直接のユーザー提案("最初にそれら（/tmp/
     // .usilic.NNNNN/shell等）をtouchしておき、実際にアクセスしてアン
     // ダーライン「No String」を表示する仕様に変更してほしい"):
-    // executeShowTcbBanner()は今やerrorLogPath_/logFilePath_を前もって
+    // executeShowUsilicBanner()は今やerrorLogPath_/logFilePath_を前もって
     // touchするので、それらは常に存在し、一様にハイライトされた/
     // 開けそうな見た目のままである(それ自身のコメント参照)――しかし
     // 何かがログされる前のERROR、あるいは本物の出力がある前のSHELL
@@ -6041,8 +6042,8 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
 
 // K-32/K-34(^J^S EGREP、^J^C CUTのregex亜種、usilicrc自身のK-31..K-34
 // の文書化による「Select string」――K-31/K-33の「Input string」
-// FGREP/CUT-fixedとは異なる): 実際のlegacy-tcbへの直接のPTYテスト
-// (新規の$HOME、~/.tcb/historyが全く無い――項目170自身の⑫の調査参照)
+// FGREP/CUT-fixedとは異なる): 実際のlegacy-usilicへの直接のPTYテスト
+// (新規の$HOME、~/.usilic/historyが全く無い――項目170自身の⑫の調査参照)
 // により、これが単なる文書上のニュアンスではないことが確認された:
 // ^J^S/^J^Cは、空のプロンプトではなく、候補パターンリスト
 // (usilicrc自身のGREPセクション、Configuration::grepSeedPatterns()の
@@ -6099,8 +6100,8 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
   // (先に特定のセグメント自身のコンテンツに「入って」いる)について
   // 正しく結線されていたが、直接のユーザーの再現(HELP.jpを選択 ->
   // ^Jc "man" -> 今やラベルの「リスト」自体を見ている、
-  // ApplicationMode::Cut、カーソルはあるエントリの上 -> ^Jc "tcb"を
-  // 「再び」)により、このガードが2回目の^Jcを完全に拒否し、"tcb"の
+  // ApplicationMode::Cut、カーソルはあるエントリの上 -> ^Jc "usilic"を
+  // 「再び」)により、このガードが2回目の^Jcを完全に拒否し、"usilic"の
   // キー入力シーケンス全体を黙って通常のリストのナビゲートへ落とし
   // てしまうことが示された。CutMode::selectedSegment()/
   // splitSelected()は、cutView_/cutContentView_のどちらがたまたま
@@ -6827,9 +6828,9 @@ bool Application::archiveHistoryFilterActive() const {
 // RecentEgrepPatternとして再利用され、よりきれいな設計を推測する
 // のではなく、まさにその癖に合わせている。実際のユーザーの再現
 // (2026-08-05、⑪付きのスクリーンショット)が、1回のCUT起動の呼び
-// 出しで"man"/"manager"/"tcb"が混ざった11個のエントリを示していた
+// 出しで"man"/"manager"/"usilic"が混ざった11個のエントリを示していた
 // ことは、これと一致する: "manager"は、ユーザーが以前実行した実際の
-// EGREP検索であり、彼らのCUTパターン"man"/"tcb"とringを共有して
+// EGREP検索であり、彼らのCUTパターン"man"/"usilic"とringを共有して
 // いる可能性が非常に高い――これはこの関数自身の作業上の想定として
 // ユーザーへ伝えてあり、ソースの読み取りとこの1枚のスクリーン
 // ショットの状況証拠的な一致を超えて独立に確認されたものではない。
@@ -7932,7 +7933,7 @@ bool Application::executeLocate(const std::string &query) {
 // ザー依頼)――^Xcが今や唯一の入り口である。
 // 2026-08-27修正、実際の報告+再現("'saved'[return]→「saved/
 // （ls）」にならない（~/usilic/（ls）のままかつカーソル位置が
-// 「tcb-h.h」でなく最上行）"): 「相対の」宛先(例えば"/tmp"ではなく
+// 「usilic-h.h」でなく最上行）"): 「相対の」宛先(例えば"/tmp"ではなく
 // "saved")は、以前はそのまま注入されるシェルのコマンドラインへ直接
 // 渡されていた――Shell::start()は、directoryMode_自身の
 // currentDirectory_に合わせて決してchdir()しない(それは単に

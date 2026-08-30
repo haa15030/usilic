@@ -2292,7 +2292,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     if (glyph != " " && lead >= 0x20) {
       // 2026-08-21修正、直接のユーザー報告("マウスの左クリック（画面
       // ドラッグスタンバイ状態）中だと文字装飾が利かず"――HELP自身の
-      // 太字/下線付きの単語、例えば"tcb"、"``TCB''"が、ドラッグ/慣性
+      // 太字/下線付きの単語、例えば"usilic"、"``USILIC''"が、ドラッグ/慣性
       // スクロールが有効な間はプレーンにレンダリングされる):これが
       // 対処する根本原因については、すぐ下のこの関数自身の
       // TTF_SetFontStyle()のコメント参照(以前は常にNORMALをレンダ

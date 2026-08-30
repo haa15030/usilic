@@ -244,7 +244,7 @@ TEST_CASE("GREP directive: strips surrounding quotes; PROGRAM directive: only in
 TEST_CASE("GREP directive (2026-08-12 fix): an UNQUOTED pattern is truncated at the first space/tab, "
           "matching legacy conf_grep()'s own `while (*cp != ' ' && *cp != '\\t') cp++;` -- usilicrc's real "
           "GREP section right-aligns each pattern's own `# comment' with a run of tabs (e.g. "
-          "\"\\\\/\\\\*[a-z]*\\\\*\\\\/\\t\\t\\t\\t # tcb source\"), and this port previously used an "
+          "\"\\\\/\\\\*[a-z]*\\\\*\\\\/\\t\\t\\t\\t # usilic source\"), and this port previously used an "
           "unquoted line's data wholesale (only trimCommentAndLeadingWs()'s own comment-strip + LEADING-"
           "whitespace-strip, no trailing-whitespace handling), baking the trailing tab run into the seed "
           "pattern as literal bytes -- a real report found this corrupted both the ^J^S/^J^C candidate "
@@ -254,7 +254,7 @@ TEST_CASE("GREP directive (2026-08-12 fix): an UNQUOTED pattern is truncated at 
   Configuration config;
   std::string rc =
       "GREP\n"
-      "\t\\/\\*[a-z]*\\*\\/\t\t\t\t # tcb source\n"
+      "\t\\/\\*[a-z]*\\*\\/\t\t\t\t # usilic source\n"
       "\t^Question\t\t\t\t # Linux-FAQ\n"
       "\t\"^Subject: \"\t\t\t\t # Mailing list\n";
   REQUIRE(config.loadRcText(rc, true));

@@ -1,4 +1,4 @@
-# tcbのビルド・実機デバッグ用。ホストのCPUアーキテクチャ(Intel/ARM)や
+# usilicのビルド・実機デバッグ用。ホストのCPUアーキテクチャ(Intel/ARM)や
 # OS(macOS/Windows)に関わらず、常に本物のUbuntu(glibc・実tty)上で
 # 動かすことが目的。ubuntu:26.04がまだDocker Hubに無い場合は下の行を
 # ubuntu:24.04 (直近のLTS) に変更して使う。

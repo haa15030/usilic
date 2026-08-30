@@ -1,5 +1,5 @@
 {
-  "name": "tcb (Ubuntu 26.04)",
+  "name": "usilic (Ubuntu 26.04)",
   "build": {
     "context": "..",
     "dockerfile": "Dockerfile"

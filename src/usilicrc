@@ -1,4 +1,4 @@
-# tcbrc  version 1.5b-1  20 Mar 2000
+# usilicrc  version 1.5b-1  20 Mar 2000
 # -------------------------------------------------------------
 # All blank lines or strings begin with the character '#' will be ignored.
 # Lines begin with one of the following strings are available.  Other lines 
@@ -12,7 +12,7 @@
 ARCHIVE
 # Format: `suffix0' `suffix1'
 #
-# Tcb will display the content of the file that has the `suffix0' with the
+# Usilic will display the content of the file that has the `suffix0' with the
 # setting of `suffix1' defined in str.c of source file.
 #
 #  `suffix1' `program' (option)
@@ -64,8 +64,8 @@ GREP
 # The `string' that will be used in EGREP or CUT.
 # (String contains a space character must be enclosed within parentheses "".)
 
-	\/\*[a-z]*\*\/				 # tcb source
-	^					 # ~/.tcb/history 
+	\/\*[a-z]*\*\/				 # usilic source
+	^					 # ~/.usilic/history 
 	"^  [0-9][0-9]+\."			 # ^J^B for HELP
 	"^  [0-9]+\."				 # ^J^C for HELP
 	^Question				 # Linux-FAQ
@@ -119,7 +119,7 @@ CODE
 #
 # If a regular-file that has no above suffixes contains a control
 # character under 0x20 excluding the ones set in here, it will be
-# assumed as a binary file.  Tcb(1) will execute file(1) and
+# assumed as a binary file.  Usilic(1) will execute file(1) and
 # display the code and the file-type. (If `code0' is equal to 0,
 # this setting will be ignored.)
 
@@ -166,7 +166,7 @@ SCROLL
 # Format: `flag' 
 # 
 # The `flag' for switching scroll-mode. (can be switched by ^Oh.)
-# When the `flag' set, tcb window will scroll within the range above
+# When the `flag' set, usilic window will scroll within the range above
 # bottom line.
 
 	0
@@ -216,7 +216,7 @@ KEY
 #	  will launch execution of the definition.
 # (7) ... Keys will launch execution of the definition of (6).
 # (8) ... Mark for the content of Setting.
-# (9) ... Setting can be used by `tcb' executed as `pager'.
+# (9) ... Setting can be used by `usilic' executed as `pager'.
 #
 # Notations :
 #	  C-x ... Ctrl+'x'
@@ -239,7 +239,7 @@ F-?	<-- (8)
 
 #  <-- (3) -->  <-- (4) -->                 		           <-- (1) -->
 K-?	<-- (8)
-	C-t	"TCB"	# ^T						K-0
+	C-t	"USILIC"	# ^T						K-0
   	F-1 C-h	"HELP"	# ^J^H		<-- (5)				K-1
 	C-g	"Return to previous mode"	# ^G			K-2
 	C-l	"Redisplay current window (clear "Exit" message)" # ^L	K-3
@@ -256,7 +256,7 @@ K-?	<-- (8)
 	ESC	"Go to the N-th line"	# ^[N				K-14
 	C-SPC	"Set mark"	# ^SPC					K-15
 	F-0 F-0	"Get mark"	# ^X^X	 				K-16
-	F-0 C-w	"Save buffer to ~/.tcb/w.tcb"	# ^X^W			K-17
+	F-0 C-w	"Save buffer to ~/.usilic/w.usilic"	# ^X^W			K-17
 	F-1 C-k	"Go to file-selector"	# ^J^K				K-18
 	F-3 C-k	"Go to parent directory"	# ^O^K			K-19
 	F-1	"Go to the N-th directory"	# ^JN			K-20
@@ -309,8 +309,8 @@ K-?	<-- (8)
 	F-1 e	"EDIT    : Edit regular-file"	# ^Je			K-66
 	F-2 e	"ERROR   : Standard error"	# ^X^Ke			K-67
 	F-2 l	"LOG     : SHELL output"	# ^X^Kl			K-68
-	F-0 C-c	"EXIT    : Exit tcb"	# ^X^C				K-69
-	q	"Exit tcb (pager)"	# q				K-70
+	F-0 C-c	"EXIT    : Exit usilic"	# ^X^C				K-69
+	q	"Exit usilic (pager)"	# q				K-70
 	F-0 C-m	"Input destination (CP, MV, RM, ARC)"	# ^X^M		K-71
 	F-0 C-y	"Mark all (CP, MV, RM, ARC)"	# ^X^Y			K-72
 	F-0 C-n	"Clear all (CP, MV, RM, ARC)"	# ^X^N			K-73
@@ -330,7 +330,7 @@ P-?
 	K-22 K-10			# (.) ^M ^N			M-5
 	K-22 K-2 K-11 K-22		# (<) ^M ^G ^N ^M		M-6
 	K-22 K-2 K-10 K-22		# (>) ^M ^G ^N ^M		M-7
-	K-45 "~/.tcb/tcbrc\cM" \
+	K-45 "~/.usilic/usilicrc\cM" \
 	K-32 "\cU^[A-Z]+\cM"		# (ESC t) ^Xf "..." ^J^S "..."	M-8
 	K-68 K-33 "usilic v1.5b\cM"	# (ESC l) ^X^Kl ^Jc "usilic v..."	M-9
 					# 				M-10
@@ -354,7 +354,7 @@ K-?
 	.	"Mark and move cursor one line down"	# (M-5)		K-85
 	<	"Mark and go to upper specific line"	# (M-6)		K-86
 	>	"Mark and go to lower specific line"	# (M-7)		K-87
-	ESC t	"Search section name in ~/.tcb/tcbrc"	# (M-8)		K-88
+	ESC t	"Search section name in ~/.usilic/usilicrc"	# (M-8)		K-88
 	ESC l	"Output from SHELL-prompt"		# (M-9)		K-88
 							# (M-10)	K-90
 							# (M-11)	K-91

@@ -11,10 +11,10 @@ namespace fm {
 // 保存されたナビゲーションフレーム: ユーザーが降りていった先の画面
 // (ディレクトリ一覧、アーカイブのエントリ、CUT/man/prog/listへの
 // 寄り道、またはネストしたgrep結果検索)から戻るために必要な全て。
-// legacyのSTACK構造体とGREP構造体(tcb.h)からの移植で、1つの
+// legacyのSTACK構造体とGREP構造体(usilic.h)からの移植で、1つの
 // ペイロード型へ統合してある――理由はModeStackのクラスコメント参照。
 //
-// legacy(tcb.hのSTACK/LINE/CUT/GREP)へのフィールドごとの対応:
+// legacy(usilic.hのSTACK/LINE/CUT/GREP)へのフィールドごとの対応:
 //   mode              <- STACK.f.M / GREP.f_M(不透明なモード識別子。
 //                         このクラス自体はこれに何の意味も与えない
 //                         ――解釈するのはMode/Applicationの仕事)
@@ -73,7 +73,7 @@ struct ModeStackFrame {
 //     grepに入る瞬間(mode.cのmode()、case M_egrep/M_fgrep)に、
 //     両者を同期させ続けるための「STACKフレームの中身を奪って新しい
 //     GREPノードの種にし、そのコピーをSTACKへ戻す」という手作りの
-//     一連の動作がある。両方の構造体(tcb.h)を並べて読むと、GREPの
+//     一連の動作がある。両方の構造体(usilic.h)を並べて読むと、GREPの
 //     ペイロードはSTACKのペイロードに、フィールドが1つ(検索パターン)
 //     加わっただけのものであることが分かる――このクラスを設計する
 //     過程で独立に確認済みで、このプロジェクト自身の以前のCRC

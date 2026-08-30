@@ -1,0 +1,1162 @@
+
+alloc.c,1244
+  PP *pp0,pp010,157
+  PP *pp0, *pp1;pp110,157
+  int n_attr,11,174
+  int n_attr, f_intr;11,174
+  ATTR attr[attr12,196
+  u_char line[line13,217
+} Alloc;14,240
+static u_char *save_attr(save_attr16,252
+int set_attr(88,2178
+static void esc_pipe(120,3126
+static int linein(133,3408
+PP *alloc_pipe(alloc_pipe186,4748
+static void alloc_l(422,10716
+PP *alloc_list(alloc_list479,12262
+PP *alloc_str(alloc_str489,12465
+PP *alloc_pp(alloc_pp590,15838
+    int f_M,597,16141
+    int f_M, split;597,16141
+    char *name;name598,16161
+PP *alloc_head(alloc_head863,23713
+static u_char *find_tar_header(find_tar_header1071,29308
+void alloc_tar(1086,29960
+void alloc_lha(1119,30880
+void alloc_unzip(1145,31410
+char **alloc_arg(alloc_arg1162,31783
+void free_arg(1230,33348
+u_char *alloc_split(alloc_split1238,33457
+u_char *alloc_buff(alloc_buff1255,33772
+  struct tmp 1261,33936
+    int len;1262,33951
+    u_char *buff;buff1263,33964
+    struct tmp *next;next1264,33982
+PP *alloc_sh(alloc_sh1378,36651
+void make_bp(1433,37938
+PP *set_pp(set_pp1457,38636
+PP **set_ppp(set_ppp1627,42707
+int alloc_winch(1641,42976
+void free_bp(1699,44351
+static void is_intr(1711,44539
+FILE *seek_intr(seek_intr1717,44622
+
+child.c,387
+CHILD *save_child(save_child6,81
+CHILD *check_ext(check_ext128,3471
+CHILD *init_child(init_child182,4863
+CHILD *get_child(get_child194,5111
+int cat_child(217,5820
+void free_chp(230,6134
+void free_child(245,6515
+int is_child(255,6669
+    int S,259,6751
+    int S, M;259,6751
+CHILD *load_chp(load_chp282,7235
+int is_chp(297,7550
+    int S,301,7623
+    int S, c;301,7623
+
+code.c,928
+typedef int (CONV)5,80
+typedef void (DECODE)6,137
+int is_man(8,191
+char *type_pipe(type_pipe31,779
+char *type_file(type_file80,2013
+u_char *check_type(check_type117,3041
+static int b_code(162,4187
+static int q_code(172,4378
+static void decode_base64(181,4568
+static void decode_quote(195,4957
+static int set_func(213,5328
+static int conv_q(248,5977
+static int conv_jis(274,6489
+static int decode_mime(416,9248
+static int conv_sjis(446,10039
+static int conv_euc(495,11321
+int jistoeuc(528,12123
+int sjistoeuc(534,12279
+int euctoeuc(549,12646
+static int uni_to_utf8(582,13919
+static int euc_to_utf8_core(599,14237
+int euctoutf8(623,14817
+int euctoutf8_buf(635,15120
+int utf8_seqlen(665,16279
+int utf8_width(674,16466
+int count_k(710,17646
+static int count_h(728,18037
+static int count_i(743,18313
+static int is_utf8(762,19004
+int init_code(778,19404
+void make_map(877,22351
+int toeuc(1101,27535
+
+disp.c,182
+static void tabtospc(2,20
+void put_str(31,581
+PP *disp_pp(disp_pp133,3258
+int disp_window(158,3721
+int print_line(385,10463
+void disp_prev(508,13797
+void disp_copy(559,14890
+
+fork.c,589
+static char *w_arg(w_arg9,144
+u_char *read_buff(read_buff19,438
+u_char *fork_key(fork_key43,935
+u_char *fork_bin(fork_bin63,1253
+void fork_exec(96,2342
+u_char *fork_chp(fork_chp109,2579
+u_char *fork_arc(fork_arc156,3544
+u_char *fork_split(fork_split340,9219
+static u_char *sgets(sgets380,10165
+static int cat_mime(388,10319
+u_char *fork_grep(fork_grep435,11533
+u_char *fork_grep2(fork_grep2501,13217
+FILE *fork_man(fork_man634,16075
+FILE *fork_pipe(fork_pipe676,17046
+char *fork_file(fork_file733,18202
+int fork_du(758,18687
+char *read_arc(read_arc803,19632
+
+init.c,486
+  void (*segv)segv9,137
+  int abort;10,158
+  jmp_buf jb;11,205
+} Init;12,219
+static void init_clear(14,228
+void init_man(21,338
+int init_pipe(42,1136
+void init_cut(90,2372
+void init_cut2(113,3028
+CHILD *init_arc(init_arc139,3787
+FILE *init_arc2(init_arc2211,5789
+void init_grep(331,8553
+void init_ls(349,9123
+void init_split(423,11074
+void init_split2(446,11778
+FILE *init_split3(init_split3473,12654
+FILE *init_split4(init_split4501,13302
+int init_bin(533,13989
+
+key.c,989
+    u_int winch	11,172
+    u_int term	12,193
+    u_int ctrl	13,213
+  } f;14,233
+} Key;15,240
+typedef int (*GETCH)GETCH17,248
+static int is_esc(19,277
+static void set_name(27,434
+static int key_getch(44,815
+static int key_getch_play(70,1750
+static int set_km(75,1816
+static void key_ttou(105,2330
+static void key_cont(113,2515
+void key_winch(120,2655
+static void key_segv(134,2884
+void key_term(142,3027
+static void stand_str(151,3160
+static int kton(205,4714
+static void key_eeol(214,4894
+static int char_bytes_before(238,6131
+static int b2col(248,6408
+static int utf8_total_width(260,6704
+static int utf8_right_shift(274,7120
+static int need_scroll(300,8328
+static int input_key(314,8746
+int read_m(568,14705
+void load_signal(980,24077
+void save_signal(987,24174
+int find_name(1021,24748
+void make_cmd(1060,25763
+static void esc_shell(1080,26703
+int make_list(1092,26944
+static void add_buff(1206,29766
+int edit_line(1304,33459
+int read_esc(1601,41483
+
+menu.c,920
+  int f_Mb;11,177
+  jmp_buf jb;12,189
+} Menu;13,203
+static void menu_clear(15,212
+static void clear_cut(22,327
+static void m_copy(31,473
+static void m_num(42,763
+static int m_dir(79,1738
+static void m_row(123,2831
+static int m_page(134,3227
+static u_char *m_w(m_w160,4167
+static int m_arc(189,4787
+static int m_exit(211,5385
+static int m_locate(232,6117
+static int m_grep(253,6742
+static int m_cut(274,7479
+static int m_man(298,8310
+static void m_help(310,8637
+static int m_prog(333,9527
+static int m_list(358,10171
+static int m_edit(412,11691
+static int m_shell(426,12016
+static int m_du(551,15469
+static int m_yn(578,16272
+static int m_dest(598,16869
+static FILE *m_pipe(m_pipe686,19496
+static int m_cr(708,19991
+static void m_clear(1025,30277
+static int m_bl(1038,30811
+static int get_m(1159,34073
+static int init_menu(1471,42042
+static void init_bp(1599,46847
+void menu(1774,51783
+
+mode.c,724
+int echo_mess(9,163
+void free_h(35,713
+int skip_spc(56,1144
+static void init_rv(118,2457
+void set_rv(146,3497
+int load_ll(170,4211
+int mode(412,10282
+void clear_stack(619,16363
+char *set_cut(set_cut687,18311
+void check_dir(716,18991
+int fmark(733,19433
+int nmark(742,19600
+int send_pp(751,19781
+int do_rm(769,20154
+int get_hup(795,20993
+static void mode_cont(804,21167
+void do_prog(810,21274
+void save_ll(845,22093
+int do_edit(896,23696
+void do_exec(950,24758
+void clear_base(995,25782
+PP *free_pp(free_pp1004,25912
+static int print_arc(1018,26107
+char *command(command1074,27628
+int is_write(1256,32212
+CHILD *set_cutchp(set_cutchp1304,33816
+void print_intr(1317,34083
+void ins_q(1384,36037
+
+scroll.c,222
+static void rv_str(4,61
+static int set_top(13,396
+int move_page(21,504
+void move_row(137,3272
+PP *sr_row(sr_row219,5207
+PP *sf_row(sf_row228,5351
+int init_col(245,5668
+int init_row(289,6445
+int get_col(309,6947
+
+shell.c,1985
+#define CHECK_SFD3,26
+    u_int nobl	19,310
+    u_int init	20,330
+    u_int alen	21,350
+    u_int blen	22,370
+    u_int clen	23,390
+  } f;24,410
+} Shell;25,417
+  u_int bash	28,444
+  u_int bs	29,462
+  u_int i_errp	30,478
+  u_int i_err	31,498
+  u_int n_err	32,517
+} FLAG;33,536
+    int *crp;crp37,613
+    int *colp,colp38,627
+    int *colp, *rowp;rowp38,627
+    int *col0p,col0p39,649
+    int *col0p, *colep;colep39,649
+    int *colbp;colbp40,673
+    int *lenp;lenp41,689
+    u_char *dir,dir42,704
+    u_char *dir, *version;version42,704
+  } w;43,731
+    int *row0p,row0p45,788
+    int *row0p, *lenp,lenp45,788
+    int *row0p, *lenp, *ip;ip45,788
+    RV *rvp;rvp46,816
+    PN *pnp;pnp47,829
+    PP **p0p;p0p48,843
+    u_char *buff,buff49,857
+    u_char *buff, *prev;prev49,857
+    u_char *name,name50,882
+    u_char *name, *prompt,prompt50,882
+    u_char *name, *prompt, *arg;arg50,882
+  } r;51,915
+} SHELL;52,922
+static void write_shell(54,932
+static int input_shell(127,2926
+    u_int cmd	137,3361
+    u_int skip	138,3380
+    u_int w2	139,3400
+void write_comm(664,17130
+static int read_comm(680,17431
+static PP *hide_ps(hide_ps695,17656
+static void disp_shell(703,17832
+static u_char *read_string(read_string741,18896
+static void shell_row(750,19045
+static int shell_page(760,19363
+static int next_line(790,20178
+static int read_line(823,21020
+    u_int nl	830,21239
+    u_int bs	831,21257
+    u_int esc	832,21275
+    u_int md	833,21294
+    u_int us	834,21312
+void print_prompt(1093,28354
+static int set_pos(1125,29064
+static void shell_hup(1142,29524
+static void shell_pipe(1148,29637
+static BASE *print_shell(print_shell1153,29707
+static void read_shell(1184,30571
+static int add_line(1352,34630
+static void output_shell(1365,35018
+int from_main(1717,45366
+int wait_comm(1762,46438
+static int make_shell(1796,47244
+int start_shell(1818,47956
+int do_shell(1918,51605
+int is_inter(1962,52987
+
+str.c,1150
+  u_char *S[S7,98
+} Str;8,117
+void r_S(10,125
+char *s_S(s_S18,245
+char **s_P(s_P23,329
+    char *s;s90,1889
+    int m;91,1902
+static void get_prog(143,3152
+static void print_usilic(154,3335
+static char *get_cp(get_cp211,4989
+static char *get_val(get_val221,5205
+static int conf_arc(237,5576
+static int conf_bin(279,6680
+static int conf_grep(315,7622
+static int conf_prog(349,8503
+static int conf_bsize(366,8851
+static int conf_code(380,9147
+static int conf_history(405,9854
+int conf_wait(416,10020
+static int conf_scroll(429,10259
+int env_charset(449,10593
+int conf_ls(460,10955
+static int get_str(474,11201
+static void key_err(503,12235
+static char *save_ov(save_ov512,12425
+static char *set_m(set_m547,12976
+static char *set_s(set_s559,13197
+int conf(576,13605
+void free_S(899,23293
+u_char *print_key(print_key906,23373
+    int key;909,23433
+    int mode;910,23446
+void set_key(1001,25788
+void read_mark(1030,26518
+static void conf_m(1041,26814
+static void conf_f(1078,27653
+static int conf_c(1135,29126
+int conf_key(1241,31862
+int init_config(1260,32465
+char *set_usilicrc(set_usilicrc1367,35441
+
+sub.c,2034
+  int abort;10,155
+  jmp_buf jb;11,168
+} Sub;12,182
+static void sub_clear(14,190
+static void sspc(20,267
+void rspc(35,594
+static void print_list(50,911
+static int read_str(59,1071
+static void write_str(94,2115
+static void delete_str(111,2612
+static void get_par(123,2812
+static void get_time(130,2998
+int find_prog(141,3187
+GREP *load_grep(load_grep157,3601
+GREP *save_grep(save_grep167,3729
+int find_grep(177,3850
+LIST *delete_name(delete_name189,4036
+static STR *save_hist(save_hist212,4542
+static int find_hist(222,4791
+STR *save_history(save_history233,5050
+STR *free_history(free_history263,5783
+void find_list(280,6097
+STR *save_str(save_str289,6296
+STACK *read_stack(read_stack300,6578
+STACK *load_stack(load_stack319,6880
+STACK *save_stack(save_stack359,7744
+STACK *save_stack_dir(save_stack_dir380,8351
+void get_name(397,8755
+int get_dir(405,8973
+void erase_dot(415,9227
+void read_list(444,10020
+void write_list(554,13785
+LIST *free_list(free_list598,15491
+void free_str(609,15678
+BASE *init_str(init_str621,15827
+BASE *init_list(init_list642,16246
+int load_list(662,16716
+LIST *save_list(save_list675,17022
+char *utoa(utoa690,17444
+char *tobo(tobo707,17759
+char *toul(toul722,18091
+char *tome(tome737,18423
+int ichrstr(751,18718
+void print_arg(760,18917
+void dup_error(802,20486
+void save_error(816,20788
+void save_stderr(829,20998
+void save_intr(842,21256
+int load_intr(852,21414
+char *is_inst(is_inst865,21664
+int is_access(891,22215
+int is_str(908,22570
+int is_list(949,23274
+static char pty_err[pty_err993,23873
+char *pty_strerror(pty_strerror995,23905
+int open_pty(1000,23995
+u_char *mtoa(mtoa1041,25260
+    u_char c[c1044,25332
+    int i;1045,25349
+void print_buff(1056,25561
+void print_ctrl(1090,26985
+void unlink_file(1104,27318
+void print_pid(1117,27561
+int strint(1124,27679
+int is_comm(1132,27801
+CHILD *check_chp(check_chp1205,28839
+void print_stderr(1219,29123
+int is_ls(1236,29436
+char *set_help(set_help1250,29647
+
+tc.c,1358
+#define N_LB 15,257
+static struct TC 16,298
+  char *cs;cs17,340
+  char *ho,ho18,352
+  char *ho, *cm;cm18,352
+  char *cl,cl19,369
+  char *cl, *ce;ce19,369
+  char *so,so20,386
+  char *so, *se;se20,386
+  char *us,us21,403
+  char *us, *ue;ue21,403
+  char *md,md22,420
+  char *md, *me;me22,420
+  char *le;le23,437
+  char *sc,sc24,449
+  char *sc, *rc;rc24,449
+  char *kl,kl25,466
+  char *kl, *kr;kr25,466
+  char *ku,ku26,483
+  char *ku, *kd;kd26,483
+  char *kP,kP27,500
+  char *kP, *kN;kN27,500
+  char *sf,sf28,517
+  char *sf, *sr;sr28,517
+  char *ti,ti29,534
+  char *ti, *te;te29,534
+} Tc;30,551
+static int outc(32,558
+static int tc_putchar(39,643
+static void tc_flush(51,810
+static void tc_endstand(57,889
+static void tc_stand(64,996
+static void tc_move(71,1100
+static int tc_row(78,1232
+static int tc_col(91,1369
+static void tc_clear(99,1450
+static void tc_eeol(106,1562
+static void tc_left(113,1665
+static void tc_sf(120,1768
+static void tc_sr(125,1822
+static void tc_rc(130,1876
+static void tc_sc(137,1993
+static void tc_cs(144,2110
+static void tc_seta(152,2232
+static char *tc_geta(tc_geta182,2817
+static void tc_ks(211,3233
+static int tc_mode(221,3370
+    u_int disp	224,3419
+    u_int win	225,3460
+    u_int hs	226,3503
+static int tc_cursor(264,4004
+VT *tc_load(tc_load270,4080
+
+usilic.c,337
+  int sfd;13,227
+  char path[path14,238
+} Usilic;15,259
+static void usage(17,270
+static void main_pipe(32,650
+static int set_path(43,803
+static void from_shell(65,1274
+static int check_ps(157,3770
+static void check_pl(218,5036
+int main(260,5933
+    u_int shell	266,6076
+    u_int usilic	267,6097
+void exit_usilic(434,11242
+
+vt.c,696
+static VT *vt;vt10,165
+void vt_printf(12,181
+int vt_putchar(22,329
+void vt_flush(27,392
+void vt_endstand(32,442
+void vt_stand(37,498
+void vt_move(42,548
+int vt_row(47,616
+int vt_col(52,674
+void vt_clear(57,732
+void vt_eeol(62,782
+void vt_left(67,830
+void vt_sf(72,878
+void vt_sr(77,922
+void vt_rc(82,966
+void vt_sc(87,1010
+void vt_cs(92,1054
+void vt_seta(97,1110
+char *vt_geta(vt_geta102,1166
+void vt_ks(107,1230
+int vt_mode(112,1282
+int vt_cursor(117,1344
+int vt_set(122,1418
+int get_winsize(133,1571
+int set_winsize(155,2021
+int vt_getch(166,2275
+int vt_charset(175,2429
+void vt_winsize(183,2529
+void vt_setwin(195,2754
+int vt_tfd(202,2878
+int vt_init(211,2996
+
+alloc.h,67
+#define _ALLOC_H6,70
+int exit_ALLOC(9,94
+void init_ALLOC(14,138
+
+euc_uni.h,121
+static const u_short euc_jisx0208_uni[euc_jisx0208_uni14,538
+static const u_short euc_kana_uni[euc_kana_uni112,46034
+
+menu.h,1105
+  u_int bsize;3,33
+  u_char *w;w4,48
+  LL ll;5,61
+  SS ss;6,70
+  CHILD *child,child7,79
+  CHILD *child, *arc;arc7,79
+  STACK *sp;sp8,101
+  GREP *grep;grep9,114
+  BASE *bp;bp10,128
+  BASE base[base11,140
+} HEAP;12,161
+  char intr[intr15,187
+  char intr[N_line], comm[comm15,187
+  u_char name[name16,222
+  u_char name[N_line], full[full16,222
+  u_char gname[gname17,259
+  u_char gname[N_line], cname[cname17,259
+  u_char du[du18,298
+  u_char mess[mess19,319
+  u_char gstr[gstr20,342
+  u_char gstr[N_line], iname[iname20,342
+  u_char lstr[lstr21,380
+  int *key_m,key_m22,403
+  int *key_m, *key_c;key_c22,403
+} ARRAY;23,425
+  u_int help	26,452
+  u_int ls	27,470
+  u_int winch	28,486
+  u_int cut	29,505
+  u_int grep	30,522
+  u_int cr	31,540
+  u_int comm	32,556
+} FLAG;33,574
+  int klen,36,600
+  int klen, nlen,36,600
+  int klen, nlen, clen,36,600
+  int klen, nlen, clen, error;36,600
+  int M,37,631
+  int M, Mb;37,631
+  int ll;38,644
+  int ppid;39,654
+  int history;40,666
+  int fd;41,681
+  u_int tell;42,691
+} NUM;43,705
+#define _MENU_H47,732
+
+mode.h,4667
+#define M_help	2,60
+#define M_bl	3,77
+#define M_clear	4,92
+#define M_forw	5,110
+#define M_back	6,127
+#define M_forw2	7,144
+#define M_back2	8,162
+#define M_next	9,180
+#define M_prev	10,197
+#define M_dn	11,214
+#define M_up	12,230
+#define M_head	13,246
+#define M_tail	14,264
+#define M_num	15,282
+#define M_mark	16,299
+#define M_jump	17,317
+#define M_w4	18,335
+#define M_sel	19,351
+#define M_m	20,368
+#define M_cd	21,383
+#define M_bl2	22,399
+#define M_cr	23,416
+#define M_fp	24,432
+#define M_code	25,448
+#define M_hs	26,466
+#define M_ls	27,482
+#define M_ascii	28,498
+#define M_kanji	29,517
+#define M_copy	30,536
+#define M_paste	31,554
+#define M_fgrep	32,573
+#define M_egrep	33,592
+#define M_cut2	34,611
+#define M_cut	35,629
+#define M_fcut2	36,646
+#define M_fcut	37,665
+#define M_du	38,683
+#define M_du2	39,699
+#define M_locate	40,716
+#define M_locate2	41,736
+#define M_prog2	42,757
+#define M_prog	43,776
+#define M_man2	44,794
+#define M_man	45,812
+#define M_lfile2	46,829
+#define M_lfile	47,849
+#define M_ldir2	48,868
+#define M_ldir	49,887
+#define M_hist	50,905
+#define M_cmd	51,923
+#define M_cp	52,940
+#define M_cp2	53,956
+#define M_mv	54,973
+#define M_mv2	55,989
+#define M_rm	56,1006
+#define M_rm2	57,1022
+#define M_arc	58,1039
+#define M_arc2	59,1056
+#define M_shell	60,1074
+#define M_hup	61,1093
+#define M_chdir2	62,1110
+#define M_chdir	63,1130
+#define M_w	64,1149
+#define M_w2	65,1164
+#define M_list	66,1180
+#define M_edit	67,1198
+#define M_error	68,1216
+#define M_log	69,1235
+#define M_exit	70,1252
+#define M_quit	71,1270
+#define M_dest	72,1288
+#define M_yes	73,1306
+#define M_no	74,1323
+#define M_ms	75,1339
+#define M_me	76,1355
+#define M_mm	77,1371
+#define M_end	78,1387
+#define M__0	80,1460
+#define M__1	81,1476
+#define M__2	82,1492
+#define M__3	83,1508
+#define M__4	84,1524
+#define M__5	85,1540
+#define M__6	86,1556
+#define M__7	87,1572
+#define M__8	88,1588
+#define M__9	89,1604
+#define M__10	90,1620
+#define M__11	91,1637
+#define M__12	92,1654
+#define M__13	93,1671
+#define M__14	94,1688
+#define M__15	95,1705
+#define M__16	96,1722
+#define M__17	97,1739
+#define M__18	98,1756
+#define M__19	99,1773
+#define M_usilic	101,1832
+#define M_key	102,1853
+#define M_klt	103,1871
+#define M_krt	104,1889
+#define M_kup	105,1907
+#define M_kdn	106,1925
+#define M_knext	107,1943
+#define M_kprev	108,1963
+#define M_kforw	109,1983
+#define M_kback	110,2003
+#define M_dl	111,2023
+#define M_susp	112,2040
+#define M_getch	113,2059
+#define M_nn	114,2079
+#define T_pipe	115,2096
+#define T_pipe2	116,2115
+#define T_hfile	117,2135
+#define T_hdir	118,2155
+#define T_hman	119,2174
+#define T_hlocate	120,2193
+#define T_hfgrep	121,2215
+#define T_hegrep	122,2236
+#define T_mode	123,2257
+#define T_null	124,2276
+#define T_bin	126,2338
+#define T_gz	127,2356
+#define T_buff	128,2373
+#define T_dir	129,2392
+#define T_skip	130,2410
+#define T_tar	131,2429
+#define T_lha	132,2447
+#define T_unzip	133,2465
+#define T_rpm	134,2485
+#define T_deb	135,2503
+#define T_roff	136,2521
+#define T_type	137,2540
+#define T_label	138,2559
+#define T_off	139,2579
+#define T_out	140,2597
+#define T_not	141,2615
+#define T_prompt	142,2633
+#define T_disp	143,2654
+#define T_input	144,2673
+#define T_cr	145,2693
+#define T_in	146,2710
+#define T_w	147,2727
+#define T_mess	148,2743
+#define T_prog	149,2762
+#define T_man	150,2781
+#define T_cp	151,2799
+#define T_mv	152,2816
+#define T_rm	153,2833
+#define T_locate	154,2850
+#define T_list	155,2871
+#define T_help	156,2890
+#define T_exit	157,2909
+#define T_file	158,2928
+#define T_file2	159,2947
+#define T_split	160,2967
+#define T_split2	161,2987
+#define T_tag	162,3008
+#define T_tag2	163,3026
+#define T_winch	164,3045
+#define T_winch2	165,3065
+#define T_du	166,3086
+#define T_du2	167,3103
+#define T_grep	168,3121
+#define T_grep2	169,3140
+#define T_fcut	170,3160
+#define T_fcut2	171,3179
+#define T_shell	172,3199
+#define T_shell2	173,3219
+#define T_hist	174,3240
+#define T_hist2	175,3259
+#define T_exec	176,3279
+#define T_exec2	177,3298
+#define T_cut	178,3318
+#define T_cut2	179,3336
+#define T_key	180,3355
+#define T_key2	181,3373
+#define T_arc	182,3392
+#define T_arc2	183,3410
+#define T_arc3	184,3429
+#define T_cmd	185,3448
+#define T_cmd2	186,3466
+#define T_cmd3	187,3485
+#define T_pipe3	188,3504
+#define T_pipe4	189,3524
+#define T_pipe5	190,3544
+#define T_cat	191,3564
+#define T_0	192,3582
+#define T_1	193,3598
+#define T_2	194,3614
+#define T_3	195,3630
+#define T_4	196,3646
+#define T_5	197,3662
+#define T_6	198,3678
+#define T_7	199,3694
+#define T_8	200,3710
+#define T_9	201,3726
+
+usilic.h,10411
+#define _DEFAULT_SOURCE20,914
+#define _XOPEN_SOURCE 23,967
+#define SKIP_SPC29,1054
+#define N_buff	41,1239
+#define N_pipe	42,1262
+#define N_char	43,1283
+#define N_num	44,1304
+#define N_line	45,1324
+#define N_attr	46,1345
+#define N_man	47,1366
+#define N_macro	48,1387
+#define N_base	49,1407
+#define N_ss 50,1425
+#define N_ll 51,1442
+#define N_f	52,1458
+#define N_c	53,1473
+#define N_m	54,1488
+#define N_ls	55,1503
+#define is_euckana_1_byte(57,1520
+#define is_euckana_2_byte(58,1561
+#define is_euc_1_byte(59,1611
+#define is_euc_2_byte(60,1657
+#define is_sjis_1_byte(61,1703
+#define is_sjis_2_byte(62,1776
+#define is_sjiskana(63,1812
+#define is_sjis(64,1861
+  K_00,67,1927
+  K_00, K_a,67,1927
+  K_00, K_a, K_b,67,1927
+  K_00, K_a, K_b, K_c,67,1927
+  K_00, K_a, K_b, K_c, K_d,67,1927
+  K_e,68,1955
+  K_e, K_f,68,1955
+  K_e, K_f, K_g,68,1955
+  K_e, K_f, K_g, K_h,68,1955
+  K_e, K_f, K_g, K_h, K_i,68,1955
+  K_j,70,1984
+  K_j, K_k,70,1984
+  K_j, K_k, K_l,70,1984
+  K_j, K_k, K_l, K_m,70,1984
+  K_j, K_k, K_l, K_m, K_n,70,1984
+  K_o,71,2011
+  K_o, K_p,71,2011
+  K_o, K_p, K_q,71,2011
+  K_o, K_p, K_q, K_r,71,2011
+  K_o, K_p, K_q, K_r, K_s,71,2011
+  K_t,73,2039
+  K_t, K_u,73,2039
+  K_t, K_u, K_v,73,2039
+  K_t, K_u, K_v, K_w,73,2039
+  K_t, K_u, K_v, K_w, K_x,73,2039
+  K_y,74,2066
+  K_y, K_z,74,2066
+  K_y, K_z, K_ec,74,2066
+  K_y, K_z, K_ec, K_krt,74,2066
+  K_y, K_z, K_ec, K_krt, K_klt,74,2066
+  K_kup,76,2099
+  K_kup, K_kdn,76,2099
+  K_dl=78,2116
+  K_dl=127, K_at,78,2116
+  K_dl=127, K_at, K_up,78,2116
+  K_lt,79,2141
+  K_lt, K_dn,79,2141
+  K_lt, K_dn, K_rt,79,2141
+  K_lt, K_dn, K_rt, K_prev,79,2141
+  K_lt, K_dn, K_rt, K_prev, K_next,79,2141
+  K_a0=81,2179
+  A_null=83,2192
+  A_null=200, A_us,83,2192
+  A_null=200, A_us, A_ue,83,2192
+  A_null=200, A_us, A_ue, A_md,83,2192
+  A_null=200, A_us, A_ue, A_md, A_me,83,2192
+  A_us2,84,2230
+  A_us2, A_ue2,84,2230
+  A_us2, A_ue2, A_md2,84,2230
+  A_us2, A_ue2, A_md2, A_me2,84,2230
+  A_us2, A_ue2, A_md2, A_me2, A_md3,84,2230
+  A_cs,86,2269
+  A_cs, A_ce,86,2269
+  C_ascii=88,2284
+  C_ascii=300, C_bin,88,2284
+  C_ascii=300, C_bin, C_sjis,88,2284
+  C_ascii=300, C_bin, C_sjis, C_euc,88,2284
+  C_ascii=300, C_bin, C_sjis, C_euc, C_jis,88,2284
+  C_base64,89,2329
+  C_base64, C_quote,89,2329
+  C_base64, C_quote, C_shift_jis,89,2329
+  C_base64, C_quote, C_shift_jis, C_us_ascii,89,2329
+  C_base64, C_quote, C_shift_jis, C_us_ascii, C_euc_jp,89,2329
+  C_base64, C_quote, C_shift_jis, C_us_ascii, C_euc_jp, C_utf8,89,2329
+  S_macro=91,2395
+  S_label=92,2409
+  S_usilic=94,2433
+  S_usilic=S_label+M_usilic, S_code,94,2433
+  S_usilic=S_label+M_usilic, S_code, S_usilicrc,94,2433
+  S_usilic=S_label+M_usilic, S_code, S_usilicrc, S_lb2,94,2433
+  S_usilic=S_label+M_usilic, S_code, S_usilicrc, S_lb2, S_path,94,2433
+  S_sh,95,2498
+  S_sh, S_w,95,2498
+  S_sh, S_w, S_write,95,2498
+  S_sh, S_w, S_write, S_mess,95,2498
+  S_sh, S_w, S_write, S_mess, S_hist,95,2498
+  S_intr,97,2538
+  S_intr, S_version,97,2538
+  S_intr, S_version, S_mark,97,2538
+  S_intr, S_version, S_mark, S_home,97,2538
+  S_intr, S_version, S_mark, S_home, S_error,97,2538
+  S_log,98,2585
+  S_log, S_help,98,2585
+  S_log, S_help, S_ls,98,2585
+  S_log, S_help, S_ls, S_du,98,2585
+  S_log, S_help, S_ls, S_du, S_cp,98,2585
+  S_mv,100,2622
+  S_mv, S_rm,100,2622
+  S_mv, S_rm, S_groff,100,2622
+  S_mv, S_rm, S_groff, S_man,100,2622
+  S_mv, S_rm, S_groff, S_man, S_locate,100,2622
+  S_file,101,2663
+  S_file, S_egrep,101,2663
+  S_file, S_egrep, S_fgrep,101,2663
+  S_file, S_egrep, S_fgrep, S_gzip,101,2663
+  S_file, S_egrep, S_fgrep, S_gzip, S_bzip2,101,2663
+  S_tar,103,2710
+  S_tar, S_lha,103,2710
+  S_tar, S_lha, S_unzip,103,2710
+  S_tar, S_lha, S_unzip, S_rpm,103,2710
+  S_tar, S_lha, S_unzip, S_rpm, S_rpm2cpio,103,2710
+  S_deb,104,2755
+  S_deb, S_tty,104,2755
+  S_deb, S_tty, S_err0,104,2755
+  S_deb, S_tty, S_err0, S_err1,104,2755
+  S_deb, S_tty, S_err0, S_err1, S_err2,104,2755
+  S_err3,106,2797
+  S_err3, S_err4,106,2797
+  S_err3, S_err4, S_err5,106,2797
+  S_err3, S_err4, S_err5, S_err6,106,2797
+  S_err3, S_err4, S_err5, S_err6, S_err7,106,2797
+  S_err8,107,2840
+  S_err8, S_err9,107,2840
+  S_err8, S_err9, S_erra,107,2840
+  S_err8, S_err9, S_erra, S_errb,107,2840
+  S_err8, S_err9, S_erra, S_errb, S_errc,107,2840
+  S_errd,109,2884
+  S_errd, S_erre,109,2884
+  S_errd, S_erre, S_errf,109,2884
+  S_errd, S_erre, S_errf, S_errg,109,2884
+  S_errd, S_erre, S_errf, S_errg, S_errh,109,2884
+  S_erri,110,2927
+  S_erri, S_errj,110,2927
+  S_erri, S_errj, S_errk,110,2927
+  S_erri, S_errj, S_errk, S_errl,110,2927
+  S_erri, S_errj, S_errk, S_errl, S_errm,110,2927
+  S_errn,112,2971
+  S_errn, S_erro,112,2971
+  S_errn, S_erro, S_errp,112,2971
+  S_errn, S_erro, S_errp, S_errq,112,2971
+  S_errn, S_erro, S_errp, S_errq, S_errr,112,2971
+  S_errs,113,3014
+  S_errs, S_errt,113,3014
+  S_errs, S_errt, S_erru,113,3014
+  S_errs, S_errt, S_erru, S_errv,113,3014
+  S_errs, S_errt, S_erru, S_errv, S_errw,113,3014
+  S_errx,115,3057
+  S_errx, S_erry,115,3057
+  S_errx, S_erry, S_errz,115,3057
+  S_errx, S_erry, S_errz, S_pid,115,3057
+  S_errx, S_erry, S_errz, S_pid, S_tmp,115,3057
+  S_nop,116,3098
+  S_nop, S_lib,116,3098
+  S_nop, S_lib, S_stderr,116,3098
+  S_nop, S_lib, S_stderr, S_arc1,116,3098
+  S_nop, S_lib, S_stderr, S_arc1, S_arc2,116,3098
+  S_arc3,118,3142
+  S_arc3, S_arc4,118,3142
+  S_arc3, S_arc4, S_arc5,118,3142
+  S_arc3, S_arc4, S_arc5, S_enter,118,3142
+  S_arc3, S_arc4, S_arc5, S_enter, S_LANG,118,3142
+  S_USILIC,119,3186
+  S_USILIC, S_option,119,3186
+  S_LS=120,3209
+  S_LS=S_option, S_DU,120,3209
+  S_LS=S_option, S_DU, S_CP,120,3209
+  S_LS=S_option, S_DU, S_CP, S_MV,120,3209
+  S_LS=S_option, S_DU, S_CP, S_MV, S_RM,120,3209
+  S_nn=121,3250
+  P_child=123,3270
+  P_child=0, P_mode,123,3270
+  P_child=0, P_mode, P_usilicrc,123,3270
+  P_child=0, P_mode, P_usilicrc, P_code,123,3270
+  P_child=0, P_mode, P_usilicrc, P_code, P_arc,123,3270
+  P_nn,124,3318
+  short n;128,3363
+  short attr;129,3374
+} ATTR;130,3388
+typedef struct PP 132,3397
+  struct PP *prev;prev133,3438
+  struct PP *next;next134,3457
+  u_char *cs;cs135,3476
+  ATTR *attr;attr136,3490
+  uintptr_t tell;137,3504
+  int split;141,3726
+    u_int nl	143,3750
+    u_int code	144,3768
+    u_int bin	145,3788
+    u_int str	146,3807
+    u_int len	147,3826
+    u_int line	148,3845
+  } f;149,3866
+} PP;150,3873
+  u_char str[str153,3918
+  u_char str[N_line], copy[copy153,3918
+  int row,154,3954
+  int row, col;154,3954
+  PP *ps,ps155,3970
+  PP *ps, *pe,pe155,3970
+  PP *ps, *pe, *pp;pp155,3970
+} RV;156,3990
+typedef struct CHILD 158,3997
+  char **argv;argv159,4040
+  char *suffix;suffix160,4055
+    u_long chp	162,4082
+    u_long exec	163,4102
+    u_long argc	164,4123
+  } f;165,4144
+  struct CHILD *next;next166,4151
+} CHILD;167,4173
+typedef struct PN 169,4183
+  int row;170,4218
+  int nrow;171,4249
+  u_int top;172,4280
+  int line;173,4325
+} PN;174,4357
+typedef struct LIST 176,4364
+  PN pn;177,4404
+  u_char *name;name178,4413
+  struct LIST *left;left179,4429
+  struct LIST *right;right180,4450
+} LIST;181,4472
+typedef struct STR 183,4483
+  PN pn;184,4517
+  u_char *name;name185,4526
+  struct STR *next;next186,4542
+} STR;187,4562
+  int nrow;190,4613
+  int size;191,4644
+  u_char *buff;buff192,4677
+  PP *pp;pp193,4693
+} BASE;194,4703
+  u_char name[name197,4729
+  u_char *buff,buff198,4752
+  u_char *buff, str[str198,4752
+  CHILD *chp;chp199,4781
+  BASE *bp;bp200,4795
+} CUT;201,4807
+  u_char dir[dir204,4848
+  u_char old[old205,4870
+  u_char arg[arg206,4892
+  u_char prev[prev207,4914
+  CUT cut;208,4937
+} LINE;209,4948
+typedef struct GREP 211,4957
+  int f_M;212,5004
+  u_char name[name213,5015
+  u_char name[N_line], str[str213,5015
+  LINE l;214,5051
+  BASE *bp;bp215,5061
+  struct GREP *prev;prev216,5073
+} GREP;217,5094
+typedef struct STACK 219,5103
+    u_int bp	221,5154
+    u_int M	222,5173
+  } f;223,5192
+  u_char *prev;prev224,5199
+  u_char *name;name225,5215
+  u_char *dir;dir226,5231
+  u_char *old;old227,5246
+  char *arg;arg228,5261
+  CUT cut;229,5274
+  BASE *bp;bp230,5285
+  struct STACK *next;next231,5297
+} STACK;232,5319
+    u_int i 236,5356
+    u_int q 237,5390
+    u_int e 238,5430
+    u_int s 239,5465
+  } f;240,5498
+  u_int c;241,5505
+} JIS;242,5516
+    STR *file;file246,5580
+    STR *dir;dir247,5604
+    STR *prog;prog248,5628
+    STR *man;man249,5652
+    STR *grep;grep250,5675
+    STR *cmd;cmd251,5699
+    STR *hist;hist252,5722
+    STR *rprog;rprog253,5746
+    STR *rgrep;rgrep254,5771
+    STR *hfile;hfile255,5796
+    STR *hdir;hdir256,5821
+    STR *hman;hman257,5846
+    STR *hlocate;hlocate258,5871
+    STR *hfgrep;hfgrep259,5898
+    STR *hegrep;hegrep260,5924
+    STR *mode;mode261,5950
+  } p;262,5975
+  u_long a[a263,5982
+} SS;264,6000
+    LIST *mode;mode268,6063
+    LIST *file;file269,6088
+    LIST *dir;dir270,6113
+    LIST *prog;prog271,6138
+    LIST *man;man272,6163
+    LIST *grep;grep273,6187
+    LIST *cmd;cmd274,6212
+    LIST *list;list275,6236
+    LIST *split;split276,6261
+  } p;277,6286
+  u_long a[a278,6293
+} LL;279,6311
+  void (*flush)flush282,6335
+  int (*printf)printf283,6358
+  int (*put_char)put_char284,6397
+  void (*endstand)endstand285,6421
+  void (*stand)stand286,6447
+  void (*move)move287,6470
+  int  (*row)row288,6496
+  int  (*col)col289,6516
+  void (*clear)clear290,6536
+  void (*eeol)eeol291,6559
+  void (*left)left292,6581
+  void (*sf)sf293,6603
+  void (*sr)sr294,6623
+  void (*rc)rc295,6643
+  void (*sc)sc296,6663
+  void (*cs)cs297,6683
+  void (*seta)seta298,6707
+  char *(*geta)geta299,6728
+  void (*ks)ks300,6750
+  int  (*mode)mode301,6774
+  int  (*cursor)cursor302,6795
+} VT;303,6818
+#define F1	305,6825
+#define F2	306,6864
+#define F3	307,6907
+#define F4	308,6959
+#define F5	309,7020
+#define F6	310,7061
+#define F7	311,7111
+#define F8	312,7160
+#define F9	313,7203
+#define F10	314,7245
+#define F11	315,7289
+#define F12	316,7332
+#define F13	317,7374
+#define sig_child 319,7417
+#define debug	321,7444
+#define is_prev(322,7471
+#define is_name(324,7562
+#define is_arg(326,7645
+#define is_pg(327,7685
+#define is_fm(328,7738
+#define _USILIC_H332,7824
+
+version.h,0

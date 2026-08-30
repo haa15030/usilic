@@ -14,7 +14,7 @@ namespace fm {
 // ファイル閲覧モード: 通常ファイルの内容を表示する。mode.cのT_file
 // ケースが、init.cのinit_bin()(read_buff()/check_type()/set_pp()の
 // 連鎖)へ手を伸ばす形からの移植――ただし「プレーンテキストファイル」
-// の経路のみ。legacyのT_file処理自体、M_error/M_log/M_tcb/M_duも
+// の経路のみ。legacyのT_file処理自体、M_error/M_log/M_old/M_duも
 // 使うもっと大きな共有機構(check_type()の内容判定、外部の
 // `file`(1)/roff/アーカイブハンドラへ引き渡すかどうかの決定、
 // バイナリ内容の16進ダンプ表示モード)の小さなラッパーに過ぎない
@@ -42,7 +42,7 @@ namespace fm {
 //     この除外を文書化済み。バイナリファイルの生バイトは、
 //     判定不能なコンテンツに対するPipeBuffer自身のパススルー挙動と
 //     同じく、ここでは単にそのまま表示される。
-//   - M_error/M_log/M_tcb/M_duの代替データ源(ログファイル、About
+//   - M_error/M_log/M_old/M_duの代替データ源(ログファイル、About
 //     バナー、`du`出力): それらは「通常ファイルを閲覧する」ことでは
 //     全く無く、たまたまinit_bin()のC実装を共有していただけのコード
 //     経路である。

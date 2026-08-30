@@ -1,51 +1,52 @@
 # editor backup files
 *~
 
-# legacy C source (tcb/) build artifacts
-tcb/src/*.o
-tcb/src/*.P
-tcb/*.P
+# legacy C source (old/, named tcb/ until the 2026-08-30 tcb->usilic
+# rename) build artifacts
+old/src/*.o
+old/src/*.P
+old/*.P
 # The built binary itself, under whatever name `make PROG=<name>` was
 # given (2026-08-05: Makefile's own PROG variable, default "usilic" --
 # see its own comment) -- "tcb"/"tcb.exe" kept for any build that
 # didn't override PROG, "usilic" for this checkout's own actual use.
-tcb/src/tcb
-tcb/src/tcb.exe
-tcb/src/usilic
+old/src/tcb
+old/src/tcb.exe
+old/src/usilic
 # "U" (2026-08-25): src/config.sh's own PROGNAME, renamed from "usilic"
 # so this legacy build installs alongside the C++ port (src/cpp/, which
 # now owns the "usilic" name) without colliding -- see config.sh's own
 # comment. "usilic" above is kept too, for any older checkout/build
 # that hasn't re-run config.sh yet.
-tcb/src/U
-tcb/src/config.h
-tcb/src/config.h.old
+old/src/U
+old/src/config.h
+old/src/config.h.old
 # progname.h is generated fresh by every `make` invocation (see
 # Makefile's own progname.h rule) -- never hand-edited, never
-# committed. tcb/src/Makefile itself is NOT listed here (2026-08-05):
+# committed. old/src/Makefile itself is NOT listed here (2026-08-05):
 # it's the genuine, hand-maintained source of truth for the PROG
 # parameterization, not a locally-generated artifact -- see CLAUDE.md.
-tcb/src/progname.h
-tcb/src/progname.h.old
-tcb/src/Makefile.old
-tcb/src/.config
-tcb/src/TAGS
-tcb/src/t
-tcb/src/TCB.EXE.stackdump
-tcb/src/debug/
+old/src/progname.h
+old/src/progname.h.old
+old/src/Makefile.old
+old/src/.config
+old/src/TAGS
+old/src/t
+old/src/USILIC.EXE.stackdump
+old/src/debug/
 
 # perl scratch/doc build output (legacy C docs toolchain)
-tcb/perl/tcb.dvi
-tcb/perl/tcb.log
-tcb/perl/tcb.aux
-tcb/perl/t
-tcb/perl/u
-tcb/perl/s
+old/perl/usilic.dvi
+old/perl/usilic.log
+old/perl/usilic.aux
+old/perl/t
+old/perl/u
+old/perl/s
 
 # src/: config.sh output, C++ port build artifacts, generated man page
 src/install.sh
 src/.config
-src/doc/tcb.1.gz
+src/doc/usilic.1.gz
 src/cpp/build/
 
 # Node.js (claude-code-book scaffold)

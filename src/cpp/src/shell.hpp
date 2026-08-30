@@ -23,7 +23,7 @@ namespace fm {
 // 起きた)。
 struct ShellOptions {
   // ptyへexecされるプログラム + argv(例えば{"bash"}や
-  // {"/bin/tcsh"})。ここで$SHELLやtcbrcのCHILD/SHELLディレクティブ
+  // {"/bin/tcsh"})。ここで$SHELLやusilicrcのCHILD/SHELLディレクティブ
   // から解決するのは意図的にしていない――どのプログラムを実行するか
   // はConfigurationの仕事である(child.cのsave_child()/get_child()
   // 参照)。ChildProcessが自身のargvを決して自分で決めないのと
@@ -59,7 +59,7 @@ struct ShellOptions {
 // shell.cppのopenPty()参照)からの移植。
 //
 // これは逐語的な移植ではない。legacyのSHELLモードは3つの協調する
-// プロセス――メインのtcbプロセス、メインプロセスがキー入力を待って
+// プロセス――メインのusilicプロセス、メインプロセスがキー入力を待って
 // ブロックしている間ptyの排出を続けるためだけにforkされた2つ目の
 // 「表示」プロセス、そしてシェル自身――が、SIGALRMをメッセージ
 // バスの呼び鈴として乱用した8個の手作りパイプ(同期リクエストの

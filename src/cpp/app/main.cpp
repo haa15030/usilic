@@ -8,7 +8,7 @@
 // Application::wantsExit() (set by the M_exit ^X^C confirmation
 // flow) becomes true, saving history back out on the way out.
 //
-// Deliberately minimal, not a literal port of tcb.c's main()/
+// Deliberately minimal, not a literal port of usilic.c's main()/
 // init_menu()/menu():
 //   - usilicrc/history loading IS wired (this is what closes the last
 //     of the three follow-ups this file's own history left open, see
@@ -16,7 +16,7 @@
 //     History::loadHistoryText() take already-read text rather than
 //     doing file I/O themselves (by design, see their own class
 //     comments) -- this file does that reading, following
-//     set_tcbrc()/the S_hist path-building in legacy's str.c as
+//     set_usilicrc()/the S_hist path-building in legacy's str.c as
 //     closely as practical: both files live under $HOME/.usilic/ (the
 //     directory is created if missing), named usilicrc and history.
 //     Two things legacy did that this doesn't: falling back to a
@@ -1201,7 +1201,7 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
 // -- so a real shell prompt afterward is never left with broken mouse
 // click/selection behavior.
 // SIGTERM/SIGHUP (2026-08-20 addition, a direct user question after
-// recalling that killing legacy tcb with `kill -9` used to leave the
+// recalling that killing legacy usilic with `kill -9` used to leave the
 // terminal in raw mode, needing `reset`): confirmed by reading key.c's
 // own save_signal()/key_term() -- legacy DOES install a real SIGTERM/
 // SIGHUP handler there (unconditionally, not just under some launch
@@ -2483,7 +2483,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
 // SHELL-mode re-exec handoff -- see Shell::start()'s own
 // setenv("USILIC", ...) comment for how this gets detected, and
 // Application::pollShellHandoff() for the parent-process half that
-// actually receives this. Ported from tcb.c's own from_shell() (a
+// actually receives this. Ported from usilic.c's own from_shell() (a
 // real legacy source investigation, 2026-08-25, confirmed against the
 // real binary): a plain `usilic <path>` (or a pipe into it) typed at
 // a live usilic's own SHELL-mode prompt should switch THAT already-
@@ -2514,14 +2514,14 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
 //     pollShellHandoff()'s own comment), and this process streams its
 //     own stdin through to it until EOF.
 // 2026-08-25 (a direct user request, ported into BOTH this binary AND
-// legacy's own tcb/src/tcb.c's main() -- see Shell::start()'s own
-// setenv("TCB_LIVE_SHELL",...) comment for the marker-SETTING half in
-// shell.cpp, and tcb.c's own identical check for legacy's side):
+// legacy's own old/src/usilic.c's main() -- see Shell::start()'s own
+// setenv("USILIC_LIVE_SHELL",...) comment for the marker-SETTING half in
+// shell.cpp, and usilic.c's own identical check for legacy's side):
 // getenv("USILIC") alone only ever proves "I'm inside a live USILIC
 // SHELL specifically" -- typing the OTHER binary's name (legacy "U")
 // inside a live USILIC SHELL sees no such env var at all and falls
 // through to launching a confusing, genuinely independent full session
-// instead. TCB_LIVE_SHELL is a SECOND, shared, binary-agnostic env var
+// instead. USILIC_LIVE_SHELL is a SECOND, shared, binary-agnostic env var
 // BOTH binaries' own Shell start sets unconditionally -- present but
 // USILIC specifically absent means "I'm in someone ELSE's live SHELL",
 // so this prints a real error instead of ever reaching normal startup,
@@ -2535,7 +2535,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
 // has neither env var set and reaches neither branch here, unaffected.
 void checkInvalidTerminalMarker() {
   if (std::getenv("USILIC")) return;
-  if (!std::getenv("TCB_LIVE_SHELL")) return;
+  if (!std::getenv("USILIC_LIVE_SHELL")) return;
   std::cerr << "usilic: Invalid Terminal\n";
   std::exit(1);
 }
@@ -2734,7 +2734,7 @@ int main(int argc, char **argv) {
 #endif
 
   // Ported from HELP.jp's own EXIT section (2.18): "引数無しで file
-  // manager で起動した場合は...アクセス履歴のリストを~/.tcb/history
+  // manager で起動した場合は...アクセス履歴のリストを~/.usilic/history
   // に保存し、次回の起動時にはこのファイルにより、履歴リストを復元
   // します" / "(ディレクトリ引数で起動した時...は、以上のファイルには
   // アクセスしません)" -- an argument-launched run neither reads NOR
@@ -2776,10 +2776,10 @@ int main(int argc, char **argv) {
   std::signal(SIGTERM, handleTerminationSignal);
   std::signal(SIGHUP, handleTerminationSignal);
 
-  // Ported from str.c's set_tcbrc()/S_hist path-building: both files
+  // Ported from str.c's set_usilicrc()/S_hist path-building: both files
   // live under $HOME/.usilic/, created if it doesn't exist yet (same
   // directory legacy's own history file lived under after the
-  // tcb->usilic rename, see CLAUDE.md).
+  // usilic->usilic rename, see CLAUDE.md).
   const char *homeEnv = std::getenv("HOME");
   std::string usilicDir = (homeEnv ? std::string(homeEnv) : std::string()) + "/.usilic/";
   ::mkdir(usilicDir.c_str(), S_IRWXU);  // ignored if it already exists; real failures surface later as I/O errors
@@ -2827,7 +2827,7 @@ int main(int argc, char **argv) {
   bool hasRealContentArgument = !positionalArgs.empty() || !::isatty(STDIN_FILENO);
   std::string tempRootDirectory = hasRealContentArgument ? pidTempDirectory : "";
   std::string workRootDirectory = pidTempDirectory;
-  // ^T's own new "Boot options" field (see executeShowTcbBanner()'s own
+  // ^T's own new "Boot options" field (see executeShowUsilicBanner()'s own
   // comment): the literal argv[1..] this process was launched with, in
   // their original order (so -c/-g/-u and the directory argument all
   // appear exactly as typed, whichever order that was) -- empty for a
@@ -2857,7 +2857,7 @@ int main(int argc, char **argv) {
   // user's own customized copy) takes priority as before; if that
   // doesn't exist yet, falls back to the SHIPPED default `make
   // install` places at $(PREFIX)/lib/usilic/usilicrc -- mirrors
-  // legacy's own two-tier set_tcbrc() lookup (str.c: $HOME/.usilic/
+  // legacy's own two-tier set_usilicrc() lookup (str.c: $HOME/.usilic/
   // then LIB/usilicrc) exactly, just without a config.sh-style
   // compile-time LIB constant to bake the second tier into, so both
   // plausible PREFIX values (~/.local, the new default; /usr/local,
@@ -3105,7 +3105,7 @@ int main(int argc, char **argv) {
   // usilicrc's own SCROLL/LS sections and Command::ToggleScrollMode/
   // ToggleLsMode's own comments on ^Oh/^Ol) -- history.
   // smoothScrollEnabled()/lsMode() were already parsed from/
-  // serialized to the history file's TCB trailer line, but nothing
+  // serialized to the history file's USILIC trailer line, but nothing
   // ever actually applied them anywhere until now (a real gap: the
   // hardware-scroll fast paths ^Oh gates were fully built and tested,
   // but every real run defaulted to false regardless of what a
