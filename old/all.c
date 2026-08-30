@@ -577,7 +577,7 @@ typedef struct {
 
 #define _USILIC_H
 #endif
-"version 1.5b-1  20 Mar 2000\012Coded by Taketo Matsubara\012E-Mail: moody@osk.3web.ne.jp\012"
+"version 1.5b-1  20 Mar 2000\012"
 static void decode_base64(u_char *code, u_char mime[], u_char end[]);
 static void decode_quote(u_char *code, u_char mime[], u_char end[]);
 static int conv_q(int buff_i, int len, u_char *cp, u_char euc[], JIS *dummy);
@@ -12896,58 +12896,21 @@ static void get_prog(char str[])
 
 static void print_usilic(char *str, int f_usilic)
 {
-  char *cp, *p = str, tmp[256];
-  
-  strcpy(p, s_S(S_version));
-  *p = 'V';
-  sprintf(strchr(p, '\0'), "--\nStartup file : %s\n", toul(s_S(S_usilicrc), 0));
-  if (f_usilic & 0x80)
-    sprintf(strchr(p, '\0'), "History file : %s\n", toul(s_S(S_hist), 0));
-  sprintf(strchr(p, '\0'), "Startup mode : %s\n"
-	  , (f_usilic & (0x80 | 0x40)) 
-	  ? tobo("file manager", 0) : tobo("pager", 0));
-  sprintf(strchr(p, '\0'), "Command line : %s\n", s_S(S_option+7));
-  strcat(p, "User name    : ");
-  do {
-    if ((cp = getenv("user"))) sprintf(strchr(p, '\0'), "%s", cp);
-    else if ((cp = getenv("USER"))) sprintf(strchr(p, '\0'), "%s", cp);
-    else {
-      sprintf(strchr(p, '\0'), "---\n");
-      continue;
-    }
-    if ((!(cp = getenv("hostname")) 
-	&& !(cp = getenv("HOSTNAME"))
-	&& !(cp = getenv("HOST")))
-	|| !strlen(cp)) {
-      int i, pv[2];
-      pipe(pv);
-      if (!fork()) {
-	close(1);
-	dup2(pv[1], 1);
-	close(pv[1]);
-	close(pv[0]);
-	execlp("hostname", "hostname", NULL);
-      }
-      close(pv[1]);
-      for (i = 0; read(pv[0], &tmp[i], 1) == 1 && i < 256; i++) ;
-      if (i == 256) i--;
-      tmp[i] = '\0';
-      close(pv[0]);
-      if ((cp = strchr(tmp, '\n'))) *cp = '\0';
-      cp = (i) ? tmp : NULL;
-    }
-    if (cp) sprintf(strchr(p, '\0'), "@%s\n", cp);
-    else strcat(p, "\n");
-  } while (0);
+  /* 新(C++移植)のINFO画面(application.cpp、field()、kLabelWidth=12)
+     と同じフィールド構成に合わせてある。旧はここに実名とメール
+     アドレスを表示していたが、実名は伏せたい・メールは無効という
+     直接の依頼を受け、その"Version ..."見出し(version.h)自体を
+     表示対象から外した。"History file"/"Startup mode"/"User name"
+     も新には無いフィールドのため削除した。 */
+  char *p = str;
+
+  *p = '\0';
+  sprintf(strchr(p, '\0'), "Boot options : %s\n", s_S(S_option+7));
+  sprintf(strchr(p, '\0'), "Startup file : %s\n", toul(s_S(S_usilicrc), 0));
   if (f_usilic & (0x80 | 0x40)) {
-    sprintf(strchr(p, '\0')
-	    , "%s log    : %s\n"
-	    , tobo(&s_P(P_mode)[M_error][1], 0)
-	    , toul(s_S(S_error), 0));
-    sprintf(strchr(p, '\0')
-	    , "%s log    : %s\n"
-	    , tobo(&s_P(P_mode)[M_shell][1], 0)
-	    , toul(s_S(S_log), 0));
+    sprintf(strchr(p, '\0'), "       ERROR : %s\n", toul(s_S(S_error), 0));
+    sprintf(strchr(p, '\0'), "       SHELL : %s\n", toul(s_S(S_log), 0));
+    sprintf(strchr(p, '\0'), "        WORK : %s\n", toul(s_S(S_w), 0));
   }
 }
 
