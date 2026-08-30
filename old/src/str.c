@@ -22,8 +22,8 @@ char *s_S(int n_S)/*usilic*/
 
 char **s_P(uintptr_t n_P)/*usilic*/
 {
-  static char *child[] = { /* built-in program */
-    /* file manager */
+  static char *child[] = { /* 組み込みプログラム */
+    /* ファイルマネージャ */
     NULL,		/* S_ls */
     NULL,		/* S_du */
     NULL,		/* S_cp */
@@ -46,7 +46,7 @@ char **s_P(uintptr_t n_P)/*usilic*/
     "ar p",		/* S_deb */
     NULL,
   };
-  static char *usilicrc[] = { /* setting name defined in usilicrc */
+  static char *usilicrc[] = { /* usilicrcで定義される設定名 */
     "ARCHIVE", 
     "FILE", 
     "EXEC", 
@@ -118,7 +118,7 @@ char **s_P(uintptr_t n_P)/*usilic*/
     {" ",	T_pipe},
     {" (stdin)",	T_pipe2},
 
-    /* for ~/.usilic/history */
+    /* ~/.usilic/historyのため */
     {" FILE_HISTORY",	T_hfile},
     {" DIR_HISTORY",	T_hdir},
     {" MAN_HISTORY",	T_hman},
@@ -331,8 +331,9 @@ static int conf_grep(FILE *fp, char str[], LIST **lgpp, STR **sgpp)
 	while (*cp != '\042' && *cp != '\047') cp++;
       } else while (*cp != ' ' && *cp != '\t') cp++;
       *cp = '\0';
-      memmove(str, p, strlen(p) + 1); /* p may overlap str; strcpy() is UB here and
-					  aborts under macOS's fortified libc */
+      memmove(str, p, strlen(p) + 1); /* pはstrと重なり得る; ここでstrcpy()は
+					  未定義動作であり、macOSのfortified
+					  libcの下ではabortする */
       size = strlen(str);
       if ((code = init_code(&size, str, 0)) == C_sjis) toeuc(str);
       else if (code == C_jis) {
@@ -447,10 +448,11 @@ static int conf_scroll(FILE *fp, char *str)
 }
 
 int env_charset(int f)/*usilic*/
-{ /* whether the user explicitly exported USILICCHARSET (as opposed to
-     it only being set by our own auto-default below). An explicit
-     export should always win over whatever charset happened to be
-     saved in ~/.usilic/history from the previous session. */
+{ /* ユーザーがUSILICCHARSETを明示的にexportしたかどうか(下の
+     自動既定値によって設定されただけなのとは対照的に)。明示的な
+     exportは、前回のセッションで~/.usilic/historyへたまたま
+     保存されていた文字コードが何であれ、常にそれより優先される
+     べきである。 */
   static int f_env;
 
   if (f >= 0) f_env = f;
@@ -493,10 +495,12 @@ static int get_str(FILE *fp, u_char str[])
   if ((cp = strchr(cp, '#'))) *cp = '\0';
   if ((cp = strchr(str, '\n'))) *cp = '\0';
   for (cp = str; *cp && (*cp == ' ' || *cp == '\t'); cp++) ;
-  if (cp > str) memmove(str, cp, strlen((char *)cp) + 1); /* cp points inside str: strcpy() is
-    UB on overlapping ranges and was observed to corrupt data here (glibc/aarch64), e.g. dropping
-    the '-' out of "K-11" and turning "previous" into "reviouss" -- same bug class as the
-    overlapping strcpy() found earlier in write_shell()/input_shell(). */
+  if (cp > str) memmove(str, cp, strlen((char *)cp) + 1); /* cpはstrの内部を
+    指している: strcpy()は重なる範囲では未定義動作であり、ここで実際に
+    データを壊すことが観測された(glibc/aarch64)、例えば"K-11"から'-'が
+    抜け落ちたり、"previous"が"reviouss"になったりする――以前
+    write_shell()/input_shell()で見つかった重なったstrcpy()と同じ
+    クラスのバグである。 */
   return 0;
 }
 
@@ -651,14 +655,14 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
   if (temp) {
     strcpy(temp, TMP);
     /*
-     * following files will be used at "TMP" (defined in config.h) directory.
-     *   d... notice of termination of `du'.
-     *   e... log of ERROR after startup with directory argument.
-     *   i... information about error message No..
-     *   l... log of SHELL after startup with directory argument.
-     *   s... output from `usilic' launched at SHELL-prompt.
-     *   w... content of ^Jw and ^J^W.
-     *   t... work file used instead of memory failed to be allocated.
+     * 以下のファイルは"TMP"(config.hで定義)ディレクトリで使われる。
+     *   d... `du'の終了通知。
+     *   e... ディレクトリ引数付きで起動した後のERRORのログ。
+     *   i... エラーメッセージ番号についての情報。
+     *   l... ディレクトリ引数付きで起動した後のSHELLのログ。
+     *   s... SHELLプロンプトから起動された`usilic'からの出力。
+     *   w... ^Jwと^J^Wの内容。
+     *   t... メモリの確保に失敗した代わりに使われる作業ファイル。
      */
     return 0;
   }
@@ -755,9 +759,10 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
     pipe(pv);
     if (!fork()) {
       int pv2[2];
-      pipe(pv2); /* was never called: dup2()/close() below ran on whatever
-		    garbage happened to be on the stack for pv2[], which could
-		    alias a real, already-open fd and redirect/close it. */
+      pipe(pv2); /* 一度も呼ばれていなかった: 下のdup2()/close()は
+		    pv2[]にたまたまスタック上にあったゴミの値に対して
+		    実行されており、本物の既に開かれているfdをエイリアス
+		    してリダイレクト/closeしてしまう可能性があった。 */
       if (!fork()) {
 	close(1);
 	dup2(pv2[1], 1);
@@ -853,7 +858,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
       Str.S[S_sh] = strdup(cp);
       if (!is_inst(s_S(S_path), p)) {
 	fprintf(stderr, "%s: %s: %s.\n", usilic, p, err[S_errc - S_err0]);
-	return -1; /* s_S(S_sh) isn't installed */
+	return -1; /* s_S(S_sh)がインストールされていない */
       }
     }
     sprintf(tmp, "%s  %s", &s_P(P_mode)[M_shell][1], version);
@@ -861,7 +866,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
     Str.S[S_lb2] = strdup(tmp);	/* S_lb2 */
     for (i = j = 0; i < S_tty - S_ls; i++, j++) {
       cp = s_P(P_child)[j];
-      /* set Str.S[S_ls]  ... */ 
+      /* Str.S[S_ls]等を設定する */
       if (!cp || !strlen(cp)) continue;
       else {
 	char *p = alloca(strlen(cp) + 1);
@@ -877,7 +882,7 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
     Str.S[S_arc5] = strdup(AR);
   } else
     for (i = 0, j = S_file - S_ls; i < S_tty - S_file; i++, j++) {
-      /* set Str.S[S_file]  ... */ 
+      /* Str.S[S_file]等を設定する */
       cp = s_P(P_child)[j];
       if (!cp || !strlen(cp)) continue;
       else { 
@@ -936,7 +941,7 @@ u_char *print_key(int *key_c)/*usilic*/
     {K_z, 0},			/* ^Z */
     {0, 0},
   };
-  static u_char inval_0[] = {/* pager */
+  static u_char inval_0[] = {/* ページャ */
     M_help, M_sel, M_fp, M_code, M_cd, M_m, M_bl2,
     M_fcut2, M_fcut, M_du, M_du2, M_locate, M_locate2, M_prog2, M_prog, 
     M_man2, M_man, M_lfile2, 
@@ -946,7 +951,7 @@ u_char *print_key(int *key_c)/*usilic*/
     M_ascii, M_kanji, M_exit, M_ls,
     0,
   };
-  static u_char inval_2[] = { /* filemanager */
+  static u_char inval_2[] = { /* ファイルマネージャ */
     M_quit, 0,
   };
   u_char *p, *cp, **label;
@@ -1006,7 +1011,7 @@ void set_key(int **key_mp, int **key_cp, int key_m0[], int key_m[], int key_c[])
   *key_cp = key_c;
   *key_m = *key_m0 = -1;
   for (i = 0; i < M_nn; i++) key_c[i] = -1;
-  /* built-in keys */
+  /* 組み込みのキー */
   key_c[M_key] = K_h;
   key_c[M_klt] = K_lt;
   key_c[M_krt] = K_rt;
