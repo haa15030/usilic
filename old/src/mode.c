@@ -126,19 +126,19 @@ static void init_rv(NUM *np, PN *pnp, RV *rvp, HEAP *hp, int etop)
   pp = hp->bp->pp;
   if ((rvp->row = init_row(&pp, pnp, np->tell, etop)) > vt_row(0) - 2) 
     pnp->row = rvp->row = vt_row(0) - 2;
-  if ((rvp->ps  /* beginning row of window */
+  if ((rvp->ps  /* ウィンドウの先頭行 */
        = rvp->pe = rvp->pp = pp)) {
     for (i = 0; i < vt_row(0) - 2 && rvp->pe->next; i++)
-      rvp->pe = rvp->pe->next; /* end row of window */
-    for (i = 0; i < pnp->row && rvp->pp->next; i++) 
-      rvp->pp = rvp->pp->next; /* current row */
+      rvp->pe = rvp->pe->next; /* ウィンドウの末尾行 */
+    for (i = 0; i < pnp->row && rvp->pp->next; i++)
+      rvp->pp = rvp->pp->next; /* 現在の行 */
   }
-  if (np->M == T_dir && hp->bp->size >= 0) 
+  if (np->M == T_dir && hp->bp->size >= 0)
     for (pp = hp->bp->pp; pp && !strstr(pp->cs, "../"); pp = pp->next) ;
   else pp = hp->bp->pp;
   rvp->col = init_col(np->M, pp->cs, hp->bp->size);
-  if (hp->bp->pp->tell != (uintptr_t)F7 /* F7: "No size" etc. */
-      && rvp->pp && rvp->col >= 0) { /* reverse attr. */
+  if (hp->bp->pp->tell != (uintptr_t)F7 /* F7: "No size"等 */
+      && rvp->pp && rvp->col >= 0) { /* 反転属性 */
     strcpy(rvp->str, &rvp->pp->cs[rvp->col]);
   } else strcpy(rvp->str, "");
 }
@@ -183,9 +183,9 @@ int load_ll(CHILD *chp, ARRAY *ap, u_char prev[], CUT *cutp, HEAP *hp, PN *pnp, 
   }
   switch(f_M) {
   case M_du:
-    skip = 1; /* display from the beginning of buffer */
+    skip = 1; /* バッファの先頭から表示する */
   case T_du:
-    /* set `lp' and `full' for saving PN of N_num save_ll() */
+    /* N_num save_ll()のPNを保存するために`lp'と`full'を設定する */
     lp = &hp->ll.p.mode;
     strcpy(ap->full, ap->du);
     break;
@@ -355,7 +355,7 @@ int load_ll(CHILD *chp, ARRAY *ap, u_char prev[], CUT *cutp, HEAP *hp, PN *pnp, 
     memcpy(&pn, pnp, sizeof(PN));
     if (skip || !load_list(*lp, ap->full, pnp))
       pnp->row = pnp->top = pnp->line = 0;
-    else if (pnp->nrow < 0) { /* (1) */
+    else if (pnp->nrow < 0) { /* (1)の場合 */
       pnp->row = pnp->top = pnp->line = 0;
       pnp->nrow = pn.nrow;
     } else {
@@ -365,8 +365,8 @@ int load_ll(CHILD *chp, ARRAY *ap, u_char prev[], CUT *cutp, HEAP *hp, PN *pnp, 
 	  alloc_pipe(0, pinp, &pn.nrow, NULL, 0);
       if (pnp->nrow != pn.nrow) pnp->nrow = pn.nrow;
     }
-    if (pnp->row && pnp->row > pnp->nrow - 1) /* cursor line > total line */
-      if ((pnp->row = pnp->nrow - 1) < 0) /* total line == 0 */
+    if (pnp->row && pnp->row > pnp->nrow - 1) /* カーソル行 > 総行数 */
+      if ((pnp->row = pnp->nrow - 1) < 0) /* 総行数 == 0 */
 	pnp->row = 0;
     i = 0;
   } else {
@@ -400,12 +400,14 @@ int load_ll(CHILD *chp, ARRAY *ap, u_char prev[], CUT *cutp, HEAP *hp, PN *pnp, 
       break;
     }
   }
-  /* hp->ll.a[] elements are u_long (8 bytes on 64-bit, to hold a LIST*);
-     dividing the byte offset by sizeof(u_int) (4) instead of the actual
-     element size doubled the computed index (e.g. p.dir, index 2, came
-     out as index 4 == p.man), so save_ll()/load_list() saved and loaded
-     the cursor position from the wrong slot. CP/RM/MV/etc. never found
-     their directory's saved row and reset the cursor to the top line. */
+  /* hp->ll.a[]の要素はu_long(LIST*を保持するため64bitでは8バイト)
+     である; バイトオフセットを、実際の要素サイズではなく
+     sizeof(u_int)(4)で割ってしまうと、計算されるインデックスが
+     2倍になり(例えばp.dir、インデックス2が、インデックス4==p.man
+     として出てきてしまう)、そのためsave_ll()/load_list()は間違った
+     スロットからカーソル位置を保存/読み込んでいた。CP/RM/MV等は、
+     自分のディレクトリの保存済みの行を決して見つけられず、カーソル
+     を先頭行にリセットしていた。 */
   return (lp) ? (int)(lp - (LIST**)&hp->ll.a[0]) : i;
 }
 
@@ -481,7 +483,7 @@ int mode(HEAP *hp, NUM *np, ARRAY *ap, LINE *lp, RV *rvp)/*mode*/
 	if ((f_M = (S_ISDIR(st.st_mode)) ? T_dir : T_file) == T_dir) {
 	  strcat(ap->name, p);
 	  if (S_ISLNK(l_st.st_mode) && strchr(ap->name, '\0')[-1] != '/') 
-	    strcat(ap->name, "/"); /* symlnk */
+	    strcat(ap->name, "/"); /* シンボリックリンク */
 	}
       }
       if (f_M == T_dir && *lp->prev != K_z) 
@@ -665,7 +667,7 @@ void clear_stack(HEAP *hp, LINE *lp, char *name, int *f_Mp, int f_clear)/*mode*/
       if (!(!strcmp(name, s_S(S_help)) && bp == &hp->base[7])
 	  && !read_stack(hp->sp, &hp->base[7], 0)) goto jump;
     case 'g':
-      if (strchr(lp->prev, ':') /* skip RM at EGREP (menu.c(4)) */
+      if (strchr(lp->prev, ':') /* EGREPでのRMを読み飛ばす(menu.c(4)) */
 	  && (is_prev(lp->prev, M_fgrep) || is_prev(lp->prev, M_egrep))) {
 	sp = load_stack(sp, lp, &f_M, name, &bp, hp->base);
 	sp = load_stack(sp, lp, &f_M, name, &bp, hp->base);
@@ -718,14 +720,14 @@ void check_dir(HEAP *hp, LINE *lp, char *dir, LIST **dirp)/*mode*/
   PN pn;
 
   if (hp) clear_stack(hp, lp, NULL, NULL, 0);
-  if (dir && strcmp(lp->dir, dir)) { /* exchange current directory name */
+  if (dir && strcmp(lp->dir, dir)) { /* カレントディレクトリ名を入れ替える */
     strcpy(lp->old, lp->dir);
     strcpy(lp->dir, dir);
     chdir(lp->dir);
   }
   if (!load_list(*dirp, lp->dir, &pn)) {
-    /* save current directory name */
-    pn.nrow = -1; /* ==> (1) */
+    /* カレントディレクトリ名を保存する */
+    pn.nrow = -1; /* ==> (1)へ */
     *dirp = save_list(*dirp, lp->dir, &pn);
   }
 }
@@ -793,7 +795,7 @@ int do_rm(LL *llp, SS *ssp, u_char prev[], FILE *fp)/*usilic*/
 }
 
 int get_hup(int pid0)/*usilic*/
-{ /* kill child process after exit of usilic */
+{ /* usilic終了後に子プロセスをkillする */
   static int pid;
 
   if (pid0 > 0) pid = pid0;
@@ -823,7 +825,7 @@ void do_prog(char *str, STR **cmdp, STR **histp, int f_wait)/*usilic*/
 #endif
   if (!(pid = fork())) {
     load_signal();
-    unsetenv(ENV_PROG); /* enable to launch us again from PROGRAM-mode */
+    unsetenv(ENV_PROG); /* PROGRAMモードから自分自身を再び起動できるようにする */
     execlp("sh", "sh", "-c", str, NULL);
   }
   fprintf(stdout, "\n%s: %s\n", s_S(S_usilic), str);
@@ -839,7 +841,7 @@ void do_prog(char *str, STR **cmdp, STR **histp, int f_wait)/*usilic*/
 #endif
   signal(SIGCONT, cont);
   if (f_wait) echo_mess(1);
-  else vt_init(2); /* still needed to restore usilic's raw termio (see vt_init(-2) above) */
+  else vt_init(2); /* usilicのraw termioを復元するためになお必要(上のvt_init(-2)参照) */
 }
 
 void save_ll(int n_ll, LL *llp, SS *ssp, char full[], PN *pnp)/*usilic*/
@@ -1158,7 +1160,7 @@ char *command(int f_Mb, u_char str[], BASE *bp, LINE *lp, int klen, u_char du[],
 	    continue;
 	  } else {
 	    if (*tmp2) *tmp2 = '\0';
-	    if ((cp = strchr(tmp, '\t'))) cp++; /* for ARC on DU */
+	    if ((cp = strchr(tmp, '\t'))) cp++; /* DU上のARCのため */
 	    else cp = tmp;
 #ifdef SKIP_SPC
  debug("!T_arc3=%s\n", cp);
@@ -1211,7 +1213,7 @@ char *command(int f_Mb, u_char str[], BASE *bp, LINE *lp, int klen, u_char du[],
     chp = get_child(NULL, s_P(P_mode)[M_shell], NULL, NULL, NULL);
     fprintf(ofp, "cat %s\n", s_S(S_w));
     if ((cp = strchr(rm, ' '))) *cp = '\0';
-    fprintf(ofp, "%s %s\n", rm, s_S(S_w)); /* ==> shell.c (9) */
+    fprintf(ofp, "%s %s\n", rm, s_S(S_w)); /* ==> shell.c (9)参照 */
     while ((i = fgetc(ifp)) != EOF) fputc(i, ofp);
     fclose(ifp);
     fclose(ofp);
@@ -1265,18 +1267,18 @@ int is_write(u_char name[], int f_dir)/*mode*/
 #ifdef SKIP_SPC
 debug("is_write:%s\n", cp);
 #endif
-  /* `name' is already a bare filename/path by the time every caller
-     gets here (see menu.c's get_col()/ichrstr()-based extraction
-     before calling this). The old skip_spc(cp, 1) call was written
-     for a full "ls -l"-style line with a permission/size prefix
-     before the name, and treated the FIRST unescaped space in `name'
-     as that prefix's end, discarding everything up to and including
-     it -- corrupting any filename that itself contains a literal
-     space (e.g. a Finder/QuickTime export like "2024-09-14
-     12.13.08.mp4") into a nonexistent path, which then failed
-     stat()/access() and silently rejected the RM/MV selection (a
-     beep, no error message). Only the "-> target" (symlink display)
-     stripping skip_spc(x,1) also did is still relevant here. */
+  /* `name'は、全ての呼び出し元がここに到達する時点で既に素のファイル
+     名/パスになっている(これを呼ぶ前のmenu.cのget_col()/ichrstr()
+     ベースの抽出参照)。古いskip_spc(cp, 1)の呼び出しは、名前の前に
+     パーミッション/サイズのprefixがある完全な"ls -l"形式の行のために
+     書かれたもので、`name'の中の最初のエスケープされていない空白を
+     そのprefixの終わりとして扱い、そこまでを(それ自身も含めて)
+     捨てていた――それ自身にリテラルな空白を含むファイル名(例えば
+     Finder/QuickTimeのエクスポート"2024-09-14 12.13.08.mp4"のような)
+     を、存在しないパスへ壊してしまい、その結果stat()/access()が
+     失敗し、RM/MVの選択を静かに拒否していた(ビープのみ、エラー
+     メッセージ無し)。skip_spc(x,1)が併せて行っていた"-> target"
+     (シンボリックリンク表示)の除去だけが、ここでは今も関係がある。 */
   if ((arrow = strstr((char*)cp, " -> "))) *arrow = '\0';
   lstat(cp, &st);
   f_symlink = S_ISLNK(st.st_mode);
@@ -1375,7 +1377,7 @@ void print_intr(char *save, char *mess)/*usilic*/
     vt_flush();
     vt_rc();
     if (!vt_mode('D')) 
-      ; /* S_errm in SHELL etc. */
+      ; /* SHELL等でのS_errm */
     else unlink(s_S(S_intr));
     if (save && p) save_error("%s: %s.\n", save, p);
   }
