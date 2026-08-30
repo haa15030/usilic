@@ -1,19 +1,19 @@
 /*
- * u_char/u_int/u_long come from sys/types.h. On Linux/glibc these
- * happened to become visible transitively through another header
- * (e.g. unistd.h) once _DEFAULT_SOURCE is active, but that is not
- * portable: macOS/clang's libc does not pull them in the same way,
- * so without an explicit include this fails there with "unknown
- * type name 'u_char'" etc. Include it directly so it works
- * everywhere regardless of what other headers happen to do.
+ * u_char/u_int/u_longはsys/types.hに由来する。Linux/glibcでは、
+ * _DEFAULT_SOURCEが有効になっていれば、これらは別のヘッダー
+ * (unistd.h等)経由でたまたま間接的に見えるようになっていたが、
+ * これは移植性が無い: macOS/clangのlibcは同じようにはそれらを
+ * 引き込まないため、明示的なincludeが無いとそちらでは"unknown
+ * type name 'u_char'"等のエラーで失敗する。他のヘッダーが何を
+ * するかに関わらずどこでも動くよう、直接includeする。
  *
- * Separately, glibc also needs _XOPEN_SOURCE for the POSIX pty
- * calls (posix_openpt/grantpt/unlockpt/ptsname), and _XOPEN_SOURCE
- * alone would hide the BSD typedefs above, hence _DEFAULT_SOURCE
- * too. This part is glibc/Linux-specific: macOS and the *BSDs
- * expose both families by default, and defining _XOPEN_SOURCE
- * there can instead hide their own BSD extensions, so leave their
- * headers alone.
+ * 別件として、glibcはPOSIXのpty呼び出し(posix_openpt/grantpt/
+ * unlockpt/ptsname)のために_XOPEN_SOURCEも必要とするが、
+ * _XOPEN_SOURCE単体では上のBSDのtypedefが隠れてしまうため、
+ * _DEFAULT_SOURCEも合わせて必要になる。この部分はglibc/Linux
+ * 固有である: macOSと*BSD群はどちらの系統もデフォルトで公開して
+ * おり、そこで_XOPEN_SOURCEを定義すると逆にそれら自身のBSD拡張が
+ * 隠れてしまうことがあるため、それらのヘッダーには手を出さない。
  */
 #ifdef __linux__
 #ifndef _DEFAULT_SOURCE
@@ -124,20 +124,21 @@ enum {
   P_nn,
 };
 
-typedef struct { /* attribute */
+typedef struct { /* 属性 */
   short n;
   short attr;
 } ATTR;
 
-typedef struct PP { /* line's pointer */
+typedef struct PP { /* 行のポインタ */
   struct PP *prev;
   struct PP *next;
   u_char *cs;
   ATTR *attr;
-  uintptr_t tell; /* also holds a raw u_char* into an archive buffer
-		      (alloc_tar/alloc_lha/alloc_unzip + init_arc etc.);
-		      u_int truncated it on 64-bit, causing ARC mode to
-		      segfault or read garbage */
+  uintptr_t tell; /* アーカイブバッファ(alloc_tar/alloc_lha/
+		      alloc_unzip + init_arc等)への生のu_char*も
+		      保持している; u_intでは64bitでそれが切り
+		      詰められてしまい、ARCモードがセグフォしたり
+		      ゴミを読んだりする原因になっていた */
   int split;
   struct {
     u_int nl	: 1;
@@ -149,13 +150,13 @@ typedef struct PP { /* line's pointer */
   } f;
 } PP;
 
-typedef struct { /* reverse string */
+typedef struct { /* 逆順文字列 */
   u_char str[N_line], copy[N_line];
   int row, col;
   PP *ps, *pe, *pp;
 } RV;
 
-typedef struct CHILD { /* child process */
+typedef struct CHILD { /* 子プロセス */
   char **argv;
   char *suffix;
   struct {
@@ -166,29 +167,29 @@ typedef struct CHILD { /* child process */
   struct CHILD *next;
 } CHILD;
 
-typedef struct PN { /* position */
-  int row;			/* cursor line */
-  int nrow;			/* total line */
-  u_int top;			/* current page's top line */
-  int line;			/* line number */
+typedef struct PN { /* 位置 */
+  int row;			/* カーソル行 */
+  int nrow;			/* 総行数 */
+  u_int top;			/* 現在のページの先頭行 */
+  int line;			/* 行番号 */
 } PN;
 
-typedef struct LIST { /* string list */
+typedef struct LIST { /* 文字列リスト */
   PN pn;
   u_char *name;
   struct LIST *left;
   struct LIST *right;
 } LIST;
-  
-typedef struct STR { /* backup */
+
+typedef struct STR { /* バックアップ */
   PN pn;
   u_char *name;
   struct STR *next;
 } STR;
-  
-typedef struct { /* window's pointer */	
-  int nrow;			/* total line */
-  int size;			/* display size */
+
+typedef struct { /* ウィンドウのポインタ */
+  int nrow;			/* 総行数 */
+  int size;			/* 表示サイズ */
   u_char *buff;
   PP *pp;
 } BASE;
@@ -200,7 +201,7 @@ typedef struct {
   BASE *bp;
 } CUT;
 
-typedef struct { /* mode-line */
+typedef struct { /* モードライン */
   u_char dir[N_line];
   u_char old[N_line];
   u_char arg[N_char];
@@ -208,7 +209,7 @@ typedef struct { /* mode-line */
   CUT cut;
 } LINE;
 
-typedef struct GREP { /* work area for GREP */
+typedef struct GREP { /* GREP用の作業領域 */
   int f_M;
   u_char name[N_line], str[N_line];
   LINE l;
@@ -216,7 +217,7 @@ typedef struct GREP { /* work area for GREP */
   struct GREP *prev;
 } GREP;
 
-typedef struct STACK { /* mode stack */
+typedef struct STACK { /* モードスタック */
   struct {
     u_int bp		: 1;
     u_int M		: 16;
@@ -233,15 +234,15 @@ typedef struct STACK { /* mode stack */
 
 typedef union {
   struct {
-    u_int i : 1; /* index list */
+    u_int i : 1; /* インデックスリスト */
     u_int q : 1; /* quoted printable */
-    u_int e : 1; /* escape code */
-    u_int s : 4; /* sequence */	
+    u_int e : 1; /* エスケープコード */
+    u_int s : 4; /* シーケンス */
   } f;
   u_int c;
 } JIS;
 
-typedef union { /* cursor position's list */
+typedef union { /* カーソル位置のリスト */
   struct {
     STR *file;		/* 0 */
     STR *dir; 		/* 1 */
@@ -263,7 +264,7 @@ typedef union { /* cursor position's list */
   u_long a[N_ss];
 } SS;
 
-typedef union { /* cursor position's list */
+typedef union { /* カーソル位置のリスト */
   struct {
     LIST *mode;		/* 0 */
     LIST *file;		/* 1 */
@@ -302,13 +303,13 @@ typedef struct {
   int  (*cursor)(int);
 } VT;
 
-#define F1		(void *)-1  /* not pipe */
+#define F1		(void *)-1  /* pipeではない */
 #define F2		(void *)-2  /* print_line() */
-#define F3		(void *)-3  /* mark for virtual line */
-#define F4		(void *)-4  /* not enough memory (alloc_sh()) */
+#define F3		(void *)-3  /* 仮想行の目印 */
+#define F4		(void *)-4  /* メモリ不足(alloc_sh()) */
 #define F5		(void *)-5  /* conf_key() */
-#define F6		(void *)-6  /* save_history() etc. */
-#define F7		(void *)-7  /* error of make_bp() */
+#define F6		(void *)-6  /* save_history()等 */
+#define F7		(void *)-7  /* make_bp()のエラー */
 #define F8		(void *)-8  /* print_intr() */
 #define F9		(void *)-9  /* fork_exec() */
 #define F10		(void *)-10 /* save_child() */

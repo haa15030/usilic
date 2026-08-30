@@ -250,15 +250,15 @@ int vt_init(int init)/*usilic*/
     vt_mode('d');
     vt_mode(0);
     if ((usiliccharset = getenv(ENV_CHARSET)))
-      /* config.h's CHARSET default is "utf-8", so an unset USILICCHARSET
-	 gets that value via setenv() in init_config() (str.c) -- but
-	 `export USILICCHARSET=` (empty, not unset) makes getenv() return
-	 a non-NULL empty string here, which matched neither "ascii"
-	 nor "utf8"/"utf-8" and fell through to a hardcoded C_euc,
-	 silently reintroducing EUC mojibake even with no USILICCHARSET
-	 value and no ~/.usilic/history to blame. Any unrecognized value
-	 (including "") now falls through to C_utf8 instead, matching
-	 the documented default. */
+      /* config.hのCHARSETの既定値は"utf-8"なので、USILICCHARSETが
+	 未設定の場合はinit_config()(str.c)のsetenv()経由でその値に
+	 なる――しかし`export USILICCHARSET=`(未設定ではなく空文字列)
+	 とすると、ここでのgetenv()は"ascii"にも"utf8"/"utf-8"にも
+	 一致しない非NULLの空文字列を返し、ハードコードされたC_euc
+	 へフォールスルーしてしまい、USILICCHARSETの値も~/.usilic/
+	 historyも原因ではないのに、EUCの文字化けを静かに再発させて
+	 いた。認識できない値(空文字列を含む)は、今は文書化された
+	 既定値と一致するC_utf8へフォールスルーするようにした。 */
       vt_charset((!strcasecmp(usiliccharset, "ascii")) ? C_ascii
 		 : (!strcasecmp(usiliccharset, "euc")) ? C_euc
 		 : C_utf8);
