@@ -228,6 +228,13 @@ class Display {
   struct ModeLineSegment {
     std::string text;
     bool standout = true;
+    // 2026-09-03追加、直接のユーザー報告("右下透かしも消えたまま"):
+    // ContentView::renderModeLine()自身のModeLineFields::rightWatermark
+    // ("usilic v1.5b"等)は反転表示ではなく「太字」で右揃えされる
+    // (自身のコメント参照)――standoutだけでは表現できない、単独の
+    // 3値目。standout==falseかつbold==falseの素のギャップ(半角
+    // スペース)とはこれで区別できる。
+    bool bold = false;
   };
 
   // 2026-08-21にここへ移設(以前はpipe_buffer.hppの独立したfm::

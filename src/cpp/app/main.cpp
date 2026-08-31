@@ -1939,6 +1939,21 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // reasoning it out instead of testing it.
       int wheelDirection = wheel->deltaY > 0 ? -1 : 1;
       if (coastLevel == 0) {
+        // 2026-09-03 fix, a direct user report: the drag-start hoverIndex_
+        // clear (scrollbar ButtonDown / content-drag Motion, see their own
+        // identical comments) never applied here, since wheel-driven
+        // scrolling never goes through either of those sites -- it just
+        // sets coastLevel/coastDirection directly. Only clearing when a
+        // coast is actually starting fresh from rest (not on every tick)
+        // mirrors the drag case: once cleared, ContentView::redraw()'s own
+        // hoverIndex_-else-cursorIndex_ priority keeps falling back to
+        // cursorIndex_ (kept continuously correct by stepTopIndex()) for
+        // the rest of this coast, exactly like a real drag/flick already
+        // does -- see ContentView::scrollHighlightForLine()'s own comment.
+        // (app.activeContentView(), not `view` -- that local isn't
+        // declared until later in this same loop iteration, see its own
+        // declaration site.)
+        app.activeContentView().setHoverIndex(std::nullopt);
         coastDirection = wheelDirection;
         coastLevel = resolveCoastLevel(1);
       } else if (wheelDirection == coastDirection) {

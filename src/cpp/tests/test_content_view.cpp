@@ -1435,6 +1435,46 @@ TEST_CASE("scrollModeLineSegments: trailing2 draws as its own separate standout 
   CHECK(segments[6].text.size() > 5);  // padded with trailing spaces to reach the row's own width
 }
 
+TEST_CASE("scrollModeLineSegments: rightWatermark is emitted as its own plain-gap + bold (not standout) "
+          "segment, matching renderModeLine()'s own look -- 2026-09-03, a direct user report that the "
+          "bottom-right \"usilic v1.5b\" watermark stayed missing during GUI drag/coast scrolling") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b", ""};
+  });
+
+  auto segments = v.scrollModeLineSegments();
+  REQUIRE(segments.size() == 7);
+  CHECK(segments[0].text == "/tmp/dir/");
+  CHECK(segments[2].text == "1/3 TOP");
+  CHECK(segments[4].text == "(ls)");
+  // The 4-column plain gap (columns 22-25 of 40) between trailing and the watermark.
+  CHECK(segments[5].text == "    ");
+  CHECK_FALSE(segments[5].standout);
+  CHECK_FALSE(segments[5].bold);
+  // The watermark itself: bold, NOT standout -- unlike every other field segment above.
+  CHECK(segments[6].text == " usilic v1.5b ");
+  CHECK_FALSE(segments[6].standout);
+  CHECK(segments[6].bold);
+}
+
+TEST_CASE("scrollModeLineSegments: rightWatermark is dropped entirely (not truncated) when it doesn't "
+          "fit, matching renderModeLine()'s own drop-if-too-narrow behavior") {
+  RecordingDisplay d(10, 25);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    return {"/tmp/dir/", "(ls)", false, "usilic v1.5b", ""};
+  });
+
+  auto segments = v.scrollModeLineSegments();
+  for (const auto &segment : segments) CHECK(segment.text.find("usilic") == std::string::npos);
+}
+
 TEST_CASE("scrollModeLineText: reaching the bottom boundary shows END, not a percentage") {
   // topIndex_ itself caps out at total-height_ (7 here), which never
   // equals totalLines the way cursorIndex_ does in modeLineText() --

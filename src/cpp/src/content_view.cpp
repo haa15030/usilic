@@ -1114,6 +1114,28 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
       drawnLen += static_cast<int>(trailing3.size());
     }
   }
+  // 2026-09-03追加、直接のユーザー報告("右下透かしも消えたままなので
+  // 反映よろしく" -- ドラッグ/慣性スクロール中は右下の「usilic
+  // v1.5b」透かしが消えたままな件): renderModeLine()自身の
+  // rightWatermark処理(自身のコメント、"disp_window()自身の
+  // フォールバックからの移植"参照)をここにも移植する――同じ条件
+  // (収まる場合のみ)、同じ見た目(反転ではなく太字、右揃え)。
+  // segments自体は連結でしか位置を表現できないので、moveCursor()の
+  // 代わりに、必要な余白を非standout/非boldのプレーンな空白セグメント
+  // として先に挿入してからwatermark自身のセグメントを続ける。
+  if (!fields.rightWatermark.empty()) {
+    std::string watermark = " " + fields.rightWatermark + " ";
+    int watermarkLen = static_cast<int>(watermark.size());
+    if (cols > 0 && drawnLen + watermarkLen <= cols) {
+      int gap = cols - watermarkLen - drawnLen;
+      if (gap > 0) segments.push_back({std::string(static_cast<std::size_t>(gap), ' '), false});
+      Display::ModeLineSegment watermarkSegment;
+      watermarkSegment.text = watermark;
+      watermarkSegment.standout = false;
+      watermarkSegment.bold = true;
+      segments.push_back(watermarkSegment);
+    }
+  }
   return segments;
 }
 

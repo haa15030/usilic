@@ -2991,6 +2991,13 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
         SDL_SetRenderDrawColor(impl_->renderer, impl_->fg.r, impl_->fg.g, impl_->fg.b, 255);
         SDL_RenderFillRect(impl_->renderer, &segBox);
         renderTextRun(modeLineY, segment.text, Color{impl_->bg.r, impl_->bg.g, impl_->bg.b}, col);
+      } else if (segment.bold) {
+        // 2026-09-03追加、直接のユーザー報告("右下透かしも消えたまま"):
+        // ContentView::scrollModeLineSegments()自身が右下の"usilic
+        // v1.5b"透かし用に注入するbold(反転なし)セグメント――
+        // renderModeLine()自身の見た目(通常のfg色、太字)に合わせる。
+        renderTextRun(modeLineY, segment.text, Color{impl_->fg.r, impl_->fg.g, impl_->fg.b}, col,
+                      {{0, static_cast<int>(segment.text.size()), Display::Attribute::Bold}});
       }
       col += segCols;
     }
