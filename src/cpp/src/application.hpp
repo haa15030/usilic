@@ -344,10 +344,15 @@ enum class Command {
   // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
   // する。Application::executeShowUsilicBanner()自身のコメント参照。
   ShowUsilicBanner,
-  // K-27(^Oa、M_ascii、「Switch ascii mode」): アクティブな文字コード
-  // をAscii -> Euc -> Utf8 -> Asciiと巡回させる。
-  // Application::cycleCharset()自身のコメント参照。
-  CycleCharset,
+  // K-27(^Oa)。2026-09-01、直接のユーザー依頼("^Oaはデフォルト文字
+  // コード切り替えではなくてHELP/KEYの日本語<-->英語切り替えでいいと
+  // 思う"): 以前はここでAscii -> Euc -> Utf8 -> Asciiの3値巡回
+  // (CycleCharset/cycleCharset())だったが、ファイル内容の文字コードは
+  // 既に自動判別されており(usilicrc/文字コードの章参照)、手動切り替え
+  // 自体が不要と判断されたため、この同じキーをHELP/KEY画面の表示言語
+  // 切り替えへ丸ごと差し替えた。Application::toggleHelpLanguage()
+  // 自身のコメント参照。
+  ToggleHelpLanguage,
   // K-46(^X^F、「FILE: Select file name」): RingCategory::RecentFile
   // に対するListBrowserを開く。K-48(^X^D、「DIR: Select directory
   // name」)は「既存の」StartDirectoryHistoryを再利用するので、
@@ -1428,12 +1433,17 @@ class Application {
   bool loadGuiHelpText(const std::string &text);
 
   ApplicationMode currentMode() const;
-  // cycleCharset()(K-27、^Oa)によってライブ更新される、現在
-  // アクティブな文字コード。main.cppは、独自の起動時のみのローカル
-  // 変数の代わりに、シャットダウン時にHistory::setSavedCharset()の
-  // ためにこれを読む。そのためセッション途中の文字コードの切り替え
-  // が実際に複数回の実行をまたいで永続化される――main.cpp自身の
-  // 呼び出し箇所のコメント参照。
+  // 起動時に一度だけ決まる、ファイル内容の文字コード判別に使うヒント
+  // (history.savedCharset().value_or(configuration.defaultCharset())、
+  // main.cpp参照)。2026-09-01より前はK-27(^Oa)でセッション中にライブ
+  // 更新できたが、その対話的な3値巡回はCommand::ToggleHelpLanguage
+  // 自身のコメントの通り廃止された――今はこのメンバー自体、構築後は
+  // 一切変更されない。main.cppがシャットダウン時にHistory::
+  // setSavedCharset()へこれをそのまま書き戻しているのは、legacy自身の
+  // historyファイルのトレーラー形式(このC++移植とlegacy usilicが
+  // 同じファイルを共有し得る)との互換性のためにあえて残してある
+  // ――もはやこの移植自身にとっては起動時に読んだのと同じ値を
+  // そのまま書き戻すだけの無害な往復に過ぎない。
   Charset::Encoding encoding() const;
 
   // feedByte()に供給される「次の」バイトが、プレーンなトップ
@@ -1796,20 +1806,21 @@ class Application {
   // "[hit highlighted string][returns to the usilic screen]"と注釈
   // を付けていた――設計については自身の定義コメント参照。
   bool openSelectedBannerEntry();
-  // K-27(^Oa): key.c自身のkey_getch()のコメントからの移植
-  // ("was a straight 2-way ASCII<->EUC toggle; cycle through all
-  // three now instead of leaving UTF-8 users stuck toggling between
-  // ASCII and EUC with no way back to UTF-8"――その修正は既にlegacy
-  // のC側で起きており、これは単にその結果の3方向の巡回を移植する
-  // だけ)。encoding_を更新し、それ自身のコピーを所有する既に
-  // 移植済みの全てのクラス(FileMode/ManMode/Shell/promptEditor_
-  // ――それが何を、遡って何に影響しない/影響するかについてはそれ
-  // ぞれ自身のsetEncoding()コメント参照)へ伝播し、その後現在画面
-  // 上にあるもの(File/Manモード)を再折り返しするので、次に開かれる
-  // ファイル/ページにだけ適用されるのではなく、効果が即座に見える。
+  // K-27(^Oa)。2026-09-01、直接のユーザー依頼により、以前の
+  // cycleCharset()(Ascii -> Euc -> Utf8の3値巡回)からこちらへ
+  // 差し替えた――Command::ToggleHelpLanguage自身のコメント参照。
+  // helpJapanese_を反転し、helpText_/guiHelpText_をkHelpTextJa/En
+  // (+GUI章)の対応する側へ読み直す。現在Cut/CutContentでHELP自身を
+  // 表示中(cutOrigin_ == CutOrigin::Help)の場合は、その場で新しい
+  // 言語のHELP目次へ差し替える(pushSplit()ではなくCutMode::split()
+  // を直接呼ぶ――新しいトップレベルの階層を積むのではなく、既存の
+  // 階層を置き換える。cutReturnMode_には触れない――^Gの戻り先は
+  // 言語を切り替えても変わらない)。KEY画面を表示中の場合は
+  // renderKeyRows()を呼び直し、その場で行の言語も切り替える。
   // 常に成功する(モード制限は無い――legacy自身のM_asciiも、この
-  // 移植の他のほとんどのK-?コマンドとは異なり、それを持たない)。
-  bool cycleCharset();
+  // 移植の他のほとんどのK-?コマンドとは異なり、それを持たなかった、
+  // その前例を踏襲している)。
+  bool toggleHelpLanguage();
   bool startCopyPrompt();
   bool startMovePrompt();
   bool startRemovePrompt();
@@ -2003,6 +2014,18 @@ class Application {
   std::string usilicrcPath_;
   std::string historyFilePath_;
   Charset::Encoding encoding_;  // wrapHelpText()自身のPipeBuffer構築――現在他のどのメンバーもこれを必要としない
+  // 2026-09-01、直接のユーザー依頼(Command::ToggleHelpLanguage自身の
+  // コメント参照): HELP/KEY画面の表示言語。意図的にencoding_(ファイル
+  // 内容の文字コード)からは完全に切り離してある――=fc自身の根本原因
+  // (~/.usilic/historyに大分前のセッションから保存されていた古い
+  // Asciiという値が、再起動のたびに黙って英語版HELPを選び続けていた)
+  // と同じ種類の「古い保存値が新しい起動を静かに支配し続ける」問題を
+  // 再導入しないため、意図的に一切永続化しない――毎回の起動でtrue
+  // (日本語)から始まり、必要ならその場で^Oaを押すだけで良い。
+  // app/main.cppの初期ロードもこれと同じtrueをハードコードしている
+  // (どちらも独立に同じデフォルトへ倒すことで、2箇所の値を明示的に
+  // 同期させる手間を避けている)。
+  bool helpJapanese_ = true;
   const Configuration &configuration_;  // executeProgram()自身のPROGRAM一覧の参照、上のfind_prog()の注記参照
   History &history_;  // startListBrowser()自身のrecentEntries()の参照――現在他のどのメンバーもこれを必要としない
   ModeStack modeStack_;

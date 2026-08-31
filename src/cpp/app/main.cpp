@@ -3051,7 +3051,17 @@ int main(int argc, char **argv) {
     std::string text = readFileIfExists(helpPathEnv);
     if (!text.empty()) app.loadHelpText(text);
   } else {
-    bool japanese = (encoding != fm::Charset::Encoding::Ascii);
+    // 2026-09-01、直接のユーザー依頼("^Oaはデフォルト文字コード切り替え
+    // ではなくてHELP/KEYの日本語<-->英語切り替えでいいと思う"): 以前は
+    // ここでファイル内容の文字コード(encoding、~/.usilic/historyから
+    // 復元され得る)からHELPの表示言語を推測していた――これがまさに
+    // 「=fc」バグの根本原因だった: ずっと前のセッションで保存された
+    // 古いAsciiという値が、再起動のたびに黙って英語版HELPを選び続けて
+    // いた。今後はApplication::helpJapanese_自身のコメントの通り、
+    // ファイル内容の文字コードとHELP/KEYの表示言語を完全に切り離し、
+    // ここも(Applicationのメンバー初期化子と同じ)固定でtrue(日本語)
+    // から始める――必要ならセッション中に^Oaで切り替えられる。
+    bool japanese = true;
     app.loadHelpText(fm::expandHelpMarkup(japanese ? fm::kHelpTextJa : fm::kHelpTextEn));
     app.loadGuiHelpText(fm::expandHelpMarkup(japanese ? fm::kHelpTextGuiJa : fm::kHelpTextGuiEn));
   }

@@ -18,6 +18,7 @@
 #include <cstring>
 
 #include "child_process.hpp"
+#include "help_text.hpp"
 #include "mode_line.hpp"
 #include "pipe_buffer.hpp"
 
@@ -254,6 +255,13 @@ std::string truncateToPathPrefix(const std::string &path, int digit) {
 struct KeyTableEntry {
   const char *keyLabel;
   const char *description;
+  // 2026-09-01、直接のユーザー依頼(^Oaの再割り当て、"HELP/KEYの日本語
+  // <-->英語切り替え"): descriptionと対になる英語版。Application::
+  // helpJapanese_に応じてrenderKeyRows()がどちらを表示するか選ぶ
+  // ――helpText_/guiHelpText_(kHelpTextJa/En)の切替と同じフラグを
+  // 共有し、"HELP/KEY"を一体で切り替える、というユーザー自身の言葉
+  // 通りにしている。
+  const char *descriptionEn;
   std::vector<int> bytes;
   bool isMacro = false;
   // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、「①順序を
@@ -264,6 +272,10 @@ struct KeyTableEntry {
   // CutMode::segments()から探して直接そこへジャンプする。該当する
   // 章が無い(キーボードマクロ記録等、HELPで文書化していない)場合は
   // nullptr――その場合「詳細」を選んでも何も起きない(no-op)。
+  // kHelpTextEn自身の章番号もkHelpTextJa(HELP.jp由来)と2.1〜2.18の
+  // 範囲で偶然ではなく一致している(どちらも元はlegacy HELP.jpの構成
+  // を継いでいるため)ので、この1つのhelpSectionを両言語で共用できる
+  // ――英語版だけの2.19(INFO)には対応するエントリを割り当てていない。
   const char *helpSection = nullptr;
 };
 
@@ -271,117 +283,131 @@ struct KeyTableEntry {
 // レファレンスが日本語なので...日本語へ翻訳"): 以前は「リーダーキー
 // 無し→マクロ→ESCリーダー→^Jリーダー→^Xリーダー→^X^Kリーダー→
 // ^Oリーダー」という、キーの「構文」(接頭辞の種類)によるグループ分け
-// だった。今はkHelpTextJa自身の章立て(1./2.1〜2.19/3./4./5.1〜5.3)の
-// 順に合わせて並び替え、descriptionも英語からkHelpTextJa/
-// kKeyReferenceTextJaと同じ言い回しの日本語へ翻訳した。バイト列
-// (bytes)自体は一切変更していない――このテーブルを裏付ける実際の
-// キー割り当ての意味には触れず、あくまで表示順序と説明文だけの変更
-// である。
+// だった。今はkHelpTextJa自身の章立て(1./2.1〜2.18/3./4./5.1〜5.3)の
+// 順に合わせて並び替えてある。バイト列(bytes)自体は一切変更していない
+// ――このテーブルを裏付ける実際のキー割り当ての意味には触れず、
+// あくまで表示順序と説明文だけの変更である。descriptionEn(2026-09-01
+// 追加)の大部分は、この並び替え・和訳より前にこのテーブル自身が
+// 持っていた元々の英語のdescriptionをそのまま再利用している。
 const KeyTableEntry kKeyTable[] = {
     // 5.1  Window(汎用のカーソル/ページング/その他、リーダーキー無し)
-    {"j", "画面を1行下へ", {'j'}, false, "5.1"},
-    {"k", "画面を1行上へ", {'k'}, false, "5.1"},
-    {"^N", "カーソルを1行下へ", {0x0e}, false, "5.1"},
-    {"^P", "カーソルを1行上へ", {0x10}, false, "5.1"},
-    {"space", "画面を1ページ下へ", {' '}, false, "5.1"},
-    {"^F", "画面を1ページ下へ", {0x06}, false, "5.1"},
-    {"^V", "画面を1ページ下へ", {0x16}, false, "5.1"},
-    {"b", "画面を1ページ上へ", {'b'}, false, "5.1"},
-    {"^B", "画面を1ページ上へ", {0x02}, false, "5.1"},
-    {"return", "選択したエントリを開く", {kCarriageReturn}, false, "5.1"},
-    {"^G", "戻る・キャンセル", {kControlG}, false, "5.1"},
-    {"^L", "画面を再描画", {0x0c}, false, "5.1"},
-    {"q", "usilicを終了(pager)", {'q'}, false, "5.1"},
+    {"j", "画面を1行下へ", "Move window down", {'j'}, false, "5.1"},
+    {"k", "画面を1行上へ", "Move window up", {'k'}, false, "5.1"},
+    {"^N", "カーソルを1行下へ", "Move cursor down", {0x0e}, false, "5.1"},
+    {"^P", "カーソルを1行上へ", "Move cursor up", {0x10}, false, "5.1"},
+    {"space", "画面を1ページ下へ", "Page down", {' '}, false, "5.1"},
+    {"^F", "画面を1ページ下へ", "Page down", {0x06}, false, "5.1"},
+    {"^V", "画面を1ページ下へ", "Page down", {0x16}, false, "5.1"},
+    {"b", "画面を1ページ上へ", "Page up", {'b'}, false, "5.1"},
+    {"^B", "画面を1ページ上へ", "Page up", {0x02}, false, "5.1"},
+    {"return", "選択したエントリを開く", "Open selected entry", {kCarriageReturn}, false, "5.1"},
+    {"^G", "戻る・キャンセル", "Back / cancel", {kControlG}, false, "5.1"},
+    {"^L", "画面を再描画", "Redraw screen", {0x0c}, false, "5.1"},
+    {"q", "usilicを終了(pager)", "Exit usilic (pager)", {'q'}, false, "5.1"},
     // マクロ(usilicrc M-0..M-3、CUTの章(2.4)で解説): ";"、":"での上下、
     // "+"、"*"での「検索後の該当行へ」移動。
-    {";", "戻る、カーソル上、選択 (M-0)", {kControlG, 0x10, kCarriageReturn}, true, "2.4"},
-    {":", "戻る、カーソル下、選択 (M-1)", {kControlG, 0x0e, kCarriageReturn}, true, "2.4"},
-    {"+", "2回戻る、カーソル上、2回選択 (M-2)", {kControlG, kControlG, 0x10, kCarriageReturn, kCarriageReturn}, true, "2.4"},
-    {"*", "2回戻る、カーソル下、2回選択 (M-3)", {kControlG, kControlG, 0x0e, kCarriageReturn, kCarriageReturn}, true, "2.4"},
+    {";", "戻る、カーソル上、選択 (M-0)", "Back, cursor up, select (M-0)",
+     {kControlG, 0x10, kCarriageReturn}, true, "2.4"},
+    {":", "戻る、カーソル下、選択 (M-1)", "Back, cursor down, select (M-1)",
+     {kControlG, 0x0e, kCarriageReturn}, true, "2.4"},
+    {"+", "2回戻る、カーソル上、2回選択 (M-2)", "Back twice, cursor up, select twice (M-2)",
+     {kControlG, kControlG, 0x10, kCarriageReturn, kCarriageReturn}, true, "2.4"},
+    {"*", "2回戻る、カーソル下、2回選択 (M-3)", "Back twice, cursor down, select twice (M-3)",
+     {kControlG, kControlG, 0x0e, kCarriageReturn, kCarriageReturn}, true, "2.4"},
 
     // 2.1  ファイル選択 (^J^K)
-    {"^J^K", "File-selectorへ移動", {kLeaderJ, 0x0b}, false, "2.1"},
-    {"^J^J", "直近の通常ファイル・アーカイブへ移動", {kLeaderJ, kLeaderJ}, false, "2.1"},
-    {"^O^K", "親ディレクトリへ移動", {kLeaderO, 0x0b}, false, "2.1"},
-    {"^O^M", "1行ずつ読み込む(簡易ページャ)", {kLeaderO, kCarriageReturn}, false, "2.1"},
-    {"^[^M", "制御コードもそのまま可視化して表示", {kEscape, kCarriageReturn}, false, "2.1"},
-    {"^X^W", "バッファ内容を作業ファイルへ保存", {kLeaderX, 0x17}, false, "2.1"},
+    {"^J^K", "File-selectorへ移動", "Go to file-selector", {kLeaderJ, 0x0b}, false, "2.1"},
+    {"^J^J", "直近の通常ファイル・アーカイブへ移動", "Go to most recent file/archive",
+     {kLeaderJ, kLeaderJ}, false, "2.1"},
+    {"^O^K", "親ディレクトリへ移動", "Go to parent directory", {kLeaderO, 0x0b}, false, "2.1"},
+    {"^O^M", "1行ずつ読み込む(簡易ページャ)", "Read per line", {kLeaderO, kCarriageReturn}, false, "2.1"},
+    {"^[^M", "制御コードもそのまま可視化して表示", "Read as is", {kEscape, kCarriageReturn}, false, "2.1"},
+    {"^X^W", "バッファ内容を作業ファイルへ保存", "Save buffer to file", {kLeaderX, 0x17}, false, "2.1"},
 
     // 2.3  FGREP / EGREP (^S / ^J^S)
-    {"^S", "FGREP", {kControlS}, false, "2.3"},
-    {"^J^S", "EGREP", {kLeaderJ, kControlS}, false, "2.3"},
+    {"^S", "FGREP", "FGREP", {kControlS}, false, "2.3"},
+    {"^J^S", "EGREP", "EGREP", {kLeaderJ, kControlS}, false, "2.3"},
 
     // 2.4  CUT (^Jc / ^J^C / ^Jb / ^J^B)
-    {"^Jc", "CUT (固定文字列、バッファ)", {kLeaderJ, 'c'}, false, "2.4"},
-    {"^J^C", "CUT (正規表現、バッファ)", {kLeaderJ, kControlC}, false, "2.4"},
-    {"^Jb", "CUT (固定文字列、File-selector上のファイル)", {kLeaderJ, 'b'}, false, "2.4"},
-    {"^J^B", "CUT (正規表現、File-selector上のファイル)", {kLeaderJ, 0x02}, false, "2.4"},
+    {"^Jc", "CUT (固定文字列、バッファ)", "CUT (fixed string, buffer)", {kLeaderJ, 'c'}, false, "2.4"},
+    {"^J^C", "CUT (正規表現、バッファ)", "CUT (regex, buffer)", {kLeaderJ, kControlC}, false, "2.4"},
+    {"^Jb", "CUT (固定文字列、File-selector上のファイル)", "CUT (fixed string, file)",
+     {kLeaderJ, 'b'}, false, "2.4"},
+    {"^J^B", "CUT (正規表現、File-selector上のファイル)", "CUT (regex, file)", {kLeaderJ, 0x02}, false, "2.4"},
     // ^J^H(HELP)自身は専用の章番号を持たない(このHELP自身の目次画面
     // そのものを開くキーであるため)――代わりに、目次の使い方を説明
     // している章"1. はじめに"を指す。
-    {"^J^H", "HELP", {kLeaderJ, 0x08}, false, "1"},
+    {"^J^H", "HELP", "HELP", {kLeaderJ, 0x08}, false, "1"},
 
     // 2.5  DU (^Jd / ^J^D)
-    {"^Jd", "DU", {kLeaderJ, 'd'}, false, "2.5"},
+    {"^Jd", "DU", "DU", {kLeaderJ, 'd'}, false, "2.5"},
 
     // 2.6  LOCATE (^Jl / ^J^L)
-    {"^Jl", "LOCATE", {kLeaderJ, 'l'}, false, "2.6"},
+    {"^Jl", "LOCATE", "LOCATE", {kLeaderJ, 'l'}, false, "2.6"},
 
     // 2.7  MAN (^Jm / ^J^M)
-    {"^Jm", "MAN", {kLeaderJ, 'm'}, false, "2.7"},
+    {"^Jm", "MAN", "MAN", {kLeaderJ, 'm'}, false, "2.7"},
 
     // 2.8  PROGRAM (^Jp / ^J^P)
-    {"^Jp", "PROGRAM", {kLeaderJ, 'p'}, false, "2.8"},
+    {"^Jp", "PROGRAM", "PROGRAM", {kLeaderJ, 'p'}, false, "2.8"},
 
     // 2.9  FILE / DIR (^Xf・^X^F / ^Xd・^X^D)
-    {"^Xf", "FILE: ファイル名を入力", {kLeaderX, 'f'}, false, "2.9"},
-    {"^Xd", "DIR: ディレクトリ名を入力", {kLeaderX, 'd'}, false, "2.9"},
-    {"^X^F", "FILE: 履歴一覧から選択", {kLeaderX, 0x06}, false, "2.9"},
-    {"^X^D", "DIR: 履歴一覧から選択", {kLeaderX, 0x04}, false, "2.9"},
+    {"^Xf", "FILE: ファイル名を入力", "FILE: input file name", {kLeaderX, 'f'}, false, "2.9"},
+    {"^Xd", "DIR: ディレクトリ名を入力", "DIR: input directory name", {kLeaderX, 'd'}, false, "2.9"},
+    {"^X^F", "FILE: 履歴一覧から選択", "FILE: select file name", {kLeaderX, 0x06}, false, "2.9"},
+    {"^X^D", "DIR: 履歴一覧から選択", "DIR: select directory name", {kLeaderX, 0x04}, false, "2.9"},
 
     // 2.10  HISTORY / COMMAND (^R / ^J^R)
-    {"^R", "通常表示⇔時系列(HISTORY)表示の切替", {0x12}, false, "2.10"},
-    {"^J^R", "COMMAND (SHELL/PROGRAMの実行履歴)", {kLeaderJ, 0x12}, false, "2.10"},
+    {"^R", "通常表示⇔時系列(HISTORY)表示の切替", "Toggle chronological HISTORY view (current list browser)",
+     {0x12}, false, "2.10"},
+    {"^J^R", "COMMAND (SHELL/PROGRAMの実行履歴)", "COMMAND (programs run at SHELL)",
+     {kLeaderJ, 0x12}, false, "2.10"},
 
     // 2.11  CP / MV / RM / ARC (^Xc・^Xm・^Xr・^Xa)
-    {"^Xc", "CP", {kLeaderX, 'c'}, false, "2.11"},
-    {"^Xm", "MV", {kLeaderX, 'm'}, false, "2.11"},
-    {"^Xr", "RM", {kLeaderX, 'r'}, false, "2.11"},
-    {"^Xa", "ARC: アーカイブを展開", {kLeaderX, 'a'}, false, "2.11"},
-    {"^space", "現在のエントリをマーク/解除", {0x80}, false, "2.11"},
-    {".", "現在のエントリをマーク/解除(移動なし)", {'.'}, false, "2.11"},
-    {"[", "現在のエントリをマークし、カーソルを上へ", {'['}, false, "2.11"},
-    {"]", "現在のエントリをマークし、カーソルを下へ", {']'}, false, "2.11"},
-    {"^X^Y", "全マーク", {kLeaderX, 0x19}, false, "2.11"},
-    {"^X^N", "全マーク解除", {kLeaderX, 0x0e}, false, "2.11"},
-    {"^X^M", "処理先を入力・確定 (CP/MV/RM/ARC)", {kLeaderX, kCarriageReturn}, false, "2.11"},
-    {"<", "選択、戻る、カーソル上、選択 (M-6)", {kCarriageReturn, kControlG, 0x10, kCarriageReturn}, true, "2.11"},
-    {">", "選択、戻る、カーソル下、選択 (M-7)", {kCarriageReturn, kControlG, 0x0e, kCarriageReturn}, true, "2.11"},
+    {"^Xc", "CP", "CP", {kLeaderX, 'c'}, false, "2.11"},
+    {"^Xm", "MV", "MV", {kLeaderX, 'm'}, false, "2.11"},
+    {"^Xr", "RM", "RM", {kLeaderX, 'r'}, false, "2.11"},
+    {"^Xa", "ARC: アーカイブを展開", "ARC: expand archive", {kLeaderX, 'a'}, false, "2.11"},
+    {"^space", "現在のエントリをマーク/解除", "Toggle mark (CP/MV/RM/ARC)", {0x80}, false, "2.11"},
+    {".", "現在のエントリをマーク/解除(移動なし)", "Toggle mark on current entry, no cursor move (CP/MV/RM/PROGRAM/ARC)",
+     {'.'}, false, "2.11"},
+    {"[", "現在のエントリをマークし、カーソルを上へ", "Mark current entry, then cursor up (CP/MV/RM/PROGRAM/ARC)",
+     {'['}, false, "2.11"},
+    {"]", "現在のエントリをマークし、カーソルを下へ", "Mark current entry, then cursor down (CP/MV/RM/PROGRAM/ARC)",
+     {']'}, false, "2.11"},
+    {"^X^Y", "全マーク", "Mark all (CP/MV/RM/ARC)", {kLeaderX, 0x19}, false, "2.11"},
+    {"^X^N", "全マーク解除", "Clear all marks (CP/MV/RM/ARC)", {kLeaderX, 0x0e}, false, "2.11"},
+    {"^X^M", "処理先を入力・確定 (CP/MV/RM/ARC)", "Input destination / confirm (CP/MV/RM/ARC)",
+     {kLeaderX, kCarriageReturn}, false, "2.11"},
+    {"<", "選択、戻る、カーソル上、選択 (M-6)", "Select, back, cursor up, select (M-6)",
+     {kCarriageReturn, kControlG, 0x10, kCarriageReturn}, true, "2.11"},
+    {">", "選択、戻る、カーソル下、選択 (M-7)", "Select, back, cursor down, select (M-7)",
+     {kCarriageReturn, kControlG, 0x0e, kCarriageReturn}, true, "2.11"},
 
     // 2.12  SHELL (^[s / ^Xs / ^J. / ^J, / ^Jw / ^J^W)
-    {"^[s", "SHELL", {kEscape, 's'}, false, "2.12"},
-    {"^Xs", "SHELLを再起動", {kLeaderX, 's'}, false, "2.12"},
-    {"^J.", "SHELL: cd <File-selectorの位置>", {kLeaderJ, '.'}, false, "2.12"},
-    {"^J,", "SHELL: usilicrc K-43で定義したコマンド", {kLeaderJ, ','}, false, "2.12"},
-    {"^Jw", "SHELL: 現在のファイル名を挿入", {kLeaderJ, 'w'}, false, "2.12"},
-    {"^J^W", "SHELL: バッファ内容を挿入", {kLeaderJ, 0x17}, false, "2.12"},
+    {"^[s", "SHELL", "SHELL", {kEscape, 's'}, false, "2.12"},
+    {"^Xs", "SHELLを再起動", "Restart SHELL", {kLeaderX, 's'}, false, "2.12"},
+    {"^J.", "SHELL: cd <File-selectorの位置>", "SHELL: cd <directory>", {kLeaderJ, '.'}, false, "2.12"},
+    {"^J,", "SHELL: usilicrc K-43で定義したコマンド", "SHELL: usilicrc K-43 command", {kLeaderJ, ','}, false, "2.12"},
+    {"^Jw", "SHELL: 現在のファイル名を挿入", "SHELL: insert access-name", {kLeaderJ, 'w'}, false, "2.12"},
+    {"^J^W", "SHELL: バッファ内容を挿入", "SHELL: insert buffer content", {kLeaderJ, 0x17}, false, "2.12"},
 
     // 2.14  COPY (^O^C)
-    {"^O^C", "COPY", {kLeaderO, 0x03}, false, "2.14"},
-    {"^O^Y", "PASTE (COPYの内容を挿入)", {kLeaderO, 0x19}, false, "2.14"},
+    {"^O^C", "COPY", "COPY", {kLeaderO, 0x03}, false, "2.14"},
+    {"^O^Y", "PASTE (COPYの内容を挿入)", "PASTE (insert COPY buffer)", {kLeaderO, 0x19}, false, "2.14"},
 
     // 2.15  EDIT (^Je)
-    {"^Je", "EDIT", {kLeaderJ, 'e'}, false, "2.15"},
+    {"^Je", "EDIT", "EDIT", {kLeaderJ, 'e'}, false, "2.15"},
 
     // 2.16  ERROR (^X^Ke)
-    {"^X^Ke", "ERROR", {kLeaderX, 0x0b, 'e'}, false, "2.16"},
+    {"^X^Ke", "ERROR", "ERROR", {kLeaderX, 0x0b, 'e'}, false, "2.16"},
 
     // 2.17  LOG (^X^Kl)
-    {"^X^Kl", "LOG: SHELLの操作ログ", {kLeaderX, 0x0b, 'l'}, false, "2.17"},
-    {"^[l", "LOG", {kEscape, 'l'}, false, "2.17"},
+    {"^X^Kl", "LOG: SHELLの操作ログ", "LOG: SHELL output", {kLeaderX, 0x0b, 'l'}, false, "2.17"},
+    {"^[l", "LOG", "LOG", {kEscape, 'l'}, false, "2.17"},
 
     // 2.18  EXIT (^X^C or ^[^[)
-    {"^X^C", "EXIT", {kLeaderX, kControlC}, false, "2.18"},
+    {"^X^C", "EXIT", "EXIT", {kLeaderX, kControlC}, false, "2.18"},
 
     // INFO (^I)
     // 2026-08-27のリネーム、直接のユーザー依頼: 以前は"^T"/"USILIC
@@ -396,14 +422,20 @@ const KeyTableEntry kKeyTable[] = {
     // コメント参照)にINFOという章自体が存在しないため――以前このC++
     // 移植側で独自に「2.19 INFO」章を新設していたが、ユーザー自身の
     // 一次資料に無いものを追加すべきでないという訂正を受けて削除した。
-    {"^I", "INFO", {0x09}},
+    {"^I", "INFO", "INFO", {0x09}},
 
     // 3  設定ファイル (usilicrc) -- LS/SCROLLフラグの切替
-    {"^Ol", "ls(1)出力形式の切替", {kLeaderO, 'l'}, false, "3"},
-    {"^Oh", "スクロールモードの切替", {kLeaderO, 'h'}, false, "3"},
+    {"^Ol", "ls(1)出力形式の切替", "Switch ls output format", {kLeaderO, 'l'}, false, "3"},
+    {"^Oh", "スクロールモードの切替", "Switch scroll mode", {kLeaderO, 'h'}, false, "3"},
 
-    // 4  補足 -- 文字コード切替
-    {"^Oa", "文字コードの切替 (ASCII/EUC/UTF-8)", {kLeaderO, 'a'}, false, "4"},
+    // 2026-09-01、直接のユーザー依頼("^Oaはデフォルト文字コード切り替え
+    // ではなくてHELP/KEYの日本語<-->英語切り替えでいいと思う"): 以前は
+    // ここでCommand::CycleCharset(Ascii/Euc/Utf8の3値巡回)に割り当てて
+    // いたが、ファイル内容の文字コード判別は既に自動化されている
+    // (usilicrc/文字コードの章参照)ため、その手動切り替え自体が不要と
+    // 判断された。Application::toggleHelpLanguage()自身のコメント参照。
+    {"^Oa", "HELP/KEYの表示言語を切替(日本語/English)", "Switch HELP/KEY display language (Japanese/English)",
+     {kLeaderO, 'a'}},
 
     // ^[<・^[>はWindowの章(5.1)には無いが、legacy自身のKEY一覧
     // (str.cのprint_key()/tobo())に元々含まれる「バッファ先頭/末尾へ
@@ -411,8 +443,8 @@ const KeyTableEntry kKeyTable[] = {
     // legacy自身のKEY一覧の表記(綴った単語"ESC"ではなく"^[")と
     // ユーザー自身の2026-08-05の訂正("space"/"return"は実際のApple
     // Keyboardのキートップのラベル)に合わせている。
-    {"^[<", "バッファ先頭へ移動", {kEscape, '<'}, false, "5.1"},
-    {"^[>", "バッファ末尾へ移動", {kEscape, '>'}, false, "5.1"},
+    {"^[<", "バッファ先頭へ移動", "Go to top", {kEscape, '<'}, false, "5.1"},
+    {"^[>", "バッファ末尾へ移動", "Go to bottom", {kEscape, '>'}, false, "5.1"},
 
     // どの章にも対応が無い(HELPで文書化していない)エントリ:
     // キーボードマクロの記録・再生自体は、usilicrcの"KEY"セクション
@@ -424,9 +456,9 @@ const KeyTableEntry kKeyTable[] = {
     // それをトグルとして記載すると誤解を招く。割り当て/ディスパッチ
     // 自体には手を付けていない(依然として^O gを直接押せば到達可能);
     // リファレンスリストの行だけが削除された。
-    {"^X(", "キーボードマクロの記録を開始", {kLeaderX, '('}},
-    {"^X)", "キーボードマクロの記録を終了", {kLeaderX, ')'}},
-    {"^Xe", "記録したマクロを実行", {kLeaderX, 'e'}},
+    {"^X(", "キーボードマクロの記録を開始", "Begin macro recording", {kLeaderX, '('}},
+    {"^X)", "キーボードマクロの記録を終了", "End macro recording", {kLeaderX, ')'}},
+    {"^Xe", "記録したマクロを実行", "Execute recorded macro", {kLeaderX, 'e'}},
 };
 
 // M_help/T_help向けのmenu.cのinit_cut2()呼び出しから移植――HELP自身の
@@ -2081,8 +2113,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ToggleScrollMode);
       case 'l':  // ^O l : `ls`出力の形式を切り替え(K-26)
         return handleCommand(Command::ToggleLsMode);
-      case 'a':  // ^O a : asciiモードを切り替え(K-27)
-        return handleCommand(Command::CycleCharset);
+      case 'a':  // ^O a : HELP/KEYの表示言語を切り替え(K-27)――Command::ToggleHelpLanguage自身のコメント参照
+        return handleCommand(Command::ToggleHelpLanguage);
       case 0x0b:  // ^O ^K : 親ディレクトリへ移動(K-19)
         return handleCommand(Command::GoToParentDirectory);
       case kCarriageReturn:  // ^O ^M : 「行単位で読む」(K-23、M_fp)
@@ -2985,8 +3017,8 @@ bool Application::handleCommand(Command command) {
       return executeStartLog();
     case Command::ShowUsilicBanner:
       return executeShowUsilicBanner();
-    case Command::CycleCharset:
-      return cycleCharset();
+    case Command::ToggleHelpLanguage:
+      return toggleHelpLanguage();
     // 2026-08-17修正(=cn): K-46(^X^F、「Select file name」)――なぜ
     // これがもうそれを直接呼ばないのかについてはstartListBrowser()
     // 自身のコメント参照。startRegexPromptList()は、その名前にも
@@ -5443,19 +5475,28 @@ bool Application::openSelectedBannerEntry() {
   return false;
 }
 
-// K-27: クラス自身の宣言コメント参照。
-bool Application::cycleCharset() {
-  encoding_ = (encoding_ == Charset::Encoding::Ascii)  ? Charset::Encoding::Euc
-              : (encoding_ == Charset::Encoding::Euc) ? Charset::Encoding::Utf8
-                                                       : Charset::Encoding::Ascii;
+// K-27: クラス自身の宣言コメント(application.hpp)参照。
+bool Application::toggleHelpLanguage() {
+  helpJapanese_ = !helpJapanese_;
+  loadHelpText(expandHelpMarkup(helpJapanese_ ? kHelpTextJa : kHelpTextEn));
+  loadGuiHelpText(expandHelpMarkup(helpJapanese_ ? kHelpTextGuiJa : kHelpTextGuiEn));
 
-  fileMode_.setEncoding(encoding_);
-  manMode_.setEncoding(encoding_);
-  shell_.setEncoding(encoding_);
-  promptEditor_.setEncoding(encoding_);
-
-  if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns());
-  else if (currentMode_ == ApplicationMode::Man) manMode_.reflow(display_.columns());
+  bool viewingHelp = (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
+                      cutOrigin_ == CutOrigin::Help;
+  if (viewingHelp) {
+    // startHelp()自身の「preserveExistingCutでない」分岐と同じ
+    // split()呼び出し――ただしpushSplit()ではない: 新しいトップ
+    // レベルの階層を積むのではなく、今表示している階層をその場で
+    // 置き換える。cutReturnMode_/cutOrigin_/cutSyntax_には触れない
+    // ――既に正しい値のまま(このHELPセッション自体が開かれた時点で
+    // 設定済み)。
+    std::vector<StyledLine> helpLines = wrapHelpText(display_.columns());
+    if (!cutMode_.split(helpLines, kHelpPattern, GrepSyntax::Regex)) return false;
+    currentMode_ = ApplicationMode::Cut;
+  } else if (currentMode_ == ApplicationMode::Key) {
+    renderKeyRows();
+    keyView_.redraw();
+  }
 
   return true;
 }
@@ -5988,7 +6029,7 @@ void Application::renderKeyRows() {
     const auto &entry = kKeyTable[i];
     std::string label = entry.keyLabel;
     if (label.size() < maxLabelWidth) label.insert(0, maxLabelWidth - label.size(), ' ');
-    std::string text = label + " : " + entry.description;
+    std::string text = label + " : " + (helpJapanese_ ? entry.description : entry.descriptionEn);
     if (entry.isMacro) text += " (M)";
     std::vector<AttributeRun> attributes;
     if (static_cast<int>(i) == cursor) {

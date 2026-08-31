@@ -4476,34 +4476,54 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): NOT reachable from SHELL mode
   CHECK(app.currentMode() == ApplicationMode::Shell);  // stayed in Shell -- did NOT open the banner
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O a (K-27) cycles the charset Ascii -> Euc -> Utf8 -> Ascii") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O a (K-27) toggles the HELP/KEY display language, and back again") {
   REQUIRE(app.start(path()));
-  CHECK(app.encoding() == Charset::Encoding::Ascii);
+  REQUIRE(app.handleCommand(Command::StartKey));
+  const auto &linesJa = app.activeContentView().lines();
+  bool sawJapaneseFirstRow = linesJa[0].text.find("j : ") != std::string::npos &&
+                              linesJa[0].text.find("Move window down") == std::string::npos;
+  CHECK(sawJapaneseFirstRow);
 
   REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   CHECK(app.feedByte('a', std::nullopt));
-  CHECK(app.encoding() == Charset::Encoding::Euc);
+  const auto &linesEn = app.activeContentView().lines();
+  CHECK(linesEn[0].text.find("Move window down") != std::string::npos);
+  CHECK(app.currentMode() == ApplicationMode::Key);  // has no mode restriction, but didn't leave Key either
 
   REQUIRE(app.feedByte(0x0f, std::nullopt));
   CHECK(app.feedByte('a', std::nullopt));
-  CHECK(app.encoding() == Charset::Encoding::Utf8);
-
-  REQUIRE(app.feedByte(0x0f, std::nullopt));
-  CHECK(app.feedByte('a', std::nullopt));
-  CHECK(app.encoding() == Charset::Encoding::Ascii);
+  const auto &linesJaAgain = app.activeContentView().lines();
+  CHECK(linesJaAgain[0].text.find("Move window down") == std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(CycleCharset): has no mode restriction, unlike most other K-? commands") {
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHelpLanguage): refreshes an open HELP session in place, "
+                           "without pushing a nested Cut level (^G still returns to Directory in one press)") {
+  REQUIRE(app.loadHelpText(fm::expandHelpMarkup(fm::kHelpTextJa)));
+  REQUIRE(app.loadGuiHelpText(fm::expandHelpMarkup(fm::kHelpTextGuiJa)));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  std::size_t japaneseSegmentCount = app.cutMode().segments().size();
+
+  CHECK(app.handleCommand(Command::ToggleHelpLanguage));
+  CHECK(app.currentMode() == ApplicationMode::Cut);  // still Cut, not pushed into a deeper level
+  // kHelpTextEn's own section structure differs from kHelpTextJa's (HELP.jp-derived) one --
+  // switching languages while HELP is open genuinely reloads different content, not just relabels it.
+  CHECK(app.cutMode().segments().size() != japaneseSegmentCount);
+
+  CHECK(app.handleCommand(Command::Back));  // ^G: one press back to wherever HELP was opened from
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHelpLanguage): has no mode restriction, and is a harmless "
+                           "no-op (beyond flipping the flag) when HELP/KEY isn't open") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  CHECK(app.handleCommand(Command::CycleCharset));
-  CHECK(app.encoding() == Charset::Encoding::Euc);
-  // Still showing the same file, un-crashed, after the reflow() this
-  // triggers for the currently-open File mode screen.
+  CHECK(app.handleCommand(Command::ToggleHelpLanguage));
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
 }
