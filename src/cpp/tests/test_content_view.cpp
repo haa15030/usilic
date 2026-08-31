@@ -436,6 +436,82 @@ TEST_CASE("isColumnWithinLineScope: false for an out-of-range line index") {
   CHECK_FALSE(v.isColumnWithinLineScope(2, 0));
 }
 
+TEST_CASE("scrollHighlightForLine: the cursor row gets a Standout run spanning "
+          "[highlightStartColumn, text.size()), matching what redraw()/renderLine() would show "
+          "(2026-09-02, GUI drag/coast highlight parity -- a direct user request)") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  std::vector<ContentView::Line> lines;
+  lines.push_back({"drwxr-xr-x  staff  aaa.txt", std::nullopt, 20, {}});
+  lines.push_back({"drwxr-xr-x  staff  bbb.txt", std::nullopt, 20, {}});
+  v.setLines(lines);
+  v.setCursorIndex(1);
+
+  auto none = v.scrollHighlightForLine(0);
+  CHECK_FALSE(none.has_value());
+  auto some = v.scrollHighlightForLine(1);
+  REQUIRE(some.has_value());
+  CHECK(some->attribute == fm::Display::Attribute::Standout);
+  CHECK(some->start == 20);
+  CHECK(some->end == static_cast<int>(std::string("drwxr-xr-x  staff  bbb.txt").size()));
+}
+
+TEST_CASE("scrollHighlightForLine: hoverIndex_ takes priority over cursorIndex_, matching redraw()'s "
+          "own `hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_`") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setLines(makeLines(3));
+  v.setCursorIndex(0);
+  v.setHoverIndex(2);
+
+  CHECK_FALSE(v.scrollHighlightForLine(0).has_value());
+  CHECK(v.scrollHighlightForLine(2).has_value());
+}
+
+TEST_CASE("scrollHighlightForLine: nullopt when cursorHighlightEnabled_ is false, or the line is "
+          "neverHighlighted, or the index is out of range") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  std::vector<ContentView::Line> lines = makeLines(2);
+  v.setLines(lines);
+  v.setCursorIndex(0);
+
+  v.setCursorHighlightEnabled(false);
+  CHECK_FALSE(v.scrollHighlightForLine(0).has_value());
+  v.setCursorHighlightEnabled(true);
+  CHECK(v.scrollHighlightForLine(0).has_value());
+
+  CHECK_FALSE(v.scrollHighlightForLine(-1).has_value());
+  CHECK_FALSE(v.scrollHighlightForLine(2).has_value());
+}
+
+TEST_CASE("scrollHighlightForLine: with setMarkedRowUsesUnderline(true), a marked row gets Underline "
+          "(not Standout), and a row that is BOTH the cursor row AND marked gets only Underline -- "
+          "matching redraw()'s own `cursorRow && !markedRow` precedence") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setLines(makeLines(3));
+  v.setCursorIndex(0);
+  v.setMarkedRowUsesUnderline(true);
+  v.setMarkedPredicate([](int idx) { return idx == 1; });
+
+  auto cursorOnly = v.scrollHighlightForLine(0);
+  REQUIRE(cursorOnly.has_value());
+  CHECK(cursorOnly->attribute == fm::Display::Attribute::Standout);
+
+  auto markedOnly = v.scrollHighlightForLine(1);
+  REQUIRE(markedOnly.has_value());
+  CHECK(markedOnly->attribute == fm::Display::Attribute::Underline);
+
+  CHECK_FALSE(v.scrollHighlightForLine(2).has_value());
+
+  // Now make row 0 both the cursor row AND marked -- marked wins, no Standout.
+  v.setMarkedPredicate([](int idx) { return idx == 0; });
+  auto both = v.scrollHighlightForLine(0);
+  REQUIRE(both.has_value());
+  CHECK(both->attribute == fm::Display::Attribute::Underline);
+}
+
 TEST_CASE("setLines: resets topIndex_ to 0, so a stale deep scroll position from the PREVIOUS content "
           "doesn't leave a much-shorter new listing scrolled almost to its own end (2026-08-05 user "
           "reproduction: cpp/(7 entries) -> Enter into src/(74 entries) -> scroll down several lines -> "

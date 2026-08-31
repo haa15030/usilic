@@ -227,6 +227,26 @@ class ContentView {
   // そもそもその一部ではなかった周囲のマージンか。
   bool isColumnWithinLineScope(int lineIndex, int column) const;
 
+  // 2026-09-02追加、直接のユーザー依頼("ついでに透かしが消える件も
+  // よろしく" -- 慣性スクロール/ドラッグ中はDirectoryModeのカーソル
+  // ハイライト(Standout)が常に消える件): GraphicalDisplay::
+  // renderScrolled()(main.cppのドラッグ/コースト専用の描画経路)
+  // 自身のScrolledLine::attributesはFileMode専用のBold/Underline
+  // runしか運ばない――DirectoryModeのカーソル/マーク行ハイライトは
+  // 完全に別の仕組み(redraw()自身のループのcursorRow/markedRow/
+  // markedRowUsesUnderline_)で計算されるので、ドラッグ中は一度も
+  // 描かれない。この関数は、redraw()の同じループがlineIndex1行分に
+  // ついて計算するのとまったく同じcursorRow/markedRow/
+  // markedRowUsesUnderline_の判定を再現し、その行が今まさに(hover/
+  // cursor優先順位も含め)ハイライトされるべきなら、注入すべき単一の
+  // AttributeRun([highlightStartColumn, text.size())、
+  // Standoutまたは(markedRowUsesUnderline_有効時のmarkedRow分)
+  // Underline)を返す――呼び出し元(main.cpp)がこれをScrolledLine::
+  // attributesへ足し込むことで、renderScrolled()側でも同じ見た目に
+  // なる。cursorHighlightEnabled_がfalse、または対象行がneverHighlighted
+  // の場合、あるいはそもそもマークされていない場合はnullopt。
+  std::optional<Display::AttributeRun> scrollHighlightForLine(int lineIndex) const;
+
   // lineIndexAtRow()の逆: cursorIndex_自身が現在描画されている絶対
   // 的な「表示」行、または表示範囲外へスクロールされていれば-1。
   // Shell自身の^P/^N履歴閲覧のために追加(2026-08-04):

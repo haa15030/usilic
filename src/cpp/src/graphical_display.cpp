@@ -2412,26 +2412,43 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     if (pos + len > line.size()) len = 1;
     int width = std::max(1, Utf8::display_width(reinterpret_cast<const unsigned char *>(line.data() + pos), len));
     std::string glyph = line.substr(pos, len);
+    // 2026-08-21修正、直接のユーザー報告("マウスの左クリック（画面
+    // ドラッグスタンバイ状態）中だと文字装飾が利かず"――HELP自身の
+    // 太字/下線付きの単語、例えば"usilic"、"``USILIC''"が、ドラッグ/慣性
+    // スクロールが有効な間はプレーンにレンダリングされる):これが
+    // 対処する根本原因については、すぐ下のこの関数自身の
+    // TTF_SetFontStyle()のコメント参照(以前は常にNORMALをレンダ
+    // リングしており、グリフごとのスタイル情報がこの関数へ一切
+    // 届いていなかった)。ContentView::renderLine()/TerminalDisplay::
+    // writeAttributedLine()が既に使っているのと同じバイトオフセット
+    // 範囲でのマッチング(`pos < run.start || pos >= run.end`――この
+    // クラス自身の慣習は全体を通じて、プレーンなASCIIのHELPテキスト
+    // (このように装飾される唯一のコンテンツ)についてはバイト
+    // オフセット==画面上の列である)。
+    bool wantBold = false, wantUnderline = false, wantStandout = false;
+    for (const auto &run : attributes) {
+      if (static_cast<int>(pos) < run.start || static_cast<int>(pos) >= run.end) continue;
+      if (run.attribute == Display::Attribute::Bold) wantBold = true;
+      else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
+      else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
+    }
+    // 2026-09-02追加、直接のユーザー依頼("ついでに透かしが消える件も
+    // よろしく"): ContentView::scrollHighlightForLine()(main.cpp自身の
+    // renderScrolled()呼び出し箇所のコメント参照)が注入するStandout
+    // runのための反転表示――背景色を塗ってから、グリフ自身をfg/bg
+    // 入れ替えて描く。ContentView::renderLine()自身のsetStandout()が
+    // 端末のSGR反転表示コードで実現しているのと同じ見た目。空白セル
+    // (下の`glyph != " "`ゲートで通常は完全にスキップされる)も、
+    // Standout範囲内であれば背景を塗る必要がある――そのためこの背景
+    // 塗りは`glyph != " "`のゲートより「前」、ループの全反復で行う。
+    if (wantStandout) {
+      SDL_Rect cellRect{Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y, width * impl_->cellWidth,
+                         impl_->cellHeight};
+      SDL_SetRenderDrawColor(impl_->renderer, fg.r, fg.g, fg.b, 255);
+      SDL_RenderFillRect(impl_->renderer, &cellRect);
+    }
     if (glyph != " " && lead >= 0x20) {
-      // 2026-08-21修正、直接のユーザー報告("マウスの左クリック（画面
-      // ドラッグスタンバイ状態）中だと文字装飾が利かず"――HELP自身の
-      // 太字/下線付きの単語、例えば"usilic"、"``USILIC''"が、ドラッグ/慣性
-      // スクロールが有効な間はプレーンにレンダリングされる):これが
-      // 対処する根本原因については、すぐ下のこの関数自身の
-      // TTF_SetFontStyle()のコメント参照(以前は常にNORMALをレンダ
-      // リングしており、グリフごとのスタイル情報がこの関数へ一切
-      // 届いていなかった)。ContentView::renderLine()/TerminalDisplay::
-      // writeAttributedLine()が既に使っているのと同じバイトオフセット
-      // 範囲でのマッチング(`pos < run.start || pos >= run.end`――この
-      // クラス自身の慣習は全体を通じて、プレーンなASCIIのHELPテキスト
-      // (このように装飾される唯一のコンテンツ)についてはバイト
-      // オフセット==画面上の列である)。
-      bool wantBold = false, wantUnderline = false;
-      for (const auto &run : attributes) {
-        if (static_cast<int>(pos) < run.start || static_cast<int>(pos) >= run.end) continue;
-        if (run.attribute == Display::Attribute::Bold) wantBold = true;
-        else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
-      }
+      SDL_Color cellFg = wantStandout ? impl_->bg : sdlFg;
       // なぜここでもフォールバックフォントが参照されるのかについては
       // renderCell()自身のコメント参照――下の`isWide`のチェックを
       // 含め、2026-08-10追加(実際の報告、"慣性スクロール中は日本語
@@ -2474,7 +2491,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       // ついてはcachedGlyphTexture()自身のコメント参照。)
       int hinting = isWide ? TTF_HINTING_NORMAL : TTF_HINTING_NONE;
       int w = 0, h = 0;
-      SDL_Texture *texture = cachedGlyphTexture(*impl_, renderFont, glyph, style, hinting, sdlFg, !isWide, w, h);
+      SDL_Texture *texture = cachedGlyphTexture(*impl_, renderFont, glyph, style, hinting, cellFg, !isWide, w, h);
       if (texture) {
         // fitGlyphRect()経由で`width`セルに合わせる――なぜこれが
         // 引き伸ばすのではなく縮小して中央寄せするのかについては

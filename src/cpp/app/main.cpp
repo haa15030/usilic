@@ -2311,9 +2311,26 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // during an active drag/coast -- see Display::ScrolledLine's own
       // comment for the rest of this fix (GraphicalDisplay::
       // renderTextRun() now actually applies these).
+      // 2026-09-02 fix, a direct user request ("ついでに透かしが消える
+      // 件もよろしく" -- DirectoryModeのカーソルハイライトがドラッグ/
+      // 慣性スクロール中は常に消え、静止すると現れる件): line.attributes
+      // はFileMode専用のBold/Underline runしか運ばないので、
+      // DirectoryModeの現在行ハイライト(全く別の仕組み、
+      // ContentView::redraw()自身のcursorRow/markedRowロジック)は
+      // これまでこのレンダ経路に一切乗らなかった。ContentView::
+      // scrollHighlightForLine()(その宣言側コメント参照)がredraw()
+      // と同じ判定を1行ずつ再現するので、対象の行があればそのAttributeRun
+      // を足し込む――GraphicalDisplay::renderTextRun()側のStandout対応
+      // (このコミットで新設)と組み合わさって、ドラッグ/コースト中も
+      // 静止中と同じ見た目のハイライトが表示される。
       std::vector<fm::Display::ScrolledLine> lines;
       lines.reserve(view.lines().size());
-      for (const auto &line : view.lines()) lines.push_back({line.text, line.attributes, line.ellipsisEligible});
+      for (std::size_t i = 0; i < view.lines().size(); i++) {
+        const auto &line = view.lines()[i];
+        std::vector<fm::Display::AttributeRun> attrs = line.attributes;
+        if (auto highlight = view.scrollHighlightForLine(static_cast<int>(i))) attrs.push_back(*highlight);
+        lines.push_back({line.text, std::move(attrs), line.ellipsisEligible});
+      }
       gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments());
     } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.redrawSensitivePromptOrRecallActive() &&
                !app.awaitingLocateUpdateDb()) {

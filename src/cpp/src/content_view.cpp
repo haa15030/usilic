@@ -292,6 +292,34 @@ int ContentView::lineIndexAtRow(int displayRow) const {
   return idx;
 }
 
+// scrollHighlightForLine()自身の宣言側コメント(content_view.hpp)参照。
+// redraw()自身のループ本体(cursorRow/markedRow/markedRowUsesUnderline_
+// の計算式)と意図的に一字一句揃えてある――ずれると、静止中と
+// ドラッグ中とでどの行がハイライトされるかが食い違ってしまう。
+std::optional<Display::AttributeRun> ContentView::scrollHighlightForLine(int lineIndex) const {
+  if (lineIndex < 0 || lineIndex >= static_cast<int>(lines_.size())) return std::nullopt;
+  if (!cursorHighlightEnabled_) return std::nullopt;
+  const Line &line = lines_[lineIndex];
+  if (line.neverHighlighted) return std::nullopt;
+  int highlighted = hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_;
+  bool cursorRow = lineIndex == highlighted && cursorRowAlsoHighlighted_;
+  bool markedRow = markedPredicate_ && markedPredicate_(lineIndex);
+  bool marked, underlineMarked;
+  if (markedRowUsesUnderline_) {
+    marked = cursorRow && !markedRow;
+    underlineMarked = markedRow;
+  } else {
+    marked = cursorRow || markedRow;
+    underlineMarked = false;
+  }
+  if (!marked && !underlineMarked) return std::nullopt;
+  int highlightStart = std::max(0, line.highlightStartColumn.value_or(0));
+  int end = static_cast<int>(line.text.size());
+  if (highlightStart >= end) return std::nullopt;
+  return Display::AttributeRun{highlightStart, end,
+                                marked ? Display::Attribute::Standout : Display::Attribute::Underline};
+}
+
 bool ContentView::isColumnWithinLineScope(int lineIndex, int column) const {
   if (lineIndex < 0 || lineIndex >= static_cast<int>(lines_.size())) return false;
   const Line &line = lines_[lineIndex];
