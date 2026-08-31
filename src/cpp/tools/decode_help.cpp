@@ -15,13 +15,15 @@
 // 戻す。この往復が情報を一切失わないことは、隣接するverify_help.cpp
 // (このディレクトリ)で確認できる。
 //
-// 使い方(ユーザーが今後src/HELP.txt上のdiffで新しい変更を示した場合、
-// またはsrc/doc/HELP.jp自体が更新された場合の再生成手順):
+// 使い方その1(kHelpTextJa再生成、ユーザーが今後src/HELP.txt上のdiffで
+// 新しい変更を示した場合、またはsrc/doc/HELP.jp自体が更新された場合):
 //   1. このツールをビルドして実行し、最新のHELP.jpをタグ付きテキスト
 //      へ変換する:
 //        c++ -std=c++17 -I../src decode_help.cpp ../src/pipe_buffer.cpp \
 //            ../src/charset.cpp ../src/utf8.cpp -o /tmp/decode_help
 //        /tmp/decode_help ../../doc/HELP.jp > /tmp/helpjp_decoded.txt
+//      (下線タグは省略時"u"のまま――expandHelpMarkup()の固定の語彙に
+//      合わせる。使い方その2とは異なる。)
 //   2. 出力(<b>/<u>タグ付きの読みやすいテキスト)を見比べ、実際のC++
 //      移植で動作が変わり明確に誤りになる箇所「だけ」を、周辺の文体・
 //      装飾を保ったまま最小限で修正する(help_text.hpp冒頭のコメントが
@@ -33,9 +35,24 @@
 //      意図的な修正以外に差分が無いことの確認用)。
 //   5. make test / make usilic で確認してからコミットする。
 //
-// src/HELP.txt(ユーザー自身が用意した平文の「業務連絡版」の下書き)は
-// この変換の入力では「ない」――一次資料は常にsrc/doc/HELP.jp自身で
-// あることについてはhelp_text.hpp冒頭のコメント参照。
+// 使い方その2(src/HELP.txt自身への「逆」の書き戻し、2026-09-01追加、
+// 直接のユーザー依頼: "逆の作業（HELP.jpの`bold`と*アンダーライン*
+// 箇所を前出のルールでHELP.txtに書き戻し）を機械的に行えるなら...
+// 誤変換防止の意味では<b></b><i></i>の方がいいのでそちらでやって"):
+// src/HELP.txt(ユーザー自身が編集する、業務連絡版の下書き)自体は
+// kHelpTextJaの入力では「ない」(一次資料は常にsrc/doc/HELP.jp自身、
+// help_text.hpp冒頭のコメント参照)が、ユーザーが手作業で`X`/*X*と
+// マークアップを再構築する手間(誤変換の危険もある)を省くため、
+// HELP.jp自身が既に持つ装飾を、ユーザー指定の<b></b>/<i></i>タグで
+// src/HELP.txtへそのまま書き戻せる――内容(プローズ)自体は一切変えず、
+// 装飾の位置だけを機械的に反映する:
+//   /tmp/decode_help ../../doc/HELP.jp 100000 i > /tmp/helptxt_new.txt
+//   cp /tmp/helptxt_new.txt ../../HELP.txt
+// (下線タグに"i"を明示的に渡す――3番目の引数、デフォルトの"u"を
+// 上書きする。src/HELP.txt自身に手作業での上書き変更が既にある場合は、
+// 事前にその内容(プローズの変更点)を控えてから、この機械的な書き戻し
+// の後に改めて適用し直すこと――このツール自体はHELP.txt側の既存の
+// 手作業編集を一切認識しない、単純な全文置き換えである。)
 
 #include <cstdio>
 #include <fstream>
@@ -51,9 +68,17 @@ using fm::PipeBuffer;
 
 int main(int argc, char **argv) {
   if (argc < 2) {
-    std::fprintf(stderr, "usage: %s <HELP.jp> [width]\n", argv[0]);
+    std::fprintf(stderr, "usage: %s <HELP.jp> [width] [underline-tag]\n", argv[0]);
     return 1;
   }
+  // 2026-09-01追加、直接のユーザー依頼("誤変換防止の意味では
+  // <b></b><i></i>の方がいいのでそちらでやってみて"): src/HELP.txt
+  // 自身(ユーザーの手書き編集用、業務連絡版)へ書き戻す時はユーザー
+  // 自身の指定通り下線に<i>を使いたいが、kHelpTextJa自身の生成では
+  // expandHelpMarkup()(help_text.cpp)が固定で<u>を要求する――同じ
+  // ツールをどちらの出力にも使えるよう、下線タグ名を引数化した
+  // (デフォルトは既存の呼び出し元との後方互換のため"u"のまま)。
+  std::string underlineTag = argc >= 4 ? argv[3] : "u";
   std::ifstream in(argv[1], std::ios::binary);
   if (!in) {
     std::fprintf(stderr, "cannot open %s\n", argv[1]);
@@ -90,7 +115,7 @@ int main(int argc, char **argv) {
     std::size_t pos = 0;
     for (const auto &run : merged) {
       if (static_cast<std::size_t>(run.start) > pos) out += text.substr(pos, run.start - pos);
-      std::string tag = (run.attribute == Display::Attribute::Bold) ? "b" : "u";
+      std::string tag = (run.attribute == Display::Attribute::Bold) ? "b" : underlineTag;
       out += "<" + tag + ">" + text.substr(run.start, run.end - run.start) + "</" + tag + ">";
       pos = run.end;
     }
