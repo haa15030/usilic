@@ -201,6 +201,21 @@ std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth)
   return text.substr(0, static_cast<std::size_t>(headEnd)) + kEllipsis + text.substr(static_cast<std::size_t>(tailStart));
 }
 
+// truncateHighlightedSuffix()自身の宣言側コメント(content_view.hpp)
+// 参照。`highlightStart`より手前は常にプレーンなASCII接頭辞である
+// (highlightStartColumn自身のコメント参照、バイト数==画面幅)ので、
+// その幅はhighlightStartそのもの――残りの予算をファイル名側の
+// middleEllipsisTruncateByWidth()へそのまま渡せる。
+std::string truncateHighlightedSuffix(const std::string &text, int highlightStart, int maxWidth) {
+  highlightStart = std::clamp(highlightStart, 0, static_cast<int>(text.size()));
+  if (totalDisplayWidth(text) <= maxWidth) return text;
+  int budget = maxWidth - highlightStart;
+  if (budget <= 0) return text.substr(0, static_cast<std::size_t>(std::max(0, maxWidth)));
+  std::string prefix = text.substr(0, static_cast<std::size_t>(highlightStart));
+  std::string suffix = text.substr(static_cast<std::size_t>(highlightStart));
+  return prefix + middleEllipsisTruncateByWidth(suffix, budget);
+}
+
 ContentView::ContentView(Display &display) : display_(display) {}
 
 void ContentView::setCursorAtModeLineTrailingEnd(bool enabled) { cursorAtModeLineTrailingEnd_ = enabled; }
@@ -318,6 +333,12 @@ std::optional<Display::AttributeRun> ContentView::scrollHighlightForLine(int lin
   if (highlightStart >= end) return std::nullopt;
   return Display::AttributeRun{highlightStart, end,
                                 marked ? Display::Attribute::Standout : Display::Attribute::Underline};
+}
+
+// ellipsisBudget()自身の宣言側コメント(content_view.hpp)参照。
+// renderLine()自身のellipsisBudgetローカル変数と一字一句同じ式。
+int ContentView::ellipsisBudget() const {
+  return cursorHighlightEnabled_ ? std::max(0, display_.columns() - 1) : display_.columns();
 }
 
 bool ContentView::isColumnWithinLineScope(int lineIndex, int column) const {
@@ -828,6 +849,17 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   const std::string *renderedText = &line.text;
   if (line.ellipsisEligible && static_cast<int>(line.text.size()) > ellipsisBudget) {
     ellipsisText = middleEllipsisTruncateByWidth(line.text, ellipsisBudget);
+    renderedText = &ellipsisText;
+  } else if (line.highlightStartColumn.has_value() && static_cast<int>(line.text.size()) > ellipsisBudget) {
+    // 2026-09-03追加、直接のユーザー報告("/Users/haa15030/（ls）画面に
+    // 収まらないファイル名...を Screensho...5-15-13.png で表示
+    // よろしく"): DirectoryModeのls一覧/WORK/arc.Nバナー(常に
+    // highlightStartColumnを持つが、上のellipsisEligibleは決して
+    // 設定しない――自身のコメント参照)に、Finderスタイルの中間省略を
+    // 「ファイル名部分だけ」に適用する。truncateHighlightedSuffix()
+    // 自身のコメント参照(なぜellipsisEligible全体版をそのまま使えない
+    // のか)。
+    ellipsisText = truncateHighlightedSuffix(line.text, std::max(0, *line.highlightStartColumn), ellipsisBudget);
     renderedText = &ellipsisText;
   }
   {

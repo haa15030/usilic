@@ -2338,13 +2338,26 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // を足し込む――GraphicalDisplay::renderTextRun()側のStandout対応
       // (このコミットで新設)と組み合わさって、ドラッグ/コースト中も
       // 静止中と同じ見た目のハイライトが表示される。
+      // 2026-09-03 fix, a direct user report ("/Users/haa15030/（ls）
+      // 画面に収まらないファイル名...を Screensho...5-15-13.png で
+      // 表示よろしく" -- redraw()側にContentView::renderLine()経由で
+      // 追加した同じ修正、その宣言側コメント参照): ここでも同じ
+      // ellipsisBudget()/truncateHighlightedSuffix()で行のテキスト
+      // 自体を先に切り詰めておかないと、静止中とドラッグ中とで
+      // DirectoryModeの長いファイル名の見た目がまた食い違ってしまう
+      // (=fe/=ffと同じ種類の退行)。
+      int ellipsisBudget = view.ellipsisBudget();
       std::vector<fm::Display::ScrolledLine> lines;
       lines.reserve(view.lines().size());
       for (std::size_t i = 0; i < view.lines().size(); i++) {
         const auto &line = view.lines()[i];
         std::vector<fm::Display::AttributeRun> attrs = line.attributes;
         if (auto highlight = view.scrollHighlightForLine(static_cast<int>(i))) attrs.push_back(*highlight);
-        lines.push_back({line.text, std::move(attrs), line.ellipsisEligible});
+        std::string text = line.text;
+        if (line.highlightStartColumn.has_value() && static_cast<int>(text.size()) > ellipsisBudget) {
+          text = fm::truncateHighlightedSuffix(text, std::max(0, *line.highlightStartColumn), ellipsisBudget);
+        }
+        lines.push_back({std::move(text), std::move(attrs), line.ellipsisEligible});
       }
       gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments());
     } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.redrawSensitivePromptOrRecallActive() &&

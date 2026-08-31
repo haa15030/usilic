@@ -1619,3 +1619,46 @@ TEST_CASE("middleEllipsisTruncateByWidth (via a plain ellipsisEligible line): ne
   CHECK(rendered.find(toDakuten) == std::string::npos);
   CHECK(rendered.find("\xe3\x82\x99") == std::string::npos);  // no orphaned mark either, on its own
 }
+
+TEST_CASE("renderLine: a DirectoryMode-style row (highlightStartColumn set, ellipsisEligible NOT set) "
+          "that overflows the terminal width gets a Finder-style middle ellipsis on the filename "
+          "portion only, leaving the fixed left margin untouched -- 2026-09-03, a direct user report "
+          "(\"Screenshot From 2026-08\" was shown hard-cut with no \"...\" at all; wanted "
+          "\"Screensho...5-15-13.png\")") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  std::string prefix = "P ";  // stands in for DirectoryMode's real perm/size/date margin
+  std::string filename = "Screenshot From 2026-08-03 15-15-13.png";
+  std::vector<ContentView::Line> lines;
+  // highlightStartColumn=2 (prefix.size()), ellipsisEligible left at its
+  // default false -- exactly DirectoryMode's own ls-entry shape.
+  lines.push_back({prefix + filename, std::nullopt, static_cast<int>(prefix.size()), {}});
+  v.setLines(lines);
+  v.setCursorIndex(0);
+  v.redraw();
+
+  std::string rendered = d.rowText(0);
+  CHECK(rendered.rfind(prefix, 0) == 0);              // the fixed margin itself is never touched
+  CHECK(rendered.find("...") != std::string::npos);   // middle-ellipsis actually applied, not a hard cut
+  CHECK(rendered.find(filename) == std::string::npos);  // the full original name no longer appears intact
+}
+
+TEST_CASE("renderLine: a DirectoryMode-style row that already fits the terminal width is left "
+          "completely alone -- no ellipsis inserted just because the line happens to have "
+          "highlightStartColumn set") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  std::string prefix = "P ";
+  std::string filename = "short.txt";  // prefix + filename is well under 39 columns
+  std::vector<ContentView::Line> lines;
+  lines.push_back({prefix + filename, std::nullopt, static_cast<int>(prefix.size()), {}});
+  v.setLines(lines);
+  v.setCursorIndex(0);
+  v.redraw();
+
+  std::string rendered = d.rowText(0);
+  CHECK(rendered.find("...") == std::string::npos);
+  CHECK(rendered.rfind(prefix + filename, 0) == 0);  // rendered verbatim (plus trailing padding)
+}

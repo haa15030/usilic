@@ -20,6 +20,25 @@ namespace fm {
 // ない件)参照。
 std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth);
 
+// 2026-09-03追加、直接のユーザー報告("/Users/haa15030/（ls）画面に
+// 収まらないファイル名...を Screensho...5-15-13.png で表示よろしく"):
+// DirectoryModeのls一覧/WORK/arc.Nバナー(highlightStartColumn自身の
+// コメント参照、常にプレーンなASCIIの固定接頭辞――権限/サイズ/日付
+// 等)+ハイライト対象の可変長部分(ファイル名)という形の行のための、
+// middleEllipsisTruncateByWidth()の亜種。ellipsisEligible(自身の
+// コメント参照)は行「全体」を中間省略する――LocateMode/DuMode/
+// ArchiveModeの離散的な名前/パス行には正しいが、DirectoryModeの
+// ような固定接頭辞付きの行にそのまま使うと、接頭辞自身の途中に
+// "..."が入ってしまい壊れる(=fe/=ff自身の教訓、renderScrolled()側
+// で全く同じ理由でellipsisEligibleを無条件適用した時に起きたのと
+// 同じ壊れ方)。この関数は`highlightStart`より手前(接頭辞)は一切
+// 変更せず、`highlightStart`以降(ファイル名)だけをFinderスタイルで
+// 中間省略する――`text`が既に`maxWidth`列に収まっていれば無変更。
+// ContentView::renderLine()自身と、main.cpp経由のGraphicalDisplay::
+// renderScrolled()の両方から同じ結果を得るために公開している
+// (middleEllipsisTruncateByWidth()自身と同じ理由)。
+std::string truncateHighlightedSuffix(const std::string &text, int highlightStart, int maxWidth);
+
 // スクロール可能なテキスト行の一覧: 1ページずつ描画し、カーソル行を
 // 追跡し、利用可能な場合はDisplayのハードウェアスクロール領域経路
 // を含めて、一覧を通して(1行単位またはページ単位で)スクロールする。
@@ -246,6 +265,17 @@ class ContentView {
   // なる。cursorHighlightEnabled_がfalse、または対象行がneverHighlighted
   // の場合、あるいはそもそもマークされていない場合はnullopt。
   std::optional<Display::AttributeRun> scrollHighlightForLine(int lineIndex) const;
+
+  // 2026-09-03追加: renderLine()自身のellipsisBudgetローカル変数と
+  // 一字一句同じ式(cursorHighlightEnabled_ ? columns()-1 : columns())
+  // ――「このビュー」全体で1つの安定した値であり、個々の行の
+  // marked/underlineMarked状態には「依存しない」(依存させると、
+  // カーソルがその行を跨ぐたびに省略記号の位置が1文字分ずれて見える
+  // ――renderLine()自身のこの式についてのコメント参照)。main.cpp
+  // 経由のGraphicalDisplay::renderScrolled()が、truncateHighlightedSuffix()
+  // /middleEllipsisTruncateByWidth()へ渡す予算として、redraw()と
+  // 同じ値を得るために公開している。
+  int ellipsisBudget() const;
 
   // lineIndexAtRow()の逆: cursorIndex_自身が現在描画されている絶対
   // 的な「表示」行、または表示範囲外へスクロールされていれば-1。
