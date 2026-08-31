@@ -1713,6 +1713,28 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // handleCommand(). Harmless outside Directory mode.
         app.directoryMode().clearEditError();
         applyHoverRowAndRedraw(app.activeContentView(), hover->row, /*moveCursor=*/true);
+        // 2026-09-02、直接のユーザー報告(=fg/=fh、慣性スクロールが
+        // 止まった直後、ドラッグ無しでマウスを動かすだけでハイライト
+        // が明滅し画面が「振動」する、j/k等キー入力で正常化する件):
+        // 原因調査用の一時的なダンプ。マウスの生の行(hover->row)と、
+        // それがlineIndexAtRow()経由でContentView::hoverIndex_/
+        // cursorIndex_/topIndex_へどう反映されたかを、実機で
+        // USILICGUIDEBUGを付けて再現してもらうことで直接確認する
+        // ためのもの――このサンドボックスには本物のマウスが無く、
+        // 憶測で直すと=fdの時と同じ轍を踏む(幅の不一致という誤った
+        // 仮説で一度コミットしてしまった)ため、まず実データを取る。
+        if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+          FILE *f = std::fopen(dbg, "a");
+          if (f) {
+            fm::ContentView &v = app.activeContentView();
+            std::fprintf(f,
+                         "---hover--- row=%d hoverIndex=%d cursorIndex=%d topIndex=%d "
+                         "dragging=%d coastLevel=%d pixelOffset=%d wasActivelyScrolling=%d\n",
+                         hover->row, v.hoverIndex().value_or(-1), v.cursorIndex(), v.topIndex(), dragging ? 1 : 0,
+                         coastLevel, pixelOffset, wasActivelyScrolling ? 1 : 0);
+            std::fclose(f);
+          }
+        }
       }
     } else {
       // Drain without acting on any of it (2026-08-05 fix): a real
@@ -2168,6 +2190,23 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // the do-while condition immediately end the loop anyway.
         performScrollStepDelay(step);
       } while (std::chrono::steady_clock::now() < frameDeadline);
+    }
+
+    // 2026-09-02、直接のユーザー報告(=fg/=fh)の原因調査用の一時的な
+    // ダンプ――このコースト物理ブロック自身が境界停止(canStepTopIndex()
+    // /commitRowCrossings()経由)を起こしたフレームを直接特定できる
+    // よう、ブロックの直後・レンダ経路の分岐より前に置いてある。
+    // 上のhoverダンプ自身のコメント参照。
+    if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+      FILE *f = std::fopen(dbg, "a");
+      if (f) {
+        std::fprintf(f,
+                     "---coastFrame--- coastLevel=%d dragging=%d pixelOffset=%d topIndex=%d cursorIndex=%d "
+                     "hoverIndex=%d wasActivelyScrolling=%d\n",
+                     coastLevel, dragging ? 1 : 0, pixelOffset, view.topIndex(), view.cursorIndex(),
+                     view.hoverIndex().value_or(-1), wasActivelyScrolling ? 1 : 0);
+        std::fclose(f);
+      }
     }
 
     // Checked here (before the render decision below), not after, so
