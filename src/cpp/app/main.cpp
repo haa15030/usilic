@@ -1989,6 +1989,33 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       anyEventThisFrame = true;
       switch (sb->type) {
         case fm::GraphicalDisplay::ScrollbarEventType::ButtonDown:
+          // 2026-09-02 fix, a direct user report (=fg/=fh): confirmed via
+          // a real USILICGUIDEBUG capture that ContentView::hoverIndex_
+          // stays completely frozen at its pre-drag value for the WHOLE
+          // duration of a coast/drag (topIndex_ 49->56, cursorIndex_
+          // 65->78, hoverIndex_ stuck at 64 the entire time) -- nothing
+          // ever clears or updates it while dragging/coasting (the
+          // hover-consumption gate above only drains the QUEUE, see its
+          // own comment; it never touches the stored hoverIndex_ value
+          // itself). redraw()'s own highlight priority
+          // (hoverIndex_.has_value() ? *hoverIndex_ : cursorIndex_)
+          // then keeps insisting on this stale, likely now off-screen
+          // row the instant coasting settles -- no highlight visible at
+          // all (its row scrolled out of view) -- and once real mouse
+          // motion resumes, each new hover event's own redraw() (which
+          // finally sets a fresh, correct hoverIndex_) races against
+          // this same frame's later "anyEventThisFrame" redraw() lower
+          // down, which is otherwise harmless UNLESS something upstream
+          // keeps re-reading the old value -- exactly the flicker/
+          // "screen vibrates" symptom reported. Clearing it here (as
+          // Application::handleCommand()'s Move/Page/GoTo dispatch and
+          // ContentView::setLines() already do for the analogous "the
+          // view moved out from under the stale hover position" cases)
+          // means cursorIndex_ -- which stepTopIndex()/jumpToScrollbarY()
+          // DO keep continuously correct throughout -- is what redraw()
+          // falls back to the instant dragging/coasting ends, with
+          // nothing stale left to fight it.
+          view.setHoverIndex(std::nullopt);
           dragging = true;
           coastLevel = 0;
           coastDirection = 0;
@@ -2056,6 +2083,13 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // buttonHeldPendingDrag自身のコメント参照: 実際にMotionが
           // 届いた時点で初めて「本物のドラッグ」と確定させる。
           if (buttonHeldPendingDrag && !dragging) {
+            // See the identical fix/comment at the scrollbar ButtonDown
+            // case just above -- a real content drag/coast is exactly
+            // the same "view is about to move out from under the stale
+            // hover position" case, confirmed via a real USILICGUIDEBUG
+            // capture (hoverIndex_ frozen at 64 for the whole coast
+            // while topIndex_/cursorIndex_ raced from 49 to 56+).
+            view.setHoverIndex(std::nullopt);
             dragging = true;
             buttonHeldPendingDrag = false;
           }
