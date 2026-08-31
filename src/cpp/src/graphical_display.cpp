@@ -2557,13 +2557,26 @@ void GraphicalDisplay::drawScrollbar(double effectiveTop, int totalLines, int co
   int thumbY = (scrollableLines > 0)
                    ? std::clamp(static_cast<int>(maxThumbY * (effectiveTop / scrollableLines)), 0, maxThumbY)
                    : 0;
-  // 再び広げた、2->1(2026-08-07、通常のDirectoryモードの選択
-  // ハイライトバーとの実際の並列比較――"ハイライトとの比較ではつまみ
-  // 部の幅がやや狭い"): それでも予約された帯の中の左右それぞれに
-  // 1pxの余白を残す(kThumbInset 0だと帯全体を使ってしまい、モード
-  // ライン/コンテンツ領域に対する目に見える縁が全く無くなる)、
-  // 全幅を使うのではなく。
-  constexpr int kThumbInset = 1;
+  // 2026-09-02訂正、直接のユーザー指摘: 以前ここにあった「2026-08-07
+  // にkThumbInset=1(左右1pxずつの余白)で確定済み」という説明は誤り
+  // だった――HISTORY.md:6618の「矩形採用で完了」は、その少し前の
+  // やり取り(丸みを帯びたピル型に戻すべきか)についての、つまみの
+  // 「形」の話であって「幅」の話ではない。つまみ幅をハイライト幅と
+  // 「揃える」という実際の依頼はHISTORY.md:12711(2026-08-30、
+  // "つまみ表示幅をモードラインのハイライト高さにあわせられない？")
+  // であり、あの時の対応(scrollbarWidthをcellHeightへ連動させた)は
+  // 予約帯自体の幅をハイライトへ揃えただけで、つまみ本体は依然として
+  // 左右1pxずつのkThumbInsetの分だけ狭いままだった――この差分が
+  // ユーザーに承認されたことは一度も無い。旧HISTORY.md:7118
+  // ("以前はモードラインのハイライト幅で、と要望はしたけど文字サイズ
+  // が変われば同幅も変わるので基準にはできない")という当時の懸念も、
+  // scrollbarWidth自体が今やcellHeightへ連動している以上もはや
+  // 当てはまらない。よってkThumbInsetは撤去し、つまみ幅を予約帯の
+  // 全幅(scrollbarWidth、cellHeightそのもの)に一致させ、依頼通り
+  // モードラインのハイライト幅と文字通り同じにする――帯の縁が見え
+  // なくなる(元々1pxの余白を入れた理由)ことにはなるが、それを理由に
+  // 幅の一致という明示的な依頼を上書きしない。
+  constexpr int kThumbInset = 0;
   // scrollbarStripLeft()自身のコメント参照: ウィンドウの実際の右端に
   // ぴったり付ける、末尾の隙間は無い(2026-08-24)。
   int thumbX = scrollbarStripLeft() + kThumbInset;
