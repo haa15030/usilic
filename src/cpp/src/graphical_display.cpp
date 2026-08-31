@@ -1262,7 +1262,32 @@ void GraphicalDisplay::flush() {
   // intである(renderScrolled()自身のドラッグ/慣性経路の外では、行内
   // の副ピクセルオフセットは働いていない)、renderScrolled()自身の
   // 小数のeffectiveTopとは異なり。
-  if (!impl_->everInteracted) {
+  //
+  // 2026-09-02、直接のユーザー報告(スクリーンショット=fd、"-g起動でも
+  // 〔スクロールバー張りぼて画像が〕ズレるみたい。フォントサイズ変更は
+  // 画像が消えてからなのでそのときは問題無いが次回起動時にズレる"):
+  // 埋め込まれた3つのidle画像スライス(scrollbar_idle_image.hpp)は、
+  // ある1つのデフォルトのフォントサイズ(cellHeight)でキャプチャされた
+  // 実機スクリーンショットの切り出しであり、幅は常にkScrollbarIdleTop/
+  // Middle/BottomWidth(いずれも17px)という固定値――一方Impl::
+  // scrollbarWidth(実際に予約されているスクロールバー帯の幅)は
+  // 2026-08-30以降cellHeightへ連動している(Impl::scrollbarWidth自身の
+  // コメント参照)。前回セッションでCmd+/Cmd-によりフォントサイズを
+  // 変更しそれが復元される(または単に非デフォルトのフォントで起動
+  // する)と、この17pxという前提が崩れ、実際の帯の幅とは合わない
+  // 固定幅の画像が貼られることになる――これがユーザー報告の直接の
+  // 原因。キャプチャした端の詳細(つまみ/丸みを帯びたトラック端)を
+  // 歪めずに横方向へ引き伸ばすことは、2026-08-09の実機報告
+  // ("つまみと丸いトラック端を歪める")で既に却下済みの手法であり
+  // 採用できない――そのため、現在のscrollbarWidthがこの画像の
+  // キャプチャ時の幅(kScrollbarIdleTopWidth、3スライスとも同じ17px)
+  // と一致する場合「だけ」装飾画像を使い、一致しない場合は
+  // (「最初の操作までは装飾画像」という原則より優先して)常に正しい
+  // 本物のdrawScrollbar()へ素直にフォールバックする――updateScrollPosition()
+  // が呼び出し元(main.cpp)によりeverInteractedの真偽に関わらず毎回
+  // 呼ばれているので、スクロール位置データは既にここで有効である。
+  bool idleImageMatchesCurrentFontSize = (impl_->scrollbarWidth == kScrollbarIdleTopWidth);
+  if (!impl_->everInteracted && idleImageMatchesCurrentFontSize) {
     drawIdleScrollbarImage();
   } else {
     drawScrollbar(static_cast<double>(impl_->scrollTopIndex), impl_->scrollTotalLines, impl_->scrollContentRows);
