@@ -1667,6 +1667,21 @@ bool GraphicalDisplay::pumpEvents() {
         // と数え、flush()を静的なアイドル画像から実際のつまみへ
         // 恒久的に切り替える。
         impl_->everInteracted = true;
+        // 2026-09-02、直接のユーザー報告(=fg/=fh、マウスドラッグ後の
+        // 明滅・「画面が入れ替わってる感じ」がhoverIndex_の固まりを
+        // 直しても直らない件、ユーザー自身の仮説: "一旦画面が停止した
+        // あともスクロールのスイッチは入っていて(クリック解除されて
+        // ないのでドラッグ？)"): 実際にSDL_MOUSEBUTTONUPが正しく
+        // 届いているか、SDL_MOUSEMOTION自身のLMASKビットが実機で
+        // 期待通り立って/落ちているかを直接確認するための調査用ダンプ。
+        if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+          FILE *f = std::fopen(dbg, "a");
+          if (f) {
+            std::fprintf(f, "---mouseButtonDown--- button=%d x=%d y=%d\n", event.button.button, event.button.x,
+                         event.button.y);
+            std::fclose(f);
+          }
+        }
         if (event.button.button != SDL_BUTTON_LEFT && event.button.button != SDL_BUTTON_RIGHT) break;
         // スクロールバーの帯の中で始まる左クリックの押下は、つまみの
         // ドラッグのジェスチャであり、コンテンツのクリック/ドラッグ
@@ -1699,6 +1714,14 @@ bool GraphicalDisplay::pumpEvents() {
         break;
       }
       case SDL_MOUSEBUTTONUP: {
+        if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+          FILE *f = std::fopen(dbg, "a");
+          if (f) {
+            std::fprintf(f, "---mouseButtonUp--- button=%d scrollbarDragActive=%d\n", event.button.button,
+                         impl_->scrollbarDragActive ? 1 : 0);
+            std::fclose(f);
+          }
+        }
         if (event.button.button == SDL_BUTTON_LEFT) {
           SDL_CaptureMouse(SDL_FALSE);
           if (impl_->scrollbarDragActive) {
@@ -1711,6 +1734,17 @@ bool GraphicalDisplay::pumpEvents() {
         break;
       }
       case SDL_MOUSEMOTION: {
+        if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+          FILE *f = std::fopen(dbg, "a");
+          if (f) {
+            std::fprintf(f,
+                         "---mouseMotion--- x=%d y=%d state=%d lmask=%d scrollbarDragActive=%d focus=%d\n",
+                         event.motion.x, event.motion.y, event.motion.state,
+                         (event.motion.state & SDL_BUTTON_LMASK) ? 1 : 0, impl_->scrollbarDragActive ? 1 : 0,
+                         (SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_FOCUS) ? 1 : 0);
+            std::fclose(f);
+          }
+        }
         if (impl_->scrollbarDragActive) {
           impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::Motion, event.motion.y});
         } else if (event.motion.state & SDL_BUTTON_LMASK) {
