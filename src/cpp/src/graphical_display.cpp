@@ -1891,13 +1891,6 @@ void GraphicalDisplay::setColors(Color foreground, Color background) {
   impl_->bg = SDL_Color{background.r, background.g, background.b, 255};
 }
 
-// skipIdleScrollbarPlaceholder()自身の宣言側コメント(graphical_display.hpp)
-// 参照。Impl::everInteractedを、実際にマウスで触れられた場合と全く
-// 同じ状態にするだけ――flush()自身の分岐(if (!impl_->everInteracted))
-// はどちらが理由で立ったかを区別しないので、以後は永続的に本物の
-// drawScrollbar()経路を使う。
-void GraphicalDisplay::skipIdleScrollbarPlaceholder() { impl_->everInteracted = true; }
-
 GraphicalDisplay::Color GraphicalDisplay::foregroundColor() const {
   return Color{impl_->fg.r, impl_->fg.g, impl_->fg.b};
 }
