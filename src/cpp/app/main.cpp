@@ -2055,11 +2055,35 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           gui.setHandCursor(true);
           break;
         case fm::GraphicalDisplay::DragEventType::ButtonUp: {
-          // buttonHeldPendingDrag自身のコメント参照: Motionが一度も
-          // 届かないまま(=素のクリック)ここに来た場合、draggingは
-          // 一度もtrueにならなかったので、pixelOffset/coastLevelは
-          // 既に0のまま一切動いていない――coast解決を一切スキップし、
-          // 単に状態をリセットするだけでよい。
+          // 2026-09-02 fix, a direct user report (=fg/=fh, confirmed via
+          // a real USILICGUIDEBUG capture): the comment this replaces
+          // assumed "if Motion never arrived, pixelOffset/coastLevel is
+          // ALREADY 0" -- true for a plain click starting from rest, but
+          // FALSE for a click that grabs mid-coast (ButtonDown's own
+          // "grabbing mid-coast stops it right where it is" only zeroes
+          // coastLevel/coastDirection, deliberately leaving pixelOffset
+          // at whatever sub-row position the coast had reached, so a
+          // REAL continued drag from there feels seamless). If that grab
+          // then turns out to be just a quick re-tap -- no Motion before
+          // this ButtonUp -- `wasRealDrag` is false, and the old code
+          // skipped the whole block below, leaving that stale nonzero
+          // pixelOffset (a real capture showed -23) permanently in
+          // place: nothing else ever clears it (the coast-physics block
+          // is gated on `coastLevel > 0`, already false here), so the
+          // render-mode check below stays wedged on renderScrolled()
+          // (no DirectoryMode highlight at all, ScrolledLine::attributes
+          // is FileMode-only) forever, even though nothing is actually
+          // animating any more -- exactly the reported "スクロールの
+          // スイッチは入っていて...画面は進まない" symptom, and each
+          // subsequent hover event's own correct redraw() then got
+          // immediately overwritten by that same stuck renderScrolled()
+          // frame later this same iteration, reading as the reported
+          // flicker/"画面が振動する". Restructured so pixelOffset is
+          // unconditionally settled to 0 whenever this release does NOT
+          // result in an active coast, covering both the always-worked
+          // "plain click" case and this previously-broken "grabbed
+          // mid-coast, released without further motion" case the same
+          // way.
           bool wasRealDrag = dragging;
           dragging = false;
           buttonHeldPendingDrag = false;
@@ -2071,12 +2095,18 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
               if (sample.first >= cutoff) releaseDistance += sample.second;
             coastLevel = resolveCoastLevel(fm::levelForReleaseDistance(releaseDistance, cellHeight));
             coastDirection = coastLevel > 0 ? (releaseDistance > 0 ? 1 : -1) : 0;
-            // A release too slow/short to coast (coastLevel resolves to
-            // 0 here) still needs pixelOffset cleared -- see the
-            // key->special branch's comment above for why a leftover
-            // fractional remainder wedges the render-mode check forever.
-            if (coastLevel == 0) pixelOffset = 0;
+          } else {
+            coastLevel = 0;
+            coastDirection = 0;
           }
+          // A release too slow/short to coast (coastLevel resolves to 0
+          // here), a plain click, or a mid-coast re-grab released
+          // without further motion -- all three leave nothing else that
+          // will ever clear a leftover fractional pixelOffset, which
+          // would otherwise wedge the render-mode check on
+          // renderScrolled() forever (see the key->special branch's
+          // comment above, and this case's own comment just above).
+          if (coastLevel == 0) pixelOffset = 0;
           break;
         }
         case fm::GraphicalDisplay::DragEventType::Motion: {
