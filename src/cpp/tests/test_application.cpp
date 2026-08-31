@@ -8948,7 +8948,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: Back (^G) on any entry returns without executin
 
 // -- KEY: dual "execute"/"reference" action per row (2026-08-31) --
 
-TEST_CASE_FIXTURE(Fixture, "Key: tab toggles between execute/reference, and Enter dispatches accordingly") {
+TEST_CASE_FIXTURE(Fixture, "Key: Left/Right toggles between execute/reference, and Enter dispatches accordingly") {
   REQUIRE(app.loadHelpText(fm::expandHelpMarkup(fm::kHelpTextJa)));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
@@ -8959,7 +8959,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: tab toggles between execute/reference, and Ente
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
-  // Default focus is "execute": Enter runs the binding as before.
+  // Default focus is "execute" (the key label side): Enter runs the binding as before.
   CHECK(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.promptActive());
@@ -8968,10 +8968,10 @@ TEST_CASE_FIXTURE(Fixture, "Key: tab toggles between execute/reference, and Ente
                                                // check promptKind_, see dispatchByte()'s own early check)
   REQUIRE_FALSE(app.promptActive());
 
-  // Re-open KEY, move to the same row, flip focus to "reference" with tab.
+  // Re-open KEY, move to the same row, flip focus to "reference" (the description side) with Right.
   REQUIRE(app.handleCommand(Command::StartKey));
   app.activeContentView().setCursorIndex(row);
-  REQUIRE(app.feedByte(0x09, std::nullopt));  // tab
+  REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Right));
   CHECK(app.handleCommand(Command::Enter));
   // ^S's helpSection is "2.3" (FGREP/EGREP) -- landing directly in that section's content.
   CHECK(app.currentMode() == ApplicationMode::CutContent);
@@ -8985,6 +8985,18 @@ TEST_CASE_FIXTURE(Fixture, "Key: tab toggles between execute/reference, and Ente
   CHECK(app.currentMode() == ApplicationMode::Key);
 }
 
+TEST_CASE_FIXTURE(Fixture, "Key: Left brings focus back to execute from reference") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Right));  // focus reference
+  REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Left));   // back to execute
+  // The first row is "j" -- executing it should behave exactly like the pre-redesign
+  // KEY screen (scroll the window down), not open any HELP reference.
+  CHECK(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK_FALSE(app.promptActive());
+}
+
 TEST_CASE_FIXTURE(Fixture, "Key: reference view is a no-op for entries with no mapped HELP section") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
@@ -8994,7 +9006,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: reference view is a no-op for entries with no m
     if (lines[i].text.find("^X( :") != std::string::npos) row = static_cast<int>(i);  // macro recording -- no HELP section
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
-  REQUIRE(app.feedByte(0x09, std::nullopt));  // tab to "reference"
+  REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Right));  // focus "reference"
 
   // No mapped HELP section for this entry -- showKeyReference() itself returns false,
   // and nothing about the current mode changes.
@@ -9002,8 +9014,8 @@ TEST_CASE_FIXTURE(Fixture, "Key: reference view is a no-op for entries with no m
   CHECK(app.currentMode() == ApplicationMode::Key);  // stayed put, nothing opened
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key: clicking the reference marker opens that row's HELP section directly, "
-                           "regardless of the current tab focus") {
+TEST_CASE_FIXTURE(Fixture, "Key: clicking the description half of a row opens that row's HELP section "
+                           "directly, regardless of the current Left/Right focus") {
   REQUIRE(app.loadHelpText(fm::expandHelpMarkup(fm::kHelpTextJa)));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
@@ -9012,7 +9024,9 @@ TEST_CASE_FIXTURE(Fixture, "Key: clicking the reference marker opens that row's 
   for (std::size_t i = 0; i < lines.size(); i++)
     if (lines[i].text.find(" ^S :") != std::string::npos) row = static_cast<int>(i);
   REQUIRE(row >= 0);
-  app.activeContentView().setCursorIndex(row);
+  // Navigate there via real MoveDown commands (not a direct setCursorIndex() poke) so the
+  // on-screen rendering -- and its label/description column split -- is actually up to date.
+  for (int i = 0; i < row; i++) app.handleCommand(Command::MoveDown);
   app.activeContentView().redraw();
 
   int displayRow = -1;
@@ -9021,10 +9035,35 @@ TEST_CASE_FIXTURE(Fixture, "Key: clicking the reference marker opens that row's 
   REQUIRE(displayRow >= 0);
 
   std::string rendered = display.rowText(displayRow);
-  int referenceColumn = static_cast<int>(rendered.rfind("詳細"));
-  REQUIRE(referenceColumn >= 0);
-  CHECK(app.handleMouseClick(displayRow, referenceColumn));
+  int descriptionColumn = static_cast<int>(rendered.find("FGREP"));  // ^S's own description text
+  REQUIRE(descriptionColumn >= 0);
+  CHECK(app.handleMouseClick(displayRow, descriptionColumn));
   CHECK(app.currentMode() == ApplicationMode::CutContent);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Key: clicking the label half of a row executes it directly, "
+                           "same as pressing return with execute focus") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  const auto &lines = app.activeContentView().lines();
+  int row = -1;
+  for (std::size_t i = 0; i < lines.size(); i++)
+    if (lines[i].text.find(" ^S :") != std::string::npos) row = static_cast<int>(i);
+  REQUIRE(row >= 0);
+  for (int i = 0; i < row; i++) app.handleCommand(Command::MoveDown);
+  app.activeContentView().redraw();
+
+  int displayRow = -1;
+  for (int r = 0; r < display.rows() - 1; r++)
+    if (display.rowText(r).find(" ^S :") != std::string::npos) displayRow = r;
+  REQUIRE(displayRow >= 0);
+  std::string rendered = display.rowText(displayRow);
+  int labelColumn = static_cast<int>(rendered.find("^S"));
+  REQUIRE(labelColumn >= 0);
+
+  CHECK(app.handleMouseClick(displayRow, labelColumn));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.promptActive());  // FGREP prompt -- the key was actually executed
 }
 
 // -- Recorded macros (p_km, ^X(/^X)/^Xe) --

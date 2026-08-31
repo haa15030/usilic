@@ -1649,6 +1649,10 @@ class Application {
   std::vector<std::string> sortedUniqueRecentEntries(RingCategory category) const;
   // K-2(^H、M_key、「KEY」): startKey()自身の定義コメント参照。
   bool startKey();
+  // renderKeyRows()自身の定義コメント(application.cpp)参照: startKey()
+  // 自身、およびLeft/Right/上下カーソル移動・マウスクリックの後に、
+  // 現在のカーソル行・keyColumnFocus_の組が変わるたび呼ばれる。
+  void renderKeyRows();
   // Keyモードにいる間のEnter: まずkeyReturnMode_へ戻り(HELP.jp
   // 2.2自身の文書化された順序――"KEYを呼び出したモードに戻った
   // のち，対応するキー定義を実行します"――に合わせている)、
@@ -2138,18 +2142,19 @@ class Application {
   // によって切り替えられる。
   bool listBrowserChronological_ = false;
   ApplicationMode keyReturnMode_ = ApplicationMode::Directory;
-  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新): 現在のカーソル
-  // 行で「キーの直接実行」(0)/「レファレンス表示」(1)のどちらが
-  // 選ばれているか。tabキー(dispatchByte()自身の割り込みチェック
-  // 参照)で切り替わり、Command::Enterのディスパッチ(handleCommand())
-  // がこれを見てexecuteSelectedKeyBinding()/showKeyReference()の
-  // どちらを呼ぶか決める。startKey()の呼び出しごとに0へリセットする。
+  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
+  // スクリーンショット=fa/=fb指定): 現在のカーソル行で「キーラベル」
+  // (0、実行)/「説明文」(1、レファレンス表示)のどちらがハイライト
+  // されているか。Left/Right矢印キー、またはマウスクリック
+  // (dispatchByte()/handleMouseClick()自身の割り込みチェック参照)で
+  // 切り替わり、Command::Enterのディスパッチ(handleCommand())が
+  // これを見てexecuteSelectedKeyBinding()/showKeyReference()のどちらを
+  // 呼ぶか決める。startKey()の呼び出しごとに0へリセットする。
   int keyColumnFocus_ = 0;
-  // startKey()自身のコメント参照: "実行"/"詳細"マーカーが実際に描画
-  // される列(表示幅、全行共通)。handleMouseClick()がクリック位置を
-  // どちらのマーカーの上かに分類するために読む。
-  int keyExecuteMarkerColumn_ = 0;
-  int keyReferenceMarkerColumn_ = 0;
+  // renderKeyRows()自身のコメント参照: キーラベル列の幅(全行共通)
+  // ――ラベル/説明文それぞれのハイライト範囲、およびhandleMouseClick()
+  // 自身のクリック位置の判定に使う。
+  int keyLabelColumnWidth_ = 0;
   ApplicationMode copyReturnMode_ = ApplicationMode::Directory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;

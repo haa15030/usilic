@@ -20,7 +20,6 @@
 #include "child_process.hpp"
 #include "mode_line.hpp"
 #include "pipe_buffer.hpp"
-#include "utf8.hpp"
 
 namespace fm {
 
@@ -384,7 +383,7 @@ const KeyTableEntry kKeyTable[] = {
     // 2.18  EXIT (^X^C or ^[^[)
     {"^X^C", "EXIT", {kLeaderX, kControlC}, false, "2.18"},
 
-    // 2.19  INFO (^I)
+    // INFO (^I)
     // 2026-08-27のリネーム、直接のユーザー依頼: 以前は"^T"/"USILIC
     // banner"だった――モードライン自身の`name`フィールドが"usilic"
     // (合成されたファイル自身のベース名、bannerFilePath()のコメント
@@ -392,8 +391,12 @@ const KeyTableEntry kKeyTable[] = {
     // 文字通り"~/.usilic/usilic"という名前で見られているかのように
     // 読めた。"INFO"へリネームし(executeShowUsilicBanner()自身の
     // setSearchOrigin()呼び出し参照)、モードライン自身の名前が曖昧で
-    // なくなるよう^Iに割り当て直した。
-    {"^I", "INFO", {0x09}, false, "2.19"},
+    // なくなるよう^Iに割り当て直した。helpSectionがnullptrなのは、
+    // src/HELP.txt(kHelpTextJa自身の一次資料、help_text.hpp冒頭の
+    // コメント参照)にINFOという章自体が存在しないため――以前このC++
+    // 移植側で独自に「2.19 INFO」章を新設していたが、ユーザー自身の
+    // 一次資料に無いものを追加すべきでないという訂正を受けて削除した。
+    {"^I", "INFO", {0x09}},
 
     // 3  設定ファイル (usilicrc) -- LS/SCROLLフラグの切替
     {"^Ol", "ls(1)出力形式の切替", {kLeaderO, 'l'}, false, "3"},
@@ -467,21 +470,6 @@ const char *const kHelpPattern = "^  [0-9]+\\.";
 // いたのと同じ`<homeDirectory>/.usilic`にフォールバックする。
 std::string resolveTempRoot(const std::string &homeDirectory, const std::string &tempRootDirectory) {
   return tempRootDirectory.empty() ? (homeDirectory + "/.usilic") : tempRootDirectory;
-}
-
-// startKey()自身の"[実行]"/"[詳細]"マーカー列の位置合わせ用――kKeyTable
-// のdescriptionは今や日本語(全角)を含むため、バイト長ではなく実際の
-// 表示幅で揃える必要がある(copy_mode.cppのdisplayColumnFor()と同種の
-// 素朴なUTF-8走査)。
-int utf8DisplayWidth(const std::string &text) {
-  int width = 0, i = 0;
-  while (i < static_cast<int>(text.size())) {
-    int len = Utf8::sequence_length(static_cast<unsigned char>(text[i]));
-    len = std::min(len, static_cast<int>(text.size()) - i);
-    width += Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, len);
-    i += len;
-  }
-  return width;
 }
 }  // namespace
 
@@ -689,19 +677,21 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // ショット(2026-08-02のユーザー報告)に一致させている。keyReturnMode_
   // は別々のKEY呼び出しをまたいで変わるので、ライブなコールバックに
   // してある。
-  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、「②各行では
-  // 『キーの直接実行』/『レファレンス表示』を選択可能...tabキーで
-  // 切替」): trailing2に、今どちらが選ばれているか(keyColumnFocus_)を
-  // 表示する。setLines()を1行変えるたびに呼ぶとtopIndex_がリセット
-  // され現在のスクロール位置を失ってしまう(ContentView::setLines()
-  // 自身のコメント参照)ため、行の「テキスト」自体にはこの状態を
-  // 一切埋め込まず、このライブなコールバック経由でモードラインだけに
-  // 反映している――keyColumnFocus_はここから毎回読み直されるので、
-  // Tabキーで切り替えるたびに専用の再描画ロジックを別途書く必要が無い。
   keyView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     return {"KEY", previousModeName(keyReturnMode_), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
-            /*trailing2=*/(keyColumnFocus_ == 0 ? "[実行]" : "[詳細]")};
+            /*trailing2=*/""};
   });
+  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
+  // スクリーンショット=fb指定): 旧版は選択中の行「全体」("Space :
+  // Move window one page down"の全体)を1本の帯として反転表示する
+  // ――このポートはそれを「キーラベル」/「説明文」という既存の2つの
+  // 部分にそのまま割り当て直し(ラベル側=実行、説明文側=レファレンス
+  // 表示)、どちらが選ばれているかをその半分だけの反転表示で示す。
+  // 通常の(このContentViewクラスが他の全ての一覧に対して行う)行全体の
+  // 自動反転表示ではこの「半分だけ」を表現できないため無効化し、
+  // renderKeyRows()が代わりにLine::attributes経由で正しい半分だけに
+  // Standoutを乗せる(CopyMode自身の生きた選択ハイライトと同じ仕組み)。
+  keyView_.setCursorHighlightEnabled(false);
   // リストベースの履歴ピッカー(K-45..K-49、^X^F/^X^D/^R等)向けの
   // モードラインのフィールド: カテゴリ自身("FILE"/"DIR"/"COMMAND"等、
   // legacy自身の" FILE_HISTORY"方式の命名、RingCategory自身のコメント
@@ -1657,13 +1647,20 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // resolveCommand()の通常のpage/scrollのキー割り当てや下の^Oリーダー
   // のテーブルは誤って発火しない。
   if (currentMode_ == ApplicationMode::Copy) return feedCopyByte(byte, special);
-  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、「②...tabキー
-  // でその2つの選択を切り替えられます」): tab(0x09)はこのモードの
-  // 外では常にINFOへ解決される(resolveCommand()自身のcase 0x09
-  // 参照)――ここでKeyモードに限ってそれより先に横取りしないと、KEY
-  // 画面自身の中でtabを押すとKEYを抜けてINFOが開いてしまう。
-  if (currentMode_ == ApplicationMode::Key && !special && byte == 0x09) {
-    keyColumnFocus_ = 1 - keyColumnFocus_;
+  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
+  // スクリーンショット=fa/=fb指定: "「`Space`」:「`Move window one
+  // page down`」（「」内がハイライト表示範囲）がマウスまたは`←`/`→`
+  // で切り替わり"): Left/Rightはこのモードの外では画面を1行上/下へ
+  // 送る(resolveCommand()自身のSpecialKey::Left/Right参照、HELPの
+  // Windowの章の記述通り)――ここでKeyモードに限ってそれより先に
+  // 横取りする。行内の左側(ラベル=実行)/右側(説明文=レファレンス
+  // 表示)という配置に素直に合わせて、Leftは常に実行側(0)、Rightは
+  // 常にレファレンス側(1)を選ぶ(トグルではない――既にどちらを見て
+  // いてもLeft/Rightだけでどちらへも直接行ける)。
+  if (currentMode_ == ApplicationMode::Key && special &&
+      (*special == KeyInput::SpecialKey::Left || *special == KeyInput::SpecialKey::Right)) {
+    keyColumnFocus_ = (*special == KeyInput::SpecialKey::Left) ? 0 : 1;
+    renderKeyRows();
     keyView_.redraw();
     return true;
   }
@@ -2664,12 +2661,17 @@ bool Application::handleCommand(Command command) {
     case Command::MoveUp:
       activeView().setHoverIndex(std::nullopt);
       activeView().moveUp();
+      // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新): renderKeyRows()
+      // 自身のコメント参照――ハイライトはcursorIndex_を追って現在の
+      // カーソル行にだけ乗るので、行が変わるたびに再構築が要る。
+      if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
       refreshDirectEntryModeLine();  // RecentFile/RecentDirectory自身の読み取り専用の閲覧の外ではno-op
       return true;
     case Command::MoveDown:
       activeView().setHoverIndex(std::nullopt);
       activeView().moveDown();
+      if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
       refreshDirectEntryModeLine();
       return true;
@@ -2686,11 +2688,13 @@ bool Application::handleCommand(Command command) {
     case Command::PageUp:
       activeView().setHoverIndex(std::nullopt);
       activeView().pageUp();
+      if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
       return true;
     case Command::PageDown:
       activeView().setHoverIndex(std::nullopt);
       activeView().pageDown();
+      if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
       return true;
     case Command::Enter:
@@ -5957,62 +5961,52 @@ bool Application::toggleListBrowserHistory() {
 // 到達可能(HELP自身のモードガード無しの前例、legacy自身の
 // init_bp()のデフォルトケースに合わせている)――Keyモード自体の内部
 // からの再入場は拒否される、このクラスの他の全てのStart*()と同じ形。
-bool Application::startKey() {
-  if (currentMode_ == ApplicationMode::Key) return false;
+// 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
+// スクリーンショット=fa/=fb指定): startKey()自身と、Left/Right/上下
+// カーソル移動の後に(現在のカーソル行・keyColumnFocus_の組が変わる
+// たび)呼ばれる、行の再構築。"<label> : <description>"のテキスト自体
+// はここでは変わらない(「実際にこのテーブルの中にある」最長のラベル
+// への前方パディング、legacy自身のprint_key()の列の揃え方に合わせて
+// いる、2026-08-05のユーザー報告2回分の経緯は変わらず有効)――変わる
+// のは、現在のカーソル行に乗せるStandout AttributeRunの範囲だけで
+// あり、keyColumnFocus_==0(実行)ならラベル側[0, maxLabelWidth)、
+// ==1(レファレンス)ならその残り[maxLabelWidth, 行末)に乗せる(CopyMode
+// 自身の生きた選択ハイライトと同じ、Line::attributes経由の仕組み)。
+// setLines()は毎回topIndex_を0へリセットしてclampViewport()し直す
+// (ContentView::setLines()自身のコメント参照)が、CopyMode::render()
+// が既にまさに同じパターンを毎回の移動で使っており、cursorIndex_を
+// 保ったまま呼べば現在行が見える位置へ再クランプされるだけなので、
+// 大きな一覧でも実害は無い。
+void Application::renderKeyRows() {
   std::vector<ContentView::Line> lines;
   lines.reserve(std::size(kKeyTable));
-  // "<label> : <description>"、「実際にこのテーブルの中にある」最長
-  // のラベルに(固定の定数ではなく)前方パディング(先頭のスペース、
-  // つまり右寄せ)される、そのため全ての行の" : "が同じ列に着地する、
-  // legacy自身のprint_key()の列の揃え方に合わせている(もっとも
-  // legacyはその列幅を異なる方法で計算しているが)。ユーザー自身の
-  // 2026-08-05の報告はこれを2回繰り返した: 最初は、以前の「固定10
-  // 列、その後2スペース」という方式が短いラベルには広すぎた(例えば
-  // "^X^C"は、"  "が始まりさえする前に10列まで埋められていた)、
-  // 最初の修正はパディングを完全に取り除くことでそれを直した――
-  // しかしそれは異なる長さのラベルの行の間で":"の文字が揃わないまま
-  // にしてしまい、この前方パディングが今、元の広い隙間の問題を
-  // 再導入することなくそれを直す(パディングの量は今や、気前の良い
-  // 固定の定数ではなく、揃えるのに必要な最小限になっている)。
   std::size_t maxLabelWidth = 0;
   for (const auto &entry : kKeyTable) maxLabelWidth = std::max(maxLabelWidth, std::string(entry.keyLabel).size());
-  // 2026-08-31、直接のユーザー依頼(「②各行では『キーの直接実行』/
-  // 『レファレンス表示』を選択可能...クリックまたは[return]でそれ
-  // ぞれの役割を実行」): 全ての行の末尾に、固定の"実行"/"詳細"マーカー
-  // 対を追加する。列位置を全行で揃えるため、まず(label : description
-  // (M)?)部分の「表示幅」の最大値を求め、それに満たない行は空白で
-  // 右パディングしてからマーカーを付ける――日本語の説明文が混ざる
-  // ため、バイト長ではなくutf8DisplayWidth()で揃える必要がある。
-  // handleMouseClick()自身のKeyモード分岐が、ここで揃えたのと同じ
-  // 列番号(keyExecuteMarkerColumn_/keyReferenceMarkerColumn_)を使って
-  // クリック位置がどちらのマーカーの上かを判定する。
-  const std::string kGap = "  ";
-  const std::string kExecuteMarker = "実行";
-  const std::string kReferenceMarker = "詳細";
-  std::vector<std::string> contents;
-  contents.reserve(std::size(kKeyTable));
-  int maxContentWidth = 0;
-  for (const auto &entry : kKeyTable) {
+  keyLabelColumnWidth_ = static_cast<int>(maxLabelWidth);
+  int cursor = keyView_.cursorIndex();
+  for (std::size_t i = 0; i < std::size(kKeyTable); i++) {
+    const auto &entry = kKeyTable[i];
     std::string label = entry.keyLabel;
     if (label.size() < maxLabelWidth) label.insert(0, maxLabelWidth - label.size(), ' ');
-    std::string content = label + " : " + entry.description;
-    if (entry.isMacro) content += " (M)";
-    maxContentWidth = std::max(maxContentWidth, utf8DisplayWidth(content));
-    contents.push_back(std::move(content));
-  }
-  keyExecuteMarkerColumn_ = maxContentWidth + static_cast<int>(kGap.size());
-  keyReferenceMarkerColumn_ =
-      keyExecuteMarkerColumn_ + utf8DisplayWidth(kExecuteMarker) + static_cast<int>(kGap.size());
-  for (std::size_t i = 0; i < contents.size(); i++) {
-    std::string &content = contents[i];
-    int pad = maxContentWidth - utf8DisplayWidth(content);
-    if (pad > 0) content.append(pad, ' ');
-    std::string text = content + kGap + kExecuteMarker + kGap + kReferenceMarker;
-    lines.push_back({text, std::nullopt, std::nullopt, {}});
+    std::string text = label + " : " + entry.description;
+    if (entry.isMacro) text += " (M)";
+    std::vector<AttributeRun> attributes;
+    if (static_cast<int>(i) == cursor) {
+      int split = static_cast<int>(maxLabelWidth);
+      if (keyColumnFocus_ == 0) attributes.push_back({0, split, Display::Attribute::Standout});
+      else attributes.push_back({split, static_cast<int>(text.size()), Display::Attribute::Standout});
+    }
+    lines.push_back({text, std::nullopt, std::nullopt, std::move(attributes)});
   }
   keyView_.setLines(std::move(lines));
-  keyView_.setCursorIndex(0);
+  keyView_.setCursorIndex(cursor);
+}
+
+bool Application::startKey() {
+  if (currentMode_ == ApplicationMode::Key) return false;
   keyColumnFocus_ = 0;
+  keyView_.setCursorIndex(0);
+  renderKeyRows();
   // 2026-08-28: ensureShellActive()自身の同一の修正と同じ方針――KEY
   // は、ユーザー自身が挙げたINFO戻りの例外("usilicrc、ERROR、
   // SHELL、WORKの対象ファイルを選んだ場合またはINFOでFGREP/EGREP/
@@ -8923,33 +8917,26 @@ bool Application::handleMouseClick(int row, int column) {
     locateView_.redraw();
     return true;
   }
-  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、「②...いずれも
-  // マウス、または移動キーでハイライト位置を移動でき、クリックまたは
-  // [return]でそれぞれの役割を実行」): startKey()自身が揃えた
-  // keyExecuteMarkerColumn_/keyReferenceMarkerColumn_を境目に、
-  // クリック位置がどちらのマーカーの上かを判定する。ラベル/説明文
-  // 自体(マーカーより左)のクリックは、他の一覧(Directory/Archive/
-  // Locate)と同じ「既に選択済みの行なら実行、そうでなければ選択のみ」
-  // という慣習に合わせている――一方レファレンス表示は副作用が無い
-  // (HELPを開くだけ)ので、常に即座に実行する。
+  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
+  // スクリーンショット=fa/=fb指定: "「`Space`」:「`Move window one
+  // page down`」（「」内がハイライト表示範囲）がマウスまたは`←`/`→`
+  // で切り替わり、マウスクリックまたはreturnでそれぞれ`キー実行`:
+  // `レファレンス表示`へ移行する"): クリック位置がkeyLabelColumnWidth_
+  // より左(ラベル側)か右(説明文側)かで、そのままキー実行/レファレンス
+  // 表示のどちらかへ「直接」移行する――[return]と同格の即時コミット
+  // であり、他の一覧(Directory/Archive/Locate)の「1回目は選択のみ、
+  // 2回目で実行」という慣習はここでは採らない(ユーザー自身の言葉
+  // 通り、クリックとreturnは同格に扱う)。
   if (currentMode_ == ApplicationMode::Key) {
     int idx = keyView_.lineIndexAtRow(row);
     if (idx < 0) return false;
-    if (column >= keyReferenceMarkerColumn_) {
-      keyView_.setCursorIndex(idx);
-      keyColumnFocus_ = 1;
-      return showKeyReference();
-    }
-    if (column >= keyExecuteMarkerColumn_) {
-      keyView_.setCursorIndex(idx);
+    keyView_.setCursorIndex(idx);
+    if (column < keyLabelColumnWidth_) {
       keyColumnFocus_ = 0;
       return executeSelectedKeyBinding();
     }
-    keyColumnFocus_ = 0;
-    if (idx == keyView_.cursorIndex()) return executeSelectedKeyBinding();
-    keyView_.setCursorIndex(idx);
-    keyView_.redraw();
-    return true;
+    keyColumnFocus_ = 1;
+    return showKeyReference();
   }
   return false;
 }
