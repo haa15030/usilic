@@ -1264,30 +1264,29 @@ void GraphicalDisplay::flush() {
   // 小数のeffectiveTopとは異なり。
   //
   // 2026-09-02、直接のユーザー報告(スクリーンショット=fd、"-g起動でも
-  // 〔スクロールバー張りぼて画像が〕ズレるみたい。フォントサイズ変更は
-  // 画像が消えてからなのでそのときは問題無いが次回起動時にズレる"):
-  // 埋め込まれた3つのidle画像スライス(scrollbar_idle_image.hpp)は、
-  // ある1つのデフォルトのフォントサイズ(cellHeight)でキャプチャされた
-  // 実機スクリーンショットの切り出しであり、幅は常にkScrollbarIdleTop/
-  // Middle/BottomWidth(いずれも17px)という固定値――一方Impl::
-  // scrollbarWidth(実際に予約されているスクロールバー帯の幅)は
-  // 2026-08-30以降cellHeightへ連動している(Impl::scrollbarWidth自身の
-  // コメント参照)。前回セッションでCmd+/Cmd-によりフォントサイズを
-  // 変更しそれが復元される(または単に非デフォルトのフォントで起動
-  // する)と、この17pxという前提が崩れ、実際の帯の幅とは合わない
-  // 固定幅の画像が貼られることになる――これがユーザー報告の直接の
-  // 原因。キャプチャした端の詳細(つまみ/丸みを帯びたトラック端)を
-  // 歪めずに横方向へ引き伸ばすことは、2026-08-09の実機報告
-  // ("つまみと丸いトラック端を歪める")で既に却下済みの手法であり
-  // 採用できない――そのため、現在のscrollbarWidthがこの画像の
-  // キャプチャ時の幅(kScrollbarIdleTopWidth、3スライスとも同じ17px)
-  // と一致する場合「だけ」装飾画像を使い、一致しない場合は
-  // (「最初の操作までは装飾画像」という原則より優先して)常に正しい
-  // 本物のdrawScrollbar()へ素直にフォールバックする――updateScrollPosition()
-  // が呼び出し元(main.cpp)によりeverInteractedの真偽に関わらず毎回
-  // 呼ばれているので、スクロール位置データは既にここで有効である。
-  bool idleImageMatchesCurrentFontSize = (impl_->scrollbarWidth == kScrollbarIdleTopWidth);
-  if (!impl_->everInteracted && idleImageMatchesCurrentFontSize) {
+  // 〔スクロールバー張りぼて画像が〕ズレるみたい")、および同日の訂正
+  // ("スクロールバーの幅は関係ない。なぜなら右端に表示されるから。
+  // なので張りぼても右端に表示されればOK")を受けて、一度は「現在の
+  // scrollbarWidthが画像キャプチャ時の17pxと一致する場合だけ描画する」
+  // というゲートをここに置いたが、これは誤った対処だった――
+  // scrollbarWidthは2026-08-30以降cellHeightへ連動しており(Impl::
+  // scrollbarWidth自身のコメント参照)、実機のフォントサイズがちょうど
+  // cellHeight=17pxになることは実質無い(USILICGUIDEBUGでの実機ログ、
+  // 2026-09-02、MS-Gothic 24pt→cellHeight 24〜25で確認)ため、この
+  // ゲートは装飾画像そのものを事実上常に無効化してしまっていた
+  // ("張りぼて出ず"というユーザー報告はこのゲートが原因)。
+  //
+  // 本当の原因はscrollbarWidthとの不一致ではなく、drawIdleScrollbarImage()
+  // 自身のstripX計算がscrollbarStripLeft()(windowWidth-scrollbarWidth、
+  // つまり「予約されている帯の左端」)を使っていたこと――画像自体は
+  // 常に固定17px幅(kScrollbarIdleTop/Middle/BottomWidth)しかないのに、
+  // cellHeight連動で帯自体が17pxより広くなると、画像は帯の左端に
+  // 貼られたまま右端まで届かず、`scrollbarWidth-17`px分だけ本物の
+  // ウィンドウ右端から左にズレて見える――これが「横方向に5mmほど
+  // ズレている」の正体(下記drawIdleScrollbarImage()の修正参照:
+  // 画像自身の実際の幅で測った右端フラッシュへ変更)。ここのゲートは
+  // 不要なので撤去し、everInteractedだけで切り替える元の設計へ戻す。
+  if (!impl_->everInteracted) {
     drawIdleScrollbarImage();
   } else {
     drawScrollbar(static_cast<double>(impl_->scrollTopIndex), impl_->scrollTotalLines, impl_->scrollContentRows);
@@ -2651,10 +2650,24 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
     SDL_FreeSurface(surface);
   };
 
-  // drawScrollbar()自身のthumbXが今使っているのと同じ
-  // scrollbarStripLeft()――そのコメント参照。このアイドル状態の合成
-  // を、実際のつまみが引き継いだ時にそれが座る場所と揃えたままにする。
-  int stripX = scrollbarStripLeft();
+  // 2026-09-02訂正: 以前はdrawScrollbar()自身のthumbXと同じ
+  // scrollbarStripLeft()(windowWidth-scrollbarWidth、つまり「予約
+  // されている帯」の左端)を使っていたが、これは間違い――
+  // scrollbarWidthは2026-08-30以降cellHeightへ連動しており、この
+  // 装飾画像自体は常に固定17px幅(kScrollbarIdleTop/Middle/
+  // BottomWidth)しかない。帯の方がその17pxより広くなると、画像は
+  // 帯の左端に貼られたまま右端まで届かず、ウィンドウの本物の右端から
+  // `scrollbarWidth-17`px分だけ左にズレて見える――ユーザー報告の
+  // "横方向に5mmほどズレている"はこれが原因(直接のユーザー訂正:
+  // "スクロールバーの幅は関係ない。なぜなら右端に表示されるから。
+  // 張りぼても右端に表示されればOK")。実際のつまみは帯を丸ごと塗る
+  // ので幅に関わらず自然に右端フラッシュになるが、この固定幅画像は
+  // 明示的に「自分自身の幅」で右端に合わせる必要がある――帯の幅
+  // ではなく、測定済みwindowWidthNowとkScrollbarIdleTopWidth自身から
+  // stripXを決める。
+  int windowWidthNow = 0, windowHeightNow = 0;
+  SDL_GetWindowSize(impl_->window, &windowWidthNow, &windowHeightNow);
+  int stripX = windowWidthNow - kScrollbarIdleTopWidth;
 
   // kDefaultIdleImageYOffset: 実際の報告(2026-08-09、スクリーンショット、
   // "2ミリほど下がるけど下にはみ出さない")により、(当時は単一画像
@@ -2740,8 +2753,6 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
   // 一致する場合(通常のcreate()/手動リサイズの場合)は古い計算式と
   // 同一であり、matchWindowSize()自身の本物の端末とのピクセルの
   // 一致の下でのみ異なる。
-  int windowWidthNow = 0, windowHeightNow = 0;
-  SDL_GetWindowSize(impl_->window, &windowWidthNow, &windowHeightNow);
   int trackBottom = (windowHeightNow - Impl::kMarginY) - yOffset;
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     FILE *f = std::fopen(dbg, "a");
