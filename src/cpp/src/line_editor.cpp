@@ -294,6 +294,8 @@ void LineEditor::killToEnd() {
 
 void LineEditor::yank() { insertText(killBuffer_); }
 
+void LineEditor::setKillBuffer(const std::string &text) { killBuffer_ = text; }
+
 void LineEditor::paste(const std::string &text) { insertText(text); }
 
 void LineEditor::toggleQuotedInsert() { quotedInsertPending_ = !quotedInsertPending_; }

@@ -2014,6 +2014,11 @@ class Application {
   // ^O^C(COPY): CopyMode自身の凍結されたスナップショットの裏付け
   // となるビュー――startCopy()自身のコメント参照。
   ContentView copyView_;
+  // feedCopyByte()自身のコメント参照: ApplicationMode::Copyの間だけ
+  // 有効な、"^[w"(confirmMark())用の1バイト先読み状態。resolveCommand()
+  // 側のescPending_とは意図的に別物――feedCopyByte()はそもそも
+  // resolveCommand()のテーブルを一切経由しない独立した語彙であるため。
+  bool copyEscapePending_ = false;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;

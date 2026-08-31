@@ -6010,6 +6010,7 @@ bool Application::startCopy() {
   copyView_.setModeLineFieldsProvider([name = frozen.name](int) -> ContentView::ModeLineFields {
     return {"COPY", name, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", /*trailing2=*/""};
   });
+  copyEscapePending_ = false;
   copyMode_.loadSnapshot(origin.lines(), origin.cursorIndex());
   return true;
 }
@@ -6041,12 +6042,29 @@ bool Application::returnFromCopy() {
 // M_tail/M_forw/M_back/M_kforw/M_kback/M_prev/M_next/M_clear)から
 // 逐語的にではなく「精神的に」移植: このポートは、既に意味を持って
 // いる自身の最小限のバイトの集合を、CopyMode自身のmove*()/
-// toggleMark()メソッドへマッピングし(なぜこれがresolveCommand()の
-// グローバルなテーブルを再利用しないのかについてはapplication.hpp
-// のfeedCopyByte()自身の宣言コメント参照)、任意の終了キーを起点の
-// モードへ再生するのではなく、プレーンな^Gで退出する――
-// returnFromCopy()自身のコメント参照。
+// startMark()/confirmMark()メソッドへマッピングし(なぜこれが
+// resolveCommand()のグローバルなテーブルを再利用しないのかについては
+// application.hppのfeedCopyByte()自身の宣言コメント参照)、任意の
+// 終了キーを起点のモードへ再生するのではなく、プレーンな^Gで退出する
+// ――returnFromCopy()自身のコメント参照。
+//
+// 2026-08-31、直接のユーザー依頼("本体で変更が必要なのは^Space...
+// emacsに合わせたい"): マーク開始(旧`^Space`)/確定(旧: `^Space`の
+// 2回目の押下)を、emacsのset-mark-command(^@)/kill-ring-save(^[w)に
+// 合わせて別々のキーへ分離した。^Spaceは日本語変換エンジン(ATOK等)の
+// 入力モード切り替えキーと衝突することがあるための変更。CopyMode
+// 自身のコメント参照。
 bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  // "^[w"(confirmMark())自身の1バイト先読み――application.hpp自身の
+  // copyEscapePending_のコメント参照。'w'以外が続いた場合(または
+  // specialキーが割り込んだ場合)は、そのESCシーケンス全体を単に
+  // 吸収する(このモードでは元々どのみち意味を持たないため、実害は無い)。
+  if (copyEscapePending_) {
+    copyEscapePending_ = false;
+    if (!special && byte == 'w') copyMode_.confirmMark();
+    promptEditor_.setKillBuffer(copyMode_.clipboardText());
+    return true;
+  }
   if (special) {
     switch (*special) {
       case KeyInput::SpecialKey::Up:
@@ -6086,13 +6104,24 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
     case 0x05:  // ^E: 行末
       copyMode_.moveToLineEnd();
       return true;
-    case 0x80:  // ^Space(M_mark)
-    case '.':   // このポート自身の他の場所にあるToggleMarkの別名(Command::ToggleMark自身の
-                // コメント参照)に一致している――無関係な機能(CP/MV/RMのエントリのマーキング)
-                // だが、同じ「ここでマークをトグルする」というニーモニックであり、この
-                // ディスパッチはどのみち一度もそのグローバルなCommandへ流れ落ちないので、
-                // 実際の衝突は無い。
-      copyMode_.toggleMark();
+    case kEscape:  // "^[w"のリーダー――上のcopyEscapePending_参照
+      copyEscapePending_ = true;
+      return true;
+    case 0x00:  // ^@(M_mark開始) -- 実端末では0を読めないのでKeyInputが0x80として報告する
+    case 0x80:
+      copyMode_.startMark();
+      return true;
+    case '.':  // 後方互換のトグル別名(ATOKと衝突しないため'.'は変更していない)。
+               // このポート自身の他の場所にあるToggleMarkの別名(Command::ToggleMark
+               // 自身のコメント参照)に一致しているが、無関係な機能(CP/MV/RMのエントリの
+               // マーキング)であり、このディスパッチはどのみち一度もそのグローバルな
+               // Commandへ流れ落ちないので、実際の衝突は無い。
+      if (copyMode_.markActive()) {
+        copyMode_.confirmMark();
+        promptEditor_.setKillBuffer(copyMode_.clipboardText());
+      } else {
+        copyMode_.startMark();
+      }
       return true;
     default:
       return true;  // 吸収される――Copyモードにいる間、他の全てのキーはno-opである

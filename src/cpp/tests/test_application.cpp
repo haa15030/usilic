@@ -8,6 +8,7 @@
 
 #include "application.hpp"
 #include "doctest.h"
+#include "help_text.hpp"
 #include "mode_line.hpp"
 #include "recording_display.hpp"
 
@@ -9680,9 +9681,10 @@ TEST_CASE_FIXTURE(Fixture, "^O^C/^O^Y (COPY/PASTE) round trip: select a substrin
   REQUIRE(app.feedByte(0x0f, std::nullopt));
   REQUIRE(app.feedByte(0x03, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Copy);
-  app.feedByte(0x80, std::nullopt);                              // mark start at column 0
+  app.feedByte(0x80, std::nullopt);                              // ^@: mark start at column 0
   for (int i = 0; i < 5; i++) app.feedByte(0x06, std::nullopt);  // extend over "hello"
-  app.feedByte(0x80, std::nullopt);                              // mark end
+  app.feedByte(0x1b, std::nullopt);
+  app.feedByte('w', std::nullopt);  // ^[w: confirm
   CHECK(app.handleCommand(Command::Back));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 

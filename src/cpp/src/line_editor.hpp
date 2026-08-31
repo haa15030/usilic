@@ -78,6 +78,13 @@ class LineEditor {
   void killToEnd();
   // ^Y: killバッファの内容をカーソル位置へ再挿入する。
   void yank();
+  // 2026-08-31、直接のユーザー依頼(COPY(^O^C)の確定内容を、^Y経由で
+  // 汎用エリアから取り出せるようにしたい、emacsのkill-ring-save(M-w)
+  // /yank(C-y)がこの同じkillバッファを共有するのに合わせて):
+  // Application::feedCopyByte()がCopyMode::confirmMark()の結果を
+  // ここへ書き込む――killToStart()/killToEnd()による通常の削除と
+  // 全く同じ着地点であり、以後の^Yはどちらの由来かを区別しない。
+  void setKillBuffer(const std::string &text);
   // M_paste: 外部のクリップボードテキストをカーソル位置へ挿入する
   // (^U/^Kのkillバッファには触れない――legacyの`copy`パラメータと
   // その静的な`yank[]`の関係と同じく、別の入力源として移植)。

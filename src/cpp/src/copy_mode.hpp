@@ -86,13 +86,27 @@ class CopyMode {
   void moveToLineStart();
   void moveToLineEnd();
 
-  // M_markのトグル: 最初の呼び出しは現在のカーソル位置に選択の
-  // アンカーを置く。2回目の呼び出しはそれを終える。空でない範囲
-  // (hi > lo)で終えた場合はclipboardText()を上書きする。空の範囲
-  // (マーク開始の直後、同じ列でマーク終了)で終えた場合は既存の
-  // clipboardText()に触れない。legacy自身の`if (*p) strcpy(rvp->copy,
-  // p)`というガードと同じ。
-  void toggleMark();
+  // 2026-08-31、直接のユーザー依頼("本体で変更が必要なのは^Space...
+  // emacsに合わせたい。^@でマーク開始トグル、^[wで確定"): 以前は
+  // toggleMark()という1つのメソッドが、1回目の呼び出しでは選択の
+  // アンカーを置き、2回目の呼び出しではそれを終える(結果を保存する)
+  // という2つの役割を兼ねていた。^Spaceが日本語変換エンジン(ATOK等)の
+  // 入力モード切り替えキーと衝突するため、emacsのset-mark-command(^@)
+  // /kill-ring-save(^[w)に合わせてこの2つの役割を別々のキー/
+  // メソッドへ分離した――application.cpp自身のfeedCopyByte()参照。
+  // ただし'.'キーは(ATOKと無関係、衝突の実害が無いため)後方互換の
+  // トグル別名として、この2メソッドを内部で使い分ける形で残っている。
+
+  // 現在のカーソル位置に選択のアンカーを置く。既にマーク中の場合は
+  // アンカーを現在位置へ置き直す(emacsのC-@を繰り返し押した時と同じ、
+  // 何度でも安全に呼べる)。
+  void startMark();
+  // アンカーと現在のカーソル位置の間の範囲を確定する。空でない範囲
+  // (hi > lo)ならclipboardText()を上書きする。空の範囲(マーク開始の
+  // 直後、同じ列で確定)なら既存のclipboardText()に触れない。legacy
+  // 自身の`if (*p) strcpy(rvp->copy, p)`というガードと同じ。マーク中で
+  // なければ何もしない。
+  void confirmMark();
   bool markActive() const;
 
   // 共有「ヤンクバッファ」(legacy: RV::copy) -- 常に素のテキスト、

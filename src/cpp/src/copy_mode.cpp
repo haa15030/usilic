@@ -116,14 +116,15 @@ void CopyMode::moveToLineEnd() {
   render();
 }
 
-void CopyMode::toggleMark() {
+void CopyMode::startMark() {
   if (lines_.empty()) return;
-  if (!markActive_) {
-    markActive_ = true;
-    markAnchorByte_ = cursorByte_;
-    render();
-    return;
-  }
+  markActive_ = true;
+  markAnchorByte_ = cursorByte_;
+  render();
+}
+
+void CopyMode::confirmMark() {
+  if (lines_.empty() || !markActive_) return;
   int lo = std::min(markAnchorByte_, cursorByte_);
   int hi = std::max(markAnchorByte_, cursorByte_);
   if (hi > lo) clipboardText_ = lines_[cursorRow_].text.substr(lo, hi - lo);

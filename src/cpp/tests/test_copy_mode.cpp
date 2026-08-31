@@ -108,9 +108,9 @@ TEST_CASE("CopyMode: moveUp()/moveDown() move rows and are bounds-checked at the
   CHECK(d.cursorRow() == 2);
 }
 
-TEST_CASE("CopyMode: toggleMark() selects a same-row substring into clipboardText(), and an empty "
-          "selection (mark start immediately followed by mark end at the same column) leaves a "
-          "prior clipboardText() unchanged, mirroring legacy's own `if (*p) strcpy(...)` guard") {
+TEST_CASE("CopyMode: startMark()+confirmMark() select a same-row substring into clipboardText(), and "
+          "an empty selection (mark start immediately followed by confirm at the same column) leaves "
+          "a prior clipboardText() unchanged, mirroring legacy's own `if (*p) strcpy(...)` guard") {
   RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
@@ -119,17 +119,46 @@ TEST_CASE("CopyMode: toggleMark() selects a same-row substring into clipboardTex
   CHECK(copy.clipboardText().empty());
 
   copy.moveRight();  // column 1
-  copy.toggleMark();
+  copy.startMark();
   CHECK(copy.markActive());
   for (int i = 0; i < 6; i++) copy.moveRight();  // columns 1..7 -- "elect "
-  copy.toggleMark();
+  copy.confirmMark();
   CHECK_FALSE(copy.markActive());
   CHECK(copy.clipboardText() == "elect ");
 
-  // Empty selection: mark then immediately end it at the same position.
-  copy.toggleMark();
-  copy.toggleMark();
+  // Empty selection: mark then immediately confirm at the same position.
+  copy.startMark();
+  copy.confirmMark();
   CHECK(copy.clipboardText() == "elect ");  // unchanged
+}
+
+TEST_CASE("CopyMode: startMark() while already marking just resets the anchor to the current position "
+          "(emacs' repeated set-mark-command), rather than confirming") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"select me please"}));
+
+  copy.moveRight();  // column 1
+  copy.startMark();
+  for (int i = 0; i < 3; i++) copy.moveRight();  // column 4
+  copy.startMark();                              // anchor moves to column 4, still marking
+  CHECK(copy.markActive());
+  for (int i = 0; i < 3; i++) copy.moveRight();  // column 7
+  copy.confirmMark();
+  CHECK(copy.clipboardText() == "ct ");  // columns 4..7, not 1..7
+}
+
+TEST_CASE("CopyMode: confirmMark() without an active mark is a safe no-op") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"select me please"}));
+  copy.confirmMark();
+  CHECK(copy.clipboardText().empty());
+  CHECK_FALSE(copy.markActive());
 }
 
 TEST_CASE("CopyMode: moveUp()/moveDown() are blocked entirely while a mark is active (ported from "
@@ -140,7 +169,7 @@ TEST_CASE("CopyMode: moveUp()/moveDown() are blocked entirely while a mark is ac
   v.setViewport(0, 5);
   CopyMode copy(v);
   copy.loadSnapshot(makeLines({"row zero", "row one"}));
-  copy.toggleMark();
+  copy.startMark();
   copy.moveDown();
   CHECK(d.cursorRow() == 0);  // blocked
   copy.moveRight();
@@ -161,8 +190,8 @@ TEST_CASE("CopyMode: an empty snapshot leaves every operation a safe no-op") {
   copy.moveRight();
   copy.moveToLineStart();
   copy.moveToLineEnd();
-  copy.toggleMark();
-  copy.toggleMark();
+  copy.startMark();
+  copy.confirmMark();
   CHECK(copy.clipboardText().empty());
   CHECK_FALSE(copy.markActive());
 }
@@ -175,7 +204,7 @@ TEST_CASE("CopyMode: the live selection renders as a Standout AttributeRun over 
   CopyMode copy(v);
   copy.loadSnapshot(makeLines({"plain SELECT plain"}));
   for (int i = 0; i < 6; i++) copy.moveRight();  // column 6, start of "SELECT"
-  copy.toggleMark();
+  copy.startMark();
   for (int i = 0; i < 6; i++) copy.moveRight();  // column 12, end of "SELECT"
   CHECK(d.standoutAt(0, 5) == false);
   CHECK(d.standoutAt(0, 6) == true);
