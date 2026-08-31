@@ -1658,6 +1658,15 @@ class Application {
   // (マルチバイトシーケンスに対して、本物のキー入力がそうする
   // ように、自然にリーダーキーの状態へ再入場する)。
   bool executeSelectedKeyBinding();
+  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、「②各行では
+  // 『キーの直接実行』/『レファレンス表示』を選択可能」): 現在の
+  // カーソル行のkKeyTable自身のhelpSectionへ、HELPを開いた上で直接
+  // ジャンプする。該当する章が見当たらない(helpSectionがnullptr、
+  // またはkHelpTextJaにその番号の見出しが無い)場合はfalseを返す
+  // (何も起きない、no-op)。startHelp()自身のcutReturnMode_設定に
+  // より、そこから^Gを2回押すとKEY自身へ戻る(HELPの目次経由で
+  // 1回、それからKEY自身へもう1回)。
+  bool showKeyReference();
 
   bool startGrepPrompt(GrepSyntax syntax);
   bool startCutPrompt(GrepSyntax syntax);
@@ -2129,6 +2138,18 @@ class Application {
   // によって切り替えられる。
   bool listBrowserChronological_ = false;
   ApplicationMode keyReturnMode_ = ApplicationMode::Directory;
+  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新): 現在のカーソル
+  // 行で「キーの直接実行」(0)/「レファレンス表示」(1)のどちらが
+  // 選ばれているか。tabキー(dispatchByte()自身の割り込みチェック
+  // 参照)で切り替わり、Command::Enterのディスパッチ(handleCommand())
+  // がこれを見てexecuteSelectedKeyBinding()/showKeyReference()の
+  // どちらを呼ぶか決める。startKey()の呼び出しごとに0へリセットする。
+  int keyColumnFocus_ = 0;
+  // startKey()自身のコメント参照: "実行"/"詳細"マーカーが実際に描画
+  // される列(表示幅、全行共通)。handleMouseClick()がクリック位置を
+  // どちらのマーカーの上かに分類するために読む。
+  int keyExecuteMarkerColumn_ = 0;
+  int keyReferenceMarkerColumn_ = 0;
   ApplicationMode copyReturnMode_ = ApplicationMode::Directory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;

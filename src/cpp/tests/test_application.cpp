@@ -8857,7 +8857,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: entries actually RENDER on screen, not just sto
   app.activeContentView().redraw();
   bool sawFirstEntry = false;
   for (int row = 0; row < display.rows() - 1; row++)  // every row EXCEPT the mode-line's own bottom row
-    if (display.rowText(row).find("Move window down") != std::string::npos) sawFirstEntry = true;
+    if (display.rowText(row).find("画面を1行下へ") != std::string::npos) sawFirstEntry = true;
   CHECK(sawFirstEntry);
 }
 
@@ -8944,6 +8944,87 @@ TEST_CASE_FIXTURE(Fixture, "Key: Back (^G) on any entry returns without executin
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK_FALSE(app.promptActive());  // NOT the EXIT prompt -- Back never executed the highlighted entry
+}
+
+// -- KEY: dual "execute"/"reference" action per row (2026-08-31) --
+
+TEST_CASE_FIXTURE(Fixture, "Key: tab toggles between execute/reference, and Enter dispatches accordingly") {
+  REQUIRE(app.loadHelpText(fm::expandHelpMarkup(fm::kHelpTextJa)));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  const auto &lines = app.activeContentView().lines();
+  int row = -1;
+  for (std::size_t i = 0; i < lines.size(); i++)
+    if (lines[i].text.find(" ^S :") != std::string::npos) row = static_cast<int>(i);
+  REQUIRE(row >= 0);
+  app.activeContentView().setCursorIndex(row);
+
+  // Default focus is "execute": Enter runs the binding as before.
+  CHECK(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.promptActive());
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G: cancel the FGREP prompt this just opened (via the
+                                               // real dispatch path -- handleCommand(Back) alone doesn't
+                                               // check promptKind_, see dispatchByte()'s own early check)
+  REQUIRE_FALSE(app.promptActive());
+
+  // Re-open KEY, move to the same row, flip focus to "reference" with tab.
+  REQUIRE(app.handleCommand(Command::StartKey));
+  app.activeContentView().setCursorIndex(row);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // tab
+  CHECK(app.handleCommand(Command::Enter));
+  // ^S's helpSection is "2.3" (FGREP/EGREP) -- landing directly in that section's content.
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
+  CHECK_FALSE(app.promptActive());  // reference view only, nothing was executed
+
+  // ^G twice: back to the HELP table of contents, then back to KEY itself
+  // (showKeyReference() opens HELP fresh from Key mode, so cutReturnMode_ is Key).
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Key);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Key: reference view is a no-op for entries with no mapped HELP section") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  const auto &lines = app.activeContentView().lines();
+  int row = -1;
+  for (std::size_t i = 0; i < lines.size(); i++)
+    if (lines[i].text.find("^X( :") != std::string::npos) row = static_cast<int>(i);  // macro recording -- no HELP section
+  REQUIRE(row >= 0);
+  app.activeContentView().setCursorIndex(row);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // tab to "reference"
+
+  // No mapped HELP section for this entry -- showKeyReference() itself returns false,
+  // and nothing about the current mode changes.
+  CHECK_FALSE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Key);  // stayed put, nothing opened
+}
+
+TEST_CASE_FIXTURE(Fixture, "Key: clicking the reference marker opens that row's HELP section directly, "
+                           "regardless of the current tab focus") {
+  REQUIRE(app.loadHelpText(fm::expandHelpMarkup(fm::kHelpTextJa)));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  const auto &lines = app.activeContentView().lines();
+  int row = -1;
+  for (std::size_t i = 0; i < lines.size(); i++)
+    if (lines[i].text.find(" ^S :") != std::string::npos) row = static_cast<int>(i);
+  REQUIRE(row >= 0);
+  app.activeContentView().setCursorIndex(row);
+  app.activeContentView().redraw();
+
+  int displayRow = -1;
+  for (int r = 0; r < display.rows() - 1; r++)
+    if (display.rowText(r).find(" ^S :") != std::string::npos) displayRow = r;
+  REQUIRE(displayRow >= 0);
+
+  std::string rendered = display.rowText(displayRow);
+  int referenceColumn = static_cast<int>(rendered.rfind("詳細"));
+  REQUIRE(referenceColumn >= 0);
+  CHECK(app.handleMouseClick(displayRow, referenceColumn));
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
 }
 
 // -- Recorded macros (p_km, ^X(/^X)/^Xe) --

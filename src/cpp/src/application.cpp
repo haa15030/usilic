@@ -20,6 +20,7 @@
 #include "child_process.hpp"
 #include "mode_line.hpp"
 #include "pipe_buffer.hpp"
+#include "utf8.hpp"
 
 namespace fm {
 
@@ -256,25 +257,134 @@ struct KeyTableEntry {
   const char *description;
   std::vector<int> bytes;
   bool isMacro = false;
+  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、「①順序を
+  // src/HELP.txt(→kHelpTextJa)に合わせる」「②各行では『キーの直接
+  // 実行』/『レファレンス表示』を選択可能」): このエントリが対応する
+  // kHelpTextJa自身の章番号("2.4"のように、末尾のピリオド無し)。
+  // Application::showKeyReference()が、この番号+"."で始まる見出しを
+  // CutMode::segments()から探して直接そこへジャンプする。該当する
+  // 章が無い(キーボードマクロ記録等、HELPで文書化していない)場合は
+  // nullptr――その場合「詳細」を選んでも何も起きない(no-op)。
+  const char *helpSection = nullptr;
 };
 
+// 2026-08-31、直接のユーザー依頼("①順序をsrc/HELP.txtに合わせる。
+// レファレンスが日本語なので...日本語へ翻訳"): 以前は「リーダーキー
+// 無し→マクロ→ESCリーダー→^Jリーダー→^Xリーダー→^X^Kリーダー→
+// ^Oリーダー」という、キーの「構文」(接頭辞の種類)によるグループ分け
+// だった。今はkHelpTextJa自身の章立て(1./2.1〜2.19/3./4./5.1〜5.3)の
+// 順に合わせて並び替え、descriptionも英語からkHelpTextJa/
+// kKeyReferenceTextJaと同じ言い回しの日本語へ翻訳した。バイト列
+// (bytes)自体は一切変更していない――このテーブルを裏付ける実際の
+// キー割り当ての意味には触れず、あくまで表示順序と説明文だけの変更
+// である。
 const KeyTableEntry kKeyTable[] = {
-    // カーソル/ページング/その他(リーダーキー無し)
-    {"j", "Move window down", {'j'}},
-    {"k", "Move window up", {'k'}},
-    {"^N", "Move cursor down", {0x0e}},
-    {"^P", "Move cursor up", {0x10}},
-    {"space", "Page down", {' '}},
-    {"^F", "Page down", {0x06}},
-    {"^V", "Page down", {0x16}},
-    {"b", "Page up", {'b'}},
-    {"^B", "Page up", {0x02}},
-    {"return", "Open selected entry", {kCarriageReturn}},
-    {"^G", "Back / cancel", {kControlG}},
-    {"^S", "FGREP", {kControlS}},
-    {"^space", "Toggle mark (CP/MV/RM/ARC)", {0x80}},
-    {"^R", "Toggle chronological HISTORY view (current list browser)", {0x12}},
-    {"^L", "Redraw screen", {0x0c}},
+    // 5.1  Window(汎用のカーソル/ページング/その他、リーダーキー無し)
+    {"j", "画面を1行下へ", {'j'}, false, "5.1"},
+    {"k", "画面を1行上へ", {'k'}, false, "5.1"},
+    {"^N", "カーソルを1行下へ", {0x0e}, false, "5.1"},
+    {"^P", "カーソルを1行上へ", {0x10}, false, "5.1"},
+    {"space", "画面を1ページ下へ", {' '}, false, "5.1"},
+    {"^F", "画面を1ページ下へ", {0x06}, false, "5.1"},
+    {"^V", "画面を1ページ下へ", {0x16}, false, "5.1"},
+    {"b", "画面を1ページ上へ", {'b'}, false, "5.1"},
+    {"^B", "画面を1ページ上へ", {0x02}, false, "5.1"},
+    {"return", "選択したエントリを開く", {kCarriageReturn}, false, "5.1"},
+    {"^G", "戻る・キャンセル", {kControlG}, false, "5.1"},
+    {"^L", "画面を再描画", {0x0c}, false, "5.1"},
+    {"q", "usilicを終了(pager)", {'q'}, false, "5.1"},
+    // マクロ(usilicrc M-0..M-3、CUTの章(2.4)で解説): ";"、":"での上下、
+    // "+"、"*"での「検索後の該当行へ」移動。
+    {";", "戻る、カーソル上、選択 (M-0)", {kControlG, 0x10, kCarriageReturn}, true, "2.4"},
+    {":", "戻る、カーソル下、選択 (M-1)", {kControlG, 0x0e, kCarriageReturn}, true, "2.4"},
+    {"+", "2回戻る、カーソル上、2回選択 (M-2)", {kControlG, kControlG, 0x10, kCarriageReturn, kCarriageReturn}, true, "2.4"},
+    {"*", "2回戻る、カーソル下、2回選択 (M-3)", {kControlG, kControlG, 0x0e, kCarriageReturn, kCarriageReturn}, true, "2.4"},
+
+    // 2.1  ファイル選択 (^J^K)
+    {"^J^K", "File-selectorへ移動", {kLeaderJ, 0x0b}, false, "2.1"},
+    {"^J^J", "直近の通常ファイル・アーカイブへ移動", {kLeaderJ, kLeaderJ}, false, "2.1"},
+    {"^O^K", "親ディレクトリへ移動", {kLeaderO, 0x0b}, false, "2.1"},
+    {"^O^M", "1行ずつ読み込む(簡易ページャ)", {kLeaderO, kCarriageReturn}, false, "2.1"},
+    {"^[^M", "制御コードもそのまま可視化して表示", {kEscape, kCarriageReturn}, false, "2.1"},
+    {"^X^W", "バッファ内容を作業ファイルへ保存", {kLeaderX, 0x17}, false, "2.1"},
+
+    // 2.3  FGREP / EGREP (^S / ^J^S)
+    {"^S", "FGREP", {kControlS}, false, "2.3"},
+    {"^J^S", "EGREP", {kLeaderJ, kControlS}, false, "2.3"},
+
+    // 2.4  CUT (^Jc / ^J^C / ^Jb / ^J^B)
+    {"^Jc", "CUT (固定文字列、バッファ)", {kLeaderJ, 'c'}, false, "2.4"},
+    {"^J^C", "CUT (正規表現、バッファ)", {kLeaderJ, kControlC}, false, "2.4"},
+    {"^Jb", "CUT (固定文字列、File-selector上のファイル)", {kLeaderJ, 'b'}, false, "2.4"},
+    {"^J^B", "CUT (正規表現、File-selector上のファイル)", {kLeaderJ, 0x02}, false, "2.4"},
+    // ^J^H(HELP)自身は専用の章番号を持たない(このHELP自身の目次画面
+    // そのものを開くキーであるため)――代わりに、目次の使い方を説明
+    // している章"1. はじめに"を指す。
+    {"^J^H", "HELP", {kLeaderJ, 0x08}, false, "1"},
+
+    // 2.5  DU (^Jd / ^J^D)
+    {"^Jd", "DU", {kLeaderJ, 'd'}, false, "2.5"},
+
+    // 2.6  LOCATE (^Jl / ^J^L)
+    {"^Jl", "LOCATE", {kLeaderJ, 'l'}, false, "2.6"},
+
+    // 2.7  MAN (^Jm / ^J^M)
+    {"^Jm", "MAN", {kLeaderJ, 'm'}, false, "2.7"},
+
+    // 2.8  PROGRAM (^Jp / ^J^P)
+    {"^Jp", "PROGRAM", {kLeaderJ, 'p'}, false, "2.8"},
+
+    // 2.9  FILE / DIR (^Xf・^X^F / ^Xd・^X^D)
+    {"^Xf", "FILE: ファイル名を入力", {kLeaderX, 'f'}, false, "2.9"},
+    {"^Xd", "DIR: ディレクトリ名を入力", {kLeaderX, 'd'}, false, "2.9"},
+    {"^X^F", "FILE: 履歴一覧から選択", {kLeaderX, 0x06}, false, "2.9"},
+    {"^X^D", "DIR: 履歴一覧から選択", {kLeaderX, 0x04}, false, "2.9"},
+
+    // 2.10  HISTORY / COMMAND (^R / ^J^R)
+    {"^R", "通常表示⇔時系列(HISTORY)表示の切替", {0x12}, false, "2.10"},
+    {"^J^R", "COMMAND (SHELL/PROGRAMの実行履歴)", {kLeaderJ, 0x12}, false, "2.10"},
+
+    // 2.11  CP / MV / RM / ARC (^Xc・^Xm・^Xr・^Xa)
+    {"^Xc", "CP", {kLeaderX, 'c'}, false, "2.11"},
+    {"^Xm", "MV", {kLeaderX, 'm'}, false, "2.11"},
+    {"^Xr", "RM", {kLeaderX, 'r'}, false, "2.11"},
+    {"^Xa", "ARC: アーカイブを展開", {kLeaderX, 'a'}, false, "2.11"},
+    {"^space", "現在のエントリをマーク/解除", {0x80}, false, "2.11"},
+    {".", "現在のエントリをマーク/解除(移動なし)", {'.'}, false, "2.11"},
+    {"[", "現在のエントリをマークし、カーソルを上へ", {'['}, false, "2.11"},
+    {"]", "現在のエントリをマークし、カーソルを下へ", {']'}, false, "2.11"},
+    {"^X^Y", "全マーク", {kLeaderX, 0x19}, false, "2.11"},
+    {"^X^N", "全マーク解除", {kLeaderX, 0x0e}, false, "2.11"},
+    {"^X^M", "処理先を入力・確定 (CP/MV/RM/ARC)", {kLeaderX, kCarriageReturn}, false, "2.11"},
+    {"<", "選択、戻る、カーソル上、選択 (M-6)", {kCarriageReturn, kControlG, 0x10, kCarriageReturn}, true, "2.11"},
+    {">", "選択、戻る、カーソル下、選択 (M-7)", {kCarriageReturn, kControlG, 0x0e, kCarriageReturn}, true, "2.11"},
+
+    // 2.12  SHELL (^[s / ^Xs / ^J. / ^J, / ^Jw / ^J^W)
+    {"^[s", "SHELL", {kEscape, 's'}, false, "2.12"},
+    {"^Xs", "SHELLを再起動", {kLeaderX, 's'}, false, "2.12"},
+    {"^J.", "SHELL: cd <File-selectorの位置>", {kLeaderJ, '.'}, false, "2.12"},
+    {"^J,", "SHELL: usilicrc K-43で定義したコマンド", {kLeaderJ, ','}, false, "2.12"},
+    {"^Jw", "SHELL: 現在のファイル名を挿入", {kLeaderJ, 'w'}, false, "2.12"},
+    {"^J^W", "SHELL: バッファ内容を挿入", {kLeaderJ, 0x17}, false, "2.12"},
+
+    // 2.14  COPY (^O^C)
+    {"^O^C", "COPY", {kLeaderO, 0x03}, false, "2.14"},
+    {"^O^Y", "PASTE (COPYの内容を挿入)", {kLeaderO, 0x19}, false, "2.14"},
+
+    // 2.15  EDIT (^Je)
+    {"^Je", "EDIT", {kLeaderJ, 'e'}, false, "2.15"},
+
+    // 2.16  ERROR (^X^Ke)
+    {"^X^Ke", "ERROR", {kLeaderX, 0x0b, 'e'}, false, "2.16"},
+
+    // 2.17  LOG (^X^Kl)
+    {"^X^Kl", "LOG: SHELLの操作ログ", {kLeaderX, 0x0b, 'l'}, false, "2.17"},
+    {"^[l", "LOG", {kEscape, 'l'}, false, "2.17"},
+
+    // 2.18  EXIT (^X^C or ^[^[)
+    {"^X^C", "EXIT", {kLeaderX, kControlC}, false, "2.18"},
+
+    // 2.19  INFO (^I)
     // 2026-08-27のリネーム、直接のユーザー依頼: 以前は"^T"/"USILIC
     // banner"だった――モードライン自身の`name`フィールドが"usilic"
     // (合成されたファイル自身のベース名、bannerFilePath()のコメント
@@ -283,126 +393,37 @@ const KeyTableEntry kKeyTable[] = {
     // 読めた。"INFO"へリネームし(executeShowUsilicBanner()自身の
     // setSearchOrigin()呼び出し参照)、モードライン自身の名前が曖昧で
     // なくなるよう^Iに割り当て直した。
-    {"^I", "INFO", {0x09}},
-    {"q", "Exit usilic (pager)", {'q'}},
-    // マクロ(usilicrc M-0..M-7、このテーブル自身の上のコメント参照)
-    {";", "Back, cursor up, select (M-0)", {kControlG, 0x10, kCarriageReturn}, true},
-    {":", "Back, cursor down, select (M-1)", {kControlG, 0x0e, kCarriageReturn}, true},
-    {"+", "Back twice, cursor up, select twice (M-2)", {kControlG, kControlG, 0x10, kCarriageReturn, kCarriageReturn}, true},
-    {"*", "Back twice, cursor down, select twice (M-3)", {kControlG, kControlG, 0x0e, kCarriageReturn, kCarriageReturn}, true},
-    // usilicrc自身のM-4/M-5のスロットはこれらを「select(^M)、その後
-    // カーソル上/下」("K-22 K-11 # (,) ^M ^P M-4"等)として定義している
-    // ――これがlegacyで「マーク、それから移動」としてしか読めないのは、
-    // legacy「自身の」M_cr(^M/Enter)が文脈依存であり、^Xc/^Xm/^Xrが
-    // 入るM_cp/M_mv/M_rmサブモード(menu.cのm_cr())の中を閲覧している
-    // 間はナビゲートする代わりにマークをトグルするからである――この
-    // ポートはその別個のサブモードを一切再現しなかった(代わりに
-    // ^Space/toggleMark()がマーキングを行い、Enterからは完全に切り離
-    // されている、PendingCpMvRmOperation自身のコメント参照)ので、ここ
-    // でリテラルなEnterを再生すると、単に現在のエントリへナビゲート/
-    // それを開くだけになり、マークすることにはならない。2026-08-21
-    // 修正、実際のユーザー報告(=ed-=eh、実際のlegacyバイナリで直接
-    // 実演された「同じ」マクロ)+直接の追跡("コピーしたいディレクトリ
-    // を選択しようにも[return]でそこへ移動してしまってはどうにもなら
-    // ない...まずはマクロとしての「,」「.」をサポートして欲しい"):
-    // legacy自身のリテラルな^Mベースのバイトシーケンスを再生する代わり
-    // に、Command::MarkAndAdvance/MarkAndRetreat(toggleMark() + 移動)
-    // に直接割り当てた――参照デモが示したのとまさに同じ「観測可能な」
-    // マクロの挙動を、legacyの文脈依存のEnterを再構築することなく達成
-    // した。もはやisMacroではない(合成された複数バイトの再生ではなく、
-    // 今は本物の単一キーの割り当て)。2026-08-23(docs/CHANGES.md
-    // 項目415、全体の経緯についてはCommand::ToggleMark自身のコメント
-    // 参照): '.'自体はカーソル移動の無いプレーンなトグルへ転用され、
-    // このコメントブロックが元々説明していたマーク後に前進/後退する
-    // ペアは','/'.'から'['/']'へ移った――これら3つのエントリ(下記)は
-    // それに合わせて更新されている;この経緯についてのコメントは、
-    // '.'が「そもそも」本物のキー割り当てとして存在する「理由」を依然
-    // として説明しているため、その現在のマッピングではないとはいえ、
-    // 上にそのまま残してある。
-    {".", "Toggle mark on current entry, no cursor move (CP/MV/RM/PROGRAM/ARC)", {'.'}},
-    {"[", "Mark current entry, then cursor up (CP/MV/RM/PROGRAM/ARC)", {'['}},
-    {"]", "Mark current entry, then cursor down (CP/MV/RM/PROGRAM/ARC)", {']'}},
-    {"<", "Select, back, cursor up, select (M-6)", {kCarriageReturn, kControlG, 0x10, kCarriageReturn}, true},
-    {">", "Select, back, cursor down, select (M-7)", {kCarriageReturn, kControlG, 0x0e, kCarriageReturn}, true},
-    // ESCリーダー: (綴った単語"ESC"ではなく)"^["、legacy自身のKEY
-    // 一覧と正確に一致させている(str.cのprint_key()/tobo()、
-    // /usr/local/bin/usilicの実際のPTYダンプで確認済み: "^[<"、"^[>"、
-    // "^[^M")、そしてユーザー自身の2026-08-05の訂正に従い、下の
-    // "space"/"return"が"Space"/"Enter"ではなく実際のApple Keyboardの
-    // キートップのラベルであることとも整合している――綴った単語
-    // としての"ESC"は、単一制御文字の記号(^J/^X/^O)とそれらキートップ
-    // のラベルの間に据わりが悪く、どちらとも一致しなかった。
-    {"^[s", "SHELL", {kEscape, 's'}},
-    {"^[l", "LOG", {kEscape, 'l'}},
-    {"^[<", "Go to top", {kEscape, '<'}},
-    {"^[>", "Go to bottom", {kEscape, '>'}},
-    {"^[^M", "Read as is", {kEscape, kCarriageReturn}},
-    // ^Jリーダー。リーダーとそれに続くキーの間にスペースは無い
-    // (^J^Hであり、"^J ^H"ではない)――legacy自身のKEY一覧(str.cの
-    // print_key()、tobo())に一致し、このテーブル自身の^J^H「HELP」
-    // エントリを、ここの他の全てと内部的に一貫させたままにする;
-    // スペースが生んでいた広い隙間こそが、startKey()の固定列の
-    // パディングより前は、この変更の理由の全てだった。
-    {"^J^K", "Go to file-selector", {kLeaderJ, 0x0b}},
-    {"^J^J", "Go to most recent file/archive", {kLeaderJ, kLeaderJ}},
-    {"^J^S", "EGREP", {kLeaderJ, kControlS}},
-    {"^Jc", "CUT (fixed string, buffer)", {kLeaderJ, 'c'}},
-    {"^J^C", "CUT (regex, buffer)", {kLeaderJ, kControlC}},
-    {"^Jb", "CUT (fixed string, file)", {kLeaderJ, 'b'}},
-    {"^J^B", "CUT (regex, file)", {kLeaderJ, 0x02}},
-    {"^Jm", "MAN", {kLeaderJ, 'm'}},
-    {"^Jp", "PROGRAM", {kLeaderJ, 'p'}},
-    {"^Jl", "LOCATE", {kLeaderJ, 'l'}},
-    {"^Jd", "DU", {kLeaderJ, 'd'}},
-    {"^J^R", "COMMAND (programs run at SHELL)", {kLeaderJ, 0x12}},
-    {"^Je", "EDIT", {kLeaderJ, 'e'}},
-    {"^J^H", "HELP", {kLeaderJ, 0x08}},
-    {"^J.", "SHELL: cd <directory>", {kLeaderJ, '.'}},
-    {"^J,", "SHELL: ls -l", {kLeaderJ, ','}},
-    {"^Jw", "SHELL: insert access-name", {kLeaderJ, 'w'}},
-    {"^J^W", "SHELL: insert buffer content", {kLeaderJ, 0x17}},
-    // ^Xリーダー(上の^Jリーダーと同じ、スペース無しの理屈)
-    {"^Xc", "CP", {kLeaderX, 'c'}},
-    {"^Xm", "MV", {kLeaderX, 'm'}},
-    {"^Xr", "RM", {kLeaderX, 'r'}},
-    {"^Xf", "FILE: input file name", {kLeaderX, 'f'}},
-    {"^Xd", "DIR: input directory name", {kLeaderX, 'd'}},
-    {"^X^F", "FILE: select file name", {kLeaderX, 0x06}},
-    {"^X^D", "DIR: select directory name", {kLeaderX, 0x04}},
-    {"^X^C", "EXIT", {kLeaderX, kControlC}},
-    {"^X^W", "Save buffer to file", {kLeaderX, 0x17}},
-    {"^X^Y", "Mark all (CP/MV/RM/ARC)", {kLeaderX, 0x19}},
-    {"^X^N", "Clear all marks (CP/MV/RM/ARC)", {kLeaderX, 0x0e}},
-    {"^X^M", "Input destination / confirm (CP/MV/RM)", {kLeaderX, kCarriageReturn}},
-    {"^X(", "Begin macro recording", {kLeaderX, '('}},
-    {"^X)", "End macro recording", {kLeaderX, ')'}},
-    {"^Xe", "Execute recorded macro", {kLeaderX, 'e'}},
-    {"^Xs", "Restart SHELL", {kLeaderX, 's'}},
-    {"^Xa", "ARC: expand archive", {kLeaderX, 'a'}},
-    // ^X^Kリーダー(上の^Jリーダーと同じ、スペース無しの理屈)。CP/MV/
-    // RM/ARC自身の「SHELLウィンドウ付き」の亜種(^X^Kc/^X^Km/^X^Kr/
-    // ^X^Ka、K-51/K-53/K-55/K-57)はここで「削除された」(2026-08-23、
-    // 直接のユーザー依頼)――CP/MV/RMの実行が常に本物のSHELLセッション
-    // 経由で実行されるよう統一された(項目396、ARCについてはこれ)
-    // 時点で、「SHELLウィンドウ無し」のプレーンな^X?/^Xaの亜種は、
-    // それらの^X^K?兄弟と機能的に「同一」になり、まさに同じ挙動に
-    // 対して2つのキーシーケンスが残ることになった。^Xc/^Xm/^Xr/^Xa
-    // が今や「唯一の」入り口である。
-    {"^X^Ke", "ERROR", {kLeaderX, 0x0b, 'e'}},
-    {"^X^Kl", "LOG: SHELL output", {kLeaderX, 0x0b, 'l'}},
-    // ^Oリーダー(上の^Jリーダーと同じ、スペース無しの理屈)。^Og
-    // (ToggleGuiMode)はここでは意図的に記載しない: ユーザーが手作業で
-    // 見つけたところによると、いったん実際の実行(app/main.cpp)が-gで
-    // 開始されると、-c/実際の端末の状態へ戻る方法は無く、実際には
-    // トグルになっていない――KEYリファレンスにそれをトグルとして
-    // 記載すると誤解を招く。割り当て/ディスパッチ自体には手を付けて
-    // いない(依然として^O gを直接押せば到達可能);リファレンス
-    // リストの行だけが削除された。
-    {"^Oh", "Switch scroll mode", {kLeaderO, 'h'}},
-    {"^Ol", "Switch ls output format", {kLeaderO, 'l'}},
-    {"^Oa", "Switch charset (ASCII/EUC/UTF-8)", {kLeaderO, 'a'}},
-    {"^O^K", "Go to parent directory", {kLeaderO, 0x0b}},
-    {"^O^M", "Read per line", {kLeaderO, kCarriageReturn}},
+    {"^I", "INFO", {0x09}, false, "2.19"},
+
+    // 3  設定ファイル (usilicrc) -- LS/SCROLLフラグの切替
+    {"^Ol", "ls(1)出力形式の切替", {kLeaderO, 'l'}, false, "3"},
+    {"^Oh", "スクロールモードの切替", {kLeaderO, 'h'}, false, "3"},
+
+    // 4  補足 -- 文字コード切替
+    {"^Oa", "文字コードの切替 (ASCII/EUC/UTF-8)", {kLeaderO, 'a'}, false, "4"},
+
+    // ^[<・^[>はWindowの章(5.1)には無いが、legacy自身のKEY一覧
+    // (str.cのprint_key()/tobo())に元々含まれる「バッファ先頭/末尾へ
+    // 移動」であり、5.1に一番近い。ESC単体("^["から始まる)キー、
+    // legacy自身のKEY一覧の表記(綴った単語"ESC"ではなく"^[")と
+    // ユーザー自身の2026-08-05の訂正("space"/"return"は実際のApple
+    // Keyboardのキートップのラベル)に合わせている。
+    {"^[<", "バッファ先頭へ移動", {kEscape, '<'}, false, "5.1"},
+    {"^[>", "バッファ末尾へ移動", {kEscape, '>'}, false, "5.1"},
+
+    // どの章にも対応が無い(HELPで文書化していない)エントリ:
+    // キーボードマクロの記録・再生自体は、usilicrcの"KEY"セクション
+    // 自身のカスタマイズ機能に近く、独立した章を割り当てていない。
+    // ^Og(ToggleGuiMode)はここでは意図的に記載しない: ユーザーが
+    // 手作業で見つけたところによると、いったん実際の実行
+    // (app/main.cpp)が-gで開始されると、-c/実際の端末の状態へ戻る
+    // 方法は無く、実際にはトグルになっていない――KEYリファレンスに
+    // それをトグルとして記載すると誤解を招く。割り当て/ディスパッチ
+    // 自体には手を付けていない(依然として^O gを直接押せば到達可能);
+    // リファレンスリストの行だけが削除された。
+    {"^X(", "キーボードマクロの記録を開始", {kLeaderX, '('}},
+    {"^X)", "キーボードマクロの記録を終了", {kLeaderX, ')'}},
+    {"^Xe", "記録したマクロを実行", {kLeaderX, 'e'}},
 };
 
 // M_help/T_help向けのmenu.cのinit_cut2()呼び出しから移植――HELP自身の
@@ -446,6 +467,21 @@ const char *const kHelpPattern = "^  [0-9]+\\.";
 // いたのと同じ`<homeDirectory>/.usilic`にフォールバックする。
 std::string resolveTempRoot(const std::string &homeDirectory, const std::string &tempRootDirectory) {
   return tempRootDirectory.empty() ? (homeDirectory + "/.usilic") : tempRootDirectory;
+}
+
+// startKey()自身の"[実行]"/"[詳細]"マーカー列の位置合わせ用――kKeyTable
+// のdescriptionは今や日本語(全角)を含むため、バイト長ではなく実際の
+// 表示幅で揃える必要がある(copy_mode.cppのdisplayColumnFor()と同種の
+// 素朴なUTF-8走査)。
+int utf8DisplayWidth(const std::string &text) {
+  int width = 0, i = 0;
+  while (i < static_cast<int>(text.size())) {
+    int len = Utf8::sequence_length(static_cast<unsigned char>(text[i]));
+    len = std::min(len, static_cast<int>(text.size()) - i);
+    width += Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, len);
+    i += len;
+  }
+  return width;
 }
 }  // namespace
 
@@ -653,9 +689,18 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // ショット(2026-08-02のユーザー報告)に一致させている。keyReturnMode_
   // は別々のKEY呼び出しをまたいで変わるので、ライブなコールバックに
   // してある。
+  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、「②各行では
+  // 『キーの直接実行』/『レファレンス表示』を選択可能...tabキーで
+  // 切替」): trailing2に、今どちらが選ばれているか(keyColumnFocus_)を
+  // 表示する。setLines()を1行変えるたびに呼ぶとtopIndex_がリセット
+  // され現在のスクロール位置を失ってしまう(ContentView::setLines()
+  // 自身のコメント参照)ため、行の「テキスト」自体にはこの状態を
+  // 一切埋め込まず、このライブなコールバック経由でモードラインだけに
+  // 反映している――keyColumnFocus_はここから毎回読み直されるので、
+  // Tabキーで切り替えるたびに専用の再描画ロジックを別途書く必要が無い。
   keyView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     return {"KEY", previousModeName(keyReturnMode_), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
-            /*trailing2=*/""};
+            /*trailing2=*/(keyColumnFocus_ == 0 ? "[実行]" : "[詳細]")};
   });
   // リストベースの履歴ピッカー(K-45..K-49、^X^F/^X^D/^R等)向けの
   // モードラインのフィールド: カテゴリ自身("FILE"/"DIR"/"COMMAND"等、
@@ -1612,6 +1657,16 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // resolveCommand()の通常のpage/scrollのキー割り当てや下の^Oリーダー
   // のテーブルは誤って発火しない。
   if (currentMode_ == ApplicationMode::Copy) return feedCopyByte(byte, special);
+  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、「②...tabキー
+  // でその2つの選択を切り替えられます」): tab(0x09)はこのモードの
+  // 外では常にINFOへ解決される(resolveCommand()自身のcase 0x09
+  // 参照)――ここでKeyモードに限ってそれより先に横取りしないと、KEY
+  // 画面自身の中でtabを押すとKEYを抜けてINFOが開いてしまう。
+  if (currentMode_ == ApplicationMode::Key && !special && byte == 0x09) {
+    keyColumnFocus_ = 1 - keyColumnFocus_;
+    keyView_.redraw();
+    return true;
+  }
   // GrepPattern/CutPattern/ManName自身の「Select ...」リスト
   // (startRegexPromptList()自身のコメント参照): 他の全てのListBrowser
   // の使い方(FILE/DIR/SHELL/PROGRAMのピッカー、全て純粋なナビゲート+
@@ -2644,7 +2699,12 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Archive) return openSelectedArchiveEntry();
       if (currentMode_ == ApplicationMode::Du) return openSelectedDuEntry();
       if (currentMode_ == ApplicationMode::ListBrowser) return openSelectedListEntry();
-      if (currentMode_ == ApplicationMode::Key) return executeSelectedKeyBinding();
+      // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新): keyColumnFocus_
+      // が「レファレンス表示」を指している間は、実行ではなく該当する
+      // HELP章を開く。showKeyReference()自身のコメント参照。
+      if (currentMode_ == ApplicationMode::Key) {
+        return keyColumnFocus_ == 1 ? showKeyReference() : executeSelectedKeyBinding();
+      }
       if (currentMode_ == ApplicationMode::Grep) return openSelectedGrepMatch();
       if (currentMode_ == ApplicationMode::Locate) return openSelectedLocateResult();
       // 2026-08-18: Fileモードには(プレーンなページャとして)他の
@@ -5916,15 +5976,43 @@ bool Application::startKey() {
   // 固定の定数ではなく、揃えるのに必要な最小限になっている)。
   std::size_t maxLabelWidth = 0;
   for (const auto &entry : kKeyTable) maxLabelWidth = std::max(maxLabelWidth, std::string(entry.keyLabel).size());
+  // 2026-08-31、直接のユーザー依頼(「②各行では『キーの直接実行』/
+  // 『レファレンス表示』を選択可能...クリックまたは[return]でそれ
+  // ぞれの役割を実行」): 全ての行の末尾に、固定の"実行"/"詳細"マーカー
+  // 対を追加する。列位置を全行で揃えるため、まず(label : description
+  // (M)?)部分の「表示幅」の最大値を求め、それに満たない行は空白で
+  // 右パディングしてからマーカーを付ける――日本語の説明文が混ざる
+  // ため、バイト長ではなくutf8DisplayWidth()で揃える必要がある。
+  // handleMouseClick()自身のKeyモード分岐が、ここで揃えたのと同じ
+  // 列番号(keyExecuteMarkerColumn_/keyReferenceMarkerColumn_)を使って
+  // クリック位置がどちらのマーカーの上かを判定する。
+  const std::string kGap = "  ";
+  const std::string kExecuteMarker = "実行";
+  const std::string kReferenceMarker = "詳細";
+  std::vector<std::string> contents;
+  contents.reserve(std::size(kKeyTable));
+  int maxContentWidth = 0;
   for (const auto &entry : kKeyTable) {
     std::string label = entry.keyLabel;
     if (label.size() < maxLabelWidth) label.insert(0, maxLabelWidth - label.size(), ' ');
-    std::string text = label + " : " + entry.description;
-    if (entry.isMacro) text += " (M)";
+    std::string content = label + " : " + entry.description;
+    if (entry.isMacro) content += " (M)";
+    maxContentWidth = std::max(maxContentWidth, utf8DisplayWidth(content));
+    contents.push_back(std::move(content));
+  }
+  keyExecuteMarkerColumn_ = maxContentWidth + static_cast<int>(kGap.size());
+  keyReferenceMarkerColumn_ =
+      keyExecuteMarkerColumn_ + utf8DisplayWidth(kExecuteMarker) + static_cast<int>(kGap.size());
+  for (std::size_t i = 0; i < contents.size(); i++) {
+    std::string &content = contents[i];
+    int pad = maxContentWidth - utf8DisplayWidth(content);
+    if (pad > 0) content.append(pad, ' ');
+    std::string text = content + kGap + kExecuteMarker + kGap + kReferenceMarker;
     lines.push_back({text, std::nullopt, std::nullopt, {}});
   }
   keyView_.setLines(std::move(lines));
   keyView_.setCursorIndex(0);
+  keyColumnFocus_ = 0;
   // 2026-08-28: ensureShellActive()自身の同一の修正と同じ方針――KEY
   // は、ユーザー自身が挙げたINFO戻りの例外("usilicrc、ERROR、
   // SHELL、WORKの対象ファイルを選んだ場合またはINFOでFGREP/EGREP/
@@ -6140,6 +6228,27 @@ bool Application::executeSelectedKeyBinding() {
   bool result = false;
   for (int byte : bytes) result = feedByte(byte, std::nullopt);
   return result;
+}
+
+// application.hpp自身の宣言コメント参照。KeyモードにいながらHELPを
+// 開く(startHelp()自身の`currentMode_ == Key`はpreserveExistingCut
+// (Cut/CutContent限定)に該当しないので、新規のトップレベルsplit()に
+// なり、cutReturnMode_はKeyになる――そこから^Gを2回でKEY自身へ戻る)。
+bool Application::showKeyReference() {
+  int idx = keyView_.cursorIndex();
+  if (idx < 0 || idx >= static_cast<int>(std::size(kKeyTable))) return false;
+  const char *section = kKeyTable[idx].helpSection;
+  if (!section || !*section) return false;
+  if (!startHelp()) return false;
+  std::string prefix = std::string("  ") + section + ".";
+  const auto &segments = cutMode_.segments();
+  for (std::size_t i = 0; i < segments.size(); i++) {
+    if (segments[i].label.rfind(prefix, 0) == 0) {
+      cutView_.setCursorIndex(static_cast<int>(i));
+      return openSelectedSegment();
+    }
+  }
+  return true;  // 目次までは開けた――該当する章が見当たらなくても安全側
 }
 
 // m_grep()から移植: FGREP/EGREPに入ることは、単にどこへ戻るかを覚え
@@ -8812,6 +8921,34 @@ bool Application::handleMouseClick(int row, int column) {
     if (idx == locateView_.cursorIndex()) return openSelectedLocateResult();
     locateView_.setCursorIndex(idx);
     locateView_.redraw();
+    return true;
+  }
+  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、「②...いずれも
+  // マウス、または移動キーでハイライト位置を移動でき、クリックまたは
+  // [return]でそれぞれの役割を実行」): startKey()自身が揃えた
+  // keyExecuteMarkerColumn_/keyReferenceMarkerColumn_を境目に、
+  // クリック位置がどちらのマーカーの上かを判定する。ラベル/説明文
+  // 自体(マーカーより左)のクリックは、他の一覧(Directory/Archive/
+  // Locate)と同じ「既に選択済みの行なら実行、そうでなければ選択のみ」
+  // という慣習に合わせている――一方レファレンス表示は副作用が無い
+  // (HELPを開くだけ)ので、常に即座に実行する。
+  if (currentMode_ == ApplicationMode::Key) {
+    int idx = keyView_.lineIndexAtRow(row);
+    if (idx < 0) return false;
+    if (column >= keyReferenceMarkerColumn_) {
+      keyView_.setCursorIndex(idx);
+      keyColumnFocus_ = 1;
+      return showKeyReference();
+    }
+    if (column >= keyExecuteMarkerColumn_) {
+      keyView_.setCursorIndex(idx);
+      keyColumnFocus_ = 0;
+      return executeSelectedKeyBinding();
+    }
+    keyColumnFocus_ = 0;
+    if (idx == keyView_.cursorIndex()) return executeSelectedKeyBinding();
+    keyView_.setCursorIndex(idx);
+    keyView_.redraw();
     return true;
   }
   return false;
