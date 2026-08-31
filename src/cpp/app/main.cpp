@@ -2210,7 +2210,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // renderTextRun() now actually applies these).
       std::vector<fm::Display::ScrolledLine> lines;
       lines.reserve(view.lines().size());
-      for (const auto &line : view.lines()) lines.push_back({line.text, line.attributes});
+      for (const auto &line : view.lines()) lines.push_back({line.text, line.attributes, line.ellipsisEligible});
       gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments());
     } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.redrawSensitivePromptOrRecallActive() &&
                !app.awaitingLocateUpdateDb()) {

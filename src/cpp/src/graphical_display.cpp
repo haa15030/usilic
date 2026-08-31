@@ -2856,13 +2856,7 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
     // いる濁点合成と"..."省略切り詰めを、renderTextRun()へ渡す前に
     // ここで同じ順序(合成してから切り詰め、切り詰め自身の書記素
     // クラスタ境界判定は合成済みの方がより単純に正しく働く)で適用
-    // する。既に列内に収まっている行(FileMode等、PipeBuffer::
-    // wrapLine()で既に折り返し済み)にはmiddleEllipsisTruncateByWidth()
-    // 自身の早期returnにより実質無害(無変更で返る)。attributes(バイト
-    // オフセット基準)は元の(未合成/未切り詰めの)ものをそのまま
-    // 使う――ContentView::renderLine()自身も「切り詰め済みテキスト+
-    // 元のline.attributes」という同じ組み合わせを使っており、この
-    // 妥協は新しいものではない。
+    // する。
     // 2026-08-30、直接のユーザー報告(GUI、マウスクリック開放時に
     // 切り詰め位置が1文字分ずれて見える件): ContentView::renderLine()
     // 自身のellipsisBudget(cursorHighlightEnabled_有効時はcolumns()-1、
@@ -2872,9 +2866,36 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
     // impl_->columnsを使うと、ドラッグ中(このrenderScrolled()自身)と
     // ドラッグ終了直後の通常描画(redraw())とで切り詰め位置が1文字分
     // ずれ、離した瞬間に末尾付近の文字が入れ替わって見えていた。
+    // 2026-09-02訂正、直接のユーザー報告(=fe/=ff、マウスクリック中に
+    // DirectoryModeのls一覧行の途中へ"..."が誤挿入され、サイズ+日付
+    // フィールドがファイル名と誤認されたように見える件、離した直後は
+    // 末尾が欠ける件): 上のmiddleEllipsisTruncateByWidth()の呼び出しを
+    // 「無条件に」全ての行へ適用していたのが誤り――「既に列内に収まっ
+    // ている行には早期returnにより実質無害」という前提は、
+    // PipeBuffer::wrapLine()で列幅ちょうどに事前折り返し済みのFileMode
+    // 系の内容にしか成り立たず、DirectoryModeのls一覧行(折り返され
+    // ない生の1行で、列幅を素で超えることが普通にある――ContentView::
+    // Line::ellipsisEligible自身のコメント参照、"...DirectoryModeのls
+    // 一覧/WORK/arc.Nバナーは、決してellipsisEligibleが設定されていな
+    // かった")には成り立たない。ContentView::renderLine()自身は、この
+    // フラグで省略記号の適用を条件分けしており(同関数のellipsisBudget
+    // 判定参照)、非対象の行は"..."無しでプレーンに列幅まで描いて
+    // 残りを切り落とすだけ――ここでも同じ条件分けに合わせる: 対象
+    // (LocateMode/DuMode/ArchiveMode自身の離散的な名前/パス行)だけに
+    // 適用し、非対象の行(DirectoryModeのls一覧、FileModeの通常内容
+    // 双方を含む)は合成済みテキストをそのまま渡し、この関数が既に
+    // 設定済みのSDLクリップ矩形(contentClip、上のコメント参照)による
+    // 静かなピクセル単位の切り落としに任せる――2026-08-30より前の、
+    // この呼び出し自体が無かった時の挙動と同じ。attributes(バイト
+    // オフセット基準)は元の(未合成/未切り詰めの)ものをそのまま
+    // 使う――ContentView::renderLine()自身も「切り詰め済みテキスト+
+    // 元のline.attributes」という同じ組み合わせを使っており、この
+    // 妥協は新しいものではない。
     std::string composed = composeDakutenInString(lines[lineIndex].text);
-    std::string truncated = middleEllipsisTruncateByWidth(composed, std::max(0, impl_->columns - 1));
-    renderTextRun(y, truncated, Color{impl_->fg.r, impl_->fg.g, impl_->fg.b}, 0, lines[lineIndex].attributes);
+    if (lines[lineIndex].ellipsisEligible) {
+      composed = middleEllipsisTruncateByWidth(composed, std::max(0, impl_->columns - 1));
+    }
+    renderTextRun(y, composed, Color{impl_->fg.r, impl_->fg.g, impl_->fg.b}, 0, lines[lineIndex].attributes);
   }
 
   SDL_RenderSetClipRect(impl_->renderer, nullptr);  // 下のモードライン行(と将来のどんなマージン装飾)もこれには縛られない

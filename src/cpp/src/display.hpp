@@ -261,6 +261,17 @@ class Display {
   struct ScrolledLine {
     std::string text;
     std::vector<AttributeRun> attributes;
+    // ContentView::Line::ellipsisEligible自身のコメント参照(2026-09-02
+    // 追加、直接のユーザー報告: -gでのマウスクリック/ドラッグ中、
+    // DirectoryModeのls一覧行のような、決してellipsisEligibleでない
+    // (常にfalseがデフォルトの)行の途中に"..."が誤って挿入され、
+    // ファイル名を誤認しているように見えた)。GraphicalDisplay::
+    // renderScrolled()自身がこのフラグに基づいてmiddleEllipsisTruncateByWidth()
+    // の適用を条件分けする――ContentView::renderLine()自身の同じ
+    // 条件分岐(このフラグがfalseの行は、省略記号ではなく、収まる
+    // 分だけをプレーンに描き、残りは既存のSDLクリップ矩形にまかせて
+    // 静かに切り落とす)と一致させるため。
+    bool ellipsisEligible = false;
   };
 
   // -- スムーズな(ドラッグ/慣性)スクロール描画 --
