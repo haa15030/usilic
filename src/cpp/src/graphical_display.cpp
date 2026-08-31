@@ -2742,7 +2742,6 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
   // 一致の下でのみ異なる。
   int windowWidthNow = 0, windowHeightNow = 0;
   SDL_GetWindowSize(impl_->window, &windowWidthNow, &windowHeightNow);
-  (void)windowWidthNow;
   int trackBottom = (windowHeightNow - Impl::kMarginY) - yOffset;
   if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
     FILE *f = std::fopen(dbg, "a");
@@ -2750,10 +2749,13 @@ void GraphicalDisplay::drawIdleScrollbarImage() {
       int windowHeight = Impl::kMarginY * 2 + impl_->rows * impl_->cellHeight;
       int contentRows = std::max(impl_->rows - 1, 0);
       std::fprintf(f,
-                    "---drawIdleScrollbarImage--- rows=%d cellHeight=%d yOffset=%d trackTop=%d "
-                    "trackBottom=%d windowHeight=%d actualWindowHeight=%d modeLineRowTop=%d\n",
-                    impl_->rows, impl_->cellHeight, yOffset, trackTop, trackBottom, windowHeight, windowHeightNow,
-                    Impl::kMarginY + contentRows * impl_->cellHeight);
+                    "---drawIdleScrollbarImage--- rows=%d cellHeight=%d cellWidth=%d columns=%d "
+                    "scrollbarWidth=%d kMarginX=%d yOffset=%d trackTop=%d "
+                    "trackBottom=%d windowHeight=%d actualWindowHeight=%d modeLineRowTop=%d "
+                    "stripX=%d windowWidthNow=%d\n",
+                    impl_->rows, impl_->cellHeight, impl_->cellWidth, impl_->columns, impl_->scrollbarWidth,
+                    Impl::kMarginX, yOffset, trackTop, trackBottom, windowHeight, windowHeightNow,
+                    Impl::kMarginY + contentRows * impl_->cellHeight, stripX, windowWidthNow);
       std::fclose(f);
     }
   }
