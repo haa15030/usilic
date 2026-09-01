@@ -108,6 +108,37 @@ int PipeBuffer::widthAt(const std::string &s, int pos, int charBytes) const {
   return charBytes;  // EUC 2バイト漢字: 2バイト=2カラム、ASCII: 1バイト=1カラム
 }
 
+// 2026-09-04追加、直接のユーザー依頼("禁則処理（句読点が行の冒頭に
+// 来ない）を実施"): 行頭禁則(句読点・閉じ括弧・小書きの仮名等が
+// 折り返しの結果として行の先頭に来ないようにする、日本語組版の
+// 基本ルールの1つ)。UTF-8限定(HELP自身のテキストは常にUTF-8――
+// help_text.hpp自身のコメント参照。EUCコンテンツについては、この
+// 一覧をEUCバイト列でも二重に持つ手間に見合うほどの実際の要望が
+// まだ無いため、今回は対象外のままにしてある)。「追い出し」方式
+// (この文字を、新しい行の先頭にするのではなく、直前の行の末尾へ、
+// たとえその行が予約列幅を1文字分超えることになっても押し込む)
+// ――このクラス自身の「隙間より文字化けの方がまし」というトレード
+// オフの選択(既存のScrollbar系コメント等、随所で繰り返されている
+// 判断)と同じ精神。連続する2文字以上の禁則文字(例えば"」。")までは
+// 追いかけない(1段階の押し出しのみ)――実用上ほぼ現れない組み合わせ
+// のための複雑化を避ける単純化。
+static bool isForbiddenAtLineStart(const std::string &s, int pos, int len) {
+  static const char *const kForbidden[] = {
+      // 句読点・区切り記号
+      "、", "。", "，", "．", "・", "：", "；", "？", "！", "ー",
+      // 閉じ括弧・引用符
+      "）", "〕", "］", "｝", "〉", "》", "」", "』", "】", "〙", "〗", "〟", "’", "”", "｠", "»",
+      // 小書きの仮名
+      "ぁ", "ぃ", "ぅ", "ぇ", "ぉ", "っ", "ゃ", "ゅ", "ょ", "ゎ",
+      "ァ", "ィ", "ゥ", "ェ", "ォ", "ッ", "ャ", "ュ", "ョ", "ヮ", "ヵ", "ヶ",
+  };
+  for (const char *f : kForbidden) {
+    auto flen = static_cast<int>(std::char_traits<char>::length(f));
+    if (flen == len && s.compare(static_cast<std::size_t>(pos), static_cast<std::size_t>(len), f) == 0) return true;
+  }
+  return false;
+}
+
 // alloc_pipe()の文字ごとのループ(タブ/幅の折り返し)とsave_attr()
 // (オーバーストライク検出)からの移植で、legacyの反応的なチェック
 // (「今バックスペースを見た、直前の文字はその一部だったか?」)では
@@ -159,6 +190,17 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
       if (digit >= '0' && digit <= '9') {
         currentIndent_ = digit - '0';
+        i += 2;
+        continue;
+      }
+    }
+    // currentItalic_自身のコメント参照(pipe_buffer.hpp): expandHelpMarkup()
+    // が<i>/</i>から生成する制御バイト\x02+数字1桁――\x01と全く同じ
+    // 「ゼロ幅、状態だけ更新して読み飛ばす」形。
+    if (c == '\x02' && i + 1 < n) {
+      unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
+      if (digit == '0' || digit == '1') {
+        currentItalic_ = (digit == '1');
         i += 2;
         continue;
       }
@@ -231,7 +273,18 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
 
     if (keepStart >= 0) {
       int w = widthAt(convertedLine, keepStart, keepBytes);
-      if (wrapCol_ + w > width_) { finalize(false); continue; }
+      if (wrapCol_ + w > width_) {
+        // isForbiddenAtLineStart()自身のコメント参照(禁則処理、
+        // 2026-09-04追加): この文字を新しい行の先頭にする代わりに、
+        // 直前の行の末尾へ追い出す――finalize()せずそのまま下の通常
+        // 配置へ進み、配置後の`wrapCol_ >= width_`チェックでこの文字を
+        // 含めた「後」に改行させる。wrapCol_ > 0の条件は、そもそも
+        // 行の先頭で発生した(=追い出す先の「前の行」が無い)場合の
+        // 無意味な適用を避けるため。
+        bool kinsoku = wrapCol_ > 0 && encoding_ == Charset::Encoding::Utf8 &&
+                       isForbiddenAtLineStart(convertedLine, keepStart, keepBytes);
+        if (!kinsoku) { finalize(false); continue; }
+      }
       int start = static_cast<int>(wrapText_.size());
       wrapText_.append(convertedLine, keepStart, keepBytes);
       wrapAttrs_.push_back({start, start + keepBytes, attr});
@@ -244,7 +297,20 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     int charBytes = byteLengthAt(convertedLine, i);
     if (i + charBytes > n) charBytes = n - i;  // チャンク末尾で切り詰められたシーケンス
     int w = widthAt(convertedLine, i, charBytes);
-    if (wrapCol_ + w > width_) { finalize(false); continue; }
+    if (wrapCol_ + w > width_) {
+      // isForbiddenAtLineStart()自身のコメント参照(禁則処理)――上の
+      // keepStart側の分岐と全く同じ考え方。
+      bool kinsoku = wrapCol_ > 0 && encoding_ == Charset::Encoding::Utf8 &&
+                     isForbiddenAtLineStart(convertedLine, i, charBytes);
+      if (!kinsoku) { finalize(false); continue; }
+    }
+    // currentItalic_自身のコメント参照: 太字/下線自身の1文字ごとの
+    // AttributeRunの粒度に合わせている(隣接runのまとめはこのクラス
+    // 自身の責務ではない――decode_help.cpp自身のコメント参照)。
+    if (currentItalic_) {
+      int start = static_cast<int>(wrapText_.size());
+      wrapAttrs_.push_back({start, start + charBytes, Display::Attribute::Italic});
+    }
     wrapText_.append(convertedLine, i, charBytes);
     wrapCol_ += w;
     i += charBytes;

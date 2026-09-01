@@ -26,6 +26,7 @@ struct Cell {
   bool bold = false;
   bool underline = false;
   bool standout = false;
+  bool italic = false;  // 2026-09-04追加、直接のユーザー依頼("<i>プログラム名</i>")
   bool continuation = false;  // 2列幅のグリフの「影」となる2つ目のセル――それ自体では描画されない
 };
 
@@ -471,7 +472,7 @@ struct GraphicalDisplay::Impl {
 
   int cursorRow = 0, cursorCol = 0;
   int savedRow = 0, savedCol = 0;
-  bool standoutActive = false, boldActive = false, underlineActive = false;
+  bool standoutActive = false, boldActive = false, underlineActive = false, italicActive = false;
 
   // renderCursor()が実際に描く「論理的な」カーソル位置――上の
   // cursorRow/cursorCol(純粋に「次のバイトがどこに書かれるか」で
@@ -989,6 +990,7 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   cell.bold = impl_->boldActive;
   cell.underline = impl_->underlineActive;
   cell.standout = impl_->standoutActive;
+  cell.italic = impl_->italicActive;
   cell.continuation = false;
 
   if (width == 2 && impl_->cursorCol + 1 < impl_->columns) {
@@ -998,6 +1000,7 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
     shadow.bold = cell.bold;
     shadow.underline = cell.underline;
     shadow.standout = cell.standout;
+    shadow.italic = cell.italic;
   }
   impl_->cursorCol += std::max(width, 1);
 }
@@ -1069,6 +1072,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (cell.underline) style |= TTF_STYLE_UNDERLINE;
+  if (cell.italic) style |= TTF_STYLE_ITALIC;
 
   // メインフォントに欠けているグリフについては、CJK対応フォント
   // (loadCjkFallbackFont()自身のコメント参照)へフォールバックする
@@ -1208,6 +1212,7 @@ void GraphicalDisplay::renderCursor() {
   int style = TTF_STYLE_NORMAL;
   if (cell.bold) style |= TTF_STYLE_BOLD;
   if (cell.underline) style |= TTF_STYLE_UNDERLINE;
+  if (cell.italic) style |= TTF_STYLE_ITALIC;
 
   // renderCell()と同じメイン/フォールバックフォントのグリフ有無の
   // 判定――それ自身のコメント参照。
@@ -1400,6 +1405,12 @@ void GraphicalDisplay::setAttribute(Attribute attr) {
       break;
     case Attribute::StandoutOff:
       impl_->standoutActive = false;
+      break;
+    case Attribute::Italic:
+      impl_->italicActive = true;
+      break;
+    case Attribute::ItalicOff:
+      impl_->italicActive = false;
       break;
   }
 }
@@ -2425,12 +2436,13 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     // クラス自身の慣習は全体を通じて、プレーンなASCIIのHELPテキスト
     // (このように装飾される唯一のコンテンツ)についてはバイト
     // オフセット==画面上の列である)。
-    bool wantBold = false, wantUnderline = false, wantStandout = false;
+    bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false;
     for (const auto &run : attributes) {
       if (static_cast<int>(pos) < run.start || static_cast<int>(pos) >= run.end) continue;
       if (run.attribute == Display::Attribute::Bold) wantBold = true;
       else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
       else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
+      else if (run.attribute == Display::Attribute::Italic) wantItalic = true;
     }
     // 2026-09-02追加、直接のユーザー依頼("ついでに透かしが消える件も
     // よろしく"): ContentView::scrollHighlightForLine()(main.cpp自身の
@@ -2480,6 +2492,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       int style = TTF_STYLE_NORMAL;
       if (wantBold) style |= TTF_STYLE_BOLD;
       if (wantUnderline) style |= TTF_STYLE_UNDERLINE;
+      if (wantItalic) style |= TTF_STYLE_ITALIC;
       // renderCell()と同じ半角用ヒンティングの調整――それ自身のコメント
       // 参照(項目264、項目263のTTF_HINTING_LIGHTを置き換えたもの)。
       // (TTF_SetFontStyle()/TTF_SetFontHinting()自体は、下で呼ばれる

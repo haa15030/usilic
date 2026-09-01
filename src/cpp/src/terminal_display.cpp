@@ -132,6 +132,8 @@ std::unique_ptr<TerminalDisplay> TerminalDisplay::fromEnvironment(bool exitOnFai
   caps.underlineOff = capOrEmpty(exit_underline_mode);
   caps.boldOn = capOrEmpty(enter_bold_mode);
   caps.boldOff = capOrEmpty(exit_attribute_mode);
+  caps.italicOn = capOrEmpty(enter_italics_mode);
+  caps.italicOff = capOrEmpty(exit_italics_mode);
   caps.saveCursor = capOrEmpty(save_cursor);
   caps.restoreCursor = capOrEmpty(restore_cursor);
   caps.changeScrollRegion = capOrEmpty(change_scroll_region);
@@ -262,6 +264,10 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
       return caps_.standoutOn;
     case Attribute::StandoutOff:
       return caps_.standoutOff;
+    case Attribute::Italic:
+      return caps_.italicOn;
+    case Attribute::ItalicOff:
+      return caps_.italicOff;
   }
   return "";
 }
@@ -356,13 +362,14 @@ void TerminalDisplay::reenterFromExternalProgram() { applyScrollRegion(); }
 // 自身のStandout切り替えが自身の(単一の、行全体の)runに対して既に
 // 使っているのと同じ形。
 void TerminalDisplay::writeAttributedLine(const std::string &text, const std::vector<Display::AttributeRun> &runs) {
-  bool boldOn = false, underlineOn = false;
+  bool boldOn = false, underlineOn = false, italicOn = false;
   for (std::size_t col = 0; col < text.size(); col++) {
-    bool wantBold = false, wantUnderline = false;
+    bool wantBold = false, wantUnderline = false, wantItalic = false;
     for (const auto &run : runs) {
       if (static_cast<int>(col) < run.start || static_cast<int>(col) >= run.end) continue;
       if (run.attribute == Attribute::Bold) wantBold = true;
       else if (run.attribute == Attribute::Underline) wantUnderline = true;
+      else if (run.attribute == Attribute::Italic) wantItalic = true;
     }
     if (wantBold != boldOn) {
       setAttribute(wantBold ? Attribute::Bold : Attribute::BoldOff);
@@ -372,10 +379,15 @@ void TerminalDisplay::writeAttributedLine(const std::string &text, const std::ve
       setAttribute(wantUnderline ? Attribute::Underline : Attribute::UnderlineOff);
       underlineOn = wantUnderline;
     }
+    if (wantItalic != italicOn) {
+      setAttribute(wantItalic ? Attribute::Italic : Attribute::ItalicOff);
+      italicOn = wantItalic;
+    }
     putChar(static_cast<unsigned char>(text[col]));
   }
   if (boldOn) setAttribute(Attribute::BoldOff);
   if (underlineOn) setAttribute(Attribute::UnderlineOff);
+  if (italicOn) setAttribute(Attribute::ItalicOff);
 }
 
 void TerminalDisplay::renderScrolled(const std::vector<ScrolledLine> &lines, int topIndex, int pixelOffsetY,

@@ -641,7 +641,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   marked = marked && cursorHighlightEnabled_;
   underlineMarked = underlineMarked && cursorHighlightEnabled_;
   int highlightStart = std::max(0, line.highlightStartColumn.value_or(0));
-  bool standoutOn = false, boldOn = false, underlineOn = false;
+  bool standoutOn = false, boldOn = false, underlineOn = false, italicOn = false;
   auto setAttr = [&](bool &state, bool on, Display::Attribute onAttr, Display::Attribute offAttr) {
     if (on == state) return;
     display_.setAttribute(on ? onAttr : offAttr);
@@ -657,6 +657,12 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   auto setBold = [&](bool on) { setAttr(boldOn, on, Display::Attribute::Bold, Display::Attribute::BoldOff); };
   auto setUnderline = [&](bool on) {
     setAttr(underlineOn, on, Display::Attribute::Underline, Display::Attribute::UnderlineOff);
+  };
+  // 2026-09-04追加、直接のユーザー依頼("今後は<i>プログラム名</i>で
+  // 記載したいので対応よろしく")――setBold()/setUnderline()と全く
+  // 同じ形。
+  auto setItalic = [&](bool on) {
+    setAttr(italicOn, on, Display::Attribute::Italic, Display::Attribute::ItalicOff);
   };
 
   // `markedNow`は、highlightStartが0の場合(よくあるケースで、
@@ -888,15 +894,17 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
       // 一致する(この分岐では画面列数であり、CJK重めの内容に対
       // しては位置がずれてしまう`col`とは異なる)。
       if (!line.attributes.empty()) {
-        bool wantBold = false, wantUnderline = false, wantStandout = false;
+        bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false;
         for (const AttributeRun &run : line.attributes) {
           if (static_cast<int>(idx) < run.start || static_cast<int>(idx) >= run.end) continue;
           if (run.attribute == Display::Attribute::Bold) wantBold = true;
           else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
           else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
+          else if (run.attribute == Display::Attribute::Italic) wantItalic = true;
         }
         setBold(wantBold);
         setUnderline(wantUnderline);
+        setItalic(wantItalic);
         // 2026-08-29の追加(CopyMode自身の選択ハイライト、
         // copy_mode.hpp参照): この行におけるStandoutの唯一「他の」
         // 源はmarkedNow(highlightStartColumnの、「ここから行末まで」
@@ -947,6 +955,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
     setStandout(false);
     setBold(false);
     setUnderline(false);
+    setItalic(false);
   }
 }
 

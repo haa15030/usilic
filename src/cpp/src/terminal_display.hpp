@@ -23,6 +23,14 @@ struct TerminalCapabilities {
   std::string standoutOn, standoutOff;          // so, se
   std::string underlineOn, underlineOff;        // us, ue(so/seへフォールバック)
   std::string boldOn, boldOff;                  // md, me
+  // 2026-09-04追加、直接のユーザー依頼("今後は<i>プログラム名</i>で
+  // 記載したいので対応よろしく"): legacyには斜体の慣習が無く(md/me
+  // のような2文字termcap名も割り当てられていない)、このC++移植
+  // 自身の新規追加――ncurses/terminfoのenter_italics_mode/
+  // exit_italics_mode(fromEnvironment()参照)を素直に使う。対応
+  // していない端末では空文字列のまま(boldOn/underlineOn等と同じ
+  // 「no-opへ優雅に劣化する」慣習)。
+  std::string italicOn, italicOff;              // ZH, ZR (terminfo: sitm, ritm)
   std::string saveCursor, restoreCursor;        // sc, rc(省略可)
   std::string changeScrollRegion;               // cs(省略可)
   std::string scrollForward, scrollReverse;     // sf, sr

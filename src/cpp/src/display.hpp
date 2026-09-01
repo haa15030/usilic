@@ -46,6 +46,12 @@ class Display {
                   // 読んで同一であることを確認済みなので、ここでは
                   // 2つのAPIではなく1つのAttributeへ統一してある。
     StandoutOff,
+    // 2026-09-04追加、直接のユーザー依頼("今後は<i>プログラム名</i>
+    // で記載したいので対応よろしく"): legacyのnroff重ね打ち規約には
+    // 斜体の慣習が無い(Bold/Underlineとは異なりlegacyからの移植では
+    // なく、このC++移植自身の新規追加)ので、専用の属性を新設した。
+    Italic,
+    ItalicOff,
   };
 
   enum class Key { Up, Down, Left, Right, PageUp, PageDown };

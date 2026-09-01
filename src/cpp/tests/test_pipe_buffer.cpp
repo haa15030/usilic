@@ -211,3 +211,57 @@ TEST_CASE("\\x01<N> indent marker: \\x010 (N=0) turns the indent back off for an
   // turned off before this wrap boundary was reached.
   CHECK(buf.lines()[1].text == "GHIJ");
 }
+
+// 2026-09-04追加、直接のユーザー依頼("禁則処理（句読点が行の冒頭に
+// 来ない）を実施"): 行頭禁則の実wrapLine()消費テスト。
+TEST_CASE("kinsoku: a forbidden line-start character (U+3002 IDEOGRAPHIC FULL STOP, \"\xe3\x80\x82\") "
+          "is pushed onto the end of the PREVIOUS line instead of starting a new one, even "
+          "though that overflows the configured width by one character") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 3, 1 << 20);
+  buf.feed("AB\xe3\x80\x82"
+           "CD\n");  // "AB。CD"
+  REQUIRE(buf.lines().size() == 2);
+  CHECK(buf.lines()[0].text == "AB\xe3\x80\x82");  // "。" pushed here despite overflowing width 3
+  CHECK(buf.lines()[1].text == "CD");
+}
+
+TEST_CASE("kinsoku: an ordinary (non-forbidden) wide character wraps normally -- confirms the "
+          "kinsoku table isn't matching too broadly") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 3, 1 << 20);
+  buf.feed("AB\xe3\x81\x82"
+           "CD\n");  // "ABあCD" -- U+3042 HIRAGANA A is not a forbidden-at-line-start character
+  REQUIRE(buf.lines().size() == 3);
+  CHECK(buf.lines()[0].text == "AB");
+  CHECK(buf.lines()[1].text == "\xe3\x81\x82"
+                                "C");  // "あ" legitimately starts this line
+  CHECK(buf.lines()[2].text == "D");
+}
+
+// 2026-09-04追加、直接のユーザー依頼("今後は<i>プログラム名</i>で
+// 記載したいので対応よろしく"): expandHelpMarkup()が<i>...</i>から
+// 生成する制御バイト\x02+数字1桁の、PipeBuffer::wrapLine()側の実
+// 消費テスト。expandHelpMarkup()自身の変換ロジックはtest_help_text.cpp
+// で別途確認済み。
+TEST_CASE("\\x02<N> italic marker: characters between \\x021 and \\x020 each get their own "
+          "Display::Attribute::Italic AttributeRun, matching Bold/Underline's own "
+          "per-character granularity; characters outside the span do not") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  std::string raw = "A";
+  raw.push_back(2);
+  raw.push_back('1');  // \x02 1 -- begin italic
+  raw += "bc";
+  raw.push_back(2);
+  raw.push_back('0');  // \x02 0 -- end italic
+  raw += "D\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == "AbcD");
+  const auto &attrs = buf.lines()[0].attributes;
+  REQUIRE(attrs.size() == 2);
+  CHECK(attrs[0].start == 1);  // 'b'
+  CHECK(attrs[0].end == 2);
+  CHECK(attrs[0].attribute == Display::Attribute::Italic);
+  CHECK(attrs[1].start == 2);  // 'c'
+  CHECK(attrs[1].end == 3);
+  CHECK(attrs[1].attribute == Display::Attribute::Italic);
+}
