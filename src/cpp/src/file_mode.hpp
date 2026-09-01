@@ -56,6 +56,13 @@ namespace fm {
 //     のと同じ――「T_dirがこれを開いたので、^Gはそこへ戻るべき」を
 //     2つのモードクラスをまたいで調整するのはMode/Applicationの
 //     仕事であり、どちらのモードクラス自身の仕事でもない。
+// 2026-09-04追加、直接のユーザー依頼("usilic ~/git/usilic/src/HELP.txt
+// をサポートして"): file_mode.cpp自身のコメント参照。CLIのファイル
+// 引数起動(Application::startPagerFileList()/navigateToPagerFile())が、
+// このファイルに対してのみFileMode::loadFile()相当の全読み込み+
+// expandHelpMarkup()展開の経路を選ぶかどうかの判定に使う。
+bool isHelpMarkupPagerFile(const std::string &path);
+
 class FileMode {
  public:
   FileMode(ContentView &view, History &history, Charset::Encoding encoding, int width);

@@ -10,9 +10,25 @@
 #include <sstream>
 #include <system_error>
 
+#include "help_text.hpp"
 #include "pipe_buffer.hpp"
 
 namespace fm {
+
+// 2026-09-04追加、直接のユーザー依頼("usilic ~/git/usilic/src/HELP.txt
+// をサポートして"): CLIのファイル引数起動(usilic HELP.txt/usilic
+// QUICK.txt)で、<indentN>/<i>/<b>/<u>markupがそのままリテラルなタグと
+// して表示されてしまうのではなく、HELP画面(^Jh)自身のkHelpTextJa/
+// kHelpTextGuiJaと同じexpandHelpMarkup()展開が効いてほしい、という
+// 要求。汎用的な「内容を見て自動判定」も検討したが、ユーザー自身の
+// 判断で「HELP.txt/QUICK.txtという名前の時だけ発動すれば十分」に
+// 絞られた――任意のプレーンテキストファイルがたまたま`<b>`等の
+// 文字列を含んでいて誤検出する心配が無くなる。ファイル名(拡張子
+// 込みのbasename)だけを見る、パス非依存の判定。
+bool isHelpMarkupPagerFile(const std::string &path) {
+  std::string name = std::filesystem::path(path).filename().string();
+  return name == "HELP.txt" || name == "QUICK.txt";
+}
 
 FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encoding, int width)
     : view_(view), history_(history), encoding_(encoding), width_(width) {
@@ -223,6 +239,10 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
   buffer << in.rdbuf();
   if (!in.good() && !in.eof()) return {};
   std::string content = buffer.str();
+  // isHelpMarkupPagerFile()自身のコメント参照(HELP.txt/QUICK.txtの
+  // <indentN>/<i>/<b>/<u>markupを、リテラルなタグのままではなく
+  // ^Jh自身のkHelpTextJa/kHelpTextGuiJaと同じ規約で展開する)。
+  if (isHelpMarkupPagerFile(path)) content = expandHelpMarkup(content);
 
   PipeBuffer pipe(encoding_, width_, 64L * 1024 * 1024);
   pipe.feed(content);

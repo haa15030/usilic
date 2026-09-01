@@ -1483,6 +1483,26 @@ bool Application::startResumingSession(const std::string &lastOpenName, const st
 
 bool Application::startPagerFileList(const std::vector<std::string> &paths) {
   if (paths.empty()) return false;
+  // 2026-09-04追加、直接のユーザー依頼("usilic ~/git/usilic/src/
+  // HELP.txt をサポートして"): HELP.txt/QUICK.txt(isHelpMarkupPagerFile()
+  // 自身のコメント参照)は、下のloadStream()(遅延読み込み、<indentN>/
+  // <i>/<b>/<u>markupをリテラルなタグのまま表示してしまう)ではなく
+  // FileMode::loadFile()(全読み込み+file_mode.cpp自身のreadAndWrap()
+  // 経由でのexpandHelpMarkup()展開)へ振り分ける。ページャー専用の
+  // 複数ファイルナビゲーション(n/p/x/f)・^Gの no-op化は、単発の
+  // 参照文書CLI起動という用途では実質恩恵が無いための割り切り
+  // ――pagerFileList_を空のままにしておくことで、この起動はもはや
+  // 「ページャーモード」を名乗らない(hasActiveStream()がfalseになる
+  // ので、^Gは通常のFileモードと同じくディレクトリへ戻る)。
+  if (paths.size() == 1 && isHelpMarkupPagerFile(paths.front())) {
+    if (!fileMode_.loadFile(paths.front())) return false;
+    currentMode_ = ApplicationMode::File;
+    fileReturnMode_ = ApplicationMode::Directory;
+    pagerFileList_.clear();
+    pagerFileIndex_ = 0;
+    activeView().redraw();
+    return true;
+  }
   // FileMode::loadFile()ではなく::open()(2026-08-25): CLIのページャの
   // 起動は遅延ロードする――FileMode::loadStream()自身のコメント参照
   // ――なのでこれは、loadFile()がそうするようにファイル全体を積極的
