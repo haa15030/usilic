@@ -1,17 +1,17 @@
 　1.　Introduction
 
-<indent2><b>control</b>＋g (<b>control</b> キーと g キーを同時押下) で HELP の目次画面へ戻り、次に以下のキーでカーソルを移動し <b>return</b> キーを押せばその内容を参照できます。</indent>
+<indent1><b>control</b>＋g (<b>control</b> キーと g キーを同時押下) で HELP の目次画面へ戻り、次に以下のキーでカーソルを移動し <b>return</b> キーを押せばその内容を参照できます。</indent>
 
-<indent4>
+<indent2>
 <b>control</b>＋p : カーソルを１行上へ
 <b>control</b>＋n : カーソルを１行下へ
 </indent>
 
-<indent2>また ';'、':' キーでそれぞれ一つ上、下の章に移動します。(主なキーの用法は KEY モード (<b>control</b>＋h キーで表示) を参照して下さい)
+<indent1>また ';'、':' キーでそれぞれ一つ上、下の章に移動します。(主なキーの用法は KEY モード (<b>control</b>＋h キーで表示) を参照して下さい)
 本文中の表記については以下の通りです。</indent>
 
-<indent4>キー入力</indent>
-<indent6>
+<indent2>キー入力</indent>
+<indent3>
 <b>^H</b>　　 : <b>control</b>＋'h'
 <b>^J^H</b>　 : <b>^J</b> の後 <b>^H</b>
 <b>^Jb</b>　　: <b>^J</b> の後 'b'
@@ -21,15 +21,15 @@
 <b>^I</b>　　 : <b>tab</b>
 </indent>
 
-<indent4>ファイル名</indent>
-<indent6>
+<indent2>ファイル名</indent>
+<indent3>
 最後が "/" で終っている file はディレクトリです ("~" もディレクトリ名で 'echo $HOME'<b>^M</b> で表示されます)。またディレクトリおよびスペシャルファイル (通常は /dev/ で使用) 以外の file を "通常ファイル" で表記しています。
 </indent>
-<indent4>その他の文字列</indent>
-<indent6>
+<indent2>その他の文字列</indent>
+<indent3>
 <i>usilic(1)</i> が出力するメッセージは 「」 で、またキーボードから入力する文字列で <b>^M</b> (<b>control</b>＋m の簡略表記) 等以外については ''、それ以外の用語等については "" で括って表示しています。
 </indent>
-<indent2>
+<indent1>
 <i>usilic(1)</i> は下記のいずれかのモードで起動できます。(これらのモード名は <b>control</b>＋'i' キーで表示される USILIC 画面の 「Startup mode:」 で表示されます)
 </indent>
 
