@@ -247,6 +247,45 @@ void TerminalDisplay::setAttribute(Attribute attr) {
   std::string esc = attributeEscape(attr);
   if (esc.empty()) return;
   tputs(esc.c_str(), 1, outc);
+
+  switch (attr) {
+    case Attribute::Bold: boldOn_ = true; break;
+    case Attribute::BoldOff: boldOn_ = false; break;
+    case Attribute::Underline: underlineOn_ = true; break;
+    case Attribute::UnderlineOff: underlineOn_ = false; break;
+    case Attribute::Italic: italicOn_ = true; break;
+    case Attribute::ItalicOff: italicOn_ = false; break;
+    case Attribute::Standout: standoutOn_ = true; break;
+    case Attribute::StandoutOff: standoutOn_ = false; break;
+  }
+
+  // 2026-09-04追加、直接のユーザー報告("-cでは斜体にならない"=fk)を
+  // 調査して発見した実際のバグの修正。attributeEscape()自身のBoldOff
+  // ケース参照: caps_.boldOffは(ほとんどの本物の端末のterminfoが
+  // 専用の「太字だけを解除する」capabilityを持たないため)常に
+  // exit_attribute_mode――つまり本物のSGRリセット(端末側では実質
+  // \x1b[0m相当)を指す。これは太字「だけ」ではなく、その時点で有効な
+  // 下線/斜体/反転表示も含めて「全て」を黙って消してしまう――このクラス
+  // 自身は元々こういった横断的な状態を一切追跡していなかったので、
+  // 呼び出し元(ContentView::renderLine())側の独立したBold/Underline/
+  // Italic/Standoutトラッキング(それぞれ自分の属性が変化した時にしか
+  // setAttribute()を呼ばない)と噛み合わず、"<i><b>fgrep</b>(1)</i>"の
+  // ような入れ子(HELP.txt自身に複数箇所実在する、例えば"<i><b>fgrep</b>
+  // (1)</i>")で、"</b>"によるBoldOffが本物の端末上の斜体まで一緒に
+  // 消してしまい、以後は呼び出し元が(自分の中ではItalicは「変化して
+  // いない」と思っているので)ItalicのON符号を再送しない――実機再現の
+  // 生バイト列キャプチャで確認済み: "\x1b[1m\x1b[3mfgrep\x1b(B\x1b[m
+  // (1)\x1b[23m"となっており、"(1)"の直前で本来まだ有効なはずの
+  // "\x1b[3m"が再送されていない。修復は、まさにこのリセットが起きた
+  // 直後、上のswitchで更新した「今から見た事実」に基づき、それでも
+  // なお有効であるべき他の属性のONコードを直ちに再送出するだけ――
+  // 呼び出し元には一切変更を要求しない。
+  if (attr == Attribute::BoldOff) {
+    if (underlineOn_) tputs(attributeEscape(Attribute::Underline).c_str(), 1, outc);
+    if (italicOn_) tputs(attributeEscape(Attribute::Italic).c_str(), 1, outc);
+    if (standoutOn_) tputs(attributeEscape(Attribute::Standout).c_str(), 1, outc);
+  }
+
   std::fflush(stdout);
 }
 

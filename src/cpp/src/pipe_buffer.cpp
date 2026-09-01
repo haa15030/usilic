@@ -329,6 +329,21 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       int start = static_cast<int>(wrapText_.size());
       wrapText_.append(convertedLine, keepStart, keepBytes);
       wrapAttrs_.push_back({start, start + keepBytes, attr});
+      // 2026-09-04追加、直接のユーザー報告("-cでは斜体にならない"=fk)
+      // を調査して発見した実際のバグの修正: <b>/<u>のオーバーストライク
+      // 検出(この分岐)は、下の素のプレーン文字パス(currentItalic_自身の
+      // コメント参照)と違い、これまでcurrentItalic_を一切見ておらず、
+      // <i><b>fgrep</b>(1)</i>のように<i>の中に<b>/<u>がネストした場合、
+      // 「fgrep」側のBold用AttributeRunだけが積まれ、Italic用の
+      // AttributeRunが丸ごと欠落していた――実機再現の生バイト列
+      // キャプチャで確認済み: "\x1b[1mfgrep\x1b(B\x1b[m\x1b[3m(1)\x1b[23m"
+      // となっており、"fgrep"の直前にあるべき"\x1b[3m"(斜体ON)が
+      // どこにも無い。複数のAttributeRunが同じバイト範囲に重なること
+      // 自体は元々想定内(ContentView::renderLine()自身の消費ループは
+      // 全runを走査してBold/Underline/Standout/Italicそれぞれ独立に
+      // ORするだけ)なので、単にここでも同じ範囲へItalic用の
+      // AttributeRunをもう1つ積むだけでよい。
+      if (currentItalic_) wrapAttrs_.push_back({start, start + keepBytes, Display::Attribute::Italic});
       wrapCol_ += w;
       i = keepStart + keepBytes;
       if (wrapCol_ >= width_) {

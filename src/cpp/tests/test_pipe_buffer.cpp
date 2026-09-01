@@ -323,3 +323,45 @@ TEST_CASE("\\x02<N> italic marker: characters between \\x021 and \\x020 each get
   CHECK(attrs[1].end == 3);
   CHECK(attrs[1].attribute == Display::Attribute::Italic);
 }
+
+// 2026-09-04追加、直接のユーザー報告("-cでは斜体にならない"=fk)を
+// 調査して発見した実際のバグの修正。上のテストが確認する「素の」
+// \x021...\x020は正しくItalicのAttributeRunを積んでいたが、その
+// 経路(このファイルの「plain char path」)とは別に、太字/下線の
+// オーバーストライク検出(char+BS+char、上の「keepStart」分岐)は
+// これまでcurrentItalic_を一切見ていなかった――HELP.txt自身に実在
+// する"<i><b>fgrep</b>(1)</i>"のような入れ子(<i>の中に<b>がある)で、
+// 太字部分のItalic AttributeRunが丸ごと欠落し、実機の生バイト列
+// キャプチャで確認済みの通り"fgrep"の直前に本来あるべき斜体ONの
+// エスケープが送出されなくなっていた。この文字については、Bold用
+// と全く同じ[start,end)範囲にItalic用のAttributeRunも「もう1つ」
+// 積まれるべきである(複数のAttributeRunが同じ範囲に重なること
+// 自体はContentView::renderLine()自身の消費ループが元々想定済み)。
+TEST_CASE("\\x02<N> italic marker: a bold overstrike character (char+BS+char) INSIDE an "
+          "\\x021...\\x020 span gets BOTH a Bold AttributeRun and an Italic AttributeRun over "
+          "the same byte range, not just Bold") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  std::string raw;
+  raw.push_back(2);
+  raw.push_back('1');  // \x02 1 -- begin italic
+  raw += "f";
+  raw.push_back(8);  // backspace
+  raw += "f";         // bold overstrike: "f" repeated via char+BS+char
+  raw.push_back(2);
+  raw.push_back('0');  // \x02 0 -- end italic
+  raw += "\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == "f");
+  const auto &attrs = buf.lines()[0].attributes;
+  REQUIRE(attrs.size() == 2);
+  bool sawBold = false, sawItalic = false;
+  for (const auto &a : attrs) {
+    CHECK(a.start == 0);
+    CHECK(a.end == 1);
+    if (a.attribute == Display::Attribute::Bold) sawBold = true;
+    if (a.attribute == Display::Attribute::Italic) sawItalic = true;
+  }
+  CHECK(sawBold);
+  CHECK(sawItalic);
+}

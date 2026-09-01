@@ -211,9 +211,38 @@ std::string composeDakutenInString(const std::string &utf8Text) {
 // 比を保つので、グリフは(既に収まる、よくあるケースでは)自然な
 // サイズで鮮明に描画されるか、レターボックス付きで一様に縮小され
 // る――決して歪まない。
-SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int surfaceH) {
-  float scale = std::min(1.0f, std::min(static_cast<float>(maxW) / std::max(surfaceW, 1),
-                                         static_cast<float>(maxH) / std::max(surfaceH, 1)));
+//
+// 2026-09-04追加、`allowWidthOverflow`: 直接のユーザー報告
+// ("usilic(1)の（と）が明らかに違う"、スクリーンショット=fl)を
+// 調査して発見した実際のバグの修正。TTF_STYLE_ITALIC(合成斜体)は
+// FreeTypeにグリフの輪郭をせん断させるだけで、フォント自身の送り幅
+// メトリクスは一切調整しない――本物の(専用にデザインされた)
+// イタリック書体が、せん断で見た目上広がる分をあらかじめグリフ
+// デザイン自体で見込んで詰めてあるのとは違う。結果として、せん断
+// されたグリフのサーフェス幅は、素のグリフよりわずかに(せん断角度
+// ×高さぶん)広くなり、単一セル幅の半角記号ではこれがちょうど
+// maxWをわずかに超えることがある――その時、上の「常にアスペクト比
+// を保つ」ロジックがmaxW側の比率で縮小するため、"("と")"のように
+// せん断後の幅が微妙に異なる(グリフの自然な形が違うので当然)2文字
+// が、"横方向の縮小のとばっちりで"それぞれ別の量だけ縦方向にも
+// 縮小されてしまう――実測(=flのスクリーンショットを実際にピクセル
+// 単位で計測): "("は高さ13px、")"は高さ18pxで表示されており、
+// 同じフォント/同じポイントサイズの兄弟記号として明らかに不揃い
+// だった。実際のGraphicalDisplayパイプラインを直接駆動する使い捨ての
+// デバッグ計装で確認済み: surfaceW=16("(")/15(")")に対しmaxW=14(cellWidth)
+// で、"("の方がわずかに幅が広いせいで強く縮小され(scale=0.875)、
+// ")"は弱く縮小される(scale=0.933)――高さ方向には全く余裕
+// (surfaceH=maxH=28)があったにも関わらず。斜体セルについては、
+// 幅方向のはみ出しをそのまま許容し(几帳面な等幅グリッドの中で
+// 斜体だけがわずかに隣のセルへ食い込むのは、本物の端末エミュレータの
+// 斜体フォントでも普通に起こる見た目であり、無理に幅で縮めて高さを
+// 犠牲にするより遥かに自然)、高さだけで縮小率を決める。
+SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int surfaceH,
+                       bool allowWidthOverflow = false) {
+  float scale = allowWidthOverflow
+                    ? std::min(1.0f, static_cast<float>(maxH) / std::max(surfaceH, 1))
+                    : std::min(1.0f, std::min(static_cast<float>(maxW) / std::max(surfaceW, 1),
+                                               static_cast<float>(maxH) / std::max(surfaceH, 1)));
   int drawW = static_cast<int>(surfaceW * scale);
   int drawH = static_cast<int>(surfaceH * scale);
   return SDL_Rect{boxX + (maxW - drawW) / 2, boxY + (maxH - drawH) / 2, drawW, drawH};
@@ -1139,7 +1168,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
     // 引き伸ばすのではなく、縮小して中央寄せするのかについてはそれ
     // 自身のコメント参照。
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
-    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h);
+    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h, cell.italic);
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
   }
 }
@@ -1230,7 +1259,7 @@ void GraphicalDisplay::renderCursor() {
   SDL_Texture *texture = cachedGlyphTexture(*impl_, renderFont, cell.glyph, style, hinting, impl_->bg, !isWide, w, h);
   if (texture) {
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
-    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h);
+    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h, cell.italic);
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
   }
 }
@@ -2510,7 +2539,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
         // 引き伸ばすのではなく縮小して中央寄せするのかについては
         // renderCell()自身のコメント参照。
         SDL_Rect dst = fitGlyphRect(Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
-                                     width * impl_->cellWidth, impl_->cellHeight, w, h);
+                                     width * impl_->cellWidth, impl_->cellHeight, w, h, wantItalic);
         SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
       }
     }

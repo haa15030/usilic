@@ -168,6 +168,15 @@ class TerminalDisplay : public Display {
   int rows_, columns_;
   bool outputEnabled_ = false;
   bool smoothScroll_ = false;
+
+  // 2026-09-04追加、直接のユーザー報告("-cでは斜体にならない"=fk)を
+  // 調査して発見した実際のバグの修正: setAttribute()自身のコメント
+  // 参照(caps_.boldOffがexit_attribute_modeへ、なぜ・どう波及するか)。
+  // これら4つは「今、実際に端末へ何を送出したか」の記録であり(単なる
+  // 「呼び出し元が最後にBold/Underline/Italic/Standoutを要求したか」
+  // の記録ではない――BoldOff自身のリセット波及を検知して修復する
+  // には、この2つを区別する必要がある)。
+  bool boldOn_ = false, underlineOn_ = false, italicOn_ = false, standoutOn_ = false;
 };
 
 }  // namespace fm
