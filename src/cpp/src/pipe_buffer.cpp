@@ -166,18 +166,58 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     wrapText_.clear();
     wrapAttrs_.clear();
     wrapCol_ = 0;
-    // currentIndent_自身のコメント参照(pipe_buffer.hpp): 段落の
-    // 最初の行はソース側の実文字の字下げをそのまま使うので、ここは
-    // 「折り返した継続行」の場合にだけ意味を持つ――currentIndent_が
-    // 0(既定)ならこのループは即座に終わり、以前と全く同じ挙動の
-    // ままである。U+3000(全角スペース、UTF-8で0xE3 0x80 0x80、
-    // 表示幅2)を直接埋め込む――kHelpTextJa自身の他の全ての漢字と
-    // 同じくこの機能はHELPでしか使わない(expandHelpMarkup()だけが
-    // \x01を生成する)ので、そちらと同じくUTF-8決め打ちで問題ない。
+  };
+  // 2026-09-04訂正、実機での実際の再現(初回のsrc/HELP.txt全面改稿を
+  // 実際に流し込んで確認して発覚): 上のfinalize()自身が新しい行を
+  // currentIndent_ぶんの全角スペースで「即座に」種付けしていたのが
+  // 誤りだった――<indentN>を可読性のためタグだけの行に置く著者の
+  // 書き方(例: "<indent4>\n^H : ...\n</indent>")では、
+  // "</indent>"がすぐ後に続く行(継続行にすべき本物のコンテンツが
+  // 一切無い行)にまで先回りしてパディングだけを種付けしてしまい、
+  // </indent>で幅0のまま閉じた後、次の実際の改行でその「パディング
+  // だけの」行が単独でlines_へ押し出されていた――見た目には章1の
+  // 冒頭で意図しない余分な空行(かつ完全な空行ではなく全角スペース
+  // だけを含む行)として現れた。修正: 種付けを「即座」ではなく
+  // 「遅延」にする――下の実際の文字配置(オーバーストライク文字・
+  // 素の文字の両方の配置箇所)の直前で、wrapCol_==0(=新しい行の
+  // 最初の1文字目)かつcurrentIndent_>0の場合にだけ、その場でパディ
+  // ングを継ぎ足す。これにより、改行や</indent>それ自体(幅を持たない)
+  // しか続かない行では一切パディングが入らなくなる――本物の可視文字
+  // が実際に置かれようとしている時だけ発動するため。
+  auto seedIndentIfAtLineStart = [&]() {
+    if (wrapCol_ != 0 || currentIndent_ <= 0) return;
     for (int k = 0; k < currentIndent_; k++) {
       wrapText_ += "\xE3\x80\x80";
       wrapCol_ += 2;
     }
+  };
+
+  // 2026-09-04追加、実機での実際の再現(初回のsrc/HELP.txt全面改稿を
+  // 実際に流し込んで発覚): 幅ちょうどで満杯になった直後の位置から、
+  // (もしあれば)\x01/\x02の制御バイト対を読み飛ばして、その先が
+  // 本物の改行かどうかを覗き見る――禁則処理の「追い出し」(自身の
+  // コメント参照)によって、段落の最後の文字がちょうど行の残り幅を
+  // 使い切ってしまうことがあり、その場合、幅超過finalize(false)の
+  // すぐ後に本物の改行がもう1つ続いてしまい、既に幅超過finalizeで
+  // 全て吐き出し済みの(空の)wrapText_に対してその改行がfinalize(true)
+  // を起こし、見せかけの空行を生んでいた。読み飛ばした制御バイト
+  // 自身の状態更新(currentIndent_/currentItalic_)は、メインループが
+  // 本来行うのと同じ効果になるようここでも適用する――呼び出し元が
+  // 改行を見つけられず結局そのままメインループへ処理を戻す場合でも、
+  // 同じ制御バイトを再度たどるだけなので安全(冪等)。改行が見つかれば
+  // その位置を返す(呼び出し元はfinalize(true)扱いにしてそこまで
+  // 読み進める)、見つからなければ-1。
+  auto peekNewlineAfterMarkers = [&](int pos) -> int {
+    while (pos + 1 < n) {
+      unsigned char mc = static_cast<unsigned char>(convertedLine[pos]);
+      if (mc != '\x01' && mc != '\x02') break;
+      unsigned char digit = static_cast<unsigned char>(convertedLine[pos + 1]);
+      if (digit < '0' || digit > '9') break;
+      if (mc == '\x01') currentIndent_ = digit - '0';
+      else currentItalic_ = (digit == '1');
+      pos += 2;
+    }
+    return (pos < n && convertedLine[pos] == '\n') ? pos : -1;
   };
 
   while (i < n) {
@@ -272,6 +312,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     }
 
     if (keepStart >= 0) {
+      seedIndentIfAtLineStart();  // 上のオーバーフロー判定より前――そちら自身のコメント参照
       int w = widthAt(convertedLine, keepStart, keepBytes);
       if (wrapCol_ + w > width_) {
         // isForbiddenAtLineStart()自身のコメント参照(禁則処理、
@@ -290,12 +331,22 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       wrapAttrs_.push_back({start, start + keepBytes, attr});
       wrapCol_ += w;
       i = keepStart + keepBytes;
-      if (wrapCol_ >= width_) finalize(false);
+      if (wrapCol_ >= width_) {
+        // peekNewlineAfterMarkers()自身のコメント参照。
+        int nlPos = peekNewlineAfterMarkers(i);
+        if (nlPos >= 0) {
+          i = nlPos + 1;
+          finalize(true);
+        } else {
+          finalize(false);
+        }
+      }
       continue;
     }
 
     int charBytes = byteLengthAt(convertedLine, i);
     if (i + charBytes > n) charBytes = n - i;  // チャンク末尾で切り詰められたシーケンス
+    seedIndentIfAtLineStart();  // 上のkeepStart側の呼び出し箇所と全く同じ理由・同じ位置(オーバーフロー判定より前)
     int w = widthAt(convertedLine, i, charBytes);
     if (wrapCol_ + w > width_) {
       // isForbiddenAtLineStart()自身のコメント参照(禁則処理)――上の
@@ -314,7 +365,16 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     wrapText_.append(convertedLine, i, charBytes);
     wrapCol_ += w;
     i += charBytes;
-    if (wrapCol_ >= width_) finalize(false);
+    if (wrapCol_ >= width_) {
+      // peekNewlineAfterMarkers()自身のコメント参照。
+      int nlPos = peekNewlineAfterMarkers(i);
+      if (nlPos >= 0) {
+        i = nlPos + 1;
+        finalize(true);
+      } else {
+        finalize(false);
+      }
+    }
   }
 }
 

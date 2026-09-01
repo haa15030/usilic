@@ -55,9 +55,27 @@ std::string expandHelpMarkup(const std::string &text) {
       out += '\x01';
       out += text[i + indentOpenPrefix.size()];
       i += indentOpenPrefix.size() + 2;  // "<indent" + digit + ">"
+      // 2026-09-04追加、実機での実際の再現(初回のsrc/HELP.txt全面
+      // 改稿を実際に流し込んで発覚): 複数行の<indentN>...</indent>を
+      // 読みやすく書く実際の著者の書き方("<indentN>\n本文...\n
+      // </indent>")では、開始タグ自身の直後の改行、終了タグ自身の
+      // 直前の改行は、いずれも純粋にソース側の可読性のための改行で
+      // あり、意図した本文の改行ではない――このまま素通りさせると、
+      // wrapLine()側でその改行「自体」が独立した(意図しない)空行を
+      // 生んでしまう(pipe_buffer.cpp自身のseedIndentIfAtLineStart()
+      // のコメント参照、この問題自体は既に一度そちらで別角度から
+      // 修正済みだが、こちらの「タグ境界に隣接する改行」自体は
+      // 残っていた)。開始タグの直後の改行はここで読み飛ばす――
+      // 終了タグ側の対称な処理は下のisIndentClose分岐参照。
+      if (i < text.size() && text[i] == '\n') i++;
       continue;
     }
     if (text.compare(i, indentClose.size(), indentClose) == 0) {
+      // 上のisIndentOpen分岐自身のコメント参照(対称な処理): 終了タグ
+      // 自身の直前の改行(=このタグが独立した行にある場合、その本文
+      // 側の最後の実際の改行)も同じ理由で無視する――既に`out`へ
+      // 出力済みなので、末尾がちょうど改行ならそれを取り除く。
+      if (!out.empty() && out.back() == '\n') out.pop_back();
       out += '\x01';
       out += '0';
       i += indentClose.size();

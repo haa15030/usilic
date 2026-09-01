@@ -493,7 +493,15 @@ const KeyTableEntry kKeyTable[] = {
 // "2.4."のうち"2."だけにマッチする)を消費する必要は無い、CUT分割は
 // マッチが各新セクションの開始点に固定されることだけを必要とし、
 // ヘッダ全体にまたがる必要は無いため。
-const char *const kHelpPattern = "^  [0-9]+\\.";
+// 2026-09-04追加、直接のユーザー依頼(src/HELP.txtの全面改稿、章見出し
+// の左マージンを半角スペース2個から全角スペース1個(U+3000)へ全面的に
+// 置き換え、「全角スペース対応でよろしく」との確認済み): 日本語版
+// (kHelpTextJa)は今後全角スペース1個、英語版(kHelpTextEn、全角スペース
+// を使わない通常の英文)は引き続き半角スペース2個――両方を1つの正規表現
+// で受け付ける必要がある。CutMode::split()自身のコメント参照: この
+// パターンは実際にegrep(1)へシェルアウトされる(ERE)ので、括弧による
+// 選択(a|b)がそのまま使える。
+const char *const kHelpPattern = "^(  |　)[0-9]+\\.";
 
 // tempRootDirectory_自身のコメント(application.hpp)参照: 明示的な
 // `tempRootDirectory`(main()自身の/tmp/.usilic.<pid>、引数付きで
@@ -6275,7 +6283,12 @@ bool Application::showKeyReference() {
   const char *section = kKeyTable[idx].helpSection;
   if (!section || !*section) return false;
   if (!startHelp()) return false;
-  std::string prefix = std::string("  ") + section + ".";
+  // kHelpPattern自身のコメント参照(2026-09-04追加): 章見出しの左
+  // マージンは、日本語版(kHelpTextJa)では全角スペース1個(U+3000)、
+  // 英語版(kHelpTextEn)では引き続き半角スペース2個――ここでの前方
+  // 一致もどちらの言語がロード中かに合わせて切り替える必要がある。
+  std::string margin = helpJapanese_ ? "\xE3\x80\x80" : "  ";
+  std::string prefix = margin + section + ".";
   const auto &segments = cutMode_.segments();
   for (std::size_t i = 0; i < segments.size(); i++) {
     if (segments[i].label.rfind(prefix, 0) == 0) {

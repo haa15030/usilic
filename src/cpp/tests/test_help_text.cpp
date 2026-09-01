@@ -70,3 +70,30 @@ TEST_CASE("expandHelpMarkup: <i> and <b>/<u> can be used independently in the sa
   std::string out = fm::expandHelpMarkup("<i>x</i><b>y</b>");
   CHECK(out == "\x02" "1x\x02" "0" "y\by");
 }
+
+// 2026-09-04追加、実機での実際の再現(初回のsrc/HELP.txt全面改稿を
+// 実際に流し込んで発覚): 複数行の<indentN>...</indent>を読みやすく
+// 書く実際の著者の書き方("<indentN>\n本文...\n</indent>")では、
+// タグ自身の直後/直前の改行は純粋にソース側の可読性のためのもので
+// あり、意図した本文の改行ではない――これをそのまま素通りさせると
+// PipeBuffer::wrapLine()側で見せかけの空行を生む(pipe_buffer.hpp自身の
+// currentIndent_のコメント参照)。開始タグ直後・終了タグ直前の改行は
+// それぞれ1個だけ読み飛ばす。
+TEST_CASE("expandHelpMarkup: the newline immediately after an <indentN> OPEN tag, and the "
+          "newline immediately before a </indent> CLOSE tag, are both trimmed (pure "
+          "source-readability newlines, not intended content)") {
+  std::string out = fm::expandHelpMarkup("<indent4>\nbody\n</indent>");
+  CHECK(out == "\x01" "4body\x01" "0");
+}
+
+TEST_CASE("expandHelpMarkup: only the newline DIRECTLY adjacent to the tag is trimmed -- a "
+          "second (genuinely intentional) blank line right after the open tag survives") {
+  std::string out = fm::expandHelpMarkup("<indent2>\n\nbody</indent>");
+  CHECK(out == "\x01" "2\nbody\x01" "0");
+}
+
+TEST_CASE("expandHelpMarkup: when </indent> is NOT preceded by a newline (it closes on the "
+          "same line as the content), nothing is trimmed") {
+  std::string out = fm::expandHelpMarkup("<indent2>body</indent>");
+  CHECK(out == "\x01" "2body\x01" "0");
+}

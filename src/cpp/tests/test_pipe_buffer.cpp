@@ -175,7 +175,8 @@ TEST_CASE("control bytes pass through as literal bytes (ContentView highlights t
 // 制御バイト列を直接手で構成し、折り返し継続行が実際に全角スペース
 // で字下げされるかどうかだけを見る。
 TEST_CASE("\\x01<N> indent marker: a wrapped CONTINUATION line is padded with N ideographic "
-          "spaces (U+3000); the paragraph's own first line is left untouched") {
+          "spaces (U+3000); text already mid-line when the marker arrives is untouched "
+          "(padding only ever applies at an actual line START, see seedIndentIfAtLineStart())") {
   PipeBuffer buf(Charset::Encoding::Ascii, 6, 1 << 20);
   std::string raw = "AB";
   raw.push_back(1);
@@ -183,15 +184,36 @@ TEST_CASE("\\x01<N> indent marker: a wrapped CONTINUATION line is padded with N 
   raw += "CDEFGH\n";
   buf.feed(raw);
   REQUIRE(buf.lines().size() == 2);
-  // First line: exactly what was typed before the wrap boundary -- the
-  // marker itself contributes zero width/bytes, and the FIRST line of
-  // the paragraph is never auto-indented (only continuation lines are).
+  // First line: "AB" was already mid-line (wrapCol_ != 0) when the marker
+  // arrived, so no padding retroactively applies to it.
   CHECK(buf.lines()[0].text == "ABCDEF");
   CHECK(buf.lines()[0].endsWithNewline == false);
   // Second (wrapped continuation) line: padded with one U+3000
   // (0xE3 0x80 0x80 in UTF-8) before the remaining "GH".
   CHECK(buf.lines()[1].text == "\xE3\x80\x80GH");
   CHECK(buf.lines()[1].endsWithNewline == true);
+}
+
+// 2026-09-04追加、実機での実際の再現(初回のsrc/HELP.txt全面改稿を
+// 実際に流し込んで発覚、pipe_buffer.hpp自身のcurrentIndent_の訂正
+// コメント参照): 当初は「タグ自身の1行目には適用しない」つもり
+// だったが、実際の著者の書き方("<indentN>本文...</indent>"、
+// タグの直後に本文、手動の字下げ文字を一切伴わない)には合わない
+// ――マーカーが「新しい行の最初の1文字」の直前に来る場合(=直前に
+// finalize()があった、または入力の本当の先頭)は、タグ自身の1行目
+// にも同じパディングが適用されるべきで、実際そうなる。
+TEST_CASE("\\x01<N> indent marker: when the marker arrives right at a fresh line start "
+          "(nothing placed yet since the last finalize, or the very start of input), the "
+          "padding applies to THAT first line too -- not just later wrap-continuations") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  std::string raw;
+  raw.push_back(1);
+  raw.push_back('2');  // \x01 2 -- right at the very start, nothing placed yet
+  raw += "AB\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == "\xE3\x80\x80\xE3\x80\x80"
+                                "AB");  // 2 ideographic spaces, then "AB"
 }
 
 TEST_CASE("\\x01<N> indent marker: \\x010 (N=0) turns the indent back off for any LATER wrap "
@@ -222,6 +244,42 @@ TEST_CASE("kinsoku: a forbidden line-start character (U+3002 IDEOGRAPHIC FULL ST
            "CD\n");  // "AB。CD"
   REQUIRE(buf.lines().size() == 2);
   CHECK(buf.lines()[0].text == "AB\xe3\x80\x82");  // "。" pushed here despite overflowing width 3
+  CHECK(buf.lines()[1].text == "CD");
+}
+
+// 2026-09-04追加、実機での実際の再現(初回のsrc/HELP.txt全面改稿を
+// 実際に流し込んで発覚): 禁則の「追い出し」によって、段落の最後の
+// 文字がちょうど行の残り幅を使い切ってしまうと、その直後に続く本物の
+// 改行が、既に幅超過finalizeで空になったwrapText_に対してさらに
+// finalize(true)を起こし、見せかけの空行を生んでいた――ここでは
+// width=3、"AB。"(=禁則で追い出された"。"を含めてちょうど幅4分、
+// つまり幅超過ぴったり)の直後に本物の改行が続くケースを直接構成
+// して確認する。
+TEST_CASE("kinsoku: when the pushed-onto line is IMMEDIATELY followed by a real newline, "
+          "that newline is absorbed into the SAME line (endsWithNewline=true) instead of "
+          "producing a spurious extra blank line") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 3, 1 << 20);
+  buf.feed("AB\xe3\x80\x82"
+           "\nCD\n");  // "AB。" then a REAL newline, then "CD"
+  REQUIRE(buf.lines().size() == 2);  // NOT 3 -- no spurious blank line in between
+  CHECK(buf.lines()[0].text == "AB\xe3\x80\x82");
+  CHECK(buf.lines()[0].endsWithNewline == true);  // the real newline was absorbed here
+  CHECK(buf.lines()[1].text == "CD");
+}
+
+TEST_CASE("kinsoku: the same newline-absorption still works when a zero-width \\x01/\\x02 "
+          "marker (e.g. an </indent> close tag) sits between the pushed-onto character and "
+          "the real newline -- the exact shape src/HELP.txt's own \"...できます。</indent>\" "
+          "produces, and the marker's own state update (currentIndent_) still applies") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 3, 1 << 20);
+  std::string raw = "AB\xe3\x80\x82";
+  raw.push_back(1);
+  raw.push_back('0');  // \x01 0 -- an </indent> close, right where HELP.txt's own shape has it
+  raw += "\nCD\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 2);  // still NOT 3
+  CHECK(buf.lines()[0].text == "AB\xe3\x80\x82");
+  CHECK(buf.lines()[0].endsWithNewline == true);
   CHECK(buf.lines()[1].text == "CD");
 }
 
