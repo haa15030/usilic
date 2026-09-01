@@ -165,3 +165,49 @@ TEST_CASE("control bytes pass through as literal bytes (ContentView highlights t
   CHECK(buf.lines()[0].text == raw);
   CHECK(buf.lines()[0].attributes.empty());
 }
+
+// 2026-09-04追加、直接のユーザー依頼("行頭にパディングする全角
+// スペースの個数を指定するだけのusilic特化マークアップ書式"、
+// EPUBの<div class="indent_1em">相当): expandHelpMarkup()
+// (help_text.hpp/cpp)が生成する\x01+数字1桁の制御バイトの、
+// PipeBuffer::wrapLine()側の実消費テスト。expandHelpMarkup()自身の
+// 変換ロジックはtest_help_text.cppで別途確認済み――ここではその
+// 制御バイト列を直接手で構成し、折り返し継続行が実際に全角スペース
+// で字下げされるかどうかだけを見る。
+TEST_CASE("\\x01<N> indent marker: a wrapped CONTINUATION line is padded with N ideographic "
+          "spaces (U+3000); the paragraph's own first line is left untouched") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 6, 1 << 20);
+  std::string raw = "AB";
+  raw.push_back(1);
+  raw.push_back('1');  // \x01 1 -- begin indent of 1 ideographic space (2 columns)
+  raw += "CDEFGH\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 2);
+  // First line: exactly what was typed before the wrap boundary -- the
+  // marker itself contributes zero width/bytes, and the FIRST line of
+  // the paragraph is never auto-indented (only continuation lines are).
+  CHECK(buf.lines()[0].text == "ABCDEF");
+  CHECK(buf.lines()[0].endsWithNewline == false);
+  // Second (wrapped continuation) line: padded with one U+3000
+  // (0xE3 0x80 0x80 in UTF-8) before the remaining "GH".
+  CHECK(buf.lines()[1].text == "\xE3\x80\x80GH");
+  CHECK(buf.lines()[1].endsWithNewline == true);
+}
+
+TEST_CASE("\\x01<N> indent marker: \\x010 (N=0) turns the indent back off for any LATER wrap "
+          "in the same feed") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 6, 1 << 20);
+  std::string raw = "AB";
+  raw.push_back(1);
+  raw.push_back('1');   // begin indent
+  raw += "CD";
+  raw.push_back(1);
+  raw.push_back('0');   // </indent> -- back to no indent
+  raw += "EFGHIJ\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 2);
+  CHECK(buf.lines()[0].text == "ABCDEF");
+  // No leading ideographic space this time -- the indent was already
+  // turned off before this wrap boundary was reached.
+  CHECK(buf.lines()[1].text == "GHIJ");
+}

@@ -1,6 +1,7 @@
 #include "help_text.hpp"
 
 #include <algorithm>
+#include <cctype>
 
 namespace fm {
 
@@ -17,7 +18,36 @@ std::string expandHelpMarkup(const std::string &text) {
   std::size_t i = 0;
   const std::string boldOpen = "<b>", boldClose = "</b>";
   const std::string underlineOpen = "<u>", underlineClose = "</u>";
+  // 2026-09-04追加、直接のユーザー依頼("行頭にパディングする全角
+  // スペースの個数を指定するだけのusilic特化マークアップ書式"、
+  // EPUBの<div class="indent_1em">相当――折り返した継続行にも
+  // 同じ幅の字下げを引き継ぐ): <indentN>...</indent>(Nは1桁の
+  // 全角スペース個数)。太字/下線(1文字ごとの重ね打ちバイト列)とは
+  // 別系統の制御バイト\x01+数字1桁で表す――\x01<N>(N=1-9)で
+  // 開始(以後の折り返しでN個の全角スペースを引き継ぐ)、\x01""0""で
+  // 終了(引き継ぎをやめる)。対応するデコーダはPipeBuffer::wrapLine()
+  // 自身のコメント参照。中身(段落本文)自体はここでは一切変換せず、
+  // 開始/終了マーカーの間をこの関数自身の通常のループにそのまま
+  // 委ねる(入れ子の<b>/<u>もそのまま機能する)。
+  const std::string indentOpenPrefix = "<indent";
+  const std::string indentClose = "</indent>";
   while (i < text.size()) {
+    bool isIndentOpen = text.compare(i, indentOpenPrefix.size(), indentOpenPrefix) == 0 &&
+                         i + indentOpenPrefix.size() + 1 < text.size() &&
+                         std::isdigit(static_cast<unsigned char>(text[i + indentOpenPrefix.size()])) &&
+                         text[i + indentOpenPrefix.size() + 1] == '>';
+    if (isIndentOpen) {
+      out += '\x01';
+      out += text[i + indentOpenPrefix.size()];
+      i += indentOpenPrefix.size() + 2;  // "<indent" + digit + ">"
+      continue;
+    }
+    if (text.compare(i, indentClose.size(), indentClose) == 0) {
+      out += '\x01';
+      out += '0';
+      i += indentClose.size();
+      continue;
+    }
     bool isBold = text.compare(i, boldOpen.size(), boldOpen) == 0;
     bool isUnderline = !isBold && text.compare(i, underlineOpen.size(), underlineOpen) == 0;
     if (isBold || isUnderline) {

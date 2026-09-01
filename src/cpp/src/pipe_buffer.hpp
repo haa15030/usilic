@@ -83,6 +83,22 @@ class PipeBuffer {
   std::vector<AttributeRun> wrapAttrs_;
   int wrapCol_ = 0;
 
+  // 2026-09-04追加、直接のユーザー依頼("行頭にパディングする全角
+  // スペースの個数を指定するだけのusilic特化マークアップ書式"、
+  // help_text.hpp自身のexpandHelpMarkup()コメント参照): HELP自身の
+  // <indentN>...</indent>マークアップが展開する制御バイト
+  // \x01+数字1桁(wrapLine()自身のコメント参照)で更新される、
+  // 「現在の折り返し継続行が引き継ぐべき全角スペースの個数」――
+  // 0は「字下げ無し」(既定)。段落の最初の行自体はソース側の
+  // 実文字の字下げをそのまま使うので触らない。折り返し(finalize())
+  // のたびにこの個数ぶんの全角スペースでwrapText_/wrapCol_を初期化
+  // することで、継続行にも同じ字下げが引き継がれる。太字/下線の
+  // ようなAttributeRunではなく素の空白文字を挿入する方式なので、
+  // 行の内容そのもの(バイト列)が変わる――HELPだけがこの制御バイトを
+  // 生成するため、他の呼び出し元(FileMode等の生ファイル内容)には
+  // 影響しない。
+  int currentIndent_ = 0;
+
   std::vector<StyledLine> lines_;
 };
 

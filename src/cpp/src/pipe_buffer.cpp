@@ -135,10 +135,34 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     wrapText_.clear();
     wrapAttrs_.clear();
     wrapCol_ = 0;
+    // currentIndent_自身のコメント参照(pipe_buffer.hpp): 段落の
+    // 最初の行はソース側の実文字の字下げをそのまま使うので、ここは
+    // 「折り返した継続行」の場合にだけ意味を持つ――currentIndent_が
+    // 0(既定)ならこのループは即座に終わり、以前と全く同じ挙動の
+    // ままである。U+3000(全角スペース、UTF-8で0xE3 0x80 0x80、
+    // 表示幅2)を直接埋め込む――kHelpTextJa自身の他の全ての漢字と
+    // 同じくこの機能はHELPでしか使わない(expandHelpMarkup()だけが
+    // \x01を生成する)ので、そちらと同じくUTF-8決め打ちで問題ない。
+    for (int k = 0; k < currentIndent_; k++) {
+      wrapText_ += "\xE3\x80\x80";
+      wrapCol_ += 2;
+    }
   };
 
   while (i < n) {
     unsigned char c = static_cast<unsigned char>(convertedLine[i]);
+    // 2026-09-04追加(currentIndent_自身のコメント参照): expandHelpMarkup()
+    // が<indentN>/</indent>から生成する制御バイト\x01+数字1桁――
+    // 幅を持たないゼロ幅の指示なので、wrapText_/wrapAttrs_には一切
+    // 書き込まず、currentIndent_を更新するだけで読み飛ばす。
+    if (c == '\x01' && i + 1 < n) {
+      unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
+      if (digit >= '0' && digit <= '9') {
+        currentIndent_ = digit - '0';
+        i += 2;
+        continue;
+      }
+    }
     if (c == '\n') {
       finalize(true);
       i++;
