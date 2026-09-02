@@ -925,7 +925,20 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
         // 1バイト(ASCII範囲)の単位は常にちょうど画面1列幅なので、
         // ここでは`col`はいずれにせよ1ずつ進む。
         if (col >= maxCol) break;
-        if (c == '\t') {
+        // 2026-09-05変更、直接のユーザー依頼("行末にtabコードがある
+        // 行をCUT一覧に載せたい"): PipeBuffer::wrapLine()は、今は
+        // 行末(改行の直前)のタブだけを生のバイトのまま残す(自身の
+        // コメント参照)――そのタブがCUT/GREPで検索でき、一覧でも
+        // 見える必要がある。一方DuMode::formatEntryLine()("size\tpath"、
+        // PipeBufferを一切経由せずLineへ直接タブを埋め込む唯一の
+        // 呼び出し元)は依然として行の「途中」にタブを置くので、
+        // こちらは元通りスペースとして描画すべき――ここを無条件に
+        // 変えるとDU一覧のサイズ/パスの間に目障りな反転表示グリフが
+        // 割り込んでしまう(2026-08-02の元のバグの、DU版の再発)。
+        // このLineの「本当に最後のバイト」かどうかで両者を区別する
+        // ――行末のタブだけがtrue になる。
+        bool trailingTab = c == '\t' && idx + 1 == text.size();
+        if (c == '\t' && !trailingTab) {
           display_.putChar(' ');
         } else if (c && (c < ' ' || c == 0x7f)) {
           setStandout(!markedNow);

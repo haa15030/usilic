@@ -1278,14 +1278,17 @@ TEST_CASE("control bytes render reverse-video, consistent with LineEditor") {
   CHECK(d.rowText(0)[1] == 'x');
 }
 
-TEST_CASE("a literal tab byte renders as a plain space, not a reverse-video control glyph") {
+TEST_CASE("a MID-LINE literal tab byte renders as a plain space, not a reverse-video control "
+          "glyph") {
   // Defensive fallback for callers that embed a raw '\t' directly into
   // a Line (e.g. DuMode::formatEntryLine()'s "size\tpath"), for any
   // caller other than PipeBuffer -- PipeBuffer's own wrapLine() now
-  // expands tabs to spaces before they ever reach a Line. Found via a
-  // real user report (2026-08-02, screenshot): tab bytes used to hit
-  // the same reverse-video path as other control bytes (< 0x20),
-  // showing as visible boxes between `ls` filenames in SHELL scrollback.
+  // expands MID-LINE tabs to spaces before they ever reach a Line (a
+  // TRAILING tab, the very last byte of the line, is a separate case --
+  // see the test right below this one). Found via a real user report
+  // (2026-08-02, screenshot): tab bytes used to hit the same
+  // reverse-video path as other control bytes (< 0x20), showing as
+  // visible boxes between `ls` filenames in SHELL scrollback.
   RecordingDisplay d(10, 20);
   ContentView v(d);
   v.setViewport(0, 3);
@@ -1298,6 +1301,28 @@ TEST_CASE("a literal tab byte renders as a plain space, not a reverse-video cont
   CHECK(d.rowText(0)[1] == ' ');
   CHECK(d.standoutAt(0, 1) == false);
   CHECK(d.rowText(0)[2] == 'b');
+}
+
+// 2026-09-05追加、直接のユーザー報告("行末にtabコードがある行をCUT
+// 一覧に載せたい...一覧にもハイライトの「^I」とは表示されない"):
+// PipeBuffer::wrapLine()は行末のタブだけ生のバイトのまま残すように
+// なった(自身のコメント参照)ので、ここでもその1バイトだけは他の
+// 制御バイト(^H等)と同じ反転表示グリフとして描画し、単なる空白との
+// 混同を無くす――上のMID-LINEのテストとの対比。
+TEST_CASE("a TRAILING literal tab byte (the very last byte of the line) renders as a "
+          "reverse-video control glyph, distinguishing it from an ordinary blank") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  v.setCursorHighlightEnabled(false);
+  std::vector<ContentView::Line> lines;
+  lines.push_back({std::string("ab\t"), std::nullopt, std::nullopt, {}});
+  v.setLines(lines);
+  v.redraw();
+  CHECK(d.rowText(0)[0] == 'a');
+  CHECK(d.rowText(0)[1] == 'b');
+  CHECK(d.rowText(0)[2] == static_cast<char>(0x09 + '@'));  // 'I', the same "^X" mnemonic as other control bytes
+  CHECK(d.standoutAt(0, 2) == true);
 }
 
 TEST_CASE("setLines clamps a stale cursor index to the new list's bounds") {

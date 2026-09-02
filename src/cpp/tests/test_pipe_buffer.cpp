@@ -68,6 +68,42 @@ TEST_CASE("tab that reaches the wrap width forces a wrap") {
   CHECK(buf.lines()[1].text == "cd");
 }
 
+// 2026-09-05追加、直接のユーザー報告("行末にtabコードがある行をCUT
+// 一覧に載せたい...^Q^Iでは入ってもgrepでヒットせず、一覧にもハイ
+// ライトの「^I」とは表示されない"): 調査の結果、原因は^Q^I自身では
+// なく、バッファへの取り込み時点で行末のタブも含め無条件にスペース
+// へ展開されており、CUT/GREPが検索する対象であるバッファそのものに
+// タブが一切残っていなかったこと。行の途中のタブ(上の2つのテスト)は
+// 引き続きスペースへ展開する(2026-08-02のSHELLスクロールバック対策を
+// 維持)が、行末(改行またはチャンク末尾の直前)のタブだけは生のバイト
+// 0x09のまま残す。
+TEST_CASE("a trailing tab (immediately before the newline) is preserved as a raw 0x09 byte, "
+          "NOT expanded to spaces -- unlike a mid-line tab") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  buf.feed("ab\t\n");
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == std::string("ab\t"));
+}
+
+TEST_CASE("a trailing tab at the very end of input with no newline at all (flush(), an "
+          "unterminated final line) is also preserved raw") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  buf.feed("ab\t");
+  buf.flush();
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == std::string("ab\t"));
+  CHECK(buf.lines()[0].endsWithNewline == false);
+}
+
+TEST_CASE("a trailing tab still forces a wrap when it lands exactly at the field width, same "
+          "as any other single-width character") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 3, 1 << 20);
+  buf.feed("ab\t\n");  // "ab" (col 2) + trailing tab (col 3, == width) -> wraps
+  REQUIRE(buf.lines().size() == 1);  // the trailing newline is absorbed into the same finalize
+  CHECK(buf.lines()[0].text == std::string("ab\t"));
+  CHECK(buf.lines()[0].endsWithNewline == true);
+}
+
 TEST_CASE("overBudget() trips once total content exceeds maxBytes") {
   PipeBuffer buf(Charset::Encoding::Ascii, 80, 5);
   CHECK(buf.overBudget() == false);

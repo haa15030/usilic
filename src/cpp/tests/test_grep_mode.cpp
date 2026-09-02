@@ -39,6 +39,26 @@ TEST_CASE_FIXTURE(Fixture, "search (Regex/egrep): real egrep supports extended r
   CHECK(mode.matches()[0].sourceLineIndex == 0);
 }
 
+// 2026-09-05追加、直接のユーザー報告("行末にtabコードがある行を
+// CUT一覧に載せたい...^Q^Iでは入ってもgrepでヒットせず")のエンドツー
+// エンド確認: PipeBuffer::wrapLine()側の修正(test_pipe_buffer.cpp)で
+// 行末のタブがバッファに生のまま残るようになった――ここではその
+// 「buffer側に生のタブが残っている」状態を再現し、パターン側にも
+// 生のタブバイトを含めた実際の`grep`検索が本当に一致することを確認
+// する(GrepMode::search()自体は実物のgrep/egrep/fgrepバイナリを
+// forkするだけで、シェルを経由しないargv直接渡しなので、パターン中の
+// 生のタブバイトがエスケープ問題で失われる心配も無い)。
+TEST_CASE_FIXTURE(Fixture, "search (Basic/plain grep): a literal tab byte in the pattern matches a "
+                           "trailing tab byte in a source line (the real end-to-end scenario PipeBuffer's "
+                           "own trailing-tab preservation exists for)") {
+  std::vector<std::string> lines = {"heading\t", "plain text", "another\t"};
+  std::string pattern = "\t";  // a raw tab byte, as ^Q^I would insert into the prompt
+  REQUIRE(mode.search(lines, pattern, GrepSyntax::Basic));
+  REQUIRE(mode.matches().size() == 2);
+  CHECK(mode.matches()[0].text == "heading\t");
+  CHECK(mode.matches()[1].text == "another\t");
+}
+
 TEST_CASE_FIXTURE(Fixture, "search: fgrep treats the pattern as a literal fixed string, not a regex") {
   std::vector<std::string> lines = {"a.b", "axb", "a.b again"};
   REQUIRE(mode.search(lines, "a.b", GrepSyntax::Fixed));
