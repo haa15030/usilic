@@ -319,6 +319,33 @@ TEST_CASE("kinsoku: the same newline-absorption still works when a zero-width \\
   CHECK(buf.lines()[1].text == "CD");
 }
 
+// 2026-09-05追加、直接のユーザー報告(実際のQUICK.txt由来のexplanation
+// を流し込んで発覚、スクリーンショット――「。」が単独の行として
+// 残っていた): 上のテスト群は、禁則対象の文字「自身」が幅超過を
+// 引き起こす場合(isForbiddenAtLineStart()の「追い出し」分岐が直接
+// 発動する)だけを確認していたが、もっとありふれた実際のケースを
+// 見落としていた――直前の文字がちょうど残り幅を「ぴったり」使い
+// 切ってfinalize()され、次の(禁則対象の)文字が真新しい行の先頭
+// (wrapCol_==0)から始まる場合。この時はどの文字を置いても
+// 「幅を超える」ことには一度もならない(0+2>widthは通常false)ので、
+// 上のどちらのkinsoku分岐も一度も発動せず、「。」が新しい行の先頭に
+// 単独で残っていた。
+TEST_CASE("kinsoku: a forbidden character is ALSO pushed back when the PRECEDING character "
+          "happened to fill the line to EXACTLY the configured width (not overflow it) -- the "
+          "forbidden character never itself triggers the width-overflow branch in this shape") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 4, 1 << 20);
+  // "AB" (2 cols) + "あ" (2 cols) lands at EXACTLY width=4 -- not an overflow.
+  // "。" (forbidden) immediately follows; without the fix it would start a
+  // fresh line entirely alone (wrapCol_==0, 0+2>4 is false, no kinsoku check
+  // ever fires).
+  buf.feed("AB\xe3\x81\x82"
+           "\xe3\x80\x82"
+           "CD\n");  // "ABあ。CD"
+  REQUIRE(buf.lines().size() == 2);
+  CHECK(buf.lines()[0].text == "AB\xe3\x81\x82\xe3\x80\x82");  // "ABあ。" -- pushed onto this line
+  CHECK(buf.lines()[1].text == "CD");
+}
+
 TEST_CASE("kinsoku: an ordinary (non-forbidden) wide character wraps normally -- confirms the "
           "kinsoku table isn't matching too broadly") {
   PipeBuffer buf(Charset::Encoding::Utf8, 3, 1 << 20);

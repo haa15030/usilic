@@ -207,7 +207,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   // 同じ制御バイトを再度たどるだけなので安全(冪等)。改行が見つかれば
   // その位置を返す(呼び出し元はfinalize(true)扱いにしてそこまで
   // 読み進める)、見つからなければ-1。
-  auto peekNewlineAfterMarkers = [&](int pos) -> int {
+  auto skipMarkersFrom = [&](int pos) -> int {
     while (pos + 1 < n) {
       unsigned char mc = static_cast<unsigned char>(convertedLine[pos]);
       if (mc != '\x01' && mc != '\x02') break;
@@ -217,7 +217,37 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       else currentItalic_ = (digit == '1');
       pos += 2;
     }
-    return (pos < n && convertedLine[pos] == '\n') ? pos : -1;
+    return pos;
+  };
+  auto peekNewlineAfterMarkers = [&](int pos) -> int {
+    int p = skipMarkersFrom(pos);
+    return (p < n && convertedLine[p] == '\n') ? p : -1;
+  };
+  // 2026-09-05追加、直接のユーザー報告(実際のQUICK.txt由来の
+  // explanationを流し込んで発覚、スクリーンショット――「。」が
+  // 単独の行として現れる): isForbiddenAtLineStart()自身の禁則
+  // チェック(上のkeepStart側/下のプレーン文字側、どちらも)は、
+  // 「この文字を置くと幅を超える」場合にしか発動しない――しかし
+  // もっとありふれた実際のケースは、直前の文字がちょうど残り幅を
+  // 使い切ってfinalize()され、次の(禁則対象の)文字が真新しい行の
+  // 先頭(wrapCol_==0)から始まる場合であり、この時はどの文字を
+  // 置いても「幅を超える」ことには一度もならない(0+2>widthは
+  // 通常false)ので、上のどちらのkinsoku分岐も一度も発動しない
+  // ――まさにこのすり抜けにより「。」が新しい行の先頭に単独で
+  // 残っていた。ここでは、ちょうど幅ぴったりで満杯になった直後の
+  // finalize()を行う「前」に、次の(マーカーを読み飛ばした先の)
+  // 本物の文字が禁則対象かどうかを覗き見る――対象なら、ここでは
+  // 確定させず、そのままメインループの次の反復へ委ねる: そちらは
+  // wrapCol_が既にwidth_に達しているので、次の文字は
+  // 「wrapCol_+w>width_」の本物のオーバーフロー分岐に必ず入り、
+  // 既存の禁則の「追い出し」ロジックがそのまま正しく処理する。
+  auto nextIsForbiddenAtLineStart = [&](int pos) -> bool {
+    if (encoding_ != Charset::Encoding::Utf8) return false;
+    int p = skipMarkersFrom(pos);
+    if (p >= n || convertedLine[p] == '\n') return false;
+    int len = byteLengthAt(convertedLine, p);
+    if (p + len > n) return false;
+    return isForbiddenAtLineStart(convertedLine, p, len);
   };
 
   while (i < n) {
@@ -361,7 +391,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       if (currentItalic_) wrapAttrs_.push_back({start, start + keepBytes, Display::Attribute::Italic});
       wrapCol_ += w;
       i = keepStart + keepBytes;
-      if (wrapCol_ >= width_) {
+      if (wrapCol_ >= width_ && !nextIsForbiddenAtLineStart(i)) {
         // peekNewlineAfterMarkers()自身のコメント参照。
         int nlPos = peekNewlineAfterMarkers(i);
         if (nlPos >= 0) {
@@ -395,7 +425,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     wrapText_.append(convertedLine, i, charBytes);
     wrapCol_ += w;
     i += charBytes;
-    if (wrapCol_ >= width_) {
+    if (wrapCol_ >= width_ && !nextIsForbiddenAtLineStart(i)) {
       // peekNewlineAfterMarkers()自身のコメント参照。
       int nlPos = peekNewlineAfterMarkers(i);
       if (nlPos >= 0) {
