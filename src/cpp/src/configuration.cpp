@@ -265,8 +265,18 @@ Configuration::Configuration() {
 #else
   roleCommands_[ConfiguredRole::UpdateDb] = {{"updatedb"}, std::nullopt};
 #endif
-  roleCommands_[ConfiguredRole::Egrep] = {{"egrep", "-n"}, std::nullopt};
-  roleCommands_[ConfiguredRole::Fgrep] = {{"fgrep", "-ne"}, std::nullopt};
+  // 2026-09-05変更、直接のユーザー依頼("fgrepとegrepの代わりにgrep -F
+  // とgrep -Eで代用"): `fgrep`/`egrep`は独立したバイナリとしては非推奨
+  // 扱いになりつつある(多くのディストリでは`grep`へのシンボリック
+  // リンクに過ぎず、GNU grepは実行時に"fgrep/egrep is obsolete"と警告
+  // する)。`grep -F`/`grep -E`は同じ機能を、廃止予定でない形で提供する
+  // ――引数の意味(-nは行番号、-eはパターンを明示するフラグでパターン
+  // 自体が"-"始まりでもオプションと誤認されない)は変えていない。
+  roleCommands_[ConfiguredRole::Egrep] = {{"grep", "-En"}, std::nullopt};
+  roleCommands_[ConfiguredRole::Fgrep] = {{"grep", "-Fne"}, std::nullopt};
+  // 2026-09-05追加(直接のユーザー依頼、"新たにGREP（grep）を新設"):
+  // プレーンな`grep`(基本正規表現、-F/-Eどちらのフラグも無し)。
+  roleCommands_[ConfiguredRole::Grep] = {{"grep", "-n"}, std::nullopt};
   roleCommands_[ConfiguredRole::GzipDecompress] = {{"gzip", "-dc"}, std::nullopt};
   roleCommands_[ConfiguredRole::Bzip2Decompress] = {{"bzip2", "-d"}, std::nullopt};
   roleCommands_[ConfiguredRole::Tar] = {{"tar"}, std::nullopt};

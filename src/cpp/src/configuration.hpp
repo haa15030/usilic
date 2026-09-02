@@ -53,6 +53,9 @@ enum class ConfiguredRole {
   UpdateDb,
   Egrep,
   Fgrep,
+  // 2026-09-05追加(直接のユーザー依頼、GrepSyntax::Basic自身の
+  // コメント参照): プレーンな`grep`(基本正規表現)。
+  Grep,
   GzipDecompress,
   Bzip2Decompress,
   Tar,

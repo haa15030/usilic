@@ -16,8 +16,15 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
                        GrepSyntax syntax) {
   if (pattern.empty()) return false;
 
-  ProgramCommand cmd =
-      configuration_.commandFor(syntax == GrepSyntax::Fixed ? ConfiguredRole::Fgrep : ConfiguredRole::Egrep);
+  // 2026-09-05追加(直接のユーザー依頼、"新たにGREP（grep）を新設"):
+  // GrepSyntax::Basic(プレーンなgrep)を含む3択――application.cpp自身の
+  // grepSyntaxRole()と同じ対応付け(重複を避けるためここでも同じ
+  // switchを持つ、grep_mode.cppはapplication.cppのファイルローカルな
+  // 匿名namespaceヘルパーを呼べないため)。
+  ConfiguredRole role = ConfiguredRole::Grep;
+  if (syntax == GrepSyntax::Fixed) role = ConfiguredRole::Fgrep;
+  else if (syntax == GrepSyntax::Regex) role = ConfiguredRole::Egrep;
+  ProgramCommand cmd = configuration_.commandFor(role);
   if (cmd.argv.empty()) return false;
 
   std::string inputText;

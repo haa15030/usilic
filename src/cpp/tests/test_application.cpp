@@ -506,10 +506,44 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) in Directory mode after descendi
   CHECK(app.directoryMode().currentDirectory() == path());
 }
 
-// -- resolveCommand/feedByte: ^S (single-byte) and ^J^S (leader) for GREP --
+// -- resolveCommand/feedByte: ^S (single-byte), ^O^S (leader), and ^J^S
+// (leader) for GREP/FGREP/EGREP --
 
-TEST_CASE("resolveCommand: ^S resolves to StartFgrep") {
-  CHECK(Application::resolveCommand(0x13, std::nullopt) == Command::StartFgrep);
+// 2026-09-05変更(直接のユーザー依頼、"発動キーはそれぞれ^O^S、^J^S、
+// ^Sとする"): プレーンな^Sは、旧来のFGREP(^O^Sへ移動)ではなく新設の
+// GREPを起動するようになった。
+TEST_CASE("resolveCommand: ^S resolves to StartGrep") {
+  CHECK(Application::resolveCommand(0x13, std::nullopt) == Command::StartGrep);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ^S (StartFgrep, moved from the old plain ^S)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  CHECK(app.feedByte(0x13, std::nullopt));    // ^S
+  CHECK(app.promptActive());
+  CHECK(display.rowText(display.rows() - 1).find("FGREP") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: plain ^S (StartGrep, new) opens a blank prompt labeled GREP, not "
+                           "FGREP/EGREP") {
+  REQUIRE(app.start(path()));
+  CHECK(app.feedByte(0x13, std::nullopt));  // ^S
+  CHECK(app.promptActive());
+  std::string row = display.rowText(display.rows() - 1);
+  CHECK(row.find("FGREP") == std::string::npos);
+  CHECK(row.find("EGREP") == std::string::npos);
+  CHECK(row.find("GREP") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "GrepMode::search (Basic/plain grep): 'grep' role runs with basic-regex syntax, "
+                           "distinct from Fixed/Regex") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
+  feedText("plain");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.grepMode().matches().size() == 1);
+  CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: a lone ^J is consumed as a pending leader byte, no action yet") {
@@ -1766,6 +1800,7 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^Q (quoted insert) inserts the NEXT 
   // + chr(0x08c) instead of "ab" + BS + 'c'.
   CHECK(app.promptText() == std::string("ab\x08" "c"));
 }
+
 
 TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^Q also quotes Enter/^G/^U -- normally-special bytes -- so a "
                            "single ^Q only affects the ONE byte right after it, not a whole mode") {
@@ -6695,7 +6730,7 @@ TEST_CASE_FIXTURE(Fixture, "^I (CopyDestination prompt): completes a partial fil
 // destination" shape (SHELL's own item-401 fix: trailing2="(zsh)"
 // badge, trailing3=return-target badge, always right-edge-padded --
 // see grepView_'s own updated provider comment).
-TEST_CASE_FIXTURE(Fixture, "FGREP results: mode line shows the program badge \"(fgrep)\" right after the "
+TEST_CASE_FIXTURE(Fixture, "FGREP results: mode line shows the program badge \"(grep)\" right after the "
                            "byte count, and the return-directory path LAST") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
@@ -6704,7 +6739,11 @@ TEST_CASE_FIXTURE(Fixture, "FGREP results: mode line shows the program badge \"(
   REQUIRE(app.currentMode() == ApplicationMode::Grep);
 
   std::string row = display.rowText(23);
-  std::size_t badgePos = row.find("(fgrep)");
+  // 2026-09-05変更(直接のユーザー依頼、"fgrepとegrepの代わりにgrep -F
+  // とgrep -Eで代用"): バッジは実際に実行されるプログラム(cmd.argv.front())
+  // をそのまま表示するので、FGREP/EGREP/GREPいずれも同じ"(grep)"になる
+  // ――configuration.cpp自身のコメント参照。
+  std::size_t badgePos = row.find("(grep)");
   std::size_t pathPos = row.find(path());
   REQUIRE(badgePos != std::string::npos);
   REQUIRE(pathPos != std::string::npos);
@@ -9055,7 +9094,10 @@ TEST_CASE_FIXTURE(Fixture, "Key: clicking the description half of a row opens th
   REQUIRE(displayRow >= 0);
 
   std::string rendered = display.rowText(displayRow);
-  int descriptionColumn = static_cast<int>(rendered.find("FGREP"));  // ^S's own description text
+  // 2026-09-05変更: プレーンな^SはGREP(旧FGREP、^O^Sへ移動)を起動する
+  // ようになった――kKeyTable自身のコメント参照。
+  int descriptionColumn = static_cast<int>(rendered.find("GREP"));  // ^S's own description text
+
   REQUIRE(descriptionColumn >= 0);
   CHECK(app.handleMouseClick(displayRow, descriptionColumn));
   CHECK(app.currentMode() == ApplicationMode::CutContent);
@@ -9186,7 +9228,7 @@ TEST_CASE_FIXTURE(Fixture, "recording: typed prompt text (a real GREP pattern) i
   app.feedByte(0x18, std::nullopt);
   app.feedByte('(', std::nullopt);
 
-  app.feedByte(0x13, std::nullopt);  // ^S : start FGREP
+  app.feedByte(0x13, std::nullopt);  // ^S : start GREP (2026-09-05: moved from FGREP)
   feedText("plain.txt");
   app.feedByte(0x0d, std::nullopt);  // submit
   REQUIRE(app.currentMode() == ApplicationMode::Grep);

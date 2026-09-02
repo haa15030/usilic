@@ -53,6 +53,49 @@ std::string truncatedTrailingPath(const std::string &path) {
   return "..." + path.substr(path.size() - kTrailingPathTailChars);
 }
 
+// 2026-09-05追加、直接のユーザー依頼("FGREP/EGREPの代わりにgrep -F/
+// grep -Eで代用の上、新たにGREP(grep)を新設"): GrepSyntax::Basic
+// (プレーンなgrep、正規表現は基本正規表現BRE)の追加に伴い、これまで
+// 各呼び出し箇所に個別に散っていた「FGREP/EGREPのラベル/ロールの
+// 2択」の三項演算子(GrepSyntax::Fixed ? "FGREP" : "EGREP"等)を、
+// GrepSyntax::Basicも扱える1箇所の判定へ括り出す――CutMode自身の
+// cutSyntax_はこのGrepSyntax::Basic拡張の対象では「ない」(ユーザー
+// 自身の依頼はGREPモードだけを指しており、CUTのFGREP/EGREP方式は
+// 元のまま)ので、cutSyntax_を読む個別の呼び出し箇所はここを使わず
+// 従来の三項演算子のままにしてある。
+const char *grepSyntaxLabel(GrepSyntax syntax) {
+  switch (syntax) {
+    case GrepSyntax::Fixed:
+      return "FGREP";
+    case GrepSyntax::Regex:
+      return "EGREP";
+    case GrepSyntax::Basic:
+      return "GREP";
+  }
+  return "GREP";
+}
+ConfiguredRole grepSyntaxRole(GrepSyntax syntax) {
+  switch (syntax) {
+    case GrepSyntax::Fixed:
+      return ConfiguredRole::Fgrep;
+    case GrepSyntax::Regex:
+      return ConfiguredRole::Egrep;
+    case GrepSyntax::Basic:
+      return ConfiguredRole::Grep;
+  }
+  return ConfiguredRole::Grep;
+}
+// GrepSyntax::Basicの検索パターン履歴は、cutSyntax_同様RecentFgrepPattern/
+// RecentEgrepPatternの2択のringだけで表現する(RecentGrepPattern用の
+// 新しいRingCategoryは追加しない)――grep(BRE)とegrep(ERE)はどちらも
+// 「固定文字列ではなく正規表現」という点でFGREPとは性質が異なり、
+// パターンの再利用という観点では両者を同じ「正規表現の履歴」として
+// 扱うのが自然なため、GrepSyntax::Basicのパターンも既存の
+// RecentEgrepPatternを共有する。
+RingCategory grepSyntaxRingCategory(GrepSyntax syntax) {
+  return syntax == GrepSyntax::Fixed ? RingCategory::RecentFgrepPattern : RingCategory::RecentEgrepPattern;
+}
+
 // 標準的なPOSIXのシングルクォートによるシェルエスケープ: '...'で
 // 包み、埋め込まれたリテラルのクォートはそれぞれ'\''(クォートを
 // 閉じ、エスケープされたクォート、クォートを再度開く)に置き換える
@@ -324,9 +367,13 @@ const KeyTableEntry kKeyTable[] = {
     {"^[^M", "制御コードもそのまま可視化して表示", "Read as is", {kEscape, kCarriageReturn}, false, "2.1"},
     {"^X^W", "バッファ内容を作業ファイルへ保存", "Save buffer to file", {kLeaderX, 0x17}, false, "2.1"},
 
-    // 2.3  FGREP / EGREP (^S / ^J^S)
-    {"^S", "FGREP", "FGREP", {kControlS}, false, "2.3"},
-    {"^J^S", "EGREP", "EGREP", {kLeaderJ, kControlS}, false, "2.3"},
+    // 2.3  FGREP / EGREP / GREP (^O^S / ^J^S / ^S) -- 2026-09-05変更
+    // (直接のユーザー依頼、"発動キーはそれぞれ^O^S、^J^S、^Sとする"):
+    // FGREPは旧来のプレーンな^S(K-31)から^O^Sへ移動し、空いた^Sは
+    // 新設のGREP(基本正規表現)が引き継ぐ。^J^S(EGREP)は変更無し。
+    {"^O^S", "FGREP ('grep -F'で検索)", "FGREP ('grep -F')", {kLeaderO, kControlS}, false, "2.3"},
+    {"^J^S", "EGREP ('grep -E'で検索)", "EGREP ('grep -E')", {kLeaderJ, kControlS}, false, "2.3"},
+    {"^S", "GREP ('grep'で検索)", "GREP ('grep')", {kControlS}, false, "2.3"},
 
     // 2.4  CUT (^Jc / ^J^C / ^Jb / ^J^B)
     {"^Jc", "CUT (固定文字列、バッファ)", "CUT (fixed string, buffer)", {kLeaderJ, 'c'}, false, "2.4"},
@@ -1118,9 +1165,8 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // なので、削除するのではなくtrailing3(それ自身のコメント参照)へ
   // 移す。
   grepView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    bool fixed = grepSyntax_ == GrepSyntax::Fixed;
-    std::string name = fixed ? "FGREP" : "EGREP";
-    const auto &cmd = configuration_.commandFor(fixed ? ConfiguredRole::Fgrep : ConfiguredRole::Egrep);
+    std::string name = grepSyntaxLabel(grepSyntax_);
+    const auto &cmd = configuration_.commandFor(grepSyntaxRole(grepSyntax_));
     std::string program = cmd.argv.empty() ? "" : cmd.argv.front();
     std::string badge = program.empty() ? "" : "(" + program + ")";
     // 2026-08-24修正、直接のユーザー報告("HELPの1.Introductionページ
@@ -1649,8 +1695,12 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::JumpPrevious;
     case ':':
       return Command::JumpNext;
+    // 2026-09-05変更(直接のユーザー依頼、"発動キーはそれぞれ^O^S、
+    // ^J^S、^Sとする"): プレーンな^Sは、これまでのFGREP(K-31、
+    // ^O^Sへ移動――leaderOPending_自身のswitch参照)ではなく、新設の
+    // GREP(基本正規表現)を起動する。
     case kControlS:
-      return Command::StartFgrep;
+      return Command::StartGrep;
     case 0x08:  // ^H(M_key、K-2、"KEY")――startKey()自身のコメント参照
       return Command::StartKey;
     case 0x80:  // ^Space(M_mark)――KeyInputはリテラルなNUL/Ctrl-Spaceを0x80として報告する、そのクラスコメント参照
@@ -2162,6 +2212,12 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::EnterCopyMode);
       case 0x19:  // ^O ^Y(K-30)
         return handleCommand(Command::PasteClipboard);
+      // 2026-09-05追加(直接のユーザー依頼、"発動キーはそれぞれ^O^S、
+      // ^J^S、^Sとする"): FGREPをプレーンな^S(K-31、旧割り当て)から
+      // ここへ移動。^J^S(EGREP)は変更無し――dispatchLeaderByte()自身の
+      // leaderJPending_のswitch参照。
+      case kControlS:  // ^O ^S : FGREP(旧K-31)
+        return handleCommand(Command::StartFgrep);
       default:
         return false;  // このスライスでは認識されない^Oシーケンス
     }
@@ -2958,6 +3014,8 @@ bool Application::handleCommand(Command command) {
       return startGrepPrompt(GrepSyntax::Fixed);
     case Command::StartEgrep:
       return startGrepPrompt(GrepSyntax::Regex);
+    case Command::StartGrep:
+      return startGrepPrompt(GrepSyntax::Basic);
     case Command::StartCutFixed:
       return startCutPrompt(GrepSyntax::Fixed);
     case Command::StartCutRegex:
@@ -4101,8 +4159,7 @@ bool Application::openSelectedGrepMatch() {
   ContentView &target = activeView();
   target.setCursorIndex(match->sourceLineIndex);
   if (grepReturnMode_ == ApplicationMode::Directory) {
-    std::string label = (grepSyntax_ == GrepSyntax::Fixed) ? "FGREP" : "EGREP";
-    directoryMode_.setSearchAnnotation(label + ": " + grepMode_.pattern());
+    directoryMode_.setSearchAnnotation(std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern());
     lastDirectorySearchKind_ = DirectorySearchKind::Grep;
     // EXEC(2026-08-24追加、openSelectedLocateResult()自身のコメント
     // と同じユーザー依頼): ここでのマッチは既に実際のディレクトリの
@@ -7168,7 +7225,7 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
       category = RingCategory::RecentLocateQuery;
       break;
     case PromptKind::GrepPattern:
-      category = (grepSyntax_ == GrepSyntax::Fixed) ? RingCategory::RecentFgrepPattern : RingCategory::RecentEgrepPattern;
+      category = grepSyntaxRingCategory(grepSyntax_);
       break;
     case PromptKind::ProgramCommand:
       category = RingCategory::ShellCommand;
@@ -7318,7 +7375,7 @@ bool Application::startShellHistoryRecall() {
 std::string Application::promptLabelText(PromptKind kind) const {
   switch (kind) {
     case PromptKind::GrepPattern:
-      return grepSyntax_ == GrepSyntax::Fixed ? "FGREP" : "EGREP";
+      return grepSyntaxLabel(grepSyntax_);
     case PromptKind::CutPattern:
       return "CUT";
     case PromptKind::ManName:
@@ -7808,9 +7865,7 @@ bool Application::executeGrep(const std::string &pattern) {
   // p.hfgrep/p.hegrepの分割に合わせている、promptLabelText()が
   // 既にFGREP/EGREPのモードラインのラベルを選ぶのと同じ方法で
   // grepSyntax_をキーにしている)。
-  history_.pushRecent(grepSyntax_ == GrepSyntax::Fixed ? RingCategory::RecentFgrepPattern
-                                                        : RingCategory::RecentEgrepPattern,
-                       pattern);
+  history_.pushRecent(grepSyntaxRingCategory(grepSyntax_), pattern);
   // 2026-08-18修正: 以前はハードコードされたFile対Directoryの三項
   // 演算子であり、grepがそこから起動され得る他の全てのモードについて
   // 黙って間違ったContentViewを読み(そして失敗時には再描画し)て

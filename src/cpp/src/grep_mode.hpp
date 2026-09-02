@@ -8,7 +8,12 @@
 
 namespace fm {
 
-enum class GrepSyntax { Fixed, Regex };  // fgrep(固定文字列) vs egrep(拡張正規表現)
+// fgrep(固定文字列)、egrep(拡張正規表現)、grep(基本正規表現) --
+// 2026-09-05追加(直接のユーザー依頼、"新たにGREP（grep）を新設"):
+// BasicはGrepMode専用(application.cppのgrepSyntaxLabel()/
+// grepSyntaxRole()自身のコメント参照)――CutMode自身のcutSyntax_は
+// このFixed/Regexの2値のままで変わらない。
+enum class GrepSyntax { Fixed, Regex, Basic };
 
 struct GrepMatch {
   int sourceLineIndex = -1;  // search()に渡された行群への0始まりインデックス

@@ -70,6 +70,10 @@ enum class Command {
   JumpPrevious,  // ';' : Back, MoveUp, Enter
   StartFgrep,
   StartEgrep,
+  // 2026-09-05追加(直接のユーザー依頼、"新たにGREP（grep）を新設"):
+  // プレーンなgrep(基本正規表現)。application.cpp自身のgrepSyntaxLabel()/
+  // grepSyntaxRole()参照。
+  StartGrep,
   StartCutFixed,
   StartCutRegex,
   // K-35/K-36(^Jb / ^J^B、M_fcut2/M_fcut――CUTの「通常ファイル」
