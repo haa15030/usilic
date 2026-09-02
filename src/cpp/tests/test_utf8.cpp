@@ -45,6 +45,15 @@ TEST_CASE("display_width: combining mark is 0 columns") {
   CHECK(Utf8::display_width(mark, 2) == 0);
 }
 
+// 2026-09-05追加、直接のユーザー依頼("半角・全角スペース・tab以外で
+// 見えない文字って無い？"): U+200B ZERO WIDTH SPACEを不可視マーカー
+// 候補として幅0扱いにした――utf8.cpp自身のコメント参照。
+TEST_CASE("display_width: U+200B ZERO WIDTH SPACE is 0 columns") {
+  // U+200B ZERO WIDTH SPACE = e2 80 8b
+  unsigned char zwsp[] = {0xe2, 0x80, 0x8b};
+  CHECK(Utf8::display_width(zwsp, 3) == 0);
+}
+
 // 2026-08-20 fix, root-caused via a real USILICGUIDEBUG grid-dump
 // capture ("ワート゛ニュース" in -g's ARC content listing): these two
 // codepoints are the actual combining dakuten/handakuten marks macOS's
