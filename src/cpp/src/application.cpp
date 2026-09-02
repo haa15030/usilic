@@ -1150,6 +1150,27 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       std::size_t start = segment->label.find_first_not_of(' ');
       if (start != std::string::npos) label = segment->label.substr(start);
     }
+    // 2026-09-02、直接のユーザー報告(スクリーンショット、モードラインに
+    // "@@quickkey@@"が出ている): showKeyReference()自身のquickKeyEntries_
+    // 分岐が、単一セグメントの目印として使っている内部限定の見出し
+    // "@@quickkey@@"は、そのままsegment->labelとしてここまで漏れて
+    // きていた――他のcutOrigin_(File/Help/Directory)向けの本物の
+    // ラベルとは違い、そもそもユーザーへ見せる意味のある文字列では
+    // ない。ここでは代わりに、開いた元のQuickKeyEntry自身の
+    // "ラベル : 説明"(KEY一覧の行と同じ見た目)を組み立て直す――
+    // keyView_自身のカーソル位置は、Keyモードを離れて以来動いて
+    // いない(quickKeyReferenceActive_が立っている間、renderKeyRows()は
+    // 一度も再実行されない)ので、そのままどのエントリを開いたかの
+    // 索引として使える。
+    if (quickKeyReferenceActive_) {
+      name = "KEY";
+      int qi = keyView_.cursorIndex();
+      if (qi >= 0 && qi < static_cast<int>(quickKeyEntries_.size())) {
+        label = quickKeyEntries_[qi].label + " : " + quickKeyEntries_[qi].description;
+      } else {
+        label.clear();
+      }
+    }
     // HELP(2026-08-23修正、実際の報告+参照: "HELP" "01/48 TOP"
     // "2194" "1.  Introdduction                  ")――バイト数と現在の
     // 章自身のラベルは、このプロバイダが以前は全ての起点について
@@ -6562,6 +6583,13 @@ bool Application::showKeyReference() {
     // 等)を拾ってしまう――"今だけ"のプロトタイプとして許容する。
     cutReturnMode_ = ApplicationMode::Key;
     cutSyntax_ = GrepSyntax::Regex;
+    // quickKeyReferenceActive_は、下のcutContentView_.redraw()自身の
+    // モードライン再構築(setModeLineFieldsProvider()自身のコメント
+    // 参照、"@@quickkey@@"をそのまま表示しないための分岐)がこの値を
+    // 読む「前」に立てる必要がある――実際の報告(スクリーンショット、
+    // モードラインに生の"@@quickkey@@"が出ていた)により、これを
+    // redraw()の「後」に立てていたのが原因と判明した。
+    quickKeyReferenceActive_ = true;
     if (!cutMode_.split(lines, "^@@quickkey@@", GrepSyntax::Regex)) return false;
     currentMode_ = ApplicationMode::Cut;
     cutView_.setCursorIndex(0);
@@ -6575,7 +6603,6 @@ bool Application::showKeyReference() {
     cutContentView_.setCursorIndex(0);
     cutContentView_.redraw();
     cutContentView_.syncVisibleCursor();
-    quickKeyReferenceActive_ = true;  // returnFromCutContent()自身のコメント参照
     currentMode_ = ApplicationMode::CutContent;
     return true;
   }
