@@ -96,6 +96,120 @@ RingCategory grepSyntaxRingCategory(GrepSyntax syntax) {
   return syntax == GrepSyntax::Fixed ? RingCategory::RecentFgrepPattern : RingCategory::RecentEgrepPattern;
 }
 
+// 2026-09-05追加、QuickKeyEntry自身のコメント参照(application.hpp)。
+// "^H"/"^J^H"/"^Jc"/"^O^S"/"^["等のキャレット記法を、kKeyTable自身の
+// 手書きのbytes初期化子(例えば{"^Jc",...,{kLeaderJ,'c'},...})と等価な
+// バイト列へ機械的に変換する。ASCII単位の単純な逐次スキャン: '^'に
+// 続く1文字は制御バイト(`toupper(c)-'@'`――このポート全体で既に確立
+// している'A'..'_'の範囲での慣習、KeyInputが生のNUL/Ctrl-Spaceを0x80
+// として報告する例外はapplication.cpp自身の別の既存コメント、"^@"に
+// だけ適用)、それ以外の1文字はそのままのリテラルバイトとして扱う。
+// このコード全体を通じて、こういった文字列→バイト列変換の既存の
+// 共有ユーティリティは無い(usilicrc自身のKEY構文の本物のパーサーは
+// 別の未着手プロジェクト、kKeyTable自身のコメント参照)ため、ここで
+// 新規に書き起こしている。
+std::vector<int> parseCaretNotationBytes(const std::string &label) {
+  std::vector<int> bytes;
+  std::size_t i = 0;
+  while (i < label.size()) {
+    unsigned char c = static_cast<unsigned char>(label[i]);
+    if (c == '^' && i + 1 < label.size()) {
+      unsigned char nc = static_cast<unsigned char>(label[i + 1]);
+      bytes.push_back(nc == '@' ? 0x80 : std::toupper(nc) - '@');
+      i += 2;
+    } else {
+      bytes.push_back(c);
+      i += 1;
+    }
+  }
+  return bytes;
+}
+
+// 2026-09-05追加、直接のユーザー依頼("今だけKEYモードを
+// ~/git/usilic/src/QUICK.txtを元に構築して欲しい...^H : キーアサイン
+// 一覧を表示...`^H`と`キーアサイン一覧を表示`がハイライト表示になり
+// 得る文字列で、動作はその章にあるとおり"): QUICK.txt自身(展開前の
+// 生のmarkupテキスト)から、"KEY"章の各エントリ
+// (<indent4><b>ラベル</b> : 説明</indent>、直後に続く
+// <indent8>詳細説明</indent>ブロック)を抜き出す。expandHelpMarkup()
+// (help_text.cpp)とは別物――あちらは<b>/<indentN>/<i>を「表示用の
+// 制御バイト列」へ展開するのに対し、こちらは逆にQUICK.txt自身の
+// markupを「構造化されたラベル/説明/詳細説明」へ「解析」する。
+// 詳細説明ブロックは、著者の可読性のための改行を含む複数行にまたがる
+// ことがあり(QUICK.txt自身、まだ執筆中で"</indent>"を書き終えていない
+// エントリも実在する)、閉じタグ・空行・次のエントリの開始行のいずれか
+// が見つかるまで貪欲に読み進める(閉じタグが最終的に見つからなくても
+// 安全側: 空行/次エントリで打ち切る)。
+std::vector<QuickKeyEntry> parseQuickKeyEntries(const std::string &raw) {
+  std::vector<QuickKeyEntry> entries;
+  std::vector<std::string> lines;
+  {
+    std::size_t start = 0;
+    while (start <= raw.size()) {
+      std::size_t nl = raw.find('\n', start);
+      if (nl == std::string::npos) {
+        lines.push_back(raw.substr(start));
+        break;
+      }
+      lines.push_back(raw.substr(start, nl - start));
+      start = nl + 1;
+    }
+  }
+  const std::string kEntryOpen = "<indent4><b>";
+  const std::string kBoldClose = "</b>";
+  const std::string kSep = " : ";
+  const std::string kIndentClose = "</indent>";
+  const std::string kExplOpen = "<indent8>";
+  std::size_t i = 0;
+  while (i < lines.size()) {
+    const std::string &line = lines[i];
+    if (line.compare(0, kEntryOpen.size(), kEntryOpen) != 0) {
+      i++;
+      continue;
+    }
+    std::size_t labelEnd = line.find(kBoldClose, kEntryOpen.size());
+    std::size_t sepPos = (labelEnd == std::string::npos) ? std::string::npos : line.find(kSep, labelEnd);
+    if (labelEnd == std::string::npos || sepPos == std::string::npos) {
+      i++;
+      continue;
+    }
+    QuickKeyEntry entry;
+    entry.label = line.substr(kEntryOpen.size(), labelEnd - kEntryOpen.size());
+    entry.bytes = parseCaretNotationBytes(entry.label);
+    std::size_t descStart = sepPos + kSep.size();
+    std::size_t descEnd = line.find(kIndentClose, descStart);
+    entry.description = (descEnd == std::string::npos) ? line.substr(descStart) : line.substr(descStart, descEnd - descStart);
+
+    std::size_t j = i + 1;
+    if (j < lines.size() && lines[j].compare(0, kExplOpen.size(), kExplOpen) == 0) {
+      std::string collected = lines[j].substr(kExplOpen.size());
+      std::size_t closePos = collected.find(kIndentClose);
+      bool closed = false;
+      if (closePos != std::string::npos) {
+        collected = collected.substr(0, closePos);
+        closed = true;
+      }
+      while (!closed && j + 1 < lines.size()) {
+        const std::string &cont = lines[j + 1];
+        if (cont.empty() || cont.compare(0, kEntryOpen.size(), kEntryOpen) == 0) break;
+        j++;
+        std::size_t cp = cont.find(kIndentClose);
+        if (cp != std::string::npos) {
+          collected += "\n" + cont.substr(0, cp);
+          closed = true;
+        } else {
+          collected += "\n" + cont;
+        }
+      }
+      entry.explanation = collected;
+      i = j;
+    }
+    entries.push_back(std::move(entry));
+    i++;
+  }
+  return entries;
+}
+
 // 標準的なPOSIXのシングルクォートによるシェルエスケープ: '...'で
 // 包み、埋め込まれたリテラルのクォートはそれぞれ'\''(クォートを
 // 閉じ、エスケープされたクォート、クォートを再度開く)に置き換える
@@ -4075,6 +4189,11 @@ bool Application::openSelectedSegment() {
   // CutContent経由で表示される、このメソッド自身のコメント冒頭
   // 参照――同じ症状がHELPでも起き得る)。
   cutContentView_.syncVisibleCursor();
+  // quickKeyReferenceActive_自身のコメント参照: 本物のCutContent入場
+  // (HELP章/CUT結果)はこの1箇所だけを通るので、ここで確実にクリア
+  // しておく――前回quickKeyEntries_経由のexplanation表示を見た後の
+  // 取り残しがここへ漏れ出さないように。
+  quickKeyReferenceActive_ = false;
   currentMode_ = ApplicationMode::CutContent;
   return true;
 }
@@ -4288,6 +4407,16 @@ bool Application::returnToGrepResults() {
 }
 
 bool Application::returnFromCutContent() {
+  // quickKeyReferenceActive_自身の宣言コメント(application.hpp)参照
+  // ――QUICK.txt由来の使い捨てexplanation表示は、無意味な1件だけの
+  // Cut目次画面を経由せず、直接Keyへ戻る。
+  if (quickKeyReferenceActive_) {
+    quickKeyReferenceActive_ = false;
+    currentMode_ = ApplicationMode::Key;
+    renderKeyRows();
+    keyView_.redraw();
+    return true;
+  }
   currentMode_ = ApplicationMode::Cut;
   cutView_.redraw();
   return true;
@@ -6103,19 +6232,55 @@ bool Application::toggleListBrowserHistory() {
 // が既にまさに同じパターンを毎回の移動で使っており、cursorIndex_を
 // 保ったまま呼べば現在行が見える位置へ再クランプされるだけなので、
 // 大きな一覧でも実害は無い。
+// 2026-09-05追加、QuickKeyEntry自身のコメント参照(application.hpp)。
+// 固定の開発用パス(~/git/usilic/src/QUICK.txt)を直接読む――"今だけ"
+// の暫定プロトタイプなので、Configuration/usilicDir経由の正式な設定
+// パスは意図的に用意していない。読めない・1件もパースできない場合は
+// quickKeyEntries_を空のままにし、renderKeyRows()等が黙って従来の
+// kKeyTableへフォールバックする(mpi等の他機体でこのパスが存在せず
+// クラッシュする、という事態を避けるため)。
+//
+// USILICQUICKKEY環境変数による明示的なopt-in必須(2026-09-05追加、
+// 実際のmake test失敗で発覚): このパスは開発機自身の$HOMEの下に実在
+// する(このリポジトリのチェックアウト先そのもの)ため、opt-in無しで
+// 常時有効にすると、テストスイート自身がこの開発機上で実行される
+// たびに黙って本物のQUICK.txtを読み込んでしまい、kKeyTable自身の
+// 行数/ラベルを前提とした既存のKEYモードのテスト群(例えば
+// "^S : FGREP"という前提)を静かに壊していた――ユーザーが明示的に
+// この暫定プレビューを試したい時だけ有効になるようにする。
+void Application::loadQuickKeyEntries() {
+  quickKeyEntries_.clear();
+  if (!std::getenv("USILICQUICKKEY")) return;
+  const char *home = std::getenv("HOME");
+  if (!home) return;
+  std::ifstream in(std::string(home) + "/git/usilic/src/QUICK.txt", std::ios::binary);
+  if (!in) return;
+  std::ostringstream buffer;
+  buffer << in.rdbuf();
+  quickKeyEntries_ = parseQuickKeyEntries(buffer.str());
+}
+
 void Application::renderKeyRows() {
+  bool useQuick = !quickKeyEntries_.empty();
+  std::size_t rowCount = useQuick ? quickKeyEntries_.size() : std::size(kKeyTable);
   std::vector<ContentView::Line> lines;
-  lines.reserve(std::size(kKeyTable));
+  lines.reserve(rowCount);
   std::size_t maxLabelWidth = 0;
-  for (const auto &entry : kKeyTable) maxLabelWidth = std::max(maxLabelWidth, std::string(entry.keyLabel).size());
+  if (useQuick) {
+    for (const auto &entry : quickKeyEntries_) maxLabelWidth = std::max(maxLabelWidth, entry.label.size());
+  } else {
+    for (const auto &entry : kKeyTable) maxLabelWidth = std::max(maxLabelWidth, std::string(entry.keyLabel).size());
+  }
   keyLabelColumnWidth_ = static_cast<int>(maxLabelWidth);
   int cursor = keyView_.cursorIndex();
-  for (std::size_t i = 0; i < std::size(kKeyTable); i++) {
-    const auto &entry = kKeyTable[i];
-    std::string label = entry.keyLabel;
+  for (std::size_t i = 0; i < rowCount; i++) {
+    std::string label = useQuick ? quickKeyEntries_[i].label : std::string(kKeyTable[i].keyLabel);
+    bool isMacro = useQuick ? false : kKeyTable[i].isMacro;
+    const std::string &description =
+        useQuick ? quickKeyEntries_[i].description : (helpJapanese_ ? kKeyTable[i].description : kKeyTable[i].descriptionEn);
     if (label.size() < maxLabelWidth) label.insert(0, maxLabelWidth - label.size(), ' ');
-    std::string text = label + " : " + (helpJapanese_ ? entry.description : entry.descriptionEn);
-    if (entry.isMacro) text += " (M)";
+    std::string text = label + " : " + description;
+    if (isMacro) text += " (M)";
     std::vector<AttributeRun> attributes;
     if (static_cast<int>(i) == cursor) {
       int split = static_cast<int>(maxLabelWidth);
@@ -6130,6 +6295,7 @@ void Application::renderKeyRows() {
 
 bool Application::startKey() {
   if (currentMode_ == ApplicationMode::Key) return false;
+  loadQuickKeyEntries();
   keyColumnFocus_ = 0;
   keyView_.setCursorIndex(0);
   renderKeyRows();
@@ -6340,8 +6506,11 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
 // ついてはこのクラス自身の宣言コメント(application.hpp)参照。
 bool Application::executeSelectedKeyBinding() {
   int idx = keyView_.cursorIndex();
-  if (idx < 0 || idx >= static_cast<int>(std::size(kKeyTable))) return false;
-  std::vector<int> bytes = kKeyTable[idx].bytes;  // コピー: 下のreturnFromKey()が先に状態を再描画/変更し得る
+  bool useQuick = !quickKeyEntries_.empty();
+  int count = useQuick ? static_cast<int>(quickKeyEntries_.size()) : static_cast<int>(std::size(kKeyTable));
+  if (idx < 0 || idx >= count) return false;
+  // コピー: 下のreturnFromKey()が先に状態を再描画/変更し得る
+  std::vector<int> bytes = useQuick ? quickKeyEntries_[idx].bytes : kKeyTable[idx].bytes;
 
   currentMode_ = keyReturnMode_;
   activeView().redraw();
@@ -6356,6 +6525,60 @@ bool Application::executeSelectedKeyBinding() {
 // なり、cutReturnMode_はKeyになる――そこから^Gを2回でKEY自身へ戻る)。
 bool Application::showKeyReference() {
   int idx = keyView_.cursorIndex();
+  // 2026-09-05追加、直接のユーザー依頼("動作はその章にあるとおり"
+  // ――QuickKeyEntry自身のコメント参照): quickKeyEntries_使用時は、
+  // kHelpTextJaの章番号でCutMode::segments()を検索する代わりに、
+  // そのエントリ自身のexplanation(QUICK.txt自身の直後の
+  // <indent8>...</indent>ブロック)を、たった1セグメントだけの
+  // 使い捨てのCutMode分割として直接構築する――showKeyReference()の
+  // 「探して直接そこへジャンプする」という最終的な見た目(description
+  // 半分を選ぶと即座に説明文が開く、^Gを2回で元のKEY一覧へ戻る)を、
+  // kKeyTable経由の本物のHELP章ジャンプと同じ形で保つため。パターンは
+  // ラベル自身の先頭バイトだけで十分に一意(egrepの特殊文字を含み得る
+  // ラベルをエスケープする手間を避ける、単一セグメントなので前方
+  // 一致の厳密さはどのみち問わない)。
+  if (!quickKeyEntries_.empty()) {
+    if (idx < 0 || idx >= static_cast<int>(quickKeyEntries_.size())) return false;
+    const QuickKeyEntry &entry = quickKeyEntries_[idx];
+    if (entry.explanation.empty()) return false;
+    // "@@quickkey@@"は本文には一切表示しない、egrepパターンとして
+    // マッチさせるためだけの内部限定の見出し行――CutMode::split()は
+    // legacy自身のHELP同様、マッチした見出し行自身もセグメント内容の
+    // 一部として含める(実際のHELP章が自分自身の"2.3. ..."という見出し
+    // 行を先頭に表示するのと同じ)ため、下でsegmentContent()を自前で
+    // 呼び、先頭の見出し行だけを取り除いてからcutContentView_へ渡す
+    // ――openSelectedSegment()をそのまま使うと、この内部限定の目印
+    // 文字列がユーザーに見えてしまう。
+    std::string body = "@@quickkey@@\n" + expandHelpMarkup(entry.explanation);
+    PipeBuffer pipe(encoding_, std::max(1, display_.columns()), 4L * 1024 * 1024);
+    pipe.feed(body);
+    pipe.flush();
+    std::vector<StyledLine> lines(pipe.lines().begin(), pipe.lines().end());
+    // cutOrigin_はここでは意図的に据え置く(File/Help/Directory/Logの
+    // どれも正確には当てはまらない――このQUICK.txt由来の使い捨て
+    // セグメントには対応する「再取得元」が無いため)。既知の割り切り:
+    // このexplanation表示中にウィンドウをリサイズすると、
+    // handleResize()自身のcutOrigin_ベースの再取得が別内容(fileView_
+    // 等)を拾ってしまう――"今だけ"のプロトタイプとして許容する。
+    cutReturnMode_ = ApplicationMode::Key;
+    cutSyntax_ = GrepSyntax::Regex;
+    if (!cutMode_.split(lines, "^@@quickkey@@", GrepSyntax::Regex)) return false;
+    currentMode_ = ApplicationMode::Cut;
+    cutView_.setCursorIndex(0);
+    const CutSegment *segment = cutMode_.selectedSegment();
+    if (!segment) return true;
+    std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
+    std::vector<ContentView::Line> contentLines;
+    contentLines.reserve(content.empty() ? 0 : content.size() - 1);
+    for (std::size_t i = 1; i < content.size(); i++) contentLines.push_back({content[i].text, std::nullopt, std::nullopt, content[i].attributes});
+    cutContentView_.setLines(std::move(contentLines));
+    cutContentView_.setCursorIndex(0);
+    cutContentView_.redraw();
+    cutContentView_.syncVisibleCursor();
+    quickKeyReferenceActive_ = true;  // returnFromCutContent()自身のコメント参照
+    currentMode_ = ApplicationMode::CutContent;
+    return true;
+  }
   if (idx < 0 || idx >= static_cast<int>(std::size(kKeyTable))) return false;
   const char *section = kKeyTable[idx].helpSection;
   if (!section || !*section) return false;

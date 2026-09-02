@@ -1108,6 +1108,26 @@ enum class ApplicationMode {
 //     ファイルを編集することが、どちらのモードも現在公開している
 //     以上のパス解決の仕組み無しに意味を成すかどうか)を将来の
 //     一切れへ延期している。
+// 2026-09-05追加、直接のユーザー依頼("今だけKEYモードを
+// ~/git/usilic/src/QUICK.txtを元に構築して欲しい"): 従来のkKeyTable
+// (application.cpp、C++のハードコード配列)の代わりに、実行中に
+// QUICK.txt自身の"KEY"章(<indent4><b>ラベル</b> : 説明</indent>の
+// 各行+直後の<indent8>詳細説明</indent>ブロック)を都度パースして
+// 構築する、暫定的な並行データソース。KeyTableEntry(application.cpp
+// 自身のコメント参照)と役割は同じだが、フィールドはこの一切れが
+// 実際に使うものだけに絞ってある――descriptionEn(英語版、QUICK.txt
+// 自体がまだ日本語専用)・isMacro(該当する概念が無い)・helpSection
+// (章番号ではなく、explanation自身が直接の参照先になる)は無い。
+// あくまで「確認しながら進める」ための一時的なプロトタイプであり、
+// 正式なアーキテクチャ(ユーザー自身の言葉: "文字列一覧表を作って
+// おいてそれを元にファイル分割")はまだ未着手。
+struct QuickKeyEntry {
+  std::string label;        // 例: "^H"(キャレット記法、画面表示にも使う)
+  std::string description;  // 例: "キーアサイン一覧を表示（常時）"
+  std::vector<int> bytes;   // labelをキャレット記法から解釈した、直接実行用のバイト列
+  std::string explanation;  // 直後の<indent8>...</indent>ブロックの生テキスト(markup展開前)、無ければ空
+};
+
 class Application {
  public:
   // `keyInput`は、実際に本物のttyのraw/cookedモードを制御している
@@ -1667,6 +1687,8 @@ class Application {
   // 自身、およびLeft/Right/上下カーソル移動・マウスクリックの後に、
   // 現在のカーソル行・keyColumnFocus_の組が変わるたび呼ばれる。
   void renderKeyRows();
+  // QuickKeyEntry自身のコメント参照。startKey()から毎回呼ばれる。
+  void loadQuickKeyEntries();
   // Keyモードにいる間のEnter: まずkeyReturnMode_へ戻り(HELP.jp
   // 2.2自身の文書化された順序――"KEYを呼び出したモードに戻った
   // のち，対応するキー定義を実行します"――に合わせている)、
@@ -2182,6 +2204,22 @@ class Application {
   // ――ラベル/説明文それぞれのハイライト範囲、およびhandleMouseClick()
   // 自身のクリック位置の判定に使う。
   int keyLabelColumnWidth_ = 0;
+  // QuickKeyEntry自身のコメント参照。startKey()の呼び出しごとに
+  // QUICK.txtを再読み込み・再パースする(キャッシュしない――
+  // ユーザーがQUICK.txtを編集しながら都度^Hで確認する運用を意図的に
+  // 優先している)。読み込み・パースに失敗した場合(該当エントリが
+  // 1つも見つからない場合を含む)は空のままにし、renderKeyRows()等が
+  // 従来通りkKeyTableへフォールバックする。
+  std::vector<QuickKeyEntry> quickKeyEntries_;
+  // showKeyReference()自身のquickKeyEntries_分岐が使う: 本物のHELP/
+  // CUT結果のCutContentは^G2回(CutContent→Cut(目次)→元のモード)で
+  // 戻るのが正しいが、QUICK.txt由来の使い捨てのexplanation表示は
+  // ("@@quickkey@@"という内部限定のダミー見出し1件だけの)無意味な
+  // Cut目次画面を経由させたくない――このフラグが立っている間、
+  // returnFromCutContent()はCutへ寄り道せず直接Keyへ戻る(自身の
+  // コメント参照)。CutContentへ入るたび設定し、そこから抜けるたび
+  // (原因を問わず)クリアする。
+  bool quickKeyReferenceActive_ = false;
   ApplicationMode copyReturnMode_ = ApplicationMode::Directory;
   GrepSyntax grepSyntax_ = GrepSyntax::Fixed;
   GrepSyntax cutSyntax_ = GrepSyntax::Fixed;
