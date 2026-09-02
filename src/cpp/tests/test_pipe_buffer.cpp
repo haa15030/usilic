@@ -272,39 +272,53 @@ TEST_CASE("\\x01<N> indent marker: \\x010 (N=0) turns the indent back off for an
 
 // 2026-09-04追加、直接のユーザー依頼("禁則処理（句読点が行の冒頭に
 // 来ない）を実施"): 行頭禁則の実wrapLine()消費テスト。
+//
+// 2026-09-05訂正、実機での実際の再現(QUICK.txt由来のexplanationを
+// 実際に表示して発覚、直接のユーザー報告"禁則処理が利いていないの
+// と、一文字欠落がある")を受けて、以下のテスト群の期待値を作り直した。
+// 以前の実装は「たとえ行が予約列幅を1文字分超えることになっても
+// 押し込む」(幅超過を許容)方式だったが、-g(GraphicalDisplay)は
+// columns()ぴったりの大きさのセル格子しか持たず、その超過分のセルへ
+// は本質的に一切描画できない(境界チェックで黙って切り捨てられる)と
+// 判明したため、本来の日本語組版の「追い出し」――直前の「普通の」
+// 文字を今の行から取り除いて次の行へ戻し、その分だけ空いた幅へ禁則
+// 対象の文字を収める――に作り直した(popLastCharForKinsoku()参照)。
+// これにより行がwidth_を超えることはもう無い。
 TEST_CASE("kinsoku: a forbidden line-start character (U+3002 IDEOGRAPHIC FULL STOP, \"\xe3\x80\x82\") "
-          "is pushed onto the end of the PREVIOUS line instead of starting a new one, even "
-          "though that overflows the configured width by one character") {
+          "is kept off the start of a line by giving up the PRECEDING line's own last character "
+          "to the next line (proper oshidashi/reflow), never letting any line exceed the "
+          "configured width") {
   PipeBuffer buf(Charset::Encoding::Utf8, 3, 1 << 20);
   buf.feed("AB\xe3\x80\x82"
            "CD\n");  // "AB。CD"
-  REQUIRE(buf.lines().size() == 2);
-  CHECK(buf.lines()[0].text == "AB\xe3\x80\x82");  // "。" pushed here despite overflowing width 3
-  CHECK(buf.lines()[1].text == "CD");
+  REQUIRE(buf.lines().size() == 3);
+  CHECK(buf.lines()[0].text == "A");
+  CHECK(buf.lines()[1].text == "B\xe3\x80\x82");  // "B" reflowed here to make room for "。"
+  CHECK(buf.lines()[2].text == "CD");
 }
 
 // 2026-09-04追加、実機での実際の再現(初回のsrc/HELP.txt全面改稿を
 // 実際に流し込んで発覚): 禁則の「追い出し」によって、段落の最後の
 // 文字がちょうど行の残り幅を使い切ってしまうと、その直後に続く本物の
-// 改行が、既に幅超過finalizeで空になったwrapText_に対してさらに
-// finalize(true)を起こし、見せかけの空行を生んでいた――ここでは
-// width=3、"AB。"(=禁則で追い出された"。"を含めてちょうど幅4分、
-// つまり幅超過ぴったり)の直後に本物の改行が続くケースを直接構成
-// して確認する。
-TEST_CASE("kinsoku: when the pushed-onto line is IMMEDIATELY followed by a real newline, "
+// 改行が、既に確定済みのwrapText_に対してさらにfinalize(true)を起こし、
+// 見せかけの空行を生んでいた――ここでは width=3、"B。"(=作り直した
+// 「追い出し」で反映された行、ちょうど幅ぴったり)の直後に本物の改行が
+// 続くケースを直接構成して確認する。
+TEST_CASE("kinsoku: when the reflowed line is IMMEDIATELY followed by a real newline, "
           "that newline is absorbed into the SAME line (endsWithNewline=true) instead of "
           "producing a spurious extra blank line") {
   PipeBuffer buf(Charset::Encoding::Utf8, 3, 1 << 20);
   buf.feed("AB\xe3\x80\x82"
            "\nCD\n");  // "AB。" then a REAL newline, then "CD"
-  REQUIRE(buf.lines().size() == 2);  // NOT 3 -- no spurious blank line in between
-  CHECK(buf.lines()[0].text == "AB\xe3\x80\x82");
-  CHECK(buf.lines()[0].endsWithNewline == true);  // the real newline was absorbed here
-  CHECK(buf.lines()[1].text == "CD");
+  REQUIRE(buf.lines().size() == 3);
+  CHECK(buf.lines()[0].text == "A");
+  CHECK(buf.lines()[1].text == "B\xe3\x80\x82");
+  CHECK(buf.lines()[1].endsWithNewline == true);  // the real newline was absorbed here
+  CHECK(buf.lines()[2].text == "CD");
 }
 
 TEST_CASE("kinsoku: the same newline-absorption still works when a zero-width \\x01/\\x02 "
-          "marker (e.g. an </indent> close tag) sits between the pushed-onto character and "
+          "marker (e.g. an </indent> close tag) sits between the reflowed line and "
           "the real newline -- the exact shape src/HELP.txt's own \"...できます。</indent>\" "
           "produces, and the marker's own state update (currentIndent_) still applies") {
   PipeBuffer buf(Charset::Encoding::Utf8, 3, 1 << 20);
@@ -313,10 +327,11 @@ TEST_CASE("kinsoku: the same newline-absorption still works when a zero-width \\
   raw.push_back('0');  // \x01 0 -- an </indent> close, right where HELP.txt's own shape has it
   raw += "\nCD\n";
   buf.feed(raw);
-  REQUIRE(buf.lines().size() == 2);  // still NOT 3
-  CHECK(buf.lines()[0].text == "AB\xe3\x80\x82");
-  CHECK(buf.lines()[0].endsWithNewline == true);
-  CHECK(buf.lines()[1].text == "CD");
+  REQUIRE(buf.lines().size() == 3);
+  CHECK(buf.lines()[0].text == "A");
+  CHECK(buf.lines()[1].text == "B\xe3\x80\x82");
+  CHECK(buf.lines()[1].endsWithNewline == true);
+  CHECK(buf.lines()[2].text == "CD");
 }
 
 // 2026-09-05追加、直接のユーザー報告(実際のQUICK.txt由来のexplanation
@@ -330,7 +345,7 @@ TEST_CASE("kinsoku: the same newline-absorption still works when a zero-width \\
 // 「幅を超える」ことには一度もならない(0+2>widthは通常false)ので、
 // 上のどちらのkinsoku分岐も一度も発動せず、「。」が新しい行の先頭に
 // 単独で残っていた。
-TEST_CASE("kinsoku: a forbidden character is ALSO pushed back when the PRECEDING character "
+TEST_CASE("kinsoku: a forbidden character is ALSO reflowed when the PRECEDING character "
           "happened to fill the line to EXACTLY the configured width (not overflow it) -- the "
           "forbidden character never itself triggers the width-overflow branch in this shape") {
   PipeBuffer buf(Charset::Encoding::Utf8, 4, 1 << 20);
@@ -341,9 +356,10 @@ TEST_CASE("kinsoku: a forbidden character is ALSO pushed back when the PRECEDING
   buf.feed("AB\xe3\x81\x82"
            "\xe3\x80\x82"
            "CD\n");  // "ABあ。CD"
-  REQUIRE(buf.lines().size() == 2);
-  CHECK(buf.lines()[0].text == "AB\xe3\x81\x82\xe3\x80\x82");  // "ABあ。" -- pushed onto this line
-  CHECK(buf.lines()[1].text == "CD");
+  REQUIRE(buf.lines().size() == 3);
+  CHECK(buf.lines()[0].text == "AB");
+  CHECK(buf.lines()[1].text == "\xe3\x81\x82\xe3\x80\x82");  // "あ。" -- "あ" reflowed here
+  CHECK(buf.lines()[2].text == "CD");
 }
 
 TEST_CASE("kinsoku: an ordinary (non-forbidden) wide character wraps normally -- confirms the "

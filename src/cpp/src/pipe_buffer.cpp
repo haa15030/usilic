@@ -114,14 +114,22 @@ int PipeBuffer::widthAt(const std::string &s, int pos, int charBytes) const {
 // 基本ルールの1つ)。UTF-8限定(HELP自身のテキストは常にUTF-8――
 // help_text.hpp自身のコメント参照。EUCコンテンツについては、この
 // 一覧をEUCバイト列でも二重に持つ手間に見合うほどの実際の要望が
-// まだ無いため、今回は対象外のままにしてある)。「追い出し」方式
-// (この文字を、新しい行の先頭にするのではなく、直前の行の末尾へ、
-// たとえその行が予約列幅を1文字分超えることになっても押し込む)
-// ――このクラス自身の「隙間より文字化けの方がまし」というトレード
-// オフの選択(既存のScrollbar系コメント等、随所で繰り返されている
-// 判断)と同じ精神。連続する2文字以上の禁則文字(例えば"」。")までは
-// 追いかけない(1段階の押し出しのみ)――実用上ほぼ現れない組み合わせ
-// のための複雑化を避ける単純化。
+// まだ無いため、今回は対象外のままにしてある)。
+//
+// 2026-09-05訂正、実機での実際の再現(QUICK.txt由来のexplanationを
+// 実際に表示して発覚、直接のユーザー報告"禁則処理が利いていないの
+// と、一文字欠落がある")を受けて、「追い出し」の実装方針を作り直した:
+// 以前は単に「たとえその行が予約列幅を1文字分超えることになっても
+// 押し込む」(幅超過を許容)方式だったが、-g(GraphicalDisplay)は
+// columns()ぴったりの大きさのセル格子しか持たず、その超過分のセルへ
+// は本質的に一切描画できない(境界チェックで黙って切り捨てられる)と
+// 判明した。今は本来の日本語組版の「追い出し」――直前の「普通の」
+// 文字を今の行から取り除いて次の行へ戻し、その分だけ空いた幅へ禁則
+// 対象の文字を収める――に作り直してある(popLastCharForKinsoku()
+// 参照)。これにより、行がwidth_を超えることはもう無い。連続する
+// 2文字以上の禁則文字(例えば"」。")までは追いかけない(1段階の
+// 押し出しのみ)――実用上ほぼ現れない組み合わせのための複雑化を
+// 避ける単純化。
 static bool isForbiddenAtLineStart(const std::string &s, int pos, int len) {
   static const char *const kForbidden[] = {
       // 句読点・区切り記号
@@ -159,6 +167,16 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   int n = static_cast<int>(convertedLine.size());
   int i = 0;
 
+  // 2026-09-05追加、isForbiddenAtLineStart()自身のコメント参照
+  // (禁則の「追い出し」実装の作り直し): 直近に配置した1文字を、
+  // 必要なら丸ごと取り消して次の行へ差し戻せるように、その1文字
+  // 「だけ」についての最小限の記録を保つ。finalize()のたびに(新しい
+  // 行には取り消す対象が何も無いので)無効化する。
+  int lastCharSeqStart = -1;      // その文字の処理がconvertedLine中で始まった位置(このループのトップでのi)
+  int lastCharRenderedBytes = 0;  // wrapText_へ実際に書き込まれたバイト数
+  int lastCharWidth = 0;          // その文字の表示カラム数
+  int lastCharAttrCount = 0;      // その文字のためだけにwrapAttrs_へ積んだ要素数(太字/下線+斜体で最大2)
+
   auto finalize = [&](bool endsWithNewline) {
     lines_.push_back({wrapText_, wrapAttrs_, endsWithNewline});
     usedBytes_ += static_cast<long>(wrapText_.size());
@@ -166,6 +184,25 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     wrapText_.clear();
     wrapAttrs_.clear();
     wrapCol_ = 0;
+    lastCharSeqStart = -1;
+  };
+  // 直近に配置した1文字を取り消し、その処理を始めた位置まで`i`を
+  // 巻き戻す――呼び出し元がすぐ後にfinalize()+continueすることで、
+  // メインループが次の反復でその文字を、真新しい(まだ何も置かれて
+  // いない)行の先頭として一から処理し直す。取り消す対象が無ければ
+  // (このwrapLine()呼び出し内で一度も文字を置いていない、または
+  // 既に一度使って無効化済み)false。「太字/下線+斜体で最大2つ」
+  // 以上のAttributeRunがこの1文字に対して積まれることは無い
+  // (currentItalic_自身のコメント参照)ので、lastCharAttrCount個
+  // だけ末尾からpop_back()すれば正確に取り消せる。
+  auto popLastCharForKinsoku = [&]() -> bool {
+    if (lastCharSeqStart < 0) return false;
+    wrapText_.resize(wrapText_.size() - static_cast<std::size_t>(lastCharRenderedBytes));
+    for (int k = 0; k < lastCharAttrCount && !wrapAttrs_.empty(); k++) wrapAttrs_.pop_back();
+    wrapCol_ -= lastCharWidth;
+    i = lastCharSeqStart;
+    lastCharSeqStart = -1;
+    return true;
   };
   // 2026-09-04訂正、実機での実際の再現(初回のsrc/HELP.txt全面改稿を
   // 実際に流し込んで確認して発覚): 上のfinalize()自身が新しい行を
@@ -251,6 +288,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   };
 
   while (i < n) {
+    int placementStart = i;  // popLastCharForKinsoku()自身のコメント参照
     unsigned char c = static_cast<unsigned char>(convertedLine[i]);
     // 2026-09-04追加(currentIndent_自身のコメント参照): expandHelpMarkup()
     // が<indentN>/</indent>から生成する制御バイト\x01+数字1桁――
@@ -361,15 +399,22 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       int w = widthAt(convertedLine, keepStart, keepBytes);
       if (wrapCol_ + w > width_) {
         // isForbiddenAtLineStart()自身のコメント参照(禁則処理、
-        // 2026-09-04追加): この文字を新しい行の先頭にする代わりに、
-        // 直前の行の末尾へ追い出す――finalize()せずそのまま下の通常
-        // 配置へ進み、配置後の`wrapCol_ >= width_`チェックでこの文字を
-        // 含めた「後」に改行させる。wrapCol_ > 0の条件は、そもそも
-        // 行の先頭で発生した(=追い出す先の「前の行」が無い)場合の
-        // 無意味な適用を避けるため。
+        // 2026-09-04追加、2026-09-05に「追い出し」の実装方針を作り
+        // 直した): この文字を新しい行の先頭にする代わりに、直前に
+        // 置いたばかりの1文字を取り消して次の行へ差し戻し、空いた
+        // 分の幅にこの文字を(改めて真新しい行の上で)収める。
+        // wrapCol_ > 0の条件は、そもそも行の先頭で発生した(=差し戻す
+        // 先の「前の文字」が無い)場合の無意味な適用を避けるため。
         bool kinsoku = wrapCol_ > 0 && encoding_ == Charset::Encoding::Utf8 &&
                        isForbiddenAtLineStart(convertedLine, keepStart, keepBytes);
         if (!kinsoku) { finalize(false); continue; }
+        if (popLastCharForKinsoku()) { finalize(false); continue; }
+        // popLastCharForKinsoku()が取り消す対象を持たなかった(通常は
+        // 起こらない――wrapCol_>0が既に何か置かれていることを保証
+        // する)場合のみ、フォールバックとして以前通りの幅超過を
+        // 許容する: 隙間より文字化けの方がまし、という既存のトレード
+        // オフの選択(既存のScrollbar系コメント等、随所で繰り返されて
+        // いる判断)に戻る。
       }
       int start = static_cast<int>(wrapText_.size());
       wrapText_.append(convertedLine, keepStart, keepBytes);
@@ -391,7 +436,23 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       if (currentItalic_) wrapAttrs_.push_back({start, start + keepBytes, Display::Attribute::Italic});
       wrapCol_ += w;
       i = keepStart + keepBytes;
-      if (wrapCol_ >= width_ && !nextIsForbiddenAtLineStart(i)) {
+      lastCharSeqStart = placementStart;
+      lastCharRenderedBytes = keepBytes;
+      lastCharWidth = w;
+      lastCharAttrCount = currentItalic_ ? 2 : 1;
+      if (wrapCol_ >= width_) {
+        // popLastCharForKinsoku()自身のコメント参照(禁則処理の作り
+        // 直し): ちょうど幅ぴったりで満杯になった直後、次の(マーカー
+        // を読み飛ばした先の)本物の文字が禁則対象なら、今置いた
+        // ばかりのこの1文字を取り消して次の行へ差し戻す――こうすれば
+        // 禁則対象の文字は、取り消された文字と一緒に真新しい行の上で
+        // 収まる(禁則対象自身が行の先頭に来ることに変わりは無いが、
+        // その直前に取り消された文字が「先に」来るので、実際には
+        // 行の2文字目になる)。
+        if (nextIsForbiddenAtLineStart(i) && popLastCharForKinsoku()) {
+          finalize(false);
+          continue;
+        }
         // peekNewlineAfterMarkers()自身のコメント参照。
         int nlPos = peekNewlineAfterMarkers(i);
         if (nlPos >= 0) {
@@ -414,18 +475,32 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       bool kinsoku = wrapCol_ > 0 && encoding_ == Charset::Encoding::Utf8 &&
                      isForbiddenAtLineStart(convertedLine, i, charBytes);
       if (!kinsoku) { finalize(false); continue; }
+      if (popLastCharForKinsoku()) { finalize(false); continue; }
+      // keepStart側の同じ分岐自身のコメント参照(popLastCharForKinsoku()
+      // が取り消す対象を持たなかった場合のフォールバック)。
     }
     // currentItalic_自身のコメント参照: 太字/下線自身の1文字ごとの
     // AttributeRunの粒度に合わせている(隣接runのまとめはこのクラス
     // 自身の責務ではない――decode_help.cpp自身のコメント参照)。
+    int charAttrCount = 0;
     if (currentItalic_) {
       int start = static_cast<int>(wrapText_.size());
       wrapAttrs_.push_back({start, start + charBytes, Display::Attribute::Italic});
+      charAttrCount = 1;
     }
     wrapText_.append(convertedLine, i, charBytes);
     wrapCol_ += w;
     i += charBytes;
-    if (wrapCol_ >= width_ && !nextIsForbiddenAtLineStart(i)) {
+    lastCharSeqStart = placementStart;
+    lastCharRenderedBytes = charBytes;
+    lastCharWidth = w;
+    lastCharAttrCount = charAttrCount;
+    if (wrapCol_ >= width_) {
+      // keepStart側の同じ分岐自身のコメント参照(禁則処理の作り直し)。
+      if (nextIsForbiddenAtLineStart(i) && popLastCharForKinsoku()) {
+        finalize(false);
+        continue;
+      }
       // peekNewlineAfterMarkers()自身のコメント参照。
       int nlPos = peekNewlineAfterMarkers(i);
       if (nlPos >= 0) {

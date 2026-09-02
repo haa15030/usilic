@@ -959,6 +959,19 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
         // まさにrenderLine()自身のmaxColの予約(上の自身のコメント
         // 参照)が避けるために存在する自動折り返しの危険そのもの
         // になる。
+        //
+        // 2026-09-05、直接のユーザー報告("禁則処理が利いていない
+        // のと、一文字欠落がある")を調査して、当初はここに例外を
+        // 設けて対処しようとした(PipeBuffer::wrapLine()自身の禁則の
+        // 「追い出し」が行の幅を最大2カラム超過させることを承知の
+        // 上で許容していたため)――しかしGraphicalDisplay自身の
+        // セル格子はcolumns()ぴったりの大きさしか無く、この超過分は
+        // -gではどのみち描画され得ないと判明した。真の修正は
+        // PipeBuffer::wrapLine()側(直前の普通の文字を次行へ戻して
+        // から禁則対象の文字を続ける、本来の日本語組版の「追い出し」
+        // ――pipe_buffer.cpp自身のpopLastCharForKinsoku()参照)にあり、
+        // それによって行がwidth_を超えることはもう無いはずなので、
+        // ここは元通り無条件のクリップのままにしてある。
         if (col + std::max(width, 0) > maxCol) break;
         for (int b = 0; b < len; b++) display_.putChar(static_cast<unsigned char>(text[idx + static_cast<std::size_t>(b)]));
         col += width;
