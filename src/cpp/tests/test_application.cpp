@@ -9610,9 +9610,17 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: ARC listing -- a click selects, a 
   CHECK(app.currentMode() == ApplicationMode::ArchiveContent);
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleMouseClick: ARC listing -- a press left of the entry's own highlighted span "
-                           "is a no-op, leaving that margin free as a screen-drag region (same convention as "
-                           "Directory mode's own ls-style margin)") {
+// 2026-09-15 修正、直接のユーザー依頼("（ls）、LOCATE等で導入していた
+// 「ドラッグエリア」も不要でいいので反映してみて"): 以前はここで
+// マージン(サイズ欄)左のクリックがno-opになる(=ドラッグの開始点として
+// 安全)ことを検証していたが、左クリックの「実行」自体がボタン解放まで
+// 遅延するようになった(GraphicalDisplay::Impl::pendingLeftClick)ことで
+// このマージン除外自体が不要になったため、handleMouseClick()側は
+// isColumnWithinRowText()(上限のみ)へ緩めた――マージン上のクリックも
+// 今は選択として機能することを検証する。
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: ARC listing -- a click on the size-column margin also selects "
+                           "now (the margin's click-scope exclusion was removed once click execution moved to "
+                           "button-release)") {
   REQUIRE(app.start(path()));
   int dirIdx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
@@ -9624,8 +9632,9 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: ARC listing -- a press left of the
   int start = app.activeContentView().lines()[idx].highlightStartColumn.value_or(0);
   REQUIRE(start > 0);  // the size column margin is always real width here
 
-  CHECK_FALSE(app.handleMouseClick(idx, start - 1));  // one column left of the highlighted span
-  CHECK(app.currentMode() == ApplicationMode::Archive);
+  REQUIRE(app.handleMouseClick(idx, start - 1));  // one column left of the (now-informational-only) span
+  CHECK(app.currentMode() == ApplicationMode::Archive);  // selecting alone doesn't open it
+  CHECK(app.archiveMode().selectedEntry()->name.find("inner.txt") != std::string::npos);
 }
 
 // 2026-08-14 addition: mirrors the Directory-mode click tests above
@@ -9705,9 +9714,17 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: DU listing -- a click selects, a s
   CHECK(app.currentMode() == ApplicationMode::File);
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleMouseClick: DU listing -- a press left of the entry's own highlighted span "
-                           "is a no-op, leaving the size-column margin free as a screen-drag region (same "
-                           "convention as Directory mode's own ls-style margin)") {
+// 2026-09-15修正、すぐ上のARC listingテストの同じコメント参照:
+// マージン除外自体が不要になったため、no-opの検証からクリックが
+// 実際に効くことの検証へ反転した。idx=0はDU一覧のデフォルトの
+// cursorIndex_と一致するため、この押下は(scope判定さえ通れば)
+// 「1回目のクリック」ではなく「既に選択済みの行への2回目のクリック」
+// 相当になりopenSelectedDuEntry()まで進む――ここでは margin除外が
+// 消えたことそのものを検証したいだけなので、select/openどちらの
+// 結果になるかは問わず、単に無視されない(true)ことだけを確認する。
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: DU listing -- a click on the size-column margin also works now "
+                           "(the margin's click-scope exclusion was removed once click execution moved to "
+                           "button-release)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
 
@@ -9716,23 +9733,28 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: DU listing -- a press left of the 
   int start = app.activeContentView().lines()[idx].highlightStartColumn.value_or(0);
   REQUIRE(start > 0);  // the size column margin is always real width here
 
-  CHECK_FALSE(app.handleMouseClick(idx, start - 1));  // one column left of the highlighted span
-  CHECK(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.handleMouseClick(idx, start - 1));  // one column left of the (now-informational-only) span
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a press left of the entry's own highlighted span is a no-op, "
-                           "not a selection -- so it's free to double as a \"cat's paw\" screen-drag start "
-                           "(2026-08-05 user proposal, replacing an earlier timing/motion-based attempt at "
-                           "distinguishing a click from a drag)") {
+// 2026-09-15修正、直接のユーザー依頼("（ls）、LOCATE等で導入していた
+// 「ドラッグエリア」も不要でいいので反映してみて"): 左クリックの
+// 「実行」自体がボタン解放まで遅延するようになった(GraphicalDisplay::
+// Impl::pendingLeftClick自身のコメント参照)ことで、2026-08-05に
+// このマージン除外を導入した理由(クリックとドラッグの区別)自体が
+// 不要になった。以前はここでno-opを検証していたが、マージン上の
+// クリックも今は選択として機能することを検証する。
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a click on DirectoryMode's own ls-style left margin also "
+                           "selects now (the margin's click-scope exclusion was removed once click execution "
+                           "moved to button-release)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   REQUIRE(idx >= 0);
   int start = app.activeContentView().lines()[idx].highlightStartColumn.value_or(0);
   REQUIRE(start > 0);  // DirectoryMode's own ls-style listing always has a real left margin
 
-  CHECK_FALSE(app.handleMouseClick(idx, start - 1));  // one column left of the highlighted span
-  CHECK(app.directoryMode().selectedEntry()->name != "plain.txt");  // selection untouched
-  CHECK(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.handleMouseClick(idx, start - 1));  // one column left of the (now-informational-only) span
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // selecting alone doesn't open it
+  CHECK(app.directoryMode().selectedEntry()->name == "plain.txt");
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a press past the end of the entry's own text is also a no-op") {

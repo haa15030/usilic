@@ -348,6 +348,11 @@ bool ContentView::isColumnWithinLineScope(int lineIndex, int column) const {
   return column >= start && column < static_cast<int>(line.text.size());
 }
 
+bool ContentView::isColumnWithinRowText(int lineIndex, int column) const {
+  if (lineIndex < 0 || lineIndex >= static_cast<int>(lines_.size())) return false;
+  return column >= 0 && column < static_cast<int>(lines_[lineIndex].text.size());
+}
+
 int ContentView::cursorDisplayRow() const {
   if (cursorIndex_ < topIndex_ || cursorIndex_ >= topIndex_ + height_) return -1;
   return row0_ + bottomAnchorRowOffset() + (cursorIndex_ - topIndex_);

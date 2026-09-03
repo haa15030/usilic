@@ -9529,17 +9529,19 @@ bool Application::handleMouseClick(int row, int column) {
   if (currentMode_ == ApplicationMode::Directory) {
     int idx = directoryView_.lineIndexAtRow(row);
     if (idx < 0) return false;
-    // このエントリ自身のハイライトされたテキストの外――DirectoryMode
-    // の`ls`一覧には、ハイライトが始まる前に固定の左マージン(パーミッ
-    // ション/サイズ/日付)があり、短いファイル名はその後に可変幅の
-    // 空の末尾を残すことがある――そのためこの押下は、視覚的には実際
-    // には一度も「エントリの上」ではなかった。ここでは無視される
-    // (ポインタの下に何も無かったかのようにfalseを返す)、そのため
-    // これは同時に「猫の手」の画面ドラッグの開始点としても自由に
-    // 働ける(これがタイミング/動きに基づくヒューリスティックを置き
-    // 換える、全体の2026-08-05のユーザー報告についてはContentView::
-    // isColumnWithinLineScope()自身のコメント参照)。
-    if (!directoryView_.isColumnWithinLineScope(idx, column)) return false;
+    // 2026-09-15修正、直接のユーザー依頼("（ls）、LOCATE等で導入して
+    // いた「ドラッグエリア」も不要でいいので反映してみて"): かつては
+    // ここでisColumnWithinLineScope()(パーミッション/サイズ/日付の
+    // 左マージンをクリックスコープ外にする)を使っていたが、それは
+    // 押下即座にクリックが実行されていた頃、猫の手ドラッグの開始点を
+    // 確保するための2026-08-05のユーザー提案だった。左クリックの
+    // 「実行」自体がボタン解放まで遅延するようになった(2026-09-15、
+    // GraphicalDisplay::Impl::pendingLeftClick自身のコメント参照)
+    // ことで、押下位置がクリックのスコープに入っていても、そのまま
+    // ドラッグの開始点として自由に使えるようになったため、この前提
+    // 自体が不要になった――isColumnWithinRowText()(上限のみ、左
+    // マージンの除外なし)へ緩めた。
+    if (!directoryView_.isColumnWithinRowText(idx, column)) return false;
     if (idx == directoryView_.cursorIndex()) return openSelectedEntry();
     directoryView_.setCursorIndex(idx);
     directoryView_.redraw();
@@ -9554,33 +9556,28 @@ bool Application::handleMouseClick(int row, int column) {
     // Directory/Archive/Locateがそれぞれ既に持っているクリック→
     // 選択/オープンの仕組みがDUにだけ配線されていなかった(結果、
     // クリックは常にfalseで無視され、代わりにドラッグだけが常に
-    // 効いていた)。すぐ上のDirectoryMode自身の分岐と同じ左マージン
-    // のドラッグ領域の切り出し――DuMode::loadUsage()自身のコメント
-    // 参照、DUのエントリも今やformatEntryLine()の右寄せサイズ欄+2
-    // スペースの隙間をLine::highlightStartColumn経由でマークして
-    // いる(ARC/lsと同じ慣習)ので、サイズ欄はドラッグの開始点として
-    // 安全なまま、パス部分のクリックだけが選択/オープンに使われる。
+    // 効いていた)。すぐ上のDirectoryMode自身の分岐と同じ理由で
+    // isColumnWithinRowText()(上限のみ)を使う――マージン除外は
+    // 同日のうちに不要と判明した(すぐ上のDirectoryMode自身の分岐の
+    // コメント参照)。
     int idx = duView_.lineIndexAtRow(row);
     if (idx < 0) return false;
-    if (!duView_.isColumnWithinLineScope(idx, column)) return false;
+    if (!duView_.isColumnWithinRowText(idx, column)) return false;
     if (idx == duView_.cursorIndex()) return openSelectedDuEntry();
     duView_.setCursorIndex(idx);
     duView_.redraw();
     return true;
   }
   if (currentMode_ == ApplicationMode::Archive) {
-    // すぐ上のDirectoryMode自身の分岐と同じ左マージンのドラッグ領域
-    // の切り出し(2026-08-26追加、直接のユーザー依頼: "内容一覧画面で
-    // 左クリックで選べるようにして...ハイライト表示を（ls）同様
-    // ファイル・ディレクトリ名のみに")――formatEntryLine()自身の
-    // 右寄せのサイズの列とその2スペースの隙間は、まさにこの形式に
-    // おける、lsのパーミッション/サイズ/日付のマージンの相当物であり、
-    // 今やDirectoryModeのエントリが既にそうしているのと同じ方法で
-    // Line::highlightStartColumn経由でマークされている
-    // (loadArchive()自身のコメント参照)。
+    // すぐ上のDirectoryMode自身の分岐と同じ理由でisColumnWithinRowText()
+    // (上限のみ、左マージンの除外なし)を使う――2026-08-26に導入した
+    // マージン除外(formatEntryLine()自身の右寄せサイズ欄+2スペースの
+    // 隙間、loadArchive()自身のコメント参照)は、2026-09-15の直接の
+    // ユーザー依頼により、DirectoryMode自身の分岐のコメントに書いた
+    // 理由と同じく不要になった。
     int idx = archiveView_.lineIndexAtRow(row);
     if (idx < 0) return false;
-    if (!archiveView_.isColumnWithinLineScope(idx, column)) return false;
+    if (!archiveView_.isColumnWithinRowText(idx, column)) return false;
     if (idx == archiveView_.cursorIndex()) return openSelectedArchiveEntry();
     archiveView_.setCursorIndex(idx);
     archiveView_.redraw();

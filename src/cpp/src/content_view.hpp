@@ -246,6 +246,23 @@ class ContentView {
   // そもそもその一部ではなかった周囲のマージンか。
   bool isColumnWithinLineScope(int lineIndex, int column) const;
 
+  // isColumnWithinLineScope()と同じ上限チェック([0, text.size()))
+  // だが、highlightStartColumnによる左マージンの除外は行わない――
+  // 2026-09-15追加、直接のユーザー依頼(「（ls）、LOCATE等で導入して
+  // いた『ドラッグエリア』も不要でいいので反映してみて」)。
+  // Application::handleMouseClick()が左クリックの「実行」自体を
+  // ボタン解放まで遅らせるようになった(GraphicalDisplay::Impl::
+  // pendingLeftClick自身のコメント参照)ことで、そもそもマージン
+  // 除外(isColumnWithinLineScope()自身の履歴コメント参照、2026-08-05
+  // のユーザー提案)がクリックとドラッグを区別するために存在していた
+  // 前提が崩れた――押下位置がスコープに入っていても、それがそのまま
+  // ドラッグの開始点として自由に使える。Line::highlightStartColumn
+  // 自体(legacyの`ls -alF`に合わせたカーソル反転表示の開始列という
+  // 「見た目」の役割)は変更せず、クリックスコープ判定だけをこちらの
+  // 緩い方へ切り替えるためにisColumnWithinLineScope()とは別関数に
+  // した。
+  bool isColumnWithinRowText(int lineIndex, int column) const;
+
   // 2026-09-02追加、直接のユーザー依頼("ついでに透かしが消える件も
   // よろしく" -- 慣性スクロール/ドラッグ中はDirectoryModeのカーソル
   // ハイライト(Standout)が常に消える件): GraphicalDisplay::
