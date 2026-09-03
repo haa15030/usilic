@@ -9526,6 +9526,29 @@ bool Application::consumeGuiModeToggleRequest() {
 // しているのと同じ方法で、クリックが即座に実際の選択を確定させる
 // ようにする。
 bool Application::handleMouseClick(int row, int column) {
+  // 2026-09-15追加、直接のユーザー報告("左クリックで内容表示できない
+  // 、LOCATEはちゃんと表示できる")の調査用。共有のApplicationレベル
+  // ロジック(このDirectory分岐含む)はDirectory/Locate両方について
+  // 既存のユニットテスト(test_application.cpp、"handleMouseClick: a
+  // second click..."等)で構造上同一かつ合格済みであり、Directory/
+  // Locateの唯一の構造的な違いはhighlightStartColumnの有無
+  // (Directoryはlsの左マージン分だけスコープを狭める、LOCATEは行
+  // 全体がスコープ)――そのためもしバグが実在するなら、この
+  // Applicationレベルではなく、実機のSDL側が計算する生のrow/column
+  // (GraphicalDisplay::pumpEvents())が、Directory一覧のような
+  // 広い左マージンを持つ行でだけ想定とズレている可能性が高いと
+  // 見ている。USILICGUIDEBUGでの実機再現の際、pumpEvents()側の生の
+  // row/x/y(既存のダンプ)と、ここでのApplicationレベルの解釈
+  // (idx/column/scope可否)を突き合わせられるよう、同じ環境変数で
+  // ここにもダンプを追加した。
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) {
+      std::fprintf(f, "---handleMouseClick--- mode=%d row=%d column=%d\n", static_cast<int>(currentMode_), row,
+                   column);
+      std::fclose(f);
+    }
+  }
   if (currentMode_ == ApplicationMode::Directory) {
     int idx = directoryView_.lineIndexAtRow(row);
     if (idx < 0) return false;
@@ -9539,7 +9562,20 @@ bool Application::handleMouseClick(int row, int column) {
     // 働ける(これがタイミング/動きに基づくヒューリスティックを置き
     // 換える、全体の2026-08-05のユーザー報告についてはContentView::
     // isColumnWithinLineScope()自身のコメント参照)。
-    if (!directoryView_.isColumnWithinLineScope(idx, column)) return false;
+    bool inScope = directoryView_.isColumnWithinLineScope(idx, column);
+    if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+      FILE *f = std::fopen(dbg, "a");
+      if (f) {
+        const ContentView::Line &line = directoryView_.lines()[idx];
+        std::fprintf(f,
+                     "---handleMouseClick(Directory)--- idx=%d inScope=%d highlightStartColumn=%d "
+                     "textLen=%zu cursorIndex=%d text=%s\n",
+                     idx, inScope ? 1 : 0, line.highlightStartColumn.value_or(-1), line.text.size(),
+                     directoryView_.cursorIndex(), line.text.c_str());
+        std::fclose(f);
+      }
+    }
+    if (!inScope) return false;
     if (idx == directoryView_.cursorIndex()) return openSelectedEntry();
     directoryView_.setCursorIndex(idx);
     directoryView_.redraw();
