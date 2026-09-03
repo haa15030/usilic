@@ -3806,6 +3806,23 @@ bool Application::openSelectedDuEntry() {
   if (!fileMode_.loadFile(entry->path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Du;
+  // 2026-09-10修正、実際のユーザー報告に基づく調査で発見(ファイル側は
+  // fileReturnMode_だけ直しており、ディレクトリ側のsetSearchAnnotation()
+  // に相当するものを一度も呼んでいなかった――loadFile()自身が内部で
+  // searchAnnotation_をクリアするので、呼ぶなら「後」でなければ
+  // ならない、openSelectedGrepMatch()自身のFileの分岐の同じ順序参照):
+  // 注釈が無いままだと、Backでは正しくDUへ戻れていたにも関わらず、
+  // モードライン自身には「DU: ...」が一切表示されていなかった。
+  fileMode_.setSearchAnnotation("DU: " + duMode_.currentPath());
+  // loadFile()は、上の注釈が設定される「前」に既に内部で一度再描画
+  // している(view_.redraw()、FileMode::loadFile()自身の実装参照)
+  // ――openSelectedDuEntry()自身のディレクトリ側の分岐が
+  // enterDirectory()に対して既に踏んでいるのと全く同じ罠。この
+  // 明示的な再描画が無いと、次の無関係な再描画がたまたま起こるまで、
+  // 画面は最初の、古い、注釈の無いモードラインを表示し続けてしまう
+  // ――実際にこの罠にはまってバグとして残っていた(2026-09-10、
+  // 実機での再現+ここでのfprintfデバッグで直接確認済み)。
+  fileView_.redraw();
   return true;
 }
 

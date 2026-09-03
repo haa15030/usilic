@@ -7444,6 +7444,89 @@ TEST_CASE_FIXTURE(Fixture, "DU: no double slash in child entry paths when the ta
   }
 }
 
+// 2026-09-10 addition, direct user request ("DU画面でのファイルサイズ
+// エリアを切り離すならファイル名表示の開始位置を揃えて欲しい"):
+// DuMode::formatEntryLine() now right-justifies the size column to the
+// widest entry in the list, so every row's filename starts at the same
+// screen column regardless of how many digits its own size has.
+TEST_CASE_FIXTURE(Fixture, "DU: filenames start at the same column across entries with differing size "
+                           "digit counts") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.duMode().entries().size() > 1);
+
+  const auto &lines = app.activeContentView().lines();
+  REQUIRE(lines.size() == app.duMode().entries().size());
+  std::optional<std::size_t> nameStartColumn;
+  for (std::size_t i = 0; i < lines.size(); i++) {
+    REQUIRE(lines[i].text.size() >= app.duMode().entries()[i].path.size());
+    std::size_t thisStart = lines[i].text.size() - app.duMode().entries()[i].path.size();
+    if (!nameStartColumn) {
+      nameStartColumn = thisStart;
+    } else {
+      CHECK(thisStart == *nameStartColumn);
+    }
+  }
+}
+
+// 2026-09-10 fix, a real user report (HISTORY.md:13905's symptom
+// investigated further): the DIRECTORY branch's "DU: ..." annotation
+// DOES survive real mode-line crowding (verified here with a
+// deliberately very long nested path) -- ContentView::modeLineText()
+// itself is a red herring for this (it goes through
+// fitModeLineFields()'s plain all-or-nothing path, NOT the actual
+// crowded-layout renderer), so this checks the real painted row via
+// RecordingDisplay instead. The FILE branch, however, had a genuine
+// bug: it fixed fileReturnMode_ but never called
+// fileMode_.setSearchAnnotation() at all (unlike the directory branch
+// and unlike openSelectedGrepMatch()'s own File branch) -- the mode
+// line showed no "DU: ..." whatsoever for files opened from DU, not
+// just a truncated one. Both branches are covered here.
+TEST_CASE_FIXTURE(Fixture, "DU: 'DU: ...' annotation appears in the actual painted mode line for both "
+                           "directory and file entries, even with a very long path") {
+  fs::path deep = root;
+  for (int i = 0; i < 6; i++) {
+    deep /= "quite_a_long_subdirectory_name_" + std::to_string(i);
+    fs::create_directory(deep);
+  }
+  { std::ofstream(deep / "leaf.txt") << "x\n"; }
+  REQUIRE(app.start(deep.string() + "/"));
+
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  int entryCount = static_cast<int>(app.duMode().entries().size());
+  REQUIRE(entryCount > 0);
+  for (int i = 0; i < entryCount &&
+       !(app.duMode().selectedEntry() && app.duMode().selectedEntry()->isDirectory &&
+         app.duMode().selectedEntry()->path.find("quite_a_long_subdirectory_name_1") != std::string::npos);
+       i++) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.duMode().selectedEntry() != nullptr);
+  REQUIRE(app.duMode().selectedEntry()->isDirectory);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  CHECK(display.rowText(display.rows() - 1).find("DU: ") != std::string::npos);
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+
+  // Back doesn't reset the cursor -- it may still be past "leaf.txt"
+  // from the search above, so this can't assume forward-only movement
+  // will reach it. MoveUp back to the top first, then search forward
+  // from a known starting point (bounded by entryCount either way).
+  for (int i = 0; i < entryCount; i++) app.handleCommand(Command::MoveUp);
+  for (int i = 0; i < entryCount &&
+       !(app.duMode().selectedEntry() && app.duMode().selectedEntry()->path.find("leaf.txt") != std::string::npos);
+       i++) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.duMode().selectedEntry() != nullptr);
+  REQUIRE(app.duMode().selectedEntry()->path.find("leaf.txt") != std::string::npos);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  CHECK(display.rowText(display.rows() - 1).find("DU: ") != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "DU: Back returns to Directory mode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));

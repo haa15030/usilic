@@ -11,8 +11,10 @@ namespace fm {
 DuMode::DuMode(ContentView &view, History &history, const Configuration &configuration)
     : view_(view), history_(history), configuration_(configuration) {}
 
-std::string DuMode::formatEntryLine(const DuEntry &entry) {
-  return std::to_string(entry.sizeKb) + "K\t" + entry.path;
+std::string DuMode::formatEntryLine(const DuEntry &entry, int sizeWidth) {
+  std::string sizeText = std::to_string(entry.sizeKb) + "K";
+  if (static_cast<int>(sizeText.size()) < sizeWidth) sizeText.insert(0, static_cast<std::size_t>(sizeWidth) - sizeText.size(), ' ');
+  return sizeText + "  " + entry.path;
 }
 
 bool DuMode::loadUsage(const std::string &path) {
@@ -38,7 +40,6 @@ bool DuMode::loadUsage(const std::string &path) {
   if (!result.ok) return false;
 
   std::vector<DuEntry> entries;
-  std::vector<ContentView::Line> lines;
   std::istringstream stream(result.output);
   std::string line;
   while (std::getline(stream, line)) {
@@ -52,8 +53,20 @@ bool DuMode::loadUsage(const std::string &path) {
     std::error_code ec;
     entry.isDirectory = std::filesystem::is_directory(entry.path, ec) && !ec;
     entries.push_back(entry);
+  }
+
+  // sizeWidth: このDIAGNOSTIC一覧全体での最大桁数――formatEntryLine()
+  // 自身のコメント参照。
+  int sizeWidth = 0;
+  for (const auto &entry : entries) {
+    int width = static_cast<int>(std::to_string(entry.sizeKb).size()) + 1;  // +1: "K"接尾辞
+    sizeWidth = std::max(sizeWidth, width);
+  }
+  std::vector<ContentView::Line> lines;
+  lines.reserve(entries.size());
+  for (const auto &entry : entries) {
     // ellipsisEligible=true: Line::ellipsisEligible自身のコメント参照。
-    lines.push_back({formatEntryLine(entry), std::nullopt, std::nullopt, {}, true});
+    lines.push_back({formatEntryLine(entry, sizeWidth), std::nullopt, std::nullopt, {}, true});
   }
 
   currentPath_ = path;

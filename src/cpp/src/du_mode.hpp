@@ -55,7 +55,13 @@ class DuMode {
   void saveCursorPosition();
 
  private:
-  static std::string formatEntryLine(const DuEntry &entry);
+  // 2026-09-10追加、直接のユーザー依頼("DU画面でのファイルサイズ
+  // エリアを切り離すならファイル名表示の開始位置を揃えて欲しい"):
+  // サイズの桁数はエントリごとにばらつく("4K"対"123456K")ので、
+  // `sizeWidth`(その一覧全体での最大桁数、loadUsage()が算出する)
+  // 分だけサイズを右詰めし、どの行でもファイル名が同じ列から
+  // 始まるようにする。
+  static std::string formatEntryLine(const DuEntry &entry, int sizeWidth);
 
   ContentView &view_;
   History &history_;
