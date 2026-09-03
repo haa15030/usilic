@@ -455,19 +455,18 @@ const KeyTableEntry kKeyTable[] = {
     {"space", "画面を1ページ下へ", "Page down", {' '}, false, "5.1"},
     {"^F", "画面を1ページ下へ", "Page down", {0x06}, false, "5.1"},
     {"^V", "画面を1ページ下へ", "Page down", {0x16}, false, "5.1"},
-    // 2026-09-08追加、直接のユーザー依頼によるキー再編("SHELLでは
-    // スクロール関連が@F/@B"): SHELLモード内では^F/^Bが行編集の文字
-    // 移動に奪われページ送りへ到達不能なため、エスケープハッチを
-    // 新設。真のAlt同時押し検出は技術調査中なので、現状は既存の
-    // Meta(ESC)機構経由(ESC F)で実装し、表記だけ将来のAlt表記
-    // "@F"を先取りしている――実装が追いつき次第、表記は変えずに
-    // 内部の検出方式だけ差し替える予定。
-    {"@F", "画面を1ページ下へ (SHELL内から)", "Page down (from within SHELL)", {kEscape, 'F'}, false, "5.1"},
+    // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
+    // 内では^F/^Bが行編集の文字移動に奪われページ送りへ到達不能な
+    // ため、エスケープハッチを新設。当初はMeta(ESC)機構経由で
+    // "@F"/"@B"(将来のAlt表記の先取り)として実装したが、同日中に
+    // 「メタキーをAltにする話自体を見合わせたい(^[^Mが使えなくなる
+    // 懸念、および@表記がマークトグルの^@と衝突する懸念)」との
+    // ユーザー自身の訂正を受けて撤回――他のSHELLエスケープハッチ
+    // (^O^H/^O^L/^O^I/^O/)と同じ^Oプレフィックス方式に差し替えた。
+    {"^O^F", "画面を1ページ下へ (SHELL内から)", "Page down (from within SHELL)", {kLeaderO, 0x06}, false, "5.1"},
     {"b", "画面を1ページ上へ", "Page up", {'b'}, false, "5.1"},
     {"^B", "画面を1ページ上へ", "Page up", {0x02}, false, "5.1"},
-    // 既存の"^[v"(Emacs M-vに合わせた別名)とは別に、この@Bも同じ
-    // PageUpを指す――@F自身のコメント参照。
-    {"@B", "画面を1ページ上へ (SHELL内から)", "Page up (from within SHELL)", {kEscape, 'B'}, false, "5.1"},
+    {"^O^B", "画面を1ページ上へ (SHELL内から)", "Page up (from within SHELL)", {kLeaderO, 0x02}, false, "5.1"},
     {"return", "選択したエントリを開く", "Open selected entry", {kCarriageReturn}, false, "5.1"},
     {"^G", "戻る・キャンセル", "Back / cancel", {kControlG}, false, "5.1"},
     {"^L", "画面を再描画", "Redraw screen", {0x0c}, false, "5.1"},
@@ -2220,18 +2219,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // は無く、単に既存のものへ到達する別のキーというだけである。
       case 'v':
         return handleCommand(Command::PageUp);
-      // ESC F / ESC B (@F/@B): 2026-09-08追加、直接のユーザー依頼に
-      // よるキー再編("SHELLではスクロール関連が@F/@B") -- SHELLモード
-      // 内で^F/^Bが行編集の文字移動に奪われページ送りへ到達不能な
-      // ことへのエスケープハッチ。真のAlt同時押し検出は技術調査中
-      // なので、現状はこの既存のMeta(ESC)機構をそのまま流用している
-      // ――kKeyTable自身の"@F"/"@B"エントリのコメント参照。'v'(すぐ
-      // 上、Emacs M-v由来のPageUp別名)とは重複するが、両方とも
-      // 残してよいとのユーザー自身の判断による。
-      case 'F':
-        return handleCommand(Command::PageDown);
-      case 'B':
-        return handleCommand(Command::PageUp);
       // ESC l : LOG――なぜこれをここに追加するのが安全なのか(同じ
       // キーへの、取り消された2026-08-05の試み――CLAUDE.mdの経緯の
       // 項目176とは異なり)についてはexecuteStartLog()自身のコメント
@@ -2456,6 +2443,15 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ShowUsilicBanner);
       case '/':  // ^O / : GREP(SHELL内から)
         return handleCommand(Command::StartGrep);
+      // 2026-09-08、当初はMeta(ESC)機構経由の"@F"/"@B"(将来のAlt表記
+      // の先取り)として実装したが、同日中に「メタキーをAltにする話
+      // 自体を見合わせたい」とのユーザー自身の訂正を受けて撤回し、
+      // 他のSHELLエスケープハッチと同じ^Oプレフィックス方式へ差し
+      // 替えた(kKeyTable自身の"^O^F"/"^O^B"エントリのコメント参照)。
+      case 0x06:  // ^O ^F : ページ送り(SHELL内から)
+        return handleCommand(Command::PageDown);
+      case 0x02:  // ^O ^B : ページ戻し(SHELL内から)
+        return handleCommand(Command::PageUp);
       default:
         return false;  // このスライスでは認識されない^Oシーケンス
     }
