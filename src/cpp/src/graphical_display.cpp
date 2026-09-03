@@ -522,6 +522,21 @@ struct GraphicalDisplay::Impl {
   bool smoothScroll = false;
 
   std::deque<MouseClick> mouseQueue;
+  // 2026-09-10追加、直接のユーザー依頼("離した瞬間かつ画面停止中に
+  // 限って選択が発動、にすれば解消するのでは"): 左クリックは以前
+  // ボタン押下の瞬間に即座にmouseQueueへ積まれていた(すぐ下の
+  // SDL_MOUSEBUTTONDOWN自身のコメント/コード参照、2026-09-02の
+  // runGuiPhase()自身の"Click-vs-drag isn't disambiguated"という
+  // 既知のギャップとして既に文書化されていた)ため、そのままドラッグ
+  // へ発展した押下でも、押された瞬間にカーソル下にあった行への
+  // クリック/選択(行のオープン等)が常に一緒に発火してしまっていた。
+  // 今は押下時にここへ保留するだけにし、SDL_MOUSEMOTIONで実際に
+  // 動き(左ボタン押下中)が届いたら破棄する――SDL_MOUSEBUTTONUPの
+  // 時点でまだ生きていれば(=押してから離すまで画面が実際に静止して
+  // いた「本物の」クリックだったことが確定した時)、そこで初めて
+  // mouseQueueへ積む。右クリックは(そもそもドラッグの対象ではない
+  // ので)従来通り即座に積む。
+  std::optional<MouseClick> pendingLeftClick;
   std::deque<KeyEvent> keyQueue;
   std::deque<DragEvent> dragQueue;
   std::deque<HoverEvent> hoverQueue;
@@ -1746,10 +1761,16 @@ bool GraphicalDisplay::pumpEvents() {
         // 近い端のセル」として扱う。
         int col = std::max(0, event.button.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
         int row = std::max(0, event.button.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
-        impl_->mouseQueue.push_back(MouseClick{row, col, event.button.button == SDL_BUTTON_RIGHT});
         if (event.button.button == SDL_BUTTON_LEFT) {
+          // pendingLeftClick自身の宣言コメント参照: 即座には積まず、
+          // 保留する――ドラッグへ発展しなかったことがSDL_MOUSEBUTTONUP
+          // で確定して初めて積まれる。
+          impl_->pendingLeftClick = MouseClick{row, col, false};
           SDL_CaptureMouse(SDL_TRUE);  // ドラッグがウィンドウを離れても動きの追跡を続ける
           impl_->dragQueue.push_back(DragEvent{DragEventType::ButtonDown, 0});
+        } else {
+          // 右クリックはドラッグの対象ではないので、以前通り即座に積む。
+          impl_->mouseQueue.push_back(MouseClick{row, col, true});
         }
         break;
       }
@@ -1770,6 +1791,14 @@ bool GraphicalDisplay::pumpEvents() {
           } else {
             impl_->dragQueue.push_back(DragEvent{DragEventType::ButtonUp, 0});
           }
+          // pendingLeftClick自身の宣言コメント参照: SDL_MOUSEMOTIONで
+          // 一度もキャンセルされずここまで生き残っていれば、押下から
+          // 解放まで画面が実際に静止していた「本物の」クリックだった
+          // ことが確定する――ここで初めて積む。
+          if (impl_->pendingLeftClick) {
+            impl_->mouseQueue.push_back(*impl_->pendingLeftClick);
+            impl_->pendingLeftClick.reset();
+          }
         }
         break;
       }
@@ -1788,6 +1817,11 @@ bool GraphicalDisplay::pumpEvents() {
         if (impl_->scrollbarDragActive) {
           impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::Motion, event.motion.y});
         } else if (event.motion.state & SDL_BUTTON_LMASK) {
+          // pendingLeftClick自身の宣言コメント参照: 左ボタン押下中に
+          // 本物の動きが実際に1回でも届いた時点で、これはもはや
+          // クリックではなくドラッグである――保留していたクリックを
+          // 破棄する(SDL_MOUSEBUTTONUpでは二度と積まれない)。
+          impl_->pendingLeftClick.reset();
           impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
         } else if (SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_FOCUS) {
           // キーボード/入力フォーカスで判定している(SDL_WINDOW_MOUSE_

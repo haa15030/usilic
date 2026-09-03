@@ -7341,6 +7341,46 @@ TEST_CASE_FIXTURE(Fixture, "DU: mode line shows 'DU' and a byte count once resul
   CHECK(modeLine.find(std::to_string(expectedBytes)) != std::string::npos);
 }
 
+// 2026-09-10 fix, a direct user report ("^Jd直後の画面に戻り値が
+// 無い"): duView_'s own ModeLineFieldsProvider used to show only the
+// literal name "DU" -- unlike every other mode (Directory/File/Archive
+// etc.), it never showed WHICH folder was actually tallied. Now
+// mirrors ArchiveMode's own name="ARC"+trailing3=currentArchive_
+// convention (archive_mode.cpp), adding trailing3=duMode_.currentPath().
+TEST_CASE_FIXTURE(Fixture, "DU: mode line shows which folder was tallied") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find(app.duMode().currentPath()) != std::string::npos);
+}
+
+// 2026-09-10 addition, a direct user request ("^J6ではハイライト
+// 表示されているエントリのパスの(ls)となってほしい"): jumpToPathPrefix()
+// now supports ApplicationMode::Du, mirroring the Locate/ListBrowser
+// branches just above it -- it uses the HIGHLIGHTED entry's own path
+// (not duMode_.currentPath(), the tallied root), matching the user's
+// own example (highlighted "8K  .../commands/add-feature.md", ^J-digit
+// truncates THAT path, not the tallied folder).
+TEST_CASE_FIXTURE(Fixture, "DU: ^J-digit (JumpToPathPrefix) truncates the HIGHLIGHTED entry's own path, "
+                           "not the tallied root folder") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  while (app.duMode().selectedEntry() &&
+         !(app.duMode().selectedEntry()->isDirectory &&
+           app.duMode().selectedEntry()->path.find("subdir") != std::string::npos)) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.duMode().selectedEntry() != nullptr);
+  std::string selectedPath = app.duMode().selectedEntry()->path;
+  REQUIRE(selectedPath != app.duMode().currentPath());  // the whole point of this test
+
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  CHECK(app.feedByte('1', std::nullopt));  // ^J1
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(selectedPath.find(app.directoryMode().currentDirectory()) == 0);  // a real prefix of the selected entry's path
+}
+
 TEST_CASE_FIXTURE(Fixture, "DU: Enter on a directory entry drills into DirectoryMode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));

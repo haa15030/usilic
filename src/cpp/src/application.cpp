@@ -1507,8 +1507,19 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   });
   duView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (duMode_.currentPath().empty()) return {};
-    return {"DU", std::to_string(contentByteCount(duView_)), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
-            /*trailing2=*/""};
+    // 2026-09-10修正、直接のユーザー報告("^Jd直後の画面に戻り値が
+    // 無い"): 以前はDUモード自身の画面が、集計対象のフォルダーを
+    // 一切表示していなかった(nameは常にリテラルな"DU"のみ)――
+    // Directory/File/Archive等、他の全モードが自分自身の「今どこに
+    // いるか」を必ず表示するのとは対照的だった。ArchiveMode自身の
+    // 同一のname="ARC"+trailing3=currentArchive_という慣習
+    // (archive_mode.cpp参照)に合わせ、trailing3へ集計対象のフォルダー
+    // を追加した。
+    ContentView::ModeLineFields fields{"DU", std::to_string(contentByteCount(duView_)),
+                                        /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
+                                        /*trailing2=*/""};
+    fields.trailing3 = duMode_.currentPath();
+    return fields;
   });
   // archiveContentView_は、すぐ上で使われている素のバイト数だけの形
   // ではなく、fileView_自身の形(展開された単一のエントリの生の
@@ -4137,6 +4148,16 @@ bool Application::jumpToPathPrefix() {
     const std::string *selected = listBrowserMode_.selectedItem();
     if (!selected) return false;
     sourcePath = *selected;
+  } else if (currentMode_ == ApplicationMode::Du) {
+    // 2026-09-10追加、直接のユーザー依頼("^J6ではハイライト表示され
+    // ているエントリのパスの(ls)となってほしい、DUの集計対象フォルダー
+    // 自体は関係ない"): Locate/ListBrowser自身の分岐(すぐ上)と同じ
+    // 「ハイライトされているエントリ自身のパス」の慣習――duMode_.
+    // currentPath()(集計対象のフォルダー自体)ではなく、カーソルが
+    // 今指している個々のエントリの実際のパスを使う。
+    const DuEntry *selected = duMode_.selectedEntry();
+    if (!selected) return false;
+    sourcePath = selected->path;
   } else {
     return false;
   }
