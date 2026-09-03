@@ -64,9 +64,23 @@ bool DuMode::loadUsage(const std::string &path) {
   }
   std::vector<ContentView::Line> lines;
   lines.reserve(entries.size());
+  // 2026-09-15追加、直接のユーザー報告("一覧上で画面ドラッグできる
+  // のはDU画面だけ...本来ならLOCATEのように左クリックした時点で
+  // 内容表示された画面がスクロールするはずなのに、表示されないから
+  // 一覧画面のままスクロールしている"): DUのエントリはこれまで
+  // highlightStartColumnを一切設定しておらず(Application::
+  // handleMouseClick()自体にDu分岐が無かったこととは別に、こちら
+  // 側の準備も欠けていた)、ArchiveMode/DirectoryModeが既に確立して
+  // いる「先頭の右寄せサイズ欄+2スペースの余白はクリックスコープ外、
+  // その後のパス部分だけがクリック可能」という慣習(formatEntryLine()
+  // 自身のコメント参照、ARCの右寄せサイズ欄+2スペースと全く同じ形式)
+  // を適用する。これによりDUも他のモードと同じ「サイズ欄で押せば
+  // 画面ドラッグの開始点として安全、パス部分をクリックすれば選択/
+  // オープン」という両立を得る。
+  int nameStartColumn = sizeWidth + 2;
   for (const auto &entry : entries) {
     // ellipsisEligible=true: Line::ellipsisEligible自身のコメント参照。
-    lines.push_back({formatEntryLine(entry, sizeWidth), std::nullopt, std::nullopt, {}, true});
+    lines.push_back({formatEntryLine(entry, sizeWidth), std::nullopt, nameStartColumn, {}, true});
   }
 
   currentPath_ = path;

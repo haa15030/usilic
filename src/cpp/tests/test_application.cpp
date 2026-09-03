@@ -9661,6 +9661,65 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: LOCATE results -- a click selects,
   CHECK(app.fileMode().currentFile() == targetB.string());
 }
 
+// 2026-09-15 addition, a direct user report ("一覧上で画面ドラッグ
+// できるのはDU画面だけ...本来ならLOCATEのように左クリックした時点で
+// 内容表示された画面がスクロールするはずなのに、表示されないから
+// 一覧画面のままスクロールしている"): handleMouseClick() had no
+// ApplicationMode::Du branch at all -- every click on a DU listing
+// silently fell through and did nothing, leaving the drag gesture as
+// the only thing that ever fired. Mirrors the ARC listing tests above
+// exactly, now that DuMode::loadUsage() also marks the size-column
+// margin via Line::highlightStartColumn (same "ls"/ARC convention).
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: DU listing -- a click selects, a second click on the "
+                           "already-selected row opens it") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+
+  int idx = -1;
+  const auto &entries = app.duMode().entries();
+  for (std::size_t i = 0; i < entries.size(); i++) {
+    if (!entries[i].isDirectory) {
+      idx = static_cast<int>(i);
+      break;
+    }
+  }
+  REQUIRE(idx >= 0);
+  int col = app.activeContentView().lines()[idx].highlightStartColumn.value_or(0) + 1;
+
+  // LocateMode自身の同種のテスト(すぐ上)の同じ注意点参照: cursorIndex_
+  // の既定値は0なので、選んだidxがたまたま0だと「1回目のクリック」が
+  // 既にidx==cursorIndex()を満たしてしまい、選択のみのつもりが即座に
+  // オープンまで進んでしまう(このテストの本来の趣旨=2段階の検証が
+  // 崩れる)。既定のカーソルから確実にずらしておく。
+  if (idx == 0) {
+    REQUIRE(entries.size() > 1);
+    REQUIRE(app.handleCommand(Command::MoveDown));
+    REQUIRE(app.duMode().selectedEntry() != &entries[idx]);
+  }
+
+  REQUIRE(app.handleMouseClick(idx, col));  // first click: select
+  CHECK(app.currentMode() == ApplicationMode::Du);  // selecting alone doesn't open it
+  CHECK(app.duMode().selectedEntry() == &entries[idx]);
+
+  REQUIRE(app.handleMouseClick(idx, col));  // second click on the same row: open
+  CHECK(app.currentMode() == ApplicationMode::File);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: DU listing -- a press left of the entry's own highlighted span "
+                           "is a no-op, leaving the size-column margin free as a screen-drag region (same "
+                           "convention as Directory mode's own ls-style margin)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+
+  int idx = 0;
+  REQUIRE(!app.duMode().entries().empty());
+  int start = app.activeContentView().lines()[idx].highlightStartColumn.value_or(0);
+  REQUIRE(start > 0);  // the size column margin is always real width here
+
+  CHECK_FALSE(app.handleMouseClick(idx, start - 1));  // one column left of the highlighted span
+  CHECK(app.currentMode() == ApplicationMode::Du);
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleMouseClick: a press left of the entry's own highlighted span is a no-op, "
                            "not a selection -- so it's free to double as a \"cat's paw\" screen-drag start "
                            "(2026-08-05 user proposal, replacing an earlier timing/motion-based attempt at "
