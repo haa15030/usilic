@@ -611,9 +611,15 @@ const KeyTableEntry kKeyTable[] = {
     {"^J^Ol", "LOG: SHELLの操作ログ", "LOG: SHELL output", {kLeaderJ, kLeaderO, 'l'}, false, "2.17"},
     {"^[l", "LOG", "LOG", {kEscape, 'l'}, false, "2.17"},
 
-    // 2.18  EXIT (^Ox or ^[^[) -- 2026-09-08、キー再編で^X^Cから移行
-    // (^O^Cは既存のCOPY文字列と衝突するため、eXitのxを採用)。
-    {"^Ox", "EXIT", "EXIT", {kLeaderO, 'x'}, false, "2.18"},
+    // 2.18  EXIT (^X^C or ^[^[) -- 2026-09-08、キー再編で一度^Oxへ
+    // 移行したが、同日中に直接のユーザー依頼("usilic終了キーは^X^C
+    // に戻してほしい")で^X^Cへ差し戻された。EmacsのC-x C-c(事実上の
+    // 終了)が元々同じ意味で^X^Cを使っているため、DIR同様に据え置く
+    // 判断。^[^[は元々この見出しコメント自身が謳っていたが実際には
+    // 一度も配線されていなかった既知のギャップで、同じ依頼を機に
+    // 初めて実際に結線した(dispatchLeaderByte()自身のescPending_
+    // switchのkEscapeケース参照)。
+    {"^X^C", "EXIT", "EXIT", {kLeaderX, kControlC}, false, "2.18"},
 
     // INFO (^I)
     // 2026-08-27のリネーム、直接のユーザー依頼: 以前は"^T"/"USILIC
@@ -2225,6 +2231,19 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 参照。
       case 'l':
         return handleCommand(Command::StartLog);
+      // ESC ESC(^[^[): kKeyTable自身の見出しコメントには元々
+      // "EXIT (^X^C or ^[^[)"と書かれていたが、実際にはこのswitchに
+      // 一度もcaseが存在せず、配線されないまま放置されていた既知の
+      // ギャップだった(2026-09-09、直接のユーザー報告"^[^[は-g起動
+      // のみ有効みたい...元々^X^Cと同じ扱いなので反映して"を受けて
+      // 発見)。GraphicalDisplay::run()自身のイベントループがSDLK_ESCAPE
+      // を素の0x1bとしてキューへ積むだけなので(application.cpp側の
+      // このディスパッチとは無関係)、-gで時々「終了したように見える」
+      // 挙動があったとしても、それはこのアプリ自身のコマンドとして
+      // ではなく、SDL/OS側の何らかの副作用だったはずである――ここで
+      // 初めて実際にCommand::StartExitへ結線する。
+      case kEscape:
+        return handleCommand(Command::StartExit);
       default:
         return false;  // このスライスでは認識されないESCシーケンス
     }
@@ -2356,15 +2375,18 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     if (special) return false;
     switch (byte) {
       // 2026-09-08、直接のユーザー依頼によるキー再編(^Xプレフィックス
-      // の廃止)で、DIR以外の全てのバイトを^O/^Jへ移行させた。DIRは
-      // 意図的にここへ残っている――Emacsの`C-x d`(Dired)/`C-x C-d`
-      // (list-directory)が元々同じ「対象はディレクトリ」の意味で
-      // ^Xを使っているため、この1組だけは移動する理由が無いという
-      // ユーザー自身の判断による。
+      // の廃止)で、DIR以外の全てのバイトを^O/^Jへ移行させたが、EXIT
+      // (^X^C)は同日中にユーザー自身の判断で^Xへ差し戻された(^Oxを
+      // 撤回)。DIRが最初から意図的にここへ残っているのと同じ理屈
+      // ――Emacsの`C-x C-c`(save-buffers-kill-terminal、事実上の終了)
+      // が元々同じ「終了」の意味で^X^Cを使っているため、この組も
+      // 移動する理由が無い。
       case 'd':  // ^X d : DIR(ディレクトリ名を入力)
         return handleCommand(Command::StartDirectoryInput);
       case 0x04:  // ^X ^D : DIR(ディレクトリ名を選択、K-48)
         return handleCommand(Command::StartDirectoryHistory);
+      case kControlC:  // ^X ^C : 終了
+        return handleCommand(Command::StartExit);
       default:
         return false;  // このスライスでは認識されない^Xシーケンス
     }
@@ -2422,9 +2444,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartArchiveExtract);
       case 0x17:  // ^O ^W : バッファをwFilePath_へ保存(旧^X^W)
         return handleCommand(Command::SaveBufferToFile);
-      case 'x':  // ^O x : 終了(旧^X^C――^O^Cは既存のCOPY文字列と
-                 // 衝突するため、eXitのxを新たに採用)
-        return handleCommand(Command::StartExit);
       case '(':  // ^O ( : マクロ記録を開始(旧^X()
         return handleCommand(Command::StartMacroRecord);
       case ')':  // ^O ) : マクロ記録を終了(旧^X))

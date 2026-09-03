@@ -5888,15 +5888,16 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: `exit` ends the child on its own, automatical
 
 // -- Global leader-key access from within Shell mode (^J/^X/^O, NOT
 // bare ESC) -- a real user report (2026-08-02) comparing side by side
-// against the legacy build found ^J^F/^Ox etc. (^X^F/^X^C at the time
-// of the original report, since moved -- see the 2026-09-08 keybinding
-// redesign) work directly from within SHELL there, silently doing
-// nothing here before this existed
+// against the legacy build found ^J^F/^X^C etc. work directly from
+// within SHELL there, silently doing nothing here before this existed
 // (currentMode_==Shell routed every byte to feedShellByte() with no
-// leader-key access at all). See feedShellByte()'s own comment. --
+// leader-key access at all). See feedShellByte()'s own comment.
+//
+// 2026-09-08/09、直接のユーザー依頼によるキー再編でFILE historyは
+// ^X^Fから^J^Fへ移行したが、EXITは一度^X^Cから^Oxへ移行した後、同じ
+// 依頼元により^X^Cへ差し戻された(kKeyTable自身の"^X^C"エントリの
+// コメント参照)。--
 
-// 2026-09-08、直接のユーザー依頼によるキー再編でFILE historyは
-// ^X^Fから^J^Fへ、EXITは^X^Cから^Oxへ、それぞれ移行。
 TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^J^F (FILE history) switches out of Shell and runs, "
                            "matching legacy") {
   REQUIRE(app.start(path()));
@@ -5909,7 +5910,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^J^F (FILE history) switches out 
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // left Shell, ^J^F's own real target mode
 }
 
-TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^Ox (EXIT) switches back to the mode SHELL was entered "
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^C (EXIT) switches back to the mode SHELL was entered "
                            "from FIRST, then opens the confirmation prompt") {
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
@@ -5922,8 +5923,8 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^Ox (EXIT) switches back to the m
     return;
   }
 
-  CHECK(app.feedShellByte(0x0f, std::nullopt));  // ^O
-  CHECK(app.feedShellByte('x', std::nullopt));   // x
+  CHECK(app.feedShellByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedShellByte(0x03, std::nullopt));  // ^C
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");  // shellReturnMode_'s own state, not reset
   CHECK(app.promptActive());
@@ -7042,19 +7043,34 @@ TEST_CASE_FIXTURE(Fixture, "RM: a target that's disappeared out from under the o
   CHECK(display.underlineAt(23, 0));
 }
 
-// -- M_exit: ^O x confirmation prompt, wantsExit() flag --
+// -- M_exit: ^X^C confirmation prompt, wantsExit() flag --
 
 TEST_CASE_FIXTURE(Fixture, "wantsExit(): false before anything happens") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(app.wantsExit());
 }
 
-// 2026-09-08、直接のユーザー依頼によるキー再編で^X^Cから^Oxへ移行
-// (^O^Cは既存のCOPY文字列と衝突するため、eXitのxを新たに採用)。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O x starts the exit-confirmation prompt") {
+// 2026-09-08にキー再編で一度^X^Cから^Oxへ移行したが、同日中に直接の
+// ユーザー依頼で^X^Cへ差し戻された(kKeyTable自身の"^X^C"エントリの
+// コメント参照)。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^C starts the exit-confirmation prompt") {
   REQUIRE(app.start(path()));
-  app.feedByte(0x0f, std::nullopt);
-  CHECK(app.feedByte('x', std::nullopt));
+  app.feedByte(0x18, std::nullopt);
+  CHECK(app.feedByte(0x03, std::nullopt));
+  CHECK(app.promptActive());
+  CHECK_FALSE(app.wantsExit());
+}
+
+// 2026-09-09追加、直接のユーザー依頼("^[^[は-g起動のみ有効みたい
+// ...元々^X^Cと同じ扱いなので反映して"): kKeyTable自身の見出し
+// コメントは元々"^X^C or ^[^["と謳っていたが、実際には一度もESC ESC
+// のdispatchLeaderByte()自身のescPending_switchにcaseが無く、配線
+// されないまま放置されていた既知のギャップだった――ここで初めて
+// 実際に結線したことを確認する。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ESC ESC also starts the exit-confirmation prompt") {
+  REQUIRE(app.start(path()));
+  app.feedByte(0x1b, std::nullopt);
+  CHECK(app.feedByte(0x1b, std::nullopt));
   CHECK(app.promptActive());
   CHECK_FALSE(app.wantsExit());
 }
@@ -9130,14 +9146,14 @@ TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^S' entry returns to Directory mo
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^Ox' entry (EXIT) chains a full multi-byte leader sequence "
-                           "(^O leader -> x sub-command)") {
+TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^X^C' entry (EXIT) chains a full multi-byte leader sequence "
+                           "(^X leader -> ^C sub-command)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("^Ox :") != std::string::npos) row = static_cast<int>(i);
+    if (lines[i].text.find("^X^C :") != std::string::npos) row = static_cast<int>(i);
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
@@ -9152,7 +9168,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: Back (^G) on any entry returns without executin
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("^Ox :") != std::string::npos) row = static_cast<int>(i);  // EXIT's own row -- would be very visible if wrongly executed
+    if (lines[i].text.find("^X^C :") != std::string::npos) row = static_cast<int>(i);  // EXIT's own row -- would be very visible if wrongly executed
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
