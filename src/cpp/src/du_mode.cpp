@@ -19,8 +19,21 @@ bool DuMode::loadUsage(const std::string &path) {
   ProgramCommand du = configuration_.commandFor(ConfiguredRole::Du);
   if (du.argv.empty()) return false;
 
+  // 2026-09-09修正、実際のユーザー報告("その一覧ではカレントディレク
+  // トリと配下の境界が//になっている"): このコードベース全体の慣習
+  // として、DirectoryMode::currentDirectory()(このプロンプトの既定の
+  // 入力値)は常に末尾に'/'を持つ――macOSの`du`(BSD du)は、末尾に
+  // '/'が付いたパスを渡されると、子エントリのパスをそのまま
+  // "<path>/<child>"ではなく"<path>//<child>"として出力する(直接
+  // 確認済み: `du -ak /tmp/dutest/`は"/tmp/dutest//sub/file.txt"を
+  // 出力するが、`du -ak /tmp/dutest`は正しく"/tmp/dutest/sub/file.txt"
+  // を出力する)。ルート"/"自体を空文字列に縮退させないよう、末尾の
+  // '/'は「ルート以外」の場合にだけ取り除く。
+  std::string normalizedPath = path;
+  if (normalizedPath.size() > 1 && normalizedPath.back() == '/') normalizedPath.pop_back();
+
   std::vector<std::string> argv = du.argv;
-  argv.push_back(path);
+  argv.push_back(normalizedPath);
   ChildProcess::Result result = ChildProcess::run(argv);
   if (!result.ok) return false;
 

@@ -154,6 +154,14 @@ enum class Command {
   // モード分岐のコメント参照。
   StartExit,
   StartDu,
+  // ^J^D(K-38、旧「Redisplay window」): 2026-09-09、直接のユーザー
+  // 依頼("^J^D : DU画面へ戻る。集計は行わず")によりStartDuから分離。
+  // 以前は^Jd(StartDu)と全く同じコマンドへ解決していた(du(1)を
+  // 毎回再実行し、既存の結果へ無条件でプロンプト経由の入力を要求
+  // していた)――今は、既存のDU結果があればプロンプト無しで即座に
+  // それへ戻るだけの、純粋な「再表示」。まだ一度もDUを実行して
+  // いなければno-op。redisplayDu()自身のコメント参照。
+  RedisplayDu,
   StartDirectoryHistory,
   StartCommandHistory,
   // K-49(素の^R、M_hist、" HISTORY"): リストブラウザの外側から
@@ -1653,6 +1661,8 @@ class Application {
   bool returnFromArchive();
   bool returnFromShell();
   bool returnFromDu();
+  bool returnToDuResults();
+  bool redisplayDu();
   bool returnFromListBrowser();
   bool returnFromKey();
   // ^O^C(M_copy、「COPY」): activeContentView().lines()を
@@ -2251,7 +2261,10 @@ class Application {
   // Command::Backがどの結果画面へルーティングすべきかを知るのに
   // 構造的に十分なほど「FGREP:/EGREP:」と「CUT:」を区別しないので、
   // これは全てのsetSearchAnnotation()呼び出しと並んで設定される。
-  enum class DirectorySearchKind { Grep, Cut };
+  // Du: 2026-09-09追加、実際のユーザー報告("DUでどれかを選ぶと
+  // 戻り値がDUじゃないのでDU一覧へ戻らない")――openSelectedDuEntry()
+  // 自身のコメント参照。
+  enum class DirectorySearchKind { Grep, Cut, Du };
   DirectorySearchKind lastDirectorySearchKind_ = DirectorySearchKind::Grep;
 
   bool recordingMacro_ = false;

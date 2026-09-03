@@ -2277,9 +2277,12 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::LocateUpdateDb);
       case 0x0c:      // ^J ^L : LOCATE(K-40、「Redisplay window」)
         return handleCommand(Command::StartLocate);
-      case 'd':       // ^J d : DU
-      case 0x04:      // ^J ^D : DU
+      case 'd':       // ^J d : DU(集計を実行)
         return handleCommand(Command::StartDu);
+      // 2026-09-09、直接のユーザー依頼により分離――RedisplayDu自身の
+      // コメント参照。
+      case 0x04:      // ^J ^D : DU(既存の結果を再表示、集計なし)
+        return handleCommand(Command::RedisplayDu);
       case 0x12:      // ^J ^R : コマンド履歴(M_cmd)
         return handleCommand(Command::StartCommandHistory);
       case 0x08:  // ^J ^H : HELP
@@ -3129,6 +3132,11 @@ bool Application::handleCommand(Command command) {
         // returnFromLocate()自身の既存の、手を付けられていないロジック
         // 経由で既に正しくlocateReturnMode_に到達する)。
         if (fileReturnMode_ == ApplicationMode::Locate) return returnFromFileToLocate();
+        // 2026-09-09追加、openSelectedDuEntry()自身のコメント参照
+        // ("DUでどれかを選ぶと戻り値がDUじゃない"): DU結果からファイル
+        // を直接開いた場合、すぐ上のLocateの前例と同じく、まずDU自身の
+        // 結果リストへ戻る。
+        if (fileReturnMode_ == ApplicationMode::Du) return returnToDuResults();
         // 2026-08-28追加、openSelectedGrepMatch()自身のFileの分岐の
         // コメント参照: GREPのマッチ経由で到達したファイル(直接開か
         // れたのではない)は、すぐ上のLocateの前例に合わせて、まず
@@ -3191,7 +3199,9 @@ bool Application::handleCommand(Command command) {
       // 構造的にそれらを区別できないため、どちらの結果画面へ戻すかを
       // 選ぶ。
       if (currentMode_ == ApplicationMode::Directory && directoryMode_.hasSearchAnnotation()) {
-        return lastDirectorySearchKind_ == DirectorySearchKind::Cut ? returnToCutResults() : returnToGrepResults();
+        if (lastDirectorySearchKind_ == DirectorySearchKind::Cut) return returnToCutResults();
+        if (lastDirectorySearchKind_ == DirectorySearchKind::Du) return returnToDuResults();
+        return returnToGrepResults();
       }
       // CP/MV/RM操作がアーム済みの間の^G――cancelPendingCpMvRm()自身の
       // コメント参照("CPでは^Gが利かない")。すぐ上のhasSearchAnnotation()
@@ -3366,6 +3376,8 @@ bool Application::handleCommand(Command command) {
       return startExitPrompt();
     case Command::StartDu:
       return startDuPrompt();
+    case Command::RedisplayDu:
+      return redisplayDu();
     // 2026-08-17修正(=cn): K-48(^X^D、「Select directory name」)――
     // すぐ上のStartFileHistoryと同じ理屈。
     case Command::StartDirectoryHistory:
@@ -3747,17 +3759,34 @@ std::string Application::materializeArchiveTempFile(const std::string &dir, cons
 // 出しているので、`du`自身の出力エントリは既に絶対パスである――
 // Cut/Archiveのセグメント/エントリとは異なり、ここではパスの結合は
 // 不要である。
+// 2026-09-09修正、実際のユーザー報告("DUでどれかを選ぶと戻り値が
+// DUじゃないのでDU一覧へ戻らない"): ディレクトリ側は以前
+// currentMode_をDirectoryへ切り替えるだけで、DUへの帰り道を一切
+// 残していなかった――openSelectedGrepMatch()/openSelectedLocateResult()
+// が既に確立している「注釈+lastDirectorySearchKind_」の慣習に
+// 合わせ、setSearchAnnotation("DU: "+duMode_.currentPath())と
+// DirectorySearchKind::Duを設定し、Command::Backのハンドラ自身の
+// hasSearchAnnotation()分岐がreturnToDuResults()へルーティング
+// できるようにした。ファイル側も同様に、無条件のfileReturnMode_ =
+// Directoryが同じバグだった――DuをfileReturnMode_の正当な値として
+// 追加した(Command::Back自身のFileの分岐参照)。
 bool Application::openSelectedDuEntry() {
   const DuEntry *entry = duMode_.selectedEntry();
   if (!entry) return false;
   if (entry->isDirectory) {
     if (!directoryMode_.enterDirectory(entry->path)) return false;
     currentMode_ = ApplicationMode::Directory;
+    directoryMode_.setSearchAnnotation("DU: " + duMode_.currentPath());
+    lastDirectorySearchKind_ = DirectorySearchKind::Du;
+    // enterDirectory()は、上の注釈が設定される前に既に内部で一度
+    // 再描画している――openSelectedLocateResult()自身の同一のコメント
+    // 参照。
+    directoryView_.redraw();
     return true;
   }
   if (!fileMode_.loadFile(entry->path)) return false;
   currentMode_ = ApplicationMode::File;
-  fileReturnMode_ = ApplicationMode::Directory;  // それ自身の宣言コメント参照
+  fileReturnMode_ = ApplicationMode::Du;
   return true;
 }
 
@@ -4699,6 +4728,15 @@ bool Application::returnFromDu() {
   duMode_.saveCursorPosition();
   currentMode_ = ApplicationMode::Directory;
   directoryView_.redraw();
+  return true;
+}
+
+// 2026-09-09追加、openSelectedDuEntry()自身のコメント参照:
+// returnToCutResults()/returnToGrepResults()と同じ形――duMode_自身の
+// 内容は既にキャッシュ済みなので、再計算せずにモードを戻すだけでよい。
+bool Application::returnToDuResults() {
+  currentMode_ = ApplicationMode::Du;
+  duView_.redraw();
   return true;
 }
 
@@ -6038,14 +6076,27 @@ bool Application::startExitPrompt() {
 }
 
 // m_du()/m_cr()のT_duケースから移植: 上の他の全てのプロンプトとは
-// 異なり、フィールドは空から始まるのではなく現在のディレクトリで
-// 「事前に埋められている」(`strcpy(rvp->str, ap->du)`)――^Mだけで
-// デフォルトを受け入れるか、ユーザーが先に編集できる。Directory
-// 専用、クラスコメント参照。
+// 異なり、フィールドは空から始まるのではなく事前に埋められている
+// (`strcpy(rvp->str, ap->du)`)――^Mだけでデフォルトを受け入れるか、
+// ユーザーが先に編集できる。Directory専用、クラスコメント参照。
+//
+// 2026-09-09修正、直接のユーザー依頼("^J^D : DU画面へ戻る。集計は
+// 行わず、デフォルト入力文字列も以前du(1)実行時のフォルダー")に
+// よりデフォルト値を変更: 以前は常に現在のディレクトリだったが、
+// 既にDUを一度でも実行していれば、その時のフォルダー(duMode_.
+// currentPath())を優先する――まだ一度も実行していなければ、現在の
+// ディレクトリへフォールバックする(以前と同じ)。
 bool Application::startDuPrompt() {
   if (currentMode_ != ApplicationMode::Directory) return false;
-  activatePrompt(PromptKind::DuPath, directoryMode_.currentDirectory());
+  const std::string &lastDuPath = duMode_.currentPath();
+  activatePrompt(PromptKind::DuPath, lastDuPath.empty() ? directoryMode_.currentDirectory() : lastDuPath);
   return true;
+}
+
+// ^J^D(K-38): Command::RedisplayDu自身のコメント参照。
+bool Application::redisplayDu() {
+  if (duMode_.currentPath().empty()) return false;
+  return returnToDuResults();
 }
 
 // K-58: クラス自身の宣言コメント参照。
@@ -7480,6 +7531,19 @@ void Application::cancelPrompt() {
     directoryView_.setCursorRowAlsoHighlighted(true);
     directoryView_.setMarkedRowUsesUnderline(true);
     directoryView_.redraw();
+    return;
+  }
+  // 2026-09-09追加、直接のユーザー依頼("^Gで集計中断後は^J^Dと同じく
+  // 既存の集計結果へ移動"): ^Jdのプロンプト(新しい集計先を尋ねる)を
+  // ^Gでキャンセルした時、既存のDU結果が(前回までに)あれば、素の
+  // Directoryモードへ戻すのではなく、それをそのまま再表示する
+  // ――redisplayDu()/returnToDuResults()自身のコメント参照。まだ
+  // 一度もDUを実行していなければ、下の汎用のフォールバック(素の
+  // Directoryモードへ戻す、以前と同じ)に委ねる。
+  if (promptKind_ == PromptKind::DuPath && !duMode_.currentPath().empty()) {
+    promptKind_ = PromptKind::None;
+    currentMode_ = ApplicationMode::Du;
+    duView_.redraw();
     return;
   }
   promptKind_ = PromptKind::None;
