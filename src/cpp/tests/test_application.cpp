@@ -3471,18 +3471,18 @@ TEST_CASE_FIXTURE(Fixture, "ARC nested: opening a fresh top-level archive clears
   CHECK(app.currentMode() == ApplicationMode::Directory);  // one Back reaches Directory directly -- no stale chain
 }
 
-// -- ARC extraction to a real destination (K-58, ^Xa -- K-57/^X^Ka
+// -- ARC extraction to a real destination (K-58, ^Oa -- K-57/^X^Ka
 // "with SHELL window" REMOVED 2026-08-23, a direct user request once
 // executeArchiveExtract() was unified to always run via shell_'s own
 // real SHELL session, same redesign as CP/MV/RM's, see its own
 // comment) --
 
-TEST_CASE_FIXTURE(Fixture, "ARC extract (^Xa, K-58, Directory mode): extracts the WHOLE archive to the destination") {
+TEST_CASE_FIXTURE(Fixture, "ARC extract (^Oa, K-58, Directory mode): extracts the WHOLE archive to the destination") {
   REQUIRE(app.start(path()));
   int idx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   REQUIRE(app.feedByte('a', std::nullopt));   // a
   CHECK(app.promptActive());
   feedText((root / "arcdest").string());
@@ -3518,7 +3518,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back): from Directory mode showing the
   REQUIRE(app.archiveMode().selectedEntry() != nullptr);
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   REQUIRE(app.feedByte('a', std::nullopt));   // a
   feedText((root / "arcdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
@@ -3561,7 +3561,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back): from Directory mode showing the
 // the entry that was actually selected when extraction was invoked.
 // Fixed in both openSelectedArchiveEntry() and executeArchiveExtract()
 // -- see their own comments.
-TEST_CASE_FIXTURE(Fixture, "ARC extract (^Xa from Archive mode): ^G back via the \"ARC: ...\" annotation "
+TEST_CASE_FIXTURE(Fixture, "ARC extract (^Oa from Archive mode): ^G back via the \"ARC: ...\" annotation "
                            "restores the cursor to the entry that was actually extracted, not row 0") {
   REQUIRE(app.start(path()));
   int idx = indexOf("archive.tar");
@@ -3581,7 +3581,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract (^Xa from Archive mode): ^G back via the
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   fs::create_directory(root / "arcdest3");  // executeArchiveExtract() rejects a destination that doesn't exist yet
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   REQUIRE(app.feedByte('a', std::nullopt));   // a
   feedText((root / "arcdest3").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
@@ -3626,7 +3626,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract destination: opening a FILE there clears
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
   fs::create_directory(root / "flatdest");  // executeArchiveExtract() rejects a destination that doesn't exist yet
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   REQUIRE(app.feedByte('a', std::nullopt));   // a -- nothing marked: extracts the WHOLE (single-file) archive
   feedText((root / "flatdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
@@ -3667,7 +3667,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract from within Archive mode's own TOC: mark
   REQUIRE(app.archiveMode().selectedEntry()->name.find("inner.txt") != std::string::npos);
   REQUIRE(app.handleCommand(Command::ToggleMark));  // ^Space -- this port's own marking key (see ArchiveMode::toggleMark())
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   REQUIRE(app.feedByte('a', std::nullopt));   // a
   feedText((root / "arcdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
@@ -3690,40 +3690,14 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract from within Archive mode's own TOC: mark
   CHECK(app.activeContentView().modeLineText().find("ARC: ") != std::string::npos);
 }
 
-// 2026-08-26 fix, a real report ("展開先を選ぶための^X^Mが利かない"):
-// legacy's menu.c folds M_arc/M_arc2 (^X^Ka/^Xa) into the exact same
-// category as M_cp/M_mv/M_rm, sharing ONE M_dest (^X^M) destination-
-// confirm step across all four -- this port's own ^X a already opens
-// the SAME destination prompt in one step (see startArchivePrompt()'s
-// own comment), but ^X^M itself was never ALSO wired to reach it,
-// unlike ^X^Y/^X^N (mark all / clear all), which already are
-// explicitly "(CP, MV, RM, ARC)". Mirrors the "^X a" test just above,
-// using "^X^M" instead.
-TEST_CASE_FIXTURE(Fixture, "ARC extract: ^X^M (not just ^X a) also opens the destination prompt from within "
-                           "Archive mode's own TOC") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("archive.tar");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::Archive);
-
-  while (app.archiveMode().selectedEntry() != nullptr &&
-         app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
-    if (!app.handleCommand(Command::MoveDown)) break;
-  }
-  REQUIRE(app.archiveMode().selectedEntry() != nullptr);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M
-  REQUIRE(app.promptActive());
-  feedText((root / "arcdest").string());
-  CHECK(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(pumpArchiveExtractToCompletion(app));
-
-  CHECK(fs::exists(root / "arcdest" / "arcsrc" / "inner.txt"));
-  CHECK(app.currentMode() == ApplicationMode::Directory);  // see the ^X a test just above's own 2026-08-26 comment
-}
+// 2026-09-08 note: the test that used to live here ("ARC extract: ^X^M
+// (not just ^X a) also opens the destination prompt...") verified that
+// the shared, independently-keyed ^X^M (K-71) destination command ALSO
+// reached the archive prompt redundantly alongside ^X a/^O a. That
+// redundant key itself (Command::StartDestinationPrompt) was deleted in
+// the same keybinding redesign that moved ARC extraction to ^O a (a
+// direct user request, "冗長分は全て削除で") -- there is no longer a
+// second key that reaches this prompt, so the test's premise is gone.
 
 // 2026-09-08 fix, a real user report ("選択マーク皆無のARC画面での
 // ^Oa^Mではsaved/への全展開が起きない"): executeArchiveExtract()'s
@@ -3748,8 +3722,8 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: from within Archive mode's own TOC with
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
   REQUIRE(app.archiveMode().markedCount() == 0);  // nothing explicitly marked
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
   REQUIRE(app.promptActive());
   feedText((root / "arcdest").string());
   CHECK(app.feedByte(0x0d, std::nullopt));
@@ -3818,7 +3792,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: an empty destination defaults to <homeD
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE_FALSE(fs::exists(root / ".usilic" / "saved"));  // doesn't exist yet -- must be auto-created
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   REQUIRE(app.feedByte('a', std::nullopt));   // a
   REQUIRE(app.promptActive());
   CHECK(app.feedByte(0x0d, std::nullopt));  // ^M alone -- no destination typed at all
@@ -3826,7 +3800,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: an empty destination defaults to <homeD
 
   CHECK(fs::exists(root / ".usilic" / "saved" / "arcsrc" / "inner.txt"));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  // "ARC: " prefix only -- see the ^X a test's own identical 2026-08-27
+  // "ARC: " prefix only -- see the ^O a test's own identical 2026-08-27
   // comment above.
   CHECK(app.activeContentView().modeLineText().find("ARC: ") != std::string::npos);
 }
@@ -3856,7 +3830,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: a destination that doesn't exist report
   // besides being irrelevant to what this test is actually checking.
   std::string typo = "/usilic-test-no-such-dir";
   REQUIRE_FALSE(fs::exists(typo));
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   REQUIRE(app.feedByte('a', std::nullopt));   // a
   REQUIRE(app.promptActive());
   feedText(typo);
@@ -3889,9 +3863,9 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: refused in Directory mode when the sele
   CHECK_FALSE(app.promptActive());
 }
 
-// -- ERROR/LOG buffers (K-67/K-68, ^X^Ke/^X^Kl) --
+// -- ERROR/LOG buffers (K-67/K-68, ^J^Oe/^J^Ol -- moved from ^X^Ke/^X^Kl 2026-09-08) --
 
-TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): refused when nothing has been logged this session yet") {
+TEST_CASE_FIXTURE(Fixture, "ERROR (^J^Oe, K-67): refused when nothing has been logged this session yet") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(app.handleCommand(Command::ShowErrorLog));
 }
@@ -3911,17 +3885,17 @@ TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): refused when nothing has been l
 // executeCopy()'s own comment) -- so a failed CP's own diagnostic goes
 // straight to the real terminal (and stays there for the user to
 // scroll back to) instead of being captured into errorLogPath_ at all.
-// ^X^Ke now correctly reports nothing logged for a CP/MV/RM failure --
+// ^J^Oe now correctly reports nothing logged for a CP/MV/RM failure --
 // this is intentional, not a regression left unnoticed.
-TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): a failed CP does NOT land in errorLogPath_ anymore -- "
+TEST_CASE_FIXTURE(Fixture, "ERROR (^J^Oe, K-67): a failed CP does NOT land in errorLogPath_ anymore -- "
                            "it runs via shell_'s own real SHELL session, same as K-51") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte('c', std::nullopt));   // c -- ^Xc: shows the destination prompt immediately (K-52)
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- ^Oc: shows the destination prompt immediately (K-52)
   // A destination whose PARENT doesn't exist either -- cp fails and
   // writes a diagnostic to stderr (unlike a merely-missing leaf name,
   // which cp happily creates).
@@ -3937,7 +3911,7 @@ TEST_CASE_FIXTURE(Fixture, "ERROR (^X^Ke, K-67): a failed CP does NOT land in er
   CHECK_FALSE(app.handleCommand(Command::ShowErrorLog));  // nothing was ever captured to errorLogPath_
 }
 
-TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): refused when Shell was never started") {
+TEST_CASE_FIXTURE(Fixture, "LOG (^J^Ol, K-68): refused when Shell was never started") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(app.handleCommand(Command::ShowShellLog));
 }
@@ -4054,7 +4028,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): shows a status screen with th
 // grow to reflect them, not just that the labels exist.
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): WORK and arc.N lists grow as w.N/arc.N are actually used") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   REQUIRE(app.feedByte(0x17, std::nullopt));  // ^W -- allocates w.1
 
   CHECK(app.feedByte(0x09, std::nullopt));  // ^I
@@ -4070,7 +4044,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): WORK and arc.N lists grow as 
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the WORK line opens w.1 as a FILE; ^G returns to "
                            "the banner itself (not the original directory)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   REQUIRE(app.feedByte(0x17, std::nullopt));  // ^W -- allocates w.1
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
 
@@ -4284,14 +4258,14 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the ERROR/SHELL/Star
 // the test just above (which pre-creates the shell log file directly
 // via ofstream, sidestepping the actual bug), a REAL shell session's
 // own output was never written to logFilePath_ on disk at all unless
-// refreshShellLogFile() had separately been called first (^X^Kl/ESC l)
+// refreshShellLogFile() had separately been called first (^J^Ol/ESC l)
 // -- Enter on the SHELL line used to just fail silently in that case.
 // openSelectedBannerEntry() now calls refreshShellLogFile() itself
 // first, so it always reflects the session's current scrollback.
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the SHELL line opens the real shell log even if "
-                           "it was never explicitly dumped first (^X^Kl/ESC l)") {
+                           "it was never explicitly dumped first (^J^Ol/ESC l)") {
   REQUIRE(app.start(path()));
-  bool shellOk = app.feedByte(0x18, std::nullopt);       // ^X
+  bool shellOk = app.feedByte(0x0f, std::nullopt);       // ^O
   shellOk = shellOk && app.feedByte('s', std::nullopt);  // s -- RestartShell (K-60)
   if (!shellOk || app.currentMode() != ApplicationMode::Shell) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -4545,7 +4519,9 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): NOT reachable from SHELL mode
   CHECK(app.currentMode() == ApplicationMode::Shell);  // stayed in Shell -- did NOT open the banner
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O a (K-27) toggles the HELP/KEY display language, and back again") {
+// 2026-09-08、直接のユーザー依頼によるキー再編で^Oaから^Jaへ移行
+// (ARCが^Xaから^Oaへ移るための地ならし)。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J a (K-27) toggles the HELP/KEY display language, and back again") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
   const auto &linesJa = app.activeContentView().lines();
@@ -4553,13 +4529,13 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O a (K-27) toggles the HELP/KEY display l
                               linesJa[0].text.find("Move window down") == std::string::npos;
   CHECK(sawJapaneseFirstRow);
 
-  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
   CHECK(app.feedByte('a', std::nullopt));
   const auto &linesEn = app.activeContentView().lines();
   CHECK(linesEn[0].text.find("Move window down") != std::string::npos);
   CHECK(app.currentMode() == ApplicationMode::Key);  // has no mode restriction, but didn't leave Key either
 
-  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x0a, std::nullopt));
   CHECK(app.feedByte('a', std::nullopt));
   const auto &linesJaAgain = app.activeContentView().lines();
   CHECK(linesJaAgain[0].text.find("Move window down") == std::string::npos);
@@ -4616,10 +4592,10 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ESC s starts Shell mode (StartShell)") {
   CHECK(app.currentMode() == ApplicationMode::Shell);
 }
 
-TEST_CASE_FIXTURE(Fixture, "saveBufferToFile (^X^W, K-17): writes the active view's lines to the "
+TEST_CASE_FIXTURE(Fixture, "saveBufferToFile (^O^W, K-17): writes the active view's lines to the "
                            "current work file (w.1 on first use)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   CHECK(app.feedByte(0x17, std::nullopt));    // ^W
 
   std::ifstream in(root / ".usilic" / "w.1");
@@ -4847,7 +4823,9 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O h toggles Display::smoothScrollEnabled(
   CHECK_FALSE(history.smoothScrollEnabled());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O l toggles DirectoryMode::filenameOnlyMode() and persists it to History") {
+// 2026-09-08、直接のユーザー依頼("^Ol⇒^Oo（←ファイル名以外は
+// omission）")によるキー再編で'l'から'o'へ移行。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O o toggles DirectoryMode::filenameOnlyMode() and persists it to History") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   REQUIRE(idx >= 0);
@@ -4856,13 +4834,13 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O l toggles DirectoryMode::filenameOnlyMo
   CHECK(app.activeContentView().lines()[idx].text != "plain.txt");
 
   REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
-  CHECK(app.feedByte('l', std::nullopt));
+  CHECK(app.feedByte('o', std::nullopt));
   CHECK(app.directoryMode().filenameOnlyMode());
   CHECK(history.lsMode() != 0);
   CHECK(app.activeContentView().lines()[idx].text == "plain.txt");
 
   REQUIRE(app.feedByte(0x0f, std::nullopt));
-  CHECK(app.feedByte('l', std::nullopt));
+  CHECK(app.feedByte('o', std::nullopt));
   CHECK_FALSE(app.directoryMode().filenameOnlyMode());
   CHECK(history.lsMode() == 0);
 }
@@ -5205,7 +5183,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector) / ^J^K: from Shell m
   REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/ first
   REQUIRE(app.directoryMode().currentDirectory() == path() + "subdir/");
 
-  bool shellOk = app.feedByte(0x18, std::nullopt);  // ^X
+  bool shellOk = app.feedByte(0x0f, std::nullopt);  // ^O
   shellOk = shellOk && app.feedByte('s', std::nullopt);  // s -- RestartShell (K-60), works from any mode
   if (!shellOk || app.currentMode() != ApplicationMode::Shell) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -5322,7 +5300,7 @@ TEST_CASE_FIXTURE(Fixture, "redrawSensitivePromptOrRecallActive: true during ^X^
   CHECK_FALSE(app.redrawSensitivePromptOrRecallActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works straight from ^X^F's own RecentFile "
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works straight from ^J^F's own RecentFile "
                            "candidate list (ListBrowser), without opening it first (2026-08-16 fix: a real "
                            "report -- \"同画面で^J^Kが利かない=bo\" -- =bo being that exact candidate-list "
                            "screen)") {
@@ -5348,7 +5326,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works straight
 // RecentFile branch of openSelectedListEntry() called
 // fileMode_.loadFile() unconditionally, never trying
 // archiveMode_.loadArchive() first.
-TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) from ^X^F's own RecentFile candidate list opens an archive "
+TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) from ^J^F's own RecentFile candidate list opens an archive "
                            "path as an actual archive (Archive mode), not raw file content") {
   history.pushRecent(RingCategory::RecentFile, (root / "archive.tar").string());
 
@@ -5361,9 +5339,9 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) from ^X^F's own RecentFile cand
   CHECK(app.archiveMode().currentArchive() == (root / "archive.tar").string());
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) from File mode reached via ^X^F (RecentFile) lands on the "
+TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) from File mode reached via ^J^F (RecentFile) lands on the "
                            "file's OWN containing directory, not whatever directory happened to be showing "
-                           "before ^X^F was pressed (2026-08-16 fix: a real report + own diagnosis -- "
+                           "before ^J^F was pressed (2026-08-16 fix: a real report + own diagnosis -- "
                            "\"=bo→[return]=bq→^G...結果は起動直後の（ls）なので「それ/BDF_Driver...」を表示 "
                            "しようとしてんじゃないの？\" -- openSelectedListEntry()'s RecentFile branch never "
                            "calls directoryMode_.enterDirectory(), so returnToDirectory() used to just redraw "
@@ -5410,9 +5388,9 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' exits immediately outside Directory mo
   CHECK(app.wantsExit());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompts, and a typed FILE path switches to File mode") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompts, and a typed FILE path switches to File mode") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
   REQUIRE(app.feedByte('f', std::nullopt));   // f
 
   for (char c : (root / "plain.txt").string()) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
@@ -5432,7 +5410,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X d prompts, and a typed DIR path switche
   CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f with a RELATIVE path resolves against the currently browsed directory, "
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f with a RELATIVE path resolves against the currently browsed directory, "
                            "not the process's own cwd (2026-08-01 user report)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
@@ -5441,7 +5419,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f with a RELATIVE path resolves against
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
   REQUIRE(app.feedByte('f', std::nullopt));   // f
   for (char c : std::string("sub.txt")) app.feedByte(static_cast<unsigned char>(c), std::nullopt);  // relative
   CHECK(app.feedByte(0x0d, std::nullopt));
@@ -5449,9 +5427,9 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f with a RELATIVE path resolves against
   CHECK(app.fileMode().currentFile() == (root / "subdir" / "sub.txt").string());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f/d with a nonexistent path fails cleanly, staying in the current mode") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f with a nonexistent path fails cleanly, staying in the current mode") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte(0x0a, std::nullopt));
   REQUIRE(app.feedByte('f', std::nullopt));
 
   for (char c : std::string("/no/such/path/at/all")) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
@@ -5459,9 +5437,9 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f/d with a nonexistent path fails clean
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompt, ^I (K-65) completes an unambiguous filename") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) completes an unambiguous filename") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
   REQUIRE(app.feedByte('f', std::nullopt));   // f
 
   // "plai" only matches plain.txt in root -- an absolute path so
@@ -5473,9 +5451,9 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompt, ^I (K-65) completes an unambi
   CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompt, ^I (K-65) with an ambiguous prefix leaves the text unchanged") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) with an ambiguous prefix leaves the text unchanged") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte(0x0a, std::nullopt));
   REQUIRE(app.feedByte('f', std::nullopt));
 
   // "cpmv_" matches both cpmv_a.txt and cpmv_b.txt -- ambiguous, so
@@ -5909,24 +5887,28 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: `exit` ends the child on its own, automatical
 
 // -- Global leader-key access from within Shell mode (^J/^X/^O, NOT
 // bare ESC) -- a real user report (2026-08-02) comparing side by side
-// against the legacy build found ^X^F/^X^C etc. work directly from
-// within SHELL there, silently doing nothing here before this existed
+// against the legacy build found ^J^F/^Ox etc. (^X^F/^X^C at the time
+// of the original report, since moved -- see the 2026-09-08 keybinding
+// redesign) work directly from within SHELL there, silently doing
+// nothing here before this existed
 // (currentMode_==Shell routed every byte to feedShellByte() with no
 // leader-key access at all). See feedShellByte()'s own comment. --
 
-TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^F (FILE history) switches out of Shell and runs, "
+// 2026-09-08、直接のユーザー依頼によるキー再編でFILE historyは
+// ^X^Fから^J^Fへ、EXITは^X^Cから^Oxへ、それぞれ移行。
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^J^F (FILE history) switches out of Shell and runs, "
                            "matching legacy") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
     return;
   }
-  CHECK(app.feedShellByte(0x18, std::nullopt));  // ^X
+  CHECK(app.feedShellByte(0x0a, std::nullopt));  // ^J
   CHECK(app.feedShellByte(0x06, std::nullopt));  // ^F
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // left Shell, ^X^F's own real target mode
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // left Shell, ^J^F's own real target mode
 }
 
-TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^C (EXIT) switches back to the mode SHELL was entered "
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^Ox (EXIT) switches back to the mode SHELL was entered "
                            "from FIRST, then opens the confirmation prompt") {
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
@@ -5939,8 +5921,8 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^C (EXIT) switches back to the 
     return;
   }
 
-  CHECK(app.feedShellByte(0x18, std::nullopt));  // ^X
-  CHECK(app.feedShellByte(0x03, std::nullopt));  // ^C
+  CHECK(app.feedShellByte(0x0f, std::nullopt));  // ^O
+  CHECK(app.feedShellByte('x', std::nullopt));   // x
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");  // shellReturnMode_'s own state, not reset
   CHECK(app.promptActive());
@@ -6211,7 +6193,10 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regex, file, ^J^B): a quick ^J^W-then-^G round 
   CHECK(text.find("EGREP") == std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): snapshots Shell's scrollback to logFilePath_, viewable via File mode") {
+// 2026-09-08、直接のユーザー依頼によるキー再編で^X^Klから^J^Olへ移行
+// (旧^X^Kサブリーダーが廃止され、ERROR/LOGは^J^O自体をネストした新設
+// のサブリーダーへ引っ越した)。
+TEST_CASE_FIXTURE(Fixture, "LOG (^J^Ol, K-68): snapshots Shell's scrollback to logFilePath_, viewable via File mode") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -6226,17 +6211,17 @@ TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): snapshots Shell's scrollback to l
   });
   REQUIRE(sawOutput);
 
-  // ^X^Kl is a leader-key sequence, only recognized by dispatchByte()'s
+  // ^J^Ol is a leader-key sequence, only recognized by dispatchByte()'s
   // OWN state machine -- while actively in Shell mode, every byte
   // routes straight to feedShellByte() instead (see dispatchByte()'s
-  // very first check), matching real usage: ^X while typing at a live
+  // very first check), matching real usage: ^J while typing at a live
   // shell prompt is command-line input, not usilic's own leader key. ^G
   // back to Directory first, same as a real user would.
   REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte(0x0b, std::nullopt));  // ^K
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   CHECK(app.feedByte('l', std::nullopt));     // l
   CHECK(app.currentMode() == ApplicationMode::File);
 
@@ -6246,13 +6231,13 @@ TEST_CASE_FIXTURE(Fixture, "LOG (^X^Kl, K-68): snapshots Shell's scrollback to l
   CHECK(found);
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X s restarts a fresh SHELL child, even from within Shell mode (K-60)") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O s restarts a fresh SHELL child, even from within Shell mode (K-60)") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
     return;
   }
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   bool ok = app.feedByte('s', std::nullopt);
   if (!ok) {
     MESSAGE("bash not available or handshake failed on restart -- skipping");
@@ -6300,7 +6285,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(RestartShell): refused while Shell::bu
   CHECK_FALSE(app.handleCommand(Command::RestartShell));
 }
 
-// -- CP/MV/RM: ^Space marking, ^Xc/^Xm/^Xr, real cp/mv/rm execution --
+// -- CP/MV/RM: ^Space marking, ^Oc/^Om/^Or, real cp/mv/rm execution --
 
 TEST_CASE("resolveCommand: 0x80 (^Space, Ctrl-Space's reported byte) resolves to ToggleMark") {
   CHECK(Application::resolveCommand(0x80, std::nullopt) == Command::ToggleMark);
@@ -6317,17 +6302,19 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleMark): toggles the mark at the c
   CHECK_FALSE(app.directoryMode().isMarked(2));
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^Y marks all entries (K-72), ^X ^N clears all marks (K-73), "
+// 2026-09-08、直接のユーザー依頼によるキー再編で^X^Y/^X^Nから^Jy/^Jn
+// へ移行(両方とも既存の^O割り当てと衝突するため、揃えて^Jへ)。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J y marks all entries (K-72), ^J n clears all marks (K-73), "
                            "excluding \"./\"/\"../\"") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  CHECK(app.feedByte(0x19, std::nullopt));    // ^Y
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  CHECK(app.feedByte('y', std::nullopt));     // y
   CHECK(app.directoryMode().markedCount() == app.directoryMode().entries().size() - 2);
   CHECK_FALSE(app.directoryMode().isMarked(0));  // "./"
   CHECK_FALSE(app.directoryMode().isMarked(1));  // "../"
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));
-  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N
+  REQUIRE(app.feedByte(0x0a, std::nullopt));
+  CHECK(app.feedByte('n', std::nullopt));  // n
   CHECK(app.directoryMode().markedCount() == 0);
 }
 
@@ -6351,18 +6338,16 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(MarkAll/ClearAllMarks): refused outsid
 // now a complete no-op: no arm, no label, nothing on screen changes,
 // exactly as if the key had never been pressed. See
 // Application::startCopyPrompt()'s own comment.
-TEST_CASE_FIXTURE(Fixture, "^Xc/^Xm/^Xr with nothing marked: a complete no-op, no prompt, nothing armed") {
+TEST_CASE_FIXTURE(Fixture, "^Oc/^Om/^Or with nothing marked: a complete no-op, no prompt, nothing armed") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" onto a real entry, but never marked
   REQUIRE(app.handleCommand(Command::MoveDown));
   std::string beforeRow = display.rowText(23);
 
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   CHECK_FALSE(app.feedByte('c', std::nullopt));
   CHECK_FALSE(app.promptActive());
   CHECK(display.rowText(23) == beforeRow);  // nothing changed on screen at all
-  // Nothing armed either -- a stray ^X^M has nothing to consume.
-  CHECK_FALSE(app.handleCommand(Command::StartDestinationPrompt));
 
   CHECK_FALSE(app.handleCommand(Command::StartMove));
   CHECK_FALSE(app.promptActive());
@@ -6376,8 +6361,8 @@ TEST_CASE_FIXTURE(Fixture, "^Xc/^Xm/^Xr with nothing marked: a complete no-op, n
 // "CP" Standout label is now part of the already-active prompt row
 // itself, see startDestinationPrompt()'s own drawPromptLabel() call,
 // rather than a separate, waiting-for-^X^M display).
-TEST_CASE_FIXTURE(Fixture, "^Xc with one entry marked: shows the destination prompt immediately, no ^X^M "
-                           "needed, and ^G cancels back to plain Directory mode unchanged") {
+TEST_CASE_FIXTURE(Fixture, "^Oc with one entry marked: shows the destination prompt immediately, no separate "
+                           "confirmation step needed, and ^G cancels back to plain Directory mode unchanged") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -6386,8 +6371,8 @@ TEST_CASE_FIXTURE(Fixture, "^Xc with one entry marked: shows the destination pro
   REQUIRE(app.handleCommand(Command::ToggleMark));
   CHECK_FALSE(app.promptActive());  // marking alone doesn't show anything yet
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  REQUIRE(app.feedByte('c', std::nullopt));   // c -- ^Xc: arms AND shows the prompt in one step
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte('c', std::nullopt));   // c -- ^Oc: arms AND shows the prompt in one step
   CHECK(app.promptActive());
   CHECK(display.rowText(23).substr(0, 2) == "CP");  // "CP" is part of the now-active prompt row itself
   CHECK(display.standoutAt(23, 0));
@@ -6410,7 +6395,7 @@ TEST_CASE_FIXTURE(Fixture, "^Xc with one entry marked: shows the destination pro
 // with both flipped back to true once the prompt is dismissed (either
 // by cancelling, checked here, or by a successful completion, which
 // enterDirectory() itself restores -- see its own comment).
-TEST_CASE_FIXTURE(Fixture, "^Xc: while the destination prompt is active, marked rows show Standout (not "
+TEST_CASE_FIXTURE(Fixture, "^Oc: while the destination prompt is active, marked rows show Standout (not "
                            "Underline) and the cursor's own row shows no Standout; ^G restores the ordinary "
                            "scheme") {
   REQUIRE(app.start(path()));
@@ -6426,7 +6411,7 @@ TEST_CASE_FIXTURE(Fixture, "^Xc: while the destination prompt is active, marked 
 
   int markNameCol = app.directoryMode().entries()[markIdx].nameStartColumn;
   int cursorNameCol = app.directoryMode().entries()[idx].nameStartColumn;
-  // Before ^Xc: the ordinary browsing scheme (established precedent).
+  // Before ^Oc: the ordinary browsing scheme (established precedent).
   CHECK(display.underlineAt(markIdx, markNameCol));
   CHECK(display.standoutAt(idx, cursorNameCol));
 
@@ -6450,7 +6435,7 @@ TEST_CASE_FIXTURE(Fixture, "^Xc: while the destination prompt is active, marked 
 
 // Same one-step activation for MV/RM -- identical gate to CP's, see
 // startMovePrompt()/startRemovePrompt()'s own comments.
-TEST_CASE_FIXTURE(Fixture, "^Xm/^Xr with one entry marked: also show their own prompt immediately") {
+TEST_CASE_FIXTURE(Fixture, "^Om/^Or with one entry marked: also show their own prompt immediately") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -6612,7 +6597,7 @@ TEST_CASE_FIXTURE(Fixture, "'.' is a no-op outside Directory/Archive mode") {
 // "RM" label jumping straight to the right-aligned source-path field,
 // easy to misread as "nothing happened" since there was no legible
 // prompt text at all.
-TEST_CASE_FIXTURE(Fixture, "^X^M's destination prompt shows plain (non-Standout) \"Destination ? \" text "
+TEST_CASE_FIXTURE(Fixture, "CP's destination prompt shows plain (non-Standout) \"Destination ? \" text "
                            "after the reversed \"CP\"/position fields, matching legacy") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
@@ -6628,7 +6613,7 @@ TEST_CASE_FIXTURE(Fixture, "^X^M's destination prompt shows plain (non-Standout)
 }
 
 // Same fix, RM's own "Delete ? " wording (legacy key.c's T_rm branch).
-TEST_CASE_FIXTURE(Fixture, "^X^M's confirm prompt shows \"Delete ? \" for RM, not \"Destination ? \"") {
+TEST_CASE_FIXTURE(Fixture, "RM's confirm prompt shows \"Delete ? \" for RM, not \"Destination ? \"") {
   REQUIRE(app.start(path()));
   int idx = indexOf("cpmv_a.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -6673,12 +6658,13 @@ TEST_CASE_FIXTURE(Fixture, "^Space marks a row Underline even when the cursor la
   CHECK_FALSE(display.standoutAt(idx, nameCol));  // no longer the cursor row, so no Standout anymore
 }
 
-TEST_CASE_FIXTURE(Fixture, "^X ^M with nothing armed is a no-op (not e.g. some stale prompt kind)") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
-  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // ^M -- nothing armed
-  CHECK_FALSE(app.promptActive());
-}
+// 2026-09-08 note: the test that used to live here ("^X ^M with nothing
+// armed is a no-op") verified Command::StartDestinationPrompt's own
+// no-op guard when nothing was armed. That command's independent key
+// binding (^X^M, K-71) was deleted in the same keybinding redesign that
+// moved CP/MV/RM/ARC's own triggers to ^O (a direct user request,
+// "冗長分は全て削除で") -- there is no longer a key that reaches it, so
+// the test's premise is gone.
 
 // 2026-08-27 note: the "arm in one directory, navigate away, THEN press
 // ^X^M" scenario this test used to cover (a stale arm from before
@@ -7055,17 +7041,19 @@ TEST_CASE_FIXTURE(Fixture, "RM: a target that's disappeared out from under the o
   CHECK(display.underlineAt(23, 0));
 }
 
-// -- M_exit: ^X^C confirmation prompt, wantsExit() flag --
+// -- M_exit: ^O x confirmation prompt, wantsExit() flag --
 
 TEST_CASE_FIXTURE(Fixture, "wantsExit(): false before anything happens") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(app.wantsExit());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^C starts the exit-confirmation prompt") {
+// 2026-09-08、直接のユーザー依頼によるキー再編で^X^Cから^Oxへ移行
+// (^O^Cは既存のCOPY文字列と衝突するため、eXitのxを新たに採用)。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O x starts the exit-confirmation prompt") {
   REQUIRE(app.start(path()));
-  app.feedByte(0x18, std::nullopt);
-  CHECK(app.feedByte(0x03, std::nullopt));
+  app.feedByte(0x0f, std::nullopt);
+  CHECK(app.feedByte('x', std::nullopt));
   CHECK(app.promptActive());
   CHECK_FALSE(app.wantsExit());
 }
@@ -7834,7 +7822,7 @@ TEST_CASE_FIXTURE(Fixture, "^R in Archive mode opens the RecentFile picker filte
 
 TEST_CASE_FIXTURE(Fixture, "^R directory-name/file-name history (2026-08-18 addition, a direct user request): "
                            "plain ^R from ordinary Directory browsing opens the SAME DIR picker ^X^D does, and "
-                           "from ordinary File viewing opens the SAME FILE picker ^X^F does -- a genuinely NEW "
+                           "from ordinary File viewing opens the SAME FILE picker ^J^F does -- a genuinely NEW "
                            "shortcut, not a reproduction of legacy's own dead-end bare-^R dispatch-table entry "
                            "(see item 353's own investigation: that path opened a functionally useless empty "
                            "\"HISTORY 0/0\" screen). Deliberately scoped to ONLY these two modes, unlike "
@@ -7934,14 +7922,14 @@ TEST_CASE_FIXTURE(Fixture, "command history: Enter on an entry is a no-op in thi
 // populated in the first place (every real access, not just ones made
 // through this specific picker).
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^F (K-46) opens a ListBrowser over real, auto-recorded RecentFile entries") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^F (K-46) opens a ListBrowser over real, auto-recorded RecentFile entries") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));  // opens plain.txt via FileMode::loadFile() -- auto-records it
-  REQUIRE(app.handleCommand(Command::Back));   // back to Directory (^X^F is Directory-only, see startListBrowser())
+  REQUIRE(app.handleCommand(Command::Back));   // back to Directory (^J^F is Directory-only, see startListBrowser())
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
   CHECK(app.feedByte(0x06, std::nullopt));    // ^F
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.listBrowserMode().items().size() == 1);
@@ -8248,7 +8236,7 @@ TEST_CASE_FIXTURE(Fixture, "DIR Select (^X^D): picking a directory discards a pr
   CHECK(app.directoryMode().canGoBack());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^F/^X^D/^J^R all work from CUT mode too, not just Directory "
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J^F/^X^D/^J^R all work from CUT mode too, not just Directory "
                            "(2026-08-12 fix -- a real report: tried ^J^C into CUT, then found these didn't "
                            "work there, matching a broader design question -- \"^J^D/^J^F自体、どのモード"
                            "からでも（^Rも含め）移行可能な仕様が目的\" (the whole point of these keys is to "
@@ -8264,7 +8252,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^F/^X^D/^J^R all work from CUT mode too,
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
-  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
   CHECK(app.feedByte(0x06, std::nullopt));    // ^F: StartFileHistory (K-46)
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.handleCommand(Command::Back));
@@ -8293,13 +8281,14 @@ TEST_CASE_FIXTURE(Fixture, "history browser: Back returns to Directory mode") {
 
 // -- EDIT (^Je) --
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J e starts EDIT (StartEdit)") {
+// 2026-09-08、直接のユーザー依頼("^Je⇒e（←lessと同様）")によるキー
+// 再編でプレフィックス無しの単一文字'e'へ移行。
+TEST_CASE_FIXTURE(Fixture, "feedByte: e starts EDIT (StartEdit)") {
   configuration.loadRcText("EDITOR\n sh -c 'echo \"EDITED:$0\" >> \"$1\"'\n", true);
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
-  app.feedByte(0x0a, std::nullopt);  // ^J
   app.feedByte('e', std::nullopt);   // e
 
   std::ifstream in(root / "plain.txt");
@@ -9008,14 +8997,14 @@ TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^S' entry returns to Directory mo
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^X^C' entry (EXIT) chains a full multi-byte leader sequence "
-                           "(^X leader -> ^C sub-command)") {
+TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^Ox' entry (EXIT) chains a full multi-byte leader sequence "
+                           "(^O leader -> x sub-command)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("^X^C :") != std::string::npos) row = static_cast<int>(i);
+    if (lines[i].text.find("^Ox :") != std::string::npos) row = static_cast<int>(i);
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
@@ -9030,7 +9019,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: Back (^G) on any entry returns without executin
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("^X^C :") != std::string::npos) row = static_cast<int>(i);  // EXIT's own row -- would be very visible if wrongly executed
+    if (lines[i].text.find("^Ox :") != std::string::npos) row = static_cast<int>(i);  // EXIT's own row -- would be very visible if wrongly executed
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
@@ -9096,7 +9085,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: reference view is a no-op for entries with no m
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("^X( :") != std::string::npos) row = static_cast<int>(i);  // macro recording -- no HELP section
+    if (lines[i].text.find("^O( :") != std::string::npos) row = static_cast<int>(i);  // macro recording -- no HELP section
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
   REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Right));  // focus "reference"
@@ -9162,25 +9151,25 @@ TEST_CASE_FIXTURE(Fixture, "Key: clicking the label half of a row executes it di
   CHECK(app.promptActive());  // FGREP prompt -- the key was actually executed
 }
 
-// -- Recorded macros (p_km, ^X(/^X)/^Xe) --
+// -- Recorded macros (p_km, ^O(/^O)/^Oe) --
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ( starts recording; the control sequence itself isn't recorded") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ( starts recording; the control sequence itself isn't recorded") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(app.isRecordingMacro());
 
-  app.feedByte(0x18, std::nullopt);  // ^X
+  app.feedByte(0x0f, std::nullopt);  // ^O
   CHECK(app.feedByte('(', std::nullopt));  // (
   CHECK(app.isRecordingMacro());
-  CHECK(app.recordedMacroLength() == 0);  // the ^X( sequence itself is excluded
+  CHECK(app.recordedMacroLength() == 0);  // the ^O( sequence itself is excluded
 
   app.feedByte('j', std::nullopt);
   app.feedByte('j', std::nullopt);
   CHECK(app.recordedMacroLength() == 2);
 
-  app.feedByte(0x18, std::nullopt);  // ^X
+  app.feedByte(0x0f, std::nullopt);  // ^O
   CHECK(app.feedByte(')', std::nullopt));  // )
   CHECK_FALSE(app.isRecordingMacro());
-  CHECK(app.recordedMacroLength() == 2);  // the ^X) sequence is excluded too
+  CHECK(app.recordedMacroLength() == 2);  // the ^O) sequence is excluded too
 }
 
 TEST_CASE_FIXTURE(Fixture, "playRecordedMacro: replays recorded cursor movement") {
@@ -9189,11 +9178,11 @@ TEST_CASE_FIXTURE(Fixture, "playRecordedMacro: replays recorded cursor movement"
   // beep on a list this short (nothing to scroll), unlike ^N's plain
   // cursor movement this test actually wants to record/replay.
   REQUIRE(app.start(path()));
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   app.feedByte('(', std::nullopt);
   app.feedByte(0x0e, std::nullopt);
   app.feedByte(0x0e, std::nullopt);
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   app.feedByte(')', std::nullopt);
 
   std::string nameAfterRecording = app.directoryMode().selectedEntry()->name;
@@ -9202,37 +9191,37 @@ TEST_CASE_FIXTURE(Fixture, "playRecordedMacro: replays recorded cursor movement"
   app.handleCommand(Command::MoveUp);
   REQUIRE(app.directoryMode().selectedEntry()->name != nameAfterRecording);
 
-  app.feedByte(0x18, std::nullopt);
-  CHECK(app.feedByte('e', std::nullopt));  // ^X e : play it back
+  app.feedByte(0x0f, std::nullopt);
+  CHECK(app.feedByte('e', std::nullopt));  // ^O e : play it back
   CHECK(app.directoryMode().selectedEntry()->name == nameAfterRecording);
 }
 
 TEST_CASE_FIXTURE(Fixture, "playRecordedMacro: false when nothing was ever recorded") {
   REQUIRE(app.start(path()));
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   CHECK_FALSE(app.feedByte('e', std::nullopt));
 }
 
-TEST_CASE_FIXTURE(Fixture, "stopMacroRecording (^X)): a safe no-op when not currently recording") {
+TEST_CASE_FIXTURE(Fixture, "stopMacroRecording (^O)): a safe no-op when not currently recording") {
   REQUIRE(app.start(path()));
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   CHECK_FALSE(app.feedByte(')', std::nullopt));
   CHECK_FALSE(app.isRecordingMacro());
 }
 
-TEST_CASE_FIXTURE(Fixture, "recording: a real leaderX command (^Xc etc) IS recorded, unlike macro control itself") {
+TEST_CASE_FIXTURE(Fixture, "recording: a real leaderO command (^Oc etc) IS recorded, unlike macro control itself") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" onto a real entry, BEFORE recording starts
   REQUIRE(app.handleCommand(Command::MoveDown));
   REQUIRE(app.handleCommand(Command::ToggleMark));  // mark BEFORE recording starts too (2026-08-27 CP redesign)
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   app.feedByte('(', std::nullopt);
 
-  app.feedByte(0x18, std::nullopt);  // ^X
+  app.feedByte(0x0f, std::nullopt);  // ^O
   app.feedByte('c', std::nullopt);   // c : a real CP command, not macro control
-  CHECK(app.promptActive());  // ^Xc shows the destination prompt immediately now (2026-08-27 redesign)
-  // Both bytes of this real ^Xc sequence are recorded, unlike the
-  // ^X(/^X)/^Xe control sequences.
+  CHECK(app.promptActive());  // ^Oc shows the destination prompt immediately now (2026-08-27 redesign)
+  // Both bytes of this real ^Oc sequence are recorded, unlike the
+  // ^O(/^O)/^Oe control sequences.
   CHECK(app.recordedMacroLength() == 2);
 
   app.feedByte(0x07, std::nullopt);  // ^G : cancel the prompt
@@ -9240,7 +9229,7 @@ TEST_CASE_FIXTURE(Fixture, "recording: a real leaderX command (^Xc etc) IS recor
 
 TEST_CASE_FIXTURE(Fixture, "recording: a ^J-leader sequence (^Jd for DU) is captured and replays correctly") {
   REQUIRE(app.start(path()));
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   app.feedByte('(', std::nullopt);
   app.feedByte(0x0a, std::nullopt);  // ^J
   app.feedByte('d', std::nullopt);   // d : DU, pre-filled with the current directory
@@ -9249,17 +9238,17 @@ TEST_CASE_FIXTURE(Fixture, "recording: a ^J-leader sequence (^Jd for DU) is capt
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   app.handleCommand(Command::Back);
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   app.feedByte(')', std::nullopt);
 
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   app.feedByte('e', std::nullopt);  // replay: ^Jd, ^M
   CHECK(app.currentMode() == ApplicationMode::Du);
 }
 
 TEST_CASE_FIXTURE(Fixture, "recording: typed prompt text (a real GREP pattern) is captured and replays correctly") {
   REQUIRE(app.start(path()));
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   app.feedByte('(', std::nullopt);
 
   app.feedByte(0x13, std::nullopt);  // ^S : start GREP (2026-09-05: moved from FGREP)
@@ -9270,10 +9259,10 @@ TEST_CASE_FIXTURE(Fixture, "recording: typed prompt text (a real GREP pattern) i
   app.handleCommand(Command::Back);
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
 
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   app.feedByte(')', std::nullopt);
 
-  app.feedByte(0x18, std::nullopt);
+  app.feedByte(0x0f, std::nullopt);
   app.feedByte('e', std::nullopt);
   CHECK(app.currentMode() == ApplicationMode::Grep);
   REQUIRE(app.grepMode().matches().size() == 1);

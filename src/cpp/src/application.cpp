@@ -455,11 +455,26 @@ const KeyTableEntry kKeyTable[] = {
     {"space", "画面を1ページ下へ", "Page down", {' '}, false, "5.1"},
     {"^F", "画面を1ページ下へ", "Page down", {0x06}, false, "5.1"},
     {"^V", "画面を1ページ下へ", "Page down", {0x16}, false, "5.1"},
+    // 2026-09-08追加、直接のユーザー依頼によるキー再編("SHELLでは
+    // スクロール関連が@F/@B"): SHELLモード内では^F/^Bが行編集の文字
+    // 移動に奪われページ送りへ到達不能なため、エスケープハッチを
+    // 新設。真のAlt同時押し検出は技術調査中なので、現状は既存の
+    // Meta(ESC)機構経由(ESC F)で実装し、表記だけ将来のAlt表記
+    // "@F"を先取りしている――実装が追いつき次第、表記は変えずに
+    // 内部の検出方式だけ差し替える予定。
+    {"@F", "画面を1ページ下へ (SHELL内から)", "Page down (from within SHELL)", {kEscape, 'F'}, false, "5.1"},
     {"b", "画面を1ページ上へ", "Page up", {'b'}, false, "5.1"},
     {"^B", "画面を1ページ上へ", "Page up", {0x02}, false, "5.1"},
+    // 既存の"^[v"(Emacs M-vに合わせた別名)とは別に、この@Bも同じ
+    // PageUpを指す――@F自身のコメント参照。
+    {"@B", "画面を1ページ上へ (SHELL内から)", "Page up (from within SHELL)", {kEscape, 'B'}, false, "5.1"},
     {"return", "選択したエントリを開く", "Open selected entry", {kCarriageReturn}, false, "5.1"},
     {"^G", "戻る・キャンセル", "Back / cancel", {kControlG}, false, "5.1"},
     {"^L", "画面を再描画", "Redraw screen", {0x0c}, false, "5.1"},
+    // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
+    // 内では素の^Lが行編集機構に一切ハンドルされず生byteとして化けて
+    // しまい(^Sと同種)、再描画へ到達不能なためエスケープハッチを新設。
+    {"^O^L", "画面を再描画 (SHELL内から)", "Redraw screen (from within SHELL)", {kLeaderO, 0x0c}, false, "5.1"},
     {"q", "usilicを終了(pager)", "Exit usilic (pager)", {'q'}, false, "5.1"},
     // マクロ(usilicrc M-0..M-3、CUTの章(2.4)で解説): ";"、":"での上下、
     // "+"、"*"での「検索後の該当行へ」移動。
@@ -479,7 +494,9 @@ const KeyTableEntry kKeyTable[] = {
     {"^O^K", "親ディレクトリへ移動", "Go to parent directory", {kLeaderO, 0x0b}, false, "2.1"},
     {"^O^M", "1行ずつ読み込む(簡易ページャ)", "Read per line", {kLeaderO, kCarriageReturn}, false, "2.1"},
     {"^[^M", "制御コードもそのまま可視化して表示", "Read as is", {kEscape, kCarriageReturn}, false, "2.1"},
-    {"^X^W", "バッファ内容を作業ファイルへ保存", "Save buffer to file", {kLeaderX, 0x17}, false, "2.1"},
+    // 2026-09-08、直接のユーザー依頼によるキー再編(^Xプレフィックス
+    // の廃止)で^X^Wから移行。
+    {"^O^W", "バッファ内容を作業ファイルへ保存", "Save buffer to file", {kLeaderO, 0x17}, false, "2.1"},
 
     // 2.3  FGREP / EGREP / GREP (^O^S / ^J^S / ^S) -- 2026-09-05変更
     // (直接のユーザー依頼、"発動キーはそれぞれ^O^S、^J^S、^Sとする"):
@@ -488,6 +505,13 @@ const KeyTableEntry kKeyTable[] = {
     {"^O^S", "FGREP ('grep -F'で検索)", "FGREP ('grep -F')", {kLeaderO, kControlS}, false, "2.3"},
     {"^J^S", "EGREP ('grep -E'で検索)", "EGREP ('grep -E')", {kLeaderJ, kControlS}, false, "2.3"},
     {"^S", "GREP ('grep'で検索)", "GREP ('grep')", {kControlS}, false, "2.3"},
+    // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
+    // 内では素の^Sが行編集機構に一切ハンドルされず生byteとして化けて
+    // しまい(バックスペース衝突の^Hと同種、ただしreadline側の意味と
+    // 衝突しているのではなく単に未ハンドル)、GREPへ到達不能だった
+    // ――^O/でのエスケープハッチを新設(^O^Sは既存のFGREPのため使えない)。
+    {"^O/", "GREP (SHELL内から) ('grep'で検索)", "GREP (from within SHELL) ('grep')",
+     {kLeaderO, '/'}, false, "2.3"},
 
     // 2.4  CUT (^Jc / ^J^C / ^Jb / ^J^B)
     {"^Jc", "CUT (固定文字列、バッファ)", "CUT (fixed string, buffer)", {kLeaderJ, 'c'}, false, "2.4"},
@@ -512,10 +536,15 @@ const KeyTableEntry kKeyTable[] = {
     // 2.8  PROGRAM (^Jp / ^J^P)
     {"^Jp", "PROGRAM", "PROGRAM", {kLeaderJ, 'p'}, false, "2.8"},
 
-    // 2.9  FILE / DIR (^Xf・^X^F / ^Xd・^X^D)
-    {"^Xf", "FILE: ファイル名を入力", "FILE: input file name", {kLeaderX, 'f'}, false, "2.9"},
+    // 2.9  FILE / DIR (^Jf・^J^F / ^Xd・^X^D)
+    // 2026-09-08、直接のユーザー依頼によるキー再編: FILEは^Xから^Jへ
+    // 移行。DIRはEmacsの`C-x d`(Dired)・`C-x C-d`(list-directory)が
+    // 元々同じ「対象はディレクトリ」という意味でC-xを使っているため、
+    // ユーザー自身の判断で意図的に^Xのまま据え置いている(DU実行用の
+    // ^Jd/^J^Dと衝突するため、そもそも^Jへは移行できない)。
+    {"^Jf", "FILE: ファイル名を入力", "FILE: input file name", {kLeaderJ, 'f'}, false, "2.9"},
     {"^Xd", "DIR: ディレクトリ名を入力", "DIR: input directory name", {kLeaderX, 'd'}, false, "2.9"},
-    {"^X^F", "FILE: 履歴一覧から選択", "FILE: select file name", {kLeaderX, 0x06}, false, "2.9"},
+    {"^J^F", "FILE: 履歴一覧から選択", "FILE: select file name", {kLeaderJ, 0x06}, false, "2.9"},
     {"^X^D", "DIR: 履歴一覧から選択", "DIR: select directory name", {kLeaderX, 0x04}, false, "2.9"},
 
     // 2.10  HISTORY / COMMAND (^R / ^J^R)
@@ -524,11 +553,14 @@ const KeyTableEntry kKeyTable[] = {
     {"^J^R", "COMMAND (SHELL/PROGRAMの実行履歴)", "COMMAND (programs run at SHELL)",
      {kLeaderJ, 0x12}, false, "2.10"},
 
-    // 2.11  CP / MV / RM / ARC (^Xc・^Xm・^Xr・^Xa)
-    {"^Xc", "CP", "CP", {kLeaderX, 'c'}, false, "2.11"},
-    {"^Xm", "MV", "MV", {kLeaderX, 'm'}, false, "2.11"},
-    {"^Xr", "RM", "RM", {kLeaderX, 'r'}, false, "2.11"},
-    {"^Xa", "ARC: アーカイブを展開", "ARC: expand archive", {kLeaderX, 'a'}, false, "2.11"},
+    // 2.11  CP / MV / RM / ARC (^Oc・^Om・^Or・^Oa) -- 2026-09-08、
+    // 直接のユーザー依頼によるキー再編で^Xから移行(ARCの^Oaは、
+    // 元々ここにあったHELP/KEY表示言語切替の^Oaを^Jaへ先に逃がした
+    // 上での再利用)。
+    {"^Oc", "CP", "CP", {kLeaderO, 'c'}, false, "2.11"},
+    {"^Om", "MV", "MV", {kLeaderO, 'm'}, false, "2.11"},
+    {"^Or", "RM", "RM", {kLeaderO, 'r'}, false, "2.11"},
+    {"^Oa", "ARC: アーカイブを展開", "ARC: expand archive", {kLeaderO, 'a'}, false, "2.11"},
     {"^space", "現在のエントリをマーク/解除", "Toggle mark (CP/MV/RM/ARC)", {0x80}, false, "2.11"},
     {".", "現在のエントリをマーク/解除(移動なし)", "Toggle mark on current entry, no cursor move (CP/MV/RM/PROGRAM/ARC)",
      {'.'}, false, "2.11"},
@@ -536,18 +568,25 @@ const KeyTableEntry kKeyTable[] = {
      {'['}, false, "2.11"},
     {"]", "現在のエントリをマークし、カーソルを下へ", "Mark current entry, then cursor down (CP/MV/RM/PROGRAM/ARC)",
      {']'}, false, "2.11"},
-    {"^X^Y", "全マーク", "Mark all (CP/MV/RM/ARC)", {kLeaderX, 0x19}, false, "2.11"},
-    {"^X^N", "全マーク解除", "Clear all marks (CP/MV/RM/ARC)", {kLeaderX, 0x0e}, false, "2.11"},
-    {"^X^M", "処理先を入力・確定 (CP/MV/RM/ARC)", "Input destination / confirm (CP/MV/RM/ARC)",
-     {kLeaderX, kCarriageReturn}, false, "2.11"},
+    // 全マーク/全解除は2026-09-08に^Xから^Jへ移行(^X^Y/^X^Nはそれぞれ
+    // 既存の^O^Y=PASTE/未使用0x0eと衝突・非衝突が入り混じっていた
+    // ため、ユーザー自身の判断で両方とも揃えて^Jへ)。
+    {"^Jy", "全マーク", "Mark all (CP/MV/RM/ARC)", {kLeaderJ, 'y'}, false, "2.11"},
+    {"^Jn", "全マーク解除", "Clear all marks (CP/MV/RM/ARC)", {kLeaderJ, 'n'}, false, "2.11"},
+    // ^X^M(「処理先を入力・確定」)は2026-09-08に削除された(直接の
+    // ユーザー依頼、"冗長分は全て削除で"): ^Oc/^Om/^Or自身が既に即座に
+    // 同じ宛先プロンプトを呼ぶので、独立したキーとしては完全に冗長
+    // だった――Command::StartDestinationPrompt自身の(削除済みの)
+    // コメント参照。
     {"<", "選択、戻る、カーソル上、選択 (M-6)", "Select, back, cursor up, select (M-6)",
      {kCarriageReturn, kControlG, 0x10, kCarriageReturn}, true, "2.11"},
     {">", "選択、戻る、カーソル下、選択 (M-7)", "Select, back, cursor down, select (M-7)",
      {kCarriageReturn, kControlG, 0x0e, kCarriageReturn}, true, "2.11"},
 
-    // 2.12  SHELL (^[s / ^Xs / ^J. / ^J, / ^Jw / ^J^W)
+    // 2.12  SHELL (^[s / ^Os / ^J. / ^J, / ^Jw / ^J^W)
     {"^[s", "SHELL", "SHELL", {kEscape, 's'}, false, "2.12"},
-    {"^Xs", "SHELLを再起動", "Restart SHELL", {kLeaderX, 's'}, false, "2.12"},
+    // 2026-09-08、キー再編で^Xsから移行。
+    {"^Os", "SHELLを再起動", "Restart SHELL", {kLeaderO, 's'}, false, "2.12"},
     {"^J.", "SHELL: cd <File-selectorの位置>", "SHELL: cd <directory>", {kLeaderJ, '.'}, false, "2.12"},
     {"^J,", "SHELL: usilicrc K-43で定義したコマンド", "SHELL: usilicrc K-43 command", {kLeaderJ, ','}, false, "2.12"},
     {"^Jw", "SHELL: 現在のファイル名を挿入", "SHELL: insert access-name", {kLeaderJ, 'w'}, false, "2.12"},
@@ -557,18 +596,25 @@ const KeyTableEntry kKeyTable[] = {
     {"^O^C", "COPY", "COPY", {kLeaderO, 0x03}, false, "2.14"},
     {"^O^Y", "PASTE (COPYの内容を挿入)", "PASTE (insert COPY buffer)", {kLeaderO, 0x19}, false, "2.14"},
 
-    // 2.15  EDIT (^Je)
-    {"^Je", "EDIT", "EDIT", {kLeaderJ, 'e'}, false, "2.15"},
+    // 2.15  EDIT (e、プレフィックス無し) -- 2026-09-08、直接のユーザー
+    // 依頼によるキー再編で^Jeから移行("^Je⇒e（←lessと同様）")、
+    // ページャの他の単一文字コマンド(b/j/k/q等)と同じ扱いになった。
+    {"e", "EDIT", "EDIT", {'e'}, false, "2.15"},
 
-    // 2.16  ERROR (^X^Ke)
-    {"^X^Ke", "ERROR", "ERROR", {kLeaderX, 0x0b, 'e'}, false, "2.16"},
+    // 2.16  ERROR (^J^Oe) -- 2026-09-08、キー再編で^X^Keから移行。
+    // 旧^X^K(usilicrc F-2)サブリーダーはERROR/LOGの2つだけを残して
+    // 他は全て削除済みだったため、^Jの下に^O自体をネストした新設の
+    // サブリーダーへ丸ごと引っ越した(使用頻度が低く、ログファイル
+    // 自体はINFO(^I)からも辿れるとのユーザー自身の判断)。
+    {"^J^Oe", "ERROR", "ERROR", {kLeaderJ, kLeaderO, 'e'}, false, "2.16"},
 
-    // 2.17  LOG (^X^Kl)
-    {"^X^Kl", "LOG: SHELLの操作ログ", "LOG: SHELL output", {kLeaderX, 0x0b, 'l'}, false, "2.17"},
+    // 2.17  LOG (^J^Ol) -- 2026-09-08、キー再編で^X^Klから移行。
+    {"^J^Ol", "LOG: SHELLの操作ログ", "LOG: SHELL output", {kLeaderJ, kLeaderO, 'l'}, false, "2.17"},
     {"^[l", "LOG", "LOG", {kEscape, 'l'}, false, "2.17"},
 
-    // 2.18  EXIT (^X^C or ^[^[)
-    {"^X^C", "EXIT", "EXIT", {kLeaderX, kControlC}, false, "2.18"},
+    // 2.18  EXIT (^Ox or ^[^[) -- 2026-09-08、キー再編で^X^Cから移行
+    // (^O^Cは既存のCOPY文字列と衝突するため、eXitのxを採用)。
+    {"^Ox", "EXIT", "EXIT", {kLeaderO, 'x'}, false, "2.18"},
 
     // INFO (^I)
     // 2026-08-27のリネーム、直接のユーザー依頼: 以前は"^T"/"USILIC
@@ -584,9 +630,15 @@ const KeyTableEntry kKeyTable[] = {
     // 移植側で独自に「2.19 INFO」章を新設していたが、ユーザー自身の
     // 一次資料に無いものを追加すべきでないという訂正を受けて削除した。
     {"^I", "INFO", "INFO", {0x09}},
+    // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
+    // 内では素の^Iがshell_自身のTab補完に奪われ、INFO(ShowUsilicBanner)
+    // へ到達できないため、^O^Iでのエスケープハッチを新設。
+    {"^O^I", "INFO (SHELL内から)", "INFO (from within SHELL)", {kLeaderO, 0x09}},
 
     // 3  設定ファイル (usilicrc) -- LS/SCROLLフラグの切替
-    {"^Ol", "ls(1)出力形式の切替", "Switch ls output format", {kLeaderO, 'l'}, false, "3"},
+    // 2026-09-08、直接のユーザー依頼("^Ol⇒^Oo（←ファイル名以外は
+    // omission）")によりキー再編、^Olから移行(空いた^Olは使用しない)。
+    {"^Oo", "ls(1)出力形式の切替", "Switch ls output format", {kLeaderO, 'o'}, false, "3"},
     {"^Oh", "スクロールモードの切替", "Switch scroll mode", {kLeaderO, 'h'}, false, "3"},
 
     // 2026-09-01、直接のユーザー依頼("^Oaはデフォルト文字コード切り替え
@@ -595,8 +647,10 @@ const KeyTableEntry kKeyTable[] = {
     // いたが、ファイル内容の文字コード判別は既に自動化されている
     // (usilicrc/文字コードの章参照)ため、その手動切り替え自体が不要と
     // 判断された。Application::toggleHelpLanguage()自身のコメント参照。
-    {"^Oa", "HELP/KEYの表示言語を切替(日本語/English)", "Switch HELP/KEY display language (Japanese/English)",
-     {kLeaderO, 'a'}},
+    // 2026-09-08、直接のユーザー依頼によるキー再編(^Xプレフィックス
+    // の廃止に向けて^Oaの枠をARC(^Oa)へ明け渡すため)で^Jaへ移行。
+    {"^Ja", "HELP/KEYの表示言語を切替(日本語/English)", "Switch HELP/KEY display language (Japanese/English)",
+     {kLeaderJ, 'a'}},
 
     // ^[<・^[>はWindowの章(5.1)には無いが、legacy自身のKEY一覧
     // (str.cのprint_key()/tobo())に元々含まれる「バッファ先頭/末尾へ
@@ -617,9 +671,10 @@ const KeyTableEntry kKeyTable[] = {
     // それをトグルとして記載すると誤解を招く。割り当て/ディスパッチ
     // 自体には手を付けていない(依然として^O gを直接押せば到達可能);
     // リファレンスリストの行だけが削除された。
-    {"^X(", "キーボードマクロの記録を開始", "Begin macro recording", {kLeaderX, '('}},
-    {"^X)", "キーボードマクロの記録を終了", "End macro recording", {kLeaderX, ')'}},
-    {"^Xe", "記録したマクロを実行", "Execute recorded macro", {kLeaderX, 'e'}},
+    // 2026-09-08、キー再編で^Xから^Oへ移行。
+    {"^O(", "キーボードマクロの記録を開始", "Begin macro recording", {kLeaderO, '('}},
+    {"^O)", "キーボードマクロの記録を終了", "End macro recording", {kLeaderO, ')'}},
+    {"^Oe", "記録したマクロを実行", "Execute recorded macro", {kLeaderO, 'e'}},
 };
 
 // M_help/T_help向けのmenu.cのinit_cut2()呼び出しから移植――HELP自身の
@@ -1838,6 +1893,12 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::StartGrep;
     case 0x08:  // ^H(M_key、K-2、"KEY")――startKey()自身のコメント参照
       return Command::StartKey;
+    // 2026-09-08、直接のユーザー依頼によるキー再編("^Je⇒e（←less
+    // 同様）")で^Jeから移行: 他のプレフィックス無しのページャー単一
+    // 文字コマンド(b/j/k/q等、このswitch自身の他のcase参照)と同じ
+    // 扱いになった。
+    case 'e':
+      return Command::StartEdit;
     case 0x80:  // ^Space(M_mark)――KeyInputはリテラルなNUL/Ctrl-Spaceを0x80として報告する、そのクラスコメント参照
     case '.':   // 2026-08-23: 同じプレーンなトグル、移動は無い――ToggleMark自身のコメント参照
       return Command::ToggleMark;
@@ -1944,7 +2005,7 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     return feedRegexListByte(byte, special);
   }
 
-  if (escPending_ || leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_ ||
+  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
       (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
     return dispatchLeaderByte(byte, special);
   }
@@ -2082,7 +2143,7 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
     }
   }
   if (isNav) return handleCommand(resolveCommand(byte, special));
-  if (escPending_ || leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_ ||
+  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
       (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
     return dispatchLeaderByte(byte, special);
   }
@@ -2159,6 +2220,18 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // は無く、単に既存のものへ到達する別のキーというだけである。
       case 'v':
         return handleCommand(Command::PageUp);
+      // ESC F / ESC B (@F/@B): 2026-09-08追加、直接のユーザー依頼に
+      // よるキー再編("SHELLではスクロール関連が@F/@B") -- SHELLモード
+      // 内で^F/^Bが行編集の文字移動に奪われページ送りへ到達不能な
+      // ことへのエスケープハッチ。真のAlt同時押し検出は技術調査中
+      // なので、現状はこの既存のMeta(ESC)機構をそのまま流用している
+      // ――kKeyTable自身の"@F"/"@B"エントリのコメント参照。'v'(すぐ
+      // 上、Emacs M-v由来のPageUp別名)とは重複するが、両方とも
+      // 残してよいとのユーザー自身の判断による。
+      case 'F':
+        return handleCommand(Command::PageDown);
+      case 'B':
+        return handleCommand(Command::PageUp);
       // ESC l : LOG――なぜこれをここに追加するのが安全なのか(同じ
       // キーへの、取り消された2026-08-05の試み――CLAUDE.mdの経緯の
       // 項目176とは異なり)についてはexecuteStartLog()自身のコメント
@@ -2222,8 +2295,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartDu);
       case 0x12:      // ^J ^R : コマンド履歴(M_cmd)
         return handleCommand(Command::StartCommandHistory);
-      case 'e':  // ^J e : EDIT
-        return handleCommand(Command::StartEdit);
       case 0x08:  // ^J ^H : HELP
         return handleCommand(Command::StartHelp);
       case '.':  // ^J . : SHELL、カレントディレクトリを変更
@@ -2234,6 +2305,29 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ShellInsertName);
       case 0x17:  // ^J ^W : SHELL、バッファのコンテンツを挿入
         return handleCommand(Command::ShellInsertBufferContent);
+      // 2026-09-08、直接のユーザー依頼によるキー再編で^Xf/^X^Fから
+      // 移行(FILE)。DIRは意図的に^Xのまま(kKeyTable自身の"2.9"
+      // コメント参照、DU用の'd'/^Dと衝突するため^Jへは移行できない)。
+      case 'f':  // ^J f : FILE(ファイル名を入力)
+        return handleCommand(Command::StartFileInput);
+      case 0x06:  // ^J ^F : FILE(ファイル名を選択)
+        return handleCommand(Command::StartFileHistory);
+      // 2026-09-08、キー再編で^X^Y/^X^Nから移行(全マーク/全解除)。
+      case 'y':  // ^J y : 全マーク(CP、MV、RM、ARC)
+        return handleCommand(Command::MarkAll);
+      case 'n':  // ^J n : 全マーク解除(CP、MV、RM、ARC)
+        return handleCommand(Command::ClearAllMarks);
+      // 2026-09-08、直接のユーザー依頼によるキー再編で^Oaから移行
+      // (ARCが^Xaから^Oaへ移るための地ならし――Command::
+      // ToggleHelpLanguage自身のコメント参照)。
+      case 'a':  // ^J a : HELP/KEYの表示言語を切り替え(旧^O a)
+        return handleCommand(Command::ToggleHelpLanguage);
+      // ^J^O(ERROR/LOG用の新設ネストしたサブリーダー): 2026-09-08、
+      // 直接のユーザー依頼によるキー再編で、廃止された^X^K(usilicrc
+      // 自身のF-2)サブリーダーの残り(ERROR/LOGのみ)を引き継ぐ。
+      case kLeaderO:  // ^J ^O
+        leaderJOPending_ = true;
+        return true;  // シーケンス継続中、no-opではない
       // ^J0..^J9 : 現在の画面自身のパス文字列の(digit+1)番目の'/'の
       // 接頭辞へ、Directoryモードの`ls`へ直接ジャンプする。
       // Command::JumpToPathPrefix自身のコメント参照。
@@ -2254,65 +2348,35 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     }
   }
 
+  if (leaderJOPending_) {
+    leaderJOPending_ = false;
+    if (special) return false;
+    switch (byte) {
+      case 'e':  // ^J ^O e : ERROR(旧^X^Ke)
+        return handleCommand(Command::ShowErrorLog);
+      case 'l':  // ^J ^O l : LOG(旧^X^Kl)
+        return handleCommand(Command::ShowShellLog);
+      default:
+        return false;  // このスライスでは認識されない^J^Oシーケンス
+    }
+  }
+
   if (leaderXPending_) {
     leaderXPending_ = false;
     if (special) return false;
     switch (byte) {
-      case 'c':  // ^X c : CP
-        return handleCommand(Command::StartCopy);
-      case 'm':  // ^X m : MV
-        return handleCommand(Command::StartMove);
-      case 'r':  // ^X r : RM
-        return handleCommand(Command::StartRemove);
-      case 'f':  // ^X f : FILE(ファイル名を入力)
-        return handleCommand(Command::StartFileInput);
+      // 2026-09-08、直接のユーザー依頼によるキー再編(^Xプレフィックス
+      // の廃止)で、DIR以外の全てのバイトを^O/^Jへ移行させた。DIRは
+      // 意図的にここへ残っている――Emacsの`C-x d`(Dired)/`C-x C-d`
+      // (list-directory)が元々同じ「対象はディレクトリ」の意味で
+      // ^Xを使っているため、この1組だけは移動する理由が無いという
+      // ユーザー自身の判断による。
       case 'd':  // ^X d : DIR(ディレクトリ名を入力)
         return handleCommand(Command::StartDirectoryInput);
-      case 0x06:  // ^X ^F : FILE(ファイル名を選択、K-46)
-        return handleCommand(Command::StartFileHistory);
       case 0x04:  // ^X ^D : DIR(ディレクトリ名を選択、K-48)
         return handleCommand(Command::StartDirectoryHistory);
-      case kControlC:  // ^X ^C : 終了
-        return handleCommand(Command::StartExit);
-      case 0x17:  // ^X ^W : バッファをwFilePath_へ保存
-        return handleCommand(Command::SaveBufferToFile);
-      case 0x19:  // ^X ^Y : 全てマーク(CP、MV、RM、ARC)
-        return handleCommand(Command::MarkAll);
-      case 0x0e:  // ^X ^N : 全マーク解除(CP、MV、RM、ARC)
-        return handleCommand(Command::ClearAllMarks);
-      case kCarriageReturn:  // ^X ^M : 宛先を指定/確認(CP、MV、RM、K-71)
-        return handleCommand(Command::StartDestinationPrompt);
-      case '(':  // ^X ( : マクロ記録を開始
-        return handleCommand(Command::StartMacroRecord);
-      case ')':  // ^X ) : マクロ記録を終了
-        return handleCommand(Command::StopMacroRecord);
-      case 'e':  // ^X e : 記録済みマクロを実行
-        return handleCommand(Command::PlayMacro);
-      case 0x0b:  // ^X ^K : CP/MV/RM自身の「SHELLウィンドウ付き」亜種のリーダー(usilicrc自身の用語ではF-2)
-        leaderXKPending_ = true;
-        return true;  // シーケンス継続中、no-opではない
-      case 's':  // ^X s : SHELLを再起動(K-60)
-        return handleCommand(Command::RestartShell);
-      case 'a':  // ^X a : ARC展開、SHELLウィンドウ無し(K-58)
-        return handleCommand(Command::StartArchiveExtract);
       default:
-        return false;  // このスライスでは認識されない^Xシーケンス(^X^Kdは依然として未着手)
-    }
-  }
-
-  if (leaderXKPending_) {
-    leaderXKPending_ = false;
-    if (special) return false;
-    switch (byte) {
-      // 'c'/'m'/'r'/'a'(CP/MV/RM/ARCの「SHELLウィンドウ付き」、
-      // K-51/53/55/57)はここで削除された(2026-08-23、kKeyTable自身の
-      // コメント参照)――^Xc/^Xm/^Xr/^Xaが今や唯一の入り口である。
-      case 'e':  // ^X ^K e : ERROR(K-67)
-        return handleCommand(Command::ShowErrorLog);
-      case 'l':  // ^X ^K l : LOG(K-68)
-        return handleCommand(Command::ShowShellLog);
-      default:
-        return false;  // ^X^Kd(kanji switch)は依然として未着手
+        return false;  // このスライスでは認識されない^Xシーケンス
     }
   }
 
@@ -2324,10 +2388,10 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ToggleGuiMode);
       case 'h':  // ^O h : スクロールモードを切り替え(K-25)
         return handleCommand(Command::ToggleScrollMode);
-      case 'l':  // ^O l : `ls`出力の形式を切り替え(K-26)
+      // 2026-09-08、直接のユーザー依頼によるキー再編("^Ol⇒^Oo（←
+      // ファイル名以外はomission）")で'l'から移行。
+      case 'o':  // ^O o : `ls`出力の形式を切り替え(K-26、旧^O l)
         return handleCommand(Command::ToggleLsMode);
-      case 'a':  // ^O a : HELP/KEYの表示言語を切り替え(K-27)――Command::ToggleHelpLanguage自身のコメント参照
-        return handleCommand(Command::ToggleHelpLanguage);
       case 0x0b:  // ^O ^K : 親ディレクトリへ移動(K-19)
         return handleCommand(Command::GoToParentDirectory);
       case kCarriageReturn:  // ^O ^M : 「行単位で読む」(K-23、M_fp)
@@ -2353,6 +2417,45 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // leaderJPending_のswitch参照。
       case kControlS:  // ^O ^S : FGREP(旧K-31)
         return handleCommand(Command::StartFgrep);
+      // 2026-09-08、直接のユーザー依頼によるキー再編(^Xプレフィックス
+      // の廃止): 以下は全て^Xから移行。
+      case 'c':  // ^O c : CP(旧^X c)
+        return handleCommand(Command::StartCopy);
+      case 'm':  // ^O m : MV(旧^X m)
+        return handleCommand(Command::StartMove);
+      case 'r':  // ^O r : RM(旧^X r)
+        return handleCommand(Command::StartRemove);
+      case 'a':  // ^O a : ARC展開(旧^X a、K-58)――^O aはここへ移る
+                 // 前にHELP/KEYの表示言語切り替えが占めていたが、
+                 // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
+                 // 参照)。
+        return handleCommand(Command::StartArchiveExtract);
+      case 0x17:  // ^O ^W : バッファをwFilePath_へ保存(旧^X^W)
+        return handleCommand(Command::SaveBufferToFile);
+      case 'x':  // ^O x : 終了(旧^X^C――^O^Cは既存のCOPY文字列と
+                 // 衝突するため、eXitのxを新たに採用)
+        return handleCommand(Command::StartExit);
+      case '(':  // ^O ( : マクロ記録を開始(旧^X()
+        return handleCommand(Command::StartMacroRecord);
+      case ')':  // ^O ) : マクロ記録を終了(旧^X))
+        return handleCommand(Command::StopMacroRecord);
+      case 'e':  // ^O e : 記録済みマクロを実行(旧^X e)
+        return handleCommand(Command::PlayMacro);
+      case 's':  // ^O s : SHELLを再起動(旧^X s、K-60)
+        return handleCommand(Command::RestartShell);
+      // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
+      // 内では素の^H/^L/^Iが行編集機構(バックスペース/未ハンドルで
+      // 化ける/Tab補完)に奪われ、それぞれKEY/再描画/INFOへ到達
+      // 不能なためのエスケープハッチ。^O^Sは既存のFGREPのためGREPの
+      // ハッチだけは'/'を使う(kKeyTable自身の"^O/"コメント参照)。
+      case 0x08:  // ^O ^H : KEY(SHELL内から)
+        return handleCommand(Command::StartKey);
+      case 0x0c:  // ^O ^L : 再描画(SHELL内から)
+        return handleCommand(Command::Redraw);
+      case 0x09:  // ^O ^I : INFO(SHELL内から)
+        return handleCommand(Command::ShowUsilicBanner);
+      case '/':  // ^O / : GREP(SHELL内から)
+        return handleCommand(Command::StartGrep);
       default:
         return false;  // このスライスでは認識されない^Oシーケンス
     }
@@ -2379,29 +2482,32 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
 }
 
 // dispatchByte()(本体のロジック、それ自身のbody参照)をp_km記録の
-// 記帳で包む――なぜこれがリーダーXのシーケンスの先頭バイトを即座に
-// 記録するのではなくpendingLeaderXByte_に保持しておくのかについては
-// クラスコメント自身のp_kmセクション参照。
+// 記帳で包む――なぜこれがリーダーOのシーケンスの先頭バイトを即座に
+// 記録するのではなくpendingLeaderOByte_に保持しておくのかについては
+// クラスコメント自身のp_kmセクション参照。2026-09-08、直接のユーザー
+// 依頼によるキー再編で^O(/^O)/^OeがStartMacroRecord/StopMacroRecord/
+// PlayMacroを引き継いだのに伴い、この保留のロジック自体も(元は^X用
+// だったが)^O用へ付け替えた――pendingLeaderOByte_自身のコメント参照。
 bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
-  bool wasLeaderXPending = leaderXPending_;
+  bool wasLeaderOPending = leaderOPending_;
   bool wasRecording = recordingMacro_;
 
   bool result = dispatchByte(byte, special);
 
   if (wasRecording) {
-    if (wasLeaderXPending) {
+    if (wasLeaderOPending) {
       if (recordingMacro_) {
         // 依然として記録中――このバイトはStartMacroRecord/
         // StopMacroRecord/PlayMacroへは解決されなかったので、
-        // 保留していた先頭の^Xバイトとこのバイトの両方をコミットする。
-        if (pendingLeaderXByte_) recordedMacro_.push_back(*pendingLeaderXByte_);
+        // 保留していた先頭の^Oバイトとこのバイトの両方をコミットする。
+        if (pendingLeaderOByte_) recordedMacro_.push_back(*pendingLeaderOByte_);
         recordedMacro_.push_back({byte, special});
       }
       // else: 記録がちょうどオフになった(StopMacroRecordが解決した)
       // ――両方のバイトを捨てる、それらは制御シーケンス自体である。
-      pendingLeaderXByte_.reset();
-    } else if (!special && byte == kLeaderX) {
-      pendingLeaderXByte_ = RecordedStep{byte, special};  // 2番目のバイトが解決するまで保留しておく
+      pendingLeaderOByte_.reset();
+    } else if (!special && byte == kLeaderO) {
+      pendingLeaderOByte_ = RecordedStep{byte, special};  // 2番目のバイトが解決するまで保留しておく
     } else {
       recordedMacro_.push_back({byte, special});
     }
@@ -2413,7 +2519,7 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
 bool Application::startMacroRecording() {
   recordingMacro_ = true;
   recordedMacro_.clear();
-  pendingLeaderXByte_.reset();
+  pendingLeaderOByte_.reset();
   return true;
 }
 
@@ -2471,7 +2577,8 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   // 起動される`vim`/`less`のような、正真正銘の生の、対話的な子プロ
   // セスは、これが触れない、完全に別個の、本物のpty経由のパススルー
   // のコードパスである。)
-  bool shellLeaderPending = leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_ || escPending_;
+  bool shellLeaderPending =
+      leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ || escPending_;
   if (!special && (shellLeaderPending || byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape)) {
     // 2026-08-26のバグ修正(実際の報告: `df`/`ls`を実行してからESC-<
     // が、SHELLに留まる代わりに予期せずDirectory自身の(ls)へ着地
@@ -3205,8 +3312,6 @@ bool Application::handleCommand(Command command) {
       return startMovePrompt();
     case Command::StartRemove:
       return startRemovePrompt();
-    case Command::StartDestinationPrompt:
-      return startDestinationPrompt();
     case Command::SaveBufferToFile:
       return saveBufferToFile();
     case Command::ShellChangeDirectory:
@@ -5855,30 +5960,25 @@ bool Application::cancelPendingCpMvRm() {
   return true;
 }
 
-// K-71(^X^M、M_dest): startCopyPrompt()/startMovePrompt()/
-// startRemovePrompt()が始めるM_cp/M_mv/M_rm -> M_destの流れの後半
-// ――PendingCpMvRmOperation自身のコメント参照。マークされた(あるいは
-// カーソルで選択された)対象が「今」存在すること(アーム時からここへ
-// 先送りされた、startCopyPrompt()自身のコメント参照)、そして現在の
-// ディレクトリが操作がアームされたものと依然として一致することを
-// 要求する――無関係なディレクトリへのナビゲートを生き延びた古い
-// アームは、代わりにそこでたまたまカーソルの下にあるものに対して
-// 黙って作用してはならない。
+// startCopyPrompt()/startMovePrompt()/startRemovePrompt()が始める
+// M_cp/M_mv/M_rm -> M_destの流れの後半――PendingCpMvRmOperation自身の
+// コメント参照。マークされた(あるいはカーソルで選択された)対象が
+// 「今」存在すること(アーム時からここへ先送りされた、
+// startCopyPrompt()自身のコメント参照)、そして現在のディレクトリが
+// 操作がアームされたものと依然として一致することを要求する――無関係
+// なディレクトリへのナビゲートを生き延びた古いアームは、代わりに
+// そこでたまたまカーソルの下にあるものに対して黙って作用しては
+// ならない。
+//
+// 2026-09-08、直接のユーザー依頼("冗長分は全て削除で")によりK-71
+// (旧^X^M)自体の独立したキーバインドを削除: この関数はCP/MV/RM自身
+// (すぐ上のstartCopyPrompt()等)がアーム直後に即座に自分で呼ぶので、
+// 独立したキーからここへ到達する経路自体がそもそも冗長だった。
+// Archiveモードの分岐(以前ここにあった、^X^Mが押された時に
+// startArchivePrompt()へリダイレクトするだけの処理)も同時に削除
+// した――^Oa(旧^Xa)自体が既に単独でstartArchivePrompt()を直接呼ぶ
+// ため、Archiveモードでこの関数が呼ばれる経路はもう存在しない。
 bool Application::startDestinationPrompt() {
-  // 2026-08-26修正、実際の報告("展開先を選ぶための^X^Mが利かない"):
-  // legacyのmenu.cは、M_arc/M_arc2(^X^Ka/^Xa)を、M_cp/M_mv/M_rmと
-  // まさに同じ`is_comm(np->Mb, 1)`のカテゴリに折り込み、4つの操作
-  // 全体で1つのM_dest(^X^M)確認ステップを共有している――このポート
-  // 自身の^X a(startArchivePrompt()、K-58)は、legacyの別個のアーム
-  // してから確認するというやり取りではなく、既に単一のステップで
-  // 宛先プロンプトを開くが、^X^M自体は、既に明示的に「(CP、MV、RM、
-  // ARC)」であるすぐ上の^X^Y/^X^N(全てマーク/全解除)とは異なり、
-  // それに到達するようには一度も結線されていなかった。Archiveモード
-  // には、ここで確認すべきpendingCpMvRm_スタイルのアーム状態が無い
-  // (それが意味し得る他のものは無い)ので、これは、下のDirectory
-  // 専用のCP/MV/RMのロジックが実行される「前に」、^X aが既に呼んで
-  // いるのと同じstartArchivePrompt()へ直接ディスパッチする。
-  if (currentMode_ == ApplicationMode::Archive) return startArchivePrompt();
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (!pendingCpMvRm_) return false;
   PendingCpMvRmOperation pending = *pendingCpMvRm_;
@@ -7071,7 +7171,7 @@ bool Application::feedPromptByte(int byte) {
   // promptKind_チェック(promptKind_は変わっていない)を通じて単に
   // feedPromptByte()へ再入場するだけになるので、直接リーダーの
   // リゾルバへ行く。
-  if (escPending_ || leaderJPending_ || leaderXPending_ || leaderXKPending_ || leaderOPending_ ||
+  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
       byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape) {
     return dispatchLeaderByte(byte, std::nullopt);
   }

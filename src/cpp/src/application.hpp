@@ -144,11 +144,14 @@ enum class Command {
   StartCopy,
   StartMove,
   StartRemove,
-  // K-71(^X^M、M_dest): StartCopy/StartMove/StartRemove(または下の
-  // それらの対話的な兄弟)のうち最も最近操作を準備したものに対して、
-  // 移動先/確認プロンプトを表示する――PendingCpMvRmOperation自身の
-  // コメント参照。
-  StartDestinationPrompt,
+  // K-71(^X^M、M_dest)は2026-09-08に削除された(直接のユーザー依頼、
+  // "冗長分は全て削除で"): StartCopy/StartMove/StartRemoveは既に
+  // それぞれ自分自身でstartDestinationPrompt()を直接呼ぶので、独立
+  // したキー(^X^M)からこれへ到達する経路は、CP/MV/RMに対しては
+  // 完全に冗長だった。ARCについても、^Oa(startArchivePrompt())が
+  // 既に単独で(アーム状態を必要とせず)同じ宛先プロンプトを開くので
+  // 同様に冗長――startDestinationPrompt()自身の(削除済みの)Archive
+  // モード分岐のコメント参照。
   StartExit,
   StartDu,
   StartDirectoryHistory,
@@ -840,16 +843,19 @@ enum class ApplicationMode {
 //     繕っている「このバイトは解決済みのコマンドだったのか
 //     プロンプトのテキストだったのか」という別の処理を必要と
 //     しない。これが必要とする唯一の注意点: 記録を開始/停止/再生
-//     する^X( / ^X) / ^Xeのシーケンス自体は、記録「の中に」入って
+//     する^O( / ^O) / ^Oeのシーケンス自体は、記録「の中に」入って
 //     はならない(legacy自身のset_km()も、M_ms/M_meをa_km[]へ
-//     追加しない)――feedByte()は、leaderXシーケンスの先頭の^X
-//     バイトを、2番目のバイトが解決するまでpendingLeaderXByte_に
+//     追加しない)――feedByte()は、leaderOシーケンスの先頭の^O
+//     バイトを、2番目のバイトが解決するまでpendingLeaderOByte_に
 //     保持しておき、「その後」解決自体がStartMacroRecord/
 //     StopMacroRecord/PlayMacroでなかった場合にだけ両方のバイトを
 //     一緒に確定する(^J/ESCリーダーシーケンスにはそのような保留
-//     は不要である: マクロ制御は排他的に^Xの下に住むので、全ての
+//     は不要である: マクロ制御は排他的に^Oの下に住むので、全ての
 //     ^J/ESCバイトは、そのシーケンスがどう解決されるかを知らずに
-//     即座に確定できる)。playRecordedMacro()は、記録された各
+//     即座に確定できる。2026-09-08、直接のユーザー依頼によるキー
+//     再編で、この保留の対象自体が旧^Xから^Oへ付け替わった――
+//     pendingLeaderOByte_自身のコメント参照)。playRecordedMacro()は、
+//     記録された各
 //     バイトを、feedByte()自体ではなく、プライベートな
 //     dispatchByte()(feedByte()自身の以前の本体、今は名前を変更
 //     されラップされている)経由で再生する。そのため、別の記録
@@ -1277,7 +1283,7 @@ class Application {
   // falseを返す。アクションがまだ保留中のまま、リーダー/プロンプト
   // 状態へ消費されたバイトはtrueを返す。マクロの記録がアクティブな
   // 間(クラスコメント自身のp_km節参照)、このバイトを
-  // recordedMacro_へも追加する(またはpendingLeaderXByte_に保持
+  // recordedMacro_へも追加する(またはpendingLeaderOByte_に保持
   // する)。
   bool feedByte(int byte, std::optional<KeyInput::SpecialKey> special);
 
@@ -2250,11 +2256,16 @@ class Application {
 
   bool recordingMacro_ = false;
   std::vector<RecordedStep> recordedMacro_;
-  // leaderXシーケンスの先頭の^Xバイトを、2番目のバイトが解決する
+  // leaderOシーケンスの先頭の^Oバイトを、2番目のバイトが解決する
   // まで保持しておくので、StartMacroRecord/StopMacroRecord/
   // PlayMacroの解決を、recordedMacro_から完全に(両方のバイトを
-  // 一度に)除外できる――クラスコメント参照。
-  std::optional<RecordedStep> pendingLeaderXByte_;
+  // 一度に)除外できる――クラスコメント参照。2026-09-08、直接の
+  // ユーザー依頼によるキー再編で^X(/^X)/^Xeが^O(/^O)/^Oeへ移行した
+  // のに伴い、この保留のロジック自体も(元は^X用だったが)^O用へ
+  // 付け替えた――^Xに最後まで残るのはDIR(d/^D)だけで、どちらも
+  // recordingMacro_を一切トグルしないため、旧来の^X版の保留は
+  // 意味を失っていた。
+  std::optional<RecordedStep> pendingLeaderOByte_;
 
   bool leaderJPending_ = false;  // ^Jを見た、2バイトのコマンドを完成させるバイトを待っている
   // ^Jの後にdispatchLeaderByte()自身のleaderJPending_スイッチが
@@ -2266,9 +2277,13 @@ class Application {
   // handleCommand()呼び出しに対してだけ意味を持つ。
   int pendingPathPrefixDigit_ = 0;
   bool escPending_ = false;      // ESC(0x1b)を見た、^[sを完成させるバイトを待っている――クラスコメント参照
-  bool leaderXPending_ = false;  // ^Xを見た、^Xc/^Xm/^Xr/^X^Cを完成させるバイトを待っている(exitも^Xを共有する)
-  bool leaderXKPending_ = false;  // ^X^K(usilicrc自身のF-2)を見た、^X^Kc/m/rを完成させるバイトを待っている
-  bool leaderOPending_ = false;  // ^Oを見た、^Ogを完成させるバイトを待っている
+  bool leaderXPending_ = false;  // ^Xを見た、^Xd/^X^Dを完成させるバイトを待っている(2026-09-08のキー再編で他は全て^O/^Jへ移行し、DIRだけが残った)
+  // ^J^O(usilicrcのERROR/LOG、2026-09-08新設のネストしたサブ
+  // リーダー): ^Jの後に^O自体を見た、^J^Oe/^J^Olを完成させる
+  // バイトを待っている――旧^X^K(F-2)がERROR/LOGの2つだけを残して
+  // 他は全て削除された後を引き継ぐ形。
+  bool leaderJOPending_ = false;
+  bool leaderOPending_ = false;  // ^Oを見た、2バイトのコマンドを完成させるバイトを待っている(2026-09-08のキー再編で^Xの大半の役割を引き継いだ)
   bool wantsExit_ = false;
   bool guiModeToggleRequested_ = false;
 
