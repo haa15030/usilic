@@ -7344,9 +7344,14 @@ TEST_CASE_FIXTURE(Fixture, "DU: mode line shows 'DU' and a byte count once resul
 // 2026-09-10 fix, a direct user report ("^Jd直後の画面に戻り値が
 // 無い"): duView_'s own ModeLineFieldsProvider used to show only the
 // literal name "DU" -- unlike every other mode (Directory/File/Archive
-// etc.), it never showed WHICH folder was actually tallied. Now
-// mirrors ArchiveMode's own name="ARC"+trailing3=currentArchive_
-// convention (archive_mode.cpp), adding trailing3=duMode_.currentPath().
+// etc.), it never showed WHICH folder was actually tallied.
+//
+// 2026-09-14 correction (a real correct-mode-line comparison from the
+// user): trailing3 now tracks the HIGHLIGHTED entry's own folder
+// (duEntryFolder(), no "DU: " label -- the name field already says
+// "DU"), falling back to duMode_.currentPath() only when nothing is
+// selected -- at the top entry right after ^Jd that's the same string,
+// which is what this substring check exercises.
 TEST_CASE_FIXTURE(Fixture, "DU: mode line shows which folder was tallied") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));

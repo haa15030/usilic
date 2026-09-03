@@ -53,6 +53,22 @@ std::string truncatedTrailingPath(const std::string &path) {
   return "..." + path.substr(path.size() - kTrailingPathTailChars);
 }
 
+// 2026-09-14追加、直接のユーザー依頼("`4K .../.husky/pre-commit`を
+// 選択したときはDU: .../.husky/でないと"): DUの一覧中のあるエントリ
+// が「実際に属しているフォルダー」を求める――ディレクトリのエントリ
+// ならそれ自身、ファイルのエントリならその親ディレクトリ(末尾に
+// スラッシュを1本補う)。duView_自身のModeLineFieldsProvider
+// (今どのフォルダーを見ているかの表示)とopenSelectedDuEntry()の
+// 両方(そのエントリをDirectory/Fileで開いた後、Backでの戻り先を
+// 示す注釈)が、同じ「エントリ自身の居場所」という概念を必要とする
+// ため、ここに1箇所へ括り出した。
+std::string duEntryFolder(const DuEntry &entry) {
+  std::string folder =
+      entry.isDirectory ? entry.path : std::filesystem::path(entry.path).parent_path().string();
+  if (!folder.empty() && folder.back() != '/') folder += '/';
+  return folder;
+}
+
 // 2026-09-05追加、直接のユーザー依頼("FGREP/EGREPの代わりにgrep -F/
 // grep -Eで代用の上、新たにGREP(grep)を新設"): GrepSyntax::Basic
 // (プレーンなgrep、正規表現は基本正規表現BRE)の追加に伴い、これまで
@@ -1513,33 +1529,36 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // Directory/File/Archive等、他の全モードが自分自身の「今どこに
     // いるか」を必ず表示するのとは対照的だった。
     //
-    // 2026-09-14再修正、直接のユーザー報告2件:
+    // 2026-09-14再修正、直接のユーザー報告(実機での正解モードライン
+    // 提示付き): "DU" "0001/1145 TOP" "85332"
+    // "/Users/haa15030/git/usilic/"――このDU自身の画面では、名前
+    // フィールドが既に"DU"と言っているので、trailing3は生のパスの
+    // まま("DU: "接頭辞は付けない、ArchiveMode自身のtrailing3=
+    // currentArchive_という無接頭辞の慣習と同じ、archive_mode.cpp
+    // 参照)。"DU: "付きの表記が要るのは、DUで開いたエントリを
+    // Directory/Fileモード側で表示する「戻り先」注釈の方
+    // (openSelectedDuEntry()参照、あちらはnameが"DU"を名乗っていない
+    // 別モードなのでラベルが要る)。
+    //
+    // 併せて2件:
     // (1) 「パディングが無い」(HISTORY.md:9473「基本的に右端まで
     //     埋まっていないモードラインは全部不良」そのもの): 前回の
     //     修正はfillTrailingToEdge=falseのまま出していた。LOCATE
     //     自身の同種のプロバイダ(すぐ上)に合わせtrueへ。
-    // (2) 「戻り値が全部DU: <集計対象ルート>では意味が無い」:
+    // (2) 「戻り値が全部<集計対象ルート>では意味が無い」:
     //     duMode_.currentPath()(集計対象のルート)は、一覧中のどの
     //     行にカーソルがあっても常に同じ文字列にしかならず、実際に
     //     選んでいるエントリの居場所を示していなかった。具体例:
-    //     `4K  .../.husky/pre-commit`を選択したら`DU: .../.husky/`
-    //     (そのファイルの入っているフォルダー)であるべき。
-    //     jumpToPathPrefix()自身のApplicationMode::Du分岐(すぐ下、
-    //     2026-09-10追加)と同じ「ハイライトされているエントリ自身の
-    //     パス」を土台にし、ディレクトリならそれ自身、ファイルなら
-    //     その親フォルダーを表示する。LOCATE自身の"LOCATE: "+query()
-    //     という表記(nameが既に"LOCATE"でも重ねて付ける、すぐ上参照)
-    //     に揃え、"DU: "接頭辞も付けた。
+    //     `4K  .../.husky/pre-commit`を選択したら`.../.husky/`
+    //     (そのファイルの入っているフォルダー)であるべき――
+    //     duEntryFolder()自身のコメント参照(この関数とopenSelected
+    //     DuEntry()の両方で共有)。
     std::string folder = duMode_.currentPath();
-    if (const DuEntry *selected = duMode_.selectedEntry()) {
-      folder = selected->isDirectory ? selected->path
-                                      : std::filesystem::path(selected->path).parent_path().string();
-      if (!folder.empty() && folder.back() != '/') folder += '/';
-    }
+    if (const DuEntry *selected = duMode_.selectedEntry()) folder = duEntryFolder(*selected);
     ContentView::ModeLineFields fields{"DU", std::to_string(contentByteCount(duView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/""};
-    fields.trailing3 = "DU: " + folder;
+    fields.trailing3 = folder;
     return fields;
   });
   // archiveContentView_は、すぐ上で使われている素のバイト数だけの形
@@ -3827,7 +3846,13 @@ bool Application::openSelectedDuEntry() {
   if (entry->isDirectory) {
     if (!directoryMode_.enterDirectory(entry->path)) return false;
     currentMode_ = ApplicationMode::Directory;
-    directoryMode_.setSearchAnnotation("DU: " + duMode_.currentPath());
+    // 2026-09-14修正、duEntryFolder()自身のコメント参照: 従来は
+    // duMode_.currentPath()(集計対象のルート)固定だったが、実機での
+    // 正解モードライン提示("pre-commit"を開いた場合はDU: .../.husky/
+    // であって集計対象ルートではない)を踏まえ、ディレクトリ側も同じ
+    // 「エントリ自身の居場所」(この分岐では、たった今enterDirectory()
+    // した、そのディレクトリ自身)へ揃えた。
+    directoryMode_.setSearchAnnotation("DU: " + duEntryFolder(*entry));
     lastDirectorySearchKind_ = DirectorySearchKind::Du;
     // enterDirectory()は、上の注釈が設定される前に既に内部で一度
     // 再描画している――openSelectedLocateResult()自身の同一のコメント
@@ -3845,7 +3870,13 @@ bool Application::openSelectedDuEntry() {
   // ならない、openSelectedGrepMatch()自身のFileの分岐の同じ順序参照):
   // 注釈が無いままだと、Backでは正しくDUへ戻れていたにも関わらず、
   // モードライン自身には「DU: ...」が一切表示されていなかった。
-  fileMode_.setSearchAnnotation("DU: " + duMode_.currentPath());
+  //
+  // 2026-09-14修正(duEntryFolder()自身のコメント参照): duMode_.
+  // currentPath()(集計対象のルート)固定だったのを、実機での正解
+  // モードライン提示("pre-commit"を開いたらDU: .../.husky/であって
+  // 集計対象ルートの.../usilic/ではない)を踏まえ、このファイル自身の
+  // 親フォルダーへ変更した。
+  fileMode_.setSearchAnnotation("DU: " + duEntryFolder(*entry));
   // loadFile()は、上の注釈が設定される「前」に既に内部で一度再描画
   // している(view_.redraw()、FileMode::loadFile()自身の実装参照)
   // ――openSelectedDuEntry()自身のディレクトリ側の分岐が

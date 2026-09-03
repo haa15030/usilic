@@ -522,21 +522,23 @@ struct GraphicalDisplay::Impl {
   bool smoothScroll = false;
 
   std::deque<MouseClick> mouseQueue;
-  // 2026-09-10追加、直接のユーザー依頼("離した瞬間かつ画面停止中に
-  // 限って選択が発動、にすれば解消するのでは"): 左クリックは以前
-  // ボタン押下の瞬間に即座にmouseQueueへ積まれていた(すぐ下の
-  // SDL_MOUSEBUTTONDOWN自身のコメント/コード参照、2026-09-02の
-  // runGuiPhase()自身の"Click-vs-drag isn't disambiguated"という
-  // 既知のギャップとして既に文書化されていた)ため、そのままドラッグ
-  // へ発展した押下でも、押された瞬間にカーソル下にあった行への
-  // クリック/選択(行のオープン等)が常に一緒に発火してしまっていた。
-  // 今は押下時にここへ保留するだけにし、SDL_MOUSEMOTIONで実際に
-  // 動き(左ボタン押下中)が届いたら破棄する――SDL_MOUSEBUTTONUPの
-  // 時点でまだ生きていれば(=押してから離すまで画面が実際に静止して
-  // いた「本物の」クリックだったことが確定した時)、そこで初めて
-  // mouseQueueへ積む。右クリックは(そもそもドラッグの対象ではない
-  // ので)従来通り即座に積む。
-  std::optional<MouseClick> pendingLeftClick;
+  // 2026-09-14修正、直接のユーザー報告("左クリックでの選択ができ
+  // ない"、実機で確認)を受けて調査した結果、2026-09-10に導入した
+  // ここの「ボタン解放まで保留し、途中で動きがあれば破棄する」という
+  // タイミング/モーションベースの仕組みは、実は全く同じ問題空間で
+  // 過去に2回試して2回とも実機検証の結果ユーザー自身の手で明示的に
+  // 撤回されていた設計だったと判明した(HISTORY.md 2026-08-05、
+  // コミット`e1a00d2`→`8658ae4`、「実マウス/トラックパッドの微小な
+  // ジッターでクリックが効かなくなる」)。最終的に採用され実機確認
+  // 済み("動作確認OK")なのはコミット`a73c052`のタイミング非依存な
+  // 空間スコープ方式――押下即座にmouseQueueへ積み、実行の可否は
+  // Application::handleMouseClick()側がContentView::
+  // isColumnWithinLineScope()で判定する(`ls`の左マージンや左詰め
+  // リストの右側余白は最初からスコープ外なので、そこを起点にした
+  // 押下は安全にドラッグの開始点としても使える)。ここでの保留機構は
+  // その空間スコープ方式を追い越す形でクリックの成立自体を丸ごと
+  // ジッターに弱くしてしまっていたため、撤回して元の「押下即座に
+  // 積む」に戻す。
   std::deque<KeyEvent> keyQueue;
   std::deque<DragEvent> dragQueue;
   std::deque<HoverEvent> hoverQueue;
@@ -1761,16 +1763,15 @@ bool GraphicalDisplay::pumpEvents() {
         // 近い端のセル」として扱う。
         int col = std::max(0, event.button.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
         int row = std::max(0, event.button.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
+        // 2026-09-14修正、すぐ上のmouseQueue自身の宣言コメント参照:
+        // 左右どちらも押下即座にmouseQueueへ積む(タイミングベースの
+        // 保留は撤回)。左クリックが実際に行を開くかどうかは
+        // Application::handleMouseClick()側の空間スコープ判定
+        // (isColumnWithinLineScope())に委ねる。
+        impl_->mouseQueue.push_back(MouseClick{row, col, event.button.button != SDL_BUTTON_LEFT});
         if (event.button.button == SDL_BUTTON_LEFT) {
-          // pendingLeftClick自身の宣言コメント参照: 即座には積まず、
-          // 保留する――ドラッグへ発展しなかったことがSDL_MOUSEBUTTONUP
-          // で確定して初めて積まれる。
-          impl_->pendingLeftClick = MouseClick{row, col, false};
           SDL_CaptureMouse(SDL_TRUE);  // ドラッグがウィンドウを離れても動きの追跡を続ける
           impl_->dragQueue.push_back(DragEvent{DragEventType::ButtonDown, 0});
-        } else {
-          // 右クリックはドラッグの対象ではないので、以前通り即座に積む。
-          impl_->mouseQueue.push_back(MouseClick{row, col, true});
         }
         break;
       }
@@ -1791,14 +1792,6 @@ bool GraphicalDisplay::pumpEvents() {
           } else {
             impl_->dragQueue.push_back(DragEvent{DragEventType::ButtonUp, 0});
           }
-          // pendingLeftClick自身の宣言コメント参照: SDL_MOUSEMOTIONで
-          // 一度もキャンセルされずここまで生き残っていれば、押下から
-          // 解放まで画面が実際に静止していた「本物の」クリックだった
-          // ことが確定する――ここで初めて積む。
-          if (impl_->pendingLeftClick) {
-            impl_->mouseQueue.push_back(*impl_->pendingLeftClick);
-            impl_->pendingLeftClick.reset();
-          }
         }
         break;
       }
@@ -1817,26 +1810,6 @@ bool GraphicalDisplay::pumpEvents() {
         if (impl_->scrollbarDragActive) {
           impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::Motion, event.motion.y});
         } else if (event.motion.state & SDL_BUTTON_LMASK) {
-          // 2026-09-14修正、直接のユーザー報告("左クリックでの選択が
-          // できない"、100%再現): 前回の実装は、左ボタン押下中に届く
-          // どんなSDL_MOUSEMOTION(1px未満のセンサーノイズ/トラック
-          // パッドの微小なブレも含む)でもpendingLeftClickを即座に
-          // 破棄していた。実機のマウス/トラックパッドで、押下から
-          // 解放まで生ピクセル単位で完全に1px足りとも動かないクリック
-          // はほぼ存在しないため、これでは事実上すべてのクリックが
-          // 「ドラッグへ発展した」と誤判定され、選択が一切発動しなく
-          // なっていた。「画面停止中」の本来の意図は生ピクセル座標
-          // ではなくセル(行/列)単位――スクロールが実際に1行分でも
-          // 動いたかどうか――のはずなので、押下時と同じ計算で現在の
-          // セル位置を求め、pendingLeftClickが記録しているセルと
-          // 実際に異なる場合に限って破棄するよう変更した。
-          if (impl_->pendingLeftClick) {
-            int motionCol = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
-            int motionRow = std::max(0, event.motion.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
-            if (motionRow != impl_->pendingLeftClick->row || motionCol != impl_->pendingLeftClick->column) {
-              impl_->pendingLeftClick.reset();
-            }
-          }
           impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
         } else if (SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_FOCUS) {
           // キーボード/入力フォーカスで判定している(SDL_WINDOW_MOUSE_

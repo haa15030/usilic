@@ -1520,10 +1520,27 @@ void syncCursorBeforeCoastStoppingKey(int coastLevel, bool &wasActivelyScrolling
 //     highlight during an active drag or while coasting
 //     (ContentView::renderLine()'s own reverse-video marking isn't
 //     replicated here at all).
-//   - Click-vs-drag isn't disambiguated: handleMouseClick() still
-//     fires on every button-down regardless of whether a drag
-//     follows, so a "click that turns into a drag" also selects
-//     whatever row was under the cursor at press time.
+//   - (2026-09-14 correction: this bullet was stale and actively
+//     misleading -- it describes a problem already solved, by design,
+//     back on 2026-08-05/commit a73c052, well before this comment
+//     block's own "still true after this rework" 2026-08-30 rework.
+//     handleMouseClick() DOES fire on every button-down, on purpose:
+//     the click-vs-drag distinction is spatial, not timing-based --
+//     Application::handleMouseClick() no-ops unless the press column
+//     falls within ContentView::isColumnWithinLineScope() (the `ls`
+//     listing's own name column, or a left-aligned list's actual text
+//     span), so a press outside that scope is free to also become a
+//     drag start with no race. HISTORY.md's 2026-08-05 entries record
+//     two earlier, REJECTED timing/motion-based attempts (a row-
+//     crossing threshold, then a fixed pixel-jitter threshold) that
+//     both failed real-mouse/trackpad testing for the same reason:
+//     genuine stationary clicks essentially never report zero raw
+//     motion, so deferring the click to ButtonUp and cancelling it on
+//     any interim MOUSEMOTION makes nearly every real click misfire as
+//     a drag. A third attempt at exactly this (GraphicalDisplay::
+//     Impl::pendingLeftClick, added 2026-09-10) reproduced that same
+//     failure and was reverted the same day it was reported broken --
+//     do not re-attempt a timing/motion-based fix here again.
 //   - The cursor shape is SDL's built-in hand pointer
 //     (SDL_SYSTEM_CURSOR_HAND), not a custom cat's-paw bitmap.
 //   - No mode-line/status-bar row-count indicator yet (legacy's
