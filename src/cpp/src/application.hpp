@@ -1874,7 +1874,7 @@ class Application {
   // 参照。
   bool cancelPendingCpMvRm();
   bool startExitPrompt();
-  bool startDuPrompt();
+  bool runDuOnCurrentFolder();
   // K-58(^Xa、M_arc2、「ARC: Expand archive」)――K-57(^X^Ka、
   // "with SHELL window")は2026-08-23に削除された、kKeyTable自身の
   // コメント参照。「Destination ?」プロンプト(HELP.jp 2.11)を
@@ -2311,7 +2311,9 @@ class Application {
     MoveDestination,
     RemoveConfirm,
     ExitConfirm,
-    DuPath,
+    // DuPathは2026-09-09に削除された(直接のユーザー依頼、"DUの仕様
+    // としては常時カレントで...文字列入力エリア無しでよろしく")――
+    // Application::runDuOnCurrentFolder()自身のコメント参照。
     PathInput,  // K-45/K-47の共有されるプロンプトの種類、Command::StartFileInput自身のコメント参照
     ArchiveDestination,  // K-57/K-58自身のDestinationプロンプト、startArchivePrompt()自身のコメント参照
     // K-46/K-48(^X^F/^X^D、「Select file/directory name」):

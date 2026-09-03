@@ -5938,8 +5938,11 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^J d (DU) works too, exercising a
   }
   CHECK(app.feedShellByte(0x0a, std::nullopt));  // ^J
   CHECK(app.feedShellByte('d', std::nullopt));   // d
-  CHECK(app.currentMode() == ApplicationMode::Directory);  // DU is prompt-first, like FGREP -- see startDuPrompt()
-  CHECK(app.promptActive());
+  // 2026-09-09redesign: DU no longer prompts at all -- it runs `du`
+  // immediately on whatever's current (runDuOnCurrentFolder()'s own
+  // comment), landing straight in Du mode.
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  CHECK_FALSE(app.promptActive());
 }
 
 // 2026-08-26 correction (a real report: running `df`/`ls` then ESC-<
@@ -7140,14 +7143,11 @@ TEST_CASE_FIXTURE(Fixture, "prompt labels: FILE vs DIR shows the right one depen
   CHECK(display.rowText(display.rows() - 1).find("DIR") != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "prompt labels: DU shows its own label, and the pre-filled directory text still "
-                           "appears right after it") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartDu));
-  std::string row = display.rowText(display.rows() - 1);
-  CHECK(row.find("DU") != std::string::npos);
-  CHECK(row.find(path()) != std::string::npos);
-}
+// 2026-09-09: DU's own destination prompt (and this test with it) was
+// removed entirely in the same-day redesign that made ^Jd run
+// immediately with no prompt at all -- see runDuOnCurrentFolder()'s
+// own comment. DU's mode line is covered separately (see "DU: mode
+// line shows 'DU' and a byte count once results are shown").
 
 TEST_CASE_FIXTURE(Fixture, "prompt labels: cancelling (^G) clears the label along with the prompt") {
   REQUIRE(app.start(path()));
@@ -7220,15 +7220,81 @@ TEST_CASE_FIXTURE(Fixture, "requestImmediateExit: sets wantsExit() without going
   CHECK_FALSE(app.promptActive());
 }
 
-// -- DU: ^Jd/^J^D, pre-filled destination prompt, real `du`, and
-// Enter drilling into DirectoryMode/FileMode --
+// -- DU: ^Jd/^J^D, no prompt at all -- see runDuOnCurrentFolder()'s own
+// comment for the 2026-09-09 redesign (direct user spec: "DUの仕様と
+// しては常時カレントで、ファイル閲覧中なら在籍フォルダーでduを発動
+// し、^J^D同様文字列入力エリア無しでよろしく") --
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J d starts a DU prompt pre-filled with the current directory") {
+// 2026-09-09 redesign: ^Jd used to open a prompt pre-filled with the
+// current directory, requiring ^M to accept before `du` actually ran.
+// Per direct user spec (contrasting with LOCATE, which genuinely needs
+// a typed query before it can show anything -- DU's results appear
+// automatically the moment the tally finishes, so there was never
+// really anything to "type"), ^Jd now runs `du` immediately on
+// whatever's current, no prompt at all.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): runs `du` immediately on the current directory, "
+                           "no prompt") {
   REQUIRE(app.start(path()));
-  app.feedByte(0x0a, std::nullopt);
-  CHECK(app.feedByte('d', std::nullopt));
-  CHECK(app.promptActive());
-  CHECK(app.promptText() == path());
+  CHECK(app.handleCommand(Command::StartDu));
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  bool sawSubdir = false, sawFile = false;
+  for (const auto &entry : app.duMode().entries()) {
+    if (entry.path.find("subdir") != std::string::npos && entry.isDirectory) sawSubdir = true;
+    if (entry.path.find("plain.txt") != std::string::npos && !entry.isDirectory) sawFile = true;
+  }
+  CHECK(sawSubdir);
+  CHECK(sawFile);
+}
+
+// Direct user spec: "ファイル閲覧中なら在籍フォルダーでduを発動" --
+// unlike before (Directory-mode only), ^Jd now also works from File
+// mode, tallying the folder the viewed file actually lives in.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): from File mode, tallies the file's own containing "
+                           "folder") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/
+  idx = indexOf("sub.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // open sub.txt as a FILE
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK(app.handleCommand(Command::StartDu));
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  bool sawSubTxt = false;
+  for (const auto &entry : app.duMode().entries())
+    if (entry.path.find("sub.txt") != std::string::npos) sawSubTxt = true;
+  CHECK(sawSubTxt);  // tallied subdir/ (sub.txt's own folder), not path() itself
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): refused outside Directory/File mode") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));  // enter Du mode itself first
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+
+  CHECK_FALSE(app.handleCommand(Command::StartDu));  // Du mode itself isn't Directory or File
+}
+
+// Direct user spec: navigating to a different folder first, then
+// pressing ^Jd again, tallies THAT folder -- replacing the old
+// "retype a path in a prompt" flow with ordinary navigation.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): tallies whatever folder is current after navigating "
+                           "elsewhere, not the original one") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  REQUIRE(app.handleCommand(Command::Back));
+
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.directoryMode().currentDirectory() != path());
+
+  CHECK(app.handleCommand(Command::StartDu));
+  CHECK(app.duMode().currentPath() != path());
 }
 
 // 2026-09-09 redesign, a direct user report/spec ("^J^D : DU画面へ戻る。
@@ -7247,8 +7313,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^D is a no-op when DU has never been ru
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^D redisplays the existing DU results without a prompt or "
                            "re-running `du`, once DU has been run at least once") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartDu));
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // accept the pre-filled path, runs `du`
+  REQUIRE(app.handleCommand(Command::StartDu));  // runs `du` immediately now, no prompt
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   std::vector<DuEntry> firstEntries(app.duMode().entries().begin(), app.duMode().entries().end());
 
@@ -7262,37 +7327,11 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^D redisplays the existing DU results w
   CHECK(app.duMode().entries().size() == firstEntries.size());
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): refused outside Directory mode") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  CHECK_FALSE(app.handleCommand(Command::StartDu));
-}
-
-TEST_CASE_FIXTURE(Fixture, "DU: accepting the pre-filled default runs real du and shows real entries") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartDu));
-  CHECK(app.feedByte(0x0d, std::nullopt));  // ^M accepts the pre-filled current directory
-
-  CHECK(app.currentMode() == ApplicationMode::Du);
-  bool sawSubdir = false, sawFile = false;
-  for (const auto &entry : app.duMode().entries()) {
-    if (entry.path.find("subdir") != std::string::npos && entry.isDirectory) sawSubdir = true;
-    if (entry.path.find("plain.txt") != std::string::npos && !entry.isDirectory) sawFile = true;
-  }
-  CHECK(sawSubdir);
-  CHECK(sawFile);
-}
-
 // 2026-08-13 (CLAUDE.md history item 291's mode-line audit): duView_
 // had no ModeLineFieldsProvider at all before this round.
 TEST_CASE_FIXTURE(Fixture, "DU: mode line shows 'DU' and a byte count once results are shown") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   const std::string &modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find("DU") != std::string::npos);
@@ -7305,7 +7344,6 @@ TEST_CASE_FIXTURE(Fixture, "DU: mode line shows 'DU' and a byte count once resul
 TEST_CASE_FIXTURE(Fixture, "DU: Enter on a directory entry drills into DirectoryMode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
 
   bool hasSubdirEntry = false;
   for (const auto &entry : app.duMode().entries())
@@ -7341,7 +7379,6 @@ TEST_CASE_FIXTURE(Fixture, "DU: Back from a directory opened via DU returns to t
                            "ordinary directory navigation") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
 
   while (app.duMode().selectedEntry() &&
          !(app.duMode().selectedEntry()->isDirectory &&
@@ -7358,7 +7395,6 @@ TEST_CASE_FIXTURE(Fixture, "DU: Back from a directory opened via DU returns to t
 TEST_CASE_FIXTURE(Fixture, "DU: Enter on a file entry drills into FileMode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
 
   while (app.duMode().selectedEntry() &&
          (app.duMode().selectedEntry()->isDirectory ||
@@ -7378,7 +7414,6 @@ TEST_CASE_FIXTURE(Fixture, "DU: Enter on a file entry drills into FileMode") {
 TEST_CASE_FIXTURE(Fixture, "DU: Back from a file opened via DU returns to the DU results") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
 
   while (app.duMode().selectedEntry() &&
          (app.duMode().selectedEntry()->isDirectory ||
@@ -7401,9 +7436,8 @@ TEST_CASE_FIXTURE(Fixture, "DU: Back from a file opened via DU returns to the DU
 TEST_CASE_FIXTURE(Fixture, "DU: no double slash in child entry paths when the tallied directory has a "
                            "trailing slash (as directoryMode_.currentDirectory() always does)") {
   REQUIRE(app.start(path()));
+  REQUIRE(path().back() == '/');  // the tallied path IS trailing-slash, the whole point of this test
   REQUIRE(app.handleCommand(Command::StartDu));
-  REQUIRE(app.promptText().back() == '/');  // the pre-filled path IS trailing-slash, the whole point of this test
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
 
   for (const auto &entry : app.duMode().entries()) {
     CHECK(entry.path.find("//") == std::string::npos);
@@ -7413,66 +7447,11 @@ TEST_CASE_FIXTURE(Fixture, "DU: no double slash in child entry paths when the ta
 TEST_CASE_FIXTURE(Fixture, "DU: Back returns to Directory mode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Du);
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == path());
-}
-
-TEST_CASE_FIXTURE(Fixture, "DU: ^G cancels the pre-filled prompt without running du") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartDu));
-  CHECK(app.feedByte(0x07, std::nullopt));
-
-  CHECK_FALSE(app.promptActive());
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-}
-
-// 2026-09-09 addition, direct user spec ("^J^D : DU画面へ戻る。...
-// デフォルト入力文字列も以前du(1)実行時のフォルダー"): once DU has
-// been run at least once, ^Jd's OWN prompt (a fresh tally, possibly of
-// a different folder) should default to the folder from that last run
-// rather than always the current directory -- confirmed via a second
-// ^Jd invocation from a DIFFERENT current directory than the one
-// actually tallied.
-TEST_CASE_FIXTURE(Fixture, "DU: ^J d's prompt defaults to the last-tallied folder, not the current "
-                           "directory, once DU has been run before") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartDu));
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // tallies path()
-  REQUIRE(app.currentMode() == ApplicationMode::Du);
-  REQUIRE(app.handleCommand(Command::Back));
-
-  // Move into subdir/ so the CURRENT directory now differs from the
-  // folder that was actually tallied.
-  int idx = indexOf("subdir/");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.directoryMode().currentDirectory() != path());
-
-  REQUIRE(app.handleCommand(Command::StartDu));
-  CHECK(app.promptText() == path());  // last-tallied folder, not subdir/
-}
-
-// 2026-09-09 addition, direct user spec ("^Gで集計中断後は^J^Dと同じ
-// く既存の集計結果へ移動"): canceling a NEW ^Jd prompt (e.g. opened to
-// tally a different folder) should fall back to the existing results
-// instead of dumping into plain Directory mode with nothing, IF a
-// previous DU run actually exists.
-TEST_CASE_FIXTURE(Fixture, "DU: ^G on ^J d's prompt lands on the existing DU results (not plain Directory "
-                           "mode) once a previous DU run exists") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartDu));
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Du);
-  REQUIRE(app.handleCommand(Command::Back));
-
-  REQUIRE(app.handleCommand(Command::StartDu));
-  CHECK(app.feedByte(0x07, std::nullopt));  // ^G
-  CHECK_FALSE(app.promptActive());
-  CHECK(app.currentMode() == ApplicationMode::Du);
 }
 
 // -- History/list browser: ^R (recent directories), ^J^R (shell
@@ -9376,14 +9355,15 @@ TEST_CASE_FIXTURE(Fixture, "recording: a real leaderO command (^Oc etc) IS recor
   app.feedByte(0x07, std::nullopt);  // ^G : cancel the prompt
 }
 
+// 2026-09-09redesign: DU no longer prompts (runDuOnCurrentFolder()'s
+// own comment) -- ^Jd alone now runs `du` and lands in Du mode
+// immediately, so the recorded sequence is just ^Jd, no trailing ^M.
 TEST_CASE_FIXTURE(Fixture, "recording: a ^J-leader sequence (^Jd for DU) is captured and replays correctly") {
   REQUIRE(app.start(path()));
   app.feedByte(0x0f, std::nullopt);
   app.feedByte('(', std::nullopt);
   app.feedByte(0x0a, std::nullopt);  // ^J
-  app.feedByte('d', std::nullopt);   // d : DU, pre-filled with the current directory
-  REQUIRE(app.promptActive());
-  app.feedByte(0x0d, std::nullopt);  // ^M : accept the pre-filled path
+  app.feedByte('d', std::nullopt);   // d : DU, runs immediately on the current directory
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   app.handleCommand(Command::Back);
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
@@ -9391,7 +9371,7 @@ TEST_CASE_FIXTURE(Fixture, "recording: a ^J-leader sequence (^Jd for DU) is capt
   app.feedByte(')', std::nullopt);
 
   app.feedByte(0x0f, std::nullopt);
-  app.feedByte('e', std::nullopt);  // replay: ^Jd, ^M
+  app.feedByte('e', std::nullopt);  // replay: ^Jd
   CHECK(app.currentMode() == ApplicationMode::Du);
 }
 

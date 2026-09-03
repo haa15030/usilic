@@ -3394,7 +3394,7 @@ bool Application::handleCommand(Command command) {
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
-      return startDuPrompt();
+      return runDuOnCurrentFolder();
     case Command::RedisplayDu:
       return redisplayDu();
     // 2026-08-17修正(=cn): K-48(^X^D、「Select directory name」)――
@@ -6094,22 +6094,30 @@ bool Application::startExitPrompt() {
   return true;
 }
 
-// m_du()/m_cr()のT_duケースから移植: 上の他の全てのプロンプトとは
-// 異なり、フィールドは空から始まるのではなく事前に埋められている
-// (`strcpy(rvp->str, ap->du)`)――^Mだけでデフォルトを受け入れるか、
-// ユーザーが先に編集できる。Directory専用、クラスコメント参照。
-//
-// 2026-09-09修正、直接のユーザー依頼("^J^D : DU画面へ戻る。集計は
-// 行わず、デフォルト入力文字列も以前du(1)実行時のフォルダー")に
-// よりデフォルト値を変更: 以前は常に現在のディレクトリだったが、
-// 既にDUを一度でも実行していれば、その時のフォルダー(duMode_.
-// currentPath())を優先する――まだ一度も実行していなければ、現在の
-// ディレクトリへフォールバックする(以前と同じ)。
-bool Application::startDuPrompt() {
-  if (currentMode_ != ApplicationMode::Directory) return false;
-  const std::string &lastDuPath = duMode_.currentPath();
-  activatePrompt(PromptKind::DuPath, lastDuPath.empty() ? directoryMode_.currentDirectory() : lastDuPath);
-  return true;
+// 2026-09-09、直接のユーザー依頼による全面的な再設計("DUの仕様として
+// は常時カレントで、ファイル閲覧中なら在籍フォルダーでduを発動し、
+// ^J^D同様文字列入力エリア無しでよろしく")によりプロンプト自体を
+// 廃止した(旧PromptKind::DuPath、旧m_du()/m_cr()のT_duケースから
+// 移植した「事前に埋められたフィールドを^Mで確定する」流れ)。
+// ユーザー自身の理屈: LOCATEは検索文字列を入力しない限り一覧が
+// 出ないので入力欄に意味があるが、DUは集計が終わり次第自動的に
+// 一覧が出るので、そもそも「何を入力するか」が無い――対象フォルダー
+// は常に「今どこにいるか」(Directoryモードなら閲覧中のディレクトリ、
+// Fileモードなら閲覧中のファイルの在籍フォルダー)から自動的に決まる。
+// 別のフォルダーを集計したければ、通常のナビゲートでそこへ移動して
+// から改めて^Jdを押せばよい(プロンプトでパスを打ち直す代わりに)。
+bool Application::runDuOnCurrentFolder() {
+  std::string folder;
+  if (currentMode_ == ApplicationMode::Directory) {
+    folder = directoryMode_.currentDirectory();
+  } else if (currentMode_ == ApplicationMode::File) {
+    std::filesystem::path filePath(fileMode_.currentFile());
+    folder = filePath.parent_path().string();
+    if (!folder.empty() && folder.back() != '/') folder += '/';
+  } else {
+    return false;
+  }
+  return executeDu(folder);
 }
 
 // ^J^D(K-38): Command::RedisplayDu自身のコメント参照。
@@ -6187,7 +6195,7 @@ std::vector<std::string> Application::buildArchiveExtractArgv(const std::string 
 }
 
 // K-45/K-47(^Xf/^Xd、「Input file/directory name」)――
-// startDuPrompt()等とは異なり、意図的にDirectoryモードにはゲート
+// runDuOnCurrentFolder()等とは異なり、意図的にDirectoryモードにはゲート
 // されていない: legacy自身のM_lfile2/M_ldir2は、汎用の「任意のパス
 // をタイプして、それが行き着く先へ着地する」ナビゲートであり、
 // ディレクトリ一覧からと同じくらいFile/Man/Grep等からも利用可能
@@ -7209,8 +7217,9 @@ bool Application::feedPromptByte(int byte) {
   // 唯一の共有されたプロンプト編集ルーチン(GrepPatternはFGREPの
   // ^Jcと、EGREPの直接入力の経路の両方をカバーする、CutPattern、
   // ManName、ProgramCommand、LocateQuery、
-  // Copy/Move/RemoveDestination、ExitConfirm、DuPath、PathInput、
-  // ArchiveDestination――列挙型自身のコメント参照)――
+  // Copy/Move/RemoveDestination、ExitConfirm、PathInput、
+  // ArchiveDestination――列挙型自身のコメント参照。DuPathは2026-09-09
+  // にプロンプト自体が廃止された)――
   // feedRegexListByte()とは異なり、リーダーバイトを一切チェックして
   // いなかった。モードごとにではなく「ここで」それを修正することが
   // まさに求められていたことである: "全モードが同ルーチンを共有化
@@ -7293,18 +7302,20 @@ bool Application::feedPromptByte(int byte) {
   // LOCATE/GREP等には依然として補完する意味のあるものが何も無い
   // (ページ名/クエリ/パターンはそもそもファイルシステムのパスでは
   // ない)ので、依然として除外される。CopyDestination/MoveDestination/
-  // ArchiveDestination/DuPath(2026-08-23追加、直接のユーザー依頼:
+  // ArchiveDestination(2026-08-23追加、直接のユーザー依頼:
   // "基本的にディレクトリおよびファイル名入力途中の^Iはマッチする
   // 対象があれば補完して欲しい")――これらは、PathInputと全く同じ
   // くらい「完全にパスそのもの」であり、単に異なるキー(^X^F/^X^D
-  // ではなく^Xc/^Xm/^Xa/^Jd)経由で到達するだけである;
-  // completeFilesystemPath()自体は既に完全に汎用的(部分文字列+現在
-  // のディレクトリが入力、最長共通の補完が出力)であり、それについて
-  // 何もPathInput固有のものは無かった。
+  // ではなく^Xc/^Xm/^Xa)経由で到達するだけである;completeFilesystemPath()
+  // 自体は既に完全に汎用的(部分文字列+現在のディレクトリが入力、
+  // 最長共通の補完が出力)であり、それについて何もPathInput固有の
+  // ものは無かった。DuPathは2026-09-09にプロンプト自体が廃止された
+  // ため、このリストから削除済み――runDuOnCurrentFolder()自身の
+  // コメント参照。
   if (byte == 0x09 &&
       (promptKind_ == PromptKind::PathInput || promptKind_ == PromptKind::ProgramCommand ||
        promptKind_ == PromptKind::CopyDestination || promptKind_ == PromptKind::MoveDestination ||
-       promptKind_ == PromptKind::ArchiveDestination || promptKind_ == PromptKind::DuPath)) {
+       promptKind_ == PromptKind::ArchiveDestination)) {
     const std::string &text = promptEditor_.text();
     int cursor = promptEditor_.cursorBytePos();
     std::string partial = text;
@@ -7323,7 +7334,7 @@ bool Application::feedPromptByte(int byte) {
     return true;
   }
   // DEL/^H(2026-08-05): 全てのプロンプトの種類(MAN/LOCATE/FGREP/
-  // EGREP/CUT/PROGRAM/PathInput/Copy/Move/Remove/.../DuPath/
+  // EGREP/CUT/PROGRAM/PathInput/Copy/Move/Remove/.../
   // ArchiveDestination――この共有のfeedPromptByte()経由でルーティン
   // グされるもの全て)は、下のinsertByte()へ流れ落ちていた、それには
   // 「消去」という概念が無く、単に生の0x7f/0x08バイトを表示不可能な
@@ -7485,8 +7496,6 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
       return executeRemove(text);
     case PromptKind::ExitConfirm:
       return executeExit(text);
-    case PromptKind::DuPath:
-      return executeDu(text);
     case PromptKind::ArchiveDestination:
       return executeArchiveExtract(text);
     case PromptKind::PathInput:
@@ -7552,19 +7561,12 @@ void Application::cancelPrompt() {
     directoryView_.redraw();
     return;
   }
-  // 2026-09-09追加、直接のユーザー依頼("^Gで集計中断後は^J^Dと同じく
-  // 既存の集計結果へ移動"): ^Jdのプロンプト(新しい集計先を尋ねる)を
-  // ^Gでキャンセルした時、既存のDU結果が(前回までに)あれば、素の
-  // Directoryモードへ戻すのではなく、それをそのまま再表示する
-  // ――redisplayDu()/returnToDuResults()自身のコメント参照。まだ
-  // 一度もDUを実行していなければ、下の汎用のフォールバック(素の
-  // Directoryモードへ戻す、以前と同じ)に委ねる。
-  if (promptKind_ == PromptKind::DuPath && !duMode_.currentPath().empty()) {
-    promptKind_ = PromptKind::None;
-    currentMode_ = ApplicationMode::Du;
-    duView_.redraw();
-    return;
-  }
+  // 2026-09-09、DU用の分岐がここに一時期あった(^Jdのプロンプトを
+  // ^Gでキャンセルした時に既存結果へ戻す処理)が、同日中にDUの
+  // プロンプト自体が完全に廃止された(runDuOnCurrentFolder()自身の
+  // コメント参照)ため、この分岐ごと不要になり削除した――^Jdはもはや
+  // プロンプトを一切開かないので、キャンセルされ得るDU用プロンプト
+  // 自体が存在しない。
   promptKind_ = PromptKind::None;
   activeView().redraw();
 }
@@ -7821,8 +7823,6 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return "RM";
     case PromptKind::ExitConfirm:
       return "EXIT (y/n)?";
-    case PromptKind::DuPath:
-      return "DU";
     case PromptKind::PathInput:
       return pathInputIsDirectory_ ? "DIR" : "FILE";
     case PromptKind::ArchiveDestination:
