@@ -1671,21 +1671,38 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
     while (auto click = gui.consumeMouseClick()) {
       anyEventThisFrame = true;
-      // Acted on immediately, right on press -- a same-day (2026-08-05)
-      // revision of two prior attempts at deferring this to release
-      // instead (first via a motion flag, then a pixel-jitter
-      // threshold), both trying to distinguish "this press is a click"
-      // from "this press is the start of a cat's-paw screen drag" by
-      // TIMING. The user's own alternative proposal, adopted here
-      // instead: distinguish by WHERE the press landed, not when it's
-      // acted on. Application::handleMouseClick() now checks whether
-      // the column is actually within the clicked row's own
-      // highlighted span (ContentView::isColumnWithinLineScope()) and
-      // simply no-ops if not -- a press in DirectoryMode's `ls` left
-      // margin, or past the end of a short entry name, was never "on"
-      // the entry to begin with, so it's free to also double as a drag
-      // start without any race against a still-in-flight ButtonUp.
-      if (!click->rightButton) app.handleMouseClick(click->row, click->column);
+      // 2026-09-15、直接のユーザー確認+依頼を経て現在の形になった
+      // (この節自身の過去のコメントは2026-08-05のマージン方式を
+      // 説明していたが、その後2回の変更で置き換わったので刷新する):
+      //
+      // (1) 左クリックの「実行」自体はもうここでは押下即座ではない
+      //     ――GraphicalDisplay::Impl::pendingLeftClick自身のコメント
+      //     参照、ボタン解放まで遅延し、mouseQueueにはその時点で
+      //     初めて積まれる。
+      // (2) その解放遅延だけで実際に「操作感は変わらない」と実機
+      //     確認できたため、2026-08-05にDirectory/ARC/DUの一覧へ
+      //     導入していた左マージン(ドラッグ専用の安全地帯)除外は
+      //     不要と判明し撤去した(Application::handleMouseClick()の
+      //     Directory/Archive/Du分岐、ContentView::
+      //     isColumnWithinRowText()自身のコメント参照)。
+      // (3) しかしマージンが消えたことで、ファイル名/パスの「真上」
+      //     で押してそのままドラッグし、離した場合に「押した時点の
+      //     エントリ」が離した瞬間に開いてしまう新しい問題が実機で
+      //     確認された。ユーザー自身の言葉: 「実際にドラッグと確定
+      //     したら、離した時のクリックは実行しない」――ただし同じ
+      //     ユーザー自身が指摘した通り、この「確定」判定そのものが
+      //     2026-08-05に2回失敗した領域(ジッターに弱いタイミング/
+      //     モーション判定)と同じ弱点を抱え得ることは承知の上での
+      //     実験。ここでは新しいヒューリスティックを発明せず、この
+      //     ファイル自身が既に別の目的(renderScrolled()への切替、
+      //     hover抑制、コースト開始判定)で使っている`dragging`
+      //     (「実際にMotionイベントが最低1回届いた」ことだけを条件に
+      //     trueになる、buttonHeldPendingDrag自身のコメント参照)を
+      //     そのまま再利用する――このクリックのButtonUpとペアになる
+      //     DragEvent::ButtonUpは、このmouseQueue消費より後(すぐ下)
+      //     で処理されるため、ここではまだ「直前のフレームまでに
+      //     本物のドラッグが確定していたかどうか」を正しく読める。
+      if (!click->rightButton && !dragging) app.handleMouseClick(click->row, click->column);
       // right-click: captured but not acted on yet, see class comments
     }
     // Plain hover-follow (no button held) -- matching the real-
