@@ -8880,7 +8880,21 @@ bool Application::executeArchiveExtract(const std::string &destination) {
   if (currentMode_ == ApplicationMode::Archive) {
     archivePath = archiveMode_.currentArchive();
     kind = archiveMode_.archiveKind();
-    for (const auto &entry : archiveMode_.targetEntries()) members.push_back(entry.name);
+    // 2026-09-08修正、実際のユーザー報告("選択マーク皆無のARC画面での
+    // ^Oa^Mではsaved/への全展開が起きない"): archiveMode_.targetEntries()
+    // は(CP/MV同様の確立された慣習として)何もマークされていなければ
+    // カーソル下の1エントリへフォールバックする――そのため以前は、
+    // マークが無い時でも常にちょうど1件のmembersが積まれてしまい、
+    // 下のDirectoryモードの分岐が意図的にmembersを空のままにして
+    // 表現している「アーカイブ全体」に、Archiveモードの側からは
+    // 決して到達できなかった。ここではmarkedCount()で明示的なマーク
+    // の有無だけを見て、マークが1件も無ければmembersを空のままにし、
+    // マークがあればそれらだけをmembersへ積む――「マーク無し=全体、
+    // マークあり=マーク分」という、Directoryモードの分岐と同じ意味論
+    // にArchiveモードの側も合わせている。
+    if (archiveMode_.markedCount() > 0) {
+      for (const auto &entry : archiveMode_.targetEntries()) members.push_back(entry.name);
+    }
   } else if (currentMode_ == ApplicationMode::Directory) {
     const DirectoryEntry *entry = directoryMode_.selectedEntry();
     if (!entry) {

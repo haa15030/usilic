@@ -3725,6 +3725,40 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: ^X^M (not just ^X a) also opens the des
   CHECK(app.currentMode() == ApplicationMode::Directory);  // see the ^X a test just above's own 2026-08-26 comment
 }
 
+// 2026-09-08 fix, a real user report ("選択マーク皆無のARC画面での
+// ^Oa^Mではsaved/への全展開が起きない"): executeArchiveExtract()'s
+// Archive-mode branch used to populate `members` straight from
+// archiveMode().targetEntries() -- which, like CP/MV's own established
+// convention, falls back to whatever single entry the cursor happens
+// to be on when nothing is explicitly marked. That meant "no marks"
+// in Archive mode could never reach the Directory-mode branch's own
+// "leave members empty -> whole archive" convention (see its comment
+// just below) -- extraction always targeted just the one cursor entry
+// instead of everything. Now gated on markedCount() instead, so "no
+// marks at all" means "the whole archive", matching Directory mode.
+// This test opens the TOC (Archive mode), marks NOTHING, and confirms
+// extraction reaches every file in the archive rather than just
+// whatever the cursor landed on after opening it.
+TEST_CASE_FIXTURE(Fixture, "ARC extract: from within Archive mode's own TOC with NO marks at all, still "
+                           "extracts the WHOLE archive instead of just the cursor's single entry") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Archive);
+  REQUIRE(app.archiveMode().markedCount() == 0);  // nothing explicitly marked
+
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M
+  REQUIRE(app.promptActive());
+  feedText((root / "arcdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
+
+  CHECK(fs::exists(root / "arcdest" / "arcsrc" / "inner.txt"));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
 // 2026-08-27 addition, a direct user report (a callback to their own
 // earlier HISTORY.md:9608 proposal): a real CJK filename long enough
 // to crowd FileMode's own mode line -- name (the file's own basename)
