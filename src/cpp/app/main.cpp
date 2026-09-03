@@ -1584,6 +1584,21 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   // dragging自体を立てない――buttonHeldPendingDrag(下のDragEvent::
   // ButtonDown/Motion/ButtonUp参照)。
   bool buttonHeldPendingDrag = false;
+  // 2026-09-15追加、直接のユーザー提案("スクロールのさなかに見つけた
+  // 目的のファイル上でクリックすればその時点で内容が表示されるって
+  // のはどう？"): ContentView::stepTopIndex()自身のコメント参照
+  // ――ドラッグ/コースト中は1行分の境界を越えるたびにcursorIndex_が
+  // ビューポートの下端(または上端)へ明示的に再固定される。つまり
+  // スクロール中ずっと「今どのエントリがハイライトされているか」は
+  // 正確に追跡され続けている一方、コーストを止めるための押下位置
+  // (生のマウス座標)は、ユーザーが目で追っていたそのハイライト行と
+  // 一致するとは限らない――むしろ普通は一致しない(ハイライトは
+  // 固定行、マウスは任意の位置)。このフラグは、コースト中に押下
+  // されたことを覚えておき、実際にドラッグへ発展しなかった(=
+  // 単なる「掴んで止める」)場合に限り、解放時の遅延クリックの対象
+  // 行を、生のマウス位置ではなくその時点のcursorIndex_(スクロール
+  // 中ずっと見えていたハイライト行)へ差し替えるために使う。
+  bool clickInterruptedCoast = false;
   int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
   int coastLevel = 0;       // 0 == not coasting; otherwise an index into fm::kScrollSpeedLevels
   int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
@@ -1702,7 +1717,39 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       //     DragEvent::ButtonUpは、このmouseQueue消費より後(すぐ下)
       //     で処理されるため、ここではまだ「直前のフレームまでに
       //     本物のドラッグが確定していたかどうか」を正しく読める。
-      if (!click->rightButton && !dragging) app.handleMouseClick(click->row, click->column);
+      if (!click->rightButton && !dragging) {
+        // clickInterruptedCoast自身の宣言コメント参照、直接のユーザー
+        // 提案("スクロールのさなかに見つけた目的のファイル上で
+        // クリックすればその時点で内容が表示されるってのはどう？"):
+        // このクリックがコースト中の押下から来ていて、かつ実際には
+        // ドラッグへ発展しなかった(=単なる「掴んで止める」)なら、
+        // 生のマウス位置(click->row/column、コースト中ずっと動いて
+        // いた実際のマウスの位置で、ユーザーが目で追っていたハイ
+        // ライト行とは普通一致しない)ではなく、その時点の
+        // cursorIndex_(ContentView::stepTopIndex()が1行境界を越える
+        // たびにビューポートの下端/上端へ明示的に再固定してきた、
+        // スクロール中ずっと見えていたハイライト行)を対象にする。
+        // その行はcursorIndex()そのものなので、Application::
+        // handleMouseClick()内のidx==cursorIndex()判定(「2回目の
+        // クリック」相当)に自然に合致し、選択だけでなくその場で直接
+        // オープンまで進む――ユーザーの言う「統合」そのもの。
+        int row = click->row;
+        int column = click->column;
+        if (clickInterruptedCoast) {
+          int cursorRow = app.activeContentView().cursorDisplayRow();
+          if (cursorRow >= 0) {
+            row = cursorRow;
+            // 生のクリック列は元々マウスが乗っていた行のテキスト長を
+            // 基準にしたものなので、行を差し替えた後もそのまま使うと
+            // (cursorRow側の行がそれより短ければ)スコープ判定に
+            // 無関係に落ちかねない。0は今やisColumnWithinRowText()の
+            // 上限チェックだけなので、空行でない限り常に安全。
+            column = 0;
+          }
+        }
+        app.handleMouseClick(row, column);
+      }
+      clickInterruptedCoast = false;
       // right-click: captured but not acted on yet, see class comments
     }
     // Plain hover-follow (no button held) -- matching the real-
@@ -2098,6 +2145,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // ドラッグかどうか」に関わらず安全な、押した瞬間のフィード
           // バックのため)。
           buttonHeldPendingDrag = true;
+          // clickInterruptedCoast自身の宣言コメント参照: coastLevelを
+          // ゼロ化する「前」に読む。
+          clickInterruptedCoast = coastLevel > 0;
           coastLevel = 0;  // grabbing mid-coast stops it right where it is
           coastDirection = 0;
           recentMotion.clear();
