@@ -1817,11 +1817,26 @@ bool GraphicalDisplay::pumpEvents() {
         if (impl_->scrollbarDragActive) {
           impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::Motion, event.motion.y});
         } else if (event.motion.state & SDL_BUTTON_LMASK) {
-          // pendingLeftClick自身の宣言コメント参照: 左ボタン押下中に
-          // 本物の動きが実際に1回でも届いた時点で、これはもはや
-          // クリックではなくドラッグである――保留していたクリックを
-          // 破棄する(SDL_MOUSEBUTTONUpでは二度と積まれない)。
-          impl_->pendingLeftClick.reset();
+          // 2026-09-14修正、直接のユーザー報告("左クリックでの選択が
+          // できない"、100%再現): 前回の実装は、左ボタン押下中に届く
+          // どんなSDL_MOUSEMOTION(1px未満のセンサーノイズ/トラック
+          // パッドの微小なブレも含む)でもpendingLeftClickを即座に
+          // 破棄していた。実機のマウス/トラックパッドで、押下から
+          // 解放まで生ピクセル単位で完全に1px足りとも動かないクリック
+          // はほぼ存在しないため、これでは事実上すべてのクリックが
+          // 「ドラッグへ発展した」と誤判定され、選択が一切発動しなく
+          // なっていた。「画面停止中」の本来の意図は生ピクセル座標
+          // ではなくセル(行/列)単位――スクロールが実際に1行分でも
+          // 動いたかどうか――のはずなので、押下時と同じ計算で現在の
+          // セル位置を求め、pendingLeftClickが記録しているセルと
+          // 実際に異なる場合に限って破棄するよう変更した。
+          if (impl_->pendingLeftClick) {
+            int motionCol = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
+            int motionRow = std::max(0, event.motion.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
+            if (motionRow != impl_->pendingLeftClick->row || motionCol != impl_->pendingLeftClick->column) {
+              impl_->pendingLeftClick.reset();
+            }
+          }
           impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
         } else if (SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_FOCUS) {
           // キーボード/入力フォーカスで判定している(SDL_WINDOW_MOUSE_

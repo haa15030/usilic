@@ -1511,14 +1511,35 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 無い"): 以前はDUモード自身の画面が、集計対象のフォルダーを
     // 一切表示していなかった(nameは常にリテラルな"DU"のみ)――
     // Directory/File/Archive等、他の全モードが自分自身の「今どこに
-    // いるか」を必ず表示するのとは対照的だった。ArchiveMode自身の
-    // 同一のname="ARC"+trailing3=currentArchive_という慣習
-    // (archive_mode.cpp参照)に合わせ、trailing3へ集計対象のフォルダー
-    // を追加した。
+    // いるか」を必ず表示するのとは対照的だった。
+    //
+    // 2026-09-14再修正、直接のユーザー報告2件:
+    // (1) 「パディングが無い」(HISTORY.md:9473「基本的に右端まで
+    //     埋まっていないモードラインは全部不良」そのもの): 前回の
+    //     修正はfillTrailingToEdge=falseのまま出していた。LOCATE
+    //     自身の同種のプロバイダ(すぐ上)に合わせtrueへ。
+    // (2) 「戻り値が全部DU: <集計対象ルート>では意味が無い」:
+    //     duMode_.currentPath()(集計対象のルート)は、一覧中のどの
+    //     行にカーソルがあっても常に同じ文字列にしかならず、実際に
+    //     選んでいるエントリの居場所を示していなかった。具体例:
+    //     `4K  .../.husky/pre-commit`を選択したら`DU: .../.husky/`
+    //     (そのファイルの入っているフォルダー)であるべき。
+    //     jumpToPathPrefix()自身のApplicationMode::Du分岐(すぐ下、
+    //     2026-09-10追加)と同じ「ハイライトされているエントリ自身の
+    //     パス」を土台にし、ディレクトリならそれ自身、ファイルなら
+    //     その親フォルダーを表示する。LOCATE自身の"LOCATE: "+query()
+    //     という表記(nameが既に"LOCATE"でも重ねて付ける、すぐ上参照)
+    //     に揃え、"DU: "接頭辞も付けた。
+    std::string folder = duMode_.currentPath();
+    if (const DuEntry *selected = duMode_.selectedEntry()) {
+      folder = selected->isDirectory ? selected->path
+                                      : std::filesystem::path(selected->path).parent_path().string();
+      if (!folder.empty() && folder.back() != '/') folder += '/';
+    }
     ContentView::ModeLineFields fields{"DU", std::to_string(contentByteCount(duView_)),
-                                        /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
+                                        /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/""};
-    fields.trailing3 = duMode_.currentPath();
+    fields.trailing3 = "DU: " + folder;
     return fields;
   });
   // archiveContentView_は、すぐ上で使われている素のバイト数だけの形
