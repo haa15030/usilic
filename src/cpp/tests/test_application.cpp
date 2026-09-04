@@ -1479,16 +1479,24 @@ TEST_CASE_FIXTURE(Fixture, "GREP (search reached via the ^J^S candidate list, Fi
   CHECK_FALSE(app.fileMode().hasSearchAnnotation());
 }
 
-// 2026-08-28 fix, same follow-up report as the test just above ("EGREP」
-// 「01/29 TOP」「2616」「(egrep)」「/Users/.../CLAUDE.md」"(不良) vs
-// "...「EGREP: ^-」"(正解)): the RESULTS-list screen's own trailing3 --
-// the mirror image of the fix just above -- shows the search's own
-// label+pattern here instead (this screen doesn't have a single "the
-// match" yet, so the file path was the previously-established
-// 2026-08-24 fix's choice; the user's follow-up reconsidered this in
-// light of the landed-screen fix, and asked for the label here instead).
-TEST_CASE_FIXTURE(Fixture, "GREP results screen (grepView_, File origin): trailing3 shows \"FGREP: pattern\", "
-                           "not the origin file's raw path") {
+// 2026-09-19 re-reversal, a direct user report + side-by-side legacy
+// comparison ("CLAUDE.mdを選択→^Ssrc^M...モードラインはやはりおかしい。
+// GREPが二文字あるので...「GREP」「01/14 TOP」「1046」「(grep)」
+// 「GREP: src」...旧版を見てみたら「FGREP」「01/14 TOP」「(fgrep)」
+// 「/Users/haa15030/git/usilic/CLAUDE.md」となっていた...こちらが
+// 正しいと思う"): the 2026-08-28 choice (label+pattern here, see the
+// old version of this test's own comment, now corrected below) turned
+// out to read as a literal duplicated word whenever grepSyntax_ is
+// GrepSyntax::Basic -- name (top-left) and trailing3 both say "GREP"
+// verbatim ("GREP" ... "GREP: src"). A direct side-by-side comparison
+// against the real legacy binary (same file, same FGREP) showed legacy
+// shows the origin file's own raw path here instead, with no label
+// prefix at all -- reverting to that. The landed-match screen (the
+// test just above, openSelectedGrepMatch()'s File branch) is a
+// different screen and keeps its own convention (the matched line's
+// text) unchanged -- not part of today's report.
+TEST_CASE_FIXTURE(Fixture, "GREP results screen (grepView_, File origin): trailing3 shows the origin file's "
+                           "raw path, not a redundant \"<name>: <pattern>\" label") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -1501,8 +1509,8 @@ TEST_CASE_FIXTURE(Fixture, "GREP results screen (grepView_, File origin): traili
   REQUIRE(app.currentMode() == ApplicationMode::Grep);
 
   const std::string &row = display.rowText(23);
-  CHECK(row.find("FGREP: hello") != std::string::npos);
-  CHECK(row.find((root / "plain.txt").string()) == std::string::npos);
+  CHECK(row.find((root / "plain.txt").string()) != std::string::npos);
+  CHECK(row.find("FGREP: hello") == std::string::npos);
 }
 
 // 2026-08-28 fix, a direct user report + precise before/after mode-line
@@ -10644,4 +10652,34 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Locate mode: the results screen la
   CHECK(app.activeContentView().modeLineText().find("LOCATE: .md") != std::string::npos);  // reset, not stale "GREP:"
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+// 2026-09-19追加、直接のユーザー報告("^J^L.md^M^S→...戻り値空っぽは
+// 今も健在"): previousModeName()(drawPromptLabel()自身のtrailing
+// フィールド計算が使う、GrepPattern/CutPattern/ManName/LocateQuery
+// 全てで共有される汎用ヘルパー)にLocateのケースが一度も無く、default
+// の""へ落ちていた。そのため、LOCATEから起動したGREPプロンプトは、
+// パターンがまだ未入力/未投入の間(currentMode_はまだLocateのまま、
+// grepView_自身のModeLineFieldsProvider――こちらは既にLocate分岐
+// 済み――がまだ一切関与しない段階)、trailingフィールドが丸ごと
+// 空欄になっていた。このテストはmodeLineText()(ContentView自身の
+// 計算、drawPromptLabel()の自前描画とは別物――このバグはmodeLineText()
+// 経由では再現しないことを調査で確認済み)ではなく、実際に画面へ
+// 描かれた行(display.rowText())を直接見て確認する。
+TEST_CASE_FIXTURE(Fixture, "GREP prompt started from Locate mode, before any pattern is typed: the mode "
+                           "line's trailing field already shows \"LOCATE: <query>\" (previousModeName() "
+                           "used to have no Locate case at all, leaving it blank)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText(".md");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not installed or no database available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+
+  REQUIRE(app.handleCommand(Command::StartGrep));
+  CHECK(app.promptActive());
+  const std::string &row = display.rowText(display.rows() - 1);
+  CHECK(row.find("LOCATE: .md") != std::string::npos);
 }

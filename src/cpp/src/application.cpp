@@ -1435,14 +1435,29 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     } else if (grepReturnMode_ == ApplicationMode::CutContent) {
       path = cutContentReturnLabel();
     } else if (grepReturnMode_ == ApplicationMode::File) {
-      // 2026-08-28の訂正、正確な変更前/後のモードライン値を伴う直接
-      // のユーザーの追跡("/Users/.../CLAUDE.md"(不良) vs "EGREP: ^-"
-      // (正解)): ファイル自身のパスは、既に暗黙のもの(あなたはその
-      // ファイル「から」の結果を閲覧している)を重複させている;
-      // 検索自身のラベル+パターンこそがこのフィールドが実際に求めて
-      // いる部分であり、着地時のopenSelectedGrepMatch()自身の同一の
-      // 訂正(それ自身のコメント参照)に一致させている。
-      path = name + ": " + grepMode_.pattern();
+      // 2026-09-19再訂正、直接のユーザー報告+旧版との並べ比較
+      // ("CLAUDE.mdを選択→^Ssrc^M...GREPが二文字あるので"、旧版は
+      // 「/Users/haa15030/git/usilic/CLAUDE.md」だった):
+      // 2026-08-28の訂正(直下、取り消し線扱いで残す)は、`name`が既に
+      // 画面左上に出ている検索種別のラベル("GREP"/"FGREP"/"EGREP")
+      // そのものを、ここでもう一度"<name>: <pattern>"として繰り返す
+      // 実装だったため、grepSyntax_がBasic("GREP")の時に限って
+      // "GREP" ... "GREP: src"と、画面上に全く同じ単語が2度も並ぶ
+      // 結果になっていた――EGREP/FGREPではnameとtrailing3の文字列が
+      // 異なる("EGREP" vs "EGREP: ^-"も実は同じ語の重複だが、ハイフン
+      // 記号のパターンに気を取られて見過ごされていた)。ユーザーが
+      // 実際に旧版のCLAUDE.mdを対象にしたFGREPを並べて確認した結果、
+      // 旧版はここに検索パターンではなく検索対象「ファイル自身の
+      // パス」を出していたと判明し、そちらを正解として2026-08-28の
+      // 判断を上書きしてこちらへ差し戻す。
+      // (2026-08-28の判断の撤回: 「ファイル自身のパスは既に暗黙の
+      // もの」という当時の理屈は、旧版との直接比較という新しい証拠の
+      // 前ではもう成り立たない――比較無しの推測に基づく判断だった。)
+      // なお着地後の画面(openSelectedGrepMatch()自身のFile分岐、
+      // fileMode_.setSearchAnnotation(match->text))はこことは別個の
+      // 画面で、今回の指摘の対象外(マッチ行自身のテキストを出す方が
+      // 引き続き有用――そちらは変更していない)。
+      path = fileMode_.currentFile();
     } else if (grepReturnMode_ == ApplicationMode::Man) {
       // 2026-09-19追加、直接のユーザー報告("^Jmls^M^Ssort^M→モード
       // ライン不良、正しくは「MAN: ls       」"): Group1/Group2の
@@ -5416,6 +5431,23 @@ std::string Application::previousModeName(ApplicationMode mode) const {
       return archiveMode_.currentArchive();
     case ApplicationMode::Du:
       return duMode_.currentPath();
+    // Locate(2026-09-19追加、直接のユーザー報告"^J^L.md^M^S→...戻り値
+    // 空っぽは今も健在"): このswitchにLocateのケースが一度も無く、
+    // defaultの""へ落ちていたため、LOCATEから起動したプロンプト
+    // (GrepPattern/CutPattern等、destinationModeがlocateReturnMode_
+    // 経由でLocateになる場合)は、まだパターンが未入力/未投入の間、
+    // drawPromptLabel()自身のtrailingフィールドが丸ごと空欄になって
+    // いた。ここだけ他のケース(Directory/File/Man/Du、いずれも接頭辞
+    // 無しの生の値)と異なり"LOCATE: "接頭辞を付けて返す――locateView_
+    // 自身のModeLineFieldsProvider(それ自身の2026-08-16の経緯コメント
+    // 参照)が確立した、LOCATE自身の画面の「通常の」自己表示規約
+    // ("LOCATE: <query>"、クエリ単体では何の値か紛らわしいための接頭辞)
+    // をそのまま踏襲している――ここはLOCATE「自身」の恒久的な識別
+    // 表示であり、grepView_自身のtrailing3が(発動元がGroup1モードの
+    // 場合に)組み立てる「MODE: query」形式の一時的な戻り値ラベルとは
+    // 別物(混同しないこと、直後のGREP: File分岐の訂正コメント参照)。
+    case ApplicationMode::Locate:
+      return "LOCATE: " + locateMode_.query();
     // Shell(2026-08-13): 直接のユーザーの訂正――drawPromptLabel()自身
     // の宛先trailingフィールドは、以前は`mode == Directory`について
     // のみ何かを表示していた、それが結線されているPromptKindの唯一の
