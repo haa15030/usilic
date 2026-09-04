@@ -347,20 +347,36 @@ void ZipReader::locateContent(const unsigned char *data, std::size_t size,
   }
 }
 
-// alloc.cのalloc_head() T_lhaケースからの移植。実際の`lha`バイナリの
-// 実際の出力に対して未検証(これを移植している間、利用可能なものが
-// 無かった)――legacyソース内の文書化されたヘッダーフォーマットの
-// コメント("PERMSSN UID GID SIZE RATIO STAMP NAME" /
-// "----- ... -----")に合わせて構築されており、パース構造(比率
-// マーカー'%'/'*'を見つけ、そこから前方へNAMEまで歩き、そこから
-// 後方へSIZEまで歩く)は、いずれにせよ機械的に引き継がれているので、
-// 正確な列幅に関わらず成り立つはずである。
+// alloc.cのalloc_head() T_lhaケースからの移植。legacyソース内の文書化
+// されたヘッダーフォーマットのコメント("PERMSSN UID GID SIZE RATIO
+// STAMP NAME" / "----- ... -----")に合わせて構築されていた(移植時点
+// では実際の`lha`バイナリが利用不可だった)。
+//
+// 2026-09-15修正、直接のユーザー報告("src/にlzhファイルがあったはず
+// だが、あれのARCがNG")+実際のLhasa版`lha`(Homebrew、v0.6.0)の
+// 実機出力による調査で2件のバグを発見:
+//
+// (1) 比率マーカーの探索が'%'「と」'*'の両方を候補にしていたが、
+//     Lhasaの実際の出力ではUID/GID欄が不明な場合"*****/*****"の
+//     ように'*'で埋められる――この'*'が本物の比率マーカー('%'、
+//     ずっと後ろの列)より「先に」見つかってしまい、そこを起点に
+//     前方/後方への歩行が丸ごとズレて、SIZE/NAMEが完全に別の場所
+//     (STAMPの残り+ゴミ)を指してしまっていた。'%'のみを探すように
+//     変更した(旧ソースが本当に単独の'*'だけで比率を表す出力を
+//     意図していたのだとしても、UID/GID欄の'*'より必ず後ろにある
+//     はずの本物の比率'%'を優先すべきだった)。
+// (2) フッターの合計行("Total  N files  <size>  NN.N% <date>")も
+//     '%'を含むため、(1)の修正後は代わりにこちらが誤ってエントリ
+//     として拾われてしまっていた(名前欄が空文字列のまま、SIZEには
+//     合計バイト数)――名前欄に何も残らない(前方への歩行が行末を
+//     超える)行は、そもそも本物のエントリではないとして除外する
+//     ようにした。
 std::vector<ArchiveEntry> LhaReader::parseListing(const std::string &listing) const {
   std::vector<ArchiveEntry> entries;
   for (const auto &line : splitLines(listing)) {
     int n = static_cast<int>(line.size());
     int marker = 0;
-    while (marker < n && marker < 40 && line[marker] != '%' && line[marker] != '*') marker++;
+    while (marker < n && marker < 40 && line[marker] != '%') marker++;
     if (marker >= 40 || marker >= n) continue;  // ヘッダー/ルール行、エントリではない
 
     // 比率マーカーから前方へ、STAMP(日付+時刻)を越えて、NAMEまで
@@ -370,6 +386,7 @@ std::vector<ArchiveEntry> LhaReader::parseListing(const std::string &listing) co
       while (ce < n && line[ce] != ' ') ce++;
       while (ce < n && line[ce] == ' ') ce++;
     }
+    if (ce >= n) continue;  // NAME欄が無い(フッターの合計行)、本物のエントリではない
 
     // 比率マーカーから後方へ、2フィールド(GID、UID)を越えて、SIZE
     // まで歩く。
@@ -387,7 +404,7 @@ std::vector<ArchiveEntry> LhaReader::parseListing(const std::string &listing) co
     }
 
     ArchiveEntry entry;
-    entry.name = (ce < n) ? line.substr(ce) : std::string();
+    entry.name = line.substr(ce);
     entry.size = size;
     entry.isDirectory = !entry.name.empty() && entry.name.back() == '/';
     entries.push_back(std::move(entry));

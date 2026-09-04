@@ -211,11 +211,15 @@ TEST_CASE("RpmReader::locateContent is a no-op (legacy never supported it)") {
 }
 
 TEST_CASE("LhaReader::parseListing: synthetic fixture matching the documented column layout") {
-  // No real `lha` binary was available while porting this (see the
-  // class comment in archive_reader.hpp) -- built from alloc.c's
-  // documented header comment:
+  // Originally written blind (no real `lha` binary was available while
+  // porting this, see the class comment in archive_reader.hpp) --
+  // built from alloc.c's documented header comment:
   //   "PERMSSN  UID GID    SIZE  RATIO     STAMP    NAME"
   //   "----------------- ------- ------ ------------ --------------------"
+  // Now cross-checked against a real Lhasa `lha` capture (see the next
+  // test) -- kept as a simpler sanity check of the general column-
+  // walking logic, now that the real-output test below has confirmed
+  // the actual bug (see its own comment).
   LhaReader reader;
   std::string listing =
       "PERMSSN  UID GID    SIZE  RATIO     STAMP    NAME\n"
@@ -225,6 +229,41 @@ TEST_CASE("LhaReader::parseListing: synthetic fixture matching the documented co
   REQUIRE(entries.size() == 1);
   CHECK(entries[0].name == "file1.txt");
   CHECK(entries[0].size == 6);
+}
+
+// 2026-09-15追加、直接のユーザー報告("src/にlzhファイルがあったはず
+// だが、あれのARCがNG")を受けた調査: 実際のLhasa版`lha`(Homebrew、
+// v0.6.0)の実機出力(`lha <archive>`)をそのまま貼った回帰テスト。
+// parseListing()自身の修正コメント参照――このリスト、UID/GID欄が
+// 不明な場合に"*****/*****"のように'*'で埋められることが、以前は
+// '*'も比率マーカーの候補にしていたパース処理を完全に誤動作させて
+// いた(本物の'%'よりずっと手前でマッチしてしまう)ことを、この実際の
+// 出力で初めて発見した――シンセティックな上のテストは(UID/GID欄に
+// 具体的な数字を使っていたため)たまたまこの退行を一度も捉えなかった。
+// フッターの合計行("Total ...")も'%'を含むため誤ってエントリとして
+// 拾われないことも確認する。
+TEST_CASE("LhaReader::parseListing: real Lhasa lha output (regression for the '*' vs '%' marker mix-up, "
+          "and the footer Total line being mistaken for an entry)") {
+  LhaReader reader;
+  std::string listing =
+      " PERMSSN    UID  GID      SIZE  RATIO     STAMP           NAME\n"
+      "---------- ----------- ------- ------ ------------ --------------------\n"
+      "[MS-DOS]   *****/*****    6421  50.3% Jun 24  1997 readme.txt\n"
+      "[MS-DOS]   *****/*****    1034  47.3% May 29  1997 server.txt\n"
+      "[MS-DOS]   *****/*****   26112  49.7% Jun 24  1997 skrwatch.exe\n"
+      "[MS-DOS]   *****/*****   25600  49.0% Jun 24  1997 sw_noras.exe\n"
+      "---------- ----------- ------- ------ ------------ --------------------\n"
+      " Total         4 files   59167  49.4% Aug 26 08:09\n";
+  auto entries = reader.parseListing(listing);
+  REQUIRE(entries.size() == 4);  // NOT 5 -- the footer Total line must be excluded
+  CHECK(entries[0].name == "readme.txt");
+  CHECK(entries[0].size == 6421);
+  CHECK(entries[1].name == "server.txt");
+  CHECK(entries[1].size == 1034);
+  CHECK(entries[2].name == "skrwatch.exe");
+  CHECK(entries[2].size == 26112);
+  CHECK(entries[3].name == "sw_noras.exe");
+  CHECK(entries[3].size == 25600);
 }
 
 TEST_CASE("LhaReader::locateContent: per-entry 3-line header is skipped") {

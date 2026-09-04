@@ -90,9 +90,18 @@ class ZipReader : public ArchiveReader {
 
 // alloc.c内の文書化されたヘッダー形式コメントからの移植(これを移植
 // する際、実際の`lha`バイナリが手元に無く実際のサンプル出力を採取
-// できなかった――代わりに使った、文書化された列レイアウトに合わせて
-// 作った合成フィクスチャについてはcpp/tests/test_archive_reader.cpp
-// 参照)。
+// できなかった――当時代わりに使った、文書化された列レイアウトに
+// 合わせて作った合成フィクスチャについてはcpp/tests/
+// test_archive_reader.cpp参照)。
+//
+// 2026-09-15追加: 実際のLhasa版`lha`(Homebrew、v0.6.0)による実機
+// 検証で、parseListing()に実在するバグを発見・修正した――UID/GID欄が
+// 不明な場合"*****/*****"のように'*'で埋められる実際の出力に対して、
+// 比率マーカー探索が'*'も候補にしていたため、本物の'%'より先にそこで
+// 誤ってマッチしていた。詳細・回帰テストはparseListing()自身のコメント
+// およびcpp/tests/test_archive_reader.cppの実機出力を貼ったテスト
+// 参照。locateContent()側(3行ヘッダー "::::::::"/ファイル名/
+// "::::::::")は同じ実機検証で形式が一致することを確認済み。
 class LhaReader : public ArchiveReader {
  public:
   std::vector<ArchiveEntry> parseListing(const std::string &listing) const override;
