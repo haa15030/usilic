@@ -7437,6 +7437,57 @@ TEST_CASE_FIXTURE(Fixture, "DU: Back from a directory opened via DU returns to t
   CHECK(app.currentMode() == ApplicationMode::Du);
 }
 
+// 2026-09-15追加、直接のユーザー報告("^Jd→.huskyを選択→pre-commit
+// を選択→^Gで行き来ループ、LOCATEでは起きない"): DU経由でディレクトリ
+// へ降りた「後」、その中で(DU経由ではなく)普通にEnterで別のファイルを
+// 開くと、そのファイルからのBackはreturnToDirectory()の「既にそこに
+// いる」早期リターン(親が既にcurrentDirectory()と一致するので
+// enterDirectory()呼び出し自体をスキップする)を通るため、DUの注釈が
+// 生き残ったままDirectoryへ戻る。以前はreturnFromDu()がGREP/CUT自身の
+// returnFromGrep()/returnFromCut()と違ってこの注釈を一度もクリアして
+// いなかったため、Directory(注釈あり)⇄Du(結果)の間で無限ループして
+// いた。returnFromDu()自身の修正コメント参照。
+TEST_CASE_FIXTURE(Fixture, "DU: opening an ORDINARY file (not via DU) from within a DU-drilled-into "
+                           "directory, then repeatedly pressing Back, terminates instead of looping forever "
+                           "between Directory and the DU results") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+
+  while (app.duMode().selectedEntry() &&
+         !(app.duMode().selectedEntry()->isDirectory &&
+           app.duMode().selectedEntry()->path.find("subdir") != std::string::npos)) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().hasSearchAnnotation());
+
+  // DU経由ではなく、普通にsub.txtをEnterで開く(openSelectedEntry()、
+  // openSelectedDuEntry()ではない)。
+  int idx = indexOf("sub.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::Back));  // File -> Directory(subdir), DU注釈がまだ残っている
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().hasSearchAnnotation());
+
+  REQUIRE(app.handleCommand(Command::Back));  // Directory(注釈あり) -> Du results
+  CHECK(app.currentMode() == ApplicationMode::Du);
+
+  REQUIRE(app.handleCommand(Command::Back));  // Du -> Directory(subdir)、ここで注釈がクリアされるはず
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK_FALSE(app.directoryMode().hasSearchAnnotation());
+
+  // これでBackはDuへ跳ね返らず、通常の親ディレクトリ探索(subdir ->
+  // root)へ進む――ループが解消されたことの直接の証拠。
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());
+}
+
 TEST_CASE_FIXTURE(Fixture, "DU: Enter on a file entry drills into FileMode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
@@ -7527,6 +7578,17 @@ TEST_CASE_FIXTURE(Fixture, "DU: filenames start at the same column across entrie
 // and unlike openSelectedGrepMatch()'s own File branch) -- the mode
 // line showed no "DU: ..." whatsoever for files opened from DU, not
 // just a truncated one. Both branches are covered here.
+//
+// 2026-09-15 correction (a real correct-mode-line comparison from the
+// user, walking back an earlier HISTORY.md:13974 misreading): the FILE
+// branch no longer uses the "DU: <label>" convention at all -- it now
+// mirrors openSelectedLocateResult()'s own setSearchOrigin("LOCATE",
+// path) precedent (setSearchOrigin("DU", entry->path) in
+// openSelectedDuEntry()), where the `name` field itself becomes the
+// literal "DU" and the trailing field carries the bare path with no
+// "DU: " prefix -- the mode NAME is what declares "you're in DU", not
+// a labeled return value. So the FILE-branch check below now looks for
+// bare "DU" (the name field surviving crowding), not "DU: ".
 TEST_CASE_FIXTURE(Fixture, "DU: 'DU: ...' annotation appears in the actual painted mode line for both "
                            "directory and file entries, even with a very long path") {
   fs::path deep = root;
@@ -7569,7 +7631,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: 'DU: ...' annotation appears in the actual paint
   REQUIRE(app.duMode().selectedEntry()->path.find("leaf.txt") != std::string::npos);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
-  CHECK(display.rowText(display.rows() - 1).find("DU: ") != std::string::npos);
+  CHECK(display.rowText(display.rows() - 1).find("DU") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "DU: Back returns to Directory mode") {

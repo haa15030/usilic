@@ -2430,6 +2430,24 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // 自体を先に切り詰めておかないと、静止中とドラッグ中とで
       // DirectoryModeの長いファイル名の見た目がまた食い違ってしまう
       // (=fe/=ffと同じ種類の退行)。
+      //
+      // 2026-09-15修正、直接のユーザー報告+スクリーンショット(=fn/
+      // =fo、DU一覧の"..."の位置が画面ドラッグの前後で変わる、LOCATE
+      // では起きない): この分岐は、ContentView::renderLine()自身の
+      // 優先順位(自身のコメント参照、ellipsisEligibleが「先」に
+      // チェックされ、highlightStartColumnはellipsisEligibleがfalseの
+      // 時だけのフォールバック)を一度も再現しておらず、highlight
+      // StartColumnの有無「だけ」でtruncateHighlightedSuffix()へ
+      // 分岐していた。DirectoryMode/ArchiveMode(highlightStartColumn
+      // はあるがellipsisEligibleは無い)ではこれで結果的に一致していた
+      // ため気づかれなかったが、DuMode(2026-09-14にクリックの左マー
+      // ジン除外用としてhighlightStartColumnを追加、しかし元々
+      // ellipsisEligible=trueも持っていた)で初めて両方を同時に持つ
+      // 呼び出し元が現れ、静止中(middleEllipsisTruncateByWidth()を
+      // 使うellipsisEligible優先の分岐)とドラッグ中(ここ、
+      // highlightStartColumnしか見ないのでtruncateHighlightedSuffix()
+      // へ流れる)とで別のアルゴリズムが使われ、"..."の挿入位置が
+      // 食い違っていた。renderLine()自身と一字一句同じ優先順位へ揃えた。
       int ellipsisBudget = view.ellipsisBudget();
       std::vector<fm::Display::ScrolledLine> lines;
       lines.reserve(view.lines().size());
@@ -2438,7 +2456,9 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         std::vector<fm::Display::AttributeRun> attrs = line.attributes;
         if (auto highlight = view.scrollHighlightForLine(static_cast<int>(i))) attrs.push_back(*highlight);
         std::string text = line.text;
-        if (line.highlightStartColumn.has_value() && static_cast<int>(text.size()) > ellipsisBudget) {
+        if (line.ellipsisEligible && static_cast<int>(text.size()) > ellipsisBudget) {
+          text = fm::middleEllipsisTruncateByWidth(text, ellipsisBudget);
+        } else if (line.highlightStartColumn.has_value() && static_cast<int>(text.size()) > ellipsisBudget) {
           text = fm::truncateHighlightedSuffix(text, std::max(0, *line.highlightStartColumn), ellipsisBudget);
         }
         lines.push_back({std::move(text), std::move(attrs), line.ellipsisEligible});

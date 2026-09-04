@@ -1540,25 +1540,24 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // (openSelectedDuEntry()参照、あちらはnameが"DU"を名乗っていない
     // 別モードなのでラベルが要る)。
     //
-    // 併せて2件:
-    // (1) 「パディングが無い」(HISTORY.md:9473「基本的に右端まで
-    //     埋まっていないモードラインは全部不良」そのもの): 前回の
-    //     修正はfillTrailingToEdge=falseのまま出していた。LOCATE
-    //     自身の同種のプロバイダ(すぐ上)に合わせtrueへ。
-    // (2) 「戻り値が全部<集計対象ルート>では意味が無い」:
-    //     duMode_.currentPath()(集計対象のルート)は、一覧中のどの
-    //     行にカーソルがあっても常に同じ文字列にしかならず、実際に
-    //     選んでいるエントリの居場所を示していなかった。具体例:
-    //     `4K  .../.husky/pre-commit`を選択したら`.../.husky/`
-    //     (そのファイルの入っているフォルダー)であるべき――
-    //     duEntryFolder()自身のコメント参照(この関数とopenSelected
-    //     DuEntry()の両方で共有)。
-    std::string folder = duMode_.currentPath();
-    if (const DuEntry *selected = duMode_.selectedEntry()) folder = duEntryFolder(*selected);
+    // 「パディングが無い」(HISTORY.md:9473「基本的に右端まで埋まって
+    // いないモードラインは全部不良」そのもの): 前回の修正は
+    // fillTrailingToEdge=falseのまま出していた。LOCATE自身の同種の
+    // プロバイダ(すぐ上)に合わせtrueへ。
+    //
+    // 2026-09-15修正、直接のユーザー訂正("DU画面でハイライト行を
+    // 移動させると戻り値も変化する。正しくは^Jdを実行した場所
+    // （/Users/haa15030/git/usilic/）のままでいい"): 直前の版は
+    // duMode_.selectedEntry()を使い、カーソル移動のたびにduEntryFolder()
+    // で再計算していたが、これは撤回された仕様だった――DU自身の画面の
+    // trailing3は、集計対象のルート(duMode_.currentPath())に固定
+    // でよく、ハイライト中のエントリに連動させる必要は無い(その連動は
+    // openSelectedDuEntry()側――実際にエントリを開いた「後」の戻り先
+    // 表示でだけ必要、setSearchOrigin()自身のコメント参照)。
     ContentView::ModeLineFields fields{"DU", std::to_string(contentByteCount(duView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/""};
-    fields.trailing3 = folder;
+    fields.trailing3 = duMode_.currentPath();
     return fields;
   });
   // archiveContentView_は、すぐ上で使われている素のバイト数だけの形
@@ -3871,12 +3870,19 @@ bool Application::openSelectedDuEntry() {
   // 注釈が無いままだと、Backでは正しくDUへ戻れていたにも関わらず、
   // モードライン自身には「DU: ...」が一切表示されていなかった。
   //
-  // 2026-09-14修正(duEntryFolder()自身のコメント参照): duMode_.
-  // currentPath()(集計対象のルート)固定だったのを、実機での正解
-  // モードライン提示("pre-commit"を開いたらDU: .../.husky/であって
-  // 集計対象ルートの.../usilic/ではない)を踏まえ、このファイル自身の
-  // 親フォルダーへ変更した。
-  fileMode_.setSearchAnnotation("DU: " + duEntryFolder(*entry));
+  // 2026-09-15修正、直接のユーザー訂正("HISTORY.md:13974は勘違い、
+  // 正解は「DU」「1/2 TOP」「34」「.../.husky/pre-commit」――所在地が
+  // DUであることの表明は戻り値ではなくモード名でなされる"): 前回まで
+  // setSearchAnnotation("DU: "+folder)(name=ファイル名のまま、
+  // trailing2にラベル付きの文字列を割り込ませる、GREP/CUT自身の
+  // 慣習)を使っていたが、これはopenSelectedLocateResult()自身が既に
+  // 確立していたsetSearchOrigin()の慣習(name「自体」をラベルへ
+  // 差し替え、詳細は素のパスのみ――"LOCATE: "の接頭辞を付けない、
+  // ラベル自体が既にLOCATEだと言っているから、を字句通りDUに置き
+  // 換えた形)と食い違っていた。setSearchOrigin("DU", entry->path)へ
+  // 切り替え、name="DU"+詳細=素の絶対パスという、LOCATEと全く同じ
+  // 慣習に揃えた。
+  fileMode_.setSearchOrigin("DU", entry->path);
   // loadFile()は、上の注釈が設定される「前」に既に内部で一度再描画
   // している(view_.redraw()、FileMode::loadFile()自身の実装参照)
   // ――openSelectedDuEntry()自身のディレクトリ側の分岐が
@@ -4835,6 +4841,26 @@ bool Application::returnFromArchive() {
 
 bool Application::returnFromDu() {
   duMode_.saveCursorPosition();
+  // 2026-09-15追加、直接のユーザー報告("^Jd→.huskyを選択→pre-commit
+  // を選択→^Gで行き来ループ、LOCATEでは起きない"): returnFromGrep()/
+  // returnFromCut()自身の同一のsetSearchAnnotation("")呼び出し(すぐ
+  // 上及びこのファイルの他の箇所参照、"そうしないと、^Gは実際には
+  // プレーンな(ls)へ決して脱出せず、2つの画面の間で永遠にループして
+  // しまう")がここには一度も無かった。再現の実際の経路: ^Jdで
+  // ディレクトリエントリを開く(openSelectedDuEntry()、
+  // directoryMode_.setSearchAnnotation("DU: ...")を設定)→その
+  // ディレクトリ内で「別の」ファイルを普通にEnterで開く
+  // (openSelectedEntry()、DU由来ではない通常の遷移なのでこの注釈には
+  // 一切触れない)→^G(returnToDirectory()、開いたファイルの親が
+  // 既にcurrentDirectory()と一致するため「戻る」の内部
+  // enterDirectory()呼び出し自体がスキップされ、注釈はここでも
+  // 生き残る)→directoryMode_.hasSearchAnnotation()がまだtrueなので
+  // 次の^Gはここ(returnFromDu())へ戻ってくるが、以前はここで注釈を
+  // 一切クリアしていなかったため、次のDirectory側の^Gが再びここへ
+  // 跳ね返り続けていた。GREP/CUTと同じ形で、ここを離れる際に無条件で
+  // クリアする(DUは常にDirectoryへ戻るので、GREP自身の
+  // grepReturnMode_==Directoryのような条件分岐は不要)。
+  directoryMode_.setSearchAnnotation("");
   currentMode_ = ApplicationMode::Directory;
   directoryView_.redraw();
   return true;
