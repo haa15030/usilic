@@ -1518,8 +1518,24 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // disp.cのdisp_window()の修正参照)。
   manView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (manMode_.currentPage().empty()) return {};
-    return {"MAN", std::to_string(contentByteCount(manView_)), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
-            /*trailing2=*/"(man)"};
+    // 2026-09-15修正、直接のユーザー指摘("戻り値は？MANもNGだった
+    // ような…"): HELP.jp自身のmode-line図([6]="以前のモード名または
+    // ファイル名...^Gでそこへ戻ります")に照らすと、MAN自身の画面は
+    // これまでこのフィールドを一切持っていなかった――DU(trailing3=
+    // currentPath())/LOCATE(trailing2="LOCATE: query")/ARC(trailing3=
+    // currentArchive_)は同種の戻り値をとうに持っていたのに、MANだけ
+    // 取り残されていた。今やMAN自身の戻り先はGroup1方針により常に
+    // 基点のDirectoryなので、そこ(directoryMode_.currentDirectory())
+    // をtrailing3へ表示する――DU自身の同じ無接頭辞の慣習(nameが既に
+    // "MAN"だと言っているので"MAN: "接頭辞は付けない)に揃えた。
+    // あわせてfillTrailingToEdgeもtrueへ(HISTORY.md:9473「基本的に
+    // 右端まで埋まっていないモードラインは全部不良」――これも同じ
+    // 見落としだった)。
+    ContentView::ModeLineFields fields{"MAN", std::to_string(contentByteCount(manView_)),
+                                        /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
+                                        /*trailing2=*/"(man)"};
+    fields.trailing3 = directoryMode_.currentDirectory();
+    return fields;
   });
   // 2026-08-14修正、それから同日に訂正: 実際の報告("^J^L→'.txt'
   // [return]→戻り値「LOCATE: .txt」が無い")により、GREP自身の結果

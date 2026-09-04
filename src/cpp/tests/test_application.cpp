@@ -2395,6 +2395,27 @@ TEST_CASE_FIXTURE(Fixture, "MAN: mode line shows 'MAN' and a byte count once a p
   CHECK(modeLine.find(std::to_string(expectedBytes)) != std::string::npos);
 }
 
+// 2026-09-15追加、直接のユーザー指摘("戻り値は？MANもNGだったような
+// …"): HELP.jp自身のmode-line図([6]="以前のモード名またはファイル
+// 名...^Gでそこへ戻ります")に照らすと、MAN自身の画面はこのフィールド
+// を一切持っていなかった(DU/LOCATE/ARCは同種の戻り値をとうに持って
+// いたのに、MANだけ取り残されていた)。今やMAN自身の戻り先は常に
+// 基点のDirectoryなので、それ(directoryMode_.currentDirectory())を
+// trailing3として表示するようにした。
+TEST_CASE_FIXTURE(Fixture, "MAN: mode line shows the Directory it will return to via trailing3 (HELP.jp's "
+                           "own mode-line field [6], previously missing entirely for MAN)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartMan));
+  feedText("ls");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("man not installed or 'ls' has no man page here -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Man);
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find(app.directoryMode().currentDirectory()) != std::string::npos);
+}
+
 // 2026-09-15修正、直接のユーザー方針("MAN、LOCATE、DU等はそれ自体が
 // 完結していて...基点の棲み分けで言えば、前者群がDirectory"): LOCATE
 // 自身の同種のテスト修正と全く同じ理屈――以前はcurrentMode_(呼び出し
