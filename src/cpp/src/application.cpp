@@ -6390,6 +6390,20 @@ std::vector<std::string> Application::buildArchiveExtractArgv(const std::string 
     argv.push_back(destination);
     return argv;
   }
+  if (kind == ArchiveKind::SevenZip) {
+    // 2026-09-04追加、上のクラス宣言コメント参照。escapeArchiveMemberPattern()
+    // をここでは使わない――それはtar/unzip自身のシェルスタイルglob構文
+    // (`\*?[]{}`)向けであり、実際の`7z`バイナリで直接確認した通り、7z
+    // 自身の`[...]`はそもそもglobの文字クラスとして解釈されない(常に
+    // リテラル一致)。それにも関わらずバックスラッシュを前置すると、7z
+    // はそれをファイル名の一部として字面通りに探しにいってしまい、
+    // 実在するはずのエントリが「マッチ無し」で静かに展開されなくなる
+    // (`abc[1].txt`で実機確認済み: エスケープ無しは成功、
+    // `abc\[1\].txt`は"No files to process")。
+    std::vector<std::string> argv = {"7z", "x", archivePath, "-o" + destination, "-y"};
+    for (const auto &m : members) argv.push_back(m);
+    return argv;
+  }
   return {};  // Lha/Rpm/Deb/Bzip2――この最初のスライスではサポートされない、クラス自身の宣言コメント参照
 }
 

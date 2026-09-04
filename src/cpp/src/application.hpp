@@ -1893,16 +1893,26 @@ class Application {
   // (例えばDirectoryモードで非アーカイブファイルが選択されている)
   // 場合はfalse(拒否)。
   bool startArchivePrompt();
-  // `kind`(この最初の一切れではTarとZipだけ――Lha自身の展開構文は
+  // `kind`(Tar/Zip/SevenZipに対応――Lha自身の展開構文は
   // extractSelected()が使う`lha p`の標準出力への展開コマンドとは
   // 異なり、Rpm/Debには既にlocateContent()サポートが全く無い、
   // ArchiveMode自身のクラスコメント参照。これらのフォーマットへ
   // 拡張することは将来の課題であり、ここで推測されてはいない)の
   // ための展開argvを構築する。`members`が空は「アーカイブ全体」を
   // 意味する。空でなければ「これらのエントリだけ」を意味する
-  // (tar/unzipは両方とも、まさにこのために末尾のメンバー名の
-  // 引数を受け付ける)。サポートされていないkindに対しては空の
-  // 結果。
+  // (tar/unzip/7zはいずれも、まさにこのために末尾のメンバー名の
+  // 引数を受け付ける――members中の1件がディレクトリエントリ
+  // (isDirectory)自身の名前であっても、3ツールとも自動的にその
+  // 配下を再帰的に展開する。2026-09-04、ユーザーからの直接の質問
+  // 「.7zの0バイトの構成員(ディレクトリ)だけをそれ単体で展開
+  // できるか」を受け、実際の`7z`バイナリ(Homebrew、p7zip 17.05)
+  // で`7z x archive.7z -o<dest> -y <dirname>`を直接検証して確認
+  // 済み――ネストしたサブディレクトリを含め、配下のファイルが
+  // 全て正しいパスで展開された)。サポートされていないkindに
+  // 対しては空の結果。
+  //
+  // 7zのmembersはescapeArchiveMemberPattern()を通さない
+  // (tar/unzipとは異なる、下のSevenZip分岐自身のコメント参照)。
   std::vector<std::string> buildArchiveExtractArgv(const std::string &archivePath, ArchiveKind kind,
                                                     const std::vector<std::string> &members,
                                                     const std::string &destination) const;
