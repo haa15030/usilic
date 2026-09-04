@@ -2424,19 +2424,45 @@ TEST_CASE_FIXTURE(Fixture, "MAN: mode line shows the Directory it will return to
   CHECK(modeLine.find(app.directoryMode().currentDirectory()) != std::string::npos);
 }
 
-// 2026-09-15修正、直接のユーザー方針("MAN、LOCATE、DU等はそれ自体が
-// 完結していて...基点の棲み分けで言えば、前者群がDirectory"): LOCATE
-// 自身の同種のテスト修正と全く同じ理屈――以前はcurrentMode_(呼び出し
-// 時にたまたまいたモード)をそのまま記憶し、Backでそこへ戻っていたが、
-// MAN/LOCATE/DUは「自己完結した」目的地であり、発動元がどこであれ
-// 常に基点のDirectoryへ戻るべき。
-TEST_CASE_FIXTURE(Fixture, "MAN: ^G always returns to the base Directory mode, discarding whichever mode "
-                           "the prompt was started from") {
+// 2026-09-19再訂正、直接のユーザー方針の転換("MANを使ってみて思うのは、
+// 通常ファイルを閲覧中にMANを発動した場合、そこへ戻る方が自然な気が
+// する。読書でも注釈参照後は元の場所へ戻るように"): 2026-09-15の
+// 「MAN/LOCATE/DUは自己完結した目的地であり、発動元がどこであれ常に
+// 基点のDirectoryへ戻るべき」という判断(すぐ下のテストがかつて検証
+// していたもの)を撤回する。nearestFileOrDirectoryAnchor()自身の
+// コメント参照――HELP/KEY/SHELLの「全モード」棲み分けとは別に、MAN/
+// LOCATE/DUは「通常ファイルかディレクトリ」を発動元から遡って基点
+// とする。
+TEST_CASE_FIXTURE(Fixture, "MAN: ^G returns to the normal FILE it was invoked from (not the base Directory), "
+                           "matching a footnote returning to the page it was opened from") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string filePath = app.fileMode().currentFile();
+
+  REQUIRE(app.handleCommand(Command::StartMan));
+  feedText("ls");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("man not installed or 'ls' has no man page here -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Man);
+  CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == filePath);
+}
+
+// MAN invoked directly from Directory (not from a normal file) still
+// resolves its own base to Directory -- nearestFileOrDirectoryAnchor()
+// returns currentMode_ itself (already a valid anchor) without any
+// further indirection needed.
+TEST_CASE_FIXTURE(Fixture, "MAN: ^G returns to the base Directory mode when invoked directly from Directory") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
 
   REQUIRE(app.handleCommand(Command::StartMan));
   feedText("ls");
@@ -3071,17 +3097,18 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line shows 'LOCATE' and a byte count on
 }
 
 // 2026-08-14 fix: a real report ("^J^L→'.txt'[return]→戻り値「LOCATE:
-// .txt」が無い") -- the results screen's own name used to be the bare
-// literal "LOCATE", with nowhere at all showing what was actually
-// searched (unlike GREP's own results screen convention, see
-// DirectoryMode::setSearchAnnotation()'s callers). See
-// locateView_'s setModeLineFieldsProvider() in the Application
-// constructor for the fix itself.
-TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line's trailing2 (\"LOCATE: <query>\") is padded with spaces to the "
-                           "row's right edge, matching every other directory-shaped trailing2 (2026-08-16 fix: "
-                           "a real report + direct comparison against a working example -- \"戻り値がディレクト "
-                           "リ名の時は左詰め、空きもちゃんとスペースで埋めるてるのに、なぜ「LOCATE: .txt」で "
-                           "そうならないのか\")") {
+// .txt」が無い") -- the results screen's own trailing2 used to be
+// entirely empty. 2026-09-19 re-reversal, a direct user report +
+// comparison against GREP's own equivalent fix ("あらたな重複発見...
+// 反映はGREPのケースと同じでいいんだが...発動元のファイルもしくは
+// ディレクトリでお願いしたい"): showing "LOCATE: <query>" here read as
+// the exact same "same word twice" duplication just fixed for GREP
+// (name is already the literal "LOCATE"). Now shows the resolved
+// return anchor (nearestFileOrDirectoryAnchor(), bare, no prefix) --
+// this fixture starts and searches directly from Directory, so the
+// anchor is the current directory.
+TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line's trailing2 shows the resolved return anchor (bare, no "
+                           "\"LOCATE: \" prefix), padded with spaces to the row's right edge") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartLocate));
   feedText(".txt");
@@ -3090,24 +3117,14 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line's trailing2 (\"LOCATE: <query>\") 
     return;
   }
   REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  std::string anchor = app.directoryMode().currentDirectory();
   std::string row = display.rowText(23);
-  std::size_t pos = row.find("LOCATE: .txt");
+  CHECK(row.find("LOCATE: .txt") == std::string::npos);  // the old, now-redundant convention
+  std::size_t pos = row.find(anchor);
   REQUIRE(pos != std::string::npos);
-  std::string afterQuery = row.substr(pos + std::string("LOCATE: .txt").size());
-  CHECK(afterQuery.size() > 4);                                    // padded well past a single trailing space
-  CHECK(afterQuery.find_first_not_of(' ') == std::string::npos);   // and it's ALL spaces, reaching the row's edge
-}
-
-TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line's name field is \"LOCATE: <query>\", not the bare literal \"LOCATE\"") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartLocate));
-  feedText(".txt");
-  if (!app.feedByte(0x0d, std::nullopt)) {
-    MESSAGE("locate not installed or no database available -- skipping");
-    return;
-  }
-  REQUIRE(app.currentMode() == ApplicationMode::Locate);
-  CHECK(app.activeContentView().modeLineText().find("LOCATE: .txt") != std::string::npos);
+  std::string afterAnchor = row.substr(pos + anchor.size());
+  CHECK(afterAnchor.size() > 4);                                    // padded well past a single trailing space
+  CHECK(afterAnchor.find_first_not_of(' ') == std::string::npos);   // and it's ALL spaces, reaching the row's edge
 }
 
 // 2026-08-18 fix: a real report ("^J^L'.txt'[return]=co→^S'.txt'[return]
@@ -3218,22 +3235,16 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: submitting the seeded query unchanged redisp
   CHECK(app.locateMode().results() == firstResults);
 }
 
-// 2026-09-15修正、直接のユーザー方針("基本的に、SHELLも含めどの
-// モードからでも他のモードへ移行可能。ただし移行先では移行元に関する
-// 履歴を失う"、具体例: "MANからLOCATEへの移行に関しては^G連打でMANへ
-// 戻ってしまい...方針にそぐわない"): 以前はここでcurrentMode_(呼び出し
-// 時にたまたまいたモード)をそのまま記憶し、Backでそこへ戻っていたが、
-// これは方針が明示的に禁じている「移行元の履歴」の保持そのものだった。
-// DuMode自身のreturnFromDu()が既に一貫してApplicationMode::Directory
-// へ戻る(この方針と噛み合っていた)のと揃え、LOCATEも常に基点の
-// Directoryへ戻るよう変更した――どのモードから起動しても、である。
-TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G always returns to the base Directory mode, discarding whichever mode "
-                           "the prompt was started from") {
+// 2026-09-19再訂正、MAN自身の同種のテストの直上のコメントと同じ方針
+// 転換――2026-09-15の「常に基点のDirectory」という判断を撤回する。
+TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G returns to the normal FILE it was invoked from (not the base "
+                           "Directory)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string filePath = app.fileMode().currentFile();
 
   REQUIRE(app.handleCommand(Command::StartLocate));
   feedText("/");
@@ -3242,17 +3253,24 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G always returns to the base Directory mode
     return;
   }
   REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
 
   REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == filePath);
 }
 
-// 2026-09-15追加、直接のユーザー報告の具体例そのもの("MANからLOCATE
-// への移行に関しては^G連打でMANへ戻ってしまい...方針にそぐわない")。
-// すぐ上のFile版と同じ修正だが、ユーザー自身が名指しした具体例(MAN)を
-// 直接カバーする。
-TEST_CASE_FIXTURE(Fixture, "LOCATE: started from Man mode, ^G returns to the base Directory mode, not back "
-                           "to Man") {
+// 2026-09-19の方針転換後も、この特定のシナリオの期待値自体は変わらない
+// (このテストがまだ生きている理由): MANはDirectoryから素で発動されて
+// おり(nearestFileOrDirectoryAnchor()はcurrentMode_自体が既に
+// Directoryなのでそのまま返す)、manReturnMode_=Directory。その状態で
+// LOCATEを発動すると、nearestFileOrDirectoryAnchor()はcurrentMode_
+// (Man)→manReturnMode_(Directory、終端)と辿り、やはりDirectoryへ
+// 行き着く――「MANを飛び越えてDirectoryへ」という2026-09-15の元々の
+// 報告そのものが、新しい遡り方式でも(この特定の入れ子では)同じ結論
+// になる好例。
+TEST_CASE_FIXTURE(Fixture, "LOCATE: started from Man mode (itself started from Directory), ^G returns to "
+                           "the base Directory mode, not back to Man") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartMan));
   feedText("ls");
@@ -7557,6 +7575,32 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): from File mode, tallies the 
   CHECK(sawSubTxt);  // tallied subdir/ (sub.txt's own folder), not path() itself
 }
 
+// 2026-09-19追加、MAN/LOCATE自身の同種のテストと対をなすDU版――直接の
+// ユーザー方針の転換("MANを使ってみて思うのは、通常ファイルを閲覧中に
+// MANを発動した場合、そこへ戻る方が自然な気がする")の対象にDUも
+// 含まれる(nearestFileOrDirectoryAnchor()自身のコメント、"通常ファイル
+// かディレクトリ"棲み分け)。DUが集計する対象フォルダ(sub.txtの親、
+// すぐ上のテストと同じ)と、DU自身の戻り先(sub.txt自身、この
+// テストの主眼)は別物であることに注意。
+TEST_CASE_FIXTURE(Fixture, "DU: ^G returns to the normal FILE it was invoked from (not the base Directory)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/
+  idx = indexOf("sub.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // open sub.txt as a FILE
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string filePath = app.fileMode().currentFile();
+
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == filePath);
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): refused outside Directory/File mode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));  // enter Du mode itself first
@@ -10649,7 +10693,10 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Locate mode: the results screen la
 
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Locate);
-  CHECK(app.activeContentView().modeLineText().find("LOCATE: .md") != std::string::npos);  // reset, not stale "GREP:"
+  // reset, not stale "GREP: .md" -- locateReturnMode_ back to its
+  // resolved anchor (this fixture searched directly from Directory).
+  CHECK(app.activeContentView().modeLineText().find(app.directoryMode().currentDirectory()) != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("GREP: .md") == std::string::npos);
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
@@ -10682,4 +10729,38 @@ TEST_CASE_FIXTURE(Fixture, "GREP prompt started from Locate mode, before any pat
   CHECK(app.promptActive());
   const std::string &row = display.rowText(display.rows() - 1);
   CHECK(row.find("LOCATE: .md") != std::string::npos);
+}
+
+// 2026-09-19追加、直接のユーザー質問("もう一点、SHELL画面でのGREPは
+// 可能なの？"): startGrepPrompt()自体はcurrentMode_ == Grep以外なら
+// 常に許可しており(Shellを特に排除していない)、viewForMode(Shell)も
+// 既にshell_.scrollback()を返すので、構造上は既に可能なはず――doctest
+// で実際に確認した。副産物として、grepView_自身のtrailing3にShell
+// 起点の分岐が一切無く(Man/Locate/Duと同じ穴)、検索は成功するのに
+// 戻り値欄だけ空欄になる見落としも見つかったので併せて直した。
+TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell's own scrollback and shows "
+                           "\"SHELL\" as the results screen's origin label") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  app.shell().commandLine().setText("printf 'SHELLGREPTESTMARKER\\n'");
+  app.shell().submitLine();
+  bool sawOutput = pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("SHELLGREPTESTMARKER") != std::string::npos) return true;
+    return false;
+  });
+  REQUIRE(sawOutput);
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+
+  REQUIRE(app.handleCommand(Command::StartGrep));
+  REQUIRE(app.promptActive());
+  feedText("SHELLGREPTESTMARKER");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 1);
+  CHECK(app.activeContentView().modeLineText().find("SHELL") != std::string::npos);
 }

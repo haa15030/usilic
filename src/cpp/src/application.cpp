@@ -1476,6 +1476,17 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     } else if (grepReturnMode_ == ApplicationMode::Du) {
       // 同じ穴、DU版。
       path = "DU: " + duMode_.currentPath();
+    } else if (grepReturnMode_ == ApplicationMode::Shell) {
+      // 2026-09-19追加、直接のユーザー質問("SHELL画面でのGREPは可能
+      // なの？"): 実際にdoctestで確認――SHELLのscrollbackから
+      // startGrepPrompt()経由でGREPを起動でき、検索も正しく実行
+      // される(既にviewForMode(Shell)がshell_.scrollback()を返す、
+      // executeGrep()自身のコメント参照)。ただしこの起点ラベルの
+      // 分岐だけがMan/Locate/Duと同様に無かった。previousModeName()
+      // 自身のShellケースがまさに返すリテラル"SHELL"を再利用する
+      // (Shell自身にMan/Locate/DuのようなQuery/Pageに相当する固有の
+      // 状態は無い)。
+      path = previousModeName(ApplicationMode::Shell);
     }
     // 2026-08-23修正、直接のユーザー報告("FGREPのモードラインで戻り値
     // の位置が(fgrep)と逆"): trailing2/trailing3は、このまさに「プログ
@@ -1582,10 +1593,15 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // manReturnMode_が一時的にGrepへ上書きされるので、ここでもそれを
     // 反映しないと、実際の戻り先(Grep結果一覧)と食い違う古い
     // Directoryパスを表示し続けてしまう。
+    // 2026-09-19再訂正、直接のユーザー方針の転換(nearestFileOrDirectoryAnchor()
+    // 自身のコメント参照): manReturnMode_はもはや常にDirectoryとは
+    // 限らない(通常ファイルから発動していればFile)ので、
+    // directoryMode_.currentDirectory()決め打ちをpreviousModeName()
+    // 経由の汎用解決へ一般化する。
     if (manReturnMode_ == ApplicationMode::Grep) {
       fields.trailing3 = std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern();
     } else {
-      fields.trailing3 = directoryMode_.currentDirectory();
+      fields.trailing3 = previousModeName(manReturnMode_);
     }
     return fields;
   });
@@ -1618,21 +1634,20 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // ない。
   locateView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (locateMode_.query().empty()) return {};
-    // 2026-09-19修正、直接のユーザー報告("LOCATEもおかしいみたい...
-    // →`usilic^M^M`→戻り値不良→「GREP: usilic      」"): manView_
-    // 自身の同日の同種の修正と全く同じ理屈――ここでのtrailing2は
-    // これまで無条件に"LOCATE: <query>"(このLOCATE画面「自身」の
-    // 検索語、自己参照的な「今どこにいるか」表示)だったが、
-    // openSelectedGrepMatch()自身のLocate分岐(それ自身のコメント
-    // 参照)がGREPの結果からLOCATE内のマッチへ着地した際に
-    // locateReturnMode_を一時的にGrepへ上書きするので、その場合は
-    // 実際の^Gの戻り先(検索結果一覧)を反映した"GREP: <pattern>"を
-    // 表示する必要がある――そうしないと、実際にはGrep結果一覧へ
-    // 戻るはずの画面が、依然としてLOCATE自身のクエリを名乗り続けて
-    // しまう。
+    // 2026-09-19再訂正、直接のユーザー報告+比較("あらたな重複発見"、
+    // 実機の「LOCATE」「LOCATE: .md」――GREPの時と同じ「同一単語が
+    // 2度出る」問題): 同日の直前の修正は"LOCATE: <query>"を
+    // "GREP: <pattern>"に分岐させただけで、Grepの上書きが無い「素の」
+    // LOCATE画面自体は依然として"LOCATE: <query>"のまま――nameが既に
+    // "LOCATE"なので、これも同じ重複だった。直接のユーザー方針("GREPと
+    // 同じく、発動元のファイルもしくはディレクトリで"): クエリ文字列
+    // 自体はもう表示せず、manView_と全く同じ形で、実際の^Gの戻り先
+    // (nearestFileOrDirectoryAnchor()により解決されたlocateReturnMode_、
+    // Fileなら生のファイルパス、Directoryなら生のディレクトリパス、
+    // どちらも"LOCATE: "接頭辞は付けない)を表示する。
     std::string trailing2 = locateReturnMode_ == ApplicationMode::Grep
                                  ? std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern()
-                                 : "LOCATE: " + locateMode_.query();
+                                 : previousModeName(locateReturnMode_);
     return {"LOCATE", std::to_string(contentByteCount(locateView_)), /*fillTrailingToEdge=*/true,
             /*rightWatermark=*/"", trailing2};
   });
@@ -5018,11 +5033,16 @@ bool Application::returnFromDu() {
   // 次の^Gはここ(returnFromDu())へ戻ってくるが、以前はここで注釈を
   // 一切クリアしていなかったため、次のDirectory側の^Gが再びここへ
   // 跳ね返り続けていた。GREP/CUTと同じ形で、ここを離れる際に無条件で
-  // クリアする(DUは常にDirectoryへ戻るので、GREP自身の
-  // grepReturnMode_==Directoryのような条件分岐は不要)。
+  // クリアする(この注釈はopenSelectedDuEntry()自身のディレクトリ
+  // エントリ分岐だけが設定するもので、duReturnMode_がFileの場合でも
+  // 無関係かつ無害――directoryMode_自身の状態なので、Fileへ戻る時は
+  // どのみち参照されない)。
   directoryMode_.setSearchAnnotation("");
-  currentMode_ = ApplicationMode::Directory;
-  directoryView_.redraw();
+  // 2026-09-19修正、startManPrompt()/startLocatePrompt()自身のコメント
+  // と同じ方針転換――以前はここでApplicationMode::Directoryへ無条件に
+  // 固定していた(duReturnMode_という変数自体が存在しなかった)。
+  currentMode_ = duReturnMode_;
+  activeView().redraw();
   return true;
 }
 
@@ -5483,6 +5503,56 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     default:
       return "";
   }
+}
+
+// application.hpp自身の宣言コメント参照。currentMode_から出発し、
+// File/Directoryに行き着くまで、各モード自身の*ReturnMode_を辿る。
+// Archive/ArchiveContentはreturnFromArchive()自身の確立された終着点
+// (常にDirectory)を直接返す――archiveParentStack_というそれ専用の
+// 機構は単純な*ReturnMode_変数ではないため、ここでは辿らない。
+ApplicationMode Application::nearestFileOrDirectoryAnchor() const {
+  ApplicationMode mode = currentMode_;
+  for (int guard = 0; guard < 16; guard++) {
+    switch (mode) {
+      case ApplicationMode::File:
+      case ApplicationMode::Directory:
+        return mode;
+      case ApplicationMode::Archive:
+      case ApplicationMode::ArchiveContent:
+        return ApplicationMode::Directory;
+      case ApplicationMode::Grep:
+        mode = grepReturnMode_;
+        break;
+      case ApplicationMode::Cut:
+      case ApplicationMode::CutContent:
+        mode = cutReturnMode_;
+        break;
+      case ApplicationMode::Man:
+        mode = manReturnMode_;
+        break;
+      case ApplicationMode::Locate:
+        mode = locateReturnMode_;
+        break;
+      case ApplicationMode::Du:
+        mode = duReturnMode_;
+        break;
+      case ApplicationMode::Key:
+        mode = keyReturnMode_;
+        break;
+      case ApplicationMode::Copy:
+        mode = copyReturnMode_;
+        break;
+      case ApplicationMode::ListBrowser:
+        mode = listBrowserReturnMode_;
+        break;
+      case ApplicationMode::Shell:
+        mode = shellReturnMode_;
+        break;
+      default:
+        return ApplicationMode::Directory;
+    }
+  }
+  return ApplicationMode::Directory;  // 保険――上の各*ReturnMode_は常に「より外側」を指すはずで、実際にはここへ到達しない
 }
 
 std::string Application::cutContentReturnLabel() const {
@@ -6424,6 +6494,11 @@ bool Application::runDuOnCurrentFolder() {
   } else {
     return false;
   }
+  // 2026-09-19追加、startManPrompt()/startLocatePrompt()自身のコメント
+  // と同じ方針転換: 以前はduReturnMode_という変数自体が無く、
+  // returnFromDu()が常にDirectoryへハードコートされていたが、MAN/
+  // LOCATEと同じ「通常ファイルかディレクトリ」棲み分けに揃える。
+  duReturnMode_ = nearestFileOrDirectoryAnchor();
   return executeDu(folder);
 }
 
@@ -7305,13 +7380,14 @@ bool Application::startCutFilePrompt(GrepSyntax syntax) {
 // ^Gは、その直前に見ていたページへではなく、その外出が元々始まった
 // 場所へ依然として戻る。
 bool Application::startManPrompt() {
-  // 2026-09-15修正、直接のユーザー方針("MAN、LOCATE、DU等はそれ自体
-  // が完結していて...基点の棲み分けで言えば、前者群がDirectory"):
-  // 以前はここでcurrentMode_(呼び出し時にたまたまいたモード)をその
-  // まま記憶していたが、MAN/LOCATE/DUは「自己完結した」目的地であり、
-  // 発動元がどこであれ常に基点のDirectoryへ戻るべき――LOCATE自身の
-  // startLocatePrompt()に加えたのと同じ修正。
-  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = ApplicationMode::Directory;
+  // 2026-09-19再訂正、直接のユーザー方針の転換("MANを使ってみて思う
+  // のは、通常ファイルを閲覧中にMANを発動した場合、そこへ戻る方が
+  // 自然な気がする。読書でも注釈参照後は元の場所へ戻るように"):
+  // 2026-09-15の「MAN/LOCATE/DUは自己完結した目的地であり、発動元が
+  // どこであれ常に基点のDirectoryへ戻るべき」という判断を撤回する。
+  // nearestFileOrDirectoryAnchor()自身のコメント参照――「通常ファイル
+  // かディレクトリ」を発動元自体からたどって遡る。
+  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = nearestFileOrDirectoryAnchor();
   activatePrompt(PromptKind::ManName, "");
   return true;
 }
@@ -7330,13 +7406,9 @@ bool Application::startManPrompt() {
 // manReturnMode_自体には触れず、currentMode_だけに触れるので必要
 // である。
 bool Application::startManList() {
-  // 2026-09-15修正、直接のユーザー方針("MAN、LOCATE、DU等はそれ自体
-  // が完結していて...基点の棲み分けで言えば、前者群がDirectory"):
-  // 以前はここでcurrentMode_(呼び出し時にたまたまいたモード)をその
-  // まま記憶していたが、MAN/LOCATE/DUは「自己完結した」目的地であり、
-  // 発動元がどこであれ常に基点のDirectoryへ戻るべき――LOCATE自身の
-  // startLocatePrompt()に加えたのと同じ修正。
-  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = ApplicationMode::Directory;
+  // 2026-09-19再訂正、startManPrompt()自身の直上のコメント参照――
+  // 2026-09-15の「常に基点のDirectory」という判断を撤回する。
+  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = nearestFileOrDirectoryAnchor();
   return startRegexPromptList(PromptKind::ManName);
 }
 
@@ -7436,17 +7508,10 @@ bool Application::startProgramList() { return startRegexPromptList(PromptKind::P
 // 自身のコメント参照)。
 bool Application::startLocatePrompt() {
   if (currentMode_ == ApplicationMode::Locate) return false;
-  // 2026-09-15修正、直接のユーザー方針("基本的に、SHELLも含めどの
-  // モードからでも他のモードへ移行可能。ただし移行先では移行元に
-  // 関する履歴を失う"、具体例: "MANからLOCATEへの移行に関しては
-  // ^G連打でMANへ戻ってしまい...方針にそぐわない"): 以前は
-  // currentMode_(呼び出し時にたまたまいたモード――MAN等も含む)を
-  // そのまま記憶していたが、これは方針が明示的に禁じている「移行元
-  // の履歴」の保持そのものだった。DuMode自身のreturnFromDu()が
-  // 既に一貫してApplicationMode::Directoryへ戻る(この方針と噛み
-  // 合っていたため、DU自身の戻り値は問題として報告されなかった)のと
-  // 揃え、LOCATEも常に基点のDirectoryへ戻るよう固定した。
-  locateReturnMode_ = ApplicationMode::Directory;
+  // 2026-09-19再訂正、startManPrompt()自身のコメント参照――2026-09-15
+  // の「常に基点のDirectory」という判断を撤回する。nearestFileOrDirectoryAnchor()
+  // で「通常ファイルかディレクトリ」を発動元から遡る。
+  locateReturnMode_ = nearestFileOrDirectoryAnchor();
   const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentLocateQuery);
   activatePrompt(PromptKind::LocateQuery, recent.empty() ? std::string() : recent.back());
   return true;

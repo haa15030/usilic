@@ -1757,6 +1757,25 @@ class Application {
   // 公開しているものは1つも無い)は、推測するのではなくtrailing
   // フィールドを単に省略する""へフォールバックする。
   std::string previousModeName(ApplicationMode mode) const;
+  // 2026-09-19追加、直接のユーザー方針の転換("MANを使ってみて思うのは、
+  // 通常ファイルを閲覧中にMANを発動した場合、そこへ戻る方が自然な気
+  // がする。読書でも注釈参照後は元の場所へ戻るように"): MAN/LOCATE/DU
+  // (HELP.jp自身の言う「通常ファイルかディレクトリ」棲み分け――
+  // HELP/KEY/SHELLの「全モード」棲み分けとは区別される、直接のユー
+  // ザーの整理)が新規に発動された時の戻り先を決める。currentMode_
+  // (発動時点でたまたまいたモード)をそのまま使うのではない――
+  // GREP/CUT/LOCATE/DU/KEY等、それ自体「通常ファイルでもディレクトリ
+  // でもない」画面から発動される場合があり得るため、その発動元自体の
+  // さらに発動元を辿り、最初に見つかる通常File/Directoryまで遡る
+  // (ユーザー自身の比喩: 注釈の中でさらに別の注釈を参照していたら、
+  // 両方閉じて元の本文まで戻る――1段ずつではなく、通常File/Directory
+  // に行き着くまで飛び越す)。Archive/ArchiveContentは専用の
+  // archiveParentStack_機構(*ReturnMode_のような単純な変数ではない)
+  // を持つが、returnFromArchive()自身の確立された挙動により最終的に
+  // 常にDirectoryへ行き着くので、ここではその終着点を直接返す。
+  // 循環を踏む可能性は無いはずだが(各*ReturnMode_は常に「より外側」
+  // を指す)、万一の保険として上限付きのループにしてある。
+  ApplicationMode nearestFileOrDirectoryAnchor() const;
   // "CUT:<現在のセグメント自身のラベル>"(先頭の空白は取り除か
   // れる)、例えば"CUT:1.  Introduction"――previousModeName()自身
   // の裸の「CUT」(その関数は描画すべきインスタンスごとの状態を
@@ -2135,6 +2154,12 @@ class Application {
   ApplicationMode cutReturnMode_ = ApplicationMode::Directory;
   ApplicationMode manReturnMode_ = ApplicationMode::Directory;
   ApplicationMode locateReturnMode_ = ApplicationMode::Directory;
+  // 2026-09-19追加、nearestFileOrDirectoryAnchor()自身のコメント参照
+  // ――MAN/LOCATEの2つの兄弟(すぐ上)にDUを揃える。以前はduReturnMode_
+  // という変数自体が存在せず、returnFromDu()がApplicationMode::Directory
+  // を直接ハードコートしていた(それ自身の宣言コメントの「DUは常に
+  // Directoryへ戻るので条件分岐は不要」という当時の前提)。
+  ApplicationMode duReturnMode_ = ApplicationMode::Directory;
   // 2026-08-14: grepReturnMode_/cutReturnMode_等(プロンプトが戻る
   // べき先を追跡する)とは異なり、これは「FILEモード自身の」^G
   // (Command::Back)がどこへ行くべきかを追跡する――直接のユーザー
