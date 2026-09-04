@@ -7568,8 +7568,22 @@ bool Application::feedPromptByte(int byte) {
       partial = text.substr(wordStart, static_cast<std::size_t>(cursor) - wordStart);
     }
     auto candidates = completeFilesystemPath(partial, directoryMode_.currentDirectory());
-    if (candidates.size() == 1 && candidates[0].size() > partial.size()) {
-      promptEditor_.paste(candidates[0].substr(partial.size()));
+    // 2026-09-15修正、直接のユーザー報告("PROGRAMのプロンプトで
+    // 'less 'と打ったところで^Iとやっても候補が出ない")+依頼("最長
+    // 共通接頭辞まで補完")――Shell::onTab()自身の同一の修正参照
+    // (このcompleteFilesystemPath()自体をそちらと共有している)。以前は
+    // 候補がちょうど1件の時だけ補完し、複数件(曖昧、例えば'less 'の
+    // 後の空の単語はカレントディレクトリの全ファイルが候補になる)
+    // なら何もしなかった。bashの素のTabと同じ、候補全体の最長共通
+    // 接頭辞まで補完する形にした。
+    if (!candidates.empty()) {
+      std::string lcp = candidates[0];
+      for (std::size_t i = 1; i < candidates.size(); i++) {
+        std::size_t j = 0;
+        while (j < lcp.size() && j < candidates[i].size() && lcp[j] == candidates[i][j]) j++;
+        lcp.resize(j);
+      }
+      if (lcp.size() > partial.size()) promptEditor_.paste(lcp.substr(partial.size()));
     }
     return true;
   }

@@ -1146,10 +1146,23 @@ void Shell::onTab() {
   std::string partial = text.substr(wordStart, static_cast<std::size_t>(cursor) - wordStart);
 
   auto candidates = completionProvider_(partial);
-  if (candidates.size() != 1) return;  // 曖昧/無し: 将来のPathCompleterが解決する仕事
-  const std::string &full = candidates[0];
-  if (full.size() <= partial.size()) return;
-  commandLine_.paste(full.substr(partial.size()));
+  if (candidates.empty()) return;
+  // 2026-09-15修正、直接のユーザー依頼("PROGRAMのプロンプトで'less '
+  // と打ったところで^Iとやっても候補が出ない...最長共通接頭辞まで
+  // 補完"): 以前は候補がちょうど1件の時だけ補完し、複数件(曖昧)なら
+  // 何もしなかった――bashの素のTabと同じ、候補全体の最長共通接頭辞
+  // まで補完する形にした(候補が1件ならその候補自身がそのままlcpに
+  // なるので、以前の単一候補の場合の挙動は変わらない)。まだ「一覧を
+  // 見せる」機能(2回目のTabでの表示等)は無い――ユーザー自身の判断で
+  // これは今回のスコープ外。
+  std::string lcp = candidates[0];
+  for (std::size_t i = 1; i < candidates.size(); i++) {
+    std::size_t j = 0;
+    while (j < lcp.size() && j < candidates[i].size() && lcp[j] == candidates[i][j]) j++;
+    lcp.resize(j);
+  }
+  if (lcp.size() <= partial.size()) return;
+  commandLine_.paste(lcp.substr(partial.size()));
 }
 
 void Shell::setCompletionProvider(

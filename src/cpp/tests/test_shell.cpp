@@ -499,7 +499,16 @@ TEST_CASE("onTab: splices a single unambiguous completion into the command line"
   CHECK(shell.commandLine().text() == "cat foobar.txt");
 }
 
-TEST_CASE("onTab: does nothing when the completion provider returns more than one candidate") {
+// 2026-09-15修正、直接のユーザー報告("PROGRAMのプロンプトで'less '
+// と打ったところで^Iとやっても候補が出ない")+依頼("最長共通接頭辞
+// まで補完"): 以前は候補が複数(曖昧)なら常に何もしなかったが、今は
+// 候補全体の最長共通接頭辞まで補完する(bashの素のTabと同じ)。この
+// テスト自身の候補("a.txt"/"b.txt")はたまたま共通接頭辞が無い
+// (1文字目から食い違う)ケースなので、結果自体(何も変わらない)は
+// 以前と同じまま――「複数候補なら常に無視」ではなく「共通接頭辞が
+// 無ければ結果的に無視」であることを示すため、名前を訂正した。
+TEST_CASE("onTab: ambiguous candidates with NO common prefix beyond what's already typed leave the "
+          "command line unchanged") {
   RecordingDisplay d(24, 80);
   ShellOptions options;
   Shell shell(d, options);
@@ -511,6 +520,23 @@ TEST_CASE("onTab: does nothing when the completion provider returns more than on
   shell.onTab();
 
   CHECK(shell.commandLine().text() == "cat a");
+}
+
+TEST_CASE("onTab: ambiguous candidates that DO share a longer common prefix complete up to that "
+          "prefix (bash-style Tab, not full auto-complete)") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  Shell shell(d, options);
+
+  shell.setCompletionProvider(
+      [](const std::string &) -> std::vector<std::string> { return {"log_alpha.txt", "log_beta.txt"}; });
+
+  typeAscii(shell.commandLine(), "cat ");
+  shell.onTab();
+
+  // Common prefix of "log_alpha.txt"/"log_beta.txt" is "log_" -- completes
+  // that far, not the whole filename (still ambiguous past that point).
+  CHECK(shell.commandLine().text() == "cat log_");
 }
 
 TEST_CASE("onResize: repositions the command-line field to the new row/width") {

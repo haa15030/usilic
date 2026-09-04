@@ -5635,7 +5635,14 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) completes an unambi
   CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) with an ambiguous prefix leaves the text unchanged") {
+// 2026-09-15修正、直接のユーザー報告+依頼("最長共通接頭辞まで補完")
+// を受けた訂正: "cpmv_"はcpmv_a.txt/cpmv_b.txt両方に共通する接頭辞
+// そのもの(食い違うのは"cpmv_"より後の1文字だけ)なので、これは「常に
+// 曖昧なら無視」ではなく「既にLCPまで打ち終わっている」ケースだった
+// ――結果自体(何も変わらない)は以前と同じまま。すぐ下の新規テストが、
+// LCPより「手前」で止めた場合に実際にLCPまで補完されることを検証する。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) already at the longest common prefix "
+                           "leaves the text unchanged (no further progress possible)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x0a, std::nullopt));
   REQUIRE(app.feedByte('f', std::nullopt));
@@ -5646,6 +5653,38 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) with an ambiguous p
   for (char c : (root / "cpmv_").string()) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
   CHECK(app.feedByte(0x09, std::nullopt));
   CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // still an incomplete path -- doesn't resolve to a real file
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) with an ambiguous prefix completes up to "
+                           "the longest common prefix (bash-style Tab, not full auto-complete)") {
+  REQUIRE(app.start(path()));
+  // Dedicated files with a clean 2-way shared prefix and no third
+  // interloper -- root's own pre-existing "cpmv*" trio (cpmv_a.txt/
+  // cpmv_b.txt/cpmvdest/) doesn't work for this: cpmvdest's own 'd'
+  // diverges one character earlier than the '_'/'_' shared by the two
+  // files, so the REAL common prefix across all three is just "cpmv"
+  // -- already fully typed below, leaving no room for this test to
+  // observe any further completion.
+  { std::ofstream(root / "tabtest_alpha.txt") << "a"; }
+  { std::ofstream(root / "tabtest_beta.txt") << "b"; }
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));
+  REQUIRE(app.feedByte('f', std::nullopt));
+
+  // "tabtest" matches both new files, but their common prefix
+  // "tabtest_" is longer than what's typed so far -- Tab should
+  // complete that far, even though the match itself is still
+  // ambiguous beyond it.
+  for (char c : (root / "tabtest").string()) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
+  CHECK(app.feedByte(0x09, std::nullopt));
+  // The completed text (up to the shared "tabtest_") is actually
+  // visible in the painted prompt row, not just inferred from
+  // non-resolution -- checked as a short suffix rather than the full
+  // (possibly long, possibly horizontally-scrolled-off) absolute root
+  // path.
+  CHECK(display.rowText(display.rows() - 1).find("tabtest_") != std::string::npos);
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // still ambiguous -- doesn't resolve to a real file
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
