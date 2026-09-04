@@ -10589,3 +10589,59 @@ TEST_CASE_FIXTURE(Fixture, "^O^Y (PASTE) with no active prompt is a harmless no-
   CHECK_FALSE(app.feedByte(0x19, std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
+
+// 2026-09-19追加、直接のユーザー報告("LOCATEもおかしいみたい。^Gは
+// 問題無い。^J^L.md^M^S→...→usilic^M^M→戻り値不良→「GREP: usilic
+// 」"): 同日のMAN向けの修正(すぐ上のTEST_CASE群参照)と対をなす
+// LOCATE版。executeGrep()/openSelectedGrepMatch()自身のLocate分岐と
+// grepView_自身のtrailing3のLocate分岐は、その回の修正で既に追加
+// 済みだった(実際にこのテストの下半分、Grep結果一覧の"LOCATE: .md"
+// 表示は既に正しい)――今回の見落としはlocateView_自身のモードライン
+// プロバイダの方: openSelectedGrepMatch()がlocateReturnMode_を
+// 一時的にGrepへ上書きしても、locateView_のtrailing2は無条件で
+// 常に"LOCATE: <query>"(自己参照的な「今どこにいるか」表示)を
+// 出し続けており、実際の^Gの戻り先(Grep結果一覧)を全く反映していな
+// かった。
+TEST_CASE_FIXTURE(Fixture, "GREP started from Locate mode: the results screen labels its origin as "
+                           "\"LOCATE: .md\", and Enter on a match lands back on Locate with \"GREP: .md\" as "
+                           "its return value (not the stale self-referential \"LOCATE: .md\"), with Back "
+                           "returning to the grep results") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText(".md");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not installed or no database available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  if (app.activeContentView().lines().empty()) {
+    MESSAGE("locate found no '.md' results -- skipping");
+    return;
+  }
+
+  // Searching the ".md" results for ".md" itself is guaranteed to match
+  // every line, regardless of what this machine's locate database
+  // happens to contain -- unlike a more "realistic" pattern (e.g. this
+  // repo's own name), which depends on updatedb having indexed this
+  // particular checkout and is not reproducible across machines.
+  REQUIRE(app.handleCommand(Command::StartGrep));
+  feedText(".md");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE_FALSE(app.grepMode().matches().empty());
+  CHECK(app.activeContentView().modeLineText().find("LOCATE: .md") != std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+  CHECK(app.activeContentView().modeLineText().find("GREP: .md") != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("LOCATE: .md") == std::string::npos);
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Grep);  // NOT straight to Directory
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+  CHECK(app.activeContentView().modeLineText().find("LOCATE: .md") != std::string::npos);  // reset, not stale "GREP:"
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}

@@ -1603,8 +1603,23 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // ない。
   locateView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (locateMode_.query().empty()) return {};
+    // 2026-09-19修正、直接のユーザー報告("LOCATEもおかしいみたい...
+    // →`usilic^M^M`→戻り値不良→「GREP: usilic      」"): manView_
+    // 自身の同日の同種の修正と全く同じ理屈――ここでのtrailing2は
+    // これまで無条件に"LOCATE: <query>"(このLOCATE画面「自身」の
+    // 検索語、自己参照的な「今どこにいるか」表示)だったが、
+    // openSelectedGrepMatch()自身のLocate分岐(それ自身のコメント
+    // 参照)がGREPの結果からLOCATE内のマッチへ着地した際に
+    // locateReturnMode_を一時的にGrepへ上書きするので、その場合は
+    // 実際の^Gの戻り先(検索結果一覧)を反映した"GREP: <pattern>"を
+    // 表示する必要がある――そうしないと、実際にはGrep結果一覧へ
+    // 戻るはずの画面が、依然としてLOCATE自身のクエリを名乗り続けて
+    // しまう。
+    std::string trailing2 = locateReturnMode_ == ApplicationMode::Grep
+                                 ? std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern()
+                                 : "LOCATE: " + locateMode_.query();
     return {"LOCATE", std::to_string(contentByteCount(locateView_)), /*fillTrailingToEdge=*/true,
-            /*rightWatermark=*/"", "LOCATE: " + locateMode_.query()};
+            /*rightWatermark=*/"", trailing2};
   });
   duView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (duMode_.currentPath().empty()) return {};
