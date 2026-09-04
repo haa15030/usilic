@@ -955,7 +955,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // は別々のKEY呼び出しをまたいで変わるので、ライブなコールバックに
   // してある。
   keyView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    return {"KEY", previousModeName(keyReturnMode_), /*fillTrailingToEdge=*/false, /*rightWatermark=*/"",
+    // 2026-09-15修正、直接のユーザー確認("KEYも問題無い？戻り値。")
+    // を受けての調査: 中身(previousModeName(keyReturnMode_)、Group1
+    // 各モードの起点にちなんだ実際のディレクトリ/ページ名/パス)は
+    // 元から正しかったが、fillTrailingToEdgeがfalseのままだった――
+    // MAN/LOCATE/DU自身の同種の見落とし(HISTORY.md:9473「基本的に
+    // 右端まで埋まっていないモードラインは全部不良」)と同じ、trueへ。
+    return {"KEY", previousModeName(keyReturnMode_), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
             /*trailing2=*/""};
   });
   // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
