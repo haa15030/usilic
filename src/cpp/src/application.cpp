@@ -3649,6 +3649,21 @@ bool Application::openSelectedEntry() {
   // (RecentFile自身の最も最近のエントリ)を再び開き、それが「その後」
   // ここへ再び^Gで戻る、永遠に。
   directoryMode_.clearArcExtractSourceAnnotation();
+  // 2026-09-15追加、直接のユーザー訂正("3.が惜しい。pre-commitを
+  // 選択の時点でDUの履歴をクリアでよろしく（現状では引き続き^Gの
+  // 戻り値がDU: /Users/...）。お手本なら`.`（カレントフォルダー）を
+  // 選択、で確認可能"): すぐ上のclearArcExtractSourceAnnotation()と
+  // 全く同じ理屈が、GREP/CUT/DU自身のsearchAnnotation_(directoryMode_.
+  // setSearchAnnotation()、"GREP: ..."/"DU: ..."等)にも当てはまる。
+  // ディレクトリのエントリを開く方(directoryMode_.openSelected()、
+  // ".")はenterDirectory()を経由し、それ自身が内部で新しい`ls`ごとに
+  // 古い検索を無効化する(directoryMode_.enterDirectory()自身の実装
+  // 参照)ので「お手本」通り即座にクリアされる――プレーンな「ファイル」
+  // を開く方はそのenterDirectory()呼び出しを一度も経由しないため、
+  // 前回(returnFromDu()へのclear追加)はDu結果画面を経由して1往復
+  // した「後」でようやくクリアされる程度にとどまっていた。この呼び
+  // 出しで、ファイルを開いた「その場で」即座にクリアするようにした。
+  directoryMode_.setSearchAnnotation("");
 
   std::string path = directoryMode_.currentDirectory();
   if (!path.empty() && path.back() != '/') path += '/';

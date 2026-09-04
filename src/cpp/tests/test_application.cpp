@@ -7438,18 +7438,24 @@ TEST_CASE_FIXTURE(Fixture, "DU: Back from a directory opened via DU returns to t
 }
 
 // 2026-09-15追加、直接のユーザー報告("^Jd→.huskyを選択→pre-commit
-// を選択→^Gで行き来ループ、LOCATEでは起きない"): DU経由でディレクトリ
-// へ降りた「後」、その中で(DU経由ではなく)普通にEnterで別のファイルを
-// 開くと、そのファイルからのBackはreturnToDirectory()の「既にそこに
-// いる」早期リターン(親が既にcurrentDirectory()と一致するので
-// enterDirectory()呼び出し自体をスキップする)を通るため、DUの注釈が
-// 生き残ったままDirectoryへ戻る。以前はreturnFromDu()がGREP/CUT自身の
-// returnFromGrep()/returnFromCut()と違ってこの注釈を一度もクリアして
-// いなかったため、Directory(注釈あり)⇄Du(結果)の間で無限ループして
-// いた。returnFromDu()自身の修正コメント参照。
+// を選択→^Gで行き来ループ、LOCATEでは起きない")、続く訂正("3.が惜しい。
+// pre-commitを選択の時点でDUの履歴をクリアでよろしく（現状では引き続き
+// ^Gの戻り値がDU: /Users/...）。お手本なら`.`（カレントフォルダー）を
+// 選択、で確認可能"): DU経由でディレクトリへ降りた「後」、その中で
+// (DU経由ではなく)普通にEnterで別のファイルを開くと、そのファイルから
+// のBackはreturnToDirectory()の「既にそこにいる」早期リターン(親が
+// 既にcurrentDirectory()と一致するのでenterDirectory()呼び出し自体を
+// スキップする)を通るため、DUの注釈が生き残ったままDirectoryへ戻る。
+// 最初の修正(returnFromDu()側でのクリア)は、Du結果画面を経由して1
+// 往復した「後」でようやくクリアされる程度にとどまっていた――ユーザー
+// 訂正の通り、ファイルを「選択した時点」(openSelectedEntry()の
+// ファイル分岐、ディレクトリのエントリ("."含む)を開く方は
+// enterDirectory()自身が既に内部でクリアするので「お手本」通り)で
+// 即座にクリアするべきだった。openSelectedEntry()自身の
+// clearArcExtractSourceAnnotation()すぐ下の新規呼び出し参照。
 TEST_CASE_FIXTURE(Fixture, "DU: opening an ORDINARY file (not via DU) from within a DU-drilled-into "
-                           "directory, then repeatedly pressing Back, terminates instead of looping forever "
-                           "between Directory and the DU results") {
+                           "directory clears the DU annotation IMMEDIATELY, not just after one round trip "
+                           "through the DU results") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
 
@@ -7469,20 +7475,15 @@ TEST_CASE_FIXTURE(Fixture, "DU: opening an ORDINARY file (not via DU) from withi
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
+  // 「選択した時点」で既にクリアされている(Backを待たない)。
+  CHECK_FALSE(app.directoryMode().hasSearchAnnotation());
 
-  REQUIRE(app.handleCommand(Command::Back));  // File -> Directory(subdir), DU注釈がまだ残っている
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.directoryMode().hasSearchAnnotation());
-
-  REQUIRE(app.handleCommand(Command::Back));  // Directory(注釈あり) -> Du results
-  CHECK(app.currentMode() == ApplicationMode::Du);
-
-  REQUIRE(app.handleCommand(Command::Back));  // Du -> Directory(subdir)、ここで注釈がクリアされるはず
+  REQUIRE(app.handleCommand(Command::Back));  // File -> Directory(subdir)、注釈は既に無い
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK_FALSE(app.directoryMode().hasSearchAnnotation());
 
-  // これでBackはDuへ跳ね返らず、通常の親ディレクトリ探索(subdir ->
-  // root)へ進む――ループが解消されたことの直接の証拠。
+  // Duへ一切跳ね返らず、通常の親ディレクトリ探索(subdir -> root)へ
+  // 直接進む――以前のように結果画面を1往復する必要すら無い。
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == path());
