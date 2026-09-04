@@ -2442,6 +2442,63 @@ TEST_CASE_FIXTURE(Fixture, "MAN: ^G always returns to the base Directory mode, d
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
+// 2026-09-19追加、帰宅した直後の直接のユーザー報告("GREPが不良。
+// ^Jmls^M^Ssort^M(MANを発動し、GREPでsortを検索)→モードライン不良、
+// 正しくは「GREP」「01/22 TOP」「1514」「(grep)」「MAN: ls       」
+// →^M→やはり不良、正しくは「MAN」「030/525  5%」「25921」「(man)」
+// 「GREP: sort   」→^G→`/Users/haa15030/git/usilic/`になってしまう
+// (正しくは検索結果一覧へ戻るべき)"): Group1/Group2の棲み分け方針
+// ("後者群は前者群からも起動できる")の実装は、executeGrep()/
+// viewForMode()側では既にMan/Locate/Duを一般的に扱っていたが、
+// (1) grepView_自身のtrailing3にMan/Locate/Du起点のラベルの分岐が
+// 一切無く常に空欄、(2) openSelectedGrepMatch()にもMan/Locate分岐が
+// 無いのでmanReturnMode_/locateReturnMode_がGrepへ上書きされず、
+// マッチへ着地した画面のtrailing3は(manView_自身の2026-09-15の修正が
+// 常にdirectoryMode_.currentDirectory()を表示する前提だったため)
+// 実際の戻り先(Grep結果一覧)と食い違う基点のDirectoryパスのまま
+// だった――という2箇所の見落としが原因だった。
+TEST_CASE_FIXTURE(Fixture, "GREP started from Man mode: the results screen labels its origin as \"MAN: ls\", "
+                           "and Enter on a match lands back on Man with \"GREP: sort\" as its return value, "
+                           "with Back returning to the grep results (not straight to the base Directory)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartMan));
+  feedText("ls");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("man not installed or 'ls' has no man page here -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Man);
+
+  REQUIRE(app.handleCommand(Command::StartGrep));
+  feedText("sort");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("'ls' man page has no 'sort' match here -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.activeContentView().modeLineText().find("MAN: ls") != std::string::npos);
+  REQUIRE_FALSE(app.grepMode().matches().empty());
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Man);
+  CHECK(app.manMode().currentPage() == "ls");
+  CHECK(app.activeContentView().modeLineText().find("GREP: sort") != std::string::npos);
+  // The stale hardcoded-to-Directory return value must be gone now.
+  CHECK(app.activeContentView().modeLineText().find(app.directoryMode().currentDirectory()) ==
+        std::string::npos);
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Grep);  // NOT straight to Directory
+
+  // A second Back should now correctly reach the ORIGINAL Man entry
+  // (manReturnMode_ reset back to Directory by returnFromGrep()), and a
+  // third should reach Directory without looping back to Grep.
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Man);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
 TEST_CASE_FIXTURE(Fixture, "MAN: viewing a second page from within Man mode still returns to the original mode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartMan));

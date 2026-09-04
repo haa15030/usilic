@@ -1443,6 +1443,24 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       // いる部分であり、着地時のopenSelectedGrepMatch()自身の同一の
       // 訂正(それ自身のコメント参照)に一致させている。
       path = name + ": " + grepMode_.pattern();
+    } else if (grepReturnMode_ == ApplicationMode::Man) {
+      // 2026-09-19追加、直接のユーザー報告("^Jmls^M^Ssort^M→モード
+      // ライン不良、正しくは「MAN: ls       」"): Group1/Group2の
+      // 棲み分け方針(「後者群は前者群からも起動できる」)により、
+      // MANの中からのFGREP/EGREP/GREPは既にviewForMode()/executeGrep()
+      // 経由で実際に動いてはいたが、ここでの起点ラベルにMan分岐が
+      // 一切無く、Directory/CutContent/Fileのどれでもない場合は
+      // pathが空文字のまま――trailing3が丸ごと空欄になっていた。
+      // Fileの分岐に倣い"MAN: <manで開いていたページ名>"を示す。
+      path = "MAN: " + manMode_.currentPage();
+    } else if (grepReturnMode_ == ApplicationMode::Locate) {
+      // 上と同じ穴、LOCATE版。executeGrep()自身のコメントが既に
+      // "Locateも含む"と明言している通り、LOCATEからのGREP自体は
+      // 前から動いていたが、この起点ラベルの分岐だけが無かった。
+      path = "LOCATE: " + locateMode_.query();
+    } else if (grepReturnMode_ == ApplicationMode::Du) {
+      // 同じ穴、DU版。
+      path = "DU: " + duMode_.currentPath();
     }
     // 2026-08-23修正、直接のユーザー報告("FGREPのモードラインで戻り値
     // の位置が(fgrep)と逆"): trailing2/trailing3は、このまさに「プログ
@@ -1540,7 +1558,20 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     ContentView::ModeLineFields fields{"MAN", std::to_string(contentByteCount(manView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/"(man)"};
-    fields.trailing3 = directoryMode_.currentDirectory();
+    // 2026-09-19修正、直接のユーザー報告("^Jmls^M^Ssort^M→[return]で
+    // マッチへ着地→「MAN」「030/525 5%」「25921」「(man)」「GREP:
+    // sort   」となるはずが不良"): 上のコメントの前提("MAN自身の戻り
+    // 先はGroup1方針により常に基点のDirectory")は、^J mによる「新規」
+    // 入場についてだけ正しい――GREPの結果からMAN内のマッチへ「着地」
+    // した場合(openSelectedGrepMatch()自身のMan分岐参照)は、
+    // manReturnMode_が一時的にGrepへ上書きされるので、ここでもそれを
+    // 反映しないと、実際の戻り先(Grep結果一覧)と食い違う古い
+    // Directoryパスを表示し続けてしまう。
+    if (manReturnMode_ == ApplicationMode::Grep) {
+      fields.trailing3 = std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern();
+    } else {
+      fields.trailing3 = directoryMode_.currentDirectory();
+    }
     return fields;
   });
   // 2026-08-14修正、それから同日に訂正: 実際の報告("^J^L→'.txt'
@@ -4655,6 +4686,22 @@ bool Application::openSelectedGrepMatch() {
     // それ自身の同一の訂正参照)。
     fileMode_.setSearchAnnotation(match->text);
     fileReturnMode_ = ApplicationMode::Grep;
+  } else if (grepReturnMode_ == ApplicationMode::Man) {
+    // 2026-09-19追加、直接のユーザー報告("^Jmls^M^Ssort^M→[return]で
+    // マッチへ着地→^G→「/Users/haa15030/git/usilic/」になってしまう、
+    // 正しくは検索結果一覧へ戻るべき"): 上のFileの分岐と同じ理屈――
+    // manReturnMode_は(startManPrompt()/startManList()により)常に
+    // Directoryへ固定されているが、それはMANへの「新規」入場について
+    // だけ正しい前提であり、ここでのようにGREPの結果からMANのある
+    // 位置へ「着地」した場合には、そこからの^Gはこの検索結果一覧
+    // (Grep)へ一段ずつ戻るべきであって、いきなり基点のDirectoryへ
+    // 飛び越えるべきではない――fileReturnMode_=Grepと全く同じ理屈を
+    // manReturnMode_に対しても適用する。resetは対称的にreturnFromGrep()
+    // 側で行う(それ自身のコメント参照)。
+    manReturnMode_ = ApplicationMode::Grep;
+  } else if (grepReturnMode_ == ApplicationMode::Locate) {
+    // 上と同じ理屈、LOCATE版。
+    locateReturnMode_ = ApplicationMode::Grep;
   }
   // 2026-08-28修正、直接のユーザー報告("検索前には画面にあった
   // ブロックカーソルが検索一覧のどれかを[return]後の画面では表示
@@ -4725,6 +4772,20 @@ bool Application::returnFromGrep() {
   // される必要がある。
   if (grepReturnMode_ == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
   else if (grepReturnMode_ == ApplicationMode::File) fileMode_.setSearchAnnotation("");
+  // 2026-09-19追加、openSelectedGrepMatch()自身のMan/Locate分岐(それ
+  // 自身のコメント参照)の対称的な後始末: あちらがmanReturnMode_/
+  // locateReturnMode_を一時的にGrepへ上書きするのは「マッチへ着地した
+  // 後の^GがGrep結果一覧へ一段ずつ戻る」ためだが、ここ(Grep結果
+  // 一覧自体からの、マッチを選ばない^G)を通って抜ける時点で、その
+  // 迂回はもう終わっている――上書きしたままにしておくと、次にここ
+  // (grepReturnMode_==Man/Locateの、まさに「素の」Man/Locate画面)から
+  // さらに^Gを押した時、返信不要のはずのDirectoryへ抜けずGrepへ跳ね
+  // 返り続けてしまう(returnFromDu()自身の2026-09-15の同種のループ
+  // バグ修正と同じ形)。DirectoryMode/FileMode自身のsetSearchAnnotation("")
+  // と対称的に、ここで無条件にDirectoryへ戻す(まだGrep由来の上書き
+  // が一度も起きていなくても、Directoryへの再代入は無害)。
+  else if (grepReturnMode_ == ApplicationMode::Man) manReturnMode_ = ApplicationMode::Directory;
+  else if (grepReturnMode_ == ApplicationMode::Locate) locateReturnMode_ = ApplicationMode::Directory;
   activeView().redraw();
   return true;
 }
