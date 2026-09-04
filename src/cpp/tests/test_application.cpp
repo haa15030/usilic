@@ -2476,6 +2476,65 @@ TEST_CASE_FIXTURE(Fixture, "MAN: ^G returns to the base Directory mode when invo
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
+// 2026-09-19追加、直接のユーザー報告(2度目、MAN起点がFileの場合):
+// "usilic -c git/usilicで起動→CLAUDE.mdを選択→^Jmls^M^S→戻り値不良。
+// 正しくは「MAN: ls」...→sort^M→^G→戻り値不良。正しくは
+// 「/Users/haa15030/git/usilic/CLAUDE.md」"。原因は2つ:
+// (1) previousModeName()自身のManケースが裸の"ls"を返しており(すぐ
+// 上のLocateのケースと同じ穴)、drawPromptLabel()自身のGrepPattern
+// プロンプト(まだ未投入)のtrailing欄で「MAN: 」接頭辞が付かなかった。
+// (2) openSelectedGrepMatch()自身のMan分岐がmanReturnMode_自体を
+// 一時的にGrepへ上書きしていたため(その回の直前の修正)、
+// returnFromGrep()側の対称的な後始末が「本来の値」を覚えておく手段が
+// 無いままDirectoryへ無条件リセットするしかなく、MANがFileから発動
+// されていた場合にその本来の戻り先(ファイル自身)を失っていた――
+// 独立したフラグ(manReturnsToGrepResults_)へ設計し直し、
+// manReturnMode_自体には一切触れないようにして解決した。
+TEST_CASE_FIXTURE(Fixture, "MAN started from File mode: the still-open GREP prompt's trailing field already "
+                           "shows \"MAN: ls\", and backing out of the grep results WITHOUT selecting a match "
+                           "still correctly shows the origin file's path (not the base Directory)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string filePath = app.fileMode().currentFile();
+
+  REQUIRE(app.handleCommand(Command::StartMan));
+  feedText("ls");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("man not installed or 'ls' has no man page here -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Man);
+
+  REQUIRE(app.handleCommand(Command::StartGrep));
+  REQUIRE(app.promptActive());
+  const std::string &promptRow = display.rowText(display.rows() - 1);
+  CHECK(promptRow.find("MAN: ls") != std::string::npos);
+
+  feedText("sort");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("'ls' man page has no 'sort' match here -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE_FALSE(app.grepMode().matches().empty());
+
+  // Back WITHOUT selecting a match -- openSelectedGrepMatch() (and its
+  // manReturnsToGrepResults_ flag) never runs here at all. (Not
+  // asserting the directory's ABSENCE here -- it's trivially a prefix
+  // of filePath itself, so that check would be meaningless.)
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Man);
+  CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("GREP: sort") == std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == filePath);
+}
+
 // 2026-09-19追加、帰宅した直後の直接のユーザー報告("GREPが不良。
 // ^Jmls^M^Ssort^M(MANを発動し、GREPでsortを検索)→モードライン不良、
 // 正しくは「GREP」「01/22 TOP」「1514」「(grep)」「MAN: ls       」
@@ -3254,6 +3313,50 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G returns to the normal FILE it was invoked
   }
   REQUIRE(app.currentMode() == ApplicationMode::Locate);
   CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == filePath);
+}
+
+// 2026-09-19追加、MAN自身の同種のテストと対をなすLOCATE版――直接の
+// ユーザー依頼("LOCATEも同じなので対応してほしい")。
+TEST_CASE_FIXTURE(Fixture, "LOCATE started from File mode: backing out of a grep search run against the "
+                           "results WITHOUT selecting a match still correctly shows the origin file's path "
+                           "(not the base Directory)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string filePath = app.fileMode().currentFile();
+
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText(".md");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not installed or no database available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  if (app.activeContentView().lines().empty()) {
+    MESSAGE("locate found no '.md' results -- skipping");
+    return;
+  }
+
+  REQUIRE(app.handleCommand(Command::StartGrep));
+  feedText(".md");  // guaranteed to match every line, see the sibling GREP-from-Locate test's own comment
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE_FALSE(app.grepMode().matches().empty());
+
+  // Back WITHOUT selecting a match -- openSelectedGrepMatch() (and its
+  // locateReturnsToGrepResults_ flag) never runs here at all. (Not
+  // asserting the directory's ABSENCE here -- it's trivially a prefix
+  // of filePath itself, so that check would be meaningless.)
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+  CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("GREP: .md") == std::string::npos);
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);

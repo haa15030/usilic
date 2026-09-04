@@ -1597,8 +1597,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 自身のコメント参照): manReturnMode_はもはや常にDirectoryとは
     // 限らない(通常ファイルから発動していればFile)ので、
     // directoryMode_.currentDirectory()決め打ちをpreviousModeName()
-    // 経由の汎用解決へ一般化する。
-    if (manReturnMode_ == ApplicationMode::Grep) {
+    // 経由の汎用解決へ一般化する。さらに同日の再訂正:
+    // manReturnMode_自体はもうGrepへ上書きされない(application.hpp自身の
+    // manReturnsToGrepResults_宣言コメント参照)ので、そちらを見る。
+    if (manReturnsToGrepResults_) {
       fields.trailing3 = std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern();
     } else {
       fields.trailing3 = previousModeName(manReturnMode_);
@@ -1645,7 +1647,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // (nearestFileOrDirectoryAnchor()により解決されたlocateReturnMode_、
     // Fileなら生のファイルパス、Directoryなら生のディレクトリパス、
     // どちらも"LOCATE: "接頭辞は付けない)を表示する。
-    std::string trailing2 = locateReturnMode_ == ApplicationMode::Grep
+    // 2026-09-19再訂正: locateReturnMode_自体はもうGrepへ上書きされ
+    // ない(manView_自身の同じ修正、application.hpp自身の
+    // locateReturnsToGrepResults_宣言コメント参照)ので、そちらを見る。
+    std::string trailing2 = locateReturnsToGrepResults_
                                  ? std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern()
                                  : previousModeName(locateReturnMode_);
     return {"LOCATE", std::to_string(contentByteCount(locateView_)), /*fillTrailingToEdge=*/true,
@@ -4732,21 +4737,22 @@ bool Application::openSelectedGrepMatch() {
     fileMode_.setSearchAnnotation(match->text);
     fileReturnMode_ = ApplicationMode::Grep;
   } else if (grepReturnMode_ == ApplicationMode::Man) {
-    // 2026-09-19追加、直接のユーザー報告("^Jmls^M^Ssort^M→[return]で
-    // マッチへ着地→^G→「/Users/haa15030/git/usilic/」になってしまう、
-    // 正しくは検索結果一覧へ戻るべき"): 上のFileの分岐と同じ理屈――
-    // manReturnMode_は(startManPrompt()/startManList()により)常に
-    // Directoryへ固定されているが、それはMANへの「新規」入場について
-    // だけ正しい前提であり、ここでのようにGREPの結果からMANのある
-    // 位置へ「着地」した場合には、そこからの^Gはこの検索結果一覧
-    // (Grep)へ一段ずつ戻るべきであって、いきなり基点のDirectoryへ
-    // 飛び越えるべきではない――fileReturnMode_=Grepと全く同じ理屈を
-    // manReturnMode_に対しても適用する。resetは対称的にreturnFromGrep()
-    // 側で行う(それ自身のコメント参照)。
-    manReturnMode_ = ApplicationMode::Grep;
+    // 2026-09-19再訂正、直接のユーザー報告("^Jmls^M^S→sort^M→^G→
+    // 戻り値不良、正しくは「/Users/haa15030/git/usilic/CLAUDE.md」"):
+    // 前回の版はここでmanReturnMode_自体をGrepへ上書きしていたが、
+    // これはnearestFileOrDirectoryAnchor()により解決された「本来の」
+    // 値(File等、常にDirectoryとは限らない)を消してしまい、
+    // returnFromGrep()側の対称的な後始末が、その本来の値を覚えて
+    // おく手段が無いまま無条件にDirectoryへリセットするしかなかった
+    // ――MANが素でDirectoryから発動された場合はこれでも正しかったが、
+    // Fileから発動された場合には本来の戻り先(そのファイル自身)を
+    // 失ってしまっていた。manReturnMode_自体には一切触れず、代わりに
+    // 独立したフラグ(application.hpp自身の宣言コメント参照)で
+    // 「次の^Gは検索結果一覧へ」だけを示す。
+    manReturnsToGrepResults_ = true;
   } else if (grepReturnMode_ == ApplicationMode::Locate) {
     // 上と同じ理屈、LOCATE版。
-    locateReturnMode_ = ApplicationMode::Grep;
+    locateReturnsToGrepResults_ = true;
   }
   // 2026-08-28修正、直接のユーザー報告("検索前には画面にあった
   // ブロックカーソルが検索一覧のどれかを[return]後の画面では表示
@@ -4817,20 +4823,14 @@ bool Application::returnFromGrep() {
   // される必要がある。
   if (grepReturnMode_ == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
   else if (grepReturnMode_ == ApplicationMode::File) fileMode_.setSearchAnnotation("");
-  // 2026-09-19追加、openSelectedGrepMatch()自身のMan/Locate分岐(それ
-  // 自身のコメント参照)の対称的な後始末: あちらがmanReturnMode_/
-  // locateReturnMode_を一時的にGrepへ上書きするのは「マッチへ着地した
-  // 後の^GがGrep結果一覧へ一段ずつ戻る」ためだが、ここ(Grep結果
-  // 一覧自体からの、マッチを選ばない^G)を通って抜ける時点で、その
-  // 迂回はもう終わっている――上書きしたままにしておくと、次にここ
-  // (grepReturnMode_==Man/Locateの、まさに「素の」Man/Locate画面)から
-  // さらに^Gを押した時、返信不要のはずのDirectoryへ抜けずGrepへ跳ね
-  // 返り続けてしまう(returnFromDu()自身の2026-09-15の同種のループ
-  // バグ修正と同じ形)。DirectoryMode/FileMode自身のsetSearchAnnotation("")
-  // と対称的に、ここで無条件にDirectoryへ戻す(まだGrep由来の上書き
-  // が一度も起きていなくても、Directoryへの再代入は無害)。
-  else if (grepReturnMode_ == ApplicationMode::Man) manReturnMode_ = ApplicationMode::Directory;
-  else if (grepReturnMode_ == ApplicationMode::Locate) locateReturnMode_ = ApplicationMode::Directory;
+  // 2026-09-19再訂正: Man/Locateについては、ここでの後始末はもう
+  // 不要になった――openSelectedGrepMatch()自身のMan/Locate分岐は
+  // manReturnMode_/locateReturnMode_自体にはもう一切触れず(それ自身
+  // のコメント参照)、代わりに独立したフラグ(manReturnsToGrepResults_/
+  // locateReturnsToGrepResults_)を使う。そのフラグはreturnFromMan()/
+  // returnFromLocate()自身が消費した時点で既にfalseへ戻っているので、
+  // ここ(Grep結果一覧自体からの、マッチを選ばない^G)に処理すべき
+  // 後始末は残っていない。
   activeView().redraw();
   return true;
 }
@@ -4936,12 +4936,29 @@ bool Application::returnToCutResults() {
 
 bool Application::returnFromMan() {
   manMode_.saveCursorPosition();
+  // 2026-09-19追加、openSelectedGrepMatch()自身のMan分岐(それ自身の
+  // コメント参照)の対称的な相方: マッチへ着地した直後の^Gは、
+  // manReturnMode_(本来の基点、GREPには一切触れられていない)へでは
+  // なく、まず検索結果一覧へ一段戻る。
+  if (manReturnsToGrepResults_) {
+    manReturnsToGrepResults_ = false;
+    currentMode_ = ApplicationMode::Grep;
+    grepView_.redraw();
+    return true;
+  }
   currentMode_ = manReturnMode_;
   activeView().redraw();
   return true;
 }
 
 bool Application::returnFromLocate() {
+  // 上と同じ理屈、LOCATE版。
+  if (locateReturnsToGrepResults_) {
+    locateReturnsToGrepResults_ = false;
+    currentMode_ = ApplicationMode::Grep;
+    grepView_.redraw();
+    return true;
+  }
   currentMode_ = locateReturnMode_;
   activeView().redraw();
   return true;
@@ -5444,8 +5461,22 @@ std::string Application::previousModeName(ApplicationMode mode) const {
       // 一度も同じ認識を得ておらず、代わりに生の合成されたパスを表示
       // していた。
       return fileMode_.currentFile() == bannerFilePath() ? "INFO" : fileMode_.currentFile();
+    // Man(2026-09-19修正、直接のユーザー報告"^Jmls^M^S→戻り値不良。
+    // 正しくは「MAN: ls」"): すぐ下のLocateのケースと全く同じ穴――
+    // ここは裸の"ls"を返しており、drawPromptLabel()自身のtrailing
+    // フィールド計算(destinationMode==Manの場合、例えばMANの中から
+    // FGREP/EGREP/GREPを起動しまだパターンを投入していない段階)で、
+    // 名前欄が"GREP"等の別のリテラルである以上、素の"ls"だけでは
+    // どのモードへ戻るのか紛らわしい――Locateの"LOCATE: <query>"と
+    // 揃え、"MAN: "接頭辞を付ける。KEY/SHELL自身のtrailing(name欄が
+    // それぞれ"KEY"/"SHELL"であり、こちらも重複の心配が無い)、
+    // ExitConfirmの"prev"欄等、他の全ての呼び出し元にも同じ接頭辞が
+    // 一貫して波及するが、いずれも名前欄が既に"MAN"を名乗っている
+    // 場面ではない(manView_自身の画面はmanReturnMode_経由でここを
+    // 呼ばない――manReturnMode_が自分自身Manになることは無い)ので
+    // 重複の心配は無い。
     case ApplicationMode::Man:
-      return manMode_.currentPage();
+      return "MAN: " + manMode_.currentPage();
     case ApplicationMode::Archive:
     case ApplicationMode::ArchiveContent:
       return archiveMode_.currentArchive();

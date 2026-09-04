@@ -2160,6 +2160,27 @@ class Application {
   // を直接ハードコートしていた(それ自身の宣言コメントの「DUは常に
   // Directoryへ戻るので条件分岐は不要」という当時の前提)。
   ApplicationMode duReturnMode_ = ApplicationMode::Directory;
+  // 2026-09-19追加、直接のユーザー報告("^Jmls^M^S→sort^M→^G→戻り値
+  // 不良、正しくは「/Users/haa15030/git/usilic/CLAUDE.md」"): 以前は
+  // openSelectedGrepMatch()自身のMan/Locate分岐が、マッチへ着地した
+  // 際にmanReturnMode_/locateReturnMode_自体を一時的にGrepへ上書き
+  // していたが、これは「発動元を遡って解決された、この本来の値
+  // (File等)」を消し去ってしまう――returnFromGrep()の対称的な後始末が
+  // それを「元に戻す」際、上書き前の本来の値を覚えておく手段が無い
+  // ため、無条件にApplicationMode::Directoryへリセットするしか
+  // できなかった(File向けの2026-08-28の同種の仕組みも、実は同じ
+  // 単純化を昔から抱えている――fileReturnMode_==Grepの上書きは同様に
+  // 元の値を消してしまうが、Fileの「本来の」既定値は元々ほぼ常に
+  // Directoryだったため、この簡略化の影響が表面化してこなかった)。
+  // MANの「本来の」既定値が今やFileにもなり得る(nearestFileOrDirectoryAnchor()
+  // 参照)ため、この簡略化はもう通用しない。manReturnMode_/
+  // locateReturnMode_自体には一切触れず、代わりにこの独立した
+  // フラグで「マッチへ着地した直後で、次の^Gは(本来の戻り先ではなく)
+  // 検索結果一覧へ戻るべき」だけを示す――FileMode自身のsearchAnnotation_
+  // /hasSearchAnnotation()と同じ発想だが、Man/LocateにはFileのような
+  // 文字列の「注釈」欄が無いので、素の真偽値にしてある。
+  bool manReturnsToGrepResults_ = false;
+  bool locateReturnsToGrepResults_ = false;
   // 2026-08-14: grepReturnMode_/cutReturnMode_等(プロンプトが戻る
   // べき先を追跡する)とは異なり、これは「FILEモード自身の」^G
   // (Command::Back)がどこへ行くべきかを追跡する――直接のユーザー
