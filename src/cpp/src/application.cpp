@@ -6245,6 +6245,20 @@ bool Application::runDuOnCurrentFolder() {
     std::filesystem::path filePath(fileMode_.currentFile());
     folder = filePath.parent_path().string();
     if (!folder.empty() && folder.back() != '/') folder += '/';
+  } else if (currentMode_ == ApplicationMode::Locate) {
+    // 2026-09-15追加、直接のユーザー方針("基本的に、SHELLも含めどの
+    // モードからでも他のモードへ移行可能。ただし移行先では移行元に
+    // 関する履歴を失う"、具体例: "LOCATEおよびMAN等からDUへ移行でき
+    // ず...方針にそぐわない")。LOCATEの結果はファイルシステム上の
+    // 任意のパス(ディレクトリの場合もある)なので、DuEntry自身の
+    // duEntryFolder()と同じ考え方――ディレクトリならそれ自身、
+    // ファイルならその親フォルダー。
+    const std::string *selected = locateMode_.selectedResult();
+    if (!selected) return false;
+    std::error_code ec;
+    bool isDirectory = std::filesystem::is_directory(*selected, ec) && !ec;
+    folder = isDirectory ? *selected : std::filesystem::path(*selected).parent_path().string();
+    if (!folder.empty() && folder.back() != '/') folder += '/';
   } else {
     return false;
   }
@@ -7215,7 +7229,17 @@ bool Application::startProgramList() { return startRegexPromptList(PromptKind::P
 // 自身のコメント参照)。
 bool Application::startLocatePrompt() {
   if (currentMode_ == ApplicationMode::Locate) return false;
-  locateReturnMode_ = currentMode_;
+  // 2026-09-15修正、直接のユーザー方針("基本的に、SHELLも含めどの
+  // モードからでも他のモードへ移行可能。ただし移行先では移行元に
+  // 関する履歴を失う"、具体例: "MANからLOCATEへの移行に関しては
+  // ^G連打でMANへ戻ってしまい...方針にそぐわない"): 以前は
+  // currentMode_(呼び出し時にたまたまいたモード――MAN等も含む)を
+  // そのまま記憶していたが、これは方針が明示的に禁じている「移行元
+  // の履歴」の保持そのものだった。DuMode自身のreturnFromDu()が
+  // 既に一貫してApplicationMode::Directoryへ戻る(この方針と噛み
+  // 合っていたため、DU自身の戻り値は問題として報告されなかった)のと
+  // 揃え、LOCATEも常に基点のDirectoryへ戻るよう固定した。
+  locateReturnMode_ = ApplicationMode::Directory;
   const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentLocateQuery);
   activatePrompt(PromptKind::LocateQuery, recent.empty() ? std::string() : recent.back());
   return true;

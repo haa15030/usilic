@@ -3034,7 +3034,17 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: submitting the seeded query unchanged redisp
   CHECK(app.locateMode().results() == firstResults);
 }
 
-TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G returns to whichever mode the prompt was started from") {
+// 2026-09-15修正、直接のユーザー方針("基本的に、SHELLも含めどの
+// モードからでも他のモードへ移行可能。ただし移行先では移行元に関する
+// 履歴を失う"、具体例: "MANからLOCATEへの移行に関しては^G連打でMANへ
+// 戻ってしまい...方針にそぐわない"): 以前はここでcurrentMode_(呼び出し
+// 時にたまたまいたモード)をそのまま記憶し、Backでそこへ戻っていたが、
+// これは方針が明示的に禁じている「移行元の履歴」の保持そのものだった。
+// DuMode自身のreturnFromDu()が既に一貫してApplicationMode::Directory
+// へ戻る(この方針と噛み合っていた)のと揃え、LOCATEも常に基点の
+// Directoryへ戻るよう変更した――どのモードから起動しても、である。
+TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G always returns to the base Directory mode, discarding whichever mode "
+                           "the prompt was started from") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -3050,8 +3060,62 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G returns to whichever mode the prompt was 
   REQUIRE(app.currentMode() == ApplicationMode::Locate);
 
   REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+// 2026-09-15追加、直接のユーザー報告の具体例そのもの("MANからLOCATE
+// への移行に関しては^G連打でMANへ戻ってしまい...方針にそぐわない")。
+// すぐ上のFile版と同じ修正だが、ユーザー自身が名指しした具体例(MAN)を
+// 直接カバーする。
+TEST_CASE_FIXTURE(Fixture, "LOCATE: started from Man mode, ^G returns to the base Directory mode, not back "
+                           "to Man") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartMan));
+  feedText("ls");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("man not installed or 'ls' has no man page here -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Man);
+
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("/");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+// 2026-09-15追加、直接のユーザー方針("LOCATEおよびMAN等からDUへ移行
+// できず...方針にそぐわない")への対応: runDuOnCurrentFolder()自身の
+// 新設のApplicationMode::Locate分岐参照――ハイライト中の結果自身の
+// フォルダー(ディレクトリならそれ自身、ファイルならその親)でduを
+// 実行する。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): works from LOCATE too, tallying the highlighted "
+                           "result's own folder") {
+  fs::path target = root / "subdir" / "sub.txt";
+  fs::path fakeLocate = root / "fake_locate_du.sh";
+  {
+    std::ofstream script(fakeLocate);
+    script << "#!/bin/sh\necho '" << target.string() << "'\n";
+  }
+  std::filesystem::permissions(fakeLocate, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate.string()}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  REQUIRE(app.locateMode().results().size() == 1);
+
+  REQUIRE(app.handleCommand(Command::StartDu));
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.duMode().currentPath() == (root / "subdir").string() + "/");
 }
 
 // 2026-08-14 (CLAUDE.md history item 297): a direct user report
