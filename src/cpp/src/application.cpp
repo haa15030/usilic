@@ -1217,6 +1217,19 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       name = "HELP";
     } else if (cutOrigin_ == CutOrigin::Directory) {
       name = "CUT";
+      // 2026-09-15追加、直接のユーザー方針("CUT、F/EGREPは[MAN、
+      // LOCATE、DU等に]関与（検索）できる"): Man/Locate/Du起点も
+      // Directoryと同じく「名付けるべき単一のファイルが存在しない」
+      // ―― ただしMAN/LOCATE/DU自身は「所在地の宣言はモード名で
+      // なされる」という同じ慣習(DuMode/LocateModeのModeLineFields
+      // Provider自身のコメント参照)に揃え、CUTの汎用ラベルではなく
+      // 各モード自身の名前を出す。
+    } else if (cutOrigin_ == CutOrigin::Man) {
+      name = "MAN";
+    } else if (cutOrigin_ == CutOrigin::Locate) {
+      name = "LOCATE";
+    } else if (cutOrigin_ == CutOrigin::Du) {
+      name = "DU";
     } else {
       name = std::filesystem::path(fileMode_.currentFile()).filename().string();
     }
@@ -1292,9 +1305,15 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 確立した前例に合わせている――同じ"ESC l"キーへの、取り消された
     // 2026-08-05の試みとは異なり、なぜこれが安全なのかについては
     // executeStartLog()自身のコメント参照。
-    std::string name = (cutOrigin_ == CutOrigin::Help)  ? "HELP"
-                        : (cutOrigin_ == CutOrigin::Log) ? "LOG"
-                                                          : "CUT";
+    // Man/Locate/Du(2026-09-15追加、cutContentView_自身の同一の
+    // 2026-09-15修正のコメント参照): 「所在地の宣言はモード名で
+    // なされる」という同じ慣習に揃えている。
+    std::string name = (cutOrigin_ == CutOrigin::Help)     ? "HELP"
+                        : (cutOrigin_ == CutOrigin::Log)    ? "LOG"
+                        : (cutOrigin_ == CutOrigin::Man)    ? "MAN"
+                        : (cutOrigin_ == CutOrigin::Locate) ? "LOCATE"
+                        : (cutOrigin_ == CutOrigin::Du)     ? "DU"
+                                                             : "CUT";
     // HELP自身の最上位(ネストしていない)モードライン(2026-08-23
     // 修正、実際の報告+参照: "HELP" "01/26 TOP" "<バイト数>"
     // "/Users/.../    ")――このプロバイダが元々出荷していた「まだ
@@ -1338,6 +1357,19 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     if (!cutMode_.parentPattern() && (cutOrigin_ == CutOrigin::File || cutOrigin_ == CutOrigin::Directory)) {
       std::string path = (cutOrigin_ == CutOrigin::File) ? fileMode_.currentFile() : directoryMode_.currentDirectory();
       std::size_t bytes = contentByteCount(cutOrigin_ == CutOrigin::File ? fileView_ : directoryView_);
+      return {name, std::to_string(bytes), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", path};
+    }
+    // 2026-09-15追加、すぐ上のFile/Directoryの分岐と同じ形――Man/
+    // Locate/Du自身の「今どこにいるか」を表す値(manMode_.currentPage()/
+    // locateMode_.query()/duMode_.currentPath())をpath欄に使う。
+    if (!cutMode_.parentPattern() &&
+        (cutOrigin_ == CutOrigin::Man || cutOrigin_ == CutOrigin::Locate || cutOrigin_ == CutOrigin::Du)) {
+      std::string path = cutOrigin_ == CutOrigin::Man      ? manMode_.currentPage()
+                          : cutOrigin_ == CutOrigin::Locate ? locateMode_.query()
+                                                             : duMode_.currentPath();
+      std::size_t bytes = contentByteCount(cutOrigin_ == CutOrigin::Man ? manView_
+                                            : cutOrigin_ == CutOrigin::Locate ? locateView_
+                                                                              : duView_);
       return {name, std::to_string(bytes), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", path};
     }
     std::string trailing;
@@ -7041,11 +7073,26 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
   // directoryView_「自身の」行を読むようには一度も結線されていなかった
   // ――これと併せて追加された、executeCut()自身の新しいDirectoryの
   // 分岐参照。
+  // 2026-09-15修正、直接のユーザー方針("CUT、F/EGREPは[MAN、LOCATE、
+  // DU等に]関与（検索）できる"): Man/Locate/Duを許可対象へ追加した。
+  // これらは(直前のMAN/LOCATE/DUの修正で確立した通り)Directory固定の
+  // 戻り先を持つ「自己完結した」目的地だが、CUT/GREP自身は逆にそれら
+  // へ「関与」できる側であり、実際に発動した場所(Man/Locate/Du自身)
+  // へ正しく戻れる必要がある――すぐ下のcutReturnMode_/cutOrigin_の
+  // 新設分岐参照。
   if (currentMode_ != ApplicationMode::File && currentMode_ != ApplicationMode::CutContent &&
-      currentMode_ != ApplicationMode::Cut && currentMode_ != ApplicationMode::Directory)
+      currentMode_ != ApplicationMode::Cut && currentMode_ != ApplicationMode::Directory &&
+      currentMode_ != ApplicationMode::Man && currentMode_ != ApplicationMode::Locate &&
+      currentMode_ != ApplicationMode::Du)
     return false;
   cutSyntax_ = syntax;
   if (currentMode_ == ApplicationMode::File) cutReturnMode_ = ApplicationMode::File;
+  // 2026-09-15追加: Man/Locate/Du自身も、Fileと同じ理屈で明示的に
+  // cutReturnMode_を発動元へ揃える(デフォルトのDirectoryのままでは、
+  // ^GがMAN/LOCATE/DUへではなくDirectoryへ戻ってしまう)。
+  else if (currentMode_ == ApplicationMode::Man) cutReturnMode_ = ApplicationMode::Man;
+  else if (currentMode_ == ApplicationMode::Locate) cutReturnMode_ = ApplicationMode::Locate;
+  else if (currentMode_ == ApplicationMode::Du) cutReturnMode_ = ApplicationMode::Du;
   // cutReturnMode_はDirectoryについては手を付けないままにしてある
   // (そのクラスのデフォルトは既にApplicationMode::Directoryである、
   // startCutFilePrompt()自身の同一の理屈に合わせている、そのコメント
@@ -7058,6 +7105,10 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
   // 戻していた時点で、^Rで呼び戻されたFile起点のパターンが黙って
   // Directory起点として再解釈されてしまうことを許していたものである。
   if (currentMode_ == ApplicationMode::Directory) cutOrigin_ = CutOrigin::Directory;
+  // 2026-09-15追加: 上と同じ理屈でMan/Locate/Duも事前にアームする。
+  else if (currentMode_ == ApplicationMode::Man) cutOrigin_ = CutOrigin::Man;
+  else if (currentMode_ == ApplicationMode::Locate) cutOrigin_ = CutOrigin::Locate;
+  else if (currentMode_ == ApplicationMode::Du) cutOrigin_ = CutOrigin::Du;
   // Regex("^J^C"、「Select string」): EGREPと同じく、直接候補リスト
   // へ開く――なぜかについてはstartGrepPrompt()/startRegexPromptList()
   // 自身のコメント参照(2026-08-05のユーザー報告が特にここでCUTを
@@ -7110,7 +7161,13 @@ bool Application::startCutFilePrompt(GrepSyntax syntax) {
 // ^Gは、その直前に見ていたページへではなく、その外出が元々始まった
 // 場所へ依然として戻る。
 bool Application::startManPrompt() {
-  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = currentMode_;
+  // 2026-09-15修正、直接のユーザー方針("MAN、LOCATE、DU等はそれ自体
+  // が完結していて...基点の棲み分けで言えば、前者群がDirectory"):
+  // 以前はここでcurrentMode_(呼び出し時にたまたまいたモード)をその
+  // まま記憶していたが、MAN/LOCATE/DUは「自己完結した」目的地であり、
+  // 発動元がどこであれ常に基点のDirectoryへ戻るべき――LOCATE自身の
+  // startLocatePrompt()に加えたのと同じ修正。
+  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = ApplicationMode::Directory;
   activatePrompt(PromptKind::ManName, "");
   return true;
 }
@@ -7129,7 +7186,13 @@ bool Application::startManPrompt() {
 // manReturnMode_自体には触れず、currentMode_だけに触れるので必要
 // である。
 bool Application::startManList() {
-  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = currentMode_;
+  // 2026-09-15修正、直接のユーザー方針("MAN、LOCATE、DU等はそれ自体
+  // が完結していて...基点の棲み分けで言えば、前者群がDirectory"):
+  // 以前はここでcurrentMode_(呼び出し時にたまたまいたモード)をその
+  // まま記憶していたが、MAN/LOCATE/DUは「自己完結した」目的地であり、
+  // 発動元がどこであれ常に基点のDirectoryへ戻るべき――LOCATE自身の
+  // startLocatePrompt()に加えたのと同じ修正。
+  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = ApplicationMode::Directory;
   return startRegexPromptList(PromptKind::ManName);
 }
 
@@ -8583,6 +8646,28 @@ bool Application::executeCut(const std::string &pattern) {
     sourceLines.reserve(directoryView_.lines().size());
     for (const auto &line : directoryView_.lines()) sourceLines.push_back({line.text, line.attributes});
     cutOrigin_ = CutOrigin::Directory;  // 上のFileの分岐自身の2026-08-18のコメント参照
+    ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
+  } else if (currentMode_ == ApplicationMode::Man) {
+    // 2026-09-15追加、直接のユーザー方針("CUT、F/EGREPは[MAN、
+    // LOCATE、DU等に]関与（検索）できる"): すぐ上のDirectory分岐と
+    // 全く同じ発想――「一覧/画面自体がバッファである」――で
+    // manView_.lines()を分割する。
+    std::vector<StyledLine> sourceLines;
+    sourceLines.reserve(manView_.lines().size());
+    for (const auto &line : manView_.lines()) sourceLines.push_back({line.text, line.attributes});
+    cutOrigin_ = CutOrigin::Man;
+    ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
+  } else if (currentMode_ == ApplicationMode::Locate) {
+    std::vector<StyledLine> sourceLines;
+    sourceLines.reserve(locateView_.lines().size());
+    for (const auto &line : locateView_.lines()) sourceLines.push_back({line.text, line.attributes});
+    cutOrigin_ = CutOrigin::Locate;
+    ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
+  } else if (currentMode_ == ApplicationMode::Du) {
+    std::vector<StyledLine> sourceLines;
+    sourceLines.reserve(duView_.lines().size());
+    for (const auto &line : duView_.lines()) sourceLines.push_back({line.text, line.attributes});
+    cutOrigin_ = CutOrigin::Du;
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
   } else {
     std::vector<StyledLine> sourceLines;

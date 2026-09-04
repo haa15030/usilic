@@ -2228,6 +2228,98 @@ TEST_CASE_FIXTURE(Fixture, "CUT: ^G cancels a pending cut prompt without splitti
   CHECK(app.currentMode() == ApplicationMode::File);
 }
 
+// 2026-09-15追加、直接のユーザー方針("CUT、F/EGREPは[MAN、LOCATE、
+// DU等に]関与（検索）できる...基点の棲み分けで言えば...後者群は前者群
+// [へ戻る]"): startCutPrompt()自身の新設のMan/Locate/Du分岐参照――
+// Directory起点(directoryView_.lines()を分割する)と全く同じ発想で、
+// manView_/locateView_/duView_.lines()を分割し、Backで発動元自身
+// (Directory固定のMAN/LOCATE/DU自身とは対照的に)へ戻る。
+TEST_CASE_FIXTURE(Fixture, "CUT: works from MAN too, splitting the currently-displayed page, and Back "
+                           "returns to Man (not Directory)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartMan));
+  feedText("ls");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("man not installed or 'ls' has no man page here -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Man);
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("a");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.activeContentView().modeLineText().find("MAN") != std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Man);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT: works from LOCATE too, splitting the results list, and Back returns to "
+                           "Locate (not Directory)") {
+  fs::path target = root / "cut_locate_target.txt";
+  { std::ofstream(target) << "x"; }
+  fs::path fakeLocate = root / "fake_locate_cut.sh";
+  {
+    std::ofstream script(fakeLocate);
+    script << "#!/bin/sh\necho '" << target.string() << "'\n";
+  }
+  std::filesystem::permissions(fakeLocate, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate.string()}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("cut_locate_target");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.activeContentView().modeLineText().find("LOCATE") != std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT: works from DU too, splitting the results list, and Back returns to Du "
+                           "(not Directory)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("plain.txt");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.activeContentView().modeLineText().find("DU") != std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Du);
+}
+
+// 2026-09-15追加、同じユーザー方針の確認: startGrepPrompt()にはそもそも
+// 一度もcurrentMode_の制限が無く、grepReturnMode_も既にcurrentMode_を
+// そのまま動的に記憶している(Group2=CUT/F/EGREP自身の正しい仕様、
+// startCutPrompt()自身の新設コメント参照)――そのためFGREP/EGREPは
+// 実装変更無しで既にMAN/LOCATE/DUから使えていたはずだが、実際にDUから
+// 検証しておく。
+TEST_CASE_FIXTURE(Fixture, "FGREP: already worked from DU (no gate on startGrepPrompt()) -- Back returns to "
+                           "Du, not Directory") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  feedText("plain");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Du);
+}
+
 // -- feedByte: ^Jm / ^J^M leader sequences for MAN --
 //
 // These MAN tests genuinely exercise the real `man`(1) command
@@ -2303,7 +2395,14 @@ TEST_CASE_FIXTURE(Fixture, "MAN: mode line shows 'MAN' and a byte count once a p
   CHECK(modeLine.find(std::to_string(expectedBytes)) != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "MAN: ^G returns to whichever mode the prompt was started from") {
+// 2026-09-15修正、直接のユーザー方針("MAN、LOCATE、DU等はそれ自体が
+// 完結していて...基点の棲み分けで言えば、前者群がDirectory"): LOCATE
+// 自身の同種のテスト修正と全く同じ理屈――以前はcurrentMode_(呼び出し
+// 時にたまたまいたモード)をそのまま記憶し、Backでそこへ戻っていたが、
+// MAN/LOCATE/DUは「自己完結した」目的地であり、発動元がどこであれ
+// 常に基点のDirectoryへ戻るべき。
+TEST_CASE_FIXTURE(Fixture, "MAN: ^G always returns to the base Directory mode, discarding whichever mode "
+                           "the prompt was started from") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -2319,8 +2418,7 @@ TEST_CASE_FIXTURE(Fixture, "MAN: ^G returns to whichever mode the prompt was sta
   REQUIRE(app.currentMode() == ApplicationMode::Man);
 
   REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
 TEST_CASE_FIXTURE(Fixture, "MAN: viewing a second page from within Man mode still returns to the original mode") {

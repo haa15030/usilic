@@ -2253,7 +2253,12 @@ class Application {
   // ――!cutMode_.canGoBack()の場合にだけ意味を持つ(そしてhandleResize()
   // にだけ参照される)。pushSplit()(ネストされた)階層はこれに
   // 触れない、クラスコメント自身のHELP節参照。
-  enum class CutOrigin { File, Help, Directory, Log };  // Log: ESC l、executeStartLog()自身のコメント参照
+  // Log: ESC l、executeStartLog()自身のコメント参照。Man/Locate/Du
+  // (2026-09-15追加、直接のユーザー方針"CUT、F/EGREPは[MAN、LOCATE、
+  // DU等に]関与（検索）できる"): Directory起点(directoryView_.lines()
+  // を分割する)と全く同じ発想で、manView_/locateView_/duView_.lines()
+  // を分割する――executeCut()自身の新設の分岐参照。
+  enum class CutOrigin { File, Help, Directory, Log, Man, Locate, Du };
   CutOrigin cutOrigin_ = CutOrigin::File;
 
   // DirectoryModeの現在の検索注釈(自身のsetSearchAnnotation()
