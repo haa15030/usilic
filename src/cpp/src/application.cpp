@@ -1474,8 +1474,14 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       // 前から動いていたが、この起点ラベルの分岐だけが無かった。
       path = "LOCATE: " + locateMode_.query();
     } else if (grepReturnMode_ == ApplicationMode::Du) {
-      // 同じ穴、DU版。
-      path = "DU: " + duMode_.currentPath();
+      // 2026-09-19六訂正、直接のユーザー報告("doc^M→戻り値不良。正しく
+      // はDU: /Users/haa150...ic/CLAUDE.md"): 当初は集計対象のルート
+      // (duMode_.currentPath())を表示していたが、previousModeName()
+      // 自身のDuケースの同日の同種の修正と揃え、実際の戻り先(DUの
+      // duReturnStack_自身の恒久的な基点)を表示するようにする――
+      // Shellの分岐(すぐ下)がまさにそうしているのと同じくpreviousModeName()
+      // へ委譲する。
+      path = previousModeName(ApplicationMode::Du);
     } else if (grepReturnMode_ == ApplicationMode::Shell) {
       // 2026-09-19追加、直接のユーザー質問("SHELL画面でのGREPは可能
       // なの？"): 実際にdoctestで確認――SHELLのscrollbackから
@@ -1667,10 +1673,21 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // でよく、ハイライト中のエントリに連動させる必要は無い(その連動は
     // openSelectedDuEntry()側――実際にエントリを開いた「後」の戻り先
     // 表示でだけ必要、setSearchOrigin()自身のコメント参照)。
+    //
+    // 2026-09-19六訂正、直接のユーザー報告+実機の正解モードライン
+    // ("^Jd→戻り値不良。正しくは/Users/haa15030/git/usilic/CLAUDE.md"
+    // ――DUがFileから発動された場合の例、CLAUDE.mdはduReturnStack_の
+    // 恒久的な基点): 上のコメントが説明する「集計対象のルートを表示」
+    // という2026-09-10/09-14/09-15の3度にわたる決定を、ユーザー自身が
+    // 今回さらに撤回する。manView_/locateView_と全く同じ形に揃え、
+    // 「集計対象」ではなく「実際の^Gの戻り先」(duReturnStack_)を表示
+    // する――GREPの結果からマッチへ着地していればduReturnStack_.back()
+    // がGrepになり(previousModeName(Grep)経由で"GREP: <pattern>")、
+    // そうでなければ恒久的な基点(File/Directory)の生のパス。
     ContentView::ModeLineFields fields{"DU", std::to_string(contentByteCount(duView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/""};
-    fields.trailing3 = duMode_.currentPath();
+    fields.trailing3 = previousModeName(duReturnStack_.back());
     return fields;
   });
   // archiveContentView_は、すぐ上で使われている素のバイト数だけの形
@@ -2109,6 +2126,25 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     if (!special && byte == kControlG) {
       locateUpdateDbPid_ = -1;
       startLocatePrompt();
+      return true;
+    }
+    return false;
+  }
+  // 2026-09-19追加、直接のユーザー依頼("LOCATEと同じく^Gでduを中断し、
+  // 構築中断時点のDUリストへ移動")、すぐ上のawaitingLocateUpdateDb()
+  // ゲートと同じ形――ただしLOCATEの「バックグラウンドで切り離した
+  // まま実行させ続ける」ではなく、実際にterminate()し、その時点
+  // までにduPendingOutput_へ蓄積された分でDU一覧を構築する
+  // (awaitingDu()/pollDuCompletion()/finishDuAsync()自身のコメント
+  // 参照、runDuOnCurrentFolder()自身のコメントの通り)。
+  if (awaitingDu()) {
+    if (!special && byte == kControlG) {
+      ChildProcess::terminate(duPid_);
+      duPendingOutput_ += ChildProcess::readAvailable(duOutputFd_);
+      close(duOutputFd_);
+      duOutputFd_ = -1;
+      duPid_ = -1;
+      finishDuAsync();
       return true;
     }
     return false;
@@ -5453,8 +5489,18 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     case ApplicationMode::Archive:
     case ApplicationMode::ArchiveContent:
       return archiveMode_.currentArchive();
+    // Du(2026-09-19六訂正、直接のユーザー報告+実機の正解モードライン
+    // "^S→戻り値不良。正しくはDU: /Users/haa150...ic/CLAUDE.md
+    // （DUモードを明示）"): 以前は集計対象のルート(duMode_.currentPath())
+    // を返していた(duView_自身のModeLineFieldsProviderの直前の
+    // 2026-09-19六訂正まで踏襲していた同じ慣習)が、ここでの実際の
+    // 用途(destinationModeがDuになる、drawPromptLabel()自身の
+    // GrepPatternプロンプト等)は「戻り先」の表示であり、「何を集計
+    // 中か」ではない。duReturnStack_自身のfront()(恒久的な基点、
+    // 常にFile/Directoryへ解決済み)を再帰的にpreviousModeName()へ
+    // 通す――Man/Locateの"MAN: "/"LOCATE: "接頭辞と同じ形。
     case ApplicationMode::Du:
-      return duMode_.currentPath();
+      return "DU: " + previousModeName(duReturnStack_.front());
     // Locate(2026-09-19追加、直接のユーザー報告"^J^L.md^M^S→...戻り値
     // 空っぽは今も健在"): このswitchにLocateのケースが一度も無く、
     // defaultの""へ落ちていたため、LOCATEから起動したプロンプト
@@ -6520,17 +6566,59 @@ bool Application::runDuOnCurrentFolder() {
   // 2026-09-19追加、直接のユーザー依頼("`/`で発動すると待たされるので
   // `^Jl`と同じく集計中な意味のメッセージを出して欲しい"、メッセージ
   // 文言は"Disk usage..."と直接指定): runLocateUpdateDb()自身の
-  // "Updating database..."と全く同じ仕組み――ただし`du`(DuMode::
-  // loadUsage()、ChildProcess::run())は現状updatedbのような非同期
-  // fork+pollではなく素朴にブロッキングなので、非同期の完了待ち機構
-  // は不要で、ブロッキング呼び出しの直前にメッセージを描いて
-  // flush()するだけで足りる(それが無いと、stdioのバッファに
-  // 溜まったまま`du`が終わるまで画面に一切現れない――
-  // TerminalDisplay::write()自身がstd::fputs()を使っており、
-  // 明示的なflush()無しでは自動では吐き出されないため)。
+  // "Updating database..."と全く同じ仕組み。
   drawPromptLabel(PromptKind::Du, /*positionText=*/"", "Disk usage...");
   display_.flush();
-  return executeDu(folder);
+  // 2026-09-19再訂正、直接のユーザー依頼("LOCATEと同じく^Gでduを中断し、
+  // 構築中断時点のDUリストへ移動"): 以前はここでexecuteDu()を直接
+  // ブロッキングで呼んでいた(du自体はChildProcess::run()で完了を待つ)
+  // ――^Gがこの呼び出しの「内側」に割り込む余地は無かった。
+  // ChildProcess::startCapturing()経由で非同期に起動し直す
+  // (awaitingDu()/pollDuCompletion()自身の宣言コメント参照)。
+  std::vector<std::string> argv = duMode_.commandArgvFor(folder);
+  if (argv.empty()) {
+    activeView().redraw();
+    return false;
+  }
+  ChildProcess::AsyncCapture capture = ChildProcess::startCapturing(argv);
+  if (capture.pid <= 0) {
+    activeView().redraw();
+    return false;
+  }
+  duPid_ = capture.pid;
+  duOutputFd_ = capture.fd;
+  duPendingOutput_.clear();
+  duPendingPath_ = folder;
+  return true;  // 今は待機中――awaitingDu()/pollDuCompletion()参照
+}
+
+// awaitingDu()自身の宣言コメント参照: 完了(pollDuCompletion())で
+// あれ^Gによる中断(dispatchByte()自身のawaitingDu()ゲート)であれ、
+// その時点までにduPendingOutput_へ蓄積された分をDuMode自身の一覧へ
+// 反映して着地する、共有の仕上げ処理。
+void Application::finishDuAsync() {
+  duMode_.loadUsageFromOutput(duPendingPath_, duPendingOutput_);
+  currentMode_ = ApplicationMode::Du;
+  duView_.redraw();
+}
+
+bool Application::awaitingDu() const { return duPid_ > 0; }
+
+void Application::pollDuCompletion() {
+  if (duPid_ <= 0) return;
+  duPendingOutput_ += ChildProcess::readAvailable(duOutputFd_);
+  if (!ChildProcess::hasExited(duPid_)) return;
+  // 2026-09-19追加: hasExited()がまさに今waitpid()で回収した直後
+  // ――子プロセス自身は既に標準出力をクローズ済み(execvp()した
+  // `du`が正常終了/異常終了のどちらであれ)なので、ここでもう一度
+  // readAvailable()を呼び、終値の直前に書き込まれ、直前の1回の
+  // 呼び出しではまだ読み切れていなかったかもしれない最後の分を
+  // 拾ってから閉じる。
+  duPendingOutput_ += ChildProcess::readAvailable(duOutputFd_);
+  close(duOutputFd_);
+  duOutputFd_ = -1;
+  duPid_ = -1;
+  finishDuAsync();
 }
 
 // ^J^D(K-38): Command::RedisplayDu自身のコメント参照。
@@ -9531,16 +9619,6 @@ bool Application::executeExit(const std::string &confirmation) {
   return true;
 }
 
-// mode.cのT_duケースから移植: `path`に対して`du`を実行する。空の
-// パスあるいは`du`の呼び出しが失敗した場合はfalse。
-bool Application::executeDu(const std::string &path) {
-  if (path.empty() || !duMode_.loadUsage(path)) {
-    activeView().redraw();
-    return false;
-  }
-  currentMode_ = ApplicationMode::Du;
-  return true;
-}
 
 // K-58: startArchivePrompt()自身のコメント参照。2026-08-23の再設計、
 // executeCopy()自身のもの(そのコメント参照)と同じ理屈、そして

@@ -153,6 +153,34 @@ class ChildProcess {
   // はなく「終了済み」と同じ扱いにする――どちらにせよポーリングする
   // 対象は何も残っていないため)。
   static bool hasExited(pid_t pid);
+
+  // 2026-09-19追加、直接のユーザー依頼("LOCATEと同じく^Gでduを中断し、
+  // 構築中断時点のDUリストへ移動"): runDetached()(標準出力を/dev/null
+  // へ捨てる)ともrun()(ブロッキングで完了を待ち、全出力を一括捕捉)
+  // とも違う第3の形――非同期に起動しつつ、標準出力を捨てずに読める
+  // ままにしておく。呼び出し側は本物の完了(hasExited())を待つことも、
+  // 好きなタイミングで打ち切って(terminate())その時点までにパイプへ
+  // 書き込まれた分だけをreadAvailable()で回収することもできる。
+  struct AsyncCapture {
+    pid_t pid = -1;
+    int fd = -1;  // 標準出力の読み込み側、O_NONBLOCK設定済み。呼び出し側が最終的にclose()する。
+  };
+  static AsyncCapture startCapturing(const std::vector<std::string> &argv, const Options &options = {});
+
+  // `fd`(startCapturing()自身のfd、O_NONBLOCK)から現時点で読める分
+  // だけを非ブロッキングで排出して返す――EAGAIN/EWOULDBLOCKに達する
+  // か、子プロセス側が既に標準出力を閉じている(EOF、read()が0を返す)
+  // まで読み続ける。何も読めなければ空文字列(EOFかどうかの区別は
+  // 呼び出し側の関心事ではない――hasExited()で別途確認する)。
+  static std::string readAvailable(int fd);
+
+  // startCapturing()の子プロセスへSIGTERMを送り、終了するまで
+  // ブロッキングでwaitpid()する(シグナル送出後は速やかに終了する
+  // はずなので、run()自身のreapStatus()と違い無期限には待たない
+  // ―― 子プロセスが送出直後の僅かな間になお標準出力へ書き込んで
+  // いる可能性があるため、呼び出し側はこの後もう一度readAvailable()
+  // を呼んで、終了直前の最後の分を拾うとよい)。
+  static void terminate(pid_t pid);
 };
 
 }  // namespace fm

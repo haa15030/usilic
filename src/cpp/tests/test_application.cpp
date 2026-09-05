@@ -64,6 +64,20 @@ bool pumpUntil(Application &app, const std::function<bool()> &predicate, int max
   return predicate();
 }
 
+// 2026-09-19追加、runDuOnCurrentFolder()自身の非同期化(直接のユーザー
+// 依頼"LOCATEと同じく^Gでduを中断し、構築中断時点のDUリストへ移動")に
+// 伴い、既存のDU関連テスト群がこれまで頼っていた「StartDu直後に
+// 即座にDuモードへ着地する」という同期的な前提が崩れたため必要に
+// なった、pumpUntil()自身と同じ発想の小さな待機ヘルパー――実際の
+// `du`は小さなfixtureディレクトリに対してならほぼ即座に終わるはず
+// なので、ごく短い間隔でpollDuCompletion()を呼び続けるだけでよい。
+void waitForDu(Application &app, int maxAttempts = 500) {
+  for (int i = 0; i < maxAttempts && app.awaitingDu(); i++) {
+    app.pollDuCompletion();
+    if (app.awaitingDu()) usleep(2000);
+  }
+}
+
 // executeCopy()/executeMove()/executeRemove() (2026-08-22 redesign, see
 // their own comment): the real cp/mv/rm command now runs by injecting
 // it into shell_'s own real, persistent SHELL session
@@ -2295,6 +2309,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: works from DU too, splitting the results list, 
                            "(not Directory)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
 
   REQUIRE(app.handleCommand(Command::StartCutFixed));
@@ -2317,6 +2332,7 @@ TEST_CASE_FIXTURE(Fixture, "FGREP: already worked from DU (no gate on startGrepP
                            "Du, not Directory") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
 
   REQUIRE(app.handleCommand(Command::StartFgrep));
@@ -3419,6 +3435,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): works from LOCATE too, tally
   REQUIRE(app.locateMode().results().size() == 1);
 
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   CHECK(app.currentMode() == ApplicationMode::Du);
   CHECK(app.duMode().currentPath() == (root / "subdir").string() + "/");
 }
@@ -6349,6 +6366,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^J d (DU) works too, exercising a
   // 2026-09-09redesign: DU no longer prompts at all -- it runs `du`
   // immediately on whatever's current (runDuOnCurrentFolder()'s own
   // comment), landing straight in Du mode.
+  waitForDu(app);
   CHECK(app.currentMode() == ApplicationMode::Du);
   CHECK_FALSE(app.promptActive());
 }
@@ -7644,6 +7662,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): runs `du` immediately on the
                            "no prompt") {
   REQUIRE(app.start(path()));
   CHECK(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   CHECK_FALSE(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Du);
   bool sawSubdir = false, sawFile = false;
@@ -7670,6 +7689,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): from File mode, tallies the 
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
   CHECK(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   CHECK_FALSE(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Du);
   bool sawSubTxt = false;
@@ -7685,7 +7705,14 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): from File mode, tallies the 
 // かディレクトリ"棲み分け)。DUが集計する対象フォルダ(sub.txtの親、
 // すぐ上のテストと同じ)と、DU自身の戻り先(sub.txt自身、この
 // テストの主眼)は別物であることに注意。
-TEST_CASE_FIXTURE(Fixture, "DU: ^G returns to the normal FILE it was invoked from (not the base Directory)") {
+// 2026-09-19六訂正、直接のユーザー報告+実機の正解モードライン
+// ("^Jd→戻り値不良。正しくは/Users/haa15030/git/usilic/CLAUDE.md"):
+// duView_自身のtrailing3は、2026-09-10/09-14/09-15の3度にわたり
+// 「集計対象のルート」を表示する仕様だったが、ユーザー自身がそれを
+// 撤回し、manView_/locateView_と同じ「実際の^Gの戻り先」を表示する
+// 仕様へ揃えた。
+TEST_CASE_FIXTURE(Fixture, "DU: ^G returns to the normal FILE it was invoked from (not the base Directory), "
+                           "and the mode line's own trailing3 already reflects that return value") {
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -7697,11 +7724,60 @@ TEST_CASE_FIXTURE(Fixture, "DU: ^G returns to the normal FILE it was invoked fro
   std::string filePath = app.fileMode().currentFile();
 
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == filePath);
+}
+
+// 2026-09-19追加、直接のユーザー依頼("あとはLOCATEと同じく^Gでduを
+// 中断し、構築中断時点のDUリストへ移動、をよろしく"): 実際の`du`の
+// 代わりに、1行出力→少し待つ→もう1行出力、という偽の`du`スクリプトを
+// 使い、最初の行が届いた直後(まだ2行目を待っている、実際にまだ
+// awaitingDu()な)タイミングで^Gを送る――ChildProcess::terminate()が
+// 子プロセスを実際に止め、finishDuAsync()がその時点までに届いていた
+// 分(1行目だけ)でDU一覧を構築することを確認する。
+// python3 -c(明示的なsys.stdout.flush()付き)を使う――最初の版は
+// /bin/shスクリプト+printfだったが、パイプ(tty以外)へのシェル自身の
+// 標準出力がフルバッファリングされ、1行目がsleep中は一切パイプへ
+// 出ないままSIGTERMで失われてしまい(entries().size()==0で失敗)、
+// 実際に発覚した――実機の`du`自身は別途直接確認済みで、この問題は
+// 一切無い(`du -ak /`を実際にパイプ越しに読むと、開始から数ミリ秒で
+// 複数行が届く――本物のfeature自体は無関係、この偽スクリプトだけの
+// 問題)。
+TEST_CASE_FIXTURE(Fixture, "DU: ^G interrupts a still-running `du` and lands on Du mode with only the "
+                           "entries that had arrived so far (not the full, eventually-complete listing)") {
+  fs::path firstEntry = root / "interrupted_du_first.txt";
+  { std::ofstream(firstEntry) << "x"; }
+  fs::path secondEntry = root / "interrupted_du_second.txt";
+  std::string pythonScript = "import sys, time\n"
+                              "print('4\\t" + firstEntry.string() + "')\n"
+                              "sys.stdout.flush()\n"
+                              "time.sleep(5)\n"
+                              "print('8\\t" + secondEntry.string() + "')\n";
+  configuration.setCommandForTest(ConfiguredRole::Du, {{"python3", "-c", pythonScript}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.awaitingDu());
+
+  // Poll a handful of times with short sleeps -- plenty of time for the
+  // first printf's line (written immediately, no delay) to arrive
+  // through the pipe, but nowhere near the fake script's 5s sleep.
+  for (int i = 0; i < 10; i++) {
+    app.pollDuCompletion();
+    usleep(20000);
+  }
+  REQUIRE(app.awaitingDu());  // the 5s sleep means it's genuinely still running
+
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
+  CHECK_FALSE(app.awaitingDu());
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  REQUIRE(app.duMode().entries().size() == 1);
+  CHECK(app.duMode().entries()[0].path == firstEntry.string());
 }
 
 // 2026-09-19追加、直接のユーザー依頼("DUの修正と、戻り値の仕組みが
@@ -7713,6 +7789,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode: Enter on a match lands ba
                            "returning to the grep results (not skipping straight past it)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   if (app.activeContentView().lines().empty()) {
     MESSAGE("du not available or produced no entries -- skipping");
@@ -7744,6 +7821,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode: Enter on a match lands ba
 TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): refused outside Directory/File mode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));  // enter Du mode itself first
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
 
   CHECK_FALSE(app.handleCommand(Command::StartDu));  // Du mode itself isn't Directory or File
@@ -7756,6 +7834,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): tallies whatever folder is c
                            "elsewhere, not the original one") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   REQUIRE(app.handleCommand(Command::Back));
 
@@ -7765,6 +7844,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): tallies whatever folder is c
   REQUIRE(app.directoryMode().currentDirectory() != path());
 
   CHECK(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   CHECK(app.duMode().currentPath() != path());
 }
 
@@ -7783,6 +7863,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^D runs `du` (like ^Jd) when DU has nev
     MESSAGE("du not available -- skipping");
     return;
   }
+  waitForDu(app);
   CHECK_FALSE(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Du);
   CHECK(app.duMode().currentPath() == path());
@@ -7792,6 +7873,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^D redisplays the existing DU results w
                            "re-running `du`, once DU has been run at least once") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));  // runs `du` immediately now, no prompt
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   std::vector<DuEntry> firstEntries(app.duMode().entries().begin(), app.duMode().entries().end());
 
@@ -7810,6 +7892,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^D redisplays the existing DU results w
 TEST_CASE_FIXTURE(Fixture, "DU: mode line shows 'DU' and a byte count once results are shown") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   const std::string &modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find("DU") != std::string::npos);
@@ -7833,6 +7916,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: mode line shows 'DU' and a byte count once resul
 TEST_CASE_FIXTURE(Fixture, "DU: mode line shows which folder was tallied") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   const std::string &modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find(app.duMode().currentPath()) != std::string::npos);
@@ -7849,6 +7933,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: ^J-digit (JumpToPathPrefix) truncates the HIGHLI
                            "not the tallied root folder") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   while (app.duMode().selectedEntry() &&
          !(app.duMode().selectedEntry()->isDirectory &&
            app.duMode().selectedEntry()->path.find("subdir") != std::string::npos)) {
@@ -7867,6 +7952,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: ^J-digit (JumpToPathPrefix) truncates the HIGHLI
 TEST_CASE_FIXTURE(Fixture, "DU: Enter on a directory entry drills into DirectoryMode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
 
   bool hasSubdirEntry = false;
   for (const auto &entry : app.duMode().entries())
@@ -7902,6 +7988,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: Back from a directory opened via DU returns to t
                            "ordinary directory navigation") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
 
   while (app.duMode().selectedEntry() &&
          !(app.duMode().selectedEntry()->isDirectory &&
@@ -7936,6 +8023,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: opening an ORDINARY file (not via DU) from withi
                            "through the DU results") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
 
   while (app.duMode().selectedEntry() &&
          !(app.duMode().selectedEntry()->isDirectory &&
@@ -7970,6 +8058,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: opening an ORDINARY file (not via DU) from withi
 TEST_CASE_FIXTURE(Fixture, "DU: Enter on a file entry drills into FileMode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
 
   while (app.duMode().selectedEntry() &&
          (app.duMode().selectedEntry()->isDirectory ||
@@ -7989,6 +8078,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: Enter on a file entry drills into FileMode") {
 TEST_CASE_FIXTURE(Fixture, "DU: Back from a file opened via DU returns to the DU results") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
 
   while (app.duMode().selectedEntry() &&
          (app.duMode().selectedEntry()->isDirectory ||
@@ -8013,6 +8103,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: no double slash in child entry paths when the ta
   REQUIRE(app.start(path()));
   REQUIRE(path().back() == '/');  // the tallied path IS trailing-slash, the whole point of this test
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
 
   for (const auto &entry : app.duMode().entries()) {
     CHECK(entry.path.find("//") == std::string::npos);
@@ -8028,6 +8119,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: filenames start at the same column across entrie
                            "digit counts") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   REQUIRE(app.duMode().entries().size() > 1);
 
   const auto &lines = app.activeContentView().lines();
@@ -8079,6 +8171,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: 'DU: ...' annotation appears in the actual paint
   REQUIRE(app.start(deep.string() + "/"));
 
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   int entryCount = static_cast<int>(app.duMode().entries().size());
   REQUIRE(entryCount > 0);
@@ -8116,6 +8209,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: 'DU: ...' annotation appears in the actual paint
 TEST_CASE_FIXTURE(Fixture, "DU: Back returns to Directory mode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
 
   REQUIRE(app.handleCommand(Command::Back));
@@ -10033,6 +10127,7 @@ TEST_CASE_FIXTURE(Fixture, "recording: a ^J-leader sequence (^Jd for DU) is capt
   app.feedByte('(', std::nullopt);
   app.feedByte(0x0a, std::nullopt);  // ^J
   app.feedByte('d', std::nullopt);   // d : DU, runs immediately on the current directory
+  waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   app.handleCommand(Command::Back);
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
@@ -10041,6 +10136,7 @@ TEST_CASE_FIXTURE(Fixture, "recording: a ^J-leader sequence (^Jd for DU) is capt
 
   app.feedByte(0x0f, std::nullopt);
   app.feedByte('e', std::nullopt);  // replay: ^Jd
+  waitForDu(app);
   CHECK(app.currentMode() == ApplicationMode::Du);
 }
 
@@ -10224,6 +10320,7 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: DU listing -- a click selects, a s
                            "already-selected row opens it") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
 
   int idx = -1;
   const auto &entries = app.duMode().entries();
@@ -10268,6 +10365,7 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: DU listing -- a click on the size-
                            "button-release)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
 
   int idx = 0;
   REQUIRE(!app.duMode().entries().empty());
@@ -10910,4 +11008,57 @@ TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell
   REQUIRE(app.currentMode() == ApplicationMode::Grep);
   REQUIRE(app.grepMode().matches().size() == 1);
   CHECK(app.activeContentView().modeLineText().find("SHELL") != std::string::npos);
+}
+
+// 2026-09-19六訂正、直接のユーザー報告の完全な手順を再現("CLAUDE.mdを
+// 選択→^Jd→...→^S→...→doc^M→...→^M→...→^G連打で行き来ループ"):
+// 一連の表示バグ(このファイル自身の直前の複数のテスト参照)を修正した
+// 結果、この完全な連鎖を実際に再現してみても^Gの繰り返しはループせず
+// File→Directoryへ正しく収束することを確認する――報告時点の「ループ」
+// は、根本原因である表示バグ群(各画面の戻り値が食い違っていたこと)
+// の症状の一部だった可能性が高い。
+TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode (Du itself started from File): the full reported "
+                           "chain converges to File then Directory without looping, with mode-line values "
+                           "matching at each step") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string filePath = app.fileMode().currentFile();
+
+  REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
+  if (app.activeContentView().lines().empty()) {
+    MESSAGE("du produced no entries -- skipping");
+    return;
+  }
+  std::string knownDuLine =
+      std::max_element(app.activeContentView().lines().begin(), app.activeContentView().lines().end(),
+                        [](const auto &a, const auto &b) { return a.text.size() < b.text.size(); })
+          ->text;
+
+  REQUIRE(app.handleCommand(Command::StartGrep));
+  feedText(knownDuLine);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE_FALSE(app.grepMode().matches().empty());
+  CHECK(app.activeContentView().modeLineText().find("DU: " + filePath) != std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.activeContentView().modeLineText().find("GREP: " + knownDuLine) != std::string::npos);
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  // Mashing further must NOT bounce back into Du/Grep -- it should
+  // settle on Directory and stay there.
+  for (int i = 0; i < 4; i++) app.handleCommand(Command::Back);
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }

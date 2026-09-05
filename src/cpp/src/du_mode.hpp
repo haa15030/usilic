@@ -48,6 +48,18 @@ class DuMode {
   // false。
   bool loadUsage(const std::string &path);
 
+  // 2026-09-19追加、直接のユーザー依頼("LOCATEと同じく^Gでduを中断し、
+  // 構築中断時点のDUリストへ移動"): loadUsage()自身の実行(argv構築+
+  // ChildProcess::run())と表示(パース+setLines())を分離する――
+  // Applicationが自前でChildProcess::startCapturing()/readAvailable()/
+  // terminate()経由の非同期実行を行い、完了時であれ^Gによる中断時で
+  // あれ、その時点までに集まった出力をここへ渡して表示させる。
+  // loadUsage()自身は、この2つを単純にブロッキングで繋いだ薄い
+  // ラッパーとして残っている(test_du_mode.cpp自身の既存の単体テスト
+  // 群がまさにこのブロッキングな形に依存している)。
+  std::vector<std::string> commandArgvFor(const std::string &path) const;
+  bool loadUsageFromOutput(const std::string &path, const std::string &output);
+
   const std::string &currentPath() const;
   const std::vector<DuEntry> &entries() const;
   const DuEntry *selectedEntry() const;

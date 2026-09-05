@@ -17,9 +17,9 @@ std::string DuMode::formatEntryLine(const DuEntry &entry, int sizeWidth) {
   return sizeText + "  " + entry.path;
 }
 
-bool DuMode::loadUsage(const std::string &path) {
+std::vector<std::string> DuMode::commandArgvFor(const std::string &path) const {
   ProgramCommand du = configuration_.commandFor(ConfiguredRole::Du);
-  if (du.argv.empty()) return false;
+  if (du.argv.empty()) return {};
 
   // 2026-09-09修正、実際のユーザー報告("その一覧ではカレントディレク
   // トリと配下の境界が//になっている"): このコードベース全体の慣習
@@ -36,11 +36,20 @@ bool DuMode::loadUsage(const std::string &path) {
 
   std::vector<std::string> argv = du.argv;
   argv.push_back(normalizedPath);
+  return argv;
+}
+
+bool DuMode::loadUsage(const std::string &path) {
+  std::vector<std::string> argv = commandArgvFor(path);
+  if (argv.empty()) return false;
   ChildProcess::Result result = ChildProcess::run(argv);
   if (!result.ok) return false;
+  return loadUsageFromOutput(path, result.output);
+}
 
+bool DuMode::loadUsageFromOutput(const std::string &path, const std::string &output) {
   std::vector<DuEntry> entries;
-  std::istringstream stream(result.output);
+  std::istringstream stream(output);
   std::string line;
   while (std::getline(stream, line)) {
     if (line.empty()) continue;

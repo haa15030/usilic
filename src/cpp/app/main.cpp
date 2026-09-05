@@ -1309,6 +1309,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     // chained into the LOCATE prompt on its own, without the user
     // needing to press anything.
     app.pollLocateUpdateDbCompletion();
+    app.pollDuCompletion();
     app.pollPendingCpMvRmShellRun();
     app.pollPendingArchiveExtractShellRun();
     app.pollShellHandoff();
@@ -1635,6 +1636,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // detached `updatedb` launched by ^Jl is now noticed and chained
     // into the LOCATE prompt every frame, same as -c's own poll loop.
     app.pollLocateUpdateDbCompletion();
+    app.pollDuCompletion();
     app.pollPendingCpMvRmShellRun();
     app.pollPendingArchiveExtractShellRun();
     app.pollShellHandoff();
@@ -1773,12 +1775,16 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // unconditionally redraws its own mode-line row, the exact row
     // Application's prompt label/input field also live on.
     if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell &&
-        !app.redrawSensitivePromptOrRecallActive() && !app.awaitingLocateUpdateDb()) {
+        !app.redrawSensitivePromptOrRecallActive() && !app.awaitingLocateUpdateDb() && !app.awaitingDu()) {
       // !app.awaitingLocateUpdateDb() (2026-08-15 fix): see the render-
       // mode branch's own identical addition below -- a mouse wiggle
       // during a real, still-running `updatedb` wait would otherwise
       // clobber "Updating database..." via this same redraw()-inside-
       // applyHoverRowAndRedraw() path too.
+      // !app.awaitingDu() (2026-09-19 addition): the exact same risk,
+      // now that `du` also runs asynchronously with its own "Disk
+      // usage..." wait message -- see Application::awaitingDu()'s own
+      // comment.
       while (auto hover = gui.consumeHoverEvent()) {
         anyEventThisFrame = true;
         // Real mouse movement clears DirectoryMode's own transient
@@ -2465,7 +2471,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       }
       gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments());
     } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.redrawSensitivePromptOrRecallActive() &&
-               !app.awaitingLocateUpdateDb()) {
+               !app.awaitingLocateUpdateDb() && !app.awaitingDu()) {
       // !app.awaitingLocateUpdateDb() (2026-08-15 fix): the exact same
       // bug class !app.promptActive() below was already added for (a
       // real report: "EXIT (y/n) ? y" flashed then got overwritten),

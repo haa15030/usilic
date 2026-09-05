@@ -1355,6 +1355,20 @@ class Application {
   // 同じ呼び出しを通じて、無料でそれを得る。
   void pollLocateUpdateDbCompletion();
 
+  // 2026-09-19追加、直接のユーザー依頼("LOCATEと同じく^Gでduを中断し、
+  // 構築中断時点のDUリストへ移動"): 上のawaitingLocateUpdateDb()/
+  // pollLocateUpdateDbCompletion()と全く同じ「実行ループ自身の既存の
+  // ティックによって駆動され、外部からチェックされるフラグ」という
+  // 形――ただしLOCATEのupdatedb(ChildProcess::runDetached()、標準
+  // 出力を/dev/nullへ捨てる、完了以外に意味のある「結果」を持たない)
+  // とは異なり、`du`の標準出力は行ごとに意味のある構築途中の結果
+  // なので、ChildProcess::startCapturing()/readAvailable()経由で
+  // 捨てずに蓄積し続け、^Gによる中断時にはその時点までの分だけを
+  // DuMode::loadUsageFromOutput()へ渡してDU一覧として表示する
+  // (runDuOnCurrentFolder()自身のコメント参照)。
+  bool awaitingDu() const;
+  void pollDuCompletion();
+
   // 実行ループの反復ごとに1回、無条件に呼ぶこと(pendingCpMvRmShellRun_
   // が未設定なら安価な何もしない呼び出し)――すぐ上の
   // pollLocateUpdateDbCompletion()と同じ「実行ループ自身の既存の
@@ -1739,6 +1753,17 @@ class Application {
   // ベースのバージョン自身のkeyInput_メンバーは、それと一緒に無く
   // なっている。
   pid_t locateUpdateDbPid_ = -1;
+  // 2026-09-19追加、awaitingDu()/pollDuCompletion()自身の宣言コメント
+  // 参照。上のlocateUpdateDbPid_と同じ役割(実行中かどうかのフラグ)
+  // だが、`du`は捨てずに読める標準出力を持つので、追加でduOutputFd_
+  // (ChildProcess::startCapturing()自身のfd、O_NONBLOCK)と
+  // duPendingOutput_(そこから今まで蓄積した分)、duPendingPath_
+  // (loadUsageFromOutput()へ最終的に渡す対象パス、runDuOnCurrentFolder()
+  // が計算済みのfolder)を保持する。
+  pid_t duPid_ = -1;
+  int duOutputFd_ = -1;
+  std::string duPendingOutput_;
+  std::string duPendingPath_;
   bool startShell();
   // startShell()とK-61/K-62/K-63/K-64で共有される: startShell()
   // 自身の「既にShellモード」という拒否無しに、Shellモードを画面
@@ -1894,6 +1919,9 @@ class Application {
   bool cancelPendingCpMvRm();
   bool startExitPrompt();
   bool runDuOnCurrentFolder();
+  // awaitingDu()自身の宣言コメント参照――完了/^G中断のどちらでも
+  // 共有される仕上げ処理。
+  void finishDuAsync();
   // K-58(^Xa、M_arc2、「ARC: Expand archive」)――K-57(^X^Ka、
   // "with SHELL window")は2026-08-23に削除された、kKeyTable自身の
   // コメント参照。「Destination ?」プロンプト(HELP.jp 2.11)を
@@ -1997,7 +2025,6 @@ class Application {
   bool startCpMvRmShellRun(const std::vector<std::string> &argv, const std::string &destination,
                             const std::string &sourceDirectory);
   bool executeExit(const std::string &confirmation);
-  bool executeDu(const std::string &path);
   bool executeArchiveExtract(const std::string &destination);
   bool executePathInput(const std::string &path);
   bool executeEdit();

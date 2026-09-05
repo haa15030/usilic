@@ -263,4 +263,60 @@ bool ChildProcess::hasExited(pid_t pid) {
   return waitpid(pid, &status, WNOHANG) != 0;  // >0: たった今回収した; -1(例えば既に回収済み): 完了扱いにする
 }
 
+ChildProcess::AsyncCapture ChildProcess::startCapturing(const std::vector<std::string> &argv,
+                                                          const Options &options) {
+  AsyncCapture capture;
+  if (argv.empty()) return capture;
+
+  int outPv[2];
+  if (pipe(outPv) < 0) return capture;
+
+  pid_t childPid = fork();
+  if (childPid == 0) {
+    close(outPv[0]);
+    prepareChild(outPv[1], -1, options);
+    close(outPv[1]);
+    auto cargv = toArgv(argv);
+    execvp(cargv[0], cargv.data());
+    _exit(127);  // execvp()失敗――そのまま処理を続けusilicとして動き続けることは絶対に無い
+  }
+  close(outPv[1]);
+  if (childPid < 0) {
+    close(outPv[0]);
+    return capture;
+  }
+
+  // 呼び出し側の主ループ(app/main.cppのpoll()サイクル)が定期的に
+  // readAvailable()を呼ぶ想定――blocking read()だと、まだ何も書かれて
+  // いない間そのポーリング自体を止めてしまう。
+  int flags = fcntl(outPv[0], F_GETFL, 0);
+  if (flags >= 0) fcntl(outPv[0], F_SETFL, flags | O_NONBLOCK);
+
+  capture.pid = childPid;
+  capture.fd = outPv[0];
+  return capture;
+}
+
+std::string ChildProcess::readAvailable(int fd) {
+  std::string out;
+  if (fd < 0) return out;
+  char buf[4096];
+  while (true) {
+    ssize_t n = read(fd, buf, sizeof(buf));
+    if (n > 0) {
+      out.append(buf, static_cast<std::size_t>(n));
+      continue;
+    }
+    break;  // n==0(EOF)またはn<0(EAGAIN/EWOULDBLOCK、他のエラー)――どちらもここでは同じ「今読める分は以上」
+  }
+  return out;
+}
+
+void ChildProcess::terminate(pid_t pid) {
+  if (pid <= 0) return;
+  kill(pid, SIGTERM);
+  int status = 0;
+  waitpid(pid, &status, 0);
+}
+
 }  // namespace fm
