@@ -10743,8 +10743,15 @@ TEST_CASE_FIXTURE(Fixture, "pollPagerExitNotice: GUI-style scrolling that bypass
   // 下端が伸びる→さらに進む」を繰り返すはずなので、ここでもそれを
   // そのまま繰り返し、書き込み済みの総量(totalLinesWritten)を実際に
   // 使い切って本当のスタールに当たるまで続ける。
+  // 2026-09-06追記: readMoreIntoPipe()自身のペーシング精度の修正
+  // (「あと1行」の要求は1バイト単位まで絞られ、以前のように256バイト
+  // 単位の超過で数十行ぶん一気に進むことがなくなった)により、
+  // topIndex_が可視範囲の際に張り付いている間は本当に1回のホイール
+  // 操作につき1行しか伸びなくなった――残り(totalLinesWritten弱)を
+  // 使い切るには以前の20回では全く足りないため、十分な余裕を見て
+  // 回数を増やしてある。
   bool stalled = false;
-  for (int i = 0; i < 20 && !stalled; ++i) {
+  for (int i = 0; i < totalLinesWritten + 20 && !stalled; ++i) {
     app.activeContentView().setTopIndex(totalLinesWritten + rows * 4);  // 常にクランプされる、意図的
     app.pollPagerExitNotice();
     stalled = app.fileMode().lastLoadAttemptYieldedNothing();
@@ -10762,6 +10769,100 @@ TEST_CASE_FIXTURE(Fixture, "pollPagerExitNotice: GUI-style scrolling that bypass
   CHECK(rowStillThere.find("(Exit)") != std::string::npos);
 
   ::close(fds[1]);
+}
+
+// 2026-09-06追加、直接のユーザー報告("総行数が１行単位で進まない...
+// 旧同様１バイトずつ読み込んで改行が来たら１増やす"): legacy自身の
+// from_shell()(old/src/usilic.c)が、SHELLの生きたPAGERハンドオフに
+// 限り画面に見えている範囲だけを1文字ずつ中継しているのに対し、この
+// 移植は以前、パイプに既に十分なデータが溜まっていれば1回の呼び出しで
+// 一気に(2画面分の先読み予算まで)満たしてしまっていた――man/groffの
+// ような整形が一瞬で終わる短いページでは、これがlegacyのような
+// 「1行ずつ増えていく」見た目には決してならない。
+// Application::pollShellHandoff()自身の"man ls"実機再現に近い形
+// (loadStream()の初期予算を1に絞る、実際のコミット参照)で、可視範囲
+// (view_.topIndex()..+rows)を埋め終えるまでは1回のensureLoadedThrough()
+// 呼び出しが「あと1行」しか読み進めないこと、埋め終えた後は画面外の
+// 先読み分をまとめて一括で読み込むことを確認する。
+TEST_CASE_FIXTURE(Fixture, "ensureLoadedThrough: a pagerReturnsToShell() stream grows exactly one line per "
+                           "call while the visible screen isn't full yet (matching legacy's own paced "
+                           "\"(stdin)\" line-count-up), then batches once the visible screen is full") {
+  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  int rows = display.rows();
+  int fds[2];
+  REQUIRE(pipe(fds) == 0);
+  // rows*8行分をあらかじめ全部書いておく(write端は開けたまま) -- 十分
+  // すぎるほどのデータが既にkernelのパイプに溜まっている、man/groffの
+  // ような短いページが一瞬で整形し終わった状況を模す。何回の呼び出しで
+  // 何行増えるかだけがこのテストの関心事であり、ペーシングが無ければ
+  // 1回目の呼び出しで即座に全部(または2画面分)読み切ってしまうはず。
+  std::string bulk;
+  for (int i = 0; i < rows * 8; ++i) bulk += "line " + std::to_string(i) + "\n";
+  REQUIRE(write(fds[1], bulk.data(), bulk.size()) == static_cast<ssize_t>(bulk.size()));
+
+  // Application::pollShellHandoff()自身の実際の呼び出しと同じ形
+  // (initialLineBudget=1)で読み込み、その直後にpagerReturnsToShell()を
+  // 立てる。
+  app.fileMode().loadStream(fds[0], /*ownsFd=*/true, "", 1);
+  app.fileMode().setPagerReturnsToShell(true);
+  REQUIRE(static_cast<int>(app.activeContentView().lines().size()) == 1);
+
+  // 可視範囲(rows行)を埋め終えるまでは、pollPagerExitNotice()の毎回の
+  // 反復(=メインループの1ティックに相当)がちょうど1行ずつしか増やさ
+  // ない――legacy同様の「1行ずつ増える」見た目そのもの。
+  for (int expected = 2; expected <= rows; ++expected) {
+    app.pollPagerExitNotice();
+    CHECK(static_cast<int>(app.activeContentView().lines().size()) == expected);
+    CHECK_FALSE(app.fileMode().lastLoadAttemptYieldedNothing());  // 実際には十分残っている、単なるペーシング
+  }
+
+  // 可視範囲をちょうど埋め終えた直後は、pollPagerExitNotice()自身の
+  // 外側のゲート(stillCatchingUpFirstScreen×viewerMovedSinceLastAttempt、
+  // 自身のコメント参照)がどちらも不成立になり、ユーザーがまだ何も
+  // していない(topIndex_も動いていない)間は今回はもう何も試みない
+  // ――これは元々の「ユーザー自身の次の操作を待つ」という設計通り
+  // であり、退行ではない。実際にユーザーがスクロールした(topIndex_が
+  // 動いた)時に初めて、画面外の先読み分(rows*2分)を1回でまとめて
+  // 読み込むことを確認する――見えていない部分にまでこの間延びを
+  // 強いる理由は無い。
+  app.activeContentView().setTopIndex(1);
+  app.pollPagerExitNotice();
+  CHECK(static_cast<int>(app.activeContentView().lines().size()) > rows);
+
+  ::close(fds[1]);
+}
+
+// 2026-09-06追加、同じ直接のユーザー報告の調査中に見つけた回帰の
+// 芽への予防線: Command::GoToBottom(`less`のGコマンド同様、本当の
+// EOFまでブロックして読み切る意図、handleCommand()自身の
+// std::numeric_limits<int>::max()-1というsentinelのコメント参照)を
+// 可視範囲がまだ埋まっていない間(ストリームを開いた直後)に押した
+// 場合、上のペーシングに巻き込まれて「あと1行」に絞られてしまっては
+// 「今すぐ全部読み切る」というGoToBottom自身の契約が壊れる――
+// sentinel値そのものをペーシングの対象外にしていることを確認する。
+TEST_CASE_FIXTURE(Fixture, "ensureLoadedThrough: Command::GoToBottom's own \"read everything now\" sentinel "
+                           "is exempt from the pagerReturnsToShell() line-by-line pacing, even when pressed "
+                           "before the visible screen has even filled once") {
+  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  int rows = display.rows();
+  int fds[2];
+  REQUIRE(pipe(fds) == 0);
+  std::string bulk;
+  for (int i = 0; i < rows * 3; ++i) bulk += "line " + std::to_string(i) + "\n";
+  REQUIRE(write(fds[1], bulk.data(), bulk.size()) == static_cast<ssize_t>(bulk.size()));
+  ::close(fds[1]);  // 実際のEOF -- GoToBottomが「本当の末尾」に到達できることも併せて確認する
+
+  app.fileMode().loadStream(fds[0], /*ownsFd=*/true, "", 1);
+  app.fileMode().setPagerReturnsToShell(true);
+  REQUIRE(static_cast<int>(app.activeContentView().lines().size()) == 1);
+
+  CHECK(app.handleCommand(Command::GoToBottom));
+  CHECK(app.fileMode().streamAtEof());  // ペーシングに巻き込まれず、本当の末尾まで一気に読み切れた
+  CHECK(static_cast<int>(app.activeContentView().lines().size()) == rows * 3);
 }
 
 TEST_CASE_FIXTURE(Fixture, "'[' and ']' keep their ordinary Directory-mode marking behavior when NOT "

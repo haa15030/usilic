@@ -206,7 +206,12 @@ class FileMode {
   // ものが無いので、そちらでは常に何もしない)。EOFに達した後、
   // またはそもそもストリームがアクティブでない場合はfalse(純粋に
   // 何もしない)。
-  bool ensureLoadedThrough(int targetLineIndex);
+  // `rows`: 呼び出し元(Application)の現在の画面高さ――「今実際に
+  // 見えている範囲」の境界(view_.topIndex()+rows)を判定するためだけ
+  // に使う(ensureLoadedThrough()自身の定義コメント、2026-09-06追加分
+  // 参照: SHELLの生きたPAGERハンドオフに限り、この境界を埋め終える
+  // までは1回の呼び出しで「あと1行」しか読み進めない)。
+  bool ensureLoadedThrough(int targetLineIndex, int rows);
   // 2026-09-20追加、直接のユーザー報告("最終行へ来てもいないのに
   // （Exit）が出てこそ価値がある"、legacy実機での再現確認: "(stdin)
   // は1ページ分ずつ読み込みながら表示するうちEOFに出くわす時が必ず
@@ -272,6 +277,21 @@ class FileMode {
   void setPagerReturnsToShell(bool value) { pagerReturnsToShell_ = value; }
   bool pagerReturnsToShell() const { return pagerReturnsToShell_; }
 
+  // 以前のストリーム状態を全てリセットする(所有しているfdを閉じる)
+  // ――loadStream()の先頭(2つ目のCLI起動されたファイルが1つ目を
+  // 置き換える場合、例えばCommand::PagerNextFile)と、loadFile()の
+  // 先頭(防御的に: 通常の即時読み込みが古いストリームを宙ぶらりんの
+  // まま残すことは決して無いようにする)で呼ばれる。
+  // 2026-09-06追加、直接のユーザー報告("最初のman ls用のパイプが
+  // 解放されていない...（stdin）を抜けたら同プロセスをkillしてパイプを
+  // 解放して欲しい"): 元々この2箇所の内部用途だけを想定してprivate
+  // だったが、Application::ensureShellActive()等がSHELLの生きたPAGER
+  // ハンドオフセッション(pagerReturnsToShell())を(^G/'q'に限らず
+  // ESC-s等の「他のどんな手段」であれ)離れる際にも、明示的にここを
+  // 呼んでOS側のfd(ソケット)を閉じる必要が出たため公開した――
+  // 呼び出し元自身のコメント参照。
+  void closeStream();
+
  private:
   std::vector<ContentView::Line> readAndWrap(const std::string &path) const;
   // loadStream()/ensureLoadedThrough()が共有する: streamFd_から
@@ -299,12 +319,6 @@ class FileMode {
   // が、これを直接使ってlegacyと同じ粒度でこの一瞬の停止を検出する。
   bool readMoreIntoPipe(int targetLineCount);
   std::vector<ContentView::Line> convertPipeLines() const;
-  // 以前のストリーム状態を全てリセットする(所有しているfdを閉じる)
-  // ――loadStream()の先頭(2つ目のCLI起動されたファイルが1つ目を
-  // 置き換える場合、例えばCommand::PagerNextFile)と、loadFile()の
-  // 先頭(防御的に: 通常の即時読み込みが古いストリームを宙ぶらりんの
-  // まま残すことは決して無いようにする)で呼ばれる。
-  void closeStream();
 
   ContentView &view_;
   History &history_;

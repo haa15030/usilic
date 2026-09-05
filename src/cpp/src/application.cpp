@@ -3377,10 +3377,7 @@ bool Application::handleCommand(Command command) {
         // をそのまま保持している)。
         if (fileMode_.isPagerMode()) {
           if (fileMode_.pagerReturnsToShell()) {
-            currentMode_ = ApplicationMode::Shell;
-            shell_.scrollback().redraw();
-            shell_.redrawPromptRow();
-            return true;
+            return returnPagerToShell();
           }
           return false;
         }
@@ -3754,10 +3751,7 @@ bool Application::handleCommand(Command command) {
       // 存在する目的である「全く新しいusilicプロセスに見える」という
       // 症状そのものになる。そこでの^Gと同一に、代わりにShellへ戻る。
       if (currentMode_ == ApplicationMode::File && fileMode_.pagerReturnsToShell()) {
-        currentMode_ = ApplicationMode::Shell;
-        shell_.scrollback().redraw();
-        shell_.redrawPromptRow();
-        return true;
+        return returnPagerToShell();
       }
       requestImmediateExit();
       return true;
@@ -5367,6 +5361,15 @@ bool Application::startShell() {
   return ensureShellActive();
 }
 
+// returnPagerToShell()自身の宣言コメント(application.hpp)参照。
+bool Application::returnPagerToShell() {
+  fileMode_.closeStream();
+  currentMode_ = ApplicationMode::Shell;
+  shell_.scrollback().redraw();
+  shell_.redrawPromptRow();
+  return true;
+}
+
 bool Application::ensureShellActive() {
   if (currentMode_ == ApplicationMode::Shell) return true;
   // 2026-08-26修正(実際の、注意深く再現された報告): (Command::Back
@@ -5395,10 +5398,7 @@ bool Application::ensureShellActive() {
   // が既に行っているのと同一である――戻ってくるべきものはもう何も
   // 無い。
   if (currentMode_ == ApplicationMode::File && fileMode_.pagerReturnsToShell()) {
-    currentMode_ = ApplicationMode::Shell;
-    shell_.scrollback().redraw();
-    shell_.redrawPromptRow();
-    return true;
+    return returnPagerToShell();
   }
   // 2026-08-12修正: 実際の報告――usilicを起動、^J^S(EGREP候補リスト)、
   // ^J^W(今日の以前のfeedRegexListByte()/feedPromptByte()のリーダー
@@ -5528,6 +5528,11 @@ bool Application::shellRestart() {
     shellReturnName_ = previousModeName(effectiveReturnMode);
     shellReturnMode_ = effectiveReturnMode;
   }
+  // 2026-09-06追加: Application::returnPagerToShell()自身のコメント
+  // 参照――^Xs(このshellRestart()自身)経由でpagerReturnsToShell()の
+  // ページャを離れる場合も同じOS側のfdの解放が必要。streamFd_が
+  // 元々無い(通常のFileモード等)場合は無害なno-op。
+  fileMode_.closeStream();
   currentMode_ = ApplicationMode::Shell;
   shell_.scrollback().redraw();
   shell_.redrawPromptRow();
@@ -8651,7 +8656,7 @@ void Application::ensurePagerStreamLoaded(int targetLineIndex) {
   // 新しい内容を読み込めた(true)場合はここで明示的にredraw()+flush()
   // する――handleCommand()自身の呼び出し元から見れば、直後の
   // switch(command)自身のredraw()と二重になるが、無害である。
-  if (fileMode_.ensureLoadedThrough(targetLineIndex)) {
+  if (fileMode_.ensureLoadedThrough(targetLineIndex, display_.rows())) {
     activeView().redraw();
     display_.flush();
   }
@@ -9881,7 +9886,16 @@ bool Application::pollShellHandoff() {
     }
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = ApplicationMode::Shell;
-    fileMode_.loadStream(fd, /*ownsFd=*/true, "", display_.rows() * 2);
+    // 2026-09-06修正、直接のユーザー報告("総行数が１行単位で進まない
+    // ...旧同様１バイトずつ読み込んで改行が来たら１増やす")――
+    // FileMode::ensureLoadedThrough()自身の2026-09-06追加分のコメント
+    // 参照: legacy自身のfrom_shell()と同じ「見えている範囲は1行ずつ」
+    // というペーシングは、その後のensureLoadedThrough()呼び出し側
+    // だけを直しても、この最初のloadStream()自身が(以前通り)
+    // rows*2行分もまとめて先に食い切ってしまっては効果が無い――
+    // 初回はここでもわざと1行だけに絞り、以後の各メインループの
+    // 反復(pollPagerExitNotice()自身のコメント参照)が1行ずつ育てる。
+    fileMode_.loadStream(fd, /*ownsFd=*/true, "", 1);
     fileMode_.setSearchOrigin("", "(stdin)");
     fileMode_.setPagerReturnsToShell(true);  // それ自身の宣言コメント参照: ^G/'q'はShellへ戻る、不活性/終了ではない
     activeView().redraw();

@@ -1793,6 +1793,28 @@ class Application {
   // 自身のm_w()の呼び出し箇所にも、そのようなモードガードは無く、
   // 別のis_inter()のbusyチェックだけがある)。
   bool ensureShellActive();
+  // 2026-09-06追加、直接のユーザー報告("最初のman ls用のパイプが
+  // 解放されていない...（stdin）を抜けたら同プロセスをkillしてパイプを
+  // 解放して欲しい"): SHELLの生きたPAGERハンドオフセッション
+  // (fileMode_.pagerReturnsToShell())をShellへ戻る形で離れる3箇所
+  // (Command::Back自身のFileモード分岐、Command::QuitPager、
+  // ensureShellActive())全てで全く同一だった「currentMode_ = Shell;
+  // scrollback().redraw(); redrawPromptRow();」に、FileMode::closeStream()
+  // の呼び出しを足して1箇所へ集約した――呼び出し元自身のコメント
+  // 参照: 元々の"(stdin)の存在は画面を離れた時点で消失でいい"という
+  // 設計はUI上のcurrentMode_の切り替えだけを指しており、その裏の
+  // OS側のfd(SHELL側のPAGERハンドオフの受信ソケット)はどの箇所でも
+  // 一度も閉じられていなかった――閉じないままだと、その先で待って
+  // いる子プロセス(man|usilic --usilic-pager、tryHandoffToParentShell()
+  // 自身のコメント参照)がbashの前景ジョブとして永遠にブロックされた
+  // ままになり、SHELLプロンプトが戻ってきたように見えても実はまだ
+  // その古いパイプラインの中で、次に打ち込んだコマンド(2回目のman ls
+  // 等)が新しいプロンプトとしては一切解釈されない――ユーザー自身の
+  // 報告通り「何も起きない」。streamFd_(こちらの読み込み端)を閉じる
+  // ことで、書き込み端(子プロセス)は次のwrite()でEPIPE/SIGPIPEを
+  // 受けて自然に終了し、man/groff自身もそれで芋づる式にSIGPIPEを
+  // 受けて終了する――標準的なUnixのパイプの後始末そのもの。
+  bool returnPagerToShell();
   // shellReturnName_のための、`mode`に一致するどの*Mode自身の
   // 「現在の名前」アクセサでも、そのスナップショット(自身のコメン
   // ト参照)。既にそのようなアクセサを持ち「かつ」Shellへの妥当な

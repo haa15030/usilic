@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <system_error>
 
@@ -424,9 +425,27 @@ bool FileMode::readMoreIntoPipe(int targetLineCount) {
   // ページよりも手前が常だった")と同じ「一時的に何も届かなかった
   // だけ、streamFd_はまだ開いたまま、次回の呼び出しでまた読み直せる」
   // という意味論に、狙って変更することなく既に一致していた。
+  // 2026-09-06追加、直接のユーザー報告("総行数が１行単位で進まない
+  // ...旧同様１バイトずつ読み込んで改行が来たら１増やす")――上の
+  // 256バイトという固定値自身、それより前のコメントの通り「超過を
+  // 画面1枚分程度に抑える」ための妥協であり、超過そのものを無くしては
+  // いなかった――ensureLoadedThrough()自身の2026-09-06追加分のコメント
+  // 参照(SHELLの生きたPAGERハンドオフに限り「あと1行」だけを要求する
+  // ペーシング)が実際に効くためには、その「あと1行」の要求1回につき
+  // 高々1行分しか読み進めてはならない――256バイト読めば大抵それだけで
+  // 数十行分をまとめて掴んでしまい、ペーシングそのものが無意味になる。
+  // 呼び出し元が要求している差分(targetLineCount-現在の行数)が1以下
+  // (=「あと1行だけ」というensureLoadedThrough()自身のペーシング済み
+  // 要求)の間だけ1バイト単位に切り替え、legacy自身のlinein()
+  // (old/src/alloc.c)と同じ粒度で改行1つ分ずつ進む――それより大きな
+  // 差分(画面外の先読み分やGoToBottom自身のsentinel等、そもそも
+  // ペーシングの対象外の要求)は、この超過を許容する256バイトの
+  // 一括読み込みのまま、効率を保つ。
+  int before = static_cast<int>(streamPipe_->lines().size());
+  std::size_t chunkSize = (targetLineCount - before <= 1) ? 1 : 256;
   char buf[256];
   while (static_cast<int>(streamPipe_->lines().size()) < targetLineCount) {
-    ssize_t n = ::read(streamFd_, buf, sizeof(buf));
+    ssize_t n = ::read(streamFd_, buf, chunkSize);
     if (n < 0) {
       if (errno == EINTR) continue;
       return true;  // EAGAIN/EWOULDBLOCK(一時的に何も無い)も含め、ここで抜ける――すぐ上のコメント参照。まさに求めていた「一瞬の停止」の信号
@@ -511,7 +530,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   return true;
 }
 
-bool FileMode::ensureLoadedThrough(int targetLineIndex) {
+bool FileMode::ensureLoadedThrough(int targetLineIndex, int rows) {
   // lastLoadAttemptYieldedNothing()自身の宣言コメント参照――「今回は
   // 何も試みなかった」場合との区別のため、実際に試みるまではfalseの
   // ままにしておく。
@@ -536,7 +555,41 @@ bool FileMode::ensureLoadedThrough(int targetLineIndex) {
   // 一瞬の停止を検出する――部分的にであれ届いた分は正しく表示に
   // 反映しつつ(下のsetLines()は無条件に呼ぶ)、それでも「一瞬でも
   // 止まった」ことを別途伝える。
-  bool stalled = readMoreIntoPipe(targetLineIndex + 1);
+  //
+  // 2026-09-06追加、直接のユーザー報告("総行数が１行単位で進まない
+  // ...旧同様１バイトずつ読み込んで改行が来たら１増やす")への調査
+  // 結果: 上のコメントの「読み込みの粒度(256バイトのチャンク)」は
+  // stall検出の"精度"には実は無関係だった(read()は今kernelのパイプに
+  // 溜まっている分だけを即座に返す短い読み込みになるので、1バイトずつ
+  // 読もうが256バイトずつ読もうがEAGAINに当たる瞬間は変わらない)――
+  // 実際に無関係でなかったのは「1回の呼び出しでどこまで一気に読み
+  // 進めるか」の方だった。legacy自身のfrom_shell()(old/src/usilic.c)
+  // を実機で追ったところ、SHELLの生きたPAGERハンドオフに限り、画面に
+  // 実際に見えている範囲(row-1行)だけをソケット越しに1文字ずつ中継
+  // していて、そこから先(画面外の先読み分)はfread()の一括読み込みに
+  // 切り替えていた――つまりlegacy自身も「見えている部分だけ」わざと
+  // 間延びさせている。man/groffのように整形が一瞬で終わる短いページ
+  // では、パイプには既に画面2枚分がまるごと溜まっていることが多く、
+  // それを毎回そのままtargetLineIndexまで一括で満たしてしまうと、1回
+  // の再描画で一気に埋まってしまい、legacyのような「1行ずつ増えて
+  // いく」見た目には決してならない。SHELLの生きたPAGERハンドオフ
+  // (pagerReturnsToShell_)に限り、画面に今見えている範囲(topIndex_
+  // からrows行先まで)がまだ埋まっていない間だけ「あと1行」に絞る
+  // ことで、メインループの毎回の反復(Application::pollPagerExitNotice()
+  // 自身のコメント参照)が自然に作る間隔だけで、legacy同様1行ずつ
+  // 増える見た目になる――画面外の先読み分にまでこの間延びを強いる
+  // 理由は無いので、可視範囲を埋め終えた後は元通りtargetLineIndexまで
+  // 一括で読み込む。Command::GoToBottom自身の巨大なsentinel値
+  // (INT_MAX-1、呼び出し元のコメント参照: `less`のGコマンド同様、
+  // 本当のEOFまでブロックして読み切る意図)はこのペーシングの対象外
+  // とする――そちらは「今すぐ全部」が意図そのものであり、1行ずつ
+  // 間延びさせては壊れる。
+  int effectiveTarget = targetLineIndex;
+  bool isDrainToRealEofRequest = targetLineIndex >= std::numeric_limits<int>::max() - 1;
+  if (pagerReturnsToShell_ && !isDrainToRealEofRequest && before < view_.topIndex() + rows) {
+    effectiveTarget = before;
+  }
+  bool stalled = readMoreIntoPipe(effectiveTarget + 1);
   int after = static_cast<int>(streamPipe_->lines().size());
   if (stalled) lastLoadAttemptYieldedNothing_ = true;
   if (after == before) return false;  // 本当に1行も増えなかった――描画すべき新しい内容自体が無い
