@@ -8676,24 +8676,46 @@ void Application::ensurePagerStreamLoaded(int targetLineIndex) {
 // ensurePagerStreamLoaded()自身の新しいredraw()(すぐ下のコメント
 // 参照、これ自体は別件の直接のユーザー報告への対応)がそれを即座に
 // 描き直し、出したばかりの(Exit)通知を一瞬で上書きしていた。
-// 「ユーザーの次の操作を待つ」という当初の設計意図に立ち返り、
-// ここでの自動的な再読み込みは、まだ画面に「何も」表示されていない
-// (Application::pollShellHandoff()自身のloadStream()呼び出し時点で
-// 子プロセスがまだ何も書き込んでいない一瞬に当たった直後、すぐ下の
-// もう1つの報告)場合「だけ」に限定する――一度でも本物の内容が
-// 1行でも表示されて以降は、実際のユーザーの操作(handleCommand()
-// 自身のensurePagerStreamLoaded()呼び出し)だけが続きを読み込む
-// トリガーになる。
-// 「何も表示されていない」ではなく「最初の1画面分にまだ満たない」
-// (lines().size() < rows())を境界にしているのは、たとえ子プロセス
-// からの最初の読み込みが(1行だけ等)ごく部分的にしか成功しなかった
-// 場合でも、legacy自身の実機が最初から画面いっぱいの初期ページを
-// 示すのに合わせて、少なくとも最初の1画面分は自動で埋めきってから
-// この自動再読み込みを止めるため。
+//
+// 2026-09-05再々訂正、直接のユーザー報告(スクリーンショット"=fp"、
+// "-g起動ではここで止まった"): 上の再訂正時点では「まだ画面に何も
+// 表示されていない(1画面分未満)」場合だけ自動再読み込みし、それ
+// 以降は「実際のユーザーの操作(handleCommand()自身の
+// ensurePagerStreamLoaded()呼び出し)だけが続きを読み込むトリガー
+// になる」としていたが、これはCUIのキー操作が必ずhandleCommand()を
+// 経由することが前提――GUIのマウスホイール/慣性スクロール
+// (main.cpp、ContentView::setTopIndex()/stepTopIndex()を直接操作、
+// handleCommand()を一切経由しない)にはこの前提が成り立たず、結果
+// 最初の1画面分を読み終えた後は、ユーザーがどれだけホイールで
+// スクロールし続けても続きが一切読み込まれない――ちょうど
+// スクリーンショットの通り、ある行で完全に止まったまま動かなく
+// なる(通知も出ない、ensureLoadedThrough()自体が二度と呼ばれない
+// ので当然)。
+// 「ユーザー自身の次の操作を待つ」という元の設計意図を保ちつつ
+// GUIもCUIも同じ経路でカバーするため、判定を「コマンド経由か」
+// ではなく「ビューアの表示位置(topIndex)が前回この場所を試みた
+// 時から実際に動いたか」というエッジトリガーに一般化する――
+// キー操作でもホイールでもスクロールバードラッグでも、topIndex_が
+// 動けば(=ユーザーが何かした証拠があれば)それだけを合図に1回だけ
+// 試みる。ユーザーが(Exit)通知を読むためにスクロールの手を止めて
+// じっとしている間はtopIndex_も動かないので再試行は起きず、通知は
+// 消えない(元の再訂正が防ごうとした「すぐ消える」問題はそのまま
+// 保たれる)。
+// 「最初の1画面分にまだ満たない」(lines().size() < rows())の
+// 判定は引き続き別枠で残す――起動直後はtopIndex_が0のまま動かない
+// (エッジトリガーの対象外)にも関わらず、子プロセスからの最初の
+// 読み込みがまだ書きかけの場合があるため、legacy自身の実機が最初
+// から画面いっぱいの初期ページを示すのに合わせて、少なくとも最初の
+// 1画面分は無条件に埋めきる。
 void Application::pollPagerExitNotice() {
-  if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream() &&
-      static_cast<int>(activeView().lines().size()) < display_.rows()) {
-    ensurePagerStreamLoaded(activeView().topIndex() + display_.rows() * 2);
+  if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
+    int topIndex = activeView().topIndex();
+    bool stillCatchingUpFirstScreen = static_cast<int>(activeView().lines().size()) < display_.rows();
+    bool viewerMovedSinceLastAttempt = topIndex != lastPagerPollTopIndex_;
+    if (stillCatchingUpFirstScreen || viewerMovedSinceLastAttempt) {
+      lastPagerPollTopIndex_ = topIndex;
+      ensurePagerStreamLoaded(topIndex + display_.rows() * 2);
+    }
   }
   if (pendingPagerExitNotice_) {
     pendingPagerExitNotice_ = false;

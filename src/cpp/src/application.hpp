@@ -2409,6 +2409,13 @@ class Application {
   // 検出された「次の」メインループの反復まで、"(Exit)"通知の実際の
   // 描画を遅らせるためだけに存在する。
   bool pendingPagerExitNotice_ = false;
+  // pollPagerExitNotice()自身のコメント参照(2026-09-05追加、GUIの
+  // マウスホイール/慣性スクロールでの"止まった"報告への対応)――
+  // 「ビューアの現在位置(topIndex)が最後にここで読み込みを試みた
+  // 位置から実際に動いたかどうか」をエッジトリガーで見るための
+  // 記憶。初期値-1はどのtopIndexとも一致しないので、最初の呼び出しは
+  // 必ず「動いた」扱いになる。
+  int lastPagerPollTopIndex_ = -1;
   std::string helpText_;
   // loadGuiHelpText()自身のコメント参照。
   std::string guiHelpText_;

@@ -10679,6 +10679,87 @@ TEST_CASE_FIXTURE(Fixture, "PageDown: the same 'nothing new yet' condition does 
   app.pollPagerExitNotice();
   std::string lastRow = display.rowText(display.rows() - 1);
   CHECK(lastRow.find("(Exit)") == std::string::npos);  // ...but the notice itself doesn't, unscoped mode
+}
+
+// 2026-09-05追加、直接のユーザー報告(スクリーンショット"=fp"、
+// "-g起動ではここで止まった"): -gのマウスホイール/慣性スクロールは
+// ContentView::setTopIndex()/stepTopIndex()を直接操作するだけで、
+// handleCommand()を一切経由しない(main.cpp自身のコメント参照)。
+// pollPagerExitNotice()自身の宣言コメント(2026-09-05再々訂正)が
+// 説明する通り、このテストはまさにその経路――handleCommand()を
+// 一度も呼ばずsetTopIndex()だけでビューアを動かし、メインループの
+// 毎フレームの無条件呼び出しに相当するpollPagerExitNotice()の
+// 反復だけで、(1)最初の1画面を超えて実際に続きが読み込まれること、
+// (2)スクロールがそこで止まった位置では通知が繰り返し上書きされず
+// 安定して出続けることを確認する。
+TEST_CASE_FIXTURE(Fixture, "pollPagerExitNotice: GUI-style scrolling that bypasses handleCommand() entirely "
+                           "(ContentView::setTopIndex() alone, as the mouse-wheel/coast path does) still "
+                           "loads more of a pagerReturnsToShell() stream as the viewport advances, and still "
+                           "shows \"(Exit)\" once a real stall is hit") {
+  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  int fds[2];
+  REQUIRE(pipe(fds) == 0);
+  // 最初の1画面分の自動読み込み(stillCatchingUpFirstScreen)を超えて
+  // 「まだ余裕がある」区間を1回、GUIのホイールで進めても試せるよう、
+  // rows*2ずつの先読みターゲットに対してたっぷり余裕を持たせた総量を
+  // 一括で書いておく(write端は開けたまま)。readMoreIntoPipe()は
+  // 256バイト単位でしか読まないため、要求行数ぴったりで止まるとは
+  // 限らない(次のチャンクの途中まで余分に読み進むことがある)――
+  // その丸め誤差を吸収できるだけの余裕(rows*8)を持たせてある。
+  int rows = display.rows();
+  int totalLinesWritten = rows * 8;
+  std::string bulk;
+  for (int i = 0; i < totalLinesWritten; ++i) bulk += "line " + std::to_string(i) + "\n";
+  REQUIRE(write(fds[1], bulk.data(), bulk.size()) == static_cast<ssize_t>(bulk.size()));
+  app.fileMode().loadStream(fds[0], /*ownsFd=*/true, "", rows * 2);
+  app.fileMode().setPagerReturnsToShell(true);
+
+  // handleCommand()は一度も呼ばない -- メインループの最初の数回分の
+  // pollPagerExitNotice()だけで、まず最初の1画面分を埋めきる。
+  app.pollPagerExitNotice();
+  int linesAfterFirstScreen = static_cast<int>(app.activeContentView().lines().size());
+  CHECK(linesAfterFirstScreen >= rows);
+  CHECK(linesAfterFirstScreen < totalLinesWritten);  // まだ全部は読み切っていない
+
+  // GUIのホイール/慣性スクロールを模して、setTopIndex()だけでビューを
+  // 直接動かす(handleCommand()は経由しない)。書き込み済みの総量には
+  // まだ十分な余裕があるので、この時点ではまだ本当のスタールではない
+  // ――これが今回の修正の核心(以前は最初の1画面を埋めた後、GUIの
+  // ホイール操作だけでは二度と追加読み込みが起きなかった)。
+  app.activeContentView().setTopIndex(linesAfterFirstScreen);
+  app.pollPagerExitNotice();
+  CHECK_FALSE(app.fileMode().lastLoadAttemptYieldedNothing());
+  std::string rowAfterAdvance = display.rowText(display.rows() - 1);
+  CHECK(rowAfterAdvance.find("(Exit)") == std::string::npos);
+
+  // さらに繰り返しホイールで「今読み込めている範囲の一番下」まで
+  // 進める -- ContentView::setTopIndex()自身の実装(すぐ上のCHECK)が
+  // 常に現在のlines_.size()-height_へクランプするため、一度の大きな
+  // ジャンプでは書き込み済みの総量を追い越せない(実機のホイール操作
+  // でも同様、読み込み済みの末尾を超えては物理的にスクロールできない)。
+  // 本物のホイール操作は「今の下端まで進む→少し追加が読み込まれて
+  // 下端が伸びる→さらに進む」を繰り返すはずなので、ここでもそれを
+  // そのまま繰り返し、書き込み済みの総量(totalLinesWritten)を実際に
+  // 使い切って本当のスタールに当たるまで続ける。
+  bool stalled = false;
+  for (int i = 0; i < 20 && !stalled; ++i) {
+    app.activeContentView().setTopIndex(totalLinesWritten + rows * 4);  // 常にクランプされる、意図的
+    app.pollPagerExitNotice();
+    stalled = app.fileMode().lastLoadAttemptYieldedNothing();
+  }
+  CHECK(stalled);
+  std::string rowAtStall = display.rowText(display.rows() - 1);
+  CHECK(rowAtStall.find("(Exit)") != std::string::npos);
+
+  // ユーザーがそのままスクロールの手を止めて通知を読んでいる間
+  // (topIndex_は動かない)、メインループが何度反復しても通知が
+  // 上書きされて消えたりしない -- これが本来のバグ("すぐ消える")
+  // への回帰防止そのもの。
+  for (int i = 0; i < 5; ++i) app.pollPagerExitNotice();
+  std::string rowStillThere = display.rowText(display.rows() - 1);
+  CHECK(rowStillThere.find("(Exit)") != std::string::npos);
 
   ::close(fds[1]);
 }
