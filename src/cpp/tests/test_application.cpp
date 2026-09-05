@@ -11062,3 +11062,78 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode (Du itself started from Fi
   for (int i = 0; i < 4; i++) app.handleCommand(Command::Back);
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
+
+// 2026-09-19八訂正、直接のユーザー報告(①②③という通し番号付き)
+// "②戻り値不良"+"^G連打で①③行き来ループ"への対応:
+//
+// ②(still-open GREP prompt trailing): previousModeName(Du)自身が
+// "DU: "接頭辞付きの文字列を返すようになっていた(直前のコミット)が、
+// drawPromptLabel()自身の末尾切り詰めロジックが、CutContentだけを
+// 特別扱いして丸ごと切り詰めを免除する一方、Man/Locate/Duは素の長い
+// パスと同じ「末尾だけを残す」切り詰めに通してしまい、接頭辞
+// ("DU: ")自体が真っ先に食べられていた(MAN/LOCATEの値がたまたま
+// 短く、この同じ穴が見過ごされていた)。値部分だけを切り詰め、
+// 接頭辞は必ず残すよう一般化して修正。
+//
+// ①③ループ: GREPの結果からDU内のマッチへ着地した「後」、その場で
+// さらにEnterを押して「別の」ファイルを直接開く(openSelectedDuEntry()、
+// 今回のグレップ関連の遷移とは別個の既存機能)と、これが共有された
+// fileMode_/fileReturnMode_を無関係な内容へ上書きしてしまい、
+// duReturnStack_の恒久的な基点(File)まで戻ってきても、その基点が
+// 指すべき「本来のファイル」ではなく後から開いた別のファイルを
+// 指したままになっていた――AnchorSnapshot(application.hpp冒頭の
+// 宣言参照)で、基点解決の瞬間にfileMode_の中身とfileReturnMode_を
+// 凍結しておき、最後の1段まで戻ってきた時に明示的に復元するよう
+// 修正。
+TEST_CASE_FIXTURE(Fixture, "DU started from File, GREP a match, open a DIFFERENT file via the matched DU "
+                           "entry itself, then Back repeatedly: converges to the ORIGINAL file and then "
+                           "Directory, without bouncing between Du and File forever") {
+  fs::path docFile = root / "subdir" / "doc-reviewer.md";
+  { std::ofstream(docFile) << "some content\n"; }
+
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string filePath = app.fileMode().currentFile();
+
+  REQUIRE(app.handleCommand(Command::StartDu));  // ①
+  waitForDu(app);
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::StartGrep));  // ②
+  REQUIRE(app.promptActive());
+  CHECK(display.rowText(display.rows() - 1).find("DU: " + filePath) != std::string::npos);
+
+  feedText("doc");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE_FALSE(app.grepMode().matches().empty());
+  CHECK(app.activeContentView().modeLineText().find("DU: " + filePath) != std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Enter));  // lands on the matched DU entry
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.duMode().selectedEntry() != nullptr);
+  CHECK(app.duMode().selectedEntry()->path == docFile.string());
+
+  REQUIRE(app.handleCommand(Command::Enter));  // ③ opens doc-reviewer.md itself, a DIFFERENT file
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == docFile.string());
+
+  // Mash Back repeatedly: Du -> Grep results -> Du (fresh) -> the
+  // ORIGINAL file (NOT doc-reviewer.md) -> Directory. Must NOT loop
+  // between Du and File forever.
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == filePath);  // the ORIGINAL file, not doc-reviewer.md
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}

@@ -461,6 +461,24 @@ enum class ApplicationMode {
   Copy
 };
 
+// 2026-09-19追加、Application自身のmanAnchor_/locateAnchor_/duAnchor_
+// 宣言コメント参照――MAN/LOCATE/DUの各セッションの恒久的な基点
+// (nearestFileOrDirectoryAnchor()により解決される、File/Directoryの
+// どちらか)が実際に指していた「中身」を、後で(GREPの結果からの
+// 着地やDU自身のopenSelectedDuEntry()等、途中の寄り道がfileMode_/
+// directoryMode_という「共有された」状態を無関係な内容へ上書きして
+// しまった後でも)確実に復元できるよう凍結しておくためのスナップ
+// ショット。Application自身のクラス本体より前、名前空間スコープに
+// 置いてあるのは、ApplicationMode自体がそうであるのと同じ理由――
+// Applicationクラス内の複数の箇所(ヘルパー関数の宣言とメンバー変数
+// の宣言)がこれを、互いの相対的な出現順に関わらず参照する。
+struct AnchorSnapshot {
+  std::string path;
+  // 基点がFileの場合だけ意味を持つ――fileReturnMode_自身の宣言コメ
+  // ント参照。Directoryの場合は無視される(既定値のままでよい)。
+  ApplicationMode fileReturnMode = ApplicationMode::Directory;
+};
+
 // 最上位のコントローラ: ModeStack(複数)と全ての*Modeインスタンスを
 // 所有し、キー入力をCommandへ対応付け、各Commandを現在の*Modeへ
 // ディスパッチする。menu.cのget_m()(キー入力からコマンドへの
@@ -1801,6 +1819,12 @@ class Application {
   // 循環を踏む可能性は無いはずだが(各*ReturnMode_は常に「より外側」
   // を指す)、万一の保険として上限付きのループにしてある。
   ApplicationMode nearestFileOrDirectoryAnchor() const;
+  // anchorSnapshotFor()/restoreAnchorContent()自身のapplication.cppのコメント
+  // 参照――manAnchor_/locateAnchor_/duAnchor_(AnchorSnapshot、この
+  // ファイル冒頭の名前空間スコープの宣言参照)を凍結/復元するための
+  // 対の小さなヘルパー。
+  AnchorSnapshot anchorSnapshotFor(ApplicationMode anchor) const;
+  void restoreAnchorContent(ApplicationMode anchor, const AnchorSnapshot &snapshot);
   // "CUT:<現在のセグメント自身のラベル>"(先頭の空白は取り除か
   // れる)、例えば"CUT:1.  Introduction"――previousModeName()自身
   // の裸の「CUT」(その関数は描画すべきインスタンスごとの状態を
@@ -2210,8 +2234,44 @@ class Application {
   // openSelectedGrepMatch()自身のMan/Locate分岐がGrepを1つpush_back()
   // し、returnFromMan()/returnFromLocate()が1つpop_back()する
   // (front以外に何も残っていなければ、それが「本来の」基点)。
+  //
+  // 2026-09-19七訂正、直接のユーザー報告("^G連打で①③行き来ループ")
+  // で判明した、上のコメントの当初の主張("MAN/LOCATEにはCutMode同種
+  // の「バッファの中身そのものを積み降ろしする」問題が無い")の誤り:
+  // 基点がFile/Directoryの場合、このスタック自体はモード識別子だけ
+  // しか覚えておらず、実際の内容は「fileMode_/directoryMode_が今
+  // 何を保持しているか」に頼っている――しかしDU自身のopenSelectedDuEntry()
+  // (GREPの結果からDU内のマッチへ着地した「後」、その場でさらに
+  // Enterを押して「別の」ファイルを直接開く、この一連の遷移とは
+  // 別個の既存の機能)が、まさにこの共有されたfileMode_/directoryMode_
+  // を、途中で全く無関係な内容へ上書きしてしまう――基点まで遡って
+  // 戻った時には、もう当初の内容ではなくなっている。結果、
+  // returnFromDu()がFile側へ「戻った」つもりでも、fileMode_自体は
+  // 依然として後から開いた別のファイルを指したままで、かつその
+  // fileReturnMode_もDuを指したままなので、Du⇄Fileの間を永遠に
+  // 往復してDirectoryへ決して抜けられなくなっていた。
+  // manAnchor_/locateAnchor_/duAnchor_(すぐ下)は、この
+  // 基点が実際に解決された「その瞬間」のfileMode_.currentFile()/
+  // directoryMode_.currentDirectory()を凍結して覚えておき、
+  // returnFromMan()/returnFromLocate()/returnFromDu()が最後の1要素
+  // (=基点)まで戻ってきた時に、途中で何が起きていようと、その凍結
+  // されたパスでfileMode_/directoryMode_を明示的に再読み込みする
+  // (ModeStack自身のfloorフレームがまさに「これより上には何も無い」
+  // 底を保持しているのと同じ発想の「底を凍結して復元する」安全策)。
+  // AnchorSnapshot自身の宣言コメント参照(名前空間スコープ、この
+  // クラスの本体より前)。pathだけでなくfileReturnMode(基点がFileの
+  // 時だけ意味を持つ)も併せて凍結する――さもないと、基点のFile自体は
+  // 正しく復元できても、その*File自身の*^Gの戻り先(fileReturnMode_、
+  // 全く別個の既存の仕組み)が、途中の無関係な寄り道(例えば
+  // openSelectedDuEntry()が別のファイルを開いた際に上書きしたもの)
+  // を指したまま生き残ってしまい、File⇄Man/Locate/Duの間で永遠に
+  // ループしてしまう(2026-09-19七訂正、直接のユーザー報告
+  // "^G連打で①③行き来ループ"で発覚――パスだけの復元ではこの
+  // ループを止められなかった)。
   std::vector<ApplicationMode> manReturnStack_ = {ApplicationMode::Directory};
+  AnchorSnapshot manAnchor_;
   std::vector<ApplicationMode> locateReturnStack_ = {ApplicationMode::Directory};
+  AnchorSnapshot locateAnchor_;
   // 2026-09-19再訂正、直接のユーザー依頼("DUの修正と、戻り値の仕組み
   // が無いようなのでMAN/LOCATEと同じ仕様にしてほしい"): 以前は
   // duReturnMode_という単一の値のみで、GREPの結果からマッチへ着地
@@ -2220,6 +2280,7 @@ class Application {
   // MAN/LOCATE自身のmanReturnStack_/locateReturnStack_と全く同じ
   // LIFOスタックに揃える――理由はそちらの宣言コメント参照。
   std::vector<ApplicationMode> duReturnStack_ = {ApplicationMode::Directory};
+  AnchorSnapshot duAnchor_;
   // 2026-08-14: grepReturnMode_/cutReturnMode_等(プロンプトが戻る
   // べき先を追跡する)とは異なり、これは「FILEモード自身の」^G
   // (Command::Back)がどこへ行くべきかを追跡する――直接のユーザー

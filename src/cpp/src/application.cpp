@@ -4957,7 +4957,16 @@ bool Application::returnFromMan() {
   // 生き続ける「フロア」であり、空にしてしまうと以降の.back()が
   // 未定義動作になる(ModeStack自身のfloorフレームと同じ発想)。
   currentMode_ = manReturnStack_.back();
-  if (manReturnStack_.size() > 1) manReturnStack_.pop_back();
+  if (manReturnStack_.size() > 1) {
+    manReturnStack_.pop_back();
+  } else {
+    // 2026-09-19七訂正、application.hpp自身のmanAnchor_宣言コメント
+    // 参照: ここが本来の基点そのものへ戻る瞬間――途中でfileMode_/
+    // directoryMode_が(例えばDU自身のopenSelectedDuEntry()経由で)
+    // 無関係な内容へ書き換えられてしまっていた場合に備え、凍結して
+    // おいた本来の内容を明示的に復元する。
+    restoreAnchorContent(currentMode_, manAnchor_);
+  }
   activeView().redraw();
   return true;
 }
@@ -4965,7 +4974,11 @@ bool Application::returnFromMan() {
 bool Application::returnFromLocate() {
   // 上と同じ理屈、LOCATE版。
   currentMode_ = locateReturnStack_.back();
-  if (locateReturnStack_.size() > 1) locateReturnStack_.pop_back();
+  if (locateReturnStack_.size() > 1) {
+    locateReturnStack_.pop_back();
+  } else {
+    restoreAnchorContent(currentMode_, locateAnchor_);
+  }
   activeView().redraw();
   return true;
 }
@@ -5067,7 +5080,17 @@ bool Application::returnFromDu() {
   // Grepを1つpush_back()するので、ここではそれを読んで1段だけ
   // pop_back()する。ただし残り1要素(本来の基点)だけは決してpopしない。
   currentMode_ = duReturnStack_.back();
-  if (duReturnStack_.size() > 1) duReturnStack_.pop_back();
+  if (duReturnStack_.size() > 1) {
+    duReturnStack_.pop_back();
+  } else {
+    // 2026-09-19七訂正、application.hpp自身のduAnchor_宣言コメント
+    // 参照: ここが本来の基点そのものへ戻る瞬間――途中でfileMode_/
+    // directoryMode_が(まさにこの関数のすぐ上のコメントが説明する
+    // openSelectedDuEntry()経由で)無関係な内容へ書き換えられて
+    // しまっていた場合に備え、凍結しておいた本来の内容を明示的に
+    // 復元する。
+    restoreAnchorContent(currentMode_, duAnchor_);
+  }
   activeView().redraw();
   return true;
 }
@@ -5617,6 +5640,45 @@ ApplicationMode Application::nearestFileOrDirectoryAnchor() const {
     }
   }
   return ApplicationMode::Directory;  // 保険――上の各*ReturnMode_は常に「より外側」を指すはずで、実際にはここへ到達しない
+}
+
+// 2026-09-19追加、manAnchor_/locateAnchor_/duAnchor_自身のapplication.hpp
+// 宣言コメント参照(AnchorSnapshot、この関数の戻り値の型自体はさらに
+// application.hpp冒頭の名前空間スコープの宣言参照)。`anchor`
+// (nearestFileOrDirectoryAnchor()の戻り値、常にFile/Directoryの
+// どちらか)が解決された「その瞬間」のfileMode_/directoryMode_の
+// 実際の中身(基点がFileの場合はfileReturnMode_も併せて)を、凍結して
+// 覚えておくために呼ぶ――後で(例えばDU自身のopenSelectedDuEntry()が
+// 同じ共有されたfileMode_/directoryMode_/fileReturnMode_を全く無関係
+// な内容へ上書きしてしまった後でも)restoreAnchorContent()で確実に
+// 復元できるようにする。
+AnchorSnapshot Application::anchorSnapshotFor(ApplicationMode anchor) const {
+  AnchorSnapshot snapshot;
+  if (anchor == ApplicationMode::File) {
+    snapshot.path = fileMode_.currentFile();
+    snapshot.fileReturnMode = fileReturnMode_;
+  } else {
+    snapshot.path = directoryMode_.currentDirectory();
+  }
+  return snapshot;
+}
+
+// anchorSnapshotFor()の対称的な相方: returnFromMan()/returnFromLocate()/
+// returnFromDu()自身が、スタックの最後の1要素(=恒久的な基点)まで
+// 戻ってきた「その瞬間」にだけ呼ぶ――途中の一時的なGrepの寄り道
+// (スタックのそれ以外の要素)を通過するだけの時は呼ばない。pathが
+// 空なら何もしない(anchorSnapshotFor()が呼ばれなかった/失敗した
+// 場合の保険――空文字列でfileMode_.loadFile("")/
+// directoryMode_.enterDirectory("")を呼んで却って壊すよりは、何も
+// しない方が安全)。
+void Application::restoreAnchorContent(ApplicationMode anchor, const AnchorSnapshot &snapshot) {
+  if (snapshot.path.empty()) return;
+  if (anchor == ApplicationMode::File) {
+    fileMode_.loadFile(snapshot.path);
+    fileReturnMode_ = snapshot.fileReturnMode;
+  } else if (anchor == ApplicationMode::Directory) {
+    directoryMode_.enterDirectory(snapshot.path);
+  }
 }
 
 std::string Application::cutContentReturnLabel() const {
@@ -6562,7 +6624,11 @@ bool Application::runDuOnCurrentFolder() {
   // と同じ方針転換: 以前はduReturnStack_という仕組み自体が無く、
   // returnFromDu()が常にDirectoryへハードコートされていたが、MAN/
   // LOCATEと同じ「通常ファイルかディレクトリ」棲み分けに揃える。
-  duReturnStack_ = {nearestFileOrDirectoryAnchor()};
+  {
+    ApplicationMode anchor = nearestFileOrDirectoryAnchor();
+    duReturnStack_ = {anchor};
+    duAnchor_ = anchorSnapshotFor(anchor);
+  }
   // 2026-09-19追加、直接のユーザー依頼("`/`で発動すると待たされるので
   // `^Jl`と同じく集計中な意味のメッセージを出して欲しい"、メッセージ
   // 文言は"Disk usage..."と直接指定): runLocateUpdateDb()自身の
@@ -7514,7 +7580,11 @@ bool Application::startManPrompt() {
   // どこであれ常に基点のDirectoryへ戻るべき」という判断を撤回する。
   // nearestFileOrDirectoryAnchor()自身のコメント参照――「通常ファイル
   // かディレクトリ」を発動元自体からたどって遡る。
-  if (currentMode_ != ApplicationMode::Man) manReturnStack_ = {nearestFileOrDirectoryAnchor()};
+  if (currentMode_ != ApplicationMode::Man) {
+    ApplicationMode anchor = nearestFileOrDirectoryAnchor();
+    manReturnStack_ = {anchor};
+    manAnchor_ = anchorSnapshotFor(anchor);
+  }
   activatePrompt(PromptKind::ManName, "");
   return true;
 }
@@ -7535,7 +7605,11 @@ bool Application::startManPrompt() {
 bool Application::startManList() {
   // 2026-09-19再訂正、startManPrompt()自身の直上のコメント参照――
   // 2026-09-15の「常に基点のDirectory」という判断を撤回する。
-  if (currentMode_ != ApplicationMode::Man) manReturnStack_ = {nearestFileOrDirectoryAnchor()};
+  if (currentMode_ != ApplicationMode::Man) {
+    ApplicationMode anchor = nearestFileOrDirectoryAnchor();
+    manReturnStack_ = {anchor};
+    manAnchor_ = anchorSnapshotFor(anchor);
+  }
   return startRegexPromptList(PromptKind::ManName);
 }
 
@@ -7638,7 +7712,11 @@ bool Application::startLocatePrompt() {
   // 2026-09-19再訂正、startManPrompt()自身のコメント参照――2026-09-15
   // の「常に基点のDirectory」という判断を撤回する。nearestFileOrDirectoryAnchor()
   // で「通常ファイルかディレクトリ」を発動元から遡る。
-  locateReturnStack_ = {nearestFileOrDirectoryAnchor()};
+  {
+    ApplicationMode anchor = nearestFileOrDirectoryAnchor();
+    locateReturnStack_ = {anchor};
+    locateAnchor_ = anchorSnapshotFor(anchor);
+  }
   const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentLocateQuery);
   activatePrompt(PromptKind::LocateQuery, recent.empty() ? std::string() : recent.back());
   return true;
@@ -8772,12 +8850,45 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     // ――これは新しい数を発明するのではなく、その結果を直接反映して
     // いる。
     std::string tail;
+    constexpr int kPromptTrailingTailChars = kTrailingPathTailChars - 1;  // 15、このブロック自身のコメント参照
     if (destinationMode == ApplicationMode::CutContent) {
       tail = destinationDirectory;
+    } else if (destinationMode == ApplicationMode::Man || destinationMode == ApplicationMode::Locate ||
+               destinationMode == ApplicationMode::Du) {
+      // 2026-09-19追加、直接のユーザー報告("^S→②戻り値不良。正しくは
+      // DU: /Users/haa150...ic/CLAUDE.md（DUモードを明示）"): これら
+      // 3つはprevious ModeName()自身が既に"<MODE>: <値>"という接頭辞
+      // 付き文字列を返す(それぞれの宣言コメント参照)――しかし、すぐ
+      // 上のCutContent分岐が回避しているのとまさに同じバグを、ここでは
+      // 依然として踏んでいた: 下のelse節の素朴な「末尾を残す」切り
+      // 詰めを"DU: /very/long/path"のような文字列全体へ適用すると、
+      // パス側は十分短ければ生き残る一方、接頭辞自体("DU: ")が真っ先に
+      // 食べられてしまう(CutContentの"CUT:<label>"と全く同じ理屈だが、
+      // あちらはラベルが常に短いので問題が表面化しなかった――MAN/
+      // LOCATEの値も短いことが多く同様に見過ごされていたが、DUの値は
+      // ファイルパスなので長くなりがちで、まさにこの報告で発覚した)。
+      // CutContentのように丸ごと切り詰めを諦めるのではなく、コロン以降
+      // の「値」部分だけを切り詰め、接頭辞は必ず生き残す――値側の予算
+      // は、この関数の他の全てのプレーンなパスが使う予算(kPromptTrailingTailChars
+      // + "..."の3文字)から接頭辞自身の長さを差し引いたもの。
+      std::size_t colon = destinationDirectory.find(": ");
+      if (colon == std::string::npos) {
+        tail = destinationDirectory;  // 保険――実際には常に見つかるはず
+      } else {
+        std::string prefix = destinationDirectory.substr(0, colon + 2);
+        std::string value = destinationDirectory.substr(colon + 2);
+        int valueBudget = kPromptTrailingTailChars + 3 - static_cast<int>(prefix.size());
+        if (valueBudget < 1) valueBudget = 1;
+        if (static_cast<int>(value.size()) <= valueBudget) {
+          tail = prefix + value;
+        } else {
+          int valueTailChars = std::max(1, valueBudget - 3);
+          tail = prefix + "..." + value.substr(value.size() - valueTailChars);
+        }
+      }
     } else if (static_cast<int>(destinationDirectory.size()) <= kTrailingPathTailChars) {
       tail = destinationDirectory;
     } else {
-      constexpr int kPromptTrailingTailChars = kTrailingPathTailChars - 1;  // 15、このブロック自身のコメント参照
       tail = "..." + destinationDirectory.substr(destinationDirectory.size() - kPromptTrailingTailChars);
     }
     // バッジ(2026-08-18修正、直接のユーザーの訂正+スクリーンショット
