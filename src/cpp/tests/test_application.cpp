@@ -3202,6 +3202,37 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line's trailing2 shows the resolved ret
   CHECK(afterAnchor.find_first_not_of(' ') == std::string::npos);   // and it's ALL spaces, reaching the row's edge
 }
 
+// 2026-09-20追加、直接のユーザー報告("...※※※※             "より
+// "...※※※※※※※※※※※"でよろしく、理由も無いのになぜパディング
+// するんだろう"): この値は以前trailing2に入っており、trailing2Kindの
+// デフォルト(QueryEcho)経由でtruncateFieldByKind()が「実際の余裕に
+// 関わらず16文字で頭打ち」にしてしまっていた――LOCATE自身のこの
+// モードラインは(drawPromptLabel()のプロンプト行とは違い)文字入力
+// エリアと幅を奪い合う理由が無いので、MAN/DU自身のtrailing3
+// (withTruncatedTrailing3()、実際の利用可能幅をそのまま使い切る)
+// と全く同じ形に揃えた。このテストは、恣意的な16文字上限を明確に
+// 超える(かつ画面には十分な余裕がある)基点パスが、切り詰められず
+// 全文表示されることを確認する。
+TEST_CASE_FIXTURE(Fixture, "LOCATE: mode line's return-anchor value is NOT artificially capped at 16 chars "
+                           "when more width is actually available (no competing text-input area exists here)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string filePath = app.fileMode().currentFile();
+  REQUIRE(static_cast<int>(filePath.size()) > 16);  // must genuinely exceed the old artificial cap to be meaningful
+
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("/");
+  if (!app.feedByte(0x0d, std::nullopt)) {
+    MESSAGE("locate not available -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
+}
+
 // 2026-08-18 fix: a real report ("^J^L'.txt'[return]=co→^S'.txt'[return]
 // →モードライン不良かつ検索してない") -- FGREP started from Locate
 // results (startGrepPrompt() has no mode restriction beyond blocking

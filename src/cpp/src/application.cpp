@@ -1636,9 +1636,22 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 参照)を表示する。previousModeName(Grep)自身が"<GREP種別>:
     // <pattern>"を返すようになった(すぐ下に新設)ので、フラグによる
     // 特別扱いは不要――manView_と全く同じ形。
-    std::string trailing2 = previousModeName(locateReturnStack_.back());
-    return {"LOCATE", std::to_string(contentByteCount(locateView_)), /*fillTrailingToEdge=*/true,
-            /*rightWatermark=*/"", trailing2};
+    //
+    // 2026-09-20再訂正、直接のユーザー報告("...※※※※             "
+    // より"...※※※※※※※※※※※"でよろしく、理由も無いのになぜ
+    // パディングするんだろう"): この値は以前trailing2に入っていた
+    // ため、trailing2Kindのデフォルト(QueryEcho)経由でtruncateFieldByKind()
+    // が「実際の余裕(budget)に関わらず16文字で頭打ち」にしてしまって
+    // いた――同じ値を(man)同種のMAN/DU自身のtrailing3(withTruncatedTrailing3()
+    // 経由、実際の利用可能幅をそのまま使い切る、上限16文字などという
+    // 恣意的な制限は無い)へ移すのを、この値がまだtrailing2にとどまって
+    // いた2026-08-14当時の一時的な都合(trailing3という概念自体が
+    // まだ存在しなかった)以来ずっと見送っていた――MAN/DUと全く同じ
+    // 形に揃える。
+    ContentView::ModeLineFields fields{"LOCATE", std::to_string(contentByteCount(locateView_)),
+                                        /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", /*trailing2=*/""};
+    fields.trailing3 = previousModeName(locateReturnStack_.back());
+    return fields;
   });
   duView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (duMode_.currentPath().empty()) return {};
