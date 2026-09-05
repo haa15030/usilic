@@ -7704,6 +7704,43 @@ TEST_CASE_FIXTURE(Fixture, "DU: ^G returns to the normal FILE it was invoked fro
   CHECK(app.fileMode().currentFile() == filePath);
 }
 
+// 2026-09-19追加、直接のユーザー依頼("DUの修正と、戻り値の仕組みが
+// 無いようなのでMAN/LOCATEと同じ仕様にしてほしい"): MAN/LOCATE自身の
+// 同種のテストと対をなすDU版――GREPの結果からDU内のマッチへ着地した
+// 場合、^Gはduに一段ずつ正しく戻る(duReturnStack_、application.hpp
+// 自身の宣言コメント参照)。
+TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode: Enter on a match lands back on Du, with Back "
+                           "returning to the grep results (not skipping straight past it)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  if (app.activeContentView().lines().empty()) {
+    MESSAGE("du not available or produced no entries -- skipping");
+    return;
+  }
+  std::string knownDuLine =
+      std::max_element(app.activeContentView().lines().begin(), app.activeContentView().lines().end(),
+                        [](const auto &a, const auto &b) { return a.text.size() < b.text.size(); })
+          ->text;
+
+  REQUIRE(app.handleCommand(Command::StartGrep));
+  feedText(knownDuLine);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE_FALSE(app.grepMode().matches().empty());
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Du);
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Grep);  // NOT straight to Directory
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): refused outside Directory/File mode") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));  // enter Du mode itself first
@@ -7731,17 +7768,24 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDu): tallies whatever folder is c
   CHECK(app.duMode().currentPath() != path());
 }
 
-// 2026-09-09 redesign, a direct user report/spec ("^J^D : DU画面へ戻る。
-// 集計は行わず"): ^J^D used to be a plain alias for ^Jd (same prompt,
-// same re-run). Now it's Command::RedisplayDu -- a pure "show existing
-// results, no prompt at all" action. With NO DU ever run yet in this
-// fixture, there's nothing to redisplay, so it's a no-op.
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^D is a no-op when DU has never been run yet") {
+// 2026-09-19 re-reversal, a direct user request ("最初のDUを^J^Dで
+// 発動した場合、集計結果がまだ無いので、そのときに限り^Jdと同じく
+// duを起動してほしい"): the 2026-09-09 "pure redisplay, no-op with
+// nothing to redisplay" spec (see this test's own former title/comment)
+// is overridden for this one specific case -- with NO DU ever run yet,
+// ^J^D now falls back to running `du` itself (exactly like ^Jd), rather
+// than staying a no-op. Once a real DU session exists, ^J^D goes back
+// to being a pure redisplay (the sibling test right below, unchanged).
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^D runs `du` (like ^Jd) when DU has never been run yet") {
   REQUIRE(app.start(path()));
   app.feedByte(0x0a, std::nullopt);
-  CHECK_FALSE(app.feedByte(0x04, std::nullopt));
+  if (!app.feedByte(0x04, std::nullopt)) {
+    MESSAGE("du not available -- skipping");
+    return;
+  }
   CHECK_FALSE(app.promptActive());
-  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.duMode().currentPath() == path());
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^D redisplays the existing DU results without a prompt or "

@@ -4726,6 +4726,11 @@ bool Application::openSelectedGrepMatch() {
   } else if (grepReturnMode_ == ApplicationMode::Locate) {
     // 上と同じ理屈、LOCATE版。
     locateReturnStack_.push_back(ApplicationMode::Grep);
+  } else if (grepReturnMode_ == ApplicationMode::Du) {
+    // 2026-09-19五訂正、直接のユーザー依頼("DUの修正と、戻り値の
+    // 仕組みが無いようなのでMAN/LOCATEと同じ仕様にしてほしい")。
+    // 上と同じ理屈、DU版。
+    duReturnStack_.push_back(ApplicationMode::Grep);
   }
   // 2026-08-28修正、直接のユーザー報告("検索前には画面にあった
   // ブロックカーソルが検索一覧のどれかを[return]後の画面では表示
@@ -5016,14 +5021,17 @@ bool Application::returnFromDu() {
   // 一切クリアしていなかったため、次のDirectory側の^Gが再びここへ
   // 跳ね返り続けていた。GREP/CUTと同じ形で、ここを離れる際に無条件で
   // クリアする(この注釈はopenSelectedDuEntry()自身のディレクトリ
-  // エントリ分岐だけが設定するもので、duReturnMode_がFileの場合でも
-  // 無関係かつ無害――directoryMode_自身の状態なので、Fileへ戻る時は
-  // どのみち参照されない)。
+  // エントリ分岐だけが設定するもので、duReturnStack_の戻り先がFileの
+  // 場合でも無関係かつ無害――directoryMode_自身の状態なので、Fileへ
+  // 戻る時はどのみち参照されない)。
   directoryMode_.setSearchAnnotation("");
-  // 2026-09-19修正、startManPrompt()/startLocatePrompt()自身のコメント
-  // と同じ方針転換――以前はここでApplicationMode::Directoryへ無条件に
-  // 固定していた(duReturnMode_という変数自体が存在しなかった)。
-  currentMode_ = duReturnMode_;
+  // 2026-09-19再訂正、manReturnStack_/locateReturnStack_と全く同じ
+  // 仕組みへ揃える(application.hpp自身のduReturnStack_宣言コメント
+  // 参照): openSelectedGrepMatch()自身のDu分岐がマッチへ着地する度に
+  // Grepを1つpush_back()するので、ここではそれを読んで1段だけ
+  // pop_back()する。ただし残り1要素(本来の基点)だけは決してpopしない。
+  currentMode_ = duReturnStack_.back();
+  if (duReturnStack_.size() > 1) duReturnStack_.pop_back();
   activeView().redraw();
   return true;
 }
@@ -5535,18 +5543,17 @@ ApplicationMode Application::nearestFileOrDirectoryAnchor() const {
       case ApplicationMode::CutContent:
         mode = cutReturnMode_;
         break;
-      // Man/Locate自身のスタック(manReturnStack_/locateReturnStack_、
-      // application.hpp自身の宣言コメント参照)は、front()(先頭=恒久
-      // 的な基点)が常に既にFile/Directoryへ解決済みの終端値――
-      // この関数自身が過去にそれを計算した結果そのものなので、
-      // さらに辿る必要が無く、ここで直接returnしてよい。
+      // Man/Locate/Du自身のスタック(manReturnStack_/locateReturnStack_/
+      // duReturnStack_、application.hpp自身の宣言コメント参照)は、
+      // front()(先頭=恒久的な基点)が常に既にFile/Directoryへ解決済み
+      // の終端値――この関数自身が過去にそれを計算した結果そのもの
+      // なので、さらに辿る必要が無く、ここで直接returnしてよい。
       case ApplicationMode::Man:
         return manReturnStack_.front();
       case ApplicationMode::Locate:
         return locateReturnStack_.front();
       case ApplicationMode::Du:
-        mode = duReturnMode_;
-        break;
+        return duReturnStack_.front();
       case ApplicationMode::Key:
         mode = keyReturnMode_;
         break;
@@ -6506,16 +6513,37 @@ bool Application::runDuOnCurrentFolder() {
     return false;
   }
   // 2026-09-19追加、startManPrompt()/startLocatePrompt()自身のコメント
-  // と同じ方針転換: 以前はduReturnMode_という変数自体が無く、
+  // と同じ方針転換: 以前はduReturnStack_という仕組み自体が無く、
   // returnFromDu()が常にDirectoryへハードコートされていたが、MAN/
   // LOCATEと同じ「通常ファイルかディレクトリ」棲み分けに揃える。
-  duReturnMode_ = nearestFileOrDirectoryAnchor();
+  duReturnStack_ = {nearestFileOrDirectoryAnchor()};
+  // 2026-09-19追加、直接のユーザー依頼("`/`で発動すると待たされるので
+  // `^Jl`と同じく集計中な意味のメッセージを出して欲しい"、メッセージ
+  // 文言は"Disk usage..."と直接指定): runLocateUpdateDb()自身の
+  // "Updating database..."と全く同じ仕組み――ただし`du`(DuMode::
+  // loadUsage()、ChildProcess::run())は現状updatedbのような非同期
+  // fork+pollではなく素朴にブロッキングなので、非同期の完了待ち機構
+  // は不要で、ブロッキング呼び出しの直前にメッセージを描いて
+  // flush()するだけで足りる(それが無いと、stdioのバッファに
+  // 溜まったまま`du`が終わるまで画面に一切現れない――
+  // TerminalDisplay::write()自身がstd::fputs()を使っており、
+  // 明示的なflush()無しでは自動では吐き出されないため)。
+  drawPromptLabel(PromptKind::Du, /*positionText=*/"", "Disk usage...");
+  display_.flush();
   return executeDu(folder);
 }
 
 // ^J^D(K-38): Command::RedisplayDu自身のコメント参照。
 bool Application::redisplayDu() {
-  if (duMode_.currentPath().empty()) return false;
+  // 2026-09-19修正、直接のユーザー依頼("最初のDUを^J^Dで発動した
+  // 場合、集計結果がまだ無いので、そのときに限り^Jdと同じくduを
+  // 起動してほしい"): 以前はここが「まだ一度もDUを実行していない」
+  // 場合に無言のno-opだった(K-38自身のusilicrcの文書「Redisplay
+  // window」通り――まだ何も無ければ何も再表示するものが無いという
+  // 理屈)。ユーザーの意図は「^J^Dは^Jdの安全な同義語であってよい」
+  // ということなので、初回に限りrunDuOnCurrentFolder()(^Jd自体)へ
+  // フォールバックする。
+  if (duMode_.currentPath().empty()) return runDuOnCurrentFolder();
   return returnToDuResults();
 }
 
@@ -7979,6 +8007,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
       return true;
     }
     case PromptKind::None:
+    case PromptKind::Du:  // promptKind_には決して代入されない、drawPromptLabel()専用のラベルマーカー――application.hpp自身の宣言コメント参照
       return false;
   }
   return false;
@@ -8283,6 +8312,8 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return "FILE";
     case PromptKind::RecentDirectory:
       return "DIR";
+    case PromptKind::Du:
+      return "DU";
     case PromptKind::None:
       return "";
   }

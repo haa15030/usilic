@@ -2185,16 +2185,14 @@ class Application {
   // (front以外に何も残っていなければ、それが「本来の」基点)。
   std::vector<ApplicationMode> manReturnStack_ = {ApplicationMode::Directory};
   std::vector<ApplicationMode> locateReturnStack_ = {ApplicationMode::Directory};
-  // 2026-09-19追加、nearestFileOrDirectoryAnchor()自身のコメント参照
-  // ――MAN/LOCATEの2つの兄弟(すぐ上)にDUを揃える。以前はduReturnMode_
-  // という変数自体が存在せず、returnFromDu()がApplicationMode::Directory
-  // を直接ハードコートしていた(それ自身の宣言コメントの「DUは常に
-  // Directoryへ戻るので条件分岐は不要」という当時の前提)。DUにはまだ
-  // GREPの結果からマッチへ着地する経路が実装されていない(グループ2
-  // からの「本来の値の上書き」問題がまだ実際には起きていない)ため、
-  // 単一の値のままで十分――もしその経路が将来追加されるなら、Man/
-  // Locateと同じ理由でスタック化するのが自然だろう。
-  ApplicationMode duReturnMode_ = ApplicationMode::Directory;
+  // 2026-09-19再訂正、直接のユーザー依頼("DUの修正と、戻り値の仕組み
+  // が無いようなのでMAN/LOCATEと同じ仕様にしてほしい"): 以前は
+  // duReturnMode_という単一の値のみで、GREPの結果からマッチへ着地
+  // する経路(openSelectedGrepMatch()、MAN/LOCATEは既に対応済み)が
+  // 実装されておらず、DUだけ「戻り値の仕組みが無い」状態だった。
+  // MAN/LOCATE自身のmanReturnStack_/locateReturnStack_と全く同じ
+  // LIFOスタックに揃える――理由はそちらの宣言コメント参照。
+  std::vector<ApplicationMode> duReturnStack_ = {ApplicationMode::Directory};
   // 2026-08-14: grepReturnMode_/cutReturnMode_等(プロンプトが戻る
   // べき先を追跡する)とは異なり、これは「FILEモード自身の」^G
   // (Command::Back)がどこへ行くべきかを追跡する――直接のユーザー
@@ -2401,7 +2399,16 @@ class Application {
     // 移植が元々構築したような純粋な閲覧ピッカーではないことを
     // 発見した)。
     RecentFile,
-    RecentDirectory
+    RecentDirectory,
+    // 2026-09-19追加、直接のユーザー依頼("`^Jl`と同じく`集計中`な意味の
+    // メッセージを出して欲しい"): DuPath(すぐ上のコメント参照)とは
+    // 違い、これは本物のプロンプト(promptKind_/promptActive())では
+    // ない――runLocateUpdateDb()がPromptKind::LocateQuery+staticMessage
+    // 経由で"Updating database..."を描くのと全く同じ仕組みを、
+    // `du`自身の(現状ブロッキングな)呼び出しの直前に一度だけ
+    // drawPromptLabel(PromptKind::Du, "", "Disk usage...")として呼ぶ
+    // ためだけに存在する――promptKind_へは一切代入されない。
+    Du
   };
   // ^Xc/^Xm/^Xr(K-52/K-54/K-56)とその^X^K「with SHELL window」の
   // 兄弟(K-51/K-53/K-55)は、以前は移動先/確認プロンプトを即座に
