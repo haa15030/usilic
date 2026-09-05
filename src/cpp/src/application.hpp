@@ -2152,35 +2152,49 @@ class Application {
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
   ApplicationMode cutReturnMode_ = ApplicationMode::Directory;
-  ApplicationMode manReturnMode_ = ApplicationMode::Directory;
-  ApplicationMode locateReturnMode_ = ApplicationMode::Directory;
+  // 2026-09-19三訂正、直接のユーザー提案("フラグはなるべく使いたく
+  // ないんで、何かを上書きするのではなく...旧版のようにスタックへの
+  // 積み降ろしでは対応できない？"): 単一の値(manReturnMode_)+それを
+  // 上書きするための独立したフラグ(manReturnsToGrepResults_)という
+  // 直前の設計を、素朴なLIFOスタックへ差し替える――legacyのSTACK/GREP
+  // 構造体からの移植であるModeStack(mode_stack.hpp、CutMode自身の
+  // modeStack_/cutModeStack_が既に使っている)と同じ発想だが、あちら
+  // ほど重くはない: ModeStackFrameはCutMode自身が抱える「バッファの
+  // 中身そのものを積み降ろしする」問題(1つのcutView_/cutMode_しか
+  // 無いので、ネストする度に本物のコンテンツを退避/復元しなければ
+  // ならない)を解くための型だが、MAN/LOCATEにはその問題が無い――
+  // manView_/locateView_はそれぞれ専用の永続ContentViewを持っており
+  // (このクラス自身の冒頭のコメント、"ModeStackのpushが全く不要な
+  // 理由"の節参照)、モード切り替えは単にどのビューをredraw()する
+  // かを変えるだけで済む。ここで本当に必要なのは、「次の^Gはどこへ
+  // 行くか」という「モード識別子だけ」のLIFOであり、ModeStackFrame
+  // 一式(name/directory/cutBuffer/view等)は要らない――
+  // std::vector<ApplicationMode>で十分。
+  //
+  // 不変条件: 常に「先頭(front)」= nearestFileOrDirectoryAnchor()に
+  // より解決された、この一連のMANセッションの恒久的な基点
+  // (File/Directory、それ自体はもう再帰する必要が無い終端値)。
+  // その後ろに積まれるのは、GREPの結果からマッチへ着地するたびに
+  // 積まれる中間の寄り道(現状はApplicationMode::Grepのみ、複数回
+  // ネストしても構わない――例えばMAN内のマッチへ着地→そこから
+  // 「さらに」GREPし直して「別の」マッチへ着地、のような入れ子も
+  // 正しく1段ずつ戻れる)。startManPrompt()/startManList()自身の
+  // 「まだManにいない時だけ」ガードで新規に1要素へリセットされ、
+  // openSelectedGrepMatch()自身のMan/Locate分岐がGrepを1つpush_back()
+  // し、returnFromMan()/returnFromLocate()が1つpop_back()する
+  // (front以外に何も残っていなければ、それが「本来の」基点)。
+  std::vector<ApplicationMode> manReturnStack_ = {ApplicationMode::Directory};
+  std::vector<ApplicationMode> locateReturnStack_ = {ApplicationMode::Directory};
   // 2026-09-19追加、nearestFileOrDirectoryAnchor()自身のコメント参照
   // ――MAN/LOCATEの2つの兄弟(すぐ上)にDUを揃える。以前はduReturnMode_
   // という変数自体が存在せず、returnFromDu()がApplicationMode::Directory
   // を直接ハードコートしていた(それ自身の宣言コメントの「DUは常に
-  // Directoryへ戻るので条件分岐は不要」という当時の前提)。
+  // Directoryへ戻るので条件分岐は不要」という当時の前提)。DUにはまだ
+  // GREPの結果からマッチへ着地する経路が実装されていない(グループ2
+  // からの「本来の値の上書き」問題がまだ実際には起きていない)ため、
+  // 単一の値のままで十分――もしその経路が将来追加されるなら、Man/
+  // Locateと同じ理由でスタック化するのが自然だろう。
   ApplicationMode duReturnMode_ = ApplicationMode::Directory;
-  // 2026-09-19追加、直接のユーザー報告("^Jmls^M^S→sort^M→^G→戻り値
-  // 不良、正しくは「/Users/haa15030/git/usilic/CLAUDE.md」"): 以前は
-  // openSelectedGrepMatch()自身のMan/Locate分岐が、マッチへ着地した
-  // 際にmanReturnMode_/locateReturnMode_自体を一時的にGrepへ上書き
-  // していたが、これは「発動元を遡って解決された、この本来の値
-  // (File等)」を消し去ってしまう――returnFromGrep()の対称的な後始末が
-  // それを「元に戻す」際、上書き前の本来の値を覚えておく手段が無い
-  // ため、無条件にApplicationMode::Directoryへリセットするしか
-  // できなかった(File向けの2026-08-28の同種の仕組みも、実は同じ
-  // 単純化を昔から抱えている――fileReturnMode_==Grepの上書きは同様に
-  // 元の値を消してしまうが、Fileの「本来の」既定値は元々ほぼ常に
-  // Directoryだったため、この簡略化の影響が表面化してこなかった)。
-  // MANの「本来の」既定値が今やFileにもなり得る(nearestFileOrDirectoryAnchor()
-  // 参照)ため、この簡略化はもう通用しない。manReturnMode_/
-  // locateReturnMode_自体には一切触れず、代わりにこの独立した
-  // フラグで「マッチへ着地した直後で、次の^Gは(本来の戻り先ではなく)
-  // 検索結果一覧へ戻るべき」だけを示す――FileMode自身のsearchAnnotation_
-  // /hasSearchAnnotation()と同じ発想だが、Man/LocateにはFileのような
-  // 文字列の「注釈」欄が無いので、素の真偽値にしてある。
-  bool manReturnsToGrepResults_ = false;
-  bool locateReturnsToGrepResults_ = false;
   // 2026-08-14: grepReturnMode_/cutReturnMode_等(プロンプトが戻る
   // べき先を追跡する)とは異なり、これは「FILEモード自身の」^G
   // (Command::Back)がどこへ行くべきかを追跡する――直接のユーザー

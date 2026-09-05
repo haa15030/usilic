@@ -2521,10 +2521,10 @@ TEST_CASE_FIXTURE(Fixture, "MAN started from File mode: the still-open GREP prom
   REQUIRE(app.currentMode() == ApplicationMode::Grep);
   REQUIRE_FALSE(app.grepMode().matches().empty());
 
-  // Back WITHOUT selecting a match -- openSelectedGrepMatch() (and its
-  // manReturnsToGrepResults_ flag) never runs here at all. (Not
-  // asserting the directory's ABSENCE here -- it's trivially a prefix
-  // of filePath itself, so that check would be meaningless.)
+  // Back WITHOUT selecting a match -- openSelectedGrepMatch() never
+  // runs here at all, so nothing was ever pushed onto manReturnStack_.
+  // (Not asserting the directory's ABSENCE here -- it's trivially a
+  // prefix of filePath itself, so that check would be meaningless.)
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Man);
   CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
@@ -3349,10 +3349,10 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE started from File mode: backing out of a grep
   REQUIRE(app.currentMode() == ApplicationMode::Grep);
   REQUIRE_FALSE(app.grepMode().matches().empty());
 
-  // Back WITHOUT selecting a match -- openSelectedGrepMatch() (and its
-  // locateReturnsToGrepResults_ flag) never runs here at all. (Not
-  // asserting the directory's ABSENCE here -- it's trivially a prefix
-  // of filePath itself, so that check would be meaningless.)
+  // Back WITHOUT selecting a match -- openSelectedGrepMatch() never
+  // runs here at all, so nothing was ever pushed onto locateReturnStack_.
+  // (Not asserting the directory's ABSENCE here -- it's trivially a
+  // prefix of filePath itself, so that check would be meaningless.)
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Locate);
   CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);

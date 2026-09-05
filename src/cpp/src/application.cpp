@@ -1584,27 +1584,14 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     ContentView::ModeLineFields fields{"MAN", std::to_string(contentByteCount(manView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/"(man)"};
-    // 2026-09-19修正、直接のユーザー報告("^Jmls^M^Ssort^M→[return]で
-    // マッチへ着地→「MAN」「030/525 5%」「25921」「(man)」「GREP:
-    // sort   」となるはずが不良"): 上のコメントの前提("MAN自身の戻り
-    // 先はGroup1方針により常に基点のDirectory")は、^J mによる「新規」
-    // 入場についてだけ正しい――GREPの結果からMAN内のマッチへ「着地」
-    // した場合(openSelectedGrepMatch()自身のMan分岐参照)は、
-    // manReturnMode_が一時的にGrepへ上書きされるので、ここでもそれを
-    // 反映しないと、実際の戻り先(Grep結果一覧)と食い違う古い
-    // Directoryパスを表示し続けてしまう。
-    // 2026-09-19再訂正、直接のユーザー方針の転換(nearestFileOrDirectoryAnchor()
-    // 自身のコメント参照): manReturnMode_はもはや常にDirectoryとは
-    // 限らない(通常ファイルから発動していればFile)ので、
-    // directoryMode_.currentDirectory()決め打ちをpreviousModeName()
-    // 経由の汎用解決へ一般化する。さらに同日の再訂正:
-    // manReturnMode_自体はもうGrepへ上書きされない(application.hpp自身の
-    // manReturnsToGrepResults_宣言コメント参照)ので、そちらを見る。
-    if (manReturnsToGrepResults_) {
-      fields.trailing3 = std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern();
-    } else {
-      fields.trailing3 = previousModeName(manReturnMode_);
-    }
+    // 2026-09-19四訂正、直接のユーザー提案("フラグはなるべく使いたく
+    // ない...旧版のようにスタックへの積み降ろしでは対応できない？"):
+    // application.hpp自身のmanReturnStack_宣言コメント参照。フラグに
+    // よる特別扱いはもう不要――manReturnStack_.back()がGrepの時、
+    // previousModeName(Grep)自身が(すぐ下に新設した通り)
+    // "<GREP種別>: <pattern>"を返すようになったので、他の全ての
+    // 戻り先(File/Directory)と全く同じ経路で済む。
+    fields.trailing3 = previousModeName(manReturnStack_.back());
     return fields;
   });
   // 2026-08-14修正、それから同日に訂正: 実際の報告("^J^L→'.txt'
@@ -1636,23 +1623,14 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // ない。
   locateView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (locateMode_.query().empty()) return {};
-    // 2026-09-19再訂正、直接のユーザー報告+比較("あらたな重複発見"、
-    // 実機の「LOCATE」「LOCATE: .md」――GREPの時と同じ「同一単語が
-    // 2度出る」問題): 同日の直前の修正は"LOCATE: <query>"を
-    // "GREP: <pattern>"に分岐させただけで、Grepの上書きが無い「素の」
-    // LOCATE画面自体は依然として"LOCATE: <query>"のまま――nameが既に
-    // "LOCATE"なので、これも同じ重複だった。直接のユーザー方針("GREPと
-    // 同じく、発動元のファイルもしくはディレクトリで"): クエリ文字列
-    // 自体はもう表示せず、manView_と全く同じ形で、実際の^Gの戻り先
-    // (nearestFileOrDirectoryAnchor()により解決されたlocateReturnMode_、
-    // Fileなら生のファイルパス、Directoryなら生のディレクトリパス、
-    // どちらも"LOCATE: "接頭辞は付けない)を表示する。
-    // 2026-09-19再訂正: locateReturnMode_自体はもうGrepへ上書きされ
-    // ない(manView_自身の同じ修正、application.hpp自身の
-    // locateReturnsToGrepResults_宣言コメント参照)ので、そちらを見る。
-    std::string trailing2 = locateReturnsToGrepResults_
-                                 ? std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern()
-                                 : previousModeName(locateReturnMode_);
+    // 2026-09-19四訂正、直接のユーザー報告+提案("あらたな重複発見"
+    // から「フラグはなるべく使いたくない...スタックへの積み降ろし
+    // では対応できない？」まで): クエリ文字列はもう表示せず、実際の
+    // ^Gの戻り先(application.hpp自身のlocateReturnStack_宣言コメント
+    // 参照)を表示する。previousModeName(Grep)自身が"<GREP種別>:
+    // <pattern>"を返すようになった(すぐ下に新設)ので、フラグによる
+    // 特別扱いは不要――manView_と全く同じ形。
+    std::string trailing2 = previousModeName(locateReturnStack_.back());
     return {"LOCATE", std::to_string(contentByteCount(locateView_)), /*fillTrailingToEdge=*/true,
             /*rightWatermark=*/"", trailing2};
   });
@@ -3334,7 +3312,7 @@ bool Application::handleCommand(Command command) {
         // "^G連打で最終的にLOCATEを起動した(ls)へ戻るのはかまわない"
         // ――今度はLocateモードからの「2回目」の^Gが、
         // returnFromLocate()自身の既存の、手を付けられていないロジック
-        // 経由で既に正しくlocateReturnMode_に到達する)。
+        // 経由で既に正しくlocateReturnStack_に到達する)。
         if (fileReturnMode_ == ApplicationMode::Locate) return returnFromFileToLocate();
         // 2026-09-09追加、openSelectedDuEntry()自身のコメント参照
         // ("DUでどれかを選ぶと戻り値がDUじゃない"): DU結果からファイル
@@ -4737,22 +4715,17 @@ bool Application::openSelectedGrepMatch() {
     fileMode_.setSearchAnnotation(match->text);
     fileReturnMode_ = ApplicationMode::Grep;
   } else if (grepReturnMode_ == ApplicationMode::Man) {
-    // 2026-09-19再訂正、直接のユーザー報告("^Jmls^M^S→sort^M→^G→
-    // 戻り値不良、正しくは「/Users/haa15030/git/usilic/CLAUDE.md」"):
-    // 前回の版はここでmanReturnMode_自体をGrepへ上書きしていたが、
-    // これはnearestFileOrDirectoryAnchor()により解決された「本来の」
-    // 値(File等、常にDirectoryとは限らない)を消してしまい、
-    // returnFromGrep()側の対称的な後始末が、その本来の値を覚えて
-    // おく手段が無いまま無条件にDirectoryへリセットするしかなかった
-    // ――MANが素でDirectoryから発動された場合はこれでも正しかったが、
-    // Fileから発動された場合には本来の戻り先(そのファイル自身)を
-    // 失ってしまっていた。manReturnMode_自体には一切触れず、代わりに
-    // 独立したフラグ(application.hpp自身の宣言コメント参照)で
-    // 「次の^Gは検索結果一覧へ」だけを示す。
-    manReturnsToGrepResults_ = true;
+    // 2026-09-19四訂正、直接のユーザー提案("フラグはなるべく使いたく
+    // ない...スタックへの積み降ろしでは対応できない？"):
+    // application.hpp自身のmanReturnStack_宣言コメント参照。
+    // manReturnStack_自体(の先頭=本来の基点)には一切触れず、単に
+    // Grepを1つpush_back()するだけ――複数回ネストしても(例えば
+    // マッチへ着地→そこから「さらに」別のGREPをしてまた別のマッチへ
+    // 着地)、returnFromMan()が1段ずつ正しくpop_back()できる。
+    manReturnStack_.push_back(ApplicationMode::Grep);
   } else if (grepReturnMode_ == ApplicationMode::Locate) {
     // 上と同じ理屈、LOCATE版。
-    locateReturnsToGrepResults_ = true;
+    locateReturnStack_.push_back(ApplicationMode::Grep);
   }
   // 2026-08-28修正、直接のユーザー報告("検索前には画面にあった
   // ブロックカーソルが検索一覧のどれかを[return]後の画面では表示
@@ -4823,14 +4796,12 @@ bool Application::returnFromGrep() {
   // される必要がある。
   if (grepReturnMode_ == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
   else if (grepReturnMode_ == ApplicationMode::File) fileMode_.setSearchAnnotation("");
-  // 2026-09-19再訂正: Man/Locateについては、ここでの後始末はもう
+  // 2026-09-19四訂正: Man/Locateについては、ここでの後始末はもう
   // 不要になった――openSelectedGrepMatch()自身のMan/Locate分岐は
-  // manReturnMode_/locateReturnMode_自体にはもう一切触れず(それ自身
-  // のコメント参照)、代わりに独立したフラグ(manReturnsToGrepResults_/
-  // locateReturnsToGrepResults_)を使う。そのフラグはreturnFromMan()/
-  // returnFromLocate()自身が消費した時点で既にfalseへ戻っているので、
-  // ここ(Grep結果一覧自体からの、マッチを選ばない^G)に処理すべき
-  // 後始末は残っていない。
+  // manReturnStack_/locateReturnStack_へGrepをpush_back()するだけで
+  // (application.hpp自身の宣言コメント参照)、この関数自体はそれらの
+  // スタックに一切触れない。マッチを選ばずここへ直接来た経路では
+  // そもそも何もpushされていないので、後始末そのものが要らない。
   activeView().redraw();
   return true;
 }
@@ -4936,30 +4907,24 @@ bool Application::returnToCutResults() {
 
 bool Application::returnFromMan() {
   manMode_.saveCursorPosition();
-  // 2026-09-19追加、openSelectedGrepMatch()自身のMan分岐(それ自身の
-  // コメント参照)の対称的な相方: マッチへ着地した直後の^Gは、
-  // manReturnMode_(本来の基点、GREPには一切触れられていない)へでは
-  // なく、まず検索結果一覧へ一段戻る。
-  if (manReturnsToGrepResults_) {
-    manReturnsToGrepResults_ = false;
-    currentMode_ = ApplicationMode::Grep;
-    grepView_.redraw();
-    return true;
-  }
-  currentMode_ = manReturnMode_;
+  // 2026-09-19四訂正、application.hpp自身のmanReturnStack_宣言コメント
+  // 参照: 先頭(back())が常に「次にどこへ戻るか」――openSelected
+  // GrepMatch()自身のMan分岐がマッチへ着地する度にGrepを1つpush_back()
+  // しているので、ここではそれを読んで1段だけpop_back()する。
+  // ただし残り1要素(前面=本来の基点)だけは決してpopしない――それは
+  // 次にstartManPrompt()/startManList()が新規にリセットするまで
+  // 生き続ける「フロア」であり、空にしてしまうと以降の.back()が
+  // 未定義動作になる(ModeStack自身のfloorフレームと同じ発想)。
+  currentMode_ = manReturnStack_.back();
+  if (manReturnStack_.size() > 1) manReturnStack_.pop_back();
   activeView().redraw();
   return true;
 }
 
 bool Application::returnFromLocate() {
   // 上と同じ理屈、LOCATE版。
-  if (locateReturnsToGrepResults_) {
-    locateReturnsToGrepResults_ = false;
-    currentMode_ = ApplicationMode::Grep;
-    grepView_.redraw();
-    return true;
-  }
-  currentMode_ = locateReturnMode_;
+  currentMode_ = locateReturnStack_.back();
+  if (locateReturnStack_.size() > 1) locateReturnStack_.pop_back();
   activeView().redraw();
   return true;
 }
@@ -5472,9 +5437,9 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     // それぞれ"KEY"/"SHELL"であり、こちらも重複の心配が無い)、
     // ExitConfirmの"prev"欄等、他の全ての呼び出し元にも同じ接頭辞が
     // 一貫して波及するが、いずれも名前欄が既に"MAN"を名乗っている
-    // 場面ではない(manView_自身の画面はmanReturnMode_経由でここを
-    // 呼ばない――manReturnMode_が自分自身Manになることは無い)ので
-    // 重複の心配は無い。
+    // 場面ではない(manView_自身の画面はmanReturnStack_経由でここを
+    // 呼ばない――manReturnStack_の要素が自分自身Manになることは無い)
+    // ので重複の心配は無い。
     case ApplicationMode::Man:
       return "MAN: " + manMode_.currentPage();
     case ApplicationMode::Archive:
@@ -5485,7 +5450,7 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     // Locate(2026-09-19追加、直接のユーザー報告"^J^L.md^M^S→...戻り値
     // 空っぽは今も健在"): このswitchにLocateのケースが一度も無く、
     // defaultの""へ落ちていたため、LOCATEから起動したプロンプト
-    // (GrepPattern/CutPattern等、destinationModeがlocateReturnMode_
+    // (GrepPattern/CutPattern等、destinationModeがlocateReturnStack_
     // 経由でLocateになる場合)は、まだパターンが未入力/未投入の間、
     // drawPromptLabel()自身のtrailingフィールドが丸ごと空欄になって
     // いた。ここだけ他のケース(Directory/File/Man/Du、いずれも接頭辞
@@ -5499,6 +5464,18 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     // 別物(混同しないこと、直後のGREP: File分岐の訂正コメント参照)。
     case ApplicationMode::Locate:
       return "LOCATE: " + locateMode_.query();
+    // Grep(2026-09-19追加、manReturnStack_/locateReturnStack_自身の
+    // application.hpp宣言コメント参照): マッチへ着地した後の
+    // manView_/locateView_自身のtrailing3が、以前は専用のフラグで
+    // "<GREP種別>: <pattern>"を特別扱いしていたが、ここにこの
+    // ケースを追加することで、その特別扱いを丸ごと不要にできる――
+    // manReturnStack_.back()/locateReturnStack_.back()がGrepの時も、
+    // 他のどの戻り先とも同じくpreviousModeName()を素通しするだけで
+    // 済む。副産物として、KEY/SHELL自身のtrailing(keyReturnMode_/
+    // shellReturnMode_がGrepの場合――Grep結果一覧を見ている最中に
+    // KEY/SHELLを起動する、以前は空欄だった)も一般的に埋まる。
+    case ApplicationMode::Grep:
+      return std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern();
     // Shell(2026-08-13): 直接のユーザーの訂正――drawPromptLabel()自身
     // の宛先trailingフィールドは、以前は`mode == Directory`について
     // のみ何かを表示していた、それが結線されているPromptKindの唯一の
@@ -5558,12 +5535,15 @@ ApplicationMode Application::nearestFileOrDirectoryAnchor() const {
       case ApplicationMode::CutContent:
         mode = cutReturnMode_;
         break;
+      // Man/Locate自身のスタック(manReturnStack_/locateReturnStack_、
+      // application.hpp自身の宣言コメント参照)は、front()(先頭=恒久
+      // 的な基点)が常に既にFile/Directoryへ解決済みの終端値――
+      // この関数自身が過去にそれを計算した結果そのものなので、
+      // さらに辿る必要が無く、ここで直接returnしてよい。
       case ApplicationMode::Man:
-        mode = manReturnMode_;
-        break;
+        return manReturnStack_.front();
       case ApplicationMode::Locate:
-        mode = locateReturnMode_;
-        break;
+        return locateReturnStack_.front();
       case ApplicationMode::Du:
         mode = duReturnMode_;
         break;
@@ -7406,10 +7386,10 @@ bool Application::startCutFilePrompt(GrepSyntax syntax) {
 // ネストしたエントリのガードが無く、現在アクティブなビューから何も
 // 読まない(クラスコメント参照)――そのためこれは、Man自体(先にMan
 // モードを離れることなく別のページを見る)を含む、どのモードからも
-// 到達可能である。manReturnMode_は「最初の」1回だけ(つまりまだMan
-// モードにいない時だけ)更新されるので、何ページも連続で閲覧した後の
-// ^Gは、その直前に見ていたページへではなく、その外出が元々始まった
-// 場所へ依然として戻る。
+// 到達可能である。manReturnStack_は「最初の」1回だけ(つまりまだMan
+// モードにいない時だけ)リセットされるので、何ページも連続で閲覧した
+// 後の^Gは、その直前に見ていたページへではなく、その外出が元々
+// 始まった場所へ依然として戻る。
 bool Application::startManPrompt() {
   // 2026-09-19再訂正、直接のユーザー方針の転換("MANを使ってみて思う
   // のは、通常ファイルを閲覧中にMANを発動した場合、そこへ戻る方が
@@ -7418,7 +7398,7 @@ bool Application::startManPrompt() {
   // どこであれ常に基点のDirectoryへ戻るべき」という判断を撤回する。
   // nearestFileOrDirectoryAnchor()自身のコメント参照――「通常ファイル
   // かディレクトリ」を発動元自体からたどって遡る。
-  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = nearestFileOrDirectoryAnchor();
+  if (currentMode_ != ApplicationMode::Man) manReturnStack_ = {nearestFileOrDirectoryAnchor()};
   activatePrompt(PromptKind::ManName, "");
   return true;
 }
@@ -7430,16 +7410,16 @@ bool Application::startManPrompt() {
 // startRegexPromptList()の共有の仕組み経由で、最近のMANページの
 // 候補リストへ直接開く(その仕組みについてはそれ自身のdocコメント
 // が扱っている;名前にも関わらず実際にはregex固有ではない)。
-// manReturnMode_は、すぐ上のstartManPrompt()が使うのとまさに同じ
-// 「まだManにいない時だけ」というルールで設定される――executeMan()
-// (候補が選ばれた時点で、openSelectedListEntry()の
+// manReturnStack_は、すぐ上のstartManPrompt()が使うのとまさに同じ
+// 「まだManにいない時だけ」というルールでリセットされる――
+// executeMan()(候補が選ばれた時点で、openSelectedListEntry()の
 // promptHistoryRecallKind_の分岐経由で到達する)は、
-// manReturnMode_自体には触れず、currentMode_だけに触れるので必要
+// manReturnStack_自体には触れず、currentMode_だけに触れるので必要
 // である。
 bool Application::startManList() {
   // 2026-09-19再訂正、startManPrompt()自身の直上のコメント参照――
   // 2026-09-15の「常に基点のDirectory」という判断を撤回する。
-  if (currentMode_ != ApplicationMode::Man) manReturnMode_ = nearestFileOrDirectoryAnchor();
+  if (currentMode_ != ApplicationMode::Man) manReturnStack_ = {nearestFileOrDirectoryAnchor()};
   return startRegexPromptList(PromptKind::ManName);
 }
 
@@ -7542,7 +7522,7 @@ bool Application::startLocatePrompt() {
   // 2026-09-19再訂正、startManPrompt()自身のコメント参照――2026-09-15
   // の「常に基点のDirectory」という判断を撤回する。nearestFileOrDirectoryAnchor()
   // で「通常ファイルかディレクトリ」を発動元から遡る。
-  locateReturnMode_ = nearestFileOrDirectoryAnchor();
+  locateReturnStack_ = {nearestFileOrDirectoryAnchor()};
   const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentLocateQuery);
   activatePrompt(PromptKind::LocateQuery, recent.empty() ? std::string() : recent.back());
   return true;
@@ -8576,8 +8556,8 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   switch (kind) {
     case PromptKind::GrepPattern: destinationMode = grepReturnMode_; break;
     case PromptKind::CutPattern: destinationMode = cutReturnMode_; break;
-    case PromptKind::ManName: destinationMode = manReturnMode_; break;
-    case PromptKind::LocateQuery: destinationMode = locateReturnMode_; break;
+    case PromptKind::ManName: destinationMode = manReturnStack_.back(); break;
+    case PromptKind::LocateQuery: destinationMode = locateReturnStack_.back(); break;
     // RecentFile/RecentDirectory(2026-08-18修正、=cxの報告――"戻り値
     // が惜しい"): GrepPattern/CutPattern/ManName/LocateQueryとは異なり、
     // この2つはそれ自身専用の*ReturnMode_を持たない――そのため
