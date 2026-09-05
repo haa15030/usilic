@@ -11113,6 +11113,60 @@ TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell
   CHECK(app.activeContentView().modeLineText().find("SHELL") != std::string::npos);
 }
 
+// 2026-09-20追加、直接のユーザー報告("^O^S/^J^Sが利かない"):
+// feedShellByte()自身の新しいisShellSafeGrep分岐のコメント参照。
+// FGREP(^O^S)/EGREP(^J^S)は、リーダーシーケンス完了時の事前切り替え
+// (「認識されないシーケンスはShellから離れる」という一括処理)に
+// 巻き込まれ、dispatchLeaderByte()に到達する前にcurrentMode_が
+// shellReturnMode_へ書き換えられてしまっていた――結果、grepReturnMode_
+// がShellではなく無関係な発動元のモードを記憶し、検索対象がShellの
+// scrollbackではなくそちらになっていた。plainな^S同様、SHELL自身の
+// scrollbackが検索対象になることを確認する(EGREPは候補リストを
+// 経由するstartRegexPromptList()の形を取るため、プロンプトの代わりに
+// ^Gで空のプロンプトへ抜けてから投入する)。
+TEST_CASE_FIXTURE(Fixture, "SHELL: ^O^S (FGREP) and ^J^S (EGREP) also search SHELL's own scrollback, not "
+                           "whatever mode SHELL was entered from") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartShell));
+  app.shell().commandLine().setText("printf 'SHELLGREPTESTMARKER\\n'");
+  app.shell().submitLine();
+  bool sawOutput = pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("SHELLGREPTESTMARKER") != std::string::npos) return true;
+    return false;
+  });
+  REQUIRE(sawOutput);
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+
+  // ^O^S: FGREP
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.promptActive());
+  feedText("SHELLGREPTESTMARKER");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.grepMode().matches().size() == 1);
+  CHECK(app.activeContentView().modeLineText().find("SHELL") != std::string::npos);
+  REQUIRE(app.handleCommand(Command::Back));  // back to Shell before the next probe
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+
+  // ^J^S: EGREP (candidate-list based, per startRegexPromptList()) --
+  // ^U starts live-editing the pre-filled seed in place (matching the
+  // sibling "^R usage-history..." test's own established convention),
+  // not ^G (which, from a fresh/unedited list, simply cancels straight
+  // back to the origin -- correct behavior, not a bug).
+  REQUIRE(app.feedByte(0x0a, std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U: start editing, clear the pre-filled seed
+  feedText("SHELLGREPTESTMARKER");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.grepMode().matches().size() == 1);
+  CHECK(app.activeContentView().modeLineText().find("SHELL") != std::string::npos);
+}
+
 // 2026-09-20追加、直接のユーザー報告("SHELLプロンプトで^Sとやっても
 // 認識しない（ハイライトのSが表示されるだけ）"): すぐ上のテストは
 // handleCommand(Command::StartGrep)を直接呼んでおり、実際の生の^S
@@ -11144,6 +11198,49 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: a real ^S keypress (not handleCommand(StartGr
   feedText("printf");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::Grep);
+}
+
+// 2026-09-20追加、直接のユーザー報告("ps等実行後、^Sps^Mでせっかく
+// プロンプト位置へ移動するのに^Mで無反応は残念"): openSelectedGrepMatch()
+// 自身の新しいShell分岐のコメント参照。マッチ選択で着地した「後」の
+// Enterが、空の生きたプロンプトを投入する(見た目には何も起きない)
+// のではなく、ハイライトされた過去のプロンプト行のコマンドを実際に
+// 再実行することを確認する。
+TEST_CASE_FIXTURE(Fixture, "SHELL: Enter on a GREP match found in SHELL's own scrollback re-runs the matched "
+                           "historical prompt line's command, instead of silently submitting an empty live "
+                           "prompt") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartShell));
+  app.shell().commandLine().setText("printf 'SHELLGREPTESTMARKER\\n'");
+  app.shell().submitLine();
+  bool sawOutput = pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("SHELLGREPTESTMARKER") != std::string::npos) return true;
+    return false;
+  });
+  REQUIRE(sawOutput);
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+  int linesBeforeRerun = static_cast<int>(app.shell().scrollback().lines().size());
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
+  feedText("SHELLGREPTESTMARKER");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 1);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.shell().historyBrowsing());
+
+  // A second Enter (matching ^P/^N's own "resubmit the highlighted
+  // command" convention, feedShellByte()'s kCarriageReturn case) must
+  // actually re-run the matched `printf` command -- not silently
+  // submit an empty live prompt.
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  bool sawSecondRun = pumpUntil(app, [&] {
+    return static_cast<int>(app.shell().scrollback().lines().size()) > linesBeforeRerun + 1;
+  });
+  CHECK(sawSecondRun);
 }
 
 // 2026-09-19六訂正、直接のユーザー報告の完全な手順を再現("CLAUDE.mdを

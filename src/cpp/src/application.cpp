@@ -2847,8 +2847,20 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     // 明示的に処理できる(それ自身の新しいShellの分岐参照)よう、
     // ここでは除外した。
     bool isShellSafeGoToFileSelector = leaderJPending_ && byte == 0x0b;
-    bool isShellSafeNavigation =
-        (escPending_ && (byte == '<' || byte == '>' || byte == 'v')) || isShellSafeGoToFileSelector;
+    // 2026-09-20追加、直接のユーザー報告("^O^S/^J^Sが利かない"):
+    // すぐ上のisShellSafeGoToFileSelectorと全く同じ理屈――FGREP
+    // (^O^S)/EGREP(^J^S)は、feedShellByte()自身の新しいプレーンな
+    // ^S分岐(すぐ下のkControlS単独ケース)と同じく、Shell自身の
+    // scrollbackを検索対象にすべきなのに、この事前切り替えのせいで
+    // dispatchLeaderByte()に到達する「前」にcurrentMode_が
+    // shellReturnMode_へ書き換えられてしまい、startGrepPrompt()内の
+    // grepReturnMode_ = currentMode_が、Shellではなくshellから抜けた
+    // 先の無関係なモード(例えばDirectory)を記憶してしまっていた――
+    // 結果、検索対象がShellのscrollbackではなくそちらになり、
+    // ユーザーからは「^O^S/^J^Sが利かない」ように見えていた。
+    bool isShellSafeGrep = (leaderOPending_ || leaderJPending_) && byte == kControlS;
+    bool isShellSafeNavigation = (escPending_ && (byte == '<' || byte == '>' || byte == 'v')) ||
+                                 isShellSafeGoToFileSelector || isShellSafeGrep;
     if (shellLeaderPending && !isShellSafeNavigation) {
       // シーケンスを完了させる――ディスパッチする「前に」、ユーザーが
       // まず^Gを押したかのように、まさに正確に、SHELLがそこから入場
@@ -4797,6 +4809,22 @@ bool Application::openSelectedGrepMatch() {
     // 仕組みが無いようなのでMAN/LOCATEと同じ仕様にしてほしい")。
     // 上と同じ理屈、DU版。
     duReturnStack_.push_back(ApplicationMode::Grep);
+  } else if (grepReturnMode_ == ApplicationMode::Shell) {
+    // 2026-09-20追加、直接のユーザー報告("ps等実行後、^Sps^Mでせっかく
+    // プロンプト位置へ移動するのに^Mで無反応は残念"): 上のtarget.
+    // setCursorIndex()は既にカーソルをマッチ行(過去のプロンプト行)へ
+    // 動かしていたが、Shell::historyBrowsing()自身のフラグには一切
+    // 触れていなかった――^P/^Nによる通常の履歴閲覧はbeginHistoryBrowsing()
+    // 経由でこれを立てる(Shell::beginHistoryBrowsing()自身の宣言
+    // コメント参照)ことで、Enter(feedShellByte()自身のkCarriageReturn
+    // ケース)が「ハイライトされた行のコマンドを再実行する」意味に
+    // なる――しかしGREPのマッチ経由でここへ着地した場合はこのフラグが
+    // 立たないままだったため、続けてEnterを押しても、まだ空の生きた
+    // プロンプト行(commandLine_)をただ投入するだけの、それ以外の
+    // 通常のEnterの意味にしかならず、見た目には何も起きなかった
+    // (「無反応」)。^P/^Nと全く同じ「閲覧中」状態にすることで、この
+    // 後のEnterも同じ意味を持つようにする。
+    shell_.beginHistoryBrowsing();
   }
   // 2026-08-28修正、直接のユーザー報告("検索前には画面にあった
   // ブロックカーソルが検索一覧のどれかを[return]後の画面では表示
