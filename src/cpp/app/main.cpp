@@ -145,6 +145,9 @@
 #include <unistd.h>
 #include <utility>
 #include <vector>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 #include "application.hpp"
 #include "help_text.hpp"
@@ -2795,6 +2798,36 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   return true;
 }
 
+// 2026-09-20追加、直接のユーザー報告("SHELLプロンプトでman ls...
+// 旧版のように(stdin)で表示して欲しい") + shell.cpp自身の
+// buildSetupCommand()の`pagerStatements`のコメント参照: legacyの
+// export PAGER='<usilic自身> -p <pid>'を再現するには、まず「今実際に
+// 動いている、このプロセス自身の」実行ファイルの絶対パスが要る
+// (argv[0]は素の"usilic"のような相対名/PATH解決に頼った名前のことが
+// あり、$PAGERとして子のシェルへexportしてもそのままでは実行できない
+// 場合がある)。macOSは_NSGetExecutablePath()(<mach-o/dyld.h>)、
+// Linuxは/proc/self/exeへのシンボリックリンクを提供する――どちらも
+// OSが「本当に何がexecされたか」を教えてくれる標準的な方法(argv[0]
+// 自体を独自にPATH解決して回るよりずっと確実)。失敗時(取得できない
+// 稀な環境)は空文字列を返し、呼び出し元(main())側でPAGERのexport
+// 自体を丸ごと省略する(ShellOptions::pagerPath自身の宣言コメント
+// 参照)。
+std::string resolveOwnExecutablePath() {
+#ifdef __APPLE__
+  uint32_t size = 0;
+  _NSGetExecutablePath(nullptr, &size);  // 最初の呼び出しは常に失敗するが、必要なバッファ長をsizeへ書き戻す
+  std::string buf(size, '\0');
+  if (_NSGetExecutablePath(buf.data(), &size) != 0) return "";
+  std::error_code ec;
+  auto resolved = std::filesystem::canonical(buf.c_str(), ec);
+  return ec ? std::string() : resolved.string();
+#else
+  std::error_code ec;
+  auto resolved = std::filesystem::canonical("/proc/self/exe", ec);
+  return ec ? std::string() : resolved.string();
+#endif
+}
+
 // 2026-08-25 (a direct user request): the child-process half of the
 // SHELL-mode re-exec handoff -- see Shell::start()'s own
 // setenv("USILIC", ...) comment for how this gets detected, and
@@ -2863,6 +2896,22 @@ void checkInvalidTerminalMarker() {
 bool tryHandoffToParentShell(int argc, char **argv) {
   if (!std::getenv("USILIC")) return false;
 
+  // 2026-09-20追加、直接のユーザー報告("SHELLプロンプトでman ls...
+  // (stdin)で表示して欲しい") + shell.cpp自身のbuildSetupCommand()の
+  // pagerStatements自身のコメント参照: この関数自身の待ち合わせパス
+  // は、元々「typed直接」のケース(usilicがbashの「直接の」子である、
+  // ls -l | usilicのような)だけを想定してgetppid()から導出していた
+  // ――しかしPAGERとして起動される場合、この「usilic」プロセスの
+  // 直接の親は`man`自身(あるいはmanが内部で起動する別の中間プロセス)
+  // であり、bash自体ではない。legacyのexport PAGER='<usilic自身>
+  // -p <pid>'が明示的にpid引数を渡していたのと全く同じ理由――
+  // buildSetupCommand()は、PAGERのexport文自体の中でシェル自身の`$$`
+  // (=bash自身のpid、この文が「セットアップ時」に実行される、つまり
+  // manより先に評価される時点でのbash自身のpid)を展開させ、
+  // --usilic-pager <pid>として埋め込む。ここでそれを検出し、
+  // getppid()の代わりに使う――付いていなければ(typed直接のケース)
+  // 以前通りgetppid()にフォールバックする。
+  long rendezvousPid = ::getppid();
   std::vector<std::string> positional;
   for (int i = 1; i < argc; i++) {
     std::string arg = argv[i];
@@ -2874,13 +2923,17 @@ bool tryHandoffToParentShell(int argc, char **argv) {
         i++;
       continue;
     }
+    if (arg == "--usilic-pager") {
+      if (i + 1 < argc) rendezvousPid = std::atol(argv[++i]);
+      continue;
+    }
     positional.push_back(arg);
   }
 
   std::string handoffDir = "/tmp/.usilic-shell";
   ::mkdir(handoffDir.c_str(), 0755);
   std::string path =
-      handoffDir + "/s." + std::to_string(::getuid()) + "." + std::to_string(::getppid());
+      handoffDir + "/s." + std::to_string(::getuid()) + "." + std::to_string(rendezvousPid);
 
   bool pipedStdin = positional.empty() && !::isatty(STDIN_FILENO);
   if (pipedStdin) {
@@ -3255,6 +3308,11 @@ int main(int argc, char **argv) {
 
   fm::ShellOptions shellOptions;
   if (const char *shellEnv = std::getenv("SHELL"); shellEnv && *shellEnv) shellOptions.argv = {shellEnv};
+  // resolveOwnExecutablePath()自身のコメント参照(2026-09-20追加、
+  // "SHELLプロンプトでman ls...(stdin)で表示して欲しい")――空(失敗)
+  // ならShellOptions::pagerPath自身のデフォルトのまま(PAGERのexport
+  // を丸ごと省略)にしておく。
+  shellOptions.pagerPath = resolveOwnExecutablePath();
 
   fm::Application app(display, keyInput, history, configuration, encoding, display.columns(), shellOptions,
                        homeEnv ? std::string(homeEnv) : std::string(), tempRootDirectory, workRootDirectory,

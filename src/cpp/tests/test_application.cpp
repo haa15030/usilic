@@ -10617,6 +10617,44 @@ TEST_CASE_FIXTURE(Fixture, "startPagerFileList: ^G stays a no-op even AFTER the 
   CHECK(app.currentMode() == ApplicationMode::File);  // did NOT fall through to an empty Directory
 }
 
+// 2026-09-20追加、直接のユーザー報告("spaceでページ送りするうちに
+// 表示される（Exit）もいい。あれも取り入れて欲しい"、legacyの実機
+// (Uバイナリ)をPTYで実際に再現し確認済み): Command::PageDown自身の
+// showPagerExitNotice()呼び出しのコメント参照――pagerReturnsToShell()
+// (実際にはApplication::pollShellHandoff()経由でPAGER自身のハンドオフ
+// から着地するFileモード画面でだけtrueになる、"(stdin)"自身の宣言
+// コメント参照)な画面で、既に真の末尾にいる状態でさらにspaceを押すと、
+// ベル+"(Exit)"(Exitだけ太字)という控えめな通知が最下行に現れる
+// ――legacyの実機の生バイト列と一致することを既にPTYで確認済み。
+// plain.txt("hello\nworld\n")はどんな現実的なビューポート高さにも
+// 十分収まる短さなので、pageDown()は最初の1回目から既に無移動
+// (真の末尾)になる。
+TEST_CASE_FIXTURE(Fixture, "PageDown: a pagerReturnsToShell() File screen already at the true end shows the "
+                           "bell+\"(Exit)\" notice, matching legacy's own \"(stdin)\" pager behavior") {
+  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
+  app.fileMode().setPagerReturnsToShell(true);
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  CHECK(app.handleCommand(Command::PageDown));
+  std::string lastRow = display.rowText(display.rows() - 1);
+  CHECK(lastRow.find("(Exit)") != std::string::npos);
+}
+
+// 見落とし防止の対照テスト: pagerReturnsToShell()がfalse(通常の
+// CLI起動のFileページャー、Shell経由のPAGERハンドオフではない)の
+// 間は、この新しい通知を一切出さない――既存の全ての(ls)/FILE等の
+// ページャー画面が、このコミットの対象外のまま今まで通り無反応で
+// あることを確認する。
+TEST_CASE_FIXTURE(Fixture, "PageDown: a plain (non-pagerReturnsToShell) File screen already at the true end "
+                           "does NOT show the \"(Exit)\" notice (unaffected, scoped narrowly)") {
+  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
+  REQUIRE_FALSE(app.fileMode().pagerReturnsToShell());  // default, confirms this test's own premise
+
+  CHECK(app.handleCommand(Command::PageDown));
+  std::string lastRow = display.rowText(display.rows() - 1);
+  CHECK(lastRow.find("(Exit)") == std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "'[' and ']' keep their ordinary Directory-mode marking behavior when NOT "
                            "in File mode with a pager list active (no regression)") {
   REQUIRE(app.start(path()));

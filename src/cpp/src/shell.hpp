@@ -49,6 +49,14 @@ struct ShellOptions {
   // パイプの内容に対して既に公開しているのと同じつまみに合わせて
   // いる。
   long scrollbackBudget = 1 << 20;
+  // buildSetupCommand()自身のコメント参照(2026-08-11、"移植されて
+  // いない: PAGERのexport"): 空(デフォルト)は、legacy由来のこの
+  // PAGER/MANPAGERのexportを丸ごと省略する(実際のバイナリパスを
+  // 知らないテスト用のShellOptions{}で、無関係な子プロセスがうっかり
+  // $PAGERとしてusilic自身を起動してしまうことを避ける)。main.cpp
+  // が自身の実行ファイルの絶対パスをここへ設定した時だけ、実際に
+  // export/setenvされる。
+  std::string pagerPath;
 };
 
 // SHELLモードのセッション: pty駆動の対話的な子シェル(bash/

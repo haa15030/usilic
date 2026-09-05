@@ -1,5 +1,8 @@
 #include <poll.h>
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <cstring>
 
 #include "doctest.h"
 #include "recording_display.hpp"
@@ -586,4 +589,75 @@ TEST_CASE("busy() reflects setBusy()") {
   CHECK(shell.busy());
   shell.setBusy(false);
   CHECK_FALSE(shell.busy());
+}
+
+// 2026-09-20追加、直接のユーザー報告("SHELLプロンプトでman ls...
+// 旧版のように(stdin)で表示して欲しい"): buildSetupCommand()自身の
+// pagerStatements/ShellOptions::pagerPath自身の宣言コメント参照
+// ――pagerPathが設定されている間、実際の生きたbashセッション内で
+// $PAGER/$MANPAGERが正しくexportされ、main.cpp自身のtryHandoffToParentShell()
+// が認識する`--usilic-pager <pid>`が(bash自身の`$$`経由で)実際の
+// 数値のPIDとして埋め込まれることを確認する(legacyのexport PAGER=
+// '<usilic> -p <pid>'と同じ理屈だが、この移植はgetppid()ではなく
+// この明示的なpid引数に頼る、main.cpp自身のコメント参照)。
+TEST_CASE("Shell start(): pagerPath (when set) exports PAGER/MANPAGER pointing at it, with a real numeric "
+          "--usilic-pager <pid> embedded via the shell's own $$") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.argv = {"bash", "--norc", "--noprofile"};
+  options.promptMark = "<usilic-test-pager-mark>";
+  options.programName = "usilictest";
+  options.pagerPath = "/fake/path/to/usilic";
+  Shell shell(d, options);
+
+  if (!shell.start()) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(shell, [&] { return !shell.currentDirectory().empty(); }));
+
+  typeAscii(shell.commandLine(), "echo \"$PAGER\" ; echo \"$MANPAGER\"");
+  shell.submitLine();
+  REQUIRE(pumpUntil(shell, [&] {
+    int count = 0;
+    for (const auto &line : shell.scrollback().lines())
+      if (line.text.find("--usilic-pager") != std::string::npos) count++;
+    return count >= 2;  // both echoes landed, not just the first (race, not a real bug)
+  }));
+
+  int pagerLines = 0;
+  for (const auto &line : shell.scrollback().lines()) {
+    if (line.text.find("/fake/path/to/usilic --usilic-pager ") == std::string::npos) continue;
+    pagerLines++;
+    std::string pidPart = line.text.substr(line.text.find("--usilic-pager ") + std::strlen("--usilic-pager "));
+    REQUIRE_FALSE(pidPart.empty());
+    CHECK(std::all_of(pidPart.begin(), pidPart.end(), [](unsigned char c) { return std::isdigit(c); }));
+  }
+  CHECK(pagerLines == 2);  // PAGER and MANPAGER both printed, both matching
+}
+
+TEST_CASE("Shell start(): pagerPath left at its default (empty) omits the PAGER/MANPAGER export entirely") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.argv = {"bash", "--norc", "--noprofile"};
+  options.promptMark = "<usilic-test-nopager-mark>";
+  options.programName = "usilictest";
+  Shell shell(d, options);
+
+  if (!shell.start()) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(shell, [&] { return !shell.currentDirectory().empty(); }));
+
+  typeAscii(shell.commandLine(), "echo \"PAGER=[$PAGER]\"");
+  shell.submitLine();
+  REQUIRE(pumpUntil(shell, [&] {
+    for (const auto &line : shell.scrollback().lines())
+      if (line.text.find("PAGER=[") != std::string::npos) return true;
+    return false;
+  }));
+
+  for (const auto &line : shell.scrollback().lines())
+    CHECK(line.text.find("--usilic-pager") == std::string::npos);
 }

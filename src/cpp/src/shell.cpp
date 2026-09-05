@@ -914,6 +914,32 @@ std::string Shell::buildSetupCommand() const {
   // 囲む。それにより`$$`は依然として展開される(内側の`#`は、
   // クオートの中の単語の途中にあるので、どちらにせよコメントの
   // パースからは安全なままである)。
+  // PAGER/MANPAGERのexport(2026-08-11のoutput_shell()移植コメントが
+  // "移植されていない...ページャーモードが存在するようになったら
+  // 再検討する"と明記していた宿題): Application::pollShellHandoff()
+  // (main.cpp自身のtryHandoffToParentShell()の「子」側と対をなす)が、
+  // まさにこの「ページャーモード」――パイプされたstdinをsocket経由で
+  // fileMode_.loadStream()へ流し込み、"(stdin)"として表示する――に
+  // 相当する形で既に実装済みだったと判明した(2026-09-20、直接の
+  // ユーザー報告"SHELLプロンプトでman ls...旧版のように(stdin)で
+  // 表示して欲しい"を受けて調査した際に発見)。legacyのexport PAGER=
+  // '<usilic自身> -p <pid>'とは異なり、この移植のtryHandoffToParentShell()
+  // 自身の待ち合わせパスはgetppid()から独立に導出される(自身のコメント
+  // 参照)ので、追加の引数は一切不要――実行ファイル自身の絶対パスを
+  // そのままPAGERへ渡すだけでよい。options_.pagerPathが空(デフォルト、
+  // 主にShellOptions{}を使うテスト用)の間は、この2行を丸ごと省略する
+  // ――実際のバイナリパスを知らないまま無関係な子プロセスがうっかり
+  // $PAGERとしてusilic自身を起動してしまう事故を避ける。
+  // `$$`(シェル自身のPID、この文が実行される時点=この後で本物の
+  // manPAGERとして起動される「前」のbash/zsh自身のPID)を、二重引用符
+  // で単一引用符から抜けて展開させ、main.cpp自身のtryHandoffToParentShell()
+  // が認識する`--usilic-pager <pid>`として埋め込む(このコメントの
+  // すぐ上のpagerStatements自身の宣言コメント参照)。
+  std::vector<std::string> pagerStatements;
+  if (!options_.pagerPath.empty()) {
+    std::string pagerCommand = "'" + options_.pagerPath + "'\" --usilic-pager $$\"";
+    pagerStatements = {"export PAGER=" + pagerCommand, "export MANPAGER=" + pagerCommand};
+  }
   std::string eos = "echo \"#eos$$#\"";
   // 文を1つの論理的なコマンドへ結合する: 各ペアの間に" ; \<改行>"
   // (文の区切り+行の継続。これによりシェルは各物理行の後に実行/
@@ -928,14 +954,16 @@ std::string Shell::buildSetupCommand() const {
     return result;
   };
   if (isBash_) {
-    return chain({
+    std::vector<std::string> statements = {
         "unset PROMPT_COMMAND",
         "export PS1='" + mark + prog + ":\\w\\$ " + mark + "'",
         "set -o ignoreeof",
         "export COLUMNS=" + std::to_string(columns_),
         "unset HISTFILE",
-        eos,
-    });
+    };
+    statements.insert(statements.end(), pagerStatements.begin(), pagerStatements.end());
+    statements.push_back(eos);
+    return chain(statements);
   }
   if (isZsh_) {
     // zsh自身のプロンプト展開シーケンス(cwd用の%~、末尾のroot
@@ -963,7 +991,7 @@ std::string Shell::buildSetupCommand() const {
     // できない。その機能を発生源で無効にする方が、zsh自身の特定の
     // eolマークのテキストを認識して隠すことも試みるよりも単純で
     // ある。
-    return chain({
+    std::vector<std::string> statements = {
         "unset PROMPT_COMMAND 2>/dev/null",
         "precmd_functions=()",
         "export PROMPT='" + mark + prog + ":%~%# " + mark + "'",
@@ -972,8 +1000,10 @@ std::string Shell::buildSetupCommand() const {
         "setopt IGNORE_EOF",
         "export COLUMNS=" + std::to_string(columns_),
         "unset HISTFILE",
-        eos,
-    });
+    };
+    statements.insert(statements.end(), pagerStatements.begin(), pagerStatements.end());
+    statements.push_back(eos);
+    return chain(statements);
   }
   // csh/tcshのフォールバック――上のbash/zshとは異なり、実際の
   // csh/tcshセッションに対して検証されていない(どちらかが実際に

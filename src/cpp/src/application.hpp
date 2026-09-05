@@ -2678,6 +2678,7 @@ class Application {
   // も無い――これは本物のプロンプトではなく、プロンプト行自身の
   // ラベル描画を再利用する一時的なステータス行に過ぎない)。
   void drawPromptLabel(PromptKind kind, const std::string &positionText = "", const std::string &staticMessage = "");
+  void showPagerExitNotice();
   // K-46/K-48(^X^F/^X^D)自身の読み取り専用(まだ編集していない)
   // 候補一覧: 2026-08-18の修正、実際の報告+参照スクリーンショット
   // (=cw)――ハイライトされた候補は、最初のバイトが入力された時点

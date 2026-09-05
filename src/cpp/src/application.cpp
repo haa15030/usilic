@@ -3308,12 +3308,29 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
       return true;
-    case Command::PageDown:
+    case Command::PageDown: {
       activeView().setHoverIndex(std::nullopt);
+      // 2026-09-20追加、直接のユーザー依頼("spaceでページ送りするうちに
+      // 表示される（Exit）もいい。あれも取り入れて欲しい"、legacy(U
+      // バイナリ)を実際にPTYで再現し確認済み): legacyは、SHELLプロンプト
+      // で起動した(man ls等、PAGER経由の)"(stdin)"内容を真の末尾を
+      // 超えてさらにspaceで送ろうとすると、ベル+"(Exit)"という控えめな
+      // 通知を出す(押しても何も起きないのではなく、ちゃんと「これ以上
+      // 無い」と伝える)。この関数のpagerReturnsToShell()経由のケース
+      // (実際にFileMode::loadStream()経由でこの新しいPAGERハンドオフ
+      // から着地する画面)に絞って再現する――FILE/MAN/DU等の既存の
+      // 他の全てのページャ画面は、これまでこの通知を一度も要求された
+      // ことが無いので意図的に対象外のままにする。
+      int topBefore = activeView().topIndex();
       activeView().pageDown();
       if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
+      if (currentMode_ == ApplicationMode::File && fileMode_.pagerReturnsToShell() &&
+          activeView().topIndex() == topBefore) {
+        showPagerExitNotice();
+      }
       return true;
+    }
     case Command::Enter:
       if (currentMode_ == ApplicationMode::Directory) return openSelectedEntry();
       if (currentMode_ == ApplicationMode::Cut) return openSelectedSegment();
@@ -8599,6 +8616,24 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return "";
   }
   return "";
+}
+
+// Command::PageDown自身のコメント参照(2026-09-20追加): legacy自身の
+// 実機再現("man ls"を末尾を超えてspaceで送ると"^G (Exit) "が最下行に
+// 現れる)を模す――ベルを鳴らし、モードライン行の左端に"Exit"だけ
+// 太字のプレーンテキストを重ねて書く(legacy自身の生バイト列と同じ、
+// 反転表示のモードライン自体は「起こさない」)。次の再描画で自然に
+// 上書きされる、意図的に一時的な通知。
+void Application::showPagerExitNotice() {
+  int row = std::max(0, display_.rows() - 1);
+  display_.moveCursor(row, 0);
+  display_.putChar(0x07);
+  display_.write(" (");
+  display_.setAttribute(Display::Attribute::Bold);
+  display_.write("Exit");
+  display_.setAttribute(Display::Attribute::BoldOff);
+  display_.write(") ");
+  display_.flush();
 }
 
 void Application::drawPromptLabel(PromptKind kind, const std::string &positionText, const std::string &staticMessage) {
