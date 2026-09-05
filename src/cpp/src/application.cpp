@@ -6624,7 +6624,19 @@ bool Application::runDuOnCurrentFolder() {
   // と同じ方針転換: 以前はduReturnStack_という仕組み自体が無く、
   // returnFromDu()が常にDirectoryへハードコートされていたが、MAN/
   // LOCATEと同じ「通常ファイルかディレクトリ」棲み分けに揃える。
-  {
+  //
+  // 2026-09-20追加、startLocatePrompt()自身のstillInLocateRealm分岐と
+  // 同じ理由での予防的な修正(直接のユーザー報告はLOCATE限定だったが、
+  // openSelectedDuEntry()もfileReturnMode_ = ApplicationMode::Duを同じ
+  // 形で設定するため、全く同じ再現手順――DU結果を直接Fileとして開き、
+  // そのFileから「もう一度」^Jd/^J^Dを発動――で全く同じ①③ループが
+  // 起こり得る)。currentMode_==Fileの時点でnearestFileOrDirectoryAnchor()
+  // はそれ以上遡らずFile自身を即座に返すので、ここで無条件に再計算
+  // すると、まさに今置き換えようとしている「古い」DUセッションへの
+  // 参照(fileReturnMode_==Du)をうっかり新しい基点のスナップショットへ
+  // 凍結してしまう。
+  bool stillInDuRealm = currentMode_ == ApplicationMode::File && fileReturnMode_ == ApplicationMode::Du;
+  if (!stillInDuRealm) {
     ApplicationMode anchor = nearestFileOrDirectoryAnchor();
     duReturnStack_ = {anchor};
     duAnchor_ = anchorSnapshotFor(anchor);
@@ -6708,7 +6720,14 @@ bool Application::redisplayDu() {
   // に^J^Dで古いDU結果を再表示すると、基点が動く前の場所(あるいは
   // 前回本当にDUを開始した時の場所)のまま固定されてしまい、MAN/
   // LOCATEの「Redisplay」が常にその場から再アンカーするのと食い違う。
-  if (currentMode_ != ApplicationMode::Du) {
+  // 2026-09-20追加、runDuOnCurrentFolder()自身のstillInDuRealm分岐と
+  // 同じ理由: currentMode_==Fileであっても、そのFile自体がまだDUの
+  // realmの中にいる間(fileReturnMode_==Du)は、下の再計算をスキップ
+  // する必要がある――さもないと、まさに今置き換えようとしている
+  // 「古い」DUセッションへの参照を新しい基点のスナップショットへ
+  // 凍結してしまう。
+  bool stillInDuRealm = currentMode_ == ApplicationMode::File && fileReturnMode_ == ApplicationMode::Du;
+  if (currentMode_ != ApplicationMode::Du && !stillInDuRealm) {
     ApplicationMode anchor = nearestFileOrDirectoryAnchor();
     duReturnStack_ = {anchor};
     duAnchor_ = anchorSnapshotFor(anchor);
@@ -7727,7 +7746,30 @@ bool Application::startLocatePrompt() {
   // 2026-09-19再訂正、startManPrompt()自身のコメント参照――2026-09-15
   // の「常に基点のDirectory」という判断を撤回する。nearestFileOrDirectoryAnchor()
   // で「通常ファイルかディレクトリ」を発動元から遡る。
-  {
+  //
+  // 2026-09-20追加、直接のユーザー報告("LOCATE中のLOCATE発動も最初の
+  // LOCATEまで履歴抹消でよろしく"、"^G連打で行き来ループ"再現手順:
+  // ^J^L .txt ^M ^M(結果を直接Fileとして開く)→ そのFileから「もう一度」
+  // ^J^L .md ^M ^M): currentMode_がFileであっても、そのFile自体が(直前の
+  // LOCATE結果を直接開いたことで)まだLOCATEのrealmの中にいる間は
+  // (fileReturnMode_自身の宣言コメント参照)、下の再計算をスキップする
+  // 必要がある。nearestFileOrDirectoryAnchor()は、currentMode_==Fileの
+  // 時点でそれ以上遡らずFile自身を即座に返す(MANを通常ファイル閲覧中
+  // に発動した場合はFile自身が正当な基点になる、という別件の直接の
+  // ユーザー依頼による意図的な設計、すぐ上のコメント参照)ため、ここで
+  // 再計算してしまうと、まさに今置き換えようとしている「古い」LOCATE
+  // セッションへの参照(fileReturnMode_==Locate)をうっかり新しい基点の
+  // スナップショットへ凍結してしまう――結果、後でこのFileへ戻って
+  // きた時にfileReturnMode_がLocateへ復元され続け、^Gを連打しても
+  // File/LOCATEの間を永遠に往復するだけでDirectoryへ辿り着けなくなる
+  // (openSelectedDuEntry()と同じ形のバグ、AnchorSnapshot自身のコメント
+  // 参照)。スキップして「本来の」(最初のLOCATEが記録した)
+  // locateReturnStack_/locateAnchor_をそのまま使い続けることで、この
+  // 中間のFile自体はスタックに一切載らず、^Gの連打は最初のLOCATEを
+  // 呼び出した場所まで一直線に戻る――ユーザーの明示的な依頼通り、
+  // 中間の履歴は消える。
+  bool stillInLocateRealm = currentMode_ == ApplicationMode::File && fileReturnMode_ == ApplicationMode::Locate;
+  if (!stillInLocateRealm) {
     ApplicationMode anchor = nearestFileOrDirectoryAnchor();
     locateReturnStack_ = {anchor};
     locateAnchor_ = anchorSnapshotFor(anchor);

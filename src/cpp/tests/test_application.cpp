@@ -3586,6 +3586,78 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: starting a nested search from within locate 
   CHECK_FALSE(app.promptActive());
 }
 
+// 2026-09-20追加、直接のユーザー報告(実際の再現手順):
+// `usilic -c ~/git/usilic`→`^J^L.txt^M^M`(結果を直接Fileとして開く)
+// →`^J^L^U.md^M^M`(そのFileから「もう一度」LOCATEを発動し、また
+// 結果を直接Fileとして開く)→`^G`連打で行き来ループ、加えて
+// "LOCATE中のLOCATE発動も最初のLOCATEまで履歴抹消でよろしく"という
+// 明示的な依頼。startLocatePrompt()自身のstillInLocateRealm分岐の
+// コメント参照――openSelectedLocateEntry()相当の処理でLOCATE結果を
+// 直接Fileとして開くと(fileReturnMode_==Locate)、そのFileから
+// 「もう一度」LOCATEを発動した際、nearestFileOrDirectoryAnchor()が
+// currentMode_==Fileの時点で即座にFile自身を返してしまうため、以前は
+// このFile自体を「新しい」基点として再計算し、その際に古いLOCATE
+// セッションへの参照(fileReturnMode_==Locate)をうっかり凍結して
+// しまっていた――結果、後でこのFileへ戻ってきた時にfileReturnMode_が
+// Locateへ復元され続け、^Gを連打してもFile/LOCATEの間を永遠に往復
+// するだけでDirectoryへ辿り着けなかった。
+TEST_CASE_FIXTURE(Fixture, "LOCATE started from a File that was ITSELF reached via a previous LOCATE result: "
+                           "re-invoking LOCATE skips the intermediate File entirely, converging straight back "
+                           "to the ORIGINAL anchor without bouncing between File and Locate forever") {
+  fs::path target1 = root / "located1.txt";
+  { std::ofstream(target1) << "one"; }
+  fs::path target2 = root / "located2.txt";
+  { std::ofstream(target2) << "two"; }
+  fs::path fakeLocate1 = root / "fake_locate1.sh";
+  { std::ofstream(fakeLocate1) << "#!/bin/sh\necho '" << target1.string() << "'\n"; }
+  fs::path fakeLocate2 = root / "fake_locate2.sh";
+  { std::ofstream(fakeLocate2) << "#!/bin/sh\necho '" << target2.string() << "'\n"; }
+  std::filesystem::permissions(fakeLocate1, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+  std::filesystem::permissions(fakeLocate2, std::filesystem::perms::owner_all, std::filesystem::perm_options::add);
+
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string originalFile = app.fileMode().currentFile();
+
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate1.string()}, std::nullopt});
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  REQUIRE(app.locateMode().results() == std::vector<std::string>{target1.string()});
+
+  REQUIRE(app.handleCommand(Command::Enter));  // opens target1 directly as File
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.fileMode().currentFile() == target1.string());
+
+  // Nested invocation: LOCATE again, from this SAME File (itself
+  // reached via the first LOCATE).
+  configuration.setCommandForTest(ConfiguredRole::Locate, {{fakeLocate2.string()}, std::nullopt});
+  REQUIRE(app.handleCommand(Command::StartLocate));
+  feedText("anything");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  REQUIRE(app.locateMode().results() == std::vector<std::string>{target2.string()});
+
+  REQUIRE(app.handleCommand(Command::Enter));  // opens target2 directly as File
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.fileMode().currentFile() == target2.string());
+
+  // Mash Back: File(target2) -> Locate (2nd session's own results) ->
+  // straight to the ORIGINAL file (target1 is skipped entirely, never
+  // revisited) -> Directory. Must NOT loop between File and Locate.
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == originalFile);  // NOT target1
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
 TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G cancels a pending prompt without searching") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartLocate));
@@ -11194,4 +11266,65 @@ TEST_CASE_FIXTURE(Fixture, "RedisplayDu (^J^D) re-anchors to the CURRENT file/di
   REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == secondFile);
+}
+
+// 2026-09-20追加、予防的な修正(直接のユーザー報告はLOCATE限定
+// だったが、runDuOnCurrentFolder()/redisplayDu()自身のstillInDuRealm
+// 分岐のコメント参照――openSelectedDuEntry()もfileReturnMode_ =
+// ApplicationMode::Duを全く同じ形で設定するため、DUでも全く同じ
+// 再現手順・同じ①③ループが起こり得ることが判明したため、LOCATE版の
+// 修正と揃えて先回りで塞いだ): DU結果を直接Fileとして開き、その
+// Fileから「もう一度」^Jd(StartDu)を発動しても、中間のFileを飛ばして
+// 最初の(DU発動前の)本来のFileへ収束することを確認する。
+TEST_CASE_FIXTURE(Fixture, "DU started from a File that was ITSELF reached via a previous DU entry: "
+                           "re-invoking DU (^Jd) skips the intermediate File entirely, converging straight "
+                           "back to the ORIGINAL anchor without bouncing between File and Du forever") {
+  fs::path target1 = root / "du_target1.txt";
+  { std::ofstream(target1) << "one"; }
+  fs::path target2 = root / "du_target2.txt";
+  { std::ofstream(target2) << "two"; }
+  configuration.setCommandForTest(ConfiguredRole::Du,
+                                   {{"python3", "-c", "print('4\\t" + target1.string() + "')"}, std::nullopt});
+
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string originalFile = app.fileMode().currentFile();
+
+  REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  REQUIRE(app.duMode().entries().size() == 1);
+  REQUIRE(app.duMode().entries()[0].path == target1.string());
+
+  REQUIRE(app.handleCommand(Command::Enter));  // opens target1 directly as File
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.fileMode().currentFile() == target1.string());
+
+  // Nested invocation: DU again, from this SAME File (itself reached
+  // via the first DU).
+  configuration.setCommandForTest(ConfiguredRole::Du,
+                                   {{"python3", "-c", "print('8\\t" + target2.string() + "')"}, std::nullopt});
+  REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  REQUIRE(app.duMode().entries().size() == 1);
+  REQUIRE(app.duMode().entries()[0].path == target2.string());
+
+  REQUIRE(app.handleCommand(Command::Enter));  // opens target2 directly as File
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.fileMode().currentFile() == target2.string());
+
+  // Mash Back: File(target2) -> Du (2nd session's own results) ->
+  // straight to the ORIGINAL file (target1 is skipped entirely) ->
+  // Directory. Must NOT loop between File and Du.
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == originalFile);  // NOT target1
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
