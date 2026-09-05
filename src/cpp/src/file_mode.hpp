@@ -213,12 +213,22 @@ class FileMode {
   // 来るんだが旧版では最終ページよりも手前が常だった")――
   // readMoreIntoPipe()自身のO_NONBLOCK化のコメント参照。
   // ensureLoadedThrough()の直前の呼び出しが、既に十分読み込み済み
-  // だったため何も試みなかった(false)のか、実際に読もうと試みたが
-  // その瞬間には何も新しく届かなかった(false、しかし再試行の余地は
-  // ある――streamAtEof_はまだfalseのまま)のかを、呼び出し元
-  // (Application::handleCommand()、showPagerExitNotice()自身の
-  // コメント参照)が区別できるようにする。直後の1回の
-  // ensureLoadedThrough()呼び出しについてだけ意味を持つ。
+  // だったため何も試みなかった(false)のか、実際に読もうと試みた
+  // ものの、その瞬間には「頼んだ分まるごとには」届かなかった
+  // (false、しかし再試行の余地はある――streamAtEof_はまだfalseの
+  // まま)のかを、呼び出し元(Application::handleCommand()、
+  // showPagerExitNotice()自身のコメント参照)が区別できるようにする。
+  // 2026-09-20再訂正、直接のユーザー報告("旧の動きを見てみたら、
+  // モードラインの行情報が１行ずつ進んでいる。つまり実際に一行ずつ
+  // 読んでるわけ？")――legacy自身のlinein()(old/src/alloc.c)は
+  // 実質1行単位でしか要求しないため、「その1行」が届かなければ即座に
+  // 検出できる。この移植は意図的に大きな先読み予算を一度に要求する
+  // ので、「合計で1行でも増えたか」ではなく「頼んだ分にまるごと
+  // 届いたか」を基準にする――部分的に(頼んだより少なく)しか届かな
+  // かった場合も、その部分自体はensureLoadedThrough()の戻り値
+  // (true)経由で正しく表示に反映されつつ、これは「まだ頼んだ全部には
+  // 届いていない」ことを別途伝える。直後の1回のensureLoadedThrough()
+  // 呼び出しについてだけ意味を持つ。
   bool lastLoadAttemptYieldedNothing() const { return lastLoadAttemptYieldedNothing_; }
   bool hasActiveStream() const { return streamFd_ >= 0; }
   bool streamAtEof() const { return streamAtEof_; }
@@ -270,7 +280,24 @@ class FileMode {
   // 当たる(これはstreamPipe_をflush()もし、まだ保留中の末尾の
   // 途中の行を確定させ、streamOwnsFd_ならstreamFd_を閉じる)まで
   // 続ける。
-  void readMoreIntoPipe(int targetLineCount);
+  // 2026-09-20追加、直接のユーザー報告("旧の動きを見てみたら、
+  // モードラインの行情報が１行ずつ進んでいる。つまり実際に一行ずつ
+  // 読んでるわけ？")への調査結果を反映する戻り値: legacy自身の
+  // linein()(old/src/alloc.c)は本当に1バイト単位(実質1行単位)でしか
+  // 要求しないため、パイプの向こう側がほんの一瞬でも書き込みを
+  // 止めれば即座に「今回は届かなかった」と分かる。この移植は
+  // 効率のため意図的に大きな先読み(targetLineCount、複数行分)を
+  // 一度に要求するので、「合計の行数が1行でも増えたか」だけを見る
+  // 判定では、大きなバッチの途中どこかで一瞬でも止まったという
+  // legacyと同じ粒度の信号を拾えない――バッチ全体としては「頼んだ分
+  // より少ないが、それでも前進はした」という結果にしかならず、
+  // 「一瞬でも止まったか」自体が呼び出し元から見えなくなってしまう。
+  // 戻り値は、ループが「頼んだ行数に到達したから」でも「本物のEOFに
+  // 当たったから」でもなく、真にEAGAIN/EWOULDBLOCK(または他の
+  // read()失敗)によって「今はこれ以上何も無い」を理由に抜けた場合
+  // にだけtrueを返す――ensureLoadedThrough()自身のlastLoadAttemptYieldedNothing()
+  // が、これを直接使ってlegacyと同じ粒度でこの一瞬の停止を検出する。
+  bool readMoreIntoPipe(int targetLineCount);
   std::vector<ContentView::Line> convertPipeLines() const;
   // 以前のストリーム状態を全てリセットする(所有しているfdを閉じる)
   // ――loadStream()の先頭(2つ目のCLI起動されたファイルが1つ目を

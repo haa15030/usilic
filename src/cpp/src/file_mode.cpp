@@ -395,8 +395,8 @@ void FileMode::closeStream() {
   streamPipe_.reset();
 }
 
-void FileMode::readMoreIntoPipe(int targetLineCount) {
-  if (streamAtEof_ || streamFd_ < 0) return;
+bool FileMode::readMoreIntoPipe(int targetLineCount) {
+  if (streamAtEof_ || streamFd_ < 0) return false;
   // 意図的に「小さい」読み込みバッファ(2026-08-25、実際のPTY
   // キャプチャに対して調整済み): read()は1回の呼び出しで最大この
   // バイト数を返し、下のループは呼び出しの「間」でだけ
@@ -429,18 +429,19 @@ void FileMode::readMoreIntoPipe(int targetLineCount) {
     ssize_t n = ::read(streamFd_, buf, sizeof(buf));
     if (n < 0) {
       if (errno == EINTR) continue;
-      break;  // EAGAIN/EWOULDBLOCK(一時的に何も無い)も含め、ここで抜ける――すぐ上のコメント参照
+      return true;  // EAGAIN/EWOULDBLOCK(一時的に何も無い)も含め、ここで抜ける――すぐ上のコメント参照。まさに求めていた「一瞬の停止」の信号
     }
     if (n == 0) {
       streamAtEof_ = true;
       streamPipe_->flush();  // まだ保留中の末尾の部分行を確定する
       if (streamOwnsFd_) ::close(streamFd_);
       streamFd_ = -1;
-      break;
+      return false;  // 本物のEOF――「一瞬の停止」ではない
     }
     streamPipe_->feed(std::string(buf, static_cast<std::size_t>(n)));
     streamBytesRead_ += static_cast<std::size_t>(n);  // 自身の宣言コメント参照: 確定した「実際に読み込まれたバイト数」の仕様
   }
+  return false;  // ループ条件を満たした――頼んだ行数に到達済み、停止ではない
 }
 
 std::vector<ContentView::Line> FileMode::convertPipeLines() const {
@@ -518,11 +519,27 @@ bool FileMode::ensureLoadedThrough(int targetLineIndex) {
   if (streamAtEof_ || streamFd_ < 0) return false;
   int before = static_cast<int>(streamPipe_->lines().size());
   if (targetLineIndex < before) return false;  // 既に十分読み込まれている(試みてすらいない)
-  readMoreIntoPipe(targetLineIndex + 1);
-  if (static_cast<int>(streamPipe_->lines().size()) == before) {
-    lastLoadAttemptYieldedNothing_ = true;  // 実際に試みたが、この瞬間は何も届かなかった
-    return false;
-  }
+  // 2026-09-20再訂正、直接のユーザー報告("（Exit）出ない...旧の動きを
+  // 見てみたら、モードラインの行情報が１行ずつ進んでいる。つまり
+  // 実際に一行ずつ読んでるわけ？")――legacy自身のlinein()
+  // (old/src/alloc.c)は本当に1バイトずつ、実質1行ずつしか要求しない
+  // ので、「その1行」が届かなければ即座に「今回は届かなかった」と
+  // 分かる。この移植は効率のため意図的に大きな先読み予算
+  // (topIndex+rows*2相当)を一度に要求するので、以前の「合計の行数が
+  // 1行でも増えたか」という判定では、大きなバッチの途中どこかで一瞬
+  // でも止まったというlegacyと同じ粒度の信号を拾えなかった
+  // (man/groffのような実際のパイプは大抵「頼んだ分の一部」くらいは
+  // 返してくるため、この粗い判定では「1行も増えなかった」がほぼ一度も
+  // 起きず、結果的に(Exit)がほぼ二度と出なくなっていた)。
+  // readMoreIntoPipe()自身の戻り値(バッチの途中でEAGAIN/EWOULDBLOCK
+  // に当たって抜けたか)を直接使うことで、legacyと同じ粒度でこの
+  // 一瞬の停止を検出する――部分的にであれ届いた分は正しく表示に
+  // 反映しつつ(下のsetLines()は無条件に呼ぶ)、それでも「一瞬でも
+  // 止まった」ことを別途伝える。
+  bool stalled = readMoreIntoPipe(targetLineIndex + 1);
+  int after = static_cast<int>(streamPipe_->lines().size());
+  if (stalled) lastLoadAttemptYieldedNothing_ = true;
+  if (after == before) return false;  // 本当に1行も増えなかった――描画すべき新しい内容自体が無い
   view_.setLines(convertPipeLines());
   return true;
 }
