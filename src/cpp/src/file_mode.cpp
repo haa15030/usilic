@@ -410,12 +410,25 @@ void FileMode::readMoreIntoPipe(int targetLineCount) {
   // 実際の目的(一度に、legacy自身が観測した約23〜25行の初期読み込み
   // に合わせて、おおよそ画面1枚分より多い入力でブロックしない)に
   // 対しては無視できるコストである。
+  // 2026-09-20追加、直接のユーザー報告("最終行へ来てもいないのに
+  // （Exit）が出てこそ価値がある"、legacy実機での再現確認): loadStream()
+  // 自身のO_NONBLOCK化のコメント参照。この下の分岐(EINTR以外の負の
+  // 戻り値)は「本物のread失敗をEOFのように扱う」ものとして元々
+  // 書かれていたが、実際にはstreamAtEof_を一切設定せずstreamFd_も
+  // 閉じないまま単にループを抜けるだけだった――O_NONBLOCK化した今、
+  // EAGAIN/EWOULDBLOCK(生きたSHELLパイプ/ソケットの向こう側がその
+  // 瞬間まだ何も送っていない、"真のEOF"ではない)もこの同じ分岐へ
+  // 素通しで落ちる。これはまさに欲しかった挙動そのもの――legacy自身の
+  // (stdin)パイプの実機再現("EOFに出くわす時が必ず来るんだが最終
+  // ページよりも手前が常だった")と同じ「一時的に何も届かなかった
+  // だけ、streamFd_はまだ開いたまま、次回の呼び出しでまた読み直せる」
+  // という意味論に、狙って変更することなく既に一致していた。
   char buf[256];
   while (static_cast<int>(streamPipe_->lines().size()) < targetLineCount) {
     ssize_t n = ::read(streamFd_, buf, sizeof(buf));
     if (n < 0) {
       if (errno == EINTR) continue;
-      break;  // 本物のread失敗――永遠にループするのではなくEOFのように扱う
+      break;  // EAGAIN/EWOULDBLOCK(一時的に何も無い)も含め、ここで抜ける――すぐ上のコメント参照
     }
     if (n == 0) {
       streamAtEof_ = true;
@@ -451,6 +464,14 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   streamFd_ = fd;
   streamOwnsFd_ = ownsFd;
   streamAtEof_ = false;
+  lastLoadAttemptYieldedNothing_ = false;
+  // 2026-09-20追加、readMoreIntoPipe()自身のO_NONBLOCK化のコメント
+  // 参照(直接のユーザー報告+legacy実機での再現確認)――失敗しても
+  // 無視して構わない(通常のブロッキングのfdのまま続行するだけ、
+  // 生きたSHELLからの引き渡しの生きたパイプ/ソケット以外――通常の
+  // ファイル/リダイレクトされたstdin等――ではどのみち意味の無い
+  // フラグ)。
+  ::fcntl(streamFd_, F_SETFL, ::fcntl(streamFd_, F_GETFL, 0) | O_NONBLOCK);
   streamBytesRead_ = 0;  // 自身の宣言コメント参照――新しいストリームはこれを0から再開する
   streamPipe_ = std::make_unique<PipeBuffer>(encoding_, width_, 256L * 1024 * 1024);
   currentFile_ = displayName;
@@ -489,11 +510,18 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
 }
 
 bool FileMode::ensureLoadedThrough(int targetLineIndex) {
+  // lastLoadAttemptYieldedNothing()自身の宣言コメント参照――「今回は
+  // 何も試みなかった」場合との区別のため、実際に試みるまではfalseの
+  // ままにしておく。
+  lastLoadAttemptYieldedNothing_ = false;
   if (streamAtEof_ || streamFd_ < 0) return false;
   int before = static_cast<int>(streamPipe_->lines().size());
-  if (targetLineIndex < before) return false;  // 既に十分読み込まれている
+  if (targetLineIndex < before) return false;  // 既に十分読み込まれている(試みてすらいない)
   readMoreIntoPipe(targetLineIndex + 1);
-  if (static_cast<int>(streamPipe_->lines().size()) == before) return false;  // 新しいものは何も届かなかった
+  if (static_cast<int>(streamPipe_->lines().size()) == before) {
+    lastLoadAttemptYieldedNothing_ = true;  // 実際に試みたが、この瞬間は何も届かなかった
+    return false;
+  }
   view_.setLines(convertPipeLines());
   return true;
 }

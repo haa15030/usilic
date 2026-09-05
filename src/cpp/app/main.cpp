@@ -1316,6 +1316,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     app.pollPendingCpMvRmShellRun();
     app.pollPendingArchiveExtractShellRun();
     app.pollShellHandoff();
+    app.pollPagerExitNotice();
     syncMouseTracking();
     bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
 
@@ -1643,6 +1644,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     app.pollPendingCpMvRmShellRun();
     app.pollPendingArchiveExtractShellRun();
     app.pollShellHandoff();
+    app.pollPagerExitNotice();
 
     // Set true below whenever something was actually consumed this
     // iteration (a click, a key, a drag/coast step) -- used to skip

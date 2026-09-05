@@ -1430,6 +1430,8 @@ class Application {
   // グの慣習に合わせて、メインループの反復ごとに無条件に呼ぶのに
   // 十分安価である。
   bool pollShellHandoff();
+  // pollPagerExitNotice()自身の宣言コメント参照(2026-09-20追加)。
+  void pollPagerExitNotice();
 
   // 終了が確認された(StartExitのプロンプトが先頭'y'で送信された)
   // 時点でtrue――将来の本物の実行ループへの、feedByte()の呼び出しを
@@ -2402,6 +2404,11 @@ class Application {
   // バリアントであれ)が誤って古びたパスを再利用しない。
   std::string cutFileSourcePath_;
   bool shellStarted_ = false;
+  // ensurePagerStreamLoaded()/pollPagerExitNotice()自身の宣言コメント
+  // 参照(2026-09-20追加)――「今回何も新しく届かなかった」ことが
+  // 検出された「次の」メインループの反復まで、"(Exit)"通知の実際の
+  // 描画を遅らせるためだけに存在する。
+  bool pendingPagerExitNotice_ = false;
   std::string helpText_;
   // loadGuiHelpText()自身のコメント参照。
   std::string guiHelpText_;
@@ -2679,6 +2686,7 @@ class Application {
   // ラベル描画を再利用する一時的なステータス行に過ぎない)。
   void drawPromptLabel(PromptKind kind, const std::string &positionText = "", const std::string &staticMessage = "");
   void showPagerExitNotice();
+  void ensurePagerStreamLoaded(int targetLineIndex);
   // K-46/K-48(^X^F/^X^D)自身の読み取り専用(まだ編集していない)
   // 候補一覧: 2026-08-18の修正、実際の報告+参照スクリーンショット
   // (=cw)――ハイライトされた候補は、最初のバイトが入力された時点

@@ -3255,7 +3255,7 @@ bool Application::handleCommand(Command command) {
     // することになってしまう。
     int target = command == Command::GoToBottom ? std::numeric_limits<int>::max() - 1
                                                   : activeView().topIndex() + display_.rows() * 2;
-    fileMode_.ensureLoadedThrough(target);
+    ensurePagerStreamLoaded(target);
   }
   switch (command) {
     // setHoverIndex(nullopt)を各移動の「後」ではなく「前」に呼ぶ
@@ -3308,29 +3308,12 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
       return true;
-    case Command::PageDown: {
+    case Command::PageDown:
       activeView().setHoverIndex(std::nullopt);
-      // 2026-09-20追加、直接のユーザー依頼("spaceでページ送りするうちに
-      // 表示される（Exit）もいい。あれも取り入れて欲しい"、legacy(U
-      // バイナリ)を実際にPTYで再現し確認済み): legacyは、SHELLプロンプト
-      // で起動した(man ls等、PAGER経由の)"(stdin)"内容を真の末尾を
-      // 超えてさらにspaceで送ろうとすると、ベル+"(Exit)"という控えめな
-      // 通知を出す(押しても何も起きないのではなく、ちゃんと「これ以上
-      // 無い」と伝える)。この関数のpagerReturnsToShell()経由のケース
-      // (実際にFileMode::loadStream()経由でこの新しいPAGERハンドオフ
-      // から着地する画面)に絞って再現する――FILE/MAN/DU等の既存の
-      // 他の全てのページャ画面は、これまでこの通知を一度も要求された
-      // ことが無いので意図的に対象外のままにする。
-      int topBefore = activeView().topIndex();
       activeView().pageDown();
       if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
-      if (currentMode_ == ApplicationMode::File && fileMode_.pagerReturnsToShell() &&
-          activeView().topIndex() == topBefore) {
-        showPagerExitNotice();
-      }
       return true;
-    }
     case Command::Enter:
       if (currentMode_ == ApplicationMode::Directory) return openSelectedEntry();
       if (currentMode_ == ApplicationMode::Cut) return openSelectedSegment();
@@ -8618,12 +8601,13 @@ std::string Application::promptLabelText(PromptKind kind) const {
   return "";
 }
 
-// Command::PageDown自身のコメント参照(2026-09-20追加): legacy自身の
-// 実機再現("man ls"を末尾を超えてspaceで送ると"^G (Exit) "が最下行に
-// 現れる)を模す――ベルを鳴らし、モードライン行の左端に"Exit"だけ
-// 太字のプレーンテキストを重ねて書く(legacy自身の生バイト列と同じ、
-// 反転表示のモードライン自体は「起こさない」)。次の再描画で自然に
-// 上書きされる、意図的に一時的な通知。
+// handleCommand()自身のensurePagerStreamLoaded()呼び出しのコメント
+// 参照(2026-09-20追加): legacy自身の実機再現("man ls"を末尾を超えて
+// spaceで送ると"^G (Exit) "が最下行に現れる)を模す――ベルを鳴らし、
+// モードライン行の左端に"Exit"だけ太字のプレーンテキストを重ねて
+// 書く(legacy自身の生バイト列と同じ、反転表示のモードライン自体は
+// 「起こさない」)。次の再描画で自然に上書きされる、意図的に一時的な
+// 通知。
 void Application::showPagerExitNotice() {
   int row = std::max(0, display_.rows() - 1);
   display_.moveCursor(row, 0);
@@ -8634,6 +8618,46 @@ void Application::showPagerExitNotice() {
   display_.setAttribute(Display::Attribute::BoldOff);
   display_.write(") ");
   display_.flush();
+}
+
+// 2026-09-20追加、直接のユーザー報告("最終行へ来てもいないのに
+// （Exit）が出てこそ価値がある"、"（stdin）は1ページ分ずつ読み込み
+// ながら表示するうちEOFに出くわす時が必ず来るんだが旧版では最終
+// ページよりも手前が常だった"、"-gでは（Exit）が出ない"):
+// FileMode::lastLoadAttemptYieldedNothing()自身の宣言コメント参照
+// ――実際に読もうと試みたが今回は何も届かなかった(streamAtEof_は
+// まだfalseで再試行の余地がある)ことを検出するだけで、通知自体は
+// 即座に描かない(pendingPagerExitNotice_自身の宣言コメント参照:
+// この直後にswitch(command)自身の対応するケースが独自にredraw()を
+// 実行し、ここで描いたばかりの通知を即座に上書きしてしまう)。
+void Application::ensurePagerStreamLoaded(int targetLineIndex) {
+  fileMode_.ensureLoadedThrough(targetLineIndex);
+  if (fileMode_.pagerReturnsToShell() && fileMode_.lastLoadAttemptYieldedNothing()) {
+    pendingPagerExitNotice_ = true;
+  }
+}
+
+// メインループ(main.cpp)から、他の全てのpoll*()系メソッド
+// (pollShellHandoff()等)と並んで、CUI/GUIの両方の反復ごとに無条件で
+// 呼ばれる――ensurePagerStreamLoaded()自身のコメント参照。今この
+// 反復の「直前」の反復で処理されたキー入力自身のredraw()は、呼ばれる
+// 時点で既に完了している(このメソッド自体は次の反復まで通知の描画を
+// 遅らせるだけ)ので、ここで描けば確実にそれに上書きされずに残る。
+// 2026-09-20追加、-gでも直接のユーザー報告通り機能させるため
+// (GUIのマウスホイール/慣性スクロールはhandleCommand()を経由せず
+// ContentView自身のtopIndex_を直接動かすので、ensurePagerStreamLoaded()
+// 自身が「あらゆるコマンドの前」にhandleCommand()経由で呼ばれること
+// には一切頼れない――そのためこのポーリング自体が、GUIのフレーム
+// ごとの独立した安全網として、CUI/GUI両方のメインループから同じ形で
+// 呼ばれる)。
+void Application::pollPagerExitNotice() {
+  if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
+    ensurePagerStreamLoaded(activeView().topIndex() + display_.rows() * 2);
+  }
+  if (pendingPagerExitNotice_) {
+    pendingPagerExitNotice_ = false;
+    showPagerExitNotice();
+  }
 }
 
 void Application::drawPromptLabel(PromptKind kind, const std::string &positionText, const std::string &staticMessage) {

@@ -10617,42 +10617,70 @@ TEST_CASE_FIXTURE(Fixture, "startPagerFileList: ^G stays a no-op even AFTER the 
   CHECK(app.currentMode() == ApplicationMode::File);  // did NOT fall through to an empty Directory
 }
 
-// 2026-09-20追加、直接のユーザー報告("spaceでページ送りするうちに
-// 表示される（Exit）もいい。あれも取り入れて欲しい"、legacyの実機
-// (Uバイナリ)をPTYで実際に再現し確認済み): Command::PageDown自身の
-// showPagerExitNotice()呼び出しのコメント参照――pagerReturnsToShell()
-// (実際にはApplication::pollShellHandoff()経由でPAGER自身のハンドオフ
-// から着地するFileモード画面でだけtrueになる、"(stdin)"自身の宣言
-// コメント参照)な画面で、既に真の末尾にいる状態でさらにspaceを押すと、
-// ベル+"(Exit)"(Exitだけ太字)という控えめな通知が最下行に現れる
-// ――legacyの実機の生バイト列と一致することを既にPTYで確認済み。
-// plain.txt("hello\nworld\n")はどんな現実的なビューポート高さにも
-// 十分収まる短さなので、pageDown()は最初の1回目から既に無移動
-// (真の末尾)になる。
-TEST_CASE_FIXTURE(Fixture, "PageDown: a pagerReturnsToShell() File screen already at the true end shows the "
-                           "bell+\"(Exit)\" notice, matching legacy's own \"(stdin)\" pager behavior") {
-  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
-  app.fileMode().setPagerReturnsToShell(true);
+// 2026-09-20追加、直接のユーザー報告("最終行へ来てもいないのに
+// （Exit）が出てこそ価値がある"、"（stdin）は1ページ分ずつ読み込み
+// ながら表示するうちEOFに出くわす時が必ず来るんだが旧版では最終
+// ページよりも手前が常だった...新版も同じなら反映してほしい"):
+// FileMode::lastLoadAttemptYieldedNothing()/readMoreIntoPipe()自身の
+// O_NONBLOCK化のコメント参照。真のEOF(書き込み側が実際にcloseした)
+// ではなく、「今この瞬間はまだ何も届いていないだけ(書き込み側は
+// 開いたまま)」を再現するため、実際のpipe(2)を使う――plain.txt等の
+// 短い"通常ファイル"は開いた瞬間に本物のEOFへ達してしまい、この
+// 「一時的なだけ」という状態を再現できない。
+TEST_CASE_FIXTURE(Fixture, "PageDown: a pagerReturnsToShell() File screen that just tried to load more but "
+                           "got nothing new YET (write end still open, not a real EOF) shows the bell+\"(Exit)\" "
+                           "notice, matching legacy's own \"(stdin)\" pager behavior") {
+  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));  // gets Application into File mode
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
+  int fds[2];
+  REQUIRE(pipe(fds) == 0);
+  REQUIRE(write(fds[1], "only one line\n", 14) == 14);
+  // fds[1] (the write end) stays OPEN here -- NOT a real EOF, matching
+  // the exact scenario this feature targets.
+  app.fileMode().loadStream(fds[0], /*ownsFd=*/true, "", 100);
+  app.fileMode().setPagerReturnsToShell(true);
+  REQUIRE(app.fileMode().hasActiveStream());
+  REQUIRE_FALSE(app.fileMode().streamAtEof());  // confirms this is NOT a real-EOF scenario
+
   CHECK(app.handleCommand(Command::PageDown));
+  CHECK(app.fileMode().lastLoadAttemptYieldedNothing());
+  CHECK_FALSE(app.fileMode().streamAtEof());  // still not a real EOF -- retryable later
+  // pollPagerExitNotice()自身の宣言コメント参照――実際の描画は
+  // main.cpp自身のメインループの「次の」反復まで意図的に遅延される
+  // (switch(command)自身のCommand::PageDownのredraw()に即座に上書き
+  // されてしまうのを避けるため)。テストでは、その次の反復に相当する
+  // この呼び出しを直接行う。
+  app.pollPagerExitNotice();
   std::string lastRow = display.rowText(display.rows() - 1);
   CHECK(lastRow.find("(Exit)") != std::string::npos);
+
+  ::close(fds[1]);
 }
 
 // 見落とし防止の対照テスト: pagerReturnsToShell()がfalse(通常の
 // CLI起動のFileページャー、Shell経由のPAGERハンドオフではない)の
-// 間は、この新しい通知を一切出さない――既存の全ての(ls)/FILE等の
-// ページャー画面が、このコミットの対象外のまま今まで通り無反応で
-// あることを確認する。
-TEST_CASE_FIXTURE(Fixture, "PageDown: a plain (non-pagerReturnsToShell) File screen already at the true end "
-                           "does NOT show the \"(Exit)\" notice (unaffected, scoped narrowly)") {
+// 間は、全く同じ「一時的に何も届かない」状況でもこの新しい通知を
+// 一切出さない――既存の全ての(ls)/FILE等のページャー画面が、この
+// コミットの対象外のまま今まで通り無反応であることを確認する。
+TEST_CASE_FIXTURE(Fixture, "PageDown: the same 'nothing new yet' condition does NOT show the \"(Exit)\" "
+                           "notice when pagerReturnsToShell() is false (unaffected, scoped narrowly)") {
   REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
   REQUIRE_FALSE(app.fileMode().pagerReturnsToShell());  // default, confirms this test's own premise
 
+  int fds[2];
+  REQUIRE(pipe(fds) == 0);
+  REQUIRE(write(fds[1], "only one line\n", 14) == 14);
+  app.fileMode().loadStream(fds[0], /*ownsFd=*/true, "", 100);
+
   CHECK(app.handleCommand(Command::PageDown));
+  CHECK(app.fileMode().lastLoadAttemptYieldedNothing());  // the underlying condition still fires...
+  app.pollPagerExitNotice();
   std::string lastRow = display.rowText(display.rows() - 1);
-  CHECK(lastRow.find("(Exit)") == std::string::npos);
+  CHECK(lastRow.find("(Exit)") == std::string::npos);  // ...but the notice itself doesn't, unscoped mode
+
+  ::close(fds[1]);
 }
 
 TEST_CASE_FIXTURE(Fixture, "'[' and ']' keep their ordinary Directory-mode marking behavior when NOT "

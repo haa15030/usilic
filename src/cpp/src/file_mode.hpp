@@ -207,6 +207,19 @@ class FileMode {
   // またはそもそもストリームがアクティブでない場合はfalse(純粋に
   // 何もしない)。
   bool ensureLoadedThrough(int targetLineIndex);
+  // 2026-09-20追加、直接のユーザー報告("最終行へ来てもいないのに
+  // （Exit）が出てこそ価値がある"、legacy実機での再現確認: "(stdin)
+  // は1ページ分ずつ読み込みながら表示するうちEOFに出くわす時が必ず
+  // 来るんだが旧版では最終ページよりも手前が常だった")――
+  // readMoreIntoPipe()自身のO_NONBLOCK化のコメント参照。
+  // ensureLoadedThrough()の直前の呼び出しが、既に十分読み込み済み
+  // だったため何も試みなかった(false)のか、実際に読もうと試みたが
+  // その瞬間には何も新しく届かなかった(false、しかし再試行の余地は
+  // ある――streamAtEof_はまだfalseのまま)のかを、呼び出し元
+  // (Application::handleCommand()、showPagerExitNotice()自身の
+  // コメント参照)が区別できるようにする。直後の1回の
+  // ensureLoadedThrough()呼び出しについてだけ意味を持つ。
+  bool lastLoadAttemptYieldedNothing() const { return lastLoadAttemptYieldedNothing_; }
   bool hasActiveStream() const { return streamFd_ >= 0; }
   bool streamAtEof() const { return streamAtEof_; }
   // 2026-08-25のバグ修正: 上の`hasActiveStream()`は、ストリームが
@@ -289,6 +302,7 @@ class FileMode {
   int streamFd_ = -1;
   bool streamOwnsFd_ = false;
   bool streamAtEof_ = false;
+  bool lastLoadAttemptYieldedNothing_ = false;  // lastLoadAttemptYieldedNothing()自身の宣言コメント参照
   // 2026-08-25(ユーザーからの直接の訂正): ページャのモードライン
   // 自身のtrailingバイト数フィールドは、以前は表示済みの行テキストを
   // 「カーソル」の行まで合計していた。Shell自身の全く同じフィールド
