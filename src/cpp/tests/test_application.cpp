@@ -11113,6 +11113,39 @@ TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell
   CHECK(app.activeContentView().modeLineText().find("SHELL") != std::string::npos);
 }
 
+// 2026-09-20追加、直接のユーザー報告("SHELLプロンプトで^Sとやっても
+// 認識しない（ハイライトのSが表示されるだけ）"): すぐ上のテストは
+// handleCommand(Command::StartGrep)を直接呼んでおり、実際の生の^S
+// キー入力(0x13)がfeedShellByte()経由で正しくそこまでルーティング
+// されることまでは確認していなかった――feedShellByte()自身の新しい
+// kControlS分岐のコメント参照。このテストは、実際のバイト入力
+// (app.feedByte())だけを使い、^Sが「ハイライトされた制御文字グリフ
+// としてコマンドラインへ挿入される」のではなく、実際にGREPプロンプト
+// を起動することを確認する。
+TEST_CASE_FIXTURE(Fixture, "SHELL: a real ^S keypress (not handleCommand(StartGrep) directly) actually "
+                           "triggers GREP, instead of being inserted into the command line as a literal "
+                           "control-character glyph") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
+  // startGrepPrompt()自身のコメント参照――他のGroup1プロンプト
+  // (MAN/CUT等)と同じく、ここではまだプロンプトを「開く」だけで、
+  // currentMode_はパターン投入までShellのまま――すぐ下でパターンを
+  // 投入して初めてGrepへ遷移する。
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.promptActive());
+  CHECK(app.shell().commandLine().text().empty());  // NOT inserted as a literal control-char glyph
+
+  feedText("printf");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+}
+
 // 2026-09-19六訂正、直接のユーザー報告の完全な手順を再現("CLAUDE.mdを
 // 選択→^Jd→...→^S→...→doc^M→...→^M→...→^G連打で行き来ループ"):
 // 一連の表示バグ(このファイル自身の直前の複数のテスト参照)を修正した

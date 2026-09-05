@@ -3019,6 +3019,23 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   if (byte == 0x12) {  // ^R――startShellHistoryRecall()自身のコメント参照
     return startShellHistoryRecall();
   }
+  // 2026-09-20追加、直接のユーザー報告("SHELLプロンプトで^Sとやっても
+  // 認識しない（ハイライトのSが表示されるだけ）"): "GREP is possible
+  // from SHELL mode"自身のコメント参照――startGrepPrompt()自体は元々
+  // Shellを排除していないと2026-09-19に確認済みだったが、その確認は
+  // handleCommand(Command::StartGrep)を直接呼ぶユニットテストによる
+  // もので、実際の生の^Sキー入力がここまで正しくルーティングされる
+  // ことまでは確認していなかった――この関数自身、^J/^X/^O/ESC以外の
+  // 生バイトをグローバルなコマンドとして一切扱わず、下のinsertByte()
+  // へ素通しして(制御バイトとして)コマンドラインへ文字通り挿入して
+  // しまうので(すぐ上の^A/^E/^B/^F/^D自身の同種の過去のバグのコメント
+  // 参照、まさに同じ症状"ハイライトのADDDD")、^S自体はここに専用の
+  // 分岐が無ければ二度と実際のGREP発動には届かない。他のモードの
+  // プレーンな^S(kControlS、dispatchByte()自身の該当ケース参照)と
+  // 揃え、ここでも同じくCommand::StartGrepへ配線する。
+  if (byte == kControlS) {
+    return handleCommand(Command::StartGrep);
+  }
   if (byte == 0x09) {  // Tab
     shell_.onTab();
     return true;
