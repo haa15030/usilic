@@ -11105,7 +11105,18 @@ TEST_CASE_FIXTURE(Fixture, "DU started from File, GREP a match, open a DIFFERENT
 
   REQUIRE(app.handleCommand(Command::StartGrep));  // ②
   REQUIRE(app.promptActive());
-  CHECK(display.rowText(display.rows() - 1).find("DU: " + filePath) != std::string::npos);
+  // プロンプト行自体は編集可能なフィールドと同じ行を分け合うため、
+  // 末尾切り詰めの予算がmodeLineText()よりずっと厳しく(接頭辞
+  // "DU: "自身は必ず生き残るが、その後の値側はテスト用の一時
+  // ディレクトリの絶対パス全体ほど長くは収まらない)、ここではフル
+  // パスの完全一致ではなく、接頭辞と(短いので予算内に必ず収まる)
+  // ファイル名自体の生存を確認する――checkpoint②が実際に検証したい
+  // 「接頭辞が食べられていないか」を、この予算差に左右されずに見る。
+  {
+    std::string promptRow = display.rowText(display.rows() - 1);
+    CHECK(promptRow.find("DU: ") != std::string::npos);
+    CHECK(promptRow.find("plain.txt") != std::string::npos);
+  }
 
   feedText("doc");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
@@ -11136,4 +11147,51 @@ TEST_CASE_FIXTURE(Fixture, "DU started from File, GREP a match, open a DIFFERENT
   CHECK(app.fileMode().currentFile() == filePath);  // the ORIGINAL file, not doc-reviewer.md
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+// 2026-09-20追加、直接のユーザー報告("^Jdは直ったが^J^Dが手つかずな
+// 感じ"): redisplayDu()自身のコメント参照――既存のDUセッションが
+// ある間に別のファイルへ移動してから^J^D(RedisplayDu)を押すと、
+// 以前はduReturnStack_/duAnchor_を一切再計算せず、古いセッションの
+// 基点のまま固定されてしまっていた。startManPrompt()の「まだそのモード
+// にいない時だけ再アンカー」というルールをここにも揃えたので、
+// ^G(Back)は「DUを最初に起動した場所」ではなく「今回^J^Dを押した
+// 場所」(この2つ目のファイル)へ戻るべき。
+TEST_CASE_FIXTURE(Fixture, "RedisplayDu (^J^D) re-anchors to the CURRENT file/directory even when an "
+                           "older DU session already exists from a different location") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string firstFile = app.fileMode().currentFile();
+
+  REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+
+  // Back out to Directory, then open a DIFFERENT file.
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  app.handleCommand(Command::GoToTop);
+  idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string secondFile = app.fileMode().currentFile();
+  REQUIRE(secondFile != firstFile);
+
+  // A DU session from `firstFile` still exists; RedisplayDu (^J^D)
+  // must re-anchor to `secondFile`, the CURRENT location, not the
+  // stale first one.
+  REQUIRE(app.handleCommand(Command::RedisplayDu));
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  CHECK(app.activeContentView().modeLineText().find(secondFile) != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find(firstFile) == std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == secondFile);
 }

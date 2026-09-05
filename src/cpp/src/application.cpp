@@ -6698,6 +6698,21 @@ bool Application::redisplayDu() {
   // ということなので、初回に限りrunDuOnCurrentFolder()(^Jd自体)へ
   // フォールバックする。
   if (duMode_.currentPath().empty()) return runDuOnCurrentFolder();
+  // 2026-09-20追加、直接のユーザー報告("^Jdは直ったが^J^Dが手つかず"):
+  // startManPrompt()/startManList()自身の直上のコメント・
+  // 「まだそのモードにいない時だけ」というルールと全く同じものを
+  // ここにも適用する。以前はここのゲートが「duMode_.currentPath()が
+  // 空か」(セッションが一度でも存在したか)だけで、既存セッションが
+  // あればduReturnStack_/duAnchor_を一切再計算せずreturnToDuResults()
+  // へ直行していた――しかし別のファイル/ディレクトリへ移動した「後」
+  // に^J^Dで古いDU結果を再表示すると、基点が動く前の場所(あるいは
+  // 前回本当にDUを開始した時の場所)のまま固定されてしまい、MAN/
+  // LOCATEの「Redisplay」が常にその場から再アンカーするのと食い違う。
+  if (currentMode_ != ApplicationMode::Du) {
+    ApplicationMode anchor = nearestFileOrDirectoryAnchor();
+    duReturnStack_ = {anchor};
+    duAnchor_ = anchorSnapshotFor(anchor);
+  }
   return returnToDuResults();
 }
 
