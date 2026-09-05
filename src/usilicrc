@@ -86,6 +86,7 @@ PROGRAM
 	xemacs
 	vi
 	less
+	man
 	dviout
 	xdvi
 	lynx

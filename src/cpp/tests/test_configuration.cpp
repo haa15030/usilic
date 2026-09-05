@@ -1,3 +1,6 @@
+#include <fstream>
+#include <sstream>
+
 #include "configuration.hpp"
 #include "doctest.h"
 
@@ -349,4 +352,34 @@ TEST_CASE("charset bootstrap: a recognized explicit value is honored") {
   config.setEnvironmentCharset("euc");
   CHECK(config.charsetExplicitlySet());
   CHECK(config.defaultCharset() == Charset::Encoding::Euc);
+}
+
+// 2026-09-20追加、直接のユーザー報告("SHELLプロンプトでman ls[return]
+// ではその場でmanページが表示され、[return]連打でスクロールするみたい
+// だが、旧版のように(stdin)で表示して欲しい"): Shell::setProgramLauncher()
+// (application.cpp)経由のハンドオフは、typedコマンドの最初の単語が
+// Configuration::programSeedCommands()(usilicrc自身のPROGRAM節)の
+// どれかと前方一致する時にだけ発動する――`less`は元々このリストに
+// 含まれていたが、`man`はそのpagerとして`less`を内部で使うだけで、
+// `man`自身は含まれておらず、SHELLプロンプトで直接`man ls`と打つと
+// 認識されずに素のptyパススルー(Shell自身の行指向のscrollback
+// パイプラインが生のフルスクリーン出力を誤って解釈する)へ落ちて
+// いた――このテストは、出荷されるusilicrc自身に`man`が実際に含まれて
+// いることを固定し、将来の編集で再び落とされないようにする。
+TEST_CASE("shipped usilicrc's PROGRAM section includes \"man\" (SHELL: `man ls` should hand off to the real "
+          "interactive-program launcher, not run inline through Shell's own line-oriented scrollback)") {
+  std::ifstream in("../usilicrc");
+  REQUIRE(in.is_open());
+  std::ostringstream buffer;
+  buffer << in.rdbuf();
+
+  Configuration config;
+  REQUIRE(config.loadRcText(buffer.str(), true));
+  bool foundMan = false;
+  for (const std::string &seed : config.programSeedCommands()) {
+    std::size_t end = seed.find_first_of(" \t");
+    std::string firstWord = seed.substr(0, end);
+    if (firstWord == "man") foundMan = true;
+  }
+  CHECK(foundMan);
 }
