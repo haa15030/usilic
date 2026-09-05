@@ -8631,7 +8631,30 @@ void Application::showPagerExitNotice() {
 // この直後にswitch(command)自身の対応するケースが独自にredraw()を
 // 実行し、ここで描いたばかりの通知を即座に上書きしてしまう)。
 void Application::ensurePagerStreamLoaded(int targetLineIndex) {
-  fileMode_.ensureLoadedThrough(targetLineIndex);
+  // 2026-09-20追加、直接のユーザー報告("man ls直後の画面が出ない
+  // （jで表示）"): FileMode::ensureLoadedThrough()自身は、新しく
+  // 読み込んだ内容をview_へ反映する(setLines())だけで、実際の画面の
+  // 再描画は一切行わない――これは元々、この関数がhandleCommand()の
+  // switch(command)自身の直前でだけ呼ばれ、その直後に各コマンドの
+  // ケース自身(moveDown()/pageDown()等)が必ず自前でredraw()する、
+  // という前提に立っていたため、それ自体は問題にならなかった。しかし
+  // このメソッド自体は今やpollPagerExitNotice()経由でメインループの
+  // 毎回の反復からも(コマンドの発行と無関係に)呼ばれるので、その
+  // 経路には「この直後に誰かがredraw()する」という前提がそもそも
+  // 成り立たない――結果、SHELLからのPAGERハンドオフ直後、たまたま
+  // 子プロセスがまだ何も書き込んでいない一瞬(Application::pollShellHandoff()
+  // 自身のloadStream()呼び出し時点)に当たると、内容は(このポーリング
+  // 経由で)裏側では正しく読み込まれ続けるのに、画面には一切反映され
+  // ないまま――ユーザーが偶然何かキー(例えば'j')を押して「その」
+  // コマンド自身のredraw()が初めて拾うまで、ずっと空白の"00000/00000
+  // END"のまま固まって見えていた。ensureLoadedThrough()が実際に
+  // 新しい内容を読み込めた(true)場合はここで明示的にredraw()+flush()
+  // する――handleCommand()自身の呼び出し元から見れば、直後の
+  // switch(command)自身のredraw()と二重になるが、無害である。
+  if (fileMode_.ensureLoadedThrough(targetLineIndex)) {
+    activeView().redraw();
+    display_.flush();
+  }
   if (fileMode_.pagerReturnsToShell() && fileMode_.lastLoadAttemptYieldedNothing()) {
     pendingPagerExitNotice_ = true;
   }
@@ -8639,19 +8662,37 @@ void Application::ensurePagerStreamLoaded(int targetLineIndex) {
 
 // メインループ(main.cpp)から、他の全てのpoll*()系メソッド
 // (pollShellHandoff()等)と並んで、CUI/GUIの両方の反復ごとに無条件で
-// 呼ばれる――ensurePagerStreamLoaded()自身のコメント参照。今この
-// 反復の「直前」の反復で処理されたキー入力自身のredraw()は、呼ばれる
-// 時点で既に完了している(このメソッド自体は次の反復まで通知の描画を
-// 遅らせるだけ)ので、ここで描けば確実にそれに上書きされずに残る。
-// 2026-09-20追加、-gでも直接のユーザー報告通り機能させるため
-// (GUIのマウスホイール/慣性スクロールはhandleCommand()を経由せず
-// ContentView自身のtopIndex_を直接動かすので、ensurePagerStreamLoaded()
-// 自身が「あらゆるコマンドの前」にhandleCommand()経由で呼ばれること
-// には一切頼れない――そのためこのポーリング自体が、GUIのフレーム
-// ごとの独立した安全網として、CUI/GUI両方のメインループから同じ形で
-// 呼ばれる)。
+// 呼ばれる。
+//
+// 2026-09-20再訂正、直接のユーザー報告2件("（Exit）は出るようだが
+// すぐ消える（上書き？）"、"man ls直後の画面が出ない（jで表示）")。
+// 前者の原因: このメソッドが「あらゆる」反復で無条件に
+// ensurePagerStreamLoaded()を呼び続けていたため、legacy自身の実機
+// (ユーザーが自分で次にspaceを押すまでは何もしない、待ち合わせは
+// 「ユーザー自身の次の操作」を単位にしている)とは異なり、この
+// 移植は裏側で継続的に読み直しを試み続けていた――man/groffのような
+// 実際に「まだ書きかけ」のパイプでは、ユーザーが(Exit)通知に気付く
+// より前に、その裏側の再試行がたまたま新しい内容を見つけてしまい、
+// ensurePagerStreamLoaded()自身の新しいredraw()(すぐ下のコメント
+// 参照、これ自体は別件の直接のユーザー報告への対応)がそれを即座に
+// 描き直し、出したばかりの(Exit)通知を一瞬で上書きしていた。
+// 「ユーザーの次の操作を待つ」という当初の設計意図に立ち返り、
+// ここでの自動的な再読み込みは、まだ画面に「何も」表示されていない
+// (Application::pollShellHandoff()自身のloadStream()呼び出し時点で
+// 子プロセスがまだ何も書き込んでいない一瞬に当たった直後、すぐ下の
+// もう1つの報告)場合「だけ」に限定する――一度でも本物の内容が
+// 1行でも表示されて以降は、実際のユーザーの操作(handleCommand()
+// 自身のensurePagerStreamLoaded()呼び出し)だけが続きを読み込む
+// トリガーになる。
+// 「何も表示されていない」ではなく「最初の1画面分にまだ満たない」
+// (lines().size() < rows())を境界にしているのは、たとえ子プロセス
+// からの最初の読み込みが(1行だけ等)ごく部分的にしか成功しなかった
+// 場合でも、legacy自身の実機が最初から画面いっぱいの初期ページを
+// 示すのに合わせて、少なくとも最初の1画面分は自動で埋めきってから
+// この自動再読み込みを止めるため。
 void Application::pollPagerExitNotice() {
-  if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
+  if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream() &&
+      static_cast<int>(activeView().lines().size()) < display_.rows()) {
     ensurePagerStreamLoaded(activeView().topIndex() + display_.rows() * 2);
   }
   if (pendingPagerExitNotice_) {
