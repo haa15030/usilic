@@ -824,6 +824,21 @@ void Shell::redrawPromptRow() {
   if (!awaitingRealPrompt_) display_.write(promptDecorated_);
   display_.flush();
   commandLine_.redraw();
+  // 2026-09-06追加、直接のユーザー報告(スクリーンショット添付)
+  // ――awaitingRealPrompt_の間、commandLine_自身のテキストは常に空
+  // (submitLine()自身のcommandLine_.setText("")参照)だが、
+  // commandLine_.redraw()はそれでもカーソルをcol0_、すなわち
+  // プロンプト文字列の直後(promptCol、updateCommandLineField()参照)
+  // へ置く――これはちょうど1行上の、freezePromptLine()が確定させた
+  // 「cat」等コマンド文字列の真下に当たり、まだ入力を受け付けない
+  // 状態なのにカーソルだけが宙に浮いているように見えて違和感がある
+  // (legacyはこの行を完全に空欄のままにするので、カーソルも自然に
+  // 左端に留まる)。この状態の間だけ、カーソルを行の左端(列0)へ
+  // 明示的に動かす。
+  if (awaitingRealPrompt_) {
+    display_.setVisibleCursor(promptRow, 0);
+    display_.flush();
+  }
 }
 
 void Shell::updateCommandLineField() {
