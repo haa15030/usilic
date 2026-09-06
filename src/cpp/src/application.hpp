@@ -1431,7 +1431,32 @@ class Application {
   // 十分安価である。
   bool pollShellHandoff();
   // pollPagerExitNotice()自身の宣言コメント参照(2026-09-20追加)。
-  void pollPagerExitNotice();
+  // `suppressDraw`(2026-09-07追加、直接のユーザー報告"わかったのは
+  // ブロックカーソル位置を画面上真ん中辺に変更すると、瞬時の表示も
+  // 同じ位置（真ん中辺）になされる点。うっすら見える数字は相変わらず
+  // （最下行の値）"): この関数が内部で呼ぶensurePagerStreamLoaded()
+  // は、新しい内容を読み込めた瞬間にactiveView().redraw()+flush()を
+  // 即座に行う(2026-09-20追加、自身のコメント参照――SHELLからの
+  // PAGERハンドオフ直後に画面が更新されない不具合の修正)。この
+  // メソッド自体は毎フレーム無条件に呼ばれる(main.cppのコメント
+  // 参照)ため、GUIの慣性スクロール/ドラッグの真っ最中でも、背景の
+  // 先読みが1行進むたびにこの通常のredraw()(cursorIndex_/
+  // hoverIndex_基準のハイライト付き)がその場でSDLへ実際に提示されて
+  // しまい、renderScrolled()の滑らかなピクセルスクロール描画の上に
+  // 一瞬だけ全く別の内容(ハイライト位置・位置表示とも異なる)が
+  // 挟まって見える――ちょうどこの症状の報告と一致する(ハイライトは
+  // 常にredraw()自身のhoverIndex_優先ロジックに従うため、ユーザーが
+  // マウスホバーで指定した位置にそのまま現れる)。呼び出し元がこの
+  // フレーム自身のrenderScrolled()で確実に上書き提示することが
+  // 分かっている間(main.cppの`dragging || coastLevel > 0 ||
+  // pixelOffset != 0`と全く同じ条件)はtrueを渡し、内部で
+  // ensurePagerStreamLoaded()の代わりにFileMode::ensureLoadedThrough()
+  // を直接呼んで読み込みだけ行い、redraw()/flush()を省く――
+  // preloadPagerAhead()が既にCommand::ScrollLineDown/PageDown向けに
+  // 行っているのと同じ「読み込みと描画を分離する」パターン。デフォルト
+  // false(CUIや、GUIでもスクロール中でない他の全ての呼び出しは
+  // 影響を受けない、既存のCUI向け動作を保つ)。
+  void pollPagerExitNotice(bool suppressDraw = false);
   // 2026-09-06追加、直接のユーザー報告("％の行数が97と98を行き来...
   // -g起動ではスクロールバーの（つまみ長を短くする）描き直しでも
   // モードライン描画が起きるみたい")――Command::ScrollLineDown/

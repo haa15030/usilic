@@ -8804,7 +8804,7 @@ void Application::ensurePagerStreamLoaded(int targetLineIndex, bool bypassPacing
 // ストリームへ一般化済みなので、`man ls|usilic -c`のような直接パイプ/
 // `$PAGER`経由の起動でも、最初の1画面は瞬時に、以後のスクロールは
 // current+1で育つ。
-void Application::pollPagerExitNotice() {
+void Application::pollPagerExitNotice(bool suppressDraw) {
   if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
     int topIndex = activeView().topIndex();
     bool stillCatchingUpFirstScreen = static_cast<int>(activeView().lines().size()) < display_.rows();
@@ -8831,9 +8831,11 @@ void Application::pollPagerExitNotice() {
     bool viewerMovedSinceLastAttempt = lastPagerPollTopIndex_ != -1 && topIndex != lastPagerPollTopIndex_;
     lastPagerPollTopIndex_ = topIndex;
     if (stillCatchingUpFirstScreen) {
-      ensurePagerStreamLoaded(topIndex + display_.rows(), /*bypassPacing=*/true);
+      if (suppressDraw) fileMode_.ensureLoadedThrough(topIndex + display_.rows(), /*bypassPacing=*/true);
+      else ensurePagerStreamLoaded(topIndex + display_.rows(), /*bypassPacing=*/true);
     } else if (viewerMovedSinceLastAttempt) {
-      ensurePagerStreamLoaded(topIndex + display_.rows() * 2);
+      if (suppressDraw) fileMode_.ensureLoadedThrough(topIndex + display_.rows() * 2);
+      else ensurePagerStreamLoaded(topIndex + display_.rows() * 2);
     }
   }
 }

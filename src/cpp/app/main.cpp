@@ -1704,7 +1704,25 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     app.pollPendingCpMvRmShellRun();
     app.pollPendingArchiveExtractShellRun();
     app.pollShellHandoff();
-    app.pollPagerExitNotice();
+    // `suppressDraw`(2026-09-07追加、直接のユーザー報告"わかったのは
+    // ブロックカーソル位置を画面上真ん中辺に変更すると、瞬時の表示も
+    // 同じ位置（真ん中辺）になされる点"): Application::pollPagerExitNotice()
+    // 自身の宣言コメント参照――内部のensurePagerStreamLoaded()が新しい
+    // 内容を読み込めるたびにactiveView().redraw()+flush()を即座に行う
+    // ため、これを抑制せずに毎フレーム無条件で呼ぶと、下のrender-mode
+    // 分岐がrenderScrolled()で描画するのと全く同じフレームの中で、
+    // その「前」にこの通常のredraw()が一瞬だけ実際にSDLへ提示されて
+    // しまっていた――これがモードラインの値・ハイライト位置ともに
+    // 全く別の内容が一瞬だけ挟まって見える症状の真因だった(canStepTopIndex()
+    // 側のタイミング解析に基づく直前2回の修正(6fd4c36、0c2e5c2)は
+    // この経路には無関係で効かなかった)。このフレーム自身がこの後
+    // renderScrolled()で確実に上書き提示することが分かっている間
+    // (=直前のフレーム終了時点で既にdragging/coastLevel/pixelOffsetの
+    // いずれかが立っていた間、下のrender-mode分岐と全く同じ条件)は
+    // 抑制し、読み込みだけ行って描画はrenderScrolled()に委ねる。CUI側
+    // (runTerminalPhase()自身の同名の無引数呼び出し)はこの経路を持た
+    // ないため、デフォルトfalseのまま影響を受けない。
+    app.pollPagerExitNotice(dragging || coastLevel > 0 || pixelOffset != 0);
 
     // Set true below whenever something was actually consumed this
     // iteration (a click, a key, a drag/coast step) -- used to skip
