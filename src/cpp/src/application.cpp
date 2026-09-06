@@ -8649,41 +8649,19 @@ std::string Application::promptLabelText(PromptKind kind) const {
   return "";
 }
 
-// legacy自身の実機再現("man ls"/"seq 1 500 | U"を末尾を超えて
-// spaceで送ると"^G (Exit) "が最下行に現れる)を模す――ベルを鳴らし、
-// モードライン行の左端に"Exit"だけ太字のプレーンテキストを重ねて
-// 書く(legacy自身の生バイト列と同じ、反転表示のモードライン自体は
-// 「起こさない」)。
-// 2026-09-06再訂正(3回目)、直接のユーザー報告(「80x24のターミナル
-// で旧との違いを比較すると」④、実機PTYでの生バイト列の再確認)を
-// 経て、この関数自体の意味も変わった――以前は「次の再描画で自然に
-// 上書きされる、意図的に一時的な通知」だったが、legacy自身の実機
-// キャプチャで確認したのは真逆: BEL(0x07)こそ最初の1回きりだが、
-// "(Exit)"というテキスト自体はその後の「あらゆる」ナビゲート操作の
-// 応答でも消えずに描画され続ける。`ringBell`は呼び出し元
-// (pollPagerExitNotice())が、このpagerReturnsToShell()セッションで
-// まだ一度もベルを鳴らしていない(pagerExitBellRung_自身の宣言コメント
-// 参照)場合にだけtrueを渡す。
-void Application::showPagerExitNotice(bool ringBell) {
-  int row = std::max(0, display_.rows() - 1);
-  display_.moveCursor(row, 0);
-  if (ringBell) display_.putChar(0x07);
-  display_.write(" (");
-  display_.setAttribute(Display::Attribute::Bold);
-  display_.write("Exit");
-  display_.setAttribute(Display::Attribute::BoldOff);
-  display_.write(") ");
-  display_.flush();
-}
-
 // showShellBusyNotice()/refuseIfShellBusy()自身の宣言コメント
 // (application.hpp)参照。legacy自身の実機再現("SHELL busy"、
 // ^G/^J.のPTYキャプチャ、太字プレーンテキスト+bell、反転表示の
-// モードライン自体は起こさない)――showPagerExitNotice()自身と
-// 同一の描画パターンだが、意図的に別関数のまま複製している
-// (同じ場所へ描く一時的な通知という以外は無関係な機能同士なので、
-// 共有ヘルパーへまとめて既存の、動作確認済みのshowPagerExitNotice()
-// 自身の呼び出し元を巻き込むリスクを取らない)。
+// モードライン自体は起こさない)。
+// 2026-09-06追記: かつてはこれと対をなす、"(stdin)"パイプが末尾に
+// 追いつけなかった時に同じ描画パターンで出すshowPagerExitNotice()
+// もあったが、直接のユーザー報告("バイト単位読み込み仕様となった
+// STDINではEOFと（Exit）がほぼ同時となり無意味なので(stdin)では
+// 通知を無くしてほしい")を受けて削除した――ensureLoadedThrough()の
+// ペーシングが「あと1行」単位まで絞られた結果、legacy自身のような
+// 「まだ本当のEOFではないのに先読みマージンだけ枯渇している」区間が
+// 事実上消え、この通知が意味を持つ場面自体がほぼ無くなっていた
+// (pollPagerExitNotice()自身のコメント参照)。
 void Application::showShellBusyNotice() {
   int row = std::max(0, display_.rows() - 1);
   display_.moveCursor(row, 0);
@@ -8702,7 +8680,7 @@ bool Application::refuseIfShellBusy() {
   return true;
 }
 
-void Application::ensurePagerStreamLoaded(int targetLineIndex) {
+void Application::ensurePagerStreamLoaded(int targetLineIndex, bool bypassPacing) {
   // 2026-09-20追加、直接のユーザー報告("man ls直後の画面が出ない
   // （jで表示）"): FileMode::ensureLoadedThrough()自身は、新しく
   // 読み込んだ内容をview_へ反映する(setLines())だけで、実際の画面の
@@ -8723,7 +8701,7 @@ void Application::ensurePagerStreamLoaded(int targetLineIndex) {
   // 新しい内容を読み込めた(true)場合はここで明示的にredraw()+flush()
   // する――handleCommand()自身の呼び出し元から見れば、直後の
   // switch(command)自身のredraw()と二重になるが、無害である。
-  if (fileMode_.ensureLoadedThrough(targetLineIndex)) {
+  if (fileMode_.ensureLoadedThrough(targetLineIndex, bypassPacing)) {
     activeView().redraw();
     display_.flush();
   }
@@ -8777,25 +8755,22 @@ void Application::ensurePagerStreamLoaded(int targetLineIndex) {
 // から画面いっぱいの初期ページを示すのに合わせて、少なくとも最初の
 // 1画面分は無条件に埋めきる。
 //
-// 2026-09-06再訂正(3回目→5回目、直接のユーザー報告「80x24の
-// ターミナルで旧との違いを比較すると」④、および「実際の内容(250行)
-// をほぼ全部捨てて早期にソケットを閉じてしまうバグが旧にあるのなら、
-// なぜ最後まで読めるの？」という鋭い指摘): 以前はfileMode_.
-// lastLoadAttemptYieldedNothing()(一時的、直後の1回の試行に
-// ついてだけ意味を持つ)を、pendingPagerExitNotice_という「次の
-// 反復まで1回だけ描いて消費する」フラグ経由で表示していた。
-// 一度は「legacyの(Exit)は本物のEOFでだけ立つsticky状態」と
-// 訂正したが、これは誤りだった――ソケットが閉じても、既に送り込ま
-// れた未読データは消えない(`seq 1 500 | U`で観測した「(Exit)が
-// すぐ出るのに総行数がその後も増え続ける」は、実は「本当に閉じた」
-// からではなく、legacy自身の狭い先読みマージン(current+2程度)への
-// 「今回はたまたま届かなかった」という、その場限りの一時的な取り
-// こぼしが繰り返し起きていただけだった――だからこそ操作を続ければ
-// 本当に最終行まで到達できる)。そのためfileMode_.lastLoadAttemptYieldedNothing()
-// (一時的、直後の1回の試行についてだけ意味を持つ)を毎回の反復で
-// 無条件に再評価して描き直す(sticky化はしない)――BELだけは
-// pagerExitBellRung_自身の宣言コメント参照の通りこのセッションで
-// 最初の1回に抑える。
+// 2026-09-06さらに訂正(6回目、直接のユーザー報告
+// "`man ls|usilic -c^M`→「00001/00050」"「`PAGER='usilic -c' man ls^M`
+// →「00001/00024」で`j`→「00024/00050」」「SHELLプロンプトで
+// `man ls^M`後の最初の画面が瞬時に出ない」を受け、legacy自身の実機
+// `U`で`man ls`を改めて逐一比較): 「常にあと1行」という前回までの
+// 一般化は誤りだった――legacy実機は、まだ画面が一度も埋まっていない
+// 「最初の1画面」は0.3秒足らずでほぼ瞬時に埋め切り(`man ls\r`直後を
+// 0.1秒刻みでサンプリングして確認)、その後の通常のスクロール(`j`
+// 連打)でだけ先読み分がちょうど1行ずつしか伸びない。stillCatchingUp
+// FirstScreenの間はensureLoadedThrough()自身のペーシングをbypassPacing
+// 経由で迂回し、要求もrows*2ではなくrows(画面ぴったり1枚)にした
+// ――FileMode::ensureLoadedThrough()自身の2026-09-06さらに訂正分の
+// コメント参照。このペーシングはpagerReturnsToShell_に絞らず全ての
+// ストリームへ一般化済みなので、`man ls|usilic -c`のような直接パイプ/
+// `$PAGER`経由の起動でも、最初の1画面は瞬時に、以後のスクロールは
+// current+1で育つ。
 void Application::pollPagerExitNotice() {
   if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
     int topIndex = activeView().topIndex();
@@ -8822,27 +8797,11 @@ void Application::pollPagerExitNotice() {
     // なってしまう。
     bool viewerMovedSinceLastAttempt = lastPagerPollTopIndex_ != -1 && topIndex != lastPagerPollTopIndex_;
     lastPagerPollTopIndex_ = topIndex;
-    if (stillCatchingUpFirstScreen || viewerMovedSinceLastAttempt) {
+    if (stillCatchingUpFirstScreen) {
+      ensurePagerStreamLoaded(topIndex + display_.rows(), /*bypassPacing=*/true);
+    } else if (viewerMovedSinceLastAttempt) {
       ensurePagerStreamLoaded(topIndex + display_.rows() * 2);
     }
-  }
-  // 2026-09-06再訂正(5回目)、直接のユーザー報告(「実際の内容(250行)を
-  // ほぼ全部捨てて早期にソケットを閉じてしまうバグが旧にあるのなら、
-  // なぜ最後まで読めるの？」)――前回の「本物のEOFでだけ発火する
-  // sticky状態」という訂正は、ソケットが閉じても「既に送り込まれた
-  // 未読データは消えない」という事実を見落としていた。実機の
-  // (Exit)は「本当にもう二度と来ない」ではなく「今回の1回の読み込み
-  // 試行が、要求したささやかな先読みマージン(current+2程度)にすら
-  // 届かなかった」というその場限りの一時的な信号であり、次の操作で
-  // また普通に続きが読めることがある(実際、操作を続ければ本当に
-  // 最終行まで到達できる)。そのためFileMode::lastLoadAttemptYieldedNothing()
-  // (一時的、直後の1回の試行についてだけ意味を持つ、その宣言コメント
-  // 参照)を毎回の反復で無条件に再評価して描き直す――sticky化は
-  // しない。BELだけはこのセッションで最初にこの状態になった時の
-  // 1回に抑える(pagerExitBellRung_自身の宣言コメント参照)。
-  if (fileMode_.pagerReturnsToShell() && fileMode_.lastLoadAttemptYieldedNothing()) {
-    showPagerExitNotice(!pagerExitBellRung_);
-    pagerExitBellRung_ = true;
   }
 }
 
@@ -10016,7 +9975,6 @@ bool Application::pollShellHandoff() {
     fileMode_.loadStream(fd, /*ownsFd=*/true, "", 1);
     fileMode_.setSearchOrigin("", "(stdin)");
     fileMode_.setPagerReturnsToShell(true);  // それ自身の宣言コメント参照: ^G/'q'はShellへ戻る、不活性/終了ではない
-    pagerExitBellRung_ = false;  // 自身の宣言コメント参照: 新しいSHELLハンドオフセッションごとに1回だけ鳴らし直す
     activeView().redraw();
     return true;
   }

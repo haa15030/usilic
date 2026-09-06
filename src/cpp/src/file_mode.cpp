@@ -540,7 +540,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   return true;
 }
 
-bool FileMode::ensureLoadedThrough(int targetLineIndex) {
+bool FileMode::ensureLoadedThrough(int targetLineIndex, bool bypassPacing) {
   // lastLoadAttemptYieldedNothing()自身の宣言コメント参照――「今回は
   // 何も試みなかった」場合との区別のため、実際に試みるまではfalseの
   // ままにしておく。
@@ -559,18 +559,34 @@ bool FileMode::ensureLoadedThrough(int targetLineIndex) {
   // 「②`j`により１行進むと「00024/00026」（先読み分は２行だけ）」
   // 「③`j`連打によりカレント行/総行は１行ずつ進行」)――「最初の
   // 画面さえ埋まればあとは２画面分まとめて読んでよい」という前回の
-  // 前提そのものが、実機のこの逐次比較で否定された。そのため
-  // pagerReturnsToShell_である間は、呼び出し元(Application自身の
-  // handleCommand()前置ブロック/pollPagerExitNotice())が要求する
-  // targetLineIndexの大小に関わらず、常に「あと1行」だけを試みる
-  // ――呼び出し元は変更不要のまま(topIndex+rows*2という従来の先読み
-  // 予算をそのまま渡し続けてよい、ここで無条件に切り詰めるため)。
+  // 前提そのものが、実機のこの逐次比較で否定された。
+  // 2026-09-06さらに訂正(6回目、直接のユーザー報告
+  // "`man ls|usilic -c`→「00001/00050」"「SHELLプロンプトで
+  // `man ls^M`後の最初の画面が瞬時に出ない」を受け、legacy自身の
+  // 実機`U`で`man ls`を改めて逐一比較): 上の「常にあと1行」への
+  // 一般化自体が誤りだった――legacyの実機は、SHELL経由の生きた
+  // PAGERハンドオフ((stdin))でも、まだ画面が一度も埋まっていない
+  // 「最初の1画面」は(既にデータが届いていれば)0.3秒足らずでほぼ
+  // 瞬時に埋め切り(`man ls\r`直後の反復サンプリングで確認)、その後の
+  // 通常のスクロール(`j`連打)でだけ先読み分がちょうど1行ずつしか
+  // 伸びない――「最初の画面もあと1行ずつ」ではなく「最初の画面だけは
+  // 別枠、以後は1行ずつ」という2段構えが正しい実態だった。加えて、
+  // このペーシング自体、SHELL経由の生きたハンドオフ(pagerReturnsToShell_)
+  // に限らず、`usilic -c`への直接パイプ/`$PAGER=usilic -c`経由の
+  // 起動でも同じくlegacyは「現在+1」を守る(`man ls|usilic -c`の
+  // `j`一回で「00024/00050」ではなく「00024/00025」を期待する直接の
+  // ユーザー報告)ため、pagerReturnsToShell_に絞らず全てのストリームへ
+  // 適用するよう一般化した。呼び出し元(pollPagerExitNotice()自身の
+  // コメント参照)が、今回の要求が「まだ最初の1画面を埋めている最中」
+  // だと分かっている時にだけbypassPacing=trueを渡し、このペーシングを
+  // 一時的に迂回する。
   // Command::GoToBottom自身の巨大なsentinel値(INT_MAX-1、呼び出し元
   // のコメント参照: `less`のGコマンド同様、本当のEOFまでブロックして
-  // 読み切る意図)だけはこのペーシングの対象外とする――そちらは
+  // 読み切る意図)も同じくこのペーシングの対象外とする――そちらは
   // 「今すぐ全部」が意図そのものであり、1行ずつ間延びさせては壊れる。
   bool isDrainToRealEofRequest = targetLineIndex >= std::numeric_limits<int>::max() - 1;
-  int effectiveTarget = (pagerReturnsToShell_ && !isDrainToRealEofRequest) ? before : targetLineIndex;
+  bool applyPacing = !isDrainToRealEofRequest && !bypassPacing;
+  int effectiveTarget = applyPacing ? before : targetLineIndex;
   // readMoreIntoPipe()自身のコメント参照: 要求された差分(effectiveTarget
   // -before)が小さい間は1バイト単位まで読み込みの粒度自体も切り詰め、
   // legacy自身のlinein()(old/src/alloc.c)と同じ粒度で改行1つ分ずつ

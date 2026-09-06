@@ -2426,14 +2426,6 @@ class Application {
   // バリアントであれ)が誤って古びたパスを再利用しない。
   std::string cutFileSourcePath_;
   bool shellStarted_ = false;
-  // showPagerExitNotice()自身の宣言コメント参照(2026-09-06再訂正、
-  // 3回目)――このpagerReturnsToShell()セッションで既にBELを鳴らした
-  // かどうか。legacy自身の実機は"(Exit)"のテキスト自体は毎回描き
-  // 直すがBELは最初の1回きりなので、これを区別するためだけに存在
-  // する。Application::pollShellHandoff()自身のsetPagerReturnsToShell(true)
-  // 呼び出しの直前でfalseにリセットされる(新しいSHELLハンドオフ
-  // セッションごとに1回だけ鳴らし直せるように)。
-  bool pagerExitBellRung_ = false;
   // pollPagerExitNotice()自身のコメント参照(2026-09-05追加、GUIの
   // マウスホイール/慣性スクロールでの"止まった"報告への対応)――
   // 「ビューアの現在位置(topIndex)が最後にここで記録した位置から
@@ -2726,7 +2718,6 @@ class Application {
   // も無い――これは本物のプロンプトではなく、プロンプト行自身の
   // ラベル描画を再利用する一時的なステータス行に過ぎない)。
   void drawPromptLabel(PromptKind kind, const std::string &positionText = "", const std::string &staticMessage = "");
-  void showPagerExitNotice(bool ringBell);
   // 2026-09-06追加、直接のユーザー報告("旧では^J.でSHELL busyと出る")
   // ――shell_.busy()自身の宣言コメント参照(is_inter()からの移植、
   // ようやくPROGRAM起動以外のケースもカバーした)。K-60/K-61/K-62/
@@ -2736,7 +2727,11 @@ class Application {
   // 通知を出してtrueを返す(呼び出し元はそのままreturn falseする)。
   bool refuseIfShellBusy();
   void showShellBusyNotice();
-  void ensurePagerStreamLoaded(int targetLineIndex);
+  // `bypassPacing`(2026-09-06追加): pollPagerExitNotice()自身の
+  // コメント参照――呼び出し元が「まだ最初の1画面を埋めている最中」
+  // だと分かっている時にだけtrueを渡し、FileMode::ensureLoadedThrough()
+  // 自身のペーシングを一時的に迂回する。
+  void ensurePagerStreamLoaded(int targetLineIndex, bool bypassPacing = false);
   // K-46/K-48(^X^F/^X^D)自身の読み取り専用(まだ編集していない)
   // 候補一覧: 2026-08-18の修正、実際の報告+参照スクリーンショット
   // (=cw)――ハイライトされた候補は、最初のバイトが入力された時点
