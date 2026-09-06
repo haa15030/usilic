@@ -2279,7 +2279,17 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             // scrollbar/modeline flicker) -- this GUI drag path moves
             // topIndex_ directly via commitRowCrossings(), bypassing
             // handleCommand()'s own fix entirely.
-            app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+            // 2026-09-06訂正、直接のユーザー報告("最初の１行スクロール
+            // で...①→②の間に総行数が25→50、つまみ長が半分になる")
+            // ――ここは`view.topIndex()+1`(runCoastLoop()自身の
+            // preloadPagerAhead()呼び出しと同じ、jキー相当の1行分)に
+            // すべきところを、誤ってPageDown用のbypassPacing相当の
+            // 大きな目標値(画面2枚分)のまま使っていた。ensureLoadedThrough()
+            // 自身のペーシングはbypassPacingを渡さない限り常に「現在+1」
+            // へ切り詰められるはずだが、この大きな目標値自体が意図を
+            // 誤って伝えており、実際に総行数が丸ごと倍増する形で観測
+            // された――より小さく正確な目標値に統一する。
+            app.preloadPagerAhead(view.topIndex() + 1);
             commitRowCrossings(view, cellHeight, pixelOffset);
             app.suppressPagerRepoll(view.topIndex());
           }
@@ -2350,9 +2360,11 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           break;
         }
         pixelOffset += coastDirection;
-        // See the drag-path call to commitRowCrossings() above, and
-        // Application::preloadPagerAhead()'s own declaration comment.
-        app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+        // See the drag-path call to commitRowCrossings() above
+        // (2026-09-06訂正済み、直接のユーザー報告参照)、および
+        // Application::preloadPagerAhead()自身の宣言コメント――ここも
+        // 同じく`+1`(1行分)に統一する。
+        app.preloadPagerAhead(view.topIndex() + 1);
         bool crossedWithoutHittingBoundary = commitRowCrossings(view, cellHeight, pixelOffset);
         app.suppressPagerRepoll(view.topIndex());
         if (!crossedWithoutHittingBoundary) {
