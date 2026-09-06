@@ -490,6 +490,28 @@ class ContentView {
   // 見た目を手を付けずに保つ。
   void setEmptyPlaceholder(Line line, bool marked = true);
 
+  // scrollModeLineText()/scrollModeLineSegments()自身の"bottomVisible
+  // >= total"判定(2026-09-07追加、直接のユーザー報告"最下行(モード
+  // ラインのすぐ上)の値を表示する箇所は見当たらない？"を受け、
+  // GUIの慣性スクロール/ドラッグで境界到達時に一瞬「END」が出る
+  // バグの根本原因を再検討して特定)専用のフラグ――このビューは
+  // lines_.size()を「今読み込めている行数」としてしか知らず、それが
+  // ページャーの生きたストリームの「本当の末尾」なのか、単に「まだ
+  // 先読みが追いついていないだけ」なのかを区別する手段を持たない。
+  // それまでの修正は、後者(先読みの遅れ)を減らすことでこの一瞬の
+  // 誤判定を「レースに勝って」隠そうとするものだったが、GUIの毎
+  // フレーム描画とペーシング済みの先読み(呼び出し1回につき既読+1
+  // 行までしか進まない、FileMode::ensureLoadedThrough()自身のコメ
+  // ント参照)の相性が悪く、何度直しても再発していた――そもそも
+  // 「まだ後ろに続きがあるかもしれない」間はEND判定自体を一切
+  // 行わないようにすれば、タイミングに一切依存しない。デフォルト
+  // false(=「これ以上増えない」、ストリーミングしない通常の一覧
+  // 全て)。FileModeは生きたストリームを開いている間だけtrueを
+  // 設定し、本物のEOFに達した瞬間(FileMode::readMoreIntoPipe()の
+  // streamAtEof_=true代入と同じ場所)にfalseへ戻す。
+  void setContentMayGrow(bool mayGrow);
+  bool contentMayGrow() const;
+
   // height_未満の行が、デフォルトの「上端」に密着(下に空白の
   // パディング行)する代わりに、ビューポートの「下端」に密着
   // (その上に空白のパディング行)して描画されるかどうか――
@@ -1139,6 +1161,7 @@ class ContentView {
   std::optional<int> hoverIndex_;
   bool cursorHighlightEnabled_ = true;
   bool bottomAnchored_ = false;
+  bool contentMayGrow_ = false;  // setContentMayGrow()自身の宣言コメント参照
   Line emptyPlaceholderLine_ = Line{"--", std::nullopt, std::nullopt, {}};
   bool emptyPlaceholderMarked_ = true;
   bool cursorAtModeLineTrailingEnd_ = false;

@@ -478,6 +478,9 @@ void ContentView::setPositionTextOverride(std::optional<std::string> text) { pos
 
 void ContentView::setBottomAnchored(bool enabled) { bottomAnchored_ = enabled; }
 
+void ContentView::setContentMayGrow(bool mayGrow) { contentMayGrow_ = mayGrow; }
+bool ContentView::contentMayGrow() const { return contentMayGrow_; }
+
 // redraw()/lineIndexAtRow()で共有され、両方とも下端固定の時に内容
 // がどこから始まるかについて一致するようにする――setBottomAnchored()
 // 自身のコメント参照。上端固定(デフォルト)の場合、またはどちらに
@@ -1005,7 +1008,7 @@ std::string ContentView::scrollModeLineText() const {
   int current;
   if (total <= 0) {
     current = 0;
-  } else if (bottomVisible >= total) {
+  } else if (bottomVisible >= total && !contentMayGrow_) {
     // 末尾まで(または惰性で)スクロールされた――topIndex_自体は
     // total-height_で頭打ちになるので、modeLineText()でcursorIndex_
     // ができるように自力で`total`に到達することは決してできない。
@@ -1014,6 +1017,14 @@ std::string ContentView::scrollModeLineText() const {
     // ナビゲーション(modeLineText())が正しくENDに到達していたのに
     // 対し、そこでパーセンテージのまま止まっていたという実際の
     // 報告に合わせている。
+    // !contentMayGrow_(2026-09-07追加): setContentMayGrow()自身の
+    // 宣言コメント参照――生きたページャーストリームがまだ続き得る
+    // 間は、たまたま今読み込めている行数がbottomVisibleに一致する
+    // 瞬間があっても、それは「本当の末尾」ではなく「先読みがまだ
+    // 追いついていないだけ」の可能性がある。これを見ずに末尾判定
+    // すると、GUIの毎フレーム描画のような高頻度の呼び出し元では
+    // 一瞬だけ誤ってENDと表示してしまう(scrollModeLineSegments()
+    // 自身のコメント参照)。
     current = total;
   } else {
     current = topIndex_ + 1;  // ここでtopIndex_==0は自然にTOPを表示する
@@ -1040,8 +1051,13 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
     // 代わりに、このフレームの直前/直後の通常描画(modeLineText())と
     // 一致するよう、cursorIndex_基準で表示する。
     current = std::min(total, cursorIndex_ + 1);
-  } else if (bottomVisible >= total) {
-    current = total;  // なぜこのチェックであってtopIndex_自体ではないのかについてはscrollModeLineText()自身のコメント参照
+  } else if (bottomVisible >= total && !contentMayGrow_) {
+    // なぜこのチェックであってtopIndex_自体ではないのかについては
+    // scrollModeLineText()自身のコメント参照。!contentMayGrow_も
+    // 同じ関数の2026-09-07追加分のコメント参照――GUIのコースト/
+    // ドラッグは毎フレームここを呼ぶため、この関数こそがまさに
+    // その「一瞬のEND誤表示」が実際に観測されていた箇所そのもの。
+    current = total;
   } else {
     current = topIndex_ + 1;
   }

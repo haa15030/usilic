@@ -281,6 +281,7 @@ bool FileMode::loadFile(const std::string &path) {
   pagerMode_ = false;
   pagerReturnsToShell_ = false;  // 防御的措置、自身の宣言コメント参照。pagerMode_がfalseの間はいずれにせよ未使用
   view_.setUseFixedWidthPosition(false);  // loadStream()自身のコメント参照。他の全てのFileモードのエントリはプレーンなまま
+  view_.setContentMayGrow(false);  // setContentMayGrow()自身の宣言コメント参照。この非ストリーミング読み込みは常に一括で確定済み
 
   view_.setLines(readAndWrap(path));
   currentFile_ = path;
@@ -493,6 +494,7 @@ bool FileMode::readMoreIntoPipe(int targetLineCount) {
     }
     if (n == 0) {
       streamAtEof_ = true;
+      view_.setContentMayGrow(false);  // setContentMayGrow()自身の宣言コメント参照。ここが本物のEOFの唯一の確定箇所
       streamPipe_->flush();  // まだ保留中の末尾の部分行を確定する
       if (streamOwnsFd_) ::close(streamFd_);
       streamFd_ = -1;
@@ -539,6 +541,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   streamFd_ = fd;
   streamOwnsFd_ = ownsFd;
   streamAtEof_ = false;  // pagerExitEncountered()自身の宣言コメント参照、これ自身が既にsticky
+  view_.setContentMayGrow(true);  // setContentMayGrow()自身の宣言コメント参照。本物のEOFに達するまでtrueのまま
   lastLoadAttemptYieldedNothing_ = false;
   // 2026-09-20追加、readMoreIntoPipe()自身のO_NONBLOCK化のコメント
   // 参照(直接のユーザー報告+legacy実機での再現確認)――失敗しても
