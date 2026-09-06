@@ -390,10 +390,31 @@ class Shell {
   // 必要ない)。
   bool consumeEscapeByte(unsigned char c);
   void flushNewScrollbackLines();
-  void freezePromptLine(const std::string &command);
+  // includePrompt=false(2026-09-06追加、直接のユーザー報告参照:
+  // `cat > /tmp/test.txt`の後に`abc`と打って送信すると、`abc`が
+  // 新しいトップレベルのコマンドであるかのように、その左側に
+  // "usilic-1.5b:..."プロンプトが挿入されてしまっていた)――
+  // submitLine()呼び出し時点で既にbusy()だった場合、今回のEnterは
+  // 新しいコマンドではなく、既にフォアグラウンドで動いている`cat`
+  // 等への生の追加入力なので、プロンプト接頭辞を一切付けない。
+  void freezePromptLine(const std::string &command, bool includePrompt = true);
   void resetSessionState();
   void writeToPty(const std::string &bytes);
   void updateCommandLineField();
+  // 2026-09-06追加、直接のユーザー報告("`cat > /tmp/test.txt`の後の
+  // `abc`が、cat直下の位置(見えないプロンプトの幅ぶん右)から入力
+  // されてしまう"、submitLine()自身のこの症状についてのコメント参照)
+  // ――awaitingRealPrompt_の間はcommandLine_のフィールドを列0・全幅
+  // へ広げ、そうでなければ本物のプロンプト幅(updateCommandLineField()
+  // 自身のpromptCol)へ戻す、その一元化された判定。updateCommandLine
+  // Field()を無条件に呼んでいた既存の呼び出し元(flushNewScroll
+  // backLines()、onResize())は、cat自身の出力の有無に関わらず
+  // (`cat > file`のようにリダイレクトされていても、書き込んだコマンド
+  // 行自体のシェル側エコーがpipeBuffer_/flushNewScrollbackLines()を
+  // 通るため)、意図せずこの列0への拡張を踏みつぶし、stale状態の
+  // promptColへ戻してしまっていた――代わりにこちらを呼ぶことで、
+  // redrawPromptRow()自身のawaitingRealPrompt_ガードと矛盾しなくなる。
+  void refreshCommandLineField();
   // commandLine_自身の生きたプロンプト/入力が占める行: 今回もまた
   // 固定定数、viewportRows_-2(2026-08-04の改訂――完全な経緯、これが
   // 置き換える以前の2回の反復とそれぞれがなぜまだ正しくなかった

@@ -613,7 +613,17 @@ void Shell::flushNewScrollbackLines() {
   // flushである――自身のコメント参照)、この関数を、他所の呼び出し
   // 元が正しい瞬間にプロンプトを再描画することに頼るのではなく、
   // 自己完結させたままにする。
-  updateCommandLineField();
+  // 2026-09-06訂正: 上のコメントの「単に同じ値を再計算するだけ」は
+  // もはや正しくない――実際のユーザー報告("`cat > /tmp/test.txt`の
+  // 後の`abc`がcat直下位置から入力される")により、`cat > file`の
+  // ようにcat自身は何も出力しなくても、書き込んだコマンド行自体の
+  // シェル側エコーは(pendingEchoFilter_で表示上は捨てられるとしても)
+  // ここを通るため、awaitingRealPrompt_中にsubmitLine()自身が列0・
+  // 全幅へ広げたcommandLine_のフィールドを、無条件のupdateCommand
+  // LineField()がstaleなpromptColへ踏みつぶしてしまっていた。
+  // refreshCommandLineField()(自身の宣言コメント参照)がその区別を
+  // 一元的に判断する。
+  refreshCommandLineField();
   // 2026-09-06追加: redrawPromptRow()自身が今やawaitingRealPrompt_
   // (自身の宣言コメント参照)を見て太字のプロンプト接頭辞自体の
   // 描画を自制するので、ここは以前通り無条件に呼んでよい――`cat`が
@@ -658,9 +668,9 @@ void Shell::flushNewScrollbackLines() {
 // は、最初のものだけでなく「全ての」折り返されたセグメントに付け
 // られるので、カーソルがたまたまどの視覚的な行に着地しようと再
 // 送信が動作する。
-void Shell::freezePromptLine(const std::string &command) {
+void Shell::freezePromptLine(const std::string &command, bool includePrompt) {
   PipeBuffer wrapper(options_.encoding, columns_, /*maxBytes=*/1 << 20);
-  wrapper.feed(promptPlain_ + command + "\n");
+  wrapper.feed((includePrompt ? promptPlain_ : std::string()) + command + "\n");
   wrapper.flush();
   std::vector<ContentView::Line> newLines(scrollback_.lines());
   for (const auto &wrapped : wrapper.lines()) newLines.push_back({wrapped.text, command, std::nullopt, {}});
@@ -845,6 +855,14 @@ void Shell::updateCommandLineField() {
   int promptCol = displayWidth(promptPlain_);
   int width = std::max(1, columns_ - promptCol);
   commandLine_.setField(commandLineRow(), promptCol, width);
+}
+
+void Shell::refreshCommandLineField() {
+  if (awaitingRealPrompt_) {
+    commandLine_.setField(commandLineRow(), 0, columns_);
+  } else {
+    updateCommandLineField();
+  }
 }
 
 int Shell::commandLineRow() const {
@@ -1177,26 +1195,41 @@ void Shell::submitLine() {
   std::size_t start = line.find_first_not_of(' ');
   std::string trimmed = (start == std::string::npos) ? "" : line.substr(start);
 
+  // 2026-09-06追加、直接のユーザー報告("`cat > /tmp/test.txt`の後に
+  // `abc`と打って^Mすると、abcの左側にプロンプトが挿入されてしまう
+  // ...cat直下位置へ移動してそこからの入力となり"): 何かを書き込む
+  // 「前」にbusy()を保存しておく――これがtrueなら、今回のEnterは
+  // 新しいトップレベルのコマンドではなく、既にフォアグラウンドで
+  // 動いている`cat`等への生の追加入力(標準入力の1行)である。PROGRAM
+  // 一覧との照合(find_prog()相当、下のprogramLauncher_呼び出し)も
+  // freezePromptLine()自身のプロンプト接頭辞付与も、コマンド履歴
+  // (historyRecorder_)への記録も、どれも「新しい対話的コマンドを
+  // 起動する」時にだけ意味を持つ処理であり、単なるstdinへのデータ行
+  // には当てはまらない。
+  bool wasAlreadyBusy = busy();
+
   if (!trimmed.empty()) {
-    freezePromptLine(trimmed);
+    freezePromptLine(trimmed, /*includePrompt=*/!wasAlreadyBusy);
 
-    // 末尾のパイプライン段のプログラムトークン('|'で分割し、
-    // 最後の段を取り、その最初の空白区切りの単語を取る)。
-    // input_shell()のコマンドディスパッチロジックからの移植。
-    // PROGRAMテーブルの検索自体(find_prog())はここでは移植されて
-    // いない――クラスコメント参照。
-    std::size_t pipePos = trimmed.find_last_of('|');
-    std::string lastStage = (pipePos == std::string::npos) ? trimmed : trimmed.substr(pipePos + 1);
-    std::size_t s = lastStage.find_first_not_of(' ');
-    std::string stageTrimmed = (s == std::string::npos) ? "" : lastStage.substr(s);
-    std::size_t e = stageTrimmed.find_first_of(" \t");
-    std::string programToken = (e == std::string::npos) ? stageTrimmed : stageTrimmed.substr(0, e);
-
-    bool handled = programLauncher_ && !programToken.empty() && programLauncher_(programToken, trimmed);
+    bool handled = false;
+    if (!wasAlreadyBusy) {
+      // 末尾のパイプライン段のプログラムトークン('|'で分割し、
+      // 最後の段を取り、その最初の空白区切りの単語を取る)。
+      // input_shell()のコマンドディスパッチロジックからの移植。
+      // PROGRAMテーブルの検索自体(find_prog())はここでは移植されて
+      // いない――クラスコメント参照。
+      std::size_t pipePos = trimmed.find_last_of('|');
+      std::string lastStage = (pipePos == std::string::npos) ? trimmed : trimmed.substr(pipePos + 1);
+      std::size_t s = lastStage.find_first_not_of(' ');
+      std::string stageTrimmed = (s == std::string::npos) ? "" : lastStage.substr(s);
+      std::size_t e = stageTrimmed.find_first_of(" \t");
+      std::string programToken = (e == std::string::npos) ? stageTrimmed : stageTrimmed.substr(0, e);
+      handled = programLauncher_ && !programToken.empty() && programLauncher_(programToken, trimmed);
+    }
     if (!handled) {
       pendingEchoFilter_ = trimmed;  // 自身のコメント参照――flushNewScrollbackLines()によって消費される
       writeToPty(trimmed + "\n");
-      if (historyRecorder_) historyRecorder_(trimmed);
+      if (!wasAlreadyBusy && historyRecorder_) historyRecorder_(trimmed);
       awaitingRealPrompt_ = true;
     }
   } else {
@@ -1205,6 +1238,22 @@ void Shell::submitLine() {
   }
 
   commandLine_.setText("");
+  // 2026-09-06追加、同じユーザー報告のもう1つの症状("aと打ったとたん
+  // ブロックカーソルがcat直下位置へ移動してそこからの入力となり
+  // (正しくはもちろん画面左端から)"): awaitingRealPrompt_の間、
+  // redrawPromptRow()自身は太字のプロンプト接頭辞を描かない(この
+  // すぐ下の呼び出し自体のコメント参照)が、commandLine_(LineEditor)
+  // 自身のフィールド開始列(col0_、updateCommandLineField()参照)は
+  // 直前の本物のプロンプトの幅(promptCol)のまま据え置かれていた
+  // ――そのため、まだ何も見えるプロンプトが無いこの行でユーザーが
+  // 実際にタイプし始めると(cat等への追加入力)、文字とカーソルの
+  // 両方が、あたかも見えないプロンプトの直後であるかのように、行の
+  // 途中から描かれてしまっていた。refreshCommandLineField()(自身の
+  // 宣言コメント参照)がこの間だけフィールドを列0・全幅へ広げる
+  // ――handledブランチ(awaitingRealPrompt_のまま偽)では、これは
+  // updateCommandLineField()と全く同じ、既に正しいpromptColを
+  // 無害に再計算するだけである。
+  refreshCommandLineField();
   // 2026-09-06追加、直接のユーザー報告("旧では`cat`が入力待ちになる
   // ...`^[scat^M`の挙動が新旧で同じかどうかに尽きる")――実機PTYの
   // 生バイト列を1バイト単位で突き合わせた結果判明した相違点。
@@ -1324,7 +1373,10 @@ void Shell::onResize(int rows, int columns) {
   columns_ = columns;
   scrollback_.setViewport(0, std::max(1, rows - 2));  // コンストラクタ自身のコメント参照
   scrollback_.setModeLineRow(rows - 1);
-  updateCommandLineField();
+  // flushNewScrollbackLines()自身の2026-09-06訂正と同じ理屈――
+  // awaitingRealPrompt_中にウィンドウがリサイズされても、列0・全幅
+  // への拡張をstaleなpromptColで踏みつぶさない。
+  refreshCommandLineField();
   if (masterFd_ >= 0) {
     struct winsize ws {};
     ws.ws_row = static_cast<unsigned short>(rows);
