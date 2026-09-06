@@ -2727,6 +2727,15 @@ class Application {
   // ラベル描画を再利用する一時的なステータス行に過ぎない)。
   void drawPromptLabel(PromptKind kind, const std::string &positionText = "", const std::string &staticMessage = "");
   void showPagerExitNotice(bool ringBell);
+  // 2026-09-06追加、直接のユーザー報告("旧では^J.でSHELL busyと出る")
+  // ――shell_.busy()自身の宣言コメント参照(is_inter()からの移植、
+  // ようやくPROGRAM起動以外のケースもカバーした)。K-60/K-61/K-62/
+  // K-63/K-64が全て同一の"if (shell_.busy()) return false;"を持って
+  // いたので、legacy自身のecho_mess(S_errf)("SHELL busy")に相当する
+  // 可視の通知をここへ集約する――shell_.busy()がtrueならベル付きで
+  // 通知を出してtrueを返す(呼び出し元はそのままreturn falseする)。
+  bool refuseIfShellBusy();
+  void showShellBusyNotice();
   void ensurePagerStreamLoaded(int targetLineIndex);
   // K-46/K-48(^X^F/^X^D)自身の読み取り専用(まだ編集していない)
   // 候補一覧: 2026-08-18の修正、実際の報告+参照スクリーンショット

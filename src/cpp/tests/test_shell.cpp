@@ -94,6 +94,45 @@ TEST_CASE("start()/alive()/terminate(): spawns and tears down a real bash sessio
   CHECK_FALSE(shell.alive());
 }
 
+// 2026-09-06追加、直接のユーザー報告("旧では^[scat^Mでちゃんと入力
+// 待ちになる...^Gで抜けた後^J.でSHELL busyと出る...環境がどこかで
+// 食い違ってるんじゃないの？")――busy()自身の宣言コメント参照:
+// PROGRAM一覧に載っていないただのシェルコマンド(`cat`)がフォア
+// グラウンドで実行中の間、busy()が正しくtrueを返し、それが終わると
+// (ここでは^C相当のSIGINTで)falseへ戻ることを、本物のbashセッション
+// で確認する。
+TEST_CASE("busy(): true while a plain (non-PROGRAM-table) foreground command like `cat` is still reading "
+          "stdin, and returns to false once it's interrupted") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.argv = {"bash", "--norc", "--noprofile"};
+  options.promptMark = "<usilic-test-mark-busy>";
+  options.programName = "usilictest";
+  Shell shell(d, options);
+
+  if (!shell.start()) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(shell, [&] { return !shell.currentDirectory().empty(); }));
+  CHECK_FALSE(shell.busy());
+
+  typeAscii(shell.commandLine(), "cat");
+  shell.submitLine();
+  // busy()自身はPTYの出力に一切依存しない(tcgetpgrp()の直接の
+  // syscall)が、bash自身がcatを実際にforkしてフォアグラウンドの
+  // プロセスグループへ渡すまでにはわずかな実時間がかかるので、
+  // pumpUntil()と同じポーリングで待つ。
+  bool becameBusy = pumpUntil(shell, [&] { return shell.busy(); });
+  CHECK(becameBusy);
+
+  shell.sendControlByte(0x03);  // ^C -- SIGINTをフォアグラウンドのプロセスグループへ、catはこれで終了する
+  bool becameIdle = pumpUntil(shell, [&] { return !shell.busy(); });
+  CHECK(becameIdle);
+
+  shell.terminate();
+}
+
 TEST_CASE("submitLine(): a plain command's output shows up in the real scrollback") {
   RecordingDisplay d(24, 80);
   ShellOptions options;

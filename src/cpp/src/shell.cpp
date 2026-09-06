@@ -1252,7 +1252,13 @@ void Shell::setHistoryRecorder(std::function<void(const std::string &)> recorder
 }
 
 void Shell::setBusy(bool busy) { busy_ = busy; }
-bool Shell::busy() const { return busy_; }
+// foregroundJobRunning()自身の宣言コメント(shell.hpp)参照。
+bool Shell::foregroundJobRunning() const {
+  if (masterFd_ < 0 || childPid_ <= 0) return false;
+  pid_t fg = ::tcgetpgrp(masterFd_);
+  return fg > 0 && fg != static_cast<pid_t>(childPid_);
+}
+bool Shell::busy() const { return busy_ || foregroundJobRunning(); }
 
 void Shell::onResize(int rows, int columns) {
   viewportRows_ = rows;

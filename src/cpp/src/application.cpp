@@ -5534,7 +5534,7 @@ bool Application::ensureShellActive() {
 // ensureShellActive()へ委譲するのではなく、
 // shellStarted_/currentMode_/shellReturnMode_を直接管理する。
 bool Application::shellRestart() {
-  if (shell_.busy()) return false;
+  if (refuseIfShellBusy()) return false;
   shell_.terminate();
   shellStarted_ = false;
   if (!shell_.start()) return false;
@@ -5801,7 +5801,7 @@ bool Application::saveBufferToFile() {
 // ディレクトリ」フィールド)に最も近いものとして、DirectoryMode自身
 // の現在のディレクトリを使う。
 bool Application::shellChangeDirectory() {
-  if (shell_.busy()) return false;
+  if (refuseIfShellBusy()) return false;
   std::string dir = directoryMode_.currentDirectory();
   if (dir.empty()) return false;
   if (!ensureShellActive()) return false;
@@ -5816,7 +5816,7 @@ bool Application::shellChangeDirectory() {
 // いるので、legacy自身のap->commがどこから埋められたかを再導出する
 // のではなく、それがここで送られるものである。
 bool Application::shellRunLsL() {
-  if (shell_.busy()) return false;
+  if (refuseIfShellBusy()) return false;
   if (!ensureShellActive()) return false;
   shell_.commandLine().setText("ls -l");
   shell_.submitLine();
@@ -5849,7 +5849,7 @@ bool Application::shellRunLsL() {
 // (冗長な"./"を落とす――そのまま連結しても依然として動く、
 // `cat`/`echo`は末尾の"/./"を問題無く扱うが、奇妙に読める)。
 bool Application::shellInsertName() {
-  if (shell_.busy()) return false;
+  if (refuseIfShellBusy()) return false;
   std::string name;
   if (currentMode_ == ApplicationMode::Directory) {
     const DirectoryEntry *entry = directoryMode_.selectedEntry();
@@ -5901,7 +5901,7 @@ bool Application::shellInsertName() {
 // を変える前に実行される必要がある)を書く、以前のバージョン自身の
 // 同一の順序に合わせている。
 bool Application::shellInsertBufferContent() {
-  if (shell_.busy()) return false;
+  if (refuseIfShellBusy()) return false;
   // Grep(2026-08-24修正、直接のユーザー報告+彼ら自身の診断:
   // "^J^Wは現在表示データのcatだが、FGREPの守備範囲はモードラインだけ
   // なので同モードの^J^Wは本来意味が無い...見た目で言えば背景の
@@ -8655,6 +8655,32 @@ void Application::showPagerExitNotice(bool ringBell) {
   display_.setAttribute(Display::Attribute::BoldOff);
   display_.write(") ");
   display_.flush();
+}
+
+// showShellBusyNotice()/refuseIfShellBusy()自身の宣言コメント
+// (application.hpp)参照。legacy自身の実機再現("SHELL busy"、
+// ^G/^J.のPTYキャプチャ、太字プレーンテキスト+bell、反転表示の
+// モードライン自体は起こさない)――showPagerExitNotice()自身と
+// 同一の描画パターンだが、意図的に別関数のまま複製している
+// (同じ場所へ描く一時的な通知という以外は無関係な機能同士なので、
+// 共有ヘルパーへまとめて既存の、動作確認済みのshowPagerExitNotice()
+// 自身の呼び出し元を巻き込むリスクを取らない)。
+void Application::showShellBusyNotice() {
+  int row = std::max(0, display_.rows() - 1);
+  display_.moveCursor(row, 0);
+  display_.putChar(0x07);
+  display_.write(" (");
+  display_.setAttribute(Display::Attribute::Bold);
+  display_.write("SHELL busy");
+  display_.setAttribute(Display::Attribute::BoldOff);
+  display_.write(") ");
+  display_.flush();
+}
+
+bool Application::refuseIfShellBusy() {
+  if (!shell_.busy()) return false;
+  showShellBusyNotice();
+  return true;
 }
 
 void Application::ensurePagerStreamLoaded(int targetLineIndex) {
