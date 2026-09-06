@@ -2483,6 +2483,42 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           lastMarginPreloadTopIndex = view.topIndex();
         }
         if (!view.canStepTopIndex(-coastDirection)) {
+          // 2026-09-07再訂正、直接のユーザー報告("こんな感じだと判明
+          // (※一瞬ブロックカーソルと共に表示される値)"、モードラインの
+          // 値が一瞬全く別の(cursorIndex_基準の、総行数に近い)値へ
+          // 跳ねてブロックカーソルと共に表示されるログを添えて): ここで
+          // coastLevelを問答無用でゼロ化していたのは、canStepTopIndex()
+          // のfalseを常に「本当の境界」として扱っていたためだった――
+          // ContentView::contentMayGrow()(直前のコミットで新設)が
+          // trueの間は、これは「本当の境界」ではなく「まだ先読みが
+          // 追いついていないだけ」の可能性がある。それにも関わらず
+          // coastLevel/coastDirection/pixelOffsetを全てゼロ化して
+          // しまうと、このフレームの下のrender-mode分岐
+          // (`dragging || coastLevel>0 || pixelOffset!=0`)が偽になり、
+          // 通常のContentView::redraw()(cursorIndex_基準、常にカーソル
+          // ハイライト付き)へ一瞬だけフォールバックしてしまう――
+          // cursorIndex_はstepTopIndex()により常にビューポート下端
+          // 付近(topIndex_+height_-1)へ追従しているため、そこだけ全く
+          // 別の(ずっと大きい)位置がブロックカーソル付きで一瞬映る、
+          // という報告のログと正確に一致する。真の境界でない間は
+          // コースト自体をキャンセルせず、このフレームの前進だけを
+          // 見送って(gateの対象から外して)先読みを再試行し、次の
+          // フレームで改めてcanStepTopIndex()を確認する。
+          //
+          // `-coastDirection > 0`(2026-09-07追加): 先読みで解消し得る
+          // のは「後方(まだ読み込んでいない側)へ進めない」場合だけ
+          // ――canStepTopIndex(-coastDirection)への引数が正で、
+          // 「LATERな内容を明かす」方向(コメント上部の`-coastDirection`
+          // 自身のマッピング解説参照)の時に限る。逆方向(既に読み込み
+          // 済みの側、topIndex_==0という本物の先頭境界)でcontentMayGrow()
+          // がtrueだからといって同じ猶予を与えると、topIndex_は
+          // どれだけ先読みしても0未満にはなり得ないため、コーストが
+          // 永遠にキャンセルされない(止まって見えるのに実は毎フレーム
+          // 空振りし続ける)というリグレッションになる。
+          if (view.contentMayGrow() && -coastDirection > 0) {
+            app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+            break;
+          }
           coastLevel = 0;
           coastDirection = 0;
           pixelOffset = 0;
@@ -2492,6 +2528,17 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         pixelOffset += coastDirection;
         bool crossedWithoutHittingBoundary = commitRowCrossings(view, cellHeight, pixelOffset);
         if (!crossedWithoutHittingBoundary) {
+          // すぐ上のcanStepTopIndex()分岐と全く同じ理由(`-coastDirection
+          // > 0`の向き限定も含めて)でここにも contentMayGrow()の分岐を
+          // 追加(2026-09-07): commitRowCrossings()自身がstepTopIndex()
+          // 経由で内部的に複数行分クロスしようとした場合、直前の
+          // 先読みだけでは足りずここで初めて境界に当たることがある
+          // ――その場合も「本当の境界」でない限りコーストをキャンセル
+          // しない。
+          if (view.contentMayGrow() && -coastDirection > 0) {
+            app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+            break;
+          }
           // Hit a boundary -- stop rather than pin against the edge.
           // commitRowCrossings() itself left pixelOffset clamped to
           // +-(cellHeight-1) (its "pinned" value, meant for the
