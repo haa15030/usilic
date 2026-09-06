@@ -1022,31 +1022,32 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
     performScrollStepDelay(fm::scaledForRow(fm::kScrollSpeedLevels[level]));
 
     int before = view.topIndex();
-    // See Application::preloadPagerAhead()'s own declaration comment
-    // (2026-09-06, a direct user report about the modeline's line-count/
-    // percentage flickering between two values): this coast loop moves
-    // topIndex_ directly, bypassing handleCommand()'s own
-    // Command::ScrollLineDown/PageDown cases where that fix normally
-    // lives -- without this, a lazily-loaded pager stream would show
-    // the exact same "old redraw, then a second redraw once
-    // pollPagerExitNotice() catches up on the next main-loop tick"
-    // flicker while coasting.
-    // 2026-09-06訂正、直接のユーザー報告("2つ目のjではENDにならない
-    // が、慣性スクロールが同じくらいの位置に到達するとEND"): 目標値を
-    // `before+direction`(1行分)にしていたのは、Command::ScrollLineDown
-    // 自身の同種の退行(コミットe341708)と全く同じ誤りだった――
-    // FileMode::ensureLoadedThrough()自身の早期リターン(`if
-    // (targetLineIndex < before) return false;`)により、既に読み込み
-    // 済みの行数(通常topIndex+画面の高さ程度)をこの小さな目標が
-    // ほぼ常に下回ってしまい、実質何も読み込まないno-opになっていた。
-    // Command::ScrollLineDown/PageDown自身が使うのと同じ、画面2枚分
-    // という大きな目標値に統一する――ensureLoadedThrough()自身の
-    // ペーシング(bypassPacingを渡さない限り常に「現在+1」へ切り詰め
-    // られる)がどのみち実際の読み込み量を1行に絞るので、大きな目標値
-    // を渡すこと自体に副作用は無い。
-    app.preloadPagerAhead(before + display.rows() * 2);
     view.setTopIndex(before + direction);
-    if (view.topIndex() == before) {  // hit a boundary
+    if (view.topIndex() == before) {
+      // See Application::preloadPagerAhead()'s own declaration comment
+      // (2026-09-06, a direct user report about the modeline's line-
+      // count/percentage flickering, then "HISTORY.md:15036が復活した"
+      // once a naive "always preload every tick" version of this fix
+      // reintroduced the SAME symptom it had just fixed): calling
+      // preloadPagerAhead() unconditionally on every single iteration
+      // of this loop -- even the many iterations where setTopIndex()
+      // was ALREADY going to succeed using content loaded on a
+      // previous iteration -- meant a single slow coast gesture spent
+      // dozens of loop iterations each independently fetching one more
+      // paced line, even though the viewport itself only advanced by a
+      // handful of rows: exactly the "①→②の間に総行数が25→50" growth
+      // reported, now traced to a mismatch between "how many times
+      // this loop ticks" and "how many times the viewport actually
+      // moves." Fetching lazily -- try the move first with whatever is
+      // already loaded, and only reach for more once that attempt
+      // genuinely comes up short -- keeps this loop's fetch count in
+      // 1:1 correspondence with actual topIndex_ advances, matching
+      // Command::ScrollLineDown's own per-keypress cadence exactly.
+      app.preloadPagerAhead(before + display.rows() * 2);
+      app.suppressPagerRepoll(view.topIndex());
+      view.setTopIndex(before + direction);
+    }
+    if (view.topIndex() == before) {  // still a real boundary even after trying to load more
       clearHoverAndRedraw(view);
       return result;
     }
@@ -1174,15 +1175,20 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
       lastRow = mouse->row;
       if (rowDelta != 0) {
         moved = true;
-        // See runCoastLoop()自身の同種の訂正(直接のユーザー報告"2つ目
-        // のjではENDにならないが慣性スクロールが同じくらいの位置に
-        // 到達するとEND")、およびApplication::preloadPagerAhead()自身の
-        // 宣言コメント――ここも同じく画面2枚分の目標値に統一する
-        // (`-rowDelta`という1行程度の小さな目標だと、既に読み込み済み
-        // の行数をほぼ常に下回ってしまい実質no-opになる)。
-        app.preloadPagerAhead(view.topIndex() - rowDelta + display.rows() * 2);
-        view.setTopIndex(view.topIndex() - rowDelta);  // natural scrolling: dragging down reveals earlier content
-        app.suppressPagerRepoll(view.topIndex());
+        // See runCoastLoop()自身の同種の訂正(直接のユーザー報告
+        // "HISTORY.md:15036が復活した"、「毎ティック無条件に先読み」
+        // という形が、少し前に直したはずの「①→②の間に総行数が
+        // 25→50」を1行ずつの粒度で再発させていた)――ここも「まず
+        // 今読み込めている範囲だけで動かしてみて、実際に動かなかった
+        // 時だけ画面2枚分を先読みして再試行する」という遅延評価の形に
+        // 揃える。
+        int beforeDrag = view.topIndex();
+        view.setTopIndex(beforeDrag - rowDelta);
+        if (view.topIndex() == beforeDrag) {
+          app.preloadPagerAhead(beforeDrag - rowDelta + display.rows() * 2);
+          app.suppressPagerRepoll(view.topIndex());
+          view.setTopIndex(beforeDrag - rowDelta);  // natural scrolling: dragging down reveals earlier content
+        }
         view.setCursorIndex(view.topIndex());           // see runCoastLoop()'s clampViewport() note
         auto now = std::chrono::steady_clock::now();
         recentMotion.push_back({now, rowDelta});
@@ -2284,18 +2290,25 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // scrollableLines<=0 guard just above.
           // 2026-09-06追加、直接のユーザー報告("2つ目のjではENDになら
           // ないが、慣性スクロールが同じくらいの位置に到達するとEND")
-          // ――すぐ下のtotalLines>contentRowsチェックより「前」に先読み
-          // しておく。runCoastLoop()自身のcanStepTopIndex()チェックと
-          // 全く同じ理屈: まだ新しい内容を読み込む機会が一度も無いまま、
-          // その時点で「たまたま」読み込み済みだった行数だけを基準に
-          // 「そもそもスクロール可能ですらない」と誤判定していた。
-          // 2026-09-06再訂正: 目標値自体も`+1`という小さな値のままだと、
-          // Command::ScrollLineDown自身の同種の退行(コミットe341708)と
-          // 全く同じ理由(既に読み込み済みの行数をほぼ常に下回り
-          // no-opになる)で効果が無かった――画面2枚分へ統一する。
-          app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+          // ――totalLines>contentRowsチェックがまだ読み込み済みでない
+          // 内容を「そもそもスクロール可能ですらない」と誤判定して
+          // いた。
+          // 2026-09-06再訂正×2(直接のユーザー報告"HISTORY.md:15036が
+          // 復活した"): 一度は「チェックの前に無条件で先読み」という
+          // 形にしたが、これはマウスの1motionイベントごとに(1行の
+          // 移動につき何度も)先読みを試みることになり、runCoastLoop()
+          // 自身の同種の訂正で見つかったのと同じ「実際の移動量より
+          // 多く読み込んでしまう」症状を再現していた――totalLines>
+          // contentRowsが最初から満たされている「通常時」は先読みを
+          // 一切試みず、それが「不足している」と分かった時だけ1回だけ
+          // 先読みして再判定する、遅延評価の形に直す。
           int totalLines = static_cast<int>(view.lines().size());
           int contentRows = std::max(gui.rows() - 1, 0);
+          if (totalLines <= contentRows) {
+            app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+            app.suppressPagerRepoll(view.topIndex());
+            totalLines = static_cast<int>(view.lines().size());
+          }
           if (totalLines > contentRows) {
             pixelOffset += drag->deltaY;
             recentMotion.push_back({std::chrono::steady_clock::now(), drag->deltaY});
@@ -2366,27 +2379,33 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // almost always available, so the guard was a near no-op.
         // 2026-09-06追加、直接のユーザー報告("2つ目のjではENDになら
         // ないが、慣性スクロールが同じくらいの位置に到達するとEND")
-        // ――すぐ下のcanStepTopIndex()チェックより「前」に先読みして
-        // おく。以前はcanStepTopIndex()を先にチェックしていたため、
-        // まだ新しい内容を読み込む機会が一度も無いまま、その時点で
-        // 「たまたま」読み込み済みだった行数だけを基準に「もう進めない
-        // (本当の境界)」と誤判定していた――keyboard駆動のjキー
-        // (Command::ScrollLineDown)は先読みしてから実際の移動を試みる
-        // ため本当の境界と区別できていたのに対し、この慣性スクロール
-        // 経路だけはcanStepTopIndex()自身の「今読み込めている範囲」
-        // という制約をそのまま「本当のストリームの終端」であるかの
-        // ように扱ってしまっていた。
-        // 2026-09-06再訂正: 目標値自体も`+1`のままだと、Command::
-        // ScrollLineDown自身の同種の退行(コミットe341708)と全く同じ
-        // 理由(既に読み込み済みの行数をほぼ常に下回りno-opになる)で
-        // 効果が無かった――画面2枚分へ統一する。
-        app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+        // ――canStepTopIndex()が、まだ新しい内容を読み込む機会が一度も
+        // 無いまま、その時点で「たまたま」読み込み済みだった行数だけを
+        // 基準に「もう進めない(本当の境界)」と誤判定していた。
+        // 2026-09-06再訂正×2(直接のユーザー報告"HISTORY.md:15036が
+        // 復活した"): 一度は「チェックの前に無条件で先読み」という形に
+        // したが、この一連のdo-whileはコースト中「毎フレーム」実行
+        // されるのに対し、実際にpixelOffsetが1行分蓄積してcanStepTopIndex()
+        // が意味を持つのはその一部のフレームだけ――結果、低速コースト
+        // 1回(見た目には1行しか進んでいない)の間に何十フレーム分も
+        // 「現在+1」の先読みが無条件に繰り返し実行され、可視の移動量を
+        // はるかに超えて総行数が育ってしまっていた(「①→②の間に総行数
+        // が25→50」として再現)。keyboard駆動のjキー(Command::
+        // ScrollLineDown)は1回のキー入力につき1回しか先読みを試みない
+        // のと対照的――ここも「まず今読み込めている範囲だけで判定して
+        // みて、実際に境界に当たった時だけ1回だけ先読みして再判定する」
+        // という遅延評価の形に直し、先読みの回数を実際のtopIndex_の
+        // 前進回数と1対1に揃える。
         if (!view.canStepTopIndex(-coastDirection)) {
-          coastLevel = 0;
-          coastDirection = 0;
-          pixelOffset = 0;
-          wasActivelyScrolling = true;  // see the identical assignment below for why
-          break;
+          app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+          app.suppressPagerRepoll(view.topIndex());
+          if (!view.canStepTopIndex(-coastDirection)) {
+            coastLevel = 0;
+            coastDirection = 0;
+            pixelOffset = 0;
+            wasActivelyScrolling = true;  // see the identical assignment below for why
+            break;
+          }
         }
         pixelOffset += coastDirection;
         bool crossedWithoutHittingBoundary = commitRowCrossings(view, cellHeight, pixelOffset);
