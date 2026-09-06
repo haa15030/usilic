@@ -2950,7 +2950,45 @@ bool tryHandoffToParentShell(int argc, char **argv) {
       ::unlink(path.c_str());
       return true;
     }
-    int client = ::accept(sfd, nullptr, nullptr);  // blocks until the parent notices and connects
+    // 2026-09-06追加、直接のユーザー報告("man bash|usilic -cで
+    // 00001/00050になる...これってパイプ用のfdをcloseしてないんじゃ
+    // ない？"): 実機PTY調査の結果、原因はfd未解放ではなく、この
+    // 待ち合わせパス自体の奪い合いだと判明した――$PAGERが既にusilic
+    // 自身にエクスポートされている間は、`man`は「自分の出力がパイプ
+    // であっても」内部で$PAGERを呼び出す(`PAGER=<probe> man bash |
+    // head`で実機確認済み)。つまり`man bash|usilic -c`と打つと、
+    // ①manが内部で呼ぶ$PAGER(= --usilic-pager <bashのpid>付きの
+    // usilic)と、②タイプした側の明示的な`usilic -c`(引数無し、
+    // getppid()にフォールバックするが、これも直接の子なので結局bashの
+    // 同じpidに解決される)の「2つ」のusilicが、全く同じ待ち合わせ
+    // パスへ同時にbind()しようとする。すぐ上の::unlink()が
+    // bind()の直前で無条件に行われるため、後から来た方が先に
+    // listen()していたソケットファイルを横取りしてしまい、先着の方は
+    // 以下のaccept()で永遠に取り残されていた(親からの接続はもう
+    // 二度と来ない――親はこの経路を1回のShell復帰につき1回しか
+    // ポーリングしないため)。
+    // 修正: accept()を無期限にブロックさせず、poll()でタイムアウト
+    // 付きにする――親(生きたSHELLセッション)は自分のメインループの
+    // 毎回の反復でこのパスをポーリングしているので、通常の(競合の
+    // 無い)場合は数十ミリ秒以内に接続されるはずであり、数秒待っても
+    // 何も来なければ「自分は今回の奪い合いに負けた」と判断してこの
+    // 引き渡し自体を諦め、tryHandoffToParentShell()自身が呼び出し元へ
+    // falseを返すことで、main()自身の通常の起動処理(このプロセス
+    // 自身のstdinを直接読む、独立したスタンドアロンページャーとしての
+    // 起動)へ普通に流れ落ちる――永遠にハングする代わりに、負けた方も
+    // 自分自身のstdin(それが実際に何であれ)をそのまま独立表示できる。
+    // タイムアウト時にpath自体をunlink()しないのは意図的――この時点で
+    // そのパスが指しているのは「自分がまだ保持している(だけ使われて
+    // いない)もの」か「既に別のプロセスが上書き済みのもの」のどちらか
+    // であり、後者を消してしまうとそちらの引き渡しまで壊しかねない。
+    // 前者であっても、次回同じパスへの試行が始まる時の防御的unlink()
+    // (この関数自身の冒頭のコメント参照)が自然に片付ける。
+    struct pollfd pfd {sfd, POLLIN, 0};
+    if (::poll(&pfd, 1, 2000) <= 0) {
+      ::close(sfd);
+      return false;
+    }
+    int client = ::accept(sfd, nullptr, nullptr);
     ::close(sfd);
     ::unlink(path.c_str());
     if (client < 0) return true;
