@@ -1644,6 +1644,29 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   int pixelOffset = 0;      // sub-row offset; -cellHeight < pixelOffset < cellHeight
   int coastLevel = 0;       // 0 == not coasting; otherwise an index into fm::kScrollSpeedLevels
   int coastDirection = 0;   // +1 or -1 while coastLevel > 0, matching renderScrolled()'s pixelOffsetY sign
+  // 2026-09-07追加、直接のユーザー報告("バーが最下点に達した瞬間...
+  // 「00023/00025 END」が一瞬出てしまう...ちらつきが復活"、さらに
+  // ContentView::scrollModeLineSegments()自身の"bottomVisible>=total
+  // でEND"という判定ロジックを直接確認して特定): 「境界に当たった時
+  // だけ1回先読みする」という遅延評価(直前の複数回の訂正)は、実際の
+  // 移動量を超えて読み込んでしまう問題は解決したが、代わりに「境界の
+  // ちょうど真上でしか読み込まない」ため、毎フレームの
+  // scrollModeLineSegments()自身の判定(topIndex_+height_>=lines_.size()
+  // ならEND)が、この関数自身のtopIndex_更新「直後」の、まだ次の
+  // 1行を読み足す「前」の一瞬だけ、正確にEND条件を満たしてしまう
+  // ――legacy自身の実機`U`で確認した「current+2」のような、常に
+  // わずかな余裕(0ではない)を保つ挙動とは異なり、この移植は「余裕が
+  // 0になった時だけ+1補充する」形になっていたため、補充が間に合う
+  // 前にちょうどその1フレームだけ描画されてしまっていた。
+  // keyboard駆動のjキー(Command::ScrollLineDown)がpollPagerExitNotice()
+  // の力を借りずとも常に正しいのは、1回のキー入力につき「境界に当たる
+  // 前から」毎回無条件に先読みを試みる(前回の実際のtopIndex_の位置を
+  // このusedForMarginTopIndex_相当の変数で記憶し、動くたびに1回だけ)
+  // ためで、それと同じ「実際にtopIndex_が動くたびに1回だけ、無条件に
+  // (境界に当たったかどうかに関わらず)先読みしておく」という頻度を、
+  // ここでも再現する――pollPagerExitNotice()自身のlastPagerPollTopIndex_
+  // と全く同じ役割の、コースト/ドラッグ専用のローカルな記憶。
+  int lastMarginPreloadTopIndex = -1;
   // Set on any frame that renders via renderScrolled() (dragging or
   // coasting); checked on the FIRST frame back on the normal redraw()
   // path so that settle-transition frame's redraw() always happens
@@ -2317,6 +2340,17 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // このコード自身の(境界に当たった時だけ動く)場当たり的な
           // 先読みだけに頼らずに済む――結果、境界ぎりぎりで一瞬だけ
           // 「END」を描いてしまう隙間が生まれなくなる。抑制を撤去した。
+          // 2026-09-07追記: 上記はコンテンツが画面すら埋まっていない
+          // 極端なケース専用で、通常のドラッグ中(既に画面は埋まって
+          // いて、境界にじりじり近づいていく場合)の余裕確保にはならな
+          // い――coastDirection側の同日の訂正(すぐ下、この関数内の
+          // 該当コメント参照)と全く同じ理由で、ここにも「実際に
+          // topIndex_が動いた時だけ2回連続で先読み」を追加する。
+          if (view.topIndex() != lastMarginPreloadTopIndex) {
+            app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+            app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+            lastMarginPreloadTopIndex = view.topIndex();
+          }
           int totalLines = static_cast<int>(view.lines().size());
           int contentRows = std::max(gui.rows() - 1, 0);
           if (totalLines <= contentRows) {
@@ -2419,15 +2453,41 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // 保ってくれる。この関数自身の先読み(すぐ上、境界に当たった
         // 時だけ)はその余裕が万一追いつかなかった時の保険としてのみ
         // 働く。
-        if (!view.canStepTopIndex(-coastDirection)) {
+        // 2026-09-07再訂正(直接のユーザー報告"バーが最下点に達した
+        // 瞬間...「00023/00025 END」が一瞬出てしまう"、ContentView::
+        // scrollModeLineSegments()自身の判定ロジックを直接確認して
+        // 特定): 上のsuppressPagerRepoll()撤去だけでは直らなかった
+        // ――pollPagerExitNotice()はこの反復の「先頭」で(前の反復の
+        // 終わり時点のtopIndex_を基準に)先読みするが、このdo-while
+        // 自身がその「後」でtopIndex_をさらに1行進めてしまうため、
+        // せっかく補充した余裕がレンダリングの時点までに使い切られて
+        // しまっていた。lastMarginPreloadTopIndex_自身の宣言コメント
+        // 参照――「境界に当たった時だけ」ではなく「実際にtopIndex_が
+        // 前回の記憶から動いた時は毎回無条件に」先読みする、jキー自身
+        // と同じ頻度に直す。
+        // 2026-09-07さらに追記: それでも1回の先読みでは、この直後の
+        // pixelOffset加算→commitRowCrossings()自身がtopIndex_をさらに
+        // 1行進めてしまい、せっかく確保した「+1」がその場で使い切られ、
+        // 差し引き0のまま――という全く同じ問題がここにも残っていた。
+        // ensureLoadedThrough()のペーシング仕様(呼び出し1回につき
+        // targetの大小に関わらず必ず「既読+1」しか読み進めない、
+        // application.cpp参照)を踏まえると、jキー側がこの一瞬だけ
+        // ちらつかないのは、pollPagerExitNotice()自身の(独立した)
+        // +1と、Command::ScrollLineDown自身のこの+1とが同じ1回の
+        // キー入力処理の中で両方効いて実質+2読み進め、移動の消費分
+        // 1を差し引いても+1の余裕が残るため――ここも同じ効果を
+        // 得るため、1回のtopIndex_変化につき2回連続で先読みする。
+        if (view.topIndex() != lastMarginPreloadTopIndex) {
           app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
-          if (!view.canStepTopIndex(-coastDirection)) {
-            coastLevel = 0;
-            coastDirection = 0;
-            pixelOffset = 0;
-            wasActivelyScrolling = true;  // see the identical assignment below for why
-            break;
-          }
+          app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+          lastMarginPreloadTopIndex = view.topIndex();
+        }
+        if (!view.canStepTopIndex(-coastDirection)) {
+          coastLevel = 0;
+          coastDirection = 0;
+          pixelOffset = 0;
+          wasActivelyScrolling = true;  // see the identical assignment below for why
+          break;
         }
         pixelOffset += coastDirection;
         bool crossedWithoutHittingBoundary = commitRowCrossings(view, cellHeight, pixelOffset);
