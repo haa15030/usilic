@@ -1946,7 +1946,20 @@ bool Application::startPagerFileList(const std::vector<std::string> &paths) {
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;  // fileMode_.hasActiveStream()の間は未使用(その時Backはno-op、
                                                   // それ自身のhandleCommand()分岐参照)、一貫性のため残してある
-  fileMode_.loadStream(fd, /*ownsFd=*/true, paths.front(), display_.rows() * 2);
+  // 2026-09-06追加、直接のユーザー報告("80x24ターミナルだと開いた
+  // 直後「00001/00024」のはずだが「00001/00050」になっている...
+  // 最初の1画面は瞬時に出てほしい"): 初期予算はrows*2(画面2枚分)
+  // ではなくrows(画面1枚分)にする――独立したCLIページャー起動
+  // (pagerReturnsToShell()ではない、ここも含む3箇所)は元々ペーシング
+  // の対象外で瞬時に全部読み込む(このコメントの「瞬時に」自体は既に
+  // 満たされている)ため、この変更で困るのはあくまで「開いた直後の
+  // 総行数の見た目」だけ――rows*2のままだと、開いた瞬間から画面外の
+  // 2画面目分まで数字上は既に読み込み済みに見えてしまい、実際に
+  // 見えている範囲(1画面)と食い違っていた。スクロールして画面外へ
+  // 出た分の先読みは、以後Application::pollPagerExitNotice()自身の
+  // 「topIndex_が動いた」判定が引き続きrows*2で行うので、ここを
+  // rowsに縮めても後続のスクロールの先読み量自体は変わらない。
+  fileMode_.loadStream(fd, /*ownsFd=*/true, paths.front(), display_.rows());
   pagerFileList_ = paths;
   pagerFileIndex_ = 0;
   // start()自身のDirectoryMode::enterDirectory()(それ自身が再描画
@@ -1976,7 +1989,10 @@ bool Application::startPagerStdin() {
   // 参照(KeyInputは別途開かれた"/dev/tty"から読む)。displayNameは無い
   // (legacyはパイプされたソースについては空のnameフィールドを表示
   // する、PTYキャプチャで確認済み)。
-  bool ok = fileMode_.loadStream(0, /*ownsFd=*/false, "", display_.rows() * 2);
+  // startPagerFileList()自身の同日の同種の修正のコメント参照
+  // ("00001/00050"ではなく"00001/00024"にしてほしいという直接の
+  // ユーザー報告)――ここも初期予算はrows*2ではなくrowsにする。
+  bool ok = fileMode_.loadStream(0, /*ownsFd=*/false, "", display_.rows());
   activeView().redraw();  // これがなぜここで必要なのかについてはstartPagerFileList()自身のコメント参照
   return ok;
 }
@@ -1991,7 +2007,9 @@ bool Application::navigateToPagerFile(int newIndex) {
   fileMode_.saveCursorPosition();
   int fd = ::open(pagerFileList_[newIndex].c_str(), O_RDONLY);
   if (fd < 0) return false;
-  fileMode_.loadStream(fd, /*ownsFd=*/true, pagerFileList_[newIndex], display_.rows() * 2);
+  // startPagerFileList()自身の同日の同種の修正のコメント参照――
+  // ここも初期予算はrows*2ではなくrowsにする。
+  fileMode_.loadStream(fd, /*ownsFd=*/true, pagerFileList_[newIndex], display_.rows());
   pagerFileIndex_ = newIndex;
   // 2026-08-25のバグ修正: ContentView自身のmove/scrollメソッド
   // (内部で自分自身をredraw()する)とは異なり、FileMode::
@@ -8737,9 +8755,29 @@ void Application::pollPagerExitNotice() {
   if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
     int topIndex = activeView().topIndex();
     bool stillCatchingUpFirstScreen = static_cast<int>(activeView().lines().size()) < display_.rows();
-    bool viewerMovedSinceLastAttempt = topIndex != lastPagerPollTopIndex_;
+    // 2026-09-06追加、直接のユーザー報告("80x24ターミナルだと開いた
+    // 直後「00001/00024」のはずだが「00001/00050」になっている"):
+    // lastPagerPollTopIndex_自身の宣言コメントの「初期値-1はどの
+    // topIndexとも一致しないので、最初の呼び出しは必ず『動いた』
+    // 扱いになる」という設計そのものが、この不具合の直接の原因
+    // だった――新しいストリームを開いた直後、たとえloadStream()自身の
+    // 初回同期読み込みで既にちょうど1画面分ぴったり埋まっていても、
+    // メインループの最初の1回の反復がこの「-1との不一致」に基づいて
+    // 無条件にtopIndex+rows*2(2画面分)の先読みを追加でトリガーして
+    // しまい、"00001/00024"が一瞬で"00001/00049"前後まで一気に育って
+    // しまっていた(実機PTYで確認: man bash | usilic -c)。「最初の
+    // 呼び出しでは必ず動いた扱いにする」こと自体はstillCatchingUpFirstScreen
+    // (画面がまだ埋まっていなければ、こちらが独立に先読みを続ける)
+    // で既に不要になっていたため、lastPagerPollTopIndex_を-1のまま
+    // (「まだ一度も記録していない」)である間は「動いた」と判定しない
+    // よう改め、代わりに「動いたかどうかに関わらず、このtickの
+    // topIndex自体は毎回必ず記録する」よう変更した――そうしないと、
+    // 次にユーザーが本当に動かした時の比較対象(基準点)自体が
+    // 永遠に-1のまま更新されず、GUIのホイール操作の検出が効かなく
+    // なってしまう。
+    bool viewerMovedSinceLastAttempt = lastPagerPollTopIndex_ != -1 && topIndex != lastPagerPollTopIndex_;
+    lastPagerPollTopIndex_ = topIndex;
     if (stillCatchingUpFirstScreen || viewerMovedSinceLastAttempt) {
-      lastPagerPollTopIndex_ = topIndex;
       ensurePagerStreamLoaded(topIndex + display_.rows() * 2);
     }
   }

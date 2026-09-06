@@ -438,13 +438,23 @@ bool FileMode::readMoreIntoPipe(int targetLineCount) {
   // (=「あと1行だけ」というensureLoadedThrough()自身のペーシング済み
   // 要求)の間だけ1バイト単位に切り替え、legacy自身のlinein()
   // (old/src/alloc.c)と同じ粒度で改行1つ分ずつ進む――それより大きな
-  // 差分(画面外の先読み分やGoToBottom自身のsentinel等、そもそも
-  // ペーシングの対象外の要求)は、この超過を許容する256バイトの
-  // 一括読み込みのまま、効率を保つ。
-  int before = static_cast<int>(streamPipe_->lines().size());
-  std::size_t chunkSize = (targetLineCount - before <= 1) ? 1 : 256;
+  // 差分は256バイトずつ効率よく読み進めるが、2026-09-06追加、直接の
+  // ユーザー報告("80x24ターミナルだと開いた直後「00001/00024」の
+  // はずだが「00001/00050」になっている")を経て、このチャンクサイズ
+  // はループの「毎回」、残り差分に合わせて計算し直す(以前はループの
+  // 外で1回だけ、最初の差分を基に決めていた)――固定256バイトのまま
+  // だと、要求が「画面1枚分(例えば24行)」程度の中規模な場合でも、
+  // 残りわずか数行の所で256バイト分をまとめて読んでしまい、行の長さ
+  // 次第で数十行分も超過することがあった(実機PTYで確認: man bashの
+  // 最初の1ページ読み込みで24行を要求したのに52行読み込まれていた)。
+  // 残り差分に応じて縮めることで、目標に近づくほど読み込み単位も
+  // 小さくなり、最終的な超過を高々1行程度に抑える――GoToBottom自身の
+  // sentinel値のような巨大な差分に対しては引き続き256バイトの一括
+  // 読み込みのまま、効率を保つ。
   char buf[256];
   while (static_cast<int>(streamPipe_->lines().size()) < targetLineCount) {
+    int remaining = targetLineCount - static_cast<int>(streamPipe_->lines().size());
+    std::size_t chunkSize = (remaining <= 1) ? 1 : std::min<std::size_t>(256, static_cast<std::size_t>(remaining) * 2);
     ssize_t n = ::read(streamFd_, buf, chunkSize);
     if (n < 0) {
       if (errno == EINTR) continue;
