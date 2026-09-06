@@ -2302,11 +2302,25 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // contentRowsが最初から満たされている「通常時」は先読みを
           // 一切試みず、それが「不足している」と分かった時だけ1回だけ
           // 先読みして再判定する、遅延評価の形に直す。
+          // 2026-09-06再訂正×3(直接のユーザー報告"バーが最下点に達した
+          // 瞬間、行が1行増えたことによる再計算で「00023/00025 END」が
+          // 一瞬出てしまう...ちらつきが復活"): suppressPagerRepoll()
+          // (main.cpp自身のpollPagerExitNotice()呼び出しが同じtopIndex_
+          // をもう一度「未対応」と誤認しないようにする抑制)を、ここの
+          // ような「毎フレーム連続で動き続けるコースト/ドラッグ」経路
+          // にまで適用していたのが誤りだった――キーボードの1回きりの
+          // キー入力(Command::ScrollLineDown/PageDown)とは異なり、この
+          // 経路は元々毎フレームredraw()し続けているので、抑制さえ
+          // しなければpollPagerExitNotice()自身の「topIndex_が前回から
+          // 動いていれば先読みする」という本来の仕組みが、次のフレーム
+          // で自然に「1行先を常に確保しておく」バッファとして働き、
+          // このコード自身の(境界に当たった時だけ動く)場当たり的な
+          // 先読みだけに頼らずに済む――結果、境界ぎりぎりで一瞬だけ
+          // 「END」を描いてしまう隙間が生まれなくなる。抑制を撤去した。
           int totalLines = static_cast<int>(view.lines().size());
           int contentRows = std::max(gui.rows() - 1, 0);
           if (totalLines <= contentRows) {
             app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
-            app.suppressPagerRepoll(view.topIndex());
             totalLines = static_cast<int>(view.lines().size());
           }
           if (totalLines > contentRows) {
@@ -2316,7 +2330,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
                    recentMotion.front().first < std::chrono::steady_clock::now() - kReleaseWindow)
               recentMotion.pop_front();
             commitRowCrossings(view, cellHeight, pixelOffset);
-            app.suppressPagerRepoll(view.topIndex());
           }
           break;
         }
@@ -2396,9 +2409,18 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // みて、実際に境界に当たった時だけ1回だけ先読みして再判定する」
         // という遅延評価の形に直し、先読みの回数を実際のtopIndex_の
         // 前進回数と1対1に揃える。
+        // 2026-09-06再訂正×3(直接のユーザー報告"バーが最下点に達した
+        // 瞬間、行が1行増えたことによる再計算で「00023/00025 END」が
+        // 一瞬出てしまう...ちらつきが復活"): drag側の同種の訂正
+        // (すぐ上のコメント参照)と同じ理由で、ここでもsuppressPagerRepoll()
+        // を撤去した――抑制さえしなければ、main.cpp自身のpollPagerExitNotice()
+        // 呼び出しが毎フレーム「topIndex_が前回から動いていれば先読み
+        // する」を自然に働かせ続け、コースト中ずっと1行分の余裕を
+        // 保ってくれる。この関数自身の先読み(すぐ上、境界に当たった
+        // 時だけ)はその余裕が万一追いつかなかった時の保険としてのみ
+        // 働く。
         if (!view.canStepTopIndex(-coastDirection)) {
           app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
-          app.suppressPagerRepoll(view.topIndex());
           if (!view.canStepTopIndex(-coastDirection)) {
             coastLevel = 0;
             coastDirection = 0;
@@ -2409,7 +2431,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         }
         pixelOffset += coastDirection;
         bool crossedWithoutHittingBoundary = commitRowCrossings(view, cellHeight, pixelOffset);
-        app.suppressPagerRepoll(view.topIndex());
         if (!crossedWithoutHittingBoundary) {
           // Hit a boundary -- stop rather than pin against the edge.
           // commitRowCrossings() itself left pixelOffset clamped to
