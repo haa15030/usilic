@@ -10617,19 +10617,22 @@ TEST_CASE_FIXTURE(Fixture, "startPagerFileList: ^G stays a no-op even AFTER the 
   CHECK(app.currentMode() == ApplicationMode::File);  // did NOT fall through to an empty Directory
 }
 
-// 2026-09-20追加、直接のユーザー報告("最終行へ来てもいないのに
-// （Exit）が出てこそ価値がある"、"（stdin）は1ページ分ずつ読み込み
-// ながら表示するうちEOFに出くわす時が必ず来るんだが旧版では最終
-// ページよりも手前が常だった...新版も同じなら反映してほしい"):
-// FileMode::lastLoadAttemptYieldedNothing()/readMoreIntoPipe()自身の
-// O_NONBLOCK化のコメント参照。真のEOF(書き込み側が実際にcloseした)
-// ではなく、「今この瞬間はまだ何も届いていないだけ(書き込み側は
-// 開いたまま)」を再現するため、実際のpipe(2)を使う――plain.txt等の
-// 短い"通常ファイル"は開いた瞬間に本物のEOFへ達してしまい、この
-// 「一時的なだけ」という状態を再現できない。
+// 2026-09-06再訂正(5回目)、直接のユーザー報告(「実際の内容(250行)を
+// ほぼ全部捨てて早期にソケットを閉じてしまうバグが旧にあるのなら、
+// なぜ最後まで読めるの？」という鋭い指摘)を経て、このテスト自身の
+// 前提が元へ戻った――一度は「本物のEOFだけがトリガー」と訂正したが、
+// これは「ソケットが閉じても、既に送り込まれた未読データは消えない」
+// という事実を見落としていた。legacy自身の実機の(Exit)は「本当に
+// もう二度と来ない」ではなく、その狭い先読みマージンへの「今回は
+// たまたま届かなかった」という、その場限りの一時的な取りこぼしで
+// あり、操作を続ければ本当に最終行まで到達できる。そのため一瞬の
+// EAGAIN(書き込み側は開いたまま)も、下の対照テストの本物のEOFも、
+// 区別せず等しく(Exit)を出す――ensureLoadedThrough()自身の
+// 2026-09-06再訂正(5回目)のコメント参照。
 TEST_CASE_FIXTURE(Fixture, "PageDown: a pagerReturnsToShell() File screen that just tried to load more but "
                            "got nothing new YET (write end still open, not a real EOF) shows the bell+\"(Exit)\" "
-                           "notice, matching legacy's own \"(stdin)\" pager behavior") {
+                           "notice too, matching legacy's own \"(stdin)\" pager behavior (a momentary stall "
+                           "is treated the same as a real close -- see the companion test just below)") {
   REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));  // gets Application into File mode
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
@@ -10643,19 +10646,44 @@ TEST_CASE_FIXTURE(Fixture, "PageDown: a pagerReturnsToShell() File screen that j
   REQUIRE(app.fileMode().hasActiveStream());
   REQUIRE_FALSE(app.fileMode().streamAtEof());  // confirms this is NOT a real-EOF scenario
 
+  // 2026-09-06再訂正(4回目)、実機PTYでの再検証を経て、この移植自身の
+  // 先読みトリガーはhandleCommand()自身の前置ブロック(GoToBottom
+  // 専用を除き撤去済み、その宣言コメント参照)ではなく
+  // pollPagerExitNotice()(main.cpp自身のメインループから
+  // handleCommand()の直後に必ず呼ばれる)へ一本化された――このテスト
+  // でも同じ順序で呼ぶ。
   CHECK(app.handleCommand(Command::PageDown));
+  app.pollPagerExitNotice();
   CHECK(app.fileMode().lastLoadAttemptYieldedNothing());
   CHECK_FALSE(app.fileMode().streamAtEof());  // still not a real EOF -- retryable later
-  // pollPagerExitNotice()自身の宣言コメント参照――実際の描画は
-  // main.cpp自身のメインループの「次の」反復まで意図的に遅延される
-  // (switch(command)自身のCommand::PageDownのredraw()に即座に上書き
-  // されてしまうのを避けるため)。テストでは、その次の反復に相当する
-  // この呼び出しを直接行う。
-  app.pollPagerExitNotice();
   std::string lastRow = display.rowText(display.rows() - 1);
   CHECK(lastRow.find("(Exit)") != std::string::npos);
 
   ::close(fds[1]);
+}
+
+// 対照テスト: 書き込み側が「実際に」閉じた(本物のEOF)場合も、同じ
+// 経路で正しく(Exit)が出ることを確認する――上のテストと合わせて、
+// 「一瞬のEAGAIN」と「本物のEOF」のどちらでも等しく(Exit)が出る
+// (区別しない)ことを両方向から確認する。
+TEST_CASE_FIXTURE(Fixture, "PageDown: a pagerReturnsToShell() File screen whose underlying pipe has actually "
+                           "closed (a real EOF) shows the bell+\"(Exit)\" notice too") {
+  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  int fds[2];
+  REQUIRE(pipe(fds) == 0);
+  REQUIRE(write(fds[1], "only one line\n", 14) == 14);
+  ::close(fds[1]);  // a REAL EOF -- the write end is actually gone, not just momentarily quiet
+  app.fileMode().loadStream(fds[0], /*ownsFd=*/true, "", 100);
+  app.fileMode().setPagerReturnsToShell(true);
+
+  CHECK(app.handleCommand(Command::PageDown));
+  app.pollPagerExitNotice();
+  CHECK(app.fileMode().streamAtEof());
+  CHECK(app.fileMode().lastLoadAttemptYieldedNothing());
+  std::string lastRow = display.rowText(display.rows() - 1);
+  CHECK(lastRow.find("(Exit)") != std::string::npos);
 }
 
 // 見落とし防止の対照テスト: pagerReturnsToShell()がfalse(通常の
@@ -10675,8 +10703,8 @@ TEST_CASE_FIXTURE(Fixture, "PageDown: the same 'nothing new yet' condition does 
   app.fileMode().loadStream(fds[0], /*ownsFd=*/true, "", 100);
 
   CHECK(app.handleCommand(Command::PageDown));
-  CHECK(app.fileMode().lastLoadAttemptYieldedNothing());  // the underlying condition still fires...
   app.pollPagerExitNotice();
+  CHECK(app.fileMode().lastLoadAttemptYieldedNothing());  // the underlying condition still fires...
   std::string lastRow = display.rowText(display.rows() - 1);
   CHECK(lastRow.find("(Exit)") == std::string::npos);  // ...but the notice itself doesn't, unscoped mode
 }
@@ -10713,6 +10741,16 @@ TEST_CASE_FIXTURE(Fixture, "pollPagerExitNotice: GUI-style scrolling that bypass
   std::string bulk;
   for (int i = 0; i < totalLinesWritten; ++i) bulk += "line " + std::to_string(i) + "\n";
   REQUIRE(write(fds[1], bulk.data(), bulk.size()) == static_cast<ssize_t>(bulk.size()));
+  // 2026-09-06再訂正(4回目)、実機PTYでの再検証を経て、書き込み端は
+  // すぐ閉じる――ensureLoadedThrough()自身の同日のコメント参照:
+  // 一瞬のEAGAIN(書き込み端が開いたまま、単に今この瞬間だけ届いて
+  // いない)はもはやpagerExitEncountered()のトリガーにならない
+  // (legacy自身のブロッキング読み込みにはそもそも「EAGAIN」という
+  // 概念が無いことが実機比較で判明したため)。既に書き込み済みの
+  // 内容は、閉じた後でも全て消費し切るまでは通常通り読める――
+  // 「本当の末尾に達した時」だけを正しくpagerExitEncountered()として
+  // 検出できることを、このテスト自身で確認する。
+  ::close(fds[1]);
   app.fileMode().loadStream(fds[0], /*ownsFd=*/true, "", rows * 2);
   app.fileMode().setPagerReturnsToShell(true);
 
@@ -10767,8 +10805,6 @@ TEST_CASE_FIXTURE(Fixture, "pollPagerExitNotice: GUI-style scrolling that bypass
   for (int i = 0; i < 5; ++i) app.pollPagerExitNotice();
   std::string rowStillThere = display.rowText(display.rows() - 1);
   CHECK(rowStillThere.find("(Exit)") != std::string::npos);
-
-  ::close(fds[1]);
 }
 
 // 2026-09-06追加、直接のユーザー報告("総行数が１行単位で進まない...
@@ -10780,13 +10816,20 @@ TEST_CASE_FIXTURE(Fixture, "pollPagerExitNotice: GUI-style scrolling that bypass
 // ような整形が一瞬で終わる短いページでは、これがlegacyのような
 // 「1行ずつ増えていく」見た目には決してならない。
 // Application::pollShellHandoff()自身の"man ls"実機再現に近い形
-// (loadStream()の初期予算を1に絞る、実際のコミット参照)で、可視範囲
-// (view_.topIndex()..+rows)を埋め終えるまでは1回のensureLoadedThrough()
-// 呼び出しが「あと1行」しか読み進めないこと、埋め終えた後は画面外の
-// 先読み分をまとめて一括で読み込むことを確認する。
+// (loadStream()の初期予算を1に絞る、実際のコミット参照)で、
+// pagerReturnsToShell()である間は「可視範囲を埋め終えた後も含めて
+// 常に」1回のensureLoadedThrough()呼び出しが「あと1行」しか読み
+// 進めないことを確認する――2026-09-06の3回目の再訂正(直接の
+// ユーザー報告「80x24のターミナルで旧との違いを比較すると」②③、
+// legacy自身の実機`seq 1 500 | U`での逐一比較)で、「最初の1画面を
+// 埋め終えたら以降は画面外の先読み分をまとめて一括で読み込んでよい」
+// という以前の前提そのものを撤回した――legacy自身は最初の1画面を
+// 埋め終えた後の通常のスクロールでも、先読み分がわずか1〜2行しか
+// 伸びない。
 TEST_CASE_FIXTURE(Fixture, "ensureLoadedThrough: a pagerReturnsToShell() stream grows exactly one line per "
-                           "call while the visible screen isn't full yet (matching legacy's own paced "
-                           "\"(stdin)\" line-count-up), then batches once the visible screen is full") {
+                           "call, always (not just while the visible screen isn't full yet) -- matching "
+                           "legacy's own paced \"(stdin)\" line-count-up throughout ordinary scrolling, not "
+                           "just during the initial catch-up") {
   REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
@@ -10824,12 +10867,19 @@ TEST_CASE_FIXTURE(Fixture, "ensureLoadedThrough: a pagerReturnsToShell() stream 
   // していない(topIndex_も動いていない)間は今回はもう何も試みない
   // ――これは元々の「ユーザー自身の次の操作を待つ」という設計通り
   // であり、退行ではない。実際にユーザーがスクロールした(topIndex_が
-  // 動いた)時に初めて、画面外の先読み分(rows*2分)を1回でまとめて
-  // 読み込むことを確認する――見えていない部分にまでこの間延びを
-  // 強いる理由は無い。
+  // 動いた)時、続きが読み込まれることは確認するが、それでも「あと
+  // 1行」だけであって、画面外の先読み分をまとめて一括で読み込んだり
+  // はしない――ここが以前の設計との核心的な違い。
   app.activeContentView().setTopIndex(1);
   app.pollPagerExitNotice();
-  CHECK(static_cast<int>(app.activeContentView().lines().size()) > rows);
+  CHECK(static_cast<int>(app.activeContentView().lines().size()) == rows + 1);
+  CHECK_FALSE(app.fileMode().lastLoadAttemptYieldedNothing());  // まだ十分残っている
+
+  // さらにもう1回スクロールしても、やはり1行だけ増える -- 通常の
+  // スクロールが続く限り、この「常に+1」が続くことを確認する。
+  app.activeContentView().setTopIndex(2);
+  app.pollPagerExitNotice();
+  CHECK(static_cast<int>(app.activeContentView().lines().size()) == rows + 2);
 
   ::close(fds[1]);
 }

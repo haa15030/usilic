@@ -3235,27 +3235,33 @@ bool Application::handleCommand(Command command) {
   // 2026-08-25(FileMode::ensureLoadedThrough()自身のコメント参照):
   // CLIのページャで起動されたファイル/stdinのストリームは、これまで
   // のスクロールを満たすのに十分なコンテンツしかロードされていない
-  // ――現在のビューポート自身の上端から約2画面分先までそれを再び
-  // 満たすことを、(何か新しいものが実際に必要な時だけではなく)
-  // 「あらゆる」コマンドの前に行う(何も新しく必要無い時はno-opの
-  // コストで済む、ensureLoadedThrough()自身の早期の「既に十分ある」
-  // returnを参照)ことで、通常の前方スクロール(MoveDown/
-  // ScrollLineDown/PageDown/GoToBottom、そして今後さらに先を読む
-  // どんなコマンドも同様)が、これまでに読まれたものを目に見えて
-  // 追い越してしまうことを決して無いようにする。hasActiveStream()
-  // は他の「全ての」Fileモードの入り口(通常のloadFile()で開かれた
-  // ファイルは既に全てを持っている)についてはfalseなので、そこでは
-  // これは不活性である。
-  if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
+  // ――hasActiveStream()は他の「全ての」Fileモードの入り口(通常の
+  // loadFile()で開かれたファイルは既に全てを持っている)については
+  // falseなので、そこではこれは不活性である。
+  // 2026-09-06再訂正(4回目)、直接のユーザー報告("80x24のターミナルで
+  // 旧との違いを比較すると"②③、実機PTYでの再検証)を経て、GoToBottom
+  // 以外の通常コマンド分の呼び出しをここから撤去した――以前は
+  // 「あらゆるコマンドの前」に無条件でここでも先読みしていたが、この
+  // 直後のswitch(command)自身のコマンド固有の移動が終わった後、
+  // 同じ1回のメインループの反復内でApplication::pollPagerExitNotice()
+  // (main.cpp自身のコメント参照、handleCommand()の直後に必ず呼ばれる)
+  // が「topIndex_が動いたか」を見て同じ内容の先読みを既に行っている
+  // ため、ここでも重ねて呼ぶと同じ1回のキー入力で先読みが二重に
+  // 実行され(pagerReturnsToShell()セッションでは1回あたり「あと1行」
+  // に絞られているため、二重実行の結果が「1行ずつ」ではなく「2行
+  // ずつ」進むという、まさに直接のユーザー報告と一致する形の回帰と
+  // なって現れた)、legacy自身の観測値(`j`1回につき先読みがちょうど
+  // 1行しか伸びない)と食い違っていた。
+  if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream() && command == Command::GoToBottom) {
     // GoToBottomは、`less`自身のG コマンドがまだ成長中のファイル/
     // パイプに対してそうする(ソースが実際に終わるまでブロックする)
     // のと同様に、まず残りのストリーム「全体」を実際のEOFまで読み
     // 通す必要がある――そうしないと「末尾」は、ストリームの本当の
     // 終わりではなく、単に「ロードがたまたま止まった場所」を意味
-    // することになってしまう。
-    int target = command == Command::GoToBottom ? std::numeric_limits<int>::max() - 1
-                                                  : activeView().topIndex() + display_.rows() * 2;
-    ensurePagerStreamLoaded(target);
+    // することになってしまう。これはpollPagerExitNotice()自身の
+    // 「あと1行」ペーシングでは決して代替できない、GoToBottom固有の
+    // 「今すぐ全部」という意図そのものなので、ここに残す。
+    ensurePagerStreamLoaded(std::numeric_limits<int>::max() - 1);
   }
   switch (command) {
     // setHoverIndex(nullopt)を各移動の「後」ではなく「前」に呼ぶ
@@ -8606,17 +8612,25 @@ std::string Application::promptLabelText(PromptKind kind) const {
   return "";
 }
 
-// handleCommand()自身のensurePagerStreamLoaded()呼び出しのコメント
-// 参照(2026-09-20追加): legacy自身の実機再現("man ls"を末尾を超えて
+// legacy自身の実機再現("man ls"/"seq 1 500 | U"を末尾を超えて
 // spaceで送ると"^G (Exit) "が最下行に現れる)を模す――ベルを鳴らし、
 // モードライン行の左端に"Exit"だけ太字のプレーンテキストを重ねて
 // 書く(legacy自身の生バイト列と同じ、反転表示のモードライン自体は
-// 「起こさない」)。次の再描画で自然に上書きされる、意図的に一時的な
-// 通知。
-void Application::showPagerExitNotice() {
+// 「起こさない」)。
+// 2026-09-06再訂正(3回目)、直接のユーザー報告(「80x24のターミナル
+// で旧との違いを比較すると」④、実機PTYでの生バイト列の再確認)を
+// 経て、この関数自体の意味も変わった――以前は「次の再描画で自然に
+// 上書きされる、意図的に一時的な通知」だったが、legacy自身の実機
+// キャプチャで確認したのは真逆: BEL(0x07)こそ最初の1回きりだが、
+// "(Exit)"というテキスト自体はその後の「あらゆる」ナビゲート操作の
+// 応答でも消えずに描画され続ける。`ringBell`は呼び出し元
+// (pollPagerExitNotice())が、このpagerReturnsToShell()セッションで
+// まだ一度もベルを鳴らしていない(pagerExitBellRung_自身の宣言コメント
+// 参照)場合にだけtrueを渡す。
+void Application::showPagerExitNotice(bool ringBell) {
   int row = std::max(0, display_.rows() - 1);
   display_.moveCursor(row, 0);
-  display_.putChar(0x07);
+  if (ringBell) display_.putChar(0x07);
   display_.write(" (");
   display_.setAttribute(Display::Attribute::Bold);
   display_.write("Exit");
@@ -8625,16 +8639,6 @@ void Application::showPagerExitNotice() {
   display_.flush();
 }
 
-// 2026-09-20追加、直接のユーザー報告("最終行へ来てもいないのに
-// （Exit）が出てこそ価値がある"、"（stdin）は1ページ分ずつ読み込み
-// ながら表示するうちEOFに出くわす時が必ず来るんだが旧版では最終
-// ページよりも手前が常だった"、"-gでは（Exit）が出ない"):
-// FileMode::lastLoadAttemptYieldedNothing()自身の宣言コメント参照
-// ――実際に読もうと試みたが今回は何も届かなかった(streamAtEof_は
-// まだfalseで再試行の余地がある)ことを検出するだけで、通知自体は
-// 即座に描かない(pendingPagerExitNotice_自身の宣言コメント参照:
-// この直後にswitch(command)自身の対応するケースが独自にredraw()を
-// 実行し、ここで描いたばかりの通知を即座に上書きしてしまう)。
 void Application::ensurePagerStreamLoaded(int targetLineIndex) {
   // 2026-09-20追加、直接のユーザー報告("man ls直後の画面が出ない
   // （jで表示）"): FileMode::ensureLoadedThrough()自身は、新しく
@@ -8656,12 +8660,9 @@ void Application::ensurePagerStreamLoaded(int targetLineIndex) {
   // 新しい内容を読み込めた(true)場合はここで明示的にredraw()+flush()
   // する――handleCommand()自身の呼び出し元から見れば、直後の
   // switch(command)自身のredraw()と二重になるが、無害である。
-  if (fileMode_.ensureLoadedThrough(targetLineIndex, display_.rows())) {
+  if (fileMode_.ensureLoadedThrough(targetLineIndex)) {
     activeView().redraw();
     display_.flush();
-  }
-  if (fileMode_.pagerReturnsToShell() && fileMode_.lastLoadAttemptYieldedNothing()) {
-    pendingPagerExitNotice_ = true;
   }
 }
 
@@ -8712,6 +8713,26 @@ void Application::ensurePagerStreamLoaded(int targetLineIndex) {
 // 読み込みがまだ書きかけの場合があるため、legacy自身の実機が最初
 // から画面いっぱいの初期ページを示すのに合わせて、少なくとも最初の
 // 1画面分は無条件に埋めきる。
+//
+// 2026-09-06再訂正(3回目→5回目、直接のユーザー報告「80x24の
+// ターミナルで旧との違いを比較すると」④、および「実際の内容(250行)
+// をほぼ全部捨てて早期にソケットを閉じてしまうバグが旧にあるのなら、
+// なぜ最後まで読めるの？」という鋭い指摘): 以前はfileMode_.
+// lastLoadAttemptYieldedNothing()(一時的、直後の1回の試行に
+// ついてだけ意味を持つ)を、pendingPagerExitNotice_という「次の
+// 反復まで1回だけ描いて消費する」フラグ経由で表示していた。
+// 一度は「legacyの(Exit)は本物のEOFでだけ立つsticky状態」と
+// 訂正したが、これは誤りだった――ソケットが閉じても、既に送り込ま
+// れた未読データは消えない(`seq 1 500 | U`で観測した「(Exit)が
+// すぐ出るのに総行数がその後も増え続ける」は、実は「本当に閉じた」
+// からではなく、legacy自身の狭い先読みマージン(current+2程度)への
+// 「今回はたまたま届かなかった」という、その場限りの一時的な取り
+// こぼしが繰り返し起きていただけだった――だからこそ操作を続ければ
+// 本当に最終行まで到達できる)。そのためfileMode_.lastLoadAttemptYieldedNothing()
+// (一時的、直後の1回の試行についてだけ意味を持つ)を毎回の反復で
+// 無条件に再評価して描き直す(sticky化はしない)――BELだけは
+// pagerExitBellRung_自身の宣言コメント参照の通りこのセッションで
+// 最初の1回に抑える。
 void Application::pollPagerExitNotice() {
   if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
     int topIndex = activeView().topIndex();
@@ -8722,9 +8743,23 @@ void Application::pollPagerExitNotice() {
       ensurePagerStreamLoaded(topIndex + display_.rows() * 2);
     }
   }
-  if (pendingPagerExitNotice_) {
-    pendingPagerExitNotice_ = false;
-    showPagerExitNotice();
+  // 2026-09-06再訂正(5回目)、直接のユーザー報告(「実際の内容(250行)を
+  // ほぼ全部捨てて早期にソケットを閉じてしまうバグが旧にあるのなら、
+  // なぜ最後まで読めるの？」)――前回の「本物のEOFでだけ発火する
+  // sticky状態」という訂正は、ソケットが閉じても「既に送り込まれた
+  // 未読データは消えない」という事実を見落としていた。実機の
+  // (Exit)は「本当にもう二度と来ない」ではなく「今回の1回の読み込み
+  // 試行が、要求したささやかな先読みマージン(current+2程度)にすら
+  // 届かなかった」というその場限りの一時的な信号であり、次の操作で
+  // また普通に続きが読めることがある(実際、操作を続ければ本当に
+  // 最終行まで到達できる)。そのためFileMode::lastLoadAttemptYieldedNothing()
+  // (一時的、直後の1回の試行についてだけ意味を持つ、その宣言コメント
+  // 参照)を毎回の反復で無条件に再評価して描き直す――sticky化は
+  // しない。BELだけはこのセッションで最初にこの状態になった時の
+  // 1回に抑える(pagerExitBellRung_自身の宣言コメント参照)。
+  if (fileMode_.pagerReturnsToShell() && fileMode_.lastLoadAttemptYieldedNothing()) {
+    showPagerExitNotice(!pagerExitBellRung_);
+    pagerExitBellRung_ = true;
   }
 }
 
@@ -9898,6 +9933,7 @@ bool Application::pollShellHandoff() {
     fileMode_.loadStream(fd, /*ownsFd=*/true, "", 1);
     fileMode_.setSearchOrigin("", "(stdin)");
     fileMode_.setPagerReturnsToShell(true);  // それ自身の宣言コメント参照: ^G/'q'はShellへ戻る、不活性/終了ではない
+    pagerExitBellRung_ = false;  // 自身の宣言コメント参照: 新しいSHELLハンドオフセッションごとに1回だけ鳴らし直す
     activeView().redraw();
     return true;
   }

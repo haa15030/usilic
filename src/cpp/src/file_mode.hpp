@@ -206,12 +206,12 @@ class FileMode {
   // ものが無いので、そちらでは常に何もしない)。EOFに達した後、
   // またはそもそもストリームがアクティブでない場合はfalse(純粋に
   // 何もしない)。
-  // `rows`: 呼び出し元(Application)の現在の画面高さ――「今実際に
-  // 見えている範囲」の境界(view_.topIndex()+rows)を判定するためだけ
-  // に使う(ensureLoadedThrough()自身の定義コメント、2026-09-06追加分
-  // 参照: SHELLの生きたPAGERハンドオフに限り、この境界を埋め終える
-  // までは1回の呼び出しで「あと1行」しか読み進めない)。
-  bool ensureLoadedThrough(int targetLineIndex, int rows);
+  // 2026-09-06再訂正(3回目)、実機PTYでの旧との詳細な逐一比較を経て
+  // rowsパラメータは撤回した――ensureLoadedThrough()自身の定義コメント
+  // 参照: SHELLの生きたPAGERハンドオフである間は、呼び出し元が渡す
+  // targetLineIndexの大小に関わらず常に「あと1行」だけを読み進める
+  // ため、画面の高さをここで知る必要が無くなった。
+  bool ensureLoadedThrough(int targetLineIndex);
   // 2026-09-20追加、直接のユーザー報告("最終行へ来てもいないのに
   // （Exit）が出てこそ価値がある"、legacy実機での再現確認: "(stdin)
   // は1ページ分ずつ読み込みながら表示するうちEOFに出くわす時が必ず
@@ -234,7 +234,48 @@ class FileMode {
   // (true)経由で正しく表示に反映されつつ、これは「まだ頼んだ全部には
   // 届いていない」ことを別途伝える。直後の1回のensureLoadedThrough()
   // 呼び出しについてだけ意味を持つ。
-  bool lastLoadAttemptYieldedNothing() const { return lastLoadAttemptYieldedNothing_; }
+  // 2026-09-06再訂正(5回目、直接のユーザー報告「実際の内容(250行)を
+  // ほぼ全部捨てて早期にソケットを閉じてしまうバグが旧にあるのなら、
+  // なぜ最後まで読めるの？」を経て): streamAtEof_を無条件でORして
+  // いる――lastLoadAttemptYieldedNothing_自身はensureLoadedThrough()
+  // の毎回の呼び出し冒頭でfalseにリセットされる一時的な変数なので、
+  // 「本物のEOFにloadStream()自身の初回読み込みで(ensureLoadedThrough()
+  // が一度も呼ばれる前に)当たった」場合はこの変数を立てる機会自体が
+  // 無い――streamAtEof_(それ自身は既にloadStream()でのみリセットされる
+  // sticky状態)を直接ORすることで、いつ/どの経路でEOFに当たったかに
+  // 関わらず常に正しくなる。
+  bool lastLoadAttemptYieldedNothing() const { return lastLoadAttemptYieldedNothing_ || streamAtEof_; }
+  // 2026-09-06再訂正(3回目)、直接のユーザー報告("④実際は２つ目の`j`
+  // で（Exit)"、legacy自身の実機を`seq 1 500 | U`(内容は明らかに
+  // まだ大量に残っている)で確認した結果): legacy自身の"(Exit)"は
+  // 一度出ると、bell自体は最初の1回きりだが、テキスト表示("(Exit)")
+  // 自体はその後の全てのナビゲート操作でも消えずに描画され続ける
+  // (実際のPTYキャプチャで確認済み: 初回はBELを伴うが、以降の
+  // 各`j`の応答には毎回"Exit"の文字列だけが含まれ、BELは含まれない)。
+  // これはlastLoadAttemptYieldedNothing()自身(「直後の1回の呼び出し
+  // についてだけ意味を持つ」、その宣言コメント参照)とは異なる、
+  // このpagerReturnsToShell()セッション自身の「一度でも本物のEOFに
+  // 当たったことがあるか」という粘着性のある(sticky)状態。一瞬の
+  // EAGAIN/EWOULDBLOCK(まだ開いたまま、単に今この瞬間だけ届いて
+  // いない)は意図的にこれのトリガーから除外している――O_NONBLOCK化
+  // されたstreamFd_に対してはごくありふれて起こる、生きた相手に
+  // とって何も異常ではない状態であり、これも含めてしまうと(実機PTYで
+  // 確認済み)man/groffがまだ全然出力し終えていない読み込み開始
+  // 直後から(Exit)が誤って粘着的に出てしまう。
+  // Application::pollPagerExitNotice()自身のコメント参照: これを
+  // 毎回の反復で無条件にチェックして描画し続けることで、legacyの
+  // 「BELは一度きり、テキストは消えない」という見た目を、個々の
+  // redraw()呼び出し箇所をいちいちフックすることなく再現する。
+  // 2026-09-06追記: 専用のsticky変数ではなく、streamAtEof_(それ自身
+  // 既にloadStream()でのみリセットされる、まさに同じ意味でsticky)
+  // から直接計算する――専用の変数だと、loadStream()自身の初回の
+  // readMoreIntoPipe()呼び出し(setPagerReturnsToShell(true)が呼ばれる
+  // "前"に実行される)が本物のEOFに当たった場合、それを立てる機会
+  // 自体が無い(フラグを立てるコードはensureLoadedThrough()の中に
+  // しか無く、その時点ではまだ一度も呼ばれていない)という発見漏れが
+  // あった。streamAtEof_から直接計算すれば、いつ/どの経路でEOFに
+  // 当たったかに関わらず常に正しい。
+  bool pagerExitEncountered() const { return pagerReturnsToShell_ && streamAtEof_; }
   bool hasActiveStream() const { return streamFd_ >= 0; }
   bool streamAtEof() const { return streamAtEof_; }
   // 2026-08-25のバグ修正: 上の`hasActiveStream()`は、ストリームが

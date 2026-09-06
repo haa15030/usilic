@@ -484,7 +484,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   view_.setUseFixedWidthPosition(true);
   streamFd_ = fd;
   streamOwnsFd_ = ownsFd;
-  streamAtEof_ = false;
+  streamAtEof_ = false;  // pagerExitEncountered()自身の宣言コメント参照、これ自身が既にsticky
   lastLoadAttemptYieldedNothing_ = false;
   // 2026-09-20追加、readMoreIntoPipe()自身のO_NONBLOCK化のコメント
   // 参照(直接のユーザー報告+legacy実機での再現確認)――失敗しても
@@ -530,7 +530,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   return true;
 }
 
-bool FileMode::ensureLoadedThrough(int targetLineIndex, int rows) {
+bool FileMode::ensureLoadedThrough(int targetLineIndex) {
   // lastLoadAttemptYieldedNothing()自身の宣言コメント参照――「今回は
   // 何も試みなかった」場合との区別のため、実際に試みるまではfalseの
   // ままにしておく。
@@ -538,59 +538,51 @@ bool FileMode::ensureLoadedThrough(int targetLineIndex, int rows) {
   if (streamAtEof_ || streamFd_ < 0) return false;
   int before = static_cast<int>(streamPipe_->lines().size());
   if (targetLineIndex < before) return false;  // 既に十分読み込まれている(試みてすらいない)
-  // 2026-09-20再訂正、直接のユーザー報告("（Exit）出ない...旧の動きを
-  // 見てみたら、モードラインの行情報が１行ずつ進んでいる。つまり
-  // 実際に一行ずつ読んでるわけ？")――legacy自身のlinein()
-  // (old/src/alloc.c)は本当に1バイトずつ、実質1行ずつしか要求しない
-  // ので、「その1行」が届かなければ即座に「今回は届かなかった」と
-  // 分かる。この移植は効率のため意図的に大きな先読み予算
-  // (topIndex+rows*2相当)を一度に要求するので、以前の「合計の行数が
-  // 1行でも増えたか」という判定では、大きなバッチの途中どこかで一瞬
-  // でも止まったというlegacyと同じ粒度の信号を拾えなかった
-  // (man/groffのような実際のパイプは大抵「頼んだ分の一部」くらいは
-  // 返してくるため、この粗い判定では「1行も増えなかった」がほぼ一度も
-  // 起きず、結果的に(Exit)がほぼ二度と出なくなっていた)。
-  // readMoreIntoPipe()自身の戻り値(バッチの途中でEAGAIN/EWOULDBLOCK
-  // に当たって抜けたか)を直接使うことで、legacyと同じ粒度でこの
-  // 一瞬の停止を検出する――部分的にであれ届いた分は正しく表示に
-  // 反映しつつ(下のsetLines()は無条件に呼ぶ)、それでも「一瞬でも
-  // 止まった」ことを別途伝える。
-  //
-  // 2026-09-06追加、直接のユーザー報告("総行数が１行単位で進まない
-  // ...旧同様１バイトずつ読み込んで改行が来たら１増やす")への調査
-  // 結果: 上のコメントの「読み込みの粒度(256バイトのチャンク)」は
-  // stall検出の"精度"には実は無関係だった(read()は今kernelのパイプに
-  // 溜まっている分だけを即座に返す短い読み込みになるので、1バイトずつ
-  // 読もうが256バイトずつ読もうがEAGAINに当たる瞬間は変わらない)――
-  // 実際に無関係でなかったのは「1回の呼び出しでどこまで一気に読み
-  // 進めるか」の方だった。legacy自身のfrom_shell()(old/src/usilic.c)
-  // を実機で追ったところ、SHELLの生きたPAGERハンドオフに限り、画面に
-  // 実際に見えている範囲(row-1行)だけをソケット越しに1文字ずつ中継
-  // していて、そこから先(画面外の先読み分)はfread()の一括読み込みに
-  // 切り替えていた――つまりlegacy自身も「見えている部分だけ」わざと
-  // 間延びさせている。man/groffのように整形が一瞬で終わる短いページ
-  // では、パイプには既に画面2枚分がまるごと溜まっていることが多く、
-  // それを毎回そのままtargetLineIndexまで一括で満たしてしまうと、1回
-  // の再描画で一気に埋まってしまい、legacyのような「1行ずつ増えて
-  // いく」見た目には決してならない。SHELLの生きたPAGERハンドオフ
-  // (pagerReturnsToShell_)に限り、画面に今見えている範囲(topIndex_
-  // からrows行先まで)がまだ埋まっていない間だけ「あと1行」に絞る
-  // ことで、メインループの毎回の反復(Application::pollPagerExitNotice()
-  // 自身のコメント参照)が自然に作る間隔だけで、legacy同様1行ずつ
-  // 増える見た目になる――画面外の先読み分にまでこの間延びを強いる
-  // 理由は無いので、可視範囲を埋め終えた後は元通りtargetLineIndexまで
-  // 一括で読み込む。Command::GoToBottom自身の巨大なsentinel値
-  // (INT_MAX-1、呼び出し元のコメント参照: `less`のGコマンド同様、
-  // 本当のEOFまでブロックして読み切る意図)はこのペーシングの対象外
-  // とする――そちらは「今すぐ全部」が意図そのものであり、1行ずつ
-  // 間延びさせては壊れる。
-  int effectiveTarget = targetLineIndex;
+  // 2026-09-06再訂正(3回目)、直接のユーザー報告(「80x24のターミナル
+  // で旧との違いを比較すると」で始まる、実機PTYでの旧との詳細な
+  // 逐一比較): 前回のここの修正は「画面に今見えている範囲がまだ
+  // 埋まっていない間"だけ"あと1行に絞り、埋め終えたら元通り一括で
+  // 読み込む」という設計だったが、これはlegacy自身の実機を新たに
+  // 見比べた結果、根本的に誤りだったと判明した――legacy自身は
+  // 「最初の1画面を埋め終えた後」も、通常のスクロール(`j`等)の
+  // たびに先読み分がわずか1〜2行しか伸びない(直接のユーザー報告
+  // 「②`j`により１行進むと「00024/00026」（先読み分は２行だけ）」
+  // 「③`j`連打によりカレント行/総行は１行ずつ進行」)――「最初の
+  // 画面さえ埋まればあとは２画面分まとめて読んでよい」という前回の
+  // 前提そのものが、実機のこの逐次比較で否定された。そのため
+  // pagerReturnsToShell_である間は、呼び出し元(Application自身の
+  // handleCommand()前置ブロック/pollPagerExitNotice())が要求する
+  // targetLineIndexの大小に関わらず、常に「あと1行」だけを試みる
+  // ――呼び出し元は変更不要のまま(topIndex+rows*2という従来の先読み
+  // 予算をそのまま渡し続けてよい、ここで無条件に切り詰めるため)。
+  // Command::GoToBottom自身の巨大なsentinel値(INT_MAX-1、呼び出し元
+  // のコメント参照: `less`のGコマンド同様、本当のEOFまでブロックして
+  // 読み切る意図)だけはこのペーシングの対象外とする――そちらは
+  // 「今すぐ全部」が意図そのものであり、1行ずつ間延びさせては壊れる。
   bool isDrainToRealEofRequest = targetLineIndex >= std::numeric_limits<int>::max() - 1;
-  if (pagerReturnsToShell_ && !isDrainToRealEofRequest && before < view_.topIndex() + rows) {
-    effectiveTarget = before;
-  }
+  int effectiveTarget = (pagerReturnsToShell_ && !isDrainToRealEofRequest) ? before : targetLineIndex;
+  // readMoreIntoPipe()自身のコメント参照: 要求された差分(effectiveTarget
+  // -before)が小さい間は1バイト単位まで読み込みの粒度自体も切り詰め、
+  // legacy自身のlinein()(old/src/alloc.c)と同じ粒度で改行1つ分ずつ
+  // 進む――256バイト固定のままだと、上の「あと1行」という要求1回に
+  // つき256バイト分(数十行相当)を一気に掴んでしまい、このペーシング
+  // 自体が無意味になる。
   bool stalled = readMoreIntoPipe(effectiveTarget + 1);
   int after = static_cast<int>(streamPipe_->lines().size());
+  // 2026-09-06再訂正(5回目、直接のユーザー報告「実際の内容(250行)を
+  // ほぼ全部捨てて早期にソケットを閉じてしまうバグが旧にあるのなら、
+  // なぜ最後まで読めるの？」): この間、「本物のEOFだけをトリガーに
+  // すべき」という訂正を一度試したが、これは「ソケットが閉じても、
+  // 既に送り込まれた未読データは消えない」という事実を見落として
+  // いた――legacy自身の実機の(Exit)は「本当にもう二度と来ない」
+  // ではなく、その狭い先読みマージン(current+2程度)への「今回は
+  // たまたま届かなかった」という、その場限りの一時的な取りこぼしで
+  // あり、それが繰り返し起きているだけだった(操作を続ければ本当に
+  // 最終行まで到達できる)。そのため一瞬のEAGAIN(stalled)も本物の
+  // EOF(streamAtEof_)も、区別せず等しく「今回は届かなかった」として
+  // 扱う――lastLoadAttemptYieldedNothing()自身のgetter(streamAtEof_を
+  // 無条件でORしている、その宣言コメント参照)が、いつ/どの経路で
+  // EOFに当たったかに関わらず正しく反映する。
   if (stalled) lastLoadAttemptYieldedNothing_ = true;
   if (after == before) return false;  // 本当に1行も増えなかった――描画すべき新しい内容自体が無い
   view_.setLines(convertPipeLines());
