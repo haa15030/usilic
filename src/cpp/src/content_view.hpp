@@ -621,7 +621,24 @@ class ContentView {
   // renderScrolled()自体が使われるどのモードにも決して当てはまら
   // ない(ファイル内容のスクロールは常に空でないtrailingパスを
   // 持つ)ので、未検証のまま移植するのではなく意図的に省かれた。
-  std::vector<Display::ModeLineSegment> scrollModeLineSegments() const;
+  //
+  // `trackCursorPosition`(2026-09-07追加、直接のユーザー報告:
+  // "（ls）のようにハイライト表示画面では最下行のハイライト位置が
+  // 更新されながらスクロールしていくんだが、同じ動作でもある`j`/`k`
+  // ではハイライト位置がちゃんと現在行の値に反映されている...ところが
+  // GUIの慣性スクロールでは...「00001」から始まる"): デフォルトfalse
+  // (上のtopIndex_基準、既存の全呼び出し元/テストの契約を保つ)。
+  // このメソッド自身の唯一の実呼び出し元であるGUI(main.cppの
+  // runGuiPhase()、gui.renderScrolled()経由)はtrueを渡す――GUIの
+  // コースト/ドラッグは(scrollbarドラッグのjumpToScrollbarY()、
+  // 通常のcommitRowCrossings()/stepTopIndex()のどちらの経路でも)
+  // 毎回cursorIndex_を明示的に追従させ続けている(topIndex_のように
+  // 「デタッチされたまま」ではない)ため、cursorIndex_基準で表示
+  // した方がキーボードj/kの表示(modeLineText()、同じcursorIndex_
+  // 基準)と一致し、かつ正確――スクロール開始時にtopIndex_がまだ
+  // 動いていなくても(=00001)、選択中の行(例: 00024)を正しく
+  // 反映できる。
+  std::vector<Display::ModeLineSegment> scrollModeLineSegments(bool trackCursorPosition = false) const;
 
   // legacyのdisp_window()がcurrent/total位置テキストの周りに包む、
   // 2つのモード固有の断片(自身のフィールドレイアウトからの移植、

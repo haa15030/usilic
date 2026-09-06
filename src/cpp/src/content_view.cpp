@@ -1035,7 +1035,7 @@ std::string ContentView::scrollModeLineText() const {
                                                        : ModeLine::format(current, total));
 }
 
-std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() const {
+std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments(bool trackCursorPosition) const {
   int total = static_cast<int>(lines_.size());
   int bottomVisible = std::min(topIndex_ + std::max(height_, 0), total);
   int current;
@@ -1051,6 +1051,21 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments() cons
     // 代わりに、このフレームの直前/直後の通常描画(modeLineText())と
     // 一致するよう、cursorIndex_基準で表示する。
     current = std::min(total, cursorIndex_ + 1);
+  } else if (trackCursorPosition) {
+    // trackCursorPosition自身の宣言コメント参照(2026-09-07追加):
+    // cursorIndex_はGUIのコースト/ドラッグの全経路で継続的に追従
+    // させ続けられているので、これを直接使う――topIndex_はスクロール
+    // 開始直後(まだ1行もクロスしていない間)はまだ古い値のままなので、
+    // そちらを使うと選択中の行(例: 24行目)ではなく常に「00001」から
+    // 始まってしまっていた。
+    current = cursorIndex_ + 1;
+    // contentMayGrow_(6fd4c36で新設)も同じ理由でここに適用する:
+    // 生きたページャーストリームがまだ続き得る間、cursorIndex_が
+    // 「今読み込めている最後の行」にたまたま追いついてcurrent==total
+    // になっても、それは本当の末尾ではなく先読みが追いついていない
+    // だけの可能性がある――そのままだとModeLine::format()が一瞬だけ
+    // 誤ってENDと表示してしまう。
+    if (contentMayGrow_ && current >= total) current = total - 1;
   } else if (bottomVisible >= total && !contentMayGrow_) {
     // なぜこのチェックであってtopIndex_自体ではないのかについては
     // scrollModeLineText()自身のコメント参照。!contentMayGrow_も

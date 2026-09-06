@@ -2702,7 +2702,11 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         }
         lines.push_back({std::move(text), std::move(attrs), line.ellipsisEligible});
       }
-      gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments());
+      // trackCursorPosition=true(2026-09-07追加): ContentView::
+      // scrollModeLineSegments()自身の宣言コメント参照――GUIのコースト/
+      // ドラッグはcursorIndex_を常に追従させ続けているので、キーボード
+      // j/k(modeLineText())と一致する表示にする。
+      gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments(/*trackCursorPosition=*/true));
     } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.redrawSensitivePromptOrRecallActive() &&
                !app.awaitingLocateUpdateDb() && !app.awaitingDu()) {
       // !app.awaitingLocateUpdateDb() (2026-08-15 fix): the exact same
