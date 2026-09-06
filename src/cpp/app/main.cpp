@@ -1000,7 +1000,6 @@ void applyHoverRowAndRedraw(fm::ContentView &view, int mouseRow, bool moveCursor
 // as if this function had never run.
 TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
                                   int initialLevel, int initialDirection) {
-  (void)display;  // kept in the signature for symmetry with runTerminalMouseDrag(); tracking is ambient now
   fm::ContentView &view = app.activeContentView();
   int level = initialLevel;
   int direction = initialDirection;
@@ -1032,7 +1031,20 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
     // the exact same "old redraw, then a second redraw once
     // pollPagerExitNotice() catches up on the next main-loop tick"
     // flicker while coasting.
-    app.preloadPagerAhead(before + direction);
+    // 2026-09-06訂正、直接のユーザー報告("2つ目のjではENDにならない
+    // が、慣性スクロールが同じくらいの位置に到達するとEND"): 目標値を
+    // `before+direction`(1行分)にしていたのは、Command::ScrollLineDown
+    // 自身の同種の退行(コミットe341708)と全く同じ誤りだった――
+    // FileMode::ensureLoadedThrough()自身の早期リターン(`if
+    // (targetLineIndex < before) return false;`)により、既に読み込み
+    // 済みの行数(通常topIndex+画面の高さ程度)をこの小さな目標が
+    // ほぼ常に下回ってしまい、実質何も読み込まないno-opになっていた。
+    // Command::ScrollLineDown/PageDown自身が使うのと同じ、画面2枚分
+    // という大きな目標値に統一する――ensureLoadedThrough()自身の
+    // ペーシング(bypassPacingを渡さない限り常に「現在+1」へ切り詰め
+    // られる)がどのみち実際の読み込み量を1行に絞るので、大きな目標値
+    // を渡すこと自体に副作用は無い。
+    app.preloadPagerAhead(before + display.rows() * 2);
     view.setTopIndex(before + direction);
     if (view.topIndex() == before) {  // hit a boundary
       clearHoverAndRedraw(view);
@@ -1162,9 +1174,13 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
       lastRow = mouse->row;
       if (rowDelta != 0) {
         moved = true;
-        // See runCoastLoop()'s identical preloadPagerAhead() call and
-        // Application::preloadPagerAhead()'s own declaration comment.
-        app.preloadPagerAhead(view.topIndex() - rowDelta);
+        // See runCoastLoop()自身の同種の訂正(直接のユーザー報告"2つ目
+        // のjではENDにならないが慣性スクロールが同じくらいの位置に
+        // 到達するとEND")、およびApplication::preloadPagerAhead()自身の
+        // 宣言コメント――ここも同じく画面2枚分の目標値に統一する
+        // (`-rowDelta`という1行程度の小さな目標だと、既に読み込み済み
+        // の行数をほぼ常に下回ってしまい実質no-opになる)。
+        app.preloadPagerAhead(view.topIndex() - rowDelta + display.rows() * 2);
         view.setTopIndex(view.topIndex() - rowDelta);  // natural scrolling: dragging down reveals earlier content
         app.suppressPagerRepoll(view.topIndex());
         view.setCursorIndex(view.topIndex());           // see runCoastLoop()'s clampViewport() note
@@ -2273,7 +2289,11 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // 全く同じ理屈: まだ新しい内容を読み込む機会が一度も無いまま、
           // その時点で「たまたま」読み込み済みだった行数だけを基準に
           // 「そもそもスクロール可能ですらない」と誤判定していた。
-          app.preloadPagerAhead(view.topIndex() + 1);
+          // 2026-09-06再訂正: 目標値自体も`+1`という小さな値のままだと、
+          // Command::ScrollLineDown自身の同種の退行(コミットe341708)と
+          // 全く同じ理由(既に読み込み済みの行数をほぼ常に下回り
+          // no-opになる)で効果が無かった――画面2枚分へ統一する。
+          app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
           int totalLines = static_cast<int>(view.lines().size());
           int contentRows = std::max(gui.rows() - 1, 0);
           if (totalLines > contentRows) {
@@ -2356,7 +2376,11 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // 経路だけはcanStepTopIndex()自身の「今読み込めている範囲」
         // という制約をそのまま「本当のストリームの終端」であるかの
         // ように扱ってしまっていた。
-        app.preloadPagerAhead(view.topIndex() + 1);
+        // 2026-09-06再訂正: 目標値自体も`+1`のままだと、Command::
+        // ScrollLineDown自身の同種の退行(コミットe341708)と全く同じ
+        // 理由(既に読み込み済みの行数をほぼ常に下回りno-opになる)で
+        // 効果が無かった――画面2枚分へ統一する。
+        app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
         if (!view.canStepTopIndex(-coastDirection)) {
           coastLevel = 0;
           coastDirection = 0;
