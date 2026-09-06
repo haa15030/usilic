@@ -1,5 +1,7 @@
 #include "man_mode.hpp"
 
+#include <cstdlib>
+
 #include "child_process.hpp"
 #include "pipe_buffer.hpp"
 
@@ -25,7 +27,32 @@ std::optional<std::vector<ContentView::Line>> ManMode::runAndWrap(const std::str
 
   std::vector<std::string> argv = command.argv;
   argv.push_back(name);
+
+  // 2026-09-06追加、直接のユーザー報告("MANも①③(`man ls|usilic -c`/
+  // SHELLプロンプトの`man ls^M`)と同じ症状"、実機PTYで実際に検証): この
+  // 呼び出しはChildProcess::run()経由で`man`の標準出力を「素の
+  // パイプ」で受け取る――manは自分の標準出力がttyかどうかをioctl
+  // (TIOCGWINSZ)で判定して整形幅を決めるため、パイプ相手には端末の
+  // 実際の幅を知りようがなく、常に80桁固定へフォールバックする(実際に
+  // `man ls | cat`を様々な端末幅のPTYで検証して確認済み――$COLUMNS
+  // 環境変数は一切見ておらず無視される)。その80桁固定の出力を、この
+  // すぐ下のPipeBuffer(`width_`、実際のビューの幅)がさらに二重に
+  // 折り返すことで、`[--color=`の途中で改行される等の不格好な見た目と、
+  // 総行数の異常な膨張の両方が同時に起きていた。`man`自身は$MANWIDTH
+  // 環境変数だけは明示的に尊重する(同じ検証で確認済み)ため、fork/exec
+  // する直前だけ一時的に設定し、直後に元の値へ戻す――これで`man`自身が
+  // 最初から実際の表示幅で整形するようになり、すぐ下のPipeBufferの
+  // 折り返しは事実上no-opになる(二重折り返しが起きなくなる)。
+  const char *previousManWidth = std::getenv("MANWIDTH");
+  std::optional<std::string> previousManWidthValue;
+  if (previousManWidth) previousManWidthValue = previousManWidth;
+  ::setenv("MANWIDTH", std::to_string(width_).c_str(), 1);
   ChildProcess::Result result = ChildProcess::run(argv);
+  if (previousManWidthValue) {
+    ::setenv("MANWIDTH", previousManWidthValue->c_str(), 1);
+  } else {
+    ::unsetenv("MANWIDTH");
+  }
   if (!result.ok) return std::nullopt;
 
   PipeBuffer pipe(encoding_, width_, 16L * 1024 * 1024);

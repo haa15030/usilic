@@ -191,6 +191,16 @@ bool Shell::start() {
   int master = openPty(slavePath);
   if (master < 0) return false;
 
+  // このptyの本物のウィンドウサイズ(bash/`man`がioctl(TIOCGWINSZ)で
+  // 読み取るもの)――fork()の「前」に読んでおく: display_自身のrows()/
+  // columns()はApplicationの生きた現在値を常に指す参照だが、fork()の
+  // 「後」の子プロセス側で読むと(親と子は別アドレス空間の別プロセス
+  // なので)意味を持たない。実際に適用される場所については、すぐ下の
+  // fork()分岐のTIOCSCTTY直後のコメント、およびwaitForHandshake()
+  // 呼び出し直後のコメント参照。
+  int realRows = display_.rows();
+  int realColumns = display_.columns();
+
   pid_t pid = fork();
   if (pid < 0) {
     close(master);
@@ -218,6 +228,53 @@ bool Shell::start() {
     dup2(slaveFd, 2);
     close(slaveFd);
     resetSignalsToDefault();
+    // 2026-09-06追加、直接のユーザー報告("SHELLプロンプトで`man ls^M`
+    // が80桁固定で整形され、64桁の実端末で二重に折り返されて総行数が
+    // 異常に膨らむ"、`stty size`で直接確認: シェルのpty自体が「0 0」を
+    // 報告していた)――このptyの、カーネルが管理する実際のウィンドウ
+    // サイズは、生成された時点では一切設定されておらず、onResize()
+    // (Application自身の本物のリサイズ時にだけ呼ばれる)が「後で」
+    // 呼ばれるまで未設定(0行0列)のままだった。`man`はこれを検出すると
+    // 独自の80桁固定フォールバックへ倒れ、実端末が64桁でもこの移植
+    // 自身のPipeBuffer(正しく実際の64桁で折り返す)がそれをさらに二重に
+    // 折り返すことで、途中の"["等を巻き込んだ不格好な改行と総行数の
+    // 異常な膨張の両方が同時に説明できる。
+    // TIOCSWINSZは(実機で直接確認済み)マスター側のfdでは効かない
+    // (ENOTTY、スレーブがまだ一度も開かれていないため)――スレーブ側の
+    // fd(dup2後はfd 0で代用できる)でのみ有効。
+    // 2026-09-06さらに訂正(2回目、実際のdoctest回帰で発覚、bash限定):
+    // isBash_の間は、本物の実際のサイズ(realRows/realColumns)を渡さず
+    // すぐ下の$COLUMNS=1024と全く同じ理屈の広い仮の値のままにする
+    // ――bash自身のreadlineは、カーネルの本物のウィンドウ幅を知って
+    // いると、これから送信するセットアップコマンド自身の入力エコー
+    // (buildSetupCommand()自身の長い1行、下のwaitForHandshake()呼び
+    // 出しのコメント参照: ECHOを切ってもreadline自身の対話的な再描画
+    // エコーまでは止められない)をその実際の幅で折り返してしまい、
+    // 折り返しの位置がたまたまプロンプトマーク文字列の途中に落ちると、
+    // 番兵/マーク検出そのものが文字化けして永久にタイムアウトする
+    // (実際にdoctestで再現・確認済み: `<mark>`が`<mar k>`のように
+    // 途中に空白が挟まって壊れていた)。本物のサイズをwaitForHandshake()
+    // 成功「直後」に送る対処も試したが、既に対話状態にあるbash
+    // セッションへ生きたTIOCSWINSZ(SIGWINCH)を送ると、実機のdoctest
+    // 回帰で(理由は特定できていないが再現性高く)Shell::terminate()
+    // 自身のSIGHUPへの応答が遅くなる副作用が観測されたため、その経路は
+    // 採用しなかった――isBash_の間は、本物のリサイズ(Application自身の
+    // onResize())が実際に起きるまで、既存通りこの仮の広い値のまま
+    // (悪化はしない、この修正が入る前と同じ状態)にとどめる。zsh(この
+    // プロジェクトの実運用でのデフォルトシェル、実機PTYで検証した
+    // 限りこの折り返し文字化けは再現しなかった)を含むisBash_でない
+    // シェルについてだけ、最初から本物のサイズをそのまま使う。
+    {
+      struct winsize ws {};
+      if (isBash_) {
+        ws.ws_row = 1024;
+        ws.ws_col = 1024;
+      } else {
+        ws.ws_row = static_cast<unsigned short>(realRows);
+        ws.ws_col = static_cast<unsigned short>(realColumns);
+      }
+      if (ws.ws_row > 0 && ws.ws_col > 0) ioctl(0, TIOCSWINSZ, &ws);
+    }
     if (isBash_) {
       // Shellが実際の端末幅を報告する機会を持つ前に、bash自身の
       // 「COLUMNSバイト分のパディングで消去して再描画する」という
