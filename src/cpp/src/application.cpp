@@ -3109,9 +3109,28 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     shell_.commandLine().redraw();
     return true;
   }
-  if (byte == 0x04) {  // ^D: 前方削除
-    shell_.commandLine().deleteForward();
-    shell_.commandLine().redraw();
+  if (byte == 0x04) {  // ^D: 前方削除、ただしフォアグラウンドジョブ実行中はEOFとして子へ転送
+    // 2026-09-06追加、実際のユーザー報告("cat^M^Dで終われない
+    // (正しい挙動はcat直下の行にプロンプトが戻る)"): shell_.busy()
+    // (Shell::foregroundJobRunning()、直前のコミット7b87695/0471b05
+    // 参照)がtrueの間、commandLine_は常に空(submitLine()自身の
+    // setText("")参照)なので「前方削除」に意味は無く、それでいて
+    // ^Dをローカルの編集キーとして飲み込んでしまうと、`cat`のような
+    // 素のフォアグラウンドコマンドへEOFが一切届かず、入力待ちのまま
+    // 固まって見える。legacy自身のshell.c(do_shell()のK_dケース、
+    // K_c(^C)/K_z(^Z)/バックスペース/K_m(Enter)と同じ「break」群)も、
+    // ^Dを生のバイトとしてそのまま子のptyへfputc()しており、
+    // ローカルな行編集としては一切扱っていない――^Cが既にsendControl
+    // Byte()経由でこれと同じ扱いを受けているのと同じ理屈で、busy()の
+    // 間はこちらも同じ経路へ回す。busy()でない間(普通にコマンドを
+    // 組み立てている間)は、2026-08-17に追加された既存の前方削除の
+    // 挙動をそのまま維持する。
+    if (shell_.busy()) {
+      shell_.sendControlByte(static_cast<unsigned char>(byte));
+    } else {
+      shell_.commandLine().deleteForward();
+      shell_.commandLine().redraw();
+    }
     return true;
   }
   // ^U/^K/^Y(2026-08-17修正): すぐ上の^A/^E/^B/^F/^Dとまさに同じ
