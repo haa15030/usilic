@@ -2266,6 +2266,14 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // effect fired on every drag instead of only at a genuine
           // edge. Matches jumpToScrollbarY()'s own identical
           // scrollableLines<=0 guard just above.
+          // 2026-09-06追加、直接のユーザー報告("2つ目のjではENDになら
+          // ないが、慣性スクロールが同じくらいの位置に到達するとEND")
+          // ――すぐ下のtotalLines>contentRowsチェックより「前」に先読み
+          // しておく。runCoastLoop()自身のcanStepTopIndex()チェックと
+          // 全く同じ理屈: まだ新しい内容を読み込む機会が一度も無いまま、
+          // その時点で「たまたま」読み込み済みだった行数だけを基準に
+          // 「そもそもスクロール可能ですらない」と誤判定していた。
+          app.preloadPagerAhead(view.topIndex() + 1);
           int totalLines = static_cast<int>(view.lines().size());
           int contentRows = std::max(gui.rows() - 1, 0);
           if (totalLines > contentRows) {
@@ -2274,22 +2282,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             while (!recentMotion.empty() &&
                    recentMotion.front().first < std::chrono::steady_clock::now() - kReleaseWindow)
               recentMotion.pop_front();
-            // See Application::preloadPagerAhead()'s own declaration
-            // comment (2026-09-06, direct user report re: -g mode
-            // scrollbar/modeline flicker) -- this GUI drag path moves
-            // topIndex_ directly via commitRowCrossings(), bypassing
-            // handleCommand()'s own fix entirely.
-            // 2026-09-06訂正、直接のユーザー報告("最初の１行スクロール
-            // で...①→②の間に総行数が25→50、つまみ長が半分になる")
-            // ――ここは`view.topIndex()+1`(runCoastLoop()自身の
-            // preloadPagerAhead()呼び出しと同じ、jキー相当の1行分)に
-            // すべきところを、誤ってPageDown用のbypassPacing相当の
-            // 大きな目標値(画面2枚分)のまま使っていた。ensureLoadedThrough()
-            // 自身のペーシングはbypassPacingを渡さない限り常に「現在+1」
-            // へ切り詰められるはずだが、この大きな目標値自体が意図を
-            // 誤って伝えており、実際に総行数が丸ごと倍増する形で観測
-            // された――より小さく正確な目標値に統一する。
-            app.preloadPagerAhead(view.topIndex() + 1);
             commitRowCrossings(view, cellHeight, pixelOffset);
             app.suppressPagerRepoll(view.topIndex());
           }
@@ -2352,6 +2344,19 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // itself. Passing coastDirection unflipped checked room in the
         // opposite direction from the one about to be taken, which is
         // almost always available, so the guard was a near no-op.
+        // 2026-09-06追加、直接のユーザー報告("2つ目のjではENDになら
+        // ないが、慣性スクロールが同じくらいの位置に到達するとEND")
+        // ――すぐ下のcanStepTopIndex()チェックより「前」に先読みして
+        // おく。以前はcanStepTopIndex()を先にチェックしていたため、
+        // まだ新しい内容を読み込む機会が一度も無いまま、その時点で
+        // 「たまたま」読み込み済みだった行数だけを基準に「もう進めない
+        // (本当の境界)」と誤判定していた――keyboard駆動のjキー
+        // (Command::ScrollLineDown)は先読みしてから実際の移動を試みる
+        // ため本当の境界と区別できていたのに対し、この慣性スクロール
+        // 経路だけはcanStepTopIndex()自身の「今読み込めている範囲」
+        // という制約をそのまま「本当のストリームの終端」であるかの
+        // ように扱ってしまっていた。
+        app.preloadPagerAhead(view.topIndex() + 1);
         if (!view.canStepTopIndex(-coastDirection)) {
           coastLevel = 0;
           coastDirection = 0;
@@ -2360,11 +2365,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           break;
         }
         pixelOffset += coastDirection;
-        // See the drag-path call to commitRowCrossings() above
-        // (2026-09-06訂正済み、直接のユーザー報告参照)、および
-        // Application::preloadPagerAhead()自身の宣言コメント――ここも
-        // 同じく`+1`(1行分)に統一する。
-        app.preloadPagerAhead(view.topIndex() + 1);
         bool crossedWithoutHittingBoundary = commitRowCrossings(view, cellHeight, pixelOffset);
         app.suppressPagerRepoll(view.topIndex());
         if (!crossedWithoutHittingBoundary) {

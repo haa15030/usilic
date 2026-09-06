@@ -477,10 +477,15 @@ bool FileMode::readMoreIntoPipe(int targetLineCount) {
       continue;  // ループ条件(streamPipe_->lines().size())を再評価する
     }
     int remaining = targetLineCount - static_cast<int>(streamPipe_->lines().size());
-    // 2026-09-06訂正: 「あと1行」の間もチャンクサイズ自体は256バイト
-    // (下と同じ)のまま――読み過ぎた分はpendingReadAhead_が安全に
-    // 吸収するので、以前のように1バイトへ切り詰める必要が無くなった。
-    std::size_t chunkSize = (remaining <= 1) ? sizeof(buf) : std::min<std::size_t>(256, static_cast<std::size_t>(remaining) * 2);
+    // 2026-09-06再訂正、直接のユーザー報告("さっきのちらつきの件、
+    // １バイト読みオーバーヘッドが原因じゃなかったんで試しに１バイト
+    // 読みに戻してみてほしい")――上のコメント(「あと1行の間もチャンク
+    // サイズをsizeof(buf)へ広げてよい」という判断)が誤りだったと
+    // ユーザー自身の実機検証で判明した。原因の切り分けのため、実験的に
+    // 元の1バイト単位へ戻す――pendingReadAhead_自身の仕組み(すぐ上の
+    // ループ先頭)は無害なまま残しておく(chunkSize=1では改行を跨いで
+    // 読み過ぎることが無いので、単に一度もデータを溜めないだけになる)。
+    std::size_t chunkSize = (remaining <= 1) ? 1 : std::min<std::size_t>(256, static_cast<std::size_t>(remaining) * 2);
     ssize_t n = ::read(streamFd_, buf, chunkSize);
     if (n < 0) {
       if (errno == EINTR) continue;
