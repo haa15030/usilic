@@ -133,6 +133,56 @@ TEST_CASE("busy(): true while a plain (non-PROGRAM-table) foreground command lik
   shell.terminate();
 }
 
+// 2026-09-06追加、直接のユーザー報告("`^[scat^M`の挙動が新旧で
+// 同じかどうかに尽きる"、実機PTYの生バイト列を1バイト単位で
+// 突き合わせて発覚): busy()自身が正しくtrueを返すようになった後も、
+// submitLine()自身は書き込み直後に無条件でredrawPromptRow()を呼んで
+// いたため、まだ本物のプロンプトが戻っていないのに太字の「準備完了」
+// プロンプト接頭辞("usilic-1.5b:...")を即座に描いてしまっていた
+// (legacy自身は本物のプロンプトが戻るまでその行を完全に空欄のまま
+// にする)。redrawPromptRow()自身がawaitingRealPrompt_を見て自制する
+// ようになったので、ここではその可視の結果(commandLineRow()自身の
+// 行に太字プロンプトが出ていないこと/出ていること)を、本物のbashで
+// 確認する。
+TEST_CASE("submitLine(): does NOT show the bold \"ready\" prompt prefix on the command-line row right after "
+          "sending a plain foreground command, and only shows it again once the real shell prompt returns") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.argv = {"bash", "--norc", "--noprofile"};
+  options.promptMark = "<usilic-test-mark-prompt>";
+  options.programName = "usilictest";
+  Shell shell(d, options);
+
+  if (!shell.start()) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(shell, [&] { return !shell.currentDirectory().empty(); }));
+  int promptRow = 24 - 2;  // Shell::commandLineRow()自身の定数と同じ計算
+  REQUIRE(d.rowText(promptRow).find("usilic-1.5b") != std::string::npos);  // 最初のハンドシェイク後は本物のプロンプトが出ている
+
+  typeAscii(shell.commandLine(), "cat");
+  shell.submitLine();
+  CHECK(pumpUntil(shell, [&] { return shell.busy(); }));
+  // busy()である間は、その後何回反復してもプロンプト行に太字の
+  // 準備完了プレフィックスが再び現れないことを確認する(cat自身が
+  // 何かエコーする可能性のあるflushNewScrollbackLines()経由の
+  // 再描画も含めて、少し待ってから確認する)。
+  for (int i = 0; i < 10; i++) {
+    struct pollfd pfd {
+      shell.ptyFd(), POLLIN, 0
+    };
+    if (poll(&pfd, 1, 20) > 0) shell.onPtyReadable();
+  }
+  CHECK(d.rowText(promptRow).find("usilic-1.5b") == std::string::npos);
+
+  shell.sendControlByte(0x03);  // ^C -- catを終了させ、本物のプロンプトへ戻す
+  CHECK(pumpUntil(shell, [&] { return !shell.busy(); }));
+  CHECK(pumpUntil(shell, [&] { return d.rowText(promptRow).find("usilic-1.5b") != std::string::npos; }));
+
+  shell.terminate();
+}
+
 TEST_CASE("submitLine(): a plain command's output shows up in the real scrollback") {
   RecordingDisplay d(24, 80);
   ShellOptions options;

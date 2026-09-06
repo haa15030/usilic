@@ -425,6 +425,12 @@ class Shell {
   bool sawBareCr_ = false;   // appendBodyByte()自身のCR対CRLFの先読みフラグ
   ContentView scrollback_;
   bool historyBrowsing_ = false;  // historyBrowsing()自身の宣言コメント参照
+  // submitLine()自身の2026-09-06追加分のコメント参照――平文の
+  // シェルコマンド(またはEnterだけの空行)を書き込んだ直後、本物の
+  // プロンプトがまだ戻ってきたと確認できていない間はtrue。
+  // handlePromptDetected()がマーカーを実際に検出した時にだけfalseへ
+  // 戻る。
+  bool awaitingRealPrompt_ = false;
   LineEditor commandLine_;
   std::size_t linesConsumed_ = 0;  // pipeBuffer_.lines()のうち既にscrollback_にある数
   // submitToPty()自身のsubmitLine()がちょうど書き込んだコマンド

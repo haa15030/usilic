@@ -614,6 +614,11 @@ void Shell::flushNewScrollbackLines() {
   // 元が正しい瞬間にプロンプトを再描画することに頼るのではなく、
   // 自己完結させたままにする。
   updateCommandLineField();
+  // 2026-09-06追加: redrawPromptRow()自身が今やawaitingRealPrompt_
+  // (自身の宣言コメント参照)を見て太字のプロンプト接頭辞自体の
+  // 描画を自制するので、ここは以前通り無条件に呼んでよい――`cat`が
+  // タイプした内容をエコーする等でこの関数が何度呼ばれても、本物の
+  // プロンプトが戻ってくるまでは行が空欄のままであり続ける。
   redrawPromptRow();
 }
 
@@ -695,12 +700,18 @@ void Shell::resetSessionState() {
   currentDirectory_.clear();
   scrollback_.setLines({});
   commandLine_.setText("");
+  awaitingRealPrompt_ = false;  // 自身の宣言コメント参照、新しいセッションは常に真っ新から始まる
 }
 
 int Shell::promptGeneration() const { return promptGeneration_; }
 
 void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
   promptGeneration_++;
+  // awaitingRealPrompt_自身の宣言コメント参照――マーカーが実際に
+  // 現れた、すなわち本物のプロンプトが本当に戻ってきたことが今
+  // 確認できたので、submitLine()自身が空欄のままにしていた行を、
+  // このすぐ下のredrawPromptRow()が正しい内容で描き直す。
+  awaitingRealPrompt_ = false;
   // シェル自身の\w(bash)/%~(csh)展開に、そのリテラルなプロンプト
   // 文字('$'/'#'/'%')と1つの空白が続く――クリーンなディレクトリ
   // 文字列を取り戻すため、その末尾の2バイトを取り除く。これは、
@@ -795,7 +806,22 @@ void Shell::redrawPromptRow() {
   int promptRow = commandLineRow();
   display_.moveCursor(promptRow, 0);
   display_.clearToEndOfLine();
-  display_.write(promptDecorated_);
+  // 2026-09-06追加、直接のユーザー報告("`^[scat^M`の挙動が新旧で
+  // 同じかどうかに尽きる"、実機PTYの生バイト列の突き合わせで発覚)
+  // ――awaitingRealPrompt_自身の宣言コメント参照。以前はこの関数自体
+  // が常に無条件で太字の「準備完了」プロンプト接頭辞(promptDecorated_)
+  // を書いていたため、submitLine()側だけをガードしても、
+  // flushNewScrollbackLines()(catが何か新しい出力を1バイトでも生む
+  // たびに呼ばれる、他にもApplication側の多数の呼び出し箇所がある)
+  // 経由でこの関数が「別途」呼ばれた瞬間に、せっかく空欄のままにした
+  // 行へすぐさま同じ太字プロンプトが描き直されてしまっていた――
+  // 呼び出し箇所ごとに個別にガードするのではなく、この関数自体に
+  // 一元化する方が、将来の新しい呼び出し元を見落とすリスクが無い。
+  // commandLine_.redraw()自体は無条件のまま――commandLine_自身の
+  // テキストはこの時点で常に空(submitLine()自身のcommandLine_.
+  // setText("")参照)なので、何も見える形では描かれず、実質的に
+  // 行全体が空欄のまま、という見た目がそのまま保たれる。
+  if (!awaitingRealPrompt_) display_.write(promptDecorated_);
   display_.flush();
   commandLine_.redraw();
 }
@@ -1156,12 +1182,30 @@ void Shell::submitLine() {
       pendingEchoFilter_ = trimmed;  // 自身のコメント参照――flushNewScrollbackLines()によって消費される
       writeToPty(trimmed + "\n");
       if (historyRecorder_) historyRecorder_(trimmed);
+      awaitingRealPrompt_ = true;
     }
   } else {
     writeToPty("\n");
+    awaitingRealPrompt_ = true;
   }
 
   commandLine_.setText("");
+  // 2026-09-06追加、直接のユーザー報告("旧では`cat`が入力待ちになる
+  // ...`^[scat^M`の挙動が新旧で同じかどうかに尽きる")――実機PTYの
+  // 生バイト列を1バイト単位で突き合わせた結果判明した相違点。
+  // legacy自身は"cat"を送った直後、次の行を完全に空欄のまま(カーソル
+  // をそこへ置くだけ)にする――太字の"U v1.5b:..."という「準備完了」
+  // に見えるプロンプト行を、本物のプロンプトが戻ってくるまで「決して」
+  // 描かない。writeToPty()自体は非同期(書き込むだけで、シェルが実際に
+  // 読んで処理し終えるのを待たない)なので、`cat`のようにまだ何も
+  // 終わっていない相手に対して即座にredrawPromptRow()を呼ぶと、
+  // いかにも「もう次の入力を受け付けられます」という見た目の太字
+  // プロンプトを一瞬で描いてしまう。redrawPromptRow()自身の
+  // 2026-09-06追加分のコメント参照――awaitingRealPrompt_である間は
+  // その太字プロンプト接頭辞自体を描かないので、ここは常に無条件に
+  // 呼んでよい(handled、すなわちprogramLauncher_経由で既に同期的に
+  // 完了している場合はawaitingRealPrompt_がfalseのままなので、元通り
+  // 即座に本物の準備完了プロンプトが描かれる)。
   redrawPromptRow();
 }
 
