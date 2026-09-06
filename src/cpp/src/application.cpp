@@ -3353,6 +3353,26 @@ bool Application::handleCommand(Command command) {
       return true;
     case Command::PageDown:
       activeView().setHoverIndex(std::nullopt);
+      // 2026-09-06追加、直接のユーザー報告("^V/^F/spaceで（どれも
+      // ページ送りキーのはずなのに）行送りすると...摩訶不思議な症状"、
+      // 修正後も再度「spaceの不可解な挙動が直ってない」との指摘)――
+      // ContentView::pageDown()自身はheight_(画面の高さ)分だけtopIndex_を
+      // 進めようとするが、maxTop = lines_.size() - height_で無条件に
+      // クランプする。この移植の遅延読み込み型ページャ(FileMode::
+      // hasActiveStream())は、ensureLoadedThrough()自身のペーシング
+      // (pollPagerExitNotice()参照、通常のスクロールでは意図的に
+      // 「現在+1」しか読み進めない)により、lines_.size()が現在の
+      // ビューポートよりわずか数行しか多く育っていないことが多い――
+      // 結果、まだ画面1枚分の余裕が無いままpageDown()が呼ばれると、
+      // 本来の「1画面分」ではなく「たまたま読み込み済みだった数行」
+      // しか進めず、legacyの本物のページ送りとは似ても似つかない
+      // line-by-lineの見た目になっていた(jキーが意図的にcurrent+1
+      // でしか伸びないのと違い、PageDown/^V/^F/spaceは「今すぐ1画面
+      // 分」という利用者の明確な意図そのものなので、GoToBottomの
+      // sentinel同様ここではペーシングを迂回してよい)。
+      if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
+        ensurePagerStreamLoaded(activeView().topIndex() + display_.rows() * 2, /*bypassPacing=*/true);
+      }
       activeView().pageDown();
       if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();

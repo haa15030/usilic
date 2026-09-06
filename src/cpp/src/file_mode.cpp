@@ -394,6 +394,7 @@ void FileMode::closeStream() {
   streamOwnsFd_ = false;
   streamAtEof_ = false;
   streamPipe_.reset();
+  pendingReadAhead_.clear();
 }
 
 bool FileMode::readMoreIntoPipe(int targetLineCount) {
@@ -451,10 +452,35 @@ bool FileMode::readMoreIntoPipe(int targetLineCount) {
   // 小さくなり、最終的な超過を高々1行程度に抑える――GoToBottom自身の
   // sentinel値のような巨大な差分に対しては引き続き256バイトの一括
   // 読み込みのまま、効率を保つ。
+  // 2026-09-06追加、直接のユーザー報告("特に-g起動ではENDページになる
+  // までガタガタなスクロールで滑らかさがない...１行単位の読み込みに
+  // 出来ない？"): 上の「あと1行の間は1バイト単位」という精度は
+  // pendingReadAhead_自身の宣言コメントの通り引き続き必要だが、それを
+  // 1バイトごとのread()システムコールの連打で実現する必要は無い――
+  // 1回のread()でまとめて読み、その中の「最初の改行の直後」までだけを
+  // streamPipe_へ供給し、それを超えて読めてしまった分は
+  // pendingReadAhead_へ一時的に留め置いて次回の呼び出しで真っ先に消費
+  // する。これにより、想定される典型的な行の長さの範囲では、1行につき
+  // 高々1回のread()で済むようになる(以前は行の長さと同じ回数の1バイト
+  // read()が必要だった)。
   char buf[256];
   while (static_cast<int>(streamPipe_->lines().size()) < targetLineCount) {
+    if (!pendingReadAhead_.empty()) {
+      std::size_t nl = pendingReadAhead_.find('\n');
+      if (nl == std::string::npos) {
+        streamPipe_->feed(pendingReadAhead_);
+        pendingReadAhead_.clear();
+        continue;  // まだ改行を含んでいなかった――行数はまだ増えていないので読み続ける
+      }
+      streamPipe_->feed(pendingReadAhead_.substr(0, nl + 1));
+      pendingReadAhead_.erase(0, nl + 1);
+      continue;  // ループ条件(streamPipe_->lines().size())を再評価する
+    }
     int remaining = targetLineCount - static_cast<int>(streamPipe_->lines().size());
-    std::size_t chunkSize = (remaining <= 1) ? 1 : std::min<std::size_t>(256, static_cast<std::size_t>(remaining) * 2);
+    // 2026-09-06訂正: 「あと1行」の間もチャンクサイズ自体は256バイト
+    // (下と同じ)のまま――読み過ぎた分はpendingReadAhead_が安全に
+    // 吸収するので、以前のように1バイトへ切り詰める必要が無くなった。
+    std::size_t chunkSize = (remaining <= 1) ? sizeof(buf) : std::min<std::size_t>(256, static_cast<std::size_t>(remaining) * 2);
     ssize_t n = ::read(streamFd_, buf, chunkSize);
     if (n < 0) {
       if (errno == EINTR) continue;
@@ -467,8 +493,21 @@ bool FileMode::readMoreIntoPipe(int targetLineCount) {
       streamFd_ = -1;
       return false;  // 本物のEOF――「一瞬の停止」ではない
     }
-    streamPipe_->feed(std::string(buf, static_cast<std::size_t>(n)));
-    streamBytesRead_ += static_cast<std::size_t>(n);  // 自身の宣言コメント参照: 確定した「実際に読み込まれたバイト数」の仕様
+    streamBytesRead_ += static_cast<std::size_t>(n);  // 自身の宣言コメント参照: 確定した「実際に読み込まれたバイト数」の仕様(streamFd_から引き出せた量、pendingReadAhead_への一時的な留め置きの有無に関わらず)
+    if (remaining <= 1) {
+      // ペーシングが効いている間だけ、最初の改行の直後までしか
+      // streamPipe_へ渡さない――それを超える分はpendingReadAhead_へ。
+      std::string chunk(buf, static_cast<std::size_t>(n));
+      std::size_t nl = chunk.find('\n');
+      if (nl == std::string::npos) {
+        streamPipe_->feed(chunk);
+      } else {
+        streamPipe_->feed(chunk.substr(0, nl + 1));
+        pendingReadAhead_ = chunk.substr(nl + 1);
+      }
+    } else {
+      streamPipe_->feed(std::string(buf, static_cast<std::size_t>(n)));
+    }
   }
   return false;  // ループ条件を満たした――頼んだ行数に到達済み、停止ではない
 }
