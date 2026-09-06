@@ -3344,50 +3344,18 @@ bool Application::handleCommand(Command command) {
       activeView().setHoverIndex(std::nullopt);
       // 2026-09-06追加、直接のユーザー報告("％の行数が97と98を行き来
       // している...画面更新の際、行数を2回表示している箇所ってない？")
-      // ――まさにその通りだった。main.cpp自身のメインループは、毎回の
-      // 反復の「先頭」でpollPagerExitNotice()を呼ぶ(次のキー入力を
-      // poll()で待つ「前」)ため、実際の順序は: (1)このcase自身の
-      // scrollLineDown()が、まだ何も追加読み込みしていない古い
-      // lines_.size()のままredraw()する(モードラインもこの時の値で
-      // 一度描かれる)、(2)その直後、同じキー入力に対する反応として
-      // 次のループの反復が始まった瞬間にpollPagerExitNotice()が
-      // topIndex_の変化を検出し、実際に「あと1行」を読み込んで
-      // もう一度redraw()する(モードラインが更新された値で「再度」
-      // 描き直される)――ユーザーが指摘した通り、1回のキー入力につき
-      // モードラインが実質2回描かれており、その2回の間で行数/％が
-      // 変わるため、素早い連打時にちらついて見えていた。
-      // scrollLineDown()自身がtopIndex_を動かす「前」に、その移動が
-      // 実際に必要とする分だけ(bypassPacingは使わない――jキー自身の
-      // 「現在+1」というペーシングの意図はそのまま尊重する)先読みして
-      // おくことで、この後のpollPagerExitNotice()が「もう何もする
-      // ことがない」と判定し、追加の再描画自体が発生しなくなる。
-      // ensurePagerStreamLoaded()(Applicationのラッパー)ではなく
-      // fileMode_.ensureLoadedThrough()を直接呼ぶ――ラッパー自身は
-      // 新しい内容を読み込めるとその場でredraw()してしまい、まだ
-      // topIndex_が「古い」位置のまま(すぐ下のscrollLineDown()が
-      // 動かす「前」)一度描き直されてしまう(実機PTYで確認: 総行数は
-      // 新しい値、カーソル位置は古い値、という中途半端な1回が挟まる)
-      // ――ここでの読み込み自体はscrollLineDown()自身の内部クランプが
-      // 実際に移動できるようにするためだけのものであり、可視の再描画は
-      // すぐ下のscrollLineDown()自身の1回「だけ」で十分。
-      if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
-        fileMode_.ensureLoadedThrough(activeView().topIndex() + 1);
-      }
+      // ――preloadPagerAhead()/suppressPagerRepoll()自身の宣言コメント
+      // 参照。目標値はpollPagerExitNotice()自身の本来のtopIndex+rows*2
+      // と同じ大きさにする――ensureLoadedThrough()自身のペーシングで
+      // 内部的に「現在+1」へ切り詰められるが、目標値そのものを小さく
+      // (例えば+1に)しすぎると、既に読み込み済みの行数をその小さな
+      // 目標が下回ってしまい、早期リターンで実質no-opになる(直接の
+      // ユーザー報告"spaceならラストページまで到達できるがjだと2回の
+      // 行送りでENDになる"で発覚した実際の退行)。
+      preloadPagerAhead(activeView().topIndex() + display_.rows() * 2);
       activeView().scrollLineDown();
       activeView().syncVisibleCursor();
-      // 2026-09-06追加(直前のensurePagerStreamLoaded()呼び出し自身の
-      // コメント参照)――ここで既に必要な分を読み込み終えているので、
-      // pollPagerExitNotice()自身のlastPagerPollTopIndex_(「前回どこを
-      // 試したか」の記憶)をこの新しいtopIndex_へ先回りして合わせて
-      // おく。そうしないと、次のメインループの反復でpollPagerExitNotice()
-      // が「topIndex_が(前回記録した値から)動いた」とまだ判定し、
-      // 全く同じ内容をもう一度読み込もうとして(ensureLoadedThrough()
-      // 自身のペーシングは「現在+1」を常に試みるだけで「既に足りて
-      // いるか」を見ないため、本当にもう1行分余分に読み進めてしまう)、
-      // 3回目の再描画(かつ1回余分な読み込み)を引き起こしてしまう。
-      if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
-        lastPagerPollTopIndex_ = activeView().topIndex();
-      }
+      suppressPagerRepoll(activeView().topIndex());
       return true;
     case Command::PageUp:
       activeView().setHoverIndex(std::nullopt);
@@ -3414,27 +3382,13 @@ bool Application::handleCommand(Command command) {
       // でしか伸びないのと違い、PageDown/^V/^F/spaceは「今すぐ1画面
       // 分」という利用者の明確な意図そのものなので、GoToBottomの
       // sentinel同様ここではペーシングを迂回してよい)。
-      // 2026-09-06追記(Command::ScrollLineDown自身の同一の訂正参照)
-      // ――ensurePagerStreamLoaded()ではなくfileMode_.ensureLoadedThrough()
-      // を直接呼ぶ: 前者はその場でredraw()してしまい、topIndex_がまだ
-      // 「古い」位置のまま(すぐ下のpageDown()が動かす前)一度描き直され
-      // てしまう(実機PTYで確認: 総行数だけ新しい値、位置は古いまま、の
-      // 中途半端な1回)。可視の再描画はすぐ下のpageDown()自身の1回だけ
-      // で十分。
-      if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
-        fileMode_.ensureLoadedThrough(activeView().topIndex() + display_.rows() * 2, /*bypassPacing=*/true);
-      }
+      // 2026-09-06追記――preloadPagerAhead()/suppressPagerRepoll()自身の
+      // 宣言コメント参照(Command::ScrollLineDownと共通の仕組み)。
+      preloadPagerAhead(activeView().topIndex() + display_.rows() * 2, /*bypassPacing=*/true);
       activeView().pageDown();
       if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
-      // 2026-09-06追加――Command::ScrollLineDown自身の同一のコメント
-      // 参照: ここで既に画面2枚分を読み込み終えているので、
-      // pollPagerExitNotice()が新しいtopIndex_を「まだ見ていない
-      // 動き」だと誤認してもう一度(ペーシングされた)追加読み込み+
-      // 再描画をしないよう、その記憶を先回りして揃えておく。
-      if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
-        lastPagerPollTopIndex_ = activeView().topIndex();
-      }
+      suppressPagerRepoll(activeView().topIndex());
       return true;
     case Command::Enter:
       if (currentMode_ == ApplicationMode::Directory) return openSelectedEntry();
@@ -8882,6 +8836,31 @@ void Application::pollPagerExitNotice() {
       ensurePagerStreamLoaded(topIndex + display_.rows() * 2);
     }
   }
+}
+
+// Command::ScrollLineDown/PageDown自身の宣言コメント参照。この関数
+// 自身は「移動する前」に呼ぶ――FileMode::ensureLoadedThrough()を
+// 直接呼び、ensurePagerStreamLoaded()(Applicationのラッパー)が
+// 新しい内容を読み込めるとその場でredraw()してしまうのを避ける
+// (実機PTYで確認: そのままだと、まだtopIndex_が「古い」位置のまま
+// 一度描き直され、総行数だけ新しい値・カーソル位置は古いまま、という
+// 中途半端な1回が挟まっていた)――可視の再描画は、呼び出し元が
+// この直後に行う実際の移動(scrollLineDown()/pageDown()等)自身の
+// 1回「だけ」に委ねる。
+void Application::preloadPagerAhead(int prospectiveTopIndex, bool bypassPacing) {
+  if (currentMode_ != ApplicationMode::File || !fileMode_.hasActiveStream()) return;
+  fileMode_.ensureLoadedThrough(prospectiveTopIndex, bypassPacing);
+}
+
+// preloadPagerAhead()自身のコメント参照。この関数は「移動した後」に、
+// 実際に着地した新しいtopIndex_で呼ぶ――pollPagerExitNotice()自身の
+// lastPagerPollTopIndex_(「前回どこを試したか」の記憶)をここで
+// 先回りして合わせておくことで、次のメインループの反復でそれが
+// 「まだ見ていない動き」だと誤認し、同じ内容をもう一度(ペーシング
+// された「現在+1」で)読み込んで3回目の再描画を引き起こすことを防ぐ。
+void Application::suppressPagerRepoll(int actualNewTopIndex) {
+  if (currentMode_ != ApplicationMode::File || !fileMode_.hasActiveStream()) return;
+  lastPagerPollTopIndex_ = actualNewTopIndex;
 }
 
 void Application::drawPromptLabel(PromptKind kind, const std::string &positionText, const std::string &staticMessage) {

@@ -1023,11 +1023,22 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
     performScrollStepDelay(fm::scaledForRow(fm::kScrollSpeedLevels[level]));
 
     int before = view.topIndex();
+    // See Application::preloadPagerAhead()'s own declaration comment
+    // (2026-09-06, a direct user report about the modeline's line-count/
+    // percentage flickering between two values): this coast loop moves
+    // topIndex_ directly, bypassing handleCommand()'s own
+    // Command::ScrollLineDown/PageDown cases where that fix normally
+    // lives -- without this, a lazily-loaded pager stream would show
+    // the exact same "old redraw, then a second redraw once
+    // pollPagerExitNotice() catches up on the next main-loop tick"
+    // flicker while coasting.
+    app.preloadPagerAhead(before + direction);
     view.setTopIndex(before + direction);
     if (view.topIndex() == before) {  // hit a boundary
       clearHoverAndRedraw(view);
       return result;
     }
+    app.suppressPagerRepoll(view.topIndex());
     // redraw() calls clampViewport(), which enforces the normal
     // moveUp()/moveDown() invariant "topIndex_ never leads
     // cursorIndex_" -- since setTopIndex() deliberately does NOT move
@@ -1151,7 +1162,11 @@ TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &disp
       lastRow = mouse->row;
       if (rowDelta != 0) {
         moved = true;
+        // See runCoastLoop()'s identical preloadPagerAhead() call and
+        // Application::preloadPagerAhead()'s own declaration comment.
+        app.preloadPagerAhead(view.topIndex() - rowDelta);
         view.setTopIndex(view.topIndex() - rowDelta);  // natural scrolling: dragging down reveals earlier content
+        app.suppressPagerRepoll(view.topIndex());
         view.setCursorIndex(view.topIndex());           // see runCoastLoop()'s clampViewport() note
         auto now = std::chrono::steady_clock::now();
         recentMotion.push_back({now, rowDelta});
@@ -2259,7 +2274,14 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             while (!recentMotion.empty() &&
                    recentMotion.front().first < std::chrono::steady_clock::now() - kReleaseWindow)
               recentMotion.pop_front();
+            // See Application::preloadPagerAhead()'s own declaration
+            // comment (2026-09-06, direct user report re: -g mode
+            // scrollbar/modeline flicker) -- this GUI drag path moves
+            // topIndex_ directly via commitRowCrossings(), bypassing
+            // handleCommand()'s own fix entirely.
+            app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
             commitRowCrossings(view, cellHeight, pixelOffset);
+            app.suppressPagerRepoll(view.topIndex());
           }
           break;
         }
@@ -2328,7 +2350,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           break;
         }
         pixelOffset += coastDirection;
-        if (!commitRowCrossings(view, cellHeight, pixelOffset)) {
+        // See the drag-path call to commitRowCrossings() above, and
+        // Application::preloadPagerAhead()'s own declaration comment.
+        app.preloadPagerAhead(view.topIndex() + gui.rows() * 2);
+        bool crossedWithoutHittingBoundary = commitRowCrossings(view, cellHeight, pixelOffset);
+        app.suppressPagerRepoll(view.topIndex());
+        if (!crossedWithoutHittingBoundary) {
           // Hit a boundary -- stop rather than pin against the edge.
           // commitRowCrossings() itself left pixelOffset clamped to
           // +-(cellHeight-1) (its "pinned" value, meant for the

@@ -1432,6 +1432,22 @@ class Application {
   bool pollShellHandoff();
   // pollPagerExitNotice()自身の宣言コメント参照(2026-09-20追加)。
   void pollPagerExitNotice();
+  // 2026-09-06追加、直接のユーザー報告("％の行数が97と98を行き来...
+  // -g起動ではスクロールバーの（つまみ長を短くする）描き直しでも
+  // モードライン描画が起きるみたい")――Command::ScrollLineDown/
+  // PageDown自身のハンドラのコメント参照。main.cpp自身のGUIマウス
+  // ホイール/慣性スクロール/スクロールバードラッグ(ContentView::
+  // setTopIndex()/stepTopIndex()を直接操作するだけで、handleCommand()
+  // を一切経由しない、それ自身のコメント参照)や、CUIのShift+Up/Down
+  // コースト(runCoastLoop())も、キーボード駆動のScrollLineDown/
+  // PageDownと全く同じ「まだ読み込んでいないtopIndex_へ動いてから
+  // pollPagerExitNotice()の次回反復に読み込みを丸投げする」形になって
+  // おり、同じ二重描画が起きる――この2つの公開メソッドで、それらの
+  // 呼び出し元がキーボード側と同じパターン(移動の「前」にpreloadPagerAhead()、
+  // 移動の「後」にsuppressPagerRepoll())を再利用できるようにする。
+  // File以外のモード/生きたストリームが無い間はどちらも無害な無視。
+  void preloadPagerAhead(int prospectiveTopIndex, bool bypassPacing = false);
+  void suppressPagerRepoll(int actualNewTopIndex);
 
   // 終了が確認された(StartExitのプロンプトが先頭'y'で送信された)
   // 時点でtrue――将来の本物の実行ループへの、feedByte()の呼び出しを
