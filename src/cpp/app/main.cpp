@@ -1137,7 +1137,45 @@ TerminalCoastResult runCoastLoop(fm::Application &app, fm::Display &display, fm:
 // mode's click-an-already-selected-row-opens-it, via
 // Application::handleMouseClick().
 TerminalCoastResult runTerminalMouseDrag(fm::Application &app, fm::Display &display, fm::KeyInput &keyInput,
-                                          int startRow) {
+                                          int startRow, int startColumn) {
+  // 2026-09-08追加、直接のユーザー要望(syncMouseTracking()自身の同日
+  // コメント参照): COPYモード中の左ドラッグは、この関数の残り(コースト
+  // /スクロール物理、ホバー先読み等、すべてリスト系モード専用)を
+  // 一切経由させず、GraphicalDisplay側のDragEventハンドリング
+  // (runGuiPhase()自身の"COPYモードのスナップショットは元々静的な
+  // 内容で...同じ左ドラッグのジェスチャーを、この経路の「前」で完全に
+  // 横取りし、Application::copyMouseDown()/copyMouseDrag()/
+  // copyMouseUp()へ委譲する"というコメント)と全く同じ理屈で、ここでも
+  // 最初に横取りする。
+  if (app.currentMode() == fm::ApplicationMode::Copy) {
+    app.copyMouseDown(startRow, startColumn);
+    for (;;) {
+      int byte = keyInput.readByte();
+      if (!byte) continue;  // waiting for the next mouse event -- VTIME polling handles the actual wait
+      if (byte != 0x1b) {
+        // 通常のrunTerminalMouseDrag()本体と同じ防御的な扱い――
+        // ジェスチャーの途中に届いた普通のキーは、そのままリクエストせず
+        // 呼び出し元へ返す。
+        TerminalCoastResult result;
+        result.hadLeftoverByte = true;
+        result.leftoverByte = byte;
+        return result;
+      }
+      auto mouse = peekMouseSgr(keyInput);
+      if (!mouse) {
+        keyInput.playRawMacro("\x1b");
+        return TerminalCoastResult{};
+      }
+      if (mouse->motionOnly) {
+        app.copyMouseDrag(mouse->row, mouse->column);
+        continue;
+      }
+      if (mouse->pressed) continue;  // an extra press while already down -- ignore
+      app.copyMouseUp();
+      return TerminalCoastResult{};
+    }
+  }
+
   fm::ContentView &view = app.activeContentView();
   int lastRow = startRow;
   bool moved = false;
@@ -1319,7 +1357,24 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
   // Without `-c`, this is unchanged: real-terminal mouse tracking
   // stays on whenever NOT in Shell mode, same as before.
   auto syncMouseTracking = [&]() {
-    bool want = !forceCui && app.currentMode() != fm::ApplicationMode::Shell;
+    // 2026-09-08追加、直接のユーザー要望("-cのCOPY: ^-をトグルに
+    // しなくなったのは...それらは本来-gでの話であって-cはGUIじゃ
+    // ないのでマウスカーソルによる範囲指定は最初から守備範囲じゃ
+    // ない。だがその結果として離れ小島不能となるのは惜しいので、
+    // いっそ(画面ドラッグを含む)慣性スクロール以外のマウスオペレー
+    // ションは-cでも可能、ってのは？"): forceCui(明示的な`-c`)は元々
+    // 「本物の、graphics非対応な端末での動作検証」という目的のため
+    // 全モードでマウス追跡を無条件に無効化していた(runTerminalPhase()
+    // 自身の宣言コメント参照)が、COPYモード限定でこれを覆す――COPY
+    // モードは自身のスナップショットが静的であることに変わりが無く
+    // (runTerminalMouseDrag()自身の同日追加コメント参照)、慣性
+    // スクロール/コーストの物理を一切必要としないため、「本物の
+    // graphics非対応端末での検証」という当初の懸念にも触れない。
+    // マウス無反応な環境(本当に非対応な端末)では、単にこの
+    // エスケープシーケンスが無視され、以前と同じ「マウスでは何も
+    // 起きない」に留まるだけで安全側に倒れる。
+    bool want = (!forceCui || app.currentMode() == fm::ApplicationMode::Copy) &&
+                app.currentMode() != fm::ApplicationMode::Shell;
     if (want != mouseTrackingOn) {
       setTerminalMouseTracking(display, want);
       mouseTrackingOn = want;
@@ -1412,7 +1467,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
           // Left-button down: the mouse-driven equivalent of
           // Shift+Up/Down -- see runTerminalMouseDrag()'s own comment
           // for why this isn't decided as click-vs-drag until release.
-          TerminalCoastResult coast = runTerminalMouseDrag(app, display, keyInput, mouse->row);
+          TerminalCoastResult coast = runTerminalMouseDrag(app, display, keyInput, mouse->row, mouse->column);
           if (coast.hadLeftoverByte) app.feedByte(coast.leftoverByte, std::nullopt);
         } else if (mouse->motionOnly && !app.redrawSensitivePromptOrRecallActive()) {
           // Plain hover (no button held), outside any active drag or
