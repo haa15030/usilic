@@ -11305,16 +11305,16 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): a REGULAR (non-rectangle) mark's ^[w st
   CHECK(app.currentMode() == ApplicationMode::Copy);  // unchanged: still in Copy
 }
 
-TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^[p confirms the mark, exits Copy, and pastes the confirmed "
-                           "selection into the ORIGIN's own suspended prompt at the cursor -- the "
-                           "round trip a prior manual ^G + ^O^Y sequence used to require (2026-09-07, "
-                           "a direct user request: \"^[pで他のモードへも渡せる\")") {
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^[p confirms the mark, exits Copy, and moves specifically "
+                           "into the PROGRAM prompt with the confirmed selection set as its text "
+                           "(2026-09-07, a direct user request: \"^@で範囲指定を開始したのち、停止"
+                           "位置で`^[p`が投入されたらその場で範囲指定終了（^[w相当）とみなして"
+                           "PROGRAMへ移行し、プロンプトにペーストして欲しい\" -- PROGRAM "
+                           "specifically, not whatever prompt happened to be suspended before "
+                           "entering Copy)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  REQUIRE(app.promptActive());
-  feedText("x");  // partial pattern typed before realizing a copy is needed
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);  // no prompt active before ^O^C
 
-  // ^O^C suspends the active FGREP prompt and enters Copy.
   REQUIRE(app.feedByte(0x0f, std::nullopt));
   REQUIRE(app.feedByte(0x03, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Copy);
@@ -11324,13 +11324,10 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^[p confirms the mark, exits Copy, and 
   for (int i = 0; i < 2; i++) app.feedByte(0x06, std::nullopt);  // extend over 2 columns
 
   REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
-  REQUIRE(app.feedByte('p', std::nullopt));   // p -- confirm, exit, paste into the resumed prompt
+  REQUIRE(app.feedByte('p', std::nullopt));   // p -- confirm, exit, go straight to PROGRAM
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  REQUIRE(app.promptActive());  // the suspended FGREP prompt resumed
-  // Resuming restores the cursor to where it was (end of "x", matching the
-  // existing ^O^C/^O^Y round-trip test's own "xhello" pattern) -- the
-  // pasted text lands there, after "x".
-  CHECK(app.promptText() == "x" + row0.substr(0, 2));
+  REQUIRE(app.promptActive());
+  CHECK(app.promptText() == row0.substr(0, 2));  // the confirmed selection, as the PROGRAM prompt's text
 }
 
 TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): GUI mouse drag (copyMouseDown()/copyMouseDrag()/copyMouseUp()) "
@@ -11363,7 +11360,13 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): GUI mouse drag (copyMouseDown()/copyMou
   CHECK(display.standoutAt(0, 0) == true);
   CHECK(display.standoutAt(0, 4) == true);
   CHECK(display.standoutAt(0, 5) == false);
-  app.copyMouseUp();  // release -- confirms the selection ("hello")
+  app.copyMouseUp();  // release -- 2026-09-07訂正⑩: no longer auto-confirms
+  CHECK(app.currentMode() == ApplicationMode::Copy);  // still marking, highlight preserved
+  CHECK(display.standoutAt(0, 0) == true);
+  CHECK(display.standoutAt(0, 4) == true);
+  // An explicit ^[w is now required to confirm the drag-selected range.
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('w', std::nullopt));
   CHECK(app.handleCommand(Command::Back));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
@@ -11374,6 +11377,25 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): GUI mouse drag (copyMouseDown()/copyMou
   REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
   REQUIRE(app.feedByte(0x19, std::nullopt));  // ^O^Y
   CHECK(app.promptText() == "hello");
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): a mouse click does NOT cancel/downgrade an already-active "
+                           "mark (regular or rectangle) -- it only repositions the free end, since "
+                           "the mark may have been started by keyboard just before the click "
+                           "(2026-09-07, a direct user report ⑪: \"^X␣→矩形モード発動後は矩形で"
+                           "ハイライト表示[現状: クリックしたとたん矩形モード解除]\")") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);
+
+  // Keyboard starts a rectangle mark; a subsequent mouse click must NOT
+  // downgrade it back to a regular (linear) mark.
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(' ', std::nullopt));   // SPC
+  CHECK(display.rowText(23).find("Rectangle-Mark") != std::string::npos);
+  app.copyMouseDown(1, 2);  // a plain click, no drag
+  CHECK(display.rowText(23).find("Rectangle-Mark") != std::string::npos);  // still a rectangle mark
 }
 
 TEST_CASE_FIXTURE(Fixture, "^O^Y (PASTE) with no active prompt is a harmless no-op, not a crash") {

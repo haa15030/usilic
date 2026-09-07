@@ -429,6 +429,13 @@ void ContentView::syncVisibleCursor() {
 
 int ContentView::topIndex() const { return topIndex_; }
 
+// CopyMode::moveUp()/moveDown()自身のコメント参照(2026-09-07追加、
+// 直接のユーザー報告⑥: "コピーモード発動後の^N^Pでページ送りが
+// 起きた場合、通常の動作と違うので同じにして")――moveUp()/moveDown()
+// 自身のスムーズな1行ずつのスクロール式を、CopyModeのように独自に
+// cursorRow_/lines_を管理するクラスからも再現できるようにする。
+int ContentView::height() const { return height_; }
+
 void ContentView::setTopIndex(int index) {
   int maxTop = std::max(0, static_cast<int>(lines_.size()) - std::max(height_, 0));
   topIndex_ = std::clamp(index, 0, maxTop);

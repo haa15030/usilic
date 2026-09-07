@@ -7342,7 +7342,18 @@ bool Application::startCopy() {
     return {"COPY", name, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", /*trailing2=*/""};
   });
   copyEscapePending_ = false;
-  copyMode_.loadSnapshot(origin.lines(), origin.cursorIndex());
+  // 2026-09-07、直接のユーザー報告⑤("CLAUDE.md→^V（ページ送り）→
+  // ^O^C→コピーモード発動前と後とでブロックカーソル位置が違うため
+  // 画面が変化してしまいコピー開始位置を見失う"): 起点のtopIndex_を
+  // loadSnapshot()自身の`initialTopIndex`引数(その宣言コメント参照)
+  // として渡す――起点のtopIndex_とcursorIndex_の関係がたまたまズレて
+  // いた場合(例: PageDown直後は、cursorIndex_がtopIndex_からheight_
+  // だけ進むのに対しtopIndex_自体はmaxTopで頭打ちになり得るため、
+  // 両者の差がheight_ちょうどではなくなることがある)、以前は
+  // copyView_自身のclampViewport()が起点とは全く別のtopIndex_を独自に
+  // 導出してしまい(cursorIndex_-height_+1、境界に強制的に寄せる式)、
+  // COPY突入直後に画面が目に見えて動いてしまっていた。
+  copyMode_.loadSnapshot(origin.lines(), origin.cursorIndex(), origin.topIndex());
   return true;
 }
 
@@ -7370,29 +7381,66 @@ bool Application::returnFromCopy() {
 
 // copyMouseDown()/copyMouseDrag()/copyMouseUp()自身の宣言コメント
 // (application.hpp)参照。
+// clampRowToCopySnapshot()自身の宣言コメント参照(2026-09-07追加、
+// 直接のユーザー報告⑧: "^O^C後はマウスカーソル移動範囲をモード
+// ラインよりも上かつ指定開始位置が自在[現状: ドラッグ後が自在]")。
+namespace {
+int clampRowToCopySnapshot(const ContentView &copyView, int row) {
+  int lineIndex = copyView.lineIndexAtRow(row);
+  if (lineIndex >= 0) return lineIndex;
+  // lineIndexAtRow()は、クリック位置がスナップショットの最後の行より
+  // 下の余白(短い内容の場合)に落ちると-1を返す――Directory等の
+  // 「実在するエントリを指す」クリックにとっては正しいno-opだが、
+  // COPYの自由な範囲選択にとっては「モードラインより上ならどこでも
+  // 開始位置になれる」べきで、最後の行にクランプするのが自然。
+  int count = static_cast<int>(copyView.lines().size());
+  return count > 0 ? count - 1 : -1;
+}
+}  // namespace
+
 void Application::copyMouseDown(int row, int column) {
   if (currentMode_ != ApplicationMode::Copy) return;
-  int lineIndex = copyView_.lineIndexAtRow(row);
-  if (lineIndex < 0) return;
+  int lineIndex = clampRowToCopySnapshot(copyView_, row);
+  if (lineIndex < 0) return;  // 空のスナップショット――他に手の打ちようが無い
   copyMode_.placeCursorAt(lineIndex, column);
-  copyMode_.startMark();
+  // 2026-09-07訂正、直接のユーザー報告⑪("^X␣→矩形モード発動後は
+  // 矩形でハイライト表示[現状: クリックしたとたん矩形モード解除]"):
+  // 以前はここで無条件にstartMark()(通常マーク)を呼んでいたが、
+  // CopyMode::startMark()自身の仕様(既にマーク中ならアンカーを
+  // 現在位置へ置き直す)により、^X SPCで矩形マークを開始した直後に
+  // マウスでクリックしただけで、矩形マークが問答無用で通常マークへ
+  // 格下げされてしまっていた――同じ理由で、通常マークがキーボードの
+  // ^@で既に始まっていた場合も、マウスの押下がそのアンカーを黙って
+  // 消して別の位置へ置き直してしまう(直接のユーザー報告⑨の症状と
+  // 一致)。マークが既に(通常/矩形いずれの形であれ)アクティブな間は
+  // 何もマーク状態を変えず、キャレットの再配置だけを行う――「一度
+  // 始まったマークは、それが実際にどうやって始まったか(キーボード/
+  // マウスいずれでも)に関わらず、以後のマウス操作では自由端を動かす
+  // だけ」という一貫した意味論にする。全くマークされていない状態
+  // からの押下だけが新規のマークを開始する。
+  if (!copyMode_.markActive()) copyMode_.startMark();
 }
 
 void Application::copyMouseDrag(int row, int column) {
   if (currentMode_ != ApplicationMode::Copy) return;
-  // markActive()の間はCopyMode::placeCursorAt()自身が`row`を無視する
-  // ので、マーク開始後にドラッグが一覧の外(モードライン等、
-  // lineIndexAtRow()が負を返す行)へはみ出しても安全――その場合
-  // だけ、まだマークが始まっていない(通常は起こらないはずだが念の
-  // ため)なら何もしない。
-  int lineIndex = copyView_.lineIndexAtRow(row);
-  if (!copyMode_.markActive() && lineIndex < 0) return;
+  int lineIndex = clampRowToCopySnapshot(copyView_, row);
+  if (lineIndex < 0) return;
   copyMode_.placeCursorAt(lineIndex, column);
 }
 
 void Application::copyMouseUp() {
+  // 2026-09-07訂正、直接のユーザー報告⑩("ドラッグ後、クリックを
+  // 解放してもハイライトは温存[現状: 消滅]"): 以前はここでconfirmMark()
+  // を呼び、マウスの解放自体を「選択の確定」と同一視していた――
+  // その結果、解放と同時にハイライトが消え、^[w/^[pで実際に確定する
+  // 前に選択内容を目で確認する機会が失われていた。マウスの解放は
+  // 「ドラッグというジェスチャの終わり」を意味するだけで、選択そのもの
+  // の確定を意味しない――マーク状態(と、そのライブハイライト)は
+  // そのまま保持し、キーボードの確定ショートカット(^[w/^[p)や、
+  // 続けてのドラッグ/キーボード移動による調整に委ねる。このメソッド
+  // 自体は今のところ何もしないが、将来ボタン解放固有の処理が必要に
+  // なった時のために残しておく。
   if (currentMode_ != ApplicationMode::Copy) return;
-  copyMode_.confirmMark();
 }
 
 // ApplicationMode::Copyが有効な間の、COPY自身の小さなキーの語彙。
@@ -7441,9 +7489,20 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
       copyMode_.confirmMark();
       if (wasRectangle) returnFromCopy();
     } else if (!special && byte == 'p') {
+      // 2026-09-07再訂正、直接のユーザー要望⑦("^@で範囲指定を開始した
+      // のち、停止位置で^[pが投入されたらその場で範囲指定終了
+      // （^[w相当）とみなしてPROGRAMへ移行し、プロンプトにペーストして
+      // 欲しい"): 以前は「起点が生きたプロンプトを一時停止していれば
+      // それを再開してペーストする」という汎用的な挙動だったが、
+      // ユーザーはPROGRAM specificallyへの移行を求めている――
+      // startProgramPrompt()を明示的に呼ぶ(起点にプロンプトが無かった
+      // 場合でも常にPROGRAMへ入る)。setText()(paste()ではなく)を使う
+      // 理由はstartProgramPrompt()自身の事前入力との混在を避けるため
+      // ――前回の訂正(84067f1→4793907)で既に確認済みの理由と同じ。
       copyMode_.confirmMark();
       returnFromCopy();
-      if (promptActive()) promptEditor_.paste(copyMode_.clipboardText());
+      startProgramPrompt();
+      if (promptActive()) promptEditor_.setText(copyMode_.clipboardText());
     }
     promptEditor_.setKillBuffer(copyMode_.clipboardText());
     return true;

@@ -356,3 +356,35 @@ TEST_CASE("CopyMode: startMark() (a regular, non-rectangle mark) downgrades an a
   CHECK(copy.markActive());
   CHECK_FALSE(copy.rectangleMarkActive());
 }
+
+TEST_CASE("CopyMode: moveDown()/moveUp() scroll the viewport smoothly by exactly one row at the "
+          "boundary, matching ContentView::moveDown()/moveUp()'s own behavior, instead of jumping "
+          "the cursor to the far edge of the viewport (2026-09-07, a direct user report ⑥: "
+          "\"コピーモード発動後の`^N^P`でページ送りが起きた場合、通常の動作と違うので同じにして\")") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);  // 5 visible rows
+  CopyMode copy(v);
+  std::initializer_list<std::string> texts = {"row0", "row1", "row2", "row3", "row4",
+                                               "row5", "row6", "row7", "row8", "row9"};
+  copy.loadSnapshot(makeLines(texts));
+  CHECK(v.topIndex() == 0);
+  for (int i = 0; i < 4; i++) copy.moveDown();  // cursor at row 4, still the last visible row -- no scroll yet
+  CHECK(v.topIndex() == 0);
+  copy.moveDown();  // cursor moves to row 5, JUST past the bottom edge
+  // A smooth scroll advances topIndex_ by exactly 1 (to 1), not a jump
+  // to `cursorRow_ - height + 1` (which would also be 1 here by
+  // coincidence at this exact boundary -- moveDown() again to confirm
+  // it keeps advancing one row at a time, not jumping further ahead).
+  CHECK(v.topIndex() == 1);
+  copy.moveDown();
+  CHECK(v.topIndex() == 2);
+  copy.moveUp();
+  CHECK(v.topIndex() == 2);  // cursor (row 5) still within [2,7) -- no scroll needed
+  copy.moveUp();
+  copy.moveUp();
+  copy.moveUp();  // cursor now at row 2, exactly at topIndex_ -- no scroll yet
+  CHECK(v.topIndex() == 2);
+  copy.moveUp();  // cursor moves to row 1, JUST past the top edge
+  CHECK(v.topIndex() == 1);
+}

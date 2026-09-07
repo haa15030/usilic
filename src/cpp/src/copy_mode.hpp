@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -82,7 +83,19 @@ class CopyMode {
   // マークがあれば解除する。clipboardText()は「クリアしない」
   // (legacyのrvp->copyもCOPYセッションをまたいで同じように持続する)。
   // `view`を即座に(再)描画する。
-  void loadSnapshot(std::vector<ContentView::Line> lines, int initialRow = 0);
+  //
+  // `initialTopIndex`(2026-09-07追加、直接のユーザー報告⑤:
+  // "CLAUDE.md→^V（ページ送り）→^O^C→コピーモード発動前と後とで
+  // ブロックカーソル位置が違うため画面が変化してしまいコピー開始
+  // 位置を見失う"): 省略時(nullopt)はview_のcursorIndex_/lines_から
+  // clampViewport()が独自に導出する(以前からの、境界に強制的に寄せる
+  // 挙動)。Application::startCopy()は代わりに起点のtopIndex()を渡す
+  // ――起点で既に成立していたスクロール位置をそのまま引き継ぐため。
+  // この値は今回の(最初の)render()呼び出し1回だけに適用され、以後の
+  // moveUp()/moveDown()等の呼び出しでは通常通りview_自身の現在の
+  // topIndex()が基準になる(render()自身のコメント参照)。
+  void loadSnapshot(std::vector<ContentView::Line> lines, int initialRow = 0,
+                     std::optional<int> initialTopIndex = std::nullopt);
 
   // -- カーソル移動、境界チェック付き(スナップショットのどちらかの
   // 端を超える移動は何もしない) -- どれも`view`を再描画する。
@@ -203,6 +216,10 @@ class CopyMode {
   int markAnchorRow_ = 0;       // markActive_の間のみ有効(2026-09-07追加、複数行対応)
   int markAnchorByte_ = 0;      // markActive_の間のみ有効
   std::string clipboardText_;
+  // loadSnapshot()自身の`initialTopIndex`引数のコメント参照
+  // (2026-09-07追加)――loadSnapshot()直後の最初のrender()呼び出しに
+  // だけ適用される、one-shotのオーバーライド。
+  std::optional<int> pendingTopIndexOverride_;
 };
 
 }  // namespace fm

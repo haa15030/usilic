@@ -58,7 +58,8 @@ int byteOffsetForDisplayColumn(const std::string &text, int targetColumn) {
 
 CopyMode::CopyMode(ContentView &view) : view_(view) {}
 
-void CopyMode::loadSnapshot(std::vector<ContentView::Line> lines, int initialRow) {
+void CopyMode::loadSnapshot(std::vector<ContentView::Line> lines, int initialRow,
+                             std::optional<int> initialTopIndex) {
   lines_.clear();
   lines_.reserve(lines.size());
   for (auto &line : lines) {
@@ -74,6 +75,13 @@ void CopyMode::loadSnapshot(std::vector<ContentView::Line> lines, int initialRow
   markAnchorRow_ = 0;
   markAnchorByte_ = 0;
   view_.setCursorHighlightEnabled(false);
+  // loadSnapshot()自身の`initialTopIndex`のコメント参照。この時点では
+  // まだview_のlines_が古い(または空の)ままなので、ここで直接
+  // view_.setTopIndex()を呼んでも、その古いlines_基準のmaxTopで
+  // 誤ってクランプされてしまう――render()自身が、新しいlines_を
+  // view_.setLines()で反映させた「直後」に適用できるよう、
+  // pendingTopIndexOverride_へ一旦預けておく。
+  pendingTopIndexOverride_ = initialTopIndex;
   render();
 }
 
@@ -82,6 +90,17 @@ void CopyMode::moveUp() {
   int col = displayColumnFor(lines_[cursorRow_].text, cursorByte_);
   cursorRow_--;
   cursorByte_ = byteOffsetForDisplayColumn(lines_[cursorRow_].text, col);
+  // 2026-09-07、直接のユーザー報告⑥("コピーモード発動後の^N^Pで
+  // ページ送りが起きた場合、通常の動作と違うので同じにして"): 何も
+  // しなければ、この後のrender()自身のview_.setCursorIndex()呼び出し
+  // (内部でclampViewport()を呼ぶ)が、境界を超えた瞬間にtopIndex_を
+  // 「cursorRow_-height+1」へ一気にジャンプさせてしまう――ページ全体
+  // が瞬時に切り替わる見た目になり、ContentView::moveUp()自身の
+  // 「境界を超えたらtopIndex_をちょうど1行だけ動かす」というスムーズ
+  // なスクロールとは異なっていた。ここで先に1行分だけ動かしておく
+  // ことで、後続のclampViewport()の不変条件が既に満たされ、no-opに
+  // なる。
+  if (cursorRow_ < view_.topIndex()) view_.setTopIndex(view_.topIndex() - 1);
   render();
 }
 
@@ -90,6 +109,8 @@ void CopyMode::moveDown() {
   int col = displayColumnFor(lines_[cursorRow_].text, cursorByte_);
   cursorRow_++;
   cursorByte_ = byteOffsetForDisplayColumn(lines_[cursorRow_].text, col);
+  // moveUp()自身のコメント参照。
+  if (cursorRow_ >= view_.topIndex() + view_.height()) view_.setTopIndex(view_.topIndex() + 1);
   render();
 }
 
@@ -241,7 +262,26 @@ void CopyMode::render() {
       }
     }
   }
+  // ContentView::setLines()は常にtopIndex_を0へリセットする(その
+  // 宣言コメント参照、「内容が丸ごと置き換わったので古いスクロール
+  // 位置は無意味」という一般的な前提)――しかしCopyModeにとっては、
+  // 「内容」は毎回のrender()呼び出しのたびに実質的に「同じ」スナップ
+  // ショット(ハイライトの範囲が変わっただけ)であり、setLines()を
+  // 呼ぶたびにスクロール位置が問答無用でリセットされてしまうと、
+  // moveUp()/moveDown()自身の「1行だけスムーズにスクロールする」
+  // という調整(2026-09-07追加、直接のユーザー報告⑥参照)が、この
+  // 直後のsetLines()によって毎回台無しになってしまう――保存して
+  // 直後に復元することで、setLines()自身のリセットを実質的に無害化
+  // する。復元後にsetCursorIndex()を呼ぶことで、その内部の
+  // clampViewport()は「本当に必要な時だけ」(カーソルが実際に
+  // ビューポートの外に出た時だけ)働く、本来の意図通りの動きになる。
+  // pendingTopIndexOverride_自身の宣言コメント参照(loadSnapshot()直後
+  // の1回だけ、起点のtopIndex()を使う――それ以外は通常通りview_自身の
+  // 現在のtopIndex()をそのまま保存/復元する)。
+  int preservedTopIndex = pendingTopIndexOverride_.value_or(view_.topIndex());
+  pendingTopIndexOverride_.reset();
   view_.setLines(std::move(rendered));
+  view_.setTopIndex(preservedTopIndex);
   if (!lines_.empty()) view_.setCursorIndex(cursorRow_);
   // render()自身の宣言コメント参照(copy_mode.hpp): 矩形マーク中は
   // モードラインの位置フィールドに"Rectangle-Mark"を表示し、それ
