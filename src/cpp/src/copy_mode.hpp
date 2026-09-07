@@ -43,6 +43,21 @@ namespace fm {
 // 各行について、アンカー〜カーソルの表示カラム範囲だけ」を選ぶ
 // ――emacs自身のkill-rectangle/copy-rectangle-as-killと同じ意味論。
 //
+// 2026-09-07さらに追記、直接のユーザー報告⑭("マウスドラッグで範囲
+// 指定はできるけど、あらたな範囲指定開始点を定められない...^@押す
+// たびに離れ小島なハイライトを画面に残留させて^[wでそれらをまとめて
+// クリップボードへ、ってのは？"): 複数の「離れ小島」(islands_)の
+// 選択を蓄積できるようにした。既に実質的な範囲を持つマーク(アンカー
+// ≠カーソル)の最中にstartMark()/startOrUpgradeRectangleMark()/
+// beginOrExtendFromMouse()のいずれかが呼ばれると、その時点の選択を
+// 1つの島としてislands_へ確定・画面上に残したまま、新しいアンカーを
+// そこから始める。まだ実質的な範囲を持たない(アンカー==カーソル、
+// 例えば^X SPC直後でまだ一度も動かしていない)場合は何もバンクせず、
+// 続くカーソル移動/マウスがそのマークの自由端を定義する――emacsの
+// rectangle-mark-modeを終えた直後にマウスで矩形の対角を指定する、
+// という自然な流れを壊さないため。confirmMark()はislands_全てと
+// 現在進行中のマークをまとめてクリップボードへ書き出す。
+//
 // スナップショットに格納する前に色/ハイライトのエスケープバイトを
 // 全て取り除くmake_map()とは異なり、このクラスは各Lineの
 // AttributeRunデータ(Bold/Underline)を届いた通りそのまま「保持」
@@ -136,6 +151,17 @@ class CopyMode {
   // 伸縮させる(通常のマーク/矩形マークどちらの最中でも同じ)。
   void placeCursorAt(int row, int column);
 
+  // GUIのマウスボタン押下(copyMouseDown())専用(2026-09-07追加、直接の
+  // ユーザー報告⑭自身のコメント参照、クラス自身のコメント参照)。
+  // placeCursorAt()と違い、押下の「瞬間」だけに使う――既に実質的な
+  // 範囲を持つマークの最中であれば、それを1つの島として確定・画面に
+  // 残したまま、この新しい押下位置から改めてマーク(常に通常マーク、
+  // 矩形ではない――矩形は^X SPCで明示的に選ぶ)を開始する。まだ実質的
+  // な範囲を持たない場合(例えば^X SPC直後の最初のクリック)は、
+  // アンカーはそのまま、カーソルだけをこの位置へ動かす――既存のマーク
+  // の自由端を定義する。
+  void beginOrExtendFromMouse(int row, int column);
+
   // 2026-08-31、直接のユーザー依頼("本体で変更が必要なのは^Space...
   // emacsに合わせたい。^@でマーク開始トグル、^[wで確定"): 以前は
   // toggleMark()という1つのメソッドが、1回目の呼び出しでは選択の
@@ -148,24 +174,33 @@ class CopyMode {
   // トグル別名として、この2メソッドを内部で使い分ける形で残っている。
 
   // 現在のカーソル位置に選択のアンカーを置く(通常の、矩形でない
-  // マーク)。既にマーク中の場合はアンカーを現在位置へ置き直す
-  // (emacsのC-@を繰り返し押した時と同じ、何度でも安全に呼べる)。
-  // 既に矩形マーク中だった場合は矩形指定を解除し、通常マークに
-  // 戻す。
+  // マーク)。既にマーク中で、かつそのマークがまだ実質的な範囲を
+  // 持たない(アンカー==カーソル)場合は、単にアンカーを現在位置へ
+  // 置き直す(emacsのC-@を繰り返し押した時と同じ、何度でも安全に
+  // 呼べる)。既に実質的な範囲を持つ場合は、bankCurrentMarkIfExtended()
+  // 自身のコメント参照(2026-09-07追加、直接のユーザー報告⑭)――
+  // それを1つの島として確定・画面に残したまま、新しいアンカーを
+  // ここから始める。矩形マーク中だった場合は矩形指定を解除し、
+  // 通常マークに戻す。
   void startMark();
 
   // emacsのrectangle-mark-mode(^X SPC)の移植(2026-09-07追加、直接の
   // ユーザー要望"①emacsには矩形範囲指定の機能があるのであれを移植
-  // してほしい")。既にマーク中(通常/矩形いずれか)ならアンカーは
-  // そのまま、選択の解釈だけを矩形に切り替える――キーボードで
-  // startMark()した後にこれを呼ぶ、またはGUIのマウスボタン押下
-  // (copyMouseDown()、常にstartMark()相当で始まる)の最中に呼んでも
-  // 自然に働く。マーク中でなければ、現在のカーソル位置をアンカーに
-  // して新規に矩形マークを開始する。
+  // してほしい")。既にマーク中で、かつそのマークがまだ実質的な範囲を
+  // 持たない場合はアンカーはそのまま、選択の解釈だけを矩形に切り替
+  // える――キーボードでstartMark()した直後や、GUIのマウスボタン
+  // 押下(beginOrExtendFromMouse())直後に呼んでも自然に働く。既に
+  // 実質的な範囲を持つ場合は、bankCurrentMarkIfExtended()自身の
+  // コメント参照(直接のユーザー報告⑭)――それを1つの島として確定・
+  // 画面に残したまま、現在位置を新しいアンカーにして矩形マークを
+  // 開始する。マーク自体が全く無ければ、現在のカーソル位置をアンカー
+  // にして新規に矩形マークを開始する。
   void startOrUpgradeRectangleMark();
 
-  // アンカーと現在のカーソル位置の間の範囲を確定する。マーク中で
-  // なければ何もしない。
+  // islands_全て(直接のユーザー報告⑭、クラス自身のコメント参照)と、
+  // 現在進行中のマーク(アンカーと現在のカーソル位置の間の範囲)を
+  // まとめて確定する。マーク中でなければ何もしない。islands_は
+  // 消費後にクリアされる。
   //
   // 2026-09-07、直接のユーザー要望("次はCOPYだな。旧の行指定は
   // 忘れていい")を受けて複数行対応に書き直した: アンカー行〜カーソル
@@ -195,16 +230,42 @@ class CopyMode {
 
  private:
   void cancelMark();
-  void render();  // view_のLine群を再構築する(あれば、ライブ選択
-                   // 自身のStandout AttributeRunを織り込む)、および
-                   // view_の実キャレットを再配置する。加えて、
-                   // rectangleMarkActive()の間はモードラインの位置
-                   // フィールドへ"Rectangle-Mark"を表示する(直接の
-                   // ユーザー要望"モードラインのメッセージエリアに
-                   // ...Rectangle-Markと表示"――下線装飾は、モード
-                   // ライン描画パイプライン自体を拡張する必要がある
-                   // 大掛かりな変更になるため今回は見送り、通常の
-                   // 位置フィールドと同じ描画のまま)。
+  void render();  // view_のLine群を再構築する(islands_全て+進行中の
+                   // マークがあれば、それぞれのStandout AttributeRun
+                   // を織り込む)、および view_の実キャレットを再配置
+                   // する。加えて、rectangleMarkActive()の間はモード
+                   // ラインの位置フィールドへ"Rectangle-Mark"を表示
+                   // する(直接のユーザー要望"モードラインのメッセージ
+                   // エリアに...Rectangle-Markと表示"――下線装飾は、
+                   // モードライン描画パイプライン自体を拡張する必要
+                   // がある大掛かりな変更になるため今回は見送り、
+                   // 通常の位置フィールドと同じ描画のまま)。
+
+  // islands_自身の宣言コメント参照(2026-09-07追加)。1つの確定済み、
+  // または進行中の選択範囲――通常マーク(読み順の連続範囲)か矩形
+  // マーク(行×列範囲)かで解釈が変わる。
+  struct Island {
+    bool rectangle = false;
+    int loRow = 0, hiRow = 0;
+    int loByte = 0, hiByte = 0;  // rectangle==falseの間だけ有効
+    int loCol = 0, hiCol = 0;    // rectangle==trueの間だけ有効
+  };
+  // 現在の(markAnchorRow_/Byte_, cursorRow_/Byte_, rectangleMark_)から
+  // Islandを組み立てる――confirmMark()/render()両方で使う共通ロジック。
+  // markActive_がfalseの間は呼ばないこと(未定義の値になる)。
+  Island currentMarkAsIsland() const;
+  // 1つのIslandが指すテキストを行ごとの断片として取り出す
+  // (confirmMark()専用)。
+  std::vector<std::string> extractIslandParts(const Island &island) const;
+  // `rendered`(view_.setLines()へ渡す直前の可変コピー)へ、1つの
+  // IslandぶんのStandout AttributeRunを書き込む(render()専用)。
+  static void highlightIsland(std::vector<ContentView::Line> &rendered, const Island &island);
+  // 実質的な範囲を持つ(アンカー≠カーソル)マークが進行中であれば、
+  // それをislands_へ確定して画面に残し、アンカーを現在のカーソル
+  // 位置へ置き直す(=空の新しい島の起点にする)――startMark()/
+  // startOrUpgradeRectangleMark()/beginOrExtendFromMouse()自身の
+  // コメント参照。実質的な範囲がまだ無ければ何もしない(no-op)。
+  void bankCurrentMarkIfExtended();
 
   ContentView &view_;
   std::vector<ContentView::Line> lines_;  // textとattributesのみ
@@ -215,6 +276,11 @@ class CopyMode {
   bool rectangleMark_ = false;  // markActive_の間のみ有効(2026-09-07追加)
   int markAnchorRow_ = 0;       // markActive_の間のみ有効(2026-09-07追加、複数行対応)
   int markAnchorByte_ = 0;      // markActive_の間のみ有効
+  // islands_自身の宣言コメント参照(2026-09-07追加)――確定済みの
+  // (現在進行中ではない)選択範囲の集まり。confirmMark()で消費され
+  // クリアされる。loadSnapshot()でも(新しいCOPYセッションの開始時に)
+  // クリアされる。
+  std::vector<Island> islands_;
   std::string clipboardText_;
   // loadSnapshot()自身の`initialTopIndex`引数のコメント参照
   // (2026-09-07追加)――loadSnapshot()直後の最初のrender()呼び出しに

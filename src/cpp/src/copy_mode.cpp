@@ -74,6 +74,7 @@ void CopyMode::loadSnapshot(std::vector<ContentView::Line> lines, int initialRow
   rectangleMark_ = false;
   markAnchorRow_ = 0;
   markAnchorByte_ = 0;
+  islands_.clear();  // 直接のユーザー報告⑭自身のコメント参照――新しいCOPYセッションは空から始まる
   view_.setCursorHighlightEnabled(false);
   // loadSnapshot()自身の`initialTopIndex`のコメント参照。この時点では
   // まだview_のlines_が古い(または空の)ままなので、ここで直接
@@ -147,8 +148,36 @@ void CopyMode::placeCursorAt(int row, int column) {
   render();
 }
 
+void CopyMode::beginOrExtendFromMouse(int row, int column) {
+  if (lines_.empty()) return;
+  // 判定は必ず「動かす前」の状態で行う――bankCurrentMarkIfExtended()
+  // 自身が(バンクした場合)アンカーをその場でカーソル位置へ置き直して
+  // しまうため、後で調べると「実質的な範囲が無かった」ように見えて
+  // しまう。
+  bool wasActiveBefore = markActive_;
+  bool hadExtentBefore = markActive_ && (markAnchorRow_ != cursorRow_ || markAnchorByte_ != cursorByte_);
+  bankCurrentMarkIfExtended();
+  cursorRow_ = std::clamp(row, 0, static_cast<int>(lines_.size()) - 1);
+  cursorByte_ = byteOffsetForDisplayColumn(lines_[cursorRow_].text, column);
+  if (!wasActiveBefore || hadExtentBefore) {
+    // マークが全く無かった、または実質的な範囲を持っていて直前の
+    // bankCurrentMarkIfExtended()で確定済み――どちらの場合も、この
+    // 新しい押下位置を新しいアンカーにして(常に通常マークとして)
+    // 開始する。
+    markActive_ = true;
+    rectangleMark_ = false;
+    markAnchorRow_ = cursorRow_;
+    markAnchorByte_ = cursorByte_;
+  }
+  // else: マークはアクティブだが実質的な範囲をまだ持っていなかった
+  // (例えば^X SPC直後)――アンカーはそのまま、カーソルだけをこの位置へ
+  // 動かしたことで、そのマークの自由端を定義する(直接のユーザー報告⑪)。
+  render();
+}
+
 void CopyMode::startMark() {
   if (lines_.empty()) return;
+  bankCurrentMarkIfExtended();
   markActive_ = true;
   rectangleMark_ = false;
   markAnchorRow_ = cursorRow_;
@@ -158,6 +187,7 @@ void CopyMode::startMark() {
 
 void CopyMode::startOrUpgradeRectangleMark() {
   if (lines_.empty()) return;
+  bankCurrentMarkIfExtended();
   if (!markActive_) {
     markActive_ = true;
     markAnchorRow_ = cursorRow_;
@@ -167,54 +197,96 @@ void CopyMode::startOrUpgradeRectangleMark() {
   render();
 }
 
-void CopyMode::confirmMark() {
-  if (lines_.empty() || !markActive_) return;
-  // (loRow,loByte)-(hiRow,hiByte)を読み順に正規化する――
-  // confirmMark()自身の宣言コメント(copy_mode.hpp)参照。
+void CopyMode::bankCurrentMarkIfExtended() {
+  if (!markActive_) return;
+  if (markAnchorRow_ != cursorRow_ || markAnchorByte_ != cursorByte_) {
+    islands_.push_back(currentMarkAsIsland());
+    markAnchorRow_ = cursorRow_;
+    markAnchorByte_ = cursorByte_;
+  }
+}
+
+CopyMode::Island CopyMode::currentMarkAsIsland() const {
   bool anchorFirst =
       markAnchorRow_ < cursorRow_ || (markAnchorRow_ == cursorRow_ && markAnchorByte_ <= cursorByte_);
-  int loRow = anchorFirst ? markAnchorRow_ : cursorRow_;
-  int hiRow = anchorFirst ? cursorRow_ : markAnchorRow_;
-
-  std::vector<std::string> parts;
-  bool anyNonEmpty = false;
+  Island island;
+  island.rectangle = rectangleMark_;
+  island.loRow = anchorFirst ? markAnchorRow_ : cursorRow_;
+  island.hiRow = anchorFirst ? cursorRow_ : markAnchorRow_;
   if (rectangleMark_) {
-    // confirmMark()自身の宣言コメント参照(矩形マーク): 列範囲は
-    // アンカー/カーソルそれぞれの「表示カラム」のmin/maxで決め、
-    // 各行ごとにbyteOffsetForDisplayColumn()でバイトオフセットへ
-    // 変換し直す――行によって文字幅(全角/半角混在等)が異なり得る
-    // ため、1つの行で求めたバイトオフセットを他の行にそのまま使い
-    // 回すことはできない。
     int anchorCol = displayColumnFor(lines_[markAnchorRow_].text, markAnchorByte_);
     int cursorCol = displayColumnFor(lines_[cursorRow_].text, cursorByte_);
-    int loCol = std::min(anchorCol, cursorCol);
-    int hiCol = std::max(anchorCol, cursorCol);
-    for (int row = loRow; row <= hiRow; row++) {
-      const std::string &text = lines_[row].text;
-      int rowLo = byteOffsetForDisplayColumn(text, loCol);
-      int rowHi = byteOffsetForDisplayColumn(text, hiCol);
-      if (rowHi > rowLo) anyNonEmpty = true;
-      parts.push_back(text.substr(rowLo, std::max(0, rowHi - rowLo)));
-    }
+    island.loCol = std::min(anchorCol, cursorCol);
+    island.hiCol = std::max(anchorCol, cursorCol);
   } else {
-    int loByte = anchorFirst ? markAnchorByte_ : cursorByte_;
-    int hiByte = anchorFirst ? cursorByte_ : markAnchorByte_;
-    for (int row = loRow; row <= hiRow; row++) {
-      const std::string &text = lines_[row].text;
-      int rowLo = (row == loRow) ? loByte : 0;
-      int rowHi = (row == hiRow) ? hiByte : static_cast<int>(text.size());
-      if (rowHi > rowLo) anyNonEmpty = true;
-      parts.push_back(text.substr(rowLo, std::max(0, rowHi - rowLo)));
-    }
+    island.loByte = anchorFirst ? markAnchorByte_ : cursorByte_;
+    island.hiByte = anchorFirst ? cursorByte_ : markAnchorByte_;
   }
+  return island;
+}
+
+std::vector<std::string> CopyMode::extractIslandParts(const Island &island) const {
+  std::vector<std::string> parts;
+  for (int row = island.loRow; row <= island.hiRow; row++) {
+    const std::string &text = lines_[row].text;
+    int rowLo, rowHi;
+    if (island.rectangle) {
+      rowLo = byteOffsetForDisplayColumn(text, island.loCol);
+      rowHi = byteOffsetForDisplayColumn(text, island.hiCol);
+    } else {
+      rowLo = (row == island.loRow) ? island.loByte : 0;
+      rowHi = (row == island.hiRow) ? island.hiByte : static_cast<int>(text.size());
+    }
+    parts.push_back(text.substr(rowLo, std::max(0, rowHi - rowLo)));
+  }
+  return parts;
+}
+
+void CopyMode::highlightIsland(std::vector<ContentView::Line> &rendered, const Island &island) {
+  int loRow = std::clamp(island.loRow, 0, static_cast<int>(rendered.size()) - 1);
+  int hiRow = std::clamp(island.hiRow, 0, static_cast<int>(rendered.size()) - 1);
+  for (int row = loRow; row <= hiRow; row++) {
+    const std::string &text = rendered[row].text;
+    int rowLo, rowHi;
+    if (island.rectangle) {
+      rowLo = byteOffsetForDisplayColumn(text, island.loCol);
+      rowHi = byteOffsetForDisplayColumn(text, island.hiCol);
+    } else {
+      rowLo = (row == island.loRow) ? island.loByte : 0;
+      rowHi = (row == island.hiRow) ? island.hiByte : static_cast<int>(text.size());
+    }
+    if (rowHi > rowLo) rendered[row].attributes.push_back({rowLo, rowHi, Display::Attribute::Standout});
+  }
+}
+
+void CopyMode::confirmMark() {
+  if (lines_.empty() || !markActive_) return;
+  std::vector<std::string> allParts;
+  for (const Island &island : islands_) {
+    auto parts = extractIslandParts(island);
+    for (auto &part : parts) allParts.push_back(std::move(part));
+  }
+  {
+    auto parts = extractIslandParts(currentMarkAsIsland());
+    for (auto &part : parts) allParts.push_back(std::move(part));
+  }
+  bool anyNonEmpty = false;
+  for (const auto &part : allParts)
+    if (!part.empty()) anyNonEmpty = true;
   if (anyNonEmpty) {
+    // 空の断片(例えば、まだ実質的な範囲を持たないままconfirmMark()に
+    // 至った現在進行中のマーク――他の島が既にある状態でのクリック
+    // 直後等)は連結から完全に除く――「\n」だけの空行が末尾に残るのを
+    // 防ぐ。
     std::string joined;
-    for (const auto &part : parts) {
+    for (const auto &part : allParts) {
+      if (part.empty()) continue;
       if (!joined.empty()) joined += "\n";
       joined += part;
     }
     clipboardText_ = joined;
   }
+  islands_.clear();
   cancelMark();
 }
 
@@ -234,34 +306,8 @@ void CopyMode::cancelMark() {
 
 void CopyMode::render() {
   std::vector<ContentView::Line> rendered = lines_;
-  if (markActive_ && !rendered.empty()) {
-    bool anchorFirst =
-        markAnchorRow_ < cursorRow_ || (markAnchorRow_ == cursorRow_ && markAnchorByte_ <= cursorByte_);
-    int loRow = std::clamp(anchorFirst ? markAnchorRow_ : cursorRow_, 0, static_cast<int>(rendered.size()) - 1);
-    int hiRow = std::clamp(anchorFirst ? cursorRow_ : markAnchorRow_, 0, static_cast<int>(rendered.size()) - 1);
-    if (rectangleMark_) {
-      // confirmMark()自身の矩形マークのコメント参照――ライブハイライト
-      // も同じ列範囲(表示カラムのmin/max)を、行ごとにバイトオフセット
-      // へ変換し直しながら描く。
-      int anchorCol = displayColumnFor(lines_[markAnchorRow_].text, markAnchorByte_);
-      int cursorCol = displayColumnFor(lines_[cursorRow_].text, cursorByte_);
-      int loCol = std::min(anchorCol, cursorCol);
-      int hiCol = std::max(anchorCol, cursorCol);
-      for (int row = loRow; row <= hiRow; row++) {
-        int rowLo = byteOffsetForDisplayColumn(rendered[row].text, loCol);
-        int rowHi = byteOffsetForDisplayColumn(rendered[row].text, hiCol);
-        if (rowHi > rowLo) rendered[row].attributes.push_back({rowLo, rowHi, Display::Attribute::Standout});
-      }
-    } else {
-      int loByte = anchorFirst ? markAnchorByte_ : cursorByte_;
-      int hiByte = anchorFirst ? cursorByte_ : markAnchorByte_;
-      for (int row = loRow; row <= hiRow; row++) {
-        int rowLo = (row == loRow) ? loByte : 0;
-        int rowHi = (row == hiRow) ? hiByte : static_cast<int>(rendered[row].text.size());
-        if (rowHi > rowLo) rendered[row].attributes.push_back({rowLo, rowHi, Display::Attribute::Standout});
-      }
-    }
-  }
+  for (const Island &island : islands_) highlightIsland(rendered, island);
+  if (markActive_ && !rendered.empty()) highlightIsland(rendered, currentMarkAsIsland());
   // ContentView::setLines()は常にtopIndex_を0へリセットする(その
   // 宣言コメント参照、「内容が丸ごと置き換わったので古いスクロール
   // 位置は無意味」という一般的な前提)――しかしCopyModeにとっては、

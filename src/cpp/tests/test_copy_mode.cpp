@@ -132,8 +132,9 @@ TEST_CASE("CopyMode: startMark()+confirmMark() select a same-row substring into 
   CHECK(copy.clipboardText() == "elect ");  // unchanged
 }
 
-TEST_CASE("CopyMode: startMark() while already marking just resets the anchor to the current position "
-          "(emacs' repeated set-mark-command), rather than confirming") {
+TEST_CASE("CopyMode: startMark() called again on a mark that has NOT yet been extended (anchor still "
+          "equals cursor) just resets the anchor in place (emacs' repeated set-mark-command) -- a "
+          "harmless no-op, not a new island") {
   RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
@@ -142,12 +143,35 @@ TEST_CASE("CopyMode: startMark() while already marking just resets the anchor to
 
   copy.moveRight();  // column 1
   copy.startMark();
+  copy.startMark();  // repeated immediately -- anchor still == cursor, nothing to bank
+  CHECK(copy.markActive());
   for (int i = 0; i < 3; i++) copy.moveRight();  // column 4
-  copy.startMark();                              // anchor moves to column 4, still marking
+  copy.confirmMark();
+  CHECK(copy.clipboardText() == "ele");  // columns 1..4
+}
+
+TEST_CASE("CopyMode: startMark() called on a mark that already has real extent banks it as a "
+          "confirmed \"island\" (kept highlighted on screen) and starts a fresh mark at the current "
+          "position -- confirmMark() later gathers every island plus the in-progress mark, "
+          "newline-joined (2026-09-07, a direct user report ⑭: \"^@押すたびに離れ小島なハイライトを"
+          "画面に残留させて`^[w`でそれらをまとめてクリップボードへ、ってのは？\")") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"select me please"}));
+
+  copy.moveRight();  // column 1
+  copy.startMark();
+  for (int i = 0; i < 3; i++) copy.moveRight();  // column 4 -- real extent now (1..4 == "ele")
+  // The island's highlight must still be visible on screen right after banking.
+  copy.startMark();  // banks "ele" as an island, starts a fresh mark at column 4
+  CHECK(d.standoutAt(0, 1) == true);   // the banked island's own highlight persists
+  CHECK(d.standoutAt(0, 3) == true);
   CHECK(copy.markActive());
   for (int i = 0; i < 3; i++) copy.moveRight();  // column 7
   copy.confirmMark();
-  CHECK(copy.clipboardText() == "ct ");  // columns 4..7, not 1..7
+  CHECK(copy.clipboardText() == "ele\nct ");  // the banked island ("ele") + the new mark ("ct ")
 }
 
 TEST_CASE("CopyMode: confirmMark() without an active mark is a safe no-op") {
@@ -387,4 +411,39 @@ TEST_CASE("CopyMode: moveDown()/moveUp() scroll the viewport smoothly by exactly
   CHECK(v.topIndex() == 2);
   copy.moveUp();  // cursor moves to row 1, JUST past the top edge
   CHECK(v.topIndex() == 1);
+}
+
+TEST_CASE("CopyMode: beginOrExtendFromMouse() extends an existing zero-extent mark's free end "
+          "(matching keyboard movement) rather than resetting it -- a mouse click right after "
+          "startOrUpgradeRectangleMark() defines the rectangle's opposite corner instead of "
+          "cancelling the rectangle (2026-09-07, a direct user report ⑪: \"^X␣→矩形モード発動後は"
+          "矩形でハイライト表示[現状: クリックしたとたん矩形モード解除]\")") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"abcdef", "ghijkl"}));
+  copy.startOrUpgradeRectangleMark();  // anchor == cursor, zero extent
+  copy.beginOrExtendFromMouse(1, 3);   // a plain click elsewhere -- must extend, not reset
+  CHECK(copy.rectangleMarkActive());   // still a rectangle mark, not downgraded
+  copy.confirmMark();
+  CHECK(copy.clipboardText() == "abc\nghi");  // rectangle from (0,0) to (1,3)
+}
+
+TEST_CASE("CopyMode: beginOrExtendFromMouse() banks an already-extended mark as an island and "
+          "starts fresh at the new click position, instead of connecting the two into one range "
+          "(2026-09-07, a direct user report ⑭: \"マウスドラッグで範囲指定はできるけど、あらたな"
+          "範囲指定開始点を定められない...別の場所のハイライトが繋がってしまい全てが指定範囲となる\")") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"abcdefghij", "klmnopqrst"}));
+  copy.beginOrExtendFromMouse(0, 0);  // press at (0,0) -- starts a fresh mark
+  copy.placeCursorAt(0, 3);           // drag to (0,3) -- real extent now ("abc")
+  copy.beginOrExtendFromMouse(1, 5);  // a NEW, unrelated click elsewhere -- must NOT connect to the first
+  CHECK(copy.markActive());
+  copy.confirmMark();
+  CHECK(copy.clipboardText() == "abc");  // only the first (banked) island -- the second click
+                                         // alone has zero extent, so it contributes nothing
 }

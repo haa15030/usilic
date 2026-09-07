@@ -259,6 +259,31 @@ std::string shellQuoteArgv(const std::vector<std::string> &argv) {
   return line;
 }
 
+// COPYモードのconfirmMark()自身のコメント参照(2026-09-07追加、直接の
+// ユーザー報告⑫: "クリップボードが共有エリアに繋がってない？（emacs
+// でペーストできない）"): それまでのCOPY/PASTEは、このアプリ自身の
+// promptEditor_(ヤンクバッファ)経由でしか通用しない、アプリ内だけの
+// クリップボードだった――OSのシステムクリップボード(macOSの
+// NSPasteboard、`pbcopy`/`pbpaste`経由でアクセス可能)には一切繋がって
+// いなかったため、確定した選択をemacs等の「別の」アプリケーションへ
+// 貼り付けることができなかった。ChildProcessOptions::inputを使い、
+// テキストを子プロセスの標準入力へ書き込む(これは既にfork_arc()等の
+// パイプライン入力で使われている、デッドロックしない専用writerプロセス
+// 経由の仕組み)。macOSでは`pbcopy`、Linuxでは`xclip`/`xsel`のどちらかが
+// 入っていればそれを使う(どちらも入っていなければ黙って何もしない
+// ――システムクリップボード連携自体は「あれば嬉しい」機能であり、
+// 無くてもアプリ内のCOPY/PASTEは今まで通り機能する)。
+void copyTextToSystemClipboard(const std::string &text) {
+  ChildProcessOptions opts;
+  opts.input = &text;
+#ifdef __APPLE__
+  ChildProcess::run({"pbcopy"}, opts);
+#else
+  ChildProcess::Result result = ChildProcess::run({"xclip", "-selection", "clipboard"}, opts);
+  if (!result.ok) ChildProcess::run({"xsel", "--clipboard", "--input"}, opts);
+#endif
+}
+
 // startCpMvRmShellRun()/pollPendingCpMvRmShellRun()自身の終了ステータス
 // のチャンネル: 実際のcp/mv/rmは今やshell_の実際のセッション内で
 // 非同期に実行される(executeCopy()自身のコメント参照)ため、そこから
@@ -7402,23 +7427,19 @@ void Application::copyMouseDown(int row, int column) {
   if (currentMode_ != ApplicationMode::Copy) return;
   int lineIndex = clampRowToCopySnapshot(copyView_, row);
   if (lineIndex < 0) return;  // 空のスナップショット――他に手の打ちようが無い
-  copyMode_.placeCursorAt(lineIndex, column);
-  // 2026-09-07訂正、直接のユーザー報告⑪("^X␣→矩形モード発動後は
-  // 矩形でハイライト表示[現状: クリックしたとたん矩形モード解除]"):
-  // 以前はここで無条件にstartMark()(通常マーク)を呼んでいたが、
-  // CopyMode::startMark()自身の仕様(既にマーク中ならアンカーを
-  // 現在位置へ置き直す)により、^X SPCで矩形マークを開始した直後に
-  // マウスでクリックしただけで、矩形マークが問答無用で通常マークへ
-  // 格下げされてしまっていた――同じ理由で、通常マークがキーボードの
-  // ^@で既に始まっていた場合も、マウスの押下がそのアンカーを黙って
-  // 消して別の位置へ置き直してしまう(直接のユーザー報告⑨の症状と
-  // 一致)。マークが既に(通常/矩形いずれの形であれ)アクティブな間は
-  // 何もマーク状態を変えず、キャレットの再配置だけを行う――「一度
-  // 始まったマークは、それが実際にどうやって始まったか(キーボード/
-  // マウスいずれでも)に関わらず、以後のマウス操作では自由端を動かす
-  // だけ」という一貫した意味論にする。全くマークされていない状態
-  // からの押下だけが新規のマークを開始する。
-  if (!copyMode_.markActive()) copyMode_.startMark();
+  // 2026-09-07再訂正、直接のユーザー報告⑭("マウスドラッグで範囲指定
+  // はできるけど、あらたな範囲指定開始点を定められない...別の場所の
+  // ハイライトが繋がってしまい全てが指定範囲となる"): 前回(98730d5)の
+  // 訂正(⑨⑪、マーク中は常にキャレットの再配置だけ)は、^X SPC直後の
+  // マウス操作(⑪)を正しくしたが、副作用として「一度マークが実質的な
+  // 範囲を持ってしまうと、以後のクリックは常にそれを拡張するだけで、
+  // 全く別の場所に新しい選択を始める手段が無くなる」という別の問題
+  // (⑭)を生んだ。CopyMode::beginOrExtendFromMouse()自身のコメント
+  // 参照――実質的な範囲を持つマークの最中の押下は、それを1つの島として
+  // 確定・画面に残したまま新しいアンカーをここから始め(⑭)、まだ実質的
+  // な範囲を持たない場合(⑪の^X SPC直後等)は既存のマークの自由端を
+  // 定義するだけにする、という形で両立させる。
+  copyMode_.beginOrExtendFromMouse(lineIndex, column);
 }
 
 void Application::copyMouseDrag(int row, int column) {
@@ -7505,6 +7526,11 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
       if (promptActive()) promptEditor_.setText(copyMode_.clipboardText());
     }
     promptEditor_.setKillBuffer(copyMode_.clipboardText());
+    // copyTextToSystemClipboard()自身のコメント参照(2026-09-07追加、
+    // 直接のユーザー報告⑫)――上のsetKillBuffer()と同じく、'w'/'p'
+    // いずれが押されたか(あるいは何も変わらなかったか)に関わらず
+    // 無条件に同期する。
+    copyTextToSystemClipboard(copyMode_.clipboardText());
     return true;
   }
   // "^X SPC"(startOrUpgradeRectangleMark())自身の1バイト先読み――
