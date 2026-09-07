@@ -116,6 +116,13 @@ void CopyMode::moveToLineEnd() {
   render();
 }
 
+void CopyMode::placeCursorAt(int row, int column) {
+  if (lines_.empty()) return;
+  if (!markActive_) cursorRow_ = std::clamp(row, 0, static_cast<int>(lines_.size()) - 1);
+  cursorByte_ = byteOffsetForDisplayColumn(lines_[cursorRow_].text, column);
+  render();
+}
+
 void CopyMode::startMark() {
   if (lines_.empty()) return;
   markActive_ = true;

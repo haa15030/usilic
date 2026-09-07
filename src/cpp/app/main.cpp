@@ -1833,9 +1833,18 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           }
         }
         app.handleMouseClick(row, column);
+      } else if (click->rightButton && !dragging) {
+        // 2026-09-07追加、直接のユーザー要望("右クリックに`^G`の機能を
+        // 持たせて欲しい"): app.feedByte()経由で本物のキーボード^G
+        // (kControlG、application.cpp)と全く同じ経路を通す――
+        // Command::Backへ直接ディスパッチするのではなく、awaitingSequenceOrPromptByte()
+        // 等、キーボード^Gが普段受ける全てのガード/前処理をそのまま
+        // 受けさせるため。左クリックと同じく`!dragging`で、コースト/
+        // ドラッグ中の右クリックは無視する(左クリックの同種のガードと
+        // 揃える、意図しない「掴んで止める」中の暴発を避ける)。
+        app.feedByte(0x07, std::nullopt);
       }
       clickInterruptedCoast = false;
-      // right-click: captured but not acted on yet, see class comments
     }
     // Plain hover-follow (no button held) -- matching the real-
     // terminal mouse-tracking path's own applyHoverRowAndRedraw()/
@@ -2225,6 +2234,33 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
 
     while (auto drag = gui.consumeDragEvent()) {
       anyEventThisFrame = true;
+      // 2026-09-07追加、直接のユーザー要望("スクロールに関する画面
+      // ドラッグと同じマウス操作に関して、発動し得る機能としては
+      // 範囲指定がある。COPYモードの際にそれは可能だろうか？"):
+      // COPYモードのスナップショットは元々静的な内容で、スクロール
+      // のコースト/ドラッグ物理(pixelOffset/coastLevel等)を一切
+      // 必要としない――同じ左ドラッグのジェスチャーを、この経路の
+      // 「前」で完全に横取りし、Application::copyMouseDown()/
+      // copyMouseDrag()/copyMouseUp()(いずれもcurrentMode()!=Copyの
+      // 間は無害にno-op)へ委譲する。下のスクロール専用のswitch
+      // (dragging/coastLevel/pixelOffset等を書き換える)には一切
+      // 触れさせない――COPYモードの描画は元々ずっと通常のredraw()
+      // 経由(CopyMode::render())で、renderScrolled()へ切り替わる
+      // 理由が無いため。
+      if (app.currentMode() == fm::ApplicationMode::Copy) {
+        switch (drag->type) {
+          case fm::GraphicalDisplay::DragEventType::ButtonDown:
+            app.copyMouseDown(drag->row, drag->column);
+            break;
+          case fm::GraphicalDisplay::DragEventType::Motion:
+            app.copyMouseDrag(drag->row, drag->column);
+            break;
+          case fm::GraphicalDisplay::DragEventType::ButtonUp:
+            app.copyMouseUp();
+            break;
+        }
+        continue;
+      }
       switch (drag->type) {
         case fm::GraphicalDisplay::DragEventType::ButtonDown:
           // dragging自体はまだ立てない――buttonHeldPendingDrag自身の

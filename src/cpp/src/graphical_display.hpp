@@ -348,6 +348,16 @@ class GraphicalDisplay : public Display {
   struct DragEvent {
     DragEventType type;
     int deltaY = 0;  // Motionに対して有効
+    // row/column(2026-09-07追加、直接のユーザー要望: COPYモードでの
+    // マウス範囲選択): MouseClick/HoverEventと同じ表示座標系
+    // (moveCursor()の座標系)での、押下/移動時点の絶対位置。
+    // ButtonDown/Motionに対してのみ有効(ButtonUpは常に0/0――解放時点
+    // の位置は呼び出し元にとって意味を持たない、直前のMotion/ButtonDown
+    // が既に最終位置を運んでいる)。スクロールのdeltaY駆動の物理
+    // (main.cppのコースト/ドラッグ)は元々この2フィールドを一切
+    // 見ないので、それらの既存の呼び出し元には影響しない。
+    int row = 0;
+    int column = 0;
   };
   std::optional<DragEvent> consumeDragEvent();
 

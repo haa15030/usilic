@@ -1781,7 +1781,7 @@ bool GraphicalDisplay::pumpEvents() {
         if (event.button.button == SDL_BUTTON_LEFT) {
           impl_->pendingLeftClick = MouseClick{row, col, false};
           SDL_CaptureMouse(SDL_TRUE);  // ドラッグがウィンドウを離れても動きの追跡を続ける
-          impl_->dragQueue.push_back(DragEvent{DragEventType::ButtonDown, 0});
+          impl_->dragQueue.push_back(DragEvent{DragEventType::ButtonDown, 0, row, col});
         } else {
           impl_->mouseQueue.push_back(MouseClick{row, col, true});
         }
@@ -1832,7 +1832,11 @@ bool GraphicalDisplay::pumpEvents() {
         if (impl_->scrollbarDragActive) {
           impl_->scrollbarQueue.push_back(ScrollbarEvent{ScrollbarEventType::Motion, event.motion.y});
         } else if (event.motion.state & SDL_BUTTON_LMASK) {
-          impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel});
+          // row/column(2026-09-07追加、DragEvent自身の宣言コメント
+          // 参照): 下のhover分岐と全く同じピクセル→セル変換。
+          int dragCol = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
+          int dragRow = std::max(0, event.motion.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
+          impl_->dragQueue.push_back(DragEvent{DragEventType::Motion, event.motion.yrel, dragRow, dragCol});
         } else if (SDL_GetWindowFlags(impl_->window) & SDL_WINDOW_INPUT_FOCUS) {
           // キーボード/入力フォーカスで判定している(SDL_WINDOW_MOUSE_
           // FOCUSでは「ない」、それだと、アクティブかどうかに関わらず、

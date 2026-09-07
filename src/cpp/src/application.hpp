@@ -1474,6 +1474,31 @@ class Application {
   void preloadPagerAhead(int prospectiveTopIndex, bool bypassPacing = false);
   void suppressPagerRepoll(int actualNewTopIndex);
 
+  // GUIのマウス範囲選択向け(2026-09-07追加、直接のユーザー要望:
+  // "スクロールに関する画面ドラッグと同じマウス操作に関して、発動
+  // し得る機能としては範囲指定がある。COPYモードの際にそれは可能
+  // だろうか？")。main.cpp(runGuiPhase()のDragEvent消費)からだけ
+  // 呼ばれ、いずれもcurrentMode_ != Copyの間は無害にno-opする――
+  // 呼び出し元がモードを問わず同じDragEvent消費ループから毎回呼べる
+  // ようにするため(スクロール用のcoastLevel/pixelOffset等を一切
+  // 触れない、CopyMode自身のスナップショットは元々スクロール物理
+  // (惰性/慣性)を必要としない静的な内容であるため)。`row`/`column`
+  // はいずれもDisplay::MouseClick/DragEventと同じ表示座標系
+  // (moveCursor()の座標系)。
+  //
+  // copyMouseDown(): 押下位置へキャレットを移動し、その場でマーク
+  // アンカーを置く――ドラッグに発展せずそのままcopyMouseUp()が来た
+  // 場合、CopyMode::confirmMark()自身のコメント通り空範囲は
+  // クリップボードに触れないので、実質的には「クリックでキャレット
+  // を置くだけ」の動作になる。
+  void copyMouseDown(int row, int column);
+  // copyMouseDrag(): 現在のドラッグ位置までマークを伸縮する。
+  // CopyMode::placeCursorAt()自身のコメント参照――マーク開始行を
+  // 一切またがない(legacy自身の一行限定選択モデル)。
+  void copyMouseDrag(int row, int column);
+  // copyMouseUp(): 確定する(空範囲なら何もしない)。
+  void copyMouseUp();
+
   // 終了が確認された(StartExitのプロンプトが先頭'y'で送信された)
   // 時点でtrue――将来の本物の実行ループへの、feedByte()の呼び出しを
   // 止めて巻き戻すべきという合図。Application自体は決してこれを

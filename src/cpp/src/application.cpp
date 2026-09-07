@@ -7368,6 +7368,33 @@ bool Application::returnFromCopy() {
   return true;
 }
 
+// copyMouseDown()/copyMouseDrag()/copyMouseUp()自身の宣言コメント
+// (application.hpp)参照。
+void Application::copyMouseDown(int row, int column) {
+  if (currentMode_ != ApplicationMode::Copy) return;
+  int lineIndex = copyView_.lineIndexAtRow(row);
+  if (lineIndex < 0) return;
+  copyMode_.placeCursorAt(lineIndex, column);
+  copyMode_.startMark();
+}
+
+void Application::copyMouseDrag(int row, int column) {
+  if (currentMode_ != ApplicationMode::Copy) return;
+  // markActive()の間はCopyMode::placeCursorAt()自身が`row`を無視する
+  // ので、マーク開始後にドラッグが一覧の外(モードライン等、
+  // lineIndexAtRow()が負を返す行)へはみ出しても安全――その場合
+  // だけ、まだマークが始まっていない(通常は起こらないはずだが念の
+  // ため)なら何もしない。
+  int lineIndex = copyView_.lineIndexAtRow(row);
+  if (!copyMode_.markActive() && lineIndex < 0) return;
+  copyMode_.placeCursorAt(lineIndex, column);
+}
+
+void Application::copyMouseUp() {
+  if (currentMode_ != ApplicationMode::Copy) return;
+  copyMode_.confirmMark();
+}
+
 // ApplicationMode::Copyが有効な間の、COPY自身の小さなキーの語彙。
 // code.c自身のkey_copy[]のホワイトリスト(M_up/M_dn/M_mark/M_head/
 // M_tail/M_forw/M_back/M_kforw/M_kback/M_prev/M_next/M_clear)から

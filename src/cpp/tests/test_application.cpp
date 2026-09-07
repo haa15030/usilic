@@ -11253,6 +11253,49 @@ TEST_CASE_FIXTURE(Fixture, "^O^C/^O^Y (COPY/PASTE) round trip: select a substrin
   CHECK(app.promptText() == "xhello");
 }
 
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): GUI mouse drag (copyMouseDown()/copyMouseDrag()/copyMouseUp()) "
+                           "selects a range the same way keyboard marking does, is a no-op outside "
+                           "Copy mode, and round-trips through ^O^Y just like a keyboard-driven "
+                           "selection would (2026-09-07, a direct user request: \"スクロールに関する"
+                           "画面ドラッグと同じマウス操作に関して...COPYモードの際にそれは可能"
+                           "だろうか？\")") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(display.rowText(0).substr(0, 5) == "hello");  // plain.txt's own known content
+
+  // Outside Copy mode, all three must be harmless no-ops (no crash, no
+  // mode/state change) -- these are called unconditionally from
+  // main.cpp's DragEvent consumption loop regardless of currentMode().
+  app.copyMouseDown(0, 0);
+  app.copyMouseDrag(0, 3);
+  app.copyMouseUp();
+  CHECK(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);
+
+  app.copyMouseDown(0, 0);  // press at column 0 -- places the anchor there
+  app.copyMouseDrag(0, 5);  // drag to column 5 -- extends the live selection
+  CHECK(display.standoutAt(0, 0) == true);
+  CHECK(display.standoutAt(0, 4) == true);
+  CHECK(display.standoutAt(0, 5) == false);
+  app.copyMouseUp();  // release -- confirms the selection ("hello")
+  CHECK(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  REQUIRE(app.promptActive());
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte(0x19, std::nullopt));  // ^O^Y
+  CHECK(app.promptText() == "hello");
+}
+
 TEST_CASE_FIXTURE(Fixture, "^O^Y (PASTE) with no active prompt is a harmless no-op, not a crash") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x0f, std::nullopt));

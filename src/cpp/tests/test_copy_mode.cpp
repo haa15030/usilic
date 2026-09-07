@@ -196,6 +196,39 @@ TEST_CASE("CopyMode: an empty snapshot leaves every operation a safe no-op") {
   CHECK_FALSE(copy.markActive());
 }
 
+TEST_CASE("CopyMode: placeCursorAt() jumps to an absolute row/column when not marking -- the GUI "
+          "mouse-drag range-selection support (2026-09-07, a direct user request)") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"aaaaa", "bb", "ccccc"}));
+  copy.placeCursorAt(2, 3);
+  CHECK(d.cursorRow() == 2);
+  CHECK(d.cursorCol() == 3);
+  // Column past the row's own end clamps to the end, same as moveToLineEnd().
+  copy.placeCursorAt(1, 99);
+  CHECK(d.cursorRow() == 1);
+  CHECK(d.cursorCol() == 2);  // "bb" is only 2 columns wide
+}
+
+TEST_CASE("CopyMode: placeCursorAt() ignores its `row` argument once a mark is active, mirroring "
+          "moveUp()/moveDown()'s own single-row selection constraint -- lets a mouse drag that "
+          "wanders onto a different row still only extend the selection within the anchor's row") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"select me please", "a different row"}));
+  copy.placeCursorAt(0, 1);
+  copy.startMark();
+  copy.placeCursorAt(1, 7);  // drag wandered onto row 1 -- row is ignored, column still applies
+  CHECK(d.cursorRow() == 0);
+  CHECK(d.cursorCol() == 7);
+  copy.confirmMark();
+  CHECK(copy.clipboardText() == "elect ");
+}
+
 TEST_CASE("CopyMode: the live selection renders as a Standout AttributeRun over exactly the marked "
           "byte range while marking is in progress") {
   RecordingDisplay d(10, 30);
