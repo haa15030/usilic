@@ -176,13 +176,19 @@ void CopyMode::beginOrExtendFromMouse(int row, int column) {
 }
 
 void CopyMode::startMark() {
-  // 2026-09-07再訂正、直接のユーザー要望("⑭では^@を押していなくても
-  // 勝手に離れ小島なので、^@はスルーでいいかも。^[wもしくは^[pで回収、
-  // では？"): ^@自身へのbankCurrentMarkIfExtended()呼び出しは撤回した
-  // ――beginOrExtendFromMouse()(GUIのマウス押下)だけが「島」を自動的に
-  // 積む。キーボードの^@は元通り、常に単純にアンカーを現在位置へ
-  // 置き直すだけ(emacsのC-@を繰り返し押した時と同じ)。
+  // 2026-09-07三訂、直接のユーザー要望(⑨のGUI限定ハイライト不具合の
+  // 切り分けのため: "離れ小島は^@で作れる。だが^X␣では作れない。
+  // そこで作れるようにしてみたらどうかな^@で。一旦ハイライトが出たら
+  // あとは出たりして"): 直前の訂正(このメソッド自身の1つ前のコメント
+  // 参照)でbankCurrentMarkIfExtended()呼び出しを撤去していたが、ここで
+  // ^@に限り再度呼ぶようにする――beginOrExtendFromMouse()と同じく、
+  // 既に実質的な範囲を持つマーク中にもう一度^@を押すと、その範囲を
+  // 1つの島としてislands_へ確定・画面に残したまま、現在位置から新しい
+  // アンカーを始める。startOrUpgradeRectangleMark()(^X SPC)側は据え
+  // 置き(呼ばない)――ユーザー自身の言葉通り「^Xスペースでは作れない」
+  // 状態を保ったまま、^@側だけを切り替えて比較できるようにするため。
   if (lines_.empty()) return;
+  bankCurrentMarkIfExtended();
   markActive_ = true;
   rectangleMark_ = false;
   markAnchorRow_ = cursorRow_;

@@ -132,12 +132,13 @@ TEST_CASE("CopyMode: startMark()+confirmMark() select a same-row substring into 
   CHECK(copy.clipboardText() == "elect ");  // unchanged
 }
 
-TEST_CASE("CopyMode: startMark() always just resets the anchor to the current position (emacs' "
-          "repeated set-mark-command), even when the mark already has real extent -- it never banks "
-          "an island itself (2026-09-07, a direct user correction: \"⑭では`^@`を押していなくても"
-          "勝手に離れ小島なので、`^@`はスルーでいいかも\" -- only beginOrExtendFromMouse() (a GUI "
-          "mouse press) does that; keyboard movement always extends the current mark, so only an "
-          "explicit mouse press needs the automatic-island behavior)") {
+TEST_CASE("CopyMode: startMark() banks the current mark as an island when it already has real "
+          "extent, then re-anchors at the current position (2026-09-07 三訂, a direct user request "
+          "to help diagnose ⑨ (the GUI-only \"regular mark never highlights\" report): \"離れ小島は"
+          "`^@`で作れる。だが`^X␣`では作れない。そこで作れるようにしてみたらどうかな`^@`で\" -- this "
+          "reinstates, for `^@` only, the same bankCurrentMarkIfExtended() behavior "
+          "beginOrExtendFromMouse() already has; calling startMark() with the anchor still equal to "
+          "the cursor -- i.e. no real extent yet -- remains a plain no-op re-anchor, same as before)") {
   RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
@@ -145,13 +146,13 @@ TEST_CASE("CopyMode: startMark() always just resets the anchor to the current po
   copy.loadSnapshot(makeLines({"select me please"}));
 
   copy.moveRight();  // column 1
-  copy.startMark();
+  copy.startMark();  // anchor==cursor here -- no extent yet, so this call itself banks nothing
   for (int i = 0; i < 3; i++) copy.moveRight();  // column 4 -- real extent now (1..4 == "ele")
-  copy.startMark();                              // just re-anchors at column 4 -- no island banked
+  copy.startMark();  // real extent -- banks "ele" as an island, then re-anchors at column 4
   CHECK(copy.markActive());
   for (int i = 0; i < 3; i++) copy.moveRight();  // column 7
   copy.confirmMark();
-  CHECK(copy.clipboardText() == "ct ");  // columns 4..7 only -- "ele" was discarded, not banked
+  CHECK(copy.clipboardText() == "ele\nct ");  // the banked island plus the newer 4..7 range
 }
 
 TEST_CASE("CopyMode: confirmMark() without an active mark is a safe no-op") {
