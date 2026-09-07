@@ -7505,6 +7505,21 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // 元々どのみち意味を持たないため、実害は無い)。
   if (copyEscapePending_) {
     copyEscapePending_ = false;
+    // 2026-09-07追加、直接のユーザー要望⑬("^X^Cおよび^[^[のみ追加で
+    // よろしく"): copyLeaderXPending_のkControlCケース(このファイル
+    // 内、少し下)と対になるもう一方の例外。通常モード側でも
+    // dispatchLeaderByte()のescPending_ブロックが全く同じ"^[^["を
+    // Command::StartExitへ結線している(同ブロック自身のコメント
+    // 参照、emacsのC-x C-c相当をESC ESCでも呼べるようにする趣旨)ので、
+    // COPYモードの内側だけこの組み合わせが無反応というのは一貫性を
+    // 欠く。マーク中の内容は確定・保存せず、'w'/'p'いずれでもない
+    // ため下のsetKillBuffer()/copyTextToSystemClipboard()へは進ませず
+    // ここで直接returnする("終了"はコピーを確定する操作ではないため)。
+    if (!special && byte == kEscape) {
+      returnFromCopy();
+      handleCommand(Command::StartExit);
+      return true;
+    }
     bool wasRectangle = copyMode_.rectangleMarkActive();
     if (!special && byte == 'w') {
       copyMode_.confirmMark();
@@ -7536,11 +7551,27 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // "^X SPC"(startOrUpgradeRectangleMark())自身の1バイト先読み――
   // application.hpp自身のcopyLeaderXPending_のコメント参照(2026-09-07
   // 追加、直接のユーザー要望"①emacsには矩形範囲指定の機能がある
-  // のであれを移植してほしい...emacs同様^X␣で発動")。SPC(0x20)以外が
-  // 続いた場合は単に吸収する(copyEscapePending_と同じ理屈)。
+  // のであれを移植してほしい...emacs同様^X␣で発動")。
+  //
+  // 2026-09-07追加、直接のユーザー要望⑬("^X^Cおよび^[^[のみ追加で
+  // よろしく"): feedCopyByte()自身の宣言コメントが言う「^G以外は
+  // ほぼ全て吸収する設計」に対する、ユーザー自身が選んだ最小限の
+  // 例外2つのうち1つ。通常モード側の^X^C(このファイル内、
+  // leaderXPending_ディスパッチのkControlCケース、"終了"参照)と
+  // 全く同じ意味を、COPYモードの内側からも直接発動できるようにする
+  // ――emacsのC-x C-cが常時どのバッファからでも効くのと同じ理屈。
+  // returnFromCopy()で起点のモードへ戻してから、通常のExit確認
+  // プロンプトを開始する(マーク中の内容は保存せず捨てる――
+  // "終了"はコピーを確定する操作ではないため)。SPCでもkControlCでも
+  // ない場合は、従来通り単に吸収する(copyEscapePending_と同じ理屈)。
   if (copyLeaderXPending_) {
     copyLeaderXPending_ = false;
-    if (!special && byte == ' ') copyMode_.startOrUpgradeRectangleMark();
+    if (!special && byte == ' ') {
+      copyMode_.startOrUpgradeRectangleMark();
+    } else if (!special && byte == kControlC) {
+      returnFromCopy();
+      handleCommand(Command::StartExit);
+    }
     return true;
   }
   // ^X(2026-09-07追加、同上): 通常のCOPYモードの語彙には元々含まれて

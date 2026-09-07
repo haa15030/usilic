@@ -1452,7 +1452,38 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
       // second byte here).
       consecutiveEscapes = std::min(consecutiveEscapes + 1, 2);
       app.feedByte(0x1b, std::nullopt);
-      for (unsigned char c : keyInput.lastEscapeBytes()) app.feedByte(c, std::nullopt);
+      // 2026-09-07修正、直接のユーザー報告(⑬"^[^[のみ追加"、COPY
+      // モードに限らず-c全体で再現): 上のコメントが言う「ride along」
+      // する2バイト目そのものが、素早く連打された2発目の裸のESC
+      // 自身であることがある――KeyInput::readEscapeSequence()は既知
+      // シーケンス判定のため、ESCの直後を最大remaining(=矢印キー等の
+      // シーケンス長-1)バイトぶん、VTIME=1(100ms)刻みでブロッキング
+      // 読みするため、その待ち時間内に届いた2発目のESCが「remaining」
+      // の1バイトとして誤って飲み込まれてしまう。従来はここで
+      // lastEscapeBytes()の中身を無条件にapp.feedByte()だけへ流して
+      // いたため、この飲み込まれた2発目のESCがconsecutiveEscapesの
+      // カウントに一切反映されず、^[^[ Enterの直接終了ジェスチャーが
+      // (COPYモードに限らず、素のDirectory等でも)全く機能しなかった
+      // ――実機PTYテストで確認済み。ここで、飲み込まれた各バイトを
+      // 「本来トップレベルのpoll()ループ自身で読まれていたら辿って
+      // いたはずの状態遷移」に通し直す: 0x1bならまさに今と同じ「裸の
+      // ESC」として数え直し、Enterかつ2回以上ESCが続いていればこの場
+      // で即終了、それ以外の通常バイトはconsecutiveEscapesをリセット
+      // しつつApplicationへそのまま渡す。
+      for (unsigned char c : keyInput.lastEscapeBytes()) {
+        if (c == 0x1b) {
+          consecutiveEscapes = std::min(consecutiveEscapes + 1, 2);
+          app.feedByte(0x1b, std::nullopt);
+          continue;
+        }
+        if (c == 0x0d && consecutiveEscapes >= 2) {
+          app.requestImmediateExit();
+          consecutiveEscapes = 0;
+          continue;
+        }
+        consecutiveEscapes = 0;
+        app.feedByte(c, std::nullopt);
+      }
       continue;
     }
     if (byte == 0x0d && consecutiveEscapes >= 2) {
