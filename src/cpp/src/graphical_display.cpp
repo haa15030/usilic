@@ -1940,15 +1940,18 @@ bool GraphicalDisplay::pumpEvents() {
             impl_->keyQueue.push_back(KeyEvent{0x80, std::nullopt});
           } else if (sym == SDLK_MINUS) {
             // 2026-09-07追加、直接のユーザー要望("ATOKユーザーは多い
-            // はずなので^@は使えないとなると何がいいだろう？^_とか？"
-            // ――application.cpp自身のfeedCopyByte()、0x1fケース自身の
-            // コメント参照): Ctrl+_(US配列ではShift+Ctrl+-)を0x1Fとして
-            // 発行する。SDLのkeysymはUS配列の素のハイフンキーを常に
-            // SDLK_MINUSとして報告する(Shiftの有無を区別しない)ため、
-            // Shift修飾の有無に関わらずCtrl+ハイフンキーを一貫して
-            // 0x1Fとして扱う――本物の端末でもCtrl+マイナスとCtrl+
-            // アンダースコアの両方を同じ制御コード(US、0x1F)として
-            // 扱う実装が一般的であることに倣っている。
+            // はずなので^@は使えないとなると何がいいだろう？"――
+            // application.cpp自身のfeedCopyByte()、0x1fケース自身の
+            // コメント参照): 当初はCtrl+_(US配列ではShift+Ctrl+-)を
+            // 提案したが、ユーザー自身が実機のemacsで確認したところ
+            // ^_はundoに割り当て済みと判明したため、Shift不要のCtrl+
+            // マイナス(^-)を採用した(値は変わらず0x1F)。SDLのkeysymは
+            // US配列の素のハイフンキーを常にSDLK_MINUSとして報告する
+            // (Shiftの有無を区別しない)ため、この分岐はShift修飾の
+            // 有無に関わらずCtrl+ハイフンキーを一貫して0x1Fとして扱う
+            // ――結果として、もしユーザーがCtrl+アンダースコア
+            // (Shift+Ctrl+-)を押してもここは動くが、公式に使う/文書化
+            // するのは^-(Shift無し)の方である。
             impl_->keyQueue.push_back(KeyEvent{0x1f, std::nullopt});
           }
           break;
