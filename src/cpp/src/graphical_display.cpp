@@ -1938,6 +1938,18 @@ bool GraphicalDisplay::pumpEvents() {
             // 計算やレンダリング側の問題ではなく、この最も手前の入力
             // 変換の欠落だと判明した)。
             impl_->keyQueue.push_back(KeyEvent{0x80, std::nullopt});
+          } else if (sym == SDLK_MINUS) {
+            // 2026-09-07追加、直接のユーザー要望("ATOKユーザーは多い
+            // はずなので^@は使えないとなると何がいいだろう？^_とか？"
+            // ――application.cpp自身のfeedCopyByte()、0x1fケース自身の
+            // コメント参照): Ctrl+_(US配列ではShift+Ctrl+-)を0x1Fとして
+            // 発行する。SDLのkeysymはUS配列の素のハイフンキーを常に
+            // SDLK_MINUSとして報告する(Shiftの有無を区別しない)ため、
+            // Shift修飾の有無に関わらずCtrl+ハイフンキーを一貫して
+            // 0x1Fとして扱う――本物の端末でもCtrl+マイナスとCtrl+
+            // アンダースコアの両方を同じ制御コード(US、0x1F)として
+            // 扱う実装が一般的であることに倣っている。
+            impl_->keyQueue.push_back(KeyEvent{0x1f, std::nullopt});
           }
           break;
         }
