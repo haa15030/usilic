@@ -1923,6 +1923,21 @@ bool GraphicalDisplay::pumpEvents() {
             impl_->keyQueue.push_back(KeyEvent{(sym - SDLK_a) + 1, std::nullopt});
           } else if (sym == SDLK_LEFTBRACKET) {
             impl_->keyQueue.push_back(KeyEvent{0x1b, std::nullopt});  // Ctrl+[ は ESC と同じ
+          } else if (sym == SDLK_SPACE) {
+            // 2026-09-07追加、直接のユーザー報告(⑨のGUI限定「COPY
+            // モードで^@によるハイライトが一切出ない」を切り分けた
+            // 末に発覚した真因): Ctrl+Space(^@、application.cpp自身が
+            // 一貫して0x80として扱う――application.cpp:2143自身のコメント
+            // 参照、実端末では素のNULを読めないのでKeyInputが0x80へ
+            // 変換して報告するのと同じ規約)がこの分岐に一件も無く、
+            // 上のCtrl+A〜Z/Ctrl+[以外は無条件で読み捨てられていた――
+            // Application::feedByte()へ一度も届かないため、COPYモードの
+            // startMark()/その他^@に反応する全ての箇所がGUIでは丸ごと
+            // 無反応だった(モードラインの"Rectangle-Mark"表示のような
+            // 描画を全く伴わない副作用すら起きないことから、ハイライト
+            // 計算やレンダリング側の問題ではなく、この最も手前の入力
+            // 変換の欠落だと判明した)。
+            impl_->keyQueue.push_back(KeyEvent{0x80, std::nullopt});
           }
           break;
         }

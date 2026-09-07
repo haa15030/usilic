@@ -187,6 +187,19 @@ void CopyMode::startMark() {
   // アンカーを始める。startOrUpgradeRectangleMark()(^X SPC)側は据え
   // 置き(呼ばない)――ユーザー自身の言葉通り「^Xスペースでは作れない」
   // 状態を保ったまま、^@側だけを切り替えて比較できるようにするため。
+  //
+  // (2026-09-07四訂、追記: この訂正自体は「最初から最後まで何も出
+  // ない」と無効と判明したが、bankCurrentMarkIfExtended()自体は無害
+  // なのでそのまま残す。この後、直接のユーザー要望で^@/^X SPCがどちら
+  // をどちらへ呼ぶかを一時的に入れ替えて試したところ、入れ替えても
+  // 「^@に相当する側」は"Rectangle-Mark"というモードラインの文字列
+  // すら一切表示されない(=そもそも呼ばれてすらいない)と判明した――
+  // 真因はrectangleMark_の値でもこの関数群でもなく、graphical_
+  // display.cpp自身のSDLキー入力側にあった(GraphicalDisplay::run()の
+  // KMOD_CTRL分岐がCtrl+A〜Zと`Ctrl+[`しか変換しておらず、Ctrl+Space
+  // ―― ^@そのもの ――を全く生成していなかった、同ファイル自身の修正
+  // コメント参照)。この入れ替え実験は既に元に戻し、この関数は常に
+  // 「非矩形マーク」を意味する。)
   if (lines_.empty()) return;
   bankCurrentMarkIfExtended();
   markActive_ = true;
