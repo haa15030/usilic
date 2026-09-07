@@ -25,14 +25,22 @@ namespace fm {
 // いい")を受けて、legacy自身のmoveUp()/moveDown()の「マーク中は行を
 // またげない」という単一行限定のモデル(code.cの`if (!f_copy && row)
 // vt_move(...)`)を撤廃し、複数行にまたがる範囲選択(GUIのマウス
-// ドラッグ、placeCursorAt()参照)を許すようにした。ただし
-// 「継承したい仕様」として、ハイライト表示のある画面(Directory一覧
-// 等、各行にContentView::Line::highlightStartColumnが設定されている)
-// からの選択は、confirmMark()が各行の「選択可能範囲」(highlightStart
-// Column以降、つまりファイル名そのもの)だけを取り出す――ちょうど
-// 通常のクリックがhighlightStartColumn以降だけをスコープにするのと
-// 同じ考え方(Application::handleMouseClick()自身のisColumnWithinRowText()
-// 参照)。confirmMark()自身のコメント参照。
+// ドラッグ、placeCursorAt()参照)を許すようにした。
+//
+// (同日、直接のユーザー訂正: ハイライト表示のある画面向けに一度実装
+// した「選択可能範囲(ファイル名)だけを取り出す」仕組みは、既存の
+// dired方式マーキング('.'/'['/']'、DirectoryMode::toggleMark())が
+// Application::startProgramPrompt()への複数ファイル渡しを既に
+// カバーしていると分かったため撤回・削除した――同じ用途に2つの
+// 仕組みを持つ必要は無い。)
+//
+// 同日さらに、直接のユーザー要望("①emacsには矩形範囲指定の機能が
+// あるのであれを移植してほしい"): emacsのrectangle-mark-mode(^X
+// SPC)を移植した――startOrUpgradeRectangleMark()参照。通常のマーク
+// (startMark())が「アンカー〜カーソルの間の、読み順での連続した
+// テキスト」を選ぶのに対し、矩形マークは「アンカー行〜カーソル行の
+// 各行について、アンカー〜カーソルの表示カラム範囲だけ」を選ぶ
+// ――emacs自身のkill-rectangle/copy-rectangle-as-killと同じ意味論。
 //
 // スナップショットに格納する前に色/ハイライトのエスケープバイトを
 // 全て取り除くmake_map()とは異なり、このクラスは各Lineの
@@ -59,14 +67,11 @@ class CopyMode {
 
   // 新しいスナップショット(通常はApplication::
   // activeContentView().lines())の所有権を受け取る: 入力の各Line
-  // からは`text`と`attributes`に加えて`highlightStartColumn`も生き
-  // 残る(2026-09-07追加、直接のユーザー要望「②」――ハイライト表示の
-  // ある画面からの選択を「選択可能範囲のみ」に絞るためにconfirmMark()
-  // が読む、クラス自身のコメント参照)。それ以外の全Lineフィールド
-  // (shellCommand、ellipsisEligible、neverHighlighted)は引き続き
-  // 「元の」モードに固有の表示メタデータであり、ここで凍結された
-  // 時点で意味を持たない(make_map()自身のPP→素のテキストへの縮約と
-  // 同じ)。`initialRow`(既定0)は代わりにカーソルを
+  // からは`text`と`attributes`だけが生き残る――それ以外の全Line
+  // フィールド(highlightStartColumn、shellCommand、ellipsisEligible、
+  // neverHighlighted)は「元の」モードに固有の表示メタデータであり、
+  // ここで凍結された時点で意味を持たない(make_map()自身のPP→素の
+  // テキストへの縮約と同じ)。`initialRow`(既定0)は代わりにカーソルを
   // そこから開始させる――実際のユーザー報告(「^Oc→ブロックカーソル
   // 位置が...正しくは直前のハイライト行位置」)により、legacy自身の
   // make_map()も同じことをしている(`row = rvp->row`、スナップショット
@@ -89,9 +94,9 @@ class CopyMode {
   // 時にしか更新されないことに倣って、マークを行をまたいで拡張する
   // こと自体をブロックしていた(単一行限定の選択モデル)。この移植は
   // 意図的にその制約を外し、複数行にまたがる範囲選択(GUIのマウス
-  // ドラッグ)を可能にする。legacy自身の列を保持するcount_i()/
-  // count_h()往復と同様、行の変更をまたいで現在の表示カラムを保持
-  // する点は変わらない。
+  // ドラッグ、および矩形マーク)を可能にする。legacy自身の列を保持する
+  // count_i()/count_h()往復と同様、行の変更をまたいで現在の表示
+  // カラムを保持する点は変わらない。
   void moveUp();
   void moveDown();
   // moveLeft()/moveRight()/moveToLineStart()/moveToLineEnd():
@@ -115,7 +120,7 @@ class CopyMode {
   // 「マーク中はrowを無視する」という以前の制約を撤廃した)。ボタン
   // 押下の瞬間に呼ばれれば実質的な「クリックでキャレットを置く」
   // 動作を兼ね、ドラッグ中に繰り返し呼ばれれば選択を複数行にまたいで
-  // 伸縮させる。
+  // 伸縮させる(通常のマーク/矩形マークどちらの最中でも同じ)。
   void placeCursorAt(int row, int column);
 
   // 2026-08-31、直接のユーザー依頼("本体で変更が必要なのは^Space...
@@ -129,36 +134,46 @@ class CopyMode {
   // ただし'.'キーは(ATOKと無関係、衝突の実害が無いため)後方互換の
   // トグル別名として、この2メソッドを内部で使い分ける形で残っている。
 
-  // 現在のカーソル位置に選択のアンカーを置く。既にマーク中の場合は
-  // アンカーを現在位置へ置き直す(emacsのC-@を繰り返し押した時と同じ、
-  // 何度でも安全に呼べる)。
+  // 現在のカーソル位置に選択のアンカーを置く(通常の、矩形でない
+  // マーク)。既にマーク中の場合はアンカーを現在位置へ置き直す
+  // (emacsのC-@を繰り返し押した時と同じ、何度でも安全に呼べる)。
+  // 既に矩形マーク中だった場合は矩形指定を解除し、通常マークに
+  // 戻す。
   void startMark();
+
+  // emacsのrectangle-mark-mode(^X SPC)の移植(2026-09-07追加、直接の
+  // ユーザー要望"①emacsには矩形範囲指定の機能があるのであれを移植
+  // してほしい")。既にマーク中(通常/矩形いずれか)ならアンカーは
+  // そのまま、選択の解釈だけを矩形に切り替える――キーボードで
+  // startMark()した後にこれを呼ぶ、またはGUIのマウスボタン押下
+  // (copyMouseDown()、常にstartMark()相当で始まる)の最中に呼んでも
+  // 自然に働く。マーク中でなければ、現在のカーソル位置をアンカーに
+  // して新規に矩形マークを開始する。
+  void startOrUpgradeRectangleMark();
+
   // アンカーと現在のカーソル位置の間の範囲を確定する。マーク中で
   // なければ何もしない。
   //
   // 2026-09-07、直接のユーザー要望("次はCOPYだな。旧の行指定は
-  // 忘れていい。ただし継承したい仕様もある...②ハイライト表示のある
-  // 画面では、選択可能範囲のみ指定")を受けて複数行対応に書き直した:
-  // アンカー行〜カーソル行の各行について、
-  //   - その行にhighlightStartColumnが設定されている(=ハイライト
-  //     表示のある一覧――Directory等――からの凍結スナップショット
-  //     である)場合: 選択の実際のバイト範囲がどこであれ、その行の
-  //     highlightStartColumn以降(=ファイル名そのもの、「選択可能
-  //     範囲」)を丸ごと取り出す――通常のクリックがそこだけをスコープ
-  //     にするのと同じ考え方(handleMouseClick()自身のisColumnWithinRowText()
-  //     参照)。行をまたぐ複数の結果は、Application::shellQuoteArgv()と
-  //     全く同じ規則でシェルクォートした上でスペース区切りに連結する
-  //     (`open -a プレビュー`のような複数引数のコマンド行にそのまま
-  //     ペーストできるようにする、直接の要望「①と併せ、open -A
-  //     プレビュー等で複数渡せる仕様」)。
-  //   - highlightStartColumnが無い(プレーンなFILE内容等)行: 従来通り
-  //     アンカー/カーソルbyteそのものが定める正確なバイト範囲を取り出
-  //     し、複数行の結果は改行で連結する(legacy自身の`if (*p)
-  //     strcpy(rvp->copy, p)`というガードに倣い、単一行かつ空の範囲
-  //     ならclipboardText()を上書きしない――ハイライト行を含む場合は
-  //     ファイル名自体が空になり得ないため、このガードの対象外)。
+  // 忘れていい")を受けて複数行対応に書き直した: アンカー行〜カーソル
+  // 行の全ての行(読み順に正規化)を対象にする。
+  //   - 通常マーク(rectangleMarkActive()がfalse): 従来通りアンカー/
+  //     カーソルbyteそのものが定める、行をまたいでも連続した1つの
+  //     テキスト範囲を取り出し、改行で連結する(legacy自身の`if (*p)
+  //     strcpy(rvp->copy, p)`というガードに倣い、空の範囲(単一行かつ
+  //     hi==lo)ならclipboardText()を上書きしない)。
+  //   - 矩形マーク(rectangleMarkActive()がtrue、2026-09-07追加):
+  //     アンカー/カーソルそれぞれの表示カラム(displayColumnFor())の
+  //     min/maxを列範囲とし、各行についてその列範囲だけ(その行自身の
+  //     byteOffsetForDisplayColumn()で求め直す――行ごとに文字幅が
+  //     異なり得るため、バイトオフセットをそのまま使い回さない)を
+  //     取り出して改行で連結する――emacsのcopy-rectangle-as-kill()と
+  //     同じ意味論。全行が空(列範囲が実質ゼロ幅)でない限り上書きする。
   void confirmMark();
   bool markActive() const;
+  // startOrUpgradeRectangleMark()自身のコメント参照。markActive()が
+  // falseの間は常にfalse。
+  bool rectangleMarkActive() const;
 
   // 共有「ヤンクバッファ」(legacy: RV::copy) -- 常に素のテキスト、
   // 理由はこのクラス自身のコメント参照。最初の空でない選択が完了
@@ -169,7 +184,14 @@ class CopyMode {
   void cancelMark();
   void render();  // view_のLine群を再構築する(あれば、ライブ選択
                    // 自身のStandout AttributeRunを織り込む)、および
-                   // view_の実キャレットを再配置する。
+                   // view_の実キャレットを再配置する。加えて、
+                   // rectangleMarkActive()の間はモードラインの位置
+                   // フィールドへ"Rectangle-Mark"を表示する(直接の
+                   // ユーザー要望"モードラインのメッセージエリアに
+                   // ...Rectangle-Markと表示"――下線装飾は、モード
+                   // ライン描画パイプライン自体を拡張する必要がある
+                   // 大掛かりな変更になるため今回は見送り、通常の
+                   // 位置フィールドと同じ描画のまま)。
 
   ContentView &view_;
   std::vector<ContentView::Line> lines_;  // textとattributesのみ
@@ -177,8 +199,9 @@ class CopyMode {
   int cursorByte_ = 0;  // lines_[cursorRow_].textへのバイトオフセット、
                         // 常にUTF-8シーケンス境界に位置する
   bool markActive_ = false;
-  int markAnchorRow_ = 0;   // markActive_の間のみ有効(2026-09-07追加、複数行対応)
-  int markAnchorByte_ = 0;  // markActive_の間のみ有効
+  bool rectangleMark_ = false;  // markActive_の間のみ有効(2026-09-07追加)
+  int markAnchorRow_ = 0;       // markActive_の間のみ有効(2026-09-07追加、複数行対応)
+  int markAnchorByte_ = 0;      // markActive_の間のみ有効
   std::string clipboardText_;
 };
 

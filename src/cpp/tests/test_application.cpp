@@ -11253,45 +11253,84 @@ TEST_CASE_FIXTURE(Fixture, "^O^C/^O^Y (COPY/PASTE) round trip: select a substrin
   CHECK(app.promptText() == "xhello");
 }
 
-TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): pressing a mode-invoking key (^J p, PROGRAM) WHILE still "
-                           "marking confirms the mark, returns to the origin mode, invokes that mode "
-                           "normally, and auto-pastes the confirmed selection into its prompt -- a "
-                           "shortcut in place of ^[w (2026-09-07, a direct user request: \"①範囲指定の"
-                           "途中、`^[w`の代わりにモード発動キー（^[p等）でもペースト可\")") {
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^X SPC starts emacs-style rectangle-mark-mode, ^F/^B/^N/^P "
+                           "build a genuine column-range rectangle across multiple rows, and ^[w "
+                           "copies it AND auto-exits Copy (2026-09-07, a direct user request: "
+                           "\"①emacsには矩形範囲指定の機能があるのであれを移植してほしい...^X␣で発動... "
+                           "`^[w`でクリップボードへコピーしたのちCOPYを終了\")") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
-  REQUIRE(display.rowText(0).substr(0, 5) == "hello");
+  REQUIRE(display.rowText(0).substr(0, 5) == "hello");   // plain.txt: "hello\nworld\n"
+  REQUIRE(display.rowText(1).substr(0, 5) == "world");
 
   REQUIRE(app.feedByte(0x0f, std::nullopt));
   REQUIRE(app.feedByte(0x03, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Copy);
-  app.feedByte(0x80, std::nullopt);                              // ^@: mark start at column 0
-  for (int i = 0; i < 5; i++) app.feedByte(0x06, std::nullopt);  // extend over "hello"
 
-  // Still marking -- no ^[w yet. ^J p (PROGRAM prompt) should confirm
-  // the mark, leave Copy mode, and land in the PROGRAM prompt with
-  // "hello" already pasted in, all from these two bytes.
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  REQUIRE(app.feedByte('p', std::nullopt));   // p -- StartProgram
-  CHECK(app.currentMode() == ApplicationMode::File);  // back to the origin, not stuck in Copy
-  REQUIRE(app.promptActive());
-  CHECK(app.promptText() == "hello");
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte(' ', std::nullopt));   // SPC -- rectangle-mark-mode starts at (row 0, col 0)
+  CHECK(display.rowText(23).find("Rectangle-Mark") != std::string::npos);
+  for (int i = 0; i < 3; i++) app.feedByte(0x06, std::nullopt);  // ^F x3 -- column 3
+  app.feedByte(0x0e, std::nullopt);                              // ^N -- row 1, column preserved (3)
+
+  REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
+  REQUIRE(app.feedByte('w', std::nullopt));   // w -- confirm AND auto-exit (rectangle-specific)
+  CHECK(app.currentMode() == ApplicationMode::File);  // left Copy automatically
+  CHECK_FALSE(display.rowText(23).find("Rectangle-Mark") != std::string::npos);
+
+  // Round-trip the clipboard through a normal ^O^Y paste to verify its content.
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x19, std::nullopt));
+  CHECK(app.promptText() == "hel\nwor");  // columns [0,3) of rows "hello"/"world"
 }
 
-TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^J while NOT marking is a harmless no-op (this shortcut is "
-                           "scoped to \"in the middle of range specification\" only, per the direct "
-                           "user request's own wording \"範囲指定の途中\")") {
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): a REGULAR (non-rectangle) mark's ^[w still just confirms "
+                           "and stays in Copy mode, unchanged -- the auto-exit is specific to "
+                           "rectangle-mark, per the direct user request's own wording describing it "
+                           "as part of that workflow") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x0f, std::nullopt));
   REQUIRE(app.feedByte(0x03, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Copy);
-  app.feedByte(0x0a, std::nullopt);
-  app.feedByte('p', std::nullopt);
-  CHECK(app.currentMode() == ApplicationMode::Copy);  // still in Copy -- did not leave
-  CHECK_FALSE(app.promptActive());
+  app.feedByte(0x80, std::nullopt);  // ^@: regular mark start
+  app.feedByte(0x06, std::nullopt);  // ^F
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('w', std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Copy);  // unchanged: still in Copy
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^[p confirms the mark, exits Copy, and pastes the confirmed "
+                           "selection into the ORIGIN's own suspended prompt at the cursor -- the "
+                           "round trip a prior manual ^G + ^O^Y sequence used to require (2026-09-07, "
+                           "a direct user request: \"^[pで他のモードへも渡せる\")") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  REQUIRE(app.promptActive());
+  feedText("x");  // partial pattern typed before realizing a copy is needed
+
+  // ^O^C suspends the active FGREP prompt and enters Copy.
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);
+  const std::string &row0 = display.rowText(0);
+  REQUIRE(row0.size() >= 4);
+  app.feedByte(0x80, std::nullopt);                              // ^@: mark start at column 0
+  for (int i = 0; i < 2; i++) app.feedByte(0x06, std::nullopt);  // extend over 2 columns
+
+  REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
+  REQUIRE(app.feedByte('p', std::nullopt));   // p -- confirm, exit, paste into the resumed prompt
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.promptActive());  // the suspended FGREP prompt resumed
+  // Resuming restores the cursor to where it was (end of "x", matching the
+  // existing ^O^C/^O^Y round-trip test's own "xhello" pattern) -- the
+  // pasted text lands there, after "x".
+  CHECK(app.promptText() == "x" + row0.substr(0, 2));
 }
 
 TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): GUI mouse drag (copyMouseDown()/copyMouseDrag()/copyMouseUp()) "

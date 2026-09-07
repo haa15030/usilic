@@ -16,17 +16,6 @@ std::vector<ContentView::Line> makeLines(std::initializer_list<std::string> text
   return lines;
 }
 
-// Directory一覧の`ls -l`行のように、各行のうち`highlightStartColumn`
-// 以降だけが「選択可能範囲」(実際にはファイル名)であるスナップ
-// ショットを作る(2026-09-07追加、confirmMark()自身の②の挙動の
-// テスト用)。
-std::vector<ContentView::Line> makeHighlightedLines(
-    std::initializer_list<std::pair<std::string, int>> textsAndStarts) {
-  std::vector<ContentView::Line> lines;
-  for (const auto &[t, start] : textsAndStarts) lines.push_back({t, std::nullopt, start, {}});
-  return lines;
-}
-
 }  // namespace
 
 TEST_CASE("CopyMode: loadSnapshot() draws the snapshot's own text unchanged and starts the cursor "
@@ -261,54 +250,109 @@ TEST_CASE("CopyMode: the live selection renders as a Standout AttributeRun over 
   CHECK(d.standoutAt(0, 12) == false);
 }
 
-TEST_CASE("CopyMode: confirmMark() on a single row with highlightStartColumn set (a highlighted "
-          "listing, e.g. Directory's `ls -l`) captures the WHOLE selectable range (the filename) "
-          "regardless of exactly where the anchor/cursor landed within it (2026-09-07, a direct user "
-          "request: \"②ハイライト表示のある画面では、選択可能範囲のみ指定\")") {
-  RecordingDisplay d(10, 40);
+TEST_CASE("CopyMode: startOrUpgradeRectangleMark() starts a new rectangle mark from scratch (emacs' "
+          "own C-x SPC, which can begin rectangle-mark-mode without a pre-existing mark) -- "
+          "2026-09-07, a direct user request: \"①emacsには矩形範囲指定の機能があるのであれを移植して"
+          "ほしい\"") {
+  RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
   CopyMode copy(v);
-  copy.loadSnapshot(makeHighlightedLines({{"-rw-r--r-- report.txt", 11}}));
-  REQUIRE(std::string("-rw-r--r-- report.txt").substr(11) == "report.txt");  // sanity-check the fixture's own offset
-  // Click lands mid-name (column 14, inside "report.txt"), not at its start.
-  copy.placeCursorAt(0, 14);
-  copy.startMark();
-  copy.placeCursorAt(0, 16);
-  copy.confirmMark();
-  CHECK(copy.clipboardText() == "'report.txt'");  // the whole name, shell-quoted -- not "ort.t"
+  copy.loadSnapshot(makeLines({"abcdef", "ghijkl", "mnopqr"}));
+  CHECK_FALSE(copy.markActive());
+  copy.moveRight();
+  copy.moveRight();               // column 2
+  copy.startOrUpgradeRectangleMark();
+  CHECK(copy.markActive());
+  CHECK(copy.rectangleMarkActive());
 }
 
-TEST_CASE("CopyMode: confirmMark() spanning multiple highlighted rows joins each row's whole "
-          "selectable range with shell-quoting, matching Application::shellQuoteArgv()'s own "
-          "convention -- so it pastes directly into a command line like `open -a Preview` (2026-09-07, "
-          "a direct user request: \"①と併せ、open -A プレビュー等で複数渡せる仕様\")") {
-  RecordingDisplay d(10, 40);
+TEST_CASE("CopyMode: startOrUpgradeRectangleMark() upgrades an ALREADY active (regular) mark in "
+          "place, keeping its anchor -- lets a keyboard startMark() (or a GUI mouse-down, which also "
+          "starts a regular mark) be promoted to a rectangle without losing where it began") {
+  RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
   CopyMode copy(v);
-  copy.loadSnapshot(makeHighlightedLines({
-      {"-rw-r--r-- first.txt", 11},
-      {"-rw-r--r-- second file.txt", 11},  // a space in the name -- must be quoted
-      {"drwxr-xr-x third", 11},
-  }));
-  copy.placeCursorAt(0, 14);
-  copy.startMark();
-  copy.placeCursorAt(2, 14);
+  copy.loadSnapshot(makeLines({"abcdef", "ghijkl"}));
+  copy.moveRight();
+  copy.startMark();  // regular mark, anchor at (row 0, col 1)
+  CHECK_FALSE(copy.rectangleMarkActive());
+  copy.startOrUpgradeRectangleMark();
+  CHECK(copy.rectangleMarkActive());
+  copy.moveDown();
+  copy.moveRight();
+  copy.moveRight();  // (row 1, col 3)
   copy.confirmMark();
-  CHECK(copy.clipboardText() == "'first.txt' 'second file.txt' 'third'");
+  // Rectangle spans columns [1,3) on rows 0..1, not the anchor's original row alone.
+  CHECK(copy.clipboardText() == "bc\nhi");
 }
 
-TEST_CASE("CopyMode: confirmMark() on a highlighted row never leaves clipboardText() untouched "
-          "(unlike the plain-text empty-range guard) -- a bare click+confirm with no real drag still "
-          "selects that row's whole name, since a directory entry's name can never be empty") {
-  RecordingDisplay d(10, 40);
+TEST_CASE("CopyMode: confirmMark() on a rectangle mark extracts each row's own [loCol, hiCol) "
+          "display-column slice and joins them with newlines, matching emacs' own "
+          "copy-rectangle-as-kill() -- independent of each row's own text length/content") {
+  RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
   CopyMode copy(v);
-  copy.loadSnapshot(makeHighlightedLines({{"-rw-r--r-- report.txt", 11}}));
-  copy.placeCursorAt(0, 14);
+  copy.loadSnapshot(makeLines({"0123456789", "ABCDEFGHIJ", "abcdefghij"}));
+  for (int i = 0; i < 3; i++) copy.moveRight();  // column 3
+  copy.startOrUpgradeRectangleMark();
+  copy.moveDown();
+  copy.moveDown();
+  for (int i = 0; i < 3; i++) copy.moveRight();  // (row 2, column 6)
+  copy.confirmMark();
+  CHECK(copy.clipboardText() == "345\nDEF\ndef");
+}
+
+TEST_CASE("CopyMode: a rectangle mark's live selection renders as a genuine per-row column-range "
+          "Standout highlight (a true rectangle), NOT a linear reading-order range -- the middle "
+          "row's own highlight does not extend to either edge of the row") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"0123456789", "ABCDEFGHIJ", "abcdefghij"}));
+  for (int i = 0; i < 3; i++) copy.moveRight();  // column 3
+  copy.startOrUpgradeRectangleMark();
+  copy.moveDown();
+  copy.moveDown();
+  for (int i = 0; i < 3; i++) copy.moveRight();  // (row 2, column 6)
+  // Row 1 (a "middle" row of the rectangle): only columns [3,6) are highlighted,
+  // unlike a linear selection which would highlight the WHOLE middle row.
+  CHECK(d.standoutAt(1, 2) == false);
+  CHECK(d.standoutAt(1, 3) == true);
+  CHECK(d.standoutAt(1, 5) == true);
+  CHECK(d.standoutAt(1, 6) == false);
+}
+
+TEST_CASE("CopyMode: a rectangle mark shows \"Rectangle-Mark\" as the mode line's position field "
+          "while active, and reverts once the mark ends (2026-09-07, a direct user request: "
+          "\"モードラインのメッセージエリアにアンダーラインの`Rectangle-Mark`と表示\" -- the "
+          "underline styling itself is not implemented, see this feature's own commit message)") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"abcdef"}));
+  // viewport(0, 5) -- the mode line renders at row 5 (row0_ + height_).
+  CHECK(d.rowText(5).find("Rectangle-Mark") == std::string::npos);
+  copy.startOrUpgradeRectangleMark();
+  CHECK(d.rowText(5).find("Rectangle-Mark") != std::string::npos);
+  copy.confirmMark();
+  CHECK(d.rowText(5).find("Rectangle-Mark") == std::string::npos);
+}
+
+TEST_CASE("CopyMode: startMark() (a regular, non-rectangle mark) downgrades an active rectangle "
+          "mark back to linear selection, resetting the anchor to the current position") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"abcdef", "ghijkl"}));
+  copy.startOrUpgradeRectangleMark();
+  CHECK(copy.rectangleMarkActive());
   copy.startMark();
-  copy.confirmMark();  // no movement at all between startMark() and confirmMark()
-  CHECK(copy.clipboardText() == "'report.txt'");
+  CHECK(copy.markActive());
+  CHECK_FALSE(copy.rectangleMarkActive());
 }

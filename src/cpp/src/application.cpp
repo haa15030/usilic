@@ -7417,45 +7417,55 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // copyEscapePending_のコメント参照。'w'以外が続いた場合(または
   // specialキーが割り込んだ場合)は、そのESCシーケンス全体を単に
   // 吸収する(このモードでは元々どのみち意味を持たないため、実害は無い)。
+  // "^[w"/"^[p"自身の1バイト先読み――application.hpp自身の
+  // copyEscapePending_のコメント参照。
+  //
+  // 2026-09-07追加、直接のユーザー要望("`^[w`でクリップボードへ
+  // コピーしたのちCOPYを終了、または`^[p`で他のモードへも渡せる"):
+  // 'w'(従来通りconfirmMark()のみ)に加えて'p'を追加した。'p'は
+  // confirmMark()に続けてreturnFromCopy()も呼ぶ(起点が生きたプロン
+  // プトを一時停止していた場合、returnFromCopy()自身がそれを再開
+  // する)――promptActive()になっていれば、Command::PasteClipboard
+  // 自身と全く同じpromptEditor_.paste()(カーソル位置に挿入)で
+  // 確定済みのCOPYの内容を流し込む。'w'自身も、矩形マーク
+  // (copyMode_.rectangleMarkActive())を確定した場合に限りCOPYを
+  // 終了する――直接のユーザー要望の文面通り、この自動終了は矩形
+  // マーク専用で、通常マークの'w'は(既存の挙動・テストの通り)COPY
+  // に留まる。'w'/'p'以外が続いた場合(またはspecialキーが割り込んだ
+  // 場合)は、そのESCシーケンス全体を単に吸収する(このモードでは
+  // 元々どのみち意味を持たないため、実害は無い)。
   if (copyEscapePending_) {
     copyEscapePending_ = false;
-    if (!special && byte == 'w') copyMode_.confirmMark();
+    bool wasRectangle = copyMode_.rectangleMarkActive();
+    if (!special && byte == 'w') {
+      copyMode_.confirmMark();
+      if (wasRectangle) returnFromCopy();
+    } else if (!special && byte == 'p') {
+      copyMode_.confirmMark();
+      returnFromCopy();
+      if (promptActive()) promptEditor_.paste(copyMode_.clipboardText());
+    }
     promptEditor_.setKillBuffer(copyMode_.clipboardText());
     return true;
   }
-  // copyLeaderJPending_自身の宣言コメント参照(2026-09-07追加、直接の
-  // ユーザー要望"範囲指定の途中、^[wの代わりにモード発動キー（^[p等）
-  // でもペースト可"): ^Jの2バイト目がここで揃う。確定(confirmMark())
-  // →起点モードへ復帰(returnFromCopy())→揃った2バイトを普段の
-  // feedByte()経路へそのまま再生する――dispatchLeaderByte()自身の
-  // leaderJPending_機構が、起点モードから直接^Jシーケンスを打った
-  // 場合と全く同じようにそれを解釈し、対応するモード(LOCATE/EGREP/
-  // PROGRAM/MAN/...)を起動する。その結果promptActive()になっていれ
-  // ば、確定済みのCOPYの内容でプロンプトのテキストを丸ごと置き換える
-  // ――「ペーストも可」という要望通り、^O^Yを別途押す手間を省く。
-  // Command::PasteClipboard自身のpromptEditor_.paste()(カーソル位置に
-  // 挿入するだけ)ではなくsetText()(丸ごと置き換え)を使う――
-  // startProgramPrompt()自身が既に(マークされたエントリ/カーソル
-  // エントリの名前を)事前入力している場合、pasteだと両方が混ざって
-  // しまう(実際にテストで検出: "helloplain.txt")。この経路で欲しい
-  // のはCOPYの選択内容そのものであり、その事前入力との合成ではない。
-  if (copyLeaderJPending_) {
-    copyLeaderJPending_ = false;
-    copyMode_.confirmMark();
-    returnFromCopy();
-    feedByte(kLeaderJ, std::nullopt);
-    feedByte(special ? 0 : byte, special);
-    if (promptActive()) promptEditor_.setText(copyMode_.clipboardText());
+  // "^X SPC"(startOrUpgradeRectangleMark())自身の1バイト先読み――
+  // application.hpp自身のcopyLeaderXPending_のコメント参照(2026-09-07
+  // 追加、直接のユーザー要望"①emacsには矩形範囲指定の機能がある
+  // のであれを移植してほしい...emacs同様^X␣で発動")。SPC(0x20)以外が
+  // 続いた場合は単に吸収する(copyEscapePending_と同じ理屈)。
+  if (copyLeaderXPending_) {
+    copyLeaderXPending_ = false;
+    if (!special && byte == ' ') copyMode_.startOrUpgradeRectangleMark();
     return true;
   }
-  // ^J(2026-09-07追加、同上): 通常のCOPYモードの語彙には元々含まれて
+  // ^X(2026-09-07追加、同上): 通常のCOPYモードの語彙には元々含まれて
   // いない(この関数自身の宣言コメントが挙げるlegacy自身のkey_copy[]
-  // ホワイトリストにも無い)キーだが、マーク中(範囲指定の途中)に限り、
-  // 「モードを起動する2バイトの先頭」として特別に先読みする――マーク
-  // 中でない間は、他の未対応キー同様の無害な吸収(下のdefault分岐)の
-  // ままにしておく(このキー単体に他の意味を持たせる要望は無かった)。
-  if (!special && byte == kLeaderJ && copyMode_.markActive()) {
-    copyLeaderJPending_ = true;
+  // ホワイトリストにも無い)キーだが、emacsのC-x SPCに倣い、マーク中
+  // か否かに関わらず常に「矩形マーク発動の2バイトの先頭」として先読み
+  // する――emacsのrectangle-mark-modeは、マークが未設定の状態からも
+  // C-x SPCだけで新規に開始できるため。
+  if (!special && byte == 0x18) {
+    copyLeaderXPending_ = true;
     return true;
   }
   if (special) {

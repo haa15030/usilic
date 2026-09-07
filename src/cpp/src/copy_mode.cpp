@@ -39,6 +39,7 @@ int displayColumnFor(const std::string &text, int byteOffset) {
 
 // displayColumnFor()の逆: 表示カラムが`targetColumn`を超えない範囲で
 // 最も近いバイトオフセット。上下移動をまたいで水平位置を保持する
+// ためと、矩形マークの列範囲を行ごとのバイトオフセットへ変換する
 // ために使う。
 int byteOffsetForDisplayColumn(const std::string &text, int targetColumn) {
   int col = 0, i = 0;
@@ -53,23 +54,6 @@ int byteOffsetForDisplayColumn(const std::string &text, int targetColumn) {
   return static_cast<int>(text.size());
 }
 
-// Application::shellQuoteArg()と一字一句同じアルゴリズム(2026-09-07
-// 追加、confirmMark()自身のコメント参照)――CopyModeはApplicationとは
-// 独立した自己完結クラスであるという既存の設計方針(クラス自身の
-// コメント参照)により、application.cpp側の実装を直接呼ぶのではなく
-// ここに複製する。挙動を変える場合は両方を揃えて直すこと。
-std::string shellQuoteArg(const std::string &arg) {
-  std::string quoted = "'";
-  for (char c : arg) {
-    if (c == '\'')
-      quoted += "'\\''";
-    else
-      quoted += c;
-  }
-  quoted += "'";
-  return quoted;
-}
-
 }  // namespace
 
 CopyMode::CopyMode(ContentView &view) : view_(view) {}
@@ -81,12 +65,12 @@ void CopyMode::loadSnapshot(std::vector<ContentView::Line> lines, int initialRow
     ContentView::Line plain;
     plain.text = std::move(line.text);
     plain.attributes = std::move(line.attributes);
-    plain.highlightStartColumn = line.highlightStartColumn;  // confirmMark()自身のコメント参照(2026-09-07追加)
     lines_.push_back(std::move(plain));
   }
   cursorRow_ = (initialRow >= 0 && initialRow < static_cast<int>(lines_.size())) ? initialRow : 0;
   cursorByte_ = 0;
   markActive_ = false;
+  rectangleMark_ = false;
   markAnchorRow_ = 0;
   markAnchorByte_ = 0;
   view_.setCursorHighlightEnabled(false);
@@ -145,8 +129,20 @@ void CopyMode::placeCursorAt(int row, int column) {
 void CopyMode::startMark() {
   if (lines_.empty()) return;
   markActive_ = true;
+  rectangleMark_ = false;
   markAnchorRow_ = cursorRow_;
   markAnchorByte_ = cursorByte_;
+  render();
+}
+
+void CopyMode::startOrUpgradeRectangleMark() {
+  if (lines_.empty()) return;
+  if (!markActive_) {
+    markActive_ = true;
+    markAnchorRow_ = cursorRow_;
+    markAnchorByte_ = cursorByte_;
+  }
+  rectangleMark_ = true;
   render();
 }
 
@@ -157,38 +153,40 @@ void CopyMode::confirmMark() {
   bool anchorFirst =
       markAnchorRow_ < cursorRow_ || (markAnchorRow_ == cursorRow_ && markAnchorByte_ <= cursorByte_);
   int loRow = anchorFirst ? markAnchorRow_ : cursorRow_;
-  int loByte = anchorFirst ? markAnchorByte_ : cursorByte_;
   int hiRow = anchorFirst ? cursorRow_ : markAnchorRow_;
-  int hiByte = anchorFirst ? cursorByte_ : markAnchorByte_;
 
   std::vector<std::string> parts;
-  bool anyHighlighted = false;
-  bool anyNonEmptyPlain = false;
-  for (int row = loRow; row <= hiRow; row++) {
-    const std::string &text = lines_[row].text;
-    if (lines_[row].highlightStartColumn.has_value()) {
-      anyHighlighted = true;
-      int start = std::clamp(*lines_[row].highlightStartColumn, 0, static_cast<int>(text.size()));
-      parts.push_back(text.substr(start));
-    } else {
+  bool anyNonEmpty = false;
+  if (rectangleMark_) {
+    // confirmMark()自身の宣言コメント参照(矩形マーク): 列範囲は
+    // アンカー/カーソルそれぞれの「表示カラム」のmin/maxで決め、
+    // 各行ごとにbyteOffsetForDisplayColumn()でバイトオフセットへ
+    // 変換し直す――行によって文字幅(全角/半角混在等)が異なり得る
+    // ため、1つの行で求めたバイトオフセットを他の行にそのまま使い
+    // 回すことはできない。
+    int anchorCol = displayColumnFor(lines_[markAnchorRow_].text, markAnchorByte_);
+    int cursorCol = displayColumnFor(lines_[cursorRow_].text, cursorByte_);
+    int loCol = std::min(anchorCol, cursorCol);
+    int hiCol = std::max(anchorCol, cursorCol);
+    for (int row = loRow; row <= hiRow; row++) {
+      const std::string &text = lines_[row].text;
+      int rowLo = byteOffsetForDisplayColumn(text, loCol);
+      int rowHi = byteOffsetForDisplayColumn(text, hiCol);
+      if (rowHi > rowLo) anyNonEmpty = true;
+      parts.push_back(text.substr(rowLo, std::max(0, rowHi - rowLo)));
+    }
+  } else {
+    int loByte = anchorFirst ? markAnchorByte_ : cursorByte_;
+    int hiByte = anchorFirst ? cursorByte_ : markAnchorByte_;
+    for (int row = loRow; row <= hiRow; row++) {
+      const std::string &text = lines_[row].text;
       int rowLo = (row == loRow) ? loByte : 0;
       int rowHi = (row == hiRow) ? hiByte : static_cast<int>(text.size());
-      if (rowHi > rowLo) anyNonEmptyPlain = true;
+      if (rowHi > rowLo) anyNonEmpty = true;
       parts.push_back(text.substr(rowLo, std::max(0, rowHi - rowLo)));
     }
   }
-  // confirmMark()自身の宣言コメント参照: ハイライト行(選択可能範囲=
-  // ファイル名そのもの、空になり得ない)を1行でも含めば常に上書きし、
-  // シェルクォート済みでスペース区切りに連結する。含まなければ従来
-  // 通りの「空の範囲なら上書きしない」ガードのまま、改行で連結する。
-  if (anyHighlighted) {
-    std::string joined;
-    for (const auto &part : parts) {
-      if (!joined.empty()) joined += " ";
-      joined += shellQuoteArg(part);
-    }
-    clipboardText_ = joined;
-  } else if (anyNonEmptyPlain) {
+  if (anyNonEmpty) {
     std::string joined;
     for (const auto &part : parts) {
       if (!joined.empty()) joined += "\n";
@@ -201,10 +199,13 @@ void CopyMode::confirmMark() {
 
 bool CopyMode::markActive() const { return markActive_; }
 
+bool CopyMode::rectangleMarkActive() const { return markActive_ && rectangleMark_; }
+
 const std::string &CopyMode::clipboardText() const { return clipboardText_; }
 
 void CopyMode::cancelMark() {
   markActive_ = false;
+  rectangleMark_ = false;
   markAnchorRow_ = 0;
   markAnchorByte_ = 0;
   render();
@@ -216,17 +217,37 @@ void CopyMode::render() {
     bool anchorFirst =
         markAnchorRow_ < cursorRow_ || (markAnchorRow_ == cursorRow_ && markAnchorByte_ <= cursorByte_);
     int loRow = std::clamp(anchorFirst ? markAnchorRow_ : cursorRow_, 0, static_cast<int>(rendered.size()) - 1);
-    int loByte = anchorFirst ? markAnchorByte_ : cursorByte_;
     int hiRow = std::clamp(anchorFirst ? cursorRow_ : markAnchorRow_, 0, static_cast<int>(rendered.size()) - 1);
-    int hiByte = anchorFirst ? cursorByte_ : markAnchorByte_;
-    for (int row = loRow; row <= hiRow; row++) {
-      int rowLo = (row == loRow) ? loByte : 0;
-      int rowHi = (row == hiRow) ? hiByte : static_cast<int>(rendered[row].text.size());
-      if (rowHi > rowLo) rendered[row].attributes.push_back({rowLo, rowHi, Display::Attribute::Standout});
+    if (rectangleMark_) {
+      // confirmMark()自身の矩形マークのコメント参照――ライブハイライト
+      // も同じ列範囲(表示カラムのmin/max)を、行ごとにバイトオフセット
+      // へ変換し直しながら描く。
+      int anchorCol = displayColumnFor(lines_[markAnchorRow_].text, markAnchorByte_);
+      int cursorCol = displayColumnFor(lines_[cursorRow_].text, cursorByte_);
+      int loCol = std::min(anchorCol, cursorCol);
+      int hiCol = std::max(anchorCol, cursorCol);
+      for (int row = loRow; row <= hiRow; row++) {
+        int rowLo = byteOffsetForDisplayColumn(rendered[row].text, loCol);
+        int rowHi = byteOffsetForDisplayColumn(rendered[row].text, hiCol);
+        if (rowHi > rowLo) rendered[row].attributes.push_back({rowLo, rowHi, Display::Attribute::Standout});
+      }
+    } else {
+      int loByte = anchorFirst ? markAnchorByte_ : cursorByte_;
+      int hiByte = anchorFirst ? cursorByte_ : markAnchorByte_;
+      for (int row = loRow; row <= hiRow; row++) {
+        int rowLo = (row == loRow) ? loByte : 0;
+        int rowHi = (row == hiRow) ? hiByte : static_cast<int>(rendered[row].text.size());
+        if (rowHi > rowLo) rendered[row].attributes.push_back({rowLo, rowHi, Display::Attribute::Standout});
+      }
     }
   }
   view_.setLines(std::move(rendered));
   if (!lines_.empty()) view_.setCursorIndex(cursorRow_);
+  // render()自身の宣言コメント参照(copy_mode.hpp): 矩形マーク中は
+  // モードラインの位置フィールドに"Rectangle-Mark"を表示し、それ
+  // 以外は常にstartCopy()自身が設定する"---"のプレースホルダーへ
+  // 戻す(2026-09-07追加、直接のユーザー要望)。
+  view_.setPositionTextOverride(rectangleMark_ ? "Rectangle-Mark" : "---");
   view_.redraw();
   int column = lines_.empty() ? 0 : displayColumnFor(lines_[cursorRow_].text, cursorByte_);
   view_.setContentCursorColumn(column);

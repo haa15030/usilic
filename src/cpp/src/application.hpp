@@ -2263,15 +2263,17 @@ class Application {
   // となるビュー――startCopy()自身のコメント参照。
   ContentView copyView_;
   // feedCopyByte()自身のコメント参照: ApplicationMode::Copyの間だけ
-  // 有効な、"^[w"(confirmMark())用の1バイト先読み状態。resolveCommand()
-  // 側のescPending_とは意図的に別物――feedCopyByte()はそもそも
-  // resolveCommand()のテーブルを一切経由しない独立した語彙であるため。
+  // 有効な、"^[w"/"^[p"(confirmMark()、2026-09-07に'p'追加)用の
+  // 1バイト先読み状態。resolveCommand()側のescPending_とは意図的に
+  // 別物――feedCopyByte()はそもそもresolveCommand()のテーブルを
+  // 一切経由しない独立した語彙であるため。
   bool copyEscapePending_ = false;
   // feedCopyByte()自身のコメント参照(2026-09-07追加、直接のユーザー
-  // 要望"範囲指定の途中、^[wの代わりにモード発動キー（^[p等）でも
-  // ペースト可"): copyEscapePending_と全く同じ理由の1バイト先読み
-  // ――^Jに続く2バイト目が来るまで、そのモード発動を確定できない。
-  bool copyLeaderJPending_ = false;
+  // 要望"①emacsには矩形範囲指定の機能があるのであれを移植して
+  // ほしい...emacs同様^X␣で発動"): copyEscapePending_と全く同じ
+  // 理由の1バイト先読み――^Xに続く2バイト目(SPC)が来るまで、
+  // 矩形マークの発動を確定できない。
+  bool copyLeaderXPending_ = false;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;
