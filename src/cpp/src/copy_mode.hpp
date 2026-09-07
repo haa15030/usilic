@@ -9,18 +9,30 @@ namespace fm {
 
 // COPY/PASTE(M_copy/^O^C + M_paste/^O^Y): 画面上にあったcontent
 // areaの内容を、プレーンテキスト+属性のスナップショットとして凍結し、
-// ユーザーがその上で実際の(行、列)キャレットを動かし同一行内の
-// 部分文字列を選択できるようにし、その結果を、後の任意のPASTEが
-// 再利用する1つの共有「ヤンクバッファ」に保持する。code.cの
-// make_map()から精神を移植――legacy自身のローカル変数
-// (row/col/ci/col0/c0/f_copy、COPYセッション中1回の関数呼び出し
-// スタックだけに閉じている)は、代わりにこのクラスのメンバになり、
-// Applicationはこの状態を一切直接持たない。これはまさに同じ
-// セッションのプロンプト履歴再設計(CLAUDE.mdの2026-08-28/29の項目と
-// .steering/20260828-prompt-history-redesign/参照)からの教訓其のもの
-// である: ある機能自身のサブループが動いている間だけ意味を持つ状態は、
-// Applicationへ場当たり的なメンバとしてばら撒くのではなく、その機能
-// 自身のクラスの内側に属するべきである。
+// ユーザーがその上で実際の(行、列)キャレットを動かし選択できる
+// ようにし、その結果を、後の任意のPASTEが再利用する1つの共有
+// 「ヤンクバッファ」に保持する。code.cのmake_map()から精神を移植
+// ――legacy自身のローカル変数(row/col/ci/col0/c0/f_copy、COPY
+// セッション中1回の関数呼び出しスタックだけに閉じている)は、代わり
+// にこのクラスのメンバになり、Applicationはこの状態を一切直接持た
+// ない。これはまさに同じセッションのプロンプト履歴再設計(CLAUDE.md
+// の2026-08-28/29の項目と.steering/20260828-prompt-history-redesign/
+// 参照)からの教訓其のものである: ある機能自身のサブループが動いて
+// いる間だけ意味を持つ状態は、Applicationへ場当たり的なメンバとして
+// ばら撒くのではなく、その機能自身のクラスの内側に属するべきである。
+//
+// 2026-09-07、直接のユーザー要望("次はCOPYだな。旧の行指定は忘れて
+// いい")を受けて、legacy自身のmoveUp()/moveDown()の「マーク中は行を
+// またげない」という単一行限定のモデル(code.cの`if (!f_copy && row)
+// vt_move(...)`)を撤廃し、複数行にまたがる範囲選択(GUIのマウス
+// ドラッグ、placeCursorAt()参照)を許すようにした。ただし
+// 「継承したい仕様」として、ハイライト表示のある画面(Directory一覧
+// 等、各行にContentView::Line::highlightStartColumnが設定されている)
+// からの選択は、confirmMark()が各行の「選択可能範囲」(highlightStart
+// Column以降、つまりファイル名そのもの)だけを取り出す――ちょうど
+// 通常のクリックがhighlightStartColumn以降だけをスコープにするのと
+// 同じ考え方(Application::handleMouseClick()自身のisColumnWithinRowText()
+// 参照)。confirmMark()自身のコメント参照。
 //
 // スナップショットに格納する前に色/ハイライトのエスケープバイトを
 // 全て取り除くmake_map()とは異なり、このクラスは各Lineの
@@ -47,11 +59,14 @@ class CopyMode {
 
   // 新しいスナップショット(通常はApplication::
   // activeContentView().lines())の所有権を受け取る: 入力の各Line
-  // からは`text`と`attributes`だけが生き残る――それ以外の全Line
-  // フィールド(highlightStartColumn、shellCommand、ellipsisEligible、
-  // neverHighlighted)は「元の」モードに固有の表示メタデータであり、
-  // ここで凍結された時点で意味を持たない(make_map()自身のPP→素の
-  // テキストへの縮約と同じ)。`initialRow`(既定0)は代わりにカーソルを
+  // からは`text`と`attributes`に加えて`highlightStartColumn`も生き
+  // 残る(2026-09-07追加、直接のユーザー要望「②」――ハイライト表示の
+  // ある画面からの選択を「選択可能範囲のみ」に絞るためにconfirmMark()
+  // が読む、クラス自身のコメント参照)。それ以外の全Lineフィールド
+  // (shellCommand、ellipsisEligible、neverHighlighted)は引き続き
+  // 「元の」モードに固有の表示メタデータであり、ここで凍結された
+  // 時点で意味を持たない(make_map()自身のPP→素のテキストへの縮約と
+  // 同じ)。`initialRow`(既定0)は代わりにカーソルを
   // そこから開始させる――実際のユーザー報告(「^Oc→ブロックカーソル
   // 位置が...正しくは直前のハイライト行位置」)により、legacy自身の
   // make_map()も同じことをしている(`row = rvp->row`、スナップショット
@@ -67,14 +82,16 @@ class CopyMode {
   // -- カーソル移動、境界チェック付き(スナップショットのどちらかの
   // 端を超える移動は何もしない) -- どれも`view`を再描画する。
   //
-  // moveUp()/moveDown(): markActive()がtrueの間は何もしない――code.c
-  // 自身のM_up/M_dn(`if (!f_copy && row) vt_move(...)`)からの移植:
-  // legacyのrow変数はマーク中「でない」時にしか更新されないため、
-  // マークを行をまたいで拡張することはそもそもできない(このクラスは
-  // 「マークを解除してから移動する」のではなく、その条件と全く同じく
-  // 移動そのものを完全にブロックする)。それが許される時は、legacy
-  // 自身の列を保持するcount_i()/count_h()往復と同様に、行の変更を
-  // またいで現在の表示カラムを保持する。
+  // moveUp()/moveDown(): 2026-09-07、直接のユーザー要望("旧の行指定は
+  // 忘れていい")を受けて、markActive()中でも常に許可するよう変更した
+  // ――以前はcode.c自身のM_up/M_dn(`if (!f_copy && row)
+  // vt_move(...)`)を忠実に移植し、legacyのrow変数がマーク中「でない」
+  // 時にしか更新されないことに倣って、マークを行をまたいで拡張する
+  // こと自体をブロックしていた(単一行限定の選択モデル)。この移植は
+  // 意図的にその制約を外し、複数行にまたがる範囲選択(GUIのマウス
+  // ドラッグ)を可能にする。legacy自身の列を保持するcount_i()/
+  // count_h()往復と同様、行の変更をまたいで現在の表示カラムを保持
+  // する点は変わらない。
   void moveUp();
   void moveDown();
   // moveLeft()/moveRight()/moveToLineStart()/moveToLineEnd():
@@ -91,14 +108,14 @@ class CopyMode {
   // し得る機能としては範囲指定がある。COPYモードの際にそれは可能
   // だろうか？")。`row`は絶対行インデックス(呼び出し元がContentView::
   // lineIndexAtRow()で画面上のマウスの行から変換済みのもの)、
-  // `column`はdisplayColumnFor()と同じ表示カラム単位。
-  //
-  // markActive()の間はmoveUp()/moveDown()と全く同じ制約により`row`を
-  // 無視する(legacy自身の一行限定の選択モデル、moveUp()自身の
-  // コメント参照) -- ドラッグでマウスが別の行へはみ出しても、
-  // マーク開始行の中でのcolumnだけが更新され続ける。まだマーク前
-  // (ボタン押下の瞬間)は`row`もそのまま反映する――ここが実質的な
-  // 「クリックでキャレットを置く」動作を兼ねる。
+  // `column`はdisplayColumnFor()と同じ表示カラム単位。単純に
+  // (row, column)へキャレットを移動するだけ――markActive()の値に
+  // 関わらず常に`row`も反映する(moveUp()/moveDown()自身のコメント
+  // 参照、2026-09-07に単一行限定の制約を撤廃したのに合わせて、ここも
+  // 「マーク中はrowを無視する」という以前の制約を撤廃した)。ボタン
+  // 押下の瞬間に呼ばれれば実質的な「クリックでキャレットを置く」
+  // 動作を兼ね、ドラッグ中に繰り返し呼ばれれば選択を複数行にまたいで
+  // 伸縮させる。
   void placeCursorAt(int row, int column);
 
   // 2026-08-31、直接のユーザー依頼("本体で変更が必要なのは^Space...
@@ -116,11 +133,30 @@ class CopyMode {
   // アンカーを現在位置へ置き直す(emacsのC-@を繰り返し押した時と同じ、
   // 何度でも安全に呼べる)。
   void startMark();
-  // アンカーと現在のカーソル位置の間の範囲を確定する。空でない範囲
-  // (hi > lo)ならclipboardText()を上書きする。空の範囲(マーク開始の
-  // 直後、同じ列で確定)なら既存のclipboardText()に触れない。legacy
-  // 自身の`if (*p) strcpy(rvp->copy, p)`というガードと同じ。マーク中で
+  // アンカーと現在のカーソル位置の間の範囲を確定する。マーク中で
   // なければ何もしない。
+  //
+  // 2026-09-07、直接のユーザー要望("次はCOPYだな。旧の行指定は
+  // 忘れていい。ただし継承したい仕様もある...②ハイライト表示のある
+  // 画面では、選択可能範囲のみ指定")を受けて複数行対応に書き直した:
+  // アンカー行〜カーソル行の各行について、
+  //   - その行にhighlightStartColumnが設定されている(=ハイライト
+  //     表示のある一覧――Directory等――からの凍結スナップショット
+  //     である)場合: 選択の実際のバイト範囲がどこであれ、その行の
+  //     highlightStartColumn以降(=ファイル名そのもの、「選択可能
+  //     範囲」)を丸ごと取り出す――通常のクリックがそこだけをスコープ
+  //     にするのと同じ考え方(handleMouseClick()自身のisColumnWithinRowText()
+  //     参照)。行をまたぐ複数の結果は、Application::shellQuoteArgv()と
+  //     全く同じ規則でシェルクォートした上でスペース区切りに連結する
+  //     (`open -a プレビュー`のような複数引数のコマンド行にそのまま
+  //     ペーストできるようにする、直接の要望「①と併せ、open -A
+  //     プレビュー等で複数渡せる仕様」)。
+  //   - highlightStartColumnが無い(プレーンなFILE内容等)行: 従来通り
+  //     アンカー/カーソルbyteそのものが定める正確なバイト範囲を取り出
+  //     し、複数行の結果は改行で連結する(legacy自身の`if (*p)
+  //     strcpy(rvp->copy, p)`というガードに倣い、単一行かつ空の範囲
+  //     ならclipboardText()を上書きしない――ハイライト行を含む場合は
+  //     ファイル名自体が空になり得ないため、このガードの対象外)。
   void confirmMark();
   bool markActive() const;
 
@@ -141,6 +177,7 @@ class CopyMode {
   int cursorByte_ = 0;  // lines_[cursorRow_].textへのバイトオフセット、
                         // 常にUTF-8シーケンス境界に位置する
   bool markActive_ = false;
+  int markAnchorRow_ = 0;   // markActive_の間のみ有効(2026-09-07追加、複数行対応)
   int markAnchorByte_ = 0;  // markActive_の間のみ有効
   std::string clipboardText_;
 };

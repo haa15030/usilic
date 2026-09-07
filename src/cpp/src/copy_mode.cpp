@@ -53,6 +53,23 @@ int byteOffsetForDisplayColumn(const std::string &text, int targetColumn) {
   return static_cast<int>(text.size());
 }
 
+// Application::shellQuoteArg()と一字一句同じアルゴリズム(2026-09-07
+// 追加、confirmMark()自身のコメント参照)――CopyModeはApplicationとは
+// 独立した自己完結クラスであるという既存の設計方針(クラス自身の
+// コメント参照)により、application.cpp側の実装を直接呼ぶのではなく
+// ここに複製する。挙動を変える場合は両方を揃えて直すこと。
+std::string shellQuoteArg(const std::string &arg) {
+  std::string quoted = "'";
+  for (char c : arg) {
+    if (c == '\'')
+      quoted += "'\\''";
+    else
+      quoted += c;
+  }
+  quoted += "'";
+  return quoted;
+}
+
 }  // namespace
 
 CopyMode::CopyMode(ContentView &view) : view_(view) {}
@@ -64,18 +81,20 @@ void CopyMode::loadSnapshot(std::vector<ContentView::Line> lines, int initialRow
     ContentView::Line plain;
     plain.text = std::move(line.text);
     plain.attributes = std::move(line.attributes);
+    plain.highlightStartColumn = line.highlightStartColumn;  // confirmMark()自身のコメント参照(2026-09-07追加)
     lines_.push_back(std::move(plain));
   }
   cursorRow_ = (initialRow >= 0 && initialRow < static_cast<int>(lines_.size())) ? initialRow : 0;
   cursorByte_ = 0;
   markActive_ = false;
+  markAnchorRow_ = 0;
   markAnchorByte_ = 0;
   view_.setCursorHighlightEnabled(false);
   render();
 }
 
 void CopyMode::moveUp() {
-  if (lines_.empty() || markActive_ || cursorRow_ == 0) return;
+  if (lines_.empty() || cursorRow_ == 0) return;
   int col = displayColumnFor(lines_[cursorRow_].text, cursorByte_);
   cursorRow_--;
   cursorByte_ = byteOffsetForDisplayColumn(lines_[cursorRow_].text, col);
@@ -83,7 +102,7 @@ void CopyMode::moveUp() {
 }
 
 void CopyMode::moveDown() {
-  if (lines_.empty() || markActive_ || cursorRow_ + 1 >= static_cast<int>(lines_.size())) return;
+  if (lines_.empty() || cursorRow_ + 1 >= static_cast<int>(lines_.size())) return;
   int col = displayColumnFor(lines_[cursorRow_].text, cursorByte_);
   cursorRow_++;
   cursorByte_ = byteOffsetForDisplayColumn(lines_[cursorRow_].text, col);
@@ -118,7 +137,7 @@ void CopyMode::moveToLineEnd() {
 
 void CopyMode::placeCursorAt(int row, int column) {
   if (lines_.empty()) return;
-  if (!markActive_) cursorRow_ = std::clamp(row, 0, static_cast<int>(lines_.size()) - 1);
+  cursorRow_ = std::clamp(row, 0, static_cast<int>(lines_.size()) - 1);
   cursorByte_ = byteOffsetForDisplayColumn(lines_[cursorRow_].text, column);
   render();
 }
@@ -126,15 +145,57 @@ void CopyMode::placeCursorAt(int row, int column) {
 void CopyMode::startMark() {
   if (lines_.empty()) return;
   markActive_ = true;
+  markAnchorRow_ = cursorRow_;
   markAnchorByte_ = cursorByte_;
   render();
 }
 
 void CopyMode::confirmMark() {
   if (lines_.empty() || !markActive_) return;
-  int lo = std::min(markAnchorByte_, cursorByte_);
-  int hi = std::max(markAnchorByte_, cursorByte_);
-  if (hi > lo) clipboardText_ = lines_[cursorRow_].text.substr(lo, hi - lo);
+  // (loRow,loByte)-(hiRow,hiByte)を読み順に正規化する――
+  // confirmMark()自身の宣言コメント(copy_mode.hpp)参照。
+  bool anchorFirst =
+      markAnchorRow_ < cursorRow_ || (markAnchorRow_ == cursorRow_ && markAnchorByte_ <= cursorByte_);
+  int loRow = anchorFirst ? markAnchorRow_ : cursorRow_;
+  int loByte = anchorFirst ? markAnchorByte_ : cursorByte_;
+  int hiRow = anchorFirst ? cursorRow_ : markAnchorRow_;
+  int hiByte = anchorFirst ? cursorByte_ : markAnchorByte_;
+
+  std::vector<std::string> parts;
+  bool anyHighlighted = false;
+  bool anyNonEmptyPlain = false;
+  for (int row = loRow; row <= hiRow; row++) {
+    const std::string &text = lines_[row].text;
+    if (lines_[row].highlightStartColumn.has_value()) {
+      anyHighlighted = true;
+      int start = std::clamp(*lines_[row].highlightStartColumn, 0, static_cast<int>(text.size()));
+      parts.push_back(text.substr(start));
+    } else {
+      int rowLo = (row == loRow) ? loByte : 0;
+      int rowHi = (row == hiRow) ? hiByte : static_cast<int>(text.size());
+      if (rowHi > rowLo) anyNonEmptyPlain = true;
+      parts.push_back(text.substr(rowLo, std::max(0, rowHi - rowLo)));
+    }
+  }
+  // confirmMark()自身の宣言コメント参照: ハイライト行(選択可能範囲=
+  // ファイル名そのもの、空になり得ない)を1行でも含めば常に上書きし、
+  // シェルクォート済みでスペース区切りに連結する。含まなければ従来
+  // 通りの「空の範囲なら上書きしない」ガードのまま、改行で連結する。
+  if (anyHighlighted) {
+    std::string joined;
+    for (const auto &part : parts) {
+      if (!joined.empty()) joined += " ";
+      joined += shellQuoteArg(part);
+    }
+    clipboardText_ = joined;
+  } else if (anyNonEmptyPlain) {
+    std::string joined;
+    for (const auto &part : parts) {
+      if (!joined.empty()) joined += "\n";
+      joined += part;
+    }
+    clipboardText_ = joined;
+  }
   cancelMark();
 }
 
@@ -144,16 +205,25 @@ const std::string &CopyMode::clipboardText() const { return clipboardText_; }
 
 void CopyMode::cancelMark() {
   markActive_ = false;
+  markAnchorRow_ = 0;
   markAnchorByte_ = 0;
   render();
 }
 
 void CopyMode::render() {
   std::vector<ContentView::Line> rendered = lines_;
-  if (markActive_ && cursorRow_ >= 0 && cursorRow_ < static_cast<int>(rendered.size())) {
-    int lo = std::min(markAnchorByte_, cursorByte_);
-    int hi = std::max(markAnchorByte_, cursorByte_);
-    if (hi > lo) rendered[cursorRow_].attributes.push_back({lo, hi, Display::Attribute::Standout});
+  if (markActive_ && !rendered.empty()) {
+    bool anchorFirst =
+        markAnchorRow_ < cursorRow_ || (markAnchorRow_ == cursorRow_ && markAnchorByte_ <= cursorByte_);
+    int loRow = std::clamp(anchorFirst ? markAnchorRow_ : cursorRow_, 0, static_cast<int>(rendered.size()) - 1);
+    int loByte = anchorFirst ? markAnchorByte_ : cursorByte_;
+    int hiRow = std::clamp(anchorFirst ? cursorRow_ : markAnchorRow_, 0, static_cast<int>(rendered.size()) - 1);
+    int hiByte = anchorFirst ? cursorByte_ : markAnchorByte_;
+    for (int row = loRow; row <= hiRow; row++) {
+      int rowLo = (row == loRow) ? loByte : 0;
+      int rowHi = (row == hiRow) ? hiByte : static_cast<int>(rendered[row].text.size());
+      if (rowHi > rowLo) rendered[row].attributes.push_back({rowLo, rowHi, Display::Attribute::Standout});
+    }
   }
   view_.setLines(std::move(rendered));
   if (!lines_.empty()) view_.setCursorIndex(cursorRow_);

@@ -2267,6 +2267,11 @@ class Application {
   // 側のescPending_とは意図的に別物――feedCopyByte()はそもそも
   // resolveCommand()のテーブルを一切経由しない独立した語彙であるため。
   bool copyEscapePending_ = false;
+  // feedCopyByte()自身のコメント参照(2026-09-07追加、直接のユーザー
+  // 要望"範囲指定の途中、^[wの代わりにモード発動キー（^[p等）でも
+  // ペースト可"): copyEscapePending_と全く同じ理由の1バイト先読み
+  // ――^Jに続く2バイト目が来るまで、そのモード発動を確定できない。
+  bool copyLeaderJPending_ = false;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;

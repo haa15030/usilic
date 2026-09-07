@@ -11253,6 +11253,47 @@ TEST_CASE_FIXTURE(Fixture, "^O^C/^O^Y (COPY/PASTE) round trip: select a substrin
   CHECK(app.promptText() == "xhello");
 }
 
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): pressing a mode-invoking key (^J p, PROGRAM) WHILE still "
+                           "marking confirms the mark, returns to the origin mode, invokes that mode "
+                           "normally, and auto-pastes the confirmed selection into its prompt -- a "
+                           "shortcut in place of ^[w (2026-09-07, a direct user request: \"①範囲指定の"
+                           "途中、`^[w`の代わりにモード発動キー（^[p等）でもペースト可\")") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(display.rowText(0).substr(0, 5) == "hello");
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);
+  app.feedByte(0x80, std::nullopt);                              // ^@: mark start at column 0
+  for (int i = 0; i < 5; i++) app.feedByte(0x06, std::nullopt);  // extend over "hello"
+
+  // Still marking -- no ^[w yet. ^J p (PROGRAM prompt) should confirm
+  // the mark, leave Copy mode, and land in the PROGRAM prompt with
+  // "hello" already pasted in, all from these two bytes.
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte('p', std::nullopt));   // p -- StartProgram
+  CHECK(app.currentMode() == ApplicationMode::File);  // back to the origin, not stuck in Copy
+  REQUIRE(app.promptActive());
+  CHECK(app.promptText() == "hello");
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^J while NOT marking is a harmless no-op (this shortcut is "
+                           "scoped to \"in the middle of range specification\" only, per the direct "
+                           "user request's own wording \"範囲指定の途中\")") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);
+  app.feedByte(0x0a, std::nullopt);
+  app.feedByte('p', std::nullopt);
+  CHECK(app.currentMode() == ApplicationMode::Copy);  // still in Copy -- did not leave
+  CHECK_FALSE(app.promptActive());
+}
+
 TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): GUI mouse drag (copyMouseDown()/copyMouseDrag()/copyMouseUp()) "
                            "selects a range the same way keyboard marking does, is a no-op outside "
                            "Copy mode, and round-trips through ^O^Y just like a keyboard-driven "

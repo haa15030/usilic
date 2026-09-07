@@ -7423,6 +7423,41 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
     promptEditor_.setKillBuffer(copyMode_.clipboardText());
     return true;
   }
+  // copyLeaderJPending_自身の宣言コメント参照(2026-09-07追加、直接の
+  // ユーザー要望"範囲指定の途中、^[wの代わりにモード発動キー（^[p等）
+  // でもペースト可"): ^Jの2バイト目がここで揃う。確定(confirmMark())
+  // →起点モードへ復帰(returnFromCopy())→揃った2バイトを普段の
+  // feedByte()経路へそのまま再生する――dispatchLeaderByte()自身の
+  // leaderJPending_機構が、起点モードから直接^Jシーケンスを打った
+  // 場合と全く同じようにそれを解釈し、対応するモード(LOCATE/EGREP/
+  // PROGRAM/MAN/...)を起動する。その結果promptActive()になっていれ
+  // ば、確定済みのCOPYの内容でプロンプトのテキストを丸ごと置き換える
+  // ――「ペーストも可」という要望通り、^O^Yを別途押す手間を省く。
+  // Command::PasteClipboard自身のpromptEditor_.paste()(カーソル位置に
+  // 挿入するだけ)ではなくsetText()(丸ごと置き換え)を使う――
+  // startProgramPrompt()自身が既に(マークされたエントリ/カーソル
+  // エントリの名前を)事前入力している場合、pasteだと両方が混ざって
+  // しまう(実際にテストで検出: "helloplain.txt")。この経路で欲しい
+  // のはCOPYの選択内容そのものであり、その事前入力との合成ではない。
+  if (copyLeaderJPending_) {
+    copyLeaderJPending_ = false;
+    copyMode_.confirmMark();
+    returnFromCopy();
+    feedByte(kLeaderJ, std::nullopt);
+    feedByte(special ? 0 : byte, special);
+    if (promptActive()) promptEditor_.setText(copyMode_.clipboardText());
+    return true;
+  }
+  // ^J(2026-09-07追加、同上): 通常のCOPYモードの語彙には元々含まれて
+  // いない(この関数自身の宣言コメントが挙げるlegacy自身のkey_copy[]
+  // ホワイトリストにも無い)キーだが、マーク中(範囲指定の途中)に限り、
+  // 「モードを起動する2バイトの先頭」として特別に先読みする――マーク
+  // 中でない間は、他の未対応キー同様の無害な吸収(下のdefault分岐)の
+  // ままにしておく(このキー単体に他の意味を持たせる要望は無かった)。
+  if (!special && byte == kLeaderJ && copyMode_.markActive()) {
+    copyLeaderJPending_ = true;
+    return true;
+  }
   if (special) {
     switch (*special) {
       case KeyInput::SpecialKey::Up:

@@ -16,6 +16,17 @@ std::vector<ContentView::Line> makeLines(std::initializer_list<std::string> text
   return lines;
 }
 
+// Directory一覧の`ls -l`行のように、各行のうち`highlightStartColumn`
+// 以降だけが「選択可能範囲」(実際にはファイル名)であるスナップ
+// ショットを作る(2026-09-07追加、confirmMark()自身の②の挙動の
+// テスト用)。
+std::vector<ContentView::Line> makeHighlightedLines(
+    std::initializer_list<std::pair<std::string, int>> textsAndStarts) {
+  std::vector<ContentView::Line> lines;
+  for (const auto &[t, start] : textsAndStarts) lines.push_back({t, std::nullopt, start, {}});
+  return lines;
+}
+
 }  // namespace
 
 TEST_CASE("CopyMode: loadSnapshot() draws the snapshot's own text unchanged and starts the cursor "
@@ -161,21 +172,26 @@ TEST_CASE("CopyMode: confirmMark() without an active mark is a safe no-op") {
   CHECK_FALSE(copy.markActive());
 }
 
-TEST_CASE("CopyMode: moveUp()/moveDown() are blocked entirely while a mark is active (ported from "
-          "code.c's own `if (!f_copy && row) vt_move(...)` -- the row variable simply never updates "
-          "while marking, so a selection can never span more than one row)") {
+TEST_CASE("CopyMode: moveUp()/moveDown() are ALLOWED while a mark is active, spanning the selection "
+          "across multiple rows (2026-09-07, a direct user request: \"次はCOPYだな。旧の行指定は "
+          "忘れていい\" -- legacy's own single-row selection model, ported verbatim from code.c's "
+          "`if (!f_copy && row) vt_move(...)`, is deliberately NOT carried over here)") {
   RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
   CopyMode copy(v);
-  copy.loadSnapshot(makeLines({"row zero", "row one"}));
-  copy.startMark();
+  copy.loadSnapshot(makeLines({"row zero", "row one", "row two"}));
+  copy.moveRight();
+  copy.moveRight();
+  copy.startMark();  // anchor at (row 0, col 2)
   copy.moveDown();
-  CHECK(d.cursorRow() == 0);  // blocked
+  copy.moveDown();
+  CHECK(d.cursorRow() == 2);  // no longer blocked
   copy.moveRight();
-  copy.moveRight();
-  CHECK(d.cursorRow() == 0);  // horizontal movement still works while marking
-  CHECK(d.cursorCol() == 2);
+  CHECK(d.cursorCol() == 3);
+  copy.confirmMark();
+  // Row 0 from the anchor column onward, all of row 1, row 2 up to the cursor column.
+  CHECK(copy.clipboardText() == "w zero\nrow one\nrow");
 }
 
 TEST_CASE("CopyMode: an empty snapshot leaves every operation a safe no-op") {
@@ -212,9 +228,9 @@ TEST_CASE("CopyMode: placeCursorAt() jumps to an absolute row/column when not ma
   CHECK(d.cursorCol() == 2);  // "bb" is only 2 columns wide
 }
 
-TEST_CASE("CopyMode: placeCursorAt() ignores its `row` argument once a mark is active, mirroring "
-          "moveUp()/moveDown()'s own single-row selection constraint -- lets a mouse drag that "
-          "wanders onto a different row still only extend the selection within the anchor's row") {
+TEST_CASE("CopyMode: placeCursorAt() honors `row` even while a mark is active, letting a mouse drag "
+          "that wanders onto a different row extend the selection across rows (2026-09-07, matching "
+          "moveUp()/moveDown()'s own removal of the single-row restriction)") {
   RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
@@ -222,11 +238,11 @@ TEST_CASE("CopyMode: placeCursorAt() ignores its `row` argument once a mark is a
   copy.loadSnapshot(makeLines({"select me please", "a different row"}));
   copy.placeCursorAt(0, 1);
   copy.startMark();
-  copy.placeCursorAt(1, 7);  // drag wandered onto row 1 -- row is ignored, column still applies
-  CHECK(d.cursorRow() == 0);
+  copy.placeCursorAt(1, 7);  // drag wandered onto row 1 -- now honored, not ignored
+  CHECK(d.cursorRow() == 1);
   CHECK(d.cursorCol() == 7);
   copy.confirmMark();
-  CHECK(copy.clipboardText() == "elect ");
+  CHECK(copy.clipboardText() == "elect me please\na diffe");
 }
 
 TEST_CASE("CopyMode: the live selection renders as a Standout AttributeRun over exactly the marked "
@@ -243,4 +259,56 @@ TEST_CASE("CopyMode: the live selection renders as a Standout AttributeRun over 
   CHECK(d.standoutAt(0, 6) == true);
   CHECK(d.standoutAt(0, 11) == true);
   CHECK(d.standoutAt(0, 12) == false);
+}
+
+TEST_CASE("CopyMode: confirmMark() on a single row with highlightStartColumn set (a highlighted "
+          "listing, e.g. Directory's `ls -l`) captures the WHOLE selectable range (the filename) "
+          "regardless of exactly where the anchor/cursor landed within it (2026-09-07, a direct user "
+          "request: \"②ハイライト表示のある画面では、選択可能範囲のみ指定\")") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeHighlightedLines({{"-rw-r--r-- report.txt", 11}}));
+  REQUIRE(std::string("-rw-r--r-- report.txt").substr(11) == "report.txt");  // sanity-check the fixture's own offset
+  // Click lands mid-name (column 14, inside "report.txt"), not at its start.
+  copy.placeCursorAt(0, 14);
+  copy.startMark();
+  copy.placeCursorAt(0, 16);
+  copy.confirmMark();
+  CHECK(copy.clipboardText() == "'report.txt'");  // the whole name, shell-quoted -- not "ort.t"
+}
+
+TEST_CASE("CopyMode: confirmMark() spanning multiple highlighted rows joins each row's whole "
+          "selectable range with shell-quoting, matching Application::shellQuoteArgv()'s own "
+          "convention -- so it pastes directly into a command line like `open -a Preview` (2026-09-07, "
+          "a direct user request: \"①と併せ、open -A プレビュー等で複数渡せる仕様\")") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeHighlightedLines({
+      {"-rw-r--r-- first.txt", 11},
+      {"-rw-r--r-- second file.txt", 11},  // a space in the name -- must be quoted
+      {"drwxr-xr-x third", 11},
+  }));
+  copy.placeCursorAt(0, 14);
+  copy.startMark();
+  copy.placeCursorAt(2, 14);
+  copy.confirmMark();
+  CHECK(copy.clipboardText() == "'first.txt' 'second file.txt' 'third'");
+}
+
+TEST_CASE("CopyMode: confirmMark() on a highlighted row never leaves clipboardText() untouched "
+          "(unlike the plain-text empty-range guard) -- a bare click+confirm with no real drag still "
+          "selects that row's whole name, since a directory entry's name can never be empty") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeHighlightedLines({{"-rw-r--r-- report.txt", 11}}));
+  copy.placeCursorAt(0, 14);
+  copy.startMark();
+  copy.confirmMark();  // no movement at all between startMark() and confirmMark()
+  CHECK(copy.clipboardText() == "'report.txt'");
 }
