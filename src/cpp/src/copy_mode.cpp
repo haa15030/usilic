@@ -176,8 +176,13 @@ void CopyMode::beginOrExtendFromMouse(int row, int column) {
 }
 
 void CopyMode::startMark() {
+  // 2026-09-07再訂正、直接のユーザー要望("⑭では^@を押していなくても
+  // 勝手に離れ小島なので、^@はスルーでいいかも。^[wもしくは^[pで回収、
+  // では？"): ^@自身へのbankCurrentMarkIfExtended()呼び出しは撤回した
+  // ――beginOrExtendFromMouse()(GUIのマウス押下)だけが「島」を自動的に
+  // 積む。キーボードの^@は元通り、常に単純にアンカーを現在位置へ
+  // 置き直すだけ(emacsのC-@を繰り返し押した時と同じ)。
   if (lines_.empty()) return;
-  bankCurrentMarkIfExtended();
   markActive_ = true;
   rectangleMark_ = false;
   markAnchorRow_ = cursorRow_;
@@ -186,8 +191,9 @@ void CopyMode::startMark() {
 }
 
 void CopyMode::startOrUpgradeRectangleMark() {
+  // startMark()自身の同日の訂正コメント参照――^X SPCも同じ理由で
+  // bankCurrentMarkIfExtended()を呼ばない、単純な形に戻した。
   if (lines_.empty()) return;
-  bankCurrentMarkIfExtended();
   if (!markActive_) {
     markActive_ = true;
     markAnchorRow_ = cursorRow_;

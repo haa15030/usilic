@@ -132,29 +132,12 @@ TEST_CASE("CopyMode: startMark()+confirmMark() select a same-row substring into 
   CHECK(copy.clipboardText() == "elect ");  // unchanged
 }
 
-TEST_CASE("CopyMode: startMark() called again on a mark that has NOT yet been extended (anchor still "
-          "equals cursor) just resets the anchor in place (emacs' repeated set-mark-command) -- a "
-          "harmless no-op, not a new island") {
-  RecordingDisplay d(10, 30);
-  ContentView v(d);
-  v.setViewport(0, 5);
-  CopyMode copy(v);
-  copy.loadSnapshot(makeLines({"select me please"}));
-
-  copy.moveRight();  // column 1
-  copy.startMark();
-  copy.startMark();  // repeated immediately -- anchor still == cursor, nothing to bank
-  CHECK(copy.markActive());
-  for (int i = 0; i < 3; i++) copy.moveRight();  // column 4
-  copy.confirmMark();
-  CHECK(copy.clipboardText() == "ele");  // columns 1..4
-}
-
-TEST_CASE("CopyMode: startMark() called on a mark that already has real extent banks it as a "
-          "confirmed \"island\" (kept highlighted on screen) and starts a fresh mark at the current "
-          "position -- confirmMark() later gathers every island plus the in-progress mark, "
-          "newline-joined (2026-09-07, a direct user report ⑭: \"^@押すたびに離れ小島なハイライトを"
-          "画面に残留させて`^[w`でそれらをまとめてクリップボードへ、ってのは？\")") {
+TEST_CASE("CopyMode: startMark() always just resets the anchor to the current position (emacs' "
+          "repeated set-mark-command), even when the mark already has real extent -- it never banks "
+          "an island itself (2026-09-07, a direct user correction: \"⑭では`^@`を押していなくても"
+          "勝手に離れ小島なので、`^@`はスルーでいいかも\" -- only beginOrExtendFromMouse() (a GUI "
+          "mouse press) does that; keyboard movement always extends the current mark, so only an "
+          "explicit mouse press needs the automatic-island behavior)") {
   RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
@@ -164,14 +147,11 @@ TEST_CASE("CopyMode: startMark() called on a mark that already has real extent b
   copy.moveRight();  // column 1
   copy.startMark();
   for (int i = 0; i < 3; i++) copy.moveRight();  // column 4 -- real extent now (1..4 == "ele")
-  // The island's highlight must still be visible on screen right after banking.
-  copy.startMark();  // banks "ele" as an island, starts a fresh mark at column 4
-  CHECK(d.standoutAt(0, 1) == true);   // the banked island's own highlight persists
-  CHECK(d.standoutAt(0, 3) == true);
+  copy.startMark();                              // just re-anchors at column 4 -- no island banked
   CHECK(copy.markActive());
   for (int i = 0; i < 3; i++) copy.moveRight();  // column 7
   copy.confirmMark();
-  CHECK(copy.clipboardText() == "ele\nct ");  // the banked island ("ele") + the new mark ("ct ")
+  CHECK(copy.clipboardText() == "ct ");  // columns 4..7 only -- "ele" was discarded, not banked
 }
 
 TEST_CASE("CopyMode: confirmMark() without an active mark is a safe no-op") {
