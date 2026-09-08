@@ -570,14 +570,26 @@ void DirectoryMode::toggleMark(int index) {
 
 bool DirectoryMode::isMarked(int index) const {
   if (markedIndices_.count(index) > 0) return true;
-  // setTransientMarkedNames()自身のコメント参照(2026-09-08追加)――
-  // markedCount()/targetEntries()はmarkedIndices_を直接見るので、
-  // この論理和はCP/MV/RM操作対象の判定には一切影響しない。
+  // setTransientMarkedNames()自身のコメント参照。2026-09-09追記、
+  // 直接のユーザー要望("見た目だけで実際は選択済み状態になっていない
+  // らしくPROGRAMもCP/MV/RMも反応しない...実際の選択としても使い
+  // たい"): 当初(2026-09-08)はmarkedCount()/targetEntries()が
+  // markedIndices_だけを見る設計だったが、ユーザーの明示的な選択
+  // (AskUserQuestion「統合する」)により、この一時マークもPROGRAM/
+  // CP/MV/RMの実際の対象として扱うよう変更した――markedCount()/
+  // targetEntries()は今やこのisMarked()自身を経由するので、以下の
+  // 判定はその両方に反映される。^Lによる消去(clearTransientMarks()、
+  // markedIndices_には触れない)との非破壊性は変わらず保たれている。
   if (index < 0 || index >= static_cast<int>(entries_.size())) return false;
   return transientMarkedNames_.count(entries_[index].name) > 0;
 }
 
-std::size_t DirectoryMode::markedCount() const { return markedIndices_.size(); }
+std::size_t DirectoryMode::markedCount() const {
+  std::size_t count = 0;
+  for (int i = 0; i < static_cast<int>(entries_.size()); i++)
+    if (isMarked(i)) count++;
+  return count;
+}
 
 void DirectoryMode::clearMarks() { markedIndices_.clear(); }
 
@@ -606,10 +618,15 @@ const std::vector<DirectoryEntry> &DirectoryMode::currentEntries() const { retur
 
 std::vector<DirectoryEntry> DirectoryMode::targetEntries() const {
   std::vector<DirectoryEntry> result;
-  if (!markedIndices_.empty()) {
-    for (int idx : markedIndices_) result.push_back(entries_[idx]);  // std::setは昇順で走査する
-    return result;
-  }
+  // isMarked()自身の2026-09-09追記のコメント参照――markedIndices_
+  // (明示的な選択)とtransientMarkedNames_(CP/MV/ARC完了後の一時
+  // マーキング)の両方を、entries_の並び順(昇順)でまとめて返す。
+  // toggleMark()/markAll()自体が"./"/"../"を決してmarkedIndices_へ
+  // 入れず、ARC/CP/MVの一時マーキングも同じく".を含まないので、
+  // ここで改めて除外する必要はない。
+  for (int i = 0; i < static_cast<int>(entries_.size()); i++)
+    if (isMarked(i)) result.push_back(entries_[i]);
+  if (!result.empty()) return result;
   // 上のtoggleMark()/markAll()と同じ"./"/"../"除外を、カーソル
   // フォールバックの場合(何も明示的にマークされていない)に対して
   // 行う――markedIndices_自体はもうどちらも含み得ないが、カーソルは

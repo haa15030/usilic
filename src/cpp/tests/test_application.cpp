@@ -4020,6 +4020,102 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: only the newly-extracted top-level entr
   CHECK_FALSE(display.underlineAt(oldIdx, oldNameCol));
 }
 
+// 2026-09-09 addition, a direct user report ("~/git/usilic/にある.json
+// ファイル群を/tmp/にCP...このあとARCを実行後、展開先のファイル・
+// ディレクトリにはアンダーラインが付かないので^Lでクリアされるで
+// あろう何らかのフラグがONのままなのかな"): reproduces a CP landing
+// in a directory (leaving transientMarkedNames_ non-empty there),
+// followed by an ARC extraction into a DIFFERENT destination WITHOUT
+// an intervening ^L -- checks whether the leftover marking from the
+// first operation somehow blocks the second one's own Underline.
+TEST_CASE_FIXTURE(Fixture, "ARC extract following a CP (no ^L in between): the ARC destination still shows "
+                           "its own Underline, unaffected by the earlier CP's leftover marking") {
+  fs::copy_file(root / "archive.tar", root / "cpmvdest" / "archive.tar");
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
+  REQUIRE(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
+
+  // cpmv_a.txt is now shown Underlined here (the CP's own post-transfer
+  // marking) -- confirm the precondition before moving on, deliberately
+  // WITHOUT pressing ^L first (matching the user's exact report).
+  int cpIdx = indexOf("cpmv_a.txt");
+  REQUIRE(cpIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != cpIdx) app.handleCommand(Command::MoveDown);
+  int cpNameCol = app.activeContentView().lines()[cpIdx].highlightStartColumn.value_or(0);
+  REQUIRE(display.underlineAt(cpIdx, cpNameCol));
+
+  // Now select archive.tar (also sitting in cpmvdest, copied there
+  // above) and extract it to a DIFFERENT, empty destination. "archive.tar"
+  // sorts BEFORE "cpmv_a.txt" alphabetically, so MoveDown() (forward-only)
+  // can't reach it from the cursor's current position -- back to the top
+  // first (see Command::Redraw's own non-destructive test for the same
+  // MoveDown()-direction lesson).
+  REQUIRE(app.handleCommand(Command::GoToTop));
+  int arcSrcIdx = indexOf("archive.tar");
+  REQUIRE(arcSrcIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != arcSrcIdx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  feedText((root / "arcdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().currentDirectory() == (root / "arcdest").string() + "/");
+
+  int newIdx = indexOf("arcsrc/");
+  REQUIRE(newIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != newIdx) app.handleCommand(Command::MoveDown);
+  int newNameCol = app.activeContentView().lines()[newIdx].highlightStartColumn.value_or(0);
+  CHECK(display.underlineAt(newIdx, newNameCol));
+}
+
+// Variant of the test directly above: this time the ARC destination is
+// the SAME directory the CP just landed in (not a different one) --
+// closer to how the user's own "コピー先と同じ場所へ展開" workflow may
+// have actually looked (typing the same path again rather than a fresh
+// one).
+TEST_CASE_FIXTURE(Fixture, "ARC extract following a CP, into the SAME directory (no ^L in between): the "
+                           "newly-extracted entry is Underlined, the CP's own leftover marking is replaced") {
+  fs::copy_file(root / "archive.tar", root / "cpmvdest" / "archive.tar");
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
+  REQUIRE(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
+
+  REQUIRE(app.handleCommand(Command::GoToTop));
+  int arcSrcIdx = indexOf("archive.tar");
+  REQUIRE(arcSrcIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != arcSrcIdx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  feedText((root / "cpmvdest").string());  // SAME directory as the CP landed in
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
+
+  int newIdx = indexOf("arcsrc/");
+  REQUIRE(newIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != newIdx) app.handleCommand(Command::MoveDown);
+  int newNameCol = app.activeContentView().lines()[newIdx].highlightStartColumn.value_or(0);
+  CHECK(display.underlineAt(newIdx, newNameCol));
+}
+
 // 2026-08-27 addition, a direct user proposal ("ディレクトリ（ls）の
 // 戻り値に「ARC:」等モードへの帰還があるときは^J^Jルーチンへ移行
 // じゃまずいの？"): a successful extraction lands in Directory mode
@@ -7368,8 +7464,19 @@ TEST_CASE_FIXTURE(Fixture, "CP: marking two files then copying them creates real
   // Sources are untouched by a copy.
   CHECK(fs::exists(root / "cpmv_a.txt"));
   CHECK(fs::exists(root / "cpmv_b.txt"));
-  // The reload clears marks (DirectoryMode::enterDirectory()'s own documented behavior).
-  CHECK(app.directoryMode().markedCount() == 0);
+  // 2026-09-09 update: the reload clears the PRE-operation selection
+  // (markedIndices_, DirectoryMode::enterDirectory()'s own documented
+  // behavior) -- but markedCount()/targetEntries() now ALSO count the
+  // post-transfer marking (transientMarkedNames_) set right after this
+  // same reload, per the direct user request to let PROGRAM/CP/MV/RM
+  // treat the just-copied files as a real selection too (see
+  // DirectoryMode::isMarked()'s own 2026-09-09 comment). So the
+  // combined count here is the 2 just-copied files, not 0.
+  CHECK(app.directoryMode().markedCount() == 2);
+  std::vector<fm::DirectoryEntry> targets = app.directoryMode().targetEntries();
+  REQUIRE(targets.size() == 2);
+  CHECK((targets[0].name == "cpmv_a.txt" || targets[0].name == "cpmv_b.txt"));
+  CHECK((targets[1].name == "cpmv_a.txt" || targets[1].name == "cpmv_b.txt"));
 }
 
 // 2026-08-21 regression, a real report + screenshot (=eh): `ls -F`'s
@@ -7442,6 +7549,35 @@ TEST_CASE_FIXTURE(Fixture, "CP: after landing in the destination directory, the 
   while (indexOf(app.directoryMode().selectedEntry()->name) != destIdx) app.handleCommand(Command::MoveDown);
   int nameCol = app.activeContentView().lines()[destIdx].highlightStartColumn.value_or(0);
   CHECK(display.underlineAt(destIdx, nameCol));
+}
+
+// 2026-09-09 addition, a direct user report ("見た目だけで実際は選択済み
+// 状態になっていないらしくPROGRAMもCP/MV/RMも反応しない...実際の選択
+// としても使いたい"): the "統合する" decision (AskUserQuestion) means a
+// FOLLOW-UP CP/MV/RM can now act on the post-transfer marking directly,
+// with no need to manually re-mark the just-copied file first.
+TEST_CASE_FIXTURE(Fixture, "CP: a follow-up CP acts on the post-transfer marking directly, with no manual "
+                           "re-marking needed") {
+  fs::create_directory(root / "cpmvdest2");
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
+  REQUIRE(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
+
+  // A second CP, straight away, with nothing manually re-marked --
+  // only the post-transfer marking from the FIRST copy is active.
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  feedText((root / "cpmvdest2").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
+
+  CHECK(fs::exists(root / "cpmvdest2" / "cpmv_a.txt"));
 }
 
 // 2026-08-27 fix, a real report + repro ("'saved'[return]→「saved/
@@ -7613,7 +7749,11 @@ TEST_CASE_FIXTURE(Fixture, "Command::Redraw (^L) clears the post-transfer Underl
   REQUIRE(otherIdx >= 0);
   while (indexOf(app.directoryMode().selectedEntry()->name) != otherIdx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));  // a fresh selection for a follow-up CP/MV
-  REQUIRE(app.directoryMode().markedCount() == 1);
+  // 2026-09-09 update: markedCount() now counts BOTH the post-transfer
+  // marking (cpmv_a.txt, still not cleared) and this fresh markedIndices_
+  // selection (unrelated.txt) -- see DirectoryMode::isMarked()'s own
+  // 2026-09-09 comment on the "integrate" decision.
+  REQUIRE(app.directoryMode().markedCount() == 2);
 
   REQUIRE(app.handleCommand(Command::Redraw));  // ^L
 
@@ -7648,7 +7788,12 @@ TEST_CASE_FIXTURE(Fixture, "^[P pastes the post-transfer marking's full path, sh
   CHECK(app.feedByte(0x0d, std::nullopt));
   REQUIRE(pumpCpMvRmToCompletion(app));
 
-  REQUIRE(app.handleCommand(Command::StartProgram));
+  // FGREP (not PROGRAM) deliberately: startProgramPrompt() now ALSO
+  // auto-seeds from targetEntries() (2026-09-09, the same "integrate"
+  // change this test's own marking relies on) -- that seeding would
+  // otherwise leave stray text in the prompt this test isn't testing.
+  // startGrepPrompt() has no such seeding (activatePrompt(...,"")).
+  REQUIRE(app.handleCommand(Command::StartFgrep));
   REQUIRE(app.promptActive());
 
   REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
