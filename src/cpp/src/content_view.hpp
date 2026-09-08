@@ -594,6 +594,15 @@ class ContentView {
   // 0近く/「TOP」で、まさに最後で「END」まで上がっていく。
   std::string modeLineText() const;
 
+  // 2026-09-08追加、直接のユーザー要望("「現在行/総行 ??%」エリア幅の
+  // まま非ハイライト入力エリアとして使用して欲しい"): modeLineText()と
+  // 違い、positionTextOverride_を一切見ない――setPositionTextOverride()
+  // で上書きする「前」に、元々そこにあったはずの("N/M XX%"等の)幅を
+  // 問い合わせるために使う(goto-line入力欄をその幅に合わせてパディング
+  // するため、Application::dispatchLeaderByte()自身のgotoLine*コメント
+  // 参照)。
+  std::string naturalPositionText() const;
+
   // 同じフォーマットだが、特にドラッグ/惰性スクロールの描画経路
   // 向け: cursorIndex_の代わりにtopIndex_(ビューポート自身の最上部
   // の行)を使う。マウスドラッグ/Shift+矢印の惰性は、意図的に

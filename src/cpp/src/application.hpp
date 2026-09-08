@@ -2589,6 +2589,16 @@ class Application {
   bool gotoLineGPending_ = false;
   bool gotoLineDigitsPending_ = false;
   std::string gotoLineDigits_;
+  // 2026-09-08追加、直接のユーザー要望("「現在行/総行 ??%」エリア幅の
+  // まま非ハイライト入力エリアとして使用して欲しい。実際の見た目は
+  // 旧を参照"): old/src/disp.cのprint_line()(linep==F2の分岐)は、
+  // 元々そこにあった位置フィールドの幅(`k = tlen`)ぶんだけ最初に
+  // 空白でクリアしてから、入力された桁をその先頭から順に上書きして
+  // いく――つまり入力欄は常に元の表示と「同じ幅」を占め続ける。この
+  // 幅を、桁入力が始まる瞬間(ContentView::naturalPositionText()、
+  // まだ上書きされていない自然な位置テキスト)に記録しておき、
+  // 桁を表示するたびにその幅までスペースでパディングする。
+  int gotoLineFieldWidth_ = 0;
   bool leaderXPending_ = false;  // ^Xを見た、^Xd/^X^Dを完成させるバイトを待っている(2026-09-08のキー再編で他は全て^O/^Jへ移行し、DIRだけが残った)
   // ^J^O(usilicrcのERROR/LOG、2026-09-08新設のネストしたサブ
   // リーダー): ^Jの後に^O自体を見た、^J^Oe/^J^Olを完成させる

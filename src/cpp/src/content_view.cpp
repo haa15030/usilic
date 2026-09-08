@@ -1012,6 +1012,13 @@ std::string ContentView::modeLineText() const {
                                                        : ModeLine::format(current, total));
 }
 
+std::string ContentView::naturalPositionText() const {
+  int total = static_cast<int>(lines_.size());
+  int current = total > 0 ? cursorIndex_ + 1 : 0;
+  applyLivePromptLineAdjustment(total, current);
+  return useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total) : ModeLine::format(current, total);
+}
+
 std::string ContentView::scrollModeLineText() const {
   int total = static_cast<int>(lines_.size());
   int bottomVisible = std::min(topIndex_ + std::max(height_, 0), total);

@@ -271,6 +271,15 @@ class CopyMode {
   // falseの間は常にfalse。
   bool rectangleMarkActive() const;
 
+  // 2026-09-08追加、直接のユーザー要望("「現在行/総行 ??%」エリア幅の
+  // まま非ハイライト入力エリアとして使用して欲しい"): render()が
+  // goto-lineの桁プレビュー("gotoLinePreview_"、setGotoLinePreview()
+  // 自身のコメント参照)を表示していない間に位置フィールドへ表示する
+  // はずのテキスト("Rectangle-Mark"または"---")――goto-line入力欄を
+  // その幅に合わせてパディングするため、application.cpp自身の
+  // feedCopyByte()が問い合わせる。
+  std::string normalPositionText() const;
+
   // 共有「ヤンクバッファ」(legacy: RV::copy) -- 常に素のテキスト、
   // 理由はこのクラス自身のコメント参照。最初の空でない選択が完了
   // するまでは空。

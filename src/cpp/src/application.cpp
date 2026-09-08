@@ -2468,7 +2468,15 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
   // 反映されない(実機PTYテストで最初に確認した不具合)。
   auto showGotoLineDigits = [&]() {
     ContentView &view = activeContentView();
-    view.setPositionTextOverride(gotoLineDigits_, /*plain=*/true);
+    // gotoLineFieldWidth_自身のコメント参照(2026-09-08追加、直接の
+    // ユーザー要望"「現在行/総行 ??%」エリア幅のまま非ハイライト
+    // 入力エリアとして使用して欲しい。実際の見た目は旧を参照")――
+    // legacy自身のprint_line()と同じく、元々そこにあった表示の幅まで
+    // 空白でパディングする(入力欄の幅を変えない)。
+    std::string padded = gotoLineDigits_;
+    if (static_cast<int>(padded.size()) < gotoLineFieldWidth_)
+      padded += std::string(gotoLineFieldWidth_ - padded.size(), ' ');
+    view.setPositionTextOverride(padded, /*plain=*/true);
     view.redraw();
   };
   auto clearGotoLineDisplay = [&]() {
@@ -2526,6 +2534,7 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     if (!special && byte == 'g') {
       gotoLineDigitsPending_ = true;
       gotoLineDigits_.clear();
+      gotoLineFieldWidth_ = static_cast<int>(activeContentView().naturalPositionText().size());
       showGotoLineDigits();
     }
     return true;
@@ -2539,6 +2548,7 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     // まず2バイト目の'g'を待つ状態へ。
     if (byte >= '0' && byte <= '9') {
       gotoLineDigitsPending_ = true;
+      gotoLineFieldWidth_ = static_cast<int>(activeContentView().naturalPositionText().size());
       gotoLineDigits_.assign(1, static_cast<char>(byte));
       showGotoLineDigits();
       return true;

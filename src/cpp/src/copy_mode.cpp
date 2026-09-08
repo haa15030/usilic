@@ -347,6 +347,8 @@ bool CopyMode::markActive() const { return markActive_; }
 
 bool CopyMode::rectangleMarkActive() const { return markActive_ && rectangleMark_; }
 
+std::string CopyMode::normalPositionText() const { return rectangleMark_ ? "Rectangle-Mark" : "---"; }
+
 const std::string &CopyMode::clipboardText() const { return clipboardText_; }
 
 void CopyMode::setGotoLinePreview(std::optional<std::string> text) {
@@ -397,12 +399,22 @@ void CopyMode::render() {
   // ラインの位置フィールド上で直接エコーしていたのと同じ見た目で、
   // それを最優先で表示する。
   if (gotoLinePreview_) {
-    // 2026-09-08追加、直接のユーザー要望("数字入力は、他の文字列
-    // 入力エリア同様、ハイライト無しにして欲しい"): `plain=true`
-    // ――setPositionTextOverride()自身の同引数のコメント参照。
-    view_.setPositionTextOverride("Line: " + *gotoLinePreview_, /*plain=*/true);
+    // 2026-09-08再訂正、直接のユーザー要望("惜しい。「現在行/総行
+    // ??%」エリア幅のまま非ハイライト入力エリアとして使用して欲しい。
+    // 実際の見た目は旧を参照"): legacy自身のprint_line()(disp.c、
+    // linep==F2の分岐)は、元々そこにあった表示("---"/"Rectangle-Mark"
+    // に相当)の幅ぶん最初に空白でクリアしてから桁を先頭から上書き
+    // していく――「Line: 」のようなラベルは付けず、入力欄は常に元の
+    // 幅のまま。normalPositionText()自身のコメント参照(この時点では
+    // rectangleMark_はgoto-line入力によって変わらないので、都度
+    // 計算して問題ない)。`plain=true`はsetPositionTextOverride()自身の
+    // 同引数のコメント参照(ハイライト無し)。
+    std::string padded = *gotoLinePreview_;
+    int width = static_cast<int>(normalPositionText().size());
+    if (static_cast<int>(padded.size()) < width) padded += std::string(width - padded.size(), ' ');
+    view_.setPositionTextOverride(padded, /*plain=*/true);
   } else {
-    view_.setPositionTextOverride(rectangleMark_ ? "Rectangle-Mark" : "---");
+    view_.setPositionTextOverride(normalPositionText());
   }
   view_.redraw();
   int column = lines_.empty() ? 0 : displayColumnFor(lines_[cursorRow_].text, cursorByte_);
