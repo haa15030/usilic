@@ -206,6 +206,30 @@ class DirectoryMode {
   // 自体が既にK-73(「Clear all」)をカバーしている。
   void markAll();
 
+  // -- 一時マーキング(CP/MV/ARC完了後の対象表示用、^[P用) --
+  // 上のmarkedIndices_(CP/MV/RM「着手前」の複数選択)とは意図的に
+  // 別の状態: 2026-09-08、直接のユーザー要望("CP/MV/ARCモードで複写/
+  // 移動/展開先ディレクトリへ移動したあと、対象ファイルおよび
+  // ディレクトリを^[Pへも渡せるようアンダーライン表示して欲しい。
+  // ^Lで消去")。名前ベース(インデックスではない)なのは、一覧の並び
+  // 順・インデックスが再読み込みごとに変わり得るため――特にARCの
+  // 「展開前後の差分」判定では、そもそも「以前のインデックス」という
+  // ものが存在しない。isMarked()がmarkedIndices_との論理和として
+  // これも見るので、既存のsetMarkedRowUsesUnderline(true)描画経路に
+  // そのまま合流する。markedCount()/targetEntries()はmarkedIndices_を
+  // 直接見るので、この一時マーキングはCP/MV/RM操作対象の判定には
+  // 一切影響しない。
+  void setTransientMarkedNames(std::vector<std::string> names);
+  void clearTransientMarks();
+  // 現在のentries_に実在するものだけを返す(一覧再読み込み後に古い
+  // 名前が残っていても、存在しないものは黙って除外する)。
+  std::vector<std::string> transientMarkedNames() const;
+
+  // 現在の一覧をそのまま返す(ARC展開後の「新規に現れた名前」の差分
+  // 計算で、Application側が展開前に保存しておいた名前集合と比較する
+  // ために使う)。
+  const std::vector<DirectoryEntry> &currentEntries() const;
+
   // 一覧順のマーク済みエントリ。または――何も明示的にマークされて
   // いなければ――単に現在選択されている1エントリ(明示的な複数選択
   // なしのアクションが「カーソルの下にあるもの」に対して働くという、
@@ -366,6 +390,8 @@ class DirectoryMode {
   std::string currentDirectory_;
   std::vector<DirectoryEntry> entries_;
   std::set<int> markedIndices_;
+  // setTransientMarkedNames()自身のコメント参照。
+  std::set<std::string> transientMarkedNames_;
   bool filenameOnlyMode_ = false;
   std::string searchAnnotation_;
   bool showEditError_ = false;

@@ -259,6 +259,18 @@ std::string shellQuoteArgv(const std::vector<std::string> &argv) {
   return line;
 }
 
+// `ls -alF`(Configuration::commandFor(ConfiguredRole::Ls)自身の
+// デフォルト、configuration.cpp参照)がDirectoryEntry::nameの末尾に
+// 付与する型マーカー(ディレクトリ'/'、実行可能'*'、シンボリックリンク
+// '@'、ソケット'='、FIFO'|')を剥がす――実在のパスとして使う時
+// (PasteTransientTargets自身のコメント参照、ARC展開前後の差分判定)
+// にだけ必要で、isMarked()自身のentries_[index].nameとの照合には
+// 元の(型マーカー付きの)表記のまま使う。
+std::string stripLsFTypeMarker(const std::string &name) {
+  if (!name.empty() && std::string("/*@=|").find(name.back()) != std::string::npos) return name.substr(0, name.size() - 1);
+  return name;
+}
+
 // COPYモードのconfirmMark()自身のコメント参照(2026-09-07追加、直接の
 // ユーザー報告⑫: "クリップボードが共有エリアに繋がってない？（emacs
 // でペーストできない）"): それまでのCOPY/PASTEは、このアプリ自身の
@@ -2644,6 +2656,13 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 初めて実際にCommand::StartExitへ結線する。
       case kEscape:
         return handleCommand(Command::StartExit);
+      // ESC P (Shift+P、2026-09-08追加): CP/MV/ARC完了直後の一時
+      // マーキングをプロンプトへ貼り付ける――Command::
+      // PasteTransientTargets自身のコメント参照。既存のCOPYモード
+      // 専用^[p(小文字、copyEscapePending_側の分岐)とは無関係の
+      // 別のキー。
+      case 'P':
+        return handleCommand(Command::PasteTransientTargets);
       default:
         return false;  // このスライスでは認識されないESCシーケンス
     }
@@ -3875,6 +3894,30 @@ bool Application::handleCommand(Command command) {
       if (!promptActive()) return false;
       promptEditor_.paste(copyMode_.clipboardText());
       return true;
+    // ^[P(2026-09-08追加、Command::PasteTransientTargets自身の
+    // コメント参照): PasteClipboardと同じpromptActive()ガードだが、
+    // 貼り付ける内容はCopyModeのクリップボードではなく
+    // DirectoryMode::transientMarkedNames()(CP/MV/ARC完了後の一時
+    // マーキング)から都度組み立てる。requirements.md「設計判断A」
+    // 決定通り、フルパス+シェルクォート済みで挿入する(宛先ディレク
+    // トリを離れると相対名は無意味になるため)。
+    case Command::PasteTransientTargets: {
+      if (!promptActive()) return false;
+      std::vector<std::string> names = directoryMode_.transientMarkedNames();
+      if (names.empty()) return false;
+      std::string dir = directoryMode_.currentDirectory();
+      if (!dir.empty() && dir.back() != '/') dir += '/';
+      std::vector<std::string> paths;
+      paths.reserve(names.size());
+      // stripLsFTypeMarker()自身のコメント参照――実在のパスとして
+      // 使うので、`ls -F`の型マーカー('*'/'@'等)を剥がす(ディレクトリ
+      // の'/'は実在のパスの表記としても問題ないが、剥がした上で改めて
+      // 明示的に付け直すよりも、他の型マーカーと同じ扱いに揃える方が
+      // 単純)。
+      for (const auto &name : names) paths.push_back(dir + stripLsFTypeMarker(name));
+      promptEditor_.paste(shellQuoteArgv(paths));
+      return true;
+    }
     case Command::StartExit:
       return startExitPrompt();
     case Command::StartDu:
@@ -3951,6 +3994,12 @@ bool Application::handleCommand(Command command) {
       return true;
     case Command::Redraw:
       activeView().setHoverIndex(std::nullopt);  // Move*/Page*系のcase自身のコメント参照
+      // 2026-09-08追加、直接のユーザー要望("^Lで消去"、DirectoryMode::
+      // setTransientMarkedNames()自身のコメント参照)――CP/MV/ARC完了後
+      // の一時マーキングを^Lで消す。CP/MV/RM着手前の複数選択
+      // (markedIndices_)はclearTransientMarks()では一切触れないので
+      // 影響しない。
+      if (currentMode_ == ApplicationMode::Directory) directoryMode_.clearTransientMarks();
       // 2026-09-08追加、直接のユーザー要望("ページTOPとENDいがいでは、
       // ^L（描き直し）が投入された場合、ブロックカーソル位置のカレント
       // 行が画面中央に来るようにしてほしい。viの番号指定起動および
@@ -10267,7 +10316,19 @@ bool Application::executeCopy(const std::string &destination) {
   }
   for (const auto &target : targets) argv.push_back(target);
   argv.push_back(resolvedDestination);
-  return startCpMvRmShellRun(argv, resolvedDestination, directoryMode_.currentDirectory());
+  // 2026-09-08追加、DirectoryMode::setTransientMarkedNames()自身の
+  // コメント参照("CP/MV/ARCモードで...対象ファイルおよびディレク
+  // トリを^[Pへも渡せるようアンダーライン表示して欲しい"): 着地先
+  // ディレクトリの中では、コピー元のベースネームのままのはず(宛先が
+  // 実在のディレクトリであることは、この後pollPendingCpMvRmShellRun()
+  // 自身のdescendTo()成功チェックで保証される――単一ファイルの
+  // リネームコピーのようにdescendTo()が失敗するケースでは、そもそも
+  // 一時マークは設定されない)。
+  std::vector<std::string> targetBasenames;
+  targetBasenames.reserve(targets.size());
+  for (const auto &target : targets)
+    targetBasenames.push_back(stripLsFTypeMarker(std::filesystem::path(target).filename().string()));
+  return startCpMvRmShellRun(argv, resolvedDestination, directoryMode_.currentDirectory(), targetBasenames);
 }
 
 // executeCopy()と同じ2026-08-22の再設計――それ自身のコメント参照。
@@ -10286,7 +10347,12 @@ bool Application::executeMove(const std::string &destination) {
   }
   for (const auto &target : targets) argv.push_back(target);
   argv.push_back(resolvedDestination);
-  return startCpMvRmShellRun(argv, resolvedDestination, directoryMode_.currentDirectory());
+  // executeCopy()自身の直上のコメント参照(2026-09-08追加)。
+  std::vector<std::string> targetBasenames;
+  targetBasenames.reserve(targets.size());
+  for (const auto &target : targets)
+    targetBasenames.push_back(stripLsFTypeMarker(std::filesystem::path(target).filename().string()));
+  return startCpMvRmShellRun(argv, resolvedDestination, directoryMode_.currentDirectory(), targetBasenames);
 }
 
 // m_dest()のT_rmの分岐から移植: `confirmation`はまさに"y"でなければ
@@ -10322,12 +10388,14 @@ bool Application::executeRemove(const std::string &confirmation) {
 // pendingCpMvRmShellRun_経由で後でどこに着地すべきかを覚えておく
 // ――pollPendingCpMvRmShellRun()参照。
 bool Application::startCpMvRmShellRun(const std::vector<std::string> &argv, const std::string &destination,
-                                       const std::string &sourceDirectory) {
+                                       const std::string &sourceDirectory,
+                                       std::vector<std::string> targetBasenames) {
   if (!ensureShellActive()) {
     directoryView_.redraw();
     return false;
   }
-  pendingCpMvRmShellRun_ = PendingCpMvRmShellRun{shell_.promptGeneration(), destination, sourceDirectory};
+  pendingCpMvRmShellRun_ =
+      PendingCpMvRmShellRun{shell_.promptGeneration(), destination, sourceDirectory, std::move(targetBasenames)};
   shell_.commandLine().setText(shellQuoteArgv(argv) + "; echo " + kCpMvRmExitMarker + "$?");
   shell_.submitLine();
   return true;
@@ -10376,8 +10444,17 @@ void Application::pollPendingCpMvRmShellRun() {
   // か、既に「絶対」パスである――executeCopy()/executeMove()が、
   // それがそもそもここへ到達する前にそれを解決する(それら自身の
   // 2026-08-27のコメント参照)。
-  if (!ok || run.destination.empty() || !directoryMode_.descendTo(run.destination))
+  if (!ok || run.destination.empty() || !directoryMode_.descendTo(run.destination)) {
     directoryMode_.enterDirectory(run.sourceDirectory);
+  } else {
+    // 2026-09-08追加、DirectoryMode::setTransientMarkedNames()自身の
+    // コメント参照――descendTo()が成功した(宛先が本物の、閲覧可能な
+    // ディレクトリへ解決した)場合に限り、コピー/移動した対象を一時
+    // マークする。descendTo()自身がenterDirectory()を呼ぶので、その
+    // 内部でtransientMarkedNames_は既にクリアされている――この直後に
+    // 設定するので問題ない。
+    directoryMode_.setTransientMarkedNames(run.targetBasenames);
+  }
   directoryView_.redraw();
 }
 
@@ -10417,6 +10494,22 @@ void Application::pollPendingArchiveExtractShellRun() {
   if (ok && directoryMode_.descendTo(run.destination)) {
     currentMode_ = ApplicationMode::Directory;
     directoryMode_.setArcExtractSourceAnnotation(run.archivePath);
+    // 2026-09-08追加、PendingArchiveExtractShellRun::
+    // entriesBeforeExtract自身のコメント参照――展開前後のエントリ名の
+    // 差分で「新規に現れたもの」だけを一時マークする。DirectoryEntry::
+    // name(`ls -F`由来、末尾に'/'/'*'/'@'等の型マーカーを保持)と
+    // entriesBeforeExtract(std::filesystem::directory_iterator由来、
+    // 型マーカーなし)は表記が異なるため、比較の瞬間だけstripLsFType
+    // Marker()で揃える(setTransientMarkedNames()自身へ渡す名前は、
+    // isMarked()がentries_[index].nameとそのまま照合できるよう、
+    // 型マーカー付きの元の表記のまま渡す)。
+    std::set<std::string> before(run.entriesBeforeExtract.begin(), run.entriesBeforeExtract.end());
+    std::vector<std::string> newNames;
+    for (const auto &entry : directoryMode_.currentEntries()) {
+      if (entry.name == "./" || entry.name == "../") continue;
+      if (!before.count(stripLsFTypeMarker(entry.name))) newNames.push_back(entry.name);
+    }
+    directoryMode_.setTransientMarkedNames(std::move(newNames));
     directoryView_.redraw();
     return;
   }
@@ -10659,8 +10752,19 @@ bool Application::executeArchiveExtract(const std::string &destination) {
     activeView().redraw();
     return false;
   }
-  pendingArchiveExtractShellRun_ =
-      PendingArchiveExtractShellRun{shell_.promptGeneration(), returnMode, resolvedDestination, archivePath};
+  // 2026-09-08追加、PendingArchiveExtractShellRun::entriesBeforeExtract
+  // 自身のコメント参照――resolvedDestinationはこの時点で既に実在の
+  // ディレクトリであることが上で保証済み(空だった場合はcreate_
+  // directories()済み、それ以外は上のis_directory()チェックを通過
+  // 済み)なので、ここでのdirectory_iteratorは常に安全。
+  std::vector<std::string> entriesBeforeExtract;
+  {
+    std::error_code ec;
+    for (const auto &dirEntry : std::filesystem::directory_iterator(resolvedDestination, ec))
+      entriesBeforeExtract.push_back(dirEntry.path().filename().string());
+  }
+  pendingArchiveExtractShellRun_ = PendingArchiveExtractShellRun{
+      shell_.promptGeneration(), returnMode, resolvedDestination, archivePath, std::move(entriesBeforeExtract)};
   shell_.commandLine().setText(shellQuoteArgv(argv) + "; echo " + kCpMvRmExitMarker + "$?");
   shell_.submitLine();
   return true;

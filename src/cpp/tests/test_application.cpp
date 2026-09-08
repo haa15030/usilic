@@ -3983,6 +3983,43 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract (^Oa, K-58, Directory mode): extracts th
   CHECK(fs::exists(root / "archive.tar"));  // untouched by extraction
 }
 
+// 2026-09-08 addition, a direct user request ("CP/MV/ARCモードで複写/
+// 移動/展開先ディレクトリへ移動したあと、対象ファイルおよびディレク
+// トリを^[Pへも渡せるようアンダーライン表示して欲しい"): unlike CP/MV
+// (whose targets are known ahead of time from collectTargetPaths()),
+// ARC determines its "target" via a before/after directory listing
+// diff (PendingArchiveExtractShellRun::entriesBeforeExtract) -- this
+// test seeds an unrelated pre-existing file in the destination to
+// confirm it's correctly excluded (it was already there, not newly
+// extracted), while the archive's own top-level entry (arcsrc/) is
+// included.
+TEST_CASE_FIXTURE(Fixture, "ARC extract: only the newly-extracted top-level entry is shown Underlined, "
+                           "a pre-existing unrelated file in the destination is not") {
+  { std::ofstream(root / "arcdest" / "preexisting.txt") << "already here\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  feedText((root / "arcdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+
+  int newIdx = indexOf("arcsrc/");
+  REQUIRE(newIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != newIdx) app.handleCommand(Command::MoveDown);
+  int newNameCol = app.activeContentView().lines()[newIdx].highlightStartColumn.value_or(0);
+  CHECK(display.underlineAt(newIdx, newNameCol));
+
+  int oldIdx = indexOf("preexisting.txt");
+  REQUIRE(oldIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != oldIdx) app.handleCommand(Command::MoveDown);
+  int oldNameCol = app.activeContentView().lines()[oldIdx].highlightStartColumn.value_or(0);
+  CHECK_FALSE(display.underlineAt(oldIdx, oldNameCol));
+}
+
 // 2026-08-27 addition, a direct user proposal ("ディレクトリ（ls）の
 // 戻り値に「ARC:」等モードへの帰還があるときは^J^Jルーチンへ移行
 // じゃまずいの？"): a successful extraction lands in Directory mode
@@ -7380,6 +7417,33 @@ TEST_CASE_FIXTURE(Fixture, "CP: a successful copy navigates the view to the dest
   CHECK(app.directoryMode().currentDirectory() == (root / "cpmvdest").string() + "/");
 }
 
+// 2026-09-08 addition, a direct user request ("CP/MV/ARCモードで複写/
+// 移動/展開先ディレクトリへ移動したあと、対象ファイルおよびディレク
+// トリを^[Pへも渡せるようアンダーライン表示して欲しい"): the just-
+// copied entry shows Underline in the destination listing, exactly
+// like the existing pre-operation marking (ARC's own "shows Underline"
+// test above), driven by the same setMarkedRowUsesUnderline(true)
+// rendering path via DirectoryMode::isMarked()'s new OR against
+// transientMarkedNames_.
+TEST_CASE_FIXTURE(Fixture, "CP: after landing in the destination directory, the copied file is shown "
+                           "Underlined (post-transfer marking, ^[P target)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
+
+  int destIdx = indexOf("cpmv_a.txt");
+  REQUIRE(destIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != destIdx) app.handleCommand(Command::MoveDown);
+  int nameCol = app.activeContentView().lines()[destIdx].highlightStartColumn.value_or(0);
+  CHECK(display.underlineAt(destIdx, nameCol));
+}
+
 // 2026-08-27 fix, a real report + repro ("'saved'[return]→「saved/
 // （ls）」にならない（~/usilic/（ls）のままかつカーソル位置が
 // 「usilic-h.h」でなく最上行）"): a RELATIVE destination (just "cpmvdest",
@@ -7500,6 +7564,125 @@ TEST_CASE_FIXTURE(Fixture, "MV: moving a marked file removes the source and crea
 
   CHECK(fs::exists(root / "cpmvdest" / "cpmv_a.txt"));
   CHECK_FALSE(fs::exists(root / "cpmv_a.txt"));
+}
+
+// CP自身の同種テストと対の関係(2026-09-08追加、直接のユーザー要望)。
+TEST_CASE_FIXTURE(Fixture, "MV: after landing in the destination directory, the moved file is shown "
+                           "Underlined (post-transfer marking, ^[P target)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartMove));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
+
+  int destIdx = indexOf("cpmv_a.txt");
+  REQUIRE(destIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != destIdx) app.handleCommand(Command::MoveDown);
+  int nameCol = app.activeContentView().lines()[destIdx].highlightStartColumn.value_or(0);
+  CHECK(display.underlineAt(destIdx, nameCol));
+}
+
+// 2026-09-08 addition: Command::Redraw (^L) clears the post-transfer
+// marking (DirectoryMode::clearTransientMarks(), directory_mode.hpp's
+// own comment on why this is a SEPARATE set from markedIndices_), but
+// a markedIndices_ selection made AFTER landing (for a follow-up CP/MV)
+// must survive it -- the two are independent by design.
+TEST_CASE_FIXTURE(Fixture, "Command::Redraw (^L) clears the post-transfer Underline marking, but leaves an "
+                           "unrelated markedIndices_ selection intact") {
+  // A pre-existing file INSIDE the destination, unrelated to this CP --
+  // cpmv_b.txt (the fixture's other source file) is never copied here,
+  // so it can't be used as the "fresh, unrelated selection" target.
+  { std::ofstream(root / "cpmvdest" / "unrelated.txt") << "x\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
+
+  int transientIdx = indexOf("cpmv_a.txt");
+  REQUIRE(transientIdx >= 0);
+  int otherIdx = indexOf("unrelated.txt");
+  REQUIRE(otherIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != otherIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));  // a fresh selection for a follow-up CP/MV
+  REQUIRE(app.directoryMode().markedCount() == 1);
+
+  REQUIRE(app.handleCommand(Command::Redraw));  // ^L
+
+  // MoveDown() only moves forward -- the cursor is currently at
+  // otherIdx (after "cpmv_a.txt" alphabetically), so it must go back
+  // to the top before searching forward for transientIdx again.
+  REQUIRE(app.handleCommand(Command::GoToTop));
+  while (indexOf(app.directoryMode().selectedEntry()->name) != transientIdx) app.handleCommand(Command::MoveDown);
+  int transientNameCol = app.activeContentView().lines()[transientIdx].highlightStartColumn.value_or(0);
+  CHECK_FALSE(display.underlineAt(transientIdx, transientNameCol));  // post-transfer marking is gone
+
+  CHECK(app.directoryMode().markedCount() == 1);  // the fresh CP/MV-prep selection is untouched
+  while (indexOf(app.directoryMode().selectedEntry()->name) != otherIdx) app.handleCommand(Command::MoveDown);
+  int otherNameCol = app.activeContentView().lines()[otherIdx].highlightStartColumn.value_or(0);
+  CHECK(display.underlineAt(otherIdx, otherNameCol));  // still shown Underlined, via markedIndices_ this time
+}
+
+// 2026-09-08 addition: ^[P (Command::PasteTransientTargets) pastes the
+// post-transfer marking's full path(s), shell-quoted, into an active
+// prompt -- requirements.md's "設計判断A" decision (full path over
+// bare name, since a bare name becomes meaningless once you leave the
+// destination directory).
+TEST_CASE_FIXTURE(Fixture, "^[P pastes the post-transfer marking's full path, shell-quoted, into an active "
+                           "prompt") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  REQUIRE(app.promptActive());
+
+  REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
+  REQUIRE(app.feedByte('P', std::nullopt));
+
+  std::string expectedPath = (root / "cpmvdest" / "cpmv_a.txt").string();
+  CHECK(app.promptText() == "'" + expectedPath + "'");
+}
+
+// 2026-09-08 addition: no active prompt / no post-transfer marking ->
+// no-op, matching Command::PasteClipboard's own established convention
+// for "this key doesn't mean anything in the current context".
+TEST_CASE_FIXTURE(Fixture, "^[P is a no-op without an active prompt, and a no-op when there's no "
+                           "post-transfer marking") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("cpmv_a.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.handleCommand(Command::StartCopy));
+  feedText((root / "cpmvdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpCpMvRmToCompletion(app));
+
+  // No active prompt yet -- ^[P must do nothing (and not crash).
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  CHECK_FALSE(app.feedByte('P', std::nullopt));
+
+  // ^L clears the post-transfer marking -- ^[P inside a NOW-active
+  // prompt must still do nothing, since there's nothing left to paste.
+  REQUIRE(app.handleCommand(Command::Redraw));
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  CHECK_FALSE(app.feedByte('P', std::nullopt));
+  CHECK(app.promptText().empty());
 }
 
 TEST_CASE_FIXTURE(Fixture, "RM: confirming with 'y' actually deletes the marked file") {

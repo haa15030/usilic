@@ -428,7 +428,14 @@ enum class Command {
   // ^O^Y(M_paste): アクティブなプロンプトのカーソルに、CopyModeの
   // 共有されたclipboardText()を挿入する――handleCommand()自身の
   // Pasteケース参照。
-  PasteClipboard
+  PasteClipboard,
+  // ^[P(新設、2026-09-08、直接のユーザー要望): DirectoryMode::
+  // transientMarkedNames()(CP/MV/ARC完了後の一時マーキング)の内容を、
+  // アクティブなプロンプトへフルパス+シェルクォート済みで挿入する。
+  // PasteClipboardの「アプリ内クリップボード」とは別の、ディレクトリ
+  // の一覧から直接読む経路――既存のCOPYモード専用^[p(小文字、
+  // copyEscapePending_側)とも無関係。
+  PasteTransientTargets
 };
 
 // 現在どの「*Mode」が画面上にあるか。legacyのnp->M(T_*モード定数)
@@ -2149,8 +2156,15 @@ class Application {
   bool checkTargetsWritable(const std::vector<std::string> &targets);
   // executeCopy()/executeMove()/executeRemove()の共有される末尾
   // ――executeCopy()自身のコメント参照。
+  // `targetBasenames`(2026-09-08追加): CP/MVがコピー/移動した対象の
+  // ベースネーム一覧――pollPendingCpMvRmShellRun()が宛先ディレクトリ
+  // への着地に成功した時、DirectoryMode::setTransientMarkedNames()へ
+  // そのまま渡す(directory_mode.hpp自身のコメント参照)。RM
+  // (executeRemove())は空のまま渡す(削除後に「対象」を表示する意味が
+  // ないため、requirements.mdのスコープ外)。
   bool startCpMvRmShellRun(const std::vector<std::string> &argv, const std::string &destination,
-                            const std::string &sourceDirectory);
+                            const std::string &sourceDirectory,
+                            std::vector<std::string> targetBasenames = {});
   bool executeExit(const std::string &confirmation);
   bool executeArchiveExtract(const std::string &destination);
   bool executePathInput(const std::string &path);
@@ -2700,6 +2714,9 @@ class Application {
     int promptGenerationBefore;
     std::string destination;
     std::string sourceDirectory;
+    // startCpMvRmShellRun()自身のtargetBasenames引数のコメント参照
+    // (2026-09-08追加)。
+    std::vector<std::string> targetBasenames;
   };
   std::optional<PendingCpMvRmShellRun> pendingCpMvRmShellRun_;
   // executeArchiveExtract()自身のPendingCpMvRmShellRunのバージョン
@@ -2716,6 +2733,14 @@ class Application {
     ApplicationMode returnMode;
     std::string destination;
     std::string archivePath;
+    // executeArchiveExtract()が展開シェルコマンドを起動する「前」に
+    // `destination`の時点のエントリ名一覧をここへ保存しておく
+    // (2026-09-08追加、DirectoryMode::setTransientMarkedNames()自身の
+    // コメント参照)。展開完了後、pollPendingArchiveExtractShellRun()
+    // がこれと展開後の一覧を比較し、新規に現れた名前だけを一時マーク
+    // する――アーカイブ形式(tar/zip/lha等)に依らず一律に「対象」を
+    // 判定できる。
+    std::vector<std::string> entriesBeforeExtract;
   };
   std::optional<PendingArchiveExtractShellRun> pendingArchiveExtractShellRun_;
   // submitPrompt()(生きたまま入力されたテキスト)と

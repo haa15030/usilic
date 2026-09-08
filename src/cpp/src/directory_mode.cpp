@@ -257,6 +257,10 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   searchAnnotation_.clear();  // 新しい`ls`は古い検索を無効にする――setSearchAnnotation()自身のコメント参照
   entries_ = std::move(entries);
   markedIndices_.clear();  // マークはそれが行われた一覧にスコープされる。新しい`ls`はそれらを無効にする
+  // setTransientMarkedNames()自身のコメント参照(2026-09-08追加)――
+  // 上のmarkedIndices_と同じ理屈: 一時マークもそれが行われた一覧に
+  // スコープされる。
+  transientMarkedNames_.clear();
   // CP/MV/RMの準備状態も、それが行われたディレクトリにスコープされて
   // いる(Application::PendingCpMvRmOperation自身のコメント参照)――
   // ここでも(Application自身の状態だけでなく)「ラベル」をクリア
@@ -564,7 +568,14 @@ void DirectoryMode::toggleMark(int index) {
     markedIndices_.insert(index);
 }
 
-bool DirectoryMode::isMarked(int index) const { return markedIndices_.count(index) > 0; }
+bool DirectoryMode::isMarked(int index) const {
+  if (markedIndices_.count(index) > 0) return true;
+  // setTransientMarkedNames()自身のコメント参照(2026-09-08追加)――
+  // markedCount()/targetEntries()はmarkedIndices_を直接見るので、
+  // この論理和はCP/MV/RM操作対象の判定には一切影響しない。
+  if (index < 0 || index >= static_cast<int>(entries_.size())) return false;
+  return transientMarkedNames_.count(entries_[index].name) > 0;
+}
 
 std::size_t DirectoryMode::markedCount() const { return markedIndices_.size(); }
 
@@ -577,6 +588,21 @@ void DirectoryMode::markAll() {
     markedIndices_.insert(i);
   }
 }
+
+void DirectoryMode::setTransientMarkedNames(std::vector<std::string> names) {
+  transientMarkedNames_ = std::set<std::string>(names.begin(), names.end());
+}
+
+void DirectoryMode::clearTransientMarks() { transientMarkedNames_.clear(); }
+
+std::vector<std::string> DirectoryMode::transientMarkedNames() const {
+  std::vector<std::string> result;
+  for (const auto &entry : entries_)
+    if (transientMarkedNames_.count(entry.name) > 0) result.push_back(entry.name);
+  return result;
+}
+
+const std::vector<DirectoryEntry> &DirectoryMode::currentEntries() const { return entries_; }
 
 std::vector<DirectoryEntry> DirectoryMode::targetEntries() const {
   std::vector<DirectoryEntry> result;
