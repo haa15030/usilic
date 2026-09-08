@@ -552,6 +552,21 @@ struct GraphicalDisplay::Impl {
   std::deque<KeyEvent> keyQueue;
   std::deque<DragEvent> dragQueue;
   std::deque<HoverEvent> hoverQueue;
+  // 2026-09-20追加、直接のユーザー報告("^[97^M e で戻った直後、マウス
+  // には一切触れず^Lしたのに98になる"、GraphicalDisplay::pumpEvents()
+  // 自身のSDL_MOUSEMOTIONケース参照): 外部エディタから戻ってウィンドウ
+  // が再びINPUT_FOCUSを得た直後、ポインタが物理的には全く動いていない
+  // のに、SDLが「フォーカスを得た」ことの副作用として同じ座標のまま
+  // もう一度SDL_MOUSEMOTIONを配送してくることがある(USILICGUIDEBUG
+  // 実機ログで確認: 同一のx/yで、focus=0のイベントの直後にfocus=1の
+  // イベントが続けて届いていた)――以前はfocus判定さえ通ればそのまま
+  // hoverQueueへ積んでいたため、この「動いていないのに届いた」1発が
+  // 本物のホバー移動と区別できず、直前に^[Nで正しく合わせたカーソル
+  // 位置を黙って上書きしていた。座標が前回と変わっていない場合は
+  // hoverQueueへ積まない(genuine movementの時だけ積む)ことで、
+  // フォーカス復帰の副作用と実際のマウス移動を区別する。
+  int lastHoverEligibleMotionX = -1;
+  int lastHoverEligibleMotionY = -1;
   std::deque<WheelEvent> wheelQueue;
   std::deque<ScrollbarEvent> scrollbarQueue;
   // スクロールバーの帯の内側で始まった左ボタン押下から、対応する
@@ -1866,9 +1881,21 @@ bool GraphicalDisplay::pumpEvents() {
           // ハイライトは、このウィンドウが他のフォーカスされていない
           // ウィンドウの後ろに座っている間でさえ、マウスを追跡して
           // いた。
-          int col = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
-          int row = std::max(0, event.motion.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
-          impl_->hoverQueue.push_back(HoverEvent{row, col});
+          // Impl::lastHoverEligibleMotionX/Y自身の宣言コメント参照
+          // (2026-09-20追加): ポインタが物理的に動いていない(直前に
+          // 記録した座標と同一の)MOUSEMOTIONは、実際のユーザー操作
+          // ではなくフォーカス復帰の副作用である可能性が高いので、
+          // hoverQueueへは積まない――座標が変わった時だけ「本物の
+          // 移動」として扱う。
+          bool actuallyMoved =
+              event.motion.x != impl_->lastHoverEligibleMotionX || event.motion.y != impl_->lastHoverEligibleMotionY;
+          impl_->lastHoverEligibleMotionX = event.motion.x;
+          impl_->lastHoverEligibleMotionY = event.motion.y;
+          if (actuallyMoved) {
+            int col = std::max(0, event.motion.x - Impl::kMarginX) / std::max(impl_->cellWidth, 1);
+            int row = std::max(0, event.motion.y - Impl::kMarginY) / std::max(impl_->cellHeight, 1);
+            impl_->hoverQueue.push_back(HoverEvent{row, col});
+          }
         }
         break;
       }
