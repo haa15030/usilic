@@ -16,7 +16,7 @@ void PipeBuffer::flush() {
     rawPending_.clear();
   }
   if (!wrapText_.empty() || !wrapAttrs_.empty()) {
-    lines_.push_back({wrapText_, wrapAttrs_, false});
+    lines_.push_back({wrapText_, wrapAttrs_, false, nextRawLineNumber_});
     usedBytes_ += static_cast<long>(wrapText_.size());
     if (usedBytes_ > maxBytes_) overBudget_ = true;
     wrapText_.clear();
@@ -178,7 +178,8 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   int lastCharAttrCount = 0;      // その文字のためだけにwrapAttrs_へ積んだ要素数(太字/下線+斜体で最大2)
 
   auto finalize = [&](bool endsWithNewline) {
-    lines_.push_back({wrapText_, wrapAttrs_, endsWithNewline});
+    lines_.push_back({wrapText_, wrapAttrs_, endsWithNewline, nextRawLineNumber_});
+    if (endsWithNewline) nextRawLineNumber_++;
     usedBytes_ += static_cast<long>(wrapText_.size());
     if (usedBytes_ > maxBytes_) overBudget_ = true;
     wrapText_.clear();

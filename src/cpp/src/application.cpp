@@ -2450,6 +2450,26 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
 }
 
 // この関数自身の宣言側のコメント(application.hpp)参照。
+int Application::resolveGotoLineRow(ContentView &view, int targetRawLine) {
+  for (int attempt = 0; attempt < 8; attempt++) {
+    const std::vector<ContentView::Line> &lines = view.lines();
+    int total = static_cast<int>(lines.size());
+    if (total == 0) return 0;
+    if (!lines[0].rawLineNumber) return std::clamp(targetRawLine - 1, 0, total - 1);
+    for (int row = 0; row < total; row++) {
+      if (lines[row].rawLineNumber && *lines[row].rawLineNumber >= targetRawLine) return row;
+    }
+    // まだ目的の生の行に届いていない(幅超過の折り返しでここまでの
+    // 表示行が水増しされている)――pagerにもっと読ませてから再挑戦
+    // する。伸びなければファイル末尾に達しているので最後の行へ
+    // クランプする。
+    preloadPagerAhead(total + std::max(display_.rows(), 20), /*bypassPacing=*/true);
+    if (static_cast<int>(view.lines().size()) == total) return total - 1;
+  }
+  return static_cast<int>(view.lines().size()) - 1;
+}
+
+// この関数自身の宣言側のコメント(application.hpp)参照。
 // dispatchByte()自身の以前の本体から変わっていない――呼び出し元だけ
 // が変わった(dispatchByte()自体、それに加えて今はfeedShellByte()も)。
 bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKey> special) {
@@ -2500,11 +2520,24 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         // 既存の呼び出しパターン(移動の「前」にpreload、移動の
         // 「後」にsuppressPagerRepoll)と同じ形。File以外のモード
         // ではno-op(preloadPagerAhead()自身のガード参照)。
-        int target = std::stoi(gotoLineDigits_) - 1;
-        preloadPagerAhead(std::max(target, 0), /*bypassPacing=*/true);
+        //
+        // 2026-09-08修正、直接のユーザー報告("usilic画面では98行
+        // だった行が97として表示されている"): 入力されたNは人間向け
+        // の「生の」行番号であって、幅超過で折り返され得る表示行
+        // インデックスではない――resolveGotoLineRow()自身のコメント
+        // 参照。
+        int targetRawLine = std::stoi(gotoLineDigits_);
         ContentView &view = activeContentView();
-        int total = static_cast<int>(view.lines().size());
-        if (total > 0) view.setCursorIndex(std::clamp(target, 0, total - 1));
+        preloadPagerAhead(std::max(targetRawLine - 1, 0), /*bypassPacing=*/true);
+        if (!view.lines().empty()) {
+          view.setCursorIndex(resolveGotoLineRow(view, targetRawLine));
+          // 2026-09-08追加、直接のユーザー要望("^[N後のジャンプ先が
+          // 今イチ分かりにくい"): Command::Redraw(^L)自身のコメント
+          // 参照――ジャンプ先を画面中央に置くことで、そのままでは
+          // ジャンプ後もカーソルが画面の同じ相対位置(端寄り)に留まり
+          // 得て見失いやすい問題を解消する。
+          view.centerOnCursor();
+        }
         suppressPagerRepoll(view.topIndex());
       }
       gotoLineDigits_.clear();
@@ -3909,6 +3942,13 @@ bool Application::handleCommand(Command command) {
       return true;
     case Command::Redraw:
       activeView().setHoverIndex(std::nullopt);  // Move*/Page*系のcase自身のコメント参照
+      // 2026-09-08追加、直接のユーザー要望("ページTOPとENDいがいでは、
+      // ^L（描き直し）が投入された場合、ブロックカーソル位置のカレント
+      // 行が画面中央に来るようにしてほしい。viの番号指定起動および
+      // emacsの^Lが同じ仕様")――ContentView::centerOnCursor()自身の
+      // コメント参照。バッファのTOP/END付近ではsetTopIndex()自身の
+      // 既存のクランプにより自然に「可能な範囲で」寄るだけになる。
+      activeView().centerOnCursor();
       activeView().redraw();
       activeView().syncVisibleCursor();
       return true;
@@ -10743,7 +10783,22 @@ bool Application::executeEdit() {
     path += entry->name;
   } else if (currentMode_ == ApplicationMode::File) {
     path = fileMode_.currentFile();
-    lineNumber = fileView_.cursorIndex() + 1;
+    // 2026-09-08修正、直接のユーザー報告("usilic画面では98行だった
+    // 行が97として表示されている"――CLAUDE.mdの長い1行が幅超過で
+    // 2つの表示行に折り返され、cursorIndex()がその分だけ実際の
+    // 生の行番号よりも多く数えてしまっていた): fileView_.cursorIndex()
+    // +1は「折り返し後の表示行インデックス」であり、viのような外部
+    // エディタが実際に理解する「生の(改行区切りの)行番号」とは別物
+    // ――ContentView::Line::rawLineNumber(PipeBuffer::wrapLine()が
+    // スタンプする、file_mode.cpp自身のconvertPipeLines()/
+    // convertStreamPipeLines()参照)があればそちらを使う。無ければ
+    // (rawLineNumberは折り返しが起こり得るFileModeでは常に設定される
+    // はずだが、念のため)従来通りのフォールバック。
+    int idx = fileView_.cursorIndex();
+    const std::vector<ContentView::Line> &fileLines = fileView_.lines();
+    lineNumber = (idx >= 0 && idx < static_cast<int>(fileLines.size()) && fileLines[idx].rawLineNumber)
+                     ? *fileLines[idx].rawLineNumber
+                     : idx + 1;
   } else {
     return false;  // このスライスの範囲外、クラスコメント参照
   }

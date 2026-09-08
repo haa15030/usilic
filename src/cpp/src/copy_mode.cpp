@@ -145,6 +145,9 @@ void CopyMode::gotoLine(int oneBasedLine) {
   if (lines_.empty()) return;
   cursorRow_ = std::clamp(oneBasedLine - 1, 0, static_cast<int>(lines_.size()) - 1);
   cursorByte_ = 0;
+  // 2026-09-08追加、直接のユーザー要望("^[N後のジャンプ先が今イチ
+  // 分かりにくい")――pendingCenterOnCursor_自身のコメント参照。
+  pendingCenterOnCursor_ = true;
   render();
 }
 
@@ -389,6 +392,14 @@ void CopyMode::render() {
   view_.setLines(std::move(rendered));
   view_.setTopIndex(preservedTopIndex);
   if (!lines_.empty()) view_.setCursorIndex(cursorRow_);
+  if (pendingCenterOnCursor_) {
+    // pendingCenterOnCursor_自身の宣言コメント参照(2026-09-08追加)
+    // ――直前のsetCursorIndex()自身のclampViewport()による通常の
+    // 配置を、gotoLine()経由のジャンプの時だけセンタリングで上書き
+    // する。
+    pendingCenterOnCursor_ = false;
+    view_.centerOnCursor();
+  }
   // render()自身の宣言コメント参照(copy_mode.hpp): 矩形マーク中は
   // モードラインの位置フィールドに"Rectangle-Mark"を表示し、それ
   // 以外は常にstartCopy()自身が設定する"---"のプレースホルダーへ

@@ -9329,6 +9329,47 @@ TEST_CASE_FIXTURE(Fixture, "EDIT: an editor that leaves the file untouched does 
   CHECK(content == "hello\nworld\n");
 }
 
+TEST_CASE_FIXTURE(Fixture, "EDIT: passes the raw (unwrapped) line number as +N, not the inflated "
+                           "wrapped-display-row count -- 2026-09-08, a direct user report: \"usilic "
+                           "-c ~/git/usilic で起動→CLAUDE.md選択→^[97^M→e→viが起動→^G / usilic画面"
+                           "では98行だった行が97として表示されている\" -- a single long raw line "
+                           "that wraps across multiple 80-column display rows was silently inflating "
+                           "every line number after it (PipeBuffer::wrapLine()'s wrap continuations "
+                           "were being counted as separate lines by ContentView::cursorIndex(), see "
+                           "StyledLine::rawLineNumber/ContentView::Line::rawLineNumber)") {
+  {
+    std::ofstream out(root / "wraptest.txt");
+    out << "raw line one\n";
+    out << std::string(200, 'x') << "\n";  // wraps across multiple 80-column rows
+    out << "raw line three\n";
+  }
+  configuration.loadRcText("EDITOR\n sh -c 'echo \"EDITED:$0\" >> \"$1\"'\n", true);
+  REQUIRE(app.start(path()));
+  int idx = indexOf("wraptest.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  // ^[3<Enter>: goto-line 3 (the RAW line number) -- must land on "raw
+  // line three", not get stuck mid-wrap on the long line.
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  app.feedByte('3', std::nullopt);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  // Confirm the long line genuinely did wrap (i.e. this test actually
+  // exercises the bug): the wrapped-row cursor index must be > 2 even
+  // though we asked for raw line 3.
+  CHECK(app.activeContentView().cursorIndex() > 2);
+  bool sawRawLineThree = false;
+  for (int row = 0; row < display.rows(); row++)
+    if (display.rowText(row).find("raw line three") != std::string::npos) sawRawLineThree = true;
+  CHECK(sawRawLineThree);
+
+  REQUIRE(app.handleCommand(Command::StartEdit));
+  std::ifstream in(root / "wraptest.txt");
+  std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content.find("EDITED:+3") != std::string::npos);  // the real raw line number, not the wrapped row+1
+}
+
 TEST_CASE_FIXTURE(Fixture, "EDIT: from Directory mode, edits the highlighted entry directly, always at line 1") {
   configuration.loadRcText("EDITOR\n sh -c 'echo \"EDITED:$0\" >> \"$1\"'\n", true);
   REQUIRE(app.start(path()));
@@ -11257,11 +11298,24 @@ TEST_CASE_FIXTURE(Fixture, "^[N (goto-line) displays the digits being typed as p
                            "direct user request: \"数字入力は、他の文字列入力エリア同様、ハイライト"
                            "無しにして欲しい\")") {
   REQUIRE(app.start(path()));
+  // Diffed against the row's own content just before typing, rather
+  // than searching the whole row for '4' -- the fixture's own temp
+  // directory path (shown elsewhere on this same modeline row) has a
+  // random suffix that could incidentally contain a '4' too, which
+  // would make a plain row-wide search flaky.
+  std::string rowBefore = display.rowText(23);
   REQUIRE(app.feedByte(0x1b, std::nullopt));
   app.feedByte('4', std::nullopt);
-  const std::string &row = display.rowText(23);
-  size_t pos = row.find('4');
+  const std::string &rowAfter = display.rowText(23);
+  size_t pos = std::string::npos;
+  for (size_t i = 0; i < rowBefore.size() && i < rowAfter.size(); i++) {
+    if (rowBefore[i] != rowAfter[i]) {
+      pos = i;
+      break;
+    }
+  }
   REQUIRE(pos != std::string::npos);
+  CHECK(rowAfter[pos] == '4');
   CHECK(display.standoutAt(23, static_cast<int>(pos)) == false);
 }
 
@@ -11296,12 +11350,48 @@ TEST_CASE_FIXTURE(Fixture, "^[N (goto-line) triggers the File-mode pager to load
   CHECK(found45);
 
   // Backward jump -- must land exactly on line 5, not get stuck wherever
-  // the forward jump left off.
+  // the forward jump left off. The jump also re-centers the viewport
+  // (2026-09-08, a direct user request -- see ContentView::
+  // centerOnCursor()'s own comment), so near the very start of the
+  // file this clamps to topIndex 0 and the target line shows at its
+  // own row (cursorIndex), not necessarily row 0.
   REQUIRE(app.feedByte(0x1b, std::nullopt));
   for (char c : std::string("5")) app.feedByte(c, std::nullopt);
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   CHECK(app.activeContentView().cursorIndex() == 4);
-  CHECK(display.rowText(0).substr(0, 10) == "bigline005");
+  CHECK(app.activeContentView().topIndex() == 0);  // can't center fully this close to TOP -- clamps
+  CHECK(display.rowText(4).substr(0, 10) == "bigline005");
+}
+
+TEST_CASE_FIXTURE(Fixture, "Command::Redraw (^L) re-centers the current line on screen, matching "
+                           "vi's line-number-launch and emacs' own ^L (2026-09-08, a direct user "
+                           "request: \"ページTOPとENDいがいでは、^L（描き直し）が投入された場合、"
+                           "ブロックカーソル位置のカレント行が画面中央に来るようにしてほしい\")") {
+  {
+    std::ofstream out(root / "biglines2.txt");
+    for (int i = 1; i <= 60; i++) {
+      std::string n = std::to_string(i);
+      out << "bigline" << std::string(3 - n.size(), '0') << n << "\n";
+    }
+  }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("biglines2.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  for (int i = 0; i < 30; i++) app.handleCommand(Command::MoveDown);  // cursorIndex == 30
+  REQUIRE(app.activeContentView().cursorIndex() == 30);
+  int topBeforeRedraw = app.activeContentView().topIndex();
+
+  REQUIRE(app.feedByte(0x0c, std::nullopt));  // ^L
+  int height = app.activeContentView().height();
+  CHECK(app.activeContentView().topIndex() == 30 - height / 2);
+  CHECK(app.activeContentView().topIndex() != topBeforeRedraw);  // actually re-centered, not a no-op
+  bool sawCurrentLine = false;
+  for (int row = 0; row < display.rows(); row++)
+    if (display.rowText(row).substr(0, 10) == "bigline031") sawCurrentLine = true;
+  CHECK(sawCurrentLine);
 }
 
 TEST_CASE_FIXTURE(Fixture, "^[N (goto-line, general version) ignores unrecognized keys and keeps "

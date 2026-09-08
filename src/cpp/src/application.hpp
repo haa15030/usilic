@@ -1661,6 +1661,19 @@ class Application {
   // (例えば^X^F/^X^C)。これは、この機能が存在する前は、この移植が
   // 生のshell入力として黙って飲み込んでいたものである)。
   bool dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKey> special);
+  // 2026-09-08追加、直接のユーザー報告("usilic画面では98行だった行が
+  // 97として表示されている"): dispatchLeaderByte()自身のgotoLine*
+  // (^[N/^[gg N)から使う。`targetRawLine`は人間向けの1始まりの「生の」
+  // 行番号(ContentView::Line::rawLineNumber自身のコメント参照)――
+  // File modeでは幅超過による折り返しで1つの生の行が複数の表示行に
+  // 分かれ得るので、`view`に既に読み込まれている範囲だけでは目的の
+  // 生の行へまだ届いていないことがある。その場合はpreloadPagerAhead()
+  // でさらに読み進めさせてから再チェックする(pagerが伸びなくなれば
+  // ファイル末尾に達したとみなしクランプする)。rawLineNumberを持たない
+  // モード(Directory等、そもそも折り返しの概念が無い)では、`view`の
+  // 行インデックス自体が既に「行番号」なので素通しする。戻り値は
+  // `view.setCursorIndex()`にそのまま渡せる0始まりの行インデックス。
+  int resolveGotoLineRow(ContentView &view, int targetRawLine);
   // SHELLのscrollback_の行全体のハイライトに対する^P/^N自身の
   // プレーンなテキストカーソルの代替――自身の定義コメント参照。
   void moveDisplayCursorToShellHistoryLine();

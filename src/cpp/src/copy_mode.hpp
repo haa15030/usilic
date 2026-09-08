@@ -345,6 +345,13 @@ class CopyMode {
   std::optional<int> pendingTopIndexOverride_;
   // setGotoLinePreview()自身のコメント参照(2026-09-08追加)。
   std::optional<std::string> gotoLinePreview_;
+  // 2026-09-08追加、直接のユーザー要望("^[N後のジャンプ先が今イチ
+  // 分かりにくい...ページTOPとENDいがいでは...カレント行が画面中央に
+  // 来るようにしてほしい"): gotoLine()自身がtrueにする、次のrender()
+  // 呼び出し1回だけに適用されるone-shotのフラグ――pendingTopIndex
+  // Override_と同じ理屈(通常のmoveUp()/moveDown()/^[w等では立てない、
+  // gotoLine()経由のジャンプの時だけセンタリングする)。
+  bool pendingCenterOnCursor_ = false;
 };
 
 }  // namespace fm

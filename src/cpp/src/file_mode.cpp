@@ -256,7 +256,15 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
   // 検出(nroffスタイルの太字/下線)は既にこれを生成している――以前は
   // ここで捨てられていた。FileModeがPipeBufferのStyledLinesを実際に
   // 画面へ届くものへ変換する、唯一の場所。
-  for (const auto &styled : pipe.lines()) lines.push_back({styled.text, std::nullopt, std::nullopt, styled.attributes});
+  for (const auto &styled : pipe.lines()) {
+    ContentView::Line line{styled.text, std::nullopt, std::nullopt, styled.attributes};
+    // StyledLine::rawLineNumber自身のコメント参照(2026-09-08追加、
+    // 直接のユーザー報告"usilic画面では98行だった行が97として表示
+    // されている")――上の位置指定初期化では素通りしてしまう
+    // (ellipsisEligible/neverHighlightedの後にある)ので、個別に代入。
+    line.rawLineNumber = styled.rawLineNumber;
+    lines.push_back(std::move(line));
+  }
   return lines;
 }
 
@@ -522,7 +530,13 @@ bool FileMode::readMoreIntoPipe(int targetLineCount) {
 std::vector<ContentView::Line> FileMode::convertPipeLines() const {
   std::vector<ContentView::Line> lines;
   lines.reserve(streamPipe_->lines().size());
-  for (const auto &styled : streamPipe_->lines()) lines.push_back({styled.text, std::nullopt, std::nullopt, styled.attributes});
+  for (const auto &styled : streamPipe_->lines()) {
+    // convertPipeLines()(上、非ストリーミング経路)自身のコメント参照
+    // (2026-09-08追加、StyledLine::rawLineNumber)。
+    ContentView::Line line{styled.text, std::nullopt, std::nullopt, styled.attributes};
+    line.rawLineNumber = styled.rawLineNumber;
+    lines.push_back(std::move(line));
+  }
   return lines;
 }
 

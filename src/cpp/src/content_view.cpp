@@ -441,6 +441,8 @@ void ContentView::setTopIndex(int index) {
   topIndex_ = std::clamp(index, 0, maxTop);
 }
 
+void ContentView::centerOnCursor() { setTopIndex(cursorIndex_ - height_ / 2); }
+
 bool ContentView::stepTopIndex(int direction) {
   if (!canStepTopIndex(direction)) return false;
   if (direction > 0) {
@@ -1007,6 +1009,7 @@ std::string ContentView::modeLineText() const {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
   applyLivePromptLineAdjustment(total, current);
+  applyRawLineNumbers(current, total);
   return composeModeLineRow(positionTextOverride_ ? *positionTextOverride_
                              : useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
                                                        : ModeLine::format(current, total));
@@ -1016,6 +1019,7 @@ std::string ContentView::naturalPositionText() const {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
   applyLivePromptLineAdjustment(total, current);
+  applyRawLineNumbers(current, total);
   return useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total) : ModeLine::format(current, total);
 }
 
@@ -1275,6 +1279,22 @@ void ContentView::applyLivePromptLineAdjustment(int &total, int &current) const 
   if (!countLivePromptAsLine_) return;
   total += 1;
   if (atLivePromptLine_) current = total;
+}
+
+// 2026-09-08追加、直接のユーザー報告("usilic画面では98行だった行が
+// 97として表示されている"): current/totalは元々cursorIndex_+1/
+// lines_.size()――幅超過による折り返しが起こるFile mode(PipeBuffer::
+// wrapLine())では「表示行」の数であって、vi等が理解する「生の
+// (改行区切りの)行」の数ではない。ContentView::Line::rawLineNumber
+// (折り返しを起こし得るFileModeだけが設定する、他の全呼び出し元は
+// nullopt)があればそちらへ翻訳する――無ければ何もしない(既存の
+// 挙動のまま)。applyLivePromptLineAdjustment()の「後」に呼ぶこと
+// (Shell自身の生きたプロンプト行の水増しと独立した、別の補正のため)。
+void ContentView::applyRawLineNumbers(int &current, int &total) const {
+  if (total <= 0 || lines_.empty() || !lines_[0].rawLineNumber) return;
+  int idx = std::clamp(cursorIndex_, 0, static_cast<int>(lines_.size()) - 1);
+  current = lines_[idx].rawLineNumber.value_or(current);
+  total = lines_.back().rawLineNumber.value_or(total);
 }
 
 void ContentView::setMarkedPredicate(std::function<bool(int)> predicate) { markedPredicate_ = std::move(predicate); }
@@ -1603,6 +1623,7 @@ void ContentView::renderModeLine() {
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
   applyLivePromptLineAdjustment(total, current);
+  applyRawLineNumbers(current, total);
   std::string positionText = positionTextOverride_ ? *positionTextOverride_
                               : useFixedWidthPosition_ ? ModeLine::formatFixedWidth(current, total)
                                                         : ModeLine::format(current, total);

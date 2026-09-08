@@ -184,6 +184,19 @@ class ContentView {
     // 前面」慣習に合わせている)。他の全ての呼び出し元に対しては
     // デフォルトでfalse(影響なし)。
     bool neverHighlighted = false;
+
+    // 2026-09-08追加、直接のユーザー報告("usilic画面では98行だった
+    // 行が97として表示されている"――幅超過で折り返された1つの生の
+    // 行が、cursorIndex_上では複数行として数えられてしまい、
+    // Command::StartEdit('e')がエディタへ渡す"+N"がvi自身の実際の
+    // 行番号と食い違っていた): PipeBuffer::wrapLine()/StyledLine::
+    // rawLineNumber自身のコメント参照――この行が属する、元のバイト
+    // 列上での1始まりの「生の」行番号。折り返し継続行は直前の行と
+    // 同じ番号を引き継ぐ。FileModeだけが設定する(幅超過による折り
+    // 返しが起こり得る唯一の呼び出し元、file_mode.cpp参照)――他の
+    // 全呼び出し元(DirectoryMode等、そもそも折り返しの概念が無い)は
+    // nullopt(デフォルト)のままにする。
+    std::optional<int> rawLineNumber;
   };
 
   explicit ContentView(Display &display);
@@ -364,6 +377,18 @@ class ContentView {
   // ループを駆動する呼び出し元(ドラッグスクロールのプロトタイプ
   // など)は自身の再描画のタイミングを所有する。
   void setTopIndex(int index);
+
+  // 2026-09-08追加、直接のユーザー要望("ページTOPとENDいがいでは、
+  // ^L（描き直し）が投入された場合、ブロックカーソル位置のカレント行が
+  // 画面中央に来るようにしてほしい。viの番号指定起動およびemacsの
+  // ^Lが同じ仕様"): cursorIndex_が画面の縦方向中央(height_/2)に来る
+  // よう、setTopIndex()経由でtopIndex_を設定する。setTopIndex()自身の
+  // 既存のクランプ(0〜maxTop)により、バッファのTOP付近/END付近では
+  // 自然に「可能な範囲で」寄るだけになる(要望文の「TOPとEND以外では」
+  // という条件を、特別扱いのコード無しに自動的に満たす)。再描画は
+  // しない(setTopIndex()自身と同じ)――呼び出し元が自分のタイミングで
+  // 行う。
+  void centerOnCursor();
 
   // topIndex_を`direction`(>0は「より後の」内容を明かし、<0は
   // 「より前の」内容を明かす――GraphicalDisplay::renderScrolled()の
@@ -1082,6 +1107,8 @@ class ContentView {
   // 全てのContentViewインスタンス自身のデフォルト)の場合は何も
   // しない(両方の参照は手を付けられないまま)。
   void applyLivePromptLineAdjustment(int &total, int &current) const;
+  // 2026-09-08追加、content_view.cpp自身のコメント参照。
+  void applyRawLineNumbers(int &current, int &total) const;
   // ModeLineFields::splitLayoutWhenCrowded自身のコメント参照。
   // その経路自身の素朴な幅チェックが失敗した時点で、renderModeLine()
   // によって、通常のfitModeLineFields()/withTruncatedFields()経路

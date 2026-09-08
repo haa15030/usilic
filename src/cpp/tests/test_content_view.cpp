@@ -1029,6 +1029,30 @@ TEST_CASE("setTopIndex: clamps to a valid range") {
   CHECK(v.topIndex() == 7);
 }
 
+TEST_CASE("centerOnCursor() puts cursorIndex_ in the middle of the viewport, clamping near the top "
+          "and bottom instead of over/under-shooting (2026-09-08, a direct user request: \"ページTOP"
+          "とENDいがいでは、^L（描き直し）が投入された場合、ブロックカーソル位置のカレント行が画面"
+          "中央に来るようにしてほしい。viの番号指定起動およびemacsの^Lが同じ仕様\")") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);  // height 5 -- center offset is 5/2 == 2
+  v.setLines(makeLines(100));
+
+  v.setCursorIndex(50);
+  v.centerOnCursor();
+  CHECK(v.topIndex() == 48);  // 50 - 2
+
+  // Near the start: can't center fully, clamps to 0 (showing from TOP).
+  v.setCursorIndex(1);
+  v.centerOnCursor();
+  CHECK(v.topIndex() == 0);
+
+  // Near the end: clamps to the last full page (showing through END).
+  v.setCursorIndex(99);
+  v.centerOnCursor();
+  CHECK(v.topIndex() == 95);  // 100 - 5, the max valid top
+}
+
 TEST_CASE("stepTopIndex: unlike setTopIndex(), pins cursorIndex_ to the newly-revealed edge") {
   RecordingDisplay d(10, 20);
   ContentView v(d);

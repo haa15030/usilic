@@ -18,6 +18,16 @@ struct StyledLine {
   std::string text;
   std::vector<AttributeRun> attributes;
   bool endsWithNewline = true;  // false: 本物の改行ではなく`width`に達したことによる折り返し
+  // 2026-09-08追加、直接のユーザー報告("usilic画面では98行だった行が
+  // 97として表示されている"――usilic自身のCommand::StartEdit('e')が
+  // エディタへ渡す"+N"がvi自身の実際の行番号と食い違っていた): この
+  // StyledLineが属する、元のバイト列上での1始まりの「生の」行番号
+  // ――幅超過による折り返し継続行は、直前の(改行で終わる)行と同じ
+  // 番号を引き継ぐ。endsWithNewline自体は「この行が改行で終わるか」
+  // だけを表し、どの生の行に属するかまでは表さなかったため、
+  // PipeBuffer::wrapLine()/flush()自身がこのフィールドで明示的に
+  // スタンプする。
+  int rawLineNumber = 1;
 };
 
 // 生のバイト列(ファイル/パイプの内容)を、幅で折り返し済み・文字
@@ -103,6 +113,12 @@ class PipeBuffer {
   // 同じに字下げが適用されるようになった(むしろ実際の書き方に合って
   // いる: 手動の字下げ文字を一切必要としない)。
   int currentIndent_ = 0;
+
+  // StyledLine::rawLineNumber自身のコメント参照(2026-09-08追加)――
+  // 次にfinalize()/flush()する行に付ける、1始まりの生の行番号。
+  // finalize(true)(本物の改行)の「後」だけ+1する――finalize(false)
+  // (折り返し継続)は同じ番号を使い回す。
+  int nextRawLineNumber_ = 1;
 
   // 2026-09-04追加、直接のユーザー依頼("今後は<i>プログラム名</i>で
   // 記載したいので対応よろしく"): HELP自身の<i>...</i>マークアップが
