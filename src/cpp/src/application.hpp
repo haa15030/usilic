@@ -68,6 +68,20 @@ enum class Command {
   // の本体への変更でもない)。
   JumpNext,      // ':' : Back, MoveDown, Enter
   JumpPrevious,  // ';' : Back, MoveUp, Enter
+  // 2026-09-09追加、直接のユーザー要望(".jsonファイル群を検索して
+  // マークする際、^S.json$^Mの後(GREP結果一覧、currentMode_==Grep)、
+  // 候補ごとに手動でEnter(openSelectedGrepMatch()、Directoryへ着地)
+  // →.(ToggleMark)→^G(Back、結果一覧へ戻る)→^N(MoveDown、次の候補へ)
+  // を繰り返すのは大変なので、{の連打でその一連の動作をまとめて実行
+  // できるようにして欲しい。}では^Pにしてほしい"): JumpNext/
+  // JumpPreviousとは実行順が異なる(あちらはBack+Move+Enter、こちらは
+  // Enterが先頭)――GREP結果一覧に立っている状態から始まる前提の
+  // ため。「Application::handleCommand()自身が唯一この合成を知って
+  // いる」という同じ設計方針を踏襲する(JumpNext自身の宣言コメント
+  // 参照)。ユーザー自身の言葉通り、正式な(usilicrc等で設定可能な)
+  // マクロキー機構が整うまでの「つなぎ」のハードコード実装。
+  MarkAndJumpNext,      // '{' : Enter, ToggleMark, Back, MoveDown
+  MarkAndJumpPrevious,  // '}' : Enter, ToggleMark, Back, MoveUp
   StartFgrep,
   StartEgrep,
   // 2026-09-05追加(直接のユーザー依頼、"新たにGREP（grep）を新設"):

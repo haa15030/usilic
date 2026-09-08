@@ -2134,6 +2134,13 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
     // (^G/^P/^N/^Mを直接送り込み、決してこのswitchを一切通らない)
     // が既に正しいまま手を付けられずにいることも保つ、最小限の修正
     // である。
+    // '{'/'}' (2026-09-09追加): Command::MarkAndJumpNext/Previous自身の
+    // 宣言コメント参照――';'/':'とちょうど同じ方向(前者MoveUp、後者
+    // MoveDown)に、ToggleMarkを1つ差し込むだけの「つなぎ」実装。
+    case '{':
+      return Command::MarkAndJumpNext;
+    case '}':
+      return Command::MarkAndJumpPrevious;
     case ';':
       return Command::JumpPrevious;
     case ':':
@@ -3780,6 +3787,19 @@ bool Application::handleCommand(Command command) {
       handleCommand(Command::Back);
       handleCommand(Command::MoveUp);
       return handleCommand(Command::Enter);
+    // Command::MarkAndJumpNext/Previous自身の宣言コメント参照――
+    // JumpNext/JumpPreviousと全く同じBack+Move+Enterの前に、まず
+    // ToggleMark(今立っている候補)を差し込むだけ。
+    case Command::MarkAndJumpNext:
+      handleCommand(Command::Enter);
+      handleCommand(Command::ToggleMark);
+      handleCommand(Command::Back);
+      return handleCommand(Command::MoveDown);
+    case Command::MarkAndJumpPrevious:
+      handleCommand(Command::Enter);
+      handleCommand(Command::ToggleMark);
+      handleCommand(Command::Back);
+      return handleCommand(Command::MoveUp);
     case Command::StartFgrep:
       return startGrepPrompt(GrepSyntax::Fixed);
     case Command::StartEgrep:

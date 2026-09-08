@@ -322,6 +322,11 @@ TEST_CASE("resolveCommand: ';' is JumpPrevious (Back+MoveUp+Enter), ':' is JumpN
   CHECK(Application::resolveCommand(':', std::nullopt) == Command::JumpNext);
 }
 
+TEST_CASE("resolveCommand: '{' is MarkAndJumpNext, '}' is MarkAndJumpPrevious") {
+  CHECK(Application::resolveCommand('{', std::nullopt) == Command::MarkAndJumpNext);
+  CHECK(Application::resolveCommand('}', std::nullopt) == Command::MarkAndJumpPrevious);
+}
+
 TEST_CASE("resolveCommand: an unmapped byte resolves to None") {
   CHECK(Application::resolveCommand('z', std::nullopt) == Command::None);
 }
@@ -559,6 +564,60 @@ TEST_CASE_FIXTURE(Fixture, "GrepMode::search (Basic/plain grep): 'grep' role run
   REQUIRE(app.currentMode() == ApplicationMode::Grep);
   CHECK(app.grepMode().matches().size() == 1);
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
+}
+
+// 2026-09-09 addition, a direct user request (repro described as:
+// "^S.json$^M のあと{の連打で対象ファイルを選択（^M.^G^N）。}では^P"):
+// GREP launched from plain Directory mode searches the raw `ls -alF`
+// listing text itself (see the sibling "GrepMode::search (Basic/plain
+// grep)" test just above) -- so a pattern like "json$" matches every
+// line whose FILENAME ends in ".json", turning GREP into a de facto
+// "find files by name" tool. '{' (Command::MarkAndJumpNext) replays
+// Enter+ToggleMark+Back+MoveDown so repeated presses mark each match
+// in turn without leaving the GREP results screen for good.
+TEST_CASE_FIXTURE(Fixture, "'{' (MarkAndJumpNext) marks each GREP match in turn: Enter, ToggleMark, Back, "
+                           "MoveDown, repeated") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  { std::ofstream(root / "two.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
+  feedText("json$");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 2);  // one.json, two.json -- plain.txt/cpmv_*.txt/etc. don't match
+
+  REQUIRE(app.feedByte('{', std::nullopt));  // Enter (lands on 1st match, Directory) + Mark + Back + MoveDown
+  CHECK(app.currentMode() == ApplicationMode::Grep);  // back on the results screen, ready for the next match
+  CHECK(app.directoryMode().markedCount() == 1);
+
+  REQUIRE(app.feedByte('{', std::nullopt));  // same, for the 2nd match
+  CHECK(app.directoryMode().markedCount() == 2);
+
+  std::vector<fm::DirectoryEntry> targets = app.directoryMode().targetEntries();
+  REQUIRE(targets.size() == 2);
+  CHECK((targets[0].name == "one.json" || targets[0].name == "two.json"));
+  CHECK((targets[1].name == "one.json" || targets[1].name == "two.json"));
+}
+
+// '}' (Command::MarkAndJumpPrevious) is the same macro with MoveUp
+// instead of MoveDown as its last step -- verified separately here by
+// starting from the LAST match and walking backward.
+TEST_CASE_FIXTURE(Fixture, "'}' (MarkAndJumpPrevious) marks each GREP match walking backward: Enter, "
+                           "ToggleMark, Back, MoveUp, repeated") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  { std::ofstream(root / "two.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
+  feedText("json$");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.grepMode().matches().size() == 2);
+
+  REQUIRE(app.handleCommand(Command::MoveDown));  // start from the LAST match before walking backward
+  REQUIRE(app.feedByte('}', std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.feedByte('}', std::nullopt));
+  CHECK(app.directoryMode().markedCount() == 2);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: a lone ^J is consumed as a pending leader byte, no action yet") {
