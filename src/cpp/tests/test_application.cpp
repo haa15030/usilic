@@ -11223,6 +11223,103 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): a live selection renders as an actual r
   CHECK(display.standoutAt(0, 4) == false);
 }
 
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^[N (ESC then digits then Enter) jumps the cursor to that "
+                           "1-based line (2026-09-08, a direct user request: \"未サポートでもある"
+                           "^[N（Nは行番号）で当該行へジャンプする機能をサポートして欲しい\")") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(display.rowText(0).substr(0, 10) == "marker one");  // log.txt: line1="marker one"
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);
+
+  // ESC, '3', Enter -- jumps straight to line 3 ("marker two").
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  app.feedByte('3', std::nullopt);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  app.feedByte(0x80, std::nullopt);                              // ^@: mark start at (row 2, col 0)
+  for (int i = 0; i < 6; i++) app.feedByte(0x06, std::nullopt);  // extend over "marker"
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('w', std::nullopt));  // confirm -- stays in Copy (regular mark)
+
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x19, std::nullopt));
+  CHECK(app.promptText() == "marker");
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^[gg N (Emacs' own M-g g goto-line prefix, followed by "
+                           "digits and Enter) is a full alias for ^[N (2026-09-08, a direct user "
+                           "request: \"emacsではalt＋ggNなのでそちらもよろしく\")") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);
+
+  // ESC, 'g', 'g', '5', Enter -- jumps to line 5 ("line2b").
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  app.feedByte('g', std::nullopt);
+  app.feedByte('g', std::nullopt);
+  app.feedByte('5', std::nullopt);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  app.feedByte(0x80, std::nullopt);                              // ^@: mark start at (row 4, col 0)
+  for (int i = 0; i < 6; i++) app.feedByte(0x06, std::nullopt);  // extend over all of "line2b"
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('w', std::nullopt));
+
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x19, std::nullopt));
+  CHECK(app.promptText() == "line2b");
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): goto-line digit entry cancels (without jumping) on any "
+                           "byte other than a digit or Enter -- matching this mode's usual "
+                           "\"unrecognized input is silently absorbed\" simplicity") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);  // still on line 1 ("marker one")
+
+  // ESC, '9', '9', 'x' -- 'x' is neither a digit nor Enter, so this cancels
+  // WITHOUT jumping to (the nonexistent, would-clamp-to-last) line 99.
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  app.feedByte('9', std::nullopt);
+  app.feedByte('9', std::nullopt);
+  app.feedByte('x', std::nullopt);
+  app.feedByte(0x80, std::nullopt);                              // ^@: mark from wherever we actually are
+  for (int i = 0; i < 6; i++) app.feedByte(0x06, std::nullopt);  // extend over "marker"
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('w', std::nullopt));
+
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x19, std::nullopt));
+  CHECK(app.promptText() == "marker");  // still line 1 ("marker one") -- no jump happened
+}
+
 TEST_CASE_FIXTURE(Fixture, "^O^C/^O^Y (COPY/PASTE) round trip: select a substring of a File-mode "
                            "buffer, leave COPY, open an FGREP prompt, and ^O^Y inserts exactly that "
                            "substring at the cursor") {

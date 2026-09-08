@@ -7482,6 +7482,32 @@ void Application::copyMouseUp() {
 // 入力モード切り替えキーと衝突することがあるための変更。CopyMode
 // 自身のコメント参照。
 bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  // "^[N"/"^[gg"(goto-line)自身の桁蓄積――application.hpp自身の
+  // copyGotoLineDigitsPending_のコメント参照。数字が続く限り蓄積し、
+  // 改行(Enter)で確定する。それ以外のバイト(specialキー含む)は
+  // 蓄積内容ごと破棄してキャンセルする。
+  if (copyGotoLineDigitsPending_) {
+    if (!special && byte >= '0' && byte <= '9') {
+      copyGotoLineDigits_.push_back(static_cast<char>(byte));
+      return true;
+    }
+    copyGotoLineDigitsPending_ = false;
+    if (!special && byte == kCarriageReturn && !copyGotoLineDigits_.empty()) {
+      copyMode_.gotoLine(std::stoi(copyGotoLineDigits_));
+    }
+    copyGotoLineDigits_.clear();
+    return true;
+  }
+  // "^[gg"の2バイト目――application.hpp自身のcopyGotoLineGPending_の
+  // コメント参照。2つ目が'g'以外ならこのシーケンス全体を単に吸収する。
+  if (copyGotoLineGPending_) {
+    copyGotoLineGPending_ = false;
+    if (!special && byte == 'g') {
+      copyGotoLineDigitsPending_ = true;
+      copyGotoLineDigits_.clear();
+    }
+    return true;
+  }
   // "^[w"(confirmMark())自身の1バイト先読み――application.hpp自身の
   // copyEscapePending_のコメント参照。'w'以外が続いた場合(または
   // specialキーが割り込んだ場合)は、そのESCシーケンス全体を単に
@@ -7518,6 +7544,22 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
     if (!special && byte == kEscape) {
       returnFromCopy();
       handleCommand(Command::StartExit);
+      return true;
+    }
+    // "^[N"/"^[gg"(goto-line)自身の入口――application.hpp自身の
+    // copyGotoLineGPending_/copyGotoLineDigitsPending_のコメント参照
+    // (2026-09-08追加、直接のユーザー要望"未サポートでもある^[N
+    // （Nは行番号）で当該行へジャンプする機能をサポートして欲しい。
+    // emacsではalt＋ggNなのでそちらもよろしく"): 数字が直接続けば
+    // (^[N)そのままcopyGotoLineDigitsPending_へ、'g'が続けば
+    // (^[gg、Emacs自身のM-g g)まず2バイト目の'g'を待つ状態へ。
+    if (!special && byte >= '0' && byte <= '9') {
+      copyGotoLineDigitsPending_ = true;
+      copyGotoLineDigits_.assign(1, static_cast<char>(byte));
+      return true;
+    }
+    if (!special && byte == 'g') {
+      copyGotoLineGPending_ = true;
       return true;
     }
     bool wasRectangle = copyMode_.rectangleMarkActive();

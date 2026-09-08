@@ -157,6 +157,18 @@ class CopyMode {
   void moveToLineStart();
   void moveToLineEnd();
 
+  // 2026-09-08追加、直接のユーザー要望("未サポートでもある^[N（Nは
+  // 行番号）で当該行へジャンプする機能をサポートして欲しい。emacsでは
+  // alt＋ggNなのでそちらもよろしく"――^[N/^[ggどちらも、最終的には
+  // このメソッドへ集約される。application.cpp自身のfeedCopyByte()
+  // 参照)。`oneBasedLine`は人間向けの1始まりの行番号(emacsの
+  // goto-line、legacyのHELP.jp「+N」オプション等と同じ慣習)――
+  // スナップショットの範囲外なら先頭/末尾へクランプする。着地列は
+  // 常に行頭(列0、moveToLineStart()と同じ)。moveUp()/moveDown()等と
+  // 同じく、markActive()の値に関わらず常に許可する(マーク中に呼べば
+  // 選択がそのまま新しいカーソル位置まで伸びる)。
+  void gotoLine(int oneBasedLine);
+
   // GUIのマウス範囲選択向け(2026-09-07追加、直接のユーザー要望:
   // "スクロールに関する画面ドラッグと同じマウス操作に関して、発動
   // し得る機能としては範囲指定がある。COPYモードの際にそれは可能

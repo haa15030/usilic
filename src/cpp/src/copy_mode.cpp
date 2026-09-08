@@ -141,6 +141,13 @@ void CopyMode::moveToLineEnd() {
   render();
 }
 
+void CopyMode::gotoLine(int oneBasedLine) {
+  if (lines_.empty()) return;
+  cursorRow_ = std::clamp(oneBasedLine - 1, 0, static_cast<int>(lines_.size()) - 1);
+  cursorByte_ = 0;
+  render();
+}
+
 void CopyMode::placeCursorAt(int row, int column) {
   if (lines_.empty()) return;
   cursorRow_ = std::clamp(row, 0, static_cast<int>(lines_.size()) - 1);

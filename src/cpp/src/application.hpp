@@ -2274,6 +2274,21 @@ class Application {
   // 理由の1バイト先読み――^Xに続く2バイト目(SPC)が来るまで、
   // 矩形マークの発動を確定できない。
   bool copyLeaderXPending_ = false;
+  // feedCopyByte()自身のコメント参照(2026-09-08追加、直接のユーザー
+  // 要望"未サポートでもある^[N（Nは行番号）で当該行へジャンプする
+  // 機能をサポートして欲しい。emacsではalt＋ggNなのでそちらも
+  // よろしく"): ^[に続く2バイト目が'g'だった場合、Emacs自身の
+  // goto-line(M-g g)のプレフィックスとして扱い、次の'g'が来るまでの
+  // 1バイト先読み状態。
+  bool copyGotoLineGPending_ = false;
+  // ^[N(直接、数字が続く)または^[gg(上のcopyGotoLineGPending_経由)の
+  // いずれかで入る、行番号の桁を蓄積中の状態。数字が続く限り
+  // copyGotoLineDigits_へ積み、改行(Enter)で確定してCopyMode::
+  // gotoLine()を呼ぶ――それ以外のバイトはこの入力全体を破棄して
+  // キャンセルする(このモードの「^G以外はほぼ全て吸収する」という
+  // 既存の単純さに合わせ、訂正/バックスペースは意図的にサポートしない)。
+  bool copyGotoLineDigitsPending_ = false;
+  std::string copyGotoLineDigits_;
   LineEditor promptEditor_;
   DirectoryMode directoryMode_;
   FileMode fileMode_;

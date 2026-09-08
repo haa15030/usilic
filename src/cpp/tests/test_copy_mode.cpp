@@ -253,6 +253,48 @@ TEST_CASE("CopyMode: an empty snapshot leaves every operation a safe no-op") {
   CHECK_FALSE(copy.markActive());
 }
 
+TEST_CASE("CopyMode: gotoLine() jumps to a 1-based line number, landing at column 0, and clamps "
+          "out-of-range targets to the first/last line (2026-09-08, a direct user request: "
+          "\"未サポートでもある^[N（Nは行番号）で当該行へジャンプする機能をサポートして欲しい。"
+          "emacsではalt＋ggNなのでそちらもよろしく\" -- application.cpp's feedCopyByte() maps both "
+          "`^[N` and `^[gg N` to this same method)") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"row1", "row2", "row3", "row4", "row5"}));
+  copy.moveRight();
+  copy.moveRight();  // column 2, just to confirm gotoLine() resets it to 0
+
+  copy.gotoLine(3);  // 1-based -- row index 2
+  CHECK(d.cursorRow() == 2);
+  CHECK(d.cursorCol() == 0);
+
+  copy.gotoLine(1);
+  CHECK(d.cursorRow() == 0);
+
+  copy.gotoLine(999);  // past the end -- clamps to the last line
+  CHECK(d.cursorRow() == 4);
+
+  copy.gotoLine(0);  // before the start -- clamps to the first line
+  CHECK(d.cursorRow() == 0);
+}
+
+TEST_CASE("CopyMode: gotoLine() extends an active mark instead of disturbing it, matching "
+          "moveUp()/moveDown()'s own cross-row behavior") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"row1", "row2", "row3", "row4", "row5"}));
+  copy.startMark();  // anchor at (row 0, col 0)
+  copy.gotoLine(4);   // extend the mark to row 3 (1-based line 4), landing at column 0
+  copy.moveRight();
+  copy.moveRight();  // column 2 on row 3 -- so its own contribution is "ro", not empty
+  copy.confirmMark();
+  CHECK(copy.clipboardText() == "row1\nrow2\nrow3\nro");
+}
+
 TEST_CASE("CopyMode: placeCursorAt() jumps to an absolute row/column when not marking -- the GUI "
           "mouse-drag range-selection support (2026-09-07, a direct user request)") {
   RecordingDisplay d(10, 30);
