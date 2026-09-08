@@ -10808,13 +10808,46 @@ bool Application::executeEdit() {
     lineNumber = (idx >= 0 && idx < static_cast<int>(fileLines.size()) && fileLines[idx].rawLineNumber)
                      ? *fileLines[idx].rawLineNumber
                      : idx + 1;
+    // 2026-09-20追加、直接のユーザー要望("`e`でviを呼ぶ前に^L(画面への
+    // 表示無しでもいい)の処理だけ実行して欲しい...`^[97^M^N^N^Ne`(100
+    // 行目でviを呼ぶ)とやるとvi画面では100行がセンターなので戻った時も
+    // そうなって欲しい"): vi自身が`+N`起動時に対象行を画面中央付近に
+    // 置くので、usilic側もエディタを呼ぶ「前」に同じセンタリング
+    // (ContentView::centerOnCursor()、Command::Redraw(^L)が使うのと
+    // 同じもの)を先に適用しておけば、エディタから戻った後の再描画が
+    // vi側の見た目と自然に揃う。実際に今この場で画面へ出す必要は無い
+    // (どうせ次の行でエディタへ制御を渡す)ので、redraw()もsyncVisible
+    // Cursor()も呼ばない――centerOnCursor()自身はtopIndex_を動かす
+    // だけの軽い操作。
+    fileView_.centerOnCursor();
   } else {
     return false;  // このスライスの範囲外、クラスコメント参照
   }
 
+  int cursorBefore = activeView().cursorIndex();
   bool changed = editMode_.edit(path, lineNumber);
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) {
+      std::fprintf(f, "executeEdit: path=%s lineNumber=%d cursorBefore=%d changed=%d cursorAfterEditCall=%d\n",
+                   path.c_str(), lineNumber, cursorBefore, changed ? 1 : 0, activeView().cursorIndex());
+      std::fclose(f);
+    }
+  }
   if (changed && currentMode_ == ApplicationMode::File) fileMode_.loadFile(path);
   activeView().redraw();
+  // 2026-09-20追加、直接のユーザー報告("-cではviから復帰後のブロック
+  // カーソルが無い"): redraw()自体は(意図的に)決してsyncVisibleCursor()
+  // を呼ばない――Command::Redrawや goto-line の各出口で既に同じ理由で
+  // 呼んでいるのと同じ穴が、ここ(EDIT復帰)にも残っていた。
+  activeView().syncVisibleCursor();
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) {
+      std::fprintf(f, "executeEdit: after redraw+sync, cursorIndex=%d\n", activeView().cursorIndex());
+      std::fclose(f);
+    }
+  }
   return true;
 }
 

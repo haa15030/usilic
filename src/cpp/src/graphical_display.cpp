@@ -1506,6 +1506,20 @@ void GraphicalDisplay::handleWindowResized(int newPixelWidth, int newPixelHeight
   int newColumns = std::max(1, contentWidth / impl_->cellWidth);
   int newRows = std::max(1, contentHeight / impl_->cellHeight);
   if (newRows == impl_->rows && newColumns == impl_->columns) return;  // 何もすることが無い
+  // 2026-09-20追加、"-gで今度は103ではなく100に来る"追跡用の一時診断
+  // ログ(既存のUSILICGUIDEBUG慣習、この関数の少し上syncMouseTracking
+  // 等と同じ): エディタ(vi)往復のあいだのgui.setVisible(false)/(true)
+  // だけで、実際にSDL_WINDOWEVENT_RESIZED経由でここへ辿り着くことが
+  // あるのかどうか自体が不明――ここを通ればFileMode::reflow()の
+  // ログと合わせて実際の値の流れが追える。
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) {
+      std::fprintf(f, "handleWindowResized: %dx%d -> columns %d->%d rows %d->%d\n", newPixelWidth, newPixelHeight,
+                   impl_->columns, newColumns, impl_->rows, newRows);
+      std::fclose(f);
+    }
+  }
   impl_->rows = newRows;
   impl_->columns = newColumns;
   impl_->grid.assign(static_cast<std::size_t>(newRows) * newColumns, Cell{});

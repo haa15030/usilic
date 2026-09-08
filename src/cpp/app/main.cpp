@@ -3002,11 +3002,24 @@ bool runProgramInLaunchingTerminal(const std::string &command, fm::GraphicalDisp
 // since there's no `sh -c` step here to prepend it to.
 bool runEditorInLaunchingTerminal(const std::vector<std::string> &argv, fm::GraphicalDisplay &gui) {
   if (!raiseLaunchingTerminalWindow()) return false;  // falls back to EditMode::edit()'s own default path
+  // 2026-09-20追加、"-gで今度は103ではなく100に来る"追跡用の一時診断
+  // ログ(既存のUSILICGUIDEBUG慣習): gui.setVisible(false)/(true)の
+  // 前後でウィンドウの実際の列数(gui.columns())を記録しておけば、
+  // 隠す/見せるだけでSDL側の列数計算がずれていないかがこれだけで
+  // 分かる。
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) { std::fprintf(f, "runEditorInLaunchingTerminal: before hide, columns=%d rows=%d\n", gui.columns(), gui.rows()); std::fclose(f); }
+  }
   gui.setVisible(false);
   clearLaunchingTerminal();
   fm::ChildProcess::runInteractive(argv);
   gui.setVisible(true);
   gui.raise();
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) { std::fprintf(f, "runEditorInLaunchingTerminal: after show, columns=%d rows=%d\n", gui.columns(), gui.rows()); std::fclose(f); }
+  }
   return true;
 }
 

@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -366,6 +368,20 @@ bool FileMode::reflow(int newWidth) {
     view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine));
     view_.redraw();
     view_.syncVisibleCursor();
+    // 2026-09-20追加、"-gで今度は103ではなく100に来る"追跡用の一時
+    // 診断ログ(既存のUSILICGUIDEBUG慣習に合わせる、graphical_display.cpp
+    // 各所参照)――-gでは実機再現しか手段が無いため、次回の再現時に
+    // これを見ればreflow()自身が何回・どの幅で呼ばれ、生行番号の翻訳が
+    // 何を返したかが分かる。
+    if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+      FILE *f = std::fopen(dbg, "a");
+      if (f) {
+        std::fprintf(f, "FileMode::reflow(pager) newWidth=%d oldCursor=%d oldRawLine=%d newCursor=%d newRawLine=%d\n",
+                     newWidth, oldCursor, oldRawLine.value_or(-1), view_.cursorIndex(),
+                     rawLineNumberAt(view_.cursorIndex()).value_or(-1));
+        std::fclose(f);
+      }
+    }
     return true;
   }
 
@@ -378,6 +394,15 @@ bool FileMode::reflow(int newWidth) {
   view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine));
   view_.redraw();
   view_.syncVisibleCursor();
+  if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
+    FILE *f = std::fopen(dbg, "a");
+    if (f) {
+      std::fprintf(f, "FileMode::reflow(plain) newWidth=%d oldCursor=%d oldRawLine=%d newCursor=%d newRawLine=%d\n",
+                   newWidth, oldCursor, oldRawLine.value_or(-1), view_.cursorIndex(),
+                   rawLineNumberAt(view_.cursorIndex()).value_or(-1));
+      std::fclose(f);
+    }
+  }
   return true;
 }
 
