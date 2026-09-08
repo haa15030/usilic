@@ -7483,20 +7483,51 @@ void Application::copyMouseUp() {
 // 自身のコメント参照。
 bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> special) {
   // "^[N"/"^[gg"(goto-line)自身の桁蓄積――application.hpp自身の
-  // copyGotoLineDigitsPending_のコメント参照。数字が続く限り蓄積し、
-  // 改行(Enter)で確定する。それ以外のバイト(specialキー含む)は
-  // 蓄積内容ごと破棄してキャンセルする。
+  // copyGotoLineDigitsPending_のコメント参照。
+  //
+  // 2026-09-08修正、直接のユーザー報告("何も起きないんだが。旧では
+  // モードライン「現在行/総行 ??%」が数値入力エリアとなって数字入力を
+  // 受け付ける仕様なのでそのようにして欲しい"): legacy自身のprint_line()
+  // (old/src/disp.c、linep==F2の分岐)を読んだところ、数字以外の
+  // キーで即キャンセルするのではなく、認識される4種類(数字/Enter/
+  // Backspace/^G)以外は単に無視して入力を待ち続ける、という仕様
+  // だったと判明した(`if ((c = vt_getch()) != K_m && c != K_g &&
+  // c != K_dl && c != K_h && (c < '0' || c > '9')) continue;`)。
+  // Backspaceは1桁削除(蓄積が空の状態でのBackspaceはキャンセルに
+  // 相当)、^Gは常に明示的なキャンセル。この仕様に合わせて全面的に
+  // 書き直した。桁を1つ追加/削除するたびに、legacy自身のモードライン
+  // 上の直接エコーと同じ見た目になるようcopyMode_.setGotoLinePreview()
+  // を呼ぶ。
   if (copyGotoLineDigitsPending_) {
     if (!special && byte >= '0' && byte <= '9') {
       copyGotoLineDigits_.push_back(static_cast<char>(byte));
+      copyMode_.setGotoLinePreview(copyGotoLineDigits_);
       return true;
     }
-    copyGotoLineDigitsPending_ = false;
-    if (!special && byte == kCarriageReturn && !copyGotoLineDigits_.empty()) {
-      copyMode_.gotoLine(std::stoi(copyGotoLineDigits_));
+    if (!special && byte == kCarriageReturn) {
+      copyGotoLineDigitsPending_ = false;
+      copyMode_.setGotoLinePreview(std::nullopt);
+      if (!copyGotoLineDigits_.empty()) copyMode_.gotoLine(std::stoi(copyGotoLineDigits_));
+      copyGotoLineDigits_.clear();
+      return true;
     }
-    copyGotoLineDigits_.clear();
-    return true;
+    if (!special && byte == 0x7f) {  // Backspace
+      if (!copyGotoLineDigits_.empty()) {
+        copyGotoLineDigits_.pop_back();
+        copyMode_.setGotoLinePreview(copyGotoLineDigits_);
+      } else {
+        copyGotoLineDigitsPending_ = false;
+        copyMode_.setGotoLinePreview(std::nullopt);
+      }
+      return true;
+    }
+    if (!special && byte == kControlG) {
+      copyGotoLineDigitsPending_ = false;
+      copyGotoLineDigits_.clear();
+      copyMode_.setGotoLinePreview(std::nullopt);
+      return true;
+    }
+    return true;  // 未認識のキーは無視して入力を待ち続ける(legacy自身の`continue`と同じ)
   }
   // "^[gg"の2バイト目――application.hpp自身のcopyGotoLineGPending_の
   // コメント参照。2つ目が'g'以外ならこのシーケンス全体を単に吸収する。
@@ -7505,6 +7536,7 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
     if (!special && byte == 'g') {
       copyGotoLineDigitsPending_ = true;
       copyGotoLineDigits_.clear();
+      copyMode_.setGotoLinePreview(copyGotoLineDigits_);
     }
     return true;
   }
@@ -7556,6 +7588,7 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
     if (!special && byte >= '0' && byte <= '9') {
       copyGotoLineDigitsPending_ = true;
       copyGotoLineDigits_.assign(1, static_cast<char>(byte));
+      copyMode_.setGotoLinePreview(copyGotoLineDigits_);
       return true;
     }
     if (!special && byte == 'g') {

@@ -349,6 +349,11 @@ bool CopyMode::rectangleMarkActive() const { return markActive_ && rectangleMark
 
 const std::string &CopyMode::clipboardText() const { return clipboardText_; }
 
+void CopyMode::setGotoLinePreview(std::optional<std::string> text) {
+  gotoLinePreview_ = std::move(text);
+  render();
+}
+
 void CopyMode::cancelMark() {
   markActive_ = false;
   rectangleMark_ = false;
@@ -386,7 +391,16 @@ void CopyMode::render() {
   // モードラインの位置フィールドに"Rectangle-Mark"を表示し、それ
   // 以外は常にstartCopy()自身が設定する"---"のプレースホルダーへ
   // 戻す(2026-09-07追加、直接のユーザー要望)。
-  view_.setPositionTextOverride(rectangleMark_ ? "Rectangle-Mark" : "---");
+  //
+  // 2026-09-08追加、setGotoLinePreview()自身のコメント参照: 行番号の
+  // 桁を入力中であれば、legacy自身のprint_line()(disp.c)がモード
+  // ラインの位置フィールド上で直接エコーしていたのと同じ見た目で、
+  // それを最優先で表示する。
+  if (gotoLinePreview_) {
+    view_.setPositionTextOverride("Line: " + *gotoLinePreview_);
+  } else {
+    view_.setPositionTextOverride(rectangleMark_ ? "Rectangle-Mark" : "---");
+  }
   view_.redraw();
   int column = lines_.empty() ? 0 : displayColumnFor(lines_[cursorRow_].text, cursorByte_);
   view_.setContentCursorColumn(column);

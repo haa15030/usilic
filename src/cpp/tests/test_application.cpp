@@ -11288,9 +11288,81 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^[gg N (Emacs' own M-g g goto-line pref
   CHECK(app.promptText() == "line2b");
 }
 
-TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): goto-line digit entry cancels (without jumping) on any "
-                           "byte other than a digit or Enter -- matching this mode's usual "
-                           "\"unrecognized input is silently absorbed\" simplicity") {
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): goto-line digit entry ignores any byte that isn't a "
+                           "digit/Enter/Backspace/^G and keeps waiting for one, matching legacy's "
+                           "own print_line() (old/src/disp.c, the linep==F2 branch) rather than "
+                           "cancelling on the first unrecognized key (2026-09-08, a direct user "
+                           "report: \"何も起きないんだが。旧ではモードライン「現在行/総行 ??%」が"
+                           "数値入力エリアとなって数字入力を受け付ける仕様なのでそのようにして"
+                           "欲しい\")") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);
+
+  // ESC, '3', 'x' (ignored, not a digit/Enter/Backspace/^G -- stays pending),
+  // Enter -- still jumps to line 3, proving 'x' didn't cancel anything.
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  app.feedByte('3', std::nullopt);
+  app.feedByte('x', std::nullopt);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  app.feedByte(0x80, std::nullopt);                              // ^@: mark start at (row 2, col 0)
+  for (int i = 0; i < 6; i++) app.feedByte(0x06, std::nullopt);  // extend over "marker"
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('w', std::nullopt));
+
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x19, std::nullopt));
+  CHECK(app.promptText() == "marker");  // from line 3 ("marker two") -- the jump DID happen
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): goto-line digit entry supports Backspace to edit a typo, "
+                           "and Backspace on an empty digit string cancels the whole entry "
+                           "(matching legacy's own K_dl/K_h handling, disp.c)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x03, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Copy);
+
+  // ESC, '9', '9', Backspace, Backspace, '3', Enter -- "99" is typed then
+  // fully erased via two Backspaces, then '3' is typed fresh -- must land
+  // on line 3, not line 99 (which would clamp to the file's last line).
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  app.feedByte('9', std::nullopt);
+  app.feedByte('9', std::nullopt);
+  app.feedByte(0x7f, std::nullopt);
+  app.feedByte(0x7f, std::nullopt);
+  app.feedByte('3', std::nullopt);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  app.feedByte(0x80, std::nullopt);
+  for (int i = 0; i < 6; i++) app.feedByte(0x06, std::nullopt);  // extend over "marker"
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('w', std::nullopt));
+
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::StartFgrep));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x19, std::nullopt));
+  CHECK(app.promptText() == "marker");  // line 3 ("marker two") -- backspace-edited digits took effect
+}
+
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^G cancels goto-line digit entry outright, without "
+                           "jumping and without leaving Copy mode (legacy's own K_g in the same "
+                           "print_line() loop)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -11301,12 +11373,12 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): goto-line digit entry cancels (without 
   REQUIRE(app.feedByte(0x03, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Copy);  // still on line 1 ("marker one")
 
-  // ESC, '9', '9', 'x' -- 'x' is neither a digit nor Enter, so this cancels
-  // WITHOUT jumping to (the nonexistent, would-clamp-to-last) line 99.
   REQUIRE(app.feedByte(0x1b, std::nullopt));
   app.feedByte('9', std::nullopt);
   app.feedByte('9', std::nullopt);
-  app.feedByte('x', std::nullopt);
+  app.feedByte(0x07, std::nullopt);  // ^G
+  CHECK(app.currentMode() == ApplicationMode::Copy);  // ^G cancelled the entry, not all of Copy
+
   app.feedByte(0x80, std::nullopt);                              // ^@: mark from wherever we actually are
   for (int i = 0; i < 6; i++) app.feedByte(0x06, std::nullopt);  // extend over "marker"
   REQUIRE(app.feedByte(0x1b, std::nullopt));

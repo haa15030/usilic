@@ -169,6 +169,17 @@ class CopyMode {
   // 選択がそのまま新しいカーソル位置まで伸びる)。
   void gotoLine(int oneBasedLine);
 
+  // 2026-09-08追加、直接のユーザー報告("何も起きないんだが。旧では
+  // モードライン「現在行/総行 ??%」が数値入力エリアとなって数字入力を
+  // 受け付ける仕様なのでそのようにして欲しい"): legacy自身のprint_line()
+  // (disp.c、linep==F2の分岐)が、モードラインの位置フィールド上で
+  // 直接1文字ずつエコーしながら桁を蓄積していたのと同じ見た目を
+  // 再現する――application.cpp自身のfeedCopyByte()が桁を1つ蓄積/削除
+  // するたびにこれを呼び、蓄積中の文字列(空文字列を含む)をrender()の
+  // 位置フィールドへ直接表示させる。std::nulloptを渡すと通常表示
+  // ("Rectangle-Mark"または"---")へ戻る。
+  void setGotoLinePreview(std::optional<std::string> text);
+
   // GUIのマウス範囲選択向け(2026-09-07追加、直接のユーザー要望:
   // "スクロールに関する画面ドラッグと同じマウス操作に関して、発動
   // し得る機能としては範囲指定がある。COPYモードの際にそれは可能
@@ -323,6 +334,8 @@ class CopyMode {
   // (2026-09-07追加)――loadSnapshot()直後の最初のrender()呼び出しに
   // だけ適用される、one-shotのオーバーライド。
   std::optional<int> pendingTopIndexOverride_;
+  // setGotoLinePreview()自身のコメント参照(2026-09-08追加)。
+  std::optional<std::string> gotoLinePreview_;
 };
 
 }  // namespace fm
