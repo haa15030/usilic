@@ -11223,30 +11223,6 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): a live selection renders as an actual r
   CHECK(display.standoutAt(0, 4) == false);
 }
 
-TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^- (Ctrl+Minus) is a full alias for ^@'s mark-start, added "
-                           "specifically for ATOK users (2026-09-07, a direct user request following "
-                           "the ⑨ postmortem: \"ATOKユーザーは多いはずなので^@は使えないとなると"
-                           "何がいいだろう？\" -- ^@ itself is physically Ctrl+Space, the exact same "
-                           "keystroke as the original `^Space` this was meant to move away from in "
-                           "the first place, per HISTORY.md's own record of that decision; ^_ "
-                           "(Ctrl+Underscore) was proposed first, but the user found real emacs "
-                           "already binds it to undo, so ^- was chosen instead -- same 0x1F control "
-                           "code, no known IME association, previously unused anywhere in this port)") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x0f, std::nullopt));
-  REQUIRE(app.feedByte(0x03, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Copy);
-  const std::string &row0 = display.rowText(0);
-  REQUIRE(row0.size() >= 3);
-  for (int i = 0; i < 2; i++) app.feedByte(0x06, std::nullopt);  // ^F x2: column 2
-  app.feedByte(0x1f, std::nullopt);                              // ^- (0x1F): mark start
-  for (int i = 0; i < 2; i++) app.feedByte(0x06, std::nullopt);  // extend to column 4
-  CHECK(display.standoutAt(0, 1) == false);
-  CHECK(display.standoutAt(0, 2) == true);
-  CHECK(display.standoutAt(0, 3) == true);
-  CHECK(display.standoutAt(0, 4) == false);
-}
-
 TEST_CASE_FIXTURE(Fixture, "^O^C/^O^Y (COPY/PASTE) round trip: select a substring of a File-mode "
                            "buffer, leave COPY, open an FGREP prompt, and ^O^Y inserts exactly that "
                            "substring at the cursor") {

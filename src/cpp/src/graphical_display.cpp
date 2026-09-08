@@ -1938,22 +1938,13 @@ bool GraphicalDisplay::pumpEvents() {
             // 計算やレンダリング側の問題ではなく、この最も手前の入力
             // 変換の欠落だと判明した)。
             impl_->keyQueue.push_back(KeyEvent{0x80, std::nullopt});
-          } else if (sym == SDLK_MINUS) {
-            // 2026-09-07追加、直接のユーザー要望("ATOKユーザーは多い
-            // はずなので^@は使えないとなると何がいいだろう？"――
-            // application.cpp自身のfeedCopyByte()、0x1fケース自身の
-            // コメント参照): 当初はCtrl+_(US配列ではShift+Ctrl+-)を
-            // 提案したが、ユーザー自身が実機のemacsで確認したところ
-            // ^_はundoに割り当て済みと判明したため、Shift不要のCtrl+
-            // マイナス(^-)を採用した(値は変わらず0x1F)。SDLのkeysymは
-            // US配列の素のハイフンキーを常にSDLK_MINUSとして報告する
-            // (Shiftの有無を区別しない)ため、この分岐はShift修飾の
-            // 有無に関わらずCtrl+ハイフンキーを一貫して0x1Fとして扱う
-            // ――結果として、もしユーザーがCtrl+アンダースコア
-            // (Shift+Ctrl+-)を押してもここは動くが、公式に使う/文書化
-            // するのは^-(Shift無し)の方である。
-            impl_->keyQueue.push_back(KeyEvent{0x1f, std::nullopt});
           }
+          // 2026-09-08、直接のユーザー報告により撤回: 一時的にここへ
+          // SDLK_MINUS(Ctrl+マイナス、^-)のケースを追加していたが
+          // (application.cpp自身のfeedCopyByte()、0x00/0x80ケース
+          // 自身のコメント参照)、Ubuntu実機のGNOME Terminalではこの
+          // キー自体がフォントサイズ縮小のショートカットと衝突する
+          // と判明したため撤去した。
           break;
         }
         if (event.key.keysym.sym == SDLK_RETURN) impl_->keyQueue.push_back(KeyEvent{0x0d, std::nullopt});
