@@ -349,14 +349,21 @@ bool FileMode::reflow(int newWidth) {
     // フォント/GUIサイズ変更がライブなstdinページャーの最中に起きる
     // という稀なケースに限られる、既知の割り切り。
     width_ = newWidth;
-    streamPipe_ = std::make_unique<PipeBuffer>(encoding_, width_, 256L * 1024 * 1024);
-    if (streamFd_ >= 0) readMoreIntoPipe(std::max(oldLineCount, 1));
+    // ContentView::Line::rawLineNumber自身のコメント参照(2026-09-08
+    // 追加、直接のユーザー報告"-gのときだけは97ではなくて103の位置に
+    // ブロックカーソルがある...この症状には手を付けてないってこと？"
+    // ――幅が変わって再折り返しされると、折り返しの入り方自体が変わり
+    // 得るため、以前と「同じ表示行インデックス」がもはや同じ生の行を
+    // 指すとは限らない。折り返し前に、カーソルが実際にいた生の行番号を
+    // 覚えておき、再折り返し後にその番号へ翻訳し直す――
+    // Application::resolveGotoLineRow()と同じ理屈だが、reflow()自身は
+    // 再読み込みを既に済ませた後の同期的なコードなので、pager先読みの
+    // リトライは不要な単純な線形探索で足りる)。
     int oldCursor = view_.cursorIndex();
+    std::optional<int> oldRawLine = rawLineNumberAt(oldCursor);
+    if (streamFd_ >= 0) readMoreIntoPipe(std::max(oldLineCount, 1));
     view_.setLines(convertPipeLines());
-    int last = static_cast<int>(view_.lines().size()) - 1;
-    if (oldCursor < 0) oldCursor = 0;
-    if (oldCursor > last) oldCursor = (last < 0) ? 0 : last;
-    view_.setCursorIndex(oldCursor);
+    view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine));
     view_.redraw();
     view_.syncVisibleCursor();
     return true;
@@ -365,15 +372,35 @@ bool FileMode::reflow(int newWidth) {
   if (currentFile_.empty()) return false;
   width_ = newWidth;
   int oldCursor = view_.cursorIndex();
+  std::optional<int> oldRawLine = rawLineNumberAt(oldCursor);
 
   view_.setLines(readAndWrap(currentFile_));
-  int last = static_cast<int>(view_.lines().size()) - 1;
-  if (oldCursor < 0) oldCursor = 0;
-  if (oldCursor > last) oldCursor = (last < 0) ? 0 : last;
-  view_.setCursorIndex(oldCursor);
+  view_.setCursorIndex(translateCursorAfterReflow(oldCursor, oldRawLine));
   view_.redraw();
   view_.syncVisibleCursor();
   return true;
+}
+
+// reflow()自身の同日コメント参照。`beforeCursor`は再折り返し「前」の
+// 表示行インデックス、返り値はそこにあった生の行(オプション、無ければ
+// beforeCursor自身をそのままクランプするだけの、以前と同じ挙動)を
+// 再折り返し「後」の内容の中で探し直した、対応する表示行インデックス。
+std::optional<int> FileMode::rawLineNumberAt(int index) const {
+  const auto &lines = view_.lines();
+  if (index < 0 || index >= static_cast<int>(lines.size())) return std::nullopt;
+  return lines[index].rawLineNumber;
+}
+
+int FileMode::translateCursorAfterReflow(int beforeCursor, std::optional<int> beforeRawLine) const {
+  const auto &lines = view_.lines();
+  int last = static_cast<int>(lines.size()) - 1;
+  if (last < 0) return 0;
+  if (beforeRawLine) {
+    for (int i = 0; i <= last; i++) {
+      if (lines[i].rawLineNumber && *lines[i].rawLineNumber >= *beforeRawLine) return i;
+    }
+  }
+  return std::clamp(beforeCursor, 0, last);
 }
 
 const std::string &FileMode::currentFile() const { return currentFile_; }

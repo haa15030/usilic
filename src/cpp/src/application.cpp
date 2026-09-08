@@ -2503,6 +2503,15 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     ContentView &view = activeContentView();
     view.setPositionTextOverride(std::nullopt);
     view.redraw();
+    // 2026-09-08追加、直接のユーザー要望("^Lを始め、何かの処理を
+    // 終えたあとは必ずカレント行に同カーソルを表示してほしい"):
+    // redraw()自体は(意図的に)決してsyncVisibleCursor()を呼ばない
+    // ――呼び出し元がここで明示的に行わない限り、実際の端末の
+    // キャレットが古い位置に取り残され、ジャンプ先が視覚的に
+    // 分かりにくくなる(Command::Redraw自身の既存のsyncVisibleCursor()
+    // 呼び出しと同じ理屈)。桁入力の確定(Enter)/キャンセル(^G、
+    // 空でのBackspace)どちらの経路でも、これが最後の共通出口。
+    view.syncVisibleCursor();
   };
   if (gotoLineDigitsPending_) {
     if (!special && byte >= '0' && byte <= '9') {

@@ -9508,6 +9508,55 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: reflows File mode's content at the new
   CHECK(sawWrappedLine);
 }
 
+TEST_CASE_FIXTURE(Fixture, "handleResize: reflow preserves the cursor's RAW line number, not its wrapped-row "
+                           "index -- 2026-09-08, a direct user report: after ^[97<Enter>e (jump to raw line "
+                           "97, launch external editor) and returning without saving, only under -g (a "
+                           "window resize -> reflow() happens between the jump and the return) the cursor "
+                           "landed on line 103 instead of 97, and a subsequent ^L then centered on the wrong "
+                           "line. Root cause: FileMode::reflow() re-wrapped content at the new width but "
+                           "preserved the cursor by its OLD numeric wrapped-row index instead of translating "
+                           "via ContentView::Line::rawLineNumber (see FileMode::rawLineNumberAt()/"
+                           "translateCursorAfterReflow()).") {
+  {
+    std::ofstream out(root / "wraptest2.txt");
+    out << "raw line one\n";
+    out << std::string(200, 'x') << "\n";  // wraps across multiple display rows at 80 columns
+    out << "raw line three\n";
+  }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("wraptest2.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  // ^[3<Enter>: goto-line 3 (the RAW line number) -- lands on "raw line three".
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  app.feedByte('3', std::nullopt);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  const std::vector<fm::ContentView::Line> &beforeLines = app.activeContentView().lines();
+  int beforeCursor = app.activeContentView().cursorIndex();
+  REQUIRE(beforeCursor < static_cast<int>(beforeLines.size()));
+  REQUIRE(beforeLines[beforeCursor].rawLineNumber);
+  CHECK(*beforeLines[beforeCursor].rawLineNumber == 3);
+
+  // Resizing narrower changes how the 200-char line wraps, shifting every
+  // wrapped-row index after it -- reflow() must re-resolve the cursor by
+  // raw line number rather than clamping the old numeric index.
+  display.setSize(24, 40);
+  app.handleResize();
+
+  const std::vector<fm::ContentView::Line> &afterLines = app.activeContentView().lines();
+  int afterCursor = app.activeContentView().cursorIndex();
+  REQUIRE(afterCursor < static_cast<int>(afterLines.size()));
+  REQUIRE(afterLines[afterCursor].rawLineNumber);
+  CHECK(*afterLines[afterCursor].rawLineNumber == 3);  // must still be raw line 3, not shifted to some other row
+
+  bool sawRawLineThree = false;
+  for (int row = 0; row < display.rows(); row++)
+    if (display.rowText(row).find("raw line three") != std::string::npos) sawRawLineThree = true;
+  CHECK(sawRawLineThree);
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleResize: does NOT reflow File mode's content while a different mode is active") {
   { std::ofstream(root / "longline.txt") << "abcdefghijklmnopqrstuvwxyz\n"; }
   REQUIRE(app.start(path()));

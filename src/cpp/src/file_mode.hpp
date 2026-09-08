@@ -371,6 +371,10 @@ class FileMode {
   // が、これを直接使ってlegacyと同じ粒度でこの一瞬の停止を検出する。
   bool readMoreIntoPipe(int targetLineCount);
   std::vector<ContentView::Line> convertPipeLines() const;
+  // reflow()自身の2026-09-08追加コメント参照――再折り返しの前後で
+  // カーソルが指す「生の」行番号を保つための一対のヘルパー。
+  std::optional<int> rawLineNumberAt(int index) const;
+  int translateCursorAfterReflow(int beforeCursor, std::optional<int> beforeRawLine) const;
 
   ContentView &view_;
   History &history_;
