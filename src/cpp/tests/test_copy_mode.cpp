@@ -132,13 +132,10 @@ TEST_CASE("CopyMode: startMark()+confirmMark() select a same-row substring into 
   CHECK(copy.clipboardText() == "elect ");  // unchanged
 }
 
-TEST_CASE("CopyMode: startMark() banks the current mark as an island when it already has real "
-          "extent, then re-anchors at the current position (2026-09-07 三訂, a direct user request "
-          "to help diagnose ⑨ (the GUI-only \"regular mark never highlights\" report): \"離れ小島は"
-          "`^@`で作れる。だが`^X␣`では作れない。そこで作れるようにしてみたらどうかな`^@`で\" -- this "
-          "reinstates, for `^@` only, the same bankCurrentMarkIfExtended() behavior "
-          "beginOrExtendFromMouse() already has; calling startMark() with the anchor still equal to "
-          "the cursor -- i.e. no real extent yet -- remains a plain no-op re-anchor, same as before)") {
+TEST_CASE("CopyMode: startMark() always just resets the anchor to the current position (emacs' "
+          "repeated set-mark-command), even when the mark already has real extent -- it never banks "
+          "an island itself (2026-09-08 五訂: that behavior moved to toggleMark(), see its own tests "
+          "below -- startMark() itself is back to its original, simplest form)") {
   RecordingDisplay d(10, 30);
   ContentView v(d);
   v.setViewport(0, 5);
@@ -146,13 +143,63 @@ TEST_CASE("CopyMode: startMark() banks the current mark as an island when it alr
   copy.loadSnapshot(makeLines({"select me please"}));
 
   copy.moveRight();  // column 1
-  copy.startMark();  // anchor==cursor here -- no extent yet, so this call itself banks nothing
+  copy.startMark();
   for (int i = 0; i < 3; i++) copy.moveRight();  // column 4 -- real extent now (1..4 == "ele")
-  copy.startMark();  // real extent -- banks "ele" as an island, then re-anchors at column 4
+  copy.startMark();                              // just re-anchors at column 4 -- no island banked
   CHECK(copy.markActive());
   for (int i = 0; i < 3; i++) copy.moveRight();  // column 7
   copy.confirmMark();
-  CHECK(copy.clipboardText() == "ele\nct ");  // the banked island plus the newer 4..7 range
+  CHECK(copy.clipboardText() == "ct ");  // columns 4..7 only -- "ele" was discarded, not banked
+}
+
+TEST_CASE("CopyMode: toggleMark() is a literal ON/OFF switch (2026-09-08, a direct user report: "
+          "\"^@がトグル（ON/OFF）になってない\" -- startMark() alone never returns to an inactive "
+          "state, unlike HELP.jp's own original description of `^@` as \"コピー位置の設定 / 解除\" "
+          "(set/release, i.e. two discrete states)): OFF->ON behaves exactly like startMark(). "
+          "ON->OFF banks the current extent (if any) as an island -- exactly like "
+          "beginOrExtendFromMouse() does for a mouse press, so repeated ^@ presses on a mouse-less "
+          "tty can still build up multiple disjoint islands (直接のユーザー報告: \"tty端末では...離れ"
+          "小島もできなくなる。そこで^@トグルも復活してほしい\") -- then deactivates the mark "
+          "(markActive() becomes false) WITHOUT writing to clipboardText() -- confirming still needs "
+          "an explicit ^[w/^[p") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"select me please"}));
+
+  copy.toggleMark();  // OFF -> ON, anchor at column 0
+  CHECK(copy.markActive());
+  for (int i = 0; i < 3; i++) copy.moveRight();  // column 3 -- extent "sel"
+  copy.toggleMark();                             // ON -> OFF: banks "sel", deactivates
+  CHECK_FALSE(copy.markActive());
+  CHECK(copy.clipboardText().empty());  // banking, not confirming -- clipboard untouched
+
+  for (int i = 0; i < 3; i++) copy.moveRight();  // column 6
+  copy.toggleMark();                             // OFF -> ON again, anchor at column 6
+  CHECK(copy.markActive());
+  for (int i = 0; i < 3; i++) copy.moveRight();  // column 9 -- extent [6,9) == " me"
+  copy.toggleMark();                             // ON -> OFF: banks the second island too
+  CHECK_FALSE(copy.markActive());
+
+  copy.confirmMark();  // gathers both banked islands (no live mark left to add)
+  CHECK(copy.clipboardText() == "sel\n me");
+}
+
+TEST_CASE("CopyMode: toggleMark() OFF->ON with the mark already having zero extent (pressed twice "
+          "without moving in between) is a plain cancel -- nothing gets banked") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  CopyMode copy(v);
+  copy.loadSnapshot(makeLines({"select me please"}));
+
+  copy.toggleMark();  // ON, anchor at column 0
+  CHECK(copy.markActive());
+  copy.toggleMark();  // OFF -- no movement happened, so nothing to bank
+  CHECK_FALSE(copy.markActive());
+  copy.confirmMark();  // no active mark, no islands -- a safe no-op
+  CHECK(copy.clipboardText().empty());
 }
 
 TEST_CASE("CopyMode: confirmMark() without an active mark is a safe no-op") {

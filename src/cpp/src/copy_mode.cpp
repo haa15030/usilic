@@ -176,37 +176,49 @@ void CopyMode::beginOrExtendFromMouse(int row, int column) {
 }
 
 void CopyMode::startMark() {
-  // 2026-09-07三訂、直接のユーザー要望(⑨のGUI限定ハイライト不具合の
-  // 切り分けのため: "離れ小島は^@で作れる。だが^X␣では作れない。
-  // そこで作れるようにしてみたらどうかな^@で。一旦ハイライトが出たら
-  // あとは出たりして"): 直前の訂正(このメソッド自身の1つ前のコメント
-  // 参照)でbankCurrentMarkIfExtended()呼び出しを撤去していたが、ここで
-  // ^@に限り再度呼ぶようにする――beginOrExtendFromMouse()と同じく、
-  // 既に実質的な範囲を持つマーク中にもう一度^@を押すと、その範囲を
-  // 1つの島としてislands_へ確定・画面に残したまま、現在位置から新しい
-  // アンカーを始める。startOrUpgradeRectangleMark()(^X SPC)側は据え
-  // 置き(呼ばない)――ユーザー自身の言葉通り「^Xスペースでは作れない」
-  // 状態を保ったまま、^@側だけを切り替えて比較できるようにするため。
-  //
-  // (2026-09-07四訂、追記: この訂正自体は「最初から最後まで何も出
-  // ない」と無効と判明したが、bankCurrentMarkIfExtended()自体は無害
-  // なのでそのまま残す。この後、直接のユーザー要望で^@/^X SPCがどちら
-  // をどちらへ呼ぶかを一時的に入れ替えて試したところ、入れ替えても
-  // 「^@に相当する側」は"Rectangle-Mark"というモードラインの文字列
-  // すら一切表示されない(=そもそも呼ばれてすらいない)と判明した――
-  // 真因はrectangleMark_の値でもこの関数群でもなく、graphical_
-  // display.cpp自身のSDLキー入力側にあった(GraphicalDisplay::run()の
-  // KMOD_CTRL分岐がCtrl+A〜Zと`Ctrl+[`しか変換しておらず、Ctrl+Space
-  // ―― ^@そのもの ――を全く生成していなかった、同ファイル自身の修正
-  // コメント参照)。この入れ替え実験は既に元に戻し、この関数は常に
-  // 「非矩形マーク」を意味する。)
+  // 2026-09-08五訂: ⑨の切り分けのため一時的に持たせていた
+  // bankCurrentMarkIfExtended()呼び出しは、toggleMark()自身の宣言
+  // コメント参照の通りtoggleMark()側へ移した――このメソッド自身は
+  // 元通り、常に単純にアンカーを現在位置へ置き直すだけ(emacsの
+  // C-@を繰り返し押した時と同じ、何度でも安全に呼べる)。
   if (lines_.empty()) return;
-  bankCurrentMarkIfExtended();
   markActive_ = true;
   rectangleMark_ = false;
   markAnchorRow_ = cursorRow_;
   markAnchorByte_ = cursorByte_;
   render();
+}
+
+void CopyMode::toggleMark() {
+  // 2026-09-08追加、直接のユーザー報告("^@がトグル（ON/OFF）になって
+  // ない"): startMark()を^@に直接割り当てていたこれまでの設計は、
+  // マークが「一度始まったら^@を何度押しても常にON(移動中の
+  // アンカー付け直し、あるいは三訂〜四訂で試した「島をバンクして
+  // 即座に新しいアンカーで再開」)のままで、実際にOFF(markActive()が
+  // falseに戻る)になる手段が^@自身には無かった――legacy自身のHELP.jp
+  // 2.14章("^@ でコピー位置の設定 / 解除")が元々"設定/解除"という
+  // 明確な2状態のトグルとして説明していたのとも食い違っていた。
+  //
+  // ここで初めて、文字通りのON/OFFとして振る舞うようにする:
+  //   OFF→ON: markActive()がfalseならstartMark()と全く同じ(新規に
+  //     マークを開始する)。
+  //   ON→OFF: markActive()がtrueなら、実質的な範囲(アンカー≠カーソル)
+  //     があればまず1つの島としてislands_へ確定・画面に残し(直接の
+  //     ユーザー要望⑭――tty端末でマウスが使えない環境でもキーボード
+  //     だけで複数の「離れ小島」を積み上げられるようにするため、
+  //     bankCurrentMarkIfExtended()自身のコメント参照)、その後
+  //     cancelMark()でマーク自体をOFFにする(confirmMark()とは違い
+  //     クリップボードへは書き込まない――OFFへ戻す操作であって
+  //     確定操作ではないため、確定は引き続き^[w/^[pが担う)。
+  // これで^@を押すたびに「開始→(移動)→終了(=1つの島を確定)→
+  // 開始→...」という、literal な2状態の繰り返しになる。
+  if (lines_.empty()) return;
+  if (markActive_) {
+    bankCurrentMarkIfExtended();
+    cancelMark();
+  } else {
+    startMark();
+  }
 }
 
 void CopyMode::startOrUpgradeRectangleMark() {
@@ -285,13 +297,22 @@ void CopyMode::highlightIsland(std::vector<ContentView::Line> &rendered, const I
 }
 
 void CopyMode::confirmMark() {
-  if (lines_.empty() || !markActive_) return;
+  // 2026-09-08、toggleMark()追加に伴う修正: 以前は「進行中のマークが
+  // 無ければ何もしない」だったが、toggleMark()のON→OFFは実質的な範囲を
+  // islands_へバンクした上でmarkActive_をfalseに戻す(=確定操作では
+  // ない、クラス自身のtoggleMark()宣言コメント参照)ため、^@でOFFに
+  // した直後に^[wを押す、という自然な流れで「進行中のマークが無い
+  // から」と何もしなくなってしまっていた(実機で発覚したバグ)。
+  // islands_に何か残っていれば、たとえmarkActive_がfalseでも続行する
+  // ――進行中のマーク自体は「無ければ何も足さない」だけで、islands_
+  // だけは常に確定・消費する。
+  if (lines_.empty() || (!markActive_ && islands_.empty())) return;
   std::vector<std::string> allParts;
   for (const Island &island : islands_) {
     auto parts = extractIslandParts(island);
     for (auto &part : parts) allParts.push_back(std::move(part));
   }
-  {
+  if (markActive_) {
     auto parts = extractIslandParts(currentMarkAsIsland());
     for (auto &part : parts) allParts.push_back(std::move(part));
   }

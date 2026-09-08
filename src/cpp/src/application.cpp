@@ -7644,7 +7644,11 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
       // Ctrl+Spaceを奪っている場合は、下のbeginOrExtendFromMouse()
       // (マウスドラッグ)が代替手段になる(HELP.jp側での言及は別途
       // 検討)。
-      copyMode_.startMark();
+      //
+      // 2026-09-08追加、直接のユーザー報告("^@がトグル（ON/OFF）に
+      // なってない"): startMark()ではなくtoggleMark()を呼ぶよう変更
+      // ――copy_mode.hpp/cpp自身のtoggleMark()宣言・実装コメント参照。
+      copyMode_.toggleMark();
       return true;
     case '.':  // 後方互換のトグル別名(ATOKと衝突しないため'.'は変更していない)。
                // このポート自身の他の場所にあるToggleMarkの別名(Command::ToggleMark
