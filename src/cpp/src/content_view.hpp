@@ -454,7 +454,13 @@ class ContentView {
   // strcpy(line, "---")`)をそこに表示する。std::nullopt(デフォル
   // ト)は通常の計算されたテキストを復元する。他の全ての呼び出し
   // 元はこれを未設定のままにし、影響を受けない。
-  void setPositionTextOverride(std::optional<std::string> text);
+  // `plain`(2026-09-08追加、直接のユーザー要望"数字入力は、他の文字列
+  // 入力エリア同様、ハイライト無しにして欲しい"): trueなら、この
+  // 位置フィールドを他の全モードライン欄と同じStandout(反転表示)無し
+  // で描画する――goto-line(^[N)の桁入力プレビュー専用。falseの間は
+  // 従来通りStandout付きで描画される("COPY"/"Rectangle-Mark"/"---"
+  // 等、他の全呼び出し元に挙動の変更は無い)。
+  void setPositionTextOverride(std::optional<std::string> text, bool plain = false);
 
   // 他の点では空の一覧に対してredraw()が表示するテキスト/整形
   // (redraw()自身のコメント参照)――デフォルトは「--」、本物の
@@ -1196,6 +1202,7 @@ class ContentView {
   int contentCursorColumn_ = 0;
   // setPositionTextOverride()自身のコメント参照。
   std::optional<std::string> positionTextOverride_;
+  bool positionTextPlain_ = false;
   // renderModeLine()自体によって設定される(なぜそこから再計算
   // するのではなくキャッシュされるのかについては自身のコメント
   // 参照)――空でない`trailing`フィールドを持つ最初の

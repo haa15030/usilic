@@ -11223,6 +11223,112 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): a live selection renders as an actual r
   CHECK(display.standoutAt(0, 4) == false);
 }
 
+TEST_CASE_FIXTURE(Fixture, "^[N/^[gg N (goto-line) work outside COPY mode too, on any ordinary "
+                           "ContentView-backed screen -- Directory mode here (2026-09-08, a direct "
+                           "user correction: \"「COPYの検証も今後の試行事案でいいとして」が伝わら"
+                           "なかったみたいだけど、^[Nはおよそ行数あり画面ならどこでも機能でもある"
+                           "のでよろしく\" -- this is Application::dispatchLeaderByte()'s own "
+                           "gotoLineDigitsPending_/gotoLineGPending_, entirely separate from "
+                           "CopyMode's own copyGotoLine*)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  int idx = indexOf("log.txt");
+
+  // ^[N: ESC, digits, Enter -- jumps straight to that entry's row.
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  for (char c : std::to_string(idx + 1)) app.feedByte(c, std::nullopt);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(indexOf(app.directoryMode().selectedEntry()->name) == idx);
+
+  // Move off of it, then jump back with ^[gg N instead.
+  app.handleCommand(Command::MoveDown);
+  REQUIRE(indexOf(app.directoryMode().selectedEntry()->name) != idx);
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  app.feedByte('g', std::nullopt);
+  app.feedByte('g', std::nullopt);
+  for (char c : std::to_string(idx + 1)) app.feedByte(c, std::nullopt);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(indexOf(app.directoryMode().selectedEntry()->name) == idx);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^[N (goto-line) displays the digits being typed as plain (non-Standout) "
+                           "text in the position field, matching other text-entry areas -- unlike "
+                           "every other modeline field, which is always Standout (2026-09-08, a "
+                           "direct user request: \"数字入力は、他の文字列入力エリア同様、ハイライト"
+                           "無しにして欲しい\")") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  app.feedByte('4', std::nullopt);
+  const std::string &row = display.rowText(23);
+  size_t pos = row.find('4');
+  REQUIRE(pos != std::string::npos);
+  CHECK(display.standoutAt(23, static_cast<int>(pos)) == false);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^[N (goto-line) triggers the File-mode pager to load content through "
+                           "the target line before jumping, both forward and backward, instead of "
+                           "silently clamping to whatever happened to be loaded already (the pager "
+                           "loads lazily -- see FileMode::ensureLoadedThrough()/Application::"
+                           "preloadPagerAhead(), the same mechanism Command::ScrollLineDown/PageDown "
+                           "already use)") {
+  {
+    std::ofstream out(root / "biglines.txt");
+    for (int i = 1; i <= 60; i++) {
+      std::string n = std::to_string(i);
+      out << "bigline" << std::string(3 - n.size(), '0') << n << "\n";
+    }
+  }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("biglines.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(display.rowText(0).substr(0, 10) == "bigline001");
+
+  // Forward jump past whatever the pager has loaded so far.
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  for (char c : std::string("45")) app.feedByte(c, std::nullopt);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.activeContentView().cursorIndex() == 44);
+  bool found45 = false;
+  for (int row = 0; row < 24; row++)
+    if (display.rowText(row).substr(0, 10) == "bigline045") found45 = true;
+  CHECK(found45);
+
+  // Backward jump -- must land exactly on line 5, not get stuck wherever
+  // the forward jump left off.
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  for (char c : std::string("5")) app.feedByte(c, std::nullopt);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.activeContentView().cursorIndex() == 4);
+  CHECK(display.rowText(0).substr(0, 10) == "bigline005");
+}
+
+TEST_CASE_FIXTURE(Fixture, "^[N (goto-line, general version) ignores unrecognized keys and keeps "
+                           "waiting, supports Backspace to edit, and ^G cancels outright -- same "
+                           "legacy-faithful spec as CopyMode's own version (old/src/disp.c's "
+                           "print_line(), linep==F2 branch)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+
+  // Ignored key mid-entry doesn't cancel the jump.
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  for (char c : std::to_string(idx + 1)) app.feedByte(c, std::nullopt);
+  app.feedByte('q', std::nullopt);  // ignored
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(indexOf(app.directoryMode().selectedEntry()->name) == idx);
+
+  app.handleCommand(Command::MoveDown);
+  int otherIdx = indexOf(app.directoryMode().selectedEntry()->name);
+  REQUIRE(otherIdx != idx);
+
+  // ^G cancels outright -- no jump back to idx.
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  for (char c : std::to_string(idx + 1)) app.feedByte(c, std::nullopt);
+  app.feedByte(0x07, std::nullopt);  // ^G
+  CHECK(indexOf(app.directoryMode().selectedEntry()->name) == otherIdx);  // unchanged
+}
+
 TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): ^[N (ESC then digits then Enter) jumps the cursor to that "
                            "1-based line (2026-09-08, a direct user request: \"未サポートでもある"
                            "^[N（Nは行番号）で当該行へジャンプする機能をサポートして欲しい\")") {

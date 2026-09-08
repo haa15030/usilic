@@ -2579,6 +2579,16 @@ class Application {
   // handleCommand()呼び出しに対してだけ意味を持つ。
   int pendingPathPrefixDigit_ = 0;
   bool escPending_ = false;      // ESC(0x1b)を見た、^[sを完成させるバイトを待っている――クラスコメント参照
+  // 2026-09-08追加、直接のユーザー要望("^[Nはおよそ行数あり画面なら
+  // どこでも機能でもあるのでよろしく"): dispatchLeaderByte()自身の
+  // escPending_ブロック、feedCopyByte()自身のcopyGotoLineGPending_/
+  // copyGotoLineDigitsPending_と全く同じ理屈の、COPYモード以外の
+  // 全モード共通版――CopyMode専用のcopyGotoLine*とは別物(こちらは
+  // Application::activeContentView()へ直接作用する、モード非依存の
+  // 汎用ジャンプ)。
+  bool gotoLineGPending_ = false;
+  bool gotoLineDigitsPending_ = false;
+  std::string gotoLineDigits_;
   bool leaderXPending_ = false;  // ^Xを見た、^Xd/^X^Dを完成させるバイトを待っている(2026-09-08のキー再編で他は全て^O/^Jへ移行し、DIRだけが残った)
   // ^J^O(usilicrcのERROR/LOG、2026-09-08新設のネストしたサブ
   // リーダー): ^Jの後に^O自体を見た、^J^Oe/^J^Olを完成させる

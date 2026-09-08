@@ -2266,6 +2266,7 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   }
 
   if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
+      gotoLineGPending_ || gotoLineDigitsPending_ ||
       (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
     return dispatchLeaderByte(byte, special);
   }
@@ -2404,6 +2405,7 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   }
   if (isNav) return handleCommand(resolveCommand(byte, special));
   if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
+      gotoLineGPending_ || gotoLineDigitsPending_ ||
       (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
     return dispatchLeaderByte(byte, special);
   }
@@ -2451,9 +2453,100 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
 // dispatchByte()自身の以前の本体から変わっていない――呼び出し元だけ
 // が変わった(dispatchByte()自体、それに加えて今はfeedShellByte()も)。
 bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  // 2026-09-08追加、直接のユーザー要望("^[Nはおよそ行数あり画面なら
+  // どこでも機能でもあるのでよろしく"): feedCopyByte()自身の
+  // copyGotoLineDigitsPending_/copyGotoLineGPending_と全く同じ仕様
+  // (legacy自身のprint_line()、old/src/disp.c、linep==F2の分岐に
+  // 合わせた挙動――数字/Enter/Backspace/^G以外は無視して入力を待ち
+  // 続ける、Backspaceは1桁削除・空でのBackspaceはキャンセル)だが、
+  // CopyMode専用ではなくactiveContentView()へ直接作用する汎用版。
+  // application.hpp自身のgotoLineDigitsPending_のコメント参照。
+  // setPositionTextOverride()自体は画面へ何も書かない(状態を設定
+  // するだけ)――CopyMode::render()が毎回自前でview_.redraw()を
+  // 呼んでいるのと同じく、ここでも桁を更新するたびに明示的に
+  // redraw()しないと、桁入力中のモードライン表示が画面に一切
+  // 反映されない(実機PTYテストで最初に確認した不具合)。
+  auto showGotoLineDigits = [&]() {
+    ContentView &view = activeContentView();
+    view.setPositionTextOverride(gotoLineDigits_, /*plain=*/true);
+    view.redraw();
+  };
+  auto clearGotoLineDisplay = [&]() {
+    ContentView &view = activeContentView();
+    view.setPositionTextOverride(std::nullopt);
+    view.redraw();
+  };
+  if (gotoLineDigitsPending_) {
+    if (!special && byte >= '0' && byte <= '9') {
+      gotoLineDigits_.push_back(static_cast<char>(byte));
+      showGotoLineDigits();
+      return true;
+    }
+    if (!special && byte == kCarriageReturn) {
+      gotoLineDigitsPending_ = false;
+      if (!gotoLineDigits_.empty()) {
+        // File modeのpagerは遅延読み込み(ContentView::lines()は
+        // まだ画面に表示した分しか持たないことがある)なので、
+        // setCursorIndex()の前にpreloadPagerAhead()で目的の行まで
+        // 確実に読み込ませる――Command::ScrollLineDown/PageDown自身の
+        // 既存の呼び出しパターン(移動の「前」にpreload、移動の
+        // 「後」にsuppressPagerRepoll)と同じ形。File以外のモード
+        // ではno-op(preloadPagerAhead()自身のガード参照)。
+        int target = std::stoi(gotoLineDigits_) - 1;
+        preloadPagerAhead(std::max(target, 0), /*bypassPacing=*/true);
+        ContentView &view = activeContentView();
+        int total = static_cast<int>(view.lines().size());
+        if (total > 0) view.setCursorIndex(std::clamp(target, 0, total - 1));
+        suppressPagerRepoll(view.topIndex());
+      }
+      gotoLineDigits_.clear();
+      clearGotoLineDisplay();
+      return true;
+    }
+    if (!special && byte == 0x7f) {  // Backspace
+      if (!gotoLineDigits_.empty()) {
+        gotoLineDigits_.pop_back();
+        showGotoLineDigits();
+      } else {
+        gotoLineDigitsPending_ = false;
+        clearGotoLineDisplay();
+      }
+      return true;
+    }
+    if (!special && byte == kControlG) {
+      gotoLineDigitsPending_ = false;
+      gotoLineDigits_.clear();
+      clearGotoLineDisplay();
+      return true;
+    }
+    return true;  // 未認識のキーは無視して入力を待ち続ける(legacy自身の`continue`と同じ)
+  }
+  if (gotoLineGPending_) {
+    gotoLineGPending_ = false;
+    if (!special && byte == 'g') {
+      gotoLineDigitsPending_ = true;
+      gotoLineDigits_.clear();
+      showGotoLineDigits();
+    }
+    return true;
+  }
   if (escPending_) {
     escPending_ = false;
     if (special) return false;
+    // "^[N"/"^[gg"(goto-line)自身の入口――上のgotoLineDigitsPending_/
+    // gotoLineGPending_のコメント参照。数字が直接続けば(^[N)そのまま
+    // gotoLineDigitsPending_へ、'g'が続けば(^[gg、Emacs自身のM-g g)
+    // まず2バイト目の'g'を待つ状態へ。
+    if (byte >= '0' && byte <= '9') {
+      gotoLineDigitsPending_ = true;
+      gotoLineDigits_.assign(1, static_cast<char>(byte));
+      showGotoLineDigits();
+      return true;
+    }
+    if (byte == 'g') {
+      gotoLineGPending_ = true;
+      return true;
+    }
     switch (byte) {
       case 's':  // ESC s : SHELL
         return handleCommand(Command::StartShell);
@@ -10948,7 +11041,8 @@ ApplicationMode Application::currentMode() const { return currentMode_; }
 Charset::Encoding Application::encoding() const { return encoding_; }
 
 bool Application::awaitingSequenceOrPromptByte() const {
-  return escPending_ || leaderJPending_ || promptKind_ != PromptKind::None;
+  return escPending_ || leaderJPending_ || gotoLineGPending_ || gotoLineDigitsPending_ ||
+         promptKind_ != PromptKind::None;
 }
 DirectoryMode &Application::directoryMode() { return directoryMode_; }
 FileMode &Application::fileMode() { return fileMode_; }

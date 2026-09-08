@@ -397,7 +397,10 @@ void CopyMode::render() {
   // ラインの位置フィールド上で直接エコーしていたのと同じ見た目で、
   // それを最優先で表示する。
   if (gotoLinePreview_) {
-    view_.setPositionTextOverride("Line: " + *gotoLinePreview_);
+    // 2026-09-08追加、直接のユーザー要望("数字入力は、他の文字列
+    // 入力エリア同様、ハイライト無しにして欲しい"): `plain=true`
+    // ――setPositionTextOverride()自身の同引数のコメント参照。
+    view_.setPositionTextOverride("Line: " + *gotoLinePreview_, /*plain=*/true);
   } else {
     view_.setPositionTextOverride(rectangleMark_ ? "Rectangle-Mark" : "---");
   }

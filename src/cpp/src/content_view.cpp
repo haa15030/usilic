@@ -481,7 +481,10 @@ void ContentView::setContentCursorColumn(int column) {
   if (!cursorHighlightEnabled_) syncVisibleCursor();
 }
 
-void ContentView::setPositionTextOverride(std::optional<std::string> text) { positionTextOverride_ = std::move(text); }
+void ContentView::setPositionTextOverride(std::optional<std::string> text, bool plain) {
+  positionTextOverride_ = std::move(text);
+  positionTextPlain_ = plain;
+}
 
 void ContentView::setBottomAnchored(bool enabled) { bottomAnchored_ = enabled; }
 
@@ -1633,9 +1636,23 @@ void ContentView::renderModeLine() {
     for (unsigned char c : text) display_.putChar(c);
     display_.setAttribute(Display::Attribute::UnderlineOff);
   };
+  // setPositionTextOverride()自身の`plain`引数のコメント参照
+  // (2026-09-08追加、直接のユーザー要望): 位置フィールドだけ、
+  // Standout無しで描画する経路。他の全フィールド(name/trailing等)は
+  // 影響を受けない。
+  auto drawPositionText = [&](const std::string &text) {
+    if (positionTextOverride_ && positionTextPlain_) {
+      for (unsigned char c : text) {
+        bool isControl = c && (c < ' ' || c == 0x7f);
+        display_.putChar(isControl ? static_cast<unsigned char>((c == 0x7f ? c - 0x80 : c) + '@') : c);
+      }
+    } else {
+      drawSegment(text);
+    }
+  };
 
   if (!modeLineFieldsProvider_) {
-    drawSegment(positionText);
+    drawPositionText(positionText);
     return;
   }
 
@@ -1669,7 +1686,7 @@ void ContentView::renderModeLine() {
     display_.putChar(' ');
     drawnLen += static_cast<int>(fields.name.size()) + 1;
   }
-  drawSegment(positionText);
+  drawPositionText(positionText);
   drawnLen += static_cast<int>(positionText.size());
   // 2026-08-11の修正: trailing2は以前`!fields.trailing.empty()`の
   // 中にネストされており、trailing自体が空の時はそれを黙って落とし
@@ -1933,6 +1950,18 @@ void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::s
     }
     display_.setAttribute(Display::Attribute::StandoutOff);
   };
+  // renderModeLine()自身のdrawPositionText()と同じ理由(setPositionTextOverride()
+  // 自身の`plain`引数のコメント参照)。
+  auto drawPositionText = [&](const std::string &text) {
+    if (positionTextOverride_ && positionTextPlain_) {
+      for (unsigned char c : text) {
+        bool isControl = c && (c < ' ' || c == 0x7f);
+        display_.putChar(isControl ? static_cast<unsigned char>((c == 0x7f ? c - 0x80 : c) + '@') : c);
+      }
+    } else {
+      drawSegment(text);
+    }
+  };
 
   std::string center = positionText;
   if (!fields.trailing.empty()) center += " " + fields.trailing;
@@ -1984,7 +2013,7 @@ void ContentView::renderSplitModeLine(const ModeLineFields &fields, const std::s
     drawSegment(name);
   }
   display_.moveCursor(modeLineRow, centerStart);
-  drawSegment(positionText);
+  drawPositionText(positionText);
   if (!fields.trailing.empty()) {
     display_.putChar(' ');
     drawSegment(fields.trailing);
