@@ -6232,6 +6232,15 @@ bool Application::shellInsertBufferContent() {
     std::error_code ec;
     std::filesystem::create_directories(savedDir, ec);
     savePath = savedDir + "/" + modeName;
+    // 2026-09-09追加、直接のユーザー報告("^X^D→履歴リストに
+    // /Users/haa15030/.usilic/saved/が無い。SHELLでcatする際、同
+    // ディレクトリにアクセスしたのは事実なので、それもまた履歴への
+    // 登録条件に加えてほしい"): DirectoryMode::enterDirectory()自身の
+    // pushRecent(RingCategory::RecentDirectory, ...)呼び出しと同じ
+    // 理屈――ここも実際に(catされるファイルの置き場所として)この
+    // ディレクトリへアクセスしているので、^X^D(K-48)の履歴リストに
+    // 登録する。enterDirectory()自身の慣習(末尾"/"付き)に合わせる。
+    history_.pushRecent(RingCategory::RecentDirectory, savedDir + "/");
   } else {
     currentWorkFilePath_ = allocateWorkFilePath();
     savePath = currentWorkFilePath_;

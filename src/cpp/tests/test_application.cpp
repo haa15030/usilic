@@ -5296,6 +5296,31 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W, K-64): writes the bu
   CHECK(firstLine.find("./") != std::string::npos);  // the directory listing's own "./" entry line
 }
 
+// 2026-09-09 addition, a direct user report ("^J^W^Mでshellの中で
+// ＢＳ世界の...の内容が表示される→^X^D→履歴リストに/Users/haa15030/
+// .usilic/saved/が無い。SHELLでcatする際、同ディレクトリにアクセス
+// したのは事実なので、それもまた履歴への登録条件に加えてほしい"):
+// <homeDirectory>/.usilic/saved/ is genuinely accessed here (it's
+// where the cat'd file lives) even though the user never navigated
+// there via DirectoryMode::enterDirectory() -- register it into
+// RingCategory::RecentDirectory here too, matching enterDirectory()'s
+// own existing pushRecent() convention (trailing "/").
+TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W) registers <homeDirectory>/.usilic/saved/ into "
+                           "RingCategory::RecentDirectory, even though DirectoryMode::enterDirectory() was "
+                           "never called for it") {
+  REQUIRE(app.start(path()));
+  bool ok = app.feedByte(0x0a, std::nullopt) && app.feedByte(0x17, std::nullopt);  // ^J ^W
+  if (!ok) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+
+  std::string savedDir = (root / ".usilic" / "saved").string() + "/";
+  const auto &ring = history.recentEntries(RingCategory::RecentDirectory);
+  CHECK(std::find(ring.begin(), ring.end(), savedDir) != ring.end());
+}
+
 TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W) also works from WITHIN the ^J^S/^J^C candidate "
                            "list (2026-08-11 fix: a real report + reference screenshot comparison against "
                            "legacy found ^J^W became literal \"JW\" text in the edited pattern instead, "
