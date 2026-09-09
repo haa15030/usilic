@@ -3387,7 +3387,46 @@ bool tryHandoffToParentShell(int argc, char **argv) {
     out.close();
     ::rename(tmpPath.c_str(), path.c_str());
   }
-  return true;
+  // 2026-09-10追加: 元は直接のユーザー報告("^Jpusilic ...が反応しない
+  // →/tmp/に戻るだけ")の調査中に見つけた、別口の潜在バグの防御。
+  // (報告自体の真因は、usilicrcのPROGRAMセクションに"usilic"が
+  // 登録されていなかったこと――isRecognizedProgram()に弾かれて
+  // executeProgram()がそもそも何も実行せずredraw()するだけだった。
+  // そちらはusilicrc側にエントリを追加して解決済み、詳細はコミット
+  // メッセージ参照。)
+  // ただし調査の過程で、この関数自体にも独立した潜在バグがあると
+  // 判明した: `USILIC`環境変数は、Shell::start()自身のsetenv()
+  // コメントの通り「生きたusilicのSHELLモードのプロンプトに直接
+  // タイプされた」ことだけを証明するつもりだったが、実際には
+  // ensureShellActive()(CP/MV/RM/ARC自身の、内部的な永続SHELLセッ
+  // ション駆動)経由でも同じくShell::start()が呼ばれ、同じ環境変数が
+  // 設定される――そのためCP/MV等を(内部的にSHELLを駆動する経路で)
+  // 一度でも実行した後にPROGRAM(^Jp)から"usilic ..."を再帰的に呼ぶと、
+  // このプロセスも(実際にはライブなSHELLプロンプトに直接タイプされた
+  // のではないにも関わらず)無条件にここへ来てしまう。受け手である
+  // Application::pollShellHandoff()自身は`currentMode_ ==
+  // ApplicationMode::Shell`の間しかこのランデブーパスを一切見ないため
+  // (自身のコメント参照)、呼び出し元がSHELL画面を実際に見ていない
+  // ケースでは誰も拾わない――この関数は(修正前は)「引き渡しを試みた
+  // かどうか」だけを見て常にtrueを返していたため、main()はApplication/
+  // Displayを一切起動せずそのまま終了し、ユーザーには「何も起きて
+  // いない」ように見えるはずだった。
+  // 修正: 上のパイプ済みstdinの分岐(accept()のpoll()タイムアウト)
+  // と同じ理屈で、このファイルが実際に「拾われた」(親のpollShell
+  // Handoff()自身の::unlink()で消える)のを短時間待つ――生きたSHELL
+  // プロンプトへ直接タイプされた本来のケースでは、親は自分のメイン
+  // ループの毎回の反復でこのパスをポーリングしているので、通常
+  // 数十ミリ秒以内に消えるはずである。タイムアウトしても消えな
+  // ければ「本当は誰も受け取っていない」と判断し、このファイル自体
+  // を後始末した上でfalseを返し、main()自身の通常の起動処理(独立
+  // した本物のセッション)へ普通に流れ落ちる。
+  for (int waited = 0; waited < 100; waited++) {
+    struct stat st;
+    if (::stat(path.c_str(), &st) != 0) return true;  // 消えた=拾われた
+    ::usleep(20000);
+  }
+  ::unlink(path.c_str());  // 誰も拾わなかった――後始末してから通常起動へ
+  return false;
 }
 
 }  // namespace
