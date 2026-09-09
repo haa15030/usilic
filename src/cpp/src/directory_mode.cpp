@@ -7,6 +7,17 @@
 
 namespace fm {
 
+namespace {
+// application.cpp自身のstripLsFTypeMarker()と同じ(小さいので複製、
+// 2026-09-09追加)――`ls -alF`がDirectoryEntry::nameの末尾に付与する
+// 型マーカー('/'/'*'/'@'/'='/'|')を、実在パス/アーカイブメンバー名
+// との比較の瞬間だけ剥がす。isMarked()自身のコメント参照。
+std::string stripLsFTypeMarker(const std::string &name) {
+  if (!name.empty() && std::string("/*@=|").find(name.back()) != std::string::npos) return name.substr(0, name.size() - 1);
+  return name;
+}
+}  // namespace
+
 DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &history,
                               const Configuration &configuration)
     : view_(view), modeStack_(modeStack), history_(history), configuration_(configuration) {
@@ -581,7 +592,12 @@ bool DirectoryMode::isMarked(int index) const {
   // 判定はその両方に反映される。^Lによる消去(clearTransientMarks()、
   // markedIndices_には触れない)との非破壊性は変わらず保たれている。
   if (index < 0 || index >= static_cast<int>(entries_.size())) return false;
-  return transientMarkedNames_.count(entries_[index].name) > 0;
+  // stripLsFTypeMarker()自身のコメント参照(2026-09-09追加)――
+  // transientMarkedNames_に入る名前の出所(CP/MVのベースネーム、ARC
+  // のアーカイブメンバー由来のトップレベル名)はどちらも型マーカー
+  // を持たないので、比較する側(entries_[index].name、`ls -F`由来で
+  // ディレクトリなら末尾に'/'等を持つ)から剥がして揃える。
+  return transientMarkedNames_.count(stripLsFTypeMarker(entries_[index].name)) > 0;
 }
 
 std::size_t DirectoryMode::markedCount() const {
@@ -609,8 +625,9 @@ void DirectoryMode::clearTransientMarks() { transientMarkedNames_.clear(); }
 
 std::vector<std::string> DirectoryMode::transientMarkedNames() const {
   std::vector<std::string> result;
+  // isMarked()自身の2026-09-09追記のコメント参照(型マーカーの剥がし)。
   for (const auto &entry : entries_)
-    if (transientMarkedNames_.count(entry.name) > 0) result.push_back(entry.name);
+    if (transientMarkedNames_.count(stripLsFTypeMarker(entry.name)) > 0) result.push_back(entry.name);
   return result;
 }
 

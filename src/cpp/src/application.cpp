@@ -10523,22 +10523,13 @@ void Application::pollPendingArchiveExtractShellRun() {
   if (ok && directoryMode_.descendTo(run.destination)) {
     currentMode_ = ApplicationMode::Directory;
     directoryMode_.setArcExtractSourceAnnotation(run.archivePath);
-    // 2026-09-08追加、PendingArchiveExtractShellRun::
-    // entriesBeforeExtract自身のコメント参照――展開前後のエントリ名の
-    // 差分で「新規に現れたもの」だけを一時マークする。DirectoryEntry::
-    // name(`ls -F`由来、末尾に'/'/'*'/'@'等の型マーカーを保持)と
-    // entriesBeforeExtract(std::filesystem::directory_iterator由来、
-    // 型マーカーなし)は表記が異なるため、比較の瞬間だけstripLsFType
-    // Marker()で揃える(setTransientMarkedNames()自身へ渡す名前は、
-    // isMarked()がentries_[index].nameとそのまま照合できるよう、
-    // 型マーカー付きの元の表記のまま渡す)。
-    std::set<std::string> before(run.entriesBeforeExtract.begin(), run.entriesBeforeExtract.end());
-    std::vector<std::string> newNames;
-    for (const auto &entry : directoryMode_.currentEntries()) {
-      if (entry.name == "./" || entry.name == "../") continue;
-      if (!before.count(stripLsFTypeMarker(entry.name))) newNames.push_back(entry.name);
-    }
-    directoryMode_.setTransientMarkedNames(std::move(newNames));
+    // 2026-09-09修正、PendingArchiveExtractShellRun::topLevelNames自身の
+    // コメント参照――アーカイブ自身のメンバー一覧から求めた名前を
+    // そのまま一時マークする(ディレクトリの実際の前後比較には一切
+    // 頼らない、既存/新規を問わず常に正しい)。DirectoryMode::
+    // isMarked()自身がentries_[index].nameの型マーカー('/'/'*'/'@'等)
+    // を比較時に剥がすので、ここで渡す名前は型マーカー無しのままでよい。
+    directoryMode_.setTransientMarkedNames(run.topLevelNames);
     directoryView_.redraw();
     return;
   }
@@ -10781,19 +10772,37 @@ bool Application::executeArchiveExtract(const std::string &destination) {
     activeView().redraw();
     return false;
   }
-  // 2026-09-08追加、PendingArchiveExtractShellRun::entriesBeforeExtract
-  // 自身のコメント参照――resolvedDestinationはこの時点で既に実在の
-  // ディレクトリであることが上で保証済み(空だった場合はcreate_
-  // directories()済み、それ以外は上のis_directory()チェックを通過
-  // 済み)なので、ここでのdirectory_iteratorは常に安全。
-  std::vector<std::string> entriesBeforeExtract;
+  // 2026-09-09修正、PendingArchiveExtractShellRun::topLevelNames自身の
+  // コメント参照(直接のユーザー報告、展開前後のディレクトリ一覧の
+  // 差分方式では「以前にも同じ場所へ展開したことがある」場合に機能
+  // しないと判明): `members`(部分展開なら実際に展開されるメンバー、
+  // 空なら「アーカイブ全体」)から、実際に宛先の直下に現れるはずの
+  // 名前(パスの最初の"/"より前の部分)を求める――ディレクトリの実際
+  // の中身には一切頼らない。
+  std::vector<std::string> topLevelNames;
   {
-    std::error_code ec;
-    for (const auto &dirEntry : std::filesystem::directory_iterator(resolvedDestination, ec))
-      entriesBeforeExtract.push_back(dirEntry.path().filename().string());
+    std::vector<std::string> namesToScan;
+    if (!members.empty()) {
+      namesToScan = members;
+    } else {
+      // archiveMode_がまだこのアーカイブを読み込んでいなければ読み込む
+      // (Directoryモードからの直接展開はarchiveMode_に一切触れていない
+      // ――上のcurrentMode_==Directoryの分岐自身のコメント参照)。
+      // 既に同じアーカイブを読み込み済み(Archiveモードから展開した
+      // 場合等)なら再読み込みしない。
+      if (archiveMode_.currentArchive() != archivePath) archiveMode_.loadArchive(archivePath);
+      for (const auto &entry : archiveMode_.entries()) namesToScan.push_back(entry.name);
+    }
+    std::set<std::string> seen;
+    for (std::string name : namesToScan) {
+      if (name.rfind("./", 0) == 0) name = name.substr(2);
+      std::size_t slash = name.find('/');
+      std::string top = (slash == std::string::npos) ? name : name.substr(0, slash);
+      if (!top.empty() && seen.insert(top).second) topLevelNames.push_back(top);
+    }
   }
   pendingArchiveExtractShellRun_ = PendingArchiveExtractShellRun{
-      shell_.promptGeneration(), returnMode, resolvedDestination, archivePath, std::move(entriesBeforeExtract)};
+      shell_.promptGeneration(), returnMode, resolvedDestination, archivePath, std::move(topLevelNames)};
   shell_.commandLine().setText(shellQuoteArgv(argv) + "; echo " + kCpMvRmExitMarker + "$?");
   shell_.submitLine();
   return true;

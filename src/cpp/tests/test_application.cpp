@@ -4175,6 +4175,58 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract following a CP, into the SAME directory 
   CHECK(display.underlineAt(newIdx, newNameCol));
 }
 
+// 2026-09-09 addition, a direct user report ("真因発見→ARC展開先を
+// ~/.usilic/saved/utf8/（あるいは^Oa^M）とした場合、同ディレクトリが
+// すでに存在しているとアンダーラインが付かない"): the original
+// before/after directory-listing-diff design (2026-09-08) fundamentally
+// couldn't handle re-extracting the SAME archive into a destination
+// that already has its own previous output sitting there -- the target
+// names aren't "new" by a plain diff, so nothing got marked. Fixed by
+// computing the mark target directly from the archive's own member
+// list (see PendingArchiveExtractShellRun::topLevelNames's own
+// comment) instead of diffing the destination directory at all. This
+// test extracts the SAME archive to the SAME destination TWICE in a
+// row, with no intervening ^L, and checks the Underline appears both
+// times.
+TEST_CASE_FIXTURE(Fixture, "ARC extract: re-extracting the SAME archive into an ALREADY-populated destination "
+                           "still shows the Underline (2026-09-09 fix, diff-based marking couldn't handle this)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  feedText((root / "arcdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  // arcdest now already contains arcsrc/ from this first extraction.
+  REQUIRE(fs::exists(root / "arcdest" / "arcsrc" / "inner.txt"));
+
+  // Navigate straight back to the root directory (bypassing Back's own
+  // "ARC: ..." annotation routing, which only applies when the
+  // extraction was launched FROM Archive mode -- this test launches it
+  // directly from Directory mode instead, same as the extraction just
+  // above) and re-select archive.tar for a second, identical extraction.
+  REQUIRE(app.directoryMode().enterDirectory(path()));
+  int idx2 = indexOf("archive.tar");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx2) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte('a', std::nullopt));   // a
+  feedText((root / "arcdest").string());
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(pumpArchiveExtractToCompletion(app));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.directoryMode().currentDirectory() == (root / "arcdest").string() + "/");
+
+  int newIdx = indexOf("arcsrc/");
+  REQUIRE(newIdx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != newIdx) app.handleCommand(Command::MoveDown);
+  int newNameCol = app.activeContentView().lines()[newIdx].highlightStartColumn.value_or(0);
+  CHECK(display.underlineAt(newIdx, newNameCol));  // still shown, even though arcsrc/ already existed here
+}
+
 // 2026-08-27 addition, a direct user proposal ("ディレクトリ（ls）の
 // 戻り値に「ARC:」等モードへの帰還があるときは^J^Jルーチンへ移行
 // じゃまずいの？"): a successful extraction lands in Directory mode

@@ -2747,14 +2747,23 @@ class Application {
     ApplicationMode returnMode;
     std::string destination;
     std::string archivePath;
-    // executeArchiveExtract()が展開シェルコマンドを起動する「前」に
-    // `destination`の時点のエントリ名一覧をここへ保存しておく
-    // (2026-09-08追加、DirectoryMode::setTransientMarkedNames()自身の
-    // コメント参照)。展開完了後、pollPendingArchiveExtractShellRun()
-    // がこれと展開後の一覧を比較し、新規に現れた名前だけを一時マーク
-    // する――アーカイブ形式(tar/zip/lha等)に依らず一律に「対象」を
-    // 判定できる。
-    std::vector<std::string> entriesBeforeExtract;
+    // 2026-09-09修正、直接のユーザー報告("ARC展開先を~/.usilic/saved/
+    // utf8/（あるいは^Oa^M）とした場合、同ディレクトリがすでに存在
+    // していると[一時マークの]アンダーラインが付かない"): 当初
+    // (2026-09-08、requirements.md「設計判断B」)は展開前後のディレ
+    // クトリ一覧の差分で「新規に現れた名前」を判定していたが、この
+    // 方式は「以前にも同じ場所へ展開したことがある」場合(2回目以降の
+    // 再展開、まさに~/.usilic/saved/配下でよく起こる)に根本的に
+    // 機能しない――対象の名前が「以前から既にそこにあった」ため、
+    // 差分上は「新規」に見えない。この場合、展開が実際に何を作った
+    // かに関わらず一時マークが一切付かなかった。
+    // 代わりに、展開コマンドを組み立てる時点で分かっている「アーカ
+    // イブ自身のメンバー一覧(または部分展開ならmembers)のトップ
+    // レベルの名前」を直接ここへ保存しておく――ディレクトリの実際の
+    // 前後比較には一切頼らないので、既存/新規を問わず常に正しく
+    // 「このアーカイブが宛先に作るはずの名前」を反映する
+    // (executeArchiveExtract()自身のコメント参照)。
+    std::vector<std::string> topLevelNames;
   };
   std::optional<PendingArchiveExtractShellRun> pendingArchiveExtractShellRun_;
   // submitPrompt()(生きたまま入力されたテキスト)と
