@@ -52,6 +52,22 @@ class Display {
     // なく、このC++移植自身の新規追加)ので、専用の属性を新設した。
     Italic,
     ItalicOff,
+    // 2026-09-10追加、直接のユーザー依頼("マッチ文字列をboldの代わり
+    // にハイライトでやってみて。色は変えられない？薄めの色とか"):
+    // in-place GREPのマッチ文字列表示専用――BoldがGrepMatch::
+    // matchSpans自身のBoldから置き換わった(FileMode自身のオーバー
+    // ストライク由来のBold、legacyのnroff重ね打ち規約からの移植とは
+    // 無関係、共存できる)。他のAttributeとは異なり、legacyにも
+    // このC++移植の他の場所にも前例が無い、色そのものを運ぶ唯一の
+    // Attributeなので、terminfoのパラメータ付きcapability
+    // (setaf、tparm()が必要)ではなく、生のANSI SGRコードを
+    // TerminalDisplay側で直接出す(このポートが読者に想定している
+    // 現実的なターミナル環境――Terminal.app/iTerm2/GNOME Terminal等
+    // ――は全てこの基本的なSGR色コードに対応している)。具体的な色は
+    // TerminalDisplay::attributeEscape()/GraphicalDisplay自身の
+    // 該当箇所のコメント参照。
+    Highlight,
+    HighlightOff,
   };
 
   enum class Key { Up, Down, Left, Right, PageUp, PageDown };

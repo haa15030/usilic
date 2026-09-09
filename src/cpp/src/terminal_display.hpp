@@ -176,7 +176,7 @@ class TerminalDisplay : public Display {
   // 「呼び出し元が最後にBold/Underline/Italic/Standoutを要求したか」
   // の記録ではない――BoldOff自身のリセット波及を検知して修復する
   // には、この2つを区別する必要がある)。
-  bool boldOn_ = false, underlineOn_ = false, italicOn_ = false, standoutOn_ = false;
+  bool boldOn_ = false, underlineOn_ = false, italicOn_ = false, standoutOn_ = false, highlightOn_ = false;
 };
 
 }  // namespace fm

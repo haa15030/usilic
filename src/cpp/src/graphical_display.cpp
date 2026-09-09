@@ -27,8 +27,19 @@ struct Cell {
   bool underline = false;
   bool standout = false;
   bool italic = false;  // 2026-09-04追加、直接のユーザー依頼("<i>プログラム名</i>")
+  // 2026-09-10追加、直接のユーザー依頼("マッチ文字列をboldの代わりに
+  // ハイライトでやってみて。色は変えられない？薄めの色とか。"):
+  // GREPマッチ表示専用の色付き前景(他の属性と同じく独立、standout等
+  // と自由に組み合わせ可能)。renderCell()自身のkHighlightColor参照。
+  bool highlight = false;
   bool continuation = false;  // 2列幅のグリフの「影」となる2つ目のセル――それ自体では描画されない
 };
+
+// TerminalDisplay::attributeEscape()のHighlight(生ANSI SGR "\x1b[93m"、
+// 明るい/薄い黄色前景)に見た目を揃えるための-g側の色。ANSI 16色の
+// bright yellow(色番号93/11)としてxterm等が使う典型的なRGBそのもの
+// (#ffff55)を採用――端末とGUIとで同じ「薄めの黄色」に見えるように。
+constexpr SDL_Color kHighlightColor{255, 255, 85, 255};
 
 // `utf8Bytes`の先頭のUTF-8シーケンス(他所でfm::Utf8::
 // sequence_length()によって既に正しい長さに分割済み)を、単一の
@@ -501,7 +512,8 @@ struct GraphicalDisplay::Impl {
 
   int cursorRow = 0, cursorCol = 0;
   int savedRow = 0, savedCol = 0;
-  bool standoutActive = false, boldActive = false, underlineActive = false, italicActive = false;
+  bool standoutActive = false, boldActive = false, underlineActive = false, italicActive = false,
+       highlightActive = false;
 
   // renderCursor()が実際に描く「論理的な」カーソル位置――上の
   // cursorRow/cursorCol(純粋に「次のバイトがどこに書かれるか」で
@@ -1062,6 +1074,7 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   cell.underline = impl_->underlineActive;
   cell.standout = impl_->standoutActive;
   cell.italic = impl_->italicActive;
+  cell.highlight = impl_->highlightActive;
   cell.continuation = false;
 
   if (width == 2 && impl_->cursorCol + 1 < impl_->columns) {
@@ -1072,6 +1085,7 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
     shadow.underline = cell.underline;
     shadow.standout = cell.standout;
     shadow.italic = cell.italic;
+    shadow.highlight = cell.highlight;
   }
   impl_->cursorCol += std::max(width, 1);
 }
@@ -1115,6 +1129,11 @@ void GraphicalDisplay::renderCell(int row, int col) {
   SDL_Color fg = impl_->fg;
   SDL_Color bg = impl_->bg;
   if (cell.standout) std::swap(fg, bg);
+  // Highlightは他の属性と直交する独立の前景色上書き――standoutによる
+  // fg/bg入れ替えの「後」に適用することで、marked行のUnderline/
+  // Standoutと共存していても常に薄い黄色のグリフとして見える
+  // (kHighlightColor自身のコメント参照)。
+  if (cell.highlight) fg = kHighlightColor;
 
   // 空白セル(空/スペースのグリフ)は、下線が付いている場合は、それ
   // でも下の本物のTTF_RenderUTF8_Blended()呼び出しへフォールスルー
@@ -1482,6 +1501,12 @@ void GraphicalDisplay::setAttribute(Attribute attr) {
       break;
     case Attribute::ItalicOff:
       impl_->italicActive = false;
+      break;
+    case Attribute::Highlight:
+      impl_->highlightActive = true;
+      break;
+    case Attribute::HighlightOff:
+      impl_->highlightActive = false;
       break;
   }
 }
@@ -2575,13 +2600,15 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     // クラス自身の慣習は全体を通じて、プレーンなASCIIのHELPテキスト
     // (このように装飾される唯一のコンテンツ)についてはバイト
     // オフセット==画面上の列である)。
-    bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false;
+    bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false,
+         wantHighlight = false;
     for (const auto &run : attributes) {
       if (static_cast<int>(pos) < run.start || static_cast<int>(pos) >= run.end) continue;
       if (run.attribute == Display::Attribute::Bold) wantBold = true;
       else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
       else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
       else if (run.attribute == Display::Attribute::Italic) wantItalic = true;
+      else if (run.attribute == Display::Attribute::Highlight) wantHighlight = true;
     }
     // 2026-09-02追加、直接のユーザー依頼("ついでに透かしが消える件も
     // よろしく"): ContentView::scrollHighlightForLine()(main.cpp自身の
@@ -2600,6 +2627,9 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     }
     if (glyph != " " && lead >= 0x20) {
       SDL_Color cellFg = wantStandout ? impl_->bg : sdlFg;
+      // renderCell()自身のkHighlightColorコメント参照――standoutによる
+      // 入れ替え後に上書きする独立の前景色。
+      if (wantHighlight) cellFg = kHighlightColor;
       // なぜここでもフォールバックフォントが参照されるのかについては
       // renderCell()自身のコメント参照――下の`isWide`のチェックを
       // 含め、2026-08-10追加(実際の報告、"慣性スクロール中は日本語

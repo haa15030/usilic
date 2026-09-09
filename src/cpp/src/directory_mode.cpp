@@ -361,12 +361,12 @@ void DirectoryMode::setGrepMatchHighlight(const std::vector<GrepMatch> &matches)
     if (idx < 0 || idx >= static_cast<int>(lines.size())) continue;
     if (match.matchSpans.empty()) {
       // フォールバック(matchSpans自身の宣言コメント参照): 部分文字列の
-      // 範囲が取れなかった場合だけ、従来通り行全体をBoldにする。
+      // 範囲が取れなかった場合だけ、従来通り行全体をHighlightにする。
       lines[idx].attributes.push_back(
-          Display::AttributeRun{0, static_cast<int>(lines[idx].text.size()), Display::Attribute::Bold});
+          Display::AttributeRun{0, static_cast<int>(lines[idx].text.size()), Display::Attribute::Highlight});
     } else {
       for (const auto &span : match.matchSpans) {
-        lines[idx].attributes.push_back(Display::AttributeRun{span.first, span.second, Display::Attribute::Bold});
+        lines[idx].attributes.push_back(Display::AttributeRun{span.first, span.second, Display::Attribute::Highlight});
       }
     }
   }

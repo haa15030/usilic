@@ -257,6 +257,8 @@ void TerminalDisplay::setAttribute(Attribute attr) {
     case Attribute::ItalicOff: italicOn_ = false; break;
     case Attribute::Standout: standoutOn_ = true; break;
     case Attribute::StandoutOff: standoutOn_ = false; break;
+    case Attribute::Highlight: highlightOn_ = true; break;
+    case Attribute::HighlightOff: highlightOn_ = false; break;
   }
 
   // 2026-09-04追加、直接のユーザー報告("-cでは斜体にならない"=fk)を
@@ -284,6 +286,10 @@ void TerminalDisplay::setAttribute(Attribute attr) {
     if (underlineOn_) tputs(attributeEscape(Attribute::Underline).c_str(), 1, outc);
     if (italicOn_) tputs(attributeEscape(Attribute::Italic).c_str(), 1, outc);
     if (standoutOn_) tputs(attributeEscape(Attribute::Standout).c_str(), 1, outc);
+    // Highlight自身のコメント参照: 生のSGRコードとはいえ、caps_.boldOff
+    // (exit_attribute_mode)は前景色も含めて全リセットするので、
+    // 同じ再送出の対象に加える。
+    if (highlightOn_) tputs(attributeEscape(Attribute::Highlight).c_str(), 1, outc);
   }
 
   std::fflush(stdout);
@@ -307,6 +313,18 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
       return caps_.italicOn;
     case Attribute::ItalicOff:
       return caps_.italicOff;
+    // Display::Attribute::Highlight自身の宣言コメント参照: terminfoの
+    // パラメータ付きcapability(setaf)経由ではなく、生のANSI SGR
+    // コードを直接返す。93=明るい黄色の前景色(検索マッチのハイライト
+    // として広く使われる、直接のユーザー要望「薄めの色」に合わせた
+    // 選択)。HighlightOffは39(前景色のみをデフォルトへ戻す、
+    // Bold/Underline/Standout/Italicの現在の状態には一切触れない
+    // ――boldOff自身の全リセットの問題、すぐ下のコメント参照、を
+    // そもそも起こさない)。
+    case Attribute::Highlight:
+      return "\x1b[93m";
+    case Attribute::HighlightOff:
+      return "\x1b[39m";
   }
   return "";
 }

@@ -21,7 +21,8 @@ class RecordingDisplay : public Display {
         screen_(rows, std::string(cols, ' ')),
         standout_(rows, std::vector<bool>(cols, false)),
         bold_(rows, std::vector<bool>(cols, false)),
-        underline_(rows, std::vector<bool>(cols, false)) {}
+        underline_(rows, std::vector<bool>(cols, false)),
+        highlight_(rows, std::vector<bool>(cols, false)) {}
 
   void write(const std::string &text) override {
     for (char c : text) putAdvance(static_cast<unsigned char>(c));
@@ -62,6 +63,7 @@ class RecordingDisplay : public Display {
       standout_[cursorRow_][c] = false;
       bold_[cursorRow_][c] = false;
       underline_[cursorRow_][c] = false;
+      highlight_[cursorRow_][c] = false;
     }
   }
   void scrollForward() override { scrollForwardCount_++; }
@@ -75,6 +77,11 @@ class RecordingDisplay : public Display {
     boldActive_ = (attr == Attribute::Bold) ? true : (attr == Attribute::BoldOff) ? false : boldActive_;
     underlineActive_ =
         (attr == Attribute::Underline) ? true : (attr == Attribute::UnderlineOff) ? false : underlineActive_;
+    // Highlight tracking (2026-09-10, direct user request: "マッチ
+    // 文字列をboldの代わりにハイライトでやってみて") -- same shape as
+    // boldActive_ just above.
+    highlightActive_ =
+        (attr == Attribute::Highlight) ? true : (attr == Attribute::HighlightOff) ? false : highlightActive_;
   }
   std::string attributeEscape(Attribute) const override { return ""; }
   int rows() const override { return rows_; }
@@ -129,6 +136,7 @@ class RecordingDisplay : public Display {
   bool standoutAt(int row, int col) const { return standout_[row][col]; }
   bool boldAt(int row, int col) const { return bold_[row][col]; }
   bool underlineAt(int row, int col) const { return underline_[row][col]; }
+  bool highlightAt(int row, int col) const { return highlight_[row][col]; }
   int scrollForwardCount() const { return scrollForwardCount_; }
   int scrollReverseCount() const { return scrollReverseCount_; }
 
@@ -162,6 +170,7 @@ class RecordingDisplay : public Display {
       standout_[cursorRow_][cursorCol_] = standoutActive_;
       bold_[cursorRow_][cursorCol_] = boldActive_;
       underline_[cursorRow_][cursorCol_] = underlineActive_;
+      highlight_[cursorRow_][cursorCol_] = highlightActive_;
     }
     cursorCol_++;
   }
@@ -171,10 +180,12 @@ class RecordingDisplay : public Display {
   std::vector<std::vector<bool>> standout_;
   std::vector<std::vector<bool>> bold_;
   std::vector<std::vector<bool>> underline_;
+  std::vector<std::vector<bool>> highlight_;
   int cursorRow_ = 0, cursorCol_ = 0;
   bool standoutActive_ = false;
   bool boldActive_ = false;
   bool underlineActive_ = false;
+  bool highlightActive_ = false;
   bool smoothScroll_ = false;
   int scrollForwardCount_ = 0, scrollReverseCount_ = 0;
   bool visibleCursorHidden_ = true;  // no visible cursor asserted yet

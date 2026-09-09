@@ -591,8 +591,8 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ^S stays in Direct
 
   REQUIRE(app.grepMode().matches().size() == 2);
   int idx = indexOf("one.json");
-  CHECK_FALSE(display.boldAt(idx, 0));   // permissions column -- NOT part of the match
-  CHECK(display.boldAt(idx, 57));        // "json" starts at byte/column 57
+  CHECK_FALSE(display.highlightAt(idx, 0));   // permissions column -- NOT part of the match
+  CHECK(display.highlightAt(idx, 57));        // "json" starts at byte/column 57
 }
 
 TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ^S from an open file stays in File mode and jumps to "
@@ -748,6 +748,18 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: no match shows a temporary, LOCATE-st
 // now Bold (Display::Attribute::Bold) simultaneously, independent of
 // the cursor (Standout) and Directory's own dired-style marks
 // (Underline) -- three separate, composable channels.
+//
+// 2026-09-10 further revision, another direct follow-up ("bold文字は
+// 分かりやすくない...マッチ文字列をboldの代わりにハイライトでやって
+// みて。色は変えられない？薄めの色とか"): Bold itself didn't stand out
+// enough, and highlighting the whole line still didn't show WHAT
+// matched -- superseded by substring-only Display::Attribute::Highlight
+// (a pale/bright-yellow foreground, see terminal_display.cpp's
+// attributeEscape() and graphical_display.cpp's kHighlightColor), scoped
+// to just the matched span via GrepMatch::matchSpans. The test names/
+// comments below still say "Bold" in places as a historical label for
+// "the multi-match-simultaneously behavior" -- the assertions
+// themselves use highlightAt(), the actual current mechanism.
 TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ALL matches are Bold simultaneously, not just "
                            "the one under the cursor, and clears when the session ends") {
   { std::ofstream(root / "one.json") << "{}\n"; }
@@ -774,14 +786,14 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ALL matches are Bo
   int oneCol = spanColFor(oneIdx);
   int twoCol = spanColFor(twoIdx);
 
-  CHECK(display.boldAt(oneIdx, oneCol));   // matched, cursor is here
-  CHECK(display.boldAt(twoIdx, twoCol));   // ALSO matched, even though the cursor is NOT here
-  CHECK_FALSE(display.boldAt(oneIdx, 0));  // permissions column -- NOT part of the match
-  CHECK_FALSE(display.boldAt(plainIdx, 0));  // not a match at all
+  CHECK(display.highlightAt(oneIdx, oneCol));   // matched, cursor is here
+  CHECK(display.highlightAt(twoIdx, twoCol));   // ALSO matched, even though the cursor is NOT here
+  CHECK_FALSE(display.highlightAt(oneIdx, 0));  // permissions column -- NOT part of the match
+  CHECK_FALSE(display.highlightAt(plainIdx, 0));  // not a match at all
 
   REQUIRE(app.feedByte(0x0e, std::nullopt));  // ^N -> move to "two.json", both stay Bold
-  CHECK(display.boldAt(oneIdx, oneCol));
-  CHECK(display.boldAt(twoIdx, twoCol));
+  CHECK(display.highlightAt(oneIdx, oneCol));
+  CHECK(display.highlightAt(twoIdx, twoCol));
 
   // A genuine mode switch (Enter, opening "two.json" -- the cursor is
   // there after the ^N above) ends the session; verify the highlight
@@ -791,8 +803,8 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ALL matches are Bo
   REQUIRE(app.currentMode() == ApplicationMode::File);
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK_FALSE(display.boldAt(oneIdx, oneCol));
-  CHECK_FALSE(display.boldAt(twoIdx, twoCol));
+  CHECK_FALSE(display.highlightAt(oneIdx, oneCol));
+  CHECK_FALSE(display.highlightAt(twoIdx, twoCol));
 }
 
 TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ALL matching lines are Bold simultaneously, "
@@ -809,10 +821,10 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ALL matching lines are 
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
   // "marker one"/"marker two"/"marker three" are lines 0, 2, 5 (0-indexed).
-  CHECK(display.boldAt(0, 0));
-  CHECK(display.boldAt(2, 0));
-  CHECK(display.boldAt(5, 0));
-  CHECK_FALSE(display.boldAt(1, 0));  // "line1" -- not a match
+  CHECK(display.highlightAt(0, 0));
+  CHECK(display.highlightAt(2, 0));
+  CHECK(display.highlightAt(5, 0));
+  CHECK_FALSE(display.highlightAt(1, 0));  // "line1" -- not a match
 }
 
 // -- incremental GREP (2026-09-10, a direct user request: "インクリメ
@@ -847,8 +859,8 @@ TEST_CASE_FIXTURE(Fixture, "ESC i (StartIncrementalGrep): highlights update live
     FAIL("no match found for line ", lineIdx);
     return -1;
   };
-  CHECK(display.boldAt(oneIdx, spanColFor(oneIdx)));  // already highlighted, live
-  CHECK(display.boldAt(twoIdx, spanColFor(twoIdx)));
+  CHECK(display.highlightAt(oneIdx, spanColFor(oneIdx)));  // already highlighted, live
+  CHECK(display.highlightAt(twoIdx, spanColFor(twoIdx)));
 
   // Enter finalizes: the prompt closes, the in-place session (already
   // built up live) is what's left showing.
@@ -867,7 +879,7 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: ^G cancels and reverts the live highlight ent
   feedText("json");
   int idx = indexOf("one.json");
   REQUIRE(app.grepMode().matches().size() == 1);
-  CHECK(display.boldAt(idx, app.grepMode().matches()[0].matchSpans.at(0).first));
+  CHECK(display.highlightAt(idx, app.grepMode().matches()[0].matchSpans.at(0).first));
 
   REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
   CHECK_FALSE(app.promptActive());

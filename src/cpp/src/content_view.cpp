@@ -684,6 +684,13 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   auto setItalic = [&](bool on) {
     setAttr(italicOn, on, Display::Attribute::Italic, Display::Attribute::ItalicOff);
   };
+  // Display::Attribute::Highlight自身の宣言コメント参照(2026-09-10
+  // 追加、直接のユーザー依頼: "マッチ文字列をboldの代わりにハイ
+  // ライトでやってみて")――setBold()/setItalic()と全く同じ形。
+  bool highlightOn = false;
+  auto setHighlight = [&](bool on) {
+    setAttr(highlightOn, on, Display::Attribute::Highlight, Display::Attribute::HighlightOff);
+  };
 
   // `markedNow`は、highlightStartが0の場合(よくあるケースで、
   // DirectoryModeのls一覧以外の全ての呼び出し元)にだけtrueで始まる
@@ -914,17 +921,20 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
       // 一致する(この分岐では画面列数であり、CJK重めの内容に対
       // しては位置がずれてしまう`col`とは異なる)。
       if (!line.attributes.empty()) {
-        bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false;
+        bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false,
+             wantHighlight = false;
         for (const AttributeRun &run : line.attributes) {
           if (static_cast<int>(idx) < run.start || static_cast<int>(idx) >= run.end) continue;
           if (run.attribute == Display::Attribute::Bold) wantBold = true;
           else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;
           else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
           else if (run.attribute == Display::Attribute::Italic) wantItalic = true;
+          else if (run.attribute == Display::Attribute::Highlight) wantHighlight = true;
         }
         setBold(wantBold);
         setUnderline(wantUnderline);
         setItalic(wantItalic);
+        setHighlight(wantHighlight);
         // 2026-08-29の追加(CopyMode自身の選択ハイライト、
         // copy_mode.hpp参照): この行におけるStandoutの唯一「他の」
         // 源はmarkedNow(highlightStartColumnの、「ここから行末まで」
@@ -1002,6 +1012,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
     setBold(false);
     setUnderline(false);
     setItalic(false);
+    setHighlight(false);
   }
 }
 

@@ -99,6 +99,29 @@ TEST_CASE("Line::attributes: Bold/Underline byte-ranges render as their own SGR 
   CHECK(d.standoutAt(0, 17) == true);
 }
 
+// 2026-09-10追加、直接のユーザー依頼("マッチ文字列をboldの代わりに
+// ハイライトでやってみて。色は変えられない？薄めの色とか"): GREP
+// マッチ表示専用のDisplay::Attribute::Highlight(生ANSI SGRの色付き
+// 前景、terminal_display.cpp/graphical_display.cpp参照)が、Bold/
+// Underlineと全く同じ独立したAttributeRunチャネルとして正しく機能
+// することを、Application抜きでピンポイントに確認する――上のBold/
+// Underlineのテストと同じ形。
+TEST_CASE("Line::attributes: a Highlight-typed AttributeRun renders as its own independent channel, "
+          "same shape as Bold/Underline just above") {
+  RecordingDisplay d(10, 30);
+  ContentView v(d);
+  v.setViewport(0, 3);
+  ContentView::Line line;
+  line.text = "plain HILITE plain";
+  line.attributes = {{6, 12, fm::Display::Attribute::Highlight}};  // "HILITE"
+  v.setLines({line});
+  v.redraw();
+  CHECK(d.highlightAt(0, 5) == false);  // space before "HILITE"
+  CHECK(d.highlightAt(0, 6) == true);   // 'H'
+  CHECK(d.highlightAt(0, 11) == true);  // 'E'
+  CHECK(d.highlightAt(0, 12) == false);  // space after "HILITE"
+}
+
 TEST_CASE("Line::attributes: a Standout-typed AttributeRun reverse-videos just its own byte range, "
           "on a line that is NOT the cursor/marked row (2026-08-29, CopyMode's own selection highlight "
           "-- see copy_mode.hpp) -- distinct from the whole-row reverse-video markedNow/highlightStartColumn "
