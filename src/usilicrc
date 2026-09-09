@@ -98,7 +98,6 @@ PROGRAM
 	lv -Oe
 	lv -Ir
 	qlmanage -p
-	usilic
 
 EDITOR
 # Format: `editor'

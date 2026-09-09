@@ -10073,7 +10073,20 @@ bool Application::executeMan(const std::string &name) {
 // (2026-08-17追加、後者が追加された時に括り出された): 何らかの
 // PROGRAM指示のエントリ自身の最初の単語とのstrncmp接頭辞マッチ
 // (find_prog()、sub.c自身の意味論)。
+//
+// "usilic"自身は常に無条件で認識済み扱いにする(2026-09-10、直接の
+// ユーザー指摘): SHELLモード(Shell::start()自身のsetenv("USILIC",
+// "1", ...)のコメント参照)は、自分自身の再帰起動を、usilicrc経由の
+// ユーザー設定に一切頼らず、バイナリ自身に組み込まれた特別扱いとして
+// 認識している――ユーザーが打ち込む先が「任意の外部ツール」ではなく
+// この実行ファイル自身だと分かっている以上、usilicrcのPROGRAM一覧へ
+// 事前登録することを要求する理由が無い。PROGRAM(^Jp)だけこの慣習から
+// 外れ、他の外部プログラムと同列にusilicrcへの登録を要求していたのは
+// 単なる見落としだった(実際の報告: `^Jpusilic ...`が無反応で単に
+// 元の画面に戻るだけに見えた――usilicrcのPROGRAM一覧に"usilic"が
+// 元々含まれていなかったため)。
 bool Application::isRecognizedProgram(const std::string &firstWord) const {
+  if (firstWord == "usilic") return true;
   for (const auto &seed : configuration_.programSeedCommands()) {
     std::size_t seedEnd = seed.find_first_of(" \t");
     std::string seedFirstWord = seed.substr(0, seedEnd);

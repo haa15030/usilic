@@ -2772,6 +2772,29 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: an unrecognized command (not in the PROGRAM
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
+// 2026-09-10 (a direct user request): "usilic" itself is always accepted
+// even though the fixture's rc (see above) never registers it as a
+// PROGRAM entry -- mirrors SHELL mode's own pre-existing special-casing
+// of a literal "usilic" invocation (Shell::start()'s own
+// setenv("USILIC", ...) comment): the user shouldn't have to add this
+// executable's own name to their usilicrc for PROGRAM to allow
+// recursively launching it, any more than SHELL requires that.
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: \"usilic\" itself is always recognized, with no usilicrc entry needed") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("usilic subdir");
+
+  std::string receivedCommand;
+  app.programMode().setForegroundLauncher([&](const std::string &command) {
+    receivedCommand = command;
+    return true;
+  });
+
+  CHECK(app.feedByte(0x0d, std::nullopt));
+  CHECK(receivedCommand == "usilic subdir");
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // PROGRAM never changes ApplicationMode
+}
+
 TEST_CASE_FIXTURE(Fixture, "PROGRAM: an empty command fails cleanly") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartProgram));
