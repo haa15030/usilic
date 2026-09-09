@@ -90,6 +90,35 @@ const char *grepSyntaxLabel(GrepSyntax syntax) {
   }
   return "GREP";
 }
+
+// Application::handleCommand()冒頭のin-place GREP自動終了ガード自身の
+// コメント参照(2026-09-10追加、直接のユーザー指摘): 明確な「モード
+// 切り替え」に当たらない、素のカーソル移動/ページ送り/画面再描画/
+// 無認識バイト(Command::None)の間はセッションを継続する――
+// GrepInPlaceNext/Previous・マーク系(ToggleMark/MarkAndAdvance/
+// MarkAndRetreat)自身は既存のセッション継続の核なので当然含む。
+bool isGrepInPlaceSafeCommand(Command command) {
+  switch (command) {
+    case Command::None:
+    case Command::GrepInPlaceNext:
+    case Command::GrepInPlacePrevious:
+    case Command::ToggleMark:
+    case Command::MarkAndAdvance:
+    case Command::MarkAndRetreat:
+    case Command::MoveUp:
+    case Command::MoveDown:
+    case Command::PageUp:
+    case Command::PageDown:
+    case Command::ScrollLineUp:
+    case Command::ScrollLineDown:
+    case Command::GoToTop:
+    case Command::GoToBottom:
+    case Command::Redraw:
+      return true;
+    default:
+      return false;
+  }
+}
 ConfiguredRole grepSyntaxRole(GrepSyntax syntax) {
   switch (syntax) {
     case GrepSyntax::Fixed:
@@ -3476,15 +3505,21 @@ bool Application::handleCommand(Command command) {
   // として「それ自身の」メッセージを表示する。
   directoryMode_.clearEditError();
   archiveMode_.clearEditError();  // ArchiveMode自身の同一の仕組み――それ自身の宣言コメント参照
+  directoryMode_.clearGrepNoMatchMessage();  // DirectoryMode::reportGrepNoMatchMessage()自身の宣言コメント参照、同じタイミング・同じ理由
   fileMode_.clearGrepNoMatchMessage();  // FileMode::reportGrepNoMatchMessage()自身の宣言コメント参照、同じタイミング・同じ理由
-  // in-place GREP(2026-09-09追加): ^N/^P(GrepInPlaceNext/Previous)・
-  // マーク系(ToggleMark/MarkAndAdvance/MarkAndRetreat)以外のコマンドが
-  // 来た時点で、明示的な^G無しに自動的にセッションを終了する
-  // (requirements.mdのオープンクエスチョン3番、ユーザー回答)。この
+  // in-place GREP(2026-09-09追加、2026-09-10改訂: 直接のユーザー指摘
+  // "うっかりミスは回避したいので、明確なモード切り替えには当たらない
+  // ...ページ送りキー（k/jその他）等はスルー"): 明確な「モード切り替え」
+  // に当たらないコマンド(このジャンプ/マーク自身・素のカーソル移動/
+  // ページ送り/画面再描画/無認識バイト)が来た間はセッションを継続し、
+  // それ以外(Enter/StartCopy等、実際にcurrentMode_や画面を切り替え
+  // 得るコマンド)が来た時点で、明示的な^G無しに自動的にセッションを
+  // 終了する(requirements.mdのオープンクエスチョン3番からの改訂)。
+  // この判定自体は「セッションを終了させないコマンド」を明示的に
+  // 列挙する方式――逆(モード切り替えを起こすコマンドを全て列挙する)
+  // だと、今後の新規コマンド追加のたびに見落としが起きやすい。
   // コマンド自体の実行は妨げない――下のswitchは普通にそのまま続く。
-  if (grepInPlaceActive_ && command != Command::GrepInPlaceNext && command != Command::GrepInPlacePrevious &&
-      command != Command::ToggleMark && command != Command::MarkAndAdvance &&
-      command != Command::MarkAndRetreat) {
+  if (grepInPlaceActive_ && !isGrepInPlaceSafeCommand(command)) {
     deactivateGrepInPlace();
   }
   // 2026-08-25(FileMode::ensureLoadedThrough()自身のコメント参照):
@@ -5187,7 +5222,7 @@ bool Application::activateGrepInPlace() {
   if (matches.empty()) {
     std::string message = grepMode_.pattern() + ": No String";
     if (grepInPlaceOriginMode_ == ApplicationMode::Directory) {
-      directoryMode_.reportError(message, /*underline=*/false);
+      directoryMode_.reportGrepNoMatchMessage(message);
     } else {
       fileMode_.reportGrepNoMatchMessage(message);
     }
@@ -9642,15 +9677,22 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   }
   // staticMessage(2026-08-13): この関数自身の宣言コメント参照
   // ――編集可能なフィールドがそうでなければ始まるであろうまさにその
-  // 列に、プレーンな下線付きのステータスメッセージを描き、それから
-  // promptEditor_には一切触れずに戻る(予約/設定すべきフィールドが
-  // 無い――これは本物の編集可能なプロンプトではない)。
+  // 列に、プレーンな下線付きのステータスメッセージを描く。
+  // 2026-09-10修正、直接のユーザー報告(スクリーンショット=fv、
+  // "戻り値が消えてる。不良"): 以前はここで即座にreturnしており、
+  // 下のtrailingフィールド(previousModeName()ベースの「戻り値」)の
+  // 計算・描画を丸ごと素通りしていた――"Updating database..."
+  // (runLocateUpdateDb())/"Disk usage..."(du相当)のどちらも、実際の
+  // 生きたプロンプトなら普通に表示されるはずの戻り先の情報が、この
+  // 静的メッセージの間だけ消えてしまっていた。returnを取り除き、下の
+  // 計算へそのまま流れ落ちるようにする――staticMessage自体は短い
+  // リテラル(実際の使用例は全て20文字未満)なので、下で予約される
+  // trailing領域と重なる心配は無い。
   if (!staticMessage.empty()) {
     display_.moveCursor(row, labelWidth);
     display_.setAttribute(Display::Attribute::Underline);
     for (unsigned char c : staticMessage) display_.putChar(c);
     display_.setAttribute(Display::Attribute::UnderlineOff);
-    return;
   }
   // Trailingの予約(2026-08-12修正): 直接のユーザーの公式――
   // "文字入力エリアの幅は、「モード名（EGREPなら5＋1）」＋「...右詰

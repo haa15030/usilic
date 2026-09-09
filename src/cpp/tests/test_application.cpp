@@ -651,35 +651,74 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: marking ('.') keeps the session alive
   CHECK((targets[1].name == "one.json" || targets[1].name == "two.json"));
 }
 
-TEST_CASE_FIXTURE(Fixture, "in-place GREP: any command other than ^N/^P/marking ends the session "
-                           "automatically (no explicit ^G needed), without blocking the command itself") {
+// 2026-09-10 revision, a direct user report: plain navigation/paging
+// (MoveUp/MoveDown/PageUp/PageDown/ScrollLineUp/ScrollLineDown/GoToTop/
+// GoToBottom/Redraw) is NOT a "clear mode switch" and must NOT end the
+// session either -- only replaced the earlier "anything but ^N/^P/
+// marking" rule (isGrepInPlaceSafeCommand()'s own comment).
+TEST_CASE_FIXTURE(Fixture, "in-place GREP: plain navigation/paging (MoveDown, ScrollLineDown, Redraw, ...) "
+                           "does NOT end the session -- only a genuine mode switch does") {
   { std::ofstream(root / "one.json") << "{}\n"; }
+  { std::ofstream(root / "two.json") << "{}\n"; }
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x13, std::nullopt));
   feedText("json$");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.activeContentView().modeLineText().find("GREP") != std::string::npos);
 
-  CHECK(app.handleCommand(Command::MoveDown));  // some unrelated command
+  for (Command safe : {Command::MoveDown, Command::MoveUp, Command::PageDown, Command::PageUp,
+                        Command::ScrollLineDown, Command::ScrollLineUp, Command::GoToBottom, Command::GoToTop,
+                        Command::Redraw}) {
+    app.handleCommand(safe);
+    CHECK(app.activeContentView().modeLineText().find("GREP") != std::string::npos);  // still active
+  }
+
+  // GoToBottom/GoToTop above moved the cursor off "one.json" -- land
+  // back on it (a real file) before Enter, so the mode switch actually
+  // happens (GoToTop just ran, so this forward-only search is valid).
+  while (indexOf(app.directoryMode().selectedEntry()->name) != indexOf("one.json")) app.handleCommand(Command::MoveDown);
+
+  // A genuine mode switch (Enter, opening the entry under the cursor)
+  // still ends the session, and the command itself still runs normally.
+  CHECK(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);  // the command itself was not blocked
+
+  REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.activeContentView().modeLineText().find("GREP") == std::string::npos);  // session ended
   CHECK(app.activeContentView().modeLineText().find("(ls)") != std::string::npos);  // back to normal
 }
 
-TEST_CASE_FIXTURE(Fixture, "in-place GREP: no match shows a temporary, non-underlined mode-line message that "
-                           "clears on the next command, without starting a session") {
+// 2026-09-10 revision, a direct user report (=fv screenshot):
+// drawPromptLabel()'s own staticMessage early return used to skip the
+// trailing "return value" field entirely (a real, pre-existing bug in
+// LOCATE's own "Updating database..."/"Disk usage..." displays, fixed
+// alongside this) -- and this GREP message must show the same origin
+// info, in the same "GREP"-labeled, LOCATE-like shape, not just a
+// plain replacement of the whole name field.
+TEST_CASE_FIXTURE(Fixture, "in-place GREP: no match shows a temporary, LOCATE-style mode-line message "
+                           "(\"GREP\" label + message + origin path) that clears on the next command, "
+                           "without starting a session") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x13, std::nullopt));
-  feedText("nonexistent-pattern-xyz");
+  // Short pattern (unlike the earlier, much longer draft of this test):
+  // "GREP" + "zzz: No String" + the origin path all have to share one
+  // 80-column row (trailing3's own established budget-based truncation
+  // -- content_view.cpp's own comment -- drops it to empty rather than
+  // partially showing it once the budget gets too tight, same as any
+  // other trailing3 user already living with that tradeoff).
+  feedText("zzz");
   CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // no match -- activateGrepInPlace() returns false
 
   CHECK(app.currentMode() == ApplicationMode::Directory);
   {
     const std::string &row = display.rowText(display.rows() - 1);
-    CHECK(row.find("nonexistent-pattern-xyz: No String") != std::string::npos);
+    CHECK(row.find("GREP") != std::string::npos);
+    CHECK(row.find("zzz: No String") != std::string::npos);
+    CHECK(row.find(path()) != std::string::npos);  // the origin ("return value") survives, unlike =fv
   }
 
-  CHECK(app.handleCommand(Command::MoveDown));  // any command clears it (DirectoryMode::clearEditError())
+  CHECK(app.handleCommand(Command::MoveDown));  // any command clears it (DirectoryMode::clearGrepNoMatchMessage())
   {
     const std::string &row = display.rowText(display.rows() - 1);
     CHECK(row.find("No String") == std::string::npos);

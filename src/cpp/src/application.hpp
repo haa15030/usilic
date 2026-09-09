@@ -1789,8 +1789,9 @@ class Application {
   // だけ、この経路(currentMode_を一切変えない)へ分岐する。
   //
   // activateGrepInPlace(): grepMode_.matches()(既にexecuteGrep()内で
-  // 検索済み)を読み、0件ならDirectoryMode::reportError()/
-  // FileMode::reportGrepNoMatchMessage()で一時的な非下線メッセージを
+  // 検索済み)を読み、0件ならDirectoryMode::reportGrepNoMatchMessage()/
+  // FileMode::reportGrepNoMatchMessage()(LOCATE自身の"Updating
+  // database..."と同じ体裁、2026-09-10改訂)で一時的なメッセージを
   // 出してfalseを返す(currentMode_/セッション状態は一切変えない)。
   // 1件以上ならgrepInPlace*状態を設定し、最初のマッチへジャンプする。
   bool activateGrepInPlace();

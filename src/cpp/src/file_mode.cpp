@@ -232,18 +232,22 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     // DirectoryMode自身の`(ls)`一覧がまさにこの同一の修正を受けた
     // のと同じ種類のバグ。
     fields.splitLayoutWhenCrowded = true;
-    // DirectoryMode::setGrepInPlaceOverlay()/reportError()自身の
-    // コメント参照(2026-09-09追加): pagerMode_のファイルについては
-    // 上で既にreturn済みのため、ここに到達するのは通常にloadFile()
-    // されたファイルだけ。
+    // DirectoryMode::setGrepInPlaceOverlay()/reportGrepNoMatchMessage()
+    // 自身のコメント参照(2026-09-09追加、2026-09-10改訂): pagerMode_
+    // のファイルについては上で既にreturn済みのため、ここに到達するのは
+    // 通常にloadFile()されたファイルだけ。trailing3にcurrentFile_
+    // (このファイル自身のフルパス、通常はname/trailing2が示していた
+    // 情報)を退避する――直接のユーザー指摘=fv参照。
     if (grepInPlaceActive_) {
       fields.name = "GREP";
       fields.trailing2 = "(grep)";
+      fields.trailing3 = currentFile_;
+      fields.fillTrailingToEdge = true;
     } else if (showGrepNoMatchMessage_) {
-      std::string message = grepNoMatchMessage_;
-      if (message.size() < fields.name.size()) message.resize(fields.name.size(), ' ');
-      fields.name = message;
-      fields.nameUnderlined = false;
+      fields.name = "GREP";
+      fields.trailing2 = grepNoMatchMessage_;
+      fields.trailing3 = currentFile_;
+      fields.fillTrailingToEdge = true;
     }
     return fields;
   });

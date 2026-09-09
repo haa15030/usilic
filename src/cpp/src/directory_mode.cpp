@@ -133,7 +133,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       std::string message = editErrorMessage_;
       if (message.size() < fields.name.size()) message.resize(fields.name.size(), ' ');
       fields.name = message;
-      fields.nameUnderlined = editErrorUnderlined_;
+      fields.nameUnderlined = true;
     } else if (grepInPlaceActive_) {
       // in-place GREPセッション中(setGrepInPlaceOverlay()自身の宣言
       // コメント参照): GREP結果一覧(grepView_自身のモードラインプロ
@@ -141,10 +141,25 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       // するのとまさに同じ見た目を、Directory自身のモードラインへ
       // 一時的に流用する。showEditError_と同時に真になることは無い
       // (マッチ0件時はactivateGrepInPlace()がセッションを開始せず、
-      // 代わりにreportError()を呼ぶだけ)ので、優先順位自体に実質的な
-      // 意味は無い。
+      // 代わりにreportGrepNoMatchMessage()を呼ぶだけ)ので、優先順位
+      // 自体に実質的な意味は無い。trailing3(2026-09-10追加、直接の
+      // ユーザー指摘: "モード名が消える以上、検索対象情報も無くなる。
+      // ...起点名を戻り値として欲しい"): nameが検索元のディレクトリ
+      // パスを乗っ取ってしまうので、grepView_自身のtrailing3(戻り先
+      // ラベル)慣習と同じ場所へ、その消えたパス自体を退避する。
       fields.name = "GREP";
       fields.trailing2 = "(grep)";
+      fields.trailing3 = currentDirectory_;
+      fields.fillTrailingToEdge = true;
+    } else if (grepNoMatchActive_) {
+      // reportGrepNoMatchMessage()自身の宣言コメント参照: LOCATE自身の
+      // "Updating database..."/"Disk usage..."と同じ体裁(短いラベル+
+      // メッセージ+起点)。showEditError_/pendingOperationLabel_とは
+      // 独立(3つ同時に真になることは無い)。
+      fields.name = "GREP";
+      fields.trailing2 = grepNoMatchMessage_;
+      fields.trailing3 = currentDirectory_;
+      fields.fillTrailingToEdge = true;
     } else if (!pendingOperationLabel_.empty()) {
       // ディレクトリパスの代わりに"CP"/"MV"/"RM"、プレーンな
       // Standout(renderModeLine()自身の`name`向けデフォルト――上の
@@ -338,13 +353,19 @@ void DirectoryMode::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = ac
 
 void DirectoryMode::reportEditError() { reportError("Invalid mode"); }
 
-void DirectoryMode::reportError(const std::string &message, bool underline) {
+void DirectoryMode::reportError(const std::string &message) {
   editErrorMessage_ = message;
-  editErrorUnderlined_ = underline;
   showEditError_ = true;
 }
 
 void DirectoryMode::clearEditError() { showEditError_ = false; }
+
+void DirectoryMode::reportGrepNoMatchMessage(const std::string &message) {
+  grepNoMatchMessage_ = message;
+  grepNoMatchActive_ = true;
+}
+
+void DirectoryMode::clearGrepNoMatchMessage() { grepNoMatchActive_ = false; }
 
 void DirectoryMode::setPendingOperationLabel(const std::string &label) { pendingOperationLabel_ = label; }
 

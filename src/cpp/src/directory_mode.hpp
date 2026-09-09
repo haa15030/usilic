@@ -304,13 +304,21 @@ class DirectoryMode {
   // ^Jeの「Invalid mode」に対して確立したのとまさに同じ表示を再利用
   // しており、2つ目の異なる挙動をするステータスメッセージ機構を
   // 新たに発明するのではない。
-  // `underline`(2026-09-09追加): デフォルトtrueで既存の全呼び出し元の
-  // 挙動を変えない。in-place GREPの「マッチ無し」表示
-  // (Application::activateGrepInPlace()自身のコメント参照)だけが
-  // falseを渡す――"Invalid mode"/権限拒否のような実際の「エラー」とは
-  // 違い、単に検索が0件だっただけなので、同じ目立つ下線装飾を付ける
-  // 必要が無いという判断。
-  void reportError(const std::string &message, bool underline = true);
+  void reportError(const std::string &message);
+
+  // in-place GREPが0件のマッチも見つけられなかった時、モードラインへ
+  // 一時的に表示するメッセージ(2026-09-09追加、2026-09-10改訂)――
+  // 直接のユーザー報告(=fv、drawPromptLabel()自身の同日の修正コメント
+  // 参照)を受け、LOCATE自身の"Updating database..."/"Disk usage..."
+  // と同じ体裁(短いモード名のラベル+メッセージ+起点の3フィールド)に
+  // 合わせた: `name`="GREP"、`trailing2`にこのメッセージ、`trailing3`
+  // に現在のディレクトリ(検索元の起点、"戻り値")を表示する――
+  // reportError()とは意図的に別のstate(showEditError_)にしてある:
+  // reportError()は"Invalid mode"のような実際のエラーで`name`を丸ごと
+  // 乗っ取る一方、こちらは検索結果が単に0件だっただけで、起点情報
+  // (currentDirectory_)を隠す理由が無いため。
+  void reportGrepNoMatchMessage(const std::string &message);
+  void clearGrepNoMatchMessage();
 
   // reportEditError()/reportError()が設定したものをクリアし、次の
   // 再描画時にモードラインの`name`スロットを現在のディレクトリパスへ
@@ -412,11 +420,6 @@ class DirectoryMode {
   std::string searchAnnotation_;
   bool showEditError_ = false;
   std::string editErrorMessage_ = "Invalid mode";
-  // reportError()自身の宣言コメント参照(2026-09-09追加、in-place
-  // GREPの「マッチ無し」表示のために一般化された): デフォルトは
-  // 既存の全呼び出し元(reportEditError()、CpMvRmMode::isWritable()
-  // 失敗時)と同じ下線付き。
-  bool editErrorUnderlined_ = true;
   std::string pendingOperationLabel_;
   std::string arcExtractSourceAnnotation_;
   // in-place GREPセッション(Application::activateGrepInPlace()/
@@ -424,6 +427,9 @@ class DirectoryMode {
   // 主要フィールドを一時的に"GREP"/"(grep)"へ差し替える
   // (setGrepInPlaceOverlay()自身の宣言コメント参照)。
   bool grepInPlaceActive_ = false;
+  // reportGrepNoMatchMessage()自身の宣言コメント参照。
+  bool grepNoMatchActive_ = false;
+  std::string grepNoMatchMessage_;
 };
 
 }  // namespace fm

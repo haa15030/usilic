@@ -168,23 +168,25 @@ class FileMode {
   bool hasSearchAnnotation() const { return !searchAnnotation_.empty(); }
 
   // DirectoryMode::setGrepInPlaceOverlay()自身の宣言コメント参照
-  // (2026-09-09追加): in-place GREPセッション中、モードラインの
-  // `name`スロットを"GREP"に、`trailing2`を"(grep)"に、一時的に
-  // 差し替える(DirectoryMode版と同じ見た目)。通常のloadFile()経由の
-  // ファイルにだけ適用される――CLIページャ起動(pagerMode_)のファイル
-  // はそもそもin-place GREPの主要な想定シナリオではないため、今回は
-  // その画面までは作り込まない(file_mode.cpp自身のモードライン
-  // プロバイダのコメント参照)。
+  // (2026-09-09追加、2026-09-10改訂): in-place GREPセッション中、
+  // モードラインの`name`スロットを"GREP"に、`trailing2`を"(grep)"に、
+  // `trailing3`をこのファイル自身のパス(通常`name`が示していた情報、
+  // 直接のユーザー指摘=fv: "モード名が消える以上、検索対象情報も
+  // 無くなる...起点名を戻り値として欲しい")に、一時的に差し替える。
+  // 通常のloadFile()経由のファイルにだけ適用される――CLIページャ起動
+  // (pagerMode_)のファイルはそもそもin-place GREPの主要な想定
+  // シナリオではないため、今回はその画面までは作り込まない
+  // (file_mode.cpp自身のモードラインプロバイダのコメント参照)。
   void setGrepInPlaceOverlay(bool active);
 
   // in-place GREPが0件のマッチも見つけられなかった時、モードラインへ
-  // 一時的に(下線無しで)表示するメッセージ――DirectoryMode::
-  // reportError(message, /*underline=*/false)のFile版。Fileモードには
-  // 元々この種の一時メッセージの仕組みが無かったため今回新設した
-  // (DirectoryMode::reportEditError()等ほど汎用化はせず、この1用途に
-  // 限定した最小限の実装)。Application::handleCommand()の先頭で、
-  // DirectoryMode::clearEditError()と同じタイミングでclearGrepNoMatchMessage()
-  // が呼ばれ、次のコマンドで自動的に消える。
+  // 一時的に表示するメッセージ(2026-09-09追加、2026-09-10改訂)――
+  // DirectoryMode::reportGrepNoMatchMessage()のFile版、同じ理由・
+  // 同じ体裁(LOCATE自身の"Updating database..."参照)。Fileモードには
+  // 元々この種の一時メッセージの仕組みが無かったため今回新設した。
+  // Application::handleCommand()の先頭で、DirectoryMode::
+  // clearEditError()と同じタイミングでclearGrepNoMatchMessage()が
+  // 呼ばれ、次のコマンドで自動的に消える。
   void reportGrepNoMatchMessage(const std::string &message);
   void clearGrepNoMatchMessage();
 
