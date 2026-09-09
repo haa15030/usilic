@@ -35,11 +35,17 @@ struct Cell {
   bool continuation = false;  // 2列幅のグリフの「影」となる2つ目のセル――それ自体では描画されない
 };
 
-// TerminalDisplay::attributeEscape()のHighlight(生ANSI SGR "\x1b[93m"、
-// 明るい/薄い黄色前景)に見た目を揃えるための-g側の色。ANSI 16色の
-// bright yellow(色番号93/11)としてxterm等が使う典型的なRGBそのもの
-// (#ffff55)を採用――端末とGUIとで同じ「薄めの黄色」に見えるように。
-constexpr SDL_Color kHighlightColor{255, 255, 85, 255};
+// TerminalDisplay::attributeEscape()のHighlight(2026-09-10改訂、生ANSI
+// SGR "\x1b[30;103m"――黒前景+明るい黄色背景)に見た目を揃えるための
+// -g側の色ペア。単なる前景色変更の初版に対する直接のユーザー指摘
+// ("文字色ではどうしても判別しにくい...emacsでは薄い背景色なのに
+// 一目でわかるのは反転表示だから...可能なら背景色薄めでやってみて")
+// を受けた改訂で、emacsのisearch/lazy-highlightに倣い、周囲の配色に
+// 関わらず常にコントラストが確保される「明るい背景+暗い前景」の
+// ペアにしてある。背景はANSI bright yellow(色番号103/11)としてxterm
+// 等が使う典型的なRGB(#ffff55)、前景は素直な黒。
+constexpr SDL_Color kHighlightBgColor{255, 255, 85, 255};
+constexpr SDL_Color kHighlightFgColor{0, 0, 0, 255};
 
 // `utf8Bytes`の先頭のUTF-8シーケンス(他所でfm::Utf8::
 // sequence_length()によって既に正しい長さに分割済み)を、単一の
@@ -1116,6 +1122,10 @@ void GraphicalDisplay::renderCellBackground(int row, int col) {
   SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth, Impl::kMarginY + row * impl_->cellHeight, impl_->cellWidth,
                impl_->cellHeight};
   SDL_Color bg = cell.standout ? impl_->fg : impl_->bg;
+  // kHighlightBgColor自身のコメント参照――standoutの結果を上書きする
+  // (この用途では、たまたまカーソル/マークの反転表示と重なっても、
+  // マッチの背景ハイライトの方を優先して常に見えるようにしたい)。
+  if (cell.highlight) bg = kHighlightBgColor;
   SDL_SetRenderDrawColor(impl_->renderer, bg.r, bg.g, bg.b, 255);
   SDL_RenderFillRect(impl_->renderer, &box);
 }
@@ -1129,11 +1139,17 @@ void GraphicalDisplay::renderCell(int row, int col) {
   SDL_Color fg = impl_->fg;
   SDL_Color bg = impl_->bg;
   if (cell.standout) std::swap(fg, bg);
-  // Highlightは他の属性と直交する独立の前景色上書き――standoutによる
-  // fg/bg入れ替えの「後」に適用することで、marked行のUnderline/
-  // Standoutと共存していても常に薄い黄色のグリフとして見える
-  // (kHighlightColor自身のコメント参照)。
-  if (cell.highlight) fg = kHighlightColor;
+  // kHighlightBgColor自身のコメント参照(2026-09-10改訂: 前景色だけの
+  // 初版から、背景色+コントラストの取れた前景色のペアへ)――standout
+  // によるfg/bg入れ替えの「後」に両方まとめて上書きすることで、
+  // marked行のUnderline/Standoutと共存していても常に一目で分かる
+  // (renderCellBackground()が既に同じ背景色をこのセルへ塗っている
+  // ので、ここでのbg上書きはグリフ描画のフォールバック/計算上の
+  // 一貫性のためだけ――実際に画面へ効くのはfgの方)。
+  if (cell.highlight) {
+    fg = kHighlightFgColor;
+    bg = kHighlightBgColor;
+  }
 
   // 空白セル(空/スペースのグリフ)は、下線が付いている場合は、それ
   // でも下の本物のTTF_RenderUTF8_Blended()呼び出しへフォールスルー
@@ -2625,11 +2641,21 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       SDL_SetRenderDrawColor(impl_->renderer, fg.r, fg.g, fg.b, 255);
       SDL_RenderFillRect(impl_->renderer, &cellRect);
     }
+    // renderCellBackground()自身のkHighlightBgColorコメント参照――
+    // wantStandoutの背景塗りと同じ理屈だが、standoutと重なった場合は
+    // こちらを優先する(常に見えてほしいマッチハイライトなので、上の
+    // if/elseではなく単純に上書きする2回目の塗りにしてある)。
+    if (wantHighlight) {
+      SDL_Rect cellRect{Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y, width * impl_->cellWidth,
+                         impl_->cellHeight};
+      SDL_SetRenderDrawColor(impl_->renderer, kHighlightBgColor.r, kHighlightBgColor.g, kHighlightBgColor.b, 255);
+      SDL_RenderFillRect(impl_->renderer, &cellRect);
+    }
     if (glyph != " " && lead >= 0x20) {
       SDL_Color cellFg = wantStandout ? impl_->bg : sdlFg;
-      // renderCell()自身のkHighlightColorコメント参照――standoutによる
-      // 入れ替え後に上書きする独立の前景色。
-      if (wantHighlight) cellFg = kHighlightColor;
+      // renderCell()自身のkHighlightFgColorコメント参照――standoutに
+      // よる入れ替え後に上書きする独立の色ペア。
+      if (wantHighlight) cellFg = kHighlightFgColor;
       // なぜここでもフォールバックフォントが参照されるのかについては
       // renderCell()自身のコメント参照――下の`isWide`のチェックを
       // 含め、2026-08-10追加(実際の報告、"慣性スクロール中は日本語

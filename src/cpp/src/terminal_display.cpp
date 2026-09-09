@@ -315,16 +315,21 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
       return caps_.italicOff;
     // Display::Attribute::Highlight自身の宣言コメント参照: terminfoの
     // パラメータ付きcapability(setaf)経由ではなく、生のANSI SGR
-    // コードを直接返す。93=明るい黄色の前景色(検索マッチのハイライト
-    // として広く使われる、直接のユーザー要望「薄めの色」に合わせた
-    // 選択)。HighlightOffは39(前景色のみをデフォルトへ戻す、
-    // Bold/Underline/Standout/Italicの現在の状態には一切触れない
-    // ――boldOff自身の全リセットの問題、すぐ下のコメント参照、を
-    // そもそも起こさない)。
+    // コードを直接返す。2026-09-10改訂(直接のユーザー指摘: 前景色
+    // だけの初版=fxは判別しにくい、emacsのisearch=fyのような背景色
+    // ハイライトの方が一目で分かる): 30=黒の前景色+103=明るい黄色の
+    // 背景色――emacsのisearch/lazy-highlight同様、明るい背景に暗い
+    // 文字という組み合わせにすることで、周囲のテキストの明るさに
+    // 関わらず常にコントラストが確保される(単に前景色を変えるだけ
+    // だと、たまたま背景色が近い明るさの端末テーマでは判別しにくい
+    // ――実際の指摘の通り)。HighlightOffは39;49(前景色・背景色を
+    // 両方ともデフォルトへ戻すだけ、Bold/Underline/Standout/Italicの
+    // 現在の状態には一切触れない――boldOff自身の全リセットの問題、
+    // すぐ下のコメント参照、をそもそも起こさない)。
     case Attribute::Highlight:
-      return "\x1b[93m";
+      return "\x1b[30;103m";
     case Attribute::HighlightOff:
-      return "\x1b[39m";
+      return "\x1b[39;49m";
   }
   return "";
 }

@@ -53,19 +53,29 @@ class Display {
     Italic,
     ItalicOff,
     // 2026-09-10追加、直接のユーザー依頼("マッチ文字列をboldの代わり
-    // にハイライトでやってみて。色は変えられない？薄めの色とか"):
-    // in-place GREPのマッチ文字列表示専用――BoldがGrepMatch::
-    // matchSpans自身のBoldから置き換わった(FileMode自身のオーバー
-    // ストライク由来のBold、legacyのnroff重ね打ち規約からの移植とは
-    // 無関係、共存できる)。他のAttributeとは異なり、legacyにも
-    // このC++移植の他の場所にも前例が無い、色そのものを運ぶ唯一の
-    // Attributeなので、terminfoのパラメータ付きcapability
-    // (setaf、tparm()が必要)ではなく、生のANSI SGRコードを
-    // TerminalDisplay側で直接出す(このポートが読者に想定している
-    // 現実的なターミナル環境――Terminal.app/iTerm2/GNOME Terminal等
-    // ――は全てこの基本的なSGR色コードに対応している)。具体的な色は
-    // TerminalDisplay::attributeEscape()/GraphicalDisplay自身の
-    // 該当箇所のコメント参照。
+    // にハイライトでやってみて。色は変えられない？薄めの色とか")、
+    // 同日さらに前景色だけの版(初版)に対する直接の追加依頼("文字色
+    // ではどうしても判別しにくい...emacsでは薄い背景色なのに一目で
+    // わかるのは反転表示だから...ハイライト(反転表示)にはどうしても
+    // できない？可能なら背景色薄めでやってみて"): in-place GREPの
+    // マッチ文字列表示専用――BoldがGrepMatch::matchSpans自身のBold
+    // から置き換わった(FileMode自身のオーバーストライク由来のBold、
+    // legacyのnroff重ね打ち規約からの移植とは無関係、共存できる)。
+    // 単なる前景色変更(初版)では、周囲のテキストと明るさが近い場合に
+    // 判別しにくいという実際の指摘を受け、emacsのisearch/lazy-highlight
+    // に倣い「背景色を塗って前景をそれに対して読みやすい色にする」
+    // 版へ改訂――本物のSGR反転表示(コード7、Standout自身が既に使って
+    // いる)ではなく、明示的な前景/背景の色ペアとして実装してある
+    // (Standoutの「今の前景/背景をそのまま入れ替える」という性質は、
+    // 何が「今の色」かに依存し薄い色を保証できないため、この用途には
+    // 使えない)。他のAttributeとは異なり、legacyにもこのC++移植の
+    // 他の場所にも前例が無い、色そのものを運ぶ唯一のAttributeなので、
+    // terminfoのパラメータ付きcapability(setaf、tparm()が必要)では
+    // なく、生のANSI SGRコードをTerminalDisplay側で直接出す(この
+    // ポートが読者に想定している現実的なターミナル環境――
+    // Terminal.app/iTerm2/GNOME Terminal等――は全てこの基本的なSGR
+    // 色コードに対応している)。具体的な色はTerminalDisplay::
+    // attributeEscape()/GraphicalDisplay自身の該当箇所のコメント参照。
     Highlight,
     HighlightOff,
   };
