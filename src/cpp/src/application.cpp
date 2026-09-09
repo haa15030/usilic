@@ -588,15 +588,19 @@ const KeyTableEntry kKeyTable[] = {
     // 2.8  PROGRAM (^Jp / ^J^P)
     {"^Jp", "PROGRAM", "PROGRAM", {kLeaderJ, 'p'}, false, "2.8"},
 
-    // 2.9  FILE / DIR (^Jf・^J^F / ^Xd・^X^D)
-    // 2026-09-08、直接のユーザー依頼によるキー再編: FILEは^Xから^Jへ
-    // 移行。DIRはEmacsの`C-x d`(Dired)・`C-x C-d`(list-directory)が
-    // 元々同じ「対象はディレクトリ」という意味でC-xを使っているため、
-    // ユーザー自身の判断で意図的に^Xのまま据え置いている(DU実行用の
+    // 2.9  FILE / DIR (^Xf・^X^F / ^Xd・^X^D)
+    // 2026-09-08、直接のユーザー依頼によるキー再編でFILEは一度^Xから
+    // ^Jへ移行したが、2026-09-09、同じ依頼元により^Xへ差し戻された
+    // (dispatchLeaderByte()自身のleaderXPending_のswitchコメント参照
+    // ――emacsの`^Xf`(set-fill-column)は使用頻度が極めて低いと判明した
+    // ため、衝突を避ける目的での移行自体が不要と判断された)。DIRは
+    // 最初からEmacsの`C-x d`(Dired)・`C-x C-d`(list-directory)が元々
+    // 同じ「対象はディレクトリ」という意味でC-xを使っているため、
+    // ユーザー自身の判断で意図的に^Xのまま据え置かれていた(DU実行用の
     // ^Jd/^J^Dと衝突するため、そもそも^Jへは移行できない)。
-    {"^Jf", "FILE: ファイル名を入力", "FILE: input file name", {kLeaderJ, 'f'}, false, "2.9"},
+    {"^Xf", "FILE: ファイル名を入力", "FILE: input file name", {kLeaderX, 'f'}, false, "2.9"},
     {"^Xd", "DIR: ディレクトリ名を入力", "DIR: input directory name", {kLeaderX, 'd'}, false, "2.9"},
-    {"^J^F", "FILE: 履歴一覧から選択", "FILE: select file name", {kLeaderJ, 0x06}, false, "2.9"},
+    {"^X^F", "FILE: 履歴一覧から選択", "FILE: select file name", {kLeaderX, 0x06}, false, "2.9"},
     {"^X^D", "DIR: 履歴一覧から選択", "DIR: select directory name", {kLeaderX, 0x04}, false, "2.9"},
 
     // 2.10  HISTORY / COMMAND (^R / ^J^R)
@@ -2740,13 +2744,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::ShellInsertName);
       case 0x17:  // ^J ^W : SHELL、バッファのコンテンツを挿入
         return handleCommand(Command::ShellInsertBufferContent);
-      // 2026-09-08、直接のユーザー依頼によるキー再編で^Xf/^X^Fから
-      // 移行(FILE)。DIRは意図的に^Xのまま(kKeyTable自身の"2.9"
-      // コメント参照、DU用の'd'/^Dと衝突するため^Jへは移行できない)。
-      case 'f':  // ^J f : FILE(ファイル名を入力)
-        return handleCommand(Command::StartFileInput);
-      case 0x06:  // ^J ^F : FILE(ファイル名を選択)
-        return handleCommand(Command::StartFileHistory);
+      // FILE(^Jf/^J^F)は2026-09-08に一度ここへ移行したが、2026-09-09、
+      // 直接のユーザー判断により^Xf/^X^Fへ差し戻された――
+      // leaderXPending_自身のswitch参照(理由: emacsの`^Xf`
+      // (set-fill-column)は使用頻度が極めて低いと判明したため、衝突を
+      // 避ける目的での移行自体が不要と判断された)。
       // 2026-09-08、キー再編で^X^Y/^X^Nから移行(全マーク/全解除)。
       case 'y':  // ^J y : 全マーク(CP、MV、RM、ARC)
         return handleCommand(Command::MarkAll);
@@ -2813,6 +2815,15 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartDirectoryHistory);
       case kControlC:  // ^X ^C : 終了
         return handleCommand(Command::StartExit);
+      // 2026-09-09、直接のユーザー依頼により^Jf/^J^Fから差し戻し
+      // (leaderJPending_自身のswitchのコメント参照)。emacsの`^Xf`
+      // (set-fill-column)は使用頻度が極めて低く、うっかり押しても
+      // `^G`で解消できるため、K-45/K-47のlegacy本来のキー(^Xf/^X^F)
+      // へ戻すのが実用上望ましいと判断された。
+      case 'f':  // ^X f : FILE(ファイル名を入力、K-45)
+        return handleCommand(Command::StartFileInput);
+      case 0x06:  // ^X ^F : FILE(ファイル名を選択、K-46)
+        return handleCommand(Command::StartFileHistory);
       default:
         return false;  // このスライスでは認識されない^Xシーケンス
     }

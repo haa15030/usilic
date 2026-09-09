@@ -6147,9 +6147,9 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' exits immediately outside Directory mo
   CHECK(app.wantsExit());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompts, and a typed FILE path switches to File mode") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompts, and a typed FILE path switches to File mode") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   REQUIRE(app.feedByte('f', std::nullopt));   // f
 
   for (char c : (root / "plain.txt").string()) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
@@ -6169,7 +6169,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X d prompts, and a typed DIR path switche
   CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f with a RELATIVE path resolves against the currently browsed directory, "
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f with a RELATIVE path resolves against the currently browsed directory, "
                            "not the process's own cwd (2026-08-01 user report)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
@@ -6178,7 +6178,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f with a RELATIVE path resolves against
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
 
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   REQUIRE(app.feedByte('f', std::nullopt));   // f
   for (char c : std::string("sub.txt")) app.feedByte(static_cast<unsigned char>(c), std::nullopt);  // relative
   CHECK(app.feedByte(0x0d, std::nullopt));
@@ -6186,9 +6186,9 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f with a RELATIVE path resolves against
   CHECK(app.fileMode().currentFile() == (root / "subdir" / "sub.txt").string());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f with a nonexistent path fails cleanly, staying in the current mode") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f with a nonexistent path fails cleanly, staying in the current mode") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x0a, std::nullopt));
+  REQUIRE(app.feedByte(0x18, std::nullopt));
   REQUIRE(app.feedByte('f', std::nullopt));
 
   for (char c : std::string("/no/such/path/at/all")) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
@@ -6196,9 +6196,9 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f with a nonexistent path fails cleanly
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) completes an unambiguous filename") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompt, ^I (K-65) completes an unambiguous filename") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   REQUIRE(app.feedByte('f', std::nullopt));   // f
 
   // "plai" only matches plain.txt in root -- an absolute path so
@@ -6216,10 +6216,10 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) completes an unambi
 // 曖昧なら無視」ではなく「既にLCPまで打ち終わっている」ケースだった
 // ――結果自体(何も変わらない)は以前と同じまま。すぐ下の新規テストが、
 // LCPより「手前」で止めた場合に実際にLCPまで補完されることを検証する。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) already at the longest common prefix "
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompt, ^I (K-65) already at the longest common prefix "
                            "leaves the text unchanged (no further progress possible)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x0a, std::nullopt));
+  REQUIRE(app.feedByte(0x18, std::nullopt));
   REQUIRE(app.feedByte('f', std::nullopt));
 
   // "cpmv_" matches both cpmv_a.txt and cpmv_b.txt -- ambiguous, so
@@ -6231,7 +6231,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) already at the long
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) with an ambiguous prefix completes up to "
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompt, ^I (K-65) with an ambiguous prefix completes up to "
                            "the longest common prefix (bash-style Tab, not full auto-complete)") {
   REQUIRE(app.start(path()));
   // Dedicated files with a clean 2-way shared prefix and no third
@@ -6244,7 +6244,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J f prompt, ^I (K-65) with an ambiguous p
   { std::ofstream(root / "tabtest_alpha.txt") << "a"; }
   { std::ofstream(root / "tabtest_beta.txt") << "b"; }
 
-  REQUIRE(app.feedByte(0x0a, std::nullopt));
+  REQUIRE(app.feedByte(0x18, std::nullopt));
   REQUIRE(app.feedByte('f', std::nullopt));
 
   // "tabtest" matches both new files, but their common prefix
@@ -6690,21 +6690,23 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: `exit` ends the child on its own, automatical
 // (currentMode_==Shell routed every byte to feedShellByte() with no
 // leader-key access at all). See feedShellByte()'s own comment.
 //
-// 2026-09-08/09、直接のユーザー依頼によるキー再編でFILE historyは
-// ^X^Fから^J^Fへ移行したが、EXITは一度^X^Cから^Oxへ移行した後、同じ
-// 依頼元により^X^Cへ差し戻された(kKeyTable自身の"^X^C"エントリの
-// コメント参照)。--
+// 2026-09-08、直接のユーザー依頼によるキー再編でFILE historyは
+// ^X^Fから^J^Fへ一度移行したが、2026-09-09、同じ依頼元により
+// (emacsの^Xf(set-fill-column)は使用頻度が極めて低いと判明したため)
+// ^X^Fへ差し戻された。EXITも一度^X^Cから^Oxへ移行した後、同じ依頼元
+// により^X^Cへ差し戻された(kKeyTable自身の"^X^C"エントリのコメント
+// 参照)。--
 
-TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^J^F (FILE history) switches out of Shell and runs, "
+TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^F (FILE history) switches out of Shell and runs, "
                            "matching legacy") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
     return;
   }
-  CHECK(app.feedShellByte(0x0a, std::nullopt));  // ^J
+  CHECK(app.feedShellByte(0x18, std::nullopt));  // ^X
   CHECK(app.feedShellByte(0x06, std::nullopt));  // ^F
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // left Shell, ^J^F's own real target mode
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // left Shell, ^X^F's own real target mode
 }
 
 TEST_CASE_FIXTURE(Fixture, "SHELL leader keys: ^X^C (EXIT) switches back to the mode SHELL was entered "
@@ -9380,14 +9382,14 @@ TEST_CASE_FIXTURE(Fixture, "command history: Enter on an entry is a no-op in thi
 // populated in the first place (every real access, not just ones made
 // through this specific picker).
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^F (K-46) opens a ListBrowser over real, auto-recorded RecentFile entries") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ^F (K-46) opens a ListBrowser over real, auto-recorded RecentFile entries") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));  // opens plain.txt via FileMode::loadFile() -- auto-records it
-  REQUIRE(app.handleCommand(Command::Back));   // back to Directory (^J^F is Directory-only, see startListBrowser())
+  REQUIRE(app.handleCommand(Command::Back));   // back to Directory (^X^F is Directory-only, see startListBrowser())
 
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   CHECK(app.feedByte(0x06, std::nullopt));    // ^F
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.listBrowserMode().items().size() == 1);
@@ -9694,13 +9696,14 @@ TEST_CASE_FIXTURE(Fixture, "DIR Select (^X^D): picking a directory discards a pr
   CHECK(app.directoryMode().canGoBack());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J^F/^X^D/^J^R all work from CUT mode too, not just Directory "
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^F/^X^D/^J^R all work from CUT mode too, not just Directory "
                            "(2026-08-12 fix -- a real report: tried ^J^C into CUT, then found these didn't "
                            "work there, matching a broader design question -- \"^J^D/^J^F自体、どのモード"
                            "からでも（^Rも含め）移行可能な仕様が目的\" (the whole point of these keys is to "
                            "be reachable from ANY mode) -- see startListBrowser()'s own comment for the "
                            "investigation confirming this was ONE narrow Directory-only guard, not scattered "
-                           "ad-hoc restrictions needing a mode-by-mode redesign)") {
+                           "ad-hoc restrictions needing a mode-by-mode redesign; ^X^F itself moved back from "
+                           "^J^F on 2026-09-09, see leaderXPending_'s own switch comment)") {
   REQUIRE(app.start(path()));
   history.pushRecent(RingCategory::RecentFile, "/some/file.txt");
   history.pushRecent(RingCategory::RecentDirectory, "/some/dir/");
@@ -9710,7 +9713,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J^F/^X^D/^J^R all work from CUT mode too,
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
   CHECK(app.feedByte(0x06, std::nullopt));    // ^F: StartFileHistory (K-46)
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.handleCommand(Command::Back));
