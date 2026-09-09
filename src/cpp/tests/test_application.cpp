@@ -588,6 +588,11 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ^S stays in Direct
   const std::string &modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find("GREP") != std::string::npos);
   CHECK(modeLine.find("(grep)") != std::string::npos);
+
+  REQUIRE(app.grepMode().matches().size() == 2);
+  int idx = indexOf("one.json");
+  CHECK_FALSE(display.boldAt(idx, 0));   // permissions column -- NOT part of the match
+  CHECK(display.boldAt(idx, 57));        // "json" starts at byte/column 57
 }
 
 TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ^S from an open file stays in File mode and jumps to "
@@ -755,13 +760,28 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ALL matches are Bo
   feedText("json$");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
-  CHECK(display.boldAt(oneIdx, 0));   // matched, cursor is here
-  CHECK(display.boldAt(twoIdx, 0));   // ALSO matched, even though the cursor is NOT here
-  CHECK_FALSE(display.boldAt(plainIdx, 0));  // not a match
+  // 2026-09-10 revision: highlighting is now substring-only (just the
+  // matched "json", not the whole line -- a direct user follow-up
+  // request), so look up the exact matched column via matchSpans
+  // rather than assuming column 0.
+  REQUIRE(app.grepMode().matches().size() == 2);
+  auto spanColFor = [&](int lineIdx) -> int {
+    for (const auto &m : app.grepMode().matches())
+      if (m.sourceLineIndex == lineIdx) return m.matchSpans.at(0).first;
+    FAIL("no match found for line ", lineIdx);
+    return -1;
+  };
+  int oneCol = spanColFor(oneIdx);
+  int twoCol = spanColFor(twoIdx);
+
+  CHECK(display.boldAt(oneIdx, oneCol));   // matched, cursor is here
+  CHECK(display.boldAt(twoIdx, twoCol));   // ALSO matched, even though the cursor is NOT here
+  CHECK_FALSE(display.boldAt(oneIdx, 0));  // permissions column -- NOT part of the match
+  CHECK_FALSE(display.boldAt(plainIdx, 0));  // not a match at all
 
   REQUIRE(app.feedByte(0x0e, std::nullopt));  // ^N -> move to "two.json", both stay Bold
-  CHECK(display.boldAt(oneIdx, 0));
-  CHECK(display.boldAt(twoIdx, 0));
+  CHECK(display.boldAt(oneIdx, oneCol));
+  CHECK(display.boldAt(twoIdx, twoCol));
 
   // A genuine mode switch (Enter, opening "two.json" -- the cursor is
   // there after the ^N above) ends the session; verify the highlight
@@ -771,8 +791,8 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ALL matches are Bo
   REQUIRE(app.currentMode() == ApplicationMode::File);
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK_FALSE(display.boldAt(oneIdx, 0));
-  CHECK_FALSE(display.boldAt(twoIdx, 0));
+  CHECK_FALSE(display.boldAt(oneIdx, oneCol));
+  CHECK_FALSE(display.boldAt(twoIdx, twoCol));
 }
 
 TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ALL matching lines are Bold simultaneously, "
@@ -793,6 +813,79 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ALL matching lines are 
   CHECK(display.boldAt(2, 0));
   CHECK(display.boldAt(5, 0));
   CHECK_FALSE(display.boldAt(1, 0));  // "line1" -- not a match
+}
+
+// -- incremental GREP (2026-09-10, a direct user request: "インクリメ
+// ンタルサーチについてはgrepではなく...文字列位置を返す関数等だけで
+// インプリメントは可能?...いずれも可能ならやってみて...切り替え
+// キーを新設すればいい") -- ESC i starts a live, per-keystroke search
+// using GrepMode::searchInProcess() (POSIX regcomp()/regexec(), no
+// child process at all, unlike plain ^S which forks a real grep/-o
+// once on Enter). Reuses the exact same in-place session machinery
+// (activateGrepInPlace()/deactivateGrepInPlace()) so the end state is
+// indistinguishable from a submitted ^S search.
+
+TEST_CASE_FIXTURE(Fixture, "ESC i (StartIncrementalGrep): highlights update live as each character is "
+                           "typed, before Enter is ever pressed") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  { std::ofstream(root / "two.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
+  REQUIRE(app.feedByte('i', std::nullopt));
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // never switches, same as plain ^S
+
+  int oneIdx = indexOf("one.json");
+  int twoIdx = indexOf("two.json");
+
+  feedText("json$");  // NOT submitted yet -- no Enter
+  CHECK(app.promptActive());  // still editing
+  REQUIRE(app.grepMode().matches().size() == 2);
+  auto spanColFor = [&](int lineIdx) -> int {
+    for (const auto &m : app.grepMode().matches())
+      if (m.sourceLineIndex == lineIdx) return m.matchSpans.at(0).first;
+    FAIL("no match found for line ", lineIdx);
+    return -1;
+  };
+  CHECK(display.boldAt(oneIdx, spanColFor(oneIdx)));  // already highlighted, live
+  CHECK(display.boldAt(twoIdx, spanColFor(twoIdx)));
+
+  // Enter finalizes: the prompt closes, the in-place session (already
+  // built up live) is what's left showing.
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.activeContentView().modeLineText().find("GREP") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "ESC i: ^G cancels and reverts the live highlight entirely (emacs isearch's own "
+                           "C-g convention -- unlike Enter, which keeps it)") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('i', std::nullopt));
+  feedText("json");
+  int idx = indexOf("one.json");
+  REQUIRE(app.grepMode().matches().size() == 1);
+  CHECK(display.boldAt(idx, app.grepMode().matches()[0].matchSpans.at(0).first));
+
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.activeContentView().modeLineText().find("GREP") == std::string::npos);  // reverted, not kept
+}
+
+TEST_CASE_FIXTURE(Fixture, "ESC i: an empty pattern (e.g. after backspacing everything) clears any live "
+                           "highlight instead of leaving stale matches") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('i', std::nullopt));
+  feedText("json");
+  REQUIRE(app.grepMode().matches().size() == 1);
+  CHECK(app.activeContentView().modeLineText().find("GREP") != std::string::npos);
+
+  for (int i = 0; i < 4; i++) app.feedByte(0x7f, std::nullopt);  // backspace x4 -> back to empty
+  CHECK(app.activeContentView().modeLineText().find("GREP") == std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: a lone ^J is consumed as a pending leader byte, no action yet") {

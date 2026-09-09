@@ -7,6 +7,7 @@
 
 #include "charset.hpp"
 #include "content_view.hpp"
+#include "grep_mode.hpp"
 #include "history.hpp"
 #include "pipe_buffer.hpp"
 
@@ -183,12 +184,13 @@ class FileMode {
   // DirectoryMode::setGrepMatchHighlight()自身の宣言コメント参照
   // (2026-09-10追加、直接のユーザー指摘: "とにかくハイライト表示は
   // 出てくれないと...CLAUDE.md等、通常ファイルでは何にヒットしたかも
-  // わからない")。DirectoryModeとは異なり、Fileモードの内容は
+  // わからない"。2026-09-10再改訂: "『マッチした文字列』だけを
+  // ハイライト表示には"、行全体ではなくGrepMatch::matchSpansの範囲
+  // だけをBoldにする)。DirectoryModeとは異なり、Fileモードの内容は
   // (オーバーストライク由来の)正規のline.attributesを既に持つことが
   // ある(PipeBuffer参照)ため、クリア時に「元に戻す」べき直前の
-  // スナップショットを別途保持する。`indices`はfileView_自身の行
-  // インデックス。
-  void setGrepMatchHighlight(const std::set<int> &indices);
+  // スナップショットを別途保持する。
+  void setGrepMatchHighlight(const std::vector<GrepMatch> &matches);
   void clearGrepMatchHighlight();
 
   // in-place GREPが0件のマッチも見つけられなかった時、モードラインへ

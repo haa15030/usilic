@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "configuration.hpp"
@@ -18,6 +19,14 @@ enum class GrepSyntax { Fixed, Regex, Basic };
 struct GrepMatch {
   int sourceLineIndex = -1;  // search()に渡された行群への0始まりインデックス
   std::string text;
+  // 2026-09-10追加、直接のユーザー指摘("行全体がそれでは何にマッチ
+  // したかもわからない...「マッチした文字列」だけをハイライト表示
+  // には"): `text`内での、実際に一致した部分文字列のバイト範囲
+  // ([start, end)、複数マッチがあれば複数要素)。search()自身の実装
+  // コメント参照(`-o`を追加した2回目の呼び出しで求める)。取得に失敗
+  // した場合(まれ)は空のままになるので、呼び出し元は空の場合に行
+  // 全体をハイライトするフォールバックを持つべき。
+  std::vector<std::pair<int, int>> matchSpans;
 };
 
 // 検索モード(FGREP/EGREP): 行の集合をパターンで検索し、一致した行を
@@ -67,6 +76,18 @@ class GrepMode {
   // かった場合(バイナリが無い、ツール自身が拒否した不正なパターン、
   // 等)、またはpatternが空の場合のみ。
   bool search(const std::vector<std::string> &sourceLines, const std::string &pattern, GrepSyntax syntax);
+
+  // 2026-09-10追加、直接のユーザー依頼("インクリメンタルサーチについて
+  // はgrepではなく...文字列位置を返す関数等だけでインプリメントは
+  // 可能?"): search()とは異なり、実物の`grep`をforkしない――POSIXの
+  // `<regex.h>`(`regcomp()`/`regexec()`、基本正規表現=BRE、
+  // GrepSyntax::Basicと同じ構文)をin-processで使い、キー入力のたびに
+  // 呼んでも十分軽い。matches()/matchSpans()の中身はsearch()と同じ
+  // 形で埋まる――呼び出し元(Application::liveIncrementalGrepSearch())
+  // はsearch()と全く同じように読める。search()とは異なり、view_
+  // (一覧画面)には一切触れない――呼び出し元は一覧へ切り替えず、
+  // in-place方式(activateGrepInPlace())でmatches()を直接使うため。
+  bool searchInProcess(const std::vector<std::string> &sourceLines, const std::string &pattern);
 
   const std::string &pattern() const;
   const std::vector<GrepMatch> &matches() const;

@@ -92,6 +92,43 @@ TEST_CASE_FIXTURE(Fixture, "selectedMatch: tracks the ContentView cursor over th
   CHECK(selected->sourceLineIndex == 2);  // maps back to the ORIGINAL line index, not the filtered index
 }
 
+// 2026-09-10追加、直接のユーザー指摘("『マッチした文字列』だけを
+// ハイライト表示には")。
+TEST_CASE_FIXTURE(Fixture, "search: matchSpans give the exact byte range of the match within each line, "
+                           "not the whole line") {
+  std::vector<std::string> lines = {"alpha", "marker one", "beta", "marker two"};
+  REQUIRE(mode.search(lines, "marker", GrepSyntax::Basic));
+  REQUIRE(mode.matches().size() == 2);
+  REQUIRE(mode.matches()[0].matchSpans.size() == 1);
+  CHECK(mode.matches()[0].matchSpans[0].first == 0);
+  CHECK(mode.matches()[0].matchSpans[0].second == 6);  // "marker" is 6 bytes, not the full "marker one" (10)
+  REQUIRE(mode.matches()[1].matchSpans.size() == 1);
+  CHECK(mode.matches()[1].matchSpans[0].first == 0);
+  CHECK(mode.matches()[1].matchSpans[0].second == 6);
+}
+
+TEST_CASE_FIXTURE(Fixture, "search: matchSpans work with an end-of-line anchor (the exact in-place GREP "
+                           "repro pattern, 'json$' against ls-style lines)") {
+  std::vector<std::string> lines = {
+      "-rw-r--r--@   1 haa15030  staff      3 Sep  9 20:17 one.json",
+      "-rw-r--r--@   1 haa15030  staff      3 Sep  9 20:17 two.json",
+  };
+  REQUIRE(mode.search(lines, "json$", GrepSyntax::Basic));
+  REQUIRE(mode.matches().size() == 2);
+  REQUIRE(mode.matches()[0].matchSpans.size() == 1);
+  CHECK(mode.matches()[0].matchSpans[0].first == static_cast<int>(lines[0].size()) - 4);
+  CHECK(mode.matches()[0].matchSpans[0].second == static_cast<int>(lines[0].size()));
+}
+
+TEST_CASE_FIXTURE(Fixture, "search: matchSpans handle multiple matches on the SAME line") {
+  std::vector<std::string> lines = {"cat and cat and dog"};
+  REQUIRE(mode.search(lines, "cat", GrepSyntax::Basic));
+  REQUIRE(mode.matches().size() == 1);
+  REQUIRE(mode.matches()[0].matchSpans.size() == 2);
+  CHECK(mode.matches()[0].matchSpans[0] == std::make_pair(0, 3));
+  CHECK(mode.matches()[0].matchSpans[1] == std::make_pair(8, 11));
+}
+
 TEST_CASE_FIXTURE(Fixture, "search: a second search replaces the previous results") {
   std::vector<std::string> lines = {"alpha", "beta", "gamma"};
   REQUIRE(mode.search(lines, "alpha", GrepSyntax::Fixed));

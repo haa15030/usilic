@@ -352,14 +352,23 @@ void DirectoryMode::setSearchAnnotation(const std::string &text) { searchAnnotat
 
 void DirectoryMode::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = active; }
 
-void DirectoryMode::setGrepMatchHighlight(const std::set<int> &indices) {
+void DirectoryMode::setGrepMatchHighlight(const std::vector<GrepMatch> &matches) {
   int savedTop = view_.topIndex();
   int savedCursor = view_.cursorIndex();
   std::vector<ContentView::Line> lines = view_.lines();
-  for (int idx : indices) {
+  for (const auto &match : matches) {
+    int idx = match.sourceLineIndex;
     if (idx < 0 || idx >= static_cast<int>(lines.size())) continue;
-    lines[idx].attributes.push_back(
-        Display::AttributeRun{0, static_cast<int>(lines[idx].text.size()), Display::Attribute::Bold});
+    if (match.matchSpans.empty()) {
+      // フォールバック(matchSpans自身の宣言コメント参照): 部分文字列の
+      // 範囲が取れなかった場合だけ、従来通り行全体をBoldにする。
+      lines[idx].attributes.push_back(
+          Display::AttributeRun{0, static_cast<int>(lines[idx].text.size()), Display::Attribute::Bold});
+    } else {
+      for (const auto &span : match.matchSpans) {
+        lines[idx].attributes.push_back(Display::AttributeRun{span.first, span.second, Display::Attribute::Bold});
+      }
+    }
   }
   view_.setLines(std::move(lines));
   view_.setTopIndex(savedTop);

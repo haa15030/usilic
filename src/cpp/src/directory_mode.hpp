@@ -6,6 +6,7 @@
 
 #include "configuration.hpp"
 #include "content_view.hpp"
+#include "grep_mode.hpp"
 #include "history.hpp"
 #include "mode_stack.hpp"
 
@@ -290,9 +291,13 @@ class DirectoryMode {
   // 元々オーバーストライク由来の属性を一切持たない――確認済み、
   // content_view.hpp自身のLine::attributesのコメント参照――ので、
   // クリア時に「元に戻す」べきスナップショットを別途保持する必要が
-  // 無く、単に空へ戻すだけでよい。`indices`は`entries_`と同じ
-  // インデックス空間(GrepMatch::sourceLineIndex)。
-  void setGrepMatchHighlight(const std::set<int> &indices);
+  // 無い。
+  // 2026-09-10再改訂、直接のユーザー指摘("『マッチした文字列』だけを
+  // ハイライト表示には"): 行全体ではなく、GrepMatch::matchSpans
+  // (GrepMode::search()が`-o`付きの2回目の呼び出しで求める)の範囲
+  // だけをBoldにする。matchSpansが空(まれな取得失敗)の場合だけ、
+  // 従来通り行全体をBoldにするフォールバック。
+  void setGrepMatchHighlight(const std::vector<GrepMatch> &matches);
   void clearGrepMatchHighlight();
 
   // "Invalid mode"(legacy mode.cのdo_edit()、S_errvからの逐語移植

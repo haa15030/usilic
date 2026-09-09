@@ -89,6 +89,14 @@ enum class Command {
   // jumpToGrepInPlaceMatch()自身の宣言コメント参照。
   GrepInPlaceNext,
   GrepInPlacePrevious,
+  // 2026-09-10追加、直接のユーザー依頼("インクリメンタルサーチ...
+  // いずれも可能ならやってみて...切り替えキーを新設すればいい"):
+  // ^S(StartGrep、Enterで確定する一括検索)とは別の、ESC iキー。
+  // startIncrementalGrepPrompt()自身のコメント参照――GrepPatternの
+  // プロンプトを開く点はStartGrepと同じだが、以後の1文字ごとの
+  // 入力で(Enterを待たずに)liveIncrementalGrepSearch()がその場で
+  // 検索し直し、in-placeハイライト+ジャンプを更新する。
+  StartIncrementalGrep,
   StartCutFixed,
   StartCutRegex,
   // K-35/K-36(^Jb / ^J^B、M_fcut2/M_fcut――CUTの「通常ファイル」
@@ -1810,6 +1818,27 @@ class Application {
   // 自身のFile分岐が同じ理由でこれを呼んでいるのと同じ、行全体の
   // ハイライトを持たないFileモードでのキャレット表示のため)。
   bool jumpToGrepInPlaceMatch(int delta);
+  // 2026-09-10追加、直接のユーザー依頼(ESC iキー、design経緯は
+  // application.hpp自身のCommand::StartIncrementalGrep宣言コメント
+  // 参照)。
+  //
+  // startIncrementalGrepPrompt(): startGrepPrompt(Basic)とほぼ同じ
+  // (grepSyntax_/grepReturnMode_の設定、GrepPatternプロンプトを開く)
+  // だが、incrementalGrepActive_も立てる。起点はDirectory/Fileのみ
+  // (in-place方式自体のスコープに合わせている)。
+  bool startIncrementalGrepPrompt();
+  // liveIncrementalGrepSearch(): feedPromptByte()の薄いラッパー
+  // (自身の宣言コメント参照)から、incrementalGrepActive_中に
+  // promptEditor_のテキストが実際に変化するたびに呼ばれる。
+  // GrepMode::searchInProcess()(サブプロセス無し)でパターンを
+  // その場で検索し直し、成功すればactivateGrepInPlace()(既存の
+  // ハイライト+ジャンプ+オーバーレイの仕組みをそのまま再利用)を
+  // 呼ぶ。activateGrepInPlace()/deactivateGrepInPlace()はどちらも
+  // 最後に(通常のモードラインを再描画する)target.redraw()を呼ぶ
+  // ――生きたプロンプトの行(画面最終行、まさに同じ行)を上書きして
+  // しまうため、その直後にdrawPromptLabel()+promptEditor_.redraw()
+  // でプロンプト自身の表示を再度上に描き直す。
+  void liveIncrementalGrepSearch();
   bool returnFromGrep();
   bool returnToGrepResults();
   bool returnFromCutContent();
@@ -2167,6 +2196,13 @@ class Application {
   std::vector<std::string> completeFilesystemPath(const std::string &partial,
                                                     const std::string &baseDirectory) const;
   bool feedPromptByte(int byte);
+  // feedPromptByte()自身の宣言に対する薄いラッパー実装本体
+  // (2026-09-10追加、liveIncrementalGrepSearch()自身のコメント参照):
+  // 元々の全ロジックはここへ移した――feedPromptByte()自体は、これを
+  // 呼んだ前後でpromptEditor_.text()を比較し、incrementalGrepActive_
+  // 中に実際に変化していればliveIncrementalGrepSearch()を呼ぶだけの
+  // 薄い皮になっている。
+  bool feedPromptByteInner(int byte);
   bool submitPrompt();
   void cancelPrompt();
   bool executeGrep(const std::string &pattern);
@@ -2392,6 +2428,11 @@ class Application {
   std::vector<GrepMatch> grepInPlaceMatches_;
   int grepInPlaceIndex_ = 0;
   ApplicationMode grepInPlaceOriginMode_ = ApplicationMode::Directory;
+  // startIncrementalGrepPrompt()/liveIncrementalGrepSearch()自身の
+  // 宣言コメント参照(2026-09-10追加)。GrepPatternプロンプトが編集中の
+  // 間だけtrueで、submitPrompt()/cancelPrompt()の両方の入口で
+  // 無条件にfalseへ戻す。
+  bool incrementalGrepActive_ = false;
   ApplicationMode cutReturnMode_ = ApplicationMode::Directory;
   // 2026-09-19三訂正、直接のユーザー提案("フラグはなるべく使いたく
   // ないんで、何かを上書きするのではなく...旧版のようにスタックへの

@@ -457,15 +457,22 @@ void FileMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ 
 
 void FileMode::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = active; }
 
-void FileMode::setGrepMatchHighlight(const std::set<int> &indices) {
+void FileMode::setGrepMatchHighlight(const std::vector<GrepMatch> &matches) {
   int savedTop = view_.topIndex();
   int savedCursor = view_.cursorIndex();
   grepMatchHighlightSnapshot_ = view_.lines();
   std::vector<ContentView::Line> lines = grepMatchHighlightSnapshot_;
-  for (int idx : indices) {
+  for (const auto &match : matches) {
+    int idx = match.sourceLineIndex;
     if (idx < 0 || idx >= static_cast<int>(lines.size())) continue;
-    lines[idx].attributes.push_back(
-        Display::AttributeRun{0, static_cast<int>(lines[idx].text.size()), Display::Attribute::Bold});
+    if (match.matchSpans.empty()) {
+      lines[idx].attributes.push_back(
+          Display::AttributeRun{0, static_cast<int>(lines[idx].text.size()), Display::Attribute::Bold});
+    } else {
+      for (const auto &span : match.matchSpans) {
+        lines[idx].attributes.push_back(Display::AttributeRun{span.first, span.second, Display::Attribute::Bold});
+      }
+    }
   }
   grepMatchHighlightActive_ = true;
   view_.setLines(std::move(lines));

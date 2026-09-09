@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cstdlib>
+#include <regex.h>
 #include <sstream>
 
 #include "child_process.hpp"
@@ -48,11 +49,16 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   options.input = &inputText;
   ChildProcess::Result result;
   bool ranAtLeastOnce = false;
+  // 2026-09-10追加: 実際に一致した候補(NFC/NFDのどちらでヒットしたか、
+  // unicodeNormalizationCandidates()自身のコメント参照)を覚えておく
+  // ――下のmatchSpans算出の2回目の呼び出しで同じ文字列を渡すため。
+  std::string winningCandidate = pattern;
   for (const auto &candidate : unicodeNormalizationCandidates(pattern)) {
     std::vector<std::string> argv = cmd.argv;
     argv.push_back(candidate);
     result = ChildProcess::run(argv, options);
     ranAtLeastOnce = true;
+    winningCandidate = candidate;
     // 終了コード0=一致あり、終了コード1=正常に実行されたが一致無し
     // ――どちらも「実行」としては成功(検索として成功とは限らない:
     // 終了コード1の場合は、あれば次の候補へフォールスルーする)。
@@ -82,6 +88,56 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
     matches_.push_back(match);
   }
 
+  // 2026-09-10追加、直接のユーザー指摘("『マッチした文字列』だけを
+  // ハイライト表示には"): 同じコマンド+勝った候補パターンに`-o`
+  // (--only-matching)を足した2回目の呼び出しで、実際に一致した部分
+  // 文字列そのものを得る――`-n`単独では行「全体」しか分からない。
+  // `-o`は行ごとに複数マッチがあれば複数行の出力になる(同じ行番号が
+  // 複数回現れる)。matches_自身もgrep自身の出力の行番号昇順のまま
+  // なので、単純な2ポインタでこの出力と対応付けられる(mapは不要)。
+  // 見つかった部分文字列テキストを、対応する行の`match.text`の中で
+  // `find()`する(前回見つけた位置より後ろから探すことで、同じ行内の
+  // 複数マッチ・同じ文字列の繰り返しにも対応する)――固定文字列/
+  // 典型的な正規表現では実用上常に正しい対応が取れる。見つからない
+  // 場合(まれ、UTF-8正規化の不一致等)は、そのマッチのmatchSpansが
+  // 空のまま残る――呼び出し元(DirectoryMode/FileMode::
+  // setGrepMatchHighlight())は、空の場合に行全体をハイライトする
+  // フォールバックを持つ。
+  if (!matches_.empty()) {
+    std::vector<std::string> spanArgv = cmd.argv;
+    spanArgv.insert(spanArgv.begin() + 1, "-o");
+    spanArgv.push_back(winningCandidate);
+    ChildProcess::Result spanResult = ChildProcess::run(spanArgv, options);
+    if (spanResult.exitStatus == 0) {
+      std::istringstream spanStream(spanResult.output);
+      std::string spanLine;
+      std::size_t matchIdx = 0;
+      std::size_t searchFrom = 0;
+      while (std::getline(spanStream, spanLine)) {
+        std::size_t spanColon = spanLine.find(':');
+        if (spanColon == std::string::npos || spanColon == 0) continue;
+        std::string spanNumPart = spanLine.substr(0, spanColon);
+        bool spanAllDigits = true;
+        for (char c : spanNumPart)
+          if (!std::isdigit(static_cast<unsigned char>(c))) spanAllDigits = false;
+        if (!spanAllDigits) continue;
+        int lineNum = std::atoi(spanNumPart.c_str()) - 1;
+        std::string matchText = spanLine.substr(spanColon + 1);
+
+        while (matchIdx < matches_.size() && matches_[matchIdx].sourceLineIndex < lineNum) {
+          matchIdx++;
+          searchFrom = 0;
+        }
+        if (matchIdx >= matches_.size() || matches_[matchIdx].sourceLineIndex != lineNum) continue;
+        GrepMatch &target = matches_[matchIdx];
+        std::size_t pos = target.text.find(matchText, searchFrom);
+        if (pos == std::string::npos) continue;
+        target.matchSpans.push_back({static_cast<int>(pos), static_cast<int>(pos + matchText.size())});
+        searchFrom = pos + std::max<std::size_t>(matchText.size(), 1);
+      }
+    }
+  }
+
   pattern_ = pattern;
   // 結果0件時のプレースホルダ(2026-08-12、2回のユーザー訂正を経た
   // もの――経緯全体はContentView::setEmptyPlaceholder()自身のコメント
@@ -107,6 +163,59 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(0);
   view_.redraw();
+  return true;
+}
+
+// searchInProcess()自身の宣言コメント参照(2026-09-10追加)。
+// regcomp()に`REG_EXTENDED`を渡さない=POSIX BRE(grepのBasic構文と
+// 同じ、GrepSyntax::Basicに揃えている――固定文字列/拡張正規表現の
+// インクリメンタル版は今回のスコープ外)。1行内の複数マッチは
+// `regexec()`をREG_NOTBOLを付けて前方から繰り返し呼ぶことで求める
+// (search()自身の`-o`ベースの複数マッチ処理と同じ発想)。
+bool GrepMode::searchInProcess(const std::vector<std::string> &sourceLines, const std::string &pattern) {
+  if (pattern.empty()) return false;
+  regex_t re;
+  if (regcomp(&re, pattern.c_str(), 0) != 0) return false;
+
+  matches_.clear();
+  for (int i = 0; i < static_cast<int>(sourceLines.size()); i++) {
+    const std::string &line = sourceLines[i];
+    GrepMatch match;
+    bool any = false;
+    int offset = 0;
+    while (offset <= static_cast<int>(line.size())) {
+      regmatch_t pmatch[1];
+      int flags = offset > 0 ? REG_NOTBOL : 0;
+      if (regexec(&re, line.c_str() + offset, 1, pmatch, flags) != 0) break;
+      int start = offset + static_cast<int>(pmatch[0].rm_so);
+      int end = offset + static_cast<int>(pmatch[0].rm_eo);
+      if (!any) {
+        match.sourceLineIndex = i;
+        match.text = line;
+        any = true;
+      }
+      match.matchSpans.push_back({start, end});
+      // ゼロ幅マッチ(例えば"$"のみ)で無限ループしないよう、必ず
+      // 最低1バイトは前進する。
+      offset = (end > offset) ? end : offset + 1;
+    }
+    if (any) matches_.push_back(std::move(match));
+  }
+  regfree(&re);
+
+  pattern_ = pattern;
+  if (matches_.empty()) {
+    static const std::string kSuffix = "No String";
+    std::string text = pattern_ + ": " + kSuffix;
+    int underlineFrom = static_cast<int>(text.size() - kSuffix.size());
+    view_.setEmptyPlaceholder(
+        ContentView::Line{text, std::nullopt, std::nullopt,
+                           {AttributeRun{underlineFrom, static_cast<int>(text.size()), Display::Attribute::Underline}}},
+        /*marked=*/false);
+  }
+  // search()とは異なり、view_(一覧画面)のlines/cursorには一切触れ
+  // ない――呼び出し元は一覧へは切り替えず、in-place方式で
+  // matches()を直接読む(searchInProcess()自身の宣言コメント参照)。
   return true;
 }
 

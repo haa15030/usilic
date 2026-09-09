@@ -2703,6 +2703,10 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 別のキー。
       case 'P':
         return handleCommand(Command::PasteTransientTargets);
+      // ESC i (2026-09-10追加): Command::StartIncrementalGrep自身の
+      // 宣言コメント参照。
+      case 'i':
+        return handleCommand(Command::StartIncrementalGrep);
       default:
         return false;  // このスライスでは認識されないESCシーケンス
     }
@@ -3854,6 +3858,8 @@ bool Application::handleCommand(Command command) {
       return jumpToGrepInPlaceMatch(+1);
     case Command::GrepInPlacePrevious:
       return jumpToGrepInPlaceMatch(-1);
+    case Command::StartIncrementalGrep:
+      return startIncrementalGrepPrompt();
     case Command::StartCutFixed:
       return startCutPrompt(GrepSyntax::Fixed);
     case Command::StartCutRegex:
@@ -5236,15 +5242,14 @@ bool Application::activateGrepInPlace() {
   // 出てくれないと...何にヒットしたかもわからない"): 全マッチを
   // 同時にBold表示する(setGrepMatchHighlight()自身のコメント参照)
   // ――カーソルが今どのマッチにいるかとは独立に、マッチ集合全体を
-  // 常に見渡せるようにする。
-  std::set<int> matchIndices;
-  for (const auto &match : grepInPlaceMatches_) matchIndices.insert(match.sourceLineIndex);
+  // 常に見渡せるようにする。matchSpans(2026-09-10再改訂、"『マッチ
+  // した文字列』だけを")付きでそのまま渡す。
   if (grepInPlaceOriginMode_ == ApplicationMode::Directory) {
     directoryMode_.setGrepInPlaceOverlay(true);
-    directoryMode_.setGrepMatchHighlight(matchIndices);
+    directoryMode_.setGrepMatchHighlight(grepInPlaceMatches_);
   } else {
     fileMode_.setGrepInPlaceOverlay(true);
-    fileMode_.setGrepMatchHighlight(matchIndices);
+    fileMode_.setGrepMatchHighlight(grepInPlaceMatches_);
   }
   ContentView &target = activeView();
   target.setCursorIndex(grepInPlaceMatches_[0].sourceLineIndex);
@@ -8207,6 +8212,40 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
   return true;
 }
 
+// Command::StartIncrementalGrep自身の宣言コメント参照(2026-09-10追加)。
+bool Application::startIncrementalGrepPrompt() {
+  if (currentMode_ != ApplicationMode::Directory && currentMode_ != ApplicationMode::File) return false;
+  grepSyntax_ = GrepSyntax::Basic;
+  grepReturnMode_ = currentMode_;
+  incrementalGrepActive_ = true;
+  activatePrompt(PromptKind::GrepPattern, "");
+  return true;
+}
+
+// liveIncrementalGrepSearch()自身の宣言コメント参照(application.hpp)。
+void Application::liveIncrementalGrepSearch() {
+  std::string pattern = promptEditor_.text();
+  if (pattern.empty()) {
+    if (grepInPlaceActive_) deactivateGrepInPlace();
+  } else {
+    ContentView &source = viewForMode(grepReturnMode_);
+    std::vector<std::string> sourceLines;
+    sourceLines.reserve(source.lines().size());
+    for (const auto &line : source.lines()) sourceLines.push_back(line.text);
+    if (grepMode_.searchInProcess(sourceLines, pattern)) {
+      grepInPlaceOriginMode_ = grepReturnMode_;
+      activateGrepInPlace();
+    }
+  }
+  // activateGrepInPlace()/deactivateGrepInPlace()はどちらも最後に
+  // target.redraw()を呼び、通常のモードラインを画面最終行(まさに
+  // 生きたプロンプトの行)へ描き直してしまう――直後にプロンプト自身の
+  // 表示をもう一度その上へ描き直す(activatePrompt()自身が最初に
+  // プロンプトを開く時に使うのと同じ組)。
+  drawPromptLabel(promptKind_, "");
+  promptEditor_.redraw();
+}
+
 // K-32/K-34(^J^S EGREP、^J^C CUTのregex亜種、usilicrc自身のK-31..K-34
 // の文書化による「Select string」――K-31/K-33の「Input string」
 // FGREP/CUT-fixedとは異なる): 実際のlegacy-usilicへの直接のPTYテスト
@@ -8635,7 +8674,25 @@ void Application::pollLocateUpdateDbCompletion() {
   startLocatePrompt();
 }
 
+// 2026-09-10追加(liveIncrementalGrepSearch()自身のコメント、
+// application.hpp自身のfeedPromptByteInner()宣言コメント参照): 本体
+// (feedPromptByteInner())の前後でpromptEditor_.text()を比較するだけの
+// 薄いラッパー。incrementalGrepActive_中に実際にテキストが変化した
+// 時(通常の文字挿入だけでなく、Backspace/^U/^K/^Y等あらゆる編集操作を
+// 等しく捕捉する――個々の編集操作それぞれに手を入れる必要が無い)
+// だけliveIncrementalGrepSearch()を呼ぶ。
 bool Application::feedPromptByte(int byte) {
+  bool trackIncremental = incrementalGrepActive_ && promptKind_ == PromptKind::GrepPattern;
+  std::string before = trackIncremental ? promptEditor_.text() : std::string();
+  bool result = feedPromptByteInner(byte);
+  if (trackIncremental && incrementalGrepActive_ && promptKind_ == PromptKind::GrepPattern &&
+      promptEditor_.text() != before) {
+    liveIncrementalGrepSearch();
+  }
+  return result;
+}
+
+bool Application::feedPromptByteInner(int byte) {
   // ^Q(2026-08-11修正): 実際のユーザーの記憶――"文字列入力の際の
   // コントロールコードは^Qの前置で入力できたような"。LineEditorは
   // 既にtoggleQuotedInsert()/quotedInsertPending()/clearQuotedInsert()
@@ -8941,6 +8998,15 @@ bool Application::submitPrompt() {
   PromptKind kind = promptKind_;
   std::string text = promptEditor_.text();
   promptKind_ = PromptKind::None;
+  // incrementalGrepActive_自身の宣言コメント参照(2026-09-10追加):
+  // ユーザー自身の要望はキー入力の「たびに」サブプロセスを起動しない
+  // ことだった――Enterでの確定自体は、下のexecutePromptSubmission()
+  // 経由で通常通りexecuteGrep()(実物のgrep、+matchSpans算出の2回目
+  // の呼び出し)を1回だけ実行する。ライブ中に何度呼んでもサブプロセス
+  // を一切起動しないGrepMode::searchInProcess()と役割が違う――こちら
+  // は「確定した結果を、実際にusilicrcで設定された検索コマンドと
+  // 完全に同じ意味論で」揃え直すための、意図した最後の1回。
+  incrementalGrepActive_ = false;
   return executePromptSubmission(kind, text);
 }
 
@@ -9002,6 +9068,16 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
 }
 
 void Application::cancelPrompt() {
+  // 2026-09-10追加、incrementalGrepActive_自身の宣言コメント参照:
+  // ^Gはemacs自身のisearchの慣習(C-gで検索開始前の位置へ戻す)に
+  // 合わせ、ライブ中に既に適用されていたハイライト/ジャンプ/
+  // オーバーレイを完全に取り消す――Enterでの確定(submitPrompt())とは
+  // 意図的に非対称: こちらは「何も無かったことにする」、あちらは
+  // 「今見えている状態を確定する」。
+  if (incrementalGrepActive_) {
+    incrementalGrepActive_ = false;
+    if (grepInPlaceActive_) deactivateGrepInPlace();
+  }
   // 2026-08-27: CP/MV/RMの宛先プロンプトのキャンセルは、以前は
   // cancelPendingCpMvRm()(directoryMode_.refresh()を呼ぶ、マークも
   // 「一掃する」実際の`ls`再実行――2026-08-24の修正、"^Gのあとls
