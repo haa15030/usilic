@@ -167,6 +167,27 @@ class FileMode {
   void setSearchAnnotation(const std::string &text);
   bool hasSearchAnnotation() const { return !searchAnnotation_.empty(); }
 
+  // DirectoryMode::setGrepInPlaceOverlay()自身の宣言コメント参照
+  // (2026-09-09追加): in-place GREPセッション中、モードラインの
+  // `name`スロットを"GREP"に、`trailing2`を"(grep)"に、一時的に
+  // 差し替える(DirectoryMode版と同じ見た目)。通常のloadFile()経由の
+  // ファイルにだけ適用される――CLIページャ起動(pagerMode_)のファイル
+  // はそもそもin-place GREPの主要な想定シナリオではないため、今回は
+  // その画面までは作り込まない(file_mode.cpp自身のモードライン
+  // プロバイダのコメント参照)。
+  void setGrepInPlaceOverlay(bool active);
+
+  // in-place GREPが0件のマッチも見つけられなかった時、モードラインへ
+  // 一時的に(下線無しで)表示するメッセージ――DirectoryMode::
+  // reportError(message, /*underline=*/false)のFile版。Fileモードには
+  // 元々この種の一時メッセージの仕組みが無かったため今回新設した
+  // (DirectoryMode::reportEditError()等ほど汎用化はせず、この1用途に
+  // 限定した最小限の実装)。Application::handleCommand()の先頭で、
+  // DirectoryMode::clearEditError()と同じタイミングでclearGrepNoMatchMessage()
+  // が呼ばれ、次のコマンドで自動的に消える。
+  void reportGrepNoMatchMessage(const std::string &message);
+  void clearGrepNoMatchMessage();
+
   // 2026-08-25(legacyとless(1)の両方と比較した、ユーザーからの直接の
   // 依頼): CLIページャ起動(main.cpp自身の「通常ファイル引数」/
   // stdin-pipeケース、Application::startPagerStream()自身のコメント
@@ -388,6 +409,11 @@ class FileMode {
   // 着地させた検索が何であれ、それを無効にする)。同じ関数内ですぐ
   // 上にあるsearchOriginLabel_/Detail_自身のクリアと同じ。
   std::string searchAnnotation_;
+  // setGrepInPlaceOverlay()/reportGrepNoMatchMessage()自身の宣言
+  // コメント参照(2026-09-09追加)。
+  bool grepInPlaceActive_ = false;
+  bool showGrepNoMatchMessage_ = false;
+  std::string grepNoMatchMessage_;
   // pagerMode_(2026-08-25): loadStream()が設定し、loadFile()が
   // クリアする――ページャ起動されたファイルのモードラインが、
   // 通常のloadFile()で開かれたファイルとは異なり、サイズ/ディレクト

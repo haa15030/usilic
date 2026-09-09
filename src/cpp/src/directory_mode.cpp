@@ -133,7 +133,18 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       std::string message = editErrorMessage_;
       if (message.size() < fields.name.size()) message.resize(fields.name.size(), ' ');
       fields.name = message;
-      fields.nameUnderlined = true;
+      fields.nameUnderlined = editErrorUnderlined_;
+    } else if (grepInPlaceActive_) {
+      // in-place GREPセッション中(setGrepInPlaceOverlay()自身の宣言
+      // コメント参照): GREP結果一覧(grepView_自身のモードラインプロ
+      // バイダ、application.cpp)がname="GREP"/badge="(grep)"を表示
+      // するのとまさに同じ見た目を、Directory自身のモードラインへ
+      // 一時的に流用する。showEditError_と同時に真になることは無い
+      // (マッチ0件時はactivateGrepInPlace()がセッションを開始せず、
+      // 代わりにreportError()を呼ぶだけ)ので、優先順位自体に実質的な
+      // 意味は無い。
+      fields.name = "GREP";
+      fields.trailing2 = "(grep)";
     } else if (!pendingOperationLabel_.empty()) {
       // ディレクトリパスの代わりに"CP"/"MV"/"RM"、プレーンな
       // Standout(renderModeLine()自身の`name`向けデフォルト――上の
@@ -323,10 +334,13 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
 
 void DirectoryMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
 
+void DirectoryMode::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = active; }
+
 void DirectoryMode::reportEditError() { reportError("Invalid mode"); }
 
-void DirectoryMode::reportError(const std::string &message) {
+void DirectoryMode::reportError(const std::string &message, bool underline) {
   editErrorMessage_ = message;
+  editErrorUnderlined_ = underline;
   showEditError_ = true;
 }
 

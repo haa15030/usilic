@@ -232,6 +232,19 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     // DirectoryMode自身の`(ls)`一覧がまさにこの同一の修正を受けた
     // のと同じ種類のバグ。
     fields.splitLayoutWhenCrowded = true;
+    // DirectoryMode::setGrepInPlaceOverlay()/reportError()自身の
+    // コメント参照(2026-09-09追加): pagerMode_のファイルについては
+    // 上で既にreturn済みのため、ここに到達するのは通常にloadFile()
+    // されたファイルだけ。
+    if (grepInPlaceActive_) {
+      fields.name = "GREP";
+      fields.trailing2 = "(grep)";
+    } else if (showGrepNoMatchMessage_) {
+      std::string message = grepNoMatchMessage_;
+      if (message.size() < fields.name.size()) message.resize(fields.name.size(), ' ');
+      fields.name = message;
+      fields.nameUnderlined = false;
+    }
     return fields;
   });
 }
@@ -436,6 +449,15 @@ void FileMode::setSearchOrigin(const std::string &label, const std::string &deta
 }
 
 void FileMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
+
+void FileMode::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = active; }
+
+void FileMode::reportGrepNoMatchMessage(const std::string &message) {
+  grepNoMatchMessage_ = message;
+  showGrepNoMatchMessage_ = true;
+}
+
+void FileMode::clearGrepNoMatchMessage() { showGrepNoMatchMessage_ = false; }
 
 void FileMode::setEncoding(Charset::Encoding encoding) { encoding_ = encoding; }
 

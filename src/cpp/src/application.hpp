@@ -68,26 +68,27 @@ enum class Command {
   // の本体への変更でもない)。
   JumpNext,      // ':' : Back, MoveDown, Enter
   JumpPrevious,  // ';' : Back, MoveUp, Enter
-  // 2026-09-09追加、直接のユーザー要望(".jsonファイル群を検索して
-  // マークする際、^S.json$^Mの後(GREP結果一覧、currentMode_==Grep)、
-  // 候補ごとに手動でEnter(openSelectedGrepMatch()、Directoryへ着地)
-  // →.(ToggleMark)→^G(Back、結果一覧へ戻る)→^N(MoveDown、次の候補へ)
-  // を繰り返すのは大変なので、{の連打でその一連の動作をまとめて実行
-  // できるようにして欲しい。}では^Pにしてほしい"): JumpNext/
-  // JumpPreviousとは実行順が異なる(あちらはBack+Move+Enter、こちらは
-  // Enterが先頭)――GREP結果一覧に立っている状態から始まる前提の
-  // ため。「Application::handleCommand()自身が唯一この合成を知って
-  // いる」という同じ設計方針を踏襲する(JumpNext自身の宣言コメント
-  // 参照)。ユーザー自身の言葉通り、正式な(usilicrc等で設定可能な)
-  // マクロキー機構が整うまでの「つなぎ」のハードコード実装。
-  MarkAndJumpNext,      // '{' : Enter, ToggleMark, Back, MoveDown
-  MarkAndJumpPrevious,  // '}' : Enter, ToggleMark, Back, MoveUp
+  // (2026-09-09追加、2026-09-09廃棄): '{'/'}'(Command::MarkAndJumpNext/
+  // MarkAndJumpPrevious、Enter+ToggleMark+Back+MoveDown/Upの合成)は
+  // 「GREP結果一覧の最終行で連打すると進めなくなる」という設計上の
+  // バグをユーザー自身が指摘し、GREP自体をin-place方式(このコメントの
+  // すぐ下、StartGrep/executeGrep()自身のコメント参照)へ作り直した
+  // ことで、Directory起点では既存の'.'(ToggleMark)がその場でそのまま
+  // 使えるようになったため、専用コマンドとしての存在意義が無くなり
+  // 廃棄された。経緯の詳細は.steering/20260909-grep-inline-highlight/
+  // requirements.md参照。
   StartFgrep,
   StartEgrep,
   // 2026-09-05追加(直接のユーザー依頼、"新たにGREP（grep）を新設"):
   // プレーンなgrep(基本正規表現)。application.cpp自身のgrepSyntaxLabel()/
   // grepSyntaxRole()参照。
   StartGrep,
+  // 2026-09-09追加(直接のユーザー提案、'{'/'}'廃棄の後継):
+  // in-place GREPセッション中だけ、通常の^N/^P(MoveDown/MoveUp)の
+  // 代わりにdispatchByte()が横取りして発行する――
+  // jumpToGrepInPlaceMatch()自身の宣言コメント参照。
+  GrepInPlaceNext,
+  GrepInPlacePrevious,
   StartCutFixed,
   StartCutRegex,
   // K-35/K-36(^Jb / ^J^B、M_fcut2/M_fcut――CUTの「通常ファイル」
@@ -1783,6 +1784,31 @@ class Application {
   bool toggleMark();
   bool returnToDirectory();
   bool openSelectedGrepMatch();
+  // in-place GREP(2026-09-09追加、design.md参照)。executeGrep()自身の
+  // コメント参照: grepSyntax_==Basicかつ起点がDirectory/Fileの場合
+  // だけ、この経路(currentMode_を一切変えない)へ分岐する。
+  //
+  // activateGrepInPlace(): grepMode_.matches()(既にexecuteGrep()内で
+  // 検索済み)を読み、0件ならDirectoryMode::reportError()/
+  // FileMode::reportGrepNoMatchMessage()で一時的な非下線メッセージを
+  // 出してfalseを返す(currentMode_/セッション状態は一切変えない)。
+  // 1件以上ならgrepInPlace*状態を設定し、最初のマッチへジャンプする。
+  bool activateGrepInPlace();
+  // deactivateGrepInPlace(): grepInPlaceActive_をfalseに戻し、
+  // directoryMode_/fileMode_(grepInPlaceOriginMode_に応じて)の
+  // setGrepInPlaceOverlay(false)を呼ぶ。セッションが元々非アクティブ
+  // なら無害(DirectoryMode::clearEditError()と同じ「無条件に呼んでも
+  // 安全」という慣習)。Application::handleCommand()冒頭から、
+  // in-placeセッション中に^N/^P・マーク系以外のコマンドが来た時に
+  // 呼ばれる。
+  void deactivateGrepInPlace();
+  // jumpToGrepInPlaceMatch(): `delta`は+1(Next、^N)/-1(Previous、^P)。
+  // grepInPlaceMatches_.size()で循環(wrap)させてgrepInPlaceIndex_を
+  // 更新し、activeView().setCursorIndex()+centerOnCursor()+redraw()。
+  // File起点では追加でsyncVisibleCursor()も呼ぶ(openSelectedGrepMatch()
+  // 自身のFile分岐が同じ理由でこれを呼んでいるのと同じ、行全体の
+  // ハイライトを持たないFileモードでのキャレット表示のため)。
+  bool jumpToGrepInPlaceMatch(int delta);
   bool returnFromGrep();
   bool returnToGrepResults();
   bool returnFromCutContent();
@@ -2355,6 +2381,16 @@ class Application {
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
+  // in-place GREPセッション(activateGrepInPlace()/deactivateGrepInPlace()
+  // /jumpToGrepInPlaceMatch()自身の宣言コメント参照、2026-09-09追加、
+  // .steering/20260909-grep-inline-highlight/design.md)。
+  // `currentMode_`は起点(Directory/File)のまま一切変えない――このセット
+  // は「今、一時的にin-place GREPの最中である」ことだけを表す、
+  // `currentMode_`とは独立した状態。
+  bool grepInPlaceActive_ = false;
+  std::vector<GrepMatch> grepInPlaceMatches_;
+  int grepInPlaceIndex_ = 0;
+  ApplicationMode grepInPlaceOriginMode_ = ApplicationMode::Directory;
   ApplicationMode cutReturnMode_ = ApplicationMode::Directory;
   // 2026-09-19三訂正、直接のユーザー提案("フラグはなるべく使いたく
   // ないんで、何かを上書きするのではなく...旧版のようにスタックへの

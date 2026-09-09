@@ -322,11 +322,6 @@ TEST_CASE("resolveCommand: ';' is JumpPrevious (Back+MoveUp+Enter), ':' is JumpN
   CHECK(Application::resolveCommand(':', std::nullopt) == Command::JumpNext);
 }
 
-TEST_CASE("resolveCommand: '{' is MarkAndJumpNext, '}' is MarkAndJumpPrevious") {
-  CHECK(Application::resolveCommand('{', std::nullopt) == Command::MarkAndJumpNext);
-  CHECK(Application::resolveCommand('}', std::nullopt) == Command::MarkAndJumpPrevious);
-}
-
 TEST_CASE("resolveCommand: an unmapped byte resolves to None") {
   CHECK(Application::resolveCommand('z', std::nullopt) == Command::None);
 }
@@ -561,36 +556,93 @@ TEST_CASE_FIXTURE(Fixture, "GrepMode::search (Basic/plain grep): 'grep' role run
   REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
   feedText("plain");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  // 2026-09-09: plain ^S (Basic syntax) from Directory now stays
+  // in-place (see .steering/20260909-grep-inline-highlight/design.md)
+  // instead of switching to ApplicationMode::Grep -- the search itself
+  // (and grepMode_.matches()) is unaffected.
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.grepMode().matches().size() == 1);
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
 }
 
-// 2026-09-09 addition, a direct user request (repro described as:
-// "^S.json$^M のあと{の連打で対象ファイルを選択（^M.^G^N）。}では^P"):
-// GREP launched from plain Directory mode searches the raw `ls -alF`
-// listing text itself (see the sibling "GrepMode::search (Basic/plain
-// grep)" test just above) -- so a pattern like "json$" matches every
-// line whose FILENAME ends in ".json", turning GREP into a de facto
-// "find files by name" tool. '{' (Command::MarkAndJumpNext) replays
-// Enter+ToggleMark+Back+MoveDown so repeated presses mark each match
-// in turn without leaving the GREP results screen for good.
-TEST_CASE_FIXTURE(Fixture, "'{' (MarkAndJumpNext) marks each GREP match in turn: Enter, ToggleMark, Back, "
-                           "MoveDown, repeated") {
+// -- in-place GREP (2026-09-09, a direct user proposal replacing the
+// short-lived '{'/'}' macro): plain ^S (Basic syntax) from Directory/
+// File no longer switches to the separate ApplicationMode::Grep
+// results screen -- it jumps the cursor to the first match, in place,
+// and ^N/^P step between matches (wrapping at the ends) while the
+// session is active. See .steering/20260909-grep-inline-highlight/
+// design.md for the full rationale.
+
+TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ^S stays in Directory, jumps the cursor to the "
+                           "first match, and shows GREP/(grep) on the mode line") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   { std::ofstream(root / "two.json") << "{}\n"; }
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
   feedText("json$");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.grepMode().matches().size() == 2);  // one.json, two.json -- plain.txt/cpmv_*.txt/etc. don't match
 
-  REQUIRE(app.feedByte('{', std::nullopt));  // Enter (lands on 1st match, Directory) + Mark + Back + MoveDown
-  CHECK(app.currentMode() == ApplicationMode::Grep);  // back on the results screen, ready for the next match
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // never switches to ApplicationMode::Grep
+  REQUIRE(app.directoryMode().selectedEntry() != nullptr);
+  CHECK(app.directoryMode().selectedEntry()->name == "one.json");  // first match, alphabetically first
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("GREP") != std::string::npos);
+  CHECK(modeLine.find("(grep)") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ^S from an open file stays in File mode and jumps to "
+                           "the first matching line") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
+  feedText("marker two");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+
+  CHECK(app.currentMode() == ApplicationMode::File);  // never switches to ApplicationMode::Grep
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("GREP") != std::string::npos);
+  CHECK(modeLine.find("(grep)") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "in-place GREP: ^N/^P step between matches, wrapping at the ends") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  { std::ofstream(root / "two.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x13, std::nullopt));
+  feedText("json$");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.directoryMode().selectedEntry()->name == "one.json");
+
+  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N -> 2nd match
+  CHECK(app.directoryMode().selectedEntry()->name == "two.json");
+
+  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N again -> wraps back to the 1st match
+  CHECK(app.directoryMode().selectedEntry()->name == "one.json");
+
+  CHECK(app.feedByte(0x10, std::nullopt));  // ^P -> wraps to the LAST match
+  CHECK(app.directoryMode().selectedEntry()->name == "two.json");
+}
+
+TEST_CASE_FIXTURE(Fixture, "in-place GREP: marking ('.') keeps the session alive, and CP/PROGRAM see the "
+                           "marked entries via targetEntries() -- the whole point of dropping '{'/'}' ") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  { std::ofstream(root / "two.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x13, std::nullopt));
+  feedText("json$");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  REQUIRE(app.feedByte('.', std::nullopt));  // ToggleMark on "one.json"
+  CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().markedCount() == 1);
+  CHECK(app.activeContentView().modeLineText().find("GREP") != std::string::npos);  // session still active
 
-  REQUIRE(app.feedByte('{', std::nullopt));  // same, for the 2nd match
+  REQUIRE(app.feedByte(0x0e, std::nullopt));  // ^N -> "two.json", session still active
+  REQUIRE(app.feedByte('.', std::nullopt));   // mark it too
   CHECK(app.directoryMode().markedCount() == 2);
 
   std::vector<fm::DirectoryEntry> targets = app.directoryMode().targetEntries();
@@ -599,25 +651,39 @@ TEST_CASE_FIXTURE(Fixture, "'{' (MarkAndJumpNext) marks each GREP match in turn:
   CHECK((targets[1].name == "one.json" || targets[1].name == "two.json"));
 }
 
-// '}' (Command::MarkAndJumpPrevious) is the same macro with MoveUp
-// instead of MoveDown as its last step -- verified separately here by
-// starting from the LAST match and walking backward.
-TEST_CASE_FIXTURE(Fixture, "'}' (MarkAndJumpPrevious) marks each GREP match walking backward: Enter, "
-                           "ToggleMark, Back, MoveUp, repeated") {
+TEST_CASE_FIXTURE(Fixture, "in-place GREP: any command other than ^N/^P/marking ends the session "
+                           "automatically (no explicit ^G needed), without blocking the command itself") {
   { std::ofstream(root / "one.json") << "{}\n"; }
-  { std::ofstream(root / "two.json") << "{}\n"; }
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
+  REQUIRE(app.feedByte(0x13, std::nullopt));
   feedText("json$");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.grepMode().matches().size() == 2);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.activeContentView().modeLineText().find("GREP") != std::string::npos);
 
-  REQUIRE(app.handleCommand(Command::MoveDown));  // start from the LAST match before walking backward
-  REQUIRE(app.feedByte('}', std::nullopt));
-  CHECK(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.feedByte('}', std::nullopt));
-  CHECK(app.directoryMode().markedCount() == 2);
+  CHECK(app.handleCommand(Command::MoveDown));  // some unrelated command
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.activeContentView().modeLineText().find("GREP") == std::string::npos);  // session ended
+  CHECK(app.activeContentView().modeLineText().find("(ls)") != std::string::npos);  // back to normal
+}
+
+TEST_CASE_FIXTURE(Fixture, "in-place GREP: no match shows a temporary, non-underlined mode-line message that "
+                           "clears on the next command, without starting a session") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x13, std::nullopt));
+  feedText("nonexistent-pattern-xyz");
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // no match -- activateGrepInPlace() returns false
+
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  {
+    const std::string &row = display.rowText(display.rows() - 1);
+    CHECK(row.find("nonexistent-pattern-xyz: No String") != std::string::npos);
+  }
+
+  CHECK(app.handleCommand(Command::MoveDown));  // any command clears it (DirectoryMode::clearEditError())
+  {
+    const std::string &row = display.rowText(display.rows() - 1);
+    CHECK(row.find("No String") == std::string::npos);
+  }
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: a lone ^J is consumed as a pending leader byte, no action yet") {
@@ -10831,17 +10897,19 @@ TEST_CASE_FIXTURE(Fixture, "recording: typed prompt text (a real GREP pattern) i
   app.feedByte(0x13, std::nullopt);  // ^S : start GREP (2026-09-05: moved from FGREP)
   feedText("plain.txt");
   app.feedByte(0x0d, std::nullopt);  // submit
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.grepMode().matches().size() == 1);
-  app.handleCommand(Command::Back);
+  // 2026-09-09: plain ^S (Basic syntax) from Directory now stays
+  // in-place (see .steering/20260909-grep-inline-highlight/design.md)
+  // instead of switching to ApplicationMode::Grep, so there's no
+  // separate results screen to Back out of any more.
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.grepMode().matches().size() == 1);
 
   app.feedByte(0x0f, std::nullopt);
   app.feedByte(')', std::nullopt);
 
   app.feedByte(0x0f, std::nullopt);
   app.feedByte('e', std::nullopt);
-  CHECK(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.currentMode() == ApplicationMode::Directory);
   REQUIRE(app.grepMode().matches().size() == 1);
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
 }

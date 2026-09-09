@@ -271,6 +271,16 @@ class DirectoryMode {
   void setSearchAnnotation(const std::string &text);
   bool hasSearchAnnotation() const { return !searchAnnotation_.empty(); }
 
+  // in-place GREPセッション(Application::activateGrepInPlace()/
+  // deactivateGrepInPlace()、詳細は.steering/20260909-grep-inline-
+  // highlight/design.md参照)が有効な間、モードラインの`name`スロット
+  // を"GREP"に、プログラムバッジ(通常は"(ls)")を"(grep)"に、一時的に
+  // 差し替える。setSearchAnnotation()とは別の状態――こちらは検索が
+  // 「終わった後」に戻ってきた画面への一回限りの注釈だが、こちらは
+  // 検索の「最中」であることを示す、セッションの生死そのものを表す
+  // フラグである。
+  void setGrepInPlaceOverlay(bool active);
+
   // "Invalid mode"(legacy mode.cのdo_edit()、S_errvからの逐語移植
   // ――str.cの文字列テーブル参照)を、現在のディレクトリパスの
   // 代わりに、モードラインの`name`スロットに下線付きで、次に
@@ -294,7 +304,13 @@ class DirectoryMode {
   // ^Jeの「Invalid mode」に対して確立したのとまさに同じ表示を再利用
   // しており、2つ目の異なる挙動をするステータスメッセージ機構を
   // 新たに発明するのではない。
-  void reportError(const std::string &message);
+  // `underline`(2026-09-09追加): デフォルトtrueで既存の全呼び出し元の
+  // 挙動を変えない。in-place GREPの「マッチ無し」表示
+  // (Application::activateGrepInPlace()自身のコメント参照)だけが
+  // falseを渡す――"Invalid mode"/権限拒否のような実際の「エラー」とは
+  // 違い、単に検索が0件だっただけなので、同じ目立つ下線装飾を付ける
+  // 必要が無いという判断。
+  void reportError(const std::string &message, bool underline = true);
 
   // reportEditError()/reportError()が設定したものをクリアし、次の
   // 再描画時にモードラインの`name`スロットを現在のディレクトリパスへ
@@ -396,8 +412,18 @@ class DirectoryMode {
   std::string searchAnnotation_;
   bool showEditError_ = false;
   std::string editErrorMessage_ = "Invalid mode";
+  // reportError()自身の宣言コメント参照(2026-09-09追加、in-place
+  // GREPの「マッチ無し」表示のために一般化された): デフォルトは
+  // 既存の全呼び出し元(reportEditError()、CpMvRmMode::isWritable()
+  // 失敗時)と同じ下線付き。
+  bool editErrorUnderlined_ = true;
   std::string pendingOperationLabel_;
   std::string arcExtractSourceAnnotation_;
+  // in-place GREPセッション(Application::activateGrepInPlace()/
+  // deactivateGrepInPlace())中だけtrueになる――モードラインの
+  // 主要フィールドを一時的に"GREP"/"(grep)"へ差し替える
+  // (setGrepInPlaceOverlay()自身の宣言コメント参照)。
+  bool grepInPlaceActive_ = false;
 };
 
 }  // namespace fm

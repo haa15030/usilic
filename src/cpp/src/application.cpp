@@ -2138,13 +2138,6 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
     // (^G/^P/^N/^Mを直接送り込み、決してこのswitchを一切通らない)
     // が既に正しいまま手を付けられずにいることも保つ、最小限の修正
     // である。
-    // '{'/'}' (2026-09-09追加): Command::MarkAndJumpNext/Previous自身の
-    // 宣言コメント参照――';'/':'とちょうど同じ方向(前者MoveUp、後者
-    // MoveDown)に、ToggleMarkを1つ差し込むだけの「つなぎ」実装。
-    case '{':
-      return Command::MarkAndJumpNext;
-    case '}':
-      return Command::MarkAndJumpPrevious;
     case ';':
       return Command::JumpPrevious;
     case ':':
@@ -2236,6 +2229,13 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // resolveCommand()の通常のpage/scrollのキー割り当てや下の^Oリーダー
   // のテーブルは誤って発火しない。
   if (currentMode_ == ApplicationMode::Copy) return feedCopyByte(byte, special);
+  // in-place GREP(2026-09-09追加、jumpToGrepInPlaceMatch()自身の
+  // コメント参照): セッション中だけ、通常のresolveCommand()の^N/^P
+  // (MoveDown/MoveUp)より先に横取りする――Shell/Copyの上の2分岐と
+  // 同じ優先度・同じ理由。
+  if (grepInPlaceActive_ && !special && (byte == 0x0e || byte == 0x10)) {
+    return handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
+  }
   // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
   // スクリーンショット=fa/=fb指定: "「`Space`」:「`Move window one
   // page down`」（「」内がハイライト表示範囲）がマウスまたは`←`/`→`
@@ -3476,6 +3476,17 @@ bool Application::handleCommand(Command command) {
   // として「それ自身の」メッセージを表示する。
   directoryMode_.clearEditError();
   archiveMode_.clearEditError();  // ArchiveMode自身の同一の仕組み――それ自身の宣言コメント参照
+  fileMode_.clearGrepNoMatchMessage();  // FileMode::reportGrepNoMatchMessage()自身の宣言コメント参照、同じタイミング・同じ理由
+  // in-place GREP(2026-09-09追加): ^N/^P(GrepInPlaceNext/Previous)・
+  // マーク系(ToggleMark/MarkAndAdvance/MarkAndRetreat)以外のコマンドが
+  // 来た時点で、明示的な^G無しに自動的にセッションを終了する
+  // (requirements.mdのオープンクエスチョン3番、ユーザー回答)。この
+  // コマンド自体の実行は妨げない――下のswitchは普通にそのまま続く。
+  if (grepInPlaceActive_ && command != Command::GrepInPlaceNext && command != Command::GrepInPlacePrevious &&
+      command != Command::ToggleMark && command != Command::MarkAndAdvance &&
+      command != Command::MarkAndRetreat) {
+    deactivateGrepInPlace();
+  }
   // 2026-08-25(FileMode::ensureLoadedThrough()自身のコメント参照):
   // CLIのページャで起動されたファイル/stdinのストリームは、これまで
   // のスクロールを満たすのに十分なコンテンツしかロードされていない
@@ -3798,25 +3809,16 @@ bool Application::handleCommand(Command command) {
       handleCommand(Command::Back);
       handleCommand(Command::MoveUp);
       return handleCommand(Command::Enter);
-    // Command::MarkAndJumpNext/Previous自身の宣言コメント参照――
-    // JumpNext/JumpPreviousと全く同じBack+Move+Enterの前に、まず
-    // ToggleMark(今立っている候補)を差し込むだけ。
-    case Command::MarkAndJumpNext:
-      handleCommand(Command::Enter);
-      handleCommand(Command::ToggleMark);
-      handleCommand(Command::Back);
-      return handleCommand(Command::MoveDown);
-    case Command::MarkAndJumpPrevious:
-      handleCommand(Command::Enter);
-      handleCommand(Command::ToggleMark);
-      handleCommand(Command::Back);
-      return handleCommand(Command::MoveUp);
     case Command::StartFgrep:
       return startGrepPrompt(GrepSyntax::Fixed);
     case Command::StartEgrep:
       return startGrepPrompt(GrepSyntax::Regex);
     case Command::StartGrep:
       return startGrepPrompt(GrepSyntax::Basic);
+    case Command::GrepInPlaceNext:
+      return jumpToGrepInPlaceMatch(+1);
+    case Command::GrepInPlacePrevious:
+      return jumpToGrepInPlaceMatch(-1);
     case Command::StartCutFixed:
       return startCutPrompt(GrepSyntax::Fixed);
     case Command::StartCutRegex:
@@ -5174,6 +5176,60 @@ bool Application::openSelectedGrepMatch() {
     target.redraw();
     target.syncVisibleCursor();
   }
+  return true;
+}
+
+// activateGrepInPlace()/deactivateGrepInPlace()/jumpToGrepInPlaceMatch()
+// 自身の宣言コメント(application.hpp)参照。design.mdの経緯:
+// .steering/20260909-grep-inline-highlight/。
+bool Application::activateGrepInPlace() {
+  const auto &matches = grepMode_.matches();
+  if (matches.empty()) {
+    std::string message = grepMode_.pattern() + ": No String";
+    if (grepInPlaceOriginMode_ == ApplicationMode::Directory) {
+      directoryMode_.reportError(message, /*underline=*/false);
+    } else {
+      fileMode_.reportGrepNoMatchMessage(message);
+    }
+    activeView().redraw();
+    return false;
+  }
+  grepInPlaceMatches_ = matches;
+  grepInPlaceIndex_ = 0;
+  grepInPlaceActive_ = true;
+  if (grepInPlaceOriginMode_ == ApplicationMode::Directory) {
+    directoryMode_.setGrepInPlaceOverlay(true);
+  } else {
+    fileMode_.setGrepInPlaceOverlay(true);
+  }
+  ContentView &target = activeView();
+  target.setCursorIndex(grepInPlaceMatches_[0].sourceLineIndex);
+  target.centerOnCursor();
+  target.redraw();
+  if (grepInPlaceOriginMode_ == ApplicationMode::File) target.syncVisibleCursor();
+  return true;
+}
+
+void Application::deactivateGrepInPlace() {
+  if (!grepInPlaceActive_) return;
+  grepInPlaceActive_ = false;
+  if (grepInPlaceOriginMode_ == ApplicationMode::Directory) {
+    directoryMode_.setGrepInPlaceOverlay(false);
+  } else {
+    fileMode_.setGrepInPlaceOverlay(false);
+  }
+  activeView().redraw();
+}
+
+bool Application::jumpToGrepInPlaceMatch(int delta) {
+  if (!grepInPlaceActive_ || grepInPlaceMatches_.empty()) return false;
+  int count = static_cast<int>(grepInPlaceMatches_.size());
+  grepInPlaceIndex_ = ((grepInPlaceIndex_ + delta) % count + count) % count;  // 循環(wrap)
+  ContentView &target = activeView();
+  target.setCursorIndex(grepInPlaceMatches_[grepInPlaceIndex_].sourceLineIndex);
+  target.centerOnCursor();
+  target.redraw();
+  if (grepInPlaceOriginMode_ == ApplicationMode::File) target.syncVisibleCursor();
   return true;
 }
 
@@ -9898,6 +9954,18 @@ bool Application::executeGrep(const std::string &pattern) {
   if (!grepMode_.search(sourceLines, pattern, grepSyntax_)) {
     source.redraw();
     return false;
+  }
+  // 2026-09-09追加、直接のユーザー提案(.steering/20260909-grep-inline-
+  // highlight/requirements.md参照): GREP(^S、Basic構文)がDirectory/
+  // File起点の場合だけ、専用の一覧画面(下のApplicationMode::Grepへの
+  // 遷移)へは切り替えず、in-place方式(activateGrepInPlace()自身の
+  // コメント参照)へ分岐する。^O^S(FGREP)/^J^S(EGREP)、およびMan/
+  // Locate/Du/Shell起点のGREPは、今回のスコープ外として全て従来通り
+  // 下の一覧モードのままにする。
+  if (grepSyntax_ == GrepSyntax::Basic &&
+      (grepReturnMode_ == ApplicationMode::Directory || grepReturnMode_ == ApplicationMode::File)) {
+    grepInPlaceOriginMode_ = grepReturnMode_;
+    return activateGrepInPlace();
   }
   currentMode_ = ApplicationMode::Grep;
   // pendingSearchFromDirectEntryList_自身のコメント参照――値に関わら
