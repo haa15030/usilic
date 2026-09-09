@@ -942,6 +942,19 @@ class ContentView {
     // 自身の混雑時の挙動を一度に変えるのではなく、これが依頼された
     // 1つの画面に狭くスコープを保つため。
     bool splitLayoutWhenCrowded = false;
+    // `trailing2`を、通常のハイライトされたrunの代わりに、プレーン
+    // な(非反転表示の)テキストとして描画する――trailingPlain自身の
+    // コメント参照、同じ発想の`trailing2`版。2026-09-10追加、直接の
+    // ユーザー依頼("同じ位置に、非ハイライトの「〜:No String」を
+    // 表示して欲しい"): in-place GREPのマッチ無しメッセージ
+    // (DirectoryMode::reportGrepNoMatchMessage()/FileMode::
+    // reportGrepNoMatchMessage())は、"GREP"という短いラベル(name、
+    // Standoutのまま)の後に続く実際の情報であり、選択可能な項目や
+    // バッジのようには見えるべきでない。他の全てのプロバイダは
+    // これをデフォルト(false、既存の常にハイライトされる挙動)の
+    // ままにする。既存の位置指定の集成体初期化の呼び出し箇所を
+    // 一切崩さないよう、末尾に追加してある。
+    bool trailing2Plain = false;
   };
 
   // このビューのModeLineFieldsを供給する。モードラインが描画され

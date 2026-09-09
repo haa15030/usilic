@@ -689,20 +689,21 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: plain navigation/paging (MoveDown, Sc
   CHECK(app.activeContentView().modeLineText().find("(ls)") != std::string::npos);  // back to normal
 }
 
-// 2026-09-10 revision, a direct user report (=fv screenshot):
-// drawPromptLabel()'s own staticMessage early return used to skip the
-// trailing "return value" field entirely (a real, pre-existing bug in
-// LOCATE's own "Updating database..."/"Disk usage..." displays, fixed
-// alongside this) -- and this GREP message must show the same origin
-// info, in the same "GREP"-labeled, LOCATE-like shape, not just a
-// plain replacement of the whole name field.
+// 2026-09-10, direct user reports across two rounds: (1) =fv/=fw --
+// the message must appear at the SAME position/style as LOCATE's own
+// "Updating database..." (a short "GREP" label followed by the actual
+// message), and the message text itself must be non-highlighted (a
+// plain, non-Standout run) -- NOT a request to change drawPromptLabel()
+// itself (that detour caused a real regression there, reverted).
+// (2) the origin ("return value") must still be visible via trailing3,
+// same as every other mode-switching prompt already shows.
 TEST_CASE_FIXTURE(Fixture, "in-place GREP: no match shows a temporary, LOCATE-style mode-line message "
-                           "(\"GREP\" label + message + origin path) that clears on the next command, "
-                           "without starting a session") {
+                           "(\"GREP\" label + non-highlighted message + origin path) that clears on the "
+                           "next command, without starting a session") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x13, std::nullopt));
-  // Short pattern (unlike the earlier, much longer draft of this test):
-  // "GREP" + "zzz: No String" + the origin path all have to share one
+  // Short pattern (unlike an earlier draft of this test): "GREP" +
+  // "zzz: No String" + the origin path all have to share one
   // 80-column row (trailing3's own established budget-based truncation
   // -- content_view.cpp's own comment -- drops it to empty rather than
   // partially showing it once the budget gets too tight, same as any
@@ -714,8 +715,15 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: no match shows a temporary, LOCATE-st
   {
     const std::string &row = display.rowText(display.rows() - 1);
     CHECK(row.find("GREP") != std::string::npos);
-    CHECK(row.find("zzz: No String") != std::string::npos);
+    std::size_t messagePos = row.find("zzz: No String");
+    CHECK(messagePos != std::string::npos);
     CHECK(row.find(path()) != std::string::npos);  // the origin ("return value") survives, unlike =fv
+    // The message itself must be non-highlighted (direct user request:
+    // "非ハイライトの「〜:No String」を表示して欲しい") -- unlike the
+    // "GREP" label (column 0, still Standout) right before it.
+    int lastRow = display.rows() - 1;
+    CHECK(display.standoutAt(lastRow, 0));                          // "GREP" IS still Standout
+    CHECK_FALSE(display.standoutAt(lastRow, static_cast<int>(messagePos)));  // the message is NOT
   }
 
   CHECK(app.handleCommand(Command::MoveDown));  // any command clears it (DirectoryMode::clearGrepNoMatchMessage())
@@ -723,6 +731,68 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: no match shows a temporary, LOCATE-st
     const std::string &row = display.rowText(display.rows() - 1);
     CHECK(row.find("No String") == std::string::npos);
   }
+}
+
+// 2026-09-10, a direct user report after actually trying the feature
+// on a real file ("とにかくハイライト表示は出てくれないと...CLAUDE.md
+// 等、通常ファイルでは何にヒットしたかもわからない"): the earlier
+// design.md decision to skip simultaneous multi-match highlighting
+// (relying on the cursor alone to show "the" current match) doesn't
+// actually work for File-mode content, where there's no per-row
+// highlight at all outside the live terminal caret. ALL matches are
+// now Bold (Display::Attribute::Bold) simultaneously, independent of
+// the cursor (Standout) and Directory's own dired-style marks
+// (Underline) -- three separate, composable channels.
+TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ALL matches are Bold simultaneously, not just "
+                           "the one under the cursor, and clears when the session ends") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  { std::ofstream(root / "two.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  int plainIdx = indexOf("plain.txt");  // a non-match, for contrast
+  int oneIdx = indexOf("one.json");
+  int twoIdx = indexOf("two.json");
+  REQUIRE(app.feedByte(0x13, std::nullopt));
+  feedText("json$");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  CHECK(display.boldAt(oneIdx, 0));   // matched, cursor is here
+  CHECK(display.boldAt(twoIdx, 0));   // ALSO matched, even though the cursor is NOT here
+  CHECK_FALSE(display.boldAt(plainIdx, 0));  // not a match
+
+  REQUIRE(app.feedByte(0x0e, std::nullopt));  // ^N -> move to "two.json", both stay Bold
+  CHECK(display.boldAt(oneIdx, 0));
+  CHECK(display.boldAt(twoIdx, 0));
+
+  // A genuine mode switch (Enter, opening "two.json" -- the cursor is
+  // there after the ^N above) ends the session; verify the highlight
+  // on BOTH previously-matched lines is cleared, not just the one the
+  // cursor happened to land on.
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK_FALSE(display.boldAt(oneIdx, 0));
+  CHECK_FALSE(display.boldAt(twoIdx, 0));
+}
+
+TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ALL matching lines are Bold simultaneously, "
+                           "answering the direct user complaint that a plain text file's matches were "
+                           "otherwise invisible") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");  // "marker one\nline1\nmarker two\nline2a\nline2b\nmarker three\nline3\n"
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+
+  // "marker one"/"marker two"/"marker three" are lines 0, 2, 5 (0-indexed).
+  CHECK(display.boldAt(0, 0));
+  CHECK(display.boldAt(2, 0));
+  CHECK(display.boldAt(5, 0));
+  CHECK_FALSE(display.boldAt(1, 0));  // "line1" -- not a match
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: a lone ^J is consumed as a pending leader byte, no action yet") {

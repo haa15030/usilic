@@ -1214,7 +1214,7 @@ std::vector<Display::ModeLineSegment> ContentView::scrollModeLineSegments(bool t
       int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
       if (remaining > 0) trailing2 += std::string(remaining, ' ');
     }
-    segments.push_back({trailing2, true});
+    segments.push_back({trailing2, !fields.trailing2Plain});  // ModeLineFields::trailing2Plain自身のコメント参照
     drawnLen += static_cast<int>(trailing2.size());
   }
   // 2026-08-30、直接のユーザー報告(GUI、実際のドラッグ中はモードライン
@@ -1664,6 +1664,13 @@ void ContentView::renderModeLine() {
     for (unsigned char c : text) display_.putChar(c);
     display_.setAttribute(Display::Attribute::UnderlineOff);
   };
+  // ModeLineFields::trailing2Plain自身のコメント参照(2026-09-10追加、
+  // 直接のユーザー要望: in-place GREPのマッチ無しメッセージを
+  // "非ハイライト"で表示したい)。drawPositionText()自身のplain経路
+  // と同じ発想だが、trailing2専用。
+  auto drawPlainSegment = [&](const std::string &text) {
+    for (unsigned char c : text) display_.putChar(c);
+  };
   // setPositionTextOverride()自身の`plain`引数のコメント参照
   // (2026-09-08追加、直接のユーザー要望): 位置フィールドだけ、
   // Standout無しで描画する経路。他の全フィールド(name/trailing等)は
@@ -1843,7 +1850,7 @@ void ContentView::renderModeLine() {
     // 代わりに、それと一緒に左右に漂ってしまう。
     if (fields.trailing2RightJustified) {
       display_.moveCursor(modeLineRow, cols - static_cast<int>(trailing2.size()));
-      drawSegment(trailing2);
+      if (fields.trailing2Plain) drawPlainSegment(trailing2); else drawSegment(trailing2);
       drawnLen = cols;
     } else {
       display_.putChar(' ');
@@ -1863,7 +1870,7 @@ void ContentView::renderModeLine() {
         int remaining = cols - drawnLen - static_cast<int>(trailing2.size());
         if (remaining > 0) trailing2 += std::string(remaining, ' ');
       }
-      drawSegment(trailing2);
+      if (fields.trailing2Plain) drawPlainSegment(trailing2); else drawSegment(trailing2);
       drawnLen += static_cast<int>(trailing2.size());
     }
   }

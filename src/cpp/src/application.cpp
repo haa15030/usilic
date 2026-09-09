@@ -5232,10 +5232,19 @@ bool Application::activateGrepInPlace() {
   grepInPlaceMatches_ = matches;
   grepInPlaceIndex_ = 0;
   grepInPlaceActive_ = true;
+  // 2026-09-10追加、直接のユーザー指摘("とにかくハイライト表示は
+  // 出てくれないと...何にヒットしたかもわからない"): 全マッチを
+  // 同時にBold表示する(setGrepMatchHighlight()自身のコメント参照)
+  // ――カーソルが今どのマッチにいるかとは独立に、マッチ集合全体を
+  // 常に見渡せるようにする。
+  std::set<int> matchIndices;
+  for (const auto &match : grepInPlaceMatches_) matchIndices.insert(match.sourceLineIndex);
   if (grepInPlaceOriginMode_ == ApplicationMode::Directory) {
     directoryMode_.setGrepInPlaceOverlay(true);
+    directoryMode_.setGrepMatchHighlight(matchIndices);
   } else {
     fileMode_.setGrepInPlaceOverlay(true);
+    fileMode_.setGrepMatchHighlight(matchIndices);
   }
   ContentView &target = activeView();
   target.setCursorIndex(grepInPlaceMatches_[0].sourceLineIndex);
@@ -5250,8 +5259,10 @@ void Application::deactivateGrepInPlace() {
   grepInPlaceActive_ = false;
   if (grepInPlaceOriginMode_ == ApplicationMode::Directory) {
     directoryMode_.setGrepInPlaceOverlay(false);
+    directoryMode_.clearGrepMatchHighlight();
   } else {
     fileMode_.setGrepInPlaceOverlay(false);
+    fileMode_.clearGrepMatchHighlight();
   }
   activeView().redraw();
 }
@@ -9677,22 +9688,23 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   }
   // staticMessage(2026-08-13): この関数自身の宣言コメント参照
   // ――編集可能なフィールドがそうでなければ始まるであろうまさにその
-  // 列に、プレーンな下線付きのステータスメッセージを描く。
-  // 2026-09-10修正、直接のユーザー報告(スクリーンショット=fv、
-  // "戻り値が消えてる。不良"): 以前はここで即座にreturnしており、
-  // 下のtrailingフィールド(previousModeName()ベースの「戻り値」)の
-  // 計算・描画を丸ごと素通りしていた――"Updating database..."
-  // (runLocateUpdateDb())/"Disk usage..."(du相当)のどちらも、実際の
-  // 生きたプロンプトなら普通に表示されるはずの戻り先の情報が、この
-  // 静的メッセージの間だけ消えてしまっていた。returnを取り除き、下の
-  // 計算へそのまま流れ落ちるようにする――staticMessage自体は短い
-  // リテラル(実際の使用例は全て20文字未満)なので、下で予約される
-  // trailing領域と重なる心配は無い。
+  // 列に、プレーンな下線付きのステータスメッセージを描き、それから
+  // promptEditor_には一切触れずに戻る(予約/設定すべきフィールドが
+  // 無い――これは本物の編集可能なプロンプトではない)。
+  // (2026-09-10、一度この直後のreturn;を取り除く修正を試みたが、
+  // 直接のユーザー報告(スクリーンショット=fw)により、staticMessage
+  // と下のtrailingフィールドの間に無地のハイライトの帯が残留する
+  // 見た目の後退を引き起こしたため撤回――ユーザーの本来の意図は
+  // そもそも戻り値の復元ではなかった(GREP自身のマッチ無し表示を
+  // このLOCATE/DUの体裁に「合わせてほしい」という意味であり、この
+  // 関数自体を変更してほしいという意味ではなかった)。この関数は
+  // 元の挙動のまま。)
   if (!staticMessage.empty()) {
     display_.moveCursor(row, labelWidth);
     display_.setAttribute(Display::Attribute::Underline);
     for (unsigned char c : staticMessage) display_.putChar(c);
     display_.setAttribute(Display::Attribute::UnderlineOff);
+    return;
   }
   // Trailingの予約(2026-08-12修正): 直接のユーザーの公式――
   // "文字入力エリアの幅は、「モード名（EGREPなら5＋1）」＋「...右詰

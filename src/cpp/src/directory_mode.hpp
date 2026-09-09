@@ -281,6 +281,20 @@ class DirectoryMode {
   // フラグである。
   void setGrepInPlaceOverlay(bool active);
 
+  // 2026-09-10追加、直接のユーザー指摘("とにかくハイライト表示は
+  // 出てくれないと...何にヒットしたかもわからない"): in-place GREP
+  // セッション中、マッチした「全ての」行を(現在のマッチだけでなく)
+  // 同時にBold(太字)表示する――カーソル行のStandout/dired式マークの
+  // Underlineとは独立した3つ目のチャネルなので、3つとも共存・区別
+  // できる。ls一覧の行は(他のモードのFileMode::attributesとは異なり)
+  // 元々オーバーストライク由来の属性を一切持たない――確認済み、
+  // content_view.hpp自身のLine::attributesのコメント参照――ので、
+  // クリア時に「元に戻す」べきスナップショットを別途保持する必要が
+  // 無く、単に空へ戻すだけでよい。`indices`は`entries_`と同じ
+  // インデックス空間(GrepMatch::sourceLineIndex)。
+  void setGrepMatchHighlight(const std::set<int> &indices);
+  void clearGrepMatchHighlight();
+
   // "Invalid mode"(legacy mode.cのdo_edit()、S_errvからの逐語移植
   // ――str.cの文字列テーブル参照)を、現在のディレクトリパスの
   // 代わりに、モードラインの`name`スロットに下線付きで、次に

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -178,6 +179,17 @@ class FileMode {
   // シナリオではないため、今回はその画面までは作り込まない
   // (file_mode.cpp自身のモードラインプロバイダのコメント参照)。
   void setGrepInPlaceOverlay(bool active);
+
+  // DirectoryMode::setGrepMatchHighlight()自身の宣言コメント参照
+  // (2026-09-10追加、直接のユーザー指摘: "とにかくハイライト表示は
+  // 出てくれないと...CLAUDE.md等、通常ファイルでは何にヒットしたかも
+  // わからない")。DirectoryModeとは異なり、Fileモードの内容は
+  // (オーバーストライク由来の)正規のline.attributesを既に持つことが
+  // ある(PipeBuffer参照)ため、クリア時に「元に戻す」べき直前の
+  // スナップショットを別途保持する。`indices`はfileView_自身の行
+  // インデックス。
+  void setGrepMatchHighlight(const std::set<int> &indices);
+  void clearGrepMatchHighlight();
 
   // in-place GREPが0件のマッチも見つけられなかった時、モードラインへ
   // 一時的に表示するメッセージ(2026-09-09追加、2026-09-10改訂)――
@@ -416,6 +428,12 @@ class FileMode {
   bool grepInPlaceActive_ = false;
   bool showGrepNoMatchMessage_ = false;
   std::string grepNoMatchMessage_;
+  // setGrepMatchHighlight()自身の宣言コメント参照: clearGrepMatchHighlight()
+  // が、ハイライト付加前の内容(オーバーストライク由来の正規の
+  // line.attributesを含む)へ正確に戻すためのスナップショット。
+  // ハイライトが有効な間だけ意味を持つ。
+  bool grepMatchHighlightActive_ = false;
+  std::vector<ContentView::Line> grepMatchHighlightSnapshot_;
   // pagerMode_(2026-08-25): loadStream()が設定し、loadFile()が
   // クリアする――ページャ起動されたファイルのモードラインが、
   // 通常のloadFile()で開かれたファイルとは異なり、サイズ/ディレクト

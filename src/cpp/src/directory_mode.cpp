@@ -158,6 +158,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       // 独立(3つ同時に真になることは無い)。
       fields.name = "GREP";
       fields.trailing2 = grepNoMatchMessage_;
+      fields.trailing2Plain = true;  // 直接のユーザー指摘: "非ハイライトの「〜:No String」を表示して欲しい"
       fields.trailing3 = currentDirectory_;
       fields.fillTrailingToEdge = true;
     } else if (!pendingOperationLabel_.empty()) {
@@ -350,6 +351,30 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
 void DirectoryMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
 
 void DirectoryMode::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = active; }
+
+void DirectoryMode::setGrepMatchHighlight(const std::set<int> &indices) {
+  int savedTop = view_.topIndex();
+  int savedCursor = view_.cursorIndex();
+  std::vector<ContentView::Line> lines = view_.lines();
+  for (int idx : indices) {
+    if (idx < 0 || idx >= static_cast<int>(lines.size())) continue;
+    lines[idx].attributes.push_back(
+        Display::AttributeRun{0, static_cast<int>(lines[idx].text.size()), Display::Attribute::Bold});
+  }
+  view_.setLines(std::move(lines));
+  view_.setTopIndex(savedTop);
+  view_.setCursorIndex(savedCursor);
+}
+
+void DirectoryMode::clearGrepMatchHighlight() {
+  int savedTop = view_.topIndex();
+  int savedCursor = view_.cursorIndex();
+  std::vector<ContentView::Line> lines = view_.lines();
+  for (auto &line : lines) line.attributes.clear();
+  view_.setLines(std::move(lines));
+  view_.setTopIndex(savedTop);
+  view_.setCursorIndex(savedCursor);
+}
 
 void DirectoryMode::reportEditError() { reportError("Invalid mode"); }
 

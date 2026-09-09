@@ -246,6 +246,7 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     } else if (showGrepNoMatchMessage_) {
       fields.name = "GREP";
       fields.trailing2 = grepNoMatchMessage_;
+      fields.trailing2Plain = true;  // 直接のユーザー指摘: "非ハイライトの「〜:No String」を表示して欲しい"
       fields.trailing3 = currentFile_;
       fields.fillTrailingToEdge = true;
     }
@@ -455,6 +456,33 @@ void FileMode::setSearchOrigin(const std::string &label, const std::string &deta
 void FileMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
 
 void FileMode::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = active; }
+
+void FileMode::setGrepMatchHighlight(const std::set<int> &indices) {
+  int savedTop = view_.topIndex();
+  int savedCursor = view_.cursorIndex();
+  grepMatchHighlightSnapshot_ = view_.lines();
+  std::vector<ContentView::Line> lines = grepMatchHighlightSnapshot_;
+  for (int idx : indices) {
+    if (idx < 0 || idx >= static_cast<int>(lines.size())) continue;
+    lines[idx].attributes.push_back(
+        Display::AttributeRun{0, static_cast<int>(lines[idx].text.size()), Display::Attribute::Bold});
+  }
+  grepMatchHighlightActive_ = true;
+  view_.setLines(std::move(lines));
+  view_.setTopIndex(savedTop);
+  view_.setCursorIndex(savedCursor);
+}
+
+void FileMode::clearGrepMatchHighlight() {
+  if (!grepMatchHighlightActive_) return;
+  grepMatchHighlightActive_ = false;
+  int savedTop = view_.topIndex();
+  int savedCursor = view_.cursorIndex();
+  view_.setLines(std::move(grepMatchHighlightSnapshot_));
+  grepMatchHighlightSnapshot_.clear();
+  view_.setTopIndex(savedTop);
+  view_.setCursorIndex(savedCursor);
+}
 
 void FileMode::reportGrepNoMatchMessage(const std::string &message) {
   grepNoMatchMessage_ = message;
