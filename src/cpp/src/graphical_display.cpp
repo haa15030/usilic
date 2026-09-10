@@ -35,18 +35,18 @@ struct Cell {
   bool continuation = false;  // 2列幅のグリフの「影」となる2つ目のセル――それ自体では描画されない
 };
 
-// TerminalDisplay::attributeEscape()のHighlight(2026-09-10さらに改訂、
-// 生ANSI SGR "\x1b[38;5;16;48;5;230m")に見た目を揃えるための-g側の
-// 色ペア。基本16色(前景=黒/背景=明るい黄色)版が、ターミナルの
-// プロファイルがその16色自体を再定義している場合(実機スクリーン
-// ショット=fz、Terminal.appの"Basic"プロファイル)に判別しにくく
-// なると判明したため、拡張256色パレットの固定色番号(ユーザーが
-// 通常のプリファレンスUIから再定義できない)へ切り替えた――
-// 色番号16(256色キューブの黒、固定RGB(0,0,0))+230(薄い黄色/
-// cornsilk相当、固定RGB(255,255,215))のxterm標準RGB値をそのまま
-// 採用している。
-constexpr SDL_Color kHighlightBgColor{255, 255, 215, 255};
-constexpr SDL_Color kHighlightFgColor{0, 0, 0, 255};
+// TerminalDisplay::attributeEscape()のHighlight(2026-09-10三度目の
+// 改訂、生ANSI SGR truecolor "\x1b[38;2;176;226;255;48;2;205;0;205m")
+// に見た目を揃えるための-g側の色ペア。自前の「無難な絶対色」の発明
+// (基本16色版→拡張256色版、いずれも実機スクリーンショットで判別
+// しにくい/同化する実例が出た=fz/=ga)をやめ、GNU Emacs自身のisearch
+// face(現在マッチの強調表示)をそのまま拝借する方針へ転換――当て
+// 推量ではなく、実際にEmacs 30.1をPTY経由で起動しC-s検索時に送出
+// される生のエスケープシーケンスをキャプチャして確認済みの値
+// (前景=lightskyblue1 RGB(176,226,255)、背景=magenta3
+// RGB(205,0,205))をそのまま採用している。
+constexpr SDL_Color kHighlightBgColor{205, 0, 205, 255};
+constexpr SDL_Color kHighlightFgColor{176, 226, 255, 255};
 
 // `utf8Bytes`の先頭のUTF-8シーケンス(他所でfm::Utf8::
 // sequence_length()によって既に正しい長さに分割済み)を、単一の
