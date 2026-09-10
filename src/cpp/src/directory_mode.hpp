@@ -272,33 +272,18 @@ class DirectoryMode {
   void setSearchAnnotation(const std::string &text);
   bool hasSearchAnnotation() const { return !searchAnnotation_.empty(); }
 
-  // in-place GREPセッション(Application::activateGrepInPlace()/
-  // deactivateGrepInPlace()、詳細は.steering/20260909-grep-inline-
-  // highlight/design.md参照)が有効な間、モードラインの`name`スロット
-  // を"GREP"に、プログラムバッジ(通常は"(ls)")を"(grep)"に、一時的に
-  // 差し替える。setSearchAnnotation()とは別の状態――こちらは検索が
-  // 「終わった後」に戻ってきた画面への一回限りの注釈だが、こちらは
-  // 検索の「最中」であることを示す、セッションの生死そのものを表す
-  // フラグである。
-  void setGrepInPlaceOverlay(bool active);
-
-  // 2026-09-10追加、直接のユーザー指摘("とにかくハイライト表示は
-  // 出てくれないと...何にヒットしたかもわからない"): in-place GREP
-  // セッション中、マッチした「全ての」行を(現在のマッチだけでなく)
-  // 同時にBold(太字)表示する――カーソル行のStandout/dired式マークの
-  // Underlineとは独立した3つ目のチャネルなので、3つとも共存・区別
-  // できる。ls一覧の行は(他のモードのFileMode::attributesとは異なり)
-  // 元々オーバーストライク由来の属性を一切持たない――確認済み、
-  // content_view.hpp自身のLine::attributesのコメント参照――ので、
-  // クリア時に「元に戻す」べきスナップショットを別途保持する必要が
-  // 無い。
-  // 2026-09-10再改訂、直接のユーザー指摘("『マッチした文字列』だけを
-  // ハイライト表示には"): 行全体ではなく、GrepMatch::matchSpans
-  // (GrepMode::search()が`-o`付きの2回目の呼び出しで求める)の範囲
-  // だけをBoldにする。matchSpansが空(まれな取得失敗)の場合だけ、
-  // 従来通り行全体をBoldにするフォールバック。
-  void setGrepMatchHighlight(const std::vector<GrepMatch> &matches);
-  void clearGrepMatchHighlight();
+  // in-place GREP(Application::activateGrepInPlace()/deactivateGrepInPlace()、
+  // 詳細は.steering/20260909-grep-inline-highlight/design.md参照)関連の
+  // setGrepInPlaceOverlay()/setGrepMatchHighlight()/clearGrepMatchHighlight()/
+  // reportGrepNoMatchMessage()/clearGrepNoMatchMessage()は、2026-09-11、
+  // 直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも反映してほしい")に
+  // よりMan/Locate/Du/Archive/ArchiveContent/Shell/CutContent/
+  // ListBrowser/KEYへ展開するにあたってContentView自身へ一本化した
+  // (view_.setGrepInPlaceOverlay()等、content_view.hpp参照)――実装は
+  // Directory/File固有のものに一切依存していなかったため。Application
+  // はview_(このモードが所有する、あるいはviewForMode()経由で得た
+  // ContentView&)へ直接呼ぶ。下のModeLineFieldsProviderは
+  // view_.grepInPlaceActive()/view_.grepNoMatchActive()を読む。
 
   // "Invalid mode"(legacy mode.cのdo_edit()、S_errvからの逐語移植
   // ――str.cの文字列テーブル参照)を、現在のディレクトリパスの
@@ -324,20 +309,6 @@ class DirectoryMode {
   // しており、2つ目の異なる挙動をするステータスメッセージ機構を
   // 新たに発明するのではない。
   void reportError(const std::string &message);
-
-  // in-place GREPが0件のマッチも見つけられなかった時、モードラインへ
-  // 一時的に表示するメッセージ(2026-09-09追加、2026-09-10改訂)――
-  // 直接のユーザー報告(=fv、drawPromptLabel()自身の同日の修正コメント
-  // 参照)を受け、LOCATE自身の"Updating database..."/"Disk usage..."
-  // と同じ体裁(短いモード名のラベル+メッセージ+起点の3フィールド)に
-  // 合わせた: `name`="GREP"、`trailing2`にこのメッセージ、`trailing3`
-  // に現在のディレクトリ(検索元の起点、"戻り値")を表示する――
-  // reportError()とは意図的に別のstate(showEditError_)にしてある:
-  // reportError()は"Invalid mode"のような実際のエラーで`name`を丸ごと
-  // 乗っ取る一方、こちらは検索結果が単に0件だっただけで、起点情報
-  // (currentDirectory_)を隠す理由が無いため。
-  void reportGrepNoMatchMessage(const std::string &message);
-  void clearGrepNoMatchMessage();
 
   // reportEditError()/reportError()が設定したものをクリアし、次の
   // 再描画時にモードラインの`name`スロットを現在のディレクトリパスへ
@@ -441,14 +412,6 @@ class DirectoryMode {
   std::string editErrorMessage_ = "Invalid mode";
   std::string pendingOperationLabel_;
   std::string arcExtractSourceAnnotation_;
-  // in-place GREPセッション(Application::activateGrepInPlace()/
-  // deactivateGrepInPlace())中だけtrueになる――モードラインの
-  // 主要フィールドを一時的に"GREP"/"(grep)"へ差し替える
-  // (setGrepInPlaceOverlay()自身の宣言コメント参照)。
-  bool grepInPlaceActive_ = false;
-  // reportGrepNoMatchMessage()自身の宣言コメント参照。
-  bool grepNoMatchActive_ = false;
-  std::string grepNoMatchMessage_;
 };
 
 }  // namespace fm

@@ -169,40 +169,8 @@ class FileMode {
   void setSearchAnnotation(const std::string &text);
   bool hasSearchAnnotation() const { return !searchAnnotation_.empty(); }
 
-  // DirectoryMode::setGrepInPlaceOverlay()自身の宣言コメント参照
-  // (2026-09-09追加、2026-09-10改訂): in-place GREPセッション中、
-  // モードラインの`name`スロットを"GREP"に、`trailing2`を"(grep)"に、
-  // `trailing3`をこのファイル自身のパス(通常`name`が示していた情報、
-  // 直接のユーザー指摘=fv: "モード名が消える以上、検索対象情報も
-  // 無くなる...起点名を戻り値として欲しい")に、一時的に差し替える。
-  // 通常のloadFile()経由のファイルにだけ適用される――CLIページャ起動
-  // (pagerMode_)のファイルはそもそもin-place GREPの主要な想定
-  // シナリオではないため、今回はその画面までは作り込まない
-  // (file_mode.cpp自身のモードラインプロバイダのコメント参照)。
-  void setGrepInPlaceOverlay(bool active);
-
-  // DirectoryMode::setGrepMatchHighlight()自身の宣言コメント参照
-  // (2026-09-10追加、直接のユーザー指摘: "とにかくハイライト表示は
-  // 出てくれないと...CLAUDE.md等、通常ファイルでは何にヒットしたかも
-  // わからない"。2026-09-10再改訂: "『マッチした文字列』だけを
-  // ハイライト表示には"、行全体ではなくGrepMatch::matchSpansの範囲
-  // だけをBoldにする)。DirectoryModeとは異なり、Fileモードの内容は
-  // (オーバーストライク由来の)正規のline.attributesを既に持つことが
-  // ある(PipeBuffer参照)ため、クリア時に「元に戻す」べき直前の
-  // スナップショットを別途保持する。
-  void setGrepMatchHighlight(const std::vector<GrepMatch> &matches);
-  void clearGrepMatchHighlight();
-
-  // in-place GREPが0件のマッチも見つけられなかった時、モードラインへ
-  // 一時的に表示するメッセージ(2026-09-09追加、2026-09-10改訂)――
-  // DirectoryMode::reportGrepNoMatchMessage()のFile版、同じ理由・
-  // 同じ体裁(LOCATE自身の"Updating database..."参照)。Fileモードには
-  // 元々この種の一時メッセージの仕組みが無かったため今回新設した。
-  // Application::handleCommand()の先頭で、DirectoryMode::
-  // clearEditError()と同じタイミングでclearGrepNoMatchMessage()が
-  // 呼ばれ、次のコマンドで自動的に消える。
-  void reportGrepNoMatchMessage(const std::string &message);
-  void clearGrepNoMatchMessage();
+  // in-place GREP関連のメソッドはContentView自身へ一本化された
+  // (DirectoryMode.hpp自身の同じコメント参照、2026-09-11)。
 
   // 2026-08-25(legacyとless(1)の両方と比較した、ユーザーからの直接の
   // 依頼): CLIページャ起動(main.cpp自身の「通常ファイル引数」/
@@ -425,17 +393,6 @@ class FileMode {
   // 着地させた検索が何であれ、それを無効にする)。同じ関数内ですぐ
   // 上にあるsearchOriginLabel_/Detail_自身のクリアと同じ。
   std::string searchAnnotation_;
-  // setGrepInPlaceOverlay()/reportGrepNoMatchMessage()自身の宣言
-  // コメント参照(2026-09-09追加)。
-  bool grepInPlaceActive_ = false;
-  bool showGrepNoMatchMessage_ = false;
-  std::string grepNoMatchMessage_;
-  // setGrepMatchHighlight()自身の宣言コメント参照: clearGrepMatchHighlight()
-  // が、ハイライト付加前の内容(オーバーストライク由来の正規の
-  // line.attributesを含む)へ正確に戻すためのスナップショット。
-  // ハイライトが有効な間だけ意味を持つ。
-  bool grepMatchHighlightActive_ = false;
-  std::vector<ContentView::Line> grepMatchHighlightSnapshot_;
   // pagerMode_(2026-08-25): loadStream()が設定し、loadFile()が
   // クリアする――ページャ起動されたファイルのモードラインが、
   // 通常のloadFile()で開かれたファイルとは異なり、サイズ/ディレクト

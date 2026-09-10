@@ -1018,6 +1018,17 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     fields.rightWatermark = hasPrev ? "" : "usilic v1.5b";
     fields.trailing2 = "(" + shell_.programName() + ")";
     fields.trailing3 = shellReturnName_;
+    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
+    // 反映してほしい"): ManMode等自身の同じ分岐のコメント参照。
+    // trailing2は成功時と同じ"(grep)"バッジへ差し替え、trailing3は
+    // 検索元(SHELL自身の現在のディレクトリ)を示す(shellReturnName_
+    // ――^Gの戻り先――ではない)。
+    if (shell_.scrollback().grepInPlaceActive() || shell_.scrollback().grepNoMatchActive()) {
+      fields.name = "GREP";
+      fields.trailing2 = "(grep)";
+      fields.trailing3 = shell_.currentDirectory();
+      return fields;
+    }
     return fields;
   });
   // KEY(^H)向けのモードラインのフィールド: 左側に固定の"KEY"、右側の
@@ -1035,8 +1046,18 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 元から正しかったが、fillTrailingToEdgeがfalseのままだった――
     // MAN/LOCATE/DU自身の同種の見落とし(HISTORY.md:9473「基本的に
     // 右端まで埋まっていないモードラインは全部不良」)と同じ、trueへ。
-    return {"KEY", previousModeName(keyReturnMode_), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
-            /*trailing2=*/""};
+    ContentView::ModeLineFields fields{"KEY", previousModeName(keyReturnMode_),
+                                        /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
+                                        /*trailing2=*/""};
+    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
+    // 反映してほしい"): ManMode等自身の同じ分岐のコメント参照。
+    if (keyView_.grepInPlaceActive() || keyView_.grepNoMatchActive()) {
+      fields.name = "GREP";
+      fields.trailing2 = "(grep)";
+      fields.trailing3 = previousModeName(keyReturnMode_);
+      return fields;
+    }
+    return fields;
   });
   // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
   // スクリーンショット=fb指定): 旧版は選択中の行「全体」("Space :
@@ -1191,6 +1212,19 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
               /*trailingKind=*/ContentView::TrailingKind::PathMiddle};
     }
     std::string name = listBrowserChronological_ ? "HISTORY" : ringCategoryLabel(listBrowserCategory_);
+    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
+    // 反映してほしい"): ManMode等自身の同じ分岐のコメント参照。他の
+    // 3つの分岐(promptHistoryContext_が設定されている間)は、いずれも
+    // プロンプト/候補一覧オーバーレイが開いている間だけ到達し、その
+    // 間currentMode_はListBrowserにはならない(^S/^[iはプロンプトが
+    // 開いていない時にしか起動できない)ため、実際にin-placeが起動
+    // し得るのはこの最後の(プレーンなHISTORY/RESULTS閲覧)分岐だけ。
+    if (listBrowserView_.grepInPlaceActive() || listBrowserView_.grepNoMatchActive()) {
+      ContentView::ModeLineFields fields{"GREP", trailing, /*fillTrailingToEdge=*/true,
+                                          /*rightWatermark=*/"", "(grep)"};
+      fields.trailing3 = name;
+      return fields;
+    }
     // trailingKind=PathMiddle(2026-08-17修正、=bw): この`trailing`は、
     // ハイライトされているFILE/DIR/COMMAND項目自身であり――端末幅を
     // 容易に超え得る完全な絶対パス(あるいはシェルコマンド、その末尾
@@ -1352,6 +1386,17 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 対応である)。他の全ての起点(実際のFile/Directory起点のCUT)は
     // 正確に元のまま残してある: 影響を受けておらず、同じ2フィールド
     // の処理を求めているとは独立に確認されていない。
+    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
+    // 反映してほしい"): ManMode等自身の同じ分岐のコメント参照。name
+    // (起点により"HELP"/"CUT"/"MAN"/"LOCATE"/"DU"/ファイル名のいずれか)
+    // を"GREP"が乗っ取るので、その見えなくなった識別情報をtrailing3へ
+    // 退避する。
+    if (cutContentView_.grepInPlaceActive() || cutContentView_.grepNoMatchActive()) {
+      ContentView::ModeLineFields fields{"GREP", trailing, /*fillTrailingToEdge=*/true,
+                                          /*rightWatermark=*/"", "(grep)"};
+      fields.trailing3 = name;
+      return fields;
+    }
     if (cutOrigin_ == CutOrigin::Help) {
       return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", label};
     }
@@ -1664,6 +1709,16 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     ContentView::ModeLineFields fields{"MAN", std::to_string(contentByteCount(manView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/"(man)"};
+    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
+    // 反映してほしい"): DirectoryMode/FileMode自身の同じ分岐のコメント
+    // 参照。trailing3はここでも「検索元」(このman page自身のトピック)
+    // を示す――戻り先(previousModeName())ではない。
+    if (manView_.grepInPlaceActive() || manView_.grepNoMatchActive()) {
+      fields.name = "GREP";
+      fields.trailing2 = "(grep)";
+      fields.trailing3 = manMode_.currentPage();
+      return fields;
+    }
     // 2026-09-19四訂正、直接のユーザー提案("フラグはなるべく使いたく
     // ない...旧版のようにスタックへの積み降ろしでは対応できない？"):
     // application.hpp自身のmanReturnStack_宣言コメント参照。フラグに
@@ -1724,6 +1779,15 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 形に揃える。
     ContentView::ModeLineFields fields{"LOCATE", std::to_string(contentByteCount(locateView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", /*trailing2=*/""};
+    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
+    // 反映してほしい"): ManMode自身の同じ分岐のコメント参照。trailing3
+    // はここでも「検索元」(このLOCATE結果自身のクエリ)を示す。
+    if (locateView_.grepInPlaceActive() || locateView_.grepNoMatchActive()) {
+      fields.name = "GREP";
+      fields.trailing2 = "(grep)";
+      fields.trailing3 = locateMode_.query();
+      return fields;
+    }
     fields.trailing3 = previousModeName(locateReturnStack_.back());
     return fields;
   });
@@ -1774,6 +1838,15 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     ContentView::ModeLineFields fields{"DU", std::to_string(contentByteCount(duView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/""};
+    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
+    // 反映してほしい"): ManMode/LocateMode自身の同じ分岐のコメント
+    // 参照。trailing3はここでも「検索元」(集計対象のルート)を示す。
+    if (duView_.grepInPlaceActive() || duView_.grepNoMatchActive()) {
+      fields.name = "GREP";
+      fields.trailing2 = "(grep)";
+      fields.trailing3 = duMode_.currentPath();
+      return fields;
+    }
     fields.trailing3 = previousModeName(duReturnStack_.back());
     return fields;
   });
@@ -1827,6 +1900,17 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                                         /*trailing2RightJustified=*/false,
                                         /*trailing2Kind=*/ContentView::TrailingKind::Path};
     fields.splitLayoutWhenCrowded = true;
+    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
+    // 反映してほしい"): ManMode等自身の同じ分岐のコメント参照。name
+    // (通常はエントリ自身のbasename)を"GREP"が乗っ取るので、その
+    // 見えなくなった識別情報をtrailing3へ退避する(FileMode自身の
+    // currentFile_と同じ理屈)。
+    if (archiveContentView_.grepInPlaceActive() || archiveContentView_.grepNoMatchActive()) {
+      fields.name = "GREP";
+      fields.trailing2 = "(grep)";
+      fields.trailing3 = entry->name;
+      return fields;
+    }
     return fields;
   });
 
@@ -3596,8 +3680,12 @@ bool Application::handleCommand(Command command) {
   // として「それ自身の」メッセージを表示する。
   directoryMode_.clearEditError();
   archiveMode_.clearEditError();  // ArchiveMode自身の同一の仕組み――それ自身の宣言コメント参照
-  directoryMode_.clearGrepNoMatchMessage();  // DirectoryMode::reportGrepNoMatchMessage()自身の宣言コメント参照、同じタイミング・同じ理由
-  fileMode_.clearGrepNoMatchMessage();  // FileMode::reportGrepNoMatchMessage()自身の宣言コメント参照、同じタイミング・同じ理由
+  // ContentView::reportGrepNoMatchMessage()自身の宣言コメント参照、同じ
+  // タイミング・同じ理由。2026-09-11、Directory/Fileの2回の明示呼び出し
+  // から一般化: grepNoMatchActive_になり得るのは常にこの時点の
+  // activeView()(=currentMode_のview)だけであり、この後の下のswitchが
+  // currentMode_を変え得るより「前」にここで読むため。
+  activeView().clearGrepNoMatchMessage();
   // in-place GREP(2026-09-09追加、2026-09-10改訂: 直接のユーザー指摘
   // "うっかりミスは回避したいので、明確なモード切り替えには当たらない
   // ...ページ送りキー（k/jその他）等はスルー"): 明確な「モード切り替え」
@@ -5281,6 +5369,12 @@ bool Application::openSelectedGrepMatch() {
     // 通常のEnterの意味にしかならず、見た目には何も起きなかった
     // (「無反応」)。^P/^Nと全く同じ「閲覧中」状態にすることで、この
     // 後のEnterも同じ意味を持つようにする。
+    // 2026-09-11追記: Basic構文(^S)のShell起点は今やin-place方式に
+    // なり、currentMode_がGrepへ一度も変わらないため、この関数自体が
+    // 呼ばれなくなった――同じshell_.beginHistoryBrowsing()の呼び出しは
+    // activateGrepInPlace()/jumpToGrepInPlaceMatch()自身に複製してある。
+    // ここに残っているのは、Shell起点のFGREP(^O^S)/EGREP(^J^S)が今も
+    // 従来通りの一覧モードのままで、この関数を経由し続けるため。
     shell_.beginHistoryBrowsing();
   }
   // 2026-08-28修正、直接のユーザー報告("検索前には画面にあった
@@ -5310,6 +5404,20 @@ bool Application::openSelectedGrepMatch() {
 // activateGrepInPlace()/deactivateGrepInPlace()/jumpToGrepInPlaceMatch()
 // 自身の宣言コメント(application.hpp)参照。design.mdの経緯:
 // .steering/20260909-grep-inline-highlight/。
+namespace {
+// activateGrepInPlace()自身のコメント参照(2026-09-11追加): GrepMatch
+// (grep_mode.hpp)からContentView::GrepHighlightMatchへの変換――
+// ContentViewはGrepModeより下位のレイヤーなので、GrepMatch自体を
+// 型として持ち込まない(ContentView::GrepHighlightMatch自身のコメント
+// 参照)。
+std::vector<ContentView::GrepHighlightMatch> toHighlightMatches(const std::vector<GrepMatch> &matches) {
+  std::vector<ContentView::GrepHighlightMatch> out;
+  out.reserve(matches.size());
+  for (const auto &m : matches) out.push_back({m.sourceLineIndex, m.matchSpans});
+  return out;
+}
+}  // namespace
+
 bool Application::activateGrepInPlace() {
   const auto &matches = grepMode_.matches();
   if (matches.empty()) {
@@ -5326,11 +5434,7 @@ bool Application::activateGrepInPlace() {
     // 特有のケースだけを正しく後始末できる。
     deactivateGrepInPlace();
     std::string message = grepMode_.pattern() + ": No String";
-    if (grepInPlaceOriginMode_ == ApplicationMode::Directory) {
-      directoryMode_.reportGrepNoMatchMessage(message);
-    } else {
-      fileMode_.reportGrepNoMatchMessage(message);
-    }
+    viewForMode(grepInPlaceOriginMode_).reportGrepNoMatchMessage(message);
     activeView().redraw();
     return false;
   }
@@ -5351,35 +5455,40 @@ bool Application::activateGrepInPlace() {
   updateGrepInPlacePositionText();
   // 2026-09-10追加、直接のユーザー指摘("とにかくハイライト表示は
   // 出てくれないと...何にヒットしたかもわからない"): 全マッチを
-  // 同時にBold表示する(setGrepMatchHighlight()自身のコメント参照)
-  // ――カーソルが今どのマッチにいるかとは独立に、マッチ集合全体を
-  // 常に見渡せるようにする。matchSpans(2026-09-10再改訂、"『マッチ
-  // した文字列』だけを")付きでそのまま渡す。
-  if (grepInPlaceOriginMode_ == ApplicationMode::Directory) {
-    directoryMode_.setGrepInPlaceOverlay(true);
-    directoryMode_.setGrepMatchHighlight(grepInPlaceMatches_);
-  } else {
-    fileMode_.setGrepInPlaceOverlay(true);
-    fileMode_.setGrepMatchHighlight(grepInPlaceMatches_);
-  }
-  ContentView &target = activeView();
+  // 同時にBold表示する(ContentView::setGrepMatchHighlight()自身の
+  // コメント参照)――カーソルが今どのマッチにいるかとは独立に、マッチ
+  // 集合全体を常に見渡せるようにする。matchSpans(2026-09-10再改訂、
+  // "『マッチした文字列』だけを")付きでそのまま渡す。
+  // 2026-09-11、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも反映して
+  // ほしい")によりDirectory/Fileの二択からviewForMode()経由の汎用呼び
+  // 出しへ一般化した(ContentView自身のGREP関連メソッド参照)。
+  ContentView &target = viewForMode(grepInPlaceOriginMode_);
+  target.setGrepInPlaceOverlay(true);
+  target.setGrepMatchHighlight(toHighlightMatches(grepInPlaceMatches_));
   target.setCursorIndex(grepInPlaceMatches_[0].sourceLineIndex);
   target.centerOnCursor();
   target.redraw();
-  if (grepInPlaceOriginMode_ == ApplicationMode::File) target.syncVisibleCursor();
+  // syncVisibleCursor()自身の宣言コメント参照: cursorHighlightEnabled()
+  // がfalseのモード(File/Man/Shell等、行全体の反転表示によるカーソル
+  // 表現を持たない)だけで必要――2026-09-11、Directory/Fileの二択判定
+  // から、この既存の汎用フラグを使う判定へ一般化した。
+  if (!target.cursorHighlightEnabled()) target.syncVisibleCursor();
+  // openSelectedGrepMatch()自身のShell分岐のコメント参照(2026-09-11
+  // 追記): Basic構文のShell起点は今やin-place方式であり、あの関数自体
+  // (currentMode_==Grepの時だけ呼ばれる)を経由しないため、同じ
+  // shell_.beginHistoryBrowsing()呼び出しをここに複製する――さもないと
+  // マッチへ着地してもEnterが「ハイライトされた行を再実行する」意味に
+  // ならず、無反応になる。
+  if (grepInPlaceOriginMode_ == ApplicationMode::Shell) shell_.beginHistoryBrowsing();
   return true;
 }
 
 void Application::deactivateGrepInPlace() {
   if (!grepInPlaceActive_) return;
   grepInPlaceActive_ = false;
-  if (grepInPlaceOriginMode_ == ApplicationMode::Directory) {
-    directoryMode_.setGrepInPlaceOverlay(false);
-    directoryMode_.clearGrepMatchHighlight();
-  } else {
-    fileMode_.setGrepInPlaceOverlay(false);
-    fileMode_.clearGrepMatchHighlight();
-  }
+  ContentView &target = viewForMode(grepInPlaceOriginMode_);
+  target.setGrepInPlaceOverlay(false);
+  target.clearGrepMatchHighlight();
   // updateGrepInPlacePositionText()自身のコメント参照――セッション
   // 終了時は通常のposition表示(カーソル行/総行数)へ戻す。
   activeView().setPositionTextOverride(std::nullopt);
@@ -5418,7 +5527,12 @@ bool Application::jumpToGrepInPlaceMatch(int delta) {
   updateGrepInPlacePositionText();
   target.centerOnCursor();
   target.redraw();
-  if (grepInPlaceOriginMode_ == ApplicationMode::File) target.syncVisibleCursor();
+  // activateGrepInPlace()自身のsyncVisibleCursor()呼び出しのコメント
+  // 参照(2026-09-11、Directory/Fileの二択から汎用フラグ判定へ一般化)。
+  if (!target.cursorHighlightEnabled()) target.syncVisibleCursor();
+  // activateGrepInPlace()自身のshell_.beginHistoryBrowsing()呼び出しの
+  // コメント参照――^N/^Pで別のマッチへ移るたびにも同じく必要。
+  if (grepInPlaceOriginMode_ == ApplicationMode::Shell) shell_.beginHistoryBrowsing();
   return true;
 }
 
@@ -8341,6 +8455,34 @@ bool Application::showKeyReference() {
 // プロンプトをスキップし、代わりに直接候補リストへ開くのかについては
 // startRegexPromptList()自身のコメント参照――FGREP(Fixed)は影響を
 // 受けない。
+// 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外(現状GREP
+// が稼働している全てのモード)へも反映してほしい"): in-place方式
+// (専用の一覧画面Grepへは切り替えず、元の画面にマッチをハイライト
+// 表示したまま留まる)の対象モード一覧――executeGrep()/
+// startIncrementalGrepPrompt()の両方から参照される単一の判定基準。
+// Grep自身(再入場防止)、Cut(セグメント一覧自体、CutContentとは別物)、
+// Copy(凍結テキスト選択、性質が違う)は対象外。^J^S(EGREP)/^O^S(FGREP)
+// は今回もin-place化しない(GrepSyntax::Basic限定の呼び出し元自身の
+// コメント参照)ので、ここに含めるモードそのものには影響しない。
+bool Application::isGrepInPlaceEligibleMode(ApplicationMode mode) const {
+  switch (mode) {
+    case ApplicationMode::Directory:
+    case ApplicationMode::File:
+    case ApplicationMode::Man:
+    case ApplicationMode::Locate:
+    case ApplicationMode::Du:
+    case ApplicationMode::Archive:
+    case ApplicationMode::ArchiveContent:
+    case ApplicationMode::Shell:
+    case ApplicationMode::CutContent:
+    case ApplicationMode::ListBrowser:
+    case ApplicationMode::Key:
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool Application::startGrepPrompt(GrepSyntax syntax) {
   if (currentMode_ == ApplicationMode::Grep) return false;
   grepSyntax_ = syntax;
@@ -8352,7 +8494,7 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
 
 // Command::StartIncrementalGrep自身の宣言コメント参照(2026-09-10追加)。
 bool Application::startIncrementalGrepPrompt() {
-  if (currentMode_ != ApplicationMode::Directory && currentMode_ != ApplicationMode::File) return false;
+  if (!isGrepInPlaceEligibleMode(currentMode_)) return false;
   grepSyntax_ = GrepSyntax::Basic;
   grepReturnMode_ = currentMode_;
   incrementalGrepActive_ = true;
@@ -10288,14 +10430,18 @@ bool Application::executeGrep(const std::string &pattern) {
     return false;
   }
   // 2026-09-09追加、直接のユーザー提案(.steering/20260909-grep-inline-
-  // highlight/requirements.md参照): GREP(^S、Basic構文)がDirectory/
-  // File起点の場合だけ、専用の一覧画面(下のApplicationMode::Grepへの
-  // 遷移)へは切り替えず、in-place方式(activateGrepInPlace()自身の
-  // コメント参照)へ分岐する。^O^S(FGREP)/^J^S(EGREP)、およびMan/
-  // Locate/Du/Shell起点のGREPは、今回のスコープ外として全て従来通り
-  // 下の一覧モードのままにする。
-  if (grepSyntax_ == GrepSyntax::Basic &&
-      (grepReturnMode_ == ApplicationMode::Directory || grepReturnMode_ == ApplicationMode::File)) {
+  // highlight/requirements.md参照): GREP(^S、Basic構文)が
+  // isGrepInPlaceEligibleMode()(自身のコメント参照)対象のモード起点
+  // の場合だけ、専用の一覧画面(下のApplicationMode::Grepへの遷移)へは
+  // 切り替えず、in-place方式(activateGrepInPlace()自身のコメント参照)
+  // へ分岐する。^O^S(FGREP)/^J^S(EGREP)は今回のスコープ外として全て
+  // 従来通り下の一覧モードのままにする(2026-09-09時点の当初の決定を
+  // 維持)。当初(2026-09-09)はDirectory/Fileの2モードだけに限定して
+  // いたが、2026-09-11、直接のユーザー依頼("^Sと^[iをFILE/DIR以外
+  // (現状GREPが稼働している全てのモード)へも反映してほしい")により
+  // Man/Locate/Du/Archive/ArchiveContent/Shell/CutContent/ListBrowser/
+  // Keyへ拡張した。
+  if (grepSyntax_ == GrepSyntax::Basic && isGrepInPlaceEligibleMode(grepReturnMode_)) {
     grepInPlaceOriginMode_ = grepReturnMode_;
     return activateGrepInPlace();
   }

@@ -3120,9 +3120,13 @@ TEST_CASE_FIXTURE(Fixture, "MAN: ^G returns to the base Directory mode when invo
 // されていた場合にその本来の戻り先(ファイル自身)を失っていた――
 // 独立したフラグ(manReturnsToGrepResults_)へ設計し直し、
 // manReturnMode_自体には一切触れないようにして解決した。
+// 2026-09-11更新、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも反映
+// してほしい")によりMan起点の^S(Basic)もin-place方式になった――
+// LocateMode自身の対になるテストのコメント参照。currentMode_は最初
+// からMan、専用のGrep一覧へは一度も切り替わらない。
 TEST_CASE_FIXTURE(Fixture, "MAN started from File mode: the still-open GREP prompt's trailing field already "
-                           "shows \"MAN: ls\", and backing out of the grep results WITHOUT selecting a match "
-                           "still correctly shows the origin file's path (not the base Directory)") {
+                           "shows \"MAN: ls\", and backing out of an in-place grep search WITHOUT selecting a "
+                           "match still correctly shows the origin file's path (not the base Directory)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -3148,18 +3152,11 @@ TEST_CASE_FIXTURE(Fixture, "MAN started from File mode: the still-open GREP prom
     MESSAGE("'ls' man page has no 'sort' match here -- skipping");
     return;
   }
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.currentMode() == ApplicationMode::Man);  // in-place: never left Man
   REQUIRE_FALSE(app.grepMode().matches().empty());
 
-  // Back WITHOUT selecting a match -- openSelectedGrepMatch() never
-  // runs here at all, so nothing was ever pushed onto manReturnStack_.
-  // (Not asserting the directory's ABSENCE here -- it's trivially a
-  // prefix of filePath itself, so that check would be meaningless.)
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Man);
-  CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
-  CHECK(app.activeContentView().modeLineText().find("GREP: sort") == std::string::npos);
-
+  // Back WITHOUT ever leaving Man -- goes straight to Man's own normal
+  // Back destination (the origin File).
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == filePath);
@@ -3180,9 +3177,16 @@ TEST_CASE_FIXTURE(Fixture, "MAN started from File mode: the still-open GREP prom
 // 常にdirectoryMode_.currentDirectory()を表示する前提だったため)
 // 実際の戻り先(Grep結果一覧)と食い違う基点のDirectoryパスのまま
 // だった――という2箇所の見落としが原因だった。
-TEST_CASE_FIXTURE(Fixture, "GREP started from Man mode: the results screen labels its origin as \"MAN: ls\", "
-                           "and Enter on a match lands back on Man with \"GREP: sort\" as its return value, "
-                           "with Back returning to the grep results (not straight to the base Directory)") {
+// 2026-09-11更新、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも反映
+// してほしい")によりMan起点の^S(Basic)もin-place方式になった――
+// currentMode_は最初からMan、専用のGrep一覧へは一度も切り替わらない。
+// Manの内容はDirectory/DUのような「開けるエントリ」を持たないプレーン
+// なテキストなので(Command::EnterのswitchにMan自身の分岐は無い)、
+// 以前あった「Enterで一旦Grep結果からManへ着地する」という段階は
+// そもそも意味を成さなくなった――マッチへは検索確定と同時に既に
+// 着地済みである。
+TEST_CASE_FIXTURE(Fixture, "GREP started from Man mode: stays in-place (Man) with \"MAN: ls\" as the mode "
+                           "line's origin label, and Back returns straight to Directory") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartMan));
   feedText("ls");
@@ -3198,26 +3202,10 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Man mode: the results screen label
     MESSAGE("'ls' man page has no 'sort' match here -- skipping");
     return;
   }
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  CHECK(app.activeContentView().modeLineText().find("MAN: ls") != std::string::npos);
+  REQUIRE(app.currentMode() == ApplicationMode::Man);  // in-place: never left Man
+  CHECK(app.activeContentView().modeLineText().find("ls") != std::string::npos);
   REQUIRE_FALSE(app.grepMode().matches().empty());
 
-  REQUIRE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Man);
-  CHECK(app.manMode().currentPage() == "ls");
-  CHECK(app.activeContentView().modeLineText().find("GREP: sort") != std::string::npos);
-  // The stale hardcoded-to-Directory return value must be gone now.
-  CHECK(app.activeContentView().modeLineText().find(app.directoryMode().currentDirectory()) ==
-        std::string::npos);
-
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Grep);  // NOT straight to Directory
-
-  // A second Back should now correctly reach the ORIGINAL Man entry
-  // (manReturnMode_ reset back to Directory by returnFromGrep()), and a
-  // third should reach Directory without looping back to Grep.
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Man);
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
@@ -4005,9 +3993,20 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: ^G returns to the normal FILE it was invoked
 
 // 2026-09-19追加、MAN自身の同種のテストと対をなすLOCATE版――直接の
 // ユーザー依頼("LOCATEも同じなので対応してほしい")。
-TEST_CASE_FIXTURE(Fixture, "LOCATE started from File mode: backing out of a grep search run against the "
-                           "results WITHOUT selecting a match still correctly shows the origin file's path "
-                           "(not the base Directory)") {
+// 2026-09-11更新、直接のユーザー依頼("^Sと^[iをFILE/DIR以外(現状GREP
+// が稼働している全てのモード)へも反映してほしい")によりLOCATE起点の
+// ^SもDirectory/Fileと同じin-place方式(専用の一覧Grepへは切り替えず、
+// LOCATE自身の画面にマッチをハイライト表示したまま留まる)になった。
+// これに伴い、以前あった「Grep結果画面からBackでLOCATEへ戻り、さらに
+// Backでその手前(File)へ」という2段階の戻りは、LOCATE自身が最初から
+// 一度も離れていない(currentMode_はLocateのまま)ため単純化される――
+// マッチを1件も選ばずにBackすると、LOCATE自身の通常のBack先(File)へ
+// 直接戻る。このテストの本来の関心事(「マッチを選ばずにBackしても、
+// 起点ファイルのパスが正しく示される」)自体は変わらず引き続き検証
+// できる。
+TEST_CASE_FIXTURE(Fixture, "LOCATE started from File mode: backing out of an in-place grep search run "
+                           "against the results WITHOUT selecting a match still correctly shows the "
+                           "origin file's path (not the base Directory)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -4030,21 +4029,18 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE started from File mode: backing out of a grep
   REQUIRE(app.handleCommand(Command::StartGrep));
   feedText(".md");  // guaranteed to match every line, see the sibling GREP-from-Locate test's own comment
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE_FALSE(app.grepMode().matches().empty());
+  // in-place: currentMode_はLocateのまま、専用のGrep一覧へは切り替わらない。
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);
+  REQUIRE_FALSE(app.locateMode().results().empty());
 
-  // Back WITHOUT selecting a match -- openSelectedGrepMatch() never
-  // runs here at all, so nothing was ever pushed onto locateReturnStack_.
-  // (Not asserting the directory's ABSENCE here -- it's trivially a
-  // prefix of filePath itself, so that check would be meaningless.)
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Locate);
-  CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
-  CHECK(app.activeContentView().modeLineText().find("GREP: .md") == std::string::npos);
-
+  // Back WITHOUT selecting a match -- 一度もLocateを離れていないので、
+  // LOCATE自身の通常のBack先(File)へ直接戻る。
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == filePath);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
 // 2026-09-19の方針転換後も、この特定のシナリオの期待値自体は変わらない
@@ -8976,8 +8972,16 @@ TEST_CASE_FIXTURE(Fixture, "DU: ^G interrupts a still-running `du` and lands on 
 // 同種のテストと対をなすDU版――GREPの結果からDU内のマッチへ着地した
 // 場合、^Gはduに一段ずつ正しく戻る(duReturnStack_、application.hpp
 // 自身の宣言コメント参照)。
-TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode: Enter on a match lands back on Du, with Back "
-                           "returning to the grep results (not skipping straight past it)") {
+// 2026-09-11更新、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも反映
+// してほしい")によりDu起点の^S(Basic)もin-place方式になった――
+// currentMode_はDuのまま変わらず、専用の一覧Grep画面を経由しなくなった
+// ため、「Grep結果画面からEnter→Du、BackでGrepへ戻る」という以前の
+// 中間段階は無くなった。今はDu自身のマッチへカーソルが直接乗った状態
+// のまま留まり、Enterを押すとDu自身の通常のEnter処理(openSelectedDuEntry())
+// がそのままそのエントリを開く――そこからのBackはDuへ、さらにBackで
+// Directoryへ収束し、それ以上のBackはDirectoryに留まる。
+TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode: stays in-place (Du), Enter opens the matched entry, "
+                           "and Back converges to Directory without bouncing forever") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
   waitForDu(app);
@@ -8994,18 +8998,19 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode: Enter on a match lands ba
   REQUIRE(app.handleCommand(Command::StartGrep));
   feedText(knownDuLine);
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE_FALSE(app.grepMode().matches().empty());
+  REQUIRE(app.currentMode() == ApplicationMode::Du);  // in-place: never left Du
+  CHECK_FALSE(app.grepMode().matches().empty());
 
   REQUIRE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Du);
-
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Grep);  // NOT straight to Directory
+  CHECK(app.currentMode() != ApplicationMode::Du);  // opened the matched entry
 
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Du);
   CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  // Mashing further must NOT bounce back into Du -- it should settle
+  // on Directory and stay there.
+  for (int i = 0; i < 3; i++) app.handleCommand(Command::Back);
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
@@ -12933,10 +12938,16 @@ TEST_CASE_FIXTURE(Fixture, "^O^Y (PASTE) with no active prompt is a harmless no-
 // 常に"LOCATE: <query>"(自己参照的な「今どこにいるか」表示)を
 // 出し続けており、実際の^Gの戻り先(Grep結果一覧)を全く反映していな
 // かった。
-TEST_CASE_FIXTURE(Fixture, "GREP started from Locate mode: the results screen labels its origin as "
-                           "\"LOCATE: .md\", and Enter on a match lands back on Locate with \"GREP: .md\" as "
-                           "its return value (not the stale self-referential \"LOCATE: .md\"), with Back "
-                           "returning to the grep results") {
+// 2026-09-11更新、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも反映
+// してほしい")によりLocate起点の^S(Basic)もin-place方式になった――
+// currentMode_は最初からLocate、専用のGrep一覧へは一度も切り替わら
+// ない。以前あった「Enterで一旦Grep結果からLocateへ着地する」という
+// 段階は無くなった(マッチへは検索確定と同時に既に着地済み)ので、
+// Enter自体の検証(openSelectedLocateResult()、GREPとは独立した既存の
+// 機能)はこのテストの関心事から外し、backing-out(マッチを選ばずに
+// Backする)の検証に絞る。
+TEST_CASE_FIXTURE(Fixture, "GREP started from Locate mode: stays in-place (Locate) with \"LOCATE: .md\" as "
+                           "the mode line's origin label, and Back returns straight to Directory") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartLocate));
   feedText(".md");
@@ -12958,24 +12969,10 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Locate mode: the results screen la
   REQUIRE(app.handleCommand(Command::StartGrep));
   feedText(".md");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.currentMode() == ApplicationMode::Locate);  // in-place: never left Locate
   REQUIRE_FALSE(app.grepMode().matches().empty());
-  CHECK(app.activeContentView().modeLineText().find("LOCATE: .md") != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find(".md") != std::string::npos);
 
-  REQUIRE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Locate);
-  CHECK(app.activeContentView().modeLineText().find("GREP: .md") != std::string::npos);
-  CHECK(app.activeContentView().modeLineText().find("LOCATE: .md") == std::string::npos);
-
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Grep);  // NOT straight to Directory
-
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Locate);
-  // reset, not stale "GREP: .md" -- locateReturnMode_ back to its
-  // resolved anchor (this fixture searched directly from Directory).
-  CHECK(app.activeContentView().modeLineText().find(app.directoryMode().currentDirectory()) != std::string::npos);
-  CHECK(app.activeContentView().modeLineText().find("GREP: .md") == std::string::npos);
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
@@ -13017,8 +13014,14 @@ TEST_CASE_FIXTURE(Fixture, "GREP prompt started from Locate mode, before any pat
 // で実際に確認した。副産物として、grepView_自身のtrailing3にShell
 // 起点の分岐が一切無く(Man/Locate/Duと同じ穴)、検索は成功するのに
 // 戻り値欄だけ空欄になる見落としも見つかったので併せて直した。
-TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell's own scrollback and shows "
-                           "\"SHELL\" as the results screen's origin label") {
+// 2026-09-11更新、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも反映
+// してほしい")によりShell起点の^S(Basic)もin-place方式になった――
+// currentMode_はShellのまま変わらないので、専用の一覧Grep画面(かつて
+// その"trailing2"に出ていた"SHELL"という文字列)はもう無い。代わりに
+// currentMode_自体がShellのままであること・マッチ件数・trailing3が
+// SHELL自身の現在のディレクトリを示すことを確認する。
+TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell's own scrollback in-place, "
+                           "without leaving Shell mode") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -13038,10 +13041,9 @@ TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell
   REQUIRE(app.promptActive());
   feedText("SHELLGREPTESTMARKER");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.grepMode().matches().size() == 1);
-  CHECK(app.activeContentView().modeLineText().find("SHELL") != std::string::npos);
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.grepMode().matches().size() == 1);
+  CHECK(app.activeContentView().modeLineText().find("(grep)") != std::string::npos);
 }
 
 // 2026-09-20追加、直接のユーザー報告("^O^S/^J^Sが利かない"):
@@ -13117,18 +13119,33 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: a real ^S keypress (not handleCommand(StartGr
   }
   REQUIRE(app.currentMode() == ApplicationMode::Shell);
 
+  // 2026-09-11更新: このテスト自身の本来の関心事(生の^Sバイトが実際に
+  // GREPプロンプトを起動すること)には影響しないが、in-place方式では
+  // マッチ0件だとfeedByte(0x0d)自体がfalseを返す(プロンプトを開いた
+  // まま、Directory/File自身の既存のNo String仕様と同じ)ため、確実に
+  // 一致するパターンが要る――実際にコマンドを1つ実行しておく。
+  app.shell().commandLine().setText("printf 'SHELLGREPTESTMARKER\\n'");
+  app.shell().submitLine();
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("SHELLGREPTESTMARKER") != std::string::npos) return true;
+    return false;
+  }));
+
   REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
   // startGrepPrompt()自身のコメント参照――他のGroup1プロンプト
   // (MAN/CUT等)と同じく、ここではまだプロンプトを「開く」だけで、
   // currentMode_はパターン投入までShellのまま――すぐ下でパターンを
-  // 投入して初めてGrepへ遷移する。
+  // 投入して初めてin-placeのGREPセッションが始まる(専用のGrep一覧
+  // モードへは切り替わらない)。
   CHECK(app.currentMode() == ApplicationMode::Shell);
   CHECK(app.promptActive());
   CHECK(app.shell().commandLine().text().empty());  // NOT inserted as a literal control-char glyph
 
-  feedText("printf");
+  feedText("SHELLGREPTESTMARKER");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  CHECK(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.grepMode().matches().size() == 1);
 }
 
 // 2026-09-20追加、直接のユーザー報告("ps等実行後、^Sps^Mでせっかく
@@ -13155,18 +13172,23 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: Enter on a GREP match found in SHELL's own sc
 
   REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
   feedText("SHELLGREPTESTMARKER");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.grepMode().matches().size() == 1);
-
-  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // confirms the search -- lands in-place, no separate Grep screen
+  // 2026-09-11更新、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
+  // 反映してほしい")によりShell起点の^S(Basic)もin-place方式になった
+  // ため、currentMode_は最初からShellのまま(以前あった「一覧Grepへ
+  // 切り替わり、そこでEnterして戻ってくる」という中間段階は無くなった)。
+  // activateGrepInPlace()自身のshell_.beginHistoryBrowsing()呼び出し
+  // (openSelectedGrepMatch()自身のShell分岐から複製)により、この時点で
+  // 既にhistoryBrowsing()はtrueになっている。
   REQUIRE(app.currentMode() == ApplicationMode::Shell);
+  REQUIRE(app.grepMode().matches().size() == 1);
   CHECK(app.shell().historyBrowsing());
 
-  // A second Enter (matching ^P/^N's own "resubmit the highlighted
-  // command" convention, feedShellByte()'s kCarriageReturn case) must
-  // actually re-run the matched `printf` command -- not silently
-  // submit an empty live prompt.
+  // 実際の生のEnterキー入力(feedShellByte()自身のkCarriageReturnケース
+  // ――handleCommand(Command::Enter)にはShellの分岐が無いので、raw
+  // byteでの投入が必須)が、ハイライトされたコマンドを実際に再実行
+  // することを確認する(空の生きたプロンプトを黙って投入するのでは
+  // なく)。
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   bool sawSecondRun = pumpUntil(app, [&] {
     return static_cast<int>(app.shell().scrollback().lines().size()) > linesBeforeRerun + 1;
@@ -13181,9 +13203,16 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: Enter on a GREP match found in SHELL's own sc
 // File→Directoryへ正しく収束することを確認する――報告時点の「ループ」
 // は、根本原因である表示バグ群(各画面の戻り値が食い違っていたこと)
 // の症状の一部だった可能性が高い。
+// 2026-09-11更新、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも反映
+// してほしい")によりDu起点の^S(Basic)もin-place方式になった――以前は
+// 「Grep結果画面→Enter→Du→Back→Grep→Back→Du→Back→File→...→Directory」
+// という、専用のGrep一覧を経由する長い連鎖だったが、in-place方式では
+// currentMode_が最初から一度もDuを離れないため、連鎖そのものが1段
+// 短くなる: Du(in-place)→Enter(マッチしたDUエントリを開く、ここでは
+// nested.txtという別のファイル)→Back→Du→Back→(Duの起点である)元の
+// File→Back→Directory。
 TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode (Du itself started from File): the full reported "
-                           "chain converges to File then Directory without looping, with mode-line values "
-                           "matching at each step") {
+                           "chain converges to File then Directory without looping") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -13207,23 +13236,21 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode (Du itself started from Fi
   REQUIRE(app.handleCommand(Command::StartGrep));
   feedText(knownDuLine);
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE_FALSE(app.grepMode().matches().empty());
-  CHECK(app.activeContentView().modeLineText().find("DU: " + filePath) != std::string::npos);
+  REQUIRE(app.currentMode() == ApplicationMode::Du);  // in-place: never left Du
 
-  REQUIRE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Du);
-  CHECK(app.activeContentView().modeLineText().find("GREP: " + knownDuLine) != std::string::npos);
+  REQUIRE(app.handleCommand(Command::Enter));  // opens the matched DU entry as a file
+  CHECK(app.currentMode() == ApplicationMode::File);
 
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Grep);
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Du);
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);
-  // Mashing further must NOT bounce back into Du/Grep -- it should
+  CHECK(app.fileMode().currentFile() == filePath);  // back to Du's own origin file
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  // Mashing further must NOT bounce back into Du/File -- it should
   // settle on Directory and stay there.
-  for (int i = 0; i < 4; i++) app.handleCommand(Command::Back);
+  for (int i = 0; i < 2; i++) app.handleCommand(Command::Back);
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
@@ -13284,32 +13311,32 @@ TEST_CASE_FIXTURE(Fixture, "DU started from File, GREP a match, open a DIFFERENT
 
   feedText("doc");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE_FALSE(app.grepMode().matches().empty());
-  CHECK(app.activeContentView().modeLineText().find("DU: " + filePath) != std::string::npos);
-
-  REQUIRE(app.handleCommand(Command::Enter));  // lands on the matched DU entry
-  REQUIRE(app.currentMode() == ApplicationMode::Du);
+  // 2026-09-11更新、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも反映
+  // してほしい")によりDu起点の^S(Basic)もin-place方式になった――
+  // 以前は「Enterで一旦Grep結果からDuの選択済みエントリへ着地し、
+  // さらにもう一度Enterでそれをファイルとして開く」という2段階だった
+  // が、in-place方式ではGREP確定の時点で既にDu自身の上でマッチが
+  // 選択済みのため、この2段階が1回のEnterへ収束する――そのEnter自体が
+  // 直接doc-reviewer.md(マッチしたDUエントリ自身、起点のplain.txtとは
+  // 別のファイル)を開く。
+  REQUIRE(app.currentMode() == ApplicationMode::Du);  // in-place: never left Du
   CHECK(app.duMode().selectedEntry() != nullptr);
   CHECK(app.duMode().selectedEntry()->path == docFile.string());
 
-  REQUIRE(app.handleCommand(Command::Enter));  // ③ opens doc-reviewer.md itself, a DIFFERENT file
+  REQUIRE(app.handleCommand(Command::Enter));  // opens doc-reviewer.md itself, a DIFFERENT file
   REQUIRE(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == docFile.string());
 
-  // Mash Back repeatedly: Du -> Grep results -> Du (fresh) -> the
-  // ORIGINAL file (NOT doc-reviewer.md) -> Directory. Must NOT loop
-  // between Du and File forever.
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Du);
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Grep);
+  // Mash Back repeatedly: Du -> the ORIGINAL file (NOT doc-reviewer.md)
+  // -> Directory. Must NOT loop between Du and File forever.
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Du);
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == filePath);  // the ORIGINAL file, not doc-reviewer.md
   CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  for (int i = 0; i < 3; i++) app.handleCommand(Command::Back);
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 

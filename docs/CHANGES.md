@@ -2723,6 +2723,72 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      完了。
 
 
+437. **in-place GREP(`^S`/`^[i`)をDirectory/File以外の9モード
+    (MAN/LOCATE/DU/ARCHIVE/ARCHIVE CONTENT/SHELL/CUT CONTENT/LIST
+    BROWSER/KEY)へ拡張**
+   - **経緯**: 項目434〜436はすべてDirectory/File起点に限定していた
+     (2026-09-09時点の当初のスコープ決定)。直接のユーザー依頼:
+     「次は`^S`と`^[i`をFILE/DIR以外（現状GREPが稼働している全ての
+     モード）へも反映してほしい。規模が大きいかな？」――調査の結果、
+     DirectoryMode/FileModeそれぞれが個別実装していたハイライト/
+     No String表示の仕組み自体はContentView(GREPの対象がどのモードか
+     に一切依存しない)の状態操作だけで完結しており、`ContentView`
+     自身へ一本化すれば残り9モードは主にモードラインへの数行の分岐
+     追加で済むと判明したため、直接実装で進めることにした
+     (AskUserQuestionで確認済み)。
+   - **リファクタリング**: `setGrepInPlaceOverlay()`/`grepInPlaceActive()`/
+     `reportGrepNoMatchMessage()`/`clearGrepNoMatchMessage()`/
+     `grepNoMatchActive()`/`setGrepMatchHighlight()`/`clearGrepMatchHighlight()`
+     (+`GrepHighlightMatch`)を`ContentView`自身のメソッド/状態として
+     新設し、DirectoryMode/FileModeが個別に持っていた同名メソッド・
+     メンバ(`grepInPlaceActive_`/`grepNoMatchActive_`/
+     `grepMatchHighlightActive_`/`grepMatchHighlightSnapshot_`等)は削除
+     して`view_`への直接呼び出しに置き換えた――`setGrepMatchHighlight()`
+     は「セッション最初の1回だけスナップショットを撮り、以後はそこから
+     組み直す」という、旧FileMode版(PipeBuffer由来の正規のBold/
+     Underline属性を保持する必要があった)の方式に統一(旧DirectoryMode
+     版の「毎回全クリア」は、ls一覧が元々属性を持たないので同じ結果に
+     なるため実害無し)。`Application::activateGrepInPlace()`/
+     `deactivateGrepInPlace()`/`jumpToGrepInPlaceMatch()`も、
+     Directory/Fileの二択ハードコードから`viewForMode(grepInPlaceOriginMode_)`
+     経由の汎用呼び出しへ一般化。`syncVisibleCursor()`の要否も
+     Directory/Fileの二択から、既存の汎用フラグ`cursorHighlightEnabled()`
+     を使う判定へ一般化(File/Man/Shell/Key等、行全体の反転表示による
+     カーソル表現を持たないモードで必要)。
+   - **対象モードの追加**: `Application::isGrepInPlaceEligibleMode()`を
+     新設し、`executeGrep()`/`startIncrementalGrepPrompt()`の両方から
+     参照する単一の判定基準にした。Man/Locate/Du/Archive/ArchiveContent/
+     Shell/CutContent/ListBrowser/Keyそれぞれのモードラインプロバイダに
+     `grepInPlaceActive()`/`grepNoMatchActive()`の分岐を追加し、
+     `name="GREP"`/`trailing2="(grep)"`へ差し替え、`trailing3`には
+     そのモード自身の「検索元」識別子(Man:現在のページ、Locate:検索
+     クエリ、Du:集計対象ルート、Archive/ArchiveContent:アーカイブ
+     パス/エントリ名、Shell:現在のディレクトリ、CutContent/
+     ListBrowser:元のname、Key:戻り先モード名)を表示する。`^O^S`
+     (FGREP)/`^J^S`(EGREP)は今回もin-place化せず、従来通り専用の
+     一覧モードのまま(2026-09-09の当初の決定を維持)。
+   - **Shell固有の追加対応**: Shellの「マッチ行(過去のプロンプト行)へ
+     着地した状態でEnterを押すとその場でコマンドを再実行する」機能
+     (旧`openSelectedGrepMatch()`のShell分岐、`shell_.beginHistoryBrowsing()`)
+     は、`currentMode_==Grep`の時だけ呼ばれるあの関数を経由しなくなった
+     (Basic構文のShell起点はin-placeになったため)ため、同じ
+     `shell_.beginHistoryBrowsing()`呼び出しを`activateGrepInPlace()`/
+     `jumpToGrepInPlaceMatch()`自身にも複製した(FGREP/EGREP起点は
+     引き続き旧関数経由なのでそちらは変更無し)。
+   - **既存テストの更新**: Directory/File以外からの`^S`が専用の一覧
+     Grepへ切り替わらなくなったことに伴い、Locate/Du/Man/Shell起点の
+     既存の回帰テスト(戻り値・Back連鎖・Enter着地先を検証していたも
+     の)を、実際の新しい遷移を1つずつ確認しながら新方式に合わせて
+     書き直した――特にDu/Locate/Man起点では、以前「Grep結果からEnter
+     で一旦戻ってくる」段階があった箇所が、in-place化により1段階
+     短縮されている(検索確定と同時に既にマッチへ着地済みのため)。
+   - **検証**: `make test` 1103/1103件・21920アサーション全通過。PTYで
+     実際にDU/MAN/(ls)ディレクトリ一覧に対する`^S`が、専用のGrep一覧
+     へ切り替わらずその場でハイライト表示されること、マッチ番号
+     ("1/3"等)・バッジ("(grep)")・trailing3が正しく表示されることを
+     確認。make install/make app/~/Applications/usilic.appへの反映、
+     jキー回帰チェックも完了。
+
 ## 4. CUT
 
 434. **タブコードをGREP/CUTで検索可能にする(PipeBuffer::wrapLine()が

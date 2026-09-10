@@ -16618,3 +16618,25 @@ CUTも問題無し。
 `Application::grepInPlaceMatchLabel()`を新設し(`updateGrepInPlacePositionText()`から文字列生成部分を括り出したもの)、`liveIncrementalGrepSearch()`末尾と、ライブ編集中の`^N`/`^P`横取り処理の両方で、`drawPromptLabel(promptKind_, "")`の`""`をこれに差し替えました。`drawPromptLabel()`自身の`positionText`引数は既に汎用の仕組み(`^J^S`/`^J^C`候補一覧の^N/^P処理が同じ引数を使っている前例あり)で、非空の文字列を渡すだけで入力欄の開始列がその直後へ自動的にずれるため、追加のレイアウト計算は不要でした。マッチ0件のライブ入力中は`grepInPlaceActive_`がfalseのままなので自動的に空文字列になり、「GREP」の直後から入力欄が始まる従来の見た目のままです("No String"表示自体は、Enterで確定した場合にだけライブ編集の上書きを避けて見えるようにする既存の設計のままで、今回変更していません)。
 
 全1103件/21955アサーション全pass。PTYで実際に`^[i`を起動し、"t"→"GREP 1/6 t"、"tx"→"GREP 1/5 tx"、"txt"→"GREP 1/5 txt"→`^N`→"GREP 2/5 txt"→`^N`→"GREP 3/5 txt"とマッチ番号が正しく更新され、0件になるパターンでは番号が消えて「GREP」の直後から入力欄が始まる(従来通り)ことを確認しました。make install/make app/~/Applications/usilic.appへの反映、jキー回帰チェックも完了しています。docs/CHANGES.mdのFGREP/EGREP節に項目436として記録しました。
+
+<出だしが「GREP」の隣だったので気づかなかった。
+マッチした文字列の数によって総行も変わるのは素晴らしい。ありがと。
+次は`^S`と`^[i`をFILE/DIR以外（現状GREPが稼働している全てのモード）へも反映してほしい。規模が大きいかな？
+よろしく。
+
+>規模について調べた結果を回答しました――そこそこの規模ではあるものの、機構自体は完全に汎用的で素直にリファクタリングできるので見た目ほど大きくはならない、という見立てを伝えました。DirectoryMode/FileModeそれぞれのsetGrepMatchHighlight()/clearGrepMatchHighlight()/reportGrepNoMatchMessage()/clearGrepNoMatchMessage()を実際に読んだところ、view_(ContentViewそのもの)の行・カーソル・position表示だけを操作しており、Directory/File固有のものに一切依存していないため、ContentView自身のメソッドとして1箇所に持たせれば全モードが無改造で共有できる、各モードに新たに必要な作業は実質的にモードラインの数行だけで済む、と説明し、対象候補(MAN、LOCATE、DU、ARCHIVE、ARCHIVE CONTENT、SHELL、CUT CONTENT、LIST BROWSER、KEY — Cut/Copyは除く)をAskUserQuestionで確認しました。
+
+<対象モードのリスト(MAN、LOCATE、DU、ARCHIVE、ARCHIVE CONTENT、SHELL、CUT CONTENT、LIST BROWSER、KEY — Cut/Copyは除く)で進めていいですか？→このリストで進める(推奨)
+進め方は？→直接実装(推奨)
+
+>実装しました。
+
+まず`ContentView`自身に`setGrepInPlaceOverlay()`/`grepInPlaceActive()`/`reportGrepNoMatchMessage()`/`clearGrepNoMatchMessage()`/`grepNoMatchActive()`/`setGrepMatchHighlight()`/`clearGrepMatchHighlight()`(+`GrepHighlightMatch`)を新設し、DirectoryMode/FileModeが個別に持っていた同名メソッド・メンバは削除して`view_`への直接呼び出しに置き換えました。`setGrepMatchHighlight()`は旧FileMode版(セッション最初の1回だけスナップショットを撮り、以後はそこから組み直す――PipeBuffer由来の正規のBold/Underline属性を保持する必要があるため)の方式に統一しています。`Application::activateGrepInPlace()`/`deactivateGrepInPlace()`/`jumpToGrepInPlaceMatch()`も、Directory/Fileの二択ハードコードから`viewForMode(grepInPlaceOriginMode_)`経由の汎用呼び出しへ一般化しました。
+
+`Application::isGrepInPlaceEligibleMode()`を新設し、`executeGrep()`/`startIncrementalGrepPrompt()`両方の判定基準を一本化。Man/Locate/Du/Archive/ArchiveContent/Shell/CutContent/ListBrowser/Keyそれぞれのモードラインプロバイダに`grepInPlaceActive()`/`grepNoMatchActive()`の分岐を追加し、trailing3にはそのモード自身の検索元識別子(Man:現在のページ、Locate:検索クエリ、Du:集計対象ルート、Archive/ArchiveContent:アーカイブパス/エントリ名、Shell:現在のディレクトリ等)を表示するようにしています。`^O^S`(FGREP)/`^J^S`(EGREP)は今回もin-place化せず、従来通り専用の一覧モードのままです。
+
+Shell固有の対応として、マッチした過去のプロンプト行へ着地した状態でEnterを押すとその場でコマンドを再実行する機能(`shell_.beginHistoryBrowsing()`)は、`currentMode_==Grep`の時だけ呼ばれる旧`openSelectedGrepMatch()`を経由しなくなったため、同じ呼び出しを`activateGrepInPlace()`/`jumpToGrepInPlaceMatch()`自身にも複製しました。
+
+Directory/File以外からの`^S`が専用の一覧Grepへ切り替わらなくなったことに伴い、Locate/Du/Man/Shell起点の既存の回帰テスト(戻り値・Back連鎖・Enter着地先を検証していたもの)は、実際の新しい遷移を1つずつデバッグ出力で確認しながら新方式に合わせて書き直しました――特にDu/Locate/Man起点では、以前「Grep結果からEnterで一旦戻ってくる」段階があった箇所が、in-place化により1段階短縮されています。
+
+全1103件/21920アサーション全pass。PTYで実際にDU/MAN/(ls)ディレクトリ一覧に対する`^S`が、専用のGrep一覧へ切り替わらずその場でハイライト表示されること、マッチ番号・バッジ("(grep)")・trailing3が正しく表示されることを確認しました。make install/make app/~/Applications/usilic.appへの反映、jキー回帰チェックも完了しています。docs/CHANGES.mdのFGREP/EGREP節に項目437として記録しました。

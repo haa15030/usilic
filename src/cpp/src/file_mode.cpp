@@ -238,12 +238,12 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     // 通常にloadFile()されたファイルだけ。trailing3にcurrentFile_
     // (このファイル自身のフルパス、通常はname/trailing2が示していた
     // 情報)を退避する――直接のユーザー指摘=fv参照。
-    if (grepInPlaceActive_) {
+    if (view_.grepInPlaceActive()) {
       fields.name = "GREP";
       fields.trailing2 = "(grep)";
       fields.trailing3 = currentFile_;
       fields.fillTrailingToEdge = true;
-    } else if (showGrepNoMatchMessage_) {
+    } else if (view_.grepNoMatchActive()) {
       // DirectoryMode自身の同じ分岐のコメント参照(2026-09-10再修正、
       // 直接のユーザー指摘: "No StringもGREPでは無く行数の隣に表示")。
       fields.name = "GREP";
@@ -455,68 +455,6 @@ void FileMode::setSearchOrigin(const std::string &label, const std::string &deta
 
 void FileMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
 
-void FileMode::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = active; }
-
-void FileMode::setGrepMatchHighlight(const std::vector<GrepMatch> &matches) {
-  int savedTop = view_.topIndex();
-  int savedCursor = view_.cursorIndex();
-  // 2026-09-10修正、直接のユーザー報告(usilic -c ~/git/usilicで再現:
-  // ESC iのインクリメンタルサーチ中、パターンを変えても古いマッチの
-  // ハイライトが消えずに居座り続ける): 以前はこの関数を呼ぶたびに
-  // view_.lines()を無条件で「元の状態」として撮り直していたが、
-  // インクリメンタルサーチは1文字入力されるたびにこの関数を呼ぶため、
-  // 2回目以降はview_.lines()が前回呼び出しで既にHighlight属性を
-  // 乗せた「汚れた」状態になっており、それをそのまま次の「元の状態」
-  // として扱ってしまっていた(=前回分のハイライトが恒久的に焼き込ま
-  // れ、以後のクリア・更新が効かなくなる)。grepMatchHighlightActive_
-  // でセッションの「最初の1回」だけを判定し、以後はこの1回目に撮った
-  // 本当にクリーンな(FileMode自身のオーバーストライク由来Bold等を
-  // 含む、正規の)スナップショットから毎回組み直す。
-  if (!grepMatchHighlightActive_) {
-    grepMatchHighlightSnapshot_ = view_.lines();
-  }
-  std::vector<ContentView::Line> lines = grepMatchHighlightSnapshot_;
-  for (const auto &match : matches) {
-    int idx = match.sourceLineIndex;
-    if (idx < 0 || idx >= static_cast<int>(lines.size())) continue;
-    if (match.matchSpans.empty()) {
-      lines[idx].attributes.push_back(
-          Display::AttributeRun{0, static_cast<int>(lines[idx].text.size()), Display::Attribute::Highlight});
-    } else {
-      for (const auto &span : match.matchSpans) {
-        lines[idx].attributes.push_back(Display::AttributeRun{span.first, span.second, Display::Attribute::Highlight});
-      }
-    }
-  }
-  grepMatchHighlightActive_ = true;
-  view_.setLines(std::move(lines));
-  view_.setTopIndex(savedTop);
-  view_.setCursorIndex(savedCursor);
-}
-
-void FileMode::clearGrepMatchHighlight() {
-  if (!grepMatchHighlightActive_) return;
-  grepMatchHighlightActive_ = false;
-  int savedTop = view_.topIndex();
-  int savedCursor = view_.cursorIndex();
-  view_.setLines(std::move(grepMatchHighlightSnapshot_));
-  grepMatchHighlightSnapshot_.clear();
-  view_.setTopIndex(savedTop);
-  view_.setCursorIndex(savedCursor);
-}
-
-void FileMode::reportGrepNoMatchMessage(const std::string &message) {
-  grepNoMatchMessage_ = message;
-  showGrepNoMatchMessage_ = true;
-  // DirectoryMode::reportGrepNoMatchMessage()自身のコメント参照
-  // (2026-09-10再修正、plain=trueの理由も含む)。
-  view_.setPositionTextOverride(message, /*plain=*/true);
-}
-
-void FileMode::clearGrepNoMatchMessage() {
-  showGrepNoMatchMessage_ = false;
-  view_.setPositionTextOverride(std::nullopt);
-}
 
 void FileMode::setEncoding(Charset::Encoding encoding) { encoding_ = encoding; }
 

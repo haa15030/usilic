@@ -488,6 +488,68 @@ void ContentView::setPositionTextOverride(std::optional<std::string> text, bool 
   positionTextPlain_ = plain;
 }
 
+// setGrepInPlaceOverlay()自身の宣言コメント参照(content_view.hpp、
+// 2026-09-11、DirectoryMode::setGrepInPlaceOverlay()から一本化)。
+void ContentView::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = active; }
+bool ContentView::grepInPlaceActive() const { return grepInPlaceActive_; }
+
+// DirectoryMode::reportGrepNoMatchMessage()自身の旧コメント参照
+// (2026-09-11、こちらへ一本化): plain=trueで非ハイライト表示にする
+// (直接のユーザー指摘: "非ハイライトの「〜:No String」を表示して
+// 欲しい")。
+void ContentView::reportGrepNoMatchMessage(const std::string &message) {
+  grepNoMatchActive_ = true;
+  setPositionTextOverride(message, /*plain=*/true);
+}
+
+void ContentView::clearGrepNoMatchMessage() {
+  grepNoMatchActive_ = false;
+  setPositionTextOverride(std::nullopt);
+}
+
+bool ContentView::grepNoMatchActive() const { return grepNoMatchActive_; }
+
+// 旧FileMode::setGrepMatchHighlight()自身のコメント参照(2026-09-11、
+// こちらへ一本化): セッション最初の1回だけlines_を「本当にクリーンな」
+// スナップショットとして撮り、以後(ESC iの毎キー入力での再呼び出し
+// 含む)はそこから毎回組み直す――呼ぶたびにその時点のlines_(前回の
+// Highlightが既に乗っている可能性がある)を「元の状態」として撮り
+// 直すと、前回分が焼き込まれて消せなくなる(実際の旧バグ)。File/Man等
+// が既に持つPipeBuffer由来のBold/Underlineも、このスナップショット
+// 経由で保持される。
+void ContentView::setGrepMatchHighlight(const std::vector<GrepHighlightMatch> &matches) {
+  int savedTop = topIndex_;
+  int savedCursor = cursorIndex_;
+  if (!grepMatchHighlightActive_) grepMatchHighlightSnapshot_ = lines_;
+  std::vector<Line> newLines = grepMatchHighlightSnapshot_;
+  for (const auto &match : matches) {
+    int idx = match.sourceLineIndex;
+    if (idx < 0 || idx >= static_cast<int>(newLines.size())) continue;
+    if (match.matchSpans.empty()) {
+      newLines[idx].attributes.push_back(
+          AttributeRun{0, static_cast<int>(newLines[idx].text.size()), Display::Attribute::Highlight});
+    } else {
+      for (const auto &span : match.matchSpans)
+        newLines[idx].attributes.push_back(AttributeRun{span.first, span.second, Display::Attribute::Highlight});
+    }
+  }
+  grepMatchHighlightActive_ = true;
+  setLines(std::move(newLines));
+  setTopIndex(savedTop);
+  setCursorIndex(savedCursor);
+}
+
+void ContentView::clearGrepMatchHighlight() {
+  if (!grepMatchHighlightActive_) return;
+  grepMatchHighlightActive_ = false;
+  int savedTop = topIndex_;
+  int savedCursor = cursorIndex_;
+  setLines(std::move(grepMatchHighlightSnapshot_));
+  grepMatchHighlightSnapshot_.clear();
+  setTopIndex(savedTop);
+  setCursorIndex(savedCursor);
+}
+
 void ContentView::setBottomAnchored(bool enabled) { bottomAnchored_ = enabled; }
 
 void ContentView::setContentMayGrow(bool mayGrow) { contentMayGrow_ = mayGrow; }

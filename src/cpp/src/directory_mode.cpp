@@ -134,7 +134,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       if (message.size() < fields.name.size()) message.resize(fields.name.size(), ' ');
       fields.name = message;
       fields.nameUnderlined = true;
-    } else if (grepInPlaceActive_) {
+    } else if (view_.grepInPlaceActive()) {
       // in-place GREPセッション中(setGrepInPlaceOverlay()自身の宣言
       // コメント参照): GREP結果一覧(grepView_自身のモードラインプロ
       // バイダ、application.cpp)がname="GREP"/badge="(grep)"を表示
@@ -151,7 +151,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       fields.trailing2 = "(grep)";
       fields.trailing3 = currentDirectory_;
       fields.fillTrailingToEdge = true;
-    } else if (grepNoMatchActive_) {
+    } else if (view_.grepNoMatchActive()) {
       // reportGrepNoMatchMessage()自身の宣言コメント参照。
       // 2026-09-10再修正、直接のユーザー指摘("No StringもGREPでは無く
       // 行数の隣に表示"): 以前はメッセージ自体をtrailing2に置き、
@@ -356,51 +356,6 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
 
 void DirectoryMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
 
-void DirectoryMode::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = active; }
-
-void DirectoryMode::setGrepMatchHighlight(const std::vector<GrepMatch> &matches) {
-  int savedTop = view_.topIndex();
-  int savedCursor = view_.cursorIndex();
-  std::vector<ContentView::Line> lines = view_.lines();
-  // 2026-09-10修正、直接のユーザー報告(usilic -c ~/git/usilicで再現:
-  // ESC iのインクリメンタルサーチ中、パターンを変えても古いマッチの
-  // ハイライトが消えずに居座り続ける): view_.lines()は前回この関数を
-  // 呼んだ時点で既にHighlight属性が乗った「汚れた」状態を返すことが
-  // あり(1文字入力されるたびに呼ばれるため)、そこへ無条件に
-  // push_back()するだけでは前回分がクリアされず蓄積してしまっていた。
-  // ls一覧の行にはそもそも他の正当な属性が乗ることは無い(確認済み、
-  // clearGrepMatchHighlight()自身のコメント参照)ので、ここで全行分
-  // まっさらにしてから今回のマッチだけを組み直す。
-  for (auto &line : lines) line.attributes.clear();
-  for (const auto &match : matches) {
-    int idx = match.sourceLineIndex;
-    if (idx < 0 || idx >= static_cast<int>(lines.size())) continue;
-    if (match.matchSpans.empty()) {
-      // フォールバック(matchSpans自身の宣言コメント参照): 部分文字列の
-      // 範囲が取れなかった場合だけ、従来通り行全体をHighlightにする。
-      lines[idx].attributes.push_back(
-          Display::AttributeRun{0, static_cast<int>(lines[idx].text.size()), Display::Attribute::Highlight});
-    } else {
-      for (const auto &span : match.matchSpans) {
-        lines[idx].attributes.push_back(Display::AttributeRun{span.first, span.second, Display::Attribute::Highlight});
-      }
-    }
-  }
-  view_.setLines(std::move(lines));
-  view_.setTopIndex(savedTop);
-  view_.setCursorIndex(savedCursor);
-}
-
-void DirectoryMode::clearGrepMatchHighlight() {
-  int savedTop = view_.topIndex();
-  int savedCursor = view_.cursorIndex();
-  std::vector<ContentView::Line> lines = view_.lines();
-  for (auto &line : lines) line.attributes.clear();
-  view_.setLines(std::move(lines));
-  view_.setTopIndex(savedTop);
-  view_.setCursorIndex(savedCursor);
-}
-
 void DirectoryMode::reportEditError() { reportError("Invalid mode"); }
 
 void DirectoryMode::reportError(const std::string &message) {
@@ -409,28 +364,6 @@ void DirectoryMode::reportError(const std::string &message) {
 }
 
 void DirectoryMode::clearEditError() { showEditError_ = false; }
-
-void DirectoryMode::reportGrepNoMatchMessage(const std::string &message) {
-  grepNoMatchMessage_ = message;
-  grepNoMatchActive_ = true;
-  // 2026-09-10再修正、直接のユーザー指摘("No StringもGREPでは無く
-  // 行数の隣に表示"): 以前はここを""にし、メッセージ自体は
-  // モードラインプロバイダ側のtrailing2に置くことで見た目上"GREP"の
-  // 直後に来るようにしていた(その一つ前の版のコメント参照)。今回、
-  // grepInPlaceActive_側に「マッチN/M」という同じposition枠を使う
-  // 行数情報を追加したため、成功/失敗どちらのケースもこの同じ枠を
-  // 使うよう統一し、メッセージ本体をここで直接position枠へ渡す。
-  // plain=true(既にCopyModeの"---"等で確立済み引数): 直接のユーザー
-  // 指摘("非ハイライトの「〜:No String」を表示して欲しい")を維持する
-  // ――「マッチN/M」側(updateGrepInPlacePositionText())は通常の
-  // position表示と同じくplain指定無し(Standoutのまま)。
-  view_.setPositionTextOverride(message, /*plain=*/true);
-}
-
-void DirectoryMode::clearGrepNoMatchMessage() {
-  grepNoMatchActive_ = false;
-  view_.setPositionTextOverride(std::nullopt);
-}
 
 void DirectoryMode::setPendingOperationLabel(const std::string &label) { pendingOperationLabel_ = label; }
 

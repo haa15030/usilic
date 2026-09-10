@@ -487,6 +487,46 @@ class ContentView {
   // 等、他の全呼び出し元に挙動の変更は無い)。
   void setPositionTextOverride(std::optional<std::string> text, bool plain = false);
 
+  // in-place GREP(2026-09-09〜11、design経緯は.steering/20260909-grep-
+  // inline-highlight/参照)一式――当初はDirectoryMode/FileModeそれぞれに
+  // 個別に実装されていたが、2026-09-11、直接のユーザー依頼("^Sと^[iを
+  // FILE/DIR以外(現状GREPが稼働している全てのモード)へも反映して
+  // ほしい")によりMan/Locate/Du/Archive/ArchiveContent/Shell/CutContent/
+  // ListBrowser/KEYへも展開するにあたり、この場所へ一本化した――実際の
+  // 実装(下記コメント参照)はどちらの旧実装も、行/カーソル/position
+  // 表示というContentView自身の状態しか操作しておらず、Directory/File
+  // 固有のものには一切依存していなかったため。
+  //
+  // grepInPlaceActive()/setGrepInPlaceOverlay(): 各モードのModeLineFields
+  // Providerが、name="GREP"/trailing2="(grep)"へ一時的に差し替えるか
+  // どうかを判定するためのフラグ(true/falseの記録だけ、描画自体はしない)。
+  void setGrepInPlaceOverlay(bool active);
+  bool grepInPlaceActive() const;
+  // grepNoMatchActive()/reportGrepNoMatchMessage()/clearGrepNoMatchMessage():
+  // 上と対になる、マッチ0件時のメッセージ表示フラグ。メッセージ本体は
+  // setPositionTextOverride(message, plain=true)でposition枠へ直接
+  // 渡される(旧DirectoryMode::reportGrepNoMatchMessage()自身のコメント
+  // 参照)。
+  void reportGrepNoMatchMessage(const std::string &message);
+  void clearGrepNoMatchMessage();
+  bool grepNoMatchActive() const;
+  // 1件のマッチ: 元の行(sourceLineIndex)と、その中で実際に一致した
+  // バイト範囲群(matchSpans、空なら行全体をハイライトするフォール
+  // バック――GrepMatch::matchSpans自身のコメント参照)。GrepMatch
+  // (grep_mode.hpp)そのものを使わないのは、ContentViewがGrepModeより
+  // 下位のレイヤーであり、上位のものを型として持ち込みたくないため
+  // ――呼び出し元(Application)がGrepMatchからこれへ変換する。
+  struct GrepHighlightMatch {
+    int sourceLineIndex = -1;
+    std::vector<std::pair<int, int>> matchSpans;
+  };
+  // setGrepMatchHighlight()/clearGrepMatchHighlight(): 指定された行群に
+  // Highlight属性を付け直す(呼ばれるたびに全行の属性を一旦クリアして
+  // から組み直す――旧DirectoryMode::setGrepMatchHighlight()自身の
+  // コメント参照、ESC iの毎キー入力での再呼び出しに対応するため)。
+  void setGrepMatchHighlight(const std::vector<GrepHighlightMatch> &matches);
+  void clearGrepMatchHighlight();
+
   // 他の点では空の一覧に対してredraw()が表示するテキスト/整形
   // (redraw()自身のコメント参照)――デフォルトは「--」、本物の
   // エントリがそうであるように「完全に」反転表示/「マーク」される
@@ -1260,6 +1300,20 @@ class ContentView {
   bool contentMayGrow_ = false;  // setContentMayGrow()自身の宣言コメント参照
   Line emptyPlaceholderLine_ = Line{"--", std::nullopt, std::nullopt, {}};
   bool emptyPlaceholderMarked_ = true;
+  // setGrepInPlaceOverlay()/reportGrepNoMatchMessage()自身のコメント
+  // 参照(2026-09-11、DirectoryMode/FileModeから一本化)。
+  bool grepInPlaceActive_ = false;
+  bool grepNoMatchActive_ = false;
+  // setGrepMatchHighlight()自身のコメント参照(旧FileMode::
+  // setGrepMatchHighlight()から一本化): セッション最初の1回だけ
+  // lines_を「本当にクリーンな」スナップショットとして保持し、以後は
+  // 毎回そこから組み直す――Directory(ls一覧)は元々line.attributesを
+  // 一切持たないので実質「全クリア」と同じ結果になるが、File/Man等
+  // (PipeBufferのオーバーストライク由来Bold/Underlineを既に持つ)では
+  // このスナップショットが無いと、GREPのHighlight適用時に正規の
+  // 属性ごと消してしまう。
+  bool grepMatchHighlightActive_ = false;
+  std::vector<Line> grepMatchHighlightSnapshot_;
   bool cursorAtModeLineTrailingEnd_ = false;
   // 2026-08-29の追加(CopyMode、copy_mode.hpp参照): cursorHighlightEnabled_
   // がfalseの時、syncVisibleCursor()は以前、常に実際の端末の

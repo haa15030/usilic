@@ -1927,6 +1927,9 @@ class Application {
   // 1回、それからKEY自身へもう1回)。
   bool showKeyReference();
 
+  // isGrepInPlaceEligibleMode()自身のコメント参照(application.cpp、
+  // 2026-09-11追加)。
+  bool isGrepInPlaceEligibleMode(ApplicationMode mode) const;
   bool startGrepPrompt(GrepSyntax syntax);
   bool startCutPrompt(GrepSyntax syntax);
   bool startCutFilePrompt(GrepSyntax syntax);
