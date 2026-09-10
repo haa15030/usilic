@@ -11214,7 +11214,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: reference view is a no-op for entries with no m
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("^O( :") != std::string::npos) row = static_cast<int>(i);  // macro recording -- no HELP section
+    if (lines[i].text.find("^X( :") != std::string::npos) row = static_cast<int>(i);  // macro recording -- no HELP section
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
   REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Right));  // focus "reference"
@@ -11280,25 +11280,34 @@ TEST_CASE_FIXTURE(Fixture, "Key: clicking the label half of a row executes it di
   CHECK(app.promptActive());  // FGREP prompt -- the key was actually executed
 }
 
-// -- Recorded macros (p_km, ^O(/^O)/^Oe) --
+// -- Recorded macros (p_km, ^X(/^X)/^Xe) --
+//
+// 2026-09-10, direct user request ("次はマクロ（^X(...）を実装して
+// 欲しい"): the feature already existed here, just under ^O(/^O)/^Oe
+// (moved there by a 2026-09-08 key reorg, per direct user request at
+// the time). Once that was pointed out, the user explicitly chose
+// "^X(/^X)/^Xeへ戻す(^Oは廃止)" -- move it back to ^X, ^O's own copy
+// removed entirely. All the byte sequences below moved from leading
+// with 0x0f (^O) to 0x18 (^X) accordingly; the actual '('/')'/'e'
+// payload bytes are unchanged.
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ( starts recording; the control sequence itself isn't recorded") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X ( starts recording; the control sequence itself isn't recorded") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(app.isRecordingMacro());
 
-  app.feedByte(0x0f, std::nullopt);  // ^O
+  app.feedByte(0x18, std::nullopt);  // ^X
   CHECK(app.feedByte('(', std::nullopt));  // (
   CHECK(app.isRecordingMacro());
-  CHECK(app.recordedMacroLength() == 0);  // the ^O( sequence itself is excluded
+  CHECK(app.recordedMacroLength() == 0);  // the ^X( sequence itself is excluded
 
   app.feedByte('j', std::nullopt);
   app.feedByte('j', std::nullopt);
   CHECK(app.recordedMacroLength() == 2);
 
-  app.feedByte(0x0f, std::nullopt);  // ^O
+  app.feedByte(0x18, std::nullopt);  // ^X
   CHECK(app.feedByte(')', std::nullopt));  // )
   CHECK_FALSE(app.isRecordingMacro());
-  CHECK(app.recordedMacroLength() == 2);  // the ^O) sequence is excluded too
+  CHECK(app.recordedMacroLength() == 2);  // the ^X) sequence is excluded too
 }
 
 TEST_CASE_FIXTURE(Fixture, "playRecordedMacro: replays recorded cursor movement") {
@@ -11307,11 +11316,11 @@ TEST_CASE_FIXTURE(Fixture, "playRecordedMacro: replays recorded cursor movement"
   // beep on a list this short (nothing to scroll), unlike ^N's plain
   // cursor movement this test actually wants to record/replay.
   REQUIRE(app.start(path()));
-  app.feedByte(0x0f, std::nullopt);
+  app.feedByte(0x18, std::nullopt);
   app.feedByte('(', std::nullopt);
   app.feedByte(0x0e, std::nullopt);
   app.feedByte(0x0e, std::nullopt);
-  app.feedByte(0x0f, std::nullopt);
+  app.feedByte(0x18, std::nullopt);
   app.feedByte(')', std::nullopt);
 
   std::string nameAfterRecording = app.directoryMode().selectedEntry()->name;
@@ -11320,20 +11329,20 @@ TEST_CASE_FIXTURE(Fixture, "playRecordedMacro: replays recorded cursor movement"
   app.handleCommand(Command::MoveUp);
   REQUIRE(app.directoryMode().selectedEntry()->name != nameAfterRecording);
 
-  app.feedByte(0x0f, std::nullopt);
-  CHECK(app.feedByte('e', std::nullopt));  // ^O e : play it back
+  app.feedByte(0x18, std::nullopt);
+  CHECK(app.feedByte('e', std::nullopt));  // ^X e : play it back
   CHECK(app.directoryMode().selectedEntry()->name == nameAfterRecording);
 }
 
 TEST_CASE_FIXTURE(Fixture, "playRecordedMacro: false when nothing was ever recorded") {
   REQUIRE(app.start(path()));
-  app.feedByte(0x0f, std::nullopt);
+  app.feedByte(0x18, std::nullopt);
   CHECK_FALSE(app.feedByte('e', std::nullopt));
 }
 
-TEST_CASE_FIXTURE(Fixture, "stopMacroRecording (^O)): a safe no-op when not currently recording") {
+TEST_CASE_FIXTURE(Fixture, "stopMacroRecording (^X)): a safe no-op when not currently recording") {
   REQUIRE(app.start(path()));
-  app.feedByte(0x0f, std::nullopt);
+  app.feedByte(0x18, std::nullopt);
   CHECK_FALSE(app.feedByte(')', std::nullopt));
   CHECK_FALSE(app.isRecordingMacro());
 }
@@ -11343,14 +11352,16 @@ TEST_CASE_FIXTURE(Fixture, "recording: a real leaderO command (^Oc etc) IS recor
   REQUIRE(app.handleCommand(Command::MoveDown));  // off "./" and "../" onto a real entry, BEFORE recording starts
   REQUIRE(app.handleCommand(Command::MoveDown));
   REQUIRE(app.handleCommand(Command::ToggleMark));  // mark BEFORE recording starts too (2026-08-27 CP redesign)
-  app.feedByte(0x0f, std::nullopt);
+  app.feedByte(0x18, std::nullopt);
   app.feedByte('(', std::nullopt);
 
   app.feedByte(0x0f, std::nullopt);  // ^O
   app.feedByte('c', std::nullopt);   // c : a real CP command, not macro control
   CHECK(app.promptActive());  // ^Oc shows the destination prompt immediately now (2026-08-27 redesign)
-  // Both bytes of this real ^Oc sequence are recorded, unlike the
-  // ^O(/^O)/^Oe control sequences.
+  // Both bytes of this real ^Oc sequence are recorded -- ^O commands
+  // are no longer special-cased at all now that macro control lives
+  // exclusively under ^X (see feedByte()'s own comment), so this is
+  // just the generic "record every byte" fallback path, same outcome.
   CHECK(app.recordedMacroLength() == 2);
 
   app.feedByte(0x07, std::nullopt);  // ^G : cancel the prompt
@@ -11361,7 +11372,7 @@ TEST_CASE_FIXTURE(Fixture, "recording: a real leaderO command (^Oc etc) IS recor
 // immediately, so the recorded sequence is just ^Jd, no trailing ^M.
 TEST_CASE_FIXTURE(Fixture, "recording: a ^J-leader sequence (^Jd for DU) is captured and replays correctly") {
   REQUIRE(app.start(path()));
-  app.feedByte(0x0f, std::nullopt);
+  app.feedByte(0x18, std::nullopt);
   app.feedByte('(', std::nullopt);
   app.feedByte(0x0a, std::nullopt);  // ^J
   app.feedByte('d', std::nullopt);   // d : DU, runs immediately on the current directory
@@ -11369,10 +11380,10 @@ TEST_CASE_FIXTURE(Fixture, "recording: a ^J-leader sequence (^Jd for DU) is capt
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   app.handleCommand(Command::Back);
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
-  app.feedByte(0x0f, std::nullopt);
+  app.feedByte(0x18, std::nullopt);
   app.feedByte(')', std::nullopt);
 
-  app.feedByte(0x0f, std::nullopt);
+  app.feedByte(0x18, std::nullopt);
   app.feedByte('e', std::nullopt);  // replay: ^Jd
   waitForDu(app);
   CHECK(app.currentMode() == ApplicationMode::Du);

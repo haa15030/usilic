@@ -899,18 +899,21 @@ struct AnchorSnapshot {
 //     繕っている「このバイトは解決済みのコマンドだったのか
 //     プロンプトのテキストだったのか」という別の処理を必要と
 //     しない。これが必要とする唯一の注意点: 記録を開始/停止/再生
-//     する^O( / ^O) / ^Oeのシーケンス自体は、記録「の中に」入って
+//     する^X( / ^X) / ^Xeのシーケンス自体は、記録「の中に」入って
 //     はならない(legacy自身のset_km()も、M_ms/M_meをa_km[]へ
-//     追加しない)――feedByte()は、leaderOシーケンスの先頭の^O
-//     バイトを、2番目のバイトが解決するまでpendingLeaderOByte_に
+//     追加しない)――feedByte()は、leaderXシーケンスの先頭の^X
+//     バイトを、2番目のバイトが解決するまでpendingLeaderXByte_に
 //     保持しておき、「その後」解決自体がStartMacroRecord/
 //     StopMacroRecord/PlayMacroでなかった場合にだけ両方のバイトを
 //     一緒に確定する(^J/ESCリーダーシーケンスにはそのような保留
-//     は不要である: マクロ制御は排他的に^Oの下に住むので、全ての
+//     は不要である: マクロ制御は排他的に^Xの下に住むので、全ての
 //     ^J/ESCバイトは、そのシーケンスがどう解決されるかを知らずに
 //     即座に確定できる。2026-09-08、直接のユーザー依頼によるキー
-//     再編で、この保留の対象自体が旧^Xから^Oへ付け替わった――
-//     pendingLeaderOByte_自身のコメント参照)。playRecordedMacro()は、
+//     再編で、この保留の対象自体が一時的に^Oへ付け替わったが、
+//     2026-09-10、直接のユーザー依頼(既存の実装がいつの間にか
+//     ^Oへ移っていたことに気づき、"^X(/^X)/^Xeへ戻す(^Oは廃止)"と
+//     明示的に選択)により^Xへ差し戻された――
+//     pendingLeaderXByte_自身のコメント参照)。playRecordedMacro()は、
 //     記録された各
 //     バイトを、feedByte()自体ではなく、プライベートな
 //     dispatchByte()(feedByte()自身の以前の本体、今は名前を変更
@@ -1339,7 +1342,7 @@ class Application {
   // falseを返す。アクションがまだ保留中のまま、リーダー/プロンプト
   // 状態へ消費されたバイトはtrueを返す。マクロの記録がアクティブな
   // 間(クラスコメント自身のp_km節参照)、このバイトを
-  // recordedMacro_へも追加する(またはpendingLeaderOByte_に保持
+  // recordedMacro_へも追加する(またはpendingLeaderXByte_に保持
   // する)。
   bool feedByte(int byte, std::optional<KeyInput::SpecialKey> special);
 
@@ -2680,16 +2683,19 @@ class Application {
 
   bool recordingMacro_ = false;
   std::vector<RecordedStep> recordedMacro_;
-  // leaderOシーケンスの先頭の^Oバイトを、2番目のバイトが解決する
+  // leaderXシーケンスの先頭の^Xバイトを、2番目のバイトが解決する
   // まで保持しておくので、StartMacroRecord/StopMacroRecord/
   // PlayMacroの解決を、recordedMacro_から完全に(両方のバイトを
   // 一度に)除外できる――クラスコメント参照。2026-09-08、直接の
-  // ユーザー依頼によるキー再編で^X(/^X)/^Xeが^O(/^O)/^Oeへ移行した
-  // のに伴い、この保留のロジック自体も(元は^X用だったが)^O用へ
-  // 付け替えた――^Xに最後まで残るのはDIR(d/^D)だけで、どちらも
-  // recordingMacro_を一切トグルしないため、旧来の^X版の保留は
-  // 意味を失っていた。
-  std::optional<RecordedStep> pendingLeaderOByte_;
+  // ユーザー依頼によるキー再編で^X(/^X)/^Xeが^O(/^O)/^Oeへ一時的に
+  // 移行し、この保留のロジック自体も^O用へ付け替えたことがあったが、
+  // 2026-09-10、直接のユーザー依頼("次はマクロ（^X(...）を実装
+  // して欲しい"――既に実装済みで単に^Oへ移っていただけと判明した後、
+  // "^X(/^X)/^Xeへ戻す(^Oは廃止)"と明示的に選択)により、この保留の
+  // ロジックごと^X用へ差し戻した。^Oの他の全てのコマンド(c/m/r/a等、
+  // 2026-09-08の同じ再編で移った分)はそのまま^Oに残る――今回戻る
+  // のはマクロ制御の3つ(^X(/^X)/^Xe)だけである。
+  std::optional<RecordedStep> pendingLeaderXByte_;
 
   bool leaderJPending_ = false;  // ^Jを見た、2バイトのコマンドを完成させるバイトを待っている
   // ^Jの後にdispatchLeaderByte()自身のleaderJPending_スイッチが
@@ -2721,7 +2727,7 @@ class Application {
   // まだ上書きされていない自然な位置テキスト)に記録しておき、
   // 桁を表示するたびにその幅までスペースでパディングする。
   int gotoLineFieldWidth_ = 0;
-  bool leaderXPending_ = false;  // ^Xを見た、^Xd/^X^Dを完成させるバイトを待っている(2026-09-08のキー再編で他は全て^O/^Jへ移行し、DIRだけが残った)
+  bool leaderXPending_ = false;  // ^Xを見た、^Xd/^X^D/^Xf/^X^F/^X^C/^X(/^X)/^Xeを完成させるバイトを待っている(2026-09-08のキー再編で他は全て^O/^Jへ移行したが、DIR/FILE/EXITは同日中に、マクロ制御(^X(/^X)/^Xe)は2026-09-10にそれぞれ^Xへ差し戻された)
   // ^J^O(usilicrcのERROR/LOG、2026-09-08新設のネストしたサブ
   // リーダー): ^Jの後に^O自体を見た、^J^Oe/^J^Olを完成させる
   // バイトを待っている――旧^X^K(F-2)がERROR/LOGの2つだけを残して

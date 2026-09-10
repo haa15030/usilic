@@ -763,9 +763,13 @@ const KeyTableEntry kKeyTable[] = {
     // 自体には手を付けていない(依然として^O gを直接押せば到達可能);
     // リファレンスリストの行だけが削除された。
     // 2026-09-08、キー再編で^Xから^Oへ移行。
-    {"^O(", "キーボードマクロの記録を開始", "Begin macro recording", {kLeaderO, '('}},
-    {"^O)", "キーボードマクロの記録を終了", "End macro recording", {kLeaderO, ')'}},
-    {"^Oe", "記録したマクロを実行", "Execute recorded macro", {kLeaderO, 'e'}},
+    // 2026-09-10、直接のユーザー依頼("次はマクロ（^X(...）を実装して
+    // 欲しい"――既に実装済みで単に2026-09-08の再編で^Oへ移っていた
+    // だけと判明した後、"^X(/^X)/^Xeへ戻す(^Oは廃止)"と明示的に選択)
+    // により、^O(/^O)/^Oeから差し戻し。
+    {"^X(", "キーボードマクロの記録を開始", "Begin macro recording", {kLeaderX, '('}},
+    {"^X)", "キーボードマクロの記録を終了", "End macro recording", {kLeaderX, ')'}},
+    {"^Xe", "記録したマクロを実行", "Execute recorded macro", {kLeaderX, 'e'}},
 };
 
 // M_help/T_help向けのmenu.cのinit_cut2()呼び出しから移植――HELP自身の
@@ -2878,6 +2882,17 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartFileInput);
       case 0x06:  // ^X ^F : FILE(ファイル名を選択、K-46)
         return handleCommand(Command::StartFileHistory);
+      // 2026-09-10、直接のユーザー依頼("次はマクロ（^X(...）を実装
+      // して欲しい"――既に実装済みで単に2026-09-08の再編で^Oへ移って
+      // いただけと判明した後、"^X(/^X)/^Xeへ戻す(^Oは廃止)"と明示的に
+      // 選択)により、^O(/^O)/^Oeから差し戻し。クラスコメント自身の
+      // p_km節、pendingLeaderXByte_自身のコメント参照。
+      case '(':  // ^X ( : マクロ記録を開始
+        return handleCommand(Command::StartMacroRecord);
+      case ')':  // ^X ) : マクロ記録を終了
+        return handleCommand(Command::StopMacroRecord);
+      case 'e':  // ^X e : 記録済みマクロを実行
+        return handleCommand(Command::PlayMacro);
       default:
         return false;  // このスライスでは認識されない^Xシーケンス
     }
@@ -2935,12 +2950,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartArchiveExtract);
       case 0x17:  // ^O ^W : バッファをwFilePath_へ保存(旧^X^W)
         return handleCommand(Command::SaveBufferToFile);
-      case '(':  // ^O ( : マクロ記録を開始(旧^X()
-        return handleCommand(Command::StartMacroRecord);
-      case ')':  // ^O ) : マクロ記録を終了(旧^X))
-        return handleCommand(Command::StopMacroRecord);
-      case 'e':  // ^O e : 記録済みマクロを実行(旧^X e)
-        return handleCommand(Command::PlayMacro);
       case 's':  // ^O s : SHELLを再起動(旧^X s、K-60)
         return handleCommand(Command::RestartShell);
       // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
@@ -2991,32 +3000,34 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
 }
 
 // dispatchByte()(本体のロジック、それ自身のbody参照)をp_km記録の
-// 記帳で包む――なぜこれがリーダーOのシーケンスの先頭バイトを即座に
-// 記録するのではなくpendingLeaderOByte_に保持しておくのかについては
+// 記帳で包む――なぜこれがリーダーXのシーケンスの先頭バイトを即座に
+// 記録するのではなくpendingLeaderXByte_に保持しておくのかについては
 // クラスコメント自身のp_kmセクション参照。2026-09-08、直接のユーザー
 // 依頼によるキー再編で^O(/^O)/^OeがStartMacroRecord/StopMacroRecord/
-// PlayMacroを引き継いだのに伴い、この保留のロジック自体も(元は^X用
-// だったが)^O用へ付け替えた――pendingLeaderOByte_自身のコメント参照。
+// PlayMacroを一時的に引き継いだのに伴い、この保留のロジック自体も
+// 元の^X用から^O用へ付け替えたことがあったが、2026-09-10、直接の
+// ユーザー依頼("^X(/^X)/^Xeへ戻す(^Oは廃止)")により^X用へ差し戻した
+// ――pendingLeaderXByte_自身のコメント参照。
 bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
-  bool wasLeaderOPending = leaderOPending_;
+  bool wasLeaderXPending = leaderXPending_;
   bool wasRecording = recordingMacro_;
 
   bool result = dispatchByte(byte, special);
 
   if (wasRecording) {
-    if (wasLeaderOPending) {
+    if (wasLeaderXPending) {
       if (recordingMacro_) {
         // 依然として記録中――このバイトはStartMacroRecord/
         // StopMacroRecord/PlayMacroへは解決されなかったので、
-        // 保留していた先頭の^Oバイトとこのバイトの両方をコミットする。
-        if (pendingLeaderOByte_) recordedMacro_.push_back(*pendingLeaderOByte_);
+        // 保留していた先頭の^Xバイトとこのバイトの両方をコミットする。
+        if (pendingLeaderXByte_) recordedMacro_.push_back(*pendingLeaderXByte_);
         recordedMacro_.push_back({byte, special});
       }
       // else: 記録がちょうどオフになった(StopMacroRecordが解決した)
       // ――両方のバイトを捨てる、それらは制御シーケンス自体である。
-      pendingLeaderOByte_.reset();
-    } else if (!special && byte == kLeaderO) {
-      pendingLeaderOByte_ = RecordedStep{byte, special};  // 2番目のバイトが解決するまで保留しておく
+      pendingLeaderXByte_.reset();
+    } else if (!special && byte == kLeaderX) {
+      pendingLeaderXByte_ = RecordedStep{byte, special};  // 2番目のバイトが解決するまで保留しておく
     } else {
       recordedMacro_.push_back({byte, special});
     }
@@ -3028,7 +3039,7 @@ bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special
 bool Application::startMacroRecording() {
   recordingMacro_ = true;
   recordedMacro_.clear();
-  pendingLeaderOByte_.reset();
+  pendingLeaderXByte_.reset();
   return true;
 }
 

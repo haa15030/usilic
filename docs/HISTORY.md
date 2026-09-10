@@ -16241,3 +16241,20 @@ doctest新規1件追加、全1098件/21937アサーション全pass。make insta
 これで"GREP"とメッセージの間のスペースが正確に1個になり、ESC iのライブ編集中の表示("GREP"+1スペース+パターン文字列)とピクセル単位で完全に一致するようになりました。
 
 doctest新規2件追加(trailing2NoLeadingSpace自体の直接テスト: デフォルトfalseでArchiveMode相当の表示が保たれること、trueでスペース無しになること)、既存の「2スペース」を検証していたテストも「1スペース」へ更新。全1100件(既知の無関係なflakyテスト含む、単独実行でpass確認済み)/21940アサーション。PTYで実際に"GREP json"(ライブ編集中)と"GREP json : No String"(Enter確定後)の列位置がスペース込みで完全一致することを確認しています。make install/make app/~/Applications/usilic.appへの反映、jキー回帰チェックも完了しています。
+
+<なかなかに込み入ってるね。
+
+GREPとインクリメンタルは完成でいい。
+次はマクロ（^X(...）を実装して欲しいんだけど。よろしく。
+
+>マクロ記録機能は既に実装済みです――ただし^X(ではなく^O(/^O)/^Oeに割り当てられています(application.cppのコメントによると、2026-09-08にユーザー自身の依頼で^X(から^O(へ付け替えられた経緯があります)。今回の依頼はこれと矛盾するので、確認させてください。
+
+[AskUserQuestion: マクロは既に^O(/^O)/^Oe(開始/終了/実行)として実装済み。今回の^X(依頼はどう扱うか――①^X(/^X)/^Xeへ戻す(^Oは廃止) ②^X(/^X)/^Xeを追加(^Oも残す) ③既存の^O(のままでいい、勘違いだった]
+
+<^X(/^X)/^Xeへ戻す(^Oは廃止)
+
+>実装しました。application.hpp/application.cppのStartMacroRecord/StopMacroRecord/PlayMacroの割り当てを^O(/^O)/^Oeから^X(/^X)/^Xeへ差し戻し、対応する保留バイトの追跡(pendingLeaderOByte_→pendingLeaderXByte_、leaderOPending_→leaderXPending_ベース)も付け替えました。^Oの他のコマンド(CP/MV/RM/ARC/SHELL再起動等、2026-09-08の同じ再編で移った分)はそのまま^Oに残しています――今回戻したのはマクロ制御の3つ(^X(/^X)/^Xe)だけです。
+
+既存のマクロ関連doctest(記録開始/終了/再生/除外ロジック)を全て^Xベースへ更新し、KEY(^H)画面の「no HELP section」テストが偶然"^O( :"という文字列に依存していた箇所も"^X( :"へ修正しました。全1100件pass。
+
+PTYで実際に^X(で記録開始→^N^Nでカーソル移動を記録→^X)で終了→^P^Pで元の位置へ戻す→^X eで再生→記録した通りに^N^Nが再現されカーソルが同じ位置へ戻ることを確認しました。KEY(^H)画面でも^X(/^X)/^Xeが正しく表示され、^Oc/^Om/^Or等の他のコマンドは変更されていないことも確認済みです。make install/make app/~/Applications/usilic.appへの反映、jキー回帰チェックも完了しています。
