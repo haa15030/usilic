@@ -11,12 +11,32 @@
 
 namespace fm {
 
+namespace {
+// grep_mode.cpp自身のconvertTabsForSearch()と全く同じもの――クラス
+// コメントが既に説明している「GrepModeへの依存を持つ代わりにマッチング
+// ロジックを重複させている」という同じ方針にならい、ここでも複製する。
+// PipeBuffer::wrapLine()が検索対象側の全タブをU+2060(WORD JOINER)+
+// スペースへ変換するようになったことに合わせ、CUTのパターン側の生の
+// タブバイト(^Q^Iで打ち込まれたもの)も同じU+2060へ変換してから照合
+// する。pattern_(履歴/表示用)は変換前のまま。
+std::string convertTabsForSearch(const std::string &pattern) {
+  std::string converted = pattern;
+  std::size_t pos = 0;
+  while ((pos = converted.find('\t', pos)) != std::string::npos) {
+    converted.replace(pos, 1, "\xE2\x81\xA0");
+    pos += 3;
+  }
+  return converted;
+}
+}  // namespace
+
 CutMode::CutMode(ContentView &view, ModeStack &modeStack, const Configuration &configuration)
     : view_(view), modeStack_(modeStack), configuration_(configuration) {}
 
 bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::string &pattern,
                      GrepSyntax syntax) {
   if (pattern.empty()) return false;
+  const std::string searchPattern = convertTabsForSearch(pattern);
 
   ProgramCommand cmd =
       configuration_.commandFor(syntax == GrepSyntax::Fixed ? ConfiguredRole::Fgrep : ConfiguredRole::Egrep);
@@ -37,7 +57,7 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
   options.input = &inputText;
   ChildProcess::Result result;
   bool ranAtLeastOnce = false;
-  for (const auto &candidate : unicodeNormalizationCandidates(pattern)) {
+  for (const auto &candidate : unicodeNormalizationCandidates(searchPattern)) {
     std::vector<std::string> argv = cmd.argv;
     argv.push_back(candidate);
     result = ChildProcess::run(argv, options);

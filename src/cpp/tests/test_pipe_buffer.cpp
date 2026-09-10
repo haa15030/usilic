@@ -46,52 +46,59 @@ TEST_CASE("flush() finalizes a trailing line with no newline") {
   CHECK(buf.lines()[0].endsWithNewline == false);
 }
 
-TEST_CASE("tab advances to the next 8-column stop, expanded to spaces") {
+// 2026-09-10更新、直接のユーザー提案: タブは「U+2060(WORD JOINER、
+// 幅0)を1つ差し込んでから、従来通りの個数のスペースを展開する」形に
+// 変わった。U+2060はUtf8::display_width()で幅0と定義されている
+// (2026-09-10にU+200Bから差し替え済み)ため、見た目の桁位置は今まで
+// 通りのスペース展開と完全に同じまま――違いは、GREP/CUT(いずれも
+// このtext自体を検索対象にする)が、生のU+2060バイトを介してタブの
+// あった位置を見つけられるようになったこと(grep_mode.cpp/cut_mode.cpp
+// 自身のconvertTabsForSearch()参照)。
+TEST_CASE("tab advances to the next 8-column stop, expanded to a zero-width U+2060 marker "
+          "followed by spaces") {
   PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
   buf.feed("a\tb\n");
   REQUIRE(buf.lines().size() == 1);
-  // The tab byte is expanded to literal spaces here, NOT kept raw --
-  // ported from disp.c's own "convert '\t' to ' '" comment. Unlike a
-  // real terminal, ContentView renders each Line's bytes glyph-by-
-  // glyph itself rather than forwarding raw control bytes to an
-  // actual terminal, so a surviving raw tab byte would hit its
-  // control-code (K_at/K_dl) reverse-video path instead of expanding.
-  CHECK(buf.lines()[0].text == "a       b");
+  // The tab byte itself is never kept raw -- ported from disp.c's own
+  // "convert '\t' to ' '" comment. Unlike a real terminal, ContentView
+  // renders each Line's bytes glyph-by-glyph itself rather than
+  // forwarding raw control bytes to an actual terminal, so a surviving
+  // raw tab byte would hit its control-code (K_at/K_dl) reverse-video
+  // path instead of expanding. The U+2060 (e2 81 a0) marks where the
+  // tab was, invisibly, alongside the usual space padding.
+  CHECK(buf.lines()[0].text == "a\xE2\x81\xA0       b");
 }
 
 TEST_CASE("tab that reaches the wrap width forces a wrap") {
   PipeBuffer buf(Charset::Encoding::Ascii, 8, 1 << 20);
   buf.feed("ab\tcd\n");  // "ab" (col 2) + tab -> col 8 (the field width) -> wrap
   REQUIRE(buf.lines().size() == 2);
-  CHECK(buf.lines()[0].text == "ab      ");
+  CHECK(buf.lines()[0].text == "ab\xE2\x81\xA0      ");
   CHECK(buf.lines()[0].endsWithNewline == false);
   CHECK(buf.lines()[1].text == "cd");
 }
 
-// 2026-09-05追加、直接のユーザー報告("行末にtabコードがある行をCUT
-// 一覧に載せたい...^Q^Iでは入ってもgrepでヒットせず、一覧にもハイ
-// ライトの「^I」とは表示されない"): 調査の結果、原因は^Q^I自身では
-// なく、バッファへの取り込み時点で行末のタブも含め無条件にスペース
-// へ展開されており、CUT/GREPが検索する対象であるバッファそのものに
-// タブが一切残っていなかったこと。行の途中のタブ(上の2つのテスト)は
-// 引き続きスペースへ展開する(2026-08-02のSHELLスクロールバック対策を
-// 維持)が、行末(改行またはチャンク末尾の直前)のタブだけは生のバイト
-// 0x09のまま残す。
-TEST_CASE("a trailing tab (immediately before the newline) is preserved as a raw 0x09 byte, "
-          "NOT expanded to spaces -- unlike a mid-line tab") {
+// 2026-09-05に追加していた「行末のタブだけは生バイトのまま残す」と
+// いう特例(直接のユーザー報告"^Q^Iでは入ってもgrepでヒットせず、
+// 一覧にもハイライトの「^I」とは表示されない"への場当たり的な対処)
+// は、2026-09-10、全位置のタブが同じU+2060方式に統一されたことで
+// 不要になったため削除した。行末のタブも、行途中のタブ(上の2つの
+// テスト)と全く同じ扱いを受ける。
+TEST_CASE("a trailing tab (immediately before the newline) gets the same U+2060+spaces "
+          "treatment as a mid-line tab -- no longer kept as a raw 0x09 byte") {
   PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
   buf.feed("ab\t\n");
   REQUIRE(buf.lines().size() == 1);
-  CHECK(buf.lines()[0].text == std::string("ab\t"));
+  CHECK(buf.lines()[0].text == "ab\xE2\x81\xA0      ");
 }
 
 TEST_CASE("a trailing tab at the very end of input with no newline at all (flush(), an "
-          "unterminated final line) is also preserved raw") {
+          "unterminated final line) gets the same treatment") {
   PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
   buf.feed("ab\t");
   buf.flush();
   REQUIRE(buf.lines().size() == 1);
-  CHECK(buf.lines()[0].text == std::string("ab\t"));
+  CHECK(buf.lines()[0].text == "ab\xE2\x81\xA0      ");
   CHECK(buf.lines()[0].endsWithNewline == false);
 }
 
@@ -100,8 +107,20 @@ TEST_CASE("a trailing tab still forces a wrap when it lands exactly at the field
   PipeBuffer buf(Charset::Encoding::Ascii, 3, 1 << 20);
   buf.feed("ab\t\n");  // "ab" (col 2) + trailing tab (col 3, == width) -> wraps
   REQUIRE(buf.lines().size() == 1);  // the trailing newline is absorbed into the same finalize
-  CHECK(buf.lines()[0].text == std::string("ab\t"));
+  CHECK(buf.lines()[0].text == "ab\xE2\x81\xA0 ");
   CHECK(buf.lines()[0].endsWithNewline == true);
+}
+
+// 2026-09-10追加、直接のユーザー提案の核心部分: GREP/CUTが検索対象に
+// するのはこのtext自身なので、タブがまさに検索可能になったことを
+// ここで直接確認しておく(実際の検索側の変換はgrep_mode.cpp/
+// cut_mode.cppのconvertTabsForSearch()、統合テストはtest_grep_mode.cpp/
+// test_cut_mode.cpp参照)。
+TEST_CASE("the U+2060 marker left behind by a tab is a real, searchable byte sequence in text") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  buf.feed("a\tb\n");
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text.find("\xE2\x81\xA0") != std::string::npos);
 }
 
 TEST_CASE("overBudget() trips once total content exceeds maxBytes") {

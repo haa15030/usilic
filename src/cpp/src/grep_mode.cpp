@@ -9,12 +9,33 @@
 
 namespace fm {
 
+namespace {
+// 2026-09-10追加、直接のユーザー提案: PipeBuffer::wrapLine()が(検索
+// 対象のバッファ側で)全てのタブをU+2060(WORD JOINER)+従来通りの
+// スペースへ変換するようになった(そちら自身のコメント参照)ことに
+// 合わせ、検索する側のパターンに含まれる生のタブバイト(^Q^Iで
+// 打ち込まれたもの)も同じU+2060へ変換してから照合する。history_
+// への記録やNo String表示に使う`pattern_`自体は(タブがそのまま
+// 反転表示のグリフとして見える方が「何を探したか」が伝わりやすい
+// ため)変換前のまま――変換は実際の照合にだけ使う一時コピーに施す。
+std::string convertTabsForSearch(const std::string &pattern) {
+  std::string converted = pattern;
+  std::size_t pos = 0;
+  while ((pos = converted.find('\t', pos)) != std::string::npos) {
+    converted.replace(pos, 1, "\xE2\x81\xA0");
+    pos += 3;
+  }
+  return converted;
+}
+}  // namespace
+
 GrepMode::GrepMode(ContentView &view, const Configuration &configuration)
     : view_(view), configuration_(configuration) {}
 
 bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::string &pattern,
                        GrepSyntax syntax) {
   if (pattern.empty()) return false;
+  const std::string searchPattern = convertTabsForSearch(pattern);
 
   // 2026-09-05追加(直接のユーザー依頼、"新たにGREP（grep）を新設"):
   // GrepSyntax::Basic(プレーンなgrep)を含む3択――application.cpp自身の
@@ -51,8 +72,8 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   // 2026-09-10追加: 実際に一致した候補(NFC/NFDのどちらでヒットしたか、
   // unicodeNormalizationCandidates()自身のコメント参照)を覚えておく
   // ――下のmatchSpans算出の2回目の呼び出しで同じ文字列を渡すため。
-  std::string winningCandidate = pattern;
-  for (const auto &candidate : unicodeNormalizationCandidates(pattern)) {
+  std::string winningCandidate = searchPattern;
+  for (const auto &candidate : unicodeNormalizationCandidates(searchPattern)) {
     std::vector<std::string> argv = cmd.argv;
     argv.push_back(candidate);
     result = ChildProcess::run(argv, options);
@@ -173,6 +194,8 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
 // 分前進させる)。
 bool GrepMode::searchInProcess(const std::vector<std::string> &sourceLines, const std::string &pattern) {
   if (pattern.empty()) return false;
+  // convertTabsForSearch()自身のコメント参照(search()と同じ理由)。
+  const std::string searchPattern = convertTabsForSearch(pattern);
 
   matches_.clear();
   for (int i = 0; i < static_cast<int>(sourceLines.size()); i++) {
@@ -181,15 +204,15 @@ bool GrepMode::searchInProcess(const std::vector<std::string> &sourceLines, cons
     bool any = false;
     std::size_t findFrom = 0;
     while (true) {
-      std::size_t pos = line.find(pattern, findFrom);
+      std::size_t pos = line.find(searchPattern, findFrom);
       if (pos == std::string::npos) break;
       if (!any) {
         match.sourceLineIndex = i;
         match.text = line;
         any = true;
       }
-      match.matchSpans.push_back({static_cast<int>(pos), static_cast<int>(pos + pattern.size())});
-      findFrom = pos + pattern.size();
+      match.matchSpans.push_back({static_cast<int>(pos), static_cast<int>(pos + searchPattern.size())});
+      findFrom = pos + searchPattern.size();
     }
     if (any) matches_.push_back(std::move(match));
   }

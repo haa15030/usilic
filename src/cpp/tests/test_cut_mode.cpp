@@ -63,6 +63,23 @@ TEST_CASE_FIXTURE(Fixture, "split: divides content into segments at each matchin
   CHECK(mode.segments()[2].label == "usilic$ echo done");
 }
 
+// 2026-09-10追加、直接のユーザー提案("検索可能ならCUTもできるはず"):
+// GrepModeと全く同じ理由でCutModeもconvertTabsForSearch()を複製して
+// いる(クラスコメント参照)。PipeBuffer::wrapLine()が残すU+2060
+// マーカー(test_pipe_buffer.cpp参照)を、^Q^Iが挿入する生のタブ
+// バイトのパターンで実際に分割できることをここで確認する
+// (test_grep_mode.cppの対になるテストと同じ形)。
+TEST_CASE_FIXTURE(Fixture, "split: a literal tab byte in the pattern (as ^Q^I would insert) is "
+                           "converted to U+2060 before matching, so it splits at the U+2060 "
+                           "marker PipeBuffer leaves behind wherever a tab was") {
+  auto lines = toStyled({"heading\xE2\x81\xA0", "plain text", "another\xE2\x81\xA0"});
+  std::string pattern = "\t";  // a raw tab byte, as ^Q^I would insert into the prompt
+  REQUIRE(mode.split(lines, pattern, GrepSyntax::Fixed));
+  REQUIRE(mode.segments().size() == 2);
+  CHECK(mode.segments()[0].label == "heading\xE2\x81\xA0");
+  CHECK(mode.segments()[1].label == "another\xE2\x81\xA0");
+}
+
 TEST_CASE_FIXTURE(Fixture, "segmentContent: a segment spans from its delimiter line up to (not including) the next") {
   REQUIRE(mode.split(logLines(), "usilic$", GrepSyntax::Fixed));
   auto content = mode.segmentContent(mode.segments()[0]);

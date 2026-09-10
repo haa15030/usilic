@@ -39,24 +39,25 @@ TEST_CASE_FIXTURE(Fixture, "search (Regex/egrep): real egrep supports extended r
   CHECK(mode.matches()[0].sourceLineIndex == 0);
 }
 
-// 2026-09-05追加、直接のユーザー報告("行末にtabコードがある行を
-// CUT一覧に載せたい...^Q^Iでは入ってもgrepでヒットせず")のエンドツー
-// エンド確認: PipeBuffer::wrapLine()側の修正(test_pipe_buffer.cpp)で
-// 行末のタブがバッファに生のまま残るようになった――ここではその
-// 「buffer側に生のタブが残っている」状態を再現し、パターン側にも
-// 生のタブバイトを含めた実際の`grep`検索が本当に一致することを確認
-// する(GrepMode::search()自体は実物のgrep/egrep/fgrepバイナリを
-// forkするだけで、シェルを経由しないargv直接渡しなので、パターン中の
-// 生のタブバイトがエスケープ問題で失われる心配も無い)。
-TEST_CASE_FIXTURE(Fixture, "search (Basic/plain grep): a literal tab byte in the pattern matches a "
-                           "trailing tab byte in a source line (the real end-to-end scenario PipeBuffer's "
-                           "own trailing-tab preservation exists for)") {
-  std::vector<std::string> lines = {"heading\t", "plain text", "another\t"};
+// 2026-09-10更新、直接のユーザー提案のエンドツーエンド確認:
+// PipeBuffer::wrapLine()は今やタブの位置に(スペードの直前へ)
+// U+2060(WORD JOINER、幅0)を差し込む(test_pipe_buffer.cpp参照)。
+// ここではその「buffer側にU+2060が残っている」状態を再現し、
+// パターン側は^Q^Iがそのまま挿入する生のタブバイトのままで、
+// GrepMode::search()自身のconvertTabsForSearch()がそれを同じU+2060へ
+// 変換してから実際の`grep`へ渡すことで一致することを確認する
+// (2026-09-05に追加していた「行末のタブだけ生バイトのまま残す」
+// 特例は、全位置のタブがU+2060方式に統一されたことで不要になり
+// 削除された――このテスト自身も併せて更新)。
+TEST_CASE_FIXTURE(Fixture, "search (Basic/plain grep): a literal tab byte in the pattern (as ^Q^I "
+                           "would insert) is converted to U+2060 before matching, so it finds the "
+                           "U+2060 marker PipeBuffer leaves behind wherever a tab was") {
+  std::vector<std::string> lines = {"heading\xE2\x81\xA0", "plain text", "another\xE2\x81\xA0"};
   std::string pattern = "\t";  // a raw tab byte, as ^Q^I would insert into the prompt
   REQUIRE(mode.search(lines, pattern, GrepSyntax::Basic));
   REQUIRE(mode.matches().size() == 2);
-  CHECK(mode.matches()[0].text == "heading\t");
-  CHECK(mode.matches()[1].text == "another\t");
+  CHECK(mode.matches()[0].text == "heading\xE2\x81\xA0");
+  CHECK(mode.matches()[1].text == "another\xE2\x81\xA0");
 }
 
 TEST_CASE_FIXTURE(Fixture, "search: fgrep treats the pattern as a literal fixed string, not a regex") {
