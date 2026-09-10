@@ -5247,6 +5247,18 @@ bool Application::openSelectedGrepMatch() {
 bool Application::activateGrepInPlace() {
   const auto &matches = grepMode_.matches();
   if (matches.empty()) {
+    // 2026-09-10修正、直接のユーザー報告(usilic -c git/usilicで再現:
+    // "^[i.→さらに␣→.␣はマッチしないのにハイライトが消えない"):
+    // ESC iはキー入力のたびにこの関数を呼び直す――前回のキー入力で
+    // 一致があった(grepInPlaceActive_==trueになっていた)後、今回の
+    // キー入力で0件になった場合、この早期returnがそれまでの
+    // オーバーレイ/ハイライトを一切消さないまま素通りしていた
+    // (grepInPlaceActive_もtrueのまま残っていた)。deactivateGrepInPlace()
+    // 自身は非activeなら何もしないので、ここで無条件に呼んでおけば、
+    // 「一度も一致したことが無い」通常の新規検索(このパスがそもそも
+    // 意図していたケース)には影響せず、このインクリメンタルサーチ
+    // 特有のケースだけを正しく後始末できる。
+    deactivateGrepInPlace();
     std::string message = grepMode_.pattern() + ": No String";
     if (grepInPlaceOriginMode_ == ApplicationMode::Directory) {
       directoryMode_.reportGrepNoMatchMessage(message);
@@ -9019,16 +9031,52 @@ bool Application::submitPrompt() {
   PromptKind kind = promptKind_;
   std::string text = promptEditor_.text();
   promptKind_ = PromptKind::None;
-  // incrementalGrepActive_自身の宣言コメント参照(2026-09-10追加):
-  // ユーザー自身の要望はキー入力の「たびに」サブプロセスを起動しない
-  // ことだった――Enterでの確定自体は、下のexecutePromptSubmission()
-  // 経由で通常通りexecuteGrep()(実物のgrep、+matchSpans算出の2回目
-  // の呼び出し)を1回だけ実行する。ライブ中に何度呼んでもサブプロセス
-  // を一切起動しないGrepMode::searchInProcess()と役割が違う――こちら
-  // は「確定した結果を、実際にusilicrcで設定された検索コマンドと
-  // 完全に同じ意味論で」揃え直すための、意図した最後の1回。
+  // incrementalGrepActive_自身の宣言コメント参照(2026-09-10追加)。
+  // 2026-09-10同日さらに修正、直接のユーザー報告(usilic -c
+  // git/usilicで再現: "^[i.→全マッチ文字.がハイライト表示→さらに
+  // ␣→.␣はマッチしないのにハイライトが消えない→さらに^M→意味不明"):
+  // 当初この後は無条件にexecutePromptSubmission()→executeGrep()
+  // (実物のgrep、GrepSyntax::Basic=正規表現)を1回だけ実行していた
+  // ――「確定した結果を、実際にusilicrcで設定された検索コマンドと
+  // 完全に同じ意味論で揃え直すため」という設計だったが、これは
+  // ライブ中のGrepMode::searchInProcess()が「正規表現ではなくfgrep
+  // 相当のリテラル検索」であるべきという、その後の別の直接の
+  // ユーザー依頼("^[iでは正規表現検索ではなくfgrepタイプにして
+  // ほしい")によって前提が崩れていた: ライブ中は"."をリテラルな点
+  // として扱うのに、Enterで確定した瞬間だけ実物のgrepが正規表現として
+  // 再解釈してしまい、ライブで0件だったパターンがEnter後に突然
+  // 大量ヒットする、という食い違いが起きていた。searchInProcess()は
+  // 既にmatches_/matchSpansを直接計算済みで、実物のgrepへ問い合わせ
+  // 直す技術的な必要性はそもそも無い(fgrep相当のリテラル検索に、
+  // 正規表現エンジンとの間の食い違いという概念自体が存在しない)ので、
+  // インクリメンタルサーチだったセッションはfinalizeIncrementalGrep()
+  // (それ自身のコメント参照)という別経路へ分岐させ、ライブで既に
+  // 確立済みの状態をそのまま維持するだけにした。
+  bool wasIncrementalGrep = incrementalGrepActive_ && kind == PromptKind::GrepPattern;
   incrementalGrepActive_ = false;
+  if (wasIncrementalGrep) return finalizeIncrementalGrep(text);
   return executePromptSubmission(kind, text);
+}
+
+// submitPrompt()自身のコメント参照。ライブ中のGrepMode::
+// searchInProcess()(fgrep相当のリテラル検索)が既にmatches_/
+// matchSpansを直接計算済みであり、かつactivateGrepInPlace()/
+// deactivateGrepInPlace()の両方がキー入力のたびに正しく呼ばれ続けて
+// きた(liveIncrementalGrepSearch()自身のコメント参照)以上、Enterの
+// 時点で表示されている状態こそが既に「確定した」状態そのものである
+// ――実物のgrepへ改めて問い合わせ直す必要は無い(意味論が違う以上、
+// 問い合わせ直すこと自体がむしろ食い違いの原因になる、submitPrompt()
+// 自身のコメント参照)。履歴への記録だけは通常の^Sと同じ慣習に揃える。
+bool Application::finalizeIncrementalGrep(const std::string &pattern) {
+  history_.pushRecent(grepSyntaxRingCategory(grepSyntax_), pattern);
+  // 通常のexecuteGrep()経路は、その先のactivateGrepInPlace()自身の
+  // redraw()によって、画面最終行(それまで生きたプロンプトが描画
+  // されていた行)が自然に通常のモードラインで上書きされていた――
+  // その呼び出し自体を丸ごとスキップするこの経路では、明示的に
+  // redraw()し直さないと、プロンプトの最後の見た目(パターン文字列+
+  // カーソル)がEnter後もそのまま画面に居座ってしまう。
+  activeView().redraw();
+  return true;
 }
 
 bool Application::executePromptSubmission(PromptKind kind, const std::string &text) {

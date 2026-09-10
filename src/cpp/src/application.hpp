@@ -2205,6 +2205,9 @@ class Application {
   bool feedPromptByteInner(int byte);
   bool submitPrompt();
   void cancelPrompt();
+  // 2026-09-10追加、submitPrompt()自身のコメント参照(直接のユーザー
+  // 報告: "^[i.→space→^Mで意味不明"): ESC iのEnter確定専用の経路。
+  bool finalizeIncrementalGrep(const std::string &pattern);
   bool executeGrep(const std::string &pattern);
   bool executeCut(const std::string &pattern);
   bool executeMan(const std::string &name);

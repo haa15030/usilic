@@ -989,6 +989,69 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: narrowing the pattern clears the highlight on
   CHECK_FALSE(display.highlightAt(plainIdx, 2));
 }
 
+// 2026-09-10, a direct user report after actually trying ESC i on a real
+// directory (usilic -c git/usilic): "^[i.→全マッチ文字.がハイライト
+// 表示→さらに␣→.␣はマッチしないのにハイライトが消えない" --
+// narrowing the pattern all the way down to ZERO matches (not just
+// "fewer, but still some") hit a DIFFERENT bug than the one just above:
+// activateGrepInPlace()'s own empty-matches branch reported the
+// no-match message and returned early WITHOUT clearing the highlight
+// or session state left over from the PREVIOUS (non-empty) keystroke,
+// because that branch had only ever been reached before from a fresh,
+// never-yet-activated search.
+TEST_CASE_FIXTURE(Fixture, "ESC i: narrowing the pattern all the way down to ZERO matches clears the "
+                           "stale highlight from a previous, broader match (the exact user-reported bug)") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  int oneIdx = indexOf("one.json");
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('i', std::nullopt));
+  feedText("json");
+  REQUIRE(app.grepMode().matches().size() == 1);
+  int oneCol = app.grepMode().matches()[0].matchSpans.at(0).first;
+  CHECK(display.highlightAt(oneIdx, oneCol));
+  CHECK(app.activeContentView().modeLineText().find("GREP") != std::string::npos);
+
+  feedText("XYZNOMATCH");  // now matches nothing at all
+  CHECK(app.grepMode().matches().empty());
+  CHECK_FALSE(display.highlightAt(oneIdx, oneCol));  // the bug: this used to stay highlighted
+  CHECK(app.activeContentView().modeLineText().find("No String") != std::string::npos);
+}
+
+// Same-day, a second bug surfaced by the same repro: pressing Enter
+// after narrowing to zero live matches ("さらに^M→意味不明") used to
+// re-run a REAL grep subprocess in GrepSyntax::Basic (regex) via the
+// normal executeGrep() path -- a DIFFERENT semantics than
+// searchInProcess()'s fgrep-style literal matching that produced the
+// live preview. For a pattern containing regex metacharacters (a
+// literal '.' followed by a space, i.e. ". "), the live/literal search
+// correctly finds nothing, but the real grep would reinterpret it as
+// "any character, then a space" and suddenly match many unrelated
+// lines -- a jarring discontinuity between what's shown while typing
+// and what Enter actually commits to.
+TEST_CASE_FIXTURE(Fixture, "ESC i: Enter after narrowing to zero matches does NOT re-interpret the "
+                           "pattern as regex and suddenly show unrelated matches (the exact user-reported "
+                           "\"意味不明\" bug)") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('i', std::nullopt));
+  feedText(".");  // literal '.' -- matches several entries with an extension dot
+  REQUIRE_FALSE(app.grepMode().matches().empty());
+
+  feedText(" ");  // pattern is now ". " -- no ls line literally contains "dot space"
+  REQUIRE(app.grepMode().matches().empty());
+
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+  CHECK_FALSE(app.promptActive());
+  // The bug: a real `grep -e '. '` (BRE, "." = any char) would match
+  // virtually every ls line (any two adjacent characters ending in a
+  // space), so this used to flip from "no match" to "GREP n/m (grep)"
+  // with a large match count right here.
+  CHECK(app.grepMode().matches().empty());
+  CHECK(app.activeContentView().modeLineText().find("No String") != std::string::npos);
+}
+
 // File origin's own version of the same bug: setGrepMatchHighlight()
 // re-snapshotted view_.lines() (already dirtied by the previous
 // keystroke) as the "clean" baseline on EVERY call, so a line that
