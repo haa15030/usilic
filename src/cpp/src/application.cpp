@@ -2250,6 +2250,27 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     }
     return false;
   }
+  // 2026-09-10追加、直接のユーザー報告(usilic -c ~/git/usilicで再現:
+  // "^[iでの検索さなかでは^N^Pが利かない"): ESC i(インクリメンタル
+  // サーチ)はEnterを押すまでプロンプトが開いたままなので、この直後の
+  // `promptKind_ != PromptKind::None`のチェックに先に捕まり、下の
+  // grepInPlaceActive_向けの^N/^P横取り(この関数の少し下、通常の
+  // 送信済み^Sセッション――既にプロンプトが閉じている――向けに書か
+  // れたもの)に一度も到達できなかった。ライブタイピング中でも次/前の
+  // マッチへジャンプしたいのは自然な要求(まだパターン編集中でも
+  // プレビューしたい)なので、このチェックをプロンプト経路より前へ
+  // 出す――他の全てのバイトは引き続き通常通りfeedPromptByte()へ渡る
+  // (ここで横取りするのは0x0e/0x10の2バイトだけ)。
+  if (grepInPlaceActive_ && incrementalGrepActive_ && promptKind_ == PromptKind::GrepPattern && !special &&
+      (byte == 0x0e || byte == 0x10)) {
+    bool result = handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
+    // jumpToGrepInPlaceMatch()自身のredraw()が、liveIncrementalGrepSearch()
+    // 自身のコメント通り画面最終行(生きたプロンプトの行)を通常の
+    // モードラインで上書きしてしまう――そちらと同じ組で描き直す。
+    drawPromptLabel(promptKind_, "");
+    promptEditor_.redraw();
+    return result;
+  }
   if (promptKind_ != PromptKind::None) return feedPromptByte(byte);
   if (currentMode_ == ApplicationMode::Shell) return feedShellByte(byte, special);
   // COPY(^O^C): それ自身の小さな自己完結したキーの語彙

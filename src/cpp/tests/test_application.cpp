@@ -908,6 +908,41 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: an empty pattern (e.g. after backspacing ever
 }
 
 // 2026-09-10, a direct user report after actually trying ESC i on a real
+// directory: "^[iでの検索さなかでは^N^Pが利かない" -- dispatchByte()'s
+// `if (promptKind_ != PromptKind::None) return feedPromptByte(byte);`
+// caught ^N/^P first and routed them into the still-open prompt editor
+// (a no-op there), because ESC i's prompt stays open until Enter --
+// unlike a submitted ^S session, where GrepInPlaceNext/Previous's own
+// ^N/^P intercept (a few lines further down in dispatchByte()) only
+// ever got a chance to run once the prompt had already closed.
+TEST_CASE_FIXTURE(Fixture, "ESC i: ^N/^P jump between matches DURING live typing, before Enter is ever "
+                           "pressed (the exact user-reported bug)") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  { std::ofstream(root / "two.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('i', std::nullopt));
+  feedText("json");
+  REQUIRE(app.grepMode().matches().size() == 2);
+  REQUIRE(app.directoryMode().selectedEntry()->name == "one.json");
+  CHECK(app.promptActive());  // still editing -- Enter was never pressed
+
+  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N -> 2nd match, all while the prompt is still open
+  CHECK(app.directoryMode().selectedEntry()->name == "two.json");
+  CHECK(app.promptActive());  // ^N did NOT close the prompt
+
+  CHECK(app.feedByte(0x10, std::nullopt));  // ^P -> back to the 1st match
+  CHECK(app.directoryMode().selectedEntry()->name == "one.json");
+  CHECK(app.promptActive());
+
+  // The pattern itself is still editable afterward -- ^N/^P didn't
+  // consume the prompt or otherwise disturb it.
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.activeContentView().modeLineText().find("GREP") != std::string::npos);
+}
+
+// 2026-09-10, a direct user report after actually trying ESC i on a real
 // directory (usilic -c ~/git/usilic): typing more characters (narrowing
 // the match set, e.g. "." then ".j") left the OLD, now-stale highlight
 // from an earlier keystroke still showing on lines that no longer
