@@ -6918,6 +6918,50 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: ^A/^E/^B/^F/^D edit the command line, not ins
   CHECK(app.shell().commandLine().text() == "abc!");  // now appends, confirming ^E actually moved to the end
 }
 
+// 2026-09-10 addition, same shape as the ^A/^E/^B/^F/^D gap just above
+// (a real user report: "SHELLでgrep '^V^I' *.[ch]とやっても^Iが入ら
+// ない。^Q^Iでは^Qだけが渡る") -- ^Q (quoted insert) was wired into
+// feedPromptByteInner()'s shared promptEditor_ back on 2026-08-11 but,
+// like ^A/^E/^B/^F/^D/^U/^K/^Y/ESC before it, was never ported to
+// feedShellByte()'s separate commandLine() editor. Without it, Tab
+// (0x09) always triggers Shell::onTab()'s own completion with no way
+// to insert it literally into the LOCAL command-line buffer.
+//
+// Getting a literal Tab all the way into a command that actually
+// EXECUTES against the real child shell needs one more step this test
+// doesn't cover: the local buffer holding a literal Tab byte is only
+// half the story, because Shell mode forwards the assembled line to a
+// genuinely interactive child shell (zsh/bash) with its OWN line
+// editor (ZLE/readline) reading it as if a human were typing it live
+// -- so that receiving shell ALSO intercepts a raw Tab as ITS OWN
+// completion trigger unless the line also embeds THAT shell's own
+// quoted-insert prefix (^V, zsh's and bash's default) right before it.
+// Verified interactively via PTY: building "grep '<^V><Tab>' *.txt"
+// (using this new ^Q for the Tab; ^V itself needs no quoting since
+// feedShellByte() doesn't intercept it) actually finds a real tab
+// character once submitted, matching typing "^V^I" at a genuine
+// interactive shell prompt. This test only verifies the (necessary,
+// but not by itself sufficient) local-buffer half.
+TEST_CASE_FIXTURE(Fixture, "SHELL: ^Q (quoted insert) inserts the NEXT byte literally into the command "
+                           "line instead of triggering its usual meaning (e.g. Tab's Shell::onTab())") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  for (unsigned char c : std::string("ab")) app.feedShellByte(c, std::nullopt);
+  CHECK(app.feedShellByte(0x11, std::nullopt));  // ^Q: arms quoted-insert
+  // The very next byte would normally trigger Shell::onTab()'s
+  // filename completion -- quoted, it's inserted literally instead.
+  CHECK(app.feedShellByte(0x09, std::nullopt));
+  CHECK(app.shell().commandLine().text() == std::string("ab\x09"));
+
+  app.feedShellByte('c', std::nullopt);
+  CHECK(app.shell().commandLine().text() == std::string("ab\x09" "c"));
+}
+
 TEST_CASE_FIXTURE(Fixture, "SHELL: typing a command and pressing Enter runs it, output reaches scrollback") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {

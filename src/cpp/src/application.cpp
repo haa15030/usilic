@@ -3067,6 +3067,55 @@ std::size_t Application::recordedMacroLength() const { return recordedMacro_.siz
 // (スクロールバックのページ送り/コマンド履歴)は、ここではまだ意図的
 // に処理していない。
 bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  // ^Q(quoted insert、2026-09-10追加): feedPromptByteInner()自身の
+  // ^Qのコメント参照。すぐ下の^A/^E/^B/^F/^D/ESC/^U/^K/^Yと全く同じ
+  // 「promptEditor_については既に修正済みだが、shell_.commandLine()
+  // という別個のLineEditorインスタンスへは一度も反映されていない」
+  // 隙間――実際のユーザー報告("SHELLでgrep '^V^I' *.[ch]とやっても
+  // ^Iが入らない。^Q^Iでは^Qだけが渡る"): ^Qがどの特殊バイトにも
+  // 一致せず下のinsertByte()へ素通しされ(それ自身の反転表示された
+  // "@"オフセットのグリフとしてレンダリングされる)、続くTabは
+  // すぐ下のkClearTo0x09チェックがshell_.onTab()(ファイル名補完)へ
+  // 無条件に渡してしまい、リテラルに挿入する手段が無かった。
+  // feedPromptByteInner()と同じ理屈で、他のどの特殊バイト(Tab/^G/
+  // リーダーキー等)より「先に」チェックする――一度アームされると、
+  // 次のバイトはそれが他に何を意味するかに関わらずリテラルに挿入
+  // される。
+  // 【この修正「だけ」では実は不十分、PTY実機検証で判明】
+  // これでshell_.commandLine()というusilic側のローカルなバッファへ
+  // リテラルなTabバイトを組み込めるようにはなるが、SHELLモードは
+  // (feedPromptByteInner()側のGREP/CUT等とは違い)組み立てた行を
+  // 丸ごと、本物のインタラクティブな子プロセス(zsh/bash、それ自身の
+  // 行編集機構ZLE/readlineを持つ)へそのまま送るだけなので、送信された
+  // 生のTabバイトを、その「子プロセス自身」のZLE/readlineが(あたかも
+  // 人間がその場でTabキーを押したかのように)「そちらの」補完機能の
+  // トリガーとして解釈してしまい、結局リテラルには挿入されない
+  // (実際のPTY確認: この修正だけを使った^Q^Iでは"grep '<TAB>' *.txt"
+  // は"grep 'AAABBB'"のようにTabが跡形も無く消える――子シェル自身の
+  // 補完が"何も補完しない"という形で静かにバイトを飲み込むため)。
+  // 正しく動作させるには、子シェル自身の同じquoted-insertの慣習
+  // (zsh/bashのデフォルトでは^V)もコマンド文字列の中にそのバイトの
+  // 直前として一緒に埋め込む必要がある――つまりusilic側は
+  // "^Q^V"(usilic自身の局所バッファへリテラルな^Vを挿入、実際には
+  // ^Vはここで特別扱いされていないので無印のままでも素通しで挿入
+  // される)、続けて"^Q<Tab>"(この修正で初めて可能になる、usilic
+  // 自身の局所バッファへのリテラルなTab挿入)と入力する――送信される
+  // 文字列に埋め込まれた"^V<Tab>"を、子シェル自身のZLE/readlineが
+  // 「本物の対話セッションでユーザーが^V^Iと打った」のと区別が付かず
+  // 同じに解釈し、初めてTabがリテラルに挿入される(実際のPTY確認: この
+  // 2段構えでgrepが実際に一致を見つけることを確認済み)。この修正
+  // 自体は、そのための「usilic側の半分」(局所バッファへの挿入)を
+  // 提供するものであり、単独で完結する解決策ではない。
+  if (shell_.commandLine().quotedInsertPending()) {
+    shell_.commandLine().clearQuotedInsert();
+    shell_.commandLine().insertByte(static_cast<unsigned char>(byte));
+    shell_.commandLine().redraw();
+    return true;
+  }
+  if (byte == kControlQ) {
+    shell_.commandLine().toggleQuotedInsert();
+    return true;
+  }
   // Shellモードの内部からのグローバルなリーダーキーへのアクセス:
   // ^J/^X/^X^K/^O/ESC。実際のユーザー報告(2026-08-02、成熟した
   // legacyビルドと並べて比較)により、そこでは^X^F/^X^C等はSHELLの
