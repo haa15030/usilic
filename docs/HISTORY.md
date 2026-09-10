@@ -16396,3 +16396,17 @@ HISTORY.md:16354　しかし不可視であることの利点はある。タブ�
 test_pipe_buffer.cppの既存のタブ関連テストを新しい挙動に合わせて更新(「行末だけ生バイト」だったテスト群も統一後の挙動に書き換え)、test_grep_mode.cpp/test_cut_mode.cppにもU+2060経由の検索/分割を確認するエンドツーエンドのdoctestを追加しました。全1103件/21955アサーション全pass(既知の無関係なflakyテスト1件が並列実行時にだけ再現したため単独実行で確認、実際には無関係と確認済み)。
 
 PTYで実際にusilicを起動し、タブを含む行をファイルに置いた状態で^S(GREP)→^Q+Tabでパターンを打ち込んで検索したところ、以前は"No String"だったのが実際にタブを含む行がヒットしてin-place GREPハイライトへ切り替わることを確認しました。make install/make app/~/Applications/usilic.appへの反映、jキー回帰チェックも完了しています。docs/CHANGES.mdのFGREP/EGREP節・CUT節の両方に項目434として記録しました(重複掲載、リポジトリの既存の運用に合わせています)。
+
+<Terminal.appで`grep ^V^I old/usilic-c.c|wc`→3928、FGREPで`^Q^I`→総行数3928。
+CUTも問題無し。
+
+`^I`検索するうち気づいた点がある。
+`^N`連打で最下行へ到達すると循環処理により最上行へと移動するのはいいとして、動きが今イチわかりにくい。そこでEGREPと同じく行数情報を含ませて欲しい。`No String`もGREPでは無く行数の隣に表示。せっかく移動してもらったが元の位置でよろしく。
+
+>実機での確認結果(実際のgrepと同じ3928件)をありがとうございます。ご指摘の2点を実装しました。
+
+EGREP(一覧モード)では一覧自体の行がマッチそのものなので、通常のposition表示("現在行/総行数")がそのまま「マッチN/M」を意味しますが、in-place方式はDirectory/Fileの生のコンテンツがそのまま画面に残るため、position表示は検索と無関係な「カーソル行/ファイル総行数」のままでした。Application::updateGrepInPlacePositionText()を新設し、activeView().setPositionTextOverride()で「マッチ番号/総マッチ数」(例: "3/12")に差し替えるようにし、activateGrepInPlace()(開始時)とjumpToGrepInPlaceMatch()(^N/^P毎回)の両方から呼び、deactivateGrepInPlace()で通常表示へ戻します。
+
+"No String"メッセージも、以前trailing2に置いていた("GREP"の直後に来るよう位置/バイト数を空にする、という別の仕組みだった)扱いをやめ、同じposition枠(non-highlightedのまま)を使うよう統一しました――マッチ有り/無しどちらも同じ枠を使う一貫した設計にしています。
+
+全1103件/21955アサーション全pass。PTYで実際に5件マッチする検索を実行し、"1/5"→^N→"2/5"→"3/5"→"4/5"→^P→"3/5"、マッチ0件では"No String"がそれぞれ正しく表示されることを確認しました(実装の途中、make testが別ターゲットの`run_tests`しかビルドしないため、確認に使っていた`build/usilic`が一時的に古いままになっていて反映されていないように見える、という寄り道がありましたが、原因を特定し再ビルドで解消しています)。「せっかく移動してもらったが元の位置でよろしく」との仰せの通り、カーソル位置を検索前に戻す機能は追加していません。make install/make app/~/Applications/usilic.appへの反映、jキー回帰チェックも完了しています。docs/CHANGES.mdのFGREP/EGREP節に項目435として記録しました。

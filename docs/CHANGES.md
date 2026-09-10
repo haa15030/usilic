@@ -2653,6 +2653,39 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      make install/make app/~/Applications/usilic.appへの反映、jキー
      回帰チェックも完了。
 
+435. **in-place GREP(Directory/File起点の`^S`)のposition表示を「マッチ
+    番号/総マッチ数」に、"No String"メッセージもtrailing2からposition
+    枠へ統一**
+   - **経緯**: 直接のユーザー報告――「タブ検索を試すうち気付いたが、
+     `^N`連打で最下行から最上行へ循環するのはいいとして、動きが今イチ
+     わかりにくい。EGREPと同じく行数情報を含ませて欲しい。No Stringも
+     GREPでは無く行数の隣に表示」。EGREP(一覧モード)では一覧自体の
+     行がマッチそのものなので、通常のposition表示("現在行/総行数")が
+     そのまま「マッチN/M」を意味する。in-place方式はDirectory/Fileの
+     生のコンテンツがそのまま画面に残るため、position表示は検索と
+     無関係な「カーソル行/ファイル総行数」のままで、^N/^Pでマッチ間を
+     移動しても何マッチ中何番目かが伝わらなかった。
+   - **対応**: `Application::updateGrepInPlacePositionText()`を新設し、
+     `activeView().setPositionTextOverride()`で「マッチ番号/総マッチ数」
+     (1始まり、例: "3/12")に差し替える――`activateGrepInPlace()`
+     (セッション開始時)と`jumpToGrepInPlaceMatch()`(^N/^P、既存の
+     `setCursorIndex()`と一緒に毎回更新)の両方から呼び、
+     `deactivateGrepInPlace()`で`std::nullopt`に戻して通常表示へ復帰
+     させる。あわせて、"No String"メッセージ(`reportGrepNoMatchMessage()`)
+     も同じposition枠(`setPositionTextOverride(message, plain=true)`)
+     を使うよう変更し、以前trailing2に置いていた("GREP"の直後に来る
+     よう位置/バイト数を空にする、という2026-09-10時点の別の凝った
+     仕組みだった)扱いは削除して、マッチ有り/無しどちらも同じ枠を
+     使う一貫した設計に統一した(trailing2は成功時と同じ"(grep)"
+     バッジのまま)。
+   - **検証**: `make test` 1103/1103件・21955アサーション全通過
+     (既存のNo Stringモードラインテストは、メッセージの非ハイライト
+     表示という要件を維持したままposition枠経由に更新)。PTYで実際に
+     5件マッチする検索を実行し、"1/5"→^N→"2/5"→...→"4/5"→^P→"3/5"、
+     マッチ0件では"No String"がそれぞれ正しく表示されることを確認。
+     make install/make app/~/Applications/usilic.appへの反映、jキー
+     回帰チェックも完了。
+
 
 ## 4. CUT
 

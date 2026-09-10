@@ -1821,6 +1821,13 @@ class Application {
   // 自身のFile分岐が同じ理由でこれを呼んでいるのと同じ、行全体の
   // ハイライトを持たないFileモードでのキャレット表示のため)。
   bool jumpToGrepInPlaceMatch(int delta);
+  // 2026-09-10追加、直接のユーザー指摘("^N連打で最下行へ到達すると
+  // 循環処理により最上行へと移動するのはいいとして、動きが今イチ
+  // わかりにくい...EGREPと同じく行数情報を含ませて欲しい"):
+  // activeView().setPositionTextOverride()を「マッチ番号/総マッチ数」
+  // (1始まり)に差し替える――activateGrepInPlace()/jumpToGrepInPlaceMatch()
+  // 自身のコメント参照。
+  void updateGrepInPlacePositionText();
   // 2026-09-10追加、直接のユーザー依頼(ESC iキー、design経緯は
   // application.hpp自身のCommand::StartIncrementalGrep宣言コメント
   // 参照)。

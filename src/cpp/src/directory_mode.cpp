@@ -152,30 +152,21 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       fields.trailing3 = currentDirectory_;
       fields.fillTrailingToEdge = true;
     } else if (grepNoMatchActive_) {
-      // reportGrepNoMatchMessage()自身の宣言コメント参照: LOCATE自身の
-      // "Updating database..."/"Disk usage..."と同じ体裁(短いラベル+
-      // メッセージ+起点)。showEditError_/pendingOperationLabel_とは
-      // 独立(3つ同時に真になることは無い)。
+      // reportGrepNoMatchMessage()自身の宣言コメント参照。
+      // 2026-09-10再修正、直接のユーザー指摘("No StringもGREPでは無く
+      // 行数の隣に表示"): 以前はメッセージ自体をtrailing2に置き、
+      // position/trailingを空にすることで見た目上"GREP"の直後に
+      // 来るようにしていた。しかしgrepInPlaceActive_側(すぐ上の分岐)
+      // に「マッチN/M」という行数情報を追加した今、成功時と失敗時で
+      // メッセージの置き場所が別の仕組み(position vs trailing2)に
+      // 分かれているのは筋が悪い――両者とも同じposition枠を使う方が
+      // 一貫している(reportGrepNoMatchMessage()自身がここでは無く
+      // setPositionTextOverride(message)側でメッセージ本体を設定
+      // する)。trailing2は成功時と同じ"(grep)"バッジのまま、trailing
+      // (バイト数)も通常通り計算済みの値のまま残す。
       fields.name = "GREP";
-      // 2026-09-10追加、直接のユーザー指摘(実機スクリーンショット
-      // =gd/=gc): デフォルトのtrailing(バイト数、この関数の冒頭で
-      // 既に埋まっている)を残したままだと、setPositionTextOverride("")
-      // で位置表示を消しても、まだそのバイト数フィールドが"GREP"と
-      // メッセージの間に残ってしまう――ライブ編集中の表示(バイト数も
-      // 一切出ない)と列位置を完全に揃えるには、これも空にする必要が
-      // ある。
-      fields.trailing.clear();
-      fields.trailing2 = grepNoMatchMessage_;
-      fields.trailing2Plain = true;  // 直接のユーザー指摘: "非ハイライトの「〜:No String」を表示して欲しい"
-      // ModeLineFields::trailing2NoLeadingSpace自身のコメント参照
-      // (2026-09-10追加、直接のユーザー指摘: "これは致命的なバグと
-      // 同じ。見える場所だから"): positionText/trailingを空にしても
-      // trailing2自身の無条件の先頭スペースが残っていたため、
-      // "GREP"の後にスペースが2個並んでいた。これでライブ編集中の
-      // 表示("GREP"+1スペース+パターン)と完全に一致する1個だけになる。
-      fields.trailing2NoLeadingSpace = true;
+      fields.trailing2 = "(grep)";
       fields.trailing3 = currentDirectory_;
-      fields.fillTrailingToEdge = true;
     } else if (!pendingOperationLabel_.empty()) {
       // ディレクトリパスの代わりに"CP"/"MV"/"RM"、プレーンな
       // Standout(renderModeLine()自身の`name`向けデフォルト――上の
@@ -422,19 +413,18 @@ void DirectoryMode::clearEditError() { showEditError_ = false; }
 void DirectoryMode::reportGrepNoMatchMessage(const std::string &message) {
   grepNoMatchMessage_ = message;
   grepNoMatchActive_ = true;
-  // 2026-09-10追加、直接のユーザー指摘(実機スクリーンショット=gd/=gc
-  // 添付): ESC iのライブ編集中(="GREP"の直後から入力が始まる=gd)と、
-  // Enter確定後のこのNo Stringメッセージ(="GREP"の後に位置表示
-  // "06/23 26%"/バイト数"1438"が挟まってからメッセージが始まる=gc)
-  // とで、".git"というまさに同じ文字列が画面上の「違う位置」に来て
-  // しまい、"^Hで①に戻ると結局同じ位置に戻るだけなのに、②では
-  // わざわざ別の位置に表示される"というユーザー体感の不整合があった。
-  // setPositionTextOverride()(CopyModeの"---"固定表示等で既に確立
-  // 済みの機構)で位置表示を空文字列に差し替え、"GREP"の直後に
-  // メッセージが直接続くようにする――ライブ編集中の表示と全く同じ
-  // 列位置になるので、①⇔②間の切り替えが「メッセージだけが現れて/
-  // 消えて元のパターン文字列に戻る」という一目で分かる変化になる。
-  view_.setPositionTextOverride("");
+  // 2026-09-10再修正、直接のユーザー指摘("No StringもGREPでは無く
+  // 行数の隣に表示"): 以前はここを""にし、メッセージ自体は
+  // モードラインプロバイダ側のtrailing2に置くことで見た目上"GREP"の
+  // 直後に来るようにしていた(その一つ前の版のコメント参照)。今回、
+  // grepInPlaceActive_側に「マッチN/M」という同じposition枠を使う
+  // 行数情報を追加したため、成功/失敗どちらのケースもこの同じ枠を
+  // 使うよう統一し、メッセージ本体をここで直接position枠へ渡す。
+  // plain=true(既にCopyModeの"---"等で確立済み引数): 直接のユーザー
+  // 指摘("非ハイライトの「〜:No String」を表示して欲しい")を維持する
+  // ――「マッチN/M」側(updateGrepInPlacePositionText())は通常の
+  // position表示と同じくplain指定無し(Standoutのまま)。
+  view_.setPositionTextOverride(message, /*plain=*/true);
 }
 
 void DirectoryMode::clearGrepNoMatchMessage() {

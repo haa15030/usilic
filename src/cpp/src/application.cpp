@@ -5331,6 +5331,18 @@ bool Application::activateGrepInPlace() {
   grepInPlaceMatches_ = matches;
   grepInPlaceIndex_ = 0;
   grepInPlaceActive_ = true;
+  // 2026-09-10追加、直接のユーザー指摘("^N連打で最下行へ到達すると
+  // 循環処理により最上行へと移動するのはいいとして、動きが今イチ
+  // わかりにくい...EGREPと同じく行数情報を含ませて欲しい"): EGREP
+  // (一覧モード)では、一覧自体の行がマッチそのものなので、通常の
+  // position表示("現在行/総行数")がそのまま「マッチN/M」を意味する。
+  // in-place方式ではDirectory/Fileの生のコンテンツがそのまま画面に
+  // 残るため、通常のposition表示は(検索と無関係な)「カーソル行/
+  // ファイル総行数」のままで、^N/^Pでマッチ間を移動しても何マッチ中
+  // 何番目かが伝わらなかった。setPositionTextOverride()で明示的に
+  // 「マッチ番号/総マッチ数」に差し替える――jumpToGrepInPlaceMatch()
+  // 側でも同じ書式で更新し、deactivateGrepInPlace()で通常表示へ戻す。
+  updateGrepInPlacePositionText();
   // 2026-09-10追加、直接のユーザー指摘("とにかくハイライト表示は
   // 出てくれないと...何にヒットしたかもわからない"): 全マッチを
   // 同時にBold表示する(setGrepMatchHighlight()自身のコメント参照)
@@ -5362,7 +5374,17 @@ void Application::deactivateGrepInPlace() {
     fileMode_.setGrepInPlaceOverlay(false);
     fileMode_.clearGrepMatchHighlight();
   }
+  // updateGrepInPlacePositionText()自身のコメント参照――セッション
+  // 終了時は通常のposition表示(カーソル行/総行数)へ戻す。
+  activeView().setPositionTextOverride(std::nullopt);
   activeView().redraw();
+}
+
+// activateGrepInPlace()自身の2026-09-10追加コメント参照: position表示
+// を「マッチ番号/総マッチ数」(1始まり、例: "3/12")に差し替える。
+void Application::updateGrepInPlacePositionText() {
+  activeView().setPositionTextOverride(std::to_string(grepInPlaceIndex_ + 1) + "/" +
+                                        std::to_string(grepInPlaceMatches_.size()));
 }
 
 bool Application::jumpToGrepInPlaceMatch(int delta) {
@@ -5371,6 +5393,7 @@ bool Application::jumpToGrepInPlaceMatch(int delta) {
   grepInPlaceIndex_ = ((grepInPlaceIndex_ + delta) % count + count) % count;  // 循環(wrap)
   ContentView &target = activeView();
   target.setCursorIndex(grepInPlaceMatches_[grepInPlaceIndex_].sourceLineIndex);
+  updateGrepInPlacePositionText();
   target.centerOnCursor();
   target.redraw();
   if (grepInPlaceOriginMode_ == ApplicationMode::File) target.syncVisibleCursor();
