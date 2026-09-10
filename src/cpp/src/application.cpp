@@ -9030,6 +9030,30 @@ bool Application::feedPromptByteInner(int byte) {
 bool Application::submitPrompt() {
   PromptKind kind = promptKind_;
   std::string text = promptEditor_.text();
+  // 2026-09-10追加、直接のユーザー提案(".git ␣^M"での再現: "それでも
+  // プロンプトは生きている、ってのはどうだろう？.git ␣はマッチしない
+  // けど^Hで.gitに戻せばマッチするので、No Stringが消えると同時に
+  // 検索も継続可能"): インクリメンタルサーチ中に0件のままEnterされた
+  // 場合、下でpromptKind_/incrementalGrepActive_を書き換える「前」に
+  // ここで検出し、それらは変更せずに即returnする――プロンプトが開いた
+  // まま、パターン文字列もそのまま残るので、続けて^Hすれば通常の
+  // liveIncrementalGrepSearch()経路でそのまま検索を再開できる。
+  // "No String"自体は既にgrepNoMatchActive_として設定済み(直前の
+  // キー入力時のactivateGrepInPlace()の空マッチ分岐)だが、
+  // liveIncrementalGrepSearch()自身の末尾がライブ編集中は常に
+  // drawPromptLabel()+promptEditor_.redraw()でそれを覆い隠して
+  // しまう(ライブ中は見せない設計)ので、ユーザーの「.gitで確定したら
+  // No Stringを見たい」という要望通り、ここでは`activeView().redraw()`
+  // だけを呼び、その上書きをしないことで初めてメッセージを画面に
+  // 出す(次の^H等のキー入力で通常通りliveIncrementalGrepSearch()の
+  // 末尾がプロンプト表示を復元する)。falseを返すのは、この関数の他の
+  // 失敗経路(executeGrep()がマッチ0件でfalseを返す、既存の
+  // "zzz: No String"テスト参照)と同じ「この操作は何も確定しなかった」
+  // という規約に揃えるため。
+  if (incrementalGrepActive_ && kind == PromptKind::GrepPattern && grepMode_.matches().empty()) {
+    activeView().redraw();
+    return false;
+  }
   promptKind_ = PromptKind::None;
   // incrementalGrepActive_自身の宣言コメント参照(2026-09-10追加)。
   // 2026-09-10同日さらに修正、直接のユーザー報告(usilic -c

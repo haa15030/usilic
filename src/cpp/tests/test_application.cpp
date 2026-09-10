@@ -1042,14 +1042,62 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: Enter after narrowing to zero matches does NO
   feedText(" ");  // pattern is now ". " -- no ls line literally contains "dot space"
   REQUIRE(app.grepMode().matches().empty());
 
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
-  CHECK_FALSE(app.promptActive());
+  // 2026-09-10 revision, a direct user follow-up request (see the
+  // "keeps the prompt open" test just below): Enter on a still-empty
+  // match set no longer closes the prompt at all, so this now returns
+  // false (submitPrompt()'s own "nothing was committed" convention) and
+  // promptActive() stays true.
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // submit
+  CHECK(app.promptActive());
   // The bug: a real `grep -e '. '` (BRE, "." = any char) would match
   // virtually every ls line (any two adjacent characters ending in a
   // space), so this used to flip from "no match" to "GREP n/m (grep)"
   // with a large match count right here.
   CHECK(app.grepMode().matches().empty());
   CHECK(app.activeContentView().modeLineText().find("No String") != std::string::npos);
+}
+
+// 2026-09-10, a direct user follow-up after confirming the "意味不明"
+// fix above ("それでもプロンプトは生きている、ってのはどうだろう？
+// .git ␣はマッチしないけど^Hで.gitに戻せばマッチするので、No Stringが
+// 消えると同時に検索も継続可能ってのは？"): pressing Enter on a
+// pattern with zero live matches should show the "No String" message
+// (same as before) but leave the prompt open, so backspacing back to a
+// matching pattern resumes the search immediately instead of forcing
+// the user to start a brand new ESC i session from scratch.
+TEST_CASE_FIXTURE(Fixture, "ESC i: Enter on zero matches shows \"No String\" but keeps the prompt open, "
+                           "so backspacing back to a matching pattern resumes the search live") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  { std::ofstream(root / "two.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  int oneIdx = indexOf("one.json");
+  int twoIdx = indexOf("two.json");
+
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('i', std::nullopt));
+  feedText("json ");  // "json " (trailing space) -- no ls line contains this literal substring
+  REQUIRE(app.grepMode().matches().empty());
+
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // Enter -- rejected, nothing committed
+  CHECK(app.promptActive());  // still editing, unlike a normal successful submission
+  CHECK(app.activeContentView().modeLineText().find("No String") != std::string::npos);
+
+  REQUIRE(app.feedByte(0x7f, std::nullopt));  // Backspace -- removes the trailing space, "json" matches again
+  CHECK(app.promptActive());  // Enter never closed it, so this is still the SAME live session
+  REQUIRE(app.grepMode().matches().size() == 2);
+  auto spanColFor = [&](int lineIdx) -> int {
+    for (const auto &m : app.grepMode().matches())
+      if (m.sourceLineIndex == lineIdx) return m.matchSpans.at(0).first;
+    FAIL("no match found for line ", lineIdx);
+    return -1;
+  };
+  CHECK(display.highlightAt(oneIdx, spanColFor(oneIdx)));
+  CHECK(display.highlightAt(twoIdx, spanColFor(twoIdx)));
+
+  // The session is still fully usable afterward -- Enter now commits normally.
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.activeContentView().modeLineText().find("GREP") != std::string::npos);
 }
 
 // File origin's own version of the same bug: setGrepMatchHighlight()
