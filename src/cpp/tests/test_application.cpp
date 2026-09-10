@@ -738,6 +738,45 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: no match shows a temporary, LOCATE-st
   }
 }
 
+// 2026-09-10, a direct user follow-up with two side-by-side screenshots
+// (=gd: ESC i live typing, ".git" starts immediately after "GREP"; =gc:
+// after Enter on no match, "GREP" is followed by position/byte-count
+// fields ("06/23 26%"/"1438") before the message finally starts) --
+// ".git" landing at two DIFFERENT screen columns in the two states felt
+// inconsistent: "why not just stay in state (1) if going back to it
+// (via Backspace) lands you right back where you started anyway?" The
+// fix suppresses the position text AND the byte-count trailing field
+// specifically for this message (via setPositionTextOverride("") and
+// clearing fields.trailing), so the message starts in the same place
+// the live pattern text already does.
+TEST_CASE_FIXTURE(Fixture, "in-place GREP: the no-match message starts immediately after \"GREP\", with "
+                           "no position/byte-count fields in between (matching where the live ESC i "
+                           "pattern text already sits, per direct user comparison screenshots)") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('i', std::nullopt));
+  feedText("json ");  // "json " -- no match
+  REQUIRE(app.grepMode().matches().empty());
+  REQUIRE_FALSE(app.feedByte(0x0d, std::nullopt));  // Enter -- shows "No String", prompt stays open
+
+  const std::string &row = display.rowText(display.rows() - 1);
+  std::size_t nameEnd = row.find("GREP") + std::string("GREP").size();
+  std::size_t messagePos = row.find("json : No String");
+  REQUIRE(messagePos != std::string::npos);
+  // Two spaces between "GREP" and the message (name's own trailing
+  // space + trailing2's own unconditional leading space, both baked
+  // into renderModeLine()'s generic field composition shared by every
+  // mode -- not specific to this feature, so not worth chasing down to
+  // exactly one space) -- the important thing this test guards is that
+  // there is NO "1438"-style byte count or "N/M"/"TOP" position
+  // indicator squeezed in between anymore (the bug: previously there
+  // was a much wider, variable-length gap here filled with those
+  // fields, landing the message at a different column than the live
+  // ESC i pattern text).
+  CHECK(messagePos == nameEnd + 2);
+}
+
 // 2026-09-10, a direct user report after actually trying the feature
 // on a real file ("とにかくハイライト表示は出てくれないと...CLAUDE.md
 // 等、通常ファイルでは何にヒットしたかもわからない"): the earlier

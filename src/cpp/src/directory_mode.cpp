@@ -157,6 +157,14 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       // メッセージ+起点)。showEditError_/pendingOperationLabel_とは
       // 独立(3つ同時に真になることは無い)。
       fields.name = "GREP";
+      // 2026-09-10追加、直接のユーザー指摘(実機スクリーンショット
+      // =gd/=gc): デフォルトのtrailing(バイト数、この関数の冒頭で
+      // 既に埋まっている)を残したままだと、setPositionTextOverride("")
+      // で位置表示を消しても、まだそのバイト数フィールドが"GREP"と
+      // メッセージの間に残ってしまう――ライブ編集中の表示(バイト数も
+      // 一切出ない)と列位置を完全に揃えるには、これも空にする必要が
+      // ある。
+      fields.trailing.clear();
       fields.trailing2 = grepNoMatchMessage_;
       fields.trailing2Plain = true;  // 直接のユーザー指摘: "非ハイライトの「〜:No String」を表示して欲しい"
       fields.trailing3 = currentDirectory_;
@@ -407,9 +415,25 @@ void DirectoryMode::clearEditError() { showEditError_ = false; }
 void DirectoryMode::reportGrepNoMatchMessage(const std::string &message) {
   grepNoMatchMessage_ = message;
   grepNoMatchActive_ = true;
+  // 2026-09-10追加、直接のユーザー指摘(実機スクリーンショット=gd/=gc
+  // 添付): ESC iのライブ編集中(="GREP"の直後から入力が始まる=gd)と、
+  // Enter確定後のこのNo Stringメッセージ(="GREP"の後に位置表示
+  // "06/23 26%"/バイト数"1438"が挟まってからメッセージが始まる=gc)
+  // とで、".git"というまさに同じ文字列が画面上の「違う位置」に来て
+  // しまい、"^Hで①に戻ると結局同じ位置に戻るだけなのに、②では
+  // わざわざ別の位置に表示される"というユーザー体感の不整合があった。
+  // setPositionTextOverride()(CopyModeの"---"固定表示等で既に確立
+  // 済みの機構)で位置表示を空文字列に差し替え、"GREP"の直後に
+  // メッセージが直接続くようにする――ライブ編集中の表示と全く同じ
+  // 列位置になるので、①⇔②間の切り替えが「メッセージだけが現れて/
+  // 消えて元のパターン文字列に戻る」という一目で分かる変化になる。
+  view_.setPositionTextOverride("");
 }
 
-void DirectoryMode::clearGrepNoMatchMessage() { grepNoMatchActive_ = false; }
+void DirectoryMode::clearGrepNoMatchMessage() {
+  grepNoMatchActive_ = false;
+  view_.setPositionTextOverride(std::nullopt);
+}
 
 void DirectoryMode::setPendingOperationLabel(const std::string &label) { pendingOperationLabel_ = label; }
 

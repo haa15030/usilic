@@ -245,6 +245,9 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
       fields.fillTrailingToEdge = true;
     } else if (showGrepNoMatchMessage_) {
       fields.name = "GREP";
+      // DirectoryMode自身の同じ分岐のコメント参照(2026-09-10追加、
+      // 実機スクリーンショット=gd/=gc)。
+      fields.trailing.clear();
       fields.trailing2 = grepNoMatchMessage_;
       fields.trailing2Plain = true;  // 直接のユーザー指摘: "非ハイライトの「〜:No String」を表示して欲しい"
       fields.trailing3 = currentFile_;
@@ -508,9 +511,15 @@ void FileMode::clearGrepMatchHighlight() {
 void FileMode::reportGrepNoMatchMessage(const std::string &message) {
   grepNoMatchMessage_ = message;
   showGrepNoMatchMessage_ = true;
+  // DirectoryMode::reportGrepNoMatchMessage()自身のコメント参照
+  // (2026-09-10追加、実機スクリーンショット=gd/=gc)。
+  view_.setPositionTextOverride("");
 }
 
-void FileMode::clearGrepNoMatchMessage() { showGrepNoMatchMessage_ = false; }
+void FileMode::clearGrepNoMatchMessage() {
+  showGrepNoMatchMessage_ = false;
+  view_.setPositionTextOverride(std::nullopt);
+}
 
 void FileMode::setEncoding(Charset::Encoding encoding) { encoding_ = encoding; }
 
