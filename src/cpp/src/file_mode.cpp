@@ -250,6 +250,8 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
       fields.trailing.clear();
       fields.trailing2 = grepNoMatchMessage_;
       fields.trailing2Plain = true;  // 直接のユーザー指摘: "非ハイライトの「〜:No String」を表示して欲しい"
+      // DirectoryMode自身の同じ分岐のコメント参照(2026-09-10追加)。
+      fields.trailing2NoLeadingSpace = true;
       fields.trailing3 = currentFile_;
       fields.fillTrailingToEdge = true;
     }

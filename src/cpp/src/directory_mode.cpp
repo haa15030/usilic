@@ -167,6 +167,13 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       fields.trailing.clear();
       fields.trailing2 = grepNoMatchMessage_;
       fields.trailing2Plain = true;  // 直接のユーザー指摘: "非ハイライトの「〜:No String」を表示して欲しい"
+      // ModeLineFields::trailing2NoLeadingSpace自身のコメント参照
+      // (2026-09-10追加、直接のユーザー指摘: "これは致命的なバグと
+      // 同じ。見える場所だから"): positionText/trailingを空にしても
+      // trailing2自身の無条件の先頭スペースが残っていたため、
+      // "GREP"の後にスペースが2個並んでいた。これでライブ編集中の
+      // 表示("GREP"+1スペース+パターン)と完全に一致する1個だけになる。
+      fields.trailing2NoLeadingSpace = true;
       fields.trailing3 = currentDirectory_;
       fields.fillTrailingToEdge = true;
     } else if (!pendingOperationLabel_.empty()) {

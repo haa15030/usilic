@@ -1864,8 +1864,12 @@ void ContentView::renderModeLine() {
       if (fields.trailing2Plain) drawPlainSegment(trailing2); else drawSegment(trailing2);
       drawnLen = cols;
     } else {
-      display_.putChar(' ');
-      drawnLen += 1;
+      // ModeLineFields::trailing2NoLeadingSpace自身のコメント参照
+      // (2026-09-10追加)。
+      if (!fields.trailing2NoLeadingSpace) {
+        display_.putChar(' ');
+        drawnLen += 1;
+      }
       // 2026-08-19の修正、すぐ上のtrailing自身の「trailing2も
       // 空の場合にだけパディングする」ゲートと同じ形: trailing3
       // (自身のコメント参照)は今やtrailing2の「後の」本物の

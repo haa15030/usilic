@@ -676,6 +676,47 @@ TEST_CASE("setModeLineFieldsProvider: trailing2Kind=PathMiddle middle-ellipsis t
   CHECK(text.substr(text.size() - 4) == ".txt");           // the tail (filename suffix) is kept visible too
 }
 
+// 2026-09-10 addition, direct user request (ESC i's "No String"
+// message needing to land at the exact same column as the live-typed
+// pattern text, application-level tests already cover the full
+// feature -- this is the direct, mechanism-level test for the new flag
+// itself): trailing2NoLeadingSpace suppresses ONLY the unconditional
+// single space renderModeLine() otherwise always inserts right before
+// trailing2. Verified (via a temporary manual experiment, since
+// reverted) that removing that space UNCONDITIONALLY for every
+// provider breaks ArchiveMode's own established display ("1765(tar)"
+// instead of "1765 (tar)") -- hence an opt-in flag, default false,
+// rather than a global change.
+TEST_CASE("setModeLineFieldsProvider: trailing2NoLeadingSpace=false (the default) keeps the usual "
+          "single space before trailing2, matching every existing provider (e.g. ArchiveMode's own "
+          "\"1765 (tar)\")") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    return {"ARC", "1765", false, "", "(tar)"};
+  });
+  v.redraw();
+  CHECK(d.rowText(5).find("1765 (tar)") != std::string::npos);
+}
+
+TEST_CASE("setModeLineFieldsProvider: trailing2NoLeadingSpace=true removes that one space, landing "
+          "trailing2 immediately after whatever came before it") {
+  RecordingDisplay d(10, 40);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setLines(makeLines(3));
+  v.setModeLineFieldsProvider([](int) -> ContentView::ModeLineFields {
+    ContentView::ModeLineFields fields{"ARC", "1765", false, "", "(tar)"};
+    fields.trailing2NoLeadingSpace = true;
+    return fields;
+  });
+  v.redraw();
+  CHECK(d.rowText(5).find("1765(tar)") != std::string::npos);
+  CHECK(d.rowText(5).find("1765 (tar)") == std::string::npos);
+}
+
 // 2026-08-15 addition: the DEFAULT (trailing2Kind left unset, i.e.
 // QueryEcho) is tail-only "..." + up to 16 characters -- a direct
 // user policy statement: "なおLOCATE以外では、右下端の戻り値が長す

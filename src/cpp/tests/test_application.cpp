@@ -749,9 +749,22 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: no match shows a temporary, LOCATE-st
 // specifically for this message (via setPositionTextOverride("") and
 // clearing fields.trailing), so the message starts in the same place
 // the live pattern text already does.
-TEST_CASE_FIXTURE(Fixture, "in-place GREP: the no-match message starts immediately after \"GREP\", with "
-                           "no position/byte-count fields in between (matching where the live ESC i "
-                           "pattern text already sits, per direct user comparison screenshots)") {
+//
+// 2026-09-10 further revision, a direct user follow-up ("これは致命的
+// なバグと同じ。見える場所だから"): the fix above still left ONE extra
+// space here (trailing2's own unconditional leading space, on top of
+// name's own trailing space) that didn't match the live-typing state's
+// single space. Verified via a temporary experiment (removing that
+// leading space outright) that it's a genuinely shared, load-bearing
+// separator elsewhere (ArchiveMode's trailing byte count would run
+// into its own "(tar)" badge, e.g. "1765(tar)" instead of "1765 (tar)")
+// -- so instead of removing it globally, ModeLineFields::
+// trailing2NoLeadingSpace was added as an opt-in flag (default false,
+// every other provider unaffected) and set true only here.
+TEST_CASE_FIXTURE(Fixture, "in-place GREP: the no-match message starts immediately after \"GREP\" with "
+                           "exactly ONE space, no position/byte-count fields and no extra space in "
+                           "between (matching where the live ESC i pattern text already sits, per direct "
+                           "user comparison screenshots)") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x1b, std::nullopt));
@@ -764,17 +777,9 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: the no-match message starts immediate
   std::size_t nameEnd = row.find("GREP") + std::string("GREP").size();
   std::size_t messagePos = row.find("json : No String");
   REQUIRE(messagePos != std::string::npos);
-  // Two spaces between "GREP" and the message (name's own trailing
-  // space + trailing2's own unconditional leading space, both baked
-  // into renderModeLine()'s generic field composition shared by every
-  // mode -- not specific to this feature, so not worth chasing down to
-  // exactly one space) -- the important thing this test guards is that
-  // there is NO "1438"-style byte count or "N/M"/"TOP" position
-  // indicator squeezed in between anymore (the bug: previously there
-  // was a much wider, variable-length gap here filled with those
-  // fields, landing the message at a different column than the live
-  // ESC i pattern text).
-  CHECK(messagePos == nameEnd + 2);
+  // Exactly one space -- pixel-for-pixel the same column the live ESC i
+  // pattern text ("GREP json") already occupies.
+  CHECK(messagePos == nameEnd + 1);
 }
 
 // 2026-09-10, a direct user report after actually trying the feature
