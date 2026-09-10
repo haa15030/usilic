@@ -1828,6 +1828,9 @@ class Application {
   // (1始まり)に差し替える――activateGrepInPlace()/jumpToGrepInPlaceMatch()
   // 自身のコメント参照。
   void updateGrepInPlacePositionText();
+  // grepInPlaceMatchLabel()自身のコメント参照(application.cpp、
+  // 2026-09-11追加)。
+  std::string grepInPlaceMatchLabel() const;
   // 2026-09-10追加、直接のユーザー依頼(ESC iキー、design経緯は
   // application.hpp自身のCommand::StartIncrementalGrep宣言コメント
   // 参照)。

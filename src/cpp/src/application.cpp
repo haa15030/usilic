@@ -2271,7 +2271,13 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     // jumpToGrepInPlaceMatch()自身のredraw()が、liveIncrementalGrepSearch()
     // 自身のコメント通り画面最終行(生きたプロンプトの行)を通常の
     // モードラインで上書きしてしまう――そちらと同じ組で描き直す。
-    drawPromptLabel(promptKind_, "");
+    // 2026-09-11修正、直接のユーザー報告("^[iの文字列入力がGREPの隣
+    // から始まっているが、それだと^N^Pで循環が起きたかどうかを判別
+    // できない"): 空文字列ではなくgrepInPlaceMatchLabel()(「マッチ
+    // 番号/総マッチ数」)を渡し、ライブ編集中も入力欄がそちらの直後
+    // から始まるようにする――grepInPlaceActive_はこの分岐に入る条件
+    // で既にtrueなので、ここでは常に非空。
+    drawPromptLabel(promptKind_, grepInPlaceMatchLabel());
     promptEditor_.redraw();
     return result;
   }
@@ -5380,11 +5386,27 @@ void Application::deactivateGrepInPlace() {
   activeView().redraw();
 }
 
-// activateGrepInPlace()自身の2026-09-10追加コメント参照: position表示
-// を「マッチ番号/総マッチ数」(1始まり、例: "3/12")に差し替える。
+// activateGrepInPlace()自身の2026-09-10追加コメント参照: 「マッチ番号/
+// 総マッチ数」(1始まり、例: "3/12")の文字列そのもの。grepInPlaceActive_
+// でなければ空文字列(呼び出し元はdrawPromptLabel()自身のpositionText
+// 引数の慣習――空ならその分の隙間ごと省略される――にそのまま渡せる)。
+// 2026-09-11追加: 当初はupdateGrepInPlacePositionText()内に直書き
+// だったが、ライブ編集中(^[i、drawPromptLabel()自身の呼び出し箇所)にも
+// 同じ文字列が必要になったため、文字列生成そのものをここへ括り出した
+// ――直接のユーザー報告("^[iの文字列入力がGREPの隣から始まっている
+// が、それだと^N^Pで循環が起きたかどうかを判別できない"): 以前は
+// activeView()自身のposition表示(ContentView::renderModeLine()経由)
+// だけを直していたが、ライブ編集中はdrawPromptLabel()+
+// promptEditor_.redraw()が画面最終行を毎回上書きしてしまうため
+// (liveIncrementalGrepSearch()自身のコメント参照)、そちらの呼び出し
+// 箇所にも同じ文字列を渡す必要があった。
+std::string Application::grepInPlaceMatchLabel() const {
+  if (!grepInPlaceActive_) return "";
+  return std::to_string(grepInPlaceIndex_ + 1) + "/" + std::to_string(grepInPlaceMatches_.size());
+}
+
 void Application::updateGrepInPlacePositionText() {
-  activeView().setPositionTextOverride(std::to_string(grepInPlaceIndex_ + 1) + "/" +
-                                        std::to_string(grepInPlaceMatches_.size()));
+  activeView().setPositionTextOverride(grepInPlaceMatchLabel());
 }
 
 bool Application::jumpToGrepInPlaceMatch(int delta) {
@@ -8358,7 +8380,11 @@ void Application::liveIncrementalGrepSearch() {
   // 生きたプロンプトの行)へ描き直してしまう――直後にプロンプト自身の
   // 表示をもう一度その上へ描き直す(activatePrompt()自身が最初に
   // プロンプトを開く時に使うのと同じ組)。
-  drawPromptLabel(promptKind_, "");
+  // 2026-09-11修正、grepInPlaceMatchLabel()自身のコメント参照:
+  // 空文字列ではなく「マッチ番号/総マッチ数」を渡す(マッチが無い/
+  // まだ検索していない間はgrepInPlaceActive_がfalseなので自動的に
+  // 空文字列のまま――呼び出し元を選ぶ条件分岐は不要)。
+  drawPromptLabel(promptKind_, grepInPlaceMatchLabel());
   promptEditor_.redraw();
 }
 

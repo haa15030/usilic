@@ -2686,6 +2686,42 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      make install/make app/~/Applications/usilic.appへの反映、jキー
      回帰チェックも完了。
 
+436. **`^[i`(ESC i、インクリメンタルサーチ)のライブ編集中にも「マッチ
+    番号/総マッチ数」ラベルを表示**
+   - **経緯**: 項目435はDirectory/File起点の`^S`(Enter確定後、非ライブ)
+     のposition表示だけを直しており、ライブ編集中(`^[i`、Enterを押す
+     前)の入力欄は依然として`drawPromptLabel(promptKind_, "")`という
+     ハードコードされた空文字列のままだった――ライブ入力の描画は
+     ContentView側のposition表示とは別の、`Application::drawPromptLabel()`
+     という独立した経路(画面最終行を「生きたプロンプトの行」として
+     毎回上書きする)を通るため、項目435の修正は自動的には及んでいな
+     かった。直接のユーザー報告: 「現状`^[i`の文字列入力が「GREP」の
+     隣から始まっているが、それだと`^N^P`で循環が起きたかどうかを
+     判別できない」――さらに、2026-09-10時点で「No Stringメッセージは
+     GREPの直後に表示する」としていた過去の指示も、行情報を表示する
+     方針への転換に伴い撤回された。
+   - **対応**: `Application::grepInPlaceMatchLabel()`を新設し(`updateGrepInPlacePositionText()`
+     から文字列生成部分を括り出したもの、`grepInPlaceActive_`でなければ
+     空文字列)、`liveIncrementalGrepSearch()`末尾と、ライブ編集中の
+     `^N`/`^P`横取り処理の両方で、`drawPromptLabel(promptKind_, "")`の
+     `""`をこの`grepInPlaceMatchLabel()`に差し替えた。`drawPromptLabel()`
+     自身の`positionText`引数は既に汎用の仕組み(`^J^S`/`^J^C`候補一覧の
+     ^N/^P処理が同じ引数を"01/10 TOP"式で使っている前例)として存在
+     しており、非空の文字列を渡すだけで入力欄の開始列がその直後へ自動
+     的にずれるため、追加のレイアウト計算は不要だった。マッチ0件の
+     ライブ入力中(まだEnterで確定していない)は`grepInPlaceActive_`が
+     falseのままなので`grepInPlaceMatchLabel()`は自動的に空文字列を
+     返し、"GREP"の直後から入力欄が始まる従来の見た目のまま(項目435の
+     "No String"表示は、Enterで確定した場合にだけ、ライブ編集自身の
+     上書きを避けて見えるようにする既存の設計のまま変更無し)。
+   - **検証**: `make test` 1103/1103件・21955アサーション全通過。
+     PTYで実際に`^[i`を起動し、"t"→"GREP 1/6 t"、"tx"→"GREP 1/5 tx"、
+     "txt"→"GREP 1/5 txt"→`^N`→"GREP 2/5 txt"→`^N`→"GREP 3/5 txt"と
+     マッチ番号が正しく更新され、0件になるパターンでは番号が消えて
+     "GREP"の直後から入力欄が始まる(従来通り)ことを確認。make install/
+     make app/~/Applications/usilic.appへの反映、jキー回帰チェックも
+     完了。
+
 
 ## 4. CUT
 
