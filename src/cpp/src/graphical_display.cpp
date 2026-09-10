@@ -35,16 +35,17 @@ struct Cell {
   bool continuation = false;  // 2列幅のグリフの「影」となる2つ目のセル――それ自体では描画されない
 };
 
-// TerminalDisplay::attributeEscape()のHighlight(2026-09-10改訂、生ANSI
-// SGR "\x1b[30;103m"――黒前景+明るい黄色背景)に見た目を揃えるための
-// -g側の色ペア。単なる前景色変更の初版に対する直接のユーザー指摘
-// ("文字色ではどうしても判別しにくい...emacsでは薄い背景色なのに
-// 一目でわかるのは反転表示だから...可能なら背景色薄めでやってみて")
-// を受けた改訂で、emacsのisearch/lazy-highlightに倣い、周囲の配色に
-// 関わらず常にコントラストが確保される「明るい背景+暗い前景」の
-// ペアにしてある。背景はANSI bright yellow(色番号103/11)としてxterm
-// 等が使う典型的なRGB(#ffff55)、前景は素直な黒。
-constexpr SDL_Color kHighlightBgColor{255, 255, 85, 255};
+// TerminalDisplay::attributeEscape()のHighlight(2026-09-10さらに改訂、
+// 生ANSI SGR "\x1b[38;5;16;48;5;230m")に見た目を揃えるための-g側の
+// 色ペア。基本16色(前景=黒/背景=明るい黄色)版が、ターミナルの
+// プロファイルがその16色自体を再定義している場合(実機スクリーン
+// ショット=fz、Terminal.appの"Basic"プロファイル)に判別しにくく
+// なると判明したため、拡張256色パレットの固定色番号(ユーザーが
+// 通常のプリファレンスUIから再定義できない)へ切り替えた――
+// 色番号16(256色キューブの黒、固定RGB(0,0,0))+230(薄い黄色/
+// cornsilk相当、固定RGB(255,255,215))のxterm標準RGB値をそのまま
+// 採用している。
+constexpr SDL_Color kHighlightBgColor{255, 255, 215, 255};
 constexpr SDL_Color kHighlightFgColor{0, 0, 0, 255};
 
 // `utf8Bytes`の先頭のUTF-8シーケンス(他所でfm::Utf8::

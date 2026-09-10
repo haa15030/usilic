@@ -831,11 +831,13 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ALL matching lines are 
 // ンタルサーチについてはgrepではなく...文字列位置を返す関数等だけで
 // インプリメントは可能?...いずれも可能ならやってみて...切り替え
 // キーを新設すればいい") -- ESC i starts a live, per-keystroke search
-// using GrepMode::searchInProcess() (POSIX regcomp()/regexec(), no
-// child process at all, unlike plain ^S which forks a real grep/-o
-// once on Enter). Reuses the exact same in-place session machinery
-// (activateGrepInPlace()/deactivateGrepInPlace()) so the end state is
-// indistinguishable from a submitted ^S search.
+// using GrepMode::searchInProcess() (fgrep-style literal substring
+// matching -- 2026-09-10 same-day revision, see its own declaration
+// comment in grep_mode.hpp; no child process at all, unlike plain ^S
+// which forks a real grep/-o once on Enter). Reuses the exact same
+// in-place session machinery (activateGrepInPlace()/
+// deactivateGrepInPlace()) so the end state is indistinguishable from
+// a submitted ^S search.
 
 TEST_CASE_FIXTURE(Fixture, "ESC i (StartIncrementalGrep): highlights update live as each character is "
                            "typed, before Enter is ever pressed") {
@@ -850,7 +852,12 @@ TEST_CASE_FIXTURE(Fixture, "ESC i (StartIncrementalGrep): highlights update live
   int oneIdx = indexOf("one.json");
   int twoIdx = indexOf("two.json");
 
-  feedText("json$");  // NOT submitted yet -- no Enter
+  // 2026-09-10 revision: searchInProcess() is fgrep-style literal
+  // substring matching now, not regex (a direct user follow-up after
+  // "." matched every character as a wildcard) -- "json$" would no
+  // longer match anything (the literal 5 bytes "json$" aren't present
+  // in either filename), so a plain literal pattern is used here.
+  feedText("json");  // NOT submitted yet -- no Enter
   CHECK(app.promptActive());  // still editing
   REQUIRE(app.grepMode().matches().size() == 2);
   auto spanColFor = [&](int lineIdx) -> int {
@@ -898,6 +905,84 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: an empty pattern (e.g. after backspacing ever
 
   for (int i = 0; i < 4; i++) app.feedByte(0x7f, std::nullopt);  // backspace x4 -> back to empty
   CHECK(app.activeContentView().modeLineText().find("GREP") == std::string::npos);
+}
+
+// 2026-09-10, a direct user report after actually trying ESC i on a real
+// directory (usilic -c ~/git/usilic): typing more characters (narrowing
+// the match set, e.g. "." then ".j") left the OLD, now-stale highlight
+// from an earlier keystroke still showing on lines that no longer
+// match -- setGrepMatchHighlight() was re-reading view_.lines() (already
+// dirtied by the PREVIOUS keystroke's own highlight) as its "clean"
+// base and only ever ADDING runs, never removing the previous ones.
+TEST_CASE_FIXTURE(Fixture, "ESC i: narrowing the pattern clears the highlight on lines that no longer "
+                           "match, not just adds to lines that newly match (the exact user-reported "
+                           "stale-highlight bug)") {
+  { std::ofstream(root / "one.json") << "{}\n"; }
+  { std::ofstream(root / "two.json") << "{}\n"; }
+  { std::ofstream(root / "plain.txt") << "hi\n"; }
+  REQUIRE(app.start(path()));
+  int oneIdx = indexOf("one.json");
+  int twoIdx = indexOf("two.json");
+  int plainIdx = indexOf("plain.txt");
+
+  auto spanColFor = [&](int lineIdx) -> int {
+    for (const auto &m : app.grepMode().matches())
+      if (m.sourceLineIndex == lineIdx) return m.matchSpans.at(0).first;
+    FAIL("no match found for line ", lineIdx);
+    return -1;
+  };
+
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('i', std::nullopt));
+  // literal '.' matches every entry with an extension dot in its ls
+  // line -- this fixture's shared root has plenty of others besides
+  // the three below (archive.tar etc.), so this only checks that
+  // these three are AMONG the matches, not the total count.
+  feedText(".");
+  CHECK(display.highlightAt(oneIdx, spanColFor(oneIdx)));
+  CHECK(display.highlightAt(twoIdx, spanColFor(twoIdx)));
+  CHECK(display.highlightAt(plainIdx, spanColFor(plainIdx)));
+
+  feedText("j");  // pattern is now ".j" -- only one.json/two.json contain it, plain.txt no longer matches
+  CHECK(display.highlightAt(oneIdx, spanColFor(oneIdx)));
+  CHECK(display.highlightAt(twoIdx, spanColFor(twoIdx)));
+  // The bug: plain.txt's highlight from the PREVIOUS keystroke (when
+  // "." matched everything) used to survive here even though ".j"
+  // doesn't match plain.txt at all.
+  CHECK_FALSE(display.highlightAt(plainIdx, 0));
+  CHECK_FALSE(display.highlightAt(plainIdx, 1));
+  CHECK_FALSE(display.highlightAt(plainIdx, 2));
+}
+
+// File origin's own version of the same bug: setGrepMatchHighlight()
+// re-snapshotted view_.lines() (already dirtied by the previous
+// keystroke) as the "clean" baseline on EVERY call, so a line that
+// stopped matching kept its stale highlight baked permanently into
+// what the code considered "the original" content.
+TEST_CASE_FIXTURE(Fixture, "ESC i (File origin): narrowing the pattern clears the highlight on lines "
+                           "that no longer match") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");  // "marker one\nline1\nmarker two\nline2a\nline2b\nmarker three\nline3\n"
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x1b, std::nullopt));
+  REQUIRE(app.feedByte('i', std::nullopt));
+  feedText("marker");
+  REQUIRE(app.grepMode().matches().size() == 3);  // lines 0, 2, 5
+  CHECK(display.highlightAt(0, 0));
+  CHECK(display.highlightAt(2, 0));
+  CHECK(display.highlightAt(5, 0));
+
+  feedText(" o");  // pattern is now "marker o" -- only "marker one" (line 0) still matches
+  REQUIRE(app.grepMode().matches().size() == 1);
+  CHECK(app.grepMode().matches()[0].sourceLineIndex == 0);
+  CHECK(display.highlightAt(0, 0));
+  // The bug: lines 2 ("marker two") and 5 ("marker three") kept their
+  // stale highlight from the previous, broader "marker" match.
+  CHECK_FALSE(display.highlightAt(2, 0));
+  CHECK_FALSE(display.highlightAt(5, 0));
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: a lone ^J is consumed as a pending leader byte, no action yet") {

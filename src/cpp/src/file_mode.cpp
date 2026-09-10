@@ -460,7 +460,21 @@ void FileMode::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = active;
 void FileMode::setGrepMatchHighlight(const std::vector<GrepMatch> &matches) {
   int savedTop = view_.topIndex();
   int savedCursor = view_.cursorIndex();
-  grepMatchHighlightSnapshot_ = view_.lines();
+  // 2026-09-10修正、直接のユーザー報告(usilic -c ~/git/usilicで再現:
+  // ESC iのインクリメンタルサーチ中、パターンを変えても古いマッチの
+  // ハイライトが消えずに居座り続ける): 以前はこの関数を呼ぶたびに
+  // view_.lines()を無条件で「元の状態」として撮り直していたが、
+  // インクリメンタルサーチは1文字入力されるたびにこの関数を呼ぶため、
+  // 2回目以降はview_.lines()が前回呼び出しで既にHighlight属性を
+  // 乗せた「汚れた」状態になっており、それをそのまま次の「元の状態」
+  // として扱ってしまっていた(=前回分のハイライトが恒久的に焼き込ま
+  // れ、以後のクリア・更新が効かなくなる)。grepMatchHighlightActive_
+  // でセッションの「最初の1回」だけを判定し、以後はこの1回目に撮った
+  // 本当にクリーンな(FileMode自身のオーバーストライク由来Bold等を
+  // 含む、正規の)スナップショットから毎回組み直す。
+  if (!grepMatchHighlightActive_) {
+    grepMatchHighlightSnapshot_ = view_.lines();
+  }
   std::vector<ContentView::Line> lines = grepMatchHighlightSnapshot_;
   for (const auto &match : matches) {
     int idx = match.sourceLineIndex;

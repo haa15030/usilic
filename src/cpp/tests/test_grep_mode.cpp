@@ -179,3 +179,48 @@ TEST_CASE_FIXTURE(Fixture, "search (Fixed/fgrep, 2026-08-23 fix, item 407): matc
   CHECK_FALSE(mode.search(lines, nfcQuery, GrepSyntax::Fixed));
 #endif
 }
+
+// -- searchInProcess() (2026-09-10, incremental search's own in-process
+// matcher) -- same-day revision, a direct user report after trying it
+// on a real directory (usilic -c ~/git/usilic): typing ".claude" made
+// the leading "." match every character as a regex wildcard, turning
+// the whole screen yellow. searchInProcess() is fgrep-style literal
+// substring matching now, not regex -- see its own declaration comment
+// in grep_mode.hpp.
+
+TEST_CASE_FIXTURE(Fixture, "searchInProcess: a '.' is matched as a literal character, not a regex "
+                           "wildcard (the exact user-reported bug)") {
+  std::vector<std::string> lines = {".claude", "plain", "other.txt"};
+  REQUIRE(mode.searchInProcess(lines, "."));
+  // A real regex "." would match every line (each has at least one
+  // character); fgrep-style literal "." only matches the two lines
+  // that actually contain a literal dot.
+  REQUIRE(mode.matches().size() == 2);
+  CHECK(mode.matches()[0].sourceLineIndex == 0);
+  CHECK(mode.matches()[0].matchSpans == std::vector<std::pair<int, int>>{{0, 1}});
+  CHECK(mode.matches()[1].sourceLineIndex == 2);
+  CHECK(mode.matches()[1].matchSpans == std::vector<std::pair<int, int>>{{5, 6}});
+}
+
+TEST_CASE_FIXTURE(Fixture, "searchInProcess: matches the exact literal substring, including regex "
+                           "metacharacters other than '.' (e.g. '$', '*'), with no special meaning") {
+  std::vector<std::string> lines = {"price: $5", "a*b", "plain"};
+  REQUIRE(mode.searchInProcess(lines, "$5"));
+  REQUIRE(mode.matches().size() == 1);
+  CHECK(mode.matches()[0].text == "price: $5");
+  CHECK(mode.matches()[0].matchSpans == std::vector<std::pair<int, int>>{{7, 9}});
+
+  REQUIRE(mode.searchInProcess(lines, "a*b"));
+  REQUIRE(mode.matches().size() == 1);
+  CHECK(mode.matches()[0].text == "a*b");
+}
+
+TEST_CASE_FIXTURE(Fixture, "searchInProcess: finds multiple non-overlapping occurrences on the same line") {
+  std::vector<std::string> lines = {"abcabcabc"};
+  REQUIRE(mode.searchInProcess(lines, "abc"));
+  REQUIRE(mode.matches().size() == 1);
+  REQUIRE(mode.matches()[0].matchSpans.size() == 3);
+  CHECK(mode.matches()[0].matchSpans[0] == std::pair<int, int>{0, 3});
+  CHECK(mode.matches()[0].matchSpans[1] == std::pair<int, int>{3, 6});
+  CHECK(mode.matches()[0].matchSpans[2] == std::pair<int, int>{6, 9});
+}

@@ -74,8 +74,17 @@ class Display {
     // なく、生のANSI SGRコードをTerminalDisplay側で直接出す(この
     // ポートが読者に想定している現実的なターミナル環境――
     // Terminal.app/iTerm2/GNOME Terminal等――は全てこの基本的なSGR
-    // 色コードに対応している)。具体的な色はTerminalDisplay::
-    // attributeEscape()/GraphicalDisplay自身の該当箇所のコメント参照。
+    // 色コードに対応している)。
+    // 2026-09-10さらに改訂(実機スクリーンショット=fz添付での直接の
+    // 指摘): 当初は基本16色(前景=黒/背景=明るい黄色)を使っていたが、
+    // ターミナルのプロファイルがその16色自体を再定義している場合
+    // (Terminal.appの"Basic"プロファイル等)、判別しにくい問題が別の
+    // 形でぶり返し得ると判明。基本16色(0〜15)はユーザーが再定義
+    // できる前提で、拡張256色パレット(16〜255)は各端末が固定RGBとして
+    // 扱うのが実質的な標準という点を利用し、そちらの色番号(黒の
+    // キューブ色+薄い黄色)へ切り替えた――具体的な色番号は
+    // TerminalDisplay::attributeEscape()/GraphicalDisplay自身の
+    // 該当箇所のコメント参照。
     Highlight,
     HighlightOff,
   };

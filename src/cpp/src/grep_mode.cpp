@@ -2,7 +2,6 @@
 
 #include <cctype>
 #include <cstdlib>
-#include <regex.h>
 #include <sstream>
 
 #include "child_process.hpp"
@@ -166,42 +165,34 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
   return true;
 }
 
-// searchInProcess()自身の宣言コメント参照(2026-09-10追加)。
-// regcomp()に`REG_EXTENDED`を渡さない=POSIX BRE(grepのBasic構文と
-// 同じ、GrepSyntax::Basicに揃えている――固定文字列/拡張正規表現の
-// インクリメンタル版は今回のスコープ外)。1行内の複数マッチは
-// `regexec()`をREG_NOTBOLを付けて前方から繰り返し呼ぶことで求める
-// (search()自身の`-o`ベースの複数マッチ処理と同じ発想)。
+// searchInProcess()自身の宣言コメント参照(2026-09-10追加、同日さらに
+// regex→fgrep相当のリテラル部分文字列検索へ修正): `std::string::
+// find()`を前進させながら繰り返すだけの単純な実装。patternが非空である
+// ことは呼び出し元でも保証済みだが、find()の戻り値をnposへ導く空文字列
+// はここでも無限ループの余地が無い(findFromを必ずpattern.size()(>=1)
+// 分前進させる)。
 bool GrepMode::searchInProcess(const std::vector<std::string> &sourceLines, const std::string &pattern) {
   if (pattern.empty()) return false;
-  regex_t re;
-  if (regcomp(&re, pattern.c_str(), 0) != 0) return false;
 
   matches_.clear();
   for (int i = 0; i < static_cast<int>(sourceLines.size()); i++) {
     const std::string &line = sourceLines[i];
     GrepMatch match;
     bool any = false;
-    int offset = 0;
-    while (offset <= static_cast<int>(line.size())) {
-      regmatch_t pmatch[1];
-      int flags = offset > 0 ? REG_NOTBOL : 0;
-      if (regexec(&re, line.c_str() + offset, 1, pmatch, flags) != 0) break;
-      int start = offset + static_cast<int>(pmatch[0].rm_so);
-      int end = offset + static_cast<int>(pmatch[0].rm_eo);
+    std::size_t findFrom = 0;
+    while (true) {
+      std::size_t pos = line.find(pattern, findFrom);
+      if (pos == std::string::npos) break;
       if (!any) {
         match.sourceLineIndex = i;
         match.text = line;
         any = true;
       }
-      match.matchSpans.push_back({start, end});
-      // ゼロ幅マッチ(例えば"$"のみ)で無限ループしないよう、必ず
-      // 最低1バイトは前進する。
-      offset = (end > offset) ? end : offset + 1;
+      match.matchSpans.push_back({static_cast<int>(pos), static_cast<int>(pos + pattern.size())});
+      findFrom = pos + pattern.size();
     }
     if (any) matches_.push_back(std::move(match));
   }
-  regfree(&re);
 
   pattern_ = pattern;
   if (matches_.empty()) {

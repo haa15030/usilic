@@ -79,14 +79,23 @@ class GrepMode {
 
   // 2026-09-10追加、直接のユーザー依頼("インクリメンタルサーチについて
   // はgrepではなく...文字列位置を返す関数等だけでインプリメントは
-  // 可能?"): search()とは異なり、実物の`grep`をforkしない――POSIXの
-  // `<regex.h>`(`regcomp()`/`regexec()`、基本正規表現=BRE、
-  // GrepSyntax::Basicと同じ構文)をin-processで使い、キー入力のたびに
-  // 呼んでも十分軽い。matches()/matchSpans()の中身はsearch()と同じ
-  // 形で埋まる――呼び出し元(Application::liveIncrementalGrepSearch())
-  // はsearch()と全く同じように読める。search()とは異なり、view_
-  // (一覧画面)には一切触れない――呼び出し元は一覧へ切り替えず、
-  // in-place方式(activateGrepInPlace())でmatches()を直接使うため。
+  // 可能?"): search()とは異なり、実物の`grep`をforkしない――キー入力
+  // のたびに呼んでも十分軽い、in-processでの文字列検索。
+  // 2026-09-10同日さらに修正(直接のユーザー報告、実機`usilic -c
+  // ~/git/usilic`で再現: "^[iでは正規表現検索ではなくfgrepタイプに
+  // してほしい。でないと.cloudと打つ場合、最初の.で全てがマッチして
+  // しまい、全面が黄色と化す"): 初版はPOSIX`<regex.h>`
+  // (`regcomp()`/`regexec()`)によるBRE(基本正規表現)解釈だったが、
+  // これだと"."が「任意の1文字」を意味してしまいユーザーの直感に
+  // 反するため、fgrep相当のリテラル部分文字列検索(`std::string::
+  // find()`)へ差し替えた――GrepSyntax::Basic(正規表現)とは別物で、
+  // インクリメンタルサーチはこの`searchInProcess()`が常にリテラル
+  // 検索という1本の挙動に統一されている(切り替えの余地は今回のスコープ
+  // 外)。matches()/matchSpans()の中身はsearch()と同じ形で埋まる――
+  // 呼び出し元(Application::liveIncrementalGrepSearch())はsearch()と
+  // 全く同じように読める。search()とは異なり、view_(一覧画面)には
+  // 一切触れない――呼び出し元は一覧へ切り替えず、in-place方式
+  // (activateGrepInPlace())でmatches()を直接使うため。
   bool searchInProcess(const std::vector<std::string> &sourceLines, const std::string &pattern);
 
   const std::string &pattern() const;

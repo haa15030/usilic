@@ -356,6 +356,16 @@ void DirectoryMode::setGrepMatchHighlight(const std::vector<GrepMatch> &matches)
   int savedTop = view_.topIndex();
   int savedCursor = view_.cursorIndex();
   std::vector<ContentView::Line> lines = view_.lines();
+  // 2026-09-10修正、直接のユーザー報告(usilic -c ~/git/usilicで再現:
+  // ESC iのインクリメンタルサーチ中、パターンを変えても古いマッチの
+  // ハイライトが消えずに居座り続ける): view_.lines()は前回この関数を
+  // 呼んだ時点で既にHighlight属性が乗った「汚れた」状態を返すことが
+  // あり(1文字入力されるたびに呼ばれるため)、そこへ無条件に
+  // push_back()するだけでは前回分がクリアされず蓄積してしまっていた。
+  // ls一覧の行にはそもそも他の正当な属性が乗ることは無い(確認済み、
+  // clearGrepMatchHighlight()自身のコメント参照)ので、ここで全行分
+  // まっさらにしてから今回のマッチだけを組み直す。
+  for (auto &line : lines) line.attributes.clear();
   for (const auto &match : matches) {
     int idx = match.sourceLineIndex;
     if (idx < 0 || idx >= static_cast<int>(lines.size())) continue;
