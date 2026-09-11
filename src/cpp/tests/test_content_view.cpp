@@ -101,7 +101,7 @@ TEST_CASE("Line::attributes: Bold/Underline byte-ranges render as their own SGR 
 
 // 2026-09-10追加、直接のユーザー依頼("マッチ文字列をboldの代わりに
 // ハイライトでやってみて。色は変えられない？薄めの色とか"): GREP
-// マッチ表示専用のDisplay::Attribute::Highlight(生ANSI SGRの色付き
+// マッチ表示専用のfm::Display::Attribute::Highlight(生ANSI SGRの色付き
 // 前景、terminal_display.cpp/graphical_display.cpp参照)が、Bold/
 // Underlineと全く同じ独立したAttributeRunチャネルとして正しく機能
 // することを、Application抜きでピンポイントに確認する――上のBold/
@@ -1731,6 +1731,104 @@ TEST_CASE("middleEllipsisTruncateByWidth (via a plain ellipsisEligible line): ne
   // with part of the C's) -- neither half appears on its own.
   CHECK(rendered.find(toDakuten) == std::string::npos);
   CHECK(rendered.find("\xe3\x82\x99") == std::string::npos);  // no orphaned mark either, on its own
+}
+
+// 2026-09-11追加、直接のユーザー報告(実機スクリーンショット=gf、
+// LOCATE上のin-place GREP(^[i)のマゼンタ(Highlight)ハイライトが
+// 「行中央の"..."が原因で」ズレている/一部の行では全く表示されない):
+// ContentView::setGrepMatchHighlight()(同じく2026-09-11追加)が設定
+// するLine::attributesのバイトオフセットは常に切り詰め前のline.text
+// 基準だが、ellipsisEligibleな行はrenderLine()が別の(短い)ellipsisText
+// を描画対象にするため、そのオフセットをそのまま使うと位置がずれる
+// か、範囲外になって一致しなくなる。
+TEST_CASE("renderLine: a Highlight AttributeRun that falls entirely inside the elided middle of an "
+          "ellipsisEligible line highlights the \"...\" marker itself, not some unrelated character at "
+          "the same raw byte offset") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  // 20 columns -> ellipsisBudget=19 -> ellipsis budget=16 -> head=8/tail=8.
+  // "AAAAAAAA"(0-7, kept prefix) + "MATCH"(10-14, entirely elided) +
+  // "BBBBBBBB"(17-24, kept suffix, tailStart=17)。
+  std::string text = std::string(10, 'A') + "MATCH" + std::string(10, 'B');
+  std::vector<ContentView::Line> lines;
+  lines.push_back({text, std::nullopt, std::nullopt,
+                    {fm::AttributeRun{10, 15, fm::Display::Attribute::Highlight}}, /*ellipsisEligible=*/true});
+  v.setLines(lines);
+  v.setCursorIndex(0);
+  v.redraw();
+  std::string rendered = d.rowText(0);
+  REQUIRE(rendered.find("...") != std::string::npos);  // truncation actually triggered
+  // Before the fix, the raw offset [10,15) would land on ellipsisText's
+  // own bytes 10-14 (one dot + 4 of the kept 'B's) -- neither of which
+  // is the actual match. After the fix, since the match is entirely
+  // inside the elided middle, the WHOLE "..." (columns 8,9,10) is
+  // highlighted instead, and nothing else is.
+  CHECK(d.highlightAt(0, 8));
+  CHECK(d.highlightAt(0, 9));
+  CHECK(d.highlightAt(0, 10));
+  CHECK_FALSE(d.highlightAt(0, 7));   // last kept 'A' -- not highlighted
+  CHECK_FALSE(d.highlightAt(0, 11));  // first kept 'B' -- not highlighted
+}
+
+TEST_CASE("renderLine: a Highlight AttributeRun that falls inside the kept SUFFIX of an ellipsisEligible "
+          "line is repositioned to the same characters, not left at its pre-truncation byte offset") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  // Same shape as above: head=8 ("AAAAAAAA"), tailStart=17 (last 8 of
+  // the trailing 10 'B's are kept). Highlight the 3 middle 'B's of the
+  // kept suffix (original offsets [20,23), i.e. the 6th-8th 'B').
+  std::string text = std::string(10, 'A') + "MATCH" + std::string(10, 'B');
+  std::vector<ContentView::Line> lines;
+  lines.push_back({text, std::nullopt, std::nullopt,
+                    {fm::AttributeRun{20, 23, fm::Display::Attribute::Highlight}}, /*ellipsisEligible=*/true});
+  v.setLines(lines);
+  v.setCursorIndex(0);
+  v.redraw();
+  std::string rendered = d.rowText(0);
+  REQUIRE(rendered.find("...") != std::string::npos);
+  // ellipsisText = "AAAAAAAA" + "..." + "BBBBBBBB" (8+3+8=19 cols).
+  // Original offset 20 is the 4th kept 'B' (tailStart=17, 20-17=3rd
+  // one in), landing at ellipsisText column 8+3+3=14 -- NOT at the
+  // raw, unshifted column 20 (which would be entirely off the end of
+  // this 19-column row).
+  CHECK(d.highlightAt(0, 14));
+  CHECK(d.highlightAt(0, 15));
+  CHECK(d.highlightAt(0, 16));
+  CHECK_FALSE(d.highlightAt(0, 11));  // first kept 'B' -- not part of this match
+  CHECK_FALSE(d.highlightAt(0, 8));   // the "..." itself -- not part of this match
+}
+
+TEST_CASE("renderLine: a Highlight AttributeRun still maps correctly through the DirectoryMode-style "
+          "highlightStartColumn+truncateHighlightedSuffix() ellipsis path, not just the plain "
+          "ellipsisEligible one") {
+  RecordingDisplay d(10, 20);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  // prefix "P " (highlightStartColumn=2) + a long filename, matching
+  // DirectoryMode's own ls-entry shape (its own sibling test below).
+  std::string prefix = "P ";
+  std::string filename = std::string(10, 'A') + "MATCH" + std::string(10, 'B');
+  std::string text = prefix + filename;
+  std::vector<ContentView::Line> lines;
+  // Highlight offsets are relative to the WHOLE text (prefix included),
+  // matching how AttributeRun is used everywhere else.
+  lines.push_back({text, std::nullopt, static_cast<int>(prefix.size()),
+                    {fm::AttributeRun{2 + 10, 2 + 15, fm::Display::Attribute::Highlight}}});
+  v.setLines(lines);
+  v.setCursorIndex(0);
+  v.redraw();
+  std::string rendered = d.rowText(0);
+  REQUIRE(rendered.find("...") != std::string::npos);
+  // The match is entirely inside the elided middle of the filename
+  // portion -- same expectation as the plain ellipsisEligible case:
+  // the "..." itself gets highlighted, nothing else does.
+  int dotsCol = static_cast<int>(rendered.find("..."));
+  REQUIRE(dotsCol >= 0);
+  CHECK(d.highlightAt(0, dotsCol));
+  CHECK(d.highlightAt(0, dotsCol + 1));
+  CHECK(d.highlightAt(0, dotsCol + 2));
 }
 
 TEST_CASE("renderLine: a DirectoryMode-style row (highlightStartColumn set, ellipsisEligible NOT set) "

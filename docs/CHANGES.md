@@ -2789,6 +2789,57 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      確認。make install/make app/~/Applications/usilic.appへの反映、
      jキー回帰チェックも完了。
 
+438. **項目437で生じた回帰: 楕円省略(Finder風の行中央`...`)表示行での
+    GREPハイライト位置ズレ・カーソル行での消失を修正**
+   - **発端**: ユーザーが実機で`^J^L.txt`(LOCATE)→`^[iRes`を試したところ、
+     マゼンタ(Highlight)反転位置がほとんどの行でズレており(「行中央
+     `...`が原因かと」という見立て付き)、さらにカーソル(黒反転)行では
+     `Res`がまったくマゼンタ反転していない、と screenshot 付きで報告
+     された。
+   - **原因**: `ContentView::renderLine()`が、`line.ellipsisEligible`
+     (LOCATE/DU/ARCHIVE等の結果一覧)や`line.highlightStartColumn`
+     (Directoryのls一覧)で楕円省略が発生すると、実際に描画する文字列を
+     `line.text`から短い`ellipsisText`/`truncateHighlightedSuffix()`
+     結果へ切り替える一方、`line.attributes`(項目437で新設した
+     `ContentView::setGrepMatchHighlight()`が設定するGREPマッチの
+     `AttributeRun`群)のバイトオフセットは元の(省略前の)`line.text`の
+     座標系のまま渡されていた――項目437以前は`line.attributes`を
+     設定するのはFileMode(内容行、楕円省略対象外)だけだったため
+     顕在化していなかった座標系の食い違いが、in-place GREPを楕円省略
+     対象の9モードへ拡張したことで初めて表面化した回帰。
+   - **修正**: `middleEllipsisTruncateByWidth()`が内部で行っていた
+     書記素クラスタ/濁点等の結合文字を考慮した省略境界計算を
+     `computeEllipsisBoundaries()`(新設、`{truncated, headEnd,
+     tailStart}`を返す)として抜き出し、文字列切り詰め本体・新設の
+     属性座標変換の双方から共有。`remapByteOffsetThroughEllipsis()`
+     (新設)で元バイトオフセットを省略後の座標へ変換し(省略された
+     中間部分に完全に収まるマッチは`...`マーカー自体をハイライトする
+     よう丸める)、`renderLine()`の2つの切り詰め経路(`ellipsisEligible`
+     経路・`highlightStartColumn`+`truncateHighlightedSuffix()`経路の
+     両方、後者はDirectoryのls一覧でも同種のバグが起こり得るため合わせて
+     対応)双方に適用。
+   - **LOCATE固有の追加修正**: 同じscreenshotで「`usilic -c`を引数無しで
+     起動して`^J^L`すると、CUTの『最初のマッチまでの区分が空』を示す
+     `--`プレースホルダーが出る(LOCATEでは無意味)」という指摘も
+     受けたため、`LocateMode::search()`の結果0件時に`GrepMode::search()`
+     と同じ`view_.setEmptyPlaceholder()`(`"<query>: No results"`、
+     "No results"部分のみ下線)を呼ぶよう修正(詳細はLOCATEの節にも
+     重複掲載)。
+   - **検証**: `RecordingDisplay::highlightAt(row,col)`で正確な列位置を
+     検証する新規doctestを`test_content_view.cpp`(楕円省略中間部への
+     マッチが`...`のみをハイライトすること・保持された末尾側への
+     マッチが正しい列へ再配置されること、を`ellipsisEligible`経路・
+     `highlightStartColumn`経路の両方で確認)と`test_locate_mode.cpp`
+     (0件時に`"No results"`が出て`--`が出ないこと)に追加。実際の
+     `locate .txt`(数百件、長いパスを含む)でscreenshotのシナリオを
+     PTY越しに再現し、pyteでセル単位のfg/bg属性を検査した結果、
+     省略された中間部にマッチする行は`...`がマゼンタ反転(fg=b0e2ff/
+     bg=cd00cd)、カーソル(黒反転)行を含め保持された`Res`部分は正しく
+     `Res`自体がマゼンタ反転することを確認(元screenshotで報告された
+     `VERSION_INFO`/`Mappings`/`JISX0208`等の無関係な部分への誤反転は
+     再現しなくなった)。単体テストは事前に`make test`で1107/1107件・
+     21942アサーション全通過を確認済み(このPTY検証の前に実施)。
+
 ## 4. CUT
 
 434. **タブコードをGREP/CUTで検索可能にする(PipeBuffer::wrapLine()が
@@ -4795,6 +4846,15 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      [return]しても常にFile modeでの通常表示に落ちておりEXECが
      一切発動していなかった不具合を修正。詳細は項目418(PROGRAM/EXEC
      の節)参照。
+
+438. **項目437で生じた回帰: 楕円省略(Finder風の行中央`...`)表示行での
+    GREPハイライト位置ズレ・カーソル行での消失を修正**――3.FGREP/EGREP
+    の節にある同項目438の重複掲載。LOCATE固有の追加修正として、
+    `usilic -c`を引数無しで起動し`^J^L`で0件の検索を行うと、CUTの
+    「最初のマッチまでの区分が空」を示す`--`プレースホルダー(LOCATE
+    では無意味)が出ていた不具合も同時に修正し、`GrepMode::search()`
+    と同じ`"<query>: No results"`表示に統一した。詳細・検証内容は
+    3.FGREP/EGREPの節参照。
 
 ## 7. MAN
 

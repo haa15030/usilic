@@ -90,6 +90,24 @@ bool LocateMode::search(const std::string &query) {
   query_ = query;
   results_ = std::move(results);
 
+  // 2026-09-11追加、直接のユーザー報告("久々にusilic -c（引数無し）で
+  // 起動してみたら^J^Lで--(CUT時、最初のマッチまでの区分)が出る。
+  // LOCATEでは無意味"): ContentView自身のデフォルトの空プレース
+  // ホルダー("--")はCUT自身の「2つのマッチの間の空の領域」という
+  // 意味の慣習であり、単に0件だっただけのLOCATE結果には意味を成さ
+  // ない。GrepMode::search()自身の"<pattern>: No String"という慣習
+  // (同じ理由でCUT向けの既定から独自に離れた前例)に倣い、
+  // "<query>: No results"を設定する。
+  if (results_.empty()) {
+    static const std::string kSuffix = "No results";
+    std::string text = query_ + ": " + kSuffix;
+    int underlineFrom = static_cast<int>(text.size() - kSuffix.size());
+    view_.setEmptyPlaceholder(
+        ContentView::Line{text, std::nullopt, std::nullopt,
+                           {AttributeRun{underlineFrom, static_cast<int>(text.size()), Display::Attribute::Underline}}},
+        /*marked=*/false);
+  }
+
   std::vector<ContentView::Line> lines;
   lines.reserve(results_.size());
   // ellipsisEligible=true: Line::ellipsisEligible自身のコメント参照

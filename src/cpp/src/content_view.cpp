@@ -89,6 +89,104 @@ std::string middleEllipsisTruncate(const std::string &text, int maxBytes) {
 // Utf8::display_width()によって累積される。
 int totalDisplayWidth(const std::string &text);  // 下で定義されている。この関数自身の早期returnのためにここで必要
 
+// 2026-09-11追加、直接のユーザー報告(実機スクリーンショット=gf、
+// LOCATE上のin-place GREPハイライトが「行中央の"..."が原因で」ズレて
+// いる/一部の行では全く表示されない): middleEllipsisTruncateByWidth()
+// /truncateHighlightedSuffix()は文字列そのものを返すだけで、その
+// 切り詰めが元のバイトオフセットをどう作り替えたかを一切呼び出し元へ
+// 伝えていなかった。ContentView::setGrepMatchHighlight()(2026-09-11
+// 追加)が設定するLine::attributes(GREPのHighlight属性)のbyteオフ
+// セットは、常に「切り詰め前の」元のline.textに対して計算されている
+// ため、renderLine()がellipsisText(切り詰め後の別の文字列)に対して
+// そのまま同じオフセットで属性を引き当てようとすると、位置がずれる
+// (中間の"..."より後ろの本来の文字位置とは無関係な、たまたま同じ
+// バイト位置にある別の文字に当たってしまう)か、あるいは元のオフ
+// セットがellipsisText自体の短い長さを超えてしまい一度も一致しない
+// (=ハイライトが丸ごと消える)かのどちらかになる。旧来の唯一の
+// line.attributes設定元だったFileMode(自身の行は折り返し済みで
+// ellipsisEligible/highlightStartColumnのどちらも設定しない)では
+// 一度も表面化しなかった問題――renderLine()自身の古いコメント
+// ("FileModeがline.attributesの唯一の呼び出し元である")はこの前提の
+// 記録であり、in-place GREPをLOCATE/DU/ARCHIVE等へ拡張した今、その
+// 前提はもう成り立たない。
+//
+// EllipsisBoundaries/computeEllipsisBoundaries(): 実際に切り詰めが
+// 起きたかどうかと、その時に保持された接頭辞(0..headEnd)・接尾辞
+// (tailStart..end、"..."を挟む)の元のバイトオフセットの境界を返す。
+// middleEllipsisTruncateByWidth()自身のロジックの複製ではなく、
+// そちらが実際に使う「同じ」計算をここへ括り出し、公開関数はこの
+// 結果から文字列を組み立てるだけにした(ロジックの二重管理を避ける)。
+struct EllipsisBoundaries {
+  bool truncated = false;
+  int headEnd = 0;    // [0, headEnd) がそのまま保持される接頭辞
+  int tailStart = 0;  // [tailStart, text.size()) がそのまま保持される接尾辞
+};
+
+EllipsisBoundaries computeEllipsisBoundaries(const std::string &text, int maxWidth) {
+  EllipsisBoundaries result;
+  if (totalDisplayWidth(text) <= maxWidth) return result;
+  static const std::string kEllipsis = "...";
+  int budget = maxWidth - static_cast<int>(kEllipsis.size());
+  if (budget <= 0) return result;  // プレーンな切り落としに任せる(呼び出し元自身の早期returnと同じ)
+
+  std::vector<int> boundaries;
+  std::vector<int> widths;
+  boundaries.push_back(0);
+  int i = 0;
+  while (i < static_cast<int>(text.size())) {
+    int len = Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
+    len = std::min(len, static_cast<int>(text.size()) - i);
+    int width = Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, len);
+    i += len;
+    while (i < static_cast<int>(text.size())) {
+      int markLen = Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
+      markLen = std::min(markLen, static_cast<int>(text.size()) - i);
+      if (Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, markLen) != 0) break;
+      i += markLen;
+    }
+    widths.push_back(width);
+    boundaries.push_back(i);
+  }
+
+  int headBudget = budget / 2;
+  int tailBudget = budget - headBudget;
+
+  int headEnd = 0, headWidth = 0;
+  for (std::size_t k = 0; k < widths.size(); k++) {
+    if (headWidth + widths[k] > headBudget) break;
+    headWidth += widths[k];
+    headEnd = boundaries[k + 1];
+  }
+
+  int tailStart = static_cast<int>(text.size());
+  int tailWidth = 0;
+  for (std::size_t k = widths.size(); k-- > 0;) {
+    if (tailWidth + widths[k] > tailBudget) break;
+    tailWidth += widths[k];
+    tailStart = boundaries[k];
+  }
+
+  if (tailStart <= headEnd) return result;  // 有効に省略するには狭すぎる
+  result.truncated = true;
+  result.headEnd = headEnd;
+  result.tailStart = tailStart;
+  return result;
+}
+
+// remapByteOffsetThroughEllipsis(): 元のline.text上のバイトオフセット
+// (AttributeRunのstart/end)を、"..."で省略された後の文字列上の
+// オフセットへ変換する。省略された中間部分に落ちる場合、start側は
+// "..."の直前、end側は"..."の直後へ寄せる――マッチが省略部分に完全に
+// 埋もれている場合でも"..."全体がハイライトされ、マッチがまたがって
+// いる場合も自然に振る舞う。
+int remapByteOffsetThroughEllipsis(int pos, const EllipsisBoundaries &b, bool isEnd) {
+  constexpr int kEllipsisLen = 3;  // "..." はプレーンなASCII3バイト
+  if (pos <= b.headEnd) return pos;
+  if (pos >= b.tailStart) return b.headEnd + kEllipsisLen + (pos - b.tailStart);
+  return isEnd ? b.headEnd + kEllipsisLen : b.headEnd;
+}
+
+
 // `text`の全文字にわたるUtf8::display_width()の合計――「既に」幅で
 // 切り詰められた文字列(renderSplitModeLine()自身のtrailing2)を
 // 実際の画面の列へ右揃えするため。バイト長(text.size())は、CJKの
@@ -132,73 +230,24 @@ std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth)
   // 実際の幅をちょうどmaxWidthとして渡すことがあり、それは変更
   // されずに戻ってくる必要があり、破損した内容によって同じ合計
   // 長さへ省略記号で切り詰められてはならない。
-  if (totalDisplayWidth(text) <= maxWidth) return text;
-  static const std::string kEllipsis = "...";
-  int budget = maxWidth - static_cast<int>(kEllipsis.size());  // 「...」自体はプレーンなASCIIで3列
-  if (budget <= 0) return text.substr(0, static_cast<std::size_t>(std::max(0, maxWidth)));
-
-  // boundaries[k]/boundaries[k+1]はk番目の「書記素クラスタ」自身の
-  // バイト範囲を括る。widths[k]はそのクラスタ自身の合計画面幅。
   //
-  // 2026-08-20の修正、直接のユーザー報告("=dz...7行目・10行目の■"):
-  // 単独の幅0の結合マーク(濁点/半濁点、この同じ種類のバグの-g描画
-  // 側についてはGraphicalDisplay::commitGlyph()自身の
-  // composeDakutenCodepoint()コメント参照)は、以前ここで、幅に
-  // 関わらず生のUTF-8文字ごとに1つの、それ自身の「別々の」
-  // boundaries/widthsエントリを得ていた。幅0のエントリは単独では
-  // 決して`tailWidth + widths[k] > tailBudget`をtrueにしないので、
-  // 下の「末尾」側の後方への歩みは、それが依存する「次の」(基底)
-  // 文字が予算を吹き飛ばして除外されている一方で、末尾のマーク
-  // (実質無料)を含めてしまうことがあった――tailStartが基底と
-  // それ自身のマークの間に着地してしまい、切り詰められた文字列が
-  // 孤児となったマークで始まり、それが付くべき基底が無い状態に
-  // なった(GraphicalDisplayはそれを合成する対象を何も持たず、
-  // 孤立した豆腐箱のグリフへフォールバックしていた)。ある文字の
-  // 直後に続く幅0のマークを「その」文字自身の単一のクラスタ
-  // エントリへ吸収することで、切り詰めの境界は今や決して1つの
-  // クラスタの「中」に着地することはなく、常にクラスタとクラスタ
-  // の「間」にだけ着地するようになる――本物の書記素クラスタを認識
-  // する文字列APIが「基底+マーク」を1つの単位として扱うのと同じに
-  // 合わせている。
-  std::vector<int> boundaries;
-  std::vector<int> widths;
-  boundaries.push_back(0);
-  int i = 0;
-  while (i < static_cast<int>(text.size())) {
-    int len = Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
-    len = std::min(len, static_cast<int>(text.size()) - i);
-    int width = Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, len);
-    i += len;
-    while (i < static_cast<int>(text.size())) {
-      int markLen = Utf8::sequence_length(static_cast<unsigned char>(text[static_cast<std::size_t>(i)]));
-      markLen = std::min(markLen, static_cast<int>(text.size()) - i);
-      if (Utf8::display_width(reinterpret_cast<const unsigned char *>(text.data()) + i, markLen) != 0) break;
-      i += markLen;
-    }
-    widths.push_back(width);
-    boundaries.push_back(i);
+  // 2026-09-11修正: 実際の切り詰めロジック(書記素クラスタの境界の
+  // 計算・幅0の結合マークの吸収等、下の各コメント参照)自体は
+  // computeEllipsisBoundaries()へ括り出した――renderLine()がAttributeRun
+  // (GREPのHighlight等)のバイトオフセットを、この切り詰め後の文字列
+  // 上の位置へ正しく作り直すために同じ境界情報を必要とするようになった
+  // ため(EllipsisBoundaries自身の宣言コメント参照)、ロジックを二重に
+  // 保守しないための整理。
+  EllipsisBoundaries b = computeEllipsisBoundaries(text, maxWidth);
+  if (!b.truncated) {
+    if (totalDisplayWidth(text) <= maxWidth) return text;
+    int budget = maxWidth - 3;  // "..." はプレーンなASCII3バイト
+    if (budget <= 0) return text.substr(0, static_cast<std::size_t>(std::max(0, maxWidth)));
+    return text;  // 有効に省略するには狭すぎる――下のプレーンな切り落としに任せる
   }
-
-  int headBudget = budget / 2;
-  int tailBudget = budget - headBudget;
-
-  int headEnd = 0, headWidth = 0;
-  for (std::size_t k = 0; k < widths.size(); k++) {
-    if (headWidth + widths[k] > headBudget) break;
-    headWidth += widths[k];
-    headEnd = boundaries[k + 1];
-  }
-
-  int tailStart = static_cast<int>(text.size());
-  int tailWidth = 0;
-  for (std::size_t k = widths.size(); k-- > 0;) {
-    if (tailWidth + widths[k] > tailBudget) break;
-    tailWidth += widths[k];
-    tailStart = boundaries[k];
-  }
-
-  if (tailStart <= headEnd) return text;  // 有効に省略するには狭すぎる――下のプレーンな切り落としに任せる
-  return text.substr(0, static_cast<std::size_t>(headEnd)) + kEllipsis + text.substr(static_cast<std::size_t>(tailStart));
+  static const std::string kEllipsis = "...";
+  return text.substr(0, static_cast<std::size_t>(b.headEnd)) + kEllipsis +
+         text.substr(static_cast<std::size_t>(b.tailStart));
 }
 
 // truncateHighlightedSuffix()自身の宣言側コメント(content_view.hpp)
@@ -214,6 +263,25 @@ std::string truncateHighlightedSuffix(const std::string &text, int highlightStar
   std::string prefix = text.substr(0, static_cast<std::size_t>(highlightStart));
   std::string suffix = text.substr(static_cast<std::size_t>(highlightStart));
   return prefix + middleEllipsisTruncateByWidth(suffix, budget);
+}
+
+// EllipsisBoundaries自身のコメント参照(2026-09-11追加)。
+// truncateHighlightedSuffix()自身と同じ計算だが、文字列を組み立てる
+// 代わりに境界だけを返す――しかも接尾辞側の相対オフセットではなく
+// `text`全体に対するオフセットへ`highlightStart`ぶんずらし済み(呼び
+// 出し元がAttributeRunの生のバイトオフセットをそのまま渡せるように)。
+EllipsisBoundaries computeHighlightedSuffixBoundaries(const std::string &text, int highlightStart, int maxWidth) {
+  highlightStart = std::clamp(highlightStart, 0, static_cast<int>(text.size()));
+  EllipsisBoundaries result;
+  if (totalDisplayWidth(text) <= maxWidth) return result;
+  int budget = maxWidth - highlightStart;
+  if (budget <= 0) return result;  // プレーンな切り落としに任せる(呼び出し元自身の早期returnと同じ)
+  std::string suffix = text.substr(static_cast<std::size_t>(highlightStart));
+  EllipsisBoundaries b = computeEllipsisBoundaries(suffix, budget);
+  if (!b.truncated) return result;
+  b.headEnd += highlightStart;
+  b.tailStart += highlightStart;
+  return b;
 }
 
 ContentView::ContentView(Display &display) : display_(display) {}
@@ -942,9 +1010,34 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   // のではなく削除された。
   std::string ellipsisText;
   const std::string *renderedText = &line.text;
+  // 2026-09-11追加、EllipsisBoundaries自身の宣言コメント参照:
+  // 切り詰めが実際に起きた場合、line.attributesのバイトオフセット
+  // (常に切り詰め前のline.text基準)を、renderedTextの座標系へ作り
+  // 直したこのローカルコピーへ差し替える――さもないとGREPの
+  // Highlight属性等の位置がずれる/消える(実際のユーザー報告、実機
+  // スクリーンショット=gf参照)。
+  std::vector<AttributeRun> remappedAttributes;
+  const std::vector<AttributeRun> *renderedAttributes = &line.attributes;
   if (line.ellipsisEligible && static_cast<int>(line.text.size()) > ellipsisBudget) {
-    ellipsisText = middleEllipsisTruncateByWidth(line.text, ellipsisBudget);
-    renderedText = &ellipsisText;
+    EllipsisBoundaries b = computeEllipsisBoundaries(line.text, ellipsisBudget);
+    if (b.truncated) {
+      static const std::string kEllipsis = "...";
+      ellipsisText = line.text.substr(0, static_cast<std::size_t>(b.headEnd)) + kEllipsis +
+                     line.text.substr(static_cast<std::size_t>(b.tailStart));
+      renderedText = &ellipsisText;
+      if (!line.attributes.empty()) {
+        for (const AttributeRun &run : line.attributes) {
+          AttributeRun remapped = run;
+          remapped.start = remapByteOffsetThroughEllipsis(run.start, b, /*isEnd=*/false);
+          remapped.end = remapByteOffsetThroughEllipsis(run.end, b, /*isEnd=*/true);
+          if (remapped.end > remapped.start) remappedAttributes.push_back(remapped);
+        }
+        renderedAttributes = &remappedAttributes;
+      }
+    } else {
+      ellipsisText = middleEllipsisTruncateByWidth(line.text, ellipsisBudget);
+      renderedText = &ellipsisText;
+    }
   } else if (line.highlightStartColumn.has_value() && static_cast<int>(line.text.size()) > ellipsisBudget) {
     // 2026-09-03追加、直接のユーザー報告("/Users/haa15030/（ls）画面に
     // 収まらないファイル名...を Screensho...5-15-13.png で表示
@@ -954,8 +1047,19 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
     // 「ファイル名部分だけ」に適用する。truncateHighlightedSuffix()
     // 自身のコメント参照(なぜellipsisEligible全体版をそのまま使えない
     // のか)。
-    ellipsisText = truncateHighlightedSuffix(line.text, std::max(0, *line.highlightStartColumn), ellipsisBudget);
+    int highlightStart = std::max(0, *line.highlightStartColumn);
+    EllipsisBoundaries b = computeHighlightedSuffixBoundaries(line.text, highlightStart, ellipsisBudget);
+    ellipsisText = truncateHighlightedSuffix(line.text, highlightStart, ellipsisBudget);
     renderedText = &ellipsisText;
+    if (b.truncated && !line.attributes.empty()) {
+      for (const AttributeRun &run : line.attributes) {
+        AttributeRun remapped = run;
+        remapped.start = remapByteOffsetThroughEllipsis(run.start, b, /*isEnd=*/false);
+        remapped.end = remapByteOffsetThroughEllipsis(run.end, b, /*isEnd=*/true);
+        if (remapped.end > remapped.start) remappedAttributes.push_back(remapped);
+      }
+      renderedAttributes = &remappedAttributes;
+    }
   }
   {
     const std::string &text = *renderedText;
@@ -982,10 +1086,10 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
       // AttributeRun{start,end}のバイトオフセットの慣習に正確に
       // 一致する(この分岐では画面列数であり、CJK重めの内容に対
       // しては位置がずれてしまう`col`とは異なる)。
-      if (!line.attributes.empty()) {
+      if (!renderedAttributes->empty()) {
         bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false,
              wantHighlight = false;
-        for (const AttributeRun &run : line.attributes) {
+        for (const AttributeRun &run : *renderedAttributes) {
           if (static_cast<int>(idx) < run.start || static_cast<int>(idx) >= run.end) continue;
           if (run.attribute == Display::Attribute::Bold) wantBold = true;
           else if (run.attribute == Display::Attribute::Underline) wantUnderline = true;

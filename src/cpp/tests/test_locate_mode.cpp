@@ -69,6 +69,25 @@ TEST_CASE_FIXTURE(Fixture, "search: an empty query fails cleanly without running
   CHECK(mode.results().empty());
 }
 
+// 2026-09-11追加、直接のユーザー報告("久々にusilic -c（引数無し）で
+// 起動してみたら^J^Lで--(CUT時、最初のマッチまでの区分)が出る。
+// LOCATEでは無意味"): 0件の検索結果に対して、ContentView自身の
+// デフォルトの空プレースホルダー("--"、CUT自身の慣習)ではなく、
+// GrepMode::search()自身の"<pattern>: No String"に倣った
+// "<query>: No results"が表示されることを確認する。
+TEST_CASE_FIXTURE(Fixture, "search: a query that finds nothing shows \"<query>: No results\", not CUT's own "
+                           "\"--\" empty-region placeholder") {
+  view.setViewport(0, 5);  // otherwise height_ defaults to 0 and nothing but the mode-line row renders
+  fs::path root = makeTempDir();
+  configuration.setCommandForTest(fm::ConfiguredRole::Locate, {{writeFakeLocate(root, "empty.sh", {}).string()}, std::nullopt});
+
+  REQUIRE(mode.search("nothing-will-match-this"));
+  CHECK(mode.results().empty());
+  view.redraw();
+  CHECK(display.rowText(0).find("nothing-will-match-this: No results") != std::string::npos);
+  CHECK(display.rowText(0).find("--") == std::string::npos);
+}
+
 // The remaining tests genuinely run the real `locate` binary (matching
 // this project's preference for real end-to-end verification), but --
 // unlike e.g. ChildProcess's echo/cat tests -- `locate` depends on a
