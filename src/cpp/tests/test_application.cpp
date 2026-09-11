@@ -613,6 +613,51 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ^S from an open file st
   CHECK(modeLine.find("(grep)") != std::string::npos);
 }
 
+// 2026-09-11追加、直接のユーザー報告("FILE/DIRでも^O^S/^J^S同様
+// ^S/^[iをサポートして欲しい"): 上のテストはDirectory経由(Enter)で
+// Fileに入った、pagerMode_==falseのケースだけを確認していた。実機
+// PTYで`usilic -c <file>`(CLIから直接ファイルを開く、pagerMode_==true、
+// startPagerFileList()自身の宣言コメント参照)を再現したところ、
+// 実際のハイライト/マッチ自体は正しく設定されるにも関わらず、
+// FileMode自身のsetModeLineFieldsProvider()のpagerMode_早期returnが
+// 一度もgrepInPlaceActive()/grepNoMatchActive()を確認していなかった
+// ため、モードラインには"GREP"/(grep)バッジが一切反映されなかった
+// (^O^S/^J^Sは専用の一覧画面へ切り替わるためこの欠落の影響を受け
+// ない)。同じ条件をpagerMode_分岐にも複製して修正した。
+TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin, pagerMode_ / CLI-direct launch): ^S from a "
+                           "startPagerFileList() screen shows the GREP/(grep) mode-line badge too, not just "
+                           "the Directory-Enter case") {
+  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
+  feedText("world");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+
+  CHECK(app.currentMode() == ApplicationMode::File);
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("GREP") != std::string::npos);
+  CHECK(modeLine.find("(grep)") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin, pagerMode_): a NO-MATCH search also shows the "
+                           "GREP/(grep) badge, not just a bare pager mode line") {
+  REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));
+  feedText("zzznotfound");
+  // feedByte()/executeGrep() legitimately return false here -- the search
+  // ran but found 0 matches (activateGrepInPlace()'s own empty-matches
+  // branch), same as the Directory-origin no-match case elsewhere in this
+  // file. Only the mode-line side effect (No String message) matters here.
+  app.feedByte(0x0d, std::nullopt);
+
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("GREP") != std::string::npos);
+  CHECK(modeLine.find("(grep)") != std::string::npos);
+  CHECK(modeLine.find("No String") != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "in-place GREP: ^N/^P step between matches, wrapping at the ends") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   { std::ofstream(root / "two.json") << "{}\n"; }

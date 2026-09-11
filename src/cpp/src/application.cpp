@@ -1,6 +1,7 @@
 #include "application.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <deque>
 #include <filesystem>

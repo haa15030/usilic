@@ -7059,6 +7059,60 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      いずれも修正前は`^J`+数字が未定義キーとして無視されていたのが、
      修正後は毎回`(ls)`表示への切り替えに成功することを確認した。
 
+440. **`usilic <file>`(CLIから直接ファイルを開く、pagerMode_)で
+    `^S`/`^[i`のGREP/(grep)モードラインバッジが一切表示されなかった
+    不具合を修正**
+   - **ユーザー報告**: 直接のユーザー依頼「FILE/DIRでも`^O^S`/`^J^S`
+     同様`^S`/`^[i`をサポートして欲しい」――当初は`^S`/`^[i`自体が
+     FILE/DIRで未サポートという意味かと確認したが、実際にはDirectory
+     モード・(Directory一覧からEnterで開いた)通常のFileモードでは
+     既に正しく動作しており、「サポートされていない」ケースは
+     `usilic -c <file>`のようにCLIから直接ファイルを開いた場合
+     (`FileMode::pagerMode_`、`loadStream()`/`startPagerFileList()`
+     経由)だけと判明した。
+   - **原因**: `FileMode`の`setModeLineFieldsProvider()`は、
+     `pagerMode_`向けの専用の分岐(CLIページャー起動・SHELL引き渡し
+     PIPE向けの、より単純なモードライン)を持っており、そこは無条件に
+     `return fields;`していた――その下にある「通常にloadFile()された
+     ファイル」向けの分岐にだけ存在する`view_.grepInPlaceActive()`/
+     `grepNoMatchActive()`チェックに、`pagerMode_`の場合は決して到達
+     できなかった。`Application::activateGrepInPlace()`自身のハイライト
+     設定・マッチ数計算は`pagerMode_`かどうかを一切気にしないため、
+     実際のハイライト表示・マッチ間`^N`/`^P`移動は`pagerMode_`でも
+     常に正しく動いていたが、モードラインだけが常にプレーンな
+     ページャー表示のまま(GREPであることを示す手掛かりが一切無い)
+     になっていた。`^O^S`(FGREP)/`^J^S`(EGREP)は専用の一覧画面
+     (`ApplicationMode::Grep`)へ切り替わるためこの`FileMode`の
+     プロバイダ自体を経由せず、この欠落の影響を受けていなかった。
+   - **修正**: `pagerMode_`分岐の`return fields;`直前に、下の通常
+     分岐と同じ`grepInPlaceActive()`/`grepNoMatchActive()`の判定・
+     `"GREP"`/`"(grep)"`/`currentFile_`への差し替えを複製した。
+   - **検証**: `test_application.cpp`に新規doctest2件を追加
+     (`startPagerFileList()`起点の`^S`成功時・0件時それぞれで
+     `"GREP"`/`"(grep)"`バッジが表示されることを確認)、全通過。
+     実機PTYで`usilic -c <file>`→`^S`/`^[i`のマッチあり・0件
+     (`No String`)・ライブ編集(`^[i`)の3パターンいずれも
+     モードラインへ正しく反映されることを確認。あわせて、Directory
+     モードの同種のモードラインプロバイダには早期returnの分岐自体が
+     無く(Directoryには「pager起動」という概念が無いため)、この
+     欠落はFileMode固有と確認した――「FILE/DIRでも」という依頼文言
+     ではあったが、実際に直す必要があったのはFILE側だけだった。
+   - **副産物として発見した別件の既存バグ(今回は未修正、スコープ外)**:
+     `test_application.cpp`の`^S`/`^[i`まわりの回帰テストを広く
+     実行した際、無関係な既存テスト「LOCATE started from a File
+     that was ITSELF reached via a previous LOCATE result」が
+     失敗することを発見した――ただし修正前のコミット(`ae3e86e`)
+     でも同一のテストが同一の理由で既に失敗しており、今回の変更
+     による回帰ではないと確認済み。`Application::executeLocate()`の
+     「クエリ文字列が前回と同じなら`search()`を省略し既存の結果を
+     再表示する」という最適化(項目439で比較対象を修正したのと同じ
+     箇所)が、クエリ文字列自体は同じでも設定されている`locate`
+     コマンド自体が入れ替わっている(テストでは別のフェイクスクリプト
+     差し替え、実運用では`^Jl`でのDB更新後の再検索等が該当し得る)
+     ケースを考慮しておらず、古い結果を誤って再利用してしまう。
+     今回のFILE/DIR依頼とは無関係な独立の問題のため、この回では
+     修正せず記録のみに留めた。
+
 ## 10. HISTORY / COMMAND(^R)
 
 160. **2026-08-04(続き): `^X^F`(FILE)/`^X^D`(DIR)で開く一覧の`^R`

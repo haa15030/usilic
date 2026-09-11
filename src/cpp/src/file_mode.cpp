@@ -146,6 +146,29 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
       // 間のプレーンなギャップを新たに反転表示で埋めてしまうことに
       // なる。
       fields.fillTrailingToEdge = pagerReturnsToShell_;
+      // 2026-09-11追加、直接のユーザー報告("FILE/DIRでも^O^S/^J^S
+      // 同様^S/^[iをサポートして欲しい"): pagerMode_(CLIから直接
+      // `usilic <file>`/パイプされたstdinで開いたファイル、この関数
+      // 自身の宣言コメント参照)は、下の「通常にloadFile()された
+      // ファイル」の分岐にある同じgrepInPlaceActive()/
+      // grepNoMatchActive()チェックに一度も到達できず、無条件に
+      // ここでreturnしていたため、in-place GREP自体は実際には機能
+      // していた(ハイライト・マッチ数は正しく設定される)にも
+      // 関わらず、モードラインには決して反映されなかった――
+      // ^O^S(FGREP)/^J^S(EGREP)は専用の一覧画面(ApplicationMode::
+      // Grep)へ切り替わるため、この関数自体を経由せずこの欠落の
+      // 影響を受けなかった。DirectoryMode/この関数下方の分岐と同じ
+      // 判定をここにも複製する。
+      if (view_.grepInPlaceActive()) {
+        fields.name = "GREP";
+        fields.trailing2 = "(grep)";
+        fields.trailing3 = currentFile_;
+        fields.fillTrailingToEdge = true;
+      } else if (view_.grepNoMatchActive()) {
+        fields.name = "GREP";
+        fields.trailing2 = "(grep)";
+        fields.trailing3 = currentFile_;
+      }
       return fields;
     }
     if (currentFile_.empty()) return {};
