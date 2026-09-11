@@ -10606,8 +10606,30 @@ bool Application::executeGrep(const std::string &pattern) {
   // だけでなく、どんなgrepReturnMode_についても正しいビューを選ぶ。
   ContentView &source = viewForMode(grepReturnMode_);
   std::vector<std::string> sourceLines;
-  sourceLines.reserve(source.lines().size());
-  for (const auto &line : source.lines()) sourceLines.push_back(line.text);
+  // 2026-09-11追加、直接のユーザー報告("^X^F^J^S^Uusilic^M→検索結果は
+  // usilicが一件だけ"――62件あるはずのRecentFileの中に"usilic"を含む
+  // パスは何件もあるのに、なぜか1件しか見つからない): EGREP
+  // (GrepSyntax::Regex)は`startRegexPromptList()`が、grepReturnMode_
+  // (=ListBrowser)を設定した「直後」に、それ自身の候補パターン一覧
+  // (`RecentFgrepPattern`/`RecentEgrepPattern`)で`listBrowserView_`
+  // (=`viewForMode(ListBrowser)`)の中身を上書きしてしまう――そのため
+  // 実際にパターンを打ち込んでEnterする時点では、`source.lines()`は
+  // もう`RecentFile`/`RecentDirectory`の62件では「なく」、EGREP自身の
+  // 候補パターン一覧("Contents"/"Res"/.../"usilic"等)に置き換わって
+  // いた。たまたま検索パターン"usilic"自身がその候補パターン一覧の
+  // 中に文字通り1件存在していた(過去に検索したパターンとして記録
+  // 済み)ため、「1件だけヒット」という、いかにも本物の検索結果らしい
+  // 見た目の誤った結果を返していた。grepReturnListCategory_
+  // (項目443)は`startGrepPrompt()`が上書きされる「前」に退避済みなので、
+  // ListBrowserの場合はそれを使って`RecentFile`/`RecentDirectory`の
+  // 一覧を都度再構築する(`listBrowserView_`の「現在の」表示内容を
+  // 一切信用しない)ことで、この上書きの影響を受けない。
+  if (grepReturnMode_ == ApplicationMode::ListBrowser) {
+    sourceLines = sortedUniqueRecentEntries(grepReturnListCategory_);
+  } else {
+    sourceLines.reserve(source.lines().size());
+    for (const auto &line : source.lines()) sourceLines.push_back(line.text);
+  }
 
   if (!grepMode_.search(sourceLines, pattern, grepSyntax_)) {
     source.redraw();

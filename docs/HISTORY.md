@@ -16771,3 +16771,10 @@ CLAUDE.mdを選択→その場で`^X^F`：戻り値「...silic/CLAUDE.md」→`^
 原因2(`^G`を2回押しても戻らない、より深い不具合): EGREP結果確定後の`^G`は、legacy由来の「1階層ずつ候補一覧へ戻る」設計により、まずEGREP自身の候補一覧へ正しく戻ります(1回目の`^G`)。しかし「`^X^F`のRecentFile一覧を閲覧中にEGREPを起動する」という組み合わせ自体が項目442/443より前は不可能だったため、2回目の`^G`(EGREP自身の候補一覧を抜けて元のRecentFile一覧へ戻るべきもの)が一度も正しく動作したことが無く、`listBrowserMode_`の内容がEGREP自身の候補一覧のまま再構築されず、画面が変わらないため「無反応」に見えていました。`ensureShellActive()`/`returnFromShell()`が既に使っている`suspendedPromptHistoryContext_`(候補一覧セッションの一時停止・復元の仕組み)を再利用し、`RecentFile`/`RecentDirectory`一覧の内容そのものも正しく復元するよう修正しました。実装中、`returnFromGrep()`自身のLIFO再入場が`startPromptHistoryRecall()`を2回呼ぶことで、素朴な実装だと1回目の正しい退避を2回目が上書き・破壊してしまう副産物のバグも発見・修正しました。
 
 新規doctest1件を追加(Grep結果→^G→EGREP候補一覧→^G→復元されたRecentFile一覧、の全経路を検証)、実機PTYで`^G`3回でGrep結果→EGREP候補一覧→復元されたRecentFile一覧→Directoryへ正しく遷移することを確認、関連テスト計186件・1973アサーション全通過、docs/CHANGES.mdに項目444として記録、make install/make app/jキー回帰チェックも完了しました。
+
+<`usilic -c`で起動→`^X^F^J^S^Uusilic^M`→検索結果は`usilic`が一件だけ。
+が直ってない。
+
+>より根本的なバグでした。`^J^S`(EGREP)は`startRegexPromptList()`が`grepReturnMode_`を設定した「直後」に、それ自身の正規表現パターン候補一覧(過去に検索した正規表現の履歴)で`listBrowserView_`の中身を丸ごと上書きしてしまいます。`executeGrep()`は検索実行時に「現在表示されている内容」をその都度読んでいたため、実際にパターンを確定する時点では、もう`RecentFile`の実際の62件のパスでは「なく」EGREP自身の候補パターン一覧に置き換わっていました。たまたま"usilic"というパターン自体が過去の検索履歴(`RecentEgrepPattern`のring)に記録済みだったため、それ自体がリテラルに1件だけヒットし、いかにも本物の検索結果らしい見た目になっていました。
+
+修正: `grepReturnMode_==ListBrowser`の場合、「現在の表示内容」を信用せず、項目443で新設した`grepReturnListCategory_`を使って`RecentFile`/`RecentDirectory`の実際の一覧を都度再構築してから検索するようにしました。新規doctest1件(意図的に罠となる文字列を`RecentEgrepPattern`のringへ仕込み、修正前ならその罠自体がヒットしてしまうことを確認)を追加、実機PTYで元のシナリオを再現し、修正前は1件だけだった結果が修正後は"usilic"を含む実際のパス31件を正しく返すことを確認しました。関連テスト計187件・1988アサーション全通過、docs/CHANGES.mdに項目445として記録、make install/make app/jキー回帰チェックも完了しました。

@@ -3936,6 +3936,58 @@ TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile) full back-out chain: 
   CHECK(std::find(items.begin(), items.end(), filePath) != items.end());
 }
 
+// 2026-09-11追加、直接のユーザー報告("^X^F^J^S^Uusilic^M→検索結果は
+// usilicが一件だけ"): EGREPは`startRegexPromptList()`が
+// `grepReturnMode_`(=ListBrowser)を設定した「直後」に、それ自身の
+// 候補パターン一覧で`listBrowserView_`の中身を上書きしてしまうため、
+// 実際にパターンを確定する時点では`viewForMode(grepReturnMode_).
+// lines()`はもう`RecentFile`の実際のパス群では「なく」EGREP自身の
+// 候補パターン一覧に置き換わっていた――たまたま打ち込んだパターン
+// 文字列自身がその候補一覧に含まれていると、いかにも本物の検索結果
+// らしい「1件だけヒット」を返してしまい、発覚しにくいバグだった。
+TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile): EGREP actually searches the RecentFile paths "
+                           "themselves, not EGREP's own (unrelated) regex-pattern candidate list that "
+                           "happens to be displayed at the moment the search executes") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string filePath = app.fileMode().currentFile();
+
+  // Seed the EGREP pattern-history ring with a pattern equal to a
+  // SUBSTRING of the real file path -- reproducing the exact trap: if
+  // the search were run against EGREP's own candidate list instead of
+  // the RecentFile paths, this literal ring entry would itself be the
+  // "1 match" (a false positive that looks like a real result).
+  std::string trap = filePath.substr(filePath.size() - 7);  // last few chars of the real path
+  history.pushRecent(RingCategory::RecentEgrepPattern, trap);
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -- ^J^S = EGREP, opens its own candidate list (now
+                                               // containing `trap`, replacing listBrowserView_'s RecentFile
+                                               // content)
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  // ^U (kill-to-start) first, matching the real user repro exactly --
+  // the candidate list pre-seeds the editable field with `trap` itself
+  // (the ring's own top entry), so typing `trap` again without
+  // clearing first would append onto it (a separate, unrelated
+  // append-on-seed quirk of this shared candidate-list editor), never
+  // matching anything.
+  REQUIRE(app.feedByte(0x15, std::nullopt));
+  feedText(trap);
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  // If this searched EGREP's own candidate list, the single match
+  // would be the literal ring entry `trap` itself. It must instead be
+  // the real file's full path.
+  REQUIRE(app.grepMode().matches().size() == 1);
+  CHECK(app.grepMode().matches()[0].text == filePath);
+}
+
 TEST_CASE_FIXTURE(Fixture, "Space (ListBrowser, a non-path category like ProgramCommand): plain PageDown") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartProgram));

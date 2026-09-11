@@ -7817,6 +7817,54 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ハングのため別途、`suspendedPromptHistoryContext_`関連テストのみ
      個別に4件・49アサーション全通過を確認)。
 
+445. **`^X^F`起点のEGREPが、`RecentFile`の実際のパス群ではなく、
+    EGREP自身の(無関係な)正規表現パターン候補一覧を検索してしまう
+    バグを修正**
+   - **ユーザー報告**: 項目444の修正報告に対し、直接のユーザー報告
+     「`usilic -c`で起動→`^X^F^J^S^Uusilic^M`→検索結果は`usilic`が
+     一件だけ。が直ってない。」――項目444では戻り値欄・`^G`2回の
+     ナビゲーションは修正したが、この「1件だけ」という検索結果自体が
+     そもそもおかしい(`RecentFile`一覧62件中、パスに"usilic"を含む
+     ものは"/Users/haa15030/.usilic/usilic"や"/Users/.../usilicrc"等
+     何十件もあるはず)という、より根本的な指摘だった。
+   - **原因**: `^J^S`(EGREP)は`startRegexPromptList()`が、
+     `grepReturnMode_`(=`ApplicationMode::ListBrowser`)を設定した
+     「直後」に、それ自身の正規表現パターン候補一覧
+     (`RecentEgrepPattern`、過去に検索した正規表現の履歴)で
+     `listBrowserView_`(=`viewForMode(ListBrowser)`)の中身を丸ごと
+     上書きしてしまう。`executeGrep()`は`viewForMode(grepReturnMode_)
+     .lines()`という「現在表示されている内容」をその都度読んでいた
+     ため、実際にパターンを確定する時点では、この`source.lines()`は
+     もう`RecentFile`の実際の62件のパスでは「なく」、EGREP自身の
+     候補パターン一覧(過去に検索した正規表現文字列十数件)に置き
+     換わっていた。たまたま打ち込んだパターン文字列自身がその候補
+     パターン一覧に(過去に検索した文字列として)含まれていると、
+     いかにも本物の検索結果らしい「1件だけヒット」という結果を返す
+     ため、発覚しにくいバグだった――今回のケースでは"usilic"という
+     パターン自体が、以前の検索で使われ`RecentEgrepPattern`のringに
+     記録済みだったため、リテラルにヒットしてしまっていた。
+   - **修正**: `grepReturnMode_ == ApplicationMode::ListBrowser`の
+     場合、`viewForMode(grepReturnMode_).lines()`という「現在の表示
+     内容」を一切信用せず、代わりに項目443で新設した
+     `grepReturnListCategory_`(`startGrepPrompt()`が上書きされる前に
+     退避した、本来の`RecentFile`/`RecentDirectory`のカテゴリ)を使い、
+     `sortedUniqueRecentEntries(grepReturnListCategory_)`で毎回
+     `RecentFile`/`RecentDirectory`の実際の一覧を都度再構築して検索
+     対象にするよう変更した――`returnFromListBrowser()`側の一覧復元
+     (項目444)と同じ考え方([カテゴリさえ分かれば内容は決定論的に
+     再構築できる]という設計方針)を検索処理そのものにも適用した形。
+   - **検証**: `test_application.cpp`に新規doctest1件を追加
+     (`RecentEgrepPattern`のringに実ファイルパスの末尾と同じ文字列を
+     意図的に仕込んでおき、EGREP自身の候補一覧を検索してしまうと
+     その仕込んだ文字列自体が「1件だけ」ヒットしてしまう罠を再現、
+     修正後は代わりに実際のファイルパスがヒットすることを確認)、
+     全通過。実機PTYで元のユーザー報告シナリオ(`^X^F^J^S^Uusilic^M`)
+     を再現し、修正前は1件だけだった検索結果が、修正後は"usilic"を
+     含む実際のパス31件(`.usilic/`配下の各種ファイル、`git/usilic/`
+     配下の各種ファイル等)を正しく返すことを確認。関連するListBrowser/
+     RecentFile/RecentDirectory/History/GrepPattern/CutPattern/
+     ManName/Fgrep/Egrep系テスト計187件・1988アサーション全通過。
+
 
 ## 11. CP / MV / RM / ARC
 
