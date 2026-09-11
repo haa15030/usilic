@@ -16778,3 +16778,10 @@ CLAUDE.mdを選択→その場で`^X^F`：戻り値「...silic/CLAUDE.md」→`^
 >より根本的なバグでした。`^J^S`(EGREP)は`startRegexPromptList()`が`grepReturnMode_`を設定した「直後」に、それ自身の正規表現パターン候補一覧(過去に検索した正規表現の履歴)で`listBrowserView_`の中身を丸ごと上書きしてしまいます。`executeGrep()`は検索実行時に「現在表示されている内容」をその都度読んでいたため、実際にパターンを確定する時点では、もう`RecentFile`の実際の62件のパスでは「なく」EGREP自身の候補パターン一覧に置き換わっていました。たまたま"usilic"というパターン自体が過去の検索履歴(`RecentEgrepPattern`のring)に記録済みだったため、それ自体がリテラルに1件だけヒットし、いかにも本物の検索結果らしい見た目になっていました。
 
 修正: `grepReturnMode_==ListBrowser`の場合、「現在の表示内容」を信用せず、項目443で新設した`grepReturnListCategory_`を使って`RecentFile`/`RecentDirectory`の実際の一覧を都度再構築してから検索するようにしました。新規doctest1件(意図的に罠となる文字列を`RecentEgrepPattern`のringへ仕込み、修正前ならその罠自体がヒットしてしまうことを確認)を追加、実機PTYで元のシナリオを再現し、修正前は1件だけだった結果が修正後は"usilic"を含む実際のパス31件を正しく返すことを確認しました。関連テスト計187件・1988アサーション全通過、docs/CHANGES.mdに項目445として記録、make install/make app/jキー回帰チェックも完了しました。
+
+<確認OK。
+次は同じ手順の検索結果画面でマッチ文字列の`usilic`をマゼンタハイライトにして欲しい。
+
+>FGREP/EGREP自身の従来からの専用一覧画面(in-place GREPとは別)は、マッチした部分文字列のバイト範囲(`matchSpans`)自体は以前から正しく計算されていたのに、それをLine自身の属性へ一度も反映していなかった単純な見落としでした。`GrepMode::search()`が結果一覧を構築する箇所で、各マッチの`matchSpans`からマゼンタハイライトの属性を組み立てるよう修正しました。
+
+新規doctest1件を追加、実機PTYで`^X^F^J^S^Uusilic^M`(前回と同じ手順)を再現し、結果一覧の各行で"usilic"部分文字列が正しくマゼンタ反転すること(カーソル行含む)、通常の`^O^S`(FGREP)でも同様に機能することを確認しました。関連テスト計125件・1501アサーション全通過、docs/CHANGES.mdに項目446として記録、make install/make app/jキー回帰チェックも完了しました。

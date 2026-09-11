@@ -177,9 +177,33 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
                            {AttributeRun{underlineFrom, static_cast<int>(text.size()), Display::Attribute::Underline}}},
         /*marked=*/false);
   }
+  // 2026-09-11追加、直接のユーザー依頼("次は同じ手順の検索結果画面で
+  // マッチ文字列のusilicをマゼンタハイライトにして欲しい"): 従来
+  // ずっと`{}`(属性無し)のままだった――in-place GREP(項目437以降、
+  // Directory/File等の元画面にマッチをその場でハイライトする方式)
+  // 導入時にContentView::setGrepMatchHighlight()という同種の仕組みが
+  // 新設されたが、こちら(専用の一覧画面、FGREP/EGREP自身の従来からの
+  // 表示形式)には一度も適用されていなかった。ロジック自体は
+  // setGrepMatchHighlight()と全く同じ(GrepMatch::matchSpans自身の
+  // コメント参照: 取得に失敗していれば行全体をハイライトするフォール
+  // バック)だが、あちらは「既存の一覧に後からハイライトを重ねる/
+  // 外す」ための、前回のスナップショットを保持する仕組みであり、
+  // ここは検索のたびに`viewLines`をゼロから作り直すだけなので、
+  // その場で直接`AttributeRun`を組み立てる方が単純――
+  // sourceLineIndexによる後からの逆引きも不要(matches_の各要素が
+  // viewLinesの対応する要素とそのまま1対1)。
   std::vector<ContentView::Line> viewLines;
   viewLines.reserve(matches_.size());
-  for (const auto &m : matches_) viewLines.push_back({m.text, std::nullopt, std::nullopt, {}});
+  for (const auto &m : matches_) {
+    std::vector<AttributeRun> attrs;
+    if (m.matchSpans.empty()) {
+      attrs.push_back(AttributeRun{0, static_cast<int>(m.text.size()), Display::Attribute::Highlight});
+    } else {
+      for (const auto &span : m.matchSpans)
+        attrs.push_back(AttributeRun{span.first, span.second, Display::Attribute::Highlight});
+    }
+    viewLines.push_back({m.text, std::nullopt, std::nullopt, std::move(attrs)});
+  }
   view_.setLines(std::move(viewLines));
   view_.setCursorIndex(0);
   view_.redraw();

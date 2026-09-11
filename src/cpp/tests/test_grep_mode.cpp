@@ -130,6 +130,30 @@ TEST_CASE_FIXTURE(Fixture, "search: matchSpans handle multiple matches on the SA
   CHECK(mode.matches()[0].matchSpans[1] == std::make_pair(8, 11));
 }
 
+// 2026-09-11追加、直接のユーザー依頼("次は同じ手順の検索結果画面で
+// マッチ文字列のusilicをマゼンタハイライトにして欲しい"): 専用の
+// 一覧画面(FGREP/EGREP自身の従来からの表示形式)は、matchSpans自体は
+// 前から正しく計算されていたにも関わらず、view_へ渡すLineの
+// attributesを一度も設定していなかった(in-place GREP側の
+// ContentView::setGrepMatchHighlight()とは別の、独立した見落とし)。
+TEST_CASE_FIXTURE(Fixture, "search: the displayed Line's own attributes carry a Highlight AttributeRun for "
+                           "each matchSpan, matching ContentView::setGrepMatchHighlight()'s convention (not "
+                           "just matches()[].matchSpans itself, which callers used to have to apply manually)") {
+  std::vector<std::string> lines = {"alpha", "marker one", "beta", "cat and cat and dog"};
+  REQUIRE(mode.search(lines, "marker", GrepSyntax::Basic));
+  REQUIRE(view.lines().size() == 1);
+  REQUIRE(view.lines()[0].attributes.size() == 1);
+  CHECK(view.lines()[0].attributes[0].start == 0);
+  CHECK(view.lines()[0].attributes[0].end == 6);
+  CHECK(view.lines()[0].attributes[0].attribute == fm::Display::Attribute::Highlight);
+
+  REQUIRE(mode.search(lines, "cat", GrepSyntax::Basic));
+  REQUIRE(view.lines().size() == 1);
+  REQUIRE(view.lines()[0].attributes.size() == 2);  // two "cat" occurrences on the same line
+  CHECK(view.lines()[0].attributes[0].start == 0);
+  CHECK(view.lines()[0].attributes[1].start == 8);
+}
+
 TEST_CASE_FIXTURE(Fixture, "search: a second search replaces the previous results") {
   std::vector<std::string> lines = {"alpha", "beta", "gamma"};
   REQUIRE(mode.search(lines, "alpha", GrepSyntax::Fixed));

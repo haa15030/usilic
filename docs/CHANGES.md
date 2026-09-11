@@ -2840,6 +2840,37 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      再現しなくなった)。単体テストは事前に`make test`で1107/1107件・
      21942アサーション全通過を確認済み(このPTY検証の前に実施)。
 
+446. **FGREP/EGREP自身の従来からの専用一覧画面で、マッチした部分文字列
+    がマゼンタハイライトされていなかった不具合を修正**
+   - **経緯**: 項目445の修正確認後、直接のユーザー依頼「次は同じ手順
+     の検索結果画面でマッチ文字列の`usilic`をマゼンタハイライトにして
+     欲しい」――項目437以降のin-place GREP(Directory/File等の元画面に
+     その場でマッチをハイライトする方式)には
+     `ContentView::setGrepMatchHighlight()`という専用の仕組みが
+     あったが、FGREP(`^O^S`)/EGREP(`^J^S`)自身の従来からの専用一覧
+     画面(`ApplicationMode::Grep`、`grepView_`)は、`GrepMatch::
+     matchSpans`(マッチした部分文字列のバイト範囲、これ自体は
+     以前から正しく計算されていた)を一度もLine自身の`attributes`へ
+     反映していなかった――単純な見落とし。
+   - **修正**: `GrepMode::search()`が`viewLines`を構築する箇所で、
+     各マッチの`matchSpans`から`Display::Attribute::Highlight`の
+     `AttributeRun`を組み立てるようにした
+     (`ContentView::setGrepMatchHighlight()`と全く同じ「`matchSpans`
+     が空なら行全体をハイライトするフォールバック」の慣習に合わせて
+     いる)。こちらは検索のたびに`viewLines`をゼロから作り直すだけ
+     なので、`setGrepMatchHighlight()`自身が持つ「前回のスナップ
+     ショットに重ねる/外す」ための状態管理は不要で、その場で直接
+     `AttributeRun`を組み立てるだけで足りた。
+   - **検証**: `test_grep_mode.cpp`に新規doctest1件を追加(単一マッチ・
+     同一行内の複数マッチの両方で、`view.lines()[].attributes`に
+     正しいバイト範囲の`Highlight`ランが設定されることを確認)、全
+     通過。実機PTYで`^X^F^J^S^Uusilic^M`(項目445と同じ手順)を再現し、
+     結果一覧の各行で"usilic"部分文字列が正しくマゼンタ反転
+     (fg=b0e2ff/bg=cd00cd)すること、カーソル(黒反転)行でも同様に
+     機能すること、通常の`^O^S`(FGREP、`^X^F`を経由しない単純な
+     ケース)でも同じくマッチ部分文字列がハイライトされることを確認。
+     関連するGrep系テスト計125件・1501アサーション全通過。
+
 ## 4. CUT
 
 434. **タブコードをGREP/CUTで検索可能にする(PipeBuffer::wrapLine()が
