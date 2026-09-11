@@ -1201,7 +1201,20 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
         if (kind == PromptKind::GrepPattern) destinationMode = grepReturnMode_;
         else if (kind == PromptKind::CutPattern) destinationMode = cutReturnMode_;
         else destinationMode = currentMode_;
-        std::string destinationName = previousModeName(destinationMode);
+        // 2026-09-11追加、直接のユーザー報告(drawPromptLabel()自身の
+        // grepReturnListCategory_のコメント参照、"^J^S...戻り値空白"):
+        // EGREP(GrepSyntax::Regex)は`startRegexPromptList()`が
+        // `listBrowserCategory_`をEGREP自身の候補一覧向けに上書きして
+        // しまうため、previousModeName(ListBrowser)の空文字列フォール
+        // バックがdrawPromptLabel()側と全く同じ形でここにも現れていた
+        // ――FGREPの方は`activatePrompt()`だけを呼ぶため
+        // `drawPromptLabel()`側の同種の修正だけで足りるが、EGREPは
+        // こちらの`listBrowserView_`自身のModeLineFieldsProviderも
+        // 経由するため、同じ`grepReturnListCategory_`を使う修正が
+        // 別途必要だった。
+        std::string destinationName = (destinationMode == ApplicationMode::ListBrowser && kind == PromptKind::GrepPattern)
+                                           ? (grepReturnListCategory_ == RingCategory::RecentFile ? "FILE" : "DIR")
+                                           : previousModeName(destinationMode);
         std::string trailing2 = destinationName.empty() ? "" : truncatedTrailingPath(destinationName);
         return {promptLabelText(kind), trailing, /*fillTrailingToEdge=*/!trailing2.empty(),
                 /*rightWatermark=*/"", trailing2, /*trailingPlain=*/true, /*trailing2RightJustified=*/true};
@@ -2586,8 +2599,24 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
       // ない)だった以上、RecentFile/RecentDirectoryだけへの追加は
       // 純粋な機能追加であり退行の余地が無い。
       case kControlS:
-        if (promptHistoryContext_ && (promptHistoryContext_->kind == PromptKind::RecentFile ||
-                                       promptHistoryContext_->kind == PromptKind::RecentDirectory)) {
+        // 2026-09-11修正、直接のユーザー報告("usilic -c（引数無し）で
+        // 起動→^X^D→^O^S：モード名FGREPのはずなのにGREP..."): この
+        // switch自体は下のescPending_/leaderOPending_等のリーダー
+        // ペンディングチェック「より前」に位置するため、`^O^S`
+        // (FGREP)/`^J^S`(EGREP)の「2バイト目」の^Sが、まだleaderOPending_/
+        // leaderJPending_が立っている状態でここに先に捕まってしまい、
+        // 本来`dispatchLeaderByte()`が解決すべき`^O^S`→Command::StartFgrep
+        // /`^J^S`→Command::StartEgrepへ一度も渡らず、代わりに単独の
+        // `^S`(Command::StartGrep、Basic)として誤って解釈されていた
+        // (モードラインに"FGREP"ではなく"GREP"が出る、という形で発覚)。
+        // リーダーが1つでも保留中の間は、このin-place GREP起動自体を
+        // 完全に譲る(下の共通のリーダーチェックへ普通に流れ落ちて
+        // dispatchLeaderByte()に解決させる)必要がある。
+        bool anyLeaderPending = escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ ||
+                                leaderOPending_ || gotoLineGPending_ || gotoLineDigitsPending_;
+        if (!anyLeaderPending && promptHistoryContext_ &&
+            (promptHistoryContext_->kind == PromptKind::RecentFile ||
+             promptHistoryContext_->kind == PromptKind::RecentDirectory)) {
           isNav = true;
           // ^N/^P/Enter/^G/^L/^R(すぐ上のcase群)は候補一覧を「引き続き
           // 閲覧する」操作であり、promptHistoryContext_(kind/returnMode
@@ -8540,6 +8569,10 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
   if (currentMode_ == ApplicationMode::Grep) return false;
   grepSyntax_ = syntax;
   grepReturnMode_ = currentMode_;
+  // grepReturnListCategory_自身の宣言コメント参照: grepReturnMode_が
+  // ListBrowserになる場合だけ、上書きされる前のlistBrowserCategory_
+  // (RecentFile/RecentDirectoryのどちらを閲覧中か)をここで退避する。
+  if (grepReturnMode_ == ApplicationMode::ListBrowser) grepReturnListCategory_ = listBrowserCategory_;
   if (syntax == GrepSyntax::Regex) return startRegexPromptList(PromptKind::GrepPattern);
   activatePrompt(PromptKind::GrepPattern, "");
   return true;
@@ -10311,9 +10344,30 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // ない(それ自身のコメント参照)ので、代わりにこれはcutContentReturnLabel()
   // ――grepView_自身の投入後のモードラインが同一のシナリオについて
   // 既に使っているのと「同じ」ヘルパー――を再利用する。
-  std::string destinationDirectory = showsBadge                                  ? promptLabelText(kind)
-                                      : destinationMode == ApplicationMode::CutContent ? cutContentReturnLabel()
-                                                                                        : previousModeName(destinationMode);
+  // 2026-09-11追加、直接のユーザー報告("usilic -c（引数無し）で起動→
+  // ^X^D→^O^S：モード名FGREPのはずなのにGREPかつハイライトの戻り値
+  // 空白"、続けて"あとは戻り値だけ。現状空白なのでFILE/DIRでは
+  // それぞれFILE/DIRとしてくれればいい"): ^O^S(FGREP)/^J^S(EGREP)を
+  // ^X^F/^X^D自身の候補一覧を「まだ閲覧中」(何もタイプする前)に
+  // 起動すると、grepReturnMode_(destinationModeの元)は
+  // ApplicationMode::ListBrowserになる――previousModeName()には
+  // ListBrowserのケースが無い(すぐ上のRecentFile/RecentDirectory
+  // 自身のコメント参照、同じ理由で以前blank化していた)ため、
+  // destinationDirectoryが空のままになっていた。grepReturnListCategory_
+  // (startGrepPrompt()自身のコメント参照――promptHistoryContext_を
+  // 使わないのは、EGREPが`startRegexPromptList()`経由でそれを自分の
+  // 候補一覧向けに上書きしてしまい、FGREPとEGREPとで挙動が非対称に
+  // なっていたため)を見てユーザー依頼通り単に"FILE"/"DIR"を表示する。
+  std::string destinationDirectory;
+  if (destinationMode == ApplicationMode::ListBrowser && kind == PromptKind::GrepPattern) {
+    destinationDirectory = grepReturnListCategory_ == RingCategory::RecentFile ? "FILE" : "DIR";
+  } else if (showsBadge) {
+    destinationDirectory = promptLabelText(kind);
+  } else if (destinationMode == ApplicationMode::CutContent) {
+    destinationDirectory = cutContentReturnLabel();
+  } else {
+    destinationDirectory = previousModeName(destinationMode);
+  }
   if (!destinationDirectory.empty()) {
     // CutContent(2026-08-24、上と同じ修正): truncatedTrailingPath()
     // を通していない――その16文字の「末尾」キャップは、末尾部分が

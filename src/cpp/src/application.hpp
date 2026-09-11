@@ -2437,6 +2437,23 @@ class Application {
 
   ApplicationMode currentMode_ = ApplicationMode::Directory;
   ApplicationMode grepReturnMode_ = ApplicationMode::Directory;
+  // 2026-09-11追加、直接のユーザー報告("usilic -c（引数無し）で起動→
+  // ^X^D→^O^S：モード名FGREPのはずなのにGREPかつハイライトの戻り値
+  // 空白"、"あとは戻り値だけ。現状空白なのでFILE/DIRではそれぞれ
+  // FILE/DIRとしてくれればいい"): grepReturnMode_が
+  // ApplicationMode::ListBrowser(^X^F/^X^D自身の候補一覧を「まだ
+  // 閲覧中」に^O^S/^J^Sを起動した場合)になる時、previousModeName()に
+  // ListBrowserのケースが無いため戻り値欄が空白になっていた。EGREP
+  // (GrepSyntax::Regex)は`startRegexPromptList()`→
+  // `startPromptHistoryRecall()`が`promptHistoryContext_`/
+  // `listBrowserCategory_`をEGREP自身の候補一覧向けに上書きしてしまう
+  // ため、後から「元々RecentFile/RecentDirectoryのどちらを閲覧して
+  // いたか」を復元できない(FGREPは`activatePrompt()`だけを呼ぶため
+  // 上書きされず、たまたま`promptHistoryContext_`から復元できていた
+  // ――FGREP/EGREPで挙動が非対称になっていた根本原因)。`startGrepPrompt()`
+  // が`grepReturnMode_`を設定する「まさにその時点」(上書きされる前)で
+  // ここへ退避しておく。
+  RingCategory grepReturnListCategory_ = RingCategory::RecentDirectory;
   // in-place GREPセッション(activateGrepInPlace()/deactivateGrepInPlace()
   // /jumpToGrepInPlaceMatch()自身の宣言コメント参照、2026-09-09追加、
   // .steering/20260909-grep-inline-highlight/design.md)。

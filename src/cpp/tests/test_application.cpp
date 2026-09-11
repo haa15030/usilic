@@ -3838,6 +3838,63 @@ TEST_CASE_FIXTURE(Fixture, "^S (ListBrowser, RecentFile): triggers in-place GREP
   CHECK(modeLine.find("(grep)") != std::string::npos);
 }
 
+// 2026-09-11追加、直接のユーザー報告("usilic -c（引数無し）で起動→
+// ^X^D→^O^S：モード名FGREPのはずなのにGREPかつハイライトの戻り値
+// 空白"): ^X^F/^X^D自身の候補一覧を閲覧中に^O^S(FGREP)/^J^S(EGREP)を
+// 起動すると、その2バイト目の^Sが、上のテストで新設したin-place GREP
+// 起動用のホワイトリストに、まだleaderOPending_/leaderJPending_が
+// 立っている段階で先に捕まってしまい、本来のCommand::StartFgrep/
+// StartEgrepへ一度も渡らないまま単独の^S(Command::StartGrep)として
+// 誤って解釈されていた(モードラインに"FGREP"ではなく"GREP"が出る、
+// という形で発覚)。
+TEST_CASE_FIXTURE(Fixture, "^O^S (ListBrowser, RecentDirectory): the 2nd byte of the leader sequence still "
+                           "resolves to FGREP, not the new in-place-GREP ^S shortcut meant for a bare ^S") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O (leader)
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -- completes ^O^S = FGREP
+
+  const std::string &row = display.rowText(display.rows() - 1);
+  CHECK(row.find("FGREP") == 0);  // name field starts with FGREP, not plain GREP
+}
+
+// 同じ実機報告の続き("あとは戻り値だけ。現状空白なのでFILE/DIRでは
+// それぞれFILE/DIRとしてくれればいい"): ^O^S(FGREP)/^J^S(EGREP)を
+// ^X^D/^X^F自身の候補一覧を「まだ閲覧中」に起動すると、grepReturnMode_
+// がApplicationMode::ListBrowserになり、previousModeName()に
+// ListBrowserのケースが無いため戻り値欄が空白になっていた。
+TEST_CASE_FIXTURE(Fixture, "^O^S (ListBrowser, RecentDirectory): the return-value field shows \"DIR\" instead "
+                           "of being blank when FGREP is invoked while still browsing the candidate list") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));
+
+  const std::string &row = display.rowText(display.rows() - 1);
+  CHECK(row.find("DIR") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile): the return-value field shows \"FILE\" instead of "
+                           "being blank when EGREP is invoked while still browsing the candidate list") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J (leader)
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -- completes ^J^S = EGREP (opens its own candidate list)
+
+  const std::string &row = display.rowText(display.rows() - 1);
+  CHECK(row.find("EGREP") == 0);
+  CHECK(row.find("FILE") != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "Space (ListBrowser, a non-path category like ProgramCommand): plain PageDown") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartProgram));

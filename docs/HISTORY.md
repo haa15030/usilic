@@ -16738,3 +16738,24 @@ CLAUDE.mdを選択→その場で`^X^F`：戻り値「...silic/CLAUDE.md」→`^
 `^S`自体は`feedRegexListByte()`の「ナビゲーション」ホワイトリストに`RecentFile`/`RecentDirectory`限定で追加し、`Command::StartGrep`へ流すようにしました。検証中、`promptHistoryContext_`が候補一覧の他のナビゲーション操作のため意図的にクリアされない設計だったことが原因で、`^S`後にマッチ件数は正しいのにモードラインが古い「まだ閲覧中」の表示("FILE 1/5 ..."、(grep)バッジ無し)のままになる副産物のバグも発見・修正しました(`^S`のケースでのみ明示的にクリア)。
 
 実機PTYで実際の`~/.usilic/history`(60件超)に対し`^S`/`^[i`いずれでも正しいマッチ数・省略された`...`自体のマゼンタ反転・`^N`でのマッチ間巡回を確認、新規doctest2件を追加、関連テスト計229件・2342アサーション全通過、docs/CHANGES.mdに項目442として記録、make install/make app/jキー回帰チェックも完了しました。
+
+<]あとは戻り値だけ。現状空白なのでFILE/DIRではそれぞれFILE/DIRとしてくれればいい。
+次の要望はFGREP/EGREPで検索結果一覧カレントハイライト行内マッチ文字列のマゼンタハイライト化だが、FILE/DIRでは現状すでに次のバグがある。
+①FILE/DIRでは`^O^S`が`^S`→`^G`→無反応→`^G`→FILE/DIR→再度`^O^S`：戻り値空白→`^G`→FILE/DIR
+②同じく`^J^S`→`^S`→`^G`→無反応→`^G`→FILE/DIR→再度`^J^S`：戻り値空白→`^G`→プロンプトの非ハイライト`Contents`がハイライト`Contents`→`^G`→FILE/DIR
+
+>何度かPTYで再現を試みましたが(`^O^S`→`^S`→`^G`→`^G`→再度`^O^S`)、いずれも正常に動作し(戻り値は空白にならず、ディレクトリ/ファイルパスが表示される)、ご報告の「無反応」「戻り値空白」を再現できませんでした。もう少し正確な手順を教えていただけますか。
+
+<FILE/DIRから実行してみた？
+
+>(FILE経由でも再現を試みたが、Directory→Enter→FILE→^O^S→^S→^G→^Gという手順でもやはり再現できず、精確な手順を再度質問した)
+
+<usilic -c（引数無し）で起動→`^X^D`→`^O^S`：モード名`FGREP`のはずなのに`GREP`かつハイライトの戻り値空白→`^G`→無反応（ビープ音も無し）→`^G`→DIR：非ハイライトの戻り値空白→（ls）
+
+>`^X^D`(RecentDirectory候補一覧)を「経由してから」`^O^S`を押すという手順で、ようやく正確に再現できました。原因は2つの独立したバグでした。
+
+①モード名が`GREP`になる件: 項目442で新設した`^S`の「in-place GREP起動」ケースが、`feedRegexListByte()`内で既存の`leaderOPending_`/`leaderJPending_`(リーダーペンディング)チェックより「前」に位置していたため、`^O^S`/`^J^S`という2バイトのリーダーシーケンスの「2バイト目」の`^S`がまだリーダー保留中の段階で先に捕まってしまい、`dispatchLeaderByte()`が解決すべき`Command::StartFgrep`/`StartEgrep`へ一度も渡らず、単独の`^S`として誤って解釈されていました。新設ケースに「いずれのリーダーも保留中でない」ガードを追加して修正しました。
+
+②戻り値欄が空白になる件: `^O^S`/`^J^S`を`^X^F`/`^X^D`の候補一覧を「まだ閲覧中」に起動すると、`grepReturnMode_`が`ApplicationMode::ListBrowser`になり、`previousModeName()`にはListBrowserのケースが無いため戻り値欄が空白になっていました(項目441で記録した既存の別バグと同型)。EGREPは`startRegexPromptList()`が内部状態をEGREP自身の候補一覧向けに上書きしてしまうため、FGREPの修正だけでは足りず、新設の`grepReturnListCategory_`(上書きされる前の`listBrowserCategory_`を退避)を使って、FGREP/EGREPどちらの経路でも統一的に`"FILE"`/`"DIR"`を表示するよう修正しました。
+
+新規doctest3件を追加、実機PTYで`^X^D`→`^O^S`・`^X^F`→`^J^S`の両方を再現して修正を確認、関連テスト計185件・1956アサーション全通過、docs/CHANGES.mdに項目443として記録、make install/make app/jキー回帰チェックも完了しました。

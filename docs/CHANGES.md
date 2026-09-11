@@ -7699,6 +7699,63 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      GrepPattern/CutPattern/ManName/content_view/ellipsis/grep系
      テスト計229件・2342アサーション全通過。
 
+443. **項目442の副産物: `^X^F`/`^X^D`を「閲覧中」に`^O^S`(FGREP)/
+    `^J^S`(EGREP)を起動すると、モード名が`GREP`に誤解決される・
+    戻り値欄が空白になる、という2つの回帰/既存バグを修正**
+   - **経緯**: 項目442のコミット報告に対し、直接のユーザー報告
+     「usilic -c（引数無し）で起動→`^X^D`→`^O^S`：モード名`FGREP`の
+     はずなのに`GREP`かつハイライトの戻り値空白」を受けた。当初は
+     PTYで何度か再現を試みたが、`^X^F`/`^X^D`を経由せず直接Directory/
+     Fileから`^O^S`を試しており(ユーザー自身の指摘「FILE/DIRから
+     実行してみた？」で気付いた)、`^X^D`→`^O^S`という正確な経路を
+     再現して初めて発覚した。
+   - **原因1(項目442自身が導入した回帰)**: `feedRegexListByte()`に
+     追加した新設の`^S`ケース(項目442、`RecentFile`/`RecentDirectory`
+     限定でin-place GREPを起動)が、下にある既存の
+     `escPending_`/`leaderOPending_`/`leaderJPending_`等の「リーダー
+     ペンディング」チェックより「前」に位置していたため、`^O^S`
+     (FGREP)/`^J^S`(EGREP)という2バイトのリーダーシーケンスの
+     「2バイト目」の`^S`が、まだ`leaderOPending_`/`leaderJPending_`が
+     立っている段階でこの新設ケースに先に捕まってしまい、本来
+     `dispatchLeaderByte()`が解決すべき`Command::StartFgrep`/
+     `StartEgrep`へ一度も渡らないまま、単独の`^S`
+     (`Command::StartGrep`、Basic)として誤って解釈されていた。
+     修正: 新設の`^S`ケースに、いずれのリーダーも保留中でないことの
+     ガードを追加(保留中ならこの新機能自体を完全に譲り、既存の
+     リーダーチェックへ普通に流れ落とす)。
+   - **原因2(項目441で既に記録していたのと同型の、既存の別バグ)**:
+     `^O^S`/`^J^S`を`^X^F`/`^X^D`自身の候補一覧を「まだ閲覧中」
+     (何もタイプする前)に起動すると、`grepReturnMode_`(FGREP用の
+     `drawPromptLabel()`側)・EGREP候補一覧自身の`listBrowserView_`
+     の`ModeLineFieldsProvider`内で複製されているもう1つの同種の
+     destinationMode計算、の両方が`ApplicationMode::ListBrowser`に
+     なる――`previousModeName()`には`ListBrowser`のケースが無い
+     (項目441自身のコメント参照、同じ理由で以前空白化していた)ため、
+     戻り値欄が空白のままになる。EGREPは`startRegexPromptList()`が
+     `promptHistoryContext_`/`listBrowserCategory_`をEGREP自身の
+     候補一覧向けに上書きしてしまうため、後から「元々RecentFile/
+     RecentDirectoryのどちらを閲覧していたか」を復元できない(FGREPは
+     `activatePrompt()`だけを呼ぶため上書きされず、たまたま
+     `promptHistoryContext_`から復元できる――この非対称性のため、
+     FGREPだけ単純な修正では足りなかった)。新設の`grepReturnListCategory_`
+     (`ApplicationMode grepReturnMode_`の隣に新設)へ、`startGrepPrompt()`
+     が`grepReturnMode_`を設定する「まさにその時点」(上書きされる前)
+     で`listBrowserCategory_`を退避し、`drawPromptLabel()`側・
+     `listBrowserView_`側の両方のdestinationMode計算で
+     `destinationMode==ListBrowser`の場合にこれを見て
+     `"FILE"`/`"DIR"`を表示するよう統一した(直接のユーザー依頼
+     「あとは戻り値だけ。現状空白なのでFILE/DIRではそれぞれFILE/DIR
+     としてくれればいい」に従う)。
+   - **検証**: `test_application.cpp`に新規doctest3件を追加
+     (`^X^D`→`^O^S`が`FGREP`に正しく解決されモード名の先頭が
+     `"FGREP"`になること、戻り値欄に`"DIR"`が出ること、`^X^F`→`^J^S`
+     で戻り値欄に`"FILE"`が出ること)、全通過。実機PTYで元のユーザー
+     報告シナリオ(`^X^D`→`^O^S`、`^X^F`→`^J^S`)を再現し、いずれも
+     モード名・戻り値欄が正しく表示されることを確認。関連する
+     ListBrowser/RecentFile/RecentDirectory/History/GrepPattern/
+     CutPattern/ManName/Fgrep/Egrep系テスト計185件・1956アサーション
+     全通過。
+
 
 ## 11. CP / MV / RM / ARC
 
