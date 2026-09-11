@@ -7588,6 +7588,52 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
       12件既知失敗)であることを確認、直後にMac側を再ビルドして
       629/629件を再確認済み。
 
+441. **`^X^F`/`^X^D`(FILE/DIR履歴一覧)を閲覧中に`^S`等を押すと、
+    モードラインの「戻り値」欄が常にDirectory基準の値に化ける不具合を
+    修正**
+   - **経緯**: 項目440(FILE/DIRの`^S`/`^[i`サポート)を受けたユーザー
+     報告「FILE/DIRとも`^S`が利かない」を調査。実機PTYで
+     `usilic -c`→CLAUDE.mdをFileで開く→`^X^F`(FILE履歴一覧)→`^S`
+     を再現したところ、ユーザー自身が指摘した通り、`^X^F`を押した
+     直後の戻り値欄「.../CLAUDE.md」が、`^S`を押した後は
+     「.../git/usilic/」(Fileの実際の親ディレクトリ)に変わって
+     しまう(それ以外の画面は特に変化しない)ことを確認した。
+   - **原因**: `^X^F`/`^X^D`の候補一覧(`RingCategory::RecentFile`/
+     `RecentDirectory`)は、legacy自身のT_hfile/T_hdirに合わせ、
+     `^N`/`^P`/Enter/`^G`/`^L`以外の任意のバイトを「その場でパスを
+     直接編集し始める」という生きたコンボボックスとして扱う
+     (`feedRegexListByte()`、GrepPattern/CutPattern/ManNameの候補
+     編集と共通の仕組み)。`^S`はこのホワイトリストに含まれない
+     ため、GREPを起動する代わりに(意図通り)この「編集開始」経路へ
+     入るが、`feedRegexListByte()`は`promptHistoryContext_`
+     (returnMode等を保持する)を、`activatePrompt()`(→
+     `drawPromptLabel()`)を呼ぶ「前に」`std::nullopt`へクリアして
+     いたため、`drawPromptLabel()`自身の`PromptKind::RecentFile`/
+     `RecentDirectory`向けdestinationMode計算
+     (`promptHistoryContext_ ? promptHistoryContext_->returnMode :
+     ApplicationMode::Directory`)が常にnulloptを読んで無条件に
+     `ApplicationMode::Directory`へ落ちていた――起点がDirectory
+     自身だった場合だけ偶然正しく見えていたため、「DIRでは変化
+     無し、FILEでは戻り値が変わる」というユーザー自身の観察と
+     正確に一致する。
+   - **修正**: `returnMode`は既にローカル変数へ退避済みなので、
+     `promptHistoryContext_`のクリア自体を`activatePrompt()`呼び出しの
+     「後」へ遅らせるだけで修正できた(`drawPromptLabel()`の他の
+     呼び出し元・`refreshDirectEntryModeLine()`等への影響が無いこと
+     も確認済み――後者は`currentMode_ != ListBrowser`の時点で即
+     returnするため、この時点では既にreturnModeへ切り替わっている)。
+   - **`^S`自体について**: この「候補一覧を編集し始める」動作自体は
+     legacy由来の意図した仕様であり、`^S`がGREPを起動しないのは
+     バグではない(FGREP/EGREP/CUTの同種の候補編集画面でも同様に、
+     `^S`は単に編集中のテキストへ挿入される制御バイトグリフになる)。
+   - **検証**: `test_application.cpp`に新規doctest1件を追加
+     (Fileで開いたファイルから`^X^F`→`^S`で、モードラインの戻り値が
+     `ApplicationMode::Directory`ではなく実際のFileパスを含むことを
+     確認)、全通過。実機PTYで元のユーザー報告シナリオを再現し、
+     `^S`後も戻り値が「.../CLAUDE.md」のまま変わらないことを確認。
+     関連するListBrowser/RecentFile/RecentDirectory/History系
+     テスト94件・884アサーションも全通過。
+
 
 ## 11. CP / MV / RM / ARC
 

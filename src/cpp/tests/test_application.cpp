@@ -3771,6 +3771,39 @@ TEST_CASE_FIXTURE(Fixture, "Space (ListBrowser, RecentFile): plain PageDown -- S
   CHECK_FALSE(launcherCalled);
 }
 
+// 2026-09-11追加、直接のユーザー報告("CLAUDE.mdを選択→^X^F：戻り値
+// 「.../CLAUDE.md」→^S：「.../git/usilic/」"): feedRegexListByte()は
+// promptHistoryContext_(returnModeを保持)を、activatePrompt()(→
+// drawPromptLabel())を呼ぶ「前に」クリアしていたため、
+// PromptKind::RecentFile/RecentDirectory向けのdestinationMode計算が
+// 常にnulloptを読んで無条件にApplicationMode::Directoryへ落ちていた
+// ――起点がDirectory自身だった場合だけ偶然正しく見えていた。
+TEST_CASE_FIXTURE(Fixture, "^S (ListBrowser, RecentFile, live-combobox \"start editing\"): the mode line's "
+                           "destination/return-value field reflects the ACTUAL return mode (File), not always "
+                           "the ApplicationMode::Directory fallback") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string filePath = app.fileMode().currentFile();
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  app.feedByte(0x13, std::nullopt);  // ^S -- not a nav key here, starts live-editing the path
+  CHECK(app.currentMode() == ApplicationMode::File);  // returnMode correctly restored, not left on Directory
+
+  // modeLineText() recomputes fresh from the underlying view's own
+  // modeLineFieldsProvider, which knows nothing about a still-open,
+  // not-yet-submitted prompt -- drawPromptLabel()'s own destinationMode
+  // text is written directly to the display, so read that row instead
+  // (same technique the =gf.png/PTY-verification work in this session
+  // used throughout).
+  std::string row = display.rowText(display.rows() - 1);
+  CHECK(row.find(filePath) != std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "Space (ListBrowser, a non-path category like ProgramCommand): plain PageDown") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartProgram));

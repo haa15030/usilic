@@ -2595,7 +2595,6 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   // executeGrep()/executeCut()がそれを依然として見られる。
   pendingSearchFromDirectEntryList_ = promptHistoryContext_->isDirectEntry;
   ApplicationMode returnMode = promptHistoryContext_->returnMode;
-  promptHistoryContext_ = std::nullopt;
   currentMode_ = returnMode;
   // 2026-08-11修正: これは以前は、編集が始まった瞬間に画面上の候補
   // リストを、下層の一覧全体で置き換える形で、activeView()(「宛先」の
@@ -2613,7 +2612,24 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   // !app.promptActive()チェック参照)ので、ここでlistBrowserView_自身
   // のコンテンツを画面に残しておくことは安全である。
   listBrowserView_.redraw();
+  // 2026-09-11修正、直接のユーザー報告("CLAUDE.mdを選択→^X^F：戻り値
+  // 「.../CLAUDE.md」→^S：「.../git/usilic/」"――^Sそのものは
+  // RecentFile/RecentDirectoryの「タイプしてパスを直接編集する」既存
+  // 仕様(このライブ編集への遷移そのもの、legacy T_hfile/T_hdir由来)
+  // の対象外キーでは全くなく、以前は`promptHistoryContext_`をここで
+  // 即座にクリアしていたため、直後のactivatePrompt()→drawPromptLabel()
+  // 自身のPromptKind::RecentFile/RecentDirectory向けdestinationMode
+  // 計算(`promptHistoryContext_ ? promptHistoryContext_->returnMode :
+  // ApplicationMode::Directory`)が、常にnulloptを読んで無条件に
+  // `ApplicationMode::Directory`へ落ち、モードラインの「戻り値」欄に
+  // 常にDirectory基準の値(たまたま起点がDirectory自身だった場合は
+  // 偶然正しく見えるだけ)を表示してしまっていた。上で既に
+  // ローカル変数`returnMode`へ退避済みなので、クリア自体を
+  // activatePrompt()の「後」へ遅らせるだけで、drawPromptLabel()が
+  // 実行される時点でもまだ本来のreturnMode(例: File)を読めるように
+  // なる。
   activatePrompt(kind, seed, positionText);
+  promptHistoryContext_ = std::nullopt;
   return feedPromptByte(byte);
 }
 

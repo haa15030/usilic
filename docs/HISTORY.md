@@ -16702,3 +16702,17 @@ docs/CHANGES.mdに項目438として記録済み(FGREP/EGREP節に全文、LOCAT
 <FILE/DIRでも`^O^S`/`^J^S`同様`^S`/`^[i`をサポートして欲しい。という意味。
 
 >実機PTYで確認したところ、Directoryモード・(Directory一覧からEnterで開いた)通常のFileモードでは`^S`/`^[i`は既に正しく動作していました。実際に動いていなかったのは`usilic -c <file>`のようにCLIから直接ファイルを開いた場合(`FileMode::pagerMode_`)だけで、`setModeLineFieldsProvider()`の`pagerMode_`向け分岐が無条件にreturnしており、その下にある`grepInPlaceActive()`/`grepNoMatchActive()`チェックに一度も到達できず、ハイライト自体は正しく効いているのにモードラインにGREP/(grep)バッジが一切表示されない不具合でした(FGREP/EGREPは専用の一覧画面に切り替わるためこの欠落の影響を受けません)。`pagerMode_`分岐にも同じチェックを複製して修正し、新規doctest2件・実機PTY(マッチあり/0件/ライブ編集の3パターン)で確認しました。あわせて、無関係な既存テスト(LOCATE経由でFileを開いた後の再LOCATE)が今回の変更と無関係に元から失敗していたことも発見し(修正前のコミットでも同一理由で失敗することを確認済み)、原因(`executeLocate()`の「クエリ文字列が同じなら再検索を省略」最適化が、クエリは同じでも裏のlocateコマンド自体が変わった場合に古い結果を再利用してしまう)を特定してdocs/CHANGES.mdに記録しましたが、今回の依頼とは無関係のためこの回では修正していません。docs/CHANGES.mdに項目440として記録し、make install/make app/jキー回帰チェックも完了、コミットしました。
+
+<余談の件はスルーでいいと思う。それらが仮に起きたとしてもユーザーはおそらく更新を試すはず。再試行の結果に満足すればusilicのバグだとは見なさない。
+
+FILE/DIRの`^S`、変化無しかと思ったら微かな兆候を発見。
+DIRでは変化無しだが、FILEでは戻り値が変わる。
+CLAUDE.mdを選択→その場で`^X^F`：戻り値「...silic/CLAUDE.md」→`^S`：「...030/git/usilic/」
+
+(AskUserQuestion回答: 端末環境→「Terminal.app」。^S症状→「フリーズはしないが単に無反応」)
+
+>実機PTYで`usilic -c ~/git/usilic`→CLAUDE.mdをFileで開く→`^X^F`(FILE履歴一覧)→`^S`を再現し、ご指摘通り戻り値欄が「.../CLAUDE.md」から「.../git/usilic/」(親ディレクトリ)へ変わることを確認しました。
+
+原因: `^X^F`/`^X^D`の候補一覧は、legacy自身のT_hfile/T_hdirに合わせ、`^N`/`^P`/Enter/`^G`/`^L`以外の任意のバイトを「その場でパスを直接編集し始める」生きたコンボボックスとして扱う仕様(`feedRegexListByte()`、GrepPattern/CutPattern/ManNameの候補編集と共通)です。`^S`はこのホワイトリストに含まれないため、GREPを起動する代わりに(意図通り)この「編集開始」経路へ入りますが、`feedRegexListByte()`が`promptHistoryContext_`(returnMode等を保持)を`activatePrompt()`(→`drawPromptLabel()`)より「前に」クリアしていたため、`drawPromptLabel()`のRecentFile/RecentDirectory向けdestinationMode計算が常にnulloptを読んで無条件に`ApplicationMode::Directory`へ落ちていました――起点がDirectory自身だった場合だけ偶然正しく見えていたため、「DIRでは変化無し、FILEでは戻り値が変わる」というご観察と正確に一致します。`returnMode`は既にローカル変数へ退避済みだったので、クリアのタイミングを`activatePrompt()`の後へ遅らせるだけで修正できました。
+
+なお`^S`自体がGREPを起動しない(この候補一覧を編集し始めるだけ)のはlegacy由来の意図した仕様で、バグではありません(FGREP/EGREP/CUTの同種の候補編集画面でも`^S`は単に編集中のテキストへの制御バイト挿入になります)。新規doctest1件・実機PTYで確認し、docs/CHANGES.mdに項目441として記録、make install/make app/jキー回帰チェックも完了、コミットしました。
