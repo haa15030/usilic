@@ -36,8 +36,11 @@ void LineEditor::setText(const std::string &text) {
   cursorPos_ = static_cast<int>(buffer_.size());
   shift_ = 0;
   pendingUtf8_.clear();
+  selectAllPending_ = false;
   redraw();
 }
+
+void LineEditor::selectAll() { selectAllPending_ = true; }
 
 const std::string &LineEditor::text() const { return buffer_; }
 
@@ -201,6 +204,11 @@ void LineEditor::redraw() {
 
 void LineEditor::insertText(const std::string &bytesIn) {
   if (bytesIn.empty()) return;
+  if (selectAllPending_) {
+    selectAllPending_ = false;
+    buffer_.clear();
+    cursorPos_ = 0;
+  }
   std::string toInsert = bytesIn;
   int overflow = static_cast<int>(buffer_.size() + toInsert.size()) - (kMaxLength - 1);
   if (overflow > 0) {
@@ -231,6 +239,13 @@ void LineEditor::insertByte(unsigned char byte) {
 }
 
 void LineEditor::backspace() {
+  if (selectAllPending_) {
+    selectAllPending_ = false;
+    buffer_.clear();
+    cursorPos_ = 0;
+    redraw();
+    return;
+  }
   if (cursorPos_ <= 0) {
     display_.putChar(7);
     return;
@@ -242,6 +257,13 @@ void LineEditor::backspace() {
 }
 
 void LineEditor::deleteForward() {
+  if (selectAllPending_) {
+    selectAllPending_ = false;
+    buffer_.clear();
+    cursorPos_ = 0;
+    redraw();
+    return;
+  }
   if (cursorPos_ >= static_cast<int>(buffer_.size())) {
     display_.putChar(7);
     return;
@@ -252,16 +274,19 @@ void LineEditor::deleteForward() {
 }
 
 void LineEditor::moveHome() {
+  selectAllPending_ = false;
   cursorPos_ = 0;
   redraw();
 }
 
 void LineEditor::moveEnd() {
+  selectAllPending_ = false;
   cursorPos_ = static_cast<int>(buffer_.size());
   redraw();
 }
 
 void LineEditor::moveLeft() {
+  selectAllPending_ = false;
   if (cursorPos_ <= 0) {
     display_.putChar(7);
     return;
@@ -271,6 +296,7 @@ void LineEditor::moveLeft() {
 }
 
 void LineEditor::moveRight() {
+  selectAllPending_ = false;
   if (cursorPos_ >= static_cast<int>(buffer_.size())) {
     display_.putChar(7);
     return;
@@ -280,6 +306,7 @@ void LineEditor::moveRight() {
 }
 
 void LineEditor::killToStart() {
+  selectAllPending_ = false;
   killBuffer_ = buffer_.substr(0, cursorPos_);
   buffer_.erase(0, cursorPos_);
   cursorPos_ = 0;
@@ -287,6 +314,7 @@ void LineEditor::killToStart() {
 }
 
 void LineEditor::killToEnd() {
+  selectAllPending_ = false;
   killBuffer_ = buffer_.substr(cursorPos_);
   buffer_.erase(cursorPos_);
   redraw();

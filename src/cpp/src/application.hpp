@@ -2948,8 +2948,15 @@ class Application {
   // 名("less ")を入力すると自然に前に追加され、「less CLAUDE.md」
   // が形成されるように。既存の全ての呼び出し箇所はこれをデフォル
   // ト(false、変更されていない末尾のカーソル配置)のままにする。
+  // selectAllOnSeed: 2026-09-11追加、直接のユーザー報告(docs/CHANGES.md
+  // 項目439参照)。trueの場合、事前入力したinitialTextを「全選択」
+  // 状態にする(LineEditor::selectAll()自身のコメント参照) ――
+  // 続く最初の編集操作がinitialTextを丸ごと消してから新しい入力に
+  // 置き換わる。startLocatePrompt()の「前回クエリを事前入力」の
+  // ためだけに新設した。既存の全ての呼び出し箇所はこれをデフォルト
+  // (false、変更されていない従来の追記的編集)のままにする。
   void activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText = "",
-                       bool cursorAtStart = false);
+                       bool cursorAtStart = false, bool selectAllOnSeed = false);
   // 各PromptKindに対して表示されるラベルテキスト――通常のケース
   // に対してはlegacy自身のs_P(P_mode)[...]のモード名文字列
   // (disp_window()のmode-line[1]の「name」フィールド、例えば

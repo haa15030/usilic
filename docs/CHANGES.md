@@ -4856,6 +4856,79 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
     と同じ`"<query>: No results"`表示に統一した。詳細・検証内容は
     3.FGREP/EGREPの節参照。
 
+439. **項目438(の"--"修正)の後もなお再現していた`usilic -c`（引数
+    無し）起動時の`^J^L`不具合、実は2つの別々の原因が重なっていた
+    ことが判明・両方を修正**
+   - **ユーザー報告**: 項目438で修正したはずの「引数無しで`^J^L`する
+     と`--`が出る」件について、直接のユーザー報告「③が直ってない。
+     データベースへのアクセスって引数無しでは何か違うわけ？　引数
+     有りだと`^J^L`でちゃんと一覧が出るのに？」を受け、実機PTYで
+     `usilic -c`(引数無し)を再現したところ、確かに再現した。
+   - **原因1(見た目の症状そのもの)**: `app/main.cpp`の
+     `bool consultHistoryOnStart = positionalArgs.empty();`により、
+     引数無し起動の時だけ`~/.usilic/history`を読み込む。
+     `Application::startLocatePrompt()`は起動のたびに「前回使った
+     クエリ」(`RingCategory::RecentLocateQuery`)をLOCATEプロンプトへ
+     事前入力する仕様だが、カーソルは事前入力テキストの「末尾」に
+     置かれる(`activatePrompt()`の`cursorAtStart`既定値`false`)。
+     このため、事前入力に気付かずそのまま新しいクエリを打つと末尾へ
+     追記され、例えば前回クエリが`.txt`だった状態で`.txt`と打つと
+     `.txt.txt`という誰も意図しない連結クエリになり、実在しないパス
+     として0件になっていた(引数有り起動は`consultHistoryOnStart`が
+     falseで事前入力が空になるため再現しない)。
+   - **修正1**: `LineEditor`に`selectAll()`(新設)を追加し、
+     「保留中の全選択」状態を導入した――続く最初の`insertByte()`/
+     `paste()`は、事前入力テキストを消してから新しい入力に「置き
+     換える」(ブラウザのアドレスバーと同じ慣習)。続く最初の
+     `backspace()`/`deleteForward()`も同様に全体を削除する。一方
+     `moveHome()`/`moveEnd()`/`moveLeft()`/`moveRight()`/
+     `killToStart()`/`killToEnd()`はこの保留状態を、何も削除せずに
+     解除するだけ(ユーザーが意図的に事前入力テキストを部分編集
+     しようとしていることの表れなので、以後は通常の追記編集に戻す)。
+     `Application::activatePrompt()`に`selectAllOnSeed`引数(既定
+     `false`、既存の全呼び出し箇所は無変更)を追加し、
+     `startLocatePrompt()`だけがこれを`true`で呼ぶ――
+     `startProgramPrompt()`の「CLAUDE.mdの前に`less `を追記する」
+     という別の既存の意図的な追記式事前入力とは衝突しない。AskUser
+     Questionでこの挙動変更の是非を確認済み(推奨案「最初の入力で
+     全消去」を採用)。
+   - **原因2(修正1だけでは直り切らなかった別の不具合、実機PTY検証中
+     に発見)**: `Application::executeLocate()`は、投入されたクエリが
+     `RingCategory::RecentLocateQuery`のring末尾(前回セッションを
+     またいで`~/.usilic/history`から復元される)と一致する場合、
+     「シードを変更せず投入した」とみなして`locateMode_.search()`を
+     一切実行せず、既存の`results_`/`locateView_`をそのまま再表示
+     する高速経路を持っていた――これはこのプロセスで一度もLOCATEを
+     実行していない(`locateMode_`がまだ空のまま)場合にも「変更
+     無し」と誤判定してしまい、たまたま前回セッションのクエリと
+     同じ文字列を(修正1後、正しく)入力してEnterしただけで、
+     search()が丸ごとスキップされ、空の`locateView_`が持つCUT既定の
+     `"--"`プレースホルダーがそのまま表示されてしまっていた(実際の
+     `locate .txt`は10000件以上ヒットするにも関わらず)。修正1の
+     検証中、たまたま前回クエリと同じ文字列を打ち直すテストケースで
+     再現し発覚。
+   - **修正2**: 比較対象をring(セッションをまたぐ履歴)ではなく、
+     `locateMode_`自身が直前に実際に検索した`query()`(`search()`の
+     中でのみ設定される、プロセス内メモリの状態)に変更――
+     `bool unchanged = query == locateMode_.query() && !locateMode_.query().empty();`。
+     これにより「このプロセスで実際にこのクエリを検索済みで、その
+     結果が今も有効」という本来意図した不変条件に一致する。
+   - **検証**: `LineEditor`の新規doctest5件(全選択後の入力/paste/
+     backspace/deleteForward/ナビゲーションによる解除/`setText()`に
+     よるリセット)を`test_line_editor.cpp`に追加、全通過。実機PTYで
+     `usilic -c`(引数無し)→`^J^L`→前回と同じクエリを打ち直すケース、
+     前回と異なるクエリ(`.txt`→`.md`)に打ち直すケースの両方を再現し、
+     いずれも事前入力の追記無し・実際の`locate`結果(前者14261件、
+     後者4128件)が正しく表示されることを確認。jキー回帰チェックも
+     完了。make install/make app/~/Applications/usilic.appへの反映
+     も実施済み。
+   - **余談**: `...`(省略された中間部分)自体がGREPマッチでハイライト
+     される件(項目438の対象)について、ユーザーに実例(=gg/=gh
+     screenshot、実際に"Resources"フォルダが省略部分に隠れていた)を
+     示して確認したところ、これはバグではなく意図した仕様(隠れた
+     マッチの存在を`...`自体のハイライトで示す)として現状維持で
+     よいとの回答を得た――変更無し。
+
 ## 7. MAN
 
 290. **2026-08-13(続き): PROGRAM(K-41/K-42)・MAN(K-43/K-44)を実装、

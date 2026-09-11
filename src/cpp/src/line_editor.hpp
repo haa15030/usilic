@@ -72,6 +72,23 @@ class LineEditor {
   void moveLeft();
   void moveRight();
 
+  // 2026-09-11追加、直接のユーザー報告(docs/CHANGES.md項目439参照:
+  // LOCATEプロンプトが前回クエリを事前入力するが、カーソルが末尾に
+  // あるため、そのまま新しいクエリを打つと末尾へ追記されて
+  // `.txt.txt`のような意図しない連結が生じ、0件になっていた)への
+  // 対応。呼び出し元(activatePrompt())がsetText()で事前入力した
+  // 直後にこれを呼ぶと、「次に来る最初の編集」を全文選択状態として
+  // 扱う: 続く最初のinsertByte()/paste()/yank()はバッファ全体を
+  // 事前入力テキストごと消してから新しい入力だけを挿入し(ブラウザの
+  // アドレスバー等と同じ「選択済みテキストへの入力は置き換え」の
+  // 慣習)、続く最初のbackspace()/deleteForward()も同様に全体を
+  // 削除する。一方、moveHome()/moveEnd()/moveLeft()/moveRight()/
+  // killToStart()/killToEnd()(=カーソル位置を明示的に操作する
+  // 操作)はこの保留状態を、何も削除せずに解除するだけにする――
+  // ユーザーが意図的に事前入力テキストを部分編集しようとしている
+  // ことの表れなので、以後は通常の編集に戻る。
+  void selectAll();
+
   // ^U: フィールド先頭からカーソルまでをkillバッファへ切り取る。
   void killToStart();
   // ^K: カーソルからフィールド末尾までをkillバッファへ切り取る。
@@ -132,6 +149,7 @@ class LineEditor {
 
   std::string killBuffer_;
   bool quotedInsertPending_ = false;
+  bool selectAllPending_ = false;
 
   // insertByte()用のUTF-8部分シーケンス累積バッファ、複数回の呼び出しをまたぐ。
   std::string pendingUtf8_;

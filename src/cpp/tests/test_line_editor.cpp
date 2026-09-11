@@ -175,3 +175,63 @@ TEST_CASE("quoted-insert pending flag toggles and clears") {
   e.clearQuotedInsert();
   CHECK(e.quotedInsertPending() == false);
 }
+
+TEST_CASE("selectAll: typing after a seeded prompt replaces the seed instead of appending") {
+  RecordingDisplay d(3, 20);
+  LineEditor e(d, Charset::Encoding::Ascii);
+  e.setField(0, 0, 20);
+  e.setText(".txt");
+  CHECK(e.cursorBytePos() == 4);  // cursor lands at the end, as usual
+  e.selectAll();
+  typeAscii(e, ".md");
+  CHECK(e.text() == ".md");  // not ".txt.md"
+  CHECK(e.cursorBytePos() == 3);
+}
+
+TEST_CASE("selectAll: backspace/deleteForward on a pending selection clears the whole field") {
+  RecordingDisplay d(3, 20);
+  LineEditor e(d, Charset::Encoding::Ascii);
+  e.setField(0, 0, 20);
+  e.setText("preset");
+  e.selectAll();
+  e.backspace();
+  CHECK(e.text() == "");
+  CHECK(e.cursorBytePos() == 0);
+
+  e.setText("preset");
+  e.selectAll();
+  e.deleteForward();
+  CHECK(e.text() == "");
+}
+
+TEST_CASE("selectAll: paste also replaces the seed, matching typed insertion") {
+  RecordingDisplay d(3, 20);
+  LineEditor e(d, Charset::Encoding::Ascii);
+  e.setField(0, 0, 20);
+  e.setText(".txt");
+  e.selectAll();
+  e.paste(".md");
+  CHECK(e.text() == ".md");
+}
+
+TEST_CASE("selectAll: navigation cancels the pending selection without deleting anything") {
+  RecordingDisplay d(3, 20);
+  LineEditor e(d, Charset::Encoding::Ascii);
+  e.setField(0, 0, 20);
+  e.setText(".txt");
+  e.selectAll();
+  e.moveHome();  // deliberately editing the seed, not replacing it
+  typeAscii(e, "x");
+  CHECK(e.text() == "x.txt");  // ordinary insert-at-cursor, seed left intact
+}
+
+TEST_CASE("selectAll: setText() (e.g. re-seeding for the next prompt) clears any pending selection") {
+  RecordingDisplay d(3, 20);
+  LineEditor e(d, Charset::Encoding::Ascii);
+  e.setField(0, 0, 20);
+  e.setText(".txt");
+  e.selectAll();
+  e.setText("fresh");
+  typeAscii(e, "x");
+  CHECK(e.text() == "freshx");  // ordinary append, no leftover selectAll from the previous seed
+}

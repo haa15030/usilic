@@ -8862,8 +8862,16 @@ bool Application::startLocatePrompt() {
     locateReturnStack_ = {anchor};
     locateAnchor_ = anchorSnapshotFor(anchor);
   }
+  // 2026-09-11追加、直接のユーザー報告(docs/CHANGES.md項目439参照:
+  // 「久々にusilic -c（引数無し）で起動」→事前入力された前回クエリ
+  // ".txt"の末尾へ気付かず新しいクエリ".txt"を追記してしまい、
+  // ".txt.txt"という誰も意図しない連結クエリになり0件になっていた)
+  // への対応。selectAllOnSeed=trueにより、事前入力された前回クエリを
+  // 「全選択」状態にする――そのまま何か入力すれば前回クエリごと
+  // 消えて新しいクエリに置き換わり(ブラウザのアドレスバーと同じ
+  // 慣習)、単にEnterだけ押せば前回クエリをそのまま再実行できる。
   const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentLocateQuery);
-  activatePrompt(PromptKind::LocateQuery, recent.empty() ? std::string() : recent.back());
+  activatePrompt(PromptKind::LocateQuery, recent.empty() ? std::string() : recent.back(), "", false, true);
   return true;
 }
 
@@ -10387,7 +10395,7 @@ void Application::refreshDirectEntryModeLine() {
 }
 
 void Application::activatePrompt(PromptKind kind, const std::string &initialText, const std::string &positionText,
-                                  bool cursorAtStart) {
+                                  bool cursorAtStart, bool selectAllOnSeed) {
   promptKind_ = kind;
   // feedPromptByte()自身の^N/^P処理参照――空でないpositionTextは
   // feedRegexListByte()の編集への遷移によってのみ渡される(他の全ての
@@ -10399,6 +10407,7 @@ void Application::activatePrompt(PromptKind kind, const std::string &initialText
   drawPromptLabel(kind, positionText);
   promptEditor_.setText(initialText);
   if (cursorAtStart) promptEditor_.moveHome();
+  if (selectAllOnSeed) promptEditor_.selectAll();
   promptEditor_.redraw();
 }
 
@@ -10813,8 +10822,23 @@ bool Application::executeQuickLook() {
 // チェックされる。クエリが変わった場合は、この変更より前と同様、
 // 通常の新規の検索を実行する。
 bool Application::executeLocate(const std::string &query) {
-  const std::deque<std::string> &recent = history_.recentEntries(RingCategory::RecentLocateQuery);
-  bool unchanged = !recent.empty() && recent.back() == query;
+  // 2026-09-11修正、直接のユーザー報告(docs/CHANGES.md項目439参照:
+  // 「usilic -c（引数無し）で起動→^J^Lで--が出る」がselectAllOnSeed
+  // 修正後もなお再現): 以前はring(RecentLocateQuery、`~/.usilic/
+  // history`から前回セッションをまたいで復元される)のback()とだけ
+  // 比較していたが、これは「このプロセスでLOCATEを一度も実行して
+  // いない」場合(locateMode_.query()が空、locateView_も未着手の
+  // ままemptyPlaceholderLine_の既定値"--"を表示するだけ)にも
+  // 「変更無し」と誤判定してしまう――前回セッションが残した履歴上の
+  // クエリと、事前入力されたシードがたまたま同じ文字列である限り、
+  // ユーザーが実際にはEnterで初めてそのクエリを投入したにも
+  // 関わらず、search()自体を一切実行せずlocateMode_の(空のままの)
+  // results_/locateView_を再表示するだけになっていた。
+  // locateMode_自身がまさに直前に検索したクエリ(query_、search()の
+  // 中でのみ設定される)と比較することで、「このプロセスで実際に
+  // このクエリを検索済みで、その結果が今も有効」という本来の意図
+  // した不変条件に一致させる。
+  bool unchanged = query == locateMode_.query() && !locateMode_.query().empty();
   history_.pushRecent(RingCategory::RecentLocateQuery, query);  // 下のsearch()自身の結果に関わらず記録される
   if (unchanged) {
     currentMode_ = ApplicationMode::Locate;
