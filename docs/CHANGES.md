@@ -7634,6 +7634,71 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      関連するListBrowser/RecentFile/RecentDirectory/History系
      テスト94件・884アサーションも全通過。
 
+442. **`^X^F`/`^X^D`(FILE/DIR履歴一覧)にin-place GREP(`^S`/`^[i`)を
+    追加、あわせて長いパスがFinder風に中間省略されないためマッチが
+    画面外に切り落とされて一切見えなかった問題も修正**
+   - **経緯・訂正**: 項目441で「`^S`がGREPを起動しないのはlegacy由来の
+     意図した仕様」「`^S`は単に編集中のテキストへ挿入される制御バイト
+     グリフになる」と記録したが、後半は誤りだった――実際にスピーカーで
+     確認したところ、`^S`(0x13)は2026-08-12の別の直接ユーザー依頼
+     「制御コード入力は`^Q`前置が必須」により、`^Q`無しの生の制御バイト
+     はグリフとして挿入されるのではなく単にビープ音で拒否される、が
+     正しい実態だった(ユーザー自身が実機のスピーカーで確認)。前半の
+     「`^S`はGREPを起動しない」自体は正しかったが、直接のユーザー依頼
+     「やりたいのはLOCATEと同じ。Resの3文字が`...`にあるやつ。あの手を
+     やりたい」を受け、この回でその評価自体を転換し、`^S`/`^[i`が
+     `^X^F`/`^X^D`の候補一覧「内」でLOCATE同様のin-place GREPを起動
+     するよう新規実装した。
+   - **`^[i`(ESC i)は既に動いていたが、ハイライトが見えなかった**:
+     `ESC`はリーダーキーとして`feedRegexListByte()`内でも
+     `dispatchLeaderByte()`へ委譲されるため、候補一覧を「編集開始」
+     させずに`Command::StartIncrementalGrep`へ届いており、
+     `isGrepInPlaceEligibleMode()`は既に`ListBrowser`を含むため
+     マッチ件数自体は正しく算出されていた。しかし
+     `ListBrowserMode::show()`が構築する`ContentView::Line`に
+     `ellipsisEligible`が未設定(既定false)だったため、長いパス
+     (`RecentFile`/`RecentDirectory`の実体)は画面幅で単純に右側が
+     切り落とされるだけでFinder風の中間省略`...`が一切出ず、マッチが
+     切り落とされた部分にあると(LOCATE同様に隠れた場所を示す`...`
+     ハイライトどころか)何も見えなかった。`LocateMode`/`DuMode`自身の
+     `Line`構築と同じ`ellipsisEligible=true`に変更(約9箇所の呼び出し
+     元全てに影響するが、短い項目には無害)。
+   - **`^S`はそもそもGREPへ到達すらしていなかった**: `^S`(0x13)は
+     `feedRegexListByte()`の「ナビゲーション」ホワイトリスト
+     (`^N`/`^P`/Enter/`^G`/`^L`/条件付き`^R`)に含まれず、意図通り
+     「その場でパスを直接編集し始める」経路へ入るが、そこで
+     `feedPromptByteInner()`の生バイト拒否ルールに阻まれ画面上は無反応
+     (ビープのみ)だった。`^S`をこのホワイトリストへ`RecentFile`/
+     `RecentDirectory`限定で追加し、`Command::StartGrep`
+     (`resolveCommand()`の対応表)へ流すよう変更――`GrepPattern`/
+     `CutPattern`/`ManName`(候補自体が検索パターン/コマンド名であり
+     `^S`で「その候補一覧を検索する」という意味を成さない)には広げて
+     いない。
+   - **副産物のバグ**: `^S`実装の検証中、`promptHistoryContext_`
+     (`kind`/`returnMode`等を保持)が候補一覧の「ナビゲーション」操作
+     全般で意図的にクリアされずに残る設計だったため、`^S`後に
+     `activateGrepInPlace()`が正しくマッチ・ハイライトを設定しても、
+     `listBrowserView_`自身の`ModeLineFieldsProvider`が
+     `promptHistoryContext_`のkindが依然`RecentFile`/`RecentDirectory`
+     のままであることを理由に「まだ候補を閲覧中」の古い表示
+     (`name="FILE"`/`"DIR"`、`(grep)`バッジ無し)を優先してしまい、
+     マッチ件数は正しいのに`"FILE 1/5 ..."`のように表示される不具合を
+     発見・修正した(`^S`のケースでのみ`promptHistoryContext_`を
+     明示的にクリア――他のナビゲーション操作は引き続き保持が必要な
+     ため対象外)。
+   - **検証**: `test_list_browser_mode.cpp`に新規doctest1件
+     (`ellipsisEligible`が全項目に設定されること)、
+     `test_application.cpp`に新規doctest1件(`^S`が`ListBrowser`
+     モードのまま`"GREP"`/`"(grep)"`バッジを表示すること)を追加、
+     既存の項目441の回帰テストは`^S`が今回の変更で意味を変えたため
+     トリガーを印字可能文字(`'x'`)に差し替えて存続。実機PTYで
+     `^X^F`→`^[i`/`^S`いずれでも、実際の`~/.usilic/history`(60件超)
+     に対して`Res`検索が正しいマッチ数を示し、省略された`...`自体が
+     マゼンタ反転すること、`^N`でマッチ間を正しく巡回できることを確認。
+     関連するListBrowser/RecentFile/RecentDirectory/History/
+     GrepPattern/CutPattern/ManName/content_view/ellipsis/grep系
+     テスト計229件・2342アサーション全通過。
+
 
 ## 11. CP / MV / RM / ARC
 

@@ -84,3 +84,19 @@ TEST_CASE_FIXTURE(Fixture, "show: a shorter (or absent) badges vector is treated
   CHECK(view.lines()[1].text == "b");
   CHECK(view.lines()[2].text == "c");
 }
+
+// 2026-09-11追加、直接のユーザー依頼("^X^F/^X^Dでも^S/^[iをLOCATEと
+// 同じように使いたい。Resの3文字が`...`にあるやつ"): 以前はどの項目も
+// ellipsisEligibleが未設定(既定false)だったため、画面幅を超える長い
+// パス(RecentFile/RecentDirectoryの実体)は単純に右側が切り落とされる
+// だけで、Finder風の中間省略"..."が出ず、in-place GREPのマッチが
+// 切り落とされた部分にあると一切見えなかった。LocateMode/DuMode自身の
+// Line構築と同じellipsisEligible=trueにする。
+TEST_CASE_FIXTURE(Fixture, "show: every line is ellipsisEligible, matching LocateMode/DuMode's own "
+                           "convention, so long paths get Finder-style middle-ellipsis truncation instead of "
+                           "a raw right-side cutoff") {
+  mode.show({"/tmp/alpha", "/tmp/beta"});
+  REQUIRE(view.lines().size() == 2);
+  CHECK(view.lines()[0].ellipsisEligible);
+  CHECK(view.lines()[1].ellipsisEligible);
+}

@@ -25,7 +25,25 @@ void ListBrowserMode::show(const std::vector<std::string> &items, const std::vec
   for (std::size_t i = 0; i < items_.size(); i++) {
     std::string text = items_[i];
     if (i < badges.size() && !badges[i].empty()) text += "  " + badges[i];
-    lines.push_back({text, std::nullopt, std::nullopt, {}});
+    // ellipsisEligible=true(2026-09-11追加、直接のユーザー報告:
+    // "^X^F/^X^Dでも^S/^[iをLOCATEと同じように使いたい。Resの3文字が
+    // `...`にあるやつ"): 以前はellipsisEligibleが未設定(既定false)
+    // だったため、長いパス(^X^F/^X^Dが表示するRecentFile/
+    // RecentDirectoryの実体)は画面幅で単純に右側が切り落とされる
+    // だけで、Finder風の中間省略"..."が一切出なかった――このため
+    // in-place GREP(^S/^[i、ListBrowserは既にisGrepInPlaceEligibleMode()
+    // 対象)自体はマッチ件数を正しく算出するにも関わらず、マッチが
+    // 画面幅を超えた場所(切り落とされた部分)にあるとハイライトが
+    // 一切見えなかった。LocateMode/DuMode自身のLine構築と同じ
+    // `ellipsisEligible=true`にすることで、長い項目はLOCATE同様に
+    // 中間省略され、省略された"..."自体の中にマッチがある場合は
+    // それ自体がハイライトされる(content_view.cpp自身の
+    // EllipsisBoundaries/remapByteOffsetThroughEllipsis()、項目438
+    // 参照)――ListBrowserModeは約9箇所の呼び出し元(FILE/DIR/PROGRAM/
+    // MAN/LOCATE/FGREP/EGREP等の各履歴一覧)全てで共有されるが、短い
+    // 項目(コマンド名等)には無害(画面幅未満なら省略自体が発生しない)
+    // なので、無条件に有効にする。
+    lines.push_back({text, std::nullopt, std::nullopt, {}, true});
   }
   view_.setLines(std::move(lines));
   view_.setCursorIndex(0);

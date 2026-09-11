@@ -2569,6 +2569,42 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
           isNav = true;
         }
         break;
+      // ^S(2026-09-11追加、直接のユーザー依頼: "やりたいのはLOCATEと
+      // 同じ。Resの3文字が`...`にあるやつ"): RecentFile/RecentDirectory
+      // (^X^F/^X^D)限定で、in-place GREPを起動するCommand::StartGrep
+      // (resolveCommand()自身の対応表参照)へ流す――isGrepInPlaceEligibleMode()
+      // は既にListBrowserを含んでいる(startGrepPrompt()自身の
+      // grepReturnMode_=currentMode_採用がそのまま効く)ので、ここで
+      // 「編集を開始する」下の分岐(=このホワイトリストの外)へ流れ
+      // 落ちるのを防ぎさえすれば、Directory/File/LOCATE等と全く同じ
+      // in-place検索(マッチ数表示・`^N`/`^P`・省略された"..."自体の
+      // ハイライト)がそのまま動く。GrepPattern/CutPattern/ManName
+      // (候補自体が検索パターン/コマンド名であり、^Sで「その候補一覧を
+      // 検索する」という意味を成さない、あるいは既にその場での
+      // パターン編集自体が主目的)には広げない――^Sは元々そちらでは
+      // 単なる「クォート無し制御バイトの拒否」(ビープのみ、何も起き
+      // ない)だった以上、RecentFile/RecentDirectoryだけへの追加は
+      // 純粋な機能追加であり退行の余地が無い。
+      case kControlS:
+        if (promptHistoryContext_ && (promptHistoryContext_->kind == PromptKind::RecentFile ||
+                                       promptHistoryContext_->kind == PromptKind::RecentDirectory)) {
+          isNav = true;
+          // ^N/^P/Enter/^G/^L/^R(すぐ上のcase群)は候補一覧を「引き続き
+          // 閲覧する」操作であり、promptHistoryContext_(kind/returnMode
+          // 等)がまだ必要なので保持したままにする――しかし^Sは候補一覧
+          // の閲覧そのものを離れ、全く別のGREP-in-placeセッションを
+          // 開始する。ここでクリアしないと、listBrowserView_自身の
+          // ModeLineFieldsProvider(このファイル冒頭のApplication自身の
+          // コンストラクタ参照)が、promptHistoryContext_のkindが依然
+          // RecentFile/RecentDirectoryのままであることを理由に、
+          // activateGrepInPlace()が設定したgrepInPlaceActive_を無視して
+          // 「まだ候補を閲覧中」の古い表示(name="FILE"/"DIR"、(grep)
+          // バッジ無し)を優先してしまう(実際に発生を確認: マッチ数は
+          // 正しいのに"GREP .../(grep)"ではなく"FILE 1/5 ..."と表示
+          // されていた)。
+          promptHistoryContext_ = std::nullopt;
+        }
+        break;
     }
   }
   if (isNav) return handleCommand(resolveCommand(byte, special));

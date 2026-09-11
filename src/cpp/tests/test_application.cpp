@@ -3778,9 +3778,15 @@ TEST_CASE_FIXTURE(Fixture, "Space (ListBrowser, RecentFile): plain PageDown -- S
 // PromptKind::RecentFile/RecentDirectory向けのdestinationMode計算が
 // 常にnulloptを読んで無条件にApplicationMode::Directoryへ落ちていた
 // ――起点がDirectory自身だった場合だけ偶然正しく見えていた。
-TEST_CASE_FIXTURE(Fixture, "^S (ListBrowser, RecentFile, live-combobox \"start editing\"): the mode line's "
-                           "destination/return-value field reflects the ACTUAL return mode (File), not always "
-                           "the ApplicationMode::Directory fallback") {
+// 2026-09-11再訂正: このテストは元々トリガーに^S(0x13)を使っていたが、
+// 直後の項目442で^Sの意味がRecentFile/RecentDirectory限定で「その場で
+// パスを編集開始する」から「in-place GREPを起動する」へ変わったため、
+// 素直な印字可能文字('x')に差し替えた――このテスト自体が検証したい
+// のはdestinationMode計算のバグであり、トリガーが具体的にどの文字かは
+// 無関係。
+TEST_CASE_FIXTURE(Fixture, "typing a plain character (ListBrowser, RecentFile, live-combobox \"start editing\"): "
+                           "the mode line's destination/return-value field reflects the ACTUAL return mode "
+                           "(File), not always the ApplicationMode::Directory fallback") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -3791,7 +3797,7 @@ TEST_CASE_FIXTURE(Fixture, "^S (ListBrowser, RecentFile, live-combobox \"start e
   REQUIRE(app.handleCommand(Command::StartFileHistory));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
 
-  app.feedByte(0x13, std::nullopt);  // ^S -- not a nav key here, starts live-editing the path
+  app.feedByte('x', std::nullopt);  // not a nav key, starts live-editing the path
   CHECK(app.currentMode() == ApplicationMode::File);  // returnMode correctly restored, not left on Directory
 
   // modeLineText() recomputes fresh from the underlying view's own
@@ -3802,6 +3808,34 @@ TEST_CASE_FIXTURE(Fixture, "^S (ListBrowser, RecentFile, live-combobox \"start e
   // used throughout).
   std::string row = display.rowText(display.rows() - 1);
   CHECK(row.find(filePath) != std::string::npos);
+}
+
+// 2026-09-11追加、直接のユーザー依頼("やりたいのはLOCATEと同じ。Resの
+// 3文字が`...`にあるやつ"): ^X^F/^X^Dの候補一覧内でも^Sがin-place GREP
+// (LOCATE/Directory/File等と同じ、専用の一覧画面へは切り替わらない
+// マッチハイライト+^N/^P)を起動するようにした――以前は^Sもまさに
+// 上のテストと同じ「その場でパスを編集開始する」経路(結局^Sという
+// 制御バイト自体は`^Qクォート必須ルール`により何も挿入されず単なる
+// ビープで終わる)にしか入れなかった。
+TEST_CASE_FIXTURE(Fixture, "^S (ListBrowser, RecentFile): triggers in-place GREP within the candidate list "
+                           "itself, staying in ListBrowser mode (not the old \"start editing\" path)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> in-place GREP, not "start editing"
+  feedText("log");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // never leaves the candidate list
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("GREP") != std::string::npos);
+  CHECK(modeLine.find("(grep)") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "Space (ListBrowser, a non-path category like ProgramCommand): plain PageDown") {

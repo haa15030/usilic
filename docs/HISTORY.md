@@ -16716,3 +16716,25 @@ CLAUDE.mdを選択→その場で`^X^F`：戻り値「...silic/CLAUDE.md」→`^
 原因: `^X^F`/`^X^D`の候補一覧は、legacy自身のT_hfile/T_hdirに合わせ、`^N`/`^P`/Enter/`^G`/`^L`以外の任意のバイトを「その場でパスを直接編集し始める」生きたコンボボックスとして扱う仕様(`feedRegexListByte()`、GrepPattern/CutPattern/ManNameの候補編集と共通)です。`^S`はこのホワイトリストに含まれないため、GREPを起動する代わりに(意図通り)この「編集開始」経路へ入りますが、`feedRegexListByte()`が`promptHistoryContext_`(returnMode等を保持)を`activatePrompt()`(→`drawPromptLabel()`)より「前に」クリアしていたため、`drawPromptLabel()`のRecentFile/RecentDirectory向けdestinationMode計算が常にnulloptを読んで無条件に`ApplicationMode::Directory`へ落ちていました――起点がDirectory自身だった場合だけ偶然正しく見えていたため、「DIRでは変化無し、FILEでは戻り値が変わる」というご観察と正確に一致します。`returnMode`は既にローカル変数へ退避済みだったので、クリアのタイミングを`activatePrompt()`の後へ遅らせるだけで修正できました。
 
 なお`^S`自体がGREPを起動しない(この候補一覧を編集し始めるだけ)のはlegacy由来の意図した仕様で、バグではありません(FGREP/EGREP/CUTの同種の候補編集画面でも`^S`は単に編集中のテキストへの制御バイト挿入になります)。新規doctest1件・実機PTYで確認し、docs/CHANGES.mdに項目441として記録、make install/make app/jキー回帰チェックも完了、コミットしました。
+
+<直ってないんだが。
+
+>どの症状がまだ直っていないか教えてください。前回の修正で対応したのは(1)FileMode::pagerMode_(CLI直接起動)でのGREP/(grep)バッジ表示、(2)^X^F/^X^D履歴一覧を編集し始めた際の戻り値欄、の2点でした。
+
+具体的にどんな操作をして、何が起きた(または起きなかった)か教えてもらえますか？
+
+<usilic -c（引数無し）で起動→`^X^F^S`または`^X^D^S`
+いずれも反応無し。
+
+>実機PTYで`usilic -c ~/git/usilic`(引数無し)→`^X^F`→`^S`を再現したところ、画面もモードラインも本当に一切変化しないことを確認しました。原因は`feedRegexListByte()`が`^S`を「ナビゲーション」ホワイトリストに含めておらず、意図通り「その場でパスを直接編集し始める」経路へ入るものの、`^S`自体が`feedPromptByteInner()`の生バイト拒否ルール(2026-08-12にユーザー様自身が依頼した「制御コード入力は`^Q`前置必須」)に阻まれ、画面上は無反応(ビープのみ)になっていたと判明しました。1点確認させてください——`^X^F`/`^X^D`の候補一覧を絞り込む/検索する目的で`^S`/`^[i`を使いたい、という新しい要望でしょうか？
+
+<スピーカーに音を出してみたら確かにビープ音が鳴る。気づけばもっと早かったかも。
+やりたいのはLOCATEと同じ。Resの3文字が`...`にあるやつ。あの手をやりたい。
+
+>ビープ確認ありがとうございます。ご要望通り、`^X^F`/`^X^D`の候補一覧内でLOCATE同様のin-place GREP(`^S`/`^[i`)を実装しました。
+
+調査の結果、`^[i`(ESC i)は実は既に動いていました(ESCはリーダーキーとして扱われるため「編集開始」経路を経由せず`Command::StartIncrementalGrep`へ届いていた)が、`ListBrowserMode::show()`が構築する行に`ellipsisEligible`が未設定だったため、長いパスはFinder風の中間省略`...`が出ず単純に右側が切り落とされるだけで、マッチが切り落とし範囲にあると何も見えていませんでした。`LocateMode`/`DuMode`と同じ`ellipsisEligible=true`に変更して解決しました。
+
+`^S`自体は`feedRegexListByte()`の「ナビゲーション」ホワイトリストに`RecentFile`/`RecentDirectory`限定で追加し、`Command::StartGrep`へ流すようにしました。検証中、`promptHistoryContext_`が候補一覧の他のナビゲーション操作のため意図的にクリアされない設計だったことが原因で、`^S`後にマッチ件数は正しいのにモードラインが古い「まだ閲覧中」の表示("FILE 1/5 ..."、(grep)バッジ無し)のままになる副産物のバグも発見・修正しました(`^S`のケースでのみ明示的にクリア)。
+
+実機PTYで実際の`~/.usilic/history`(60件超)に対し`^S`/`^[i`いずれでも正しいマッチ数・省略された`...`自体のマゼンタ反転・`^N`でのマッチ間巡回を確認、新規doctest2件を追加、関連テスト計229件・2342アサーション全通過、docs/CHANGES.mdに項目442として記録、make install/make app/jキー回帰チェックも完了しました。
