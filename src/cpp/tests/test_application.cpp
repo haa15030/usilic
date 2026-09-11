@@ -3895,6 +3895,47 @@ TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile): the return-value fie
   CHECK(row.find("FILE") != std::string::npos);
 }
 
+// 2026-09-11追加、直接のユーザー報告("usilic -c で起動→^X^F^J^S
+// ^Uusilic^M→...→^G→^G（なぜ2回？）"): EGREPの検索結果を確定した後、
+// ^Gで1段階ずつ戻る際、`returnFromGrep()`自身の`grepReturnsToCandidateList_`
+// LIFO再入場が`startRegexPromptList()`経由で`startPromptHistoryRecall()`
+// を「再度」呼ぶ――その時点で`promptHistoryContext_`は既に空になって
+// いるため、無条件に退避する実装だとその2回目の呼び出しが「空」を
+// 退避して、1回目の呼び出しで退避したはずのRecentFileコンテキストを
+// 上書き・破壊してしまい、EGREP自身の候補一覧から`^X^F`元のRecentFile
+// 一覧へ戻る「はず」の2回目の^Gが、画面上何も変わらない(無反応に見える)
+// バグを引き起こしていた。
+TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile) full back-out chain: Grep results -> ^G -> EGREP's "
+                           "own candidate list -> ^G -> the ORIGINAL RecentFile list is restored (not stuck "
+                           "showing EGREP's candidates again)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  std::string filePath = app.fileMode().currentFile();
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -- ^J^S = EGREP, opens its own candidate list
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  feedText(".");  // clears the seeded candidate, types a regex matching (almost) everything
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+
+  REQUIRE(app.handleCommand(Command::Back));  // ^G #1: back to EGREP's own candidate list
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  REQUIRE(app.handleCommand(Command::Back));  // ^G #2: should restore the ORIGINAL RecentFile list
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  // The restored list must contain the real file path, not EGREP's own
+  // regex-pattern candidates (proving RecentFile content was actually
+  // re-populated, not just left stuck showing EGREP's list again).
+  const auto &items = app.listBrowserMode().items();
+  CHECK(std::find(items.begin(), items.end(), filePath) != items.end());
+}
+
 TEST_CASE_FIXTURE(Fixture, "Space (ListBrowser, a non-path category like ProgramCommand): plain PageDown") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartProgram));

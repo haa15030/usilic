@@ -7756,6 +7756,67 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      CutPattern/ManName/Fgrep/Egrep系テスト計185件・1956アサーション
      全通過。
 
+444. **`^X^F`起点のEGREP検索確定後、`^G`を2回押しても元の`RecentFile`
+    一覧に戻らず(EGREP自身の候補一覧が再表示されるだけで)無反応に
+    見えるバグを修正**
+   - **ユーザー報告**: 直接のユーザー報告「usilic -cで起動→
+     `^X^F^J^S^Uusilic^M`→検索結果は`usilic`が一件だけ。戻り値もそれ
+     自体が無い。「EGREP」「1/1 END」「7」「(grep)       」→`^G`→
+     `^G`（なぜ2回？）→（ls）」を受けて調査。
+   - **原因1(項目443と同型、3箇所目の同種バグ)**: 投入・確定済みの
+     EGREP結果一覧(`ApplicationMode::Grep`、`grepView_`自身の
+     `ModeLineFieldsProvider`)も、`drawPromptLabel()`/EGREP候補一覧
+     自身の`listBrowserView_`のProviderと同じく、`grepReturnMode_`が
+     `ApplicationMode::ListBrowser`になるケースの分岐が無く、戻り値欄
+     (trailing3)が空白のままだった。`grepReturnListCategory_`(項目443
+     で新設)をここでも使い、`"FILE"`/`"DIR"`を表示するよう修正。
+   - **原因2(`^G`を2回押しても戻らない、より深い不具合)**: EGREP
+     結果を確定した後の`^G`は、legacy由来の「1階層ずつ候補一覧へ
+     戻る」設計(`returnFromGrep()`の`grepReturnsToCandidateList_`)
+     により、まずEGREP自身の候補一覧へ戻る(1回目の`^G`、ここは正しく
+     動作する)。しかし「まだ`^X^F`自身の`RecentFile`一覧を閲覧中に
+     EGREPを起動する」という組み合わせ自体が項目442/443より前は
+     到達不能だったため、2回目の`^G`(EGREP自身の候補一覧を抜けて、
+     本来は元の`RecentFile`一覧へ戻るべきもの)は一度も正しく動作した
+     ことが無かった――`returnFromListBrowser()`は`promptHistoryContext_
+     ->returnMode`(EGREP起動時のcurrentMode_、この場合
+     `ApplicationMode::ListBrowser`)へ`currentMode_`を戻すだけで、
+     `RecentFile`一覧自身の内容(`listBrowserMode_`)を再構築する処理を
+     一切持たない――そのため画面は(既に`ListBrowser`のままだったので)
+     何も変わらず、EGREP自身の候補一覧が表示され続け、ユーザーには
+     「2回目の`^G`が無反応」に見えていた。
+   - **修正**: `ensureShellActive()`/`returnFromShell()`が「Shellへの
+     割り込み中、進行中の候補一覧セッションを破棄せず一時停止する」
+     ために既に使っている`suspendedPromptHistoryContext_`を再利用。
+     `startPromptHistoryRecall()`が`promptHistoryContext_`をEGREP自身
+     の候補一覧向けに上書きする「前」に、`currentMode_==ListBrowser`
+     (=既に`RecentFile`/`RecentDirectory`一覧を閲覧中)なら退避し、
+     `returnFromListBrowser()`側で`returnMode==ListBrowser`かつ退避
+     済みのコンテキストがあれば、それを復元した上で
+     `listBrowserMode_.show(sortedUniqueRecentEntries(...))`により
+     元の`RecentFile`/`RecentDirectory`一覧の内容そのものも再構築する。
+   - **副産物のバグ(実装中に発覚)**: `returnFromGrep()`自身の
+     `grepReturnsToCandidateList_`LIFO再入場が、EGREP検索の確定後に
+     `startRegexPromptList()`経由で`startPromptHistoryRecall()`を
+     「再度」呼ぶ(1回目はEGREP起動時、2回目はこのLIFO再入場時)ため、
+     退避処理を無条件に行う素朴な実装だと、2回目の呼び出し(その時点
+     で`promptHistoryContext_`は既に空)が「空」を退避して1回目の
+     正しい退避(`RecentFile`コンテキスト)を上書き・破壊してしまう
+     ――`suspendedPromptHistoryContext_`が「まだ何も保持していない」
+     時だけ退避するガードを追加して回避した。
+   - **検証**: `test_application.cpp`に新規doctest1件を追加(EGREP結果
+     →`^G`→EGREP自身の候補一覧→`^G`→復元された`RecentFile`一覧、の
+     全経路を再現し、復元後の一覧に実際のファイルパスが含まれること
+     ――EGREP自身の正規表現パターン候補ではないこと――を確認)、全
+     通過。実機PTYで元のユーザー報告シナリオを再現し、`^G`3回で
+     Grep結果→EGREP候補一覧→復元された`RecentFile`一覧(実際のファイル
+     パス群を表示)→Directoryへ、それぞれ正しく1段階ずつ遷移することを
+     確認。関連するListBrowser/RecentFile/RecentDirectory/History/
+     GrepPattern/CutPattern/ManName/Fgrep/Egrep系テスト計186件・
+     1973アサーション全通過(Shell系はPTYハーネスの既知のフレーキーな
+     ハングのため別途、`suspendedPromptHistoryContext_`関連テストのみ
+     個別に4件・49アサーション全通過を確認)。
+
 
 ## 11. CP / MV / RM / ARC
 

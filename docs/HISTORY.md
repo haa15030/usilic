@@ -16759,3 +16759,15 @@ CLAUDE.mdを選択→その場で`^X^F`：戻り値「...silic/CLAUDE.md」→`^
 ②戻り値欄が空白になる件: `^O^S`/`^J^S`を`^X^F`/`^X^D`の候補一覧を「まだ閲覧中」に起動すると、`grepReturnMode_`が`ApplicationMode::ListBrowser`になり、`previousModeName()`にはListBrowserのケースが無いため戻り値欄が空白になっていました(項目441で記録した既存の別バグと同型)。EGREPは`startRegexPromptList()`が内部状態をEGREP自身の候補一覧向けに上書きしてしまうため、FGREPの修正だけでは足りず、新設の`grepReturnListCategory_`(上書きされる前の`listBrowserCategory_`を退避)を使って、FGREP/EGREPどちらの経路でも統一的に`"FILE"`/`"DIR"`を表示するよう修正しました。
 
 新規doctest3件を追加、実機PTYで`^X^D`→`^O^S`・`^X^F`→`^J^S`の両方を再現して修正を確認、関連テスト計185件・1956アサーション全通過、docs/CHANGES.mdに項目443として記録、make install/make app/jキー回帰チェックも完了しました。
+
+<`usilic -c`で起動→`^X^F^J^S^Uusilic^M`→検索結果は`usilic`が一件だけ。戻り値もそれ自体が無い。
+「EGREP」「1/1 END」「7」「(grep)       」
+→`^G`→`^G`（なぜ2回？）→（ls）
+
+>2つの独立した原因がありました。
+
+原因1(項目443と同型、3箇所目の同種バグ): 確定済みのEGREP結果一覧(`grepView_`自身のモードライン)も、`grepReturnMode_`が`ListBrowser`になるケースの分岐が無く戻り値欄が空白でした。既存の`grepReturnListCategory_`を使い`"FILE"`/`"DIR"`を表示するよう修正。
+
+原因2(`^G`を2回押しても戻らない、より深い不具合): EGREP結果確定後の`^G`は、legacy由来の「1階層ずつ候補一覧へ戻る」設計により、まずEGREP自身の候補一覧へ正しく戻ります(1回目の`^G`)。しかし「`^X^F`のRecentFile一覧を閲覧中にEGREPを起動する」という組み合わせ自体が項目442/443より前は不可能だったため、2回目の`^G`(EGREP自身の候補一覧を抜けて元のRecentFile一覧へ戻るべきもの)が一度も正しく動作したことが無く、`listBrowserMode_`の内容がEGREP自身の候補一覧のまま再構築されず、画面が変わらないため「無反応」に見えていました。`ensureShellActive()`/`returnFromShell()`が既に使っている`suspendedPromptHistoryContext_`(候補一覧セッションの一時停止・復元の仕組み)を再利用し、`RecentFile`/`RecentDirectory`一覧の内容そのものも正しく復元するよう修正しました。実装中、`returnFromGrep()`自身のLIFO再入場が`startPromptHistoryRecall()`を2回呼ぶことで、素朴な実装だと1回目の正しい退避を2回目が上書き・破壊してしまう副産物のバグも発見・修正しました。
+
+新規doctest1件を追加(Grep結果→^G→EGREP候補一覧→^G→復元されたRecentFile一覧、の全経路を検証)、実機PTYで`^G`3回でGrep結果→EGREP候補一覧→復元されたRecentFile一覧→Directoryへ正しく遷移することを確認、関連テスト計186件・1973アサーション全通過、docs/CHANGES.mdに項目444として記録、make install/make app/jキー回帰チェックも完了しました。

@@ -1626,6 +1626,18 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       // (Shell自身にMan/Locate/DuのようなQuery/Pageに相当する固有の
       // 状態は無い)。
       path = previousModeName(ApplicationMode::Shell);
+    } else if (grepReturnMode_ == ApplicationMode::ListBrowser) {
+      // 2026-09-11追加、直接のユーザー報告("usilic -c で起動→^X^F^J^S
+      // ^Uusilic^M→検索結果はusilicが一件だけ。戻り値もそれ自体が無い"):
+      // 上と同じ穴、投入・確定済みのEGREP結果一覧(ApplicationMode::Grep、
+      // この関数自身)版。`^X^F`/`^X^D`自身の候補一覧から起動された
+      // EGREP/FGREPが実際に検索を実行しGrepモードへ切り替わった後も、
+      // grepReturnMode_はApplicationMode::ListBrowserのままであり、
+      // 上のどの分岐にも該当しないためpathが空のままだった――
+      // drawPromptLabel()/listBrowserView_自身のModeLineFieldsProvider
+      // 向けに新設したgrepReturnListCategory_(項目443参照)をここでも
+      // 再利用し、"FILE"/"DIR"を表示する。
+      path = grepReturnListCategory_ == RingCategory::RecentFile ? "FILE" : "DIR";
     }
     // 2026-08-23修正、直接のユーザー報告("FGREPのモードラインで戻り値
     // の位置が(fgrep)と逆"): trailing2/trailing3は、このまさに「プログ
@@ -6084,6 +6096,39 @@ bool Application::returnFromListBrowser() {
         return toggleListBrowserHistory();
       }
       ApplicationMode returnMode = promptHistoryContext_->returnMode;
+      // 2026-09-11追加、直接のユーザー報告("usilic -c で起動→^X^F^J^S
+      // ^Uusilic^M→...→^G→^G（なぜ2回？）"): 項目442/443により、
+      // `^X^F`/`^X^D`自身の候補一覧を「閲覧中」に`^O^S`/`^J^S`
+      // (FGREP/EGREP)を起動することが初めて可能になったが、これは
+      // `startPromptHistoryRecall()`が`promptHistoryContext_`
+      // (`RecentFile`/`RecentDirectory`のもの)を、EGREP自身の候補
+      // 一覧向けの新しい`PromptHistoryContext`で無条件に上書きして
+      // しまう(returnMode=currentMode_=ListBrowser、つまり「ただの
+      // ListBrowserへ戻る」という具体性の無い値になる)ケースを新たに
+      // 生んだ――ensureShellActive()/returnFromShell()自身の
+      // `suspendedPromptHistoryContext_`と全く同じ理屈で、ここでも
+      // returnMode自体がListBrowserを指す場合は、直前に上書きされて
+      // 消えた「元々RecentFile/RecentDirectoryのどちらを閲覧していた
+      // か」を`suspendedPromptHistoryContext_`から復元する(復元しない
+      // と、`listBrowserMode_`自身の内容がEGREP自身の候補一覧のまま
+      // 変わらず、その上で`currentMode_`だけがListBrowserへ戻る――
+      // 画面が一切変わらないため見た目上「^Gが無反応」に見え、実際には
+      // もう1回^Gを押して初めて、元のRecentFile/RecentDirectory一覧を
+      // 一度も経由せず、その先の起点(Directory/File)へ直接ジャンプ
+      // していた)。
+      if (returnMode == ApplicationMode::ListBrowser && suspendedPromptHistoryContext_) {
+        promptHistoryContext_ = suspendedPromptHistoryContext_;
+        suspendedPromptHistoryContext_ = std::nullopt;
+        RingCategory restoredCategory = promptHistoryContext_->kind == PromptKind::RecentFile
+                                             ? RingCategory::RecentFile
+                                             : RingCategory::RecentDirectory;
+        listBrowserCategory_ = restoredCategory;
+        listBrowserChronological_ = false;
+        listBrowserView_.setCursorAtModeLineTrailingEnd(false);
+        listBrowserMode_.show(sortedUniqueRecentEntries(restoredCategory));
+        currentMode_ = ApplicationMode::ListBrowser;
+        return true;
+      }
       promptHistoryContext_ = std::nullopt;
       currentMode_ = returnMode;
       // 2026-08-12修正、直接のユーザーの訂正: "戻り値が(ls)ならちゃんと
@@ -9657,6 +9702,29 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
       break;
     default:
       return false;
+  }
+  // 2026-09-11追加、returnFromListBrowser()自身の
+  // suspendedPromptHistoryContext_を使った復元ロジックのコメント参照:
+  // ここに到達する時点でcurrentMode_が既にListBrowser(つまり`^X^F`/
+  // `^X^D`自身の候補一覧を「閲覧中」に、この呼び出し――例えば
+  // EGREPの直接入力の候補一覧――が起きた)なら、これから直後の行で
+  // 上書きしてしまう前の`promptHistoryContext_`を退避しておく
+  // ――ensureShellActive()が全く同じ状況(ListBrowserの最中に別の
+  // セッションへ跳ぶ)に対して既に使っている、同じ
+  // suspendedPromptHistoryContext_を再利用する。
+  // 2026-09-11再訂正: `returnFromGrep()`自身の`grepReturnsToCandidateList_`
+  // LIFO再入場(1階層ずつ候補一覧へ戻る既存の仕組み、そのコメント参照)
+  // が、EGREP検索の確定後に`startRegexPromptList()`経由でこの関数を
+  // 「再び」呼ぶ――その時点では(検索実行前に既にactivatePrompt()/
+  // submitPrompt()を経てクリアされているため)`promptHistoryContext_`
+  // は既に空になっている。無条件に退避すると、この2回目の呼び出しが
+  // 「空」を退避して`suspendedPromptHistoryContext_`を上書きしてしまい、
+  // 1回目の呼び出し(実際に退避すべきだったRecentFile/RecentDirectory
+  // のコンテキスト)を破壊してしまっていた。`suspendedPromptHistoryContext_`
+  // が「まだ何も保持していない」時だけ退避することで、この二重呼び出し
+  // 越しでも最初の退避を保ち続ける。
+  if (currentMode_ == ApplicationMode::ListBrowser && !suspendedPromptHistoryContext_ && promptHistoryContext_) {
+    suspendedPromptHistoryContext_ = promptHistoryContext_;
   }
   promptHistoryContext_ = PromptHistoryContext{promptKind_, currentMode_, promptEditor_.text(), directEntry};
   promptKind_ = PromptKind::None;
