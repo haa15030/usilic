@@ -1824,10 +1824,18 @@ std::string ContentView::composeModeLineRow(const std::string &positionText) con
 // つまみ2列ぶん差し引かれた「コンテンツ用の」幅だということ。つまり
 // ここでの書き込み先(columns()、columns()+1)は、他の全ての描画が
 // 一切使わない、常に予約済みの専用領域であり、上書きの心配は無い。
-// モードラインの表示/非表示にも一切関わらず常に描く(-gの本物の
-// スクロールバーが常時表示なのに倣う)。
+// 2026-09-13訂正、直接のユーザー自身の言葉("張りぼては-gだけの話
+// だったなと途中で気づいた。気づかぬまま-gと同じく完全に常時、とは
+// 書いたけど、モードライン有りの時は消せる？"): 「完全に常時」は
+// GraphicalDisplay自身の(この機能とは無関係な)張りぼて/本物の話との
+// 混同に気づく前の回答だったため、モードライン表示中はこの関数の
+// 描画自体を抑制する――ただし2列の幅の予約(TerminalDisplay::
+// columns()側)は、^Ohの切り替えのたびに全コンテンツが再折り返しに
+// なる方が却って落ち着かないと判断し、意図的にモードラインの表示/
+// 非表示に関わらず常時のままにしてある(モードライン表示中はこの2列
+// が単なる未使用の余白になるだけ)。
 void ContentView::renderScrollIndicatorOverlay() {
-  if (display_.hasNativeScrollbar()) return;
+  if (display_.modeLineVisible() || display_.hasNativeScrollbar()) return;
   int total = static_cast<int>(lines_.size());
   auto [thumbTop, thumbHeight] = scrollThumbRowRange(topIndex_, height_, total);
   if (thumbHeight <= 0) return;

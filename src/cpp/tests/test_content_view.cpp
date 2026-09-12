@@ -1953,9 +1953,15 @@ RecordingDisplay makeStripReservedDisplay(int rows, int contentColumns) {
 
 }  // namespace
 
-TEST_CASE("redraw: with no native scrollbar, the reserved 2-column strip shows a reverse-video "
-          "scroll-position thumb -- regardless of the mode line's own visibility") {
+TEST_CASE("redraw: with the mode line hidden and no native scrollbar, the reserved 2-column strip "
+          "shows a reverse-video scroll-position thumb") {
+  // 2026-09-13再訂正、ユーザー自身の言葉("張りぼては-gだけの話
+  // だったなと途中で気づいた。気づかぬまま-gと同じく完全に常時、
+  // とは書いたけど、モードライン有りの時は消せる？"): 幅2列の予約
+  // 自体は常時のままだが、つまみの描画はmodeLineVisible()がfalseの
+  // 間だけに戻した(renderScrollIndicatorOverlay()自身のコメント参照)。
   RecordingDisplay d = makeStripReservedDisplay(10, 20);
+  d.setModeLineVisible(false);
   ContentView v(d);
   v.setViewport(0, 5);
   v.setCursorHighlightEnabled(false);  // 行のハイライトと切り離して検証する
@@ -1969,18 +1975,24 @@ TEST_CASE("redraw: with no native scrollbar, the reserved 2-column strip shows a
     CHECK(d.standoutAt(row, 20) == expected);  // columns()そのものの列
     CHECK(d.standoutAt(row, 21) == expected);  // columns()+1列目
   }
+}
 
-  // モードラインの表示/非表示に関わらず常に出る(項目459の"常時"要求)。
-  d.setModeLineVisible(true);
+TEST_CASE("redraw: with the mode line visible, the reserved strip stays blank (no thumb drawn)") {
+  RecordingDisplay d = makeStripReservedDisplay(10, 20);  // modeLineVisible_の既定はtrue
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setCursorHighlightEnabled(false);
+  v.setLines(makeLines(20));
   v.redraw();
-  CHECK(d.standoutAt(top, 20) == true);
-  d.setModeLineVisible(false);
-  v.redraw();
-  CHECK(d.standoutAt(top, 20) == true);
+  for (int row = 0; row < 5; row++) {
+    CHECK(d.standoutAt(row, 20) == false);
+    CHECK(d.standoutAt(row, 21) == false);
+  }
 }
 
 TEST_CASE("redraw: the scroll-position thumb moves down as topIndex advances") {
   RecordingDisplay d = makeStripReservedDisplay(10, 20);
+  d.setModeLineVisible(false);
   ContentView v(d);
   v.setViewport(0, 5);
   v.setCursorHighlightEnabled(false);

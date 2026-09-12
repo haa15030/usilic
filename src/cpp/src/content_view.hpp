@@ -1227,14 +1227,19 @@ class ContentView {
   void renderModeLine();
   // 2026-09-13追加、項目458フィードバック("最低限のインジケーター")、
   // 同日項目459フィードバック("クネクネになる...それ用のエリアが
-  // 必要...常時...幅は倍")で改訂: redraw()の通常の行描画の「後」に
-  // 呼ぶ――display_.hasNativeScrollbar()がfalse(=TerminalDisplay/
-  // RecordingDisplay、Display::hasNativeScrollbar()自身のコメント参照)
-  // の間、モードラインの表示/非表示に関わらず常に、scrollThumbRowRange()
-  // が計算したつまみの行範囲について、columns()/columns()+1の2列
-  // (TerminalDisplay::columns()自身のコメント参照――常時予約済みの
-  // 専用領域であり、他のどの描画もここへは書かない)を反転表示の
-  // 空白2文字で上書きする。
+  // 必要...常時...幅は倍")で改訂、さらに同日、ユーザー自身の言葉
+  // ("張りぼては-gだけの話だったなと途中で気づいた。気づかぬまま
+  // -gと同じく完全に常時、とは書いたけど、モードライン有りの時は
+  // 消せる？")で再改訂: redraw()の通常の行描画の「後」に呼ぶ――
+  // display_.modeLineVisible()がfalseかつdisplay_.hasNativeScrollbar()
+  // がfalse(=TerminalDisplay/RecordingDisplay、Display::
+  // hasNativeScrollbar()自身のコメント参照)の間だけ、
+  // scrollThumbRowRange()が計算したつまみの行範囲について、
+  // columns()/columns()+1の2列(TerminalDisplay::columns()自身の
+  // コメント参照――幅の予約自体はモードラインの表示/非表示に関わらず
+  // 常時。ここで描画だけを条件分けしても、予約済みの専用領域が
+  // 単なる未使用の余白になるだけで他の描画とは衝突しない)を反転
+  // 表示の空白2文字で上書きする。
   void renderScrollIndicatorOverlay();
   // 全ての位置フィールドの計算(modeLineText()、renderModeLine()、
   // scrollModeLineText()、scrollModeLineSegments())で共有される:
