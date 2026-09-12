@@ -443,7 +443,27 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
           if (pos + len <= n) { keepStart = pos; keepBytes = len; attr = Display::Attribute::Bold; }
         } else {
           int pos = i + charBytes + 1;
-          if (pos < n && static_cast<unsigned char>(convertedLine[pos]) < 0x80) {
+          // 2026-09-12修正、直接のユーザー報告("QUICK.txt:237 ↑↓に
+          // ^Hコードが混入"): expandHelpMarkup()(help_text.cpp)自身の
+          // <b>/<u>エンコーディングは、文字の実バイト幅に関わらず常に
+          // 単一のバックスペース1個で重ね打ちを表す("1文字ごとに重ね
+          // 打ちを生成する"、そちら自身のコメント参照)――legacy由来の
+          // EUC規約(1バイト文字は単一BS、2バイト幅文字は二重BS)とは
+          // 別物。単一BSの直後を0x80未満(ASCII)限定にしていたこの
+          // 分岐は、UTF-8のマルチバイト文字(例: <b>↑</b>が生成する
+          // "↑\b↑")を認識できずに素通しさせてしまい、生のバックスペース
+          // がそのまま反転表示の制御グリフとして画面に現れていた。
+          // UTF-8エンコーディング時に限り(legacyのEUC規約自体には
+          // 一切手を付けない――下のelse分岐)、単一BSの直後も実際の
+          // 1文字分のバイト長を読み取るよう広げる。
+          if (encoding_ == Charset::Encoding::Utf8) {
+            int len = byteLengthAt(convertedLine, pos);
+            if (pos + len <= n) {
+              keepStart = pos;
+              keepBytes = len;
+              attr = Display::Attribute::Bold;
+            }
+          } else if (pos < n && static_cast<unsigned char>(convertedLine[pos]) < 0x80) {
             keepStart = pos;
             keepBytes = 1;
             attr = Display::Attribute::Bold;

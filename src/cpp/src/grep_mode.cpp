@@ -27,6 +27,30 @@ std::string convertTabsForSearch(const std::string &pattern) {
   }
   return converted;
 }
+
+// 2026-09-12追加、直接のユーザー報告("CUT一覧のために必要な行には
+// タブコードを行末に入れてあるんだが、^Sで検索してもマゼンタハイ
+// ライトが出ない"): convertTabsForSearch()/PipeBuffer::wrapLine()自身の
+// コメント参照の通り、タブはU+2060(WORD JOINER、幅0)+それに続く
+// スペースへ変換されて検索対象になる――マッチ自体はU+2060の3バイトに
+// 対して正しく成立するが、そのバイト範囲だけをハイライトのAttributeRun
+// にしても、U+2060自体は表示幅0なので端末上には色が乗る「セル」が
+// 一つも存在せず、結果としてハイライトが実際には何も見えない
+// (実機PTYで確認済み: マゼンタの前景色/背景色を指定するエスケープ
+// シーケンス自体は正しく送出されているが、それを引き継ぐべき可視文字
+// が無いまま即座にリセットされてしまう)。マッチ範囲の終端がちょうど
+// このU+2060マーカーの直後に来る場合、そのタブが実際に「見た目上」
+// 占めている(タブ展開由来の)半角スペースの連続へ、終端をそこまで
+// 広げる――これにより、タブへのマッチが、その視覚的な表現である
+// 空白の帯として実際に着色されるようになる。
+int widenSpanPastTabMarker(const std::string &line, int end) {
+  static const std::string kTabMarker = "\xE2\x81\xA0";  // U+2060 WORD JOINER
+  if (end < 3 || static_cast<std::size_t>(end) > line.size()) return end;
+  if (line.compare(end - 3, 3, kTabMarker) != 0) return end;
+  int p = end;
+  while (p < static_cast<int>(line.size()) && line[p] == ' ') p++;
+  return p;
+}
 }  // namespace
 
 GrepMode::GrepMode(ContentView &view, const Configuration &configuration)
@@ -152,7 +176,8 @@ bool GrepMode::search(const std::vector<std::string> &sourceLines, const std::st
         GrepMatch &target = matches_[matchIdx];
         std::size_t pos = target.text.find(matchText, searchFrom);
         if (pos == std::string::npos) continue;
-        target.matchSpans.push_back({static_cast<int>(pos), static_cast<int>(pos + matchText.size())});
+        int spanEnd = widenSpanPastTabMarker(target.text, static_cast<int>(pos + matchText.size()));
+        target.matchSpans.push_back({static_cast<int>(pos), spanEnd});
         searchFrom = pos + std::max<std::size_t>(matchText.size(), 1);
       }
     }
@@ -235,7 +260,8 @@ bool GrepMode::searchInProcess(const std::vector<std::string> &sourceLines, cons
         match.text = line;
         any = true;
       }
-      match.matchSpans.push_back({static_cast<int>(pos), static_cast<int>(pos + searchPattern.size())});
+      int spanEnd = widenSpanPastTabMarker(line, static_cast<int>(pos + searchPattern.size()));
+      match.matchSpans.push_back({static_cast<int>(pos), spanEnd});
       findFrom = pos + searchPattern.size();
     }
     if (any) matches_.push_back(std::move(match));

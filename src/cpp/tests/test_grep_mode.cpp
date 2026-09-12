@@ -60,6 +60,31 @@ TEST_CASE_FIXTURE(Fixture, "search (Basic/plain grep): a literal tab byte in the
   CHECK(mode.matches()[1].text == "another\xE2\x81\xA0");
 }
 
+// 2026-09-12追加、直接のユーザー報告("CUT一覧のために必要な行には
+// タブコードを行末に入れてあるんだが、^Sで検索してもマゼンタハイ
+// ライトが出ない"): U+2060(WORD JOINER)自体は表示幅0なので、
+// matchSpansがそのマーカーの3バイトだけを指していると、実機の端末上
+// では色を乗せるべき可視セルが一つも無く、ハイライトが実際には何も
+// 見えない――マッチ範囲の終端がこのマーカーの直後に来る場合、その
+// タブが視覚的に占めている(タブ展開由来の)半角スペースの連続まで
+// 終端を広げる(widenSpanPastTabMarker()自身のコメント参照)ことで、
+// 実際に着色される可視範囲を確保する。
+TEST_CASE_FIXTURE(Fixture, "search: a match ending exactly at a U+2060 tab marker widens its span to also "
+                           "cover the following space padding (PipeBuffer::wrapLine()'s own tab-expansion), "
+                           "since the marker itself has zero display width and could never show a visible "
+                           "highlight color on any real terminal") {
+  std::vector<std::string> lines = {"foo\xE2\x81\xA0     bar\xE2\x81\xA0     baz\xE2\x81\xA0     "};
+  REQUIRE(mode.search(lines, "\t", GrepSyntax::Basic));  // raw tab, as ^Q^I would insert
+  REQUIRE(mode.matches().size() == 1);
+  REQUIRE(mode.matches()[0].matchSpans.size() == 3);  // one per tab on this line
+  // Each span must extend past its own marker's 3 bytes through the 5
+  // trailing spaces (tab stop 8 from column 3/11/19) -- not stop at
+  // byte offset +3 (the marker alone).
+  CHECK(mode.matches()[0].matchSpans[0] == std::pair<int, int>{3, 11});   // "\xe2\x81\xa0" + 5 spaces
+  CHECK(mode.matches()[0].matchSpans[1] == std::pair<int, int>{14, 22});  // after "bar"
+  CHECK(mode.matches()[0].matchSpans[2] == std::pair<int, int>{25, 33});  // after "baz"
+}
+
 TEST_CASE_FIXTURE(Fixture, "search: fgrep treats the pattern as a literal fixed string, not a regex") {
   std::vector<std::string> lines = {"a.b", "axb", "a.b again"};
   REQUIRE(mode.search(lines, "a.b", GrepSyntax::Fixed));
@@ -248,4 +273,16 @@ TEST_CASE_FIXTURE(Fixture, "searchInProcess: finds multiple non-overlapping occu
   CHECK(mode.matches()[0].matchSpans[0] == std::pair<int, int>{0, 3});
   CHECK(mode.matches()[0].matchSpans[1] == std::pair<int, int>{3, 6});
   CHECK(mode.matches()[0].matchSpans[2] == std::pair<int, int>{6, 9});
+}
+
+// 2026-09-12追加、widenSpanPastTabMarker()自身のコメント参照(上の
+// search()向けの同種テストと同じ理屈): in-place GREP(searchInProcess())
+// 側でも同じ問題があった。
+TEST_CASE_FIXTURE(Fixture, "searchInProcess: a match ending exactly at a U+2060 tab marker widens its span "
+                           "to also cover the following space padding, same as search()") {
+  std::vector<std::string> lines = {"foo\xE2\x81\xA0     bar"};
+  REQUIRE(mode.searchInProcess(lines, "\t"));
+  REQUIRE(mode.matches().size() == 1);
+  REQUIRE(mode.matches()[0].matchSpans.size() == 1);
+  CHECK(mode.matches()[0].matchSpans[0] == std::pair<int, int>{3, 11});
 }

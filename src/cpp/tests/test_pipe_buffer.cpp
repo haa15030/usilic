@@ -1,5 +1,6 @@
 #include "charset.hpp"
 #include "doctest.h"
+#include "help_text.hpp"
 #include "pipe_buffer.hpp"
 
 using fm::Charset;
@@ -208,6 +209,61 @@ TEST_CASE("UTF-8 overstrike: same kanji-bold source, converted through euc_to_ut
   CHECK(buf.lines()[0].attributes[0].attribute == Display::Attribute::Bold);
   // "概" itself (3 UTF-8 bytes), kept once; no trailing newline byte.
   CHECK(buf.lines()[0].text.size() == 3);
+}
+
+// 2026-09-12追加、直接のユーザー報告("QUICK.txt:237 ↑↓に^Hコードが
+// 混入"): expandHelpMarkup()(help_text.cpp)自身の<b>/<u>エンコード
+// ロジックは、文字の実バイト幅に関わらず常に「単一の」バックスペース
+// 1個で重ね打ちを表す(そちら自身の「1文字ごとに重ね打ちを生成する」
+// コメント参照)――legacyのEUC規約(1バイト文字は単一BS、2バイト幅
+// 文字は二重BS、すぐ上の"UTF-8 overstrike"テスト参照)とは別物。
+// 修正前は、単一BSの直後を0x80未満(ASCII)限定にしていたため、UTF-8の
+// マルチバイト文字(↑=U+2191、3バイト)を"↑\b↑"という単一BSの重ね
+// 打ちとして書いても認識できず、生のバックスペースがそのまま素通り
+// し、画面には見た目上「文字+反転表示の^Hグリフ+文字」という壊れた
+// 表示になっていた。
+TEST_CASE("UTF-8 overstrike: a SINGLE backspace (not doubled) between two copies of a multi-byte "
+          "UTF-8 character -- the shape expandHelpMarkup()'s own <b>/<u> encoding actually produces "
+          "for ANY character regardless of byte width -- is still recognized as bold, not left as "
+          "literal bytes with a visible backspace") {
+  std::string raw = "\xe2\x86\x91\x08\xe2\x86\x91";  // "↑" BS "↑" (U+2191, single backspace)
+  PipeBuffer buf(Charset::Encoding::Utf8, 80, 1 << 20);
+  buf.feed(raw + "\n");
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == "\xe2\x86\x91");  // kept once, no literal \x08 surviving
+  REQUIRE(buf.lines()[0].attributes.size() == 1);
+  CHECK(buf.lines()[0].attributes[0].start == 0);
+  CHECK(buf.lines()[0].attributes[0].end == 3);
+  CHECK(buf.lines()[0].attributes[0].attribute == Display::Attribute::Bold);
+}
+
+// 同上、実際のQUICK.txt自身の生成経路(expandHelpMarkup()を通す)で
+// end-to-end確認する。
+TEST_CASE("UTF-8 overstrike: end-to-end through expandHelpMarkup() -- \"<b>up-arrow</b>\" renders as "
+          "a single bold arrow, not the arrow followed by a literal backspace control byte") {
+  std::string expanded = fm::expandHelpMarkup("<b>\xe2\x86\x91</b>");
+  PipeBuffer buf(Charset::Encoding::Utf8, 80, 1 << 20);
+  buf.feed(expanded + "\n");
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == "\xe2\x86\x91");
+  REQUIRE(buf.lines()[0].attributes.size() == 1);
+  CHECK(buf.lines()[0].attributes[0].attribute == Display::Attribute::Bold);
+}
+
+// EUC(非UTF-8)エンコーディングでは、上の修正の対象外(legacyの単一BS
+// =1バイト限定という意味付けが引き続きそのまま有効であるべき)である
+// ことの回帰確認――単一BSの直後が0x80以上(EUCの2バイト目)なら、
+// 依然として重ね打ちとして認識せず素通しする。
+TEST_CASE("EUC overstrike: a single backspace followed by a non-ASCII byte is still NOT recognized "
+          "as bold under EUC encoding (the widened UTF-8 handling above must not leak into legacy's "
+          "own single-BS-means-1-byte-only convention)") {
+  std::string raw = "\xa4\xa2";
+  raw.push_back('\b');
+  raw += "\xa4\xa2";
+  PipeBuffer buf(Charset::Encoding::Euc, 80, 1 << 20);
+  buf.feed(raw + "\n");
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].attributes.empty());  // not recognized as overstrike -- passes through as-is
 }
 
 TEST_CASE("control bytes pass through as literal bytes (ContentView highlights them, not PipeBuffer)") {
