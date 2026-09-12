@@ -24,7 +24,6 @@ using fm::DuEntry;
 using fm::GrepSyntax;
 using fm::History;
 using fm::KeyInput;
-using fm::QuickKeyEntry;
 using fm::RingCategory;
 using fm::ShellOptions;
 using fm::test::RecordingDisplay;
@@ -132,25 +131,6 @@ struct Fixture {
 
   Fixture() : root(makeTempDir()) {
     fs::create_directory(root / ".usilic");  // wFilePath_'s own parent dir, see app{}'s own comment above
-    // 2026-09-12追加、直接のユーザー依頼(⑪、QUICK.txtが常時有効な
-    // 本番データソースになったことに伴う追加): QUICK.txt自身の多くの
-    // KEYエントリはusilicrc本来の"F-N"プレフィックス記法を使う
-    // (例:"F-0 C-c"、"F-1 C-h")――loadFPrefixTable()自身のコメント
-    // 参照の通り、これはApplication::usilicrcPath_(このFixtureでは
-    // root/.usilic/usilicrc)を都度新規に読み込んで解決される。この
-    // ファイルが存在しないと、F-Nトークンは未解決のまま(文字通り
-    // "F-0"等)になり、parseKeyNotationBytes()がそれを実行可能な
-    // バイト列として正しく解釈できない(意味の無い文字通りのバイト
-    // 列になってしまう)ため、実際にF-N付きのKEYエントリを実行する
-    // テストが成り立たない。配布テンプレート(src/usilicrc)と同じ
-    // デフォルト値(F-0=C-x、F-1=C-j、F-2=C-x C-k、F-3=C-o)を持つ
-    // 最小限のF-?セクションを用意しておく。
-    {
-      std::ofstream rc(root / ".usilic" / "usilicrc");
-      rc << "KEY\nF-?\n\tC-x\t# ^X\t\t\t\t\t\t\tF-0\n\tC-j\t# ^J\t\t\t\t\t\t\tF-1\n"
-            "\tC-x C-k # ^X^K\t\t\t\t\t\tF-2\n\tC-o     # ^O\t\t\t\t\t\t\tF-3\n\n"
-            "K-?\n";
-    }
     fs::create_directory(root / "subdir");
     { std::ofstream(root / "plain.txt") << "hello\nworld\n"; }
     { std::ofstream(root / "log.txt") << "marker one\nline1\nmarker two\nline2a\nline2b\nmarker three\nline3\n"; }
@@ -5297,40 +5277,6 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): NOT reachable from SHELL mode
   CHECK(app.currentMode() == ApplicationMode::Shell);  // stayed in Shell -- did NOT open the banner
 }
 
-// 2026-09-08、直接のユーザー依頼によるキー再編で^Oaから^Jaへ移行
-// (ARCが^Xaから^Oaへ移るための地ならし)。
-//
-// 2026-09-12修正、直接のユーザー依頼(⑪、"QUICK.txtに基づいてKEY
-// モードを更新して欲しい"): QUICK.txtがKEYモードの常時有効な本番
-// データソースになった(loadQuickKeyEntries()自身のコメント参照、
-// USILICQUICKKEY環境変数によるopt-inゲートを撤廃)ため、以前この
-// テストが検証していた「^JaでKEYモード自身の行内容が英語/日本語に
-// 切り替わる」という挙動は成り立たなくなった――QuickKeyEntryには
-// kKeyTable::descriptionEnに相当する英語版フィールドが無く(QUICK.txt
-// 自体が日本語専用)、renderKeyRows()のhelpJapanese_分岐は
-// useQuick==falseの場合(kKeyTableフォールバック時)にしか効かない。
-// ^Ja(ToggleHelpLanguage)自体は健在で、引き続きHELP本文の言語
-// (kHelpTextJa/En)を切り替える――ここではKEYモードの行内容が
-// QUICK.txt由来のまま(日本語)で変化しないことを確認する形に書き
-// 換えた。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J a (K-27) toggles the HELP text language, but no longer affects "
-                           "KEY mode's own row content (QUICK.txt-driven rows are Japanese-only, unlike "
-                           "the superseded kKeyTable's bilingual description/descriptionEn pair)") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  const auto &linesBefore = app.activeContentView().lines();
-  REQUIRE_FALSE(linesBefore.empty());
-  std::string firstRowBefore = linesBefore[0].text;
-  CHECK(firstRowBefore.find("C-h") != std::string::npos);  // QUICK.txt's own first KEY-section row
-
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  CHECK(app.feedByte('a', std::nullopt));
-  const auto &linesAfter = app.activeContentView().lines();
-  REQUIRE_FALSE(linesAfter.empty());
-  CHECK(linesAfter[0].text == firstRowBefore);  // unchanged -- QUICK.txt has no English variant
-  CHECK(app.currentMode() == ApplicationMode::Key);  // has no mode restriction, but didn't leave Key either
-}
-
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHelpLanguage): refreshes an open HELP session in place, "
                            "without pushing a nested Cut level (^G still returns to Directory in one press)") {
   REQUIRE(app.loadHelpText(fm::expandHelpMarkup(fm::kHelpTextJa)));
@@ -5734,8 +5680,10 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from File mode, 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): refused from a mode with no current "
                            "file/archive to compute a parent from") {
   REQUIRE(app.start(path()));
+  // KEY (^H) rides on Cut/CutContent (2026-09-20 rewrite, see startKey()'s
+  // own comment) -- like HELP, it has no current file/archive of its own.
   REQUIRE(app.handleCommand(Command::StartKey));
-  REQUIRE(app.currentMode() == ApplicationMode::Key);
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   CHECK_FALSE(app.handleCommand(Command::GoToParentDirectory));
 }
@@ -6010,7 +5958,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from Directory mode
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): refused outside File/Directory/etc modes") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
-  REQUIRE(app.currentMode() == ApplicationMode::Key);
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
   CHECK_FALSE(app.handleCommand(Command::GoToFileSelector));
 }
 
@@ -9071,15 +9019,16 @@ TEST_CASE_FIXTURE(Fixture, "^R (ToggleHistoryView): a non-consecutive revisit sh
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHistoryView): refused outside ListBrowser mode, matching "
                            "m_list()'s own echo_mess(S_errf) for a context ^R doesn't apply to -- using "
-                           "Key mode, since Directory/File/Archive/ArchiveContent now all have their OWN "
-                           "dedicated ^R meaning (see the \"^R directory-name/file-name history\"/\"^R in "
-                           "Archive\" tests)") {
+                           "KEY (now a Cut/CutContent session, see startKey()'s own comment), since "
+                           "Directory/File/Archive/ArchiveContent now all have their OWN dedicated ^R "
+                           "meaning (see the \"^R directory-name/file-name history\"/\"^R in Archive\" "
+                           "tests)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
-  REQUIRE(app.currentMode() == ApplicationMode::Key);
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   CHECK_FALSE(app.handleCommand(Command::ToggleHistoryView));
-  CHECK(app.currentMode() == ApplicationMode::Key);
+  CHECK(app.currentMode() == ApplicationMode::Cut);
 }
 
 // -- ^R prompt-time history recall (MAN/LOCATE/FGREP/EGREP), ported
@@ -9373,15 +9322,16 @@ TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: ^G restores whatever had already
   CHECK(app.shell().commandLine().text() == "partial");
 }
 
-TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode (using Key mode, since Directory/"
-                           "File/Archive/ArchiveContent now all have their OWN top-level ^R meaning -- see the "
-                           "dedicated \"^R directory-name/file-name history\"/\"^R in Archive\" tests below)") {
+TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode (using KEY, now a Cut/CutContent "
+                           "session, since Directory/File/Archive/ArchiveContent now all have their OWN "
+                           "top-level ^R meaning -- see the dedicated \"^R directory-name/file-name history\"/"
+                           "\"^R in Archive\" tests below)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
-  REQUIRE(app.currentMode() == ApplicationMode::Key);
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   CHECK_FALSE(app.feedByte(0x12, std::nullopt));  // top-level ^R (ToggleHistoryView) is a no-op here
-  CHECK(app.currentMode() == ApplicationMode::Key);
+  CHECK(app.currentMode() == ApplicationMode::Cut);
 }
 
 // 2026-08-20 addition, a direct user request: "ARC:^R新設。内容は、
@@ -10625,50 +10575,89 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: does NOT reflow HELP when it's nested 
   CHECK(app.currentMode() == ApplicationMode::Cut);  // the real CUT session is still intact
 }
 
-// -- KEY (^H, M_key): a browsable table of this port's own key
-// bindings, Enter re-executes the highlighted one in the mode KEY was
-// invoked from (HELP.jp 2.2) --
+// -- KEY (^H, M_key) -- 2026-09-20 full rewrite, direct user request
+// ("暫定QUICK.txtで作ってもらったKEYを見てみると...HELPと同じにして
+// ほしい。タブコードで分割の純粋CUTモード版KEYでよろしく"): the
+// previous bespoke table UI (renderKeyRows()/kKeyTable/QuickKeyEntry,
+// its own F-N prefix resolution, its own Left/Right execute/reference
+// toggle -- ALL removed, see startKey()'s own comment in
+// application.cpp) is gone. KEY now rides on Cut/CutContent exactly
+// like HELP: Application::startKey() wraps src/QUICK.txt's own "KEY"
+// section (loadKeyText()) through wrapKeyText() and splits it on the
+// literal tab byte that terminates each entry's label line
+// (GrepSyntax::Fixed), producing a normal CUT segment list.
+//
+// Unlike the HELP tests above (which inject a small synthetic string
+// via loadHelpText(), fully decoupled from the real src/doc/HELP file),
+// KEY has NO such injection point -- loadKeyText() always reads the
+// real, hardcoded ~/git/usilic/src/QUICK.txt on this dev machine (the
+// old QuickKeyEntry-based code had the very same hardcoded-path
+// limitation, no test-only override ever existed for it either). So
+// these tests exercise the REAL file's actual "KEY" section content,
+// searching for known literal substrings (visible in the file itself,
+// see the CLAUDE.md task description this session was given) rather
+// than asserting an exact segment count/shape the way the synthetic
+// HELP tests above can.
 
 TEST_CASE("resolveCommand: ^H resolves to StartKey") {
   CHECK(Application::resolveCommand(0x08, std::nullopt) == Command::StartKey);
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartKey): opens a browsable table of key bindings, without leaving "
-                           "Directory mode's own return-anchor") {
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartKey): opens a browsable CUT segment list built from the real "
+                           "QUICK.txt KEY section, entering Cut mode like HELP (not a bespoke ApplicationMode)") {
   REQUIRE(app.start(path()));
   CHECK(app.handleCommand(Command::StartKey));
-  CHECK(app.currentMode() == ApplicationMode::Key);
-  CHECK_FALSE(app.activeContentView().lines().empty());
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE_FALSE(app.cutMode().segments().empty());
+  // QUICK.txt's own first KEY-section entry is the ^H/KEY binding itself
+  // ("C-h：[KEY] キーアサイン一覧を表示").
+  CHECK(app.cutMode().segments()[0].label.find("C-h") != std::string::npos);
+  CHECK(app.cutMode().segments()[0].label.find("[KEY]") != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key: entries actually RENDER on screen, not just stored -- regression for a missing "
-                           "keyView_.setViewport() call (2026-08-02 user report: real screenshots showed only the "
-                           "mode-line row drawn, at row 0, with zero content rows)") {
+TEST_CASE_FIXTURE(Fixture, "KEY: re-entering from within a KEY session nests via pushSplit(), same as HELP -- "
+                           "no re-entrancy guard (startHelp() itself has none either)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
-  app.activeContentView().redraw();
-  // 2026-09-12修正、直接のユーザー依頼(⑪、QUICK.txtが常時有効な本番
-  // データソースになったことに伴う更新): 以前はkKeyTable自身の先頭
-  // 付近のエントリ("j : 画面を1行下へ")を探していたが、QUICK.txt
-  // では同じ内容が末尾近くの「ページ/行送り」章にあり、初期ビュー
-  // ポート(先頭23行程度)には収まらない――そもそもこのテストの目的
-  // (setViewport()が実際に呼ばれているか)には無関係な選択だった。
-  // QUICK.txt自身の実際の先頭行の内容("キーアサイン一覧を表示")を
-  // 探すよう更新した。
-  bool sawFirstEntry = false;
-  for (int row = 0; row < display.rows() - 1; row++)  // every row EXCEPT the mode-line's own bottom row
-    if (display.rowText(row).find("キーアサイン一覧を表示") != std::string::npos) sawFirstEntry = true;
-  CHECK(sawFirstEntry);
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK_FALSE(app.cutMode().canGoBack());
+
+  CHECK(app.handleCommand(Command::StartKey));  // pushed, not refused
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.cutMode().canGoBack());
+
+  REQUIRE(app.handleCommand(Command::Back));  // pops the nested KEY level
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK_FALSE(app.cutMode().canGoBack());
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key: re-entering from within Key mode itself is refused") {
+TEST_CASE_FIXTURE(Fixture, "KEY: Enter on an entry shows its detail text (CutContent), like a real CUT segment") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
-  CHECK_FALSE(app.handleCommand(Command::StartKey));
-  CHECK(app.currentMode() == ApplicationMode::Key);
+  REQUIRE(app.handleCommand(Command::Enter));  // first segment -- the ^H/KEY entry itself
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
+  bool sawExplanation = false;
+  for (const auto &line : app.activeContentView().lines())
+    if (line.text.find("usilicrc") != std::string::npos) sawExplanation = true;
+  CHECK(sawExplanation);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key: reachable from File mode too, and Back returns there (not always Directory)") {
+TEST_CASE_FIXTURE(Fixture, "KEY: ^G from the detail view returns to the KEY segment list, and a second ^G "
+                           "returns to the mode KEY was invoked from (Directory here)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartKey));
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "KEY: reachable from File mode too, and Back returns there (not always Directory), "
+                           "matching HELP's own identical cutReturnMode_ mechanism") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -10676,406 +10665,80 @@ TEST_CASE_FIXTURE(Fixture, "Key: reachable from File mode too, and Back returns 
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
   REQUIRE(app.handleCommand(Command::StartKey));
-  CHECK(app.currentMode() == ApplicationMode::Key);
+  CHECK(app.currentMode() == ApplicationMode::Cut);
 
   REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
   CHECK(app.currentMode() == ApplicationMode::File);  // back to File, not Directory
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key mode-line: shows the mode KEY was invoked from as the trailing field "
-                           "(2026-08-02 user report: a real legacy screenshot showed \"KEY .../HELP.rej\" after "
-                           "invoking KEY while viewing that file; this port showed nothing at all)") {
+TEST_CASE_FIXTURE(Fixture, "KEY (cutView_, the TOC level): mode-line shows the fixed name \"KEY\", the TOC "
+                           "listing's own byte size, and the originating directory -- exactly HELP's own "
+                           "established mode-line shape (CutOrigin::Key shares the same field-shape branch as "
+                           "CutOrigin::Help, see the cutView_ ModeLineFieldsProvider in application.cpp)") {
   REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
   REQUIRE(app.handleCommand(Command::StartKey));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+
   std::string text = app.activeContentView().modeLineText();
-  CHECK(text.rfind("KEY ", 0) == 0);
-  CHECK(text.find((root / "plain.txt").string()) != std::string::npos);
+  CHECK(text.rfind("KEY", 0) == 0);
+  std::size_t tocBytes = app.activeContentView().totalByteCount();
+  CHECK(text.find(std::to_string(tocBytes)) != std::string::npos);
+  CHECK(text.find(path()) != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key: Enter on the plain 'C-s' entry returns to Directory mode AND actually starts "
-                           "GREP (single-byte binding)") {
+TEST_CASE_FIXTURE(Fixture, "KEY: CutContent's mode-line shows the fixed name \"KEY\", matching HELP's own "
+                           "identical convention (cutContentView_ ModeLineFieldsProvider)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
-  const auto &lines = app.activeContentView().lines();
-  int row = -1;
-  // 2026-09-12修正、直接のユーザー依頼(⑪、QUICK.txtが常時有効な本番
-  // データソースになったことに伴う更新): 旧kKeyTableの"^S"ラベルは、
-  // 今のQUICK.txt由来の表記では単なる"C-s"になった。ラベルの部分
-  // 一致("C-s")は"F-1 C-s"/"F-2 C-s"(EGREP/拡張正規表現)の各行にも
-  // マッチしてしまい曖昧なため、この行だけが持つ一意な説明文で
-  // 検索する。
-  for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("基本正規表現による文字列検索") != std::string::npos) row = static_cast<int>(i);
-  REQUIRE(row >= 0);
-  app.activeContentView().setCursorIndex(row);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
 
-  CHECK(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Directory);  // FGREP is a prompt, not a mode switch
-  CHECK(app.promptActive());
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.find("KEY") != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^X^C' entry (EXIT) chains a full multi-byte leader sequence "
-                           "(^X leader -> ^C sub-command)") {
+TEST_CASE_FIXTURE(Fixture, "handleResize: reflows the KEY TOC via wrapKeyText(), same as HELP's own "
+                           "wrapHelpText() reflow branch -- must not crash, must not lose the session") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
-  const auto &lines = app.activeContentView().lines();
-  int row = -1;
-  for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("C-x C-c") != std::string::npos) row = static_cast<int>(i);  // EXIT (F-0 resolved to C-x by this Fixture's minimal usilicrc)
-  REQUIRE(row >= 0);
-  app.activeContentView().setCursorIndex(row);
+  REQUIRE_FALSE(app.cutMode().canGoBack());
 
-  CHECK(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Directory);  // EXIT is a y/n prompt, not an immediate mode switch
-  CHECK(app.promptActive());
+  display.setSize(24, 10);
+  app.handleResize();  // must not crash
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK_FALSE(app.cutMode().segments().empty());
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key: Back (^G) on any entry returns without executing anything") {
+namespace {
+// RAII scoped $HOME removal, mirroring test_shell.cpp's own
+// ScopedHomeEnv (see its class comment for why this must be restored
+// even on assertion failure -- setenv()/unsetenv() mutate real
+// process-wide state that would otherwise leak into whichever test
+// happens to run next in the same `make test` process).
+struct ScopedNoHomeEnv {
+  std::string previous;
+  bool hadPrevious;
+  ScopedNoHomeEnv() {
+    const char *existing = std::getenv("HOME");
+    hadPrevious = existing != nullptr;
+    if (hadPrevious) previous = existing;
+    unsetenv("HOME");
+  }
+  ~ScopedNoHomeEnv() {
+    if (hadPrevious) setenv("HOME", previous.c_str(), 1);
+  }
+};
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "KEY: refused (returns false, no state change) when QUICK.txt's hardcoded dev-"
+                           "machine path can't be resolved ($HOME unset) -- matching startHelp()'s own "
+                           "helpText_.empty() early return; the old QuickKeyEntry-based code had the exact "
+                           "same $HOME-based fallback (loadQuickKeyEntries(), now removed) and no override "
+                           "mechanism ever existed for testing the missing-file path either") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  const auto &lines = app.activeContentView().lines();
-  int row = -1;
-  for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("C-x C-c") != std::string::npos) row = static_cast<int>(i);  // EXIT's own row (F-0 resolved to C-x by this Fixture's minimal usilicrc) -- would be very visible if wrongly executed
-  REQUIRE(row >= 0);
-  app.activeContentView().setCursorIndex(row);
-
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK_FALSE(app.promptActive());  // NOT the EXIT prompt -- Back never executed the highlighted entry
-}
-
-// -- KEY: dual "execute"/"reference" action per row (2026-08-31) --
-
-TEST_CASE_FIXTURE(Fixture, "Key: Left/Right toggles between execute/reference, and Enter dispatches accordingly") {
-  REQUIRE(app.loadHelpText(fm::expandHelpMarkup(fm::kHelpTextJa)));
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  const auto &lines = app.activeContentView().lines();
-  int row = -1;
-  for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("基本正規表現による文字列検索") != std::string::npos) row = static_cast<int>(i);
-  REQUIRE(row >= 0);
-  app.activeContentView().setCursorIndex(row);
-
-  // Default focus is "execute" (the key label side): Enter runs the binding as before.
-  CHECK(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.promptActive());
-  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G: cancel the FGREP prompt this just opened (via the
-                                               // real dispatch path -- handleCommand(Back) alone doesn't
-                                               // check promptKind_, see dispatchByte()'s own early check)
-  REQUIRE_FALSE(app.promptActive());
-
-  // Re-open KEY, move to the same row, flip focus to "reference" (the description side) with Right.
-  REQUIRE(app.handleCommand(Command::StartKey));
-  app.activeContentView().setCursorIndex(row);
-  REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Right));
-  CHECK(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::CutContent);
-  CHECK_FALSE(app.promptActive());  // reference view only, nothing was executed
-
-  // 2026-09-12修正、直接のユーザー依頼(⑪、QUICK.txtが常時有効な本番
-  // データソースになったことに伴う更新): 以前はkKeyTable経由の本物の
-  // HELP章ジャンプ(^Gを2回、まずCut目次画面へ、次にKEYへ)を検証して
-  // いたが、QuickKeyEntry(QUICK.txt)経由のexplanation表示は
-  // quickKeyReferenceActive_により、無意味な1件だけのCut目次画面を
-  // 経由せず^G1回で直接KEYへ戻る(returnFromCutContent()自身のコメント
-  // 参照)。
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Key);
-}
-
-TEST_CASE_FIXTURE(Fixture, "Key: Left brings focus back to execute from reference") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  const auto &lines = app.activeContentView().lines();
-  int row = -1;
-  for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("基本正規表現による文字列検索") != std::string::npos) row = static_cast<int>(i);
-  REQUIRE(row >= 0);
-  app.activeContentView().setCursorIndex(row);
-  REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Right));  // focus reference
-  REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Left));   // back to execute
-  // 2026-09-12修正、直接のユーザー依頼(⑪、QUICK.txtが常時有効な本番
-  // データソースになったことに伴う更新): 以前は先頭行が単純に
-  // カーソルを動かすだけの"j"だったが、QUICK.txt由来の先頭行は
-  // "C-h"(KEYモード自身の再入場、拒否される)になったため、この
-  // テストの検証目的(Leftで確実に"実行"フォーカスへ戻ること)には
-  // 別の行を明示的に選ぶ必要がある――他のテストと同じ、GREP(C-s)の
-  // 行を使う: 実行するとDirectoryモードでプロンプトが開く、という
-  // 明確な副作用で確認する。
-  CHECK(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.promptActive());
-}
-
-TEST_CASE_FIXTURE(Fixture, "Key: reference view is a no-op for entries with no mapped HELP section") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  const auto &lines = app.activeContentView().lines();
-  int row = -1;
-  for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("範囲指定開始/終了トグル") != std::string::npos) row = static_cast<int>(i);  // COPY sub-binding -- no explanation
-  REQUIRE(row >= 0);
-  app.activeContentView().setCursorIndex(row);
-  REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Right));  // focus "reference"
-
-  // No mapped HELP section for this entry -- showKeyReference() itself returns false,
-  // and nothing about the current mode changes.
-  CHECK_FALSE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Key);  // stayed put, nothing opened
-}
-
-TEST_CASE_FIXTURE(Fixture, "Key: clicking the description half of a row opens that row's HELP section "
-                           "directly, regardless of the current Left/Right focus") {
-  REQUIRE(app.loadHelpText(fm::expandHelpMarkup(fm::kHelpTextJa)));
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  const auto &lines = app.activeContentView().lines();
-  int row = -1;
-  for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("基本正規表現による文字列検索") != std::string::npos) row = static_cast<int>(i);
-  REQUIRE(row >= 0);
-  // Navigate there via real MoveDown commands (not a direct setCursorIndex() poke) so the
-  // on-screen rendering -- and its label/description column split -- is actually up to date.
-  for (int i = 0; i < row; i++) app.handleCommand(Command::MoveDown);
-  app.activeContentView().redraw();
-
-  int displayRow = -1;
-  for (int r = 0; r < display.rows() - 1; r++)
-    if (display.rowText(r).find("基本正規表現による文字列検索") != std::string::npos) displayRow = r;
-  REQUIRE(displayRow >= 0);
-
-  std::string rendered = display.rowText(displayRow);
-  // 2026-09-12修正、直接のユーザー依頼(⑪、QUICK.txtが常時有効な本番
-  // データソースになったことに伴う更新): 旧kKeyTableの"GREP"という
-  // 説明文はQUICK.txt由来の"基本正規表現による文字列検索"に変わった。
-  int descriptionColumn = static_cast<int>(rendered.find("基本正規表現による文字列検索"));
-
-  REQUIRE(descriptionColumn >= 0);
-  CHECK(app.handleMouseClick(displayRow, descriptionColumn));
-  CHECK(app.currentMode() == ApplicationMode::CutContent);
-}
-
-TEST_CASE_FIXTURE(Fixture, "Key: clicking the label half of a row executes it directly, "
-                           "same as pressing return with execute focus") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  const auto &lines = app.activeContentView().lines();
-  int row = -1;
-  for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("基本正規表現による文字列検索") != std::string::npos) row = static_cast<int>(i);
-  REQUIRE(row >= 0);
-  for (int i = 0; i < row; i++) app.handleCommand(Command::MoveDown);
-  app.activeContentView().redraw();
-
-  int displayRow = -1;
-  for (int r = 0; r < display.rows() - 1; r++)
-    if (display.rowText(r).find("基本正規表現による文字列検索") != std::string::npos) displayRow = r;
-  REQUIRE(displayRow >= 0);
-  std::string rendered = display.rowText(displayRow);
-  int labelColumn = static_cast<int>(rendered.find("C-s"));  // this row's own label (QUICK.txt notation)
-  REQUIRE(labelColumn >= 0);
-
-  CHECK(app.handleMouseClick(displayRow, labelColumn));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.promptActive());  // GREP prompt -- the key was actually executed
-}
-
-// -- QUICK.txt's real usilicrc notation: F-? prefix resolution (item⑧),
-// the 2026-09-12 parseQuickKeyEntries() rewrite, and per-row highlight
-// scope (item⑨) --
-//
-// 2026-09-12, direct user request ("KEYについての方針...⑧今の
-// QUICK.txtではプレフィックスキーをF-0、F-1等で表示しているが、KEY
-// モードへ反映する際は、~/.usilic/usilicrc内のKEY設定を反映してから
-// 表示して欲しい（F-0 C-cならC-x C-c）...⑨「ページ/行送り」および
-// 「プロンプト」の項については説明文が無いので行全体を反転表示に
-// してほしい"): src/QUICK.txt was rewritten to use usilicrc's own
-// notation directly ("C-h", "F-1 C-h", "ESC", "SPC", full-width "："
-// as the key/description separator, <indentN> whose N shifted after
-// item451's half-width change) -- these tests exercise the free
-// functions directly (parseFPrefixTable/resolveFPrefixTokens/
-// parseKeyNotationBytes/parseQuickKeyEntries), independent of the
-// USILICQUICKKEY env-var gate that guards the full Application-level
-// path (loadQuickKeyEntries() reads the real ~/git/usilic/src/QUICK.txt
-// and ~/.usilic/usilicrc, neither of which this test suite should
-// depend on).
-
-TEST_CASE("parseFPrefixTable: extracts F-0..F-9 from a template-shaped usilicrc KEY section, cutting each "
-          "line's trailing '# comment  F-N' marker") {
-  std::string keySection =
-      "F-?\t<-- (8)\n"
-      "\tC-x\t# ^X\t\t\t\t\t\t\tF-0\n"
-      "\tC-j\t# ^J\t\t\t\t\t\t\tF-1\n"
-      "\tC-x C-k # ^X^K\t\t\t\t\t\tF-2\n"
-      "\tC-o     # ^O\t\t\t\t\t\t\tF-3\n"
-      "\t\t#\t\t\t\t\t\t\tF-4\n"
-      "\n"
-      "K-?\t<-- (8)\n";
-  std::vector<std::string> table = fm::parseFPrefixTable(keySection);
-  REQUIRE(table.size() == 5);
-  CHECK(table[0] == "C-x");
-  CHECK(table[1] == "C-j");
-  CHECK(table[2] == "C-x C-k");  // multi-token slot value preserved as one string
-  CHECK(table[3] == "C-o");
-  CHECK(table[4] == "");  // unset slot
-}
-
-TEST_CASE("parseFPrefixTable: a real, SHORTER usilicrc (only F-0..F-4 defined, no trailing comment/F-N "
-          "marker column at all) parses just as well -- this is the shape of this machine's own real "
-          "~/.usilic/usilicrc, not just the shipped template") {
-  std::string keySection =
-      "F-?\t<-- (8)\n"
-      "\tC-x\t\n"
-      "\tC-j\t\n"
-      "\tC-o     \n"
-      "\tC-o C-j \n"
-      "\t\t\n"
-      "C-h\t\"キーアサイン一覧を表示（常時）\"\n";
-  std::vector<std::string> table = fm::parseFPrefixTable(keySection);
-  REQUIRE(table.size() == 5);
-  CHECK(table[0] == "C-x");
-  CHECK(table[1] == "C-j");
-  CHECK(table[2] == "C-o");
-  CHECK(table[3] == "C-o C-j");  // F-3 reassigned to a two-key combo on this real machine
-  CHECK(table[4] == "");
-}
-
-TEST_CASE("parseFPrefixTable: missing \"F-?\" marker (empty/corrupt usilicrc) yields an empty table, not a "
-          "crash") {
-  CHECK(fm::parseFPrefixTable("").empty());
-  CHECK(fm::parseFPrefixTable("some unrelated text\nwith no F-? anywhere\n").empty());
-}
-
-TEST_CASE("resolveFPrefixTokens: substitutes a standalone \"F-N\" token with the configured value, leaving "
-          "surrounding text and multi-token values intact") {
-  std::vector<std::string> table = {"C-x", "C-j", "C-o", "C-o C-j"};
-  CHECK(fm::resolveFPrefixTokens("F-0 C-c", table) == "C-x C-c");
-  CHECK(fm::resolveFPrefixTokens("F-3 e", table) == "C-o C-j e");  // 2-token slot value
-  CHECK(fm::resolveFPrefixTokens("F-1 F-1", table) == "C-j C-j");  // same token twice
-}
-
-TEST_CASE("resolveFPrefixTokens: an unset/out-of-range slot (e.g. F-4 in a 4-slot table) is left "
-          "unresolved -- there is nothing sensible to substitute") {
-  std::vector<std::string> table = {"C-x", "C-j", "C-o", ""};
-  CHECK(fm::resolveFPrefixTokens("F-3 e", table) == "F-3 e");  // table[3] is "" -- unresolved
-  CHECK(fm::resolveFPrefixTokens("F-9 x", table) == "F-9 x");  // out of range entirely
-}
-
-TEST_CASE("resolveFPrefixTokens: \"F-10\" is never misread as \"F-1\" plus a literal \"0\" -- there is no "
-          "F-10 slot, so a second digit disqualifies the match") {
-  std::vector<std::string> table = {"C-x", "C-j"};
-  CHECK(fm::resolveFPrefixTokens("F-10", table) == "F-10");
-}
-
-TEST_CASE("parseKeyNotationBytes: usilicrc's own control/escape/space/tab keyword notation converts to the "
-          "same bytes the caret-notation kKeyTable already hand-writes for the same physical keys") {
-  CHECK(fm::parseKeyNotationBytes("C-h") == std::vector<int>{0x08});
-  CHECK(fm::parseKeyNotationBytes("C-j C-h") == std::vector<int>{0x0a, 0x08});  // ^J^H
-  CHECK(fm::parseKeyNotationBytes("C-x C-k e") == std::vector<int>{0x18, 0x0b, 'e'});
-  CHECK(fm::parseKeyNotationBytes("ESC") == std::vector<int>{0x1b});
-  CHECK(fm::parseKeyNotationBytes("C-[") == std::vector<int>{0x1b});
-  CHECK(fm::parseKeyNotationBytes("C-[ i") == std::vector<int>{0x1b, 'i'});
-  CHECK(fm::parseKeyNotationBytes("SPC") == std::vector<int>{' '});
-  CHECK(fm::parseKeyNotationBytes("tab") == std::vector<int>{'\t'});
-  CHECK(fm::parseKeyNotationBytes("C-@") == std::vector<int>{0x00});
-  CHECK(fm::parseKeyNotationBytes("q") == std::vector<int>{'q'});
-}
-
-TEST_CASE("parseKeyNotationBytes: a notation containing a raw non-ASCII display glyph (e.g. the \"↓\"/\"↑\" "
-          "arrow QUICK.txt itself uses as a human-readable alias, after <b> stripping) has no real key-replay "
-          "byte sequence -- returns empty rather than pushing meaningless raw UTF-8 bytes, matching "
-          "kKeyTable's own established precedent of omitting pure-special-key entries") {
-  CHECK(fm::parseKeyNotationBytes("\xe2\x86\x93").empty());  // "↓" alone
-  CHECK(fm::parseKeyNotationBytes("\xe2\x86\x91").empty());  // "↑" alone
-}
-
-TEST_CASE("parseQuickKeyEntries: scopes to the bare, standalone \"<b>KEY</b>\" heading -- the NOTATION "
-          "section's own nested \"<indent7><b>KEY</b>\" sub-heading (illustrative prose about notation "
-          "conventions, not real key bindings) must NOT be mistaken for the real KEY section start") {
-  std::string raw =
-      "<b>NOTATION</b>\n"
-      "<indent7><b>KEY</b>\n"
-      "\xe3\x80\x80\xe3\x80\x80 C-h：not a real binding, just illustrating notation</indent>\n"
-      "\n"
-      "<b>KEY</b>\n"
-      "<indent7>C-h：キーアサイン一覧を表示</indent>\t\n"
-      "<indent16>usilicrc で定義したキー割り当て一覧。</indent>\n";
-  std::vector<QuickKeyEntry> entries = fm::parseQuickKeyEntries(raw, {});
-  REQUIRE(entries.size() == 1);
-  CHECK(entries[0].label == "C-h");
-  CHECK(entries[0].description == "キーアサイン一覧を表示");
-  CHECK(entries[0].explanation == "usilicrc で定義したキー割り当て一覧。");
-}
-
-TEST_CASE("parseQuickKeyEntries: a single-line <indentN>label：description</indent> entry pairs with the "
-          "immediately-following <indentN>explanation</indent> block (no blank line between them), and F-N "
-          "tokens are resolved in BOTH the label and the description/explanation using the same table") {
-  std::string raw =
-      "<b>KEY</b>\n"
-      "<indent7>F-1 C-h：F-1のオンラインヘルプ</indent>\t\n"
-      "<indent16>F-0を押した後の話ではない。</indent>\n";
-  std::vector<QuickKeyEntry> entries = fm::parseQuickKeyEntries(raw, {"C-x", "C-j"});
-  REQUIRE(entries.size() == 1);
-  CHECK(entries[0].label == "C-j C-h");
-  CHECK(entries[0].description == "C-jのオンラインヘルプ");  // "F-1" substituted in-place, no space added
-  CHECK(entries[0].explanation == "C-xを押した後の話ではない。");  // "F-0" resolved to "C-x" in the explanation too
-  CHECK(entries[0].bytes == std::vector<int>{0x0a, 0x08});  // ^J^H, derived from the RESOLVED label
-}
-
-TEST_CASE("parseQuickKeyEntries: a multi-line span with SEVERAL \"key：description\" sub-lines (no blank-line "
-          "separators between them) splits into one entry PER sub-line, each with an empty explanation -- "
-          "the real shape of QUICK.txt's own COPY-mode block (one main key plus several in-mode sub-bindings "
-          "crammed into a single <indentN>...</indent> span)") {
-  std::string raw =
-      "<b>KEY</b>\n"
-      "<indent7>F-2 C-c：文字列をコピー\n"
-      "\xe3\x80\x80\xe3\x80\x80" "C-@：範囲指定開始/終了トグル。\n"
-      "\xe3\x80\x80" "C-[ w：全指定範囲をコピー。\n"
-      "F-0 spc：矩形範囲指定開始</indent>\n";
-  std::vector<QuickKeyEntry> entries = fm::parseQuickKeyEntries(raw, {"C-x", "C-j", "C-o"});
-  REQUIRE(entries.size() == 4);
-  CHECK(entries[0].label == "C-o C-c");
-  CHECK(entries[1].label == "C-@");
-  CHECK(entries[2].label == "C-[ w");
-  CHECK(entries[3].label == "C-x spc");
-  for (const auto &e : entries) CHECK(e.explanation.empty());  // item⑨: none of these pair with an explanation
-}
-
-TEST_CASE("parseQuickKeyEntries: a bare section header with no <indentN> tag of its own (e.g. QUICK.txt's "
-          "own \"ページ/行送り\"/\"プロンプト\" reference-list headings) is skipped, and the following "
-          "<indentN>...</indent> block's several \"key：description\" lines each become their own entry with "
-          "an empty explanation -- item⑨'s whole-row-highlight case") {
-  std::string raw =
-      "<b>KEY</b>\n"
-      "\xe3\x83\x9a\xe3\x83\xbc\xe3\x82\xb8/\xe8\xa1\x8c\xe9\x80\x81\xe3\x82\x8a\n"  // "ページ/行送り"
-      "<indent5>\xe3\x80\x80\xe3\x80\x80spc：画面を1ページ下へ\n"
-      "\xe3\x80\x80\xe3\x80\x80" "C-v：画面を1ページ下へ</indent>\n";
-  std::vector<QuickKeyEntry> entries = fm::parseQuickKeyEntries(raw, {});
-  REQUIRE(entries.size() == 2);
-  CHECK(entries[0].label == "spc");
-  CHECK(entries[1].label == "C-v");
-  CHECK(entries[0].explanation.empty());
-  CHECK(entries[1].explanation.empty());
-}
-
-TEST_CASE("parseQuickKeyEntries: <b>/<u>/<i> inline markup is stripped from both the label and the "
-          "description (renderKeyRows() builds a plain ContentView::Line::text directly, without running it "
-          "through expandHelpMarkup(), so a raw tag would otherwise leak onto the screen as literal text)") {
-  std::string raw =
-      "<b>KEY</b>\n"
-      "<indent7>　　　 <b>↓</b>：カーソルを1行下へ</indent>\n";
-  std::vector<QuickKeyEntry> entries = fm::parseQuickKeyEntries(raw, {});
-  REQUIRE(entries.size() == 1);
-  CHECK(entries[0].label == "\xe2\x86\x93");  // "↓", tags stripped
-  CHECK(entries[0].bytes.empty());  // no executable replay for a bare arrow glyph
+  ScopedNoHomeEnv noHome;
+  CHECK_FALSE(app.handleCommand(Command::StartKey));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // unchanged -- no-op
 }
 
 // -- Recorded macros (p_km, ^X(/^X)/^Xe) --

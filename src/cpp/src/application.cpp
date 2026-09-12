@@ -354,344 +354,6 @@ std::string truncateToPathPrefix(const std::string &path, int digit) {
   return path.substr(0, pos);
 }
 
-// K-2(^H、M_key、"KEY"): startKey()自身の静的なキー割り当てテーブル。
-// (loadHelpText()経由で実行時に実際の説明文をロードする)HELPとは
-// 異なり、このテーブルはusilicrc自身のKEYセクションからパースされて
-// い「ない」――Configurationは意図的にそれを除外している(それ自身の
-// クラスコメント参照: 「そのキー割り当ては、このC++移植ではまだ存在
-// しないmode/command番号を対象にしている...Modeが存在するまで先送り」)。
-// その隙間は、Configuration自身のKEYパーサーを書き直すことでは埋まって
-// いない(usilicrcのKEY構文は、このテーブルが再現しない任意のユーザー
-// による再割り当てをサポートするため、別個の、依然として未着手の
-// プロジェクトである);代わりに、このテーブルはdispatchByte()/
-// resolveCommand()自身のswitch文の手作業で保守される「鏡」である
-// ――このポートが「今まさに」実際に認識するキーシーケンスについての
-// 唯一の正典。各エントリのバイト列は、executeSelectedKeyBinding()に
-// よって、Application::feedByte()へ1バイトずつ通される――まさに本物の
-// ユーザーがそのシーケンスをライブでタイプしたかのように、そのため
-// 複数バイトのリーダーシーケンス(^J c、^X ^K l等)は、ライブのキー
-// 入力がそうするのと同じleaderXPending_/leaderJPending_等の状態へ
-// 自然に再入場する。M-0..M-9(usilicrc自身の、利用可能な20個のうち
-// 埋まっている10個のキーボードマクロスロット)は下に「含まれている」、
-// それぞれisMacro=trueとフラグ付けされているので、startKey()はlegacy
-// 自身の"(M)"接尾辞をレンダリングできる(legacyのprint_key()、
-// old/src/str.c、`if (i >= 80) printf(" (M)")`参照)――このポートには
-// legacyの独立に割り当てられた20個ではなく、ユーザーが記録可能な
-// マクロスロットが自分自身のもの「1つだけ」しかない(下の
-// StartMacroRecord/PlayMacro、"^X ("/"^X )"/"^X e")ので、これらの
-// usilicrcで定義されたエントリは、実際の汎用的なスロットごとのマクロ
-// システムとしてではなく、ここではリテラルに再生されるバイトシーケンス
-// として再現されている(executeSelectedKeyBinding()は、どんなテーブル
-// エントリのバイト列も、既にfeedByte()へ1つずつ再生する――ライブの
-// マクロ再生が使うのとまさに同じ仕組み)。M-8("ESC t"、
-// ~/.usilic/usilicrcのセクション名を検索)は除外されている: 調べてみると、
-// これはusilicrc自身のサンプル設定に焼き込まれた、使い捨ての自己言及
-// 的な「デモ」マクロであり(2026-08-30のtcb->usilicリネーム以前は、
-// 既にリネーム済みのはずのこのusilicrcの中でさえ、なお古い
-// リネーム前の"~/.tcb/tcbrc"パスをハードコードしたままだった――
-// CLAUDE.mdに記載済み)、ここで再現する価値のある機能ではない。
-// M-9("ESC l")は同じ理由で「かつては」除外されていた――同じ経緯参照
-// ――しかし2026-08-18以降(executeStartLog()自身のコメント参照)、
-// それはデモマクロの再生ではなく、本物の、独立した機能(LOG)になった
-// ので、代わりに下に通常のエントリを得る。矢印/PageUp/PageDownの
-// 特殊キーも省かれている――そのどれもが、このテーブルに既に素の
-// バイトでの別名を持っている(j/k、^N/^P、space/^F/^V、b/^B)ので、
-// KeyInput::SpecialKeyのみのエントリを省いても、何も到達不能には
-// ならない。
-struct KeyTableEntry {
-  const char *keyLabel;
-  const char *description;
-  // 2026-09-01、直接のユーザー依頼(^Oaの再割り当て、"HELP/KEYの日本語
-  // <-->英語切り替え"): descriptionと対になる英語版。Application::
-  // helpJapanese_に応じてrenderKeyRows()がどちらを表示するか選ぶ
-  // ――helpText_/guiHelpText_(kHelpTextJa/En)の切替と同じフラグを
-  // 共有し、"HELP/KEY"を一体で切り替える、というユーザー自身の言葉
-  // 通りにしている。
-  const char *descriptionEn;
-  std::vector<int> bytes;
-  bool isMacro = false;
-  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、「①順序を
-  // src/HELP.txt(→kHelpTextJa)に合わせる」「②各行では『キーの直接
-  // 実行』/『レファレンス表示』を選択可能」): このエントリが対応する
-  // kHelpTextJa自身の章番号("2.4"のように、末尾のピリオド無し)。
-  // Application::showKeyReference()が、この番号+"."で始まる見出しを
-  // CutMode::segments()から探して直接そこへジャンプする。該当する
-  // 章が無い(キーボードマクロ記録等、HELPで文書化していない)場合は
-  // nullptr――その場合「詳細」を選んでも何も起きない(no-op)。
-  // kHelpTextEn自身の章番号もkHelpTextJa(HELP.jp由来)と2.1〜2.18の
-  // 範囲で偶然ではなく一致している(どちらも元はlegacy HELP.jpの構成
-  // を継いでいるため)ので、この1つのhelpSectionを両言語で共用できる
-  // ――英語版だけの2.19(INFO)には対応するエントリを割り当てていない。
-  const char *helpSection = nullptr;
-};
-
-// 2026-08-31、直接のユーザー依頼("①順序をsrc/HELP.txtに合わせる。
-// レファレンスが日本語なので...日本語へ翻訳"): 以前は「リーダーキー
-// 無し→マクロ→ESCリーダー→^Jリーダー→^Xリーダー→^X^Kリーダー→
-// ^Oリーダー」という、キーの「構文」(接頭辞の種類)によるグループ分け
-// だった。今はkHelpTextJa自身の章立て(1./2.1〜2.18/3./4./5.1〜5.3)の
-// 順に合わせて並び替えてある。バイト列(bytes)自体は一切変更していない
-// ――このテーブルを裏付ける実際のキー割り当ての意味には触れず、
-// あくまで表示順序と説明文だけの変更である。descriptionEn(2026-09-01
-// 追加)の大部分は、この並び替え・和訳より前にこのテーブル自身が
-// 持っていた元々の英語のdescriptionをそのまま再利用している。
-const KeyTableEntry kKeyTable[] = {
-    // 5.1  Window(汎用のカーソル/ページング/その他、リーダーキー無し)
-    {"j", "画面を1行下へ", "Move window down", {'j'}, false, "5.1"},
-    {"k", "画面を1行上へ", "Move window up", {'k'}, false, "5.1"},
-    {"^N", "カーソルを1行下へ", "Move cursor down", {0x0e}, false, "5.1"},
-    {"^P", "カーソルを1行上へ", "Move cursor up", {0x10}, false, "5.1"},
-    {"space", "画面を1ページ下へ", "Page down", {' '}, false, "5.1"},
-    {"^F", "画面を1ページ下へ", "Page down", {0x06}, false, "5.1"},
-    {"^V", "画面を1ページ下へ", "Page down", {0x16}, false, "5.1"},
-    // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
-    // 内では^F/^Bが行編集の文字移動に奪われページ送りへ到達不能な
-    // ため、エスケープハッチを新設。当初はMeta(ESC)機構経由で
-    // "@F"/"@B"(将来のAlt表記の先取り)として実装したが、同日中に
-    // 「メタキーをAltにする話自体を見合わせたい(^[^Mが使えなくなる
-    // 懸念、および@表記がマークトグルの^@と衝突する懸念)」との
-    // ユーザー自身の訂正を受けて撤回――他のSHELLエスケープハッチ
-    // (^O^H/^O^L/^O^I/^O/)と同じ^Oプレフィックス方式に差し替えた。
-    {"^O^F", "画面を1ページ下へ (SHELL内から)", "Page down (from within SHELL)", {kLeaderO, 0x06}, false, "5.1"},
-    {"b", "画面を1ページ上へ", "Page up", {'b'}, false, "5.1"},
-    {"^B", "画面を1ページ上へ", "Page up", {0x02}, false, "5.1"},
-    {"^O^B", "画面を1ページ上へ (SHELL内から)", "Page up (from within SHELL)", {kLeaderO, 0x02}, false, "5.1"},
-    {"return", "選択したエントリを開く", "Open selected entry", {kCarriageReturn}, false, "5.1"},
-    {"^G", "戻る・キャンセル", "Back / cancel", {kControlG}, false, "5.1"},
-    {"^L", "画面を再描画", "Redraw screen", {0x0c}, false, "5.1"},
-    // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
-    // 内では素の^Lが行編集機構に一切ハンドルされず生byteとして化けて
-    // しまい(^Sと同種)、再描画へ到達不能なためエスケープハッチを新設。
-    // 2026-09-12追記: SHELL以外(主にDirectory)では、同じ^O^Lが
-    // CycleLsSortKey(-t/-S/-k巡回)へ回るようモードガードを追加した
-    // (dispatchLeaderByte()自身のコメント参照)ため、説明文をその旨
-    // 併記するよう更新した。
-    {"^O^L", "画面を再描画(SHELL内から)/lsソートキー巡回(それ以外)",
-     "Redraw screen (SHELL) / cycle ls sort key (elsewhere)", {kLeaderO, 0x0c}, false, "5.1"},
-    {"q", "usilicを終了(pager)", "Exit usilic (pager)", {'q'}, false, "5.1"},
-    // マクロ(usilicrc M-0..M-3、CUTの章(2.4)で解説): ";"、":"での上下、
-    // "+"、"*"での「検索後の該当行へ」移動。
-    {";", "戻る、カーソル上、選択 (M-0)", "Back, cursor up, select (M-0)",
-     {kControlG, 0x10, kCarriageReturn}, true, "2.4"},
-    {":", "戻る、カーソル下、選択 (M-1)", "Back, cursor down, select (M-1)",
-     {kControlG, 0x0e, kCarriageReturn}, true, "2.4"},
-    {"+", "2回戻る、カーソル上、2回選択 (M-2)", "Back twice, cursor up, select twice (M-2)",
-     {kControlG, kControlG, 0x10, kCarriageReturn, kCarriageReturn}, true, "2.4"},
-    {"*", "2回戻る、カーソル下、2回選択 (M-3)", "Back twice, cursor down, select twice (M-3)",
-     {kControlG, kControlG, 0x0e, kCarriageReturn, kCarriageReturn}, true, "2.4"},
-
-    // 2.1  ファイル選択 (^J^K)
-    {"^J^K", "File-selectorへ移動", "Go to file-selector", {kLeaderJ, 0x0b}, false, "2.1"},
-    {"^J^J", "直近の通常ファイル・アーカイブへ移動", "Go to most recent file/archive",
-     {kLeaderJ, kLeaderJ}, false, "2.1"},
-    {"^O^K", "親ディレクトリへ移動", "Go to parent directory", {kLeaderO, 0x0b}, false, "2.1"},
-    {"^O^M", "1行ずつ読み込む(簡易ページャ)", "Read per line", {kLeaderO, kCarriageReturn}, false, "2.1"},
-    {"^[^M", "制御コードもそのまま可視化して表示", "Read as is", {kEscape, kCarriageReturn}, false, "2.1"},
-    // 2026-09-08、直接のユーザー依頼によるキー再編(^Xプレフィックス
-    // の廃止)で^X^Wから移行。
-    {"^O^W", "バッファ内容を作業ファイルへ保存", "Save buffer to file", {kLeaderO, 0x17}, false, "2.1"},
-
-    // 2.3  FGREP / EGREP / GREP (^O^S / ^J^S / ^S) -- 2026-09-05変更
-    // (直接のユーザー依頼、"発動キーはそれぞれ^O^S、^J^S、^Sとする"):
-    // FGREPは旧来のプレーンな^S(K-31)から^O^Sへ移動し、空いた^Sは
-    // 新設のGREP(基本正規表現)が引き継ぐ。^J^S(EGREP)は変更無し。
-    {"^O^S", "FGREP ('grep -F'で検索)", "FGREP ('grep -F')", {kLeaderO, kControlS}, false, "2.3"},
-    {"^J^S", "EGREP ('grep -E'で検索)", "EGREP ('grep -E')", {kLeaderJ, kControlS}, false, "2.3"},
-    {"^S", "GREP ('grep'で検索)", "GREP ('grep')", {kControlS}, false, "2.3"},
-    // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
-    // 内では素の^Sが行編集機構に一切ハンドルされず生byteとして化けて
-    // しまい(バックスペース衝突の^Hと同種、ただしreadline側の意味と
-    // 衝突しているのではなく単に未ハンドル)、GREPへ到達不能だった
-    // ――^O/でのエスケープハッチを新設(^O^Sは既存のFGREPのため使えない)。
-    {"^O/", "GREP (SHELL内から) ('grep'で検索)", "GREP (from within SHELL) ('grep')",
-     {kLeaderO, '/'}, false, "2.3"},
-
-    // 2.4  CUT (^Jc / ^J^C / ^Jb / ^J^B)
-    {"^Jc", "CUT (固定文字列、バッファ)", "CUT (fixed string, buffer)", {kLeaderJ, 'c'}, false, "2.4"},
-    {"^J^C", "CUT (正規表現、バッファ)", "CUT (regex, buffer)", {kLeaderJ, kControlC}, false, "2.4"},
-    {"^Jb", "CUT (固定文字列、File-selector上のファイル)", "CUT (fixed string, file)",
-     {kLeaderJ, 'b'}, false, "2.4"},
-    {"^J^B", "CUT (正規表現、File-selector上のファイル)", "CUT (regex, file)", {kLeaderJ, 0x02}, false, "2.4"},
-    // ^J^H(HELP)自身は専用の章番号を持たない(このHELP自身の目次画面
-    // そのものを開くキーであるため)――代わりに、目次の使い方を説明
-    // している章"1. はじめに"を指す。
-    {"^J^H", "HELP", "HELP", {kLeaderJ, 0x08}, false, "1"},
-
-    // 2.5  DU (^Jd / ^J^D)
-    {"^Jd", "DU", "DU", {kLeaderJ, 'd'}, false, "2.5"},
-
-    // 2.6  LOCATE (^Jl / ^J^L)
-    {"^Jl", "LOCATE", "LOCATE", {kLeaderJ, 'l'}, false, "2.6"},
-
-    // 2.7  MAN (^Jm / ^J^M)
-    {"^Jm", "MAN", "MAN", {kLeaderJ, 'm'}, false, "2.7"},
-
-    // 2.8  PROGRAM (^Jp / ^J^P)
-    {"^Jp", "PROGRAM", "PROGRAM", {kLeaderJ, 'p'}, false, "2.8"},
-
-    // 2.9  FILE / DIR (^Xf・^X^F / ^Xd・^X^D)
-    // 2026-09-08、直接のユーザー依頼によるキー再編でFILEは一度^Xから
-    // ^Jへ移行したが、2026-09-09、同じ依頼元により^Xへ差し戻された
-    // (dispatchLeaderByte()自身のleaderXPending_のswitchコメント参照
-    // ――emacsの`^Xf`(set-fill-column)は使用頻度が極めて低いと判明した
-    // ため、衝突を避ける目的での移行自体が不要と判断された)。DIRは
-    // 最初からEmacsの`C-x d`(Dired)・`C-x C-d`(list-directory)が元々
-    // 同じ「対象はディレクトリ」という意味でC-xを使っているため、
-    // ユーザー自身の判断で意図的に^Xのまま据え置かれていた(DU実行用の
-    // ^Jd/^J^Dと衝突するため、そもそも^Jへは移行できない)。
-    {"^Xf", "FILE: ファイル名を入力", "FILE: input file name", {kLeaderX, 'f'}, false, "2.9"},
-    {"^Xd", "DIR: ディレクトリ名を入力", "DIR: input directory name", {kLeaderX, 'd'}, false, "2.9"},
-    {"^X^F", "FILE: 履歴一覧から選択", "FILE: select file name", {kLeaderX, 0x06}, false, "2.9"},
-    {"^X^D", "DIR: 履歴一覧から選択", "DIR: select directory name", {kLeaderX, 0x04}, false, "2.9"},
-
-    // 2.10  HISTORY / COMMAND (^R / ^J^R)
-    {"^R", "通常表示⇔時系列(HISTORY)表示の切替", "Toggle chronological HISTORY view (current list browser)",
-     {0x12}, false, "2.10"},
-    {"^J^R", "COMMAND (SHELL/PROGRAMの実行履歴)", "COMMAND (programs run at SHELL)",
-     {kLeaderJ, 0x12}, false, "2.10"},
-
-    // 2.11  CP / MV / RM / ARC (^Oc・^Om・^Or・^Oa) -- 2026-09-08、
-    // 直接のユーザー依頼によるキー再編で^Xから移行(ARCの^Oaは、
-    // 元々ここにあったHELP/KEY表示言語切替の^Oaを^Jaへ先に逃がした
-    // 上での再利用)。
-    {"^Oc", "CP", "CP", {kLeaderO, 'c'}, false, "2.11"},
-    {"^Om", "MV", "MV", {kLeaderO, 'm'}, false, "2.11"},
-    {"^Or", "RM", "RM", {kLeaderO, 'r'}, false, "2.11"},
-    {"^Oa", "ARC: アーカイブを展開", "ARC: expand archive", {kLeaderO, 'a'}, false, "2.11"},
-    {"^space", "現在のエントリをマーク/解除", "Toggle mark (CP/MV/RM/ARC)", {0x80}, false, "2.11"},
-    {".", "現在のエントリをマーク/解除(移動なし)", "Toggle mark on current entry, no cursor move (CP/MV/RM/PROGRAM/ARC)",
-     {'.'}, false, "2.11"},
-    {"[", "現在のエントリをマークし、カーソルを上へ", "Mark current entry, then cursor up (CP/MV/RM/PROGRAM/ARC)",
-     {'['}, false, "2.11"},
-    {"]", "現在のエントリをマークし、カーソルを下へ", "Mark current entry, then cursor down (CP/MV/RM/PROGRAM/ARC)",
-     {']'}, false, "2.11"},
-    // 全マーク/全解除は2026-09-08に^Xから^Jへ移行(^X^Y/^X^Nはそれぞれ
-    // 既存の^O^Y=PASTE/未使用0x0eと衝突・非衝突が入り混じっていた
-    // ため、ユーザー自身の判断で両方とも揃えて^Jへ)。
-    {"^Jy", "全マーク", "Mark all (CP/MV/RM/ARC)", {kLeaderJ, 'y'}, false, "2.11"},
-    {"^Jn", "全マーク解除", "Clear all marks (CP/MV/RM/ARC)", {kLeaderJ, 'n'}, false, "2.11"},
-    // ^X^M(「処理先を入力・確定」)は2026-09-08に削除された(直接の
-    // ユーザー依頼、"冗長分は全て削除で"): ^Oc/^Om/^Or自身が既に即座に
-    // 同じ宛先プロンプトを呼ぶので、独立したキーとしては完全に冗長
-    // だった――Command::StartDestinationPrompt自身の(削除済みの)
-    // コメント参照。
-    {"<", "選択、戻る、カーソル上、選択 (M-6)", "Select, back, cursor up, select (M-6)",
-     {kCarriageReturn, kControlG, 0x10, kCarriageReturn}, true, "2.11"},
-    {">", "選択、戻る、カーソル下、選択 (M-7)", "Select, back, cursor down, select (M-7)",
-     {kCarriageReturn, kControlG, 0x0e, kCarriageReturn}, true, "2.11"},
-
-    // 2.12  SHELL (^[s / ^Os / ^J. / ^J, / ^Jw / ^J^W)
-    {"^[s", "SHELL", "SHELL", {kEscape, 's'}, false, "2.12"},
-    // 2026-09-08、キー再編で^Xsから移行。
-    {"^Os", "SHELLを再起動", "Restart SHELL", {kLeaderO, 's'}, false, "2.12"},
-    {"^J.", "SHELL: cd <File-selectorの位置>", "SHELL: cd <directory>", {kLeaderJ, '.'}, false, "2.12"},
-    {"^J,", "SHELL: usilicrc K-43で定義したコマンド", "SHELL: usilicrc K-43 command", {kLeaderJ, ','}, false, "2.12"},
-    {"^Jw", "SHELL: 現在のファイル名を挿入", "SHELL: insert access-name", {kLeaderJ, 'w'}, false, "2.12"},
-    {"^J^W", "SHELL: バッファ内容を挿入", "SHELL: insert buffer content", {kLeaderJ, 0x17}, false, "2.12"},
-
-    // 2.14  COPY (^O^C)
-    {"^O^C", "COPY", "COPY", {kLeaderO, 0x03}, false, "2.14"},
-    {"^O^Y", "PASTE (COPYの内容を挿入)", "PASTE (insert COPY buffer)", {kLeaderO, 0x19}, false, "2.14"},
-
-    // 2.15  EDIT (e、プレフィックス無し) -- 2026-09-08、直接のユーザー
-    // 依頼によるキー再編で^Jeから移行("^Je⇒e（←lessと同様）")、
-    // ページャの他の単一文字コマンド(b/j/k/q等)と同じ扱いになった。
-    {"e", "EDIT", "EDIT", {'e'}, false, "2.15"},
-
-    // 2.16  ERROR (^J^Oe) -- 2026-09-08、キー再編で^X^Keから移行。
-    // 旧^X^K(usilicrc F-2)サブリーダーはERROR/LOGの2つだけを残して
-    // 他は全て削除済みだったため、^Jの下に^O自体をネストした新設の
-    // サブリーダーへ丸ごと引っ越した(使用頻度が低く、ログファイル
-    // 自体はINFO(^I)からも辿れるとのユーザー自身の判断)。
-    {"^J^Oe", "ERROR", "ERROR", {kLeaderJ, kLeaderO, 'e'}, false, "2.16"},
-
-    // 2.17  LOG (^J^Ol) -- 2026-09-08、キー再編で^X^Klから移行。
-    {"^J^Ol", "LOG: SHELLの操作ログ", "LOG: SHELL output", {kLeaderJ, kLeaderO, 'l'}, false, "2.17"},
-    {"^[l", "LOG", "LOG", {kEscape, 'l'}, false, "2.17"},
-
-    // 2.18  EXIT (^X^C or ^[^[) -- 2026-09-08、キー再編で一度^Oxへ
-    // 移行したが、同日中に直接のユーザー依頼("usilic終了キーは^X^C
-    // に戻してほしい")で^X^Cへ差し戻された。EmacsのC-x C-c(事実上の
-    // 終了)が元々同じ意味で^X^Cを使っているため、DIR同様に据え置く
-    // 判断。^[^[は元々この見出しコメント自身が謳っていたが実際には
-    // 一度も配線されていなかった既知のギャップで、同じ依頼を機に
-    // 初めて実際に結線した(dispatchLeaderByte()自身のescPending_
-    // switchのkEscapeケース参照)。
-    {"^X^C", "EXIT", "EXIT", {kLeaderX, kControlC}, false, "2.18"},
-
-    // INFO (^I)
-    // 2026-08-27のリネーム、直接のユーザー依頼: 以前は"^T"/"USILIC
-    // banner"だった――モードライン自身の`name`フィールドが"usilic"
-    // (合成されたファイル自身のベース名、bannerFilePath()のコメント
-    // 参照)を表示しており、それはあたかも実在の、普通のファイルが
-    // 文字通り"~/.usilic/usilic"という名前で見られているかのように
-    // 読めた。"INFO"へリネームし(executeShowUsilicBanner()自身の
-    // setSearchOrigin()呼び出し参照)、モードライン自身の名前が曖昧で
-    // なくなるよう^Iに割り当て直した。helpSectionがnullptrなのは、
-    // src/HELP.txt(kHelpTextJa自身の一次資料、help_text.hpp冒頭の
-    // コメント参照)にINFOという章自体が存在しないため――以前このC++
-    // 移植側で独自に「2.19 INFO」章を新設していたが、ユーザー自身の
-    // 一次資料に無いものを追加すべきでないという訂正を受けて削除した。
-    {"^I", "INFO", "INFO", {0x09}},
-    // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
-    // 内では素の^Iがshell_自身のTab補完に奪われ、INFO(ShowUsilicBanner)
-    // へ到達できないため、^O^Iでのエスケープハッチを新設。
-    {"^O^I", "INFO (SHELL内から)", "INFO (from within SHELL)", {kLeaderO, 0x09}},
-
-    // 3  設定ファイル (usilicrc) -- LS/SCROLLフラグの切替
-    // 2026-09-08、直接のユーザー依頼("^Ol⇒^Oo（←ファイル名以外は
-    // omission）")によりキー再編、^Olから移行。
-    {"^Oo", "ls(1)出力形式の切替", "Switch ls output format", {kLeaderO, 'o'}, false, "3"},
-    // 2026-09-12追加、直接のユーザー依頼("`-l`以外も変更できるように
-    // したい...`^Ol`が`-r`トグル"): 上の改名で空いた^Olへ新規に割り
-    // 当てる(usilicrc新設のCOLUMNディレクティブと合わせ、
-    // DirectoryMode::toggleReverseSort()自身のコメント参照)。ソート
-    // キー巡回(-t/-S/-k)の^O^Lは、既存の"5.1"節にある同じ物理キーの
-    // エントリ(すぐ上のCommand::Redrawと共有)の説明文で併記済み――
-    // 同じ^O^Lを指す2つの行を作らないため、ここには新規追加しない。
-    {"^Ol", "lsのソート順を逆順(-r)に切替", "Toggle ls reverse sort order (-r)", {kLeaderO, 'l'}, false, "3"},
-    {"^Oh", "モードラインの表示/非表示切替", "Toggle mode line visibility", {kLeaderO, 'h'}, false, "3"},
-
-    // 2026-09-01、直接のユーザー依頼("^Oaはデフォルト文字コード切り替え
-    // ではなくてHELP/KEYの日本語<-->英語切り替えでいいと思う"): 以前は
-    // ここでCommand::CycleCharset(Ascii/Euc/Utf8の3値巡回)に割り当てて
-    // いたが、ファイル内容の文字コード判別は既に自動化されている
-    // (usilicrc/文字コードの章参照)ため、その手動切り替え自体が不要と
-    // 判断された。Application::toggleHelpLanguage()自身のコメント参照。
-    // 2026-09-08、直接のユーザー依頼によるキー再編(^Xプレフィックス
-    // の廃止に向けて^Oaの枠をARC(^Oa)へ明け渡すため)で^Jaへ移行。
-    {"^Ja", "HELP/KEYの表示言語を切替(日本語/English)", "Switch HELP/KEY display language (Japanese/English)",
-     {kLeaderJ, 'a'}},
-
-    // ^[<・^[>はWindowの章(5.1)には無いが、legacy自身のKEY一覧
-    // (str.cのprint_key()/tobo())に元々含まれる「バッファ先頭/末尾へ
-    // 移動」であり、5.1に一番近い。ESC単体("^["から始まる)キー、
-    // legacy自身のKEY一覧の表記(綴った単語"ESC"ではなく"^[")と
-    // ユーザー自身の2026-08-05の訂正("space"/"return"は実際のApple
-    // Keyboardのキートップのラベル)に合わせている。
-    {"^[<", "バッファ先頭へ移動", "Go to top", {kEscape, '<'}, false, "5.1"},
-    {"^[>", "バッファ末尾へ移動", "Go to bottom", {kEscape, '>'}, false, "5.1"},
-
-    // どの章にも対応が無い(HELPで文書化していない)エントリ:
-    // キーボードマクロの記録・再生自体は、usilicrcの"KEY"セクション
-    // 自身のカスタマイズ機能に近く、独立した章を割り当てていない。
-    // ^Og(ToggleGuiMode)はここでは意図的に記載しない: ユーザーが
-    // 手作業で見つけたところによると、いったん実際の実行
-    // (app/main.cpp)が-gで開始されると、-c/実際の端末の状態へ戻る
-    // 方法は無く、実際にはトグルになっていない――KEYリファレンスに
-    // それをトグルとして記載すると誤解を招く。割り当て/ディスパッチ
-    // 自体には手を付けていない(依然として^O gを直接押せば到達可能);
-    // リファレンスリストの行だけが削除された。
-    // 2026-09-08、キー再編で^Xから^Oへ移行。
-    // 2026-09-10、直接のユーザー依頼("次はマクロ（^X(...）を実装して
-    // 欲しい"――既に実装済みで単に2026-09-08の再編で^Oへ移っていた
-    // だけと判明した後、"^X(/^X)/^Xeへ戻す(^Oは廃止)"と明示的に選択)
-    // により、^O(/^O)/^Oeから差し戻し。
-    {"^X(", "キーボードマクロの記録を開始", "Begin macro recording", {kLeaderX, '('}},
-    {"^X)", "キーボードマクロの記録を終了", "End macro recording", {kLeaderX, ')'}},
-    {"^Xe", "記録したマクロを実行", "Execute recorded macro", {kLeaderX, 'e'}},
-};
-
 // M_help/T_help向けのmenu.cのinit_cut2()呼び出しから移植――HELP自身の
 // CUT分割が常に使う、固定のセクションヘッダのパターン(クラスコメント
 // 参照)。legacy「自身の」パターン(HELP.jp 2.4自身の実例:
@@ -744,416 +406,6 @@ std::string resolveTempRoot(const std::string &homeDirectory, const std::string 
 }
 }  // namespace
 
-// 2026-09-05追加、QuickKeyEntry自身のコメント参照(application.hpp)。
-// "^H"/"^J^H"/"^Jc"/"^O^S"/"^["等のキャレット記法を、kKeyTable自身の
-// 手書きのbytes初期化子(例えば{"^Jc",...,{kLeaderJ,'c'},...})と等価な
-// バイト列へ機械的に変換する。ASCII単位の単純な逐次スキャン: '^'に
-// 続く1文字は制御バイト(`toupper(c)-'@'`――このポート全体で既に確立
-// している'A'..'_'の範囲での慣習、KeyInputが生のNUL/Ctrl-Spaceを0x80
-// として報告する例外はapplication.cpp自身の別の既存コメント、"^@"に
-// だけ適用)、それ以外の1文字はそのままのリテラルバイトとして扱う。
-// 2026-09-12時点、QUICK.txt自身はもうこの記法を使っていない
-// (parseKeyNotationBytes()自身のコメント参照)――既存の呼び出し元が
-// 無くなった後もテスト・将来の利用のため残してある、無名名前空間の
-// 外(application.hpp宣言、テストから直接呼べるように)へ移した。
-std::vector<int> parseCaretNotationBytes(const std::string &label) {
-  std::vector<int> bytes;
-  std::size_t i = 0;
-  while (i < label.size()) {
-    unsigned char c = static_cast<unsigned char>(label[i]);
-    if (c == '^' && i + 1 < label.size()) {
-      unsigned char nc = static_cast<unsigned char>(label[i + 1]);
-      bytes.push_back(nc == '@' ? 0x80 : std::toupper(nc) - '@');
-      i += 2;
-    } else {
-      bytes.push_back(c);
-      i += 1;
-    }
-  }
-  return bytes;
-}
-
-namespace {
-// help_text.cpp自身のexpandHelpMarkup()とは別物(あちらは表示用の制御
-// バイト列を「生成」する側): ここでは逆に、QUICK.txt自身が地の文の
-// 強調に使う<b>/<u>/<i>タグを、KEY一覧の1行テキスト(renderKeyRows()
-// 自身がexpandHelpMarkup()を通さず素のContentView::Line::textを直接
-// 組み立てる、自身のコメント参照)に生の"<b>"等が漏れて見えてしまわ
-// ないよう、タグ自体だけを取り除き中身は残す(装飾自体は失われるが、
-// 正しく読めるプレーンテキストの方を優先する)。
-std::string stripInlineMarkupTags(const std::string &text) {
-  static const std::vector<std::string> kTags = {"<b>", "</b>", "<u>", "</u>", "<i>", "</i>"};
-  std::string out = text;
-  for (const auto &tag : kTags) {
-    std::size_t pos;
-    while ((pos = out.find(tag)) != std::string::npos) out.erase(pos, tag.size());
-  }
-  return out;
-}
-
-// ASCII空白+全角スペース(U+3000、QUICK.txt自身が多用する字下げ)の
-// 両方を取り除く――std::isspace()は全角スペースの3バイト個々には
-// 反応してしまう(それぞれ単体では制御文字でも空白でもない)ため、
-// 専用の実装が必要。
-std::string trimKeyText(const std::string &text) {
-  std::size_t start = 0, end = text.size();
-  auto isAsciiSpace = [](unsigned char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
-  while (start < end) {
-    if (isAsciiSpace(static_cast<unsigned char>(text[start]))) {
-      start++;
-    } else if (start + 3 <= end && text.compare(start, 3, "\xE3\x80\x80") == 0) {
-      start += 3;
-    } else {
-      break;
-    }
-  }
-  while (end > start) {
-    if (isAsciiSpace(static_cast<unsigned char>(text[end - 1]))) {
-      end--;
-    } else if (end - start >= 3 && text.compare(end - 3, 3, "\xE3\x80\x80") == 0) {
-      end -= 3;
-    } else {
-      break;
-    }
-  }
-  return text.substr(start, end - start);
-}
-}  // namespace
-
-// 2026-09-12追加、直接のユーザー依頼(⑧、docs/HISTORY.md参照:
-// "今のQUICK.txtではプレフィックスキーをF-0、F-1等で表示しているが、
-// KEYモードへ反映する際は、~/.usilic/usilicrc内のKEY設定を反映して
-// から表示して欲しい"): usilicrc/QUICK.txt自身が使う"C-h"/"C-j C-h"/
-// "C-x C-k e"/"ESC"(またはC-[)/"SPC"/"tab"という表記(いずれも
-// src/usilicrc自身のKEY章の表記規約そのもの)を、直接実行用のバイト列
-// へ変換する。呼び出し元は、F-Nプレフィックス参照(F-0/F-1等)を
-// resolveFPrefixTokens()で事前に解決してから渡すこと――ここでは
-// もうF-Nという記号自体は理解しない(usilicrcの実際のF-?設定次第で
-// 何にでもなり得る、記号のままでは実行不能なため)。
-// "↓"/"↑"のような、QUICK.txt自身がNOTATION代わりに使う生の非ASCII
-// グリフ(特殊キーの見た目上の別名であり、それ自体を打鍵で再現する
-// 手段が無い)を含む表記は、素直にその生バイト列を「実行用バイト」と
-// して押し込むのではなく、空のバイト列(=実行不能)を返す――kKeyTable
-// 自身のコメントが既に確立している「矢印等の特殊キーはこのテーブル
-// 自体には含めない(素のバイトでの別名(^N/^P等)がどのみち存在する
-// ため実害無し)」という前例に合わせている。
-std::vector<int> parseKeyNotationBytes(const std::string &notation) {
-  for (unsigned char c : notation) {
-    if (c >= 0x80) return {};  // 生の非ASCIIグリフ(矢印等)を含む -- 実行不能
-  }
-  std::vector<int> bytes;
-  std::istringstream iss(notation);
-  std::string token;
-  while (iss >> token) {
-    std::string upper = token;
-    for (char &c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    if (upper == "ESC" || token == "C-[") {
-      bytes.push_back(0x1b);
-    } else if (upper == "SPC" || upper == "SPACE") {
-      bytes.push_back(' ');
-    } else if (upper == "TAB") {
-      bytes.push_back('\t');
-    } else if (upper == "C-SPC" || token == "C-@") {
-      bytes.push_back(0x00);
-    } else if (token.size() >= 3 && token[0] == 'C' && token[1] == '-') {
-      unsigned char c = static_cast<unsigned char>(token[2]);
-      bytes.push_back(std::toupper(c) - '@');
-      for (std::size_t k = 3; k < token.size(); k++) bytes.push_back(static_cast<unsigned char>(token[k]));
-    } else {
-      for (char c : token) bytes.push_back(static_cast<unsigned char>(c));
-    }
-  }
-  return bytes;
-}
-
-// 2026-09-12追加、直接のユーザー依頼(⑧): usilicrc自身のKEY章の
-// F-?サブセクション(F-0からF-9、最大10個のプレフィックスキー定義、
-// src/usilicrc自身のコメント(2)(3)参照: "Any keys except for ESC can
-// be set to `F-?' (from F-0 to F-9) up to 2-stroke")を、そのセクション
-// 自体の生テキスト(usilicrcファイル全体、または"KEY"セクションの
-// 部分文字列)から抽出する。各F-Nスロットの値は、対応する行の先頭の
-// 連続したインデント(タブ/半角スペース)を取り除き、'#'以降の
-// コメント(あれば)を切り捨て、前後の空白を取り除いたもの――複数語
-// (例:"C-x C-k")もそのまま1つの値として保持する。行がインデント
-// されていなければ(次のトップレベルの内容、通常はK-?セクションの
-// 開始)そこで打ち切る。空行に達した場合も打ち切る(このリポジトリの
-// 他の全セクションと同じ、空行区切りの慣習)。実際のユーザー自身の
-// ~/.usilic/usilicrcはテンプレート(src/usilicrc)より短く、F-0から
-// F-4までの5個しか定義していない(F-5以降は存在しない)――戻り値の
-// 要素数がusilicrcファイルによって10未満になり得ることは想定内。
-std::vector<std::string> parseFPrefixTable(const std::string &keySectionRawText) {
-  std::vector<std::string> table;
-  std::vector<std::string> lines;
-  {
-    std::size_t start = 0;
-    while (start <= keySectionRawText.size()) {
-      std::size_t nl = keySectionRawText.find('\n', start);
-      if (nl == std::string::npos) {
-        lines.push_back(keySectionRawText.substr(start));
-        break;
-      }
-      lines.push_back(keySectionRawText.substr(start, nl - start));
-      start = nl + 1;
-    }
-  }
-  std::size_t i = 0;
-  while (i < lines.size() && trimKeyText(lines[i]).compare(0, 3, "F-?") != 0) i++;
-  if (i >= lines.size()) return table;  // "F-?"自体が見つからない(空/壊れたusilicrc) -- 空のテーブル
-  i++;
-  while (i < lines.size() && table.size() < 10) {
-    const std::string &line = lines[i];
-    if (line.empty()) break;
-    unsigned char first = static_cast<unsigned char>(line[0]);
-    if (first != ' ' && first != '\t') break;  // インデントされていない=次のトップレベル(通常K-?)
-    std::string value = line;
-    std::size_t hashPos = value.find('#');
-    if (hashPos != std::string::npos) value = value.substr(0, hashPos);
-    table.push_back(trimKeyText(value));
-    i++;
-  }
-  return table;
-}
-
-// 2026-09-12追加、直接のユーザー依頼(⑧、"F-0を変更後、エディターを
-// 抜けて^Hしたときにはすでに反映"): 本物の~/.usilic/usilicrcを都度
-// 新規に読み込む(loadQuickKeyEntries()自身のQUICK.txt無キャッシュ
-// 方針と同じ――Configuration自身のキャッシュされた起動時設定とは
-// 意図的に別系統にしてある、こちらは呼ばれるたびに実際のファイル
-// システムの「今の」状態を反映する必要があるため)。ファイルが
-// 存在しない/読めない場合は空のテーブルを返す(loadQuickKeyEntries()
-// 自身の「mpi等の他機体でこのパスが存在せずクラッシュする、という
-// 事態を避ける」という既存の防御方針に合わせている)――空のテーブル
-// はresolveFPrefixTokens()側で「該当スロット無し、素通し」として
-// 安全に扱われる。
-std::vector<std::string> loadFPrefixTable(const std::string &usilicrcPath) {
-  std::ifstream in(usilicrcPath, std::ios::binary);
-  if (!in) return {};
-  std::ostringstream buffer;
-  buffer << in.rdbuf();
-  return parseFPrefixTable(buffer.str());
-}
-
-// 2026-09-12追加、直接のユーザー依頼(⑧、"KEYモードへ反映する際は、
-// ~/.usilic/usilicrc内のKEY設定を反映してから表示して欲しい
-// （F-0 C-cならC-x C-c）"): text内に現れる独立した"F-<数字1桁>"
-// トークンを、table(parseFPrefixTable()自身のコメント参照)の対応する
-// 設定値へ置き換える。2桁以上の数字が続く場合(例:"F-10"、実際には
-// F-9までしか存在しないが)は誤認しないよう素通しする。該当スロットが
-// 未設定または範囲外の場合(例: F-5以降が定義されていないusilicrc)は、
-// 置き換えず"F-N"の表記のままにする――代入すべき実際の値が無いため。
-std::string resolveFPrefixTokens(const std::string &text, const std::vector<std::string> &table) {
-  std::string out;
-  out.reserve(text.size());
-  std::size_t i = 0;
-  while (i < text.size()) {
-    if (text[i] == 'F' && i + 2 < text.size() && text[i + 1] == '-' &&
-        std::isdigit(static_cast<unsigned char>(text[i + 2]))) {
-      std::size_t digitEnd = i + 3;
-      bool multiDigit = digitEnd < text.size() && std::isdigit(static_cast<unsigned char>(text[digitEnd]));
-      if (!multiDigit) {
-        int slot = text[i + 2] - '0';
-        if (slot >= 0 && slot < static_cast<int>(table.size()) && !table[slot].empty()) {
-          out += table[slot];
-          i = digitEnd;
-          continue;
-        }
-      }
-    }
-    out += text[i];
-    i++;
-  }
-  return out;
-}
-
-// 2026-09-05追加、直接のユーザー依頼("今だけKEYモードを
-// ~/git/usilic/src/QUICK.txtを元に構築して欲しい...^H : キーアサイン
-// 一覧を表示...`^H`と`キーアサイン一覧を表示`がハイライト表示になり
-// 得る文字列で、動作はその章にあるとおり"): QUICK.txt自身(展開前の
-// 生のmarkupテキスト)から、"KEY"章の各エントリを抜き出す。
-// expandHelpMarkup()(help_text.cpp)とは別物――あちらは<b>/<indentN>/
-// <i>を「表示用の制御バイト列」へ展開するのに対し、こちらは逆に
-// QUICK.txt自身のmarkupを「構造化されたラベル/説明/詳細説明」へ
-// 「解析」する。
-// 2026-09-12全面改稿、直接のユーザー依頼(⑧⑨⑩): QUICK.txt自身が
-// usilicrc本来の記法へ全面的に書き直されたのに伴う書き直し。旧版が
-// 前提にしていた"<indent4><b>ラベル</b> : 説明</indent>"という固定の
-// タグ番号・太字ラップ・" : "区切りはもう現存するQUICK.txtとは一致
-// しない(indent番号は項目451の半角化に伴い変わり得る、ラベル自体は
-// もう<b>で囲まれない、区切りは全角の"：")。新しい解析方針:
-//   1. まず本文全体から、独立行として"<b>KEY</b>"(前後の空白のみ許容、
-//      他のNOTATION章内の入れ子の"<indent7><b>KEY</b>"とは区別する
-//      ――あちらは単なるNOTATION説明の一部であり、実際のKEY章その
-//      ものではない)が現れる位置を探し、その直後からを走査対象と
-//      する(それより前のNAME/SYNOPSIS/DESCRIPTION/NOTATION/
-//      CONFIGURATION各章の"："を含む地の文を、実際のキー割り当てと
-//      誤認しないため)。
-//   2. 走査対象の中で、"<indentN>"(Nは1〜2桁、半角化後の任意の値)
-//      で始まる行を見つけたら、"</indent>"が現れるまで(複数行に
-//      またがることがある)貪欲に読み進めて1つの「スパン」として
-//      集める。
-//   3. スパンを改行で分割し、"："を含む行それぞれを1つのエントリの
-//      候補にする――"ページ/行送り"/"プロンプト"のような、タグ無し
-//      の見出し行の直後に<indent5>で複数のkey：description行が
-//      まとめて入っている場合も、あるいは1つの<indent7>スパンに
-//      複数のkey：description行が(空行区切り無しで)詰め込まれている
-//      場合(例:「文字列をコピー」の項が、本体+C-@/C-[ w/F-0 spcの
-//      3つの補助キーを同じスパン内に持つ)も、この分割だけで自然に
-//      複数エントリへ分かれる――特別扱いのコードは不要。
-//   4. スパンから作られたエントリがちょうど1件だけの場合に限り、
-//      直後(空行を挟まない、まさに次)の行がさらに別の<indentN>で
-//      始まっていれば、それをこのエントリの説明(explanation)として
-//      対応付ける――複数エントリに分かれたスパン(上の3参照)は、
-//      観測されたQUICK.txt自身の実例ではどれも後続の説明を伴わない
-//      ため、対応付けを行わない。
-//   5. 各エントリのラベル/説明それぞれから<b>/<u>/<i>タグを剥がし
-//      (stripInlineMarkupTags()、renderKeyRows()が素のテキストとして
-//      そのまま使うため)、"F-N"トークンをfPrefixTable経由で実際の
-//      設定値へ解決する(resolveFPrefixTokens()、⑧自身の要求)。
-//      実行用バイト列(bytes)は、解決「後」のラベルからparseKeyNotationBytes()
-//      で導出する――表示上の"F-0 C-c"→"C-x C-c"という書き換えと、
-//      実行時に実際に送出されるバイト列が、決して食い違わないように
-//      するため。
-std::vector<QuickKeyEntry> parseQuickKeyEntries(const std::string &raw, const std::vector<std::string> &fPrefixTable) {
-  std::vector<QuickKeyEntry> entries;
-  std::vector<std::string> lines;
-  {
-    std::size_t start = 0;
-    while (start <= raw.size()) {
-      std::size_t nl = raw.find('\n', start);
-      if (nl == std::string::npos) {
-        lines.push_back(raw.substr(start));
-        break;
-      }
-      lines.push_back(raw.substr(start, nl - start));
-      start = nl + 1;
-    }
-  }
-  const std::string kIndentOpenPrefix = "<indent";
-  const std::string kIndentClose = "</indent>";
-  const std::string kFullWidthColon = "\xEF\xBC\x9A";  // "："
-
-  auto stripIndentTag = [&](const std::string &line, std::size_t &pos) -> bool {
-    if (line.compare(pos, kIndentOpenPrefix.size(), kIndentOpenPrefix) != 0) return false;
-    std::size_t numStart = pos + kIndentOpenPrefix.size();
-    std::size_t numEnd = numStart;
-    while (numEnd < line.size() && numEnd < numStart + 2 && std::isdigit(static_cast<unsigned char>(line[numEnd])))
-      numEnd++;
-    if (numEnd == numStart || numEnd >= line.size() || line[numEnd] != '>') return false;
-    pos = numEnd + 1;
-    return true;
-  };
-
-  // "<b>KEY</b>"という独立行を探し、それより前は一切見ない(NOTATION
-  // 章内の入れ子の"<indent7><b>KEY</b>"は、行頭がインデントタグである
-  // ため一致しない)。
-  std::size_t keyStart = 0;
-  while (keyStart < lines.size() && trimKeyText(lines[keyStart]) != "<b>KEY</b>") keyStart++;
-  if (keyStart >= lines.size()) return entries;  // "KEY"章自体が見つからない
-  std::size_t i = keyStart + 1;
-
-  auto makeEntryFromSubline = [&](const std::string &subline) -> std::optional<QuickKeyEntry> {
-    std::size_t sep = subline.find(kFullWidthColon);
-    if (sep == std::string::npos) return std::nullopt;
-    std::string keyPart = trimKeyText(subline.substr(0, sep));
-    std::string descPart = trimKeyText(subline.substr(sep + kFullWidthColon.size()));
-    keyPart = stripInlineMarkupTags(keyPart);
-    descPart = stripInlineMarkupTags(descPart);
-    if (keyPart.empty()) return std::nullopt;
-    std::string resolvedKey = resolveFPrefixTokens(keyPart, fPrefixTable);
-    std::string resolvedDesc = resolveFPrefixTokens(descPart, fPrefixTable);
-    QuickKeyEntry entry;
-    entry.label = resolvedKey;
-    entry.description = resolvedDesc;
-    entry.bytes = parseKeyNotationBytes(resolvedKey);
-    return entry;
-  };
-
-  while (i < lines.size()) {
-    const std::string &line = lines[i];
-    std::size_t pos = 0;
-    if (!stripIndentTag(line, pos)) {
-      i++;
-      continue;
-    }
-    std::string collected = line.substr(pos);
-    std::size_t closePos = collected.find(kIndentClose);
-    bool closed = false;
-    std::size_t j = i;
-    if (closePos != std::string::npos) {
-      collected = collected.substr(0, closePos);
-      closed = true;
-    }
-    while (!closed && j + 1 < lines.size()) {
-      const std::string &cont = lines[j + 1];
-      std::size_t contPos = 0;
-      if (cont.empty() || stripIndentTag(cont, contPos)) break;
-      j++;
-      std::size_t cp = cont.find(kIndentClose);
-      if (cp != std::string::npos) {
-        collected += "\n" + cont.substr(0, cp);
-        closed = true;
-      } else {
-        collected += "\n" + cont;
-      }
-    }
-    std::vector<std::string> sublines;
-    {
-      std::size_t start = 0;
-      while (start <= collected.size()) {
-        std::size_t nl = collected.find('\n', start);
-        if (nl == std::string::npos) {
-          sublines.push_back(collected.substr(start));
-          break;
-        }
-        sublines.push_back(collected.substr(start, nl - start));
-        start = nl + 1;
-      }
-    }
-    std::vector<QuickKeyEntry> spanEntries;
-    for (const auto &sl : sublines) {
-      if (auto e = makeEntryFromSubline(sl)) spanEntries.push_back(std::move(*e));
-    }
-    std::size_t next = j + 1;
-    if (spanEntries.size() == 1 && next < lines.size()) {
-      std::size_t explPos = 0;
-      if (stripIndentTag(lines[next], explPos)) {
-        std::string explCollected = lines[next].substr(explPos);
-        std::size_t explClose = explCollected.find(kIndentClose);
-        bool explClosed = false;
-        std::size_t k = next;
-        if (explClose != std::string::npos) {
-          explCollected = explCollected.substr(0, explClose);
-          explClosed = true;
-        }
-        while (!explClosed && k + 1 < lines.size()) {
-          const std::string &cont = lines[k + 1];
-          std::size_t contPos = 0;
-          if (cont.empty() || stripIndentTag(cont, contPos)) break;
-          k++;
-          std::size_t cp = cont.find(kIndentClose);
-          if (cp != std::string::npos) {
-            explCollected += "\n" + cont.substr(0, cp);
-            explClosed = true;
-          } else {
-            explCollected += "\n" + cont;
-          }
-        }
-        // resolveFPrefixTokens()自身のコメント参照(⑧): 説明文中の
-        // "F-N"トークンも同じテーブルで解決する――<b>/<u>/<i>タグは
-        // ここでは剥がさない(showKeyReference()側が既にexpandHelpMarkup()
-        // を通して正しく装飾展開するため、stripInlineMarkupTags()は
-        // renderKeyRows()が素のテキストとして直接使うlabel/description
-        // 側だけに必要)。
-        spanEntries[0].explanation = resolveFPrefixTokens(explCollected, fPrefixTable);
-        j = k;
-      }
-    }
-    for (auto &e : spanEntries) entries.push_back(std::move(e));
-    i = j + 1;
-  }
-  return entries;
-}
-
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
                           std::string homeDirectory, std::string tempRootDirectory, std::string workRootDirectory,
@@ -1181,7 +433,6 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       archiveContentView_(display),
       duView_(display),
       listBrowserView_(display),
-      keyView_(display),
       copyView_(display),
       promptEditor_(display, encoding),
       directoryMode_(directoryView_, modeStack_, history, configuration),
@@ -1361,45 +612,6 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     }
     return fields;
   });
-  // KEY(^H)向けのモードラインのフィールド: 左側に固定の"KEY"、右側の
-  // trailingフィールドとして、KEYがそこから呼び出されたモードそれ
-  // 自身の名前(previousModeName()、上のShell自身のtrailingフィールド
-  // が使うのと同じヘルパー)――そのファイルを見ている間にKEYを呼び
-  // 出した後、例えば"KEY .../HELP.rej"を示す実際のlegacyのスクリーン
-  // ショット(2026-08-02のユーザー報告)に一致させている。keyReturnMode_
-  // は別々のKEY呼び出しをまたいで変わるので、ライブなコールバックに
-  // してある。
-  keyView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
-    // 2026-09-15修正、直接のユーザー確認("KEYも問題無い？戻り値。")
-    // を受けての調査: 中身(previousModeName(keyReturnMode_)、Group1
-    // 各モードの起点にちなんだ実際のディレクトリ/ページ名/パス)は
-    // 元から正しかったが、fillTrailingToEdgeがfalseのままだった――
-    // MAN/LOCATE/DU自身の同種の見落とし(HISTORY.md:9473「基本的に
-    // 右端まで埋まっていないモードラインは全部不良」)と同じ、trueへ。
-    ContentView::ModeLineFields fields{"KEY", previousModeName(keyReturnMode_),
-                                        /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
-                                        /*trailing2=*/""};
-    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
-    // 反映してほしい"): ManMode等自身の同じ分岐のコメント参照。
-    if (keyView_.grepInPlaceActive() || keyView_.grepNoMatchActive()) {
-      fields.name = keyView_.grepInPlaceLabel();
-      fields.trailing2 = keyView_.grepInPlaceProgramBadge();
-      fields.trailing3 = previousModeName(keyReturnMode_);
-      return fields;
-    }
-    return fields;
-  });
-  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
-  // スクリーンショット=fb指定): 旧版は選択中の行「全体」("Space :
-  // Move window one page down"の全体)を1本の帯として反転表示する
-  // ――このポートはそれを「キーラベル」/「説明文」という既存の2つの
-  // 部分にそのまま割り当て直し(ラベル側=実行、説明文側=レファレンス
-  // 表示)、どちらが選ばれているかをその半分だけの反転表示で示す。
-  // 通常の(このContentViewクラスが他の全ての一覧に対して行う)行全体の
-  // 自動反転表示ではこの「半分だけ」を表現できないため無効化し、
-  // renderKeyRows()が代わりにLine::attributes経由で正しい半分だけに
-  // Standoutを乗せる(CopyMode自身の生きた選択ハイライトと同じ仕組み)。
-  keyView_.setCursorHighlightEnabled(false);
   // リストベースの履歴ピッカー(K-45..K-49、^X^F/^X^D/^R等)向けの
   // モードラインのフィールド: カテゴリ自身("FILE"/"DIR"/"COMMAND"等、
   // legacy自身の" FILE_HISTORY"方式の命名、RingCategory自身のコメント
@@ -1687,6 +899,11 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       name = "LOCATE";
     } else if (cutOrigin_ == CutOrigin::Du) {
       name = "DU";
+    } else if (cutOrigin_ == CutOrigin::Key) {
+      // 2026-09-20追加、直接のユーザー依頼("HELPと同じにしてほしい"):
+      // すぐ上のHELP自身の分岐と全く同じ理屈――KEYもCutOrigin::Help
+      // 同様「名付けるべき単一のファイルが存在しない」CutOrigin。
+      name = "KEY";
     } else {
       name = std::filesystem::path(fileMode_.currentFile()).filename().string();
     }
@@ -1695,27 +912,6 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     if (const CutSegment *segment = cutMode_.selectedSegment()) {
       std::size_t start = segment->label.find_first_not_of(' ');
       if (start != std::string::npos) label = segment->label.substr(start);
-    }
-    // 2026-09-02、直接のユーザー報告(スクリーンショット、モードラインに
-    // "@@quickkey@@"が出ている): showKeyReference()自身のquickKeyEntries_
-    // 分岐が、単一セグメントの目印として使っている内部限定の見出し
-    // "@@quickkey@@"は、そのままsegment->labelとしてここまで漏れて
-    // きていた――他のcutOrigin_(File/Help/Directory)向けの本物の
-    // ラベルとは違い、そもそもユーザーへ見せる意味のある文字列では
-    // ない。ここでは代わりに、開いた元のQuickKeyEntry自身の
-    // "ラベル : 説明"(KEY一覧の行と同じ見た目)を組み立て直す――
-    // keyView_自身のカーソル位置は、Keyモードを離れて以来動いて
-    // いない(quickKeyReferenceActive_が立っている間、renderKeyRows()は
-    // 一度も再実行されない)ので、そのままどのエントリを開いたかの
-    // 索引として使える。
-    if (quickKeyReferenceActive_) {
-      name = "KEY";
-      int qi = keyView_.cursorIndex();
-      if (qi >= 0 && qi < static_cast<int>(quickKeyEntries_.size())) {
-        label = quickKeyEntries_[qi].label + " : " + quickKeyEntries_[qi].description;
-      } else {
-        label.clear();
-      }
     }
     // HELP(2026-08-23修正、実際の報告+参照: "HELP" "01/48 TOP"
     // "2194" "1.  Introdduction                  ")――バイト数と現在の
@@ -1740,7 +936,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       fields.trailing3 = name;
       return fields;
     }
-    if (cutOrigin_ == CutOrigin::Help) {
+    if (cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) {
       return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", label};
     }
     if (!label.empty()) trailing += "  " + label;
@@ -1776,7 +972,10 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // Man/Locate/Du(2026-09-15追加、cutContentView_自身の同一の
     // 2026-09-15修正のコメント参照): 「所在地の宣言はモード名で
     // なされる」という同じ慣習に揃えている。
+    // Key(2026-09-20追加、直接のユーザー依頼"HELPと同じにしてほしい"):
+    // HELP自身の前例に倣い、CutOrigin::Keyも"KEY"という固定のリテラル名。
     std::string name = (cutOrigin_ == CutOrigin::Help)     ? "HELP"
+                        : (cutOrigin_ == CutOrigin::Key)    ? "KEY"
                         : (cutOrigin_ == CutOrigin::Log)    ? "LOG"
                         : (cutOrigin_ == CutOrigin::Man)    ? "MAN"
                         : (cutOrigin_ == CutOrigin::Locate) ? "LOCATE"
@@ -1805,7 +1004,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // バイト数」という慣習)がまさにそれを与え、ユーザー自身の参照
     // 値(413、TOC一覧自身のサイズであり、HELP.jpのはるかに大きい
     // 合計ではない)に一致する。
-    if (cutOrigin_ == CutOrigin::Help && !cutMode_.parentPattern()) {
+    if ((cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) && !cutMode_.parentPattern()) {
       return {name, std::to_string(contentByteCount(cutView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
               directoryMode_.currentDirectory()};
     }
@@ -2356,7 +1555,6 @@ void Application::layoutViews() {
   archiveContentView_.setViewport(0, contentHeight);
   duView_.setViewport(0, contentHeight);
   listBrowserView_.setViewport(0, contentHeight);
-  keyView_.setViewport(0, contentHeight);
   copyView_.setViewport(0, contentHeight);
   promptEditor_.setField(display_.rows() - 1, 0, std::max(1, display_.columns()));
 }
@@ -2746,23 +1944,6 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // 同じ優先度・同じ理由。
   if (grepInPlaceActive_ && !special && (byte == 0x0e || byte == 0x10)) {
     return handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
-  }
-  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
-  // スクリーンショット=fa/=fb指定: "「`Space`」:「`Move window one
-  // page down`」（「」内がハイライト表示範囲）がマウスまたは`←`/`→`
-  // で切り替わり"): Left/Rightはこのモードの外では画面を1行上/下へ
-  // 送る(resolveCommand()自身のSpecialKey::Left/Right参照、HELPの
-  // Windowの章の記述通り)――ここでKeyモードに限ってそれより先に
-  // 横取りする。行内の左側(ラベル=実行)/右側(説明文=レファレンス
-  // 表示)という配置に素直に合わせて、Leftは常に実行側(0)、Rightは
-  // 常にレファレンス側(1)を選ぶ(トグルではない――既にどちらを見て
-  // いてもLeft/Rightだけでどちらへも直接行ける)。
-  if (currentMode_ == ApplicationMode::Key && special &&
-      (*special == KeyInput::SpecialKey::Left || *special == KeyInput::SpecialKey::Right)) {
-    keyColumnFocus_ = (*special == KeyInput::SpecialKey::Left) ? 0 : 1;
-    renderKeyRows();
-    keyView_.redraw();
-    return true;
   }
   // GrepPattern/CutPattern/ManName自身の「Select ...」リスト
   // (startRegexPromptList()自身のコメント参照): 他の全てのListBrowser
@@ -4109,8 +3290,6 @@ ContentView &Application::viewForMode(ApplicationMode mode) {
       return duView_;
     case ApplicationMode::ListBrowser:
       return listBrowserView_;
-    case ApplicationMode::Key:
-      return keyView_;
     case ApplicationMode::Copy:
       return copyView_;
     case ApplicationMode::Directory:
@@ -4208,17 +3387,12 @@ bool Application::handleCommand(Command command) {
     case Command::MoveUp:
       activeView().setHoverIndex(std::nullopt);
       activeView().moveUp();
-      // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新): renderKeyRows()
-      // 自身のコメント参照――ハイライトはcursorIndex_を追って現在の
-      // カーソル行にだけ乗るので、行が変わるたびに再構築が要る。
-      if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
       refreshDirectEntryModeLine();  // RecentFile/RecentDirectory自身の読み取り専用の閲覧の外ではno-op
       return true;
     case Command::MoveDown:
       activeView().setHoverIndex(std::nullopt);
       activeView().moveDown();
-      if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
       refreshDirectEntryModeLine();
       return true;
@@ -4247,7 +3421,6 @@ bool Application::handleCommand(Command command) {
     case Command::PageUp:
       activeView().setHoverIndex(std::nullopt);
       activeView().pageUp();
-      if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
       return true;
     case Command::PageDown:
@@ -4273,7 +3446,6 @@ bool Application::handleCommand(Command command) {
       // 宣言コメント参照(Command::ScrollLineDownと共通の仕組み)。
       preloadPagerAhead(activeView().topIndex() + display_.rows() * 2, /*bypassPacing=*/true);
       activeView().pageDown();
-      if (currentMode_ == ApplicationMode::Key) renderKeyRows();
       activeView().syncVisibleCursor();
       suppressPagerRepoll(activeView().topIndex());
       return true;
@@ -4283,12 +3455,6 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Archive) return openSelectedArchiveEntry();
       if (currentMode_ == ApplicationMode::Du) return openSelectedDuEntry();
       if (currentMode_ == ApplicationMode::ListBrowser) return openSelectedListEntry();
-      // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新): keyColumnFocus_
-      // が「レファレンス表示」を指している間は、実行ではなく該当する
-      // HELP章を開く。showKeyReference()自身のコメント参照。
-      if (currentMode_ == ApplicationMode::Key) {
-        return keyColumnFocus_ == 1 ? showKeyReference() : executeSelectedKeyBinding();
-      }
       if (currentMode_ == ApplicationMode::Grep) return openSelectedGrepMatch();
       if (currentMode_ == ApplicationMode::Locate) return openSelectedLocateResult();
       // 2026-08-18: Fileモードには(プレーンなページャとして)他の
@@ -4299,7 +3465,6 @@ bool Application::handleCommand(Command command) {
       return false;
     case Command::Back:
       if (currentMode_ == ApplicationMode::Copy) return returnFromCopy();
-      if (currentMode_ == ApplicationMode::Key) return returnFromKey();
       if (currentMode_ == ApplicationMode::ListBrowser) return returnFromListBrowser();
       if (currentMode_ == ApplicationMode::Du) return returnFromDu();
       if (currentMode_ == ApplicationMode::Shell) return returnFromShell();
@@ -5694,11 +4859,6 @@ bool Application::openSelectedSegment() {
   // CutContent経由で表示される、このメソッド自身のコメント冒頭
   // 参照――同じ症状がHELPでも起き得る)。
   cutContentView_.syncVisibleCursor();
-  // quickKeyReferenceActive_自身のコメント参照: 本物のCutContent入場
-  // (HELP章/CUT結果)はこの1箇所だけを通るので、ここで確実にクリア
-  // しておく――前回quickKeyEntries_経由のexplanation表示を見た後の
-  // 取り残しがここへ漏れ出さないように。
-  quickKeyReferenceActive_ = false;
   currentMode_ = ApplicationMode::CutContent;
   return true;
 }
@@ -6108,16 +5268,6 @@ bool Application::returnToGrepResults() {
 }
 
 bool Application::returnFromCutContent() {
-  // quickKeyReferenceActive_自身の宣言コメント(application.hpp)参照
-  // ――QUICK.txt由来の使い捨てexplanation表示は、無意味な1件だけの
-  // Cut目次画面を経由せず、直接Keyへ戻る。
-  if (quickKeyReferenceActive_) {
-    quickKeyReferenceActive_ = false;
-    currentMode_ = ApplicationMode::Key;
-    renderKeyRows();
-    keyView_.redraw();
-    return true;
-  }
   currentMode_ = ApplicationMode::Cut;
   cutView_.redraw();
   return true;
@@ -6915,9 +6065,6 @@ ApplicationMode Application::nearestFileOrDirectoryAnchor() const {
         return locateReturnStack_.front();
       case ApplicationMode::Du:
         return duReturnStack_.front();
-      case ApplicationMode::Key:
-        mode = keyReturnMode_;
-        break;
       case ApplicationMode::Copy:
         mode = copyReturnMode_;
         break;
@@ -7676,9 +6823,6 @@ bool Application::toggleHelpLanguage() {
     std::vector<StyledLine> helpLines = wrapHelpText(display_.columns());
     if (!cutMode_.split(helpLines, kHelpPattern, GrepSyntax::Regex)) return false;
     currentMode_ = ApplicationMode::Cut;
-  } else if (currentMode_ == ApplicationMode::Key) {
-    renderKeyRows();
-    keyView_.redraw();
   }
 
   return true;
@@ -8324,137 +7468,101 @@ bool Application::toggleListBrowserHistory() {
   return true;
 }
 
-// K-2(^H、M_key、「KEY」): なぜこれが本物のusilicrcのKEYセクション
-// のパースではなく、dispatchByte()のswitch文の手作業で保守される鏡
-// なのかについてはkKeyTable自身のコメント参照。どのモードからでも
-// 到達可能(HELP自身のモードガード無しの前例、legacy自身の
-// init_bp()のデフォルトケースに合わせている)――Keyモード自体の内部
-// からの再入場は拒否される、このクラスの他の全てのStart*()と同じ形。
-// 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
-// スクリーンショット=fa/=fb指定): startKey()自身と、Left/Right/上下
-// カーソル移動の後に(現在のカーソル行・keyColumnFocus_の組が変わる
-// たび)呼ばれる、行の再構築。"<label> : <description>"のテキスト自体
-// はここでは変わらない(「実際にこのテーブルの中にある」最長のラベル
-// への前方パディング、legacy自身のprint_key()の列の揃え方に合わせて
-// いる、2026-08-05のユーザー報告2回分の経緯は変わらず有効)――変わる
-// のは、現在のカーソル行に乗せるStandout AttributeRunの範囲だけで
-// あり、keyColumnFocus_==0(実行)ならラベル側[0, maxLabelWidth)、
-// ==1(レファレンス)ならその残り[maxLabelWidth, 行末)に乗せる(CopyMode
-// 自身の生きた選択ハイライトと同じ、Line::attributes経由の仕組み)。
-// setLines()は毎回topIndex_を0へリセットしてclampViewport()し直す
-// (ContentView::setLines()自身のコメント参照)が、CopyMode::render()
-// が既にまさに同じパターンを毎回の移動で使っており、cursorIndex_を
-// 保ったまま呼べば現在行が見える位置へ再クランプされるだけなので、
-// 大きな一覧でも実害は無い。
-// 2026-09-05追加、QuickKeyEntry自身のコメント参照(application.hpp)。
-// 固定の開発用パス(~/git/usilic/src/QUICK.txt)を直接読む――"今だけ"
-// の暫定プロトタイプなので、Configuration/usilicDir経由の正式な設定
-// パスは意図的に用意していない(このパス自体の可搬性はこのコメントが
-// 書かれた時点でも今も未解決の課題として残っている)。読めない・
-// 1件もパースできない場合はquickKeyEntries_を空のままにし、
-// renderKeyRows()等が黙って従来のkKeyTableへフォールバックする
-// (mpi等の他機体でこのパスが存在せずクラッシュする、という事態を
-// 避けるため)。
-//
-// 2026-09-12更新、直接のユーザー依頼(⑪、"QUICK.txtに基づいてKEY
-// モードを更新して欲しい"): QUICK.txt自身のKEY章が(項目448時点の
-// 12件から)86件まで育ち、旧kKeyTable(95件)とほぼ同等の網羅性に
-// 達したため、以前ユーザー自身が「保留」を選んだ理由(表示行数が
-// 95件→12件に激減する実害)が解消された、という判断のもとで、
-// USILICQUICKKEY環境変数によるopt-inゲート(2026-09-05追加、当時は
-// テストスイートが開発機上でこのパスに気付かず本物のQUICK.txtを
-// 読み込んでしまうことを防ぐためのものだった)を撤廃し、QUICK.txtを
-// 常時有効な本番のデータソースにした。上のフォールバック(読めない
-// 場合はkKeyTableへ)自体は無変更――このマシン固有の開発用パスが
-// 存在しない環境では、引き続き安全側にkKeyTableへ自動的に戻る。
-// 2026-09-12更新、直接のユーザー依頼(⑧): F-Nプレフィックス参照を
-// 実際の設定へ解決するため、本物の~/.usilic/usilicrc(usilicrcPath_、
-// 既にInfoバナー等で使われている実パス)のF-?テーブルを、呼ばれる
-// たびに新規に読み込む(loadFPrefixTable()自身のコメント参照――
-// Configuration自身のキャッシュされた起動時設定とは意図的に別系統)。
-// これによりQUICK.txt同様、usilicrcを編集して戻ってきた直後の^Hにも
-// 即座に反映される。
-void Application::loadQuickKeyEntries() {
-  quickKeyEntries_.clear();
+// K-2(^H、M_key、「KEY」): 2026-09-20全面改稿、直接のユーザー依頼
+// ("暫定QUICK.txtで作ってもらったKEYを見てみると...HELPと同じにして
+// ほしい。タブコードで分割の純粋CUTモード版KEYでよろしく"): 独自の
+// テーブル表示UI(renderKeyRows()/kKeyTable/QuickKeyEntry、以上全て
+// 撤廃済み)をやめ、startHelp()と全く同じ立て付けにした――QUICK.txt
+// 自身の"KEY"章の生テキストをCutMode::split()でタブ文字("\t")分割
+// した、CutOrigin::Keyの本物のCut/CutContentセッション。どのモード
+// からでも到達可能(HELP自身のモードガード無しの前例に合わせている)。
+// startHelp()と異なり内部からの再入場ガードも無い(HELP自身も持たない
+// ――preserveExistingCutの分岐がpushSplit()で自然にネストする)。
+bool Application::loadKeyText() {
+  keyText_.clear();
+  // 2026-09-05追加時のQuickKeyEntry自身のコメント(旧版、削除済み)が
+  // 既に述べていた通り、固定の開発用パス(~/git/usilic/src/QUICK.txt)
+  // を直接読む――正式なConfiguration/usilicDir経由の設定パスは意図的に
+  // 用意していない(このパス自体の可搬性は今も未解決の課題として残って
+  // いる)。読めない場合はkeyText_を空のままにし、startKey()がfalseを
+  // 返す(helpText_.empty()時のstartHelp()と全く同じ形)。
   const char *home = std::getenv("HOME");
-  if (!home) return;
+  if (!home) return false;
   std::ifstream in(std::string(home) + "/git/usilic/src/QUICK.txt", std::ios::binary);
-  if (!in) return;
+  if (!in) return false;
   std::ostringstream buffer;
   buffer << in.rdbuf();
-  std::vector<std::string> fPrefixTable = loadFPrefixTable(usilicrcPath_);
-  quickKeyEntries_ = parseQuickKeyEntries(buffer.str(), fPrefixTable);
+  std::string raw = buffer.str();
+
+  // 標準の、独立行としての"<b>KEY</b>"見出しを探す――旧
+  // parseQuickKeyEntries()自身が確立していた区別と同じ理屈: NOTATION
+  // 章内の入れ子の"<indent7><b>KEY</b>"(キー表記の説明の一部であり、
+  // 実際のKEY章そのものではない)は、行頭にインデントタグが付くため、
+  // ここでの「行全体がちょうど"<b>KEY</b>"」という一致条件には
+  // マッチしない。
+  std::size_t pos = 0;
+  std::size_t sectionStart = std::string::npos;
+  while (pos <= raw.size()) {
+    std::size_t nl = raw.find('\n', pos);
+    std::string line = raw.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line == "<b>KEY</b>") {
+      // 2026-09-20修正、実際にビルドして初回テストを流した際に発覚:
+      // 見出し行自身(pos)をkeyText_へ含めてしまうと、その行には
+      // エントリ末尾の目印であるタブが無いため、CutMode::split()自身の
+      // 「最初のマッチより前の区間はラベル無しの"--"プレースホルダー」
+      // という既存の仕様(このファイル冒頭のコメント参照)に飲まれ、
+      // segments()[0]が本来の最初のエントリ("C-h：[KEY] ...")ではなく
+      // 見出しだけの"--"になってしまっていた。見出し「行」自体は表示上
+      // 不要(HELPの目次と違い、章の内容そのものが即キー一覧なので、
+      // 見出しを別途表示する意味が無い)なので、見出し行の直後(次の
+      // 改行の次)からを本文として取り込む。
+      sectionStart = (nl == std::string::npos) ? raw.size() : nl + 1;
+      break;
+    }
+    if (nl == std::string::npos) break;
+    pos = nl + 1;
+  }
+  if (sectionStart == std::string::npos) return false;  // "KEY"章自体が見つからない
+
+  // 見出しの次行から末尾まで(QUICK.txt自身の中でKEYが最後の章である
+  // ことはCLAUDE.mdの依頼元コメント自身が確認済み)を、helpText_と
+  // 同じくexpandHelpMarkup()で展開して保持する――<b>/<u>/<i>/<indentN>
+  // タグをPipeBuffer::wrapLine()が理解する重ね打ち/インデント制御
+  // バイトへ変換する一方、各エントリ行末の生のタブバイトはこの関数の
+  // 素通し経路でそのまま残る(下のwrapKeyText()がその「タブで区切る」
+  // という前提で動く)。
+  keyText_ = expandHelpMarkup(raw.substr(sectionStart));
+  return !keyText_.empty();
 }
 
-void Application::renderKeyRows() {
-  bool useQuick = !quickKeyEntries_.empty();
-  std::size_t rowCount = useQuick ? quickKeyEntries_.size() : std::size(kKeyTable);
-  std::vector<ContentView::Line> lines;
-  lines.reserve(rowCount);
-  std::size_t maxLabelWidth = 0;
-  if (useQuick) {
-    for (const auto &entry : quickKeyEntries_) maxLabelWidth = std::max(maxLabelWidth, entry.label.size());
-  } else {
-    for (const auto &entry : kKeyTable) maxLabelWidth = std::max(maxLabelWidth, std::string(entry.keyLabel).size());
-  }
-  keyLabelColumnWidth_ = static_cast<int>(maxLabelWidth);
-  int cursor = keyView_.cursorIndex();
-  for (std::size_t i = 0; i < rowCount; i++) {
-    std::string label = useQuick ? quickKeyEntries_[i].label : std::string(kKeyTable[i].keyLabel);
-    bool isMacro = useQuick ? false : kKeyTable[i].isMacro;
-    const std::string &description =
-        useQuick ? quickKeyEntries_[i].description : (helpJapanese_ ? kKeyTable[i].description : kKeyTable[i].descriptionEn);
-    if (label.size() < maxLabelWidth) label.insert(0, maxLabelWidth - label.size(), ' ');
-    std::string text = label + " : " + description;
-    if (isMacro) text += " (M)";
-    // 2026-09-12追加、直接のユーザー依頼(⑨、docs/HISTORY.md参照:
-    // "「ページ/行送り」および「プロンプト」の項については説明文が
-    // 無いので行全体を反転表示にしてほしい（選択するとキーが返る
-    // だけ）"): 対応する説明(explanation)が無いエントリには、実行/
-    // 参照という2つの意味のある行き先が無い(showKeyReference()自身の
-    // entry.explanation.empty()時の早期returnコメント参照――選択して
-    // も何も起きない)ため、keyColumnFocus_による左右の分割ハイライト
-    // をやめ、行全体を1つの単位としてハイライトする。
-    bool wholeRowHighlight = useQuick && quickKeyEntries_[i].explanation.empty();
-    std::vector<AttributeRun> attributes;
-    if (static_cast<int>(i) == cursor) {
-      if (wholeRowHighlight) {
-        attributes.push_back({0, static_cast<int>(text.size()), Display::Attribute::Standout});
-      } else {
-        int split = static_cast<int>(maxLabelWidth);
-        if (keyColumnFocus_ == 0) attributes.push_back({0, split, Display::Attribute::Standout});
-        else attributes.push_back({split, static_cast<int>(text.size()), Display::Attribute::Standout});
-      }
-    }
-    lines.push_back({text, std::nullopt, std::nullopt, std::move(attributes)});
-  }
-  keyView_.setLines(std::move(lines));
-  keyView_.setCursorIndex(cursor);
+std::vector<StyledLine> Application::wrapKeyText(int width) const {
+  PipeBuffer pipe(encoding_, width, 16L * 1024 * 1024);
+  pipe.feed(keyText_);
+  pipe.flush();
+  return pipe.lines();
 }
 
 bool Application::startKey() {
-  if (currentMode_ == ApplicationMode::Key) return false;
-  loadQuickKeyEntries();
-  keyColumnFocus_ = 0;
-  keyView_.setCursorIndex(0);
-  renderKeyRows();
-  // 2026-08-28: ensureShellActive()自身の同一の修正と同じ方針――KEY
-  // は、ユーザー自身が挙げたINFO戻りの例外("usilicrc、ERROR、
-  // SHELL、WORKの対象ファイルを選んだ場合またはINFOでFGREP/EGREP/
-  // CUTを実行した場合のみ")の1つではないので、INFOからそれを開いても
-  // そこへ戻るべきではない――代わりにDirectoryへフォールバックする
-  // (INFO自体が戻っていたであろう先)。
-  keyReturnMode_ = (currentMode_ == ApplicationMode::File && fileMode_.currentFile() == bannerFilePath())
-                       ? ApplicationMode::Directory
-                       : currentMode_;
-  currentMode_ = ApplicationMode::Key;
-  keyView_.redraw();
-  return true;
-}
+  if (!loadKeyText()) return false;
+  std::vector<StyledLine> keyLines = wrapKeyText(display_.columns());
 
-bool Application::returnFromKey() {
-  currentMode_ = keyReturnMode_;
-  activeView().redraw();
+  // startHelp()自身のpreserveExistingCut分岐と全く同じ理屈・同じ形
+  // ――そちらのコメント参照。違いはパターン(タブ文字1つ・GrepSyntax::
+  // Fixed)とcutOrigin_(CutOrigin::Key)だけ。
+  bool preserveExistingCut = (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent);
+  bool ok;
+  if (preserveExistingCut) {
+    ok = cutMode_.pushSplit(keyLines, "\t", GrepSyntax::Fixed);
+  } else {
+    cutReturnMode_ = currentMode_;
+    cutOrigin_ = CutOrigin::Key;
+    cutSyntax_ = GrepSyntax::Fixed;
+    ok = cutMode_.split(keyLines, "\t", GrepSyntax::Fixed);
+  }
+  if (!ok) return false;
+
+  currentMode_ = ApplicationMode::Cut;
   return true;
 }
 
@@ -8899,109 +8007,6 @@ bool Application::feedCopyByte(int byte, std::optional<KeyInput::SpecialKey> spe
   }
 }
 
-// HELP.jp 2.2が文書化する「先に戻り、それから実行する」という順序に
-// ついてはこのクラス自身の宣言コメント(application.hpp)参照。
-bool Application::executeSelectedKeyBinding() {
-  int idx = keyView_.cursorIndex();
-  bool useQuick = !quickKeyEntries_.empty();
-  int count = useQuick ? static_cast<int>(quickKeyEntries_.size()) : static_cast<int>(std::size(kKeyTable));
-  if (idx < 0 || idx >= count) return false;
-  // コピー: 下のreturnFromKey()が先に状態を再描画/変更し得る
-  std::vector<int> bytes = useQuick ? quickKeyEntries_[idx].bytes : kKeyTable[idx].bytes;
-
-  currentMode_ = keyReturnMode_;
-  activeView().redraw();
-  bool result = false;
-  for (int byte : bytes) result = feedByte(byte, std::nullopt);
-  return result;
-}
-
-// application.hpp自身の宣言コメント参照。KeyモードにいながらHELPを
-// 開く(startHelp()自身の`currentMode_ == Key`はpreserveExistingCut
-// (Cut/CutContent限定)に該当しないので、新規のトップレベルsplit()に
-// なり、cutReturnMode_はKeyになる――そこから^Gを2回でKEY自身へ戻る)。
-bool Application::showKeyReference() {
-  int idx = keyView_.cursorIndex();
-  // 2026-09-05追加、直接のユーザー依頼("動作はその章にあるとおり"
-  // ――QuickKeyEntry自身のコメント参照): quickKeyEntries_使用時は、
-  // kHelpTextJaの章番号でCutMode::segments()を検索する代わりに、
-  // そのエントリ自身のexplanation(QUICK.txt自身の直後の
-  // <indent8>...</indent>ブロック)を、たった1セグメントだけの
-  // 使い捨てのCutMode分割として直接構築する――showKeyReference()の
-  // 「探して直接そこへジャンプする」という最終的な見た目(description
-  // 半分を選ぶと即座に説明文が開く、^Gを2回で元のKEY一覧へ戻る)を、
-  // kKeyTable経由の本物のHELP章ジャンプと同じ形で保つため。パターンは
-  // ラベル自身の先頭バイトだけで十分に一意(egrepの特殊文字を含み得る
-  // ラベルをエスケープする手間を避ける、単一セグメントなので前方
-  // 一致の厳密さはどのみち問わない)。
-  if (!quickKeyEntries_.empty()) {
-    if (idx < 0 || idx >= static_cast<int>(quickKeyEntries_.size())) return false;
-    const QuickKeyEntry &entry = quickKeyEntries_[idx];
-    if (entry.explanation.empty()) return false;
-    // "@@quickkey@@"は本文には一切表示しない、egrepパターンとして
-    // マッチさせるためだけの内部限定の見出し行――CutMode::split()は
-    // legacy自身のHELP同様、マッチした見出し行自身もセグメント内容の
-    // 一部として含める(実際のHELP章が自分自身の"2.3. ..."という見出し
-    // 行を先頭に表示するのと同じ)ため、下でsegmentContent()を自前で
-    // 呼び、先頭の見出し行だけを取り除いてからcutContentView_へ渡す
-    // ――openSelectedSegment()をそのまま使うと、この内部限定の目印
-    // 文字列がユーザーに見えてしまう。
-    std::string body = "@@quickkey@@\n" + expandHelpMarkup(entry.explanation);
-    PipeBuffer pipe(encoding_, std::max(1, display_.columns()), 4L * 1024 * 1024);
-    pipe.feed(body);
-    pipe.flush();
-    std::vector<StyledLine> lines(pipe.lines().begin(), pipe.lines().end());
-    // cutOrigin_はここでは意図的に据え置く(File/Help/Directory/Logの
-    // どれも正確には当てはまらない――このQUICK.txt由来の使い捨て
-    // セグメントには対応する「再取得元」が無いため)。既知の割り切り:
-    // このexplanation表示中にウィンドウをリサイズすると、
-    // handleResize()自身のcutOrigin_ベースの再取得が別内容(fileView_
-    // 等)を拾ってしまう――"今だけ"のプロトタイプとして許容する。
-    cutReturnMode_ = ApplicationMode::Key;
-    cutSyntax_ = GrepSyntax::Regex;
-    // quickKeyReferenceActive_は、下のcutContentView_.redraw()自身の
-    // モードライン再構築(setModeLineFieldsProvider()自身のコメント
-    // 参照、"@@quickkey@@"をそのまま表示しないための分岐)がこの値を
-    // 読む「前」に立てる必要がある――実際の報告(スクリーンショット、
-    // モードラインに生の"@@quickkey@@"が出ていた)により、これを
-    // redraw()の「後」に立てていたのが原因と判明した。
-    quickKeyReferenceActive_ = true;
-    if (!cutMode_.split(lines, "^@@quickkey@@", GrepSyntax::Regex)) return false;
-    currentMode_ = ApplicationMode::Cut;
-    cutView_.setCursorIndex(0);
-    const CutSegment *segment = cutMode_.selectedSegment();
-    if (!segment) return true;
-    std::vector<StyledLine> content = cutMode_.segmentContent(*segment);
-    std::vector<ContentView::Line> contentLines;
-    contentLines.reserve(content.empty() ? 0 : content.size() - 1);
-    for (std::size_t i = 1; i < content.size(); i++) contentLines.push_back({content[i].text, std::nullopt, std::nullopt, content[i].attributes});
-    cutContentView_.setLines(std::move(contentLines));
-    cutContentView_.setCursorIndex(0);
-    cutContentView_.redraw();
-    cutContentView_.syncVisibleCursor();
-    currentMode_ = ApplicationMode::CutContent;
-    return true;
-  }
-  if (idx < 0 || idx >= static_cast<int>(std::size(kKeyTable))) return false;
-  const char *section = kKeyTable[idx].helpSection;
-  if (!section || !*section) return false;
-  if (!startHelp()) return false;
-  // kHelpPattern自身のコメント参照(2026-09-04追加): 章見出しの左
-  // マージンは、日本語版(kHelpTextJa)では全角スペース1個(U+3000)、
-  // 英語版(kHelpTextEn)では引き続き半角スペース2個――ここでの前方
-  // 一致もどちらの言語がロード中かに合わせて切り替える必要がある。
-  std::string margin = helpJapanese_ ? "\xE3\x80\x80" : "  ";
-  std::string prefix = margin + section + ".";
-  const auto &segments = cutMode_.segments();
-  for (std::size_t i = 0; i < segments.size(); i++) {
-    if (segments[i].label.rfind(prefix, 0) == 0) {
-      cutView_.setCursorIndex(static_cast<int>(i));
-      return openSelectedSegment();
-    }
-  }
-  return true;  // 目次までは開けた――該当する章が見当たらなくても安全側
-}
-
 // m_grep()から移植: FGREP/EGREPに入ることは、単にどこへ戻るかを覚え
 // (legacy: save_stack())、次のバイトがコマンドではなく検索パターン
 // になるようプロンプト状態へ切り替える。grepの結果の内部からの
@@ -9036,7 +8041,6 @@ bool Application::isGrepInPlaceEligibleMode(ApplicationMode mode) const {
     case ApplicationMode::Shell:
     case ApplicationMode::CutContent:
     case ApplicationMode::ListBrowser:
-    case ApplicationMode::Key:
       return true;
     default:
       return false;
@@ -12348,6 +11352,10 @@ void Application::handleResize() {
     std::vector<StyledLine> freshSource;
     if (cutOrigin_ == CutOrigin::Help) {
       freshSource = wrapHelpText(display_.columns());
+    } else if (cutOrigin_ == CutOrigin::Key) {
+      // startKey()自身のコメント参照――HELP自身のすぐ上の分岐と全く
+      // 同じ理屈、ソースがQUICK.txtの"KEY"章(keyText_)である点だけが違う。
+      freshSource = wrapKeyText(display_.columns());
     } else if (cutOrigin_ == CutOrigin::Directory) {
       // 2026-08-11: ディレクトリ一覧の行は、File/Manのテキストがそう
       // するようには幅に合わせてリフロー/折り返しされない
@@ -12482,27 +11490,6 @@ bool Application::handleMouseClick(int row, int column) {
     locateView_.setCursorIndex(idx);
     locateView_.redraw();
     return true;
-  }
-  // 2026-08-31、直接のユーザー依頼(KEY(^H)画面の刷新、実際の旧版
-  // スクリーンショット=fa/=fb指定: "「`Space`」:「`Move window one
-  // page down`」（「」内がハイライト表示範囲）がマウスまたは`←`/`→`
-  // で切り替わり、マウスクリックまたはreturnでそれぞれ`キー実行`:
-  // `レファレンス表示`へ移行する"): クリック位置がkeyLabelColumnWidth_
-  // より左(ラベル側)か右(説明文側)かで、そのままキー実行/レファレンス
-  // 表示のどちらかへ「直接」移行する――[return]と同格の即時コミット
-  // であり、他の一覧(Directory/Archive/Locate)の「1回目は選択のみ、
-  // 2回目で実行」という慣習はここでは採らない(ユーザー自身の言葉
-  // 通り、クリックとreturnは同格に扱う)。
-  if (currentMode_ == ApplicationMode::Key) {
-    int idx = keyView_.lineIndexAtRow(row);
-    if (idx < 0) return false;
-    keyView_.setCursorIndex(idx);
-    if (column < keyLabelColumnWidth_) {
-      keyColumnFocus_ = 0;
-      return executeSelectedKeyBinding();
-    }
-    keyColumnFocus_ = 1;
-    return showKeyReference();
   }
   return false;
 }

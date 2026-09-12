@@ -1,5 +1,6 @@
 #include "pipe_buffer.hpp"
 
+#include <algorithm>
 #include <utility>
 
 namespace fm {
@@ -234,9 +235,22 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   // だけがここで変わる。既存のsrc/HELP.txt/QUICK.txt側のNの値自体は、
   // 半分の見た目幅を意図した新しい値へ著者側で調整し直す必要がある
   // (このコミット自体はレンダラのみを変更、本文側の調整は別途)。
+  // 2026-09-20修正、直接のユーザー依頼("KEYもHELPと同じ立て付けに")
+  // でQUICK.txtの"KEY"章をこの経路に初めて通した際に発覚した実際の
+  // 無限ループ: QUICK.txtは<indent16>/<indent26>のような、HELP.txt
+  // (最大<indent1>)より遥かに大きい字下げ幅を使っており、これが
+  // width_(狭いウィンドウ、例えば幅10列)以上になり得る。従来の実装は
+  // currentIndent_ぶんを無条件にwrapText_へ書き込んでいたため、字下げ
+  // だけで行が埋まる(または超過する)と、続く本物の1文字が一度も
+  // 置けないままfinalize(false)して次の行へ...を繰り返し、
+  // currentIndent_・width_のどちらも変わらないので同じ状態を際限なく
+  // 繰り返す(lines_が無限に伸び続けメモリを食い尽くす)。全角文字1つ
+  // (最大2列)ぶんは必ず置ける余地を残すよう、字下げ自体をwidth_-2
+  // までに切り詰める(width_が極端に狭くこれが負になる場合は0)。
   auto seedIndentIfAtLineStart = [&]() {
     if (wrapCol_ != 0 || currentIndent_ <= 0) return;
-    for (int k = 0; k < currentIndent_; k++) {
+    int seed = std::min(currentIndent_, std::max(0, width_ - 2));
+    for (int k = 0; k < seed; k++) {
       wrapText_ += " ";
       wrapCol_ += 1;
     }
