@@ -226,7 +226,14 @@ TEST_CASE_FIXTURE(Fixture, "search (Fixed/fgrep, 2026-08-23 fix, item 407): matc
   // and CFStringNormalize() itself, are both macOS-specific) -- this
   // cross-form match isn't expected to work there. Every other test in
   // this file (plain byte-identical patterns) is unaffected.
-  CHECK_FALSE(mode.search(lines, nfcQuery, GrepSyntax::Fixed));
+  //
+  // 2026-09-12 fix: search() returning false here would have been
+  // wrong regardless of platform -- per the "zero matches is a
+  // successful (not failed) search" test above, a clean grep run with
+  // no hits still returns true; only matches() should be empty. This
+  // branch had never actually been exercised off macOS until now.
+  REQUIRE(mode.search(lines, nfcQuery, GrepSyntax::Fixed));
+  CHECK(mode.matches().empty());
 #endif
 }
 
