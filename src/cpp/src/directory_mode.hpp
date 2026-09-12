@@ -238,9 +238,9 @@ class DirectoryMode {
   // 有効な選択も無い場合は空。
   std::vector<DirectoryEntry> targetEntries() const;
 
-  // K-26(^Ol、usilicrc自身のLSセクション: 「When the flag is set,
-  // file-selector will display only filename」): 各表示行を、完全な
-  // `ls -alF`行と裸のファイル名だけの間で切り替える。`ls`を
+  // K-26(^Oo、旧^Ol、usilicrc自身のLSセクション: 「When the flag is
+  // set, file-selector will display only filename」): 各表示行を、
+  // 完全な`ls -alF`行と裸のファイル名だけの間で切り替える。`ls`を
   // 再実行「しない」――entries_は既にDirectoryEntry::lsLineと::name
   // の両方を独立して保持しているので、これは既にパース済みの
   // エントリからview_の各行を再構築するだけの、純粋な表示層の作業
@@ -250,6 +250,46 @@ class DirectoryMode {
   // 処理を参照。
   void setFilenameOnlyMode(bool enabled);
   bool filenameOnlyMode() const;
+
+  // COLUMNディレクティブ(Configuration::columnThreshold()自身の
+  // コメント参照、2026-09-12追加)に基づく自動判定: 現在のカーソル
+  // 行の実際の表示幅(view_自身の端末幅からnameStartColumnを差し
+  // 引いた、ファイル名自身に残る幅)がこの閾値未満ならfilenameOnlyMode_
+  // を強制的にtrueへ、以上ならfalseへ設定し直す。setFilenameOnlyMode()
+  // 自体は変更しない(^Ooによる手動切り替えは、この自動判定が次に
+  // 再評価されるまではそのまま尊重される)――enterDirectory()自身の
+  // 末尾と、Application::handleResize()の両方から、まさに「表示幅が
+  // 変わり得た」タイミング(新しい一覧を読んだ直後/端末リサイズ直後)
+  // にだけ呼ばれることを想定している。エントリが1件も無ければ何も
+  // しない(比較対象が無いため)。
+  void applyColumnAutoDisplay();
+
+  // 2026-09-12追加、直接のユーザー依頼("`-l`以外も変更できるように
+  // したい...^Olが-rトグル、^O^Lが-t/-S/-k切り替え"): `ls`呼び出しへ
+  // 付加するソートキー。KindはBSD/GNU両lsに相当オプションが無い
+  // ため、このモード自身がparseLsLine()後の結果を拡張子順へ並べ
+  // 替える唯一の自前ソート実装――cycleSortKey()自身のコメント参照。
+  enum class LsSortKey { Default, Time, Size, Kind };
+
+  // K-26と同じ「^Oo」枠のDirectoryモード限定機能、`-r`(逆順)を
+  // enterDirectory()自身の`ls`呼び出しへ付加するかどうかを切り替える。
+  // トグル後は即座に(現在のcurrentDirectory_に対して)再読み込みする
+  // ――refresh()自身と同じ「同名エントリへカーソル復元」慣習に従う。
+  void toggleReverseSort();
+  bool reverseSort() const;
+
+  // Default(名前順、追加のソートフラグ無し)→Time(`-t`)→Size(`-S`)→
+  // Kind(拡張子順、自前実装)→Defaultの順で巡回する。Kind以外は
+  // enterDirectory()自身の`ls`呼び出しへそのままフラグとして渡す
+  // だけ(実際のソートは本物の`ls`に委ねる)。Kindだけは、ls自体には
+  // 渡さず(macOS版lsには`-k`相当が無いため)、parseLsLine()後の
+  // entries_/表示行をこのモード自身が拡張子(ls -F自身の型マーカーを
+  // 剥がした後の、ファイル名の最後の"."以降、無ければ空文字列)で
+  // 安定ソートし直す――usilicの「既存プログラム活用」という原則の
+  // 例外(SHELL/^[i(in-place GREP)と同じ扱い、直接のユーザー自身の
+  // 言葉)。トグル同様、切り替え後は即座に再読み込み/再ソートする。
+  void cycleSortKey();
+  LsSortKey sortKey() const;
 
   // ユーザーがこの一覧に対するFGREP/EGREP/CUT検索から戻ってきた時に
   // Application::openSelectedGrepMatch()/returnFromCut()によって
@@ -407,6 +447,9 @@ class DirectoryMode {
   // setTransientMarkedNames()自身のコメント参照。
   std::set<std::string> transientMarkedNames_;
   bool filenameOnlyMode_ = false;
+  // toggleReverseSort()/cycleSortKey()自身のコメント参照。
+  bool reverseSort_ = false;
+  LsSortKey sortKey_ = LsSortKey::Default;
   std::string searchAnnotation_;
   bool showEditError_ = false;
   std::string editErrorMessage_ = "Invalid mode";

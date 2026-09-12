@@ -15,6 +15,11 @@ const std::vector<std::string> &directiveKeywords() {
   static const std::vector<std::string> kKeywords = {
       "ARCHIVE", "FILE", "EXEC",   "EDITOR", "SHELL", "GREP", "PROGRAM", "BUFFER", "CODE",
       "HISTORY", "WAIT", "SCROLL", "LS",     "KEY",   "CP",   "MV",      "RM",
+      // 2026-09-12追加、直接のユーザー依頼(columnThreshold()自身の
+      // コメント参照): このC++移植自身の新設ディレクティブなので
+      // legacy str.cのusilicrc[]には対応物が無い――既存の並びの
+      // 末尾に追記する(既存インデックスの番号を一切ずらさないため)。
+      "COLUMN",
   };
   return kKeywords;
 }
@@ -506,7 +511,7 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         // isContinuationLine()のインデントチェックはそれを次の
         // トップレベルディレクティブと誤読してしまう。そのため代わり
         // に正確なキーワード一致でスキップする: 最初のトークンが
-        // 17個の既知のディレクティブキーワードのどれかに正確に等しい
+        // 18個の既知のディレクティブキーワードのどれかに正確に等しい
         // 次の行までの全てを消費する。
         while (i < lines.size()) {
           if (std::find(keywords.begin(), keywords.end(), firstToken(lines[i])) != keywords.end()) break;
@@ -524,6 +529,10 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
           if (!tokens.empty()) last = tokens;
         }
         if (!last.empty() && fileManagerMode) roleCommands_[role] = {last, std::nullopt};
+        break;
+      }
+      case 17: {  // COLUMN(columnThreshold()自身のコメント参照)
+        if (auto v = nextDigitToken(lines, i)) columnThreshold_ = std::atoi(v->c_str());
         break;
       }
       default:
@@ -622,6 +631,7 @@ int Configuration::historyRetentionCount() const { return historyRetentionCount_
 int Configuration::waitIntervalMicros() const { return waitIntervalMicros_; }
 bool Configuration::smoothScrollEnabled() const { return smoothScrollEnabled_; }
 int Configuration::lsMode() const { return lsMode_; }
+int Configuration::columnThreshold() const { return columnThreshold_; }
 
 void Configuration::setEnvironmentCharset(std::optional<std::string> envCharsetValue) {
   envCharsetValue_ = std::move(envCharsetValue);

@@ -1,5 +1,6 @@
 #include "directory_mode.hpp"
 
+#include <algorithm>
 #include <optional>
 #include <sstream>
 
@@ -148,7 +149,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       // パスを乗っ取ってしまうので、grepView_自身のtrailing3(戻り先
       // ラベル)慣習と同じ場所へ、その消えたパス自体を退避する。
       fields.name = view_.grepInPlaceLabel();
-      fields.trailing2 = "(grep)";
+      fields.trailing2 = view_.grepInPlaceProgramBadge();
       fields.trailing3 = currentDirectory_;
       fields.fillTrailingToEdge = true;
     } else if (view_.grepNoMatchActive()) {
@@ -165,7 +166,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       // する)。trailing2は成功時と同じ"(grep)"バッジのまま、trailing
       // (バイト数)も通常通り計算済みの値のまま残す。
       fields.name = view_.grepInPlaceLabel();
-      fields.trailing2 = "(grep)";
+      fields.trailing2 = view_.grepInPlaceProgramBadge();
       fields.trailing3 = currentDirectory_;
     } else if (!pendingOperationLabel_.empty()) {
       // ディレクトリパスの代わりに"CP"/"MV"/"RM"、プレーンな
@@ -265,6 +266,14 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   if (!normalizedPath.empty() && normalizedPath.back() != '/') normalizedPath += '/';
 
   std::vector<std::string> argv = ls.argv;
+  // 2026-09-12追加、直接のユーザー依頼(toggleReverseSort()/
+  // cycleSortKey()自身のコメント参照): Kind(拡張子順)だけはこの
+  // モード自身が後段で並べ替える自前実装なので、本物の`ls`へは何も
+  // 渡さない(Default=フラグ無し、実際にはKindの並べ替え前の`ls`
+  // 自身の名前順出力が入力になる)。
+  if (sortKey_ == LsSortKey::Time) argv.push_back("-t");
+  else if (sortKey_ == LsSortKey::Size) argv.push_back("-S");
+  if (reverseSort_) argv.push_back("-r");
   argv.push_back(normalizedPath);
 
   ChildProcess::Options options;
@@ -290,6 +299,41 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
     if (!filenameOnlyMode_) contentLine.highlightStartColumn = entry.nameStartColumn;
     lines.push_back(std::move(contentLine));
     entries.push_back(std::move(entry));
+  }
+
+  if (sortKey_ == LsSortKey::Kind) {
+    // cycleSortKey()自身のコメント参照: macOS/GNU lsのどちらにも
+    // 拡張子順オプションが無いため自前で並べ替える。"./"/"../"は
+    // ナビゲーション用の特殊エントリなので、常に(ls自身が出力した
+    // 元の並び順のまま)先頭に固定し、反転(-r)の対象にもしない。
+    std::vector<std::size_t> order(entries.size());
+    for (std::size_t i = 0; i < order.size(); i++) order[i] = i;
+    auto isNav = [&](std::size_t idx) { return entries[idx].name == "./" || entries[idx].name == "../"; };
+    auto extensionOf = [](const std::string &name) {
+      std::string stripped = stripLsFTypeMarker(name);
+      std::size_t dot = stripped.find_last_of('.');
+      return (dot == std::string::npos || dot == 0) ? std::string() : stripped.substr(dot + 1);
+    };
+    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+      bool aNav = isNav(a), bNav = isNav(b);
+      if (aNav != bNav) return aNav;
+      if (aNav && bNav) return false;  // どちらもナビゲーション用: stable_sort自身が元の順序を保つ
+      return extensionOf(entries[a].name) < extensionOf(entries[b].name);
+    });
+    if (reverseSort_) {
+      auto firstNonNav = std::find_if(order.begin(), order.end(), [&](std::size_t idx) { return !isNav(idx); });
+      std::reverse(firstNonNav, order.end());
+    }
+    std::vector<DirectoryEntry> reorderedEntries;
+    std::vector<ContentView::Line> reorderedLines;
+    reorderedEntries.reserve(entries.size());
+    reorderedLines.reserve(lines.size());
+    for (std::size_t idx : order) {
+      reorderedEntries.push_back(std::move(entries[idx]));
+      reorderedLines.push_back(std::move(lines[idx]));
+    }
+    entries = std::move(reorderedEntries);
+    lines = std::move(reorderedLines);
   }
 
   // 末尾スラッシュの正規化のみ(正規化「ではない」――シンボリック
@@ -351,6 +395,11 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
     view_.setCursorIndex(0);
   }
   view_.redraw();
+  // COLUMNディレクティブ(applyColumnAutoDisplay()自身のコメント参照)
+  // ――ここが「新しい一覧を読んだ直後」のちょうどそのタイミングで
+  // あり、カーソル位置が既に確定した後に呼ぶ(比較対象がカーソル行の
+  // nameStartColumnであるため)。
+  applyColumnAutoDisplay();
   return true;
 }
 
@@ -702,5 +751,41 @@ void DirectoryMode::setFilenameOnlyMode(bool enabled) {
 }
 
 bool DirectoryMode::filenameOnlyMode() const { return filenameOnlyMode_; }
+
+void DirectoryMode::applyColumnAutoDisplay() {
+  if (entries_.empty()) return;
+  const DirectoryEntry *cursor = selectedEntry();
+  int nameStartColumn = cursor ? cursor->nameStartColumn : entries_.front().nameStartColumn;
+  int remaining = view_.columns() - nameStartColumn;
+  bool shouldBeNameOnly = remaining < configuration_.columnThreshold();
+  if (shouldBeNameOnly != filenameOnlyMode_) setFilenameOnlyMode(shouldBeNameOnly);
+}
+
+void DirectoryMode::toggleReverseSort() {
+  reverseSort_ = !reverseSort_;
+  refresh();
+}
+
+bool DirectoryMode::reverseSort() const { return reverseSort_; }
+
+void DirectoryMode::cycleSortKey() {
+  switch (sortKey_) {
+    case LsSortKey::Default:
+      sortKey_ = LsSortKey::Time;
+      break;
+    case LsSortKey::Time:
+      sortKey_ = LsSortKey::Size;
+      break;
+    case LsSortKey::Size:
+      sortKey_ = LsSortKey::Kind;
+      break;
+    case LsSortKey::Kind:
+      sortKey_ = LsSortKey::Default;
+      break;
+  }
+  refresh();
+}
+
+DirectoryMode::LsSortKey DirectoryMode::sortKey() const { return sortKey_; }
 
 }  // namespace fm

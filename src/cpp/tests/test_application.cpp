@@ -1220,7 +1220,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: typing a pattern then ^M runs a real fgrep
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
   const std::string &modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find("FGREP") != std::string::npos);
-  CHECK(modeLine.find("(grep)") != std::string::npos);
+  CHECK(modeLine.find("(fgrep)") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^G cancels a pending prompt without starting a search") {
@@ -1554,7 +1554,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP: searching from File mode stays in File mode, i
   REQUIRE(app.grepMode().matches().size() == 1);
   const std::string &modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find("FGREP") != std::string::npos);
-  CHECK(modeLine.find("(grep)") != std::string::npos);
+  CHECK(modeLine.find("(fgrep)") != std::string::npos);
 }
 
 // (2026-09-11削除: このコメントより上の旧テストが検証していた
@@ -2209,7 +2209,7 @@ TEST_CASE_FIXTURE(Fixture, "FGREP: already worked from DU (no gate on startGrepP
   CHECK(app.currentMode() == ApplicationMode::Du);
   const std::string &modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find("FGREP") != std::string::npos);
-  CHECK(modeLine.find("(grep)") != std::string::npos);
+  CHECK(modeLine.find("(fgrep)") != std::string::npos);
 }
 
 // -- feedByte: ^Jm / ^J^M leader sequences for MAN --
@@ -7577,7 +7577,7 @@ TEST_CASE_FIXTURE(Fixture, "^I (CopyDestination prompt): completes a partial fil
 // destination" shape (SHELL's own item-401 fix: trailing2="(zsh)"
 // badge, trailing3=return-target badge, always right-edge-padded --
 // see grepView_'s own updated provider comment).
-TEST_CASE_FIXTURE(Fixture, "FGREP results: mode line shows the program badge \"(grep)\" right after the "
+TEST_CASE_FIXTURE(Fixture, "FGREP results: mode line shows the program badge \"(fgrep)\" right after the "
                            "byte count, and the return-directory path LAST") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
@@ -7588,11 +7588,13 @@ TEST_CASE_FIXTURE(Fixture, "FGREP results: mode line shows the program badge \"(
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
 
   std::string row = display.rowText(23);
-  // 2026-09-05変更(直接のユーザー依頼、"fgrepとegrepの代わりにgrep -F
-  // とgrep -Eで代用"): バッジは実際に実行されるプログラム(cmd.argv.front())
-  // をそのまま表示するので、FGREP/EGREP/GREPいずれも同じ"(grep)"になる
-  // ――configuration.cpp自身のコメント参照。
-  std::size_t badgePos = row.find("(grep)");
+  // 2026-09-12修正(直接のユーザー依頼、"GREP/FGREP/EGREPの違いを明示"):
+  // 実際に実行されるプログラムはgrep -F/-E/(無指定)のままだが(PATH次第
+  // でgrepの実装自体が暗黙に変わるリスクを避けるため、バイナリ自体は
+  // 切り替えないことをAskUserQuestionで確認済み)、バッジ文字列だけは
+  // grepSyntax_から"(fgrep)"/"(egrep)"/"(grep)"を導出するようになった
+  // ――ContentView::grepInPlaceProgramBadge()自身のコメント参照。
+  std::size_t badgePos = row.find("(fgrep)");
   std::size_t pathPos = row.find(path());
   REQUIRE(badgePos != std::string::npos);
   REQUIRE(pathPos != std::string::npos);
@@ -10312,7 +10314,7 @@ TEST_CASE_FIXTURE(Fixture, "FGREP from within a HELP chapter's own content: mode
 
   const std::string &row = display.rowText(23);
   CHECK(row.find("FGREP") != std::string::npos);
-  CHECK(row.find("(grep)") != std::string::npos);
+  CHECK(row.find("(fgrep)") != std::string::npos);
   CHECK(row.find("HELP") != std::string::npos);  // not blank
 }
 

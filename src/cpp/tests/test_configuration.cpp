@@ -205,20 +205,32 @@ TEST_CASE("CODE directive: only byte values under 32 are accepted, clamped to 2 
   CHECK(allowed.find(static_cast<char>(99)) == std::string::npos);
 }
 
-TEST_CASE("BUFFER/HISTORY/WAIT/SCROLL/LS: single-integer directives") {
+TEST_CASE("BUFFER/HISTORY/WAIT/SCROLL/LS/COLUMN: single-integer directives") {
   Configuration config;
   REQUIRE(config.loadRcText(
       "BUFFER\n 5\n"
       "HISTORY\n 300\n"
       "WAIT\n 7\n"
       "SCROLL\n 1\n"
-      "LS\n 2\n",
+      "LS\n 2\n"
+      "COLUMN\n 12\n",
       true));
   CHECK(config.bufferSizeLimitBytes() == 5 * 1024 * 1024);
   CHECK(config.historyRetentionCount() == 300);
   CHECK(config.waitIntervalMicros() == 70000);
   CHECK(config.smoothScrollEnabled() == true);
   CHECK(config.lsMode() == 2);
+  CHECK(config.columnThreshold() == 12);
+}
+
+// 2026-09-12追加、直接のユーザー依頼(columnThreshold()自身の
+// コメント参照): デフォルト値8自体は暫定("今後の試用による見極めは
+// 必要")なので、usilicrc自身にCOLUMNディレクティブが無い場合にこの
+// 値が使われることを確認する。
+TEST_CASE("COLUMN directive: defaults to 8 when absent from usilicrc") {
+  Configuration config;
+  REQUIRE(config.loadRcText("", true));
+  CHECK(config.columnThreshold() == 8);
 }
 
 TEST_CASE("BUFFER: an out-of-range value is clamped to 1 and recorded as an error") {

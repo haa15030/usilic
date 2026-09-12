@@ -161,12 +161,12 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
       // 判定をここにも複製する。
       if (view_.grepInPlaceActive()) {
         fields.name = view_.grepInPlaceLabel();
-        fields.trailing2 = "(grep)";
+        fields.trailing2 = view_.grepInPlaceProgramBadge();
         fields.trailing3 = currentFile_;
         fields.fillTrailingToEdge = true;
       } else if (view_.grepNoMatchActive()) {
         fields.name = view_.grepInPlaceLabel();
-        fields.trailing2 = "(grep)";
+        fields.trailing2 = view_.grepInPlaceProgramBadge();
         fields.trailing3 = currentFile_;
       }
       return fields;
@@ -263,14 +263,14 @@ FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encodi
     // 情報)を退避する――直接のユーザー指摘=fv参照。
     if (view_.grepInPlaceActive()) {
       fields.name = view_.grepInPlaceLabel();
-      fields.trailing2 = "(grep)";
+      fields.trailing2 = view_.grepInPlaceProgramBadge();
       fields.trailing3 = currentFile_;
       fields.fillTrailingToEdge = true;
     } else if (view_.grepNoMatchActive()) {
       // DirectoryMode自身の同じ分岐のコメント参照(2026-09-10再修正、
       // 直接のユーザー指摘: "No StringもGREPでは無く行数の隣に表示")。
       fields.name = view_.grepInPlaceLabel();
-      fields.trailing2 = "(grep)";
+      fields.trailing2 = view_.grepInPlaceProgramBadge();
       fields.trailing3 = currentFile_;
     }
     return fields;

@@ -582,6 +582,82 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ことを確認)含め全836件・19018アサーション全通過。`make usilic`
      クリーンビルド確認済み。
 
+449. **usilicrcにCOLUMN新設(狭い端末幅では自動的に`ls -alF`の詳細
+    表示を諦める)、`^Ol`で逆順(-r)トグル、`^O^L`でソートキー巡回
+    (名前/更新日時/サイズ/種類)を新設**
+   - **経緯**: 直接のユーザー依頼。「usilicrcにCOLUMNを新設。今後の
+     試用による見極めは必要だが、デフォルトを8とする。普段は`^Oo`が
+     切り替えトグルだが、（ls）のハイライト表示域長がCOLUMNよりも
+     短い場合は、自動的にlsの`-l`オプションを削除、長ければ付加され
+     る」「同じく`-l`以外も変更できるようにしたい。デフォルトは
+     `-lF`、付加するオプションとして`^Ol`が`-r`トグル、`^O^L`が
+     `-t`/`-S`/`-k`切り替え。...macOS版lsには種類（拡張子）順（←`-k`
+     相当）が無いため、ここだけは作り込んでほしい」。副作用調査を
+     フォークへ依頼したところ、`^Oo`は実は本物の`ls -l`起動自体を
+     切り替えておらず(常に`ls -alF`を起動し、表示層の
+     `filenameOnlyMode_`だけを切り替えていた)、`^O^L`(0x0c)は
+     既に`Command::Redraw`(「SHELL内から」用の意図だがモードガード
+     欠如でDirectoryでも発動)に割り当て済みという2点の衝突が判明。
+     「（ls）のハイライト表示域長」の意味をユーザーへ確認したところ
+     「カーソル行の表示文字数自体。長いファイル名等で行が長くなった
+     時に-lへ切り替えるイメージ」(要約)と回答、`^O^L`の衝突は
+     「SHELLでの`^L`への対処と同じ扱いでいい」との回答により、
+     Command::RedrawをShellモード限定にガードし、Directoryでの
+     `^O^L`を新設のCycleLsSortKeyへ回すことで解決する方針に合意した。
+   - **修正**: `Configuration`にCOLUMNディレクティブ(数値、デフォルト
+     8、`columnThreshold()`)を新設(usilicrcの`directiveKeywords()`
+     末尾へ追記、既存インデックスは無変更)。`DirectoryMode`に
+     `applyColumnAutoDisplay()`(現在のカーソル行の
+     `DirectoryEntry::nameStartColumn`と`ContentView::columns()`
+     (新設、`display_.columns()`への単純転送)から「ファイル名自身に
+     残る表示幅」を算出し、COLUMN未満なら`filenameOnlyMode_`を
+     強制的にtrueへ、以上ならfalseへ設定し直す)を新設し、
+     `enterDirectory()`末尾と`Application::handleResize()`の両方
+     (「表示幅が変わり得た」ちょうどそのタイミング)から呼ぶように
+     した。`^Oo`による手動切り替え自体はそのまま尊重され、この自動
+     判定は次にどちらかのタイミングが来るまで割り込まない。
+     `DirectoryMode::toggleReverseSort()`/`cycleSortKey()`
+     (Default→Time→Size→Kind→Defaultの巡回)を新設し、
+     `enterDirectory()`の`ls`呼び出しへ`-r`/`-t`/`-S`を実際に付加
+     するようにした。Kind(拡張子順)だけはBSD/GNU両`ls`に相当
+     オプションが無いため、`ls`自体には何も渡さず、パース後の
+     `entries_`/表示行をこのモード自身が拡張子(`ls -F`自身の型
+     マーカーを剥がした後の、ファイル名の最後の"."以降)で安定ソート
+     し直す自前実装とした――usilicの「既存プログラム活用」という
+     原則の例外(SHELL/`^[i`と同じ扱い、ユーザー自身の言葉)。"./"/
+     "../"は常に(元の`ls`出力順のまま)先頭に固定し、反転(`-r`)の
+     対象にも含めない。`Command::ToggleLsReverse`(`^Ol`、2026-09-08
+     の改名で空いていたキー)/`Command::CycleLsSortKey`(`^O^L`)を
+     新設して配線し、kKeyTableにも対応するエントリを追加・既存の
+     `^O^L`エントリの説明文を「再描画(SHELL)/ソートキー巡回(それ
+     以外)」に更新した。
+   - **検証**: 新規doctest4件(`Configuration`のCOLUMN直接指定/
+     デフォルト値、`toggleReverseSort()`の実`ls`出力反転、
+     `cycleSortKey()`のKind巡回と"./"/"../"固定、`applyColumnAutoDisplay()`
+     の狭幅/広幅端末での自動切替)を追加。`make test`
+     1085/1086件・21597/21598アサーション通過(残る1件はLOCATEデータ
+     ベースのタイミングに依存する既知の環境フレークで本変更と無関係)。
+     実機PTYで`^Ol`による実際の逆順表示、`^O^L`3回でKindソートへ
+     巡回し拡張子順(かつ"./"/"../"が先頭のまま)になること、狭い
+     端末幅(20列)でCOLUMN=8により自動的にファイル名のみ表示へ切り
+     替わることを確認。`make install`/`make app`/jキー回帰チェックも
+     完了。
+   - **既知の未解決事項(今回は対象外)**: 検証中に、`^O^L`をSHELL
+     モード「内から」押した場合、意図(「SHELL内から再描画」)通りに
+     動作せず、`feedShellByte()`自身の`isShellSafeNavigation`
+     ホワイトリスト(`^O^S`/`^J^S`(FGREP/EGREP)や`ESC <`/`ESC >`/
+     `ESC v`のみを許可)に`^O^H`(KEY)/`^O^L`(Redraw)/`^O^I`(INFO)の
+     3つのSHELLエスケープハッチが含まれていないため、いずれも
+     dispatchLeaderByte()に到達する前にcurrentMode_が
+     shellReturnMode_へ書き戻されてしまい、実際にはSHELLを離れた先の
+     モードで実行されてしまう、という2026-09-08時点から存在していた
+     と見られる別種の既存バグを発見した。今回の依頼(Directoryでの
+     ソートキー巡回)とは無関係で、この項目の実装によって新たに
+     壊れたものでも直したものでもない(`^O^L`がDirectoryで正しく
+     CycleLsSortKeyとして動作することは実機PTYで確認済み)ため、
+     今回は修正せず記録のみに留める。対応が必要そうであれば別途
+     ご指示ください。
+
 ## 2. KEY(キー一覧 / HELP)
 
 58. **2026-07-29: KEY/ヘルプモード(^J^H)をApplicationへ配線 ―
@@ -2990,6 +3066,45 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `^J^C`(CUT-Regex)がもう候補一覧を経由せず空のプロンプトから
      直接始まることを確認。`make install`/`make app`/
      `~/Applications/usilic.app`への反映、jキー回帰チェックも完了。
+
+450. **GREP/FGREP/EGREPのモードライン「(grep)」バッジを、実際の検索
+    構文から導出した「(grep)」/「(fgrep)」/「(egrep)」に区別**
+   - **経緯**: 直接のユーザー依頼。「usilicrcのGRFPは削除した。それに
+     伴い、GREP/FGREP/EGREPの違いを明示するために、現状の-E/-F
+     オプション起動の代わりにfgrep/egrepでの検索に変更したい
+     （(fgrep)/(egrep)表示のため）」。副作用調査の結果、実際に
+     `fgrep`/`egrep`バイナリへ切り替えなくても、バッジ文字列だけを
+     `GrepSyntax`から導出すれば同じ表示上の目的を達成できると判明
+     (「(grep)」自体が14箇所でハードコードされたリテラルであり、
+     「実際に起動したプログラム名から導出」する仕組みには元々
+     なっていなかったため)。加えて、この機体で実際に確認したところ
+     `grep`はugrep(Homebrew経由のPATH上書き)に解決される一方
+     `fgrep`/`egrep`は本物の/usr/bin(BSD)に解決されており、実際に
+     バイナリを切り替えると検索エンジン自体がユーザーのPATH次第で
+     暗黙に変わってしまうリスクが実在すると分かったため、
+     AskUserQuestionで確認の上「バッジのみ変更(推奨)」を選択、
+     実際のサブプロセス起動(`grep -F`/`grep -E`/`grep`)は変更しない
+     ことにした。
+   - **修正**: `ContentView`に`setGrepInPlaceBadge(std::string)`/
+     `grepInPlaceProgramBadge()`を新設(前項の`setGrepInPlaceLabel()`/
+     `grepInPlaceLabel()`と対の仕組み)。`application.cpp`に
+     `grepSyntaxBadge(GrepSyntax)`(`"(grep)"`/`"(fgrep)"`/
+     `"(egrep)"`を返す)を新設し、`grepSyntaxLabel()`と同じ2箇所の
+     呼び出し元(in-place GREP活性化時)から呼ぶようにした。
+     `application.cpp`(Shell/Key/ListBrowser/CutContent/Man/Locate/
+     Du/ArchiveContent、8箇所)・`directory_mode.cpp`(2箇所)・
+     `file_mode.cpp`(4箇所)・`archive_mode.cpp`(1箇所)の各
+     `ModeLineFieldsProvider`にあった`fields.trailing2 = "(grep)"`
+     というリテラルを、新設のアクセサ経由へ置き換えた。
+   - **検証**: `test_application.cpp`のうち、FGREP in-place検索中の
+     モードライン`"(grep)"`を検証していた5件を`"(fgrep)"`期待値へ
+     更新(プレーンなGREP/Basic向けの既存の`"(grep)"`期待値はそのまま
+     維持)。`make -j4 usilic`クリーンビルド確認済み、GREP関連の
+     絞り込みテスト76件・916アサーション全通過(フルスイートは既知の
+     PTYハーネスのフレーキーなハングに当たったためkillし、この
+     絞り込み結果を採用)。実機PTYで、Directory起点の`^O^S`(FGREP)/
+     `^J^S`(EGREP)/`^S`(GREP)がそれぞれ`"(fgrep)"`/`"(egrep)"`/
+     `"(grep)"`を正しく表示することを確認。
 
 ## 4. CUT
 

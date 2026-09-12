@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -414,6 +415,102 @@ TEST_CASE_FIXTURE(Fixture, "setFilenameOnlyMode: switches displayed rows to bare
   mode.setFilenameOnlyMode(false);
   CHECK_FALSE(mode.filenameOnlyMode());
   CHECK(view.lines()[idx].text == mode.entries()[idx].lsLine);  // switches back cleanly
+}
+
+// 2026-09-12追加、直接のユーザー依頼("^Olが-rトグル、^O^Lが-t/-S/-k
+// 切り替え"): toggleReverseSort()/cycleSortKey()自身の実end-to-end
+// 検証(実物の`ls`サブプロセスを実際のディレクトリに対して実行する、
+// このクラス自身の既存の検証方針に合わせている)。
+TEST_CASE_FIXTURE(Fixture, "toggleReverseSort: appends -r to the real `ls` invocation, reversing entry order") {
+  REQUIRE(mode.enterDirectory(path()));
+  std::vector<std::string> forward;
+  for (const auto &e : mode.entries()) forward.push_back(e.name);
+
+  mode.toggleReverseSort();
+  CHECK(mode.reverseSort());
+  std::vector<std::string> reversed;
+  for (const auto &e : mode.entries()) reversed.push_back(e.name);
+  REQUIRE(reversed.size() == forward.size());
+  std::reverse(forward.begin(), forward.end());
+  CHECK(reversed == forward);
+
+  mode.toggleReverseSort();
+  CHECK_FALSE(mode.reverseSort());
+}
+
+TEST_CASE_FIXTURE(Fixture, "cycleSortKey: Kind (extension) sort is implemented in-house since neither BSD nor "
+                           "GNU ls has an equivalent flag -- \"./\"/\"../\" stay pinned at the front") {
+  { std::ofstream(root / "photo.jpg") << "j"; }
+  { std::ofstream(root / "notes.txt") << "n"; }
+  { std::ofstream(root / "readme.txt") << "r"; }
+  REQUIRE(mode.enterDirectory(path()));
+
+  CHECK(mode.sortKey() == DirectoryMode::LsSortKey::Default);
+  mode.cycleSortKey();
+  CHECK(mode.sortKey() == DirectoryMode::LsSortKey::Time);
+  mode.cycleSortKey();
+  CHECK(mode.sortKey() == DirectoryMode::LsSortKey::Size);
+  mode.cycleSortKey();
+  CHECK(mode.sortKey() == DirectoryMode::LsSortKey::Kind);
+
+  const auto &entries = mode.entries();
+  REQUIRE(entries.size() >= 2);
+  CHECK(entries[0].name == "./");
+  CHECK(entries[1].name == "../");
+  // "jpg" < "txt" lexicographically, so photo.jpg must precede both .txt files.
+  int jpgIndex = -1, firstTxtIndex = -1;
+  for (std::size_t i = 2; i < entries.size(); i++) {
+    if (entries[i].name == "photo.jpg") jpgIndex = static_cast<int>(i);
+    if ((entries[i].name == "notes.txt" || entries[i].name == "readme.txt") && firstTxtIndex < 0)
+      firstTxtIndex = static_cast<int>(i);
+  }
+  REQUIRE(jpgIndex >= 0);
+  REQUIRE(firstTxtIndex >= 0);
+  CHECK(jpgIndex < firstTxtIndex);
+
+  mode.cycleSortKey();
+  CHECK(mode.sortKey() == DirectoryMode::LsSortKey::Default);
+}
+
+// 2026-09-12追加、直接のユーザー依頼("usilicrcにCOLUMNを新設...（ls）
+// のハイライト表示域長がCOLUMNよりも短い場合は、自動的にlsの-l
+// オプションを削除、長ければ付加される"): applyColumnAutoDisplay()
+// 自身のコメント参照。狭い端末幅では自動的にfilenameOnlyMode_を
+// 強制し、広ければ解除する。
+TEST_CASE("applyColumnAutoDisplay: forces filename-only display when the cursor entry's remaining name width "
+          "drops below Configuration::columnThreshold(), and restores full ls -alF lines once it's wide enough "
+          "again") {
+  fs::path root2;
+  {
+    char tmpl[] = "/tmp/dirmode_columnXXXXXX";
+    char *result = mkdtemp(tmpl);
+    REQUIRE(result != nullptr);
+    root2 = fs::path(result);
+  }
+  { std::ofstream(root2 / "a.txt") << "hi"; }
+  Configuration configuration;
+  REQUIRE(configuration.loadRcText("COLUMN\n 8\n", true));
+
+  fm::test::RecordingDisplay narrowDisplay(24, 20);
+  fm::ContentView narrowView{narrowDisplay};
+  ModeStack narrowStack;
+  History narrowHistory;
+  DirectoryMode narrowMode{narrowView, narrowStack, narrowHistory, configuration};
+  REQUIRE(narrowMode.enterDirectory(root2.string() + "/"));
+  // At 20 columns, `ls -alF`'s own fixed-width metadata prefix leaves
+  // less than 8 columns for the name itself -- COLUMN should have
+  // already forced filename-only display.
+  CHECK(narrowMode.filenameOnlyMode());
+
+  fm::test::RecordingDisplay wideDisplay(24, 200);
+  fm::ContentView wideView{wideDisplay};
+  ModeStack wideStack;
+  History wideHistory;
+  DirectoryMode wideMode{wideView, wideStack, wideHistory, configuration};
+  REQUIRE(wideMode.enterDirectory(root2.string() + "/"));
+  CHECK_FALSE(wideMode.filenameOnlyMode());
+
+  fs::remove_all(root2);
 }
 
 TEST_CASE_FIXTURE(Fixture, "goBack: false when there is nothing to go back to") {

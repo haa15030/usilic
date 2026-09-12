@@ -297,6 +297,15 @@ class Configuration {
   int waitIntervalMicros() const;                  // WAIT
   bool smoothScrollEnabled() const;                // SCROLL
   int lsMode() const;                              // LS
+  // COLUMNディレクティブ(2026-09-12追加、直接のユーザー依頼):
+  // DirectoryMode自身の同名の使用箇所コメント参照――現在の端末幅から
+  // `ls -alF`の固定幅メタ情報(パーミッション・リンク数・所有者・
+  // グループ・サイズ・日付)を差し引いた「ファイル名自身に残る表示幅」
+  // が、この値未満なら自動的に`-l`相当の詳細表示を諦めてファイル名
+  // のみへ切り替え、以上ならその詳細表示を維持する、その閾値。
+  // デフォルト8は暫定(ユーザー自身の言葉:"今後の試用による見極めは
+  // 必要")。
+  int columnThreshold() const;                     // COLUMN
 
   // -- 文字コードのブートストラップ --
   // これがCLAUDE.mdの作業ログ13番をなぜ直接修正するかについては
@@ -330,6 +339,7 @@ class Configuration {
   int bufferSizeLimitBytes_ = 1 * 1024 * 1024;
   int historyRetentionCount_ = 200;
   int waitIntervalMicros_ = 100000;  // conf_wait()の静的k_wait初期化値(100000)
+  int columnThreshold_ = 8;  // columnThreshold()自身のコメント参照
   bool smoothScrollEnabled_ = false;
   int lsMode_ = 0;
 

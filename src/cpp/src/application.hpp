@@ -257,13 +257,32 @@ enum class Command {
   // 参照。
   StartFileInput,
   StartDirectoryInput,
-  // K-26(^Ol、M_ls): DirectoryMode::filenameOnlyMode()を切り替える
+  // K-26(^Oo、旧^Ol、M_ls): DirectoryMode::filenameOnlyMode()を切り替える
   // ――usilicrc自身のLSセクション("When the flag is set, file-
   // selector will display only filename")からの移植。Directory
   // モードだけにゲートされており、K-26自身の「file-selector」
   // スコープに合わせている(File/Man等の内容ビューでは意味を成さ
-  // ない)。ToggleScrollMode/K-25と同じ方法で永続化される。
+  // ない)。ToggleScrollMode/K-25と同じ方法で永続化される。2026-09-08
+  // に^Olから^Ooへ改名された(直接のユーザー依頼、"^Ol⇒^Oo（←
+  // ファイル名以外はomission）")――空いた^Olは2026-09-12、
+  // ToggleLsReverse(すぐ下)へ新たに割り当てられた。
   ToggleLsMode,
+  // 2026-09-12追加、直接のユーザー依頼("`-l`以外も変更できるように
+  // したい...付加するオプションとして`^Ol`が`-r`トグル"): DirectoryMode
+  // の`ls`呼び出しへ`-r`(逆順)を付加するかどうかを切り替える。
+  // ToggleLsMode(^Oo)と同じくDirectoryモード限定。
+  ToggleLsReverse,
+  // 2026-09-12追加、同じユーザー依頼("`^O^L`が`-t`/`-S`/`-k`切り替え"):
+  // DirectoryModeの`ls`呼び出しに付加するソートキーを、デフォルト
+  // (名前順)→`-t`(更新日時順)→`-S`(サイズ順)→`-k`(拡張子順、macOS
+  // 版lsには相当オプションが無いためDirectoryMode自身の自前実装、
+  // その宣言コメント参照)→デフォルト、の順で巡回させる。`^O^L`
+  // (0x0c)は元々Command::Redraw(「SHELL内から」用のエスケープハッチ)
+  // に割り当て済みだったが、モードガードが無くDirectoryモードでも
+  // 誤って発動していたため、Redraw側にShellモード限定のガードを
+  // 追加した上で、Directoryモードでの`^O^L`をこちらへ回した
+  // (dispatchLeaderByte()自身のコメント参照)。
+  CycleLsSortKey,
   // K-72/K-73(^X^Y / ^X^N、CP/MV/RM/ARC向け「Mark all」/
   // 「Clear all」): ToggleMarkの一括版――^Spaceを1つずつ押す代わりに、
   // 1回のキー入力で現在の一覧の全エントリをマークするか、全マーク

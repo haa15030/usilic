@@ -92,6 +92,26 @@ const char *grepSyntaxLabel(GrepSyntax syntax) {
   return "GREP";
 }
 
+// 2026-09-12追加、直接のユーザー依頼("GREP/FGREP/EGREPの違いを明示する
+// ために...(fgrep)/(egrep)表示のため"): grepSyntaxLabel()と対になる、
+// trailing2欄のプログラムバッジ版。AskUserQuestionで「バッジのみ変更」
+// (実際にfgrep/egrepバイナリへは切り替えない――ユーザーのPATH次第で
+// grepの実装(ugrep/BSD grep等)自体が暗黙に変わってしまうリスクを
+// 避けるため)を選択したので、実際の検索プログラム自体は
+// GrepMode::search()側で引き続きgrep -F/-E/(無指定)のまま――ここでは
+// 表示文字列だけをgrepSyntax_から導出する。
+const char *grepSyntaxBadge(GrepSyntax syntax) {
+  switch (syntax) {
+    case GrepSyntax::Fixed:
+      return "(fgrep)";
+    case GrepSyntax::Regex:
+      return "(egrep)";
+    case GrepSyntax::Basic:
+      return "(grep)";
+  }
+  return "(grep)";
+}
+
 // Application::handleCommand()冒頭のin-place GREP自動終了ガード自身の
 // コメント参照(2026-09-10追加、直接のユーザー指摘): 明確な「モード
 // 切り替え」に当たらない、素のカーソル移動/ページ送り/画面再描画/
@@ -556,7 +576,12 @@ const KeyTableEntry kKeyTable[] = {
     // 2026-09-08追加、直接のユーザー依頼によるキー再編: SHELLモード
     // 内では素の^Lが行編集機構に一切ハンドルされず生byteとして化けて
     // しまい(^Sと同種)、再描画へ到達不能なためエスケープハッチを新設。
-    {"^O^L", "画面を再描画 (SHELL内から)", "Redraw screen (from within SHELL)", {kLeaderO, 0x0c}, false, "5.1"},
+    // 2026-09-12追記: SHELL以外(主にDirectory)では、同じ^O^Lが
+    // CycleLsSortKey(-t/-S/-k巡回)へ回るようモードガードを追加した
+    // (dispatchLeaderByte()自身のコメント参照)ため、説明文をその旨
+    // 併記するよう更新した。
+    {"^O^L", "画面を再描画(SHELL内から)/lsソートキー巡回(それ以外)",
+     "Redraw screen (SHELL) / cycle ls sort key (elsewhere)", {kLeaderO, 0x0c}, false, "5.1"},
     {"q", "usilicを終了(pager)", "Exit usilic (pager)", {'q'}, false, "5.1"},
     // マクロ(usilicrc M-0..M-3、CUTの章(2.4)で解説): ";"、":"での上下、
     // "+"、"*"での「検索後の該当行へ」移動。
@@ -729,8 +754,16 @@ const KeyTableEntry kKeyTable[] = {
 
     // 3  設定ファイル (usilicrc) -- LS/SCROLLフラグの切替
     // 2026-09-08、直接のユーザー依頼("^Ol⇒^Oo（←ファイル名以外は
-    // omission）")によりキー再編、^Olから移行(空いた^Olは使用しない)。
+    // omission）")によりキー再編、^Olから移行。
     {"^Oo", "ls(1)出力形式の切替", "Switch ls output format", {kLeaderO, 'o'}, false, "3"},
+    // 2026-09-12追加、直接のユーザー依頼("`-l`以外も変更できるように
+    // したい...`^Ol`が`-r`トグル"): 上の改名で空いた^Olへ新規に割り
+    // 当てる(usilicrc新設のCOLUMNディレクティブと合わせ、
+    // DirectoryMode::toggleReverseSort()自身のコメント参照)。ソート
+    // キー巡回(-t/-S/-k)の^O^Lは、既存の"5.1"節にある同じ物理キーの
+    // エントリ(すぐ上のCommand::Redrawと共有)の説明文で併記済み――
+    // 同じ^O^Lを指す2つの行を作らないため、ここには新規追加しない。
+    {"^Ol", "lsのソート順を逆順(-r)に切替", "Toggle ls reverse sort order (-r)", {kLeaderO, 'l'}, false, "3"},
     {"^Oh", "スクロールモードの切替", "Switch scroll mode", {kLeaderO, 'h'}, false, "3"},
 
     // 2026-09-01、直接のユーザー依頼("^Oaはデフォルト文字コード切り替え
@@ -1026,7 +1059,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // ――^Gの戻り先――ではない)。
     if (shell_.scrollback().grepInPlaceActive() || shell_.scrollback().grepNoMatchActive()) {
       fields.name = shell_.scrollback().grepInPlaceLabel();
-      fields.trailing2 = "(grep)";
+      fields.trailing2 = shell_.scrollback().grepInPlaceProgramBadge();
       fields.trailing3 = shell_.currentDirectory();
       return fields;
     }
@@ -1054,7 +1087,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 反映してほしい"): ManMode等自身の同じ分岐のコメント参照。
     if (keyView_.grepInPlaceActive() || keyView_.grepNoMatchActive()) {
       fields.name = keyView_.grepInPlaceLabel();
-      fields.trailing2 = "(grep)";
+      fields.trailing2 = keyView_.grepInPlaceProgramBadge();
       fields.trailing3 = previousModeName(keyReturnMode_);
       return fields;
     }
@@ -1235,7 +1268,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // し得るのはこの最後の(プレーンなHISTORY/RESULTS閲覧)分岐だけ。
     if (listBrowserView_.grepInPlaceActive() || listBrowserView_.grepNoMatchActive()) {
       ContentView::ModeLineFields fields{listBrowserView_.grepInPlaceLabel(), trailing, /*fillTrailingToEdge=*/true,
-                                          /*rightWatermark=*/"", "(grep)"};
+                                          /*rightWatermark=*/"", listBrowserView_.grepInPlaceProgramBadge()};
       fields.trailing3 = name;
       return fields;
     }
@@ -1407,7 +1440,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 退避する。
     if (cutContentView_.grepInPlaceActive() || cutContentView_.grepNoMatchActive()) {
       ContentView::ModeLineFields fields{cutContentView_.grepInPlaceLabel(), trailing, /*fillTrailingToEdge=*/true,
-                                          /*rightWatermark=*/"", "(grep)"};
+                                          /*rightWatermark=*/"", cutContentView_.grepInPlaceProgramBadge()};
       fields.trailing3 = name;
       return fields;
     }
@@ -1741,7 +1774,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // を示す――戻り先(previousModeName())ではない。
     if (manView_.grepInPlaceActive() || manView_.grepNoMatchActive()) {
       fields.name = manView_.grepInPlaceLabel();
-      fields.trailing2 = "(grep)";
+      fields.trailing2 = manView_.grepInPlaceProgramBadge();
       fields.trailing3 = manMode_.currentPage();
       return fields;
     }
@@ -1810,7 +1843,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // はここでも「検索元」(このLOCATE結果自身のクエリ)を示す。
     if (locateView_.grepInPlaceActive() || locateView_.grepNoMatchActive()) {
       fields.name = locateView_.grepInPlaceLabel();
-      fields.trailing2 = "(grep)";
+      fields.trailing2 = locateView_.grepInPlaceProgramBadge();
       fields.trailing3 = locateMode_.query();
       return fields;
     }
@@ -1869,7 +1902,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 参照。trailing3はここでも「検索元」(集計対象のルート)を示す。
     if (duView_.grepInPlaceActive() || duView_.grepNoMatchActive()) {
       fields.name = duView_.grepInPlaceLabel();
-      fields.trailing2 = "(grep)";
+      fields.trailing2 = duView_.grepInPlaceProgramBadge();
       fields.trailing3 = duMode_.currentPath();
       return fields;
     }
@@ -1933,7 +1966,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // currentFile_と同じ理屈)。
     if (archiveContentView_.grepInPlaceActive() || archiveContentView_.grepNoMatchActive()) {
       fields.name = archiveContentView_.grepInPlaceLabel();
-      fields.trailing2 = "(grep)";
+      fields.trailing2 = archiveContentView_.grepInPlaceProgramBadge();
       fields.trailing3 = entry->name;
       return fields;
     }
@@ -3098,6 +3131,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // ファイル名以外はomission）")で'l'から移行。
       case 'o':  // ^O o : `ls`出力の形式を切り替え(K-26、旧^O l)
         return handleCommand(Command::ToggleLsMode);
+      // 2026-09-12追加、直接のユーザー依頼("`-l`以外も変更できるように
+      // したい...`^Ol`が`-r`トグル"): 上の改名で空いた^Olへ新規に
+      // 割り当てる(ToggleLsReverse自身の宣言コメント参照)。
+      case 'l':  // ^O l : `ls`のソート順を逆順(-r)にトグル
+        return handleCommand(Command::ToggleLsReverse);
       case 0x0b:  // ^O ^K : 親ディレクトリへ移動(K-19)
         return handleCommand(Command::GoToParentDirectory);
       case kCarriageReturn:  // ^O ^M : 「行単位で読む」(K-23、M_fp)
@@ -3147,8 +3185,21 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // ハッチだけは'/'を使う(kKeyTable自身の"^O/"コメント参照)。
       case 0x08:  // ^O ^H : KEY(SHELL内から)
         return handleCommand(Command::StartKey);
-      case 0x0c:  // ^O ^L : 再描画(SHELL内から)
-        return handleCommand(Command::Redraw);
+      // 2026-09-12修正、直接のユーザー依頼("`^O^L`がSHELLでの`^L`への
+      // 対処なら^Sと同じ扱いでいいと思う"): 本来この`^O^L`はSHELLモード
+      // 内で素の`^L`(usilic自身の再描画)がSHELL自身の行編集機構に
+      // 奪われてしまう分の、"SHELL内から"限定のエスケープハッチとして
+      // 追加されたものだった(すぐ上のコメント参照)が、実装には
+      // モードガードが一切無く、Directoryモードでも同じくRedrawが
+      // 発動してしまっていた。ここへ`currentMode_ ==
+      // ApplicationMode::Shell`のガードを追加し、Directoryモードでの
+      // `^O^L`は新設のCycleLsSortKey(-t/-S/-k巡回、その宣言コメント
+      // 参照)へ回す――^O^S(FGREP)がGREPの元の`^S`割り当てを塞いだ際に
+      // GREPのハッチだけ`/`へ移したのと同種の、キー空間の奪い合いへの
+      // 対処。
+      case 0x0c:  // ^O ^L : 再描画(SHELL内から)/ソートキー巡回(Directory)
+        if (currentMode_ == ApplicationMode::Shell) return handleCommand(Command::Redraw);
+        return handleCommand(Command::CycleLsSortKey);
       case 0x09:  // ^O ^I : INFO(SHELL内から)
         return handleCommand(Command::ShowUsilicBanner);
       case '/':  // ^O / : GREP(SHELL内から)
@@ -4421,6 +4472,16 @@ bool Application::handleCommand(Command command) {
       history_.setLsMode(enabled ? 1 : 0);  // 実行をまたいで永続化される、History自身のフィールドのコメント参照
       return true;
     }
+    // ToggleLsReverse/CycleLsSortKey自身の宣言コメント(application.hpp)
+    // 参照。ToggleLsMode(^Oo)と同じくDirectoryモード限定。
+    case Command::ToggleLsReverse:
+      if (currentMode_ != ApplicationMode::Directory) return false;
+      directoryMode_.toggleReverseSort();
+      return true;
+    case Command::CycleLsSortKey:
+      if (currentMode_ != ApplicationMode::Directory) return false;
+      directoryMode_.cycleSortKey();
+      return true;
     case Command::MarkAll:
       if (currentMode_ == ApplicationMode::Archive) {
         archiveMode_.markAll();
@@ -5536,7 +5597,10 @@ bool Application::activateGrepInPlace() {
     // setGrepInPlaceLabel()自身のコメント参照): 各ModeLineFieldsProvider
     // がgrepNoMatchActive()の間に出すname欄も、grepSyntax_に応じた
     // 正しいラベル("FGREP"/"EGREP"/"GREP")にする。
+    // 2026-09-12追加、同じ理由でtrailing2欄のバッジも(ContentView::
+    // setGrepInPlaceBadge()自身のコメント参照)。
     viewForMode(grepInPlaceOriginMode_).setGrepInPlaceLabel(grepSyntaxLabel(grepSyntax_));
+    viewForMode(grepInPlaceOriginMode_).setGrepInPlaceBadge(grepSyntaxBadge(grepSyntax_));
     viewForMode(grepInPlaceOriginMode_).reportGrepNoMatchMessage(message);
     activeView().redraw();
     return false;
@@ -5570,7 +5634,10 @@ bool Application::activateGrepInPlace() {
   // setGrepInPlaceLabel()自身のコメント参照): 各ModeLineFieldsProvider
   // がgrepInPlaceActive()の間に出すname欄を、grepSyntax_に応じた正しい
   // ラベル("FGREP"/"EGREP"/"GREP")にする。
+  // 2026-09-12追加、同じ理由でtrailing2欄のバッジも(ContentView::
+  // setGrepInPlaceBadge()自身のコメント参照)。
   target.setGrepInPlaceLabel(grepSyntaxLabel(grepSyntax_));
+  target.setGrepInPlaceBadge(grepSyntaxBadge(grepSyntax_));
   target.setGrepInPlaceOverlay(true);
   target.setGrepMatchHighlight(toHighlightMatches(grepInPlaceMatches_));
   target.setCursorIndex(grepInPlaceMatches_[0].sourceLineIndex);
@@ -11914,6 +11981,14 @@ void Application::handleResize() {
   manMode_.setWidth(display_.columns());
   if (currentMode_ == ApplicationMode::File) fileMode_.reflow(display_.columns());
   if (currentMode_ == ApplicationMode::Man) manMode_.reflow(display_.columns());
+  // DirectoryMode::applyColumnAutoDisplay()自身のコメント参照
+  // (2026-09-12追加、直接のユーザー依頼): 端末幅が変わり得た、まさに
+  // このタイミングで、usilicrcのCOLUMNディレクティブに基づく自動判定
+  // を再評価する。DirectoryModeにはFile/Man同様の「アクティブな時
+  // だけreflow」制約は無い(entries_/lsLine自体は変わらず、単に表示
+  // 層のfilenameOnlyMode_を切り替えるだけなので、Directory非アクティブ
+  // 中でも安全に呼べる)。
+  directoryMode_.applyColumnAutoDisplay();
   if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
       !cutMode_.canGoBack()) {
     std::vector<StyledLine> freshSource;

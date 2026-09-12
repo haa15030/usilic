@@ -129,7 +129,7 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
       // 反映してほしい"): DirectoryMode等自身の同じ分岐のコメント参照。
       // trailing3は元々currentArchive_(検索元)なので変更不要。
       fields.name = view_.grepInPlaceLabel();
-      fields.trailing2 = "(grep)";
+      fields.trailing2 = view_.grepInPlaceProgramBadge();
     }
     return fields;
   });

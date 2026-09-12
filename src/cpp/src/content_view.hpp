@@ -201,6 +201,14 @@ class ContentView {
 
   explicit ContentView(Display &display);
 
+  // 2026-09-12追加、直接のユーザー依頼(DirectoryMode::
+  // applyColumnAutoDisplay()自身のコメント参照、usilicrc新設のCOLUMN
+  // ディレクティブ向け): display_自身のcolumns()への単純な転送。
+  // display_はこのクラスの他のメソッド内部で既に何度も読まれている
+  // が、公開アクセサが無かったため、呼び出し元(DirectoryMode)が
+  // 現在の端末幅を必要とする初めてのケースとしてここへ追加した。
+  int columns() const { return display_.columns(); }
+
   // このビューが画面上でどこに住んでいるか(row0..row0+height-1)、
   // 何行分の高さか。
   void setViewport(int row0, int height);
@@ -516,6 +524,19 @@ class ContentView {
   // なので、それらの型自体は持ち込まず、素の文字列だけを保持する。
   void setGrepInPlaceLabel(std::string label);
   const std::string &grepInPlaceLabel() const;
+  // setGrepInPlaceBadge()/grepInPlaceProgramBadge(): 2026-09-12追加、
+  // 直接のユーザー依頼("GREP/FGREP/EGREPの違いを明示するために...
+  // (fgrep)/(egrep)表示のため")により、trailing2欄のリテラルな
+  // "(grep)"も、grepInPlaceLabel()と全く同じ理由・同じ形で差し替え
+  // 可能にする。実際の検索プログラム自体はgrep -F/-E/(無指定)の
+  // ままで変えない(バイナリをfgrep/egrepへ切り替えると、ユーザーの
+  // PATH次第で検索エンジン実装そのものが暗黙に変わってしまうリスクが
+  // あるため、見送られた)――バッジ文字列だけをgrepSyntax_から導出する。
+  // Application::activateGrepInPlace()/executeGrep()のNo-match分岐が、
+  // grepSyntaxBadge()(application.cpp、grepSyntaxLabel()の並び)を
+  // ここへ渡す。
+  void setGrepInPlaceBadge(std::string badge);
+  const std::string &grepInPlaceProgramBadge() const;
   // grepNoMatchActive()/reportGrepNoMatchMessage()/clearGrepNoMatchMessage():
   // 上と対になる、マッチ0件時のメッセージ表示フラグ。メッセージ本体は
   // setPositionTextOverride(message, plain=true)でposition枠へ直接
@@ -1321,6 +1342,8 @@ class ContentView {
   // setGrepInPlaceLabel()自身の宣言コメント参照(2026-09-11追加、
   // FGREP/EGREP/GREP統一)。
   std::string grepInPlaceLabel_ = "GREP";
+  // setGrepInPlaceBadge()自身の宣言コメント参照(2026-09-12追加)。
+  std::string grepInPlaceProgramBadge_ = "(grep)";
   // setGrepMatchHighlight()自身のコメント参照(旧FileMode::
   // setGrepMatchHighlight()から一本化): セッション最初の1回だけ
   // lines_を「本当にクリーンな」スナップショットとして保持し、以後は
