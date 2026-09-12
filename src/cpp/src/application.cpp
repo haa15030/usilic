@@ -8316,19 +8316,24 @@ bool Application::toggleListBrowserHistory() {
 // 2026-09-05追加、QuickKeyEntry自身のコメント参照(application.hpp)。
 // 固定の開発用パス(~/git/usilic/src/QUICK.txt)を直接読む――"今だけ"
 // の暫定プロトタイプなので、Configuration/usilicDir経由の正式な設定
-// パスは意図的に用意していない。読めない・1件もパースできない場合は
-// quickKeyEntries_を空のままにし、renderKeyRows()等が黙って従来の
-// kKeyTableへフォールバックする(mpi等の他機体でこのパスが存在せず
-// クラッシュする、という事態を避けるため)。
+// パスは意図的に用意していない(このパス自体の可搬性はこのコメントが
+// 書かれた時点でも今も未解決の課題として残っている)。読めない・
+// 1件もパースできない場合はquickKeyEntries_を空のままにし、
+// renderKeyRows()等が黙って従来のkKeyTableへフォールバックする
+// (mpi等の他機体でこのパスが存在せずクラッシュする、という事態を
+// 避けるため)。
 //
-// USILICQUICKKEY環境変数による明示的なopt-in必須(2026-09-05追加、
-// 実際のmake test失敗で発覚): このパスは開発機自身の$HOMEの下に実在
-// する(このリポジトリのチェックアウト先そのもの)ため、opt-in無しで
-// 常時有効にすると、テストスイート自身がこの開発機上で実行される
-// たびに黙って本物のQUICK.txtを読み込んでしまい、kKeyTable自身の
-// 行数/ラベルを前提とした既存のKEYモードのテスト群(例えば
-// "^S : FGREP"という前提)を静かに壊していた――ユーザーが明示的に
-// この暫定プレビューを試したい時だけ有効になるようにする。
+// 2026-09-12更新、直接のユーザー依頼(⑪、"QUICK.txtに基づいてKEY
+// モードを更新して欲しい"): QUICK.txt自身のKEY章が(項目448時点の
+// 12件から)86件まで育ち、旧kKeyTable(95件)とほぼ同等の網羅性に
+// 達したため、以前ユーザー自身が「保留」を選んだ理由(表示行数が
+// 95件→12件に激減する実害)が解消された、という判断のもとで、
+// USILICQUICKKEY環境変数によるopt-inゲート(2026-09-05追加、当時は
+// テストスイートが開発機上でこのパスに気付かず本物のQUICK.txtを
+// 読み込んでしまうことを防ぐためのものだった)を撤廃し、QUICK.txtを
+// 常時有効な本番のデータソースにした。上のフォールバック(読めない
+// 場合はkKeyTableへ)自体は無変更――このマシン固有の開発用パスが
+// 存在しない環境では、引き続き安全側にkKeyTableへ自動的に戻る。
 // 2026-09-12更新、直接のユーザー依頼(⑧): F-Nプレフィックス参照を
 // 実際の設定へ解決するため、本物の~/.usilic/usilicrc(usilicrcPath_、
 // 既にInfoバナー等で使われている実パス)のF-?テーブルを、呼ばれる
@@ -8338,7 +8343,6 @@ bool Application::toggleListBrowserHistory() {
 // 即座に反映される。
 void Application::loadQuickKeyEntries() {
   quickKeyEntries_.clear();
-  if (!std::getenv("USILICQUICKKEY")) return;
   const char *home = std::getenv("HOME");
   if (!home) return;
   std::ifstream in(std::string(home) + "/git/usilic/src/QUICK.txt", std::ios::binary);

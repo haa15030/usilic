@@ -132,6 +132,25 @@ struct Fixture {
 
   Fixture() : root(makeTempDir()) {
     fs::create_directory(root / ".usilic");  // wFilePath_'s own parent dir, see app{}'s own comment above
+    // 2026-09-12追加、直接のユーザー依頼(⑪、QUICK.txtが常時有効な
+    // 本番データソースになったことに伴う追加): QUICK.txt自身の多くの
+    // KEYエントリはusilicrc本来の"F-N"プレフィックス記法を使う
+    // (例:"F-0 C-c"、"F-1 C-h")――loadFPrefixTable()自身のコメント
+    // 参照の通り、これはApplication::usilicrcPath_(このFixtureでは
+    // root/.usilic/usilicrc)を都度新規に読み込んで解決される。この
+    // ファイルが存在しないと、F-Nトークンは未解決のまま(文字通り
+    // "F-0"等)になり、parseKeyNotationBytes()がそれを実行可能な
+    // バイト列として正しく解釈できない(意味の無い文字通りのバイト
+    // 列になってしまう)ため、実際にF-N付きのKEYエントリを実行する
+    // テストが成り立たない。配布テンプレート(src/usilicrc)と同じ
+    // デフォルト値(F-0=C-x、F-1=C-j、F-2=C-x C-k、F-3=C-o)を持つ
+    // 最小限のF-?セクションを用意しておく。
+    {
+      std::ofstream rc(root / ".usilic" / "usilicrc");
+      rc << "KEY\nF-?\n\tC-x\t# ^X\t\t\t\t\t\t\tF-0\n\tC-j\t# ^J\t\t\t\t\t\t\tF-1\n"
+            "\tC-x C-k # ^X^K\t\t\t\t\t\tF-2\n\tC-o     # ^O\t\t\t\t\t\t\tF-3\n\n"
+            "K-?\n";
+    }
     fs::create_directory(root / "subdir");
     { std::ofstream(root / "plain.txt") << "hello\nworld\n"; }
     { std::ofstream(root / "log.txt") << "marker one\nline1\nmarker two\nline2a\nline2b\nmarker three\nline3\n"; }
@@ -5280,24 +5299,36 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): NOT reachable from SHELL mode
 
 // 2026-09-08、直接のユーザー依頼によるキー再編で^Oaから^Jaへ移行
 // (ARCが^Xaから^Oaへ移るための地ならし)。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J a (K-27) toggles the HELP/KEY display language, and back again") {
+//
+// 2026-09-12修正、直接のユーザー依頼(⑪、"QUICK.txtに基づいてKEY
+// モードを更新して欲しい"): QUICK.txtがKEYモードの常時有効な本番
+// データソースになった(loadQuickKeyEntries()自身のコメント参照、
+// USILICQUICKKEY環境変数によるopt-inゲートを撤廃)ため、以前この
+// テストが検証していた「^JaでKEYモード自身の行内容が英語/日本語に
+// 切り替わる」という挙動は成り立たなくなった――QuickKeyEntryには
+// kKeyTable::descriptionEnに相当する英語版フィールドが無く(QUICK.txt
+// 自体が日本語専用)、renderKeyRows()のhelpJapanese_分岐は
+// useQuick==falseの場合(kKeyTableフォールバック時)にしか効かない。
+// ^Ja(ToggleHelpLanguage)自体は健在で、引き続きHELP本文の言語
+// (kHelpTextJa/En)を切り替える――ここではKEYモードの行内容が
+// QUICK.txt由来のまま(日本語)で変化しないことを確認する形に書き
+// 換えた。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J a (K-27) toggles the HELP text language, but no longer affects "
+                           "KEY mode's own row content (QUICK.txt-driven rows are Japanese-only, unlike "
+                           "the superseded kKeyTable's bilingual description/descriptionEn pair)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
-  const auto &linesJa = app.activeContentView().lines();
-  bool sawJapaneseFirstRow = linesJa[0].text.find("j : ") != std::string::npos &&
-                              linesJa[0].text.find("Move window down") == std::string::npos;
-  CHECK(sawJapaneseFirstRow);
+  const auto &linesBefore = app.activeContentView().lines();
+  REQUIRE_FALSE(linesBefore.empty());
+  std::string firstRowBefore = linesBefore[0].text;
+  CHECK(firstRowBefore.find("C-h") != std::string::npos);  // QUICK.txt's own first KEY-section row
 
   REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
   CHECK(app.feedByte('a', std::nullopt));
-  const auto &linesEn = app.activeContentView().lines();
-  CHECK(linesEn[0].text.find("Move window down") != std::string::npos);
+  const auto &linesAfter = app.activeContentView().lines();
+  REQUIRE_FALSE(linesAfter.empty());
+  CHECK(linesAfter[0].text == firstRowBefore);  // unchanged -- QUICK.txt has no English variant
   CHECK(app.currentMode() == ApplicationMode::Key);  // has no mode restriction, but didn't leave Key either
-
-  REQUIRE(app.feedByte(0x0a, std::nullopt));
-  CHECK(app.feedByte('a', std::nullopt));
-  const auto &linesJaAgain = app.activeContentView().lines();
-  CHECK(linesJaAgain[0].text.find("Move window down") == std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHelpLanguage): refreshes an open HELP session in place, "
@@ -10553,9 +10584,17 @@ TEST_CASE_FIXTURE(Fixture, "Key: entries actually RENDER on screen, not just sto
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
   app.activeContentView().redraw();
+  // 2026-09-12修正、直接のユーザー依頼(⑪、QUICK.txtが常時有効な本番
+  // データソースになったことに伴う更新): 以前はkKeyTable自身の先頭
+  // 付近のエントリ("j : 画面を1行下へ")を探していたが、QUICK.txt
+  // では同じ内容が末尾近くの「ページ/行送り」章にあり、初期ビュー
+  // ポート(先頭23行程度)には収まらない――そもそもこのテストの目的
+  // (setViewport()が実際に呼ばれているか)には無関係な選択だった。
+  // QUICK.txt自身の実際の先頭行の内容("キーアサイン一覧を表示")を
+  // 探すよう更新した。
   bool sawFirstEntry = false;
   for (int row = 0; row < display.rows() - 1; row++)  // every row EXCEPT the mode-line's own bottom row
-    if (display.rowText(row).find("画面を1行下へ") != std::string::npos) sawFirstEntry = true;
+    if (display.rowText(row).find("キーアサイン一覧を表示") != std::string::npos) sawFirstEntry = true;
   CHECK(sawFirstEntry);
 }
 
@@ -10595,16 +10634,20 @@ TEST_CASE_FIXTURE(Fixture, "Key mode-line: shows the mode KEY was invoked from a
   CHECK(text.find((root / "plain.txt").string()) != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^S' entry returns to Directory mode AND actually starts FGREP "
-                           "(single-byte binding)") {
+TEST_CASE_FIXTURE(Fixture, "Key: Enter on the plain 'C-s' entry returns to Directory mode AND actually starts "
+                           "GREP (single-byte binding)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
   const auto &lines = app.activeContentView().lines();
   int row = -1;
+  // 2026-09-12修正、直接のユーザー依頼(⑪、QUICK.txtが常時有効な本番
+  // データソースになったことに伴う更新): 旧kKeyTableの"^S"ラベルは、
+  // 今のQUICK.txt由来の表記では単なる"C-s"になった。ラベルの部分
+  // 一致("C-s")は"F-1 C-s"/"F-2 C-s"(EGREP/拡張正規表現)の各行にも
+  // マッチしてしまい曖昧なため、この行だけが持つ一意な説明文で
+  // 検索する。
   for (std::size_t i = 0; i < lines.size(); i++)
-    // Leading space before "^S" (front-padding, since "^S" is the whole label) distinguishes this row from
-    // "^J^S" (EGREP)'s own row, which also contains "^S :" as a substring but with no space before it.
-    if (lines[i].text.find(" ^S :") != std::string::npos) row = static_cast<int>(i);
+    if (lines[i].text.find("基本正規表現による文字列検索") != std::string::npos) row = static_cast<int>(i);
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
@@ -10620,7 +10663,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: Enter on the '^X^C' entry (EXIT) chains a full 
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("^X^C :") != std::string::npos) row = static_cast<int>(i);
+    if (lines[i].text.find("C-x C-c") != std::string::npos) row = static_cast<int>(i);  // EXIT (F-0 resolved to C-x by this Fixture's minimal usilicrc)
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
@@ -10635,7 +10678,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: Back (^G) on any entry returns without executin
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("^X^C :") != std::string::npos) row = static_cast<int>(i);  // EXIT's own row -- would be very visible if wrongly executed
+    if (lines[i].text.find("C-x C-c") != std::string::npos) row = static_cast<int>(i);  // EXIT's own row (F-0 resolved to C-x by this Fixture's minimal usilicrc) -- would be very visible if wrongly executed
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
@@ -10653,7 +10696,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: Left/Right toggles between execute/reference, a
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find(" ^S :") != std::string::npos) row = static_cast<int>(i);
+    if (lines[i].text.find("基本正規表現による文字列検索") != std::string::npos) row = static_cast<int>(i);
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
 
@@ -10671,14 +10714,16 @@ TEST_CASE_FIXTURE(Fixture, "Key: Left/Right toggles between execute/reference, a
   app.activeContentView().setCursorIndex(row);
   REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Right));
   CHECK(app.handleCommand(Command::Enter));
-  // ^S's helpSection is "2.3" (FGREP/EGREP) -- landing directly in that section's content.
   CHECK(app.currentMode() == ApplicationMode::CutContent);
   CHECK_FALSE(app.promptActive());  // reference view only, nothing was executed
 
-  // ^G twice: back to the HELP table of contents, then back to KEY itself
-  // (showKeyReference() opens HELP fresh from Key mode, so cutReturnMode_ is Key).
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
+  // 2026-09-12修正、直接のユーザー依頼(⑪、QUICK.txtが常時有効な本番
+  // データソースになったことに伴う更新): 以前はkKeyTable経由の本物の
+  // HELP章ジャンプ(^Gを2回、まずCut目次画面へ、次にKEYへ)を検証して
+  // いたが、QuickKeyEntry(QUICK.txt)経由のexplanation表示は
+  // quickKeyReferenceActive_により、無意味な1件だけのCut目次画面を
+  // 経由せず^G1回で直接KEYへ戻る(returnFromCutContent()自身のコメント
+  // 参照)。
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Key);
 }
@@ -10686,13 +10731,25 @@ TEST_CASE_FIXTURE(Fixture, "Key: Left/Right toggles between execute/reference, a
 TEST_CASE_FIXTURE(Fixture, "Key: Left brings focus back to execute from reference") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
+  const auto &lines = app.activeContentView().lines();
+  int row = -1;
+  for (std::size_t i = 0; i < lines.size(); i++)
+    if (lines[i].text.find("基本正規表現による文字列検索") != std::string::npos) row = static_cast<int>(i);
+  REQUIRE(row >= 0);
+  app.activeContentView().setCursorIndex(row);
   REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Right));  // focus reference
   REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Left));   // back to execute
-  // The first row is "j" -- executing it should behave exactly like the pre-redesign
-  // KEY screen (scroll the window down), not open any HELP reference.
+  // 2026-09-12修正、直接のユーザー依頼(⑪、QUICK.txtが常時有効な本番
+  // データソースになったことに伴う更新): 以前は先頭行が単純に
+  // カーソルを動かすだけの"j"だったが、QUICK.txt由来の先頭行は
+  // "C-h"(KEYモード自身の再入場、拒否される)になったため、この
+  // テストの検証目的(Leftで確実に"実行"フォーカスへ戻ること)には
+  // 別の行を明示的に選ぶ必要がある――他のテストと同じ、GREP(C-s)の
+  // 行を使う: 実行するとDirectoryモードでプロンプトが開く、という
+  // 明確な副作用で確認する。
   CHECK(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK_FALSE(app.promptActive());
+  CHECK(app.promptActive());
 }
 
 TEST_CASE_FIXTURE(Fixture, "Key: reference view is a no-op for entries with no mapped HELP section") {
@@ -10701,7 +10758,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: reference view is a no-op for entries with no m
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find("^X( :") != std::string::npos) row = static_cast<int>(i);  // macro recording -- no HELP section
+    if (lines[i].text.find("範囲指定開始/終了トグル") != std::string::npos) row = static_cast<int>(i);  // COPY sub-binding -- no explanation
   REQUIRE(row >= 0);
   app.activeContentView().setCursorIndex(row);
   REQUIRE(app.feedByte(0, KeyInput::SpecialKey::Right));  // focus "reference"
@@ -10720,7 +10777,7 @@ TEST_CASE_FIXTURE(Fixture, "Key: clicking the description half of a row opens th
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find(" ^S :") != std::string::npos) row = static_cast<int>(i);
+    if (lines[i].text.find("基本正規表現による文字列検索") != std::string::npos) row = static_cast<int>(i);
   REQUIRE(row >= 0);
   // Navigate there via real MoveDown commands (not a direct setCursorIndex() poke) so the
   // on-screen rendering -- and its label/description column split -- is actually up to date.
@@ -10729,13 +10786,14 @@ TEST_CASE_FIXTURE(Fixture, "Key: clicking the description half of a row opens th
 
   int displayRow = -1;
   for (int r = 0; r < display.rows() - 1; r++)
-    if (display.rowText(r).find(" ^S :") != std::string::npos) displayRow = r;
+    if (display.rowText(r).find("基本正規表現による文字列検索") != std::string::npos) displayRow = r;
   REQUIRE(displayRow >= 0);
 
   std::string rendered = display.rowText(displayRow);
-  // 2026-09-05変更: プレーンな^SはGREP(旧FGREP、^O^Sへ移動)を起動する
-  // ようになった――kKeyTable自身のコメント参照。
-  int descriptionColumn = static_cast<int>(rendered.find("GREP"));  // ^S's own description text
+  // 2026-09-12修正、直接のユーザー依頼(⑪、QUICK.txtが常時有効な本番
+  // データソースになったことに伴う更新): 旧kKeyTableの"GREP"という
+  // 説明文はQUICK.txt由来の"基本正規表現による文字列検索"に変わった。
+  int descriptionColumn = static_cast<int>(rendered.find("基本正規表現による文字列検索"));
 
   REQUIRE(descriptionColumn >= 0);
   CHECK(app.handleMouseClick(displayRow, descriptionColumn));
@@ -10749,22 +10807,22 @@ TEST_CASE_FIXTURE(Fixture, "Key: clicking the label half of a row executes it di
   const auto &lines = app.activeContentView().lines();
   int row = -1;
   for (std::size_t i = 0; i < lines.size(); i++)
-    if (lines[i].text.find(" ^S :") != std::string::npos) row = static_cast<int>(i);
+    if (lines[i].text.find("基本正規表現による文字列検索") != std::string::npos) row = static_cast<int>(i);
   REQUIRE(row >= 0);
   for (int i = 0; i < row; i++) app.handleCommand(Command::MoveDown);
   app.activeContentView().redraw();
 
   int displayRow = -1;
   for (int r = 0; r < display.rows() - 1; r++)
-    if (display.rowText(r).find(" ^S :") != std::string::npos) displayRow = r;
+    if (display.rowText(r).find("基本正規表現による文字列検索") != std::string::npos) displayRow = r;
   REQUIRE(displayRow >= 0);
   std::string rendered = display.rowText(displayRow);
-  int labelColumn = static_cast<int>(rendered.find("^S"));
+  int labelColumn = static_cast<int>(rendered.find("C-s"));  // this row's own label (QUICK.txt notation)
   REQUIRE(labelColumn >= 0);
 
   CHECK(app.handleMouseClick(displayRow, labelColumn));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.promptActive());  // FGREP prompt -- the key was actually executed
+  CHECK(app.promptActive());  // GREP prompt -- the key was actually executed
 }
 
 // -- QUICK.txt's real usilicrc notation: F-? prefix resolution (item⑧),

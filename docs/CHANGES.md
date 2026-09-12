@@ -1649,6 +1649,41 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      脱線はしない」という範囲の判断により)行っていない――同種の
      ズレが他にも残っている可能性がある。
 
+456. **KEY(^H)モードのデータソースを、`USILICQUICKKEY`環境変数
+    ゲート付きのプレビューから、QUICK.txt常時・無条件の本番データ
+    ソースへ昇格**
+   - **経緯**: 直接のユーザー依頼「QUICK.txtに基づいてKEYモードを
+     更新して欲しい。キー表示順はQUICK.txtのとおり」。項目448で
+     「保留」としたQUICK.txt昇格の判断(当時95件中12件しか書けて
+     いなかった)を、QUICK.txtが今や86件まで充実したこと(項目455)を
+     受けて正式に実施した。
+   - **修正**: `loadQuickKeyEntries()`から`USILICQUICKKEY`環境変数の
+     ゲート(`if (!std::getenv("USILICQUICKKEY")) return;`)を削除。
+     `renderKeyRows()`/`showKeyReference()`/`executeSelectedKeyBinding()`
+     の`useQuick = !quickKeyEntries_.empty()`という既存の分岐は変更
+     不要だった――QUICK.txtが読めない場合の`kKeyTable`(95件)への
+     フォールバックも無変更のまま安全網として維持。キー表示順は
+     `parseQuickKeyEntries()`がファイルを先頭から順に走査して構築
+     するため、追加の並べ替えロジック無しに自然にQUICK.txtの記載
+     順と一致する。
+   - **保留にした判断点(コード側で勝手に決めず、方針として明記)**:
+     QUICK.txt自体のパスは引き続き開発機固有の`~/git/usilic/src/QUICK.txt`
+     ハードコードのままで、他機体向けの可搬化(インストール先相対
+     パスでの解決等)は今回のスコープ外とした――ファイルが存在しない
+     機体では既存の`kKeyTable`フォールバックがそのまま機能する。
+   - **検証**: テストフィクスチャに`~/.usilic/usilicrc`相当のF-?
+     セクション(テンプレート既定のF-0=C-x/F-1=C-j/F-2=C-x C-k/
+     F-3=C-o)を追加(QUICK.txtの実際のエントリが多用する"F-N"記法を
+     意味のある形で実行できるようにするため)。旧`kKeyTable`前提
+     だった約10件のテスト(行/列の参照文字列、日英切替、レファレンス
+     画面からの戻り階層数等)を実際のQUICK.txt内容に合わせて更新。
+     `make test` 1106/1107件・21684/21685アサーション通過(残る1件は
+     既知の環境依存フレークで無関係)。実機PTYで`USILICQUICKKEY`を
+     明示的に未設定にした状態で`usilic -c`→`^H`を実行し、実際の
+     QUICK.txt内容(86件、ファイル順、F-N解決込み)がそのまま表示
+     されることを確認。`make install`/`make app`/jキー回帰チェックも
+     完了。
+
 ## 3. FGREP / EGREP
 
 171. **2026-08-05(続き): `^J^S`(EGREP)/`^J^C`(CUT正規表現)の入口を
