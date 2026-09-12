@@ -17048,3 +17048,9 @@ CUTでタブコード切断すると、最初のタブまでが--となるけれ
 
 >⑫を実装・検証・コミットしました。Display::modeLineVisible()/setModeLineVisible()をsmoothScrollEnabled()と同じ形で新設し、History側で永続化、layoutViews()のcontentHeightとContentView::renderModeLine()を連動させ、^Ohのディスパッチ先をCommand::ToggleModeLineVisibilityへ変更しました(旧ToggleScrollMode自体は削除せず、usilicrcのSCROLLディレクティブ経由の起動時設定という役割だけ残しています)。-gのDock風自動表示/非表示は、ユーザーの永続化された希望と「今このロジックが一時的に表示させている最中か」を別のboolに分離し、マウス下端接近のマージン2行・引っ込めまでのグレース期間800msという値で実装しました(実機の本物のマウスが無い環境のため、この2つの数値は私の判断値です、実機で違和感があれば調整してください)。実装は規模のためforkに任せましたが、その後の自分自身によるレビュー・PTY検証で実際に1件バグを発見しました――^Ohでモードラインを隠した状態で終了→再起動すると、永続化されたはずの非表示設定が再起動直後には反映されない不具合です。原因はmain.cppの起動順序で、Applicationのコンストラクタが自身のlayoutViews()を(displayがまだ既定の「表示」のうちに)1回実行してしまうのに対し、historyから読み込んだmodeLineVisibleの値をdisplayへ適用するのはその後の行だったため、明示的な再レイアウトを挟まないと反映されないというものでした。display.setModeLineVisible()の直後にapp.relayoutForModeLineVisibilityChange()を追加して解消し、修正前は再現・修正後は解消することをPTYで確認しています。make test 1111/1112件・21714/21715アサーション通過(残る1件は無関係な既知の環境フレークLOCATE)、make install/make app/jキー回帰チェックも完了、docs/CHANGES.mdに項目457として記録しました。-gのマウス接近によるDock風自動表示/非表示自体は、コードレビューでの確認のみで、実機でのマウス操作による検証はできていません。
 
+<-gでは慣性スクロール中、^Ohトグル如何に関わらずモードラインが常時表示される。それ以外はOK。
+ただし、-gで感じたのは、せっかく作ってもらったDock風の表示/非常時だが、-cのときのようにON/OFF状態が徹底していた方がしっくりくる。逆に-cで感じたのは、最低限のインジケーターはあったほうがいいってこと。
+そこで考えたんだが、ブロックカーソルによるスクロールバー風の構造って作成可能？　-gのDock風は取り消しでいいんで、今度は-cでの可能性を調べてほしい。
+
+>慣性スクロール中の不具合は、GraphicalDisplay::renderScrolled()(ドラッグ/慣性スクロール中の毎フレームが使う、通常のredraw()/ContentView::renderModeLine()とは完全に別の描画経路)が、モードライン用の1行予約と描画を無条件に行っていたことが原因でした――項目457でlayoutViews()/renderModeLine()側には非表示対応を入れましたが、この別経路には反映していませんでした。renderScrolled()のcontentRows計算とモードライン描画ブロックの両方にmodeLineVisible判定を追加して修正しました。-gのDock風自動表示/非表示は、runGuiPhase()からmodeLineAutoRevealed等の状態・毎フレームのDock判定ブロックを丸ごと削除し、^Ohによる手動トグルのみの、-cと同じ厳密なON/OFFに戻しました。make test 1111/1112件通過(既知のLOCATEフレークのみ)、make install/make app/jキー回帰チェックも完了、docs/CHANGES.mdに項目458として記録しました。ブロックカーソルによるスクロールバー風の構造については、これから技術的な可能性を調査します。
+

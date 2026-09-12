@@ -3100,7 +3100,15 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
   TTF_SetFontStyle(impl_->font, TTF_STYLE_NORMAL);
   if (impl_->fallbackFont) TTF_SetFontStyle(impl_->fallbackFont, TTF_STYLE_NORMAL);
 
-  int contentRows = std::max(impl_->rows - 1, 0);
+  // 2026-09-13修正、直接のユーザー報告("-gでは慣性スクロール中、^Oh
+  // トグル如何に関わらずモードラインが常時表示される"): このメソッドは
+  // redraw()/ContentView::renderModeLine()とは完全に別の描画経路(下の
+  // コメント群参照)のため、Application::layoutViews()のcontentHeight
+  // 計算がmodeLineVisible()を尊重するようになった後も、ここの
+  // contentRowsは無条件に1行を予約したままだった――ドラッグ/コースト中
+  // の毎フレームがこの関数を使うため、その間だけ非表示設定が無視されて
+  // 見えていた。
+  int contentRows = impl_->modeLineVisible ? std::max(impl_->rows - 1, 0) : std::max(impl_->rows, 0);
 
   // コンテンツの描画をマージンの境界に厳密にクリップする
   // (2026-08-07、実際のユーザー報告): これが無いと、SDLのデフォルトの
@@ -3189,7 +3197,7 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
   double effectiveTop = topIndex - static_cast<double>(pixelOffsetY) / std::max(impl_->cellHeight, 1);
   drawScrollbar(effectiveTop, static_cast<int>(lines.size()), contentRows);
 
-  if (impl_->rows > 0) {
+  if (impl_->rows > 0 && impl_->modeLineVisible) {
     // 行全体にわたる1つの連続したバーとしてではなく、セグメントごと
     // に「別々の」反転表示の走りとして描く――これが修正する実際の
     // スクリーンショットのバグについてはDisplay::ModeLineSegment

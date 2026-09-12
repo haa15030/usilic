@@ -1770,47 +1770,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui, fm::History &h
   // exit gesture below -- reset by any other key.
   int consecutiveEscapes = 0;
 
-  // 2026-09-12追加、直接のユーザー依頼(項目⑫、"-g起動時の非表示
-  // モードでは、macOSのDockのようにモードラインを自動的に表示/
-  // 非表示にする"): Dock風のマウス接近による一時的な再表示専用の
-  // ループローカルな状態。Display::modeLineVisible()/History::
-  // modeLineVisible()自身の永続化された「希望」とは意図的に別
-  // ――ここで管理するのは「今、希望とは無関係に一時的に見えている
-  // かどうか」だけであり、この2つを1つのboolに混ぜてしまうと、
-  // 手動の^Ohトグルとこの自動再表示が互いの状態を上書きし合って
-  // しまう(application.hpp自身のCommand::ToggleModeLineVisibility
-  // 宣言コメント参照)。
-  //
-  // modeLineAutoRevealed: 現在「このDockロジック自身が」表示させて
-  // いる最中かどうか。falseのままgui.modeLineVisible()がfalseなら、
-  // それは単にユーザーの希望が「非表示」であるという意味であり
-  // (Historyへの直接アクセスを必要とせず、この不変条件だけで判別
-  // できる――希望が「表示」ならgui.modeLineVisible()は最初から
-  // ずっとtrueのはずで、この関数はそれを一切falseにしない)、この
-  // ロジックはまだ何もしていない。
-  bool modeLineAutoRevealed = false;
-  // マウスが最後に下端近くにあった時刻。グレース期間の起点。
-  auto lastNearBottomEdgeTime = std::chrono::steady_clock::now();
-  // 2026-09-12: 下端から何行以内を「接近」とみなすか。実物のmacOS
-  // Dockが1pxではなく数pxの当たり判定を持つのと同じ理由(セル1行
-  // ぴったりだと実マウスでは狙いにくい)で2行分の余裕を持たせた
-  // ――このサンドボックスには本物のマウスが無くPTY越しの検証も
-  // できないため、これは実測に基づかない私自身の判断値であり、
-  // 実機で違和感があれば調整が必要。
-  constexpr int kModeLineRevealMarginRows = 2;
-  // グレース期間: 下端から離れてからモードラインを引っ込めるまでの
-  // 待ち時間。短すぎるとマウスがほんの少し揺れただけで消えて
-  // 使いにくく、長すぎるとDockらしい機敏さが失われる――実際のmacOS
-  // Dockの体感(数百ms〜1秒程度)を参考にした、同じく実機未検証の
-  // 判断値。
-  constexpr auto kModeLineRevealGracePeriod = std::chrono::milliseconds(800);
-  // consumeHoverEvent()が実際に何かキューから取り出せた、直近で
-  // 分かっている限りのマウス行。-1は「このセッションでまだ一度も
-  // hoverイベントを受け取っていない」を意味し、その間はDockロジック
-  // 自体を完全にスキップする(実マウス位置が全く不明なまま行番号
-  // 比較をしても無意味なため)。
-  int lastKnownMouseRow = -1;
-
   while (!app.wantsExit()) {
     if (gGuiSessionSigintReceived) {
       app.requestImmediateExit();
@@ -2006,7 +1965,6 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui, fm::History &h
       // comment.
       while (auto hover = gui.consumeHoverEvent()) {
         anyEventThisFrame = true;
-        lastKnownMouseRow = hover->row;  // Dock風モードライン自動再表示、ループ末尾のコメント参照
         // Real mouse movement clears DirectoryMode's own transient
         // "Invalid mode" error (see DirectoryMode::clearEditError()'s
         // own comment on why THIS call site, alongside Application::
@@ -2065,49 +2023,8 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui, fm::History &h
       // here (rather than just skipping the block that would have
       // consumed it) means there's nothing stale left queued by the
       // time hovering becomes meaningful again.
-      while (auto hover = gui.consumeHoverEvent()) {
-        lastKnownMouseRow = hover->row;  // Dock風モードライン自動再表示、ループ末尾のコメント参照――
-                                         // カーソルハイライトへの反映(上のapplyHoverRowAndRedraw())は
-                                         // このガード自体の元々の理由によりここでは意図的に行わない。
+      while (gui.consumeHoverEvent()) {
       }
-    }
-
-    // 2026-09-12追加、項目⑫: Dock風モードライン自動表示/非表示の
-    // 本体。上のどちらのhover消費ループが実行されたかに関わらず
-    // (dragging/coast中やShellモード中でも、マウスが下端に近づけば
-    // 一時的に見せる/離れれば隠す、という挙動自体は変わらないと
-    // 判断した――gui.rows()/Application::viewForMode()はどのモード
-    // でも安全に成立する)、毎フレーム無条件に1回だけ評価する。
-    // 新しいhoverイベントが1件も届かなかったフレームでも
-    // lastKnownMouseRowは前回値を保持しているので、「マウスが下端
-    // から離れて完全に静止したまま」なグレース期間経過も、次に
-    // マウスが動くのを待たずに正しく検知できる(hoverイベント消費
-    // ループの「中」だけでこの判定をしていた場合の弱点)。
-    if (lastKnownMouseRow >= 0 && !history.modeLineVisible()) {
-      auto now = std::chrono::steady_clock::now();
-      bool nearBottomEdge = lastKnownMouseRow >= gui.rows() - kModeLineRevealMarginRows;
-      if (nearBottomEdge) {
-        lastNearBottomEdgeTime = now;
-        if (!modeLineAutoRevealed) {
-          gui.setModeLineVisible(true);
-          app.relayoutForModeLineVisibilityChange();
-          modeLineAutoRevealed = true;
-        }
-      } else if (modeLineAutoRevealed && now - lastNearBottomEdgeTime >= kModeLineRevealGracePeriod) {
-        gui.setModeLineVisible(false);
-        app.relayoutForModeLineVisibilityChange();
-        modeLineAutoRevealed = false;
-      }
-    } else if (modeLineAutoRevealed && history.modeLineVisible()) {
-      // 2026-09-12追加: セッション中に^Ohで希望が「表示」へ切り替え
-      // られた場合(handleCommand()自身のCommand::ToggleModeLineVisibility
-      // ハンドラがdisplay_/historyの両方を更新する)、このループ
-      // ローカルなmodeLineAutoRevealedフラグだけが古いtrueのまま
-      // 取り残ってしまう――実害は無い(次に希望が再び「非表示」に
-      // 戻るまでこの分岐もこのif全体もどのみち触れない)が、フラグの
-      // 意味を「今このDockロジックが表示させている最中」に保つため
-      // 明示的にfalseへ戻しておく。
-      modeLineAutoRevealed = false;
     }
 
     while (auto key = gui.consumeKeyEvent()) {

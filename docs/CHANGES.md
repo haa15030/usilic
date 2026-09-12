@@ -23650,6 +23650,49 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      jキー回帰チェックも完了。
 
 
+458. **-gのDock風モードライン自動表示/非表示(項目457)を撤回し、
+    慣性スクロール中もモードライン非表示設定が常に尊重されるよう
+    修正**
+   - **経緯**: 項目457の実機フィードバック。直接のユーザー報告
+     「-gでは慣性スクロール中、^Ohトグル如何に関わらずモードラインが
+     常時表示される。それ以外はOK」。続けて「-gで感じたのは、せっかく
+     作ってもらったDock風の表示/非常時だが、-cのときのようにON/OFF
+     状態が徹底していた方がしっくりくる」との明示的な設計フィード
+     バック――「Dock風は取り消しでいい」。
+   - **バグの原因**: `GraphicalDisplay::renderScrolled()`(ドラッグ/
+     慣性スクロール中の毎フレームが使う、通常の`redraw()`/
+     `ContentView::renderModeLine()`とは完全に別の描画経路)は、
+     `contentRows = impl_->rows - 1`を常に無条件で計算し、モードライン
+     セグメントも`impl_->rows > 0`だけを条件に常に描画していた――
+     項目457で`Application::layoutViews()`/`ContentView::renderModeLine()`
+     側にモードライン非表示対応を入れた際、この別経路には一切
+     反映していなかったため、通常描画では隠れていても、ドラッグ/
+     慣性スクロール中だけモードラインが復活して見えていた。
+   - **修正**: `renderScrolled()`の`contentRows`計算と、モードライン
+     セグメント描画ブロックの両方に`impl_->modeLineVisible`の判定を
+     追加し、非表示時は他の描画経路と同じく1行も予約・描画しない
+     ようにした。
+   - **Dock風自動表示/非表示の撤回**: `runGuiPhase()`から
+     `modeLineAutoRevealed`/`lastNearBottomEdgeTime`/
+     `kModeLineRevealMarginRows`/`kModeLineRevealGracePeriod`/
+     `lastKnownMouseRow`の全状態と、毎フレームのDock判定ブロック、
+     2箇所のhoverイベント消費ループへの`lastKnownMouseRow`更新を
+     削除。`^Oh`による手動トグルと、`-c`⇔`-g`切り替え時に
+     `history.modeLineVisible()`(真実の値)を新バックエンドへ明示的に
+     反映する配線(`tryEnterGuiPhase()`/GUI終了パス)は、ユーザーの
+     「それ以外はOK」との評価どおりそのまま維持した――`-g`も`-c`と
+     同じ、マウス位置に依存しない厳密なON/OFFのみになった。
+   - **検証**: `make test` 1111/1112件・21714/21715アサーション通過
+     (残る1件は無関係な既知の環境フレークLOCATE)。`make usilic`
+     クリーンビルド確認済み。`renderScrolled()`自体はSDL実描画経路
+     でありこのサンドボックスでは本物のGUIウィンドウ/マウスによる
+     視覚確認ができないため、修正はコードレビュー(バグの実際の
+     発生箇所の特定と、他の描画経路と同じ判定を追加したことの確認)
+     に留まる――`-c`側の`^Oh`即時切替・終了/再起動をまたいだ永続化は
+     項目457で既にPTY確認済みで今回のdiffはこれらに触れていない。
+     `make install`/`make app`/jキー回帰チェックも完了。
+
+
 ## 22. UTF-8コア処理(charset判定・変換、モード非依存)
 
 3. **UTF-8対応(Step 1〜7完了、2026-07-16)**
