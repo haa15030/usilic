@@ -42,16 +42,18 @@ std::string truncateHighlightedSuffix(const std::string &text, int highlightStar
 
 // 2026-09-13追加、直接のユーザー依頼(項目458フィードバック、モード
 // ラインを消した代わりの最低限のインジケーターとして"ブロックカーソル
-// によるスクロールバー風の構造"): GraphicalDisplay::drawScrollbar()の
-// つまみ位置/高さの計算(トラック高さに対する可視割合・スクロール
-// 位置に応じた比例配置)を、ピクセル単位ではなく端末の行単位に移植した
-// もの。戻り値は{つまみの先頭行(ビューポート内、0起点)、つまみの
-// 行数}。scrollableLines(=total-height)が0以下(スクロールする余地が
-// 無い)の場合は{0, 0}を返し、呼び出し元はオーバーレイ自体を出さない
-// ――GraphicalDisplayの本物のスクロールバーは可視割合100%でも
-// トラック全体を塗るが、こちらは「既存の文字を上書きする」オーバー
-// レイという性質上、スクロールできないビューでは何も上書きしない
-// 方が「最低限」の趣旨に合う。
+// によるスクロールバー風の構造")、同日項目459フィードバック("スク
+// ロールバーがクネクネになる...それ用のエリアが必要...-gと同じく
+// 常時")で改訂: GraphicalDisplay::drawScrollbar()のつまみ位置/高さの
+// 計算(トラック高さに対する可視割合・スクロール位置に応じた比例
+// 配置)を、ピクセル単位ではなく端末の行単位に移植したもの。戻り値は
+// {つまみの先頭行(ビューポート内、0起点)、つまみの行数}。
+// scrollableLines(=total-height)が0以下(スクロールする余地が無い)の
+// 場合は{0, 0}を返し、呼び出し元は何も描かない――専用の2列は常時
+// 確保されているものの、スクロール不要な画面を反転表示で塗り潰す
+// ことに実用上の利点は無い(GraphicalDisplay::drawScrollbar()自身は
+// 可視割合100%でもトラック全体を塗るが、そちらに厳密に合わせる
+// 必要は無いと判断した)。
 std::pair<int, int> scrollThumbRowRange(int topIndex, int height, int total);
 
 // スクロール可能なテキスト行の一覧: 1ページずつ描画し、カーソル行を
@@ -1223,15 +1225,16 @@ class ContentView {
   // 渡すので、これは既存の挙動への影響が無い純粋な追加である。
   void renderLine(const Line &line, bool marked, bool underlineMarked = false);
   void renderModeLine();
-  // 2026-09-13追加、項目458フィードバック("最低限のインジケーター"):
-  // redraw()の通常の行描画の「後」に呼ぶ――display_.modeLineVisible()が
-  // falseかつdisplay_.hasNativeScrollbar()がfalse(=TerminalDisplay/
+  // 2026-09-13追加、項目458フィードバック("最低限のインジケーター")、
+  // 同日項目459フィードバック("クネクネになる...それ用のエリアが
+  // 必要...常時...幅は倍")で改訂: redraw()の通常の行描画の「後」に
+  // 呼ぶ――display_.hasNativeScrollbar()がfalse(=TerminalDisplay/
   // RecordingDisplay、Display::hasNativeScrollbar()自身のコメント参照)
-  // の間だけ、scrollThumbRowRange()が計算したつまみの行範囲について、
-  // ビューポート最終列(columns()-1)を反転表示の空白1文字で上書きする。
-  // 幅の再確保は一切行わない(呼び出し元の合意事項参照)――既存の行が
-  // その列にちょうど全角文字の後半セルを持っていた場合に見た目が崩れる
-  // 可能性はある(既知の限定的なトレードオフ)。
+  // の間、モードラインの表示/非表示に関わらず常に、scrollThumbRowRange()
+  // が計算したつまみの行範囲について、columns()/columns()+1の2列
+  // (TerminalDisplay::columns()自身のコメント参照――常時予約済みの
+  // 専用領域であり、他のどの描画もここへは書かない)を反転表示の
+  // 空白2文字で上書きする。
   void renderScrollIndicatorOverlay();
   // 全ての位置フィールドの計算(modeLineText()、renderModeLine()、
   // scrollModeLineText()、scrollModeLineSegments())で共有される:

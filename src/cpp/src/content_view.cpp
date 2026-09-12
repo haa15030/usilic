@@ -289,7 +289,13 @@ EllipsisBoundaries computeHighlightedSuffixBoundaries(const std::string &text, i
 // drawScrollbar()の比例配置の計算(トラック高さに対する可視割合、
 // スクロール位置に応じたつまみの配置)を、ピクセルではなく行単位に
 // 移植したもの――変数名(trackHeight→height、totalLines→total等)も
-// 対応関係が分かるよう揃えている。
+// 対応関係が分かるよう揃えている。total<=height(スクロール不可)の
+// 場合は{0,0}を返し、呼び出し元は何も描かない――GraphicalDisplayの
+// 本物のスクロールバーは可視割合100%でもトラック全体を塗るが、こちら
+// は専用の2列を常時確保してはいるものの、スクロールできないビューで
+// 画面全体を反転表示で塗り潰すことに実用上の利点は無く(むしろ視覚的
+// なノイズになる)、「既に全部見えている」ことが伝わればよいので何も
+// 描かない方を選んだ。
 std::pair<int, int> scrollThumbRowRange(int topIndex, int height, int total) {
   if (height <= 0 || total <= height) return {0, 0};
   int scrollableLines = total - height;
@@ -1807,20 +1813,29 @@ std::string ContentView::composeModeLineRow(const std::string &positionText) con
   return row;
 }
 
-// 2026-09-13追加、直接のユーザー依頼(項目458フィードバック):
-// content_view.hpp自身の宣言コメント参照。redraw()が通常の行描画を
-// 終えた「後」に呼ばれる前提――scrollThumbRowRange()が返す範囲の
-// 各行だけ、ビューポート最終列を反転表示の空白1文字で上書きする。
+// 2026-09-13追加、直接のユーザー依頼(項目458フィードバック)。
+// 2026-09-13修正、項目459フィードバック("スクロールバーがクネクネに
+// なる...やはりそれ用のエリアが必要かと...-gと同じく...一度でも
+// バーが表示されたら以後は常時...幅は今の倍(二文字分)で"): 当初は
+// モードライン非表示中だけ、既存の行の最終列へ上書きしていたが、行
+// ごとに元々あった内容と衝突して縁がガタガタになる問題があった。
+// TerminalDisplay::columns()自身の.cpp側コメント参照――この関数の
+// 呼び出し元(ここ)が意識すべきなのは、columns()が返す値は既に
+// つまみ2列ぶん差し引かれた「コンテンツ用の」幅だということ。つまり
+// ここでの書き込み先(columns()、columns()+1)は、他の全ての描画が
+// 一切使わない、常に予約済みの専用領域であり、上書きの心配は無い。
+// モードラインの表示/非表示にも一切関わらず常に描く(-gの本物の
+// スクロールバーが常時表示なのに倣う)。
 void ContentView::renderScrollIndicatorOverlay() {
-  if (display_.modeLineVisible() || display_.hasNativeScrollbar()) return;
+  if (display_.hasNativeScrollbar()) return;
   int total = static_cast<int>(lines_.size());
   auto [thumbTop, thumbHeight] = scrollThumbRowRange(topIndex_, height_, total);
   if (thumbHeight <= 0) return;
-  int col = columns() - 1;
-  if (col < 0) return;
+  int col = columns();
   for (int row = thumbTop; row < thumbTop + thumbHeight; row++) {
     display_.moveCursor(row0_ + row, col);
     display_.setAttribute(Display::Attribute::Standout);
+    display_.putChar(' ');
     display_.putChar(' ');
     display_.setAttribute(Display::Attribute::StandoutOff);
   }

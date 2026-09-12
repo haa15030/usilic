@@ -348,7 +348,27 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
 }
 
 int TerminalDisplay::rows() const { return rows_; }
-int TerminalDisplay::columns() const { return columns_; }
+// 2026-09-13修正、直接のユーザー依頼(項目459フィードバック、"-cでは
+// スクロールバーがクネクネになる=gj。やはりそれ用のエリアが必要かと。
+// -gと同じく...一度でもバーが表示されたら以後は常時それでいいんじゃ
+// ない？　幅は今の倍(二文字分)で。"): 項目459の「既存の文字への
+// オーバーレイ上書き」方式は、行によって元々の最終列の内容が違う
+// ため、スクロールバー自体が生きた本物の内容と衝突して縁が
+// ガタガタ(クネクネ)に見えるバグがあった。この修正では、本物の
+// 端末には本物のスクロールバーが無い(GraphicalDisplay::
+// hasNativeScrollbar()参照、GUIはウィンドウ自身をグリッド幅+
+// scrollbarWidthぶん広く作れるので「専用エリア」がグリッド外に
+// 確保できるが、端末のグリッド幅こそが利用可能な全幅であり、
+// そのような余剰は無い)ため、代わりにこの公開columns()自体を
+// kScrollbarStripWidth分だけ常に狭く報告する――display_.columns()を
+// 読む全ての呼び出し元(ContentView、DirectoryModeのls列レイアウト、
+// PipeBuffer::wrapLine()の折り返し幅、PromptEditor等、本ファイルの
+// 外の全て)が、この1箇所を変えるだけで自動的に2列狭い幅で再配置
+// されるようになる――ContentView::renderScrollIndicatorOverlay()が
+// その2列(columns()、columns()+1)を反転表示のつまみ専用の予約
+// エリアとして使う。実際の生の端末幅(columns_、setSize()が保持)は
+// このメソッドの外では一切変わらない。
+int TerminalDisplay::columns() const { return std::max(0, columns_ - kScrollbarStripWidth); }
 
 void TerminalDisplay::setSize(int rows, int columns) {
   rows_ = rows;

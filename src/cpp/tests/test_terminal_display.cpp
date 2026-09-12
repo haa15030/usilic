@@ -61,12 +61,16 @@ TEST_CASE("keySequence: direct lookups") {
 }
 
 TEST_CASE("rows/columns/setSize") {
+  // 2026-09-13修正、項目459フィードバック("スクロールバー...それ用の
+  // エリアが必要...幅は倍(二文字分)")を受けて、columns()自身の.cpp側
+  // コメント参照――公開columns()は生の端末幅から常に
+  // kScrollbarStripWidth(2)を差し引いて報告する。
   TerminalDisplay d(fakeCaps(), 24, 80);
   CHECK(d.rows() == 24);
-  CHECK(d.columns() == 80);
+  CHECK(d.columns() == 78);  // 80 - 2 (常時予約されるスクロールバー用の2列)
   d.setSize(50, 120);
   CHECK(d.rows() == 50);
-  CHECK(d.columns() == 120);
+  CHECK(d.columns() == 118);  // 120 - 2
 }
 
 TEST_CASE("outputEnabled defaults to false and is settable") {
@@ -108,6 +112,11 @@ TEST_CASE("modeLineVisible defaults to true and is settable") {
   CHECK(d.modeLineVisible() == true);
   d.setModeLineVisible(false);
   CHECK(d.modeLineVisible() == false);
+}
+
+TEST_CASE("hasNativeScrollbar is always false -- a real terminal has no scrollbar of its own") {
+  TerminalDisplay d(fakeCaps(), 24, 80);
+  CHECK(d.hasNativeScrollbar() == false);
 }
 
 TEST_CASE("scrollRegionArgs: mode line hidden reserves zero rows regardless of smooth scroll") {

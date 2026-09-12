@@ -1903,9 +1903,12 @@ TEST_CASE("renderLine: a DirectoryMode-style row that already fits the terminal 
 }
 
 // 2026-09-13追加、項目458フィードバック("最低限のインジケーター"、
-// ブロックカーソル風のスクロールバー)。GraphicalDisplay::drawScrollbar()
-// のピクセル単位の比例配置を行単位に移植したfm::scrollThumbRowRange()
-// 自身の数学的な検証。
+// ブロックカーソル風のスクロールバー)。2026-09-13、項目459フィード
+// バック("クネクネになる...それ用のエリアが必要...-gと同じく常時...
+// 幅は倍")で改訂: 右端2列を常時予約する方式になったため、以下のテスト
+// 群も、モードライン非表示への依存を外し、幅2列を検証するよう更新
+// した。GraphicalDisplay::drawScrollbar()のピクセル単位の比例配置を
+// 行単位に移植したfm::scrollThumbRowRange()自身の数学的な検証。
 TEST_CASE("scrollThumbRowRange: no scrollable content (total <= height) yields an empty range") {
   CHECK(fm::scrollThumbRowRange(0, 5, 5) == std::pair<int, int>{0, 0});
   CHECK(fm::scrollThumbRowRange(0, 5, 3) == std::pair<int, int>{0, 0});
@@ -1932,10 +1935,27 @@ TEST_CASE("scrollThumbRowRange: the thumb never exceeds the viewport height even
   CHECK(top + height <= 5);
 }
 
-TEST_CASE("redraw: with the mode line hidden and no native scrollbar, the last column shows a "
-          "reverse-video scroll-position thumb") {
-  RecordingDisplay d(10, 20);
-  d.setModeLineVisible(false);
+namespace {
+
+// RecordingDisplay::setSize()自身のコメント参照("construct a grid wide
+// enough to safely record output, then narrow what columns() reports
+// afterward")――realColumns(=contentColumns+kStripWidth)で実際の
+// スクリーンバッファを確保しつつ、columns()自体はcontentColumns列だけ
+// を報告させる。TerminalDisplay::columns()自身の常時2列差し引きを、
+// このテスト用ダブルでも同じ形で模擬する。
+constexpr int kStripWidth = 2;
+
+RecordingDisplay makeStripReservedDisplay(int rows, int contentColumns) {
+  RecordingDisplay d(rows, contentColumns + kStripWidth);
+  d.setSize(rows, contentColumns);
+  return d;
+}
+
+}  // namespace
+
+TEST_CASE("redraw: with no native scrollbar, the reserved 2-column strip shows a reverse-video "
+          "scroll-position thumb -- regardless of the mode line's own visibility") {
+  RecordingDisplay d = makeStripReservedDisplay(10, 20);
   ContentView v(d);
   v.setViewport(0, 5);
   v.setCursorHighlightEnabled(false);  // 行のハイライトと切り離して検証する
@@ -1946,13 +1966,21 @@ TEST_CASE("redraw: with the mode line hidden and no native scrollbar, the last c
   REQUIRE(height >= 1);
   for (int row = 0; row < 5; row++) {
     bool expected = row >= top && row < top + height;
-    CHECK(d.standoutAt(row, 19) == expected);
+    CHECK(d.standoutAt(row, 20) == expected);  // columns()そのものの列
+    CHECK(d.standoutAt(row, 21) == expected);  // columns()+1列目
   }
+
+  // モードラインの表示/非表示に関わらず常に出る(項目459の"常時"要求)。
+  d.setModeLineVisible(true);
+  v.redraw();
+  CHECK(d.standoutAt(top, 20) == true);
+  d.setModeLineVisible(false);
+  v.redraw();
+  CHECK(d.standoutAt(top, 20) == true);
 }
 
 TEST_CASE("redraw: the scroll-position thumb moves down as topIndex advances") {
-  RecordingDisplay d(10, 20);
-  d.setModeLineVisible(false);
+  RecordingDisplay d = makeStripReservedDisplay(10, 20);
   ContentView v(d);
   v.setViewport(0, 5);
   v.setCursorHighlightEnabled(false);
@@ -1962,22 +1990,12 @@ TEST_CASE("redraw: the scroll-position thumb moves down as topIndex advances") {
 
   auto [top, height] = fm::scrollThumbRowRange(15, 5, 20);
   REQUIRE(top + height == 5);  // 一番下まで到達している
-  CHECK(d.standoutAt(4, 19) == true);
-  CHECK(d.standoutAt(0, 19) == false);
-}
-
-TEST_CASE("redraw: with the mode line visible, no scroll-position thumb overlay is drawn") {
-  RecordingDisplay d(10, 20);  // modeLineVisible_の既定はtrue
-  ContentView v(d);
-  v.setViewport(0, 5);
-  v.setCursorHighlightEnabled(false);
-  v.setLines(makeLines(20));
-  v.redraw();
-  for (int row = 0; row < 5; row++) CHECK(d.standoutAt(row, 19) == false);
+  CHECK(d.standoutAt(4, 20) == true);
+  CHECK(d.standoutAt(0, 20) == false);
 }
 
 TEST_CASE("redraw: a backend with its own native scrollbar (GraphicalDisplay-like) never gets the "
-          "text overlay even with the mode line hidden") {
+          "text overlay") {
   // RecordingDisplayはTerminalDisplay相当(hasNativeScrollbar()==false)
   // なので、GraphicalDisplay相当の挙動そのものはここでは検証できない
   // ――Display::hasNativeScrollbar()自身の宣言・GraphicalDisplayの

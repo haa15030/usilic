@@ -171,6 +171,10 @@ class TerminalDisplay : public Display {
   // 自身の.cppのコメント参照。
   void writeAttributedLine(const std::string &text, const std::vector<Display::AttributeRun> &runs);
 
+  // columns()自身の.cpp側コメント参照。ContentView::
+  // renderScrollIndicatorOverlay()が使う、常時予約されるつまみ2列分。
+  static constexpr int kScrollbarStripWidth = 2;
+
   TerminalCapabilities caps_;
   int rows_, columns_;
   bool outputEnabled_ = false;
