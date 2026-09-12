@@ -101,6 +101,11 @@ class RecordingDisplay : public Display {
   // 参照。smoothScrollEnabled()と全く同じ、単なる状態保持のフェイク。
   bool modeLineVisible() const override { return modeLineVisible_; }
   void setModeLineVisible(bool visible) override { modeLineVisible_ = visible; }
+
+  // 2026-09-13追加: Display::hasNativeScrollbar()自身のコメント参照。
+  // このクラス自身のヘッダコメント("本物の端末画面のように振る舞う")
+  // どおり、TerminalDisplayと同じくfalse。
+  bool hasNativeScrollbar() const override { return false; }
   void open() override {}
   void close() override {}
   void leaveForExternalProgram() override {}

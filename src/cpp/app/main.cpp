@@ -1695,7 +1695,7 @@ void syncCursorBeforeCoastStoppingKey(int coastLevel, bool &wasActivelyScrolling
 volatile std::sig_atomic_t gGuiSessionSigintReceived = 0;
 void handleSigintForGuiSession(int) { gGuiSessionSigintReceived = 1; }
 
-void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui, fm::History &history) {
+void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   bool dragging = false;
   // 2026-08-30、直接のユーザー報告(GUI、ARCモードで再現させたスクリー
   // ンショット付き――ただし根本原因はモードを問わない): マウスボタンを
@@ -3133,7 +3133,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   app.editMode().setForegroundLauncher(
       [&gui](const std::vector<std::string> &argv) { return runEditorInLaunchingTerminal(argv, *gui); });
 
-  runGuiPhase(app, *gui, history);
+  runGuiPhase(app, *gui);
 
   app.programMode().setForegroundLauncher(nullptr);  // back to plain ChildProcess::runInteractive() in terminal mode
   app.editMode().setForegroundLauncher(nullptr);
@@ -4175,7 +4175,7 @@ int main(int argc, char **argv) {
         [&launchGui](const std::string &command) { return runProgramInLaunchingTerminal(command, *launchGui); });
     app.editMode().setForegroundLauncher(
         [&launchGui](const std::vector<std::string> &argv) { return runEditorInLaunchingTerminal(argv, *launchGui); });
-    runGuiPhase(app, *launchGui, history);
+    runGuiPhase(app, *launchGui);
     app.programMode().setForegroundLauncher(nullptr);
     app.editMode().setForegroundLauncher(nullptr);
   } else {

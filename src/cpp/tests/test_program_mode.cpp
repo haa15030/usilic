@@ -72,6 +72,7 @@ struct Fixture {
       void setSmoothScrollEnabled(bool) override {}
       bool modeLineVisible() const override { return true; }
       void setModeLineVisible(bool) override {}
+      bool hasNativeScrollbar() const override { return false; }
       void open() override {}
       void close() override {}
       void leaveForExternalProgram() override { leaveExternalProgramCount()++; }

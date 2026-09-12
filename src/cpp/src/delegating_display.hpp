@@ -82,6 +82,8 @@ class DelegatingDisplay : public Display {
   bool modeLineVisible() const override;
   void setModeLineVisible(bool visible) override;
 
+  bool hasNativeScrollbar() const override;
+
   void open() override;
   void close() override;
 

@@ -3,6 +3,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "display.hpp"
@@ -38,6 +39,20 @@ std::string middleEllipsisTruncateByWidth(const std::string &text, int maxWidth)
 // renderScrolled()の両方から同じ結果を得るために公開している
 // (middleEllipsisTruncateByWidth()自身と同じ理由)。
 std::string truncateHighlightedSuffix(const std::string &text, int highlightStart, int maxWidth);
+
+// 2026-09-13追加、直接のユーザー依頼(項目458フィードバック、モード
+// ラインを消した代わりの最低限のインジケーターとして"ブロックカーソル
+// によるスクロールバー風の構造"): GraphicalDisplay::drawScrollbar()の
+// つまみ位置/高さの計算(トラック高さに対する可視割合・スクロール
+// 位置に応じた比例配置)を、ピクセル単位ではなく端末の行単位に移植した
+// もの。戻り値は{つまみの先頭行(ビューポート内、0起点)、つまみの
+// 行数}。scrollableLines(=total-height)が0以下(スクロールする余地が
+// 無い)の場合は{0, 0}を返し、呼び出し元はオーバーレイ自体を出さない
+// ――GraphicalDisplayの本物のスクロールバーは可視割合100%でも
+// トラック全体を塗るが、こちらは「既存の文字を上書きする」オーバー
+// レイという性質上、スクロールできないビューでは何も上書きしない
+// 方が「最低限」の趣旨に合う。
+std::pair<int, int> scrollThumbRowRange(int topIndex, int height, int total);
 
 // スクロール可能なテキスト行の一覧: 1ページずつ描画し、カーソル行を
 // 追跡し、利用可能な場合はDisplayのハードウェアスクロール領域経路
@@ -1208,6 +1223,16 @@ class ContentView {
   // 渡すので、これは既存の挙動への影響が無い純粋な追加である。
   void renderLine(const Line &line, bool marked, bool underlineMarked = false);
   void renderModeLine();
+  // 2026-09-13追加、項目458フィードバック("最低限のインジケーター"):
+  // redraw()の通常の行描画の「後」に呼ぶ――display_.modeLineVisible()が
+  // falseかつdisplay_.hasNativeScrollbar()がfalse(=TerminalDisplay/
+  // RecordingDisplay、Display::hasNativeScrollbar()自身のコメント参照)
+  // の間だけ、scrollThumbRowRange()が計算したつまみの行範囲について、
+  // ビューポート最終列(columns()-1)を反転表示の空白1文字で上書きする。
+  // 幅の再確保は一切行わない(呼び出し元の合意事項参照)――既存の行が
+  // その列にちょうど全角文字の後半セルを持っていた場合に見た目が崩れる
+  // 可能性はある(既知の限定的なトレードオフ)。
+  void renderScrollIndicatorOverlay();
   // 全ての位置フィールドの計算(modeLineText()、renderModeLine()、
   // scrollModeLineText()、scrollModeLineSegments())で共有される:
   // setCountLivePromptAsLine()自身の、生きたプロンプト行のための

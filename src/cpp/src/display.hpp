@@ -244,6 +244,21 @@ class Display {
   virtual bool modeLineVisible() const = 0;
   virtual void setModeLineVisible(bool visible) = 0;
 
+  // 2026-09-13追加、直接のユーザー依頼(項目458フィードバック、
+  // "-cで感じたのは、最低限のインジケーターはあったほうがいいって
+  // こと...ブロックカーソルによるスクロールバー風の構造って作成可能?"):
+  // このバックエンド自身が、常時表示される本物のスクロールバーを
+  // 独自に持っているかどうか。GraphicalDisplayはtrue(drawScrollbar()/
+  // drawIdleScrollbarImage()、モードラインの表示/非表示に関わらず
+  // 常時右端に描かれる)、TerminalDisplayはfalse――ContentView::
+  // renderScrollIndicatorOverlay()は、この値がfalseかつ
+  // modeLineVisible()がfalseの間だけ(=モードラインを消した代わりの
+  // 最低限の代替インジケーターとして)、既存の行の右端1文字を反転
+  // 表示のブロックで上書きする、文字セル版の簡易スクロールバーを
+  // 描く。GraphicalDisplayでは自前の本物のスクロールバーが常に既に
+  // あるため、この文字オーバーレイは常にfalseを返して無効化する。
+  virtual bool hasNativeScrollbar() const = 0;
+
   // 画面へ入る/画面から出る(legacy: ti/te能力経由での端末の代替
   // スクリーンへの出入り)。注記: legacyのtc.cはte(exit_ca_mode)を
   // 取得していたが、どこでも実際には一度も呼んでいなかった――usilic

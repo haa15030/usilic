@@ -140,6 +140,10 @@ class TerminalDisplay : public Display {
   bool modeLineVisible() const override;
   void setModeLineVisible(bool visible) override;
 
+  // Display::hasNativeScrollbar()自身のコメント参照。本物の端末には
+  // usilic自身が描く独自のスクロールバーが無いためfalse。
+  bool hasNativeScrollbar() const override { return false; }
+
   void open() override;
   void close() override;
 

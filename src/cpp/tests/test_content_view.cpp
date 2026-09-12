@@ -1901,3 +1901,88 @@ TEST_CASE("renderLine: a DirectoryMode-style row that already fits the terminal 
   CHECK(rendered.find("...") == std::string::npos);
   CHECK(rendered.rfind(prefix + filename, 0) == 0);  // rendered verbatim (plus trailing padding)
 }
+
+// 2026-09-13追加、項目458フィードバック("最低限のインジケーター"、
+// ブロックカーソル風のスクロールバー)。GraphicalDisplay::drawScrollbar()
+// のピクセル単位の比例配置を行単位に移植したfm::scrollThumbRowRange()
+// 自身の数学的な検証。
+TEST_CASE("scrollThumbRowRange: no scrollable content (total <= height) yields an empty range") {
+  CHECK(fm::scrollThumbRowRange(0, 5, 5) == std::pair<int, int>{0, 0});
+  CHECK(fm::scrollThumbRowRange(0, 5, 3) == std::pair<int, int>{0, 0});
+  CHECK(fm::scrollThumbRowRange(0, 0, 100) == std::pair<int, int>{0, 0});  // height<=0のガード
+}
+
+TEST_CASE("scrollThumbRowRange: at the very top, the thumb starts at row 0") {
+  auto [top, height] = fm::scrollThumbRowRange(/*topIndex=*/0, /*height=*/5, /*total=*/20);
+  CHECK(top == 0);
+  CHECK(height >= 1);
+}
+
+TEST_CASE("scrollThumbRowRange: at the very bottom (topIndex == scrollableLines), the thumb reaches "
+          "the last row") {
+  int viewportHeight = 5, total = 20;
+  int scrollableLines = total - viewportHeight;  // 15
+  auto [top, height] = fm::scrollThumbRowRange(scrollableLines, viewportHeight, total);
+  CHECK(top + height == viewportHeight);
+}
+
+TEST_CASE("scrollThumbRowRange: the thumb never exceeds the viewport height even for very long content") {
+  auto [top, height] = fm::scrollThumbRowRange(0, 5, 100000);
+  CHECK(height >= 1);
+  CHECK(top + height <= 5);
+}
+
+TEST_CASE("redraw: with the mode line hidden and no native scrollbar, the last column shows a "
+          "reverse-video scroll-position thumb") {
+  RecordingDisplay d(10, 20);
+  d.setModeLineVisible(false);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setCursorHighlightEnabled(false);  // 行のハイライトと切り離して検証する
+  v.setLines(makeLines(20));
+  v.redraw();
+
+  auto [top, height] = fm::scrollThumbRowRange(0, 5, 20);
+  REQUIRE(height >= 1);
+  for (int row = 0; row < 5; row++) {
+    bool expected = row >= top && row < top + height;
+    CHECK(d.standoutAt(row, 19) == expected);
+  }
+}
+
+TEST_CASE("redraw: the scroll-position thumb moves down as topIndex advances") {
+  RecordingDisplay d(10, 20);
+  d.setModeLineVisible(false);
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setCursorHighlightEnabled(false);
+  v.setLines(makeLines(20));
+  v.setCursorIndex(19);  // topIndex_をビューポート末尾まで押し下げる
+  v.redraw();
+
+  auto [top, height] = fm::scrollThumbRowRange(15, 5, 20);
+  REQUIRE(top + height == 5);  // 一番下まで到達している
+  CHECK(d.standoutAt(4, 19) == true);
+  CHECK(d.standoutAt(0, 19) == false);
+}
+
+TEST_CASE("redraw: with the mode line visible, no scroll-position thumb overlay is drawn") {
+  RecordingDisplay d(10, 20);  // modeLineVisible_の既定はtrue
+  ContentView v(d);
+  v.setViewport(0, 5);
+  v.setCursorHighlightEnabled(false);
+  v.setLines(makeLines(20));
+  v.redraw();
+  for (int row = 0; row < 5; row++) CHECK(d.standoutAt(row, 19) == false);
+}
+
+TEST_CASE("redraw: a backend with its own native scrollbar (GraphicalDisplay-like) never gets the "
+          "text overlay even with the mode line hidden") {
+  // RecordingDisplayはTerminalDisplay相当(hasNativeScrollbar()==false)
+  // なので、GraphicalDisplay相当の挙動そのものはここでは検証できない
+  // ――Display::hasNativeScrollbar()自身の宣言・GraphicalDisplayの
+  // オーバーライド(true固定)はコードレビューで直接確認済み。ここでは
+  // 代わりに、RecordingDisplay自身がfalseを返すこと自体を固定する。
+  RecordingDisplay d(10, 20);
+  CHECK(d.hasNativeScrollbar() == false);
+}

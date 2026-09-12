@@ -39,6 +39,7 @@ bool DelegatingDisplay::smoothScrollEnabled() const { return backend_->smoothScr
 void DelegatingDisplay::setSmoothScrollEnabled(bool enabled) { backend_->setSmoothScrollEnabled(enabled); }
 
 bool DelegatingDisplay::modeLineVisible() const { return backend_->modeLineVisible(); }
+bool DelegatingDisplay::hasNativeScrollbar() const { return backend_->hasNativeScrollbar(); }
 void DelegatingDisplay::setModeLineVisible(bool visible) { backend_->setModeLineVisible(visible); }
 
 void DelegatingDisplay::open() { backend_->open(); }

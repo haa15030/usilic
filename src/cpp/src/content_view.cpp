@@ -1,6 +1,7 @@
 #include "content_view.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "mode_line.hpp"
@@ -282,6 +283,23 @@ EllipsisBoundaries computeHighlightedSuffixBoundaries(const std::string &text, i
   b.headEnd += highlightStart;
   b.tailStart += highlightStart;
   return b;
+}
+
+// content_view.hpp自身の宣言コメント参照。GraphicalDisplay::
+// drawScrollbar()の比例配置の計算(トラック高さに対する可視割合、
+// スクロール位置に応じたつまみの配置)を、ピクセルではなく行単位に
+// 移植したもの――変数名(trackHeight→height、totalLines→total等)も
+// 対応関係が分かるよう揃えている。
+std::pair<int, int> scrollThumbRowRange(int topIndex, int height, int total) {
+  if (height <= 0 || total <= height) return {0, 0};
+  int scrollableLines = total - height;
+  double visibleFraction = static_cast<double>(height) / total;
+  int thumbHeight = std::clamp(static_cast<int>(std::lround(height * visibleFraction)), 1, height);
+  int maxThumbTop = height - thumbHeight;
+  int thumbTop = std::clamp(static_cast<int>(std::lround(maxThumbTop * (static_cast<double>(topIndex) /
+                                                                          scrollableLines))),
+                             0, maxThumbTop);
+  return {thumbTop, thumbHeight};
 }
 
 ContentView::ContentView(Display &display) : display_(display) {}
@@ -674,6 +692,7 @@ void ContentView::moveUp() {
       display_.scrollReverse();
       renderLine(lines_[topIndex_], topIndex_ == cursorIndex_);
       renderModeLine();
+      renderScrollIndicatorOverlay();
       display_.flush();
       return;
     }
@@ -700,6 +719,7 @@ void ContentView::moveDown() {
       if (bottomIndex < static_cast<int>(lines_.size()))
         renderLine(lines_[bottomIndex], bottomIndex == cursorIndex_);
       renderModeLine();
+      renderScrollIndicatorOverlay();
       display_.flush();
       return;
     }
@@ -733,6 +753,7 @@ void ContentView::scrollLineDown() {
     if (bottomIndex < static_cast<int>(lines_.size()))
       renderLine(lines_[bottomIndex], bottomIndex == cursorIndex_);
     renderModeLine();
+    renderScrollIndicatorOverlay();
     display_.flush();
     return;
   }
@@ -757,6 +778,7 @@ void ContentView::scrollLineUp() {
     display_.scrollReverse();
     renderLine(lines_[topIndex_], topIndex_ == cursorIndex_);
     renderModeLine();
+    renderScrollIndicatorOverlay();
     display_.flush();
     return;
   }
@@ -1785,6 +1807,25 @@ std::string ContentView::composeModeLineRow(const std::string &positionText) con
   return row;
 }
 
+// 2026-09-13追加、直接のユーザー依頼(項目458フィードバック):
+// content_view.hpp自身の宣言コメント参照。redraw()が通常の行描画を
+// 終えた「後」に呼ばれる前提――scrollThumbRowRange()が返す範囲の
+// 各行だけ、ビューポート最終列を反転表示の空白1文字で上書きする。
+void ContentView::renderScrollIndicatorOverlay() {
+  if (display_.modeLineVisible() || display_.hasNativeScrollbar()) return;
+  int total = static_cast<int>(lines_.size());
+  auto [thumbTop, thumbHeight] = scrollThumbRowRange(topIndex_, height_, total);
+  if (thumbHeight <= 0) return;
+  int col = columns() - 1;
+  if (col < 0) return;
+  for (int row = thumbTop; row < thumbTop + thumbHeight; row++) {
+    display_.moveCursor(row0_ + row, col);
+    display_.setAttribute(Display::Attribute::Standout);
+    display_.putChar(' ');
+    display_.setAttribute(Display::Attribute::StandoutOff);
+  }
+}
+
 // print_line()の現在行/合計行/パーセント表示からの移植(disp_window()
 // のこの一片だけがこのクラスへ移された理由についてはModeLine自身の
 // クラスコメント参照)。row0_+height_は、まさにこの目的のために全て
@@ -2315,6 +2356,7 @@ void ContentView::redraw() {
     renderLine(emptyPlaceholderLine_, emptyPlaceholderMarked_);
   }
   renderModeLine();
+  renderScrollIndicatorOverlay();
   if (cursorHighlightEnabled_) syncVisibleCursor();
   display_.flush();
 }

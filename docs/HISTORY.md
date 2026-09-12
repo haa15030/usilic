@@ -17054,3 +17054,9 @@ CUTでタブコード切断すると、最初のタブまでが--となるけれ
 
 >慣性スクロール中の不具合は、GraphicalDisplay::renderScrolled()(ドラッグ/慣性スクロール中の毎フレームが使う、通常のredraw()/ContentView::renderModeLine()とは完全に別の描画経路)が、モードライン用の1行予約と描画を無条件に行っていたことが原因でした――項目457でlayoutViews()/renderModeLine()側には非表示対応を入れましたが、この別経路には反映していませんでした。renderScrolled()のcontentRows計算とモードライン描画ブロックの両方にmodeLineVisible判定を追加して修正しました。-gのDock風自動表示/非表示は、runGuiPhase()からmodeLineAutoRevealed等の状態・毎フレームのDock判定ブロックを丸ごと削除し、^Ohによる手動トグルのみの、-cと同じ厳密なON/OFFに戻しました。make test 1111/1112件通過(既知のLOCATEフレークのみ)、make install/make app/jキー回帰チェックも完了、docs/CHANGES.mdに項目458として記録しました。ブロックカーソルによるスクロールバー風の構造については、これから技術的な可能性を調査します。
 
+>技術的な検証の結果、本物の端末カーソル自体の転用は却下しました(既にDirectoryMode等の選択行表示・LineEditorの入力位置・Shellのプロンプト位置を示すために使われており、端末が持てるカーソルは1つだけなので衝突するため)。代わりに、GraphicalDisplay::drawScrollbar()と同じ発想の、右端1列への反転表示による文字セル版スクロールバーを提案し、実装方式(既存コンテンツへの上書き方式か専用列予約方式か)と表示条件(モードライン非表示中のみか常時か)の2点をAskUserQuestionで確認しました。
+
+<上書きオーバーレイ(推奨)/モードライン非表示中のみ(推奨)
+
+>Display::hasNativeScrollbar()を新設(GraphicalDisplayはtrue、TerminalDisplay等はfalse)し、GraphicalDisplay::drawScrollbar()のピクセル単位の比例配置を行単位に移植したfm::scrollThumbRowRange()を実装、ContentView::renderScrollIndicatorOverlay()が、モードライン非表示かつhasNativeScrollbar()がfalseの間だけ、つまみの行範囲についてビューポート最終列を反転表示の空白1文字で上書きするようにしました。通常のredraw()だけでなく、^N/^Pの単一行スクロール高速経路(moveUp()/moveDown()等)にも配線しています――ここを忘れるとモードライン非表示中に普通にスクロールするたびインジケーターが固まって見えるところでした。幅の再確保は一切しないオーバーレイ方式のため、行の最後の1文字がつまみと重なる場合に隠れる、全角文字の境界で見た目が崩れ得る、という2点は意図的なトレードオフとして残しています。scrollThumbRowRange()自身の境界値テストと、RecordingDisplay経由の統合テストを追加、make test 1119/1120件・21737/21738アサーション通過(残る1件は既知のLOCATEフレーク)。実機PTYで、60ファイルのディレクトリで^Oh後に右端の反転表示が現れること、^N連打で位置が下へ移動すること、^Oh前は何も出ないことを直接確認しました。make install/make app/jキー回帰チェックも完了、docs/CHANGES.mdに項目459として記録しました。
+

@@ -219,6 +219,11 @@ class GraphicalDisplay : public Display {
   bool modeLineVisible() const override;
   void setModeLineVisible(bool visible) override;
 
+  // Display::hasNativeScrollbar()自身のコメント参照。drawScrollbar()/
+  // drawIdleScrollbarImage()という本物のスクロールバーを既に自前で
+  // 持っているためtrue。
+  bool hasNativeScrollbar() const override { return true; }
+
   void open() override;
   void close() override;
 
