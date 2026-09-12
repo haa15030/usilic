@@ -147,7 +147,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       // ...起点名を戻り値として欲しい"): nameが検索元のディレクトリ
       // パスを乗っ取ってしまうので、grepView_自身のtrailing3(戻り先
       // ラベル)慣習と同じ場所へ、その消えたパス自体を退避する。
-      fields.name = "GREP";
+      fields.name = view_.grepInPlaceLabel();
       fields.trailing2 = "(grep)";
       fields.trailing3 = currentDirectory_;
       fields.fillTrailingToEdge = true;
@@ -164,7 +164,7 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
       // setPositionTextOverride(message)側でメッセージ本体を設定
       // する)。trailing2は成功時と同じ"(grep)"バッジのまま、trailing
       // (バイト数)も通常通り計算済みの値のまま残す。
-      fields.name = "GREP";
+      fields.name = view_.grepInPlaceLabel();
       fields.trailing2 = "(grep)";
       fields.trailing3 = currentDirectory_;
     } else if (!pendingOperationLabel_.empty()) {

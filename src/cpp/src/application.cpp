@@ -1025,7 +1025,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 検索元(SHELL自身の現在のディレクトリ)を示す(shellReturnName_
     // ――^Gの戻り先――ではない)。
     if (shell_.scrollback().grepInPlaceActive() || shell_.scrollback().grepNoMatchActive()) {
-      fields.name = "GREP";
+      fields.name = shell_.scrollback().grepInPlaceLabel();
       fields.trailing2 = "(grep)";
       fields.trailing3 = shell_.currentDirectory();
       return fields;
@@ -1053,7 +1053,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
     // 反映してほしい"): ManMode等自身の同じ分岐のコメント参照。
     if (keyView_.grepInPlaceActive() || keyView_.grepNoMatchActive()) {
-      fields.name = "GREP";
+      fields.name = keyView_.grepInPlaceLabel();
       fields.trailing2 = "(grep)";
       fields.trailing3 = previousModeName(keyReturnMode_);
       return fields;
@@ -1234,7 +1234,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 開いていない時にしか起動できない)ため、実際にin-placeが起動
     // し得るのはこの最後の(プレーンなHISTORY/RESULTS閲覧)分岐だけ。
     if (listBrowserView_.grepInPlaceActive() || listBrowserView_.grepNoMatchActive()) {
-      ContentView::ModeLineFields fields{"GREP", trailing, /*fillTrailingToEdge=*/true,
+      ContentView::ModeLineFields fields{listBrowserView_.grepInPlaceLabel(), trailing, /*fillTrailingToEdge=*/true,
                                           /*rightWatermark=*/"", "(grep)"};
       fields.trailing3 = name;
       return fields;
@@ -1406,7 +1406,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // を"GREP"が乗っ取るので、その見えなくなった識別情報をtrailing3へ
     // 退避する。
     if (cutContentView_.grepInPlaceActive() || cutContentView_.grepNoMatchActive()) {
-      ContentView::ModeLineFields fields{"GREP", trailing, /*fillTrailingToEdge=*/true,
+      ContentView::ModeLineFields fields{cutContentView_.grepInPlaceLabel(), trailing, /*fillTrailingToEdge=*/true,
                                           /*rightWatermark=*/"", "(grep)"};
       fields.trailing3 = name;
       return fields;
@@ -1740,7 +1740,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 参照。trailing3はここでも「検索元」(このman page自身のトピック)
     // を示す――戻り先(previousModeName())ではない。
     if (manView_.grepInPlaceActive() || manView_.grepNoMatchActive()) {
-      fields.name = "GREP";
+      fields.name = manView_.grepInPlaceLabel();
       fields.trailing2 = "(grep)";
       fields.trailing3 = manMode_.currentPage();
       return fields;
@@ -1809,7 +1809,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 反映してほしい"): ManMode自身の同じ分岐のコメント参照。trailing3
     // はここでも「検索元」(このLOCATE結果自身のクエリ)を示す。
     if (locateView_.grepInPlaceActive() || locateView_.grepNoMatchActive()) {
-      fields.name = "GREP";
+      fields.name = locateView_.grepInPlaceLabel();
       fields.trailing2 = "(grep)";
       fields.trailing3 = locateMode_.query();
       return fields;
@@ -1868,7 +1868,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 反映してほしい"): ManMode/LocateMode自身の同じ分岐のコメント
     // 参照。trailing3はここでも「検索元」(集計対象のルート)を示す。
     if (duView_.grepInPlaceActive() || duView_.grepNoMatchActive()) {
-      fields.name = "GREP";
+      fields.name = duView_.grepInPlaceLabel();
       fields.trailing2 = "(grep)";
       fields.trailing3 = duMode_.currentPath();
       return fields;
@@ -1932,7 +1932,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 見えなくなった識別情報をtrailing3へ退避する(FileMode自身の
     // currentFile_と同じ理屈)。
     if (archiveContentView_.grepInPlaceActive() || archiveContentView_.grepNoMatchActive()) {
-      fields.name = "GREP";
+      fields.name = archiveContentView_.grepInPlaceLabel();
       fields.trailing2 = "(grep)";
       fields.trailing3 = entry->name;
       return fields;
@@ -1957,12 +1957,16 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // ("登録済みのパターンは履歴ではなく検索に使用するための文字列候補
   // に過ぎない...初めて発動したEGREPで検索文字列一覧が出た時点では、
   // いくら^Rしたって『No String』なのは当たり前")が、この混同を直接
-  // 捕まえた。シード投入はここでは削除された;grepSeedPatterns()は
-  // 今や、実際に直接入力の候補リストが構築される場所(
-  // startPromptHistoryRecall()自身のsortDirectEntryListの分岐参照)
-  // にのみマージされ、RecentEgrepPattern自体は本物の使用履歴だけの
-  // ままにしている――legacy自身のlg/hegrepの分割に合わせ、そこでの
-  // ^Rがまさに示すべきとおり、実際の検索が起きるまでは空である。
+  // 捕まえた。シード投入はここでは削除され、RecentEgrepPattern自体は
+  // 本物の使用履歴だけのままにしている――legacy自身のlg/hegrepの分割
+  // に合わせ、そこでの^Rがまさに示すべきとおり、実際の検索が起きる
+  // までは空である。
+  // (2026-09-11追記): grepSeedPatterns()自体、それを使っていたEGREP/
+  // CUT-Regexの直接入力の候補リストがstartGrepPrompt()自身のコメント
+  // 参照の統一で廃止されたのに伴い、完全に削除した――usilicrcの
+  // GREPセクションは引き続き構文としては認識される(既存設定ファイル
+  // との互換性のため)が、内容は読み飛ばされるだけで、もうどこにも
+  // マージされない。
 }
 
 std::string Application::ringCategoryLabel(RingCategory category) const {
@@ -5528,6 +5532,11 @@ bool Application::activateGrepInPlace() {
     // 特有のケースだけを正しく後始末できる。
     deactivateGrepInPlace();
     std::string message = grepMode_.pattern() + ": No String";
+    // 2026-09-11追加、直接のユーザー依頼のFGREP/EGREP統一(ContentView::
+    // setGrepInPlaceLabel()自身のコメント参照): 各ModeLineFieldsProvider
+    // がgrepNoMatchActive()の間に出すname欄も、grepSyntax_に応じた
+    // 正しいラベル("FGREP"/"EGREP"/"GREP")にする。
+    viewForMode(grepInPlaceOriginMode_).setGrepInPlaceLabel(grepSyntaxLabel(grepSyntax_));
     viewForMode(grepInPlaceOriginMode_).reportGrepNoMatchMessage(message);
     activeView().redraw();
     return false;
@@ -5557,6 +5566,11 @@ bool Application::activateGrepInPlace() {
   // ほしい")によりDirectory/Fileの二択からviewForMode()経由の汎用呼び
   // 出しへ一般化した(ContentView自身のGREP関連メソッド参照)。
   ContentView &target = viewForMode(grepInPlaceOriginMode_);
+  // 2026-09-11追加、直接のユーザー依頼のFGREP/EGREP統一(ContentView::
+  // setGrepInPlaceLabel()自身のコメント参照): 各ModeLineFieldsProvider
+  // がgrepInPlaceActive()の間に出すname欄を、grepSyntax_に応じた正しい
+  // ラベル("FGREP"/"EGREP"/"GREP")にする。
+  target.setGrepInPlaceLabel(grepSyntaxLabel(grepSyntax_));
   target.setGrepInPlaceOverlay(true);
   target.setGrepMatchHighlight(toHighlightMatches(grepInPlaceMatches_));
   target.setCursorIndex(grepInPlaceMatches_[0].sourceLineIndex);
@@ -7875,17 +7889,12 @@ bool Application::toggleListBrowserHistory() {
     const std::deque<std::string> &recent = history_.recentEntries(listBrowserCategory_);
     items.assign(recent.begin(), recent.end());
   } else {
+    // 2026-09-11削除: 以前はここでlistBrowserCategory_==RecentEgrepPattern
+    // の場合だけconfiguration_.grepSeedPatterns()をマージしていたが、
+    // その候補一覧の種自体が(startGrepPrompt()自身のコメント参照の
+    // 統一により)廃止されたため、単純にsortedUniqueRecentEntries()の
+    // 結果だけを使う。
     items = sortedUniqueRecentEntries(listBrowserCategory_);
-    // startPromptHistoryRecall()自身の同一のマージ処理参照――時系列の
-    // 使用履歴ビューからソート済みの候補ビューへ「戻る」トグルは、
-    // 実際にこれまでに検索されたものだけでなく、元の直接入力リスト
-    // が示したのと同じシードとマージされたコンテンツを示さなければ
-    // ならない。
-    if (listBrowserCategory_ == RingCategory::RecentEgrepPattern) {
-      std::set<std::string> merged(items.begin(), items.end());
-      merged.insert(configuration_.grepSeedPatterns().begin(), configuration_.grepSeedPatterns().end());
-      items.assign(merged.begin(), merged.end());
-    }
   }
   // archiveHistoryFilterActive()自身のコメント参照――startPromptHistoryRecall()
   // が組み立てた最初のリストだけでなく、^Rの時系列トグルをまたいでも
@@ -8578,19 +8587,22 @@ bool Application::showKeyReference() {
 // ネストした検索の開始は拒否する、m_grep()自身のis_name(ap->name,
 // M_fgrep/M_egrep)のガードに合わせている。
 //
-// EGREP(Regex)は意図的な例外である(2026-08-05): なぜそれが空の
-// プロンプトをスキップし、代わりに直接候補リストへ開くのかについては
-// startRegexPromptList()自身のコメント参照――FGREP(Fixed)は影響を
-// 受けない。
+// (2026-08-05〜2026-09-11)以前はEGREP(Regex)だけ空のプロンプトを
+// スキップし、代わりに直接候補リストへ開く意図的な例外だったが、
+// 2026-09-11、直接のユーザー依頼によりこの例外は撤廃した――詳細は
+// startGrepPrompt()自身のコメント参照。FGREP/EGREP/GREPのいずれも
+// 今は同じ空のプロンプトから始まる。
 // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外(現状GREP
 // が稼働している全てのモード)へも反映してほしい"): in-place方式
 // (専用の一覧画面Grepへは切り替えず、元の画面にマッチをハイライト
 // 表示したまま留まる)の対象モード一覧――executeGrep()/
 // startIncrementalGrepPrompt()の両方から参照される単一の判定基準。
 // Grep自身(再入場防止)、Cut(セグメント一覧自体、CutContentとは別物)、
-// Copy(凍結テキスト選択、性質が違う)は対象外。^J^S(EGREP)/^O^S(FGREP)
-// は今回もin-place化しない(GrepSyntax::Basic限定の呼び出し元自身の
-// コメント参照)ので、ここに含めるモードそのものには影響しない。
+// Copy(凍結テキスト選択、性質が違う)は対象外。同日、FGREP/EGREPを
+// GREPと同じ仕様に統一する依頼(startGrepPrompt()自身のコメント参照)
+// により、executeGrep()側のgrepSyntax_==Basic限定も撤廃したので、
+// ^J^S(EGREP)/^O^S(FGREP)も今はここに含まれるモードならin-place化
+// される。
 bool Application::isGrepInPlaceEligibleMode(ApplicationMode mode) const {
   switch (mode) {
     case ApplicationMode::Directory:
@@ -8618,7 +8630,29 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
   // ListBrowserになる場合だけ、上書きされる前のlistBrowserCategory_
   // (RecentFile/RecentDirectoryのどちらを閲覧中か)をここで退避する。
   if (grepReturnMode_ == ApplicationMode::ListBrowser) grepReturnListCategory_ = listBrowserCategory_;
-  if (syntax == GrepSyntax::Regex) return startRegexPromptList(PromptKind::GrepPattern);
+  // 2026-09-11削除、直接のユーザー依頼("FGREPおよびEGREPを同じ仕様に
+  // 統一して欲しい。違いは直値および拡張正規表現で検索が行われる点
+  // ...候補一覧は廃棄"): 以前はGrepSyntax::Regex(EGREP)だけ
+  // startRegexPromptList()経由で専用の候補一覧(usilicrcのGREPシード
+  // +過去に検索した正規表現の履歴)へ直接開いていたが、この場当たり的
+  // な候補一覧自体がユーザー体験を損なっていた(以下の直接のユーザー
+  // 指摘参照: (1)実機で`^X^F`から`^J^S`を起動→検索確定→結果一覧で
+  // Enterしても、FILE上のマッチ箇所へ行かずEGREP自身の候補一覧画面に
+  // なってしまうバグに遭遇――`openSelectedGrepMatch()`が
+  // `grepReturnMode_==ListBrowser`起点を一度も想定していなかったため。
+  // (2)GREP(Basic)の洗練されたin-place UI(マッチ行センタリング等)を
+  // 見た後では、EGREP結果一覧のマゼンタハイライトだけ同じ動きをしない
+  // ことに強い違和感がある――新規ユーザーも同様に感じるはず。
+  // (3)候補一覧自体、旧ソース時代の場当たり的収集物でしかなく正規表現
+  // の代表例でもない、マニュアル解説の予定も無い――中途半端なデフォル
+  // トを見せるくらいなら、正規表現に疎いユーザーにはLLM等で調べて
+  // もらう方がよほど有用。以後はFGREP/EGREP/GREPのいずれも同じ空の
+  // プロンプトから始まり(下のactivatePrompt()、Basicと全く同じ経路)、
+  // 違いは検索アルゴリズム(固定文字列/拡張正規表現/基本正規表現)
+  // だけになる――isGrepInPlaceEligibleMode()自身のコメント参照
+  // (grepSyntax_==Basic限定を撤廃)、これによりFGREP/EGREPも同じ
+  // in-place方式(専用の一覧画面Grepへは切り替えない)になり、問題(1)の
+  // バグ自体もこの経路が到達不能になることで解消する。
   activatePrompt(PromptKind::GrepPattern, "");
   return true;
 }
@@ -8661,6 +8695,13 @@ void Application::liveIncrementalGrepSearch() {
   promptEditor_.redraw();
 }
 
+// (2026-09-11追記): 以下はK-32/K-34(^J^S EGREP、^J^C CUTのregex亜種)が
+// この関数を使っていた頃の経緯だが、startGrepPrompt()自身のコメント
+// 参照の統一により、EGREP/CUT-Regexはもうこの関数を呼ばない(FGREPと
+// 同じ空のプロンプトから始まる)――以下の説明はRecentFile/
+// RecentDirectory/ManName/ProgramCommand(K-44/K-42、下の方の追記参照)
+// が引き続きこの関数に依存している理由の歴史的記録として残す。
+//
 // K-32/K-34(^J^S EGREP、^J^C CUTのregex亜種、usilicrc自身のK-31..K-34
 // の文書化による「Select string」――K-31/K-33の「Input string」
 // FGREP/CUT-fixedとは異なる): 実際のlegacy-usilicへの直接のPTYテスト
@@ -8774,13 +8815,15 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
   else if (currentMode_ == ApplicationMode::Man) cutOrigin_ = CutOrigin::Man;
   else if (currentMode_ == ApplicationMode::Locate) cutOrigin_ = CutOrigin::Locate;
   else if (currentMode_ == ApplicationMode::Du) cutOrigin_ = CutOrigin::Du;
-  // Regex("^J^C"、「Select string」): EGREPと同じく、直接候補リスト
-  // へ開く――なぜかについてはstartGrepPrompt()/startRegexPromptList()
-  // 自身のコメント参照(2026-08-05のユーザー報告が特にここでCUTを
-  // 名指しした、なぜならその2つの亜種は――FGREP/EGREPとは異なり――
-  // どちらがアクティブかを示す他の目に見える手がかりが無い、同一の
-  // "CUT"というモードライン名を共有するため)。
-  if (syntax == GrepSyntax::Regex) return startRegexPromptList(PromptKind::CutPattern);
+  // 2026-09-11削除、直接のユーザー依頼(startGrepPrompt()自身のコメント
+  // 参照、"CUTも同様。基本拡張表現（GREP仕様）に統一してほしい"、
+  // AskUserQuestionで(a)候補一覧だけ廃止を選択): 以前はRegex("^J^C"、
+  // 「Select string」)だけEGREPと同じ理屈でstartRegexPromptList()
+  // 経由の直接候補リストへ開いていたが、この統一によりCUT-Fixed/
+  // CUT-Regexのどちらも同じ空のプロンプトから始まるようにした――CUTの
+  // セグメント分割・ラベル付き一覧というCUT自身の仕組み(この関数の
+  // 他の全て)は一切変更していない、変わるのは検索パターン入力の
+  // 起動方法だけである。
   activatePrompt(PromptKind::CutPattern, "");
   return true;
 }
@@ -8806,13 +8849,9 @@ bool Application::startCutFilePrompt(GrepSyntax syntax) {
   path += entry->name;
   cutFileSourcePath_ = path;
   cutSyntax_ = syntax;
-  // Regex("^J^B"): バッファ亜種自身の^J^Cと同じ「直接候補リストへ
-  // 開く」という扱い――startCutPrompt()/startRegexPromptList()自身の
-  // コメント参照。executeCut()は、パターンがライブなタイプから来た
-  // か選ばれたリストの項目から来たかに関わらず、(上で設定された)
-  // cutFileSourcePath_を読むので、この経路についてここで他に変える
-  // 必要は無い。
-  if (syntax == GrepSyntax::Regex) return startRegexPromptList(PromptKind::CutPattern);
+  // 2026-09-11削除: バッファ亜種のstartCutPrompt()と同じ統一により、
+  // Regex("^J^B")も直接候補リストへは開かず、Fixedと同じ空のプロンプト
+  // から始まる――詳細はstartCutPrompt()自身のコメント参照。
   activatePrompt(PromptKind::CutPattern, "");
   return true;
 }
@@ -9754,11 +9793,9 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   // 意図的に適用されない: そのケースは、legacy自身の生の、重複を
   // 含む呼び出しリストの実際のスクリーンショット(⑪)に裏付けられ、
   // まさに上のコメントが既に決着させたものである――この修正は、
-  // タイプが始まる「前」に^J^S/^J^Cが開く別個の直接入力の候補リスト
-  // だけに関係する(legacy自身の参照されたスクリーンショット㊳/㊴が
-  // 「その」リストがソートされていることを示すのに合わせている)、
-  // そしてGrepPattern/CutPatternについてのみ(MAN/LOCATE/PROGRAM
-  // 自身の直接入力の無い呼び出しは手を付けられていない)。
+  // タイプが始まる「前」に開く別個の直接入力の候補リストだけに関係
+  // する(legacy自身の参照されたスクリーンショット㊳/㊴が「その」
+  // リストがソートされていることを示すのに合わせている)。
   // RecentFile/RecentDirectory(2026-08-17追加、K-46/K-48)は「常に」
   // directEntry経由で到達する(この2つには別個の「タイプ中の本物の
   // ^R呼び出し」という入り口は無い――startListBrowser()が唯一の呼び
@@ -9768,29 +9805,23 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   // sortedUniqueRecentEntries()を直接呼んでいた)ので、ここでその
   // 同じ順序を保つことは、新しい挙動の変更ではなく、そのまま持ち
   // 越すだけである。
-  bool sortDirectEntryList = directEntry && (category == RingCategory::RecentFgrepPattern ||
-                                              category == RingCategory::RecentEgrepPattern ||
-                                              category == RingCategory::RecentFile ||
+  // 2026-09-11修正、直接のユーザー依頼(startGrepPrompt()自身の
+  // コメント参照、"FGREPおよびEGREPを同じ仕様に統一...候補一覧は
+  // 廃棄"): 以前はGrepPattern/CutPatternについてもRegex構文の場合
+  // だけこのdirectEntryの直接入力候補リストへ開いていたが
+  // (startRegexPromptList()自身の、EGREP/CUT-Regexを直接候補リストへ
+  // 開いていた古い呼び出し元参照)、その候補一覧自体が廃止された今、
+  // GrepPattern/CutPatternがdirectEntry==trueでここに来ることは無く
+  // なった――RecentFgrepPattern/RecentEgrepPatternをこの判定に含める
+  // 意味も無くなったので外した(この2つのringが指す実際の履歴表示は、
+  // 引き続き下のchronological分岐(タイプ中の本物の^R呼び出し)経由で
+  // 提供される)。
+  bool sortDirectEntryList = directEntry && (category == RingCategory::RecentFile ||
                                               category == RingCategory::RecentDirectory);
   listBrowserChronological_ = !sortDirectEntryList;
   std::vector<std::string> items;
   if (sortDirectEntryList) {
     items = sortedUniqueRecentEntries(category);
-    // usilicrc自身のGREPセクション(2026-08-28、全体の経緯について
-    // はApplication自身のコンストラクタのコメント参照):
-    // RecentEgrepPatternはもう構築時にシードされないので、代わりに
-    // シード値は「ここで」、直接入力の候補リストを構築する唯一の
-    // 場所でマージされなければならない――^R自身の時系列の分岐(下の
-    // `else`)は、それが本物の使用履歴だけを表示することを意図されて
-    // いるので、意図的にこれを行わ「ない」。CutPatternのregex亜種は
-    // この同じring(そこでもcategory == RecentEgrepPattern、
-    // startPromptHistoryRecall()自身のswitch参照)を共有するので、
-    // 別個の分岐を必要とせずに同じcategoryのチェックでカバーされる。
-    if (category == RingCategory::RecentEgrepPattern) {
-      std::set<std::string> merged(items.begin(), items.end());
-      merged.insert(configuration_.grepSeedPatterns().begin(), configuration_.grepSeedPatterns().end());
-      items.assign(merged.begin(), merged.end());
-    }
   } else {
     const std::deque<std::string> &recent = history_.recentEntries(category);
     items.assign(recent.begin(), recent.end());
@@ -10636,18 +10667,24 @@ bool Application::executeGrep(const std::string &pattern) {
     return false;
   }
   // 2026-09-09追加、直接のユーザー提案(.steering/20260909-grep-inline-
-  // highlight/requirements.md参照): GREP(^S、Basic構文)が
-  // isGrepInPlaceEligibleMode()(自身のコメント参照)対象のモード起点
-  // の場合だけ、専用の一覧画面(下のApplicationMode::Grepへの遷移)へは
-  // 切り替えず、in-place方式(activateGrepInPlace()自身のコメント参照)
-  // へ分岐する。^O^S(FGREP)/^J^S(EGREP)は今回のスコープ外として全て
-  // 従来通り下の一覧モードのままにする(2026-09-09時点の当初の決定を
-  // 維持)。当初(2026-09-09)はDirectory/Fileの2モードだけに限定して
-  // いたが、2026-09-11、直接のユーザー依頼("^Sと^[iをFILE/DIR以外
-  // (現状GREPが稼働している全てのモード)へも反映してほしい")により
-  // Man/Locate/Du/Archive/ArchiveContent/Shell/CutContent/ListBrowser/
-  // Keyへ拡張した。
-  if (grepSyntax_ == GrepSyntax::Basic && isGrepInPlaceEligibleMode(grepReturnMode_)) {
+  // highlight/requirements.md参照): isGrepInPlaceEligibleMode()(自身の
+  // コメント参照)対象のモード起点の場合だけ、専用の一覧画面(下の
+  // ApplicationMode::Grepへの遷移)へは切り替えず、in-place方式
+  // (activateGrepInPlace()自身のコメント参照)へ分岐する。当初
+  // (2026-09-09)はGrepSyntax::Basic(^S/^[i)限定、Directory/Fileの2
+  // モードだけに限定していたが、2026-09-11、直接のユーザー依頼("^Sと
+  // ^[iをFILE/DIR以外(現状GREPが稼働している全てのモード)へも反映して
+  // ほしい")によりMan/Locate/Du/Archive/ArchiveContent/Shell/
+  // CutContent/ListBrowser/Keyへ拡張した。さらに同日、EGREP検索結果
+  // 一覧で選択してもFILE上の該当箇所へ飛ばずEGREP自身の候補一覧に
+  // 戻ってしまうバグの報告をきっかけに、ユーザーから
+  // "FGREPおよびEGREPを同じ仕様に統一して欲しい。違いは直値および
+  // 拡張正規表現で検索が行われる点...候補一覧は廃棄"という統一依頼が
+  // あり、GrepSyntax::Basicへの限定も撤廃した――FGREP(^O^S)/EGREP
+  // (^J^S)も含め、grepSyntax_の値に関わらずisGrepInPlaceEligibleMode()
+  // だけで判定する(startGrepPrompt()自身のコメントも参照、EGREP用の
+  // 候補一覧起動(startRegexPromptList())自体をこの統一で廃止した)。
+  if (isGrepInPlaceEligibleMode(grepReturnMode_)) {
     grepInPlaceOriginMode_ = grepReturnMode_;
     return activateGrepInPlace();
   }

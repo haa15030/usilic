@@ -502,6 +502,20 @@ class ContentView {
   // どうかを判定するためのフラグ(true/falseの記録だけ、描画自体はしない)。
   void setGrepInPlaceOverlay(bool active);
   bool grepInPlaceActive() const;
+  // setGrepInPlaceLabel()/grepInPlaceLabel(): 2026-09-11追加、直接の
+  // ユーザー依頼("FGREPおよびEGREPを同じ仕様に統一して欲しい")により
+  // FGREP/EGREPもGREP(Basic)と同じin-place方式になったのに伴う追加。
+  // 以前は各ModeLineFieldsProviderがgrepInPlaceActive()/
+  // grepNoMatchActive()の間、name欄をリテラルな"GREP"へ無条件に
+  // 差し替えていた(GrepSyntax::Basicしかin-place化されていなかった
+  // 頃はそれで正しかった)――FGREP/EGREPも同じ経路を通るようになった今、
+  // それらの検索については代わりに"FGREP"/"EGREP"を出す必要がある。
+  // Application::activateGrepInPlace()/executeGrep()のNo-match分岐が、
+  // grepSyntax_から実際のラベル(grepSyntaxLabel()自身の定義参照)を
+  // ここへ渡す――ContentViewはGrepMode/GrepSyntaxより下位のレイヤー
+  // なので、それらの型自体は持ち込まず、素の文字列だけを保持する。
+  void setGrepInPlaceLabel(std::string label);
+  const std::string &grepInPlaceLabel() const;
   // grepNoMatchActive()/reportGrepNoMatchMessage()/clearGrepNoMatchMessage():
   // 上と対になる、マッチ0件時のメッセージ表示フラグ。メッセージ本体は
   // setPositionTextOverride(message, plain=true)でposition枠へ直接
@@ -1304,6 +1318,9 @@ class ContentView {
   // 参照(2026-09-11、DirectoryMode/FileModeから一本化)。
   bool grepInPlaceActive_ = false;
   bool grepNoMatchActive_ = false;
+  // setGrepInPlaceLabel()自身の宣言コメント参照(2026-09-11追加、
+  // FGREP/EGREP/GREP統一)。
+  std::string grepInPlaceLabel_ = "GREP";
   // setGrepMatchHighlight()自身のコメント参照(旧FileMode::
   // setGrepMatchHighlight()から一本化): セッション最初の1回だけ
   // lines_を「本当にクリーンな」スナップショットとして保持し、以後は

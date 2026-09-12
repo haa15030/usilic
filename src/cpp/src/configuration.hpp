@@ -270,13 +270,18 @@ class Configuration {
   // 参照。
   void setCommandForTest(ConfiguredRole role, ProgramCommand command);
 
-  // -- シードリスト(GREP/PROGRAMディレクティブ) --
-  // FGREP/EGREPおよびPROGRAMプロンプトで、履歴/自動補完の候補として
-  // 提供されるあらかじめ用意されたパターン/コマンド――単純な順序
-  // 付きリスト。legacyの並行するLIST*/STR*木のペアは、純粋に内部
-  // 検索構造上の最適化であり、「これらの文字列の順序付き列」という
-  // 以上のユーザーに見える形は持っていなかった。
-  const std::vector<std::string> &grepSeedPatterns() const;
+  // -- シードリスト(PROGRAMディレクティブ) --
+  // PROGRAMプロンプトで、履歴/自動補完の候補として提供されるあらか
+  // じめ用意されたコマンド――単純な順序付きリスト。legacyの並行する
+  // LIST*/STR*木のペアは、純粋に内部検索構造上の最適化であり、
+  // 「これらの文字列の順序付き列」という以上のユーザーに見える形は
+  // 持っていなかった。
+  // (2026-09-11削除: 以前ここにあったgrepSeedPatterns()/GREPディレク
+  // ティブは、それを使っていたEGREP/CUT-Regexの候補一覧自体が
+  // startGrepPrompt()自身のコメント参照の統一により廃止されたため、
+  // 完全に不要になった。usilicrc自身のGREP:セクションは、既存の設定
+  // ファイルとの互換性のため引き続き認識される構文だが、内容は解析
+  // されるだけで捨てられる――load()自身のcase 5コメント参照。)
   const std::vector<std::string> &programSeedCommands() const;
 
   // -- スカラー設定 --
@@ -319,7 +324,6 @@ class Configuration {
 
   std::map<ConfiguredRole, ProgramCommand> roleCommands_;
 
-  std::vector<std::string> grepSeedPatterns_;
   std::vector<std::string> programSeedCommands_;
 
   std::string allowedControlBytes_;

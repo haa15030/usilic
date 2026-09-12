@@ -128,7 +128,7 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
       // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
       // 反映してほしい"): DirectoryMode等自身の同じ分岐のコメント参照。
       // trailing3は元々currentArchive_(検索元)なので変更不要。
-      fields.name = "GREP";
+      fields.name = view_.grepInPlaceLabel();
       fields.trailing2 = "(grep)";
     }
     return fields;

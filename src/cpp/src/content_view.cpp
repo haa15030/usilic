@@ -561,6 +561,10 @@ void ContentView::setPositionTextOverride(std::optional<std::string> text, bool 
 void ContentView::setGrepInPlaceOverlay(bool active) { grepInPlaceActive_ = active; }
 bool ContentView::grepInPlaceActive() const { return grepInPlaceActive_; }
 
+// setGrepInPlaceLabel()自身の宣言コメント参照(content_view.hpp)。
+void ContentView::setGrepInPlaceLabel(std::string label) { grepInPlaceLabel_ = std::move(label); }
+const std::string &ContentView::grepInPlaceLabel() const { return grepInPlaceLabel_; }
+
 // DirectoryMode::reportGrepNoMatchMessage()自身の旧コメント参照
 // (2026-09-11、こちらへ一本化): plain=trueで非ハイライト表示にする
 // (直接のユーザー指摘: "非ハイライトの「〜:No String」を表示して

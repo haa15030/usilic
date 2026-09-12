@@ -202,90 +202,6 @@ struct Fixture {
 
 }  // namespace
 
-// -- usilicrc's GREP section: seeds RecentEgrepPattern at construction --
-// (2026-08-05: Configuration::grepSeedPatterns() already parsed this
-// section, with its own doctest coverage, but nothing ever consumed
-// it -- these get a fresh Configuration/History/Application built
-// LOCALLY, in that order, rather than reusing Fixture: Fixture's own
-// configuration.loadRcText() call runs in ITS constructor BODY, which
-// is always AFTER its app{} member has already finished constructing
-// (C++ member init order follows declaration order, not the
-// initializer list), so seeding-at-construction can never be observed
-// through Fixture regardless of what rc text it loads.)
-
-// 2026-08-28 redesign, a direct user report ("登録済みのパターンは
-// 履歴ではなく検索に使用するための文字列候補に過ぎない"): usilicrc's
-// GREP section is a static CANDIDATE list (legacy's own str.c conf_grep()
-// loads it into a separate LIST *lg, distinct from hp->ss.p.hegrep --
-// the ring save_history() only grows when a search is actually
-// SUBMITTED, menu.c:833). Pre-seeding RecentEgrepPattern itself (the
-// OLD 2026-08-05 fix this replaces) conflated the two, so ^R (which
-// legacy's own M_hist shows as the genuine USAGE history) displayed
-// these static seeds even on a session where nothing has ever been
-// searched. Now: RecentEgrepPattern itself stays empty until a real
-// search happens, but the seeds still appear in the DIRECT-ENTRY
-// candidate list (^J^S itself), merged in at display time -- see
-// Configuration::grepSeedPatterns()'s own callers.
-TEST_CASE_FIXTURE(Fixture, "usilicrc's GREP seed patterns appear in the ^J^S direct-entry candidate list, "
-                           "but do NOT seed RecentEgrepPattern itself (so ^R's own usage-history view stays "
-                           "genuinely empty until a real search has been submitted)") {
-  configuration.loadRcText("GREP\n \"diff \\-\"\n ^Question\n \"^Subject: \"\n", true);
-  REQUIRE(app.start(path()));
-
-  // history_ itself: no seeding at construction.
-  CHECK(history.recentEntries(RingCategory::RecentEgrepPattern).empty());
-
-  // The ^J^S candidate list still shows the seeds (real CUI defaults,
-  // matching the original 2026-08-05 report this test used to cover).
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  const auto &items = app.listBrowserMode().items();
-  CHECK(std::find(items.begin(), items.end(), "diff \\-") != items.end());
-  CHECK(std::find(items.begin(), items.end(), "^Question") != items.end());
-  CHECK(std::find(items.begin(), items.end(), "^Subject: ") != items.end());
-}
-
-// 2026-08-28: ^R (real usage history, toggleListBrowserHistory()'s
-// chronological branch) with usilicrc GREP seeds present but NOTHING
-// ever actually searched yet -- must come back empty (the seeds are
-// candidates to search WITH, not history of searches already done),
-// shown via the existing "No String" empty-placeholder convention
-// (listBrowserView_.setEmptyPlaceholder(), already wired since
-// 2026-08-13 -- this redesign just makes RecentEgrepPattern itself
-// genuinely empty here for the first time, so that existing mechanism
-// now actually applies).
-TEST_CASE_FIXTURE(Fixture, "^R usage-history view is genuinely empty (\"No String\") when usilicrc has GREP "
-                           "seeds but nothing has ever actually been searched") {
-  configuration.loadRcText("GREP\n \"diff \\-\"\n ^Question\n \"^Subject: \"\n", true);
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  CHECK(app.feedByte(0x12, std::nullopt));  // ^R: toggle to chronological usage history
-  CHECK(app.listBrowserMode().items().empty());
-  CHECK(display.rowText(0).find("No String") != std::string::npos);  // content row, not the mode line
-}
-
-// 2026-08-28: once a real search IS submitted, ^R's own chronological
-// view shows exactly that one submitted pattern -- not the seeds too.
-TEST_CASE_FIXTURE(Fixture, "^R usage-history view shows ONLY an actually-submitted search, not usilicrc's own "
-                           "GREP seeds") {
-  configuration.loadRcText("GREP\n \"diff \\-\"\n ^Question\n \"^Subject: \"\n", true);
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U: start editing, clear the pre-filled seed
-  feedText("plain\\.txt");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.handleCommand(Command::Back));  // -> back to candidate list (LIFO)
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  CHECK(app.feedByte(0x12, std::nullopt));  // ^R: toggle to chronological usage history
-  const auto &items = app.listBrowserMode().items();
-  REQUIRE(items.size() == 1);
-  CHECK(items[0] == "plain\\.txt");
-}
-
 // -- resolveCommand: the new keystroke->Command table --
 
 TEST_CASE("resolveCommand: special keys map to movement, with left/right as up/down synonyms") {
@@ -1235,297 +1151,15 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J followed by an unrecognized byte fails 
   CHECK(app.feedByte('j', std::nullopt));
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^S (StartEgrep) opens directly into the candidate-pattern list, "
-                           "not a blank prompt (2026-08-05: \"Select string\" per usilicrc's own K-32 "
-                           "documentation, confirmed against real legacy-usilic PTY behavior)") {
-  REQUIRE(app.start(path()));
-  app.feedByte(0x0a, std::nullopt);
-  CHECK(app.feedByte(0x13, std::nullopt));
-  CHECK_FALSE(app.promptActive());
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-}
-
-// -- feedRegexListByte: legacy's own EGREP/CUT-regex list is a live
-// combobox, not a pure picker (2026-08-05 user report: "新たな文字列は
-// 入力できないし既存の文字列編集も受け付けない") -- see its own
-// definition comment for the design (a curated set of navigation
-// bytes stays list-only, everything else transitions into an editable
-// prompt pre-filled with the highlighted candidate).
-
-TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: ^N/^P still navigate the EGREP candidate list without "
-                           "leaving it (regression check: these must stay list-only, not trigger the "
-                           "edit-transition)") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "three");
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  // Cursor starts on the TOP (oldest) entry for this direct-entry path
-  // (2026-08-11 fix -- see promptHistoryRecallIsDirectEntry_'s own
-  // comment: legacy's mode.c distinguishes M_fgrep/M_locate/M_cut2's
-  // direct entry, defaulting to the top, from a real ^R recall's own
-  // T_hfgrep/T_hegrep, which starts on the newest/bottom entry
-  // instead), so ^N (down) is the one guaranteed not to be a no-op
-  // boundary bounce here; ^P (up) is tried second, back to the
-  // starting position.
-  int startIndex = app.activeContentView().cursorIndex();
-
-  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-  CHECK(app.activeContentView().cursorIndex() != startIndex);
-
-  CHECK(app.feedByte(0x10, std::nullopt));  // ^P
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-  CHECK(app.activeContentView().cursorIndex() == startIndex);
-}
-
-// 2026-08-28 fix, a direct user report ("CLAUDE.md上で^J^S→モードライン
-// に戻り値がない"): listBrowserView_'s own ModeLineFieldsProvider only
-// ever showed a trailing2 destination when grepReturnMode_ was
-// Directory -- the exact same narrow special-case drawPromptLabel()'s
-// own destinationMode logic had already been corrected away from (see
-// its own comment: "Restricting to 'only when the destination is
-// Directory' was equally arbitrary"), just never mirrored to this read-
-// only candidate-list screen. previousModeName(File) already returns
-// the real file path generically, so reusing it here fixes this without
-// a new File-specific branch.
-TEST_CASE_FIXTURE(Fixture, "EGREP direct-entry candidate list: shows a trailing2 destination even when "
-                           "returning to FILE mode, not just Directory") {
-  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> EGREP direct entry
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  // Tail-truncated to 16 chars by truncatedTrailingPath() when longer
-  // (the fixture's own temp path always is) -- "plain.txt" itself, the
-  // last 9 chars, is always within that tail regardless of the full
-  // path's own length.
-  CHECK(display.rowText(23).find("plain.txt") != std::string::npos);
-}
-
-TEST_CASE_FIXTURE(Fixture, "startPromptHistoryRecall (2026-08-12 fix): the EGREP/CUT candidate list's own "
-                           "visible caret sits at the END of the mode line's own trailing field (the "
-                           "candidate text shown there), not at the highlighted content row -- a direct "
-                           "user correction: \"『候補一覧のハイライト行末尾へ正しくカーソルを移動する設計』"
-                           "が有効なのはハイライト行を選択する場合の話で文字入力はモードラインで行われる"
-                           "ので最下行の文字列末尾にないとおかしい\" (that design is right for SELECTING a "
-                           "row, but text input happens in the mode line, so the caret belongs there), "
-                           "independently confirmed by a real macOS report that ATOK's own input-mode icon "
-                           "(drawn under the system's actual text caret) was appearing over the top content "
-                           "row instead") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  CHECK(display.cursorRow() == 23);  // the mode line (24-row fixture), NOT row 0 (the highlighted candidate)
-  CHECK_FALSE(display.visibleCursorHidden());
-
-  // A plain FILE/DIR/PROGRAM-command picker (Enter simply selects, no
-  // live-editing paradigm) must NOT get this treatment -- regression
-  // check for the same code path. ^G here goes straight to Directory
-  // (2026-08-12 fix: EGREP's own candidate list no longer resumes a
-  // blank prompt on ^G -- see returnFromListBrowser()'s own comment),
-  // so a single ^G is enough to get back to Directory to start a
-  // DIFFERENT list from.
-  REQUIRE(app.handleCommand(Command::Back));
-  REQUIRE(app.currentMode() == ApplicationMode::Directory);
-
-  history.pushRecent(RingCategory::ShellCommand, "echo hi");
-  REQUIRE(app.handleCommand(Command::StartCommandHistory));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  CHECK(display.cursorRow() == 0);
-}
-
-TEST_CASE_FIXTURE(Fixture, "returnFromListBrowser (2026-08-12 fix): ^G from the candidate list reached via "
-                           "item 275's own LIFO return from Grep results clears the STALE \"EGREP: pattern\" "
-                           "search annotation too, landing on the TRUE plain (ls) the whole excursion "
-                           "started from -- a direct user correction: \"戻り値が(ls)ならちゃんとそこ"
-                           "（(ls)でEGREPしたので当然(ls)のはず）へ戻ってほしい\". Before this fix, "
-                           "currentMode_ was correctly restored to Directory, but the annotation set by the "
-                           "earlier openSelectedGrepMatch() lingered, so the screen still read as \"just "
-                           "picked a match\" instead of a genuinely fresh (ls)") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartEgrep));  // ^J^S
-  REQUIRE(app.feedByte(0x15, std::nullopt));         // ^U: start editing, clear the seed
-  feedText("plain");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit -- search from the candidate list
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // select the match
-  REQUIRE(app.currentMode() == ApplicationMode::Directory);
-  REQUIRE(app.directoryMode().hasSearchAnnotation());  // "EGREP: plain" now showing
-
-  REQUIRE(app.handleCommand(Command::Back));  // ^G #1: Directory+annotation -> Grep results
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.handleCommand(Command::Back));  // ^G #2: results -> candidate list (LIFO, item 275)
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  REQUIRE(app.handleCommand(Command::Back));  // ^G #3: candidate list -> should be TRUE plain (ls)
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK_FALSE(app.directoryMode().hasSearchAnnotation());  // NOT still showing "EGREP: plain"
-}
-
-// 2026-08-22 fix, item 405 -- docs/HISTORY.md:10208, a direct user
-// report: "（ls）のCLAUDE.md上で^J^B→...引き続き^G→...（ls）からCUTの
-// 正規表現検索文字列一覧モードを起動してるんで戻り値の通り（ls）へ戻
-// らないと". returnFromListBrowser()'s 2026-08-12 "^G from the direct-
-// entry candidate list returns straight to where it was invoked from"
-// fix was scoped to PromptKind::GrepPattern only at the time, with a
-// note deferring CutPattern "for now" since CUT hadn't been exercised
-// enough yet to know if the same gap mattered there. It does: CUT's
-// own ^J^B/^J^C open into the exact same kind of direct-entry candidate
-// list via startRegexPromptList(PromptKind::CutPattern) (see
-// startCutFilePrompt()/startCutPrompt()'s own calls), so ^G with
-// nothing typed/selected fell through to the same "reopen a blank
-// editable prompt" fallback GrepPattern used to, instead of landing
-// back on the plain Directory listing the search was launched from.
-TEST_CASE_FIXTURE(Fixture, "returnFromListBrowser (2026-08-22 fix, item 405): ^G from CUT's own regex "
-                           "direct-entry candidate list (^J^B on a selected file), with nothing typed or "
-                           "selected, returns straight to the Directory listing it was invoked from -- "
-                           "not a reopened blank CUT prompt") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("log.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-
-  REQUIRE(app.handleCommand(Command::StartCutFileRegex));  // ^J^B on log.txt, cursor still in Directory
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  CHECK_FALSE(app.promptActive());  // direct entry into the list itself, not a live editable prompt yet
-
-  REQUIRE(app.handleCommand(Command::Back));  // ^G, nothing typed/selected
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK_FALSE(app.promptActive());  // NOT a reopened blank CUT prompt
-  CHECK_FALSE(app.directoryMode().hasSearchAnnotation());
-}
-
-TEST_CASE_FIXTURE(Fixture, "listBrowserView_'s own ModeLineFieldsProvider (2026-08-12 fix): the truncated "
-                           "destination-directory field is right-justified to the SCREEN's own edge, not "
-                           "drawn immediately after the candidate-preview text's own gap -- a real report + "
-                           "reference screenshot (=ac): \"戻り値自体はいいけど位置が右端じゃない\" (the "
-                           "value itself is fine, but the position isn't at the right edge) -- "
-                           "drawPromptLabel()'s own matching field was already right-justified via an "
-                           "explicit moveCursor(), this provider's own trailing2 wasn't") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "x");
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  std::string row = display.rowText(23);
-  std::string dir = app.directoryMode().currentDirectory();
-  std::string expectedTail = dir;
-  // Still the usual 16 here (unlike drawPromptLabel()'s own field,
-  // 2026-08-28 fix): this is listBrowserView_'s own SEPARATE
-  // ModeLineFieldsProvider, rendered through renderModeLine()'s own
-  // budget-aware truncateFieldByKind() pipeline (unaffected by that
-  // fix, which only touches drawPromptLabel()'s hand-rolled column math).
-  if (expectedTail.size() > 16) expectedTail = "..." + expectedTail.substr(expectedTail.size() - 16);
-  // Ends at the VERY LAST column, not somewhere in the middle of the row.
-  CHECK(row.substr(row.size() - expectedTail.size()) == expectedTail);
-  CHECK(row.back() == expectedTail.back());
-}
-
-TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: the candidate list's own \"NN/MM TOP/END\" position stays "
-                           "visible in the mode line once editing starts (2026-08-12 fix: a direct user "
-                           "correction -- \"[bs]→「1/10 TOP」が消滅\", i.e. backspacing an existing "
-                           "candidate straight into editing used to drop this the instant editing began, "
-                           "even though it had been on screen the whole time the list was just being "
-                           "browsed)") {
-  REQUIRE(app.start(path()));
-  // 10 entries, matching the double-digit "01/10" zero-padding real
-  // screenshots showed (ModeLine::format() zero-pads current to
-  // total's own digit width -- 2 entries would format as "1/2", not
-  // "01/02").
-  for (int i = 0; i < 10; i++) history.pushRecent(RingCategory::RecentEgrepPattern, "pattern" + std::to_string(i));
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  CHECK(app.feedByte(0x7f, std::nullopt));  // backspace: transitions into editing
-  CHECK(app.promptActive());
-  // "01/10 TOP" -- cursor started on the top (oldest) direct-entry
-  // candidate, per promptHistoryRecallIsDirectEntry_'s own comment.
-  CHECK(display.rowText(23).find("01/10 TOP") != std::string::npos);
-}
-
-TEST_CASE_FIXTURE(Fixture, "activatePrompt (2026-08-12 fix): the candidate's own text lands at the EXACT "
-                           "same column once editing starts as it sat at while just browsing -- a real "
-                           "report + reference screenshot found it shifted one column to the right (an "
-                           "earlier version of the positionText fix above double-counted the gap after the "
-                           "position field: one increment for the space actually drawn before it, another "
-                           "+1 folded into the length-plus-gap increment after it, six vs. the seven the "
-                           "listBrowserView_-provider math above actually produces)") {
-  REQUIRE(app.start(path()));
-  for (int i = 0; i < 10; i++) history.pushRecent(RingCategory::RecentEgrepPattern, "pattern" + std::to_string(i));
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  std::string browsingRow = display.rowText(23);
-  std::size_t browsingCol = browsingRow.find("pattern0");
-  REQUIRE(browsingCol != std::string::npos);
-
-  // ^U doesn't move the cursor before starting to edit (unlike ^A/^E/
-  // ^B/^F, which would confound this column comparison), so the
-  // freshly-drawn seed text's own STARTING column is directly
-  // comparable to where it sat while browsing.
-  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U: starts editing, clears the seed
-  REQUIRE(app.promptActive());
-  // The field is now empty (^U cleared it), so compare the CURSOR's
-  // own column instead -- it sits right where "pattern0" itself
-  // started (the field's own col0_), which must match browsingCol.
-  CHECK(display.cursorCol() == static_cast<int>(browsingCol));
-}
-
-TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^N/^P keep cycling through the STILL-VISIBLE candidate list "
-                           "even after editing has started, re-seeding the prompt with each newly-"
-                           "highlighted candidate's own text -- 2026-08-12 fix, a direct user report: "
-                           "typing a character correctly starts editing, but \"^N^Pが利かなくなる（他の"
-                           "ハイライト文字列へ移れない）\" (^N/^P stop working -- can't move to another "
-                           "highlighted string)") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "aaa");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "bbb");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "ccc");
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  std::string first = *app.listBrowserMode().selectedItem();
-
-  CHECK(app.feedByte('X', std::nullopt));  // starts editing, appends 'X'
-  REQUIRE(app.promptActive());
-  CHECK(app.promptText() == first + "X");
-
-  REQUIRE(app.feedByte(0x0e, std::nullopt));  // ^N: cycle to the next candidate
-  CHECK(app.promptActive());                  // still editing -- ^N didn't cancel/submit
-  std::string second = *app.listBrowserMode().selectedItem();
-  CHECK(second != first);
-  // Re-seeded with the NEW candidate's own text, not "first+X" with
-  // anything appended/replaced -- the in-progress "X" edit is
-  // deliberately discarded (matching a combobox's own "cycle through
-  // the ORIGINAL suggestions" semantics).
-  CHECK(app.promptText() == second);
-
-  REQUIRE(app.feedByte(0x10, std::nullopt));  // ^P: cycle back
-  CHECK(app.promptText() == first);
-}
-
-TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: typing a character while browsing the EGREP candidate list "
-                           "transitions into an editable prompt PRE-FILLED with the highlighted candidate's "
-                           "own text, with the typed character appended -- this IS \"editing an existing "
-                           "string\", not starting from blank") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "three");
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  std::string highlighted = *app.listBrowserMode().selectedItem();
-
-  CHECK(app.feedByte('X', std::nullopt));
-  CHECK(app.promptActive());
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.promptText() == highlighted + "X");
-}
+// 2026-09-11削除、直接のユーザー依頼("FGREPおよびEGREPを同じ仕様に
+// 統一して欲しい...候補一覧は廃棄"): このコメントより上のブロックには
+// 以前、^J^S(EGREP)/^J^C系(CUT-Regex)が開いていた専用の候補一覧
+// (ApplicationMode::ListBrowser、feedRegexListByte()の"live combobox"
+// 挙動、そのモードライン独自のtrailing2/caret位置/TOP-END表示、LIFO
+// 経由の戻り方等)だけを検証するテストが多数あったが、その候補一覧
+// 自体が廃止された(startGrepPrompt()自身のコメント参照)ため、対応する
+// テスト群を削除した――ManName(^J^M)は影響を受けないので、その候補
+// 一覧のテストは下にそのまま残している。
 
 // 2026-08-15 addition: a real user report ("^J^M→「No String」はいい
 // けどモードラインに入力できない") -- key.c's own input_key() groups
@@ -1549,38 +1183,15 @@ TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: typing a character while browsing
   CHECK(app.promptText() == highlighted + "X");
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: backspace while browsing the EGREP candidate list also "
-                           "transitions into editing, applied to the highlighted candidate's own text") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "three");
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  std::string highlighted = *app.listBrowserMode().selectedItem();
-  REQUIRE_FALSE(highlighted.empty());
-
-  CHECK(app.feedByte(0x7f, std::nullopt));  // DEL
-  CHECK(app.promptActive());
-  CHECK(app.promptText() == highlighted.substr(0, highlighted.size() - 1));
-}
-
-TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: Enter still submits the highlighted candidate as-is "
-                           "(regression check: the edit-transition must not interfere with plain "
-                           "pick-from-the-list use)") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "three");
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  std::string highlighted = *app.listBrowserMode().selectedItem();
-
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter
-  CHECK(app.currentMode() == ApplicationMode::Grep);
-  CHECK_FALSE(app.promptActive());
-  const auto &ring = history.recentEntries(RingCategory::RecentEgrepPattern);
-  CHECK(ring.back() == highlighted);
-}
+// (2026-09-11削除: EGREPの候補一覧backspace/Enterテスト2件――
+// startGrepPrompt()自身のコメント参照の統一で候補一覧自体が廃止された
+// ため。Enter版は削除前、StartEgrep後にapp.listBrowserMode().selectedItem()
+// が返すstd::optionalが常にnulloptになった(EGREPがもうListBrowserへ
+// 一切入らないため)状態で`*`により無条件に間接参照しておりSIGSEGVで
+// クラッシュした――これは統一後の実装に潜む新規バグではなく、除去された
+// UIの状態を前提にしたテスト側の作法自体が古くなっていただけと判断した
+// (production側の該当箇所には他に同種の無条件`*std::optional`間接参照
+// は無く、このテストコード自体にのみ存在した)。)
 
 // -- GREP: starting a search prompt, typing a pattern, submitting --
 
@@ -1591,16 +1202,25 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartFgrep): opens a prompt without le
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: typing a pattern then ^M runs a real fgrep search over the directory listing") {
+// 2026-09-11修正、直接のユーザー依頼("FGREPおよびEGREPを同じ仕様に
+// 統一して欲しい...候補一覧は廃棄"): FGREPもGREP(Basic)と同じin-place
+// 方式になった(executeGrep()自身のコメント参照)ので、Directory起点なら
+// もうApplicationMode::Grepへは切り替わらない――上の"in-place GREP
+// (Directory origin)"テストと同じ検証パターンに合わせる。
+TEST_CASE_FIXTURE(Fixture, "feedByte: typing a pattern then ^M runs a real fgrep search over the directory "
+                           "listing, in-place (stays in Directory mode, matching GREP/Basic)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("plain.txt");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M submits
 
   CHECK_FALSE(app.promptActive());
-  CHECK(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // never switches to ApplicationMode::Grep
   REQUIRE(app.grepMode().matches().size() == 1);
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("FGREP") != std::string::npos);
+  CHECK(modeLine.find("(grep)") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^G cancels a pending prompt without starting a search") {
@@ -1827,106 +1447,42 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: an unrecognized, UNQUOTED control by
   CHECK(app.promptActive());                // still editing, not cancelled/submitted
 }
 
-TEST_CASE_FIXTURE(Fixture, "grepView_'s empty-result placeholder reads \"<pattern>: No String\", not "
-                           "ContentView's generic \"--\" -- and shows plain (not full reverse-video), with "
-                           "ONLY \"No String\" underlined (2026-08-12, two rounds of user correction: first "
-                           "\"EGREPはファイルの切り分けではないので「--」ではなくて「No String」\" (EGREP "
-                           "isn't CUT's own region-splitting, so its empty placeholder shouldn't reuse "
-                           "CUT's \"--\" marker), then \"ハイライトだと選択可能文字列と紛らわしいので"
-                           "アンダーライン\" + \"マッチしないと検索対象文字列情報が失われるので「abc: No "
-                           "String」かつ「No String」のみアンダーライン\" (full reverse-video reads as "
-                           "\"selectable\", which this isn't -- underline instead; and losing which "
-                           "pattern was searched is its own problem, so show it with only the \"No "
-                           "String\" suffix underlined)") {
+// 2026-09-11修正、直接のユーザー依頼のFGREP/EGREP統一(startGrepPrompt()
+// 自身のコメント参照): 以前はここでFGREPの0件マッチが専用の
+// ApplicationMode::Grep結果画面(grepView_)の"<pattern>: No String"
+// プレースホルダーへ表示されることを検証していたが、FGREPもGREP(Basic)
+// と同じin-place方式になったため、Directory等のin-place対象モード
+// からの0件マッチはもうこの画面へ一度も到達しない――代わりに"in-place
+// GREP: no match shows a temporary, LOCATE-style mode-line message"の
+// テスト(そのコメント参照、activateGrepInPlace()がfalseを返しモード
+// ラインへ一時メッセージを出すだけでセッションを開始しない)と全く同じ
+// 経路を通ることを、FGREP自身のワイヤリング確認として検証する。
+// grepView_自身のプレースホルダー描画ロジック(GrepMode単体としての
+// 書式)は引き続きtest_grep_mode.cppで検証されている。
+TEST_CASE_FIXTURE(Fixture, "FGREP no-match search takes the same in-place \"temporary message\" path as "
+                           "GREP/Basic, not the old separate grepView_ results screen") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("this-pattern-matches-nothing-at-all");
   // A zero-match search is still a SUCCESSFUL search (GrepMode::search()'s
   // own comment: "exit 1 = ran fine but found none -- both are a
-  // successful search"), so this enters Grep mode with an empty
-  // matches_ list, not a rejected/failed submission.
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.grepMode().matches().empty());
-  std::string expected = "this-pattern-matches-nothing-at-all: No String";
-  CHECK(display.rowText(0).substr(0, expected.size()) == expected);
-  // Not fully reverse-video: the pattern prefix's own first cell must
-  // NOT be in standout.
-  CHECK_FALSE(display.standoutAt(0, 0));
-  // "No String" itself is underlined, the "<pattern>: " prefix is not.
-  int underlineFrom = static_cast<int>(expected.size() - std::string("No String").size());
-  CHECK_FALSE(display.underlineAt(0, 0));
-  CHECK(display.underlineAt(0, underlineFrom));
-  CHECK(display.underlineAt(0, static_cast<int>(expected.size()) - 1));
+  // successful search") -- activateGrepInPlace() itself returns false on
+  // zero matches (see its own comment), so submitting here must NOT
+  // start a session or switch modes.
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));  // ^M
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.grepMode().matches().empty());
+  const std::string &row = display.rowText(display.rows() - 1);
+  CHECK(row.find("FGREP") != std::string::npos);
+  CHECK(row.find("this-pattern-matches-nothing-at-all: No String") != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "startRegexPromptList (^J^S/^J^C, 2026-08-12 fix): the direct-entry candidate "
-                           "list is sorted + de-duplicated, not shown in raw load/chronological order -- a "
-                           "direct user request (avoiding future duplicate growth as usilicrc's own GREP "
-                           "section is edited over time), scoped ONLY to this direct-entry list, not to a "
-                           "real ^R recall while typing (that case was already deliberately corrected to "
-                           "stay raw/chronological earlier, backed by a real legacy screenshot)") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "zzz");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "aaa");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "aaa");  // duplicate
-  history.pushRecent(RingCategory::RecentEgrepPattern, "mmm");
-  REQUIRE(app.handleCommand(Command::StartEgrep));  // ^J^S: direct-entry candidate list
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  const auto &items = app.listBrowserMode().items();
-  std::vector<std::string> sorted(items.begin(), items.end());
-  CHECK(std::is_sorted(sorted.begin(), sorted.end()));
-  CHECK(std::adjacent_find(sorted.begin(), sorted.end()) == sorted.end());  // no consecutive duplicates
-  // A genuinely REAL ^R recall (not direct entry) still shows raw
-  // chronological order, duplicate "aaa" included -- unaffected by
-  // this fix. Reached by typing a character right here (the SAME
-  // open list's own edit-transition, matching how legacy's own
-  // T_hegrep real-recall is only ever reachable from an ALREADY-
-  // active EGREP prompt -- ^J^S has no separate "start blank" entry
-  // point of its own to invoke instead).
-  REQUIRE(app.feedByte('X', std::nullopt));
-  REQUIRE(app.promptActive());
-  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
-  CHECK(app.listBrowserMode().items().back() == "mmm");  // newest at the bottom, chronological
-}
-
-TEST_CASE_FIXTURE(Fixture, "ensureShellActive (2026-08-12 fix): jumping into Shell mode from a still-"
-                           "in-progress ^J^S/^J^C candidate-list recall (via ^J^W, not that recall's own "
-                           "^G/Enter/edit-start consumption path) no longer leaves promptHistoryRecallKind_ "
-                           "stale -- a real report: start, ^J^S, ^J^W, run a shell command, then ^R at the "
-                           "live SHELL prompt showed the ListBrowser mode line reading \"EGREP\" instead of "
-                           "\"PROGRAM\", and selecting an entry ran an EGREP search using the shell command "
-                           "text as the pattern instead of inserting it into the command line") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartEgrep));  // ^J^S
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  bool ok = app.feedByte(0x0a, std::nullopt);  // ^J
-  ok = app.feedByte(0x17, std::nullopt) && ok;  // ^W -- shellInsertBufferContent()
-  if (!ok) {
-    MESSAGE("bash not available or handshake failed -- skipping");
-    return;
-  }
-  REQUIRE(app.currentMode() == ApplicationMode::Shell);
-  // Matches the report's own "|sort" [return] step: a real shell
-  // command actually having been run (pushed into RingCategory::
-  // ShellCommand) is what makes the later ^R meaningful at all. The
-  // only entry in this ring in this test, so it's also the only (and
-  // therefore already-selected) item in the ^R list below.
-  history.pushRecent(RingCategory::ShellCommand, "echo shell-history-marker");
-
-  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R at the live SHELL prompt
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(app.listBrowserMode().items() == std::vector<std::string>{"echo shell-history-marker"});
-
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter: select it
-  // openSelectedListEntry() checks promptHistoryRecallKind_ BEFORE
-  // shellHistoryRecallActive_ -- the bug had the former still stale
-  // (== GrepPattern), so this used to run executeGrep("echo shell-
-  // history-marker") instead (currentMode() would come back as Grep,
-  // not Shell, and the shell command line would be untouched).
-  CHECK(app.currentMode() == ApplicationMode::Shell);
-  CHECK(app.shell().commandLine().text() == "echo shell-history-marker");
-}
+// (2026-09-11削除: 上の2件――EGREPの直接入力候補一覧自体のソート/
+// 重複排除の検証、およびその候補一覧からの^J^W経由のensureShellActive()
+// リグレッションテスト――はどちらも、startGrepPrompt()自身のコメント
+// 参照の統一で廃止されたEGREP候補一覧(ApplicationMode::ListBrowser)
+// の存在を前提にしていた。EGREPは今やFGREPと同じ空のプロンプトから
+// 始まるため、この2つのシナリオ自体がもう発生し得ない。)
 
 // 2026-08-05: feedPromptByte() (every prompt kind routed through it --
 // MAN/LOCATE/FGREP/EGREP/CUT/PROGRAM/PathInput/Copy/Move/Remove/.../
@@ -1948,8 +1504,11 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: DEL/^H backspaces the prompt text before i
   feedText("t");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // ^M submits "plain.txt"
 
+  // 2026-09-11修正: FGREPもGREP(Basic)と同じin-place方式になった
+  // (startGrepPrompt()自身のコメント参照)ため、Directory起点では
+  // ApplicationMode::Grepへ切り替わらない。
   CHECK_FALSE(app.promptActive());
-  CHECK(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.currentMode() == ApplicationMode::Directory);
   REQUIRE(app.grepMode().matches().size() == 1);
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
 }
@@ -1973,7 +1532,13 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^H (0x08) also backspaces the prompt text,
   CHECK(fgrepRing[0] == "hello");
 }
 
-TEST_CASE_FIXTURE(Fixture, "GREP: searching from File mode returns to File mode on Back") {
+// 2026-09-11修正、直接のユーザー依頼のFGREP/EGREP統一(startGrepPrompt()
+// 自身のコメント参照): FGREPもGREP(Basic)と同じin-place方式になった
+// ため、File起点の検索はもうApplicationMode::Grepへ切り替わらない――
+// "in-place GREP (File origin)"の既存テスト(そのコメント参照)と同じ
+// 検証パターンに合わせ、FGREP自身のワイヤリング確認として書き直す。
+TEST_CASE_FIXTURE(Fixture, "GREP: searching from File mode stays in File mode, in-place (matching GREP/Basic, "
+                           "FGREP's own syntax wiring)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -1983,298 +1548,41 @@ TEST_CASE_FIXTURE(Fixture, "GREP: searching from File mode returns to File mode 
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("hello");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.grepMode().matches().size() == 1);
 
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.currentMode() == ApplicationMode::File);  // never switches to ApplicationMode::Grep
   CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
-}
-
-TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match returns to Directory mode with the cursor on the "
-                           "matched entry and a \"FGREP: pattern\" mode-line annotation (2026-08-11 fix: "
-                           "a real report found Enter did nothing at all here)") {
-  REQUIRE(app.start(path()));
-  int expectedIdx = indexOf("plain.txt");
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("plain.txt");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-
-  CHECK(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.activeContentView().cursorIndex() == expectedIdx);
-  CHECK(app.activeContentView().modeLineText().find("FGREP: plain.txt") != std::string::npos);
-}
-
-// 2026-08-24 addition (docs/CHANGES.md item 418, a direct user
-// request: "LOCATE、FGREP等「.mp4」マッチ一覧上でも可能で"): a match
-// here already corresponds to a real directory entry, so an
-// EXEC-mapped suffix should fire on this SAME Enter, not require a
-// second one after landing back on the (ls) row. Uses the same
-// harmless "sh -c echo >> marker" EXEC trick as the Directory-mode
-// EXEC tests just below (see their own section header).
-TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match for an EXEC-mapped suffix runs EXEC immediately, in "
-                           "addition to the usual jump-back-to-(ls) landing") {
-  configuration.loadRcText("EXEC\n .marker sh -c 'echo EXECRAN >> \"$0\"'\n", true);
-  { std::ofstream(root / "target.marker") << "original\n"; }
-  REQUIRE(app.start(path()));
-  int expectedIdx = indexOf("target.marker");
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("target.marker");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-
-  CHECK(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Directory);  // still just lands back on (ls), same as before
-  CHECK(app.activeContentView().cursorIndex() == expectedIdx);
-
-  std::ifstream in(root / "target.marker");
-  std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  CHECK(content.find("EXECRAN") != std::string::npos);  // AND EXEC actually ran
-}
-
-TEST_CASE_FIXTURE(Fixture, "GREP: Back from the \"FGREP: pattern\"-annotated Directory listing returns to "
-                           "the still-intact grep results, even with an empty ModeStack (2026-08-11 fix: "
-                           "a real report found ^G did nothing here since there was no directory to pop "
-                           "back to)") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("plain.txt");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::Directory);
-  REQUIRE_FALSE(app.directoryMode().canGoBack());  // no subdirectory was ever entered
-
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.grepMode().matches().size() == 1);  // the original search results, not re-run
-  CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
-}
-
-// 2026-08-28 fix, a direct user report + precise repro ("CLAUDE.mdを
-// 開いた状態で^J^S...[return]で最上行を選択→戻り値が「~/git/usilic/」
-// のまま...これでは^Gで（ls）に戻ってしまう。検索結果一覧へ戻るのが
-// 筋なので戻り値は「EGREP: ^-」であるべき"), refined by a same-day
-// follow-up with exact before/after mode-line values ("EGREP: ^-"(不良,
-// on the LANDED-on-match screen specifically) vs "- レガシーC実装...
-// src/config.sh"(正解) -- the match's own line text, not the search
-// label, since the label is redundant once you're actually looking at
-// the match; the label belongs on the RESULTS-list screen instead, see
-// the grepView_ trailing3 test elsewhere): the File-mode counterpart to
-// the Directory-mode test just above -- before this fix,
-// openSelectedGrepMatch()'s special handling (annotation + routing ^G
-// back to the results list) only existed for the Directory case, so a
-// match reached via a File-mode-originated search landed back on the
-// file with its PLAIN mode line (no annotation) and Back went straight
-// to returnToDirectory() (the (ls) listing), skipping the results
-// screen the Directory case already preserves correctly.
-TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match (search run from File mode) returns to the file with the "
-                           "MATCHED LINE'S OWN TEXT as trailing2 (name unchanged), and Back returns to the "
-                           "grep results instead of the directory listing") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("hello");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
   REQUIRE(app.grepMode().matches().size() == 1);
-  std::string matchedText = app.grepMode().matches()[0].text;
-
-  CHECK(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());  // the file's own name, unchanged
-  CHECK(app.activeContentView().modeLineText().find(matchedText) != std::string::npos);
-  CHECK(app.activeContentView().modeLineText().find("FGREP: hello") == std::string::npos);
-
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Grep);  // NOT Directory -- see this test's own comment
-  REQUIRE(app.grepMode().matches().size() == 1);       // the original search results, not re-run
-
-  // 2026-08-28 fix, a real report ("^Gの連打で無限ループ"): a further
-  // Back from here used to bounce right back to Grep forever (annotation
-  // cleared but fileReturnMode_ stayed stuck at Grep) -- now correctly
-  // reaches File (plain), then Directory, and stays there.
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK_FALSE(app.fileMode().hasSearchAnnotation());
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  app.handleCommand(Command::Back);  // one more, for good measure (a legitimate no-op here) -- must NOT loop back to Grep
-  CHECK(app.currentMode() != ApplicationMode::Grep);
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("FGREP") != std::string::npos);
+  CHECK(modeLine.find("(grep)") != std::string::npos);
 }
 
-// 2026-08-28 fix, a real report + precise repro ("履歴Gが不良...②の
-// はずが上記①"): a search reached via the ^J^S candidate list (NOT a
-// plain StartFgrep, which skips the candidate list and goes straight to
-// an editable prompt -- see the test just above) sets
-// grepReturnsToCandidateList_, so returnFromGrep()'s OWN early-return
-// branch (re-entering the candidate list instead of jumping straight to
-// File) used to skip the annotation-clearing code entirely -- File's
-// own stale match annotation (from openSelectedGrepMatch()) survived
-// the whole candidate-list detour, so the NEXT time File's plain view
-// got shown it still read as "landed on the match" instead of "backed
-// all the way out", extending the ^G chain by one confusing extra hop.
-TEST_CASE_FIXTURE(Fixture, "GREP (search reached via the ^J^S candidate list, File origin): repeated Back "
-                           "correctly reaches the PLAIN file (no stale annotation) after re-entering the "
-                           "candidate list, not a second landing on the match") {
-  history.pushRecent(RingCategory::RecentEgrepPattern, "x");
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> EGREP direct entry (candidate list)
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U -> starts editing
-  feedText("hello");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-
-  REQUIRE(app.handleCommand(Command::Enter));  // select the top match
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-  REQUIRE(app.fileMode().hasSearchAnnotation());  // "①"
-
-  REQUIRE(app.handleCommand(Command::Back));  // -> "③" (results)
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-
-  REQUIRE(app.handleCommand(Command::Back));  // -> "④" (candidate list re-entered)
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  CHECK(app.handleCommand(Command::Back));  // -> should be "②" (plain file), NOT "①" again
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK_FALSE(app.fileMode().hasSearchAnnotation());
-}
-
-// 2026-09-19 re-reversal, a direct user report + side-by-side legacy
-// comparison ("CLAUDE.mdを選択→^Ssrc^M...モードラインはやはりおかしい。
-// GREPが二文字あるので...「GREP」「01/14 TOP」「1046」「(grep)」
-// 「GREP: src」...旧版を見てみたら「FGREP」「01/14 TOP」「(fgrep)」
-// 「/Users/haa15030/git/usilic/CLAUDE.md」となっていた...こちらが
-// 正しいと思う"): the 2026-08-28 choice (label+pattern here, see the
-// old version of this test's own comment, now corrected below) turned
-// out to read as a literal duplicated word whenever grepSyntax_ is
-// GrepSyntax::Basic -- name (top-left) and trailing3 both say "GREP"
-// verbatim ("GREP" ... "GREP: src"). A direct side-by-side comparison
-// against the real legacy binary (same file, same FGREP) showed legacy
-// shows the origin file's own raw path here instead, with no label
-// prefix at all -- reverting to that. The landed-match screen (the
-// test just above, openSelectedGrepMatch()'s File branch) is a
-// different screen and keeps its own convention (the matched line's
-// text) unchanged -- not part of today's report.
-TEST_CASE_FIXTURE(Fixture, "GREP results screen (grepView_, File origin): trailing3 shows the origin file's "
-                           "raw path, not a redundant \"<name>: <pattern>\" label") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("hello");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-
-  const std::string &row = display.rowText(23);
-  CHECK(row.find((root / "plain.txt").string()) != std::string::npos);
-  CHECK(row.find("FGREP: hello") == std::string::npos);
-}
-
-// 2026-08-28 fix, a direct user report + precise before/after mode-line
-// values ("「^-」「...usilic/CLAUDE.md」"(不良、隙間無し) vs "「^-」
-// 「...usilic/CLAUDE.md」"(正解、1桁の隙間あり)), refined by a same-day
-// follow-up ("^Uを投入したとたんに１文字左へ寄る症状。そこだけ直せば
-// いいのでは" -- confirming the READ-ONLY candidate list, rendered via
-// ContentView::renderModeLine()'s own budget-aware truncation, was
-// already correct; only drawPromptLabel()'s own separate, hand-rolled
-// column math -- reached via ^U's transition into live editing -- had
-// the bug): the trailing destination field must leave a real gap after
-// the editable field, not sit flush against it, while STILL never
-// writing to the row's true last column (79).
-TEST_CASE_FIXTURE(Fixture, "EGREP candidate list, ^U into edit mode (File origin, long path): the trailing "
-                           "destination field leaves a real gap after the editable field, and still never "
-                           "writes to the true last column") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> EGREP direct entry
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U
-  feedText("^-");
-  const std::string &row = display.rowText(23);
-  std::size_t dots = row.find("...");
-  REQUIRE(dots != std::string::npos);
-  CHECK(row[dots - 1] == ' ');                                       // a real gap column right before the trailing field
-  CHECK_FALSE(display.standoutAt(23, static_cast<int>(dots) - 1));   // and it's plain, not Standout
-  CHECK_FALSE(display.standoutAt(23, 79));                            // the true last column: never written to
-}
-
-// 2026-08-28 fix, a direct user report ("検索前には画面にあったブロック
-// カーソルが検索一覧のどれかを[return]後の画面では表示されない...どれ
-// がマッチ行かわかりづらい"): openSelectedGrepMatch() unconditionally
-// called hideVisibleCursor(), correct for the Directory case (whose own
-// full-row highlight already marks the current entry) but wrong for
-// File, which has no other highlight of its own and relies entirely on
-// the terminal's real caret to show the current line.
-TEST_CASE_FIXTURE(Fixture, "GREP: Enter on a match (search run from File mode) leaves the terminal's block "
-                           "cursor VISIBLE, on the matched line -- not hidden the way the Directory case is") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("world");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.grepMode().matches().size() == 1);
-
-  CHECK(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK_FALSE(display.visibleCursorHidden());
-  CHECK(display.cursorRow() == app.activeContentView().cursorDisplayRow());
-}
-
-TEST_CASE_FIXTURE(Fixture, "GREP: a second Back (out of the grep results reached via the first Back) "
-                           "clears the stale \"FGREP: pattern\" annotation instead of carrying it forward "
-                           "(2026-08-11 fix: a real report found the mode line still read \"FGREP: .json\" "
-                           "here instead of the plain \"(ls)\" a fresh Back-out-of-grep should show)") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("plain.txt");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.activeContentView().modeLineText().find("FGREP: plain.txt") != std::string::npos);
-  REQUIRE(app.handleCommand(Command::Back));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK_FALSE(app.directoryMode().hasSearchAnnotation());
-  CHECK(app.activeContentView().modeLineText().find("FGREP:") == std::string::npos);
-}
-
-TEST_CASE_FIXTURE(Fixture, "GREP: starting a nested search from within grep results fails") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("plain.txt");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-
-  CHECK_FALSE(app.handleCommand(Command::StartFgrep));
-  CHECK_FALSE(app.promptActive());
-}
+// (2026-09-11削除: このコメントより上の旧テストが検証していた
+// 「専用のGrep結果画面(ApplicationMode::Grep)へ切り替わり、Enterで
+// マッチへ着地→"FGREP: pattern"注釈→Backで結果一覧へ戻る」という一連の
+// 挙動は、FGREPがGREP(Basic)と同じin-place方式に統一された今、
+// Directory/File起点では構造上二度と到達しない――in-place方式では
+// currentMode_自体が最初から一度も変わらないため(「in-place GREP:
+// plain navigation/paging」テスト自身のコメント参照)、注釈もEXEC即時
+// 実行の特別扱いも「結果一覧へのBack」も、そもそも専用のGrep結果画面が
+// 存在した設計に固有のものだった。EXEC実行自体は、in-place検索中の
+// Enterが「本物のモード切り替え」として素通しされる(同テスト参照)ため、
+// 通常のDirectory::Enter/EXEC経路がそのまま動く――GREP固有のコードパス
+// ではなくなった。同様の理由で削除した旧テスト一覧: "GREP: Enter on a
+// match returns to Directory mode..."、"GREP: Enter on a match for an
+// EXEC-mapped suffix..."、"GREP: Back from the FGREP: pattern-annotated
+// Directory listing..."、"GREP: Enter on a match (search run from File
+// mode) returns to the file with the MATCHED LINE'S OWN TEXT..."、
+// "GREP (search reached via the ^J^S candidate list, File origin):
+// repeated Back..."(候補一覧自体も廃止済み)、"GREP results screen
+// (grepView_, File origin): trailing3..."、"EGREP candidate list, ^U
+// into edit mode (File origin, long path)..."(候補一覧自体も廃止済み)、
+// "GREP: Enter on a match (search run from File mode) leaves the
+// terminal's block cursor VISIBLE..."、"GREP: a second Back...clears
+// the stale FGREP: pattern annotation..."、"GREP: starting a nested
+// search from within grep results fails"(専用結果画面自体に前提を
+// 置いていた――in-place検索がアクティブな間に新たな検索を開始した
+// 場合の挙動は、この統一とは別の未検証の論点として残る)。)
 
 // -- feedByte: ^Jc / ^J^C leader sequences for CUT --
 
@@ -2290,10 +1598,13 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J c starts a CUT prompt (StartCutFixed) o
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C (StartCutRegex) also opens directly into the candidate list, "
-                           "same as EGREP (2026-08-05: see startCutPrompt()'s own comment -- unlike "
-                           "FGREP/EGREP, CUT's own two variants show identically as \"CUT\", so this is "
-                           "the only visible cue distinguishing regex/\"Select\" from fixed/\"Input\")") {
+// 2026-09-11修正、直接のユーザー依頼("CUTも同様。基本拡張表現
+// （GREP仕様）に統一してほしい"、AskUserQuestionで(a)候補一覧だけ廃止
+// を選択): ^J^C(StartCutRegex)はもう専用の候補一覧を開かず、
+// ^Jc(StartCutFixed)と全く同じ空のプロンプトから始まる――
+// startCutPrompt()自身のコメント参照。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C (StartCutRegex) now opens a blank prompt directly, same as "
+                           "StartCutFixed (candidate list removed)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -2301,8 +1612,9 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C (StartCutRegex) also opens directly 
 
   app.feedByte(0x0a, std::nullopt);
   CHECK(app.feedByte(0x03, std::nullopt));
-  CHECK_FALSE(app.promptActive());
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.promptText().empty());
 }
 
 // -- CUT: split, view a segment, resplit it, back out step by step --
@@ -2348,99 +1660,13 @@ TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): submitting a pattern from Dire
   CHECK(app.activeContentView().modeLineText().find("CUT:") == std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the ^J^C candidate list shows the real mode name and "
-                           "the destination directory highlighted on the right, not the fixed \"HISTORY\" "
-                           "name + unhighlighted mode-name badge a real ^R recall uses (a real report + "
-                           "legacy source read: direct entry via startRegexPromptList() is a different "
-                           "screen from ^R, per mode.c's own T_hfgrep/T_hegrep vs plain M_cut2)") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutRegex));  // ^J^C
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  std::string modeLine = app.activeContentView().modeLineText();
-  CHECK(modeLine.find("CUT") != std::string::npos);
-  CHECK(modeLine.find("HISTORY") == std::string::npos);
-  // 2026-08-12 fix: the destination directory is now truncated to its
-  // own last 16 characters (see truncatedTrailingPath()'s own
-  // comment) -- checking for path()'s own trailing 16 chars survives
-  // that truncation regardless of how long the fixture's temp dir path
-  // happens to be, unlike the full path() itself.
-  CHECK(modeLine.find(path().substr(path().size() - 16)) != std::string::npos);
-}
-
-TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the ^J^C candidate list starts on the TOP (oldest) "
-                           "entry, not the bottom -- a real report found it landing on the LAST seed "
-                           "pattern instead of the first") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "first");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "second");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "third");
-  REQUIRE(app.handleCommand(Command::StartCutRegex));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  CHECK(app.activeContentView().cursorIndex() == 0);
-  CHECK(*app.listBrowserMode().selectedItem() == "first");
-}
-
-TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the destination directory still shows even when the "
-                           "highlighted candidate's own long pattern text would overflow the row width -- "
-                           "fitModeLineFields() used to drop trailing/trailing2 together as one all-or-"
-                           "nothing unit, silently hiding the directory too even though it alone would fit") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, std::string(70, 'x'));  // deliberately overflows 80 cols
-  REQUIRE(app.handleCommand(Command::StartCutRegex));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  std::string modeLine = app.activeContentView().modeLineText();
-  CHECK(modeLine.find("CUT") != std::string::npos);
-  // 2026-08-12 fix: the destination directory is now truncated to its
-  // own last 16 characters (see truncatedTrailingPath()'s own
-  // comment) -- checking for path()'s own trailing 16 chars survives
-  // that truncation regardless of how long the fixture's temp dir path
-  // happens to be, unlike the full path() itself.
-  CHECK(modeLine.find(path().substr(path().size() - 16)) != std::string::npos);
-}
-
-TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the highlighted candidate's own preview text in the mode "
-                           "line is drawn plain (non-reverse-video), since that position reads as an "
-                           "editable text area (what typing would replace), not a static highlighted label "
-                           "-- a real report + reference screenshot found it wrongly highlighted") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "abc");
-  REQUIRE(app.handleCommand(Command::StartCutRegex));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  int modeLineRow = 23;  // rows()-1, the fixed mode-line row every ContentView uses
-  const std::string &row = display.rowText(modeLineRow);
-  CHECK(row.find("CUT") != std::string::npos);
-  CHECK(display.standoutAt(modeLineRow, 0));  // "CUT" itself is still highlighted, unaffected
-
-  std::size_t candidatePos = row.find("abc");
-  REQUIRE(candidatePos != std::string::npos);
-  CHECK_FALSE(display.standoutAt(modeLineRow, static_cast<int>(candidatePos)));
-}
-
-TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the candidate list stays visible on screen while editing "
-                           "starts (^U no longer replaces it with the full directory listing, which read "
-                           "confusingly identical to ^Jc's own plain fgrep-style prompt -- a real report)") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "abc");
-  REQUIRE(app.handleCommand(Command::StartCutRegex));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  CHECK(app.feedByte(0x15, std::nullopt));  // ^U: starts in-place editing
-  // currentMode_ switches internally so executeCut() resolves the
-  // right source at submit time (see feedRegexListByte()'s own
-  // comment) -- but what's actually ON SCREEN should still be the
-  // candidate list's own content, not the full directory listing.
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.promptActive());
-
-  bool foundCandidateRow = false;
-  for (int row = 0; row < 23; ++row) {
-    if (display.rowText(row).find("abc") != std::string::npos) foundCandidateRow = true;
-  }
-  CHECK(foundCandidateRow);
-}
+// (2026-09-11削除: 上の5件――^J^C候補一覧のモードライン名/戻り先
+// ハイライト/カーソル初期位置/長い候補のオーバーフロー処理/プレビュー
+// テキストの非反転表示/^U編集移行時の表示維持――は全て、
+// startCutPrompt()自身のコメント参照のCUT統一で廃止されたCUT-Regex
+// 専用の候補一覧(ApplicationMode::ListBrowser)を前提にしていた。
+// CUT-Regexは今やCUT-Fixedと全く同じ空のプロンプトから始まるため、
+// これらのシナリオ自体がもう発生し得ない。)
 
 TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^U clears from the field start to the cursor (2026-08-11 fix: "
                            "LineEditor::killToStart() already existed but was never wired to any actual "
@@ -2550,54 +1776,29 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W also works from CUT's plain pro
   CHECK(app.currentMode() == ApplicationMode::Shell);
 }
 
-TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): the full reported reproduction -- ^J^C, ^U to clear the "
-                           "pre-filled seed pattern, type a real pattern, Enter -- actually splits the "
-                           "directory listing instead of silently doing nothing") {
+// 2026-09-11修正、直接のユーザー依頼のCUT統一(startCutPrompt()自身の
+// コメント参照): ^J^Cはもう専用の候補一覧を開かず、^Jcと全く同じ空の
+// プロンプトから始まる――上の"CUT (2026-08-11 fix): submitting a
+// pattern from Directory mode splits..."と同じ検証パターンに合わせ、
+// StartCutRegex自身のワイヤリング確認として書き直す。
+TEST_CASE_FIXTURE(Fixture, "CUT (regex, ^J^C): now opens a blank prompt directly (candidate list removed) "
+                           "and splits the directory listing on submit, same as StartCutFixed") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutRegex));  // ^J^C: candidate list
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  CHECK(app.feedByte(0x15, std::nullopt));  // ^U: transitions to editable, pre-filled text cleared
-  CHECK(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.handleCommand(Command::StartCutRegex));  // ^J^C
   CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.promptText().empty());
 
   feedText("cpmv");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter
   CHECK(app.currentMode() == ApplicationMode::Cut);
   REQUIRE(app.cutMode().segments().size() == 4);
-}
 
-TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): Back from a Cut split reached via the ^J^C candidate "
-                           "list re-opens that SAME candidate list (a proper LIFO stack -- Directory -> "
-                           "list -> results, popping one level at a time), not Directory directly -- a "
-                           "direct user clarification: \"検索への入口がCUTなら出るときもCUTから出るはず\"") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutRegex));  // ^J^C: candidate list
-  CHECK(app.feedByte(0x15, std::nullopt));             // ^U: start editing
-  feedText("cpmv");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter: submits, lands in Cut
-  REQUIRE(app.currentMode() == ApplicationMode::Cut);
-
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // back to the candidate list, NOT Directory
-  // Confirms this is genuinely the CUT candidate-list-recall screen
-  // (not some other ListBrowser use, e.g. FILE/DIR picker) -- see the
-  // direct-entry mode-line fix's own test for what this field means.
-  CHECK(app.activeContentView().modeLineText().find("CUT") != std::string::npos);
-
-  // A second round-trip -- edit again, submit again -- still chains
-  // back to the candidate list, not Directory, since THIS submission
-  // also came from the list.
-  CHECK(app.feedByte(0x15, std::nullopt));
-  feedText("plain.txt");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Cut);
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-
-  // Only cancelling FROM the candidate list itself (^G there) reaches
-  // Directory.
+  // Back from this split returns straight to Directory now (the LIFO
+  // "return to the candidate list" chain no longer exists) -- matching
+  // "CUT (2026-08-11 fix): Back from a Cut split reached via ^Jc's
+  // plain blank prompt..." just below, since ^J^C and ^Jc are now the
+  // exact same entry path.
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
@@ -2687,22 +1888,26 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin, regex ^J^B): ^R-reca
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
+  // 2026-09-11修正、直接のユーザー依頼のCUT統一(startCutPrompt()自身の
+  // コメント参照): StartCutFileRegex(^J^B)はもう専用の候補一覧を開かず、
+  // 空のプロンプトから始まる。Backも1回でDirectoryへ直接戻る。
   REQUIRE(app.handleCommand(Command::StartCutFileRegex));  // ^J^B -- the exact variant the report used
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
   REQUIRE(app.cutMode().segments().size() == 3);  // see the earlier "splits the SELECTED entry" test
 
-  // Regex (direct-entry) CUT's own LIFO stack (see PendingCpMvRmOperation-
-  // style comments elsewhere: "検索への入口がCUTなら出るときもCUTから
-  // 出るはず"): the FIRST ^G returns to the candidate list itself, not
-  // straight to Directory -- matching the report's own literal
-  // "^G→^R" (a single ^G before ^R), not "^G^G→^R".
   REQUIRE(app.handleCommand(Command::Back));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
 
-  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R: restarts the SAME candidate list as a real history view
+  // 今度は「本物の」^R(タイプ中の呼び戻し)でlog.txtを再度ターゲットに
+  // 選び直す -- cutFileSourcePath_がディレクトリ一覧ではなく実際の
+  // ファイル自身を指したままであることの確認。
+  REQUIRE(app.handleCommand(Command::StartCutFileRegex));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.handleCommand(Command::Enter));  // select "marker" (the only/newest entry)
 
   CHECK(app.currentMode() == ApplicationMode::Cut);
@@ -2987,8 +2192,12 @@ TEST_CASE_FIXTURE(Fixture, "CUT: works from DU too, splitting the results list, 
 // startCutPrompt()自身の新設コメント参照)――そのためFGREP/EGREPは
 // 実装変更無しで既にMAN/LOCATE/DUから使えていたはずだが、実際にDUから
 // 検証しておく。
-TEST_CASE_FIXTURE(Fixture, "FGREP: already worked from DU (no gate on startGrepPrompt()) -- Back returns to "
-                           "Du, not Directory") {
+// 2026-09-11修正、直接のユーザー依頼のFGREP/EGREP統一(startGrepPrompt()
+// 自身のコメント参照): FGREPもGREP(Basic)と同じin-place方式になった
+// ため、DU(isGrepInPlaceEligibleMode()対象)起点ではもうApplicationMode::
+// Grepへ切り替わらず、DUのままマッチをハイライトする。
+TEST_CASE_FIXTURE(Fixture, "FGREP: already worked from DU (no gate on startGrepPrompt()) -- stays in DU, "
+                           "in-place (matching GREP/Basic)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDu));
   waitForDu(app);
@@ -2997,10 +2206,10 @@ TEST_CASE_FIXTURE(Fixture, "FGREP: already worked from DU (no gate on startGrepP
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("plain");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  CHECK(app.currentMode() == ApplicationMode::Grep);
-
-  REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Du);
+  const std::string &modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find("FGREP") != std::string::npos);
+  CHECK(modeLine.find("(grep)") != std::string::npos);
 }
 
 // -- feedByte: ^Jm / ^J^M leader sequences for MAN --
@@ -3705,13 +2914,20 @@ TEST_CASE_FIXTURE(Fixture, "Space (Locate mode): runs `qlmanage -p` on the highl
 // Directory-ORIGIN Grep (matched rows == real directory entries) is
 // covered; a File-origin Grep (matched LINES within one already-known
 // file) deliberately is not.
+// 2026-09-11修正、直接のユーザー依頼のFGREP/EGREP統一(startGrepPrompt()
+// 自身のコメント参照): FGREPもin-place方式になりDirectoryのまま切り
+// 替わらなくなったので、executeQuickLook()自身の`currentMode_==Grep
+// かつgrepReturnMode_==Directory`という専用分岐はもう到達しない――
+// カーソルが既にマッチしたエントリ上にあるので、通常のDirectory分岐
+// (targetEntries()、単一カーソルエントリへフォールバック)がそのまま
+// 正しく動く。
 TEST_CASE_FIXTURE(Fixture, "Space (Grep mode, Directory origin): runs `qlmanage -p` on the directory "
                            "entry the highlighted match came from") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("plain.txt");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // in-place, never switches to ApplicationMode::Grep
 
   std::string receivedCommand;
   app.programMode().setForegroundLauncher([&](const std::string &command) {
@@ -3733,7 +2949,7 @@ TEST_CASE_FIXTURE(Fixture, "Space (Grep mode, File origin): plain PageDown -- a 
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("hello");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.currentMode() == ApplicationMode::File);  // in-place, never switches to ApplicationMode::Grep
 
   bool launcherCalled = false;
   app.programMode().setForegroundLauncher([&](const std::string &) {
@@ -3895,19 +3111,18 @@ TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile): the return-value fie
   CHECK(row.find("FILE") != std::string::npos);
 }
 
-// 2026-09-11追加、直接のユーザー報告("usilic -c で起動→^X^F^J^S
-// ^Uusilic^M→...→^G→^G（なぜ2回？）"): EGREPの検索結果を確定した後、
-// ^Gで1段階ずつ戻る際、`returnFromGrep()`自身の`grepReturnsToCandidateList_`
-// LIFO再入場が`startRegexPromptList()`経由で`startPromptHistoryRecall()`
-// を「再度」呼ぶ――その時点で`promptHistoryContext_`は既に空になって
-// いるため、無条件に退避する実装だとその2回目の呼び出しが「空」を
-// 退避して、1回目の呼び出しで退避したはずのRecentFileコンテキストを
-// 上書き・破壊してしまい、EGREP自身の候補一覧から`^X^F`元のRecentFile
-// 一覧へ戻る「はず」の2回目の^Gが、画面上何も変わらない(無反応に見える)
-// バグを引き起こしていた。
-TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile) full back-out chain: Grep results -> ^G -> EGREP's "
-                           "own candidate list -> ^G -> the ORIGINAL RecentFile list is restored (not stuck "
-                           "showing EGREP's candidates again)") {
+// 2026-09-11修正、直接のユーザー依頼のFGREP/EGREP統一(startGrepPrompt()
+// 自身のコメント参照): ^J^Sはもう専用の候補一覧を開かない――
+// RecentFile一覧(ListBrowser、isGrepInPlaceEligibleMode()対象)を
+// 閲覧中に起動しても、その場に空のプロンプトが重なるだけで、提出後は
+// ListBrowser自身のまま(専用のGrep結果画面へは切り替わらない)、
+// RecentFileの項目群自体がin-place方式でハイライトされる。これにより
+// 元々の2つのバグ(候補一覧からの2段階戻りが1回目で無反応になる/検索が
+// EGREP自身の候補一覧を対象にしてしまう)はどちらも、その原因だった
+// 専用候補一覧自体が無くなったことで構造上再発し得なくなった。
+TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile): EGREP now searches the RecentFile paths "
+                           "in-place, staying in ListBrowser mode (never a separate candidate list or "
+                           "results screen), and a plain Back ends the session and returns to File") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -3917,37 +3132,24 @@ TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile) full back-out chain: 
 
   REQUIRE(app.handleCommand(Command::StartFileHistory));
   REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -- ^J^S = EGREP, opens its own candidate list
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  feedText(".");  // clears the seeded candidate, types a regex matching (almost) everything
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-
-  REQUIRE(app.handleCommand(Command::Back));  // ^G #1: back to EGREP's own candidate list
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  REQUIRE(app.handleCommand(Command::Back));  // ^G #2: should restore the ORIGINAL RecentFile list
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -- ^J^S = EGREP
+  CHECK(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-  // The restored list must contain the real file path, not EGREP's own
-  // regex-pattern candidates (proving RecentFile content was actually
-  // re-populated, not just left stuck showing EGREP's list again).
-  const auto &items = app.listBrowserMode().items();
-  CHECK(std::find(items.begin(), items.end(), filePath) != items.end());
+
+  feedText(".");  // matches (almost) everything, including the real file path just visited
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // in-place, never a separate results screen
+  REQUIRE(app.grepMode().matches().size() >= 1);
+  bool matchedRealPath = false;
+  for (const auto &m : app.grepMode().matches()) matchedRealPath = matchedRealPath || (m.text == filePath);
+  CHECK(matchedRealPath);  // searched the real RecentFile paths, not some unrelated candidate list
+
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::File);
 }
 
-// 2026-09-11追加、直接のユーザー報告("^X^F^J^S^Uusilic^M→検索結果は
-// usilicが一件だけ"): EGREPは`startRegexPromptList()`が
-// `grepReturnMode_`(=ListBrowser)を設定した「直後」に、それ自身の
-// 候補パターン一覧で`listBrowserView_`の中身を上書きしてしまうため、
-// 実際にパターンを確定する時点では`viewForMode(grepReturnMode_).
-// lines()`はもう`RecentFile`の実際のパス群では「なく」EGREP自身の
-// 候補パターン一覧に置き換わっていた――たまたま打ち込んだパターン
-// 文字列自身がその候補一覧に含まれていると、いかにも本物の検索結果
-// らしい「1件だけヒット」を返してしまい、発覚しにくいバグだった。
 TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile): EGREP actually searches the RecentFile paths "
-                           "themselves, not EGREP's own (unrelated) regex-pattern candidate list that "
-                           "happens to be displayed at the moment the search executes") {
+                           "themselves, not some other content") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -3955,35 +3157,18 @@ TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile): EGREP actually searc
   REQUIRE(app.currentMode() == ApplicationMode::File);
   std::string filePath = app.fileMode().currentFile();
 
-  // Seed the EGREP pattern-history ring with a pattern equal to a
-  // SUBSTRING of the real file path -- reproducing the exact trap: if
-  // the search were run against EGREP's own candidate list instead of
-  // the RecentFile paths, this literal ring entry would itself be the
-  // "1 match" (a false positive that looks like a real result).
-  std::string trap = filePath.substr(filePath.size() - 7);  // last few chars of the real path
-  history.pushRecent(RingCategory::RecentEgrepPattern, trap);
-
   REQUIRE(app.handleCommand(Command::StartFileHistory));
   REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -- ^J^S = EGREP, opens its own candidate list (now
-                                               // containing `trap`, replacing listBrowserView_'s RecentFile
-                                               // content)
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  // ^U (kill-to-start) first, matching the real user repro exactly --
-  // the candidate list pre-seeds the editable field with `trap` itself
-  // (the ring's own top entry), so typing `trap` again without
-  // clearing first would append onto it (a separate, unrelated
-  // append-on-seed quirk of this shared candidate-list editor), never
-  // matching anything.
-  REQUIRE(app.feedByte(0x15, std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -- ^J^S = EGREP
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  // A pattern matching a SUBSTRING unique to the real file path -- if
+  // this searched anything other than the real RecentFile paths, this
+  // would come back with zero matches instead.
+  std::string trap = filePath.substr(filePath.size() - 7);
   feedText(trap);
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // in-place, never a separate results screen
 
-  // If this searched EGREP's own candidate list, the single match
-  // would be the literal ring entry `trap` itself. It must instead be
-  // the real file's full path.
   REQUIRE(app.grepMode().matches().size() == 1);
   CHECK(app.grepMode().matches()[0].text == filePath);
 }
@@ -4164,10 +3349,13 @@ TEST_CASE_FIXTURE(Fixture, "FGREP started from LOCATE results (^S) searches the 
   feedText(knownLocateLine);
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
-  CHECK(app.currentMode() == ApplicationMode::Grep);
-  // Not garbled by a mismatched-view redraw: the results screen's own
-  // provider (grepView_'s) is now live, showing "FGREP", not whatever
-  // directoryView_'s "(ls)"-shaped provider would have left behind.
+  // 2026-09-11修正: FGREPもin-place方式になったため、LOCATE
+  // (isGrepInPlaceEligibleMode()対象)のままマッチをハイライトする
+  // ――専用の結果画面(ApplicationMode::Grep)へは切り替わらない。
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+  // Not garbled by a mismatched-view redraw: locateView_自身の
+  // ModeLineFieldsProviderがgrepInPlaceActive()の間に出す"FGREP"を
+  // 表示している。
   CHECK(app.activeContentView().modeLineText().substr(0, 5) == "FGREP");
   const auto &matches = app.grepMode().matches();
   REQUIRE_FALSE(matches.empty());
@@ -6268,43 +5456,14 @@ TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W) registers <homeDirec
   CHECK(std::find(ring.begin(), ring.end(), savedDir) != ring.end());
 }
 
-TEST_CASE_FIXTURE(Fixture, "shellInsertBufferContent (^J^W) also works from WITHIN the ^J^S/^J^C candidate "
-                           "list (2026-08-11 fix: a real report + reference screenshot comparison against "
-                           "legacy found ^J^W became literal \"JW\" text in the edited pattern instead, "
-                           "since feedRegexListByte() didn't know leader sequences exist -- matches key.c's "
-                           "own T_input-vs-list-navigation distinction: leader bytes are commands everywhere "
-                           "except while actually editing text). Still uses the w.N fallback (2026-08-18 "
-                           "REDESIGN, see shellInsertBufferContent()'s own comment) -- ListBrowser has no "
-                           "established \"mode name\" concept the way Directory/File now do, so this scenario "
-                           "keeps the old behavior rather than becoming a silent no-op and breaking the "
-                           "ensureShellActive() regression test right above, which relies on ^J^W reaching "
-                           "Shell from exactly this same context") {
-  REQUIRE(app.start(path()));
-  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
-  REQUIRE(app.handleCommand(Command::StartEgrep));  // ^J^S: candidate list
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  bool ok = app.feedByte(0x17, std::nullopt);  // ^W
-  if (!ok) {
-    MESSAGE("bash not available or handshake failed -- skipping");
-    return;
-  }
-  CHECK(app.currentMode() == ApplicationMode::Shell);
-  std::string wPath = (root / ".usilic" / "w.1").string();
-  // Single-quoted -- see the ^J^S candidate-list test above's own
-  // 2026-08-27 comment.
-  CHECK(app.shell().commandLine().text() == "cat '" + wPath + "'");
-
-  // The written buffer is the candidate LIST's own content (one
-  // pattern per line), not the directory listing underneath it.
-  std::ifstream in(wPath);
-  REQUIRE(in.good());
-  std::string firstLine;
-  std::getline(in, firstLine);
-  CHECK((firstLine == "one" || firstLine == "two"));
-}
+// (2026-09-11削除: このテストはEGREP自身の候補一覧(^J^Sで
+// ApplicationMode::ListBrowserへ直接入る挙動)を前提にしていたが、
+// startGrepPrompt()自身のコメント参照の統一によりその候補一覧自体が
+// 廃止されたため、シナリオごと成立しなくなった。同等の趣旨(プレーンな
+// FGREP/EGREPプロンプトから^J^Wが機能すること)は、既存の
+// "feedPromptByte: ^J^W (SHELL: insert buffer content) works from a
+// PLAIN FGREP prompt too, not just the ^J^S candidate list"テストで
+// 引き続きカバーされている。)
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ESC followed by an unrecognized byte fails cleanly") {
   REQUIRE(app.start(path()));
@@ -7854,29 +7013,12 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from Cut mode shows \"CUT\
 // comment on why). Fixed by suspending (not discarding)
 // promptHistoryRecallKind_/Text_/IsDirectEntry_ across the Shell
 // excursion and restoring them in returnFromShell().
-TEST_CASE_FIXTURE(Fixture, "CUT (regex, file, ^J^B): a quick ^J^W-then-^G round trip through Shell, with "
-                           "NOTHING ever typed into the candidate list, restores it correctly labeled "
-                           "\"CUT\" -- not mislabeled \"EGREP\" (which shares its own ring)") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("cpmv_a.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-
-  REQUIRE(app.handleCommand(Command::StartCutFileRegex));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  CHECK(app.activeContentView().modeLineText().find("CUT") != std::string::npos);
-
-  if (!app.handleCommand(Command::ShellInsertBufferContent)) {
-    MESSAGE("bash not available or handshake failed -- skipping");
-    return;
-  }
-  REQUIRE(app.currentMode() == ApplicationMode::Shell);
-
-  REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-  std::string text = app.activeContentView().modeLineText();
-  CHECK(text.find("CUT") != std::string::npos);
-  CHECK(text.find("EGREP") == std::string::npos);
-}
+// (2026-09-11削除: このテストはCUT-Regex(^J^B)自身の候補一覧
+// (ApplicationMode::ListBrowser)を前提にしていたが、startCutPrompt()
+// 自身のコメント参照のCUT統一によりその候補一覧自体が廃止された
+// (^J^BはFixedと同じ空のプロンプトから始まり、currentMode_はDirectory
+// のまま)ため、"候補一覧がShell経由の往復後にEGREPと誤表示される"と
+// いうシナリオごと成立しなくなった。)
 
 // 2026-09-08、直接のユーザー依頼によるキー再編で^X^Klから^J^Olへ移行
 // (旧^X^Kサブリーダーが廃止され、ERROR/LOGは^J^O自体をネストした新設
@@ -8441,7 +7583,9 @@ TEST_CASE_FIXTURE(Fixture, "FGREP results: mode line shows the program badge \"(
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("plain");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  // 2026-09-11修正: FGREPもin-place方式になったため、Directoryのまま
+  // (専用の結果画面へは切り替わらない)。
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
 
   std::string row = display.rowText(23);
   // 2026-09-05変更(直接のユーザー依頼、"fgrepとegrepの代わりにgrep -F
@@ -8986,17 +8130,19 @@ TEST_CASE_FIXTURE(Fixture, "prompt labels: EXIT also shows the previous mode's n
   CHECK(display.standoutAt(row, display.columns() - 1) == true);  // filled reversed to the right edge
 }
 
-TEST_CASE_FIXTURE(Fixture, "prompt labels: FGREP shows its own name in the (still blank-prompt) bottom "
-                           "row; EGREP shows its own name as the candidate list's own badge (2026-08-05: "
-                           "EGREP no longer opens a blank prompt at all -- see startGrepPrompt()'s own "
-                           "comment)") {
+// 2026-09-11修正、直接のユーザー依頼のFGREP/EGREP統一(startGrepPrompt()
+// 自身のコメント参照): EGREPも今やFGREPと全く同じ空のプロンプトから
+// 始まる(専用の候補一覧は廃止された)ので、両方とも同じ検証で確認する。
+TEST_CASE_FIXTURE(Fixture, "prompt labels: FGREP and EGREP both show their own name in the (blank-prompt) "
+                           "bottom row -- candidate list removed, both use the same plain prompt path") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
   CHECK(display.rowText(display.rows() - 1).find("FGREP") != std::string::npos);
 
   REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G cancel
   REQUIRE(app.handleCommand(Command::StartEgrep));
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(display.rowText(display.rows() - 1).find("EGREP") != std::string::npos);
 }
 
@@ -9856,7 +9002,10 @@ TEST_CASE_FIXTURE(Fixture, "^R (startPromptHistoryRecall): opens the RAW chronol
   feedText("plain.txt");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // records "plain.txt" into RecentFgrepPattern
 
-  REQUIRE(app.handleCommand(Command::Back));
+  // 2026-09-11修正、直接のユーザー依頼のFGREP/EGREP統一(startGrepPrompt()
+  // 自身のコメント参照): FGREPもGREP(Basic)と同じin-place方式になった
+  // ため、提出後は既にDirectoryのまま(専用の結果画面へは切り替わらない)
+  // ――^Gで抜ける必要が無くなった、そのままもう一度StartFgrepできる。
   REQUIRE(app.handleCommand(Command::StartFgrep));  // a fresh prompt -- history exists from the search above
   CHECK(app.promptActive());
 
@@ -9876,14 +9025,15 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: Enter on a picked pattern re-
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("plain.txt");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.handleCommand(Command::Back));
 
+  // 2026-09-11修正: FGREPの統一によりDirectoryのまま(in-place)なので
+  // ^Gは不要――そのままもう一度StartFgrepできる。
   REQUIRE(app.handleCommand(Command::StartFgrep));
   REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
   REQUIRE(app.listBrowserMode().items().size() == 1);
 
   REQUIRE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // in-place, never switches to ApplicationMode::Grep
   REQUIRE(app.grepMode().matches().size() == 1);
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
 }
@@ -9894,8 +9044,9 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: ^G restores the ORIGINAL prom
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("plain.txt");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.handleCommand(Command::Back));
 
+  // 2026-09-11修正: FGREPの統一によりDirectoryのまま(in-place)なので
+  // ^Gは不要。
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("partial");  // typed, but not yet submitted, when ^R interrupts
   REQUIRE(app.feedByte(0x12, std::nullopt));
@@ -9912,27 +9063,28 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: distinguishes FGREP from EGRE
                            "own separate p.hfgrep/p.hegrep rings") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("fixedpattern");
+  // "fixedpattern"は実在するどのエントリ名にもマッチしないため
+  // (2026-09-11修正: in-place方式では0件マッチはactivateGrepInPlace()
+  // 自身のコメント参照によりfeedByte()自体がfalseを返す)、実在する
+  // "log.txt"に差し替えた――このテストの目的(FGREP/EGREPそれぞれの
+  // ring分離の確認)には無関係な変更。
+  feedText("log.txt");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.handleCommand(Command::Back));
 
-  // EGREP opens directly into the candidate list, not a blank prompt
-  // (startGrepPrompt()'s own comment). ^G no longer reopens a blank
-  // prompt to type a fresh pattern from there (2026-08-12 fix, a
-  // direct user instruction -- see returnFromListBrowser()'s own
-  // comment) -- ^U (clears the pre-filled seed, same as the "start
-  // editing" transition any other byte would trigger) is the current
-  // way to type a genuinely fresh pattern instead.
+  // 2026-09-11修正、直接のユーザー依頼のFGREP/EGREP統一(startGrepPrompt()
+  // 自身のコメント参照): FGREPの提出後は既にDirectoryのまま(in-place)
+  // なので^Gは不要。EGREPも今やFGREPと全く同じ空のプロンプトから始まる
+  // (専用の候補一覧は廃止された)ので、^Uでの編集開始も不要。
   REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U: starts editing, clears the seed
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
   feedText("plain\\.txt");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
   const auto &egrepRing = history.recentEntries(RingCategory::RecentEgrepPattern);
   CHECK(egrepRing.back() == "plain\\.txt");  // the just-submitted pattern landed in EGREP's own ring...
   CHECK(history.recentEntries(RingCategory::RecentFgrepPattern).back() ==
-        "fixedpattern");  // ...NOT FGREP's, which stayed separate
+        "log.txt");  // ...NOT FGREP's, which stayed separate
 }
 
 TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: swallowed (no ListBrowser, no literal byte inserted) for a "
@@ -9993,30 +9145,26 @@ TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt (REGEX, ^J^C/StartCutRegex) rec
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  // StartCutRegex (2026-08-05: opens directly into the candidate list,
-  // not a blank prompt -- see startCutPrompt()'s own comment) --
-  // typing directly into the still-showing list (a live-editable
-  // combobox, same as EGREP's own candidate list -- see
-  // feedRegexListByte()'s own comment) is how a fresh pattern gets
-  // typed; ^G no longer reopens a blank prompt here (2026-08-22 fix,
-  // item 405: extended returnFromListBrowser()'s 2026-08-12 GrepPattern
-  // fix to CutPattern too, so ^G instead returns straight to where
-  // this was invoked from).
+  // 2026-09-11修正、直接のユーザー依頼のCUT統一(startCutPrompt()自身の
+  // コメント参照): StartCutRegexはもう専用の候補一覧を開かず、
+  // StartCutFixedと全く同じ空のプロンプトから始まる。Backも(LIFOの
+  // 候補一覧再入場が無くなったため)1回でFileへ直接戻る。
   REQUIRE(app.handleCommand(Command::StartCutRegex));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::File);
   feedText("pla.n");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // records "pla.n" into RecentEgrepPattern
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
-  // Regex direct-entry CUT's own LIFO stack (cutReturnsToCandidateList_,
-  // see its own declaration comment): the FIRST Back returns to the
-  // candidate list itself, the SECOND reaches File.
-  REQUIRE(app.handleCommand(Command::Back));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
+  // 今度は「本物の」^R(タイプ中の呼び戻し、startPromptHistoryRecall()
+  // 自身のsortDirectEntryList分岐参照――CutPattern/GrepPatternはもう
+  // directEntry==trueで到達しないので、これは常にこの時系列の分岐を通る)
+  // で同じ履歴を確認する。
   REQUIRE(app.handleCommand(Command::StartCutRegex));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.listBrowserMode().items().size() == 1);
   CHECK(app.listBrowserMode().items()[0] == "pla.n");
 
@@ -10801,10 +9949,12 @@ TEST_CASE_FIXTURE(Fixture, "EDIT: shows an underlined \"Invalid mode\" error in 
 
 TEST_CASE_FIXTURE(Fixture, "EDIT: refused outside Directory/File mode") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("plain.txt");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  // 2026-09-11修正: FGREPはもうApplicationMode::Grepへ切り替わらない
+  // (in-place方式、startGrepPrompt()自身のコメント参照)ため、
+  // Directory/File以外のモードへ到達する別の手段が必要――DUで代用する。
+  REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
+  REQUIRE(app.currentMode() == ApplicationMode::Du);
 
   CHECK_FALSE(app.handleCommand(Command::StartEdit));
 }
@@ -11133,8 +10283,21 @@ TEST_CASE_FIXTURE(Fixture, "HELP (cutView_, the TOC level): mode-line shows the 
 // (File, CutContent -- e.g. FGREP run from within a HELP chapter's own
 // content). CutContent mirrors cutContentView_'s own "CUT:<segment
 // label>" convention.
-TEST_CASE_FIXTURE(Fixture, "FGREP from within a HELP chapter's own content: mode line shows \"CUT:<chapter "
-                           "label>\" as the return-destination field, not blank") {
+//
+// 2026-09-11修正: FGREPもGREP(Basic)と同じin-place方式になった
+// (startGrepPrompt()自身のコメント参照)ため、CutContent
+// (isGrepInPlaceEligibleMode()対象)のまま切り替わらない――上のgrepView_
+// 自身の専用ロジック(セグメントのラベルまで含めた"CUT:<segment
+// label>")はもう経由せず、cutContentView_自身のin-place分岐
+// (application.cpp、2026-09-11、GREP/Basic向けに先行して実装済み)が
+// 代わりに使われる。この分岐はセグメントラベルまでは持ち込まず、
+// 起点の種別だけを示す汎用の"name"変数(HELP起点なら"HELP")を
+// trailing3へ流用する――GREP(Basic)がCutContent起点で既にそうして
+// いたのと同じ、より粗い表示。セグメントラベルの粒度を保つかどうかは
+// 今回のFGREP/EGREP統一の範囲外の別論点として残す。
+TEST_CASE_FIXTURE(Fixture, "FGREP from within a HELP chapter's own content: mode line shows \"HELP\" as the "
+                           "return-destination field (in-place, matching GREP/Basic's own established "
+                           "CutContent convention), not blank") {
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
@@ -11145,9 +10308,12 @@ TEST_CASE_FIXTURE(Fixture, "FGREP from within a HELP chapter's own content: mode
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("content");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
 
-  CHECK(display.rowText(23).find("CUT:11. Section One") != std::string::npos);
+  const std::string &row = display.rowText(23);
+  CHECK(row.find("FGREP") != std::string::npos);
+  CHECK(row.find("(grep)") != std::string::npos);
+  CHECK(row.find("HELP") != std::string::npos);  // not blank
 }
 
 // 2026-08-24 fix (same report, its OWN follow-up correction): the
@@ -11253,8 +10419,15 @@ TEST_CASE_FIXTURE(Fixture, "^J^W from a Grep results screen writes the ORIGIN's 
   REQUIRE(app.handleCommand(Command::StartFgrep));
   feedText("line A");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.activeContentView().lines().size() == 1);  // only "line A" matched, not "line B"
+  // 2026-09-11修正: FGREPもin-place方式になったため、CutContent
+  // (isGrepInPlaceEligibleMode()対象)のまま切り替わらない――専用の
+  // フィルタ済みビュー(マッチした行だけ)には一度も切り替わらないので、
+  // このテスト自身が守っていたバグ("マッチ行だけがcatされる")は、
+  // その原因だった専用結果画面自体が無くなったことで構造上再発し得
+  // なくなった。セグメント自身の全3行(見出し+line A+line B)がずっと
+  // 見えたままであることを、その代わりに確認する。
+  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
+  REQUIRE(app.activeContentView().lines().size() == 3);  // full segment content, not filtered to "line A" alone
 
   if (!app.handleCommand(Command::ShellInsertBufferContent)) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -12391,12 +11564,16 @@ TEST_CASE_FIXTURE(Fixture, "EGREP results screen (grepView_): the mode line fill
                            "Standout, matching HISTORY.md:9473's general rule (was fillTrailingToEdge=false)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  // 2026-09-11修正: EGREPもin-place方式になったため(startGrepPrompt()
+  // 自身のコメント参照)、専用の候補一覧もGrep結果画面も経由しない
+  // ――Directoryのまま、その自身のModeLineFieldsProviderがこの
+  // fillTrailingToEdge慣習を担う。
   REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> EGREP direct entry
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> EGREP
+  CHECK(app.promptActive());
   feedText("^-");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter -> submit search
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
   const std::string &row = display.rowText(23);
   std::size_t lastContent = row.find_last_not_of(' ');
   REQUIRE(lastContent != std::string::npos);
@@ -12413,39 +11590,13 @@ TEST_CASE_FIXTURE(Fixture, "EGREP results screen (grepView_): the mode line fill
   CHECK_FALSE(display.standoutAt(23, 79));
 }
 
-// 2026-08-28 fix, a direct user report + own explicit spec ("戻り値＋
-// モード名エリアがいずれも長過ぎ名称の時に限り中央に...残りを半々でいい
-// けれども今回は「CLAUDE.md」だけなので臨機応変で"): when landing on a
-// match crowds the mode line into renderSplitModeLine()'s fallback
-// layout, a SHORT name (e.g. "CLAUDE.md") must show in full (not
-// truncated to its own forced half) and the freed-up space must go to
-// the genuinely long trailing2 (the matched line's own text) instead of
-// sitting unused.
-TEST_CASE_FIXTURE(Fixture, "GREP: split mode-line layout (crowded File-mode landing) gives a SHORT name its "
-                           "full width, not its own forced half, and gives trailing2 the freed-up space") {
-  { std::ofstream(root / "CLAUDE.md") << "hello\n- Legacy C implementation description here matching old/src/config.sh\nworld\n"; }
-  REQUIRE(app.start(path()));
-  int idx = indexOf("CLAUDE.md");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  REQUIRE(app.handleCommand(Command::StartFgrep));
-  feedText("Legacy");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  const std::string &row = display.rowText(23);
-  CHECK(row.substr(0, 9) == "CLAUDE.md");  // full name, not ellipsis-truncated to share a forced half
-  // The match text itself is still long enough to need SOME truncation
-  // even after freeing up name's own unused half -- but both its own
-  // head and tail should now survive (Finder-style middle-ellipsis),
-  // unlike the OLD forced-half budget which cut it back much further.
-  CHECK(row.find("- Legacy C implementation") != std::string::npos);
-  CHECK(row.find("old/src/config.sh") != std::string::npos);
-}
+// (2026-09-11削除: このテストは「Grep結果一覧からEnterでマッチへ着地
+// すると、モードラインのtrailing2がその行の全文になり、名前欄と共に
+// 画面が混雑する」という、専用の結果画面(ApplicationMode::Grep)に
+// 固有の挙動を前提にしていた。FGREPもin-place方式になった今
+// (startGrepPrompt()自身のコメント参照)、trailing2は常に短い固定の
+// "(grep)"バッジであり(file_mode.cpp自身のgrepInPlaceActive()分岐
+// 参照)、この「マッチ行の全文で混雑する」シナリオ自体が発生し得ない。)
 
 // 2026-08-28 fix, a direct user report + precise repro ("CLAUDE.md画面
 // で^J^S^R...^G→EGREPなのに検索文字列一覧が無く（←FGREP風）行数情報も
@@ -12462,101 +11613,15 @@ TEST_CASE_FIXTURE(Fixture, "GREP: split mode-line layout (crowded File-mode land
 // RecentFile/RecentDirectory's own ^R already does, just reached
 // safely now (via isNav/resolveCommand/toggleListBrowserHistory()),
 // not through the corrupting "start editing" detour.
-TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: plain ^R while still just BROWSING the EGREP candidate list "
-                           "(nothing typed yet) does a REAL sorted<->chronological toggle (not the old "
-                           "corrupting detour), and a later Back still correctly returns to File mode") {
-  history.pushRecent(RingCategory::RecentEgrepPattern, "one");
-  history.pushRecent(RingCategory::RecentEgrepPattern, "two");
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  CHECK(*app.listBrowserMode().selectedItem() == "one");  // sorted, direct-entry default: TOP (oldest)
-
-  CHECK(app.feedByte(0x12, std::nullopt));  // ^R: real toggle now
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-  // 2026-08-29 fix, a direct user report with exact before/after field
-  // values: name DOES switch to "HISTORY" once chronological (matching
-  // RecentFile/RecentDirectory's own identical swap) -- the isDirectEntry
-  // branch is only for the READ-ONLY-but-not-yet-toggled state; once
-  // listBrowserChronological_ flips, this falls through to the same
-  // "HISTORY" + rightWatermark=promptLabelText(kind) shape a real ^R
-  // mid-typing recall already used.
-  CHECK(display.rowText(23).find("HISTORY") != std::string::npos);
-  CHECK(*app.listBrowserMode().selectedItem() == "two");  // chronological: newest (last-pushed) selected
-
-  // 2026-08-29 fix: the FIRST ^G pops the toggle back to sorted (still
-  // ListBrowser), matching RecentFile/RecentDirectory's own established
-  // two-^G shape -- only the SECOND ^G actually leaves.
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-  CHECK(*app.listBrowserMode().selectedItem() == "one");  // back to sorted, TOP entry
-
-  CHECK(app.handleCommand(Command::Back));  // second ^G
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK_FALSE(app.promptActive());  // NOT a stray editable EGREP prompt left drawn over File's own view
-  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
-}
-
-// 2026-08-28: a direct user report ("^H(bs)が利いてしまって「^[A-Z[A-Z]+」
-// になるバグ" on usilicrc's own real "^[A-Z][A-Z]+" MAN seed pattern) --
-// investigated using the REAL usilicrc GREP seed list (not synthetic
-// "one"/"two"/"three") to match the exact reported string. Backspace
-// while browsing correctly removes only the last byte ("+"), matching
-// the existing synthetic-content test just above -- could not reproduce
-// the reported "]" also disappearing this way; left as a passing
-// regression check pending a more specific repro (e.g. via the ^R
-// chronological view specifically, see this session's HISTORY.md).
-TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: backspace on the real usilicrc MAN seed pattern candidate "
-                           "\"^[A-Z][A-Z]+\" removes only the last byte") {
-  for (const std::string &pattern : {"/\\*[a-z]*\\*/", "^", "^  [0-9][0-9]+\\.", "^  [0-9]+\\.", "^Question",
-                                      "^Subject: ", "^[0-9]*\\.", "^[A-Z][A-Z]+", "diff \\-", "~$"}) {
-    history.pushRecent(RingCategory::RecentEgrepPattern, pattern);
-  }
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  while (*app.listBrowserMode().selectedItem() != "^[A-Z][A-Z]+") {
-    if (!app.handleCommand(Command::MoveDown)) break;
-  }
-  std::string highlighted = *app.listBrowserMode().selectedItem();
-  REQUIRE(highlighted == "^[A-Z][A-Z]+");
-
-  CHECK(app.feedByte(0x08, std::nullopt));  // ^H
-  CHECK(app.promptText() == "^[A-Z][A-Z]");  // only the trailing "+" removed
-}
-
-// 2026-08-28: a direct user report referencing HISTORY.md:7833/7839
-// (item 283 -- a candidate string with a LITERAL embedded control byte,
-// e.g. from a corrupted/hand-edited usilicrc entry): investigated
-// whether that fix (renderModeLine()'s trailingPlain path showing
-// control bytes as reversed char+0x40, matching renderLine()'s own
-// convention) also holds once ^H itself (as a KEYPRESS) transitions the
-// highlighted candidate into a real editable LineEditor. It does --
-// LineEditor::renderVisible() already had this exact convention (ported
-// from vt_putchar(), predating item 283), and correctly removes only
-// the LAST byte on backspace regardless of an embedded control byte
-// elsewhere in the string.
-TEST_CASE_FIXTURE(Fixture, "feedRegexListByte: a candidate string containing a literal embedded control byte "
-                           "(^H/0x08) still backspaces correctly (only the last byte removed) once ^H itself "
-                           "transitions it into editing") {
-  std::string pattern = "^[A-Z]";
-  pattern += static_cast<char>(0x08);
-  pattern += "[A-Z]+";
-  history.pushRecent(RingCategory::RecentEgrepPattern, pattern);
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartEgrep));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(*app.listBrowserMode().selectedItem() == pattern);
-
-  REQUIRE(app.feedByte(0x08, std::nullopt));  // ^H (backspace) -- transitions into editing
-  CHECK(app.promptText() == pattern.substr(0, pattern.size() - 1));
-}
+// (2026-09-11削除: 上の3件――EGREP候補一覧を「まだ何もタイプしていない
+// 状態でブラウズ中」の^R時系列トグル、usilicrcのMAN seedパターン候補の
+// backspace、候補文字列に埋め込まれた制御バイトのbackspace――は全て、
+// startGrepPrompt()自身のコメント参照の統一で廃止されたEGREP専用の
+// 候補一覧(ApplicationMode::ListBrowser)を前提にしていた。EGREPは今や
+// FGREPと同じ空のプロンプトから始まるため、これらのシナリオ自体が
+// もう発生し得ない――候補一覧に依存しない「本物の^R」経由の同種の
+// テスト(すぐ下の"^R real recall (HISTORY chronological view)"等)は
+// 引き続き有効。)
 
 // 2026-08-28 fix, a direct user report: "~/.usilic/usilicrcのGREP
 // セクションに実際にある^L(0x0C、~/.usilic/history内のモード区切り用)
@@ -12629,10 +11694,15 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): reachable from Directory mode, freezes 
   for (int i = 0; i < 24; i++) CHECK(display.rowText(i) == rowsBefore[i]);      // screen fully restored
 }
 
-TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): also reachable from File mode, GrepPattern's own candidate "
-                           "list (ListBrowser), and a plain ListBrowser session (SHELL command "
-                           "history) -- confirming this is genuinely mode-agnostic, not wired "
-                           "per-mode") {
+// 2026-09-11修正、直接のユーザー依頼のFGREP/EGREP統一(startGrepPrompt()
+// 自身のコメント参照): EGREPはもう専用の候補一覧(ListBrowser)を開かない
+// ため、そのシナリオはRecentFile一覧(^X^F、こちらも引き続きListBrowser
+// を使う)に差し替えた――「File mode」「(EGREP以外の)ListBrowser使用の
+// 一覧」「もう1つの独立したListBrowser使用の一覧」という3系統の
+// 検証意図自体は変わらない。
+TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): also reachable from File mode, a RecentFile ListBrowser session, "
+                           "and a plain ListBrowser session (SHELL command history) -- confirming this is "
+                           "genuinely mode-agnostic, not wired per-mode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -12646,7 +11716,7 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): also reachable from File mode, GrepPatt
 
   REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
-  REQUIRE(app.handleCommand(Command::StartEgrep));
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.feedByte(0x0f, std::nullopt));
   REQUIRE(app.feedByte(0x03, std::nullopt));
@@ -13333,6 +12403,12 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: ^O^S (FGREP) and ^J^S (EGREP) also search SHE
   REQUIRE(sawOutput);
   REQUIRE(app.currentMode() == ApplicationMode::Shell);
 
+  // 2026-09-11修正、直接のユーザー依頼のFGREP/EGREP統一(startGrepPrompt()
+  // 自身のコメント参照): どちらもGREP(Basic)と同じin-place方式になった
+  // ため、Shell(isGrepInPlaceEligibleMode()対象)のまま切り替わらない
+  // ――専用の結果画面(ApplicationMode::Grep)も、EGREP自身の候補一覧も
+  // もう経由しない。
+
   // ^O^S: FGREP
   REQUIRE(app.feedByte(0x0f, std::nullopt));
   REQUIRE(app.feedByte(0x13, std::nullopt));
@@ -13340,26 +12416,20 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: ^O^S (FGREP) and ^J^S (EGREP) also search SHE
   CHECK(app.promptActive());
   feedText("SHELLGREPTESTMARKER");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.currentMode() == ApplicationMode::Shell);
   CHECK(app.grepMode().matches().size() == 1);
-  CHECK(app.activeContentView().modeLineText().find("SHELL") != std::string::npos);
-  REQUIRE(app.handleCommand(Command::Back));  // back to Shell before the next probe
-  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.activeContentView().modeLineText().find("FGREP") != std::string::npos);
 
-  // ^J^S: EGREP (candidate-list based, per startRegexPromptList()) --
-  // ^U starts live-editing the pre-filled seed in place (matching the
-  // sibling "^R usage-history..." test's own established convention),
-  // not ^G (which, from a fresh/unedited list, simply cancels straight
-  // back to the origin -- correct behavior, not a bug).
+  // ^J^S: EGREP -- now a plain prompt too, no candidate list.
   REQUIRE(app.feedByte(0x0a, std::nullopt));
   REQUIRE(app.feedByte(0x13, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(app.feedByte(0x15, std::nullopt));  // ^U: start editing, clear the pre-filled seed
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Shell);
   feedText("SHELLGREPTESTMARKER");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.currentMode() == ApplicationMode::Grep);
+  CHECK(app.currentMode() == ApplicationMode::Shell);
   CHECK(app.grepMode().matches().size() == 1);
-  CHECK(app.activeContentView().modeLineText().find("SHELL") != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("EGREP") != std::string::npos);
 }
 
 // 2026-09-20追加、直接のユーザー報告("SHELLプロンプトで^Sとやっても

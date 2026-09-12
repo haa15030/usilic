@@ -228,7 +228,15 @@ TEST_CASE("BUFFER: an out-of-range value is clamped to 1 and recorded as an erro
   CHECK_FALSE(config.errors().empty());
 }
 
-TEST_CASE("GREP directive: strips surrounding quotes; PROGRAM directive: only in file-manager mode") {
+TEST_CASE("GREP directive: parsed as a no-op for backward-compat with existing usilicrc files; "
+          "PROGRAM directive: only in file-manager mode") {
+  // 2026-09-11修正: 以前このセクションはConfiguration::grepSeedPatterns()
+  // (EGREP/CUT-Regexの直接入力の候補一覧の種)を検証していたが、その
+  // 候補一覧自体がstartGrepPrompt()自身のコメント参照の統一により
+  // 廃止されたため、grepSeedPatterns()ごと削除した。GREP:ディレクティブ
+  // 自体はdirectiveKeywords()に残したまま(既存のusilicrcファイルに
+  // このセクションが残っていてもエラーにしないため)なので、ここでは
+  // それがエラーを出さずに読み飛ばされることだけを確認する。
   Configuration config;
   std::string rc =
       "GREP\n"
@@ -237,41 +245,13 @@ TEST_CASE("GREP directive: strips surrounding quotes; PROGRAM directive: only in
       "PROGRAM\n"
       " ls -la | grep foo\n";
   REQUIRE(config.loadRcText(rc, true));
-  REQUIRE(config.grepSeedPatterns().size() == 2);
-  CHECK(config.grepSeedPatterns()[0] == "TODO");
-  CHECK(config.grepSeedPatterns()[1] == "unquoted-pattern");
+  CHECK(config.errors().empty());
   REQUIRE(config.programSeedCommands().size() == 1);
   CHECK(config.programSeedCommands()[0] == "ls -la | grep foo");
 
   Configuration pagerConfig;
   REQUIRE(pagerConfig.loadRcText(rc, /*fileManagerMode=*/false));
   CHECK(pagerConfig.programSeedCommands().empty());
-}
-
-TEST_CASE("GREP directive (2026-08-12 fix): an UNQUOTED pattern is truncated at the first space/tab, "
-          "matching legacy conf_grep()'s own `while (*cp != ' ' && *cp != '\\t') cp++;` -- usilicrc's real "
-          "GREP section right-aligns each pattern's own `# comment' with a run of tabs (e.g. "
-          "\"\\\\/\\\\*[a-z]*\\\\*\\\\/\\t\\t\\t\\t # usilic source\"), and this port previously used an "
-          "unquoted line's data wholesale (only trimCommentAndLeadingWs()'s own comment-strip + LEADING-"
-          "whitespace-strip, no trailing-whitespace handling), baking the trailing tab run into the seed "
-          "pattern as literal bytes -- a real report found this corrupted both the ^J^S/^J^C candidate "
-          "list's own mode-line layout (real terminal tab-stop jumps threw off column alignment) and, once "
-          "such a candidate seeded an actual editable prompt, rendered as reversed \"IIII\"-style control-"
-          "character glyphs the moment editing began") {
-  Configuration config;
-  std::string rc =
-      "GREP\n"
-      "\t\\/\\*[a-z]*\\*\\/\t\t\t\t # usilic source\n"
-      "\t^Question\t\t\t\t # Linux-FAQ\n"
-      "\t\"^Subject: \"\t\t\t\t # Mailing list\n";
-  REQUIRE(config.loadRcText(rc, true));
-  REQUIRE(config.grepSeedPatterns().size() == 3);
-  CHECK(config.grepSeedPatterns()[0] == "\\/\\*[a-z]*\\*\\/");
-  CHECK(config.grepSeedPatterns()[1] == "^Question");
-  // The quoted branch is untouched by this fix -- still extracts
-  // exactly the quoted span, trailing tabs and all excluded by the
-  // closing quote itself, not by this new truncation.
-  CHECK(config.grepSeedPatterns()[2] == "^Subject: ");
 }
 
 TEST_CASE("CP/MV/RM directives override the default command, only in file-manager mode") {

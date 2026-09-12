@@ -39,7 +39,7 @@ class ListBrowserMode {
 
   // 項目一覧を表示する(例:
   // History::recentEntries(RingCategory::RecentFile)や
-  // Configuration::grepSeedPatterns()から――必要ならstd::dequeから
+  // Configuration::programSeedCommands()から――必要ならstd::dequeから
   // std::vectorへの変換は呼び出し側が行う)。
   //
   // `badges`(2026-08-20追加、省略可、`items`と同じ長さか空):

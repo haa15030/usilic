@@ -432,51 +432,16 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         break;
       }
       case 5: {  // GREP
-        // conf_grep()からの移植: 「クオートされた」パターンに対して
-        // は、一致する閉じクオートまでの全て(既に下で処理済み)。
-        // 「クオートされていない」ものに対しては、
-        // `while (*cp != ' ' && *cp != '\t') cp++;`が最初の空白
-        // 「または」タブで切り詰める。この移植は以前クオートされた
-        // 分岐しか持っておらず、クオートされていない行のデータを
-        // 変更せず「丸ごと」使っていた――この切り詰めが完全に欠けて
-        // いた。usilicrc自身のGREPセクションは、各パターンの
-        // 「#コメント」を一連のタブで右揃えする(例えば
-        // "\/\*[a-z]*\*\/\t\t\t\t # usilic source")。そして
-        // nextDataLine()/trimCommentAndLeadingWs()(別の、汎用的な
-        // get_cp()の忠実な移植で、他のconfigセクションでも使われる)
-        // はコメントと「先頭の」空白だけを取り除く――get_cp()自身の
-        // 実際の挙動に正確に一致しており、末尾の空白を含む。これは
-        // 他の全てのセクション(tokenize()がそれを取り除く)にとっては
-        // 問題無いが、クオートされていないGREPパターンは、それ以上
-        // トークン化されない「1つの」丸ごとの文字列として使われる
-        // ので、ここでは問題「がある」。この切り詰めが無いと、全ての
-        // クオートされていないシードパターンが、それ自身の末尾のタブ
-        // 列をリテラルなバイトとして運んでいた。これは、^J^S/^J^C
-        // 候補一覧自身のモードラインレイアウト(タブの本物の端末の
-        // タブストップジャンプが列の整列を狂わせ、移動先ディレクトリ
-        // フィールドを右へ大きく押しやり、折り返しさえ引き起こして
-        // いた)と、そのような候補のテキストが実際の編集可能な
-        // プロンプトの種になった(feedRegexListByte()自身の編集への
-        // 遷移)時点で、その埋め込まれたタブバイトが編集開始の瞬間に
-        // 反転表示の「IIII」スタイルの制御文字グリフ(LineEditor::
-        // renderVisible()自身の反転された`c + '@'`慣習: TAB 0x09 +
-        // 0x40 = 'I')として描画される、両方を壊していた――実際の
-        // 報告(スクリーンショット㊹/㊺)は、これを、事前に破損した
-        // シードデータが初めて可視化されたのではなく、「新しい」
-        // 表示バグ("文字を入力したとたんハイライトIIIIが出る")だと
-        // 誤解していた。
-        while (auto data = nextDataLine(lines, i)) {
-          std::string pattern = *data;
-          if (!pattern.empty() && (pattern[0] == '\'' || pattern[0] == '"')) {
-            char openQuote = pattern[0];
-            std::size_t close = pattern.find_first_of("'\"", 1);
-            (void)openQuote;
-            if (close != std::string::npos) pattern = pattern.substr(1, close - 1);
-          } else {
-            std::size_t ws = pattern.find_first_of(" \t");
-            if (ws != std::string::npos) pattern = pattern.substr(0, ws);
-          }
-          grepSeedPatterns_.push_back(pattern);
+        // 2026-09-11削除、直接のユーザー依頼(startGrepPrompt()自身の
+        // コメント参照、"FGREPおよびEGREPを同じ仕様に統一...候補一覧は
+        // 廃棄"): 以前はここでこのセクションの各パターンを解析し、
+        // grepSeedPatterns_(EGREP/CUT-Regexの候補一覧の種)へ格納して
+        // いたが、その候補一覧自体が上の統一で廃止されたため、格納先
+        // ごと不要になった。GREP:ディレクティブ自体はdirectiveKeywords()
+        // に残したまま(既存のusilicrcファイルにこのセクションが残って
+        // いても「不明なディレクティブ」エラーにしないため)、内容は
+        // nextDataLine()で読み飛ばすだけにする。
+        while (nextDataLine(lines, i)) {
         }
         break;
       }
@@ -649,7 +614,6 @@ void Configuration::setCommandForTest(ConfiguredRole role, ProgramCommand comman
   roleCommands_[role] = std::move(command);
 }
 
-const std::vector<std::string> &Configuration::grepSeedPatterns() const { return grepSeedPatterns_; }
 const std::vector<std::string> &Configuration::programSeedCommands() const { return programSeedCommands_; }
 
 const std::string &Configuration::allowedControlBytes() const { return allowedControlBytes_; }
