@@ -24,6 +24,7 @@ using fm::DuEntry;
 using fm::GrepSyntax;
 using fm::History;
 using fm::KeyInput;
+using fm::QuickKeyEntry;
 using fm::RingCategory;
 using fm::ShellOptions;
 using fm::test::RecordingDisplay;
@@ -10764,6 +10765,196 @@ TEST_CASE_FIXTURE(Fixture, "Key: clicking the label half of a row executes it di
   CHECK(app.handleMouseClick(displayRow, labelColumn));
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.promptActive());  // FGREP prompt -- the key was actually executed
+}
+
+// -- QUICK.txt's real usilicrc notation: F-? prefix resolution (item⑧),
+// the 2026-09-12 parseQuickKeyEntries() rewrite, and per-row highlight
+// scope (item⑨) --
+//
+// 2026-09-12, direct user request ("KEYについての方針...⑧今の
+// QUICK.txtではプレフィックスキーをF-0、F-1等で表示しているが、KEY
+// モードへ反映する際は、~/.usilic/usilicrc内のKEY設定を反映してから
+// 表示して欲しい（F-0 C-cならC-x C-c）...⑨「ページ/行送り」および
+// 「プロンプト」の項については説明文が無いので行全体を反転表示に
+// してほしい"): src/QUICK.txt was rewritten to use usilicrc's own
+// notation directly ("C-h", "F-1 C-h", "ESC", "SPC", full-width "："
+// as the key/description separator, <indentN> whose N shifted after
+// item451's half-width change) -- these tests exercise the free
+// functions directly (parseFPrefixTable/resolveFPrefixTokens/
+// parseKeyNotationBytes/parseQuickKeyEntries), independent of the
+// USILICQUICKKEY env-var gate that guards the full Application-level
+// path (loadQuickKeyEntries() reads the real ~/git/usilic/src/QUICK.txt
+// and ~/.usilic/usilicrc, neither of which this test suite should
+// depend on).
+
+TEST_CASE("parseFPrefixTable: extracts F-0..F-9 from a template-shaped usilicrc KEY section, cutting each "
+          "line's trailing '# comment  F-N' marker") {
+  std::string keySection =
+      "F-?\t<-- (8)\n"
+      "\tC-x\t# ^X\t\t\t\t\t\t\tF-0\n"
+      "\tC-j\t# ^J\t\t\t\t\t\t\tF-1\n"
+      "\tC-x C-k # ^X^K\t\t\t\t\t\tF-2\n"
+      "\tC-o     # ^O\t\t\t\t\t\t\tF-3\n"
+      "\t\t#\t\t\t\t\t\t\tF-4\n"
+      "\n"
+      "K-?\t<-- (8)\n";
+  std::vector<std::string> table = fm::parseFPrefixTable(keySection);
+  REQUIRE(table.size() == 5);
+  CHECK(table[0] == "C-x");
+  CHECK(table[1] == "C-j");
+  CHECK(table[2] == "C-x C-k");  // multi-token slot value preserved as one string
+  CHECK(table[3] == "C-o");
+  CHECK(table[4] == "");  // unset slot
+}
+
+TEST_CASE("parseFPrefixTable: a real, SHORTER usilicrc (only F-0..F-4 defined, no trailing comment/F-N "
+          "marker column at all) parses just as well -- this is the shape of this machine's own real "
+          "~/.usilic/usilicrc, not just the shipped template") {
+  std::string keySection =
+      "F-?\t<-- (8)\n"
+      "\tC-x\t\n"
+      "\tC-j\t\n"
+      "\tC-o     \n"
+      "\tC-o C-j \n"
+      "\t\t\n"
+      "C-h\t\"キーアサイン一覧を表示（常時）\"\n";
+  std::vector<std::string> table = fm::parseFPrefixTable(keySection);
+  REQUIRE(table.size() == 5);
+  CHECK(table[0] == "C-x");
+  CHECK(table[1] == "C-j");
+  CHECK(table[2] == "C-o");
+  CHECK(table[3] == "C-o C-j");  // F-3 reassigned to a two-key combo on this real machine
+  CHECK(table[4] == "");
+}
+
+TEST_CASE("parseFPrefixTable: missing \"F-?\" marker (empty/corrupt usilicrc) yields an empty table, not a "
+          "crash") {
+  CHECK(fm::parseFPrefixTable("").empty());
+  CHECK(fm::parseFPrefixTable("some unrelated text\nwith no F-? anywhere\n").empty());
+}
+
+TEST_CASE("resolveFPrefixTokens: substitutes a standalone \"F-N\" token with the configured value, leaving "
+          "surrounding text and multi-token values intact") {
+  std::vector<std::string> table = {"C-x", "C-j", "C-o", "C-o C-j"};
+  CHECK(fm::resolveFPrefixTokens("F-0 C-c", table) == "C-x C-c");
+  CHECK(fm::resolveFPrefixTokens("F-3 e", table) == "C-o C-j e");  // 2-token slot value
+  CHECK(fm::resolveFPrefixTokens("F-1 F-1", table) == "C-j C-j");  // same token twice
+}
+
+TEST_CASE("resolveFPrefixTokens: an unset/out-of-range slot (e.g. F-4 in a 4-slot table) is left "
+          "unresolved -- there is nothing sensible to substitute") {
+  std::vector<std::string> table = {"C-x", "C-j", "C-o", ""};
+  CHECK(fm::resolveFPrefixTokens("F-3 e", table) == "F-3 e");  // table[3] is "" -- unresolved
+  CHECK(fm::resolveFPrefixTokens("F-9 x", table) == "F-9 x");  // out of range entirely
+}
+
+TEST_CASE("resolveFPrefixTokens: \"F-10\" is never misread as \"F-1\" plus a literal \"0\" -- there is no "
+          "F-10 slot, so a second digit disqualifies the match") {
+  std::vector<std::string> table = {"C-x", "C-j"};
+  CHECK(fm::resolveFPrefixTokens("F-10", table) == "F-10");
+}
+
+TEST_CASE("parseKeyNotationBytes: usilicrc's own control/escape/space/tab keyword notation converts to the "
+          "same bytes the caret-notation kKeyTable already hand-writes for the same physical keys") {
+  CHECK(fm::parseKeyNotationBytes("C-h") == std::vector<int>{0x08});
+  CHECK(fm::parseKeyNotationBytes("C-j C-h") == std::vector<int>{0x0a, 0x08});  // ^J^H
+  CHECK(fm::parseKeyNotationBytes("C-x C-k e") == std::vector<int>{0x18, 0x0b, 'e'});
+  CHECK(fm::parseKeyNotationBytes("ESC") == std::vector<int>{0x1b});
+  CHECK(fm::parseKeyNotationBytes("C-[") == std::vector<int>{0x1b});
+  CHECK(fm::parseKeyNotationBytes("C-[ i") == std::vector<int>{0x1b, 'i'});
+  CHECK(fm::parseKeyNotationBytes("SPC") == std::vector<int>{' '});
+  CHECK(fm::parseKeyNotationBytes("tab") == std::vector<int>{'\t'});
+  CHECK(fm::parseKeyNotationBytes("C-@") == std::vector<int>{0x00});
+  CHECK(fm::parseKeyNotationBytes("q") == std::vector<int>{'q'});
+}
+
+TEST_CASE("parseKeyNotationBytes: a notation containing a raw non-ASCII display glyph (e.g. the \"↓\"/\"↑\" "
+          "arrow QUICK.txt itself uses as a human-readable alias, after <b> stripping) has no real key-replay "
+          "byte sequence -- returns empty rather than pushing meaningless raw UTF-8 bytes, matching "
+          "kKeyTable's own established precedent of omitting pure-special-key entries") {
+  CHECK(fm::parseKeyNotationBytes("\xe2\x86\x93").empty());  // "↓" alone
+  CHECK(fm::parseKeyNotationBytes("\xe2\x86\x91").empty());  // "↑" alone
+}
+
+TEST_CASE("parseQuickKeyEntries: scopes to the bare, standalone \"<b>KEY</b>\" heading -- the NOTATION "
+          "section's own nested \"<indent7><b>KEY</b>\" sub-heading (illustrative prose about notation "
+          "conventions, not real key bindings) must NOT be mistaken for the real KEY section start") {
+  std::string raw =
+      "<b>NOTATION</b>\n"
+      "<indent7><b>KEY</b>\n"
+      "\xe3\x80\x80\xe3\x80\x80 C-h：not a real binding, just illustrating notation</indent>\n"
+      "\n"
+      "<b>KEY</b>\n"
+      "<indent7>C-h：キーアサイン一覧を表示</indent>\t\n"
+      "<indent16>usilicrc で定義したキー割り当て一覧。</indent>\n";
+  std::vector<QuickKeyEntry> entries = fm::parseQuickKeyEntries(raw, {});
+  REQUIRE(entries.size() == 1);
+  CHECK(entries[0].label == "C-h");
+  CHECK(entries[0].description == "キーアサイン一覧を表示");
+  CHECK(entries[0].explanation == "usilicrc で定義したキー割り当て一覧。");
+}
+
+TEST_CASE("parseQuickKeyEntries: a single-line <indentN>label：description</indent> entry pairs with the "
+          "immediately-following <indentN>explanation</indent> block (no blank line between them), and F-N "
+          "tokens are resolved in BOTH the label and the description/explanation using the same table") {
+  std::string raw =
+      "<b>KEY</b>\n"
+      "<indent7>F-1 C-h：F-1のオンラインヘルプ</indent>\t\n"
+      "<indent16>F-0を押した後の話ではない。</indent>\n";
+  std::vector<QuickKeyEntry> entries = fm::parseQuickKeyEntries(raw, {"C-x", "C-j"});
+  REQUIRE(entries.size() == 1);
+  CHECK(entries[0].label == "C-j C-h");
+  CHECK(entries[0].description == "C-jのオンラインヘルプ");  // "F-1" substituted in-place, no space added
+  CHECK(entries[0].explanation == "C-xを押した後の話ではない。");  // "F-0" resolved to "C-x" in the explanation too
+  CHECK(entries[0].bytes == std::vector<int>{0x0a, 0x08});  // ^J^H, derived from the RESOLVED label
+}
+
+TEST_CASE("parseQuickKeyEntries: a multi-line span with SEVERAL \"key：description\" sub-lines (no blank-line "
+          "separators between them) splits into one entry PER sub-line, each with an empty explanation -- "
+          "the real shape of QUICK.txt's own COPY-mode block (one main key plus several in-mode sub-bindings "
+          "crammed into a single <indentN>...</indent> span)") {
+  std::string raw =
+      "<b>KEY</b>\n"
+      "<indent7>F-2 C-c：文字列をコピー\n"
+      "\xe3\x80\x80\xe3\x80\x80" "C-@：範囲指定開始/終了トグル。\n"
+      "\xe3\x80\x80" "C-[ w：全指定範囲をコピー。\n"
+      "F-0 spc：矩形範囲指定開始</indent>\n";
+  std::vector<QuickKeyEntry> entries = fm::parseQuickKeyEntries(raw, {"C-x", "C-j", "C-o"});
+  REQUIRE(entries.size() == 4);
+  CHECK(entries[0].label == "C-o C-c");
+  CHECK(entries[1].label == "C-@");
+  CHECK(entries[2].label == "C-[ w");
+  CHECK(entries[3].label == "C-x spc");
+  for (const auto &e : entries) CHECK(e.explanation.empty());  // item⑨: none of these pair with an explanation
+}
+
+TEST_CASE("parseQuickKeyEntries: a bare section header with no <indentN> tag of its own (e.g. QUICK.txt's "
+          "own \"ページ/行送り\"/\"プロンプト\" reference-list headings) is skipped, and the following "
+          "<indentN>...</indent> block's several \"key：description\" lines each become their own entry with "
+          "an empty explanation -- item⑨'s whole-row-highlight case") {
+  std::string raw =
+      "<b>KEY</b>\n"
+      "\xe3\x83\x9a\xe3\x83\xbc\xe3\x82\xb8/\xe8\xa1\x8c\xe9\x80\x81\xe3\x82\x8a\n"  // "ページ/行送り"
+      "<indent5>\xe3\x80\x80\xe3\x80\x80spc：画面を1ページ下へ\n"
+      "\xe3\x80\x80\xe3\x80\x80" "C-v：画面を1ページ下へ</indent>\n";
+  std::vector<QuickKeyEntry> entries = fm::parseQuickKeyEntries(raw, {});
+  REQUIRE(entries.size() == 2);
+  CHECK(entries[0].label == "spc");
+  CHECK(entries[1].label == "C-v");
+  CHECK(entries[0].explanation.empty());
+  CHECK(entries[1].explanation.empty());
+}
+
+TEST_CASE("parseQuickKeyEntries: <b>/<u>/<i> inline markup is stripped from both the label and the "
+          "description (renderKeyRows() builds a plain ContentView::Line::text directly, without running it "
+          "through expandHelpMarkup(), so a raw tag would otherwise leak onto the screen as literal text)") {
+  std::string raw =
+      "<b>KEY</b>\n"
+      "<indent7>　　　 <b>↓</b>：カーソルを1行下へ</indent>\n";
+  std::vector<QuickKeyEntry> entries = fm::parseQuickKeyEntries(raw, {});
+  REQUIRE(entries.size() == 1);
+  CHECK(entries[0].label == "\xe2\x86\x93");  // "↓", tags stripped
+  CHECK(entries[0].bytes.empty());  // no executable replay for a bare arrow glyph
 }
 
 // -- Recorded macros (p_km, ^X(/^X)/^Xe) --

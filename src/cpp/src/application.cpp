@@ -162,120 +162,6 @@ RingCategory grepSyntaxRingCategory(GrepSyntax syntax) {
   return syntax == GrepSyntax::Fixed ? RingCategory::RecentFgrepPattern : RingCategory::RecentEgrepPattern;
 }
 
-// 2026-09-05追加、QuickKeyEntry自身のコメント参照(application.hpp)。
-// "^H"/"^J^H"/"^Jc"/"^O^S"/"^["等のキャレット記法を、kKeyTable自身の
-// 手書きのbytes初期化子(例えば{"^Jc",...,{kLeaderJ,'c'},...})と等価な
-// バイト列へ機械的に変換する。ASCII単位の単純な逐次スキャン: '^'に
-// 続く1文字は制御バイト(`toupper(c)-'@'`――このポート全体で既に確立
-// している'A'..'_'の範囲での慣習、KeyInputが生のNUL/Ctrl-Spaceを0x80
-// として報告する例外はapplication.cpp自身の別の既存コメント、"^@"に
-// だけ適用)、それ以外の1文字はそのままのリテラルバイトとして扱う。
-// このコード全体を通じて、こういった文字列→バイト列変換の既存の
-// 共有ユーティリティは無い(usilicrc自身のKEY構文の本物のパーサーは
-// 別の未着手プロジェクト、kKeyTable自身のコメント参照)ため、ここで
-// 新規に書き起こしている。
-std::vector<int> parseCaretNotationBytes(const std::string &label) {
-  std::vector<int> bytes;
-  std::size_t i = 0;
-  while (i < label.size()) {
-    unsigned char c = static_cast<unsigned char>(label[i]);
-    if (c == '^' && i + 1 < label.size()) {
-      unsigned char nc = static_cast<unsigned char>(label[i + 1]);
-      bytes.push_back(nc == '@' ? 0x80 : std::toupper(nc) - '@');
-      i += 2;
-    } else {
-      bytes.push_back(c);
-      i += 1;
-    }
-  }
-  return bytes;
-}
-
-// 2026-09-05追加、直接のユーザー依頼("今だけKEYモードを
-// ~/git/usilic/src/QUICK.txtを元に構築して欲しい...^H : キーアサイン
-// 一覧を表示...`^H`と`キーアサイン一覧を表示`がハイライト表示になり
-// 得る文字列で、動作はその章にあるとおり"): QUICK.txt自身(展開前の
-// 生のmarkupテキスト)から、"KEY"章の各エントリ
-// (<indent4><b>ラベル</b> : 説明</indent>、直後に続く
-// <indent8>詳細説明</indent>ブロック)を抜き出す。expandHelpMarkup()
-// (help_text.cpp)とは別物――あちらは<b>/<indentN>/<i>を「表示用の
-// 制御バイト列」へ展開するのに対し、こちらは逆にQUICK.txt自身の
-// markupを「構造化されたラベル/説明/詳細説明」へ「解析」する。
-// 詳細説明ブロックは、著者の可読性のための改行を含む複数行にまたがる
-// ことがあり(QUICK.txt自身、まだ執筆中で"</indent>"を書き終えていない
-// エントリも実在する)、閉じタグ・空行・次のエントリの開始行のいずれか
-// が見つかるまで貪欲に読み進める(閉じタグが最終的に見つからなくても
-// 安全側: 空行/次エントリで打ち切る)。
-std::vector<QuickKeyEntry> parseQuickKeyEntries(const std::string &raw) {
-  std::vector<QuickKeyEntry> entries;
-  std::vector<std::string> lines;
-  {
-    std::size_t start = 0;
-    while (start <= raw.size()) {
-      std::size_t nl = raw.find('\n', start);
-      if (nl == std::string::npos) {
-        lines.push_back(raw.substr(start));
-        break;
-      }
-      lines.push_back(raw.substr(start, nl - start));
-      start = nl + 1;
-    }
-  }
-  const std::string kEntryOpen = "<indent4><b>";
-  const std::string kBoldClose = "</b>";
-  const std::string kSep = " : ";
-  const std::string kIndentClose = "</indent>";
-  const std::string kExplOpen = "<indent8>";
-  std::size_t i = 0;
-  while (i < lines.size()) {
-    const std::string &line = lines[i];
-    if (line.compare(0, kEntryOpen.size(), kEntryOpen) != 0) {
-      i++;
-      continue;
-    }
-    std::size_t labelEnd = line.find(kBoldClose, kEntryOpen.size());
-    std::size_t sepPos = (labelEnd == std::string::npos) ? std::string::npos : line.find(kSep, labelEnd);
-    if (labelEnd == std::string::npos || sepPos == std::string::npos) {
-      i++;
-      continue;
-    }
-    QuickKeyEntry entry;
-    entry.label = line.substr(kEntryOpen.size(), labelEnd - kEntryOpen.size());
-    entry.bytes = parseCaretNotationBytes(entry.label);
-    std::size_t descStart = sepPos + kSep.size();
-    std::size_t descEnd = line.find(kIndentClose, descStart);
-    entry.description = (descEnd == std::string::npos) ? line.substr(descStart) : line.substr(descStart, descEnd - descStart);
-
-    std::size_t j = i + 1;
-    if (j < lines.size() && lines[j].compare(0, kExplOpen.size(), kExplOpen) == 0) {
-      std::string collected = lines[j].substr(kExplOpen.size());
-      std::size_t closePos = collected.find(kIndentClose);
-      bool closed = false;
-      if (closePos != std::string::npos) {
-        collected = collected.substr(0, closePos);
-        closed = true;
-      }
-      while (!closed && j + 1 < lines.size()) {
-        const std::string &cont = lines[j + 1];
-        if (cont.empty() || cont.compare(0, kEntryOpen.size(), kEntryOpen) == 0) break;
-        j++;
-        std::size_t cp = cont.find(kIndentClose);
-        if (cp != std::string::npos) {
-          collected += "\n" + cont.substr(0, cp);
-          closed = true;
-        } else {
-          collected += "\n" + cont;
-        }
-      }
-      entry.explanation = collected;
-      i = j;
-    }
-    entries.push_back(std::move(entry));
-    i++;
-  }
-  return entries;
-}
-
 // 標準的なPOSIXのシングルクォートによるシェルエスケープ: '...'で
 // 包み、埋め込まれたリテラルのクォートはそれぞれ'\''(クォートを
 // 閉じ、エスケープされたクォート、クォートを再度開く)に置き換える
@@ -857,6 +743,416 @@ std::string resolveTempRoot(const std::string &homeDirectory, const std::string 
   return tempRootDirectory.empty() ? (homeDirectory + "/.usilic") : tempRootDirectory;
 }
 }  // namespace
+
+// 2026-09-05追加、QuickKeyEntry自身のコメント参照(application.hpp)。
+// "^H"/"^J^H"/"^Jc"/"^O^S"/"^["等のキャレット記法を、kKeyTable自身の
+// 手書きのbytes初期化子(例えば{"^Jc",...,{kLeaderJ,'c'},...})と等価な
+// バイト列へ機械的に変換する。ASCII単位の単純な逐次スキャン: '^'に
+// 続く1文字は制御バイト(`toupper(c)-'@'`――このポート全体で既に確立
+// している'A'..'_'の範囲での慣習、KeyInputが生のNUL/Ctrl-Spaceを0x80
+// として報告する例外はapplication.cpp自身の別の既存コメント、"^@"に
+// だけ適用)、それ以外の1文字はそのままのリテラルバイトとして扱う。
+// 2026-09-12時点、QUICK.txt自身はもうこの記法を使っていない
+// (parseKeyNotationBytes()自身のコメント参照)――既存の呼び出し元が
+// 無くなった後もテスト・将来の利用のため残してある、無名名前空間の
+// 外(application.hpp宣言、テストから直接呼べるように)へ移した。
+std::vector<int> parseCaretNotationBytes(const std::string &label) {
+  std::vector<int> bytes;
+  std::size_t i = 0;
+  while (i < label.size()) {
+    unsigned char c = static_cast<unsigned char>(label[i]);
+    if (c == '^' && i + 1 < label.size()) {
+      unsigned char nc = static_cast<unsigned char>(label[i + 1]);
+      bytes.push_back(nc == '@' ? 0x80 : std::toupper(nc) - '@');
+      i += 2;
+    } else {
+      bytes.push_back(c);
+      i += 1;
+    }
+  }
+  return bytes;
+}
+
+namespace {
+// help_text.cpp自身のexpandHelpMarkup()とは別物(あちらは表示用の制御
+// バイト列を「生成」する側): ここでは逆に、QUICK.txt自身が地の文の
+// 強調に使う<b>/<u>/<i>タグを、KEY一覧の1行テキスト(renderKeyRows()
+// 自身がexpandHelpMarkup()を通さず素のContentView::Line::textを直接
+// 組み立てる、自身のコメント参照)に生の"<b>"等が漏れて見えてしまわ
+// ないよう、タグ自体だけを取り除き中身は残す(装飾自体は失われるが、
+// 正しく読めるプレーンテキストの方を優先する)。
+std::string stripInlineMarkupTags(const std::string &text) {
+  static const std::vector<std::string> kTags = {"<b>", "</b>", "<u>", "</u>", "<i>", "</i>"};
+  std::string out = text;
+  for (const auto &tag : kTags) {
+    std::size_t pos;
+    while ((pos = out.find(tag)) != std::string::npos) out.erase(pos, tag.size());
+  }
+  return out;
+}
+
+// ASCII空白+全角スペース(U+3000、QUICK.txt自身が多用する字下げ)の
+// 両方を取り除く――std::isspace()は全角スペースの3バイト個々には
+// 反応してしまう(それぞれ単体では制御文字でも空白でもない)ため、
+// 専用の実装が必要。
+std::string trimKeyText(const std::string &text) {
+  std::size_t start = 0, end = text.size();
+  auto isAsciiSpace = [](unsigned char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+  while (start < end) {
+    if (isAsciiSpace(static_cast<unsigned char>(text[start]))) {
+      start++;
+    } else if (start + 3 <= end && text.compare(start, 3, "\xE3\x80\x80") == 0) {
+      start += 3;
+    } else {
+      break;
+    }
+  }
+  while (end > start) {
+    if (isAsciiSpace(static_cast<unsigned char>(text[end - 1]))) {
+      end--;
+    } else if (end - start >= 3 && text.compare(end - 3, 3, "\xE3\x80\x80") == 0) {
+      end -= 3;
+    } else {
+      break;
+    }
+  }
+  return text.substr(start, end - start);
+}
+}  // namespace
+
+// 2026-09-12追加、直接のユーザー依頼(⑧、docs/HISTORY.md参照:
+// "今のQUICK.txtではプレフィックスキーをF-0、F-1等で表示しているが、
+// KEYモードへ反映する際は、~/.usilic/usilicrc内のKEY設定を反映して
+// から表示して欲しい"): usilicrc/QUICK.txt自身が使う"C-h"/"C-j C-h"/
+// "C-x C-k e"/"ESC"(またはC-[)/"SPC"/"tab"という表記(いずれも
+// src/usilicrc自身のKEY章の表記規約そのもの)を、直接実行用のバイト列
+// へ変換する。呼び出し元は、F-Nプレフィックス参照(F-0/F-1等)を
+// resolveFPrefixTokens()で事前に解決してから渡すこと――ここでは
+// もうF-Nという記号自体は理解しない(usilicrcの実際のF-?設定次第で
+// 何にでもなり得る、記号のままでは実行不能なため)。
+// "↓"/"↑"のような、QUICK.txt自身がNOTATION代わりに使う生の非ASCII
+// グリフ(特殊キーの見た目上の別名であり、それ自体を打鍵で再現する
+// 手段が無い)を含む表記は、素直にその生バイト列を「実行用バイト」と
+// して押し込むのではなく、空のバイト列(=実行不能)を返す――kKeyTable
+// 自身のコメントが既に確立している「矢印等の特殊キーはこのテーブル
+// 自体には含めない(素のバイトでの別名(^N/^P等)がどのみち存在する
+// ため実害無し)」という前例に合わせている。
+std::vector<int> parseKeyNotationBytes(const std::string &notation) {
+  for (unsigned char c : notation) {
+    if (c >= 0x80) return {};  // 生の非ASCIIグリフ(矢印等)を含む -- 実行不能
+  }
+  std::vector<int> bytes;
+  std::istringstream iss(notation);
+  std::string token;
+  while (iss >> token) {
+    std::string upper = token;
+    for (char &c : upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (upper == "ESC" || token == "C-[") {
+      bytes.push_back(0x1b);
+    } else if (upper == "SPC" || upper == "SPACE") {
+      bytes.push_back(' ');
+    } else if (upper == "TAB") {
+      bytes.push_back('\t');
+    } else if (upper == "C-SPC" || token == "C-@") {
+      bytes.push_back(0x00);
+    } else if (token.size() >= 3 && token[0] == 'C' && token[1] == '-') {
+      unsigned char c = static_cast<unsigned char>(token[2]);
+      bytes.push_back(std::toupper(c) - '@');
+      for (std::size_t k = 3; k < token.size(); k++) bytes.push_back(static_cast<unsigned char>(token[k]));
+    } else {
+      for (char c : token) bytes.push_back(static_cast<unsigned char>(c));
+    }
+  }
+  return bytes;
+}
+
+// 2026-09-12追加、直接のユーザー依頼(⑧): usilicrc自身のKEY章の
+// F-?サブセクション(F-0からF-9、最大10個のプレフィックスキー定義、
+// src/usilicrc自身のコメント(2)(3)参照: "Any keys except for ESC can
+// be set to `F-?' (from F-0 to F-9) up to 2-stroke")を、そのセクション
+// 自体の生テキスト(usilicrcファイル全体、または"KEY"セクションの
+// 部分文字列)から抽出する。各F-Nスロットの値は、対応する行の先頭の
+// 連続したインデント(タブ/半角スペース)を取り除き、'#'以降の
+// コメント(あれば)を切り捨て、前後の空白を取り除いたもの――複数語
+// (例:"C-x C-k")もそのまま1つの値として保持する。行がインデント
+// されていなければ(次のトップレベルの内容、通常はK-?セクションの
+// 開始)そこで打ち切る。空行に達した場合も打ち切る(このリポジトリの
+// 他の全セクションと同じ、空行区切りの慣習)。実際のユーザー自身の
+// ~/.usilic/usilicrcはテンプレート(src/usilicrc)より短く、F-0から
+// F-4までの5個しか定義していない(F-5以降は存在しない)――戻り値の
+// 要素数がusilicrcファイルによって10未満になり得ることは想定内。
+std::vector<std::string> parseFPrefixTable(const std::string &keySectionRawText) {
+  std::vector<std::string> table;
+  std::vector<std::string> lines;
+  {
+    std::size_t start = 0;
+    while (start <= keySectionRawText.size()) {
+      std::size_t nl = keySectionRawText.find('\n', start);
+      if (nl == std::string::npos) {
+        lines.push_back(keySectionRawText.substr(start));
+        break;
+      }
+      lines.push_back(keySectionRawText.substr(start, nl - start));
+      start = nl + 1;
+    }
+  }
+  std::size_t i = 0;
+  while (i < lines.size() && trimKeyText(lines[i]).compare(0, 3, "F-?") != 0) i++;
+  if (i >= lines.size()) return table;  // "F-?"自体が見つからない(空/壊れたusilicrc) -- 空のテーブル
+  i++;
+  while (i < lines.size() && table.size() < 10) {
+    const std::string &line = lines[i];
+    if (line.empty()) break;
+    unsigned char first = static_cast<unsigned char>(line[0]);
+    if (first != ' ' && first != '\t') break;  // インデントされていない=次のトップレベル(通常K-?)
+    std::string value = line;
+    std::size_t hashPos = value.find('#');
+    if (hashPos != std::string::npos) value = value.substr(0, hashPos);
+    table.push_back(trimKeyText(value));
+    i++;
+  }
+  return table;
+}
+
+// 2026-09-12追加、直接のユーザー依頼(⑧、"F-0を変更後、エディターを
+// 抜けて^Hしたときにはすでに反映"): 本物の~/.usilic/usilicrcを都度
+// 新規に読み込む(loadQuickKeyEntries()自身のQUICK.txt無キャッシュ
+// 方針と同じ――Configuration自身のキャッシュされた起動時設定とは
+// 意図的に別系統にしてある、こちらは呼ばれるたびに実際のファイル
+// システムの「今の」状態を反映する必要があるため)。ファイルが
+// 存在しない/読めない場合は空のテーブルを返す(loadQuickKeyEntries()
+// 自身の「mpi等の他機体でこのパスが存在せずクラッシュする、という
+// 事態を避ける」という既存の防御方針に合わせている)――空のテーブル
+// はresolveFPrefixTokens()側で「該当スロット無し、素通し」として
+// 安全に扱われる。
+std::vector<std::string> loadFPrefixTable(const std::string &usilicrcPath) {
+  std::ifstream in(usilicrcPath, std::ios::binary);
+  if (!in) return {};
+  std::ostringstream buffer;
+  buffer << in.rdbuf();
+  return parseFPrefixTable(buffer.str());
+}
+
+// 2026-09-12追加、直接のユーザー依頼(⑧、"KEYモードへ反映する際は、
+// ~/.usilic/usilicrc内のKEY設定を反映してから表示して欲しい
+// （F-0 C-cならC-x C-c）"): text内に現れる独立した"F-<数字1桁>"
+// トークンを、table(parseFPrefixTable()自身のコメント参照)の対応する
+// 設定値へ置き換える。2桁以上の数字が続く場合(例:"F-10"、実際には
+// F-9までしか存在しないが)は誤認しないよう素通しする。該当スロットが
+// 未設定または範囲外の場合(例: F-5以降が定義されていないusilicrc)は、
+// 置き換えず"F-N"の表記のままにする――代入すべき実際の値が無いため。
+std::string resolveFPrefixTokens(const std::string &text, const std::vector<std::string> &table) {
+  std::string out;
+  out.reserve(text.size());
+  std::size_t i = 0;
+  while (i < text.size()) {
+    if (text[i] == 'F' && i + 2 < text.size() && text[i + 1] == '-' &&
+        std::isdigit(static_cast<unsigned char>(text[i + 2]))) {
+      std::size_t digitEnd = i + 3;
+      bool multiDigit = digitEnd < text.size() && std::isdigit(static_cast<unsigned char>(text[digitEnd]));
+      if (!multiDigit) {
+        int slot = text[i + 2] - '0';
+        if (slot >= 0 && slot < static_cast<int>(table.size()) && !table[slot].empty()) {
+          out += table[slot];
+          i = digitEnd;
+          continue;
+        }
+      }
+    }
+    out += text[i];
+    i++;
+  }
+  return out;
+}
+
+// 2026-09-05追加、直接のユーザー依頼("今だけKEYモードを
+// ~/git/usilic/src/QUICK.txtを元に構築して欲しい...^H : キーアサイン
+// 一覧を表示...`^H`と`キーアサイン一覧を表示`がハイライト表示になり
+// 得る文字列で、動作はその章にあるとおり"): QUICK.txt自身(展開前の
+// 生のmarkupテキスト)から、"KEY"章の各エントリを抜き出す。
+// expandHelpMarkup()(help_text.cpp)とは別物――あちらは<b>/<indentN>/
+// <i>を「表示用の制御バイト列」へ展開するのに対し、こちらは逆に
+// QUICK.txt自身のmarkupを「構造化されたラベル/説明/詳細説明」へ
+// 「解析」する。
+// 2026-09-12全面改稿、直接のユーザー依頼(⑧⑨⑩): QUICK.txt自身が
+// usilicrc本来の記法へ全面的に書き直されたのに伴う書き直し。旧版が
+// 前提にしていた"<indent4><b>ラベル</b> : 説明</indent>"という固定の
+// タグ番号・太字ラップ・" : "区切りはもう現存するQUICK.txtとは一致
+// しない(indent番号は項目451の半角化に伴い変わり得る、ラベル自体は
+// もう<b>で囲まれない、区切りは全角の"：")。新しい解析方針:
+//   1. まず本文全体から、独立行として"<b>KEY</b>"(前後の空白のみ許容、
+//      他のNOTATION章内の入れ子の"<indent7><b>KEY</b>"とは区別する
+//      ――あちらは単なるNOTATION説明の一部であり、実際のKEY章その
+//      ものではない)が現れる位置を探し、その直後からを走査対象と
+//      する(それより前のNAME/SYNOPSIS/DESCRIPTION/NOTATION/
+//      CONFIGURATION各章の"："を含む地の文を、実際のキー割り当てと
+//      誤認しないため)。
+//   2. 走査対象の中で、"<indentN>"(Nは1〜2桁、半角化後の任意の値)
+//      で始まる行を見つけたら、"</indent>"が現れるまで(複数行に
+//      またがることがある)貪欲に読み進めて1つの「スパン」として
+//      集める。
+//   3. スパンを改行で分割し、"："を含む行それぞれを1つのエントリの
+//      候補にする――"ページ/行送り"/"プロンプト"のような、タグ無し
+//      の見出し行の直後に<indent5>で複数のkey：description行が
+//      まとめて入っている場合も、あるいは1つの<indent7>スパンに
+//      複数のkey：description行が(空行区切り無しで)詰め込まれている
+//      場合(例:「文字列をコピー」の項が、本体+C-@/C-[ w/F-0 spcの
+//      3つの補助キーを同じスパン内に持つ)も、この分割だけで自然に
+//      複数エントリへ分かれる――特別扱いのコードは不要。
+//   4. スパンから作られたエントリがちょうど1件だけの場合に限り、
+//      直後(空行を挟まない、まさに次)の行がさらに別の<indentN>で
+//      始まっていれば、それをこのエントリの説明(explanation)として
+//      対応付ける――複数エントリに分かれたスパン(上の3参照)は、
+//      観測されたQUICK.txt自身の実例ではどれも後続の説明を伴わない
+//      ため、対応付けを行わない。
+//   5. 各エントリのラベル/説明それぞれから<b>/<u>/<i>タグを剥がし
+//      (stripInlineMarkupTags()、renderKeyRows()が素のテキストとして
+//      そのまま使うため)、"F-N"トークンをfPrefixTable経由で実際の
+//      設定値へ解決する(resolveFPrefixTokens()、⑧自身の要求)。
+//      実行用バイト列(bytes)は、解決「後」のラベルからparseKeyNotationBytes()
+//      で導出する――表示上の"F-0 C-c"→"C-x C-c"という書き換えと、
+//      実行時に実際に送出されるバイト列が、決して食い違わないように
+//      するため。
+std::vector<QuickKeyEntry> parseQuickKeyEntries(const std::string &raw, const std::vector<std::string> &fPrefixTable) {
+  std::vector<QuickKeyEntry> entries;
+  std::vector<std::string> lines;
+  {
+    std::size_t start = 0;
+    while (start <= raw.size()) {
+      std::size_t nl = raw.find('\n', start);
+      if (nl == std::string::npos) {
+        lines.push_back(raw.substr(start));
+        break;
+      }
+      lines.push_back(raw.substr(start, nl - start));
+      start = nl + 1;
+    }
+  }
+  const std::string kIndentOpenPrefix = "<indent";
+  const std::string kIndentClose = "</indent>";
+  const std::string kFullWidthColon = "\xEF\xBC\x9A";  // "："
+
+  auto stripIndentTag = [&](const std::string &line, std::size_t &pos) -> bool {
+    if (line.compare(pos, kIndentOpenPrefix.size(), kIndentOpenPrefix) != 0) return false;
+    std::size_t numStart = pos + kIndentOpenPrefix.size();
+    std::size_t numEnd = numStart;
+    while (numEnd < line.size() && numEnd < numStart + 2 && std::isdigit(static_cast<unsigned char>(line[numEnd])))
+      numEnd++;
+    if (numEnd == numStart || numEnd >= line.size() || line[numEnd] != '>') return false;
+    pos = numEnd + 1;
+    return true;
+  };
+
+  // "<b>KEY</b>"という独立行を探し、それより前は一切見ない(NOTATION
+  // 章内の入れ子の"<indent7><b>KEY</b>"は、行頭がインデントタグである
+  // ため一致しない)。
+  std::size_t keyStart = 0;
+  while (keyStart < lines.size() && trimKeyText(lines[keyStart]) != "<b>KEY</b>") keyStart++;
+  if (keyStart >= lines.size()) return entries;  // "KEY"章自体が見つからない
+  std::size_t i = keyStart + 1;
+
+  auto makeEntryFromSubline = [&](const std::string &subline) -> std::optional<QuickKeyEntry> {
+    std::size_t sep = subline.find(kFullWidthColon);
+    if (sep == std::string::npos) return std::nullopt;
+    std::string keyPart = trimKeyText(subline.substr(0, sep));
+    std::string descPart = trimKeyText(subline.substr(sep + kFullWidthColon.size()));
+    keyPart = stripInlineMarkupTags(keyPart);
+    descPart = stripInlineMarkupTags(descPart);
+    if (keyPart.empty()) return std::nullopt;
+    std::string resolvedKey = resolveFPrefixTokens(keyPart, fPrefixTable);
+    std::string resolvedDesc = resolveFPrefixTokens(descPart, fPrefixTable);
+    QuickKeyEntry entry;
+    entry.label = resolvedKey;
+    entry.description = resolvedDesc;
+    entry.bytes = parseKeyNotationBytes(resolvedKey);
+    return entry;
+  };
+
+  while (i < lines.size()) {
+    const std::string &line = lines[i];
+    std::size_t pos = 0;
+    if (!stripIndentTag(line, pos)) {
+      i++;
+      continue;
+    }
+    std::string collected = line.substr(pos);
+    std::size_t closePos = collected.find(kIndentClose);
+    bool closed = false;
+    std::size_t j = i;
+    if (closePos != std::string::npos) {
+      collected = collected.substr(0, closePos);
+      closed = true;
+    }
+    while (!closed && j + 1 < lines.size()) {
+      const std::string &cont = lines[j + 1];
+      std::size_t contPos = 0;
+      if (cont.empty() || stripIndentTag(cont, contPos)) break;
+      j++;
+      std::size_t cp = cont.find(kIndentClose);
+      if (cp != std::string::npos) {
+        collected += "\n" + cont.substr(0, cp);
+        closed = true;
+      } else {
+        collected += "\n" + cont;
+      }
+    }
+    std::vector<std::string> sublines;
+    {
+      std::size_t start = 0;
+      while (start <= collected.size()) {
+        std::size_t nl = collected.find('\n', start);
+        if (nl == std::string::npos) {
+          sublines.push_back(collected.substr(start));
+          break;
+        }
+        sublines.push_back(collected.substr(start, nl - start));
+        start = nl + 1;
+      }
+    }
+    std::vector<QuickKeyEntry> spanEntries;
+    for (const auto &sl : sublines) {
+      if (auto e = makeEntryFromSubline(sl)) spanEntries.push_back(std::move(*e));
+    }
+    std::size_t next = j + 1;
+    if (spanEntries.size() == 1 && next < lines.size()) {
+      std::size_t explPos = 0;
+      if (stripIndentTag(lines[next], explPos)) {
+        std::string explCollected = lines[next].substr(explPos);
+        std::size_t explClose = explCollected.find(kIndentClose);
+        bool explClosed = false;
+        std::size_t k = next;
+        if (explClose != std::string::npos) {
+          explCollected = explCollected.substr(0, explClose);
+          explClosed = true;
+        }
+        while (!explClosed && k + 1 < lines.size()) {
+          const std::string &cont = lines[k + 1];
+          std::size_t contPos = 0;
+          if (cont.empty() || stripIndentTag(cont, contPos)) break;
+          k++;
+          std::size_t cp = cont.find(kIndentClose);
+          if (cp != std::string::npos) {
+            explCollected += "\n" + cont.substr(0, cp);
+            explClosed = true;
+          } else {
+            explCollected += "\n" + cont;
+          }
+        }
+        // resolveFPrefixTokens()自身のコメント参照(⑧): 説明文中の
+        // "F-N"トークンも同じテーブルで解決する――<b>/<u>/<i>タグは
+        // ここでは剥がさない(showKeyReference()側が既にexpandHelpMarkup()
+        // を通して正しく装飾展開するため、stripInlineMarkupTags()は
+        // renderKeyRows()が素のテキストとして直接使うlabel/description
+        // 側だけに必要)。
+        spanEntries[0].explanation = resolveFPrefixTokens(explCollected, fPrefixTable);
+        j = k;
+      }
+    }
+    for (auto &e : spanEntries) entries.push_back(std::move(e));
+    i = j + 1;
+  }
+  return entries;
+}
 
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
@@ -8033,6 +8329,13 @@ bool Application::toggleListBrowserHistory() {
 // 行数/ラベルを前提とした既存のKEYモードのテスト群(例えば
 // "^S : FGREP"という前提)を静かに壊していた――ユーザーが明示的に
 // この暫定プレビューを試したい時だけ有効になるようにする。
+// 2026-09-12更新、直接のユーザー依頼(⑧): F-Nプレフィックス参照を
+// 実際の設定へ解決するため、本物の~/.usilic/usilicrc(usilicrcPath_、
+// 既にInfoバナー等で使われている実パス)のF-?テーブルを、呼ばれる
+// たびに新規に読み込む(loadFPrefixTable()自身のコメント参照――
+// Configuration自身のキャッシュされた起動時設定とは意図的に別系統)。
+// これによりQUICK.txt同様、usilicrcを編集して戻ってきた直後の^Hにも
+// 即座に反映される。
 void Application::loadQuickKeyEntries() {
   quickKeyEntries_.clear();
   if (!std::getenv("USILICQUICKKEY")) return;
@@ -8042,7 +8345,8 @@ void Application::loadQuickKeyEntries() {
   if (!in) return;
   std::ostringstream buffer;
   buffer << in.rdbuf();
-  quickKeyEntries_ = parseQuickKeyEntries(buffer.str());
+  std::vector<std::string> fPrefixTable = loadFPrefixTable(usilicrcPath_);
+  quickKeyEntries_ = parseQuickKeyEntries(buffer.str(), fPrefixTable);
 }
 
 void Application::renderKeyRows() {
@@ -8066,11 +8370,24 @@ void Application::renderKeyRows() {
     if (label.size() < maxLabelWidth) label.insert(0, maxLabelWidth - label.size(), ' ');
     std::string text = label + " : " + description;
     if (isMacro) text += " (M)";
+    // 2026-09-12追加、直接のユーザー依頼(⑨、docs/HISTORY.md参照:
+    // "「ページ/行送り」および「プロンプト」の項については説明文が
+    // 無いので行全体を反転表示にしてほしい（選択するとキーが返る
+    // だけ）"): 対応する説明(explanation)が無いエントリには、実行/
+    // 参照という2つの意味のある行き先が無い(showKeyReference()自身の
+    // entry.explanation.empty()時の早期returnコメント参照――選択して
+    // も何も起きない)ため、keyColumnFocus_による左右の分割ハイライト
+    // をやめ、行全体を1つの単位としてハイライトする。
+    bool wholeRowHighlight = useQuick && quickKeyEntries_[i].explanation.empty();
     std::vector<AttributeRun> attributes;
     if (static_cast<int>(i) == cursor) {
-      int split = static_cast<int>(maxLabelWidth);
-      if (keyColumnFocus_ == 0) attributes.push_back({0, split, Display::Attribute::Standout});
-      else attributes.push_back({split, static_cast<int>(text.size()), Display::Attribute::Standout});
+      if (wholeRowHighlight) {
+        attributes.push_back({0, static_cast<int>(text.size()), Display::Attribute::Standout});
+      } else {
+        int split = static_cast<int>(maxLabelWidth);
+        if (keyColumnFocus_ == 0) attributes.push_back({0, split, Display::Attribute::Standout});
+        else attributes.push_back({split, static_cast<int>(text.size()), Display::Attribute::Standout});
+      }
     }
     lines.push_back({text, std::nullopt, std::nullopt, std::move(attributes)});
   }

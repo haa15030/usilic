@@ -1195,22 +1195,57 @@ struct AnchorSnapshot {
 // 2026-09-05追加、直接のユーザー依頼("今だけKEYモードを
 // ~/git/usilic/src/QUICK.txtを元に構築して欲しい"): 従来のkKeyTable
 // (application.cpp、C++のハードコード配列)の代わりに、実行中に
-// QUICK.txt自身の"KEY"章(<indent4><b>ラベル</b> : 説明</indent>の
-// 各行+直後の<indent8>詳細説明</indent>ブロック)を都度パースして
-// 構築する、暫定的な並行データソース。KeyTableEntry(application.cpp
-// 自身のコメント参照)と役割は同じだが、フィールドはこの一切れが
-// 実際に使うものだけに絞ってある――descriptionEn(英語版、QUICK.txt
-// 自体がまだ日本語専用)・isMacro(該当する概念が無い)・helpSection
-// (章番号ではなく、explanation自身が直接の参照先になる)は無い。
-// あくまで「確認しながら進める」ための一時的なプロトタイプであり、
-// 正式なアーキテクチャ(ユーザー自身の言葉: "文字列一覧表を作って
-// おいてそれを元にファイル分割")はまだ未着手。
+// QUICK.txt自身の"KEY"章を都度パースして構築する、暫定的な並行
+// データソース。KeyTableEntry(application.cpp自身のコメント参照)と
+// 役割は同じだが、フィールドはこの一切れが実際に使うものだけに絞って
+// ある――descriptionEn(英語版、QUICK.txt自体がまだ日本語専用)・
+// isMacro(該当する概念が無い)・helpSection(章番号ではなく、
+// explanation自身が直接の参照先になる)は無い。あくまで「確認しながら
+// 進める」ための一時的なプロトタイプであり、正式なアーキテクチャ
+// (ユーザー自身の言葉: "文字列一覧表を作っておいてそれを元にファイル
+// 分割")はまだ未着手。
+// 2026-09-12更新、直接のユーザー依頼(⑧⑨⑩、docs/HISTORY.md参照):
+// QUICK.txt自身がusilicrc本来の記法("<indentN>label：description
+// </indent>"、labelはF-N(usilicrc自身のF-?プレフィックス定義への
+// 記号参照)を含み得るC-x/ESC/SPC等の生の表記)へ全面的に書き直された
+// のに伴い、parseQuickKeyEntries()自身も全面的に書き直した(旧版の
+// "<indent4><b>label</b> : description</indent>"という形は現存する
+// QUICK.txt本体とはもう一致しない、旧版のコメントに残っていたその
+// 記述は歴史的事実として上のコメントからは削除済み)。
 struct QuickKeyEntry {
   std::string label;        // 例: "^H"(キャレット記法、画面表示にも使う)
   std::string description;  // 例: "キーアサイン一覧を表示（常時）"
-  std::vector<int> bytes;   // labelをキャレット記法から解釈した、直接実行用のバイト列
-  std::string explanation;  // 直後の<indent8>...</indent>ブロックの生テキスト(markup展開前)、無ければ空
+  std::vector<int> bytes;   // labelをキー表記から解釈した、直接実行用のバイト列(解釈不能なら空――parseKeyNotationBytes()自身のコメント参照)
+  std::string explanation;  // 直後の<indentN>...</indent>ブロックの生テキスト(markup展開前)、無ければ空
 };
+
+// parseCaretNotationBytes()自身の定義コメント(application.cpp)参照。
+std::vector<int> parseCaretNotationBytes(const std::string &label);
+
+// parseKeyNotationBytes()自身の定義コメント(application.cpp)参照:
+// usilicrc/QUICK.txt自身が使う"C-h"/"ESC"/"SPC"/"tab"等の表記(F-N
+// プレフィックス参照は事前にresolveFPrefixTokens()で解決済みである
+// ことを前提とする)を、直接実行用のバイト列へ変換する。
+std::vector<int> parseKeyNotationBytes(const std::string &notation);
+
+// parseFPrefixTable()自身の定義コメント(application.cpp)参照:
+// usilicrc自身のKEY章のF-?サブセクション(F-0からF-9、最大10個の
+// プレフィックスキー定義)を、そのセクション自体の生テキストから
+// 抽出する。
+std::vector<std::string> parseFPrefixTable(const std::string &keySectionRawText);
+
+// loadFPrefixTable()自身の定義コメント(application.cpp)参照:
+// usilicrcファイル自体を都度新規に読み込み、そのF-?テーブルを返す
+// (ファイルが存在しない/読めない場合は空のテーブルを返す――安全側)。
+std::vector<std::string> loadFPrefixTable(const std::string &usilicrcPath);
+
+// resolveFPrefixTokens()自身の定義コメント(application.cpp)参照:
+// text内の独立した"F-N"トークンを、tableの対応する設定値へ置き換える
+// (未設定/範囲外のスロットはそのまま素通しする)。
+std::string resolveFPrefixTokens(const std::string &text, const std::vector<std::string> &table);
+
+// parseQuickKeyEntries()自身の定義コメント(application.cpp)参照。
+std::vector<QuickKeyEntry> parseQuickKeyEntries(const std::string &raw, const std::vector<std::string> &fPrefixTable);
 
 class Application {
  public:
