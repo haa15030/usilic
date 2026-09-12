@@ -398,6 +398,24 @@ void TerminalDisplay::open() {
 }
 
 void TerminalDisplay::close() {
+  // 2026-09-12修正、直接のユーザー報告("usilic -cを終えた後、普通に
+  // man lsとやっても何も出ない。かつての一行設定未解除みたいな
+  // 症状"): 実機PTYで確認したところ、通常終了時に送出される制御
+  // シーケンスはexitAltScreen(代替画面から抜けるだけ)のみで、
+  // open()自身がapplyScrollRegion()でモードライン用に1行(または
+  // スムーズスクロール時は2行)狭めていたスクロール領域(DECSTBM)は
+  // 一度も本来の全画面幅へ戻されていなかった――本物の端末はそのまま
+  // 狭いスクロール領域を引き継いでしまい、usilic終了後に起動された
+  // 別のプログラム(`man`が使う`less`等)の出力がその領域に押し込め
+  // られて「何も出ない」ように見える。leaveForExternalProgram()自身の
+  // コメント参照の通り「外部プログラムはusilicがそれを狭めたことなど
+  // 全く知らない」という同じ理屈がここにも当てはまる――違いは今回、
+  // usilic自身がその後二度と戻ってこない(プロセスごと終了する)ため、
+  // 対になるreenterFromExternalProgram()は不要な点だけ。先にこれを
+  // 呼んで全画面幅へ戻し(open()自身のenterAltScreen→
+  // applyScrollRegion()の順序のちょうど逆順)、その後で代替画面から
+  // 抜ける。
+  leaveForExternalProgram();
   // legacyのtc.cはexit_ca_mode(te)をTc.teへ取り込んでいたが一度も
   // それを呼んでいなかった――usilicは終了時に常に端末の代替画面を
   // 有効なままにしていた。これは単純な移植ではなく意図的な修正
