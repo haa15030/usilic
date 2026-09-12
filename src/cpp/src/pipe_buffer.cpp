@@ -1,5 +1,7 @@
 #include "pipe_buffer.hpp"
 
+#include <utility>
+
 namespace fm {
 
 PipeBuffer::PipeBuffer(Charset::Encoding encoding, int width, long maxBytes)
@@ -255,14 +257,41 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   // 同じ制御バイトを再度たどるだけなので安全(冪等)。改行が見つかれば
   // その位置を返す(呼び出し元はfinalize(true)扱いにしてそこまで
   // 読み進める)、見つからなければ-1。
+  // 2026-09-12修正、直接のユーザー依頼("<indentN>を<indentNN>
+  // （二桁対応）にして"): \x01(字下げ)の直後は、expandHelpMarkup()
+  // 自身のコメント参照の通り、元のタグの数字を1〜2文字そのまま転写
+  // したASCII数字「文字」列のまま(値そのものを1バイトの生バイトに
+  // する案は、本物のCtrl-A(0x01)がたまたま非数字の後続バイトを伴う
+  // 場合に誤認してしまうため撤回した)。ここで最大2文字の連続した
+  // 数字を読んで10進数として組み立てる――1文字も数字が続かなければ
+  // 自分のマーカーではない(本物のCtrl-A等)とみなし読み飛ばさない。
+  // 戻り値: {読み取った値, 数字列の直後の位置}。1文字も数字が続か
+  // なければ{-1, pos}(呼び出し元は「自分のマーカーではない」と判断
+  // する)。
+  auto readIndentDigits = [&](int pos) -> std::pair<int, int> {
+    int value = -1, p = pos;
+    for (int k = 0; k < 2 && p < n && convertedLine[p] >= '0' && convertedLine[p] <= '9'; k++, p++) {
+      if (value < 0) value = 0;
+      value = value * 10 + (convertedLine[p] - '0');
+    }
+    return {value, p};
+  };
   auto skipMarkersFrom = [&](int pos) -> int {
     while (pos + 1 < n) {
       unsigned char mc = static_cast<unsigned char>(convertedLine[pos]);
-      if (mc != '\x01' && mc != '\x02') break;
-      unsigned char digit = static_cast<unsigned char>(convertedLine[pos + 1]);
-      if (digit < '0' || digit > '9') break;
-      if (mc == '\x01') currentIndent_ = digit - '0';
-      else currentItalic_ = (digit == '1');
+      if (mc == '\x01') {
+        auto [value, digitsEnd] = readIndentDigits(pos + 1);
+        if (value < 0) break;
+        currentIndent_ = value;
+        pos = digitsEnd;
+        continue;
+      }
+      unsigned char value = static_cast<unsigned char>(convertedLine[pos + 1]);
+      if (mc == '\x02' && value >= '0' && value <= '9') {
+        currentItalic_ = (value == '1');
+      } else {
+        break;
+      }
       pos += 2;
     }
     return pos;
@@ -302,14 +331,18 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     int placementStart = i;  // popLastCharForKinsoku()自身のコメント参照
     unsigned char c = static_cast<unsigned char>(convertedLine[i]);
     // 2026-09-04追加(currentIndent_自身のコメント参照): expandHelpMarkup()
-    // が<indentN>/</indent>から生成する制御バイト\x01+数字1桁――
-    // 幅を持たないゼロ幅の指示なので、wrapText_/wrapAttrs_には一切
-    // 書き込まず、currentIndent_を更新するだけで読み飛ばす。
+    // が<indentN>/</indent>から生成する制御バイト\x01+1バイト――幅を
+    // 持たないゼロ幅の指示なので、wrapText_/wrapAttrs_には一切書き
+    // 込まず、currentIndent_を更新するだけで読み飛ばす。2026-09-12
+    // 修正(readIndentDigits()自身のコメント参照、二桁対応): 直後の
+    // 1〜2バイトはASCII数字文字のままなので、それらを読んで10進数を
+    // 組み立てる――数字が1つも続かなければ(本物のCtrl-A等)このまま
+    // 素通りさせる。
     if (c == '\x01' && i + 1 < n) {
-      unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
-      if (digit >= '0' && digit <= '9') {
-        currentIndent_ = digit - '0';
-        i += 2;
+      auto [value, digitsEnd] = readIndentDigits(i + 1);
+      if (value >= 0) {
+        currentIndent_ = value;
+        i = digitsEnd;
         continue;
       }
     }

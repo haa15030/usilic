@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 
 namespace fm {
 
@@ -33,28 +34,47 @@ std::string expandHelpMarkup(const std::string &text) {
   if (!text.empty() && text[0] == '\n') i = 1;
   const std::string boldOpen = "<b>", boldClose = "</b>";
   const std::string underlineOpen = "<u>", underlineClose = "</u>";
-  // 2026-09-04追加、直接のユーザー依頼("行頭にパディングする全角
-  // スペースの個数を指定するだけのusilic特化マークアップ書式"、
-  // EPUBの<div class="indent_1em">相当――折り返した継続行にも
-  // 同じ幅の字下げを引き継ぐ): <indentN>...</indent>(Nは1桁の
-  // 全角スペース個数)。太字/下線(1文字ごとの重ね打ちバイト列)とは
-  // 別系統の制御バイト\x01+数字1桁で表す――\x01<N>(N=1-9)で
-  // 開始(以後の折り返しでN個の全角スペースを引き継ぐ)、\x01""0""で
-  // 終了(引き継ぎをやめる)。対応するデコーダはPipeBuffer::wrapLine()
+  // 2026-09-04追加、直接のユーザー依頼("行頭にパディングするスペース
+  // の個数を指定するだけのusilic特化マークアップ書式"、EPUBの
+  // <div class="indent_1em">相当――折り返した継続行にも同じ幅の
+  // 字下げを引き継ぐ): <indentN>...</indent>(Nはスペース個数、
+  // 2026-09-12以降は半角スペース、pipe_buffer.cpp自身の
+  // seedIndentIfAtLineStart()参照)。太字/下線(1文字ごとの重ね打ち
+  // バイト列)とは別系統の制御バイト\x01+1バイトで表す――\x01<N>で
+  // 開始(以後の折り返しでN個のスペースを引き継ぐ)、\x01\x00で終了
+  // (引き継ぎをやめる)。対応するデコーダはPipeBuffer::wrapLine()
   // 自身のコメント参照。中身(段落本文)自体はここでは一切変換せず、
   // 開始/終了マーカーの間をこの関数自身の通常のループにそのまま
   // 委ねる(入れ子の<b>/<u>もそのまま機能する)。
+  // 2026-09-12修正、直接のユーザー依頼("QUICK.txt検証用<indentN>の
+  // 設定を<indentNN>（二桁対応）にして"): 半角化により同じ見た目の
+  // 字下げ幅を得るにはNの値がおおむね倍必要になったため、1桁(0-9)
+  // 限定だったNを1〜2桁(0-99)へ拡張した。当初は\x01の直後の1バイトを
+  // 値そのもの(生バイト、0-99)にする案で実装したが、実機テスト
+  // ("control bytes pass through as literal bytes"、test_pipe_buffer.cpp)
+  // により、この案では本物のCtrl-A(0x01)がたまたま非数字の後続バイト
+  // (例:'b'=0x62)を伴って現れた場合に、それを誤って自分のマーカーだと
+  // 誤認してしまう(安全網が失われる)ことが判明したため撤回した。
+  // 代わりに、後続バイトはあくまでASCII数字「文字」のまま(元のタグの
+  // 数字を1〜2文字そのまま転写するだけ)にし、デコーダ側
+  // (PipeBuffer::wrapLine()/skipMarkersFrom())が最大2文字の連続した
+  // 数字を読んで10進数として組み立てる――「\x01の直後が数字文字で
+  // なければ自分のマーカーではない」という既存の安全網はそのまま
+  // 保たれる。斜体用の\x02(下記)は0/1の2値のみなので、元から1文字
+  // 固定のまま変更していない。
   const std::string indentOpenPrefix = "<indent";
   const std::string indentClose = "</indent>";
   while (i < text.size()) {
-    bool isIndentOpen = text.compare(i, indentOpenPrefix.size(), indentOpenPrefix) == 0 &&
-                         i + indentOpenPrefix.size() + 1 < text.size() &&
-                         std::isdigit(static_cast<unsigned char>(text[i + indentOpenPrefix.size()])) &&
-                         text[i + indentOpenPrefix.size() + 1] == '>';
+    std::size_t numStart = i + indentOpenPrefix.size();
+    std::size_t numEnd = numStart;
+    while (numEnd < text.size() && numEnd < numStart + 2 && std::isdigit(static_cast<unsigned char>(text[numEnd])))
+      numEnd++;
+    bool isIndentOpen = text.compare(i, indentOpenPrefix.size(), indentOpenPrefix) == 0 && numEnd > numStart &&
+                        numEnd < text.size() && text[numEnd] == '>';
     if (isIndentOpen) {
       out += '\x01';
-      out += text[i + indentOpenPrefix.size()];
-      i += indentOpenPrefix.size() + 2;  // "<indent" + digit + ">"
+      out.append(text, numStart, numEnd - numStart);  // 元の数字文字(1〜2桁)をそのまま転写
+      i = numEnd + 1;  // "<indent" + 1〜2桁の数字 + ">"
       // 2026-09-04追加、実機での実際の再現(初回のsrc/HELP.txt全面
       // 改稿を実際に流し込んで発覚): 複数行の<indentN>...</indent>を
       // 読みやすく書く実際の著者の書き方("<indentN>\n本文...\n
@@ -77,7 +97,7 @@ std::string expandHelpMarkup(const std::string &text) {
       // 出力済みなので、末尾がちょうど改行ならそれを取り除く。
       if (!out.empty() && out.back() == '\n') out.pop_back();
       out += '\x01';
-      out += '0';
+      out += '0';  // 終了(値0) -- ASCII '0'文字のまま(isIndentOpen自身のコメント参照)
       i += indentClose.size();
       continue;
     }

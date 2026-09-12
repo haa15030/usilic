@@ -235,13 +235,19 @@ TEST_CASE("control bytes pass through as literal bytes (ContentView highlights t
 // (1個あたり表示幅2、U+3000)から半角スペースN個(1個あたり表示幅1、
 // ASCII 0x20)へ変更された――pipe_buffer.cpp自身のseedIndentIfAtLineStart()
 // のコメント参照。このテスト自体の期待値も合わせて更新した。
+//
+// 2026-09-12再修正、直接のユーザー依頼("<indentN>の設定を<indentNN>
+// （二桁対応）にして"): \x01の直後は引き続きASCII数字「文字」の
+// まま(本物のCtrl-A(0x01)との誤認を避けるため、help_text.cpp/
+// pipe_buffer.cpp自身のコメント参照)――1〜2桁まで許容するよう
+// デコーダ側(readIndentDigits())を拡張した。
 TEST_CASE("\\x01<N> indent marker: a wrapped CONTINUATION line is padded with N half-width "
           "ASCII spaces; text already mid-line when the marker arrives is untouched "
           "(padding only ever applies at an actual line START, see seedIndentIfAtLineStart())") {
   PipeBuffer buf(Charset::Encoding::Ascii, 6, 1 << 20);
   std::string raw = "AB";
   raw.push_back(1);
-  raw.push_back('1');  // \x01 1 -- begin indent of 1 half-width space (1 column)
+  raw.push_back('1');  // \x01 '1' -- begin indent of 1 half-width space (1 column)
   raw += "CDEFGH\n";
   buf.feed(raw);
   REQUIRE(buf.lines().size() == 2);
@@ -269,7 +275,7 @@ TEST_CASE("\\x01<N> indent marker: when the marker arrives right at a fresh line
   PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
   std::string raw;
   raw.push_back(1);
-  raw.push_back('2');  // \x01 2 -- right at the very start, nothing placed yet
+  raw.push_back('2');  // \x01 '2' -- right at the very start, nothing placed yet
   raw += "AB\n";
   buf.feed(raw);
   REQUIRE(buf.lines().size() == 1);
@@ -292,6 +298,42 @@ TEST_CASE("\\x01<N> indent marker: \\x010 (N=0) turns the indent back off for an
   // No leading ideographic space this time -- the indent was already
   // turned off before this wrap boundary was reached.
   CHECK(buf.lines()[1].text == "GHIJ");
+}
+
+// 2026-09-12追加、直接のユーザー依頼("<indentN>の設定を<indentNN>
+// （二桁対応）にして"): 2桁の数字文字列("12"、readIndentDigits()自身
+// のコメント参照)が正しく10進数として組み立てられ、その個数ぶんの
+// 半角スペースが実際に生成されることを確認する。
+TEST_CASE("\\x01<N> indent marker: a TWO-digit value (e.g. 12) is read as two ASCII digit "
+          "characters and produces that many half-width spaces, not just a single-digit "
+          "subset of it") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  std::string raw;
+  raw.push_back(1);
+  raw += "12";  // \x01 "12" -- two ASCII digit characters, value 12
+  raw += "AB\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == std::string(12, ' ') + "AB");
+}
+
+// 2026-09-12追加、同上: 本物のCtrl-A(0x01)の直後に非数字バイトが
+// 続く場合は、依然として(safe-net、"control bytes pass through as
+// literal bytes"と同じ理屈)自分のマーカーとして誤認せずそのまま
+// 素通りすることを確認する――2桁対応の実装(readIndentDigits())が
+// この安全網を壊していないことの回帰テスト。
+TEST_CASE("\\x01<N> indent marker: \\x01 NOT followed by any digit is left as a literal "
+          "control byte, not misread as a (zero-length) indent marker") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  std::string raw = "a";
+  raw.push_back(1);
+  raw += "b\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 1);
+  std::string expected = "a";
+  expected.push_back(1);
+  expected += "b";
+  CHECK(buf.lines()[0].text == expected);
 }
 
 // 2026-09-04追加、直接のユーザー依頼("禁則処理（句読点が行の冒頭に
@@ -348,7 +390,7 @@ TEST_CASE("kinsoku: the same newline-absorption still works when a zero-width \\
   PipeBuffer buf(Charset::Encoding::Utf8, 3, 1 << 20);
   std::string raw = "AB\xe3\x80\x82";
   raw.push_back(1);
-  raw.push_back('0');  // \x01 0 -- an </indent> close, right where HELP.txt's own shape has it
+  raw.push_back('0');  // \x01 '0' -- an </indent> close, right where HELP.txt's own shape has it
   raw += "\nCD\n";
   buf.feed(raw);
   REQUIRE(buf.lines().size() == 3);

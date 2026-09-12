@@ -5,27 +5,51 @@
 // スペースの個数を指定するだけのusilic特化マークアップ書式"):
 // expandHelpMarkup()自身の<indentN>...</indent>展開のテスト。
 // PipeBuffer::wrapLine()側の実際の消費(折り返し継続行が本当に
-// 全角スペースで字下げされるか)はtest_pipe_buffer.cppで確認する
+// 半角スペースで字下げされるか)はtest_pipe_buffer.cppで確認する
 // ――ここではexpandHelpMarkup()が正しい制御バイト列を生成するかだけ
 // を単体で確認する。
+//
+// 2026-09-12修正、直接のユーザー依頼("<indentN>の設定を<indentNN>
+// （二桁対応）にして"): \x01の直後は、元のタグの数字を1〜2文字その
+// ままASCII数字文字として転写したもの(help_text.cpp自身のコメント
+// 参照、本物のCtrl-A(0x01)との誤認を避けるため)――このindentMarker()
+// ヘルパーは値を10進数の文字列へ変換して連結するだけの薄いラッパー。
+namespace {
+std::string indentMarker(int value) { return "\x01" + std::to_string(value); }
+}  // namespace
 
-TEST_CASE("expandHelpMarkup: <indentN>...</indent> becomes \\x01<N>...\\x010, leaving the "
-          "content between the tags untouched") {
+TEST_CASE("expandHelpMarkup: <indentN>...</indent> becomes \\x01<value>...\\x01\\x00, leaving "
+          "the content between the tags untouched") {
   std::string out = fm::expandHelpMarkup("a<indent2>bcd</indent>e");
-  CHECK(out == "a\x01" "2bcd\x01" "0e");
+  CHECK(out == "a" + indentMarker(2) + "bcd" + indentMarker(0) + "e");
 }
 
 TEST_CASE("expandHelpMarkup: <indentN> nests correctly with <b>/<u> inside its span") {
   std::string out = fm::expandHelpMarkup("<indent3>x<b>y</b>z</indent>");
   // <b>y</b> still expands to its own per-character overstrike "y\by" as usual;
   // only the indent tags themselves become the \x01 control bytes.
-  CHECK(out == "\x01" "3x" "y\by" "z\x01" "0");
+  CHECK(out == indentMarker(3) + "x" "y\by" "z" + indentMarker(0));
 }
 
 TEST_CASE("expandHelpMarkup: a digit 1-9 is accepted, and unrelated text around the tags "
           "passes through unchanged") {
   std::string out = fm::expandHelpMarkup("head <indent9>mid</indent> tail");
-  CHECK(out == "head \x01" "9mid\x01" "0 tail");
+  CHECK(out == "head " + indentMarker(9) + "mid" + indentMarker(0) + " tail");
+}
+
+// 2026-09-12追加、直接のユーザー依頼("<indentN>の設定を<indentNN>
+// （二桁対応）にして"): 2桁(10-99)も正しく1バイトの値として運ばれる
+// ことを確認する。
+TEST_CASE("expandHelpMarkup: a TWO-digit N (10-99) is accepted, encoded as a single raw byte "
+          "carrying the value itself (not two ASCII digit characters)") {
+  std::string out = fm::expandHelpMarkup("<indent16>mid</indent>");
+  CHECK(out == indentMarker(16) + "mid" + indentMarker(0));
+  // 3桁目があると、2桁ちょうどの直後に">"が来ないためタグとして認識
+  // されず(numEnd自身の"2桁まで"上限参照)、"<indent123>"はそのまま
+  // 素通りする(一致しなかったタグは単なるプレーンテキスト)――
+  // </indent>自体は独立してマッチするので、そちらは通常通り閉じる。
+  std::string threeDigits = fm::expandHelpMarkup("<indent123>x</indent>");
+  CHECK(threeDigits == "<indent123>x" + indentMarker(0));
 }
 
 // 2026-09-04追加、直接のユーザー報告("src/HELP.txtは冒頭でちゃんと
@@ -83,17 +107,17 @@ TEST_CASE("expandHelpMarkup: the newline immediately after an <indentN> OPEN tag
           "newline immediately before a </indent> CLOSE tag, are both trimmed (pure "
           "source-readability newlines, not intended content)") {
   std::string out = fm::expandHelpMarkup("<indent4>\nbody\n</indent>");
-  CHECK(out == "\x01" "4body\x01" "0");
+  CHECK(out == indentMarker(4) + "body" + indentMarker(0));
 }
 
 TEST_CASE("expandHelpMarkup: only the newline DIRECTLY adjacent to the tag is trimmed -- a "
           "second (genuinely intentional) blank line right after the open tag survives") {
   std::string out = fm::expandHelpMarkup("<indent2>\n\nbody</indent>");
-  CHECK(out == "\x01" "2\nbody\x01" "0");
+  CHECK(out == indentMarker(2) + "\nbody" + indentMarker(0));
 }
 
 TEST_CASE("expandHelpMarkup: when </indent> is NOT preceded by a newline (it closes on the "
           "same line as the content), nothing is trimmed") {
   std::string out = fm::expandHelpMarkup("<indent2>body</indent>");
-  CHECK(out == "\x01" "2body\x01" "0");
+  CHECK(out == indentMarker(2) + "body" + indentMarker(0));
 }
