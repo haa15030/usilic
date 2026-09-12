@@ -1664,16 +1664,22 @@ class Application {
   // そして現在画面上にあるものが何であれ再描画する。
   void handleResize();
 
-  // 2026-09-12追加、項目⑫: GUIモード限定のDock風モードライン自動
-  // 表示/非表示(main.cppのrunGuiPhase()自身のコメント参照)専用。
-  // 呼び出し側(main.cpp)が既にdisplay_の実効状態(GraphicalDisplay::
-  // setModeLineVisible())を直接書き換えた「後」に呼ばれる想定――
-  // Command::ToggleModeLineVisibility自身のhandleCommand()ハンドラ
-  // とは異なりHistory::setModeLineVisible()には一切触れない。永続化
-  // された「希望」(History)と、GUIループだけが知っている一時的な
-  // 「マウス接近による今の見た目」を混ぜないための、意図的な分離
-  // (application.hpp自身のCommand::ToggleModeLineVisibility宣言
-  // コメント参照)。
+  // 2026-09-12追加、項目⑫。当初はGUIモード限定のDock風モードライン
+  // 自動表示/非表示専用だったが、そのDock機能自体は項目458で撤回
+  // 済み――現在の呼び出し元は、`Command::ToggleModeLineVisibility`
+  // 自身のhandleCommand()ハンドラ(^Oh、-c/-g共通、既にdisplay_/
+  // history_双方を更新した「後」に呼ぶ)と、main.cpp起動時の
+  // history.modeLineVisible()適用直後(display.setModeLineVisible()
+  // 呼び出し側が既にdisplay_の実効状態を書き換えた「後」)の2箇所。
+  // どちらも呼び出し側が既にdisplay_の状態を確定させてから呼ぶという
+  // 前提は変わっていない。2026-09-13追加、項目461のさらなる修正
+  // (TerminalDisplay::columns()自身のコメント参照――^Ohの表示/非表示
+  // でcolumns()の値自体が変わるようになった)を受けて、単なる
+  // layoutViews()+redraw()では幅に依存する内容(FileMode/ManModeの
+  // 折り返し、DirectoryModeのls列レイアウト等)が古いままになるため、
+  // handleResize()自身(本物の端末リサイズと全く同じ理由でdisplay_の
+  // 現在のrows()/columns()を読み直して幅・高さ両方をリフローする)へ
+  // 委譲するよう変更した。
   void relayoutForModeLineVisibilityChange();
 
   // Shell::onPtyReadable()がEOFを報告するたびに(子プロセスが、

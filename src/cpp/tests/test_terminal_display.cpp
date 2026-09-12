@@ -61,16 +61,27 @@ TEST_CASE("keySequence: direct lookups") {
 }
 
 TEST_CASE("rows/columns/setSize") {
-  // 2026-09-13修正、項目459フィードバック("スクロールバー...それ用の
-  // エリアが必要...幅は倍(二文字分)")を受けて、columns()自身の.cpp側
-  // コメント参照――公開columns()は生の端末幅から常に
-  // kScrollbarStripWidth(2)を差し引いて報告する。
   TerminalDisplay d(fakeCaps(), 24, 80);
   CHECK(d.rows() == 24);
-  CHECK(d.columns() == 78);  // 80 - 2 (常時予約されるスクロールバー用の2列)
+  CHECK(d.columns() == 80);  // modeLineVisible()の既定はtrue -- 生の端末幅そのまま
   d.setSize(50, 120);
   CHECK(d.rows() == 50);
-  CHECK(d.columns() == 118);  // 120 - 2
+  CHECK(d.columns() == 120);
+}
+
+TEST_CASE("columns: reserves kScrollbarStripWidth(2) columns only while the mode line is hidden") {
+  // 2026-09-13修正、直接のユーザー依頼("HELPを見たユーザが機能を
+  // 試すとき、右端に意味も無く空白が残るならバグだと見なすはず...
+  // 都度行数が調整され、きちんとウィンドウ幅に揃うなら、ちゃんと
+  // 作り込まれていると判断する。なので都度調整でよろしく。")を受けて、
+  // columns()自身の.cpp側コメント参照――当初の「常に-2」から、
+  // modeLineVisible()に連動する形へ改めた。
+  TerminalDisplay d(fakeCaps(), 24, 80);
+  CHECK(d.columns() == 80);
+  d.setModeLineVisible(false);
+  CHECK(d.columns() == 78);  // 80 - 2、スクロールバー用に予約
+  d.setModeLineVisible(true);
+  CHECK(d.columns() == 80);  // 表示に戻すと予約も解除される
 }
 
 TEST_CASE("outputEnabled defaults to false and is settable") {

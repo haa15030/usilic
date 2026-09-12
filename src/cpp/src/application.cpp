@@ -12369,9 +12369,13 @@ void Application::handleResize() {
 }
 
 void Application::relayoutForModeLineVisibilityChange() {
-  layoutViews();
-  activeView().redraw();
-  if (promptActive()) promptEditor_.redraw();
+  // application.hpp自身の宣言コメント参照――項目461でTerminalDisplay::
+  // columns()自体がmodeLineVisible()に連動するようになったため、
+  // 単なるlayoutViews()+redraw()では幅依存のリフローが古いまま
+  // 取り残される。handleResize()は本物の端末リサイズと全く同じ理由で
+  // display_の現在のrows()/columns()を読み直すので、そのままここでも
+  // 再利用できる。
+  handleResize();
 }
 
 bool Application::wantsExit() const { return wantsExit_; }

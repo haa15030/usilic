@@ -360,7 +360,7 @@ int TerminalDisplay::rows() const { return rows_; }
 // scrollbarWidthぶん広く作れるので「専用エリア」がグリッド外に
 // 確保できるが、端末のグリッド幅こそが利用可能な全幅であり、
 // そのような余剰は無い)ため、代わりにこの公開columns()自体を
-// kScrollbarStripWidth分だけ常に狭く報告する――display_.columns()を
+// kScrollbarStripWidth分だけ狭く報告する――display_.columns()を
 // 読む全ての呼び出し元(ContentView、DirectoryModeのls列レイアウト、
 // PipeBuffer::wrapLine()の折り返し幅、PromptEditor等、本ファイルの
 // 外の全て)が、この1箇所を変えるだけで自動的に2列狭い幅で再配置
@@ -368,7 +368,27 @@ int TerminalDisplay::rows() const { return rows_; }
 // その2列(columns()、columns()+1)を反転表示のつまみ専用の予約
 // エリアとして使う。実際の生の端末幅(columns_、setSize()が保持)は
 // このメソッドの外では一切変わらない。
-int TerminalDisplay::columns() const { return std::max(0, columns_ - kScrollbarStripWidth); }
+//
+// 2026-09-13再修正、直接のユーザー依頼("頻繁に切り替わる、という
+// 意味で該当するケースはもちろんある。HELPを見たユーザが機能を試す
+// とき、右端に意味も無く空白が残るならバグだと見なすはず=gk。逆に
+// 都度行数が調整され、きちんとウィンドウ幅に揃うなら、ちゃんと作り
+// 込まれていると判断する。なので都度調整でよろしく。"): 当初は
+// modeLineVisible_の状態に関わらず常時-2としていたが(コーディネー
+// ター自身の判断、「^Ohのたびに折り返し幅が変わる方が落ち着かない」
+// という理由だった)、ユーザーからは「モードライン表示中に理由も
+// 無く2列の空白が残る方こそバグに見える」との明確な反論があり、
+// これを受けてmodeLineVisible_に連動させることにした――非表示の
+// 間だけ狭く報告し、表示中は生の端末幅をそのまま返す。^Ohを押す
+// たびに実際に列数が変わる(=Application::relayoutForModeLineVisibilityChange()
+// が単なるlayoutViews()+redraw()ではなくhandleResize()相当のフル
+// リフロー(FileMode/ManModeのreflow()、DirectoryModeのls列レイア
+// ウト再評価、Shellのonresize等)を今や必要とする、自身のコメント
+// 参照)ことになるが、それこそが「ウィンドウ幅にきちんと揃う」と
+// いう望まれた見た目である。
+int TerminalDisplay::columns() const {
+  return modeLineVisible_ ? columns_ : std::max(0, columns_ - kScrollbarStripWidth);
+}
 
 void TerminalDisplay::setSize(int rows, int columns) {
   rows_ = rows;
