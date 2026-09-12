@@ -23897,6 +23897,50 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `make app`/jキー回帰チェックも完了。
 
 
+463. **`^Oh`の実際のキーハンドラが`relayoutForModeLineVisibilityChange()`
+    を一度も呼んでおらず、FileMode/ManModeが幅変更時に再折り返しされ
+    ないままだったバグを修正**
+   - **経緯**: 直接のユーザー報告「スクロールバーが出るたびに折り
+     返し位置の文字が消えてしまって文章が繋がらない。」(項目462の
+     反映後)。続けて、この症状が実機での判断("これでは作り込まれて
+     いない、と判断されて終いだな")につながりかねないという指摘も
+     受けた。
+   - **原因**: 項目462で`Application::relayoutForModeLineVisibilityChange()`
+     の実装自体は`handleResize()`(FileMode/ManModeの`reflow()`、
+     DirectoryModeのls列レイアウト再評価、Shellの`onResize()`を含む
+     フルリフロー)へ委譲するよう修正済みだったが、実際に`^O` `h`が
+     叩く`handleCommand()`内の`case Command::ToggleModeLineVisibility:`
+     は、項目⑫(2026-09-12)当時からの独立した(`layoutViews()`+
+     `activeView().redraw()`だけの)自前実装を持っており、この
+     `relayoutForModeLineVisibilityChange()`を一度も呼び出していな
+     かった――つまり`display_.setModeLineVisible()`でTerminalDisplay::
+     columns()の値自体は変わっても、FileMode/ManModeはそれを一切
+     知らされないまま、既に折り返し済みの(古い幅の)行がレンダリング
+     時に新しい(狭い)`columns()`へ黙って切り詰められるだけだった
+     ――行の末尾が失われ、次の行の本来の続きとかみ合わなくなって
+     いた。項目462の実装時、`relayoutForModeLineVisibilityChange()`
+     自体は正しく直したが、それを実際に呼んでいるかどうかの確認を
+     怠っていた(このハンドラが独立した重複実装を持っていたことに
+     気づいていなかった)。
+   - **修正**: `case Command::ToggleModeLineVisibility:`の
+     `layoutViews(); activeView().redraw();`を
+     `relayoutForModeLineVisibilityChange();`の呼び出しに置き換えた。
+   - **検証**: `test_application.cpp`に、File モードで`^Oh`を押す前に
+     (RecordingDisplay自身はTerminalDisplayと異なりmodeLineVisible()
+     に連動しないため)`display.setSize()`で幅の変化を明示的に模擬し、
+     `^Oh`後の`app.activeContentView().lines()`を連結した文字列が
+     元のソース文字列と1文字も欠落・重複せず一致することを検証する
+     回帰テストを追加。`make test` 1122/1123件・21763/21764アサー
+     ション通過(残る1件は既知の環境フレークLOCATEで無関係)。実機PTYで、
+     非周期的な300文字の一意な文字列(a-z0-9を含むファイル)を用意し、
+     モードライン表示中(幅80)・`^Oh`後(幅78)それぞれの折り返し結果を
+     行単位に連結して元の文字列と1文字単位で一致することを直接確認
+     した――修正前はモードライン表示中のwidth-80の行がそのまま
+     width-78へ黙って切り詰められ、行と行の継ぎ目が本来の続きとは
+     ずれて表示されることも合わせて確認済み。`make install`/
+     `make app`/jキー回帰チェックも完了。
+
+
 ## 22. UTF-8コア処理(charset判定・変換、モード非依存)
 
 3. **UTF-8対応(Step 1〜7完了、2026-07-16)**

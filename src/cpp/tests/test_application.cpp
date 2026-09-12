@@ -5615,6 +5615,46 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O h toggles Display::modeLineVisible() an
   CHECK(history.modeLineVisible());
 }
 
+// 2026-09-13追加、直接のユーザー報告("スクロールバーが出るたびに
+// 折り返し位置の文字が消えてしまって文章が繋がらない"): 項目461で
+// TerminalDisplay::columns()自体がmodeLineVisible()に連動するように
+// なった際、実際の^Oh経路(このすぐ下のcase Command::
+// ToggleModeLineVisibility)は、application.cpp内に自身の独立した
+// (layoutViews()+redraw()だけの)実装を持っており、Application::
+// relayoutForModeLineVisibilityChange()(handleResize()への委譲、
+// FileMode/ManModeのreflow()込み)を一度も呼んでいなかった――幅が
+// 変わったこと自体をFileMode側が知らないまま、表示だけが新しい幅で
+// 切り詰められ、行の末尾が黙って失われていた。display.setSize()で
+// 幅の変化を明示的に模擬し(RecordingDisplay自身は本物のTerminalDisplay
+// と異なりmodeLineVisible()に連動しないため)、^Ohがそれを正しく
+// FileModeへ反映する(=文字を失わず再折り返しする)ことを検証する。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O h while in File mode reflows the content to the new width "
+                           "without losing or duplicating any character at the wrap boundary") {
+  std::string original;
+  for (int i = 0; i < 300; i++) original += static_cast<char>('a' + (i % 26));
+  { std::ofstream(root / "longline.txt") << original; }
+
+  REQUIRE(app.start(path()));
+  int idx = indexOf("longline.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  // TerminalDisplay::columns()自身のコメント参照: モードラインを
+  // 隠すと本物の端末では幅が2列狭くなる――RecordingDisplayはこの
+  // 連動を持たないため、ここで明示的に模擬する。
+  display.setSize(display.rows(), display.columns() - 2);
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  REQUIRE(app.feedByte('h', std::nullopt));
+  CHECK_FALSE(display.modeLineVisible());
+
+  std::string reflowed;
+  for (const auto &line : app.activeContentView().lines()) reflowed += line.text;
+  REQUIRE(reflowed.size() >= original.size());
+  CHECK(reflowed.substr(0, original.size()) == original);
+}
+
 // ^Ohの再割り当て後もCommand::ToggleScrollMode自身の仕組み(Display/
 // Historyの永続化含む)はコードとして残っている(どのキーからも到達
 // できないだけ)ことを、handleCommand()への直接呼び出しで確認する。

@@ -17079,3 +17079,10 @@ CUTでタブコード切断すると、最初のタブまでが--となるけれ
 
 >TerminalDisplay::columns()を、modeLineVisible()に連動する形(表示中は生の端末幅そのまま、非表示中だけ2列差し引く)へ変更しました。Application::relayoutForModeLineVisibilityChange()も、単なるlayoutViews()+redraw()からhandleResize()への委譲に変更しています――columns()の値自体が変わるようになった以上、本物の端末リサイズ時と全く同じ理由で、FileMode/ManModeの折り返しやDirectoryModeのls列レイアウトも同時にリフローする必要があるためです。test_terminal_display.cppにcolumns()が78⇔80を往復する専用テストを追加、make test 1121/1122件・21751/21752アサーション通過(残る1件は既知のLOCATEフレーク)。実機PTYで、モードライン表示中はモードライン行が80列全幅まで埋まり右端に無意味な空白が残らないこと、^Ohで隠すと実際に表示領域が1行増えて右端2列につまみが現れること、再度^Ohで戻すと全幅表示に戻ることを直接確認しました。make install/make app/jキー回帰チェックも完了、docs/CHANGES.mdに項目462として記録しました。
 
+<これでは作り込まれていない、と判断されて終いだな。
+反映は大規模になりすぎ？
+
+<スクロールバーが出るたびに折り返し位置の文字が消えてしまって文章が繋がらない。
+
+>実際に原因を特定しました――私自身の見落としです。項目462でApplication::relayoutForModeLineVisibilityChange()自体はhandleResize()(FileMode/ManModeのreflow()込み)へ委譲するよう直しましたが、実際に^O hが叩くhandleCommand()内のcase Command::ToggleModeLineVisibilityは、項目⑫当時からの独立した(layoutViews()+redraw()だけの)自前実装を持っており、この関数を一度も呼んでいませんでした。そのためFileMode/ManModeは幅が変わったこと自体を知らされないまま、既に折り返し済みの古い幅の行が新しい狭いcolumns()へレンダリング時に黙って切り詰められるだけでした――行の末尾が失われ、次の行の続きとかみ合わなくなっていたのが原因です。私のPTY確認がlsディレクトリ一覧ばかりで、実際に折り返しが起きるFileModeのテキストを試していなかったため見逃していました。case Command::ToggleModeLineVisibilityの実装をrelayoutForModeLineVisibilityChange()の呼び出しに差し替えて修正し、非周期的な一意文字列で回帰テストも追加しました。make test 1122/1123件・21763/21764アサーション通過(残る1件は既知のLOCATEフレーク)。実機PTYで、モードライン表示中(幅80)と^Oh後(幅78)それぞれの折り返し結果を連結し、元の文字列と1文字単位で一致することを直接確認しました。make install/make app/jキー回帰チェックも完了、docs/CHANGES.mdに項目463として記録しました。
+

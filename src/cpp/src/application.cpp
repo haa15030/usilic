@@ -4769,15 +4769,25 @@ bool Application::handleCommand(Command command) {
     }
     // 2026-09-12追加、項目⑫(Command::ToggleModeLineVisibility自身の
     // 宣言コメント参照): ToggleLsMode等と異なり、この切り替えは
-    // 予約行数そのものを変えるため、layoutViews()での再計算と
-    // activeView().redraw()での実際の再描画の両方が必要
-    // ――handleResize()自身が全く同じ組み合わせを使っている。
+    // 予約行数そのものを変える。2026-09-13修正、直接のユーザー報告
+    // ("スクロールバーが出るたびに折り返し位置の文字が消えてしまって
+    // 文章が繋がらない"、項目462のフィードバック): 項目461でTerminalDisplay::
+    // columns()自体をmodeLineVisible()に連動させて以来、この
+    // layoutViews()+redraw()だけの旧い組み合わせでは幅が変わったこと
+    // 自体をFileMode/ManModeが知らないまま(reflow()が一度も呼ばれない
+    // ため)取り残されていた――表示だけが新しい(狭い)columns()で
+    // 切り詰められる一方、保持している折り返し済みの行自体は古い幅の
+    // ままだったため、行の末尾が黙って切り落とされ、次の行の本来の
+    // 続きとかみ合わなくなっていた。relayoutForModeLineVisibilityChange()
+    // (自身のコメント参照、今はhandleResize()そのものへ委譲している)
+    // へ差し替えることで、本物の端末リサイズと全く同じ経路でFileMode/
+    // ManModeの再折り返し・DirectoryModeのls列レイアウト再評価・Shell
+    // のonResize()もまとめて行われるようにした。
     case Command::ToggleModeLineVisibility: {
       bool visible = !display_.modeLineVisible();
       display_.setModeLineVisible(visible);
       history_.setModeLineVisible(visible);  // 実行をまたいで永続化される、History自身のフィールドのコメント参照
-      layoutViews();
-      activeView().redraw();
+      relayoutForModeLineVisibilityChange();
       return true;
     }
     case Command::StartFileInput:
