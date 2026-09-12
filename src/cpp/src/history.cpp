@@ -238,6 +238,8 @@ int History::retentionCount() const { return retentionCount_; }
 
 bool History::smoothScrollEnabled() const { return smoothScrollEnabled_; }
 void History::setSmoothScrollEnabled(bool enabled) { smoothScrollEnabled_ = enabled; }
+bool History::modeLineVisible() const { return modeLineVisible_; }
+void History::setModeLineVisible(bool visible) { modeLineVisible_ = visible; }
 int History::lsMode() const { return lsMode_; }
 void History::setLsMode(int mode) { lsMode_ = mode; }
 std::optional<Charset::Encoding> History::savedCharset() const { return savedCharset_; }
@@ -436,6 +438,10 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     // 空白を含むパスも安全に往復できる。
     if (toks.size() > 13) prefs.fontPath = decodeField(toks[13]);
     guiPreferences_ = prefs;
+    // modeLineVisible_(2026-09-12、項目⑫)――同じ理由(古い履歴
+    // ファイルとの前方互換)でさらに末尾に追加。無い場合の既定は
+    // 「表示」(旧来からの唯一の挙動と一致させる)。
+    modeLineVisible_ = toks.size() > 14 ? std::atoi(toks[14].c_str()) != 0 : true;
   }
 
   complete_ = (i < lines.size() && !lines[i].empty() && lines[i][0] == kSubEof);
@@ -515,7 +521,8 @@ std::string History::serialize(const std::string &programName, const std::string
          std::to_string(guiPreferences_.hasColors ? 1 : 0) + " " + std::to_string(guiPreferences_.fgR) + " " +
          std::to_string(guiPreferences_.fgG) + " " + std::to_string(guiPreferences_.fgB) + " " +
          std::to_string(guiPreferences_.bgR) + " " + std::to_string(guiPreferences_.bgG) + " " +
-         std::to_string(guiPreferences_.bgB) + " " + encodeField(guiPreferences_.fontPath) + "\n";
+         std::to_string(guiPreferences_.bgB) + " " + encodeField(guiPreferences_.fontPath) + " " +
+         std::to_string(modeLineVisible_ ? 1 : 0) + "\n";
   out += std::string(1, kSubEof) + "\n";
   return out;
 }

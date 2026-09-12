@@ -650,7 +650,7 @@ const KeyTableEntry kKeyTable[] = {
     // エントリ(すぐ上のCommand::Redrawと共有)の説明文で併記済み――
     // 同じ^O^Lを指す2つの行を作らないため、ここには新規追加しない。
     {"^Ol", "lsのソート順を逆順(-r)に切替", "Toggle ls reverse sort order (-r)", {kLeaderO, 'l'}, false, "3"},
-    {"^Oh", "スクロールモードの切替", "Switch scroll mode", {kLeaderO, 'h'}, false, "3"},
+    {"^Oh", "モードラインの表示/非表示切替", "Toggle mode line visibility", {kLeaderO, 'h'}, false, "3"},
 
     // 2026-09-01、直接のユーザー依頼("^Oaはデフォルト文字コード切り替え
     // ではなくてHELP/KEYの日本語<-->英語切り替えでいいと思う"): 以前は
@@ -2336,7 +2336,15 @@ std::string Application::ringCategoryLabel(RingCategory category) const {
 // もまたContentViewの仕事ではないのかについてはContentView自身の
 // クラスコメント参照)。
 void Application::layoutViews() {
-  int contentHeight = std::max(1, display_.rows() - 1);
+  // 2026-09-12追加、項目⑫: モードラインが非表示の間は、通常その行の
+  // ために予約している1行を全ビューへ返す(display_.modeLineVisible()
+  // 自身のコメント参照)。promptEditor_の配置(この関数末尾)は意図的に
+  // 変えていない――legacyから、モードライン行自身をプロンプト入力欄
+  // としても兼用する慣習を引き継いでおり、モードライン非表示中に
+  // プロンプトが起動された場合は、そのビューの最終行を一時的に
+  // 借りるだけで済む(プロンプト終了後の通常のredraw()で元に戻る)。
+  int contentHeight =
+      display_.modeLineVisible() ? std::max(1, display_.rows() - 1) : std::max(1, display_.rows());
   directoryView_.setViewport(0, contentHeight);
   fileView_.setViewport(0, contentHeight);
   grepView_.setViewport(0, contentHeight);
@@ -3421,8 +3429,10 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
     switch (byte) {
       case 'g':  // ^O g : GUIモードをトグル(このポート自身の追加であり、usilicrcのK-?のキー割り当てではない)
         return handleCommand(Command::ToggleGuiMode);
-      case 'h':  // ^O h : スクロールモードを切り替え(K-25)
-        return handleCommand(Command::ToggleScrollMode);
+      case 'h':  // ^O h : モードライン表示/非表示を切り替え(K-25、
+                 // 2026-09-12にToggleScrollModeから付け替え。
+                 // Command::ToggleModeLineVisibility自身のコメント参照)
+        return handleCommand(Command::ToggleModeLineVisibility);
       // 2026-09-08、直接のユーザー依頼によるキー再編("^Ol⇒^Oo（←
       // ファイル名以外はomission）")で'l'から移行。
       case 'o':  // ^O o : `ls`出力の形式を切り替え(K-26、旧^O l)
@@ -4755,6 +4765,19 @@ bool Application::handleCommand(Command command) {
       bool enabled = !display_.smoothScrollEnabled();
       display_.setSmoothScrollEnabled(enabled);
       history_.setSmoothScrollEnabled(enabled);  // 実行をまたいで永続化される、History自身のフィールドのコメント参照
+      return true;
+    }
+    // 2026-09-12追加、項目⑫(Command::ToggleModeLineVisibility自身の
+    // 宣言コメント参照): ToggleLsMode等と異なり、この切り替えは
+    // 予約行数そのものを変えるため、layoutViews()での再計算と
+    // activeView().redraw()での実際の再描画の両方が必要
+    // ――handleResize()自身が全く同じ組み合わせを使っている。
+    case Command::ToggleModeLineVisibility: {
+      bool visible = !display_.modeLineVisible();
+      display_.setModeLineVisible(visible);
+      history_.setModeLineVisible(visible);  // 実行をまたいで永続化される、History自身のフィールドのコメント参照
+      layoutViews();
+      activeView().redraw();
       return true;
     }
     case Command::StartFileInput:
@@ -12341,6 +12364,12 @@ void Application::handleResize() {
     }
   }
   shell_.onResize(display_.rows(), display_.columns());
+  activeView().redraw();
+  if (promptActive()) promptEditor_.redraw();
+}
+
+void Application::relayoutForModeLineVisibilityChange() {
+  layoutViews();
   activeView().redraw();
   if (promptActive()) promptEditor_.redraw();
 }

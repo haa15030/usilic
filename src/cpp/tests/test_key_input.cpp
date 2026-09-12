@@ -43,6 +43,8 @@ class FakeDisplay : public Display {
   void setOutputEnabled(bool e) override { outputEnabled_ = e; }
   bool smoothScrollEnabled() const override { return false; }
   void setSmoothScrollEnabled(bool) override {}
+  bool modeLineVisible() const override { return true; }
+  void setModeLineVisible(bool) override {}
   void open() override {}
   void close() override {}
   void leaveForExternalProgram() override {}

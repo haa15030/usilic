@@ -229,6 +229,21 @@ class Display {
   virtual bool smoothScrollEnabled() const = 0;
   virtual void setSmoothScrollEnabled(bool enabled) = 0;
 
+  // 2026-09-12追加、直接のユーザー依頼(項目⑫、^Ohの再割り当て):
+  // モードライン(画面最終行)の表示/非表示。^Ohキーとusilicrcの
+  // 起動時デフォルト値(History永続化)で切り替わる――smoothScrollEnabled()
+  // 自身の設計と全く同じ形(正確な行算術はこのペアの裏に隠す)。
+  // falseの間は、Application::layoutViews()が全ContentViewへ渡す
+  // contentHeightがdisplay_.rows()そのもの(1行減算無し)になり、
+  // ContentView::renderModeLine()はこの値を見て実際の描画を丸ごと
+  // 抑制する(自身のコメント参照)。TerminalDisplay側はさらに
+  // スクロール領域(DECSTBM)もrows_全体へ広げる(scrollRegionArgs()
+  // 参照)。GraphicalDisplay側は独立したモードライン専用の描画要素を
+  // 持たない(ContentViewが渡す行データをそのままセルグリッドへ描く
+  // だけ)ため、同じ仕組みだけで両バックエンドに効く。
+  virtual bool modeLineVisible() const = 0;
+  virtual void setModeLineVisible(bool visible) = 0;
+
   // 画面へ入る/画面から出る(legacy: ti/te能力経由での端末の代替
   // スクリーンへの出入り)。注記: legacyのtc.cはte(exit_ca_mode)を
   // 取得していたが、どこでも実際には一度も呼んでいなかった――usilic

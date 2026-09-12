@@ -79,6 +79,9 @@ class DelegatingDisplay : public Display {
   bool smoothScrollEnabled() const override;
   void setSmoothScrollEnabled(bool enabled) override;
 
+  bool modeLineVisible() const override;
+  void setModeLineVisible(bool visible) override;
+
   void open() override;
   void close() override;
 

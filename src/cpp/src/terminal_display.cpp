@@ -379,7 +379,32 @@ void TerminalDisplay::setSmoothScrollEnabled(bool enabled) {
   applyScrollRegion();
 }
 
+// 2026-09-12追加、直接のユーザー依頼(項目⑫): display.hpp自身の
+// modeLineVisible()宣言コメント参照。
+bool TerminalDisplay::modeLineVisible() const { return modeLineVisible_; }
+
+void TerminalDisplay::setModeLineVisible(bool visible) {
+  modeLineVisible_ = visible;
+  applyScrollRegion();
+}
+
 std::pair<int, int> TerminalDisplay::scrollRegionArgs() const {
+  // 2026-09-12追加、実際のPTYキャプチャで検証して発見・修正した
+  // オフバイワン: モードライン非表示時は「画面全体」を意図している
+  // ので、素朴に{rows_, 0}を返すと、applyScrollRegion()自身の
+  // tgoto()呼び出し(2整数引数のケースでは列/行を入れ替えて解釈する、
+  // という昔ながらのtgoto()の慣習――このファイル自身のコメント
+  // 参照)と%iによる1加算を経た後、DECSTBMの下端引数がrows_+1という
+  // 範囲外の値になってしまう(実機/実端末では無視されるかクランプ
+  // されるかもしれないが、正しくない)。既に画面全体スクロールを
+  // 実現している`smoothScroll_`有効時の値(rows_-1、下の分岐)と
+  // 全く同じ理由・同じ値を再利用する――スムーズスクロール時は
+  // 元々「モードライン行も含めて丸ごとハードウェアスクロールし、
+  // 直後にrenderModeLine()で描き直す」設計であり(ContentView::
+  // moveUp()/moveDown()自身のコメント参照)、モードライン非表示時に
+  // 「画面全体をスクロール領域にする」というのは、まさにこれと
+  // 同じ状態(予約行が実質ゼロ)を指す。
+  if (!modeLineVisible_) return {rows_ - 1, 0};
   return {rows_ - (smoothScroll_ ? 1 : 2), 0};
 }
 

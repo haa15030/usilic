@@ -137,6 +137,9 @@ class TerminalDisplay : public Display {
   bool smoothScrollEnabled() const override;
   void setSmoothScrollEnabled(bool enabled) override;
 
+  bool modeLineVisible() const override;
+  void setModeLineVisible(bool visible) override;
+
   void open() override;
   void close() override;
 
@@ -168,6 +171,7 @@ class TerminalDisplay : public Display {
   int rows_, columns_;
   bool outputEnabled_ = false;
   bool smoothScroll_ = false;
+  bool modeLineVisible_ = true;
 
   // 2026-09-04追加、直接のユーザー報告("-cでは斜体にならない"=fk)を
   // 調査して発見した実際のバグの修正: setAttribute()自身のコメント

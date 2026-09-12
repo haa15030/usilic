@@ -70,6 +70,8 @@ struct Fixture {
       void setOutputEnabled(bool) override {}
       bool smoothScrollEnabled() const override { return false; }
       void setSmoothScrollEnabled(bool) override {}
+      bool modeLineVisible() const override { return true; }
+      void setModeLineVisible(bool) override {}
       void open() override {}
       void close() override {}
       void leaveForExternalProgram() override { leaveExternalProgramCount()++; }

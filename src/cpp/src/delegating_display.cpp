@@ -38,6 +38,9 @@ void DelegatingDisplay::setOutputEnabled(bool enabled) { backend_->setOutputEnab
 bool DelegatingDisplay::smoothScrollEnabled() const { return backend_->smoothScrollEnabled(); }
 void DelegatingDisplay::setSmoothScrollEnabled(bool enabled) { backend_->setSmoothScrollEnabled(enabled); }
 
+bool DelegatingDisplay::modeLineVisible() const { return backend_->modeLineVisible(); }
+void DelegatingDisplay::setModeLineVisible(bool visible) { backend_->setModeLineVisible(visible); }
+
 void DelegatingDisplay::open() { backend_->open(); }
 void DelegatingDisplay::close() { backend_->close(); }
 

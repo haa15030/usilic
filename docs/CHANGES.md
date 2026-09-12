@@ -23549,6 +23549,106 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      切り詰めスタイルの2bool→1enumへの統合と、trailingへの切り詰め
      機構の新設という、実際にバグ(=bw)を解消する変更は達成できた。
 
+457. **`^Oh`(旧・スクロールモード切替)を「モードラインの表示/非表示
+    切り替え」に再割り当て、`-g`起動時はmacOSのDockのようにマウスが
+    下端に近づくと自動的に一時表示するようにした**
+   - **経緯**: 直接のユーザー依頼(項目⑫)「`^Oo`/`^Ol`は新設したばかり
+     ゆえの失念だが、スクロールモード切替(`^Oh`)は要検討なので載せて
+     いない。旧で試してみたんだが、機能的には意味不明で何のために作った
+     のか今イチピンとこない。そこで別の機能を割り振ってはどうかなと。
+     具体的にはモードラインの表示/非表示切り替え。さらに言えば-g起動時
+     の非表示モードでは、macOSのDockのようにモードラインを自動的に
+     表示/非表示にする。それらが可能かどうか調べて見て」。ユーザーの
+     「現状`^Oh`では慣性スクロールの何が切り替わるの?」という質問に
+     対しては、コード読解の結果、`Display::smoothScrollEnabled()`が
+     viewport端での単一行カーソル移動に実ハードウェアスクロール
+     (`scrollReverse()`/`scrollForward()`)を使うか、常にフル`redraw()`
+     するかを切り替えるだけの、現代のターミナル上では見た目に一切
+     違いが出ない純粋な描画最適化であると回答、ユーザー自身の
+     「機能的には意味不明」という所感を裏付けた。続けて「ではさきほど
+     の方針を、-gも含めて反映して」という実装指示を受けた。
+   - **設計**: `Display::modeLineVisible()`/`setModeLineVisible()`
+     という仮想関数ペアを新設(`smoothScrollEnabled()`と全く同じ形、
+     `TerminalDisplay`/`GraphicalDisplay`/`DelegatingDisplay`全実装)。
+     `History::modeLineVisible()`/`setModeLineVisible()`で永続化
+     (USILICトレーラー末尾に新規トークンを追加、古い履歴ファイルには
+     このトークンが無いため`toks.size() > 14`で有無判定し、無ければ
+     「表示」を既定値とする前方互換)。`Application::layoutViews()`の
+     `contentHeight`計算を`display_.modeLineVisible()`で分岐、非表示
+     時はモードライン用の1行を予約しない。`ContentView::renderModeLine()`
+     は非表示時に早期returnするよう変更(単に描画を省くだけでなく、
+     モードライン用の行が無くなった分`row0_+height_`が画面最終行の
+     「次」を指してしまうため、範囲外への`moveCursor()`を防ぐのに
+     必須)。`TerminalDisplay::scrollRegionArgs()`に非表示専用の分岐
+     `{rows_ - 1, 0}`を追加――`rows_`ではなく`rows_ - 1`である理由は
+     `applyScrollRegion()`自身の`tgoto()`呼び出しの1加算慣習
+     (項目452で確立済み)によるもので、実PTYキャプチャで
+     `\x1b[1;24r`(24行画面で`rows_`のまま渡すと誤って生成されて
+     しまう`\x1b[1;25r`ではなく)になることを確認済み。`^Oh`の
+     ディスパッチ先を`Command::ToggleScrollMode`から新設の
+     `Command::ToggleModeLineVisibility`へ変更(旧`ToggleScrollMode`
+     自体のコードは削除せず、`usilicrc`の`SCROLL`ディレクティブ/
+     `History`の永続化経由の起動時設定という役割だけ残した)。
+     `main.cpp`の`handleCommand()`からは呼べない、GUIループ側から
+     呼ぶための公開メソッド`Application::relayoutForModeLineVisibilityChange()`
+     を新設。
+   - **`-g`のDock風自動表示/非表示**: `runGuiPhase()`内にループ
+     ローカルな状態を追加。設計上の要点は、ユーザーの**永続化された
+     希望**(`History::modeLineVisible()`)と、**今このDockロジック
+     自身が一時的に表示させている最中かどうか**(`modeLineAutoRevealed`、
+     ループローカル、非永続)を意図的に別のboolとして分離したこと――
+     1つに混ぜると手動`^Oh`トグルとこの自動再表示が互いの状態を
+     上書きし合う。マウスの最終既知行(`lastKnownMouseRow`、-1は
+     「まだ一度もhoverイベントを受け取っていない」を意味しDockロジック
+     自体をスキップ)を、hoverイベント消費ループの**両方の**呼び出し
+     箇所で更新した上で、どちらのループが実行されたフレームでも
+     (dragging/coast中やShellモード中でも)無条件に1回評価――新しい
+     hoverイベントが1件も届かなかったフレームでも前回値を保持している
+     ため、「マウスが下端から離れて完全に静止したまま」なグレース
+     期間経過も、次にマウスが動くのを待たずに正しく検知できる。
+     下端からの当たり判定`kModeLineRevealMarginRows=2`(行)、引っ込め
+     までのグレース期間`kModeLineRevealGracePeriod=800ms`は、実際の
+     macOS Dockの体感を参考にしたコーディネーター自身の判断値――この
+     サンドボックスには本物のマウスが無くPTY越しの検証もできないため
+     実測に基づかない。セッション中に`^Oh`で希望が「表示」へ手動で
+     切り替えられた場合、ループローカルな`modeLineAutoRevealed`だけが
+     古いtrueのまま取り残らないよう明示的にリセットする分岐も追加。
+     `tryEnterGuiPhase()`(`-c`→`-g`切り替え時)・GUI終了時の両方で、
+     新しいバックエンドへ`history.modeLineVisible()`(真実の値)を
+     明示的に適用する配線も追加(`GraphicalDisplay`は新規作成時
+     `modeLineVisible_=true`で始まるため、これが無いと非表示設定の
+     まま`^Og`でGUIへ切り替えた瞬間にモードラインが無条件に復活
+     してしまう)。
+   - **実装をforkに委譲した後の"trust but verify"で発見・自力修正した
+     実際のバグ**: fork自身の実装・報告を鵜呑みにせず独自にPTY検証
+     した結果、「`^Oh`でモードラインを隠す→終了→再起動」で、永続化
+     されたはずの非表示設定が再起動直後は反映されず、モードラインが
+     表示されたままになる不具合を発見した。原因は`app/main.cpp`の
+     起動順序――`fm::Application app(...)`のコンストラクタが自身の
+     `layoutViews()`を1回実行する(この時点では`display.modeLineVisible()`
+     はまだ既定のtrue)のに対し、`history.modeLineVisible()`を実際に
+     `display`へ適用する`display.setModeLineVisible(...)`呼び出しは
+     その**後**の行にあり、しかも(同じ並びの`setSmoothScrollEnabled()`/
+     `setFilenameOnlyMode()`とは異なり)`modeLineVisible`は
+     `contentHeight`というレイアウトそのものに影響するため、適用後に
+     再レイアウトを挟まないと反映されない。`display.setModeLineVisible(...)`
+     呼び出し直後に`app.relayoutForModeLineVisibilityChange()`を追加
+     して解消。
+   - **検証**: `make test` 1111/1112件・21714/21715アサーション通過
+     (残る1件は既知の環境依存フレーク`LOCATE`で無関係)。`make usilic`
+     クリーンビルド確認済み。PTY自動テストで、①`usilic -c`(引数無し、
+     履歴の保存/読込パス)で`^Oh`を押すとモードライン行が即座に消える
+     こと、②その状態で終了(`^X^C`→Enter)→再起動すると(上記バグ
+     修正**前**は再現しなかった)モードラインが隠れたまま起動する
+     こと、③再度`^Oh`で表示に戻せることを、それぞれセル単位で確認
+     した。`-g`のマウス接近によるDock風自動表示/非表示自体は、この
+     サンドボックスに本物のマウス/SDLウィンドウが無くPTY越しの検証
+     もできないため、コードレビュー(状態分離・グレース期間・
+     `lastKnownMouseRow`の毎フレーム評価等の設計)のみで確認し、実機
+     での見え方(マージン2行・グレース期間800msが体感に合うか)は
+     ユーザー自身の実機確認を要する。`make install`/`make app`/
+     jキー回帰チェックも完了。
+
 
 ## 22. UTF-8コア処理(charset判定・変換、モード非依存)
 

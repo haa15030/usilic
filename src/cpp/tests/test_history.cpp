@@ -155,6 +155,10 @@ TEST_CASE("session state and trailer settings round trip through explicit setter
   CHECK(h.lsMode() == 2);
   REQUIRE(h.savedCharset().has_value());
   CHECK(*h.savedCharset() == Charset::Encoding::Euc);
+
+  CHECK(h.modeLineVisible() == true);  // 既定は「表示」
+  h.setModeLineVisible(false);
+  CHECK(h.modeLineVisible() == false);
 }
 
 TEST_CASE("serialize() then loadHistoryText() round-trips every category") {
@@ -185,6 +189,7 @@ TEST_CASE("serialize() then loadHistoryText() round-trips every category") {
   h.setSmoothScrollEnabled(true);
   h.setLsMode(1);
   h.setSavedCharset(Charset::Encoding::Utf8);
+  h.setModeLineVisible(false);
 
   std::string text = h.serialize("usilic", "Mon Jan  1 00:00:00 2026");
 
@@ -231,6 +236,35 @@ TEST_CASE("serialize() then loadHistoryText() round-trips every category") {
   CHECK(loaded.lsMode() == 1);
   REQUIRE(loaded.savedCharset().has_value());
   CHECK(*loaded.savedCharset() == Charset::Encoding::Utf8);
+  CHECK(loaded.modeLineVisible() == false);
+}
+
+TEST_CASE("loadHistoryText: USILIC trailer without the modeLineVisible token defaults to visible") {
+  // 2026-09-12追加、項目⑫: modeLineVisible_はUSILICトレーラーの末尾に
+  // 新規追加されたトークンなので、それが「無い」古い履歴ファイルでも
+  // 正しく既定値(表示)へフォールバックすることを検証する
+  // ――history.cpp自身のloadHistoryText()コメント(前方互換の慣習)
+  // 参照。この1行のトークンだけを人為的に切り落として「古い」形式を
+  // 再現する。
+  History h(50);
+  h.setSmoothScrollEnabled(true);
+  std::string text = h.serialize("usilic", "timestamp");
+
+  const std::string label = " USILIC\n";
+  size_t labelPos = text.find(label);
+  REQUIRE(labelPos != std::string::npos);
+  size_t lineStart = labelPos + label.size();
+  size_t lineEnd = text.find('\n', lineStart);
+  REQUIRE(lineEnd != std::string::npos);
+  size_t lastSpace = text.rfind(' ', lineEnd - 1);
+  REQUIRE(lastSpace != std::string::npos);
+  REQUIRE(lastSpace > lineStart);
+  text.erase(lastSpace, lineEnd - lastSpace);  // 末尾トークン(modeLineVisible_)だけを除去
+
+  History loaded;
+  REQUIRE(loaded.loadHistoryText(text, /*environmentCharsetExplicitlySet=*/false));
+  CHECK(loaded.isComplete());
+  CHECK(loaded.modeLineVisible() == true);
 }
 
 TEST_CASE("loadHistoryText: environmentCharsetExplicitlySet=true suppresses the saved charset") {

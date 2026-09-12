@@ -5593,18 +5593,41 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: 'q' (QuitPager) is a no-op in Directory mo
   CHECK_FALSE(app.wantsExit());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O h toggles Display::smoothScrollEnabled() and persists it to History") {
+// 2026-09-12、直接のユーザー依頼(項目⑫、"モードラインの表示/非表示
+// 切り替え")による付け替え: ^OhはCommand::ToggleScrollModeではなく
+// Command::ToggleModeLineVisibilityへ再割り当てされた
+// (application.hpp自身のCommand::ToggleModeLineVisibility宣言コメント
+// 参照)。ToggleScrollMode自体はまだ存在する(下の別テスト、
+// handleCommand()経由の直接呼び出し)。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O h toggles Display::modeLineVisible() and persists it to History") {
+  REQUIRE(app.start(path()));
+  CHECK(display.modeLineVisible());
+  CHECK(history.modeLineVisible());
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
+  CHECK(app.feedByte('h', std::nullopt));
+  CHECK_FALSE(display.modeLineVisible());
+  CHECK_FALSE(history.modeLineVisible());
+
+  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  CHECK(app.feedByte('h', std::nullopt));
+  CHECK(display.modeLineVisible());
+  CHECK(history.modeLineVisible());
+}
+
+// ^Ohの再割り当て後もCommand::ToggleScrollMode自身の仕組み(Display/
+// Historyの永続化含む)はコードとして残っている(どのキーからも到達
+// できないだけ)ことを、handleCommand()への直接呼び出しで確認する。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleScrollMode): still toggles Display::smoothScrollEnabled() and persists it, even though no key reaches it anymore") {
   REQUIRE(app.start(path()));
   CHECK_FALSE(display.smoothScrollEnabled());
   CHECK_FALSE(history.smoothScrollEnabled());
 
-  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
-  CHECK(app.feedByte('h', std::nullopt));
+  CHECK(app.handleCommand(Command::ToggleScrollMode));
   CHECK(display.smoothScrollEnabled());
   CHECK(history.smoothScrollEnabled());
 
-  REQUIRE(app.feedByte(0x0f, std::nullopt));
-  CHECK(app.feedByte('h', std::nullopt));
+  CHECK(app.handleCommand(Command::ToggleScrollMode));
   CHECK_FALSE(display.smoothScrollEnabled());
   CHECK_FALSE(history.smoothScrollEnabled());
 }

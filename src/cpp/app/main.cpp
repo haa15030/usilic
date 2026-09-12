@@ -1695,7 +1695,7 @@ void syncCursorBeforeCoastStoppingKey(int coastLevel, bool &wasActivelyScrolling
 volatile std::sig_atomic_t gGuiSessionSigintReceived = 0;
 void handleSigintForGuiSession(int) { gGuiSessionSigintReceived = 1; }
 
-void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
+void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui, fm::History &history) {
   bool dragging = false;
   // 2026-08-30、直接のユーザー報告(GUI、ARCモードで再現させたスクリー
   // ンショット付き――ただし根本原因はモードを問わない): マウスボタンを
@@ -1769,6 +1769,47 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   // Counts consecutive bare ESC presses, for the ESC-ESC-Enter direct-
   // exit gesture below -- reset by any other key.
   int consecutiveEscapes = 0;
+
+  // 2026-09-12追加、直接のユーザー依頼(項目⑫、"-g起動時の非表示
+  // モードでは、macOSのDockのようにモードラインを自動的に表示/
+  // 非表示にする"): Dock風のマウス接近による一時的な再表示専用の
+  // ループローカルな状態。Display::modeLineVisible()/History::
+  // modeLineVisible()自身の永続化された「希望」とは意図的に別
+  // ――ここで管理するのは「今、希望とは無関係に一時的に見えている
+  // かどうか」だけであり、この2つを1つのboolに混ぜてしまうと、
+  // 手動の^Ohトグルとこの自動再表示が互いの状態を上書きし合って
+  // しまう(application.hpp自身のCommand::ToggleModeLineVisibility
+  // 宣言コメント参照)。
+  //
+  // modeLineAutoRevealed: 現在「このDockロジック自身が」表示させて
+  // いる最中かどうか。falseのままgui.modeLineVisible()がfalseなら、
+  // それは単にユーザーの希望が「非表示」であるという意味であり
+  // (Historyへの直接アクセスを必要とせず、この不変条件だけで判別
+  // できる――希望が「表示」ならgui.modeLineVisible()は最初から
+  // ずっとtrueのはずで、この関数はそれを一切falseにしない)、この
+  // ロジックはまだ何もしていない。
+  bool modeLineAutoRevealed = false;
+  // マウスが最後に下端近くにあった時刻。グレース期間の起点。
+  auto lastNearBottomEdgeTime = std::chrono::steady_clock::now();
+  // 2026-09-12: 下端から何行以内を「接近」とみなすか。実物のmacOS
+  // Dockが1pxではなく数pxの当たり判定を持つのと同じ理由(セル1行
+  // ぴったりだと実マウスでは狙いにくい)で2行分の余裕を持たせた
+  // ――このサンドボックスには本物のマウスが無くPTY越しの検証も
+  // できないため、これは実測に基づかない私自身の判断値であり、
+  // 実機で違和感があれば調整が必要。
+  constexpr int kModeLineRevealMarginRows = 2;
+  // グレース期間: 下端から離れてからモードラインを引っ込めるまでの
+  // 待ち時間。短すぎるとマウスがほんの少し揺れただけで消えて
+  // 使いにくく、長すぎるとDockらしい機敏さが失われる――実際のmacOS
+  // Dockの体感(数百ms〜1秒程度)を参考にした、同じく実機未検証の
+  // 判断値。
+  constexpr auto kModeLineRevealGracePeriod = std::chrono::milliseconds(800);
+  // consumeHoverEvent()が実際に何かキューから取り出せた、直近で
+  // 分かっている限りのマウス行。-1は「このセッションでまだ一度も
+  // hoverイベントを受け取っていない」を意味し、その間はDockロジック
+  // 自体を完全にスキップする(実マウス位置が全く不明なまま行番号
+  // 比較をしても無意味なため)。
+  int lastKnownMouseRow = -1;
 
   while (!app.wantsExit()) {
     if (gGuiSessionSigintReceived) {
@@ -1965,6 +2006,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // comment.
       while (auto hover = gui.consumeHoverEvent()) {
         anyEventThisFrame = true;
+        lastKnownMouseRow = hover->row;  // Dock風モードライン自動再表示、ループ末尾のコメント参照
         // Real mouse movement clears DirectoryMode's own transient
         // "Invalid mode" error (see DirectoryMode::clearEditError()'s
         // own comment on why THIS call site, alongside Application::
@@ -2023,9 +2065,51 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // here (rather than just skipping the block that would have
       // consumed it) means there's nothing stale left queued by the
       // time hovering becomes meaningful again.
-      while (gui.consumeHoverEvent()) {
+      while (auto hover = gui.consumeHoverEvent()) {
+        lastKnownMouseRow = hover->row;  // Dock風モードライン自動再表示、ループ末尾のコメント参照――
+                                         // カーソルハイライトへの反映(上のapplyHoverRowAndRedraw())は
+                                         // このガード自体の元々の理由によりここでは意図的に行わない。
       }
     }
+
+    // 2026-09-12追加、項目⑫: Dock風モードライン自動表示/非表示の
+    // 本体。上のどちらのhover消費ループが実行されたかに関わらず
+    // (dragging/coast中やShellモード中でも、マウスが下端に近づけば
+    // 一時的に見せる/離れれば隠す、という挙動自体は変わらないと
+    // 判断した――gui.rows()/Application::viewForMode()はどのモード
+    // でも安全に成立する)、毎フレーム無条件に1回だけ評価する。
+    // 新しいhoverイベントが1件も届かなかったフレームでも
+    // lastKnownMouseRowは前回値を保持しているので、「マウスが下端
+    // から離れて完全に静止したまま」なグレース期間経過も、次に
+    // マウスが動くのを待たずに正しく検知できる(hoverイベント消費
+    // ループの「中」だけでこの判定をしていた場合の弱点)。
+    if (lastKnownMouseRow >= 0 && !history.modeLineVisible()) {
+      auto now = std::chrono::steady_clock::now();
+      bool nearBottomEdge = lastKnownMouseRow >= gui.rows() - kModeLineRevealMarginRows;
+      if (nearBottomEdge) {
+        lastNearBottomEdgeTime = now;
+        if (!modeLineAutoRevealed) {
+          gui.setModeLineVisible(true);
+          app.relayoutForModeLineVisibilityChange();
+          modeLineAutoRevealed = true;
+        }
+      } else if (modeLineAutoRevealed && now - lastNearBottomEdgeTime >= kModeLineRevealGracePeriod) {
+        gui.setModeLineVisible(false);
+        app.relayoutForModeLineVisibilityChange();
+        modeLineAutoRevealed = false;
+      }
+    } else if (modeLineAutoRevealed && history.modeLineVisible()) {
+      // 2026-09-12追加: セッション中に^Ohで希望が「表示」へ切り替え
+      // られた場合(handleCommand()自身のCommand::ToggleModeLineVisibility
+      // ハンドラがdisplay_/historyの両方を更新する)、このループ
+      // ローカルなmodeLineAutoRevealedフラグだけが古いtrueのまま
+      // 取り残ってしまう――実害は無い(次に希望が再び「非表示」に
+      // 戻るまでこの分岐もこのif全体もどのみち触れない)が、フラグの
+      // 意味を「今このDockロジックが表示させている最中」に保つため
+      // 明示的にfalseへ戻しておく。
+      modeLineAutoRevealed = false;
+    }
+
     while (auto key = gui.consumeKeyEvent()) {
       anyEventThisFrame = true;
       // w/s: the keyboard-driven equivalent of a mouse-drag release
@@ -3078,6 +3162,14 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
                     fm::GraphicalDisplay::Color{savedGui.bgR, savedGui.bgG, savedGui.bgB});
 
   gui->open();
+  // 2026-09-12追加、項目⑫: 新しく作られたGraphicalDisplayは
+  // modeLineVisible_=trueで始まる(GraphicalDisplayのImpl自身の
+  // フィールド既定値参照)ため、直前までterminalDisplayが保持して
+  // いた「実際の希望」(history.modeLineVisible()――^Ohでの手動
+  // トグルはdisplay/historyの両方を同時に更新するので、これが常に
+  // 真実の値)をここで明示的に適用しておかないと、非表示設定のまま
+  // ^OgでGUIへ切り替えた瞬間にモードラインが無条件に復活してしまう。
+  gui->setModeLineVisible(history.modeLineVisible());
   display.setBackend(*gui);
   clearLaunchingTerminal();  // see its own comment -- covered by the GUI window now, so this never flashes
   // 2026-08-21 fix, a direct user report ("HISTORY:9023...が今は逆に
@@ -3124,7 +3216,7 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
   app.editMode().setForegroundLauncher(
       [&gui](const std::vector<std::string> &argv) { return runEditorInLaunchingTerminal(argv, *gui); });
 
-  runGuiPhase(app, *gui);
+  runGuiPhase(app, *gui, history);
 
   app.programMode().setForegroundLauncher(nullptr);  // back to plain ChildProcess::runInteractive() in terminal mode
   app.editMode().setForegroundLauncher(nullptr);
@@ -3161,6 +3253,12 @@ bool tryEnterGuiPhase(fm::Application &app, fm::DelegatingDisplay &display, fm::
     history.setGuiPreferences(prefs);
   }
 
+  // 2026-09-12追加、項目⑫: 上のsetBackend(*gui)呼び出し時と同じ理由
+  // (自身のコメント参照)――GUIセッション中に^Ohで希望が変わっていた
+  // 場合も含め、history.modeLineVisible()を「真実」としてterminalDisplay
+  // 側へも反映しておく。直後のapp.handleResize()がlayoutViews()+
+  // activeView().redraw()を行うので、再描画自体はそちらに任せられる。
+  terminalDisplay.setModeLineVisible(history.modeLineVisible());
   display.setBackend(terminalDisplay);
   gui.reset();  // closes the real window
   if (!app.wantsExit()) app.handleResize();  // redraw the terminal, which SDL's window never touched
@@ -3995,6 +4093,22 @@ int main(int argc, char **argv) {
   display.setSmoothScrollEnabled(hasSavedHistory ? history.smoothScrollEnabled()
                                                   : configuration.smoothScrollEnabled());
   app.directoryMode().setFilenameOnlyMode(hasSavedHistory ? history.lsMode() != 0 : configuration.lsMode() != 0);
+  // 2026-09-12追加、項目⑫: History::modeLineVisible_にはusilicrc側の
+  // 対応するディレクティブが無い(ユーザー依頼はHistoryでの永続化のみ)
+  // ため、未保存の新規インストールは単純に「表示」を既定値とする
+  // (History::modeLineVisible_自身の既定値と一致)。この時点で
+  // display(DelegatingDisplay)がどちらのバックエンドを指していようと
+  // (この行より前のGUI起動経路自身のsetBackend()呼び出し参照)、
+  // ここで一度適用しておけば両方の起動経路を一箇所でカバーできる。
+  display.setModeLineVisible(hasSavedHistory ? history.modeLineVisible() : true);
+  // 2026-09-12追加: fm::Application appのコンストラクタ(このsetModeLineVisible()
+  // 呼び出しより前の行で既に構築済み)は自身のlayoutViews()を構築時点の
+  // display.modeLineVisible()(まだ既定のtrueのまま)で1回実行してしまって
+  // いるため、ここでhistoryの永続化された値を適用するだけではcontentHeight
+  // が古いまま――setSmoothScrollEnabled()/setFilenameOnlyMode()と違い、
+  // modeLineVisible()はレイアウト(予約行数)そのものに影響するので、この
+  // 1回だけは明示的な再レイアウトが必要(PTYでの実機検証で発見)。
+  app.relayoutForModeLineVisibilityChange();
 
   // Resolved to an absolute path (textually only -- lexically_normal(),
   // no symlink resolution, matching PathResolver's own established
@@ -4144,7 +4258,7 @@ int main(int argc, char **argv) {
         [&launchGui](const std::string &command) { return runProgramInLaunchingTerminal(command, *launchGui); });
     app.editMode().setForegroundLauncher(
         [&launchGui](const std::vector<std::string> &argv) { return runEditorInLaunchingTerminal(argv, *launchGui); });
-    runGuiPhase(app, *launchGui);
+    runGuiPhase(app, *launchGui, history);
     app.programMode().setForegroundLauncher(nullptr);
     app.editMode().setForegroundLauncher(nullptr);
   } else {

@@ -178,6 +178,14 @@ class History {
   // -- セッションレベルのトレーラ設定 --
   bool smoothScrollEnabled() const;
   void setSmoothScrollEnabled(bool enabled);
+  // 2026-09-12追加、項目⑫: モードライン(画面最終行)表示/非表示の
+  // ユーザー設定(^Ohで切り替え)。smoothScrollEnabled()と全く同じ
+  // 永続化の形――display.hpp自身のmodeLineVisible()コメント参照。
+  // GUIモードのDock風自動表示/非表示が一時的にDisplay側の実効状態を
+  // 変えることがあっても、この「本来の希望」はここにしか書き込まれ
+  // ない(main.cppのDock自動再表示ロジック自身のコメント参照)。
+  bool modeLineVisible() const;
+  void setModeLineVisible(bool visible);
   int lsMode() const;
   void setLsMode(int mode);
   // 未設定(新規の履歴)の場合、または読み込み時に環境の文字コードが
@@ -248,6 +256,7 @@ class History {
 
   int retentionCount_;
   bool smoothScrollEnabled_ = false;
+  bool modeLineVisible_ = true;
   int lsMode_ = 0;
   GuiPreferences guiPreferences_;
   std::optional<Charset::Encoding> savedCharset_;

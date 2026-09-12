@@ -539,6 +539,13 @@ struct GraphicalDisplay::Impl {
 
   bool outputEnabled = true;
   bool smoothScroll = false;
+  // 2026-09-12追加、項目⑫: display.hpp自身のmodeLineVisible()宣言
+  // コメント参照。GraphicalDisplayには独立したモードライン専用の
+  // 描画要素が無い(ContentViewが渡す行データをそのままセルグリッド
+  // へ描くだけ)ため、このフラグ自体はここに保持するだけで、実際の
+  // 表示/非表示はApplication::layoutViews()のcontentHeight計算と
+  // ContentView::renderModeLine()の抑制ロジックだけで完結する。
+  bool modeLineVisible = true;
 
   std::deque<MouseClick> mouseQueue;
   // 2026-09-14修正、直接のユーザー報告("左クリックでの選択ができ
@@ -1684,6 +1691,9 @@ void GraphicalDisplay::setOutputEnabled(bool enabled) { impl_->outputEnabled = e
 
 bool GraphicalDisplay::smoothScrollEnabled() const { return impl_->smoothScroll; }
 void GraphicalDisplay::setSmoothScrollEnabled(bool enabled) { impl_->smoothScroll = enabled; }
+
+bool GraphicalDisplay::modeLineVisible() const { return impl_->modeLineVisible; }
+void GraphicalDisplay::setModeLineVisible(bool visible) { impl_->modeLineVisible = visible; }
 
 // create()が非表示で作成したウィンドウを表示する(そして前面化/
 // フォーカスする)――create()自身から意図的に分離してあるのは、

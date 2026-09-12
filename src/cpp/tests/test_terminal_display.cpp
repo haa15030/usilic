@@ -102,3 +102,30 @@ TEST_CASE("scrollRegionArgs follows setSize") {
   CHECK(top == 38);  // 40 - 2
   CHECK(bottom == 0);
 }
+
+TEST_CASE("modeLineVisible defaults to true and is settable") {
+  TerminalDisplay d(fakeCaps(), 24, 80);
+  CHECK(d.modeLineVisible() == true);
+  d.setModeLineVisible(false);
+  CHECK(d.modeLineVisible() == false);
+}
+
+TEST_CASE("scrollRegionArgs: mode line hidden reserves zero rows regardless of smooth scroll") {
+  // 24 - 1(smoothScrollEnabled()有効時と同じ値、自身の宣言コメント
+  // 参照)であって24そのものでは「ない」ことに注意: 実際のPTY
+  // キャプチャで確認済みの、applyScrollRegion()自身のtgoto()呼び出し
+  // 経由の2整数引数の入れ替え+%iによる1加算を踏まえた値。
+  TerminalDisplay d(fakeCaps(), 24, 80);
+  d.setModeLineVisible(false);
+  auto [top, bottom] = d.scrollRegionArgs();
+  CHECK(top == 23);  // 24 - 1, full screen, no row reserved for the mode line
+  CHECK(bottom == 0);
+
+  d.setSmoothScrollEnabled(true);
+  auto [top2, bottom2] = d.scrollRegionArgs();
+  CHECK(top2 == 23);  // smooth scroll's own 1-vs-2 distinction is moot once nothing is reserved
+
+  d.setModeLineVisible(true);
+  auto [top3, bottom3] = d.scrollRegionArgs();
+  CHECK(top3 == 23);  // 24 - 1, back to the smooth-scroll-enabled case
+}

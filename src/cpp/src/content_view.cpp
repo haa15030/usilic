@@ -1805,6 +1805,16 @@ std::string ContentView::composeModeLineRow(const std::string &positionText) con
 // ライトバーとして読める――CUIのモードラインは、フィールドの間に
 // 目に見える小さな黒い(ハイライトされていない)ギャップを持つ。
 void ContentView::renderModeLine() {
+  // 2026-09-12追加、項目⑫(display_.modeLineVisible()自身のコメント
+  // 参照): 非表示の間はsetViewport()経由のheight_がモードライン用の
+  // 1行を予約しなくなっている(Application::layoutViews()参照)ため、
+  // 下のmodeLineRow_.value_or(row0_+height_)は画面最終行の「次」を
+  // 指してしまう――描画を単に省くだけでなく、この関数冒頭で早期
+  // returnしないと範囲外へのmoveCursor()になる。total/current計算
+  // (applyLivePromptLineAdjustment()/applyRawLineNumbers())はこの関数
+  // のローカル変数だけを更新するconstヘルパーなので、丸ごと省いても
+  // 他のどこにも副作用は残らない。
+  if (!display_.modeLineVisible()) return;
   int total = static_cast<int>(lines_.size());
   int current = total > 0 ? cursorIndex_ + 1 : 0;
   applyLivePromptLineAdjustment(total, current);

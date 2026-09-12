@@ -243,6 +243,32 @@ enum class Command {
   // いる。トグルキーは、それが切り替える永続化された値がそもそも
   // 実際にDisplayに到達しないなら意味を成さないため。
   ToggleScrollMode,
+  // 2026-09-12追加、直接のユーザー依頼(項目⑫、"モードラインの表示/
+  // 非表示切り替え...さらに言えば-g起動時の非表示モードでは、macOSの
+  // Dockのようにモードラインを自動的に表示/非表示にする"): ^Ohを
+  // ToggleScrollMode(すぐ上)からこちらへ付け替えた――旧割り当ての
+  // 対象(Display::smoothScrollEnabled())は、単一行カーソル移動時に
+  // 端末のハードウェアスクロール領域シフトを使うか完全redraw()するか
+  // という、現代の端末では利用者から見えるべき機能差の無いレンダリング
+  // 技法の選択に過ぎないと判明した(moveUp()/moveDown()自身の調査
+  // より)一方、モードライン表示/非表示は実際に利用者の目に見える形で
+  // 有用なため、より価値の高い機能へ^Ohを再割り当てする方が理にかなう
+  // と判断した。ToggleScrollMode自体・Command本体・Display/History
+  // 側の永続化機構はコードとして残したまま(どのキーからも到達
+  // できないだけ)――usilicrcのSCROLLセクションで設定した起動時
+  // デフォルトはそのまま尊重され続ける(handleCommand()自身の
+  // ToggleScrollMode caseのコメント参照)。Display::modeLineVisible()/
+  // setModeLineVisible()を切り替え、History::modeLineVisible_へ永続化
+  // する。falseの間はApplication::layoutViews()のcontentHeight計算が
+  // モードライン用の1行を予約しなくなり、ContentView::renderModeLine()
+  // 自身がその値を見て描画を丸ごと抑制する――どちらも自身のコメント
+  // 参照。GUIモード(-g)限定のDock風自動表示/非表示は、この永続化
+  // された「希望」とは別に、main.cppのrunGuiPhase()がマウス位置に
+  // 応じて一時的にDisplay側の実効状態だけを操作する(この「希望」
+  // フィールド自体は変更しない)――両者を1つのbooleanに混ぜると
+  // 手動トグルと自動再表示が互いに干渉してしまうため、意図的に
+  // 分離してある(main.cpp自身のコメント参照)。
+  ToggleModeLineVisibility,
   // K-45/K-47(^Xf / ^Xd、M_lfile2/M_ldir2――「Input file/directory
   // name」): パスを尋ねてそれを開き、PathResolverが実際にそれが
   // 何であると言うかに応じてFileまたはDirectoryモードに着地する。
@@ -1637,6 +1663,18 @@ class Application {
   // プレクサがバックグラウンドのペインもリサイズするのと同じ)。
   // そして現在画面上にあるものが何であれ再描画する。
   void handleResize();
+
+  // 2026-09-12追加、項目⑫: GUIモード限定のDock風モードライン自動
+  // 表示/非表示(main.cppのrunGuiPhase()自身のコメント参照)専用。
+  // 呼び出し側(main.cpp)が既にdisplay_の実効状態(GraphicalDisplay::
+  // setModeLineVisible())を直接書き換えた「後」に呼ばれる想定――
+  // Command::ToggleModeLineVisibility自身のhandleCommand()ハンドラ
+  // とは異なりHistory::setModeLineVisible()には一切触れない。永続化
+  // された「希望」(History)と、GUIループだけが知っている一時的な
+  // 「マウス接近による今の見た目」を混ぜないための、意図的な分離
+  // (application.hpp自身のCommand::ToggleModeLineVisibility宣言
+  // コメント参照)。
+  void relayoutForModeLineVisibilityChange();
 
   // Shell::onPtyReadable()がEOFを報告するたびに(子プロセスが、
   // 典型的には`exit`経由で、自力で終了した)メインループによって

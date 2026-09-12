@@ -981,6 +981,34 @@ TEST_CASE("renderModeLine: trailing3 is dropped (not truncated) if it doesn't fi
   CHECK(d.rowText(5).find("(tar)") != std::string::npos);
 }
 
+// 2026-09-12追加、項目⑫: display_.modeLineVisible()がfalseの間、
+// renderModeLine()は丸ごと早期returnする(自身のコメント参照)――
+// Application::layoutViews()の規約により、非表示時はheight_が
+// rows()全体になる(モードライン用の1行が予約されなくなる)ので、
+// もし早期returnし忘れていたら、この行(rows()-1、ここではviewport
+// の外)へのmoveCursor()が範囲外になっていたはず。ここではその
+// viewport自体を「非表示」規約に合わせて構築し、最終行が普通の
+// コンテンツ行として描かれる(=モードライン特有のreverse-video
+// runでは「ない」)ことを確認する。
+TEST_CASE("renderModeLine: no-ops when Display::modeLineVisible() is false, matching the "
+          "no-reserved-row viewport a hidden mode line implies") {
+  RecordingDisplay d(5, 40);
+  d.setModeLineVisible(false);
+  ContentView v(d);
+  v.setViewport(0, d.rows());  // Application::layoutViews()自身のコメント参照: 予約行無し
+  v.setLines(makeLines(5));
+  v.setModeLineFieldsProvider(
+      [](int) -> ContentView::ModeLineFields { return {"/tmp/dir/", "(ls)", false, "", ""}; });
+  v.redraw();
+
+  // 最終行(rows()-1、モードライン非表示時はここも普通のコンテンツ行)
+  // が実際のコンテンツで埋まっており、モードライン自身の反転表示
+  // ("name/position/trailingは別々の反転表示run"の既存テスト参照)
+  // には「なって」いない。
+  CHECK(d.rowText(d.rows() - 1).find("line4") != std::string::npos);
+  CHECK(d.standoutAt(d.rows() - 1, 0) == false);
+}
+
 TEST_CASE("renderModeLine: splitLayoutWhenCrowded leaves the normal layout untouched when everything fits") {
   // A real user proposal (report =dh follow-up: "モードラインの長過ぎ
   // モード名および戻り値対処としては...") added an alternate fallback

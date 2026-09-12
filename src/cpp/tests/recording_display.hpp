@@ -97,6 +97,10 @@ class RecordingDisplay : public Display {
   void setOutputEnabled(bool) override {}
   bool smoothScrollEnabled() const override { return smoothScroll_; }
   void setSmoothScrollEnabled(bool enabled) override { smoothScroll_ = enabled; }
+  // 2026-09-12追加、項目⑫: display.hpp自身のmodeLineVisible()コメント
+  // 参照。smoothScrollEnabled()と全く同じ、単なる状態保持のフェイク。
+  bool modeLineVisible() const override { return modeLineVisible_; }
+  void setModeLineVisible(bool visible) override { modeLineVisible_ = visible; }
   void open() override {}
   void close() override {}
   void leaveForExternalProgram() override {}
@@ -187,6 +191,7 @@ class RecordingDisplay : public Display {
   bool underlineActive_ = false;
   bool highlightActive_ = false;
   bool smoothScroll_ = false;
+  bool modeLineVisible_ = true;
   int scrollForwardCount_ = 0, scrollReverseCount_ = 0;
   bool visibleCursorHidden_ = true;  // no visible cursor asserted yet
 };
