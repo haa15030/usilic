@@ -227,15 +227,21 @@ TEST_CASE("control bytes pass through as literal bytes (ContentView highlights t
 // (help_text.hpp/cpp)が生成する\x01+数字1桁の制御バイトの、
 // PipeBuffer::wrapLine()側の実消費テスト。expandHelpMarkup()自身の
 // 変換ロジックはtest_help_text.cppで別途確認済み――ここではその
-// 制御バイト列を直接手で構成し、折り返し継続行が実際に全角スペース
+// 制御バイト列を直接手で構成し、折り返し継続行が実際に半角スペース
 // で字下げされるかどうかだけを見る。
-TEST_CASE("\\x01<N> indent marker: a wrapped CONTINUATION line is padded with N ideographic "
-          "spaces (U+3000); text already mid-line when the marker arrives is untouched "
+//
+// 2026-09-12修正、直接のユーザー依頼("indentタグのスペース数指定を
+// 全角ではなく半角にしてほしい"): <indentN>のNは全角スペースN個
+// (1個あたり表示幅2、U+3000)から半角スペースN個(1個あたり表示幅1、
+// ASCII 0x20)へ変更された――pipe_buffer.cpp自身のseedIndentIfAtLineStart()
+// のコメント参照。このテスト自体の期待値も合わせて更新した。
+TEST_CASE("\\x01<N> indent marker: a wrapped CONTINUATION line is padded with N half-width "
+          "ASCII spaces; text already mid-line when the marker arrives is untouched "
           "(padding only ever applies at an actual line START, see seedIndentIfAtLineStart())") {
   PipeBuffer buf(Charset::Encoding::Ascii, 6, 1 << 20);
   std::string raw = "AB";
   raw.push_back(1);
-  raw.push_back('1');  // \x01 1 -- begin indent of 1 ideographic space (2 columns)
+  raw.push_back('1');  // \x01 1 -- begin indent of 1 half-width space (1 column)
   raw += "CDEFGH\n";
   buf.feed(raw);
   REQUIRE(buf.lines().size() == 2);
@@ -243,9 +249,9 @@ TEST_CASE("\\x01<N> indent marker: a wrapped CONTINUATION line is padded with N 
   // arrived, so no padding retroactively applies to it.
   CHECK(buf.lines()[0].text == "ABCDEF");
   CHECK(buf.lines()[0].endsWithNewline == false);
-  // Second (wrapped continuation) line: padded with one U+3000
-  // (0xE3 0x80 0x80 in UTF-8) before the remaining "GH".
-  CHECK(buf.lines()[1].text == "\xE3\x80\x80GH");
+  // Second (wrapped continuation) line: padded with one ASCII space
+  // before the remaining "GH".
+  CHECK(buf.lines()[1].text == " GH");
   CHECK(buf.lines()[1].endsWithNewline == true);
 }
 
@@ -267,8 +273,7 @@ TEST_CASE("\\x01<N> indent marker: when the marker arrives right at a fresh line
   raw += "AB\n";
   buf.feed(raw);
   REQUIRE(buf.lines().size() == 1);
-  CHECK(buf.lines()[0].text == "\xE3\x80\x80\xE3\x80\x80"
-                                "AB");  // 2 ideographic spaces, then "AB"
+  CHECK(buf.lines()[0].text == "  AB");  // 2 half-width spaces, then "AB"
 }
 
 TEST_CASE("\\x01<N> indent marker: \\x010 (N=0) turns the indent back off for any LATER wrap "

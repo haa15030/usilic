@@ -1423,6 +1423,42 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      入力途中の文字列ごと正しく復元されることを確認)。`make usilic`
      クリーンビルド確認済み。
 
+448. **`<indentN>`マークアップ(HELP/QUICK.txt双方が使う独自の字下げ
+    タグ)のNの意味を、全角スペースN個から半角スペースN個へ変更**
+   - **経緯**: 直接のユーザー依頼「indentタグのスペース数指定を全角
+     ではなく半角にしてほしい(`<indent2>`は全角ではなく半角スペース
+     が２個)」。同じ依頼の中で、KEY(^H)モードのデータソースを
+     usilicrc由来の`kKeyTable`(95件のハードコード配列)から
+     `QUICK.txt`(現時点でKEY章のエントリは12件のみ)へ完全移行する
+     案も提示されたが、AskUserQuestionで確認したところ「保留」
+     (QUICK.txtがまだ95件中12件しか書けておらず、今切り替えると
+     ^Hの表示が95件→12件に激減する実害があるため)を選択、今回は
+     見送った。indent半角化のみ実施。
+   - **修正**: `PipeBuffer`(pipe_buffer.cpp)の`seedIndentIfAtLineStart()`
+     が、`<indentN>`展開後の制御バイト(`\x01`+数字1桁、
+     `expandHelpMarkup()`(help_text.cpp)が生成)を消費してN個の
+     パディングを行頭に継ぎ足す箇所で、以前は全角スペース(U+3000、
+     1個あたり表示幅2)をN個書き込んでいたのを、半角スペース(ASCII
+     0x20、1個あたり表示幅1)をN個書き込むよう変更した。制御バイト
+     自体のエンコーディング(`\x01`+digit)は無変更――digitが表す
+     「1個あたりの実際の見た目幅」だけが変わる。この1箇所の変更で、
+     HELP(^J^H)本体・QUICK.txt(KEY(^H)のプレビュー、`USILICQUICKKEY`
+     環境変数opt-in時)双方の`<indentN>`が影響を受ける(両者とも同じ
+     `expandHelpMarkup()`/`wrapLine()`経路を共有するため)。
+   - **検証**: `test_pipe_buffer.cpp`の既存doctest2件(継続行への
+     パディング・行頭マーカーでの即時パディングを検証していたもの)
+     の期待値を、全角スペースのUTF-8バイト列から半角ASCIIスペースへ
+     更新。`make test` 1081/1082件・21570/21571アサーション通過
+     (残る1件は本変更と無関係な既知の環境依存フレーク――`LOCATE
+     started from a File that was ITSELF reached via a previous
+     LOCATE result`、実際のmacOS `locate`データベースの更新タイミング
+     に依存するテストで、単独実行でも同じ理由で失敗することを確認
+     済み)。実機PTYで`^J^H`→「1. Introduction」を開き、`<indent2>`
+     タグの本文が半角スペース2個で字下げされていることを確認
+     (以前は全角スペース2個=表示幅4だったのが、表示幅2になった)。
+     `make install`/`make app`/`~/Applications/usilic.app`への反映、
+     jキー回帰チェックも完了。
+
 ## 3. FGREP / EGREP
 
 171. **2026-08-05(続き): `^J^S`(EGREP)/`^J^C`(CUT正規表現)の入口を
@@ -2871,7 +2907,100 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      ケース)でも同じくマッチ部分文字列がハイライトされることを確認。
      関連するGrep系テスト計125件・1501アサーション全通過。
 
+447. **FGREP(`^O^S`)/EGREP(`^J^S`)/CUT-Regex(`^J^C`/`^J^B`)を、専用の
+    候補一覧UIを廃棄してGREP(Basic構文)と同じin-place仕様に統一**
+   - **経緯**: 項目446の確認後、直接のユーザー報告――「usilic検索結果
+     一覧で適当に選択してみたら、FILE上の当該検索箇所へは行かずに
+     EGREP検索文字列一覧画面になった」――をきっかけに、ユーザーから
+     正式な統一依頼: 「GREPのマッチ行センタリングUIを見てしまった後
+     ではEGREP検索結果一覧のマゼンタハイライトが同じ動きじゃないのが
+     違和感しかない...EGREPで表示される正規表現文字列候補は旧ソースを
+     作っていたころの場当たり的収集物でしかなく、正規表現の代表的な
+     事例でもない...FGREPおよびEGREPを同じ仕様に統一して欲しい...
+     候補一覧は廃棄。CUTも同様。基本拡張表現（GREP仕様）に統一して
+     ほしい」。副作用調査を先に依頼され、フォークで`isGrepInPlace
+     EligibleMode()`/`executeGrep()`/`startRegexPromptList()`/
+     `startPromptHistoryRecall()`/`grepSeedPatterns()`等の依存関係を
+     洗い出した上で、AskUserQuestionでCUT統一方法(候補一覧だけ廃止/
+     専用in-place方式を新設/(a)+モードライン名の書き分け、の3択)と
+     `grepSeedPatterns()`の扱い(削除/残す)を確認、それぞれ
+     「(a)候補一覧だけ廃止」「削除する」を選択(いずれも推奨案)。
+   - **修正**: `Application::startGrepPrompt()`から、`GrepSyntax::Regex`
+     (EGREP)だけ`startRegexPromptList(PromptKind::GrepPattern)`経由で
+     専用の候補一覧(`ApplicationMode::ListBrowser`、usilicrcのGREP
+     セクションのシード+過去の検索履歴で構成)へ直接開いていた1行を
+     削除し、FGREP/EGREP/GREPのいずれも`activatePrompt(GrepPattern, "")`
+     という同じ空のプロンプトから始まるようにした。`executeGrep()`の
+     in-place化条件から`grepSyntax_ == GrepSyntax::Basic &&`という
+     限定を外し、`isGrepInPlaceEligibleMode(grepReturnMode_)`(項目
+     437〜443で拡張済みのDirectory/File/Man/Locate/Du/Archive/
+     ArchiveContent/Shell/CutContent/ListBrowser/Key)だけで判定する
+     ようにした結果、FGREP/EGREPもGREPと全く同じin-place方式(元画面に
+     留まったままマッチをハイライト、`^N`/`^P`でマッチ間移動+
+     センタリング)になった。副次効果として、`openSelectedGrepMatch()`
+     に`ApplicationMode::ListBrowser`起点の分岐が無かったために発生
+     していた「ListBrowser起点のEGREP結果でEnterすると候補一覧へ
+     戻ってしまう」という、この統一作業の発端になった不具合自体も、
+     その経路がそもそも到達不能になることで別途パッチ不要のまま解消
+     した。
+     CUTも同じ理屈で、`startCutPrompt()`/`startCutFilePrompt()`の
+     `GrepSyntax::Regex`亜種から`startRegexPromptList(CutPattern)`への
+     分岐を削除し、CUT-Fixed/CUT-Regexどちらも同じ空のプロンプトから
+     始まるようにした(承認済みの(a)解釈――CUT自身のセグメント分割/
+     ラベル付き一覧という仕組み自体は完全に無変更、変わるのは検索
+     パターン入力プロンプトの起動方法だけ)。
+     `Configuration::grepSeedPatterns()`(usilicrcのGREPセクションの
+     シードパターン、専ら上記の候補一覧の種としてのみ使われていた)
+     を、それを参照していた`startPromptHistoryRecall()`/
+     `toggleListBrowserHistory()`内の2箇所のマージ処理ごと削除。
+     usilicrcの`GREP:`ディレクティブ自体は、既存の設定ファイルとの
+     後方互換のため`directiveKeywords()`には残し、セクション内容は
+     解析するだけで捨てる(不明なディレクティブとしてエラーには
+     しない)よう変更した。
+     `startPromptHistoryRecall()`の`sortDirectEntryList`判定
+     (directEntry==trueで候補一覧を構築する対象カテゴリ)から、もう
+     到達不能になった`RecentFgrepPattern`/`RecentEgrepPattern`も外した
+     (RecentFile/RecentDirectoryだけが残る)。`suspendedPromptHistory
+     Context_`(項目444で新設)等、GrepPattern/CutPattern専用ではない
+     汎用的な仕組み(ManName等が将来同じネストしたListBrowserの状況に
+     入る可能性を否定できないため)は、意図的に手を付けずそのまま
+     残した。
+   - **検証**: 本体(`make -j4 usilic`)のビルド成功を確認。この変更で
+     前提が崩れた候補一覧専用のdoctest群(EGREP/CUT-Regexの候補一覧
+     自体のナビゲーション・`^R`トグル・ネストしたBack階層等を検証して
+     いた約30件、項目443〜445で追加した回帰テスト2件を含む)を削除、
+     約25件を新仕様(in-place方式)に合わせて書き換えた(いずれも
+     フォークへ委譲)。`make -j4 test`実行中に発覚したSIGSEGVクラッシュ
+     は、調査の結果、本番コードのバグではなくテスト側の前提崩れ
+     (候補一覧廃止後もEGREPの`listBrowserMode().selectedItem()`を
+     無条件参照していた、`std::optional`の空値への未定義動作)と判明、
+     該当テストを削除して解消。あわせて、FGREP/EGREPが同じin-place
+     経路を通るようになったことで、各`ModeLineFieldsProvider`が
+     in-place中の`name`欄へ無条件に`"GREP"`を出していた(項目437当時、
+     `GrepSyntax::Basic`限定だった頃はそれで正しかった)箇所を、実際の
+     `grepSyntax_`から得た`"FGREP"`/`"EGREP"`/`"GREP"`を出すよう
+     `ContentView::setGrepInPlaceLabel()`/`grepInPlaceLabel()`を新設
+     して修正(`archive_mode.cpp`/`directory_mode.cpp`/`file_mode.cpp`
+     他、複数の`ModeLineFieldsProvider`)。`make -j4 test`最終
+     1081/1082件通過(残る1件はLOCATEデータベースのタイミングに依存
+     する既知の環境フレークで本変更と無関係)。実機PTYで、Directory
+     起点の`^O^S`(FGREP)が`"FGREP 1/1 ... (grep)"`のまま画面に留まり
+     マッチをその場でハイライトすること、`^J^S`(EGREP)も同様に
+     `"EGREP 1/3 ... (grep)"`のまま複数マッチを検索できること、
+     `^J^C`(CUT-Regex)がもう候補一覧を経由せず空のプロンプトから
+     直接始まることを確認。`make install`/`make app`/
+     `~/Applications/usilic.app`への反映、jキー回帰チェックも完了。
+
 ## 4. CUT
+
+447. **CUT-Regex(`^J^C`/`^J^B`)の専用候補一覧UIを廃棄し、CUT-Fixedと
+    同じ空のプロンプトから始まるよう統一**――3.FGREP/EGREPの節にある
+    同項目447の重複掲載。FGREP/EGREPをGREP(Basic構文)のin-place仕様に
+    統一するのと同じユーザー依頼("CUTも同様。基本拡張表現（GREP仕様）
+    に統一してほしい")により、`startCutPrompt()`/`startCutFilePrompt()`
+    のRegex亜種から専用候補一覧への分岐を削除した。CUT自身のセグメント
+    分割・ラベル付き一覧という仕組み自体は完全に無変更(承認済みの
+    (a)解釈――候補一覧だけ廃止)。詳細・検証内容は3.FGREP/EGREPの節参照。
 
 434. **タブコードをGREP/CUTで検索可能にする(PipeBuffer::wrapLine()が
     U+2060マーカーを自動挿入)**――3.FGREP/EGREPの節にある同項目434の
