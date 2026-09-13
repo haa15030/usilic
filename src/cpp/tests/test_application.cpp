@@ -1998,6 +1998,69 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): ^G at the fallback
   CHECK(app.currentMode() == ApplicationMode::File);
 }
 
+// -- CUT-by-file's own composite RecentFile history entry (2026-09-20) --
+//
+// Direct user request (QUICK.txt's own "C-j b" entry text: "後述[FILE]
+// によるアクセス履歴一覧では「ファイル名 "文字列"」で表示され、選択
+// すると文字列行の目次一覧画面となる"): completing a real CUT-by-file
+// split additionally records a "path \"pattern\"" composite entry into
+// RingCategory::RecentFile (alongside the plain path entry FileMode::
+// loadFile() already records unconditionally), and RE-SELECTING that
+// composite entry later replays the CUT itself rather than opening the
+// file plainly.
+
+TEST_CASE_FIXTURE(Fixture, "CUT (regular file): completing a real split records a composite "
+                           "\"path \\\"pattern\\\"\" entry in RecentFile, alongside the plain path "
+                           "FileMode::loadFile() already records") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  std::string plainPath = (root / "log.txt").string();
+  std::string composite = plainPath + " \"marker\"";
+  const auto &recent = history.recentEntries(RingCategory::RecentFile);
+  CHECK(std::find(recent.begin(), recent.end(), plainPath) != recent.end());
+  CHECK(std::find(recent.begin(), recent.end(), composite) != recent.end());
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile) / FILE history: selecting a composite "
+                           "\"path \\\"pattern\\\"\" RecentFile entry REPLAYS the CUT split, not a "
+                           "plain file open") {
+  std::string composite = (root / "log.txt").string() + " \"marker\"";
+  history.pushRecent(RingCategory::RecentFile, composite);
+
+  REQUIRE(app.start(path()));
+  CHECK(app.handleCommand(Command::GoToRecentFile));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 3);  // log.txt's own real split on "marker", not a plain file view
+}
+
+TEST_CASE_FIXTURE(Fixture, "FILE history ListBrowser: Enter on a composite \"path \\\"pattern\\\"\" "
+                           "candidate also replays the CUT split (openRecentFileEntry()'s own shared "
+                           "path, not just ^J^J)") {
+  std::string composite = (root / "log.txt").string() + " \"marker\"";
+  history.pushRecent(RingCategory::RecentFile, composite);
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 3);
+}
+
+TEST_CASE_FIXTURE(Fixture, "FILE history: a plain path that happens to contain no quote is NOT "
+                           "misparsed as a composite entry -- an ordinary path opens normally") {
+  history.pushRecent(RingCategory::RecentFile, (root / "log.txt").string());
+  REQUIRE(app.start(path()));
+  CHECK(app.handleCommand(Command::GoToRecentFile));
+  CHECK(app.currentMode() == ApplicationMode::File);  // plain open, not Cut
+}
+
 TEST_CASE_FIXTURE(Fixture, "CUT: Enter on a segment label shows that segment's content in CutContent") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");

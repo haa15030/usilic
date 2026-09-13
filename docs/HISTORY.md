@@ -17210,3 +17210,5 @@ saved/QUICK.txtはsrc/QUICK.txtを画面表示したやつを^J^Wしただけ。
 
 >③(C-j bのFILE履歴化)を実装・検証・コミットしました(項目468)。startCutFilePrompt()はDirectory一覧で通常ファイルが選択されていない場合(Directory外、ディレクトリ選択、選択無し等)、K-45/K-47と全く同じPathInputプロンプト(ファイル名の入力/履歴/Tab補完)へフォールバックし、その投入をCutPatternプロンプトへ引き継ぐようにしました。新規doctest5件・既存テスト1件更新。make test 1131件中1118件通過(残る13件は既存のKEYモード関連で今回とは無関係)。make install/make app完了。
 
+続けて、CUT-by-file完了時にFILE履歴へ「パス "パターン"」という合成エントリも記録し(QUICK.txt自身のC-j bの説明通り)、選び直すとCUT自体を再実行するようにしました(項目469)。openRecentFileEntry()(^J^J・ListBrowser Enter)とexecutePathInput()(^X^Fのライブコンボボックス経由、openSelectedListEntry()のpromptHistoryContext_分岐がこちらへ実際に投入するため両方への配線が必要でした)の両方で合成形を検出します。新規doctest4件、make test 1135件中1122件通過(残る13件は既存のKEYモード関連で無関係)。make install/make app完了。
+

@@ -3535,6 +3535,34 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      1131件中1118件通過(残る13件は既存のKEYモード関連で今回とは
      無関係、次の一切れで解消予定)。`make install`/`make app`完了。
 
+469. **2026-09-20: CUT-by-fileの完了時、FILE履歴に「パス "パターン"」
+     という合成エントリも記録し、選び直すとCUT自体を再実行するように**
+   - **直接のユーザー依頼**: QUICK.txt自身のC-j bの説明文「後述
+     [FILE]によるアクセス履歴一覧では「ファイル名 "文字列"」で表示
+     され、選択すると文字列行の目次一覧画面となる」を実装。
+   - `executeCut()`自身のファイルソース分岐で、`cutMode_.split()`が
+     成功した直後に`history_.pushRecent(RingCategory::RecentFile,
+     fileSourcePath + " \"" + pattern + "\"")`で合成エントリを追加
+     記録するようにした――`FileMode::loadFile()`自身が既に無条件に
+     積むプレーンなパス単体のエントリとは別に、両方が履歴に残る。
+   - 新設の`parseCutFileHistoryEntry()`(末尾が引用符で閉じ、その
+     直前に` "`があり、両側とも空でない場合にのみ一致とみなす)で
+     この合成形を検出し、`openRecentFileEntry()`(^J^J・FILE履歴の
+     ListBrowserでのEnter)と`executePathInput()`(^X^F自身の
+     ライブなコンボボックスでのEnter、`openSelectedListEntry()`の
+     `promptHistoryContext_`分岐経由でこちらに実際に投入される)の
+     両方に配線――どちらの経路で選ばれても、プレーンなファイル閲覧
+     ではなくCUT自体(ファイルを読み込み直し、同じパターンで
+     `cutMode_.split()`)を再実行する。実行時の構文(Fixed/Regex)は
+     表示文字列自体には残っていないため、C-j b(QUICK.txt自身がこの
+     エントリの説明で名指ししている、より一般的に使われる方)に合わせ
+     Fixedへ決め打ちしている。
+   - **検証**: 新規doctest4件(合成エントリの記録確認、^J^Jでの再実行、
+     ListBrowserでのEnterでの再実行、引用符を含まない通常のパスは
+     誤検出されないこと)。`make test` 1135件中1122件通過(残る13件は
+     既存のKEYモード関連で今回とは無関係)。`make install`/`make app`
+     完了。
+
 ## 4. CUT
 
 447. **CUT-Regex(`^J^C`/`^J^B`)の専用候補一覧UIを廃棄し、CUT-Fixedと

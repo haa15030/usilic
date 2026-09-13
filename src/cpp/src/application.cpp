@@ -70,6 +70,22 @@ std::string duEntryFolder(const DuEntry &entry) {
   return folder;
 }
 
+// 2026-09-20追加、openRecentFileEntry()自身のコメント参照: executeCut()
+// が積む「パス "パターン"」という合成形のRecentFileエントリを検出・
+// 分解する。末尾が引用符で閉じ、その直前に` "`(スペース+引用符)が
+// 見つかり、両側とも空でない場合にだけ一致とみなす――ただの
+// ファイルパスに偶然二重引用符が含まれるような病的なケースを
+// (完璧ではないにせよ)大まかに避けるための、最も単純な形式チェック。
+std::optional<std::pair<std::string, std::string>> parseCutFileHistoryEntry(const std::string &entry) {
+  if (entry.size() < 4 || entry.back() != '"') return std::nullopt;
+  std::size_t openQuote = entry.rfind(" \"", entry.size() - 2);
+  if (openQuote == std::string::npos) return std::nullopt;
+  std::string filePath = entry.substr(0, openQuote);
+  std::string pattern = entry.substr(openQuote + 2, entry.size() - (openQuote + 2) - 1);
+  if (filePath.empty() || pattern.empty()) return std::nullopt;
+  return std::make_pair(filePath, pattern);
+}
+
 // 2026-09-05追加、直接のユーザー依頼("FGREP/EGREPの代わりにgrep -F/
 // grep -Eで代用の上、新たにGREP(grep)を新設"): GrepSyntax::Basic
 // (プレーンなgrep、正規表現は基本正規表現BRE)の追加に伴い、これまで
@@ -4763,6 +4779,25 @@ bool Application::openSelectedListEntry() {
 // openSelectedEntry()自身の「アーカイブを先に、ファイルをフォール
 // バックとして」という順序を正確に反映している。
 bool Application::openRecentFileEntry(const std::string &path) {
+  // 2026-09-20追加、直接のユーザー依頼(QUICK.txt自身のC-j bの説明
+  // "後述[FILE]によるアクセス履歴一覧では「ファイル名 "文字列"」で
+  // 表示され、選択すると文字列行の目次一覧画面となる"): executeCut()
+  // 自身のfileSourcePath分岐が積む「パス "パターン"」という合成形の
+  // 場合は、プレーンなファイル閲覧ではなくCUT-by-fileそのものを
+  // 再実行する。実行時の構文(Fixed/Regex)は表示文字列自体には残って
+  // いないため、C-j b(QUICK.txt自身がこのエントリの説明で名指しして
+  // いる、より一般的に使われる方)に合わせてFixedへ決め打ちする。
+  if (auto composite = parseCutFileHistoryEntry(path)) {
+    if (!fileMode_.loadFile(composite->first)) return false;
+    std::vector<StyledLine> sourceLines;
+    sourceLines.reserve(fileView_.lines().size());
+    for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
+    cutOrigin_ = CutOrigin::File;
+    cutSyntax_ = GrepSyntax::Fixed;
+    if (!cutMode_.split(sourceLines, composite->second, cutSyntax_)) return false;
+    currentMode_ = ApplicationMode::Cut;
+    return true;
+  }
   if (archiveMode_.loadArchive(path)) {
     archiveParentStack_.clear();
     currentMode_ = ApplicationMode::Archive;
@@ -10283,6 +10318,14 @@ bool Application::executeCut(const std::string &pattern) {
     // 決して無い。
     cutOrigin_ = CutOrigin::File;
     ok = cutMode_.split(sourceLines, pattern, cutSyntax_);
+    // 2026-09-20追加、直接のユーザー依頼(QUICK.txt自身のC-j bの
+    // 説明"後述[FILE]によるアクセス履歴一覧では「ファイル名 "文字列"」
+    // で表示され、選択すると文字列行の目次一覧画面となる"): 通常の
+    // ファイルパス単体のRecentFileエントリ(fileMode_.loadFile()自身が
+    // 既に無条件に積んでいる)とは別に、「パス "パターン"」という
+    // 合成形のエントリも積む――openRecentFileEntry()自身のコメント
+    // 参照、この形をFILE履歴から選び直すとCUT自体を再実行する。
+    if (ok) history_.pushRecent(RingCategory::RecentFile, fileSourcePath + " \"" + pattern + "\"");
   } else if (cutOrigin_ == CutOrigin::File && !fileMode_.currentFile().empty()) {
     // 2026-08-24修正、実際の報告+直接の追跡質問("戻り値が正常化
     // さえ実現すれば直る問題じゃないの？"――^Gが正しく再びDirectory
@@ -11173,6 +11216,12 @@ bool Application::executePathInput(const std::string &path) {
     activeView().redraw();
     return false;
   }
+  // openRecentFileEntry()自身のコメント参照: PromptKind::RecentFile
+  // (^X^F自身のFILE履歴一覧)の投入はexecutePathInput()を直接呼ぶ
+  // (openSelectedListEntry()自身のpromptHistoryContext_分岐経由の
+  // ため、下のRecentFile専用のopenRecentFileEntry()分岐を経由し
+  // ない)ので、ここでも同じ合成形の検出をしておく必要がある。
+  if (parseCutFileHistoryEntry(path)) return openRecentFileEntry(path);
   // directoryMode_自身のcurrentDirectory()(最後に「閲覧された」
   // ディレクトリ、そこから開かれたFile/Man等の画面を見ている間も
   // そのまま留まる――なぜこれがプロセス自身のcwdではあり得ないのか
