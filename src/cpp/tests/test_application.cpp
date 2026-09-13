@@ -5769,8 +5769,17 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from File mode, 
   CHECK(app.directoryMode().currentDirectory() == path());  // one level above subdir/ -- root itself
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): refused from a mode with no current "
-                           "file/archive to compute a parent from") {
+// 2026-09-14修正、直接のユーザー報告("HELP画面で^J^J/^J^K/^O^K/
+// （どこでもキー）が利かない（一度でも（ls）へ行けばOK）"): このテスト
+// は元々「HELPには自分自身のfile/archiveが無いので拒否される」という、
+// まさにこの報告が指摘した不具合をそのまま「意図した挙動」として
+// 検証してしまっていた。File起点以外のCut/CutContent(HELP含む)は、
+// goToParentFromFileOrArchive()自身の2026-09-14修正により、Cut/
+// CutContentへ入る前のdirectoryMode_自身の状態(無傷のまま残っている)
+// へフォールバックするようになったため、今は成功するのが正しい。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from HELP (no current file/archive of its "
+                           "own), falls back to directoryMode_'s own still-intact state instead of being "
+                           "refused") {
   REQUIRE(app.start(path()));
   // HELP (^H/^J^H) rides on Cut/CutContent (2026-09-20 rewrite) and has
   // no current file/archive of its own.
@@ -5778,7 +5787,8 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): refused from a m
   REQUIRE(app.handleCommand(Command::StartHelp));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
-  CHECK_FALSE(app.handleCommand(Command::GoToParentDirectory));
+  CHECK(app.handleCommand(Command::GoToParentDirectory));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
 // 2026-09-20 further extension, direct user request ("^O^KをHISTORY.md:
@@ -6109,12 +6119,19 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from Directory mode
   CHECK(app.directoryMode().currentDirectory() == path());
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): refused outside File/Directory/etc modes") {
+// 2026-09-14修正、GoToParentDirectory自身の同種のテストの直前コメント
+// 参照(直接のユーザー報告"HELP画面で...（どこでもキー）が利かない"):
+// HELPはFile起点ではないCut/CutContentのGoToFileSelector自身の
+// 2026-09-14修正により、directoryMode_自身の状態を再表示する形で
+// 成功するのが正しい――拒否ではない。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from HELP, falls back to directoryMode_'s own "
+                           "still-intact state instead of being refused") {
   REQUIRE(app.start(path()));
   REQUIRE(app.loadHelpText("placeholder\n"));
   REQUIRE(app.handleCommand(Command::StartHelp));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
-  CHECK_FALSE(app.handleCommand(Command::GoToFileSelector));
+  CHECK(app.handleCommand(Command::GoToFileSelector));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
 // 2026-08-27 addition, a real report: pressing ^J^K FROM Shell mode
@@ -10723,6 +10740,47 @@ TEST_CASE_FIXTURE(Fixture, "HELP: a genuinely NEW top-level CUT session started 
   REQUIRE(app.handleCommand(Command::StartHelp));
   CHECK(app.currentMode() == ApplicationMode::Cut);
   CHECK(app.activeContentView().cursorIndex() == 0);  // fresh HELP entry, not the CUT session's own leftover index
+}
+
+// 2026-09-14追加、直接のユーザー報告("HELP画面で^J^J/^J^K/^O^K/
+// （どこでもキー）が利かない（一度でも（ls）へ行けばOK）"):
+// goToFileSelector()/goToParentFromFileOrArchive()/jumpToPathPrefix()
+// はCut/CutContentを常にFile起点として扱い、fileMode_.currentFile()
+// を読んでいた――一度も実ファイルをFileモードで開いていないセッション
+// (起動直後に直接^Hを押した場合等)では、それが空のままなので常に
+// 失敗していた。以下の3件はいずれも、REQUIRE(app.start(path()))の
+// 直後、Directory一覧に触れることはあってもEnterで実ファイルを一度も
+// 開かないまま^Hへ直行する――「一度でも(ls)で何か開けばOK」に見えて
+// いた報告と対をなす、「開いていない」状態の再現。
+TEST_CASE_FIXTURE(Fixture, "HELP: ^J^K (GoToFileSelector) works even if no real file has ever been opened "
+                           "this session (falls back to directoryMode_'s own still-intact state)") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.fileMode().currentFile().empty());  // never opened a real file -- the failure precondition
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  CHECK(app.handleCommand(Command::GoToFileSelector));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "HELP: ^O^K (GoToParentDirectory) works even if no real file has ever been "
+                           "opened this session") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.fileMode().currentFile().empty());
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  CHECK(app.handleCommand(Command::GoToParentDirectory));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "HELP: ^J-digit (JumpToPathPrefix, the \"anywhere\" key) works even if no real "
+                           "file has ever been opened this session") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.fileMode().currentFile().empty());
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  CHECK(app.feedByte('1', std::nullopt));  // ^J1
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleResize: reflows HELP's own content (a top-level split)") {

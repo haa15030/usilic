@@ -696,6 +696,41 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      21676/21677アサーション通過(残る1件は既知のLOCATEフレークで
      無関係)。`make install`/`make app`完了。
 
+476. **2026-09-14: HELP画面から^J^K(GoToFileSelector)/^O^K
+     (GoToParentDirectory)/^J-digit(JumpToPathPrefix、「どこでも
+     キー」)を呼んでも常に失敗していた不具合を修正**
+   - **直接のユーザー報告**: 「HELP画面で^J^J/^J^K/^O^K/（どこでも
+     キー）が利かない（一度でも（ls）へ行けばOK）」。
+   - **原因**: `goToFileSelector()`/`goToParentFromFileOrArchive()`/
+     `jumpToPathPrefix()`はいずれも、`Cut`/`CutContent`を「常にFileの
+     バッファ亜種のCUTから来た」ものとして扱い、無条件に
+     `fileMode_.currentFile()`を読んでいた――実際のユーザー起動のCUT
+     (`cutOrigin_==File`)には正しい前提だが、HELP/MAN/LOCATE/DU/
+     Directory起点のCUT(それぞれ自分自身のビューモデルから内容を得て
+     おり、`fileMode_`には一切触れない)には成り立たない。一度も実
+     ファイルを`FileMode`で開いていないセッション(起動直後に直接
+     `^H`を押した場合等)では`fileMode_.currentFile()`が空のままな
+     ので、3つの関数とも常に失敗していた――「一度でも(ls)で何かを
+     開けばOK」に見えたのは、それが`fileMode_.currentFile()`を初めて
+     非空にする、たまたま一番身近な操作だったため。
+   - **修正**: 3関数それぞれに、`currentMode_`が`Cut`/`CutContent`
+     かつ`cutOrigin_ != CutOrigin::File`の場合の分岐を追加した――
+     Cut/CutContentへ入る前の`directoryMode_`自身の状態は無傷のまま
+     残っているので、それぞれの関数自身の意味論に応じてそこへ
+     フォールバックする: `goToFileSelector()`は`directoryMode_.
+     refresh()`(素のDirectoryモード自身の分岐と同じ「そこを再表示
+     する」)、`goToParentFromFileOrArchive()`は`directoryMode_.
+     goToParent()`(`handleCommand()`が素のDirectoryモードで使うのと
+     同じ「もう1段階先」)、`jumpToPathPrefix()`は`sourcePath =
+     directoryMode_.currentDirectory()`(素のDirectory自身の分岐と
+     同じソース)。
+   - **検証**: 新規doctest4件(3関数それぞれについて、実ファイルを
+     一度も開いていない状態のHELPから成功することを確認)、既存の
+     関連テスト2件(HELPからの拒否を前提にしていた、今回の修正で
+     期待値が反転したもの)を更新。`make test`は1132件中1131件通過
+     (残る1件は既存の無関係なLOCATE環境依存フレーク)。`make install`/
+     `make app`完了。
+
 ## 2. KEY(キー一覧 / HELP)
 
 58. **2026-07-29: KEY/ヘルプモード(^J^H)をApplicationへ配線 ―
@@ -26537,5 +26572,29 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `make test`(C++側)は1126件中1125件通過(残る1件は既存の無関係な
      LOCATE環境依存フレーク、今回の変更はコメントのみで対象コードには
      無関係)。
+
+477. **2026-09-14(項目473の訂正): 引数無し起動の多重起動を検知した際の
+     "Process-ID... Already running."警告メッセージの出力自体を削除**
+   - **直接のユーザー報告**: 「⑤は新しい方の端末に一瞬出るので直って
+     ない」――項目475の⑤で行ったIDEAS.md:51の引用ブロック削除
+     (ドキュメントの整理)では、項目473で実装した警告メッセージの
+     実際の出力(ランタイムの挙動)は何も変わっておらず、新プロセスの
+     端末に依然としてメッセージが一瞬表示されてから、その直後に
+     curses/GUIの画面が上書きして消える、という指摘だった。
+   - **修正**: `app/main.cpp`の該当箇所から`std::fprintf(stderr, ...)`
+     による警告出力そのものを削除した。legacyではユーザー自身が手動で
+     旧プロセスをkillする必要があったためこの警告に意味があったが、
+     この移植は乗っ取り自体を自動で行うので、新プロセス自身の画面が
+     すぐ後で塗りつぶす直前に一瞬だけ表示されて消える、意味の薄い
+     視覚的なノイズにしかならないと判断した。pidファイルによる生死
+     確認+`kill`による乗っ取り自体は無条件に継続する――出力を削った
+     だけで、乗っ取りの判定・タイミングには一切手を加えていない。
+   - **検証**: 実機でバックグラウンド起動を2回連続実行し、2回目の
+     ログに"Process-ID"/"Already running"の文字列が一切出力されない
+     ことを確認したうえで、1回目が正しく終了し2回目が生き残ることも
+     従来通り確認した。`make test`は1132件中1131件通過(残る1件は
+     既存の無関係なLOCATE環境依存フレーク)。`make install`/
+     `make app`完了。docs/ideas/IDEAS.md:46の実装済み注記もあわせて
+     更新した。
 
 

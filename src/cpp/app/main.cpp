@@ -3730,6 +3730,16 @@ int main(int argc, char **argv) {
   // legacy同様、引数無しの「素の」起動(履歴付きファイルマネージャ、
   // f.usilic&0x80相当)だけ――hasRealContentArgumentがtrueの起動は
   // 元々何個でも並行して構わない(すぐ上の2026-08-18コメント参照)。
+  //
+  // 2026-09-14修正、直接のユーザー報告("⑤は新しい方の端末に一瞬出る
+  // ので直ってない"): legacy自身の"tcb: Process-ID <pid> ...
+  // \n     Already running."という警告メッセージの出力は、この移植
+  // では意図的に削除した(IDEAS.md:51自身のコメント参照)――legacyでは
+  // ユーザー自身が手動で旧プロセスをkillする必要があったためこの
+  // 警告に意味があったが、この移植は乗っ取り自体を自動で行うので、
+  // 新プロセス自身の画面(curses/GUI)がすぐ後で塗りつぶす直前に一瞬
+  // だけ表示されて消える、意味の薄い視覚的なノイズにしかならない。
+  // 乗っ取り自体は引き続き無条件に行う――ここは出力を削っただけ。
   if (!hasRealContentArgument) {
     std::string ownProgramName = std::filesystem::path(argv[0]).filename().string();
     std::string pidPath = usilicDir + "pid";
@@ -3742,8 +3752,6 @@ int main(int argc, char **argv) {
       std::string comm = fm::ChildProcess::run({"ps", "-p", std::to_string(oldPid), "-o", "comm="}).output;
       while (!comm.empty() && (comm.back() == '\n' || comm.back() == '\r' || comm.back() == ' ')) comm.pop_back();
       if (std::filesystem::path(comm).filename().string() == ownProgramName) {
-        std::fprintf(stderr, "%s: Process-ID %ld ... \n     Already running.\n", ownProgramName.c_str(), oldPid);
-        std::fflush(stderr);
         ::kill(static_cast<pid_t>(oldPid), SIGTERM);
         for (int waited = 0; waited < 40 && ::kill(static_cast<pid_t>(oldPid), 0) == 0; waited++) ::usleep(50000);
         if (::kill(static_cast<pid_t>(oldPid), 0) == 0) ::kill(static_cast<pid_t>(oldPid), SIGKILL);  // 2秒待っても応答無し -- 強制終了

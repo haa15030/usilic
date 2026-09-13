@@ -4461,6 +4461,31 @@ bool Application::goToFileSelector() {
     directoryView_.redraw();
     return true;
   }
+  // 2026-09-14追加、直接のユーザー報告("HELP画面で^J^J/^J^K/^O^K/
+  // （どこでもキー）が利かない（一度でも（ls）へ行けばOK）"):
+  // Cut/CutContentを「常にFileから来た」ものとして扱うすぐ下の
+  // 分岐(sourceFile = fileMode_.currentFile())は、実際のユーザー
+  // 起動のCUT(cutOrigin_==File)には正しいが、HELP/MAN/LOCATE/DU/
+  // Directory起点のCUT(それぞれ自分自身のビューモデルから内容を
+  // 得ており、fileMode_には一切触れない)には成り立たない前提
+  // だった――一度も実ファイルをFileモードで開いていないセッション
+  // (例えば起動直後に直接^Hを押した場合)では、fileMode_.currentFile()
+  // が空のままなので、以下のparent.empty()チェックで常に失敗して
+  // いた(「一度でも(ls)で何かを開けばOK」に見えたのは、それが
+  // fileMode_.currentFile()を初めて非空にする、たまたま一番身近な
+  // 操作だったため)。File起点以外のCut/CutContentは、そもそも
+  // 「ファイル」という概念を持たない――その代わり、Cut/CutContentへ
+  // 入る前のdirectoryMode_自身の状態はここでも無傷のまま残っている
+  // ので、素のDirectoryモード自身の上の分岐と全く同じ「そこを
+  // 再表示する」動作にフォールバックする。
+  if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
+      cutOrigin_ != CutOrigin::File) {
+    if (!directoryMode_.refresh()) return false;
+    currentMode_ = ApplicationMode::Directory;
+    display_.hideVisibleCursor();
+    directoryView_.redraw();
+    return true;
+  }
   std::string sourceFile;
   if (currentMode_ == ApplicationMode::ListBrowser) {
     if (listBrowserCategory_ != RingCategory::RecentFile) return false;
@@ -4547,6 +4572,25 @@ bool Application::goToFileSelector() {
 // is_directory()の実stat、DuはDuEntry::isDirectory(既にdu_mode.cpp
 // 自身がstat済み)。
 bool Application::goToParentFromFileOrArchive() {
+  // 2026-09-14追加、goToFileSelector()自身の同一の2026-09-14修正の
+  // コメント参照(直接のユーザー報告"HELP画面で^J^J/^J^K/^O^K/（どこ
+  // でもキー）が利かない"): File起点以外のCut/CutContent(HELP/MAN/
+  // LOCATE/DU/Directory起点)には、下のfileMode_.currentFile()という
+  // 前提がそもそも成り立たない。Cut/CutContentへ入る前のdirectoryMode_
+  // 自身の状態はここでも無傷のまま残っているので、素のDirectoryモード
+  // 自身が^O^Kに使うdirectoryMode_.goToParent()(すぐ上のhandleCommand()
+  // 自身のcase Command::GoToParentDirectory参照)へ直接フォールバック
+  // する――こちらは「その場を再表示する」だけのgoToFileSelector()側の
+  // フォールバックとは違い、"もう1段階先"というこの関数自身の意味論を
+  // 正しく保つ。
+  if ((currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
+      cutOrigin_ != CutOrigin::File) {
+    if (!directoryMode_.goToParent()) return false;
+    currentMode_ = ApplicationMode::Directory;
+    display_.hideVisibleCursor();
+    directoryView_.redraw();
+    return true;
+  }
   std::string sourcePath;
   bool sourceIsDirectory = false;
   if (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut ||
@@ -4644,9 +4688,17 @@ bool Application::jumpToPathPrefix() {
     sourcePath = directoryMode_.currentDirectory();
   } else if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent) {
     sourcePath = archiveMode_.currentArchive();
-  } else if (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut ||
-             currentMode_ == ApplicationMode::CutContent) {
+  } else if (currentMode_ == ApplicationMode::File) {
     sourcePath = fileMode_.currentFile();
+  } else if (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) {
+    // 2026-09-14追加、goToFileSelector()自身の同一の2026-09-14修正の
+    // コメント参照(直接のユーザー報告"HELP画面で...（どこでもキー）
+    // が利かない"): File起点のCUTだけがfileMode_.currentFile()を
+    // 実際に持つ――それ以外の起点(HELP/MAN/LOCATE/DU/Directory)は、
+    // すぐ上のDirectory自身の分岐と同じくdirectoryMode_.
+    // currentDirectory()(Cut/CutContentへ入る前のまま無傷で残って
+    // いる)にフォールバックする。
+    sourcePath = (cutOrigin_ == CutOrigin::File) ? fileMode_.currentFile() : directoryMode_.currentDirectory();
   } else if (currentMode_ == ApplicationMode::Locate) {
     const std::string *selected = locateMode_.selectedResult();
     if (!selected) return false;
