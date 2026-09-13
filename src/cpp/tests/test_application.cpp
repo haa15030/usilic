@@ -5688,6 +5688,67 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): refused from a m
   CHECK_FALSE(app.handleCommand(Command::GoToParentDirectory));
 }
 
+// 2026-09-20 further extension, direct user request ("^O^KをHISTORY.md:
+// 9768と同じ形で反映して"、具体例"^X^D^N^N^N^N^O^K"): goToParentFromFileOrArchive()'s
+// own comment explains why a plain "two parent_path() calls" wouldn't
+// work here -- the ListBrowser candidate (RingCategory::RecentDirectory)
+// is ALREADY a directory, not a file, so only ONE parent_path() is
+// correct (matching DirectoryMode::goToParent()'s own semantics exactly,
+// as if the highlighted history entry were the CURRENT directory).
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from the ^X^D directory-history "
+                           "ListBrowser, goes to the PARENT of the highlighted (already-a-directory) "
+                           "entry -- only ONE parent_path(), not two like the File/Archive branches") {
+  history.pushRecent(RingCategory::RecentDirectory, "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/");
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(*app.listBrowserMode().selectedItem() ==
+          "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/");
+
+  CHECK(app.handleCommand(Command::GoToParentDirectory));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/");
+}
+
+// Contrast case: the SAME ListBrowser mode, but RecentFile candidates are
+// real FILE paths (no forced trailing "/", history.cpp's own pushRecent()
+// call sites for RecentFile never append one) -- so this should keep
+// behaving like the existing File-mode branch (two parent_path() calls).
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from the ^X^F file-history ListBrowser, "
+                           "goes to the PARENT of the highlighted file's own containing directory -- "
+                           "TWO parent_path() calls, matching the File/Archive branches (the candidate "
+                           "itself is a file, not a directory)") {
+  history.pushRecent(RingCategory::RecentFile, "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Info.plist");
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.handleCommand(Command::GoToParentDirectory));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == "/Applications/Adobe Acrobat DC/Adobe Acrobat.app/");
+}
+
+// Du: DuEntry::isDirectory is already stat-computed (du_mode.cpp), so
+// the same directory/file distinction applies without any extra work.
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from DU, goes to the PARENT of the "
+                           "highlighted entry's own folder (directory entry: one parent_path(); file "
+                           "entry: two, via duEntryFolder()'s own convention)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDu));
+  waitForDu(app);
+  while (app.duMode().selectedEntry() &&
+         !(app.duMode().selectedEntry()->isDirectory &&
+           app.duMode().selectedEntry()->path.find("subdir") != std::string::npos)) {
+    if (!app.handleCommand(Command::MoveDown)) break;
+  }
+  REQUIRE(app.duMode().selectedEntry() != nullptr);
+  REQUIRE(app.duMode().selectedEntry()->isDirectory);
+
+  CHECK(app.handleCommand(Command::GoToParentDirectory));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());  // parent of subdir/ -- root itself
+}
+
 // 2026-08-14 addition, K-18 (^J^K, "Go to file-selector") -- a direct
 // user request ("検索ファイル所在地へ降りるためのキーアサインも実は
 // あるので反映してほしい（^J^K）"), previously unimplemented in this

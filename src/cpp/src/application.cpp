@@ -4538,17 +4538,77 @@ bool Application::goToFileSelector() {
 // (currentDirectory_ -> parent)を正確に反映しているが、既にアクティブ
 // なDirectory一覧からではなく、「現在のファイル/アーカイブが現れる
 // であろうディレクトリ」から計算されるだけである。
+//
+// 2026-09-20追加、直接のユーザー依頼("^O^KをHISTORY.md:9768と同じ
+// 形で反映して"): 9768番の依頼はJumpToPathPrefix(^J+数字)を「単なる
+// 文字列上も含めたまさにどこでも」(Locate/ListBrowser/Du含む、その
+// jumpToPathPrefix()自身のコメント参照)へ一般化したものであり、今回
+// ^O^Kにも同じ広さを反映する――具体例("^X^D^N^N^N^N^O^K"、ListBrowser
+// のRecentDirectory候補からの発動)により、単に対応モードを追加する
+// だけでは不十分だと判明した: File/Archiveは常に「ファイル」パスな
+// ので`parent_path()`を2回(格納先ディレクトリ、さらにその親)適用して
+// いたが、ListBrowserのRecentDirectory候補やDuのディレクトリエントリ
+// は既にそれ自身が「ディレクトリ」であり、2回適用すると1段階余分に
+// 遡ってしまう(具体例で言えば期待される"Resources/"ではなく
+// "Contents/"に着地してしまう)。そこでduEntryFolder()と全く同じ考え方
+// ――「格納先ディレクトリ(ファイルなら親、ディレクトリなら自分自身)」
+// をまず求め、その「親」を取ることで、ファイル/ディレクトリどちらの
+// ソースでも统一的に「もう1段階先」を計算できるようにした。ソースが
+// ディレクトリかどうかの判定は、jumpToPathPrefix()と同様モードごとに
+// 最も自然な方法を使う――ListBrowserはRingCategory(RecentDirectoryの
+// 候補は末尾"/"付きの本物のディレクトリパスであることがhistory.cpp
+// 自身のpushRecent()呼び出し箇所で保証されている)、Locateは
+// runDuOnCurrentFolder()自身のLocate分岐と同じくstd::filesystem::
+// is_directory()の実stat、DuはDuEntry::isDirectory(既にdu_mode.cpp
+// 自身がstat済み)。
 bool Application::goToParentFromFileOrArchive() {
   std::string sourcePath;
-  if (currentMode_ == ApplicationMode::File) {
+  bool sourceIsDirectory = false;
+  if (currentMode_ == ApplicationMode::File || currentMode_ == ApplicationMode::Cut ||
+      currentMode_ == ApplicationMode::CutContent) {
+    // jumpToPathPrefix()自身のFile/Cut/CutContent分岐と同じ理屈
+    // ――CUTはFileモードのバッファ亜種であり、fileMode_自身の状態には
+    // 触れない。
     sourcePath = fileMode_.currentFile();
   } else if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent) {
     sourcePath = archiveMode_.currentArchive();
+  } else if (currentMode_ == ApplicationMode::ListBrowser) {
+    const std::string *selected = listBrowserMode_.selectedItem();
+    if (!selected) return false;
+    sourcePath = *selected;
+    sourceIsDirectory = (listBrowserCategory_ == RingCategory::RecentDirectory);
+  } else if (currentMode_ == ApplicationMode::Locate) {
+    const std::string *selected = locateMode_.selectedResult();
+    if (!selected) return false;
+    sourcePath = *selected;
+    std::error_code ec;
+    sourceIsDirectory = std::filesystem::is_directory(sourcePath, ec) && !ec;
+  } else if (currentMode_ == ApplicationMode::Du) {
+    const DuEntry *selected = duMode_.selectedEntry();
+    if (!selected) return false;
+    sourcePath = selected->path;
+    sourceIsDirectory = selected->isDirectory;
   } else {
     return false;
   }
   if (sourcePath.empty()) return false;
-  std::string parent = std::filesystem::path(sourcePath).parent_path().parent_path().string();
+  // 2026-09-20修正、実際にテストを流して発覚: sourcePathが末尾"/"付きの
+  // ディレクトリの場合、std::filesystem::pathはそれを「末尾に空の
+  // コンポーネントが1つある」パスとして扱うため、parent_path()を
+  // 1回呼んでも末尾のスラッシュが取れるだけで、最後の本物のディレクトリ
+  // 名(例: "Resources")自体は消えない――"/a/b/c/"のparent_path()は
+  // "/a/b"ではなく"/a/b/c"になる、というstd::filesystem::path自身の
+  // 既知の挙動。そのため、ディレクトリの場合はまず末尾のスラッシュを
+  // 文字列として素通しで取り除いてから(directory_mode.cpp自身の同種の
+  // 正規化と同じ手法)parent_path()を1回だけ呼ぶ――ファイルの場合は
+  // 元々末尾スラッシュを持たないのでこの問題自体が起こらない。
+  std::string normalizedSource = sourcePath;
+  if (sourceIsDirectory && normalizedSource.size() > 1 && normalizedSource.back() == '/') {
+    normalizedSource.pop_back();
+  }
+  std::filesystem::path containing = sourceIsDirectory ? std::filesystem::path(normalizedSource)
+                                                        : std::filesystem::path(sourcePath).parent_path();
+  std::string parent = containing.parent_path().string();
   if (parent.empty()) return false;
   // goToFileSelector()自身の同一のコメント参照: enterDirectory()が
   // currentDirectory_を上書きする「前に」取得する。

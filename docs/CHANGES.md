@@ -658,6 +658,44 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      今回は修正せず記録のみに留める。対応が必要そうであれば別途
      ご指示ください。
 
+466. **2026-09-20: ^O^K(GoToParentDirectory)をJumpToPathPrefix(^J+
+     数字)と同じ広さ――Locate/ListBrowser/Duへも拡張**
+   - **直接のユーザー依頼**: 「③`^O^K`をHISTORY.md:9768と同じ形で
+     反映して。`^X^D^N^N^N^N^O^K`→/Applications/Adobe Acrobat DC/
+     Adobe Acrobat.app/Contents/Resources/の（ls）へ」。HISTORY.md
+     9768番は項目375(JumpToPathPrefix、^J+数字)の一般化依頼――
+     「単なる文字列上も含めたまさにどこでも」機能する設計方針
+     ――を指しており、この同じ広さを^O^Kにも反映する依頼。
+   - 従来`goToParentFromFileOrArchive()`(^O^K)はFile/Archive/
+     ArchiveContentの3モードしかカバーしておらず、jumpToPathPrefix()
+     が既にカバーしているLocate/ListBrowser/Duには一切対応していな
+     かった。単純にモード分岐を追加するだけでは不十分だと判明した:
+     File/Archiveのソースは常に「ファイル」パスなので`parent_path()`
+     を2回(格納先ディレクトリ、さらにその親)適用していたが、
+     ListBrowserのRecentDirectory候補やDuのディレクトリエントリは
+     既にそれ自身が「ディレクトリ」であり、2回適用すると1段階余分に
+     遡ってしまう(具体例で言えば期待される"Resources/"ではなく
+     "Contents/"に着地する)。`duEntryFolder()`と同じ考え方――「格納先
+     ディレクトリ(ファイルなら親、ディレクトリなら自分自身)」をまず
+     求め、その「親」を取ることで統一的に計算するようにした。ソースが
+     ディレクトリかどうかの判定は、jumpToPathPrefix()と同様モードごと
+     に最も自然な方法(ListBrowserはRingCategory、Locateは
+     `std::filesystem::is_directory()`の実stat、DuはDuEntry::
+     isDirectory)を使う。
+   - **副産物のバグ発見・修正**: 実装検証中、`std::filesystem::path`
+     の末尾スラッシュに関する挙動――"/a/b/c/"への`parent_path()`は
+     "/a/b"ではなく末尾のスラッシュを剥がしただけの"/a/b/c"を返す
+     (末尾スラッシュ自体が「空の最終コンポーネント」として扱われる
+     ため)――に起因する実バグを新規doctestで発見した。ディレクトリ
+     ソースの場合は先に文字列として末尾スラッシュを取り除いてから
+     `parent_path()`を1回だけ呼ぶよう修正(directory_mode.cpp自身の
+     同種の正規化と同じ手法)。
+   - **検証**: 新規doctest4件(ListBrowserのRecentDirectory/RecentFile
+     それぞれでの対称性確認、Duのディレクトリエントリ)を追加、既存の
+     GoToParentDirectory関連8件全通過。`make test` 1107/1108件・
+     21676/21677アサーション通過(残る1件は既知のLOCATEフレークで
+     無関係)。`make install`/`make app`完了。
+
 ## 2. KEY(キー一覧 / HELP)
 
 58. **2026-07-29: KEY/ヘルプモード(^J^H)をApplicationへ配線 ―

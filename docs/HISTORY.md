@@ -17186,3 +17186,11 @@ ContentView::renderScrollIndicatorOverlay()にdisplay_.modeLineVisible()のチ�
 
 >項目464のバグ②修正(見出し行"<b>KEY</b>"を読み飛ばす)を撤回し、見出し行をkeyText_に含める元の形へ戻しました。これによりCutMode::split()自身の既存仕様がそのまま発動し、他の本物のCUTセッションと同じく冒頭に"--"(内容は見出し行の"KEY"のみ)が現れます。影響したdoctest2件をsegments()[0]=="--"・segments()[1]が本物の最初のエントリという前提に更新。KEY関連の全27テスト・make install/make app完了。フルスイートは1105件中1103件通過(残る2件は既知のLOCATEフレークと、activatePromptのCOLUMNS計算テストの既存フレーク――後者は今回の変更をgit stashで退避したベースラインでも5回中2回失敗することを確認済みで、フィクスチャの一時ディレクトリ名の長さのランダム性に起因する無関係な既知の不安定性と判断)。docs/CHANGES.mdに項目465として記録。
 
+<③`^O^K`をHISTORY.md:9768と同じ形で反映して。`^X^D^N^N^N^N^O^K`→/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/の（ls）へ。
+④src/QUICK.txtを更新してみた。
+HELPの方針だが、QUICK.txt:328のような形にしたい（HELPをKEYで置き換えたやつをHELP）。必要なのは、usilic.1をmanで表示した結果が~/.usilic/saved/QUICK.txtと同じであること。それが可能かどうかをまずは調べて見て。
+
+>③goToParentFromFileOrArchive()(^O^K)をjumpToPathPrefix()(^J+数字、HISTORY.md:9768で確立された「どこでも」方針)と同じ広さ――Locate/ListBrowser/Duへ拡張しました。File/Archiveは常に「ファイル」パスなのでparent_path()を2回適用していましたが、ListBrowserのRecentDirectory候補やDuのディレクトリエントリは既にそれ自身が「ディレクトリ」であり2回適用すると1段階余分に遡ってしまうため(具体例の期待値"Resources/"ではなく"Contents/"に着地する)、duEntryFolder()と同じ考え方(格納先ディレクトリをまず求め、その親を取る)で統一しました。副産物として、std::filesystem::pathの末尾スラッシュ関連の実バグ("/a/b/c/"へのparent_path()が"/a/b"ではなく"/a/b/c"になる)も新規テストで発見・修正しました。新規doctest4件追加、make test 1107/1108件・21676/21677アサーション通過(残る1件は既知のLOCATEフレーク)、make install/make app完了、docs/CHANGES.mdに項目466として記録。
+
+④は「投資してみて」の依頼のとおり、実装はまだせず可能性のみ調査しました。結論: 仕組み自体(man描画結果を全角「：」でCUT分割)は技術的に成立します(KEYのタブ分割と全く同じ理屈)が、ご自身の~/.usilic/saved/QUICK.txt内の脚注(「※実際は全角の':'。usilic(1)に拾われてしまうので全角では書けない」)が示す通り、説明文中に全角「：」が紛れ込むと誤ってCUT境界になる問題があり、現状のsrc/usilic.1にも同様の箇所が2箇所(HELP項目の説明文中)見つかりました――同じ回避(半角へ差し替え)が必要です。一方、~/.usilic/saved/QUICK.txt自体をman経由で完全に(バイト単位で)再現するのは困難と判明しました: ManMode::runAndWrap()はMANWIDTH=width_を設定してから本物のman(1)を実行するため実際の折り返しは常にman自身が担い(後段のPipeBufferは太字/下線検出用でほぼno-op)、実機で同じ手順(MANWIDTH=80 man ./src/usilic.1)を試したところ「usilicは、...起動した場合はページャー、」で単語境界通りに改行されましたが、対象ファイルは「ページャ」「ー、」の間、つまり「ページャー」という1単語の途中(禁則的にも本来ありえない位置)で改行されており、本物のman/groffの折り返しともusilic自身のPipeBuffer(禁則処理付き)の折り返しとも一致しない、別の(単純な固定幅文字数での機械的な)折り返し方法で作られたものと見られます。加えて内容面でもTERMSの追加項目(「.」「..」「「」」「''」、HELP.txt由来)、KEY内エントリの並び替え(CUT系が先頭、HELP/KEYが末尾寄り)、AUTHOR差し替え等、現状のsrc/usilic.1との差分が複数あります。バイト完全一致ではなく内容・構造面での一致を目指すのか、~/.usilic/saved/QUICK.txtがどのように生成されたか(手編集か、別ツールか)を教えていただければ、次の一手を検討します。
+
