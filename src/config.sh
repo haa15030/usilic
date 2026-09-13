@@ -266,10 +266,16 @@ echo "install $COPY -m 755 $CSRC/$PROGNAME \$PREFIX/bin/$PROGNAME"
 install $COPY -m 755 $CSRC/$PROGNAME \$PREFIX/bin/$PROGNAME
 echo "install $COPY -m 644 ${PROGNAME}rc \$PREFIX/lib/$PROGNAME"
 install $COPY -m 644 ${PROGNAME}rc \$PREFIX/lib/$PROGNAME
-echo "install $COPY -m 644 doc/HELP \$PREFIX/lib/$PROGNAME"
-install $COPY -m 644 doc/HELP \$PREFIX/lib/$PROGNAME
-echo "install $COPY -m 644 doc/HELP.jp \$PREFIX/lib/$PROGNAME"
-install $COPY -m 644 doc/HELP.jp \$PREFIX/lib/$PROGNAME
+# 2026-09-20、直接のユーザー依頼: 元々ここはsrc/doc/HELP(.jp)を
+# インストールしていたが、その内容を新たに正式なsrc/README(.jp)へ
+# 昇格したのに伴い、ソース側のパスだけをそちらへ差し替えた――
+# インストール先の実際のファイル名("HELP"/"HELP.jp")はBUILT BINARY
+# 自身が実行時に探す名前なので、install(1)の第2引数を明示的な
+# ファイル名(ディレクトリ末尾ではなく)にして変更していない。
+echo "install $COPY -m 644 README \$PREFIX/lib/$PROGNAME/HELP"
+install $COPY -m 644 README \$PREFIX/lib/$PROGNAME/HELP
+echo "install $COPY -m 644 README.jp \$PREFIX/lib/$PROGNAME/HELP.jp"
+install $COPY -m 644 README.jp \$PREFIX/lib/$PROGNAME/HELP.jp
 echo "install $COPY $PERM doc/usilic.1.gz \$PREFIX/man/man1"
 install $COPY $PERM doc/usilic.1.gz \$PREFIX/man/man1
 EOF

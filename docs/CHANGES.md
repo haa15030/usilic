@@ -26437,4 +26437,35 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      環境依存フレーク)。`make install`/`make app`完了。
      docs/ideas/IDEAS.md:46にも実装済みの旨を追記した。
 
+474. **旧`src/doc/HELP(.jp)`を正式な`src/README(.jp)`へ昇格、旧
+     `src/README(.jp)`は`old/`直下へ移動しリポジトリから除外**
+   - **直接のユーザー依頼**: 「以前のHELP.jpだが、新たに正式な
+     README.jpとしたい（英文HELPはREADME）。...以前のREADME.jp/
+     READMEはリポジトリ除外の上、oldへ移行でいい」。旧`src/doc/
+     HELP.jp`/`HELP`(legacy自身の`^J^H`が実際に表示していた、全モード
+     を網羅する詳細な解説文書)は、本セッションのHELP全面作り直し
+     (項目470、`usilic -m`生成物ベースのCUT-by-fileへ)により、
+     usilic自身の実行時HELPとしては既に使われなくなっていた――
+     内容自体は失うには惜しい本物のドキュメントなので、プロジェクトの
+     正式なREADME(.jp)へ昇格させる、という判断。
+   - **実装**: `git mv src/README(.jp) old/README(.jp)`で退避した後、
+     `git mv src/doc/HELP(.jp) src/README(.jp)`で昇格。旧`src/README
+     (.jp)`は`.gitignore`(`old/README`/`old/README.jp`)へ追加し、以後
+     追跡しない(内容はgit履歴からも辿れる)。`src/config.sh`が
+     legacy(`old/`)ビルド時にインストール元として`doc/HELP`/
+     `doc/HELP.jp`を参照していたため、参照元パスを`README`/
+     `README.jp`へ差し替えた――インストール先の実際のファイル名
+     ("HELP"/"HELP.jp")はBUILT BINARY自身が実行時に探す名前なので、
+     `install(1)`の第2引数を明示的なファイル名指定に変更し、そちらは
+     変更していない。`src/cpp/src/markup_to_roff.hpp`のコメントが
+     旧パスを参照していた箇所、および当初(項目471)の「物理行ごとに
+     リテラルなスペースを焼き込む」という既に撤回済みの古い説明も
+     あわせて、項目472で実際に採用したU+FEFF方式の説明へ更新した。
+   - **検証**: `bash config.sh && bash install.sh`を実機で実行し、
+     `$PREFIX/lib/U/HELP`・`HELP.jp`が新しい`src/README`・
+     `README.jp`の内容で正しくインストールされることを確認した。
+     `make test`(C++側)は1126件中1125件通過(残る1件は既存の無関係な
+     LOCATE環境依存フレーク、今回の変更はコメントのみで対象コードには
+     無関係)。
+
 

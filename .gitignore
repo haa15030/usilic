@@ -34,6 +34,12 @@ old/src/TAGS
 old/src/t
 old/src/USILIC.EXE.stackdump
 old/src/debug/
+# 2026-09-20、直接のユーザー依頼: 旧README/README.jp(src/直下、
+# src/doc/HELP(.jp)を新たに正式なREADME(.jp)としたことに伴い置き換え
+# られた)は、参考資料としてold/直下へ物理的に残すがリポジトリからは
+# 除外する(過去の内容はgit履歴からも辿れる)。
+old/README
+old/README.jp
 
 # perl scratch/doc build output (legacy C docs toolchain)
 old/perl/usilic.dvi
