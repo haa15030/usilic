@@ -1872,6 +1872,56 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      想定通りの未対応、次の一切れで解消予定。他2件は既知のLOCATE/
      activatePromptフレーク)。`make install`/`make app`完了。
 
+470. **2026-09-20: KEYモードを完全退役させ、HELP(^H/^J^H)を
+     `usilic -m`生成ファイルの本物のCUT-by-file(タブ区切りではなく
+     全角「：」区切り)へ全面的に作り直した**
+   - **直接のユーザー依頼**: 「今のKEYをHELPに置き換え...KEYモードでは
+     無くなるのでKEYのみの抜粋ではなく正味の：カットによるHELPと
+     してほしい」。旧HELP(`kHelpTextJa`/`En`本文埋め込み+`^Oa`日英
+     切替)は削除するか？とAskUserQuestionで確認し、「完全削除する」
+     の回答を得て実施。あわせて「`^H`で新HELP、SHELLを含むプロンプト
+     からは`^J^H`」と、両方の入口を維持する方針を確認済み。
+   - **HELPの作り直し**: `helpText_`の中身を、埋め込み文字列から
+     `~/.local/lib/usilic/usilic.man`(前項467の`usilic -m`で
+     `QUICK.txt`から生成する、legacy `HELP.jp`と同じnroff重ね打ち
+     バイト列形式のファイル)の生の内容へ切り替えた(`main.cpp`、
+     `$USILICHELP`での上書きは従来通り維持)。`kHelpPattern`を、旧
+     `"^  [0-9]+\\."`(番号付き見出し正規表現、`GrepSyntax::Regex`)
+     から固定文字列`"："`(`GrepSyntax::Fixed`)へ差し替え――`startHelp()`
+     ・`wrapHelpText()`(GUI章追加ロジックも削除)ともに追随。
+   - **KEYの完全削除**: `Command::StartKey`/`CutOrigin::Key`/
+     `Application::startKey()`/`loadKeyText()`/`wrapKeyText()`/
+     `keyText_`メンバー、および`^H`の旧ディスパッチ(`resolveCommand()`
+     内の`case 0x08:`)と`^O^H`(SHELLからの旧エスケープハッチ)を削除
+     ――`^H`は新HELP(`Command::StartHelp`)を指すよう変更。`^J^H`は
+     元々存在する`leaderJPending_`の汎用フォールバック機構
+     (`isShellSafeNavigation`等)がそのまま効くため、新規配線は不要
+     と判断(トレースにより確認)。`^Oa`(旧`ToggleHelpLanguage`、日英
+     切替)も、`usilic.man`が日本語専用になり概念自体が無意味化した
+     ため未割り当てに戻した(再割り当ては別途)。`ModeLineFieldsProvider`
+     (cutContentView_/cutView_)の`CutOrigin::Key`分岐、`handleResize()`
+     の`wrapKeyText()`呼び出しもあわせて削除。
+   - **副次的なバグ修正(`drawPromptLabel()`)**: 新HELPの本物のセグメント
+     ラベル(例:「Section One：first entry」)は、旧KEYの短い番号付き
+     見出しと異なり長くなり得る――CutContentの戻り先表示("CUT:<ラベル>")
+     が2026-08-24修正以来「ラベルは常に短い」という前提で切り詰めを
+     一切行っていなかったため、ラベルが`editableWidth`の予約幅へ食い
+     込むと、まだ入力中のプロンプト自身の再描画で先頭が上書きされて
+     消える実害を発見(例: "CUT:Sectio"が消え"n One：first entry"だけ
+     残る)。MAN/LOCATE/DUと同じ「接頭辞は生かし値だけ切り詰める」方式
+     に統一し、値側は(パスと違い見出しが先頭にあるため)先頭を残す
+     向きにした。
+   - **テスト**: 旧KEY専用のテスト区画(`resolveCommand`/nesting/Enter/
+     ^G/mode-line/resize/`$HOME`未設定、計約11件)を削除。既存のHELP
+     テスト区画の合成データ(`testHelpText()`)を旧番号付き見出しから
+     新しい「：」区切り形へ更新、もはや無意味になった「chapter.section.
+     形式の見出しにも対応」テストを削除、上記drawPromptLabel()修正に
+     伴うテストの期待値更新。`make test`は1122件中1121件通過(残る1件は
+     このセッションと無関係な既存のLOCATE環境依存フレーク、変更前の
+     コミットでも同じ箇所で再現することを確認済み)。`make install`/
+     `make app`完了、`usilic -m QUICK.txt`の生成物を実際にHELPとして
+     読み込ませて起動することも確認した。
+
 ## 3. FGREP / EGREP
 
 171. **2026-08-05(続き): `^J^S`(EGREP)/`^J^C`(CUT正規表現)の入口を

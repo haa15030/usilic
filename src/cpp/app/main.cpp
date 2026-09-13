@@ -3810,55 +3810,26 @@ int main(int argc, char **argv) {
                        homeEnv ? std::string(homeEnv) : std::string(), tempRootDirectory, workRootDirectory,
                        bootOptions);
 
-  // Ported from str.c's set_help(): English (HELP) vs a genuine
-  // Japanese translation (HELP.jp), chosen by charset the same way
-  // legacy does. USILICHELP (when set) names the ASCII/English file
-  // directly -- no jp/plain fallback list, used AS GIVEN.
-  //
-  // 2026-08-25 update: this port now has its OWN `make install`
-  // (src/cpp/Makefile), which lands HELP/HELP.jp under
-  // $(PREFIX)/lib/usilic/ -- PREFIX defaulting to ~/.local, same
-  // convention src/config.sh's own legacy build install uses (see
-  // that Makefile's own comment). The candidate list here tries that
-  // exact default location FIRST, falling back to /usr/local/lib/usilic/HELP
-  // (a `make install PREFIX=/usr/local` install, or -- historically --
-  // wherever the legacy C build happened to be installed under the
-  // "usilic" name before its own 2026-08-25 rename to "U"; that
-  // coincidental reuse no longer applies now that the two builds have
-  // distinct install trees, but the same fallback VALUE still works
-  // for a real /usr/local install of THIS port). If none of the
-  // candidates exist or are readable, HELP (^J^H) is simply
-  // unavailable (Command::StartHelp fails cleanly) rather than this
-  // being a hard startup error.
-  // 2026-08-30、直接のユーザー依頼("HELP.jp本体をソースに統合しては
-  // どうか、使用前に読まれて『実はすでにGUI』ネタバレを回避すべく"):
-  // 上のディスク上のHELP/HELP.jp探索は、レガシー版(old/、今も
-  // src/config.shのmake installが同じsrc/doc/HELP(.jp)を使い続けて
-  // いる)専用のものとして残しつつ、C++移植版自身のデフォルトの
-  // ヘルプ本文はhelp_text.hppに埋め込んだ全く新しいテキストへ切り替
-  // えた――src/doc/HELP(.jp)自体はレガシー版のために一切変更して
-  // いない。$USILICHELPが設定されている場合だけは、以前と全く同じ
-  // ようにそのファイルをそのまま読み込む(埋め込みテキストへの
-  // フォールバックはしない、GUI章の自動追加も行わない――
-  // 「そのファイルの内容がそのまま全て」という以前からの前提に
-  // 合わせている)。
-  if (const char *helpPathEnv = std::getenv("USILICHELP")) {
-    std::string text = readFileIfExists(helpPathEnv);
+  // 2026-09-20、直接のユーザー依頼("今のKEYをHELPに置き換え...正味の
+  // ：カットによるHELPとしてほしい")によりHELP自身が全面的に作り直
+  // された。以前はここでhelp_text.hppに埋め込んだ日本語/英語の全文
+  // (kHelpTextJa/En、+GUI専用章kHelpTextGuiJa/En、Command::
+  // ToggleHelpLanguage/^Oaで切替可能)を読み込んでいたが、それらは
+  // 全て削除済み(git履歴には残る)。新HELPは~/.local/lib/usilic/
+  // usilic.man(usilic -m QUICK.txtで生成する、legacy自身のHELP.jpと
+  // 同じnroff重ね打ちバイト列形式のファイル、markup_to_roff.hpp
+  // 参照)の生の内容をそのまま読み込むだけ――expandHelpMarkup()展開も
+  // GUI章の自動追加も一切行わない(そのファイルの内容がそのまま
+  // 全て)。$USILICHELPが設定されている場合は、以前と全く同じように
+  // そちらを優先する(手元の別ファイルで試したい場合の上書き用)。
+  // 読めない場合はHELP(^H/^J^H)が単に利用不可能になるだけ
+  // (Command::StartHelpが素直に失敗する)――起動時エラーにはしない。
+  std::string helpPath = std::getenv("USILICHELP") ? std::getenv("USILICHELP")
+                                                    : (homeEnv ? std::string(homeEnv) + "/.local/lib/usilic/usilic.man"
+                                                               : std::string());
+  if (!helpPath.empty()) {
+    std::string text = readFileIfExists(helpPath);
     if (!text.empty()) app.loadHelpText(text);
-  } else {
-    // 2026-09-01、直接のユーザー依頼("^Oaはデフォルト文字コード切り替え
-    // ではなくてHELP/KEYの日本語<-->英語切り替えでいいと思う"): 以前は
-    // ここでファイル内容の文字コード(encoding、~/.usilic/historyから
-    // 復元され得る)からHELPの表示言語を推測していた――これがまさに
-    // 「=fc」バグの根本原因だった: ずっと前のセッションで保存された
-    // 古いAsciiという値が、再起動のたびに黙って英語版HELPを選び続けて
-    // いた。今後はApplication::helpJapanese_自身のコメントの通り、
-    // ファイル内容の文字コードとHELP/KEYの表示言語を完全に切り離し、
-    // ここも(Applicationのメンバー初期化子と同じ)固定でtrue(日本語)
-    // から始める――必要ならセッション中に^Oaで切り替えられる。
-    bool japanese = true;
-    app.loadHelpText(fm::expandHelpMarkup(japanese ? fm::kHelpTextJa : fm::kHelpTextEn));
-    app.loadGuiHelpText(fm::expandHelpMarkup(japanese ? fm::kHelpTextGuiJa : fm::kHelpTextGuiEn));
   }
 
   // "実はすでにGUI" (docs/ideas/IDEAS.md, see CLAUDE.md's 2026-07-30

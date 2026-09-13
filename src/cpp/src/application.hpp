@@ -427,15 +427,16 @@ enum class Command {
   // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
   // する。Application::executeShowUsilicBanner()自身のコメント参照。
   ShowUsilicBanner,
-  // K-27(^Oa)。2026-09-01、直接のユーザー依頼("^Oaはデフォルト文字
-  // コード切り替えではなくてHELP/KEYの日本語<-->英語切り替えでいいと
-  // 思う"): 以前はここでAscii -> Euc -> Utf8 -> Asciiの3値巡回
-  // (CycleCharset/cycleCharset())だったが、ファイル内容の文字コードは
-  // 既に自動判別されており(usilicrc/文字コードの章参照)、手動切り替え
-  // 自体が不要と判断されたため、この同じキーをHELP/KEY画面の表示言語
-  // 切り替えへ丸ごと差し替えた。Application::toggleHelpLanguage()
-  // 自身のコメント参照。
-  ToggleHelpLanguage,
+  // K-27(^Oa)は2026-09-20に廃止された。2026-09-01に一度、直接の
+  // ユーザー依頼("^Oaはデフォルト文字コード切り替えではなくてHELP/KEY
+  // の日本語<->英語切り替えでいいと思う")によりCycleCharset(Ascii ->
+  // Euc -> Utf8の3値巡回)からToggleHelpLanguage(HELP/KEYの日英切替)へ
+  // 差し替えられていたが、直接のユーザー依頼("今のKEYをHELPに置き
+  // 換え...正味の：カットによるHELPとしてほしい")によりHELP自体が
+  // usilic.man(日本語専用、usilic -mで生成)のCUT-by-fileへ全面的に
+  // 作り直され、日英切替という概念自体が意味を持たなくなったため、
+  // このキー自体を(CycleCharsetへ戻すことも含めて)未割り当てのまま
+  // にした――再割り当てが必要になれば別途検討する。
   // K-46(^X^F、「FILE: Select file name」): RingCategory::RecentFile
   // に対するListBrowserを開く。K-48(^X^D、「DIR: Select directory
   // name」)は「既存の」StartDirectoryHistoryを再利用するので、
@@ -445,14 +446,12 @@ enum class Command {
   // 閲覧されているかと無関係である理由についてはToggleHistoryView
   // 自身のコメント参照。)
   StartFileHistory,
-  // K-2(^H、M_key、「KEY」): 2026-09-20、直接のユーザー依頼("HELPと
-  // 同じにしてほしい。タブコードで分割の純粋CUTモード版KEYでよろしく")
-  // により、旧来の専用テーブル(kKeyTable/QuickKeyEntry、F-Nプレフィックス
-  // 解決込みの独自レンダリング)を全面撤廃し、startHelp()と全く同じ
-  // 立て付け――QUICK.txt自身の"KEY"章のテキストをCutMode::split()で
-  // タブ文字分割した、CutOrigin::Keyの本物のCut/CutContentセッション
-  // へ作り直した。Application::startKey()自身のコメント参照。
-  StartKey,
+  // K-2(^H)は2026-09-20に廃止された――直接のユーザー依頼("今のKEY
+  // をHELPに置き換え、KEYモードでは無くなる")により、旧KEY(QUICK.txt
+  // "KEY"章のタブ分割によるキー一覧、CutOrigin::Key)は完全に退役し、
+  // ^H自身がStartHelp(新HELP、下記)を指すようになった。かつての
+  // Command::StartKey/startKey()/loadKeyText()/wrapKeyText()/keyText_/
+  // CutOrigin::Keyは全て削除済み(git履歴には残る)。
   // 実験的(2026-08-23、単なるSpaceの意味を上乗せしてみるという
   // 直接のユーザー依頼――legacy/usilicrc自身のキーテーブルの一部
   // ではない)。最初の一切れ(docs/CHANGES.md項目414)はこれを
@@ -1637,12 +1636,6 @@ class Application {
   // 単に失敗する)。
   bool loadHelpText(const std::string &text);
 
-  // 2026-08-30、直接のユーザー依頼("-gおよびopen -aの時だけ表示される
-  // 章も追加してもらって"): loadHelpText()自身のテキストの「末尾に」、
-  // Display::isGraphical()が真の間だけwrapHelpText()が追加する、GUI
-  // 専用の章。空のまま(呼ばない)なら、GUI専用の章は一切追加されない。
-  bool loadGuiHelpText(const std::string &text);
-
   ApplicationMode currentMode() const;
   // 起動時に一度だけ決まる、ファイル内容の文字コード判別に使うヒント
   // (history.savedCharset().value_or(configuration.defaultCharset())、
@@ -1939,15 +1932,6 @@ class Application {
   // ToggleHistoryView自身のコメント参照。
   bool toggleListBrowserHistory();
   std::vector<std::string> sortedUniqueRecentEntries(RingCategory category) const;
-  // K-2(^H、M_key、「KEY」): startKey()自身の定義コメント参照。
-  // 2026-09-20全面改稿、直接のユーザー依頼("HELPと同じにしてほしい。
-  // タブコードで分割の純粋CUTモード版KEYでよろしく")――startHelp()と
-  // 全く同じ立て付けになったので、returnFromKey()/renderKeyRows()等の
-  // 専用の付随関数はもう無い(Cut/CutContentの既存のBack/^G・
-  // カーソル移動がそのまま使われる、startHelp()自身が専用の
-  // "returnFromHelp()"を持たないのと同じ理由)。
-  bool startKey();
-
   // isGrepInPlaceEligibleMode()自身のコメント参照(application.cpp、
   // 2026-09-11追加)。
   bool isGrepInPlaceEligibleMode(ApplicationMode mode) const;
@@ -2133,22 +2117,6 @@ class Application {
   // "[hit highlighted string][returns to the usilic screen]"と注釈
   // を付けていた――設計については自身の定義コメント参照。
   bool openSelectedBannerEntry();
-  // K-27(^Oa)。2026-09-01、直接のユーザー依頼により、以前の
-  // cycleCharset()(Ascii -> Euc -> Utf8の3値巡回)からこちらへ
-  // 差し替えた――Command::ToggleHelpLanguage自身のコメント参照。
-  // helpJapanese_を反転し、helpText_/guiHelpText_をkHelpTextJa/En
-  // (+GUI章)の対応する側へ読み直す。現在Cut/CutContentでHELP自身を
-  // 表示中(cutOrigin_ == CutOrigin::Help)の場合は、その場で新しい
-  // 言語のHELP目次へ差し替える(pushSplit()ではなくCutMode::split()
-  // を直接呼ぶ――新しいトップレベルの階層を積むのではなく、既存の
-  // 階層を置き換える。cutReturnMode_には触れない――^Gの戻り先は
-  // 言語を切り替えても変わらない)。KEY(QUICK.txt由来、日本語専用)
-  // 表示中は対象外――2026-09-20のCUTモード化以降、この関数はもう
-  // KEY画面には触れない。
-  // 常に成功する(モード制限は無い――legacy自身のM_asciiも、この
-  // 移植の他のほとんどのK-?コマンドとは異なり、それを持たなかった、
-  // その前例を踏襲している)。
-  bool toggleHelpLanguage();
   bool startCopyPrompt();
   bool startMovePrompt();
   bool startRemovePrompt();
@@ -2289,13 +2257,6 @@ class Application {
   bool executeEdit();
   bool startHelp();
   std::vector<StyledLine> wrapHelpText(int width) const;
-  // startKey()自身のコメント参照――wrapHelpText()の姉妹。
-  std::vector<StyledLine> wrapKeyText(int width) const;
-  // startKey()自身のコメント参照: keyText_を都度新規に読み直す
-  // ローダー――helpText_がloadHelpText(text)経由で外部(コンパイル済み
-  // kHelpTextJa/En)から渡されるのとは異なり、こちらは固定の開発用
-  // パスから自前でファイルを読む(引数を取らない理由)。
-  bool loadKeyText();
 
   Display &display_;  // handleResize()自身のrows()/columns()の参照――現在他のどのメンバーもこれを必要としない
   PathResolver pathResolver_;  // ^Xf/^Xdパスプロンプト、コンストラクタ自身のhomeDirectoryコメント参照
@@ -2378,18 +2339,6 @@ class Application {
   std::string usilicrcPath_;
   std::string historyFilePath_;
   Charset::Encoding encoding_;  // wrapHelpText()自身のPipeBuffer構築――現在他のどのメンバーもこれを必要としない
-  // 2026-09-01、直接のユーザー依頼(Command::ToggleHelpLanguage自身の
-  // コメント参照): HELP/KEY画面の表示言語。意図的にencoding_(ファイル
-  // 内容の文字コード)からは完全に切り離してある――=fc自身の根本原因
-  // (~/.usilic/historyに大分前のセッションから保存されていた古い
-  // Asciiという値が、再起動のたびに黙って英語版HELPを選び続けていた)
-  // と同じ種類の「古い保存値が新しい起動を静かに支配し続ける」問題を
-  // 再導入しないため、意図的に一切永続化しない――毎回の起動でtrue
-  // (日本語)から始まり、必要ならその場で^Oaを押すだけで良い。
-  // app/main.cppの初期ロードもこれと同じtrueをハードコードしている
-  // (どちらも独立に同じデフォルトへ倒すことで、2箇所の値を明示的に
-  // 同期させる手間を避けている)。
-  bool helpJapanese_ = true;
   const Configuration &configuration_;  // executeProgram()自身のPROGRAM一覧の参照、上のfind_prog()の注記参照
   History &history_;  // startListBrowser()自身のrecentEntries()の参照――現在他のどのメンバーもこれを必要としない
   ModeStack modeStack_;
@@ -2692,15 +2641,18 @@ class Application {
   // になっている")。番兵が-1のままの間は「動いた」と判定しない
   // よう改めた。
   int lastPagerPollTopIndex_ = -1;
+  // 2026-09-20更新、直接のユーザー依頼("今のKEYをHELPに置き換え...
+  // 正味の：カットによるHELPとしてほしい"): helpText_はもはや
+  // loadHelpText(expandHelpMarkup(kHelpTextJa/En))経由の埋め込み
+  // テキストではなく、~/.local/lib/usilic/usilic.man(usilic -m
+  // QUICK.txtで生成する、legacy自身のHELP.jpと同じnroff重ね打ち
+  // バイト列形式のファイル、markup_to_roff.hpp参照)の生の内容を
+  // 保持する(main.cpp参照)。startHelp()自身のCUTパターンも、
+  // 番号付き見出し(kHelpPattern、正規表現)から全角「：」の固定
+  // 文字列検索へ切り替えた。日英切替(旧ToggleHelpLanguage/^Oa)・
+  // GUI専用章(旧loadGuiHelpText()/guiHelpText_)は、この作り直しに
+  // 伴い完全に削除した。
   std::string helpText_;
-  // loadGuiHelpText()自身のコメント参照。
-  std::string guiHelpText_;
-  // 2026-09-20、直接のユーザー依頼("HELPと同じにしてほしい。タブ
-  // コードで分割の純粋CUTモード版KEYでよろしく"): startKey()自身の
-  // コメント参照。helpText_の姉妹――QUICK.txt自身の"KEY"章(末尾まで)
-  // の生テキストを、startKey()が呼ばれるたびに都度読み直して保持する
-  // (キャッシュしない、旧quickKeyEntries_自身の同じ方針を継承)。
-  std::string keyText_;
   // 現在どのトップレベルのCut/CutContentの分割がアクティブか
   // ――!cutMode_.canGoBack()の場合にだけ意味を持つ(そしてhandleResize()
   // にだけ参照される)。pushSplit()(ネストされた)階層はこれに
@@ -2710,11 +2662,7 @@ class Application {
   // DU等に]関与（検索）できる"): Directory起点(directoryView_.lines()
   // を分割する)と全く同じ発想で、manView_/locateView_/duView_.lines()
   // を分割する――executeCut()自身の新設の分岐参照。
-  // Key(2026-09-20追加、直接のユーザー依頼、上のkeyText_自身の
-  // コメント参照): Help自身と全く同じ立て付け――QUICK.txtの"KEY"章を
-  // wrapKeyText()でラップし、kHelpPatternの代わりにタブ文字("\t")と
-  // GrepSyntax::Fixedで分割する。startKey()自身のコメント参照。
-  enum class CutOrigin { File, Help, Directory, Log, Man, Locate, Du, Key };
+  enum class CutOrigin { File, Help, Directory, Log, Man, Locate, Du };
   CutOrigin cutOrigin_ = CutOrigin::File;
 
   // DirectoryModeの現在の検索注釈(自身のsetSearchAnnotation()

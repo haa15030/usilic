@@ -5401,38 +5401,6 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): NOT reachable from SHELL mode
   CHECK(app.currentMode() == ApplicationMode::Shell);  // stayed in Shell -- did NOT open the banner
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHelpLanguage): refreshes an open HELP session in place, "
-                           "without pushing a nested Cut level (^G still returns to Directory in one press)") {
-  REQUIRE(app.loadHelpText(fm::expandHelpMarkup(fm::kHelpTextJa)));
-  REQUIRE(app.loadGuiHelpText(fm::expandHelpMarkup(fm::kHelpTextGuiJa)));
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  std::size_t japaneseSegmentCount = app.cutMode().segments().size();
-
-  CHECK(app.handleCommand(Command::ToggleHelpLanguage));
-  CHECK(app.currentMode() == ApplicationMode::Cut);  // still Cut, not pushed into a deeper level
-  // kHelpTextEn's own section structure differs from kHelpTextJa's (HELP.jp-derived) one --
-  // switching languages while HELP is open genuinely reloads different content, not just relabels it.
-  CHECK(app.cutMode().segments().size() != japaneseSegmentCount);
-
-  CHECK(app.handleCommand(Command::Back));  // ^G: one press back to wherever HELP was opened from
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-}
-
-TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHelpLanguage): has no mode restriction, and is a harmless "
-                           "no-op (beyond flipping the flag) when HELP/KEY isn't open") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  CHECK(app.handleCommand(Command::ToggleHelpLanguage));
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
-}
-
 // -- SHELL: ESC-leader entry, byte routing to Shell's own LineEditor/
 // pty, and the child persisting across Back/^G --
 //
@@ -5804,9 +5772,10 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): from File mode, 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToParentDirectory): refused from a mode with no current "
                            "file/archive to compute a parent from") {
   REQUIRE(app.start(path()));
-  // KEY (^H) rides on Cut/CutContent (2026-09-20 rewrite, see startKey()'s
-  // own comment) -- like HELP, it has no current file/archive of its own.
-  REQUIRE(app.handleCommand(Command::StartKey));
+  // HELP (^H/^J^H) rides on Cut/CutContent (2026-09-20 rewrite) and has
+  // no current file/archive of its own.
+  REQUIRE(app.loadHelpText("placeholder\n"));
+  REQUIRE(app.handleCommand(Command::StartHelp));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   CHECK_FALSE(app.handleCommand(Command::GoToParentDirectory));
@@ -6142,7 +6111,8 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): from Directory mode
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): refused outside File/Directory/etc modes") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
+  REQUIRE(app.loadHelpText("placeholder\n"));
+  REQUIRE(app.handleCommand(Command::StartHelp));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
   CHECK_FALSE(app.handleCommand(Command::GoToFileSelector));
 }
@@ -9204,12 +9174,13 @@ TEST_CASE_FIXTURE(Fixture, "^R (ToggleHistoryView): a non-consecutive revisit sh
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleHistoryView): refused outside ListBrowser mode, matching "
                            "m_list()'s own echo_mess(S_errf) for a context ^R doesn't apply to -- using "
-                           "KEY (now a Cut/CutContent session, see startKey()'s own comment), since "
+                           "HELP (a Cut/CutContent session, see startHelp()'s own comment), since "
                            "Directory/File/Archive/ArchiveContent now all have their OWN dedicated ^R "
                            "meaning (see the \"^R directory-name/file-name history\"/\"^R in Archive\" "
                            "tests)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
+  REQUIRE(app.loadHelpText("placeholder\n"));
+  REQUIRE(app.handleCommand(Command::StartHelp));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   CHECK_FALSE(app.handleCommand(Command::ToggleHistoryView));
@@ -9507,12 +9478,13 @@ TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: ^G restores whatever had already
   CHECK(app.shell().commandLine().text() == "partial");
 }
 
-TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode (using KEY, now a Cut/CutContent "
+TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: refused outside Shell mode (using HELP, a Cut/CutContent "
                            "session, since Directory/File/Archive/ArchiveContent now all have their OWN "
                            "top-level ^R meaning -- see the dedicated \"^R directory-name/file-name history\"/"
                            "\"^R in Archive\" tests below)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
+  REQUIRE(app.loadHelpText("placeholder\n"));
+  REQUIRE(app.handleCommand(Command::StartHelp));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   CHECK_FALSE(app.feedByte(0x12, std::nullopt));  // top-level ^R (ToggleHistoryView) is a no-op here
@@ -10337,14 +10309,15 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: propagates the new size to Shell's pty
 // -- HELP (^J^H) --
 
 namespace {
-// Matches the fixed header pattern HELP always splits on ("^  [0-9]+\\."),
-// same shape as the real src/doc/HELP file's own numbered sections,
-// but synthetic content (no overstrike bytes needed -- CutMode::split()
-// operates on already wrapped/collapsed plain text, same as any other
-// CUT source, see Application's own class comment).
+// 2026-09-20、kHelpPatternが(旧HELPの番号付き見出し正規表現から)固定
+// 文字列"："へ変更されたのに合わせ、この合成テストデータも「ラベル：
+// 本文」という、実際のQUICK.txt/usilic.man由来の新HELPと同じ形へ
+// 変更した(CutMode::split()は既にラップ/収縮済みのプレーンテキストに
+// 対して動くので、重ね打ちバイト等は引き続き不要 -- Applicationの
+// クラスコメント参照)。
 std::string testHelpText() {
-  return "  11. Section One\nSection one content line A.\nSection one content line B.\n"
-         "  12. Section Two\nSection two content.\n";
+  return "Section One：first entry\nSection one content line A.\nSection one content line B.\n"
+         "Section Two：second entry\nSection two content.\n";
 }
 }  // namespace
 
@@ -10362,38 +10335,15 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^H starts HELP (StartHelp)") {
   CHECK(app.currentMode() == ApplicationMode::Cut);
 }
 
-TEST_CASE_FIXTURE(Fixture, "HELP: shows the numbered sections as a CUT segment list") {
+TEST_CASE_FIXTURE(Fixture, "HELP: shows the ：-delimited entries as a CUT segment list") {
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
 
   REQUIRE(app.handleCommand(Command::StartHelp));
   CHECK(app.currentMode() == ApplicationMode::Cut);
   REQUIRE(app.cutMode().segments().size() == 2);
-  CHECK(app.cutMode().segments()[0].label == "  11. Section One");
-  CHECK(app.cutMode().segments()[1].label == "  12. Section Two");
-}
-
-TEST_CASE_FIXTURE(Fixture, "HELP: splits on real doc/HELP-shaped \"chapter.section.\" headers, not just bare numbers "
-                           "(2026-08-01 user report)") {
-  // The real src/doc/HELP(.jp) uses two-level "N.M." numbering (e.g.
-  // "2.4.", "2.18.", "5.3."), not the bare "NN." shape testHelpText()
-  // uses above -- a previous kHelpPattern ("^  [1-6][1-6]+\\.", fixed
-  // 2026-08-01) never matched this real shape at all (confirmed via a
-  // real PTY run against doc/HELP.jp: HELP loaded as a single
-  // unsplit "1/1 END" segment instead of a proper table of contents).
-  std::string dottedHelp =
-      "  1. Overview\nTop-level content.\n"
-      "  2.1. First subsection\nSubsection content.\n"
-      "  2.18. Eighteenth subsection\nMore content.\n"
-      "  5.3. Another chapter's subsection\nFinal content.\n";
-  REQUIRE(app.loadHelpText(dottedHelp));
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.cutMode().segments().size() == 4);
-  CHECK(app.cutMode().segments()[0].label == "  1. Overview");
-  CHECK(app.cutMode().segments()[1].label == "  2.1. First subsection");
-  CHECK(app.cutMode().segments()[2].label == "  2.18. Eighteenth subsection");
-  CHECK(app.cutMode().segments()[3].label == "  5.3. Another chapter's subsection");
+  CHECK(app.cutMode().segments()[0].label == "Section One：first entry");
+  CHECK(app.cutMode().segments()[1].label == "Section Two：second entry");
 }
 
 TEST_CASE_FIXTURE(Fixture, "HELP: Enter on a section shows its content (CutContent), like a real CUT segment") {
@@ -10430,14 +10380,14 @@ TEST_CASE_FIXTURE(Fixture, "HELP: CutContent's mode-line trailing ALSO shows the
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::Enter));  // selects the first section, "  11. Section One"
+  REQUIRE(app.handleCommand(Command::Enter));  // selects the first section, "Section One：first entry"
   REQUIRE(app.currentMode() == ApplicationMode::CutContent);
 
   std::string text = app.activeContentView().modeLineText();
   std::size_t expectedBytes = 0;
   for (const auto &line : app.activeContentView().lines()) expectedBytes += line.text.size() + 1;
   CHECK(text.find(std::to_string(expectedBytes)) != std::string::npos);  // byte count still present...
-  CHECK(text.find("11. Section One") != std::string::npos);              // ...alongside the section's own label
+  CHECK(text.find("Section One：first entry") != std::string::npos);      // ...alongside the section's own label
 }
 
 TEST_CASE_FIXTURE(Fixture, "HELP: CutContent shows no whole-line reverse-video highlight on the current section's "
@@ -10534,7 +10484,7 @@ TEST_CASE_FIXTURE(Fixture, "FGREP from within a HELP chapter's own content: mode
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
-  REQUIRE(app.handleCommand(Command::Enter));  // select "11. Section One"
+  REQUIRE(app.handleCommand(Command::Enter));  // select "Section One：first entry"
   REQUIRE(app.currentMode() == ApplicationMode::CutContent);
 
   REQUIRE(app.handleCommand(Command::StartFgrep));
@@ -10563,14 +10513,18 @@ TEST_CASE_FIXTURE(Fixture, "FGREP prompt (not yet submitted) from within a HELP 
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::Enter));  // "11. Section One"
+  REQUIRE(app.handleCommand(Command::Enter));  // "Section One：first entry"
   REQUIRE(app.currentMode() == ApplicationMode::CutContent);
 
   REQUIRE(app.handleCommand(Command::StartFgrep));  // ^S -- prompt now active, currentMode_ still CutContent
   REQUIRE(app.currentMode() == ApplicationMode::CutContent);
   REQUIRE(app.promptActive());
 
-  CHECK(display.rowText(23).find("CUT:11. Section One") != std::string::npos);
+  // 2026-09-20、drawPromptLabel()自身のCutContent分岐の修正参照:
+  // 新HELPの本物のラベル("Section One：first entry")はeditableWidth
+  // を侵食するほど長いので、"CUT:"接頭辞を残したまま値の先頭だけを
+  // 生かす切り詰めが働く。
+  CHECK(display.rowText(23).find("CUT:Section One...") != std::string::npos);
 }
 
 // 2026-08-24 fix, a real report + the user's own careful trace: ^J^W
@@ -10591,7 +10545,7 @@ TEST_CASE_FIXTURE(Fixture, "^J^W pressed while an editable FGREP prompt is still
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::Enter));  // "11. Section One"
+  REQUIRE(app.handleCommand(Command::Enter));  // "Section One：first entry"
   REQUIRE(app.currentMode() == ApplicationMode::CutContent);
 
   REQUIRE(app.handleCommand(Command::StartFgrep));  // ^S
@@ -10645,7 +10599,7 @@ TEST_CASE_FIXTURE(Fixture, "^J^W from a Grep results screen writes the ORIGIN's 
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
-  REQUIRE(app.handleCommand(Command::Enter));  // "11. Section One"
+  REQUIRE(app.handleCommand(Command::Enter));  // "Section One：first entry"
   REQUIRE(app.currentMode() == ApplicationMode::CutContent);
 
   REQUIRE(app.handleCommand(Command::StartFgrep));
@@ -10723,7 +10677,7 @@ TEST_CASE_FIXTURE(Fixture, "HELP: invoked mid-CUT preserves the real session; Ba
 
 TEST_CASE_FIXTURE(Fixture, "handleResize: reflows HELP's own content (a top-level split)") {
   std::string longHelp =
-      "  11. Section One\nabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n  12. Section Two\ntext\n";
+      "A：x\nabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\nB：x\ntext\n";
   REQUIRE(app.loadHelpText(longHelp));
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartHelp));
@@ -10741,7 +10695,7 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: reflows HELP's own content (a top-leve
 
 TEST_CASE_FIXTURE(Fixture, "handleResize: does NOT reflow HELP when it's nested on top of a real CUT session") {
   std::string longHelp =
-      "  11. Section One\nabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\n  12. Section Two\ntext\n";
+      "A：x\nabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\nB：x\ntext\n";
   REQUIRE(app.loadHelpText(longHelp));
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
@@ -10758,184 +10712,6 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: does NOT reflow HELP when it's nested 
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Cut);  // the real CUT session is still intact
-}
-
-// -- KEY (^H, M_key) -- 2026-09-20 full rewrite, direct user request
-// ("暫定QUICK.txtで作ってもらったKEYを見てみると...HELPと同じにして
-// ほしい。タブコードで分割の純粋CUTモード版KEYでよろしく"): the
-// previous bespoke table UI (renderKeyRows()/kKeyTable/QuickKeyEntry,
-// its own F-N prefix resolution, its own Left/Right execute/reference
-// toggle -- ALL removed, see startKey()'s own comment in
-// application.cpp) is gone. KEY now rides on Cut/CutContent exactly
-// like HELP: Application::startKey() wraps src/QUICK.txt's own "KEY"
-// section (loadKeyText()) through wrapKeyText() and splits it on the
-// literal tab byte that terminates each entry's label line
-// (GrepSyntax::Fixed), producing a normal CUT segment list.
-//
-// Unlike the HELP tests above (which inject a small synthetic string
-// via loadHelpText(), fully decoupled from the real src/doc/HELP file),
-// KEY has NO such injection point -- loadKeyText() always reads the
-// real, hardcoded ~/git/usilic/src/QUICK.txt on this dev machine (the
-// old QuickKeyEntry-based code had the very same hardcoded-path
-// limitation, no test-only override ever existed for it either). So
-// these tests exercise the REAL file's actual "KEY" section content,
-// searching for known literal substrings (visible in the file itself,
-// see the CLAUDE.md task description this session was given) rather
-// than asserting an exact segment count/shape the way the synthetic
-// HELP tests above can.
-
-TEST_CASE("resolveCommand: ^H resolves to StartKey") {
-  CHECK(Application::resolveCommand(0x08, std::nullopt) == Command::StartKey);
-}
-
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartKey): opens a browsable CUT segment list built from the real "
-                           "QUICK.txt KEY section, entering Cut mode like HELP (not a bespoke ApplicationMode)") {
-  REQUIRE(app.start(path()));
-  CHECK(app.handleCommand(Command::StartKey));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  REQUIRE(app.cutMode().segments().size() >= 2);
-  // 2026-09-13, direct user request ("正式にCUT仕様となったので冒頭の
-  // マッチ無しエリアも表示するようにして。`--`の部分"): the "KEY"
-  // section's own heading line ("<b>KEY</b>") precedes the first
-  // tab-terminated entry and has no tab of its own, so -- exactly like
-  // any other real CUT session -- it becomes the standard leading
-  // "--" (no-match-yet) placeholder segment, same as
-  // CutMode::split()'s own documented convention. The real first entry
-  // (the ^H/KEY binding itself, "C-h：[KEY] キーアサイン一覧を表示") is
-  // therefore segments()[1], not segments()[0].
-  CHECK(app.cutMode().segments()[0].label == "--");
-  CHECK(app.cutMode().segments()[1].label.find("C-h") != std::string::npos);
-  CHECK(app.cutMode().segments()[1].label.find("[KEY]") != std::string::npos);
-}
-
-TEST_CASE_FIXTURE(Fixture, "KEY: re-entering from within a KEY session nests via pushSplit(), same as HELP -- "
-                           "no re-entrancy guard (startHelp() itself has none either)") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK_FALSE(app.cutMode().canGoBack());
-
-  CHECK(app.handleCommand(Command::StartKey));  // pushed, not refused
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK(app.cutMode().canGoBack());
-
-  REQUIRE(app.handleCommand(Command::Back));  // pops the nested KEY level
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK_FALSE(app.cutMode().canGoBack());
-}
-
-TEST_CASE_FIXTURE(Fixture, "KEY: Enter on an entry shows its detail text (CutContent), like a real CUT segment") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  // segments()[0] is now the leading "--" placeholder (see "opens a
-  // browsable CUT segment list..." above) -- move down once to reach
-  // the real first entry (the ^H/KEY binding itself) before entering it.
-  REQUIRE(app.handleCommand(Command::MoveDown));
-  REQUIRE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::CutContent);
-  bool sawExplanation = false;
-  for (const auto &line : app.activeContentView().lines())
-    if (line.text.find("usilicrc") != std::string::npos) sawExplanation = true;
-  CHECK(sawExplanation);
-}
-
-TEST_CASE_FIXTURE(Fixture, "KEY: ^G from the detail view returns to the KEY segment list, and a second ^G "
-                           "returns to the mode KEY was invoked from (Directory here)") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
-
-  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-
-  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-}
-
-TEST_CASE_FIXTURE(Fixture, "KEY: reachable from File mode too, and Back returns there (not always Directory), "
-                           "matching HELP's own identical cutReturnMode_ mechanism") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  REQUIRE(app.handleCommand(Command::StartKey));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-
-  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
-  CHECK(app.currentMode() == ApplicationMode::File);  // back to File, not Directory
-}
-
-TEST_CASE_FIXTURE(Fixture, "KEY (cutView_, the TOC level): mode-line shows the fixed name \"KEY\", the TOC "
-                           "listing's own byte size, and the originating directory -- exactly HELP's own "
-                           "established mode-line shape (CutOrigin::Key shares the same field-shape branch as "
-                           "CutOrigin::Help, see the cutView_ ModeLineFieldsProvider in application.cpp)") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-
-  std::string text = app.activeContentView().modeLineText();
-  CHECK(text.rfind("KEY", 0) == 0);
-  std::size_t tocBytes = app.activeContentView().totalByteCount();
-  CHECK(text.find(std::to_string(tocBytes)) != std::string::npos);
-  CHECK(text.find(path()) != std::string::npos);
-}
-
-TEST_CASE_FIXTURE(Fixture, "KEY: CutContent's mode-line shows the fixed name \"KEY\", matching HELP's own "
-                           "identical convention (cutContentView_ ModeLineFieldsProvider)") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::CutContent);
-
-  std::string text = app.activeContentView().modeLineText();
-  CHECK(text.find("KEY") != std::string::npos);
-}
-
-TEST_CASE_FIXTURE(Fixture, "handleResize: reflows the KEY TOC via wrapKeyText(), same as HELP's own "
-                           "wrapHelpText() reflow branch -- must not crash, must not lose the session") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartKey));
-  REQUIRE_FALSE(app.cutMode().canGoBack());
-
-  display.setSize(24, 10);
-  app.handleResize();  // must not crash
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK_FALSE(app.cutMode().segments().empty());
-}
-
-namespace {
-// RAII scoped $HOME removal, mirroring test_shell.cpp's own
-// ScopedHomeEnv (see its class comment for why this must be restored
-// even on assertion failure -- setenv()/unsetenv() mutate real
-// process-wide state that would otherwise leak into whichever test
-// happens to run next in the same `make test` process).
-struct ScopedNoHomeEnv {
-  std::string previous;
-  bool hadPrevious;
-  ScopedNoHomeEnv() {
-    const char *existing = std::getenv("HOME");
-    hadPrevious = existing != nullptr;
-    if (hadPrevious) previous = existing;
-    unsetenv("HOME");
-  }
-  ~ScopedNoHomeEnv() {
-    if (hadPrevious) setenv("HOME", previous.c_str(), 1);
-  }
-};
-}  // namespace
-
-TEST_CASE_FIXTURE(Fixture, "KEY: refused (returns false, no state change) when QUICK.txt's hardcoded dev-"
-                           "machine path can't be resolved ($HOME unset) -- matching startHelp()'s own "
-                           "helpText_.empty() early return; the old QuickKeyEntry-based code had the exact "
-                           "same $HOME-based fallback (loadQuickKeyEntries(), now removed) and no override "
-                           "mechanism ever existed for testing the missing-file path either") {
-  REQUIRE(app.start(path()));
-  ScopedNoHomeEnv noHome;
-  CHECK_FALSE(app.handleCommand(Command::StartKey));
-  CHECK(app.currentMode() == ApplicationMode::Directory);  // unchanged -- no-op
 }
 
 // -- Recorded macros (p_km, ^X(/^X)/^Xe) --

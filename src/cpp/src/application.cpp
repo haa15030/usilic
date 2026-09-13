@@ -370,47 +370,17 @@ std::string truncateToPathPrefix(const std::string &path, int digit) {
   return path.substr(0, pos);
 }
 
-// M_help/T_help向けのmenu.cのinit_cut2()呼び出しから移植――HELP自身の
-// CUT分割が常に使う、固定のセクションヘッダのパターン(クラスコメント
-// 参照)。legacy「自身の」パターン(HELP.jp 2.4自身の実例:
-// "^  [0-9]^H[0-9]+\.")は、生の、未処理のバイトに対して書かれている
-// ――HELP.jp/HELPのセクション番号はnroff方式のオーバーストライクに
-// よる太字である(各文字が"X\bX"として重複される、PipeBuffer自身の
-// A_md/A_md2の処理参照)、そのためlegacyのパターンは実質的に「先頭の
-// スペース2つ、太字重複した数字1つ、それからピリオド」に固定される
-// だけであり、それが照合するバッファの中に「同じ」リテラルなバック
-// スペースが依然として存在することに依存している。このポート自身の
-// wrapHelpText()は、cutMode_.split()がそれを見る「前」に、生のテキスト
-// を既にPipeBuffer経由で処理しており、あらゆるオーバーストライクの
-// ペアを単一の(それでも単なる、重複していない)文字へ削ぎ落とす――
-// そのため、リテラルな"\bH"や、狭い範囲の2桁の数字バイトに対する
-// マッチングは、「この」ポート自身の既にきれいになったhelpLinesの
-// 中では何にもヒットし得ない。実際のユーザー報告(2026-08-01:
-// "HELPのCUTでマクロ機能を試そうとしたが...効かない")を受けて、
-// PTYテストにより、HELPが適切なセクションごとの目次ではなく、単一の
-// 1行の、分割されていないCUTセグメント("1/1 END")としてロードされて
-// いることが判明した後に見つかった。ここでの以前の"^  [1-6][1-6]+\."
-// (隣接する2桁の数字、両方とも人為的に1-6に制限されている)も、生の
-// テキストと削ぎ落とし後のテキストのどちらに対しても、何にもマッチ
-// していなかった――実際のdoc/HELP.jpの削ぎ落とし後のテキストのダンプ
-// を生成し、ヘッダが"1."(素の章タイトル)から"2.18."(2桁の副節)や
-// "5.3."までを含むことを確認して裏付けた: どのヘッダも隣接する2桁の
-// 数字ではなく、いくつかは1-6の範囲外の数字を使っている(例えば
-// "2.18."、"2.9.")。"^  [0-9]+\."(1つ以上の数字、それからピリオド、
-// 「きれいな」オーバーストライク除去後のテキストに対して)はそれらの
-// 全てにマッチする――ヘッダ自身の末尾の".M."という接尾辞(例えば
-// "2.4."のうち"2."だけにマッチする)を消費する必要は無い、CUT分割は
-// マッチが各新セクションの開始点に固定されることだけを必要とし、
-// ヘッダ全体にまたがる必要は無いため。
-// 2026-09-04追加、直接のユーザー依頼(src/HELP.txtの全面改稿、章見出し
-// の左マージンを半角スペース2個から全角スペース1個(U+3000)へ全面的に
-// 置き換え、「全角スペース対応でよろしく」との確認済み): 日本語版
-// (kHelpTextJa)は今後全角スペース1個、英語版(kHelpTextEn、全角スペース
-// を使わない通常の英文)は引き続き半角スペース2個――両方を1つの正規表現
-// で受け付ける必要がある。CutMode::split()自身のコメント参照: この
-// パターンは実際にegrep(1)へシェルアウトされる(ERE)ので、括弧による
-// 選択(a|b)がそのまま使える。
-const char *const kHelpPattern = "^(  |　)[0-9]+\\.";
+// 2026-09-20、直接のユーザー依頼("今のKEYをHELPに置き換え...正味の
+// ：カットによるHELPとしてほしい")によりHELP自身が全面的に作り直され
+// たのに伴い削除された、旧HELPの番号付き見出し正規表現("^(  |　)[0-9]
+// +\\."、GrepSyntax::Regex)は、この関数の以前のコメント(git履歴参照)
+// が詳しく説明していた通りlegacy自身のHELP.jpの構造(章番号+ピリオド)
+// に合わせたものだった。新HELPはstartHelp()自身のコメントの通り、
+// 全角「：」の固定文字列検索(GrepSyntax::Fixed)へ切り替わっている
+// ――QUICK.txt自身の全ての章・エントリが既にこの記号を区切りとして
+// 統一的に使っているため、章番号のような専用の見出し規約はもはや
+// 不要になった。
+const char *const kHelpPattern = "：";
 
 // tempRootDirectory_自身のコメント(application.hpp)参照: 明示的な
 // `tempRootDirectory`(main()自身の/tmp/.usilic.<pid>、引数付きで
@@ -915,11 +885,6 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       name = "LOCATE";
     } else if (cutOrigin_ == CutOrigin::Du) {
       name = "DU";
-    } else if (cutOrigin_ == CutOrigin::Key) {
-      // 2026-09-20追加、直接のユーザー依頼("HELPと同じにしてほしい"):
-      // すぐ上のHELP自身の分岐と全く同じ理屈――KEYもCutOrigin::Help
-      // 同様「名付けるべき単一のファイルが存在しない」CutOrigin。
-      name = "KEY";
     } else {
       name = std::filesystem::path(fileMode_.currentFile()).filename().string();
     }
@@ -952,7 +917,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       fields.trailing3 = name;
       return fields;
     }
-    if (cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) {
+    if (cutOrigin_ == CutOrigin::Help) {
       return {name, trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", label};
     }
     if (!label.empty()) trailing += "  " + label;
@@ -988,10 +953,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // Man/Locate/Du(2026-09-15追加、cutContentView_自身の同一の
     // 2026-09-15修正のコメント参照): 「所在地の宣言はモード名で
     // なされる」という同じ慣習に揃えている。
-    // Key(2026-09-20追加、直接のユーザー依頼"HELPと同じにしてほしい"):
-    // HELP自身の前例に倣い、CutOrigin::Keyも"KEY"という固定のリテラル名。
     std::string name = (cutOrigin_ == CutOrigin::Help)     ? "HELP"
-                        : (cutOrigin_ == CutOrigin::Key)    ? "KEY"
                         : (cutOrigin_ == CutOrigin::Log)    ? "LOG"
                         : (cutOrigin_ == CutOrigin::Man)    ? "MAN"
                         : (cutOrigin_ == CutOrigin::Locate) ? "LOCATE"
@@ -1020,7 +982,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // バイト数」という慣習)がまさにそれを与え、ユーザー自身の参照
     // 値(413、TOC一覧自身のサイズであり、HELP.jpのはるかに大きい
     // 合計ではない)に一致する。
-    if ((cutOrigin_ == CutOrigin::Help || cutOrigin_ == CutOrigin::Key) && !cutMode_.parentPattern()) {
+    if (cutOrigin_ == CutOrigin::Help && !cutMode_.parentPattern()) {
       return {name, std::to_string(contentByteCount(cutView_)), /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
               directoryMode_.currentDirectory()};
     }
@@ -1846,8 +1808,12 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
     // GREP(基本正規表現)を起動する。
     case kControlS:
       return Command::StartGrep;
-    case 0x08:  // ^H(M_key、K-2、"KEY")――startKey()自身のコメント参照
-      return Command::StartKey;
+    // 2026-09-20更新、直接のユーザー依頼("^Hで新HELP、SHELLを含む
+    // プロンプトからは^J^H"): 旧K-2("KEY")は退役し、^H自身がStartHelp
+    // (下のleaderJPending_側の'h'ケースと同じコマンド)を指すように
+    // なった――^H単体と^J^Hはどちらも同じ新HELPへ到達する。
+    case 0x08:  // ^H
+      return Command::StartHelp;
     // 2026-09-08、直接のユーザー依頼によるキー再編("^Je⇒e（←less
     // 同様）")で^Jeから移行: 他のプレフィックス無しのページャー単一
     // 文字コマンド(b/j/k/q等、このswitch自身の他のcase参照)と同じ
@@ -2535,10 +2501,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       case 'n':  // ^J n : 全マーク解除(CP、MV、RM、ARC)
         return handleCommand(Command::ClearAllMarks);
       // 2026-09-08、直接のユーザー依頼によるキー再編で^Oaから移行
-      // (ARCが^Xaから^Oaへ移るための地ならし――Command::
-      // ToggleHelpLanguage自身のコメント参照)。
-      case 'a':  // ^J a : HELP/KEYの表示言語を切り替え(旧^O a)
-        return handleCommand(Command::ToggleHelpLanguage);
+      // (ARCが^Xaから^Oaへ移るための地ならし)。2026-09-20、
+      // Command::ToggleHelpLanguage自体が(新HELP自身のコメント参照、
+      // usilic.manが日本語専用になったため)廃止されたのに伴い、
+      // "^J a"自体も未割り当てに戻した(再割り当てが必要になれば
+      // 別途検討する)。
       // ^J^O(ERROR/LOG用の新設ネストしたサブリーダー): 2026-09-08、
       // 直接のユーザー依頼によるキー再編で、廃止された^X^K(usilicrc
       // 自身のF-2)サブリーダーの残り(ERROR/LOGのみ)を引き継ぐ。
@@ -2686,8 +2653,14 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 化ける/Tab補完)に奪われ、それぞれKEY/再描画/INFOへ到達
       // 不能なためのエスケープハッチ。^O^Sは既存のFGREPのためGREPの
       // ハッチだけは'/'を使う(kKeyTable自身の"^O/"コメント参照)。
-      case 0x08:  // ^O ^H : KEY(SHELL内から)
-        return handleCommand(Command::StartKey);
+      // 2026-09-20、直接のユーザー依頼("^Hで新HELP、SHELLを含む
+      // プロンプトからは^J^H")によりこの"^O^H"(旧K-2/KEY)エスケープ
+      // ハッチ自体を削除した――^Jはbyte(bare ^H/^L/^I)とは異なり
+      // SHELL自身の行編集機構に奪われないので、"^J^H"はこの下の
+      // isShellSafeNavigation経由の一般的な仕組み(shellReturnMode_へ
+      // 切り替えてから該当コマンドをディスパッチする、すぐ下のコメント
+      // 参照)で既にSHELL内から到達可能――KEY専用の個別ハッチは
+      // 不要になった。
       // 2026-09-12修正、直接のユーザー依頼("`^O^L`がSHELLでの`^L`への
       // 対処なら^Sと同じ扱いでいいと思う"): 本来この`^O^L`はSHELLモード
       // 内で素の`^L`(usilic自身の再描画)がSHELL自身の行編集機構に
@@ -3756,8 +3729,6 @@ bool Application::handleCommand(Command command) {
       return executeStartLog();
     case Command::ShowUsilicBanner:
       return executeShowUsilicBanner();
-    case Command::ToggleHelpLanguage:
-      return toggleHelpLanguage();
     // 2026-08-17修正(=cn): K-46(^X^F、「Select file name」)――なぜ
     // これがもうそれを直接呼ばないのかについてはstartListBrowser()
     // 自身のコメント参照。startRegexPromptList()は、その名前にも
@@ -3765,8 +3736,6 @@ bool Application::handleCommand(Command command) {
     // する)。
     case Command::StartFileHistory:
       return startRegexPromptList(PromptKind::RecentFile);
-    case Command::StartKey:
-      return startKey();
     case Command::EnterCopyMode:
       return startCopy();
     // ^O^Y: 実際に編集可能なプロンプトが立っている間だけ意味を持つ
@@ -6901,28 +6870,6 @@ bool Application::openSelectedBannerEntry() {
 }
 
 // K-27: クラス自身の宣言コメント(application.hpp)参照。
-bool Application::toggleHelpLanguage() {
-  helpJapanese_ = !helpJapanese_;
-  loadHelpText(expandHelpMarkup(helpJapanese_ ? kHelpTextJa : kHelpTextEn));
-  loadGuiHelpText(expandHelpMarkup(helpJapanese_ ? kHelpTextGuiJa : kHelpTextGuiEn));
-
-  bool viewingHelp = (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent) &&
-                      cutOrigin_ == CutOrigin::Help;
-  if (viewingHelp) {
-    // startHelp()自身の「preserveExistingCutでない」分岐と同じ
-    // split()呼び出し――ただしpushSplit()ではない: 新しいトップ
-    // レベルの階層を積むのではなく、今表示している階層をその場で
-    // 置き換える。cutReturnMode_/cutOrigin_/cutSyntax_には触れない
-    // ――既に正しい値のまま(このHELPセッション自体が開かれた時点で
-    // 設定済み)。
-    std::vector<StyledLine> helpLines = wrapHelpText(display_.columns());
-    if (!cutMode_.split(helpLines, kHelpPattern, GrepSyntax::Regex)) return false;
-    currentMode_ = ApplicationMode::Cut;
-  }
-
-  return true;
-}
-
 // M_cp/M_mv(^Xc/^Xm)がマーキング/閲覧のサブモードに入るところから
 // 移植――2026-08-21の変更(実際のユーザー報告、=ecスクリーンショット):
 // これは以前は即座に宛先プロンプトを有効化しており、ユーザーがまだ
@@ -7560,106 +7507,6 @@ bool Application::toggleListBrowserHistory() {
   // PromptKindについてはno-op(上の早期returnのガード)、他の全ての
   // 呼び出し箇所自身のガードに合わせている。
   refreshDirectEntryModeLine();
-  return true;
-}
-
-// K-2(^H、M_key、「KEY」): 2026-09-20全面改稿、直接のユーザー依頼
-// ("暫定QUICK.txtで作ってもらったKEYを見てみると...HELPと同じにして
-// ほしい。タブコードで分割の純粋CUTモード版KEYでよろしく"): 独自の
-// テーブル表示UI(renderKeyRows()/kKeyTable/QuickKeyEntry、以上全て
-// 撤廃済み)をやめ、startHelp()と全く同じ立て付けにした――QUICK.txt
-// 自身の"KEY"章の生テキストをCutMode::split()でタブ文字("\t")分割
-// した、CutOrigin::Keyの本物のCut/CutContentセッション。どのモード
-// からでも到達可能(HELP自身のモードガード無しの前例に合わせている)。
-// startHelp()と異なり内部からの再入場ガードも無い(HELP自身も持たない
-// ――preserveExistingCutの分岐がpushSplit()で自然にネストする)。
-bool Application::loadKeyText() {
-  keyText_.clear();
-  // 2026-09-05追加時のQuickKeyEntry自身のコメント(旧版、削除済み)が
-  // 既に述べていた通り、固定の開発用パス(~/git/usilic/src/QUICK.txt)
-  // を直接読む――正式なConfiguration/usilicDir経由の設定パスは意図的に
-  // 用意していない(このパス自体の可搬性は今も未解決の課題として残って
-  // いる)。読めない場合はkeyText_を空のままにし、startKey()がfalseを
-  // 返す(helpText_.empty()時のstartHelp()と全く同じ形)。
-  const char *home = std::getenv("HOME");
-  if (!home) return false;
-  std::ifstream in(std::string(home) + "/git/usilic/src/QUICK.txt", std::ios::binary);
-  if (!in) return false;
-  std::ostringstream buffer;
-  buffer << in.rdbuf();
-  std::string raw = buffer.str();
-
-  // 標準の、独立行としての"<b>KEY</b>"見出しを探す――旧
-  // parseQuickKeyEntries()自身が確立していた区別と同じ理屈: NOTATION
-  // 章内の入れ子の"<indent7><b>KEY</b>"(キー表記の説明の一部であり、
-  // 実際のKEY章そのものではない)は、行頭にインデントタグが付くため、
-  // ここでの「行全体がちょうど"<b>KEY</b>"」という一致条件には
-  // マッチしない。
-  std::size_t pos = 0;
-  std::size_t sectionStart = std::string::npos;
-  while (pos <= raw.size()) {
-    std::size_t nl = raw.find('\n', pos);
-    std::string line = raw.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
-    if (!line.empty() && line.back() == '\r') line.pop_back();
-    if (line == "<b>KEY</b>") {
-      // 2026-09-20修正(初回ビルド検証時)で、一度は見出し行自体を
-      // 読み飛ばす(次の改行の次から取り込む)よう変更していたが、
-      // 2026-09-13の直接のユーザー依頼("以前は仕様が違っていたので
-      // キーアサインのみとしていたけど、正式にCUT仕様となったので
-      // 冒頭のマッチ無しエリアも表示するようにして。`--`の部分")
-      // により撤回した。見出し行自体(タブが無くマッチしない)を
-      // keyText_に含めれば、CutMode::split()自身の既存仕様(このファイル
-      // 冒頭のコメント参照、「最初のマッチより前の区間はラベル無しの
-      // "--"プレースホルダー」)がそのまま自然に発動し、他の本物のCUT
-      // セッション同様、冒頭にマッチ無し領域("--"、内容は見出し行の
-      // "KEY"のみ)が表示される――これが今の正式な仕様。sectionStart
-      // は見出し行自身の開始位置(pos)のまま。
-      sectionStart = pos;
-      break;
-    }
-    if (nl == std::string::npos) break;
-    pos = nl + 1;
-  }
-  if (sectionStart == std::string::npos) return false;  // "KEY"章自体が見つからない
-
-  // 見出しから末尾まで(QUICK.txt自身の中でKEYが最後の章であることは
-  // CLAUDE.mdの依頼元コメント自身が確認済み)を、helpText_と
-  // 同じくexpandHelpMarkup()で展開して保持する――<b>/<u>/<i>/<indentN>
-  // タグをPipeBuffer::wrapLine()が理解する重ね打ち/インデント制御
-  // バイトへ変換する一方、各エントリ行末の生のタブバイトはこの関数の
-  // 素通し経路でそのまま残る(下のwrapKeyText()がその「タブで区切る」
-  // という前提で動く)。
-  keyText_ = expandHelpMarkup(raw.substr(sectionStart));
-  return !keyText_.empty();
-}
-
-std::vector<StyledLine> Application::wrapKeyText(int width) const {
-  PipeBuffer pipe(encoding_, width, 16L * 1024 * 1024);
-  pipe.feed(keyText_);
-  pipe.flush();
-  return pipe.lines();
-}
-
-bool Application::startKey() {
-  if (!loadKeyText()) return false;
-  std::vector<StyledLine> keyLines = wrapKeyText(display_.columns());
-
-  // startHelp()自身のpreserveExistingCut分岐と全く同じ理屈・同じ形
-  // ――そちらのコメント参照。違いはパターン(タブ文字1つ・GrepSyntax::
-  // Fixed)とcutOrigin_(CutOrigin::Key)だけ。
-  bool preserveExistingCut = (currentMode_ == ApplicationMode::Cut || currentMode_ == ApplicationMode::CutContent);
-  bool ok;
-  if (preserveExistingCut) {
-    ok = cutMode_.pushSplit(keyLines, "\t", GrepSyntax::Fixed);
-  } else {
-    cutReturnMode_ = currentMode_;
-    cutOrigin_ = CutOrigin::Key;
-    cutSyntax_ = GrepSyntax::Fixed;
-    ok = cutMode_.split(keyLines, "\t", GrepSyntax::Fixed);
-  }
-  if (!ok) return false;
-
-  currentMode_ = ApplicationMode::Cut;
   return true;
 }
 
@@ -10025,38 +9872,39 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     destinationDirectory = previousModeName(destinationMode);
   }
   if (!destinationDirectory.empty()) {
-    // CutContent(2026-08-24、上と同じ修正): truncatedTrailingPath()
-    // を通していない――その16文字の「末尾」キャップは、末尾部分が
-    // 意味のある部分である長い「パス」のためのものである;
-    // "CUT:<label>"に適用すると、代わりにまさに"CUT:"という接頭辞
-    // 自体を食べてしまい(例えば"CUT:1.  Introduction" ->
-    // "...1.  Introduction")、まさにcutContentReturnLabel()が追加
-    // するために存在する部分を失ってしまう。grepView_自身の投入後の
-    // trailing3フィールドに一致させている、まさに同じ理由で
-    // 同じ上限をスキップする(それ自身のコメント参照)。2026-08-28修正、
-    // この同じ修正への以前の広すぎる試みを明確にする直接のユーザー
-    // 報告+正確な再現("^Uを投入したとたんに１文字左へ寄る症状。
-    // そこだけ直せばいいのでは"――これは、ContentView::renderModeLine()
-    // 「自身の」truncateFieldByKind()/withTruncatedFields()のパイプ
-    // ラインを通る読み取り専用の候補リストは既に正しかったこと;
-    // 「この」関数自身の別個の、手作りの列の計算だけがバグを持って
-    // いたことを確認した): 上のtrailingReserveは既に、編集可能な
-    // フィールドの後の隙間のためにkTrailingPathGap(1列)を予約して
-    // いるが、truncatedTrailingPath()の固定16文字の末尾(「...」の
-    // 分+3)は、それだけで(編集可能なフィールド自身の右端と、下の
-    // 確立された自動折り返し回避のルールにより、これも決して書き
-    // 込まれることのない、本当の最後の列79の間の19列のうちの19列を)
-    // 「残りの予算全体」を正確に消費してしまい、予約された隙間の
-    // 余地をゼロにしてしまう。1文字短くする(15の末尾文字、18文字の
-    // 切り詰め結果)ことは、まさにrenderModeLine()自身の予算を意識
-    // したtruncateFieldByKind()(`tailChars = min(16, budget - 3)`)
-    // が、この同じ利用可能な幅について既に到達している値である
-    // ――これは新しい数を発明するのではなく、その結果を直接反映して
-    // いる。
+    // CutContent(2026-08-24、上と同じ修正)は元々、truncatedTrailingPath()
+    // を通さず"CUT:<label>"を丸ごと生かしていた――その16文字の「末尾」
+    // キャップは末尾部分が意味のある部分である長い「パス」のための
+    // もので、丸ごと適用すると"CUT:"という接頭辞自体を食べてしまう
+    // (例えば"CUT:1.  Introduction" -> "...1.  Introduction")ためで、
+    // 当時は「(HELPの番号付き見出しのように)ラベルは常に短いので
+    // 問題が表面化しない」という前提でこれを許容していた。
+    //
+    // 2026-09-20修正、直接のユーザー依頼("今のKEYをHELPに置き換え...
+    // 正味の：カットによるHELPとしてほしい")によりHELPの本物のセグメント
+    // ラベルはQUICK.txt/usilic.man由来の「見出し：本文」形になり、
+    // 上の前提が崩れた――ラベルがeditableWidth(下のtrailingReserve
+    // 分だけ切り詰められた入力欄の幅)へ食い込むほど長いと、まだ入力中
+    // のプロンプト自身の再描画がtailの左側を上書きしてしまう
+    // (実例: "CUT:Section One：first entry"の先頭"CUT:Sectio"が消え、
+    // "n One：first entry"だけが残る)。今はMAN/LOCATE/DUと全く同じ
+    // 「接頭辞は必ず生かし、値だけ切り詰める」方式に統一する――ただし
+    // 値側は末尾ではなく先頭を残す(パスと違い、ラベルは見出しの部分
+    // が先頭にあり、そちらの方が有用なため)。
     std::string tail;
     constexpr int kPromptTrailingTailChars = kTrailingPathTailChars - 1;  // 15、このブロック自身のコメント参照
     if (destinationMode == ApplicationMode::CutContent) {
-      tail = destinationDirectory;
+      constexpr int kCutPrefixLen = 4;  // "CUT:"、cutContentReturnLabel()自身の実装参照
+      std::string prefix = destinationDirectory.substr(0, kCutPrefixLen);
+      std::string value = destinationDirectory.substr(kCutPrefixLen);
+      int valueBudget = kPromptTrailingTailChars + 3 - static_cast<int>(prefix.size());
+      if (valueBudget < 1) valueBudget = 1;
+      if (static_cast<int>(value.size()) <= valueBudget) {
+        tail = prefix + value;
+      } else {
+        int valueHeadChars = std::max(1, valueBudget - 3);
+        tail = prefix + value.substr(0, valueHeadChars) + "...";
+      }
     } else if (destinationMode == ApplicationMode::Man || destinationMode == ApplicationMode::Locate ||
                destinationMode == ApplicationMode::Du) {
       // 2026-09-19追加、直接のユーザー報告("^S→②戻り値不良。正しくは
@@ -11394,25 +11242,23 @@ bool Application::executeEdit() {
 
 std::vector<StyledLine> Application::wrapHelpText(int width) const {
   PipeBuffer pipe(encoding_, width, 16L * 1024 * 1024);
-  // 2026-08-30、直接のユーザー依頼("-gおよびopen -aの時だけ表示される
-  // 章"): display_.isGraphical()は^Ogによるバックエンド切り替えの
-  // たびに変わり得るので、helpText_の構築時ではなく、実際にこの関数が
-  // 呼ばれるたび(startHelp()/handleResize()の両方から)に毎回ここで
-  // 判定する――そうすることで、GUI章の有無が常に「今現在」実際に
-  // 見えているバックエンドと一致する。
-  pipe.feed(display_.isGraphical() ? helpText_ + guiHelpText_ : helpText_);
+  pipe.feed(helpText_);
   pipe.flush();
   return pipe.lines();  // .attributesはそのまま素通しされる――cutMode_.split()自身のコメント参照
 }
 
+// 2026-09-20更新、直接のユーザー依頼("今のKEYをHELPに置き換え...
+// 正味の：カットによるHELPとしてほしい"): main.cppからの通常の
+// 起動時呼び出しでは、~/.local/lib/usilic/usilic.man(usilic -mで
+// QUICK.txtから生成、legacy自身のHELP.jpと同じnroff重ね打ちバイト
+// 列形式)の生の内容がそのまま渡される。テストからは引き続き任意の
+// 合成テキストを直接注入できる(このシグネチャ自体は変更していない
+// ――KEYのloadKeyText()のような「引数を取らない専用ローダー」とは
+// 異なり、こちらは元々main.cpp自身のUSILICHELP環境変数の経路とも
+// 共有されていた汎用の注入口)。
 bool Application::loadHelpText(const std::string &text) {
   helpText_ = text;
   return !helpText_.empty();
-}
-
-bool Application::loadGuiHelpText(const std::string &text) {
-  guiHelpText_ = text;
-  return !guiHelpText_.empty();
 }
 
 // menu.cのM_help/T_helpケースから移植――なぜこれがそれ自身の表示の
@@ -11420,6 +11266,10 @@ bool Application::loadGuiHelpText(const std::string &text) {
 // を共有する)なのかについてはクラスコメント参照。どのモードから
 // でも到達可能(legacyのinit_bp()のデフォルトケースにも、M_help/
 // T_helpについてのモードの文脈のガードは無い)。
+// 2026-09-20更新: CUTパターンをkHelpPattern(旧: 番号付き見出しの
+// 正規表現)/GrepSyntax::Regexから、全角「：」の固定文字列検索
+// (GrepSyntax::Fixed)へ切り替えた――kHelpPattern自身の定義コメント
+// 参照。
 bool Application::startHelp() {
   if (helpText_.empty()) return false;
   std::vector<StyledLine> helpLines = wrapHelpText(display_.columns());
@@ -11435,10 +11285,8 @@ bool Application::startHelp() {
     // (ModeStackのレベルごとに保存/復元されない)ので、それらをその
     // ままにしておくことで、保存されている本物のcutが既に持っていた
     // ものが保たれる――HELP自身の都合でそれらを設定すると、^Gがそれ
-    // を復元した時点で、その本物のcut自身の状態を壊してしまう(例えば
-    // 固定文字列の本物のcutが、HELPから残されたcutSyntax_ = Regexで
-    // 再開すると、後のリサイズで誤って再分割してしまう)。
-    ok = cutMode_.pushSplit(helpLines, kHelpPattern, GrepSyntax::Regex);
+    // を復元した時点で、その本物のcut自身の状態を壊してしまう。
+    ok = cutMode_.pushSplit(helpLines, kHelpPattern, GrepSyntax::Fixed);
   } else {
     cutReturnMode_ = currentMode_;  // 保存すべきものが無い――本物のCUTが使うのと同じ「Cutを...へ戻す」という錨
     // 新規の最上位の分割――リサイズ時のリフローの対象になる。split()
@@ -11451,8 +11299,8 @@ bool Application::startHelp() {
     // 内の他の全てのcutOrigin_の代入にも影響していたと判明した、
     // HELP自身のものも含めて)。
     cutOrigin_ = CutOrigin::Help;
-    cutSyntax_ = GrepSyntax::Regex;  // ここで設定しても安全: この分岐では古い値に依存する本物のものは何も無い
-    ok = cutMode_.split(helpLines, kHelpPattern, GrepSyntax::Regex);
+    cutSyntax_ = GrepSyntax::Fixed;  // ここで設定しても安全: この分岐では古い値に依存する本物のものは何も無い
+    ok = cutMode_.split(helpLines, kHelpPattern, GrepSyntax::Fixed);
   }
   if (!ok) return false;
 
@@ -11498,10 +11346,6 @@ void Application::handleResize() {
     std::vector<StyledLine> freshSource;
     if (cutOrigin_ == CutOrigin::Help) {
       freshSource = wrapHelpText(display_.columns());
-    } else if (cutOrigin_ == CutOrigin::Key) {
-      // startKey()自身のコメント参照――HELP自身のすぐ上の分岐と全く
-      // 同じ理屈、ソースがQUICK.txtの"KEY"章(keyText_)である点だけが違う。
-      freshSource = wrapKeyText(display_.columns());
     } else if (cutOrigin_ == CutOrigin::Directory) {
       // 2026-08-11: ディレクトリ一覧の行は、File/Manのテキストがそう
       // するようには幅に合わせてリフロー/折り返しされない
