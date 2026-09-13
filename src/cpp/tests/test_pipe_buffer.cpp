@@ -392,68 +392,78 @@ TEST_CASE("\\x01<N> indent marker: \\x01 NOT followed by any digit is left as a 
   CHECK(buf.lines()[0].text == expected);
 }
 
-// 2026-09-20追加、直接のユーザー報告("indentタグは、文章を書き始める
-// 位置の設定=goではなく、=gpのようにすべての行頭がindent位置に揃って
-// ないと意味が無い"): usilic -m生成物(usilic.man)のような、\x01N制御
-// バイトを一切持たない「行頭にリテラルな空白があるだけ」のプレーン
-// テキストでも、幅超過で折り返された継続行に同じ字下げが自動的に
-// 引き継がれることを確認する(indentFromMarker_自身のコメント参照)。
-TEST_CASE("plain leading whitespace (no \\x01 marker at all): auto-detected as this line's own "
-          "indent, and carried over to a wrapped CONTINUATION line -- same effect as an explicit "
-          "\\x01N marker, but from ordinary ASCII space characters alone") {
-  PipeBuffer buf(Charset::Encoding::Ascii, 6, 1 << 20);
-  std::string raw = "  ABCDEFGH\n";  // 2 leading spaces, then 8 chars -- too wide for width 6
+// 2026-09-20追加のち同日撤回、直接のユーザー報告("indentタグは...
+// すべての行頭がindent位置に揃ってないと意味が無い"): ここには当初、
+// 「行頭の空白から自動的に字下げ幅を検出する」汎用ヒューリスティックの
+// テストがあったが、直後のユーザー指摘("小説の下書き文書...パラグラフ
+// の出だしを字下げするルールがある。今の方法だと全体が１文字下がって
+// しまう")により、その方式自体が誤りと判明し撤回した――<indentN>は
+// 「タグがある場所でのみ」有効という著者の意図的な制御であり、単なる
+// 行頭の空白の有無だけでは、それが継続行にも及ぶべき字下げなのか、
+// 段落先頭だけの字下げ(小説の慣習)なのかを区別できない。
+//
+// 代わりに採用したのが、直接のユーザー提案("<indentN>のNが伝われば
+// いいわけだから、それをタブ用とは別の不可視コードをN個並べておく
+// ってのはどうかな？　usilicはそれを受け取ってindentタグと同じ作業を
+// する")による、readPortableIndentRun()自身のコメント参照の下記の
+// テスト群: usilic -m生成物(usilic.man)のような\x01N制御バイトを
+// 持てないポータブルな平文でも、U+FEFF(ZERO WIDTH NO-BREAK SPACE)の
+// 連続による単項エンコード経由で、\x01Nと全く同じ「著者が指定した
+// 場所でのみ」有効な、複数の生行/折り返し継続行にまたがる字下げを
+// 実現できることを確認する。
+TEST_CASE("U+FEFF portable indent marker: K consecutive U+FEFF characters (K>=1) set the indent to "
+          "(K-1) -- same live, wrap-surviving effect as an explicit \\x01N marker, but usable in a "
+          "plain-text file that cannot carry usilic's own raw \\x01 control byte") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 6, 1 << 20);
+  std::string raw;
+  raw += "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF";  // 3 copies -> indent 2
+  raw += "ABCDEFGH\n";                            // too wide for width 6
   buf.feed(raw);
   REQUIRE(buf.lines().size() == 2);
-  // First line: leading spaces are consumed into the auto-detected
-  // indent (seedIndentIfAtLineStart() re-synthesizes them), not
-  // rendered a second time as ordinary characters.
   CHECK(buf.lines()[0].text == "  ABCD");
   CHECK(buf.lines()[0].endsWithNewline == false);
-  // Wrapped continuation: the same 2-space indent is reapplied automatically.
+  // Wrapped continuation: the same indent is reapplied automatically,
+  // exactly like the \\x01N control-byte marker's own established test above.
   CHECK(buf.lines()[1].text == "  EFGH");
   CHECK(buf.lines()[1].endsWithNewline == true);
 }
 
-TEST_CASE("plain leading whitespace: a full-width IDEOGRAPHIC SPACE (U+3000, 2 columns wide) run "
-          "at the start of a line is also auto-detected as indent (common Japanese plain-text "
-          "convention, e.g. QUICK.txt's own \"　　　 ^H：...\" entries) -- re-synthesized as plain "
-          "ASCII spaces of the same total column width, same as seedIndentIfAtLineStart() already "
-          "does for the \\x01N marker case (not a byte-for-byte echo of the original glyphs)") {
-  PipeBuffer buf(Charset::Encoding::Utf8, 8, 1 << 20);
-  std::string raw = "\xe3\x80\x80\xe3\x80\x80";  // "　　" -- 2 full-width spaces = 4 columns
-  raw += "ABCDEFGH\n";                            // 8 more columns, overflows width 8
+TEST_CASE("U+FEFF portable indent marker: a SINGLE occurrence (K=1) sets the indent back to 0 -- "
+          "the portable equivalent of \\x010 (</indent>)") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 80, 1 << 20);
+  std::string raw;
+  raw += "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF";  // 4 copies -> indent 3
+  raw += "AB\n";
+  raw += "\xEF\xBB\xBF";  // 1 copy -> indent 0 (close)
+  raw += "CD\n";
   buf.feed(raw);
   REQUIRE(buf.lines().size() == 2);
-  CHECK(buf.lines()[0].text == "    ABCD");
-  CHECK(buf.lines()[1].text == "    EFGH");
+  CHECK(buf.lines()[0].text == "   AB");
+  CHECK(buf.lines()[1].text == "CD");
 }
 
-TEST_CASE("plain leading whitespace: does NOT interfere with an ACTIVE \\x01N marker block -- a "
-          "second raw line inside the same <indentN>...</indent> span keeps the marker's own "
-          "indent instead of re-deriving it from (the absence of) its own leading whitespace") {
-  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+TEST_CASE("U+FEFF portable indent marker: persists across MULTIPLE raw lines until explicitly "
+          "closed, same as \\x01N -- a second raw line inside the same span keeps the indent") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 80, 1 << 20);
   std::string raw;
-  raw.push_back(1);
-  raw.push_back('3');  // \x01 '3' -- begin indent of 3, no literal leading spaces of its own
-  raw += "AB\nCD\n";    // two raw lines while the marker is still active
-  raw.push_back(1);
-  raw.push_back('0');  // </indent>
+  raw += "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF";  // 4 copies -> indent 3
+  raw += "AB\nCD\n";                                          // two raw lines while still active
+  raw += "\xEF\xBB\xBF";                                      // close
   raw += "EF\n";
   buf.feed(raw);
   REQUIRE(buf.lines().size() == 3);
   CHECK(buf.lines()[0].text == "   AB");
-  CHECK(buf.lines()[1].text == "   CD");  // still indented -- marker span, not auto-detected
-  CHECK(buf.lines()[2].text == "EF");     // indent off again after </indent>
+  CHECK(buf.lines()[1].text == "   CD");  // still indented
+  CHECK(buf.lines()[2].text == "EF");     // indent off again after the close marker
 }
 
-TEST_CASE("plain leading whitespace: a line with NO leading whitespace right after one that had "
-          "some does not inherit the previous line's auto-detected indent") {
+TEST_CASE("U+FEFF portable indent marker: ignored outside UTF-8 (EUC/ASCII content has no such "
+          "convention -- the raw bytes pass through as ordinary content instead)") {
   PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
-  buf.feed("  AB\nCD\n");
-  REQUIRE(buf.lines().size() == 2);
-  CHECK(buf.lines()[0].text == "  AB");
-  CHECK(buf.lines()[1].text == "CD");  // no leftover indent from the previous line
+  std::string raw = "\xEF\xBB\xBF\xEF\xBB\xBF" "AB\n";  // would be "indent 1" if this were UTF-8
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == raw.substr(0, raw.size() - 1));  // untouched, minus the trailing '\n'
 }
 
 // 2026-09-04追加、直接のユーザー依頼("禁則処理（句読点が行の冒頭に

@@ -114,19 +114,6 @@ class PipeBuffer {
   // いる: 手動の字下げ文字を一切必要としない)。
   int currentIndent_ = 0;
 
-  // 2026-09-20追加、直接のユーザー報告("indentタグは、文章を書き始める
-  // 位置の設定=goではなく、=gpのようにすべての行頭がindent位置に
-  // 揃ってないと意味が無い"): currentIndent_が今まさに\x01N制御バイト
-  // (<indentN>展開)によってアクティブ化されている最中かどうか。
-  // wrapLine()の冒頭で行う新設の「行頭の空白から自動的に字下げ幅を
-  // 検出する」処理(下記参照)は、これがtrueの間は一切手を出さない
-  // ――マーカー駆動の字下げは複数の生の行(=複数回のwrapLine()呼び
-  // 出し)にまたがって持続する(\x010が来るまでcurrentIndent_を
-  // 保持し続ける)ため、行ごとに毎回自動検出で上書きしてしまうと
-  // マーカー自身の指定を壊してしまう。\x01N(N>0)でtrueに、
-  // \x010でfalseに戻る(wrapLine()自身の2箇所の設定箇所参照)。
-  bool indentFromMarker_ = false;
-
   // StyledLine::rawLineNumber自身のコメント参照(2026-09-08追加)――
   // 次にfinalize()/flush()する行に付ける、1始まりの生の行番号。
   // finalize(true)(本物の改行)の「後」だけ+1する――finalize(false)

@@ -4,6 +4,20 @@
 
 using fm::convertMarkupToLegacyHelpText;
 
+namespace {
+// pipe_buffer.cpp自身のreadPortableIndentRun()と全く同じエンコード
+// (2026-09-20、直接のユーザー提案"<indentN>のNが伝わればいいわけ
+// だから...不可視コードをN個並べておく"): U+FEFF(UTF-8で"\xEF\xBB\xBF")
+// のK個(K>=1)の連続で字下げ幅(K-1)を表す単項エンコード。
+const std::string kFeff = "\xEF\xBB\xBF";
+std::string portableIndentOpen(int n) {
+  std::string out;
+  for (int k = 0; k <= n; k++) out += kFeff;  // n+1個
+  return out;
+}
+std::string portableIndentClose() { return kFeff; }  // 1個 -> 字下げ0
+}  // namespace
+
 // -- convertMarkupToLegacyHelpText() (2026-09-20) --
 //
 // Direct user request ("usilicに裏オプションを作ってほしい。具体的
@@ -47,24 +61,42 @@ TEST_CASE("convertMarkupToLegacyHelpText: a multi-byte UTF-8 character is overst
   CHECK(out == "\xE6\x97\xA5\b\xE6\x97\xA5");
 }
 
-TEST_CASE("convertMarkupToLegacyHelpText: <indentN> becomes N literal leading half-width spaces on "
-          "each line of that block, not usilic's internal \\x01 control byte") {
+// 2026-09-20更新、直接のユーザー報告2件を経ての再設計: 当初はここで
+// <indentN>をN個のリテラルな半角スペースへ物理行ごとに焼き込んでいた
+// (旧テストはこの形を検証していた)が、(1)端末幅を超えて折り返された
+// 継続行にはその字下げを再現する手段が無く先頭が揃わなくなる、
+// (2)代替のPipeBuffer側ヒューリスティック(行頭の空白から自動検出)も
+// 小説の段落先頭字下げ等、継続行には適用すべきでない字下げと区別
+// できず誤りだった――という2つの実際の不具合により撤回した。今は
+// pipe_buffer.cpp自身のreadPortableIndentRun()が解釈する、U+FEFFの
+// 連続による不可視の単項エンコードへ変換するだけで、字下げの実現
+// (継続行への引き継ぎ含む)自体はPipeBuffer::wrapLine()の通常の動的
+// 折り返し処理に委ねる――usilic内部専用markup経由の\x01N制御バイト
+// 方式と全く同じ実行時の仕組みを、生の制御バイトを持てないポータブル
+// な平文からも起動できるようにする、というのがこの関数の役割。
+TEST_CASE("convertMarkupToLegacyHelpText: <indentN> becomes the U+FEFF portable indent marker "
+          "(N+1 repetitions, readPortableIndentRun()'s own unary encoding), not literal leading "
+          "spaces and not usilic's internal \\x01 control byte -- the actual indentation (and its "
+          "carry-over to wrapped continuation lines) happens live in PipeBuffer::wrapLine() at "
+          "display time, not baked in here") {
   std::string out = convertMarkupToLegacyHelpText("<indent3>hello</indent>");
-  CHECK(out == "   hello");
+  CHECK(out == portableIndentOpen(3) + "hello" + portableIndentClose());
   CHECK(out.find('\x01') == std::string::npos);
 }
 
-TEST_CASE("convertMarkupToLegacyHelpText: the indent applies to EVERY line inside the block, not "
-          "just the first") {
+TEST_CASE("convertMarkupToLegacyHelpText: a hard newline INSIDE the block is passed through as an "
+          "ordinary '\\n' -- no per-line re-emission of the marker, since PipeBuffer's own "
+          "currentIndent_ persists across raw lines until the closing U+FEFF marker is reached "
+          "(exactly like the internal \\x01N convention)") {
   std::string out = convertMarkupToLegacyHelpText("<indent2>one\ntwo</indent>");
-  CHECK(out == "  one\n  two");
+  CHECK(out == portableIndentOpen(2) + "one\ntwo" + portableIndentClose());
 }
 
 TEST_CASE("convertMarkupToLegacyHelpText: the newline immediately after an opening <indentN> tag "
           "and immediately before a closing </indent> tag are both readability-only in the source "
           "and get swallowed (matching expandHelpMarkup()'s own identical convention)") {
   std::string out = convertMarkupToLegacyHelpText("<indent2>\nhello\n</indent>");
-  CHECK(out == "  hello");
+  CHECK(out == portableIndentOpen(2) + "hello" + portableIndentClose());
 }
 
 TEST_CASE("convertMarkupToLegacyHelpText: plain characters that have no roff/troff significance at "
@@ -79,7 +111,7 @@ TEST_CASE("convertMarkupToLegacyHelpText: a real QUICK.txt-shaped \"label：desc
           "round-trips with the label bolded and the colon literally intact, ready for a literal "
           "CUT search on \"：\"") {
   std::string out = convertMarkupToLegacyHelpText("<indent6>\xE3\x82\xA2\xEF\xBC\x9A[CUT] desc</indent>");
-  CHECK(out == "      \xE3\x82\xA2\xEF\xBC\x9A[CUT] desc");
+  CHECK(out == portableIndentOpen(6) + "\xE3\x82\xA2\xEF\xBC\x9A[CUT] desc" + portableIndentClose());
 }
 
 TEST_CASE("convertMarkupToLegacyHelpText: a closing tag with no matching opener is passed through "

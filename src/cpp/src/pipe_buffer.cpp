@@ -170,45 +170,19 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   int n = static_cast<int>(convertedLine.size());
   int i = 0;
 
-  // 2026-09-20追加、直接のユーザー報告("indentタグは、文章を書き始める
-  // 位置の設定=goではなく、=gpのようにすべての行頭がindent位置に
-  // 揃ってないと意味が無い"): usilic -mが生成するusilic.man(legacy
-  // HELP.jpと同じ、usilic独自制御バイトを一切持たない本物の平文)は、
-  // <indentN>を物理行ごとに1回だけリテラルな半角スペースへ焼き込む
-  // ――この行が端末幅を超えて折り返される際、その継続行には字下げを
-  // 再現する手段が無く、先頭が揃わなくなっていた。indentFromMarker_
-  // 自身のコメント参照の通り、修正はusilic.man側ではなくここ(汎用の
-  // 折り返し処理)に置く: マーカー駆動の字下げが今アクティブでなければ
-  // (indentFromMarker_ == false)、この生の行自身の「行頭の空白文字列
-  // (半角スペース/全角スペースU+3000)」の表示幅を自動的にcurrentIndent_
-  // として採用する――そのままにすると、この後の通常ループがこの行頭
-  // 空白自身を「普通の文字」としてもう一度書き込んでしまい
-  // (seedIndentIfAtLineStart()が合成する分と二重になる)、iを空白の
-  // 直後まで進めて元の空白自体は読み飛ばす(マーカー自身が幅を持たない
-  // のと同じ扱い)。usilic.man専用の特別扱いではなく、行頭に空白を
-  // 持つ任意のプレーンテキスト全般に効く、汎用の折り返し挙動である。
-  if (!indentFromMarker_) {
-    int p = 0;
-    int leadingWidth = 0;
-    while (p < n) {
-      if (static_cast<unsigned char>(convertedLine[p]) == ' ') {
-        leadingWidth += 1;
-        p += 1;
-        continue;
-      }
-      if (encoding_ == Charset::Encoding::Utf8 && p + 3 <= n &&
-          static_cast<unsigned char>(convertedLine[p]) == 0xE3 &&
-          static_cast<unsigned char>(convertedLine[p + 1]) == 0x80 &&
-          static_cast<unsigned char>(convertedLine[p + 2]) == 0x80) {
-        leadingWidth += 2;  // U+3000(全角スペース)の表示幅
-        p += 3;
-        continue;
-      }
-      break;
-    }
-    currentIndent_ = leadingWidth;
-    i = p;
-  }
+  // 2026-09-20追加のち同日撤回、直接のユーザー報告("indentタグは、
+  // 文章を書き始める位置の設定=goではなく、=gpのようにすべての行頭が
+  // indent位置に揃ってないと意味が無い"): 当初はここで「行頭の空白
+  // から自動的にcurrentIndent_を検出する」汎用ヒューリスティックを
+  // 試みたが、直後のユーザー指摘("小説の下書き文書を表示する場合...
+  // パラグラフの出だしを字下げするルールがある。ところが今の方法だと
+  // 全体が１文字下がってしまってルールが守られていない")により誤りと
+  // 判明し撤回した――<indentN>は「タグがある場所でのみ」有効という
+  // 著者の意図的な制御であり、「行頭の空白の有無」という表面的な形
+  // だけでは、それが継続行にも及ぶべき字下げ(<indentN>ブロック)なのか、
+  // 段落先頭だけの字下げ(小説の字下げ慣習)なのかを区別できない――
+  // どちらも「行頭に空白がある」という点では同じに見えてしまう。
+  // 正しい修正は下のU+FEFF不可視マーカー方式参照(同ユーザー提案)。
 
   // 2026-09-05追加、isForbiddenAtLineStart()自身のコメント参照
   // (禁則の「追い出し」実装の作り直し): 直近に配置した1文字を、
@@ -330,6 +304,44 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     }
     return {value, p};
   };
+  // 2026-09-20追加、直接のユーザー提案("<indentN>のNが伝わればいい
+  // わけだから、それをタブ用とは別の不可視コードをN個並べておくって
+  // のはどうかな？　usilicはそれを受け取ってindentタグと同じ作業を
+  // する"): usilic -mが生成するusilic.man(legacy HELP.jpと同じ、
+  // usilic独自制御バイト\x01Nを一切持たない本物の平文)でも、複数の
+  // 生の行にまたがる<indentN>相当の字下げを、`\x01`という非ポータブル
+  // な生の制御バイトを使わずに表現するための、独立した第2のエンコード
+  // 方式。U+FEFF(ZERO WIDTH NO-BREAK SPACE、UTF-8で"\xEF\xBB\xBF")を
+  // 採用する――utf8.cpp自身のdisplay_width()コメント参照の通り、
+  // タブ用に既に使っているU+2060 WORD JOINERと同じ2026-09-10の実機
+  // (iTerm2)検証で、U+2060と並んで「完全に隙間ゼロで不可視」と確認
+  // 済みの、もう一方の候補である(BOMとしての意味を持つためU+2060を
+  // 優先しU+FEFFは当時見送られていたが、ここでは行頭ではなく任意の
+  // 位置に埋め込むので、その意味は問題にならない)。U+2060自体を
+  // 再利用しない理由: タブ展開が"U+2060+実際のスペースN個"という形で
+  // 既にこの文字を使っており、連続するU+2060の並びを字下げマーカー
+  // だと誤認する余地を作りたくないため、完全に別の文字を割り当てる。
+  //
+  // エンコード: 連続するK個(K>=1)のU+FEFFで「字下げ幅(K-1)を設定」を
+  // 表す――\x01の直後のASCII数字のような可視の値表現を使わず、繰り返し
+  // 回数「だけ」で値を表す単項(unary)エンコードなので、「0個」という
+  // 表現が原理上作れない(マーカーが1つも無いことと区別できない)。
+  // そのため値を+1してから繰り返し回数にする: 1個だけなら字下げ0
+  // (=</indent>のリセットに相当)、N+1個ならば字下げN、という対応
+  // ――convertMarkupToLegacyHelpText()(markup_to_roff.cpp)自身の
+  // コメント参照。UTF-8限定(HELP/QUICK.txt自身のテキストは常にUTF-8
+  // ――help_text.hpp自身のコメント参照と同じ理由)。
+  auto readPortableIndentRun = [&](int pos) -> std::pair<int, int> {
+    if (encoding_ != Charset::Encoding::Utf8) return {0, pos};
+    int count = 0, p = pos;
+    while (p + 3 <= n && static_cast<unsigned char>(convertedLine[p]) == 0xEF &&
+           static_cast<unsigned char>(convertedLine[p + 1]) == 0xBB &&
+           static_cast<unsigned char>(convertedLine[p + 2]) == 0xBF) {
+      count++;
+      p += 3;
+    }
+    return {count, p};
+  };
   auto skipMarkersFrom = [&](int pos) -> int {
     while (pos + 1 < n) {
       unsigned char mc = static_cast<unsigned char>(convertedLine[pos]);
@@ -337,9 +349,16 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
         auto [value, digitsEnd] = readIndentDigits(pos + 1);
         if (value < 0) break;
         currentIndent_ = value;
-        indentFromMarker_ = (value > 0);
         pos = digitsEnd;
         continue;
+      }
+      if (mc == 0xEF) {
+        auto [count, runEnd] = readPortableIndentRun(pos);
+        if (count > 0) {
+          currentIndent_ = count - 1;
+          pos = runEnd;
+          continue;
+        }
       }
       unsigned char value = static_cast<unsigned char>(convertedLine[pos + 1]);
       if (mc == '\x02' && value >= '0' && value <= '9') {
@@ -397,8 +416,19 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       auto [value, digitsEnd] = readIndentDigits(i + 1);
       if (value >= 0) {
         currentIndent_ = value;
-        indentFromMarker_ = (value > 0);
         i = digitsEnd;
+        continue;
+      }
+    }
+    // readPortableIndentRun()自身のコメント参照: \x01Nと全く同じ
+    // 「ゼロ幅、状態だけ更新して読み飛ばす」形だが、usilic -m生成物
+    // (usilic.man)のような、usilic独自の生の制御バイトを持てない
+    // ポータブルな平文向けの、U+FEFF単項エンコード版。
+    if (c == 0xEF) {
+      auto [count, runEnd] = readPortableIndentRun(i);
+      if (count > 0) {
+        currentIndent_ = count - 1;
+        i = runEnd;
         continue;
       }
     }

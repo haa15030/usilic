@@ -81,6 +81,18 @@ int Utf8::display_width(const unsigned char *cp, int len) {
   // 自身の幅テーブル次第――U+2060はiTerm2での実機確認で不可視と
   // 確認済みだが、他の端末/フォントでは保証されない点は変わらない。
   if (cpt == 0x2060) return 0;
+  // U+FEFF ZERO WIDTH NO-BREAK SPACE(2026-09-20追加、
+  // pipe_buffer.cpp自身のreadPortableIndentRun()コメント参照):
+  // usilic -m生成物(usilic.man)向けの、字下げ幅を単項エンコードする
+  // 不可視マーカー。上のU+2060と同じ2026-09-10の実機(iTerm2)検証で
+  // 「完全に隙間ゼロで不可視」と確認済みの、もう一方の候補――BOMとしての
+  // 意味を持つため当時はU+2060を優先したが、ここでは行頭ではなく
+  // 任意の位置に埋め込む(タブ用のU+2060と衝突しないよう完全に別の
+  // 文字を割り当てる)ので、その意味は問題にならない。pipe_buffer.cpp
+  // が常にこのマーカーを完全に読み飛ばす(wrapText_へ一切書き込まない)
+  // ため実際にはこの分岐へ到達しないはずだが、他の経路が生のU+FEFF
+  // バイト列をそのまま表示に回す可能性に備えた安全網として登録する。
+  if (cpt == 0xFEFF) return 0;
   if ((cpt >= 0x0300 && cpt <= 0x036f)
       || (cpt == 0x3099 || cpt == 0x309a)
       || (cpt >= 0x1ab0 && cpt <= 0x1aff)
