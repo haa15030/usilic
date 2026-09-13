@@ -3711,6 +3711,48 @@ int main(int argc, char **argv) {
   // 「引数無しの素の起動」の扱いに揃える。
   bool hasRealContentArgument =
       !positionalArgs.empty() || (!::isatty(STDIN_FILENO) && keyInput.fd() >= 0);
+
+  // 2026-09-20追加、直接のユーザー報告("引数無しでも複数起動できて
+  // しまうのは真性バグなので修正よろしく。ついてはIDEAS.md:46の反映も
+  // よろしく")。legacy自身のcheck_pl()/check_ps()(old/src/usilic.c)
+  // からの移植だが、挙動はdocs/ideas/IDEAS.md:46が実際に望んでいる形
+  // (legacy自身の実際の挙動である「警告して即終了、ユーザーが自分で
+  // 旧プロセスをkillする必要がある」ではなく、「警告した上で新プロセス
+  // 自身が旧プロセスをkillしてから起動を続ける」)に合わせて作り直した
+  // ――legacy自身のSIGCONT+mtime監視による「本当に生きているか」の
+  // 確認(このポートには、実行中プロセスが定期的にpidファイルへ触れる
+  // ような対応する仕組みが無いため素直に移植できない)の代わりに、
+  // kill(pid,0)一発の生死確認(サスペンド中でも真――IDEAS.md自身の
+  // 「サスペンド中のケースを含む」という要件を自然に満たす)に単純化
+  // し、PID再利用による誤検出を避けるため`ps -p <pid> -o comm=`で
+  // 実際にusilic自身(argv[0]の実行ファイル名)かどうかも確認する
+  // (legacy自身のcheck_ps()の`ps | grep PROGNAME`と同じ発想)。対象は
+  // legacy同様、引数無しの「素の」起動(履歴付きファイルマネージャ、
+  // f.usilic&0x80相当)だけ――hasRealContentArgumentがtrueの起動は
+  // 元々何個でも並行して構わない(すぐ上の2026-08-18コメント参照)。
+  if (!hasRealContentArgument) {
+    std::string ownProgramName = std::filesystem::path(argv[0]).filename().string();
+    std::string pidPath = usilicDir + "pid";
+    long oldPid = 0;
+    {
+      std::ifstream pidIn(pidPath);
+      if (pidIn) pidIn >> oldPid;
+    }
+    if (oldPid > 0 && static_cast<pid_t>(oldPid) != ::getpid() && ::kill(static_cast<pid_t>(oldPid), 0) == 0) {
+      std::string comm = fm::ChildProcess::run({"ps", "-p", std::to_string(oldPid), "-o", "comm="}).output;
+      while (!comm.empty() && (comm.back() == '\n' || comm.back() == '\r' || comm.back() == ' ')) comm.pop_back();
+      if (std::filesystem::path(comm).filename().string() == ownProgramName) {
+        std::fprintf(stderr, "%s: Process-ID %ld ... \n     Already running.\n", ownProgramName.c_str(), oldPid);
+        std::fflush(stderr);
+        ::kill(static_cast<pid_t>(oldPid), SIGTERM);
+        for (int waited = 0; waited < 40 && ::kill(static_cast<pid_t>(oldPid), 0) == 0; waited++) ::usleep(50000);
+        if (::kill(static_cast<pid_t>(oldPid), 0) == 0) ::kill(static_cast<pid_t>(oldPid), SIGKILL);  // 2秒待っても応答無し -- 強制終了
+      }
+    }
+    std::ofstream pidOut(pidPath, std::ios::trunc);
+    if (pidOut) pidOut << ::getpid() << "\n";
+  }
+
   std::string tempRootDirectory = hasRealContentArgument ? pidTempDirectory : "";
   std::string workRootDirectory = pidTempDirectory;
   // ^T's own new "Boot options" field (see executeShowUsilicBanner()'s own
