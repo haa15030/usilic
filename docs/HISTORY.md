@@ -17174,32 +17174,37 @@ ContentView::renderScrollIndicatorOverlay()にdisplay_.modeLineVisible()のチ�
 そこでHELPと同じにしてほしい。タブコードで分割の純粋CUTモード版KEYでよろしく。
 お試しなのでF-?はすでに反映してある。これでKEYを構築してみて。
 
-<日本語でよろしく。
+2026-09-13
 
->了解しました、以降は日本語で対応します。現在のブランチcomments-jaにはdocs/HISTORY.md・src/HELP.txt・src/cpp/src/application.cpp(.hpp含む)・src/cpp/tests/test_application.cppに未コミットの変更があり、src/直下に見慣れない未追跡ファイルもあるが今回の作業とは無関係と判断し触れないと回答。何から進めるか尋ねた。
+>日本語でよろしく。
+
+>了解しました、以降は日本語で対応します。
+
+現在のブランチ comments-ja には docs/HISTORY.md・src/HELP.txt・src/cpp/src/application.cpp(.hpp含む)・src/cpp/tests/test_application.cpp に未コミットの変更があるようです。また src/ 直下に見慣れないファイル(debian-keyring_2015.03.04.tar.xz・fmd_0.9.32.2.7z・skrw021.lzh・u100_SL.rar・utf8.tar・QUICK.txt・test.txt)が未追跡としてありますが、これらは今回の作業とは無関係そうなので特に触りません。
+
+何から進めましょうか(未コミットの変更の続き、新しい依頼、など)?
 
 <docs/HISTORY.md:17175の作業をよろしく。
 
->調査したところ、application.hpp/cppとtest_application.cppには既に「KEYをHELPと全く同じ立て付け(QUICK.txtの"KEY"章をCutMode::split()でタブ文字分割したCutOrigin::KeyのCut/CutContentセッション)へ全面改稿する」という、まさに今回の依頼そのものの実装が未コミットのまま入っていました(前回セッションの続きと思われる、コメント中の日付は2026-09-20と誤って先の日付になっていましたが内容は今回の依頼と一致)。ビルド・テストで検証したところ2つの実バグを発見: ①PipeBuffer::wrapLine()のseedIndentIfAtLineStart()が、字下げ幅(currentIndent_)を表示幅(width_)で一切キャップしていなかったため、QUICK.txtが使う<indent16>/<indent26>(HELP.txtの最大<indent1>よりずっと大きい)が狭い幅(テストでは10)を超えると、字下げだけで行が埋まり本物の文字が一度も置けないままfinalize()を繰り返す無限ループに陥り、lines_が際限なく伸びてメモリを食い尽くしていました(実際にmake testが`Killed: 9`で落ち、単体のKEYテストだけでも3GB超・増加し続けるRSSを確認)。字下げをwidth_-2までに切り詰めるよう修正。②loadKeyText()がQUICK.txtの"<b>KEY</b>"見出し行自体をkeyText_に含めてしまい、その行にはタブが無いためCutMode::split()の「最初のマッチ前は"--"プレースホルダー」仕様に飲まれ、segments()[0]が本来の最初のエントリ("C-h：[KEY] ...")ではなく見出しだけの"--"になっていたため、見出し行の直後から取り込むよう修正。両修正後、KEY関連の全27テスト・pipe_buffer既存31テストが通過、フルスイートは1104/1105(残る1件は既知のLOCATEフレーク)。実機PTY(手組みharness)でも確認を試みたが、ブート直後の一時的なSHELL画面を挟む複雑な起動シーケンスの影響で^Hへの反応を安定して読み取れず(既知のharness不安定性、CLAUDE.mdの「深追い禁物」方針により打ち切り)、ここは実ターミナルでのユーザー自身の確認を勧める形にした。pipe_buffer.cpp/application.cpp/application.hpp/test_application.cppをコミット、docs/CHANGES.mdに項目464として記録。
+>コミットします。
 
-<KEYだが以前は仕様が違っていたのでキーアサインのみとしていたけど、正式にCUT仕様となったので冒頭のマッチ無しエリアも表示するようにして。`--`の部分。
+  Ran 1 shell command
 
->項目464のバグ②修正(見出し行"<b>KEY</b>"を読み飛ばす)を撤回し、見出し行をkeyText_に含める元の形へ戻しました。これによりCutMode::split()自身の既存仕様がそのまま発動し、他の本物のCUTセッションと同じく冒頭に"--"(内容は見出し行の"KEY"のみ)が現れます。影響したdoctest2件をsegments()[0]=="--"・segments()[1]が本物の最初のエントリという前提に更新。KEY関連の全27テスト・make install/make app完了。フルスイートは1105件中1103件通過(残る2件は既知のLOCATEフレークと、activatePromptのCOLUMNS計算テストの既存フレーク――後者は今回の変更をgit stashで退避したベースラインでも5回中2回失敗することを確認済みで、フィクスチャの一時ディレクトリ名の長さのランダム性に起因する無関係な既知の不安定性と判断)。docs/CHANGES.mdに項目465として記録。
+src/HELP.txt(無関係な既存の未コミット編集)は含めず、意図通りステージされています。コミットします。
 
-<③`^O^K`をHISTORY.md:9768と同じ形で反映して。`^X^D^N^N^N^N^O^K`→/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/の（ls）へ。
-④src/QUICK.txtを更新してみた。
-HELPの方針だが、QUICK.txt:328のような形にしたい（HELPをKEYで置き換えたやつをHELP）。必要なのは、usilic.1をmanで表示した結果が~/.usilic/saved/QUICK.txtと同じであること。それが可能かどうかをまずは調べて見て。
+  Committed 1b9a53e, ran 2 shell commands
+PostToolUse:Bash says: Tip: Run /ultrareview before you push to catch bugs with a cloud-based multi-agent review — 3 free reviews left.
 
->③goToParentFromFileOrArchive()(^O^K)をjumpToPathPrefix()(^J+数字、HISTORY.md:9768で確立された「どこでも」方針)と同じ広さ――Locate/ListBrowser/Duへ拡張しました。File/Archiveは常に「ファイル」パスなのでparent_path()を2回適用していましたが、ListBrowserのRecentDirectory候補やDuのディレクトリエントリは既にそれ自身が「ディレクトリ」であり2回適用すると1段階余分に遡ってしまうため(具体例の期待値"Resources/"ではなく"Contents/"に着地する)、duEntryFolder()と同じ考え方(格納先ディレクトリをまず求め、その親を取る)で統一しました。副産物として、std::filesystem::pathの末尾スラッシュ関連の実バグ("/a/b/c/"へのparent_path()が"/a/b"ではなく"/a/b/c"になる)も新規テストで発見・修正しました。新規doctest4件追加、make test 1107/1108件・21676/21677アサーション通過(残る1件は既知のLOCATEフレーク)、make install/make app完了、docs/CHANGES.mdに項目466として記録。
+KEYモード修正のコミットは完了しましたが、その過程で一点、報告すべき問題があります。
 
-④は「投資してみて」の依頼のとおり、実装はまだせず可能性のみ調査しました。結論: 仕組み自体(man描画結果を全角「：」でCUT分割)は技術的に成立します(KEYのタブ分割と全く同じ理屈)が、ご自身の~/.usilic/saved/QUICK.txt内の脚注(「※実際は全角の':'。usilic(1)に拾われてしまうので全角では書けない」)が示す通り、説明文中に全角「：」が紛れ込むと誤ってCUT境界になる問題があり、現状のsrc/usilic.1にも同様の箇所が2箇所(HELP項目の説明文中)見つかりました――同じ回避(半角へ差し替え)が必要です。一方、~/.usilic/saved/QUICK.txt自体をman経由で完全に(バイト単位で)再現するのは困難と判明しました: ManMode::runAndWrap()はMANWIDTH=width_を設定してから本物のman(1)を実行するため実際の折り返しは常にman自身が担い(後段のPipeBufferは太字/下線検出用でほぼno-op)、実機で同じ手順(MANWIDTH=80 man ./src/usilic.1)を試したところ「usilicは、...起動した場合はページャー、」で単語境界通りに改行されましたが、対象ファイルは「ページャ」「ー、」の間、つまり「ページャー」という1単語の途中(禁則的にも本来ありえない位置)で改行されており、本物のman/groffの折り返しともusilic自身のPipeBuffer(禁則処理付き)の折り返しとも一致しない、別の(単純な固定幅文字数での機械的な)折り返し方法で作られたものと見られます。加えて内容面でもTERMSの追加項目(「.」「..」「「」」「''」、HELP.txt由来)、KEY内エントリの並び替え(CUT系が先頭、HELP/KEYが末尾寄り)、AUTHOR差し替え等、現状のsrc/usilic.1との差分が複数あります。バイト完全一致ではなく内容・構造面での一致を目指すのか、~/.usilic/saved/QUICK.txtがどのように生成されたか(手編集か、別ツールか)を教えていただければ、次の一手を検討します。
+やってしまったこと: docs/HISTORY.mdは元々、今回のKEY作業とは無関係な別編集(「▎」記号や「承知しました」等の冗長な接頭辞をあちこちの過去エントリから取り除く、58行規模のクリーンアップ)が未コミットのまま残っていました。私が今回KEYの作業ログを追記する際、git add docs/HISTORY.mdでファイル全体をステージしてしまい、その無関係な既存編集ごとコミット(1b9a53e)に巻き込んでしまいました。
 
-<man src/usilic.1を実行してみたとき、「全角：」が消えてしまっていたのでそれさえ温存できればそれでいい。その方針でusilic.1を再作成してみて。
-saved/QUICK.txtはsrc/QUICK.txtを画面表示したやつを^J^Wしただけ。
+CLAUDE.mdにある通りdocs/HISTORY.mdは二重記録の突き合わせという慎重な運用をされているファイルなので、意図しない形で別の編集を混ぜてしまったのはまずかったです。まだpushしていないローカルコミットなので、ご希望であればgit reset --soft HEAD~1で一旦コミットを解いてから、
 
->saved/QUICK.txtの件、了解しました――man/groff経由ではなく、単にsrc/QUICK.txtをusilicのFILE表示(QUICK.txt固有のisHelpMarkupPagerFile()判定でexpandHelpMarkup()が効き、その後PipeBufferで折り返される、KEYと全く同じ経路)で開いて^J^W保存しただけだったのですね。man/groffは無関係だったので、④の「バイト完全一致」に関する調査(先の報告)はそもそも的外れな前提に基づいていました。
+1. そのクリーンアップ分だけの独立したコミット
+2. KEY修正(pipe_buffer.cpp/application.cpp/hpp/test_application.cpp/CHANGES.md/HISTORY.mdへの今回分追記)のコミット
 
-「全角：」消失の件を実機で再現調査したところ、`groff -mandoc -Kutf8 -Tutf8`単体・システムの`man`単体(ja_JP.UTF-8ロケール)どちらでもこのマシンでは再現しませんでしたが、ロケール/man実装の違いにより起こり得る既知の脆弱性(groffの入力エンコーディング判定に依存する)と判断し、根本的に依存を断つ修正をしました: 全60箇所の生の「：」(U+FF1A)を、出力デバイス側で直接その符号点を要求するgroffのUnicode特殊文字指定`\[uFF1A]`へ置き換えました――^(`\N'94'`)/~(`\N'126'`)を素の文字のまま書かなかったのと全く同じ理由・同じ対策です。`groff -mandoc -Kutf8 -Tutf8`・システムの`man`両方でエラー無く、60箇所すべての「：」が正しく残ることを確認済みです。src/usilic.1はまだ未追跡のままです。
+の2つに分け直せます。このままで問題なければそれでも構いません。どうしますか。
 
 <過去の発言に「▎」あるいは「チャットへの貼り付け用(コピペ可):」等があるのは、それをこちらがコピーして一日の終わりにdocs/HISTORY.mdとの差分を取ることによって整合性を図る、というのが目的。
 何の整合性かというと、
@@ -17210,62 +17215,184 @@ saved/QUICK.txtはsrc/QUICK.txtを画面表示したやつを^J^Wしただけ。
 アシスタントは最後に受け取った差分を見て、欠落、スペース置換の有無を確認の上、それらの記録済みコメントはそのままに差分を反映してくれればいい。そうすれば「チャットへの貼り付け用(コピペ可):」との注釈付きの文章をわざわざ貼る手間が省ける。
 これでどう？
 
->ご提案に賛成しました――docs/HISTORY.mdに既に記録済みの内容を「チャットへの貼り付け用(コピペ可):」として重ねて貼り直す必要は無い(正本コピー側に無くても、既に記録済みの箇所は差分検出で拾えるため)という簡略化に合意し、CLAUDE.mdの「進め方の合意事項」に2026-09-13追記として反映、自分のメモリ(feedback_history_md_live_recording.md)も更新しました。
+>CLAUDE.mdと関連メモリに、この運用の簡略化を追記しました。要点をまとめると:
 
-<分割せずこのままでいい。
+- 「▎」/「コピペ用」注釈の目的は、①アシスタントの要約癖と②ユーザーの手コピペ時の欠落、という独立した2種類の欠落を正本コピーとの差分突き合わせで検出すること。
+- 既にdocs/HISTORY.mdに記録済みの内容は、正本コピー側に無くても差分検出で拾えるので、チャット文への「コピペ用」再掲は不要——以後そうします。
+- セッション区切りで差分を受け取ったら、2種類の欠落パターン(文字欠落/スペース置換)の有無を確認し、どちらが正しいか判断した上で、記録済みの箇所には手を付けず差分箇所だけをdocs/HISTORY.mdへ反映します。
 
->了解しました、直前の^O^K拡張(項目466、std::filesystem::pathの末尾スラッシュ絡みの実バグ修正込み)を分割せず単一コミットのままにしました。
+なお、先ほどの「コミット1b9a53eにHISTORY.mdの無関係な既存編集(▎/承知しました除去、58行分)を巻き込んでしまった」件はまだ未回答でした。このまま1つのコミットにしておいて問題ないか、それとも分割し直した方がよいか、どちらにしますか。
+
+✻ Brewed for 2m 34s · done 7:19
+
+❯ 分割せずこのままでいい。
+
+了解しました、コミットはこのままにします。
+
+KEY(^H)の再構築タスク(HISTORY.md:17175)はコミット1b9a53eで完了です。実機PTYでの^H動作確認だけは、手組みharnessの起動シーケンスが複雑で安定して読み取れなかったため未確認のままなので、お手すきの際に実ターミナルで一度^Hを試していただけると安心です。
+
+<KEYだが以前は仕様が違っていたのでキーアサインのみとしていたけど、正式にCUT仕様となったので冒頭のマッチ無しエリアも表示するようにして。`--`の部分。
+
+>コミットfd165df完了です。KEYの先頭に見出し部分が"--"のマッチ無しエリアとして表示されるようになり、実際のエントリは2番目以降に並びます。全27件のKEYテスト・make install/make appも確認済みです。
+
+<src/QUICK.txtをgroffでman表示可能なmsマクロ形式に書き換えできる？　可能ならsrc/usilic.1で保存してみて。
+
+>Gaps解消しました(27警告、いずれも「cannot adjust」系の無害な情報警告)。念のためエラーが無いことと全体を再確認します。
+
+  Ran 1 shell command
+
+manコマンド(col -bでoverstrike除去)でも綺麗に表示されます。最後にKEY章末尾・COPYの入れ子・ページ/行送り・プロンプト章まで通しで確認します。
+
+  Ran 1 shell command
+
+COPYの入れ子リストも正しくインデントされています。全体を通して確認完了です。gitに追跡させるか確認します。
+
+  Ran 1 shell command
+
+src/QUICK.txtをgroffの-manマクロ形式(.TH/.SH/.TP等)へ変換し、src/usilic.1として保存しました。
+
+確認方法:
+man ./src/usilic.1
+または
+groff -mandoc -Kutf8 -Tutf8 src/usilic.1 | less
+
+変換内容:
+- NAME/SYNOPSIS/DESCRIPTION/NOTATION(KEY記法・TERMS)/CONFIGURATION(Makefile/usilicrc)/KEY(全エントリ)/ページ・行送り/プロンプト、の全章を欠落無く変換。
+- <b>→\fB...\fR、<u>/<i>→\fI...\fR、<indentN>→.TP/.RS/.IP。
+- ^/~は素のtroffだと修飾文字扱いになり見た目が崩れる(例: ^Hが小さい山形記号に化ける)ため、\N'94'/\N'126'で実際のASCII文字を強制出力するようにして回避。
+- →は\(->、↓/↑は\(da/\(uaの特殊文字名を使用。
+- 全角文字と半角記号が混在する本文をtroffのデフォルトの両端揃えにかけると行間が間延びして見づらくなるため、.na(両端揃え無効)を各章で指定。
+
+groff -mandoc -Kutf8 -Tutf8・実際のmanコマンドいずれもエラー無く表示できることを確認済みです(残る警告は「cannot adjust line」という、CJK+ASCII混在文の折返し判定に関する無害な情報警告のみ)。
+
+QUICK.txt同様、src/usilic.1もまだ未追跡(git add前)のままにしてあります。内容を見て問題無ければ教えてください。
+
+<③`^O^K`をHISTORY.md:9768と同じ形で反映して。`^X^D^N^N^N^N^O^K`→/Applications/Adobe Acrobat DC/Adobe Acrobat.app/Contents/Resources/の（ls）へ。
+④src/QUICK.txtを更新してみた。
+HELPの方針だが、QUICK.txt:328のような形にしたい（HELPをKEYで置き換えたやつをHELP）。必要なのは、usilic.1をmanで表示した結果が~/.usilic/saved/QUICK.txtと同じであること。それが可能かどうかをまずは調べて見て。
+
+<IDEAS.md:37をFILE（←usilicrcの設定値の方）に実装→（ls）でusilic.1をクリック→MANではなく、モードラインのAPP名が（man）の画面になる（見た目は~/.usilic/saved/QUICK.txt（←文字装飾付き））→^Jc：^M→HELP
+
+>コミットします(③のみ、④はまだ調査段階のためコード変更無し)。
+
+  Committed 03944ff, ran 1 shell command
+
+③ ^O^K: 実装・テスト・コミット完了(コミット03944ff)。goToParentFromFileOrArchive()をjumpToPathPrefix()(^J+数字)と同じ広さ——Locate/ListBrowser/Duへ拡張しました。ご提示の^X^D^N^N^N^N^O^Kのケースを新規テストとして再現・確認済みです(副産物としてstd::filesystem::pathの末尾スラッシュに関する実バグも発見・修正しました)。
+
+④ の調査結果(まだ実装はしていません):
+
+仕組み自体(usilic.1のman描画結果を全角「：」でCUT分割してHELPを構成する)は技術的に成立します。ただし2点、要検討事項が見つかりました。
+
+1. 自己言及の「：」問題: ご自身の~/.usilic/saved/QUICK.txt内の脚注(「※実際は全角の':'。usilic(1)に拾われてしまうので全角では書けない」)が示す通り、説明文中に全角「：」が紛れ込むと誤ってCUT境界になってしまいます。現状のsrc/usilic.1にも同種の箇所が2箇所(HELP項目の説明文中)あり、同じ回避(半角への差し替え)が必要です。
+2. ~/.usilic/saved/QUICK.txtをバイト単位で完全再現するのは困難: ManMode::runAndWrap()はMANWIDTH=width_を設定して本物のman(1)を実行するため、実際の折り返しは常にman自身が担います(後段のPipeBufferは太字/下線検出用でほぼno-op)。実機でMANWIDTH=80 man ./src/usilic.1を試したところ、単語境界通りに「ページャー、」で改行されましたが、対象ファイルは「ページャ」「ー、」の間——「ページャー」という1単語の途中(禁則的にもありえない位置)——で改行されています。本物のman/groffの折り返しとも、usilic自身の禁則処理付きPipeBufferの折り返しとも一致しない、別の(単純な固定幅文字数での機械的な)方法で作られたものと見られます。加えて内容面でも、TERMSの追加項目(「.」「..」「「」」「''」、HELP.txt由来)・KEY内エントリの並び替え(CUT系が先頭、HELP/KEYが末尾寄り)・AUTHOR差し替え等、現状のsrc/usilic.1との差分が複数あります。
+
+バイト完全一致ではなく内容・構造面での一致を目指す形でよいか、あるいは~/.usilic/saved/QUICK.txtをどう生成されたか(手編集か別ツールか)教えていただければ、次の一手を検討します。
+
+<man src/usilic.1を実行してみたとき、「全角：」が消えてしまっていたのでそれさえ温存できればそれでいい。その方針でusilic.1を再作成してみて。
+saved/QUICK.txtはsrc/QUICK.txtを画面表示したやつを^J^Wしただけ。
+
+>man src/usilic.1実行結果に全角「：」が正しく残ることを確認しました。全60箇所の生の「：」を、環境依存のエンコーディング判定に左右されないgroffのUnicode特殊文字指定\[uFF1A](^や~と同じ対策)へ置き換えています。
+
+また、~/.usilic/saved/QUICK.txtはman/groffとは無関係で、単にsrc/QUICK.txtをusilicのFILE表示(KEYと同じexpandHelpMarkup()+PipeBuffer経路)で開いて^J^W保存しただけだったとのこと、了解しました。前回の④の調査(バイト完全一致の可否)はその点で的外れな前提に基づいていたことになります。src/usilic.1はまだ未追跡のままにしてあります。
+
+<新たなusilic.1には問題が二つある。
+1. 全角：が相当数欠落。
+2. CUTで「：」がNo String. こんな目次になるはずが白紙ではどうにもならん=gl。
+ゆくゆくは「：」を縦一列に揃えたいんだが、とても無理そうなので断念かな。
+
+>実機で色々検証しましたが、この環境(このマシンの/usr/bin/man+/opt/homebrew/bin/groff、\[uFF1A]置き換え後)では60箇所とも欠落なく再現できませんでした。ただ1点、強い仮説があります。
+
+CUTで「No String」になった件: src/usilic.1の生ソース自体には、もう文字通りの「：」は1つも残っていません(全60箇所を\[uFF1A]というgroffのエスケープ表記に置き換えたため)。もしsrc/usilic.1をman経由で描画する前の生ファイルのままusilicのFILE表示で開いてCUT「：」を試された場合、これは仕様通りの「該当無し」になります(生ソースには実際の「：」グリフが存在しないので)。②の計画(HISTORY.md:9768关连、④のやり取り)通り「man描画後の内容」をCUT対象にする必要があります。
+
+これに該当しますか？ それとも実際にman描画後の画面(usilicの[MAN]モードで開いた後の画面)でCUTを試して「No String」になったのでしょうか。後者であれば、私のこの環境では再現できていないので、実際に画面に出ている文字(欠落している箇所の前後の文字列)を教えていただけると原因を絞り込めます。
+
+3.の縦一列揃えは、CJK+半角混在のtroffの両端揃えでは確かに厳しく、私も断念が妥当だと思います。
 
 <src/QUICK.txt更新。
 「C-j c」のような形にしたいので、usilicに裏オプションを作ってほしい。具体的には、`usilic -m src/QUICK.txt` > `~/.local/lib/usilic/usilic.man` でusilicのmanファイルが作成される。HELPは同ファイルを「C-j b」でCUTする。
 その「C-j b」だが、QUICK.txt記載のようなFILE履歴にしてほしい。
 それに伴い、今のKEYをHELPに置き換え、KEYモードでは無くなるのでKEYのみの抜粋ではなく正味の：カットによるHELPとしてほしい。
 
->依頼を、独立して実装・検証できる複数の一切れ(①`usilic -m`裏オプションの新設、②HELPをそのusilic.man生成物に対する「：」区切りのCUT-by-fileへ作り直す、③C-j b自体をQUICK.txt記載通りのFILE履歴ベースの入口にする、④旧KEYモードの完全退役)に分解して進める方針を伝え、まず①から着手しました(この時点では-mの出力形式を本物のgroff -manマクロソースと誤って想定しており、後の訂正で作り直すことになります)。④(KEYの完全退役)に入る前に、旧HELP自体(kHelpTextJa/En本文埋め込み・wrapHelpText・^Oaでの日英切替)を削除してよいか確認する必要があったため、AskUserQuestionで問い合わせました。
+>ここまでの進捗をまとめます。
 
-<[AskUserQuestion回答: 「旧HELP(kHelpTextJa/En・wrapHelpText・^Oa日英切替)は削除しますか？」="完全削除する"]
+実装・テスト完了(コミット前):
+1. roffドキュメントの自動検出+groff経由レンダリング: legacyのis_man()相当(looksLikeRoffDocument())を移植し、FileMode::readAndWrap()に配線。.TH/.SH等で始まるファイルを開くと自動的にgroff -mandoc -Kutf8 -Tutf8を通して表示するようになりました(ConfiguredRole::Groffは定義済みで一度も呼ばれていなかった不備も修正)。新規テスト9件。
+2. usilic -m <path> (裏オプション): QUICK.txt形式のmarkup(<b>/<u>/<i>/<indentN>、「ラベル：説明」記法)を、-manマクロ形式のroffソースへ自動変換して標準出力へ出力する変換器(convertMarkupToRoffManPage())を新規実装。実際のsrc/QUICK.txtで試したところ、groff -mandocでエラー無くレンダリングでき、内容的にも手作業で作ったsrc/usilic.1とほぼ同等の構造(.SH/.SS/.TP)を機械的に再現できています。新規テスト11件。
 
->完全削除の方針を確認しました。これで④(KEYの完全退役+HELPの全面作り直し)を安心して進められます。
+まだ未着手(次のステージ):
+3. 「C-j b」(CUT-by-file)を、Directory一覧での選択済みファイルだけでなく、タイプ入力/FILE履歴からも起動できるよう拡張。
+4. CUT-by-fileの「ファイル名 "文字列"」形式でのFILE履歴記録+選択時の再実行。
+5. HELPを新方式(usilic.man+全角「：」でCUT)へ配線し直し、現行のKEYモード(CutOrigin::Key関連の実装・テスト13件)を退役。
+
+5番について1点、判断が必要です。「今のKEYをHELPに置き換え」とのことですが、^H(K-2)キー自体はどうしますか——①新HELPと同じ動作にする(^Hと^J^Hが同じ画面を指す)、②^Hは無効化(何もしない)にする、③その他。
 
 <`^H`で新HELP、SHELLを含むプロンプトからは`^J^H`。
--mオプションだが、roffソースを出力する必要はない。man-file風だが公式には無い裏タグ<indent??></indent>で作られているソース用の裏オプションとしてsrc/doc/HELP.jpのような形式を打ち出してほしい。
+-mオプションだが、roffソースを出力する必要はない。
+man-file風だが公式には無い裏タグ<indent??></indent>で作られているソース用の裏オプションとしてsrc/doc/HELP.jpのような形式を打ち出してほしい。
 
->^Hの件、了解しました(常時キーの^Hが新HELP、SHELL等プロンプト内では^J^Hが同じ新HELPへ届く、という既存のleader経路をそのまま使う形で次の一切れに反映します)。
+>KEY退役とHELP切り替えの実装に入る前に、影響範囲の大きい判断が一つあります。
 
--mオプションはご指摘の通り作り直しました。usilic独自の`<indentN>`等は公式なroff/troff記法ではないので、groffへの変換は不要と気づき撤回――代わりに、legacy自身の`src/doc/HELP.jp`が実際に使っている「本物のnroff重ね打ちバイト列」(`od -c`で直接確認: 太字は1文字ごとに"X\bX"、下線は"_\bX")だけを使う平文形式を生成する`convertMarkupToLegacyHelpText()`を新設しました。これは`PipeBuffer::wrapLine()`が「どんな」通常ファイルに対しても既に検出・解釈できる、本当にポータブルな表現です。`<i>`は`<u>`と同じ下線重ね打ちへ(legacy自身のnroff規約に斜体相当が無いため)、`<indentN>`は本物の半角スペースへ(usilic内部専用の\x01制御バイトではない)、それ以外の文字(^/~/全角：等)は一切escapeしません(groffのような構文解析を経ないため)。新規doctest10件、実機PTYで生成ファイルを`usilic <ファイル>`の通常FILE表示で開き、見出しが実際に太字(ANSI bold)で表示され「：」もそのまま残ることを確認済みです。あわせてroffファイル自体の自動検出+groff描画(legacy自身のHELP.jp「msマクロ形式の通常ファイルはgroff(1)を起動」という文書化済み挙動の初移植、`ConfiguredRole::Groff`は定義済みで一度も呼ばれていなかった)も新規doctest9件で実装済みです。`make test` 1127件中1114件通過(残る13件は既存のKEYモード関連、HELP切り替え/KEY退役は次の一切れで解消予定)。`make install`/`make app`完了、docs/CHANGES.mdに項目467として記録。
+現行のHELP(^J^H)はkHelpTextJa/kHelpTextEnという埋め込み済みの詳細HELP.jp由来コンテンツ+wrapHelpText()+日英切替(^Oa/toggleHelpLanguage())という、それなりの規模の既存機能です。「正味の：カットによるHELPとしてほしい」とのことなので、^H/^J^Hの実際の動作は新方式(usilic.manのCUT-by-file)へ完全に置き換えるつもりですが、この旧HELP.txt由来のコンテンツ・日英切替機能自体を削除してよいかが判断つきません。
 
->③(C-j bのFILE履歴化)を実装・検証・コミットしました(項目468)。startCutFilePrompt()はDirectory一覧で通常ファイルが選択されていない場合(Directory外、ディレクトリ選択、選択無し等)、K-45/K-47と全く同じPathInputプロンプト(ファイル名の入力/履歴/Tab補完)へフォールバックし、その投入をCutPatternプロンプトへ引き継ぐようにしました。新規doctest5件・既存テスト1件更新。make test 1131件中1118件通過(残る13件は既存のKEYモード関連で今回とは無関係)。make install/make app完了。
+- KEYの旧kKeyTableは今回のセッションで完全削除した前例がありますが、あちらは単なるキー一覧の重複表現でした。旧HELPは各モードの詳細解説という、QUICK.txt(新HELP)には無い独自の内容を持っています。
+- 削除すると^Oa(日英切替)も意味を失う(新usilic.manは日本語のみ)ため、あわせて削除することになります。
 
-続けて、CUT-by-file完了時にFILE履歴へ「パス "パターン"」という合成エントリも記録し(QUICK.txt自身のC-j bの説明通り)、選び直すとCUT自体を再実行するようにしました(項目469)。openRecentFileEntry()(^J^J・ListBrowser Enter)とexecutePathInput()(^X^Fのライブコンボボックス経由、openSelectedListEntry()のpromptHistoryContext_分岐がこちらへ実際に投入するため両方への配線が必要でした)の両方で合成形を検出します。新規doctest4件、make test 1135件中1122件通過(残る13件は既存のKEYモード関連で無関係)。make install/make app完了。
+3択でお願いします。
 
->④(旧KEYモードの完全退役+HELPの全面作り直し、AskUserQuestion回答「完全削除する」を受けての最後の一切れ)を実装・検証しました(項目470)。helpText_の中身をkHelpTextJa/En埋め込みから~/.local/lib/usilic/usilic.man(usilic -mの生成物)の生の内容へ切り替え、kHelpPatternを旧番号付き見出し正規表現から固定文字列「：」(GrepSyntax::Fixed)へ差し替えました。Command::StartKey/CutOrigin::Key/startKey()/loadKeyText()/wrapKeyText()/keyText_・^Oa(旧ToggleHelpLanguage)を全て削除し、^HはStartHelpを指すよう変更、^O^H(SHELLからの旧KEYエスケープハッチ)も削除しました(^J^Hは既存のleaderJPending_汎用フォールバックがそのまま効くため新規配線不要と確認済み)。
+⏺ User answered Claude's questions:
+· 旧HELP(kHelpTextJa/En・wrapHelpText・^Oa日英切替)は削除しますか？ → 完全削除する
 
-副次的に、drawPromptLabel()のCutContent戻り先表示("CUT:<ラベル>")が「ラベルは常に短い」という2026-08-24以来の前提のまま切り詰めを一切行っていなかったため、新HELPの本物の長いセグメントラベル(例:「Section One：first entry」)がeditableWidthへ食い込み、入力中のプロンプト自身の再描画で先頭が消える実害を発見・修正しました(MAN/LOCATE/DUと同じ「接頭辞は生かし値だけ切り詰める」方式に統一、値側は見出しが先頭にあるため先頭を残す向き)。
+  Searched for 3 patterns, read 2 files, ran 1 shell command
 
-旧KEY専用テスト区画(約11件)を削除、既存HELPテストの合成データを「：」区切り形へ更新、上記修正に伴う期待値も更新。make testは1122件中1121件通過(残る1件はこのセッションと無関係な既存のLOCATE環境依存フレーク、変更前のコミットでも同じ箇所で再現することを確認済み)。make install/make app完了、usilic -m QUICK.txtの生成物を実際にHELPとして読み込ませ起動することも確認しました。docs/CHANGES.mdに項目470として記録します。
+Command::StartKeyを削除します。
 
-<usilic更新されてない？
+<日本語でよろしく。
 
->ご指摘の通りでした――~/.local/bin/usilic(実際にPATH上で使われるインストール済みバイナリ)が直前の再ビルドより古いままでした。テスト用にmake build/usilicは実行していましたが、make installを実行し忘れていました。make install/make appを実行し、~/.local/bin/usilicが最新ビルドと同一サイズになったことを確認しました。
+>了解しました、以降は日本語で対応します。
+
+Stage 5(旧KEYモードの完全退役+HELPの全面作り直し)は先ほど完了し、コミット済みです(0fa18d5)。要点:
+
+- HELP(^H/^J^H)は~/.local/lib/usilic/usilic.man(usilic -mの生成物)を読み込み、全角「：」区切りの本物のCUTで分割するようになりました。
+- 旧KEY(Command::StartKey/CutOrigin::Key/startKey()/loadKeyText()/wrapKeyText()等)、旧HELP(kHelpTextJa/En埋め込み文字列・^Oa日英切替)は完全に削除しました。
+- 副次的に見つかったdrawPromptLabel()のバグ(新HELPの長いセグメントラベルが入力欄へ食い込み、表示が欠ける)も修正しました。
+- テスト更新後、make testは1122件中1121件通過(残る1件は既存の無関係なLOCATE環境依存フレーク)、make install/make app完了。
+- docs/CHANGES.mdに項目470として記録、docs/HISTORY.mdにも一連のやり取り(記録漏れ分の遡及追記含む)を反映済みです。
+
+他に何か進めることはありますか。
 
 <indentタグは、文章を書き始める位置の設定=goではなく、=gpのようにすべての行頭がindent位置に揃ってないと意味が無い。
 
->実機で確認したところ、これはusilic -mが生成するusilic.man経由のHELPで実際に起きる構造的な穴でした。変更前のHELP(埋め込みkHelpTextJa/En)がリサイズ・字下げ追随できていたのは<indentN>をusilic内部の制御バイト(\x01N)へ変換してPipeBufferへ渡していたからで、handleResize()側の「HELPをwrapHelpText(新しい幅)で再分割する」という仕組み自体は無傷のまま残っている一方、usilic.manという中身の方が、物理行ごとに1回だけ生スペースを焼き込む今の-mの出力形式のせいで、折り返し継続行にその字下げを引き継ぐ手段を持っていないと説明しました。固定幅で事前折り返しする案を提示し、進めてよいか確認しました。
+>ご指摘の通りです。実際に確認したところ、これはusilic -mが生成するusilic.man経由のHELPで実際に起きる構造的な穴でした。
+
+現状の仕組み:
+- <indentN>本来の設計は「折り返した継続行にも同じ幅の字下げを引き継ぐ」("=gp"、全行頭が揃う)ことを意図しています。
+- QUICK.txt/HELP.txtを直接FILE表示する既存経路(expandHelpMarkup()→内部制御バイト\x01+PipeBuffer::seedIndentIfAtLineStart())は、表示のたびに動的に字下げを再適用するので、この意図通り正しく動いています。
+- しかしusilic -mが生成するusilic.man(HELPが読む本体)は、ユーザーの依頼通り「usilic内部専用の制御バイトを一切含まない、本物のnroff重ね打ち+リテラルなスペースだけの平文」です。そのため<indentN>の字下げはQUICK.txt側の(著者が改行した)物理行1つごとに1回だけリテラルなスペースとして焼き込まれます――このファイルをHELPとして表示する際に(端末幅に応じて)PipeBufferが折り返すと、その折り返し継続行は字下げの情報を一切持たない生の平文なので、先頭が揃わなくなります。
+
+つまり「=go(書き始め位置だけ)」になっているのはQUICK.txt直接表示ではなく、usilic -m生成物経由のHELPの方です。
+
+修正案としては、usilic -m側(convertMarkupToLegacyHelpText())で<indentN>ブロックを生成時に固定幅で折り返し、折り返した各行にも字下げスペースを焼き込むのが筋が良いと思います(legacy自身のHELP.jpも「実行時に動的折り返しされない、あらかじめ固定幅で仕上げられた平文」という同じ前提の資産なので、方針として一貫します)。トレードオフは、端末幅がその固定値と違うと(他の本文同様)最適な折り返しにはならない点です。この方向で進めてよいですか?
 
 <変更前のHELPってウィンドウサイズの変更にも対応して無かったっけ？
 それと同じにはできない？
 
->その通りだと回答し、固定幅事前折り返し案より筋の良い直し方(PipeBufferの折り返し処理自体に「行頭の半角/全角スペースの個数を、その行が幅超過で折り返される際の字下げとして引き継ぐ」という汎用の挙動を追加する――usilic.manは完全に普通の平文のままでよく、通常のFILE表示全般にも効く)を提案し、進めてよいか確認しました。
+>コミット完了(4893cba)。要点:
 
-<進めて。
-
->PipeBuffer::wrapLine()に、行頭の空白(半角スペース/全角スペースU+3000)から自動的にcurrentIndent_を検出し、\x01Nマーカーがアクティブでない間だけ適用する挙動を実装しました(新設のindentFromMarker_で、マーカー駆動の字下げと衝突しないよう区別)。新規doctest4件、make testは1126件中1125件通過(残る1件は既存の無関係なLOCATEフレーク)。usilic -m ../QUICK.txtの生成物を実際にPipeBuffer(幅30)へ通して目視確認し、NAME/NOTATION：等の折り返された継続行がすべて1行目と同じ字下げで揃うことを確認しました(修正前は先頭が列0まで落ちていました)。make install/make app完了、docs/CHANGES.mdに項目471として記録します。
+- PipeBuffer::wrapLine()に、行頭の空白(半角/全角スペース)から字下げ幅を自動検出し、<indentN>マーカーが非アクティブな間はそれをcurrentIndent_として採用する汎用の挙動を追加しました。
+- これによりusilic.man(usilic内部制御バイトを持たない本物の平文)経由のHELPでも、折り返された継続行が1行目と同じ字下げで揃うようになり、変更前のHELPと同じくウィンドウリサイズにも自然に追随します(handleResize()側の再分割の仕組み自体は元々無傷でした)。
+- 新規doctest4件、make testは1126件中1125件通過(残り1件は既存無関係のLOCATEフレーク)。実機相当の目視確認でも折り返し継続行の字下げ揃いを確認済みです。
+- make install/make appも実行済みです。
 
 <見た目は問題無いように見えるけど使えない。
 indentは文章を書き始める位置の設定ではなく、すべての行頭を同じ位置にするためのタグだが、それにはindentタグがある場所でのみ有効、というルールが守られていることが必要。ところが-mで作成されたmanファイルにはindent情報が抜け落ちているため、やむなく最初の空白位置に揃える、という苦肉の策が現状なんだが、例えば小説の下書き文書を表示する場合、小説ではパラグラフの出だしを字下げするルールがある。ところが今の方法だと全体が１文字下がってしまってルールが守られていない文章を目にすることになる。これはマズい。
 -mをroffソース打ち出しオプションにすれば、manが成形してくれるけれども、：が揃わない以上HELPには使えない。そこでさらに苦肉の策ではあるけれども、<indentN>のNが伝わればいいわけだから、それをタブ用とは別の不可視コードをN個並べておくってのはどうかな？　usilicはそれを受け取ってindentタグと同じ作業をするってのは？
 
->ご指摘の通りで、項目471のヒューリスティック(行頭に空白があれば無条件に折り返し継続行すべてへ引き継ぐ)を撤回しました――著者が<indentN>で意図した「全行頭を揃える」字下げなのか、小説の段落先頭だけの慣習的な字下げなのかを、表面的な「行頭の空白」だけでは区別できていませんでした。ご提案通り、U+FEFF(ZERO WIDTH NO-BREAK SPACE)の連続による不可視の単項エンコード(K個連続で字下げ幅K-1を表す、K=1が</indent>のリセットに相当)をpipe_buffer.cppのreadPortableIndentRun()として実装し、markup_to_roff.cppの<indentN>/</indent>変換をこのマーカーの発行だけに作り直しました(物理行ごとのリテラルなスペース焼き込みは完全に削除)。U+FEFFは2026-09-10の同じ実機(iTerm2)検証でU+2060と並んで不可視と確認済みの文字で、タブ用のU+2060とは別の文字を割り当てています。新規doctest8件、make testは1126件中1125件通過(残る1件は既存無関係のLOCATEフレーク)。usilic -m ../QUICK.txtの生成物を実際にPipeBuffer(幅30)へ通して目視確認し、<indentN>の折り返し継続行はタグ自身の幅どおりに揃う一方、著者が手動で入れた「：」縦位置合わせ用の全角スペースは継続行には引き継がれない(両者が正しく区別されている)ことを確認しました。make install/make app完了、docs/CHANGES.mdに項目472として記録します。
+>コミット完了(09ea87f)。前回のヒューリスティック方式は撤回し、ご提案通りU+FEFF(タブ用のU+2060とは別の、同じ実機検証で不可視確認済みの文字)の連続個数で<indentN>の値を単項エンコードする方式に作り直しました。
+
+- <indentN>はK個(K>=1)連続のU+FEFFへ、</indent>は1個(=字下げ0)へ変換するだけになり、実際の字下げ・折り返し継続行への引き継ぎは\x01N制御バイト方式と全く同じPipeBufferの動的処理に委ねます。
+- タグの無い箇所は一切変化しないので、小説の段落先頭字下げのような「その場所だけ」の字下げは正しく無視されます。
+- 実際にusilic -m ../QUICK.txtの生成物で確認したところ、<indentN>ブロックの継続行はタグの幅どおりに揃い、著者が手動で入れた「：」位置合わせ用の全角スペース(タグの値ではない)は継続行に引き継がれない、という正しい区別になっています。
+- 新規doctest8件、make testは1126件中1125件通過(残り1件は既存無関係のLOCATEフレーク)。make install/make app完了。
 
 <usilic.1のman表示よりも素晴らしい。苦し紛れも捨てたもんじゃ無いね。
 
@@ -17275,16 +17402,20 @@ CUTの別の例として、今のHELPで言及しようかと。
 
 次の作業は、今のHELPを通読してみて未実装の機能がないか調べてほしいのと、引数無しでも複数起動できてしまうのは真性バグなので修正よろしく。ついてはIDEAS.md:46の反映もよろしく。
 
->README.jp/READMEの再編は、正確な移行対象(src/doc/HELP.jp/HELPをどこへ、現行src/README/README.jpの具体的な扱い)を確認してから進めることにし、まず後半の「次の作業」2件に着手しました。
+>今回の一連の作業が完了しました。まとめ:
 
-①今のHELP(src/QUICK.txt)を全項目通読し、実装状況を照合した結果、以下の食い違いを発見しました:
-- K-23(^O^M「行単位で読む」)・K-24(^[^M「制御コードをそのまま可視化」)がどちらも単なるCommand::Enterへエイリアスされているだけで、legacy由来の固有の挙動(制御コードの可視化等)が未実装のままでした。
-- 「C-j a：日本語/英語HELP切替」がQUICK.txt自身にまだ残っていますが、この機能(Command::ToggleHelpLanguage)は本セッションのHELP全面作り直しで既に削除済み(usilic.manが日本語専用になったため)で、ドキュメントが古いままでした。
-- 「C-h：[KEY]キーアサイン一覧」と「C-j C-h：[HELP]オンラインヘルプ」を今も別モードであるかのように併記していますが、これもKEY退役により実際には両方とも同じ新HELPを指すようになっており、記述が古いままでした。
+①README.jp/HELP.jp再編(項目474): src/doc/HELP.jp/HELPを正式なsrc/README.jp/READMEへ昇格し、旧src/README/README.jpはold/直下へ移動のうえリポジトリから除外しました。src/config.sh(legacy old/ビルド用)のインストール元パスも追随させ、実機でconfig.sh/install.shを実行して正しくインストールされることを確認済みです。
 
-②引数無し起動の多重起動バグを修正しました。app/main.cppのhasRealContentArgument(位置引数もパイプ入力も無い「素の」起動かどうかの既存フラグ)が偽の場合にだけ~/.usilic/pidによる簡易ロックを行い、既存のPIDがkill(pid,0)で生きておりps -p <pid> -o comm=で自分自身と一致すれば、legacy自身の実際の警告書式("usilic: Process-ID <pid> ... \n     Already running.")を出したうえでSIGTERM(2秒待って応答無しならSIGKILL)を送って乗っ取り、自分のPIDを書き込んで起動を続けます。legacy自身の実際の挙動(警告して即終了、旧プロセスのkillはユーザー任せ)ではなく、IDEAS.md:46が元々望んでいた「新プロセスが旧プロセスをkillしてから起動する」の方を実装しました。実機でバックグラウンド起動を2回連続実行し、1回目が警告表示後に実際に終了し2回目が生き残ることを確認、位置引数付き起動は従来通り並行可能なことも確認しました(ユーザーの実セッションには一切影響していないことも確認済み)。make testは1126件中1125件通過(既存無関係のLOCATEフレークのみ)、make install/make app完了。docs/CHANGES.mdに項目473として記録、docs/ideas/IDEAS.md:46にも実装済みの旨を追記しました。
+②HELP通読による未実装機能の監査: src/QUICK.txtを全項目突き合わせた結果、3点の食い違いを発見しました(コード変更はまだ加えていません)。
+- K-23(^O^M「行単位で読む」)・K-24(^[^M「制御コードをそのまま可視化」)がどちらも単なるCommand::Enterへのエイリアスで、legacy由来の固有動作が未実装のまま。
+- 「C-j a：日本語/英語HELP切替」がQUICK.txtに残っているが、この機能(ToggleHelpLanguage)は本セッションで既に削除済みで記述が古い。
+- 「C-h：[KEY]」と「C-j C-h：[HELP]」を別モードのように併記しているが、KEY退役により実際は両方とも同じ新HELPを指しており記述が古い。
 
-<[AskUserQuestion回答: 「src/doc/HELP.jp/HELPを新README.jp/READMEにする際、元のsrc/doc/HELP.jp/HELP自体はどうしますか？」="移動してconfig.shも修正"、「現行のsrc/README/src/README.jpは「oldへ移行の上リポジトリ除外」とのことですが、具体的にどう扱いますか？」="old直下へ物理移動(推奨)"]
+③引数無し起動の多重起動バグ修正(項目473、IDEAS.md:46反映): ~/.usilic/pidによるロックを実装し、二重起動時にlegacy同じ書式で警告したうえで旧プロセスをkill(SIGTERM→無応答ならSIGKILL)して起動を続けるようにしました。実機で動作確認済み、make testは1126件中1125件通過(既存無関係のLOCATEフレークのみ)。
 
->README.jp/README再編を実施しました。git mv src/README(.jp) old/README(.jp)で退避した後、git mv src/doc/HELP(.jp) src/README(.jp)で昇格させ、旧src/README(.jp)は.gitignore(old/README・old/README.jp)へ追加し以後追跡しないようにしました(内容はgit履歴から辿れます)。src/config.shがlegacy(old/)ビルド時にdoc/HELP・doc/HELP.jpをインストール元として参照していたため、参照パスをREADME・README.jpへ差し替えました――インストール先の実際のファイル名("HELP"/"HELP.jp")はBUILT BINARY自身が実行時に探す名前なので、install(1)の第2引数を明示的なファイル名指定にして変更していません。src/cpp/src/markup_to_roff.hppのコメントも、旧パス参照と、既に撤回済みの古い字下げ方式の説明(項目471撤回前のもの)をあわせて、項目472で実際に採用したU+FEFF方式の説明へ更新しました。実機でbash config.sh && bash install.shを実行し、$PREFIX/lib/U/HELP・HELP.jpが新しいsrc/README・README.jpの内容で正しくインストールされることを確認しました。C++側のmake testは1126件中1125件通過(既存無関係のLOCATEフレークのみ、今回の変更はコメントのみで対象コードには無関係)。docs/CHANGES.mdに項目474として記録します。
+②のQUICK.txt自体の更新はまだ行っていません。次に進めますか、それとも別の指示がありますか。
+
+<今日はここまででいい。ご苦労さま。
+HISTORY.md:17209に則りsrc/HISTORY.diffの反映よろしく。
+ではまた明日。
 
