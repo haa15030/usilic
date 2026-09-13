@@ -50,6 +50,16 @@ enum class Command {
   PageUp,
   PageDown,
   Enter,
+  // K-23(^O^M、M_fp、「行単位で読む」)/K-24(^[^M、M_code、「そのまま
+  // 読む」)、いずれも(ls)専用(QUICK.txt自身の"<(ls)>"の注記参照)。
+  // 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
+  // して")――openSelectedEntryNoWrap()/openSelectedEntryRaw()自身の
+  // コメント参照。Directoryモード以外では、legacy自身のcr値が読み込み
+  // ループの中では実質cr=0(素のEnter)と同一だった(alloc_buff()を
+  // 追跡して確認済み)のに合わせ、単なるCommand::Enterへフォール
+  // バックする。
+  ReadFileNoWrap,
+  ReadFileRaw,
   Back,
   // ';'/':' -- ユーザーによって直接確認済み(2026-08-03、最初は
   // これが何らかの「関連ファイル」ジャンプだという誤った推測が
@@ -1748,6 +1758,9 @@ class Application {
   bool playRecordedMacro();
 
   bool openSelectedEntry();
+  // Command::ReadFileNoWrap/ReadFileRaw自身のコメント参照。
+  bool openSelectedEntryNoWrap();
+  bool openSelectedEntryRaw();
   bool openSelectedSegment();
   bool openSelectedArchiveEntry();
   // 入れ子のアーカイブサポート(docs/ideas/IDEAS.md自身の、C++移植

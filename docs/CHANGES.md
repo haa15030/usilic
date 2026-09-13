@@ -731,6 +731,45 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      (残る1件は既存の無関係なLOCATE環境依存フレーク)。`make install`/
      `make app`完了。
 
+478. **2026-09-14: （ls）専用のK-23(^O^M「行単位で読む」)/K-24
+     (^[^M「制御コードをそのまま可視化」)を実装 ―― これまで両方とも
+     単なるCommand::Enterへのエイリアスだった**
+   - **直接のユーザー依頼**: 「（ls）での^O^M/^[^Mを実装して」。2ターン
+     前の「今のHELPを通読して未実装の機能がないか調べてほしい」という
+     監査依頼で発見していた項目。
+   - **調査**: legacy自身の実際の実装(`alloc_buff()`)を追跡した結果、
+     K-23(cr=2、M_fp)は読み込みループの中では実質cr=0(素のEnter)と
+     同一になり、唯一の差は「読み込み中の中断キー入力チェックをする
+     かどうか」だけ(このポートの読み込み方式には対応する概念が無く、
+     現代的にはほぼ意味が無い)と判明した。AskUserQuestionでK-23の
+     意図を確認し、「行の折り返しを行わない」(`less -S`と同じ)という
+     現代的な解釈を採用することにした。K-24は既存のQUICK.txt自身の
+     説明("^A^B^Cはハイライト表示のABCで表示")で明確だった。
+   - **実装**: `PipeBuffer`に`detectOverstrike`コンストラクタ引数
+     (既定true)を追加――falseの間はnroff重ね打ち("X\bX"=太字、
+     "_\bX"=下線)の解釈を一切行わず、バックスペースバイト自体も他の
+     制御バイトと全く同じ「素の文字」経路へ落とす(`ContentView::
+     renderLine()`自身の既存の制御バイト表示規約でそのまま可視化
+     される)。`FileMode`に`loadFileNoWrap()`/`loadFileRaw()`を新設
+     (`loadFile()`と共有の`loadFileImpl()`実体、`noWrapMode_`/
+     `rawControlCodesMode_`という2つの新設メンバーフラグを見て
+     `readAndWrap()`が実効的な幅(前者は`1<<20`という実質無限の幅、
+     長い行の折り返し自体を無くす――水平スクロールという新規UIは
+     実装しない、`ContentView::renderLine()`自身の既存のmaxCol打ち
+     切りにそのまま任せる)/`detectOverstrike`を選ぶ)。両フラグは
+     `reflow()`の再折り返しでも自然に効き続ける。`Application`に
+     新設の`Command::ReadFileNoWrap`/`ReadFileRaw`と
+     `openSelectedEntryNoWrap()`/`openSelectedEntryRaw()`を追加し、
+     ^O^M/^[^Mの既存のディスパッチ(以前は両方とも`Command::Enter`
+     を返すだけだった)をこれらへ差し替えた。Directoryモード以外
+     (QUICK.txt自身の"<(ls)>"の注記通り(ls)専用の機能)では単なる
+     `Command::Enter`へフォールバックし、従来の挙動を保つ。
+   - **検証**: 新規doctest7件(PipeBuffer自身の`detectOverstrike`3件、
+     Application経由の折り返し無し/生バイト表示/ディレクトリでの
+     拒否/Directory以外でのフォールバックの4件)。`make test`は
+     1140件中1139件通過(残る1件は既存の無関係なLOCATE環境依存
+     フレーク)。`make install`/`make app`完了。
+
 ## 2. KEY(キー一覧 / HELP)
 
 58. **2026-07-29: KEY/ヘルプモード(^J^H)をApplicationへ配線 ―

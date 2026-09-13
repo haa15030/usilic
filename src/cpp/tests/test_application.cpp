@@ -296,6 +296,81 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) on a regular file switches to F
   CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
 }
 
+// 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
+// して"、QUICK.txt自身のK-23/K-24自身の説明参照)。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap): a line longer than the display width is NOT "
+                           "wrapped into multiple lines (unlike a plain Enter)") {
+  std::string longLine(200, 'x');
+  { std::ofstream(root / "long.txt") << longLine << "\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("long.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::ReadFileNoWrap));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.activeContentView().lines().size() == 1);
+  CHECK(app.activeContentView().lines()[0].text == longLine);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) on the SAME long-line file wraps it into multiple lines "
+                           "(confirms the NoWrap test above is actually exercising different behavior)") {
+  std::string longLine(200, 'x');
+  { std::ofstream(root / "long.txt") << longLine << "\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("long.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.activeContentView().lines().size() > 1);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileRaw): an \"X\\bX\" bold-looking byte sequence is left "
+                           "completely raw (unlike a plain Enter, which collapses it into a Bold "
+                           "AttributeRun)") {
+  std::string raw = "f";
+  raw.push_back(8);  // backspace
+  raw += "f\n";
+  { std::ofstream out(root / "raw.txt", std::ios::binary); out << raw; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("raw.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::ReadFileRaw));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.activeContentView().lines().size() == 1);
+  std::string expected = "f";
+  expected.push_back(8);
+  expected += "f";
+  CHECK(app.activeContentView().lines()[0].text == expected);
+  CHECK(app.activeContentView().lines()[0].attributes.empty());
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap)/(ReadFileRaw): refused on a directory entry") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  CHECK_FALSE(app.handleCommand(Command::ReadFileNoWrap));
+  CHECK_FALSE(app.handleCommand(Command::ReadFileRaw));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap)/(ReadFileRaw): outside Directory mode, falls "
+                           "back to plain Enter's own behavior for that mode") {
+  REQUIRE(app.loadHelpText("Section One：first entry\ncontent\n"));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+
+  CHECK(app.handleCommand(Command::ReadFileNoWrap));
+  CHECK(app.currentMode() == ApplicationMode::CutContent);  // same as a plain Enter on a CUT segment
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) is a no-op while already in File mode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");

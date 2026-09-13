@@ -17451,3 +17451,16 @@ HISTORY.md:17209に則りsrc/HISTORY.diffの反映よろしく。
 
 ⑥はgoToFileSelector()/goToParentFromFileOrArchive()/jumpToPathPrefix()がいずれもCut/CutContentを「常にFileのバッファ亜種のCUTから来た」ものとして扱い無条件にfileMode_.currentFile()を読んでいたのが原因でした(項目476)――HELP/MAN/LOCATE/DU/Directory起点のCUTには成り立たない前提で、一度も実ファイルをFileModeで開いていないセッションではfileMode_.currentFile()が空のまま常に失敗していました。「一度でも(ls)で何か開けばOK」に見えたのは、それがfileMode_.currentFile()を初めて非空にする身近な操作だったためです。Cut/CutContentへ入る前のdirectoryMode_自身の状態が無傷のまま残っていることを利用し、cutOrigin_ != CutOrigin::Fileの場合はそれぞれの意味論に応じてdirectoryMode_へフォールバックするようにしました。新規doctest8件(⑥4件+⑤の実機確認、既存2件の期待値更新も含む)、make testは1132件中1131件通過(既存無関係のLOCATEフレークのみ)、make install/make app完了。
 
+<確認OK。
+ここからはちょっと大きめの方針転換を。
+⑦usilic引数無し起動はSTDIN入力ページャー機能のみとする。通常ファイル引数も同様で~/.usilic/historyへのアクセスは無し。ディレクトリ引数のみ、FILE/DIR/PROGRAM等のリストを共有する。^Rで発動の履歴のみ真っ新で起動してはどうかなと。
+現状はusilic終了時に~/.usilic/historyに書き戻す形だが、それだとkill -9（あるいは停電等）でデータも消失する。そこで、FILE/DIR/PROGRAMに項目が加わるたびに同ファイルへ記録、というのは？　複数のターミナルでusilicを起動していたとしても、同時には操作できないので競合は除外できるうえに前出の事故が起きても履歴は失われない。
+以上が可能かどうか調べてほしい。
+⑧マニュアル関連では、README改めTUTORIALとしてFILE履歴には真っ新起動の時点で~/.local/lib/usilic/TUTORIAL "^　[0-9]^H[0-9]+\."が登録済み、usilic内での発動は^Tで行う。ついては~/.usilic/historyを~/.usilic/history.BAKとしておいたので反映してみてほしい。
+⑨（ls）での^O^M/^[^Mを実装して。
+以上よろしく。
+
+>⑦の投稿はコード変更を伴わない調査のみ実施しました。現状を確認したところ、consultHistoryOnStart(main.cpp)=positionalArgs.empty()が~/.usilic/history全体(FILE/DIR/PROGRAM等の全リング+GUI設定+文字コード)の読み込み・書き出し「両方」を一括制御しており、現状は「引数無し=全部あり」「ファイル/ディレクトリ引数=全部なし」という2択でした。ご提案は「ディレクトリ引数だけ全部あり」「引数無し/ファイル引数=STDINページャーのみ、履歴なし」への転換で、技術的には十分実現可能です(positionalArgsが単一のディレクトリかどうかで判定を差し替えるだけ)。書き戻しタイミングの変更(pushRecent()のたびに即座に~/.usilic/historyへ書く)も実現可能で、Historyクラス自体は意図的にファイルI/Oを持たない設計なので、pushRecent()完了時に呼ばれるコールバックをmain.cpp側に追加する形が自然です。ただし1点、ご自身の「複数ターミナルは同時操作できないので競合は除外できる」という前提だけではカバーしきれない、別種のデータ消失リスクを見つけました: 複数のusilicを同時に起動したままにしておくと(同時に「操作」しなくても)、片方のターミナルAで新しいFILEエントリを追加→即座に~/.usilic/historyへ書き込み→その後ターミナルB(Aの追加より「前」の古い履歴を起動時に読み込んだまま)で何か別のエントリを追加→Bも自分の(Aの追加を知らない)メモリ上の全リングをまるごと上書き書き込み、という順序になると、Aが追加した項目がBの書き込みで静かに消えてしまいます(バイト単位の同時書き込み競合ではなく、各プロセスが自分の全体スナップショットで上書きし合う形の消失です)。この点を踏まえたうえで実装を進めてよいか、あるいは別の対策(他プロセスの追加分を各書き込み前にマージする等)を検討すべきか、判断をお願いします。
+
+⑨から先に実装しました。K-23(^O^M)/K-24(^[^M)を(ls)専用で実装しました(項目478)。legacy自身の実際の実装(alloc_buff())を追跡した結果、K-23は読み込みループの中では実質K-22(素のEnter)と同一で、唯一の差は「読み込み中の中断キー入力チェックの有無」(現代の実装ではほぼ意味が無い)と判明したため、AskUserQuestionで意図を確認し「行の折り返しを行わない」(less -Sと同じ)という現代的な解釈を採用しました。K-24は既存のQUICK.txt自身の説明("^A^B^Cはハイライト表示のABCで表示")通り実装しました。PipeBufferにdetectOverstrike引数、FileModeにloadFileNoWrap()/loadFileRaw()、Applicationに新設のCommand::ReadFileNoWrap/ReadFileRawを追加し、^O^M/^[^Mの既存のディスパッチ(以前は両方ともCommand::Enterへのエイリアス)を差し替えました。新規doctest7件、make testは1140件中1139件通過(既存無関係のLOCATEフレークのみ)、make install/make app完了。⑧はTUTORIAL化・履歴事前登録・^T連携という複数の設計判断を伴うため、AskUserQuestionで2点(README英語版の扱い→「TUTORIAL.en等で対にする」)を確認済みで、続けて実装します。
+

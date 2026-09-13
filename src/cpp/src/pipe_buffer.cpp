@@ -5,8 +5,8 @@
 
 namespace fm {
 
-PipeBuffer::PipeBuffer(Charset::Encoding encoding, int width, long maxBytes)
-    : encoding_(encoding), width_(width), maxBytes_(maxBytes) {}
+PipeBuffer::PipeBuffer(Charset::Encoding encoding, int width, long maxBytes, bool detectOverstrike)
+    : encoding_(encoding), width_(width), maxBytes_(maxBytes), detectOverstrike_(detectOverstrike) {}
 
 void PipeBuffer::feed(const std::string &bytes) {
   rawPending_.append(bytes);
@@ -508,7 +508,13 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     int keepStart = -1, keepBytes = 0;
     Display::Attribute attr = Display::Attribute::Bold;
 
-    if (c == '_' && i + 1 < n && static_cast<unsigned char>(convertedLine[i + 1]) == 0x08) {
+    // detectOverstrike_自身のコメント参照: falseの間はこのブロック
+    // 全体を丸ごとスキップする(keepStartは-1のまま)――バックスペース
+    // バイト自体を含め、以下の素の文字パスへ無条件にフォールスルー
+    // させる。
+    if (!detectOverstrike_) {
+      // no-op -- keepStart stays -1, falls through to the plain character path below.
+    } else if (c == '_' && i + 1 < n && static_cast<unsigned char>(convertedLine[i + 1]) == 0x08) {
       if (i + 3 < n && convertedLine[i + 2] == '_' &&
           static_cast<unsigned char>(convertedLine[i + 3]) == 0x08) {
         int pos = i + 4;

@@ -640,3 +640,49 @@ TEST_CASE("\\x02<N> italic marker: a bold overstrike character (char+BS+char) IN
   CHECK(sawBold);
   CHECK(sawItalic);
 }
+
+// 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
+// して"、QUICK.txt自身の"C-[ C-m：<(ls)> 制御コードをそのまま可視化
+// （ls）"): detectOverstrike=falseのコンストラクタ引数を検証する。
+TEST_CASE("detectOverstrike=false: a bold-looking \"X\\bX\" byte sequence is left completely raw "
+          "(the backspace byte itself passes through as an ordinary character), not interpreted "
+          "as an overstrike run") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20, /*detectOverstrike=*/false);
+  std::string raw = "f";
+  raw.push_back(8);  // backspace
+  raw += "f\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 1);
+  std::string expected = "f";
+  expected.push_back(8);
+  expected += "f";
+  CHECK(buf.lines()[0].text == expected);
+  CHECK(buf.lines()[0].attributes.empty());
+}
+
+TEST_CASE("detectOverstrike=false: an underline-looking \"_\\bX\" byte sequence is also left raw") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20, /*detectOverstrike=*/false);
+  std::string raw = "_";
+  raw.push_back(8);
+  raw += "f\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 1);
+  std::string expected = "_";
+  expected.push_back(8);
+  expected += "f";
+  CHECK(buf.lines()[0].text == expected);
+  CHECK(buf.lines()[0].attributes.empty());
+}
+
+TEST_CASE("detectOverstrike defaults to true when the constructor argument is omitted (backward "
+          "compatible with every other existing call site)") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  std::string raw = "f";
+  raw.push_back(8);
+  raw += "f\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == "f");  // overstrike collapsed, as before
+  REQUIRE(buf.lines()[0].attributes.size() == 1);
+  CHECK(buf.lines()[0].attributes[0].attribute == Display::Attribute::Bold);
+}

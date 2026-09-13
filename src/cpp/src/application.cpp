@@ -2372,7 +2372,7 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       case '>':  // ESC > : バッファの末尾へ移動(M_tail)
         return handleCommand(Command::GoToBottom);
       case kCarriageReturn:  // ESC ^M : 「そのまま読む」(K-24、M_code)
-        return handleCommand(Command::Enter);
+        return handleCommand(Command::ReadFileRaw);
       // ESC v : 1ページ戻る(2026-08-14、直接のユーザーの指示による:
       // "旧版のKEYには収録し忘れだが「1ページ戻る」は^[wではなくて、
       // emacs同様^[vで反映してほしい")。以前の回で、old/src/key.c
@@ -2609,7 +2609,7 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       case 0x0b:  // ^O ^K : 親ディレクトリへ移動(K-19)
         return handleCommand(Command::GoToParentDirectory);
       case kCarriageReturn:  // ^O ^M : 「行単位で読む」(K-23、M_fp)
-        return handleCommand(Command::Enter);
+        return handleCommand(Command::ReadFileNoWrap);
       // ^O^C / ^O^Y(M_copy/M_paste): usilicrc自身のK-29/K-30の
       // エントリ("F-3 C-c \"Copy string\"" / "F-3 C-y \"Paste string
       // (Command-line)\"")が実際の文書化されたキー割り当てである
@@ -3452,6 +3452,12 @@ bool Application::handleCommand(Command command) {
       // 返す)なので、これは通常のファイル閲覧についてはno-opである。
       if (currentMode_ == ApplicationMode::File) return openSelectedBannerEntry();
       return false;
+    case Command::ReadFileNoWrap:
+      if (currentMode_ != ApplicationMode::Directory) return handleCommand(Command::Enter);
+      return openSelectedEntryNoWrap();
+    case Command::ReadFileRaw:
+      if (currentMode_ != ApplicationMode::Directory) return handleCommand(Command::Enter);
+      return openSelectedEntryRaw();
     case Command::Back:
       if (currentMode_ == ApplicationMode::Copy) return returnFromCopy();
       if (currentMode_ == ApplicationMode::ListBrowser) return returnFromListBrowser();
@@ -4078,6 +4084,38 @@ bool Application::openSelectedEntry() {
   if (!fileMode_.loadFile(path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;  // それ自身の宣言コメント参照
+  return true;
+}
+
+// K-23(^O^M、M_fp、「行単位で読む」)/K-24(^[^M、M_code、「そのまま
+// 読む」)、いずれも(ls)専用(QUICK.txt自身の"<(ls)>"の注記参照)――
+// openSelectedEntry()自身のEXEC/アーカイブ判定の分岐までは複製しない
+// (高度な/稀な機能であり、それらのファイル種別に対してこの2キーを
+// 使うこと自体が想定外)。ディレクトリの選択時だけ明示的に拒否し、
+// それ以外はFileMode::loadFileNoWrap()/loadFileRaw()へ直接渡す――
+// 通常ファイルでなければそちら自身のstd::ifstreamチェックで自然に
+// falseになる。
+bool Application::openSelectedEntryNoWrap() {
+  const DirectoryEntry *entry = directoryMode_.selectedEntry();
+  if (!entry || entry->isDirectory) return false;
+  std::string path = directoryMode_.currentDirectory();
+  if (!path.empty() && path.back() != '/') path += '/';
+  path += entry->name;
+  if (!fileMode_.loadFileNoWrap(path)) return false;
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;
+  return true;
+}
+
+bool Application::openSelectedEntryRaw() {
+  const DirectoryEntry *entry = directoryMode_.selectedEntry();
+  if (!entry || entry->isDirectory) return false;
+  std::string path = directoryMode_.currentDirectory();
+  if (!path.empty() && path.back() != '/') path += '/';
+  path += entry->name;
+  if (!fileMode_.loadFileRaw(path)) return false;
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;
   return true;
 }
 

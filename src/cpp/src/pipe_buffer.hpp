@@ -66,7 +66,17 @@ class PipeBuffer {
   // width: 折り返し列(legacy: vt_col(0))。maxBytes: 全行を通じての
   // コンテンツ総予算(legacy: `bsize`)。超過するとoverBudget()がtrueに
   // なり、alloc_pipe()の「バッファ不足」中断と同じ挙動になる。
-  PipeBuffer(Charset::Encoding encoding, int width, long maxBytes);
+  // detectOverstrike(2026-09-14追加、直接のユーザー依頼"（ls）での
+  // ^O^M/^[^Mを実装して"、QUICK.txt自身の"C-[ C-m：<(ls)> 制御コードを
+  // そのまま可視化（ls）"の実装): falseにすると、nroff重ね打ち
+  // ("X\bX"=太字、"_\bX"=下線)の解釈を一切行わない――バックスペース
+  // バイト自体も他の生の制御バイトと全く同じ「素の文字」経路へ落ち、
+  // ContentView::renderLine()自身の既存の制御バイト表示規約
+  // (0x20未満を反転表示のグリフとして描く、QUICK.txt自身の
+  // "^A^B^Cはハイライト表示のABCで表示"と同じ)でそのまま可視化
+  // される。既定はtrue(従来通りの挙動、他の全ての呼び出し元に影響
+  // しない)。
+  PipeBuffer(Charset::Encoding encoding, int width, long maxBytes, bool detectOverstrike = true);
 
   void feed(const std::string &bytes);
   // まだ保留中の途中までの行を確定させる(入力の終わり)。
@@ -85,6 +95,7 @@ class PipeBuffer {
   Charset::Encoding encoding_;
   int width_;
   long maxBytes_;
+  bool detectOverstrike_;
   long usedBytes_ = 0;
   bool overBudget_ = false;
 

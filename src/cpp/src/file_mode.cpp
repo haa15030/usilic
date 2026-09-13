@@ -342,7 +342,16 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
     }
   }
 
-  PipeBuffer pipe(encoding_, width_, 64L * 1024 * 1024);
+  // 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
+  // して"): loadFileNoWrap()自身のコメント参照――行の折り返しを行わ
+  // ない代わりに、PipeBufferへ実質無限の幅を渡す。長い行はContentView::
+  // renderLine()自身の既存のmaxCol打ち切り(そちら自身のコメント参照、
+  // 元々ELLIPSISロジックのために存在する)にそのまま任せる――水平
+  // スクロール自体は実装しない(less -Sと同じ「画面幅で切り詰める」
+  // 挙動、水平スクロールバー等の新規UIは無い)。
+  constexpr int kNoWrapWidth = 1 << 20;
+  int effectiveWidth = noWrapMode_ ? kNoWrapWidth : width_;
+  PipeBuffer pipe(encoding_, effectiveWidth, 64L * 1024 * 1024, /*detectOverstrike=*/!rawControlCodesMode_);
   pipe.feed(content);
   pipe.flush();
 
@@ -365,6 +374,24 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
 }
 
 bool FileMode::loadFile(const std::string &path) {
+  noWrapMode_ = false;
+  rawControlCodesMode_ = false;
+  return loadFileImpl(path);
+}
+
+bool FileMode::loadFileNoWrap(const std::string &path) {
+  noWrapMode_ = true;
+  rawControlCodesMode_ = false;
+  return loadFileImpl(path);
+}
+
+bool FileMode::loadFileRaw(const std::string &path) {
+  noWrapMode_ = false;
+  rawControlCodesMode_ = true;
+  return loadFileImpl(path);
+}
+
+bool FileMode::loadFileImpl(const std::string &path) {
   std::ifstream probe(path, std::ios::binary);
   if (!probe) return false;
   probe.close();

@@ -89,6 +89,26 @@ class FileMode {
   // false。
   bool loadFile(const std::string &path);
 
+  // 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
+  // して"、QUICK.txt自身のK-23/K-24自身の説明): loadFile()と全く同じ
+  // だが、以後(reflow()経由の再折り返し含む)このファイルの内容を
+  // 折り返さない(K-23、^O^M、"ファイルを１行ずつ読み込む"――legacy
+  // 自身の実際の実装(alloc_buff())を追った結果、実質的な違いは
+  // 「読み込み中の中断キー入力チェックの有無」だけと判明したが、この
+  // ポートにはその概念が無いため、現代的に意味のある解釈として
+  // 「long行を折り返さない」(less -Sと同じ)を採用した)。長い行は
+  // ContentView::renderLine()自身の既存のmaxCol打ち切りにそのまま
+  // 任せる。
+  bool loadFileNoWrap(const std::string &path);
+
+  // 2026-09-14追加、同上のユーザー依頼: loadFile()と全く同じだが、
+  // 以後このファイルのnroff重ね打ち("X\bX"=太字、"_\bX"=下線)を
+  // 一切解釈しない(K-24、^[^M、"制御コードをそのまま可視化"――
+  // QUICK.txt自身の説明"^A^B^Cはハイライト表示のABCで表示"通り、
+  // バックスペース等の生の制御バイトはContentView::renderLine()
+  // 自身の既存の制御バイト表示規約でそのまま可視化される)。
+  bool loadFileRaw(const std::string &path);
+
   const std::string &currentFile() const;
 
   // K-27(^Oa、M_ascii、「Switch ascii mode」): 「次の」loadFile()/
@@ -364,6 +384,9 @@ class FileMode {
   void closeStream();
 
  private:
+  // loadFile()/loadFileNoWrap()/loadFileRaw()が共有する本体――呼び出し元が
+  // 先にnoWrapMode_/rawControlCodesMode_をセットしてから呼ぶ。
+  bool loadFileImpl(const std::string &path);
   std::vector<ContentView::Line> readAndWrap(const std::string &path) const;
   // loadStream()/ensureLoadedThrough()が共有する: streamFd_から
   // 有限サイズのチャンクで読み込み、それぞれをstreamPipe_へ供給
@@ -400,6 +423,12 @@ class FileMode {
   const Configuration &configuration_;
   Charset::Encoding encoding_;
   int width_;
+  // 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
+  // して"): loadFileNoWrap()/loadFileRaw()自身のコメント参照。
+  // 「次に」readAndWrap()/reflow()が使うモードを覚えておく――
+  // loadFile()(通常の読み込み)は毎回両方falseへリセットする。
+  bool noWrapMode_ = false;
+  bool rawControlCodesMode_ = false;
   std::string currentFile_;
   std::string searchOriginLabel_;
   std::string searchOriginDetail_;
