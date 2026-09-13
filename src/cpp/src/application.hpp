@@ -2661,6 +2661,20 @@ class Application {
   // executeCut()によってクリアされるので、まさに次のCUT(どちらの
   // バリアントであれ)が誤って古びたパスを再利用しない。
   std::string cutFileSourcePath_;
+  // 2026-09-20追加、直接のユーザー依頼("C-j bだが、QUICK.txt記載の
+  // ようなFILE履歴にしてほしい"): startCutFilePrompt()(C-j b/C-j C-b、
+  // 「指定文字列でファイルを分割」)は元々Directory一覧で選択済みの
+  // ファイルに対してしか発動できなかった――HELPの新設計(usilic.man
+  // をCUT-by-fileで開く)がこれをどのモードからでも「ファイル名を
+  // 入力/履歴から選ぶ」形で起動できる必要が出たため拡張した。値が
+  // 設定されている間は、startCutFilePrompt()がPromptKind::PathInput
+  // (K-45/K-47と全く同じ、履歴補完/Tab補完込みの共有UI)を起動して
+  // いる最中であることを示し、その投入(executePromptSubmission()
+  // 自身のPathInput分岐参照)を、通常のexecutePathInput()(ファイルを
+  // そのまま開く)ではなくcutFileSourcePath_を設定してCutPattern
+  // プロンプトへ引き継ぐ経路へ振り向ける。cancelPrompt()で無条件に
+  // クリアされる(このフローの外では常にnullopt)。
+  std::optional<GrepSyntax> cutFilePendingSyntax_;
   bool shellStarted_ = false;
   // pollPagerExitNotice()自身のコメント参照(2026-09-05追加、GUIの
   // マウスホイール/慣性スクロールでの"止まった"報告への対応)――

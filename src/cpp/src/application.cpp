@@ -8328,18 +8328,31 @@ bool Application::startCutPrompt(GrepSyntax syntax) {
 // クラスのデフォルトは既にApplicationMode::Directoryであり、まさに
 // この亜種がそこから入場し、そこへ戻るべき場所である。
 bool Application::startCutFilePrompt(GrepSyntax syntax) {
-  if (currentMode_ != ApplicationMode::Directory) return false;
-  const DirectoryEntry *entry = directoryMode_.selectedEntry();
-  if (!entry || entry->isDirectory) return false;
-  std::string path = directoryMode_.currentDirectory();
-  if (!path.empty() && path.back() != '/') path += '/';
-  path += entry->name;
-  cutFileSourcePath_ = path;
-  cutSyntax_ = syntax;
-  // 2026-09-11削除: バッファ亜種のstartCutPrompt()と同じ統一により、
-  // Regex("^J^B")も直接候補リストへは開かず、Fixedと同じ空のプロンプト
-  // から始まる――詳細はstartCutPrompt()自身のコメント参照。
-  activatePrompt(PromptKind::CutPattern, "");
+  if (currentMode_ == ApplicationMode::Directory) {
+    const DirectoryEntry *entry = directoryMode_.selectedEntry();
+    if (entry && !entry->isDirectory) {
+      std::string path = directoryMode_.currentDirectory();
+      if (!path.empty() && path.back() != '/') path += '/';
+      path += entry->name;
+      cutFileSourcePath_ = path;
+      cutSyntax_ = syntax;
+      // 2026-09-11削除: バッファ亜種のstartCutPrompt()と同じ統一により、
+      // Regex("^J^B")も直接候補リストへは開かず、Fixedと同じ空の
+      // プロンプトから始まる――詳細はstartCutPrompt()自身のコメント
+      // 参照。
+      activatePrompt(PromptKind::CutPattern, "");
+      return true;
+    }
+  }
+  // 2026-09-20追加、直接のユーザー依頼("C-j bだが、QUICK.txt記載の
+  // ようなFILE履歴にしてほしい"): Directory一覧での選択が無い(または
+  // Directoryモード自体にいない)場合、cutFilePendingSyntax_自身の
+  // コメント参照の通り、K-45/K-47と全く同じPathInputプロンプトを
+  // 起動してファイル名を入力/履歴から選ばせる――その投入は
+  // executePromptSubmission()自身のPathInput分岐がこのフローへ
+  // 引き継ぐ。
+  cutFilePendingSyntax_ = syntax;
+  activatePrompt(PromptKind::PathInput, "");
   return true;
 }
 
@@ -9042,6 +9055,23 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     case PromptKind::ArchiveDestination:
       return executeArchiveExtract(text);
     case PromptKind::PathInput:
+      // cutFilePendingSyntax_自身のコメント参照(startCutFilePrompt()
+      // 経由でここへ来た場合、通常のexecutePathInput()――ファイルを
+      // そのまま開く――ではなく、解決したパスをCUTの対象として
+      // CutPatternプロンプトへ引き継ぐ)。
+      if (cutFilePendingSyntax_) {
+        GrepSyntax syntax = *cutFilePendingSyntax_;
+        cutFilePendingSyntax_.reset();
+        ResolvedPath resolved = pathResolver_.resolve(text, directoryMode_.currentDirectory());
+        if (!resolved.exists || resolved.isDirectory) {
+          activeView().redraw();
+          return false;
+        }
+        cutFileSourcePath_ = resolved.path;
+        cutSyntax_ = syntax;
+        activatePrompt(PromptKind::CutPattern, "");
+        return true;
+      }
       return executePathInput(text);
     // K-46/K-48自身の投入: PathInput(K-45/K-47)と同一のパスの検証
     // ――legacy自身のkey.cは、T_hfile/T_hdirを、M_lfile/M_ldir
@@ -9077,6 +9107,11 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
 }
 
 void Application::cancelPrompt() {
+  // cutFilePendingSyntax_自身のコメント参照: このフロー中(PathInput
+  // プロンプト表示中)に^Gされた場合、次に何の関係も無いPathInput/
+  // ^Xf等が起動された時に誤って引き継がれないよう無条件にクリアする
+  // (このフローの外では常にnulloptなので、これは常に安全なno-op)。
+  cutFilePendingSyntax_.reset();
   // 2026-09-10追加、incrementalGrepActive_自身の宣言コメント参照:
   // ^Gはemacs自身のisearchの慣習(C-gで検索開始前の位置へ戻す)に
   // 合わせ、ライブ中に既に適用されていたハイライト/ジャンプ/

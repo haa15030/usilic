@@ -1929,12 +1929,73 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file): Back returns to Directory mode, 
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): refused on a directory entry or outside Directory mode") {
+// 2026-09-20更新、直接のユーザー依頼("C-j bだが、QUICK.txt記載の
+// ようなFILE履歴にしてほしい"): 以前はDirectory一覧で通常ファイルが
+// 選択されていない限り無条件に拒否していたが、startCutFilePrompt()
+// 自身のコメント参照の通り、その場合は代わりにPathInputプロンプト
+// (K-45/K-47と同じ、ファイル名の入力/履歴選択)へフォールバックする
+// よう拡張した――ディレクトリが選択されている場合も同様。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): a directory entry selected falls back "
+                           "to the typed-filename prompt instead of being refused outright") {
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  CHECK_FALSE(app.handleCommand(Command::StartCutFileFixed));  // selected entry is a directory
+  CHECK(app.handleCommand(Command::StartCutFileFixed));
+  CHECK(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // PathInput doesn't change currentMode_
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): reachable from OUTSIDE Directory mode "
+                           "too, via the same typed-filename prompt (2026-09-20 extension)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // any non-Directory mode
+  CHECK(app.currentMode() == ApplicationMode::File);
+
+  CHECK(app.handleCommand(Command::StartCutFileFixed));
+  CHECK(app.promptActive());
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): typing a real file's path at the "
+                           "fallback prompt resolves it, then chains straight into the CutPattern "
+                           "prompt (not a plain file open)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutFileFixed));  // no selection yet -- top entry is "./"
+  feedText((root / "log.txt").string());
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.promptActive());  // chained into CutPattern, not opened as a plain file
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.cutMode().segments().size() == 3);  // log.txt's own real split, matching the other CUT-by-file tests above
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): typing a path to a DIRECTORY at the "
+                           "fallback prompt is refused (a directory has no content to CUT), not "
+                           "silently entered") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  feedText((root / "subdir").string());
+  CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
   CHECK_FALSE(app.promptActive());
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // not silently descended into subdir/
+}
+
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): ^G at the fallback filename prompt "
+                           "cancels cleanly, and does not leak into a LATER, unrelated PathInput "
+                           "prompt (cutFilePendingSyntax_ is reset on cancel)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
+  CHECK_FALSE(app.promptActive());
+
+  // A later, ordinary ^Xf (PathInput) must behave normally -- opening
+  // the typed file directly -- not get hijacked into the CUT flow.
+  REQUIRE(app.handleCommand(Command::StartFileInput));
+  feedText((root / "log.txt").string());
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::File);
 }
 
 TEST_CASE_FIXTURE(Fixture, "CUT: Enter on a segment label shows that segment's content in CutContent") {

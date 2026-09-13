@@ -3507,6 +3507,34 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      `^J^S`(EGREP)/`^S`(GREP)がそれぞれ`"(fgrep)"`/`"(egrep)"`/
      `"(grep)"`を正しく表示することを確認。
 
+468. **2026-09-20: C-j b(CUT-by-file)を、Directory一覧での選択済み
+     ファイルだけでなくファイル名の入力/履歴からも起動できるよう拡張**
+   - **直接のユーザー依頼**: 「その「C-j b」だが、QUICK.txt記載の
+     ようなFILE履歴にしてほしい」――HELPの新設計(usilic.manを
+     CUT-by-fileで開く)には、Directory一覧での事前選択に頼らず
+     どのモードからでも(タイプ入力または履歴から)ファイル名を
+     指定してCUT-by-fileを起動できる経路が必要になったため。
+   - `startCutFilePrompt()`は従来、Directory一覧で選択中の通常
+     ファイルに対してしか発動できなかった。それが成立しない場合
+     (Directoryモード自体にいない、選択がディレクトリ、選択が無い
+     等)は、新設の`cutFilePendingSyntax_`を立てたうえで
+     `PromptKind::PathInput`(K-45/K-47の「ファイル名を入力」と全く
+     同じ、履歴補完/Tab補完込みの共有UI)を起動するようフォール
+     バックする。その投入は`executePromptSubmission()`自身の
+     `PathInput`分岐で`cutFilePendingSyntax_`の有無をチェックし、
+     立っていれば通常の`executePathInput()`(ファイルをそのまま開く)
+     ではなく、`pathResolver_`で解決したパスを`cutFileSourcePath_`に
+     設定して`CutPattern`プロンプトへ引き継ぐ形にした。`cancelPrompt()`
+     で無条件にリセットし、無関係な後続のPathInputプロンプトへ
+     誤って引き継がれないようにしている。
+   - **検証**: 既存の「ディレクトリ選択時は拒否」テストを「フォール
+     バックプロンプトが起動する」という新仕様に更新、新規doctest5件
+     (Directory外からの起動、実在ファイルパスの入力からCutPattern
+     への連鎖、ディレクトリパスの入力は拒否、^Gでのキャンセルが
+     後続の無関係なPathInputへ漏れないこと)を追加。`make test`
+     1131件中1118件通過(残る13件は既存のKEYモード関連で今回とは
+     無関係、次の一切れで解消予定)。`make install`/`make app`完了。
+
 ## 4. CUT
 
 447. **CUT-Regex(`^J^C`/`^J^B`)の専用候補一覧UIを廃棄し、CUT-Fixedと
