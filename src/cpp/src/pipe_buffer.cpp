@@ -170,6 +170,46 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   int n = static_cast<int>(convertedLine.size());
   int i = 0;
 
+  // 2026-09-20追加、直接のユーザー報告("indentタグは、文章を書き始める
+  // 位置の設定=goではなく、=gpのようにすべての行頭がindent位置に
+  // 揃ってないと意味が無い"): usilic -mが生成するusilic.man(legacy
+  // HELP.jpと同じ、usilic独自制御バイトを一切持たない本物の平文)は、
+  // <indentN>を物理行ごとに1回だけリテラルな半角スペースへ焼き込む
+  // ――この行が端末幅を超えて折り返される際、その継続行には字下げを
+  // 再現する手段が無く、先頭が揃わなくなっていた。indentFromMarker_
+  // 自身のコメント参照の通り、修正はusilic.man側ではなくここ(汎用の
+  // 折り返し処理)に置く: マーカー駆動の字下げが今アクティブでなければ
+  // (indentFromMarker_ == false)、この生の行自身の「行頭の空白文字列
+  // (半角スペース/全角スペースU+3000)」の表示幅を自動的にcurrentIndent_
+  // として採用する――そのままにすると、この後の通常ループがこの行頭
+  // 空白自身を「普通の文字」としてもう一度書き込んでしまい
+  // (seedIndentIfAtLineStart()が合成する分と二重になる)、iを空白の
+  // 直後まで進めて元の空白自体は読み飛ばす(マーカー自身が幅を持たない
+  // のと同じ扱い)。usilic.man専用の特別扱いではなく、行頭に空白を
+  // 持つ任意のプレーンテキスト全般に効く、汎用の折り返し挙動である。
+  if (!indentFromMarker_) {
+    int p = 0;
+    int leadingWidth = 0;
+    while (p < n) {
+      if (static_cast<unsigned char>(convertedLine[p]) == ' ') {
+        leadingWidth += 1;
+        p += 1;
+        continue;
+      }
+      if (encoding_ == Charset::Encoding::Utf8 && p + 3 <= n &&
+          static_cast<unsigned char>(convertedLine[p]) == 0xE3 &&
+          static_cast<unsigned char>(convertedLine[p + 1]) == 0x80 &&
+          static_cast<unsigned char>(convertedLine[p + 2]) == 0x80) {
+        leadingWidth += 2;  // U+3000(全角スペース)の表示幅
+        p += 3;
+        continue;
+      }
+      break;
+    }
+    currentIndent_ = leadingWidth;
+    i = p;
+  }
+
   // 2026-09-05追加、isForbiddenAtLineStart()自身のコメント参照
   // (禁則の「追い出し」実装の作り直し): 直近に配置した1文字を、
   // 必要なら丸ごと取り消して次の行へ差し戻せるように、その1文字
@@ -297,6 +337,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
         auto [value, digitsEnd] = readIndentDigits(pos + 1);
         if (value < 0) break;
         currentIndent_ = value;
+        indentFromMarker_ = (value > 0);
         pos = digitsEnd;
         continue;
       }
@@ -356,6 +397,7 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       auto [value, digitsEnd] = readIndentDigits(i + 1);
       if (value >= 0) {
         currentIndent_ = value;
+        indentFromMarker_ = (value > 0);
         i = digitsEnd;
         continue;
       }

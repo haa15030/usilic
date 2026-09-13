@@ -392,6 +392,70 @@ TEST_CASE("\\x01<N> indent marker: \\x01 NOT followed by any digit is left as a 
   CHECK(buf.lines()[0].text == expected);
 }
 
+// 2026-09-20追加、直接のユーザー報告("indentタグは、文章を書き始める
+// 位置の設定=goではなく、=gpのようにすべての行頭がindent位置に揃って
+// ないと意味が無い"): usilic -m生成物(usilic.man)のような、\x01N制御
+// バイトを一切持たない「行頭にリテラルな空白があるだけ」のプレーン
+// テキストでも、幅超過で折り返された継続行に同じ字下げが自動的に
+// 引き継がれることを確認する(indentFromMarker_自身のコメント参照)。
+TEST_CASE("plain leading whitespace (no \\x01 marker at all): auto-detected as this line's own "
+          "indent, and carried over to a wrapped CONTINUATION line -- same effect as an explicit "
+          "\\x01N marker, but from ordinary ASCII space characters alone") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 6, 1 << 20);
+  std::string raw = "  ABCDEFGH\n";  // 2 leading spaces, then 8 chars -- too wide for width 6
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 2);
+  // First line: leading spaces are consumed into the auto-detected
+  // indent (seedIndentIfAtLineStart() re-synthesizes them), not
+  // rendered a second time as ordinary characters.
+  CHECK(buf.lines()[0].text == "  ABCD");
+  CHECK(buf.lines()[0].endsWithNewline == false);
+  // Wrapped continuation: the same 2-space indent is reapplied automatically.
+  CHECK(buf.lines()[1].text == "  EFGH");
+  CHECK(buf.lines()[1].endsWithNewline == true);
+}
+
+TEST_CASE("plain leading whitespace: a full-width IDEOGRAPHIC SPACE (U+3000, 2 columns wide) run "
+          "at the start of a line is also auto-detected as indent (common Japanese plain-text "
+          "convention, e.g. QUICK.txt's own \"　　　 ^H：...\" entries) -- re-synthesized as plain "
+          "ASCII spaces of the same total column width, same as seedIndentIfAtLineStart() already "
+          "does for the \\x01N marker case (not a byte-for-byte echo of the original glyphs)") {
+  PipeBuffer buf(Charset::Encoding::Utf8, 8, 1 << 20);
+  std::string raw = "\xe3\x80\x80\xe3\x80\x80";  // "　　" -- 2 full-width spaces = 4 columns
+  raw += "ABCDEFGH\n";                            // 8 more columns, overflows width 8
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 2);
+  CHECK(buf.lines()[0].text == "    ABCD");
+  CHECK(buf.lines()[1].text == "    EFGH");
+}
+
+TEST_CASE("plain leading whitespace: does NOT interfere with an ACTIVE \\x01N marker block -- a "
+          "second raw line inside the same <indentN>...</indent> span keeps the marker's own "
+          "indent instead of re-deriving it from (the absence of) its own leading whitespace") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  std::string raw;
+  raw.push_back(1);
+  raw.push_back('3');  // \x01 '3' -- begin indent of 3, no literal leading spaces of its own
+  raw += "AB\nCD\n";    // two raw lines while the marker is still active
+  raw.push_back(1);
+  raw.push_back('0');  // </indent>
+  raw += "EF\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 3);
+  CHECK(buf.lines()[0].text == "   AB");
+  CHECK(buf.lines()[1].text == "   CD");  // still indented -- marker span, not auto-detected
+  CHECK(buf.lines()[2].text == "EF");     // indent off again after </indent>
+}
+
+TEST_CASE("plain leading whitespace: a line with NO leading whitespace right after one that had "
+          "some does not inherit the previous line's auto-detected indent") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  buf.feed("  AB\nCD\n");
+  REQUIRE(buf.lines().size() == 2);
+  CHECK(buf.lines()[0].text == "  AB");
+  CHECK(buf.lines()[1].text == "CD");  // no leftover indent from the previous line
+}
+
 // 2026-09-04追加、直接のユーザー依頼("禁則処理（句読点が行の冒頭に
 // 来ない）を実施"): 行頭禁則の実wrapLine()消費テスト。
 //
