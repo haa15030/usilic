@@ -161,6 +161,7 @@
 #include "history.hpp"
 #include "key_input.hpp"
 #include "mac_font_resolver.hpp"
+#include "markup_to_roff.hpp"
 #include "mouse_sgr.hpp"
 #include "terminal_display.hpp"
 
@@ -3542,6 +3543,36 @@ int main(int argc, char **argv) {
         return 1;
       }
       explicitFontFlag = argv[++i];
+    } else if (std::strcmp(argv[i], "-m") == 0) {
+      // 2026-09-20追加、直接のユーザー依頼("usilicに裏オプションを
+      // 作ってほしい。具体的には、`usilic -m src/QUICK.txt` >
+      // `~/.local/lib/usilic/usilic.man` でusilicのmanファイルが
+      // 作成される")。-c/-g/-u/-i/-fと同じ、隠しの一回限りの
+      // ユーティリティモード――対話セッションは一切起動せず、与え
+      // られたQUICK.txt形式のmarkupファイルを変換して標準出力へ
+      // 書き出し、即座に終了する。
+      // 2026-09-20訂正、同じ依頼への直接の追記("-mオプションだが、
+      // roffソースを出力する必要はない。man-file風だが公式には無い
+      // 裏タグ<indentNN></indent>で作られているソース用の裏オプション
+      // としてsrc/doc/HELP.jpのような形式を打ち出してほしい"): 当初は
+      // groffの-manマクロソースへ変換していたが、それは差し戻し、
+      // legacy自身のHELP.jpが実際に使う「本物のnroff重ね打ちバイト列」
+      // 形式(convertMarkupToLegacyHelpText()自身のコメント参照)へ
+      // 作り直した。
+      if (i + 1 >= argc) {
+        std::cerr << "usilic: -m requires a markup file path (e.g. -m src/QUICK.txt).\n";
+        return 1;
+      }
+      std::string markupPath = argv[++i];
+      std::ifstream in(markupPath, std::ios::binary);
+      if (!in) {
+        std::cerr << "usilic: -m: cannot read " << markupPath << ".\n";
+        return 1;
+      }
+      std::ostringstream buffer;
+      buffer << in.rdbuf();
+      std::cout << fm::convertMarkupToLegacyHelpText(buffer.str());
+      return 0;
     } else positionalArgs.push_back(argv[i]);
   }
   if (forceCui && forceGui) {

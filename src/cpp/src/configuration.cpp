@@ -234,8 +234,16 @@ Configuration::Configuration() {
   // groffの実際のlegacyデフォルトは、実行時のgroffバージョンの探り
   // (-Rか-Tutf8スタイルのフラグかを選ぶための)を含んでおり、ここ
   // では再現されていない。これは妥当な固定のデフォルトであり、
-  // 逐語的な移植ではない。
-  roleCommands_[ConfiguredRole::Groff] = {{"groff", "-Tutf8"}, std::nullopt};
+  // 逐語的な移植ではない。2026-09-20追加: `-mandoc`(manマクロ/mdoc
+  // マクロを自動判別して読み込む)が無いと、looksLikeRoffDocument()
+  // が検出する`.TH`/`.SH`等はgroffにとって単なる未定義マクロで
+  // あり、警告付きで無視されるだけで章立てが一切反映されない
+  // ――このrole自体が2026-09-20まで一度も実際には呼ばれておらず
+  // (定義のみ)、この不備が今まで表面化していなかった。
+  // `-Kutf8`(入力エンコーディングの明示、preconv向け)が無いと、
+  // 環境によっては日本語部分が文字化けする(実機検証で確認済み――
+  // "invalid input character code"警告と共に化ける)。
+  roleCommands_[ConfiguredRole::Groff] = {{"groff", "-mandoc", "-Kutf8", "-Tutf8"}, std::nullopt};
   roleCommands_[ConfiguredRole::Man] = {{"man"}, std::nullopt};
   roleCommands_[ConfiguredRole::Locate] = {{"locate"}, std::nullopt};
   // K-39(^Jl、「LOCATE: Execute `locate'」)、docs/ideas/IDEAS.mdの

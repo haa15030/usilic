@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "charset.hpp"
+#include "configuration.hpp"
 #include "content_view.hpp"
 #include "grep_mode.hpp"
 #include "history.hpp"
@@ -65,9 +66,22 @@ namespace fm {
 // expandHelpMarkup()展開の経路を選ぶかどうかの判定に使う。
 bool isHelpMarkupPagerFile(const std::string &path);
 
+// 2026-09-20追加、直接のユーザー依頼("usilic -m src/QUICK.txt > .../
+// usilic.man...HELPは同ファイルを「C-j b」でCUTする"): legacy自身の
+// is_man()(old/src/code.cから移植、readAndWrap()自身のコメント参照)
+// ――ファイル先頭N_man(0x1000)バイトを行頭ごとに走査し、troffの
+// 「短い(1〜2文字の)マクロ名+区切り」という見た目のパターン
+// (".\\\""コメント行、".B "/".I "、または".XY "/".XY\n"の形の
+// 2文字マクロ名)に一致する行が見つかれば、その通常ファイルは
+// ms/manマクロ形式のroffドキュメントだと判定する――拡張子は一切
+// 見ない(legacy自身のcheck_ext()も、既知の拡張子テーブルで一致
+// しなかった場合の「最後の手段」としてのみこれを使っていた)。
+bool looksLikeRoffDocument(const std::string &content);
+
 class FileMode {
  public:
-  FileMode(ContentView &view, History &history, Charset::Encoding encoding, int width);
+  FileMode(ContentView &view, History &history, const Configuration &configuration,
+           Charset::Encoding encoding, int width);
 
   // pathの全内容を読み、PipeBuffer経由で変換/折り返しし、表示する。
   // このパスに対して記憶済みのカーソル位置がHistoryにあればそれを
@@ -383,6 +397,7 @@ class FileMode {
 
   ContentView &view_;
   History &history_;
+  const Configuration &configuration_;
   Charset::Encoding encoding_;
   int width_;
   std::string currentFile_;

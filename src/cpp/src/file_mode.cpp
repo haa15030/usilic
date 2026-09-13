@@ -14,6 +14,7 @@
 #include <sstream>
 #include <system_error>
 
+#include "child_process.hpp"
 #include "help_text.hpp"
 #include "pipe_buffer.hpp"
 
@@ -34,8 +35,39 @@ bool isHelpMarkupPagerFile(const std::string &path) {
   return name == "HELP.txt" || name == "QUICK.txt";
 }
 
-FileMode::FileMode(ContentView &view, History &history, Charset::Encoding encoding, int width)
-    : view_(view), history_(history), encoding_(encoding), width_(width) {
+// old/src/code.cのis_man()から移植: `man[0]`が'.'で、続く1〜2文字が
+// troffマクロ名らしく見え(".\\\""コメント、".B "/".I "、または英字1〜2
+// 文字+空白/改行)、その位置が実際に行頭にある場合に真。legacy自身の
+// check_ext()(old/src/child.c)は、これを先頭N_man(0x1000)バイトの中で
+// 改行ごとに1回だけ試す――拡張子テーブルで一致しなかった通常ファイル
+// に対する最後の判定手段として。
+bool looksLikeRoffDocument(const std::string &content) {
+  constexpr std::size_t kScanLimit = 0x1000;
+  std::size_t limit = std::min(content.size(), kScanLimit);
+  std::size_t pos = 0;
+  while (pos < limit) {
+    if (pos + 3 < content.size() && content[pos] == '.') {
+      char c1 = content[pos + 1], c2 = content[pos + 2], c3 = content[pos + 3];
+      if (c1 == '\\' && c2 == '"') return true;
+      if ((c1 == 'B' || c1 == 'I') && c2 == ' ') return true;
+      bool c1Upper = c1 >= 'A' && c1 <= 'Z';
+      bool c1Lower = c1 >= 'a' && c1 <= 'z';
+      if (c1Upper || c1Lower) {
+        bool c2Lower = c2 >= 'a' && c2 <= 'z';
+        bool c2Upper = c1Upper && c2 >= 'A' && c2 <= 'Z';
+        if ((c2Lower || c2Upper) && (c3 == ' ' || c3 == '\n')) return true;
+      }
+    }
+    std::size_t nl = content.find('\n', pos);
+    if (nl == std::string::npos) break;
+    pos = nl + 1;
+  }
+  return false;
+}
+
+FileMode::FileMode(ContentView &view, History &history, const Configuration &configuration,
+                    Charset::Encoding encoding, int width)
+    : view_(view), history_(history), configuration_(configuration), encoding_(encoding), width_(width) {
   // put_str()自身のf_markロジックからの移植(ContentView::
   // setCursorHighlightEnabled()のコメント参照): 実際のCUIでは、
   // Directoryモードの一覧(この移植は、このフラグが存在するずっと
@@ -287,7 +319,28 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
   // isHelpMarkupPagerFile()自身のコメント参照(HELP.txt/QUICK.txtの
   // <indentN>/<i>/<b>/<u>markupを、リテラルなタグのままではなく
   // ^Jh自身のkHelpTextJa/kHelpTextGuiJaと同じ規約で展開する)。
-  if (isHelpMarkupPagerFile(path)) content = expandHelpMarkup(content);
+  if (isHelpMarkupPagerFile(path)) {
+    content = expandHelpMarkup(content);
+  } else if (looksLikeRoffDocument(content)) {
+    // 2026-09-20追加、直接のユーザー依頼("usilic -m src/QUICK.txt > .../
+    // usilic.man...HELPは同ファイルを「C-j b」でCUTする")、HELP.jp
+    // 自身の文書化された挙動("特定のsuffixを持たなくてもマニュアル
+    // ページなどのmsマクロ形式で書かれている通常ファイルはgroff(1)を
+    // 起動して整形します")の初移植。ConfiguredRole::Groffは
+    // Configuration側に以前から定義済みだったが、この一切れまで
+    // どこからも一度も呼ばれていなかった。groff自体が使えない/失敗
+    // した場合は、legacy自身のfork_bin()が失敗時に生バイトへ
+    // フォールバックするのに倣い、contentを未加工のまま表示する
+    // (この通常ファイル閲覧という文脈で、失敗時に画面を完全に
+    // 諦めさせるほどの理由は無い)。
+    ProgramCommand groff = configuration_.commandFor(ConfiguredRole::Groff);
+    if (!groff.argv.empty()) {
+      ChildProcessOptions options;
+      options.input = &content;
+      ChildProcess::Result result = ChildProcess::run(groff.argv, options);
+      if (result.ok) content = result.output;
+    }
+  }
 
   PipeBuffer pipe(encoding_, width_, 64L * 1024 * 1024);
   pipe.feed(content);

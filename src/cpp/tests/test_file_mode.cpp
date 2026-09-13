@@ -3,6 +3,7 @@
 #include <fstream>
 #include <unistd.h>
 
+#include "configuration.hpp"
 #include "content_view.hpp"
 #include "doctest.h"
 #include "file_mode.hpp"
@@ -11,8 +12,10 @@
 namespace fs = std::filesystem;
 
 using fm::Charset;
+using fm::Configuration;
 using fm::FileMode;
 using fm::History;
+using fm::looksLikeRoffDocument;
 using fm::PositionCategory;
 using fm::test::RecordingDisplay;
 
@@ -30,7 +33,8 @@ struct Fixture {
   RecordingDisplay display{24, 80};
   fm::ContentView view{display};
   History history;
-  FileMode mode{view, history, Charset::Encoding::Ascii, 80};
+  Configuration configuration;
+  FileMode mode{view, history, configuration, Charset::Encoding::Ascii, 80};
 
   Fixture() : root(makeTempDir()) {}
   ~Fixture() { fs::remove_all(root); }
@@ -104,7 +108,7 @@ TEST_CASE_FIXTURE(Fixture, "reflow: keeps the visible cursor in sync with the (p
 TEST_CASE_FIXTURE(Fixture, "loadFile: long lines wrap at the configured width, via PipeBuffer") {
   fm::ContentView narrowView{display};
   History h2;
-  FileMode narrowMode{narrowView, h2, Charset::Encoding::Ascii, 10};
+  FileMode narrowMode{narrowView, h2, configuration, Charset::Encoding::Ascii, 10};
   std::string path = writeFile("long.txt", "abcdefghijklmno\n");
 
   REQUIRE(narrowMode.loadFile(path));
@@ -117,7 +121,7 @@ TEST_CASE_FIXTURE(Fixture, "loadFile: UTF-8 content round-trips without corrupti
   std::string path = writeFile("utf8.txt", "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e\n");  // "日本語\n"
   fm::ContentView utf8View{display};
   History h2;
-  FileMode utf8Mode{utf8View, h2, Charset::Encoding::Utf8, 80};
+  FileMode utf8Mode{utf8View, h2, configuration, Charset::Encoding::Utf8, 80};
 
   REQUIRE(utf8Mode.loadFile(path));
   REQUIRE(utf8View.lines().size() == 1);
@@ -148,7 +152,7 @@ TEST_CASE_FIXTURE(Fixture, "loadFile: an empty file produces no lines and doesn'
 }
 
 TEST_CASE_FIXTURE(Fixture, "saveCursorPosition before any loadFile is a safe no-op") {
-  FileMode fresh{view, history, Charset::Encoding::Ascii, 80};
+  FileMode fresh{view, history, configuration, Charset::Encoding::Ascii, 80};
   fresh.saveCursorPosition();  // must not crash
   CHECK(history.positionFor(PositionCategory::File, "").has_value() == false);
 }
@@ -187,7 +191,7 @@ TEST_CASE_FIXTURE(Fixture, "reflow: clamps the cursor if the new width produces 
   std::string path = writeFile("wrap.txt", "abcdefghijklmno\n");
   fm::ContentView narrowView{display};
   History h2;
-  FileMode narrowMode{narrowView, h2, Charset::Encoding::Ascii, 10};
+  FileMode narrowMode{narrowView, h2, configuration, Charset::Encoding::Ascii, 10};
   REQUIRE(narrowMode.loadFile(path));
   REQUIRE(narrowView.lines().size() == 2);
   narrowView.setCursorIndex(1);
@@ -198,7 +202,7 @@ TEST_CASE_FIXTURE(Fixture, "reflow: clamps the cursor if the new width produces 
 }
 
 TEST_CASE_FIXTURE(Fixture, "reflow: a no-op (false) when no file is currently loaded") {
-  FileMode fresh{view, history, Charset::Encoding::Ascii, 80};
+  FileMode fresh{view, history, configuration, Charset::Encoding::Ascii, 80};
   CHECK_FALSE(fresh.reflow(40));
 }
 
@@ -225,7 +229,7 @@ TEST_CASE_FIXTURE(Fixture, "mode-line fields: shows the bare filename, byte size
 }
 
 TEST_CASE_FIXTURE(Fixture, "mode-line fields: before any loadFile, no fields are shown") {
-  FileMode fresh{view, history, Charset::Encoding::Ascii, 80};
+  FileMode fresh{view, history, configuration, Charset::Encoding::Ascii, 80};
   CHECK(view.modeLineText() == "0/0 END");
 }
 
@@ -259,4 +263,76 @@ TEST_CASE_FIXTURE(Fixture, "constructing FileMode disables the cursor-line highl
   REQUIRE(mode.loadFile(path));
   view.redraw();
   CHECK(display.standoutAt(0, 0) == false);  // cursor is on line 0 -- real CUI has no highlight here
+}
+
+// -- looksLikeRoffDocument() / auto-groff-render (2026-09-20 addition) --
+//
+// Direct user request ("usilic -m src/QUICK.txt > .../usilic.man...
+// HELPは同ファイルを「C-j b」でCUTする"): legacy's documented behavior
+// (HELP.jp: "特定のsuffixを持たなくてもマニュアルページなどのmsマクロ
+// 形式で書かれている通常ファイルはgroff(1)を起動して整形します") had
+// never been ported -- ConfiguredRole::Groff existed in Configuration
+// but was never actually invoked anywhere. Ported from old/src/code.c's
+// is_man(), scanning the first 0x1000 bytes line-by-line for a
+// troff-macro-looking line.
+
+TEST_CASE("looksLikeRoffDocument: a `.TH`-led man page is detected") {
+  CHECK(looksLikeRoffDocument(".TH USILIC 1\n.SH NAME\nusilic\n"));
+}
+
+TEST_CASE("looksLikeRoffDocument: a `.\\\"` comment line alone is enough") {
+  CHECK(looksLikeRoffDocument(".\\\" just a comment\nplain text follows\n"));
+}
+
+TEST_CASE("looksLikeRoffDocument: `.B `/`.I ` (single-letter macros followed by a space) count too") {
+  CHECK(looksLikeRoffDocument(".B bold word\n"));
+  CHECK(looksLikeRoffDocument(".I italic word\n"));
+}
+
+TEST_CASE("looksLikeRoffDocument: plain prose with no leading-dot lines is NOT roff") {
+  CHECK_FALSE(looksLikeRoffDocument("hello\nworld\nno dots here\n"));
+}
+
+TEST_CASE("looksLikeRoffDocument: a dot-led line that's clearly not a 1-2 letter macro name (a real "
+          "filename fragment, 3+ letters before the next boundary) is NOT mistaken for roff") {
+  CHECK_FALSE(looksLikeRoffDocument("何かの説明。\n.gitignore\n"));
+}
+
+// Faithful to legacy's own is_man() (deliberately loose: ANY leading-dot
+// line whose 2nd/3rd bytes are letters and 4th byte is a space or
+// newline counts, false positives included -- this port doesn't try to
+// out-guess it).
+TEST_CASE("looksLikeRoffDocument: even a short, plausible-looking 2-letter run after the dot counts, "
+          "matching legacy's own permissive heuristic") {
+  CHECK(looksLikeRoffDocument(".ok\n"));
+}
+
+TEST_CASE("looksLikeRoffDocument: only scans the first 0x1000 bytes, matching legacy's N_man") {
+  std::string padding(0x1000, 'x');
+  CHECK_FALSE(looksLikeRoffDocument(padding + "\n.TH LATE 1\n"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "loadFile: a `.TH`-led file is auto-rendered through groff before display, "
+                           "instead of showing the raw troff source") {
+  std::string path = writeFile("usilic.man", ".TH USILIC 1\n.SH NAME\nusilic \\- test\n");
+  if (!mode.loadFile(path)) {
+    MESSAGE("groff not installed here -- skipping");
+    return;
+  }
+  bool sawRawMacro = false, sawRenderedHeading = false;
+  for (const auto &line : view.lines()) {
+    if (line.text.find(".TH") != std::string::npos) sawRawMacro = true;
+    if (line.text.find("NAME") != std::string::npos) sawRenderedHeading = true;
+  }
+  CHECK_FALSE(sawRawMacro);  // the raw ".TH USILIC 1" macro line must not leak through verbatim
+  CHECK(sawRenderedHeading);  // groff's own rendered "NAME" section heading should be there instead
+}
+
+TEST_CASE_FIXTURE(Fixture, "loadFile: a plain (non-roff) file is unaffected -- no groff invocation, no "
+                           "content change") {
+  std::string path = writeFile("plain2.txt", "just some ordinary text\nwith a . in it\n");
+  REQUIRE(mode.loadFile(path));
+  REQUIRE(view.lines().size() == 2);
+  CHECK(view.lines()[0].text == "just some ordinary text");
+  CHECK(view.lines()[1].text == "with a . in it");
 }
