@@ -10608,11 +10608,19 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartKey): opens a browsable CUT segme
   REQUIRE(app.start(path()));
   CHECK(app.handleCommand(Command::StartKey));
   CHECK(app.currentMode() == ApplicationMode::Cut);
-  REQUIRE_FALSE(app.cutMode().segments().empty());
-  // QUICK.txt's own first KEY-section entry is the ^H/KEY binding itself
-  // ("C-h：[KEY] キーアサイン一覧を表示").
-  CHECK(app.cutMode().segments()[0].label.find("C-h") != std::string::npos);
-  CHECK(app.cutMode().segments()[0].label.find("[KEY]") != std::string::npos);
+  REQUIRE(app.cutMode().segments().size() >= 2);
+  // 2026-09-13, direct user request ("正式にCUT仕様となったので冒頭の
+  // マッチ無しエリアも表示するようにして。`--`の部分"): the "KEY"
+  // section's own heading line ("<b>KEY</b>") precedes the first
+  // tab-terminated entry and has no tab of its own, so -- exactly like
+  // any other real CUT session -- it becomes the standard leading
+  // "--" (no-match-yet) placeholder segment, same as
+  // CutMode::split()'s own documented convention. The real first entry
+  // (the ^H/KEY binding itself, "C-h：[KEY] キーアサイン一覧を表示") is
+  // therefore segments()[1], not segments()[0].
+  CHECK(app.cutMode().segments()[0].label == "--");
+  CHECK(app.cutMode().segments()[1].label.find("C-h") != std::string::npos);
+  CHECK(app.cutMode().segments()[1].label.find("[KEY]") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "KEY: re-entering from within a KEY session nests via pushSplit(), same as HELP -- "
@@ -10634,7 +10642,11 @@ TEST_CASE_FIXTURE(Fixture, "KEY: re-entering from within a KEY session nests via
 TEST_CASE_FIXTURE(Fixture, "KEY: Enter on an entry shows its detail text (CutContent), like a real CUT segment") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartKey));
-  REQUIRE(app.handleCommand(Command::Enter));  // first segment -- the ^H/KEY entry itself
+  // segments()[0] is now the leading "--" placeholder (see "opens a
+  // browsable CUT segment list..." above) -- move down once to reach
+  // the real first entry (the ^H/KEY binding itself) before entering it.
+  REQUIRE(app.handleCommand(Command::MoveDown));
+  REQUIRE(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::CutContent);
   bool sawExplanation = false;
   for (const auto &line : app.activeContentView().lines())
