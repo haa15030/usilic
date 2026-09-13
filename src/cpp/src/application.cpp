@@ -11288,6 +11288,18 @@ bool Application::startHelp() {
     // を復元した時点で、その本物のcut自身の状態を壊してしまう。
     ok = cutMode_.pushSplit(helpLines, kHelpPattern, GrepSyntax::Fixed);
   } else {
+    // 2026-09-14追加、直接のユーザー報告("-g: HELPのカーソル行が
+    // 保存されていない（^Hで常に最上行）"): cutOrigin_はCUT系セッション
+    // を抜けた後もそのまま残る(このファイル内、新規の最上位セッションを
+    // 作るまさにこの手の代入以外では一切書き換えられない――他の全ての
+    // 代入箇所を確認済み)ので、「今まさにcutOrigin_がHelpである」こと
+    // 自体が「前回もHELPだった(=このcutView_のcursorIndex()は前回の
+    // HELP閲覧位置をまだ保持している)」ことの十分な証拠になる。前回の
+    // カーソル位置を退避してから、下のsplit()(常にインデックス0へ
+    // リセットする、CutMode::split()自身のコメント参照)を呼び、直後に
+    // 復元する。
+    bool resumingHelpSession = (cutOrigin_ == CutOrigin::Help);
+    int previousCursorIndex = resumingHelpSession ? cutView_.cursorIndex() : 0;
     cutReturnMode_ = currentMode_;  // 保存すべきものが無い――本物のCUTが使うのと同じ「Cutを...へ戻す」という錨
     // 新規の最上位の分割――リサイズ時のリフローの対象になる。split()
     // の返り値をチェックした後ではなく、それを呼ぶ前に設定する
@@ -11301,6 +11313,11 @@ bool Application::startHelp() {
     cutOrigin_ = CutOrigin::Help;
     cutSyntax_ = GrepSyntax::Fixed;  // ここで設定しても安全: この分岐では古い値に依存する本物のものは何も無い
     ok = cutMode_.split(helpLines, kHelpPattern, GrepSyntax::Fixed);
+    if (ok && resumingHelpSession && previousCursorIndex > 0) {
+      int last = static_cast<int>(cutMode_.segments().size()) - 1;
+      cutView_.setCursorIndex(std::clamp(previousCursorIndex, 0, std::max(0, last)));
+      cutView_.redraw();
+    }
   }
   if (!ok) return false;
 
@@ -11479,6 +11496,26 @@ bool Application::handleMouseClick(int row, int column) {
     if (idx == locateView_.cursorIndex()) return openSelectedLocateResult();
     locateView_.setCursorIndex(idx);
     locateView_.redraw();
+    return true;
+  }
+  // 2026-09-14追加、直接のユーザー報告("-g: HELPのハイライト行が
+  // マウスのクリックで選べない"): 上のDu分岐自身のコメントと全く同じ
+  // 原因――handleMouseClick()にCut分岐が丸ごと存在しなかった。HELPは
+  // Cut/CutContentに乗る通常のCUTセッションの1つに過ぎない(クラス
+  // コメント参照)ので、これは実はHELP固有のバグではなく、CUT自体
+  // (実際のユーザー起動のCUTはもちろん、MAN/LOCATE/DUのCUT等も含む)
+  // がGUIモードで一度もクリック選択に対応していなかった、という
+  // より根深い既存の穴だった。Directory/Du/Archive自身の分岐と同じ
+  // 理由でisColumnWithinRowText()(上限のみ)を使う――セグメントの
+  // ラベルはls形式のパーミッション/サイズ/日付列を持たない、単純な
+  // 1列のテキストなので。
+  if (currentMode_ == ApplicationMode::Cut) {
+    int idx = cutView_.lineIndexAtRow(row);
+    if (idx < 0) return false;
+    if (!cutView_.isColumnWithinRowText(idx, column)) return false;
+    if (idx == cutView_.cursorIndex()) return openSelectedSegment();
+    cutView_.setCursorIndex(idx);
+    cutView_.redraw();
     return true;
   }
   return false;

@@ -10675,6 +10675,56 @@ TEST_CASE_FIXTURE(Fixture, "HELP: invoked mid-CUT preserves the real session; Ba
   CHECK(app.cutMode().segments().size() == realSegmentCount);
 }
 
+// 2026-09-14追加、直接のユーザー報告("-g: HELPのカーソル行が保存され
+// ていない（^Hで常に最上行）"): startHelp()は非ネストの分岐で常に
+// cutMode_.split()(内部でcursorIndex()を0へリセットする)を呼ぶため、
+// 一度^Gで抜けてから再び^Hで戻ると、前回どのセクションを見ていたかに
+// 関わらず常に先頭から始まっていた。
+TEST_CASE_FIXTURE(Fixture, "HELP: re-entering after Back resumes at the previously-viewed section, "
+                           "not always the top") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.cutMode().segments().size() == 2);
+  REQUIRE(app.handleCommand(Command::MoveDown));  // move to the second section
+  REQUIRE(app.activeContentView().cursorIndex() == 1);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.activeContentView().cursorIndex() == 1);  // resumed, not reset to 0
+}
+
+TEST_CASE_FIXTURE(Fixture, "HELP: a genuinely NEW top-level CUT session started in between does NOT leak "
+                           "its own cursor position into a later HELP re-entry") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.handleCommand(Command::MoveDown));
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+
+  // A real CUT session, started fresh from Directory -- cutOrigin_ is
+  // no longer Help, so the "resume" logic must not fire for it either.
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  feedText("hello");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  if (app.cutMode().segments().size() > 1) REQUIRE(app.handleCommand(Command::MoveDown));
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.activeContentView().cursorIndex() == 0);  // fresh HELP entry, not the CUT session's own leftover index
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleResize: reflows HELP's own content (a top-level split)") {
   std::string longHelp =
       "A：x\nabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz\nB：x\ntext\n";
@@ -10990,6 +11040,31 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: LOCATE results -- a click selects,
   REQUIRE(app.handleMouseClick(1, 0));  // click the SAME row again -- opens it, matching Directory's convention
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == targetB.string());
+}
+
+// 2026-09-14追加、直接のユーザー報告("-g: HELPのハイライト行がマウスの
+// クリックで選べない"): handleMouseClick()にはCut分岐そのものが一度も
+// 存在しなかった――上のDU自身の2026-09-15の穴と全く同じ形の欠落だが、
+// こちらはCut/CutContentに乗る全てのCUT系画面(実際のユーザー起動の
+// CUTはもちろん、HELP/MAN/LOCATE/DUのCUTも含む)に及ぶ、より根深い
+// 既存の穴だった。Directory/Du/Archive自身のテストと全く同じ形――
+// HELPを具体例として使う(testHelpText()経由、他のCUT起点でも同じ
+// 仕組みなので代表例として十分)。
+TEST_CASE_FIXTURE(Fixture, "handleMouseClick: CUT segment list (HELP as a concrete example) -- a click "
+                           "selects, a second click on the already-selected row opens it") {
+  REQUIRE(app.loadHelpText(testHelpText()));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartHelp));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+  REQUIRE(app.cutMode().segments().size() == 2);
+  REQUIRE(app.activeContentView().cursorIndex() == 0);
+
+  REQUIRE(app.handleMouseClick(1, 0));  // click row 1 (the second segment), not yet selected -- just selects it
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.activeContentView().cursorIndex() == 1);
+
+  REQUIRE(app.handleMouseClick(1, 0));  // click the SAME row again -- opens it, matching Directory's convention
+  CHECK(app.currentMode() == ApplicationMode::CutContent);
 }
 
 // 2026-09-15 addition, a direct user report ("一覧上で画面ドラッグ

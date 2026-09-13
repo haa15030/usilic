@@ -255,6 +255,19 @@ std::string composeDakutenInString(const std::string &utf8Text) {
 // 斜体だけがわずかに隣のセルへ食い込むのは、本物の端末エミュレータの
 // 斜体フォントでも普通に起こる見た目であり、無理に幅で縮めて高さを
 // 犠牲にするより遥かに自然)、高さだけで縮小率を決める。
+//
+// 2026-09-14追加、直接のユーザー報告("-g: bold装飾文字はそうでない
+// 文字に比べてサイズが小さい"、スクリーンショット=gq): 全く同じ
+// 根本原因がTTF_STYLE_BOLD(合成太字)にも存在すると判明した――
+// FreeTypeのemboldenはストロークを太らせるだけで送り幅メトリクスは
+// 調整しないため、太らせた分だけグリフのサーフェス幅が素のグリフより
+// 広くなり、単一セル幅の半角文字ではmaxWをわずかに超えて上と全く
+// 同じ「横方向の縮小に高さも巻き込まれる」現象が起きる――太字の
+// 文字だけが、同じフォント/ポイントサイズの非装飾文字より小さく
+// (かつ字形ごとにバラバラの量だけ)描画されていた。斜体と全く同じ
+// 理屈(几帳面な等幅グリッドの中で太字だけがわずかに隣のセルへ食み
+// 出るのは、本物の端末エミュレータの太字フォントでも普通に起こる
+// 見た目)で、太字セルについても幅方向のはみ出しを許容する。
 SDL_Rect fitGlyphRect(int boxX, int boxY, int maxW, int maxH, int surfaceW, int surfaceH,
                        bool allowWidthOverflow = false) {
   float scale = allowWidthOverflow
@@ -512,6 +525,26 @@ struct GraphicalDisplay::Impl {
   // (drawScrollbar())へ切り替わる。renderScrolled()自身のアクティ
   // ブなドラッグの描画に合わせている。
   bool everInteracted = false;
+
+  // 2026-09-14追加、直接のユーザー報告("-g: プロンプトに日本語が
+  // 入らない"): SDL_TEXTEDITING(IME変換中のプレビュー、事前に一度も
+  // 処理していなかった)のtextが空でない間、trueにする――日本語入力の
+  // 実際の流れは、ローマ字入力→IMEが変換候補を編集(SDL_TEXTEDITINGの
+  // 連続)→returnキーで確定(SDL側がIMEへその押下を渡し、IMEが確定
+  // した完成形の文字列を1回のSDL_TEXTINPUTとして配送)。ここで
+  // SDL_TEXTEDITINGを一切見ていなかったため、変換確定のreturn押下を
+  // SDL自体が(IME用の内部処理と「並行して」)通常のSDL_KEYDOWN
+  // (SDLK_RETURN)としても配送してしまうケースを区別できず、それが
+  // そのままkeyQueueへ0x0dとして積まれ、feedPromptByte()の
+  // `if (byte == kCarriageReturn) return submitPrompt();`により、
+  // 確定後のSDL_TEXTINPUTがまだ届いてもいないうちにプロンプト自体が
+  // 送信されてしまっていた――日本語が「入力される前に」プロンプトが
+  // 閉じてしまうので、ユーザーの目には「日本語が入らない」ように映る。
+  // IME変換中はSDL_KEYDOWN自体を丸ごと無視する(下のcase SDL_KEYDOWN
+  // 冒頭のガード参照)ことで、Return/Backspace/矢印キー等をIME自身に
+  // 完全に譲る――本物の端末がIMEとの間で同じ排他関係を保っているのと
+  // 同じ発想。
+  bool imeComposing = false;
   std::vector<Cell> grid;
 
   SDL_Color fg{220, 220, 220, 255};
@@ -1253,7 +1286,7 @@ void GraphicalDisplay::renderCell(int row, int col) {
     // 引き伸ばすのではなく、縮小して中央寄せするのかについてはそれ
     // 自身のコメント参照。
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
-    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h, cell.italic);
+    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h, cell.italic || cell.bold);
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
   }
 }
@@ -1344,7 +1377,7 @@ void GraphicalDisplay::renderCursor() {
   SDL_Texture *texture = cachedGlyphTexture(*impl_, renderFont, cell.glyph, style, hinting, impl_->bg, !isWide, w, h);
   if (texture) {
     int maxW = isWide ? impl_->cellWidth * 2 : impl_->cellWidth;
-    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h, cell.italic);
+    SDL_Rect dst = fitGlyphRect(box.x, box.y, maxW, impl_->cellHeight, w, h, cell.italic || cell.bold);
     SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
   }
 }
@@ -1952,6 +1985,11 @@ bool GraphicalDisplay::pumpEvents() {
         break;
       }
       case SDL_KEYDOWN: {
+        // Impl::imeComposing自身のコメント参照: IME変換中はこの
+        // イベント全体を無視し、Return/Backspace/矢印キー等の意味を
+        // IMEに完全に譲る(SDL_TEXTEDITING/SDL_TEXTINPUT側だけで
+        // 完結させる)。
+        if (impl_->imeComposing) break;
         if (const char *dbg = std::getenv("USILICGUIDEBUG")) {
           FILE *f = std::fopen(dbg, "a");
           if (f) { std::fprintf(f, "SDL_KEYDOWN sym=%d mod=%d GUI=%d CTRL=%d\n", event.key.keysym.sym, event.key.keysym.mod, (event.key.keysym.mod & KMOD_GUI) != 0, (event.key.keysym.mod & KMOD_CTRL) != 0); std::fclose(f); }
@@ -2046,7 +2084,17 @@ bool GraphicalDisplay::pumpEvents() {
         else if (event.key.keysym.sym == SDLK_ESCAPE) impl_->keyQueue.push_back(KeyEvent{0x1b, std::nullopt});
         break;
       }
+      case SDL_TEXTEDITING: {
+        // Impl::imeComposing自身のコメント参照。event.edit.textは、
+        // 変換が確定/取り消された(=もう編集中の文字列が無い)瞬間、
+        // 空文字列のイベントとして届く――これでフラグを下ろす。
+        impl_->imeComposing = event.edit.text[0] != '\0';
+        break;
+      }
       case SDL_TEXTINPUT: {
+        // IMEが確定した完成形の文字列がここへ届く時点で、変換自体は
+        // もう終わっている(Impl::imeComposing自身のコメント参照)。
+        impl_->imeComposing = false;
         for (const char *p = event.text.text; *p; p++) impl_->keyQueue.push_back(KeyEvent{static_cast<unsigned char>(*p), std::nullopt});
         break;
       }
