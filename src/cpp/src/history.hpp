@@ -147,6 +147,19 @@ class History {
 
   explicit History(int retentionCount = 200);
 
+  // 2026-09-20追加、直接のユーザー依頼("大きめの方針転換...historyへの
+  // その場反映は^R発動のHISTORY以外でお願いしたい"): pushRecent()が
+  // 呼ばれるたびに(どのcategoryだったかを添えて)通知するコールバック。
+  // 「^R発動のHISTORY」(RingCategory::ShellCommand、実行したシェル
+  // コマンド/cd/PROGRAMモードのコマンド――高頻度なので即時保存の対象
+  // から意図的に除外)かどうかの判断自体はこのクラスの関心事ではなく
+  // 呼び出し側(main.cpp)のポリシーなので、ここでは無条件にcategoryを
+  // そのまま渡すだけにしてある。main.cppはこれを使って、ディレクトリ
+  // 引数起動(consultHistoryOnStart)の間だけ、対象カテゴリのpush毎に
+  // ~/.usilic/historyへ即座に書き戻す(read-merge-write+lock込み、
+  // replayJournalOnto()自身のコメント参照)。
+  void setOnRingPushed(std::function<void(RingCategory)> callback);
+
   // -- カーソル位置の記憶 --
   std::optional<CursorPosition> positionFor(PositionCategory category, const std::string &name) const;
   void setPosition(PositionCategory category, const std::string &name, CursorPosition position);
@@ -295,6 +308,7 @@ class History {
   // 同時記録)はpushRecentImpl()を直接呼ぶことで、再生時に二重記録
   // (無害だが冗長)にならないようにしている。
   std::vector<std::function<void(History &)>> journal_;
+  std::function<void(RingCategory)> onRingPushed_;
   void setPositionImpl(PositionCategory category, const std::string &name, CursorPosition position);
   void rememberNameImpl(NameSetCategory category, const std::string &name);
   void pushRecentImpl(RingCategory category, const std::string &name);

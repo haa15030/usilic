@@ -235,6 +235,44 @@ std::string currentTimestampText() {
   return text;
 }
 
+// 2026-09-20追加、直接のユーザー依頼("history競合の件、1〜4の対策
+// (read-merge-write+lock)&書き込み手順を「一時ファイルに書いてから
+// rename」で実装よろしく"): ~/.usilic/historyへの実際の保存処理
+// (排他ロック+読み直し+このセッション自身の変更だけの再生+
+// 一時ファイル→rename)を1箇所に括り出したもの――終了時の保存と、
+// pushRecent()毎の即時保存(History::setOnRingPushed()自身のコメント
+// 参照)の両方から呼ぶ。sessionHistoryは呼び出し側が最後にpushした
+// 状態のまま(このセッション自身のjournal_を保持している)必要がある
+// ので、値渡しではなく参照で受け取る。
+void saveHistoryToDisk(const fm::History &sessionHistory, const std::string &usilicDir,
+                        bool charsetExplicitlySet) {
+  std::string historyPath = usilicDir + "history";
+  std::string historyOldPath = usilicDir + "history.old";
+  std::string historyLockPath = usilicDir + "history.lock";
+  acquireHistoryLock(historyLockPath);
+
+  fm::History diskHistory;
+  std::string currentDiskText = readFileIfExists(historyPath);
+  if (!currentDiskText.empty()) {
+    diskHistory.loadHistoryText(currentDiskText, charsetExplicitlySet);
+    if (!diskHistory.isComplete()) {
+      std::string diskOldText = readFileIfExists(historyOldPath);
+      if (!diskOldText.empty()) diskHistory.loadHistoryText(diskOldText, charsetExplicitlySet);
+    }
+  }
+  sessionHistory.replayJournalOnto(diskHistory);
+
+  std::string historyTmpPath = historyPath + ".tmp." + std::to_string(::getpid());
+  {
+    std::ofstream out(historyTmpPath, std::ios::binary);
+    out << diskHistory.serialize("usilic", currentTimestampText());
+  }
+  if (!currentDiskText.empty()) std::rename(historyPath.c_str(), historyOldPath.c_str());
+  std::rename(historyTmpPath.c_str(), historyPath.c_str());
+
+  releaseHistoryLock(historyLockPath);
+}
+
 struct TerminalAppearance {
   fm::GraphicalDisplay::Color background;
   fm::GraphicalDisplay::Color foreground;
@@ -3626,6 +3664,36 @@ int main(int argc, char **argv) {
       return 0;
     } else positionalArgs.push_back(argv[i]);
   }
+
+  // 2026-08-25 (a direct user request, "いまだ手つかずの通常ファイル
+  // 引数"): a positional argument that is a plain FILE, not a
+  // directory, used to be silently mistreated as one (fed straight
+  // into app.start() below, which lists it as if it were a
+  // directory -- previously the only path this function had). Now
+  // resolved to absolute paths up front (still lexically_normal(),
+  // matching the directory case's own established convention) and
+  // checked with std::filesystem::is_directory(): any positional
+  // argument that ISN'T a directory (a real file, or a typo that
+  // doesn't exist at all -- left for Application::startPagerFileList()
+  // itself to report, same as a bad directory argument already falls
+  // through to the "cannot list" error below) routes into
+  // startPagerFileList() instead of Directory mode. Two or more such
+  // arguments is the genuinely NEW case (legacy never supported this
+  // at all): a navigable "pager file list", see Command::PagerNextFile's
+  // own comment for the n/p/x/f and '['/']' navigation keys this wires
+  // up.
+  // 2026-09-20、直接のユーザー依頼("大きめの方針転換")によりconsultHistoryOnStart
+  // (下)の判定にも使うため、この計算をここ(display/keyInputのセット
+  // アップより前、引数解析の直後)へ引き上げた――positionalArgs自体の
+  // 内容だけで決まる、std::filesystemだけの純粋な計算なので前倒しに
+  // 副作用は無い。
+  std::vector<std::string> filePaths;
+  for (char *arg : positionalArgs) {
+    std::string resolved = std::filesystem::absolute(arg).lexically_normal().string();
+    if (!std::filesystem::is_directory(resolved)) filePaths.push_back(resolved);
+  }
+  bool isFileLaunch = !filePaths.empty() && filePaths.size() == positionalArgs.size();
+
   if (forceCui && forceGui) {
     std::cerr << "usilic: -c and -g are mutually exclusive.\n";
     return 1;
@@ -3659,23 +3727,6 @@ int main(int argc, char **argv) {
   if (!forceCui && !forceGui) forceCui = true;
 #endif
 
-  // Ported from HELP.jp's own EXIT section (2.18): "引数無しで file
-  // manager で起動した場合は...アクセス履歴のリストを~/.usilic/history
-  // に保存し、次回の起動時にはこのファイルにより、履歴リストを復元
-  // します" / "(ディレクトリ引数で起動した時...は、以上のファイルには
-  // アクセスしません)" -- an argument-launched run neither reads NOR
-  // writes ~/.usilic/history at all, matching legacy's "resume last
-  // session" feature being exclusive to the no-argument case (see
-  // startDirectory/consultHistoryOnStart's own comment below for the
-  // narrower, already-fixed half of this: which directory ROW to land
-  // on). Declared here (rather than where it's used below) so both the
-  // startup load AND the exit-time save can share one flag -- a real
-  // side-by-side screenshot comparison against legacy (2026-08-03)
-  // found an argument-launched run's ^X^F/^X^D lists polluted with
-  // unrelated entries from past unrelated sessions, because loading
-  // was previously unconditional.
-  bool consultHistoryOnStart = positionalArgs.empty();
-
   // exitOnFailure=!forceGui (2026-08-24 fix, docs/CHANGES.md item 423):
   // see TerminalDisplay::fromEnvironment()'s own declaration comment
   // for the full story -- forceGui/forceCui are already fully resolved
@@ -3701,6 +3752,47 @@ int main(int argc, char **argv) {
   // backend ends up running.
   std::signal(SIGTERM, handleTerminationSignal);
   std::signal(SIGHUP, handleTerminationSignal);
+
+  // 2026-09-20、直接のユーザー依頼("大きめの方針転換...引数無しかつ
+  // 素の対話的なusilic単体起動では「usilic [<file] [file] [directory]」
+  // を表示して終わる、でいいかなと"): 以前は「引数無し起動」= 「file
+  // managerでカレントディレクトリを開き、~/.usilic/historyを読み書き
+  // する」だったが、この方針を転換した。パイプも位置引数も無い、
+  // 純粋に対話的な起動(端末から`usilic`とだけ打った場合)はもう
+  // file managerにならず、簡単な使い方だけ出して即終了する――
+  // isPipedStdin自身の判定(下、pager起動の分岐)と全く同じ
+  // isatty()+keyInput.fd()の組み合わせをここでも使う必要があるため、
+  // その判定自体をここへ早めた。
+  bool stdinPiped = !::isatty(STDIN_FILENO) && keyInput.fd() >= 0;
+  if (positionalArgs.empty() && !stdinPiped) {
+    keyInput.close();
+    std::cout << "usilic [<file] [file] [directory]\n";
+    return 0;
+  }
+
+  // Ported from HELP.jp's own EXIT section (2.18) -- but with a direct
+  // user policy reversal (2026-09-20, "大きめの方針転換"): legacy (and
+  // this port until today) restricted ~/.usilic/history access to a
+  // no-argument launch only ("引数無しでfile managerで起動した場合は
+  // ...履歴リストを...復元"/"ディレクトリ引数で起動した時は...アクセス
+  // しません"). Per the reversal above, a bare no-argument launch no
+  // longer even reaches this point (it now exits right above, before a
+  // "session" of any kind exists) -- so the ONLY launch shape left that
+  // could plausibly want a persistent, shared history now is an
+  // explicit DIRECTORY argument (isFileLaunch's own pager mode and a
+  // piped-stdin pager still don't want one, matching legacy's existing
+  // "pager mode only uses KEY-mode features" restriction). This is the
+  // exact inverse of the old formula (positionalArgs.empty()) --
+  // deliberately, not a bug: a directory launch is now the one case
+  // that DOES touch history, and unlike the old no-argument case (which
+  // legacy itself only ever assumed a single instance of), any number
+  // of directory launches can run concurrently against the same or
+  // different directories, sharing the SAME ~/.usilic/history -- this
+  // is precisely why the read-merge-write+lock protocol (History::
+  // replayJournalOnto()/acquireHistoryLock() their own comments) was
+  // worth building today: multiple genuinely-concurrent writers to one
+  // shared file is now the normal, expected case, not a rare accident.
+  bool consultHistoryOnStart = !positionalArgs.empty() && !isFileLaunch;
 
   // Ported from str.c's set_usilicrc()/S_hist path-building: both files
   // live under $HOME/.usilic/, created if it doesn't exist yet (same
@@ -3749,70 +3841,34 @@ int main(int argc, char **argv) {
   // directory argument, not the persistent shared usilicDir a bare
   // interactive no-argument launch keeps (this comment block's own
   // 2026-08-18 reasoning above still applies to a genuine bare
-  // launch -- only the stdin-pipe case is added here).
-  // 2026-08-30 (直接のユーザー報告): "!::isatty(STDIN_FILENO)"だけでは
-  // Finderからbuild/usilicを直接ダブルクリックした場合(制御端末が
-  // 一切無く、stdin/stdout/stderrが/dev/null相当になる)と、本物の
-  // シェルからパイプされた場合("cat foo | ./build/usilic"、制御端末
-  // 自体は存在する)を区別できない――前者は「パイプされたstdin」
-  // ではなく素のダブルクリック起動であり、区別を誤ると空のSTDIN
-  // ページャモードに落ちてしまう(isPipedStdinの同種の修正参照)。
-  // keyInput.open("/dev/tty")は既に上で試行済みなので、その成否
-  // (fd() >= 0か)をここでも同じ判定に使い、制御端末が無い場合は
-  // 「引数無しの素の起動」の扱いに揃える。
-  bool hasRealContentArgument =
-      !positionalArgs.empty() || (!::isatty(STDIN_FILENO) && keyInput.fd() >= 0);
-
-  // 2026-09-20追加、直接のユーザー報告("引数無しでも複数起動できて
-  // しまうのは真性バグなので修正よろしく。ついてはIDEAS.md:46の反映も
-  // よろしく")。legacy自身のcheck_pl()/check_ps()(old/src/usilic.c)
-  // からの移植だが、挙動はdocs/ideas/IDEAS.md:46が実際に望んでいる形
-  // (legacy自身の実際の挙動である「警告して即終了、ユーザーが自分で
-  // 旧プロセスをkillする必要がある」ではなく、「警告した上で新プロセス
-  // 自身が旧プロセスをkillしてから起動を続ける」)に合わせて作り直した
-  // ――legacy自身のSIGCONT+mtime監視による「本当に生きているか」の
-  // 確認(このポートには、実行中プロセスが定期的にpidファイルへ触れる
-  // ような対応する仕組みが無いため素直に移植できない)の代わりに、
-  // kill(pid,0)一発の生死確認(サスペンド中でも真――IDEAS.md自身の
-  // 「サスペンド中のケースを含む」という要件を自然に満たす)に単純化
-  // し、PID再利用による誤検出を避けるため`ps -p <pid> -o comm=`で
-  // 実際にusilic自身(argv[0]の実行ファイル名)かどうかも確認する
-  // (legacy自身のcheck_ps()の`ps | grep PROGNAME`と同じ発想)。対象は
-  // legacy同様、引数無しの「素の」起動(履歴付きファイルマネージャ、
-  // f.usilic&0x80相当)だけ――hasRealContentArgumentがtrueの起動は
-  // 元々何個でも並行して構わない(すぐ上の2026-08-18コメント参照)。
+  // launch -- only the stdin-pipe case is added here). The
+  // isatty()-alone-is-insufficient Finder-double-click distinction
+  // this paragraph used to spell out for hasRealContentArgument's own
+  // (now-removed, see the next comment) definition lives on unchanged
+  // at isPipedStdin's own declaration further down, which still needs
+  // it.
   //
-  // 2026-09-14修正、直接のユーザー報告("⑤は新しい方の端末に一瞬出る
-  // ので直ってない"): legacy自身の"tcb: Process-ID <pid> ...
-  // \n     Already running."という警告メッセージの出力は、この移植
-  // では意図的に削除した(IDEAS.md:51自身のコメント参照)――legacyでは
-  // ユーザー自身が手動で旧プロセスをkillする必要があったためこの
-  // 警告に意味があったが、この移植は乗っ取り自体を自動で行うので、
-  // 新プロセス自身の画面(curses/GUI)がすぐ後で塗りつぶす直前に一瞬
-  // だけ表示されて消える、意味の薄い視覚的なノイズにしかならない。
-  // 乗っ取り自体は引き続き無条件に行う――ここは出力を削っただけ。
-  if (!hasRealContentArgument) {
-    std::string ownProgramName = std::filesystem::path(argv[0]).filename().string();
-    std::string pidPath = usilicDir + "pid";
-    long oldPid = 0;
-    {
-      std::ifstream pidIn(pidPath);
-      if (pidIn) pidIn >> oldPid;
-    }
-    if (oldPid > 0 && static_cast<pid_t>(oldPid) != ::getpid() && ::kill(static_cast<pid_t>(oldPid), 0) == 0) {
-      std::string comm = fm::ChildProcess::run({"ps", "-p", std::to_string(oldPid), "-o", "comm="}).output;
-      while (!comm.empty() && (comm.back() == '\n' || comm.back() == '\r' || comm.back() == ' ')) comm.pop_back();
-      if (std::filesystem::path(comm).filename().string() == ownProgramName) {
-        ::kill(static_cast<pid_t>(oldPid), SIGTERM);
-        for (int waited = 0; waited < 40 && ::kill(static_cast<pid_t>(oldPid), 0) == 0; waited++) ::usleep(50000);
-        if (::kill(static_cast<pid_t>(oldPid), 0) == 0) ::kill(static_cast<pid_t>(oldPid), SIGKILL);  // 2秒待っても応答無し -- 強制終了
-      }
-    }
-    std::ofstream pidOut(pidPath, std::ios::trunc);
-    if (pidOut) pidOut << ::getpid() << "\n";
-  }
-
-  std::string tempRootDirectory = hasRealContentArgument ? pidTempDirectory : "";
+  // 2026-09-20削除、直接のユーザー依頼("大きめの方針転換")に伴う後始末:
+  // 項目473で実装した「引数無しの多重起動を検知してkillする」仕組み
+  // (旧hasRealContentArgument判定+~/.usilic/pidベースの排他)は、
+  // それが守っていた対象そのもの(引数無し起動=履歴付きfile manager
+  // セッション)が上のポリシー転換で消滅した(引数無し起動は今や
+  // usageを出して即終了するだけ)ため、丸ごと不要になった。今後
+  // history(と旧来の~/.usilic/pid)へアクセスするのはディレクトリ
+  // 引数起動だけであり、そちらは複数並行稼働が仕様上の前提(このすぐ
+  // 下のtempRootDirectory自身のコメント、およびHistory::
+  // replayJournalOnto()/acquireHistoryLock()参照)なので、「多重起動を
+  // killする」という発想自体がそもそも当てはまらない。
+  //
+  // tempRootDirectory(旧hasRealContentArgument ? pidTempDirectory : ""):
+  // 上の方針転換で「引数無しの素の起動」という分岐そのものがここまで
+  // 到達しなくなった(この関数のもっと前でusageを出して return
+  // している)ため、この関数のこの先に生き残るどの起動シェイプ
+  // (ディレクトリ引数/ファイル引数/pipe stdin)も、常にこの2026-08-18
+  // 追加のper-pid隔離(下のコメント参照、ERROR/SHELLログの相互汚染
+  // 防止)の対象になる――三項演算子で分岐する理由が無くなったので
+  // 単純化した。
+  std::string tempRootDirectory = pidTempDirectory;
   std::string workRootDirectory = pidTempDirectory;
   // ^T's own new "Boot options" field (see executeShowUsilicBanner()'s own
   // comment): the literal argv[1..] this process was launched with, in
@@ -3868,6 +3924,23 @@ int main(int argc, char **argv) {
 
   std::string historyText;  // stays empty (see hasSavedHistory below) when consultHistoryOnStart is false
   if (consultHistoryOnStart) {
+    // 2026-09-20追加、直接のユーザー依頼("大きめの方針転換...historyへの
+    // その場反映は^R発動のHISTORY以外でお願いしたい"): 元々の⑦提案
+    // ("FILE/DIR/PROGRAMに項目が加わるたびに同ファイルへ記録")を、
+    // RingCategory::ShellCommand(" HISTORY"章、^Rで見る生の時系列
+    // ログ――実行したシェルコマンド/cd/PROGRAMモードのコマンドが
+    // 積まれる、他のどのカテゴリより高頻度)だけ除外する形で実装した。
+    // どのカテゴリを対象外にするかはHistory自身の関心事ではなく
+    // ここ(main.cpp)のポリシーなので、コールバック自体は無条件に
+    // 全カテゴリの通知を受け取り、ここでShellCommandだけ弾く。
+    // saveHistoryToDisk()自身がロック+読み直し+差分再生を担うので、
+    // ここでは呼ぶだけでよい。
+    history.setOnRingPushed([&](fm::RingCategory category) {
+      if (category != fm::RingCategory::ShellCommand) {
+        saveHistoryToDisk(history, usilicDir, configuration.charsetExplicitlySet());
+      }
+    });
+
     historyText = readFileIfExists(usilicDir + "history");
     if (!historyText.empty()) {
       history.loadHistoryText(historyText, configuration.charsetExplicitlySet());
@@ -4191,29 +4264,6 @@ int main(int argc, char **argv) {
     std::filesystem::path cwd = std::filesystem::current_path(cwdEc);
     if (!cwdEc && cwd == std::filesystem::path("/") && homeEnv) cwdFallback = homeEnv;
   }
-  // 2026-08-25 (a direct user request, "いまだ手つかずの通常ファイル
-  // 引数"): a positional argument that is a plain FILE, not a
-  // directory, used to be silently mistreated as one (fed straight
-  // into app.start() below, which lists it as if it were a
-  // directory -- previously the only path this function had). Now
-  // resolved to absolute paths up front (still lexically_normal(),
-  // matching the directory case's own established convention) and
-  // checked with std::filesystem::is_directory(): any positional
-  // argument that ISN'T a directory (a real file, or a typo that
-  // doesn't exist at all -- left for Application::startPagerFileList()
-  // itself to report, same as a bad directory argument already falls
-  // through to the "cannot list" error below) routes into
-  // startPagerFileList() instead of Directory mode. Two or more such
-  // arguments is the genuinely NEW case (legacy never supported this
-  // at all): a navigable "pager file list", see Command::PagerNextFile's
-  // own comment for the n/p/x/f and '['/']' navigation keys this wires
-  // up.
-  std::vector<std::string> filePaths;
-  for (char *arg : positionalArgs) {
-    std::string resolved = std::filesystem::absolute(arg).lexically_normal().string();
-    if (!std::filesystem::is_directory(resolved)) filePaths.push_back(resolved);
-  }
-  bool isFileLaunch = !filePaths.empty() && filePaths.size() == positionalArgs.size();
   // 2026-08-25 (a direct user follow-up, "less同様1ページ分しか読み
   // 込まない。その点STDINと同じなのでついでにそれもサポートして"): a
   // piped stdin (no positional arguments at all, and fd 0 isn't a real
@@ -4328,7 +4378,7 @@ int main(int argc, char **argv) {
     // 2026-08-30 (直接のユーザー報告、「usilicウィンドウの赤(終了)を
     // クリックすると暴走」): keyInput.fd() < 0は制御端末が一切無い
     // ことを意味する(Finderからのダブルクリック起動、isPipedStdin/
-    // hasRealContentArgumentの同種の修正参照)。この場合、下の
+    // stdinPipedの同種の修正参照)。この場合、下の
     // runTerminalPhase()は自分のpoll()にSTDIN_FILENO(/dev/null相当)
     // を使い続け、常に即座にPOLLINで戻り、keyInput.readByte()も
     // fd_<0のため常に0を返す――結果、100msのはずのスリープが一度も
@@ -4408,44 +4458,14 @@ int main(int argc, char **argv) {
 
     // 2026-09-20追加、直接のユーザー依頼("history競合の件、1〜4の対策
     // (read-merge-write+lock)&書き込み手順を「一時ファイルに書いて
-    // からrename」で実装よろしく"): 複数usilicプロセス並行時の
-    // 上書き消失対策。①history.lockで排他(acquireHistoryLock()自身の
-    // コメント参照)、②書く直前に~/.usilic/historyを「今」の状態で
-    // 読み直し(このプロセス起動後に他プロセスが書いた分もここで
-    // 拾える)、③このセッション「自身」が実際に行った変更だけを
-    // History::replayJournalOnto()で再生(2つのスナップショットの
-    // 差分を推測するのではなく、実際の操作列をそのまま再現する――
-    // history.hpp自身のreplayJournalOnto()宣言コメント参照)、
-    // ④一時ファイルへ書いてからrename()で本番パスへ差し替える
-    // (直前の.oldへの退避と合わせ、書き込み中のクラッシュでも
-    // 中途半端な内容の`history`が観測されることが無い――同じ
-    // temp+renameの手法は本ファイルの別の設定保存箇所(tmpPath変数)
-    // で既に使っている手法)。
-    std::string historyPath = usilicDir + "history";
-    std::string historyOldPath = usilicDir + "history.old";
-    std::string historyLockPath = usilicDir + "history.lock";
-    acquireHistoryLock(historyLockPath);
-
-    fm::History diskHistory;
-    std::string currentDiskText = readFileIfExists(historyPath);
-    if (!currentDiskText.empty()) {
-      diskHistory.loadHistoryText(currentDiskText, configuration.charsetExplicitlySet());
-      if (!diskHistory.isComplete()) {
-        std::string diskOldText = readFileIfExists(historyOldPath);
-        if (!diskOldText.empty()) diskHistory.loadHistoryText(diskOldText, configuration.charsetExplicitlySet());
-      }
-    }
-    history.replayJournalOnto(diskHistory);
-
-    std::string historyTmpPath = historyPath + ".tmp." + std::to_string(::getpid());
-    {
-      std::ofstream out(historyTmpPath, std::ios::binary);
-      out << diskHistory.serialize("usilic", currentTimestampText());
-    }
-    if (!currentDiskText.empty()) std::rename(historyPath.c_str(), historyOldPath.c_str());
-    std::rename(historyTmpPath.c_str(), historyPath.c_str());
-
-    releaseHistoryLock(historyLockPath);
+    // からrename」で実装よろしく"): 実際の保存処理(排他ロック+読み
+    // 直し+このセッション自身の変更だけの再生+一時ファイル→rename)は
+    // saveHistoryToDisk()に括り出してある――pushRecent()毎の即時保存
+    // (この関数のもっと前、history.setOnRingPushed()自身のコメント
+    // 参照)と同じ処理をここでも呼ぶだけ。sessionState/savedCharsetの
+    // ようなセッション終了時にしか確定しない値は、この最後の1回でのみ
+    // 反映される。
+    saveHistoryToDisk(history, usilicDir, configuration.charsetExplicitlySet());
   }
 
   return 0;

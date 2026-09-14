@@ -193,9 +193,12 @@ const std::vector<std::string> &History::namesIn(NameSetCategory category) const
   return (it != nameSets_.end()) ? it->second : kEmpty;
 }
 
+void History::setOnRingPushed(std::function<void(RingCategory)> callback) { onRingPushed_ = std::move(callback); }
+
 void History::pushRecent(RingCategory category, const std::string &name) {
   journal_.emplace_back([category, name](History &h) { h.pushRecentImpl(category, name); });
   pushRecentImpl(category, name);
+  if (onRingPushed_) onRingPushed_(category);
 }
 
 void History::pushRecentImpl(RingCategory category, const std::string &name) {
