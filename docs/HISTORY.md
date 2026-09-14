@@ -17671,3 +17671,15 @@ killしたのち再起動、を作ってもらったばかり、というタイ�
 
 ③^O^M(K-23)の「STDIN仕様」: legacyのold/src/menu.cを読み直したところ、M_fp(^O^M)はfp->cr=2を設定し、それが後続の`if (fp->cr == 2 && np->M != T_dir) *pinp = m_pipe(...)`でファイルを直接openするのではなく「パイプ経由」(m_pipe())で読ませる分岐だと判明しました――ご指摘の通り、私が以前AskUserQuestionで選んだ「行の折り返しを行わない」という解釈は誤りで、正しくは「選択したファイルをSTDINページャーと同じ経路(パイプ越し)で読む」でした。この再実装(loadFileNoWrap()をパイプ/ストリーム読み込みへ作り直す)は現在のnoWrapMode_の実装より影響範囲が大きいため、今すぐ着手してよいか、他の作業と合わせて後回しにするか、ご指示をお願いします。
 
+<^[^Mは旧をお手本として挙げたけど制御コードを表示する目的しかなく0x80以上はハイライトの*で表示しているので使い道（役に立った記憶）が無い。今のほうがよほどいいと思う。ただし^Iが表示されていないのでそれだけは偽装よろしく。
+^O^Mは`.tar`ファイル等に適用すると、ARC表示ではなく項目が選べないtvf表示画面になるだけだと思う。範囲は広そうだが反映よろしく。
+それと`git/usilic -c`起動でさっきうっかり`debian-keyring_2015.03.04.tar.xz`を踏んだら反応が無くなった。LOCATE同様、^Gで読み込みを中断できるようにして。
+
+>3件とも実装・検証・コミット完了しました。
+
+①^Iのタブ可視化: PipeBuffer::wrapLine()のタブ処理が`if (c == '\t')`という無条件分岐になっており、raw mode(K-24/ESC^M)でもスペースへ展開されてしまうため制御コードのハイライトが出ていませんでした。`if (c == '\t' && detectOverstrike_)`へ変更し、raw modeではタブも他の制御コード同様*付きで可視化されるようにしました。
+
+②^O^M(K-23)のアーカイブtvf表示: openSelectedEntryNoWrap()を、Configuration::programForSuffix()でアーカイブと判定できた場合は一覧表示コマンド(tar tvf等、.tgz等のパイプ分割も含む)を実行し、その生出力を一時ファイル経由でloadFileNoWrap()へ渡す(ArchiveModeには入らない、項目選択不可のプレーンページャー表示)よう作り直しました。コミット23b9c9b。
+
+③アーカイブ読み込みの^G中断: ArchiveMode::loadArchive()をChildProcess::run()/runPipeline()で同期的にコマンド完了を待つ実装から、DU/LOCATEのupdatedbと同じ非同期ポーリングパターン(ChildProcess::startCapturing()+pollArchiveLoadCompletion()+awaitingArchiveLoad())へ作り直し、dispatchByte()に^Gで中断するゲートを追加しました。スコープはDirectory一覧からの最初のEnterのみ(ネストしたアーカイブへの降下、^X^F/^J^J経由の履歴再生は元々の同期呼び出しのまま)。test_application.cppの22箇所にwaitForArchiveLoad()ポーリングヘルパーを追加してテストを追随させました。make testは1144件中1143件通過(既存無関係のLOCATEフレークのみ)、make install/make app完了。コミットc400a43。
+
