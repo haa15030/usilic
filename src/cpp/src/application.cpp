@@ -1894,6 +1894,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::Redraw;
     case 0x09:  // ^I(M_usilic、K-0、"USILIC"/今は"INFO")――2026-08-27に^Tから割り当て直した、kKeyTable自身のコメント参照
       return Command::ShowUsilicBanner;
+    case 0x14:  // ^T――Command::StartTutorial自身のコメント参照(TUTORIAL専用の直接キー)
+      return Command::StartTutorial;
     case 0x1a:  // ^Z(M_susp)――Command::Suspend自身のコメント参照
       return Command::Suspend;
     case 'q':  // M_quit――usilicrcはこれをページャの文脈に限定している;handleCommand()自身のゲート参照
@@ -3798,6 +3800,8 @@ bool Application::handleCommand(Command command) {
       return executeStartLog();
     case Command::ShowUsilicBanner:
       return executeShowUsilicBanner();
+    case Command::StartTutorial:
+      return openTutorial();
     // 2026-08-17修正(=cn): K-46(^X^F、「Select file name」)――なぜ
     // これがもうそれを直接呼ばないのかについてはstartListBrowser()
     // 自身のコメント参照。startRegexPromptList()は、その名前にも
@@ -6690,7 +6694,21 @@ std::string Application::bannerFilePath() const {
 // 切っているのでカーネルの通常のジョブコントロールは発火しない
 // ――leaveRawMode()で本物のtermio設定へ戻してから自分自身に
 // SIGTSTPを送って初めて、シェルから見て「本当に」止まる。
+//
+// 2026-09-20追加、直接のユーザー報告("-Zは-g起動で丸レインボーが
+// 回転"): -g(GraphicalDisplay)自体は制御端末のraw termioに一切
+// 依存していない(SDL2のウィンドウ+イベントループ)ため、そもそも
+// legacyのM_susp("シェルへ戻す")という概念自体が存在しない――
+// それでもSIGTSTPを自分自身へ送ると、SDL2のイベントループ/描画が
+// 応答しなくなり、macOS(ウィンドウサーバー)からは「応答無し」の
+// スピナー(丸レインボー)としてしか見えない、本物のジョブコント
+// ロールには繋がらないハングになる。display_.isGraphical()
+// (Display::isGraphical()自身のコメント参照、DelegatingDisplayが
+// 実際のバックエンドへ転送する)でGUIかどうかを判定し、GUIの場合は
+// 何もせずfalseを返す――legacy自身の`f_M != M_shell`という除外を、
+// legacyには存在しなかったGUIモードにも拡張したもの。
 bool Application::handleSuspend() {
+  if (display_.isGraphical()) return false;
   std::cout << "\n";
   std::cout.flush();
   keyInput_.leaveRawMode();
@@ -6958,6 +6976,18 @@ bool Application::executeShowUsilicBanner() {
 // のディレクトリへ降りることになろうと、それをまたいで状態を持つ
 // 「バナーへ戻る」フラグが古くなる危険を冒すよりも、^Gは無害な
 // no-opになる)。
+// 2026-09-20追加、直接のユーザー依頼("INFOは^I、TUTORIALは^T"):
+// 以前は^Tが^Iへ丸ごと付け替えられ(2026-08-27)、TUTORIALは^I画面
+// (INFO banner)の中の1行としてしか到達できなくなっていた――このport
+// 自身のここ数日の変更で新設された機能なのでlegacyには先例が無いが、
+// 実際にはTUTORIAL専用の直接キーとして^T自体を(空いていたので)復活
+// させたいという要望。openSelectedBannerEntry()自身の「TUTORIAL」行
+// 分岐と全く同じCUT-by-file再生ロジックをここへ括り出し、両方の入口
+// (^I画面での選択、^T直接)から共有する。
+bool Application::openTutorial() {
+  return openRecentFileEntry(buildCutFileHistoryEntry(tutorialPath_, tutorialCutPattern(), GrepSyntax::Basic));
+}
+
 bool Application::openSelectedBannerEntry() {
   if (fileMode_.currentFile() != bannerFilePath()) return false;
   const auto &lines = fileView_.lines();
@@ -7006,12 +7036,9 @@ bool Application::openSelectedBannerEntry() {
   // 2026-09-14追加、直接のユーザー依頼("usilic内での発動は^Tで行う"):
   // 「TUTORIAL」行は他の固定パス行(Startup file/ERROR/SHELL、プレーン
   // なloadFile())とは異なり、CUT-by-fileそのものを再生する必要がある
-  // ――app/main.cpp自身の真っ新起動時の事前登録エントリと全く同じ
-  // 経路(openRecentFileEntry()自身の合成エントリ分岐、cutReturnMode_の
-  // 代入含む)を、その合成エントリ文字列をここで組み立てて渡すことで
-  // そのまま再利用する(専用のCUT起動コードをここに複製しない)。
-  if (endsWith(tutorialPath_))
-    return openRecentFileEntry(buildCutFileHistoryEntry(tutorialPath_, tutorialCutPattern(), GrepSyntax::Basic));
+  // ――openTutorial()自身のコメント参照(2026-09-20、^T単独キーとの
+  // 共有のため括り出した)。
+  if (endsWith(tutorialPath_)) return openTutorial();
   for (const std::string &fixedPath : {usilicrcPath_, errorLogPath_, logFilePath_}) {
     if (!endsWith(fixedPath)) continue;
     // 2026-08-27修正、実際の報告("^T→「/tmp/.usilic.NNNNN/shell」

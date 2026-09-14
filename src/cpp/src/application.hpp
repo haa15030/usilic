@@ -460,6 +460,10 @@ enum class Command {
   // K-0(^T、M_usilic、「USILIC」): ステータス/バージョン情報画面を表示
   // する。Application::executeShowUsilicBanner()自身のコメント参照。
   ShowUsilicBanner,
+  // ^T――直接のユーザー依頼("INFOは^I、TUTORIALは^T")。openTutorial()
+  // 自身のコメント参照: ^I(INFO banner)の「TUTORIAL」行のEnterと全く
+  // 同じCUT-by-file再生を、専用の直接キーからも起動できるようにする。
+  StartTutorial,
   // K-27(^Oa)は2026-09-20に廃止された。2026-09-01に一度、直接の
   // ユーザー依頼("^Oaはデフォルト文字コード切り替えではなくてHELP/KEY
   // の日本語<->英語切り替えでいいと思う")によりCycleCharset(Ascii ->
@@ -2163,6 +2167,8 @@ class Application {
   // る。FileMode::loadFile()は本物のパスを必要とし、このテキストは
   // ERROR/LOGのような他の自然なディスク上の住処を持たないため。
   bool executeShowUsilicBanner();
+  // openTutorial()自身のコメント参照(^T単独キー、Command::StartTutorial)。
+  bool openTutorial();
   // Command::Suspend(^Z)自身のコメント参照。
   bool handleSuspend();
   // ^Tバナー自身の合成された裏付けファイルは
