@@ -4170,6 +4170,45 @@ bool Application::openSelectedEntryNoWrap() {
   std::string path = directoryMode_.currentDirectory();
   if (!path.empty() && path.back() != '/') path += '/';
   path += entry->name;
+
+  // 2026-09-20追加、直接のユーザー指摘("^O^Mは.tarファイル等に適用
+  // すると、ARC表示ではなく項目が選べないtvf表示画面になるだけだと
+  // 思う"): old/src/menu.cを読み直すと、M_fp(^O^M)はfp->cr=2を経て
+  // m_pipe()――つまり「一覧表示コマンド自体をパイプ越しに読ませる」
+  // 経路に入る。通常のEnter/openSelectedEntry()がアーカイブに対して
+  // 発動するArchiveMode(entries_へ構造化して対話的に選べる一覧)とは
+  // 別物で、tar tvf/unzip -l等の生出力を、選択不可なプレーンな
+  // ページャーテキストとしてそのまま見せるのが正しい解釈だった
+  // (以前このケースを「高度な/稀な機能」として意図的に複製しない
+  // 判断をしていたが誤りだった)。ArchiveMode::loadArchive()自身が
+  // 一覧コマンドを組み立てる箇所と全く同じ構築(pipedFromArgvの
+  // 2段パイプライン形式含む)を踏襲し、その捕捉済み出力を一時
+  // ファイルへ書き出してFileMode::loadFileNoWrap()へ渡す――
+  // ArchiveEntryへのparseListing()はここでは呼ばない(構造化しない)。
+  ArchiveKind kind = ArchiveKind::None;
+  auto command = configuration_.programForSuffix(path, &kind);
+  if (command && kind != ArchiveKind::None) {
+    ChildProcess::Options options;
+    options.forceUtf8CTypeForListing = true;
+    ChildProcess::Result result;
+    if (command->pipedFromArgv) {
+      std::vector<std::string> firstStage = *command->pipedFromArgv;
+      firstStage.push_back(path);
+      result = ChildProcess::runPipeline(firstStage, command->argv, options);
+    } else {
+      std::vector<std::string> argv = command->argv;
+      argv.push_back(path);
+      result = ChildProcess::run(argv, options);
+    }
+    if (!result.ok) return false;
+    std::vector<unsigned char> bytes(result.output.begin(), result.output.end());
+    std::string tempPath = materializeArchiveTempFile(tempRootDirectory_, entry->name + ".tvf", bytes);
+    if (tempPath.empty() || !fileMode_.loadFileNoWrap(tempPath)) return false;
+    currentMode_ = ApplicationMode::File;
+    fileReturnMode_ = ApplicationMode::Directory;
+    return true;
+  }
+
   if (!fileMode_.loadFileNoWrap(path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;

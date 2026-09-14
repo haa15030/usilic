@@ -469,7 +469,16 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     // U+2060方式に統一したことでこの特例自体が不要になったため、
     // 行末/行途中の区別(旧: peekNewlineAfterMarkers()によるlookahead)
     // ごと削除した。
-    if (c == '\t') {
+    // 2026-09-20追加、直接のユーザー指摘("^[^Mは...ただし^Iが表示
+    // されていないのでそれだけは偽装よろしく"): detectOverstrike_が
+    // falseの間(K-24、raw modeでの「制御コードをそのまま可視化」)は、
+    // タブも他の制御バイト(0x01-0x1F)と同じく、素のまま下の一般文字
+    // パスへ素通しし、ContentView::renderLine()自身の反転表示グリフ
+    // (0x09+'@'='I'、他の"^A^B^C"表示と同じ慣習)で見せる――このすぐ
+    // 下のU+2060+スペース展開(検索性のための「タブらしく見せる」
+    // 偽装)は、生の制御コードを見せるのが目的のraw modeの趣旨とは
+    // 逆なので、通常表示(detectOverstrike_ == true)の時だけ適用する。
+    if (c == '\t' && detectOverstrike_) {
       // disp.c自身の「'\t'を' 'へ変換する」というコメント(そちら自身の
       // count_h()/count_i()による列数カウント処理も、何かがdisplay層へ
       // 到達する前に同じ置換を行っている)からの移植――生のタブバイト

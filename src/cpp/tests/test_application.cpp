@@ -4066,6 +4066,26 @@ TEST_CASE_FIXTURE(Fixture, "ARC: Enter on an archive file switches to Archive mo
   CHECK(archiveIndexOf(app, "inner.txt") >= 0);
 }
 
+// 2026-09-20追加、直接のユーザー指摘("^O^Mは.tarファイル等に適用する
+// と、ARC表示ではなく項目が選べないtvf表示画面になるだけだと思う"):
+// old/src/menu.cのM_fp(fp->cr=2、m_pipe())からの、以前見送っていた
+// アーカイブ分岐の再実装。
+TEST_CASE_FIXTURE(Fixture, "ReadFileNoWrap (^O^M) on an archive shows the raw listing command's plain "
+                           "output as a non-interactive pager, NOT Archive mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::ReadFileNoWrap));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  bool sawEntry = false;
+  for (const auto &line : app.activeContentView().lines()) {
+    if (line.text.find("inner.txt") != std::string::npos) sawEntry = true;
+  }
+  CHECK(sawEntry);  // tar tvfの生出力に含まれるはずのエントリ名がプレーンテキストとして見える
+}
+
 TEST_CASE_FIXTURE(Fixture, "ARC: Enter on a plain (non-archive) file still opens File mode as before") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
