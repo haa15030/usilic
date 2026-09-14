@@ -17466,3 +17466,36 @@ HISTORY.md:17209に則りsrc/HISTORY.diffの反映よろしく。
 
 ⑧を実装しました(項目479)。src/README.jp→src/TUTORIAL、src/README→src/TUTORIAL.enへgit mvし、見出し行の先頭(半角スペース2つ)を全角スペース1つへ機械的に変換しました(太字重ね打ちの章番号バイト列自体は不変、egrep -aで全26見出しの一致を確認済み)。src/config.sh・src/cpp/Makefileのインストール手順を追随させ、FILE履歴の合成CUTエントリ形式(項目469)を拡張して末尾の区切り文字でGrepSyntaxを判別できるようにしました("..."=Fixed、/.../=Regex)。app/main.cppは~/.usilic/history自体が存在しない場合に限りTUTORIAL自身の合成エントリを1件事前登録し、^T(INFO banner)に新設した「TUTORIAL」行もopenRecentFileEntry()の同じ合成エントリ再生経路を呼んで発動するようにしました。実装の途中で2点、実際に検証して初めて気づいた不具合を見つけて修正しています。1点目: ご指定のパターンをそのまま生バイト(\x08込み)で実装したところ、実際にはfileMode_.loadFile()がオーバーストライク検出(既定ON)でsrc/TUTORIAL自身の全見出し文字を1文字+Bold属性へ収縮させてしまい\x08が残らないため、実機のTUTORIAL全26見出しに対して0件一致という形で発覚しました――収縮後の見た目通りの文字列(全角スペース+数字+ドットの並び)に一致するようパターンを改めました。2点目: ~/.usilic/historyを退避して実際にusilicをバックグラウンド起動→SIGTERM→ファイルを検分する形で確認したところ、Historyクラスの「ファイル記録と同時に含むディレクトリもDIR履歴へ記録する」既存機能(項目440前後)が、スラッシュ区切り(Regex)の合成エントリだと閉じデリミタ自身を「最後のスラッシュ」と誤認し、導出される「ディレクトリ」が合成文字列まるごとになる不具合を発見・修正しました。openRecentFileEntry()自身にも、Directory以外から呼ばれた場合のcutReturnMode_未設定という潜在バグを合わせて修正しています。新規doctest4件+回帰テスト2件、既存の^Tバナーテスト2件(行インデックスのずれ)を更新、make testは1145件中1144件通過(既存無関係のLOCATEフレークのみ)、make install/make app完了。ご指定通り~/.usilic/historyを退避しての実機検証(FILE_HISTORYへの事前登録・DIR_HISTORYへの正しい親ディレクトリ導出の両方を確認)後、元のファイルを復元しました。
 
+⑦(引数無し起動の履歴アクセス制限・書き戻しタイミング変更)は調査のみで実装は保留中です――複数インスタンス同時起動時のデータ上書き消失リスクをどう扱うか、ご判断待ちです。
+
+<ターミナルが突然の強制終了でclaudeを起動していたウィンドウまで消えていた。
+さっきまでのやり取りを含めたdiffがsrcにあるのでHISTORY.md:16110を踏まえて反映よろしく。
+
+⑦データ上書き消失リスクが起きるとしたらどんなケースか挙げてみて。
+⑧FILE一覧上では
+/Users/haa15030/.local/lib/usilic/TUTORIAL /^　[0-9]/
+となっているので旧同様
+/Users/haa15030/.local/lib/usilic/TUTORIAL "/^　[0-9]/"
+として欲しい。^Hが入るとやはりマッチしないので真っ新FILEには上でよろしく。
+それに関連し、^Jc/^J^Cがそれぞれfgrep/grep検索となっているのをいずれも「grepで^Jc（バッファ分割）/^J^C（ファイル分割。^Jb/^J^Bは廃止）」でよろしく。
+
+「2. History::pushRecent()の「含むディレクトリも...」のくだりがちょっと分かりにくいので簡単な実例で解説をお願い。
+
+⑨モード名はTUTORIALだが読み込むファイルをTUTORIALとTUTORIAL.enとで切り替えを行う^Oaを復活して欲しい。真っ新FILEリストには下記を登録でよろしく。
+/Users/haa15030/.local/lib/usilic/TUTORIAL "/^　[0-9]/"
+/Users/haa15030/.local/lib/usilic/TUTORIAL.en "/^　[0-9]/"
+
+（新しいターミナルウィンドウでのセッション再開。旧ウィンドウ消失前のsrc/HISTORY.diffは既にdocs/HISTORY.mdへ反映済みと自力で確認し、AskUserQuestionでsrc/HISTORY.diffの扱い・src/HELP.txtのコミット可否を尋ねたが、質問自体は却下された。）
+
+<日本語でよろしく。
+
+>了解しました。以降は日本語で対応します。
+
+現状の確認結果をまとめると:
+
+1. **src/HISTORY.diffは既にdocs/HISTORY.mdへ反映済み**(内容完全一致、patchも「既に適用済み」と判定)。おそらく私が把握していない別セッションで既に処理されています。
+2. **src/HELP.txtに未コミットの整形編集**(`<indentN>`を全て`<indent1>`へ統一、旧来の全角スペース字下げ行を撤去)があり、見た限り整形は完了していそうです。
+3. **src/直下の見慣れない未追跡ファイル**(QUICK.txt・usilic.1・test.txt・各種アーカイブ)は、過去のやり取りから無関係と判断され触れられていなかったものです。
+
+このsrc/HISTORY.diff(既に反映済み)の扱いと、src/HELP.txtの未コミット整形をコミットするかどうか、どうしましょうか。
+
