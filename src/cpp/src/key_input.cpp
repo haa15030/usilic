@@ -54,6 +54,15 @@ void handleCont(int) {
   std::signal(SIGCONT, handleCont);
   if (g_active) g_active->reportPid();
   if (g_active) g_active->reenterRawMode();
+  // 2026-09-20追加、直接のユーザー依頼("^Zも実装して"、Application::
+  // handleSuspend()自身のコメント参照): ジョブコントロールで再開
+  // された直後(handleTtouの自己停止、またはApplication::
+  // handleSuspend()自身のkill(SIGTSTP)のどちらが停止元でも共通)は、
+  // 端末サイズが停止中に変わっているかもしれない(別のウィンドウへ
+  // フォーカスが移っていた等)し、変わっていなくても画面の再描画は
+  // 必要――既存のSIGWINCH検知の仕組み(g_resizePending/
+  // consumeResizeSignal())にそのまま相乗りする。
+  g_resizePending = 1;
 }
 
 // 重複させてあり、terminal_display.cppのwindowSize()とは共有して

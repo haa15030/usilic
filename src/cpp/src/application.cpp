@@ -1,6 +1,7 @@
 #include "application.hpp"
 
 #include <algorithm>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
@@ -454,6 +455,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
                           std::string homeDirectory, std::string tempRootDirectory, std::string workRootDirectory,
                           std::string bootOptions)
     : display_(display),
+      keyInput_(keyInput),
       pathResolver_(homeDirectory),
       tempRootDirectory_(resolveTempRoot(homeDirectory, tempRootDirectory)),
       workRootDirectory_(resolveTempRoot(homeDirectory, workRootDirectory)),
@@ -1892,6 +1894,8 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::Redraw;
     case 0x09:  // ^I(M_usilic、K-0、"USILIC"/今は"INFO")――2026-08-27に^Tから割り当て直した、kKeyTable自身のコメント参照
       return Command::ShowUsilicBanner;
+    case 0x1a:  // ^Z(M_susp)――Command::Suspend自身のコメント参照
+      return Command::Suspend;
     case 'q':  // M_quit――usilicrcはこれをページャの文脈に限定している;handleCommand()自身のゲート参照
       return Command::QuitPager;
     case 'n':  // Command::PagerNextFile自身のコメント参照
@@ -3929,6 +3933,8 @@ bool Application::handleCommand(Command command) {
       activeView().redraw();
       activeView().syncVisibleCursor();
       return true;
+    case Command::Suspend:
+      return handleSuspend();
     case Command::GoToTop:
       activeView().setHoverIndex(std::nullopt);
       activeView().goToTop();
@@ -6677,6 +6683,27 @@ bool Application::executeStartLog() {
 // 一度も言及されなかった。
 std::string Application::bannerFilePath() const {
   return std::filesystem::path(usilicrcPath_).parent_path().string() + "/usilic";
+}
+
+// Command::Suspend(^Z)自身の宣言コメント参照。legacy自身のkey.c
+// (M_susp、`f_M != M_shell`の分岐)からの移植: raw modeではISIGを
+// 切っているのでカーネルの通常のジョブコントロールは発火しない
+// ――leaveRawMode()で本物のtermio設定へ戻してから自分自身に
+// SIGTSTPを送って初めて、シェルから見て「本当に」止まる。
+bool Application::handleSuspend() {
+  std::cout << "\n";
+  std::cout.flush();
+  keyInput_.leaveRawMode();
+  ::kill(::getpid(), SIGTSTP);
+  // ここへ戻ってくるのはSIGCONTで再開された後――key_input.cpp自身の
+  // handleCont()が(非同期のシグナルハンドラとして)既にreenterRawMode()
+  // を呼び、g_resizePendingも立てている。consumeResizeSignal()で
+  // それを消費し、リサイズの有無に関わらず無条件に完全な再描画で
+  // 復帰する(legacy自身のvt_winsize()+条件付きkey_winch(0)を、この
+  // 移植では単純化した形)。
+  keyInput_.consumeResizeSignal();
+  handleResize();
+  return true;
 }
 
 bool Application::executeShowUsilicBanner() {

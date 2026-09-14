@@ -234,6 +234,19 @@ enum class Command {
   ToggleGuiMode,
   // K-3(^L、M_clear): アクティブなビューの完全な再描画を強制する。
   Redraw,
+  // ^Z(M_susp)――legacy自身のkey.c(M_susp、`f_M != M_shell`の場合の
+  // 分岐)からの移植、直接のユーザー依頼("^Zも実装して")。raw modeでは
+  // カーネルの行編集(ISIG)を切っているため、Ctrl-Zを押しても通常の
+  // ジョブコントロール(SIGTSTP)は自動発火しない――このコマンド自身が
+  // 明示的にleaveRawMode()してから自分自身にSIGTSTPを送ることで代用
+  // する(handleSuspend()自身のコメント参照)。legacy同様SHELLモード中
+  // (子プロセスへの生バイト転送)は対象外――resolveCommand()経由では
+  // dispatchByte()自身のShellモード早期分岐(feedShellByte())より後にしか
+  // 届かないため、この制限は自然に成り立つ。同じ理由でプロンプト編集中
+  // (promptKind_ != None)も対象外――legacy自身のf_M != M_shellという
+  // 単純な条件よりは狭いスコープだが、素の閲覧中の誤操作からの復帰
+  // (最も一般的な使い方)を素直にカバーする。
+  Suspend,
   // K-12/K-13(ESC< / ESC>、M_head/M_tail): 最初/最後の行へジャンプ
   // する――ContentView::goToTop()/goToBottom()は既に存在していたが
   // 一度もキーに配線されていなかった(実際の報告: usilicrc自身の
@@ -2150,6 +2163,8 @@ class Application {
   // る。FileMode::loadFile()は本物のパスを必要とし、このテキストは
   // ERROR/LOGのような他の自然なディスク上の住処を持たないため。
   bool executeShowUsilicBanner();
+  // Command::Suspend(^Z)自身のコメント参照。
+  bool handleSuspend();
   // ^Tバナー自身の合成された裏付けファイルは
   // "<homeDirectory>/.usilic/usilic"の下に住む――tempRootDirectory_
   // では「ない」(2026-08-18の修正、実際の報告: ERROR/SHELL/WORK/
@@ -2308,6 +2323,12 @@ class Application {
   std::vector<StyledLine> wrapHelpText(int width) const;
 
   Display &display_;  // handleResize()自身のrows()/columns()の参照――現在他のどのメンバーもこれを必要としない
+  // Command::Suspend(^Z)自身のコメント参照。他の*Mode(ExecMode等)は
+  // 既にそれぞれ自分自身のKeyInput&を持っているが、Application自身は
+  // これまで直接には保持していなかった――このコマンドだけがApplication
+  // 自身のレベルでleaveRawMode()/reenterRawMode()を必要とするため、
+  // ここに追加した。
+  KeyInput &keyInput_;
   PathResolver pathResolver_;  // ^Xf/^Xdパスプロンプト、コンストラクタ自身のhomeDirectoryコメント参照
   // 2026-08-18の追加(スクリーンショット=cm、2つの同時実行される
   // 引数起動されたインスタンスが、以前はhomeDirectoryの下の1つの
