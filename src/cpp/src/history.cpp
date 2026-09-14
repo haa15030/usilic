@@ -223,8 +223,32 @@ void History::pushRecent(RingCategory category, const std::string &name) {
   // のpushに対しても、上の同一の重複排除/保持上限ロジックが再利用
   // される。
   if (category == RingCategory::RecentFile) {
-    std::string::size_type slash = name.find_last_of('/');
-    if (slash != std::string::npos) pushRecent(RingCategory::RecentDirectory, name.substr(0, slash + 1));
+    // 2026-09-14修正、実際の再現(TUTORIALの真っ新起動時の事前登録
+    // エントリを検証中に発覚): application.cpp自身のbuildCutFileHistoryEntry()
+    // が積む「パス "パターン"」/「パス /パターン/」という合成形の
+    // 場合、上のslash導出をそのまま`name`(合成文字列そのもの)に
+    // 適用すると、スラッシュ区切り(GrepSyntax::Regex)ではその末尾の
+    // 閉じスラッシュ自身が「最後の'/'」になってしまい、導出される
+    // 「ディレクトリ」が本当のパスの親ではなく合成文字列全体に化ける
+    // (引用符区切りのFixedはパターン自身にスラッシュを含まない限り
+    // 偶然無事だった)。parseCutFileHistoryEntry()自身のコメントと
+    // 同じ最も単純な形式チェック(末尾が`"`/`/`で閉じ、その直前に
+    // ` "`/` /`が見つかる)で合成形を検出し、本当のファイルパス部分
+    // だけをここでのスラッシュ探索の対象にする――Historyクラス自体は
+    // application.cpp側のGrepSyntax等を一切知らないので、完全な
+    // パース(parseCutFileHistoryEntry()自身)は複製せず、ディレクトリ
+    // 導出に必要な最小限(パス部分の切り出し)だけをここに持つ。
+    std::string pathPart = name;
+    if (pathPart.size() >= 4) {
+      char delim = pathPart.back();
+      if (delim == '"' || delim == '/') {
+        std::string openMarker = std::string(" ") + delim;
+        std::string::size_type openPos = pathPart.rfind(openMarker, pathPart.size() - 2);
+        if (openPos != std::string::npos) pathPart = pathPart.substr(0, openPos);
+      }
+    }
+    std::string::size_type slash = pathPart.find_last_of('/');
+    if (slash != std::string::npos) pushRecent(RingCategory::RecentDirectory, pathPart.substr(0, slash + 1));
   }
 }
 

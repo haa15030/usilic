@@ -3826,6 +3826,27 @@ int main(int argc, char **argv) {
         std::string oldText = readFileIfExists(usilicDir + "history.old");
         if (!oldText.empty()) history.loadHistoryText(oldText, configuration.charsetExplicitlySet());
       }
+    } else {
+      // 2026-09-14追加、直接のユーザー依頼("README改めTUTORIALとして
+      // FILE履歴には真っ新起動の時点で~/.local/lib/usilic/TUTORIAL
+      // \"^　[0-9]^H[0-9]+\\.\"が登録済み"): ~/.usilic/history自体が
+      // 存在しない(=このユーザーにとって本当に初めての起動、または
+      // 何らかの理由で履歴がまっさらな状態)場合に限り、FILE履歴へ
+      // TUTORIAL自身の合成CUTエントリ(application.cppのparseCutFileHistoryEntry()/
+      // buildCutFileHistoryEntry()自身のコメント参照――スラッシュ
+      // 区切りはGrepSyntax::Regexを意味する)を1件だけ事前登録する。
+      // パターン自体はfm::tutorialCutPattern()(application.hpp/cpp)を
+      // 呼ぶ――^T画面自身の「TUTORIAL」行(Application::
+      // openSelectedBannerEntry())と全く同じバイト列を参照する必要が
+      // あり、ここで独自に組み立てると片方だけ直す事故が起きるため
+      // (そのものの宣言コメント参照)。usilic.man同様、ここでは
+      // TUTORIAL自身の存在確認までは行わない(実際に選択された時点で
+      // FileMode::loadFile()が自然に失敗するだけなので、ここで二重に
+      // チェックする必要が無い)。
+      if (homeEnv) {
+        std::string tutorialPath = std::string(homeEnv) + "/.local/lib/usilic/TUTORIAL";
+        history.pushRecent(fm::RingCategory::RecentFile, tutorialPath + " /" + fm::tutorialCutPattern() + "/");
+      }
     }
   }
 

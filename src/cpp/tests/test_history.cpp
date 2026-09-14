@@ -113,6 +113,36 @@ TEST_CASE("ring history: pushRecent(RecentFile, ...)'s derived directory push do
   CHECK(dirs.back() == "/a/b/");
 }
 
+// 2026-09-14修正、実際の再現(TUTORIALの真っ新起動時の事前登録エント
+// リをusilicを実際に起動して検証中に発覚): application.cppのbuildCutFileHistoryEntry()
+// が積む「パス /パターン/」(GrepSyntax::Regex)という合成形は、この
+// 導出ロジックが素朴に`name`全体の最後の'/'を探すと、その閉じ
+// デリミタ自身にヒットしてしまい、導出される「ディレクトリ」が
+// 合成文字列まるごとになっていた(引用符区切りのFixedはパターン自身
+// にスラッシュが無い限り無事だった、下の2ケース目参照)。
+TEST_CASE("ring history: pushRecent(RecentFile, ...) with a slash-delimited composite CUT entry "
+          "(GrepSyntax::Regex) derives the REAL containing directory, not the whole composite string") {
+  History h(10);
+  h.pushRecent(RingCategory::RecentFile, "/a/b/file.txt /pattern [a-z]+/");
+
+  const auto &dirs = h.recentEntries(RingCategory::RecentDirectory);
+  REQUIRE(dirs.size() == 1);
+  CHECK(dirs.back() == "/a/b/");
+}
+
+// 同じ導出ロジックの引用符区切り(GrepSyntax::Fixed)側 -- 参考として
+// 明示的に固定する(上のRegexケースが壊れる直前まで、これは`name`
+// 自身がたまたま普通のパスと同じ形をしていたので無事だった)。
+TEST_CASE("ring history: pushRecent(RecentFile, ...) with a quote-delimited composite CUT entry "
+          "(GrepSyntax::Fixed) derives the REAL containing directory too") {
+  History h(10);
+  h.pushRecent(RingCategory::RecentFile, "/a/b/file.txt \"marker\"");
+
+  const auto &dirs = h.recentEntries(RingCategory::RecentDirectory);
+  REQUIRE(dirs.size() == 1);
+  CHECK(dirs.back() == "/a/b/");
+}
+
 TEST_CASE("ring history: evicts the single oldest entry once at the retention cap") {
   History h(3);
   h.pushRecent(RingCategory::ShellCommand, "cmd1");

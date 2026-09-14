@@ -272,10 +272,14 @@ install $COPY -m 644 ${PROGNAME}rc \$PREFIX/lib/$PROGNAME
 # インストール先の実際のファイル名("HELP"/"HELP.jp")はBUILT BINARY
 # 自身が実行時に探す名前なので、install(1)の第2引数を明示的な
 # ファイル名(ディレクトリ末尾ではなく)にして変更していない。
-echo "install $COPY -m 644 README \$PREFIX/lib/$PROGNAME/HELP"
-install $COPY -m 644 README \$PREFIX/lib/$PROGNAME/HELP
-echo "install $COPY -m 644 README.jp \$PREFIX/lib/$PROGNAME/HELP.jp"
-install $COPY -m 644 README.jp \$PREFIX/lib/$PROGNAME/HELP.jp
+# 2026-09-14追記、直接のユーザー依頼("README改めTUTORIAL"):
+# src/README(.jp)がsrc/TUTORIAL.en/TUTORIALへさらに改名されたのに
+# 伴い、ソース側のパスだけを再度差し替えた――上と同じ理由で
+# インストール先のファイル名("HELP"/"HELP.jp")自体は変更していない。
+echo "install $COPY -m 644 TUTORIAL.en \$PREFIX/lib/$PROGNAME/HELP"
+install $COPY -m 644 TUTORIAL.en \$PREFIX/lib/$PROGNAME/HELP
+echo "install $COPY -m 644 TUTORIAL \$PREFIX/lib/$PROGNAME/HELP.jp"
+install $COPY -m 644 TUTORIAL \$PREFIX/lib/$PROGNAME/HELP.jp
 echo "install $COPY $PERM doc/usilic.1.gz \$PREFIX/man/man1"
 install $COPY $PERM doc/usilic.1.gz \$PREFIX/man/man1
 EOF

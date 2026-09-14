@@ -770,6 +770,80 @@ CLAUDE.mdの作業ログ(項目1〜332)を、モード別(参照しやすさの�
      1140件中1139件通過(残る1件は既存の無関係なLOCATE環境依存
      フレーク)。`make install`/`make app`完了。
 
+479. **2026-09-14: README改めTUTORIAL(英文はTUTORIAL.en)へ昇格 ――
+     真っ新起動時にFILE履歴へTUTORIAL自身の合成CUTエントリを事前
+     登録、^T(INFO banner)から直接発動できるように**
+   - **直接のユーザー依頼**: 「README改めTUTORIALとしてFILE履歴には
+     真っ新起動の時点で`~/.local/lib/usilic/TUTORIAL "^　[0-9]^H
+     [0-9]+\."`が登録済み、usilic内での発動は^Tで行う。ついては
+     `~/.usilic/history`を`history.BAK`としておいたので反映してみて
+     ほしい」。AskUserQuestionで英文版の扱いを確認し、「TUTORIAL.en
+     等で対にする」を採用。
+   - **実装**: `src/README.jp`→`src/TUTORIAL`(見出し行の先頭を、
+     半角スペース2つから全角スペース1つへ機械的に変換――既存の
+     `2\x082.1\x081.`のような太字重ね打ちの章番号バイト列自体は
+     不変)、`src/README`→`src/TUTORIAL.en`(見出し形式は不変、
+     GitHub向け資料としてのみ残置、このポートのランタイムからは
+     未参照)。`src/config.sh`(legacy自身の`make install`が
+     `HELP`/`HELP.jp`としてコピーする元)と`src/cpp/Makefile`の
+     `install`ターゲット(新規、`$PREFIX/lib/usilic/TUTORIAL`)の
+     両方を追随させた。FILE履歴の合成CUTエントリ形式(項目469が
+     導入した「パス "パターン"」)を拡張し、末尾の区切り文字で
+     `GrepSyntax`を判別できるようにした(`"..."`=Fixed、`/.../`
+     =Regex、新設)――`parseCutFileHistoryEntry()`の戻り値が
+     `tuple<path, pattern, syntax>`になり、`buildCutFileHistoryEntry()`
+     が逆変換を担う。`app/main.cpp`は`~/.usilic/history`自体が
+     存在しない場合に限り、この合成エントリ(`fm::tutorialCutPattern()`
+     が正典として定義するパターン、実体は下記参照)をFILE履歴へ
+     1件だけ事前登録する。`Application`の^T(INFO banner、
+     `executeShowUsilicBanner()`)に新規「TUTORIAL」行を追加し、
+     `openSelectedBannerEntry()`はそれを選ぶと(他の固定パス行の
+     ような素のファイル閲覧ではなく)`openRecentFileEntry()`自身の
+     合成エントリ再生経路をそのまま呼び出してCUT-by-fileを再生する
+     ――事前登録エントリの選択と全く同じ経路。`openRecentFileEntry()`
+     自身にも、Directory以外(この新設の^T画面を含む)から呼ばれた
+     場合の`cutReturnMode_`未設定という潜在バグを発見・修正した
+     (`startCutFilePrompt()`自身の同じ代入パターンに合わせた)。
+   - **パターンの訂正(実装中に発覚)**: 当初はユーザー自身の指定
+     通り生バイト(`\x08`込み)のパターンをそのまま実装したが、
+     `openRecentFileEntry()`が実際に`fileMode_.loadFile()`(既定で
+     オーバーストライク検出ON)経由でCUT対象の文字列を組み立てる
+     ため、`src/TUTORIAL`自身の見出しの生バイト("c\bc"の1文字
+     ごとの重ね打ちがヘッダー全体に及ぶ、pythonで直接read()して
+     確認)は`loadFile()`の時点で1文字+Bold属性へ収縮し、`\x08`が
+     残らないと判明した(新規doctestで`REQUIRE(...segments...==1)`
+     として実際に失敗、生の`src/TUTORIAL`に対しても26見出し中0件
+     一致で再現)。生バイト版のパターンのまま動かすには
+     `loadFileRaw()`を使う必要があるが、それだとTUTORIAL全体の
+     太字表示を失ってしまい本末転倒――代わりに`loadFile()`収縮後の
+     「見た目通りの」文字列(全角スペース+数字+ドットの並び、
+     `^　[0-9]+(\.[0-9]+)*\.`)に一致するよう`fm::tutorialCutPattern()`
+     を改めた。実`src/TUTORIAL`の26見出し全件に一致することを
+     python3での模擬収縮+正規表現照合で確認済み。
+   - **副作用として発覚したHistoryクラス側のバグも修正**:
+     `History::pushRecent(RecentFile, ...)`は2026-08-27追加の
+     「ファイルを記録すると同時にその含むディレクトリもDIR履歴へ
+     記録する」機能を持つが、スラッシュ区切り(Regex)の合成エント
+     リをこの導出ロジックにそのまま渡すと、閉じデリミタ自身の`/`
+     が「最後のスラッシュ」に化けてしまい、導出される「ディレクト
+     リ」が合成文字列まるごとになる不具合を、実際に`usilic`を
+     バックグラウンド起動→SIGTERM→`~/.usilic/history`を検分する
+     形で再現・発見した(引用符区切りのFixedはパターン自身に
+     スラッシュが無い限り無事だった)。`parseCutFileHistoryEntry()`
+     と同じ最小限の形式チェックをHistoryクラス側にも持たせ、
+     合成エントリからパス部分だけを切り出してから導出するよう
+     修正。
+   - **検証**: 新規doctest4件(FILE履歴Regexエントリの一致確認、
+     ^TのTUTORIAL行からのCUT再生、Historyクラスの合成エントリ
+     ディレクトリ導出バグの回帰テスト2件)、既存の^Tバナーテスト
+     2件(新規行の挿入で行インデックスがずれた分)を更新。実機検証:
+     `~/.usilic/history`を退避して`usilic`を実際にバックグラウンド
+     起動→SIGTERM→`~/.usilic/history`を検分し、`FILE_HISTORY`への
+     事前登録・`DIR_HISTORY`への正しい親ディレクトリ導出の両方を
+     確認、その後元の`~/.usilic/history`を復元した。`make test`は
+     1145件中1144件通過(残る1件は既存の無関係なLOCATE環境依存
+     フレーク)。`make install`/`make app`完了。
+
 ## 2. KEY(キー一覧 / HELP)
 
 58. **2026-07-29: KEY/ヘルプモード(^J^H)をApplicationへ配線 ―

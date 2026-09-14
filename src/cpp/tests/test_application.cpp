@@ -2136,6 +2136,39 @@ TEST_CASE_FIXTURE(Fixture, "FILE history: a plain path that happens to contain n
   CHECK(app.currentMode() == ApplicationMode::File);  // plain open, not Cut
 }
 
+// 2026-09-14追加、直接のユーザー依頼("README改めTUTORIALとして...
+// FILE履歴には...TUTORIAL \"^　[0-9]^H[0-9]+\\.\"が登録済み"):
+// この事前登録エントリ自身のパターンが正規表現であり、当初の実装
+// (GrepSyntax::Fixedに決め打ち)では動作しない。parseCutFileHistoryEntry()/
+// buildCutFileHistoryEntry()自身のコメント参照(区切り文字でFixed/
+// Regexを区別する拡張)。
+TEST_CASE_FIXTURE(Fixture, "FILE history: a composite \"path /pattern/\" entry (slash delimiters) "
+                           "replays the CUT using Regex syntax, not Fixed") {
+  std::string composite = (root / "log.txt").string() + " /marker [a-z]+/";
+  history.pushRecent(RingCategory::RecentFile, composite);
+  REQUIRE(app.start(path()));
+  CHECK(app.handleCommand(Command::GoToRecentFile));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.cutMode().pattern() == "marker [a-z]+");
+  REQUIRE(app.cutMode().segments().size() == 3);  // marker one/two/three
+}
+
+TEST_CASE_FIXTURE(Fixture, "CUT (regular file, Regex syntax): completing a real split records a "
+                           "slash-delimited composite entry, not the quote-delimited Fixed form") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::StartCutFileRegex));
+  feedText("marker [a-z]+");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  std::string plainPath = (root / "log.txt").string();
+  std::string composite = plainPath + " /marker [a-z]+/";
+  const auto &recent = history.recentEntries(RingCategory::RecentFile);
+  CHECK(std::find(recent.begin(), recent.end(), composite) != recent.end());
+}
+
 TEST_CASE_FIXTURE(Fixture, "CUT: Enter on a segment label shows that segment's content in CutContent") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
@@ -5009,7 +5042,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the WORK line opens 
   REQUIRE(app.currentMode() == ApplicationMode::File);
   std::string bannerFile = app.fileMode().currentFile();
 
-  for (int i = 0; i < 4; i++) REQUIRE(app.handleCommand(Command::MoveDown));  // Boot/Startup/ERROR/SHELL/WORK
+  for (int i = 0; i < 5; i++) REQUIRE(app.handleCommand(Command::MoveDown));  // Boot/Startup/ERROR/SHELL/TUTORIAL/WORK
   int workRow = app.activeContentView().cursorIndex();
   REQUIRE(app.handleCommand(Command::Enter));
   CHECK(app.currentMode() == ApplicationMode::File);
@@ -5141,18 +5174,65 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): highlightStartColumn lands at
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
   const auto &lines = app.activeContentView().lines();
-  // Boot options / Startup file / ERROR / SHELL / WORK (fresh fixture: no
-  // w.N ever allocated, so WORK's own line has nothing after it) -- see
-  // executeShowUsilicBanner()'s own `openable` comment for why Boot options
-  // and an empty WORK are the only two non-openable lines here.
-  REQUIRE(lines.size() >= 5);
-  for (std::size_t i = 0; i < 5; i++) {
+  // Boot options / Startup file / ERROR / SHELL / TUTORIAL / WORK (fresh
+  // fixture: no w.N ever allocated, so WORK's own line has nothing after
+  // it) -- see executeShowUsilicBanner()'s own `openable` comment for why
+  // Boot options and an empty WORK are the only two non-openable lines
+  // here (TUTORIAL, added 2026-09-14, is always openable -- see its own
+  // `openable` comment).
+  REQUIRE(lines.size() >= 6);
+  for (std::size_t i = 0; i < 6; i++) {
     REQUIRE(lines[i].highlightStartColumn.has_value());
     CHECK(*lines[i].highlightStartColumn == 15);  // kLabelWidth(12) + " : "(3) -- every line, uniformly
   }
   CHECK(lines[0].neverHighlighted);         // "Boot options" -- never openable
-  CHECK(lines[4].neverHighlighted);         // "WORK :" with nothing after it
-  for (std::size_t i : {1, 2, 3}) CHECK_FALSE(lines[i].neverHighlighted);  // Startup file / ERROR / SHELL
+  CHECK(lines[5].neverHighlighted);         // "WORK :" with nothing after it
+  for (std::size_t i : {1, 2, 3, 4}) CHECK_FALSE(lines[i].neverHighlighted);  // Startup file / ERROR / SHELL / TUTORIAL
+}
+
+// 2026-09-14追加、直接のユーザー依頼("README改めTUTORIALとして...
+// usilic内での発動は^Tで行う"): ^T(INFO banner)の「TUTORIAL」行を
+// 選んでEnterすると、プレーンなファイル閲覧ではなく、
+// tutorialPath_自身に対するCUT-by-fileが(openRecentFileEntry()の
+// 合成エントリ分岐を経由して)再生される――app/main.cppの真っ新起動
+// 時の事前登録エントリが選ばれた時と全く同じ経路・同じパターン
+// (fm::tutorialCutPattern())。
+TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on the TUTORIAL line replays a CUT split over "
+                           "its own heading pattern, the same composite-entry path fresh-boot seeding uses") {
+  fs::create_directories(root / ".local" / "lib" / "usilic");
+  // U+3000 (full-width space, raw UTF-8) + bold-overstruck digit
+  // ("N\bN") + "." -- the same heading byte sequence src/TUTORIAL
+  // itself actually uses (verified via egrep, docs/HISTORY.md).
+  {
+    std::ofstream tutorial(root / ".local" / "lib" / "usilic" / "TUTORIAL");
+    tutorial << "intro\n"
+             << "\xE3\x80\x80" << "1\b1." << "\nfirst section\n"
+             << "\xE3\x80\x80" << "2\b2." << "\nsecond section\n";
+  }
+
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::ShowUsilicBanner));
+  const auto &lines = app.activeContentView().lines();
+  int tutorialRow = -1;
+  std::string suffix = (root / ".local" / "lib" / "usilic" / "TUTORIAL").string();
+  for (std::size_t i = 0; i < lines.size(); i++) {
+    if (lines[i].text.size() >= suffix.size() &&
+        lines[i].text.compare(lines[i].text.size() - suffix.size(), suffix.size(), suffix) == 0) {
+      tutorialRow = static_cast<int>(i);
+      break;
+    }
+  }
+  REQUIRE(tutorialRow >= 0);
+  app.activeContentView().setCursorIndex(tutorialRow);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Cut);
+  CHECK(app.cutMode().pattern() == fm::tutorialCutPattern());
+  // 3segments: the leading "--" region ("intro", before the first
+  // heading match) plus the two "N\bN." heading segments themselves --
+  // see CutMode::split()'s own comment for why unmatched leading
+  // content gets its own labelless "--" segment.
+  REQUIRE(app.cutMode().segments().size() == 3);
+  CHECK(app.cutMode().segments()[0].label == "--");
 }
 
 // 2026-08-28 addition, same report: confirms the ACTUAL RENDERED

@@ -10,6 +10,7 @@
 #include <limits>
 #include <set>
 #include <sstream>
+#include <tuple>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -76,14 +77,38 @@ std::string duEntryFolder(const DuEntry &entry) {
 // 見つかり、両側とも空でない場合にだけ一致とみなす――ただの
 // ファイルパスに偶然二重引用符が含まれるような病的なケースを
 // (完璧ではないにせよ)大まかに避けるための、最も単純な形式チェック。
-std::optional<std::pair<std::string, std::string>> parseCutFileHistoryEntry(const std::string &entry) {
-  if (entry.size() < 4 || entry.back() != '"') return std::nullopt;
-  std::size_t openQuote = entry.rfind(" \"", entry.size() - 2);
-  if (openQuote == std::string::npos) return std::nullopt;
-  std::string filePath = entry.substr(0, openQuote);
-  std::string pattern = entry.substr(openQuote + 2, entry.size() - (openQuote + 2) - 1);
+//
+// 2026-09-14拡張、直接のユーザー依頼("README改めTUTORIALとして...
+// FILE履歴には真っ新起動の時点で~/.local/lib/usilic/TUTORIAL "^
+// [0-9]^H[0-9]+\."が登録済み"): この事前登録エントリ自身のパターンが
+// 正規表現(`^`/`[0-9]`/`+`/`\.`)であり、当初の実装(GrepSyntax::Fixed
+// に決め打ち)では正しく動作しない。表示文字列自体にGrepSyntaxを
+// 残すため、区切り文字で2方式を区別するよう拡張した: 二重引用符
+// (`"..."`、従来通り)はFixed、スラッシュ(`/.../`、新設)はRegex。
+// C-j b(QUICK.txt自身がFixed版のこのエントリの説明で名指ししている)
+// は引き続きFixedのまま――この拡張は既存の合成エントリの見た目/
+// 挙動を一切変えない、後方互換な追加。
+std::optional<std::tuple<std::string, std::string, GrepSyntax>> parseCutFileHistoryEntry(
+    const std::string &entry) {
+  if (entry.size() < 4) return std::nullopt;
+  char delim = entry.back();
+  GrepSyntax syntax;
+  if (delim == '"') syntax = GrepSyntax::Fixed;
+  else if (delim == '/') syntax = GrepSyntax::Regex;
+  else return std::nullopt;
+  std::string openMarker = std::string(" ") + delim;
+  std::size_t openPos = entry.rfind(openMarker, entry.size() - 2);
+  if (openPos == std::string::npos) return std::nullopt;
+  std::string filePath = entry.substr(0, openPos);
+  std::string pattern = entry.substr(openPos + 2, entry.size() - (openPos + 2) - 1);
   if (filePath.empty() || pattern.empty()) return std::nullopt;
-  return std::make_pair(filePath, pattern);
+  return std::make_tuple(filePath, pattern, syntax);
+}
+
+// parseCutFileHistoryEntry()自身のコメント参照――その逆変換。
+std::string buildCutFileHistoryEntry(const std::string &path, const std::string &pattern, GrepSyntax syntax) {
+  char delim = (syntax == GrepSyntax::Regex) ? '/' : '"';
+  return path + " " + delim + pattern + delim;
 }
 
 // 2026-09-05追加、直接のユーザー依頼("FGREP/EGREPの代わりにgrep -F/
@@ -392,6 +417,33 @@ std::string resolveTempRoot(const std::string &homeDirectory, const std::string 
 }
 }  // namespace
 
+// application.hpp自身の宣言コメント参照: app/main.cpp(真っ新起動時の
+// FILE履歴への事前登録)とこのファイル自身(下のexecuteShowUsilicBanner()/
+// openSelectedBannerEntry()の「TUTORIAL」行)の両方が使う、唯一の
+// 正典。
+//
+// 2026-09-14訂正: 当初(このコメントの前の版)はユーザー自身が指定した
+// 生バイト表記("^　[0-9]^H[0-9]+\.")をそのまま実装していたが、
+// openRecentFileEntry()の合成エントリ分岐は実際にはfileMode_.loadFile()
+// (オーバーストライク検出が既定でON、PipeBuffer::wrapLine()の
+// detectOverstrike_)経由でsourceLinesを組み立てる――src/TUTORIAL
+// 自身の見出しの生バイトは実は数字・ピリオド・空白・英字を含む
+// 「行全体」が"c\bc"(1文字ごとに同じ文字をバックスペース越しに
+// 重ね打ち)というnroff太字表現になっており(python3で直接read()して
+// repr()し確認済み、単なる先頭の見出し番号だけが特別というわけでは
+// ない)、loadFile()はこの"c\bc"を1文字+Bold属性へ収縮させる――結果
+// としてCutMode::split()が実際に見る文字列には\x08が一切残らない。
+// 生バイト版のこのパターンは(FGREP/EGREPへの直接シェルアウトである
+// CutMode::split()自身の性質上)`fileMode_.loadFileRaw()`のような
+// オーバーストライク検出無しの経路でしか一致しないが、それだと今度は
+// TUTORIAL全体の太字表示(本文含め全行がこの重ね打ち規約)を失って
+// しまい本末転倒(K-24のRaw表示と同じ見た目になる)。そこで代わりに、
+// loadFile()収縮後の「見た目通りの」文字列(全角スペース+数字+ドット
+// の並び、バックスペース無し)に一致するよう改めた――太字の見た目は
+// そのまま保たれる。「1.」「2.」「2.1.」「2.18.」のような1〜複数階層
+// の見出し番号すべてに一致する。
+std::string tutorialCutPattern() { return "^\xE3\x80\x80[0-9]+(\\.[0-9]+)*\\."; }
+
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
                           std::string homeDirectory, std::string tempRootDirectory, std::string workRootDirectory,
@@ -405,6 +457,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       logFilePath_(tempRootDirectory_ + "/shell"),
       usilicrcPath_(homeDirectory + "/.usilic/usilicrc"),
       historyFilePath_(homeDirectory + "/.usilic/history"),
+      tutorialPath_(homeDirectory + "/.local/lib/usilic/TUTORIAL"),
       encoding_(encoding),
       configuration_(configuration),
       history_(history),
@@ -4843,17 +4896,27 @@ bool Application::openRecentFileEntry(const std::string &path) {
   // 表示され、選択すると文字列行の目次一覧画面となる"): executeCut()
   // 自身のfileSourcePath分岐が積む「パス "パターン"」という合成形の
   // 場合は、プレーンなファイル閲覧ではなくCUT-by-fileそのものを
-  // 再実行する。実行時の構文(Fixed/Regex)は表示文字列自体には残って
-  // いないため、C-j b(QUICK.txt自身がこのエントリの説明で名指しして
-  // いる、より一般的に使われる方)に合わせてFixedへ決め打ちする。
+  // 再実行する。2026-09-14拡張、parseCutFileHistoryEntry()自身の
+  // コメント参照: 実行時の構文(Fixed/Regex)は区切り文字(引用符/
+  // スラッシュ)から復元する。
   if (auto composite = parseCutFileHistoryEntry(path)) {
-    if (!fileMode_.loadFile(composite->first)) return false;
+    const auto &[filePath, pattern, syntax] = *composite;
+    // 2026-09-14追加、直接のユーザー依頼("usilic内での発動は^Tで
+    // 行う"、^T画面からTUTORIALを選ぶ経路の追加で発覚): startCutFilePrompt()
+    // 自身の同一のcutReturnMode_の代入(そちら自身のコメント参照)と
+    // 同じ理屈――ここへ到達し得る全ての経路(FILE履歴のListBrowser、
+    // ^X^F自身のライブコンボボックス、そしてこの新設の^T画面)のうち、
+    // Directory以外から呼ばれた場合は、明示的にcutReturnMode_を発動元
+    // へ揃えないと、^Gが(デフォルトのDirectoryへではなく)無関係な
+    // 前回のCUTセッションが残した古いcutReturnMode_へ戻ってしまう。
+    if (currentMode_ != ApplicationMode::Directory) cutReturnMode_ = currentMode_;
+    if (!fileMode_.loadFile(filePath)) return false;
     std::vector<StyledLine> sourceLines;
     sourceLines.reserve(fileView_.lines().size());
     for (const auto &line : fileView_.lines()) sourceLines.push_back({line.text, line.attributes});
     cutOrigin_ = CutOrigin::File;
-    cutSyntax_ = GrepSyntax::Fixed;
-    if (!cutMode_.split(sourceLines, composite->second, cutSyntax_)) return false;
+    cutSyntax_ = syntax;
+    if (!cutMode_.split(sourceLines, pattern, cutSyntax_)) return false;
     currentMode_ = ApplicationMode::Cut;
     return true;
   }
@@ -6672,6 +6735,15 @@ bool Application::executeShowUsilicBanner() {
   openable.push_back(true);   // 「Startup file」――usilicrc、常に実在する
   openable.push_back(true);   // 「ERROR」――下でtouchされる、それ自身のコメント参照
   openable.push_back(true);   // 「SHELL」――下でtouchされる、それ自身のコメント参照
+  // 2026-09-14追加、直接のユーザー依頼("usilic内での発動は^Tで行う"):
+  // 「TUTORIAL」――tutorialPath_自身のコメント参照(インストール先
+  // $PREFIX/lib/usilic/TUTORIAL、~/.usilic/ではない)。Startup file/
+  // ERROR/SHELLとは異なり実体はTUTORIAL自身が固定で持つ(このセッション
+  // 中に何かが起きて初めて存在する類のファイルではない)ので、touch()は
+  // 不要――未インストール環境(TUTORIAL自体が無い)ではopenSelectedBannerEntry()
+  // 自身のCUT再生がfileMode_.loadFile()の失敗経由で黙ってno-opになる、
+  // ERROR/SHELLがまだ空の時と同じ扱い。
+  openable.push_back(true);
   for (std::size_t i = 0; i < (allocatedWorkFiles_.empty() ? std::size_t{1} : allocatedWorkFiles_.size()); i++)
     openable.push_back(!allocatedWorkFiles_.empty());
   for (std::size_t i = 0; i < allocatedArcDirs_.size(); i++) openable.push_back(true);
@@ -6696,6 +6768,7 @@ bool Application::executeShowUsilicBanner() {
   banner << field("Startup file") << usilicrcPath_ << "\n";
   banner << field("ERROR") << errorLogPath_ << "\n";
   banner << field("SHELL") << logFilePath_ << "\n";
+  banner << field("TUTORIAL") << tutorialPath_ << "\n";
   banner << field("WORK");
   for (std::size_t i = 0; i < allocatedWorkFiles_.size(); i++) {
     if (i) banner << continuationIndent;
@@ -6897,6 +6970,15 @@ bool Application::openSelectedBannerEntry() {
   // という修正とまさに同じ。`label`はファイル自身の素のベース名
   // (FileModeが既に表示していたであろうものから変わっていない)と
   // して渡されるので、モードラインの宛先の半分だけが実際に変わる。
+  // 2026-09-14追加、直接のユーザー依頼("usilic内での発動は^Tで行う"):
+  // 「TUTORIAL」行は他の固定パス行(Startup file/ERROR/SHELL、プレーン
+  // なloadFile())とは異なり、CUT-by-fileそのものを再生する必要がある
+  // ――app/main.cpp自身の真っ新起動時の事前登録エントリと全く同じ
+  // 経路(openRecentFileEntry()自身の合成エントリ分岐、cutReturnMode_の
+  // 代入含む)を、その合成エントリ文字列をここで組み立てて渡すことで
+  // そのまま再利用する(専用のCUT起動コードをここに複製しない)。
+  if (endsWith(tutorialPath_))
+    return openRecentFileEntry(tutorialPath_ + " /" + tutorialCutPattern() + "/");
   for (const std::string &fixedPath : {usilicrcPath_, errorLogPath_, logFilePath_}) {
     if (!endsWith(fixedPath)) continue;
     // 2026-08-27修正、実際の報告("^T→「/tmp/.usilic.NNNNN/shell」
@@ -10263,7 +10345,7 @@ bool Application::executeCut(const std::string &pattern) {
     // 既に無条件に積んでいる)とは別に、「パス "パターン"」という
     // 合成形のエントリも積む――openRecentFileEntry()自身のコメント
     // 参照、この形をFILE履歴から選び直すとCUT自体を再実行する。
-    if (ok) history_.pushRecent(RingCategory::RecentFile, fileSourcePath + " \"" + pattern + "\"");
+    if (ok) history_.pushRecent(RingCategory::RecentFile, buildCutFileHistoryEntry(fileSourcePath, pattern, cutSyntax_));
   } else if (cutOrigin_ == CutOrigin::File && !fileMode_.currentFile().empty()) {
     // 2026-08-24修正、実際の報告+直接の追跡質問("戻り値が正常化
     // さえ実現すれば直る問題じゃないの？"――^Gが正しく再びDirectory

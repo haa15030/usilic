@@ -1224,6 +1224,21 @@ struct AnchorSnapshot {
 //     ファイルを編集することが、どちらのモードも現在公開している
 //     以上のパス解決の仕組み無しに意味を成すかどうか)を将来の
 //     一切れへ延期している。
+// 2026-09-14追加、直接のユーザー依頼("README改めTUTORIALとして...
+// usilic内での発動は^Tで行う"): TUTORIAL自身の見出し(全角スペース+
+// 章番号+ピリオド、1〜複数階層)にマッチするCUT用の正規表現パターン
+// ――openRecentFileEntry()の合成エントリ分岐がfileMode_.loadFile()
+// (オーバーストライク検出ON)経由で組み立てる、太字が既に1文字へ
+// 収縮済みの「見た目通りの」文字列に対して一致する(application.cpp
+// 自身の定義側コメント参照、\x08を含む生バイト版では一致しないと
+// 判明した経緯も含む)。app/main.cpp(真っ新起動時、FILE履歴への
+// 事前登録)とapplication.cpp(^T画面自身の「TUTORIAL」行、
+// Application::openSelectedBannerEntry())の両方が、この同じバイト列を
+// それぞれ独立に組み立てると、片方だけ直して他方を直し忘れる事故が
+// 起きやすい――両者が正典として1箇所(application.cpp)だけで定義した
+// この関数を呼ぶことで、その危険を排除する。
+std::string tutorialCutPattern();
+
 class Application {
  public:
   // `keyInput`は、実際に本物のttyのraw/cookedモードを制御している
@@ -2351,6 +2366,15 @@ class Application {
   // 例外である)参照。
   std::string usilicrcPath_;
   std::string historyFilePath_;
+  // 2026-09-14追加、直接のユーザー依頼("README改めTUTORIALとして...
+  // usilic内での発動は^Tで行う"): executeShowUsilicBanner()/
+  // openSelectedBannerEntry()自身のコメント参照。usilicrcPath_とは
+  // 異なり(~/.usilic/usilicrc、ユーザー自身のホームディレクトリ配下)、
+  // これはインストール先($PREFIX/lib/usilic/TUTORIAL、main.cpp自身の
+  // 真っ新起動時のFILE履歴事前登録と全く同じパス構築)を指す――
+  // ホームディレクトリはこの2つの意味で重なるだけで、本質的には
+  // 別の概念である。
+  std::string tutorialPath_;
   Charset::Encoding encoding_;  // wrapHelpText()自身のPipeBuffer構築――現在他のどのメンバーもこれを必要としない
   const Configuration &configuration_;  // executeProgram()自身のPROGRAM一覧の参照、上のfind_prog()の注記参照
   History &history_;  // startListBrowser()自身のrecentEntries()の参照――現在他のどのメンバーもこれを必要としない

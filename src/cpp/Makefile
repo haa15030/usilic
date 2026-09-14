@@ -103,11 +103,21 @@ usilic: $(BUILD_DIR)/usilic
 # そのまま読む)。src/doc/HELP(.jp)自体はレガシー版(old/、
 # src/config.shが生成する別のmake installが今も使う)専用として残して
 # あり、このMakefileはそちらには一切触れない。
+# 2026-09-14追加、直接のユーザー依頼("README改めTUTORIALとして...
+# ~/.local/lib/usilic/TUTORIAL...が登録済み"): src/TUTORIAL(旧
+# src/README.jp、legacy自身のsrc/doc/HELP.jpから昇格した本物のnroff
+# 重ね打ちバイト列)を、このポート自身のFILE履歴の「真っ新起動時の
+# 事前登録エントリ」が指す先としてインストールする――
+# Application::seedFreshFileHistory()自身のコメント参照。TUTORIAL.en
+# (英語版)は今のところこのポート自身のランタイムからは参照されない
+# (GitHub上のリポジトリ説明用の資料として残すのみ)ので、意図的に
+# インストールしない。
 install: $(BUILD_DIR)/usilic
 	install -d $(INSTALL_DIR)
 	install -m 755 $(BUILD_DIR)/usilic $(INSTALL_DIR)/$(INSTALL_NAME)
 	install -d $(LIB_DIR)
 	install -m 644 ../usilicrc $(LIB_DIR)/usilicrc
+	install -m 644 ../TUTORIAL $(LIB_DIR)/TUTORIAL
 
 # macOS .app bundle (2026-08-24, docs/CHANGES.md item 421, a direct
 # user request: "アイコンをクリックして起動する形にはできる？"):
