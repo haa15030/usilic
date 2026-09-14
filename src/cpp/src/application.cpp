@@ -1950,6 +1950,21 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     }
     return false;
   }
+  // 2026-09-20追加、直接のユーザー報告("debian-keyring...tar.xzを
+  // 踏んだら反応が無くなった。LOCATE同様、^Gで読み込みを中断できる
+  // ようにして")、すぐ上のawaitingDu()ゲートと全く同じ形。
+  if (awaitingArchiveLoad()) {
+    if (!special && byte == kControlG) {
+      ChildProcess::terminate(archiveLoadPid_);
+      archiveLoadPendingOutput_ += ChildProcess::readAvailable(archiveLoadOutputFd_);
+      close(archiveLoadOutputFd_);
+      archiveLoadOutputFd_ = -1;
+      archiveLoadPid_ = -1;
+      finishArchiveLoadAsync();
+      return true;
+    }
+    return false;
+  }
   // 2026-09-10追加、直接のユーザー報告(usilic -c ~/git/usilicで再現:
   // "^[iでの検索さなかでは^N^Pが利かない"): ESC i(インクリメンタル
   // サーチ)はEnterを押すまでプロンプトが開いたままなので、この直後の
@@ -4130,25 +4145,26 @@ bool Application::openSelectedEntry() {
     return true;
   }
 
-  if (archiveMode_.loadArchive(path)) {
-    archiveParentStack_.clear();  // 全く新しい最上位のアーカイブ――以前のネストした降下の連鎖はもう当てはまらない
-    currentMode_ = ApplicationMode::Archive;
-    // 2026-08-20修正、実際の報告("ARC:^X^F→「utf8.tar」が履歴に
-    // 無い"): FileMode::loadFile()は、開かれた全てのファイルをRecentFile
-    // 履歴に記録する(それ自身のpushRecent()呼び出し参照)が、
-    // アーカイブはそもそもloadFile()に一度も到達しない――この分岐は
-    // 下の`fileMode_.loadFile(path)`呼び出しより「前に」returnするので、
-    // .tar/.zip/...を開くことは一度も記録されず、それがどれだけ最近
-    // 開かれたかに関わらず、^X^Fからは永久に到達不能になっていた。
-    // ユーザーが直接選択した「最上位の」アーカイブ(この呼び出し箇所)
-    // だけが記録される――「ネストした」アーカイブへ降りること
-    // (さらに下のmaterializeArchiveTempFile()自身のloadArchive()呼び
-    // 出し)は、記録する持続的な意味の無い使い捨てのmkdtemp()の一時
-    // パスを使い、既に記録済みの親へ「上」へナビゲートすること
-    // (goToParentArchive()自身のloadArchive()呼び出し)は、既存の
-    // エントリを単に重複させるだけになってしまう。
-    history_.pushRecent(RingCategory::RecentFile, path);
-    return true;
+  // 2026-09-20修正、直接のユーザー報告("debian-keyring...tar.xzを
+  // 踏んだら反応が無くなった。LOCATE同様、^Gで読み込みを中断できる
+  // ようにして"): 以前はここで同期的なarchiveMode_.loadArchive(path)
+  // を直接呼んでおり、大きな(圧縮)アーカイブの展開+一覧構築が完了
+  // するまで^G含め一切の入力に反応できなかった。startArchiveLoadAsync()
+  // /awaitingArchiveLoad()/pollArchiveLoadCompletion()(runDuOnCurrentFolder()
+  // と全く同じ非同期+^G中断の形)へ切り替えた――archiveParentStack_の
+  // クリア/RecentFileへのpushRecent()という、以前ここにあった後始末は
+  // finishArchiveLoadAsync()へ移した。ユーザーが直接選択した「最上位
+  // の」アーカイブ(この呼び出し箇所)だけがこの非同期経路を通る――
+  // openRecentFileEntry()(^X^F履歴再生)・materializeArchiveTempFile()
+  // 経由のネストした降下・goToParentArchive()は、いずれも通常は
+  // 小さい/既に手元にある内容なので、当面は従来通り同期のまま
+  // (loadArchive()自身は無改造)。
+  ArchiveKind archiveKind = ArchiveKind::None;
+  if (configuration_.programForSuffix(path, &archiveKind) && archiveKind != ArchiveKind::None) {
+    drawPromptLabel(PromptKind::ArchiveLoad, /*positionText=*/"", "Loading archive...");
+    display_.flush();
+    if (startArchiveLoadAsync(path)) return true;  // 今は待機中――awaitingArchiveLoad()参照
+    activeView().redraw();
   }
   if (!fileMode_.loadFile(path)) return false;
   currentMode_ = ApplicationMode::File;
@@ -7457,6 +7473,76 @@ void Application::pollDuCompletion() {
   finishDuAsync();
 }
 
+// awaitingArchiveLoad()自身の宣言コメント参照。openSelectedEntry()
+// 自身のアーカイブ分岐から呼ばれる――ArchiveMode::loadArchive()自身の
+// 「コマンドを解決する」部分だけをここで複製し(プロセスは起動しない
+// 安価な文字列一致)、実際の起動はChildProcess::startCapturing()で
+// 非同期に行う。.tgz等のパイプ形式(command->pipedFromArgv)は、
+// startCapturing()が単一のargvしか受け付けないため、shellQuoteArgv()
+// で安全にクォートした上で`/bin/sh -c "段1 | 段2"`として1プロセス
+// にまとめる(forceUtf8CTypeForListingは、この/bin/sh自身に対して
+// 設定すれば、fork/exec経由でその子である段1/段2にもそのまま
+// 継承される)。
+bool Application::startArchiveLoadAsync(const std::string &path) {
+  ArchiveKind kind = ArchiveKind::None;
+  auto command = configuration_.programForSuffix(path, &kind);
+  if (!command || kind == ArchiveKind::None) return false;
+
+  ChildProcess::Options options;
+  options.forceUtf8CTypeForListing = true;
+  std::vector<std::string> argv;
+  if (command->pipedFromArgv) {
+    std::vector<std::string> firstStage = *command->pipedFromArgv;
+    firstStage.push_back(path);
+    std::string shellLine = shellQuoteArgv(firstStage) + " | " + shellQuoteArgv(command->argv);
+    argv = {"/bin/sh", "-c", shellLine};
+  } else {
+    argv = command->argv;
+    argv.push_back(path);
+  }
+  ChildProcess::AsyncCapture capture = ChildProcess::startCapturing(argv, options);
+  if (capture.pid <= 0) return false;
+  archiveLoadPid_ = capture.pid;
+  archiveLoadOutputFd_ = capture.fd;
+  archiveLoadPendingOutput_.clear();
+  archiveLoadPendingPath_ = path;
+  return true;  // 今は待機中――awaitingArchiveLoad()/pollArchiveLoadCompletion()参照
+}
+
+// awaitingArchiveLoad()自身の宣言コメント参照: 完了(pollArchiveLoadCompletion())
+// であれ^Gによる中断(dispatchByte()自身のawaitingArchiveLoad()ゲート)
+// であれ、その時点までにarchiveLoadPendingOutput_へ蓄積された分を
+// ArchiveMode::finishLoadFromOutput()へ渡す、共有の仕上げ処理――
+// openSelectedEntry()自身の(以前は同期的なloadArchive()呼び出しの
+// 直後にあった)後始末(archiveParentStack_のクリア+RecentFileへの
+// pushRecent())もここへ移した。
+void Application::finishArchiveLoadAsync() {
+  if (archiveMode_.finishLoadFromOutput(archiveLoadPendingPath_, archiveLoadPendingOutput_)) {
+    archiveParentStack_.clear();  // 全く新しい最上位のアーカイブ――以前のネストした降下の連鎖はもう当てはまらない
+    currentMode_ = ApplicationMode::Archive;
+    history_.pushRecent(RingCategory::RecentFile, archiveLoadPendingPath_);
+  } else {
+    // 解決できなかった/一覧コマンドが失敗した(^Gによる中断で出力が
+    // 全く読めていなかった場合を含む)――Directoryのまま、単に
+    // 読み込み中メッセージを消して再描画する。
+    activeView().redraw();
+  }
+}
+
+bool Application::awaitingArchiveLoad() const { return archiveLoadPid_ > 0; }
+
+void Application::pollArchiveLoadCompletion() {
+  if (archiveLoadPid_ <= 0) return;
+  archiveLoadPendingOutput_ += ChildProcess::readAvailable(archiveLoadOutputFd_);
+  if (!ChildProcess::hasExited(archiveLoadPid_)) return;
+  // pollDuCompletion()自身の同じ理由のコメント参照。
+  archiveLoadPendingOutput_ += ChildProcess::readAvailable(archiveLoadOutputFd_);
+  close(archiveLoadOutputFd_);
+  archiveLoadOutputFd_ = -1;
+  archiveLoadPid_ = -1;
+  finishArchiveLoadAsync();
+}
+
 // ^J^D(K-38): Command::RedisplayDu自身のコメント参照。
 bool Application::redisplayDu() {
   // 2026-09-19修正、直接のユーザー依頼("最初のDUを^J^Dで発動した
@@ -9254,6 +9340,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     }
     case PromptKind::None:
     case PromptKind::Du:  // promptKind_には決して代入されない、drawPromptLabel()専用のラベルマーカー――application.hpp自身の宣言コメント参照
+    case PromptKind::ArchiveLoad:  // 同上――PromptKind::ArchiveLoad自身の宣言コメント参照
       return false;
   }
   return false;
@@ -9590,6 +9677,8 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return "DIR";
     case PromptKind::Du:
       return "DU";
+    case PromptKind::ArchiveLoad:
+      return "ARC";
     case PromptKind::None:
       return "";
   }

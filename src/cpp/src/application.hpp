@@ -1504,6 +1504,20 @@ class Application {
   bool awaitingDu() const;
   void pollDuCompletion();
 
+  // 2026-09-20追加、直接のユーザー報告("debian-keyring_2015.03.04.
+  // tar.xzを踏んだら反応が無くなった。LOCATE同様、^Gで読み込みを
+  // 中断できるようにして"): awaitingDu()/pollDuCompletion()と全く
+  // 同じ「実行ループの既存のティックで駆動される非同期ポーリング」
+  // の形。ArchiveMode::loadArchive()自身は(.tar.xz/.tgz等の巨大な
+  // アーカイブでは)展開+一覧コマンドの完了をブロッキングで待つため、
+  // ^Gが割り込む余地が無かった――ChildProcess::startCapturing()
+  // 経由で非同期に起動し直し、完了/^G中断のどちらでもその時点まで
+  // 蓄積した出力をArchiveMode::finishLoadFromOutput()へ渡す
+  // (startArchiveLoadAsync()/finishArchiveLoadAsync()自身の宣言
+  // コメント参照)。
+  bool awaitingArchiveLoad() const;
+  void pollArchiveLoadCompletion();
+
   // 実行ループの反復ごとに1回、無条件に呼ぶこと(pendingCpMvRmShellRun_
   // が未設定なら安価な何もしない呼び出し)――すぐ上の
   // pollLocateUpdateDbCompletion()と同じ「実行ループ自身の既存の
@@ -2027,6 +2041,19 @@ class Application {
   int duOutputFd_ = -1;
   std::string duPendingOutput_;
   std::string duPendingPath_;
+
+  // awaitingArchiveLoad()自身の宣言コメント参照。duPid_/duOutputFd_/
+  // duPendingOutput_/duPendingPath_と全く同じ役割。
+  pid_t archiveLoadPid_ = -1;
+  int archiveLoadOutputFd_ = -1;
+  std::string archiveLoadPendingOutput_;
+  std::string archiveLoadPendingPath_;
+  // 完了/中断時、openSelectedEntry()自身の既存の後始末(archiveParentStack_
+  // のクリア+RecentFileへのpushRecent())を再現するために覚えておく
+  // 必要がある――runDuOnCurrentFolder()相当のこの起動元はopenSelectedEntry()
+  // 1箇所だけなので、DU/LOCATEのような戻り先スタックの計算は不要。
+  bool startArchiveLoadAsync(const std::string &path);
+  void finishArchiveLoadAsync();
   bool startShell();
   // startShell()とK-61/K-62/K-63/K-64で共有される: startShell()
   // 自身の「既にShellモード」という拒否無しに、Shellモードを画面
@@ -2861,7 +2888,11 @@ class Application {
     // `du`自身の(現状ブロッキングな)呼び出しの直前に一度だけ
     // drawPromptLabel(PromptKind::Du, "", "Disk usage...")として呼ぶ
     // ためだけに存在する――promptKind_へは一切代入されない。
-    Du
+    Du,
+    // 2026-09-20追加、startArchiveLoadAsync()自身のコメント参照。
+    // Du同様、promptKind_へは一切代入されないdrawPromptLabel()専用の
+    // 静的メッセージ("Loading archive...")のためだけに存在する。
+    ArchiveLoad
   };
   // ^Xc/^Xm/^Xr(K-52/K-54/K-56)とその^X^K「with SHELL window」の
   // 兄弟(K-51/K-53/K-55)は、以前は移動先/確認プロンプトを即座に

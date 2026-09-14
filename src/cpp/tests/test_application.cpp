@@ -78,6 +78,17 @@ void waitForDu(Application &app, int maxAttempts = 500) {
   }
 }
 
+// waitForDu()と全く同じ発想(2026-09-20追加、openSelectedEntry()自身の
+// アーカイブ分岐が非同期化されたことに伴う): 実際の一覧コマンドは
+// 小さなfixtureアーカイブに対してならほぼ即座に終わるはずなので、
+// ごく短い間隔でpollArchiveLoadCompletion()を呼び続けるだけでよい。
+void waitForArchiveLoad(Application &app, int maxAttempts = 500) {
+  for (int i = 0; i < maxAttempts && app.awaitingArchiveLoad(); i++) {
+    app.pollArchiveLoadCompletion();
+    if (app.awaitingArchiveLoad()) usleep(2000);
+  }
+}
+
 // executeCopy()/executeMove()/executeRemove() (2026-08-22 redesign, see
 // their own comment): the real cp/mv/rm command now runs by injecting
 // it into shell_'s own real, persistent SHELL session
@@ -4031,6 +4042,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC: a marked entry shows Underline, not just Stando
   int dirIdx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
   int markIdx = archiveIndexOf(app, "inner.txt");
@@ -4062,6 +4074,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC: Enter on an archive file switches to Archive mo
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   CHECK(app.currentMode() == ApplicationMode::Archive);
   CHECK(archiveIndexOf(app, "inner.txt") >= 0);
 }
@@ -4100,6 +4113,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC: Enter on a file entry inside the archive extrac
   int idx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
 
   while (app.archiveMode().selectedEntry() != nullptr &&
          app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
@@ -4146,6 +4160,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC: entry content view has cursor highlight disable
   int idx = indexOf("widearc.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
 
   while (app.archiveMode().selectedEntry() != nullptr &&
          app.archiveMode().selectedEntry()->name.find("wide.txt") == std::string::npos) {
@@ -4171,6 +4186,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC: Back from ArchiveContent returns to Archive, Ba
   int idx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
 
   while (app.archiveMode().selectedEntry() != nullptr &&
          app.archiveMode().selectedEntry()->name.find("inner.txt") == std::string::npos) {
@@ -4197,6 +4213,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC nested: Enter on an archive entry inside an arch
   REQUIRE(idx >= 0);
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
   REQUIRE(archiveIndexOf(app, "level1.tar") >= 0);
 
@@ -4214,6 +4231,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC nested: descending three levels deep still reach
   int idx = indexOf("outer.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));  // into outer.tar
+  waitForArchiveLoad(app);
 
   auto descendTo = [&](const std::string &needle) {
     while (app.archiveMode().selectedEntry() != nullptr &&
@@ -4238,6 +4256,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC nested: Back climbs the nested chain one level a
   int idx = indexOf("outer.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));  // outer.tar's listing
+  waitForArchiveLoad(app);
 
   while (app.archiveMode().selectedEntry() != nullptr &&
          app.archiveMode().selectedEntry()->name.find("level1.tar") == std::string::npos) {
@@ -4260,6 +4279,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC nested: opening a fresh top-level archive clears
   int outerIdx = indexOf("outer.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != outerIdx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   while (app.archiveMode().selectedEntry() != nullptr &&
          app.archiveMode().selectedEntry()->name.find("level1.tar") == std::string::npos) {
     if (!app.handleCommand(Command::MoveDown)) break;
@@ -4283,6 +4303,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC nested: opening a fresh top-level archive clears
   }
   REQUIRE(app.directoryMode().selectedEntry()->name == "archive.tar");
   REQUIRE(app.handleCommand(Command::Enter));  // a DIFFERENT, non-nested top-level archive
+  waitForArchiveLoad(app);
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);  // one Back reaches Directory directly -- no stale chain
 }
@@ -4510,6 +4531,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back): from Directory mode showing the
   int idx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
   while (app.archiveMode().selectedEntry() != nullptr &&
@@ -4568,6 +4590,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract (^Oa from Archive mode): ^G back via the
   int idx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
   // Move OFF row 0 ("arcsrc/") onto "arcsrc/inner.txt" -- if the
@@ -4624,6 +4647,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract destination: opening a FILE there clears
   REQUIRE(idx >= 0);
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
   fs::create_directory(root / "flatdest");  // executeArchiveExtract() rejects a destination that doesn't exist yet
@@ -4658,6 +4682,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract from within Archive mode's own TOC: mark
   int idx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
   while (app.archiveMode().selectedEntry() != nullptr &&
@@ -4720,6 +4745,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: from within Archive mode's own TOC with
   int idx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
   REQUIRE(app.archiveMode().markedCount() == 0);  // nothing explicitly marked
 
@@ -4783,6 +4809,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: an empty destination defaults to <homeD
   int idx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
   while (app.archiveMode().selectedEntry() != nullptr &&
@@ -4812,6 +4839,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract: a destination that doesn't exist report
   int idx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
   while (app.archiveMode().selectedEntry() != nullptr &&
@@ -5087,6 +5115,7 @@ TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): Enter on an arc.N line opens 
   REQUIRE(idx >= 0);
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));  // into outer.tar
+  waitForArchiveLoad(app);
   while (app.archiveMode().selectedEntry() != nullptr &&
          app.archiveMode().selectedEntry()->name.find("level1.tar") == std::string::npos) {
     REQUIRE(app.handleCommand(Command::MoveDown));
@@ -6057,6 +6086,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works from Arc
   int idx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
   REQUIRE(app.archiveMode().currentArchive() == path() + "archive.tar");
 
@@ -6143,6 +6173,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): jumps back to an arch
   int idx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
   REQUIRE(app.archiveMode().currentArchive() == path() + "archive.tar");
 
@@ -9669,6 +9700,7 @@ TEST_CASE_FIXTURE(Fixture, "^R in Archive mode opens the RecentFile picker filte
   REQUIRE(idx >= 0);
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
   CHECK(app.feedByte(0x12, std::nullopt));  // ^R
@@ -11169,6 +11201,7 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: ARC listing -- a click selects, a 
   int dirIdx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
   int idx = archiveIndexOf(app, "inner.txt");
@@ -11198,6 +11231,7 @@ TEST_CASE_FIXTURE(Fixture, "handleMouseClick: ARC listing -- a click on the size
   int dirIdx = indexOf("archive.tar");
   while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
+  waitForArchiveLoad(app);
   REQUIRE(app.currentMode() == ApplicationMode::Archive);
 
   int idx = archiveIndexOf(app, "inner.txt");

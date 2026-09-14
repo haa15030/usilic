@@ -1495,6 +1495,7 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     // needing to press anything.
     app.pollLocateUpdateDbCompletion();
     app.pollDuCompletion();
+    app.pollArchiveLoadCompletion();
     app.pollPendingCpMvRmShellRun();
     app.pollPendingArchiveExtractShellRun();
     app.pollShellHandoff();
@@ -1877,6 +1878,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // into the LOCATE prompt every frame, same as -c's own poll loop.
     app.pollLocateUpdateDbCompletion();
     app.pollDuCompletion();
+    app.pollArchiveLoadCompletion();
     app.pollPendingCpMvRmShellRun();
     app.pollPendingArchiveExtractShellRun();
     app.pollShellHandoff();
@@ -2043,7 +2045,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // unconditionally redraws its own mode-line row, the exact row
     // Application's prompt label/input field also live on.
     if (!dragging && coastLevel == 0 && app.currentMode() != fm::ApplicationMode::Shell &&
-        !app.redrawSensitivePromptOrRecallActive() && !app.awaitingLocateUpdateDb() && !app.awaitingDu()) {
+        !app.redrawSensitivePromptOrRecallActive() && !app.awaitingLocateUpdateDb() && !app.awaitingDu() && !app.awaitingArchiveLoad()) {
       // !app.awaitingLocateUpdateDb() (2026-08-15 fix): see the render-
       // mode branch's own identical addition below -- a mouse wiggle
       // during a real, still-running `updatedb` wait would otherwise
@@ -2921,7 +2923,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // j/k(modeLineText())と一致する表示にする。
       gui.renderScrolled(lines, view.topIndex(), pixelOffset, view.scrollModeLineSegments(/*trackCursorPosition=*/true));
     } else if ((wasActivelyScrolling || anyEventThisFrame) && !app.redrawSensitivePromptOrRecallActive() &&
-               !app.awaitingLocateUpdateDb() && !app.awaitingDu()) {
+               !app.awaitingLocateUpdateDb() && !app.awaitingDu() && !app.awaitingArchiveLoad()) {
       // !app.awaitingLocateUpdateDb() (2026-08-15 fix): the exact same
       // bug class !app.promptActive() below was already added for (a
       // real report: "EXIT (y/n) ? y" flashed then got overwritten),

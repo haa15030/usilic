@@ -161,9 +161,6 @@ bool ArchiveMode::loadArchive(const std::string &path) {
   auto command = configuration_.programForSuffix(path, &kind);
   if (!command || kind == ArchiveKind::None) return false;
 
-  auto reader = readerFor(kind);
-  if (!reader) return false;
-
   // 2026-08-30、直接のユーザー報告(Finderからの直接ダブルクリック
   // 起動限定で再現): ChildProcessOptions::forceUtf8CTypeForListing
   // 自身のコメント参照――tar(1)/unzip(1)等はLC_CTYPEで非ASCIIバイトを
@@ -189,8 +186,21 @@ bool ArchiveMode::loadArchive(const std::string &path) {
     result = ChildProcess::run(argv, options);
   }
   if (!result.ok) return false;
+  return finishLoadFromOutput(path, result.output);
+}
 
-  std::vector<ArchiveEntry> entries = reader->parseListing(result.output);
+// finishLoadFromOutput()自身の宣言コメント参照。loadArchive()自身の
+// 「コマンドを実行する」部分の「後」半分――結果をパースし、状態を
+// 確定する。
+bool ArchiveMode::finishLoadFromOutput(const std::string &path, const std::string &output) {
+  ArchiveKind kind = ArchiveKind::None;
+  auto command = configuration_.programForSuffix(path, &kind);
+  if (!command || kind == ArchiveKind::None) return false;
+
+  auto reader = readerFor(kind);
+  if (!reader) return false;
+
+  std::vector<ArchiveEntry> entries = reader->parseListing(output);
 
   currentArchive_ = path;
   archiveKind_ = kind;

@@ -64,6 +64,19 @@ class ArchiveMode {
   // false。
   bool loadArchive(const std::string &path);
 
+  // 2026-09-20追加、直接のユーザー報告("debian-keyring...tar.xzを
+  // 踏んだら反応が無くなった。LOCATE同様、^Gで読み込みを中断できる
+  // ようにして"): loadArchive()自身の「一覧コマンドを実行して結果を
+  // パースする」の後半(パース+状態確定)だけを取り出したもの――
+  // Application側がChildProcess::startCapturing()で非同期に起動し、
+  // ポーリング/^G中断でその時点までに集めた出力を渡す際に使う
+  // (loadArchive()自身はこれを呼ぶ形に作り直され、他の全ての
+  // 呼び出し元(ネストしたアーカイブへの降下等)は無改造で今まで通り
+  // 同期的に動く)。outputの再パースに必要なコマンド解決
+  // (configuration_.programForSuffix())をここでもう一度行う――
+  // プロセスは起動し直さない、文字列比較だけの安価な処理。
+  bool finishLoadFromOutput(const std::string &path, const std::string &output);
+
   const std::string &currentArchive() const;
   // currentArchive()の具体的なフォーマット(loadArchive()呼び出し前は
   // None)――K-57/K-58(^X^Ka/^Xa、「ARC: Expand archive」)のために
