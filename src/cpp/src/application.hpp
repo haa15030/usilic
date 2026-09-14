@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "archive_mode.hpp"
@@ -1238,6 +1239,17 @@ struct AnchorSnapshot {
 // 起きやすい――両者が正典として1箇所(application.cpp)だけで定義した
 // この関数を呼ぶことで、その危険を排除する。
 std::string tutorialCutPattern();
+
+// parseCutFileHistoryEntry()/buildCutFileHistoryEntry()自身の定義側
+// コメント参照(application.cpp): FILE履歴の合成CUTエントリ
+// (「パス "パターン"」、QUICK.txt自身のC-j bの説明が定める表示形式)
+// の双方向変換。tutorialCutPattern()と同じ理由(定義箇所を1つに
+// 揃え、複数箇所での独自組み立てによる食い違い事故を防ぐ)で
+// ここに宣言し、main.cpp(真っ新起動時の事前登録)からも呼べるように
+// する。
+std::optional<std::tuple<std::string, std::string, GrepSyntax>> parseCutFileHistoryEntry(
+    const std::string &entry);
+std::string buildCutFileHistoryEntry(const std::string &path, const std::string &pattern, GrepSyntax syntax);
 
 class Application {
  public:

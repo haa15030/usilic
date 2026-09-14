@@ -2142,9 +2142,9 @@ TEST_CASE_FIXTURE(Fixture, "FILE history: a plain path that happens to contain n
 // (GrepSyntax::Fixedに決め打ち)では動作しない。parseCutFileHistoryEntry()/
 // buildCutFileHistoryEntry()自身のコメント参照(区切り文字でFixed/
 // Regexを区別する拡張)。
-TEST_CASE_FIXTURE(Fixture, "FILE history: a composite \"path /pattern/\" entry (slash delimiters) "
-                           "replays the CUT using Regex syntax, not Fixed") {
-  std::string composite = (root / "log.txt").string() + " /marker [a-z]+/";
+TEST_CASE_FIXTURE(Fixture, "FILE history: a composite \"path \\\"/pattern/\\\"\" entry (slash-wrapped "
+                           "content inside the quotes) replays the CUT using Regex syntax, not Fixed") {
+  std::string composite = (root / "log.txt").string() + " \"/marker [a-z]+/\"";
   history.pushRecent(RingCategory::RecentFile, composite);
   REQUIRE(app.start(path()));
   CHECK(app.handleCommand(Command::GoToRecentFile));
@@ -2154,7 +2154,8 @@ TEST_CASE_FIXTURE(Fixture, "FILE history: a composite \"path /pattern/\" entry (
 }
 
 TEST_CASE_FIXTURE(Fixture, "CUT (regular file, Regex syntax): completing a real split records a "
-                           "slash-delimited composite entry, not the quote-delimited Fixed form") {
+                           "quote-delimited composite entry with slash-wrapped inner content, not "
+                           "the plain quote-delimited Fixed form") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -2164,7 +2165,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, Regex syntax): completing a real 
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   std::string plainPath = (root / "log.txt").string();
-  std::string composite = plainPath + " /marker [a-z]+/";
+  std::string composite = plainPath + " \"/marker [a-z]+/\"";
   const auto &recent = history.recentEntries(RingCategory::RecentFile);
   CHECK(std::find(recent.begin(), recent.end(), composite) != recent.end());
 }

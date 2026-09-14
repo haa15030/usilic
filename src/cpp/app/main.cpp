@@ -3845,7 +3845,8 @@ int main(int argc, char **argv) {
       // チェックする必要が無い)。
       if (homeEnv) {
         std::string tutorialPath = std::string(homeEnv) + "/.local/lib/usilic/TUTORIAL";
-        history.pushRecent(fm::RingCategory::RecentFile, tutorialPath + " /" + fm::tutorialCutPattern() + "/");
+        history.pushRecent(fm::RingCategory::RecentFile,
+                            fm::buildCutFileHistoryEntry(tutorialPath, fm::tutorialCutPattern(), fm::GrepSyntax::Regex));
       }
     }
   }

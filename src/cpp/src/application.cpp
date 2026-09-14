@@ -71,46 +71,6 @@ std::string duEntryFolder(const DuEntry &entry) {
   return folder;
 }
 
-// 2026-09-20追加、openRecentFileEntry()自身のコメント参照: executeCut()
-// が積む「パス "パターン"」という合成形のRecentFileエントリを検出・
-// 分解する。末尾が引用符で閉じ、その直前に` "`(スペース+引用符)が
-// 見つかり、両側とも空でない場合にだけ一致とみなす――ただの
-// ファイルパスに偶然二重引用符が含まれるような病的なケースを
-// (完璧ではないにせよ)大まかに避けるための、最も単純な形式チェック。
-//
-// 2026-09-14拡張、直接のユーザー依頼("README改めTUTORIALとして...
-// FILE履歴には真っ新起動の時点で~/.local/lib/usilic/TUTORIAL "^
-// [0-9]^H[0-9]+\."が登録済み"): この事前登録エントリ自身のパターンが
-// 正規表現(`^`/`[0-9]`/`+`/`\.`)であり、当初の実装(GrepSyntax::Fixed
-// に決め打ち)では正しく動作しない。表示文字列自体にGrepSyntaxを
-// 残すため、区切り文字で2方式を区別するよう拡張した: 二重引用符
-// (`"..."`、従来通り)はFixed、スラッシュ(`/.../`、新設)はRegex。
-// C-j b(QUICK.txt自身がFixed版のこのエントリの説明で名指ししている)
-// は引き続きFixedのまま――この拡張は既存の合成エントリの見た目/
-// 挙動を一切変えない、後方互換な追加。
-std::optional<std::tuple<std::string, std::string, GrepSyntax>> parseCutFileHistoryEntry(
-    const std::string &entry) {
-  if (entry.size() < 4) return std::nullopt;
-  char delim = entry.back();
-  GrepSyntax syntax;
-  if (delim == '"') syntax = GrepSyntax::Fixed;
-  else if (delim == '/') syntax = GrepSyntax::Regex;
-  else return std::nullopt;
-  std::string openMarker = std::string(" ") + delim;
-  std::size_t openPos = entry.rfind(openMarker, entry.size() - 2);
-  if (openPos == std::string::npos) return std::nullopt;
-  std::string filePath = entry.substr(0, openPos);
-  std::string pattern = entry.substr(openPos + 2, entry.size() - (openPos + 2) - 1);
-  if (filePath.empty() || pattern.empty()) return std::nullopt;
-  return std::make_tuple(filePath, pattern, syntax);
-}
-
-// parseCutFileHistoryEntry()自身のコメント参照――その逆変換。
-std::string buildCutFileHistoryEntry(const std::string &path, const std::string &pattern, GrepSyntax syntax) {
-  char delim = (syntax == GrepSyntax::Regex) ? '/' : '"';
-  return path + " " + delim + pattern + delim;
-}
-
 // 2026-09-05追加、直接のユーザー依頼("FGREP/EGREPの代わりにgrep -F/
 // grep -Eで代用の上、新たにGREP(grep)を新設"): GrepSyntax::Basic
 // (プレーンなgrep、正規表現は基本正規表現BRE)の追加に伴い、これまで
@@ -416,6 +376,52 @@ std::string resolveTempRoot(const std::string &homeDirectory, const std::string 
   return tempRootDirectory.empty() ? (homeDirectory + "/.usilic") : tempRootDirectory;
 }
 }  // namespace
+
+// 2026-09-20追加、openRecentFileEntry()自身のコメント参照: executeCut()
+// が積む「パス "パターン"」という合成形のRecentFileエントリを検出・
+// 分解する。末尾が引用符で閉じ、その直前に` "`(スペース+引用符)が
+// 見つかり、両側とも空でない場合にだけ一致とみなす――ただの
+// ファイルパスに偶然二重引用符が含まれるような病的なケースを
+// (完璧ではないにせよ)大まかに避けるための、最も単純な形式チェック。
+// application.hpp自身の宣言コメント参照(main.cppからも呼ぶため、
+// 匿名namespaceではなくここ(fm本体)で定義している)。
+//
+// 2026-09-14拡張、直接のユーザー依頼("README改めTUTORIALとして...
+// FILE履歴には真っ新起動の時点で~/.local/lib/usilic/TUTORIAL "^
+// [0-9]^H[0-9]+\."が登録済み"): この事前登録エントリ自身のパターンが
+// 正規表現(`^`/`[0-9]`/`+`/`\.`)であり、当初の実装(GrepSyntax::Fixed
+// に決め打ち)では正しく動作しない。当初はこれを表示側の区切り文字
+// (二重引用符/スラッシュ)そのもので区別する形にしたが、QUICK.txt
+// 自身が定めるC-j bの説明("「ファイル名 "文字列"」で表示され")は
+// Fixed/Regexを問わず常に二重引用符で括る形なので、Regex専用に
+// スラッシュを外側の区切りへ格上げしたのはこの既定から外れた独自の
+// 追加だった。2026-09-14再訂正、直接のユーザー指摘("FILE一覧上では
+// TUTORIAL /^　[0-9]/となっているので旧同様TUTORIAL "/^　[0-9]/"と
+// して欲しい"): 外側は常に二重引用符に統一し、その中身が更に
+// `/.../`(スラッシュで開始・終了)で括られていればRegex、そうでなければ
+// Fixedと判定する――「文字列」自体の見た目に正規表現の目印(スラッシュ)
+// が残るぶん、外側の区切り文字だけを見るより一目でわかる。
+std::optional<std::tuple<std::string, std::string, GrepSyntax>> parseCutFileHistoryEntry(
+    const std::string &entry) {
+  if (entry.size() < 4 || entry.back() != '"') return std::nullopt;
+  std::size_t openPos = entry.rfind(" \"", entry.size() - 2);
+  if (openPos == std::string::npos) return std::nullopt;
+  std::string filePath = entry.substr(0, openPos);
+  std::string inner = entry.substr(openPos + 2, entry.size() - (openPos + 2) - 1);
+  if (filePath.empty() || inner.empty()) return std::nullopt;
+  if (inner.size() >= 2 && inner.front() == '/' && inner.back() == '/') {
+    std::string pattern = inner.substr(1, inner.size() - 2);
+    if (pattern.empty()) return std::nullopt;
+    return std::make_tuple(filePath, pattern, GrepSyntax::Regex);
+  }
+  return std::make_tuple(filePath, inner, GrepSyntax::Fixed);
+}
+
+// parseCutFileHistoryEntry()自身のコメント参照――その逆変換。
+std::string buildCutFileHistoryEntry(const std::string &path, const std::string &pattern, GrepSyntax syntax) {
+  std::string inner = (syntax == GrepSyntax::Regex) ? "/" + pattern + "/" : pattern;
+  return path + " \"" + inner + "\"";
+}
 
 // application.hpp自身の宣言コメント参照: app/main.cpp(真っ新起動時の
 // FILE履歴への事前登録)とこのファイル自身(下のexecuteShowUsilicBanner()/
@@ -6978,7 +6984,7 @@ bool Application::openSelectedBannerEntry() {
   // 代入含む)を、その合成エントリ文字列をここで組み立てて渡すことで
   // そのまま再利用する(専用のCUT起動コードをここに複製しない)。
   if (endsWith(tutorialPath_))
-    return openRecentFileEntry(tutorialPath_ + " /" + tutorialCutPattern() + "/");
+    return openRecentFileEntry(buildCutFileHistoryEntry(tutorialPath_, tutorialCutPattern(), GrepSyntax::Regex));
   for (const std::string &fixedPath : {usilicrcPath_, errorLogPath_, logFilePath_}) {
     if (!endsWith(fixedPath)) continue;
     // 2026-08-27修正、実際の報告("^T→「/tmp/.usilic.NNNNN/shell」
