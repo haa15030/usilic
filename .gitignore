@@ -41,6 +41,13 @@ old/src/debug/
 old/README
 old/README.jp
 
+# 2026-09-20、直接のユーザー依頼: src/HELP.txt(QUICK.txt/usilic.man
+# 経由のHELPへ全面移行済みで、もう実体を使わない旧markup)と
+# src/QUICK.txt(HELPの実体だが、意図的にリポジトリ管理の外に置く)は
+# 追跡対象から外す。
+src/HELP.txt
+src/QUICK.txt
+
 # perl scratch/doc build output (legacy C docs toolchain)
 old/perl/usilic.dvi
 old/perl/usilic.log
