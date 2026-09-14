@@ -158,6 +158,12 @@ std::optional<History::CursorPosition> History::positionFor(PositionCategory cat
 }
 
 void History::setPosition(PositionCategory category, const std::string &name, CursorPosition position) {
+  journal_.emplace_back(
+      [category, name, position](History &h) { h.setPositionImpl(category, name, position); });
+  setPositionImpl(category, name, position);
+}
+
+void History::setPositionImpl(PositionCategory category, const std::string &name, CursorPosition position) {
   positions_[category][name] = position;
 }
 
@@ -170,6 +176,11 @@ bool History::containsName(NameSetCategory category, const std::string &name) co
 }
 
 void History::rememberName(NameSetCategory category, const std::string &name) {
+  journal_.emplace_back([category, name](History &h) { h.rememberNameImpl(category, name); });
+  rememberNameImpl(category, name);
+}
+
+void History::rememberNameImpl(NameSetCategory category, const std::string &name) {
   auto &names = nameSets_[category];
   for (const auto &n : names)
     if (n == name) return;  // 最初の出現優先、save_str()からの移植
@@ -183,6 +194,11 @@ const std::vector<std::string> &History::namesIn(NameSetCategory category) const
 }
 
 void History::pushRecent(RingCategory category, const std::string &name) {
+  journal_.emplace_back([category, name](History &h) { h.pushRecentImpl(category, name); });
+  pushRecentImpl(category, name);
+}
+
+void History::pushRecentImpl(RingCategory category, const std::string &name) {
   // 訂正(2026-08-04): sub.cのfind_hist()をより注意深く読み直すと、
   // それが`name`をリストの「最後の」ノードとだけ比較しており(走査
   // `for (...; hist->next; hist = hist->next)`はまさにそこで止まる)、
@@ -248,7 +264,7 @@ void History::pushRecent(RingCategory category, const std::string &name) {
       }
     }
     std::string::size_type slash = pathPart.find_last_of('/');
-    if (slash != std::string::npos) pushRecent(RingCategory::RecentDirectory, pathPart.substr(0, slash + 1));
+    if (slash != std::string::npos) pushRecentImpl(RingCategory::RecentDirectory, pathPart.substr(0, slash + 1));
   }
 }
 
@@ -261,18 +277,51 @@ const std::deque<std::string> &History::recentEntries(RingCategory category) con
 int History::retentionCount() const { return retentionCount_; }
 
 bool History::smoothScrollEnabled() const { return smoothScrollEnabled_; }
-void History::setSmoothScrollEnabled(bool enabled) { smoothScrollEnabled_ = enabled; }
+void History::setSmoothScrollEnabled(bool enabled) {
+  journal_.emplace_back([enabled](History &h) { h.setSmoothScrollEnabledImpl(enabled); });
+  setSmoothScrollEnabledImpl(enabled);
+}
+void History::setSmoothScrollEnabledImpl(bool enabled) { smoothScrollEnabled_ = enabled; }
+
 bool History::modeLineVisible() const { return modeLineVisible_; }
-void History::setModeLineVisible(bool visible) { modeLineVisible_ = visible; }
+void History::setModeLineVisible(bool visible) {
+  journal_.emplace_back([visible](History &h) { h.setModeLineVisibleImpl(visible); });
+  setModeLineVisibleImpl(visible);
+}
+void History::setModeLineVisibleImpl(bool visible) { modeLineVisible_ = visible; }
+
 int History::lsMode() const { return lsMode_; }
-void History::setLsMode(int mode) { lsMode_ = mode; }
+void History::setLsMode(int mode) {
+  journal_.emplace_back([mode](History &h) { h.setLsModeImpl(mode); });
+  setLsModeImpl(mode);
+}
+void History::setLsModeImpl(int mode) { lsMode_ = mode; }
+
 std::optional<Charset::Encoding> History::savedCharset() const { return savedCharset_; }
-void History::setSavedCharset(Charset::Encoding encoding) { savedCharset_ = encoding; }
+void History::setSavedCharset(Charset::Encoding encoding) {
+  journal_.emplace_back([encoding](History &h) { h.setSavedCharsetImpl(encoding); });
+  setSavedCharsetImpl(encoding);
+}
+void History::setSavedCharsetImpl(Charset::Encoding encoding) { savedCharset_ = encoding; }
+
 History::GuiPreferences History::guiPreferences() const { return guiPreferences_; }
-void History::setGuiPreferences(const GuiPreferences &preferences) { guiPreferences_ = preferences; }
+void History::setGuiPreferences(const GuiPreferences &preferences) {
+  journal_.emplace_back([preferences](History &h) { h.setGuiPreferencesImpl(preferences); });
+  setGuiPreferencesImpl(preferences);
+}
+void History::setGuiPreferencesImpl(const GuiPreferences &preferences) { guiPreferences_ = preferences; }
 
 const History::SessionState &History::sessionState() const { return sessionState_; }
-void History::setSessionState(SessionState state) { sessionState_ = std::move(state); }
+void History::setSessionState(SessionState state) {
+  journal_.emplace_back([state](History &h) { h.setSessionStateImpl(state); });
+  setSessionStateImpl(std::move(state));
+}
+void History::setSessionStateImpl(SessionState state) { sessionState_ = std::move(state); }
+
+// replayJournalOnto()自身の宣言コメント参照。
+void History::replayJournalOnto(History &target) const {
+  for (const auto &op : journal_) op(target);
+}
 
 bool History::isComplete() const { return complete_; }
 const std::vector<std::string> &History::errors() const { return errors_; }
@@ -359,8 +408,12 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     }
   };
   auto readNameSetSection = [&](NameSetCategory category) {
+    // replayJournalOnto()自身のコメント参照: ファイルからの読み込みは
+    // 「このセッションが新たに行った変更」ではないので、journal_を
+    // 汚さないよう公開rememberName()ではなくImpl版を直接呼ぶ
+    // (readRingSection()が既にrings_を直接操作しているのと同じ理屈)。
     while (i < lines.size() && !isSectionBoundary(lines[i])) {
-      rememberName(category, decodeField(lines[i]));
+      rememberNameImpl(category, decodeField(lines[i]));
       i++;
     }
   };

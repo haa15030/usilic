@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -249,6 +250,29 @@ class History {
 
   std::string serialize(const std::string &programName, const std::string &timestampText) const;
 
+  // 2026-09-20追加、直接のユーザー依頼("history競合の件、1〜4の対策
+  // (read-merge-write+lock)...で実装よろしく"): 複数のusilicプロセス
+  // が並行して~/.usilic/historyへ書き戻す際、各プロセスが自分の
+  // 起動時点の古いスナップショットをまるごと上書きすると、その間に
+  // 他プロセスが積んだ分が消える(main.cpp自身のconsultHistoryOnStart
+  // 周辺コメント、旧②③④の分析参照)。対策は「書く直前に最新の
+  // ディスク上の状態を読み直し、自分がこのセッション中に実際に
+  // 行った変更「だけ」をそこへ再適用してから書く」――このクラスの
+  // 各mutator(pushRecent/setPosition/rememberName/
+  // setSmoothScrollEnabled/setModeLineVisible/setLsMode/
+  // setSavedCharset/setGuiPreferences/setSessionState)は、自分自身の
+  // 呼び出しをjournal_へ記録している(呼び出し側であるmain.cpp/
+  // application.cpp等は一切変更不要――呼ぶたびに自動で記録される)。
+  // replayJournalOnto()はその記録を「呼ばれた順に」targetへ再生する
+  // ――2つのスナップショットの差分を推測するのではなく、実際に
+  // 行われた操作列をそのまま再現するだけなので、リングの重複排除
+  // (直前と同じなら無視)や保持数上限といった各mutator自身の既存の
+  // ロジックがそのまま正しく働く。呼び出し側の使い方: 起動時に
+  // 読み込んだ`history`とは別に、書き込み直前に`History disk;`を
+  // 新規に作って最新のファイルを読み込み、`history.replayJournalOnto(disk);`
+  // した上で`disk`をシリアライズして保存する(main.cpp参照)。
+  void replayJournalOnto(History &target) const;
+
  private:
   std::map<PositionCategory, std::map<std::string, CursorPosition>> positions_;
   std::map<NameSetCategory, std::vector<std::string>> nameSets_;
@@ -264,6 +288,22 @@ class History {
 
   bool complete_ = false;
   std::vector<std::string> errors_;
+
+  // replayJournalOnto()自身のコメント参照。各公開mutatorは実装本体を
+  // ここへ委譲し(*Impl)、自分自身はjournal_への記録+Impl呼び出しだけ
+  // を行う――pushRecent()自身の再帰呼び出し(含むディレクトリの
+  // 同時記録)はpushRecentImpl()を直接呼ぶことで、再生時に二重記録
+  // (無害だが冗長)にならないようにしている。
+  std::vector<std::function<void(History &)>> journal_;
+  void setPositionImpl(PositionCategory category, const std::string &name, CursorPosition position);
+  void rememberNameImpl(NameSetCategory category, const std::string &name);
+  void pushRecentImpl(RingCategory category, const std::string &name);
+  void setSmoothScrollEnabledImpl(bool enabled);
+  void setModeLineVisibleImpl(bool visible);
+  void setLsModeImpl(int mode);
+  void setSavedCharsetImpl(Charset::Encoding encoding);
+  void setGuiPreferencesImpl(const GuiPreferences &preferences);
+  void setSessionStateImpl(SessionState state);
 };
 
 }  // namespace fm

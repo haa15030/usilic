@@ -132,6 +132,7 @@
 #include <cstring>
 #include <ctime>
 #include <deque>
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -173,6 +174,56 @@ std::string readFileIfExists(const std::string &path) {
   std::ostringstream ss;
   ss << in.rdbuf();
   return ss.str();
+}
+
+// 2026-09-20追加、直接のユーザー依頼("history競合の件、1〜4の対策
+// (read-merge-write+lock)...で実装よろしく"): ~/.usilic/history.lock
+// を使った、複数usilicプロセス間の簡易排他制御。O_CREAT|O_EXCLは
+// 「ファイルが既に存在すれば失敗する」ことをOSが保証する唯一の
+// アトミックな生成手段なので、これで作成できた側だけがロックを
+// 得る(既存の~/.usilic/pid自身の「存在確認してから書く」という
+// 2段階のチェックとは違い、TOCTOUの隙が無い)。
+bool tryCreateHistoryLock(const std::string &lockPath) {
+  int fd = ::open(lockPath.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0644);
+  if (fd < 0) return false;
+  std::string pidText = std::to_string(::getpid()) + "\n";
+  ::write(fd, pidText.c_str(), pidText.size());
+  ::close(fd);
+  return true;
+}
+
+// ロック保持者の生死確認(kill(pid,0)一発、~/.usilic/pid自身のチェック
+// と同じ発想――サスペンド中でも真)込みで、最大で約5秒待つ。保持者が
+// kill -9等で死んだまま取り残されたロックは、生死確認がfalseになった
+// 時点で削除して奪い直す。5秒待っても解放されない(生きたまま応答が
+// 無い)場合も、保存自体を諦めるより奪って進む方が実害が小さい
+// (最悪でも従来通りの「稀に上書きが起きる」状態に戻るだけで、保存
+// そのものが永久に止まるよりはましなため)。
+void acquireHistoryLock(const std::string &lockPath) {
+  for (int attempt = 0; attempt < 100; attempt++) {
+    if (tryCreateHistoryLock(lockPath)) return;
+    long lockPid = 0;
+    {
+      std::ifstream in(lockPath);
+      if (in) in >> lockPid;
+    }
+    bool holderAlive = lockPid > 0 && lockPid != static_cast<long>(::getpid()) &&
+                        ::kill(static_cast<pid_t>(lockPid), 0) == 0;
+    if (!holderAlive) {
+      std::error_code ec;
+      std::filesystem::remove(lockPath, ec);
+      continue;  // 次のループでtryCreateHistoryLock()を再試行
+    }
+    ::usleep(50000);  // 50ms待って再試行
+  }
+  std::error_code ec;
+  std::filesystem::remove(lockPath, ec);
+  tryCreateHistoryLock(lockPath);
+}
+
+void releaseHistoryLock(const std::string &lockPath) {
+  std::error_code ec;
+  std::filesystem::remove(lockPath, ec);
 }
 
 // Ported from sub.c's save_time(): a plain asctime()-style timestamp
@@ -4354,11 +4405,47 @@ int main(int argc, char **argv) {
       history.setSessionState(state);
     }
     history.setSavedCharset(app.encoding());  // so a future session with no explicit override resumes in this one's charset
+
+    // 2026-09-20追加、直接のユーザー依頼("history競合の件、1〜4の対策
+    // (read-merge-write+lock)&書き込み手順を「一時ファイルに書いて
+    // からrename」で実装よろしく"): 複数usilicプロセス並行時の
+    // 上書き消失対策。①history.lockで排他(acquireHistoryLock()自身の
+    // コメント参照)、②書く直前に~/.usilic/historyを「今」の状態で
+    // 読み直し(このプロセス起動後に他プロセスが書いた分もここで
+    // 拾える)、③このセッション「自身」が実際に行った変更だけを
+    // History::replayJournalOnto()で再生(2つのスナップショットの
+    // 差分を推測するのではなく、実際の操作列をそのまま再現する――
+    // history.hpp自身のreplayJournalOnto()宣言コメント参照)、
+    // ④一時ファイルへ書いてからrename()で本番パスへ差し替える
+    // (直前の.oldへの退避と合わせ、書き込み中のクラッシュでも
+    // 中途半端な内容の`history`が観測されることが無い――同じ
+    // temp+renameの手法は本ファイルの別の設定保存箇所(tmpPath変数)
+    // で既に使っている手法)。
     std::string historyPath = usilicDir + "history";
     std::string historyOldPath = usilicDir + "history.old";
-    if (!readFileIfExists(historyPath).empty()) std::rename(historyPath.c_str(), historyOldPath.c_str());
-    std::ofstream out(historyPath, std::ios::binary);
-    out << history.serialize("usilic", currentTimestampText());
+    std::string historyLockPath = usilicDir + "history.lock";
+    acquireHistoryLock(historyLockPath);
+
+    fm::History diskHistory;
+    std::string currentDiskText = readFileIfExists(historyPath);
+    if (!currentDiskText.empty()) {
+      diskHistory.loadHistoryText(currentDiskText, configuration.charsetExplicitlySet());
+      if (!diskHistory.isComplete()) {
+        std::string diskOldText = readFileIfExists(historyOldPath);
+        if (!diskOldText.empty()) diskHistory.loadHistoryText(diskOldText, configuration.charsetExplicitlySet());
+      }
+    }
+    history.replayJournalOnto(diskHistory);
+
+    std::string historyTmpPath = historyPath + ".tmp." + std::to_string(::getpid());
+    {
+      std::ofstream out(historyTmpPath, std::ios::binary);
+      out << diskHistory.serialize("usilic", currentTimestampText());
+    }
+    if (!currentDiskText.empty()) std::rename(historyPath.c_str(), historyOldPath.c_str());
+    std::rename(historyTmpPath.c_str(), historyPath.c_str());
+
+    releaseHistoryLock(historyLockPath);
   }
 
   return 0;
