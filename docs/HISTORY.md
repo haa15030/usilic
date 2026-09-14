@@ -17659,3 +17659,15 @@ killしたのち再起動、を作ってもらったばかり、というタイ�
 
 ^Z(Command::Suspend)は実装・コミットしました(c183162)。raw modeはISIGを切っているため素のCtrl-Zでは通常のジョブコントロールが働かない点をleaveRawMode()+自分自身へのSIGTSTP送信で補い、legacy自身のkey.c(M_susp)を移植しました。SHELLモード中・プロンプト編集中は対象外です(dispatchByte()の既存の早期分岐により自然にそうなる)。SIGTSTPを実際に送るためdoctestでは検証できず、実機の本物の端末での確認をお願いします。
 
+<INFOは^I、TUTORIALは^T。
+^O^M=gr（STDIN仕様）、^[^M=gs。旧参照。
+-Zは-g起動で丸レインボーが回転。
+
+>3件それぞれ調べました。
+
+①^T(TUTORIAL直結)/-g起動での^Zハング: 実装・コミット済みです(3f23645)。^Tを新設のCommand::StartTutorialに割り当て、openSelectedBannerEntry()の「TUTORIAL」行と同じCUT-by-file再生をopenTutorial()へ括り出して共有しました。^Zは-g(GraphicalDisplay)がSDL2ベースでraw termio/ジョブコントロールという概念自体を持たないため、SIGTSTPを送るとSDL2のイベントループが応答無しになりウィンドウサーバーからは丸レインボーにしか見えないハングになっていました――display_.isGraphical()で判定し、GUIでは何もしないようにしました。
+
+②=gs(ESC^M、K-24)のJapanese UTF-8文字化け: 深く調査しましたが実機無しでは確証に至りませんでした。テスト用のFileMode/PipeBufferを直接叩き、CLAUDE.mdの実際の冒頭(①②③・バッククォート・長い行を含む)をloadFileRaw()で読ませたところ、生成されるLineのtext/attributesは一字一句正しく、余分なオーバーストライク/制御コード属性も一切付いていませんでした――つまりデータ処理層(FileMode→PipeBuffer)はこの内容に対して完全にクリーンです。ContentView::renderLine()の実端末描画(TerminalDisplay経由の実際のエスケープシーケンス出力)側の問題である可能性が高いですが、こちらは実PTYが無いと再現・特定できません(過去のPTY検証の不安定性についての既知の制約と同じです)。お手数ですが再現手順を教えていただけますか(^O^Mを先に試してから^[^Mを試したか、それとも^[^M単体か、ディレクトリ一覧から直接開いたか等)。
+
+③^O^M(K-23)の「STDIN仕様」: legacyのold/src/menu.cを読み直したところ、M_fp(^O^M)はfp->cr=2を設定し、それが後続の`if (fp->cr == 2 && np->M != T_dir) *pinp = m_pipe(...)`でファイルを直接openするのではなく「パイプ経由」(m_pipe())で読ませる分岐だと判明しました――ご指摘の通り、私が以前AskUserQuestionで選んだ「行の折り返しを行わない」という解釈は誤りで、正しくは「選択したファイルをSTDINページャーと同じ経路(パイプ越し)で読む」でした。この再実装(loadFileNoWrap()をパイプ/ストリーム読み込みへ作り直す)は現在のnoWrapMode_の実装より影響範囲が大きいため、今すぐ着手してよいか、他の作業と合わせて後回しにするか、ご指示をお願いします。
+
