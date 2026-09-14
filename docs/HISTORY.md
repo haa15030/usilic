@@ -17612,3 +17612,38 @@ history競合対策の実装: Historyクラスに全mutator(pushRecent/setPositi
 
 （ビルド確認: 1回目1143件中1141件通過(既存無関係のLOCATEフレーク+activatePromptのCOLUMNS計算テストの既知フレーク)、2回目1143件中1142件通過(LOCATEフレークのみ、COLUMNSテストは今回パス)――どちらも今回の変更とは無関係な既知の不安定性と判断。make install/make app完了、コミット98d936d。）
 
+<usilic -c .で起動してもFILEに何も無い。下記があるはずなのに。
+/Users/haa15030/.local/lib/usilic/TUTORIAL "^　[0-9]"
+/Users/haa15030/.local/lib/usilic/TUTORIAL.en "^　[0-9]"
+
+>`usilic -c .`(引数付き起動)は仕様上、`~/.usilic/history`を一切読み書きしません(`consultHistoryOnStart = positionalArgs.empty()`という既存の分岐で、legacyの実際の挙動に合わせたもの――今日の変更とは無関係の前からの仕様です)。FILE履歴が見えるのは引数無しの素の`usilic`起動時だけです。
+
+ただ、それとは別に気になる状態を見つけました。実際の`~/.usilic/history`を確認したところ:
+- 現在アクティブな`history`は769バイトで、中身は今日の開発中に(私が誤って`usilic --help`を叩いてしまった件を含め)複数回に分けて登録された、TUTORIALの旧形式の断片5件だけです。
+- 一方、8月26日以前からの本来の実履歴(33862バイト、`history.BAK`)が未使用のまま残っています。項目479で「退避→検証→復元」した際の「復元」が、その後の作業(私の誤操作含む)で再び上書きされてしまったようです。
+
+引数無し`usilic`はヒストリー無しの時しか事前登録を行わないので、今のまま`history`だけ削除しても`history.BAK`は戻りません。どう進めますか?
+
+<「今日の変更とは無関係の前からの仕様です」とあるけれども、では今日の変更は何のためにやったの？
+HISTORY.md:17469をもう一度精読してほしいんだが、方針転換なので旧がどうなっていようが関係ない。あえて触れると、historyにアクセスするのは引数無しだけなので、生きているプロセスがあればkillした上でないと新たな引数無しは起動できない。でもそれなら競合回避の仕組みなんて出る幕ないんじゃない？　１プロセスしか存在できなんだから。
+killしたのち再起動、を作ってもらったばかり、というタイミングも悪かったようだけど、「大きめの方針転換」とは、とにかくディレクトリ引数で起動したusilicプロセス群は漏れなくhistoryへアクセスする。だからこそ競合が発生しうる。
+引数無しこそはhistoryとは無縁のSTDINのみってこと。
+さっき~/.usilic/history.BAKを~にコピーしたのでhistory*は好きにしていい。
+ただし新しい方のhistoryを見てみたら、MANだのLOCATEだのも履歴があったなと。
+なのでhistoryへのその場反映は^R発動のHISTORY以外でお願いしたい。
+以上よろしく。
+
+>1点だけ確認させてください。「引数無し起動はSTDIN入力ページャー機能のみ」とのことですが、これは**パイプもファイル引数も無い、素の対話的な`usilic`単体起動**(今まで「カレントディレクトリのfile manager」を意味していた、一番よく使われてきた形)も含めて、というご理解でよいですか？ つまり今後、file managerとして使うには`usilic .`のように必ずディレクトリ引数を明示する必要がある、という変更になりますが、それで合っていますか？
+
+<それでいい。引数無しかつ素の対話的なusilic単体起動では「usilic [<file] [file] [directory]」を表示して終わる、でいいかなと。
+
+>実装・検証・コミット完了しました(41564e8)。
+
+- consultHistoryOnStartを`positionalArgs.empty()`から`!positionalArgs.empty() && !isFileLaunch`(ディレクトリ引数起動だけ)へ反転しました。
+- 位置引数無し・パイプも無い素の対話的起動は、keyInput.open()直後の早期returnで「usilic [<file] [file] [directory]」を表示して即終了するようにしました。
+- 項目473の多重起動kill機構(引数無しセッションを守るためのものだった)は、その対象自体が無くなったため丸ごと削除しました。
+- History::setOnRingPushed()を新設し、pushRecent()のたびに(RingCategory::ShellCommand=^R発動のHISTORYだけ除外して)即座に~/.usilic/historyへ保存するようにしました(saveHistoryToDisk()として関数化、終了時保存と共有)。
+- 実機で素の`usilic -c`(引数無し・パイプ無し)がusageを表示して即終了することを確認(ハング無し)。ディレクトリ引数起動の対話的な検証は実ターミナルでお願いします。
+- あわせて~/.usilic/historyの実データも整理: 今日のテスト断片(769バイト、旧形式のTUTORIALエントリ5件)を、外部に退避済みの本来の実履歴(history.BAK)へ復元した上で、最終形式のTUTORIAL/TUTORIAL.enエントリをFILE_HISTORY末尾に追記しました。history.old/history.lockも削除しました。
+- make testは1143件中1142件通過(既存無関係のLOCATEフレークのみ)、make install/make app完了。
+
