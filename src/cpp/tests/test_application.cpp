@@ -1595,16 +1595,18 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^H (0x08) also backspaces the prompt text,
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("hellZ");
   CHECK(app.feedByte(0x08, std::nullopt));  // ^H: removes the trailing 'Z'
   feedText("o");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
   CHECK_FALSE(app.promptActive());
-  const auto &fgrepRing = history.recentEntries(RingCategory::RecentFgrepPattern);
-  REQUIRE(fgrepRing.size() == 1);
-  CHECK(fgrepRing[0] == "hello");
+  // CUTはGrepSyntax::Basic一本(2026-09-14再編)なので、grepSyntaxRingCategory()
+  // 自身のコメント通りRecentEgrepPatternを共有する(RecentFgrepPatternではない)。
+  const auto &egrepRing = history.recentEntries(RingCategory::RecentEgrepPattern);
+  REQUIRE(egrepRing.size() == 1);
+  CHECK(egrepRing[0] == "hello");
 }
 
 // 2026-09-11修正、直接のユーザー依頼のFGREP/EGREP統一(startGrepPrompt()
@@ -1661,7 +1663,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP: searching from File mode stays in File mode, i
 
 // -- feedByte: ^Jc / ^J^C leader sequences for CUT --
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J c starts a CUT prompt (StartCutFixed) once in File mode") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J c starts a CUT prompt (StartCut) once in File mode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -1673,13 +1675,16 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J c starts a CUT prompt (StartCutFixed) o
   CHECK(app.promptActive());
 }
 
-// 2026-09-11修正、直接のユーザー依頼("CUTも同様。基本拡張表現
-// （GREP仕様）に統一してほしい"、AskUserQuestionで(a)候補一覧だけ廃止
-// を選択): ^J^C(StartCutRegex)はもう専用の候補一覧を開かず、
-// ^Jc(StartCutFixed)と全く同じ空のプロンプトから始まる――
-// startCutPrompt()自身のコメント参照。
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C (StartCutRegex) now opens a blank prompt directly, same as "
-                           "StartCutFixed (candidate list removed)") {
+// 2026-09-14再編、直接のユーザー依頼(Command::StartCut自身のコメント
+// 参照): ^J^Cはもう「バッファCUTのregex構文」ではなく
+// Command::StartCutFileを指す――File自体から発動した場合は
+// startCutFilePrompt()自身のフォールバック(Directoryの選択が無い
+// ときはPathInputプロンプトへ)が効くので、見た目(promptActive/
+// currentMode_/promptTextの3点)はキー再編前と偶然同じだが、実際に
+// 開いているプロンプトの種類はCutPatternではなくPathInputへ変わって
+// いる。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C now dispatches to StartCutFile, which falls back to the "
+                           "typed-path prompt when not in Directory mode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -1694,11 +1699,11 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^C (StartCutRegex) now opens a blank pr
 
 // -- CUT: split, view a segment, resplit it, back out step by step --
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFixed): opens a prompt from Directory mode (2026-08-11 fix: "
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCut): opens a prompt from Directory mode (2026-08-11 fix: "
                            "a real report found ^J^C was a silent no-op here, unlike ^J^S/EGREP which was "
                            "never restricted this way)") {
   REQUIRE(app.start(path()));
-  CHECK(app.handleCommand(Command::StartCutFixed));
+  CHECK(app.handleCommand(Command::StartCut));
   CHECK(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
@@ -1707,7 +1712,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): submitting a pattern from Dire
                            "directory listing itself, landing in Cut mode with a \"CUT: pattern\" mode-line "
                            "annotation to get back to it from Directory") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("cpmv");  // matches cpmv_a.txt/cpmv_b.txt/cpmvdest's own ls lines
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
@@ -1748,7 +1753,7 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^U clears from the field start to th
                            "keystroke, so ^U silently corrupted the prompt text -- a real report traced a "
                            "\"CUT search does nothing after ^U\" symptom to exactly this)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("garbage");
   REQUIRE(app.promptText() == "garbage");
 
@@ -1766,7 +1771,7 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^Q (quoted insert) inserts the NEXT 
                            "clearQuotedInsert() already existed but were never wired (2026-08-11 fix: a real "
                            "user recollection, \"文字列入力の際のコントロールコードは^Qの前置で入力できた\")") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("ab");
 
   CHECK(app.feedByte(0x11, std::nullopt));  // ^Q: arms quoted-insert
@@ -1788,7 +1793,7 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^Q (quoted insert) inserts the NEXT 
 TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^Q also quotes Enter/^G/^U -- normally-special bytes -- so a "
                            "single ^Q only affects the ONE byte right after it, not a whole mode") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("x");
 
   CHECK(app.feedByte(0x11, std::nullopt));  // ^Q
@@ -1838,7 +1843,7 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W (SHELL: insert buffer content) 
 TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W also works from CUT's plain prompt (2026-08-12 fix, same "
                            "shared routine as the FGREP case above)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   REQUIRE(app.promptActive());
   feedText("x");
 
@@ -1851,38 +1856,22 @@ TEST_CASE_FIXTURE(Fixture, "feedPromptByte: ^J^W also works from CUT's plain pro
   CHECK(app.currentMode() == ApplicationMode::Shell);
 }
 
-// 2026-09-11修正、直接のユーザー依頼のCUT統一(startCutPrompt()自身の
-// コメント参照): ^J^Cはもう専用の候補一覧を開かず、^Jcと全く同じ空の
-// プロンプトから始まる――上の"CUT (2026-08-11 fix): submitting a
-// pattern from Directory mode splits..."と同じ検証パターンに合わせ、
-// StartCutRegex自身のワイヤリング確認として書き直す。
-TEST_CASE_FIXTURE(Fixture, "CUT (regex, ^J^C): now opens a blank prompt directly (candidate list removed) "
-                           "and splits the directory listing on submit, same as StartCutFixed") {
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutRegex));  // ^J^C
-  CHECK(app.promptActive());
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.promptText().empty());
+// 2026-09-14再編、直接のユーザー依頼(Command::StartCut自身のコメント
+// 参照、"CUTは一律grep仕様。Fixedは廃止。"+"^Jc/^J^Cを...「grepで^Jc
+// （バッファ分割）/^J^C（ファイル分割。^Jb/^J^Bは廃止）」"): ^J^Cは
+// もうStartCut(バッファ分割)の別構文ではなく、StartCutFile(ファイル
+// 分割)そのものを指すようになった――このケースがDirectoryの`ls`
+// バッファ自体を分割する挙動を検証していた旧StartCutRegex(^J^C)は、
+// 直下の「^Jc's plain blank prompt」ケースとのちょうど重複になった
+// ため削除。ファイル分割としての^J^Cの検証は
+// "handleCommand(StartCutFile): reachable from OUTSIDE Directory
+// mode..."等、下のStartCutFile関連ケースが担う。
 
-  feedText("cpmv");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // Enter
-  CHECK(app.currentMode() == ApplicationMode::Cut);
-  REQUIRE(app.cutMode().segments().size() == 4);
-
-  // Back from this split returns straight to Directory now (the LIFO
-  // "return to the candidate list" chain no longer exists) -- matching
-  // "CUT (2026-08-11 fix): Back from a Cut split reached via ^Jc's
-  // plain blank prompt..." just below, since ^J^C and ^Jc are now the
-  // exact same entry path.
-  CHECK(app.handleCommand(Command::Back));
-  CHECK(app.currentMode() == ApplicationMode::Directory);
-}
-
-TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): Back from a Cut split reached via ^Jc's plain blank "
+TEST_CASE_FIXTURE(Fixture, "CUT (2026-08-11 fix): Back from a Cut split reached via ^Jc's plain blank"
                            "prompt (not the candidate list) still returns straight to Directory, unchanged "
                            "from item 269's own behavior") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));  // ^Jc: blank prompt, no candidate list involved
+  REQUIRE(app.handleCommand(Command::StartCut));  // ^Jc: blank prompt, no candidate list involved
   feedText("cpmv");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -1897,7 +1886,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: splitting log.txt on 'marker' produces one segm
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
@@ -1914,7 +1903,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, K-35/^Jb): splits the SELECTED en
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.currentMode() == ApplicationMode::Directory);  // never entered File mode
 
-  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  REQUIRE(app.handleCommand(Command::StartCutFile));
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
@@ -1934,7 +1923,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin): mode-line shows the
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
-  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  REQUIRE(app.handleCommand(Command::StartCutFile));
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -1957,16 +1946,17 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin): mode-line shows the
 // (startCutPrompt() from Directory) explicitly set cutOrigin_ itself,
 // so reaching executeCut() with cutOrigin_ still File unambiguously
 // means "no fresh Directory search since" -- reuse that file instead.
-TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin, regex ^J^B): ^R-recalling the pattern still "
-                           "re-targets the SAME file, not the directory listing") {
+TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin, StartCutFile/^J^C): ^R-recalling the pattern "
+                           "still re-targets the SAME file, not the directory listing") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
-  // 2026-09-11修正、直接のユーザー依頼のCUT統一(startCutPrompt()自身の
-  // コメント参照): StartCutFileRegex(^J^B)はもう専用の候補一覧を開かず、
-  // 空のプロンプトから始まる。Backも1回でDirectoryへ直接戻る。
-  REQUIRE(app.handleCommand(Command::StartCutFileRegex));  // ^J^B -- the exact variant the report used
+  // 2026-09-14再編、直接のユーザー依頼(Command::StartCut自身のコメント
+  // 参照): 旧StartCutFileRegex(^J^B、廃止済み)はStartCutFile(^J^C)へ
+  // 統合された。空のプロンプトから始まる点、Backが1回でDirectoryへ
+  // 直接戻る点は変わらない。
+  REQUIRE(app.handleCommand(Command::StartCutFile));  // ^J^C
   CHECK(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);
   feedText("marker");
@@ -1980,7 +1970,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file, File-origin, regex ^J^B): ^R-reca
   // 今度は「本物の」^R(タイプ中の呼び戻し)でlog.txtを再度ターゲットに
   // 選び直す -- cutFileSourcePath_がディレクトリ一覧ではなく実際の
   // ファイル自身を指したままであることの確認。
-  REQUIRE(app.handleCommand(Command::StartCutFileRegex));
+  REQUIRE(app.handleCommand(Command::StartCutFile));
   REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.handleCommand(Command::Enter));  // select "marker" (the only/newest entry)
@@ -1995,7 +1985,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file): Back returns to Directory mode, 
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
-  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  REQUIRE(app.handleCommand(Command::StartCutFile));
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -2010,17 +2000,17 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file): Back returns to Directory mode, 
 // 自身のコメント参照の通り、その場合は代わりにPathInputプロンプト
 // (K-45/K-47と同じ、ファイル名の入力/履歴選択)へフォールバックする
 // よう拡張した――ディレクトリが選択されている場合も同様。
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): a directory entry selected falls back "
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFile): a directory entry selected falls back "
                            "to the typed-filename prompt instead of being refused outright") {
   REQUIRE(app.start(path()));
   int idx = indexOf("subdir/");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  CHECK(app.handleCommand(Command::StartCutFileFixed));
+  CHECK(app.handleCommand(Command::StartCutFile));
   CHECK(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);  // PathInput doesn't change currentMode_
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): reachable from OUTSIDE Directory mode "
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFile): reachable from OUTSIDE Directory mode "
                            "too, via the same typed-filename prompt (2026-09-20 extension)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
@@ -2028,15 +2018,15 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): reachable from OUT
   REQUIRE(app.handleCommand(Command::Enter));  // any non-Directory mode
   CHECK(app.currentMode() == ApplicationMode::File);
 
-  CHECK(app.handleCommand(Command::StartCutFileFixed));
+  CHECK(app.handleCommand(Command::StartCutFile));
   CHECK(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): typing a real file's path at the "
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFile): typing a real file's path at the "
                            "fallback prompt resolves it, then chains straight into the CutPattern "
                            "prompt (not a plain file open)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutFileFixed));  // no selection yet -- top entry is "./"
+  REQUIRE(app.handleCommand(Command::StartCutFile));  // no selection yet -- top entry is "./"
   feedText((root / "log.txt").string());
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   CHECK(app.promptActive());  // chained into CutPattern, not opened as a plain file
@@ -2046,22 +2036,22 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): typing a real file
   CHECK(app.cutMode().segments().size() == 3);  // log.txt's own real split, matching the other CUT-by-file tests above
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): typing a path to a DIRECTORY at the "
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFile): typing a path to a DIRECTORY at the "
                            "fallback prompt is refused (a directory has no content to CUT), not "
                            "silently entered") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  REQUIRE(app.handleCommand(Command::StartCutFile));
   feedText((root / "subdir").string());
   CHECK_FALSE(app.feedByte(0x0d, std::nullopt));
   CHECK_FALSE(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);  // not silently descended into subdir/
 }
 
-TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFileFixed): ^G at the fallback filename prompt "
+TEST_CASE_FIXTURE(Fixture, "handleCommand(StartCutFile): ^G at the fallback filename prompt "
                            "cancels cleanly, and does not leak into a LATER, unrelated PathInput "
                            "prompt (cutFilePendingSyntax_ is reset on cancel)") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  REQUIRE(app.handleCommand(Command::StartCutFile));
   REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
   CHECK_FALSE(app.promptActive());
 
@@ -2090,7 +2080,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (regular file): completing a real split records 
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::StartCutFileFixed));
+  REQUIRE(app.handleCommand(Command::StartCutFile));
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -2136,36 +2126,36 @@ TEST_CASE_FIXTURE(Fixture, "FILE history: a plain path that happens to contain n
   CHECK(app.currentMode() == ApplicationMode::File);  // plain open, not Cut
 }
 
-// 2026-09-14追加、直接のユーザー依頼("README改めTUTORIALとして...
-// FILE履歴には...TUTORIAL \"^　[0-9]^H[0-9]+\\.\"が登録済み"):
-// この事前登録エントリ自身のパターンが正規表現であり、当初の実装
-// (GrepSyntax::Fixedに決め打ち)では動作しない。parseCutFileHistoryEntry()/
-// buildCutFileHistoryEntry()自身のコメント参照(区切り文字でFixed/
-// Regexを区別する拡張)。
-TEST_CASE_FIXTURE(Fixture, "FILE history: a composite \"path \\\"/pattern/\\\"\" entry (slash-wrapped "
-                           "content inside the quotes) replays the CUT using Regex syntax, not Fixed") {
-  std::string composite = (root / "log.txt").string() + " \"/marker [a-z]+/\"";
+// 2026-09-14再編、直接のユーザー依頼("CUTは一律grep仕様。Fixedは
+// 廃止。"+"検索をgrep一本に絞るので正規表現である印としてのスラッシュ
+// も不要となる"): parseCutFileHistoryEntry()/buildCutFileHistoryEntry()
+// はもうFixed/Regexの2択を区別しない――常に二重引用符+生のパターンで、
+// 常にGrepSyntax::Basicとして再生する。旧「引用符の中身が更に
+// `/.../`ならRegex」という区別(2026-09-14の一時的な拡張)は、区別
+// する対象自体が無くなったため撤回・削除した。
+TEST_CASE_FIXTURE(Fixture, "FILE history: a composite \"path \\\"pattern\\\"\" entry always replays the "
+                           "CUT using GrepSyntax::Basic") {
+  std::string composite = (root / "log.txt").string() + " \"marker [a-z]\"";
   history.pushRecent(RingCategory::RecentFile, composite);
   REQUIRE(app.start(path()));
   CHECK(app.handleCommand(Command::GoToRecentFile));
   CHECK(app.currentMode() == ApplicationMode::Cut);
-  CHECK(app.cutMode().pattern() == "marker [a-z]+");
+  CHECK(app.cutMode().pattern() == "marker [a-z]");
   REQUIRE(app.cutMode().segments().size() == 3);  // marker one/two/three
 }
 
-TEST_CASE_FIXTURE(Fixture, "CUT (regular file, Regex syntax): completing a real split records a "
-                           "quote-delimited composite entry with slash-wrapped inner content, not "
-                           "the plain quote-delimited Fixed form") {
+TEST_CASE_FIXTURE(Fixture, "CUT (regular file, StartCutFile/^J^C): completing a real split records a "
+                           "plain quote-delimited composite entry (no Regex slash-marker anymore)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::StartCutFileRegex));
-  feedText("marker [a-z]+");
+  REQUIRE(app.handleCommand(Command::StartCutFile));
+  feedText("marker [a-z]");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
 
   std::string plainPath = (root / "log.txt").string();
-  std::string composite = plainPath + " \"/marker [a-z]+/\"";
+  std::string composite = plainPath + " \"marker [a-z]\"";
   const auto &recent = history.recentEntries(RingCategory::RecentFile);
   CHECK(std::find(recent.begin(), recent.end(), composite) != recent.end());
 }
@@ -2175,7 +2165,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: Enter on a segment label shows that segment's c
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
@@ -2195,7 +2185,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: nested resplit from CutContent, then step back 
   REQUIRE(app.handleCommand(Command::Enter));  // open sub.txt
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("alpha");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -2204,7 +2194,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: nested resplit from CutContent, then step back 
   REQUIRE(app.handleCommand(Command::Enter));  // view segment 0: ["alpha", "beta"]
   REQUIRE(app.currentMode() == ApplicationMode::CutContent);
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));  // resplit this segment
+  REQUIRE(app.handleCommand(Command::StartCut));  // resplit this segment
   feedText("beta");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -2248,14 +2238,14 @@ TEST_CASE_FIXTURE(Fixture, "CUT: ^Jc pressed WHILE STILL ON THE LABEL LIST (not 
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("alpha");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);  // label list -- NOT CutContent, no Enter pressed yet
   REQUIRE(app.cutMode().segments().size() == 2);
   REQUIRE(app.activeContentView().cursorIndex() == 0);  // segment 0 ["alpha", "beta"] is selected
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));  // ^Jc AGAIN, straight from the label list
+  REQUIRE(app.handleCommand(Command::StartCut));  // ^Jc AGAIN, straight from the label list
   feedText("beta");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::Cut);
@@ -2281,7 +2271,7 @@ TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: top-level split shows \"CUT\" an
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("plain");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -2303,10 +2293,10 @@ TEST_CASE_FIXTURE(Fixture, "cutView_ mode-line: a NESTED split shows \"CUT:<pare
   while (indexOf(app.directoryMode().selectedEntry()->name) != fileIdx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("alpha");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("beta");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -2322,7 +2312,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: Back from CutContent returns to the Cut label l
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.handleCommand(Command::Enter));
@@ -2339,7 +2329,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: ^G cancels a pending cut prompt without splitti
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("marker");
   CHECK(app.feedByte(0x07, std::nullopt));
 
@@ -2364,7 +2354,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: works from MAN too, splitting the currently-dis
   }
   REQUIRE(app.currentMode() == ApplicationMode::Man);
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("a");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::Cut);
@@ -2392,7 +2382,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: works from LOCATE too, splitting the results li
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Locate);
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("cut_locate_target");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::Cut);
@@ -2409,7 +2399,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT: works from DU too, splitting the results list, 
   waitForDu(app);
   REQUIRE(app.currentMode() == ApplicationMode::Du);
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("plain.txt");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::Cut);
@@ -6360,7 +6350,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToFileSelector): also works from Cut
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("hello");  // matches plain.txt's own first line ("hello\nworld\n")
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -7352,7 +7342,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: shows the total byte count of all s
 TEST_CASE_FIXTURE(Fixture, "SHELL mode-line: entering from Cut mode shows \"CUT\" as the return-target "
                            "trailing field, not the \"usilic v1.5b\" no-previous-mode fallback") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("cpmv");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -9477,54 +9467,31 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: swallowed (no ListBrowser, no
   CHECK(app.promptText().empty());  // 0x12 itself was NOT inserted as literal text
 }
 
-// -- ^R at the CUT prompt (CutPattern, 2026-08-05): FIXED (^Jc)
-// shares FGREP's own ring, REGEX (^J^C) shares EGREP's -- matching
-// legacy's own ss.p.hfgrep/hegrep split for M_cut2/M_cut, ported here
-// (executeCut()'s own comment) after a direct user report that an
-// EARLIER same-day revision used EGREP's ring unconditionally for
-// BOTH, which is itself a real legacy bug (menu.c's own `case M_cut:
-// case M_cut2: hp->ss.p.hegrep = save_history(...)` never branches
-// here either, unlike the FGREP/EGREP block just above it in the same
-// switch) -- also fixed in old/src/menu.c itself, see that commit. --
+// -- ^R at the CUT prompt (CutPattern, 2026-08-05): 元々はFIXED (^Jc)
+// がFGREP自身のringを共有し、REGEX (^J^C)がEGREPのそれを共有していた
+// (legacy自身のss.p.hfgrep/hegrep split for M_cut2/M_cutの移植)。
+// 2026-09-14、直接のユーザー依頼("CUTは一律grep仕様。Fixedは廃止。")
+// によりCUT自体がGrepSyntax::Basic一本になったため、このFIXED側の
+// 経路(旧StartCutFixed)自体が無くなり、「^JcがRecentFgrepPatternを
+// 使う」という前提を検証していたテストも丸ごと撤回した――直下の
+// テストが検証する「Basic(^Jc/StartCut)はRecentEgrepPatternを共有
+// する」の方が、今のCUTの唯一の経路になっている。
 
-TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt (FIXED, ^Jc/StartCutFixed) recalls from RecentFgrepPattern, "
-                           "NOT RecentEgrepPattern -- matching FGREP's own fixed-string semantics") {
+// 2026-09-14再編、直接のユーザー依頼("CUTは一律grep仕様。Fixedは
+// 廃止。"): StartCut(^Jc)はもうGrepSyntax::Basic一本だが、
+// grepSyntaxRingCategory()/cutSyntax_ == GrepSyntax::Fixedの判定
+// ("そうでなければRecentEgrepPattern")自体は既にBasicも
+// RecentEgrepPattern側に含める設計だった(同関数自身のコメント参照)
+// ため、この履歴recallの挙動自体は変わらない。
+TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt (^Jc/StartCut) recalls from RecentEgrepPattern "
+                           "(GrepSyntax::Basic shares the Regex-pattern ring, not RecentFgrepPattern)") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
-  feedText("plain");
-  REQUIRE(app.feedByte(0x0d, std::nullopt));  // records "plain" into RecentFgrepPattern
-  REQUIRE(app.handleCommand(Command::Back));  // not nested -- one ^G exits CUT entirely, back to File
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
-  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-  REQUIRE(app.listBrowserMode().items().size() == 1);
-  CHECK(app.listBrowserMode().items()[0] == "plain");
-
-  const auto &fgrepRing = history.recentEntries(RingCategory::RecentFgrepPattern);
-  REQUIRE(fgrepRing.size() == 1);
-  CHECK(fgrepRing[0] == "plain");
-  CHECK(history.recentEntries(RingCategory::RecentEgrepPattern).empty());
-}
-
-TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt (REGEX, ^J^C/StartCutRegex) recalls from RecentEgrepPattern") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("plain.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.currentMode() == ApplicationMode::File);
-
-  // 2026-09-11修正、直接のユーザー依頼のCUT統一(startCutPrompt()自身の
-  // コメント参照): StartCutRegexはもう専用の候補一覧を開かず、
-  // StartCutFixedと全く同じ空のプロンプトから始まる。Backも(LIFOの
-  // 候補一覧再入場が無くなったため)1回でFileへ直接戻る。
-  REQUIRE(app.handleCommand(Command::StartCutRegex));
+  REQUIRE(app.handleCommand(Command::StartCut));
   CHECK(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::File);
   feedText("pla.n");
@@ -9537,7 +9504,7 @@ TEST_CASE_FIXTURE(Fixture, "^R at the CUT prompt (REGEX, ^J^C/StartCutRegex) rec
   // 自身のsortDirectEntryList分岐参照――CutPattern/GrepPatternはもう
   // directEntry==trueで到達しないので、これは常にこの時系列の分岐を通る)
   // で同じ履歴を確認する。
-  REQUIRE(app.handleCommand(Command::StartCutRegex));
+  REQUIRE(app.handleCommand(Command::StartCut));
   REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.listBrowserMode().items().size() == 1);
@@ -9558,22 +9525,22 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: the list is the RAW chronolog
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("man");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.handleCommand(Command::Back));
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("usilic");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.handleCommand(Command::Back));
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("man");  // revisit, non-consecutive -- must NOT be de-duplicated away
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.handleCommand(Command::Back));
 
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
   REQUIRE(app.listBrowserMode().items().size() == 3);  // man, usilic, man -- raw order, duplicate "man" kept
   CHECK(app.listBrowserMode().items()[0] == "man");
@@ -10122,7 +10089,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^F/^X^D/^J^R all work from CUT mode too,
   history.pushRecent(RingCategory::RecentFile, "/some/file.txt");
   history.pushRecent(RingCategory::RecentDirectory, "/some/dir/");
   history.pushRecent(RingCategory::ShellCommand, "echo hi");
-  REQUIRE(app.handleCommand(Command::StartCutFixed));  // ^Jc: blank prompt
+  REQUIRE(app.handleCommand(Command::StartCut));  // ^Jc: blank prompt
   feedText("plain");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -10585,7 +10552,7 @@ TEST_CASE_FIXTURE(Fixture, "CUT (real, File-origin): CutContent's mode-line show
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("marker");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
@@ -10831,7 +10798,7 @@ TEST_CASE_FIXTURE(Fixture, "HELP: invoked mid-CUT preserves the real session; Ba
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("hello");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -10886,7 +10853,7 @@ TEST_CASE_FIXTURE(Fixture, "HELP: a genuinely NEW top-level CUT session started 
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("hello");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Cut);
@@ -10965,7 +10932,7 @@ TEST_CASE_FIXTURE(Fixture, "handleResize: does NOT reflow HELP when it's nested 
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));
-  REQUIRE(app.handleCommand(Command::StartCutFixed));
+  REQUIRE(app.handleCommand(Command::StartCut));
   feedText("hello");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.handleCommand(Command::StartHelp));  // pushed -- canGoBack() is now true

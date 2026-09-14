@@ -389,38 +389,29 @@ std::string resolveTempRoot(const std::string &homeDirectory, const std::string 
 // 2026-09-14拡張、直接のユーザー依頼("README改めTUTORIALとして...
 // FILE履歴には真っ新起動の時点で~/.local/lib/usilic/TUTORIAL "^
 // [0-9]^H[0-9]+\."が登録済み"): この事前登録エントリ自身のパターンが
-// 正規表現(`^`/`[0-9]`/`+`/`\.`)であり、当初の実装(GrepSyntax::Fixed
-// に決め打ち)では正しく動作しない。当初はこれを表示側の区切り文字
-// (二重引用符/スラッシュ)そのもので区別する形にしたが、QUICK.txt
-// 自身が定めるC-j bの説明("「ファイル名 "文字列"」で表示され")は
-// Fixed/Regexを問わず常に二重引用符で括る形なので、Regex専用に
-// スラッシュを外側の区切りへ格上げしたのはこの既定から外れた独自の
-// 追加だった。2026-09-14再訂正、直接のユーザー指摘("FILE一覧上では
-// TUTORIAL /^　[0-9]/となっているので旧同様TUTORIAL "/^　[0-9]/"と
-// して欲しい"): 外側は常に二重引用符に統一し、その中身が更に
-// `/.../`(スラッシュで開始・終了)で括られていればRegex、そうでなければ
-// Fixedと判定する――「文字列」自体の見た目に正規表現の目印(スラッシュ)
-// が残るぶん、外側の区切り文字だけを見るより一目でわかる。
+// 正規表現(`^`/`[0-9]`)であり、当初の実装(GrepSyntax::Fixedに決め
+// 打ち)では正しく動作しない。一時期は外側の区切り文字自体(二重引用符/
+// スラッシュ)でFixed/Regexを区別していたが、QUICK.txt自身が定める
+// C-j bの説明("「ファイル名 "文字列"」で表示され")通り常に二重引用符
+// で括る形に戻した後、直接のユーザー依頼("CUTは一律grep仕様。Fixedは
+// 廃止。")によりCUT自体がGrepSyntax::Basic一本になったため、
+// Fixed/Regexの区別自体が丸ごと不要になった――もう常にBasicを返す。
 std::optional<std::tuple<std::string, std::string, GrepSyntax>> parseCutFileHistoryEntry(
     const std::string &entry) {
   if (entry.size() < 4 || entry.back() != '"') return std::nullopt;
   std::size_t openPos = entry.rfind(" \"", entry.size() - 2);
   if (openPos == std::string::npos) return std::nullopt;
   std::string filePath = entry.substr(0, openPos);
-  std::string inner = entry.substr(openPos + 2, entry.size() - (openPos + 2) - 1);
-  if (filePath.empty() || inner.empty()) return std::nullopt;
-  if (inner.size() >= 2 && inner.front() == '/' && inner.back() == '/') {
-    std::string pattern = inner.substr(1, inner.size() - 2);
-    if (pattern.empty()) return std::nullopt;
-    return std::make_tuple(filePath, pattern, GrepSyntax::Regex);
-  }
-  return std::make_tuple(filePath, inner, GrepSyntax::Fixed);
+  std::string pattern = entry.substr(openPos + 2, entry.size() - (openPos + 2) - 1);
+  if (filePath.empty() || pattern.empty()) return std::nullopt;
+  return std::make_tuple(filePath, pattern, GrepSyntax::Basic);
 }
 
-// parseCutFileHistoryEntry()自身のコメント参照――その逆変換。
-std::string buildCutFileHistoryEntry(const std::string &path, const std::string &pattern, GrepSyntax syntax) {
-  std::string inner = (syntax == GrepSyntax::Regex) ? "/" + pattern + "/" : pattern;
-  return path + " \"" + inner + "\"";
+// parseCutFileHistoryEntry()自身のコメント参照――その逆変換。CUTは
+// 常にGrepSyntax::Basicなので`syntax`自体はもう使わないが、
+// 呼び出し側(main.cpp/application.cpp)を単純に保つため引数は残す。
+std::string buildCutFileHistoryEntry(const std::string &path, const std::string &pattern, GrepSyntax) {
+  return path + " \"" + pattern + "\"";
 }
 
 // application.hpp自身の宣言コメント参照: app/main.cpp(真っ新起動時の
@@ -446,9 +437,17 @@ std::string buildCutFileHistoryEntry(const std::string &path, const std::string 
 // しまい本末転倒(K-24のRaw表示と同じ見た目になる)。そこで代わりに、
 // loadFile()収縮後の「見た目通りの」文字列(全角スペース+数字+ドット
 // の並び、バックスペース無し)に一致するよう改めた――太字の見た目は
-// そのまま保たれる。「1.」「2.」「2.1.」「2.18.」のような1〜複数階層
-// の見出し番号すべてに一致する。
-std::string tutorialCutPattern() { return "^\xE3\x80\x80[0-9]+(\\.[0-9]+)*\\."; }
+// そのまま保たれる。
+//
+// 2026-09-14再訂正、直接のユーザー依頼("CUTは一律grep仕様。Fixedは
+// 廃止。"): CUTがGrepSyntax::Basic(素のgrep、基本正規表現)一本に
+// なったのに合わせ、`+`/`(...)`(拡張正規表現の記法、BREのままだと
+// 文字通りにしか解釈されない)を含んでいた旧パターンを撤回。
+// 「全角スペース+数字」で始まる行はTUTORIAL内の見出し以外に存在
+// しない(本文が全角スペースで始まることは無い)ため、後続の階層
+// 表現無しでも見出し行すべてに過不足無く一致する――BREの範囲内で
+// 完結する分、ERE前提の旧パターンより移植性も高い。
+std::string tutorialCutPattern() { return "^\xE3\x80\x80[0-9]"; }
 
 Application::Application(Display &display, KeyInput &keyInput, History &history, const Configuration &configuration,
                           Charset::Encoding encoding, int width, ShellOptions shellOptions,
@@ -464,6 +463,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       usilicrcPath_(homeDirectory + "/.usilic/usilicrc"),
       historyFilePath_(homeDirectory + "/.usilic/history"),
       tutorialPath_(homeDirectory + "/.local/lib/usilic/TUTORIAL"),
+      tutorialBasePath_(homeDirectory + "/.local/lib/usilic/TUTORIAL"),
       encoding_(encoding),
       configuration_(configuration),
       history_(history),
@@ -2494,14 +2494,15 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::GoToRecentFile);
       case kControlS:  // ^J ^S : EGREP
         return handleCommand(Command::StartEgrep);
-      case 'c':  // ^J c : CUT(固定文字列、バッファ)
-        return handleCommand(Command::StartCutFixed);
-      case kControlC:  // ^J ^C : CUT(regex、バッファ)
-        return handleCommand(Command::StartCutRegex);
-      case 'b':  // ^J b : CUT(固定文字列、通常ファイル)
-        return handleCommand(Command::StartCutFileFixed);
-      case 0x02:  // ^J ^B : CUT(regex、通常ファイル)
-        return handleCommand(Command::StartCutFileRegex);
+      // 2026-09-14再編、直接のユーザー依頼(Command::StartCut自身の
+      // コメント参照): ^Jb/^J^Bは廃止し、旧「通常ファイル」CUT
+      // (Directory一覧から直接、開かずに分割)は^J^Cへ統合した。
+      case 'c':  // ^J c : CUT(バッファ分割)
+        return handleCommand(Command::StartCut);
+      case kControlC:  // ^J ^C : CUT(ファイル分割、旧^Jb/^J^Bの後継)
+        return handleCommand(Command::StartCutFile);
+      case 'a':  // ^J a : TUTORIAL/TUTORIAL.en切替(Command::ToggleTutorialLanguage自身のコメント参照)
+        return handleCommand(Command::ToggleTutorialLanguage);
       // K-43/K-44、K-41/K-42(CLAUDE.mdの経緯の項目289の追跡): LOCATE/
       // DUとは異なり、この2つのペアについてのusilicrc自身の表現は本当
       // に「Input」/「Select」である――EGREPの^J^Sと同じ形――なので、
@@ -3709,14 +3710,13 @@ bool Application::handleCommand(Command command) {
       return jumpToGrepInPlaceMatch(-1);
     case Command::StartIncrementalGrep:
       return startIncrementalGrepPrompt();
-    case Command::StartCutFixed:
-      return startCutPrompt(GrepSyntax::Fixed);
-    case Command::StartCutRegex:
-      return startCutPrompt(GrepSyntax::Regex);
-    case Command::StartCutFileFixed:
-      return startCutFilePrompt(GrepSyntax::Fixed);
-    case Command::StartCutFileRegex:
-      return startCutFilePrompt(GrepSyntax::Regex);
+    case Command::StartCut:
+      return startCutPrompt(GrepSyntax::Basic);
+    case Command::StartCutFile:
+      return startCutFilePrompt(GrepSyntax::Basic);
+    case Command::ToggleTutorialLanguage:
+      tutorialPath_ = (tutorialPath_ == tutorialBasePath_) ? tutorialBasePath_ + ".en" : tutorialBasePath_;
+      return true;
     case Command::StartMan:
       return startManPrompt();
     case Command::StartManList:
@@ -6984,7 +6984,7 @@ bool Application::openSelectedBannerEntry() {
   // 代入含む)を、その合成エントリ文字列をここで組み立てて渡すことで
   // そのまま再利用する(専用のCUT起動コードをここに複製しない)。
   if (endsWith(tutorialPath_))
-    return openRecentFileEntry(buildCutFileHistoryEntry(tutorialPath_, tutorialCutPattern(), GrepSyntax::Regex));
+    return openRecentFileEntry(buildCutFileHistoryEntry(tutorialPath_, tutorialCutPattern(), GrepSyntax::Basic));
   for (const std::string &fixedPath : {usilicrcPath_, errorLogPath_, logFilePath_}) {
     if (!endsWith(fixedPath)) continue;
     // 2026-08-27修正、実際の報告("^T→「/tmp/.usilic.NNNNN/shell」

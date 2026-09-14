@@ -108,17 +108,26 @@ enum class Command {
   // 入力で(Enterを待たずに)liveIncrementalGrepSearch()がその場で
   // 検索し直し、in-placeハイライト+ジャンプを更新する。
   StartIncrementalGrep,
-  StartCutFixed,
-  StartCutRegex,
-  // K-35/K-36(^Jb / ^J^B、M_fcut2/M_fcut――CUTの「通常ファイル」
-  // バリアント): StartCutFixed/StartCutRegexと同じ発想だが、まず
-  // Fileモードでそれを開くことなく、Directoryモードから「選択
-  // された」エントリに対して直接到達可能(CutMode自身のクラス
-  // コメントが既にまさにこのショートカットを配線されていない
-  // 将来の課題として印を付けていた)。startCutFilePrompt()自身の
-  // コメント参照。
-  StartCutFileFixed,
-  StartCutFileRegex,
+  // 2026-09-14再編、直接のユーザー依頼("CUTは一律grep仕様。Fixedは
+  // 廃止。"+"^Jc/^J^Cがそれぞれfgrep/grep検索となっているのをいずれも
+  // 「grepで^Jc（バッファ分割）/^J^C（ファイル分割。^Jb/^J^Bは廃止）」
+  // でよろしく"): CUTは以前StartCutFixed(FGREP)/StartCutRegex(EGREP)の
+  // 2方式を持っていたが、GrepSyntax::Basic(素のgrep、基本正規表現、
+  // 他のトップレベルのGREP(^S)と同じ)一本化した――Fixed方式・EGREP
+  // 方式のどちらも廃止(startCutPrompt()/startCutFilePrompt()自身の
+  // コメント参照)。それに伴い^Jc/^J^Cの2キーも、「構文の選択」ではなく
+  // 「対象がバッファかファイルか」を表す1組へ作り直した:
+  // ^Jc(K-33、旧StartCutFixed) : CUT(バッファ分割)
+  // ^J^C(K-34、旧StartCutRegex): CUT(ファイル分割、旧StartCutFileFixed/
+  //                              StartCutFileRegexの後継――旧^Jb/^J^B
+  //                              自体はキーごと廃止した)
+  StartCut,
+  StartCutFile,
+  // 2026-09-14追加、直接のユーザー依頼("モード名はTUTORIALだが読み込む
+  // ファイルをTUTORIALとTUTORIAL.enとで切り替えを行う^Jaを復活して
+  // 欲しい"、旧HELPの日英切替^Oa/^Jaの後継、HISTORY.md:13854): ^J a。
+  // tutorialPath_自身のコメント参照。
+  ToggleTutorialLanguage,
   StartMan,
   StartManList,
   StartProgram,
@@ -2387,6 +2396,15 @@ class Application {
   // ホームディレクトリはこの2つの意味で重なるだけで、本質的には
   // 別の概念である。
   std::string tutorialPath_;
+  // 2026-09-14追加、直接のユーザー依頼("モード名はTUTORIALだが読み込む
+  // ファイルをTUTORIALとTUTORIAL.enとで切り替えを行う^Jaを復活して
+  // 欲しい"、旧HELPの日英切替^Oa/^Jaの後継、HISTORY.md:13854): 切替
+  // 前の(常に日本語版の)パスをここに固定で保持しておき、
+  // handleCommand(Command::ToggleTutorialLanguage)がtutorialPath_
+  // 自身をこれと(これ+".en")の間でトグルする――tutorialPath_を直接
+  // 書き換えるだけなので、^T画面のTUTORIAL行表示・そこからの再生
+  // (openSelectedBannerEntry())は無改造のまま追随する。
+  std::string tutorialBasePath_;
   Charset::Encoding encoding_;  // wrapHelpText()自身のPipeBuffer構築――現在他のどのメンバーもこれを必要としない
   const Configuration &configuration_;  // executeProgram()自身のPROGRAM一覧の参照、上のfind_prog()の注記参照
   History &history_;  // startListBrowser()自身のrecentEntries()の参照――現在他のどのメンバーもこれを必要としない

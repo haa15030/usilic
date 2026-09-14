@@ -33,13 +33,34 @@ std::string convertTabsForSearch(const std::string &pattern) {
 CutMode::CutMode(ContentView &view, ModeStack &modeStack, const Configuration &configuration)
     : view_(view), modeStack_(modeStack), configuration_(configuration) {}
 
+namespace {
+// 2026-09-14修正、直接のユーザー依頼("CUTは一律grep仕様。Fixedは廃止。"):
+// 以前はFixed(FGREP)以外を一律Egrep(EGREP)扱いする2択だったが、
+// application.cpp自身のgrepSyntaxRole()と同じ3択(Fixed→FGREP、
+// Regex→EGREP、Basic→GREP)へ揃えた――CUTの実際の呼び出し元
+// (Application::startCutPrompt()/startCutFilePrompt())はもう
+// GrepSyntax::Basicしか渡さないが、CutMode自体はFILE履歴の合成
+// エントリ再生(openRecentFileEntry())等、他の値でも呼ばれ得る
+// 汎用のクラスなので、判定自体は3値のまま正しく扱う。
+ConfiguredRole cutSyntaxRole(GrepSyntax syntax) {
+  switch (syntax) {
+    case GrepSyntax::Fixed:
+      return ConfiguredRole::Fgrep;
+    case GrepSyntax::Regex:
+      return ConfiguredRole::Egrep;
+    case GrepSyntax::Basic:
+      return ConfiguredRole::Grep;
+  }
+  return ConfiguredRole::Grep;
+}
+}  // namespace
+
 bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::string &pattern,
                      GrepSyntax syntax) {
   if (pattern.empty()) return false;
   const std::string searchPattern = convertTabsForSearch(pattern);
 
-  ProgramCommand cmd =
-      configuration_.commandFor(syntax == GrepSyntax::Fixed ? ConfiguredRole::Fgrep : ConfiguredRole::Egrep);
+  ProgramCommand cmd = configuration_.commandFor(cutSyntaxRole(syntax));
   if (cmd.argv.empty()) return false;
 
   std::string inputText;

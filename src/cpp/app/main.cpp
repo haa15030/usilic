@@ -3833,8 +3833,7 @@ int main(int argc, char **argv) {
       // 存在しない(=このユーザーにとって本当に初めての起動、または
       // 何らかの理由で履歴がまっさらな状態)場合に限り、FILE履歴へ
       // TUTORIAL自身の合成CUTエントリ(application.cppのparseCutFileHistoryEntry()/
-      // buildCutFileHistoryEntry()自身のコメント参照――スラッシュ
-      // 区切りはGrepSyntax::Regexを意味する)を1件だけ事前登録する。
+      // buildCutFileHistoryEntry()自身のコメント参照)を事前登録する。
       // パターン自体はfm::tutorialCutPattern()(application.hpp/cpp)を
       // 呼ぶ――^T画面自身の「TUTORIAL」行(Application::
       // openSelectedBannerEntry())と全く同じバイト列を参照する必要が
@@ -3843,10 +3842,20 @@ int main(int argc, char **argv) {
       // TUTORIAL自身の存在確認までは行わない(実際に選択された時点で
       // FileMode::loadFile()が自然に失敗するだけなので、ここで二重に
       // チェックする必要が無い)。
+      // 2026-09-14再訂正、直接のユーザー依頼("モード名はTUTORIALだが
+      // 読み込むファイルをTUTORIALとTUTORIAL.enとで切り替えを行う^Ja
+      // を復活して欲しい。真っ新FILEリストには...両方を登録"):
+      // TUTORIAL.en側も同じ形で1件事前登録する。Application::
+      // tutorialPath_の初期値(常にTUTORIAL、日本語版)に合わせ、
+      // より目立つ「最新」の位置(pushRecent()は末尾ほど新しい)に
+      // TUTORIALが来るよう、TUTORIAL.enを先に積む。
       if (homeEnv) {
         std::string tutorialPath = std::string(homeEnv) + "/.local/lib/usilic/TUTORIAL";
+        history.pushRecent(fm::RingCategory::RecentFile, fm::buildCutFileHistoryEntry(
+                                                               tutorialPath + ".en", fm::tutorialCutPattern(),
+                                                               fm::GrepSyntax::Basic));
         history.pushRecent(fm::RingCategory::RecentFile,
-                            fm::buildCutFileHistoryEntry(tutorialPath, fm::tutorialCutPattern(), fm::GrepSyntax::Regex));
+                            fm::buildCutFileHistoryEntry(tutorialPath, fm::tutorialCutPattern(), fm::GrepSyntax::Basic));
       }
     }
   }
