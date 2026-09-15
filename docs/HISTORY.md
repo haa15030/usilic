@@ -17812,3 +17812,20 @@ pagerReturnsToDirectory_(前回新設)は^Gの戻り先の判定にしか使っ�
 
 2点目(-cで起動後もGUI画面へ繋がってしまう件)は、tryHandoffToParentShell()(main.cpp、getenv("USILIC")チェック)/setenv("USILIC",...)(shell.cpp、Shell::start())/pollShellHandoff()(application.cpp、両方のメインループから対称に呼ばれている)を一通り追いましたが、-c起動時に限ってGUIへ誤って繋がる経路を特定できませんでした。guiModeToggleRequested_(唯一のGUI起動トリガー)は^O g以外からは一切設定されないことも確認済みです。恐れ入りますが、実際に何が起きているか(新しいSDLウィンドウが本当に開くのか、それとも別の見え方なのか)、具体的な再現手順(usilic -cで起動→どの操作の後に何が起きるか)を教えていただけますか。
 
+<・`usilic -c ~/.usilic/saved`で起動①→`^[scat usilic.1^M`→新たなGUIウィンドウ出現。
+だがさらに深刻な症状に遭遇。
+①→`^[susilic usilic.1^M`→GUI仕様usilic画面現る→`^X^C^M`→GUI版usilicが終了→CUIの（ls）画面へ。
+原因を究明しなくても、usilicは起動時のオプションにより自分が今、CUIかGUIかを知っているはずなのでSHELLで処理を受け取ったusilicもそれに準ずるだけでいいのでは？
+あるいは、新たなusilicを起動しているように見せるだけで、実態はそれ用のモードへ移行するだけ、とか。
+・/Users/haa15030/.usilic/saved/の（ls）画面で`usilic.1`を`^O^M`で開いたときの戻り値は、`^M`で開いたときと同じでいい。
+
+>3点目(戻り値の単純化)は修正・検証・コミット完了しました(00cd4e9)――前回追加した専用の"(ls)"trailing3バッジは撤回し、通常のloadFile()(K-22)と同じくrightWatermark/trailing3のどちらも表示しないようにしました(独立起動フォールバックの"usilic v1.5b"だけは引き続き抑制)。
+
+1点目・2点目(GUIウィンドウが現れる件)は、正直まだ原因を特定できていません。サンドボックス内でtryHandoffToParentShell()相当の状況(USILIC=1を設定してusilicへファイル引数を渡す)を再現しようとしましたが、このサンドボックスには本物の制御端末(tty)が無いため、"Invalid terminal"という別の警告が混入し、かつ手元の簡易テストではプロセスが即終了せず通常のセッションとして起動し続けてしまいました――ただしこれ自体、環境変数がこのサンドボックスのシェルラッパー経由で正しく子プロセスへ伝わっていない可能性が高く(本物のPTY環境での再現ではありません)、実際のバグの手がかりとして信頼できるものではないと判断しています。コード自体(getenv("USILIC")チェック、rendezvousのパス計算、pollShellHandoff()の両方の分岐)を読む限りでは、`usilic.1`のような位置引数付き起動・`cat`単体のケースのどちらも問題を起こす経路が見当たりませんでした。
+
+②の`cat usilic.1`だけでGUIウィンドウが現れるという方が特に不可解です(catはusilicを一切呼び出さないため)――usilic自身のシェルセットアップ以外に、何かエイリアス/関数(例えば`cat`を`$PAGER`経由でページングする設定)が.bashrc/.zshrc側にありませんか？もしあれば、それが$PAGER(usilic --usilic-pager <pid>形式)を経由して間接的にusilicを起動している可能性があります。
+
+実機でのPTY検証はこのセッションでは信頼性に欠けるとの既知の制約があるため(過去の教訓)、恐れ入りますが以下を実機で確認いただけますか:
+1. `usilic usilic.1^M`を打った直後、`/tmp/.usilic-shell/`配下に`s.<uid>.<pid>`という名前のファイル(またはソケット)が一瞬でも作成されるか(lsで直後に確認、または`ls -la /tmp/.usilic-shell/`を別ターミナルから)。
+2. `cat usilic.1`実行前後で`.bashrc`/`.zshrc`に`cat`絡みのalias/function定義が無いか。
+
