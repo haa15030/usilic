@@ -17743,3 +17743,19 @@ application.cppのkHelpPattern(HELP自身のCUT分割パターン)は現在"："
 
 検証: usilic -m src/QUICK.txtで実際にusilic.manを生成し、タブパターンでのgrep一致数が期待通り80件(旧「：」パターンでは122件)になることを確認。make testは1144件中1143件通過(既存無関係のLOCATEフレークのみ)。
 
+<~/.usilic/usilicrcのFILE設定を反映できるようにして欲しい。
+今のmacOS環境で設定可能なsuffix/programがあれば追加で設定して。
+最後の`.[0-9]`は正規表現ではピリオドのエスケープが必要だが他の設定に倣いこれでOKとしたい。
+よろしく。
+
+>調べたところ、~/.usilic/usilicrcのFILE設定は既に正しく反映されていました――main.cppが起動時にこのファイルを読み、Configuration::loadRcText()がFILE節をパースし、programForSuffix()(拡張子の末尾一致、legacy自身のchild.cのstrcasecmp相当)がファイルを開く際に実際に参照されています。Configuration単体をリンクした検証用の小さいプログラムを書いて実際の~/.usilic/usilicrcを読み込ませたところ、.gz/.bz2/.zは期待通りgzip -dc等に解決され、.[0-9]は(ご指摘の通り)正規表現ではなくリテラルな6文字のsuffix比較なので実在のファイル名(例: manpage.1)には一切マッチしないことも実測で確認しました――legacy自身(child.c)も同じくstrcasecmpによるリテラル比較なので、この非対称は移植前から存在した仕様であり、ご依頼通りマッチングロジックには手を入れず、この行はそのまま残しています。
+
+今のmacOS環境(このマシン)で実際に動作確認した上で、FILE節に以下を追加しました:
+- .xz	xz	-dc
+- .zst	zstd	-dc
+- .lz4	lz4	-dc
+- .Z	uncompress	-c(古典的なcompress形式。小文字の既存.zエントリとは別物として共存)
+- .plist	plutil	-p(バイナリplistを人間可読に。macOS実機の実在のバイナリplistで実際に動作確認)
+
+いずれも実際にファイルを圧縮/生成してコマンドを実行し、正しく展開・変換できることを確認済みです。
+
