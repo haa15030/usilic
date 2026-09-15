@@ -17830,6 +17830,8 @@ pagerReturnsToDirectory_(前回新設)は^Gの戻り先の判定にしか使っ�
 それよりもさっきの提案はどう？　SHELLプロンプトでusilicを起動する場合、実際の~/.local/bin/usilicには触らずに（誤起動回避）、`cat usilic.1|usilic`であれば`^O^M`で`~/.usilic/saved/usilic.1`を表示する時のモードへ移行したうえで戻り値をSHELLにするだけ、ってのは？
 ・バグ：`usilic -c ~/.usilic/saved`で起動→`^[s`でカレントディクトリが`~/.usilic/saved/`じゃない。
 
+それだとマズい。^O^Mではモード名がusilic.1なので（現状は不良だが）、読み込み先の情報を知らない|usilicには使えない。提案は取り消しでいい。他は続けて。
+
 >①の訂正で謎は解けました――`cat usilic.1|usilic`ならusilicを実際に起動するので、`ls -l|usilic`と同じ系統のバグで一貫します(catコマンド単体でGUIが開く、という不可解な経路は最初から存在しませんでした)。
 
 ②のご質問(-g省略時のデフォルトがGUIなのが原因か)はその通りです――app/main.cppに`#ifdef __APPLE__`で`if (!forceCui && !forceGui) forceGui = true;`という、以前のセッションでのユーザー自身の依頼("デフォルト-gで起動できるのはmacOSのみ...-g起動では別のウィンドウ上で起動")による意図的な既定値があります。tryHandoffToParentShell()がgetenv("USILIC")を正しく検出できていれば、このデフォルト分岐へ到達する前に早期returnするはずなので、ここへ落ちてしまうこと自体が「検出に失敗している」ことの証拠です――ただしその失敗の具体的な原因はまだ特定できていません。
@@ -17839,6 +17841,12 @@ pagerReturnsToDirectory_(前回新設)は^Gの戻り先の判定にしか使っ�
 ④(バグ: ^[sでカレントディレクトリが違う)は原因を特定し、修正・検証・コミット完了しました(ec7000f)。usilic自身のプロセスは決してchdir()しない設計のため、Shell::start()が新しいbash子プロセスをfork/execする際、usilic自身のプロセス全体のcwd(起動時の場所、今表示中のDirectory一覧とは無関係)をそのまま継承していました――buildSetupCommand()が送る他のセットアップ文(PS1/COLUMNS等)にcd文自体が含まれていなかったのが原因です。Shell::start()/buildSetupCommand()にinitialDirectory引数を追加し、bash/zsh/csh-tcshいずれの分岐でも最初にcdするようにしました。本物のbashを使うPTY統合テストで、新しいセッションが実際にそこへcdしたことを確認済みです。make testは1150件中1149件通過(既存無関係のLOCATEフレークのみ)、make usilic/make install/make app完了。
 
 GUIウィンドウの件(②)は、まだ原因不明のままです。ご提案通りの設計変更(③)は撤回されたため、引き続き根本原因(tryHandoffToParentShell()のgetenv("USILIC")検出がこのケースでなぜ効かないか)を特定できれば、そちらを直接修正するのが筋と考えていますが、このサンドボックスでは実PTYでの再現が信頼できないため、いったん保留とさせてください。
+
+なお、ついでに気づいた点として: ~/.usilic/usilicrcのARCHIVE節26行目が
+
+`.tar .tar.gz .tgz .tar.bz2 .tbz2 .tar.xz .txz tar.zst .tzst .lzh .zip .7z .rpm .deb	.taz	.tgz`
+
+という形になっており、他の行(suffix0 <TAB> suffix1の2トークン形式)と違って1行に多数の拡張子が詰め込まれています。編集途中のものかもしれませんが、意図した形と違う可能性があればお知らせください。
 
 実機でのPTY検証はこのセッションでは信頼性に欠けるとの既知の制約があるため(過去の教訓)、恐れ入りますが以下を実機で確認いただけますか:
 1. `usilic usilic.1^M`を打った直後、`/tmp/.usilic-shell/`配下に`s.<uid>.<pid>`という名前のファイル(またはソケット)が一瞬でも作成されるか(lsで直後に確認、または`ls -la /tmp/.usilic-shell/`を別ターミナルから)。
@@ -17930,3 +17938,57 @@ pagerMode_のModeLineFieldsProviderを拡張し、既存のsetSearchOrigin()(nam
 行数表示("00001/00026"対"00001/00025")については、調査の結果、readMoreIntoPipe()自身の「最初の1画面はpollPagerExitNotice()の1回の呼び出しで一気に埋まるが、チャンク読み込みの都合上高々1行程度の丸め超過があり得る」という、この移植の(stdin)系ページング機構全体に以前から存在する、容認されている挙動(ensureLoadedThrough()自身の2026-09-06訂正コメント、および同種のテストの「少なくとも1画面分」というコメント参照)と一致する差分と見られ、ARCHIVE分岐固有の新しいバグではないと判断しました――コード上は変更せず、経緯を説明するに留めています。もし引き続き厳密な一致を望まれる場合は、readMoreIntoPipe()のチャンク境界の扱いから改めて調査します。
 
 test_application.cppの既存のARCHIVE ^O^Mテストの"(stdin)"表明を"archive.tar"/"(tar)"表明へ更新し、新しいモードライン専用の回帰テストも追加(ファイル名・"(tar)"バッジ・所属ディレクトリが見え、"(stdin)"は見えないことを確認)。make testは1154件中1153件通過(既存無関係のLOCATE既知フレークのみ)。make usilic/make install/make app完了。
+
+<--continue
+
+>直近の作業(ARCHIVE ^O^Mのモードライン不良修正)はb6a86c4で実装・検証・コミット済み、その記録もdocs/HISTORY.md(71e4784)まで反映済みで、作業ツリーもクリーンです。.steering/配下の各タスク(20260908-post-transfer-underline、20260909-grep-inline-highlight等)も追記12まで完了とtasklist.mdに記録されています。
+
+つまり明確に「続きから再開すべき未完了タスク」は見当たりません。次に何を進めましょうか(①クラッシュ系バグ修正の続き、②実機で気になった新しい症状の報告、③IDEAS.mdの未着手項目の着手、など)。
+
+<週の制限まで90％と出た。17日夜8時にリセットらしい。
+usilicの試用はTerminal.appでやっているんだが、Claudeも動いている状態で全ターミナル強制終了となってClaudeとも接続断。再接続が今。
+結構な破壊力のバグなので直して欲しいところだが、再現性が今イチつかめない。
+最初に起きたときは全く覚えておらず、2度目の今回は、usilic -c /tmpで起動後に起きている。jでページ送りしようとしたらひらがな入力モードになっていて全角ｊがいくつか表示されたところで強制終了となった。
+全ターミナル巻き添えって何が原因だろう？
+
+>この規模の破壊力(全Terminal.appウィンドウ巻き添え=Claude Code接続まで切れる)は本当に危険なので、まず状況を整理させてください。
+
+「jでページ送り」時点ではIMEがひらがな変換中で、キー入力ではなく全角"ｊ"という**通常のマルチバイト文字**がusilicへ届いていた、という理解で合っていますか? つまり escape sequence 起因ではなく、「usilicが想定していない全角文字を、テキスト入力欄ではない通常のナビゲーション画面で複数回受け取った」状況です。
+
+これで疑っているのは、以前から履歴のある「表示幅計算(East Asian Width)のバグが暴走描画(莫大な文字数のpadding/repeatをターミナルへ出力)を引き起こし、Terminal.app側が固まって強制終了に至る」という系統です。全角文字は表示幅2のため、幅計算をどこかで間違えて `width - used` のような減算が負になり、それを符号無し型で扱ってしまうと、天文学的な回数のループ(スペース詰め等)が発生し、そのままterminalへ書き出され続けてTerminal.appごと固まる、という筋です。実際に該当コードを見てみます。
+
+(application.cpp/key_input.cpp/main.cppの調査経緯は割愛。)
+
+Terminal.appのクラッシュレポート(`~/Library/Logs/DiagnosticReports/Terminal-2026-09-15-223853.ips`)が実際に残っていました。中身を確認します。
+
+Terminal.appのクラッシュログが実際に残っていて、原因がはっきり分かりました。**usilic側のバグではありません。**
+
+クラッシュの実体は次の通りです:
+
+- `EXC_BAD_ACCESS`(SIGBUS、メモリアクセス違反)がTerminal.appのメインスレッドで発生。
+- クラッシュしたスレッド名がそのものずばり **`(input method 787 com.justsystems.inputmethod.atok30)`** — つまり ATOK30(ジャストシステムの日本語IME)。
+- スタックトレースは `IMKInputSession_Modern setMarkedText:...` → `NSTextInputContext handleTSMEvent:` → `TSMProcessRawKeyEventWithOptionsAndCompletionHandler` と、まるごとmacOSのTSM/IMKit(Text Services Manager)経由でATOKが「変換中の下線付きテキスト(marked text)」をTerminal.appの画面へ書き込もうとしている最中の処理。
+
+つまり実際に起きていたのは:
+
+1. `j`キー押下 → ATOKがひらがな変換候補として「marked text」(変換確定前の下線付き表示、全角ｊに見えたのはこれ)をTerminal.appのテキスト入力欄へ渡そうとした。
+2. その`setMarkedText`処理の途中でATOKのIMEプラグインコード自体がメモリ違反を起こし、Terminal.appプロセス**全体**がクラッシュ(SIGBUS)。
+3. Terminal.appは全ウィンドウ・全タブを1つのプロセスで抱えているため、このクラッシュで無関係なClaude Codeのタブも巻き添えで落ちた。
+
+usilicはptyの向こう側で生バイトを`read()`しているだけで、この崩壊はそのバイトがusilicへ届く**前**、macOS側のIME合成レイヤーで起きています。resolveCommand()やkey_input.cppのraw mode設定を見ましたが、ここに手を入れてもこの種の崩壊は防げません(usilicが受け取る前の話なので)。
+
+つまり「usilic上でJでページ送りしようとしてIMEが誤発動した」のは単なるトリガー(ATOKのバグを踏むきっかけ)であって、原因はATOK30とTerminal.app(macOS 26.5.2、TSM/IMKit)側にあります。理論上はusilicを使っていなくても、Terminal.appのプロンプトで同じタイミング(ローマ字入力中の変換途中)でATOKが同じ内部エラーを踏めば再現し得ます。
+
+**対処の方向性(usilicのコード修正では直せない範囲):**
+- 再現性確認のため、次に同じことが起きたら「usilicを使わず素のシェルプロンプトでも同様に発生するか」を試すと、ATOK/Terminal.app起因であることの追加証拠になります。
+- ATOK30の更新(ジャストシステム)を確認する。
+- Appleへのフィードバック(Terminal.app/TSMがIME側の例外を握りつぶさずクラッシュしてしまう点)。
+- 回避策としては、usilic使用中(特にファイル一覧・ページャ画面)は日本語入力モードをオフにしておく、あるいは可能ならTerminal.appの代わりにiTerm2等別ターミナルで同じ操作を試し、同じATOKバグを踏むか確認する、あたりが実用的です。
+
+CLAUDE.mdやIDEAS.mdへの追記は必要そうですか(「usilic起因ではなくATOK30/Terminal.appのIMEクラッシュだった」という調査結果として)?
+
+<追記はしておいて。ただし同じような状況はすでに多々あって、いっそ全角ｊ（ほか単独小文字）も受付可能を要望しようかと思っていたくらいなので再現性は乏しいと思う。
+マニュアルにその旨記載しかないかなと。
+
+今日はもう寝るんでログの反映をお願いしたい。初めてiTerm2でClaude中だが、コピペの欠落はやはり起きている（すぐ上）。
+HISTORY.md:3を踏まえて作業よろしく。ではまた明日。
