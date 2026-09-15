@@ -17903,3 +17903,15 @@ test_application.cppに、SHELLプロンプトでの"usilic"がProgramModeへ一
 
 make testは1152件中1150件通過(LOCATEの既知フレークに加え、activatePrompt(2026-08-12 fix)というテストが1件失敗しましたが、単体再実行では2/2とも通過しておりCOLUMNS計算絡みの既知の間欠フレークパターンと判断、無関係)。make usilic/make install/make app完了。main.cppはdoctest対象外のため、今回もこのセッションのサンドボックスでは実PTY確認ができておらず、コードレビューと項目473の元実装との整合性確認に基づく修正です。実機での確認をお願いします。
 
+
+<`~/tcb-1.5b.linux.tgz`を`^O^M`すると`^G`で`~/`へは戻らずに`~/.usilic/`へ移動してしまい、さらに`.tvf`の拡張子ファイルが作成されている。これって、`^O^M`画面を表示するのに`.tvf`ファイルをわざわざ作ってそれを画面表示してるの？　fork()で子プロセスの出力を取り込めば終いでは？
+
+>ご指摘の通りでした、修正・検証・コミット完了しました(1618e27)。
+
+openSelectedEntryNoWrap()のARCHIVE分岐(2026-09-20追加)は、ChildProcess::run()/runPipeline()が既にfork()+exec()+パイプ読み取りでtar tvf等の出力をメモリ上(result.output)に丸ごと捕捉し終えているにも関わらず、それをmaterializeArchiveTempFile()経由でtempRootDirectory_直下の固定名`<entry>.tvf`へわざわざディスクへ書き出し直し、FileMode::loadFileNoWrap()という「実在するファイルパスを開く」経路へ渡していました。これがご指摘の2つの実害の原因でした: (1)そのファイルが実際にディスク上に残り続ける、(2)FileMode::currentFile()がその一時パスを指すため、Command::Back→returnToDirectory()の「本物のファイルの所属ディレクトリを辿る」ロジック(2026-08-16修正、bannerFilePath()自身の特例と同じ理屈)が誤発動し、directoryMode_を実際にいたディレクトリ(~/)ではなくtempRootDirectory_(~/.usilic/配下)へ切り替えてしまっていました。
+
+FileMode::loadFileAsPipe()自身が既に同種の問題(K-23の"(stdin)"化)を、mkstemp()+unlink()の無名の一時fd(ディスク上に残らない)へ書き、currentFile_を空のまま保つことで解決済みだったので、その共有部分をFileMode::loadContentAsPipe(const std::string &content)として公開し、loadFileAsPipe()自身もこれを呼ぶ薄いラッパーへリファクタリングしました。ARCHIVE分岐はmaterializeArchiveTempFile()呼び出しを削除し、result.outputをloadContentAsPipe()へ直接渡すよう変更(実ファイルを一切経由しない)しています。
+
+test_application.cppに新しい回帰テストを追加し、実際にtarで作ったアーカイブに対して(1)ディスク上に.tvf拡張子ファイルが一切存在しないこと、(2)^G後もdirectoryMode_.currentDirectory()が元のディレクトリのままであること、の両方を確認しました。既存の「ReadFileNoWrap on an archive」テストは、loadFileNoWrap()(即時全文読み込み)からloadStream()ベースの"(stdin)"ページング読み込み(初回はわざと1行だけ)へ挙動が変わったため、他の(stdin)系テストと同じくensureLoadedThrough()で明示的に全文を読み切ってから検証する形に更新しました。
+
+make testは1153件中1151件通過(既存無関係の2件の既知フレーク――LOCATE、およびactivatePrompt/COLUMNS計算――のみ、いずれも今回の変更とは無関係)。make usilic/make install/make app完了。
