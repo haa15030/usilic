@@ -17759,3 +17759,18 @@ application.cppのkHelpPattern(HELP自身のCUT分割パターン)は現在"："
 
 いずれも実際にファイルを圧縮/生成してコマンドを実行し、正しく展開・変換できることを確認済みです。
 
+<~/.usilic/saved/usilic.1について、現状では^O^M/^[^M/^Mが皆おなじなのでちゃんと機能を反映して。
+具体的には^O^Mで(stdin)形式になっておらず、^[^Mは「as is」（msマクロ）になってない。
+
+>調査・実装・検証・コミット完了しました(d3f0d4e)。
+
+old/src/menu.cのm_cr()/check_ext()/check_type()を辿って判明したlegacyの実際の意味は次の通りでした: fp->cr=1(plain Enter)/fp->cr=2(^O^M)はどちらもcheck_ext()を通る(HELP-markup展開/roff文書のgroff整形が効く)――差はread_buff()がm_pipe()経由のパイプ越しになる点だけ。一方fp->cr=0(^[^M、M_code)はcheck_ext()自体を呼ばない――変換ゼロで生バイトをそのまま見せる、が「そのまま(as is)読む」の実体でした。
+
+このポートのFileMode::readAndWrap()は、HELP-markup展開/roff→groff整形をrawControlCodesMode_(K-24)の状態に関わらず一律に適用しており、かつK-23はloadFileNoWrap()の素のまま(loadStream()の"(stdin)"ラベル付けを経由しない)だったため、usilic.1(msマクロ形式)のような、この変換が実際に発火するファイルでは^M/^O^M/^[^Mが全く同じ内容を表示してしまっていました。
+
+- readAndWrap()の変換部分をloadAndTransformContent()へ切り出し、rawControlCodesMode_が真の間はこれを丸ごとスキップするようにしました(loadFileRaw()、K-24)。
+- 新設のFileMode::loadFileAsPipe()(K-23向け)は、loadAndTransformContent()で変換した内容を一時ファイル経由でloadStream()へ渡し、setSearchOrigin("", "(stdin)")で実際のSTDINパイプ起動と同じラベル付けにしました(生のOSパイプへ直接write()するとパイプバッファ容量超過でデッドロックし得るため、tempファイル経由にしています)。
+- loadStream()にnoWrap引数を追加(デフォルトfalse、本物のSTDIN/SHELL引き渡し呼び出し元は無変更)し、loadFileAsPipe()がtrueを渡すようにしました。
+
+実際の~/.usilic/saved/usilic.1を読ませる手組み検証(FileMode単体リンク)で、K-22/K-23がgroff整形済みの同一内容(K-23のみモードラインが"00001/00370 TOP 16058 (stdin)"形式)、K-24が生のtroff源(.TH行等)そのままになることを確認しました。test_file_mode.cppに合成の.TH文書を使った回帰テストも追加。make testは1147件中1146件通過(既存無関係のLOCATEフレークのみ)、make usilic/make app完了。
+
