@@ -355,6 +355,57 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a regular fi
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
+// 2026-09-21追加、直接のユーザー指摘("`~/tcb-1.5b.linux.tgz`を^O^M
+// すると^Gで~/へは戻らずに~/.usilic/へ移動してしまい、さらに.tvf
+// 拡張子ファイルが作成されている...fork()で子プロセスの出力を取り込
+// めば終いでは？"): openSelectedEntryNoWrap()のARCHIVE分岐は以前、
+// tar tvf等の捕捉済み出力(fork()+exec()+パイプ読み取り、既にメモリ
+// 上にある)をmaterializeArchiveTempFile()経由でtempRootDirectory_
+// 直下の固定名<entry>.tvfへわざわざ書き出し、loadFileNoWrap()という
+// 「実在パスを開く」経路へ渡していた。これが(1)ディスク上に.tvf
+// ファイルが残り続ける、(2)FileMode::currentFile()がその一時パスを
+// 指すためCommand::Back->returnToDirectory()の「ファイルの所属
+// ディレクトリを辿る」ロジックが誤発動しdirectoryMode_がtempRootDirectory_
+// 側へ切り替わってしまう、という2つの実害の原因だった。
+// FileMode::loadContentAsPipe()(loadFileAsPipe()自身のmkstemp+unlink
+// の無名一時fd経路を公開したもの)へ直接渡すよう修正し、実ファイルを
+// 一切経由しないようにした――このテストはその両方を検証する。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a real .tar archive: pipes tar's captured "
+                           "output directly (no .tvf temp file left on disk), and Back (^G) returns to the "
+                           "ORIGINAL directory rather than following the temp file's path") {
+  REQUIRE(app.start(path()));
+  std::string originalDirectory = app.directoryMode().currentDirectory();
+  int idx = indexOf("archive.tar");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::ReadFileNoWrap));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  // loadContentAsPipe()自身のloadStream()呼び出しは初回わざと1行だけ
+  // しか読まない("(stdin)"系ページングの既定、他の全てのensureLoadedThrough
+  // テストと同じ)ので、全文を読み切ってから検証する。
+  app.fileMode().ensureLoadedThrough(1000, /*bypassPacing=*/true);
+  // tar tvfの生出力(選択不可なプレーンテキスト、"arcsrc/"を含むはず)
+  // がそのままページャーへ渡っている。
+  CHECK(app.activeContentView().modeLineText().find("(stdin)") != std::string::npos);
+  bool sawArcsrc = false;
+  for (const auto &line : app.activeContentView().lines())
+    if (line.text.find("arcsrc") != std::string::npos) sawArcsrc = true;
+  CHECK(sawArcsrc);
+
+  // (1) ディスク上のどこにも.tvfファイルが残っていないこと。
+  bool foundTvf = false;
+  for (const auto &entry : fs::recursive_directory_iterator(root))
+    if (entry.path().extension() == ".tvf") foundTvf = true;
+  CHECK_FALSE(foundTvf);
+
+  // (2) ^Gで戻った先が、tempRootDirectory_ではなく元のディレクトリの
+  // ままであること。
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == originalDirectory);
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) on the SAME long-line file wraps it into multiple lines "
                            "(confirms the NoWrap test above is actually exercising different behavior)") {
   std::string longLine(200, 'x');
@@ -4114,6 +4165,17 @@ TEST_CASE_FIXTURE(Fixture, "ARC: Enter on an archive file switches to Archive mo
 // と、ARC表示ではなく項目が選べないtvf表示画面になるだけだと思う"):
 // old/src/menu.cのM_fp(fp->cr=2、m_pipe())からの、以前見送っていた
 // アーカイブ分岐の再実装。
+// 2026-09-21修正: 当初はmaterializeArchiveTempFile()経由でtar tvfの
+// 出力を一時ファイルへ書き出しloadFileNoWrap()(通常ファイルと同じ
+// 即時の全文読み込み)で開いていたため、ensureLoadedThrough()無しでも
+// 全行が即座に見えていた。同日中の別の修正(直接のユーザー指摘
+// "~/.usilic/配下に.tvfファイルが作られ、^Gで戻ると元のディレクトリ
+// ではなくそちらへ移動してしまう"、このテストのすぐ下の新しいテスト
+// 参照)でFileMode::loadContentAsPipe()(loadFileAsPipe()と同じ
+// loadStream()ベースの"(stdin)"ページング読み込み、初回はわざと
+// 1行だけ)へ切り替えたため、他の全ての"(stdin)"系テスト(loadFileAsPipe
+// 自身のtest_file_mode.cppのテスト参照)と同じくensureLoadedThrough()
+// で明示的に全文を読み切ってから検証する必要が生じた。
 TEST_CASE_FIXTURE(Fixture, "ReadFileNoWrap (^O^M) on an archive shows the raw listing command's plain "
                            "output as a non-interactive pager, NOT Archive mode") {
   REQUIRE(app.start(path()));
@@ -4123,6 +4185,7 @@ TEST_CASE_FIXTURE(Fixture, "ReadFileNoWrap (^O^M) on an archive shows the raw li
 
   REQUIRE(app.handleCommand(Command::ReadFileNoWrap));
   CHECK(app.currentMode() == ApplicationMode::File);
+  app.fileMode().ensureLoadedThrough(1000, /*bypassPacing=*/true);
   bool sawEntry = false;
   for (const auto &line : app.activeContentView().lines()) {
     if (line.text.find("inner.txt") != std::string::npos) sawEntry = true;

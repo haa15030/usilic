@@ -4257,9 +4257,23 @@ bool Application::openSelectedEntryNoWrap() {
   // (以前このケースを「高度な/稀な機能」として意図的に複製しない
   // 判断をしていたが誤りだった)。ArchiveMode::loadArchive()自身が
   // 一覧コマンドを組み立てる箇所と全く同じ構築(pipedFromArgvの
-  // 2段パイプライン形式含む)を踏襲し、その捕捉済み出力を一時
-  // ファイルへ書き出してFileMode::loadFileNoWrap()へ渡す――
-  // ArchiveEntryへのparseListing()はここでは呼ばない(構造化しない)。
+  // 2段パイプライン形式含む)を踏襲する――ArchiveEntryへの
+  // parseListing()はここでは呼ばない(構造化しない)。
+  // 2026-09-21修正、直接のユーザー指摘("~/.usilic/配下に実在の
+  // <entry>.tvfファイルが作られ、^Gで戻ると元のディレクトリではなく
+  // そちらへ移動してしまう。fork()で子プロセスの出力を直接取り込め
+  // ば済むのでは？"): ChildProcess::run()/runPipeline()は既にfork()+
+  // exec()+パイプ読み取りで出力をメモリ上(result.output)に捕捉し
+  // 終えている――以前はそれをmaterializeArchiveTempFile()経由で
+  // わざわざtempRootDirectory_直下の固定名ファイルへ書き出し直し、
+  // loadFileNoWrap()という「実在パスを開く」経路へ渡していたが、
+  // これがまさにユーザー指摘の2つの実害の原因だった: 残置ファイル
+  // 自体、および(returnToDirectory()の「currentFile()の所属ディレク
+  // トリを辿る」ロジックが誤発動する形で)^Gの戻り先の混乱。
+  // FileMode::loadContentAsPipe()(loadFileAsPipe()自身のmkstemp+
+  // unlinkの無名一時fd経路を公開したもの、file_mode.hpp自身の宣言
+  // コメント参照)へメモリ上の内容を直接渡せば、実ファイルを一切
+  // 経由せずに済む。
   ArchiveKind kind = ArchiveKind::None;
   auto command = configuration_.programForSuffix(path, &kind);
   if (command && kind != ArchiveKind::None) {
@@ -4276,9 +4290,7 @@ bool Application::openSelectedEntryNoWrap() {
       result = ChildProcess::run(argv, options);
     }
     if (!result.ok) return false;
-    std::vector<unsigned char> bytes(result.output.begin(), result.output.end());
-    std::string tempPath = materializeArchiveTempFile(tempRootDirectory_, entry->name + ".tvf", bytes);
-    if (tempPath.empty() || !fileMode_.loadFileNoWrap(tempPath)) return false;
+    if (!fileMode_.loadContentAsPipe(result.output)) return false;
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = ApplicationMode::Directory;
     return true;

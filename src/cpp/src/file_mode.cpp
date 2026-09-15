@@ -435,7 +435,14 @@ bool FileMode::loadFileAsPipe(const std::string &path) {
 
   rawControlCodesMode_ = false;
   std::string content = loadAndTransformContent(path);
+  return loadContentAsPipe(content);
+}
 
+// loadContentAsPipe()自身の宣言コメント(file_mode.hpp)参照――
+// loadFileAsPipe()自身のmkstemp()以降と元々全く同じ内容だったものを
+// 2026-09-21に抽出した(そちら自身は上でloadAndTransformContent()の
+// 結果を渡すだけの薄いラッパーになった)。
+bool FileMode::loadContentAsPipe(const std::string &content) {
   char tempPath[] = "/tmp/usilic-pipe-XXXXXX";
   int fd = ::mkstemp(tempPath);
   if (fd < 0) return false;

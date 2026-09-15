@@ -144,6 +144,33 @@ class FileMode {
   // 経由でそのまま流用できる。ファイルが読めない場合はfalse。
   bool loadFileAsPipe(const std::string &path);
 
+  // 2026-09-21追加、直接のユーザー指摘("^O^Mを.tar.gz等に適用すると
+  // ~/.usilic/配下に実在の<entry>.tvfファイルが作られ、しかも^Gで
+  // 戻ると（ls）の元のディレクトリではなくそちらへ移動してしまう
+  // ――fork()で子プロセスの出力を直接取り込めば済むのでは？"):
+  // Application::openSelectedEntryNoWrap()のARCHIVE分岐は、既に
+  // ChildProcess::run()/runPipeline()(=fork()+exec()+pipe読み取り)で
+  // tar tvf等の出力をメモリ上に丸ごと捕捉し終えているにも関わらず、
+  // それを一旦ディスク上の固定名一時ファイル(materializeArchiveTempFile()、
+  // tempRootDirectory_直下)へ書き出し、loadFileNoWrap()という「実在
+  // するファイルパスを開く」経路へ渡していた。この結果2つの実害が
+  // 出ていた: (1) そのファイルが実際にディスク上に残り続ける(ユーザー
+  // が発見した.tvfファイル)。(2) FileMode::currentFile()がその一時
+  // パスを指すため、Command::Back→returnToDirectory()の「本物の
+  // ファイルの所属ディレクトリを辿る」ロジック(2026-08-16修正、
+  // bannerFilePath()自身の特例コメント参照)が誤発動し、directoryMode_を
+  // 実際にユーザーがいたディレクトリ(例: ~/)ではなくtempRootDirectory_
+  // (~/.usilic/配下)へ切り替えてしまっていた。
+  // 根本原因は「メモリ上に既にある内容を、わざわざ実ファイルとして
+  // 経由させていた」ことそのもの――loadFileAsPipe()自身が、まさに
+  // この同じ問題(K-23の"(stdin)"化)を、mkstemp()+unlink()の無名の
+  // 一時fd(ディスク上に残らない)へ書き、currentFile_を空のまま
+  // (setSearchOrigin("", "(stdin)"))保つことで既に解決していた――
+  // このメソッドはその共有部分(mkstemp/write/loadStream呼び出し)を
+  // 公開し、ARCHIVE分岐がChildProcess::run()の出力を、loadAndTransformContent()
+  // による再読み込み/groff変換無しに、直接そこへ渡せるようにする。
+  bool loadContentAsPipe(const std::string &content);
+
   const std::string &currentFile() const;
 
   // K-27(^Oa、M_ascii、「Switch ascii mode」): 「次の」loadFile()/
