@@ -17733,3 +17733,13 @@ Not touched: `old/src` (legacy C) has ~332 longstanding `-Wpointer-sign` warning
 - 今回のこの会話(fix lint errors〜日本語でよろしく)はdocs/HISTORY.mdにまだ記録されていなかったため、上に追記しました。
 - 反映が終わったのでsrc/HISTORY.diffは削除します。
 
+<今のHELPでは~/usilic/usilic.manを全角の「：」でCUTしていると思うんだが、それをタブコードによるCUTに変更してほしい。
+
+>調査・実装・検証・コミット完了しました(68e23ca)。
+
+application.cppのkHelpPattern(HELP自身のCUT分割パターン)は現在"："(全角コロン)の固定文字列検索でした。ところがsrc/QUICK.txtを調べると、「：」はNOTATION章の「key：meaning」形式の通常の説明文でも大量に使われていて(全出現122件)、本当にCUTの1エントリにしたいのはそのうち80行だけでした。QUICK.txt自身は既にその80行の行末にだけタブを1つ追加済みだったので(markup_to_roff.cppはタブを一切加工せず素通しするため、usilic -m生成後のusilic.manにもそのまま残ります)、kHelpPatternをこの生のタブ1文字へ切り替え、CutMode::split()が既に持っていた^Q^I検索用のtab→U+2060(WORD JOINER)変換経路にそのまま乗せました。
+
+副作用として、PipeBuffer::wrapLine()がタブをU+2060+最大8個のスペースへ展開するため、素朴に実装するとCUT一覧でこの区間にカーソルが乗った時の反転表示が最大8桁分余分に右へ伸びてしまうと分かったので、CutMode::split()にstripTrailingTabPadding()を追加し、ラベル構築時にこの見えない末尾装飾を取り除きました(実際のファイル内容側=segmentContent()は無変更)。
+
+検証: usilic -m src/QUICK.txtで実際にusilic.manを生成し、タブパターンでのgrep一致数が期待通り80件(旧「：」パターンでは122件)になることを確認。make testは1144件中1143件通過(既存無関係のLOCATEフレークのみ)。
+
