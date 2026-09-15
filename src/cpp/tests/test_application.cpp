@@ -386,8 +386,13 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a real .tar 
   // テストと同じ)ので、全文を読み切ってから検証する。
   app.fileMode().ensureLoadedThrough(1000, /*bypassPacing=*/true);
   // tar tvfの生出力(選択不可なプレーンテキスト、"arcsrc/"を含むはず)
-  // がそのままページャーへ渡っている。
-  CHECK(app.activeContentView().modeLineText().find("(stdin)") != std::string::npos);
+  // がそのままページャーへ渡っている。2026-09-21修正、直接のユーザー
+  // 指摘("モードライン不良...正しくは「archive.tar」「(tar)」
+  // 「元のディレクトリ」"): 汎用の"(stdin)"ではなく、実際のファイル名
+  // +"(tar)"バッジ+所属ディレクトリが見えるべき(下の別のテスト
+  // "mode-line fields"参照、これはその前段の内容自体の検証)。
+  CHECK(app.activeContentView().modeLineText().find("archive.tar") != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("(tar)") != std::string::npos);
   bool sawArcsrc = false;
   for (const auto &line : app.activeContentView().lines())
     if (line.text.find("arcsrc") != std::string::npos) sawArcsrc = true;
@@ -404,6 +409,32 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a real .tar 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == originalDirectory);
+}
+
+// 2026-09-21追加、直接のユーザー指摘("モードライン不良。現状は
+// 「00001/00026 TOP」「1894」「(stdin)」戻り値無し だが、正しくは
+// 「tcb-1.5b.linux.tgz」「00001/00025 TOP」「1894」「(tar)」
+// 「/Users/haa15030/」"): 上のテストの続き――name/trailing2/trailing3
+// の各フィールドが、ArchiveMode自身のname="ARC"/trailing2="(tar)"/
+// trailing3=フルパスのレイアウトと同じ考え方(ただしnameは"ARC"では
+// なく実際のファイル名、trailing3はフルパスではなく所属ディレクトリ
+// ――name自身が既にファイル名を持っているため)になっていることを
+// 個別に検証する。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a real .tar archive: mode-line shows the "
+                           "entry's own file name, a \"(tar)\" command badge (matching ArchiveMode's own "
+                           "badge convention), and the containing directory -- NOT the generic \"(stdin)\" "
+                           "blank-name display") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("archive.tar");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::ReadFileNoWrap));
+  std::string text = app.activeContentView().modeLineText();
+  CHECK(text.find("archive.tar") != std::string::npos);
+  CHECK(text.find("(tar)") != std::string::npos);
+  CHECK(text.find(root.string()) != std::string::npos);
+  CHECK(text.find("(stdin)") == std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) on the SAME long-line file wraps it into multiple lines "

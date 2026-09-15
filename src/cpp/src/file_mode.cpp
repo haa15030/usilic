@@ -177,11 +177,18 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       // ことに変わりはないため。
       bool hasReturnTarget = pagerReturnsToShell_ || pagerReturnsToDirectory_;
       ContentView::ModeLineFields fields;
-      fields.name = currentFile_;
+      // 2026-09-21追加、直接のユーザー指摘("モードライン不良...正しく
+      // は「tcb-1.5b.linux.tgz」「(tar)」「/Users/haa15030/」"):
+      // setPagerListingDirectory()自身の宣言コメント参照――ARCHIVE
+      // 分岐はsetSearchOrigin(entry->name, "(tar)"等)を併用するので、
+      // searchOriginLabel_が非空ならそちらをnameに使う(searchOriginLabel_
+      // が空の他の全ての(stdin)ケースでは、これまで通りcurrentFile_
+      // ――常に空文字列)。
+      fields.name = searchOriginLabel_.empty() ? currentFile_ : searchOriginLabel_;
       fields.trailing = std::to_string(bytes);
       fields.rightWatermark = hasReturnTarget ? "" : "usilic v1.5b";
       fields.trailing2 = searchOriginDetail_;
-      fields.trailing3 = pagerReturnsToShell_ ? "SHELL" : "";
+      fields.trailing3 = pagerReturnsToShell_ ? "SHELL" : pagerListingDirectory_;
       // 2026-08-25の修正(HISTORY.md:9462を引用した直接のユーザー
       // 報告、"基本的に右端まで埋まっていないモードラインは全部
       // 不良"): trailing3は「既に」fillTrailingToEdgeサポートを
@@ -198,7 +205,11 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       // 間のプレーンなギャップを新たに反転表示で埋めてしまうことに
       // なる。pagerReturnsToDirectory_はtrailing3を持たない(上参照)
       // ので、これはpagerReturnsToShell_だけにスコープしたまま。
-      fields.fillTrailingToEdge = pagerReturnsToShell_;
+      // 2026-09-21追加: pagerListingDirectory_(ARCHIVE分岐の所属
+      // ディレクトリ)が非空の場合も同様にtrailing3を端まで埋める
+      // ――ArchiveMode自身のtrailing3(currentArchive_、フルパス)が
+      // fillTrailingToEdgeなのと同じ理屈。
+      fields.fillTrailingToEdge = pagerReturnsToShell_ || !pagerListingDirectory_.empty();
       // 2026-09-11追加、直接のユーザー報告("FILE/DIRでも^O^S/^J^S
       // 同様^S/^[iをサポートして欲しい"): pagerMode_(CLIから直接
       // `usilic <file>`/パイプされたstdinで開いたファイル、この関数
@@ -812,6 +823,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   pagerMode_ = true;
   pagerReturnsToShell_ = false;  // 自身の宣言コメント参照。pollShellHandoff()はこの呼び出しの後にこれを切り替える
   pagerReturnsToDirectory_ = false;  // 同上。loadFileAsPipe()がこの呼び出しの後にこれを切り替える
+  pagerListingDirectory_.clear();  // 同上。Application::openSelectedEntryNoWrap()のARCHIVE分岐だけがこの呼び出しの後にこれを設定する
   // 2026-08-25(直接のユーザー依頼: "SHELL同様、行数を5桁とバイト
   // 数表示をよろしく")――他の全てのFileモードのエントリが使う
   // 可変幅のデフォルトの代わりに、同じ固定5桁ゼロパディングの

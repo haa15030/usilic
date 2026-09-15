@@ -451,6 +451,23 @@ class FileMode {
   void setPagerReturnsToDirectory(bool value) { pagerReturnsToDirectory_ = value; }
   bool pagerReturnsToDirectory() const { return pagerReturnsToDirectory_; }
 
+  // 2026-09-21追加、直接のユーザー指摘("モードライン不良...正しくは
+  // 「tcb-1.5b.linux.tgz」「00001/00025 TOP」「1894」「(tar)」
+  // 「/Users/haa15030/」"): loadContentAsPipe()経由のARCHIVE分岐
+  // (Application::openSelectedEntryNoWrap())専用のtrailing3上書き
+  // ――ArchiveMode自身のModeLineFieldsProvider(name="ARC"、
+  // trailing2="(tar)"のようなバッジ、trailing3=アーカイブの完全パス、
+  // fillTrailingToEdge)と揃えたいが、ここは「アーカイブそのもの」
+  // ではなく「アーカイブの一覧を見ているFileモード」なので、nameには
+  // (固定の"ARC"ではなく、setSearchOrigin()経由で)実際のファイル名、
+  // trailing3には(nameが既にファイル名を持っているのでフルパスでは
+  // なく)所属ディレクトリだけを置く――pagerReturnsToShell_の"SHELL"
+  // と同じtrailing3スロットを共有する(自身の宣言コメント参照、
+  // 両立しない: ARCHIVE分岐がSHELLへ戻ることは無いため)。既定は空、
+  // loadStream()の全ての呼び出しでリセットされる(pagerReturnsToShell_/
+  // pagerReturnsToDirectory_と同じく)。
+  void setPagerListingDirectory(const std::string &directory) { pagerListingDirectory_ = directory; }
+
   // 以前のストリーム状態を全てリセットする(所有しているfdを閉じる)
   // ――loadStream()の先頭(2つ目のCLI起動されたファイルが1つ目を
   // 置き換える場合、例えばCommand::PagerNextFile)と、loadFile()の
@@ -533,6 +550,7 @@ class FileMode {
   bool pagerMode_ = false;
   bool pagerReturnsToShell_ = false;
   bool pagerReturnsToDirectory_ = false;  // setPagerReturnsToDirectory()自身の宣言コメント参照
+  std::string pagerListingDirectory_;     // setPagerListingDirectory()自身の宣言コメント参照
   int streamFd_ = -1;
   bool streamOwnsFd_ = false;
   bool streamAtEof_ = false;

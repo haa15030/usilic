@@ -4242,9 +4242,9 @@ bool Application::openSelectedEntry() {
 bool Application::openSelectedEntryNoWrap() {
   const DirectoryEntry *entry = directoryMode_.selectedEntry();
   if (!entry || entry->isDirectory) return false;
-  std::string path = directoryMode_.currentDirectory();
-  if (!path.empty() && path.back() != '/') path += '/';
-  path += entry->name;
+  std::string directory = directoryMode_.currentDirectory();
+  if (!directory.empty() && directory.back() != '/') directory += '/';
+  std::string path = directory + entry->name;
 
   // 2026-09-20追加、直接のユーザー指摘("^O^Mは.tarファイル等に適用
   // すると、ARC表示ではなく項目が選べないtvf表示画面になるだけだと
@@ -4291,6 +4291,19 @@ bool Application::openSelectedEntryNoWrap() {
     }
     if (!result.ok) return false;
     if (!fileMode_.loadContentAsPipe(result.output)) return false;
+    // 2026-09-21追加、直接のユーザー指摘("モードライン不良...正しく
+    // は「tcb-1.5b.linux.tgz」「(tar)」「/Users/haa15030/」"):
+    // loadContentAsPipe()単独だと(通常ファイルの^O^Mと区別が付かず)
+    // 汎用の"(stdin)"表示のままになってしまう――ArchiveMode::
+    // finishLoadFromOutput()自身のarchiveCommand_(command->argv.front()、
+    // 例えば.tar.gzでも最終段のtarを指す)と全く同じ導出でバッジを
+    // 作り、setSearchOrigin()(FileMode::loadContentAsPipe()自身の
+    // ModeLineFieldsProvider、pagerMode_分岐のコメント参照)経由で
+    // name/trailing2を上書きし、setPagerListingDirectory()経由で
+    // trailing3(所属ディレクトリ)も設定する。
+    std::string badge = command->argv.empty() ? "" : "(" + command->argv.front() + ")";
+    fileMode_.setSearchOrigin(entry->name, badge);
+    fileMode_.setPagerListingDirectory(directory);
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = ApplicationMode::Directory;
     return true;
