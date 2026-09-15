@@ -144,7 +144,18 @@ class Shell {
   // 割り当て、fork、または最初のハンドシェイクが完了する前に
   // シェルが終了する)ではfalse。Shellは不活性のままになり、
   // start()はリトライしてよい。
-  bool start();
+  //
+  // `initialDirectory`(2026-09-15追加、直接のユーザー報告
+  // "usilic -c ~/.usilic/savedで起動→^[sでカレントディレクトリが
+  // ~/.usilic/saved/じゃない"): 空でなければ、セットアップコマンド
+  // 自身の最初の文としてここへ`cd`するbashスクリプト文を1つ差し込む
+  // ――usilic自身のプロセスは(application.cpp各所のコメント参照)
+  // 決してchdir()しないので、これが無いと新しいbash子プロセスは
+  // usilic自身のプロセス全体のcwd(典型的にはusilicが最初に起動
+  // された時の場所で、今表示中のDirectory一覧とは無関係)をそのまま
+  // 継承してしまっていた。空文字列(既定)は以前通りcd文自体を丸ごと
+  // 省略する――ShellOptions{}を使う既存のテストの挙動を変えない。
+  bool start(const std::string &initialDirectory = "");
   bool alive() const;
   // 現在の子のpid、開始されていなければ-1――純粋に、呼び出し元
   // (例えばK-60/RestartShell自身のテスト)が、再起動が同じ
@@ -430,7 +441,7 @@ class Shell {
   // 共有されている。
   int commandLineRow() const;
   int displayWidth(const std::string &text) const;
-  std::string buildSetupCommand() const;
+  std::string buildSetupCommand(const std::string &initialDirectory) const;
   bool waitForHandshake();
 
   Display &display_;

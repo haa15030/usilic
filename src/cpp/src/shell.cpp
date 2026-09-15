@@ -182,7 +182,7 @@ Shell::Shell(Display &display, const ShellOptions &options)
 
 Shell::~Shell() { terminate(); }
 
-bool Shell::start() {
+bool Shell::start(const std::string &initialDirectory) {
   if (masterFd_ >= 0) return true;
   if (options_.argv.empty()) return false;
   resetSessionState();
@@ -374,7 +374,7 @@ bool Shell::start() {
     tcsetattr(masterFd_, TCSANOW, &setupTio);
   }
 
-  writeToPty(buildSetupCommand());
+  writeToPty(buildSetupCommand(initialDirectory));
 
   if (!waitForHandshake()) {
     terminate();
@@ -994,9 +994,34 @@ int Shell::displayWidth(const std::string &text) const {
 // を「1つの」論理的なコマンドとして読む(2番目のバグを回避)
 // ――セットアップ全体に対して正確に1回のプロンプト再描画が起き、
 // それはPROMPT/PS1が既に効いた後にだけ起きる。
-std::string Shell::buildSetupCommand() const {
+namespace {
+// application.cpp自身のshellQuoteArg()/configuration.cpp自身の
+// shellQuoteSinglePath()と同じPOSIXのシングルクオートエスケープの
+// 形――このファイルもまた、それぞれの理由(各コメント参照)で自身の
+// 小さなローカルヘルパーを持つ、という既に確立した慣習に倣う。
+std::string shellQuotePath(const std::string &path) {
+  std::string quoted = "'";
+  for (char c : path) {
+    if (c == '\'')
+      quoted += "'\\''";
+    else
+      quoted += c;
+  }
+  quoted += "'";
+  return quoted;
+}
+}  // namespace
+
+std::string Shell::buildSetupCommand(const std::string &initialDirectory) const {
   const std::string &mark = options_.promptMark;
   const std::string &prog = options_.programName;
+  // 2026-09-15追加、initialDirectory自身の宣言コメント(shell.hpp)
+  // 参照。cd自体の成功/失敗に関わらず後続の文は続行してよいので
+  // (存在しなくなったディレクトリを渡された場合でも、シェル自体が
+  // 死ぬ理由には全くならない)、`;`で区切る他の全ての文と同じ扱いで
+  // よい――他の文と違って`&&`にする必要は無い。
+  std::vector<std::string> cdStatement;
+  if (!initialDirectory.empty()) cdStatement = {"cd " + shellQuotePath(initialDirectory)};
   // ここでは本物の`echo`であり、これが以前そうだった無音の`:`という
   // 何もしないコマンドではない――理由については(これが送られる前に
   // ptyでECHOが今は無効にされている場所である)start()自身のコメント
@@ -1077,6 +1102,7 @@ std::string Shell::buildSetupCommand() const {
         "export COLUMNS=" + std::to_string(columns_),
         "unset HISTFILE",
     };
+    statements.insert(statements.begin(), cdStatement.begin(), cdStatement.end());
     statements.insert(statements.end(), pagerStatements.begin(), pagerStatements.end());
     statements.push_back(eos);
     return chain(statements);
@@ -1117,6 +1143,7 @@ std::string Shell::buildSetupCommand() const {
         "export COLUMNS=" + std::to_string(columns_),
         "unset HISTFILE",
     };
+    statements.insert(statements.begin(), cdStatement.begin(), cdStatement.end());
     statements.insert(statements.end(), pagerStatements.begin(), pagerStatements.end());
     statements.push_back(eos);
     return chain(statements);
@@ -1131,11 +1158,13 @@ std::string Shell::buildSetupCommand() const {
   // 参照――そしてcsh/tcshの`#`は無条件にコメント文字なので、
   // どちらにせよ`:`スタイルの何もしない接頭辞に頼ることもできな
   // かった)。
-  return chain({
+  std::vector<std::string> cshStatements = {
       "set prompt = \"" + mark + prog + ":%~%# " + mark + "\"",
       "set ignoreeof",
       eos,
-  });
+  };
+  cshStatements.insert(cshStatements.begin(), cdStatement.begin(), cdStatement.end());
+  return chain(cshStatements);
 }
 
 // 一度きりの起動時ハンドシェイク: output_shell()のメインループ前

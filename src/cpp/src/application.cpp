@@ -6167,7 +6167,15 @@ bool Application::ensureShellActive() {
     promptKind_ = PromptKind::None;
   }
   if (!shellStarted_) {
-    if (!shell_.start()) return false;
+    // 2026-09-15追加、直接のユーザー報告("usilic -c ~/.usilic/saved
+    // で起動→^[sでカレントディレクトリが~/.usilic/saved/じゃない")
+    // ――Shell::start()自身のinitialDirectory宣言コメント参照。
+    // directoryMode_.currentDirectory()は、現在どのモードがアクティブ
+    // であってもDirectory一覧のナビゲート状態として永続する(File/
+    // Grep等を経由していても最後に表示していたDirectory一覧を指す
+    // ――このクラスの他の全ての場所と同じ前提)ので、ここでは呼び出し
+    // 元のモードを問わず無条件にこれを使ってよい。
+    if (!shell_.start(directoryMode_.currentDirectory())) return false;
     shellStarted_ = true;
   }
   // previousModeName()にはListBrowserのケースが無い(それは汎用的
@@ -6216,7 +6224,10 @@ bool Application::shellRestart() {
   if (refuseIfShellBusy()) return false;
   shell_.terminate();
   shellStarted_ = false;
-  if (!shell_.start()) return false;
+  // ensureShellActive()自身の同一の2026-09-15のコメント参照――
+  // 「再起動」でも新しいbash子プロセスに現在のDirectory一覧のcwdを
+  // 引き継がせる。
+  if (!shell_.start(directoryMode_.currentDirectory())) return false;
   shellStarted_ = true;
   // ensureShellActive()自身の同一の2026-08-26のコメント参照: SHELLの
   // 引き渡し由来のページャセッションも、同じ理由で記録された戻り先

@@ -94,6 +94,36 @@ TEST_CASE("start()/alive()/terminate(): spawns and tears down a real bash sessio
   CHECK_FALSE(shell.alive());
 }
 
+// 2026-09-15追加、直接のユーザー報告("usilic -c ~/.usilic/savedで
+// 起動→^[sでカレントディレクトリが~/.usilic/saved/じゃない")――
+// start()自身のinitialDirectory宣言コメント参照。usilic自身の
+// プロセスは決してchdir()しないので、渡されたディレクトリへ実際に
+// 移動したかどうかは、新しいbashの子プロセス自身が報告してくる
+// プロンプトのcwd(currentDirectory()、processOutputBytes()自身の
+// PS1マーカー解析経由)を見て初めて確認できる――本物のbashを使う
+// この統合テストでしか検証できない理由。
+TEST_CASE("start(initialDirectory): the new bash session actually cd's there, confirmed via its own "
+          "reported prompt directory") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.argv = {"bash", "--norc", "--noprofile"};
+  options.promptMark = "<usilic-test-mark>";
+  options.programName = "usilictest";
+  options.rows = 24;
+  options.columns = 80;
+  Shell shell(d, options);
+
+  if (!shell.start("/tmp")) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  bool gotPrompt = pumpUntil(shell, [&] { return !shell.currentDirectory().empty(); });
+  REQUIRE(gotPrompt);
+  CHECK(shell.currentDirectory() == "/tmp");
+
+  shell.terminate();
+}
+
 // 2026-09-06追加、直接のユーザー報告("旧では^[scat^Mでちゃんと入力
 // 待ちになる...^Gで抜けた後^J.でSHELL busyと出る...環境がどこかで
 // 食い違ってるんじゃないの？")――busy()自身の宣言コメント参照:
