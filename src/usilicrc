@@ -10,24 +10,35 @@
 # -------------------------------------------------------------
 
 ARCHIVE
-# Format: `suffix0' `suffix1'
+# Format: `newSuffix' `builtinSuffix'
 #
-# Usilic will display the content of the file that has the `suffix0' with the
-# setting of `suffix1' defined in str.c of source file.
+# Each line adds `newSuffix' as an ALIAS of an already-built-in archive
+# entry, looked up by `builtinSuffix' (an exact match against one of the
+# suffixes below -- not a free-form suffix/program pair; this directive
+# cannot define a brand-new extraction command, only alias a new suffix
+# onto an existing one).
 #
-#  `suffix1' `program' (option)
-#  .tar	     tar       tvf",
-#  .tgz	     gzip      -dc | tar tvf -",
-#  .tar.bz2  bzip2     -dc | tar tvf -",
-#  .lzh	     lha",
-#  .zip	     unzip     -l",
-#  .rpm	     rpm       -qplv",
-#  .deb	     dpkg-deb  -c",
+# Built-in suffixes (2026-09-15, this C++ port's own table, Configuration's
+# constructor):
+#  .tar        tar tvf
+#  .tgz        gzip -dc | tar tvf -
+#  .tar.bz2    bzip2 -dc | tar tvf -
+#  .tar.xz     xz -dc | tar tvf -
+#  .tar.zst    zstd -dc | tar tvf -
+#  .lzh        lha
+#  .zip        unzip -l
+#  .rpm        rpm -qplv
+#  .deb        ar tv
+#  .rar        lsar -l
+#  .7z         7z l
 #
 	.taz	.tgz
 	.tar.z	.tgz
 	.tar.gz	.tgz
 	.jar	.zip
+	.tbz2	.tar.bz2
+	.txz	.tar.xz
+	.tzst	.tar.zst
 	
 FILE
 # format: `suffix' `program' (option)

@@ -243,7 +243,23 @@ Configuration::Configuration() {
   // `-Kutf8`(入力エンコーディングの明示、preconv向け)が無いと、
   // 環境によっては日本語部分が文字化けする(実機検証で確認済み――
   // "invalid input character code"警告と共に化ける)。
-  roleCommands_[ConfiguredRole::Groff] = {{"groff", "-mandoc", "-Kutf8", "-Tutf8"}, std::nullopt};
+  // 2026-09-15追加、直接のユーザー依頼("usilic.1を表示の際の
+  // エスケープシーケンスの反映もよろしく"、docs/ideas/IDEAS.md
+  // "PAGERモードがANSIエスケープシーケンスを解釈せず生のまま表示
+  // してしまう"の同種の症状): groffの-Tutf8出力デバイスは、太字/
+  // 下線を(legacy自身のnroffが使う"X\bX"/"_\bX"重ね打ち規約ではなく)
+  // ANSI SGRエスケープ(実機確認: 太字は"\x1b[1m"..."\x1b[0m"、下線は
+  // "\x1b[4m"..."\x1b[24m")で表現する――このポートのPipeBuffer::
+  // wrapLine()は前者(legacy由来の重ね打ち規約)だけを検出するため、
+  // 生のANSIバイト列がそのまま(端末には正しく解釈されるにせよ)
+  // 幅計算・検索・AttributeRun生成のどれからも素通りしてしまって
+  // いた。`GROFF_NO_SGR=1`(groff自身がサポートする環境変数、実機で
+  // 動作確認済み)は出力を"X\bX"/"_\bX"の重ね打ちへ切り替える――
+  // ChildProcessOptionsに新しい汎用の環境変数機構を追加する代わりに、
+  // `env`経由でこの1個の変数だけをgroffの子プロセスへ渡す、既存の
+  // 仕組みだけで完結する最小の変更。
+  roleCommands_[ConfiguredRole::Groff] = {
+      {"env", "GROFF_NO_SGR=1", "groff", "-mandoc", "-Kutf8", "-Tutf8"}, std::nullopt};
   roleCommands_[ConfiguredRole::Man] = {{"man"}, std::nullopt};
   roleCommands_[ConfiguredRole::Locate] = {{"locate"}, std::nullopt};
   // K-39(^Jl、「LOCATE: Execute `locate'」)、docs/ideas/IDEAS.mdの
@@ -327,6 +343,18 @@ Configuration::Configuration() {
   // 登場した)。
   addBuiltinArchive(".tar.xz", ArchiveKind::Tar,
                      {{"tar", "tvf", "-"}, std::vector<std::string>{"xz", "-dc"}});
+  // 2026-09-15追加(上の.tar.xzと同じ理由での直接のユーザー依頼、
+  // "対応可/不可なsuffixは知りたい"に対する回答の一環で追加)。zstdは
+  // このマシンに実際にインストール済みであることを確認済み。legacy
+  // の先例は無い(xz同様、このプロジェクトのオリジナルC時代を過ぎて
+  // から登場したフォーマット)。usilicrc側のARCHIVEエイリアス機構
+  // (findBuiltinArchiveAlias())では、既存の組み込みへの別名追加しか
+  // できず、この`zstd -dc`のような新しいコマンド自体をゼロから
+  // 定義することはできないため、.tzst等の追加suffixはこの組み込み
+  // エントリへのエイリアスとして使う想定(../usilicrc自身のARCHIVE
+  // 節コメント参照)。
+  addBuiltinArchive(".tar.zst", ArchiveKind::Tar,
+                     {{"tar", "tvf", "-"}, std::vector<std::string>{"zstd", "-dc"}});
   // legacy自身の組み込みテーブルは単に".lzh lha"(明示的な一覧表示
   // フラグ無し)を列挙している――これに対して実際の呼び出しを検証
   // すべき`lha`バイナリがこのプロジェクトの歴史のどこにも利用可能

@@ -328,6 +328,46 @@ TEST_CASE_FIXTURE(Fixture, "loadFile: a `.TH`-led file is auto-rendered through 
   CHECK(sawRenderedHeading);  // groff's own rendered "NAME" section heading should be there instead
 }
 
+// 2026-09-15追加、直接のユーザー依頼("usilic.1を表示の際のエスケープ
+// シーケンスの反映もよろしく"): groffの-Tutf8出力デバイスは太字/
+// 下線をANSI SGR("\x1b[1m"..."\x1b[0m"/"\x1b[4m"..."\x1b[24m")で表現
+// する(legacy由来の"X\bX"/"_\bX"重ね打ち規約とは別物)。
+// ConfiguredRole::Groffの起動コマンドへ`env GROFF_NO_SGR=1`を挟む
+// ことで、groff自身に重ね打ち規約での出力を強制する――この修正が
+// 効いていれば、(a)どの行のtextにも生のESC(0x1b)バイトが一切残ら
+// ず、(b)"NAME"見出し全体が実際にBold属性のAttributeRunとして
+// マークされているはず。
+TEST_CASE_FIXTURE(Fixture, "loadFile: groff's own bold/underline output arrives as AttributeRuns (via "
+                           "GROFF_NO_SGR-forced legacy overstrike), not raw ANSI escape bytes") {
+  std::string path = writeFile("usilic.man", ".TH USILIC 1\n.SH NAME\nusilic \\- test\n");
+  if (!mode.loadFile(path)) {
+    MESSAGE("groff not installed here -- skipping");
+    return;
+  }
+  bool sawEscapeByte = false;
+  bool sawBoldNameRun = false;
+  for (const auto &line : view.lines()) {
+    if (line.text.find('\x1b') != std::string::npos) sawEscapeByte = true;
+    std::size_t namePos = line.text.find("NAME");
+    if (namePos == std::string::npos) continue;
+    // legacyの重ね打ち規約に倣い、1文字ごとに別々のAttributeRunが
+    // 積まれる(既存のnroff overstrike検出と同じ粒度)ので、"NAME"の
+    // 4バイト全てが(複数の隣接するRunにまたがっていても構わず)
+    // Boldで覆われているかを1バイトずつ確認する。
+    bool allBold = true;
+    for (int pos = static_cast<int>(namePos); pos < static_cast<int>(namePos) + 4; pos++) {
+      bool covered = false;
+      for (const auto &run : line.attributes) {
+        if (run.attribute == fm::Display::Attribute::Bold && run.start <= pos && pos < run.end) covered = true;
+      }
+      if (!covered) allBold = false;
+    }
+    if (allBold) sawBoldNameRun = true;
+  }
+  CHECK_FALSE(sawEscapeByte);
+  CHECK(sawBoldNameRun);
+}
+
 TEST_CASE_FIXTURE(Fixture, "loadFile: a plain (non-roff) file is unaffected -- no groff invocation, no "
                            "content change") {
   std::string path = writeFile("plain2.txt", "just some ordinary text\nwith a . in it\n");
