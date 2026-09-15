@@ -10,7 +10,14 @@ CXX      ?= c++
 # this comment existed for anyone building without them installed.
 SDL_CFLAGS := $(shell pkg-config --cflags sdl2 SDL2_ttf 2>/dev/null)
 SDL_LIBS   := $(shell pkg-config --libs sdl2 SDL2_ttf 2>/dev/null)
-CXXFLAGS ?= -std=c++17 -Wall -Wextra -g $(SDL_CFLAGS)
+# -Wextra's -Wmissing-field-initializers fights an established idiom in
+# this codebase: ContentView::Line/ModeLineFields etc. are aggregates
+# that grow trailing optional fields over time (see content_view.hpp's
+# own field comments -- "他の全ての呼び出し元はデフォルトのままにする"),
+# and existing call sites are meant to keep omitting new trailing fields
+# rather than being revisited every time one is added. Disabled globally
+# instead of patched at each of the 100+ call sites this warning fires on.
+CXXFLAGS ?= -std=c++17 -Wall -Wextra -Wno-missing-field-initializers -g $(SDL_CFLAGS)
 # terminal_display.cpp uses ncurses' terminfo API (setupterm/tputs/
 # tgoto), same as the legacy C's config.sh (LIBS= -lncurses).
 # mac_font_resolver.cpp's CoreText/CoreFoundation use is #ifdef
