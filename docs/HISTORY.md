@@ -17892,3 +17892,14 @@ test_application.cppに、SHELLプロンプトでの"usilic"がProgramModeへ一
 
 実機確認: `usilic -h`が即座に使い方を表示して終了することを確認しました。「引数無し起動が前回セッションを再開する」「二重起動で旧プロセスをkillする」の2点は、このセッションのサンドボックスでのPTY検証がハングし直接確認できませんでした(既知の制約)――元の実装(項目473)をほぼ逐語的に復元したもので、そちら自身が実機確認済みだったことに基づいています。実機での確認をお願いします。make testは1152件中1151件通過(既存無関係のLOCATEフレークのみ)、make usilic/make install/make app完了。
 
+<④ディレクトリ引数で指定したディレクトリから立ち上がらない(引数無し同様前回終了時から開始)。
+⑤引数無しusilicが生きていたら、ディレクトリ引数であってもkillしたうえで起動して欲しい。つまりファイルマネージャーとしてのusilicプロセスは一つだけ。
+
+>実装・検証・コミット完了しました(3fbc1d0)。
+
+④の原因: 前回(21f4606)の変更でconsultHistoryOnStartを「ディレクトリ引数起動でも真」に広げた際、`app.startResumingSession(...)`と`app.start(startDirectory, ...)`のどちらを呼ぶかを選ぶ三項演算子の条件式まで、うっかり同じconsultHistoryOnStartに変えてしまっていました。この2つは本来別の問いです――「historyを読み書きするか」(consultHistoryOnStart)と「実際に位置引数(ディレクトリ)が与えられたか」(positionalArgs.empty())――で、後者を問うべき箇所に前者を使っていたため、ディレクトリ引数を渡しても常にlastOpenNameへ再開してしまっていました。分岐条件をpositionalArgs.empty()に戻して修正しました(consultHistoryOnStart自体は両方の分岐に3引数目として引き続き渡され、ディレクトリ引数起動でもカーソル位置の保存/復元は行われます)。
+
+⑤の変更: 項目473のkill機構(~/.usilic/pid+生死確認+SIGTERM/SIGKILL)、およびtempRootDirectory(per-pid一時ディレクトリ隔離)の適用条件を、「引数無し・パイプ無し起動のみ」から consultHistoryOnStart(ディレクトリ引数起動も含み、ファイル引数/pipe stdinのpagerモードだけ除く)へ広げました。これにより、ファイルマネージャーとして起動するusilic(引数無し・ディレクトリ引数のどちらも)は常に単一インスタンスとなり、既存の旧プロセス(引数無し起動でもディレクトリ引数起動でも)がいればkillしてから起動します。pagerモード(ファイル引数/pipe stdin)は従来通り何個でも並行して起動できます。
+
+make testは1152件中1150件通過(LOCATEの既知フレークに加え、activatePrompt(2026-08-12 fix)というテストが1件失敗しましたが、単体再実行では2/2とも通過しておりCOLUMNS計算絡みの既知の間欠フレークパターンと判断、無関係)。make usilic/make install/make app完了。main.cppはdoctest対象外のため、今回もこのセッションのサンドボックスでは実PTY確認ができておらず、コードレビューと項目473の元実装との整合性確認に基づく修正です。実機での確認をお願いします。
+
