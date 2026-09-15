@@ -391,3 +391,28 @@ TEST_CASE_FIXTURE(Fixture, "loadFileAsPipe: long lines are not wrapped, matching
   REQUIRE(view.lines().size() == 1);
   CHECK(view.lines()[0].text == longLine);
 }
+
+// 2026-09-15追加、直接のユーザー指摘("バッファへの読み込みが、最初に
+// 一括ではなく１バイトずつなのが（stdin）...「1バイト」で検索してみて"、
+// HISTORY.md:14857参照): loadFileAsPipe()はloadStream()を経由するので、
+// ensureLoadedThrough()自身の既存の(SHELL経由の生きたハンドオフに
+// 限らず全てのストリームへ一般化済みの、そちら自身のコメント参照)
+// 「現在+1」ペーシングをそのまま受け継ぐ――内容を丸ごと一括で
+// view_へ流し込むわけではない。ここではファイル全体(5行)を渡した
+// 直後の時点でまだ1行しか見えていないこと、その後1回のensure
+// LoadedThrough()ごとにちょうど1行ずつしか増えないことを確認する。
+TEST_CASE_FIXTURE(Fixture, "loadFileAsPipe: content is paced in one line at a time via "
+                           "ensureLoadedThrough(), not materialized into the view all at once") {
+  std::string path = writeFile("multi5.txt", "line1\nline2\nline3\nline4\nline5\n");
+  REQUIRE(mode.loadFileAsPipe(path));
+  REQUIRE(view.lines().size() == 1);  // not all 5 lines yet, despite the whole file already being on disk
+  CHECK(view.lines()[0].text == "line1");
+
+  REQUIRE(mode.ensureLoadedThrough(50, /*bypassPacing=*/false));
+  REQUIRE(view.lines().size() == 2);  // exactly one more line, not a jump to the end
+  CHECK(view.lines()[1].text == "line2");
+
+  REQUIRE(mode.ensureLoadedThrough(50, /*bypassPacing=*/false));
+  REQUIRE(view.lines().size() == 3);
+  CHECK(view.lines()[2].text == "line3");
+}
