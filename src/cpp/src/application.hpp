@@ -2770,9 +2770,10 @@ class Application {
   // バイト列形式のファイル、markup_to_roff.hpp参照)の生の内容を
   // 保持する(main.cpp参照)。startHelp()自身のCUTパターンも、
   // 番号付き見出し(kHelpPattern、正規表現)から全角「：」の固定
-  // 文字列検索へ切り替えた。日英切替(旧ToggleHelpLanguage/^Oa)・
-  // GUI専用章(旧loadGuiHelpText()/guiHelpText_)は、この作り直しに
-  // 伴い完全に削除した。
+  // 文字列検索へ切り替えた(2026-09-15、さらにタブ文字へ切り替え
+  // 済み――kHelpPattern自身の定義コメント参照)。日英切替(旧
+  // ToggleHelpLanguage/^Oa)・GUI専用章(旧loadGuiHelpText()/
+  // guiHelpText_)は、この作り直しに伴い完全に削除した。
   std::string helpText_;
   // 現在どのトップレベルのCut/CutContentの分割がアクティブか
   // ――!cutMode_.canGoBack()の場合にだけ意味を持つ(そしてhandleResize()

@@ -10507,9 +10507,19 @@ namespace {
 // 変更した(CutMode::split()は既にラップ/収縮済みのプレーンテキストに
 // 対して動くので、重ね打ちバイト等は引き続き不要 -- Applicationの
 // クラスコメント参照)。
+//
+// 2026-09-15修正: kHelpPatternが行末タブへ切り替わったのに合わせ、
+// 各見出し行の末尾に本物のQUICK.txt(80行、grep -Pc '\t$'で数え
+// られる)と同じ生のタブを1つ追加した。見た目上の「：」はそのまま
+// 残るので(タブは行の一番最後、可視テキストの外側にあるだけ)、下の
+// 各テストが期待するラベル文字列("Section One：first entry"等)は
+// 変更不要 -- PipeBuffer::wrapLine()がこのタブをU+2060(WORD JOINER)
+// +スペースへ展開した後も、CutMode::split()自身のstripTrailingTab
+// Padding()がラベル構築時にその末尾装飾を取り除く(そのものの定義
+// コメント参照)。
 std::string testHelpText() {
-  return "Section One：first entry\nSection one content line A.\nSection one content line B.\n"
-         "Section Two：second entry\nSection two content.\n";
+  return "Section One：first entry\t\nSection one content line A.\nSection one content line B.\n"
+         "Section Two：second entry\t\nSection two content.\n";
 }
 }  // namespace
 
@@ -10527,7 +10537,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^H starts HELP (StartHelp)") {
   CHECK(app.currentMode() == ApplicationMode::Cut);
 }
 
-TEST_CASE_FIXTURE(Fixture, "HELP: shows the ：-delimited entries as a CUT segment list") {
+TEST_CASE_FIXTURE(Fixture, "HELP: shows the tab-delimited entries as a CUT segment list") {
   REQUIRE(app.loadHelpText(testHelpText()));
   REQUIRE(app.start(path()));
 

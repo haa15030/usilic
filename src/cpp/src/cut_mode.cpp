@@ -28,6 +28,29 @@ std::string convertTabsForSearch(const std::string &pattern) {
   }
   return converted;
 }
+
+// 2026-09-15追加、HELP(kHelpPattern、application.cpp参照)が「行末の
+// タブ1つ」を見出し行の分割点にする以上の必然的な帰結: PipeBuffer::
+// wrapLine()はそのタブをU+2060(WORD JOINER、幅0)+次のタブストップ
+// までのスペースへ展開する(detectOverstrike_有効時)ので、マッチした
+// 行そのもの(sourceLines_[start].text)をそのままラベルにすると、
+// 画面には見えない末尾の空白(最大8桁分)がラベル文字列自体には残って
+// しまう――CUT一覧でこの区間にカーソルが乗った時の反転表示が、
+// 実際に見えているテキストより最大8桁分右へ余分に伸びる(このラベルは
+// 元々パス末尾ではなく行全体なので、feedbyte等での意図的な右パディング
+// とは違い、正当化する理由が無い――「表示幅の切り詰め/パディング
+// 判断基準」の方針通り)。行末のタブ以外の理由でU+2060がラベルに
+// 混じることは無い(通常のCUT検索文字列がU+2060を含む入力を打てる
+// 経路は無い)ので、末尾のスペース→直前のU+2060(あれば)という順で
+// 無条件に切り詰めて構わない。
+std::string stripTrailingTabPadding(std::string label) {
+  constexpr const char *kTabMarker = "\xE2\x81\xA0";  // U+2060 WORD JOINER
+  std::size_t end = label.size();
+  while (end > 0 && label[end - 1] == ' ') end--;
+  if (end >= 3 && label.compare(end - 3, 3, kTabMarker) == 0) end -= 3;
+  label.erase(end);
+  return label;
+}
 }  // namespace
 
 CutMode::CutMode(ContentView &view, ModeStack &modeStack, const Configuration &configuration)
@@ -127,7 +150,7 @@ bool CutMode::split(const std::vector<StyledLine> &sourceLines, const std::strin
     for (std::size_t i = 0; i < matchLines.size(); i++) {
       int start = matchLines[i];
       int end = (i + 1 < matchLines.size()) ? matchLines[i + 1] : total;
-      std::string label = (start < total) ? sourceLines_[start].text : std::string();
+      std::string label = (start < total) ? stripTrailingTabPadding(sourceLines_[start].text) : std::string();
       segments_.push_back({label, start, end});
     }
   }

@@ -361,12 +361,26 @@ std::string truncateToPathPrefix(const std::string &path, int digit) {
 // たのに伴い削除された、旧HELPの番号付き見出し正規表現("^(  |　)[0-9]
 // +\\."、GrepSyntax::Regex)は、この関数の以前のコメント(git履歴参照)
 // が詳しく説明していた通りlegacy自身のHELP.jpの構造(章番号+ピリオド)
-// に合わせたものだった。新HELPはstartHelp()自身のコメントの通り、
-// 全角「：」の固定文字列検索(GrepSyntax::Fixed)へ切り替わっている
-// ――QUICK.txt自身の全ての章・エントリが既にこの記号を区切りとして
-// 統一的に使っているため、章番号のような専用の見出し規約はもはや
-// 不要になった。
-const char *const kHelpPattern = "：";
+// に合わせたものだった。当初はこれを全角「：」の固定文字列検索
+// (GrepSyntax::Fixed)へ切り替えたが、QUICK.txt自身が「key：meaning」
+// 形式の通常の説明文(NOTATION章等)でも「：」を大量に使っていたため、
+// 見出しでも何でもない行までことごとくCUTの1エントリにされてしまって
+// いた。
+//
+// 2026-09-15修正、直接のユーザー指摘("今のHELPでは...全角「：」で
+// CUTしていると思うんだが、それをタブコードによるCUTに変更してほしい"):
+// パターンを本物の見出し行「だけ」に確実に絞り込むため、タブ文字
+// 単体へ切り替えた。QUICK.txt自身は本当にCUTの1エントリにしたい行
+// (80行、grep -Pc '\t$'で数えられる)の末尾にだけ既にタブを1つ追加
+// 済みで、それ以外(NOTATION章の「key：meaning」等)にはタブが無い。
+// 生のタブバイトはPipeBuffer::wrapLine()がU+2060(WORD JOINER)+
+// スペースへ展開してしまう(detectOverstrike_有効時、そのものの
+// コメント参照)ため、この見た目上の「：」はそのまま行の途中に残り
+// つつ、実際の分割点は行末の(不可視の)U+2060になる――CutMode::
+// split()自身のconvertTabsForSearch()が、渡された生のタブ1文字を
+// 同じU+2060へ変換してから検索するので、この定数はそのまま生の
+// '\t'でよい(^Q^Iで打ち込む本物のCUT検索と全く同じ変換経路を共有)。
+const char *const kHelpPattern = "\t";
 
 // tempRootDirectory_自身のコメント(application.hpp)参照: 明示的な
 // `tempRootDirectory`(main()自身の/tmp/.usilic.<pid>、引数付きで
@@ -5604,7 +5618,7 @@ bool Application::returnFromCut() {
   // 1.5b」が正解）")――この関数は、実際のユーザーが開始した^J^C検索
   // だけでなく、Directoryへ戻ることができる、CutModeに裏打ちされた
   // 全ての画面で共有される。HELP(cutOrigin_==Help、kHelpPattern自身
-  // のセクション見出しのregex)とLOG(cutOrigin_==Log)は、どちらも
+  // の見出し行末タブ)とLOG(cutOrigin_==Log)は、どちらも
   // 内部的にまさに同じCutMode/split()の仕組みを再利用するが、どちら
   // から戻ることも「たった今CUT検索を実行した」ことにはならない
   // ――その後にDirectory一覧の検索注釈に"CUT: <内部パターン>"という

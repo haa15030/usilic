@@ -69,15 +69,25 @@ TEST_CASE_FIXTURE(Fixture, "split: divides content into segments at each matchin
 // マーカー(test_pipe_buffer.cpp参照)を、^Q^Iが挿入する生のタブ
 // バイトのパターンで実際に分割できることをここで確認する
 // (test_grep_mode.cppの対になるテストと同じ形)。
+//
+// 2026-09-15修正、HELP(application.cpp自身のkHelpPattern参照)が
+// この同じ仕組みを行末のタブ1つに使うようになったのに合わせ、
+// stripTrailingTabPadding()(cut_mode.cpp)がラベル末尾の(不可視の)
+// U+2060+タブ展開分のスペースを取り除くようになった――ラベルは
+// CUT一覧の反転表示テキストそのものなので、画面には映らない末尾の
+// 装飾をラベル文字列に残す理由が無い。この行末ケース(直後に何も
+// 続かない"heading\xE2\x81\xA0")ではスペースが0個なのでU+2060だけ
+// が消える。
 TEST_CASE_FIXTURE(Fixture, "split: a literal tab byte in the pattern (as ^Q^I would insert) is "
                            "converted to U+2060 before matching, so it splits at the U+2060 "
-                           "marker PipeBuffer leaves behind wherever a tab was") {
+                           "marker PipeBuffer leaves behind wherever a tab was -- and that "
+                           "trailing marker is stripped back out of the label") {
   auto lines = toStyled({"heading\xE2\x81\xA0", "plain text", "another\xE2\x81\xA0"});
   std::string pattern = "\t";  // a raw tab byte, as ^Q^I would insert into the prompt
   REQUIRE(mode.split(lines, pattern, GrepSyntax::Fixed));
   REQUIRE(mode.segments().size() == 2);
-  CHECK(mode.segments()[0].label == "heading\xE2\x81\xA0");
-  CHECK(mode.segments()[1].label == "another\xE2\x81\xA0");
+  CHECK(mode.segments()[0].label == "heading");
+  CHECK(mode.segments()[1].label == "another");
 }
 
 TEST_CASE_FIXTURE(Fixture, "segmentContent: a segment spans from its delimiter line up to (not including) the next") {
