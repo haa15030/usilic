@@ -17844,3 +17844,21 @@ GUIウィンドウの件(②)は、まだ原因不明のままです。ご提案
 1. `usilic usilic.1^M`を打った直後、`/tmp/.usilic-shell/`配下に`s.<uid>.<pid>`という名前のファイル(またはソケット)が一瞬でも作成されるか(lsで直後に確認、または`ls -la /tmp/.usilic-shell/`を別ターミナルから)。
 2. `cat usilic.1`実行前後で`.bashrc`/`.zshrc`に`cat`絡みのalias/function定義が無いか。
 
+<`.tar .tar.gz .tgz .tar.bz2 .tbz2 .tar.xz .txz tar.zst .tzst .lzh .zip .7z .rpm .deb	.taz	.tgz`は
+~/.usilic/usilicrcを編集していたのが原因。ローカルへ移動したので今後は起きない。ただ、対応可/不可なsuffixは知りたい。ついでに教えて。
+
+>それを教えました――built-in既対応(.tar/.tgz/.tar.bz2/.tar.xz/.lzh/.zip/.rpm/.deb/.rar/.7z)、usilicrcのARCHIVEエイリアス1行で対応可能(.tbz2→.tar.bz2、.txz→.tar.xz)、現状どちらでも対応不可(.tar.zst/.tzst、エイリアス先の組み込みエントリ自体が無い)の3分類で回答。zstdはこのマシンに導入済みであることも確認済みなので、実装すれば簡単に対応できる旨を伝えた。
+
+<・それを実装してほしいのと、ARCHIVEの書式は説明と食い違っているようなので正しく記述してほしい。
+・usilic.1を表示の際のエスケープシーケンスの反映もよろしく（IDEAS.md:81）。
+
+>3点とも実装・検証・コミット完了しました(f21971e)。
+
+1. .tar.zst(zstd圧縮tar)の組み込みARCHIVE対応を追加しました(.tar.xzと同じパターン、tar tvf - | zstd -dc)。ARCHIVE:のエイリアス機構(findBuiltinArchiveAlias())は既存の組み込みエントリへの別名追加しかできず新しいコマンド自体は定義できないため、コード変更が必要でした。.tbz2/.txz/.tzstは新設のエイリアス例としてusilicrc自身にも追加しています。
+
+2. src/usilicrcのARCHIVE節の説明コメントを訂正しました。旧コメントはlegacyのstr.c ARCHIVE[]テーブルの宣言をほぼそのままコピーしたもので、「suffix1 program」という組をユーザーが自由に定義できるかのように読めましたが、実際はこの移植のARCHIVEディレクティブは既存の組み込みエントリへの別名追加専用(builtinSuffixの完全一致検索)です。加えて.deb行が実際のコマンド(ar tv)ではなくlegacyのdpkg-deb -cのままだった、.tar.xz/.rar/.7z/.tar.zst(今回追加)が一覧に無かった、という2つの実質的な誤りも修正しました。~/.usilic/usilicrc側も同じ訂正を反映し、あわせて冒頭にあった破損した1行(`.tar .tar.gz .tgz...`)もこの機会に整理しています。
+
+3. ConfiguredRole::Groffの起動コマンドへ`env GROFF_NO_SGR=1`を追加しました。IDEAS.mdの該当項目("PAGERモードがANSIエスケープシーケンスを解釈せず生のまま表示してしまう")と同種の症状で、groffの-Tutf8出力デバイスは太字/下線をANSI SGRエスケープ(実機確認: "\x1b[1m"..."\x1b[0m"/"\x1b[4m"..."\x1b[24m")で表現しますが、このポートのPipeBuffer::wrapLine()はlegacy由来の"X\bX"/"_\bX"重ね打ち規約しか検出しないため、生のANSIバイト列が幅計算・検索・AttributeRun生成のどれからも素通りしてしまっていました。GROFF_NO_SGR=1(groff自身がサポートする環境変数)は出力を重ね打ち規約へ切り替えます――ChildProcessOptionsに新しい環境変数機構を追加する代わりに、`env`経由でこの1個の変数だけを渡す最小の変更にしました。
+
+test_file_mode.cppに、groffのNAME見出しが実際にBold AttributeRunで覆われ生のESCバイトが一切残らないことを確認する回帰テストを追加。usilicrc側は標準入出力のConfiguration単体リンクで.tar.gz/.tbz2/.txz/.tzst/.taz/.jarいずれも正しく解決することを実測確認し、実際の~/.usilic/saved/usilic.1でも生のESCバイトが0件・Bold 534件/Underline 105件のAttributeRunが正しく抽出されることを確認しました。make testは1151件中1150件通過(既存無関係のLOCATEフレークのみ)、make usilic/make install/make app完了。
+
