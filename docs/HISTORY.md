@@ -17774,3 +17774,15 @@ old/src/menu.cのm_cr()/check_ext()/check_type()を辿って判明したlegacy�
 
 実際の~/.usilic/saved/usilic.1を読ませる手組み検証(FileMode単体リンク)で、K-22/K-23がgroff整形済みの同一内容(K-23のみモードラインが"00001/00370 TOP 16058 (stdin)"形式)、K-24が生のtroff源(.TH行等)そのままになることを確認しました。test_file_mode.cppに合成の.TH文書を使った回帰テストも追加。make testは1147件中1146件通過(既存無関係のLOCATEフレークのみ)、make usilic/make app完了。
 
+<HISTORY.md:12785の理由でmake installもよろしく。
+『K-23のみモードラインが00001/00370 TOP 16058 (stdin)形式)』ならNG。正しくはHISTORY.md:14985辺りの仕様でないと。バッファへの読み込みが、最初に一括ではなく１バイトずつなのが（stdin）。「1バイト」で検索してみて。
+あと~/.local/bin/usilic .で起動しても^O^M、^[^Mとも全く変わってないんだが。
+
+>make installを実行し、~/.local/bin/usilicが最新ビルドと一致することを確認しました(md5一致)。
+
+「1バイト」で検索し、HISTORY.md:14857に辿り着きました――ensureLoadedThrough()はpagerReturnsToShell()である間、要求量に関わらず常に「現在+1行」に切り詰め、readMoreIntoPipe()側もその差分が小さい間はチャンクサイズを1バイトへ縮めるという仕様で、かつこのペーシング自体はその後の修正でSHELL経由の生きたハンドオフに限らず全てのストリームへ一般化済み(file_mode.cpp、ensureLoadedThrough()自身の現行コメント参照)と分かりました。
+
+前回ご報告した「00001/00370 TOP 16058 (stdin)」は、私自身の検証スクリプトがensureLoadedThrough(1000, bypassPacing=true)を明示的に使って中身を一括ダンプした結果であり、実際のインタラクティブな挙動を反映していませんでした――誤解を招く報告をしてしまいました。bypassPacingを使わずに検証し直したところ、loadFileAsPipe()もloadStream()経由でこの既存の「現在+1」ペーシングをそのまま受け継いでおり、直後は1行(00001/00001)、ensureLoadedThrough()を1回呼ぶごとにちょうど1行ずつ(00001/00002→00001/00003→...)しか増えないことを確認しました。この保証をtest_file_mode.cppに回帰テストとして追加しています(コミット220f369)。
+
+~/.local/bin/usilic .でK-23/K-24が変わらなかった件は、make install未実施で以前のビルド(旧loadFileNoWrap()ベース、ペーシング無しの一括読み込み)のままだったことが原因と思われます。make install済みですので、お手数ですが再度お試しいただけますか。
+
