@@ -3873,10 +3873,21 @@ int main(int argc, char **argv) {
   // かどうかも確認する。警告メッセージ自体は出さない(2026-09-14の
   // 既存の判断、IDEAS.md:51参照――新プロセス自身の画面がすぐ後で
   // 塗りつぶす直前に一瞬だけ表示されて消える、意味の薄いノイズだった
-  // ため)。対象は引数無し・パイプ無しの「素の」起動だけ――ディレクトリ
-  // 引数起動(①)は元々何個でも並行して構わない(このすぐ下の
-  // tempRootDirectory自身のコメント参照)。
-  if (positionalArgs.empty() && !stdinPiped) {
+  // ため)。
+  //
+  // 2026-09-15追加、直接のユーザー依頼("⑤引数無しusilicが生きて
+  // いたら、ディレクトリ引数であってもkillしたうえで起動して欲しい。
+  // つまりファイルマネージャーとしてのusilicプロセスは一つだけ"):
+  // 対象を「引数無し・パイプ無しの素の起動」だけから、consult
+  // HistoryOnStart(=ディレクトリ引数起動も含む、pagerモード――
+  // ファイル引数/pipe stdin――だけを除く)へ広げた――ファイル
+  // マネージャーとして起動するusilicは(ディレクトリ引数の有無に
+  // 関わらず)常に単一インスタンスであるべき、というのがこの依頼の
+  // 趣旨。旧プロセスがディレクトリ引数付き/無しのどちらで起動されて
+  // いたかは問わず、~/.usilic/pidに記録された(生きていれば)何であれ
+  // killする。pagerモードは従来通り何個でも並行して構わない(この
+  // すぐ下のtempRootDirectory自身のコメント参照)。
+  if (consultHistoryOnStart) {
     std::string ownProgramName = std::filesystem::path(argv[0]).filename().string();
     std::string pidPath = usilicDir + "pid";
     long oldPid = 0;
@@ -3897,14 +3908,14 @@ int main(int argc, char **argv) {
     if (pidOut) pidOut << ::getpid() << "\n";
   }
 
-  // tempRootDirectory: 引数無し・パイプ無しの「素の」起動(①の反対、
-  // 単一インスタンス前提)だけ空のまま(ERROR/SHELLは永続共有の
-  // usilicDirを使う――前回セッションの内容を引き継ぐのがまさに
-  // この起動シェイプの目的のため)、それ以外(ディレクトリ引数/
-  // ファイル引数/pipe stdin、何個でも並行稼働してよい)はこの
-  // 2026-08-18追加のper-pid隔離(ERROR/SHELLログの相互汚染防止)の
-  // 対象になる。
-  std::string tempRootDirectory = (!positionalArgs.empty() || stdinPiped) ? pidTempDirectory : "";
+  // tempRootDirectory: 2026-09-15修正(⑤、上のkill機構自身のコメント
+  // 参照)――ファイルマネージャーとして起動する側(引数無し/ディレクト
+  // リ引数、consultHistoryOnStart全体)は常に単一インスタンス前提に
+  // なったので、どちらも永続共有のusilicDirのまま(ERROR/SHELLは
+  // 前回セッションの内容を引き継ぐ)。pagerモード(ファイル引数/pipe
+  // stdin、何個でも並行稼働してよい)だけがこの2026-08-18追加の
+  // per-pid隔離(ERROR/SHELLログの相互汚染防止)の対象になる。
+  std::string tempRootDirectory = consultHistoryOnStart ? "" : pidTempDirectory;
   std::string workRootDirectory = pidTempDirectory;
   // ^T's own new "Boot options" field (see executeShowUsilicBanner()'s own
   // comment): the literal argv[1..] this process was launched with, in
@@ -4361,14 +4372,30 @@ int main(int argc, char **argv) {
     // startup load further up can share it too.
     // 2026-08-30、直接のユーザー報告("`open -a usilic`で起動すなわち
     // 引数無しなので前回の履歴を引き継がないと。通常ファイルで終えた
-    // なら次回起動時も同ファイルから"): consultHistoryOnStart(引数
-    // 無し起動)の場合のみ、Application::startResumingSession()自身の
-    // コメントが説明する通り、前回終了時に開いていたもの
-    // (history.sessionState().lastOpenName)がFileモードの通常ファイル
-    // であればそれをそのまま復元する。引数付き起動、またはlastOpenName
-    // がディレクトリ/存在しない/開けない場合は、その内部で従来通りの
+    // なら次回起動時も同ファイルから"): 引数無し起動の場合のみ、
+    // Application::startResumingSession()自身のコメントが説明する
+    // 通り、前回終了時に開いていたもの(history.sessionState().
+    // lastOpenName)がFileモードの通常ファイルであればそれをそのまま
+    // 復元する。引数付き起動、またはlastOpenNameがディレクトリ/
+    // 存在しない/開けない場合は、その内部で従来通りの
     // start(startDirectory, ...)へフォールバックする。
-    bool started = consultHistoryOnStart
+    //
+    // 2026-09-15訂正、直接のユーザー報告("④ディレクトリ引数で指定
+    // したディレクトリから立ち上がらない(引数無し同様前回終了時から
+    // 開始)"): この分岐の条件を誤ってconsultHistoryOnStart(2026-09-15
+    // の別の変更で、ディレクトリ引数起動でも真になるよう広げたばかり
+    // だった)にしてしまっていたため、ディレクトリ引数付き起動まで
+    // 「引数を無視してlastOpenNameを復元する」経路に巻き込まれて
+    // いた――本来この分岐が問うべきは「historyへアクセスするか
+    // どうか」ではなく「実際に位置引数(ディレクトリ)が与えられたか
+    // どうか」であり、それは別物(consultHistoryOnStartは両方の起動
+    // シェイプでtrueになるが、lastOpenName復元は引数無し起動だけの
+    // 話)だった。positionalArgs.empty()自体で判定するよう戻す
+    // ――consultHistoryOnStart(historyへの読み書き自体の可否)は、
+    // 引数付き起動の側の分岐でも変わらず渡し続ける(このstartDirectory
+    // 自身のcursor位置保存/復元等は、ディレクトリ引数起動でも引き続き
+    // history経由で行いたいため)。
+    bool started = positionalArgs.empty()
                        ? app.startResumingSession(history.sessionState().lastOpenName, startDirectory,
                                                    consultHistoryOnStart)
                        : app.start(startDirectory, consultHistoryOnStart);
