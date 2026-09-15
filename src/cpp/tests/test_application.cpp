@@ -342,6 +342,12 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a regular fi
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().isPagerMode());  // still uses loadStream() internally -- (stdin)-style
   CHECK(app.activeContentView().modeLineText().find("(stdin)") != std::string::npos);
+  // 2026-09-15追加、直接のユーザー指摘("^O^Mによる(stdin)は（ls）
+  // から発動しているので戻り値も（ls）でないと"): pagerReturnsToShell_
+  // の"SHELL"バッジと同じ扱いで、非ハイライトの"usilic v1.5b"ではなく
+  // ハイライト表示の"(ls)"が戻り値として見えるべき。
+  CHECK(app.activeContentView().modeLineText().find("(ls)") != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("usilic v1.5b") == std::string::npos);
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
