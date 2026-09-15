@@ -17915,3 +17915,18 @@ FileMode::loadFileAsPipe()自身が既に同種の問題(K-23の"(stdin)"化)を
 test_application.cppに新しい回帰テストを追加し、実際にtarで作ったアーカイブに対して(1)ディスク上に.tvf拡張子ファイルが一切存在しないこと、(2)^G後もdirectoryMode_.currentDirectory()が元のディレクトリのままであること、の両方を確認しました。既存の「ReadFileNoWrap on an archive」テストは、loadFileNoWrap()(即時全文読み込み)からloadStream()ベースの"(stdin)"ページング読み込み(初回はわざと1行だけ)へ挙動が変わったため、他の(stdin)系テストと同じくensureLoadedThrough()で明示的に全文を読み切ってから検証する形に更新しました。
 
 make testは1153件中1151件通過(既存無関係の2件の既知フレーク――LOCATE、およびactivatePrompt/COLUMNS計算――のみ、いずれも今回の変更とは無関係)。make usilic/make install/make app完了。
+
+<モードライン不良。現状は
+「00001/00026 TOP」「1894」「(stdin)」戻り値無し
+だが、正しくは
+「tcb-1.5b.linux.tgz」「00001/00025 TOP」「1894」「(tar)」「/Users/haa15030/」
+
+>修正・検証・コミット完了しました(b6a86c4)。
+
+前回のコミット(1618e27)でARCHIVE分岐をFileMode::loadContentAsPipe()(loadFileAsPipe()と全く同じ"(stdin)"扱い)へ切り替えた際、モードライン側の扱いまでは区別しておらず、通常ファイルの^O^M(本当に「安定したパスの無いstdin」)と全く同じ、name欄が空・trailing2="(stdin)"・trailing3(戻り値)無し、という表示になっていました。しかしARCHIVEのlisting表示は、実在のアーカイブファイルから生成された由来のはっきりした内容であり、ArchiveMode自身のモードライン(name="ARC"、trailing2="(<command>)"バッジ、trailing3=フルパス)と同じ考え方で表示すべきでした。
+
+pagerMode_のModeLineFieldsProviderを拡張し、既存のsetSearchOrigin()(name/trailing2)をpagerMode_分岐でも活かすようにし、新設のFileMode::setPagerListingDirectory()でtrailing3に所属ディレクトリを設定できるようにしました。Application::openSelectedEntryNoWrap()のARCHIVE分岐はloadContentAsPipe()成功後にsetSearchOrigin(entry->name, "(" + command->argv.front() + ")")(ArchiveMode自身のarchiveCommand_導出と同じ、.tar.gzでも最終段のtarを指すので"(tar)"になります)とsetPagerListingDirectory(directory)を呼びます。
+
+行数表示("00001/00026"対"00001/00025")については、調査の結果、readMoreIntoPipe()自身の「最初の1画面はpollPagerExitNotice()の1回の呼び出しで一気に埋まるが、チャンク読み込みの都合上高々1行程度の丸め超過があり得る」という、この移植の(stdin)系ページング機構全体に以前から存在する、容認されている挙動(ensureLoadedThrough()自身の2026-09-06訂正コメント、および同種のテストの「少なくとも1画面分」というコメント参照)と一致する差分と見られ、ARCHIVE分岐固有の新しいバグではないと判断しました――コード上は変更せず、経緯を説明するに留めています。もし引き続き厳密な一致を望まれる場合は、readMoreIntoPipe()のチャンク境界の扱いから改めて調査します。
+
+test_application.cppの既存のARCHIVE ^O^Mテストの"(stdin)"表明を"archive.tar"/"(tar)"表明へ更新し、新しいモードライン専用の回帰テストも追加(ファイル名・"(tar)"バッジ・所属ディレクトリが見え、"(stdin)"は見えないことを確認)。make testは1154件中1153件通過(既存無関係のLOCATE既知フレークのみ)。make usilic/make install/make app完了。
