@@ -3593,7 +3593,23 @@ bool Application::handleCommand(Command command) {
         // pollShellHandoff()はcurrentMode_をそこから入れ替えただけな
         // ので、それらは既に、引き渡しが起こる前に保持していたもの
         // をそのまま保持している)。
-        if (fileMode_.isPagerMode()) {
+        // 2026-09-15追加、直接のユーザー指摘("^O^MはSTDINなページャー
+        // 仕様へ完全移行していて^Gで（ls）へ戻れない"): FileMode::
+        // setPagerReturnsToDirectory()自身のコメント参照。K-23
+        // (loadFileAsPipe())はpagerReturnsToDirectory()を立てるので、
+        // ここでは早期returnせず、下の(pagerでない普通のFileセッション
+        // と全く同じ)fileReturnMode_ベースの分岐/returnToDirectory()
+        // へそのまま素通りさせる――openSelectedEntryNoWrap()が
+        // fileReturnMode_ = Directoryを設定済みなので、これで正しく
+        // (ls)へ戻る。
+        if (fileMode_.isPagerMode() && fileMode_.pagerReturnsToDirectory()) {
+          // loadFileAsPipe()自身のコメント参照: returnPagerToShell()の
+          // 3箇所と同じく、裏のfd(loadFileAsPipe()が開いた一時ファイル
+          // ――既にunlink済みなのでディスクには残らないが、fd自体は
+          // 明示的に閉じないと次のloadFile()/loadStream()まで開いた
+          // ままになる)をここで閉じる。
+          fileMode_.closeStream();
+        } else if (fileMode_.isPagerMode()) {
           if (fileMode_.pagerReturnsToShell()) {
             return returnPagerToShell();
           }

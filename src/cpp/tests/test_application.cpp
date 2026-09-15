@@ -324,6 +324,29 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap): a line longer than th
   CHECK(app.activeContentView().lines()[0].text == longLine);
 }
 
+// 2026-09-15追加、直接のユーザー指摘("^O^MはSTDINなページャー仕様へ
+// 完全移行していて^Gで（ls）へ戻れない"): loadFileAsPipe()(K-23)は
+// loadStream()を再利用するため、FileMode::isPagerMode()が真になる
+// ――修正前はApplication::handleCommand(Command::Back)がこれだけを
+// 見て「本物のCLIページャー起動には戻り先が無い」という既存のルール
+// (setPagerReturnsToDirectory()自身のコメント参照)に巻き込まれ、
+// ^Gが無条件no-opになっていた。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a regular file: Back (^G) returns to "
+                           "Directory, unlike a real STDIN-pager session's inert ^G") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  REQUIRE(idx >= 0);
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::ReadFileNoWrap));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().isPagerMode());  // still uses loadStream() internally -- (stdin)-style
+  CHECK(app.activeContentView().modeLineText().find("(stdin)") != std::string::npos);
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) on the SAME long-line file wraps it into multiple lines "
                            "(confirms the NoWrap test above is actually exercising different behavior)") {
   std::string longLine(200, 'x');

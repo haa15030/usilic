@@ -449,6 +449,11 @@ bool FileMode::loadFileAsPipe(const std::string &path) {
   // 素直に従う(実ファイルの閲覧履歴・カーソル位置は、K-22の通常の
   // loadFile()セッション側だけが引き続き担う)。
   setSearchOrigin("", "(stdin)");
+  // 2026-09-15追加、直接のユーザー指摘("^O^MはSTDINなページャー仕様
+  // へ完全移行していて^Gで（ls）へ戻れない"): setPagerReturnsToDirectory()
+  // 自身の宣言コメント参照――本物のSTDINパイプ起動と違い、K-23は
+  // Directory一覧からの選択という正真正銘の「前のモード」を持つ。
+  setPagerReturnsToDirectory(true);
   return true;
 }
 
@@ -472,6 +477,7 @@ bool FileMode::loadFileImpl(const std::string &path) {
   closeStream();  // 防御的措置: 通常の即時読み込みは、古びたストリームをぶら下げたままにしてはならない
   pagerMode_ = false;
   pagerReturnsToShell_ = false;  // 防御的措置、自身の宣言コメント参照。pagerMode_がfalseの間はいずれにせよ未使用
+  pagerReturnsToDirectory_ = false;  // 同上
   view_.setUseFixedWidthPosition(false);  // loadStream()自身のコメント参照。他の全てのFileモードのエントリはプレーンなまま
   view_.setContentMayGrow(false);  // setContentMayGrow()自身の宣言コメント参照。この非ストリーミング読み込みは常に一括で確定済み
 
@@ -782,6 +788,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   noWrapMode_ = noWrap;  // 自身の宣言コメント参照(file_mode.hpp) -- 前回のセッションからの取り残しを防ぐ明示的な上書き
   pagerMode_ = true;
   pagerReturnsToShell_ = false;  // 自身の宣言コメント参照。pollShellHandoff()はこの呼び出しの後にこれを切り替える
+  pagerReturnsToDirectory_ = false;  // 同上。loadFileAsPipe()がこの呼び出しの後にこれを切り替える
   // 2026-08-25(直接のユーザー依頼: "SHELL同様、行数を5桁とバイト
   // 数表示をよろしく")――他の全てのFileモードのエントリが使う
   // 可変幅のデフォルトの代わりに、同じ固定5桁ゼロパディングの

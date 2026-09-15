@@ -409,6 +409,21 @@ class FileMode {
   void setPagerReturnsToShell(bool value) { pagerReturnsToShell_ = value; }
   bool pagerReturnsToShell() const { return pagerReturnsToShell_; }
 
+  // 2026-09-15追加、直接のユーザー指摘("^O^MはSTDINなページャー仕様
+  // へ完全移行していて^Gで（ls）へ戻れない"): loadFileAsPipe()(K-23、
+  // ^O^M)はloadStream()を再利用するため、上のpagerReturnsToShell_と
+  // 同じく既定でfalseのままだと、すぐ上のコメントが説明する「独立
+  // したCLIページャ起動には戻り先が無い」という前提に巻き込まれ、
+  // ^Gが無条件no-opになってしまっていた――しかしK-23は実際には
+  // Directory一覧からの選択という、正真正銘の「前のモード」を持つ
+  // (SHELLへの引き渡しと同じ理屈、戻り先がSHELLではなくDirectoryな
+  // だけ)。pagerReturnsToShell_を「SHELLへ戻る」専用の意味のまま
+  // 汚さず、並行するこの専用フラグで表現する――loadFileAsPipe()
+  // 自身が設定し、他の全てのloadFile()/loadStream()呼び出しでは
+  // (pagerReturnsToShell_と同じく)falseにリセットされる。
+  void setPagerReturnsToDirectory(bool value) { pagerReturnsToDirectory_ = value; }
+  bool pagerReturnsToDirectory() const { return pagerReturnsToDirectory_; }
+
   // 以前のストリーム状態を全てリセットする(所有しているfdを閉じる)
   // ――loadStream()の先頭(2つ目のCLI起動されたファイルが1つ目を
   // 置き換える場合、例えばCommand::PagerNextFile)と、loadFile()の
@@ -490,6 +505,7 @@ class FileMode {
   // のコメント参照。
   bool pagerMode_ = false;
   bool pagerReturnsToShell_ = false;
+  bool pagerReturnsToDirectory_ = false;  // setPagerReturnsToDirectory()自身の宣言コメント参照
   int streamFd_ = -1;
   bool streamOwnsFd_ = false;
   bool streamAtEof_ = false;
