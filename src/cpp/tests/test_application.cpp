@@ -343,10 +343,12 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a regular fi
   CHECK(app.fileMode().isPagerMode());  // still uses loadStream() internally -- (stdin)-style
   CHECK(app.activeContentView().modeLineText().find("(stdin)") != std::string::npos);
   // 2026-09-15追加、直接のユーザー指摘("^O^Mによる(stdin)は（ls）
-  // から発動しているので戻り値も（ls）でないと"): pagerReturnsToShell_
-  // の"SHELL"バッジと同じ扱いで、非ハイライトの"usilic v1.5b"ではなく
-  // ハイライト表示の"(ls)"が戻り値として見えるべき。
-  CHECK(app.activeContentView().modeLineText().find("(ls)") != std::string::npos);
+  // から発動しているので戻り値も（ls）でないと")、同日中に単純化
+  // ("usilic.1を^O^Mで開いたときの戻り値は、^Mで開いたときと同じで
+  // いい"): 一度は専用の"(ls)"trailing3バッジを追加したが、通常の
+  // loadFile()(K-22)と同じく戻り値バッジ自体を一切表示しない(が、
+  // 独立起動フォールバックの"usilic v1.5b"だけは引き続き出さない)
+  // という、より単純な仕様に決着した。
   CHECK(app.activeContentView().modeLineText().find("usilic v1.5b") == std::string::npos);
 
   REQUIRE(app.handleCommand(Command::Back));

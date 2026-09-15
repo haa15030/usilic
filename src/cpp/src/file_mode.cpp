@@ -163,20 +163,25 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       // 「変更されていない」(戻り値の表示自体だけが移動した)。
       // 2026-09-15追加、直接のユーザー指摘("^O^Mによる(stdin)は
       // （ls）から発動しているので戻り値も（ls）でないと（現状非
-      // ハイライトのusilic v1.5b）"): pagerReturnsToDirectory_
-      // (setPagerReturnsToDirectory()自身のコメント参照)は、すぐ
-      // 下のpagerReturnsToShell_の「SHELL」と全く同じ理屈で、戻り先
-      // が「独立起動には無い」ではなく「Directory一覧」であることを
-      // 示す必要がある――legacy自身のtrailing3ハイライト表示の
-      // 慣習に倣い、DirectoryMode自身の"(ls)"バッジと同じ文字列を
-      // ここでも使う。
+      // ハイライトのusilic v1.5b）")、同日中に単純化("usilic.1を
+      // ^O^Mで開いたときの戻り値は、^Mで開いたときと同じでいい"):
+      // 一度はpagerReturnsToShell_の"SHELL"に倣い専用の"(ls)"trailing3
+      // バッジを追加したが、ユーザー自身の判断でこれは過剰と分かった
+      // ――K-23の戻り値表示は、通常のloadFile()(K-22)が最初から
+      // 「rightWatermark/trailing3のどちらも一切表示しない」のと
+      // 全く同じにすればよい(下の非pager分岐参照、"Fileモードが
+      // 決してそれを表示しない"のがまさにこの単純な既定)。ただし
+      // rightWatermarkの「独立起動フォールバック」("usilic v1.5b")
+      // だけは、それとは別に依然として抑制する必要がある――
+      // pagerReturnsToDirectory_の間、戻り先が無い独立起動ではない
+      // ことに変わりはないため。
       bool hasReturnTarget = pagerReturnsToShell_ || pagerReturnsToDirectory_;
       ContentView::ModeLineFields fields;
       fields.name = currentFile_;
       fields.trailing = std::to_string(bytes);
       fields.rightWatermark = hasReturnTarget ? "" : "usilic v1.5b";
       fields.trailing2 = searchOriginDetail_;
-      fields.trailing3 = pagerReturnsToShell_ ? "SHELL" : (pagerReturnsToDirectory_ ? "(ls)" : "");
+      fields.trailing3 = pagerReturnsToShell_ ? "SHELL" : "";
       // 2026-08-25の修正(HISTORY.md:9462を引用した直接のユーザー
       // 報告、"基本的に右端まで埋まっていないモードラインは全部
       // 不良"): trailing3は「既に」fillTrailingToEdgeサポートを
@@ -191,8 +196,9 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       // これを有効にすると、この報告の対象では決してなく、望まれた
       // ものとして確認もされていない、バイト数と"usilic v1.5b"の
       // 間のプレーンなギャップを新たに反転表示で埋めてしまうことに
-      // なる。
-      fields.fillTrailingToEdge = hasReturnTarget;
+      // なる。pagerReturnsToDirectory_はtrailing3を持たない(上参照)
+      // ので、これはpagerReturnsToShell_だけにスコープしたまま。
+      fields.fillTrailingToEdge = pagerReturnsToShell_;
       // 2026-09-11追加、直接のユーザー報告("FILE/DIRでも^O^S/^J^S
       // 同様^S/^[iをサポートして欲しい"): pagerMode_(CLIから直接
       // `usilic <file>`/パイプされたstdinで開いたファイル、この関数
