@@ -17825,6 +17825,21 @@ pagerReturnsToDirectory_(前回新設)は^Gの戻り先の判定にしか使っ�
 
 ②の`cat usilic.1`だけでGUIウィンドウが現れるという方が特に不可解です(catはusilicを一切呼び出さないため)――usilic自身のシェルセットアップ以外に、何かエイリアス/関数(例えば`cat`を`$PAGER`経由でページングする設定)が.bashrc/.zshrc側にありませんか？もしあれば、それが$PAGER(usilic --usilic-pager <pid>形式)を経由して間接的にusilicを起動している可能性があります。
 
+<・『②のcat usilic.1だけでGUIウィンドウが現れる方が特に不可解です』については大変申し訳ない。正しくは`^[scat usilic.1|usilic^M`。
+・1点目・2点目(GUIウィンドウが現れる件)の原因は、-gならGUI起動だが省略してもそうだから、じゃない？
+それよりもさっきの提案はどう？　SHELLプロンプトでusilicを起動する場合、実際の~/.local/bin/usilicには触らずに（誤起動回避）、`cat usilic.1|usilic`であれば`^O^M`で`~/.usilic/saved/usilic.1`を表示する時のモードへ移行したうえで戻り値をSHELLにするだけ、ってのは？
+・バグ：`usilic -c ~/.usilic/saved`で起動→`^[s`でカレントディクトリが`~/.usilic/saved/`じゃない。
+
+>①の訂正で謎は解けました――`cat usilic.1|usilic`ならusilicを実際に起動するので、`ls -l|usilic`と同じ系統のバグで一貫します(catコマンド単体でGUIが開く、という不可解な経路は最初から存在しませんでした)。
+
+②のご質問(-g省略時のデフォルトがGUIなのが原因か)はその通りです――app/main.cppに`#ifdef __APPLE__`で`if (!forceCui && !forceGui) forceGui = true;`という、以前のセッションでのユーザー自身の依頼("デフォルト-gで起動できるのはmacOSのみ...-g起動では別のウィンドウ上で起動")による意図的な既定値があります。tryHandoffToParentShell()がgetenv("USILIC")を正しく検出できていれば、このデフォルト分岐へ到達する前に早期returnするはずなので、ここへ落ちてしまうこと自体が「検出に失敗している」ことの証拠です――ただしその失敗の具体的な原因はまだ特定できていません。
+
+③(SHELL入力インターセプトの提案)は撤回とのことなので取り下げました。
+
+④(バグ: ^[sでカレントディレクトリが違う)は原因を特定し、修正・検証・コミット完了しました(ec7000f)。usilic自身のプロセスは決してchdir()しない設計のため、Shell::start()が新しいbash子プロセスをfork/execする際、usilic自身のプロセス全体のcwd(起動時の場所、今表示中のDirectory一覧とは無関係)をそのまま継承していました――buildSetupCommand()が送る他のセットアップ文(PS1/COLUMNS等)にcd文自体が含まれていなかったのが原因です。Shell::start()/buildSetupCommand()にinitialDirectory引数を追加し、bash/zsh/csh-tcshいずれの分岐でも最初にcdするようにしました。本物のbashを使うPTY統合テストで、新しいセッションが実際にそこへcdしたことを確認済みです。make testは1150件中1149件通過(既存無関係のLOCATEフレークのみ)、make usilic/make install/make app完了。
+
+GUIウィンドウの件(②)は、まだ原因不明のままです。ご提案通りの設計変更(③)は撤回されたため、引き続き根本原因(tryHandoffToParentShell()のgetenv("USILIC")検出がこのケースでなぜ効かないか)を特定できれば、そちらを直接修正するのが筋と考えていますが、このサンドボックスでは実PTYでの再現が信頼できないため、いったん保留とさせてください。
+
 実機でのPTY検証はこのセッションでは信頼性に欠けるとの既知の制約があるため(過去の教訓)、恐れ入りますが以下を実機で確認いただけますか:
 1. `usilic usilic.1^M`を打った直後、`/tmp/.usilic-shell/`配下に`s.<uid>.<pid>`という名前のファイル(またはソケット)が一瞬でも作成されるか(lsで直後に確認、または`ls -la /tmp/.usilic-shell/`を別ターミナルから)。
 2. `cat usilic.1`実行前後で`.bashrc`/`.zshrc`に`cat`絡みのalias/function定義が無いか。
