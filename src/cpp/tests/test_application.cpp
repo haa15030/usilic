@@ -6893,6 +6893,64 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: a recognized PROGRAM command (e.g. \"echo\", 
   CHECK(recorded);
 }
 
+// 2026-09-15追加、直接のユーザー報告("SHELLで環境変数USILICが利かない
+// 件を深掘りしてみて。一度は完動していた")を深掘りして判明した回帰の
+// 固定。b26fdf5(2026-09-09、^Jp/PROGRAM向けの正しい修正)が
+// isRecognizedProgram()を"usilic"無条件認識に変えた際、それを共有する
+// このSHELLプロンプト側のprogramLauncher_ラムダにも波及してしまい、
+// SHELLプロンプトで直接`usilic ...`/`... | usilic`と打つと、実際のpty
+// 接続されたbash(Shell::start()がsetenv("USILIC", "1", ...)を設定
+// 済み――main.cpp自身のtryHandoffToParentShell()がこれを検出して
+// 「生きているusilicの中から呼ばれた」と正しく認識する経路)へは一切
+// 送られず、ChildProcess::runInteractive()経由の完全に独立した新規
+// プロセスとして起動されていた――その新規プロセスにはUSILIC環境変数
+// が無いため、tryHandoffToParentShell()の検出が常に失敗し、正しい
+// ハンドオフの代わりに-g既定(macOS)への独立起動に落ちてしまっていた。
+// 上のechoテストと対をなす形で、"usilic"というトークンだけは
+// ProgramMode()へ一切渡らず(setForegroundLauncher()が一度も呼ばれ
+// ない)、実際のpty接続されたbash自身がこれを処理する(テスト環境の
+// PATHには本物の"usilic"バイナリが無いはずなので、bash自身の
+// "command not found"がscrollbackに実際の出力として現れる)ことを
+// 確認する。
+TEST_CASE_FIXTURE(Fixture, "SHELL: typing \"usilic\" itself at the live SHELL prompt is NOT intercepted by "
+                           "the PROGRAM launcher -- it reaches the real pty-attached bash, letting that "
+                           "bash's own USILIC=1 env var (Shell::start()'s own setenv()) drive "
+                           "tryHandoffToParentShell()'s self-recognition instead") {
+  REQUIRE(app.start(path()));
+  if (!app.handleCommand(Command::StartShell)) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); }));
+
+  // PATHを/usr/bin:/binだけへ絞ってから試す――このマシン自身の
+  // ~/.local/binに本物のusilicバイナリがインストール済みなことが
+  // あり(このセッション自身のmake install参照)、それが誤って本当に
+  // 実行されてしまう(入れ子のGUIウィンドウ等、テストとして安全では
+  // ない副作用)のを避けるため。
+  feedText("export PATH=/usr/bin:/bin");
+  REQUIRE(app.feedShellByte(0x0d, std::nullopt));
+  REQUIRE(pumpUntil(app, [&] { return !app.shell().busy(); }));
+
+  bool programModeCalled = false;
+  app.programMode().setForegroundLauncher([&](const std::string &) {
+    programModeCalled = true;
+    return true;
+  });
+
+  feedText("usilic");
+  CHECK(app.feedShellByte(0x0d, std::nullopt));
+
+  bool sawShellError = pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("usilic: ") != std::string::npos && line.text.find("not found") != std::string::npos)
+        return true;
+    return false;
+  });
+  CHECK_FALSE(programModeCalled);  // never routed through ProgramMode/ChildProcess::runInteractive()
+  CHECK(sawShellError);            // the real bash child actually tried (and failed) to run it
+}
+
 TEST_CASE_FIXTURE(Fixture, "SHELL: a real submitted command is actually recorded into RingCategory::ShellCommand "
                            "(2026-08-02: setHistoryRecorder() was declared but never wired to anything)") {
   REQUIRE(app.start(path()));

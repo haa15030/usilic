@@ -569,6 +569,34 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // ない: ProgramMode::run()自身のrecordedCommandパラメータが、既に
   // まさに同じRingCategory::ShellCommandのringへ積んでいる。
   shell_.setProgramLauncher([this](const std::string &programToken, const std::string &fullLine) -> bool {
+    // 2026-09-15追加、直接のユーザー報告("SHELLで環境変数USILICが
+    // 利かない...一度は完動していた")を深掘りした結果判明した回帰:
+    // isRecognizedProgram()の"usilic"無条件認識(b26fdf5、2026-09-09、
+    // ^Jp/PROGRAMプロンプト向けの修正)は、このラムダ(Shell::
+    // submitLine()自身のprogramLauncher_、SHELLプロンプトで「直接
+    // 打ち込まれた」コマンドの横取り判定)とexecuteProgram()(^Jpの
+    // 判定)の両方で共有されている――が、両者は全く別物である。
+    // 「打ち込まれたコマンドをptyへ送らずProgramMode::run()/
+    // ChildProcess::runInteractive()(新規fork/exec)へ迂回させる」
+    // このラムダの仕組みは、フルスクリーンプログラム(vi/less/man等)
+    // がShell自身の行指向パイプラインでは正しく動かないことへの
+    // 対処であり、"usilic"自身にはそもそも無関係だった――Shell::
+    // start()が既にsetenv("USILIC", ...)で自分自身の再帰起動を
+    // ptyへ送るだけで正しく検出できるようにしている(main.cpp自身の
+    // tryHandoffToParentShell()参照)。b26fdf5はexecuteProgram()
+    // (^Jp)側の正しい修正だったが、isRecognizedProgram()を経由して
+    // このラムダにも同じ無条件認識を及ぼしてしまい、以後
+    // 「SHELLプロンプトで`usilic ...`/`... | usilic`と直接打つと、
+    // ptyのbashへは一切送られずChildProcess::runInteractive()経由の
+    // 独立した新規プロセスとして起動される」という回帰を作り込んで
+    // いた――その新規プロセスはptyのbash(USILIC=1を持つ)の子では
+    // なくusilic自身の直接の子なので、USILIC環境変数を一切持たず、
+    // tryHandoffToParentShell()の検出が常に失敗し、-c/-g省略時の
+    // 既定(macOSではGUI)へ落ちてしまっていた。ここでは"usilic"
+    // だけを明示的に除外し、通常通りptyへ送る(そちらの既存の
+    // env変数ベースの検出へ委ねる)――isRecognizedProgram()自体、
+    // および^Jp側の挙動には一切手を付けない。
+    if (programToken == "usilic") return false;
     if (!isRecognizedProgram(programToken)) return false;
     display_.flush();
     shell_.setBusy(true);
