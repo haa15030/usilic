@@ -3560,7 +3560,22 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; i++) {
     if (std::strcmp(argv[i], "-c") == 0) forceCui = true;
     else if (std::strcmp(argv[i], "-g") == 0) forceGui = true;
-    else if (std::strcmp(argv[i], "-u") == 0) {
+    else if (std::strcmp(argv[i], "-h") == 0) {
+      // 2026-09-15追加、直接のユーザー依頼("新たな仕様として...
+      // ③-hオプションで「usilic [<file] [file] [directory]」を表示")
+      // ――forceCui/forceGui宣言直前のコメント自身が2026-08-21時点で
+      // 既に予告していた「隠れオプションとしては「-c -g -u -i -h」」
+      // のうち、これだけが今日まで未実装のまま残っていた。以前
+      // (41564e8、2026-09-14「大きめの方針転換」)は「引数無し・パイプ
+      // 無し」の起動そのものがこの使い方メッセージを表示して即終了
+      // していたが、その方針は同日中に撤回された(このすぐ下の
+      // consultHistoryOnStart自身のコメント参照、"深く考えもせず
+      // 取り消してしまって申し訳ない"というユーザー自身の言葉通り)
+      // ――使い方の表示は「素の引数無し起動の既定の挙動」ではなく、
+      // この明示的な-hフラグ専用にした。
+      std::cout << "usilic [<file] [file] [directory]\n";
+      return 0;
+    } else if (std::strcmp(argv[i], "-u") == 0) {
       // User-tunable drag-scroll "inertia" speed, in usleep()
       // microseconds -- see fm::applyScrollSpeedOverride()'s own
       // comment for exactly which levels this reaches: levels
@@ -3755,46 +3770,31 @@ int main(int argc, char **argv) {
   std::signal(SIGTERM, handleTerminationSignal);
   std::signal(SIGHUP, handleTerminationSignal);
 
-  // 2026-09-20、直接のユーザー依頼("大きめの方針転換...引数無しかつ
-  // 素の対話的なusilic単体起動では「usilic [<file] [file] [directory]」
-  // を表示して終わる、でいいかなと"): 以前は「引数無し起動」= 「file
-  // managerでカレントディレクトリを開き、~/.usilic/historyを読み書き
-  // する」だったが、この方針を転換した。パイプも位置引数も無い、
-  // 純粋に対話的な起動(端末から`usilic`とだけ打った場合)はもう
-  // file managerにならず、簡単な使い方だけ出して即終了する――
-  // isPipedStdin自身の判定(下、pager起動の分岐)と全く同じ
-  // isatty()+keyInput.fd()の組み合わせをここでも使う必要があるため、
-  // その判定自体をここへ早めた。
+  // 2026-09-20(「大きめの方針転換」、41564e8)は、パイプも位置引数も
+  // 無い素の対話的起動を「usilic [<file] [file] [directory]」という
+  // 使い方表示+即終了に変え、historyの読み書きをディレクトリ引数
+  // 起動だけへ移していた――が、2026-09-15、直接のユーザーによる
+  // 訂正でこの転換自体を撤回した("深く考えもせず取り消してしまって
+  // 申し訳ない")。isPipedStdin自身の判定(下、pager起動の分岐)と
+  // 全く同じisatty()+keyInput.fd()の組み合わせをここでも使う必要が
+  // あるため、その判定自体はここに残す(usageの表示自体は-h専用の
+  // 分岐(上のflagループ参照)へ移した)。
   bool stdinPiped = !::isatty(STDIN_FILENO) && keyInput.fd() >= 0;
-  if (positionalArgs.empty() && !stdinPiped) {
-    keyInput.close();
-    std::cout << "usilic [<file] [file] [directory]\n";
-    return 0;
-  }
 
-  // Ported from HELP.jp's own EXIT section (2.18) -- but with a direct
-  // user policy reversal (2026-09-20, "大きめの方針転換"): legacy (and
-  // this port until today) restricted ~/.usilic/history access to a
-  // no-argument launch only ("引数無しでfile managerで起動した場合は
+  // Ported from HELP.jp's own EXIT section (2.18)。2026-09-15、直接の
+  // ユーザー依頼("新たな仕様として①引数がディレクトリならそこから
+  // 起動。②引数無しなら前回終了時の最終画面から起動。③-hオプション
+  // で使い方を表示")により、41564e8の反転をさらに反転し直す形で
+  // legacy自身のこの節の原則("引数無しでfile managerで起動した場合は
   // ...履歴リストを...復元"/"ディレクトリ引数で起動した時は...アクセス
-  // しません"). Per the reversal above, a bare no-argument launch no
-  // longer even reaches this point (it now exits right above, before a
-  // "session" of any kind exists) -- so the ONLY launch shape left that
-  // could plausibly want a persistent, shared history now is an
-  // explicit DIRECTORY argument (isFileLaunch's own pager mode and a
-  // piped-stdin pager still don't want one, matching legacy's existing
-  // "pager mode only uses KEY-mode features" restriction). This is the
-  // exact inverse of the old formula (positionalArgs.empty()) --
-  // deliberately, not a bug: a directory launch is now the one case
-  // that DOES touch history, and unlike the old no-argument case (which
-  // legacy itself only ever assumed a single instance of), any number
-  // of directory launches can run concurrently against the same or
-  // different directories, sharing the SAME ~/.usilic/history -- this
-  // is precisely why the read-merge-write+lock protocol (History::
-  // replayJournalOnto()/acquireHistoryLock() their own comments) was
-  // worth building today: multiple genuinely-concurrent writers to one
-  // shared file is now the normal, expected case, not a rare accident.
-  bool consultHistoryOnStart = !positionalArgs.empty() && !isFileLaunch;
+  // しません")の「両方」を満たすよう作り直した――ディレクトリ引数
+  // 起動(①、41564e8で追加された「何個でも並行稼働してよい」仕様は
+  // 変更無し)と、素の引数無し起動(②、legacy自身の「単一インスタンス
+  // 前提の、履歴による前回セッション再開」)の両方がhistoryへアクセス
+  // する。ファイル引数のpager/pipe stdinのpagerだけが、legacy自身の
+  // 「pagerモードはKEY-modeの機能しか使わない」という既存の制限どおり
+  // historyに触れない。
+  bool consultHistoryOnStart = !isFileLaunch && !stdinPiped;
 
   // Ported from str.c's set_usilicrc()/S_hist path-building: both files
   // live under $HOME/.usilic/, created if it doesn't exist yet (same
@@ -3850,27 +3850,61 @@ int main(int argc, char **argv) {
   // at isPipedStdin's own declaration further down, which still needs
   // it.
   //
-  // 2026-09-20削除、直接のユーザー依頼("大きめの方針転換")に伴う後始末:
-  // 項目473で実装した「引数無しの多重起動を検知してkillする」仕組み
-  // (旧hasRealContentArgument判定+~/.usilic/pidベースの排他)は、
-  // それが守っていた対象そのもの(引数無し起動=履歴付きfile manager
-  // セッション)が上のポリシー転換で消滅した(引数無し起動は今や
-  // usageを出して即終了するだけ)ため、丸ごと不要になった。今後
-  // history(と旧来の~/.usilic/pid)へアクセスするのはディレクトリ
-  // 引数起動だけであり、そちらは複数並行稼働が仕様上の前提(このすぐ
-  // 下のtempRootDirectory自身のコメント、およびHistory::
-  // replayJournalOnto()/acquireHistoryLock()参照)なので、「多重起動を
-  // killする」という発想自体がそもそも当てはまらない。
-  //
-  // tempRootDirectory(旧hasRealContentArgument ? pidTempDirectory : ""):
-  // 上の方針転換で「引数無しの素の起動」という分岐そのものがここまで
-  // 到達しなくなった(この関数のもっと前でusageを出して return
-  // している)ため、この関数のこの先に生き残るどの起動シェイプ
-  // (ディレクトリ引数/ファイル引数/pipe stdin)も、常にこの2026-08-18
-  // 追加のper-pid隔離(下のコメント参照、ERROR/SHELLログの相互汚染
-  // 防止)の対象になる――三項演算子で分岐する理由が無くなったので
-  // 単純化した。
-  std::string tempRootDirectory = pidTempDirectory;
+  // 2026-09-15復活、直接のユーザー依頼("HISTORY.md:17429を復活して
+  // ほしい...前プロセスをkillしたうえでの再立ち上げが実装してあれば、
+  // 複数プロセスを林立させることなく任意のディレクトリで起動し直せる
+  // ことになる")。項目473で実装した「引数無しの多重起動を検知して
+  // killする」仕組み(旧hasRealContentArgument判定+~/.usilic/pidベース
+  // の排他)は、41564e8(「大きめの方針転換」)で「それが守っていた
+  // 対象自体(引数無し起動=履歴付きfile managerセッション)が消滅した」
+  // として丸ごと削除されていたが、その方針転換自体を上のconsult
+  // HistoryOnStart変更で撤回したため、この排他もここで復活させる
+  // ――以下、削除前の実装をstdinPiped(旧hasRealContentArgumentの
+  // パイプ判定部分に相当)を使って再現したもの。legacy自身の
+  // check_pl()/check_ps()(old/src/usilic.c)ではなく、docs/ideas/
+  // IDEAS.md:46が元々望んでいた「警告した上で新プロセス自身が旧
+  // プロセスをkillしてから起動を続ける」形。legacy自身のSIGCONT+
+  // pidファイルのmtime監視による生死確認(このポートには対応する
+  // 「稼働中プロセスが定期的にpidファイルへ触れる」仕組みが無い)の
+  // 代わりに、kill(pid,0)一発の単純な生死確認(サスペンド中でも
+  // 真――IDEAS.md自身の「サスペンド中のケースを含む」という要件を
+  // 自然に満たす)に単純化し、PID再利用による誤検出を避けるため
+  // `ps -p <pid> -o comm=`で実際にusilic自身(argv[0]の実行ファイル名)
+  // かどうかも確認する。警告メッセージ自体は出さない(2026-09-14の
+  // 既存の判断、IDEAS.md:51参照――新プロセス自身の画面がすぐ後で
+  // 塗りつぶす直前に一瞬だけ表示されて消える、意味の薄いノイズだった
+  // ため)。対象は引数無し・パイプ無しの「素の」起動だけ――ディレクトリ
+  // 引数起動(①)は元々何個でも並行して構わない(このすぐ下の
+  // tempRootDirectory自身のコメント参照)。
+  if (positionalArgs.empty() && !stdinPiped) {
+    std::string ownProgramName = std::filesystem::path(argv[0]).filename().string();
+    std::string pidPath = usilicDir + "pid";
+    long oldPid = 0;
+    {
+      std::ifstream pidIn(pidPath);
+      if (pidIn) pidIn >> oldPid;
+    }
+    if (oldPid > 0 && static_cast<pid_t>(oldPid) != ::getpid() && ::kill(static_cast<pid_t>(oldPid), 0) == 0) {
+      std::string comm = fm::ChildProcess::run({"ps", "-p", std::to_string(oldPid), "-o", "comm="}).output;
+      while (!comm.empty() && (comm.back() == '\n' || comm.back() == '\r' || comm.back() == ' ')) comm.pop_back();
+      if (std::filesystem::path(comm).filename().string() == ownProgramName) {
+        ::kill(static_cast<pid_t>(oldPid), SIGTERM);
+        for (int waited = 0; waited < 40 && ::kill(static_cast<pid_t>(oldPid), 0) == 0; waited++) ::usleep(50000);
+        if (::kill(static_cast<pid_t>(oldPid), 0) == 0) ::kill(static_cast<pid_t>(oldPid), SIGKILL);  // 2秒待っても応答無し -- 強制終了
+      }
+    }
+    std::ofstream pidOut(pidPath, std::ios::trunc);
+    if (pidOut) pidOut << ::getpid() << "\n";
+  }
+
+  // tempRootDirectory: 引数無し・パイプ無しの「素の」起動(①の反対、
+  // 単一インスタンス前提)だけ空のまま(ERROR/SHELLは永続共有の
+  // usilicDirを使う――前回セッションの内容を引き継ぐのがまさに
+  // この起動シェイプの目的のため)、それ以外(ディレクトリ引数/
+  // ファイル引数/pipe stdin、何個でも並行稼働してよい)はこの
+  // 2026-08-18追加のper-pid隔離(ERROR/SHELLログの相互汚染防止)の
+  // 対象になる。
+  std::string tempRootDirectory = (!positionalArgs.empty() || stdinPiped) ? pidTempDirectory : "";
   std::string workRootDirectory = pidTempDirectory;
   // ^T's own new "Boot options" field (see executeShowUsilicBanner()'s own
   // comment): the literal argv[1..] this process was launched with, in
