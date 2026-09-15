@@ -17862,3 +17862,17 @@ GUIウィンドウの件(②)は、まだ原因不明のままです。ご提案
 
 test_file_mode.cppに、groffのNAME見出しが実際にBold AttributeRunで覆われ生のESCバイトが一切残らないことを確認する回帰テストを追加。usilicrc側は標準入出力のConfiguration単体リンクで.tar.gz/.tbz2/.txz/.tzst/.taz/.jarいずれも正しく解決することを実測確認し、実際の~/.usilic/saved/usilic.1でも生のESCバイトが0件・Bold 534件/Underline 105件のAttributeRunが正しく抽出されることを確認しました。make testは1151件中1150件通過(既存無関係のLOCATEフレークのみ)、make usilic/make install/make app完了。
 
+<SHELLで環境変数USILICが利かない件を深掘りしてみて。一度は完動していたので、そこまで遡って調べればわかるかも。時間かかってもいいんでよろしく。
+
+>原因を特定し、修正・検証・コミット完了しました(5640950)。
+
+git logを遡ったところ、SHELL経由のusilicハンドオフ機構(main.cppのtryHandoffToParentShell()、Shell::start()のsetenv("USILIC", "1", ...))自体は2026-08-25(0fd9825〜f2ddc22)で完成しており、当時は正しく動いていました。ところが2026-09-09のコミットb26fdf5(「PROGRAM(^Jp)自身も"usilic"を無条件に認識」)が、^Jp(PROGRAMプロンプト)向けの正しい修正のつもりでApplication::isRecognizedProgram()の先頭に`if (firstWord == "usilic") return true;`を追加した際、この関数がexecuteProgram()(^Jp)とShell::setProgramLauncher()のラムダ(SHELLプロンプトで「直接打ち込まれた」コマンドの横取り判定)の「両方」で共有されていることを見落としていました。
+
+この結果、SHELLプロンプトで`usilic ...`/`... | usilic`と直接打つと、本来ptyに接続されたbash(USILIC=1を持つ)へ送られるべきところ、Shell::submitLine()のprogramLauncher_に横取りされてProgramMode::run()→ChildProcess::runInteractive()(usilic自身の直接の子としての新規fork/exec、ptyのbashを一切経由しない)へ迂回していました。この新規プロセスにはUSILIC環境変数が無いため、tryHandoffToParentShell()の検出が常に失敗し、正しいハンドオフの代わりに-c/-g省略時の既定(macOSではGUI)への独立起動に落ちていました――「-cで起動後もGUI画面へ繋がってしまう」報告の真因です。
+
+setProgramLauncher()のラムダの先頭で"usilic"だけを明示的に除外し、通常通りptyへ送るようにしました(isRecognizedProgram()自体、および^Jp側の挙動には一切手を付けていません)。
+
+実PTYでの検証: `usilic -c ~/.usilic/saved`→^[s→`cat usilic.1 | usilic`を実行し、修正前はusilic自身の直接の子として独立プロセスが生成されていたのに対し、修正後はptyのbashの子として実行され、同じ-cセッションの画面へ正しくハンドオフされることを確認しました(ps上の親子関係、および画面内容の両方で確認)。
+
+test_application.cppに、SHELLプロンプトでの"usilic"がProgramModeへ一切渡らず実際のptyのbashへ届くことを確認する回帰テストを追加(実環境の~/.local/bin/usilicが誤って実行されないようテスト内でPATHを絞る安全策込み)。make testは1152件中1151件通過(既存無関係のLOCATEフレークのみ)、make usilic/make install/make app完了。
+
