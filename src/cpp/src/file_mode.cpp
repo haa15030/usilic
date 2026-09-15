@@ -20,6 +20,11 @@
 
 namespace fm {
 
+// readAndWrap()自身のコメント参照(K-23、^O^M、長い行を折り返さない)。
+// loadFileAsPipe()もこれを共有する――ファイル名だけ違う「読み込み
+// 経路」であって、折り返し方針自体はloadFileNoWrap()と揃えたいため。
+constexpr int kNoWrapWidth = 1 << 20;
+
 // 2026-09-04追加、直接のユーザー依頼("usilic ~/git/usilic/src/HELP.txt
 // をサポートして"): CLIのファイル引数起動(usilic HELP.txt/usilic
 // QUICK.txt)で、<indentN>/<i>/<b>/<u>markupがそのままリテラルなタグと
@@ -309,13 +314,24 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
   });
 }
 
-std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) const {
+// 2026-09-15追加、直接のユーザー指摘("^[^Mは「as is」（msマクロ）に
+// なってない"): 以前はここ(旧readAndWrap()の先頭)がrawControlCodesMode_
+// を一切見ておらず、loadFile()/loadFileNoWrap()/loadFileRaw()いずれも
+// 同じ変換済み内容(HELP-markup展開、またはroff/msマクロ文書のgroff
+// 整形)を表示していた。old/src/code.cのcheck_type()を辿ると、legacy
+// のM_code(^[^M、fp->cr=0)はcheck_ext()自体を呼ばない――つまりHELP-
+// markup展開/groff整形どちらの変換ステップにも一切進まない、という
+// のが"そのまま(as is)読む"の実体だった。rawControlCodesMode_が真の
+// 間はこの変換を丸ごとスキップし、生バイトをそのままcontentとして
+// 返すようにした。
+std::string FileMode::loadAndTransformContent(const std::string &path) const {
   std::ifstream in(path, std::ios::binary);
   if (!in) return {};
   std::ostringstream buffer;
   buffer << in.rdbuf();
   if (!in.good() && !in.eof()) return {};
   std::string content = buffer.str();
+  if (rawControlCodesMode_) return content;
   // isHelpMarkupPagerFile()自身のコメント参照(HELP.txt/QUICK.txtの
   // <indentN>/<i>/<b>/<u>markupを、リテラルなタグのままではなく
   // ^Jh自身のkHelpTextJa/kHelpTextGuiJaと同じ規約で展開する)。
@@ -341,6 +357,11 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
       if (result.ok) content = result.output;
     }
   }
+  return content;
+}
+
+std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) const {
+  std::string content = loadAndTransformContent(path);
 
   // 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
   // して"): loadFileNoWrap()自身のコメント参照――行の折り返しを行わ
@@ -349,7 +370,6 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
   // 元々ELLIPSISロジックのために存在する)にそのまま任せる――水平
   // スクロール自体は実装しない(less -Sと同じ「画面幅で切り詰める」
   // 挙動、水平スクロールバー等の新規UIは無い)。
-  constexpr int kNoWrapWidth = 1 << 20;
   int effectiveWidth = noWrapMode_ ? kNoWrapWidth : width_;
   PipeBuffer pipe(encoding_, effectiveWidth, 64L * 1024 * 1024, /*detectOverstrike=*/!rawControlCodesMode_);
   pipe.feed(content);
@@ -389,6 +409,47 @@ bool FileMode::loadFileRaw(const std::string &path) {
   noWrapMode_ = false;
   rawControlCodesMode_ = true;
   return loadFileImpl(path);
+}
+
+// loadFileAsPipe()自身の宣言コメント(file_mode.hpp)参照。
+bool FileMode::loadFileAsPipe(const std::string &path) {
+  std::ifstream probe(path, std::ios::binary);
+  if (!probe) return false;
+  probe.close();
+
+  rawControlCodesMode_ = false;
+  std::string content = loadAndTransformContent(path);
+
+  char tempPath[] = "/tmp/usilic-pipe-XXXXXX";
+  int fd = ::mkstemp(tempPath);
+  if (fd < 0) return false;
+  ::unlink(tempPath);  // POSIXでは開いたままのfdは生き続ける――ディスク上に何も残さない
+  std::size_t written = 0;
+  while (written < content.size()) {
+    ssize_t n = ::write(fd, content.data() + written, content.size() - written);
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      ::close(fd);
+      return false;
+    }
+    written += static_cast<std::size_t>(n);
+  }
+  if (::lseek(fd, 0, SEEK_SET) < 0) {
+    ::close(fd);
+    return false;
+  }
+
+  loadStream(fd, /*ownsFd=*/true, "", 1, /*noWrap=*/true);
+  // "(stdin)"――loadStream()自身のクラスコメント/実際のSTDINパイプ
+  // 起動が使うのと全く同じラベル付け。displayName/labelを空のまま
+  // にするのは、その本物のケースと同じくcurrentFile_を空のままにし
+  // (History::pushRecent()も発火しない)、カーソル位置もHistory経由
+  // では保存/復元しない――"常時真っ新から始まる"というloadStream()
+  // 自身のコメントが述べる原則に、このパイプ越しの疑似セッションも
+  // 素直に従う(実ファイルの閲覧履歴・カーソル位置は、K-22の通常の
+  // loadFile()セッション側だけが引き続き担う)。
+  setSearchOrigin("", "(stdin)");
+  return true;
 }
 
 bool FileMode::loadFileImpl(const std::string &path) {
@@ -714,9 +775,11 @@ std::vector<ContentView::Line> FileMode::convertPipeLines() const {
   return lines;
 }
 
-bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, int initialLineBudget) {
+bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, int initialLineBudget,
+                           bool noWrap) {
   closeStream();
   view_.setCursorHighlightEnabled(false);
+  noWrapMode_ = noWrap;  // 自身の宣言コメント参照(file_mode.hpp) -- 前回のセッションからの取り残しを防ぐ明示的な上書き
   pagerMode_ = true;
   pagerReturnsToShell_ = false;  // 自身の宣言コメント参照。pollShellHandoff()はこの呼び出しの後にこれを切り替える
   // 2026-08-25(直接のユーザー依頼: "SHELL同様、行数を5桁とバイト
@@ -739,7 +802,16 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   // フラグ)。
   ::fcntl(streamFd_, F_SETFL, ::fcntl(streamFd_, F_GETFL, 0) | O_NONBLOCK);
   streamBytesRead_ = 0;  // 自身の宣言コメント参照――新しいストリームはこれを0から再開する
-  streamPipe_ = std::make_unique<PipeBuffer>(encoding_, width_, 256L * 1024 * 1024);
+  // 2026-09-15追加、loadFileAsPipe()自身のコメント参照: noWrapMode_は
+  // 本来loadFileImpl()/readAndWrap()専用だったが、loadFileAsPipe()が
+  // 「先に」これをセットしてからloadStream()を呼ぶ経路を追加した
+  // ため、ここもreadAndWrap()自身のkNoWrapWidthと同じ幅を使うよう
+  // 揃える必要がある――そうしないとloadFileAsPipe()の折り返し方針
+  // (loadFileNoWrap()と同じ「長い行を折り返さない」)がこの構築時点
+  // で無視され、通常幅で折り返されてしまう。実際のSTDINパイプ/SHELL
+  // 引き渡しの既存呼び出し元はnoWrapMode_を一切セットしない
+  // (常にfalseのまま)ので、この変更はそれらの既存の挙動を変えない。
+  streamPipe_ = std::make_unique<PipeBuffer>(encoding_, noWrapMode_ ? kNoWrapWidth : width_, 256L * 1024 * 1024);
   currentFile_ = displayName;
   searchOriginLabel_.clear();
   searchOriginDetail_.clear();

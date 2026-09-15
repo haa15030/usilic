@@ -336,3 +336,58 @@ TEST_CASE_FIXTURE(Fixture, "loadFile: a plain (non-roff) file is unaffected -- n
   CHECK(view.lines()[0].text == "just some ordinary text");
   CHECK(view.lines()[1].text == "with a . in it");
 }
+
+// 2026-09-15追加、直接のユーザー指摘("~/.usilic/saved/usilic.1に
+// ついて、現状では^O^M/^[^M/^Mが皆おなじなのでちゃんと機能を反映
+// して...^[^Mは「as is」（msマクロ）になってない"): loadFileRaw()
+// (rawControlCodesMode_)は、legacy自身のM_code(^[^M、fp->cr=0が
+// check_ext()自体を呼ばない)に倣い、HELP-markup展開/groff整形の
+// どちらもスキップして生バイトのまま見せるべきだった――修正前は
+// loadFile()と全く同じ変換済み内容を表示してしまっていた。
+TEST_CASE_FIXTURE(Fixture, "loadFileRaw: a `.TH`-led file is shown completely as-is -- bypasses the "
+                           "auto-groff-render loadFile() applies, matching legacy's M_code (fp->cr=0 "
+                           "never reaching check_ext())") {
+  std::string path = writeFile("usilic.man", ".TH USILIC 1\n.SH NAME\nusilic \\- test\n");
+  REQUIRE(mode.loadFileRaw(path));
+  REQUIRE(view.lines().size() == 3);
+  CHECK(view.lines()[0].text == ".TH USILIC 1");
+  CHECK(view.lines()[1].text == ".SH NAME");
+  CHECK(view.lines()[2].text == "usilic \\- test");
+}
+
+// 同上のユーザー指摘、こちらは"^O^Mで(stdin)形式になっておらず"の
+// 方。loadFileAsPipe()(K-23)は、legacy自身のM_fp(fp->cr=2)がplain
+// Enter(fp->cr=1)と同じくcheck_ext()を通る(=groff整形はloadFile()と
+// 揃う)一方、read_buff()自体はm_pipe()経由でパイプ越しに行われる、
+// という2点セットの移植。
+TEST_CASE_FIXTURE(Fixture, "loadFileAsPipe: a `.TH`-led file IS groff-rendered (same content as "
+                           "loadFile(), unlike loadFileRaw()), but the mode-line shows \"(stdin)\" like "
+                           "a real STDIN-pager session") {
+  std::string path = writeFile("usilic.man", ".TH USILIC 1\n.SH NAME\nusilic \\- test\n");
+  if (!mode.loadFileAsPipe(path)) {
+    MESSAGE("groff not installed here -- skipping");
+    return;
+  }
+  // loadStream()自身のコメント参照: 初回はわざと少ない行数しか読まない
+  // (生きたSHELLパイプのペーシングに合わせた設計)ので、ここでは
+  // ensureLoadedThrough()で全文(既にtempファイルへ書き出し済みの
+  // 有限な内容)を強制的に読み切ってから中身を検証する。
+  mode.ensureLoadedThrough(1000, /*bypassPacing=*/true);
+  bool sawRawMacro = false, sawRenderedHeading = false;
+  for (const auto &line : view.lines()) {
+    if (line.text.find(".TH") != std::string::npos) sawRawMacro = true;
+    if (line.text.find("NAME") != std::string::npos) sawRenderedHeading = true;
+  }
+  CHECK_FALSE(sawRawMacro);
+  CHECK(sawRenderedHeading);
+  CHECK(view.modeLineText().find("(stdin)") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "loadFileAsPipe: long lines are not wrapped, matching loadFileNoWrap()'s own "
+                           "policy") {
+  std::string longLine(200, 'x');
+  std::string path = writeFile("long.txt", longLine + "\n");
+  REQUIRE(mode.loadFileAsPipe(path));
+  REQUIRE(view.lines().size() == 1);
+  CHECK(view.lines()[0].text == longLine);
+}

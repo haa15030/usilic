@@ -4191,9 +4191,10 @@ bool Application::openSelectedEntry() {
 // openSelectedEntry()自身のEXEC/アーカイブ判定の分岐までは複製しない
 // (高度な/稀な機能であり、それらのファイル種別に対してこの2キーを
 // 使うこと自体が想定外)。ディレクトリの選択時だけ明示的に拒否し、
-// それ以外はFileMode::loadFileNoWrap()/loadFileRaw()へ直接渡す――
-// 通常ファイルでなければそちら自身のstd::ifstreamチェックで自然に
-// falseになる。
+// それ以外は(下のARCHIVE特例を除き)FileMode::loadFileAsPipe()へ
+// 直接渡す――通常ファイルでなければそちら自身のstd::ifstreamチェック
+// で自然にfalseになる。2026-09-15修正前はloadFileNoWrap()だった
+// (loadFileAsPipe()自身のコメント参照、"(stdin)"ラベル付けが無かった)。
 bool Application::openSelectedEntryNoWrap() {
   const DirectoryEntry *entry = directoryMode_.selectedEntry();
   if (!entry || entry->isDirectory) return false;
@@ -4239,7 +4240,12 @@ bool Application::openSelectedEntryNoWrap() {
     return true;
   }
 
-  if (!fileMode_.loadFileNoWrap(path)) return false;
+  // 2026-09-15修正、直接のユーザー指摘("^O^Mで(stdin)形式になって
+  // おらず"): ここ(アーカイブでない通常ファイル)は依然として
+  // loadFileNoWrap()の素のまま――FileMode::loadFileAsPipe()自身の
+  // コメント参照、legacy自身のM_fp(fp->cr=2)がm_pipe()経由のパイプ
+  // 越しに読ませる分岐に対応する。
+  if (!fileMode_.loadFileAsPipe(path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;
   return true;

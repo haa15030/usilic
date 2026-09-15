@@ -99,6 +99,16 @@ class FileMode {
   // 「long行を折り返さない」(less -Sと同じ)を採用した)。長い行は
   // ContentView::renderLine()自身の既存のmaxCol打ち切りにそのまま
   // 任せる。
+  //
+  // 2026-09-15訂正: 上のalloc_buff()調査は浅かった――old/src/menu.c
+  // のcheck_type()/check_ext()まで遡ると、fp->cr==2(^O^M)はfp->cr==1
+  // (plain Enter)と同じくcheck_ext()を通る(HELP-markup展開/roff文書
+  // のgroff整形が適用される)一方、read_buff()自体はm_pipe()経由の
+  // パイプ越しに行われる、という「読み込み経路」の違いも実在した。
+  // このメソッド自体(直接呼び出し元のApplication::
+  // openSelectedEntryNoWrap()のARCHIVE分岐)はそのままでよいが、通常
+  // ファイル分岐は代わりにloadFileAsPipe()(このヘッダの少し上)を
+  // 使う――そちらのコメント参照。
   bool loadFileNoWrap(const std::string &path);
 
   // 2026-09-14追加、同上のユーザー依頼: loadFile()と全く同じだが、
@@ -107,7 +117,32 @@ class FileMode {
   // QUICK.txt自身の説明"^A^B^Cはハイライト表示のABCで表示"通り、
   // バックスペース等の生の制御バイトはContentView::renderLine()
   // 自身の既存の制御バイト表示規約でそのまま可視化される)。
+  //
+  // 2026-09-15追加、直接のユーザー指摘("^[^Mは「as is」（msマクロ）
+  // になってない"): loadAndTransformContent()自身のコメント参照
+  // ――このメソッドが設定するrawControlCodesMode_は、上のオーバー
+  // ストライク解釈の有無だけでなく、HELP-markup展開/roff文書の
+  // groff整形も丸ごとスキップするようになった。legacy自身のM_code
+  // (^[^M、fp->cr=0)がcheck_ext()自体を呼ばないのと同じ「変換ゼロ」
+  // が、この"as is"の実体だった。
   bool loadFileRaw(const std::string &path);
+
+  // 2026-09-15追加、直接のユーザー指摘("^O^Mで(stdin)形式になって
+  // おらず"): old/src/menu.cのM_fp(^O^M、fp->cr=2)は、fp->cr==1
+  // (plain Enter)と同じくcheck_ext()を通す(=HELP-markup展開/roff
+  // 文書のgroff整形はloadFile()と同じく適用される――そこはK-24の
+  // "as is"とは違う)一方、read_buff()自身へ`m_pipe()`経由でパイプ
+  // 越しに読ませる。この2点目を、既存のloadStream()(元々は本物の
+  // STDINページャー/SHELL引き渡し用)の再利用で表現する――選択された
+  // ファイルをloadAndTransformContent()で変換した後、その結果を
+  // 一時ファイルへ書き出し、開き直したfdをloadStream()へ渡す(生の
+  // OSパイプへ直接書き込むと、内容がパイプバッファ容量を超えた
+  // 場合にwrite()がブロックし、まだ誰も読み出していないこの同じ
+  // 呼び出し中にデッドロックする――一時ファイル経由ならその心配が
+  // 無い)。loadStream()自身の"(stdin)"ラベル付けを呼び出し元
+  // (Application::openSelectedEntryNoWrap())からsetSearchOrigin()
+  // 経由でそのまま流用できる。ファイルが読めない場合はfalse。
+  bool loadFileAsPipe(const std::string &path);
 
   const std::string &currentFile() const;
 
@@ -235,8 +270,14 @@ class FileMode {
   // キーでもあり、空の場合は完全にスキップされる(パイプには記憶
   // すべき安定したパスが無いため)。`initialLineBudget`: 事前に何行
   // 読むか(Applicationは現在のビューポート高さに少し余裕を足した
-  // ものを渡す)。
-  bool loadStream(int fd, bool ownsFd, const std::string &displayName, int initialLineBudget);
+  // ものを渡す)。`noWrap`: 2026-09-15追加、loadFileAsPipe()専用
+  // ――そちら自身のコメント参照。他の全ての(本物のSTDINパイプ/SHELL
+  // 引き渡しの)呼び出し元は省略してfalseのままにする――このメソッド
+  // 自身がここでnoWrapMode_を明示的に上書きするので、以前の呼び出し
+  // (loadFileNoWrap()/loadFileAsPipe()等)がtrueのまま残していても、
+  // 次の本物のストリームセッションへ意図せず引き継がれることはない。
+  bool loadStream(int fd, bool ownsFd, const std::string &displayName, int initialLineBudget,
+                   bool noWrap = false);
   // `targetLineIndex`が現在読み込み済みの末尾以上で、かつストリームが
   // まだEOFに達していなければ、まだ開いているストリームからさらに
   // 読み込む――Applicationが、スクロール/移動コマンドをビューへ委譲
@@ -387,6 +428,10 @@ class FileMode {
   // loadFile()/loadFileNoWrap()/loadFileRaw()が共有する本体――呼び出し元が
   // 先にnoWrapMode_/rawControlCodesMode_をセットしてから呼ぶ。
   bool loadFileImpl(const std::string &path);
+  // readAndWrap()/loadFileAsPipe()が共有する: pathの生バイトを読み、
+  // rawControlCodesMode_が真でなければHELP-markup展開/roff文書の
+  // groff整形を適用する――loadAndTransformContent()自身のコメント参照。
+  std::string loadAndTransformContent(const std::string &path) const;
   std::vector<ContentView::Line> readAndWrap(const std::string &path) const;
   // loadStream()/ensureLoadedThrough()が共有する: streamFd_から
   // 有限サイズのチャンクで読み込み、それぞれをstreamPipe_へ供給
