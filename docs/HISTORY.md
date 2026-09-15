@@ -17786,3 +17786,20 @@ old/src/menu.cのm_cr()/check_ext()/check_type()を辿って判明したlegacy�
 
 ~/.local/bin/usilic .でK-23/K-24が変わらなかった件は、make install未実施で以前のビルド(旧loadFileNoWrap()ベース、ペーシング無しの一括読み込み)のままだったことが原因と思われます。make install済みですので、お手数ですが再度お試しいただけますか。
 
+<^O^MはSTDINなページャー仕様へ完全移行していて^Gで（ls）へ戻れない。
+編集中のTUTORIALから抜粋すると、
+
+このキーで通常ファイルを選択した時は、行単位入力で表示分まで読み込む。後述の「(stdin)」表示も、このモードになる。これらのモードでは、同じメモリ領域を使用するので、どれかのモードになると他の内容は消える。
+
+ここで言う(stdin)とは標準入力ありのページャー起動ではなく、SHELLプロンプトで`ls -l .|usilic`等やった時のことなので反映よろしく。
+
+>調査・実装・検証・コミット完了しました(a24a8cc)。
+
+loadFileAsPipe()(K-23)がloadStream()を再利用するため、FileMode::isPagerMode()が真になり、Application::handleCommand(Command::Back)の既存ルール「独立したCLIページャー起動には戻り先が無いので^Gは無条件no-op」に巻き込まれていました。このルールは本来、生きた親usilicプロセスを持たない本物のSTDINパイプ起動(startPagerStdin())専用のものでした。ご指摘の通り、K-23が実際に共有すべき「(stdin)」はSHELLプロンプトでの`ls -l .|usilic`のような、SHELL引き渡しの(stdin)の方で、Directory一覧からの選択という正真正銘の「前のモード」を持つ点で共通ですが、戻り先がSHELLではなくDirectoryである点だけが違います。
+
+FileMode::pagerReturnsToShell_と並行するpagerReturnsToDirectory_を新設し、loadFileAsPipe()がこれを立てるようにしました。Application側のBack処理は、この状態ではpagerMode_の早期return(no-op/returnPagerToShell())をスキップし、下の(pagerでない普通のFileセッションと全く同じ)fileReturnMode_ベースの分岐/returnToDirectory()へそのまま素通りさせます――openSelectedEntryNoWrap()が既にfileReturnMode_=Directoryを設定済みなので、これで正しく(ls)へ戻ります。裏のfd(loadFileAsPipe()が開いた一時ファイル、既にunlink済み)はこの経路でfileMode_.closeStream()を明示的に呼んで閉じています。
+
+なお「同じメモリ領域を使用する」という記述の通り、K-23とSHELL引き渡しの(stdin)はどちらもFileMode1個が持つ単一のstreamPipe_を共有しており、これは元から自然にそうなっています(loadStream()を呼ぶたびに前のストリームが閉じられ置き換わるため、追加の作業は不要でした)。
+
+test_application.cppに回帰テストを追加。make testは1149件中1148件通過(既存無関係のLOCATEフレークのみ)、make usilic/make install/make app完了。
+
