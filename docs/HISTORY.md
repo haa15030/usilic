@@ -17803,3 +17803,12 @@ FileMode::pagerReturnsToShell_と並行するpagerReturnsToDirectory_を新設�
 
 test_application.cppに回帰テストを追加。make testは1149件中1148件通過(既存無関係のLOCATEフレークのみ)、make usilic/make install/make app完了。
 
+<^O^Mによる(stdin)は（ls）から発動しているので戻り値も（ls）でないと（現状非ハイライトの`usilic 1.5b`）。
+`ls -l | usilic`で(stdin)に切り替わるのはいいとして、-cで起動後もGUI画面へ繋がってしまうので-cで起動したときは-c画面、-gでも同じ画面にして（新たなGUI画面が現れるのは`open -A usilic`で起動したときのみ）。
+
+>1点目、修正・検証・コミット完了しました(5e6d2b2)。
+
+pagerReturnsToDirectory_(前回新設)は^Gの戻り先の判定にしか使っておらず、モードライン自体はpagerReturnsToShell_だけを見て「独立起動には戻り先が無い」のフォールバック("usilic v1.5b"のrightWatermark)を表示していました。pagerReturnsToShell_の"SHELL"trailing3バッジと全く同じ扱いで、pagerReturnsToDirectory_の時はDirectoryMode自身の"(ls)"バッジと同じ文字列をtrailing3へ出し、rightWatermarkは空に、fillTrailingToEdgeも有効にしました。test_application.cppの回帰テストにこの2フィールドの検証を追加。make testは1149件中1148件通過(既存無関係のLOCATEフレークのみ)、make usilic/make install/make app完了。
+
+2点目(-cで起動後もGUI画面へ繋がってしまう件)は、tryHandoffToParentShell()(main.cpp、getenv("USILIC")チェック)/setenv("USILIC",...)(shell.cpp、Shell::start())/pollShellHandoff()(application.cpp、両方のメインループから対称に呼ばれている)を一通り追いましたが、-c起動時に限ってGUIへ誤って繋がる経路を特定できませんでした。guiModeToggleRequested_(唯一のGUI起動トリガー)は^O g以外からは一切設定されないことも確認済みです。恐れ入りますが、実際に何が起きているか(新しいSDLウィンドウが本当に開くのか、それとも別の見え方なのか)、具体的な再現手順(usilic -cで起動→どの操作の後に何が起きるか)を教えていただけますか。
+
