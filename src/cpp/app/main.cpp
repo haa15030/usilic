@@ -3739,6 +3739,22 @@ int main(int argc, char **argv) {
   // point (unchanged, existing behavior for explicit "-g" too, not
   // something this default changes).
 #ifdef __APPLE__
+  // 2026-09-16追加、直接のユーザー提案("実行後SHELLへ戻る案、戻らずに
+  // 仕様だけ頂くってのはどうかな？^Jpusilic ...はlessのように現usilic
+  // から出ること無くusilic内で完結する。SHELLと違うのはPROGRAMを
+  // 発動した場所へ戻る点"): ^Jp(PROGRAM)経由でChildProcess::
+  // runInteractive()(新規fork/exec)された"usilic"は、
+  // tryHandoffToParentShell()自身のランデブー(親がProgramMode::run()
+  // のwaitpid()でブロック中のためポーリングできず、必ず2秒でタイム
+  // アウトしてfalseを返す――tryHandoffToParentShell()自身のコメント
+  // 参照)には失敗するが、USILIC環境変数自体は「ネストしている」こと
+  // の信頼できる証拠であり続ける。この場合だけmacOSの既定をGUIから
+  // CUIへ倒す――ProgramMode::run()自身の「フォアグラウンドで実行→
+  // 終了を待つ→呼び出し元の画面へそのまま戻る」という既存の挙動
+  // (lessと同じ)には一切手を付けない。SHELLへ注入する案とは異なり、
+  // このusilicは引き続き独立したfork/execのまま、既定の起動先だけが
+  // GUIからCUIへ変わる。
+  if (!forceCui && !forceGui && std::getenv("USILIC")) forceCui = true;
   if (!forceCui && !forceGui) forceGui = true;
 #else
   if (!forceCui && !forceGui) forceCui = true;
