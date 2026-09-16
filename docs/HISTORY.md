@@ -18062,3 +18062,20 @@ git管理下のdocs/HISTORY.mdは既に前回コミット(00d94c4)で正しい�
 make testは1154件中1153件通過(既存無関係のLOCATEフレークのみ、stashしたクリーンな状態でも同一失敗を再現し無関係と確認済み)。make usilic/make install/make app完了、~/Applications/usilic.appへも反映済みです。
 
 次は④(他モード監査)へ進みます。週次利用制限を踏まえ、1モードずつ検証が終わり次第、都度ご報告します。
+
+<`usilic -c^M`で起動→
+・src/debian-key...tar.xzの^[^Mで^G中断不能により別のターミナルでusilic^Mするとkillはされるものの~/からの開始となる（src/が正解。src/debian...を選択した時点でのDIR履歴への登録が必要？）。
+・src/skrw021.lzhを選択→`server.txt`で`.^Oa^M`→~/.usilic/saved/へ移動せずserver.txtも保存されていない。
+・src/fmd_0.9.32.2.7zを選択→戻り値が「.../g.../src/」（...が2カ所）→`FMD-LICENSE.txt`と`GPL-2.0.txt`を`.`で選択後`^Oa/tmp^M`→`^Jpusilic ^M`→-g起動のGUI画面へ移行。
+
+>実機報告3件を修正し、コミット完了しました(1c5cf70)。
+
+1. trailing3の二重省略記号(".../g.../src/"のように"..."が2箇所出る): ContentView::withTruncatedFields()がname自身の切り詰め予算を計算する際、trailing/rightWatermark/trailing2の3つは確保していたが、trailing3は一度も確保していなかった。ARCHIVEのように識別情報をname欄に置くようになったモード(name自身がしばしば長い)では、nameがこの関数で予算を使い切ってしまい、archive_mode.cpp側で既に切り詰め済みのtrailing3(truncatedTrailingPath()、先頭"..."+末尾16文字)に、withTruncatedTrailing3()側の予算計算がさらにmiddleEllipsisTruncate()を重ねてしまっていた。trailing3もkReservableFieldLength以下なら同様に確保するようにした(既存の3フィールドと全く同じ理屈)。他モード自身の意図的に長い(未切り詰めの)trailing3はこの上限を超えるため、この確保は効かず既存の挙動を変えない。
+
+2. DIR履歴フォールバック: SessionState::lastOpenNameは終了時にしか保存されないため、`kill -9`(起動ポリシーのkill機構、2秒応答無しへのフォールバック)で終了したセッションの後は常に空のまま――このケースでは呼び出し元シェルの起動時cwd(直前セッションの在籍先とは無関係なことが多い)へ単純に落ちていた。RecentDirectoryリング(訪問の度にライブ書き込みされ、kill -9でも失われない)の直近訪問先を、lastOpenNameが空の場合のfallbackDirectoryより優先するようApplication::startResumingSession()を修正した。
+
+3. LZH(および現状未サポートのRpm/Deb/Bzip2)への^Oa展開が、何の説明も無く単にno-opしていた(buildArchiveExtractArgv()が空を返すケース)。"<dest>: No such directory"と同じ考え方で、対応していないアーカイブ種別であることをreportError()経由で明示するようにした(展開機能自体の追加は今回のスコープ外)。
+
+もう1件("^Jpでusilicを起動すると-g起動のGUI画面へ移行")は根本原因を特定しました――ProgramMode::run()はChildProcess::runInteractive()で新規fork/execするため、SHELLの生きたptyセッションを経由する場合と違いUSILIC環境変数も無く、pollShellHandoff()相当の非同期ランデブーの余地も無い(ProgramMode::run()自体がwaitpid()で同期的にブロックするため)。これが長らく「原因不明」のまま保留していたGUI混入バグの正体でした。ただし2026-09-10の直接のユーザー依頼(^Jpの"usilic"認識はProgramMode::run()を経由する既存の仕様として明示的にテスト化済み)と正面から矛盾する修正になるため、実装せずユーザーの判断を仰ぐことにしました。
+
+make testは1156件中1154件通過(既存無関係のactivatePrompt(COLUMNS計算)とLOCATEの2件の既知フレークのみ、単体再実行でいずれも通過確認済み)。make usilic/make install/make app完了、~/Applications/usilic.appへも反映済みです。
