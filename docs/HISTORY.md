@@ -17992,3 +17992,73 @@ CLAUDE.mdやIDEAS.mdへの追記は必要そうですか(「usilic起因では�
 
 今日はもう寝るんでログの反映をお願いしたい。初めてiTerm2でClaude中だが、コピペの欠落はやはり起きている（すぐ上）。
 HISTORY.md:3を踏まえて作業よろしく。ではまた明日。
+
+>docs/HISTORY.mdへの逐語追記とdocs/ideas/IDEAS.mdへのメモ追加、両方完了しました。
+
+- docs/HISTORY.md: 今日の週制限90%報告からATOK30/Terminal.appクラッシュ診断、今夜の締めの挨拶までを逐語で追記(2026-09-15の日付ブロック末尾)。
+- docs/ideas/IDEAS.md: 「マニュアルにIMEオフ推奨を明記する」という対応方針と、診断結果(ATOK30がTSM/IMKit経由のsetMarkedText:中にSIGBUSでクラッシュ、Terminal.appプロセス全体が巻き添え、usilic側では対処不能)、および全角小文字受付案を見送った経緯をまとめて記録。
+
+おやすみなさい。iTerm2でのコピペ欠落は明日、正本コピーとの差分を見て反映します。
+
+2026-09-16
+
+<差分の反映よろしく。
+
+>`src/HISTORY.diff`を精査し、反映・コミット完了しました(00d94c4)。
+
+内容を突き合わせた結果:
+
+- 差分の大半は想定内でした――今回の`src/HISTORY.diff`の相当部分(⑦⑧⑨のCUT再編・history競合対策・usilicrc FILE設定・K-23/K-24・SHELL handoff・起動ポリシー等)は、canon側(正本コピー)が逐語、docs側が技術的詳細を補う版という既存の役割分担どおりの差、または過去のセッションで既に判断・確定済みだった内容(30c3876のコミットメッセージ自身がそう明記していました)でした。
+- 正本コピー側(~/HISTORY.md)のコピペ欠損を1件多数箇所にわたって確認: 昨夜の私自身のATOK30診断の返信が、既知のパターン(文字の塊が消えてスペースに置換)で盛大に破損していました。これはdocs/HISTORY.md側(私がその場でEditツールで書いた分)が正しいので、docs側は無修正です。
+- docs/HISTORY.md側の実質的な欠落を3箇所発見・復元:
+  1. 「`usilic -c ~/.usilic/saved`で起動→^[sでカレントディレクトリが違う」バグ報告の直後、ユーザーの「それだとマズい。^O^Mでは...提案は取り消しでいい。他は続けて。」という1ターンがまるごと抜け落ちていました(復元済み)。
+  2. 「GUIウィンドウの件(②)は、まだ原因不明のままです。」の直後、`~/.usilic/usilicrc`のARCHIVE節26行目についての指摘パラグラフが抜けていました(復元済み)。
+  3. 今朝セッション冒頭の「`--continue`」への状況確認の返信(未完了タスク無しの報告)が、そもそも一度もdocs/HISTORY.mdに記録されていませんでした(追記済み)。
+
+これで今回の差分は反映完了なので`src/HISTORY.diff`は削除しました。
+
+<~/HISTORY.md:3の通り同ファイルの修正もよろしく。
+
+>`~/HISTORY.md`(正本コピー)側の修正も完了しました。
+
+- `<欠損は無し？`が誤って`>欠損は無し？`(発言者マークが逆)になっていたのを修正。
+- `>因を特定し、修正・検証・コミット完了しました(5640950)。`の「原」が抜けていたのを`原因を特定し...`に修正。
+- 昨夜のATOK30診断の返信一式(「「jでページ送り」時点では...」から「CLAUDE.mdやIDEAS.mdへの追記は必要そうですか」まで)が、文中の大きな塊が消えてスペースに置き換わる例の欠損パターンで広範囲に破損していたのを、docs/HISTORY.md側の正しい記録から丸ごと差し替えて修正。
+
+git管理下のdocs/HISTORY.mdは既に前回コミット(00d94c4)で正しい内容になっているので、こちらは無修正のままです。これで両ファイルとも今回の差分は反映完了です。
+
+<モードラインの戻り値が、実際は^Gによる戻り先となっていないモードがあるのでそれらを正したい。
+①　まずはARC。tarファイルの場合、^M/^O^M/^[^Mで選択した場合の画面表示が異なる。形としては、^[^Mは`as is`なのでいいとして前の二つは(tar)表示により対象がアーカイブファイルであることを明示すると同時に画面表示によってモードの種別を提示する。肝心のモード名ARCは（CP/MV/RM同様）、^Oaが押されて初めて表示、でいいかなと。つまり現状の
+「ARC」「01/14 TOP」「1765」「(tar)」「/Users/haa15030/git/usilic/src/utf8.tar」
+では^Gでutf8.tarに戻らないため②へ変更し
+②　「/Users/haa15030/...ic/src/utf8.tar」「01/14 TOP」「1765」「(tar)」「/Users/haa1503....t/usilic/src/」
+（または
+③　「/Users/haa15030/git/usilic/src/utf8.tar」「01/14 TOP」「1765」「(tar)」「...git/usilic/src/」）、
+~Oaで初めて下記とする。
+「ARC」　　　　　　　　　　　　　　　「...ic/src/utf8.tar」
+④　①　ようなケースに該当するモードが他にも無いか調べてほしい。なお週規制が今現在90％超なので全ての調査を終えてから報告、では恐らく中断となって結果も失われる（かもしれない）ので、対象モードの検証が終わった時点でモード名を報告して欲しい。中断以降については17日PM8時から継続ということで。
+⑤　②　および③　のいずれにするかの判断基準を調べてみて。
+⑥　^O^Mのモードラインではアーカイブファイルの整備は終わったがそれ以外では「00001/00026 TOP」「サイズ」「(stdin)」のままなので修正よろしく。
+⑦　src/debian-keyring_2015.03.04.tar.xzを^Mした場合の^Gによる中断を^O^M/^[^Mへも適用してほしい。
+以上よろしく。
+
+>モードラインの戻り値欄について、実装に入る前に①の設計を確認させてください。
+
+コードを確認したところ、`^M`(plain Enter)と`^Oa`は別物でした。`^M`でtarファイルを開くと、既存の(今回とは無関係な、以前から確立された)対話的ArchiveModeに入り、そのモードライン提供部が常にname="ARC"を表示する設計です。`^Oa`は「ARC展開」、Directory上でtarファイルを選択した状態、またはArchiveMode内でマーク済みエントリがある状態から展開先ディレクトリを尋ねるプロンプトを起動するコマンドで、対話的ArchiveModeへの入口ではありません。
+
+確認したいのは1点でした: `^M`で対話的にアーカイブ内を選択・降下できる画面(既存のArchiveMode)自体も、名前欄を"ARC"から外して「ファイルパス+(tar)バッジ」表示に変えたい、という理解で合っていますか?
+
+<表示元の情報が戻り値にある点が問題であってMANのように画面内に情報（USILIC（1）等）があれば問題ないんだがね。
+前者の理解で合ってる。実際の使用感で判断したい部分もあるので、それで進めてみて。
+
+>steeringスキルで`.steering/20260916-modeline-return-value-audit/`を作成し、①⑥⑦をフェーズ1として実装・検証・コミット完了しました(0cdcfae)。
+
+- archive_mode.cppのModeLineFieldsProviderを再設計: name="ARC"固定→アーカイブ自身のフルパス(識別情報、MANの"MAN: <page>"と同じ考え方)、trailing3=アーカイブ自身のフルパス→親ディレクトリ(returnFromArchive()が実際に^Gで着地する先)。"ARC"の文字列自体は^Oa(ARC展開)のプロンプト表示でのみ使われる仕組み(drawPromptLabel()/promptLabelText()経由)が既に別途正しく実装済みだったので無変更。
+- openSelectedEntryNoWrap()の^O^M(プレーンなtvfページャー)分岐も同じ考え方に揃え、setSearchOrigin()の第一引数をentry->name(短いファイル名)からフルパスへ変更。
+- ⑥: 非アーカイブの通常ファイル^O^Mにも同じsetSearchOrigin()/setPagerListingDirectory()を適用し、汎用の"(stdin)"表示にファイル名・所属ディレクトリを追加(バッジ自体の"(stdin)"はK-23固有のペース読み込み経路であることを示す技術的事実として残した)。
+- ⑤の判断基準調査: 既存の全ての常時表示モードライン(Directory/File/Man/Locate/Du)は本来name/trailing3を事前切り詰めせず生の値を渡す設計だが、doctestで実際に検証したところ、nameが長いフルパスになったことでContentView::withTruncatedTrailing3()の予算計算がしばしば4文字未満まで落ち込みtrailing3が丸ごと消える(2026-08-27に一度直した「戻り値=空白」症状の再発)ことが判明。CP/MV/DU等が戻り値表示に既に使っているtruncatedTrailingPath()(先頭"..."+末尾16文字)をtrailing3に明示的に適用することで解決した――結果としてnameは③寄り(未切り詰め)、trailing3はユーザー提示のどちらとも異なる「常時先頭省略+末尾固定長」という第三の形になった。
+- ⑦: openSelectedEntryNoWrap()のARCHIVE分岐が同期的なChildProcess::run()/runPipeline()呼び出しだった(debian-keyring...tar.xz等の巨大アーカイブで^G含め無反応になる原因)のを、^M分岐が既に持つ非同期+^G中断の仕組み(startArchiveLoadAsync()/awaitingArchiveLoad()/pollArchiveLoadCompletion())を再利用する形で、新設のstartArchivePagerLoadAsync()+finishArchiveLoadAsync()のarchiveLoadForPager_分岐を追加。専用の^G中断回帰テストは、既存のArchiveMode本体側の同機能(c400a43)自体も専用テストが無く実機確認のみだった前例に倣い、実機確認をお願いする形にした(configuration.setCommandForTest()がARCHIVE suffixテーブルの差し替えに対応していないため)。
+
+make testは1154件中1153件通過(既存無関係のLOCATEフレークのみ、stashしたクリーンな状態でも同一失敗を再現し無関係と確認済み)。make usilic/make install/make app完了、~/Applications/usilic.appへも反映済みです。
+
+次は④(他モード監査)へ進みます。週次利用制限を踏まえ、1モードずつ検証が終わり次第、都度ご報告します。
