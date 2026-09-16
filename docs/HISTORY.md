@@ -18079,3 +18079,26 @@ make testは1154件中1153件通過(既存無関係のLOCATEフレークのみ�
 もう1件("^Jpでusilicを起動すると-g起動のGUI画面へ移行")は根本原因を特定しました――ProgramMode::run()はChildProcess::runInteractive()で新規fork/execするため、SHELLの生きたptyセッションを経由する場合と違いUSILIC環境変数も無く、pollShellHandoff()相当の非同期ランデブーの余地も無い(ProgramMode::run()自体がwaitpid()で同期的にブロックするため)。これが長らく「原因不明」のまま保留していたGUI混入バグの正体でした。ただし2026-09-10の直接のユーザー依頼(^Jpの"usilic"認識はProgramMode::run()を経由する既存の仕様として明示的にテスト化済み)と正面から矛盾する修正になるため、実装せずユーザーの判断を仰ぐことにしました。
 
 make testは1156件中1154件通過(既存無関係のactivatePrompt(COLUMNS計算)とLOCATEの2件の既知フレークのみ、単体再実行でいずれも通過確認済み)。make usilic/make install/make app完了、~/Applications/usilic.appへも反映済みです。
+
+<3. LZH展開実装よろしく。
+ProgramMode経由が独立起動でなくなることの副作用は？　それによる。
+
+>LZH展開を実装・実機確認・コミット完了しました(9031fb4)。
+
+実機のLhasa(Homebrew v0.6.0)を引数無しで起動すると使い方が表示され、`lha [-]{lvtxep[q{num}][finv]}[w=<dir>] archive_file [file...]`という構文だと判明しました。x(パス保持展開)+f(確認無し上書き)+w=<dir>(展開先)を1トークンにまとめるLhasa自身の構文に合わせ、`lha xfw=<dest> <archive> [members...]`としました。実機のsrc/skrw021.lzhに対し、全体展開・特定メンバー(server.txt)指定の両方を直接実行して展開先へのファイル出現を確認済みです。メンバー名のglob文字扱いも実機確認しました(`"*.txt"`が複数エントリにマッチ→tar/unzipと同じfnmatch系のglobエンジンと判断)、escapeArchiveMemberPattern()をそのまま適用しています。
+
+自動テストについては、Lhasaにはアーカイブ作成コマンドが無く(実機の`lha`使用法にa/c相当の選択肢が無い)、既存のtar/zip/7z向けARC extractテストが前提とする「テストfixture内で実際にアーカイブを作成する」という手法が使えませんでした――RARが同じ理由でArchiveReaderレベルより上のテストを持たない、という既存の前例と同じ制約です。第三者の実バイナリ(src/skrw021.lzh)をテストfixtureとして恒久的にリポジトリへ持ち込むのもライセンス上の理由で避けました。make testは1156件中1155件通過(既存無関係のLOCATEフレークのみ)、make usilic/make install/make app完了、~/Applications/usilic.appへも反映済みです。
+
+ProgramMode(^Jp)経由の副作用について:
+
+現状(ChildProcess::runInteractive()での独立fork/exec)は、`less`/`vi`等の一般的なPROGRAMエントリと全く同じ「フォアグラウンドで実行→終了を待つ→元のDirectory/File画面へそのまま戻る」という一時的な体験です。usilicもこの一般的な仕組みに乗っているだけなので、実行中は画面を明け渡し、終了(=このケースでは新しいusilicを閉じる)すると、呼び出し元の`^Jp`を押した時点の画面(Directory一覧の同じ位置等)へ戻ります。
+
+これをSHELLへの注入(ensureShellActive()+shell_.commandLine().setText()/submitLine())に変えると、動作モデル自体が変わります:
+- `^Jp`から`usilic`と打った瞬間、画面はDirectory/File(呼び出し元)ではなく、生きたSHELL画面へ切り替わります(currentMode_がShellになる)。
+- タイプしたusilicはSHELLのpty経由で起動されるので、USILIC環境変数を正しく検出でき、今回のGUI混入は解消します。
+- ただし、そのusilicを終了しても、戻る先は「^Jpを押す前のDirectory/File画面」ではなく「SHELLのプロンプト」になります――そこから元の画面に戻るには、SHELLモードを抜ける操作(^Gや^[s相当)がもう一段必要です。
+- SHELLがまだ起動していなければ、この操作をきっかけに新規にSHELLセッションが立ち上がります(以後そのセッションは通常のSHELLと同じく残り続けます)――「ちょっと実行してすぐ戻る」という^Jp本来の使用感とは異なる、より「腰を据えた」遷移になります。
+- `usilic`以外の全てのPROGRAMエントリ(less/vi/echo等)は無変更です――この特殊扱いは文字通り"usilic"という語だけに限定されます。
+- コマンド履歴への記録先(RingCategory::ShellCommand)は変わりません。
+
+要するに、「^Jpで別プロセスとしてサッと起動→終わったら元の画面」という現在の性質と引き換えに、「SHELL経由で正しくハンドオフされる代わりに、終了後はSHELL画面に留まる」という性質になります。技術的には、これ以外にProgramMode::run()自体を非同期化する(Shellと同じポーリング方式へ作り替える)という選択肢もありますが、こちらは^Jp全体(less/vi等も含む)に影響する大掛かりな設計変更になるため、"usilic"だけの特殊扱いより明らかに割に合わないと考えています。
