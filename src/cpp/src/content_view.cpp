@@ -1610,6 +1610,19 @@ ContentView::ModeLineFields ContentView::withTruncatedFields(ModeLineFields fiel
   if (!fields.trailing2.empty() && static_cast<int>(fields.trailing2.size()) <= kReservableFieldLength) {
     reserved += 1 + static_cast<int>(fields.trailing2.size());
   }
+  // trailing3(2026-09-16追加、実機報告"戻り値が「.../g.../src/」
+  // （...が2カ所）"): trailing/rightWatermark/trailing2と全く同じ
+  // 理由でここでも確保する。ARCHIVEの新しいtrailing3(archive_mode.cpp
+  // 自身のtruncatedTrailingPath()参照、常に19文字以下)のような短い
+  // 値は、この確保が無いとnameが先にこの関数で育ち切ってしまい、
+  // withTruncatedTrailing3()自身の下流の予算計算に一切余地を残さず、
+  // 既に切り詰め済みのtrailing3を「二重に」middleEllipsisTruncate()
+  // してしまっていた。他モード自身の(意図的に長い、untruncatedな)
+  // trailing3はkReservableFieldLengthを超えるので、この確保は効かず、
+  // 既存の挙動を変えない。
+  if (!fields.trailing3.empty() && static_cast<int>(fields.trailing3.size()) <= kReservableFieldLength) {
+    reserved += 1 + static_cast<int>(fields.trailing3.size());
+  }
   int positionBudget = cols - static_cast<int>(positionText.size()) - reserved;
   if (positionBudget < 0) {
     // trailing/rightWatermarkも確保してなお余地が足りない――「元々

@@ -1716,7 +1716,31 @@ bool Application::startResumingSession(const std::string &lastOpenName, const st
   }
   // lastOpenName自体が実在しない(mv/rm等)場合でも、その在籍していた
   // ディレクトリ(既に無ければ最も近い実在する祖先)で起動する。
-  return start(nearestExistingAncestorDirectory(lastOpenName, fallbackDirectory), consultHistory);
+  //
+  // 2026-09-16追加、実機報告("src/debian-key...tar.xzの^[^Mで^G中断
+  // 不能により別のターミナルでusilic^Mするとkillはされるものの~/
+  // からの開始となる（src/が正解。...DIR履歴への登録が必要？）"):
+  // lastOpenNameはSessionState::lastOpenNameとして「終了時にしか」
+  // 保存されない(main.cpp自身のconsultHistoryOnStart分岐のコメント
+  // 参照)ため、`kill -9`(2秒待っても応答無しの旧プロセスに対する
+  // 起動ポリシーのkill機構自身のフォールバック)で終了したセッション
+  // の後は常に空のままになる。その場合、これまでは無条件に
+  // fallbackDirectory(呼び出し元シェルの起動時cwd――今回のように別
+  // ターミナルから起動すれば、直前のセッションの在籍先とは何の関係
+  // も無い)へ落ちていた。一方DirectoryMode::enterDirectory()自身の
+  // history_.pushRecent(RingCategory::RecentDirectory, ...)は、
+  // History::setOnRingPushed()経由で訪問の「たびに」ライブ書き込み
+  // される(kill -9で失われない)ので、lastOpenNameが空の場合は、
+  // これの直近訪問先(実在すれば)をfallbackDirectory自体より優先する。
+  std::string fallback = fallbackDirectory;
+  if (lastOpenName.empty()) {
+    const auto &recentDirs = history_.recentEntries(RingCategory::RecentDirectory);
+    if (!recentDirs.empty()) {
+      std::error_code existsEc;
+      if (std::filesystem::exists(recentDirs.back(), existsEc) && !existsEc) fallback = recentDirs.back();
+    }
+  }
+  return start(nearestExistingAncestorDirectory(lastOpenName, fallback), consultHistory);
 }
 
 bool Application::startPagerFileList(const std::vector<std::string> &paths) {
@@ -11507,6 +11531,18 @@ bool Application::executeArchiveExtract(const std::string &destination) {
 
   std::vector<std::string> argv = buildArchiveExtractArgv(archivePath, kind, members, resolvedDestination);
   if (argv.empty()) {
+    // 2026-09-16追加、実機報告("src/skrw021.lzhを選択→...^Oa^M→
+    // ~/.usilic/saved/へ移動せずserver.txtも保存されていない"):
+    // buildArchiveExtractArgv()自身の宣言コメントの通りLha/Rpm/Deb/
+    // Bzip2はこの最初のスライスでは未サポートで空を返すが、以前は
+    // ここで何の説明も無く単にno-opしていた――「何も起きなかった」
+    // ように見え、宛先が間違っているのか操作自体が無効なのか区別が
+    // 付かなかった。"<dest>: No such directory"と同じ考え方
+    // (reportError()経由の下線付きモードラインメッセージ)で、対応
+    // していないアーカイブ種別であることを明示する。
+    std::string message = "Extract not supported for this archive type";
+    if (currentMode_ == ApplicationMode::Archive) archiveMode_.reportError(message);
+    else directoryMode_.reportError(message);
     activeView().redraw();
     return false;
   }

@@ -437,7 +437,13 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a real .tar 
   std::string text = app.activeContentView().modeLineText();
   CHECK(text.find("archive.tar") != std::string::npos);
   CHECK(text.find("(tar)") != std::string::npos);
-  CHECK(text.find(root.string()) != std::string::npos);
+  // 2026-09-16修正: trailing3(所属ディレクトリ)は今やtruncatedTrailingPath()
+  // (先頭"..."+末尾16文字、archive_mode.cpp自身の同種の修正コメント参照)
+  // で切り詰められるので、生のroot.string()そのままではなく末尾一致で
+  // 確認する。
+  std::string directory = root.string() + "/";
+  std::string truncatedDirectory = directory.size() > 16 ? "..." + directory.substr(directory.size() - 16) : directory;
+  CHECK(text.find(truncatedDirectory) != std::string::npos);
   CHECK(text.find("(stdin)") == std::string::npos);
 }
 
@@ -497,6 +503,35 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap)/(ReadFileRaw): outside
 
   CHECK(app.handleCommand(Command::ReadFileNoWrap));
   CHECK(app.currentMode() == ApplicationMode::CutContent);  // same as a plain Enter on a CUT segment
+}
+
+// 2026-09-16追加、実機報告("src/debian-key...tar.xzの^[^Mで^G中断
+// 不能により別のターミナルでusilic^Mするとkillはされるものの~/から
+// の開始となる（src/が正解。src/debian...を選択した時点でのDIR履歴
+// への登録が必要？）"): SessionState::lastOpenNameは終了時にしか
+// 保存されないので、kill -9(強制終了)されたセッションの後は常に
+// 空のまま――このケースでは、呼び出し元シェルの起動時cwd
+// (fallbackDirectory、直前のセッションの在籍先とは無関係なことが
+// 多い)へ単純に落ちるのではなく、ライブ書き込みされている
+// RecentDirectoryリングの直近訪問先を優先するようApplication::
+// startResumingSession()を修正した(application.cpp自身のコメント
+// 参照)。
+TEST_CASE_FIXTURE(Fixture, "startResumingSession: an empty lastOpenName (a kill -9'd previous session never "
+                           "reached its own exit-time save) falls back to the RecentDirectory ring's most "
+                           "recent live-written entry, NOT the caller's unrelated launch-time cwd") {
+  std::string subdir = (root / "subdir").string() + "/";
+  history.pushRecent(RingCategory::RecentDirectory, subdir);
+
+  std::string unrelatedFallback = (root / "arcsrc").string();
+  REQUIRE(app.startResumingSession("", unrelatedFallback, /*consultHistory=*/true));
+  CHECK(app.directoryMode().currentDirectory() == subdir);
+}
+
+TEST_CASE_FIXTURE(Fixture, "startResumingSession: with no RecentDirectory entry either, an empty lastOpenName "
+                           "still falls back to the caller-supplied fallbackDirectory as before") {
+  std::string unrelatedFallback = (root / "arcsrc").string();
+  REQUIRE(app.startResumingSession("", unrelatedFallback, /*consultHistory=*/true));
+  CHECK(app.directoryMode().currentDirectory() == unrelatedFallback + "/");
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) is a no-op while already in File mode") {
