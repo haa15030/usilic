@@ -4274,39 +4274,23 @@ bool Application::openSelectedEntryNoWrap() {
   // unlinkの無名一時fd経路を公開したもの、file_mode.hpp自身の宣言
   // コメント参照)へメモリ上の内容を直接渡せば、実ファイルを一切
   // 経由せずに済む。
+  // 2026-09-16修正、直接のユーザー依頼("debian-keyring...tar.xzを^M
+  // した場合の^Gによる中断を^O^M/^[^Mへも適用してほしい"):
+  // 以前はここでChildProcess::run()/runPipeline()を同期的に呼んで
+  // おり、大きな(圧縮)アーカイブでは一覧構築が終わるまで^G含め一切の
+  // 入力に反応できなかった。openSelectedEntry()自身のARCHIVE分岐
+  // (^M、startArchiveLoadAsync()自身のコメント参照)と全く同じ非同期
+  // +^G中断の形(startArchivePagerLoadAsync()/awaitingArchiveLoad()/
+  // pollArchiveLoadCompletion()/finishArchiveLoadAsync()を共有)へ
+  // 切り替えた――setSearchOrigin()/setPagerListingDirectory()呼び出し
+  // 自体はfinishArchiveLoadAsync()自身のarchiveLoadForPager_分岐へ
+  // 移した。
   ArchiveKind kind = ArchiveKind::None;
-  auto command = configuration_.programForSuffix(path, &kind);
-  if (command && kind != ArchiveKind::None) {
-    ChildProcess::Options options;
-    options.forceUtf8CTypeForListing = true;
-    ChildProcess::Result result;
-    if (command->pipedFromArgv) {
-      std::vector<std::string> firstStage = *command->pipedFromArgv;
-      firstStage.push_back(path);
-      result = ChildProcess::runPipeline(firstStage, command->argv, options);
-    } else {
-      std::vector<std::string> argv = command->argv;
-      argv.push_back(path);
-      result = ChildProcess::run(argv, options);
-    }
-    if (!result.ok) return false;
-    if (!fileMode_.loadContentAsPipe(result.output)) return false;
-    // 2026-09-21追加、直接のユーザー指摘("モードライン不良...正しく
-    // は「tcb-1.5b.linux.tgz」「(tar)」「/Users/haa15030/」"):
-    // loadContentAsPipe()単独だと(通常ファイルの^O^Mと区別が付かず)
-    // 汎用の"(stdin)"表示のままになってしまう――ArchiveMode::
-    // finishLoadFromOutput()自身のarchiveCommand_(command->argv.front()、
-    // 例えば.tar.gzでも最終段のtarを指す)と全く同じ導出でバッジを
-    // 作り、setSearchOrigin()(FileMode::loadContentAsPipe()自身の
-    // ModeLineFieldsProvider、pagerMode_分岐のコメント参照)経由で
-    // name/trailing2を上書きし、setPagerListingDirectory()経由で
-    // trailing3(所属ディレクトリ)も設定する。
-    std::string badge = command->argv.empty() ? "" : "(" + command->argv.front() + ")";
-    fileMode_.setSearchOrigin(entry->name, badge);
-    fileMode_.setPagerListingDirectory(directory);
-    currentMode_ = ApplicationMode::File;
-    fileReturnMode_ = ApplicationMode::Directory;
-    return true;
+  if (configuration_.programForSuffix(path, &kind) && kind != ArchiveKind::None) {
+    drawPromptLabel(PromptKind::ArchiveLoad, /*positionText=*/"", "Loading archive...");
+    display_.flush();
+    if (startArchivePagerLoadAsync(path, directory)) return true;  // 今は待機中――awaitingArchiveLoad()参照
+    return false;
   }
 
   // 2026-09-15修正、直接のユーザー指摘("^O^Mで(stdin)形式になって
@@ -4315,6 +4299,22 @@ bool Application::openSelectedEntryNoWrap() {
   // コメント参照、legacy自身のM_fp(fp->cr=2)がm_pipe()経由のパイプ
   // 越しに読ませる分岐に対応する。
   if (!fileMode_.loadFileAsPipe(path)) return false;
+  // 2026-09-16追加、直接のユーザー指摘("^O^Mの(stdin)モードラインも
+  // アーカイブ同様に整備してほしい"): loadFileAsPipe()自身が内部で
+  // 呼ぶsetSearchOrigin("", "(stdin)")(loadContentAsPipe()自身の
+  // コメント参照)は、ARCHIVE分岐と同じ理由でファイル名/所属ディレ
+  // クトリを一切示さない。"(stdin)"バッジ自体(このK-23固有のペース
+  // 読み込み経路であることを示す技術的な事実)は引き続き正しいので
+  // 残しつつ、name欄へ実際のファイルのフルパスを、trailing3へ所属
+  // ディレクトリを追加で上書きする(ARCHIVE分岐のsetSearchOrigin(path,
+  // badge)+setPagerListingDirectory(directory)呼び出しと全く同じ形)。
+  // truncatedTrailingPath()(2026-09-16追加、archive_mode.cpp自身の
+  // 同種の修正コメント参照): nameが今や短い固定文字列ではなくpath
+  // (フルパス)になったことで、事前に切り詰めないとContentView自身の
+  // withTruncatedTrailing3()の予算計算がしばしば4文字未満まで落ち込み
+  // trailing3が丸ごと消え得る。
+  fileMode_.setSearchOrigin(path, "(stdin)");
+  fileMode_.setPagerListingDirectory(truncatedTrailingPath(directory));
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;
   return true;
@@ -7606,6 +7606,40 @@ bool Application::startArchiveLoadAsync(const std::string &path) {
   archiveLoadOutputFd_ = capture.fd;
   archiveLoadPendingOutput_.clear();
   archiveLoadPendingPath_ = path;
+  archiveLoadForPager_ = false;
+  return true;  // 今は待機中――awaitingArchiveLoad()/pollArchiveLoadCompletion()参照
+}
+
+// startArchiveLoadAsync()自身の宣言コメント参照。openSelectedEntryNoWrap()
+// (^O^M)向けの同一の非同期起動――archiveLoadForPager_/
+// archiveLoadPendingDirectory_/archiveLoadPendingBadge_を追加で立てる
+// 点だけが違う(finishArchiveLoadAsync()自身の分岐参照)。
+bool Application::startArchivePagerLoadAsync(const std::string &path, const std::string &directory) {
+  ArchiveKind kind = ArchiveKind::None;
+  auto command = configuration_.programForSuffix(path, &kind);
+  if (!command || kind == ArchiveKind::None) return false;
+
+  ChildProcess::Options options;
+  options.forceUtf8CTypeForListing = true;
+  std::vector<std::string> argv;
+  if (command->pipedFromArgv) {
+    std::vector<std::string> firstStage = *command->pipedFromArgv;
+    firstStage.push_back(path);
+    std::string shellLine = shellQuoteArgv(firstStage) + " | " + shellQuoteArgv(command->argv);
+    argv = {"/bin/sh", "-c", shellLine};
+  } else {
+    argv = command->argv;
+    argv.push_back(path);
+  }
+  ChildProcess::AsyncCapture capture = ChildProcess::startCapturing(argv, options);
+  if (capture.pid <= 0) return false;
+  archiveLoadPid_ = capture.pid;
+  archiveLoadOutputFd_ = capture.fd;
+  archiveLoadPendingOutput_.clear();
+  archiveLoadPendingPath_ = path;
+  archiveLoadPendingDirectory_ = directory;
+  archiveLoadPendingBadge_ = command->argv.empty() ? "" : "(" + command->argv.front() + ")";
+  archiveLoadForPager_ = true;
   return true;  // 今は待機中――awaitingArchiveLoad()/pollArchiveLoadCompletion()参照
 }
 
@@ -7616,7 +7650,25 @@ bool Application::startArchiveLoadAsync(const std::string &path) {
 // openSelectedEntry()自身の(以前は同期的なloadArchive()呼び出しの
 // 直後にあった)後始末(archiveParentStack_のクリア+RecentFileへの
 // pushRecent())もここへ移した。
+//
+// 2026-09-16追加: archiveLoadForPager_(startArchivePagerLoadAsync()自身
+// のコメント参照)が立っている場合は、openSelectedEntryNoWrap()自身の
+// ARCHIVE分岐が同期的に行っていたのと同じ着地(FileMode::
+// loadContentAsPipe()+setSearchOrigin()+setPagerListingDirectory())を
+// 代わりに行う――ArchiveModeへは一切入らない(対話的な選択不可の
+// プレーンなtvfページャー表示のまま)。
 void Application::finishArchiveLoadAsync() {
+  if (archiveLoadForPager_) {
+    archiveLoadForPager_ = false;
+    if (fileMode_.loadContentAsPipe(archiveLoadPendingOutput_)) {
+      fileMode_.setSearchOrigin(archiveLoadPendingPath_, archiveLoadPendingBadge_);
+      fileMode_.setPagerListingDirectory(truncatedTrailingPath(archiveLoadPendingDirectory_));
+      currentMode_ = ApplicationMode::File;
+      fileReturnMode_ = ApplicationMode::Directory;
+    }
+    activeView().redraw();
+    return;
+  }
   if (archiveMode_.finishLoadFromOutput(archiveLoadPendingPath_, archiveLoadPendingOutput_)) {
     archiveParentStack_.clear();  // 全く新しい最上位のアーカイブ――以前のネストした降下の連鎖はもう当てはまらない
     currentMode_ = ApplicationMode::Archive;

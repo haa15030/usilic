@@ -380,6 +380,9 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a real .tar 
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
   REQUIRE(app.handleCommand(Command::ReadFileNoWrap));
+  // 2026-09-16修正、^Gによる中断対応(このテストファイル自身のコメント
+  // 参照): ARCHIVE分岐が非同期化されたため、着地するまでポーリングする。
+  waitForArchiveLoad(app);
   CHECK(app.currentMode() == ApplicationMode::File);
   // loadContentAsPipe()自身のloadStream()呼び出しは初回わざと1行だけ
   // しか読まない("(stdin)"系ページングの既定、他の全てのensureLoadedThrough
@@ -430,6 +433,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap) (^O^M) on a real .tar 
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
   REQUIRE(app.handleCommand(Command::ReadFileNoWrap));
+  waitForArchiveLoad(app);
   std::string text = app.activeContentView().modeLineText();
   CHECK(text.find("archive.tar") != std::string::npos);
   CHECK(text.find("(tar)") != std::string::npos);
@@ -4215,6 +4219,7 @@ TEST_CASE_FIXTURE(Fixture, "ReadFileNoWrap (^O^M) on an archive shows the raw li
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
   REQUIRE(app.handleCommand(Command::ReadFileNoWrap));
+  waitForArchiveLoad(app);
   CHECK(app.currentMode() == ApplicationMode::File);
   app.fileMode().ensureLoadedThrough(1000, /*bypassPacing=*/true);
   bool sawEntry = false;

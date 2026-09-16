@@ -2053,6 +2053,21 @@ class Application {
   // 必要がある――runDuOnCurrentFolder()相当のこの起動元はopenSelectedEntry()
   // 1箇所だけなので、DU/LOCATEのような戻り先スタックの計算は不要。
   bool startArchiveLoadAsync(const std::string &path);
+  // 2026-09-16追加、直接のユーザー依頼("debian-keyring...tar.xzを^Mし
+  // た場合の^Gによる中断を^O^M/^[^Mへも適用してほしい"):
+  // openSelectedEntryNoWrap()自身のARCHIVE分岐(^O^M、対話的Archive
+  // Modeではなく選択不可のプレーンなtvfページャー表示)向けの、
+  // startArchiveLoadAsync()と全く同じ非同期起動――ただし完了後の着地
+  // 先がArchiveMode(finishArchiveLoadAsync()の既定の分岐)ではなく
+  // FileMode自身のpager表示になるため、archiveLoadForPager_で分岐する。
+  // 新しい非同期の仕組み一式(pid/fd/バッファ/^Gゲート)をまるごと複製
+  // するのではなく、既存のarchiveLoadPid_一式・awaitingArchiveLoad()・
+  // pollArchiveLoadCompletion()・dispatchByte()自身の^Gゲートをそのまま
+  // 共有し、finishArchiveLoadAsync()内の着地先だけを条件分岐させる。
+  bool startArchivePagerLoadAsync(const std::string &path, const std::string &directory);
+  bool archiveLoadForPager_ = false;
+  std::string archiveLoadPendingDirectory_;
+  std::string archiveLoadPendingBadge_;
   void finishArchiveLoadAsync();
   bool startShell();
   // startShell()とK-61/K-62/K-63/K-64で共有される: startShell()

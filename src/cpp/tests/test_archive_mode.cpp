@@ -116,29 +116,38 @@ TEST_CASE_FIXTURE(Fixture, "loadArchive: a missing archive file fails cleanly") 
   CHECK_FALSE(mode.loadArchive(path("does-not-exist.tar")));
 }
 
-// 2026-08-19 REDESIGN, a direct user correction: "旧ARCのモードラインは
-// お手本じゃなく、正しくは「ARC」「01/14 TOP」「1774」「(tar)」
-// 「/Users/haa15030/git/usilic/src/utf8.tar」でよろしく" -- name is now
-// the fixed literal "ARC" (not the archive's own basename, which this
-// test originally asserted), trailing2 is a "(<command>)" badge (e.g.
-// "(tar)").
-//
-// 2026-08-19 SAME-DAY follow-up (report =dh: "「(tar)」と「/Users/.../
-// utf8.tar」の間に空白が無い"): the archive's own full path moved from
-// rightWatermark (non-highlighted, an earlier attempt at this fix) to
-// trailing3 (see its own comment) -- a genuinely separate, independently
-// highlighted field with its own real plain-mode gap before it, instead
-// of being glued onto trailing2 as one string whose embedded space
-// rendered invisibly inside a single reverse-video run.
-TEST_CASE_FIXTURE(Fixture, "mode-line fields: \"ARC\" name, \"(tar)\" command badge, and the archive's own "
-                           "full path as a genuinely separate, gapped field (not glued onto the badge)") {
+// 2026-09-16 REDESIGN, a direct user report ("表示元の情報が戻り値に
+// ある点が問題であってMANのように画面内に情報があれば問題ない"): the
+// 2026-08-19 design below (name="ARC" fixed literal, trailing3=the
+// archive's own full path) put "which archive is this" identification
+// into trailing3 -- but trailing3 is supposed to mean "where ^G actually
+// lands", and returnFromArchive() actually lands on the archive's
+// PARENT DIRECTORY, not the archive file itself. name now carries the
+// archive's own full path (the identification, like MAN's "MAN: <page>"
+// convention), and trailing3 now carries the parent directory (the real
+// ^G destination), truncated ("..."+last 16 chars, the same convention
+// drawPromptLabel() already uses for CP/MV/DU's own return-value
+// display) -- a doctest run against this very fixture caught trailing3
+// vanishing entirely otherwise: with name now the archive's own long
+// full path (instead of the short "ARC" literal), the shared
+// withTruncatedTrailing3() budget calculation (which subtracts name's
+// length first) routinely fell below its own 4-char cutoff, reproducing
+// the exact "戻り値=空白" regression 2026-08-27 had already fixed once.
+// The literal "ARC" name only appears during the ^Oa (ARC extract)
+// prompt itself (drawPromptLabel()/promptLabelText(), unrelated to this
+// provider -- matching CP/MV/RM's own prompt-only naming).
+TEST_CASE_FIXTURE(Fixture, "mode-line fields: the archive's own full path as name, \"(tar)\" command badge, "
+                           "and the archive's parent directory (the real ^G destination, tail-truncated) as "
+                           "a genuinely separate, gapped trailing3 field (not glued onto the badge)") {
   REQUIRE(mode.loadArchive(path("archive.tar")));
   // modeLineText() composes name/position/trailing/trailing2/trailing3
   // (see its own comment).
+  std::string parentDirectory = root.string() + "/";
+  std::string truncatedParent = "..." + parentDirectory.substr(parentDirectory.size() - 16);
   std::string text = view.modeLineText();
-  CHECK(text.rfind("ARC ", 0) == 0);
+  CHECK(text.rfind(path("archive.tar"), 0) == 0);  // name starts with the archive's own full path
   CHECK(text.find("(tar)") != std::string::npos);
-  CHECK(text.find(path("archive.tar")) != std::string::npos);
+  CHECK(text.find(truncatedParent) != std::string::npos);
 
   view.setViewport(0, 23);
   view.redraw();
@@ -146,8 +155,9 @@ TEST_CASE_FIXTURE(Fixture, "mode-line fields: \"ARC\" name, \"(tar)\" command ba
   std::size_t badgeEnd = row.find("(tar)") + 5;  // just past the ')'
   CHECK(display.standoutAt(23, static_cast<int>(badgeEnd) - 1) == true);   // ')' of the badge itself
   CHECK(display.standoutAt(23, static_cast<int>(badgeEnd)) == false);      // the real gap this fix adds
-  CHECK(row.find(path("archive.tar")) != std::string::npos);
-  CHECK(display.standoutAt(23, static_cast<int>(row.find(path("archive.tar")))) == true);  // path itself, highlighted
+  std::size_t trailing3Pos = row.find(truncatedParent);
+  CHECK(trailing3Pos != std::string::npos);
+  CHECK(display.standoutAt(23, static_cast<int>(trailing3Pos)) == true);  // directory itself, highlighted
 }
 
 TEST_CASE_FIXTURE(Fixture, "mode-line fields: no name field before any archive has been loaded") {

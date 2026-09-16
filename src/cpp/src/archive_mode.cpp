@@ -1,6 +1,7 @@
 #include "archive_mode.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 
@@ -32,6 +33,18 @@ std::unique_ptr<ArchiveReader> readerFor(ArchiveKind kind) {
   return nullptr;
 }
 
+// application.cpp自身のtruncatedTrailingPath()と全く同じ慣習(先頭
+// "..."+末尾16文字)の複製――2026-09-16追加、下のModeLineFieldsProvider
+// 自身のコメント参照。application.cppのものはその翻訳単位のみの
+// 匿名名前空間で定義されており、共有ヘッダには出ていないため、
+// この小さな(4行の)ヘルパーはこのプロジェクトの既存の慣習(小さな
+// 複製を、新たな結合を導入するより優先する)通りここでも複製する。
+constexpr int kTrailingPathTailChars = 16;
+std::string truncatedTrailingPath(const std::string &path) {
+  if (static_cast<int>(path.size()) <= kTrailingPathTailChars) return path;
+  return "..." + path.substr(path.size() - kTrailingPathTailChars);
+}
+
 }  // namespace
 
 ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuration &configuration)
@@ -48,12 +61,20 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
   // ArchiveModeのマーキングサポートが最初に移植された時の見落とし
   // である。
   view_.setMarkedRowUsesUnderline(true);
-  // モードラインフィールド(2026-08-19の再設計、直接のユーザー訂正:
-  // "旧ARCのモードラインはお手本じゃなく、正しくは「ARC」「01/14
-  // TOP」「1774」「(tar)」「/Users/haa15030/git/usilic/src/utf8.tar」
-  // でよろしく"): `name`は固定リテラルの"ARC"(Directory/File自身の
-  // "DIR"/"FILE"スタイルのモード名慣習に合わせている。以前ここでの
-  // バージョンが表示していたアーカイブ自身のベース名では「ない」)
+  // モードラインフィールド(2026-09-16の再設計、直接のユーザー指摘:
+  // "表示元の情報が戻り値にある点が問題であってMANのように画面内に
+  // 情報があれば問題ない"): 2026-08-19に確立した「name="ARC"固定+
+  // trailing3=currentArchive_(アーカイブ自身のフルパス)」という形は、
+  // trailing3(戻り値欄、実際に^Gを押した時の遷移先を示すべきフィール
+  // ド)へ「今どのアーカイブを見ているか」という識別情報を押し込んで
+  // いた――しかしreturnFromArchive()が実際に^Gで戻る先はアーカイブ
+  // ファイル自身ではなくその「親ディレクトリ」であり、両者は食い違って
+  // いた。MAN("MAN: <page>"のように画面内で識別情報を示す)と同じ考え
+  // 方で、識別情報(アーカイブのフルパス)はname欄へ、trailing3には
+  // 本当の戻り先(親ディレクトリ)を置く形に改めた。"ARC"という固定
+  // 文字列自体は、CP/MV/RM同様、実際に^Oa(ARC展開)のプロンプトが
+  // 発動した時にだけ表示される(drawPromptLabel()/promptLabelText()
+  // 経由、既に別途正しく実装済み――このコンストラクタの変更対象外)。
   // ――trailingは依然として一覧自身の合計バイト数(2026-08-15の追加、
   // 変更なし)。
   //
@@ -109,10 +130,24 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
   view_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (currentArchive_.empty()) return {};
     std::string badge = archiveCommand_.empty() ? "" : "(" + archiveCommand_ + ")";
-    ContentView::ModeLineFields fields{"ARC", std::to_string(view_.totalByteCount()),
+    // 親ディレクトリ(2026-09-16追加、このコンストラクタ自身の直前の
+    // コメント参照): returnFromArchive()が実際に^Gで着地する先。
+    // 2026-09-16の実測訂正: 当初はDirectory/File/Man/Locate/Du同様
+    // 未切り詰めのまま渡す設計にしたが、doctestで実際に踏んだ通り、
+    // nameが今やARCHIVE自身のフルパス(以前の固定"ARC"よりずっと長い)
+    // になったことで、withTruncatedTrailing3()自身の予算計算(name分を
+    // 差し引く)がしばしば4文字未満まで落ち込み、trailing3が丸ごと
+    // 消える(2026-08-27に一度直したのと同じ「戻り値=空白」症状)ことが
+    // 判明した。CP/MV/DU等のdrawPromptLabel()自身の戻り値表示が既に
+    // 使っているtruncatedTrailingPath()(先頭"..."+末尾16文字)と
+    // 同じ慣習で、name側の長さに関わらずtrailing3が常に何かしら
+    // 意味のある内容を保つようにする。
+    std::string parentDirectory = std::filesystem::path(currentArchive_).parent_path().string();
+    if (!parentDirectory.empty() && parentDirectory.back() != '/') parentDirectory += '/';
+    ContentView::ModeLineFields fields{currentArchive_, std::to_string(view_.totalByteCount()),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/badge};
-    fields.trailing3 = currentArchive_;
+    fields.trailing3 = truncatedTrailingPath(parentDirectory);
     // showEditError_(2026-08-26、reportError()自身のコメント参照):
     // DirectoryMode自身のプロバイダがCP/MV/RMの「Permission denied」/
     // 「Invalid mode」向けに確立した(directory_mode.cpp)、「name
@@ -127,9 +162,14 @@ ArchiveMode::ArchiveMode(ContentView &view, History &history, const Configuratio
     } else if (view_.grepInPlaceActive() || view_.grepNoMatchActive()) {
       // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
       // 反映してほしい"): DirectoryMode等自身の同じ分岐のコメント参照。
-      // trailing3は元々currentArchive_(検索元)なので変更不要。
+      // 2026-09-16修正: 外側の既定がparentDirectoryへ変わったため、
+      // ここでは明示的にcurrentArchive_(検索元そのもの)へ戻す――
+      // 検索中に見せるべきは「^Gの着地先」ではなく「今何を検索して
+      // いるか」であり、これはArchiveMode自身の(新しい)name欄が示す
+      // のと同じ識別情報。
       fields.name = view_.grepInPlaceLabel();
       fields.trailing2 = view_.grepInPlaceProgramBadge();
+      fields.trailing3 = truncatedTrailingPath(currentArchive_);
     }
     return fields;
   });
