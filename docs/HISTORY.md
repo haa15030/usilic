@@ -18157,3 +18157,20 @@ doctestで、この経路(shouldAbortコールバック付き)が既存の一括
 あわせて、いただいた`src/HISTORY.diff`(2件目)も確認しました。中身は既知のパターンのみでした――正本コピー側で、私自身の直近の返信の複数箇所が例のスペース置換で破損していたのと、日付見出しの"2026-09-16"が"2026−09-16"(ハイフンが全角マイナスのような別のUnicode文字に化けている)という1文字の文字化けです。docs/HISTORY.md側は元から正しいため無修正、diffは削除しました。
 
 make testは1157件中1156件通過(既存無関係のLOCATEフレークのみ)、make usilic/make install/make app完了、~/Applications/usilic.appへも反映済みです。
+
+<quotaって何？
+
+>「quota」は英語で「割り当て量・上限」という意味の単語で、ここでは今回何度も話題に出ている「週次の利用制限(残り○%)」を指すつもりで使いました――直前にご自身が「さっき97％と出たのでそろそろアウトかと」とおっしゃっていたので、それを指して「quota逼迫」と書きました。特別な専門用語ではなく、単に私が英語のまま書いてしまっただけです、紛らわしくすみません。日本語なら「利用制限」「使用上限」くらいの意味です。
+
+<実装中ではなく検討中ならいきなり途絶でも問題ない。切れるまでの会話は残ってるんで。
+実行後SHELLへ戻る案、戻らずに仕様だけ頂くってのはどうかな？
+^Jpusilic ...はlessのように現usilicから出ること無くusilic内で完結する。SHELLと違うのはPROGRAMを発動した場所へ戻る点。
+マニュアルにはPROGRAMモードではusilicを一旦離れるけれどもSHELL同様usilicは例外、とすればいい。
+
+>ご提案の通りに実装・検証・コミット完了しました(3a75b9c)。
+
+^Jp経由でChildProcess::runInteractive()(新規fork/exec)された"usilic"は、tryHandoffToParentShell()自身のランデブー(親がProgramMode::run()のwaitpid()でブロック中のためポーリングできず、必ず2秒でタイムアウトしてfalseを返す)には失敗しますが、USILIC環境変数自体は「ネストしている」ことの信頼できる証拠であり続けます。main.cppの-c/-g既定判定にこのUSILIC環境変数チェックを追加し、この場合だけmacOSの既定をGUIからCUIへ倒すようにしました――ProgramMode::run()自身の「フォアグラウンドで実行→終了を待つ→呼び出し元の画面へそのまま戻る」という既存の挙動(lessと同じ)には一切手を付けていません。SHELLへ注入する案(前回提示したもう一つの選択肢)とは異なり、このusilicは引き続き独立したfork/execのまま、既定の起動先だけがGUIからCUIへ変わります。
+
+あわせてsrc/QUICK.txt(gitignore対象、既知の未追跡ファイル)のPROGRAM節に、usilic自身がSHELL同様の例外である旨を追記しました。
+
+main.cppはdoctest対象外のため、既存のtest suiteで無関係のリグレッションが無いことを確認(1156/1157、既知無関係のLOCATEフレークのみ)、make usilic/make install/make app完了、~/Applications/usilic.appへも反映済みです。実機での`^Jpusilic ^M`確認をお願いします。
