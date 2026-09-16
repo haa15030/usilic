@@ -420,6 +420,47 @@ std::vector<ContentView::Line> FileMode::readAndWrap(const std::string &path) co
   return lines;
 }
 
+// loadFileRaw()自身の宣言コメント参照。readAndWrap()と違い、ファイル
+// 全体を一度にloadAndTransformContent()で読んでからPipeBuffer::feed()
+// する代わりに、kChunkBytes単位で読み進めながら都度feed()し、各
+// チャンクの後にshouldAbort()を呼ぶ。呼び出し元は常にrawControlCodesMode_
+// が真の場合だけこれを使う(loadFileImpl()自身の分岐参照)ので、
+// loadAndTransformContent()自身が行うHELP-markup展開/roff整形は
+// そもそも関係が無く、ここでは複製していない――生バイトをそのまま
+// PipeBufferへ渡す。
+std::vector<ContentView::Line> FileMode::readAndWrapChunked(const std::string &path,
+                                                              const std::function<bool()> &shouldAbort) const {
+  std::vector<ContentView::Line> lines;
+  std::ifstream in(path, std::ios::binary);
+  if (!in) return lines;
+
+  int effectiveWidth = noWrapMode_ ? kNoWrapWidth : width_;
+  PipeBuffer pipe(encoding_, effectiveWidth, 64L * 1024 * 1024, /*detectOverstrike=*/false);
+  // 2026-09-16、直接のユーザー提案("使用頻度は確かに低いので...速度
+  // は度外視でいいのではないか"): 8MBという大きさ自体に技術的な根拠は
+  // 無く、「^Gの反応までの遅延(チャンクの実処理時間+shouldAbort()自身の
+  // 最大0.1秒のポーリング待ち)」と「チャンク数を減らして後者の合計を
+  // 抑える」という2つの相反する要求の、深く検証していない妥協点。
+  constexpr std::size_t kChunkBytes = 8 * 1024 * 1024;
+  std::string chunk(kChunkBytes, '\0');
+  while (in) {
+    in.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
+    std::streamsize n = in.gcount();
+    if (n <= 0) break;
+    pipe.feed(chunk.substr(0, static_cast<std::size_t>(n)));
+    if (shouldAbort()) break;
+  }
+  pipe.flush();
+
+  lines.reserve(pipe.lines().size());
+  for (const auto &styled : pipe.lines()) {
+    ContentView::Line line{styled.text, std::nullopt, std::nullopt, styled.attributes};
+    line.rawLineNumber = styled.rawLineNumber;
+    lines.push_back(std::move(line));
+  }
+  return lines;
+}
+
 bool FileMode::loadFile(const std::string &path) {
   noWrapMode_ = false;
   rawControlCodesMode_ = false;
@@ -432,10 +473,10 @@ bool FileMode::loadFileNoWrap(const std::string &path) {
   return loadFileImpl(path);
 }
 
-bool FileMode::loadFileRaw(const std::string &path) {
+bool FileMode::loadFileRaw(const std::string &path, const std::function<bool()> &shouldAbort) {
   noWrapMode_ = false;
   rawControlCodesMode_ = true;
-  return loadFileImpl(path);
+  return loadFileImpl(path, shouldAbort);
 }
 
 // loadFileAsPipe()自身の宣言コメント(file_mode.hpp)参照。
@@ -491,7 +532,7 @@ bool FileMode::loadContentAsPipe(const std::string &content) {
   return true;
 }
 
-bool FileMode::loadFileImpl(const std::string &path) {
+bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()> &shouldAbort) {
   std::ifstream probe(path, std::ios::binary);
   if (!probe) return false;
   probe.close();
@@ -515,7 +556,8 @@ bool FileMode::loadFileImpl(const std::string &path) {
   view_.setUseFixedWidthPosition(false);  // loadStream()自身のコメント参照。他の全てのFileモードのエントリはプレーンなまま
   view_.setContentMayGrow(false);  // setContentMayGrow()自身の宣言コメント参照。この非ストリーミング読み込みは常に一括で確定済み
 
-  view_.setLines(readAndWrap(path));
+  // 2026-09-16追加、loadFileRaw()自身の宣言コメント参照。
+  view_.setLines(rawControlCodesMode_ && shouldAbort ? readAndWrapChunked(path, shouldAbort) : readAndWrap(path));
   currentFile_ = path;
   // 新しい読み込みは古い検索を無効にする――setSearchOrigin()自身のコメント参照
   searchOriginLabel_.clear();

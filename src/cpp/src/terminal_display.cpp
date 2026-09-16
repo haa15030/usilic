@@ -502,7 +502,18 @@ void TerminalDisplay::close() {
 void TerminalDisplay::leaveForExternalProgram() {
   if (!outputEnabled_ || caps_.changeScrollRegion.empty()) return;
   tputs(tgoto(caps_.changeScrollRegion.c_str(), rows_ - 1, 0), 1, outc);
-  std::fflush(stdout);
+  // 2026-09-16追加、直接のユーザー報告("^Jp less...「"readme.txt" may
+  // be a binary file. See it anyway?」が画面最上部に出ていたのに
+  // 気づかなかった...-gだと画面を一旦クリアした上で表示するので
+  // それでわかった。旧もクリア後...新の-cだけは画面はそのままに
+  // 最上部へ出るので気づきにくい"): 以前はスクロール領域を全画面へ
+  // 戻すだけで、代替画面バッファの中身自体(直前まで表示していた
+  // usilic自身のDirectory一覧等)は一切消していなかった――外部
+  // プログラム(less等)がその上に部分的に書くだけなので、lessが
+  // 画面最上部にだけ出す短いプロンプト/警告が、消し残った古い内容に
+  // 紛れて見落とされやすかった(-g/legacyは実際に画面をクリアしてから
+  // 渡っており、この違いのおかげでユーザーが気付けた)。
+  clearScreen();
 }
 
 // 上のペアのもう半分: 制御が戻った時に、スクロール領域をusilic

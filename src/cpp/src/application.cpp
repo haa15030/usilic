@@ -4350,7 +4350,23 @@ bool Application::openSelectedEntryRaw() {
   std::string path = directoryMode_.currentDirectory();
   if (!path.empty() && path.back() != '/') path += '/';
   path += entry->name;
-  if (!fileMode_.loadFileRaw(path)) return false;
+  // 2026-09-16追加、直接のユーザー報告("debian-keyring...tar.xz(75MB)
+  // の^[^Mが^Gで中断不能")+提案("一回の読み込み分が終わったらそこを
+  // 通り、^Gが投入されていたら中断"): FileMode::readAndWrapChunked()
+  // (loadFileRaw()自身のコメント参照)が各チャンクの後に呼ぶ中断判定。
+  // KeyInput::readByte()は元々raw mode設定(VMIN=0/VTIME=1)によりブロック
+  // せず最大0.1秒で戻る、まさにご提案の「入力待ち無しのgetchっぽい
+  // 関数」そのもの――新しい仕組みは不要だった。^G以外の何かが偶然
+  // 届いていた場合(考えにくいが、例えば直前の操作の取りこぼし等)は
+  // 捨てずにplayRawMacro()で送り返し、通常のディスパッチへ委ねる。
+  auto shouldAbort = [this]() {
+    int byte = keyInput_.readByte();
+    if (byte == 0) return false;
+    if (byte == kControlG) return true;
+    keyInput_.playRawMacro(std::string(1, static_cast<char>(byte)));
+    return false;
+  };
+  if (!fileMode_.loadFileRaw(path, shouldAbort)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;
   return true;
@@ -11614,9 +11630,30 @@ bool Application::executeArchiveExtract(const std::string &destination) {
       if (!top.empty() && seen.insert(top).second) topLevelNames.push_back(top);
     }
   }
+  // 2026-09-16追加、直接のユーザー指摘("MS-DOSの.lzhの構成員って
+  // 展開するとパーミッションは強制一律↑なんだろうか？"→"パーミッ
+  // ションは0644へ変更よろしく"): 実機のLhasa(`lha xfw=`)は展開した
+  // ファイルを`-rw-------`(0600、所有者のみ)にする――MS-DOS側に
+  // unixパーミッションの概念が無いための安全側フォールバックと見られ、
+  // tar/unzipが実機で示す典型的な0644より制限的だった。展開コマンド
+  // 自体の直後に`chmod`を続け、topLevelNames(このコマンド自身が
+  // 宛先直下に実際に作るはずの名前、すぐ上のコメント参照)だけを対象に
+  // する――宛先ディレクトリに元々あった無関係なファイルには触れない。
+  // go+r(0600→0644相当)+u+rw(既にrwなので無害)+go+X(ディレクトリ
+  // だけ実行ビットも付け、辿れるようにする――大文字Xは「ディレクトリ
+  // か、既に誰かに実行権が立っている場合だけ」実行ビットを追加する
+  // chmodのシンボリックモード上の特殊扱い、この移植では平ファイルに
+  // 誤って実行権を付けてしまう心配が無い)。ArchiveKind::Lhaだけに
+  // 限定する(tar/unzip/7zは既に妥当な既定パーミッションのため無変更)。
+  std::string chmodSuffix;
+  if (kind == ArchiveKind::Lha && !topLevelNames.empty()) {
+    std::vector<std::string> chmodTargets;
+    for (const auto &name : topLevelNames) chmodTargets.push_back(resolvedDestination + "/" + name);
+    chmodSuffix = " && chmod -R u+rw,go+rX " + shellQuoteArgv(chmodTargets);
+  }
   pendingArchiveExtractShellRun_ = PendingArchiveExtractShellRun{
       shell_.promptGeneration(), returnMode, resolvedDestination, archivePath, std::move(topLevelNames)};
-  shell_.commandLine().setText(shellQuoteArgv(argv) + "; echo " + kCpMvRmExitMarker + "$?");
+  shell_.commandLine().setText(shellQuoteArgv(argv) + chmodSuffix + "; echo " + kCpMvRmExitMarker + "$?");
   shell_.submitLine();
   return true;
 }

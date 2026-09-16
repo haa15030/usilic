@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <set>
 #include <string>
@@ -125,7 +126,16 @@ class FileMode {
   // groff整形も丸ごとスキップするようになった。legacy自身のM_code
   // (^[^M、fp->cr=0)がcheck_ext()自体を呼ばないのと同じ「変換ゼロ」
   // が、この"as is"の実体だった。
-  bool loadFileRaw(const std::string &path);
+  // 2026-09-16追加、直接のユーザー報告("debian-keyring...tar.xz(75MB)
+  // の^[^Mが^Gで中断不能")+提案("入力待ち無しのgetchっぽい関数...
+  // 一回の読み込み分が終わったらそこを通り、^Gが投入されていたら
+  // 中断": シェルスクリプトは巨大な2進ファイルを一括でPipeBuffer::
+  // feed()する(readAndWrap()自身)代わりに、shouldAbortが渡された
+  // 場合はreadAndWrapChunked()(自身の宣言コメント参照)でチャンク単位
+  // に処理する。shouldAbortを渡さない既存の呼び出し元(テスト等)は
+  // 完全に無変更のまま(空のstd::functionはfalsyなので、下のloadFileImpl()
+  // 自身の分岐で無視される)。
+  bool loadFileRaw(const std::string &path, const std::function<bool()> &shouldAbort = {});
 
   // 2026-09-15追加、直接のユーザー指摘("^O^Mで(stdin)形式になって
   // おらず"): old/src/menu.cのM_fp(^O^M、fp->cr=2)は、fp->cr==1
@@ -485,8 +495,19 @@ class FileMode {
 
  private:
   // loadFile()/loadFileNoWrap()/loadFileRaw()が共有する本体――呼び出し元が
-  // 先にnoWrapMode_/rawControlCodesMode_をセットしてから呼ぶ。
-  bool loadFileImpl(const std::string &path);
+  // 先にnoWrapMode_/rawControlCodesMode_をセットしてから呼ぶ。shouldAbort
+  // はloadFileRaw()自身のコメント参照、rawControlCodesMode_が真かつ
+  // 非空の場合だけreadAndWrapChunked()へ回す。
+  bool loadFileImpl(const std::string &path, const std::function<bool()> &shouldAbort = {});
+  // loadFileRaw()自身の宣言コメント参照: readAndWrap()と同じ変換
+  // ゼロ・同じ折り返し規約だが、ファイルをkChunkBytes単位で読んで
+  // 都度PipeBuffer::feed()し、各チャンクの後にshouldAbort()を呼ぶ
+  // ――trueが返ればそこまでに溜まった分だけでpipe.flush()して打ち切る
+  // (呼び出し元は既に読み込んだ範囲のPipeBuffer出力を受け取る、
+  // 途中経過であっても構造上壊れたものにはならない――PipeBufferの
+  // 行分割は既に確定した完全な行だけをlines()へ積む設計のため)。
+  std::vector<ContentView::Line> readAndWrapChunked(const std::string &path,
+                                                     const std::function<bool()> &shouldAbort) const;
   // readAndWrap()/loadFileAsPipe()が共有する: pathの生バイトを読み、
   // rawControlCodesMode_が真でなければHELP-markup展開/roff文書の
   // groff整形を適用する――loadAndTransformContent()自身のコメント参照。

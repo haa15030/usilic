@@ -395,6 +395,34 @@ TEST_CASE_FIXTURE(Fixture, "loadFileRaw: a `.TH`-led file is shown completely as
   CHECK(view.lines()[2].text == "usilic \\- test");
 }
 
+// 2026-09-16追加、直接のユーザー報告("debian-keyring...tar.xz(75MB)
+// の^[^Mが^Gで中断不能")+提案("一回の読み込み分が終わったらそこを
+// 通り、^Gが投入されていたら中断"): loadFileRaw()にshouldAbortを渡すと
+// readAndWrapChunked()(ファイルをkChunkBytes単位で読みPipeBuffer::
+// feed()、各チャンクの後にshouldAbort()を呼ぶ)経由になる。ここでは
+// shouldAbortが常にfalseを返すケースを検証し、読み込み結果が
+// (呼び出し元がshouldAbortを渡さない)既存のreadAndWrap()経路と
+// 完全に同じ内容になること、およびshouldAbort自体が実際に呼ばれる
+// ことを確認する――実ファイルが8MBのチャンク境界を超えるケース
+// (中断時に一部だけが残る場合)は、テストスイートの実行時間の都合上
+// ここでは検証していない(実機での確認が必要、既知の制約)。
+TEST_CASE_FIXTURE(Fixture, "loadFileRaw with a shouldAbort callback that never aborts: goes through "
+                           "readAndWrapChunked() but produces identical content to the plain (no "
+                           "callback) readAndWrap() path, and the callback is actually invoked") {
+  std::string path = writeFile("usilic.man", ".TH USILIC 1\n.SH NAME\nusilic \\- test\n");
+  int abortCheckCalls = 0;
+  auto shouldAbort = [&]() {
+    abortCheckCalls++;
+    return false;
+  };
+  REQUIRE(mode.loadFileRaw(path, shouldAbort));
+  REQUIRE(view.lines().size() == 3);
+  CHECK(view.lines()[0].text == ".TH USILIC 1");
+  CHECK(view.lines()[1].text == ".SH NAME");
+  CHECK(view.lines()[2].text == "usilic \\- test");
+  CHECK(abortCheckCalls >= 1);
+}
+
 // 同上のユーザー指摘、こちらは"^O^Mで(stdin)形式になっておらず"の
 // 方。loadFileAsPipe()(K-23)は、legacy自身のM_fp(fp->cr=2)がplain
 // Enter(fp->cr=1)と同じくcheck_ext()を通る(=groff整形はloadFile()と
