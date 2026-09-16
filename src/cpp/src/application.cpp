@@ -7834,7 +7834,31 @@ std::vector<std::string> Application::buildArchiveExtractArgv(const std::string 
     for (const auto &m : members) argv.push_back(m);
     return argv;
   }
-  return {};  // Lha/Rpm/Deb/Bzip2――この最初のスライスではサポートされない、クラス自身の宣言コメント参照
+  if (kind == ArchiveKind::Lha) {
+    // 2026-09-16追加、直接のユーザー依頼("LZH展開実装よろしく")。
+    // 実機のLhasa(Homebrew、v0.6.0、addBuiltinArchive(".lzh", ...)
+    // 自身のコメント参照)を`lha`単体(引数無し)で起動すると使い方が
+    // 表示され、そこに構文が明記されている: `lha [-]{lvtxep[q{num}]
+    // [finv]}[w=<dir>] archive_file [file...]`。`x`(パス情報を保持
+    // したまま展開、tar/unzipのデフォルトと同じ考え方)+`f`(確認無し
+    // で上書き、zip/7zの-o/-yと同じ考え方)+`w=<dir>`(展開先)を1つの
+    // トークンにまとめる(Lhasa自身のオプション構文がそれを要求する
+    // ――ハイフン無しで`x`/`f`/`w=...`を連結)。実機の`src/skrw021.lzh`
+    // に対して`lha xfw=<dest> <archive> [members...]`(メンバー指定
+    // 無しならアーカイブ全体)の両方を直接実行し、実際にファイルが
+    // 展開先へ現れることを確認済み。メンバー名がシェルスタイルの
+    // glob文字(`\*?[]{}`)を含む場合の扱いも実機で確認済み――`"*.txt"`
+    // を実際に渡すと(エスケープ無しでは)複数エントリにマッチした
+    // (tar/unzipと同じfnmatch系のglobエンジンと判断)ため、
+    // escapeArchiveMemberPattern()をそのまま適用する(7z自身の
+    // 「`[...]`は常にリテラル」という例外は踏まない前提――`[...]`
+    // 自体の実機確認はしていないが、`*`の挙動から同じglobエンジン
+    // 系列と推定)。
+    std::vector<std::string> argv = {"lha", "xfw=" + destination, archivePath};
+    for (const auto &m : members) argv.push_back(escapeArchiveMemberPattern(m));
+    return argv;
+  }
+  return {};  // Rpm/Deb/Bzip2――この最初のスライスではサポートされない、クラス自身の宣言コメント参照
 }
 
 // K-45/K-47(^Xf/^Xd、「Input file/directory name」)――
