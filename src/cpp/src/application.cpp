@@ -3654,7 +3654,12 @@ bool Application::handleCommand(Command command) {
         // へそのまま素通りさせる――openSelectedEntryNoWrap()が
         // fileReturnMode_ = Directoryを設定済みなので、これで正しく
         // (ls)へ戻る。
-        if (fileMode_.isPagerMode() && fileMode_.pagerReturnsToDirectory()) {
+        // 2026-09-17追加、Application::tryPollProgramHandoff()自身の
+        // コメント参照: pagerReturnsToProgram_(^Jp経由のパイプされた
+        // stdin引き渡し)も全く同じ理由でここに含める――こちらは
+        // fileReturnMode_がcapturedMode(呼び出し時に実際にいたモード)
+        // に設定済みなので、同じ素通しでそこへ正しく戻る。
+        if (fileMode_.isPagerMode() && (fileMode_.pagerReturnsToDirectory() || fileMode_.pagerReturnsToProgram())) {
           // loadFileAsPipe()自身のコメント参照: returnPagerToShell()の
           // 3箇所と同じく、裏のfd(loadFileAsPipe()が開いた一時ファイル
           // ――既にunlink済みなのでディスクには残らないが、fd自体は
@@ -10918,6 +10923,12 @@ bool Application::executeProgram(const std::string &command) {
     return false;
   }
 
+  // 2026-09-17追加、実機報告("D. が直ってない")+提案(runNestedUsilicProgram()
+  // 自身のapplication.hpp宣言コメント参照): "usilic"だけは通常の
+  // programMode_.run()を経由せず、ランデブーのポーリングに参加できる
+  // 専用の起動経路を使う。
+  if (firstWord == "usilic") return runNestedUsilicProgram(command);
+
   // programPromptDirectory_: それ自身の宣言コメント参照――
   // startProgramPrompt()の素のファイル名の事前入力(例えば
   // "CLAUDE.md")には、このcdの包みが必要である;ファイルの文脈が
@@ -11442,6 +11453,92 @@ bool Application::pollShellHandoff() {
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;
   activeView().redraw();  // 通常のキー入力ごとの再描画サイクルの外での一度限りの呼び出し、startPagerFileList()自身のコメント参照
+  return true;
+}
+
+// runNestedUsilicProgram()自身の宣言コメント参照。pollShellHandoff()
+// の核心部分の複製(パイプされたstdin/プレーンなパス/ファイルの
+// 3分岐とも同一のロジック)――違いはshell_.childPid()の代わりに引数の
+// pidを使うこと、currentMode_ == Shellのゲートが無いこと、パイプされた
+// stdinのケースだけ戻り先ラベルが"SHELL"ではなく"PROGRAM"になること。
+bool Application::tryPollProgramHandoff(pid_t pid, ApplicationMode capturedMode) {
+  std::string path = "/tmp/.usilic-shell/s." + std::to_string(::getuid()) + "." + std::to_string(pid);
+  struct stat st;
+  if (::stat(path.c_str(), &st) != 0) return false;
+
+  if (S_ISSOCK(st.st_mode)) {
+    int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return false;
+    sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    std::strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
+    if (::connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
+      ::close(fd);
+      return false;
+    }
+    currentMode_ = ApplicationMode::File;
+    fileReturnMode_ = capturedMode;
+    fileMode_.loadStream(fd, /*ownsFd=*/true, "", 1);
+    fileMode_.setSearchOrigin("", "(stdin)");
+    fileMode_.setPagerReturnsToProgram(true);
+    activeView().redraw();
+    return true;
+  }
+
+  std::ifstream in(path);
+  std::string resolved;
+  std::getline(in, resolved);
+  in.close();
+  ::unlink(path.c_str());
+  if (resolved.empty()) return false;
+
+  if (std::filesystem::is_directory(resolved)) {
+    currentMode_ = ApplicationMode::Directory;
+    return directoryMode_.enterDirectory(resolved, /*consultHistory=*/false);
+  }
+  if (!fileMode_.loadFile(resolved)) return false;
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Directory;
+  activeView().redraw();
+  return true;
+}
+
+// 2026-09-17追加、直接のユーザー報告+提案参照(このメソッド自身の
+// application.hpp宣言コメント)。executeProgram()自身の"usilic"分岐
+// から呼ばれる――ProgramMode::run()(完全同期のChildProcess::
+// runInteractive())を経由せず、ここで直接ChildProcess::
+// spawnInteractive()+ポーリングループを組み立てる。
+bool Application::runNestedUsilicProgram(const std::string &command) {
+  ApplicationMode capturedMode = currentMode_;
+  // USILIC=1(Shell::start()自身のsetenv()と同じ意味だが、こちらは
+  // Shellの管理下のptyではなくusilic自身がここで直接fork/execする
+  // ので、コマンドライン自体に付与する)――cdWrap()が生成する
+  // "cd '<dir>' && <command>"全体の先頭にではなく、<command>自体の
+  // 先頭に付ける(cdだけに変数代入が掛かってしまわないよう、cdWrap()
+  // へ渡す前に付与する)。
+  std::string toRun = cdWrap(programPromptDirectory_, "USILIC=1 " + command);
+  programPromptDirectory_.clear();  // 結果に関わらず正確に一度消費される、executeProgram()自身の慣習通り
+
+  display_.leaveForExternalProgram();
+  keyInput_.leaveRawMode();
+  pid_t pid = ChildProcess::spawnInteractive({"sh", "-c", toRun});
+  if (pid > 0) {
+    bool handedOff = false;
+    while (!ChildProcess::hasExited(pid)) {
+      if (!handedOff && tryPollProgramHandoff(pid, capturedMode)) handedOff = true;
+      ::usleep(20000);
+    }
+    // 子が既に終了済みでもランデブーファイルの受け取りが間に合って
+    // いない可能性への最後の一押し(ポーリング間隔20msに対し、子自身の
+    // 待ち合わせは最大2秒あるので通常はここに来る前にhandedOff済みの
+    // はずだが、念のため)。
+    if (!handedOff) tryPollProgramHandoff(pid, capturedMode);
+  }
+  keyInput_.reenterRawMode();
+  display_.reenterFromExternalProgram();
+
+  history_.pushRecent(RingCategory::ShellCommand, command);
+  activeView().redraw();
   return true;
 }
 

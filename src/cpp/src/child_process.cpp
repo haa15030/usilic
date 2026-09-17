@@ -235,6 +235,22 @@ int ChildProcess::runInteractive(const std::vector<std::string> &argv) {
   return reapStatus(pid);
 }
 
+pid_t ChildProcess::spawnInteractive(const std::vector<std::string> &argv) {
+  if (argv.empty()) return -1;
+
+  pid_t pid = fork();
+  if (pid < 0) return -1;
+
+  if (pid == 0) {
+    resetSignalsToDefault();
+    auto cargv = toArgv(argv);
+    execvp(cargv[0], cargv.data());
+    _exit(127);  // execvp()失敗――そのまま処理を続けusilicとして動き続けることは絶対に無い
+  }
+
+  return pid;
+}
+
 pid_t ChildProcess::runDetached(const std::vector<std::string> &argv) {
   if (argv.empty()) return -1;
 

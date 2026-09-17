@@ -461,6 +461,17 @@ class FileMode {
   void setPagerReturnsToDirectory(bool value) { pagerReturnsToDirectory_ = value; }
   bool pagerReturnsToDirectory() const { return pagerReturnsToDirectory_; }
 
+  // 2026-09-17追加、Application::tryPollProgramHandoff()自身の宣言
+  // コメント参照: ^Jp(PROGRAM)経由のパイプされたstdin引き渡し
+  // ("usilic < file"、SHELLプロンプトでの"cat file|usilic"に相当する
+  // PROGRAM版)専用――pagerReturnsToShell_の"SHELL"バッジと全く同じ
+  // 考え方だが、こちらは戻り値ラベルが"PROGRAM"になる(実際の戻り先
+  // モードはfileReturnMode_が別途保持する、呼び出し時にApplicationが
+  // 実際にいたモード)。既定はfalse、他の全てのloadFile()/loadStream()
+  // 呼び出しでリセットされる。
+  void setPagerReturnsToProgram(bool value) { pagerReturnsToProgram_ = value; }
+  bool pagerReturnsToProgram() const { return pagerReturnsToProgram_; }
+
   // 2026-09-21追加、直接のユーザー指摘("モードライン不良...正しくは
   // 「tcb-1.5b.linux.tgz」「00001/00025 TOP」「1894」「(tar)」
   // 「/Users/haa15030/」"): loadContentAsPipe()経由のARCHIVE分岐
@@ -571,6 +582,7 @@ class FileMode {
   bool pagerMode_ = false;
   bool pagerReturnsToShell_ = false;
   bool pagerReturnsToDirectory_ = false;  // setPagerReturnsToDirectory()自身の宣言コメント参照
+  bool pagerReturnsToProgram_ = false;    // setPagerReturnsToProgram()自身の宣言コメント参照
   std::string pagerListingDirectory_;     // setPagerListingDirectory()自身の宣言コメント参照
   int streamFd_ = -1;
   bool streamOwnsFd_ = false;

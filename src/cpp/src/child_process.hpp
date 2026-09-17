@@ -131,6 +131,20 @@ class ChildProcess {
   // なかった、または正常終了しなかった場合は-1。
   static int runInteractive(const std::vector<std::string> &argv);
 
+  // 2026-09-17追加、直接のユーザー報告+提案("^Jpusilic ...はlessの
+  // ように現usilicから出ること無くusilic内で完結する"、その後の
+  // 実機報告"D. が直ってない"を受けた本格対応): runInteractive()と
+  // 全く同じfork()+execvp()だが、waitpid()で完了をブロック待ちせず
+  // pidをすぐ返す――呼び出し側(Application::runNestedUsilicProgram()
+  // 参照)が、子の終了をhasExited()でポーリングしながら、同時に
+  // ランデブー用のパス(main.cppのtryHandoffToParentShell()が
+  // getppid()から導出するパスと一致する、このpidを使う)も並行して
+  // ポーリングできるようにするためのもの。runDetached()と違い標準
+  // 出力/標準エラーを/dev/nullへリダイレクトしない(本物の端末を
+  // 直接継承する対話的プログラム向け、runInteractive()自身の
+  // コメント参照)。
+  static pid_t spawnInteractive(const std::vector<std::string> &argv);
+
   // argvをバックグラウンドで起動する: 上の他の呼び出しと同様にfork
   // されexecされるが、完了を待つことも出力を捕捉することもせず
   // すぐに戻る――呼び出し側が(Application::runLocateUpdateDb()の

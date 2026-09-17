@@ -1561,6 +1561,36 @@ class Application {
   // グの慣習に合わせて、メインループの反復ごとに無条件に呼ぶのに
   // 十分安価である。
   bool pollShellHandoff();
+  // 2026-09-17追加、直接のユーザー報告+提案(実機報告"D. が直ってない"、
+  // 提案"実行後SHELLへ戻る案、戻らずに仕様だけ頂くってのはどうかな？
+  // ^Jpusilic ...はlessのように現usilicから出ること無くusilic内で
+  // 完結する。SHELLと違うのはPROGRAMを発動した場所へ戻る点"): ^Jp
+  // (PROGRAM)経由で"usilic"が認識された場合、executeProgram()から
+  // 通常のprogramMode_.run()(ChildProcess::runInteractive()、完全に
+  // 同期ブロック)の代わりにこちらを呼ぶ。ChildProcess::
+  // spawnInteractive()(pollShellHandoff()自身のコメントが説明する
+  // getppid()側のランデブーパス計算と一致する、この子自身のpidを
+  // 使う)で子を起動し、hasExited()でのポーリングの合間に
+  // tryPollProgramHandoff()も呼ぶことで、pollShellHandoff()と全く
+  // 同じランデブー機構(main.cpp自身のtryHandoffToParentShell())に
+  // ProgramMode::run()自身の完全ブロッキングな設計のままでは参加
+  // できなかった問題を解消する――USILIC環境変数を子のコマンドライン
+  // 自体に付与する(Shell::start()自身のsetenv()と違い、この子は
+  // usilic自身のfork/execであってShellの管理下のptyではないため)。
+  bool runNestedUsilicProgram(const std::string &command);
+  // runNestedUsilicProgram()自身の宣言コメント参照。pollShellHandoff()
+  // の核心部分の複製――違いは(1)shell_.childPid()の代わりに引数の
+  // pidを使う、(2)currentMode_ == Shellのゲートが無い(このポーリング
+  // はProgramMode文脈でのみ呼ばれ、Shellとは無関係)、(3)戻り先が
+  // 常にShell/Directory固定ではなく、呼び出し時にApplicationが
+  // 実際にいたモード(capturedMode)になる――パイプされたstdinの
+  // ケースだけ、FileMode::setPagerReturnsToProgram(true)でモード
+  // ライン上「PROGRAM」と明示する(setPagerReturnsToShell()の
+  // "SHELL"と同じ考え方)。プレーンなパス/ファイルのケースは
+  // pollShellHandoff()自身と全く同じ(常にDirectory、legacy自身の
+  // 挙動に合わせた既存の無条件の値であり、呼び出し元の文脈に
+  // 依存しない)。
+  bool tryPollProgramHandoff(pid_t pid, ApplicationMode capturedMode);
   // pollPagerExitNotice()自身の宣言コメント参照(2026-09-20追加)。
   // `suppressDraw`(2026-09-07追加、直接のユーザー報告"わかったのは
   // ブロックカーソル位置を画面上真ん中辺に変更すると、瞬時の表示も

@@ -2962,20 +2962,46 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: an unrecognized command (not in the PROGRAM
 // setenv("USILIC", ...) comment): the user shouldn't have to add this
 // executable's own name to their usilicrc for PROGRAM to allow
 // recursively launching it, any more than SHELL requires that.
-TEST_CASE_FIXTURE(Fixture, "PROGRAM: \"usilic\" itself is always recognized, with no usilicrc entry needed") {
+//
+// 2026-09-17 REDESIGN, a real-machine report ("D. が直ってない") + a
+// direct user proposal ("実行後SHELLへ戻る案、戻らずに仕様だけ頂く"):
+// "usilic" no longer reaches ProgramMode::run()/ChildProcess::
+// runInteractive() (the generic foreground launcher, formerly asserted
+// here via receivedCommand) at all -- see runNestedUsilicProgram()'s own
+// declaration comment for the full story. It now takes a dedicated path
+// (ChildProcess::spawnInteractive() + a rendezvous-polling loop) so that
+// a nested "usilic" launched this way can still hand off to the SAME
+// session (via main.cpp's tryHandoffToParentShell(), the same mechanism
+// SHELL-typed "usilic" already used) instead of always spawning an
+// independent process. This test now confirms the *routing* only (never
+// reaches the old foreground-launcher hook) -- like the SHELL-side
+// sibling test just above, it restricts PATH to /usr/bin:/bin first so
+// the real ~/.local/bin/usilic on this machine (see this session's own
+// `make install`) can't actually be found and run (sh's own "command not
+// found" makes the spawned child exit almost immediately, keeping this
+// safe and fast without needing a real nested usilic).
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: \"usilic\" itself is launched via the dedicated rendezvous-polling path "
+                           "(runNestedUsilicProgram()), never through the generic ProgramMode::run() foreground "
+                           "launcher") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartProgram));
   feedText("usilic subdir");
 
-  std::string receivedCommand;
-  app.programMode().setForegroundLauncher([&](const std::string &command) {
-    receivedCommand = command;
+  bool foregroundLauncherCalled = false;
+  app.programMode().setForegroundLauncher([&](const std::string &) {
+    foregroundLauncherCalled = true;
     return true;
   });
 
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", "/usr/bin:/bin", 1);
   CHECK(app.feedByte(0x0d, std::nullopt));
-  CHECK(receivedCommand == "usilic subdir");
-  CHECK(app.currentMode() == ApplicationMode::Directory);  // PROGRAM never changes ApplicationMode
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+
+  CHECK_FALSE(foregroundLauncherCalled);  // never routed through ProgramMode::run()
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // PATH-restricted "usilic" never ran, so no handoff landed
 }
 
 TEST_CASE_FIXTURE(Fixture, "PROGRAM: an empty command fails cleanly") {

@@ -175,7 +175,7 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       // だけは、それとは別に依然として抑制する必要がある――
       // pagerReturnsToDirectory_の間、戻り先が無い独立起動ではない
       // ことに変わりはないため。
-      bool hasReturnTarget = pagerReturnsToShell_ || pagerReturnsToDirectory_;
+      bool hasReturnTarget = pagerReturnsToShell_ || pagerReturnsToDirectory_ || pagerReturnsToProgram_;
       ContentView::ModeLineFields fields;
       // 2026-09-21追加、直接のユーザー指摘("モードライン不良...正しく
       // は「tcb-1.5b.linux.tgz」「(tar)」「/Users/haa15030/」"):
@@ -188,7 +188,12 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       fields.trailing = std::to_string(bytes);
       fields.rightWatermark = hasReturnTarget ? "" : "usilic v1.5b";
       fields.trailing2 = searchOriginDetail_;
-      fields.trailing3 = pagerReturnsToShell_ ? "SHELL" : pagerListingDirectory_;
+      // 2026-09-17追加: pagerReturnsToProgram_(setPagerReturnsToProgram()
+      // 自身の宣言コメント参照)はpagerReturnsToShell_の"SHELL"と全く
+      // 同じ扱いだが、"PROGRAM"を表示する――^Jp(PROGRAM)経由のパイプ
+      // されたstdin引き渡し専用。
+      fields.trailing3 =
+          pagerReturnsToShell_ ? "SHELL" : (pagerReturnsToProgram_ ? "PROGRAM" : pagerListingDirectory_);
       // 2026-08-25の修正(HISTORY.md:9462を引用した直接のユーザー
       // 報告、"基本的に右端まで埋まっていないモードラインは全部
       // 不良"): trailing3は「既に」fillTrailingToEdgeサポートを
@@ -209,7 +214,7 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       // ディレクトリ)が非空の場合も同様にtrailing3を端まで埋める
       // ――ArchiveMode自身のtrailing3(currentArchive_、フルパス)が
       // fillTrailingToEdgeなのと同じ理屈。
-      fields.fillTrailingToEdge = pagerReturnsToShell_ || !pagerListingDirectory_.empty();
+      fields.fillTrailingToEdge = pagerReturnsToShell_ || pagerReturnsToProgram_ || !pagerListingDirectory_.empty();
       // 2026-09-11追加、直接のユーザー報告("FILE/DIRでも^O^S/^J^S
       // 同様^S/^[iをサポートして欲しい"): pagerMode_(CLIから直接
       // `usilic <file>`/パイプされたstdinで開いたファイル、この関数
@@ -553,6 +558,7 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   pagerMode_ = false;
   pagerReturnsToShell_ = false;  // 防御的措置、自身の宣言コメント参照。pagerMode_がfalseの間はいずれにせよ未使用
   pagerReturnsToDirectory_ = false;  // 同上
+  pagerReturnsToProgram_ = false;    // 同上
   view_.setUseFixedWidthPosition(false);  // loadStream()自身のコメント参照。他の全てのFileモードのエントリはプレーンなまま
   view_.setContentMayGrow(false);  // setContentMayGrow()自身の宣言コメント参照。この非ストリーミング読み込みは常に一括で確定済み
 
@@ -865,6 +871,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   pagerMode_ = true;
   pagerReturnsToShell_ = false;  // 自身の宣言コメント参照。pollShellHandoff()はこの呼び出しの後にこれを切り替える
   pagerReturnsToDirectory_ = false;  // 同上。loadFileAsPipe()がこの呼び出しの後にこれを切り替える
+  pagerReturnsToProgram_ = false;    // 同上。tryPollProgramHandoff()はこの呼び出しの後にこれを切り替える
   pagerListingDirectory_.clear();  // 同上。Application::openSelectedEntryNoWrap()のARCHIVE分岐だけがこの呼び出しの後にこれを設定する
   // 2026-08-25(直接のユーザー依頼: "SHELL同様、行数を5桁とバイト
   // 数表示をよろしく")――他の全てのFileモードのエントリが使う
