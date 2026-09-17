@@ -2955,6 +2955,147 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: an unrecognized command (not in the PROGRAM
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
+// -- HELP.txt 2.13. LIST (2026-09-18) --
+//
+// Direct user request to implement the ^I/Tab LIST feature documented
+// in src/HELP.txt, ported from old/src/key.c's make_list(): SHELL/
+// PROGRAM/MAN prompts search $PATH for the bare command word (no
+// delimiter characters typed yet anywhere in the buffer), falling back
+// to plain filesystem completion once a space (or other delimiter)
+// appears. These tests point PATH at a throwaway directory holding one
+// fake executable so the result is fully deterministic (unaffected by
+// whatever's really installed on the machine running the suite).
+namespace {
+// Creates <root>/.pathbin/<name> as an owner-executable regular file and
+// points $PATH at ONLY that directory for the lifetime of the guard --
+// RAII so a REQUIRE()/CHECK() failure earlier in a test still restores
+// the real PATH afterwards (matching the save/restore shape already
+// established just below, in the "usilic"-routing tests). Named
+// ".pathbin" (not e.g. "fakebin") deliberately: it lives INSIDE the
+// fixture's own root (so plain cwd-based filesystem completion sees it
+// too), and every test here types "fake..." as the word being
+// completed -- a directory literally named "fakebin" would itself be a
+// same-prefixed cwd candidate and corrupt the very fallback-to-cwd
+// scenario these tests are trying to isolate.
+struct ScopedFakeProgramPath {
+  std::string savedPath;
+  bool hadPath;
+  explicit ScopedFakeProgramPath(const fs::path &binDir, const std::string &programName) {
+    fs::create_directories(binDir);
+    std::ofstream(binDir / programName) << "#!/bin/sh\n";
+    fs::permissions(binDir / programName, fs::perms::owner_all);
+    const char *old = std::getenv("PATH");
+    hadPath = old != nullptr;
+    savedPath = old ? old : "";
+    setenv("PATH", binDir.string().c_str(), 1);
+  }
+  ~ScopedFakeProgramPath() {
+    if (hadPath) setenv("PATH", savedPath.c_str(), 1);
+    else unsetenv("PATH");
+  }
+};
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "PROGRAM prompt ^I: a bare word with no delimiter anywhere in the buffer "
+                           "completes from $PATH, not the current directory") {
+  REQUIRE(app.start(path()));
+  ScopedFakeProgramPath guard(root / ".pathbin", "fakeprog");
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("fake");
+  CHECK(app.feedByte(0x09, std::nullopt));  // Tab
+
+  CHECK(app.promptText() == "fakeprog");
+}
+
+TEST_CASE_FIXTURE(Fixture, "PROGRAM prompt ^I: once a space has been typed (a second word has "
+                           "started), completion falls back to the current directory even though "
+                           "a $PATH match would otherwise exist") {
+  REQUIRE(app.start(path()));
+  ScopedFakeProgramPath guard(root / ".pathbin", "fakeprog");
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("less fake");  // "fake" here should resolve against the CURRENT DIRECTORY, not $PATH
+  CHECK(app.feedByte(0x09, std::nullopt));  // Tab
+
+  // Nothing in the fixture's own current directory starts with "fake",
+  // so this should NOT have completed to "fakeprog" (the $PATH match).
+  CHECK(app.promptText() == "less fake");
+}
+
+TEST_CASE_FIXTURE(Fixture, "MAN prompt ^I: also searches $PATH for the page/command name (legacy's "
+                           "make_list() groups M_man with M_prog/M_shell)") {
+  REQUIRE(app.start(path()));
+  ScopedFakeProgramPath guard(root / ".pathbin", "fakeprog");
+
+  REQUIRE(app.handleCommand(Command::StartMan));
+  feedText("fake");
+  CHECK(app.feedByte(0x09, std::nullopt));  // Tab
+
+  CHECK(app.promptText() == "fakeprog");
+}
+
+TEST_CASE_FIXTURE(Fixture, "PathInput ^I (K-47, directory input): completion candidates are "
+                           "restricted to directories -- a same-prefixed plain FILE never matches") {
+  REQUIRE(app.start(path()));
+  // "onlydir_" (not "subd_") -- the fixture's own root already contains
+  // an unrelated pre-existing "subdir/" (used by other test cases) that
+  // would otherwise collide with a "subd"-prefixed name here and make
+  // this an unintended 2-way directory ambiguity instead of the clean
+  // single-directory-vs-single-file case this test wants to isolate.
+  fs::create_directory(root / "onlydir_target");
+  std::ofstream(root / "onlydir_target_file.txt") << "x";
+
+  REQUIRE(app.handleCommand(Command::StartDirectoryInput));
+  feedText((root / "onlydir").string());
+  CHECK(app.feedByte(0x09, std::nullopt));  // Tab
+
+  // Both "onlydir_target/" and "onlydir_target_file.txt" share the
+  // "onlydir" prefix, but only the directory should ever be offered --
+  // if the file leaked in, the longest-common-prefix step would stop
+  // short of "onlydir_target/" (it'd stall at "onlydir_target" instead,
+  // the shared prefix of both names).
+  CHECK(app.promptText() == (root / "onlydir_target/").string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "LIST: a Tab left armed by a prior ambiguous Tab (no other key in "
+                           "between) opens a selectable candidate list; choosing one completes the "
+                           "PROGRAM prompt and returns to it") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("fake");
+  CHECK(app.feedByte(0x09, std::nullopt));  // 1st Tab: ambiguous, extends to "fake-" + beeps + arms
+  CHECK(app.promptText() == "fake-");
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // 2nd Tab, still ambiguous: opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.activeContentView().modeLineText().substr(0, 4) == "LIST");
+
+  int idx = -1;
+  const auto &items = app.listBrowserMode().items();
+  for (std::size_t i = 0; i < items.size(); i++)
+    if (items[i] == "fake-two") idx = static_cast<int>(i);
+  REQUIRE(idx >= 0);
+  app.activeContentView().setCursorIndex(idx);
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // PROGRAM never switches mode
+  CHECK(app.promptActive());
+  CHECK(app.promptText() == "fake-two");
+}
+
 // 2026-09-10 (a direct user request): "usilic" itself is always accepted
 // even though the fixture's rc (see above) never registers it as a
 // PROGRAM entry -- mirrors SHELL mode's own pre-existing special-casing

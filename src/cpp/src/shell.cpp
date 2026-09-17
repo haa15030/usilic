@@ -43,6 +43,16 @@ void resetSignalsToDefault() {
   for (int i = 1; i < NSIG; i++) std::signal(i, SIG_DFL);
 }
 
+// application.cpp自身の同名ヘルパー(anonymous namespace)と全く同じ
+// 内容の重複定義――理由もそちらと同じ(2つの別個のLineEditorインス
+// タンスをそれぞれ別のTUから扱うため、共有ヘルパーを吊るす共通の
+// 所有者が無い)。HELP.txt 2.13章「LIST」の実装、old/src/key.c::
+// make_list()の`nc[] = "/<>()|; "`+先頭'.'の除外を参照。
+bool shouldSearchPath(const std::string &text) {
+  if (text.empty() || text.front() == '.') return false;
+  return text.find_first_of("/<>()|; ") == std::string::npos;
+}
+
 std::string baseName(const std::string &argv0) {
   auto pos = argv0.find_last_of('/');
   return (pos == std::string::npos) ? argv0 : argv0.substr(pos + 1);
@@ -1359,8 +1369,9 @@ void Shell::submitLine() {
   redrawPromptRow();
 }
 
-void Shell::onTab() {
-  if (!completionProvider_) return;
+Shell::TabOutcome Shell::onTab() {
+  TabOutcome outcome;
+  if (!completionProvider_) return outcome;
   const std::string &text = commandLine_.text();
   int cursor = commandLine_.cursorBytePos();
   std::size_t searchFrom = (cursor > 0) ? static_cast<std::size_t>(cursor - 1) : 0;
@@ -1369,30 +1380,64 @@ void Shell::onTab() {
   if (static_cast<int>(wordStart) > cursor) wordStart = static_cast<std::size_t>(cursor);
   std::string partial = text.substr(wordStart, static_cast<std::size_t>(cursor) - wordStart);
 
-  auto candidates = completionProvider_(partial);
-  if (candidates.empty()) return;
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装: shouldSearchPath()
+  // 自身のコメント参照――バッファ「全体」に区切り文字が無ければ
+  // (=まだコマンド名自体を入力中)$PATH検索、そうでなければ従来通り
+  // カレントディレクトリのファイル名補完。programCompletionProvider_
+  // が設定されていない場合(テスト用の合成Provider等)は常に後者へ
+  // フォールバックする。
+  bool searchPath = programCompletionProvider_ && shouldSearchPath(text);
+  auto candidates = searchPath ? programCompletionProvider_(partial) : completionProvider_(partial);
+  if (candidates.empty()) {
+    tabArmed_ = false;
+    return outcome;
+  }
   // 2026-09-15修正、直接のユーザー依頼("PROGRAMのプロンプトで'less '
   // と打ったところで^Iとやっても候補が出ない...最長共通接頭辞まで
   // 補完"): 以前は候補がちょうど1件の時だけ補完し、複数件(曖昧)なら
   // 何もしなかった――bashの素のTabと同じ、候補全体の最長共通接頭辞
   // まで補完する形にした(候補が1件ならその候補自身がそのままlcpに
-  // なるので、以前の単一候補の場合の挙動は変わらない)。まだ「一覧を
-  // 見せる」機能(2回目のTabでの表示等)は無い――ユーザー自身の判断で
-  // これは今回のスコープ外。
+  // なるので、以前の単一候補の場合の挙動は変わらない)。
   std::string lcp = candidates[0];
   for (std::size_t i = 1; i < candidates.size(); i++) {
     std::size_t j = 0;
     while (j < lcp.size() && j < candidates[i].size() && lcp[j] == candidates[i][j]) j++;
     lcp.resize(j);
   }
-  if (lcp.size() <= partial.size()) return;
-  commandLine_.paste(lcp.substr(partial.size()));
+  bool ambiguous = candidates.size() > 1;
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装(old/src/key.c::
+  // input_key()の`f_list`フラグと同じ役割): 曖昧な状態のまま直後に
+  // もう一度TABが来た場合(tabArmed_が既にtrue)だけ一覧表示を要求
+  // する――このメソッド自身のクラスコメント参照、実際にListBrowser
+  // へ遷移するのは呼び出し元(Application)の仕事。
+  if (ambiguous && tabArmed_) {
+    tabArmed_ = false;
+    outcome.showList = true;
+    outcome.candidates = std::move(candidates);
+    outcome.partial = std::move(partial);
+    return outcome;
+  }
+  if (lcp.size() > partial.size()) commandLine_.paste(lcp.substr(partial.size()));
+  if (ambiguous) {
+    display_.putChar(7);  // BEL、legacy自身のvt_putchar(K_g)から移植
+    tabArmed_ = true;
+  } else {
+    tabArmed_ = false;
+  }
+  return outcome;
 }
 
 void Shell::setCompletionProvider(
     std::function<std::vector<std::string>(const std::string &partialWord)> provider) {
   completionProvider_ = std::move(provider);
 }
+
+void Shell::setProgramCompletionProvider(
+    std::function<std::vector<std::string>(const std::string &partialWord)> provider) {
+  programCompletionProvider_ = std::move(provider);
+}
+
+void Shell::resetTabArm() { tabArmed_ = false; }
 
 void Shell::sendControlByte(unsigned char byte) { writeToPty(std::string(1, static_cast<char>(byte))); }
 

@@ -2351,8 +2351,23 @@ class Application {
   // 種類(MAN/PROGRAM/LOCATE/GREPの名前はそもそもファイルシステム
   // パスではない)には配線されていない。一般的なパターンについては
   // クラスコメント自身の範囲の注記参照。
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装(directoriesOnly):
+  // legacyのmake_list()自身のf_dir==2(M_ldir/T_arc、ディレクトリのみ
+  // 補完)に対応――PathInput(pathInputIsDirectory_==true)/
+  // ArchiveDestination(展開先は常にディレクトリ)で使う。既定false
+  // (既存の全呼び出し元は無変更のまま)。
   std::vector<std::string> completeFilesystemPath(const std::string &partial,
-                                                    const std::string &baseDirectory) const;
+                                                    const std::string &baseDirectory,
+                                                    bool directoriesOnly = false) const;
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装(legacy make_list()
+  // 自身のf_prog分岐、old/src/key.c参照): $PATH環境変数の各ディレクト
+  // リを走査し、`partial`から始まる名前で、通常ファイルかつ所有者
+  // 実行可能なエントリだけを集める。legacyと異なりソート済み・重複
+  // 排除する(design.md参照、異なる$PATHディレクトリの同名実行ファイル
+  // を1回だけ表示する判断)。SHELL(Shell::onTab()、Provider注入経由)/
+  // PROGRAM/MANプロンプト(feedPromptByteInner()、shouldSearchPath()が
+  // trueの間)で使う。
+  std::vector<std::string> pathProgramCandidates(const std::string &partial) const;
   bool feedPromptByte(int byte);
   // feedPromptByte()自身の宣言に対する薄いラッパー実装本体
   // (2026-09-10追加、liveIncrementalGrepSearch()自身のコメント参照):
@@ -3082,6 +3097,20 @@ class Application {
   // 再実行することは、単なるUXの癖ではなく、本物の安全性の退行に
   // なるだろう。
   bool startShellHistoryRecall();
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、
+  // TabCompletionContext自身の宣言コメント参照。startShellHistory
+  // Recall()と全く同じ形(currentMode_を保存→ListBrowserMode::show()
+  // →currentMode_=ListBrowser)だが、戻り先がSHELL固定ではなく
+  // 呼び出し時のcurrentMode_(SHELLの生きたコマンドライン、または
+  // promptEditor_の下敷きのモードのどちらでもあり得る)である点が
+  // 異なる。
+  bool showTabCompletionList(const std::vector<std::string> &candidates, const std::string &partial);
+  // openSelectedListEntry()(^M、selected=true)/returnFromListBrowser()
+  // (^G、selected=false)の両方の「先頭」(promptHistoryContext_等の
+  // 既存の分岐より前)から呼ばれる共有ヘルパー。tabCompletionContext_
+  // が無ければ何もせずfalseを返す(呼び出し元はそのまま既存の分岐へ
+  // 進む)。
+  bool returnFromTabCompletionList(bool selected);
   // 全てのstartXxxPrompt()で共有される末尾処理: promptKind_を設定
   // し、その種類自身のラベルをモードラインの行に描き
   // (promptLabelText()自身のコメント参照)、initialTextで
@@ -3234,6 +3263,28 @@ class Application {
     bool isDirectEntry = false;
   };
   std::optional<PromptHistoryContext> promptHistoryContext_;
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装(design.md参照)。
+  // TAB補完の候補が曖昧なまま2回目のTABが来た時、ListBrowserMode
+  // 経由で一覧を見せ、選択結果を呼び出し元(SHELLの生きたコマンド
+  // ライン、またはpromptEditor_)へ返すための最小限の文脈。
+  // promptHistoryContext_(「過去の1件を丸ごと呼び戻す」)とは目的が
+  // 異なる(「今まさに入力中の単語を補完する」)ため、あえて別の
+  // optionalとして独立させている――兼用すると、PromptKindを持たない
+  // SHELL(生きたコマンドライン、promptKind_を一切経由しない)を表現
+  // できない。
+  struct TabCompletionContext {
+    // 呼び出し時のcurrentMode_。プロンプトはcurrentMode_を書き換え
+    // ない(promptKind_/promptEditor_が下敷きのモードの「上に」重なる
+    // だけ)という既存の設計そのものにより、これがApplicationMode::
+    // Shellならshell_.commandLine()、それ以外ならpromptEditor_が
+    // 挿入先だと判別できる――isShellPrompt相当の別フィールドは不要。
+    ApplicationMode returnMode;
+    // 一覧表示時点での補完対象語――選択項目からこれを差し引いた
+    // 残りだけをpaste()する(既存のLCP補完と同じ「残りの接尾辞だけ
+    // 追記する」流儀に揃えている、置換ではない)。
+    std::string partial;
+  };
+  std::optional<TabCompletionContext> tabCompletionContext_;
   // ensureShellActive()/returnFromShell()(2026-08-24の修正、実際の
   // 100%再現する報告: "（ls）のCLAUDE.md上で^J^B^J^W^G"――^J^Bの
   // 直後は正しく「CUT」とラベル付けされていた候補一覧が、この
@@ -3346,6 +3397,12 @@ class Application {
   bool cutResultsResumed_ = false;
   // startShellHistoryRecall()自身のコメント参照。
   bool shellHistoryRecallActive_ = false;
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装。Shell::tabArmed_と
+  // 全く同じ役割(design.md参照)だが、こちらはpromptEditor_側
+  // (feedPromptByteInner()のbyte==0x09分岐)専用――Shell::tabArmed_は
+  // Shellクラス自身が持つので二重に持つ必要はない。feedPromptByte()
+  // 自身の冒頭で、TAB以外の任意のバイトによりfalseへ戻る。
+  bool promptTabArmed_ = false;
   std::string shellHistoryRecallText_;
   // 2つのキー(K-45 ^Xf対K-47 ^Xd)のどちらが現在のPathInput
   // プロンプトを開始したか――なぜ「実行」は統一されたまま

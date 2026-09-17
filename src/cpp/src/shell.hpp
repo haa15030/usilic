@@ -278,15 +278,43 @@ class Shell {
   // ――定義自身のコメント参照。
   void redrawPromptRow();
 
-  // TAB: (設定されていれば)completionProvider_に、カーソルで
-  // 終わる部分的な単語に一致する候補を尋ね、単一の曖昧でない
-  // 一致をコマンド行へ繋ぎ戻す。複数/0個の候補は、将来の
-  // PathCompleterが解決するために残される(これは意図的に
-  // make_list()の候補を順に巡るUIを再実装していない)――クラス
-  // コメント参照。
-  void onTab();
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装
+  // (old/src/key.c::make_list()/input_key()参照): TABで候補が複数
+  // (曖昧)な場合の一覧表示を運ぶための戻り値。`showList`がtrueの間
+  // だけ`candidates`/`partial`が有効――呼び出し元(Application)は
+  // これを見てListBrowserMode経由の一覧選択画面へ遷移する。Shell
+  // クラス自身はApplicationMode/ListBrowserModeを一切知らない
+  // (レイヤリング維持――クラスコメント参照)ので、遷移そのものは
+  // 呼び出し元の仕事のまま。
+  struct TabOutcome {
+    bool showList = false;
+    std::vector<std::string> candidates;
+    std::string partial;
+  };
+  // TAB: 入力バッファ全体に区切り文字が無ければ(shouldSearchPath()
+  // 自身のコメント参照)programCompletionProvider_($PATH検索)、
+  // そうでなければ従来通りcompletionProvider_(カレントディレクトリの
+  // ファイル名)に、カーソルで終わる部分的な単語に一致する候補を
+  // 尋ねる。候補1件なら最長共通接頭辞まで補完してコマンド行へ繋ぎ
+  // 戻す(2026-09-15までの既存の挙動、無変更)。候補が複数(曖昧)の
+  // 場合は最長共通接頭辞まで補完しつつビープ音を鳴らし、直後にもう
+  // 一度(間に他の編集操作を挟まずに)TABが来た場合だけ一覧表示を
+  // 要求する(`tabArmed_`、legacyの`f_list`フラグと同じ役割――
+  // Application::feedShellByte()自身の冒頭が、TAB以外の任意のバイト
+  // でこれをリセットする)。
+  TabOutcome onTab();
   void setCompletionProvider(
       std::function<std::vector<std::string>(const std::string &partialWord)> provider);
+  // 2026-09-18追加: pathProgramCandidates()相当の$PATH検索版
+  // Provider。設定されていなければ常にcompletionProvider_(カレント
+  // ディレクトリ)を使う――既存のテスト用の合成Providerとの後方
+  // 互換のため。
+  void setProgramCompletionProvider(
+      std::function<std::vector<std::string>(const std::string &partialWord)> provider);
+  // Application::feedShellByte()自身の冒頭から、TAB以外の任意の
+  // バイトを処理する直前に呼ばれる――tabArmed_自身の宣言コメント
+  // 参照。
+  void resetTabArm();
 
   // 生のバイトをコマンド行エディタを完全に迂回してptyへ直接
   // 書き込む――例えばCtrl-Cを転送して、シェルが現在フォアグラウンド
@@ -509,6 +537,14 @@ class Shell {
   std::function<bool(const std::string &, const std::string &)> programLauncher_;
   std::function<void(const std::string &)> historyRecorder_;
   std::function<std::vector<std::string>(const std::string &)> completionProvider_;
+  // 2026-09-18追加、TabOutcome自身の宣言コメント参照。
+  std::function<std::vector<std::string>(const std::string &)> programCompletionProvider_;
+  // 2026-09-18追加、legacyの`f_list`フラグ(old/src/key.c)と同じ役割:
+  // 直前のTABが「まさに今と同じ曖昧な状態」だった場合だけtrue――
+  // 次のTABで一覧表示を要求する合図になる。TAB以外の任意のバイトで
+  // resetTabArm()経由でfalseへ戻る(Application::feedShellByte()自身の
+  // 冒頭)。
+  bool tabArmed_ = false;
 };
 
 }  // namespace fm

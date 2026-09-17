@@ -661,6 +661,101 @@ TEST_CASE("onTab: ambiguous candidates that DO share a longer common prefix comp
   CHECK(shell.commandLine().text() == "cat log_");
 }
 
+// -- HELP.txt 2.13. LIST (2026-09-18) --
+//
+// Direct user request ("`U .^M`で起動→`^[s^I^I`→プログラム一覧→
+// `^GU ^I^I`→カレントディレクトリ構成員一覧") to implement the ^I/Tab
+// LIST feature documented in src/HELP.txt, ported from old/src/key.c's
+// make_list()/input_key() (the `f_list` flag: beep on the first
+// ambiguous Tab, show a candidate list on the SECOND consecutive Tab
+// with no other edit in between).
+
+TEST_CASE("onTab: a Tab that is STILL ambiguous right after a first ambiguous Tab (armed) requests "
+          "a candidate list instead of beeping again") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  Shell shell(d, options);
+
+  shell.setCompletionProvider(
+      [](const std::string &) -> std::vector<std::string> { return {"a.txt", "b.txt"}; });
+
+  typeAscii(shell.commandLine(), "cat ");
+  Shell::TabOutcome first = shell.onTab();
+  CHECK_FALSE(first.showList);  // first ambiguous Tab: just beeps and arms
+
+  Shell::TabOutcome second = shell.onTab();
+  CHECK(second.showList);
+  CHECK(second.candidates == std::vector<std::string>{"a.txt", "b.txt"});
+  CHECK(second.partial == "");
+  // The list request doesn't itself touch the command line -- inserting
+  // the eventual selection is the caller's (Application's) job.
+  CHECK(shell.commandLine().text() == "cat ");
+}
+
+TEST_CASE("onTab: any OTHER byte in between two ambiguous Tabs disarms the list request -- the "
+          "next Tab beeps again instead of showing the list") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  Shell shell(d, options);
+
+  shell.setCompletionProvider(
+      [](const std::string &) -> std::vector<std::string> { return {"a.txt", "b.txt"}; });
+
+  typeAscii(shell.commandLine(), "cat ");
+  shell.onTab();  // arms
+  shell.resetTabArm();  // Application::feedShellByte() calls this for any non-Tab byte
+  Shell::TabOutcome second = shell.onTab();
+  CHECK_FALSE(second.showList);
+}
+
+TEST_CASE("onTab: with a program-completion provider set, a buffer containing no delimiter "
+          "characters (still the bare command word) searches PATH instead of the filesystem "
+          "provider") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  Shell shell(d, options);
+
+  bool fsProviderCalled = false;
+  shell.setCompletionProvider([&](const std::string &) -> std::vector<std::string> {
+    fsProviderCalled = true;
+    return {};
+  });
+  shell.setProgramCompletionProvider(
+      [](const std::string &partial) -> std::vector<std::string> {
+        if (partial == "us") return {"usilic"};
+        return {};
+      });
+
+  typeAscii(shell.commandLine(), "us");
+  shell.onTab();
+
+  CHECK(shell.commandLine().text() == "usilic");
+  CHECK_FALSE(fsProviderCalled);
+}
+
+TEST_CASE("onTab: once the buffer contains a space (a second word has started), completion falls "
+          "back to the filesystem provider even with a program-completion provider set") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  Shell shell(d, options);
+
+  bool pathProviderCalled = false;
+  shell.setCompletionProvider([](const std::string &partial) -> std::vector<std::string> {
+    if (partial == "fo") return {"foobar.txt"};
+    return {};
+  });
+  shell.setProgramCompletionProvider([&](const std::string &) -> std::vector<std::string> {
+    pathProviderCalled = true;
+    return {};
+  });
+
+  typeAscii(shell.commandLine(), "cat fo");
+  shell.onTab();
+
+  CHECK(shell.commandLine().text() == "cat foobar.txt");
+  CHECK_FALSE(pathProviderCalled);
+}
+
 TEST_CASE("onResize: repositions the command-line field to the new row/width") {
   RecordingDisplay d(24, 80);
   ShellOptions options;

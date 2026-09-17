@@ -57,6 +57,23 @@ std::string truncatedTrailingPath(const std::string &path) {
   return "..." + path.substr(path.size() - kTrailingPathTailChars);
 }
 
+// 2026-09-18追加、HELP.txt 2.13章「LIST」の実装(old/src/key.c::
+// make_list()、`nc[] = "/<>()|; "`+先頭'.'の除外)。SHELL/PROGRAM/MAN
+// プロンプトで、入力バッファ「全体」(カーソル位置の単語ではなく)に
+// これらの区切り文字が一つも無く、かつ先頭が'.'でなければ、まだ
+// コマンド名自体を入力中とみなして$PATH検索の対象にする――区切り
+// 文字(スペースを含む)が一つでも現れた時点でこの判定は偽になり、
+// 呼び出し元はカレントディレクトリのファイル名補完にフォールバック
+// する。shell.cpp自身にも同じ内容を重複定義してある(2つの別個の
+// LineEditorインスタンス=shell_.commandLine()とpromptEditor_をそれぞれ
+// 別のTUから扱うため、共有ヘルパーを吊るす共通の所有者が無い――
+// truncatedTrailingPath()のarchive_mode.cpp/application.cpp間の重複と
+// 同じ理由)。
+bool shouldSearchPath(const std::string &text) {
+  if (text.empty() || text.front() == '.') return false;
+  return text.find_first_of("/<>()|; ") == std::string::npos;
+}
+
 // 2026-09-14追加、直接のユーザー依頼("`4K .../.husky/pre-commit`を
 // 選択したときはDU: .../.husky/でないと"): DUの一覧中のあるエントリ
 // が「実際に属しているフォルダー」を求める――ディレクトリのエントリ
@@ -528,6 +545,12 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // Tabが黙って何もしないことを意味していた。
   shell_.setCompletionProvider(
       [this](const std::string &partial) { return completeFilesystemPath(partial, shell_.currentDirectory()); });
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装(shouldSearchPath()
+  // 自身のコメント参照): SHELLプロンプトの入力バッファ全体に区切り
+  // 文字が無い間(=まだコマンド名自体を入力中)、Shell::onTab()が
+  // こちらを使う。
+  shell_.setProgramCompletionProvider(
+      [this](const std::string &partial) { return pathProgramCandidates(partial); });
   // K-50(^J^R)自身のRingCategory::ShellCommand履歴(2026-08-04の訂正:
   // 単なる^Rでは「ない」――ToggleHistoryView自身のコメント参照)、
   // それに加えてこのポートの新しい^P/^Nコマンド呼び出し
@@ -752,6 +775,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // name/バッジのフィールドは、埋まったリストと同じくらい、空の
     // リストでも意味がある。
     std::string trailing = inRange ? items[cursorIndex] : "";
+    // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装: 他の全ての分岐
+    // (promptHistoryContext_ベースのもの)より先にチェックする――
+    // ここでチェックしないと、下のフォールバック(ringCategoryLabel
+    // (listBrowserCategory_))へ落ち、無関係な直前のring種別が誤って
+    // 表示されてしまう(listBrowserCategory_はこの機能では一切
+    // 更新しない――design.md参照)。
+    if (tabCompletionContext_) return {"LIST", trailing};
     // RecentFile/RecentDirectory(2026-08-17追加): 意図的に、下の汎用の
     // promptHistoryRecallKind_の分岐より「前に」チェックする――この
     // 2つは、GREP/CUT/MANが(タイプする機能のために)使うのと同じ直接
@@ -2930,6 +2960,13 @@ std::size_t Application::recordedMacroLength() const { return recordedMacro_.siz
 // (スクロールバックのページ送り/コマンド履歴)は、ここではまだ意図的
 // に処理していない。
 bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、Shell::tabArmed_
+  // 自身の宣言コメント参照(legacyの`f_list`フラグと同じ役割): TAB
+  // 以外の任意のバイトを処理する「前」に、必ずここでリセットする
+  // ――この関数自身の以降の分岐がどこで早期returnしても、Tab以外の
+  // バイトなら確実にリセットされることを保証するため、関数の最初の
+  // 行に置く。
+  if (byte != 0x09) shell_.resetTabArm();
   // ^Q(quoted insert、2026-09-10追加): feedPromptByteInner()自身の
   // ^Qのコメント参照。すぐ下の^A/^E/^B/^F/^D/ESC/^U/^K/^Yと全く同じ
   // 「promptEditor_については既に修正済みだが、shell_.commandLine()
@@ -3251,7 +3288,8 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     return handleCommand(Command::StartGrep);
   }
   if (byte == 0x09) {  // Tab
-    shell_.onTab();
+    Shell::TabOutcome outcome = shell_.onTab();
+    if (outcome.showList) showTabCompletionList(outcome.candidates, outcome.partial);
     return true;
   }
   if (byte == 0x7f || byte == 0x08) {  // DEL/^H
@@ -5041,6 +5079,10 @@ bool Application::jumpToPathPrefix() {
 bool Application::openSelectedListEntry() {
   const std::string *item = listBrowserMode_.selectedItem();
   if (!item) return false;
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装――他の全ての分岐
+  // (promptHistoryContext_等)より先にチェックする、returnFromTab
+  // CompletionList()自身のコメント参照。
+  if (tabCompletionContext_) return returnFromTabCompletionList(/*selected=*/true);
   if (promptHistoryContext_) {
     // まず「元の」下層のモードを復元し(プロンプトは、それらが始まった
     // 時にアクティブだったものの上に重なるものであり、対応する
@@ -5989,6 +6031,9 @@ void Application::handleShellChildExited() {
 }
 
 bool Application::returnFromListBrowser() {
+  // 2026-09-18追加、openSelectedListEntry()自身の同じ理由のコメント
+  // 参照。
+  if (tabCompletionContext_) return returnFromTabCompletionList(/*selected=*/false);
   if (promptHistoryContext_) {
     PromptKind kind = promptHistoryContext_->kind;
     // EGREP自身の候補リスト(2026-08-12修正、直接のユーザーの指示)。
@@ -9105,6 +9150,10 @@ void Application::pollLocateUpdateDbCompletion() {
 // 等しく捕捉する――個々の編集操作それぞれに手を入れる必要が無い)
 // だけliveIncrementalGrepSearch()を呼ぶ。
 bool Application::feedPromptByte(int byte) {
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、promptTabArmed_
+  // 自身の宣言コメント参照(Application::feedShellByte()自身の同一の
+  // 修正と同じ理由・同じ配置)。
+  if (byte != 0x09) promptTabArmed_ = false;
   bool trackIncremental = incrementalGrepActive_ && promptKind_ == PromptKind::GrepPattern;
   std::string before = trackIncremental ? promptEditor_.text() : std::string();
   bool result = feedPromptByteInner(byte);
@@ -9232,36 +9281,50 @@ bool Application::feedPromptByteInner(int byte) {
   // 自身の最後の単語を補完するのと一致する(カーソル前のスペースで
   // 分割する同じロジック、promptEditor_とshell_.commandLine()は共有
   // ヘルパーを吊るす共通の所有者を持たない別個のLineEditorのインス
-  // タンスなので、共有するのではなくここにコピーしてある)。MAN/
-  // LOCATE/GREP等には依然として補完する意味のあるものが何も無い
-  // (ページ名/クエリ/パターンはそもそもファイルシステムのパスでは
-  // ない)ので、依然として除外される。CopyDestination/MoveDestination/
-  // ArchiveDestination(2026-08-23追加、直接のユーザー依頼:
-  // "基本的にディレクトリおよびファイル名入力途中の^Iはマッチする
-  // 対象があれば補完して欲しい")――これらは、PathInputと全く同じ
-  // くらい「完全にパスそのもの」であり、単に異なるキー(^X^F/^X^D
-  // ではなく^Xc/^Xm/^Xa)経由で到達するだけである;completeFilesystemPath()
-  // 自体は既に完全に汎用的(部分文字列+現在のディレクトリが入力、
-  // 最長共通の補完が出力)であり、それについて何もPathInput固有の
-  // ものは無かった。DuPathは2026-09-09にプロンプト自体が廃止された
-  // ため、このリストから削除済み――runDuOnCurrentFolder()自身の
-  // コメント参照。
+  // タンスなので、共有するのではなくここにコピーしてある)。
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装: ManName(旧コメント
+  // は「MAN/LOCATE/GREP等には補完する意味のあるものが無い」としていた
+  // が、legacyのmake_list()(old/src/key.c)はM_man/M_man2をM_prog/
+  // M_shellと全く同じ$PATH検索対象に含めている――ページ名がそもそも
+  // ファイルシステムパスではない、という判断自体は正しいが、legacy
+  // 仕様の見落としだった)を、ProgramCommandと全く同じ「最後の単語」
+  // 分割+$PATH検索の対象へ追加する。LOCATE/GREP等(パターン/クエリを
+  // 入力する場所で、"最後の単語"という概念自体が意味を成さない)は
+  // 引き続き除外。CopyDestination/MoveDestination/ArchiveDestination
+  // (2026-08-23追加)は、PathInputと全く同じ「完全にパスそのもの」。
+  // DuPathは2026-09-09にプロンプト自体が廃止されたため、このリスト
+  // から削除済み――runDuOnCurrentFolder()自身のコメント参照。
   if (byte == 0x09 &&
       (promptKind_ == PromptKind::PathInput || promptKind_ == PromptKind::ProgramCommand ||
-       promptKind_ == PromptKind::CopyDestination || promptKind_ == PromptKind::MoveDestination ||
-       promptKind_ == PromptKind::ArchiveDestination)) {
+       promptKind_ == PromptKind::ManName || promptKind_ == PromptKind::CopyDestination ||
+       promptKind_ == PromptKind::MoveDestination || promptKind_ == PromptKind::ArchiveDestination)) {
     const std::string &text = promptEditor_.text();
     int cursor = promptEditor_.cursorBytePos();
     std::string partial = text;
     std::size_t wordStart = 0;
-    if (promptKind_ == PromptKind::ProgramCommand) {
+    bool wordSplitting = promptKind_ == PromptKind::ProgramCommand || promptKind_ == PromptKind::ManName;
+    if (wordSplitting) {
       std::size_t searchFrom = (cursor > 0) ? static_cast<std::size_t>(cursor - 1) : 0;
       wordStart = text.find_last_of(" \t", searchFrom);
       wordStart = (wordStart == std::string::npos) ? 0 : wordStart + 1;
       if (static_cast<int>(wordStart) > cursor) wordStart = static_cast<std::size_t>(cursor);
       partial = text.substr(wordStart, static_cast<std::size_t>(cursor) - wordStart);
     }
-    auto candidates = completeFilesystemPath(partial, directoryMode_.currentDirectory());
+    // 2026-09-18追加、shouldSearchPath()自身のコメント参照: 入力
+    // バッファ「全体」に区切り文字が無ければ(=まだコマンド名/ページ
+    // 名自体を入力中)$PATH検索、そうでなければ従来通りカレント
+    // ディレクトリのファイル名補完。PathInput(pathInputIsDirectory_
+    // ==true、K-47/^X^d)/ArchiveDestination(展開先は常にディレクトリ)
+    // はディレクトリのみに絞る。
+    bool searchPath = wordSplitting && shouldSearchPath(text);
+    bool directoriesOnly =
+        (promptKind_ == PromptKind::PathInput && pathInputIsDirectory_) || promptKind_ == PromptKind::ArchiveDestination;
+    auto candidates = searchPath ? pathProgramCandidates(partial)
+                                  : completeFilesystemPath(partial, directoryMode_.currentDirectory(), directoriesOnly);
+    if (candidates.empty()) {
+      promptTabArmed_ = false;
+      return true;
+    }
     // 2026-09-15修正、直接のユーザー報告("PROGRAMのプロンプトで
     // 'less 'と打ったところで^Iとやっても候補が出ない")+依頼("最長
     // 共通接頭辞まで補完")――Shell::onTab()自身の同一の修正参照
@@ -9270,14 +9333,26 @@ bool Application::feedPromptByteInner(int byte) {
     // 後の空の単語はカレントディレクトリの全ファイルが候補になる)
     // なら何もしなかった。bashの素のTabと同じ、候補全体の最長共通
     // 接頭辞まで補完する形にした。
-    if (!candidates.empty()) {
-      std::string lcp = candidates[0];
-      for (std::size_t i = 1; i < candidates.size(); i++) {
-        std::size_t j = 0;
-        while (j < lcp.size() && j < candidates[i].size() && lcp[j] == candidates[i][j]) j++;
-        lcp.resize(j);
-      }
-      if (lcp.size() > partial.size()) promptEditor_.paste(lcp.substr(partial.size()));
+    std::string lcp = candidates[0];
+    for (std::size_t i = 1; i < candidates.size(); i++) {
+      std::size_t j = 0;
+      while (j < lcp.size() && j < candidates[i].size() && lcp[j] == candidates[i][j]) j++;
+      lcp.resize(j);
+    }
+    bool ambiguous = candidates.size() > 1;
+    // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装(Shell::onTab()
+    // 自身の同一の修正参照、legacyのf_listフラグと同じ役割)。
+    if (ambiguous && promptTabArmed_) {
+      promptTabArmed_ = false;
+      showTabCompletionList(candidates, partial);
+      return true;
+    }
+    if (lcp.size() > partial.size()) promptEditor_.paste(lcp.substr(partial.size()));
+    if (ambiguous) {
+      display_.putChar(7);  // BEL、Shell::onTab()自身の同一の修正参照
+      promptTabArmed_ = true;
+    } else {
+      promptTabArmed_ = false;
     }
     return true;
   }
@@ -9866,6 +9941,43 @@ bool Application::startShellHistoryRecall() {
   listBrowserView_.setCursorAtModeLineTrailingEnd(false);
   listBrowserMode_.show(sortedUniqueRecentEntries(RingCategory::ShellCommand));
   currentMode_ = ApplicationMode::ListBrowser;
+  return true;
+}
+
+// showTabCompletionList()自身のapplication.hpp宣言コメント参照。
+bool Application::showTabCompletionList(const std::vector<std::string> &candidates, const std::string &partial) {
+  tabCompletionContext_ = TabCompletionContext{currentMode_, partial};
+  listBrowserView_.setCursorAtModeLineTrailingEnd(false);
+  listBrowserMode_.show(candidates);
+  currentMode_ = ApplicationMode::ListBrowser;
+  activeView().redraw();
+  return true;
+}
+
+// returnFromTabCompletionList()自身のapplication.hpp宣言コメント参照。
+bool Application::returnFromTabCompletionList(bool selected) {
+  if (!tabCompletionContext_) return false;
+  ApplicationMode returnMode = tabCompletionContext_->returnMode;
+  std::string partial = tabCompletionContext_->partial;
+  tabCompletionContext_ = std::nullopt;
+  currentMode_ = returnMode;
+  if (selected) {
+    const std::string *item = listBrowserMode_.selectedItem();
+    // 既存のLCP補完と同じ「残りの接尾辞だけ追記する」流儀――一覧の
+    // 全候補はpartialを共通接頭辞に持つ(LCPの定義上)ので、置換では
+    // なく追記で正しく完成する。
+    if (item && item->size() > partial.size()) {
+      std::string suffix = item->substr(partial.size());
+      if (returnMode == ApplicationMode::Shell) shell_.commandLine().paste(suffix);
+      else promptEditor_.paste(suffix);
+    }
+  }
+  if (returnMode == ApplicationMode::Shell) {
+    shell_.scrollback().redraw();
+    shell_.redrawPromptRow();
+  } else {
+    activeView().redraw();
+  }
   return true;
 }
 
@@ -11907,7 +12019,8 @@ bool Application::executePathInput(const std::string &path) {
 
 // K-65(^I、M_list): クラス自身の宣言コメント参照。
 std::vector<std::string> Application::completeFilesystemPath(const std::string &partial,
-                                                               const std::string &baseDirectory) const {
+                                                               const std::string &baseDirectory,
+                                                               bool directoriesOnly) const {
   std::string dirPart, prefix;
   std::size_t slash = partial.find_last_of('/');
   if (slash == std::string::npos) {
@@ -11934,8 +12047,37 @@ std::vector<std::string> Application::completeFilesystemPath(const std::string &
     std::string name = entry.path().filename().string();
     if (name.compare(0, prefix.size(), prefix) != 0) continue;
     bool isDir = entry.is_directory(ec);
+    if (directoriesOnly && !isDir) continue;
     results.push_back(dirPart + name + (isDir ? "/" : ""));
   }
+  return results;
+}
+
+// pathProgramCandidates()自身の宣言コメント参照(application.hpp)。
+std::vector<std::string> Application::pathProgramCandidates(const std::string &partial) const {
+  std::vector<std::string> results;
+  const char *pathEnv = std::getenv("PATH");
+  if (!pathEnv) return results;
+  std::istringstream stream(pathEnv);
+  std::string dir;
+  while (std::getline(stream, dir, ':')) {
+    if (dir.empty()) continue;
+    std::error_code ec;
+    std::filesystem::directory_iterator it(dir, ec);
+    if (ec) continue;
+    for (const auto &entry : it) {
+      std::string name = entry.path().filename().string();
+      if (name.compare(0, partial.size(), partial) != 0) continue;
+      if (entry.is_directory(ec)) continue;
+      std::error_code permEc;
+      auto status = entry.status(permEc);
+      if (permEc) continue;
+      if ((status.permissions() & std::filesystem::perms::owner_exec) == std::filesystem::perms::none) continue;
+      results.push_back(name);
+    }
+  }
+  std::sort(results.begin(), results.end());
+  results.erase(std::unique(results.begin(), results.end()), results.end());
   return results;
 }
 
