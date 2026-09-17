@@ -18262,3 +18262,19 @@ usilic.1を開いたとき、manではなくgroffで開きたい。理由は『m
 > `usilic -n <path>`を新設しました(コミットb4a74ad)。既存の`usilic -m`(convertMarkupToLegacyHelpText())がusilic独自markup(<b>/<u>/<i>/<indentN>)を最終的なnroff重ね打ち平文へ直接変換するのに対し、`-n`(convertMarkupToMsRoffSource())は同じmarkupを本物のroff -msマクロソースへ変換します――ユーザー自身が`groff -ms`へ通して初めてレンダリングされる、-mとの比較用の別経路です。<b>→\fBX\fP、<u>/<i>→\fIX\fP(下線相当プリミティブが無いため両方斜体扱い、-mと同じ慣習)、<indentN>→".in Nn"/".in 0"(.RS/.REのようなマクロパッケージ固有ブロックマクロではなく、パッケージ非依存のtroffプリミティブ)、空行→.PP(-ms既定の段落先頭字下げマクロ――小説の下書きのパラグラフ先頭字下げという当初の動機を、usilic側の仕組みではなく-msマクロパッケージ自身の振る舞いとして実現)。行頭の"."/"'"は"\&"、リテラルな"\"は"\e"でエスケープ(本物のtroffが構文解析する中間ソースなので必須)。実際に`usilic -n ../QUICK.txt | groff -ms -Kutf8 -Tutf8`でエラー無くレンダリングされることを確認済みです(fill/adjust絡みの警告は出ますが、-ms既定のfillモード段落とKEY表記のような本来テーブル的な内容との相性の問題で、変換自体のバグではありません)。
 
 新規doctest9件、make test 1169/1170(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。
+
+< src/HELP.txtは未完成だが、2.13.に記載のLISTを実装してほしい。
+実態は下記で確認よろしく。
+`U .^M`で起動→`^[s^I^I`→プログラム一覧→`^GU ^I^I`→カレントディレクトリ構成員一覧
+
+> HELP.txt 2.13章「LIST」(^I/Tab補完)を実装しました(コミットe9a5b5a)。legacy(old/src/key.c::make_list()/input_key()、shell.c)を調査し、以下の仕様を移植しました:
+
+1. $PATH検索補完: SHELL/PROGRAM/MANプロンプトで、入力バッファ「全体」(カーソル位置の単語ではなく)に区切り文字(`nc[] = "/<>()|; "`)が一つも無く、かつ先頭が'.'でなければ、まだコマンド名/ページ名自体を入力中とみなし$PATH上の実行ファイル名で補完します(shouldSearchPath())。区切り文字(スペースを含む)が一つでも現れた時点でカレントディレクトリのファイル名補完にフォールバックします。ManNameはこれまで補完対象から除外されていましたが、legacyがM_man/M_man2をM_prog/M_shellと全く同じ$PATH検索対象にしていることが判明したため、対象へ追加しました。
+
+2. 曖昧時のビープ+2回目のTabで一覧表示: 候補が複数(曖昧)な場合、最長共通接頭辞まで補完しつつビープを鳴らしarmedフラグを立てます(legacyのf_listフラグと同じ役割)。直後にもう一度(間に他の編集操作を挟まずに)Tabが来た場合だけ、ListBrowserMode経由で候補一覧を表示します。Shell::onTab()の戻り値をvoidからTabOutcome構造体へ変更し「一覧表示が必要か」を呼び出し元(Application)へ運ぶようにし(Shellクラス自身はApplicationMode/ListBrowserModeを一切知らないレイヤリングは維持)、Application::TabCompletionContext/showTabCompletionList()/returnFromTabCompletionList()を新設して、startShellHistoryRecall()(SHELLの^R呼び戻し)と全く同じ「呼び出し元へ戻って挿入する」形を踏襲しました。
+
+3. DIR限定補完: PathInput(K-47/^X^d)/ArchiveDestination(展開先は常にディレクトリ)は、completeFilesystemPath()に新設したdirectoriesOnly引数でファイルを除外しディレクトリのみを候補にします。
+
+新規doctest9件を追加する過程で、テスト自体の不備を2件発見・修正しました(fixture rootに既存の"subdir/"があり意図しない曖昧一致を作っていた、"fakebin"という$PATHディレクトリ名自体が"fake"接頭辞のcwd補完テストと衝突していた)。
+
+make test 1178/1179(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。実機での`U .^M`→`^[s^I^I`→`^GU ^I^I`相当(usilic自身での再現)の確認をお願いします。
