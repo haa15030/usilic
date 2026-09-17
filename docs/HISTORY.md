@@ -18199,3 +18199,13 @@ main.cppはdoctest対象外のため、既存のtest suiteで無関係のリグ�
 これにより`usilic CLAUDE.md`のような位置引数付き起動、`usilic < CLAUDE.md`のようなパイプされたstdin相当の起動のどちらも、SHELLプロンプトで直接打った場合と同じくハンドオフされ、独立したGUI/新規プロセスとして起動されなくなるはずです。前回のUSILIC環境変数チェック(main.cpp)はセーフティネットとしてそのまま残しています。
 
 新規doctest(runNestedUsilicProgram()の起動経路が通常のProgramMode::run()とは別物であることを確認、PATHを/usr/bin:/binへ制限した安全な環境で)を追加し、既存の"usilic"認識テストを更新しました。main.cppはdoctest対象外ですが、既存のtest suiteで無関係のリグレッションが無いことを確認(1156/1157、既知無関係のLOCATEフレークのみ)。make usilic/make install/make app完了、~/Applications/usilic.appへも反映済みです。実機での`usilic CLAUDE.md`/`usilic < CLAUDE.md`両パターンの`^Jp`経由確認をお願いします。
+
+< `^Jpusilic < ^M`ではモードラインが「00000/00000 END」「0」「(stdin)」「PROGRAM　　　　」となってキー入力すると生データがターミナルに出てくる。
+
+> 2件とも根本原因が判明・修正しました(コミットc4fd327)。
+
+1. 内容0行(00000/00000 END): tryPollProgramHandoff()のソケット分岐(パイプされたstdin)はpollShellHandoff()と全く同じ設計で、loadStream()により最初の1行だけを同期的に試します。SHELLモードの場合、その後メインループ自身の毎回の反復がpollPagerExitNotice()を呼び続けるので、たとえ最初の1回がEAGAIN(子がまだソケットへ書き込んでいない一瞬)で0行のまま終わっても、数ms後の次の反復が自然に拾い直します。しかしrunNestedUsilicProgram()自身のポーリングループはメインループの「外」にある独立したブロッキングループで、子プロセス(sh経由の入れ子usilic)が終了する(hasExited()がtrueになる)までの間、誰もensureLoadedThrough()/pollPagerExitNotice()を呼んでいませんでした――子が全バイトをソケットへ書き終えて自分自身は先に終了していても、こちらが一度もEAGAINを再試行しなければ0行のまま固まってしまいます。ハンドオフ後も子の終了を待つ間、毎回pollPagerExitNotice()を呼ぶよう修正しました。
+
+2. キー入力すると生データがターミナルに出てくる: less/vi(ProgramMode::run()の既存経路)は子プロセス自身が本物の端末を直接読みますが、`usilic < ファイル`のケースでは子(sh、その子である入れ子usilic)のstdinはリダイレクトされたファイルであり、本物の端末を一切読みません。leaveRawMode()でcooked+echoモードに戻された端末は、子の実行中ずっと「誰も読んでいない」状態のまま放置されます――その間にキーを押すと、cookedモードのカーネル自身によってそのバイトがそのまま画面へエコーされ(かつ入力キューにも溜まり)、これがまさに報告いただいた「生データ」の正体でした。reenterRawMode()の直前にtcflush(TCIFLUSH)を呼んで未読の入力キューを捨ててからraw modeへ戻すよう修正し、その残骸が以後のreadByte()に紛れ込むことも防ぎました。
+
+make test 1156/1157(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。実機での`usilic < CLAUDE.md`パターンの再確認をお願いします。
