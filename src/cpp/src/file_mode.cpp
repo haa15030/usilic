@@ -188,12 +188,19 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       fields.trailing = std::to_string(bytes);
       fields.rightWatermark = hasReturnTarget ? "" : "usilic v1.5b";
       fields.trailing2 = searchOriginDetail_;
-      // 2026-09-17追加: pagerReturnsToProgram_(setPagerReturnsToProgram()
-      // 自身の宣言コメント参照)はpagerReturnsToShell_の"SHELL"と全く
-      // 同じ扱いだが、"PROGRAM"を表示する――^Jp(PROGRAM)経由のパイプ
-      // されたstdin引き渡し専用。
-      fields.trailing3 =
-          pagerReturnsToShell_ ? "SHELL" : (pagerReturnsToProgram_ ? "PROGRAM" : pagerListingDirectory_);
+      // 2026-09-17追加、直接のユーザー指摘("戻り値がPROGRAMなら
+      // PROGRAMへ戻らないと。なんだけど、PROGRAMは^J^P(program一覧)
+      // でも発動するので話がややこしくなる。そこで戻り値は
+      // ~/git/usilic/でいいかなと"): 以前はpagerReturnsToProgram_の
+      // 間、固定文字列"PROGRAM"を表示していたが、この語自体が
+      // usilicrc設定一覧(^J^P、startProgramList())と紛らわしく、
+      // しかも実際の^Gの戻り先は「PROGRAM画面」という独立した何かでは
+      // なく、Application::tryPollProgramHandoff()自身のコメント通り
+      // capturedModeが指す実際の場所(典型的にはディレクトリ)――
+      // ARCHIVE再設計(①)/K-23(⑥)と同じ理屈で、ラベルではなく
+      // pagerListingDirectory_(tryPollProgramHandoff()が
+      // capturedMode==Directoryの時に設定する)をそのまま出す。
+      fields.trailing3 = pagerReturnsToShell_ ? "SHELL" : pagerListingDirectory_;
       // 2026-08-25の修正(HISTORY.md:9462を引用した直接のユーザー
       // 報告、"基本的に右端まで埋まっていないモードラインは全部
       // 不良"): trailing3は「既に」fillTrailingToEdgeサポートを
@@ -214,7 +221,7 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       // ディレクトリ)が非空の場合も同様にtrailing3を端まで埋める
       // ――ArchiveMode自身のtrailing3(currentArchive_、フルパス)が
       // fillTrailingToEdgeなのと同じ理屈。
-      fields.fillTrailingToEdge = pagerReturnsToShell_ || pagerReturnsToProgram_ || !pagerListingDirectory_.empty();
+      fields.fillTrailingToEdge = pagerReturnsToShell_ || !pagerListingDirectory_.empty();
       // 2026-09-11追加、直接のユーザー報告("FILE/DIRでも^O^S/^J^S
       // 同様^S/^[iをサポートして欲しい"): pagerMode_(CLIから直接
       // `usilic <file>`/パイプされたstdinで開いたファイル、この関数
@@ -872,7 +879,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   pagerReturnsToShell_ = false;  // 自身の宣言コメント参照。pollShellHandoff()はこの呼び出しの後にこれを切り替える
   pagerReturnsToDirectory_ = false;  // 同上。loadFileAsPipe()がこの呼び出しの後にこれを切り替える
   pagerReturnsToProgram_ = false;    // 同上。tryPollProgramHandoff()はこの呼び出しの後にこれを切り替える
-  pagerListingDirectory_.clear();  // 同上。Application::openSelectedEntryNoWrap()のARCHIVE分岐だけがこの呼び出しの後にこれを設定する
+  pagerListingDirectory_.clear();  // 同上。Application::openSelectedEntryNoWrap()のARCHIVE分岐/tryPollProgramHandoff()がこの呼び出しの後にこれを設定する(2026-09-17追加分)
   // 2026-08-25(直接のユーザー依頼: "SHELL同様、行数を5桁とバイト
   // 数表示をよろしく")――他の全てのFileモードのエントリが使う
   // 可変幅のデフォルトの代わりに、同じ固定5桁ゼロパディングの

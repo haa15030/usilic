@@ -11470,8 +11470,24 @@ bool Application::pollShellHandoff() {
 // runNestedUsilicProgram()自身の宣言コメント参照。pollShellHandoff()
 // の核心部分の複製(パイプされたstdin/プレーンなパス/ファイルの
 // 3分岐とも同一のロジック)――違いはshell_.childPid()の代わりに引数の
-// pidを使うこと、currentMode_ == Shellのゲートが無いこと、パイプされた
-// stdinのケースだけ戻り先ラベルが"SHELL"ではなく"PROGRAM"になること。
+// pidを使うこと、currentMode_ == Shellのゲートが無いこと。
+// 2026-09-17追加、直接のユーザー指摘("戻り値がPROGRAMならPROGRAMへ
+// 戻らないと。なんだけど、PROGRAMは^J^P(program一覧)でも発動する
+// ので話がややこしくなる。そこで戻り値は~/git/usilic/でいいかなと"):
+// 以前はパイプされたstdinのケースだけ戻り先ラベルを固定文字列
+// "PROGRAM"にしていたが、"PROGRAM"という語自体がusilicrc設定一覧
+// (^J^P、startProgramList())と紛らわしく、しかも実際の^Gの戻り先は
+// 常にcapturedModeが指す「実際の場所」であって「PROGRAM画面」という
+// 独立した何かではない――ARCHIVE再設計(①)/K-23(⑥)と同じ理屈で、
+// ラベルではなく実際の戻り先パスをtrailing3に出す。capturedModeが
+// Directoryの場合(最も一般的、PROGRAMがディレクトリ一覧から発動
+// された場合)はdirectoryMode_.currentDirectory()をそのまま使う――
+// programPromptDirectory_(マークされたファイル/カーソル位置の
+// エントリが無いと空のまま)には依存しない、こちらは常に有効。
+// それ以外のcapturedMode(File/Grep/Locate/Du等からのPROGRAM発動)は
+// 今のところ対象外(pagerListingDirectory_が空のままなのでtrailing3
+// 自体が単に表示されない、独立起動と同じ既定の見た目に留まる)――
+// フェーズ2の他モード監査で改めて扱う。
 bool Application::tryPollProgramHandoff(pid_t pid, ApplicationMode capturedMode) {
   std::string path = "/tmp/.usilic-shell/s." + std::to_string(::getuid()) + "." + std::to_string(pid);
   struct stat st;
@@ -11492,6 +11508,9 @@ bool Application::tryPollProgramHandoff(pid_t pid, ApplicationMode capturedMode)
     fileMode_.loadStream(fd, /*ownsFd=*/true, "", 1);
     fileMode_.setSearchOrigin("", "(stdin)");
     fileMode_.setPagerReturnsToProgram(true);
+    if (capturedMode == ApplicationMode::Directory) {
+      fileMode_.setPagerListingDirectory(truncatedTrailingPath(directoryMode_.currentDirectory()));
+    }
     activeView().redraw();
     return true;
   }
