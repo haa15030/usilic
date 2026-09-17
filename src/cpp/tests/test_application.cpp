@@ -3096,6 +3096,41 @@ TEST_CASE_FIXTURE(Fixture, "LIST: a Tab left armed by a prior ambiguous Tab (no 
   CHECK(app.promptText() == "fake-two");
 }
 
+// 2026-09-18追加、実機報告(スクリーンショット=gv、legacyの参照画面:
+// "プロンプトエリアは編集可能な非ハイライト表示が正解"): moving the
+// list cursor previews the currently-highlighted candidate's full text
+// via promptEditor_ (refreshDirectEntryModeLine()'s tabCompletionContext_
+// branch) -- the same "direct entry" convention RecentFile/RecentDirectory
+// already use, rather than a plain highlighted ModeLineFields trailing run.
+TEST_CASE_FIXTURE(Fixture, "LIST: moving the cursor previews the highlighted candidate via the "
+                           "editable prompt area (drawPromptLabel(TabCompletionList)), matching "
+                           "RecentFile/RecentDirectory's own direct-entry convention") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("fake");
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  REQUIRE(app.handleCommand(Command::MoveDown));
+  CHECK(app.activeContentView().modeLineText().substr(0, 4) == "LIST");
+  const std::string *selected = app.listBrowserMode().selectedItem();
+  REQUIRE(selected != nullptr);
+  CHECK(app.promptText() == *selected);  // the highlighted candidate's full text, live-previewed
+}
+
 // 2026-09-10 (a direct user request): "usilic" itself is always accepted
 // even though the fixture's rc (see above) never registers it as a
 // PROGRAM entry -- mirrors SHELL mode's own pre-existing special-casing

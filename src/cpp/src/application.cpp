@@ -70,7 +70,19 @@ std::string truncatedTrailingPath(const std::string &path) {
 // truncatedTrailingPath()のarchive_mode.cpp/application.cpp間の重複と
 // 同じ理由)。
 bool shouldSearchPath(const std::string &text) {
-  if (text.empty() || text.front() == '.') return false;
+  // 2026-09-18訂正、実機報告(スクリーンショット=gu: "usilic .^M→
+  // ^[s^I^I→不良...カレントディレクトリ一覧ではなくプログラム一覧が
+  // 正解")を受けての修正: 空のバッファ(何もタイプしていない状態での
+  // ^I^I)を無条件にfalse(=カレントディレクトリ検索)扱いしていたのが
+  // バグだった――legacyのold/src/key.c::make_list()自身の実際の分岐
+  // (`if (*buff != '.') { ...ncを含まなければf_prog=1... } else
+  // f_prog=0;`)を素の空文字列(`*buff`はNUL、'.'ではない)に通すと、
+  // 続くループは1回も回らずに即座に終わり`c`は0のまま、
+  // `f_prog = !c`は1(true)になる――つまり空のバッファは「まだ
+  // コマンド名を1文字も入力していない」の極端な場合に過ぎず、legacy
+  // 自身はこれも$PATH検索対象に含めている。空文字列を先頭'.'と誤って
+  // 同一視していたのが今回の誤り。
+  if (!text.empty() && text.front() == '.') return false;
   return text.find_first_of("/<>()|; ") == std::string::npos;
 }
 
@@ -9638,6 +9650,7 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     case PromptKind::None:
     case PromptKind::Du:  // promptKind_には決して代入されない、drawPromptLabel()専用のラベルマーカー――application.hpp自身の宣言コメント参照
     case PromptKind::ArchiveLoad:  // 同上――PromptKind::ArchiveLoad自身の宣言コメント参照
+    case PromptKind::TabCompletionList:  // 同上――PromptKind::TabCompletionList自身の宣言コメント参照
       return false;
   }
   return false;
@@ -10013,6 +10026,8 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return "DU";
     case PromptKind::ArchiveLoad:
       return "ARC";
+    case PromptKind::TabCompletionList:
+      return "LIST";
     case PromptKind::None:
       return "";
   }
@@ -10698,6 +10713,23 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
 
 void Application::refreshDirectEntryModeLine() {
   if (currentMode_ != ApplicationMode::ListBrowser) return;
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、実機報告
+  // (スクリーンショット=gv、legacyの参照画面: "プロンプトエリアは
+  // 編集可能な非ハイライト表示が正解")を受けての追加。RecentFile/
+  // RecentDirectoryの直下の分岐と全く同じ形――promptHistoryContext_
+  // ではなくtabCompletionContext_を見る点だけが違う(design.md参照、
+  // SHELLの生きたコマンドラインにはPromptKindという概念自体が無い
+  // ため、この機能専用の別のoptionalを使っている)。
+  if (tabCompletionContext_) {
+    int candidateCount = static_cast<int>(listBrowserMode_.items().size());
+    std::string positionText =
+        candidateCount > 0 ? ModeLine::format(listBrowserView_.cursorIndex() + 1, candidateCount) : "";
+    drawPromptLabel(PromptKind::TabCompletionList, positionText);
+    const std::string *selected = listBrowserMode_.selectedItem();
+    promptEditor_.setText(selected ? *selected : "");
+    promptEditor_.redraw();
+    return;
+  }
   if (!promptHistoryContext_ || !promptHistoryContext_->isDirectEntry) return;
   PromptKind kind = promptHistoryContext_->kind;
   if (kind != PromptKind::RecentFile && kind != PromptKind::RecentDirectory) return;

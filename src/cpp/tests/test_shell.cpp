@@ -733,6 +733,37 @@ TEST_CASE("onTab: with a program-completion provider set, a buffer containing no
   CHECK_FALSE(fsProviderCalled);
 }
 
+// 2026-09-18追加、実機報告(スクリーンショット=gu: "usilic .^M→
+// ^[s^I^I→不良...カレントディレクトリ一覧ではなくプログラム一覧が
+// 正解"): shouldSearchPath()(application.cpp/shell.cpp)が空の
+// バッファ(何もタイプしていない状態でのTab連打)を無条件にfalse
+// (=カレントディレクトリ検索)扱いしてしまう回帰があった――legacyの
+// old/src/key.c::make_list()自身は、空のバッファも$PATH検索対象に
+// 含める(空文字列は「まだコマンド名を1文字も入力していない」の
+// 極端な場合に過ぎず、先頭'.'とは別物)。
+TEST_CASE("onTab: an EMPTY buffer (nothing typed yet) also searches $PATH, not the filesystem "
+          "provider -- the empty case is NOT the same as a leading '.'") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  Shell shell(d, options);
+
+  bool fsProviderCalled = false;
+  shell.setCompletionProvider([&](const std::string &) -> std::vector<std::string> {
+    fsProviderCalled = true;
+    return {};
+  });
+  shell.setProgramCompletionProvider(
+      [](const std::string &partial) -> std::vector<std::string> {
+        if (partial.empty()) return {"usilic"};
+        return {};
+      });
+
+  shell.onTab();  // nothing typed at all
+
+  CHECK(shell.commandLine().text() == "usilic");
+  CHECK_FALSE(fsProviderCalled);
+}
+
 TEST_CASE("onTab: once the buffer contains a space (a second word has started), completion falls "
           "back to the filesystem provider even with a program-completion provider set") {
   RecordingDisplay d(24, 80);

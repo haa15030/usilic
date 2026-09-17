@@ -49,7 +49,10 @@ void resetSignalsToDefault() {
 // 所有者が無い)。HELP.txt 2.13章「LIST」の実装、old/src/key.c::
 // make_list()の`nc[] = "/<>()|; "`+先頭'.'の除外を参照。
 bool shouldSearchPath(const std::string &text) {
-  if (text.empty() || text.front() == '.') return false;
+  // application.cpp自身の同名ヘルパーの2026-09-18訂正コメント参照
+  // (実機報告=gu: 空のバッファでの^I^Iがカレントディレクトリ一覧に
+  // 誤って落ちていた――legacyは空文字列も$PATH検索対象に含める)。
+  if (!text.empty() && text.front() == '.') return false;
   return text.find_first_of("/<>()|; ") == std::string::npos;
 }
 

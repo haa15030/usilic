@@ -2963,7 +2963,16 @@ class Application {
     // 2026-09-20追加、startArchiveLoadAsync()自身のコメント参照。
     // Du同様、promptKind_へは一切代入されないdrawPromptLabel()専用の
     // 静的メッセージ("Loading archive...")のためだけに存在する。
-    ArchiveLoad
+    ArchiveLoad,
+    // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、実機報告
+    // (スクリーンショット=gv、legacyの参照画面: "プロンプトエリアは
+    // 編集可能な非ハイライト表示が正解")を受けての追加。Du/ArchiveLoad
+    // と全く同じ理由でpromptKind_へは一切代入されない
+    // ――refreshDirectEntryModeLine()自身のtabCompletionContext_分岐が
+    // drawPromptLabel(PromptKind::TabCompletionList, positionText)を
+    // 呼んで"LIST"ラベルを描くためだけに存在する(promptLabelText()
+    // 自身のコメント参照)。
+    TabCompletionList
   };
   // ^Xc/^Xm/^Xr(K-52/K-54/K-56)とその^X^K「with SHELL window」の
   // 兄弟(K-51/K-53/K-55)は、以前は移動先/確認プロンプトを即座に
