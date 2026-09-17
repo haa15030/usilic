@@ -73,7 +73,24 @@ std::string expandHelpMarkup(const std::string &text) {
                         numEnd < text.size() && text[numEnd] == '>';
     if (isIndentOpen) {
       out += '\x01';
-      out.append(text, numStart, numEnd - numStart);  // 元の数字文字(1〜2桁)をそのまま転写
+      // 2026-09-21修正、直接のユーザー報告("<indent?>タグにバグが
+      // ある。直後に数字があると正しく字下げしない。<indent2>1.
+      // Introductionとか。特に<indent8>0x7fでは暴走"): 元の数字文字を
+      // そのまま(1桁なら1文字だけ)転写していたため、デコーダ(pipe_
+      // buffer.cpp自身のreadIndentDigits())の「\x01の直後、最大2文字
+      // までの連続した数字を読む」という貪欲な読み取りが、タグの数字
+      // が1桁だけの場合、直後に続く本文側の最初の文字がたまたま数字
+      // だと、それをエンコードされた数字の2桁目だと誤読んでしまって
+      // いた(例: <indent2>1. → \x01+"2"+"1. "を\x01+"21"と誤読、
+      // 本文の"1"自体も字下げ値へ吸い込まれて消える)。<indent8>のような
+      // 大きな値と本文側の数字が組み合わさると、字下げ幅が実際の画面幅
+      // を超える巨大な値になり得て、折り返し処理の無限ループ(暴走)を
+      // 引き起こしていた。固定2桁(0埋め)へ変更し、デコーダ側が常に
+      // ちょうど2文字だけを読む(readIndentDigits()自身のk<2という
+      // ループ上限により、これで曖昧さが無くなる)ようにする。
+      std::string digits = text.substr(numStart, numEnd - numStart);
+      if (digits.size() == 1) digits = "0" + digits;
+      out += digits;
       i = numEnd + 1;  // "<indent" + 1〜2桁の数字 + ">"
       // 2026-09-04追加、実機での実際の再現(初回のsrc/HELP.txt全面
       // 改稿を実際に流し込んで発覚): 複数行の<indentN>...</indent>を
@@ -97,7 +114,7 @@ std::string expandHelpMarkup(const std::string &text) {
       // 出力済みなので、末尾がちょうど改行ならそれを取り除く。
       if (!out.empty() && out.back() == '\n') out.pop_back();
       out += '\x01';
-      out += '0';  // 終了(値0) -- ASCII '0'文字のまま(isIndentOpen自身のコメント参照)
+      out += "00";  // 終了(値0)、isIndentOpen自身の2026-09-21修正と同じ固定2桁ゼロ埋め(単独の'0'だと直後の本文側の数字を2桁目として誤読み得るため)
       i += indentClose.size();
       continue;
     }

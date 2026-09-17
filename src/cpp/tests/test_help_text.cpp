@@ -15,7 +15,16 @@
 // 参照、本物のCtrl-A(0x01)との誤認を避けるため)――このindentMarker()
 // ヘルパーは値を10進数の文字列へ変換して連結するだけの薄いラッパー。
 namespace {
-std::string indentMarker(int value) { return "\x01" + std::to_string(value); }
+// 2026-09-21修正、直接のユーザー報告("<indent?>タグにバグがある。
+// 直後に数字があると正しく字下げしない...特に<indent8>0x7fでは
+// 暴走"): help_text.cpp自身の同日の修正コメント参照――転写する数字を
+// 固定2桁(0埋め)にしたので、このテストヘルパーも同じ0埋め形式に
+// 合わせる。
+std::string indentMarker(int value) {
+  std::string digits = std::to_string(value);
+  if (digits.size() == 1) digits = "0" + digits;
+  return "\x01" + digits;
+}
 }  // namespace
 
 TEST_CASE("expandHelpMarkup: <indentN>...</indent> becomes \\x01<value>...\\x01\\x00, leaving "
@@ -108,6 +117,28 @@ TEST_CASE("expandHelpMarkup: the newline immediately after an <indentN> OPEN tag
           "source-readability newlines, not intended content)") {
   std::string out = fm::expandHelpMarkup("<indent4>\nbody\n</indent>");
   CHECK(out == indentMarker(4) + "body" + indentMarker(0));
+}
+
+// 2026-09-21追加、直接のユーザー報告("<indent?>タグにバグがある。
+// 直後に数字があると正しく字下げしない。<indent2>1. Introductionとか。
+// 特に<indent8>0x7fでは暴走"): 単一桁の値(0-9)を0埋めせずそのまま
+// 転写していたため、デコーダ(pipe_buffer.cpp自身のreadIndentDigits())
+// の「\x01の直後、最大2文字の連続した数字を読む」処理が、本文側の
+// 最初の数字文字を値の2桁目だと誤読んでいた――本文の先頭の数字が
+// 消えて字下げ値も誤った大きな値になる。0埋め修正後は、本文側の
+// 数字がいくつ続いていても、常にちょうど2文字だけがマーカーとして
+// 消費され、本文自体は一切変質しないことを確認する。
+TEST_CASE("expandHelpMarkup: a SINGLE-digit indent value immediately followed by body text that "
+          "itself starts with a digit does not swallow that digit into the encoded value "
+          "(regression: <indent2>1. Introduction used to decode as value 21)") {
+  std::string out = fm::expandHelpMarkup("<indent2>1. Introduction</indent>");
+  CHECK(out == indentMarker(2) + "1. Introduction" + indentMarker(0));
+}
+
+TEST_CASE("expandHelpMarkup: same fix for a larger single-digit-prone case (<indent8>0x7f), "
+          "which used to be misread as value 80 and hang PipeBuffer's word-wrap") {
+  std::string out = fm::expandHelpMarkup("<indent8>0x7f</indent>");
+  CHECK(out == indentMarker(8) + "0x7f" + indentMarker(0));
 }
 
 TEST_CASE("expandHelpMarkup: only the newline DIRECTLY adjacent to the tag is trimmed -- a "

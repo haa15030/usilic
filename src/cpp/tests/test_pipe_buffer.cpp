@@ -373,6 +373,46 @@ TEST_CASE("\\x01<N> indent marker: a TWO-digit value (e.g. 12) is read as two AS
   CHECK(buf.lines()[0].text == std::string(12, ' ') + "AB");
 }
 
+// 2026-09-21追加、直接のユーザー報告("<indent?>タグにバグがある。
+// 直後に数字があると正しく字下げしない。<indent2>1. Introductionとか。
+// 特に<indent8>0x7fでは暴走")+help_text.cpp自身の同日修正コメント
+// 参照: expandHelpMarkup()側が単一桁の値を0埋めせず転写していたため、
+// このデコーダのreadIndentDigits()が本文側の先頭の数字を値の2桁目
+// だと誤読んでいた(<indent2>1. → \x01"2"+"1. "を\x01"21"と誤読)。
+// help_text.cpp側の修正(常に固定2桁でエンコード)により、このデコーダ
+// 自身は変更不要のまま正しく動くようになったことを確認する回帰
+// テスト――\x01の直後に固定2桁"02"、続けて本文側の数字"1. Introduction"
+// を置き、値が2(21ではない)と正しく読まれ、かつ本文の"1"が消えずに
+// 残ることを確認する。
+TEST_CASE("\\x01<N> indent marker: a fixed-width TWO-digit encoding (\"02\") followed by body "
+          "text that itself starts with a digit reads the value as 2 (not 21), and the body's "
+          "leading digit is preserved intact") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  std::string raw;
+  raw.push_back(1);
+  raw += "02";  // \x01 "02" -- fixed 2-digit encoding of value 2
+  raw += "1. Introduction\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == "  1. Introduction");  // 2 half-width spaces, body untouched
+}
+
+// 同上、より大きな値(8)+本文側の数字("0x7f")の組み合わせ――修正前は
+// 値80(画面幅を超える)に誤読まれ、折り返し処理が無限ループ(暴走)して
+// いた。ここでは単にhang/crashしないこと、かつ値が8だけ(80ではない)
+// として正しく適用されることを確認する。
+TEST_CASE("\\x01<N> indent marker: fixed-width \"08\" followed by \"0x7f\" reads the value as 8 "
+          "(not 80, which used to overflow the wrap width and hang)") {
+  PipeBuffer buf(Charset::Encoding::Ascii, 80, 1 << 20);
+  std::string raw;
+  raw.push_back(1);
+  raw += "08";  // \x01 "08" -- fixed 2-digit encoding of value 8
+  raw += "0x7f\n";
+  buf.feed(raw);
+  REQUIRE(buf.lines().size() == 1);
+  CHECK(buf.lines()[0].text == "        0x7f");  // 8 half-width spaces, body untouched
+}
+
 // 2026-09-12追加、同上: 本物のCtrl-A(0x01)の直後に非数字バイトが
 // 続く場合は、依然として(safe-net、"control bytes pass through as
 // literal bytes"と同じ理屈)自分のマーカーとして誤認せずそのまま
