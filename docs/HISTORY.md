@@ -18278,3 +18278,14 @@ usilic.1を開いたとき、manではなくgroffで開きたい。理由は『m
 新規doctest9件を追加する過程で、テスト自体の不備を2件発見・修正しました(fixture rootに既存の"subdir/"があり意図しない曖昧一致を作っていた、"fakebin"という$PATHディレクトリ名自体が"fake"接頭辞のcwd補完テストと衝突していた)。
 
 make test 1178/1179(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。実機での`U .^M`→`^[s^I^I`→`^GU ^I^I`相当(usilic自身での再現)の確認をお願いします。
+
+< ・`usilic .^M`→`^[s^I^I`→不良。'/Users/haa15030/Desktop/=gu.png'
+カレントディレクトリ一覧ではなくプログラム一覧かつプロンプトエリアは編集可能な非ハイライト表示が正解。'/Users/haa15030/Desktop/=gv.png'
+
+> 実機報告2件を修正しました(コミット430e660)。
+
+1. `usilic .^M`→`^[s^I^I`が不良(カレントディレクトリ一覧になり、プログラム一覧にならない): shouldSearchPath()(application.cpp/shell.cpp)が、空のバッファ(何もタイプしていない状態での^I^I)を無条件にfalse(=カレントディレクトリ検索)扱いする回帰がありました。legacy(old/src/key.c::make_list())自身の実際の分岐(`if (*buff != '.') { ... }`)を素の空文字列に通すと、空文字列は先頭'.'とは別物として扱われ、後続のnc走査ループも1回も回らずに`f_prog=1`(true、$PATH検索対象)になります――空バッファを先頭'.'と誤って同一視していたのが今回のバグでした。
+
+2. legacy参照画面(=gv.png)との比較: 一覧のプロンプトエリアは「編集可能な非ハイライト表示」が正解(既存のRecentFile/RecentDirectory方式のdirect entryピッカーと同じ、カーソル移動のたびに現在ハイライト中の候補の全文をpromptEditor_経由でプレーンな非反転表示プレビューする規約)でした。PromptKind::TabCompletionList(Du/ArchiveLoadと同じ、promptKind_へは一切代入されないdrawPromptLabel()専用のラベルマーカー)を新設し、refreshDirectEntryModeLine()にtabCompletionContext_分岐を追加してMoveUp/MoveDownのたびにこのプレビューを描くようにしました。
+
+新規doctest2件、make test 1180/1181(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。
