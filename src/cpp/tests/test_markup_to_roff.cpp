@@ -120,3 +120,79 @@ TEST_CASE("convertMarkupToLegacyHelpText: a closing tag with no matching opener 
   std::string out = convertMarkupToLegacyHelpText("<b>unterminated");
   CHECK(out == "<b>unterminated");
 }
+
+// -- convertMarkupToMsRoffSource() (2026-09-21) --
+//
+// Direct user request ("-mオプションはmanマクロ形式なのでmsを出力
+// するオプションが欲しい。-nとか...とりあえず、manとmsで比較もし
+// たいので-mはそのままで-nを新設してほしい"): unlike
+// convertMarkupToLegacyHelpText() (which produces the FINAL plain text
+// PipeBuffer itself interprets at display time), this produces real
+// roff -ms macro SOURCE that the user renders themselves via
+// `groff -ms`, for a side-by-side comparison against -m's output.
+
+using fm::convertMarkupToMsRoffSource;
+
+TEST_CASE("convertMarkupToMsRoffSource: <b>X</b> becomes \\fBX\\fP (roff font-change escape, "
+          "package-agnostic, works under -ms same as -man)") {
+  std::string out = convertMarkupToMsRoffSource("<b>AB</b>");
+  CHECK(out == "\\fBAB\\fP");
+}
+
+TEST_CASE("convertMarkupToMsRoffSource: <u>X</u> and <i>X</i> both become \\fIX\\fP (italic) -- "
+          "roff/troff has no underline primitive, matching convertMarkupToLegacyHelpText()'s own "
+          "identical unification of the two tags") {
+  CHECK(convertMarkupToMsRoffSource("<u>AB</u>") == "\\fIAB\\fP");
+  CHECK(convertMarkupToMsRoffSource("<i>AB</i>") == "\\fIAB\\fP");
+}
+
+TEST_CASE("convertMarkupToMsRoffSource: <indentN>...</indent> becomes \".in Nn\" ... \".in 0\" -- "
+          "the portable, macro-package-agnostic troff indent request (not a -man/-ms-specific "
+          "block macro like .RS/.RE), on its own line") {
+  std::string out = convertMarkupToMsRoffSource("<indent3>hello</indent>");
+  CHECK(out == ".in 3n\nhello\n.in 0\n");
+}
+
+TEST_CASE("convertMarkupToMsRoffSource: the newline immediately after an opening <indentN> tag and "
+          "immediately before a closing </indent> tag are both readability-only and swallowed, "
+          "matching convertMarkupToLegacyHelpText()'s own identical convention") {
+  std::string out = convertMarkupToMsRoffSource("<indent2>\nhello\n</indent>");
+  CHECK(out == ".in 2n\nhello\n.in 0\n");
+}
+
+TEST_CASE("convertMarkupToMsRoffSource: a blank line (paragraph break in the source) becomes .PP "
+          "(-ms's own default indented-paragraph-start macro) -- this is how the original "
+          "novel-draft paragraph-indent request gets satisfied here: by -ms's own built-in "
+          "behavior, not a usilic-side mechanism") {
+  std::string out = convertMarkupToMsRoffSource("first\n\nsecond");
+  CHECK(out == "first\n.PP\nsecond");
+}
+
+TEST_CASE("convertMarkupToMsRoffSource: a leading '.' or '\\'' at the start of a line is escaped "
+          "with \\& (zero-width) so it is never misread as a troff control line -- a real risk "
+          "here (unlike convertMarkupToLegacyHelpText(), which produces final plain text with no "
+          "downstream parser)") {
+  CHECK(convertMarkupToMsRoffSource(".gitignore") == "\\&.gitignore");
+  CHECK(convertMarkupToMsRoffSource("'quoted'") == "\\&'quoted'");
+  // Not at the start of a line -- no escaping needed.
+  CHECK(convertMarkupToMsRoffSource("a.b") == "a.b");
+}
+
+TEST_CASE("convertMarkupToMsRoffSource: a literal backslash is escaped as \\e so it is never "
+          "misread as the start of a troff escape sequence") {
+  CHECK(convertMarkupToMsRoffSource("C:\\path") == "C:\\epath");
+}
+
+TEST_CASE("convertMarkupToMsRoffSource: plain characters with no roff significance (^, ~, "
+          "full-width：, -) pass through unescaped when not at the start of a line -- the "
+          "mid-string '.' in \"~/.usilic\" is NOT at a line start, so it is left alone (unlike "
+          "the dedicated leading-'.'-at-line-start test above)") {
+  std::string out = convertMarkupToMsRoffSource("^H ~/.usilic C\xEF\xBC\x9Ax a-b");
+  CHECK(out == "^H ~/.usilic C\xEF\xBC\x9Ax a-b");
+}
+
+TEST_CASE("convertMarkupToMsRoffSource: a closing tag with no matching opener is passed through "
+          "literally rather than corrupting or hanging (malformed-markup safety net)") {
+  std::string out = convertMarkupToMsRoffSource("<b>unterminated");
+  CHECK(out == "<b>unterminated");
+}

@@ -3679,6 +3679,30 @@ int main(int argc, char **argv) {
       buffer << in.rdbuf();
       std::cout << fm::convertMarkupToLegacyHelpText(buffer.str());
       return 0;
+    } else if (std::strcmp(argv[i], "-n") == 0) {
+      // 2026-09-21追加、直接のユーザー依頼("-mオプションはmanマクロ
+      // 形式なのでmsを出力するオプションが欲しい。-nとか...とりあえず、
+      // manとmsで比較もしたいので-mはそのままで-nを新設してほしい")。
+      // -mと対になる裏オプション――同じusilic独自markup(<b>/<u>/<i>/
+      // <indentN>)を、今度は本物のroff -msマクロソースへ変換して
+      // 標準出力へ書き出す(convertMarkupToMsRoffSource()自身の
+      // markup_to_roff.hppコメント参照)。-mと違いこれはまだ「最終的な
+      // 平文」ではなく、ユーザー自身が`groff -ms`(または-Tutf8等)へ
+      // 通して初めてレンダリングされる、-mとの見比べ用の別経路。
+      if (i + 1 >= argc) {
+        std::cerr << "usilic: -n requires a markup file path (e.g. -n src/QUICK.txt).\n";
+        return 1;
+      }
+      std::string markupPath = argv[++i];
+      std::ifstream in(markupPath, std::ios::binary);
+      if (!in) {
+        std::cerr << "usilic: -n: cannot read " << markupPath << ".\n";
+        return 1;
+      }
+      std::ostringstream buffer;
+      buffer << in.rdbuf();
+      std::cout << fm::convertMarkupToMsRoffSource(buffer.str());
+      return 0;
     } else positionalArgs.push_back(argv[i]);
   }
 

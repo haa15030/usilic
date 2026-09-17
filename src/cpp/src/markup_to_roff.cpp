@@ -122,4 +122,112 @@ std::string convertMarkupToLegacyHelpText(const std::string &markup) {
   return out;
 }
 
+// convertMarkupToMsRoffSource()自身のmarkup_to_roff.hpp宣言コメント
+// 参照。convertMarkupToLegacyHelpText()と同じ逐次スキャン方式・同じ
+// タグ集合(<b>/<u>/<i>/<indentN>)だが、出力先が「usilic自身の
+// PipeBufferが後で解釈する平文」ではなく「troffが構文解析する本物の
+// roffソース」である点が異なる――そのため、そちら側には無かった
+// 2つの処理が必要になる: (1)行頭の"."/"'"、リテラルな"\"のエスケープ
+// (さもないと著者の本文がroffの制御行/エスケープと誤認される)、
+// (2)空行を.PP(-msの「段落先頭字下げ」既定マクロ)へ変換する処理
+// (小説の下書きのパラグラフ先頭字下げという、この機能自身の当初の
+// 動機を、usilic独自の仕組みではなく-msマクロパッケージ自身の既定の
+// 振る舞いとして実現する)。
+std::string convertMarkupToMsRoffSource(const std::string &markup) {
+  std::string out;
+  out.reserve(markup.size() * 2);
+  std::size_t i = 0;
+  const std::string boldOpen = "<b>", boldClose = "</b>";
+  const std::string underlineOpen = "<u>", underlineClose = "</u>";
+  const std::string italicOpen = "<i>", italicClose = "</i>";
+  const std::string indentOpenPrefix = "<indent";
+  const std::string indentClose = "</indent>";
+  bool atLineStart = true;
+
+  auto ensureFreshLine = [&]() {
+    if (!out.empty() && out.back() != '\n') out += '\n';
+  };
+  auto appendEscaped = [&](char c) {
+    if (c == '\\') {
+      out += "\\e";  // リテラルなバックスラッシュ自体のroffエスケープ
+      return;
+    }
+    out += c;
+  };
+
+  while (i < markup.size()) {
+    std::size_t numStart = i + indentOpenPrefix.size();
+    std::size_t numEnd = numStart;
+    while (numEnd < markup.size() && numEnd < numStart + 2 && markup[numEnd] >= '0' && markup[numEnd] <= '9')
+      numEnd++;
+    bool isIndentOpen = markup.compare(i, indentOpenPrefix.size(), indentOpenPrefix) == 0 && numEnd > numStart &&
+                        numEnd < markup.size() && markup[numEnd] == '>';
+    if (isIndentOpen) {
+      int value = std::atoi(markup.substr(numStart, numEnd - numStart).c_str());
+      ensureFreshLine();
+      out += ".in " + std::to_string(value) + "n\n";
+      i = numEnd + 1;
+      if (i < markup.size() && markup[i] == '\n') i++;  // convertMarkupToLegacyHelpText()自身の同じ理由のコメント参照
+      atLineStart = true;
+      continue;
+    }
+    if (markup.compare(i, indentClose.size(), indentClose) == 0) {
+      ensureFreshLine();
+      out += ".in 0\n";
+      i += indentClose.size();
+      atLineStart = true;
+      continue;
+    }
+    if (markup[i] == '\n') {
+      // 空行(段落区切り) -> .PP。両方の改行文字をまとめて消費する
+      // (そうしないと.PPの直後に本物の空行がもう1行残ってしまう)。
+      if (i + 1 < markup.size() && markup[i + 1] == '\n') {
+        ensureFreshLine();
+        out += ".PP\n";
+        i += 2;
+        atLineStart = true;
+        continue;
+      }
+      out += '\n';
+      i++;
+      atLineStart = true;
+      continue;
+    }
+    // 行頭の"."/"'"はtroffの制御行の先頭と誤認されるため、"\&"
+    // (幅ゼロの空文字列)を前置してエスケープする。
+    if (atLineStart && (markup[i] == '.' || markup[i] == '\'')) out += "\\&";
+    atLineStart = false;
+
+    bool isBold = markup.compare(i, boldOpen.size(), boldOpen) == 0;
+    bool isUnderline = !isBold && markup.compare(i, underlineOpen.size(), underlineOpen) == 0;
+    bool isItalic = !isBold && !isUnderline && markup.compare(i, italicOpen.size(), italicOpen) == 0;
+    if (isBold || isUnderline || isItalic) {
+      // <u>と<i>はどちらも\fI(斜体)へ――convertMarkupToLegacyHelpText()
+      // 自身のコメント参照(roff/troffに下線専用のプリミティブが無い
+      // ため、legacy自身の慣習に倣い同じ扱いにする)。
+      const std::string &openTag = isBold ? boldOpen : (isUnderline ? underlineOpen : italicOpen);
+      const std::string &closeTag = isBold ? boldClose : (isUnderline ? underlineClose : italicClose);
+      std::size_t contentStart = i + openTag.size();
+      std::size_t closePos = markup.find(closeTag, contentStart);
+      if (closePos == std::string::npos) {
+        // 対応する終了タグが無い――壊れたmarkupとして、開始タグ自体を
+        // そのまま素通りさせる(convertMarkupToLegacyHelpText()自身の
+        // 同じ安全策)。
+        out += openTag;
+        i = contentStart;
+        continue;
+      }
+      out += isBold ? "\\fB" : "\\fI";
+      for (std::size_t j = contentStart; j < closePos; j++) appendEscaped(markup[j]);
+      out += "\\fP";
+      i = closePos + closeTag.size();
+      continue;
+    }
+
+    appendEscaped(markup[i]);
+    i++;
+  }
+  return out;
+}
+
 }  // namespace fm
