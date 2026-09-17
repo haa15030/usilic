@@ -1591,6 +1591,16 @@ class Application {
   // 挙動に合わせた既存の無条件の値であり、呼び出し元の文脈に
   // 依存しない)。
   bool tryPollProgramHandoff(pid_t pid, ApplicationMode capturedMode);
+  // 2026-09-17追加、直接のユーザー報告("表示はOKだがキーが一切効か
+  // ない、以前効いた^Cも効かなくなった")+runNestedUsilicProgram()
+  // 自身のコメント参照: パイプされたstdinのハンドオフが成立した
+  // 直後、子(sh経由の入れ子usilic)がまだソケットへ書き込み中(送信
+  // バッファ満杯でブロックされたまま)かもしれない状態で、
+  // runNestedUsilicProgram()自身がその完了を待たずに手放した場合に
+  // 記録される、まだ回収(waitpid)していないpid。-1は「回収待ちの
+  // 子は無い」。pollPagerExitNotice()自身の冒頭でメインループ毎回の
+  // 反復のついでにopportunisticに回収し、ゾンビ化を防ぐ。
+  pid_t pendingProgramChildPid_ = -1;
   // pollPagerExitNotice()自身の宣言コメント参照(2026-09-20追加)。
   // `suppressDraw`(2026-09-07追加、直接のユーザー報告"わかったのは
   // ブロックカーソル位置を画面上真ん中辺に変更すると、瞬時の表示も

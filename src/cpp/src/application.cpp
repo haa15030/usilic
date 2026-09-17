@@ -10030,6 +10030,16 @@ void Application::ensurePagerStreamLoaded(int targetLineIndex, bool bypassPacing
 // `$PAGER`経由の起動でも、最初の1画面は瞬時に、以後のスクロールは
 // current+1で育つ。
 void Application::pollPagerExitNotice(bool suppressDraw) {
+  // 2026-09-17追加、pendingProgramChildPid_自身の宣言コメント参照
+  // (runNestedUsilicProgram()自身のコメントも参照): ハンドオフ後に
+  // 待たずに手放した子(sh経由の入れ子usilic、ソケットの送信バッファ
+  // が満杯になりwrite()でブロックされたままかもしれない)を、この
+  // メインループ毎回の反復のついでに(ゾンビ化を防ぐため)機会がある
+  // たびにopportunisticに回収する――hasExited()自身のコメント通り
+  // WNOHANGなので、まだ生きていれば単に0を返すだけで何も変えない。
+  if (pendingProgramChildPid_ > 0 && ChildProcess::hasExited(pendingProgramChildPid_)) {
+    pendingProgramChildPid_ = -1;
+  }
   if (currentMode_ == ApplicationMode::File && fileMode_.hasActiveStream()) {
     int topIndex = activeView().topIndex();
     bool stillCatchingUpFirstScreen = static_cast<int>(activeView().lines().size()) < display_.rows();
@@ -11525,25 +11535,8 @@ bool Application::runNestedUsilicProgram(const std::string &command) {
   pid_t pid = ChildProcess::spawnInteractive({"sh", "-c", toRun});
   if (pid > 0) {
     bool handedOff = false;
-    while (!ChildProcess::hasExited(pid)) {
-      if (!handedOff && tryPollProgramHandoff(pid, capturedMode)) handedOff = true;
-      // 2026-09-17追加、実機報告("00000/00000 END...キー入力すると
-      // 生データがターミナルに出てくる")の調査で判明: パイプされた
-      // stdinの分岐(tryPollProgramHandoff()自身のS_ISSOCK側)は
-      // loadStream()で最初の1行だけを同期的に試すだけ(SHELLの
-      // pollShellHandoff()と全く同じ設計)――SHELL側はその後メイン
-      // ループ自身の毎回の反復がpollPagerExitNotice()を呼び続ける
-      // ことで、たとえ最初の1回がEAGAIN(子がまだ書き込んでいない
-      // 一瞬)で0行のまま終わっても、数ms後の次の反復が自然に拾い
-      // 直す。しかしこのメソッド自身のループはメインループの「外」の
-      // 独自のブロッキングループであり、hasExited()がtrueになるまで
-      // 誰もensureLoadedThrough()を呼ばない――子(sh経由の入れ子
-      // usilic)がソケットへ全バイトを書き終えて自分自身は先に終了
-      // した場合でも、こちらが一度もEAGAINを再試行しなければ0行の
-      // ままになり得る。ここでハンドオフ後も(hasExited()がtrueに
-      // なるまで)毎回pollPagerExitNotice()を呼び、通常のメインループ
-      // 反復と同じペースでストリームを育てる。
-      if (handedOff) pollPagerExitNotice(/*suppressDraw=*/false);
+    while (!handedOff && !ChildProcess::hasExited(pid)) {
+      if (tryPollProgramHandoff(pid, capturedMode)) handedOff = true;
       ::usleep(20000);
     }
     // 子が既に終了済みでもランデブーファイルの受け取りが間に合って
@@ -11551,7 +11544,44 @@ bool Application::runNestedUsilicProgram(const std::string &command) {
     // 待ち合わせは最大2秒あるので通常はここに来る前にhandedOff済みの
     // はずだが、念のため)。
     if (!handedOff) tryPollProgramHandoff(pid, capturedMode);
-    pollPagerExitNotice(/*suppressDraw=*/false);
+    // 2026-09-17追加、実機報告("00000/00000 END...キー入力すると
+    // 生データがターミナルに出てくる"、修正後さらに"表示はOKだが
+    // キーが一切効かなくなった/以前効いた^Cも効かなくなった")――
+    // 調査の結果、真因はこの直前まで存在していた「handedOff後も
+    // hasExited(pid)になるまで待ち続ける」というループ設計そのもの
+    // だったと判明した。main.cpp自身のtryHandoffToParentShell()の
+    // パイプされたstdin分岐(子側)は、読めたバイトをブロッキングの
+    // write()でソケットへそのまま流し込むだけで、こちら(親)側の
+    // 意図的なペーシング(loadStream()自身のコメント参照: 生きた
+    // パイプ/ライブなSHELLのpagerに配慮し、最初は1行、以後は
+    // ensureLoadedThrough()が「画面1枚分育ったら以後はユーザーが
+    // 実際にスクロールするまで追加要求しない」という設計)を一切
+    // 考慮しない――ある程度の大きさのファイル(このCLAUDE.md自身が
+    // 実例)では、画面1枚分を読み終えた時点で親側の要求が止まり、
+    // ソケットの送信バッファが満杯になった子側のwrite()がブロック
+    // されたまま二度と進まなくなる。そこへ「子が終了するまで待つ」
+    // という設計を重ねると、親自身がその子の完了を無期限に待ち続け、
+    // 結果としてkeyInput_.reenterRawMode()に一度も到達できないまま
+    // 固まる(cooked+echoのまま、SHELLのpollShellHandoff()相当の
+    // 「ハンドオフしたら即座に通常の対話ループへ戻る」という前提を、
+    // このメソッド自身が独自の待ち合わせループで踏みにじっていた)。
+    // 修正: ハンドオフが成立した時点(SHELLのpollShellHandoff()が
+    // メインループの1反復内で完結するのと同じ意味)で即座にループを
+    // 抜ける――子(sh、その子である入れ子usilic)がまだソケットへ
+    // 書き込み中/ブロック中でも構わない、以後はSHELLの生きたpager
+    // 同様、通常のメインループ自身のpollPagerExitNotice()呼び出し
+    // (この関数の外、main.cpp側)がユーザーの実際のスクロールに応じて
+    // 少しずつ読み進め、その都度ブロックされていた子のwrite()を
+    // 必要なだけ再開させる。子プロセス自体はここでは待たず、
+    // pendingProgramChildPid_自身の宣言コメント通り、以後
+    // pollPagerExitNotice()自身の冒頭のopportunisticな回収チェック
+    // 経由で機会があるたびに(ゾンビ化を防ぐため)回収する。
+    if (handedOff && !ChildProcess::hasExited(pid)) pendingProgramChildPid_ = pid;
+    // ここで一度だけ即座に呼ぶことで、画面へ戻る前に(次のメイン
+    // ループの反復を待たず)可能な範囲の続きを先読みしておく――
+    // 既にstillCatchingUpFirstScreen自身の条件で自然に止まるので、
+    // 上のブロッキングのdead lockには戻らない。
+    if (handedOff) pollPagerExitNotice(/*suppressDraw=*/false);
   }
   // 2026-09-17追加、同じ実機報告の後半("キー入力すると生データが
   // ターミナルに出てくる")向けの修正: 上のループの間、子(sh、その
