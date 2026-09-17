@@ -16,6 +16,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include <cstring>
@@ -11526,6 +11527,23 @@ bool Application::runNestedUsilicProgram(const std::string &command) {
     bool handedOff = false;
     while (!ChildProcess::hasExited(pid)) {
       if (!handedOff && tryPollProgramHandoff(pid, capturedMode)) handedOff = true;
+      // 2026-09-17追加、実機報告("00000/00000 END...キー入力すると
+      // 生データがターミナルに出てくる")の調査で判明: パイプされた
+      // stdinの分岐(tryPollProgramHandoff()自身のS_ISSOCK側)は
+      // loadStream()で最初の1行だけを同期的に試すだけ(SHELLの
+      // pollShellHandoff()と全く同じ設計)――SHELL側はその後メイン
+      // ループ自身の毎回の反復がpollPagerExitNotice()を呼び続ける
+      // ことで、たとえ最初の1回がEAGAIN(子がまだ書き込んでいない
+      // 一瞬)で0行のまま終わっても、数ms後の次の反復が自然に拾い
+      // 直す。しかしこのメソッド自身のループはメインループの「外」の
+      // 独自のブロッキングループであり、hasExited()がtrueになるまで
+      // 誰もensureLoadedThrough()を呼ばない――子(sh経由の入れ子
+      // usilic)がソケットへ全バイトを書き終えて自分自身は先に終了
+      // した場合でも、こちらが一度もEAGAINを再試行しなければ0行の
+      // ままになり得る。ここでハンドオフ後も(hasExited()がtrueに
+      // なるまで)毎回pollPagerExitNotice()を呼び、通常のメインループ
+      // 反復と同じペースでストリームを育てる。
+      if (handedOff) pollPagerExitNotice(/*suppressDraw=*/false);
       ::usleep(20000);
     }
     // 子が既に終了済みでもランデブーファイルの受け取りが間に合って
@@ -11533,7 +11551,20 @@ bool Application::runNestedUsilicProgram(const std::string &command) {
     // 待ち合わせは最大2秒あるので通常はここに来る前にhandedOff済みの
     // はずだが、念のため)。
     if (!handedOff) tryPollProgramHandoff(pid, capturedMode);
+    pollPagerExitNotice(/*suppressDraw=*/false);
   }
+  // 2026-09-17追加、同じ実機報告の後半("キー入力すると生データが
+  // ターミナルに出てくる")向けの修正: 上のループの間、子(sh、その
+  // 子である入れ子usilic)のstdinはリダイレクトされたファイルであり
+  // 本物の端末を一切読まない――less/vi(ProgramMode::run()の既存の
+  // 経路、子が本物の端末を直接読む)と違い、この端末はleaveRawMode()
+  // でcooked+echoに戻ったまま、この間ずっと「誰も読んでいない」。
+  // その間にユーザーがキーを押すと、cookedモードのカーネル自身に
+  // よってそのバイトがそのまま画面へエコーされ(かつ入力キューに
+  // 溜まり)、これがまさに報告された「生データ」の正体――tcflush()
+  // で未読の入力キューを捨ててからraw modeへ戻すことで、その残骸が
+  // 以後のreadByte()に紛れ込むことも防ぐ。
+  if (keyInput_.fd() >= 0) ::tcflush(keyInput_.fd(), TCIFLUSH);
   keyInput_.reenterRawMode();
   display_.reenterFromExternalProgram();
 
