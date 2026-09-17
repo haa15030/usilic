@@ -18174,3 +18174,28 @@ make testは1157件中1156件通過(既存無関係のLOCATEフレークのみ)�
 あわせてsrc/QUICK.txt(gitignore対象、既知の未追跡ファイル)のPROGRAM節に、usilic自身がSHELL同様の例外である旨を追記しました。
 
 main.cppはdoctest対象外のため、既存のtest suiteで無関係のリグレッションが無いことを確認(1156/1157、既知無関係のLOCATEフレークのみ)、make usilic/make install/make app完了、~/Applications/usilic.appへも反映済みです。実機での`^Jpusilic ^M`確認をお願いします。
+
+~/HISTORY.mdは修正済み、docs/HISTORY.mdも今回のやり取りまで追記・コミット済みです(念のため、直前のコミットが働くツリーに正しく反映されていないという小さな不整合が一度発生していたのに気付き、git checkoutで復旧してから追記しています)。
+
+<~/HISTORY.md:18233,18235ほか多々あるので修正よろしく。
+
+>`~/HISTORY.md:18233,18235`ほか(18229〜18242の範囲、私の返信の重複2つ目のコピーがスペース置換で破損していた箇所)を、実際に送った原文と照合して修正しました。それ以外の範囲(18213〜18227、18244〜末尾)は確認した限り破損なしでした。
+
+<D. が直ってない。伝わっていないかもしれないので正解を簡単に。
+・`usilic -c^M`→`^[s`→`usilic CLAUDE.md^M`→（ls）でCALUDE.mdを^Mしたときと同じ→`^G^Jpusilic ^M`→（ls）でCALUDE.mdを^Mしたときと同じ。
+・`usilic -c^M`→`^[s`→`usilic < CLAUDE.md^M`→モード名無し、戻り値SHELLの(stdin)→`^G^G`→`^Jpusilic < ^M`→モード名無し、戻り値PROGRAMの(stdin)。
+現状は前者が-gのGUI、後者が新規ウィンドウのGUI。
+
+>本格的に対応・実装・検証・コミット完了しました(e6f1bf0)。
+
+前回のUSILIC環境変数チェックだけの修正が効かなかった理由が分かりました――ProgramMode::run()自体はUSILIC環境変数を一切設定していなかった(Shell::start()だけが自分のptyの子に対してsetenv()する)ため、そもそも前回の修正の前提が成立していませんでした。
+
+ご提案通り「SHELLへ戻らず仕様だけ頂く」形で実装しました:
+
+- ChildProcess::spawnInteractive()を新設(runInteractive()と同じfork+execだがwaitpid()でブロックせずpidをすぐ返す)。
+- Application::executeProgram()の"usilic"分岐を、通常のprogramMode_.run()ではなく新設のrunNestedUsilicProgram()へ差し替え。ここでspawnInteractive()で子を起動し、hasExited()でのポーリングの合間にtryPollProgramHandoff()(main.cppのtryHandoffToParentShell()と対をなす、pollShellHandoff()の核心部分の複製)も呼ぶことで、ProgramMode::run()自身の完全ブロッキングな設計のままでは参加できなかったランデブー機構に、SHELLと全く同じ形で参加できるようにしました。コマンド自体にUSILIC=1を付与します。
+- FileMode::pagerReturnsToProgram_を新設(pagerReturnsToShell_の"SHELL"バッジと同じ考え方で"PROGRAM"を表示、^Gの実際の戻り先は呼び出し時のcapturedMode、実際にはpagerReturnsToDirectory_と同じfileReturnMode_ベースの一般経路にそのまま素通しします)。
+
+これにより`usilic CLAUDE.md`のような位置引数付き起動、`usilic < CLAUDE.md`のようなパイプされたstdin相当の起動のどちらも、SHELLプロンプトで直接打った場合と同じくハンドオフされ、独立したGUI/新規プロセスとして起動されなくなるはずです。前回のUSILIC環境変数チェック(main.cpp)はセーフティネットとしてそのまま残しています。
+
+新規doctest(runNestedUsilicProgram()の起動経路が通常のProgramMode::run()とは別物であることを確認、PATHを/usr/bin:/binへ制限した安全な環境で)を追加し、既存の"usilic"認識テストを更新しました。main.cppはdoctest対象外ですが、既存のtest suiteで無関係のリグレッションが無いことを確認(1156/1157、既知無関係のLOCATEフレークのみ)。make usilic/make install/make app完了、~/Applications/usilic.appへも反映済みです。実機での`usilic CLAUDE.md`/`usilic < CLAUDE.md`両パターンの`^Jp`経由確認をお願いします。
