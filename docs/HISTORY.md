@@ -18228,3 +18228,15 @@ make test 1156/1157(既知無関係のLOCATEフレーク1件のみ)、make usili
 修正(コミット4cac9fb): ハンドオフが成立した時点(SHELLのpollShellHandoff()がメインループの1反復内で完結するのと同じ意味)で即座にループを抜け、子プロセスの完了は待たずに通常の対話ループへ戻すようにしました。子(sh、その子である入れ子usilic)がまだソケットへ書き込み中/ブロック中でも構いません――以後は通常のメインループ自身のpollPagerExitNotice()がユーザーの実際のスクロールに応じて少しずつ読み進め、その都度ブロックされていた子のwrite()を必要なだけ再開させます(生きたSHELLのpagerと全く同じ振る舞い)。子プロセス自体はpendingProgramChildPid_で追跡し、pollPagerExitNotice()自身の冒頭でメインループ毎回の反復のついでにopportunisticに回収します(ゾンビ化防止)。
 
 make test 1156/1157(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。実機での`usilic < CLAUDE.md`パターンの再確認をお願いします。
+
+< 戻り値がPROGRAMならPROGRAMへ戻らないと。
+なんだけど、PROGRAMは^J^P（program一覧）でも発動するので話がややこしくなる。そこで戻り値は~/git/usilic/でいいかなと。実際の^Gで戻るのもそこみたいだし。
+そのprogram一覧だが、^J^Pで表示されるリストはusilicrcに設定のPROGRAM一覧であって実行履歴じゃない。PROGRAMで^Rと押されて初めて表示されるのが実行履歴。HISTORY.md:12301と同じ問題かなと。
+
+> ^J^P側はRingCategory::ShellCommandという同じ1本のringをdirectEntry=true(ソート済み・重複排除)で見せているだけで、実行時にも同じringへpushRecent(RingCategory::ShellCommand, ...)しています。コードを見た限り、ご指摘の通りHISTORY.md:12301のGREPと同じ「シード候補と実行履歴が同じringに混在している」構造でした(toggleListBrowserHistory()もProgramCommandを未対応のままなので、そもそも^Rでソート済み⇔時系列のトグル自体がPROGRAMには無い状態でした)。これは別件として後で扱う前提で、まずtrailing3の修正を先に進めます。
+
+固定文字列"PROGRAM"は、usilicrc設定一覧(^J^P)と紛らわしい上、実際の^Gの戻り先は「PROGRAM画面」という独立した何かではなく、呼び出し時に実際にいたcapturedModeが指す場所そのものです。ARCHIVE再設計(①)/K-23(⑥)と同じ理屈で、ラベルではなく実際の戻り先パスをtrailing3に出すよう修正しました(コミット2107e7c)。capturedMode==Directoryの場合(最も一般的)はdirectoryMode_.currentDirectory()を使います――マークされたファイルが無いと空のままのprogramPromptDirectory_には依存せず、こちらは常に有効です。それ以外のcapturedMode(File/Grep/Locate/Du等からのPROGRAM発動)は今回は対象外(pagerListingDirectory_が空のままなのでtrailing3自体が表示されないだけで、独立起動と同じ既定の見た目に留まります)――フェーズ2の他モード監査で改めて扱います。
+
+^J^P/^Rのring混在問題(seed候補と実行履歴の区別が無い)は今回は着手せず、確認のみ記録しました。
+
+make test 1156/1157(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。
