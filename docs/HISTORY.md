@@ -18306,3 +18306,17 @@ make test 1178/1179(既知無関係のLOCATEフレーク1件のみ)、make usili
 ②の修正に伴い、選択確定(Enter)時の「残りの接尾辞だけ追記する」という以前の流儀が、プレビューによる上書きと両立しなくなっていたため、returnFromTabCompletionList()もprefixBeforeWord+選択項目(または非選択時はpartialへ戻す)による完全な行の再構成+置換に改めました。
 
 新規doctest4件、make test 1184/1185(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。
+
+< ④^[vはOKだが^Vが利かないのでページ送りできない。
+⑤^[vによるページ戻り（画面更新？）で②が起きる。
+⑥SHELLで発動したので戻り値もSHELL。
+
+> 3件とも修正しました(コミット07e0ccf)。
+
+④ feedTabCompletionListByte()のnav語彙(^N/^P/Enter/^G/^L)に^B(0x02、PageUp)/^F(0x06)/^V(0x16、PageDown)を追加しました。^[v(ESC v)は既にescPending_経由でdispatchLeaderByte()へ普通に流れていたので最初から動いていましたが、素の制御バイトはnav語彙に無く、代わりに「編集を開始する」遷移へ誤って落ちていました。
+
+⑤ MoveUp/MoveDownは既にrefreshDirectEntryModeLine()を呼んでいましたが、ScrollLineUp/ScrollLineDown/PageUp/PageDownは一度も呼んでいませんでした――RecentFile/RecentDirectory自身の既存のdirect entry機能にとっても本来同じ穴でしたが、今回のLIST機能で初めて実際に踏まれて表面化しました。4箇所に追加しました。
+
+⑥ drawPromptLabel()自身のdestinationMode計算は、GrepPattern/CutPattern/ManName/LocateQuery/RecentFile/RecentDirectoryには専用の*ReturnMode_を参照する分岐がありましたが、PromptKind::TabCompletionListには無く、デフォルトのdestinationMode=currentMode_(この時点で既にListBrowser自身)へ落ちて戻り値バッジが空欄になっていました。RecentFile/RecentDirectoryと全く同じ理由でtabCompletionContext_->returnModeを参照する分岐を追加しました。
+
+新規doctest3件、make test 1187/1188(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。
