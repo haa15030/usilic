@@ -11101,8 +11101,21 @@ void Application::refreshDirectEntryModeLine() {
     std::string positionText =
         candidateCount > 0 ? ModeLine::format(listBrowserView_.cursorIndex() + 1, candidateCount) : "";
     drawPromptLabel(tabCompletionContext_->kind, positionText);
+    // 2026-09-19追加(フォローアップ10、直接のユーザー指摘「SHELLの
+    // 場合、^Iを押した時も"usilic "（←SHELLプロンプトで入力済み文字列）
+    // を入れておけば^Bで突然それが現れて位置がズレることもないので
+    // は？」): prefixBeforeWord(補完対象語の「前」にあったテキスト、
+    // 例えば"usilic "――単語の途中を補完している時に非空になる)を
+    // 付け忘れていたため、閲覧中のプレビューは候補自身("fake-one")
+    // だけを見せ、「編集を開始する」遷移(feedTabCompletionListByte()
+    // 自身の同じ式のseed計算参照)で初めてprefixBeforeWordが前に
+    // 付いた完全な行("usilic fake-one")が現れていた――まさにこの
+    // 「突然現れる」ことそのものがフォローアップ9の位置ズレとは別の、
+    // もう1つの見た目の跳躍だった。閲覧中から同じ完全な行を見せる
+    // ことで、編集開始時に内容が変わらなくなる。
     const std::string *selected = listBrowserMode_.selectedItem();
-    promptEditor_.setText(selected ? *selected : "");
+    promptEditor_.setText(tabCompletionContext_->prefixBeforeWord +
+                           (selected ? *selected : tabCompletionContext_->partial));
     promptEditor_.redraw();
     return;
   }

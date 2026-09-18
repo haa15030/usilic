@@ -3542,6 +3542,87 @@ TEST_CASE_FIXTURE(Fixture, "LIST: the position text (\"N/M\") survives the trans
   CHECK(static_cast<int>(rowWhileEditing.find("fake-")) == candidateStartCol);
 }
 
+// 2026-09-19追加(フォローアップ10, real report: "SHELLの場合、^Iを押した
+// 時も\"usilic \"（←SHELLプロンプトで入力済み文字列）を入れておけば^Bで
+// 突然それが現れて位置がズレることもないのでは？"): when the word being
+// completed is NOT the first word on the line (prefixBeforeWord is
+// non-empty, e.g. "less " before an ambiguous filename), the live
+// browsing preview was seeding promptEditor_ with ONLY the candidate
+// itself, dropping prefixBeforeWord entirely -- it only reappeared once
+// the "start editing" transition reconstructed the full line. That is a
+// second, independent jump on top of フォローアップ9's own position-text
+// width shift: the field's CONTENT itself changed the instant editing
+// began, not just its column.
+TEST_CASE_FIXTURE(Fixture, "LIST: the live preview already includes prefixBeforeWord (e.g. \"less \") "
+                           "while still just BROWSING, not just once editing starts") {
+  REQUIRE(app.start(path()));
+  // Directly in root (the Shell's own cwd) -- this scenario completes
+  // against the CURRENT DIRECTORY (a space already appeared, so
+  // shouldSearchPath() rules out $PATH), unlike the other tests in this
+  // file which complete a bare first word against $PATH via .pathbin.
+  std::ofstream(root / "fake-one") << "a\n";
+  std::ofstream(root / "fake-two") << "b\n";
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+
+  // "less fake" -- the word being completed ("fake") is NOT the first
+  // word, so prefixBeforeWord == "less " and $PATH search doesn't apply
+  // (shouldSearchPath() sees the space) -- completes against the
+  // fixture's own current directory instead.
+  for (unsigned char c : std::string("less fake")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x09, std::nullopt);
+  REQUIRE(app.feedShellByte(0x09, std::nullopt));  // opens the LIST (root has multiple "fake*" entries)
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  // Still just BROWSING -- the preview must already show "less " + the
+  // highlighted candidate, not the bare candidate alone.
+  CHECK(app.promptText().rfind("less ", 0) == 0);
+
+  std::string beforeEdit = app.promptText();
+  CHECK(app.feedByte(0x08, std::nullopt));  // ^H starts editing
+  // Content must NOT suddenly change (beyond the one deleted character)
+  // -- no "less " appearing out of nowhere.
+  CHECK(app.promptText() == beforeEdit.substr(0, beforeEdit.size() - 1));
+}
+
+// 2026-09-19追加(フォローアップ10, direct user request: "^Xdへも反映して
+// ほしい"): フォローアップ9(position text survives into editing) applies
+// equally to RecentDirectory (^X^D) since it shares the exact same
+// feedTabCompletionListByte()/refreshDirectEntryModeLine() code as
+// RecentFile -- confirms it directly instead of only by inspection.
+TEST_CASE_FIXTURE(Fixture, "LIST: Tab-completion within RecentDirectory's own direct-entry combobox "
+                           "(^X^D) also keeps its position text and preview stable across the "
+                           "transition into editing, same as ^X^F") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / "recentdir_one");
+  fs::create_directories(root / "recentdir_two");
+
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  app.feedByte('x', std::nullopt);  // starts editing (arbitrary first char)
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  app.feedByte(0x15, std::nullopt);  // ^U: clear back to an empty field
+  feedText((root / "recentdir_").string());
+
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // ambiguous (one/two) -> opens the LIST on 2nd Tab
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().items().size() == 2);
+
+  std::string rowWhileBrowsing = display.rowText(display.rows() - 1);
+  CHECK(rowWhileBrowsing.find("1/2") != std::string::npos);
+  std::string beforeEdit = app.promptText();
+
+  CHECK(app.feedByte(0x08, std::nullopt));  // ^H starts editing
+  std::string rowWhileEditing = display.rowText(display.rows() - 1);
+  CHECK(rowWhileEditing.find("1/2") != std::string::npos);  // position text still there
+  CHECK(app.promptText() == beforeEdit.substr(0, beforeEdit.size() - 1));  // content, not just a jump
+}
+
 TEST_CASE_FIXTURE(Fixture, "LIST: starting to edit shows the real SHELL destination badge, not a "
                            "stale/wrong default left over from the list's own mode line "
                            "(フォローアップ5, real report screenshot =gw showed \"DIR\")") {
