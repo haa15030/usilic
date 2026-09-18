@@ -9708,7 +9708,12 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
     // scrollback_の変更の後はredraw()+redrawPromptRow()の組が必要
     // (redraw()自体がcommandLineRow()も含めて無条件にクリアするため、
     // redrawPromptRow()での描き直しが必須)。
+    // 2026-09-18再訂正(フォローアップ7): currentMode_はここまで
+    // (フォローアップ5以来ずっと)意図的にListBrowserのまま――
+    // currentMode_を本当にShellへ戻すのはまさにこの瞬間、実際に
+    // 投入が確定した「後」である。
     case PromptKind::ShellCommand:
+      currentMode_ = ApplicationMode::Shell;
       shell_.commandLine().setText(text);
       shell_.submitLine();
       shell_.scrollback().redraw();
@@ -9779,6 +9784,10 @@ void Application::cancelPrompt() {
   // すれば良い。
   if (promptKind_ == PromptKind::ShellCommand) {
     promptKind_ = PromptKind::None;
+    // 2026-09-18再訂正(フォローアップ7): currentMode_を本当にShellへ
+    // 戻すのはここ(キャンセルが確定した瞬間)――executePromptSubmission()
+    // 自身の同種の修正参照。
+    currentMode_ = ApplicationMode::Shell;
     shell_.scrollback().redraw();
     shell_.redrawPromptRow();
     return;
@@ -10043,7 +10052,19 @@ bool Application::startShellHistoryRecall() {
 // showTabCompletionList()自身のapplication.hpp宣言コメント参照。
 bool Application::showTabCompletionList(const std::vector<std::string> &candidates, const std::string &partial,
                                           const std::string &prefixBeforeWord) {
-  tabCompletionContext_ = TabCompletionContext{currentMode_, partial, prefixBeforeWord};
+  // 2026-09-18追加(フォローアップ7、実機報告「直ってない」を受けての
+  // さらなる修正): PromptKind::ShellCommand自身の宣言コメント参照
+  // ――このコミット以降、SHELLへ戻る編集中はcurrentMode_をShellへ
+  // 戻さず(意図的にListBrowserのまま)保つため、編集中にもう一度Tabを
+  // 押して2回目の一覧を開く(この関数のこの呼び出し自体)時点では
+  // currentMode_はShellではなくListBrowserになっている。ここで単純に
+  // currentMode_を戻り先として採用すると、2回目以降の一覧が
+  // returnMode=ListBrowserという誤った値を記憶してしまう――
+  // promptKind_==ShellCommandである間は、戻り先は常にShellである
+  // (この関係はPromptKind::ShellCommand自身の設計上、他の値を取り
+  // 得ない)ので、そちらを優先する。
+  ApplicationMode returnMode = promptKind_ == PromptKind::ShellCommand ? ApplicationMode::Shell : currentMode_;
+  tabCompletionContext_ = TabCompletionContext{returnMode, partial, prefixBeforeWord};
   listBrowserView_.setCursorAtModeLineTrailingEnd(false);
   listBrowserMode_.show(candidates);
   currentMode_ = ApplicationMode::ListBrowser;
@@ -10070,6 +10091,18 @@ bool Application::returnFromTabCompletionList(bool selected) {
   std::string partial = tabCompletionContext_->partial;
   tabCompletionContext_ = std::nullopt;
   currentMode_ = returnMode;
+  // 2026-09-18追加(フォローアップ7): returnMode==Shellの場合、
+  // promptKind_はShellCommand(編集を一度でも開始していれば)かNone
+  // (一度も編集を開始せずここへ来た、通常の初回の一覧確定)のどちらか
+  // ――どちらであれ、Enter/^Gで一覧そのものを確定/キャンセルする時点で
+  // は「もうShellCommandプロンプトの中にいる」状態ではなく「生きた
+  // SHELLコマンドラインへ戻る」状態なので、promptKind_を明示的にNone
+  // へ戻す。これが無いと、ShellCommandプロンプトの中でもう一度Tabを
+  // 押して開いた「入れ子の」一覧をEnterで確定した際、promptKind_が
+  // ShellCommandのまま残ってしまい、この後のバイトがdispatchByte()の
+  // `promptKind_ != None`チェックに捕まって(本来はfeedShellByte()へ
+  // 届くべきところ)誤ってfeedPromptByte()へ流れ続けてしまう。
+  if (returnMode == ApplicationMode::Shell) promptKind_ = PromptKind::None;
   // 2026-09-18修正、実機報告の追跡調査で判明した回帰(選択時に
   // "fake-onetwo"のような二重連結になる): 以前は「残りの接尾辞だけ
   // 追記する」流儀(既存のLCP補完と同じ)だったが、これは
@@ -10176,17 +10209,34 @@ bool Application::feedTabCompletionListByte(int byte, std::optional<KeyInput::Sp
   std::string prefixBeforeWord = tabCompletionContext_->prefixBeforeWord;
   const std::string *selected = listBrowserMode_.selectedItem();
   std::string seed = prefixBeforeWord + (selected ? *selected : tabCompletionContext_->partial);
-  currentMode_ = returnMode;
   listBrowserView_.redraw();
+  // 2026-09-18再訂正(フォローアップ7、実機報告「直ってない」): 前回
+  // (コミット0628934)はcurrentMode_をここで無条件にreturnModeへ戻して
+  // いたため、SHELL宛先の場合はcurrentMode_が(実際にはまだ何も送信
+  // されていない、単なる編集中の下書きに過ぎないのに)Shellへ戻って
+  // しまい、main.cpp自身のwatchShellPty以外にも「currentMode()==Shell
+  // なら本物のShellセッションとして扱ってよい」と仮定している箇所が
+  // 他にも存在する可能性を捨て切れなかった(実際に直っていなかった)。
+  // 直接のユーザー提案(「SHELL自体をスタックへ積んだ上でLISTルーチンへ
+  // 移行し...編集が完了した時点でスタックからSHELLを戻す」)により忠実
+  // に倣い、SHELL宛先の間はcurrentMode_を意図的にListBrowserのまま
+  // 保つ(=画面に実際に映っているものと矛盾しない状態を保つ)ことにした
+  // ――本当にcurrentMode_をShellへ戻すのは、編集が確定/中断して初めて
+  // (executePromptSubmission()/cancelPrompt()自身のShellCommand分岐)。
+  // ProgramCommand等(SHELL以外の宛先)は元々何の問題も無かった(実機
+  // 報告は全てSHELL起点)ので、退行を避けるため従来通りcurrentMode_を
+  // 即座にreturnModeへ切り替える。
+  //
   // feedRegexListByte()自身の2026-09-11修正と同じ理由でtabCompletionContext_の
-  // クリアをactivatePrompt()の「後」まで遅らせる: PromptKind::ShellCommand
-  // 自身のdestinationMode計算は default(=currentMode_、既に上でreturnMode
-  // へ切り替え済み)にそのまま乗るので影響しないが、直前のlistBrowserView_.
-  // redraw()自身のModeLineFieldsProviderが読む"LIST"ラベルとの整合(=cw
-  // 自身の実機報告、"DIR"という無関係なデフォルトラベルが最後のモード
-  // ライン行に居座っていた回帰)のため、この関数全体を通じて同じ並びに
-  // 揃えておく。
-  PromptKind kind = (returnMode == ApplicationMode::Shell) ? PromptKind::ShellCommand : promptKind_;
+  // クリアをactivatePrompt()の「後」まで遅らせる(直前のlistBrowserView_.
+  // redraw()自身のModeLineFieldsProviderが読む"LIST"ラベルとの整合のため)。
+  PromptKind kind;
+  if (returnMode == ApplicationMode::Shell) {
+    kind = PromptKind::ShellCommand;
+  } else {
+    currentMode_ = returnMode;
+    kind = promptKind_;
+  }
   activatePrompt(kind, seed);
   tabCompletionContext_ = std::nullopt;
   return feedPromptByte(byte);
@@ -10737,6 +10787,15 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     // 失われる。
     case PromptKind::TabCompletionList:
       destinationMode = tabCompletionContext_ ? tabCompletionContext_->returnMode : ApplicationMode::Directory;
+      break;
+    // 2026-09-18追加(フォローアップ7、PromptKind::ShellCommand自身の
+    // 宣言コメント参照): このPromptKindは常にSHELLへ戻ることを意味する
+    // 定義そのもの(他のどんな戻り先も取り得ない)なので、状態を一切
+    // 読まずハードコードできる――かつ、この回のコミットからは
+    // currentMode_自体がShellCommand編集中は意図的にListBrowserのまま
+    // なので、default(=currentMode_)には二重の意味で乗れない。
+    case PromptKind::ShellCommand:
+      destinationMode = ApplicationMode::Shell;
       break;
     default: break;
   }

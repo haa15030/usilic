@@ -3240,8 +3240,17 @@ TEST_CASE_FIXTURE(Fixture, "LIST: typing while browsing (SHELL-originated) actua
   // and subsequent bytes go through app.feedByte() (the real dispatcher,
   // now routed by promptKind_ != None) rather than feedShellByte()
   // directly.
+  //
+  // 2026-09-18 further redesign (フォローアップ7, real report "直って
+  // ない" after フォローアップ6's main.cpp-only fix wasn't enough):
+  // currentMode() deliberately STAYS ListBrowser throughout the whole
+  // ShellCommand edit now (never flips back to Shell early) -- anything
+  // keying off currentMode()==Shell (main.cpp's watchShellPty, and
+  // potentially others) must not mistake a still-in-progress, not-yet-
+  // submitted edit for a real live Shell session. It only becomes Shell
+  // again once the edit actually concludes (Enter/^G).
   app.feedByte(0x08, std::nullopt);
-  CHECK(app.currentMode() == ApplicationMode::Shell);  // editing exits ListBrowser back to the live prompt
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // NOT Shell yet -- still just a draft
   CHECK(app.promptText() == previewedBeforeEdit.substr(0, previewedBeforeEdit.size() - 1));
 
   // And an ordinary printable character actually inserts, continuing to
@@ -3413,10 +3422,12 @@ TEST_CASE_FIXTURE(Fixture, "LIST: ^B/^F are NOT list-navigation keys -- they sta
   else unsetenv("PATH");
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
 
-  // ^B: must bounce straight into editing (back to SHELL), not be
-  // swallowed as list navigation the way ^V/^N/^P are.
+  // ^B: must bounce straight into editing, not be swallowed as list
+  // navigation the way ^V/^N/^P are. currentMode() deliberately stays
+  // ListBrowser (フォローアップ7) -- only Enter/^G actually returns to
+  // Shell.
   CHECK(app.feedByte(0x02, std::nullopt));
-  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }
 
 TEST_CASE_FIXTURE(Fixture, "LIST: starting to edit keeps the candidate list visible on screen "
@@ -3457,9 +3468,10 @@ TEST_CASE_FIXTURE(Fixture, "LIST: starting to edit keeps the candidate list visi
   // ^H: an ordinary editing byte, starts editing -- previously this
   // called shell_.scrollback().redraw(), which repaints the whole
   // viewport with the (still mostly empty) shell scrollback and wipes
-  // the list right off the screen.
+  // the list right off the screen. currentMode() deliberately stays
+  // ListBrowser throughout the edit (フォローアップ7).
   CHECK(app.feedByte(0x08, std::nullopt));
-  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   CHECK(listOnScreen());
 }
 
@@ -3504,7 +3516,7 @@ TEST_CASE_FIXTURE(Fixture, "LIST: starting to edit shows the real SHELL destinat
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
 
   CHECK(app.feedByte(0x08, std::nullopt));  // ^H starts editing
-  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // deliberately not Shell yet (フォローアップ7)
   const std::string &row = display.rowText(display.rows() - 1);
   CHECK(row.find("SHELL") != std::string::npos);
   CHECK(row.find("DIR") == std::string::npos);
@@ -3583,7 +3595,7 @@ TEST_CASE_FIXTURE(Fixture, "LIST: ^G while editing (PromptKind::ShellCommand) ca
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
 
   CHECK(app.feedByte(0x08, std::nullopt));  // starts editing
-  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // deliberately not Shell yet (フォローアップ7)
 
   REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G cancels the ShellCommand prompt itself this time
                                                // (not the earlier "still browsing" ^G test)
@@ -3593,6 +3605,72 @@ TEST_CASE_FIXTURE(Fixture, "LIST: ^G while editing (PromptKind::ShellCommand) ca
   CHECK(app.shell().commandLine().text() == "fake-");
   const auto &lines = app.shell().scrollback().lines();
   for (const auto &line : lines) CHECK_FALSE(line.shellCommand.has_value());  // nothing was ever run
+}
+
+// 2026-09-18追加(フォローアップ7): PromptKind::ShellCommand編集中に
+// もう一度Tabを押して「入れ子の」一覧を開き、その入れ子の一覧をEnterで
+// (再編集ではなく)確定する経路――showTabCompletionList()自身の
+// returnMode計算がこの時点でcurrentMode_(既にListBrowser)ではなく
+// promptKind_==ShellCommandを見てShellを正しく選ぶこと、および
+// returnFromTabCompletionList()がpromptKind_をNoneへ戻し忘れずに
+// 本当のSHELLへ復帰できることの両方を検証する。
+TEST_CASE_FIXTURE(Fixture, "LIST: a SECOND (nested) Tab-list opened while already editing a "
+                           "PromptKind::ShellCommand prompt correctly remembers SHELL as its own "
+                           "return mode, and confirming it returns all the way to the real live "
+                           "SHELL command line (not stuck re-entering the outer ShellCommand prompt)") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  for (unsigned char c : std::string("fake")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x09, std::nullopt);
+  REQUIRE(app.feedShellByte(0x09, std::nullopt));  // opens the FIRST list
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.feedByte(0x08, std::nullopt));  // starts editing -- promptKind_ becomes ShellCommand
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+
+  // Re-type an ambiguous prefix from scratch and hit Tab twice again --
+  // this second showTabCompletionList() call happens while promptKind_
+  // is ALREADY ShellCommand and currentMode_ is ALREADY ListBrowser (not
+  // Shell), unlike the very first call above.
+  app.feedByte(0x15, std::nullopt);  // ^U: clear back to empty
+  for (unsigned char c : std::string("fake")) app.feedByte(c, std::nullopt);
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // opens the SECOND (nested) list
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  const std::string *selected = app.listBrowserMode().selectedItem();
+  REQUIRE(selected != nullptr);
+  std::string chosen = *selected;
+
+  // Enter while still just BROWSING this nested list (not re-editing):
+  // must return all the way to the real, live SHELL command line.
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.shell().commandLine().text() == chosen);
+
+  // And a further byte must now go through the REAL feedShellByte()
+  // path (shell_.commandLine() itself), not silently still be captured
+  // by a leftover promptKind_==ShellCommand from the outer session.
+  app.feedShellByte('Z', std::nullopt);
+  CHECK(app.shell().commandLine().text() == chosen + "Z");
 }
 
 // 2026-09-18追加(フォローアップ5、直接のユーザー依頼:「^Xf/^Xdへの流用も
