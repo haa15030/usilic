@@ -18367,3 +18367,11 @@ LISTは確かに^Xf/^Xdからも呼び出され、カレントディクトリの
 ^Xf/^Xdへの流用: RecentFile/RecentDirectoryは元々feedRegexListByte()経由で同じactivatePrompt()+feedPromptByte()の経路を使っていたため、feedPromptByteInner()のTab補完条件へこの2つを加えるだけで、直接入力中のパス補完+曖昧時の一覧表示がそのまま流用できました(新しい配線は不要)。
 
 既存テスト1件修正、新規doctest5件追加。--test-case="LIST:*"で15/15件、RecentFile/RecentDirectory/PROGRAM/MAN/PathInput/ArchiveDestination関連239件、make test 1192/1194(既知無関係のLOCATEフレーク1件+FGREP列幅テストの既知の間欠フレーク1件、単体再実行で確認済み)。make usilic/install/app確認済みです。
+
+< 惜しい。^Bを押した途端、モード名とプロンプトの「usilic 」が戻る。FILEでも同じ。LISTのままなのは何も入力しない間だけ。
+
+> 修正しました(コミット0628934)。再現テストを書いたところ、PROGRAM起点(Directory/File戻り先どちらも)は一覧が無傷のままで問題無く、真因はapp/main.cppのメインループ自身の`watchShellPty`(SHELLのpty出力を監視するかどうかのフラグ)が`currentMode()==Shell`のみを見ており`!app.promptActive()`を見ていなかったことでした――tabCompletionContext_で「閲覧中」の間はcurrentMode_がListBrowserのままなので無関係でしたが、PromptKind::ShellCommandへ「編集を開始する」瞬間にcurrentMode_がShellへ戻るため、SHELLの子プロセスがその間に出力したバイトがメインループに読み込まれ、Shell::flushNewScrollbackLines()/handlePromptDetected()が無条件に呼ぶShell::redrawPromptRow()が、編集中のフィールドが乗っているのと同じ行(commandLineRow())をSHELL自身の(凍結済みの)プロンプト内容で踏みつぶしていました。
+
+既存のホバーガード(`!app.promptActive()`、"マウスを動かすだけでプロンプトが消える"の修正)と全く同じ理屈で、CUIループ・GUIループ両方の`watchShellPty`計算に`&& !app.promptActive()`を追加しました。編集完了(Enter/^G)までSHELLの出力の可視化を遅らせるだけで、バイト自体はOSのpty側バッファにそのまま残るため実害はありません。
+
+新規doctest1件、--test-case="LIST:*"で17/17件、make test 1195/1196(既知無関係のLOCATEフレーク1件のみ)。app/main.cpp自身のメインループはPTY実機検証が前提で、このプロジェクト自身のPTY自動検証の既知の不安定さにより自動テスト化は見送り、コードの推論+既存のホバーガードとの一貫性で検証しました(実機確認をお願いします)。make usilic/install/app確認済みです。
