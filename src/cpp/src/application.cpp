@@ -10302,8 +10302,22 @@ bool Application::feedTabCompletionListByte(int byte, std::optional<KeyInput::Sp
   // 使う(showTabCompletionList()が既に同じロジックで確定済み――二重に
   // 計算し直さない)。
   PromptKind kind = tabCompletionContext_->kind;
+  // 2026-09-19追加(フォローアップ9、直接のユーザー報告「^Xf→^I→FILEの
+  // まま行数現る→^B→行数消えてプロンプトがまんま移動」+お手本の提示
+  // 「^X^F^R→FILE→HISTORY→^B→HISTORYのまま」): feedRegexListByte()
+  // 自身の「編集を開始する」遷移は、閲覧中ずっと見えていた位置表示
+  // ("01/10 TOP")を、編集開始後もactivatePrompt()の第3引数として
+  // そのまま引き継ぐ(feedRegexListByte()自身の2026-08-xxの確立済みの
+  // 修正――「[bs]→「1/10 TOP」が消滅」の反省)――この関数はそれを
+  // コピーし忘れていたため、編集開始の瞬間に位置表示が消え、
+  // それに伴いdrawPromptLabel()自身のlabelWidth計算(position表示の
+  // 有無で編集可能フィールドの開始列が変わる)が変わってしまい、
+  // プロンプト自体が横にずれて見えていた(「プロンプトがまんま移動」)。
+  std::string positionText;
+  int candidateCount = static_cast<int>(listBrowserMode_.items().size());
+  if (candidateCount > 0) positionText = ModeLine::format(listBrowserView_.cursorIndex() + 1, candidateCount);
   if (returnMode != ApplicationMode::Shell) currentMode_ = returnMode;
-  activatePrompt(kind, seed);
+  activatePrompt(kind, seed, positionText);
   tabCompletionContext_ = std::nullopt;
   return feedPromptByte(byte);
 }

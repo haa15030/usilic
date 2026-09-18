@@ -3489,6 +3489,59 @@ TEST_CASE_FIXTURE(Fixture, "LIST: starting to edit keeps the candidate list visi
 // SHELL's tab-completion-edit through the exact same activatePrompt()/
 // promptEditor_ combobox every other PromptKind already uses.
 
+// 2026-09-19追加(フォローアップ9, real report: "お手本：^X^F^R→FILE→
+// HISTORY→^B→HISTORYのまま→^G→FILE / 現状：・^Xf→^I→FILEのまま行数
+// 現る→^B→行数消えてプロンプトがまんま移動←バグな動き"): unlike
+// feedRegexListByte()'s own "start editing" transition (which explicitly
+// carries the "01/10 TOP"-style position text across into
+// activatePrompt()'s 3rd argument -- see its own established fix),
+// feedTabCompletionListByte()'s transition was dropping it, which both
+// hid the count AND shifted the editable field's starting column
+// (drawPromptLabel()'s labelWidth grows when positionText is non-empty)
+// -- visible as the whole prompt field jumping sideways the instant
+// editing began.
+TEST_CASE_FIXTURE(Fixture, "LIST: the position text (\"N/M\") survives the transition into editing, "
+                           "matching ^X^F^R's own HISTORY precedent, instead of vanishing and shifting "
+                           "the prompt field sideways") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  for (unsigned char c : std::string("fake")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x09, std::nullopt);
+  REQUIRE(app.feedShellByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  std::string rowWhileBrowsing = display.rowText(display.rows() - 1);
+  CHECK(rowWhileBrowsing.find("1/2") != std::string::npos);
+
+  CHECK(app.feedByte(0x08, std::nullopt));  // ^H starts editing
+  std::string rowWhileEditing = display.rowText(display.rows() - 1);
+  CHECK(rowWhileEditing.find("1/2") != std::string::npos);  // still there, not vanished
+
+  // The editable field's starting column must not shift: the label
+  // ("SHELL" + the SAME position text) occupies the same prefix, so the
+  // characters right after it (the seeded candidate text) should start
+  // at the same column before and after.
+  int candidateStartCol = static_cast<int>(rowWhileBrowsing.find("fake-"));
+  REQUIRE(candidateStartCol >= 0);
+  CHECK(static_cast<int>(rowWhileEditing.find("fake-")) == candidateStartCol);
+}
+
 TEST_CASE_FIXTURE(Fixture, "LIST: starting to edit shows the real SHELL destination badge, not a "
                            "stale/wrong default left over from the list's own mode line "
                            "(フォローアップ5, real report screenshot =gw showed \"DIR\")") {
