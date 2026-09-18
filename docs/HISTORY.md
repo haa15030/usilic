@@ -18408,3 +18408,14 @@ LISTは確かに^Xf/^Xdからも呼び出され、カレントディクトリの
 feedTabCompletionListByte()にpositionText計算を追加し、feedRegexListByte()と全く同じ式でactivatePrompt()へ渡すようにしました。副次的な恩恵として、^N/^Pでの候補巡回もこのTab補完の一覧について正しく動くようになりました。
 
 新規doctest1件、--test-case="LIST:*"で21/21件、関連367件、make test 1200/1201(既知無関係のLOCATEフレーク1件のみ)。make usilic/install/app確認済みです。-c起動での実機確認をお願いします。
+
+< 「LIST」は出ない？　もう疲れた？
+^Xdへも反映してほしいのと、SHELLの場合、^Iを押した時も "usilic "（←SHELLプロンプトで入力済み文字列）を入れておけば^Bで突然それが現れて位置がズレることもないのでは？
+
+> 「LIST」が出ないのはフォローアップ8で意図的に廃止したためで、後退ではありません(閲覧中から実際のkind、SHELL/PROGRAM等を表示するようにした結果です)。疲れてはいません。
+
+^Xdへの反映: フォローアップ9(位置表示が編集開始後も消えない)は共有コード(feedTabCompletionListByte())経由でRecentDirectory(^X^D)にも既に及んでいましたが、新規doctestで直接確認しました。
+
+もう一点、ご指摘は的確でした。修正しました(コミット3d8c94e)。真因: 補完対象語が行の先頭単語でない場合(prefixBeforeWordが非空、例えば"less "の後の曖昧なファイル名)、閲覧中のプレビューが候補自身("fake-one")だけをセットしており、prefixBeforeWord("less ")を付け忘れていました――「編集を開始する」遷移で初めてprefixBeforeWordが前に付いた完全な行が現れており、フォローアップ9の位置ズレとは別の、内容そのものが編集開始の瞬間に変わって見える、もう1つの「突然現れる」バグでした。閲覧中のプレビューをfeedTabCompletionListByte()自身のseed計算(prefixBeforeWord+選択項目)と全く同じ式に揃えました。
+
+新規doctest3件、--test-case="LIST:*"で23/23件、関連368件、make test 1202/1203(既知無関係のLOCATEフレーク1件のみ)。make usilic/install/app確認済みです。
