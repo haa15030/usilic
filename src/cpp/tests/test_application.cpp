@@ -3673,6 +3673,138 @@ TEST_CASE_FIXTURE(Fixture, "LIST: a SECOND (nested) Tab-list opened while alread
   CHECK(app.shell().commandLine().text() == chosen + "Z");
 }
 
+// 2026-09-18追加(フォローアップ8, real report: "SHELLならSHELL、FILEなら
+// FILEから一歩も出ずに補完しているように見えるから。でなければ^B押した
+// 途端、LISTがSHELL/FILEへ変わるわけない。"): the mode-line label must
+// show the ACTUAL destination kind (SHELL/PROGRAM/...) from the very
+// first frame of BROWSING, not a generic "LIST" that only switches to
+// the real kind once editing starts -- mirrors how ^X^F^R's "HISTORY"
+// label never changes across browsing and editing.
+TEST_CASE_FIXTURE(Fixture, "LIST: the mode-line label already shows the real destination kind while "
+                           "still just BROWSING (before any edit starts), matching ^X^F^R's HISTORY "
+                           "precedent of never visibly switching labels") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  for (unsigned char c : std::string("fake")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x09, std::nullopt);
+  REQUIRE(app.feedShellByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  // Still just BROWSING (no edit yet) -- the label must ALREADY say
+  // "SHELL", not a generic "LIST".
+  std::string rowWhileBrowsing = display.rowText(display.rows() - 1);
+  CHECK(rowWhileBrowsing.find("SHELL") != std::string::npos);
+  CHECK(rowWhileBrowsing.find("LIST") == std::string::npos);
+
+  // And it must stay "SHELL" once editing starts too (no visible flip).
+  CHECK(app.feedByte(0x08, std::nullopt));
+  std::string rowWhileEditing = display.rowText(display.rows() - 1);
+  CHECK(rowWhileEditing.find("SHELL") != std::string::npos);
+  CHECK(rowWhileEditing.find("LIST") == std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM's own mode-line label also shows \"PROGRAM\" (not \"LIST\") "
+                           "from the first frame of browsing, same as SHELL") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("fake");
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  std::string row = display.rowText(display.rows() - 1);
+  CHECK(row.find("PROGRAM") != std::string::npos);
+  CHECK(row.find("LIST") == std::string::npos);
+}
+
+// 2026-09-18追加(フォローアップ8, real report: "SHELLでの^R（COMMAND）は
+// まだNGだが、それも併せて修正してくれればいい。"): ^R for ShellCommand
+// history recall (RingCategory::ShellCommand, shared with PROGRAM) was a
+// genuine REGRESSION from フォローアップ5/7's own PromptKind::ShellCommand
+// introduction -- once a Tab-completion round put you into a
+// ShellCommand prompt, ^R stopped reaching feedShellByte()'s own working
+// startShellHistoryRecall() (dispatchByte() now routes to
+// feedPromptByte() instead, whose generic 0x12 handler calls
+// startPromptHistoryRecall(), which had no ShellCommand case at all).
+// This wires ShellCommand into that SAME machinery ^X^F/^R's own HISTORY
+// already uses, exactly as requested.
+TEST_CASE_FIXTURE(Fixture, "SHELL: ^R (COMMAND history) still works after Tab-completion has already "
+                           "put you into a PromptKind::ShellCommand prompt (フォローアップ8, real "
+                           "report: \"SHELLでの^R（COMMAND）はまだNG\")") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  history.pushRecent(RingCategory::ShellCommand, "echo recalled-inside-shellcommand");
+
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  for (unsigned char c : std::string("fake")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x09, std::nullopt);
+  REQUIRE(app.feedShellByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  CHECK(app.feedByte(0x08, std::nullopt));  // ^H starts editing -- promptKind_ becomes ShellCommand
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+
+  // Now ^R, while genuinely inside the ShellCommand prompt (not plain
+  // Shell typing) -- must open the SAME ShellCommand history ring.
+  REQUIRE(app.feedByte(0x12, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().items().size() == 1);
+  const std::string &row = display.rowText(display.rows() - 1);
+  CHECK(row.find("SHELL") != std::string::npos);  // stays "SHELL", not the generic COMMAND-ring label
+
+  // Enter on the recalled command must INSERT it (and return to the
+  // real live SHELL), NOT auto-run it -- matches startShellHistoryRecall()'s
+  // own established "past commands could be destructive" design choice.
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.shell().commandLine().text() == "echo recalled-inside-shellcommand");
+  for (const auto &line : app.shell().scrollback().lines())
+    CHECK(line.text.find("recalled-inside-shellcommand") == std::string::npos);
+}
+
 // 2026-09-18追加(フォローアップ5、直接のユーザー依頼:「^Xf/^Xdへの流用も
 // 可能なら進めて」): RecentFileの直接入力コンボボックス(^X^F)でも、
 // SHELL/PROGRAM/MANと全く同じTab補完+曖昧時の一覧表示が使えることを

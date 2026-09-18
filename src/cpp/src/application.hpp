@@ -3308,6 +3308,15 @@ class Application {
     // Shellならshell_.commandLine()、それ以外ならpromptEditor_が
     // 挿入先だと判別できる――isShellPrompt相当の別フィールドは不要。
     ApplicationMode returnMode;
+    // 2026-09-18追加(フォローアップ8、直接のユーザー報告「SHELLなら
+    // SHELL、FILEならFILEから一歩も出ずに補完しているように見える」):
+    // 一覧を閲覧中の間、モードラインのラベルにこの値(SHELL/PROGRAM/
+    // MAN/FILE/DIR等、宛先の実際のPromptKind)をそのまま使う――以前は
+    // 閲覧中だけ汎用の`PromptKind::TabCompletionList`("LIST")を挟み、
+    // 編集開始の瞬間に初めてこの値へ切り替えていたため、ラベルが
+    // "LIST"→"SHELL"のように見た目上変化していた(=^X^F^Rの「HISTORY」
+    // が閲覧中も編集中も同じラベルを保つのとは対照的だった)。
+    PromptKind kind;
     // 一覧表示時点での補完対象語――選択項目からこれを差し引いた
     // 残りだけをpaste()する(既存のLCP補完と同じ「残りの接尾辞だけ
     // 追記する」流儀に揃えている、置換ではない)。

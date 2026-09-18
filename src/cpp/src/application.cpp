@@ -2237,6 +2237,14 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
       case 0x0c:  // ^L
         isNav = true;
         break;
+      // ^V(2026-09-18追加、フォローアップ8: feedTabCompletionListByte()
+      // 自身の同種の修正(フォローアップ3)参照――PageDown。SHELL自身の
+      // ^R COMMAND履歴呼び戻し(startPromptHistoryRecall()、
+      // PromptKind::ShellCommand)が今回この関数を経由するようになった
+      // ため、同じページ送りをここにも揃える。
+      case 0x16:
+        isNav = true;
+        break;
       // ^R(2026-08-18修正、直接の報告+スクリーンショット=cz/=da):
       // 元々このホワイトリストには無かったので、まだ単に「閲覧して
       // いる」だけ(まだ何もタイプしていない)状態でプレーンな^Rを
@@ -2374,7 +2382,13 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
   // executeGrep()/executeCut()がそれを依然として見られる。
   pendingSearchFromDirectEntryList_ = promptHistoryContext_->isDirectEntry;
   ApplicationMode returnMode = promptHistoryContext_->returnMode;
-  currentMode_ = returnMode;
+  // 2026-09-18追加(フォローアップ8、PromptKind::ShellCommand自身の
+  // 宣言コメント+feedTabCompletionListByte()自身の同種の修正参照):
+  // SHELL宛先(このPromptKindが有効なのはSHELL自身の^R COMMAND履歴
+  // 呼び戻しがShellCommandプロンプト編集中に押された場合のみ)の間は
+  // currentMode_を意図的にListBrowserのまま保つ――他は元々問題無かった
+  // ため退行を避け従来通り即座に切り替える。
+  if (returnMode != ApplicationMode::Shell) currentMode_ = returnMode;
   // 2026-08-11修正: これは以前は、編集が始まった瞬間に画面上の候補
   // リストを、下層の一覧全体で置き換える形で、activeView()(「宛先」の
   // Directory/Fileビュー)を再描画していた――実際の報告+参照スクリーン
@@ -5125,6 +5139,25 @@ bool Application::openSelectedListEntry() {
     // するのとまさに同じ経路でディスパッチする。
     PromptKind kind = promptHistoryContext_->kind;
     std::string text = *item;
+    // 2026-09-18追加(フォローアップ8、直接のユーザー報告「SHELLでの
+    // ^R（COMMAND）はまだNG」): ShellCommand自身のここでの唯一の
+    // 到達経路は、Tab補完編集中に押された本物の^R COMMAND履歴呼び戻し
+    // (startPromptHistoryRecall()自身の新設ケース参照、Tab補完自体は
+    // 別のtabCompletionContext_経路でこの関数の最初の分岐が既に処理
+    // 済み)――既存のshellHistoryRecallActive_(プレーンなSHELLタイピング
+    // 中の^R)自身の確立済みの設計判断("過去のコマンドは破壊的
+    // (rm/mv等)であり得るため、選択しても自動実行しない、挿入のみ")
+    // をそのまま踏襲する。executePromptSubmission()の共通経路
+    // (GrepPattern/CutPattern/RecentFile/RecentDirectory等は選択即
+    // 実行が正しい)には乗せない。
+    if (kind == PromptKind::ShellCommand) {
+      promptHistoryContext_ = std::nullopt;
+      currentMode_ = ApplicationMode::Shell;
+      shell_.commandLine().setText(text);
+      shell_.scrollback().redraw();
+      shell_.redrawPromptRow();
+      return true;
+    }
     // pendingSearchFromDirectEntryList_自身のコメント参照。
     pendingSearchFromDirectEntryList_ = promptHistoryContext_->isDirectEntry;
     currentMode_ = promptHistoryContext_->returnMode;
@@ -6214,6 +6247,14 @@ bool Application::returnFromListBrowser() {
     currentMode_ = returnMode;
     activeView().redraw();
     activatePrompt(kind, text);  // ^Rの前に既にタイプされていたものから再開する
+    // 2026-09-18追加(フォローアップ8、PromptKind::ShellCommand自身の
+    // 宣言コメント参照): SHELLだけは生きたコマンドライン行
+    // (commandLineRow())がモードライン行(activatePrompt()が今しがた
+    // 書いた行)とは別の行にある――直前のactiveView().redraw()
+    // (=shell_.scrollback().redraw())がcommandLineRow()を無条件に
+    // 空欄化するため(Shell::redrawPromptRow()自身のコメント参照)、
+    // 他の全てのkindには不要なこの明示的な描き直しがここだけ必要。
+    if (kind == PromptKind::ShellCommand) shell_.redrawPromptRow();
     return true;
   }
   if (shellHistoryRecallActive_) {
@@ -9903,9 +9944,28 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
     case PromptKind::RecentDirectory:
       category = RingCategory::RecentDirectory;
       break;
+    // 2026-09-18追加(フォローアップ8、直接のユーザー報告「SHELLでの
+    // ^R（COMMAND）はまだNG」): ShellCommandプロンプト編集中(Tab補完で
+    // 一度でも一覧を開いた後)の^Rがここに来るようになった――ProgramCommand
+    // と全く同じRingCategory::ShellCommand(usilicrc自身の"COMMAND"、
+    // ProgramCommand自身のコメント参照)を共有する。プレーンなSHELL
+    // タイピング中(promptKind_がまだNoneのまま)の^Rは、この関数とは
+    // 別の既存のstartShellHistoryRecall()が引き続き処理する(そちらは
+    // 無変更、この修正の対象外)。
+    case PromptKind::ShellCommand:
+      category = RingCategory::ShellCommand;
+      break;
     default:
       return false;
   }
+  // 2026-09-18追加(フォローアップ8、PromptKind::ShellCommand自身の
+  // 宣言コメント参照): SHELL宛先のShellCommandプロンプト編集中は
+  // currentMode_が意図的にListBrowserのまま(フォローアップ7)なので、
+  // それをそのままreturnModeとして捕まえると、この^R呼び戻し自体の
+  // 戻り先が「ただのListBrowser」という具体性の無い値になってしまう
+  // ――showTabCompletionList()自身の同種の修正と同じ理屈。
+  ApplicationMode historyReturnMode =
+      promptKind_ == PromptKind::ShellCommand ? ApplicationMode::Shell : currentMode_;
   // 2026-09-11追加、returnFromListBrowser()自身の
   // suspendedPromptHistoryContext_を使った復元ロジックのコメント参照:
   // ここに到達する時点でcurrentMode_が既にListBrowser(つまり`^X^F`/
@@ -9929,7 +9989,7 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   if (currentMode_ == ApplicationMode::ListBrowser && !suspendedPromptHistoryContext_ && promptHistoryContext_) {
     suspendedPromptHistoryContext_ = promptHistoryContext_;
   }
-  promptHistoryContext_ = PromptHistoryContext{promptKind_, currentMode_, promptEditor_.text(), directEntry};
+  promptHistoryContext_ = PromptHistoryContext{promptKind_, historyReturnMode, promptEditor_.text(), directEntry};
   promptKind_ = PromptKind::None;
   listBrowserCategory_ = category;
   // 2026-08-12修正: ContentView::setCursorAtModeLineTrailingEnd()
@@ -10064,7 +10124,14 @@ bool Application::showTabCompletionList(const std::vector<std::string> &candidat
   // (この関係はPromptKind::ShellCommand自身の設計上、他の値を取り
   // 得ない)ので、そちらを優先する。
   ApplicationMode returnMode = promptKind_ == PromptKind::ShellCommand ? ApplicationMode::Shell : currentMode_;
-  tabCompletionContext_ = TabCompletionContext{returnMode, partial, prefixBeforeWord};
+  // 2026-09-18追加(フォローアップ8): kindは「一覧を確定/編集した後、
+  // どのPromptKindへ戻るか」――SHELL宛先ならShellCommand(promptKind_が
+  // 既にShellCommandならそのまま、まだNoneのままの初回ならこの時点で
+  // 確定する)、それ以外は既存のpromptKind_をそのまま引き継ぐ(元々
+  // ProgramCommand/ManName/PathInput/ArchiveDestination/RecentFile/
+  // RecentDirectoryのどれであっても、その値は編集中ずっと変わらない)。
+  PromptKind kind = returnMode == ApplicationMode::Shell ? PromptKind::ShellCommand : promptKind_;
+  tabCompletionContext_ = TabCompletionContext{returnMode, kind, partial, prefixBeforeWord};
   listBrowserView_.setCursorAtModeLineTrailingEnd(false);
   listBrowserMode_.show(candidates);
   currentMode_ = ApplicationMode::ListBrowser;
@@ -10229,14 +10296,13 @@ bool Application::feedTabCompletionListByte(int byte, std::optional<KeyInput::Sp
   //
   // feedRegexListByte()自身の2026-09-11修正と同じ理由でtabCompletionContext_の
   // クリアをactivatePrompt()の「後」まで遅らせる(直前のlistBrowserView_.
-  // redraw()自身のModeLineFieldsProviderが読む"LIST"ラベルとの整合のため)。
-  PromptKind kind;
-  if (returnMode == ApplicationMode::Shell) {
-    kind = PromptKind::ShellCommand;
-  } else {
-    currentMode_ = returnMode;
-    kind = promptKind_;
-  }
+  // redraw()自身のModeLineFieldsProviderが読む、閲覧中と同じラベルとの
+  // 整合のため――フォローアップ8、refreshDirectEntryModeLine()自身の
+  // 同時の修正参照)。kindはtabCompletionContext_->kind自身をそのまま
+  // 使う(showTabCompletionList()が既に同じロジックで確定済み――二重に
+  // 計算し直さない)。
+  PromptKind kind = tabCompletionContext_->kind;
+  if (returnMode != ApplicationMode::Shell) currentMode_ = returnMode;
   activatePrompt(kind, seed);
   tabCompletionContext_ = std::nullopt;
   return feedPromptByte(byte);
@@ -10749,6 +10815,21 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   // currentMode_自体)、2つ目の、より狭いDirectory専用の版を独自に
   // 手作りするのではなく、ここでそれを再利用する。
   ApplicationMode destinationMode = currentMode_;
+  // 2026-09-18追加(フォローアップ8): tabCompletionContext_が有効な間
+  // (=一覧をまだ閲覧中、編集はまだ始まっていない)は、下のkindごとの
+  // switchより「先に」これを優先する――このタイミングでは
+  // drawPromptLabel()自身にtabCompletionContext_->kind(SHELL/PROGRAM/
+  // MAN/FILE/DIR等、実際のラベル)がそのまま渡ってくるようになった
+  // ため(フォローアップ8自身のrefreshDirectEntryModeLine()修正参照)、
+  // 下のswitchがそのkind専用のケース(例えばRecentFile/RecentDirectory
+  // 自身のpromptHistoryContext_依存の分岐)に誤って乗ってしまう――
+  // promptHistoryContext_はこの閲覧中は常にnulloptなので、そちらの
+  // ケースはDirectoryへ誤ってフォールバックしてしまう。
+  // tabCompletionContext_->returnModeこそが、この閲覧中における唯一
+  // 正しい戻り先である。
+  if (tabCompletionContext_) {
+    destinationMode = tabCompletionContext_->returnMode;
+  } else
   switch (kind) {
     case PromptKind::GrepPattern: destinationMode = grepReturnMode_; break;
     case PromptKind::CutPattern: destinationMode = cutReturnMode_; break;
@@ -10774,17 +10855,22 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     // returnFromListBrowser()自体が既に頼っているのと同じ値である
     // ――別個の変数を独自に手作りするのではなく、ここでそれを再利用
     // する。
+    // 2026-09-18修正(フォローアップ8): 非nulloptのpromptHistoryContext_
+    // が無い場合のフォールバックを、ハードコードされたDirectoryから
+    // currentMode_へ変更した――tabCompletionContext_駆動の(RecentFile/
+    // RecentDirectory自身のTab補完、フォローアップ5参照)「編集を開始
+    // する」遷移後は、promptHistoryContext_は常にnulloptのままだが、
+    // currentMode_は既に(feedTabCompletionListByte()自身の遷移が)本当の
+    // 戻り先(File/Directory)へ切り替え済みなので、こちらの方が正しい。
     case PromptKind::RecentFile:
     case PromptKind::RecentDirectory:
-      destinationMode = promptHistoryContext_ ? promptHistoryContext_->returnMode : ApplicationMode::Directory;
+      destinationMode = promptHistoryContext_ ? promptHistoryContext_->returnMode : currentMode_;
       break;
-    // 2026-09-18追加、実機報告(⑥「SHELLで発動したので戻り値もSHELL」)
-    // ――RecentFile/RecentDirectory自身のすぐ上のコメントと全く同じ
-    // 理由: TabCompletionListもそれ専用の*ReturnMode_(ここでは
-    // tabCompletionContext_->returnMode)を持ち、かつrefreshDirectEntryModeLine()は
-    // currentMode_が既にListBrowserへ切り替わった後に呼ばれるので、
-    // デフォルトの`= currentMode_`ではSHELL/PROGRAM等の本当の戻り先が
-    // 失われる。
+    // PromptKind::TabCompletionList自身の宣言コメント参照――もう
+    // drawPromptLabel()へ渡されることが無い(フォローアップ8、
+    // refreshDirectEntryModeLine()自身の同時の修正参照)ため、この
+    // caseは到達不能だが、他のDu/ArchiveLoad同様のマーカー専用値と
+    // して残す。
     case PromptKind::TabCompletionList:
       destinationMode = tabCompletionContext_ ? tabCompletionContext_->returnMode : ApplicationMode::Directory;
       break;
@@ -10989,11 +11075,18 @@ void Application::refreshDirectEntryModeLine() {
   // ではなくtabCompletionContext_を見る点だけが違う(design.md参照、
   // SHELLの生きたコマンドラインにはPromptKindという概念自体が無い
   // ため、この機能専用の別のoptionalを使っている)。
+  // 2026-09-18再訂正(フォローアップ8、直接のユーザー報告「SHELLなら
+  // SHELL、FILEならFILEから一歩も出ずに補完しているように見える」):
+  // 以前はここで汎用のPromptKind::TabCompletionList("LIST")を無条件に
+  // 渡していたため、編集開始の瞬間にtabCompletionContext_->kind
+  // (SHELL/PROGRAM/MAN等)へラベルが切り替わって見えていた――
+  // ^X^F^Rの「HISTORY」が閲覧中も編集中も同じラベルを保つのに倣い、
+  // 閲覧中からtabCompletionContext_->kind自身をそのまま渡す。
   if (tabCompletionContext_) {
     int candidateCount = static_cast<int>(listBrowserMode_.items().size());
     std::string positionText =
         candidateCount > 0 ? ModeLine::format(listBrowserView_.cursorIndex() + 1, candidateCount) : "";
-    drawPromptLabel(PromptKind::TabCompletionList, positionText);
+    drawPromptLabel(tabCompletionContext_->kind, positionText);
     const std::string *selected = listBrowserMode_.selectedItem();
     promptEditor_.setText(selected ? *selected : "");
     promptEditor_.redraw();
