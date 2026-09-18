@@ -678,42 +678,44 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) in Directory mode after descendi
 // -- resolveCommand/feedByte: ^S (single-byte), ^O^S (leader), and ^J^S
 // (leader) for GREP/FGREP/EGREP --
 
-// 2026-09-05変更(直接のユーザー依頼、"発動キーはそれぞれ^O^S、^J^S、
-// ^Sとする"): プレーンな^Sは、旧来のFGREP(^O^Sへ移動)ではなく新設の
-// GREPを起動するようになった。
+// 2026-09-18変更、直接のユーザー依頼("egrepよりもgrepのほうが簡単だと
+// 勘違いしていて...GREPとFGREPを無くしたい。^[i→^S（リテラル）、^O^S→
+// ^J^S（拡張正規表現）に限定"): 2026-09-05に新設したGrepSyntax::Basic
+// (プレーンな基本正規表現GREP)を廃止し、プレーンな^SはFGREP(リテラル)
+// 一本になった。^O^S(旧FGREPの発動キー)自体も廃止し、以後は素の^S一本
+// でリテラル検索に統合、拡張正規表現は^J^S(EGREP)一本のまま。
 TEST_CASE("resolveCommand: ^S resolves to StartGrep") {
   CHECK(Application::resolveCommand(0x13, std::nullopt) == Command::StartGrep);
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ^S (StartFgrep, moved from the old plain ^S)") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ^S no longer resolves to anything (FGREP's old dedicated key, "
+                           "removed once plain ^S itself became FGREP/literal)") {
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O
-  CHECK(app.feedByte(0x13, std::nullopt));    // ^S
-  CHECK(app.promptActive());
-  CHECK(display.rowText(display.rows() - 1).find("FGREP") != std::string::npos);
+  CHECK_FALSE(app.feedByte(0x13, std::nullopt));  // ^S -- unrecognized ^O^S sequence, no-op
+  CHECK_FALSE(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: plain ^S (StartGrep, new) opens a blank prompt labeled GREP, not "
-                           "FGREP/EGREP") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: plain ^S (StartGrep) opens a blank prompt labeled FGREP (literal), not "
+                           "EGREP") {
   REQUIRE(app.start(path()));
   CHECK(app.feedByte(0x13, std::nullopt));  // ^S
   CHECK(app.promptActive());
   std::string row = display.rowText(display.rows() - 1);
-  CHECK(row.find("FGREP") == std::string::npos);
   CHECK(row.find("EGREP") == std::string::npos);
-  CHECK(row.find("GREP") != std::string::npos);
+  CHECK(row.find("FGREP") != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "GrepMode::search (Basic/plain grep): 'grep' role runs with basic-regex syntax, "
-                           "distinct from Fixed/Regex") {
+TEST_CASE_FIXTURE(Fixture, "GrepMode::search (plain ^S): 'grep' role now runs with FIXED (literal) syntax, "
+                           "same as ^O^S used to before it was removed") {
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> FGREP
   feedText("plain");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
-  // 2026-09-09: plain ^S (Basic syntax) from Directory now stays
-  // in-place (see .steering/20260909-grep-inline-highlight/design.md)
-  // instead of switching to ApplicationMode::Grep -- the search itself
-  // (and grepMode_.matches()) is unaffected.
+  // 2026-09-09: plain ^S from Directory stays in-place (see
+  // .steering/20260909-grep-inline-highlight/design.md) instead of
+  // switching to ApplicationMode::Grep -- the search itself (and
+  // grepMode_.matches()) is unaffected.
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.grepMode().matches().size() == 1);
   CHECK(app.grepMode().matches()[0].text.find("plain.txt") != std::string::npos);
@@ -728,20 +730,24 @@ TEST_CASE_FIXTURE(Fixture, "GrepMode::search (Basic/plain grep): 'grep' role run
 // design.md for the full rationale.
 
 TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ^S stays in Directory, jumps the cursor to the "
-                           "first match, and shows GREP/(grep) on the mode line") {
+                           "first match, and shows FGREP/(fgrep) on the mode line") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   { std::ofstream(root / "two.json") << "{}\n"; }
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
-  feedText("json$");
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> FGREP
+  // 2026-09-18: plain ^S is now FIXED/literal syntax (Command::StartGrep
+  //自身のコメント参照), so "json$" (a regex anchor, matches nothing
+  // literally) would no longer match -- a plain literal pattern is used
+  // here, same as the "ESC i" incremental-search tests already do.
+  feedText("json");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
 
   CHECK(app.currentMode() == ApplicationMode::Directory);  // never switches to ApplicationMode::Grep
   REQUIRE(app.directoryMode().selectedEntry() != nullptr);
   CHECK(app.directoryMode().selectedEntry()->name == "one.json");  // first match, alphabetically first
   const std::string &modeLine = app.activeContentView().modeLineText();
-  CHECK(modeLine.find("GREP") != std::string::npos);
-  CHECK(modeLine.find("(grep)") != std::string::npos);
+  CHECK(modeLine.find("FGREP") != std::string::npos);
+  CHECK(modeLine.find("(fgrep)") != std::string::npos);
 
   REQUIRE(app.grepMode().matches().size() == 2);
   int idx = indexOf("one.json");
@@ -757,14 +763,14 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ^S from an open file st
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> FGREP
   feedText("marker two");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
 
   CHECK(app.currentMode() == ApplicationMode::File);  // never switches to ApplicationMode::Grep
   const std::string &modeLine = app.activeContentView().modeLineText();
-  CHECK(modeLine.find("GREP") != std::string::npos);
-  CHECK(modeLine.find("(grep)") != std::string::npos);
+  CHECK(modeLine.find("FGREP") != std::string::npos);
+  CHECK(modeLine.find("(fgrep)") != std::string::npos);
 }
 
 // 2026-09-11追加、直接のユーザー報告("FILE/DIRでも^O^S/^J^S同様
@@ -779,23 +785,23 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ^S from an open file st
 // (^O^S/^J^Sは専用の一覧画面へ切り替わるためこの欠落の影響を受け
 // ない)。同じ条件をpagerMode_分岐にも複製して修正した。
 TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin, pagerMode_ / CLI-direct launch): ^S from a "
-                           "startPagerFileList() screen shows the GREP/(grep) mode-line badge too, not just "
+                           "startPagerFileList() screen shows the FGREP/(fgrep) mode-line badge too, not just "
                            "the Directory-Enter case") {
   REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> GREP
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> FGREP
   feedText("world");
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
 
   CHECK(app.currentMode() == ApplicationMode::File);
   const std::string &modeLine = app.activeContentView().modeLineText();
-  CHECK(modeLine.find("GREP") != std::string::npos);
-  CHECK(modeLine.find("(grep)") != std::string::npos);
+  CHECK(modeLine.find("FGREP") != std::string::npos);
+  CHECK(modeLine.find("(fgrep)") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin, pagerMode_): a NO-MATCH search also shows the "
-                           "GREP/(grep) badge, not just a bare pager mode line") {
+                           "FGREP/(fgrep) badge, not just a bare pager mode line") {
   REQUIRE(app.startPagerFileList({(root / "plain.txt").string()}));
 
   REQUIRE(app.feedByte(0x13, std::nullopt));
@@ -807,8 +813,8 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin, pagerMode_): a NO-MATCH 
   app.feedByte(0x0d, std::nullopt);
 
   const std::string &modeLine = app.activeContentView().modeLineText();
-  CHECK(modeLine.find("GREP") != std::string::npos);
-  CHECK(modeLine.find("(grep)") != std::string::npos);
+  CHECK(modeLine.find("FGREP") != std::string::npos);
+  CHECK(modeLine.find("(fgrep)") != std::string::npos);
   CHECK(modeLine.find("No String") != std::string::npos);
 }
 
@@ -817,7 +823,7 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: ^N/^P step between matches, wrapping 
   { std::ofstream(root / "two.json") << "{}\n"; }
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x13, std::nullopt));
-  feedText("json$");
+  feedText("json");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.directoryMode().selectedEntry()->name == "one.json");
 
@@ -837,7 +843,7 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: marking ('.') keeps the session alive
   { std::ofstream(root / "two.json") << "{}\n"; }
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x13, std::nullopt));
-  feedText("json$");
+  feedText("json");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
   REQUIRE(app.feedByte('.', std::nullopt));  // ToggleMark on "one.json"
@@ -866,7 +872,7 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: plain navigation/paging (MoveDown, Sc
   { std::ofstream(root / "two.json") << "{}\n"; }
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x13, std::nullopt));
-  feedText("json$");
+  feedText("json");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.activeContentView().modeLineText().find("GREP") != std::string::npos);
 
@@ -1012,7 +1018,7 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ALL matches are Bo
   int oneIdx = indexOf("one.json");
   int twoIdx = indexOf("two.json");
   REQUIRE(app.feedByte(0x13, std::nullopt));
-  feedText("json$");
+  feedText("json");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
 
   // 2026-09-10 revision: highlighting is now substring-only (just the
@@ -4734,42 +4740,41 @@ TEST_CASE_FIXTURE(Fixture, "^S (ListBrowser, RecentFile): triggers in-place GREP
 
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // never leaves the candidate list
   const std::string &modeLine = app.activeContentView().modeLineText();
-  CHECK(modeLine.find("GREP") != std::string::npos);
-  CHECK(modeLine.find("(grep)") != std::string::npos);
+  CHECK(modeLine.find("FGREP") != std::string::npos);
+  CHECK(modeLine.find("(fgrep)") != std::string::npos);
 }
 
-// 2026-09-11追加、直接のユーザー報告("usilic -c（引数無し）で起動→
-// ^X^D→^O^S：モード名FGREPのはずなのにGREPかつハイライトの戻り値
-// 空白"): ^X^F/^X^D自身の候補一覧を閲覧中に^O^S(FGREP)/^J^S(EGREP)を
-// 起動すると、その2バイト目の^Sが、上のテストで新設したin-place GREP
-// 起動用のホワイトリストに、まだleaderOPending_/leaderJPending_が
-// 立っている段階で先に捕まってしまい、本来のCommand::StartFgrep/
-// StartEgrepへ一度も渡らないまま単独の^S(Command::StartGrep)として
-// 誤って解釈されていた(モードラインに"FGREP"ではなく"GREP"が出る、
-// という形で発覚)。
-TEST_CASE_FIXTURE(Fixture, "^O^S (ListBrowser, RecentDirectory): the 2nd byte of the leader sequence still "
-                           "resolves to FGREP, not the new in-place-GREP ^S shortcut meant for a bare ^S") {
+// 2026-09-18改訂、直接のユーザー依頼(Command::StartGrep自身のコメント
+// 参照、"GREPとFGREPを無くしたい"): ^O^S自体を廃止したため、このテスト
+// はもう「^O^Sの2バイト目がin-place GREPの^Sショートカットに誤って
+// 先取りされないか」を確認する意味を持たない――^O^S自体が完全に
+// 未認識のシーケンスになった(下のCHECK_FALSEで確認)。2026-09-11の元の
+// 報告が検出した回帰(候補一覧閲覧中に押した^Sがモードラインに"FGREP"
+// ではなく"GREP"を出してしまう)自体の再発防止は、上の"^S (ListBrowser,
+// RecentFile)"テストが引き続き担う。
+TEST_CASE_FIXTURE(Fixture, "^O^S (ListBrowser, RecentDirectory): the leader sequence itself no longer "
+                           "resolves to anything (removed), and does NOT fall through to the bare-^S "
+                           "in-place-GREP shortcut either") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
 
-  REQUIRE(app.feedByte(0x0f, std::nullopt));  // ^O (leader)
-  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -- completes ^O^S = FGREP
+  REQUIRE(app.feedByte(0x0f, std::nullopt));      // ^O (leader)
+  CHECK_FALSE(app.feedByte(0x13, std::nullopt));  // ^S -- ^O^S is unrecognized now, no-op
 
-  const std::string &row = display.rowText(display.rows() - 1);
-  CHECK(row.find("FGREP") == 0);  // name field starts with FGREP, not plain GREP
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // still just browsing, untouched
 }
 
-// 同じ実機報告の続き("あとは戻り値だけ。現状空白なのでFILE/DIRでは
-// それぞれFILE/DIRとしてくれればいい"): ^O^S(FGREP)/^J^S(EGREP)を
-// ^X^D/^X^F自身の候補一覧を「まだ閲覧中」に起動すると、grepReturnMode_
-// がApplicationMode::ListBrowserになり、previousModeName()に
-// ListBrowserのケースが無いため戻り値欄が空白になっていた。
-TEST_CASE_FIXTURE(Fixture, "^O^S (ListBrowser, RecentDirectory): the return-value field shows \"DIR\" instead "
+// 2026-09-11追加、直接のユーザー報告("あとは戻り値だけ。現状空白なので
+// FILE/DIRではそれぞれFILE/DIRとしてくれればいい")の回帰確認は、
+// ^O^Sが廃止された今、素の^S(FGREP)経由でも同じgrepReturnMode_==
+// ListBrowser起点のケースを再現できる――previousModeName()に
+// ListBrowserのケースが無いため戻り値欄が空白になっていたのが元の
+// バグだった。
+TEST_CASE_FIXTURE(Fixture, "^S (ListBrowser, RecentDirectory): the return-value field shows \"DIR\" instead "
                            "of being blank when FGREP is invoked while still browsing the candidate list") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
-  REQUIRE(app.feedByte(0x0f, std::nullopt));
   REQUIRE(app.feedByte(0x13, std::nullopt));
 
   const std::string &row = display.rowText(display.rows() - 1);
@@ -14211,7 +14216,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Shell);
   CHECK(app.grepMode().matches().size() == 1);
-  CHECK(app.activeContentView().modeLineText().find("(grep)") != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("(fgrep)") != std::string::npos);
 }
 
 // 2026-09-20追加、直接のユーザー報告("^O^S/^J^Sが利かない"):
@@ -14225,7 +14230,12 @@ TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell
 // scrollbackが検索対象になることを確認する(EGREPは候補リストを
 // 経由するstartRegexPromptList()の形を取るため、プロンプトの代わりに
 // ^Gで空のプロンプトへ抜けてから投入する)。
-TEST_CASE_FIXTURE(Fixture, "SHELL: ^O^S (FGREP) and ^J^S (EGREP) also search SHELL's own scrollback, not "
+// 2026-09-18改訂(Command::StartGrep自身のコメント参照、GREP/FGREP
+// 統合): ^O^S自体を廃止したので、このテストは以後plainな^S(FGREP)
+// 一本と^J^S(EGREP)の2つだけを確認する――^O^Sが未認識シーケンスとして
+// もShellを離れる副作用を起こさないことは、isShellSafeGrep自身の
+// 更新されたコメントが説明する保護に委ねる。
+TEST_CASE_FIXTURE(Fixture, "SHELL: plain ^S (FGREP) and ^J^S (EGREP) also search SHELL's own scrollback, not "
                            "whatever mode SHELL was entered from") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartShell));
@@ -14245,8 +14255,7 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: ^O^S (FGREP) and ^J^S (EGREP) also search SHE
   // ――専用の結果画面(ApplicationMode::Grep)も、EGREP自身の候補一覧も
   // もう経由しない。
 
-  // ^O^S: FGREP
-  REQUIRE(app.feedByte(0x0f, std::nullopt));
+  // plain ^S: FGREP (旧^O^Sは2026-09-18廃止)
   REQUIRE(app.feedByte(0x13, std::nullopt));
   CHECK(app.currentMode() == ApplicationMode::Shell);
   CHECK(app.promptActive());
