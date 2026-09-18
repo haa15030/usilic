@@ -3840,17 +3840,108 @@ TEST_CASE_FIXTURE(Fixture, "LIST: the mode-line label already shows the real des
   else unsetenv("PATH");
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
 
-  // Still just BROWSING (no edit yet) -- the label must ALREADY say
-  // "SHELL", not a generic "LIST".
+  // Still just BROWSING (no edit yet) -- the LABEL (left side) must
+  // ALREADY say "SHELL", not a generic "LIST" -- checked by position,
+  // not mere substring presence, since フォローアップ11 (直接のユーザー
+  // 指摘: "SHELLの戻り値がSHELLなのでLIST入れ忘れたのかなと") legitimately
+  // put "LIST" back as the right-justified 戻り値 badge (previously a
+  // redundant second "SHELL", now that the label itself already says
+  // "SHELL") -- so "LIST" appearing further right in the row is correct.
   std::string rowWhileBrowsing = display.rowText(display.rows() - 1);
-  CHECK(rowWhileBrowsing.find("SHELL") != std::string::npos);
-  CHECK(rowWhileBrowsing.find("LIST") == std::string::npos);
+  CHECK(rowWhileBrowsing.rfind("SHELL", 0) == 0);
+  CHECK(rowWhileBrowsing.rfind("LIST", 0) != 0);
 
   // And it must stay "SHELL" once editing starts too (no visible flip).
   CHECK(app.feedByte(0x08, std::nullopt));
   std::string rowWhileEditing = display.rowText(display.rows() - 1);
-  CHECK(rowWhileEditing.find("SHELL") != std::string::npos);
-  CHECK(rowWhileEditing.find("LIST") == std::string::npos);
+  CHECK(rowWhileEditing.rfind("SHELL", 0) == 0);
+  CHECK(rowWhileEditing.rfind("LIST", 0) != 0);
+}
+
+// 2026-09-19追加(フォローアップ11, real report: "ただSHELLの戻り値が
+// SHELLなのでLIST入れ忘れたのかなと。戻り値だけ直しといて。"):
+// PromptKind::ShellCommand's destinationMode is hardcoded to Shell by
+// definition (it can never mean anything else), so once フォローアップ8
+// made the LEFT label itself say "SHELL", the right-justified 戻り値
+// badge repeating "SHELL" a second time became pure, uninformative
+// duplication -- unlike every other kind (PROGRAM/MAN/...), whose badge
+// genuinely differs from its label. Putting "LIST" there instead
+// restores the badge to carrying real information (this candidate list
+// came from the LIST/Tab-completion feature) without the redundancy.
+TEST_CASE_FIXTURE(Fixture, "LIST: SHELL's own 戻り値 badge says \"LIST\", not a redundant second "
+                           "\"SHELL\" that duplicates the label") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  for (unsigned char c : std::string("fake")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x09, std::nullopt);
+  REQUIRE(app.feedShellByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  auto countOccurrences = [](const std::string &haystack, const std::string &needle) {
+    int count = 0;
+    std::size_t pos = 0;
+    while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+      count++;
+      pos += needle.size();
+    }
+    return count;
+  };
+
+  std::string rowWhileBrowsing = display.rowText(display.rows() - 1);
+  CHECK(rowWhileBrowsing.rfind("SHELL", 0) == 0);  // label, left
+  CHECK(rowWhileBrowsing.find("LIST") != std::string::npos);  // 戻り値, right
+  CHECK(countOccurrences(rowWhileBrowsing, "SHELL") == 1);  // not duplicated
+
+  CHECK(app.feedByte(0x08, std::nullopt));  // starts editing
+  std::string rowWhileEditing = display.rowText(display.rows() - 1);
+  CHECK(rowWhileEditing.rfind("SHELL", 0) == 0);
+  CHECK(rowWhileEditing.find("LIST") != std::string::npos);
+  CHECK(countOccurrences(rowWhileEditing, "SHELL") == 1);
+}
+
+// 2026-09-19追加(フォローアップ11, direct user request: "動きは問題無し
+// だが要望はある。^Xfで出るリストはレギュラーファイルだけにして欲しい。
+// 「/」で終わる項目を排除するだけで済むのでは？"): RecentFile (^X^F) is
+// a list of recently opened FILES -- its own Tab-completion candidates
+// should exclude directories (RecentDirectory/^X^D already gets the
+// symmetric directoriesOnly=true treatment).
+TEST_CASE_FIXTURE(Fixture, "LIST: Tab-completion within RecentFile's own combobox (^X^F) excludes "
+                           "directories, offering only regular files") {
+  REQUIRE(app.start(path()));
+  std::ofstream(root / "recentmix_alpha.txt") << "a\n";
+  fs::create_directories(root / "recentmix_beta");  // a directory sharing the same prefix
+
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  app.feedByte('x', std::nullopt);  // starts editing (arbitrary first char)
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  app.feedByte(0x15, std::nullopt);  // ^U: clear back to an empty field
+  feedText((root / "recentmix_").string());
+
+  app.feedByte(0x09, std::nullopt);  // unambiguous now (only the file matches) -- completes directly
+  CHECK(app.promptText() == (root / "recentmix_alpha.txt").string());
 }
 
 TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM's own mode-line label also shows \"PROGRAM\" (not \"LIST\") "

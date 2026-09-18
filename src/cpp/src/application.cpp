@@ -9417,6 +9417,19 @@ bool Application::feedPromptByteInner(int byte) {
         promptKind_ == PromptKind::ShellCommand ? shell_.currentDirectory() : directoryMode_.currentDirectory();
     auto candidates =
         searchPath ? pathProgramCandidates(partial) : completeFilesystemPath(partial, baseDirectory, directoriesOnly);
+    // 2026-09-19追加(フォローアップ11、直接のユーザー要望: "^Xfで出る
+    // リストはレギュラーファイルだけにして欲しい。「/」で終わる項目を
+    // 排除するだけで済むのでは？"): RecentFile(^X^F)は「最近開いた
+    // ファイル」の一覧であり、ディレクトリを候補に含める意味が無い
+    // ――RecentDirectory(^X^D)は既にdirectoriesOnly=trueで対称的に
+    // 絞られている。completeFilesystemPath()自身はディレクトリの候補に
+    // 常に末尾"/"を付ける(このファイル冒頭の一覧表示との既存の慣習)
+    // ので、ご提案通りそれだけを目印に除外すれば足りる。
+    if (promptKind_ == PromptKind::RecentFile) {
+      candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
+                                       [](const std::string &c) { return !c.empty() && c.back() == '/'; }),
+                        candidates.end());
+    }
     if (candidates.empty()) {
       promptTabArmed_ = false;
       return true;
@@ -10956,6 +10969,18 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     destinationDirectory = promptLabelText(kind);
   } else if (destinationMode == ApplicationMode::CutContent) {
     destinationDirectory = cutContentReturnLabel();
+  } else if (kind == PromptKind::ShellCommand) {
+    // 2026-09-19追加(フォローアップ11、直接のユーザー指摘: "SHELLの
+    // 戻り値がSHELLなのでLIST入れ忘れたのかなと"): PromptKind::ShellCommand
+    // 自身の宣言コメント参照――このkindは定義上、常にdestinationMode==Shell
+    // (previousModeName()は"SHELL")である。フォローアップ8より前は
+    // 左のラベル自体が汎用の"LIST"だったので、右の戻り値"SHELL"が
+    // 「一覧の宛先はSHELL」という独立した情報を運んでいたが、
+    // フォローアップ8で左のラベル自体を"SHELL"へ変えたことで、右側は
+    // 完全に同じ文字列を繰り返すだけの無意味な重複になっていた。
+    // 右側にこの機能自体の由来("LIST")を残すことで、重複を解消しつつ
+    // 情報を保つ。
+    destinationDirectory = "LIST";
   } else {
     destinationDirectory = previousModeName(destinationMode);
   }
