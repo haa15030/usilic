@@ -18289,3 +18289,20 @@ make test 1178/1179(既知無関係のLOCATEフレーク1件のみ)、make usili
 2. legacy参照画面(=gv.png)との比較: 一覧のプロンプトエリアは「編集可能な非ハイライト表示」が正解(既存のRecentFile/RecentDirectory方式のdirect entryピッカーと同じ、カーソル移動のたびに現在ハイライト中の候補の全文をpromptEditor_経由でプレーンな非反転表示プレビューする規約)でした。PromptKind::TabCompletionList(Du/ArchiveLoadと同じ、promptKind_へは一切代入されないdrawPromptLabel()専用のラベルマーカー)を新設し、refreshDirectEntryModeLine()にtabCompletionContext_分岐を追加してMoveUp/MoveDownのたびにこのプレビューを描くようにしました。
 
 新規doctest2件、make test 1180/1181(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。
+
+< ・プログラム一覧は問題無し。`usilic ^I`が不良。
+①sortされていない。
+②`^I`直後のプロンプトはハイライトのまま。=gu
+③`^N`で非ハイライトにはなるものの編集不能。`#q.txt#`で`^H`とやると`#q.txt`とはならずにHELPになる。
+
+> 3件とも修正しました(コミット4e4e99a)。
+
+① completeFilesystemPath()の結果にstd::sort()を追加しました。std::filesystem::directory_iterator自身の列挙順序はOS/ファイルシステム依存でアルファベット順とは限りません――LCP補完1件だけを取り出す従来の用途では順序自体は無関係でしたが、今回の一覧表示機能がこの並びをそのままユーザーへ見せるようになりました。pathProgramCandidates()は元からソート済みでした。
+
+② showTabCompletionList()の末尾でrefreshDirectEntryModeLine()を即座に呼ぶようにしました。以前はRecentFile/RecentDirectory自身の前例(最初の1枚目はハイライトされたまま、実際にMoveUp/MoveDownした後にだけ非ハイライトのプレビューへ切り替える)に倣っていましたが、この機能については最初の1枚目からして「編集可能なフィールド」に見えるべきだとご指摘の通りでした。
+
+③ PromptKind::TabCompletionListが有効な間(SHELLの生きたコマンドラインからの^Jp usilic起動時等、promptKind_がNoneのままかつcurrentMode_も既にListBrowserへ切り替わっている場合)、^H等のキーが汎用コマンド割り当て(たまたまHELPに解決されていた)へ誤って落ちていました。feedRegexListByte()(GrepPattern/CutPattern/ManName/RecentFile/RecentDirectory自身の「生きた編集可能なコンボボックス」)と全く同じ構造のfeedTabCompletionListByte()を新設し、dispatchByte()の冒頭でtabCompletionContext_が有効な間最優先で処理するようにしました――^N/^P/Enter/^G/^Lは一覧のナビゲートのみ、他の全てのバイトは「編集を開始する」遷移(prefixBeforeWord+現在ハイライト中の候補で完全な行を再構成し、SHELLの生きたコマンドラインまたはpromptEditor_へ書き戻してから同じバイトを再送りする)です。
+
+②の修正に伴い、選択確定(Enter)時の「残りの接尾辞だけ追記する」という以前の流儀が、プレビューによる上書きと両立しなくなっていたため、returnFromTabCompletionList()もprefixBeforeWord+選択項目(または非選択時はpartialへ戻す)による完全な行の再構成+置換に改めました。
+
+新規doctest4件、make test 1184/1185(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。
