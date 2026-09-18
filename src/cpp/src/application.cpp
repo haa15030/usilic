@@ -3596,6 +3596,14 @@ bool Application::handleCommand(Command command) {
       activeView().setHoverIndex(std::nullopt);
       activeView().scrollLineUp();
       activeView().syncVisibleCursor();
+      // 2026-09-18追加、実機報告(⑤「^[vによるページ戻り（画面更新？）
+      // で②が起きる」)を受けて追加: MoveUp/MoveDown(すぐ上)は既に
+      // refreshDirectEntryModeLine()を呼んでいたが、この移植の
+      // スクロール/ページ系コマンドは元から一度も呼んでいなかった
+      // ――RecentFile/RecentDirectory自身の既存のdirect entry機能に
+      // とっても本来同じ穴だったが、今回のLIST機能で初めて実際に
+      // 踏まれて表面化した。
+      refreshDirectEntryModeLine();
       return true;
     case Command::ScrollLineDown:
       activeView().setHoverIndex(std::nullopt);
@@ -3613,11 +3621,13 @@ bool Application::handleCommand(Command command) {
       activeView().scrollLineDown();
       activeView().syncVisibleCursor();
       suppressPagerRepoll(activeView().topIndex());
+      refreshDirectEntryModeLine();  // ScrollLineUp自身のコメント参照(⑤)
       return true;
     case Command::PageUp:
       activeView().setHoverIndex(std::nullopt);
       activeView().pageUp();
       activeView().syncVisibleCursor();
+      refreshDirectEntryModeLine();  // ScrollLineUp自身のコメント参照(⑤)
       return true;
     case Command::PageDown:
       activeView().setHoverIndex(std::nullopt);
@@ -3644,6 +3654,7 @@ bool Application::handleCommand(Command command) {
       activeView().pageDown();
       activeView().syncVisibleCursor();
       suppressPagerRepoll(activeView().topIndex());
+      refreshDirectEntryModeLine();  // ScrollLineUp自身のコメント参照(⑤)
       return true;
     case Command::Enter:
       if (currentMode_ == ApplicationMode::Directory) return openSelectedEntry();
@@ -10029,7 +10040,16 @@ bool Application::returnFromTabCompletionList(bool selected) {
 // PromptKindを持たない戻り先もあり得る)である点。
 bool Application::feedTabCompletionListByte(int byte, std::optional<KeyInput::SpecialKey> special) {
   if (!tabCompletionContext_) return false;
-  bool isNav = special == KeyInput::SpecialKey::Up || special == KeyInput::SpecialKey::Down;
+  // 2026-09-18追加、実機報告(④「^[vはOKだが^Vが利かないのでページ
+  // 送りできない」): ^[v(ESC v)は既にescPending_経由でdispatchLeaderByte()
+  // へ普通に流れる(下のリーダー分岐)ので最初から動いていたが、素の
+  // 制御バイト^V(0x16、resolveCommand()自身のPageDownへのマッピング
+  // 参照)/^B(0x02、対称的なPageUp)/^F(0x06、Spaceの別名)はnav語彙に
+  // 含まれておらず、代わりに「編集を開始する」遷移へ誤って落ちて
+  // いた――^N/^P/^Gと同じく、これらもリテラルな編集対象の文字として
+  // 打たれることが現実的に無い制御バイトなので、nav側へ加える。
+  bool isNav = special == KeyInput::SpecialKey::Up || special == KeyInput::SpecialKey::Down ||
+               special == KeyInput::SpecialKey::PageUp || special == KeyInput::SpecialKey::PageDown;
   if (!special) {
     switch (byte) {
       case 0x0e:  // ^N
@@ -10037,6 +10057,9 @@ bool Application::feedTabCompletionListByte(int byte, std::optional<KeyInput::Sp
       case kCarriageReturn:
       case kControlG:
       case 0x0c:  // ^L
+      case 0x02:  // ^B(PageUp)
+      case 0x06:  // ^F(PageDown、Spaceの別名)
+      case 0x16:  // ^V(PageDown)
         isNav = true;
         break;
     }
@@ -10612,6 +10635,16 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
     case PromptKind::RecentFile:
     case PromptKind::RecentDirectory:
       destinationMode = promptHistoryContext_ ? promptHistoryContext_->returnMode : ApplicationMode::Directory;
+      break;
+    // 2026-09-18追加、実機報告(⑥「SHELLで発動したので戻り値もSHELL」)
+    // ――RecentFile/RecentDirectory自身のすぐ上のコメントと全く同じ
+    // 理由: TabCompletionListもそれ専用の*ReturnMode_(ここでは
+    // tabCompletionContext_->returnMode)を持ち、かつrefreshDirectEntryModeLine()は
+    // currentMode_が既にListBrowserへ切り替わった後に呼ばれるので、
+    // デフォルトの`= currentMode_`ではSHELL/PROGRAM等の本当の戻り先が
+    // 失われる。
+    case PromptKind::TabCompletionList:
+      destinationMode = tabCompletionContext_ ? tabCompletionContext_->returnMode : ApplicationMode::Directory;
       break;
     default: break;
   }

@@ -3276,6 +3276,103 @@ TEST_CASE_FIXTURE(Fixture, "LIST: ^G cancels back to exactly what was typed befo
   CHECK(app.shell().commandLine().text() == "fake-");  // restored, not left as the previewed candidate
 }
 
+// 2026-09-18 second follow-up, direct real-machine reports once ^N/edit
+// worked: "④^[vはOKだが^Vが利かないのでページ送りできない。⑤^[vによる
+// ページ戻り（画面更新？）で②が起きる。⑥SHELLで発動したので戻り値も
+// SHELL。"
+
+TEST_CASE_FIXTURE(Fixture, "LIST: bare ^V (PageDown) navigates the list instead of starting an "
+                           "edit transition (④ -- ^[v via the leader path already worked, but the "
+                           "bare control byte fell through to \"start editing\")") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (int i = 0; i < 40; i++) {
+    std::string name = "fake-" + std::string(2 - std::to_string(i).size(), '0') + std::to_string(i);
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("fake");
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  int topBefore = app.activeContentView().topIndex();
+
+  CHECK(app.feedByte(0x16, std::nullopt));  // ^V
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);  // still browsing, not bounced into editing
+  CHECK(app.activeContentView().topIndex() > topBefore);     // actually scrolled
+}
+
+TEST_CASE_FIXTURE(Fixture, "LIST: paging (PageUp/PageDown/ScrollLineUp/ScrollLineDown) refreshes "
+                           "the non-highlighted preview too, not just MoveUp/MoveDown (⑤)") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (int i = 0; i < 40; i++) {
+    std::string name = "fake-" + std::string(2 - std::to_string(i).size(), '0') + std::to_string(i);
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("fake");
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  REQUIRE(app.handleCommand(Command::PageDown));
+  const std::string *selected = app.listBrowserMode().selectedItem();
+  REQUIRE(selected != nullptr);
+  CHECK(app.promptText() == *selected);  // preview followed the cursor after paging, not stale
+}
+
+TEST_CASE_FIXTURE(Fixture, "LIST: the return-value badge reflects the ACTUAL origin (SHELL), not "
+                           "a blank/wrong destination (⑥ -- previously fell into the default "
+                           "`destinationMode = currentMode_` branch, which by then is already "
+                           "ListBrowser itself)") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  for (unsigned char c : std::string("fake")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x09, std::nullopt);
+  REQUIRE(app.feedShellByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  // drawPromptLabel()'s destination-badge writes directly to the
+  // display buffer (bypassing ContentView::modeLineText(), which only
+  // reflects the ModeLineFieldsProvider's initial-frame rendering) --
+  // check the actual rendered bottom row instead.
+  const std::string &row = display.rowText(display.rows() - 1);
+  CHECK(row.find("SHELL") != std::string::npos);
+}
+
 // 2026-09-10 (a direct user request): "usilic" itself is always accepted
 // even though the fixture's rc (see above) never registers it as a
 // PROGRAM entry -- mirrors SHELL mode's own pre-existing special-casing
