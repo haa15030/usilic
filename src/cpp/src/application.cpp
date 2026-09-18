@@ -2101,6 +2101,15 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
     promptEditor_.redraw();
     return result;
   }
+  // 2026-09-18追加、HELP.txt 2.13章「LIST」の実装、実機報告(③「^Nで
+  // 非ハイライトにはなるものの編集不能」)を受けて追加: feedTabCompletionListByte()
+  // 自身の宣言コメント参照。tabCompletionContext_が有効な間は、下の
+  // promptKind_/currentMode_==Shellの通常分岐(SHELLからの^Jp usilic
+  // 起動時はpromptKind_がNoneのまま、かつcurrentMode_も既にListBrowser
+  // へ切り替わっているため、どちらの通常分岐にも一度も引っかからず、
+  // ^H等が汎用コマンド割り当てへ誤って落ちていた)より先にここで
+  // 一括して処理する。
+  if (tabCompletionContext_) return feedTabCompletionListByte(byte, special);
   if (promptKind_ != PromptKind::None) return feedPromptByte(byte);
   if (currentMode_ == ApplicationMode::Shell) return feedShellByte(byte, special);
   // COPY(^O^C): それ自身の小さな自己完結したキーの語彙
@@ -3301,7 +3310,7 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   }
   if (byte == 0x09) {  // Tab
     Shell::TabOutcome outcome = shell_.onTab();
-    if (outcome.showList) showTabCompletionList(outcome.candidates, outcome.partial);
+    if (outcome.showList) showTabCompletionList(outcome.candidates, outcome.partial, outcome.prefixBeforeWord);
     return true;
   }
   if (byte == 0x7f || byte == 0x08) {  // DEL/^H
@@ -9356,7 +9365,7 @@ bool Application::feedPromptByteInner(int byte) {
     // 自身の同一の修正参照、legacyのf_listフラグと同じ役割)。
     if (ambiguous && promptTabArmed_) {
       promptTabArmed_ = false;
-      showTabCompletionList(candidates, partial);
+      showTabCompletionList(candidates, partial, text.substr(0, wordStart));
       return true;
     }
     if (lcp.size() > partial.size()) promptEditor_.paste(lcp.substr(partial.size()));
@@ -9958,12 +9967,24 @@ bool Application::startShellHistoryRecall() {
 }
 
 // showTabCompletionList()自身のapplication.hpp宣言コメント参照。
-bool Application::showTabCompletionList(const std::vector<std::string> &candidates, const std::string &partial) {
-  tabCompletionContext_ = TabCompletionContext{currentMode_, partial};
+bool Application::showTabCompletionList(const std::vector<std::string> &candidates, const std::string &partial,
+                                          const std::string &prefixBeforeWord) {
+  tabCompletionContext_ = TabCompletionContext{currentMode_, partial, prefixBeforeWord};
   listBrowserView_.setCursorAtModeLineTrailingEnd(false);
   listBrowserMode_.show(candidates);
   currentMode_ = ApplicationMode::ListBrowser;
   activeView().redraw();
+  // 2026-09-18追加、実機報告(②「^I直後のプロンプトはハイライトの
+  // まま」): RecentFile/RecentDirectory自身の前例は、最初の1枚目は
+  // (listBrowserView_自身のModeLineFieldsProviderが描く)ハイライト
+  // されたtrailingのままで、実際にMoveUp/MoveDownした後にだけ
+  // refreshDirectEntryModeLine()が非ハイライトのプレビューへ切り替える
+  // ――しかしこの機能については、その最初の1枚目からして「編集可能な
+  // フィールド」に見えるべきだとユーザーから直接指摘された。ここで
+  // 即座にrefreshDirectEntryModeLine()自身と同じ内容を呼ぶことで、
+  // 一度も動かしていない状態でも最初から非ハイライトのプレビューに
+  // なるようにする。
+  refreshDirectEntryModeLine();
   return true;
 }
 
@@ -9971,20 +9992,26 @@ bool Application::showTabCompletionList(const std::vector<std::string> &candidat
 bool Application::returnFromTabCompletionList(bool selected) {
   if (!tabCompletionContext_) return false;
   ApplicationMode returnMode = tabCompletionContext_->returnMode;
+  std::string prefixBeforeWord = tabCompletionContext_->prefixBeforeWord;
   std::string partial = tabCompletionContext_->partial;
   tabCompletionContext_ = std::nullopt;
   currentMode_ = returnMode;
-  if (selected) {
-    const std::string *item = listBrowserMode_.selectedItem();
-    // 既存のLCP補完と同じ「残りの接尾辞だけ追記する」流儀――一覧の
-    // 全候補はpartialを共通接頭辞に持つ(LCPの定義上)ので、置換では
-    // なく追記で正しく完成する。
-    if (item && item->size() > partial.size()) {
-      std::string suffix = item->substr(partial.size());
-      if (returnMode == ApplicationMode::Shell) shell_.commandLine().paste(suffix);
-      else promptEditor_.paste(suffix);
-    }
-  }
+  // 2026-09-18修正、実機報告の追跡調査で判明した回帰(選択時に
+  // "fake-onetwo"のような二重連結になる): 以前は「残りの接尾辞だけ
+  // 追記する」流儀(既存のLCP補完と同じ)だったが、これは
+  // showTabCompletionList()自身の②修正(一覧を開いた直後から
+  // refreshDirectEntryModeLine()相当のプレビューを描く)と両立
+  // しない――カーソル移動のたびに、下敷きのエディタ自身の文字列が
+  // 「現在ハイライト中の候補の全文」で上書きされてしまうため、選択
+  // 確定時点でもう「partialのままの元のテキスト」ではなくなっている。
+  // prefixBeforeWord+選択項目(または非選択時はpartialへ戻す=一覧を
+  // 開く前の状態への復元)で毎回「完全な行」を再構成し、置換
+  // (setText())する形に改めた――feedTabCompletionListByte()自身の
+  // 「編集を開始する」遷移と同じ考え方に揃えている。
+  const std::string *item = selected ? listBrowserMode_.selectedItem() : nullptr;
+  std::string full = prefixBeforeWord + (item ? *item : partial);
+  if (returnMode == ApplicationMode::Shell) shell_.commandLine().setText(full);
+  else promptEditor_.setText(full);
   if (returnMode == ApplicationMode::Shell) {
     shell_.scrollback().redraw();
     shell_.redrawPromptRow();
@@ -9992,6 +10019,64 @@ bool Application::returnFromTabCompletionList(bool selected) {
     activeView().redraw();
   }
   return true;
+}
+
+// feedTabCompletionListByte()自身のapplication.hpp宣言コメント参照。
+// feedRegexListByte()と全く同じ「ナビゲートのみの小さな語彙、それ
+// 以外の全バイトは編集開始」という構造の複製――違いは戻り先が
+// promptHistoryContext_(常にPromptKindを持つ)ではなく
+// tabCompletionContext_(SHELLの生きたコマンドラインという
+// PromptKindを持たない戻り先もあり得る)である点。
+bool Application::feedTabCompletionListByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  if (!tabCompletionContext_) return false;
+  bool isNav = special == KeyInput::SpecialKey::Up || special == KeyInput::SpecialKey::Down;
+  if (!special) {
+    switch (byte) {
+      case 0x0e:  // ^N
+      case 0x10:  // ^P
+      case kCarriageReturn:
+      case kControlG:
+      case 0x0c:  // ^L
+        isNav = true;
+        break;
+    }
+  }
+  if (isNav) return handleCommand(resolveCommand(byte, special));
+  // feedRegexListByte()自身の同じ理由のコメント参照: リーダーの
+  // シーケンス(^J/^X/^O/ESC)は「編集を開始する」ではなく、通常通り
+  // コマンドとしてディスパッチする。
+  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ ||
+      gotoLineGPending_ || gotoLineDigitsPending_ ||
+      (!special && (byte == kLeaderJ || byte == kLeaderX || byte == kLeaderO || byte == kEscape))) {
+    return dispatchLeaderByte(byte, special);
+  }
+  if (special) return false;  // 処理されない特殊キー――テキストとして送り込む意味のあるものが無い
+
+  // ここから先は「編集を開始する」――実機報告(③「^Nで非ハイライトに
+  // はなるものの編集不能。'#q.txt#'で^Hとやると'#q.txt'とはならずに
+  // HELPになる」)への対応。prefixBeforeWord(補完対象語の前にあった
+  // テキスト、例えば"cat ")+現在ハイライト中の候補で完全な行を
+  // 再構成し、対応する生きたエディタ(SHELLの生きたコマンドライン、
+  // またはpromptEditor_)へ実際に書き戻してから、このバイト自身を
+  // 通常の経路(feedShellByte()/feedPromptByte())へ再送りする――
+  // feedRegexListByte()と同じ「遷移が連続しているように感じられる」
+  // ための再送り。
+  ApplicationMode returnMode = tabCompletionContext_->returnMode;
+  std::string prefixBeforeWord = tabCompletionContext_->prefixBeforeWord;
+  const std::string *selected = listBrowserMode_.selectedItem();
+  std::string seed = prefixBeforeWord + (selected ? *selected : tabCompletionContext_->partial);
+  tabCompletionContext_ = std::nullopt;
+  currentMode_ = returnMode;
+  if (returnMode == ApplicationMode::Shell) {
+    shell_.commandLine().setText(seed);
+    shell_.scrollback().redraw();
+    shell_.redrawPromptRow();
+    return feedShellByte(byte, special);
+  }
+  drawPromptLabel(promptKind_, "");
+  promptEditor_.setText(seed);
+  promptEditor_.redraw();
+  return feedPromptByte(byte);
 }
 
 std::string Application::promptLabelText(PromptKind kind) const {
@@ -12082,6 +12167,14 @@ std::vector<std::string> Application::completeFilesystemPath(const std::string &
     if (directoriesOnly && !isDir) continue;
     results.push_back(dirPart + name + (isDir ? "/" : ""));
   }
+  // 2026-09-18追加、実機報告(①「sortされていない」): std::filesystem::
+  // directory_iterator自身の列挙順序はOS/ファイルシステム依存で
+  // アルファベット順とは限らない――LCP補完1件だけを取り出す従来の
+  // 用途では順序自体は無関係だったが、HELP.txt 2.13章「LIST」の
+  // 一覧表示機能がこの並びをそのままユーザーへ見せるようになった今、
+  // 順序も意味を持つ。pathProgramCandidates()は元から
+  // ソート済み・重複排除済みだったので、こちらも揃える。
+  std::sort(results.begin(), results.end());
   return results;
 }
 

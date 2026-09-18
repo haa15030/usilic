@@ -3131,6 +3131,151 @@ TEST_CASE_FIXTURE(Fixture, "LIST: moving the cursor previews the highlighted can
   CHECK(app.promptText() == *selected);  // the highlighted candidate's full text, live-previewed
 }
 
+// 2026-09-18 follow-up, direct real-machine reports on the LIST feature
+// once it actually reached $PATH candidates ("usilic ^Iが不良。①sort
+// されていない。②^I直後のプロンプトはハイライトのまま。③^Nで非
+// ハイライトにはなるものの編集不能。'#q.txt#'で^Hとやると'#q.txt'とは
+// ならずにHELPになる"): three follow-up fixes to the feature just added.
+
+TEST_CASE_FIXTURE(Fixture, "LIST: candidates are sorted (① - directory_iterator's own enumeration "
+                           "order is filesystem-dependent, not alphabetical)") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-zebra", "fake-alpha", "fake-mid"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("fake");
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  auto items = app.listBrowserMode().items();
+  auto sortedItems = items;
+  std::sort(sortedItems.begin(), sortedItems.end());
+  CHECK(items == sortedItems);
+}
+
+// ② is already covered by the "moving the cursor previews..." test above
+// plus the fact that showTabCompletionList() itself now calls
+// refreshDirectEntryModeLine() before any navigation happens -- verified
+// directly here for the very first frame (no MoveDown at all).
+TEST_CASE_FIXTURE(Fixture, "LIST: the FIRST frame (before any cursor movement at all) already shows "
+                           "the non-highlighted editable preview, not just after moving once") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("fake");
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // opens the LIST -- no MoveDown/MoveUp at all yet
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  const std::string *selected = app.listBrowserMode().selectedItem();
+  REQUIRE(selected != nullptr);
+  CHECK(app.promptText() == *selected);
+}
+
+TEST_CASE_FIXTURE(Fixture, "LIST: typing while browsing (SHELL-originated) actually edits the "
+                           "live command line -- backspace removes a character instead of falling "
+                           "through to an unrelated generic command (③, real report: \"'#q.txt#'で"
+                           "^Hとやると'#q.txt'とはならずにHELPになる\")") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  // StartShell itself needs to find a real bash/zsh via the REAL PATH --
+  // restrict PATH only AFTER the shell child is already spawned (same
+  // reasoning as the pre-existing "usilic"-routing tests' own ordering).
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  for (unsigned char c : std::string("fake")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x09, std::nullopt);
+  REQUIRE(app.feedShellByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  const std::string *selected = app.listBrowserMode().selectedItem();
+  REQUIRE(selected != nullptr);
+  std::string previewedBeforeEdit = *selected;
+
+  // Backspace: a real edit, not a generic command (previously fell
+  // through to whatever resolveCommand() maps 0x08 to outside any live
+  // prompt, e.g. a HELP-ish banner instead of actually deleting a char).
+  app.feedByte(0x08, std::nullopt);
+  CHECK(app.currentMode() == ApplicationMode::Shell);  // editing exits ListBrowser back to the live prompt
+  CHECK(app.shell().commandLine().text() == previewedBeforeEdit.substr(0, previewedBeforeEdit.size() - 1));
+
+  // And an ordinary printable character actually inserts, continuing to
+  // edit normally from here via the regular Shell byte path.
+  app.feedShellByte('X', std::nullopt);
+  CHECK(app.shell().commandLine().text() ==
+        previewedBeforeEdit.substr(0, previewedBeforeEdit.size() - 1) + "X");
+}
+
+TEST_CASE_FIXTURE(Fixture, "LIST: ^G cancels back to exactly what was typed before the list opened "
+                           "(SHELL-originated), not whatever candidate happened to be previewed") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  // StartShell itself needs to find a real bash/zsh via the REAL PATH --
+  // restrict PATH only AFTER the shell child is already spawned.
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  for (unsigned char c : std::string("fake")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x09, std::nullopt);
+  REQUIRE(app.feedShellByte(0x09, std::nullopt));  // opens the LIST, previewing e.g. "fake-one"
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  // app.feedByte() (the top-level dispatcher), not feedShellByte()
+  // directly -- currentMode_ is ListBrowser now, and the
+  // tabCompletionContext_ interception lives in dispatchByte() itself.
+  REQUIRE(app.feedByte(0x07, std::nullopt));  // ^G
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.shell().commandLine().text() == "fake-");  // restored, not left as the previewed candidate
+}
+
 // 2026-09-10 (a direct user request): "usilic" itself is always accepted
 // even though the fixture's rc (see above) never registers it as a
 // PROGRAM entry -- mirrors SHELL mode's own pre-existing special-casing

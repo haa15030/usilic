@@ -3113,7 +3113,8 @@ class Application {
   // 呼び出し時のcurrentMode_(SHELLの生きたコマンドライン、または
   // promptEditor_の下敷きのモードのどちらでもあり得る)である点が
   // 異なる。
-  bool showTabCompletionList(const std::vector<std::string> &candidates, const std::string &partial);
+  bool showTabCompletionList(const std::vector<std::string> &candidates, const std::string &partial,
+                              const std::string &prefixBeforeWord);
   // openSelectedListEntry()(^M、selected=true)/returnFromListBrowser()
   // (^G、selected=false)の両方の「先頭」(promptHistoryContext_等の
   // 既存の分岐より前)から呼ばれる共有ヘルパー。tabCompletionContext_
@@ -3292,8 +3293,31 @@ class Application {
     // 残りだけをpaste()する(既存のLCP補完と同じ「残りの接尾辞だけ
     // 追記する」流儀に揃えている、置換ではない)。
     std::string partial;
+    // 2026-09-18追加、実機報告(③「^Nで非ハイライトにはなるものの
+    // 編集不能」)を受けて追加: 補完対象語の「前」にあったテキスト
+    // (例えば"less "、SHELLなら"cat "――バッファ全体からpartialを
+    // 引いた残り)。一覧の閲覧中にタイプ/DELが来て「編集を開始する」
+    // 遷移(feedTabCompletionListByte()自身のコメント参照、
+    // feedRegexListByte()と同じ考え方)へ入る時、これ+選択中の候補で
+    // 完全な行を再構成する――候補一覧はpartialだけを補完する機能
+    // なので、その前にあった単語(コマンド名等)を消してはならない。
+    std::string prefixBeforeWord;
   };
   std::optional<TabCompletionContext> tabCompletionContext_;
+  // 2026-09-18追加、実機報告(③)を受けて新設。dispatchByte()自身の
+  // 冒頭付近、promptKind_/currentMode_==Shellの通常分岐より「前」で
+  // 呼ばれる――tabCompletionContext_が有効な間だけの専用の小さな
+  // キー語彙(feedRegexListByte()自身のクラスコメント参照、全く同じ
+  // 考え方の複製): ^N/^P/Enter/^G/^Lは一覧のナビゲートのみ、他の
+  // 全てのバイト(普通の文字、DEL/^H)は「編集を開始する」遷移――
+  // prefixBeforeWord+現在ハイライト中の候補で、SHELLの生きたコマンド
+  // ライン(returnMode==Shell)またはpromptEditor_(それ以外)の
+  // どちらかへ実際に書き戻し、その後このバイト自身をfeedShellByte()/
+  // feedPromptByte()へ再送りして編集を続行させる。feedRegexListByte()
+  // と違い、SHELLという「PromptKindを持たない」戻り先にも対応する
+  // 必要があるため、promptHistoryContext_ベースの既存関数を拡張する
+  // のではなく専用に新設した(design.md参照)。
+  bool feedTabCompletionListByte(int byte, std::optional<KeyInput::SpecialKey> special);
   // ensureShellActive()/returnFromShell()(2026-08-24の修正、実際の
   // 100%再現する報告: "（ls）のCLAUDE.md上で^J^B^J^W^G"――^J^Bの
   // 直後は正しく「CUT」とラベル付けされていた候補一覧が、この

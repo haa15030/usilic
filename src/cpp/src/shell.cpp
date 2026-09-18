@@ -1417,6 +1417,7 @@ Shell::TabOutcome Shell::onTab() {
     tabArmed_ = false;
     outcome.showList = true;
     outcome.candidates = std::move(candidates);
+    outcome.prefixBeforeWord = text.substr(0, wordStart);
     outcome.partial = std::move(partial);
     return outcome;
   }

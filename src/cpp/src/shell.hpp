@@ -290,6 +290,13 @@ class Shell {
     bool showList = false;
     std::vector<std::string> candidates;
     std::string partial;
+    // 2026-09-18追加、実機報告(③「^Nで非ハイライトにはなるものの
+    // 編集不能」)を受けて追加: partialの「前」にあったバッファの
+    // 内容(例えば"cat ")――呼び出し元(Application::showTabCompletionList()
+    // /feedTabCompletionListByte())が、一覧の閲覧からの「編集を開始
+    // する」遷移時に、この後ろへ選択中の候補を繋いで完全なコマンド
+    // 行を再構成するために必要。
+    std::string prefixBeforeWord;
   };
   // TAB: 入力バッファ全体に区切り文字が無ければ(shouldSearchPath()
   // 自身のコメント参照)programCompletionProvider_($PATH検索)、
