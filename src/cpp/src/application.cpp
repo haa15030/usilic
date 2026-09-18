@@ -9326,15 +9326,29 @@ bool Application::feedPromptByteInner(int byte) {
   // (2026-08-23追加)は、PathInputと全く同じ「完全にパスそのもの」。
   // DuPathは2026-09-09にプロンプト自体が廃止されたため、このリスト
   // から削除済み――runDuOnCurrentFolder()自身のコメント参照。
+  // 2026-09-18追加(フォローアップ5、直接のユーザー依頼:「^Xf/^Xdへの
+  // 流用も可能なら進めて」): RecentFile/RecentDirectory(^X^F/^X^D)は
+  // feedRegexListByte()自身の「編集を開始する」遷移が、これと全く同じ
+  // activatePrompt()+feedPromptByte()の経路を既に使っているので
+  // (promptHistoryContext_自身のコメント参照)、この条件へ2つ加える
+  // だけで、直接入力中のTabによるパス補完+曖昧時の一覧表示(この機能
+  // 全体)がそのままそちらにも乗る――新しい配線は一切不要。
   if (byte == 0x09 &&
       (promptKind_ == PromptKind::PathInput || promptKind_ == PromptKind::ProgramCommand ||
        promptKind_ == PromptKind::ManName || promptKind_ == PromptKind::CopyDestination ||
-       promptKind_ == PromptKind::MoveDestination || promptKind_ == PromptKind::ArchiveDestination)) {
+       promptKind_ == PromptKind::MoveDestination || promptKind_ == PromptKind::ArchiveDestination ||
+       promptKind_ == PromptKind::ShellCommand || promptKind_ == PromptKind::RecentFile ||
+       promptKind_ == PromptKind::RecentDirectory)) {
     const std::string &text = promptEditor_.text();
     int cursor = promptEditor_.cursorBytePos();
     std::string partial = text;
     std::size_t wordStart = 0;
-    bool wordSplitting = promptKind_ == PromptKind::ProgramCommand || promptKind_ == PromptKind::ManName;
+    // 2026-09-18追加(フォローアップ5): ShellCommandはSHELLの生きた
+    // コマンドラインそのものを引き継いだプロンプトなので、
+    // ProgramCommand/ManNameと同じく「最後の単語」だけを補完対象と
+    // する(Shell::onTab()自身の同一のロジックのコピー)。
+    bool wordSplitting =
+        promptKind_ == PromptKind::ProgramCommand || promptKind_ == PromptKind::ManName || promptKind_ == PromptKind::ShellCommand;
     if (wordSplitting) {
       std::size_t searchFrom = (cursor > 0) ? static_cast<std::size_t>(cursor - 1) : 0;
       wordStart = text.find_last_of(" \t", searchFrom);
@@ -9349,10 +9363,19 @@ bool Application::feedPromptByteInner(int byte) {
     // ==true、K-47/^X^d)/ArchiveDestination(展開先は常にディレクトリ)
     // はディレクトリのみに絞る。
     bool searchPath = wordSplitting && shouldSearchPath(text);
-    bool directoriesOnly =
-        (promptKind_ == PromptKind::PathInput && pathInputIsDirectory_) || promptKind_ == PromptKind::ArchiveDestination;
-    auto candidates = searchPath ? pathProgramCandidates(partial)
-                                  : completeFilesystemPath(partial, directoryMode_.currentDirectory(), directoriesOnly);
+    bool directoriesOnly = (promptKind_ == PromptKind::PathInput && pathInputIsDirectory_) ||
+                           promptKind_ == PromptKind::ArchiveDestination ||
+                           promptKind_ == PromptKind::RecentDirectory;
+    // 2026-09-18追加(フォローアップ5): ShellCommandはdirectoryMode_の
+    // カレントディレクトリではなく、shell_自身が最後に自己申告した
+    // ディレクトリ(Shell::currentDirectory()、cd等で乖離し得る)を基準
+    // にする――Application構築時のshell_.setCompletionProvider()自身の
+    // コメント参照、Tabの1回目(promptKind_がまだNoneのままShell::onTab()
+    // 経由で処理される間)と全く同じ基準に揃えるため。
+    const std::string &baseDirectory =
+        promptKind_ == PromptKind::ShellCommand ? shell_.currentDirectory() : directoryMode_.currentDirectory();
+    auto candidates =
+        searchPath ? pathProgramCandidates(partial) : completeFilesystemPath(partial, baseDirectory, directoriesOnly);
     if (candidates.empty()) {
       promptTabArmed_ = false;
       return true;
@@ -9667,6 +9690,30 @@ bool Application::executePromptSubmission(PromptKind kind, const std::string &te
       if (currentMode_ == ApplicationMode::Directory) directoryMode_.resetNavigationToFloor(previousDirectory);
       return true;
     }
+    // 2026-09-18追加(フォローアップ5、PromptKind::ShellCommand自身の
+    // 宣言コメント参照): Enterはこのプロンプト自身にとっては「確定」
+    // だが、SHELLにとっては「このコマンドラインを実際に実行する」と
+    // いう意味であり、GrepPattern等の「その場で1回だけ何かを実行して
+    // 終わる」プロンプトとは違って、SHELL自体はこの後も生き続ける
+    // セッションである。編集中は一切触れていなかったshell_.commandLine()
+    // (Tabが最初に押される「前」の状態のまま凍結されていた)へ確定した
+    // 文字列を書き戻し、Shell::submitLine()(browsingHistory自身のEnter
+    // 分岐がまさに同じ「setText()してsubmitLine()」の形を使っている、
+    // すぐ上のコメント参照)へ普通に投入する――これがfreezePromptLine()
+    // 経由でscrollback_自身のlines_を書き換える(が、それ自体は
+    // ContentView::setLines()同様、画面の再描画は一切行わない)。
+    // 一覧の内容行がまだ画面に残ったままなので、submitLine()自身の
+    // 内部のredrawPromptRow()呼び出し「だけ」では不十分――
+    // returnFromTabCompletionList()自身の同一の理由のコメント参照、
+    // scrollback_の変更の後はredraw()+redrawPromptRow()の組が必要
+    // (redraw()自体がcommandLineRow()も含めて無条件にクリアするため、
+    // redrawPromptRow()での描き直しが必須)。
+    case PromptKind::ShellCommand:
+      shell_.commandLine().setText(text);
+      shell_.submitLine();
+      shell_.scrollback().redraw();
+      shell_.redrawPromptRow();
+      return true;
     case PromptKind::None:
     case PromptKind::Du:  // promptKind_には決して代入されない、drawPromptLabel()専用のラベルマーカー――application.hpp自身の宣言コメント参照
     case PromptKind::ArchiveLoad:  // 同上――PromptKind::ArchiveLoad自身の宣言コメント参照
@@ -9718,6 +9765,22 @@ void Application::cancelPrompt() {
     directoryView_.setCursorRowAlsoHighlighted(true);
     directoryView_.setMarkedRowUsesUnderline(true);
     directoryView_.redraw();
+    return;
+  }
+  // 2026-09-18追加(フォローアップ5、PromptKind::ShellCommand自身の
+  // 宣言コメント参照): 下の汎用の末尾(`activeView().redraw()`)は
+  // currentMode_==Shellの間shell_.scrollback()を返すactiveView()経由で
+  // 内容行自体は正しく再描画するが、shell_.redrawPromptRow()を呼ばない
+  // ――redraw()自体がcommandLineRow()を無条件にクリアするため
+  // (Shell::redrawPromptRow()自身のコメント参照)、これが無いと生きた
+  // プロンプト行が空欄のまま残る。編集中一切触れていなかった
+  // shell_.commandLine()は、Tabが最初に押される「前」の文字列のまま
+  // なので、ここではsetText()し直す必要は無い――このまま復元表示
+  // すれば良い。
+  if (promptKind_ == PromptKind::ShellCommand) {
+    promptKind_ = PromptKind::None;
+    shell_.scrollback().redraw();
+    shell_.redrawPromptRow();
     return;
   }
   // 2026-09-09、DU用の分岐がここに一時期あった(^Jdのプロンプトを
@@ -10085,41 +10148,47 @@ bool Application::feedTabCompletionListByte(int byte, std::optional<KeyInput::Sp
   // はなるものの編集不能。'#q.txt#'で^Hとやると'#q.txt'とはならずに
   // HELPになる」)への対応。prefixBeforeWord(補完対象語の前にあった
   // テキスト、例えば"cat ")+現在ハイライト中の候補で完全な行を
-  // 再構成し、対応する生きたエディタ(SHELLの生きたコマンドライン、
-  // またはpromptEditor_)へ実際に書き戻してから、このバイト自身を
-  // 通常の経路(feedShellByte()/feedPromptByte())へ再送りする――
-  // feedRegexListByte()と同じ「遷移が連続しているように感じられる」
-  // ための再送り。
+  // 再構成し、通常の生きた編集可能なプロンプト(activatePrompt())へ
+  // 遷移してから、このバイト自身を通常の経路(feedPromptByte())へ
+  // 再送りする――feedRegexListByte()と同じ「遷移が連続しているように
+  // 感じられる」ための再送り。
+  //
+  // 2026-09-18再設計(フォローアップ5、直接のユーザー提案:「SHELL自体
+  // をスタックへ積んだ上でLISTルーチンへ移行し、文字列編集はLIST内で
+  // 行った上で(当然一覧も無傷)編集が完了した時点でスタックからSHELLを
+  // 戻して文字列を渡す」): 以前はSHELL宛先だけshell_.commandLine()/
+  // shell_.redrawPromptRow()を直接操作し、バイトをfeedShellByte()へ
+  // 再送りしていた――これはSHELLだけが他のPromptKind(GrepPattern/
+  // CutPattern/ManName/RecentFile/RecentDirectory等)と違って専用の
+  // PromptKindを持たず、編集対象が別個のウィジェット(shell_.commandLine()
+  // 、独自のcommandLineRow())だったための特別扱いであり、行の所有権が
+  // 一覧の内容行と2系統に分かれ、実機報告のたびに(パス補完/ソート/
+  // 生きた編集/ページ送り/戻り値バッジ/一覧の消失、と5ラウンド連続で)
+  // 取りこぼしが起きていた。PromptKind::ShellCommand(自身の宣言コメント
+  // 参照)を新設し、SHELL宛先の場合もPROGRAM/MAN等と全く同じ
+  // activatePrompt()+promptEditor_の経路に統合した――これにより
+  // shell_.commandLine()自体は、確定(Enter、executePromptSubmission()
+  // 自身のShellCommand分岐)またはキャンセル(^G、cancelPrompt()自身の
+  // ShellCommand分岐)まで一切触れられなくなり、編集中は他の全ての
+  // PromptKindと全く同じく「activatePrompt()はモードライン1行だけを
+  // 書く」という既存の保証だけで一覧が無傷のまま保たれる。
   ApplicationMode returnMode = tabCompletionContext_->returnMode;
   std::string prefixBeforeWord = tabCompletionContext_->prefixBeforeWord;
   const std::string *selected = listBrowserMode_.selectedItem();
   std::string seed = prefixBeforeWord + (selected ? *selected : tabCompletionContext_->partial);
-  tabCompletionContext_ = std::nullopt;
   currentMode_ = returnMode;
-  // 2026-09-18訂正、直接のユーザー指摘(「^B/^F/^H等を押してもLISTは
-  // そのままに編集できるようにして欲しいんだが(←旧仕様)」): 以前は
-  // ここでSHELL側だけshell_.scrollback().redraw()(候補一覧の内容を
-  // 含む画面全体を、下敷きのSHELLスクロールバックで丸ごと上書きする)
-  // を呼んでいたため、「編集を開始する」瞬間に一覧が画面から消えて
-  // いた。feedRegexListByte()自身の同種の修正(2026-08-11、そちらの
-  // コメント参照)に倣い、宛先ビュー自身を再描画するのではなく
-  // listBrowserView_自身を再描画するだけに留め、一覧の内容を画面に
-  // 残したまま、SHELLの生きたプロンプト行(redrawPromptRow()、
-  // commandLineRow()という固定行だけを塗り直す――他の全ての行には
-  // 触れない)だけを上書きする。promptEditor_側(SHELL以外の宛先)は
-  // 元々ここで宛先ビュー自身のredraw()を一切呼んでいなかった
-  // (drawPromptLabel()+promptEditor_.redraw()はどちらもモードライン
-  // 行だけを書く)ので、一覧はもう残ったままだった――ただし念のため
-  // 同じ明示的なlistBrowserView_.redraw()をこちらにも揃える。
   listBrowserView_.redraw();
-  if (returnMode == ApplicationMode::Shell) {
-    shell_.commandLine().setText(seed);
-    shell_.redrawPromptRow();
-    return feedShellByte(byte, special);
-  }
-  drawPromptLabel(promptKind_, "");
-  promptEditor_.setText(seed);
-  promptEditor_.redraw();
+  // feedRegexListByte()自身の2026-09-11修正と同じ理由でtabCompletionContext_の
+  // クリアをactivatePrompt()の「後」まで遅らせる: PromptKind::ShellCommand
+  // 自身のdestinationMode計算は default(=currentMode_、既に上でreturnMode
+  // へ切り替え済み)にそのまま乗るので影響しないが、直前のlistBrowserView_.
+  // redraw()自身のModeLineFieldsProviderが読む"LIST"ラベルとの整合(=cw
+  // 自身の実機報告、"DIR"という無関係なデフォルトラベルが最後のモード
+  // ライン行に居座っていた回帰)のため、この関数全体を通じて同じ並びに
+  // 揃えておく。
+  PromptKind kind = (returnMode == ApplicationMode::Shell) ? PromptKind::ShellCommand : promptKind_;
+  activatePrompt(kind, seed);
+  tabCompletionContext_ = std::nullopt;
   return feedPromptByte(byte);
 }
 
@@ -10157,6 +10226,8 @@ std::string Application::promptLabelText(PromptKind kind) const {
       return "ARC";
     case PromptKind::TabCompletionList:
       return "LIST";
+    case PromptKind::ShellCommand:
+      return "SHELL";
     case PromptKind::None:
       return "";
   }

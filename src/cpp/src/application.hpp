@@ -2972,7 +2972,26 @@ class Application {
     // drawPromptLabel(PromptKind::TabCompletionList, positionText)を
     // 呼んで"LIST"ラベルを描くためだけに存在する(promptLabelText()
     // 自身のコメント参照)。
-    TabCompletionList
+    TabCompletionList,
+    // 2026-09-18追加(フォローアップ5、直接のユーザー提案: "SHELL自体を
+    // スタックへ積んだ上でLISTルーチンへ移行し、文字列編集はLIST内で
+    // 行った上で(当然一覧も無傷)編集が完了した時点でスタックからSHELL
+    // を戻して文字列を渡す"): 上のDu/ArchiveLoad/TabCompletionListとは
+    // 違い、これは「本物の」promptKind_であり、実際にpromptEditor_へ
+    // 代入される。SHELLはGrepPattern/CutPattern/ManName/RecentFile/
+    // RecentDirectoryと違って専用のPromptKindを持たず、feedShellByte()
+    // /shell_.commandLine()という別個のウィジェットへ直接バイトを再送り
+    // していたため、行の所有権(一覧の内容行とSHELL自身のcommandLineRow()
+    // /モードライン行)が2系統に分かれ、実機報告のたびに(パス補完/
+    // ソート/生きた編集/ページ送り/戻り値バッジ/一覧の消失、と5ラウンド
+    // 連続で)取りこぼしが起き続けた。ShellCommandは、SHELLのTab補完中の
+    // 編集を、GrepPattern等と全く同じpromptEditor_ベースのコンボボック
+    // スへ完全に統合する――編集中は一覧の内容行に一切触れず(list
+    // BrowserView_のredraw()以降何も再描画しない、activatePrompt()自身
+    // が最下行のモードライン1行だけを書く)、Enter/^Gで初めて確定した
+    // 文字列をshell_.commandLine()へ書き戻す(executePromptSubmission()/
+    // cancelPrompt()自身のShellCommandの分岐参照)。
+    ShellCommand
   };
   // ^Xc/^Xm/^Xr(K-52/K-54/K-56)とその^X^K「with SHELL window」の
   // 兄弟(K-51/K-53/K-55)は、以前は移動先/確認プロンプトを即座に
