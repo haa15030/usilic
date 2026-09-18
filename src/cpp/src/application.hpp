@@ -83,17 +83,32 @@ enum class Command {
   // MarkAndJumpPrevious、Enter+ToggleMark+Back+MoveDown/Upの合成)は
   // 「GREP結果一覧の最終行で連打すると進めなくなる」という設計上の
   // バグをユーザー自身が指摘し、GREP自体をin-place方式(このコメントの
-  // すぐ下、StartGrep/executeGrep()自身のコメント参照)へ作り直した
+  // すぐ下、StartIncrementalGrep/executeGrep()自身のコメント参照)へ
+  // 作り直した
   // ことで、Directory起点では既存の'.'(ToggleMark)がその場でそのまま
   // 使えるようになったため、専用コマンドとしての存在意義が無くなり
   // 廃棄された。経緯の詳細は.steering/20260909-grep-inline-highlight/
   // requirements.md参照。
+  // StartFgrep(2026-09-19追記): Enterで確定する一括のリテラル検索。
+  // 2026-09-18に専用キー^O^Sを失い、2026-09-19には素の^S自体が
+  // インクリメンタルサーチへ一本化された(すぐ下のStartIncrementalGrep
+  // 自身のコメント参照)ため、今はどのキー割り当ても持たない内部/
+  // テスト専用アーティファクトである――約40件の既存ユニットテストが
+  // 「grep系プロンプトを開く」汎用トリガーとして参照しており、かつ
+  // ^J^S(StartEgrep)が通るstartGrepPrompt()経路そのもののリテラル版
+  // としてテストする価値があるので残してある。
   StartFgrep,
   StartEgrep,
-  // 2026-09-05追加(直接のユーザー依頼、"新たにGREP（grep）を新設"):
-  // プレーンなgrep(基本正規表現)。application.cpp自身のgrepSyntaxLabel()/
-  // grepSyntaxRole()参照。
-  StartGrep,
+  // (StartGrep: 2026-09-05追加、2026-09-19削除) プレーンなgrep
+  // (基本正規表現BRE、GrepSyntax::Basic、当時の発動キーは素の^S)。
+  // 2026-09-18に「BREの方がEREより易しいと勘違いしていた」という
+  // ユーザー自身の気づきでGrepSyntax::Fixed(リテラル)へ格下げされ、
+  // その時点で既にStartFgrepと完全に同じ挙動になっていた。さらに
+  // 2026-09-19、^S自体がインクリメンタルサーチへ一本化されたことで
+  // どのキーからも到達しなくなったため、重複したアーティファクトと
+  // して削除した――Enter確定の一括リテラル検索を代表する内部/テスト
+  // 専用アーティファクトはStartFgrepの方に一本化する(すぐ下の
+  // StartIncrementalGrep自身のコメント参照)。
   // 2026-09-09追加(直接のユーザー提案、'{'/'}'廃棄の後継):
   // in-place GREPセッション中だけ、通常の^N/^P(MoveDown/MoveUp)の
   // 代わりにdispatchByte()が横取りして発行する――
@@ -102,11 +117,32 @@ enum class Command {
   GrepInPlacePrevious,
   // 2026-09-10追加、直接のユーザー依頼("インクリメンタルサーチ...
   // いずれも可能ならやってみて...切り替えキーを新設すればいい"):
-  // ^S(StartGrep、Enterで確定する一括検索)とは別の、ESC iキー。
-  // startIncrementalGrepPrompt()自身のコメント参照――GrepPatternの
-  // プロンプトを開く点はStartGrepと同じだが、以後の1文字ごとの
-  // 入力で(Enterを待たずに)liveIncrementalGrepSearch()がその場で
-  // 検索し直し、in-placeハイライト+ジャンプを更新する。
+  // 当初は^S(当時のStartGrep、Enterで確定する一括検索)とは別の、
+  // ESC i専用キーだった。startIncrementalGrepPrompt()自身のコメント
+  // 参照――GrepPatternのプロンプトを開く点は一括検索と同じだが、
+  // 以後の1文字ごとの入力で(Enterを待たずに)liveIncrementalGrepSearch()
+  // がその場で検索し直し、in-placeハイライト+ジャンプを更新する。
+  //
+  // 2026-09-19改訂、直接のユーザー依頼("現状の^SでFGREP、^[iで
+  // インクリメンタルサーチを廃止して、^Sでリテラルなインクリメンタル
+  // サーチに一本化してほしい"): 発動キーが専用のESC i(^[i)からプレーン
+  // な^S(K-31)へ移った。2026-09-18の統合(削除済みStartGrepの上の
+  // コメント参照)で^Sと^[iはどちらも「GrepSyntax::Fixed(リテラル)で
+  // 検索する」という全く同じ意味になり、違いは「Enterまで待つか、
+  // 1文字ごとに検索するか」だけ――2つのキーを残す理由が無くなったので、
+  // 後者(インクリメンタル)へ一本化した。これに伴い:
+  //   - ^S(K-31)は、resolveCommand()・feedShellByte()の専用分岐・
+  //     SHELL用エスケープハッチ^O/のいずれからもこのコマンドへ解決する
+  //   - ^[i(ESC i)自体は廃止(dispatchLeaderByte()のescPending_の
+  //     switchから削除、以後は未認識シーケンス)
+  //   - Enterで確定する一括検索はキー空間には^J^S(StartEgrep、拡張
+  //     正規表現)だけが残る(そのリテラル版はStartFgrep、キー割り当ての
+  //     無い内部/テスト専用アーティファクト)
+  //   - in-place方式の対象外モード(isGrepInPlaceEligibleMode()がfalse
+  //     ――Grep自身/Cut(セグメント一覧)/Copy)では^Sは何もしなくなる
+  //     (旧^Sはそこでも一括プロンプトを開けた)――in-place検索という
+  //     機能自体がそれらの画面を想定していない以上、一本化の必然の
+  //     帰結である。
   StartIncrementalGrep,
   // 2026-09-14再編、直接のユーザー依頼("CUTは一律grep仕様。Fixedは
   // 廃止。"+"^Jc/^J^Cがそれぞれfgrep/grep検索となっているのをいずれも
@@ -1984,14 +2020,16 @@ class Application {
   // grepInPlaceMatchLabel()自身のコメント参照(application.cpp、
   // 2026-09-11追加)。
   std::string grepInPlaceMatchLabel() const;
-  // 2026-09-10追加、直接のユーザー依頼(ESC iキー、design経緯は
-  // application.hpp自身のCommand::StartIncrementalGrep宣言コメント
-  // 参照)。
+  // 2026-09-10追加、直接のユーザー依頼(当初はESC iキー、2026-09-19に
+  // プレーンな^Sへ一本化――design経緯はapplication.hpp自身の
+  // Command::StartIncrementalGrep宣言コメント参照)。
   //
-  // startIncrementalGrepPrompt(): startGrepPrompt(Basic)とほぼ同じ
+  // startIncrementalGrepPrompt(): startGrepPrompt(Fixed)とほぼ同じ
   // (grepSyntax_/grepReturnMode_の設定、GrepPatternプロンプトを開く)
-  // だが、incrementalGrepActive_も立てる。起点はDirectory/Fileのみ
-  // (in-place方式自体のスコープに合わせている)。
+  // だが、incrementalGrepActive_も立てる。起点は
+  // isGrepInPlaceEligibleMode()が真のモードに限られる(in-place方式
+  // 自体のスコープに合わせている――2026-09-11にDirectory/Fileから
+  // MAN/LOCATE/DU/ARC/SHELL/CUT(内容)/LIST等へ拡張済み)。
   bool startIncrementalGrepPrompt();
   // liveIncrementalGrepSearch(): feedPromptByte()の薄いラッパー
   // (自身の宣言コメント参照)から、incrementalGrepActive_中に

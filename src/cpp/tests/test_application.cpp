@@ -684,8 +684,14 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) in Directory mode after descendi
 // (プレーンな基本正規表現GREP)を廃止し、プレーンな^SはFGREP(リテラル)
 // 一本になった。^O^S(旧FGREPの発動キー)自体も廃止し、以後は素の^S一本
 // でリテラル検索に統合、拡張正規表現は^J^S(EGREP)一本のまま。
-TEST_CASE("resolveCommand: ^S resolves to StartGrep") {
-  CHECK(Application::resolveCommand(0x13, std::nullopt) == Command::StartGrep);
+// 2026-09-19再改訂、直接のユーザー依頼("現状の^SでFGREP、^[iで
+// インクリメンタルサーチを廃止して、^Sでリテラルなインクリメンタル
+// サーチに一本化してほしい"): 素の^Sは、Enterで確定する一括のリテラル
+// 検索(削除済みのCommand::StartGrep)ではなく、以前ESC i専用だった
+// Command::StartIncrementalGrep(リテラルのインクリメンタルサーチ)へ
+// 解決する。
+TEST_CASE("resolveCommand: ^S resolves to StartIncrementalGrep (literal incremental search)") {
+  CHECK(Application::resolveCommand(0x13, std::nullopt) == Command::StartIncrementalGrep);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ^S no longer resolves to anything (FGREP's old dedicated key, "
@@ -696,8 +702,8 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^O ^S no longer resolves to anything (FGRE
   CHECK_FALSE(app.promptActive());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: plain ^S (StartGrep) opens a blank prompt labeled FGREP (literal), not "
-                           "EGREP") {
+TEST_CASE_FIXTURE(Fixture, "feedByte: plain ^S (StartIncrementalGrep) opens a blank prompt labeled FGREP "
+                           "(literal), not EGREP") {
   REQUIRE(app.start(path()));
   CHECK(app.feedByte(0x13, std::nullopt));  // ^S
   CHECK(app.promptActive());
@@ -735,7 +741,7 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (Directory origin): ^S stays in Direct
   { std::ofstream(root / "two.json") << "{}\n"; }
   REQUIRE(app.start(path()));
   REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S -> FGREP
-  // 2026-09-18: plain ^S is now FIXED/literal syntax (Command::StartGrep
+  // 2026-09-18: plain ^S is now FIXED/literal syntax (Command::StartIncrementalGrep
   //自身のコメント参照), so "json$" (a regex anchor, matches nothing
   // literally) would no longer match -- a plain literal pattern is used
   // here, same as the "ESC i" incremental-search tests already do.
@@ -972,8 +978,7 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: the no-match message starts immediate
                            "user comparison screenshots)") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x1b, std::nullopt));
-  REQUIRE(app.feedByte('i', std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S(2026-09-19: 旧ESC i)
   feedText("json ");  // "json " -- no match
   REQUIRE(app.grepMode().matches().empty());
   REQUIRE_FALSE(app.feedByte(0x0d, std::nullopt));  // Enter -- shows "No String", prompt stays open
@@ -1079,22 +1084,42 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ALL matching lines are 
 // -- incremental GREP (2026-09-10, a direct user request: "インクリメ
 // ンタルサーチについてはgrepではなく...文字列位置を返す関数等だけで
 // インプリメントは可能?...いずれも可能ならやってみて...切り替え
-// キーを新設すればいい") -- ESC i starts a live, per-keystroke search
-// using GrepMode::searchInProcess() (fgrep-style literal substring
-// matching -- 2026-09-10 same-day revision, see its own declaration
-// comment in grep_mode.hpp; no child process at all, unlike plain ^S
-// which forks a real grep/-o once on Enter). Reuses the exact same
+// キーを新設すればいい") -- a live, per-keystroke search using
+// GrepMode::searchInProcess() (fgrep-style literal substring matching
+// -- 2026-09-10 same-day revision, see its own declaration comment in
+// grep_mode.hpp; no child process at all). Reuses the exact same
 // in-place session machinery (activateGrepInPlace()/
-// deactivateGrepInPlace()) so the end state is indistinguishable from
-// a submitted ^S search.
+// deactivateGrepInPlace()) as a submitted search, so the end state is
+// indistinguishable from one.
+//
+// 2026-09-19改訂、直接のユーザー依頼("現状の^SでFGREP、^[iで
+// インクリメンタルサーチを廃止して、^Sでリテラルなインクリメンタル
+// サーチに一本化してほしい"): 発動キーはESC i(^[i)専用から、プレーンな
+// ^S(K-31)へ移った――以下のテストが0x1b,'i'ではなく0x13を送るのは
+// このため。ESC i自体はもう何も起こさない(そのことを確かめるテストは
+// すぐ下の "^[i (ESC i) is no longer bound" 参照)。
 
-TEST_CASE_FIXTURE(Fixture, "ESC i (StartIncrementalGrep): highlights update live as each character is "
+// 2026-09-19追加、直接のユーザー依頼("^[iでインクリメンタルサーチを
+// 廃止して、^Sでリテラルなインクリメンタルサーチに一本化してほしい"):
+// ESC iはdispatchLeaderByte()のescPending_のswitchから削除済みで、
+// 以後はそのdefault(認識されないESCシーケンス)へ落ちる――^O^Sを廃止
+// した時の既存テスト("feedByte: ^O ^S no longer resolves to anything")
+// と同じ形で、「もう何も起こさない」ことを固定する。'i'がプロンプトへ
+// リテラルに挿入されたりもしない(そもそもプロンプトが開かない)。
+TEST_CASE_FIXTURE(Fixture, "^[i (ESC i) is no longer bound: the incremental search moved to plain ^S") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x1b, std::nullopt));      // ESC
+  CHECK_FALSE(app.feedByte('i', std::nullopt));   // 未認識のESCシーケンス、no-op
+  CHECK_FALSE(app.promptActive());
+  CHECK(app.grepMode().matches().empty());
+}
+
+TEST_CASE_FIXTURE(Fixture, "^S (StartIncrementalGrep): highlights update live as each character is "
                            "typed, before Enter is ever pressed") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   { std::ofstream(root / "two.json") << "{}\n"; }
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x1b, std::nullopt));  // ESC
-  REQUIRE(app.feedByte('i', std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S(2026-09-19: 旧ESC i)
   CHECK(app.promptActive());
   CHECK(app.currentMode() == ApplicationMode::Directory);  // never switches, same as plain ^S
 
@@ -1126,12 +1151,11 @@ TEST_CASE_FIXTURE(Fixture, "ESC i (StartIncrementalGrep): highlights update live
   CHECK(app.activeContentView().modeLineText().find("GREP") != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "ESC i: ^G cancels and reverts the live highlight entirely (emacs isearch's own "
+TEST_CASE_FIXTURE(Fixture, "^S: ^G cancels and reverts the live highlight entirely (emacs isearch's own "
                            "C-g convention -- unlike Enter, which keeps it)") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x1b, std::nullopt));
-  REQUIRE(app.feedByte('i', std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S(2026-09-19: 旧ESC i)
   feedText("json");
   int idx = indexOf("one.json");
   REQUIRE(app.grepMode().matches().size() == 1);
@@ -1142,12 +1166,11 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: ^G cancels and reverts the live highlight ent
   CHECK(app.activeContentView().modeLineText().find("GREP") == std::string::npos);  // reverted, not kept
 }
 
-TEST_CASE_FIXTURE(Fixture, "ESC i: an empty pattern (e.g. after backspacing everything) clears any live "
+TEST_CASE_FIXTURE(Fixture, "^S: an empty pattern (e.g. after backspacing everything) clears any live "
                            "highlight instead of leaving stale matches") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x1b, std::nullopt));
-  REQUIRE(app.feedByte('i', std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S(2026-09-19: 旧ESC i)
   feedText("json");
   REQUIRE(app.grepMode().matches().size() == 1);
   CHECK(app.activeContentView().modeLineText().find("GREP") != std::string::npos);
@@ -1164,13 +1187,12 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: an empty pattern (e.g. after backspacing ever
 // unlike a submitted ^S session, where GrepInPlaceNext/Previous's own
 // ^N/^P intercept (a few lines further down in dispatchByte()) only
 // ever got a chance to run once the prompt had already closed.
-TEST_CASE_FIXTURE(Fixture, "ESC i: ^N/^P jump between matches DURING live typing, before Enter is ever "
+TEST_CASE_FIXTURE(Fixture, "^S: ^N/^P jump between matches DURING live typing, before Enter is ever "
                            "pressed (the exact user-reported bug)") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   { std::ofstream(root / "two.json") << "{}\n"; }
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x1b, std::nullopt));
-  REQUIRE(app.feedByte('i', std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S(2026-09-19: 旧ESC i)
   feedText("json");
   REQUIRE(app.grepMode().matches().size() == 2);
   REQUIRE(app.directoryMode().selectedEntry()->name == "one.json");
@@ -1198,7 +1220,7 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: ^N/^P jump between matches DURING live typing
 // match -- setGrepMatchHighlight() was re-reading view_.lines() (already
 // dirtied by the PREVIOUS keystroke's own highlight) as its "clean"
 // base and only ever ADDING runs, never removing the previous ones.
-TEST_CASE_FIXTURE(Fixture, "ESC i: narrowing the pattern clears the highlight on lines that no longer "
+TEST_CASE_FIXTURE(Fixture, "^S: narrowing the pattern clears the highlight on lines that no longer "
                            "match, not just adds to lines that newly match (the exact user-reported "
                            "stale-highlight bug)") {
   { std::ofstream(root / "one.json") << "{}\n"; }
@@ -1216,8 +1238,7 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: narrowing the pattern clears the highlight on
     return -1;
   };
 
-  REQUIRE(app.feedByte(0x1b, std::nullopt));
-  REQUIRE(app.feedByte('i', std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S(2026-09-19: 旧ESC i)
   // literal '.' matches every entry with an extension dot in its ls
   // line -- this fixture's shared root has plenty of others besides
   // the three below (archive.tar etc.), so this only checks that
@@ -1248,13 +1269,12 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: narrowing the pattern clears the highlight on
 // or session state left over from the PREVIOUS (non-empty) keystroke,
 // because that branch had only ever been reached before from a fresh,
 // never-yet-activated search.
-TEST_CASE_FIXTURE(Fixture, "ESC i: narrowing the pattern all the way down to ZERO matches clears the "
+TEST_CASE_FIXTURE(Fixture, "^S: narrowing the pattern all the way down to ZERO matches clears the "
                            "stale highlight from a previous, broader match (the exact user-reported bug)") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   REQUIRE(app.start(path()));
   int oneIdx = indexOf("one.json");
-  REQUIRE(app.feedByte(0x1b, std::nullopt));
-  REQUIRE(app.feedByte('i', std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S(2026-09-19: 旧ESC i)
   feedText("json");
   REQUIRE(app.grepMode().matches().size() == 1);
   int oneCol = app.grepMode().matches()[0].matchSpans.at(0).first;
@@ -1278,13 +1298,12 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: narrowing the pattern all the way down to ZER
 // "any character, then a space" and suddenly match many unrelated
 // lines -- a jarring discontinuity between what's shown while typing
 // and what Enter actually commits to.
-TEST_CASE_FIXTURE(Fixture, "ESC i: Enter after narrowing to zero matches does NOT re-interpret the "
+TEST_CASE_FIXTURE(Fixture, "^S: Enter after narrowing to zero matches does NOT re-interpret the "
                            "pattern as regex and suddenly show unrelated matches (the exact user-reported "
                            "\"意味不明\" bug)") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   REQUIRE(app.start(path()));
-  REQUIRE(app.feedByte(0x1b, std::nullopt));
-  REQUIRE(app.feedByte('i', std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S(2026-09-19: 旧ESC i)
   feedText(".");  // literal '.' -- matches several entries with an extension dot
   REQUIRE_FALSE(app.grepMode().matches().empty());
 
@@ -1314,7 +1333,7 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: Enter after narrowing to zero matches does NO
 // (same as before) but leave the prompt open, so backspacing back to a
 // matching pattern resumes the search immediately instead of forcing
 // the user to start a brand new ESC i session from scratch.
-TEST_CASE_FIXTURE(Fixture, "ESC i: Enter on zero matches shows \"No String\" but keeps the prompt open, "
+TEST_CASE_FIXTURE(Fixture, "^S: Enter on zero matches shows \"No String\" but keeps the prompt open, "
                            "so backspacing back to a matching pattern resumes the search live") {
   { std::ofstream(root / "one.json") << "{}\n"; }
   { std::ofstream(root / "two.json") << "{}\n"; }
@@ -1322,8 +1341,7 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: Enter on zero matches shows \"No String\" but
   int oneIdx = indexOf("one.json");
   int twoIdx = indexOf("two.json");
 
-  REQUIRE(app.feedByte(0x1b, std::nullopt));
-  REQUIRE(app.feedByte('i', std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S(2026-09-19: 旧ESC i)
   feedText("json ");  // "json " (trailing space) -- no ls line contains this literal substring
   REQUIRE(app.grepMode().matches().empty());
 
@@ -1354,7 +1372,7 @@ TEST_CASE_FIXTURE(Fixture, "ESC i: Enter on zero matches shows \"No String\" but
 // keystroke) as the "clean" baseline on EVERY call, so a line that
 // stopped matching kept its stale highlight baked permanently into
 // what the code considered "the original" content.
-TEST_CASE_FIXTURE(Fixture, "ESC i (File origin): narrowing the pattern clears the highlight on lines "
+TEST_CASE_FIXTURE(Fixture, "^S (File origin): narrowing the pattern clears the highlight on lines "
                            "that no longer match") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");  // "marker one\nline1\nmarker two\nline2a\nline2b\nmarker three\nline3\n"
@@ -1362,8 +1380,7 @@ TEST_CASE_FIXTURE(Fixture, "ESC i (File origin): narrowing the pattern clears th
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
 
-  REQUIRE(app.feedByte(0x1b, std::nullopt));
-  REQUIRE(app.feedByte('i', std::nullopt));
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S(2026-09-19: 旧ESC i)
   feedText("marker");
   REQUIRE(app.grepMode().matches().size() == 3);  // lines 0, 2, 5
   CHECK(display.highlightAt(0, 0));
@@ -2788,7 +2805,7 @@ TEST_CASE_FIXTURE(Fixture, "MAN started from File mode: the still-open GREP prom
   }
   REQUIRE(app.currentMode() == ApplicationMode::Man);
 
-  REQUIRE(app.handleCommand(Command::StartGrep));
+  REQUIRE(app.handleCommand(Command::StartIncrementalGrep));
   REQUIRE(app.promptActive());
   const std::string &promptRow = display.rowText(display.rows() - 1);
   CHECK(promptRow.find("MAN: ls") != std::string::npos);
@@ -2842,7 +2859,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Man mode: stays in-place (Man) wit
   }
   REQUIRE(app.currentMode() == ApplicationMode::Man);
 
-  REQUIRE(app.handleCommand(Command::StartGrep));
+  REQUIRE(app.handleCommand(Command::StartIncrementalGrep));
   feedText("sort");
   if (!app.feedByte(0x0d, std::nullopt)) {
     MESSAGE("'ls' man page has no 'sort' match here -- skipping");
@@ -4744,7 +4761,7 @@ TEST_CASE_FIXTURE(Fixture, "^S (ListBrowser, RecentFile): triggers in-place GREP
   CHECK(modeLine.find("(fgrep)") != std::string::npos);
 }
 
-// 2026-09-18改訂、直接のユーザー依頼(Command::StartGrep自身のコメント
+// 2026-09-18改訂、直接のユーザー依頼(Command::StartIncrementalGrep自身のコメント
 // 参照、"GREPとFGREPを無くしたい"): ^O^S自体を廃止したため、このテスト
 // はもう「^O^Sの2バイト目がin-place GREPの^Sショートカットに誤って
 // 先取りされないか」を確認する意味を持たない――^O^S自体が完全に
@@ -5165,7 +5182,7 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE started from File mode: backing out of an in-
     return;
   }
 
-  REQUIRE(app.handleCommand(Command::StartGrep));
+  REQUIRE(app.handleCommand(Command::StartIncrementalGrep));
   feedText(".md");  // guaranteed to match every line, see the sibling GREP-from-Locate test's own comment
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   // in-place: currentMode_はLocateのまま、専用のGrep一覧へは切り替わらない。
@@ -10388,7 +10405,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode: stays in-place (Du), Ente
                         [](const auto &a, const auto &b) { return a.text.size() < b.text.size(); })
           ->text;
 
-  REQUIRE(app.handleCommand(Command::StartGrep));
+  REQUIRE(app.handleCommand(Command::StartIncrementalGrep));
   feedText(knownDuLine);
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Du);  // in-place: never left Du
@@ -14139,7 +14156,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Locate mode: stays in-place (Locat
   // happens to contain -- unlike a more "realistic" pattern (e.g. this
   // repo's own name), which depends on updatedb having indexed this
   // particular checkout and is not reproducible across machines.
-  REQUIRE(app.handleCommand(Command::StartGrep));
+  REQUIRE(app.handleCommand(Command::StartIncrementalGrep));
   feedText(".md");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Locate);  // in-place: never left Locate
@@ -14174,7 +14191,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP prompt started from Locate mode, before any pat
   }
   REQUIRE(app.currentMode() == ApplicationMode::Locate);
 
-  REQUIRE(app.handleCommand(Command::StartGrep));
+  REQUIRE(app.handleCommand(Command::StartIncrementalGrep));
   CHECK(app.promptActive());
   const std::string &row = display.rowText(display.rows() - 1);
   CHECK(row.find("LOCATE: .md") != std::string::npos);
@@ -14210,7 +14227,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell
   REQUIRE(sawOutput);
   REQUIRE(app.currentMode() == ApplicationMode::Shell);
 
-  REQUIRE(app.handleCommand(Command::StartGrep));
+  REQUIRE(app.handleCommand(Command::StartIncrementalGrep));
   REQUIRE(app.promptActive());
   feedText("SHELLGREPTESTMARKER");
   REQUIRE(app.feedByte(0x0d, std::nullopt));
@@ -14230,7 +14247,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell
 // scrollbackが検索対象になることを確認する(EGREPは候補リストを
 // 経由するstartRegexPromptList()の形を取るため、プロンプトの代わりに
 // ^Gで空のプロンプトへ抜けてから投入する)。
-// 2026-09-18改訂(Command::StartGrep自身のコメント参照、GREP/FGREP
+// 2026-09-18改訂(Command::StartIncrementalGrep自身のコメント参照、GREP/FGREP
 // 統合): ^O^S自体を廃止したので、このテストは以後plainな^S(FGREP)
 // 一本と^J^S(EGREP)の2つだけを確認する――^O^Sが未認識シーケンスとして
 // もShellを離れる副作用を起こさないことは、isShellSafeGrep自身の
@@ -14279,14 +14296,14 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: plain ^S (FGREP) and ^J^S (EGREP) also search
 
 // 2026-09-20追加、直接のユーザー報告("SHELLプロンプトで^Sとやっても
 // 認識しない（ハイライトのSが表示されるだけ）"): すぐ上のテストは
-// handleCommand(Command::StartGrep)を直接呼んでおり、実際の生の^S
+// handleCommand(Command::StartIncrementalGrep)を直接呼んでおり、実際の生の^S
 // キー入力(0x13)がfeedShellByte()経由で正しくそこまでルーティング
 // されることまでは確認していなかった――feedShellByte()自身の新しい
 // kControlS分岐のコメント参照。このテストは、実際のバイト入力
 // (app.feedByte())だけを使い、^Sが「ハイライトされた制御文字グリフ
 // としてコマンドラインへ挿入される」のではなく、実際にGREPプロンプト
 // を起動することを確認する。
-TEST_CASE_FIXTURE(Fixture, "SHELL: a real ^S keypress (not handleCommand(StartGrep) directly) actually "
+TEST_CASE_FIXTURE(Fixture, "SHELL: a real ^S keypress (not handleCommand(StartIncrementalGrep) directly) actually "
                            "triggers GREP, instead of being inserted into the command line as a literal "
                            "control-character glyph") {
   REQUIRE(app.start(path()));
@@ -14410,7 +14427,7 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Du mode (Du itself started from Fi
                         [](const auto &a, const auto &b) { return a.text.size() < b.text.size(); })
           ->text;
 
-  REQUIRE(app.handleCommand(Command::StartGrep));
+  REQUIRE(app.handleCommand(Command::StartIncrementalGrep));
   feedText(knownDuLine);
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Du);  // in-place: never left Du
@@ -14471,7 +14488,7 @@ TEST_CASE_FIXTURE(Fixture, "DU started from File, GREP a match, open a DIFFERENT
   REQUIRE(app.currentMode() == ApplicationMode::Du);
   CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
 
-  REQUIRE(app.handleCommand(Command::StartGrep));  // ②
+  REQUIRE(app.handleCommand(Command::StartIncrementalGrep));  // ②
   REQUIRE(app.promptActive());
   // プロンプト行自体は編集可能なフィールドと同じ行を分け合うため、
   // 末尾切り詰めの予算がmodeLineText()よりずっと厳しく(接頭辞

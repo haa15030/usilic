@@ -112,8 +112,8 @@ std::string duEntryFolder(const DuEntry &entry) {
 // 自身の依頼はGREPモードだけを指しており、CUTのFGREP/EGREP方式は
 // 元のまま)ので、cutSyntax_を読む個別の呼び出し箇所はここを使わず
 // 従来の三項演算子のままにしてある。
-// 2026-09-18追記(Command::StartGrep自身のコメント参照、"GREPと
-// FGREPを無くしたい"): GREP(Basic)自体は本物のGREP検索機能としては
+// 2026-09-18追記(Command::StartIncrementalGrep自身のコメント参照、
+// "GREPとFGREPを無くしたい"): GREP(Basic)自体は本物のGREP検索機能としては
 // 廃止され、grepSyntax_が実際にBasicになることはもう無い――以下の
 // switchにBasicのcaseを残しているのは、cutSyntax_同様GrepSyntaxの
 // 3値enum自体は変えずに残す設計判断のため(型としては引き続き有効な
@@ -1978,12 +1978,15 @@ Command Application::resolveCommand(int byte, std::optional<KeyInput::SpecialKey
       return Command::JumpPrevious;
     case ':':
       return Command::JumpNext;
-    // 2026-09-05変更(直接のユーザー依頼、"発動キーはそれぞれ^O^S、
-    // ^J^S、^Sとする"): プレーンな^Sは、これまでのFGREP(K-31、
-    // ^O^Sへ移動――leaderOPending_自身のswitch参照)ではなく、新設の
-    // GREP(基本正規表現)を起動する。
+    // 2026-09-19変更、直接のユーザー依頼("現状の^SでFGREP、^[iで
+    // インクリメンタルサーチを廃止して、^Sでリテラルなインクリメンタル
+    // サーチに一本化してほしい"): プレーンな^S(K-31)は、Enterで確定
+    // する一括のリテラル検索(2026-09-05〜2026-09-18の
+    // Command::StartGrep、削除済み)ではなく、以前ESC i専用だった
+    // インクリメンタルサーチを起動する――Command::StartIncrementalGrep
+    // 自身の宣言コメント参照。
     case kControlS:
-      return Command::StartGrep;
+      return Command::StartIncrementalGrep;
     // 2026-09-20更新、直接のユーザー依頼("^Hで新HELP、SHELLを含む
     // プロンプトからは^J^H"): 旧K-2("KEY")は退役し、^H自身がStartHelp
     // (下のleaderJPending_側の'h'ケースと同じコマンド)を指すように
@@ -2312,8 +2315,10 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
         break;
       // ^S(2026-09-11追加、直接のユーザー依頼: "やりたいのはLOCATEと
       // 同じ。Resの3文字が`...`にあるやつ"): RecentFile/RecentDirectory
-      // (^X^F/^X^D)限定で、in-place GREPを起動するCommand::StartGrep
-      // (resolveCommand()自身の対応表参照)へ流す――isGrepInPlaceEligibleMode()
+      // (^X^F/^X^D)限定で、in-place GREPを起動するコマンド
+      // (resolveCommand()自身の対応表参照――2026-09-19の一本化以後は
+      // Command::StartIncrementalGrep、それ自身の宣言コメント参照)へ
+      // 流す――isGrepInPlaceEligibleMode()
       // は既にListBrowserを含んでいる(startGrepPrompt()自身の
       // grepReturnMode_=currentMode_採用がそのまま効く)ので、ここで
       // 「編集を開始する」下の分岐(=このホワイトリストの外)へ流れ
@@ -2335,7 +2340,8 @@ bool Application::feedRegexListByte(int byte, std::optional<KeyInput::SpecialKey
         // leaderJPending_が立っている状態でここに先に捕まってしまい、
         // 本来`dispatchLeaderByte()`が解決すべき`^O^S`→Command::StartFgrep
         // /`^J^S`→Command::StartEgrepへ一度も渡らず、代わりに単独の
-        // `^S`(Command::StartGrep、Basic)として誤って解釈されていた
+        // `^S`(当時のCommand::StartGrep、Basic)として誤って解釈されて
+        // いた
         // (モードラインに"FGREP"ではなく"GREP"が出る、という形で発覚)。
         // リーダーが1つでも保留中の間は、このin-place GREP起動自体を
         // 完全に譲る(下の共通のリーダーチェックへ普通に流れ落ちて
@@ -2634,10 +2640,14 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 別のキー。
       case 'P':
         return handleCommand(Command::PasteTransientTargets);
-      // ESC i (2026-09-10追加): Command::StartIncrementalGrep自身の
-      // 宣言コメント参照。
-      case 'i':
-        return handleCommand(Command::StartIncrementalGrep);
+      // (ESC i: 2026-09-10追加、2026-09-19削除) ESC iは
+      // Command::StartIncrementalGrepの元々の専用キーだったが、直接の
+      // ユーザー依頼("^[iでインクリメンタルサーチを廃止して、^Sで
+      // リテラルなインクリメンタルサーチに一本化してほしい")により、
+      // 同じコマンドがプレーンな^S(resolveCommand()自身のkControlSの
+      // ケース参照)へ移り、2つのキーを保つ理由が無くなったため削除した
+      // ――以後^[iはこのswitchのdefaultへ落ちる未認識シーケンスである
+      // (Command::StartIncrementalGrep自身の宣言コメント参照)。
       default:
         return false;  // このスライスでは認識されないESCシーケンス
     }
@@ -2846,8 +2856,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::PasteClipboard);
       // 2026-09-18削除、直接のユーザー依頼("GREPとFGREPを無くしたい。
       // ^[i→^S（リテラル）、^O^S→^J^S（拡張正規表現）に限定"): 2026-09-05
-      // にここへ配線した^O^S(FGREP)を廃止し、素の^S(Command::StartGrep、
-      // 今はGrepSyntax::Fixed)一本にリテラル検索を統合した――^O^Sは
+      // にここへ配線した^O^S(FGREP)を廃止し、素の^S(当時の
+      // Command::StartGrep、今はGrepSyntax::Fixed)一本にリテラル検索を
+      // 統合した(2026-09-19追記: その素の^S自身も、同日
+      // Command::StartIncrementalGrepへ――インクリメンタルサーチへ
+      // ――移った、それ自身の宣言コメント参照)――^O^Sは
       // 以後どのコマンドにも解決されない未認識シーケンスとなり、下の
       // defaultへ流れ落ちる。^J^S(EGREP)は変更無し(dispatchLeaderByte()
       // 自身のleaderJPending_のswitch参照)。
@@ -2874,7 +2887,9 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 不能なためのエスケープハッチ。当時^O^Sは既存のFGREPが占めて
       // いたためGREPのハッチだけは'/'を使った(kKeyTable自身の"^O/"
       // コメント参照)――2026-09-18に^O^S自体を廃止した後も、'/'の
-      // 方はそのまま残している(Command::StartGrep自身のコメント参照)。
+      // 方はそのまま残している(2026-09-19の一本化以後は、素の^Sと
+      // 同じくインクリメンタルサーチへ配線する――
+      // Command::StartIncrementalGrep自身の宣言コメント参照)。
       // 2026-09-20、直接のユーザー依頼("^Hで新HELP、SHELLを含む
       // プロンプトからは^J^H")によりこの"^O^H"(旧K-2/KEY)エスケープ
       // ハッチ自体を削除した――^Jはbyte(bare ^H/^L/^I)とは異なり
@@ -2900,8 +2915,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::CycleLsSortKey);
       case 0x09:  // ^O ^I : INFO(SHELL内から)
         return handleCommand(Command::ShowUsilicBanner);
-      case '/':  // ^O / : GREP(SHELL内から)
-        return handleCommand(Command::StartGrep);
+      case '/':  // ^O / : 検索(SHELL内から、2026-09-19以後はインクリメンタル)
+        return handleCommand(Command::StartIncrementalGrep);
       // 2026-09-08、当初はMeta(ESC)機構経由の"@F"/"@B"(将来のAlt表記
       // の先取り)として実装したが、同日中に「メタキーをAltにする話
       // 自体を見合わせたい」とのユーザー自身の訂正を受けて撤回し、
@@ -3141,8 +3156,8 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
     // 先の無関係なモード(例えばDirectory)を記憶してしまっていた――
     // 結果、検索対象がShellのscrollbackではなくそちらになり、
     // ユーザーからは「^O^S/^J^Sが利かない」ように見えていた。
-    // 2026-09-18追記(Command::StartGrep自身のコメント参照、GREP/FGREP
-    // 統合): ^O^S自体はdispatchLeaderByte()のleaderOPending_switchから
+    // 2026-09-18追記(Command::StartIncrementalGrep自身のコメント参照、
+    // GREP/FGREP統合): ^O^S自体はdispatchLeaderByte()のleaderOPending_switchから
     // 廃止済みで、以後は未認識シーケンスとして下のdefaultへ落ちる――
     // leaderOPending_の側の条件は、その未認識シーケンスがShellから
     // 離れる副作用(すぐ下のコメント参照、"本物のタイプミス"には既に
@@ -3325,18 +3340,22 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
   // 認識しない（ハイライトのSが表示されるだけ）"): "GREP is possible
   // from SHELL mode"自身のコメント参照――startGrepPrompt()自体は元々
   // Shellを排除していないと2026-09-19に確認済みだったが、その確認は
-  // handleCommand(Command::StartGrep)を直接呼ぶユニットテストによる
+  // handleCommand(当時のCommand::StartGrep)を直接呼ぶユニットテストに
+  // よる
   // もので、実際の生の^Sキー入力がここまで正しくルーティングされる
   // ことまでは確認していなかった――この関数自身、^J/^X/^O/ESC以外の
   // 生バイトをグローバルなコマンドとして一切扱わず、下のinsertByte()
   // へ素通しして(制御バイトとして)コマンドラインへ文字通り挿入して
   // しまうので(すぐ上の^A/^E/^B/^F/^D自身の同種の過去のバグのコメント
   // 参照、まさに同じ症状"ハイライトのADDDD")、^S自体はここに専用の
-  // 分岐が無ければ二度と実際のGREP発動には届かない。他のモードの
+  // 分岐が無ければ二度と実際の検索発動には届かない。他のモードの
   // プレーンな^S(kControlS、dispatchByte()自身の該当ケース参照)と
-  // 揃え、ここでも同じくCommand::StartGrepへ配線する。
+  // 揃える――2026-09-19の一本化以後はそちらと同じく
+  // Command::StartIncrementalGrep(それ自身の宣言コメント参照)へ配線する
+  // (SHELLはisGrepInPlaceEligibleMode()に含まれているので、
+  // scrollbackに対するライブ検索がそのまま動く)。
   if (byte == kControlS) {
-    return handleCommand(Command::StartGrep);
+    return handleCommand(Command::StartIncrementalGrep);
   }
   if (byte == 0x09) {  // Tab
     Shell::TabOutcome outcome = shell_.onTab();
@@ -3907,25 +3926,24 @@ bool Application::handleCommand(Command command) {
       handleCommand(Command::Back);
       handleCommand(Command::MoveUp);
       return handleCommand(Command::Enter);
+    // 2026-09-18〜2026-09-19の整理(Command::StartFgrep/
+    // Command::StartIncrementalGrep自身の宣言コメント参照): 2026-09-05に
+    // 新設したGrepSyntax::Basic(プレーンな基本正規表現BRE)は、実際には
+    // 拡張正規表現(EGREP)より習得が難しく("GREP"という素の名前から
+    // 易しそうに見えるという誤解を、QUICK.txt自身の記述が助長していた)、
+    // FGREP/EGREPと並ぶ3つ目の選択肢として残す価値が無いと判断され、
+    // まず2026-09-18に素の^Sが「GREP(Basic)」から「リテラル(Fixed)」へ
+    // 格下げされ、続く2026-09-19に素の^S自体がインクリメンタルサーチ
+    // (Command::StartIncrementalGrep)へ一本化された。結果、Enterで確定
+    // する一括検索としてキーから到達できるのは^J^S(StartEgrep)だけに
+    // なり、そのリテラル版であるこのStartFgrepはキー割り当ての無い
+    // 内部/テスト専用アーティファクトとして残っている(約40件の既存
+    // ユニットテストが「grep系プロンプトを開く」汎用トリガーとして
+    // 参照している)。
     case Command::StartFgrep:
       return startGrepPrompt(GrepSyntax::Fixed);
     case Command::StartEgrep:
       return startGrepPrompt(GrepSyntax::Regex);
-    // 2026-09-18追加、直接のユーザー依頼("egrepよりもgrepのほうが簡単
-    // だと勘違いしていて...調べて見るとまったくの逆なので思い切って
-    // GREPとFGREPを無くしたい"): 2026-09-05に新設したGrepSyntax::Basic
-    // (プレーンな基本正規表現BRE)は、実際には拡張正規表現(EGREP)より
-    // 習得が難しく("GREP"という素の名前から易しそうに見えるという
-    // 誤解を、QUICK.txt自身の記述が助長していた)、FGREP/EGREPと並ぶ
-    // 3つ目の選択肢として残す価値が無いと判断された。以後、素の^S
-    // (Command::StartGrep)はFGREP(GrepSyntax::Fixed、リテラル文字列)
-    // として振る舞う――Command::StartFgrep(^O^S、このコミットで廃止済み
-    // ――下のdispatchLeaderByte()自身のleaderOPending_のコメント参照)
-    // と実質同じ挙動になるが、Command自体は約40件のユニットテストが
-    // 「grep系プロンプトを開く」ための一般的なトリガーとして参照して
-    // いるため、書き換えコストを避けてそのまま残す。
-    case Command::StartGrep:
-      return startGrepPrompt(GrepSyntax::Fixed);
     case Command::GrepInPlaceNext:
       return jumpToGrepInPlaceMatch(+1);
     case Command::GrepInPlacePrevious:
@@ -8752,12 +8770,15 @@ bool Application::startGrepPrompt(GrepSyntax syntax) {
   return true;
 }
 
-// Command::StartIncrementalGrep自身の宣言コメント参照(2026-09-10追加)。
-// 2026-09-18修正、直接のユーザー依頼(Command::StartGrep自身のコメント
-// 参照): searchInProcess()自体は元々grepSyntax_の値に関わらず常に
-// リテラル一致なので、GrepSyntax::Basicのままではラベル("GREP")と
+// Command::StartIncrementalGrep自身の宣言コメント参照(2026-09-10追加、
+// 2026-09-19に発動キーがESC iからプレーンな^Sへ一本化)。
+// 2026-09-18修正、直接のユーザー依頼(Command::StartIncrementalGrep自身の
+// コメント参照): searchInProcess()自体は元々grepSyntax_の値に関わらず
+// 常にリテラル一致なので、GrepSyntax::Basicのままではラベル("GREP")と
 // 実際の挙動(リテラル)が食い違っていた――GrepSyntax::Fixed(FGREP)に
-// 揃えて表示と挙動を一致させる。
+// 揃えて表示と挙動を一致させる(モードラインのラベルが今も"FGREP"で
+// あるのはこのため――^Sの検索が「リテラル」であることを、^J^Sの
+// "EGREP"と対にして示し続ける)。
 bool Application::startIncrementalGrepPrompt() {
   if (!isGrepInPlaceEligibleMode(currentMode_)) return false;
   grepSyntax_ = GrepSyntax::Fixed;
