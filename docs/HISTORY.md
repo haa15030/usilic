@@ -18375,3 +18375,13 @@ LISTは確かに^Xf/^Xdからも呼び出され、カレントディクトリの
 既存のホバーガード(`!app.promptActive()`、"マウスを動かすだけでプロンプトが消える"の修正)と全く同じ理屈で、CUIループ・GUIループ両方の`watchShellPty`計算に`&& !app.promptActive()`を追加しました。編集完了(Enter/^G)までSHELLの出力の可視化を遅らせるだけで、バイト自体はOSのpty側バッファにそのまま残るため実害はありません。
 
 新規doctest1件、--test-case="LIST:*"で17/17件、make test 1195/1196(既知無関係のLOCATEフレーク1件のみ)。app/main.cpp自身のメインループはPTY実機検証が前提で、このプロジェクト自身のPTY自動検証の既知の不安定さにより自動テスト化は見送り、コードの推論+既存のホバーガードとの一貫性で検証しました(実機確認をお願いします)。make usilic/install/app確認済みです。
+
+< 直ってない。汎用ナビゲーションスタック形式にしなかった理由って何だっけ？
+
+> 「汎用ナビゲーションスタック」を避けた理由は、ModeStackがディレクトリ/バッファ/grepパターン等を運ぶ重量級の汎用ナビゲーション用フレームで、この「値を1つ受け取って戻る」だけの用途には過剰であり、既にGrepPattern/CutPattern/ManName/RecentFile/RecentDirectoryで実績のある軽量なtabCompletionContext_(promptHistoryContext_と同型)で十分と判断したためです。
+
+ただ今回の再発の真因を見直すと、問題はModeStackを使わなかったことではなく、「編集を開始する」瞬間に`currentMode_`を律儀に`Shell`へ戻していたこと自体でした。`dispatchByte()`は`promptKind_ != None`を`currentMode_==Shell`より先に見るので、実は`currentMode_`をShellへ戻す必要は無かったのに戻していたせいで、`currentMode_==Shell`を見る他の仕組み(前回のwatchShellPty含む、他にもまだあるかもしれない)が誤爆する土壌を残していました。ご提案の「SHELLを積んで戻さない」という発想が本質的に正しく、`currentMode_`を編集完了(Enter/^G)まで実際には変えない形に直します。
+
+修正しました(コミット0b8575b)。SHELL宛先の間はcurrentMode_を意図的にListBrowserのまま保ち(画面に実際に映っているものと矛盾しない状態を保つ)、本当にcurrentMode_をShellへ戻すのは編集が確定/中断して初めて(executePromptSubmission()/cancelPrompt()自身のShellCommand分岐)にしました。副次的に、ShellCommand編集中に2回目のTabで入れ子の一覧を開いた際のreturnMode計算の誤りと、その一覧をEnterで確定した後もpromptKind_==ShellCommandが居残ってしまう不具合の2件も発見・修正しました。
+
+既存テスト5件のcurrentMode()アサーションを修正、新規doctest1件追加。--test-case="LIST:*"で18/18件、RecentFile/RecentDirectory/PROGRAM/MAN/PathInput/ArchiveDestination/SHELL関連291件、make test 1196/1197(既知無関係のLOCATEフレーク1件のみ)。make usilic/install/app確認済みです。今回もcurrentMode_の扱いというロジック上の修正なので、実機での確認をお願いします。
