@@ -3627,6 +3627,94 @@ TEST_CASE_FIXTURE(Fixture, "LIST: Tab-completion also works while editing Recent
   REQUIRE(app.listBrowserMode().items().size() == 2);
 }
 
+// 2026-09-18 fifth follow-up (フォローアップ6), real-machine report after
+// フォローアップ5 landed: "惜しい。^Bを押した途端、モード名とプロンプト
+// の「usilic 」が戻る。FILEでも同じ。LISTのままなのは何も入力しない間
+// だけ。" -- every existing "starting to edit keeps the list visible"
+// test happened to be SHELL-originated only; this is the PROGRAM-
+// originated (non-Shell) equivalent, reproducing the gap directly.
+TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM-originated (non-SHELL) editing also keeps the candidate "
+                           "list visible and the correct \"PROGRAM\" label, not the underlying "
+                           "Directory view's own raw content reappearing (real report: \"^Bを押した"
+                           "途端、モード名とプロンプトの「usilic 」が戻る。FILEでも同じ\")") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  feedText("fake");
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  auto listOnScreen = [&] {
+    for (int row = 0; row < display.rows(); row++) {
+      if (display.rowText(row).find("fake-two") != std::string::npos) return true;
+    }
+    return false;
+  };
+  REQUIRE(listOnScreen());
+
+  CHECK(app.feedByte(0x02, std::nullopt));  // ^B starts editing
+  CHECK(app.currentMode() == ApplicationMode::Directory);  // PROGRAM's own returnMode here
+  CHECK(listOnScreen());
+  const std::string &row = display.rowText(display.rows() - 1);
+  CHECK(row.find("PROGRAM") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM-originated editing also keeps the list when the "
+                           "return mode is File instead of Directory (フォローアップ6 follow-on "
+                           "coverage -- the non-SHELL activatePrompt() path itself was already fine; "
+                           "only Shell's own async pty output needed a promptActive() guard, "
+                           "app/main.cpp's own watchShellPty fix)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  REQUIRE(app.handleCommand(Command::StartProgram));
+  app.feedByte(0x15, std::nullopt);
+  feedText("fake");
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  auto listOnScreen = [&] {
+    for (int row = 0; row < display.rows(); row++) {
+      if (display.rowText(row).find("fake-two") != std::string::npos) return true;
+    }
+    return false;
+  };
+  REQUIRE(listOnScreen());
+  CHECK(app.feedByte(0x02, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(listOnScreen());
+  const std::string &row2 = display.rowText(display.rows() - 1);
+  CHECK(row2.find("PROGRAM") != std::string::npos);
+}
+
 // 2026-09-10 (a direct user request): "usilic" itself is always accepted
 // even though the fixture's rc (see above) never registers it as a
 // PROGRAM entry -- mirrors SHELL mode's own pre-existing special-casing

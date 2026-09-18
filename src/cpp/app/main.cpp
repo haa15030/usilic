@@ -1501,7 +1501,25 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
     app.pollShellHandoff();
     app.pollPagerExitNotice();
     syncMouseTracking();
-    bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
+    // !app.promptActive() (2026-09-18 fix, a real report: LIST's
+    // PromptKind::ShellCommand combobox -- see its own declaration
+    // comment -- lives on Shell's own commandLineRow()/mode-line rows
+    // while currentMode() is (necessarily) back to Shell already, but
+    // Shell::flushNewScrollbackLines()/handlePromptDetected() call
+    // Shell::redrawPromptRow() unconditionally the moment ANY buffered
+    // child output is read, overwriting that row with the frozen
+    // pre-Tab command line the instant an ordinary editing byte reached
+    // this window -- "^Bを押した途端、モード名とプロンプトの「usilic
+    // 」が戻る"). Mirrors the existing hover-guard's own !promptActive()
+    // gating just above for the exact same reason: any of Shell's
+    // internal display writes triggered by newly-read pty bytes are
+    // blind to Application's own overlay on this row. Deferring the
+    // read until editing concludes (Enter/^G, whereupon promptActive()
+    // goes back to false and this resumes watching) just delays when
+    // that output becomes visible by a few keystrokes' worth of time --
+    // the bytes stay queued in the OS pty buffer meanwhile.
+    bool watchShellPty =
+        app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive() && !app.promptActive();
 
     struct pollfd fds[2];
     fds[0].fd = STDIN_FILENO;  // see file comment on why this, not keyInput.fd(), is polled
@@ -2833,7 +2851,11 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // optimization below is in place, since typing into a DIFFERENT
     // program (the shell) doesn't generate any GraphicalDisplay
     // click/key/drag event of its own.
-    bool watchShellPty = app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive();
+    // !app.promptActive() -- see the CUI phase's own identical fix and
+    // comment for why (PromptKind::ShellCommand's live edit borrows
+    // Shell's own rows while currentMode() is back to Shell).
+    bool watchShellPty =
+        app.currentMode() == fm::ApplicationMode::Shell && app.shell().alive() && !app.promptActive();
     if (watchShellPty) {
       struct pollfd fd{app.shell().ptyFd(), POLLIN, 0};
       // POLLHUP/POLLERR too -- see the CUI phase's own comment on why.
