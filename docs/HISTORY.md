@@ -18394,3 +18394,17 @@ LISTは確かに^Xf/^Xdからも呼び出され、カレントディクトリの
 もう一点、SHELL自身の^R(COMMAND履歴呼び戻し、startShellHistoryRecall())が、フォローアップ5のPromptKind::ShellCommand導入により、Tab補完で一度でも編集を開始した後は壊れていたと判明しました――dispatchByte()がpromptKind_!=Noneの間はfeedShellByte()ではなくfeedPromptByte()へルーティングするため、その汎用の^Rハンドラ(startPromptHistoryRecall())がShellCommandのケースを持たず素通りしていました。ProgramCommandが既に共有しているRingCategory::ShellCommandへShellCommandも追加し、^X^F^R自身が使うのと全く同じpromptHistoryContext_/feedRegexListByte()の経路に正式に統合しました――ご提案通りの形です。過去のコマンドは破壊的(rm/mv等)であり得るため、Enterでの選択は挿入のみで自動実行しない、というstartShellHistoryRecall()自身の既存の設計判断もそのまま踏襲しています。
 
 新規doctest4件、--test-case="LIST:*,SHELL:*"で38/38件、GrepPattern/CutPattern/EGREP/FGREP/CUT/RecentFile/RecentDirectory/PROGRAM/MAN/PathInput/ArchiveDestination関連367件、make test 1198/1200(既知無関係のLOCATEフレーク1件+FGREP列幅テストの既知の間欠フレーク1件のみ)。make usilic/install/app確認済みです。
+
+< テストスイートやってないよね？　モードラインだが、
+お手本：^X^F^R→FILE→HISTORY→^B→HISTORYのまま→^G→FILE
+現状：・^Xf→^I→FILEのまま行数現る→^B→行数消えてプロンプトがまんま移動←バグな動き
+-c起動なら検証できると思うんで直ったら報告して。
+なんなら旧のソースまるパクリでもいいんでよろしく。
+
+> はい、直前のコミット前にmake testはフルで実行済みです(1198/1200、既知無関係のフレーク2件のみ)。
+
+修正しました(コミットab3a9c8)。真因は、feedTabCompletionListByte()の「編集を開始する」遷移が、feedRegexListByte()自身の確立済みの修正(閲覧中ずっと見えていた位置表示"01/10 TOP"を、編集開始後もactivatePrompt()の第3引数として引き継ぐ)をコピーし忘れており、positionTextを渡さず(空のまま)activatePrompt()を呼んでいたことでした。これにより編集開始の瞬間に位置表示が消えるだけでなく、drawPromptLabel()自身のlabelWidth計算(position表示の有無で編集可能フィールドの開始列が変わる)によりプロンプト自体が横にずれて見えていました。
+
+feedTabCompletionListByte()にpositionText計算を追加し、feedRegexListByte()と全く同じ式でactivatePrompt()へ渡すようにしました。副次的な恩恵として、^N/^Pでの候補巡回もこのTab補完の一覧について正しく動くようになりました。
+
+新規doctest1件、--test-case="LIST:*"で21/21件、関連367件、make test 1200/1201(既知無関係のLOCATEフレーク1件のみ)。make usilic/install/app確認済みです。-c起動での実機確認をお願いします。
