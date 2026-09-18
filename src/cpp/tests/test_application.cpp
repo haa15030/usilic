@@ -8074,10 +8074,55 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompt, ^I (K-65) completes an unambi
   // "plai" only matches plain.txt in root -- an absolute path so
   // completion isn't relative to DirectoryMode's current directory.
   for (char c : (root / "plai").string()) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
-  CHECK(app.feedByte(0x09, std::nullopt));  // ^I
-  CHECK(app.feedByte(0x0d, std::nullopt));  // ^M submits whatever got completed
+  // 2026-09-19追加(フォローアップ13, real report + exact repro: "usilic
+  // ~/git/usilic -c^M→(ls)→^Xf^I^I^M（.DS_Storeを選択）→(ls)のまま"):
+  // Tab itself now auto-submits once it resolves unambiguously (LIST:
+  // auto-proceed doctests) -- the trailing ^M here is now a harmless
+  // extra keystroke in File mode rather than "the" submitting keystroke,
+  // but this test's own end-state assertions (currentMode/currentFile)
+  // still hold either way, so it's kept as a light regression check that
+  // the extra ^M doesn't do anything destructive afterward.
+  CHECK(app.feedByte(0x09, std::nullopt));  // ^I -- already opens plain.txt
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+  app.feedByte(0x0d, std::nullopt);  // harmless extra ^M afterward
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+}
+
+// 2026-09-19追加(フォローアップ13, real report + exact repro: "usilic
+// ~/git/usilic -c^M→(ls)→^Xf^I^I^M（.DS_Storeを選択）→(ls)のまま"):
+// フォローアップ12は「^Xf」を誤って"^X^F"(RecentFile)と読み違え、
+// PathInput(この小文字の"^X f"、K-65)を自動投入の対象から意図的に
+// 除外していた――この一連の実機報告全体がPathInputを指していたと
+// 判明したため対象へ加えた。この doctest はambiguous(2回目のTabで
+// 一覧が開く)から選択する経路を、報告された手順そのままの形で検証
+// する。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompt, selecting from an opened (ambiguous) candidate "
+                           "list actually opens the file, not just filling it in and staying put "
+                           "(フォローアップ13, real report: \"^Xf^I^I^M（.DS_Storeを選択）→(ls)のまま\")") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.feedByte(0x18, std::nullopt));  // ^X
+  REQUIRE(app.feedByte('f', std::nullopt));   // f
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);  // still overlaying (ls) at this point
+
+  // Absolute path prefix, ambiguous (matches multiple root-level
+  // entries) -- opens the LIST on the second Tab.
+  for (char c : root.string()) app.feedByte(static_cast<unsigned char>(c), std::nullopt);
+  app.feedByte('/', std::nullopt);
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  const std::string *selected = app.listBrowserMode().selectedItem();
+  REQUIRE(selected != nullptr);
+  std::string chosen = *selected;
+
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // selects it -- must actually open/navigate, not just fill
+                                               // in and leave the SAME original (ls) untouched
+  bool opened = (app.currentMode() == ApplicationMode::File && app.fileMode().currentFile() == chosen) ||
+                (app.currentMode() == ApplicationMode::Directory &&
+                 app.directoryMode().currentDirectory() == chosen);
+  CHECK(opened);
 }
 
 // 2026-09-15修正、直接のユーザー報告+依頼("最長共通接頭辞まで補完")

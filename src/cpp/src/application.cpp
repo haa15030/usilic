@@ -9462,19 +9462,21 @@ bool Application::feedPromptByteInner(int byte) {
       promptTabArmed_ = true;
     } else {
       promptTabArmed_ = false;
-      // 2026-09-19追加(フォローアップ12、returnFromTabCompletionList()
-      // 自身の同種の修正のコメント参照): 一覧を経由せず、Tabだけで
-      // 直接candidates.size()==1(曖昧さ無し)まで絞り込めた場合も同じ
-      // 「フィールド全体を1つの完結した値で置き換えるkindは、確定
-      // したら即座に投入する」を適用する。RecentFile/RecentDirectory
-      // (^X^F/^X^D)限定――ユーザー自身の「お手本」提示("^X^F^R→FILE→
-      // HISTORY"、PathInputには無い^R/HISTORYトグルを引き合いに出して
-      // いる)からもこの2つを指しているのが明らかであり、PathInput
-      // (^X f、K-65)/ArchiveDestinationは「Tabで補完してから別途Enter
-      // で投入する」という既存の確立済みの2段階の設計(この振る舞いを
-      // 直接検証する既存のdoctestが元々ある)を持つ別機能なので、意図
-      // せず変えてしまわないよう対象外のままにする。
-      if (promptKind_ == PromptKind::RecentFile || promptKind_ == PromptKind::RecentDirectory) {
+      // 2026-09-19再訂正(フォローアップ13、直接のユーザー報告+正確な
+      // 再現手順: "usilic ~/git/usilic -c^M→(ls)→^Xf^I^I^M（.DS_Storeを
+      // 選択）→(ls)のまま"): フォローアップ12では「^Xf」を"^X^F"
+      // (RecentFile)の書き間違いと誤読し、対象からPathInput(^X f、
+      // 小文字、K-65、Command::StartFileInput)を意図的に除外していた
+      // ――しかし正確な再現手順は紛れも無く小文字の「^X f」+「^I」
+      // (leaderXPending_下のf、その後のTab)であり、PathInputこそが
+      // 今回の一連の実機報告全体の対象だったと判明した。"^X^F^R"
+      // (お手本)自体はRecentFileのままで正しい参照だったが、ユーザー
+      // 自身が実際に操作・報告していたのは終始PathInputだった。
+      // ArchiveDestinationもフィールド全体を1つの完結した値(常に
+      // ディレクトリ)で置き換える全く同じ形のkindなので、対称的に
+      // 含める――こちらには阻害する既存のdoctestが無いことを確認済み。
+      if (promptKind_ == PromptKind::RecentFile || promptKind_ == PromptKind::RecentDirectory ||
+          promptKind_ == PromptKind::PathInput || promptKind_ == PromptKind::ArchiveDestination) {
         return submitPrompt();
       }
     }
@@ -10225,14 +10227,16 @@ bool Application::returnFromTabCompletionList(bool selected) {
   // でファイルを開く/ディレクトリへ移動する)まで直接進める――
   // submitPrompt()自身のpromptKind_クリアと同じ作法に揃える。^Gキャン
   // セル(selected==false)はこれまで通り編集可能な状態へ戻すだけ。
-  // PathInput(^X f、K-65)/ArchiveDestinationは対象外――feedPromptByteInner()
-  // 自身のTab補完部の同種のコメント参照、「補完してから別途Enterで
-  // 投入する」という既存の確立済みの2段階設計を持つ別機能であり、
-  // 実際に既存のdoctestがその2段階自体を検証している(このフォロー
-  // アップで最初PathInput/ArchiveDestinationも含めてしまい、その
-  // 既存テストを壊してしまったため、範囲をRecentFile/RecentDirectory
-  // だけに絞り直した)。
-  bool wholeFieldKind = kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory;
+  // 2026-09-19再訂正(フォローアップ13、直接のユーザー報告+正確な
+  // 再現手順: "usilic ~/git/usilic -c^M→(ls)→^Xf^I^I^M（.DS_Storeを
+  // 選択）→(ls)のまま"): feedPromptByteInner()自身の同種の修正コメント
+  // 参照――「^Xf」は小文字であり"^X f"(PathInput、K-65、
+  // Command::StartFileInput)のことだった。フォローアップ12は
+  // "^X^F"(RecentFile)との書き間違いと誤読し、PathInput/ArchiveDestination
+  // を意図的に除外していたが、実際の一連の報告全体がPathInputを対象に
+  // していたと判明したため、この2つも含める。
+  bool wholeFieldKind = kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory ||
+                        kind == PromptKind::PathInput || kind == PromptKind::ArchiveDestination;
   if (selected && item && wholeFieldKind) {
     promptKind_ = PromptKind::None;
     return executePromptSubmission(kind, full);
