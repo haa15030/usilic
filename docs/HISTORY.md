@@ -18385,3 +18385,12 @@ LISTは確かに^Xf/^Xdからも呼び出され、カレントディクトリの
 修正しました(コミット0b8575b)。SHELL宛先の間はcurrentMode_を意図的にListBrowserのまま保ち(画面に実際に映っているものと矛盾しない状態を保つ)、本当にcurrentMode_をShellへ戻すのは編集が確定/中断して初めて(executePromptSubmission()/cancelPrompt()自身のShellCommand分岐)にしました。副次的に、ShellCommand編集中に2回目のTabで入れ子の一覧を開いた際のreturnMode計算の誤りと、その一覧をEnterで確定した後もpromptKind_==ShellCommandが居残ってしまう不具合の2件も発見・修正しました。
 
 既存テスト5件のcurrentMode()アサーションを修正、新規doctest1件追加。--test-case="LIST:*"で18/18件、RecentFile/RecentDirectory/PROGRAM/MAN/PathInput/ArchiveDestination/SHELL関連291件、make test 1196/1197(既知無関係のLOCATEフレーク1件のみ)。make usilic/install/app確認済みです。今回もcurrentMode_の扱いというロジック上の修正なので、実機での確認をお願いします。
+
+< 直ってない。なぜさっきの点が気になるかというと、SHELLならSHELL、FILEならFILEから一歩も出ずに補完しているように見えるから。でなければ^B押した途端、LISTがSHELL/FILEへ変わるわけない。
+そこで提案だが、^X^F^RのHISTORYをお手本に^Xf^Iを作ってみてよ。前者はちゃんとHISTORYのまま編集できるのですでに完成している。違いは^Xfには行情報が無いがHISTORYやLISTにはある点。SHELLでの^R（COMMAND）はまだNGだが、それも併せて修正してくれればいい。
+
+> 修正しました(コミット278aaa6)。真因は、tabCompletionContext_ベースの一覧が閲覧中だけ汎用のPromptKind::TabCompletionList("LIST"ラベル)を使い、編集開始の瞬間に初めて実際のkind(SHELL/PROGRAM等)のラベルへ切り替えていたことでした――^X^F^Rの「HISTORY」ラベルが閲覧中も編集中も同じままなのとは対照的でした。TabCompletionContextにkindフィールドを追加し、閲覧中から実際のkind自身をラベルへ渡すよう修正したことで、閲覧中から編集完了まで一切ラベルが変化しなくなりました。
+
+もう一点、SHELL自身の^R(COMMAND履歴呼び戻し、startShellHistoryRecall())が、フォローアップ5のPromptKind::ShellCommand導入により、Tab補完で一度でも編集を開始した後は壊れていたと判明しました――dispatchByte()がpromptKind_!=Noneの間はfeedShellByte()ではなくfeedPromptByte()へルーティングするため、その汎用の^Rハンドラ(startPromptHistoryRecall())がShellCommandのケースを持たず素通りしていました。ProgramCommandが既に共有しているRingCategory::ShellCommandへShellCommandも追加し、^X^F^R自身が使うのと全く同じpromptHistoryContext_/feedRegexListByte()の経路に正式に統合しました――ご提案通りの形です。過去のコマンドは破壊的(rm/mv等)であり得るため、Enterでの選択は挿入のみで自動実行しない、というstartShellHistoryRecall()自身の既存の設計判断もそのまま踏襲しています。
+
+新規doctest4件、--test-case="LIST:*,SHELL:*"で38/38件、GrepPattern/CutPattern/EGREP/FGREP/CUT/RecentFile/RecentDirectory/PROGRAM/MAN/PathInput/ArchiveDestination関連367件、make test 1198/1200(既知無関係のLOCATEフレーク1件+FGREP列幅テストの既知の間欠フレーク1件のみ)。make usilic/install/app確認済みです。
