@@ -18347,3 +18347,23 @@ make test 1178/1179(既知無関係のLOCATEフレーク1件のみ)、make usili
 < 進めていいんだが、今右下に「0% until auto-compact」とあるのでそうなると記憶も消える。SKILフォルダを作って作業まえに必ず見る（読むほど長くない）項目を記したファイルを作ったらどうかなと。
 
 > CLAUDE.mdは既にセッション開始時・圧縮後を問わず毎ターン自動で読み込まれる(このやり取り自体、圧縮を挟んだ直後もCLAUDE.mdの内容はそのまま見えていました)ので、圧縮への耐性という意味では既にカバーされています。加えて`.steering/*/tasklist.md`(steeringスキールが強制するリアルタイム更新)が「今どのタスクの途中か」を、docs/HISTORY.mdが「いつ何を言われて何をしたか」をそれぞれ担っているため、新しいSKILLフォルダを追加するより、今回合意した節約方針(反復中--test-case絞り込み・フルスイートはラウンド区切りに1回等)のような具体的な合意事項をCLAUDE.mdの「進め方の合意事項」に一行足すほうが、既存の仕組みとの重複が無く効果的だと考えます。追加するかどうか、方針を確認させてください。
+
+< その方針で追加して
+
+> CLAUDE.mdの「進め方の合意事項」に(2026-09-18追記)として、反復デバッグ中は`--test-case`で絞り込み・フルスイートはラウンド区切りのコミット直前に1回・`make usilic`単体は反復中省略しラウンド最後に1回、という節約方針を追記しました。
+
+< LIST一覧は消えてないんだが、LISTモードから出てしまっている感がある。しかもなぜ「DIR」？ '/Users/haa15030/Desktop/=gw.png'
+LISTは確かに^Xf/^Xdからも呼び出され、カレントディクトリの通常ファイル/ディレクトリ一覧を表示することになるルーチンでもあるんだが、なんかSHELL自体への作り込みをしているように見えるんだけど。
+編集中のHELP.txtには「4. Note」に「モードスタック」って項目がある。それに従うなら、LISTをSHELLに組み込むんじゃなくて、SHELL自体をスタックへ積んだ上でLISTルーチンへ移行し、文字列編集はLIST内で行った上で（当然一覧も無傷）編集が完了した時点でスタックからSHELLを戻して文字列を渡す。こういう形にはできないの？
+
+> ご指摘の通りでした。直接の原因は、feedTabCompletionListByte()の「編集を開始する」遷移が`tabCompletionContext_`を`listBrowserView_.redraw()`より前にクリアしていたバグで、そのredraw()自身のModeLineFieldsProviderが"LIST"ではなくデフォルトの"DIR"を描いていました。加えてSHELLの生きたプロンプト行(commandLineRow())とモードライン行(rows-1)が別の行で、後者を誰も再描画し直していませんでした。
+
+ご提案の「SHELLをスタックへ積んでLISTへ完全に移行し、完了時に文字列を返す」は方向として正しいですが、実装としては重量級のModeStack(ディレクトリ/バッファ/grepパターン等を運ぶ汎用ナビゲーションスタック)を使うより、既存のtabCompletionContext_(promptHistoryContext_と同型の軽量な「戻り先を覚えておくだけ」の仕組み)で既に達成できているので、GrepPattern/CutPattern/ManName/RecentFile/RecentDirectoryと全く同じactivatePrompt()+promptEditor_の経路にSHELLも統合する形(PromptKind::ShellCommand新設)を提案します。この方向で進めてよろしいですか？
+
+< ^Xf/^Xdへの流用も可能なら進めて。
+
+> 進めました(コミット32700bb)。PromptKind::ShellCommandを新設し、feedTabCompletionListByte()の「編集を開始する」遷移をSHELL分岐無しに統一しました――`kind = (returnMode==Shell) ? ShellCommand : promptKind_`+`activatePrompt(kind, seed)`という形です。編集中はpromptEditor_のみを操作し、shell_.commandLine()には一切触れません(EnterでexecutePromptSubmission()のShellCommand分岐がShell::submitLine()で実際に実行、^Gでcancel PromptのShellCommand分岐が何もせず復元)。
+
+^Xf/^Xdへの流用: RecentFile/RecentDirectoryは元々feedRegexListByte()経由で同じactivatePrompt()+feedPromptByte()の経路を使っていたため、feedPromptByteInner()のTab補完条件へこの2つを加えるだけで、直接入力中のパス補完+曖昧時の一覧表示がそのまま流用できました(新しい配線は不要)。
+
+既存テスト1件修正、新規doctest5件追加。--test-case="LIST:*"で15/15件、RecentFile/RecentDirectory/PROGRAM/MAN/PathInput/ArchiveDestination関連239件、make test 1192/1194(既知無関係のLOCATEフレーク1件+FGREP列幅テストの既知の間欠フレーク1件、単体再実行で確認済み)。make usilic/install/app確認済みです。
