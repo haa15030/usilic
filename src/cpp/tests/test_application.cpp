@@ -3373,6 +3373,87 @@ TEST_CASE_FIXTURE(Fixture, "LIST: the return-value badge reflects the ACTUAL ori
   CHECK(row.find("SHELL") != std::string::npos);
 }
 
+// 2026-09-18 third follow-up, direct user correction after ④⑤⑥ landed:
+// "^B/^Fは文字列編集用だからダメだって。^Vだけでよろしく。あと、
+// ^B/^F/^H等を押してもLISTはそのままに編集できるようにして欲しいんだが
+// （←旧仕様）。"
+
+TEST_CASE_FIXTURE(Fixture, "LIST: ^B/^F are NOT list-navigation keys -- they start editing just "
+                           "like any other ordinary byte (フォローアップ4, direct correction: "
+                           "\"^B/^Fは文字列編集用だからダメだって\")") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  for (unsigned char c : std::string("fake")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x09, std::nullopt);
+  REQUIRE(app.feedShellByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  // ^B: must bounce straight into editing (back to SHELL), not be
+  // swallowed as list navigation the way ^V/^N/^P are.
+  CHECK(app.feedByte(0x02, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+}
+
+TEST_CASE_FIXTURE(Fixture, "LIST: starting to edit keeps the candidate list visible on screen "
+                           "instead of switching to the destination view's own content "
+                           "(フォローアップ4, direct request: \"^B/^F/^H等を押してもLISTはそのままに"
+                           "編集できるようにして欲しいんだが（←旧仕様）\")") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / ".pathbin");
+  for (const char *name : {"fake-one", "fake-two"}) {
+    std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
+    fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
+  }
+  REQUIRE(app.handleCommand(Command::StartShell));
+  if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
+    MESSAGE("bash not available or handshake failed -- skipping");
+    return;
+  }
+  const char *oldPath = std::getenv("PATH");
+  std::string savedPath = oldPath ? oldPath : "";
+  setenv("PATH", (root / ".pathbin").string().c_str(), 1);
+
+  for (unsigned char c : std::string("fake")) app.feedShellByte(c, std::nullopt);
+  app.feedShellByte(0x09, std::nullopt);
+  REQUIRE(app.feedShellByte(0x09, std::nullopt));  // opens the LIST
+
+  if (oldPath) setenv("PATH", savedPath.c_str(), 1);
+  else unsetenv("PATH");
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  auto listOnScreen = [&] {
+    for (int row = 0; row < display.rows(); row++) {
+      if (display.rowText(row).find("fake-two") != std::string::npos) return true;
+    }
+    return false;
+  };
+  REQUIRE(listOnScreen());
+
+  // ^H: an ordinary editing byte, starts editing -- previously this
+  // called shell_.scrollback().redraw(), which repaints the whole
+  // viewport with the (still mostly empty) shell scrollback and wipes
+  // the list right off the screen.
+  CHECK(app.feedByte(0x08, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(listOnScreen());
+}
+
 // 2026-09-10 (a direct user request): "usilic" itself is always accepted
 // even though the fixture's rc (see above) never registers it as a
 // PROGRAM entry -- mirrors SHELL mode's own pre-existing special-casing

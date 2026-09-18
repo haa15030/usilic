@@ -10044,10 +10044,18 @@ bool Application::feedTabCompletionListByte(int byte, std::optional<KeyInput::Sp
   // 送りできない」): ^[v(ESC v)は既にescPending_経由でdispatchLeaderByte()
   // へ普通に流れる(下のリーダー分岐)ので最初から動いていたが、素の
   // 制御バイト^V(0x16、resolveCommand()自身のPageDownへのマッピング
-  // 参照)/^B(0x02、対称的なPageUp)/^F(0x06、Spaceの別名)はnav語彙に
-  // 含まれておらず、代わりに「編集を開始する」遷移へ誤って落ちて
-  // いた――^N/^P/^Gと同じく、これらもリテラルな編集対象の文字として
-  // 打たれることが現実的に無い制御バイトなので、nav側へ加える。
+  // 参照)はnav語彙に含まれておらず、代わりに「編集を開始する」遷移へ
+  // 誤って落ちていた。
+  // (2026-09-18訂正、直接のユーザー指摘: 「^B/^Fは文字列編集用だから
+  // ダメだって。^Vだけでよろしく」)――^B(0x02)/^F(0x06)は
+  // feedPromptByte()/feedShellByte()自身の2026-08-16の修正(それぞれの
+  // 呼び出し箇所参照)で既に「編集中の行内でのカーソル左右移動」に
+  // 割り当て済みの制御バイトであり、このLIST画面でだけnavの意味に
+  // 割り込ませると、後述の「編集を開始する」遷移後にまさにその
+  // カーソル移動が使えなくなる(遷移前のこの分岐に先に捕まってしまう
+  // ため)。^N/^P/^Gと違い、^B/^Fは「編集中の文字列そのものを操作する」
+  // 目的で押される現実的な可能性があるので、nav語彙には加えない――
+  // ^V(PageDown)だけを追加する。
   bool isNav = special == KeyInput::SpecialKey::Up || special == KeyInput::SpecialKey::Down ||
                special == KeyInput::SpecialKey::PageUp || special == KeyInput::SpecialKey::PageDown;
   if (!special) {
@@ -10057,8 +10065,6 @@ bool Application::feedTabCompletionListByte(int byte, std::optional<KeyInput::Sp
       case kCarriageReturn:
       case kControlG:
       case 0x0c:  // ^L
-      case 0x02:  // ^B(PageUp)
-      case 0x06:  // ^F(PageDown、Spaceの別名)
       case 0x16:  // ^V(PageDown)
         isNav = true;
         break;
@@ -10090,9 +10096,24 @@ bool Application::feedTabCompletionListByte(int byte, std::optional<KeyInput::Sp
   std::string seed = prefixBeforeWord + (selected ? *selected : tabCompletionContext_->partial);
   tabCompletionContext_ = std::nullopt;
   currentMode_ = returnMode;
+  // 2026-09-18訂正、直接のユーザー指摘(「^B/^F/^H等を押してもLISTは
+  // そのままに編集できるようにして欲しいんだが(←旧仕様)」): 以前は
+  // ここでSHELL側だけshell_.scrollback().redraw()(候補一覧の内容を
+  // 含む画面全体を、下敷きのSHELLスクロールバックで丸ごと上書きする)
+  // を呼んでいたため、「編集を開始する」瞬間に一覧が画面から消えて
+  // いた。feedRegexListByte()自身の同種の修正(2026-08-11、そちらの
+  // コメント参照)に倣い、宛先ビュー自身を再描画するのではなく
+  // listBrowserView_自身を再描画するだけに留め、一覧の内容を画面に
+  // 残したまま、SHELLの生きたプロンプト行(redrawPromptRow()、
+  // commandLineRow()という固定行だけを塗り直す――他の全ての行には
+  // 触れない)だけを上書きする。promptEditor_側(SHELL以外の宛先)は
+  // 元々ここで宛先ビュー自身のredraw()を一切呼んでいなかった
+  // (drawPromptLabel()+promptEditor_.redraw()はどちらもモードライン
+  // 行だけを書く)ので、一覧はもう残ったままだった――ただし念のため
+  // 同じ明示的なlistBrowserView_.redraw()をこちらにも揃える。
+  listBrowserView_.redraw();
   if (returnMode == ApplicationMode::Shell) {
     shell_.commandLine().setText(seed);
-    shell_.scrollback().redraw();
     shell_.redrawPromptRow();
     return feedShellByte(byte, special);
   }
