@@ -18320,3 +18320,30 @@ make test 1178/1179(既知無関係のLOCATEフレーク1件のみ)、make usili
 ⑥ drawPromptLabel()自身のdestinationMode計算は、GrepPattern/CutPattern/ManName/LocateQuery/RecentFile/RecentDirectoryには専用の*ReturnMode_を参照する分岐がありましたが、PromptKind::TabCompletionListには無く、デフォルトのdestinationMode=currentMode_(この時点で既にListBrowser自身)へ落ちて戻り値バッジが空欄になっていました。RecentFile/RecentDirectoryと全く同じ理由でtabCompletionContext_->returnModeを参照する分岐を追加しました。
 
 新規doctest3件、make test 1187/1188(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認、~/Applications/usilic.appへも反映済みです。
+
+< 一つ質問。
+前の発言にある「新規テスト3件追加、make testは1187/1188(既知無関係のLOCATEフレークのみ)」ってどんなtestなの？
+昨日の夜に週規制が開けたばかりの午前中、早くもセッション規制とやらに引っかかっているんでなるべくトークンを浪費しないよう進めたい。
+今回起きた規制の真因は何なのか？　
+回答よろしく。
+
+> (この回答自体はコンテキスト圧縮を挟んだため逐語再現できません――要旨のみ記録: 直近の新規テスト3件は④⑤⑥各々の回帰確認だったこと、今回のセッション規制の真因として①application.cppのような巨大ファイルの読み込みを繰り返したこと②4ラウンド連続でmake build/run_testsのフルスイートを何度も実行したこと③日本語の長いコミットメッセージ・HISTORY.md追記を挙げ、以後は反復中は--test-caseで絞り込み・フルスイートはラウンドの区切り(コミット直前)に1回・make usilic単体は反復中スキップしラウンド最後にだけ実行、という節約方針で合意した。)
+
+< テストスイートの実行って必須なの？
+
+> (この回答も同じ理由で逐語再現できません――要旨: 必須ではなく、大きめの変更を無検証でコミットしないためのCLAUDE.md自身の合意事項に基づく習慣であること、上記の節約方針(反復中は絞り込み、フルスイートはラウンド区切りに1回)で運用することを再確認した。)
+
+< ^B/^Fは文字列編集用だからダメだって。^Vだけでよろしく。
+あと、^B/^F/^H等を押してもLISTはそのままに編集できるようにして欲しいんだが（←旧仕様）。
+
+> 2件とも修正しました(コミット08c8fb7)。
+
+1件目: feedTabCompletionListByte()のnav語彙から^B(0x02)/^F(0x06)を削除し、^V(0x16)のみ残しました。^B/^Fはfeedプロンプト/feedShellByte()自身の2026-08-16の修正で既に「編集中の行内カーソル移動」に割り当て済みの制御バイトであり、LIST画面のnavに含めると編集再開後にその移動ができなくなるためです。
+
+2件目: 「編集を開始する」遷移(SHELL宛先)が呼んでいたshell_.scrollback().redraw()を削除しました。これは画面全体をSHELLのスクロールバックで上書きしてしまい、一覧がその瞬間に画面から消える原因でした。feedRegexListByte()自身の同種の修正(2026-08-11)に倣い、listBrowserView_.redraw()に置き換え、SHELLの生きたプロンプト行(redrawPromptRow()、commandLineRow()という固定行のみ)だけを上書きするようにしました。promptEditor_宛先側は元々宛先ビュー自身のredraw()を呼んでいなかったため実害はありませんでしたが、同じ明示的listBrowserView_.redraw()を揃えました。
+
+新規doctest2件(^Bが編集開始へ遷移することの確認、編集開始後も一覧が画面に残ることの確認)、--test-case="LIST:*"で11/11件通過、make test 1189/1190(既知無関係のLOCATEフレーク1件のみ)、make usilic/install/app確認済みです。
+
+< 進めていいんだが、今右下に「0% until auto-compact」とあるのでそうなると記憶も消える。SKILフォルダを作って作業まえに必ず見る（読むほど長くない）項目を記したファイルを作ったらどうかなと。
+
+> CLAUDE.mdは既にセッション開始時・圧縮後を問わず毎ターン自動で読み込まれる(このやり取り自体、圧縮を挟んだ直後もCLAUDE.mdの内容はそのまま見えていました)ので、圧縮への耐性という意味では既にカバーされています。加えて`.steering/*/tasklist.md`(steeringスキールが強制するリアルタイム更新)が「今どのタスクの途中か」を、docs/HISTORY.mdが「いつ何を言われて何をしたか」をそれぞれ担っているため、新しいSKILLフォルダを追加するより、今回合意した節約方針(反復中--test-case絞り込み・フルスイートはラウンド区切りに1回等)のような具体的な合意事項をCLAUDE.mdの「進め方の合意事項」に一行足すほうが、既存の仕組みとの重複が無く効果的だと考えます。追加するかどうか、方針を確認させてください。
