@@ -3859,28 +3859,46 @@ TEST_CASE_FIXTURE(Fixture, "LIST: the mode-line label already shows the real des
 }
 
 // 2026-09-19追加(フォローアップ11, real report: "ただSHELLの戻り値が
-// SHELLなのでLIST入れ忘れたのかなと。戻り値だけ直しといて。"):
-// PromptKind::ShellCommand's destinationMode is hardcoded to Shell by
-// definition (it can never mean anything else), so once フォローアップ8
-// made the LEFT label itself say "SHELL", the right-justified 戻り値
-// badge repeating "SHELL" a second time became pure, uninformative
-// duplication -- unlike every other kind (PROGRAM/MAN/...), whose badge
-// genuinely differs from its label. Putting "LIST" there instead
-// restores the badge to carrying real information (this candidate list
-// came from the LIST/Tab-completion feature) without the redundancy.
-TEST_CASE_FIXTURE(Fixture, "LIST: SHELL's own 戻り値 badge says \"LIST\", not a redundant second "
-                           "\"SHELL\" that duplicates the label") {
+// SHELLなのでLIST入れ忘れたのかなと。戻り値だけ直しといて。"): put a
+// hardcoded "LIST" into the 戻り値 badge to stop it duplicating the
+// "SHELL" label.
+//
+// 2026-09-19 REVERTED (フォローアップ12, real report: "SHELLはOKだが、
+// なぜか消え去ったはずの「LIST」が戻り値に復活している。^Iを押す直前の
+// 戻り値でいいんでよろしく"): hardcoding "LIST" contradicted フォロー
+// アップ8's own principle (show the real destination, not a generic
+// feature name). SHELL's own native mode line (shell_.scrollback()'s
+// ModeLineFieldsProvider) already shows a real, pre-existing 戻り値 in
+// this exact slot (trailing3 = shellReturnName_, e.g. the origin
+// directory's own path via previousModeName(Directory) -- where ^G will
+// eventually take you) even before Tab is ever pressed -- this test now
+// confirms that badge simply carries over unchanged across the whole
+// Tab-completion excursion, matching what it showed right before ^I
+// (compared by its trailing characters, since previousModeName(Directory)
+// returns the real directory path, not a fixed literal like "DIR").
+TEST_CASE_FIXTURE(Fixture, "LIST: SHELL's own 戻り値 badge stays exactly what it was right before "
+                           "^I was pressed (フォローアップ12, not a duplicate \"SHELL\" nor a "
+                           "hardcoded \"LIST\")") {
   REQUIRE(app.start(path()));
   fs::create_directories(root / ".pathbin");
   for (const char *name : {"fake-one", "fake-two"}) {
     std::ofstream(root / ".pathbin" / name) << "#!/bin/sh\n";
     fs::permissions(root / ".pathbin" / name, fs::perms::owner_all);
   }
-  REQUIRE(app.handleCommand(Command::StartShell));
+  REQUIRE(app.handleCommand(Command::StartShell));  // from Directory mode
   if (!pumpUntil(app, [&] { return !app.shell().currentDirectory().empty(); })) {
     MESSAGE("bash not available or handshake failed -- skipping");
     return;
   }
+  std::string rowBeforeTab = display.rowText(display.rows() - 1);
+  // The trailing 10 characters of root's own path -- distinctive enough
+  // to identify this exact badge without assuming any particular literal
+  // label (previousModeName(Directory) returns the real path, truncated
+  // to its own tail by truncatedTrailingPath()).
+  std::string rootPath = root.string();
+  std::string badgeTail = rootPath.substr(rootPath.size() >= 10 ? rootPath.size() - 10 : 0);
+  REQUIRE(rowBeforeTab.find(badgeTail) != std::string::npos);  // the real, pre-existing 戻り値
+
   const char *oldPath = std::getenv("PATH");
   std::string savedPath = oldPath ? oldPath : "";
   setenv("PATH", (root / ".pathbin").string().c_str(), 1);
@@ -3893,26 +3911,16 @@ TEST_CASE_FIXTURE(Fixture, "LIST: SHELL's own 戻り値 badge says \"LIST\", not
   else unsetenv("PATH");
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
 
-  auto countOccurrences = [](const std::string &haystack, const std::string &needle) {
-    int count = 0;
-    std::size_t pos = 0;
-    while ((pos = haystack.find(needle, pos)) != std::string::npos) {
-      count++;
-      pos += needle.size();
-    }
-    return count;
-  };
-
   std::string rowWhileBrowsing = display.rowText(display.rows() - 1);
   CHECK(rowWhileBrowsing.rfind("SHELL", 0) == 0);  // label, left
-  CHECK(rowWhileBrowsing.find("LIST") != std::string::npos);  // 戻り値, right
-  CHECK(countOccurrences(rowWhileBrowsing, "SHELL") == 1);  // not duplicated
+  CHECK(rowWhileBrowsing.find(badgeTail) != std::string::npos);  // same 戻り値 as before ^I
+  CHECK(rowWhileBrowsing.find("LIST") == std::string::npos);
 
   CHECK(app.feedByte(0x08, std::nullopt));  // starts editing
   std::string rowWhileEditing = display.rowText(display.rows() - 1);
   CHECK(rowWhileEditing.rfind("SHELL", 0) == 0);
-  CHECK(rowWhileEditing.find("LIST") != std::string::npos);
-  CHECK(countOccurrences(rowWhileEditing, "SHELL") == 1);
+  CHECK(rowWhileEditing.find(badgeTail) != std::string::npos);
+  CHECK(rowWhileEditing.find("LIST") == std::string::npos);
 }
 
 // 2026-09-19追加(フォローアップ11, direct user request: "動きは問題無し
@@ -3922,7 +3930,8 @@ TEST_CASE_FIXTURE(Fixture, "LIST: SHELL's own 戻り値 badge says \"LIST\", not
 // should exclude directories (RecentDirectory/^X^D already gets the
 // symmetric directoriesOnly=true treatment).
 TEST_CASE_FIXTURE(Fixture, "LIST: Tab-completion within RecentFile's own combobox (^X^F) excludes "
-                           "directories, offering only regular files") {
+                           "directories, offering only regular files, and auto-opens the file once "
+                           "Tab resolves it unambiguously (フォローアップ12 auto-proceed)") {
   REQUIRE(app.start(path()));
   std::ofstream(root / "recentmix_alpha.txt") << "a\n";
   fs::create_directories(root / "recentmix_beta");  // a directory sharing the same prefix
@@ -3940,8 +3949,76 @@ TEST_CASE_FIXTURE(Fixture, "LIST: Tab-completion within RecentFile's own combobo
   app.feedByte(0x15, std::nullopt);  // ^U: clear back to an empty field
   feedText((root / "recentmix_").string());
 
-  app.feedByte(0x09, std::nullopt);  // unambiguous now (only the file matches) -- completes directly
-  CHECK(app.promptText() == (root / "recentmix_alpha.txt").string());
+  // Unambiguous now (the directory was filtered out, leaving only the
+  // file) -- Tab both completes AND immediately opens it, matching real
+  // Enter-driven RecentFile selection instead of just filling text in
+  // and waiting for a separate, manual Enter.
+  app.feedByte(0x09, std::nullopt);
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "recentmix_alpha.txt").string());
+}
+
+// 2026-09-19追加(フォローアップ12, real report: "FILE補完では複数の
+// 末尾「/」が健在"): a fuller reproduction of フォローアップ11's own
+// directory-exclusion fix -- TWO files plus a directory all sharing the
+// same prefix (so filtering the directory out still leaves an ambiguous
+// pair of files, actually opening the LIST, unlike the previous test
+// where filtering collapsed straight to a single unambiguous match).
+// Confirms no directory entry (trailing "/") leaks into that opened list.
+TEST_CASE_FIXTURE(Fixture, "LIST: the opened (ambiguous) candidate list within RecentFile's combobox "
+                           "excludes directories too, not just the direct/unambiguous completion path") {
+  REQUIRE(app.start(path()));
+  std::ofstream(root / "recentmix2_alpha.txt") << "a\n";
+  std::ofstream(root / "recentmix2_beta.txt") << "b\n";
+  fs::create_directories(root / "recentmix2_gamma");  // a directory sharing the same prefix
+
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.handleCommand(Command::StartFileHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  app.feedByte('x', std::nullopt);
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  app.feedByte(0x15, std::nullopt);
+  feedText((root / "recentmix2_").string());
+
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // still ambiguous (alpha/beta) -> opens the LIST
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  const auto &items = app.listBrowserMode().items();
+  REQUIRE(items.size() == 2);  // NOT 3 -- the directory must not be among them
+  for (const auto &item : items) CHECK((item.empty() || item.back() != '/'));
+
+  // Selecting one auto-opens it too (フォローアップ12).
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == items.front());
+}
+
+// 2026-09-19追加(フォローアップ12, real report: "DIRではカレント以外を
+// 選んでもカレント"): completing to a directory OTHER than the current
+// one must actually navigate there, not silently stay put.
+TEST_CASE_FIXTURE(Fixture, "LIST: Tab-completion within RecentDirectory's own combobox (^X^D) "
+                           "auto-navigates to the completed directory, even when it's not the "
+                           "current one") {
+  REQUIRE(app.start(path()));
+  fs::create_directories(root / "recentdir_target_one");
+  fs::create_directories(root / "recentdir_target_two");
+
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  app.feedByte('x', std::nullopt);
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  app.feedByte(0x15, std::nullopt);
+  feedText((root / "recentdir_target_one").string());
+
+  app.feedByte(0x09, std::nullopt);  // unambiguous -- completes AND navigates there
+  CHECK(app.directoryMode().currentDirectory() == (root / "recentdir_target_one").string() + "/");
 }
 
 TEST_CASE_FIXTURE(Fixture, "LIST: PROGRAM's own mode-line label also shows \"PROGRAM\" (not \"LIST\") "

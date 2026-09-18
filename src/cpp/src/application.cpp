@@ -9462,6 +9462,21 @@ bool Application::feedPromptByteInner(int byte) {
       promptTabArmed_ = true;
     } else {
       promptTabArmed_ = false;
+      // 2026-09-19追加(フォローアップ12、returnFromTabCompletionList()
+      // 自身の同種の修正のコメント参照): 一覧を経由せず、Tabだけで
+      // 直接candidates.size()==1(曖昧さ無し)まで絞り込めた場合も同じ
+      // 「フィールド全体を1つの完結した値で置き換えるkindは、確定
+      // したら即座に投入する」を適用する。RecentFile/RecentDirectory
+      // (^X^F/^X^D)限定――ユーザー自身の「お手本」提示("^X^F^R→FILE→
+      // HISTORY"、PathInputには無い^R/HISTORYトグルを引き合いに出して
+      // いる)からもこの2つを指しているのが明らかであり、PathInput
+      // (^X f、K-65)/ArchiveDestinationは「Tabで補完してから別途Enter
+      // で投入する」という既存の確立済みの2段階の設計(この振る舞いを
+      // 直接検証する既存のdoctestが元々ある)を持つ別機能なので、意図
+      // せず変えてしまわないよう対象外のままにする。
+      if (promptKind_ == PromptKind::RecentFile || promptKind_ == PromptKind::RecentDirectory) {
+        return submitPrompt();
+      }
     }
     return true;
   }
@@ -10167,6 +10182,7 @@ bool Application::showTabCompletionList(const std::vector<std::string> &candidat
 bool Application::returnFromTabCompletionList(bool selected) {
   if (!tabCompletionContext_) return false;
   ApplicationMode returnMode = tabCompletionContext_->returnMode;
+  PromptKind kind = tabCompletionContext_->kind;
   std::string prefixBeforeWord = tabCompletionContext_->prefixBeforeWord;
   std::string partial = tabCompletionContext_->partial;
   tabCompletionContext_ = std::nullopt;
@@ -10197,6 +10213,30 @@ bool Application::returnFromTabCompletionList(bool selected) {
   // 「編集を開始する」遷移と同じ考え方に揃えている。
   const std::string *item = selected ? listBrowserMode_.selectedItem() : nullptr;
   std::string full = prefixBeforeWord + (item ? *item : partial);
+  // 2026-09-19追加(フォローアップ12、直接のユーザー要望:「せっかく
+  // 完全な形で補完できているのだから、あとはそれを先方に渡さないと。
+  // 今はそれだけで終わってる」): RecentFile/RecentDirectoryは単語の
+  // 途中を補完するSHELL/PROGRAM/MANとは違い、フィールド「全体」を
+  // 1つの完結した値で置き換えるkindである――一覧から候補を選んだ
+  // 時点でその値は既に確定済みであり、続けて別の引数をタイプする
+  // 余地が無い。選ばれた(`selected`)場合はfeedRegexListByte()自身の
+  // 候補選択と同じ意味(「戻ってさらに編集」ではなく「この値で確定・
+  // 投入」)として扱い、executePromptSubmission()(→executePathInput()
+  // でファイルを開く/ディレクトリへ移動する)まで直接進める――
+  // submitPrompt()自身のpromptKind_クリアと同じ作法に揃える。^Gキャン
+  // セル(selected==false)はこれまで通り編集可能な状態へ戻すだけ。
+  // PathInput(^X f、K-65)/ArchiveDestinationは対象外――feedPromptByteInner()
+  // 自身のTab補完部の同種のコメント参照、「補完してから別途Enterで
+  // 投入する」という既存の確立済みの2段階設計を持つ別機能であり、
+  // 実際に既存のdoctestがその2段階自体を検証している(このフォロー
+  // アップで最初PathInput/ArchiveDestinationも含めてしまい、その
+  // 既存テストを壊してしまったため、範囲をRecentFile/RecentDirectory
+  // だけに絞り直した)。
+  bool wholeFieldKind = kind == PromptKind::RecentFile || kind == PromptKind::RecentDirectory;
+  if (selected && item && wholeFieldKind) {
+    promptKind_ = PromptKind::None;
+    return executePromptSubmission(kind, full);
+  }
   if (returnMode == ApplicationMode::Shell) shell_.commandLine().setText(full);
   else promptEditor_.setText(full);
   if (returnMode == ApplicationMode::Shell) {
@@ -10970,17 +11010,18 @@ void Application::drawPromptLabel(PromptKind kind, const std::string &positionTe
   } else if (destinationMode == ApplicationMode::CutContent) {
     destinationDirectory = cutContentReturnLabel();
   } else if (kind == PromptKind::ShellCommand) {
-    // 2026-09-19追加(フォローアップ11、直接のユーザー指摘: "SHELLの
-    // 戻り値がSHELLなのでLIST入れ忘れたのかなと"): PromptKind::ShellCommand
-    // 自身の宣言コメント参照――このkindは定義上、常にdestinationMode==Shell
-    // (previousModeName()は"SHELL")である。フォローアップ8より前は
-    // 左のラベル自体が汎用の"LIST"だったので、右の戻り値"SHELL"が
-    // 「一覧の宛先はSHELL」という独立した情報を運んでいたが、
-    // フォローアップ8で左のラベル自体を"SHELL"へ変えたことで、右側は
-    // 完全に同じ文字列を繰り返すだけの無意味な重複になっていた。
-    // 右側にこの機能自体の由来("LIST")を残すことで、重複を解消しつつ
-    // 情報を保つ。
-    destinationDirectory = "LIST";
+    // 2026-09-19再訂正(フォローアップ12、直接のユーザー指摘: "SHELLは
+    // OKだが、なぜか消え去ったはずの「LIST」が戻り値に復活している。
+    // ^Iを押す直前の戻り値でいいんでよろしく"): フォローアップ11で
+    // ここに"LIST"をハードコードしたが、これはフォローアップ8自身の
+    // 「汎用の機能名では無く実際の宛先を見せる」という方針に自ら反して
+    // いた。SHELL自身のネイティブなモードライン(shell_.scrollback()の
+    // ModeLineFieldsProvider、このファイル冒頭)は、Tabが押される
+    // 「前」から既に`fields.trailing3 = shellReturnName_`という、まさに
+    // これと同じ枠に「本物の」戻り値(SHELL自体が^Gで戻る先、例えば
+    // "DIR"/"FILE")を表示している――ここでもそれをそのまま使うことで、
+    // Tab補完の前後で戻り値が変わらないようにする。
+    destinationDirectory = shellReturnName_;
   } else {
     destinationDirectory = previousModeName(destinationMode);
   }
