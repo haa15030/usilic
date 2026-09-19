@@ -1644,16 +1644,35 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
 std::string Application::ringCategoryLabel(RingCategory category) const {
   switch (category) {
     case RingCategory::ShellCommand:
-      // K-50(^J^R、M_cmd、" COMMAND")、usilicrc自身の286行目
-      // ("COMMAND : Select program executed at SHELL")に従う。
-      // "HISTORY"では「ない」――そのラベルはM_hist自身の時系列ビュー
-      // のトグル(ToggleHistoryViewのコメント参照)のために予約されて
-      // おり、これはどのRingCategoryが閲覧されているかとは直交し、
-      // これも含めて「どれにでも」適用される。このポートの以前の版は
-      // この2つを混同していた(どちらも漠然と「履歴」らしい形をして
-      // いたため)、単なる^R自身の無関係な挙動についての直接のユーザー
-      // の説明がその混同を浮かび上がらせた後、2026-08-04に訂正された。
-      return "COMMAND";
+      // 2026-08-04訂正時点ではlegacyのK-50(^J^R、M_cmd、" COMMAND")、
+      // usilicrc自身の286行目("COMMAND : Select program executed at
+      // SHELL")に従い"COMMAND"だった。"HISTORY"では「ない」――そちらは
+      // M_hist自身の時系列ビューのトグル(ToggleHistoryViewのコメント
+      // 参照)のために予約されており、これはどのRingCategoryが閲覧
+      // されているかとは直交し、これも含めて「どれにでも」適用される。
+      // このポートの以前の版はこの2つを混同していた(どちらも漠然と
+      // 「履歴」らしい形をしていたため)、単なる^R自身の無関係な挙動に
+      // ついての直接のユーザーの説明がその混同を浮かび上がらせた後、
+      // 2026-08-04に訂正された。
+      //
+      // 2026-09-20改訂、直接のユーザー依頼(^Rの再設計、"1つの共有ring
+      // が全部をまとめて記録しているのなら、いままでCOMMANDとして
+      // 分類されていたカテゴリー名をPROGRAMに置き換えるだけで足りる"):
+      // ^J^R自体を廃止し^J^Pへ統合した(Command::StartCommandHistory
+      // 自身の削除コメント参照)ことで、このカテゴリの「ソート済み」
+      // ビューの主要な入口はPROGRAM(^Jp/^J^P、PromptKind::
+      // ProgramCommand)になった――promptLabelText(ProgramCommand)も
+      // 既に"PROGRAM"を返す(この関数と表示上分岐する2つの別経路が
+      // 同じ概念に別の名前を与えてしまう食い違いを避けるため、こちら
+      // も揃える)。SHELL自身の素の^R(startShellHistoryRecall())は
+      // 引き続きこの同じラベルを経由するので、"PROGRAM"呼びは
+      // SHELLの文脈からも見えるが、記録内容自体(実行したシェル
+      // コマンド/cd/PROGRAMモードのコマンドの共有ring、RingCategory::
+      // ShellCommand自身の宣言コメント参照)が元々混在している以上、
+      // どちらの入口から見ても同じ1つの概念として一貫した名前で
+      // 見せる方が、入口ごとに違う名前(COMMAND対PROGRAM)で同じ
+      // データを指すより分かりやすいと判断した。
+      return "PROGRAM";
     case RingCategory::RecentFile:
       return "FILE";
     case RingCategory::RecentDirectory:
@@ -2721,8 +2740,12 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // コメント参照。
       case 0x04:      // ^J ^D : DU(既存の結果を再表示、集計なし)
         return handleCommand(Command::RedisplayDu);
-      case 0x12:      // ^J ^R : コマンド履歴(M_cmd)
-        return handleCommand(Command::StartCommandHistory);
+      // (^J ^R: 2026-09-20削除、直接のユーザー依頼(^Rの再設計、
+      // "^J^Rを^J^Pに置き換える(^J^Rは廃棄)")。旧Command::
+      // StartCommandHistory(M_cmd、"COMMAND"一覧)は^J^P(PromptKind::
+      // ProgramCommand、startPromptHistoryRecall()自身の
+      // sortDirectEntryList拡張コメント参照)へ統合され、以後^J^Rは
+      // このswitchのdefaultへ落ちる未認識シーケンスである。)
       case 0x08:  // ^J ^H : HELP
         return handleCommand(Command::StartHelp);
       case '.':  // ^J . : SHELL、カレントディレクトリを変更
@@ -4141,8 +4164,8 @@ bool Application::handleCommand(Command command) {
     // すぐ上のStartFileHistoryと同じ理屈。
     case Command::StartDirectoryHistory:
       return startRegexPromptList(PromptKind::RecentDirectory);
-    case Command::StartCommandHistory:
-      return startListBrowser(RingCategory::ShellCommand);
+    // (Command::StartCommandHistory: 2026-09-20削除、旧startListBrowser()
+    // 自身の削除コメント参照。)
     // 通常のDirectory/File閲覧からのプレーンな^R(2026-08-18追加、
     // 直接のユーザー依頼): legacy自身の素の^R(M_hist)は文字通りどの
     // モードからでもディスパッチされるが、プレーンな"(ls)"の閲覧から
@@ -8173,84 +8196,19 @@ std::vector<std::string> Application::sortedUniqueRecentEntries(RingCategory cat
   return std::vector<std::string>(unique.begin(), unique.end());
 }
 
-// m_list()のディスパッチから移植、最も曖昧でない2つのカテゴリに
-// 絞ってある(クラスコメント参照)。プロンプト駆動ではない――これは、
-// アーカイブ閲覧の自動検出のような、テキスト入力の流れではない
-// 即座のアクションである。
-//
-// Directoryモードにはゲートされていない(2026-08-12修正――このコメ
-// ントの以前の版は「Directory専用の入り口、このスライスの他の履歴
-// 隣接のアクションと同じ」と主張していたが、それはK-45..K-48の
-// ファミリー全体について実際には一度も真ではなかった:
-// startPathInputPrompt()(K-45/K-47、「Input file/directory name」、
-// すぐ上)は既に意図的に制限されていなかった――「ディレクトリ一覧
-// からと同じくらいFile/Man/Grep等から利用可能」――そしてusilicrcは
-// K-46/K-48("Select file/directory name")とK-50/^J^R(COMMAND、
-// これもこの関数を呼ぶ)を、それ自身のK-?テーブルのどこにも
-// Directory専用の注意書きが無い、まさに同じ「どのモードからでも
-// 到達可能」という意図で文書化している。実際のユーザー報告+直接の
-// 説明: "^X^F/^X^D自体、どのモードからでも（^Rも含め）移行可能な
-// 仕様が目的"――^J^C(CUT)を試し、そこからもこれらが動かないことに
-// 気づいた際に捕まった。この関数自身の本体は、実行するのに
-// Directory固有の状態から何も必要としない(listBrowserReturnMode_
-// は、それ自身のMAN/LOCATE/GREP/CUT/PROGRAMの呼び出しカテゴリに
-// ついてstartPromptHistoryRecall()がやっているのとまさに同じよう
-// に、どんなモードについても、たまたま既にそうだったcurrentMode_
-// を単に取得するだけである――このDirectory専用のガードは構造的な
-// 必要性ではなく、唯一の不整合だった)。
-//
-// アルファベット順にソートされ、重複排除されて表示される――
-// ユーザーによって直接確認済み(2026-08-04): "FILE（DIR）は今まで
-// アクセスしたファイル（ディレクトリ）をソートしたのち重複を排除
-// した一覧"。重複排除は、History::pushRecent()自体によってではなく、
-// 表示時に「ここで」(sortedUniqueRecentEntries())行われる――同日の
-// 訂正: このコメントの以前の版は、pushRecent()自身の「最初の出現が
-// 勝つ」というポリシーが既にそれを処理していたと主張していたが、
-// それはpushRecent()の(それ以来同様に訂正された)「以前の」版に
-// ついては真だったが、それが移植するはずだった実際のlegacyの挙動
-// については真ではなかった(pushRecent()自身のコメント参照)。この
-// 関数のさらに以前の版は、ソート済みの順序ではなく逆時系列順
-// (recent.rbegin()/rend())を表示していた、ユーザーの説明により、
-// legacyがこの通常の(^Rではない)ビューについて実際に表示するもの
-// も一度もそうではなかったことが明らかになった。生の時系列順
-// (重複を含む)は本物だが、代わりに別個の「HISTORY」トグルに属する
-// ――toggleListBrowserHistory()参照。
-bool Application::startListBrowser(RingCategory category) {
-  // 2026-08-15修正: 実際の報告+スクリーンショット(=bf/=bg、^X^Dが
-  // 以前の無関係なLOCATEのパスからの文字化けしたtrailing2の断片を
-  // 表示していた)を、一度も完全には解決しなかった(例えば途中で^G
-  // 経由で戻った)以前の、無関係なGREP/CUT/MAN直接入力の候補リスト
-  // セッションによってpromptHistoryContext_が設定されたまま残されて
-  // いたことまで突き止めた――listBrowserView_自身のModeLineFieldsProvider
-  // は、`if (promptHistoryContext_)`をチェックして、「これ」が直接
-  // 入力のregexリスト(name/trailing2の形が大きく異なる)なのか、
-  // プレーンなMAN/PROGRAM/COMMANDのピッカーなのかを決める、そして
-  // 完全に別の機能からの古い残り物の値が、それに間違った分岐を取ら
-  // せていた。startListBrowser()は、あらゆる「プレーンな」ピッカー
-  // (それ自体が直接入力のregexリストになることは決してない)にとって
-  // 単一の共有された入り口なので、ここでそれをクリアすることで、
-  // 以前の、無関係なセッションが何を残していったかに関わらず、
-  // 新鮮で正しい状態を保証する。(2026-08-17: RecentFile/
-  // RecentDirectory――^X^F/^X^D――は、もはやこの関数に一切到達し
-  // ない、Command::StartFileHistory/StartDirectoryHistory自身の呼び
-  // 出し箇所参照――legacy自身のT_hfile/T_hdirも、プレーンなピッカー
-  // ではなく生きた編集可能なコンボボックスだと判明したので、それら
-  // は今や代わりにstartRegexPromptList(PromptKind::RecentFile/
-  // RecentDirectory)を通る。Command::StartCommandHistory
-  // ――RingCategory::ShellCommand――だけが依然としてこれを呼ぶ。)
-  promptHistoryContext_ = std::nullopt;
-  listBrowserCategory_ = category;
-  listBrowserReturnMode_ = currentMode_;
-  listBrowserChronological_ = false;
-  // ContentView::setCursorAtModeLineTrailingEnd()自身のコメント参照
-  // ――GrepPattern/CutPatternの候補リストとは異なり、プレーンな
-  // FILE/DIRのピッカーなので、カレットはハイライトされている行に
-  // 属する。
-  listBrowserView_.setCursorAtModeLineTrailingEnd(false);
-  listBrowserMode_.show(sortedUniqueRecentEntries(category));
-  currentMode_ = ApplicationMode::ListBrowser;
-  return true;
-}
+// (旧startListBrowser()、2026-09-20削除、直接のユーザー依頼(^Rの
+// 再設計、"^J^Rを^J^Pに置き換える(^J^Rは廃棄)"): m_list()のディス
+// パッチから移植した、プレーンな(直接入力の候補リストではない)
+// FILE/DIR/COMMANDピッカー専用の共有エントリポイントだったが、
+// RecentFile/RecentDirectoryは2026-08-17に既にstartRegexPromptList()
+// 経由へ移行済みで、この時点でCommand::StartCommandHistory
+// (^J^R、旧"COMMAND")だけが唯一の呼び出し元として残っていた。
+// ^J^R自体を廃止した(dispatchLeaderByte()自身のcase 0x12削除コメント
+// 参照)ことで完全に到達不能になったため、Command::StartCommandHistory
+// 自身とともに削除した――^J^Pが持つ、RingCategory::ShellCommandへの
+// 唯一の入口としての役割はstartPromptHistoryRecall()
+// (sortDirectEntryList自身の同日の拡張コメント参照)がそのまま
+// 引き継いでいる。)
 
 // K-49(素の^R、M_hist): 全体の経緯についてはToggleHistoryView自身の
 // コメント参照。listBrowserCategory_自身のringを再表示するが、
@@ -8286,15 +8244,26 @@ bool Application::toggleListBrowserHistory() {
   // (ソート済みで一意対、生の重複ありの時系列)がGREP/CUTについても
   // 存在し、FILE/DIRについてと同じくらい正当に、「最後に何を検索
   // したか」(時系列順、最新が最後)に答えるためにトグルする価値が
-  // ある。ManName/LocateQuery/ProgramCommandは拡張されていない
-  // ――それらについてはまだ同等の報告が無く、GREP/CUTとは異なり、
-  // それらはそもそも一度もこのポート自身のソート済み重複排除された
-  // 直接入力の亜種を与えられたことが無い(sortDirectEntryList自身の
-  // 範囲についてのコメント参照)、そのためトグルして入る2つ目の
-  // ビューが無い。
+  // ある。ManName/LocateQueryは拡張されていない――それらについては
+  // まだ同等の報告が無く、GREP/CUTとは異なり、それらはそもそも一度も
+  // このポート自身のソート済み重複排除された直接入力の亜種を与えられた
+  // ことが無い(sortDirectEntryList自身の範囲についてのコメント参照)、
+  // そのためトグルして入る2つ目のビューが無い。
+  // 2026-09-20追加、直接のユーザー依頼(^Rの再設計、"「まだ同等の報告が
+  // 無い」の意味が今イチ不明だが、対象範囲へ入れて欲しい、との要望を
+  // 指しているのなら、今をもって報告としたい"): ProgramCommandを
+  // ここへ追加した――上のコメントが挙げていた「拡張しない理由」自体は
+  // 「まだ報告が無かった」というだけで、GREP/CUT同様ソート済み+
+  // 重複排除の直接入力ビューを持てない技術的な制約は無い
+  // (sortDirectEntryList自身の同日の拡張参照)。^J^R(旧COMMAND、
+  // Command::StartCommandHistory)を廃止して^J^Pへ統合したことで、
+  // ^J^Pの候補一覧(PromptKind::ProgramCommand)がこのソート済みビュー
+  // とその後の^Rでの生の時系列ビューへのトグルの唯一の入口になった。
   if (promptHistoryContext_ && promptHistoryContext_->kind != PromptKind::RecentFile &&
       promptHistoryContext_->kind != PromptKind::RecentDirectory &&
-      promptHistoryContext_->kind != PromptKind::GrepPattern && promptHistoryContext_->kind != PromptKind::CutPattern) {
+      promptHistoryContext_->kind != PromptKind::GrepPattern &&
+      promptHistoryContext_->kind != PromptKind::CutPattern &&
+      promptHistoryContext_->kind != PromptKind::ProgramCommand) {
     return false;
   }
   listBrowserChronological_ = !listBrowserChronological_;
@@ -10215,8 +10184,16 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   // 意味も無くなったので外した(この2つのringが指す実際の履歴表示は、
   // 引き続き下のchronological分岐(タイプ中の本物の^R呼び出し)経由で
   // 提供される)。
+  // 2026-09-20追加、直接のユーザー依頼(^Rの再設計、"^J^Rを^J^Pに置き
+  // 換える(^J^Rは廃棄)"): RingCategory::ShellCommand(PromptKind::
+  // ProgramCommand経由でしかここへ来ない――このswitch自身の対応する
+  // caseコメント参照)を追加した。従来^J^Rが単独で担っていた「ソート
+  // 済み+重複排除された一覧」(旧ラベル"COMMAND"、ringCategoryLabel()
+  // 自身の改名コメント参照)は、以後^J^P(このカテゴリの唯一の
+  // directEntry入口)の初期表示として統合される。
   bool sortDirectEntryList = directEntry && (category == RingCategory::RecentFile ||
-                                              category == RingCategory::RecentDirectory);
+                                              category == RingCategory::RecentDirectory ||
+                                              category == RingCategory::ShellCommand);
   listBrowserChronological_ = !sortDirectEntryList;
   std::vector<std::string> items;
   if (sortDirectEntryList) {

@@ -242,7 +242,9 @@ enum class Command {
   // いなければno-op。redisplayDu()自身のコメント参照。
   RedisplayDu,
   StartDirectoryHistory,
-  StartCommandHistory,
+  // (StartCommandHistory: 2026-09-20削除、直接のユーザー依頼(^Rの
+  // 再設計、"^J^Rを^J^Pに置き換える(^J^Rは廃棄)")。旧startListBrowser()
+  // 自身の削除コメント参照(application.cpp)。)
   // K-49(素の^R、M_hist、" HISTORY"): リストブラウザの外側から
   // 「別の」カテゴリへジャンプする方法では「ない」(この移植の以前
   // のバージョンはまさにそれだと誤解し、StartDirectoryHistoryへ
@@ -2111,7 +2113,8 @@ class Application {
   // 手を付けない)――一覧の端でのless自身の":n"/":p"
   // ("No next/previous file")に合わせている、循環はしない。
   bool navigateToPagerFile(int newIndex);
-  bool startListBrowser(RingCategory category);
+  // (startListBrowser(): 2026-09-20削除、application.cpp自身の削除
+  // コメント参照。)
   // ToggleHistoryView自身のコメント参照。
   bool toggleListBrowserHistory();
   std::vector<std::string> sortedUniqueRecentEntries(RingCategory category) const;
@@ -2594,7 +2597,7 @@ class Application {
   std::string tutorialBasePath_;
   Charset::Encoding encoding_;  // wrapHelpText()自身のPipeBuffer構築――現在他のどのメンバーもこれを必要としない
   const Configuration &configuration_;  // executeProgram()自身のPROGRAM一覧の参照、上のfind_prog()の注記参照
-  History &history_;  // startListBrowser()自身のrecentEntries()の参照――現在他のどのメンバーもこれを必要としない
+  History &history_;  // sortedUniqueRecentEntries()/startPromptHistoryRecall()自身のrecentEntries()の参照(2026-09-20: startListBrowser()削除に伴い参照元を更新)
   ModeStack modeStack_;
   ModeStack cutModeStack_;
   ContentView directoryView_;

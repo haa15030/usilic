@@ -10905,12 +10905,12 @@ TEST_CASE_FIXTURE(Fixture, "resolveCommand: ^R resolves to ToggleHistoryView, no
   CHECK(Application::resolveCommand(0x12, std::nullopt) == Command::ToggleHistoryView);
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^J ^R starts the command-history browser (StartCommandHistory)") {
-  REQUIRE(app.start(path()));
-  app.feedByte(0x0a, std::nullopt);
-  CHECK(app.feedByte(0x12, std::nullopt));
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-}
+// 2026-09-20削除、直接のユーザー依頼(^Rの再設計、"^J^Rを^J^Pに置き
+// 換える(^J^Rは廃棄)"): ここにあった「feedByte: ^J ^R starts the
+// command-history browser (StartCommandHistory)」は、Command::
+// StartCommandHistory自身の削除コメント参照の通り、対象のキー自体が
+// 未認識シーケンスになったため削除。^J^Pの同等のテストは既存の
+// "PROGRAM: ^J ^P seeds the candidate list..."を参照。
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(StartDirectoryHistory): reachable from OUTSIDE Directory mode too "
                            "(2026-08-12 fix -- an earlier version of startListBrowser() rejected this "
@@ -11452,16 +11452,14 @@ TEST_CASE_FIXTURE(Fixture, "^R at PROGRAM prompt: Enter on a picked entry auto-E
   CHECK(content == "recalled");  // the real side effect happened -- it actually ran, not just got inserted
 }
 
-TEST_CASE_FIXTURE(Fixture, "command history: Enter on an entry is a no-op in this slice") {
-  history.pushRecent(RingCategory::ShellCommand, "echo hi");
-
-  REQUIRE(app.start(path()));
-  REQUIRE(app.handleCommand(Command::StartCommandHistory));
-  REQUIRE(app.listBrowserMode().items().size() == 1);
-
-  CHECK_FALSE(app.handleCommand(Command::Enter));
-  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
-}
+// 2026-09-20削除、直接のユーザー依頼(^Rの再設計): このテストが確認
+// していた「Command::StartCommandHistory一覧上のEnterはno-op」という
+// 挙動自体、その入口(^J^R)がCommand::StartCommandHistory自身の削除
+// コメントの通り廃棄されたことで対象を失った。代わりの入口^J^P
+// (Command::StartProgramList)のEnterは(このスライスで既に確立して
+// いる通り)no-opではなく実際に選択したコマンドを実行する――
+// "PROGRAM: ^J ^P seeds the candidate list from ShellCommand history, "
+// "and Enter runs it"がその挙動を確認している。
 
 // -- K-46/K-48 (^X^F/^X^D, "FILE/DIR: Select file/directory name") --
 // HELP.jp 2.9's own picker of previously-accessed files/directories,
@@ -11785,14 +11783,17 @@ TEST_CASE_FIXTURE(Fixture, "DIR Select (^X^D): picking a directory discards a pr
   CHECK(app.directoryMode().canGoBack());
 }
 
-TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^F/^X^D/^J^R all work from CUT mode too, not just Directory "
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^F/^X^D/^J^P all work from CUT mode too, not just Directory "
                            "(2026-08-12 fix -- a real report: tried ^J^C into CUT, then found these didn't "
                            "work there, matching a broader design question -- \"^J^D/^J^F自体、どのモード"
                            "からでも（^Rも含め）移行可能な仕様が目的\" (the whole point of these keys is to "
                            "be reachable from ANY mode) -- see startListBrowser()'s own comment for the "
                            "investigation confirming this was ONE narrow Directory-only guard, not scattered "
                            "ad-hoc restrictions needing a mode-by-mode redesign; ^X^F itself moved back from "
-                           "^J^F on 2026-09-09, see leaderXPending_'s own switch comment)") {
+                           "^J^F on 2026-09-09, see leaderXPending_'s own switch comment. 2026-09-20: the "
+                           "third key here was ^J^R (StartCommandHistory) until that day's ^R redesign "
+                           "retired it in favor of ^J^P -- see Command::StartCommandHistory's own removal "
+                           "comment) -- replaced with ^J^P here") {
   REQUIRE(app.start(path()));
   history.pushRecent(RingCategory::RecentFile, "/some/file.txt");
   history.pushRecent(RingCategory::RecentDirectory, "/some/dir/");
@@ -11815,7 +11816,7 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^F/^X^D/^J^R all work from CUT mode too,
   CHECK(app.currentMode() == ApplicationMode::Cut);
 
   REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
-  CHECK(app.feedByte(0x12, std::nullopt));    // ^R: StartCommandHistory (K-50, ^J^R)
+  CHECK(app.feedByte(0x10, std::nullopt));    // ^P: StartProgramList (K-42, ^J^P)
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 }
 
@@ -13627,8 +13628,9 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): reachable from Directory mode, freezes 
 // 一覧」「もう1つの独立したListBrowser使用の一覧」という3系統の
 // 検証意図自体は変わらない。
 TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): also reachable from File mode, a RecentFile ListBrowser session, "
-                           "and a plain ListBrowser session (SHELL command history) -- confirming this is "
-                           "genuinely mode-agnostic, not wired per-mode") {
+                           "and a plain ListBrowser session (PROGRAM/^J^P, 2026-09-20: was ^J^R/"
+                           "StartCommandHistory before that day's ^R redesign retired it) -- confirming this "
+                           "is genuinely mode-agnostic, not wired per-mode") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -13652,7 +13654,7 @@ TEST_CASE_FIXTURE(Fixture, "^O^C (COPY): also reachable from File mode, a Recent
 
   CHECK(app.handleCommand(Command::Back));
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
-  REQUIRE(app.handleCommand(Command::StartCommandHistory));
+  REQUIRE(app.handleCommand(Command::StartProgramList));
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.feedByte(0x0f, std::nullopt));
   REQUIRE(app.feedByte(0x03, std::nullopt));
