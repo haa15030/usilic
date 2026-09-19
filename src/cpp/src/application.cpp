@@ -3577,9 +3577,24 @@ bool Application::handleCommand(Command command) {
   // 列挙する方式――逆(モード切り替えを起こすコマンドを全て列挙する)
   // だと、今後の新規コマンド追加のたびに見落としが起きやすい。
   // コマンド自体の実行は妨げない――下のswitchは普通にそのまま続く。
+  //
+  // 2026-09-19追加、直接のユーザー報告(PTYハーネス実験で再現確認:
+  // "usilic -c ~/git/usilicでCLAUDE.mdを開き^S*→^M→^Gすると
+  // CLAUDE.mdへ戻らず(ls)まで抜けてしまう"): Command::Backだけは
+  // 上の「コマンド自体の実行は妨げない」の対象から除外する――^Gの
+  // 役割はどのモードでも常に「一番内側の状態から順にキャンセルする」
+  // ことであり(returnFromShell()自身のhistoryBrowsing()、CutMode::
+  // canGoBack()と同じ「1回目は内側をキャンセル、2回目で実際に抜ける」
+  // という既存の慣習)、in-place検索のハイライトはcurrentMode_を
+  // 一度も離れていないという点でまさにその「一番内側の状態」に
+  // 当たる。ここで吸収せずBackを素通りさせると、ハイライト解除と
+  // 「元のモードから抜ける」が1回の^Gで同時に起きてしまい、
+  // ユーザーが期待する「まずハイライトだけが消える」動作にならない。
+  bool wasGrepInPlaceActive = grepInPlaceActive_;
   if (grepInPlaceActive_ && !isGrepInPlaceSafeCommand(command)) {
     deactivateGrepInPlace();
   }
+  if (wasGrepInPlaceActive && command == Command::Back) return true;
   // 2026-08-25(FileMode::ensureLoadedThrough()自身のコメント参照):
   // CLIのページャで起動されたファイル/stdinのストリームは、これまで
   // のスクロールを満たすのに十分なコンテンツしかロードされていない

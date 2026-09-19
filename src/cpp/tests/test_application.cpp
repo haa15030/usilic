@@ -2818,8 +2818,15 @@ TEST_CASE_FIXTURE(Fixture, "MAN started from File mode: the still-open GREP prom
   REQUIRE(app.currentMode() == ApplicationMode::Man);  // in-place: never left Man
   REQUIRE_FALSE(app.grepMode().matches().empty());
 
-  // Back WITHOUT ever leaving Man -- goes straight to Man's own normal
-  // Back destination (the origin File).
+  // 2026-09-19改訂、直接のユーザー報告(PTYハーネスでの再現確認、
+  // application.cpp自身のhandleCommand()内のwasGrepInPlaceActive
+  // コメント参照): ^Gの1回目は(ShellのhistoryBrowsing()/CutModeの
+  // canGoBack()と同じ「一番内側の状態から順にキャンセルする」慣習に
+  // 揃え)in-place検索のハイライトだけをキャンセルしてMan自体には
+  // 留まる――2回目でようやくMan自身の通常のBack先(起点のFile)へ。
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Man);  // 1st ^G: cancels the in-place session only
+
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == filePath);
@@ -2849,7 +2856,8 @@ TEST_CASE_FIXTURE(Fixture, "MAN started from File mode: the still-open GREP prom
 // そもそも意味を成さなくなった――マッチへは検索確定と同時に既に
 // 着地済みである。
 TEST_CASE_FIXTURE(Fixture, "GREP started from Man mode: stays in-place (Man) with \"MAN: ls\" as the mode "
-                           "line's origin label, and Back returns straight to Directory") {
+                           "line's origin label, and Back (after a first ^G cancels the in-place session) "
+                           "returns to Directory") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartMan));
   feedText("ls");
@@ -2868,6 +2876,11 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Man mode: stays in-place (Man) wit
   REQUIRE(app.currentMode() == ApplicationMode::Man);  // in-place: never left Man
   CHECK(app.activeContentView().modeLineText().find("ls") != std::string::npos);
   REQUIRE_FALSE(app.grepMode().matches().empty());
+
+  // 2026-09-19改訂(直前のテスト自身のコメント参照): 1回目の^Gは
+  // in-place検索のハイライトだけをキャンセルする。
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Man);
 
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
@@ -4828,7 +4841,8 @@ TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile): the return-value fie
 // 専用候補一覧自体が無くなったことで構造上再発し得なくなった。
 TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile): EGREP now searches the RecentFile paths "
                            "in-place, staying in ListBrowser mode (never a separate candidate list or "
-                           "results screen), and a plain Back ends the session and returns to File") {
+                           "results screen), and Back (after a first ^G cancels the in-place session) "
+                           "returns to File") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
@@ -4849,6 +4863,12 @@ TEST_CASE_FIXTURE(Fixture, "^J^S (ListBrowser, RecentFile): EGREP now searches t
   bool matchedRealPath = false;
   for (const auto &m : app.grepMode().matches()) matchedRealPath = matchedRealPath || (m.text == filePath);
   CHECK(matchedRealPath);  // searched the real RecentFile paths, not some unrelated candidate list
+
+  // 2026-09-19改訂、直接のユーザー報告(application.cpp自身の
+  // handleCommand()内のwasGrepInPlaceActiveコメント参照): 1回目の^Gは
+  // in-place検索のハイライトだけをキャンセルしてListBrowserに留まる。
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
 
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);
@@ -5189,8 +5209,16 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE started from File mode: backing out of an in-
   REQUIRE(app.currentMode() == ApplicationMode::Locate);
   REQUIRE_FALSE(app.locateMode().results().empty());
 
-  // Back WITHOUT selecting a match -- 一度もLocateを離れていないので、
-  // LOCATE自身の通常のBack先(File)へ直接戻る。
+  // 2026-09-19改訂、直接のユーザー報告(application.cpp自身の
+  // handleCommand()内のwasGrepInPlaceActiveコメント参照): 1回目の^Gは
+  // in-place検索のハイライトだけをキャンセルしてLocateに留まる――
+  // 一度もLocateを離れていない、という以下のコメントの前提はこの
+  // 1回目のBackにこそ当てはまる。
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
+
+  // Back WITHOUT selecting a match -- LOCATE自身の通常のBack先(File)
+  // へ戻る。
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == filePath);
@@ -14137,7 +14165,8 @@ TEST_CASE_FIXTURE(Fixture, "^O^Y (PASTE) with no active prompt is a harmless no-
 // 機能)はこのテストの関心事から外し、backing-out(マッチを選ばずに
 // Backする)の検証に絞る。
 TEST_CASE_FIXTURE(Fixture, "GREP started from Locate mode: stays in-place (Locate) with \"LOCATE: .md\" as "
-                           "the mode line's origin label, and Back returns straight to Directory") {
+                           "the mode line's origin label, and Back (after a first ^G cancels the in-place "
+                           "session) returns to Directory") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartLocate));
   feedText(".md");
@@ -14162,6 +14191,12 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Locate mode: stays in-place (Locat
   REQUIRE(app.currentMode() == ApplicationMode::Locate);  // in-place: never left Locate
   REQUIRE_FALSE(app.grepMode().matches().empty());
   CHECK(app.activeContentView().modeLineText().find(".md") != std::string::npos);
+
+  // 2026-09-19改訂、直接のユーザー報告(application.cpp自身の
+  // handleCommand()内のwasGrepInPlaceActiveコメント参照): 1回目の^Gは
+  // in-place検索のハイライトだけをキャンセルしてLocateに留まる。
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Locate);
 
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
