@@ -11268,8 +11268,15 @@ TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: the list is the RAW chronolog
 // startup timing except where the live prompt itself is what's under
 // test. --
 
-TEST_CASE_FIXTURE(Fixture, "^R (startShellHistoryRecall): opens a sorted ShellCommand history ListBrowser at "
-                           "the live SHELL prompt") {
+// 2026-09-20改訂、直接のユーザー報告(^Rの再設計、"SHELLで^RがHISTORY
+// じゃない（以前のCOMMANDのまま）"): startShellHistoryRecall()自身の
+// 削除コメント参照――以前はここでソート済み+重複排除された一覧(旧
+// "COMMAND"、今は^J^P経由でのみ到達するビュー)を最初に見せていたが、
+// SHELLプロンプトの^Rは生の時系列(HISTORY)を直接見せるべきという
+// ユーザー判断により変更された。このテストが確認していた
+// "opens a sorted...ListBrowser"という前提自体がもう成り立たない。
+TEST_CASE_FIXTURE(Fixture, "^R (startShellHistoryRecall): opens a raw chronological ShellCommand HISTORY "
+                           "ListBrowser at the live SHELL prompt, cursor on the most recent entry") {
   REQUIRE(app.start(path()));
   if (!app.handleCommand(Command::StartShell)) {
     MESSAGE("bash not available or handshake failed -- skipping");
@@ -11282,7 +11289,14 @@ TEST_CASE_FIXTURE(Fixture, "^R (startShellHistoryRecall): opens a sorted ShellCo
   REQUIRE(app.feedShellByte(0x12, std::nullopt));  // ^R
   CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.listBrowserMode().items().size() == 2);
-  CHECK(std::is_sorted(app.listBrowserMode().items().begin(), app.listBrowserMode().items().end()));
+  // Chronological (push order, oldest first) -- NOT alphabetically
+  // sorted ("echo two" was pushed before "echo one", so it comes
+  // first despite sorting after it alphabetically).
+  CHECK(app.listBrowserMode().items()[0] == "echo two");
+  CHECK(app.listBrowserMode().items()[1] == "echo one");
+  CHECK(app.activeContentView().modeLineText().find("HISTORY") != std::string::npos);
+  // "最下行が最新" -- cursor starts on the LAST (most recent) entry.
+  CHECK(app.activeContentView().cursorIndex() == 1);
 }
 
 TEST_CASE_FIXTURE(Fixture, "^R at SHELL prompt: Enter on a picked command INSERTS it into the command line "

@@ -10248,7 +10248,18 @@ bool Application::startShellHistoryRecall() {
   shellHistoryRecallActive_ = true;
   shellHistoryRecallText_ = shell_.commandLine().text();
   listBrowserCategory_ = RingCategory::ShellCommand;
-  listBrowserChronological_ = false;
+  // 2026-09-20修正、直接のユーザー報告(^Rの再設計、"SHELLプロンプトの
+  // 最初の^Rでは履歴一覧が自然ではないかと"): 以前はここでソート済み+
+  // 重複排除された一覧(旧ラベル"COMMAND"、今は^J^P/PromptKind::
+  // ProgramCommand経由でのみ到達するビュー、ringCategoryLabel()自身の
+  // 改名コメント参照)を最初に見せ、2回目の^R(toggleListBrowserHistory()
+  // 経由)で初めて生の時系列(HISTORY)へ切り替えていたが、SHELLの
+  // プロンプトで打った^Rが最初から欲しいのは「直近何を打ったか」の
+  // 生の履歴であり、ソート済み一意リストではないというのが直接の
+  // ユーザー判断――^J^Pの方はソート済みビューの入口として引き続き
+  // 機能する(sortDirectEntryList自身の同日の拡張コメント参照)ので、
+  // ここを変えても「ソート済み一覧を見る手段が無くなる」ことはない。
+  listBrowserChronological_ = true;
   // ContentView::setCursorAtModeLineTrailingEnd()自身のコメント参照
   // ――ここではEnterは単に選択をシェルのコマンドラインへ「挿入する」
   // だけであり(openSelectedListEntry()自身のshellHistoryRecallActive_
@@ -10256,8 +10267,18 @@ bool Application::startShellHistoryRecall() {
   // イムではないので、カレットは他のどんなプレーンなピッカーとも
   // 同様、ハイライトされている行に属する。
   listBrowserView_.setCursorAtModeLineTrailingEnd(false);
-  listBrowserMode_.show(sortedUniqueRecentEntries(RingCategory::ShellCommand));
+  const std::deque<std::string> &recent = history_.recentEntries(RingCategory::ShellCommand);
+  std::vector<std::string> items(recent.begin(), recent.end());
+  listBrowserMode_.show(items);
   currentMode_ = ApplicationMode::ListBrowser;
+  // toggleListBrowserHistory()自身の同種の処理(History::recentEntries()
+  // は最も古いものから返すので、最後の要素が最新――時系列モードでは
+  // それを最初に見せる、"最下行が最新"というユーザー自身の説明済みの
+  // 慣習に合わせる)。
+  if (!items.empty()) {
+    listBrowserView_.setCursorIndex(static_cast<int>(items.size()) - 1);
+    listBrowserView_.redraw();
+  }
   return true;
 }
 
