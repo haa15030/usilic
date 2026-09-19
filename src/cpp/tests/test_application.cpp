@@ -14409,6 +14409,82 @@ TEST_CASE_FIXTURE(Fixture, "SHELL: ^N/^P navigate between in-place GREP matches 
   CHECK(app.activeContentView().modeLineText().find("GREP") == std::string::npos);
 }
 
+// 2026-09-19追加、直接のユーザー報告(TUTORIAL執筆中に発覚、"EGREPの
+// モードからは離脱したうえで前のモードに戻るわけだからカーソル位置
+// だけ残留するわけにはいかない。SHELL時のカーソル位置へ戻らないと"):
+// grepInPlaceShellWasBrowsing_自身の宣言コメント参照。検索前に生きた
+// プロンプトにいた場合、1回目の^Gだけで(2回目を待たず)生きたプロンプト
+// まで戻ることを確認する。
+TEST_CASE_FIXTURE(Fixture, "SHELL: the first ^G after an in-place GREP search returns directly to the live "
+                           "prompt if that's where SHELL was before the search started (no longer needs a "
+                           "2nd ^G to exit the history-browsing side effect)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartShell));
+  app.shell().commandLine().setText("printf 'MARKERONE\\n'");
+  app.shell().submitLine();
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("MARKERONE") != std::string::npos) return true;
+    return false;
+  }));
+  REQUIRE_FALSE(app.shell().historyBrowsing());  // confirm: at the live prompt before the search
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
+  feedText("MARKER");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.shell().historyBrowsing());  // activateGrepInPlace()'s own side effect
+
+  CHECK(app.feedByte(0x07, std::nullopt));  // ^G (1st)
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK_FALSE(app.shell().historyBrowsing());  // restored directly -- no lingering browsing state
+}
+
+// 同上のコメント参照。検索前に「既に」手動で履歴閲覧中だった場合は、
+// historyBrowsing_自体は継続させ、検索でジャンプする前のカーソル位置
+// だけを正確に復元することを確認する。
+TEST_CASE_FIXTURE(Fixture, "SHELL: the first ^G after an in-place GREP search restores the exact cursor "
+                           "position SHELL was at if it was ALREADY browsing history before the search "
+                           "started (stays in history-browsing, doesn't snap to the matched line)") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartShell));
+  app.shell().commandLine().setText("printf 'MARKERONE\\n'");
+  app.shell().submitLine();
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("MARKERONE") != std::string::npos) return true;
+    return false;
+  }));
+  app.shell().commandLine().setText("printf 'MARKERTWO\\n'");
+  app.shell().submitLine();
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("MARKERTWO") != std::string::npos) return true;
+    return false;
+  }));
+
+  REQUIRE(app.feedByte(0x10, std::nullopt));  // ^P -- begin manual history browsing
+  REQUIRE(app.shell().historyBrowsing());
+  int priorCursor = app.activeContentView().cursorIndex();
+
+  // ^J^S (EGREP), NOT bare ^S -- feedShellByte()自身の"browsingHistory
+  // && byte != kControlC"ガード(shell.c由来、「閲覧中に何か変更する
+  // キーはまず生きたプロンプトへ戻す」)は、bare ^Sには適用されるが
+  // (leaderJPending_を経ないため)、^J^Sはリーダーキー(^J)の時点で
+  // 既にdispatchLeaderByte()へ委譲されそちらのガードを一度も通らない
+  // ――そのため実際に「検索前から手動閲覧中だった」状態を再現できる
+  // 唯一の入口は^J^Sである(bare ^Sでは常に強制的にfalseへ戻される)。
+  REQUIRE(app.feedByte(0x0a, std::nullopt));  // ^J
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S (^J^S = EGREP)
+  feedText("MARKER");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  CHECK(app.activeContentView().cursorIndex() != priorCursor);  // search jumped away, as expected
+
+  CHECK(app.feedByte(0x07, std::nullopt));  // ^G (1st)
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.shell().historyBrowsing());  // still browsing -- was already, before the search
+  CHECK(app.activeContentView().cursorIndex() == priorCursor);  // exact pre-search position restored
+}
+
 // 2026-09-20追加、直接のユーザー報告("^O^S/^J^Sが利かない"):
 // feedShellByte()自身の新しいisShellSafeGrep分岐のコメント参照。
 // FGREP(^O^S)/EGREP(^J^S)は、リーダーシーケンス完了時の事前切り替え

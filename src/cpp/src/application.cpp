@@ -5758,6 +5758,10 @@ std::vector<Application::GrepOccurrence> Application::buildGrepInPlaceOccurrence
 }
 
 bool Application::activateGrepInPlace() {
+  // grepInPlaceShellWasBrowsing_自身の宣言コメント参照(application.hpp)
+  // ――このセッションが「最初の」activationかどうかを、下でtargetの
+  // カーソルが動かされる前に判定しておく必要がある。
+  bool wasAlreadyActive = grepInPlaceActive_;
   const auto &matches = grepMode_.matches();
   if (matches.empty()) {
     // 2026-09-10修正、直接のユーザー報告(usilic -c git/usilicで再現:
@@ -5815,6 +5819,13 @@ bool Application::activateGrepInPlace() {
   // ほしい")によりDirectory/Fileの二択からviewForMode()経由の汎用呼び
   // 出しへ一般化した(ContentView自身のGREP関連メソッド参照)。
   ContentView &target = viewForMode(grepInPlaceOriginMode_);
+  // grepInPlaceShellWasBrowsing_自身の宣言コメント参照――最初の
+  // activationでだけ、下のtarget.setCursorIndex()等で上書きされる
+  // 「前」の、検索開始時点そのままのShellの状態を退避する。
+  if (grepInPlaceOriginMode_ == ApplicationMode::Shell && !wasAlreadyActive) {
+    grepInPlaceShellWasBrowsing_ = shell_.historyBrowsing();
+    grepInPlaceShellPriorCursorIndex_ = target.cursorIndex();
+  }
   // 2026-09-11追加、直接のユーザー依頼のFGREP/EGREP統一(ContentView::
   // setGrepInPlaceLabel()自身のコメント参照): 各ModeLineFieldsProvider
   // がgrepInPlaceActive()の間に出すname欄を、grepSyntax_に応じた正しい
@@ -5850,6 +5861,21 @@ void Application::deactivateGrepInPlace() {
   ContentView &target = viewForMode(grepInPlaceOriginMode_);
   target.setGrepInPlaceOverlay(false);
   target.clearGrepMatchHighlight();
+  // grepInPlaceShellWasBrowsing_自身の宣言コメント参照: Shell起点の
+  // 場合、検索開始前の状態へ正確に戻す――生きたプロンプトだったなら
+  // ここでexitHistoryBrowsing()まで済ませてしまう(activateGrepInPlace()
+  // 自身が呼んだbeginHistoryBrowsing()を、対になる1回で相殺する)ので、
+  // 「1回のGREP終了=1回の状態遷移」になり、もう1回^Gを押して初めて
+  // 生きたプロンプトへ戻るという余分な段が無くなる。既に手動で履歴
+  // 閲覧中だった場合はhistoryBrowsing_自体は継続させ、退避しておいた
+  // カーソル位置(検索でジャンプする前の位置)だけを戻す。
+  if (grepInPlaceOriginMode_ == ApplicationMode::Shell) {
+    if (grepInPlaceShellWasBrowsing_) {
+      target.setCursorIndex(grepInPlaceShellPriorCursorIndex_);
+    } else if (shell_.historyBrowsing()) {
+      shell_.exitHistoryBrowsing();
+    }
+  }
   // updateGrepInPlacePositionText()自身のコメント参照――セッション
   // 終了時は通常のposition表示(カーソル行/総行数)へ戻す。
   activeView().setPositionTextOverride(std::nullopt);

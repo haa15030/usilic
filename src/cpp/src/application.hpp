@@ -2700,6 +2700,23 @@ class Application {
   std::vector<GrepOccurrence> grepInPlaceOccurrences_;
   int grepInPlaceIndex_ = 0;
   ApplicationMode grepInPlaceOriginMode_ = ApplicationMode::Directory;
+  // 2026-09-19追加、直接のユーザー報告(TUTORIAL執筆中に発覚、"EGREPの
+  // モードからは離脱したうえで前のモードに戻るわけだからカーソル位置
+  // だけ残留するわけにはいかない。SHELL時のカーソル位置へ戻らないと"):
+  // activateGrepInPlace()自身がShell起点の場合に呼ぶshell_.
+  // beginHistoryBrowsing()は、検索開始前のShell自身の状態(生きた
+  // プロンプトだったか、既に手動で履歴閲覧中だったか)を一切保存
+  // しないため、deactivateGrepInPlace()側もそれを正確に戻せなかった
+  // (検索前は生きたプロンプトだったのに、検索後もマッチ行にカーソルが
+  // 残留し、もう1回^Gを押して初めて生きたプロンプトへ戻る、という
+  // 余分な1段が必要だった)。activateGrepInPlace()自身の「最初の」
+  // activation(grepInPlaceActive_がまだfalseだった時点)でだけこの2つを
+  // 退避し、deactivateGrepInPlace()で正確に復元する――ユーザー提案の
+  // 「モードスタック」の1フレーム分の状態退避に相当する。Shell以外の
+  // 起点では未使用(Shell特有のhistoryBrowsing_概念に対応するものが
+  // 他の起点には無いため)。
+  bool grepInPlaceShellWasBrowsing_ = false;
+  int grepInPlaceShellPriorCursorIndex_ = 0;
   // startIncrementalGrepPrompt()/liveIncrementalGrepSearch()自身の
   // 宣言コメント参照(2026-09-10追加)。GrepPatternプロンプトが編集中の
   // 間だけtrueで、submitPrompt()/cancelPrompt()の両方の入口で
