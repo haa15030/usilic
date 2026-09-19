@@ -3003,6 +3003,31 @@ TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^J ^P seeds the candidate list from ShellCo
   CHECK(fs::exists(outPath));
 }
 
+// 2026-09-20追加、直接のユーザー報告("^J^Pが戻り値無し"): 上のテストは
+// currentMode()と実行結果だけを確認しており、モードラインの戻り値
+// (trailing2)フィールド自体は見ていなかった。sortDirectEntryList自身
+// の同日の拡張(^Rの再設計)により、^J^Pがソート済み("PROGRAM")ビューへ
+// 初めて到達するようになったことで、destinationModeの計算
+// (drawPromptLabel()自身の同種の分岐参照)がProgramCommandを想定して
+// おらず、既にApplicationMode::ListBrowserへ切り替わった後の
+// currentMode_を誤って読んでpreviousModeName()の空文字列フォール
+// バックに落ち、戻り値が消えていたバグが露呈した。
+TEST_CASE_FIXTURE(Fixture, "PROGRAM: ^J ^P shows a non-empty destination (return value) in the mode line, "
+                           "not a blank trailing2 field") {
+  REQUIRE(app.start(path()));
+  history.pushRecent(RingCategory::ShellCommand, "echo hi");
+  REQUIRE(app.handleCommand(Command::StartProgramList));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  const std::string &row = display.rowText(display.rows() - 1);
+  CHECK(row.find("PROGRAM") != std::string::npos);
+  // truncatedTrailingPath()自身の慣習(archive_mode.cppの同種のテスト
+  // 参照、"tail-truncated")に合わせ、フル一致ではなく末尾での一致を
+  // 見る――path()自身(fixtureの一時ディレクトリ)がtrailing2の表示幅
+  // より長く、先頭側が切り詰められ得るため。
+  std::string tail = path().substr(path().size() > 12 ? path().size() - 12 : 0);
+  CHECK(row.find(tail) != std::string::npos);  // the Directory origin's own path, as the destination
+}
+
 // -- PROGRAM: only a recognized (PROGRAM-list first-word-prefix
 // matching) command actually runs; ApplicationMode never changes --
 

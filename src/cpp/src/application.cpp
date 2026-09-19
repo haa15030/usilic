@@ -893,6 +893,22 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
         ApplicationMode destinationMode = ApplicationMode::Directory;
         if (kind == PromptKind::GrepPattern) destinationMode = grepReturnMode_;
         else if (kind == PromptKind::CutPattern) destinationMode = cutReturnMode_;
+        // 2026-09-20追加、直接のユーザー報告(^Rの再設計に伴う"^J^Pが
+        // 戻り値無し"): ProgramCommandがこの分岐(isDirectEntry &&
+        // !listBrowserChronological_、旧"COMMAND"改めソート済み
+        // "PROGRAM"ビュー)へ到達するのは今日のsortDirectEntryList
+        // 拡張が初めて――以前は他の全てのカテゴリ同様chronological
+        // 固定だったので、この分岐自体が到達不能だった。ここに来る
+        // 時点でcurrentMode_は既にApplicationMode::ListBrowserへ
+        // 切り替わっている(この関数の少し下のcurrentMode_代入参照)
+        // ため、GrepPattern/CutPatternと違って専用の戻り先変数を
+        // 持たないProgramCommandがすぐ下の`else`(旧`currentMode_`)へ
+        // 落ちると、previousModeName(ListBrowser)の空文字列フォール
+        // バック(すぐ下のコメント、EGREP自身の同種の過去のバグ参照)
+        // に当たって戻り値が消えていた。startPromptHistoryRecall()が
+        // 切り替え「前」のcurrentMode_をpromptHistoryContext_->returnMode
+        // へ既に退避済みなので、それを使う。
+        else if (kind == PromptKind::ProgramCommand) destinationMode = promptHistoryContext_->returnMode;
         else destinationMode = currentMode_;
         // 2026-09-11追加、直接のユーザー報告(drawPromptLabel()自身の
         // grepReturnListCategory_のコメント参照、"^J^S...戻り値空白"):
