@@ -257,8 +257,9 @@ void TerminalDisplay::setAttribute(Attribute attr) {
     case Attribute::ItalicOff: italicOn_ = false; break;
     case Attribute::Standout: standoutOn_ = true; break;
     case Attribute::StandoutOff: standoutOn_ = false; break;
-    case Attribute::Highlight: highlightOn_ = true; break;
-    case Attribute::HighlightOff: highlightOn_ = false; break;
+    case Attribute::Highlight: highlightVariant_ = Attribute::Highlight; break;
+    case Attribute::HighlightCurrent: highlightVariant_ = Attribute::HighlightCurrent; break;
+    case Attribute::HighlightOff: highlightVariant_ = std::nullopt; break;
   }
 
   // 2026-09-04追加、直接のユーザー報告("-cでは斜体にならない"=fk)を
@@ -288,8 +289,12 @@ void TerminalDisplay::setAttribute(Attribute attr) {
     if (standoutOn_) tputs(attributeEscape(Attribute::Standout).c_str(), 1, outc);
     // Highlight自身のコメント参照: 生のSGRコードとはいえ、caps_.boldOff
     // (exit_attribute_mode)は前景色も含めて全リセットするので、
-    // 同じ再送出の対象に加える。
-    if (highlightOn_) tputs(attributeEscape(Attribute::Highlight).c_str(), 1, outc);
+    // 同じ再送出の対象に加える。2026-09-19追記: Highlight/
+    // HighlightCurrentの2種類に分かれたため、highlightVariant_に
+    // 記録されている「実際に有効な方」をそのまま再送する
+    // (highlightOn_単なるboolだった頃と違い、どちらだったか自体が
+    // 情報として必要)。
+    if (highlightVariant_) tputs(attributeEscape(*highlightVariant_).c_str(), 1, outc);
   }
 
   std::fflush(stdout);
@@ -313,33 +318,46 @@ std::string TerminalDisplay::attributeEscape(Attribute attr) const {
       return caps_.italicOn;
     case Attribute::ItalicOff:
       return caps_.italicOff;
-    // Display::Attribute::Highlight自身の宣言コメント参照: terminfoの
-    // パラメータ付きcapability(setaf)経由ではなく、生のANSI SGR
-    // コードを直接返す。2026-09-10三度目の改訂、直接のユーザー提案
-    // ("手近なところでemacs仕様はどう？ネックになりそうな青系Ocean
-    // でもこんな感じなので判別は充分可能かと"): 固定16色・固定256色
-    // パレットのどちらも、結局は「たまたま選んだ絶対色が、たまたま
-    // その端末の実際の配色と衝突しないか」という水物の賭けでしかなく
-    // (256色版でもTerminal.appの"Solid Colors"プロファイルで文字色/
-    // 背景色が同化する実例が出た=ga)、自前で「無難な色」を発明する
-    // のではなく、何十年も無数の配色テーマの上で実際に使われ続けて
-    // 実績のあるGNU Emacs自身のisearch face(現在マッチの強調表示)を
+    // Display::Attribute::Highlight/HighlightCurrent自身の宣言コメント
+    // 参照: terminfoのパラメータ付きcapability(setaf)経由ではなく、
+    // 生のANSI SGRコードを直接返す。2026-09-10三度目の改訂、直接の
+    // ユーザー提案("手近なところでemacs仕様はどう？ネックになりそうな
+    // 青系Oceanでもこんな感じなので判別は充分可能かと"): 固定16色・
+    // 固定256色パレットのどちらも、結局は「たまたま選んだ絶対色が、
+    // たまたまその端末の実際の配色と衝突しないか」という水物の賭けで
+    // しかなく(256色版でもTerminal.appの"Solid Colors"プロファイルで
+    // 文字色/背景色が同化する実例が出た=ga)、自前で「無難な色」を
+    // 発明するのではなく、何十年も無数の配色テーマの上で実際に使われ
+    // 続けて実績のあるGNU Emacs自身のisearch/lazy-highlight faceを
     // そのまま拝借することにした。値は当て推量ではなく、この移植
     // 自身の開発環境でGNU Emacs 30.1を実際にPTY経由で起動し、
     // C-sで検索した際に本物のEmacsが送出する生のエスケープシーケンス
-    // をそのままキャプチャして確認済み: 前景=lightskyblue1
-    // RGB(176,226,255)、背景=magenta3 RGB(205,0,205)(24bit
-    // トゥルーカラーSGR、Emacs自身も同じ表現)。この配色が有効な
-    // 理由: 中間的な明度・高い彩度の色は、明るいテーマ・暗いテーマの
-    // どちら側とも十分なコントラストを保ちやすい(近黒/近白のような
-    // 極端な色は、テーマがたまたま同じ極端側に寄っている場合に
-    // 衝突しやすいのとは対照的)――だからこそ何百万人ものEmacs
-    // ユーザーが何十年も、テーマを問わずこの配色でisearchのマッチを
-    // 問題なく視認できてきた。HighlightOffは引き続き39;49(前景色・
-    // 背景色を両方ともデフォルトへ戻すだけ、Bold/Underline/Standout/
-    // Italicの現在の状態には一切触れない――boldOff自身の全リセットの
-    // 問題、すぐ下のコメント参照、をそもそも起こさない)。
+    // をそのままキャプチャして確認済み: 現在マッチ(isearch face)は
+    // 前景=lightskyblue1 RGB(176,226,255)、背景=magenta3
+    // RGB(205,0,205)、他のマッチ(lazy-highlight face)は背景=
+    // paleturquoise RGB(175,238,238)のみ(前景は変更しない)。この
+    // 配色が有効な理由: 中間的な明度・高い彩度の色は、明るいテーマ・
+    // 暗いテーマのどちら側とも十分なコントラストを保ちやすい(近黒/
+    // 近白のような極端な色は、テーマがたまたま同じ極端側に寄っている
+    // 場合に衝突しやすいのとは対照的)――だからこそ何百万人もの
+    // Emacsユーザーが何十年も、テーマを問わずこの配色でisearchの
+    // マッチを問題なく視認できてきた。HighlightOffは両方に共通
+    // (39;49で前景色・背景色を両方ともデフォルトへ戻すだけ、Bold/
+    // Underline/Standout/Italicの現在の状態には一切触れない――
+    // boldOff自身の全リセットの問題、すぐ下のコメント参照、を
+    // そもそも起こさない)。
+    //
+    // 2026-09-19追記、直接のユーザー報告(PTYハーネスでの再現確認、
+    // Emacsとの比較: "本来マッチするのは*ひとつだけなので**の行は
+    // ^Nを2回押さないと次行へ行かないはずが1回で行ってしまう"):
+    // ^N/^Pの移動先を「行」単位から「一致した個々の出現位置」単位
+    // (Application::GrepOccurrence自身のコメント参照)へ改めたのに
+    // 合わせ、以前は全マッチに一律適用していたこの値(旧Highlight)を
+    // HighlightCurrent(現在位置の出現だけ)へ移し、Highlight自体は
+    // 本来のlazy-highlight相当(他の全マッチ、背景のみ)へ格下げした。
     case Attribute::Highlight:
+      return "\x1b[48;2;175;238;238m";
+    case Attribute::HighlightCurrent:
       return "\x1b[38;2;176;226;255;48;2;205;0;205m";
     case Attribute::HighlightOff:
       return "\x1b[39;49m";

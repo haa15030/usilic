@@ -843,6 +843,46 @@ TEST_CASE_FIXTURE(Fixture, "in-place GREP: ^N/^P step between matches, wrapping 
   CHECK(app.directoryMode().selectedEntry()->name == "two.json");
 }
 
+// 2026-09-19追加、直接のユーザー報告(PTYハーネスでの再現確認、Emacs
+// との比較実演: "^Sで検索した文字が1行に複数あるとき(例えば`**`)、
+// 本来マッチするのは*ひとつだけなので^Nを2回押さないと次行へ行かない
+// はずが1回で行ってしまう"): GrepMode::searchInProcess()はマッチを
+// 「行」単位でまとめる(GrepOccurrence自身の宣言コメント参照)ため、
+// 以前は^N/^Pがその行単位でしか動かず、同じ行内の複数一致が1回の
+// ステップでまとめてスキップされていた。このテストは直接その症状
+// (2行目の"**"の1文字目・2文字目それぞれで止まるかどうか)を確認する。
+TEST_CASE_FIXTURE(Fixture, "in-place GREP (File origin): ^N steps through EACH occurrence within a single "
+                           "line, not just once per matching line -- a '**' line needs two ^N presses to "
+                           "pass both, matching Emacs' isearch/lazy-highlight behavior") {
+  { std::ofstream(root / "stars.txt") << "one*\n**\nthree\n"; }
+  REQUIRE(app.start(path()));
+  int idx = indexOf("stars.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
+  feedText("*");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));  // submit
+
+  // 3 occurrences total across 2 matching lines: "one*"(1) + "**"(2) --
+  // the mode line's denominator must count occurrences, not lines.
+  CHECK(app.activeContentView().modeLineText().find("1/3") != std::string::npos);
+  CHECK(app.activeContentView().cursorIndex() == 0);  // "one*"
+
+  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N -> 2nd occurrence: the "**" line's 1st '*'
+  CHECK(app.activeContentView().modeLineText().find("2/3") != std::string::npos);
+  CHECK(app.activeContentView().cursorIndex() == 1);  // "**"
+
+  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N -> 3rd occurrence: the SAME "**" line's 2nd '*' -- the bug itself
+  CHECK(app.activeContentView().modeLineText().find("3/3") != std::string::npos);
+  CHECK(app.activeContentView().cursorIndex() == 1);  // still "**", NOT "three" yet
+
+  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N again -> wraps back to the 1st occurrence
+  CHECK(app.activeContentView().modeLineText().find("1/3") != std::string::npos);
+  CHECK(app.activeContentView().cursorIndex() == 0);
+}
+
 TEST_CASE_FIXTURE(Fixture, "in-place GREP: marking ('.') keeps the session alive, and CP/PROGRAM see the "
                            "marked entries via targetEntries() -- the whole point of dropping '{'/'}' ") {
   { std::ofstream(root / "one.json") << "{}\n"; }

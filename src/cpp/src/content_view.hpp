@@ -576,7 +576,16 @@ class ContentView {
   // Highlight属性を付け直す(呼ばれるたびに全行の属性を一旦クリアして
   // から組み直す――旧DirectoryMode::setGrepMatchHighlight()自身の
   // コメント参照、ESC iの毎キー入力での再呼び出しに対応するため)。
-  void setGrepMatchHighlight(const std::vector<GrepHighlightMatch> &matches);
+  // 2026-09-19追記、直接のユーザー報告(Application::GrepOccurrence
+  // 自身のコメント参照、^N/^Pを出現単位まで細分化した際に発覚): 全て
+  // の一致は一律Display::Attribute::Highlight(Emacsのlazy-highlight
+  // 相当)になるが、`currentLineIndex`/`currentSpan`で指定された1件
+  // (現在位置)だけはDisplay::Attribute::HighlightCurrent(isearch
+  // 相当)になる――既定値(-1、{-1,-1})はどのmatchSpansとも一致し
+  // 得ないので、呼び出し元が「現在位置」を持たない場合は従来通り
+  // 全マッチが同じ扱いになる。
+  void setGrepMatchHighlight(const std::vector<GrepHighlightMatch> &matches, int currentLineIndex = -1,
+                              std::pair<int, int> currentSpan = {-1, -1});
   void clearGrepMatchHighlight();
 
   // 他の点では空の一覧に対してredraw()が表示するテキスト/整形

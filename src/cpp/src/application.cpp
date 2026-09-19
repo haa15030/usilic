@@ -5658,6 +5658,29 @@ std::vector<ContentView::GrepHighlightMatch> toHighlightMatches(const std::vecto
 }
 }  // namespace
 
+// buildGrepInPlaceOccurrences()自身の宣言コメント(application.hpp、
+// Application::GrepOccurrence自身の宣言コメント)参照。GrepMatchは
+// 「行」単位(1件=1行、その行内の複数一致は同じmatchSpansへまとめて
+// 入る)なので、ここでmatchSpansの要素それぞれを1件のGrepOccurrence
+// (出現)へ展開する――^N/^Pのナビゲーション単位を「行」から「一致した
+// 個々の出現位置」へ細かくするための変換。
+std::vector<Application::GrepOccurrence> Application::buildGrepInPlaceOccurrences(
+    const std::vector<GrepMatch> &matches) const {
+  std::vector<GrepOccurrence> out;
+  for (const auto &m : matches) {
+    if (m.matchSpans.empty()) {
+      // ContentView::setGrepMatchHighlight()自身のフォールバックと
+      // 同じ理屈(GrepMatch::matchSpans自身のコメント参照、取得に
+      // 失敗した場合に行全体をハイライトする)――ナビゲーションでも
+      // 行全体を1件の出現として扱う。
+      out.push_back({m.sourceLineIndex, {0, static_cast<int>(m.text.size())}});
+    } else {
+      for (const auto &span : m.matchSpans) out.push_back({m.sourceLineIndex, span});
+    }
+  }
+  return out;
+}
+
 bool Application::activateGrepInPlace() {
   const auto &matches = grepMode_.matches();
   if (matches.empty()) {
@@ -5687,6 +5710,7 @@ bool Application::activateGrepInPlace() {
     return false;
   }
   grepInPlaceMatches_ = matches;
+  grepInPlaceOccurrences_ = buildGrepInPlaceOccurrences(matches);
   grepInPlaceIndex_ = 0;
   grepInPlaceActive_ = true;
   // 2026-09-10追加、直接のユーザー指摘("^N連打で最下行へ到達すると
@@ -5703,10 +5727,14 @@ bool Application::activateGrepInPlace() {
   updateGrepInPlacePositionText();
   // 2026-09-10追加、直接のユーザー指摘("とにかくハイライト表示は
   // 出てくれないと...何にヒットしたかもわからない"): 全マッチを
-  // 同時にBold表示する(ContentView::setGrepMatchHighlight()自身の
-  // コメント参照)――カーソルが今どのマッチにいるかとは独立に、マッチ
-  // 集合全体を常に見渡せるようにする。matchSpans(2026-09-10再改訂、
-  // "『マッチした文字列』だけを")付きでそのまま渡す。
+  // 同時にハイライト表示する(ContentView::setGrepMatchHighlight()
+  // 自身のコメント参照)――マッチ集合全体を常に見渡せるようにする。
+  // matchSpans(2026-09-10再改訂、"『マッチした文字列』だけを")付きで
+  // そのまま渡す。2026-09-19追記(GrepOccurrence自身のコメント参照):
+  // このうち現在位置の1件(grepInPlaceOccurrences_[0])だけは
+  // HighlightCurrentで区別する――以前はここが「カーソルが今どの
+  // マッチにいるかとは独立」だったが、^N/^Pが出現単位になったことで
+  // 「独立」ではいられなくなった。
   // 2026-09-11、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも反映して
   // ほしい")によりDirectory/Fileの二択からviewForMode()経由の汎用呼び
   // 出しへ一般化した(ContentView自身のGREP関連メソッド参照)。
@@ -5720,8 +5748,9 @@ bool Application::activateGrepInPlace() {
   target.setGrepInPlaceLabel(grepSyntaxLabel(grepSyntax_));
   target.setGrepInPlaceBadge(grepSyntaxBadge(grepSyntax_));
   target.setGrepInPlaceOverlay(true);
-  target.setGrepMatchHighlight(toHighlightMatches(grepInPlaceMatches_));
-  target.setCursorIndex(grepInPlaceMatches_[0].sourceLineIndex);
+  target.setGrepMatchHighlight(toHighlightMatches(grepInPlaceMatches_), grepInPlaceOccurrences_[0].sourceLineIndex,
+                                grepInPlaceOccurrences_[0].span);
+  target.setCursorIndex(grepInPlaceOccurrences_[0].sourceLineIndex);
   target.centerOnCursor();
   target.redraw();
   // syncVisibleCursor()自身の宣言コメント参照: cursorHighlightEnabled()
@@ -5767,7 +5796,11 @@ void Application::deactivateGrepInPlace() {
 // 箇所にも同じ文字列を渡す必要があった。
 std::string Application::grepInPlaceMatchLabel() const {
   if (!grepInPlaceActive_) return "";
-  return std::to_string(grepInPlaceIndex_ + 1) + "/" + std::to_string(grepInPlaceMatches_.size());
+  // 2026-09-19、grepInPlaceMatches_.size()(行数)からgrepInPlaceOccurrences_
+  // .size()(出現数)へ変更――GrepOccurrence自身の宣言コメント参照。
+  // "**"のような1行に複数一致がある場合、以前は分母がその行を1件と
+  // しか数えず、Emacs等と比べて総数がユーザーの直感より少なく出ていた。
+  return std::to_string(grepInPlaceIndex_ + 1) + "/" + std::to_string(grepInPlaceOccurrences_.size());
 }
 
 void Application::updateGrepInPlacePositionText() {
@@ -5775,11 +5808,16 @@ void Application::updateGrepInPlacePositionText() {
 }
 
 bool Application::jumpToGrepInPlaceMatch(int delta) {
-  if (!grepInPlaceActive_ || grepInPlaceMatches_.empty()) return false;
-  int count = static_cast<int>(grepInPlaceMatches_.size());
+  if (!grepInPlaceActive_ || grepInPlaceOccurrences_.empty()) return false;
+  int count = static_cast<int>(grepInPlaceOccurrences_.size());
   grepInPlaceIndex_ = ((grepInPlaceIndex_ + delta) % count + count) % count;  // 循環(wrap)
+  const GrepOccurrence &occurrence = grepInPlaceOccurrences_[grepInPlaceIndex_];
   ContentView &target = activeView();
-  target.setCursorIndex(grepInPlaceMatches_[grepInPlaceIndex_].sourceLineIndex);
+  target.setCursorIndex(occurrence.sourceLineIndex);
+  // activateGrepInPlace()自身の2026-09-19追記コメント参照: 現在位置が
+  // 出現単位で動くようになったので、^N/^Pのたびにハイライトも呼び
+  // 直し、HighlightCurrentを新しい出現へ移す。
+  target.setGrepMatchHighlight(toHighlightMatches(grepInPlaceMatches_), occurrence.sourceLineIndex, occurrence.span);
   updateGrepInPlacePositionText();
   target.centerOnCursor();
   target.redraw();

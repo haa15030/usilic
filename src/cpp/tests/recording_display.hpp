@@ -22,7 +22,8 @@ class RecordingDisplay : public Display {
         standout_(rows, std::vector<bool>(cols, false)),
         bold_(rows, std::vector<bool>(cols, false)),
         underline_(rows, std::vector<bool>(cols, false)),
-        highlight_(rows, std::vector<bool>(cols, false)) {}
+        highlight_(rows, std::vector<bool>(cols, false)),
+        highlightCurrent_(rows, std::vector<bool>(cols, false)) {}
 
   void write(const std::string &text) override {
     for (char c : text) putAdvance(static_cast<unsigned char>(c));
@@ -64,6 +65,7 @@ class RecordingDisplay : public Display {
       bold_[cursorRow_][c] = false;
       underline_[cursorRow_][c] = false;
       highlight_[cursorRow_][c] = false;
+      highlightCurrent_[cursorRow_][c] = false;
     }
   }
   void scrollForward() override { scrollForwardCount_++; }
@@ -79,9 +81,17 @@ class RecordingDisplay : public Display {
         (attr == Attribute::Underline) ? true : (attr == Attribute::UnderlineOff) ? false : underlineActive_;
     // Highlight tracking (2026-09-10, direct user request: "マッチ
     // 文字列をboldの代わりにハイライトでやってみて") -- same shape as
-    // boldActive_ just above.
+    // boldActive_ just above. 2026-09-19: split into Highlight ("other"
+    // matches, Emacs lazy-highlight equivalent) and HighlightCurrent
+    // (the match under the cursor, Emacs isearch equivalent) -- see
+    // Display::Attribute::HighlightCurrent's own declaration comment.
+    // HighlightOff clears both (only one is ever active at a time, same
+    // as TerminalDisplay::highlightVariant_).
     highlightActive_ =
         (attr == Attribute::Highlight) ? true : (attr == Attribute::HighlightOff) ? false : highlightActive_;
+    highlightCurrentActive_ = (attr == Attribute::HighlightCurrent) ? true
+                             : (attr == Attribute::HighlightOff)    ? false
+                                                                     : highlightCurrentActive_;
   }
   std::string attributeEscape(Attribute) const override { return ""; }
   int rows() const override { return rows_; }
@@ -145,7 +155,13 @@ class RecordingDisplay : public Display {
   bool standoutAt(int row, int col) const { return standout_[row][col]; }
   bool boldAt(int row, int col) const { return bold_[row][col]; }
   bool underlineAt(int row, int col) const { return underline_[row][col]; }
-  bool highlightAt(int row, int col) const { return highlight_[row][col]; }
+  // 2026-09-19: true for EITHER Highlight (other matches) or
+  // HighlightCurrent (the match under the cursor) -- most existing
+  // callers just want "is this a grep-match highlight of some kind"
+  // and predate the current/other split. Use highlightCurrentAt() below
+  // when a test specifically needs to tell the two apart.
+  bool highlightAt(int row, int col) const { return highlight_[row][col] || highlightCurrent_[row][col]; }
+  bool highlightCurrentAt(int row, int col) const { return highlightCurrent_[row][col]; }
   int scrollForwardCount() const { return scrollForwardCount_; }
   int scrollReverseCount() const { return scrollReverseCount_; }
 
@@ -180,6 +196,7 @@ class RecordingDisplay : public Display {
       bold_[cursorRow_][cursorCol_] = boldActive_;
       underline_[cursorRow_][cursorCol_] = underlineActive_;
       highlight_[cursorRow_][cursorCol_] = highlightActive_;
+      highlightCurrent_[cursorRow_][cursorCol_] = highlightCurrentActive_;
     }
     cursorCol_++;
   }
@@ -190,11 +207,13 @@ class RecordingDisplay : public Display {
   std::vector<std::vector<bool>> bold_;
   std::vector<std::vector<bool>> underline_;
   std::vector<std::vector<bool>> highlight_;
+  std::vector<std::vector<bool>> highlightCurrent_;
   int cursorRow_ = 0, cursorCol_ = 0;
   bool standoutActive_ = false;
   bool boldActive_ = false;
   bool underlineActive_ = false;
   bool highlightActive_ = false;
+  bool highlightCurrentActive_ = false;
   bool smoothScroll_ = false;
   bool modeLineVisible_ = true;
   int scrollForwardCount_ = 0, scrollReverseCount_ = 0;

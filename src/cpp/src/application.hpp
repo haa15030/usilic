@@ -2003,12 +2003,37 @@ class Application {
   // in-placeセッション中に^N/^P・マーク系以外のコマンドが来た時に
   // 呼ばれる。
   void deactivateGrepInPlace();
+  // 2026-09-19追加、直接のユーザー報告(PTYハーネスでの再現確認、
+  // Emacsとの比較実演: "本来マッチするのは*ひとつだけなので**の行は
+  // ^Nを2回押さないと次行へ行かないはずが1回で行ってしまう")。
+  // GrepMode::searchInProcess()自身のコメント参照: matches_(≒
+  // grepInPlaceMatches_)は「行」単位(1件のGrepMatchが1行に対応し、
+  // その行内の複数一致は同じGrepMatch::matchSpansへまとめて入る)
+  // なので、それをそのまま^N/^Pのナビゲーション単位に使うと、同じ
+  // 行内の複数マッチが1回のステップでまとめてスキップされてしまう
+  // (Emacsは逆に一致した位置ごとに1歩ずつ進む)。GrepOccurrenceは、
+  // 行単位のGrepMatchを「一致した個々の出現位置」まで展開した、
+  // ナビゲーション専用のフラットな単位。
+  struct GrepOccurrence {
+    int sourceLineIndex = -1;
+    std::pair<int, int> span{-1, -1};
+  };
+  // buildGrepInPlaceOccurrences(): GrepOccurrence自身の宣言コメント
+  // 参照。行単位のGrepMatch群を、その中のmatchSpansまで展開した
+  // フラットな出現位置リストへ変換する(matchSpansが空の行は
+  // ContentView::setGrepMatchHighlight()自身のフォールバックと同じ
+  // 理屈で、行全体を1件の出現として扱う)。
+  std::vector<GrepOccurrence> buildGrepInPlaceOccurrences(const std::vector<GrepMatch> &matches) const;
   // jumpToGrepInPlaceMatch(): `delta`は+1(Next、^N)/-1(Previous、^P)。
-  // grepInPlaceMatches_.size()で循環(wrap)させてgrepInPlaceIndex_を
-  // 更新し、activeView().setCursorIndex()+centerOnCursor()+redraw()。
-  // File起点では追加でsyncVisibleCursor()も呼ぶ(openSelectedGrepMatch()
-  // 自身のFile分岐が同じ理由でこれを呼んでいるのと同じ、行全体の
-  // ハイライトを持たないFileモードでのキャレット表示のため)。
+  // grepInPlaceOccurrences_.size()(2026-09-19、行単位のgrepInPlaceMatches_
+  // から出現単位のこちらへ変更――GrepOccurrence自身の宣言コメント
+  // 参照)で循環(wrap)させてgrepInPlaceIndex_を更新し、
+  // activeView().setCursorIndex()+centerOnCursor()+redraw()。File起点
+  // では追加でsyncVisibleCursor()も呼ぶ(openSelectedGrepMatch()自身の
+  // File分岐が同じ理由でこれを呼んでいるのと同じ、行全体のハイライト
+  // を持たないFileモードでのキャレット表示のため)。ハイライトも
+  // setGrepMatchHighlight()を呼び直し、現在位置(HighlightCurrent)を
+  // 新しい出現へ移す。
   bool jumpToGrepInPlaceMatch(int delta);
   // 2026-09-10追加、直接のユーザー指摘("^N連打で最下行へ到達すると
   // 循環処理により最上行へと移動するのはいいとして、動きが今イチ
@@ -2663,6 +2688,13 @@ class Application {
   // `currentMode_`とは独立した状態。
   bool grepInPlaceActive_ = false;
   std::vector<GrepMatch> grepInPlaceMatches_;
+  // GrepOccurrence自身の宣言コメント(このヘッダ内、buildGrepInPlace
+  // Occurrences()宣言の直前)参照――^N/^Pのナビゲーション単位を「行」
+  // から「一致した個々の出現位置」へ細分化したフラットなリスト。
+  // 全マッチを見渡すハイライト自体(grepInPlaceMatches_→
+  // toHighlightMatches())は引き続き行単位のままでよい(そちらは
+  // 変更不要)。
+  std::vector<GrepOccurrence> grepInPlaceOccurrences_;
   int grepInPlaceIndex_ = 0;
   ApplicationMode grepInPlaceOriginMode_ = ApplicationMode::Directory;
   // startIncrementalGrepPrompt()/liveIncrementalGrepSearch()自身の

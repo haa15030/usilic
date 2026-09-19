@@ -31,22 +31,32 @@ struct Cell {
   // ハイライトでやってみて。色は変えられない？薄めの色とか。"):
   // GREPマッチ表示専用の色付き前景(他の属性と同じく独立、standout等
   // と自由に組み合わせ可能)。renderCell()自身のkHighlightColor参照。
+  // 2026-09-19追記(kHighlightCurrentBgColor自身のコメント参照):
+  // highlightは「他の全マッチ」、highlightCurrentは「現在位置の
+  // 一致」――両者は互いに排他(同じスパンが両方trueになることは
+  // 無い、TerminalDisplay::highlightVariant_と同じ理屈)。
   bool highlight = false;
+  bool highlightCurrent = false;
   bool continuation = false;  // 2列幅のグリフの「影」となる2つ目のセル――それ自体では描画されない
 };
 
-// TerminalDisplay::attributeEscape()のHighlight(2026-09-10三度目の
-// 改訂、生ANSI SGR truecolor "\x1b[38;2;176;226;255;48;2;205;0;205m")
-// に見た目を揃えるための-g側の色ペア。自前の「無難な絶対色」の発明
-// (基本16色版→拡張256色版、いずれも実機スクリーンショットで判別
-// しにくい/同化する実例が出た=fz/=ga)をやめ、GNU Emacs自身のisearch
-// face(現在マッチの強調表示)をそのまま拝借する方針へ転換――当て
-// 推量ではなく、実際にEmacs 30.1をPTY経由で起動しC-s検索時に送出
-// される生のエスケープシーケンスをキャプチャして確認済みの値
-// (前景=lightskyblue1 RGB(176,226,255)、背景=magenta3
-// RGB(205,0,205))をそのまま採用している。
-constexpr SDL_Color kHighlightBgColor{205, 0, 205, 255};
-constexpr SDL_Color kHighlightFgColor{176, 226, 255, 255};
+// TerminalDisplay::attributeEscape()のHighlight/HighlightCurrent
+// (2026-09-10三度目の改訂、2026-09-19追記でisearch/lazy-highlightの
+// 2種類に分離)に見た目を揃えるための-g側の色ペア。自前の「無難な
+// 絶対色」の発明(基本16色版→拡張256色版、いずれも実機スクリーン
+// ショットで判別しにくい/同化する実例が出た=fz/=ga)をやめ、GNU
+// Emacs自身のisearch/lazy-highlight faceをそのまま拝借する方針へ
+// 転換――当て推量ではなく、実際にEmacs 30.1をPTY経由で起動しC-s
+// 検索時に送出される生のエスケープシーケンスをキャプチャして確認
+// 済みの値。現在位置の一致(isearch face、旧kHighlightBgColor/
+// kHighlightFgColorから改名)は前景=lightskyblue1 RGB(176,226,255)、
+// 背景=magenta3 RGB(205,0,205)。他の全ての一致(lazy-highlight
+// face)は背景=paleturquoise RGB(175,238,238)のみ(前景は変更しない
+// ――TerminalDisplay::attributeEscape()自身のHighlightケースの
+// コメント参照)。
+constexpr SDL_Color kHighlightCurrentBgColor{205, 0, 205, 255};
+constexpr SDL_Color kHighlightCurrentFgColor{176, 226, 255, 255};
+constexpr SDL_Color kHighlightBgColor{175, 238, 238, 255};
 
 // `utf8Bytes`の先頭のUTF-8シーケンス(他所でfm::Utf8::
 // sequence_length()によって既に正しい長さに分割済み)を、単一の
@@ -553,7 +563,7 @@ struct GraphicalDisplay::Impl {
   int cursorRow = 0, cursorCol = 0;
   int savedRow = 0, savedCol = 0;
   bool standoutActive = false, boldActive = false, underlineActive = false, italicActive = false,
-       highlightActive = false;
+       highlightActive = false, highlightCurrentActive = false;
 
   // renderCursor()が実際に描く「論理的な」カーソル位置――上の
   // cursorRow/cursorCol(純粋に「次のバイトがどこに書かれるか」で
@@ -1122,6 +1132,7 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
   cell.standout = impl_->standoutActive;
   cell.italic = impl_->italicActive;
   cell.highlight = impl_->highlightActive;
+  cell.highlightCurrent = impl_->highlightCurrentActive;
   cell.continuation = false;
 
   if (width == 2 && impl_->cursorCol + 1 < impl_->columns) {
@@ -1133,6 +1144,7 @@ void GraphicalDisplay::commitGlyph(const std::string &utf8Bytes, int width) {
     shadow.standout = cell.standout;
     shadow.italic = cell.italic;
     shadow.highlight = cell.highlight;
+    shadow.highlightCurrent = cell.highlightCurrent;
   }
   impl_->cursorCol += std::max(width, 1);
 }
@@ -1163,10 +1175,12 @@ void GraphicalDisplay::renderCellBackground(int row, int col) {
   SDL_Rect box{Impl::kMarginX + col * impl_->cellWidth, Impl::kMarginY + row * impl_->cellHeight, impl_->cellWidth,
                impl_->cellHeight};
   SDL_Color bg = cell.standout ? impl_->fg : impl_->bg;
-  // kHighlightBgColor自身のコメント参照――standoutの結果を上書きする
-  // (この用途では、たまたまカーソル/マークの反転表示と重なっても、
-  // マッチの背景ハイライトの方を優先して常に見えるようにしたい)。
-  if (cell.highlight) bg = kHighlightBgColor;
+  // kHighlightCurrentBgColor自身のコメント参照――standoutの結果を
+  // 上書きする(この用途では、たまたまカーソル/マークの反転表示と
+  // 重なっても、マッチの背景ハイライトの方を優先して常に見える
+  // ようにしたい)。highlight/highlightCurrentは互いに排他。
+  if (cell.highlightCurrent) bg = kHighlightCurrentBgColor;
+  else if (cell.highlight) bg = kHighlightBgColor;
   SDL_SetRenderDrawColor(impl_->renderer, bg.r, bg.g, bg.b, 255);
   SDL_RenderFillRect(impl_->renderer, &box);
 }
@@ -1180,15 +1194,19 @@ void GraphicalDisplay::renderCell(int row, int col) {
   SDL_Color fg = impl_->fg;
   SDL_Color bg = impl_->bg;
   if (cell.standout) std::swap(fg, bg);
-  // kHighlightBgColor自身のコメント参照(2026-09-10改訂: 前景色だけの
-  // 初版から、背景色+コントラストの取れた前景色のペアへ)――standout
+  // kHighlightCurrentBgColor自身のコメント参照(2026-09-10改訂: 前景色
+  // だけの初版から、背景色+コントラストの取れた前景色のペアへ。
+  // 2026-09-19追記: 現在位置の一致(highlightCurrent)だけがこのfg+bg
+  // ペアを使い、他の全ての一致(highlight)は下のbgのみ)――standout
   // によるfg/bg入れ替えの「後」に両方まとめて上書きすることで、
   // marked行のUnderline/Standoutと共存していても常に一目で分かる
   // (renderCellBackground()が既に同じ背景色をこのセルへ塗っている
   // ので、ここでのbg上書きはグリフ描画のフォールバック/計算上の
   // 一貫性のためだけ――実際に画面へ効くのはfgの方)。
-  if (cell.highlight) {
-    fg = kHighlightFgColor;
+  if (cell.highlightCurrent) {
+    fg = kHighlightCurrentFgColor;
+    bg = kHighlightCurrentBgColor;
+  } else if (cell.highlight) {
     bg = kHighlightBgColor;
   }
 
@@ -1562,8 +1580,12 @@ void GraphicalDisplay::setAttribute(Attribute attr) {
     case Attribute::Highlight:
       impl_->highlightActive = true;
       break;
+    case Attribute::HighlightCurrent:
+      impl_->highlightCurrentActive = true;
+      break;
     case Attribute::HighlightOff:
       impl_->highlightActive = false;
+      impl_->highlightCurrentActive = false;
       break;
   }
 }
@@ -2676,7 +2698,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
     // (このように装飾される唯一のコンテンツ)についてはバイト
     // オフセット==画面上の列である)。
     bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false,
-         wantHighlight = false;
+         wantHighlight = false, wantHighlightCurrent = false;
     for (const auto &run : attributes) {
       if (static_cast<int>(pos) < run.start || static_cast<int>(pos) >= run.end) continue;
       if (run.attribute == Display::Attribute::Bold) wantBold = true;
@@ -2684,6 +2706,7 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
       else if (run.attribute == Display::Attribute::Italic) wantItalic = true;
       else if (run.attribute == Display::Attribute::Highlight) wantHighlight = true;
+      else if (run.attribute == Display::Attribute::HighlightCurrent) wantHighlightCurrent = true;
     }
     // 2026-09-02追加、直接のユーザー依頼("ついでに透かしが消える件も
     // よろしく"): ContentView::scrollHighlightForLine()(main.cpp自身の
@@ -2700,21 +2723,24 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
       SDL_SetRenderDrawColor(impl_->renderer, fg.r, fg.g, fg.b, 255);
       SDL_RenderFillRect(impl_->renderer, &cellRect);
     }
-    // renderCellBackground()自身のkHighlightBgColorコメント参照――
-    // wantStandoutの背景塗りと同じ理屈だが、standoutと重なった場合は
-    // こちらを優先する(常に見えてほしいマッチハイライトなので、上の
-    // if/elseではなく単純に上書きする2回目の塗りにしてある)。
-    if (wantHighlight) {
+    // renderCellBackground()自身のkHighlightCurrentBgColorコメント
+    // 参照――wantStandoutの背景塗りと同じ理屈だが、standoutと重なった
+    // 場合はこちらを優先する(常に見えてほしいマッチハイライトなので、
+    // 上のif/elseではなく単純に上書きする2回目の塗りにしてある)。
+    // wantHighlight/wantHighlightCurrentは互いに排他。
+    if (wantHighlight || wantHighlightCurrent) {
+      SDL_Color hlBg = wantHighlightCurrent ? kHighlightCurrentBgColor : kHighlightBgColor;
       SDL_Rect cellRect{Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y, width * impl_->cellWidth,
                          impl_->cellHeight};
-      SDL_SetRenderDrawColor(impl_->renderer, kHighlightBgColor.r, kHighlightBgColor.g, kHighlightBgColor.b, 255);
+      SDL_SetRenderDrawColor(impl_->renderer, hlBg.r, hlBg.g, hlBg.b, 255);
       SDL_RenderFillRect(impl_->renderer, &cellRect);
     }
     if (glyph != " " && lead >= 0x20) {
       SDL_Color cellFg = wantStandout ? impl_->bg : sdlFg;
-      // renderCell()自身のkHighlightFgColorコメント参照――standoutに
-      // よる入れ替え後に上書きする独立の色ペア。
-      if (wantHighlight) cellFg = kHighlightFgColor;
+      // renderCell()自身のkHighlightCurrentFgColorコメント参照――
+      // standoutによる入れ替え後に上書きする独立の色ペア。他の全ての
+      // 一致(wantHighlight)は前景を変更しない。
+      if (wantHighlightCurrent) cellFg = kHighlightCurrentFgColor;
       // なぜここでもフォールバックフォントが参照されるのかについては
       // renderCell()自身のコメント参照――下の`isWide`のチェックを
       // 含め、2026-08-10追加(実際の報告、"慣性スクロール中は日本語

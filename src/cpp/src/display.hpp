@@ -106,7 +106,27 @@ class Display {
     // ――絶対的な保証は無いが、実績のある選択によりリスクを大きく
     // 下げられる、という主張であり、"Solid Colors"のような完全に
     // ランダムな配色に対してまで無敵になるわけではない)。
+    //
+    // 2026-09-19追記、直接のユーザー報告(PTYハーネスでの再現確認、
+    // Emacsとの比較: "本来マッチするのは*ひとつだけなので**の行は
+    // ^Nを2回押さないと次行へ行かないはずが1回で行ってしまう"):
+    // 上の全ての改訂は「全マッチを一律に同じ色で塗る」version 1の
+    // 話であり、その一律の色として採用したのは実はEmacs自身の
+    // isearch face(現在マッチ専用の強調)だった――^N/^Pの移動先
+    // (grepInPlaceIndex_)が「行」単位だったため「現在マッチ」という
+    // 概念が「行」の粒度でしか存在せず、isearch face本来の役割
+    // (現在マッチ"だけ"の強調)を全マッチに転用しても実害が無かった。
+    // 今回、^N/^Pの移動先を「一致した個々の出現位置」単位まで細かく
+    // した(Application::GrepOccurrence自身のコメント参照)ことで、
+    // 「今どの出現位置にいるか」が初めて全マッチとは別の情報になった
+    // ため、Highlightは「他の全マッチ」(Emacsのlazy-highlight face
+    // 相当、背景paleturquoiseのみ)へ格下げし、新設のHighlightCurrent
+    // が「現在位置の出現」(旧Highlightの値そのまま、isearch face)を
+    // 引き継ぐ。値は当て推量ではなく、こちらも同じくEmacs 30.1を
+    // PTY経由で実際に起動しキャプチャ済み(TerminalDisplay::
+    // attributeEscape()自身のコメント参照)。
     Highlight,
+    HighlightCurrent,
     HighlightOff,
   };
 

@@ -617,7 +617,8 @@ bool ContentView::grepNoMatchActive() const { return grepNoMatchActive_; }
 // 直すと、前回分が焼き込まれて消せなくなる(実際の旧バグ)。File/Man等
 // が既に持つPipeBuffer由来のBold/Underlineも、このスナップショット
 // 経由で保持される。
-void ContentView::setGrepMatchHighlight(const std::vector<GrepHighlightMatch> &matches) {
+void ContentView::setGrepMatchHighlight(const std::vector<GrepHighlightMatch> &matches, int currentLineIndex,
+                                         std::pair<int, int> currentSpan) {
   int savedTop = topIndex_;
   int savedCursor = cursorIndex_;
   if (!grepMatchHighlightActive_) grepMatchHighlightSnapshot_ = lines_;
@@ -626,11 +627,20 @@ void ContentView::setGrepMatchHighlight(const std::vector<GrepHighlightMatch> &m
     int idx = match.sourceLineIndex;
     if (idx < 0 || idx >= static_cast<int>(newLines.size())) continue;
     if (match.matchSpans.empty()) {
-      newLines[idx].attributes.push_back(
-          AttributeRun{0, static_cast<int>(newLines[idx].text.size()), Display::Attribute::Highlight});
+      // 空(行全体をハイライトするフォールバック、GrepHighlightMatch
+      // 自身の宣言コメント参照)の場合、行全体を1件の出現として扱う
+      // ――currentSpanとの厳密な一致判定はできないので、行番号だけで
+      // 現在位置かどうかを決める。
+      Display::Attribute attr =
+          (idx == currentLineIndex) ? Display::Attribute::HighlightCurrent : Display::Attribute::Highlight;
+      newLines[idx].attributes.push_back(AttributeRun{0, static_cast<int>(newLines[idx].text.size()), attr});
     } else {
-      for (const auto &span : match.matchSpans)
-        newLines[idx].attributes.push_back(AttributeRun{span.first, span.second, Display::Attribute::Highlight});
+      for (const auto &span : match.matchSpans) {
+        Display::Attribute attr = (idx == currentLineIndex && span == currentSpan)
+                                       ? Display::Attribute::HighlightCurrent
+                                       : Display::Attribute::Highlight;
+        newLines[idx].attributes.push_back(AttributeRun{span.first, span.second, attr});
+      }
     }
   }
   grepMatchHighlightActive_ = true;
@@ -852,10 +862,28 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
   };
   // Display::Attribute::Highlight自身の宣言コメント参照(2026-09-10
   // 追加、直接のユーザー依頼: "マッチ文字列をboldの代わりにハイ
-  // ライトでやってみて")――setBold()/setItalic()と全く同じ形。
-  bool highlightOn = false;
-  auto setHighlight = [&](bool on) {
-    setAttr(highlightOn, on, Display::Attribute::Highlight, Display::Attribute::HighlightOff);
+  // ライトでやってみて")――setBold()/setItalic()と全く同じ形…
+  // だったが、2026-09-19追記(Display::Attribute::HighlightCurrent
+  // 自身のコメント参照)でHighlight("他の"マッチ)とHighlightCurrent
+  // (現在位置のマッチ)の2つの"on"状態がHighlightOffという1つの"off"
+  // を共有するようになったため、setAttr()自身の単純なbool版では
+  // 足りない――3状態(Off/Regular/Current)を自前で追跡する。
+  enum class HighlightState { Off, Regular, Current };
+  HighlightState highlightState = HighlightState::Off;
+  auto setHighlightState = [&](HighlightState want) {
+    if (want == highlightState) return;
+    switch (want) {
+      case HighlightState::Off:
+        display_.setAttribute(Display::Attribute::HighlightOff);
+        break;
+      case HighlightState::Regular:
+        display_.setAttribute(Display::Attribute::Highlight);
+        break;
+      case HighlightState::Current:
+        display_.setAttribute(Display::Attribute::HighlightCurrent);
+        break;
+    }
+    highlightState = want;
   };
 
   // `markedNow`は、highlightStartが0の場合(よくあるケースで、
@@ -1124,7 +1152,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
       // しては位置がずれてしまう`col`とは異なる)。
       if (!renderedAttributes->empty()) {
         bool wantBold = false, wantUnderline = false, wantStandout = false, wantItalic = false,
-             wantHighlight = false;
+             wantHighlight = false, wantHighlightCurrent = false;
         for (const AttributeRun &run : *renderedAttributes) {
           if (static_cast<int>(idx) < run.start || static_cast<int>(idx) >= run.end) continue;
           if (run.attribute == Display::Attribute::Bold) wantBold = true;
@@ -1132,11 +1160,14 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
           else if (run.attribute == Display::Attribute::Standout) wantStandout = true;
           else if (run.attribute == Display::Attribute::Italic) wantItalic = true;
           else if (run.attribute == Display::Attribute::Highlight) wantHighlight = true;
+          else if (run.attribute == Display::Attribute::HighlightCurrent) wantHighlightCurrent = true;
         }
         setBold(wantBold);
         setUnderline(wantUnderline);
         setItalic(wantItalic);
-        setHighlight(wantHighlight);
+        setHighlightState(wantHighlightCurrent  ? HighlightState::Current
+                           : wantHighlight       ? HighlightState::Regular
+                                                  : HighlightState::Off);
         // 2026-08-29の追加(CopyMode自身の選択ハイライト、
         // copy_mode.hpp参照): この行におけるStandoutの唯一「他の」
         // 源はmarkedNow(highlightStartColumnの、「ここから行末まで」
@@ -1214,7 +1245,7 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
     setBold(false);
     setUnderline(false);
     setItalic(false);
-    setHighlight(false);
+    setHighlightState(HighlightState::Off);
   }
 }
 

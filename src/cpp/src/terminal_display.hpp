@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -188,7 +189,14 @@ class TerminalDisplay : public Display {
   // 「呼び出し元が最後にBold/Underline/Italic/Standoutを要求したか」
   // の記録ではない――BoldOff自身のリセット波及を検知して修復する
   // には、この2つを区別する必要がある)。
-  bool boldOn_ = false, underlineOn_ = false, italicOn_ = false, standoutOn_ = false, highlightOn_ = false;
+  bool boldOn_ = false, underlineOn_ = false, italicOn_ = false, standoutOn_ = false;
+  // 2026-09-19追記(Display::Attribute::HighlightCurrent自身のコメント
+  // 参照): Highlight/HighlightCurrentの2種類に分かれたので、単なる
+  // bool(highlightOn_)では「今どちらが有効か」を区別できない――
+  // BoldOff後の再送出(setAttribute()自身のコメント参照)は正しい方の
+  // エスケープを再送する必要があるため、有効な方のAttributeそのもの
+  // (無効ならnullopt)を保持する。
+  std::optional<Display::Attribute> highlightVariant_;
 };
 
 }  // namespace fm
