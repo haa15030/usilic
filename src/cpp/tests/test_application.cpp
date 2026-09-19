@@ -14311,6 +14311,63 @@ TEST_CASE_FIXTURE(Fixture, "GREP is possible from SHELL mode: searches the shell
   CHECK(app.activeContentView().modeLineText().find("(fgrep)") != std::string::npos);
 }
 
+// 2026-09-20追加、直接のユーザー報告(PTYハーネスでの再現確認: "usilic
+// -c git/usilic→^[s→head C^I^M^Sc^M→FGREPのはずなのに^N/^PがSHELLの
+// 動作となる。^Gでも戻らない"): dispatchByte()自身のgrepInPlaceActive_
+// 向け^N/^P横取りはcurrentMode_==Shellの間feedShellByte()へ丸ごと
+// 委譲されるため一度も届かず、かつactivateGrepInPlace()自身が
+// shell_.beginHistoryBrowsing()を呼ぶせいで、shell自身のhistoryBrowsing()
+// 向け^N/^P/^G分岐に代わりに奪われていた――feedShellByte()自身の
+// 新しいgrepInPlaceActive_優先分岐で修正。直前のテストはactivateまで
+// しか確認していなかった(matches().size()とモードラインの
+// ラベルだけ)ので、ここでは^N/^P/^Gの実際の生バイト入力での挙動まで
+// 確認する。
+TEST_CASE_FIXTURE(Fixture, "SHELL: ^N/^P navigate between in-place GREP matches in the scrollback (not "
+                           "SHELL's own command-history browsing), and the first ^G cancels the search "
+                           "without leaving SHELL") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartShell));
+  // 2つの別コマンドとして投入する(1つのprintfへ埋め込んだ複数の
+  // \nだと1本のscrollback行にまとまってしまう場合がある)――
+  // 確実に2本の別々のscrollback行にするため。
+  app.shell().commandLine().setText("printf 'MARKERONE\\n'");
+  app.shell().submitLine();
+  REQUIRE(pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("MARKERONE") != std::string::npos) return true;
+    return false;
+  }));
+  app.shell().commandLine().setText("printf 'MARKERTWO\\n'");
+  app.shell().submitLine();
+  bool sawOutput = pumpUntil(app, [&] {
+    for (const auto &line : app.shell().scrollback().lines())
+      if (line.text.find("MARKERTWO") != std::string::npos) return true;
+    return false;
+  });
+  REQUIRE(sawOutput);
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
+  feedText("MARKER");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.activeContentView().modeLineText().find("1/2") != std::string::npos);
+
+  CHECK(app.feedByte(0x0e, std::nullopt));  // ^N -- must jump to the 2nd match, not scroll shell history
+  CHECK(app.activeContentView().modeLineText().find("2/2") != std::string::npos);
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+
+  CHECK(app.feedByte(0x10, std::nullopt));  // ^P -- back to the 1st match
+  CHECK(app.activeContentView().modeLineText().find("1/2") != std::string::npos);
+
+  // Command::Back自身のwasGrepInPlaceActiveコメント(handleCommand()
+  // 冒頭)と同じ慣習: 1回目の^Gはin-place検索のハイライトだけを
+  // キャンセルし、Shellには留まる。
+  CHECK(app.feedByte(0x07, std::nullopt));  // ^G (1st)
+  CHECK(app.currentMode() == ApplicationMode::Shell);
+  CHECK(app.activeContentView().modeLineText().find("GREP") == std::string::npos);
+}
+
 // 2026-09-20追加、直接のユーザー報告("^O^S/^J^Sが利かない"):
 // feedShellByte()自身の新しいisShellSafeGrep分岐のコメント参照。
 // FGREP(^O^S)/EGREP(^J^S)は、リーダーシーケンス完了時の事前切り替え

@@ -738,7 +738,21 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     if (shell_.scrollback().grepInPlaceActive() || shell_.scrollback().grepNoMatchActive()) {
       fields.name = shell_.scrollback().grepInPlaceLabel();
       fields.trailing2 = shell_.scrollback().grepInPlaceProgramBadge();
-      fields.trailing3 = shell_.currentDirectory();
+      // 2026-09-20修正、直接のユーザー報告(PTYハーネスでの再現確認、
+      // 通常時のfields.trailing3(shellReturnName_、この関数少し上)と
+      // 見比べて発覚: "戻り値が「.../git/usilic」で「/」で終わって
+      // ない"): shell_.currentDirectory()はShell自身のプロンプト
+      // テキスト(bashの`\w`/zshの`%~`)から抜き出した生の文字列
+      // (Shell::handlePromptDetected()自身のコメント参照)で、
+      // シェル側の表記自体に元々末尾スラッシュが付かない――他の
+      // 全てのモードラインのパス表示(shellReturnName_含む)が常に
+      // 末尾スラッシュ付きなのと食い違って見えていた。表示専用に
+      // ここで補う(shell_.currentDirectory()自体は変更しない――
+      // completeFilesystemPath()等の他の消費者はスラッシュ無しの
+      // ままを期待している)。
+      std::string dir = shell_.currentDirectory();
+      if (!dir.empty() && dir.back() != '/') dir += '/';
+      fields.trailing3 = dir;
       return fields;
     }
     return fields;
@@ -3197,6 +3211,29 @@ bool Application::feedShellByte(int byte, std::optional<KeyInput::SpecialKey> sp
       default:
         return false;
     }
+  }
+
+  // 2026-09-20追加、直接のユーザー報告(PTYハーネスでの再現確認:
+  // "usilic -c git/usilic→^[s→head C^I^M^Sc^M→FGREPのはずなのに
+  // ^N/^PがSHELLの動作となる。^Gでも戻らない"): dispatchByte()自身の
+  // grepInPlaceActive_向けの^N/^P横取り(この関数の少し上のコメント
+  // 参照、"Shell/Copyの上の2分岐と同じ優先度")は、currentMode_==Shell
+  // の間は一度もここへ到達しない――dispatchByte()がcurrentMode_==Shell
+  // を見た時点でfeedShellByte()(この関数自体)へ丸ごと委譲してしまう
+  // ため。同じ横取りをここに複製する必要がある。しかも
+  // activateGrepInPlace()自身がgrepInPlaceOriginMode_==Shellの際に
+  // shell_.beginHistoryBrowsing()を呼ぶ(スクロールバックの閲覧状態を
+  // 借用するため)ので、in-place検索中は下のhistoryBrowsing()向けの
+  // ^N/^P/^G分岐がすぐ下で「代わりに」発火してしまっていた――ここで
+  // grepInPlaceActive_を先にチェックすることで、Command::Back自身の
+  // wasGrepInPlaceActiveコメント(application.cpp、handleCommand()冒頭)
+  // と同じ「一番内側の状態から先にキャンセルする」慣習に揃える。
+  if (grepInPlaceActive_ && !special && (byte == 0x0e || byte == 0x10)) {
+    return handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
+  }
+  if (grepInPlaceActive_ && byte == kControlG) {
+    deactivateGrepInPlace();
+    return true;
   }
 
   // 2026-08-26のバグ修正(実際の報告: `df`/`ls`を実行してから、^Gから
