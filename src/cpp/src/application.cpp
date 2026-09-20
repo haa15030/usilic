@@ -730,29 +730,18 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     fields.rightWatermark = hasPrev ? "" : "usilic v1.5b";
     fields.trailing2 = "(" + shell_.programName() + ")";
     fields.trailing3 = shellReturnName_;
-    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
-    // 反映してほしい"): ManMode等自身の同じ分岐のコメント参照。
-    // trailing2は成功時と同じ"(grep)"バッジへ差し替え、trailing3は
-    // 検索元(SHELL自身の現在のディレクトリ)を示す(shellReturnName_
-    // ――^Gの戻り先――ではない)。
+    // 2026-09-20修正(design.md「先走りバグの修正」参照、直接のユーザー
+    // 指摘): 2026-09-11に「検索中はtrailing3を検索元(SHELL自身の現在の
+    // ディレクトリ)へ差し替える」形にしていたが、これはTUTORIALの
+    // 「mode-line{6}=^Gの行き先」という契約と食い違う――trailing3が
+    // パスっぽい値を示すと、そこへ^Gで戻れると誤解させる(実際には
+    // 検索中の^Gは検索解除のみでどこへも遷移しない)。trailing2
+    // ("(grep)"系バッジ)/nameの差し替えはそのまま維持し、trailing3
+    // だけは通常時と同じshellReturnName_(実際の戻り先)を表示し
+    // 続ける――ここで何もしないのがその意味。
     if (shell_.scrollback().grepInPlaceActive() || shell_.scrollback().grepNoMatchActive()) {
       fields.name = shell_.scrollback().grepInPlaceLabel();
       fields.trailing2 = shell_.scrollback().grepInPlaceProgramBadge();
-      // 2026-09-20修正、直接のユーザー報告(PTYハーネスでの再現確認、
-      // 通常時のfields.trailing3(shellReturnName_、この関数少し上)と
-      // 見比べて発覚: "戻り値が「.../git/usilic」で「/」で終わって
-      // ない"): shell_.currentDirectory()はShell自身のプロンプト
-      // テキスト(bashの`\w`/zshの`%~`)から抜き出した生の文字列
-      // (Shell::handlePromptDetected()自身のコメント参照)で、
-      // シェル側の表記自体に元々末尾スラッシュが付かない――他の
-      // 全てのモードラインのパス表示(shellReturnName_含む)が常に
-      // 末尾スラッシュ付きなのと食い違って見えていた。表示専用に
-      // ここで補う(shell_.currentDirectory()自体は変更しない――
-      // completeFilesystemPath()等の他の消費者はスラッシュ無しの
-      // ままを期待している)。
-      std::string dir = shell_.currentDirectory();
-      if (!dir.empty() && dir.back() != '/') dir += '/';
-      fields.trailing3 = dir;
       return fields;
     }
     return fields;
@@ -1423,15 +1412,16 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     ContentView::ModeLineFields fields{"MAN", std::to_string(contentByteCount(manView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/"(man)"};
-    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
-    // 反映してほしい"): DirectoryMode/FileMode自身の同じ分岐のコメント
-    // 参照。trailing3はここでも「検索元」(このman page自身のトピック)
-    // を示す――戻り先(previousModeName())ではない。
+    // 2026-09-20修正(design.md「先走りバグの修正」参照、直接のユーザー
+    // 指摘): 2026-09-11に「検索中はtrailing3を検索元(このman page自身の
+    // トピック)へ差し替える」形にしていたが、TUTORIALの「mode-line{6}=
+    // ^Gの行き先」という契約と食い違っていた(検索中の^Gは検索解除のみで
+    // どこへも遷移しないため)。name/trailing2の差し替えは維持し、
+    // trailing3は下の通常時と同じpreviousModeName()計算にそのまま委ねる
+    // (早期returnせず、下の共通コードへ流す)。
     if (manView_.grepInPlaceActive() || manView_.grepNoMatchActive()) {
       fields.name = manView_.grepInPlaceLabel();
       fields.trailing2 = manView_.grepInPlaceProgramBadge();
-      fields.trailing3 = manMode_.currentPage();
-      return fields;
     }
     // 2026-09-19四訂正、直接のユーザー提案("フラグはなるべく使いたく
     // ない...旧版のようにスタックへの積み降ろしでは対応できない？"):
@@ -1493,14 +1483,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 形に揃える。
     ContentView::ModeLineFields fields{"LOCATE", std::to_string(contentByteCount(locateView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", /*trailing2=*/""};
-    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
-    // 反映してほしい"): ManMode自身の同じ分岐のコメント参照。trailing3
-    // はここでも「検索元」(このLOCATE結果自身のクエリ)を示す。
+    // 2026-09-20修正(ManMode自身の同じ分岐のコメント参照): 検索中の
+    // trailing3を検索元(このLOCATE結果自身のクエリ)へ差し替える旧仕様は
+    // TUTORIAL契約と食い違うため撤回。name/trailing2の差し替えのみ維持し、
+    // trailing3は下の通常時と同じpreviousModeName()計算に委ねる。
     if (locateView_.grepInPlaceActive() || locateView_.grepNoMatchActive()) {
       fields.name = locateView_.grepInPlaceLabel();
       fields.trailing2 = locateView_.grepInPlaceProgramBadge();
-      fields.trailing3 = locateMode_.query();
-      return fields;
     }
     fields.trailing3 = previousModeName(locateReturnStack_.back());
     return fields;
@@ -1552,14 +1541,13 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     ContentView::ModeLineFields fields{"DU", std::to_string(contentByteCount(duView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/""};
-    // 2026-09-11追加、直接のユーザー依頼("^Sと^[iをFILE/DIR以外へも
-    // 反映してほしい"): ManMode/LocateMode自身の同じ分岐のコメント
-    // 参照。trailing3はここでも「検索元」(集計対象のルート)を示す。
+    // 2026-09-20修正(ManMode/LocateMode自身の同じ分岐のコメント参照):
+    // 検索中のtrailing3を検索元(集計対象のルート)へ差し替える旧仕様は
+    // TUTORIAL契約と食い違うため撤回。name/trailing2の差し替えのみ維持し、
+    // trailing3は下の通常時と同じpreviousModeName()計算に委ねる。
     if (duView_.grepInPlaceActive() || duView_.grepNoMatchActive()) {
       fields.name = duView_.grepInPlaceLabel();
       fields.trailing2 = duView_.grepInPlaceProgramBadge();
-      fields.trailing3 = duMode_.currentPath();
-      return fields;
     }
     fields.trailing3 = previousModeName(duReturnStack_.back());
     return fields;
