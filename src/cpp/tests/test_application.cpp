@@ -13219,6 +13219,135 @@ TEST_CASE_FIXTURE(Fixture, "startPagerFileList: ^G stays a no-op even AFTER the 
   CHECK(app.currentMode() == ApplicationMode::File);  // did NOT fall through to an empty Directory
 }
 
+// -- Command::StartUnderlineView / UnderlineViewNext / UnderlineViewPrevious (^Ou) --
+// 2026-09-20 (a direct user request, an addition to the TUTORIAL being
+// edited: "(ls) では、通常ファイルを複数選択すると、アンダーラインが
+// 付加されて閲覧...の対象となります...^Ou ではそれらが順に画面表示さ
+// れ、; および : キーでファイルを移動します"): reuses the same
+// pagerFileList_/navigateToPagerFile() machinery as the CLI-launched
+// pager file list above, but sourced from DirectoryMode::
+// targetEntries() (marked files, or the cursor entry) instead of
+// command-line arguments, and navigated with ';'/':' instead of
+// n/p/x/f -- per the user's explicit instruction ("それをやめてマクロ
+// キーの;と:に合わせたい") those are disabled during this session
+// (confirmed via AskUserQuestion: "完全に無効化").
+
+TEST_CASE_FIXTURE(Fixture, "^Ou: with no explicit mark, the cursor's single regular-file entry opens, "
+                           "same as an ordinary Enter") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+
+  REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "^Ou: with two regular files marked, the first one (in listing order) opens") {
+  REQUIRE(app.start(path()));
+  int plainIdx = indexOf("plain.txt");
+  int logIdx = indexOf("log.txt");
+  REQUIRE(plainIdx >= 0);
+  REQUIRE(logIdx >= 0);
+  int idxA = std::min(plainIdx, logIdx);
+  std::string nameA = (idxA == plainIdx) ? "plain.txt" : "log.txt";
+  int idxB = std::max(plainIdx, logIdx);
+
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / nameA).string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "^Ou: marking only a directory is a no-op (regular files only, per the "
+                           "TUTORIAL wording)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+
+  CHECK_FALSE(app.handleCommand(Command::StartUnderlineView));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^Ou: ':' and ';' switch between marked files, with no wrap-around at "
+                           "either end, and 'n'/'p'/'x'/'f' are disabled during the session") {
+  REQUIRE(app.start(path()));
+  int plainIdx = indexOf("plain.txt");
+  int logIdx = indexOf("log.txt");
+  int idxA = std::min(plainIdx, logIdx);
+  std::string nameA = (idxA == plainIdx) ? "plain.txt" : "log.txt";
+  std::string nameB = (idxA == plainIdx) ? "log.txt" : "plain.txt";
+  int idxB = std::max(plainIdx, logIdx);
+
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  CHECK(app.fileMode().currentFile() == (root / nameA).string());
+
+  CHECK(app.feedByte(':', std::nullopt));
+  CHECK(app.fileMode().currentFile() == (root / nameB).string());
+  CHECK_FALSE(app.feedByte(':', std::nullopt));  // already the last file -- no-op
+  CHECK(app.fileMode().currentFile() == (root / nameB).string());
+
+  CHECK(app.feedByte(';', std::nullopt));
+  CHECK(app.fileMode().currentFile() == (root / nameA).string());
+  CHECK_FALSE(app.feedByte(';', std::nullopt));  // already the first file -- no-op
+  CHECK(app.fileMode().currentFile() == (root / nameA).string());
+
+  CHECK_FALSE(app.feedByte('n', std::nullopt));
+  CHECK_FALSE(app.feedByte('p', std::nullopt));
+  CHECK_FALSE(app.feedByte('x', std::nullopt));
+  CHECK_FALSE(app.feedByte('f', std::nullopt));
+  CHECK(app.fileMode().currentFile() == (root / nameA).string());  // unchanged by any of the above
+}
+
+TEST_CASE_FIXTURE(Fixture, "^Ou: outside an active session, ';'/':' keep their ordinary JumpPrevious/"
+                           "JumpNext meaning (Back+Move+Enter), not this session's file navigation") {
+  REQUIRE(app.start(path()));
+  CHECK(Application::resolveCommand(';', std::nullopt) == Command::JumpPrevious);
+  CHECK(Application::resolveCommand(':', std::nullopt) == Command::JumpNext);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^Ou: ^G returns to Directory and clears the session so it doesn't leak into "
+                           "a later, unrelated single-file view") {
+  REQUIRE(app.start(path()));
+  int plainIdx = indexOf("plain.txt");
+  int logIdx = indexOf("log.txt");
+  int idxA = std::min(plainIdx, logIdx);
+  int idxB = std::max(plainIdx, logIdx);
+
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.feedByte(':', std::nullopt));  // move off the first file before backing out
+
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+
+  // A later, ordinary single-file open (not through ^Ou) must not be
+  // navigable via ';'/':'/n/p -- the prior session's state must be gone.
+  int subIdx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != subIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/
+  int subFileIdx = indexOf("sub.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != subFileIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // open sub.txt normally
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "subdir" / "sub.txt").string());
+
+  CHECK_FALSE(app.feedByte('n', std::nullopt));
+  CHECK(app.fileMode().currentFile() == (root / "subdir" / "sub.txt").string());
+}
+
 // 2026-09-06追記: この2つのテストは元々、"(Exit)"通知が一瞬の
 // EAGAIN(書き込み側は開いたまま)と本物のEOFのどちらでも等しく出る
 // ことを確認していたが、その通知自体を直接のユーザー報告("バイト

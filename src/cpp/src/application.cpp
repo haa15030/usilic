@@ -2173,6 +2173,16 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   if (grepInPlaceActive_ && !special && (byte == 0x0e || byte == 0x10)) {
     return handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
   }
+  // 2026-09-20追加、Command::UnderlineViewNext/Previous自身の宣言
+  // コメント参照(`^Ou`): セッション中だけ、通常のresolveCommand()の
+  // ';'/':'(JumpPrevious/JumpNext)より先に横取りする――すぐ上の
+  // grepInPlaceActive_向け^N/^P横取りと同じ優先度・同じ理由。File
+  // モードはShellのような専用のfeedXxxByte()を持たずこの
+  // dispatchByte()自身の下のresolveCommand()経路をそのまま通るため、
+  // grepInPlaceActive_の側とは異なりfeedShellByte()向けの複製は不要。
+  if (underlineViewActive_ && !special && (byte == ';' || byte == ':')) {
+    return handleCommand(byte == ':' ? Command::UnderlineViewNext : Command::UnderlineViewPrevious);
+  }
   // GrepPattern/CutPattern/ManName自身の「Select ...」リスト
   // (startRegexPromptList()自身のコメント参照): 他の全てのListBrowser
   // の使い方(FILE/DIR/SHELL/PROGRAMのピッカー、全て純粋なナビゲート+
@@ -2969,6 +2979,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::PageDown);
       case 0x02:  // ^O ^B : ページ戻し(SHELL内から)
         return handleCommand(Command::PageUp);
+      // 2026-09-20追加、Command::StartUnderlineView自身の宣言コメント
+      // 参照(編集中のTUTORIALへの追記、直接のユーザー依頼): File-
+      // selectorでマークした通常ファイルを順に閲覧する。
+      case 'u':
+        return handleCommand(Command::StartUnderlineView);
       default:
         return false;  // このスライスでは認識されない^Oシーケンス
     }
@@ -3867,6 +3882,17 @@ bool Application::handleCommand(Command command) {
           // 明示的に閉じないと次のloadFile()/loadStream()まで開いた
           // ままになる)をここで閉じる。
           fileMode_.closeStream();
+          // 2026-09-20追加、Command::StartUnderlineView自身の宣言
+          // コメント参照: `^Ou`セッションからのBackもここを通る
+          // (pagerReturnsToDirectory()がtrueのため)。この枝を素通り
+          // するK-23/^Jp引き渡しのケースはpagerFileList_/
+          // underlineViewActive_のどちらも元々触れていないので、
+          // ここでのクリアはそちらには無害――次の無関係な単発File
+          // 表示でn/p/;/:がこのセッションの残り香として誤動作しない
+          // ようにする。
+          underlineViewActive_ = false;
+          pagerFileList_.clear();
+          pagerFileIndex_ = 0;
         } else if (fileMode_.isPagerMode()) {
           if (fileMode_.pagerReturnsToShell()) {
             return returnPagerToShell();
@@ -4072,21 +4098,49 @@ bool Application::handleCommand(Command command) {
       // Directory/Archive専用であり(toggleMark()自体が既にそれで
       // ゲートされている、それ自身のbody参照)、そこでは単にno-opに
       // なるだけなので、最初にチェックする。
-      if (currentMode_ == ApplicationMode::File) return navigateToPagerFile(pagerFileIndex_ + 1);
+      // 2026-09-20追加: underlineViewActive_の間は無効化(2026-09-20の
+      // AskUserQuestionでユーザー承認、Command::StartUnderlineView自身
+      // の宣言コメント参照)――下のtoggleMark()(Directory/Archive
+      // 専用、Fileモードでは元々no-op)へそのまま素通しする。
+      if (currentMode_ == ApplicationMode::File && !underlineViewActive_) {
+        return navigateToPagerFile(pagerFileIndex_ + 1);
+      }
       if (!toggleMark()) return false;
       return handleCommand(Command::MoveDown);
     case Command::MarkAndRetreat:
-      if (currentMode_ == ApplicationMode::File) return navigateToPagerFile(pagerFileIndex_ - 1);
+      if (currentMode_ == ApplicationMode::File && !underlineViewActive_) {
+        return navigateToPagerFile(pagerFileIndex_ - 1);
+      }
       if (!toggleMark()) return false;
       return handleCommand(Command::MoveUp);
     case Command::PagerNextFile:
+      if (underlineViewActive_) return false;  // 上のMarkAndAdvance自身のコメント参照
       return navigateToPagerFile(pagerFileIndex_ + 1);
     case Command::PagerPreviousFile:
+      if (underlineViewActive_) return false;
       return navigateToPagerFile(pagerFileIndex_ - 1);
     case Command::PagerFirstFile:
+      if (underlineViewActive_) return false;
       return navigateToPagerFile(0);
     case Command::PagerLastFile:
+      if (underlineViewActive_) return false;
       return navigateToPagerFile(static_cast<int>(pagerFileList_.size()) - 1);
+    case Command::StartUnderlineView:
+      return startUnderlineFileView();
+    case Command::UnderlineViewNext:
+      if (!underlineViewActive_) return false;
+      if (!navigateToPagerFile(pagerFileIndex_ + 1)) return false;
+      // navigateToPagerFile()内部のloadStream()がpagerReturnsToDirectory_
+      // をfalseへリセットする――FileMode::loadContentAsPipe()自身の
+      // コメント参照、「呼んだ後に立てる」という同じパターンをここでも
+      // 繰り返す。
+      fileMode_.setPagerReturnsToDirectory(true);
+      return true;
+    case Command::UnderlineViewPrevious:
+      if (!underlineViewActive_) return false;
+      if (!navigateToPagerFile(pagerFileIndex_ - 1)) return false;
+      fileMode_.setPagerReturnsToDirectory(true);
+      return true;
     case Command::QuickLook:
       return executeQuickLook();
     case Command::StartCopy:
@@ -5504,6 +5558,37 @@ std::vector<std::string> Application::collectTargetPaths() const {
     paths.push_back(std::move(path));
   }
   return paths;
+}
+
+std::vector<std::string> Application::collectTargetFilePaths() const {
+  std::vector<std::string> paths;
+  std::string dir = directoryMode_.currentDirectory();
+  for (const auto &entry : directoryMode_.targetEntries()) {
+    if (entry.isDirectory) continue;  // collectTargetPaths()自身のコメント参照――^Ouは通常ファイルのみが対象
+    std::string path = dir;
+    if (!path.empty() && path.back() != '/') path += '/';
+    path += entry.name;
+    while (path.size() > 1 && path.back() == '/') path.pop_back();
+    paths.push_back(std::move(path));
+  }
+  return paths;
+}
+
+bool Application::startUnderlineFileView() {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  std::vector<std::string> paths = collectTargetFilePaths();
+  if (paths.empty()) return false;
+  if (!startPagerFileList(paths)) return false;
+  // startPagerFileList()自身のコメント参照: 対象が1件かつHELP
+  // マークアップ形式のファイルだった場合はloadFile()経由で読み込まれ
+  // pagerFileList_が空のまま返る――その場合hasActiveStream()もfalse
+  // になるので、通常のFileモードと同じくBackがそのまま機能し、
+  // underlineViewActive_という特別扱いは不要(そもそも';'/':'で
+  // 切り替える相手も無い)。
+  if (pagerFileList_.empty()) return true;
+  underlineViewActive_ = true;
+  fileMode_.setPagerReturnsToDirectory(true);
+  return true;
 }
 
 bool Application::openSelectedSegment() {
