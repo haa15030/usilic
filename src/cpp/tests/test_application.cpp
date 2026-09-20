@@ -5419,13 +5419,21 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a result opens it (Directory or Fil
 // the annotation AND the byte-count-not-dropped fix (fitModeLineFields()'s
 // new fallback tier, see its own comment) can both be checked exactly,
 // unconditionally.
-// 2026-08-14 fix (two direct user corrections): the name field is
-// "LOCATE" (not the bare filename) and the trailing2 field is the raw
+// 2026-08-14 fix (two direct user corrections): the name field was
+// "LOCATE" (not the bare filename) and the trailing2 field the raw
 // path with NO "LOCATE: " prefix (not "LOCATE: <path>") -- see
 // FileMode::setSearchOrigin()'s own comment. Also: ^G from here
 // returns to LOCATE's own results list, not straight to (ls)
 // (fileReturnMode_, see its own declaration comment).
-TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a File result sets name=\"LOCATE\" + the raw path as trailing2, "
+//
+// 2026-09-20 reversal (direct user correction, HISTORY.md:18022, a
+// concrete real-machine example): the 2026-08-14 field assignment is
+// backwards from the convention this whole session's mode-line work
+// converged on -- name should show what you're actually LOOKING AT
+// (the file's own path), and the return-value field should carry the
+// short destination label ("LOCATE") -- not the other way around. See
+// openSelectedLocateResult()'s own 2026-09-20 comment.
+TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a File result sets name=the raw path, trailing2=\"LOCATE\", "
                            "still shows the byte count, and ^G returns to LOCATE results") {
   fs::path target = root / "found.txt";
   { std::ofstream(target) << "hello"; }  // 5 bytes
@@ -5448,8 +5456,8 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a File result sets name=\"LOCATE\" 
   REQUIRE(app.currentMode() == ApplicationMode::File);
   REQUIRE(app.fileMode().currentFile() == target.string());
   const std::string &modeLine = app.activeContentView().modeLineText();
-  CHECK(modeLine.substr(0, 6) == "LOCATE");  // the name field itself, not the bare filename
-  CHECK(modeLine.find(target.string()) != std::string::npos);  // the raw path, no "LOCATE: " prefix
+  CHECK(modeLine.substr(0, target.string().size()) == target.string());  // the name field is the raw path itself
+  CHECK(modeLine.find("LOCATE") != std::string::npos);  // the return-value field, literal "LOCATE" (no path there anymore)
   CHECK(modeLine.find("5") != std::string::npos);  // the byte count, no longer dropped alongside the long path
 
   CHECK(app.handleCommand(Command::Back));
@@ -13219,31 +13227,46 @@ TEST_CASE_FIXTURE(Fixture, "startPagerFileList: ^G stays a no-op even AFTER the 
   CHECK(app.currentMode() == ApplicationMode::File);  // did NOT fall through to an empty Directory
 }
 
-// -- Command::StartUnderlineView / UnderlineViewNext / UnderlineViewPrevious (^Ou) --
+// -- Command::StartUnderlineView / ApplicationMode::Underline (^Ou) --
 // 2026-09-20 (a direct user request, an addition to the TUTORIAL being
 // edited: "(ls) では、通常ファイルを複数選択すると、アンダーラインが
 // 付加されて閲覧...の対象となります...^Ou ではそれらが順に画面表示さ
-// れ、; および : キーでファイルを移動します"): reuses the same
-// pagerFileList_/navigateToPagerFile() machinery as the CLI-launched
-// pager file list above, but sourced from DirectoryMode::
-// targetEntries() (marked files, or the cursor entry) instead of
-// command-line arguments, and navigated with ';'/':' instead of
-// n/p/x/f -- per the user's explicit instruction ("それをやめてマクロ
-// キーの;と:に合わせたい") those are disabled during this session
-// (confirmed via AskUserQuestion: "完全に無効化").
+// れ、; および : キーでファイルを移動します").
+//
+// 2026-09-20 redesign (the first implementation, which reused the
+// CLI-launched "pager file list" (pagerFileList_/navigateToPagerFile(),
+// FileMode::isPagerMode()) and intercepted raw ';'/':' bytes in
+// dispatchByte(), was withdrawn after direct user feedback): that
+// reuse dragged in `isPagerMode()`-specific behavior never intended for
+// this feature (e.g. 'q' would exit the whole usilic process, per
+// Command::QuitPager's own File-mode branch -- see HISTORY.md:18159's
+// "usilic内で完結させたい" precedent for why that's undesirable), and
+// intercepting ';'/':' hid their real meaning (Command::JumpNext/
+// JumpPrevious, the Back+Move+Enter macro) instead of letting CUT/
+// LOCATE/DU's own established pattern -- a dedicated list mode that
+// JumpNext/Previous can cycle through unmodified -- do the same job.
+// ApplicationMode::Underline (UnderlineMode, its own underlineView_) is
+// that dedicated list mode: ^Ou shows the marked files; Enter opens the
+// selected one (fileReturnMode_ = Underline, exactly like Du/Locate);
+// Back returns to it; and ';'/':' therefore need no special-casing at
+// all -- JumpNext/Previous's own Back+Move+Enter already cycles through
+// this list once Back correctly routes back into it.
 
-TEST_CASE_FIXTURE(Fixture, "^Ou: with no explicit mark, the cursor's single regular-file entry opens, "
-                           "same as an ordinary Enter") {
+TEST_CASE_FIXTURE(Fixture, "^Ou: with no explicit mark, the cursor's single regular-file entry is the "
+                           "sole entry in the UNDER list") {
   REQUIRE(app.start(path()));
   int idx = indexOf("plain.txt");
   while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
 
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(app.fileMode().currentFile() == (root / "plain.txt").string());
+  CHECK(app.currentMode() == ApplicationMode::Underline);
+  REQUIRE(app.underlineMode().entries().size() == 1);
+  CHECK(app.underlineMode().entries()[0] == (root / "plain.txt").string());
 }
 
-TEST_CASE_FIXTURE(Fixture, "^Ou: with two regular files marked, the first one (in listing order) opens") {
+TEST_CASE_FIXTURE(Fixture, "^Ou: with two regular files marked, both appear in listing order, and "
+                           "marking only a directory is a no-op (regular files only, per the TUTORIAL "
+                           "wording)") {
   REQUIRE(app.start(path()));
   int plainIdx = indexOf("plain.txt");
   int logIdx = indexOf("log.txt");
@@ -13251,6 +13274,7 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: with two regular files marked, the first one (i
   REQUIRE(logIdx >= 0);
   int idxA = std::min(plainIdx, logIdx);
   std::string nameA = (idxA == plainIdx) ? "plain.txt" : "log.txt";
+  std::string nameB = (idxA == plainIdx) ? "log.txt" : "plain.txt";
   int idxB = std::max(plainIdx, logIdx);
 
   while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
@@ -13259,23 +13283,27 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: with two regular files marked, the first one (i
   REQUIRE(app.handleCommand(Command::ToggleMark));
 
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(app.fileMode().currentFile() == (root / nameA).string());
-}
+  CHECK(app.currentMode() == ApplicationMode::Underline);
+  REQUIRE(app.underlineMode().entries().size() == 2);
+  CHECK(app.underlineMode().entries()[0] == (root / nameA).string());
+  CHECK(app.underlineMode().entries()[1] == (root / nameB).string());
 
-TEST_CASE_FIXTURE(Fixture, "^Ou: marking only a directory is a no-op (regular files only, per the "
-                           "TUTORIAL wording)") {
-  REQUIRE(app.start(path()));
-  int idx = indexOf("subdir/");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  // returnFromUnderline() never touches directoryMode_'s own marks (no
+  // enterDirectory() call, same listing throughout), so nameA/nameB are
+  // still marked here -- clear them before exercising the
+  // directory-only case below.
+  REQUIRE(app.handleCommand(Command::Back));
+  app.directoryMode().clearMarks();
+  int dirIdx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
-
   CHECK_FALSE(app.handleCommand(Command::StartUnderlineView));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
-TEST_CASE_FIXTURE(Fixture, "^Ou: ':' and ';' switch between marked files, with no wrap-around at "
-                           "either end, and 'n'/'p'/'x'/'f' are disabled during the session") {
+TEST_CASE_FIXTURE(Fixture, "^Ou: Enter opens the selected entry (fileReturnMode_ = Underline), Back "
+                           "returns to the UNDER list with the cursor preserved, and a second Back "
+                           "returns to Directory") {
   REQUIRE(app.start(path()));
   int plainIdx = indexOf("plain.txt");
   int logIdx = indexOf("log.txt");
@@ -13289,63 +13317,63 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: ':' and ';' switch between marked files, with n
   while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
   REQUIRE(app.handleCommand(Command::StartUnderlineView));
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == (root / nameA).string());
 
-  CHECK(app.feedByte(':', std::nullopt));
+  // JumpNext (':') is the ordinary, UNMODIFIED Back+MoveDown+Enter
+  // macro -- no ^Ou-specific interception exists at all. Pressed while
+  // VIEWING nameA's content (not while sitting on the UNDER list
+  // overview itself -- see the dedicated test below for that case),
+  // Back returns to the UNDER list with the cursor still on nameA's
+  // row (this Back path never touched the cursor), so MoveDown+Enter
+  // opens nameB directly -- exactly the "cycle through the marked
+  // files" behavior this feature exists for.
+  REQUIRE(app.handleCommand(Command::JumpNext));
+  CHECK(app.currentMode() == ApplicationMode::File);
   CHECK(app.fileMode().currentFile() == (root / nameB).string());
-  CHECK_FALSE(app.feedByte(':', std::nullopt));  // already the last file -- no-op
-  CHECK(app.fileMode().currentFile() == (root / nameB).string());
-
-  CHECK(app.feedByte(';', std::nullopt));
-  CHECK(app.fileMode().currentFile() == (root / nameA).string());
-  CHECK_FALSE(app.feedByte(';', std::nullopt));  // already the first file -- no-op
-  CHECK(app.fileMode().currentFile() == (root / nameA).string());
-
-  CHECK_FALSE(app.feedByte('n', std::nullopt));
-  CHECK_FALSE(app.feedByte('p', std::nullopt));
-  CHECK_FALSE(app.feedByte('x', std::nullopt));
-  CHECK_FALSE(app.feedByte('f', std::nullopt));
-  CHECK(app.fileMode().currentFile() == (root / nameA).string());  // unchanged by any of the above
-}
-
-TEST_CASE_FIXTURE(Fixture, "^Ou: outside an active session, ';'/':' keep their ordinary JumpPrevious/"
-                           "JumpNext meaning (Back+Move+Enter), not this session's file navigation") {
-  REQUIRE(app.start(path()));
-  CHECK(Application::resolveCommand(';', std::nullopt) == Command::JumpPrevious);
-  CHECK(Application::resolveCommand(':', std::nullopt) == Command::JumpNext);
-}
-
-TEST_CASE_FIXTURE(Fixture, "^Ou: ^G returns to Directory and clears the session so it doesn't leak into "
-                           "a later, unrelated single-file view") {
-  REQUIRE(app.start(path()));
-  int plainIdx = indexOf("plain.txt");
-  int logIdx = indexOf("log.txt");
-  int idxA = std::min(plainIdx, logIdx);
-  int idxB = std::max(plainIdx, logIdx);
-
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::ToggleMark));
-  REQUIRE(app.handleCommand(Command::StartUnderlineView));
-  REQUIRE(app.feedByte(':', std::nullopt));  // move off the first file before backing out
 
   REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Underline);
+  REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
+}
 
-  // A later, ordinary single-file open (not through ^Ou) must not be
-  // navigable via ';'/':'/n/p -- the prior session's state must be gone.
-  int subIdx = indexOf("subdir/");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != subIdx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));  // descend into subdir/
-  int subFileIdx = indexOf("sub.txt");
-  while (indexOf(app.directoryMode().selectedEntry()->name) != subFileIdx) app.handleCommand(Command::MoveDown);
-  REQUIRE(app.handleCommand(Command::Enter));  // open sub.txt normally
-  CHECK(app.currentMode() == ApplicationMode::File);
-  CHECK(app.fileMode().currentFile() == (root / "subdir" / "sub.txt").string());
+TEST_CASE_FIXTURE(Fixture, "^Ou: JumpNext/JumpPrevious pressed on the UNDER list screen itself (not "
+                           "while viewing one of its files) keep their ordinary, generic meaning -- "
+                           "Back leaves the list entirely, landing in Directory -- since that generic "
+                           "macro was never given any ^Ou-specific special-casing") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.currentMode() == ApplicationMode::Underline);
 
-  CHECK_FALSE(app.feedByte('n', std::nullopt));
-  CHECK(app.fileMode().currentFile() == (root / "subdir" / "sub.txt").string());
+  app.handleCommand(Command::JumpNext);  // Back(-> Directory) + MoveDown + Enter, generic and unmodified
+  CHECK(app.currentMode() != ApplicationMode::Underline);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^Ou: a file opened from the UNDER list shows its own path as the mode-line "
+                           "name and the literal \"UNDER\" as the return-value field (2026-09-20 "
+                           "convention: name = what you're looking at, not how you got there)") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.handleCommand(Command::Enter));
+
+  std::string modeLine = app.activeContentView().modeLineText();
+  CHECK(modeLine.find((root / "plain.txt").string()) != std::string::npos);
+  CHECK(modeLine.find("UNDER") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "^Ou: ';'/':' keep their ordinary JumpPrevious/JumpNext resolution -- no "
+                           "dedicated Command exists for this feature, unlike the withdrawn first "
+                           "implementation") {
+  CHECK(Application::resolveCommand(';', std::nullopt) == Command::JumpPrevious);
+  CHECK(Application::resolveCommand(':', std::nullopt) == Command::JumpNext);
 }
 
 // 2026-09-06追記: この2つのテストは元々、"(Exit)"通知が一瞬の

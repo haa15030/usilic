@@ -529,6 +529,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       archiveView_(display),
       archiveContentView_(display),
       duView_(display),
+      underlineView_(display),
       listBrowserView_(display),
       copyView_(display),
       promptEditor_(display, encoding),
@@ -548,6 +549,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
       }()),
       cpMvRmMode_(configuration, keyInput, &errorLogPath_),
       duMode_(duView_, history, configuration),
+      underlineMode_(underlineView_),
       listBrowserMode_(listBrowserView_),
       editMode_(keyInput, configuration),
       execMode_(keyInput),
@@ -1554,6 +1556,22 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     fields.trailing3 = previousModeName(duReturnStack_.back());
     return fields;
   });
+  // 2026-09-20新設、Command::StartUnderlineView自身の宣言コメント
+  // 参照(`^Ou`)。Du/Locateとは異なり、この一覧は常にDirectoryから
+  // 直接発動し(検索プロンプトも、他モード経由の着地も無い)、
+  // duReturnStack_/locateReturnStack_のような「^Gの実際の戻り先が
+  // 途中で変わり得る」複雑さが無いので、trailing3は素直に
+  // directoryMode_.currentDirectory()(この一覧の唯一の戻り先)を
+  // そのまま出す――ArchiveMode自身のtrailing3=currentArchive_という
+  // 無接頭辞の慣習と同じ理屈(duView_自身の同種のコメント参照)。
+  underlineView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
+    if (underlineMode_.entries().empty()) return {};
+    ContentView::ModeLineFields fields{"UNDER", std::to_string(contentByteCount(underlineView_)),
+                                        /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
+                                        /*trailing2=*/""};
+    fields.trailing3 = directoryMode_.currentDirectory();
+    return fields;
+  });
   // archiveContentView_は、すぐ上で使われている素のバイト数だけの形
   // ではなく、fileView_自身の形(展開された単一のエントリの生の
   // コンテンツ、name=リテラルなモードの単語ではなく素のファイル名
@@ -1723,6 +1741,7 @@ void Application::layoutViews() {
   archiveView_.setViewport(0, contentHeight);
   archiveContentView_.setViewport(0, contentHeight);
   duView_.setViewport(0, contentHeight);
+  underlineView_.setViewport(0, contentHeight);
   listBrowserView_.setViewport(0, contentHeight);
   copyView_.setViewport(0, contentHeight);
   promptEditor_.setField(display_.rows() - 1, 0, std::max(1, display_.columns()));
@@ -2172,16 +2191,6 @@ bool Application::dispatchByte(int byte, std::optional<KeyInput::SpecialKey> spe
   // 同じ優先度・同じ理由。
   if (grepInPlaceActive_ && !special && (byte == 0x0e || byte == 0x10)) {
     return handleCommand(byte == 0x0e ? Command::GrepInPlaceNext : Command::GrepInPlacePrevious);
-  }
-  // 2026-09-20追加、Command::UnderlineViewNext/Previous自身の宣言
-  // コメント参照(`^Ou`): セッション中だけ、通常のresolveCommand()の
-  // ';'/':'(JumpPrevious/JumpNext)より先に横取りする――すぐ上の
-  // grepInPlaceActive_向け^N/^P横取りと同じ優先度・同じ理由。File
-  // モードはShellのような専用のfeedXxxByte()を持たずこの
-  // dispatchByte()自身の下のresolveCommand()経路をそのまま通るため、
-  // grepInPlaceActive_の側とは異なりfeedShellByte()向けの複製は不要。
-  if (underlineViewActive_ && !special && (byte == ';' || byte == ':')) {
-    return handleCommand(byte == ':' ? Command::UnderlineViewNext : Command::UnderlineViewPrevious);
   }
   // GrepPattern/CutPattern/ManName自身の「Select ...」リスト
   // (startRegexPromptList()自身のコメント参照): 他の全てのListBrowser
@@ -3614,6 +3623,8 @@ ContentView &Application::viewForMode(ApplicationMode mode) {
       return shell_.scrollback();
     case ApplicationMode::Du:
       return duView_;
+    case ApplicationMode::Underline:
+      return underlineView_;
     case ApplicationMode::ListBrowser:
       return listBrowserView_;
     case ApplicationMode::Copy:
@@ -3806,6 +3817,7 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Cut) return openSelectedSegment();
       if (currentMode_ == ApplicationMode::Archive) return openSelectedArchiveEntry();
       if (currentMode_ == ApplicationMode::Du) return openSelectedDuEntry();
+      if (currentMode_ == ApplicationMode::Underline) return openSelectedUnderlineEntry();
       if (currentMode_ == ApplicationMode::ListBrowser) return openSelectedListEntry();
       if (currentMode_ == ApplicationMode::Grep) return openSelectedGrepMatch();
       if (currentMode_ == ApplicationMode::Locate) return openSelectedLocateResult();
@@ -3825,6 +3837,7 @@ bool Application::handleCommand(Command command) {
       if (currentMode_ == ApplicationMode::Copy) return returnFromCopy();
       if (currentMode_ == ApplicationMode::ListBrowser) return returnFromListBrowser();
       if (currentMode_ == ApplicationMode::Du) return returnFromDu();
+      if (currentMode_ == ApplicationMode::Underline) return returnFromUnderline();
       if (currentMode_ == ApplicationMode::Shell) return returnFromShell();
       if (currentMode_ == ApplicationMode::ArchiveContent) return returnFromArchiveContent();
       if (currentMode_ == ApplicationMode::Archive) return returnFromArchive();
@@ -3882,17 +3895,6 @@ bool Application::handleCommand(Command command) {
           // 明示的に閉じないと次のloadFile()/loadStream()まで開いた
           // ままになる)をここで閉じる。
           fileMode_.closeStream();
-          // 2026-09-20追加、Command::StartUnderlineView自身の宣言
-          // コメント参照: `^Ou`セッションからのBackもここを通る
-          // (pagerReturnsToDirectory()がtrueのため)。この枝を素通り
-          // するK-23/^Jp引き渡しのケースはpagerFileList_/
-          // underlineViewActive_のどちらも元々触れていないので、
-          // ここでのクリアはそちらには無害――次の無関係な単発File
-          // 表示でn/p/;/:がこのセッションの残り香として誤動作しない
-          // ようにする。
-          underlineViewActive_ = false;
-          pagerFileList_.clear();
-          pagerFileIndex_ = 0;
         } else if (fileMode_.isPagerMode()) {
           if (fileMode_.pagerReturnsToShell()) {
             return returnPagerToShell();
@@ -3912,6 +3914,10 @@ bool Application::handleCommand(Command command) {
         // を直接開いた場合、すぐ上のLocateの前例と同じく、まずDU自身の
         // 結果リストへ戻る。
         if (fileReturnMode_ == ApplicationMode::Du) return returnToDuResults();
+        // 2026-09-20追加、Command::StartUnderlineView自身の宣言コメント
+        // 参照(`^Ou`): UNDER一覧から開いたファイルは、すぐ上のDu/Locate
+        // と全く同じ理由でまず一覧自身へ戻る。
+        if (fileReturnMode_ == ApplicationMode::Underline) return returnToUnderlineResults();
         // 2026-08-28追加、openSelectedGrepMatch()自身のFileの分岐の
         // コメント参照: GREPのマッチ経由で到達したファイル(直接開か
         // れたのではない)は、すぐ上のLocateの前例に合わせて、まず
@@ -4098,49 +4104,23 @@ bool Application::handleCommand(Command command) {
       // Directory/Archive専用であり(toggleMark()自体が既にそれで
       // ゲートされている、それ自身のbody参照)、そこでは単にno-opに
       // なるだけなので、最初にチェックする。
-      // 2026-09-20追加: underlineViewActive_の間は無効化(2026-09-20の
-      // AskUserQuestionでユーザー承認、Command::StartUnderlineView自身
-      // の宣言コメント参照)――下のtoggleMark()(Directory/Archive
-      // 専用、Fileモードでは元々no-op)へそのまま素通しする。
-      if (currentMode_ == ApplicationMode::File && !underlineViewActive_) {
-        return navigateToPagerFile(pagerFileIndex_ + 1);
-      }
+      if (currentMode_ == ApplicationMode::File) return navigateToPagerFile(pagerFileIndex_ + 1);
       if (!toggleMark()) return false;
       return handleCommand(Command::MoveDown);
     case Command::MarkAndRetreat:
-      if (currentMode_ == ApplicationMode::File && !underlineViewActive_) {
-        return navigateToPagerFile(pagerFileIndex_ - 1);
-      }
+      if (currentMode_ == ApplicationMode::File) return navigateToPagerFile(pagerFileIndex_ - 1);
       if (!toggleMark()) return false;
       return handleCommand(Command::MoveUp);
     case Command::PagerNextFile:
-      if (underlineViewActive_) return false;  // 上のMarkAndAdvance自身のコメント参照
       return navigateToPagerFile(pagerFileIndex_ + 1);
     case Command::PagerPreviousFile:
-      if (underlineViewActive_) return false;
       return navigateToPagerFile(pagerFileIndex_ - 1);
     case Command::PagerFirstFile:
-      if (underlineViewActive_) return false;
       return navigateToPagerFile(0);
     case Command::PagerLastFile:
-      if (underlineViewActive_) return false;
       return navigateToPagerFile(static_cast<int>(pagerFileList_.size()) - 1);
     case Command::StartUnderlineView:
       return startUnderlineFileView();
-    case Command::UnderlineViewNext:
-      if (!underlineViewActive_) return false;
-      if (!navigateToPagerFile(pagerFileIndex_ + 1)) return false;
-      // navigateToPagerFile()内部のloadStream()がpagerReturnsToDirectory_
-      // をfalseへリセットする――FileMode::loadContentAsPipe()自身の
-      // コメント参照、「呼んだ後に立てる」という同じパターンをここでも
-      // 繰り返す。
-      fileMode_.setPagerReturnsToDirectory(true);
-      return true;
-    case Command::UnderlineViewPrevious:
-      if (!underlineViewActive_) return false;
-      if (!navigateToPagerFile(pagerFileIndex_ - 1)) return false;
-      fileMode_.setPagerReturnsToDirectory(true);
-      return true;
     case Command::QuickLook:
       return executeQuickLook();
     case Command::StartCopy:
@@ -4844,7 +4824,19 @@ bool Application::openSelectedDuEntry() {
   // 換えた形)と食い違っていた。setSearchOrigin("DU", entry->path)へ
   // 切り替え、name="DU"+詳細=素の絶対パスという、LOCATEと全く同じ
   // 慣習に揃えた。
-  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, "DU", entry->path);
+  //
+  // 2026-09-20再訂正、直接のユーザー指摘(HISTORY.md:18022、LOCATE向け
+  // の同種の指摘から一般化): 上の2026-09-15の判断("所在地がDUである
+  // ことの表明は戻り値ではなくモード名でなされる")を撤回する。
+  // モードライン最左のname欄は「今見ている中身そのもの」を表すべきで、
+  // 「ここへどうやって来たか」ではない――^Gの行き先を示すのは
+  // trailing2(この一覧に何らかのフレームがある間はPathMiddle切り詰め
+  // が効く、file_mode.cpp自身のModeLineFieldsProvider参照)の役目。
+  // openSelectedUnderlineEntry()(UNDER一覧、2026-09-20新設)を最初から
+  // 正しい並びで書いたところ、DU/LOCATEだけが逆向きだったと判明した
+  // ため、それら2箇所を揃える。name=entry->path(実際に見ているファイル)、
+  // detail="DU"(戻り先ラベル)。
+  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, entry->path, "DU");
   // loadFile()は、上の注釈が設定される「前」に既に内部で一度再描画
   // している(view_.redraw()、FileMode::loadFile()自身の実装参照)
   // ――openSelectedDuEntry()自身のディレクトリ側の分岐が
@@ -4931,7 +4923,15 @@ bool Application::openSelectedLocateResult() {
   // "LOCATE: "の接頭辞は付かない――ラベル自体が既にLOCATEだと言って
   // いる以上、なぜその重複がもう意味を成さないのかについてはそれ
   // 自身のコメント参照)。
-  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, "LOCATE", *path);
+  //
+  // 2026-09-20再訂正、直接のユーザー指摘(HISTORY.md:18022、実機の
+  // 具体例付き――「LOCATE」「00004/23297 0%」「367723」「/Applications/
+  // Adobe.../HKSCS.txt」だったのを「/Applications/Adobe.../HKSCS.txt」
+  // 「00004/23297 0%」「367723」「LOCATE」へ)。openSelectedDuEntry()
+  // 自身の同日の同種の訂正コメント参照――name=今見ている中身
+  // そのもの(パス)、detail=戻り先ラベルへ、DU/LOCATE両方揃えて逆転
+  // させる。
+  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, *path, "LOCATE");
   fileReturnMode_ = ApplicationMode::Locate;
   fileView_.redraw();  // すぐ上のDirectoryの分岐の同一のコメント参照
   return true;
@@ -5578,16 +5578,53 @@ bool Application::startUnderlineFileView() {
   if (currentMode_ != ApplicationMode::Directory) return false;
   std::vector<std::string> paths = collectTargetFilePaths();
   if (paths.empty()) return false;
-  if (!startPagerFileList(paths)) return false;
-  // startPagerFileList()自身のコメント参照: 対象が1件かつHELP
-  // マークアップ形式のファイルだった場合はloadFile()経由で読み込まれ
-  // pagerFileList_が空のまま返る――その場合hasActiveStream()もfalse
-  // になるので、通常のFileモードと同じくBackがそのまま機能し、
-  // underlineViewActive_という特別扱いは不要(そもそも';'/':'で
-  // 切り替える相手も無い)。
-  if (pagerFileList_.empty()) return true;
-  underlineViewActive_ = true;
-  fileMode_.setPagerReturnsToDirectory(true);
+  underlineMode_.show(std::move(paths));
+  currentMode_ = ApplicationMode::Underline;
+  return true;
+}
+
+bool Application::openSelectedUnderlineEntry() {
+  const std::string *path = underlineMode_.selectedEntry();
+  if (!path) return false;
+  if (!fileMode_.loadFile(*path)) return false;
+  currentMode_ = ApplicationMode::File;
+  fileReturnMode_ = ApplicationMode::Underline;
+  // openSelectedDuEntry()/openSelectedLocateResult()自身のコメント
+  // 参照――ただし2026-09-20のユーザー指摘により、name/detailの割り
+  // 当ては両者の当時の慣習(name=モードラベル、detail=パス)とは逆に
+  // する: nameには現在見ている中身そのもの(パス)を、detailには
+  // ^Gの戻り先を示す短いラベル("UNDER")を割り当てる――stdin/ARC/
+  // INFOの一部が既にこの並びを使っている(file_mode.cpp自身の
+  // ModeLineFieldsProvider参照)。DU/LOCATE自身も同じ指摘を受けて
+  // 同日中に修正済み(openSelectedDuEntry()/openSelectedLocateResult()
+  // 自身のコメント参照)。
+  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, *path, "UNDER");
+  fileView_.redraw();
+  return true;
+}
+
+// openSelectedUnderlineEntry()で開いたFile(fileReturnMode_ ==
+// Underline)からのBack専用――returnToDuResults()と同型: 一覧自身の
+// 内容は既にunderlineMode_へキャッシュ済みなので、再計算せず一覧へ
+// 戻るだけでよい。一覧自身からのBack(Directoryへ戻る、すぐ下の
+// returnFromUnderline())とは戻り先が異なるので、混同して1つの関数に
+// まとめない。
+bool Application::returnToUnderlineResults() {
+  currentMode_ = ApplicationMode::Underline;
+  underlineView_.redraw();
+  return true;
+}
+
+// UNDER一覧「自体」からのBack専用――returnFromDu()と同型。
+bool Application::returnFromUnderline() {
+  // Du/Locateとは異なり、UNDERは常にDirectoryから直接発動し(検索
+  // プロンプトを経由しない)、directoryMode_/directoryView_の状態
+  // (エントリ一覧・カーソル位置)には一切触れていないので、戻り先は
+  // 常にそのままのDirectory一覧であり、duReturnStack_/
+  // locateReturnStack_のようなスタックは不要。
+  currentMode_ = ApplicationMode::Directory;
+  display_.hideVisibleCursor();  // returnToDirectory()自身の同一のコメント参照
+  directoryView_.redraw();
   return true;
 }
 
@@ -6866,6 +6903,12 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     case ApplicationMode::Cut:
     case ApplicationMode::CutContent:
       return "CUT";
+    // 2026-09-20追加、Command::StartUnderlineView自身の宣言コメント
+    // 参照(`^Ou`)――すぐ上のShell/Cut自身のリテラルな一語のケースと
+    // 同じ理屈(UNDER一覧自身の画面には、クエリ/パターンのような
+    // インスタンスごとの詳細が無い)。
+    case ApplicationMode::Underline:
+      return "UNDER";
     default:
       return "";
   }
@@ -6904,6 +6947,12 @@ ApplicationMode Application::nearestFileOrDirectoryAnchor() const {
         return locateReturnStack_.front();
       case ApplicationMode::Du:
         return duReturnStack_.front();
+      // 2026-09-20追加、Command::StartUnderlineView自身の宣言コメント
+      // 参照(`^Ou`): UNDER一覧は常にDirectoryから直接発動する(スタック
+      // を辿る必要が無い、returnFromUnderline()自身のコメント参照)
+      // ので、すぐ上のArchive/ArchiveContentと同じ形で直接returnする。
+      case ApplicationMode::Underline:
+        return ApplicationMode::Directory;
       case ApplicationMode::Copy:
         mode = copyReturnMode_;
         break;
@@ -13168,6 +13217,17 @@ bool Application::handleMouseClick(int row, int column) {
     duView_.redraw();
     return true;
   }
+  // 2026-09-20追加、Command::StartUnderlineView自身の宣言コメント
+  // 参照(`^Ou`)――すぐ上のDu自身の分岐と全く同じ理由・同じ形。
+  if (currentMode_ == ApplicationMode::Underline) {
+    int idx = underlineView_.lineIndexAtRow(row);
+    if (idx < 0) return false;
+    if (!underlineView_.isColumnWithinRowText(idx, column)) return false;
+    if (idx == underlineView_.cursorIndex()) return openSelectedUnderlineEntry();
+    underlineView_.setCursorIndex(idx);
+    underlineView_.redraw();
+    return true;
+  }
   if (currentMode_ == ApplicationMode::Archive) {
     // すぐ上のDirectoryMode自身の分岐と同じ理由でisColumnWithinRowText()
     // (上限のみ、左マージンの除外なし)を使う――2026-08-26に導入した
@@ -13284,6 +13344,7 @@ ProgramMode &Application::programMode() { return programMode_; }
 LocateMode &Application::locateMode() { return locateMode_; }
 ArchiveMode &Application::archiveMode() { return archiveMode_; }
 DuMode &Application::duMode() { return duMode_; }
+UnderlineMode &Application::underlineMode() { return underlineMode_; }
 ListBrowserMode &Application::listBrowserMode() { return listBrowserMode_; }
 Shell &Application::shell() { return shell_; }
 CpMvRmMode &Application::cpMvRmMode() { return cpMvRmMode_; }

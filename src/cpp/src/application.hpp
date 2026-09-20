@@ -29,6 +29,7 @@
 #include "path_resolver.hpp"
 #include "program_mode.hpp"
 #include "shell.hpp"
+#include "underline_mode.hpp"
 
 namespace fm {
 
@@ -220,26 +221,45 @@ enum class Command {
   PagerPreviousFile,  // 'p'、そしてページャー一覧が有効な間は'['も
   PagerFirstFile,     // 'x'
   PagerLastFile,      // 'f'
-  // 2026-09-20追加、直接のユーザー依頼(編集中のTUTORIALへの追記
+  // 2026-09-20新設、直接のユーザー依頼(編集中のTUTORIALへの追記
   // "(ls) では、通常ファイルを複数選択すると...^Ou ではそれらが順に
-  // 画面表示され、; および : キーでファイルを移動します"):
-  // File-selectorでアンダーライン表示(マーク、または未マークなら
-  // カーソル選択中の1件)された通常ファイルを、上のPagerNextFile系
-  // (コマンドライン複数位置引数起動、'n'/'p'/'x'/'f')と全く同じ
-  // pagerFileList_/navigateToPagerFile()の仕組みを再利用して順に
-  // 閲覧する。ただしユーザー自身の明示指示("n/pで次/前のファイル
-  // だが、それをやめてマクロキーの;と:に合わせたい"、2026-09-20の
-  // AskUserQuestionで「n/p/x/fは完全に無効化」を確認済み)により、
-  // 移動キーは';'/':'専用とし、この閲覧セッション中はn/p/x/fを無効化
-  // する――';'/':'自体は本来Command::JumpNext/JumpPrevious(Back+
-  // Move+Enterマクロ)に紐付いているため、GrepInPlaceNext/Previous
-  // (in-place GREP中だけ^N/^Pを横取りする既存の前例)と同じ構造で
-  // dispatchByte()がunderlineViewActive_の間だけ横取りする
-  // (詳細は.steering/20260920-underline-view-semicolon-nav/
-  // design.md参照)。
+  // 画面表示され、; および : キーでファイルを移動します")。
+  //
+  // 2026-09-20再設計(直接のユーザー指摘、初回実装は撤回): 当初は
+  // 上のPagerNextFile系(pagerFileList_/navigateToPagerFile()、CLIの
+  // 複数位置引数起動用)をそのまま再利用し、';'/':'をdispatchByte()で
+  // 横取りする形にしたが、ユーザーからの指摘で以下が判明した:
+  //   - CLIの複数位置引数起動は元々「usilic内で完結させたい」という
+  //     経緯(HISTORY.md:18159、^Jp usilicの前例)があり、それが実際
+  //     には`FileMode::pagerMode_`(isPagerMode())という、'q'
+  //     (QuitPager)がusilicプロセス全体を終了させる等、外部ページャー
+  //     的な挙動を伴う仕組みだった――^Ouをそこへ相乗りさせるのは筋が
+  //     悪い。
+  //   - ';'/':'はCommand::JumpNext/JumpPrevious(Back+Move+Enterの
+  //     マクロ)という「本来の機能」を持つのに、横取りしてしまうと
+  //     それを隠してしまう。CUT(セグメント一覧)がこのマクロをその
+  //     ままの意味で使えているのは、CUTが「専用の一覧モード」を
+  //     持っているからであり、File自身がその一覧を代行しているから
+  //     ではない。
+  //   - 実際、素のDirectoryから開いたFileで';'/':'を試すと、
+  //     Back+MoveDown/Up+Enterがディレクトリの「全エントリ」(マーク
+  //     済みかどうかを問わない)に対して働くため、次のエントリが
+  //     たまたまディレクトリだと「(ls)へ戻って終わり」に見える
+  //     ――マークしたファイルだけを巡回する仕組みには最初からなって
+  //     いなかった。
+  // そこで、CUT/LOCATE/DUと同型の、独立した新モード
+  // ApplicationMode::Underline(UnderlineMode、専用のunderlineView_)
+  // を新設する。^OuはこのモードのEnter専用リストを表示するだけ
+  // ――pagerFileList_・isPagerMode()には一切触れない。リストから
+  // Enterで開いたFileはfileReturnMode_ = ApplicationMode::Underlineを
+  // 設定し(Du/Locateと同じ慣習)、Backはこの一覧へ戻る
+  // (returnFromUnderline())。この一覧「自体」がJumpNext/JumpPrevious
+  // (Back+Move+Enter)の対象になるので、';'/':'は本来のCommand値
+  // (JumpNext/JumpPrevious)のまま何も変更する必要がない――専用の
+  // UnderlineViewNext/Previousのようなコマンドも、dispatchByte()での
+  // 横取りも一切不要になった。詳細は
+  // .steering/20260920-underline-mode-redesign/design.md参照。
   StartUnderlineView,
-  UnderlineViewNext,      // ':'(underlineViewActive_の間だけ)
-  UnderlineViewPrevious,  // ';'(同上)
   StartCopy,
   StartMove,
   StartRemove,
@@ -617,6 +637,9 @@ enum class ApplicationMode {
   ArchiveContent,
   Shell,
   Du,
+  // 2026-09-20新設、Command::StartUnderlineView自身の宣言コメント
+  // 参照(`^Ou`)。
+  Underline,
   ListBrowser,
   // COPY(M_copy/^O^C、copy_mode.hpp参照): code.cのmake_map()から
   // 移植された、他のどのモードからでも到達可能な凍結されたテキスト
@@ -1459,14 +1482,25 @@ class Application {
 
   // 2026-09-20追加、Command::StartUnderlineView自身の宣言コメント
   // 参照(`^Ou`): directoryMode_.targetEntries()(マーク済み、無ければ
-  // カーソル選択中の1件)から通常ファイルだけを絶対パスで集め、
-  // startPagerFileList()へ渡す。ディレクトリはTUTORIAL自身の記述
-  // ("通常ファイルを複数選択すると...")通り対象外――
-  // collectTargetPaths()(CP/MV/RM用、ディレクトリも対象に含む)とは
-  // 中身が異なるため、無理に共通化せず別のヘルパーとして実装する。
+  // カーソル選択中の1件)から通常ファイルだけを絶対パスで集める。
+  // ディレクトリはTUTORIAL自身の記述("通常ファイルを複数選択すると
+  // ...")通り対象外――collectTargetPaths()(CP/MV/RM用、ディレクトリも
+  // 対象に含む)とは中身が異なるため、無理に共通化せず別のヘルパーと
+  // して実装する。
   std::vector<std::string> collectTargetFilePaths() const;
   // currentMode_ != Directoryなら何もせずfalse。対象0件でもfalse。
+  // underlineMode_.show()でApplicationMode::Underlineへ切り替える。
   bool startUnderlineFileView();
+  // UnderlineMode一覧からEnterで選んだファイルを開く――
+  // openSelectedDuEntry()/openSelectedLocateResult()と同型。
+  bool openSelectedUnderlineEntry();
+  // Fileモード(fileReturnMode_ == Underline)からBackで一覧へ戻る
+  // ――returnToDuResults()と同型。
+  bool returnToUnderlineResults();
+  // UNDER一覧「自体」(currentMode_ == Underline)からBackでDirectoryへ
+  // 戻る――returnFromDu()と同型。上のreturnToUnderlineResults()とは
+  // 戻り先が異なるので混同しないこと。
+  bool returnFromUnderline();
 
   // 単一の、リーダー接頭辞の無いキー入力をCommandへ解決する。
   // get_m()のswitch(m)の移動/Enter/^G/^Sの一切れからの移植――
@@ -1861,6 +1895,7 @@ class Application {
   Shell &shell();
   CpMvRmMode &cpMvRmMode();
   DuMode &duMode();
+  UnderlineMode &underlineMode();
   ListBrowserMode &listBrowserMode();
   EditMode &editMode();
   ExecMode &execMode();
@@ -2641,6 +2676,7 @@ class Application {
   ContentView archiveView_;
   ContentView archiveContentView_;
   ContentView duView_;
+  ContentView underlineView_;
   ContentView listBrowserView_;
   // ^O^C(COPY): CopyMode自身の凍結されたスナップショットの裏付け
   // となるビュー――startCopy()自身のコメント参照。
@@ -2690,6 +2726,7 @@ class Application {
   Shell shell_;
   CpMvRmMode cpMvRmMode_;
   DuMode duMode_;
+  UnderlineMode underlineMode_;
   ListBrowserMode listBrowserMode_;
   EditMode editMode_;
   ExecMode execMode_;
@@ -2876,16 +2913,6 @@ class Application {
   // 現在読み込まれているエントリを追跡する。
   std::vector<std::string> pagerFileList_;
   int pagerFileIndex_ = 0;
-  // 2026-09-20追加、Command::StartUnderlineView自身の宣言コメント
-  // 参照: pagerFileList_/navigateToPagerFile()を、`^Ou`(File-selector
-  // でマークした通常ファイルの順次閲覧)から使っている間だけtrue。
-  // n/p/x/f(Command::PagerNextFile系)・']'/'['(MarkAndAdvance/
-  // MarkAndRetreatのFileモード特殊分岐)を無効化し、代わりに';'/':'
-  // (本来Command::JumpNext/JumpPreviousに紐付く)をdispatchByte()が
-  // 横取りしてnavigateToPagerFile()を呼ぶために使う。Command::Back
-  // でDirectoryへ戻る際にfalseへ戻す(このセッションの「残り香」が
-  // 次の無関係なFile表示でn/p/;/:を誤動作させないため)。
-  bool underlineViewActive_ = false;
   ApplicationMode shellReturnMode_ = ApplicationMode::Directory;
   // 前のモード自身の「名前」フィールド(例えばDirectoryMode::
   // currentDirectory()、FileMode::currentFile())、Shellモードに
