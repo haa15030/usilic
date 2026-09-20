@@ -19346,3 +19346,92 @@ Now let's run the existing test suite for this hook to confirm nothing broke.
 All 39 tests pass, including the new regression test.
 
 Now let's update the state file so the next Stop hook run for this session doesn't try to re-derive an offset for the already-fully-consumed old session file, and fix the stale `79fe41a9` entry.
+
+見つけました。`docs/HISTORY.md:19299`の直後、実際には2往復が抜けていました。
+
+**原因**: あの時のセッション(`79fe41a9`)で`cd /Users/haa15030/git/usilic/src/cpp/src && grep ...`を実行した後、Bashツールの仕様通りcwdがそのサブディレクトリに居座り続け、その間に発火した`history_sync.py`のStopフックが「cwd≠REPO_ROOT」の完全一致比較で**無関係な別プロジェクトと誤判定**、ログも残さず無言でスキップしていました(該当4回のフック実行はいずれも空振り)。
+
+**復元した内容**(`docs/HISTORY.md`に追記済み):
+- あなたの「直ってない。...戻り値が「/Users/haa15030/git/usilic/」なのに^GでSHELLに戻る」という実機報告
+- それに対する原因分析(検索中の^Gは元々どこへも遷移しない、という仕様自体が問題だった、という気づき)
+- **「早く次へ行きたいんだが...「SHELL」を「SHELL　　　　」にするのがなぜそんなに難しいの？」という、まさにご指摘の発言そのもの**(なのでさっきの私の回答は不正確でした——「思いつけなかった」のではなく、あなたが直接そう提案していたのに、私はその通りには実装せず「リテラルに現在のモード名を出す」という一段抽象化した形に変えていました。ほぼ同じ結果ですが、ご提案をそのまま採用しなかった経緯自体を見落としていました)
+- インストール完了報告とループ停止のメッセージ
+
+**再発防止**: `history_sync.py`のcwd判定を「REPO_ROOT完全一致」から「REPO_ROOTまたはそのサブディレクトリ」に緩和し、スキップ時は理由をログに残すよう修正、回帰テストも追加(`.claude/hooks/test_history_sync.py`、39件全通過)。`.history_sync_state.json`のoffsetも実際に処理済みの末尾まで進めておきました。
+
+コミットしますか？
+
+<コミットして
+
+>Good, both are purely about the automation feature. Let's check the CLAUDE.md diff too, and confirm HISTORY.md's diff boundaries.
+
+Now the trailing3 fix commit.
+
+Now the history-sync automation commit.
+
+Good, only the intended files are staged.
+
+3つのコミットに分けてコミットしました(pushはしていません)。
+
+- `e8ab2fc`: docs/HISTORY.md — 直近セッション分の逐語ログ反映+欠落2往復の復元
+- `807e45e`: application.cpp/test_application.cpp — trailing3のSHELL/MAN/LOCATE/DUリテラル表示化
+- `a633ce6`: .claude/hooks/新設+.claude/settings.json/.gitignore/CLAUDE.md — 履歴自動化(cwdサブディレクトリ修正込み)
+
+残りの未追跡ファイル(`old/`由来の`.o`/`doc/`/`install.sh`/`src/tcb`等)は今回の作業と無関係なので触れていません。`make usilic`/`install`はまだ実行していないので、必要であればお知らせください。
+
+<編集中のTUTORIALからの抜粋：
+-- ここから↓
+(ls) では、通常ファイルを複数選択すると、アンダーラインが付加されて閲覧/複写/移動/削除/実行の対象となります。
+
+閲覧
+^Ou ではそれらが順に画面表示され、; および : キーでファイルを移動します。
+...
+
+実行
+^Jp では usilicrc の PROGRAM に設定されていない program は SHELL で実行されます。エディター等端末設定が変わってしまうアプリを起動してしまった場合は ^O^S で SHELL が再起動します。ただし usilic は例外で、^Ou と同じ動作になります。
+-- ここまで↑
+
+`^Ou`は新設。`n`/`p`で次/前のファイルだが、それをやめてマクロキーの `;` と `:` に合わせたい。
+よろしく。
+
+>Now the tasklist, then implementation.
+
+Now find `grepInPlaceActive_` member declaration to add `underlineViewActive_` nearby, and `pagerFileList_` declaration.
+
+Now Phase 2: the path-collection helper and `startUnderlineFileView()`. Let's view `collectTargetPaths()` fully for style reference (already partially seen) and add the new function right after it.
+
+Now add the `Command::StartUnderlineView` handler in `handleCommand()`. Let's find where `StartLocate`/similar simple-dispatch commands sit.
+
+Now let's add all the handlers in one edit, applying the `underlineViewActive_` guards per the design.
+
+Good, single insertion. Now Phase 5: cleanup on Back. Let's find that exact branch again with precise context.
+
+Now update tasklist progress for phases 2-5, then build.
+
+Now let's build to catch compile errors before writing tests.
+
+Clean build, no warnings. Now let's write unit tests. First, let's look at how existing pager-file-list tests are structured for style reference.
+
+I'll insert my new test section right after that ^G no-op test, before the 2026-09-06 comment block.
+
+Clean build. Now let's run the new tests specifically.
+
+All 6 pass. Now let's run the broader Pager/Jump/MarkAndAdvance-related test cases to confirm no regressions in the code paths I touched.
+
+Let's wait for that to finish rather than poll.
+
+バックグラウンドでベースコミット(stash後)のテスト実行中です。完了を待ちます。
+
+Confirmed pre-existing/unrelated failures (reproduce identically without my changes). Restoring my work.
+
+Waiting for that build+test run to finish.
+
+ビルド+テスト実行完了を待っています。
+
+</btwコンパイルは通る？
+
+>まだビルド中で、結果は出ていません(出力ファイルはまだ空)。完了したらお知らせします。
+
+まだコンパイルは通っていません(直前のリンカーエラーは一時的な破損ファイルによるものらしく、再試行中)。完了を待ちます。
+
+リンカーエラーの原因切り分けのため、並列指定無しで再ビルド中です。完了を待ちます。
