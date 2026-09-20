@@ -2896,8 +2896,8 @@ TEST_CASE_FIXTURE(Fixture, "MAN started from File mode: the still-open GREP prom
 // そもそも意味を成さなくなった――マッチへは検索確定と同時に既に
 // 着地済みである。
 TEST_CASE_FIXTURE(Fixture, "GREP started from Man mode: stays in-place (Man) with the mode line's "
-                           "trailing3 still showing the actual ^G destination (not the search context), "
-                           "and Back (after a first ^G cancels the in-place session) returns to Directory") {
+                           "trailing3 showing the literal mode name \"MAN\" it stays in (a first ^G "
+                           "cancels the search only), and Back (after that) returns to Directory") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartMan));
   feedText("ls");
@@ -2914,12 +2914,11 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Man mode: stays in-place (Man) wit
     return;
   }
   REQUIRE(app.currentMode() == ApplicationMode::Man);  // in-place: never left Man
-  // 2026-09-20修正(design.md「先走りバグの修正」参照、直接のユーザー
-  // 指摘): 検索中のtrailing3は、以前は検索元("ls"というman page名)を
-  // 示していたが、TUTORIALの「mode-line{6}=^Gの行き先」契約と食い違う
-  // ため撤回し、通常時と同じ実際の戻り先(ここではMan自身の基点である
-  // Directoryのパス)を示すようになった。
-  CHECK(app.activeContentView().modeLineText().find(app.directoryMode().currentDirectory()) != std::string::npos);
+  // 2026-09-20再修正(直接のユーザー指摘、前回の対応は不十分だった):
+  // 検索アクティブ中の^Gは検索解除のみでどこへも遷移せずMANへ留まる
+  // ため、trailing3は(検索元の"ls"でも、実際の戻り先パスでもなく)
+  // リテラルに"MAN"を示す。
+  CHECK(app.activeContentView().modeLineText().find("MAN") != std::string::npos);
   REQUIRE_FALSE(app.grepMode().matches().empty());
 
   // 2026-09-19改訂(直前のテスト自身のコメント参照): 1回目の^Gは
@@ -14251,8 +14250,8 @@ TEST_CASE_FIXTURE(Fixture, "^O^Y (PASTE) with no active prompt is a harmless no-
 // 機能)はこのテストの関心事から外し、backing-out(マッチを選ばずに
 // Backする)の検証に絞る。
 TEST_CASE_FIXTURE(Fixture, "GREP started from Locate mode: stays in-place (Locate) with the mode line's "
-                           "trailing3 still showing the actual ^G destination (not the search context), "
-                           "and Back (after a first ^G cancels the in-place session) returns to Directory") {
+                           "trailing3 showing the literal mode name \"LOCATE\" it stays in (a first ^G "
+                           "cancels the search only), and Back (after that) returns to Directory") {
   REQUIRE(app.start(path()));
   REQUIRE(app.handleCommand(Command::StartLocate));
   feedText(".md");
@@ -14276,12 +14275,11 @@ TEST_CASE_FIXTURE(Fixture, "GREP started from Locate mode: stays in-place (Locat
   REQUIRE(app.feedByte(0x0d, std::nullopt));
   REQUIRE(app.currentMode() == ApplicationMode::Locate);  // in-place: never left Locate
   REQUIRE_FALSE(app.grepMode().matches().empty());
-  // 2026-09-20修正(design.md「先走りバグの修正」参照、直接のユーザー
-  // 指摘): 検索中のtrailing3は、以前は検索元(".md"というLOCATEクエリ)を
-  // 示していたが、TUTORIALの「mode-line{6}=^Gの行き先」契約と食い違う
-  // ため撤回し、通常時と同じ実際の戻り先(ここではLocate自身の基点である
-  // Directoryのパス)を示すようになった。
-  CHECK(app.activeContentView().modeLineText().find(app.directoryMode().currentDirectory()) != std::string::npos);
+  // 2026-09-20再修正(直接のユーザー指摘、前回の対応は不十分だった):
+  // 検索アクティブ中の^Gは検索解除のみでどこへも遷移せずLOCATEへ留まる
+  // ため、trailing3は(検索元の".md"でも、実際の戻り先パスでもなく)
+  // リテラルに"LOCATE"を示す。
+  CHECK(app.activeContentView().modeLineText().find("LOCATE") != std::string::npos);
 
   // 2026-09-19改訂、直接のユーザー報告(application.cpp自身の
   // handleCommand()内のwasGrepInPlaceActiveコメント参照): 1回目の^Gは

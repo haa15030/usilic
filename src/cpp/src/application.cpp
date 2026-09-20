@@ -730,18 +730,17 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     fields.rightWatermark = hasPrev ? "" : "usilic v1.5b";
     fields.trailing2 = "(" + shell_.programName() + ")";
     fields.trailing3 = shellReturnName_;
-    // 2026-09-20修正(design.md「先走りバグの修正」参照、直接のユーザー
-    // 指摘): 2026-09-11に「検索中はtrailing3を検索元(SHELL自身の現在の
-    // ディレクトリ)へ差し替える」形にしていたが、これはTUTORIALの
-    // 「mode-line{6}=^Gの行き先」という契約と食い違う――trailing3が
-    // パスっぽい値を示すと、そこへ^Gで戻れると誤解させる(実際には
-    // 検索中の^Gは検索解除のみでどこへも遷移しない)。trailing2
-    // ("(grep)"系バッジ)/nameの差し替えはそのまま維持し、trailing3
-    // だけは通常時と同じshellReturnName_(実際の戻り先)を表示し
-    // 続ける――ここで何もしないのがその意味。
+    // 2026-09-20再修正(直接のユーザー指摘、前回の対応は不十分だった):
+    // 検索アクティブ中の^Gは検索解除のみでどこへも遷移せず、その場の
+    // モード(SHELL)へ留まる――なので trailing3 には、実際に何か別の
+    // 場所へのパスを装った値ではなく、リテラルに"SHELL"(=このまま
+    // ここに留まる)を出す。FileMode::pagerReturnsToShell_のtrailing3
+    // ="SHELL"という既存の前例と同じ考え方。trailing2("(grep)"系
+    // バッジ)/nameの差し替えはそのまま維持。
     if (shell_.scrollback().grepInPlaceActive() || shell_.scrollback().grepNoMatchActive()) {
       fields.name = shell_.scrollback().grepInPlaceLabel();
       fields.trailing2 = shell_.scrollback().grepInPlaceProgramBadge();
+      fields.trailing3 = "SHELL";
       return fields;
     }
     return fields;
@@ -1412,16 +1411,17 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     ContentView::ModeLineFields fields{"MAN", std::to_string(contentByteCount(manView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/"(man)"};
-    // 2026-09-20修正(design.md「先走りバグの修正」参照、直接のユーザー
-    // 指摘): 2026-09-11に「検索中はtrailing3を検索元(このman page自身の
-    // トピック)へ差し替える」形にしていたが、TUTORIALの「mode-line{6}=
-    // ^Gの行き先」という契約と食い違っていた(検索中の^Gは検索解除のみで
-    // どこへも遷移しないため)。name/trailing2の差し替えは維持し、
-    // trailing3は下の通常時と同じpreviousModeName()計算にそのまま委ねる
-    // (早期returnせず、下の共通コードへ流す)。
+    // 2026-09-20再修正(直接のユーザー指摘、前回の対応は不十分だった):
+    // 検索アクティブ中の^Gは検索解除のみでどこへも遷移せず、その場の
+    // モード(MAN)へ留まる――なのでtrailing3には、実際に別の場所への
+    // パスを装った値(previousModeName()の計算結果)ではなく、リテラルに
+    // "MAN"(=このまま留まる)を出す。Shell自身の同じ分岐のコメント
+    // 参照。name/trailing2の差し替えは維持。
     if (manView_.grepInPlaceActive() || manView_.grepNoMatchActive()) {
       fields.name = manView_.grepInPlaceLabel();
       fields.trailing2 = manView_.grepInPlaceProgramBadge();
+      fields.trailing3 = "MAN";
+      return fields;
     }
     // 2026-09-19四訂正、直接のユーザー提案("フラグはなるべく使いたく
     // ない...旧版のようにスタックへの積み降ろしでは対応できない？"):
@@ -1483,13 +1483,14 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // 形に揃える。
     ContentView::ModeLineFields fields{"LOCATE", std::to_string(contentByteCount(locateView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"", /*trailing2=*/""};
-    // 2026-09-20修正(ManMode自身の同じ分岐のコメント参照): 検索中の
-    // trailing3を検索元(このLOCATE結果自身のクエリ)へ差し替える旧仕様は
-    // TUTORIAL契約と食い違うため撤回。name/trailing2の差し替えのみ維持し、
-    // trailing3は下の通常時と同じpreviousModeName()計算に委ねる。
+    // 2026-09-20再修正(Shell自身の同じ分岐のコメント参照、直接のユーザー
+    // 指摘): 検索アクティブ中の^Gは検索解除のみでどこへも遷移しないため、
+    // trailing3にはリテラルに"LOCATE"(=このまま留まる)を出す。
     if (locateView_.grepInPlaceActive() || locateView_.grepNoMatchActive()) {
       fields.name = locateView_.grepInPlaceLabel();
       fields.trailing2 = locateView_.grepInPlaceProgramBadge();
+      fields.trailing3 = "LOCATE";
+      return fields;
     }
     fields.trailing3 = previousModeName(locateReturnStack_.back());
     return fields;
@@ -1541,13 +1542,14 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     ContentView::ModeLineFields fields{"DU", std::to_string(contentByteCount(duView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/""};
-    // 2026-09-20修正(ManMode/LocateMode自身の同じ分岐のコメント参照):
-    // 検索中のtrailing3を検索元(集計対象のルート)へ差し替える旧仕様は
-    // TUTORIAL契約と食い違うため撤回。name/trailing2の差し替えのみ維持し、
-    // trailing3は下の通常時と同じpreviousModeName()計算に委ねる。
+    // 2026-09-20再修正(Shell自身の同じ分岐のコメント参照、直接のユーザー
+    // 指摘): 検索アクティブ中の^Gは検索解除のみでどこへも遷移しないため、
+    // trailing3にはリテラルに"DU"(=このまま留まる)を出す。
     if (duView_.grepInPlaceActive() || duView_.grepNoMatchActive()) {
       fields.name = duView_.grepInPlaceLabel();
       fields.trailing2 = duView_.grepInPlaceProgramBadge();
+      fields.trailing3 = "DU";
+      return fields;
     }
     fields.trailing3 = previousModeName(duReturnStack_.back());
     return fields;
