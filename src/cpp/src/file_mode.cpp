@@ -180,14 +180,18 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
       // 2026-09-21追加、直接のユーザー指摘("モードライン不良...正しく
       // は「tcb-1.5b.linux.tgz」「(tar)」「/Users/haa15030/」"):
       // setPagerListingDirectory()自身の宣言コメント参照――ARCHIVE
-      // 分岐はsetSearchOrigin(entry->name, "(tar)"等)を併用するので、
-      // searchOriginLabel_が非空ならそちらをnameに使う(searchOriginLabel_
-      // が空の他の全ての(stdin)ケースでは、これまで通りcurrentFile_
-      // ――常に空文字列)。
-      fields.name = searchOriginLabel_.empty() ? currentFile_ : searchOriginLabel_;
+      // 分岐はpushWithNameOverride(kind, entry->name, "(tar)"等)を
+      // 併用するので、トップフレームがnameOverride付きならそちらを
+      // nameに使う(nameOverride無しの他の全ての(stdin)ケースでは、
+      // これまで通りcurrentFile_――常に空文字列)。plain push()の
+      // フレーム(旧searchAnnotation_相当)はこの分岐では一切読まない
+      // ――旧実装もここではsearchAnnotation_を参照していなかった。
+      const auto *originFrame = annotations_.top();
+      bool hasOrigin = originFrame && originFrame->nameOverride;
+      fields.name = hasOrigin ? *originFrame->nameOverride : currentFile_;
       fields.trailing = std::to_string(bytes);
       fields.rightWatermark = hasReturnTarget ? "" : "usilic v1.5b";
-      fields.trailing2 = searchOriginDetail_;
+      fields.trailing2 = hasOrigin ? originFrame->text : "";
       // 2026-09-17追加、直接のユーザー指摘("戻り値がPROGRAMなら
       // PROGRAMへ戻らないと。なんだけど、PROGRAMは^J^P(program一覧)
       // でも発動するので話がややこしくなる。そこで戻り値は
@@ -272,46 +276,41 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
     // (別の、以前の誤読が既に確立し撤回した"ファイルサイズは
     // 「1108009」のままでいい")。
     std::string trailing = ec ? directory : std::to_string(size);
-    // searchOriginLabel_/searchOriginDetail_(setSearchOrigin()自身の
-    // コメント参照)は、設定されている時は常にname/trailing2
-    // フィールドを乗っ取る――DirectoryMode自身のプロバイダが
-    // searchAnnotation_対"usilic v1.5b"のrightWatermarkに対して
-    // 行っているのと同じ置き換えで、単にここでは1つではなく2つの
-    // フィールドにまたがっているだけ。
-    std::string name = searchOriginLabel_.empty() ? path.filename().string() : searchOriginLabel_;
-    // searchAnnotation_(2026-08-28の追加、setSearchAnnotation()自身の
-    // コメント参照): searchOriginLabel_/Detail_(両方が何らかの形で
-    // 設定されている場合、依然として完全に優先する――LOCATE/INFO
-    // 自身の「これは本当にはファイル自身の名前についてのものでは
-    // ない」という位置付けが優先される)より下の「3番目の」階層
-    // ――それら2つとは異なり、これは`name`には手を付けず、プレーンな
-    // 「含むディレクトリ」のtrailing2フォールバックを置き換える
-    // だけ。DirectoryMode::searchAnnotation_の同一のname/trailing2
-    // 分割を反映している。
-    std::string trailing2 =
-        ec ? "" : (searchOriginLabel_.empty() ? (searchAnnotation_.empty() ? directory : searchAnnotation_) : searchOriginDetail_);
+    // annotations_のトップフレーム(旧searchOriginLabel_/Detail_+
+    // searchAnnotation_、design.md「FileModeの統合」参照)は、
+    // nameOverride付きなら常にname/trailing2フィールドを乗っ取り
+    // (LOCATE/INFO等)、nameOverride無しのplain pushならtrailing2
+    // だけを乗っ取る(GREP等、ファイル自身の名前"CLAUDE.md"等はそのまま)。
+    // どちらの種類のフレームも無ければ、name=ファイル名、trailing2=
+    // 含むディレクトリという素のフォールバックになる。以前は2つの
+    // 独立フィールド+優先順位チェックで表現されていたが、スタックの
+    // トップが常に「今表示すべき唯一の理由」を表すため、この単純化が
+    // 成り立つ。
+    const auto *originFrame = annotations_.top();
+    std::string name = (originFrame && originFrame->nameOverride) ? *originFrame->nameOverride : path.filename().string();
+    std::string trailing2 = ec ? "" : (originFrame ? originFrame->text : directory);
     // Fileモードのtrailingフィールドは、legacyの端まで埋める
     // スタイル、ModeLineFields::fillTrailingToEdge自身のコメント
     // 参照。ここにはrightWatermarkは無い――Fileモードが決してそれを
     // 表示しない理由は自身のコメント参照。trailing2Kind=PathMiddle
-    // は、LOCATE(searchOriginLabel_設定時)とsearchAnnotation_の
-    // 両方に対して――これが他の全プロバイダの末尾のみの切り詰めに
-    // 対する唯一の例外である理由はContentView::TrailingKind自身の
-    // コメント参照。フォールバック(プレーンな含むディレクトリの
-    // PATH)は代わりにPathを使い、利用可能な幅全体を使う。
-    // searchAnnotation_(2026-08-28の修正、直接のユーザー報告+例:
-    // "「- レガシーC実装...src/config.sh」...使えるだけ使う":
-    // QueryEcho自身の固定16文字の末尾上限は、実際に利用可能な幅が
-    // 必要とするよりもはるかにきつく、一致した行のテキストを切り
-    // 詰めていた――"CLAUDE.md"のような短い名前は、このフィールドが
-    // 実際に使うべき十分な余地を残す。PathMiddleは予算を認識する
-    // (middleEllipsisTruncate()は、withTruncatedFields()自身の
-    // パイプライン経由で、実際に「残っているもの」に合わせてサイズを
-    // 決める)し、既に依頼されたまさにその"- レガシーC実装...
-    // src/config.sh"の形に合わせてテキストの両端を保持している
-    // ――そして下のsplitLayoutWhenCrowded(このプロバイダに対して
-    // 既に無条件で有効)は、name+trailing2が一緒になって本当に
-    // 両方収まらない場合に、「反対側」で自動的に発動するものである。
+    // は、annotations_に何らかのフレームがある間――これが他の全
+    // プロバイダの末尾のみの切り詰めに対する唯一の例外である理由は
+    // ContentView::TrailingKind自身のコメント参照。フォールバック
+    // (プレーンな含むディレクトリのPATH)は代わりにPathを使い、
+    // 利用可能な幅全体を使う。
+    // (2026-08-28の修正、直接のユーザー報告+例: "「- レガシーC実装...
+    // src/config.sh」...使えるだけ使う": QueryEcho自身の固定16文字の
+    // 末尾上限は、実際に利用可能な幅が必要とするよりもはるかにきつく、
+    // 一致した行のテキストを切り詰めていた――"CLAUDE.md"のような
+    // 短い名前は、このフィールドが実際に使うべき十分な余地を残す。
+    // PathMiddleは予算を認識する(middleEllipsisTruncate()は、
+    // withTruncatedFields()自身のパイプライン経由で、実際に
+    // 「残っているもの」に合わせてサイズを決める)し、既に依頼された
+    // まさにその"- レガシーC実装...src/config.sh"の形に合わせて
+    // テキストの両端を保持している――そして下のsplitLayoutWhenCrowded
+    // (このプロバイダに対して既に無条件で有効)は、name+trailing2が
+    // 一緒になって本当に両方収まらない場合に、「反対側」で自動的に
+    // 発動するものである。
     ContentView::ModeLineFields fields{name,
                                         trailing,
                                         /*fillTrailingToEdge=*/true,
@@ -319,9 +318,8 @@ FileMode::FileMode(ContentView &view, History &history, const Configuration &con
                                         trailing2,
                                         /*trailingPlain=*/false,
                                         /*trailing2RightJustified=*/false,
-                                        /*trailing2Kind=*/(searchOriginLabel_.empty() && searchAnnotation_.empty())
-                                            ? ContentView::TrailingKind::Path
-                                            : ContentView::TrailingKind::PathMiddle};
+                                        /*trailing2Kind=*/originFrame ? ContentView::TrailingKind::PathMiddle
+                                                                       : ContentView::TrailingKind::Path};
     // splitLayoutWhenCrowded(2026-08-27の追加、直接のユーザー報告/
     // 自身の以前のHISTORY.md:9608提案への呼び戻し。archiveContentView_
     // 自身のプロバイダが既に採用している――application.cppの自身の
@@ -535,7 +533,7 @@ bool FileMode::loadContentAsPipe(const std::string &content) {
   // 自身のコメントが述べる原則に、このパイプ越しの疑似セッションも
   // 素直に従う(実ファイルの閲覧履歴・カーソル位置は、K-22の通常の
   // loadFile()セッション側だけが引き続き担う)。
-  setSearchOrigin("", "(stdin)");
+  annotations_.pushWithNameOverride(FileAnnotationKind::Search, "", "(stdin)");
   // 2026-09-15追加、直接のユーザー指摘("^O^MはSTDINなページャー仕様
   // へ完全移行していて^Gで（ls）へ戻れない"): setPagerReturnsToDirectory()
   // 自身の宣言コメント参照――本物のSTDINパイプ起動と違い、K-23は
@@ -572,10 +570,8 @@ bool FileMode::loadFileImpl(const std::string &path, const std::function<bool()>
   // 2026-09-16追加、loadFileRaw()自身の宣言コメント参照。
   view_.setLines(rawControlCodesMode_ && shouldAbort ? readAndWrapChunked(path, shouldAbort) : readAndWrap(path));
   currentFile_ = path;
-  // 新しい読み込みは古い検索を無効にする――setSearchOrigin()自身のコメント参照
-  searchOriginLabel_.clear();
-  searchOriginDetail_.clear();
-  searchAnnotation_.clear();  // setSearchAnnotation()自身のコメント参照
+  // 新しい読み込みは古い検索を無効にする――AnnotationStack自身のコメント参照
+  annotations_.clear();
   // K-46(^X^F、「FILE: Select file name」)自身のデータソース――
   // K-48自身のRecentDirectoryの対応物に対するDirectoryMode::
   // enterDirectory()の同一のpushRecent()呼び出し参照。
@@ -706,14 +702,6 @@ int FileMode::translateCursorAfterReflow(int beforeCursor, std::optional<int> be
 }
 
 const std::string &FileMode::currentFile() const { return currentFile_; }
-
-void FileMode::setSearchOrigin(const std::string &label, const std::string &detail) {
-  searchOriginLabel_ = label;
-  searchOriginDetail_ = detail;
-}
-
-void FileMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
-
 
 void FileMode::setEncoding(Charset::Encoding encoding) { encoding_ = encoding; }
 
@@ -911,8 +899,7 @@ bool FileMode::loadStream(int fd, bool ownsFd, const std::string &displayName, i
   // (常にfalseのまま)ので、この変更はそれらの既存の挙動を変えない。
   streamPipe_ = std::make_unique<PipeBuffer>(encoding_, noWrapMode_ ? kNoWrapWidth : width_, 256L * 1024 * 1024);
   currentFile_ = displayName;
-  searchOriginLabel_.clear();
-  searchOriginDetail_.clear();
+  annotations_.clear();
   if (!displayName.empty()) history_.pushRecent(RingCategory::RecentFile, displayName);
   readMoreIntoPipe(std::max(initialLineBudget, 1));
   view_.setLines(convertPipeLines());

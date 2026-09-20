@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "annotation_stack.hpp"
 #include "charset.hpp"
 #include "configuration.hpp"
 #include "content_view.hpp"
@@ -238,42 +239,27 @@ class FileMode {
 
   // モードラインの名前フィールド(通常は素のファイル名)と、その
   // trailing2フィールド(通常はファイルが属するディレクトリ、
-  // コンストラクタ自身のコメント参照)の「両方」を上書きする――
-  // Application::openSelectedLocateResult()のFile分岐のために追加:
-  // LOCATE経由で到達したファイルは、ちょうど今閲覧していたディレクト
-  // リの近くにあるとは限らないため、そこでは素の所属ディレクトリ
-  // 表示より、実際にそれを見つけた検索の方が有用である(実際の
-  // ユーザー報告: 「旧版と違うので注意」――legacy自身のこのケースの
-  // 「戻り値」フィールド)。`label`は名前になる(例えば"LOCATE"、
-  // その検索自身の結果画面名と一致させる――ユーザーからの直接の
-  // 訂正、スクリーンショット=aw: 「『LOCATE: .txt』はモード名では
-  // なく戻り値、モード名は『LOCATE』で」により、検索自身のラベルは
-  // detailへの接頭辞としてではなく、ここでは「名前」スロットに属する
-  // ことが明確になった)。`detail`はtrailing2へそのまま入る
-  // (Finder風の中間省略で収まるよう切り詰め――ContentView::
-  // withTruncatedFields()自身のコメント参照――ユーザーからの直接の
-  // 依頼と一致: 「戻り値も検索一覧同様『/Applications/Adobe
-  // Acrob...source/.../HKSCS.txt』形式で」――LOCATE自身の結果一覧の
-  // 行が既に使っているのと「同じ」切り詰めの慣習。ファイルの完全な
-  // 絶対パスは、まさにその慣習が存在する対象である「長い共通接頭辞、
-  // 異なる末尾」というテキストそのものであるため)。全てのloadFile()
-  // 呼び出しの先頭で自動的にクリアされる(自身のコメント参照)。
-  void setSearchOrigin(const std::string &label, const std::string &detail);
-
-  // 2026-08-28追加、実際のユーザー報告(「これでは^Gで（ls）に戻って
-  // しまう。検索結果一覧へ戻るのが筋なので戻り値は『EGREP: ^-』で
-  // あるべき」): DirectoryMode::setSearchAnnotation()を正確に踏襲
-  // している(同じ名前、同じ「直接この内容を検索したのではなく、
-  // GREPの一致に対するEnter経由で『ここへ』着地した」という意味)
-  // ――上のsetSearchOrigin()(名前とtrailing2の「両方」を、
-  // LOCATE/INFOの「これは本当にはファイル自身の名前についての話では
-  // ない」という枠組みのために置き換える)とは異なり、これは
-  // trailing2「だけ」に触れる: ファイル自身の名前(例えば
-  // "CLAUDE.md")はそのまま正確に残り、戻り先フィールドだけが変わる。
-  // DirectoryMode自身のname/searchAnnotation_が既に保っているのと
-  // 同じ分離。
-  void setSearchAnnotation(const std::string &text);
-  bool hasSearchAnnotation() const { return !searchAnnotation_.empty(); }
+  // コンストラクタ自身のコメント参照)を上書きする(name+trailing2の
+  // 「両方」、LOCATE/INFO等)か、trailing2「だけ」を上書きする(GREP/
+  // CUT等、ファイル自身の名前はそのまま)かの2種類の注釈を、
+  // `AnnotationStack<FileAnnotationKind>`へ統合した(2026-09-20、
+  // .steering/20260920-modeline-annotation-stack/design.md参照)。
+  //
+  // 以前は`searchOriginLabel_`/`searchOriginDetail_`(name+trailing2上書き
+  // ――Application::openSelectedLocateResult()のFile分岐等)と
+  // `searchAnnotation_`(trailing2のみ上書き――GREPのマッチにEnter経由で
+  // 着地した場合等)という独立フィールド+優先順位チェックで表現されて
+  // いたが、実際にはどちらか一方だけが常に「今表示すべき唯一の理由」
+  // であり、スタックのトップが常にそれを表すため、優先順位チェック
+  // 自体が丸ごと不要になった。全てのloadFile()/loadStream()呼び出しの
+  // 先頭で自動的にclear()される。
+  //
+  // `push(kind, text)`: trailing2のみ上書き(旧setSearchAnnotation()相当)。
+  // `pushWithNameOverride(kind, label, detail)`: name+trailing2を上書き
+  // (旧setSearchOrigin()相当、labelがname、detailがtrailing2)。
+  enum class FileAnnotationKind { Search };
+  AnnotationStack<FileAnnotationKind> &annotations() { return annotations_; }
+  const AnnotationStack<FileAnnotationKind> &annotations() const { return annotations_; }
 
   // in-place GREP関連のメソッドはContentView自身へ一本化された
   // (DirectoryMode.hpp自身の同じコメント参照、2026-09-11)。
@@ -566,13 +552,7 @@ class FileMode {
   bool noWrapMode_ = false;
   bool rawControlCodesMode_ = false;
   std::string currentFile_;
-  std::string searchOriginLabel_;
-  std::string searchOriginDetail_;
-  // setSearchAnnotation()自身のコメント参照。新しいloadFile()のたび
-  // にクリアされる(新しいファイル/再読み込みは、「前の」ファイルへ
-  // 着地させた検索が何であれ、それを無効にする)。同じ関数内ですぐ
-  // 上にあるsearchOriginLabel_/Detail_自身のクリアと同じ。
-  std::string searchAnnotation_;
+  AnnotationStack<FileAnnotationKind> annotations_;
   // pagerMode_(2026-08-25): loadStream()が設定し、loadFile()が
   // クリアする――ページャ起動されたファイルのモードラインが、
   // 通常のloadFile()で開かれたファイルとは異なり、サイズ/ディレクト

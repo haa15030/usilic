@@ -79,10 +79,10 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
     const auto &ls = configuration_.commandFor(ConfiguredRole::Ls);
     std::string program = ls.argv.empty() ? "" : ls.argv.front();
     std::string programBadge = program.empty() ? "" : "(" + program + ")";
-    std::string trailing2 = searchAnnotation_.empty() ? programBadge : searchAnnotation_;
+    std::string trailing2 = primaryAnnotations_.empty() ? programBadge : primaryAnnotations_.displayText();
     // fillTrailingToEdgeは、trailing2自身の空かどうか(「(ls)」が
     // フォールバックとして埋まるようになった今では常に非空である)
-    // ではなく、特にsearchAnnotation_に紐付けたままにしてある――
+    // ではなく、特にprimaryAnnotations_に紐付けたままにしてある――
     // 実際の退行として、「(ls)」自体が行の右端まで丸ごとパディング
     // されてしまい、renderModeLine()自身のdrawnLen追跡がrightWatermark
     // に到達する時点で既に列数「そのもの」になってしまい、その関数
@@ -91,7 +91,8 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
     // 修正すべきだった=bd/=be報告の「usilic v1.5b」側の半分であり、
     // 保存すべきものではなかった。
     ContentView::ModeLineFields fields{currentDirectory_, std::to_string(view_.totalByteCount()),
-                                        /*fillTrailingToEdge=*/!searchAnnotation_.empty(), "usilic v1.5b", trailing2};
+                                        /*fillTrailingToEdge=*/!primaryAnnotations_.empty(), "usilic v1.5b",
+                                        trailing2};
     // reportEditError()/clearEditError()自身のコメント参照――読み取り
     // 時にここではクリアされ「ない」。実際のユーザー報告
     // (2026-08-17、GUIモードのみ: "-cはOKだが-gだといつもの一瞬出て
@@ -222,8 +223,8 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
     // ためのスペースを作るためのfillTrailingToEdge/rightWatermark)
     // だけが変わる。ArchiveMode自身の同一のtrailing2+trailing3の
     // バッジ/パスの組み合わせに合わせている。
-    if (!arcExtractSourceAnnotation_.empty()) {
-      fields.trailing3 = "ARC: " + arcExtractSourceAnnotation_;
+    if (!arcAnnotations_.empty()) {
+      fields.trailing3 = "ARC: " + arcAnnotations_.displayText();
       fields.fillTrailingToEdge = true;
       fields.rightWatermark = "";
     }
@@ -342,7 +343,7 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   // スクリーンショット比較参照)。normalizedPath(上で、`ls`のargvが
   // 構築される前に計算済み)を再利用し、同じ正規化を2回導出しない。
   currentDirectory_ = normalizedPath;
-  searchAnnotation_.clear();  // 新しい`ls`は古い検索を無効にする――setSearchAnnotation()自身のコメント参照
+  primaryAnnotations_.clear();  // 新しい`ls`は古い検索を無効にする――AnnotationStack自身のコメント参照
   entries_ = std::move(entries);
   markedIndices_.clear();  // マークはそれが行われた一覧にスコープされる。新しい`ls`はそれらを無効にする
   // setTransientMarkedNames()自身のコメント参照(2026-09-08追加)――
@@ -356,11 +357,10 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   // 既に陳腐化させた準備状態に対して、モードラインが"CP"等を表示し
   // 続けないようにする。
   clearPendingOperationLabel();
-  // setArcExtractSourceAnnotation()自身のコメント参照: 新しい`ls`
-  // (成功したアーカイブ展開がちょうど着地したディレクトリからの
-  // 実際の離脱ナビゲート)はこれを無効にする。すぐ上のCP/MV/RM
-  // 準備状態ラベルと同じ寿命。
-  arcExtractSourceAnnotation_.clear();
+  // AnnotationStack自身のコメント参照: 新しい`ls`(成功したアーカイブ
+  // 展開がちょうど着地したディレクトリからの実際の離脱ナビゲート)は
+  // これを無効にする。すぐ上のCP/MV/RM準備状態ラベルと同じ寿命。
+  arcAnnotations_.clear();
   // cancelPendingCpMvRm()/startDestinationPrompt()が自身の準備解除
   // 経路で行うのと同じ復元――ここでクリアされる古びた準備状態
   // (別のディレクトリへのナビゲート)は、カーソル行自身のハイライト
@@ -403,8 +403,6 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
   return true;
 }
 
-void DirectoryMode::setSearchAnnotation(const std::string &text) { searchAnnotation_ = text; }
-
 void DirectoryMode::reportEditError() { reportError("Invalid mode"); }
 
 void DirectoryMode::reportError(const std::string &message) {
@@ -417,10 +415,6 @@ void DirectoryMode::clearEditError() { showEditError_ = false; }
 void DirectoryMode::setPendingOperationLabel(const std::string &label) { pendingOperationLabel_ = label; }
 
 void DirectoryMode::clearPendingOperationLabel() { pendingOperationLabel_.clear(); }
-
-void DirectoryMode::setArcExtractSourceAnnotation(const std::string &archivePath) {
-  arcExtractSourceAnnotation_ = archivePath;
-}
 
 const std::string &DirectoryMode::currentDirectory() const { return currentDirectory_; }
 const std::vector<DirectoryEntry> &DirectoryMode::entries() const { return entries_; }

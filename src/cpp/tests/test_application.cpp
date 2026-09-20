@@ -6125,7 +6125,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back): from Directory mode showing the
   CHECK(app.feedByte(0x0d, std::nullopt));
   REQUIRE(pumpArchiveExtractToCompletion(app));
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
-  REQUIRE(app.directoryMode().hasArcExtractSourceAnnotation());
+  REQUIRE(!app.directoryMode().arcAnnotations().empty());
 
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Archive);
@@ -6148,7 +6148,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back): from Directory mode showing the
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
   CHECK(app.directoryMode().currentDirectory() == path());
-  CHECK_FALSE(app.directoryMode().hasArcExtractSourceAnnotation());
+  CHECK(app.directoryMode().arcAnnotations().empty());
 }
 
 // 2026-08-27 fix, a real report + repro ("^X^M[return]①→^G（=^J^J）
@@ -6189,7 +6189,7 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract (^Oa from Archive mode): ^G back via the
   CHECK(app.feedByte(0x0d, std::nullopt));
   REQUIRE(pumpArchiveExtractToCompletion(app));
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
-  REQUIRE(app.directoryMode().hasArcExtractSourceAnnotation());
+  REQUIRE(!app.directoryMode().arcAnnotations().empty());
 
   CHECK(app.handleCommand(Command::Back));  // ^G -- routes via goToRecentFile() back to Archive
   CHECK(app.currentMode() == ApplicationMode::Archive);
@@ -6235,14 +6235,14 @@ TEST_CASE_FIXTURE(Fixture, "ARC extract destination: opening a FILE there clears
   CHECK(app.feedByte(0x0d, std::nullopt));
   REQUIRE(pumpArchiveExtractToCompletion(app));
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
-  REQUIRE(app.directoryMode().hasArcExtractSourceAnnotation());
+  REQUIRE(!app.directoryMode().arcAnnotations().empty());
 
   int fileIdx = indexOf("flat.txt");
   REQUIRE(fileIdx >= 0);
   while (indexOf(app.directoryMode().selectedEntry()->name) != fileIdx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));  // open flat.txt -- must clear the annotation
   REQUIRE(app.currentMode() == ApplicationMode::File);
-  CHECK_FALSE(app.directoryMode().hasArcExtractSourceAnnotation());
+  CHECK(app.directoryMode().arcAnnotations().empty());
 
   REQUIRE(app.handleCommand(Command::Back));  // back to the destination directory (annotation already gone)
   CHECK(app.currentMode() == ApplicationMode::Directory);
@@ -10731,7 +10731,7 @@ TEST_CASE_FIXTURE(Fixture, "DU: opening an ORDINARY file (not via DU) from withi
   }
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
-  REQUIRE(app.directoryMode().hasSearchAnnotation());
+  REQUIRE(!app.directoryMode().primaryAnnotations().empty());
 
   // DU経由ではなく、普通にsub.txtをEnterで開く(openSelectedEntry()、
   // openSelectedDuEntry()ではない)。
@@ -10741,11 +10741,11 @@ TEST_CASE_FIXTURE(Fixture, "DU: opening an ORDINARY file (not via DU) from withi
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::File);
   // 「選択した時点」で既にクリアされている(Backを待たない)。
-  CHECK_FALSE(app.directoryMode().hasSearchAnnotation());
+  CHECK(app.directoryMode().primaryAnnotations().empty());
 
   REQUIRE(app.handleCommand(Command::Back));  // File -> Directory(subdir)、注釈は既に無い
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK_FALSE(app.directoryMode().hasSearchAnnotation());
+  CHECK(app.directoryMode().primaryAnnotations().empty());
 
   // Duへ一切跳ね返らず、通常の親ディレクトリ探索(subdir -> root)へ
   // 直接進む――以前のように結果画面を1往復する必要すら無い。

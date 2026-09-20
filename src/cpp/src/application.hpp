@@ -2947,17 +2947,6 @@ class Application {
   enum class CutOrigin { File, Help, Directory, Log, Man, Locate, Du };
   CutOrigin cutOrigin_ = CutOrigin::File;
 
-  // DirectoryModeの現在の検索注釈(自身のsetSearchAnnotation()
-  // コメント参照)をどの検索が設定したか――注釈のテキストだけでは、
-  // Command::Backがどの結果画面へルーティングすべきかを知るのに
-  // 構造的に十分なほど「FGREP:/EGREP:」と「CUT:」を区別しないので、
-  // これは全てのsetSearchAnnotation()呼び出しと並んで設定される。
-  // Du: 2026-09-09追加、実際のユーザー報告("DUでどれかを選ぶと
-  // 戻り値がDUじゃないのでDU一覧へ戻らない")――openSelectedDuEntry()
-  // 自身のコメント参照。
-  enum class DirectorySearchKind { Grep, Cut, Du };
-  DirectorySearchKind lastDirectorySearchKind_ = DirectorySearchKind::Grep;
-
   bool recordingMacro_ = false;
   std::vector<RecordedStep> recordedMacro_;
   // leaderXシーケンスの先頭の^Xバイトを、2番目のバイトが解決する

@@ -3911,7 +3911,7 @@ bool Application::handleCommand(Command command) {
         // クリア済みだが、fileReturnMode_は依然としてGrepのまま)は、
         // 下のreturnToDirectory()へ流れ落ちる代わりに、永遠に
         // returnToGrepResults()へ跳ね返り続けていた。
-        if (fileReturnMode_ == ApplicationMode::Grep && fileMode_.hasSearchAnnotation()) return returnToGrepResults();
+        if (fileReturnMode_ == ApplicationMode::Grep && !fileMode_.annotations().empty()) return returnToGrepResults();
         // 2026-08-18: openSelectedBannerEntry()(K-0/^T自身の候補リスト
         // の選択)経由で開かれたw.Nのエントリ――returnToDirectory()の
         // 「ファイルの実際の親ディレクトリをたどる」ロジック(そう
@@ -3957,10 +3957,21 @@ bool Application::handleCommand(Command command) {
       // 設定したかと併せて設定される)が、注釈のテキストだけでは
       // 構造的にそれらを区別できないため、どちらの結果画面へ戻すかを
       // 選ぶ。
-      if (currentMode_ == ApplicationMode::Directory && directoryMode_.hasSearchAnnotation()) {
-        if (lastDirectorySearchKind_ == DirectorySearchKind::Cut) return returnToCutResults();
-        if (lastDirectorySearchKind_ == DirectorySearchKind::Du) return returnToDuResults();
-        return returnToGrepResults();
+      if (currentMode_ == ApplicationMode::Directory && !directoryMode_.primaryAnnotations().empty()) {
+        auto kind = *directoryMode_.primaryAnnotations().topKind();
+        if (kind == DirectoryMode::DirAnnotationKind::Cut) return returnToCutResults();
+        if (kind == DirectoryMode::DirAnnotationKind::Du) return returnToDuResults();
+        if (kind == DirectoryMode::DirAnnotationKind::Grep) return returnToGrepResults();
+        // kind == Locate: 意図的に特別ルーティングしない(2026-09-20、
+        // ユーザー承認による意図的な挙動修正――旧実装は、
+        // lastDirectorySearchKind_がGrep/Cut/Duしか区別できず
+        // LOCATEを一切設定していなかったことにより、LOCATEでディレクトリ
+        // へ着地した直後の^Gが古い(デフォルトGrep)値に従って
+        // returnToGrepResults()へ誤ってルーティングされる潜在バグが
+        // あった(.steering/20260920-modeline-annotation-stack/
+        // requirements.md参照)。ここでは何もせず、下の通常のgoBack()/
+        // RecentDirectoryフォールバックへ進む――LOCATE由来の注釈自体は
+        // 消費されず、次の`ls`まで表示され続ける。
       }
       // CP/MV/RM操作がアーム済みの間の^G――cancelPendingCpMvRm()自身の
       // コメント参照("CPでは^Gが利かない")。すぐ上のhasSearchAnnotation()
@@ -3981,7 +3992,7 @@ bool Application::handleCommand(Command command) {
       // まさにこの時点では依然としてそのアーカイブである(ここに着地
       // して以来、他の何もファイルを開いていない)ので、これは直接
       // それに到達する。
-      if (currentMode_ == ApplicationMode::Directory && directoryMode_.hasArcExtractSourceAnnotation()) {
+      if (currentMode_ == ApplicationMode::Directory && !directoryMode_.arcAnnotations().empty()) {
         return goToRecentFile();
       }
       if (directoryMode_.goBack()) return true;
@@ -4422,7 +4433,7 @@ bool Application::openSelectedEntry() {
   // (^J^J)へルーティングされていた――それはまさにこの同じファイル
   // (RecentFile自身の最も最近のエントリ)を再び開き、それが「その後」
   // ここへ再び^Gで戻る、永遠に。
-  directoryMode_.clearArcExtractSourceAnnotation();
+  directoryMode_.arcAnnotations().pop();
   // 2026-09-15追加、直接のユーザー訂正("3.が惜しい。pre-commitを
   // 選択の時点でDUの履歴をクリアでよろしく（現状では引き続き^Gの
   // 戻り値がDU: /Users/...）。お手本なら`.`（カレントフォルダー）を
@@ -4437,7 +4448,7 @@ bool Application::openSelectedEntry() {
   // 前回(returnFromDu()へのclear追加)はDu結果画面を経由して1往復
   // した「後」でようやくクリアされる程度にとどまっていた。この呼び
   // 出しで、ファイルを開いた「その場で」即座にクリアするようにした。
-  directoryMode_.setSearchAnnotation("");
+  directoryMode_.primaryAnnotations().pop();
 
   std::string path = directoryMode_.currentDirectory();
   if (!path.empty() && path.back() != '/') path += '/';
@@ -4565,7 +4576,7 @@ bool Application::openSelectedEntryNoWrap() {
   // (フルパス)になったことで、事前に切り詰めないとContentView自身の
   // withTruncatedTrailing3()の予算計算がしばしば4文字未満まで落ち込み
   // trailing3が丸ごと消え得る。
-  fileMode_.setSearchOrigin(path, "(stdin)");
+  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, path, "(stdin)");
   fileMode_.setPagerListingDirectory(truncatedTrailingPath(directory));
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Directory;
@@ -4759,8 +4770,7 @@ bool Application::openSelectedDuEntry() {
     // であって集計対象ルートではない)を踏まえ、ディレクトリ側も同じ
     // 「エントリ自身の居場所」(この分岐では、たった今enterDirectory()
     // した、そのディレクトリ自身)へ揃えた。
-    directoryMode_.setSearchAnnotation("DU: " + duEntryFolder(*entry));
-    lastDirectorySearchKind_ = DirectorySearchKind::Du;
+    directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Du, "DU: " + duEntryFolder(*entry));
     // enterDirectory()は、上の注釈が設定される前に既に内部で一度
     // 再描画している――openSelectedLocateResult()自身の同一のコメント
     // 参照。
@@ -4790,7 +4800,7 @@ bool Application::openSelectedDuEntry() {
   // 換えた形)と食い違っていた。setSearchOrigin("DU", entry->path)へ
   // 切り替え、name="DU"+詳細=素の絶対パスという、LOCATEと全く同じ
   // 慣習に揃えた。
-  fileMode_.setSearchOrigin("DU", entry->path);
+  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, "DU", entry->path);
   // loadFile()は、上の注釈が設定される「前」に既に内部で一度再描画
   // している(view_.redraw()、FileMode::loadFile()自身の実装参照)
   // ――openSelectedDuEntry()自身のディレクトリ側の分岐が
@@ -4834,7 +4844,8 @@ bool Application::openSelectedLocateResult() {
     // ディレクトリ自体が既にDirectoryMode自身のnameフィールド全体
     // であるため、どの検索がそれを見つけたか以上に付け加えるものは
     // 何も無い。
-    directoryMode_.setSearchAnnotation("LOCATE: " + locateMode_.query());
+    directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Locate,
+                                              "LOCATE: " + locateMode_.query());
     // enterDirectory()は、上の注釈が設定される前に、既に内部で一度
     // 再描画している――GREPのマッチは常に「既に」一覧表示された現在
     // のディレクトリの内側にあるため、enterDirectory()を全く呼ばない
@@ -4876,7 +4887,7 @@ bool Application::openSelectedLocateResult() {
   // "LOCATE: "の接頭辞は付かない――ラベル自体が既にLOCATEだと言って
   // いる以上、なぜその重複がもう意味を成さないのかについてはそれ
   // 自身のコメント参照)。
-  fileMode_.setSearchOrigin("LOCATE", *path);
+  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, "LOCATE", *path);
   fileReturnMode_ = ApplicationMode::Locate;
   fileView_.redraw();  // すぐ上のDirectoryの分岐の同一のコメント参照
   return true;
@@ -5611,8 +5622,8 @@ bool Application::openSelectedGrepMatch() {
   ContentView &target = activeView();
   target.setCursorIndex(match->sourceLineIndex);
   if (grepReturnMode_ == ApplicationMode::Directory) {
-    directoryMode_.setSearchAnnotation(std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern());
-    lastDirectorySearchKind_ = DirectorySearchKind::Grep;
+    directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Grep,
+                                              std::string(grepSyntaxLabel(grepSyntax_)) + ": " + grepMode_.pattern());
     // EXEC(2026-08-24追加、openSelectedLocateResult()自身のコメント
     // と同じユーザー依頼): ここでのマッチは既に実際のディレクトリの
     // エントリに対応している(sourceLineIndexがdirectoryMode_.entries()
@@ -5651,7 +5662,7 @@ bool Application::openSelectedGrepMatch() {
     // いる)、"EGREP: pattern"というラベルの繰り返しではない――「それ」
     // は代わりに結果リストの画面に属する(grepView_自身のプロバイダ、
     // それ自身の同一の訂正参照)。
-    fileMode_.setSearchAnnotation(match->text);
+    fileMode_.annotations().push(FileMode::FileAnnotationKind::Search, match->text);
     fileReturnMode_ = ApplicationMode::Grep;
   } else if (grepReturnMode_ == ApplicationMode::Man) {
     // 2026-09-19四訂正、直接のユーザー提案("フラグはなるべく使いたく
@@ -5960,7 +5971,7 @@ bool Application::returnFromGrep() {
     // 隙間は無い(DirectoryMode::enterDirectory()自体が、新しい`ls`
     // のたびにsearchAnnotation_をクリアする、それ自身のコメント参照)、
     // これがFileの分岐だけがこれを必要とした理由である。
-    if (grepReturnMode_ == ApplicationMode::File) fileMode_.setSearchAnnotation("");
+    if (grepReturnMode_ == ApplicationMode::File) fileMode_.annotations().pop();
     return startRegexPromptList(PromptKind::GrepPattern);
   }
   currentMode_ = grepReturnMode_;
@@ -5975,8 +5986,8 @@ bool Application::returnFromGrep() {
   // を意味する、そのため以前の選択から残っていたどんな注釈も、もう
   // 今起きたことを説明しておらず、2回目に持ち越すのではなくクリア
   // される必要がある。
-  if (grepReturnMode_ == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
-  else if (grepReturnMode_ == ApplicationMode::File) fileMode_.setSearchAnnotation("");
+  if (grepReturnMode_ == ApplicationMode::Directory) directoryMode_.primaryAnnotations().pop();
+  else if (grepReturnMode_ == ApplicationMode::File) fileMode_.annotations().pop();
   // 2026-09-19四訂正: Man/Locateについては、ここでの後始末はもう
   // 不要になった――openSelectedGrepMatch()自身のMan/Locate分岐は
   // manReturnStack_/locateReturnStack_へGrepをpush_back()するだけで
@@ -6039,7 +6050,7 @@ bool Application::returnFromCut() {
   // である)。
   if (cutResultsResumed_) {
     cutResultsResumed_ = false;
-    if (cutReturnMode_ == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
+    if (cutReturnMode_ == ApplicationMode::Directory) directoryMode_.primaryAnnotations().pop();
     activeView().redraw();
     return true;
   }
@@ -6057,8 +6068,7 @@ bool Application::returnFromCut() {
   // なので、これは古いフレームではなく間違ったデータだった)。本物の
   // Directory起点のCUTだけがそれを設定する。
   if (cutReturnMode_ == ApplicationMode::Directory && cutOrigin_ == CutOrigin::Directory) {
-    directoryMode_.setSearchAnnotation("CUT: " + cutMode_.pattern());
-    lastDirectorySearchKind_ = DirectorySearchKind::Cut;
+    directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Cut, "CUT: " + cutMode_.pattern());
   }
   activeView().redraw();
   return true;
@@ -6203,7 +6213,7 @@ bool Application::returnFromDu() {
   // エントリ分岐だけが設定するもので、duReturnStack_の戻り先がFileの
   // 場合でも無関係かつ無害――directoryMode_自身の状態なので、Fileへ
   // 戻る時はどのみち参照されない)。
-  directoryMode_.setSearchAnnotation("");
+  directoryMode_.primaryAnnotations().pop();
   // 2026-09-19再訂正、manReturnStack_/locateReturnStack_と全く同じ
   // 仕組みへ揃える(application.hpp自身のduReturnStack_宣言コメント
   // 参照): openSelectedGrepMatch()自身のDu分岐がマッチへ着地する度に
@@ -6439,7 +6449,7 @@ bool Application::returnFromListBrowser() {
       // 状態と区別が付かない)を表示していた。まさに同じ理由による
       // returnFromGrep()自身の同一のクリア処理を反映している――それ
       // 自身のコメント参照。
-      if (returnMode == ApplicationMode::Directory) directoryMode_.setSearchAnnotation("");
+      if (returnMode == ApplicationMode::Directory) directoryMode_.primaryAnnotations().pop();
       activeView().redraw();
       return true;
     }
@@ -7447,8 +7457,9 @@ bool Application::executeShowUsilicBanner() {
   // として無条件にdirectoryMode_.currentDirectory()を表示していた
   // ――この2つはずれてしまっていた。今は^Gが実際に使う方をそのまま
   // 反映する。
-  fileMode_.setSearchOrigin(
-      "INFO", infoPreviousFilePath_.empty() ? directoryMode_.currentDirectory() : infoPreviousFilePath_);
+  fileMode_.annotations().pushWithNameOverride(
+      FileMode::FileAnnotationKind::Search, "INFO",
+      infoPreviousFilePath_.empty() ? directoryMode_.currentDirectory() : infoPreviousFilePath_);
   // 2026-08-28修正、実際の報告+再現("usilic -c ~/git/usilic→^I→
   // 名前欄が「INFO」ではなく「usilic」、戻り値が「~/.usilic/」の
   // まま"): 上のloadFile()は既に内部で一度、FileMode自身の「デフォル
@@ -7593,7 +7604,8 @@ bool Application::openSelectedBannerEntry() {
       fileView_.setLines({ContentView::Line{
           kNoString, std::nullopt, std::nullopt, {AttributeRun{0, static_cast<int>(kNoString.size()), Display::Attribute::Underline}}}});
     }
-    fileMode_.setSearchOrigin(std::filesystem::path(fixedPath).filename().string(), "INFO");  // 2026-08-27リネーム
+    fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search,
+                                                  std::filesystem::path(fixedPath).filename().string(), "INFO");  // 2026-08-27リネーム
     fileReturnMode_ = ApplicationMode::File;
     // loadFile()は既に内部で一度、デフォルトのモードラインで再描画
     // していた(その時点ではsearchOriginはまだ空だった――loadFile()
@@ -7608,7 +7620,8 @@ bool Application::openSelectedBannerEntry() {
     if (!endsWith(workPath)) continue;
     fileMode_.saveCursorPosition();
     if (!fileMode_.loadFile(workPath)) return false;
-    fileMode_.setSearchOrigin(std::filesystem::path(workPath).filename().string(), "INFO");  // 2026-08-27リネーム
+    fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search,
+                                                  std::filesystem::path(workPath).filename().string(), "INFO");  // 2026-08-27リネーム
     fileReturnMode_ = ApplicationMode::File;
     fileView_.redraw();  // 上のfixedPathループ自身の同一のコメント参照
     return true;
@@ -8027,7 +8040,8 @@ void Application::finishArchiveLoadAsync() {
   if (archiveLoadForPager_) {
     archiveLoadForPager_ = false;
     if (fileMode_.loadContentAsPipe(archiveLoadPendingOutput_)) {
-      fileMode_.setSearchOrigin(archiveLoadPendingPath_, archiveLoadPendingBadge_);
+      fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, archiveLoadPendingPath_,
+                                                    archiveLoadPendingBadge_);
       fileMode_.setPagerListingDirectory(truncatedTrailingPath(archiveLoadPendingDirectory_));
       currentMode_ = ApplicationMode::File;
       fileReturnMode_ = ApplicationMode::Directory;
@@ -12149,7 +12163,7 @@ void Application::pollPendingArchiveExtractShellRun() {
 
   if (ok && directoryMode_.descendTo(run.destination)) {
     currentMode_ = ApplicationMode::Directory;
-    directoryMode_.setArcExtractSourceAnnotation(run.archivePath);
+    directoryMode_.arcAnnotations().push(DirectoryMode::ArcAnnotationKind::Arc, run.archivePath);
     // 2026-09-09修正、PendingArchiveExtractShellRun::topLevelNames自身の
     // コメント参照――アーカイブ自身のメンバー一覧から求めた名前を
     // そのまま一時マークする(ディレクトリの実際の前後比較には一切
@@ -12208,7 +12222,7 @@ bool Application::pollShellHandoff() {
     // 初回はここでもわざと1行だけに絞り、以後の各メインループの
     // 反復(pollPagerExitNotice()自身のコメント参照)が1行ずつ育てる。
     fileMode_.loadStream(fd, /*ownsFd=*/true, "", 1);
-    fileMode_.setSearchOrigin("", "(stdin)");
+    fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, "", "(stdin)");
     fileMode_.setPagerReturnsToShell(true);  // それ自身の宣言コメント参照: ^G/'q'はShellへ戻る、不活性/終了ではない
     activeView().redraw();
     return true;
@@ -12294,7 +12308,7 @@ bool Application::tryPollProgramHandoff(pid_t pid, ApplicationMode capturedMode)
     currentMode_ = ApplicationMode::File;
     fileReturnMode_ = capturedMode;
     fileMode_.loadStream(fd, /*ownsFd=*/true, "", 1);
-    fileMode_.setSearchOrigin("", "(stdin)");
+    fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, "", "(stdin)");
     fileMode_.setPagerReturnsToProgram(true);
     if (capturedMode == ApplicationMode::Directory) {
       fileMode_.setPagerListingDirectory(truncatedTrailingPath(directoryMode_.currentDirectory()));

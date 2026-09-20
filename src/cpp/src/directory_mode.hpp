@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "annotation_stack.hpp"
 #include "configuration.hpp"
 #include "content_view.hpp"
 #include "grep_mode.hpp"
@@ -291,26 +292,32 @@ class DirectoryMode {
   void cycleSortKey();
   LsSortKey sortKey() const;
 
-  // ユーザーがこの一覧に対するFGREP/EGREP/CUT検索から戻ってきた時に
-  // Application::openSelectedGrepMatch()/returnFromCut()によって
-  // 設定される――モードラインのtrailing2フィールド("FGREP:
-  // pattern"/"CUT: pattern")として表示され、mode.c自身のT_grepケース
+  // ユーザーがこの一覧に対するFGREP/EGREP/CUT/DU/LOCATE検索から戻って
+  // きた時にApplication::openSelectedGrepMatch()/returnFromCut()等に
+  // よってpushされる――モードラインのtrailing2フィールド("FGREP:
+  // pattern"/"CUT: pattern"等)として表示され、mode.c自身のT_grepケース
   // (`sprintf(lp->prev, "%s: %s", ...)`、「直前にどの検索から来たかを
   // 覚えている」という注釈で、実際のCUIスクリーンショットで確認済み)
   // からの移植。legacy自身のT_dirケースにおけるis_prev(prev,
-  // M_fgrep/M_egrep)チェックは、ここでCUTへ一般化された同じ発想で
-  // ある。CUTも同じ「prev」スロットへ戻ってくることがあるため。
-  // enterDirectory()によってクリアされる(新しい`ls`は、この注釈が
+  // M_fgrep/M_egrep)チェックは、ここでCUT/DU/LOCATEへ一般化された同じ
+  // 発想である。
+  // enterDirectory()によってclear()される(新しい`ls`は、この注釈が
   // 参照していた古い一覧を生み出した検索が何であれ無効にする)。
   // カーソルを動かすたびには「クリアされない」――これはlegacy自身の
   // T_dir処理と一致しており、本物のディレクトリ変更でのみこれを
-  // クリアする。意図的に汎用的(名前上「grep専用」ではない): どの
-  // 「種類」の検索がそれを設定したかはApplicationが別に追跡している
-  // (自身のlastDirectorySearchKind_参照)ので、Backは正しい結果画面へ
-  // ルーティングできる――このクラスはテキストを表示することだけを
-  // 所有し、それが何を意味するかは所有しない。
-  void setSearchAnnotation(const std::string &text);
-  bool hasSearchAnnotation() const { return !searchAnnotation_.empty(); }
+  // クリアする。
+  //
+  // 2026-09-20、`AnnotationStack<DirAnnotationKind>`へ置き換え
+  // (.steering/20260920-modeline-annotation-stack/design.md参照)。
+  // 以前は「表示テキスト(searchAnnotation_)」と「種別
+  // (Application::lastDirectorySearchKind_、Backが正しい結果画面へ
+  // ルーティングするための別フィールド)」が別々に管理されており、
+  // 「どちらかだけ更新し忘れる」型のバグを繰り返し起こしていた
+  // (LOCATE用の種別が一度も追加されなかったことによる`^G`誤爆を含む)。
+  // 今はpush()一発でテキスト+種別が同期して設定される。
+  enum class DirAnnotationKind { Grep, Cut, Du, Locate };
+  AnnotationStack<DirAnnotationKind> &primaryAnnotations() { return primaryAnnotations_; }
+  const AnnotationStack<DirAnnotationKind> &primaryAnnotations() const { return primaryAnnotations_; }
 
   // in-place GREP(Application::activateGrepInPlace()/deactivateGrepInPlace()、
   // 詳細は.steering/20260909-grep-inline-highlight/design.md参照)関連の
@@ -387,33 +394,20 @@ class DirectoryMode {
   // 来たか」)。setPendingOperationLabel()自身の準備状態と同じ方法で
   // クリアされる: enterDirectory()自身によって。ユーザーが他所へ
   // ナビゲートしたら残り続けないように。
-  void setArcExtractSourceAnnotation(const std::string &archivePath);
-  // 2026-08-27の追加、直接のユーザー提案("ディレクトリ（ls）の
-  // 戻り値に「ARC:」等モードへの帰還があるときは^J^Jルーチンへ移行
-  // じゃまずいの？"): Application::handleCommand(Command::Back)が、
-  // この注釈を、すぐ上のhasSearchAnnotation()を既にチェックしている
-  // のと「同じ」方法でチェックできるようにする(その前例は、汎用の
-  // ModeStackベースgoBack()の代わりにBackをreturnToGrepResults()/
-  // returnToCutResults()へルーティングする――これは、代わりに
-  // goToRecentFile()/^J^Jへルーティングするという点を除いて同一の
-  // 形である。ModeStackフレームは「Archiveモードへ戻る」を全く表現
-  // できないため、pollPendingArchiveExtractShellRun()自身のコメント
-  // 参照)。
-  bool hasArcExtractSourceAnnotation() const { return !arcExtractSourceAnnotation_.empty(); }
-  // 2026-08-27の追加、直接のユーザー報告+自身が提案した修正
-  // ("①のあと「ＢＳ世界の〜」を閲覧したりutf8/へ降りたりした時点で
-  // ARC履歴は抹消し"): サブディレクトリへ降りることは既に
-  // enterDirectory()へ到達する(これは自力でこの注釈をクリアする、
-  // setArcExtractSourceAnnotation()自身のコメント参照)が、ファイルを
-  // 「開く」ことは決してそうならない――Application::
-  // returnToDirectory()自身の「ファイルの本物の親ディレクトリを
-  // 辿る」修正は、ファイルが「現在表示中の」ディレクトリから開かれた
-  // 場合(ここでのよくあるケース)に丁度何もしないので、そうしないと
-  // この注釈はファイルの閲覧を無期限に生き残ってしまう。
-  // Application::openSelectedEntry()は、選択されたもの(ファイル/EXEC
-  // /アーカイブいずれも)を開くために離れる直前に、この理由で明示的に
-  // これを呼ぶ。
-  void clearArcExtractSourceAnnotation() { arcExtractSourceAnnotation_.clear(); }
+  //
+  // 2026-09-20、`AnnotationStack<ArcAnnotationKind>`へ置き換え
+  // (design.md参照)。primaryAnnotations_とは独立した別インスタンス
+  // ――「ARC展開したディレクトリの中でさらにDUした」場合等、trailing2
+  // (primaryAnnotations_)とtrailing3(こちら)が同時に生きうるため。
+  // Application::handleCommand(Command::Back)が、
+  // primaryAnnotations_を既にチェックしているのと同じ方法でこちらも
+  // チェックする(空でなければ、汎用のModeStackベースgoBack()の代わりに
+  // goToRecentFile()/^J^Jへルーティングする――ModeStackフレームは
+  // 「Archiveモードへ戻る」を全く表現できないため、
+  // pollPendingArchiveExtractShellRun()自身のコメント参照)。
+  enum class ArcAnnotationKind { Arc };
+  AnnotationStack<ArcAnnotationKind> &arcAnnotations() { return arcAnnotations_; }
+  const AnnotationStack<ArcAnnotationKind> &arcAnnotations() const { return arcAnnotations_; }
 
   // カーソル自身の行を、currentDirectory_に対してHistory
   // (PositionCategory::Directory)へ記録する。descendTo()/goBack()が
@@ -450,11 +444,11 @@ class DirectoryMode {
   // toggleReverseSort()/cycleSortKey()自身のコメント参照。
   bool reverseSort_ = false;
   LsSortKey sortKey_ = LsSortKey::Default;
-  std::string searchAnnotation_;
+  AnnotationStack<DirAnnotationKind> primaryAnnotations_;
   bool showEditError_ = false;
   std::string editErrorMessage_ = "Invalid mode";
   std::string pendingOperationLabel_;
-  std::string arcExtractSourceAnnotation_;
+  AnnotationStack<ArcAnnotationKind> arcAnnotations_;
 };
 
 }  // namespace fm
