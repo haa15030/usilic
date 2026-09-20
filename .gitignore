@@ -101,3 +101,11 @@ coverage/
 !.steering/.gitkeep
 
 .claude/settings.local.json
+
+# .claude/hooks/history_sync.py(docs/HISTORY.md自動追記フック)の実行時状態。
+# transcript_pathごとのbyte_offset等、このマシン・このセッション列に
+# 固有の情報でしかないためコミット対象外(.steering/20260920-
+# history-jsonl-automation/design.md参照)。
+.claude/hooks/.history_sync_state.json
+.claude/hooks/history_sync.log
+__pycache__/

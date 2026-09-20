@@ -11,5 +11,17 @@
     "deny": [],
     "ask": []
   },
-  "hooks": {}
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/history_sync.py",
+            "statusMessage": "docs/HISTORY.mdを更新中..."
+          }
+        ]
+      }
+    ]
+  }
 }
