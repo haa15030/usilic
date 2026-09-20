@@ -19435,3 +19435,157 @@ Waiting for that build+test run to finish.
 まだコンパイルは通っていません(直前のリンカーエラーは一時的な破損ファイルによるものらしく、再試行中)。完了を待ちます。
 
 リンカーエラーの原因切り分けのため、並列指定無しで再ビルド中です。完了を待ちます。
+
+6件とも通りました。ビルドも通っています(先ほどのリンカーエラーは`-j4`並列実行時の一過性の問題で、逐次ビルドでは再現しませんでした)。
+
+`make usilic`とinstallまで進めます。
+
+`^Ou`の実装が完了しました。
+
+**動作**: File-selectorで通常ファイルをマーク(`.`/`^Space`)して`^Ou`を押すと最初のファイルが開き、`:`で次、`;`で前のファイルへ切り替わります(先頭/末尾では何もしません)。このセッション中は`n`/`p`/`x`/`f`を無効化し(ご承認いただいた通り)、`^G`でDirectoryへ正しく戻り、セッション状態もクリアされます。
+
+- 新規ユニットテスト6件、既存のPager系/JumpNext,Previous系/Back系テストへの回帰無しを確認
+- `make usilic`ビルド成功(警告0件)、`~/.local/bin/usilic`へインストール済み
+- 詳細は`.steering/20260920-underline-view-semicolon-nav/`(requirements/design/tasklist、振り返り記録済み)参照
+
+一点確認です。`make install`が`src/TUTORIAL`を実際にインストール先へコピーしていることを確認しました――つまりアプリの`^T`(TUTORIAL画面)で実際に表示されるのはこのファイルです。今回パースいただいた抜粋を`src/TUTORIAL`(および`TUTORIAL.en`)へ私の方で反映しましょうか、それとも「編集中の」別ドラフトをお持ちで、あとでご自身で反映されますか?
+
+<あとで反映。
+
+>了解しました。TUTORIALへの反映はそちらにお任せします。コード側の変更(`^Ou`実装)はコミット待ちの状態です、必要になったらお声がけください。
+
+<ソースを変更したらコミット。
+
+>2つのコミットに分けてコミットしました(pushはしていません)。
+
+- `9427c39`: docs/HISTORY.md — 今回のセッション分の逐語ログ反映
+- `4f242be`: `^Ou`実装本体(application.cpp/hpp・テスト)
+
+<`^Oa`、せっかく作ってもらったんだが、よくわからない仕様になってしまっている。特にページャーモードで起動するのはマズい。最初はその仕様だったもののHISTORY.md:18159のようにusilic内で完結することになった。だがCUTでもないのに `;`/`:` はやはりおかしい。`^G^N^M`/`^G^P^M`で定義されるマクロキーと取説に書いてしまっていて動きが合ってない。そこであらたにUNDERモードを新設したい。
+^Ouで発動し、アンダーラインファイル一覧を表示する。
+これならCUT同様 `;`/`:` が本来の機能として使える。
+そう思ってFILEを見てみるとそのような仕様にはなっていない（FILE一覧から選んだファイル上で `:` とやると（ls）へ戻って終わり）。
+LOCATEはなっているけれども戻り値が^Gじゃないバグがある（HISTORY.md:18022がまだ未対応）。
+やはり一覧が出るモードは同じ動きにしておきたいのでFILE/DIRにも反映したうえでLOCATEの戻り値も修正して欲しい。具体的には、
+`usilic -c git/usilic^M`→`^J^L^M^M`→
+「LOCATE」「00004/23297  0%」「367723」「/Applications/Adobe...ings/Adobe/HKSCS.txt」
+を次のように変更
+「/Applications/Adobe...ings/Adobe/HKSCS.txt」「00004/23297  0%」「367723」「LOCATE」
+
+>Found it — it's in `file_mode.cpp` itself. Let's read the whole provider.
+
+Let's revert this Command enum block to its original state plus the new, simpler `StartUnderlineView` entry.
+
+Now let's remove the `underlineViewActive_` member and update the `collectTargetFilePaths`/`startUnderlineFileView` declarations.
+
+Now let's remove `underlineViewActive_` member and add the `underlineMode_`/`underlineView_` members. Let's view the current member declaration area.
+
+Good — `$(wildcard $(SRC_DIR)/*.cpp)` automatically picks up new files. No Makefile edit needed. Now let's wire up the Application members and constructor.
+
+Now add the `#include "underline_mode.hpp"` and remove the `underlineViewActive_` member.
+
+Now remove the obsolete `underlineViewActive_` member.
+
+Now add `ApplicationMode::Underline` to the enum (before `Copy`, to get exhaustive-switch warnings).
+
+Now remove the `;`/`:` interception block in `dispatchByte()`.
+
+Now remove the Back-cleanup block.
+
+Now let's find where LOCATE's Back-routing check happens (fileReturnMode_ == Locate) to add Underline right alongside it.
+
+Now let's add `Command::Enter` dispatch for Underline mode.
+
+Now let's replace this with the new implementation, plus `openSelectedUnderlineEntry()` and `returnFromUnderline()`.
+
+Now the LOCATE call site.
+
+Now let's build to discover missing `ApplicationMode::Underline` switch cases and any other errors.
+
+Now let's check the other two switches (`nearestFileOrDirectoryAnchor()` at ~6903/6905, and the one at ~8934).
+
+Now let's check the switch at line ~8934 (shifted).
+
+Found it — need to add `underlineView_.setViewport(0, contentHeight)` too, otherwise the list won't resize on terminal resize.
+
+Clean. Let's check a few more places that might reference per-mode view lists (drag-scroll, idle hover redraw, or a "list of all views" loop) to ensure `underlineView_` is included wherever `duView_`/`locateView_` are grouped.
+
+Now let's replace the whole block (lines 13222-13349) with new tests matching the redesigned UNDER mode.
+
+I'll add an `underlineMode()` accessor too, mirroring `duMode()`.
+
+Now find the corresponding `.cpp` implementation of `duMode()` to add `underlineMode()` next to it.
+
+Now let's rewrite the test block.
+
+Good, exists. Now let's build and run these tests.
+
+`make usilic`は警告0件で通りました。テストビルド完了を待っています。
+
+まだ完了していないようです(終了マーカーがまだ出ていません)。通知を待ちます。
+
+テストビルドの完了を待っています。
+
+Build succeeded (`underline_mode.cpp` picked up automatically). Let's run the new and related tests.
+
+Found the bug — I conflated "Back from the file to the list" with "Back from the list to Directory". Let's split into two functions like Du's pattern.
+
+Now let's add `returnToUnderlineResults()` and fix the call site.
+
+Now fix the call site at line 3920 to use `returnToUnderlineResults()` instead.
+
+Now add the declaration in application.hpp.
+
+Now rebuild and test.
+
+テストの再ビルドを待っています。
+
+ビルド完了を待っています。
+
+Now let's rebuild and test.
+
+ビルド完了を待っています。
+
+ビルド完了を待っています。
+
+All 6 pass. Now let's run the broader regression suite to check DU/LOCATE and related areas since I changed their mode-line field ordering.
+
+関連する回帰テストを実行中です。完了を待ちます。
+
+テスト完了を待っています。
+
+</btw何のテスト？
+
+2026-09-21
+
+>DU/LOCATE(モードラインのname⟷戻り値ラベル入れ替えの影響確認)、Pager系/JumpNext,Previous/MarkAndAdvance,Retreat(UNDER新設に伴うBackディスパッチ変更の影響確認)、マウスクリック系(UNDER用に追加したクリック処理の副作用確認)の回帰テストです。
+
+ビルド完了を待っています。
+
+テストの再ビルドを待っています。
+
+回帰テストの再実行を待っています。
+
+テスト完了を待っています。
+
+Only the two pre-existing, unrelated failures remain (confirmed earlier as environment-dependent, not caused by my changes). Let's run the full test suite once for a final sanity check before wrapping up.
+
+フルテストスイートの完了を待っています。
+
+フルテスト完了を待っています。
+
+フルテストの完全なログを取得中です。完了を待ちます。
+
+完了を待っています。
+
+ベースコミット(4f242be)でビルド中です。完了を待ちます。
+
+完了を待っています。
+
+Confirmed pre-existing (reproduces identically without my changes — the known "Adobe path" environment flake). Restoring my work.
+
+My changes are restored. Let's rebuild to confirm everything's consistent, then install.
+
+再ビルドを待っています。
+
+ビルド完了を待っています。
