@@ -13,6 +13,10 @@ struct DuEntry {
   std::string path;
   long sizeKb = 0;
   bool isDirectory = false;
+  // `ls -F`と同じ型マーカー(表示専用、pathには含めない): ディレクトリ'/'、
+  // シンボリックリンク'@'、実行ファイル'*'、FIFO'|'、ソケット'='、他は0。
+  // duには`ls -F`相当のオプションが無い(BSD/GNUとも)ため、ここで補う。
+  char typeMarker = 0;
 };
 
 // ディスク使用量モード(T_du): あるディレクトリに対して`du`を実行し、

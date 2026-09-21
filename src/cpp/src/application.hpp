@@ -266,6 +266,7 @@ enum class Command {
   // 「一覧表示」に分かれているのと同じ形)。
   StartUsilicHistorySorted,  // `^J^U`
   StartUsilicHistory,        // `^Ju`
+  StartUsilicToc,            // `^[u`
   StartCopy,
   StartMove,
   StartRemove,
@@ -1500,7 +1501,10 @@ class Application {
   // 2026-09-21追加: アクセス履歴(RingCategory::Usilic)をUSILIC一覧として
   // 表示する。sorted=trueはファイル/ディレクトリ/manの順に、各々ソート
   // 済み重複排除。falseは記録順(直近が一番下、カーソルもそこ)。
-  bool startUsilicHistory(bool sorted);
+  enum class UsilicStyle { Chronological, Sorted, Toc };
+  bool startUsilicHistory(UsilicStyle style);
+  // 目次(MAN/DIR/FILE)で選んだ種別の一覧(ソート・重複排除)へ進む。
+  bool openUsilicGroup(const std::string &title);
   // UnderlineMode一覧からEnterで選んだファイルを開く――
   // openSelectedDuEntry()/openSelectedLocateResult()と同型。
   bool openSelectedUnderlineEntry();
@@ -3271,6 +3275,7 @@ class Application {
   // startPromptHistoryRecall()をどう丸ごと再利用するかについては
   // startRegexPromptList()自身の定義コメント参照。
   bool startRegexPromptList(PromptKind kind);
+  void selectListBrowserItem(const std::string &item);
   // 生きたSHELLプロンプトでK-49(^R)が押された(^R設計の統合ポイント
   // 3――CLAUDE.mdの項目162/163参照): ^J^R自身の「COMMAND」ピッカーが
   // 既に使っているのと同じ基礎データである、ソートされた
@@ -3603,9 +3608,16 @@ class Application {
   bool manReturnsToCandidateList_ = false;
   // USILIC一覧(アクセス履歴)から開いたManは、^GでそのUSILIC一覧へ戻る。
   bool manReturnsToUnderline_ = false;
+  // USILIC一覧の階層: None=マーク一覧/時系列、Toc=MAN/DIR/FILE目次、Group=種別ごとの一覧。
+  enum class UsilicLevel { None, Toc, Group };
+  UsilicLevel usilicLevel_ = UsilicLevel::None;
+  int usilicGroupKind_ = 0;  // 目次で最後に選んだ種別(0=MAN、1=DIR、2=FILE)
   // DIR一覧(^X^D)から選んで移動する前のディレクトリ。注釈Dirの^Gで
   // 元の位置へ戻した上で一覧を再表示する。
   std::string dirListOriginDirectory_;
+  // 上の一覧で選んだ項目(^Gで一覧へ戻る時、カーソルをそこへ復元する)。
+  std::string dirListSelectedItem_;
+  std::string manListSelectedItem_;  // MAN一覧から選んだページ(^G復帰時のカーソル復元用)
   bool grepReturnsToCandidateList_ = false;
   bool cutReturnsToCandidateList_ = false;
   // returnToCutResults()/returnFromCut()(2026-08-24の修正、実際の

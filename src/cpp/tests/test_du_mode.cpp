@@ -91,3 +91,20 @@ TEST_CASE_FIXTURE(Fixture, "saveCursorPosition / loadUsage: cursor position roun
   REQUIRE(mode.loadUsage(path()));
   CHECK(view.cursorIndex() == last);
 }
+
+// 2026-09-21、直接のユーザー依頼: duには`ls -F`相当が無いので、表示行の末尾へ型マーカーを補う
+// (ディレクトリ'/'、実行ファイル'*'、シンボリックリンク'@')。entry.path自体は変えない。
+TEST_CASE_FIXTURE(Fixture, "DuMode: entries carry ls -F style type markers, entry paths stay clean") {
+  { std::ofstream(root / "run.sh") << "x"; }
+  fs::permissions(root / "run.sh", fs::perms::owner_exec, fs::perm_options::add);
+  fs::create_symlink(root / "top.txt", root / "link");
+  auto row = [&](const char *name) { return "4\t" + (root / name).string() + "\n"; };
+  REQUIRE(mode.loadUsageFromOutput(root.string(), row("subdir") + row("top.txt") + row("run.sh") + row("link")));
+  const auto &entries = mode.entries();
+  REQUIRE(entries.size() == 4);
+  CHECK(entries[0].typeMarker == '/');
+  CHECK(entries[1].typeMarker == 0);
+  CHECK(entries[2].typeMarker == '*');
+  CHECK(entries[3].typeMarker == '@');
+  CHECK(entries[0].path == (root / "subdir").string());  // pathはマーカー無し
+}

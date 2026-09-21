@@ -10888,7 +10888,9 @@ TEST_CASE_FIXTURE(Fixture, "DU: filenames start at the same column across entrie
   std::optional<std::size_t> nameStartColumn;
   for (std::size_t i = 0; i < lines.size(); i++) {
     REQUIRE(lines[i].text.size() >= app.duMode().entries()[i].path.size());
-    std::size_t thisStart = lines[i].text.size() - app.duMode().entries()[i].path.size();
+    // 末尾の`ls -F`型マーカー(表示専用、1文字)は、パス自体の長さには含めない。
+    std::size_t marker = app.duMode().entries()[i].typeMarker ? 1 : 0;
+    std::size_t thisStart = lines[i].text.size() - marker - app.duMode().entries()[i].path.size();
     if (!nameStartColumn) {
       nameStartColumn = thisStart;
     } else {
@@ -10946,7 +10948,10 @@ TEST_CASE_FIXTURE(Fixture, "DU: 'DU: ...' annotation appears in the actual paint
   REQUIRE(app.duMode().selectedEntry()->isDirectory);
   REQUIRE(app.handleCommand(Command::Enter));
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
-  CHECK(display.rowText(display.rows() - 1).find("DU: ") != std::string::npos);
+  // 2026-09-21: ディレクトリ着地も、ファイルと同じ戻り値"DU"だけにした(名前欄が既に
+  // 到着先パスを出しているので"DU: パス"は重複していた)。
+  CHECK(display.rowText(display.rows() - 1).find("DU") != std::string::npos);
+  CHECK(display.rowText(display.rows() - 1).find("DU: ") == std::string::npos);
   REQUIRE(app.handleCommand(Command::Back));
   REQUIRE(app.currentMode() == ApplicationMode::Du);
 
@@ -11874,14 +11879,43 @@ TEST_CASE_FIXTURE(Fixture, "DIR Select (^X^D): picking a directory discards a pr
   REQUIRE(app.currentMode() == ApplicationMode::Directory);
   REQUIRE(app.directoryMode().currentDirectory() == path());
 
+  // 2026-09-21: 一覧ありモードの仕様統一(5aa326f)以降、^Gはまず元の位置(subdir/)へ
+  // 戻した上でDIR一覧を再表示し、カーソルは選んだ項目に復元される。
+  // (2回目の^Gで一覧を抜けて、元のDirectoryへ戻る。)
   REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
   CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
+  REQUIRE(app.listBrowserMode().selectedItem() != nullptr);
+  CHECK(*app.listBrowserMode().selectedItem() == root.string() + "/");
   REQUIRE(app.handleCommand(Command::Back));
-  CHECK(app.directoryMode().currentDirectory() == path());
-  // Never exhausts -- the OLD descent chain (subdir/'s own parent
-  // frame from the Enter above) is gone, replaced by this fresh
-  // toggling floor, matching resetNavigationToFloor()'s own contract.
-  CHECK(app.directoryMode().canGoBack());
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
+}
+
+// 2026-09-21、直接のユーザー報告(実機PTYでも再現・確認): ^X^Dで選んだ先のモードラインに
+// 戻り値"DIR"が出ず(注釈を積んだ後に再描画していなかった)、^Gで一覧へ戻ってもカーソルが
+// 先頭に戻っていた。
+TEST_CASE_FIXTURE(Fixture, "DIR Select (^X^D): the destination's mode line shows DIR, and ^G restores the cursor "
+                           "to the picked item") {
+  REQUIRE(app.start(path()));
+  std::string other = (root / "subdir").string() + "/";
+  history.pushRecent(RingCategory::RecentDirectory, other);
+  history.pushRecent(RingCategory::RecentDirectory, root.string() + "/");
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte(0x04, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  const auto &items = app.listBrowserMode().items();
+  int idx = static_cast<int>(std::find(items.begin(), items.end(), other) - items.begin());
+  REQUIRE(idx < static_cast<int>(items.size()));
+  REQUIRE(idx > 0);  // 先頭ではない項目を選ぶ(カーソル復元が意味を持つように)
+  app.activeContentView().setCursorIndex(idx);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.activeContentView().modeLineText().find("DIR") != std::string::npos);
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().selectedItem() != nullptr);
+  CHECK(*app.listBrowserMode().selectedItem() == other);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^F/^X^D/^J^P all work from CUT mode too, not just Directory "
@@ -15152,12 +15186,29 @@ TEST_CASE_FIXTURE(Fixture, "^J^U/^Ju: FILE/DIR/MAN accesses are mirrored into th
   CHECK(app.underlineMode().selectedEntry() == &chrono.back());
   REQUIRE(app.handleCommand(Command::Back));
 
+  // ^J^U: 常時3項目の目次。FILE(3行目)を選ぶと、ソート・重複排除された
+  // ファイルだけの一覧になり、^Gで目次、もう一度で元へ戻る。
   REQUIRE(app.handleCommand(Command::StartUsilicHistorySorted));
-  const auto &sorted = app.underlineMode().entries();
-  auto pos = [&](const std::string &e) { return std::find(sorted.begin(), sorted.end(), e) - sorted.begin(); };
-  CHECK(pos("/tmp/bbb.txt") < pos("/tmp/zzz.txt"));      // sorted within files
-  CHECK(pos("/tmp/zzz.txt") < pos("/tmp/aaa/"));         // files before directories
-  CHECK(pos("/tmp/aaa/") < pos("ls (man)"));             // directories before man pages
+  {
+    const auto &flat = app.underlineMode().entries();
+    CHECK(std::is_sorted(flat.begin(), flat.end()));
+    CHECK(std::adjacent_find(flat.begin(), flat.end()) == flat.end());
+  }
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.handleCommand(Command::StartUsilicToc));
+  CHECK(app.underlineMode().entries() == std::vector<std::string>{"MAN", "DIR", "FILE"});
+  REQUIRE(app.handleCommand(Command::MoveDown));
+  REQUIRE(app.handleCommand(Command::MoveDown));
+  REQUIRE(app.handleCommand(Command::Enter));
+  const auto &files = app.underlineMode().entries();
+  auto pos = [&](const std::string &e) { return std::find(files.begin(), files.end(), e) - files.begin(); };
+  CHECK(pos("/tmp/bbb.txt") < pos("/tmp/zzz.txt"));
+  CHECK(pos("ls (man)") == static_cast<long>(files.size()));
+  CHECK(pos("/tmp/aaa/") == static_cast<long>(files.size()));
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.underlineMode().entries().size() == 3);
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
 TEST_CASE("History: the USILIC ring survives serialize/load, and files without the section still load") {

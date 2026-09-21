@@ -38,7 +38,8 @@ class UnderlineMode {
   // `paths`(絶対パス、通常ファイルのみ、呼び出し側が既に収集済み)を
   // 一覧表示する。
   // cursorAtEnd=trueは、履歴を時系列で出す時に直近(一番下)へカーソルを置く。
-  void show(std::vector<std::string> paths, bool cursorAtEnd = false);
+  // cursorIndex>=0はカーソルをその行へ置く(cursorAtEndより優先)。
+  void show(std::vector<std::string> paths, bool cursorAtEnd = false, int cursorIndex = -1);
 
   const std::vector<std::string> &entries() const;
   const std::string *selectedEntry() const;

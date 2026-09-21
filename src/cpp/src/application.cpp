@@ -2708,6 +2708,9 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 別のキー。
       case 'P':
         return handleCommand(Command::PasteTransientTargets);
+      // ESC u (2026-09-21、直接のユーザー依頼): USILICのCUT風目次(MAN/DIR/FILE)。
+      case 'u':
+        return handleCommand(Command::StartUsilicToc);
       // (ESC i: 2026-09-10追加、2026-09-19削除) ESC iは
       // Command::StartIncrementalGrepの元々の専用キーだったが、直接の
       // ユーザー依頼("^[iでインクリメンタルサーチを廃止して、^Sで
@@ -4007,7 +4010,10 @@ bool Application::handleCommand(Command command) {
           // (その一覧の^Gは元のディレクトリのDirectoryへ戻る)。
           directoryMode_.primaryAnnotations().pop();
           if (!dirListOriginDirectory_.empty()) directoryMode_.enterDirectory(dirListOriginDirectory_);
-          return startRegexPromptList(PromptKind::RecentDirectory);
+          if (!startRegexPromptList(PromptKind::RecentDirectory)) return false;
+          // 選んだ項目へカーソルを戻す(一覧はソート済み・重複排除なので同じ並びで再構築される)。
+          selectListBrowserItem(dirListSelectedItem_);
+          return true;
         }
         if (kind == DirectoryMode::DirAnnotationKind::Grep) return returnToGrepResults();
         // kind == Locate: 意図的に特別ルーティングしない(2026-09-20、
@@ -4148,9 +4154,11 @@ bool Application::handleCommand(Command command) {
     case Command::StartUnderlineView:
       return startUnderlineFileView();
     case Command::StartUsilicHistorySorted:
-      return startUsilicHistory(/*sorted=*/true);
+      return startUsilicHistory(UsilicStyle::Sorted);
+    case Command::StartUsilicToc:
+      return startUsilicHistory(UsilicStyle::Toc);
     case Command::StartUsilicHistory:
-      return startUsilicHistory(/*sorted=*/false);
+      return startUsilicHistory(UsilicStyle::Chronological);
     case Command::QuickLook:
       return executeQuickLook();
     case Command::StartCopy:
@@ -4828,7 +4836,10 @@ bool Application::openSelectedDuEntry() {
     // であって集計対象ルートではない)を踏まえ、ディレクトリ側も同じ
     // 「エントリ自身の居場所」(この分岐では、たった今enterDirectory()
     // した、そのディレクトリ自身)へ揃えた。
-    directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Du, "DU: " + duEntryFolder(*entry));
+    // 2026-09-21修正、直接のユーザー指摘: 名前欄が既に到着先のディレクトリ
+    // パスを表示しているので、"DU: パス"だと重複する。ファイルへ着地した
+    // 場合(下のpushWithNameOverride(..., "DU"))と同様、"DU"だけにする。
+    directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Du, "DU");
     // enterDirectory()は、上の注釈が設定される前に既に内部で一度
     // 再描画している――openSelectedLocateResult()自身の同一のコメント
     // 参照。
@@ -5414,11 +5425,16 @@ bool Application::openSelectedListEntry() {
       // (^X^D)から選んだディレクトリでは、^Gで一覧へ戻れるよう注釈を積む
       // (ディレクトリ移動でクリア)。
       dirListOriginDirectory_ = originDirectory;
+      dirListSelectedItem_ = text;
       directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Dir, "DIR");
+      // 2026-09-21修正: enterDirectory()は注釈を積む前に再描画済みなので、
+      // ここで再描画しないと、モードラインに"DIR"が出ない(実機PTYで確認)。
+      directoryView_.redraw();
     }
     if (kind == PromptKind::ManName) {
       pendingSearchFromDirectEntryList_ = false;  // Man自身はこのフラグを消費しない
       manReturnsToCandidateList_ = ok && fromSortedManList && manReturnStack_.size() == 1;
+      if (manReturnsToCandidateList_) manListSelectedItem_ = text;
     }
     return ok;
   }
@@ -5647,35 +5663,63 @@ bool Application::startUnderlineFileView() {
   std::vector<std::string> paths = collectTargetFilePaths();
   if (paths.empty()) return false;
   underlineOriginDirectory_ = directoryMode_.currentDirectory();
+  usilicLevel_ = UsilicLevel::None;
   underlineMode_.show(std::move(paths));
   currentMode_ = ApplicationMode::Underline;
   return true;
 }
 
-bool Application::startUsilicHistory(bool sorted) {
+bool Application::startUsilicHistory(UsilicStyle style) {
   if (currentMode_ != ApplicationMode::Directory) return false;
+  underlineOriginDirectory_ = directoryMode_.currentDirectory();
+  if (style == UsilicStyle::Toc) {
+    // 2026-09-21、直接のユーザー仕様(`^[u`): MAN/DIR/FILEの3項目の
+    // 目次(常時表示、履歴が空でも出る)。選ぶとその種別の一覧(項目名で
+    // ソート・重複排除、行番号なし)へ進み、^Gは一覧→目次→Directoryの順に戻る。
+    usilicLevel_ = UsilicLevel::Toc;
+    usilicGroupKind_ = 0;
+    underlineMode_.show({"MAN", "DIR", "FILE"});
+    currentMode_ = ApplicationMode::Underline;
+    return true;
+  }
+  usilicLevel_ = UsilicLevel::None;
   const auto &ring = history_.recentEntries(RingCategory::Usilic);
   std::vector<std::string> entries(ring.begin(), ring.end());
   if (entries.empty()) return false;
-  if (sorted) {
-    auto isMan = [](const std::string &e) { return e.size() > 6 && e.compare(e.size() - 6, 6, " (man)") == 0; };
-    auto isDir = [](const std::string &e) { return !e.empty() && e.back() == '/'; };
+  if (style == UsilicStyle::Sorted) {
+    // `^J^U`: ベタなソート・重複排除一覧(MAN、DIR、FILEの区別なく項目名順)。
     std::sort(entries.begin(), entries.end());
     entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
-    // ファイル→ディレクトリ→manの順(各群の中は上のソート順を保つ)。
-    auto rank = [&](const std::string &e) { return isMan(e) ? 2 : (isDir(e) ? 1 : 0); };
-    std::stable_sort(entries.begin(), entries.end(),
-                     [&](const std::string &a, const std::string &b) { return rank(a) < rank(b); });
   }
-  underlineOriginDirectory_ = directoryMode_.currentDirectory();
-  underlineMode_.show(std::move(entries), /*cursorAtEnd=*/!sorted);
+  underlineMode_.show(std::move(entries), /*cursorAtEnd=*/style == UsilicStyle::Chronological);
   currentMode_ = ApplicationMode::Underline;
+  return true;
+}
+
+// 履歴1行の種別: `/`で始まらなければMAN、`/`で始まり`/`で終わればDIR、それ以外はFILE。
+static int usilicKindOf(const std::string &e) {
+  if (e.empty() || e[0] != '/') return 0;
+  return e.back() == '/' ? 1 : 2;
+}
+
+bool Application::openUsilicGroup(const std::string &title) {
+  int kind = title == "MAN" ? 0 : (title == "DIR" ? 1 : 2);
+  const auto &ring = history_.recentEntries(RingCategory::Usilic);
+  std::vector<std::string> entries;
+  for (const auto &e : ring)
+    if (usilicKindOf(e) == kind) entries.push_back(e);
+  std::sort(entries.begin(), entries.end());
+  entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
+  usilicLevel_ = UsilicLevel::Group;
+  usilicGroupKind_ = kind;
+  underlineMode_.show(std::move(entries));
   return true;
 }
 
 bool Application::openSelectedUnderlineEntry() {
   const std::string *path = underlineMode_.selectedEntry();
   if (!path) return false;
+  if (usilicLevel_ == UsilicLevel::Toc) return openUsilicGroup(*path);
   // 2026-09-21追加: アクセス履歴の"名前 (man)"はmanページとして開き、^Gで
   // このUSILIC一覧へ戻る。
   if (path->size() > 6 && path->compare(path->size() - 6, 6, " (man)") == 0) {
@@ -5733,6 +5777,11 @@ bool Application::returnToUnderlineResults() {
 
 // UNDER一覧「自体」からのBack専用――returnFromDu()と同型。
 bool Application::returnFromUnderline() {
+  if (usilicLevel_ == UsilicLevel::Group) {
+    usilicLevel_ = UsilicLevel::Toc;
+    underlineMode_.show({"MAN", "DIR", "FILE"}, /*cursorAtEnd=*/false, usilicGroupKind_);  // 選んだ種別へカーソルを戻す
+    return true;
+  }
   if (directoryMode_.primaryAnnotations().topKind() == DirectoryMode::DirAnnotationKind::Usilic) {
     directoryMode_.primaryAnnotations().pop();  // ディレクトリ選択で積んだ注釈
   }
@@ -6333,7 +6382,9 @@ bool Application::returnFromMan() {
     // 通常の戻り先へ)。
     manReturnsToCandidateList_ = false;
     currentMode_ = manReturnStack_.back();
-    return startRegexPromptList(PromptKind::ManName);
+    if (!startRegexPromptList(PromptKind::ManName)) return false;
+    selectListBrowserItem(manListSelectedItem_);  // 選んだページへカーソルを戻す
+    return true;
   }
   // 2026-09-19四訂正、application.hpp自身のmanReturnStack_宣言コメント
   // 参照: 先頭(back())が常に「次にどこへ戻るか」――openSelected
@@ -9239,6 +9290,16 @@ void Application::liveIncrementalGrepSearch() {
 // CUT-regexの「Select string」という表現と同じように合わせている。
 // 既存の全てのEGREP/CUT呼び出し箇所にわたる無関係な差分を避ける
 // ため、リネームはされていない。
+// 一覧(ListBrowser)のカーソルを、指定した項目の行へ移す(2026-09-21追加、DIR/FILE/MAN一覧から
+// 開いた先で^Gして一覧へ戻る時、選んだ項目へカーソルを復元するため)。無ければ何もしない。
+void Application::selectListBrowserItem(const std::string &item) {
+  const auto &items = listBrowserMode_.items();
+  auto it = std::find(items.begin(), items.end(), item);
+  if (it == items.end()) return;
+  listBrowserView_.setCursorIndex(static_cast<int>(it - items.begin()));
+  listBrowserView_.redraw();
+}
+
 bool Application::startRegexPromptList(PromptKind kind) {
   promptKind_ = kind;
   promptEditor_.setText("");

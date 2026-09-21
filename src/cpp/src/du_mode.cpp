@@ -14,7 +14,9 @@ DuMode::DuMode(ContentView &view, History &history, const Configuration &configu
 std::string DuMode::formatEntryLine(const DuEntry &entry, int sizeWidth) {
   std::string sizeText = std::to_string(entry.sizeKb) + "K";
   if (static_cast<int>(sizeText.size()) < sizeWidth) sizeText.insert(0, static_cast<std::size_t>(sizeWidth) - sizeText.size(), ' ');
-  return sizeText + "  " + entry.path;
+  std::string text = sizeText + "  " + entry.path;
+  if (entry.typeMarker) text += entry.typeMarker;
+  return text;
 }
 
 std::vector<std::string> DuMode::commandArgvFor(const std::string &path) const {
@@ -61,6 +63,18 @@ bool DuMode::loadUsageFromOutput(const std::string &path, const std::string &out
     entry.path = line.substr(tab + 1);
     std::error_code ec;
     entry.isDirectory = std::filesystem::is_directory(entry.path, ec) && !ec;
+    // `ls -F`相当の型マーカー(2026-09-21、直接のユーザー依頼)。
+    std::filesystem::file_status status = std::filesystem::symlink_status(entry.path, ec);
+    if (!ec) {
+      if (std::filesystem::is_symlink(status)) entry.typeMarker = '@';
+      else if (std::filesystem::is_directory(status)) entry.typeMarker = '/';
+      else if (std::filesystem::is_fifo(status)) entry.typeMarker = '|';
+      else if (std::filesystem::is_socket(status)) entry.typeMarker = '=';
+      else if (std::filesystem::is_regular_file(status) &&
+               (status.permissions() & (std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec |
+                                        std::filesystem::perms::others_exec)) != std::filesystem::perms::none)
+        entry.typeMarker = '*';
+    }
     entries.push_back(entry);
   }
 
