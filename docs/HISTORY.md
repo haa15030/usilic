@@ -19589,3 +19589,105 @@ My changes are restored. Let's rebuild to confirm everything's consistent, then 
 再ビルドを待っています。
 
 ビルド完了を待っています。
+
+Clean build. Let's install.
+
+2つのコミットに分けてコミットしました(pushはしていません)。
+
+- `2cab9bb`: docs/HISTORY.md — 今回のセッション分の逐語ログ反映
+- `569caf8`: `^Ou`をUNDERモードとして作り直し、DU/LOCATEのモードライン戻り値も修正
+
+`make usilic`ビルド・`make install`済み、`~/.local/bin/usilic`でお試しいただけます。
+
+2026-09-21
+
+<今、Sequoiaマシンが勝手に再起動した。usilicとは関係ないが、何か異常終了のエラーメッセージ残ってないかな？
+
+>Panicのレポートは「Retired」に移されているので、中身を確認します。
+
+残っていました。カーネルパニックによる再起動です(06:17:34、macOS 15.7.8)。
+
+**原因の流れ**
+- パニック文言は `userspace watchdog timeout: no successful checkins from WindowServer (2 induced crashes) in 120 seconds` です。
+- WindowServer が 120 秒間応答せず、watchdogd がカーネルパニックを起こして再起動しました。
+
+**前兆はGPU側に出ています**(すべて今朝)
+- `Kernel_...gpuRestart` が 02:19、05:48、06:14 の3回あります。GPU がハングしてリセットされたということです。
+- 06:15 と 06:16 に、WindowServer の `.ips` クラッシュレポートと `userspace_watchdog_timeout.spin` が出ています。
+- 06:15 は WindowServer が一度クラッシュして再起動した時点です。その後もう一度固まり、パニックになりました。
+
+**気になる点**
+- Boot args に `igfxonln=1` と `alcid=1` が入っています。これは OpenCore/Hackintosh 系の設定で、Intel 内蔵GPUを強制的に有効にするものです。ホスト名は iMac ですが、Hackintosh か、OCLP などで非対応の macOS に上げた機種かもしれません。
+- その場合、GPU ドライバの不安定さが原因の可能性が高いです。02:19 から繰り返している gpuRestart とも合います。
+- 対処するなら、OpenCore/Lilu/WhateverGreen などのバージョン確認や、GPU を高負荷にするアプリの洗い出しが候補です。
+
+詳しい確認が必要なら、`.gpuRestart` の内容や、WindowServer の `.ips` のスタックを見ます。
+
+<見てみて。
+
+>原因はほぼ特定できました。**`mediaanalysisd` が Intel GPU をハングさせたことです。**
+
+**3回とも同じプロセスが引き金**
+- GPU リセットは 02:19、05:48、06:14 の3回で、すべて `mediaanalysisd` が原因です。
+- `mediaanalysisd` は、写真の顔認識、画像内テキスト認識、Visual Look Up などをバックグラウンドで解析するシステムの常駐プロセスです。
+- GPU のレポートには、RCS(描画)リングが busy のまま止まっている(`Appears hung`)と出ています。
+- 対象は Intel UHD Graphics 630 です。
+
+**再起動までの流れ**
+1. 06:14:43 に `mediaanalysisd` が GPU をハングさせ、GPU がリセットされました。
+2. 06:15:17 に、WindowServer のメインスレッドが「40秒間応答なし」となりました(watchdog の `.ips` レポート)。
+3. 06:15 に WindowServer が強制終了され、再起動しました(induced crash)。
+4. 06:16〜17 に WindowServer がもう一度 120 秒応答しなくなり、watchdogd がパニックを起こして再起動しました。
+
+**機種について**
+- 機種は `iMac20,1` で、純正の Apple 製 iMac です。先ほど書いた Hackintosh の可能性はなくなりました。
+- ただし Boot args に `igfxonln=1 alcid=1` が入っているのは不自然で、過去に誰かが設定した名残かもしれません。`nvram boot-args` で確認できます。
+- iMac20,1 は通常、Radeon Pro の dGPU を積んでいます。それなのに UHD 630 だけが表示されています。ディスプレイは 3440x1440 で、標準の iMac の画面ではありません。外付けの可能性が高いです。
+- dGPU が使われず、Intel の内蔵GPUだけで動いている状態かもしれません。
+
+**対処案**
+1. 写真ライブラリの解析が集中して走ったのが原因なら、解析が終われば収まる見込みです。当面は「写真」アプリを開かない、または Mac をしばらく放置して解析を終わらせる、といった対応が考えられます。
+2. `nvram boot-args` を確認します。`igfxonln=1` を外して再起動すると、改善するかもしれません。iMac20,1 は AMD dGPU 搭載機なので、Intel のみを強制する設定は不自然です。
+3. 繰り返すようなら、システム設定でアップデートの有無を確認するか、Apple Diagnostics(起動時に D キー)でハードウェアを診断します。
+
+`nvram boot-args` の出力を見て、原因を絞り込みましょうか?
+
+<同時進行していたのは、claude、HandBrake1.11.2、Video Editor Redux。
+最後のは他のアプリによるメモリ使用量の変動で落ちやすい。マシンが再起動は初めてだが。
+機種についてはZ390M-PlusでHackintosh。定番のRX-580はあるんだがマザーボードがやや不安定なので取り付けられない。
+事実昨日の停電では、復旧後電源を入れたところでビープ音が鳴って起動せず（長音＋単音3回）、USB（6本使用）を全部抜いたら起動した。だましだまし使ってるのが現状。
+claudeはminiのiTerm2によりssh経由で使用中。ターミナルだと全部死ぬ場面に巻き込まれたことがあったため。
+miniのモニターの方が文字が大きいのでそうしている。
+i5-9400のGPUでは3440x1440が負担なんだと思う。原因は多分それだな。
+
+>納得できる説明です。先ほどの私の推測のうち、いくつかを訂正します。
+
+**訂正**
+- `iMac20,1` は SMBIOS の偽装でした。`igfxonln=1` を外す案は撤回します。RX 580 がない構成では、UHD 630 だけで表示するための正当な設定です。
+- 「dGPU が使われていない」も、そもそも dGPU が付いていないだけでした。
+
+**原因の見立て**
+
+iGPU の負荷が同時に重なったことが原因だと考えます。
+- 3440x1440 の描画は WindowServer が担当しています。
+- Video Editor Redux はプレビューやエフェクトで GPU を使います。
+- HandBrake は、VideoToolbox(ハードウェアエンコード)を選んでいると UHD 630 のメディアエンジンを使います。
+- `mediaanalysisd` の GPU 解析が、どれかのアプリが動いている最中に割り込んだ形でした。
+
+この4つが UHD 630 に集中して、RCS リングがハングしたのでしょう。3回とも同じ `mediaanalysisd` が引き金になっているので、GPU が常に限界近くで動いていて、最後の一押しが毎回 `mediaanalysisd` だった可能性があります。
+
+パニック自体は、GPU ハングの後で WindowServer が固まったことによる watchdog パニックです。マザーボードや電源の不調ではありません。再起動が初めてなのは、今朝が、映像処理を重ねて走らせた初めての機会だったからかもしれません。
+
+**再発防止の案**
+1. HandBrake は、重い作業の間は VideoToolbox を避けます。x265 などのソフトウェアエンコードなら GPU を使いません。CPU は使いますが、i5-9400 でも GPU ハングよりは安全です。
+2. HandBrake と Video Editor Redux は同時に走らせません。
+3. 写真ライブラリの解析(`mediaanalysisd`)が落ち着くまで、重いエンコードは避けます。`sudo launchctl disable` などで止める手もありますが、SIP の有無によって手順が変わります。
+4. モニターの解像度を一時的に下げて、GPU の負荷を見るのも手です。
+
+**ビープ音について**
+
+ビープ音(長1+短3)の意味は BIOS メーカーによって違います。AMI 系だとメモリ関連の可能性があるので、マニュアルで確認してください。USB を全部抜いたら起動したということは、USB デバイスかそのヘッダの不具合の可能性が高いです。停電で電源の状態が乱れたのかもしれません。今回のパニックとは無関係ですが、不安定要因として頭に置いておくといいと思います。
+
+Claude を mini の iTerm2 から SSH 経由で使う運用は、今回のような再起動でも mini 側のセッションが守られる点で理にかなっています。ただし今回は、iMac 側で動いていた usilic の作業ファイルなどは巻き込まれているかもしれません。`git status` で確認しておくのが安全です。
+
+<確認してみて。

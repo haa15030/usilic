@@ -260,6 +260,11 @@ enum class Command {
   // 横取りも一切不要になった。詳細は
   // .steering/20260920-underline-mode-redesign/design.md参照。
   StartUnderlineView,
+  // 2026-09-21新設(`^Ju`): StartUnderlineView(`^J^U`、一覧表示)を
+  // 発動した上で、一覧のトップのエントリを`^M`で開いた後の画面へ
+  // 直接遷移する(`^Jd`/`^J^D`、`^Jm`/`^J^M`が「実行・入力」と
+  // 「一覧表示」に分かれているのと同じ形)。
+  StartUnderlineViewOpenFirst,
   StartCopy,
   StartMove,
   StartRemove,
@@ -1501,6 +1506,12 @@ class Application {
   // 戻る――returnFromDu()と同型。上のreturnToUnderlineResults()とは
   // 戻り先が異なるので混同しないこと。
   bool returnFromUnderline();
+  // 2026-09-21追加、直接のユーザー依頼(一覧ありモードの仕様統一):
+  // DU/LOCATE/USILICの一覧から選んだディレクトリへ移動した後、そこで
+  // ディレクトリを移動(`^J^K`/`^J`+数字/`^O^K`/`../`等、`./`を除く)
+  // したら、その一覧への戻り(注釈スタック=モードラインの戻り値)を
+  // 破棄する。以後の^Gは通常のDirectoryとして振る舞う。
+  void clearListReturnAnnotations();
 
   // 単一の、リーダー接頭辞の無いキー入力をCommandへ解決する。
   // get_m()のswitch(m)の移動/Enter/^G/^Sの一切れからの移植――
@@ -2677,6 +2688,9 @@ class Application {
   ContentView archiveContentView_;
   ContentView duView_;
   ContentView underlineView_;
+  // startUnderlineFileView()発動時のカレントディレクトリ(ディレクトリを
+  // 選んで移動した後も、returnFromUnderline()が元の位置へ戻れるように覚える)。
+  std::string underlineOriginDirectory_;
   ContentView listBrowserView_;
   // ^O^C(COPY): CopyMode自身の凍結されたスナップショットの裏付け
   // となるビュー――startCopy()自身のコメント参照。

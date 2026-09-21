@@ -1566,7 +1566,7 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
   // 無接頭辞の慣習と同じ理屈(duView_自身の同種のコメント参照)。
   underlineView_.setModeLineFieldsProvider([this](int) -> ContentView::ModeLineFields {
     if (underlineMode_.entries().empty()) return {};
-    ContentView::ModeLineFields fields{"UNDER", std::to_string(contentByteCount(underlineView_)),
+    ContentView::ModeLineFields fields{"USILIC", std::to_string(contentByteCount(underlineView_)),
                                         /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
                                         /*trailing2=*/""};
     fields.trailing3 = directoryMode_.currentDirectory();
@@ -2787,6 +2787,14 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // (set-fill-column)は使用頻度が極めて低いと判明したため、衝突を
       // 避ける目的での移行自体が不要と判断された)。
       // 2026-09-08、キー再編で^X^Y/^X^Nから移行(全マーク/全解除)。
+      // 2026-09-21、直接のユーザー依頼(`^Ou`→`^Ju`/`^J^U`、一覧を持つ
+      // モードの接頭キーを`^J`へ揃える): `^J^U`は一覧表示、`^Ju`は
+      // 一覧のトップを`^M`で開いた後の画面(Command::
+      // StartUnderlineViewOpenFirst自身のコメント参照)。
+      case 0x15:  // ^J ^U : USILIC(マークしたファイル/ディレクトリの一覧)
+        return handleCommand(Command::StartUnderlineView);
+      case 'u':  // ^J u : USILIC、一覧のトップを開く
+        return handleCommand(Command::StartUnderlineViewOpenFirst);
       case 'y':  // ^J y : 全マーク(CP、MV、RM、ARC)
         return handleCommand(Command::MarkAll);
       case 'n':  // ^J n : 全マーク解除(CP、MV、RM、ARC)
@@ -2988,11 +2996,6 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::PageDown);
       case 0x02:  // ^O ^B : ページ戻し(SHELL内から)
         return handleCommand(Command::PageUp);
-      // 2026-09-20追加、Command::StartUnderlineView自身の宣言コメント
-      // 参照(編集中のTUTORIALへの追記、直接のユーザー依頼): File-
-      // selectorでマークした通常ファイルを順に閲覧する。
-      case 'u':
-        return handleCommand(Command::StartUnderlineView);
       default:
         return false;  // このスライスでは認識されない^Oシーケンス
     }
@@ -3983,6 +3986,7 @@ bool Application::handleCommand(Command command) {
         auto kind = *directoryMode_.primaryAnnotations().topKind();
         if (kind == DirectoryMode::DirAnnotationKind::Cut) return returnToCutResults();
         if (kind == DirectoryMode::DirAnnotationKind::Du) return returnToDuResults();
+        if (kind == DirectoryMode::DirAnnotationKind::Usilic) return returnToUnderlineResults();
         if (kind == DirectoryMode::DirAnnotationKind::Grep) return returnToGrepResults();
         // kind == Locate: 意図的に特別ルーティングしない(2026-09-20、
         // ユーザー承認による意図的な挙動修正――旧実装は、
@@ -4121,6 +4125,8 @@ bool Application::handleCommand(Command command) {
       return navigateToPagerFile(static_cast<int>(pagerFileList_.size()) - 1);
     case Command::StartUnderlineView:
       return startUnderlineFileView();
+    case Command::StartUnderlineViewOpenFirst:
+      return startUnderlineFileView() && openSelectedUnderlineEntry();
     case Command::QuickLook:
       return executeQuickLook();
     case Command::StartCopy:
@@ -4140,6 +4146,7 @@ bool Application::handleCommand(Command command) {
     case Command::ShellInsertBufferContent:
       return shellInsertBufferContent();
     case Command::GoToParentDirectory:
+      clearListReturnAnnotations();
       if (currentMode_ == ApplicationMode::Directory) return directoryMode_.goToParent();
       return goToParentFromFileOrArchive();
     case Command::GoToFileSelector:
@@ -4433,7 +4440,10 @@ bool Application::handleCommand(Command command) {
 bool Application::openSelectedEntry() {
   const DirectoryEntry *entry = directoryMode_.selectedEntry();
   if (!entry) return false;
-  if (entry->isDirectory) return directoryMode_.openSelected();
+  if (entry->isDirectory) {
+    if (entry->name != "./") clearListReturnAnnotations();  // `./`は再読込のみで移動ではない
+    return directoryMode_.openSelected();
+  }
 
   // 2026-08-27追加、実際の報告("^J^K→カーソル位置が「usilicrc」
   // じゃない"): このディレクトリを離れる他の「全ての」方法
@@ -4962,7 +4972,18 @@ bool Application::openSelectedLocateResult() {
 // ことを確認済み、スクリーンショット=bd/=bf/=bg)により、これが
 // 同じ扱いを与えられていなかった唯一のディレクトリジャンプの入り口
 // であることが判明した。
+void Application::clearListReturnAnnotations() {
+  if (currentMode_ != ApplicationMode::Directory) return;
+  auto kind = directoryMode_.primaryAnnotations().topKind();
+  if (!kind) return;
+  if (*kind == DirectoryMode::DirAnnotationKind::Du || *kind == DirectoryMode::DirAnnotationKind::Locate ||
+      *kind == DirectoryMode::DirAnnotationKind::Usilic) {
+    directoryMode_.primaryAnnotations().clear();
+  }
+}
+
 bool Application::goToFileSelector() {
+  clearListReturnAnnotations();
   // 2026-08-16修正: usilicrc自身のK-?セクション(項目177/CLAUDE.md)
   // は、K-18を明らかに普遍的なキー割り当て(K-2「Return to previous
   // mode」、K-21「Go to previous regular file」、K-22「Read content
@@ -5257,6 +5278,7 @@ bool Application::goToParentFromFileOrArchive() {
 // について既に同じ方法で結線されている他の全ての「外出先」画面を
 // カバーし、"どこでも"に合わせている。
 bool Application::jumpToPathPrefix() {
+  clearListReturnAnnotations();
   std::string sourcePath;
   if (currentMode_ == ApplicationMode::Directory) {
     sourcePath = directoryMode_.currentDirectory();
@@ -5564,7 +5586,10 @@ std::vector<std::string> Application::collectTargetFilePaths() const {
   std::vector<std::string> paths;
   std::string dir = directoryMode_.currentDirectory();
   for (const auto &entry : directoryMode_.targetEntries()) {
-    if (entry.isDirectory) continue;  // collectTargetPaths()自身のコメント参照――^Ouは通常ファイルのみが対象
+    // 2026-09-21修正、直接のユーザー指摘(`^Ou`で.[]で選んだ
+    // ディレクトリが一覧に出ない): DU/LOCATE等の他の一覧モードと
+    // 同様、ディレクトリも一覧へ含める(選ぶと、DUと同じ形で
+    // そのディレクトリへ移動し、^Gで一覧へ戻る)。
     std::string path = dir;
     if (!path.empty() && path.back() != '/') path += '/';
     path += entry.name;
@@ -5578,6 +5603,7 @@ bool Application::startUnderlineFileView() {
   if (currentMode_ != ApplicationMode::Directory) return false;
   std::vector<std::string> paths = collectTargetFilePaths();
   if (paths.empty()) return false;
+  underlineOriginDirectory_ = directoryMode_.currentDirectory();
   underlineMode_.show(std::move(paths));
   currentMode_ = ApplicationMode::Underline;
   return true;
@@ -5586,6 +5612,17 @@ bool Application::startUnderlineFileView() {
 bool Application::openSelectedUnderlineEntry() {
   const std::string *path = underlineMode_.selectedEntry();
   if (!path) return false;
+  // 2026-09-21追加: ディレクトリはopenSelectedDuEntry()自身の
+  // ディレクトリ分岐と同型――移動先へ注釈(Usilic)を積み、^Gで
+  // 一覧へ戻れるようにする。
+  std::error_code ec;
+  if (std::filesystem::is_directory(*path, ec)) {
+    if (!directoryMode_.enterDirectory(*path)) return false;
+    currentMode_ = ApplicationMode::Directory;
+    directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Usilic, "USILIC");
+    directoryView_.redraw();
+    return true;
+  }
   if (!fileMode_.loadFile(*path)) return false;
   currentMode_ = ApplicationMode::File;
   fileReturnMode_ = ApplicationMode::Underline;
@@ -5598,7 +5635,7 @@ bool Application::openSelectedUnderlineEntry() {
   // ModeLineFieldsProvider参照)。DU/LOCATE自身も同じ指摘を受けて
   // 同日中に修正済み(openSelectedDuEntry()/openSelectedLocateResult()
   // 自身のコメント参照)。
-  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, *path, "UNDER");
+  fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, *path, "USILIC");
   fileView_.redraw();
   return true;
 }
@@ -5617,6 +5654,12 @@ bool Application::returnToUnderlineResults() {
 
 // UNDER一覧「自体」からのBack専用――returnFromDu()と同型。
 bool Application::returnFromUnderline() {
+  if (directoryMode_.primaryAnnotations().topKind() == DirectoryMode::DirAnnotationKind::Usilic) {
+    directoryMode_.primaryAnnotations().pop();  // ディレクトリ選択で積んだ注釈
+  }
+  if (directoryMode_.currentDirectory() != underlineOriginDirectory_ && !underlineOriginDirectory_.empty()) {
+    directoryMode_.enterDirectory(underlineOriginDirectory_);  // 一覧から選んだディレクトリへ移動していた場合、元の位置へ戻す
+  }
   // Du/Locateとは異なり、UNDERは常にDirectoryから直接発動し(検索
   // プロンプトを経由しない)、directoryMode_/directoryView_の状態
   // (エントリ一覧・カーソル位置)には一切触れていないので、戻り先は
@@ -6908,7 +6951,7 @@ std::string Application::previousModeName(ApplicationMode mode) const {
     // 同じ理屈(UNDER一覧自身の画面には、クエリ/パターンのような
     // インスタンスごとの詳細が無い)。
     case ApplicationMode::Underline:
-      return "UNDER";
+      return "USILIC";
     default:
       return "";
   }

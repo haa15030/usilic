@@ -13265,8 +13265,7 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: with no explicit mark, the cursor's single regu
 }
 
 TEST_CASE_FIXTURE(Fixture, "^Ou: with two regular files marked, both appear in listing order, and "
-                           "marking only a directory is a no-op (regular files only, per the TUTORIAL "
-                           "wording)") {
+                           "a marked directory is listed too (2026-09-21, like DU/LOCATE)") {
   REQUIRE(app.start(path()));
   int plainIdx = indexOf("plain.txt");
   int logIdx = indexOf("log.txt");
@@ -13297,7 +13296,33 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: with two regular files marked, both appear in l
   int dirIdx = indexOf("subdir/");
   while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::ToggleMark));
-  CHECK_FALSE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.underlineMode().entries().size() == 1);
+  CHECK(app.underlineMode().entries()[0] == (root / "subdir").string());
+
+  // Selecting the directory enters it with the USILIC return annotation;
+  // Back returns to the list, and a second Back to the origin directory.
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == (root / "subdir").string() + "/");
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Underline);
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == root.string() + "/");
+}
+
+TEST_CASE_FIXTURE(Fixture, "^J^U: moving to another directory from a listed directory clears the USILIC "
+                           "return annotation, so Back no longer returns to the list") {
+  REQUIRE(app.start(path()));
+  int dirIdx = indexOf("subdir/");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != dirIdx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  REQUIRE(app.handleCommand(Command::StartUnderlineView));
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.directoryMode().primaryAnnotations().topKind() == fm::DirectoryMode::DirAnnotationKind::Usilic);
+  REQUIRE(app.handleCommand(Command::GoToParentDirectory));
+  CHECK(app.directoryMode().primaryAnnotations().empty());
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
 
@@ -13366,7 +13391,7 @@ TEST_CASE_FIXTURE(Fixture, "^Ou: a file opened from the UNDER list shows its own
 
   std::string modeLine = app.activeContentView().modeLineText();
   CHECK(modeLine.find((root / "plain.txt").string()) != std::string::npos);
-  CHECK(modeLine.find("UNDER") != std::string::npos);
+  CHECK(modeLine.find("USILIC") != std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "^Ou: ';'/':' keep their ordinary JumpPrevious/JumpNext resolution -- no "
