@@ -8167,9 +8167,17 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Back) from File mode reached via ^J^F 
   REQUIRE(app.currentMode() == ApplicationMode::File);
   REQUIRE(app.fileMode().currentFile() == target.string());
 
+  // 2026-09-21、直接のユーザー判断(選択肢B): ^Gはまず元のディレクトリへ戻した上でFILE一覧を
+  // 再表示し(カーソルは選んだ項目)、一覧からの^Gで元のDirectoryへ戻る。従来(legacy準拠)は
+  // ファイルの親ディレクトリへ直接着地していた。
+  CHECK(app.activeContentView().modeLineText().find("FILE") != std::string::npos);
+  CHECK(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().selectedItem() != nullptr);
+  CHECK(*app.listBrowserMode().selectedItem() == target.string());
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
-  CHECK(app.directoryMode().currentDirectory() == subdir.string() + "/");  // NOT path() (the stale startup dir)
+  CHECK(app.directoryMode().currentDirectory() == path());
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleLsMode): refused outside Directory mode (K-26's own scoping)") {
@@ -11916,6 +11924,30 @@ TEST_CASE_FIXTURE(Fixture, "DIR Select (^X^D): the destination's mode line shows
   REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
   REQUIRE(app.listBrowserMode().selectedItem() != nullptr);
   CHECK(*app.listBrowserMode().selectedItem() == other);
+}
+
+TEST_CASE_FIXTURE(Fixture, "FILE Select (^X^F): ^G returns to the list with the cursor on the picked file") {
+  REQUIRE(app.start(path()));
+  std::string a = (root / "aaa.txt").string();
+  std::string b = (root / "bbb.txt").string();
+  { std::ofstream(a) << "a\n"; }
+  { std::ofstream(b) << "b\n"; }
+  history.pushRecent(RingCategory::RecentFile, a);
+  history.pushRecent(RingCategory::RecentFile, b);
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  REQUIRE(app.feedByte(0x06, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  const auto &items = app.listBrowserMode().items();
+  int idx = static_cast<int>(std::find(items.begin(), items.end(), b) - items.begin());
+  REQUIRE(idx > 0);
+  REQUIRE(idx < static_cast<int>(items.size()));
+  app.activeContentView().setCursorIndex(idx);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.handleCommand(Command::Back));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().selectedItem() != nullptr);
+  CHECK(*app.listBrowserMode().selectedItem() == b);
 }
 
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^F/^X^D/^J^P all work from CUT mode too, not just Directory "

@@ -3617,6 +3617,10 @@ class Application {
   std::string dirListOriginDirectory_;
   // 上の一覧で選んだ項目(^Gで一覧へ戻る時、カーソルをそこへ復元する)。
   std::string dirListSelectedItem_;
+  // FILE一覧(^X^F)から開いたファイルの^G復帰用(DIR一覧と同型)。
+  bool fileReturnsToFileList_ = false;
+  std::string fileListOriginDirectory_;
+  std::string fileListSelectedItem_;
   std::string manListSelectedItem_;  // MAN一覧から選んだページ(^G復帰時のカーソル復元用)
   bool grepReturnsToCandidateList_ = false;
   bool cutReturnsToCandidateList_ = false;

@@ -3935,6 +3935,18 @@ bool Application::handleCommand(Command command) {
         // を直接開いた場合、すぐ上のLocateの前例と同じく、まずDU自身の
         // 結果リストへ戻る。
         if (fileReturnMode_ == ApplicationMode::Du) return returnToDuResults();
+        // FILE一覧(^X^F)から開いたファイル: 元のディレクトリへ戻した上で一覧を再表示する。
+        // 注釈のゲート(Grepと同じ理屈): 別のファイルを開くと注釈が消え、この分岐は働かない。
+        if (fileReturnsToFileList_ && !fileMode_.annotations().empty()) {
+          fileReturnsToFileList_ = false;
+          fileMode_.annotations().clear();
+          currentMode_ = ApplicationMode::Directory;
+          if (!fileListOriginDirectory_.empty() && directoryMode_.currentDirectory() != fileListOriginDirectory_)
+            directoryMode_.enterDirectory(fileListOriginDirectory_);
+          if (!startRegexPromptList(PromptKind::RecentFile)) return false;
+          selectListBrowserItem(fileListSelectedItem_);
+          return true;
+        }
         // 2026-09-20追加、Command::StartUnderlineView自身の宣言コメント
         // 参照(`^Ou`): UNDER一覧から開いたファイルは、すぐ上のDu/Locate
         // と全く同じ理由でまず一覧自身へ戻る。
@@ -5419,7 +5431,20 @@ bool Application::openSelectedListEntry() {
     promptHistoryContext_ = std::nullopt;
     bool fromDirectEntry = pendingSearchFromDirectEntryList_;
     std::string originDirectory = directoryMode_.currentDirectory();
+    bool fromDirectoryMode = currentMode_ == ApplicationMode::Directory;
     bool ok = executePromptSubmission(kind, text);
+    if (ok && kind == PromptKind::RecentFile && fromDirectEntry && fromDirectoryMode &&
+        currentMode_ == ApplicationMode::File) {
+      // 2026-09-21、直接のユーザー判断(選択肢B): FILE一覧(^X^F)から選んだファイルも、
+      // DIR/MANと同じく戻り値を"FILE"にし、^Gで元のディレクトリと一覧(カーソルは選んだ
+      // 項目)へ戻れるようにする。従来(legacy準拠)は^Gでファイルの親ディレクトリへ着地していた。
+      fileListOriginDirectory_ = originDirectory;
+      fileListSelectedItem_ = text;
+      fileMode_.annotations().pushWithNameOverride(FileMode::FileAnnotationKind::Search, fileMode_.currentFile(),
+                                                    "FILE");
+      fileReturnsToFileList_ = true;
+      fileView_.redraw();
+    }
     if (ok && kind == PromptKind::RecentDirectory && fromDirectEntry && currentMode_ == ApplicationMode::Directory) {
       // 2026-09-21追加、直接のユーザー依頼(一覧ありモードの仕様統一): DIR一覧
       // (^X^D)から選んだディレクトリでは、^Gで一覧へ戻れるよう注釈を積む
