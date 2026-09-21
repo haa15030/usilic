@@ -2016,3 +2016,22 @@ TEST_CASE("redraw: a backend with its own native scrollbar (GraphicalDisplay-lik
   RecordingDisplay d(10, 20);
   CHECK(d.hasNativeScrollbar() == false);
 }
+
+// 2026-09-21、直接のユーザー報告(Terminal.app 80x24): タブ展開の内部マーカーU+2060(幅0)は
+// 画面へ書き出さない(Terminal.appは1セル分として数え、80桁ぴったりの行が溢れて折り返した)。
+// 行の内部文字列(Line::text、検索用)は変わらず、表示だけが「マーカー無し」になる。
+TEST_CASE("renderLine: U+2060 (tab-expansion marker) is not written to the display") {
+  RecordingDisplay d(10, 20);
+  fm::ContentView view(d);
+  view.setViewport(0, 5);
+  const std::string wj = "\xE2\x81\xA0";
+  view.setLines({{wj + "        <k>" + wj + "v", std::nullopt, std::nullopt, {}, false}});
+  view.redraw();
+  bool sawText = false;
+  for (int r = 0; r < 10; r++) {
+    CHECK(d.rowText(r).find(wj) == std::string::npos);
+    if (d.rowText(r).find("        <k>v") != std::string::npos) sawText = true;
+  }
+  CHECK(sawText);
+  CHECK(view.lines()[0].text.find(wj) != std::string::npos);  // 内部の文字列は変えない
+}

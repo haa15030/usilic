@@ -105,13 +105,6 @@ class TerminalDisplay : public Display {
   static std::unique_ptr<TerminalDisplay> fromEnvironment(bool exitOnFailure = true);
 
   void write(const std::string &text) override;
-
-  // 2026-09-21、直接のユーザー報告(Terminal.app 80x24、実機で確認): タブはPipeBuffer::wrapLine()が
-  // U+2060(WORD JOINER、幅0)+スペースへ展開する(検索性のための内部表現)。iTerm2ではこれが
-  // 幅0で不可視だが、Terminal.appは1セル分として数えるらしく、タブを含む80桁ぴったりの行が
-  // 溢れて折り返し、最下行付近の表示が崩れた(タブ→空白置換で消えることも確認済み)。
-  // 内部の幅計算は幅0のままなので、端末へ書き出す時だけU+2060を取り除く。
-  static std::string withoutWordJoiners(const std::string &text);
   void putChar(int c) override;
   void flush() override;
 

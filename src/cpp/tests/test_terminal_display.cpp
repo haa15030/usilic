@@ -149,15 +149,3 @@ TEST_CASE("scrollRegionArgs: mode line hidden reserves zero rows regardless of s
   auto [top3, bottom3] = d.scrollRegionArgs();
   CHECK(top3 == 23);  // 24 - 1, back to the smooth-scroll-enabled case
 }
-
-// 2026-09-21: タブ展開のU+2060(幅0の内部マーカー)は端末へ書き出さない(Terminal.appで
-// 80桁ぴったりの行が溢れて折り返す実機報告への対処)。内部の文字列(検索用)は変えない。
-TEST_CASE("withoutWordJoiners: strips U+2060 only, keeps everything else byte for byte") {
-  const std::string wj = "\xE2\x81\xA0";
-  CHECK(TerminalDisplay::withoutWordJoiners(wj + "        <key>" + wj + "x</key>") == "        <key>x</key>");
-  CHECK(TerminalDisplay::withoutWordJoiners("plain text") == "plain text");
-  CHECK(TerminalDisplay::withoutWordJoiners("") == "");
-  // 他のマルチバイト文字(U+2061や日本語)は巻き込まない。
-  CHECK(TerminalDisplay::withoutWordJoiners("\xE2\x81\xA1\xE3\x81\x82") == "\xE2\x81\xA1\xE3\x81\x82");
-  CHECK(TerminalDisplay::withoutWordJoiners(wj + wj + wj) == "");
-}

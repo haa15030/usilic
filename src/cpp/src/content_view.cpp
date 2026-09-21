@@ -1236,7 +1236,16 @@ void ContentView::renderLine(const Line &line, bool marked, bool underlineMarked
         // それによって行がwidth_を超えることはもう無いはずなので、
         // ここは元通り無条件のクリップのままにしてある。
         if (col + std::max(width, 0) > maxCol) break;
-        for (int b = 0; b < len; b++) display_.putChar(static_cast<unsigned char>(text[idx + static_cast<std::size_t>(b)]));
+        // 2026-09-21、直接のユーザー報告(Terminal.app 80x24、実機で確認): タブ展開の内部マーカー
+        // U+2060(WORD JOINER、幅0、PipeBuffer::wrapLine()自身のコメント参照)は、iTerm2では
+        // 不可視だがTerminal.appは1セル分として数えるらしく、タブを含む80桁ぴったりの行が
+        // 溢れて折り返し、表示が崩れた。内部の幅計算は幅0のままなので、画面へは書き出さない
+        // (検索用の内部文字列wrapText_/Line::textは変えない)。
+        bool isWordJoiner = len == 3 && static_cast<unsigned char>(text[idx]) == 0xE2 &&
+                            static_cast<unsigned char>(text[idx + 1]) == 0x81 &&
+                            static_cast<unsigned char>(text[idx + 2]) == 0xA0;
+        if (!isWordJoiner)
+          for (int b = 0; b < len; b++) display_.putChar(static_cast<unsigned char>(text[idx + static_cast<std::size_t>(b)]));
         col += width;
         idx += static_cast<std::size_t>(len);
       }

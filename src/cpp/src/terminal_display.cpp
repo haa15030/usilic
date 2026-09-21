@@ -164,27 +164,9 @@ std::unique_ptr<TerminalDisplay> TerminalDisplay::fromEnvironment(bool exitOnFai
   return std::make_unique<TerminalDisplay>(std::move(caps), rows, columns);
 }
 
-namespace {
-constexpr const char kWordJoiner[] = "\xE2\x81\xA0";  // U+2060
-}
-
-std::string TerminalDisplay::withoutWordJoiners(const std::string &text) {
-  if (text.find(kWordJoiner) == std::string::npos) return text;
-  std::string out;
-  out.reserve(text.size());
-  for (std::size_t i = 0; i < text.size();) {
-    if (text.compare(i, 3, kWordJoiner) == 0) {
-      i += 3;
-      continue;
-    }
-    out.push_back(text[i++]);
-  }
-  return out;
-}
-
 void TerminalDisplay::write(const std::string &text) {
   if (!outputEnabled_) return;
-  std::fputs(withoutWordJoiners(text).c_str(), stdout);
+  std::fputs(text.c_str(), stdout);
 }
 
 void TerminalDisplay::putChar(int c) {
@@ -587,12 +569,6 @@ void TerminalDisplay::writeAttributedLine(const std::string &text, const std::ve
     if (wantItalic != italicOn) {
       setAttribute(wantItalic ? Attribute::Italic : Attribute::ItalicOff);
       italicOn = wantItalic;
-    }
-    // U+2060は端末へ書き出さない(withoutWordJoiners()自身のコメント参照)。属性runはバイト
-    // オフセットなので、3バイト分を読み飛ばしつつ位置だけ進める。
-    if (text.compare(col, 3, kWordJoiner) == 0) {
-      col += 2;
-      continue;
     }
     putChar(static_cast<unsigned char>(text[col]));
   }
