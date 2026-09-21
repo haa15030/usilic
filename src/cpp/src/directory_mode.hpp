@@ -315,7 +315,7 @@ class DirectoryMode {
   // 「どちらかだけ更新し忘れる」型のバグを繰り返し起こしていた
   // (LOCATE用の種別が一度も追加されなかったことによる`^G`誤爆を含む)。
   // 今はpush()一発でテキスト+種別が同期して設定される。
-  enum class DirAnnotationKind { Grep, Cut, Du, Locate, Usilic };
+  enum class DirAnnotationKind { Grep, Cut, Du, Locate, Usilic, Dir };
   AnnotationStack<DirAnnotationKind> &primaryAnnotations() { return primaryAnnotations_; }
   const AnnotationStack<DirAnnotationKind> &primaryAnnotations() const { return primaryAnnotations_; }
 

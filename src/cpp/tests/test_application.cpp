@@ -2753,8 +2753,58 @@ TEST_CASE_FIXTURE(Fixture, "MAN: mode line shows the Directory it will return to
     return;
   }
   REQUIRE(app.currentMode() == ApplicationMode::Man);
+  // 2026-09-21改訂、直接のユーザー依頼(MAN一覧の仕様統一): 名前は開いた
+  // ページ名、戻り値はリテラルな"MAN"(現在地は内部で保持し、表示しない)。
   const std::string &modeLine = app.activeContentView().modeLineText();
-  CHECK(modeLine.find(app.directoryMode().currentDirectory()) != std::string::npos);
+  CHECK(modeLine.find("ls") != std::string::npos);
+  CHECK(modeLine.find("(man)") != std::string::npos);
+  CHECK(modeLine.find("MAN") != std::string::npos);
+  CHECK(modeLine.find(app.directoryMode().currentDirectory()) == std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "MAN: ^J^M shows the SORTED list (^R gives HISTORY); a page opened from it returns "
+                           "to that list on ^G, and a second ^G to Directory") {
+  history.pushRecent(RingCategory::RecentManPage, "sort");
+  history.pushRecent(RingCategory::RecentManPage, "ls");
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartManList));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.listBrowserMode().selectedItem() != nullptr);
+  CHECK(*app.listBrowserMode().selectedItem() == "ls");  // sorted, not most-recent-first ("ls" is also newest; "sort" must follow)
+  REQUIRE(app.listBrowserMode().items().size() == 2);
+  CHECK(app.listBrowserMode().items()[1] == "sort");
+  const std::string &listLine = app.activeContentView().modeLineText();
+  CHECK(listLine.find("MAN") != std::string::npos);
+  CHECK(listLine.find("HISTORY") == std::string::npos);
+
+  if (!app.handleCommand(Command::Enter)) {
+    MESSAGE("man not installed or 'ls' has no man page here -- skipping");
+    return;
+  }
+  REQUIRE(app.currentMode() == ApplicationMode::Man);
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+}
+
+TEST_CASE_FIXTURE(Fixture, "DIR: a directory chosen from the ^X^D list returns to that list on ^G, and moving "
+                           "directories (^J^K/../) instead clears that return") {
+  std::string sub = (root / "subdir").string() + "/";
+  history.pushRecent(RingCategory::RecentDirectory, sub);
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartDirectoryHistory));
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  REQUIRE(app.handleCommand(Command::Enter));
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.handleCommand(Command::Back));
+  CHECK(app.currentMode() == ApplicationMode::ListBrowser);
+  CHECK(app.directoryMode().currentDirectory() == path());  // origin restored
+
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::Directory);
+  REQUIRE(app.handleCommand(Command::GoToParentDirectory));
+  CHECK(app.directoryMode().primaryAnnotations().empty());
 }
 
 // 2026-09-19再訂正、直接のユーザー方針の転換("MANを使ってみて思うのは、
@@ -2782,7 +2832,7 @@ TEST_CASE_FIXTURE(Fixture, "MAN: ^G returns to the normal FILE it was invoked fr
     return;
   }
   REQUIRE(app.currentMode() == ApplicationMode::Man);
-  CHECK(app.activeContentView().modeLineText().find(filePath) != std::string::npos);
+  CHECK(app.activeContentView().modeLineText().find("MAN") != std::string::npos);  // 2026-09-21改訂: 戻り値は"MAN"
 
   REQUIRE(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::File);

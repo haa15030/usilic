@@ -1432,6 +1432,14 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
     // previousModeName(Grep)自身が(すぐ下に新設した通り)
     // "<GREP種別>: <pattern>"を返すようになったので、他の全ての
     // 戻り先(File/Directory)と全く同じ経路で済む。
+    // 2026-09-21、直接のユーザー依頼(MAN一覧の仕様統一): 名前は開いた
+    // ページ名、戻り値はリテラルな"MAN"(現在地の情報は内部で保持して
+    // いるが表示しない)。Grep結果へ着地した場合だけ従来の形のまま。
+    if (manReturnStack_.back() != ApplicationMode::Grep) {
+      fields.name = manMode_.currentPage();
+      fields.trailing3 = "MAN";
+      return fields;
+    }
     fields.trailing3 = previousModeName(manReturnStack_.back());
     return fields;
   });
@@ -3987,6 +3995,13 @@ bool Application::handleCommand(Command command) {
         if (kind == DirectoryMode::DirAnnotationKind::Cut) return returnToCutResults();
         if (kind == DirectoryMode::DirAnnotationKind::Du) return returnToDuResults();
         if (kind == DirectoryMode::DirAnnotationKind::Usilic) return returnToUnderlineResults();
+        if (kind == DirectoryMode::DirAnnotationKind::Dir) {
+          // DIR一覧(^X^D)から選んだディレクトリ: 元の位置へ戻した上で一覧を再表示する
+          // (その一覧の^Gは元のディレクトリのDirectoryへ戻る)。
+          directoryMode_.primaryAnnotations().pop();
+          if (!dirListOriginDirectory_.empty()) directoryMode_.enterDirectory(dirListOriginDirectory_);
+          return startRegexPromptList(PromptKind::RecentDirectory);
+        }
         if (kind == DirectoryMode::DirAnnotationKind::Grep) return returnToGrepResults();
         // kind == Locate: 意図的に特別ルーティングしない(2026-09-20、
         // ユーザー承認による意図的な挙動修正――旧実装は、
@@ -4973,11 +4988,13 @@ bool Application::openSelectedLocateResult() {
 // 同じ扱いを与えられていなかった唯一のディレクトリジャンプの入り口
 // であることが判明した。
 void Application::clearListReturnAnnotations() {
-  if (currentMode_ != ApplicationMode::Directory) return;
+  // 2026-09-21修正: 移動元がDu/Locate/Man一覧やFile等の場合も含め、
+  // 現在地が変わる操作では常に戻り値を破棄する(モードのガードは不要)。
+  manReturnsToCandidateList_ = false;
   auto kind = directoryMode_.primaryAnnotations().topKind();
   if (!kind) return;
   if (*kind == DirectoryMode::DirAnnotationKind::Du || *kind == DirectoryMode::DirAnnotationKind::Locate ||
-      *kind == DirectoryMode::DirAnnotationKind::Usilic) {
+      *kind == DirectoryMode::DirAnnotationKind::Usilic || *kind == DirectoryMode::DirAnnotationKind::Dir) {
     directoryMode_.primaryAnnotations().clear();
   }
 }
@@ -5375,9 +5392,25 @@ bool Application::openSelectedListEntry() {
     }
     // pendingSearchFromDirectEntryList_自身のコメント参照。
     pendingSearchFromDirectEntryList_ = promptHistoryContext_->isDirectEntry;
+    bool fromSortedManList =
+        kind == PromptKind::ManName && promptHistoryContext_->isDirectEntry && !listBrowserChronological_;
     currentMode_ = promptHistoryContext_->returnMode;
     promptHistoryContext_ = std::nullopt;
-    return executePromptSubmission(kind, text);
+    bool fromDirectEntry = pendingSearchFromDirectEntryList_;
+    std::string originDirectory = directoryMode_.currentDirectory();
+    bool ok = executePromptSubmission(kind, text);
+    if (ok && kind == PromptKind::RecentDirectory && fromDirectEntry && currentMode_ == ApplicationMode::Directory) {
+      // 2026-09-21追加、直接のユーザー依頼(一覧ありモードの仕様統一): DIR一覧
+      // (^X^D)から選んだディレクトリでは、^Gで一覧へ戻れるよう注釈を積む
+      // (ディレクトリ移動でクリア)。
+      dirListOriginDirectory_ = originDirectory;
+      directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Dir, "DIR");
+    }
+    if (kind == PromptKind::ManName) {
+      pendingSearchFromDirectEntryList_ = false;  // Man自身はこのフラグを消費しない
+      manReturnsToCandidateList_ = ok && fromSortedManList && manReturnStack_.size() == 1;
+    }
+    return ok;
   }
   if (shellHistoryRecallActive_) {
     // 挿入だけ――submitLine()はしない。なぜこれが意図的にMAN/LOCATE/
@@ -6243,6 +6276,13 @@ bool Application::returnToCutResults() {
 
 bool Application::returnFromMan() {
   manMode_.saveCursorPosition();
+  if (manReturnsToCandidateList_) {
+    // ソート済みMAN一覧から開いたページ: ^Gはその一覧へ戻る(2回目の^Gが
+    // 通常の戻り先へ)。
+    manReturnsToCandidateList_ = false;
+    currentMode_ = manReturnStack_.back();
+    return startRegexPromptList(PromptKind::ManName);
+  }
   // 2026-09-19四訂正、application.hpp自身のmanReturnStack_宣言コメント
   // 参照: 先頭(back())が常に「次にどこへ戻るか」――openSelected
   // GrepMatch()自身のMan分岐がマッチへ着地する度にGrepを1つpush_back()
@@ -10416,7 +10456,8 @@ bool Application::startPromptHistoryRecall(bool directEntry) {
   // directEntry入口)の初期表示として統合される。
   bool sortDirectEntryList = directEntry && (category == RingCategory::RecentFile ||
                                               category == RingCategory::RecentDirectory ||
-                                              category == RingCategory::ShellCommand);
+                                              category == RingCategory::ShellCommand ||
+                                              category == RingCategory::RecentManPage);
   listBrowserChronological_ = !sortDirectEntryList;
   std::vector<std::string> items;
   if (sortDirectEntryList) {
@@ -11823,6 +11864,7 @@ bool Application::executeCut(const std::string &pattern) {
 }
 
 bool Application::executeMan(const std::string &name) {
+  manReturnsToCandidateList_ = false;  // 一覧から開いた場合だけ、呼び出し元(openSelectedListEntry())が立て直す
   history_.pushRecent(RingCategory::RecentManPage, name);  // 下のloadPage()自身の結果に関わらず記録される
   if (!manMode_.loadPage(name)) {
     activeView().redraw();

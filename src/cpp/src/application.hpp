@@ -3592,6 +3592,13 @@ class Application {
   // (returnFromListBrowser()自身の無関係な、既存の^Gキャンセル
   // 経路)である。
   bool pendingSearchFromDirectEntryList_ = false;
+  // 2026-09-21追加、直接のユーザー依頼(MAN一覧の仕様統一): ^J^Mの
+  // ソート済み一覧から選んで開いたManは、^Gでその一覧へ戻る(Grepの
+  // grepReturnsToCandidateList_と同型)。ディレクトリ移動でクリアする。
+  bool manReturnsToCandidateList_ = false;
+  // DIR一覧(^X^D)から選んで移動する前のディレクトリ。注釈Dirの^Gで
+  // 元の位置へ戻した上で一覧を再表示する。
+  std::string dirListOriginDirectory_;
   bool grepReturnsToCandidateList_ = false;
   bool cutReturnsToCandidateList_ = false;
   // returnToCutResults()/returnFromCut()(2026-08-24の修正、実際の
