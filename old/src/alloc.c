@@ -13,6 +13,12 @@ static struct {
   u_char line[N_buff];
 } Alloc;  
 
+/*
+ * 【機能】行の中の、nroff形式の重ね打ち(太字`X\bX`、下線`_\bX`)を見つけて、属性列(Alloc.attr)へ属性の開始・
+ *       終了位置を登録し、重ね打ちの文字は読み飛ばす。
+ * 【C++】PipeBuffer::wrapLine (src/cpp/src/pipe_buffer.cpp)
+ * 【備考】C++では、重ね打ちの検出と属性の保持をPipeBufferがAttributeRunとして行う。
+ */
 static u_char *save_attr(u_char *cp, int attr, int *n_attrp, int *np)
 {
   int n = *np, n_attr = *n_attrp;
@@ -85,6 +91,11 @@ static u_char *save_attr(u_char *cp, int attr, int *n_attrp, int *np)
   return cp;
 }
 
+/*
+ * 【機能】文字列strの制御文字(`^X`と表示するもの)や、GREPの強調範囲を調べて、属性列(ATTR)へ登録し、
+ *       属性の個数を返す。
+ * 【C++】ContentView::renderLine (src/cpp/src/content_view.cpp); PipeBuffer::wrapLine (src/cpp/src/pipe_buffer.cpp)
+ */
 int set_attr(ATTR attr[], u_char str[], int f_stand, int f_grep)/*usilic*/
 {
   int i, n, n_attr, f_attr;
@@ -117,6 +128,11 @@ int set_attr(ATTR attr[], u_char str[], int f_stand, int f_grep)/*usilic*/
   return n_attr;
 }
 
+/*
+ * 【機能】パイプの読み込みを中断する(ESC)。行(pp)と入力を閉じ、標準入力でなければSIGPIPEを送り、
+ *       エラーを記録する。
+ * 【C++】FileMode::closeStream (src/cpp/src/file_mode.cpp)
+ */
 static void esc_pipe(FILE **pinp, PP *pp)
 {
   if (pp) free(pp);
@@ -130,6 +146,12 @@ static void esc_pipe(FILE **pinp, PP *pp)
   save_error("%s: %s.\n", s_S(S_usilic), s_S(S_errl));
 }
 
+/*
+ * 【機能】ファイルから1行(最大N_buff/2バイト)を読み、必要ならJIS等の文字コードを変換して、buffへ入れる。
+ *       許可されていない制御文字があれば、バイナリと判定する。
+ * 【C++】PipeBuffer::feed (src/cpp/src/pipe_buffer.cpp)
+ * 【備考】旧は1バイトずつfreadで読む。C++はチャンク単位でPipeBufferへ送る(ペーシング)。
+ */
 static int linein(FILE *fp, u_char buff[], int *lenp, int *f_binp)
 {
   int i, c, len, code, f_nl;
@@ -183,6 +205,13 @@ static int linein(FILE *fp, u_char buff[], int *lenp, int *f_binp)
   return c;
 }
 
+/*
+ * 【機能】パイプまたは標準入力から少しずつ読み込み、行(PP)の連結リストを組み立てる。画面幅での折り返し、
+ *       タブ、重ね打ちの属性、漢字境界、文字コードの変換を行う。initの値で、初期化(-2)・追加
+ *       読み込み・終了を切り替える。
+ * 【C++】PipeBuffer::feed; PipeBuffer::wrapLine (src/cpp/src/pipe_buffer.cpp); FileMode::loadStream (src/cpp/src/file_mode.cpp)
+ * 【備考】旧は多数のstatic変数で状態を持つ。C++はPipeBufferがその状態をメンバーとして持つ。
+ */
 PP *alloc_pipe(int init, FILE **pinp, int *nrowp, BASE *bp0, int nlen0)/*usilic*/
 {
   static PP *pp, *pp0, *pp1;
@@ -419,6 +448,10 @@ PP *alloc_pipe(int init, FILE **pinp, int *nrowp, BASE *bp0, int nlen0)/*usilic*
   return pp0;
 }
 
+/*
+ * 【機能】二分木のLIST(履歴や候補一覧)を、左から順に(再帰で)行(PP)の連結リストへ変換する。
+ * 【C++】ListBrowserMode::show (src/cpp/src/list_browser_mode.cpp)
+ */
 static void alloc_l(LIST *list, int *rowp, int f_grep, int f_ls)
 {
   if (list) {
@@ -476,6 +509,10 @@ static void alloc_l(LIST *list, int *rowp, int f_grep, int f_ls)
   }  
 }
 
+/*
+ * 【機能】LIST(二分木)から行(PP)の連結リストを作り、行数を返す(alloc_lの窓口)。
+ * 【C++】ListBrowserMode::show (src/cpp/src/list_browser_mode.cpp)
+ */
 PP *alloc_list(LIST *list, int *rowp, int f_grep, int f_ls)/*usilic*/
 {
   int n_row = 0;
@@ -486,6 +523,10 @@ PP *alloc_list(LIST *list, int *rowp, int f_grep, int f_ls)/*usilic*/
   return Alloc.pp0;
 }  
 
+/*
+ * 【機能】STR(連結リストに保存された文字列群)から、行(PP)の連結リストを作り、行数を返す。
+ * 【C++】ListBrowserMode::show (src/cpp/src/list_browser_mode.cpp); History (src/cpp/src/history.cpp)
+ */
 PP *alloc_str(STR s0[], int *rowp, int f_grep)/*usilic*/
 {
   int i, n, len, n_attr;
@@ -589,6 +630,11 @@ PP *alloc_str(STR s0[], int *rowp, int f_grep)/*usilic*/
   return pp0;
 }  
 
+/*
+ * 【機能】`ls -l`や`grep -n`等の出力(buff)を、モード(f_M)に合わせて行(PP)の連結リストへ編集する。
+ *       lsの名前の開始桁、grepの行番号、KEY一覧の区切りなどを、行ごとに決める。
+ * 【C++】DirectoryMode::parseLsLine (src/cpp/src/directory_mode.cpp); GrepMode::search (src/cpp/src/grep_mode.cpp); ContentView::setLines (src/cpp/src/content_view.cpp)
+ */
 PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*usilic*/
 {  /* `f(e)grep -b(n)`または`ls -l`の出力を編集する */
   int i, h, len, n_row, n_attr, n, f_M, f_kanji, f_ascii, f_ls, i_dir;
@@ -862,6 +908,11 @@ PP *alloc_pp(u_char buff[], int f_M0, int size, int *rowp, char name[])/*usilic*
   return pp0;
 }
 
+/*
+ * 【機能】アーカイブ(tar/lha/unzip/rpm/deb)の一覧(tvf等の出力)から、各エントリの行(PP)を作り、内容が
+ *       置かれた位置(tell)と大きさ(split)の見出しを準備する。
+ * 【C++】ArchiveReader (src/cpp/src/archive_reader.cpp); ArchiveMode::finishLoadFromOutput (src/cpp/src/archive_mode.cpp)
+ */
 PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
 {
   int c, i, j, k, n_row, split;
@@ -1072,6 +1123,11 @@ PP *alloc_head(u_char buff0[], int f_M0, int size0, int *rowp)/*usilic*/
   return pp0;
 }
 
+/*
+ * 【機能】tarの本体から、名前nameで始まるヘッダを探す。ヘッダは512バイト境界に揃っているので、
+ *       その位置だけを調べる(macOSの`._name`のような、一覧に出ない隠れたエントリと取り違えないため)。
+ * 【C++】ArchiveReader (src/cpp/src/archive_reader.cpp)
+ */
 static u_char *find_tar_header(u_char *cp, u_char *cp0, u_char *end, char name[])
 { /* Tarのヘッダーは、アーカイブの先頭から常に512バイト境界に揃って
      いる; アライメントの合う位置だけをテストする、さもないと、
@@ -1088,6 +1144,10 @@ static u_char *find_tar_header(u_char *cp, u_char *cp0, u_char *end, char name[]
   return end;
 }
 
+/*
+ * 【機能】tarアーカイブの各エントリについて、内容の位置(tell)と大きさ(split)を、ヘッダを辿って決める。
+ * 【C++】ArchiveReader (src/cpp/src/archive_reader.cpp)
+ */
 void alloc_tar(u_char cp0[], PP pp0[], int size)/*usilic*/
 {
   int i;
@@ -1121,6 +1181,10 @@ void alloc_tar(u_char cp0[], PP pp0[], int size)/*usilic*/
   }
 }
 
+/*
+ * 【機能】lhaアーカイブの各エントリについて、内容の位置と大きさを決める。
+ * 【C++】ArchiveReader (src/cpp/src/archive_reader.cpp)
+ */
 void alloc_lha(u_char cp0[], PP pp0[], int size)/*usilic*/
 {
   int i;
@@ -1147,6 +1211,10 @@ void alloc_lha(u_char cp0[], PP pp0[], int size)/*usilic*/
   }
 }
 
+/*
+ * 【機能】zipアーカイブの各エントリについて、内容の位置と大きさを決める。
+ * 【C++】ArchiveReader (src/cpp/src/archive_reader.cpp)
+ */
 void alloc_unzip(u_char cp0[], PP pp0[], int size)/*usilic*/
 {
   int i;
@@ -1164,6 +1232,11 @@ void alloc_unzip(u_char cp0[], PP pp0[], int size)/*usilic*/
   }
 }
 
+/*
+ * 【機能】コマンド行の文字列を、空白と引用符(`'`、`"`)で区切って、argvの配列を作る。
+ * 【C++】ExecMode::run (src/cpp/src/exec_mode.cpp)
+ * 【備考】C++は、設定の読み込み(Configuration)の時点で引数を分けて、ProgramCommandに持つ。
+ */
 char **alloc_arg(char *arg, int *argcp)/*usilic*/
 {
   int c, i, j;
@@ -1232,6 +1305,10 @@ char **alloc_arg(char *arg, int *argcp)/*usilic*/
   return argv;
 }
 
+/*
+ * 【機能】alloc_argが作ったargvの配列を解放する。
+ * 【C++】なし(C++はstd::vectorの自動解放で足りる)
+ */
 void free_arg(char **argv)/*usilic*/
 {
   int i;
@@ -1240,6 +1317,10 @@ void free_arg(char **argv)/*usilic*/
   free(argv);
 }
 
+/*
+ * 【機能】ファイル(name)のtell位置からsizeバイトを読み込んで返す(メモリが足りなければ半分にして再試行)。
+ * 【C++】CutMode::segmentContent (src/cpp/src/cut_mode.cpp)
+ */
 u_char *alloc_split(char name[], int tell, int size)/*usilic*/
 {
   FILE *fp;
@@ -1257,6 +1338,11 @@ u_char *alloc_split(char name[], int tell, int size)/*usilic*/
   return cp;
 }
 
+/*
+ * 【機能】ファイル記述子fdから全データをバッファへ読み込む(大きさが不明でもよい)。読み込みは中断でき、
+ *       f_chkbinに応じて文字コードの判定・変換も行う。
+ * 【C++】ChildProcess::run (src/cpp/src/child_process.cpp); FileMode::loadFile (src/cpp/src/file_mode.cpp)
+ */
 u_char *alloc_buff(int *sizep, u_int fd, int f_chkbin)/*usilic*/
 {
   FILE *fp;
@@ -1380,6 +1466,10 @@ u_char *alloc_buff(int *sizep, u_int fd, int f_chkbin)/*usilic*/
   return buff;
 }
 
+/*
+ * 【機能】SHELLの出力(str)を、行(PP)として連結リストへ積み上げる(入力途中の行を仮想行として扱う)。
+ * 【C++】Shell::processOutputBytes (src/cpp/src/shell.cpp)
+ */
 PP *alloc_sh(u_char *str, int pid0, int c)/*usilic*/
 {
   PP *pp;
@@ -1435,6 +1525,11 @@ PP *alloc_sh(u_char *str, int pid0, int c)/*usilic*/
   return (s_len > bsize) ? F4 : pp0;
 }  
 
+/*
+ * 【機能】エラーメッセージ用のバッファ(bp)を作る。メッセージを画面に表示し、nameが有ればエラー記録
+ *       (save_error)にも書く。
+ * 【C++】DirectoryMode::reportError (src/cpp/src/directory_mode.cpp); ArchiveMode::reportError (src/cpp/src/archive_mode.cpp)
+ */
 void make_bp(BASE *bp, char mess[], char *name, char *cp)/*usilic*/
 { /* エラーメッセージ用の文字列を確保する */
   free_bp(bp);
@@ -1459,6 +1554,11 @@ void make_bp(BASE *bp, char mess[], char *name, char *cp)/*usilic*/
   }
 }
 
+/*
+ * 【機能】バッファ(cs)を、画面幅で折り返しながら行(PP)の連結リストにする。タブ、制御コード、漢字の境界、
+ *       バイナリ表示(f_code)を扱う。csがNULLのときは、折り返し幅(bsize)だけを設定する。
+ * 【C++】PipeBuffer::feed; PipeBuffer::wrapLine (src/cpp/src/pipe_buffer.cpp)
+ */
 PP *set_pp(u_char *cs, int size, int *rowp, int f_code, int f_bin)/*usilic*/
 {
   int f_kanji, p_len;
@@ -1629,6 +1729,11 @@ PP *set_pp(u_char *cs, int size, int *rowp, int f_code, int f_bin)/*usilic*/
   return pp0;
 }
 
+/*
+ * 【機能】ウィンドウのリサイズ後に、古い行ポインタを調整済みのものへ差し替えるため、差し替え先の変数の
+ *       アドレスを覚えておく(f_setが真のとき)/差し替える(偽のとき)。
+ * 【C++】なし(C++は行を配列で持つ。リサイズ時はFileMode::reflowが再折り返しをする)
+ */
 PP **set_ppp(void *p, void *p0, int f_set)/*usilic*/
 { /* ウィンドウのリサイズ後、古い行ポインタを調整済みのものへ置き換える */
   static PP **ppp, **ppp0;
@@ -1643,6 +1748,10 @@ PP **set_ppp(void *p, void *p0, int f_set)/*usilic*/
   return ppp;
 }
 
+/*
+ * 【機能】ウィンドウのリサイズ後に、バッファの行を新しい幅で折り返し直して、行ポインタを付け替える。
+ * 【C++】FileMode::reflow (src/cpp/src/file_mode.cpp)
+ */
 int alloc_winch(BASE *bp, int f_ppp)/*usilic*/
 { /* ウィンドウのリサイズ後に行ポインタを調整する */
   u_char *cp, *buff;
@@ -1701,6 +1810,10 @@ int alloc_winch(BASE *bp, int f_ppp)/*usilic*/
   return bp->nrow;
 }
 
+/*
+ * 【機能】バッファ(BASE)とその行のリストを解放し、サイズと行数を0にする。
+ * 【C++】なし(C++はデストラクタ/std::vectorの自動解放で足りる)
+ */
 void free_bp(BASE *bp)/*usilic*/
 {
   if (!bp) return;
@@ -1713,12 +1826,20 @@ void free_bp(BASE *bp)/*usilic*/
 }
 
 
+/*
+ * 【機能】SIGINTのハンドラ。中断フラグ(Alloc.f_intr)を立て、以後のSIGINTを無視する。
+ * 【C++】なし(C++は、読み込みの合間に^Gを確認して中断する)
+ */
 static void is_intr(int dummy)
 {
   Alloc.f_intr = 1;
   signal(SIGINT, SIG_IGN);
 }
 
+/*
+ * 【機能】パイプの出力を、末尾(またはSIGINTによる中断)まで読み進める。読み込み中はSIGINTで中断できる。
+ * 【C++】FileMode::ensureLoadedThrough (src/cpp/src/file_mode.cpp)
+ */
 FILE *seek_intr(FILE *pin, int *nrowp)/*usilic*/
 {
   int pid = 0;
