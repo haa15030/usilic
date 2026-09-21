@@ -4016,6 +4016,18 @@ bool Application::handleCommand(Command command) {
         auto kind = *directoryMode_.primaryAnnotations().topKind();
         if (kind == DirectoryMode::DirAnnotationKind::Cut) return returnToCutResults();
         if (kind == DirectoryMode::DirAnnotationKind::Du) return returnToDuResults();
+        // 2026-09-21、直接のユーザー判断: LOCATE一覧から選んだディレクトリの^Gも、DUと同様に
+        // まずLOCATE一覧へ戻る(従来は一覧を飛ばして元のディレクトリへ戻っていた)。
+        if (kind == DirectoryMode::DirAnnotationKind::Locate) {
+          directoryMode_.primaryAnnotations().pop();
+          // 元のディレクトリへ戻す(一覧のモードライン右端が実際の^Gの行き先を示すように)。
+          if (!locateDirOriginDirectory_.empty() && directoryMode_.currentDirectory() != locateDirOriginDirectory_)
+            directoryMode_.enterDirectory(locateDirOriginDirectory_);
+          currentMode_ = ApplicationMode::Locate;
+          display_.hideVisibleCursor();
+          locateView_.redraw();
+          return true;
+        }
         if (kind == DirectoryMode::DirAnnotationKind::Usilic) return returnToUnderlineResults();
         if (kind == DirectoryMode::DirAnnotationKind::Dir) {
           // DIR一覧(^X^D)から選んだディレクトリ: 元の位置へ戻した上で一覧を再表示する
@@ -4925,6 +4937,7 @@ bool Application::openSelectedLocateResult() {
   if (!path) return false;
   std::error_code ec;
   if (std::filesystem::is_directory(*path, ec) && !ec) {
+    locateDirOriginDirectory_ = directoryMode_.currentDirectory();
     if (!directoryMode_.enterDirectory(*path)) return false;
     currentMode_ = ApplicationMode::Directory;
     // 2026-08-14修正: 実際の報告("モードラインにバイト数...および
@@ -4937,8 +4950,9 @@ bool Application::openSelectedLocateResult() {
     // ディレクトリ自体が既にDirectoryMode自身のnameフィールド全体
     // であるため、どの検索がそれを見つけたか以上に付け加えるものは
     // 何も無い。
-    directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Locate,
-                                              "LOCATE: " + locateMode_.query());
+    // 2026-09-21、直接のユーザー判断(戻り値の統一): DU/DIR/USILICと同様、戻り値は
+    // "LOCATE"だけにする(検索語は付けない。ファイルへ着地した場合と同じ形)。
+    directoryMode_.primaryAnnotations().push(DirectoryMode::DirAnnotationKind::Locate, "LOCATE");
     // enterDirectory()は、上の注釈が設定される前に、既に内部で一度
     // 再描画している――GREPのマッチは常に「既に」一覧表示された現在
     // のディレクトリの内側にあるため、enterDirectory()を全く呼ばない

@@ -3617,6 +3617,8 @@ class Application {
   std::string dirListOriginDirectory_;
   // 上の一覧で選んだ項目(^Gで一覧へ戻る時、カーソルをそこへ復元する)。
   std::string dirListSelectedItem_;
+  // LOCATE一覧から選んだディレクトリへ移動する前のディレクトリ(^Gで一覧へ戻る時に復元)。
+  std::string locateDirOriginDirectory_;
   // FILE一覧(^X^F)から開いたファイルの^G復帰用(DIR一覧と同型)。
   bool fileReturnsToFileList_ = false;
   std::string fileListOriginDirectory_;

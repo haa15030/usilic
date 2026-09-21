@@ -5441,7 +5441,15 @@ TEST_CASE_FIXTURE(Fixture, "LOCATE: Enter on a result opens it (Directory or Fil
     // landing here via a LOCATE match now leaves a trace of the search
     // that led here, mirroring EGREP/CUT's own setSearchAnnotation()
     // convention exactly.
-    CHECK(app.activeContentView().modeLineText().find("LOCATE: /") != std::string::npos);
+    // 2026-09-21: 戻り値は"LOCATE"だけ(検索語は付けない、DU/DIR/USILICと同様)。^Gはまず
+    // LOCATE一覧へ戻り、そこからの^Gで元のDirectoryへ戻る。
+    CHECK(app.activeContentView().modeLineText().find("LOCATE") != std::string::npos);
+    CHECK(app.activeContentView().modeLineText().find("LOCATE: /") == std::string::npos);
+    CHECK(app.handleCommand(Command::Back));
+    CHECK(app.currentMode() == ApplicationMode::Locate);
+    CHECK(app.handleCommand(Command::Back));
+    CHECK(app.currentMode() == ApplicationMode::Directory);
+    CHECK(app.directoryMode().currentDirectory() == path());
   } else {
     CHECK(app.currentMode() == ApplicationMode::File);
     CHECK(app.fileMode().currentFile() == selected);
