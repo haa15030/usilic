@@ -51,6 +51,14 @@ typedef union {
   } r;
 } SHELL;
 
+/*
+ * 【機能】SHELLの表示側プロセスのSIGALRMハンドラ。Shell.f.initで用途が変わる(0=通知の処理、1=パイプの設定、
+ *       2=状態変数の公開、3=停止)。通知では、シェルのプロンプト行から現在のディレクトリを取り出してchdirし、
+ *       カーソルの位置(行・桁)を受け取り、入力できる桁数を親へ返す。
+ * 【C++】Shell::handlePromptDetected; Shell::onPtyReadable (src/cpp/src/shell.cpp)
+ * 【備考】旧のSHELLは、表示側と入力側の2つのプロセスがパイプとSIGALRMで連絡し合う。C++は単一のプロセス・
+ *       イベントループで、Shellクラスが疑似端末のfdを直接読む。
+ */
 static void write_shell(void *p)
 {
   static int row, col, col0, colb, cole, len, f_cr, *pv;
@@ -125,6 +133,14 @@ static void write_shell(void *p)
   }
 }
 
+/*
+ * 【機能】SHELLモードの入力側のメイン処理。キー入力を読み、行編集(read_line)、画面のスクロール
+ *       (shell_row/shell_page)、履歴の呼び出しや補完、他のモードへの移行などを処理して、必要な
+ *       コマンドを表示側へ送る(write_comm)。
+ * 【C++】Application::feedShellByte (src/cpp/src/application.cpp); Shell::submitLine (src/cpp/src/shell.cpp); LineEditor (src/cpp/src/line_editor.cpp)
+ * 【備考】旧のSHELLは、表示側と入力側の2つのプロセスがパイプとSIGALRMで連絡し合う。C++は単一のプロセス・
+ *       イベントループで、Shellクラスが疑似端末のfdを直接読む。
+ */
 static int input_shell(int spid, void *w, u_char prev[], char str[], FILE *ofp, FILE **pinp, LIST *prog, LIST **listp, STR **cmdp, STR **histp, int *ppidp, int f_shell)
 {
   u_char *cp;
@@ -663,6 +679,11 @@ jump:
   return m;
 }
 
+/*
+ * 【機能】表示側と入力側の間の通信。コマンドm(と、あれば文字列comm)をパイプ(pfd)へ書き、SIGALRMで
+ *       相手プロセス(spid)を起こす。commがNULLのときは、mを負にして「文字列なし」を伝える。
+ * 【C++】なし(C++は単一プロセスなので、プロセス間の通信を持たない)
+ */
 void write_comm(int pfd, int m, char *comm, int spid)/*usilic*/
 {
   int len;
@@ -679,6 +700,11 @@ void write_comm(int pfd, int m, char *comm, int spid)/*usilic*/
   }
 }
 
+/*
+ * 【機能】write_commで送られたコマンドを、パイプ(pfd)から読む。正の値なら文字列commが続き、負の値は
+ *       「文字列なし」の印(絶対値を返す)。
+ * 【C++】なし(C++は単一プロセスなので、プロセス間の通信を持たない)
+ */
 static int read_comm(int pfd, char comm[])
 {
   int m, len;
@@ -694,6 +720,12 @@ static int read_comm(int pfd, char comm[])
   return m;
 }
 
+/*
+ * 【機能】行のリストの末尾にある仮想行(プロンプト行)を、リストから一時的に外して返す(画面のスクロール等の間、
+ *       プロンプトを含めないため)。
+ * 【C++】Shell::redrawPromptRow (src/cpp/src/shell.cpp)
+ * 【備考】C++は、プロンプトの行を、スクロールバックの行とは別に(コマンドライン欄として)持つ。
+ */
 static PP *hide_ps(PP *ps)
 { /* 仮想行(プロンプト行)を保存する */
   while (ps->next) ps = ps->next;
@@ -702,6 +734,11 @@ static PP *hide_ps(PP *ps)
   return ps;
 }
 
+/*
+ * 【機能】SHELL画面を、モードライン付きで描く。プロンプト行があればコマンドラインも描き、表示が無効なら
+ *       有効に戻す。
+ * 【C++】Shell::redrawPromptRow (src/cpp/src/shell.cpp); ContentView::renderModeLine (src/cpp/src/content_view.cpp)
+ */
 static void disp_shell(RV *rvp, char name[], u_char prev[], char arg[], int row0, u_char prompt[], int len, u_char buff[])
 {
   PP *ps = NULL;
@@ -740,6 +777,10 @@ static void disp_shell(RV *rvp, char name[], u_char prev[], char arg[], int row0
   }
 }
 
+/*
+ * 【機能】バッファcpから改行までを文字列strへ複写して、進めた位置を返す(通信で受け取った文字列の分解)。
+ * 【C++】なし(C++は標準ライブラリで足りる。プロセス間通信が無い)
+ */
 static u_char *read_string(u_char *cp, u_char str[])
 {
   int i = 0;
@@ -749,6 +790,11 @@ static u_char *read_string(u_char *cp, u_char str[])
   return cp;
 }
 
+/*
+ * 【機能】SHELL画面で、カーソルを1行動かす(move_rowを呼ぶ)。仮想行(プロンプト)を一時的に外して、動かした後に
+ *       戻す。
+ * 【C++】ContentView::moveUp; ContentView::moveDown (src/cpp/src/content_view.cpp)
+ */
 static void shell_row(RV *rvp, PN *pnp, int f_M, u_char buff[])
 {
   PP *ps;
@@ -759,6 +805,10 @@ static void shell_row(RV *rvp, PN *pnp, int f_M, u_char buff[])
   if (ps) ps->prev->next = ps; /* 仮想行を読み込む */
 }
 
+/*
+ * 【機能】SHELL画面で、ページ単位の移動をする(move_pageを呼ぶ)。プロンプト行を一時的に外して、動かした後に戻す。
+ * 【C++】ContentView::pageUp; ContentView::pageDown (src/cpp/src/content_view.cpp)
+ */
 static int shell_page(RV *rvp, PN *pnp, int f_M, u_char prompt[], u_char buff[])
 {
   PP *ps;
@@ -789,6 +839,11 @@ static int shell_page(RV *rvp, PN *pnp, int f_M, u_char prompt[], u_char buff[])
   return i;
 }
 
+/*
+ * 【機能】SHELL画面へ新しい行を1行追加して(alloc_sh)、カーソル位置を進める。画面がいっぱいなら、
+ *       先頭を1行送ってスクロールする。
+ * 【C++】Shell::appendBodyByte; Shell::flushPendingLine (src/cpp/src/shell.cpp)
+ */
 static int next_line(RV *rvp, PN *pnp, int c, int sf)
 {
   PP *pp;
@@ -822,6 +877,11 @@ static int next_line(RV *rvp, PN *pnp, int c, int sf)
   return rvp->row;
 }
 
+/*
+ * 【機能】SHELLのコマンドライン入力を、1バイト受け取って処理する。文字の挿入・削除、UTF-8の組み立て、
+ *       ESC列や属性の解釈、改行を扱い、改行なら行が確定したことを返す。
+ * 【C++】LineEditor (src/cpp/src/line_editor.cpp); Shell::submitLine (src/cpp/src/shell.cpp)
+ */
 static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, PN *pnp, FLAG *fp)
 {
   static int plen;
@@ -1092,6 +1152,10 @@ static int read_line(int c, u_char buff[], char prompt[], RV *rvp, int *row0p, P
   return c;
 }
 
+/*
+ * 【機能】SHELLのプロンプトと、入力途中の文字列を再描画する。
+ * 【C++】Shell::redrawPromptRow (src/cpp/src/shell.cpp)
+ */
 void print_prompt(RV *rvp, int row0, char prompt[], char buff[])
 {
   int i;
@@ -1124,6 +1188,11 @@ void print_prompt(RV *rvp, int row0, char prompt[], char buff[])
   }
 }
   
+/*
+ * 【機能】画面の現在位置(先頭・末尾・途中)と前回の位置(pos)から、次のスクロール指令(M_head/M_tail/T_not/
+ *       M_cmd)を決める。
+ * 【C++】Application::feedShellByte (src/cpp/src/application.cpp)
+ */
 static int set_pos(PP *pp, int *posp)
 {
   int m;
@@ -1141,17 +1210,29 @@ static int set_pos(PP *pp, int *posp)
 }
 
 static void output_shell(FILE **, FILE **, char[], int[], int, int);
+/*
+ * 【機能】SIGALRM等を受けたとき、SHELLの終了処理(output_shellをf_shell=-1で呼ぶ)を行う。
+ * 【C++】Shell::terminate (src/cpp/src/shell.cpp)
+ */
 static void shell_hup(int dummy)
 {
   signal(SIGALRM, SIG_IGN);
   output_shell(NULL, NULL, NULL, NULL, 0, -1);
 }
 
+/*
+ * 【機能】SIGPIPEを受けても終了しないよう、ハンドラを登録し直す。
+ * 【C++】なし(C++は、SIGPIPEを無視する設定で足りる)
+ */
 static void shell_pipe(int dummy)
 {
   signal(SIGPIPE, shell_pipe);
 }
 
+/*
+ * 【機能】ウィンドウのリサイズ後に、SHELLの行を新しい幅で作り直す(alloc_winchを使う)。
+ * 【C++】Shell::onResize (src/cpp/src/shell.cpp)
+ */
 static BASE *print_shell(BASE *bp, RV *rvp, PN *pnp, PP *p0, int *rowp, int pid)
 {
   char str[256];
@@ -1183,6 +1264,14 @@ static BASE *print_shell(BASE *bp, RV *rvp, PN *pnp, PP *p0, int *rowp, int pid)
   return bp;
 }
 
+/*
+ * 【機能】SHELLの入力側プロセスのSIGALRMハンドラ。表示側から届いたコマンド(T_in/T_out/T_off/T_disp/M_mark/
+ *       M_jump/行番号の指定など)をread_commで読み、対話中かの応答、表示の切り替え・再描画、マーク、
+ *       指定した行へのジャンプを行う。
+ * 【C++】Application::feedShellByte (src/cpp/src/application.cpp); Shell::onResize (src/cpp/src/shell.cpp)
+ * 【備考】旧のSHELLは、表示側と入力側の2つのプロセスがパイプとSIGALRMで連絡し合う。C++は単一のプロセス・
+ *       イベントループで、Shellクラスが疑似端末のfdを直接読む。
+ */
 static void read_shell(void *p)
 {
   static char comm[N_pipe+1], str[N_pipe+1];
@@ -1351,6 +1440,10 @@ static void read_shell(void *p)
   }
 }
   
+/*
+ * 【機能】read_lineの結果が改行(またはエラー)なら、新しい行を追加する(next_line)。
+ * 【C++】Shell::appendBodyByte (src/cpp/src/shell.cpp)
+ */
 static int add_line(int row, int c, u_char buff[], char prompt[], RV *rvp, int *row0p, PN *pnp, int pv[], FLAG *fp)
 {
   int i;
@@ -1364,6 +1457,13 @@ static int add_line(int row, int c, u_char buff[], char prompt[], RV *rvp, int *
   return row;
 }
 
+/*
+ * 【機能】SHELLの出力側のメインループ。擬似端末から読み込み、プロンプトを検出し、ESC列を解釈して、
+ *       画面に行を積み、エラー出力を別に扱う。f_shellの値で、開始・通常・終了(-1)を切り替える。
+ * 【C++】Shell::onPtyReadable; Shell::processOutputBytes (src/cpp/src/shell.cpp)
+ * 【備考】旧のSHELLは、表示側と入力側の2つのプロセスがパイプとSIGALRMで連絡し合う。C++は単一のプロセス・
+ *       イベントループで、Shellクラスが疑似端末のfdを直接読む。
+ */
 static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], int pid0, int f_shell)
 {
   static char prompt[N_pipe+1], name[N_line], arg[10], usilic[N_line];
@@ -1717,6 +1817,11 @@ static void output_shell(FILE **ifpp0, FILE **ofpp0, char prev0[], int pv0[], in
   }
 }
 
+/*
+ * 【機能】別のusilicプロセス(SHELLの中で起動された、引数付きの起動やパイプ入力)から、ソケットまたは
+ *       ファイルで渡された内容(ファイル・ディレクトリ・DU・パイプ)を受け取って開く。
+ * 【C++】Application::pollShellHandoff (src/cpp/src/application.cpp); tryHandoffToParentShell (src/cpp/app/main.cpp)
+ */
 int from_main(char name[], char str[], char *mess, FILE **pinp, int *ppidp)/*usilic*/
 {
   FILE *fp;
@@ -1762,6 +1867,11 @@ int from_main(char name[], char str[], char *mess, FILE **pinp, int *ppidp)/*usi
   return m;
 }
 
+/*
+ * 【機能】表示側からの返事(T_in/T_out等)を、パイプ(pfd)で待って読む。返事に応じて表示を有効にしたり、
+ *       位置(pos)を更新したりする。
+ * 【C++】なし(C++は単一プロセスなので、プロセス間の通信を持たない)
+ */
 int wait_comm(int pfd, int *posp, int *rowp, int col0p, u_char *buff, u_char pp_str[])/*usilic*/
 {
   int m, row, len, f_prompt;
@@ -1796,6 +1906,13 @@ int wait_comm(int pfd, int *posp, int *rowp, int col0p, u_char *buff, u_char pp_
   return len;
 }
 
+/*
+ * 【機能】SHELL用のパイプ4組(8本)を作り、子プロセスをforkして、表示側と入力側を組み立てる。SIGALRMの
+ *       ハンドラも設定する。
+ * 【C++】Shell::start (src/cpp/src/shell.cpp)
+ * 【備考】旧のSHELLは、表示側と入力側の2つのプロセスがパイプとSIGALRMで連絡し合う。C++は単一のプロセス・
+ *       イベントループで、Shellクラスが疑似端末のfdを直接読む。
+ */
 static int make_shell(FILE **ifpp, FILE **ofpp, int pv[], u_char prev[], int pid, char mess[], int f_comm)
 {
   int i, spid;
@@ -1818,6 +1935,11 @@ static int make_shell(FILE **ifpp, FILE **ofpp, int pv[], u_char prev[], int pid
   return spid;
 }
 
+/*
+ * 【機能】SHELLの起動・状態取得・終了を行う。擬似端末を開き(open_pty)、シェルをforkして起動する。
+ *       shell_pidが負ならシェルのPIDを返し、disp_pidを渡せば表示側のPIDを登録する。
+ * 【C++】Shell::start; Shell::alive; Shell::childPid; Shell::terminate (src/cpp/src/shell.cpp)
+ */
 int start_shell(int shell_pid, int disp_pid, FILE **ofpp, FILE **ifpp, char *mess, char pty[])/*usilic*/
 {
   static FILE *ifp, *ofp;
@@ -1917,6 +2039,11 @@ int start_shell(int shell_pid, int disp_pid, FILE **ofpp, FILE **ifpp, char *mes
   return pid;
 }
 
+/*
+ * 【機能】SHELLモードの入口と全体の制御。初回に表示用の長さを計算し、シェルが生きていなければ起動して、
+ *       SHELLの入出力の処理へ入る。
+ * 【C++】Application::ensureShellActive (src/cpp/src/application.cpp); Shell::start (src/cpp/src/shell.cpp)
+ */
 int do_shell(u_char prev[], char str[], FILE **pinp, u_char *w, int *ppidp, LIST *prog, LIST **listp, STR **cmdp, STR **histp, int f_comm)/*usilic*/
 {
   int m, f_shell, f_init;
@@ -1961,6 +2088,11 @@ int do_shell(u_char prev[], char str[], FILE **pinp, u_char *w, int *ppidp, LIST
   return m;
 }
 
+/*
+ * 【機能】SHELLが対話中(入力待ち)かどうかを、表示側へ問い合わせて判定する。F12を渡すと、シェルへSIGHUPを
+ *       送って、終了するまで待つ。
+ * 【C++】Shell::foregroundJobRunning; Shell::busy (src/cpp/src/shell.cpp)
+ */
 int is_inter(int *pv0, int pid0, int spid0)/*usilic*/
 {
   int f_inter = 0;

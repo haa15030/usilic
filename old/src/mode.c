@@ -6,6 +6,11 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include "menu.h"
+/*
+ * 【機能】メッセージ番号f_messに応じて、最下行にメッセージ(`Hit any key`、`Interrupted`等)を表示する。
+ *       負の値ではBEL(ベル)を鳴らさない。
+ * 【C++】Application::drawPromptLabel (src/cpp/src/application.cpp)
+ */
 int echo_mess(int f_mess)/*usilic*/
 {
   switch(f_mess) {
@@ -32,6 +37,11 @@ int echo_mess(int f_mess)/*usilic*/
   return 0;
 }
 
+/*
+ * 【機能】履歴等の管理領域(HEAP)を解放する(終了処理)。hp0が渡されたときは、それを覚えるだけで解放しない。
+ * 【C++】History (src/cpp/src/history.cpp)
+ * 【備考】C++は、履歴の保存をHistoryが行い、解放はデストラクタが行う。
+ */
 void free_h(void *hp0)/*usilic*/
 {
   int i;
@@ -53,6 +63,12 @@ void free_h(void *hp0)/*usilic*/
   free_child(hp->child);
 }
 
+/*
+ * 【機能】`ls -alF`の1行から、ファイル名より前の部分(権限・所有者・サイズ・日付)を読み飛ばして、名前だけに
+ *       する。lsの型マーカー(`*=|@`)や、`-> リンク先`も処理する。f_spcで動作が違う。
+ * 【C++】DirectoryMode::parseLsLine (src/cpp/src/directory_mode.cpp)
+ * 【備考】C++は、lsの1行を、DirectoryEntry(名前・種別など)へ構造化して持つ。
+ */
 int skip_spc(u_char cs[], int f_spc)/*usilic*/
 {
   static char mark[] = "*=|@";
@@ -115,6 +131,11 @@ int skip_spc(u_char cs[], int f_spc)/*usilic*/
   return 0;
 }
 
+/*
+ * 【機能】画面の位置(PN)を範囲内に補正して、ページ先頭・カーソル行のポインタ(RV)を設定する。DUのときは、
+ *       DUの一覧モードへ切り替える。
+ * 【C++】ContentView::setCursorIndex (src/cpp/src/content_view.cpp); History::positionFor (src/cpp/src/history.cpp)
+ */
 static void init_rv(NUM *np, PN *pnp, RV *rvp, HEAP *hp, int etop)
 {
   int i;
@@ -143,6 +164,10 @@ static void init_rv(NUM *np, PN *pnp, RV *rvp, HEAP *hp, int etop)
   } else strcpy(rvp->str, "");
 }
 
+/*
+ * 【機能】init_rvの後、記憶しておいた行(np->tell、pnp->line)へカーソルを合わせる。
+ * 【C++】ContentView::setCursorIndex (src/cpp/src/content_view.cpp); History::positionFor (src/cpp/src/history.cpp)
+ */
 void set_rv(NUM *np, PN *pnp, RV *rvp, HEAP *hp, int etop)/*mode*/
 {
   PP *pp;
@@ -167,6 +192,11 @@ void set_rv(NUM *np, PN *pnp, RV *rvp, HEAP *hp, int etop)/*mode*/
   pnp->line = rvp->pp->f.line;
 }
 
+/*
+ * 【機能】FILE/DIR/MAN/LOCATE/PROGRAM等の履歴のリスト(LL)を、モードf_Mごとに読み込み、候補一覧として
+ *       表示できるよう整える。
+ * 【C++】Application::startPromptHistoryRecall (src/cpp/src/application.cpp); History::recentEntries (src/cpp/src/history.cpp)
+ */
 int load_ll(CHILD *chp, ARRAY *ap, u_char prev[], CUT *cutp, HEAP *hp, PN *pnp, int f_M, FILE **pinp)/*mode*/
 {
   int i, skip;
@@ -411,6 +441,13 @@ int load_ll(CHILD *chp, ARRAY *ap, u_char prev[], CUT *cutp, HEAP *hp, PN *pnp, 
   return (lp) ? (int)(lp - (LIST**)&hp->ll.a[0]) : i;
 }
 
+/*
+ * 【機能】モード遷移の中核。現在のモード(np->Mb)ごとに、選択された行を開く(Enter)処理を分岐する:
+ *       EGREP/FGREPの結果、ディレクトリ(T_dirは、ディレクトリなら降りる・ファイルなら開く)、アーカイブ、
+ *       CUT、DU等。モードのスタック(hp->sp)への積み降ろしと、カレントディレクトリの更新も行う。
+ * 【C++】Application::handleCommand; Application::openSelectedEntry (src/cpp/src/application.cpp); ModeStack (src/cpp/src/mode_stack.hpp)
+ * 【備考】旧は1つの巨大なswitchに全モードの遷移が集まる。C++はモードごとのopenSelected*関数に分かれている。
+ */
 int mode(HEAP *hp, NUM *np, ARRAY *ap, LINE *lp, RV *rvp)/*mode*/
 {
   struct stat st, l_st;
@@ -618,6 +655,11 @@ int mode(HEAP *hp, NUM *np, ARRAY *ap, LINE *lp, RV *rvp)/*mode*/
   return m;
 }  
 
+/*
+ * 【機能】モードのスタック(hp->sp)を空にして、スタックに積まれていたGREP・CUTの領域等を解放する。
+ *       f_clearの値で、消す範囲が変わる。
+ * 【C++】ModeStack (src/cpp/src/mode_stack.hpp); DirectoryMode::resetNavigationToFloor (src/cpp/src/directory_mode.cpp)
+ */
 void clear_stack(HEAP *hp, LINE *lp, char *name, int *f_Mp, int f_clear)/*mode*/
 {
   int f_M;
@@ -686,6 +728,11 @@ void clear_stack(HEAP *hp, LINE *lp, char *name, int *f_Mp, int f_clear)/*mode*/
   if (f_Mp) *f_Mp = f_M;
 }
   
+/*
+ * 【機能】CUTの状態(cutp)を設定する。メッセージmessから検索文字列と名前を取り出し、ディレクトリ(dir)と
+ *       合わせて、分割の対象を決める。
+ * 【C++】Application::executeCut (src/cpp/src/application.cpp); CutMode::split (src/cpp/src/cut_mode.cpp)
+ */
 char *set_cut(HEAP *hp, CUT *cutp, u_char mess[], char name[], char dir[], char old[])/*mode*/
 {
   int c;
@@ -715,6 +762,11 @@ char *set_cut(HEAP *hp, CUT *cutp, u_char mess[], char name[], char dir[], char 
   return cp;
 }
 
+/*
+ * 【機能】ディレクトリを変えるときの共通処理。スタックを空にし、カレントディレクトリと直前のディレクトリを
+ *       入れ替えてchdirし、ディレクトリの履歴(dirp)へ記録する。
+ * 【C++】DirectoryMode::enterDirectory (src/cpp/src/directory_mode.cpp)
+ */
 void check_dir(HEAP *hp, LINE *lp, char *dir, LIST **dirp)/*mode*/
 {
   PN pn;
@@ -732,6 +784,11 @@ void check_dir(HEAP *hp, LINE *lp, char *dir, LIST **dirp)/*mode*/
   }
 }
 
+/*
+ * 【機能】モードf_Mで、複数選択(マーク)に使う値(行のsplitに入れる印)を返す。CP/MV/RM/ARC等が対象で、
+ *       EXITでは常に1。
+ * 【C++】DirectoryMode::targetEntries (src/cpp/src/directory_mode.cpp)
+ */
 int fmark(int f_M)/*usilic*/
 {
   int f_mark;
@@ -741,6 +798,10 @@ int fmark(int f_M)/*usilic*/
   return f_mark;
 }
 
+/*
+ * 【機能】行のリスト(pp)の中で、マーク(fmarkの値)が付いた行の数を数える。
+ * 【C++】DirectoryMode::targetEntries (src/cpp/src/directory_mode.cpp)
+ */
 int nmark(PP *pp, int f_M)/*usilic*/
 {
   int n_mark, f_mark;
@@ -750,6 +811,11 @@ int nmark(PP *pp, int f_M)/*usilic*/
   return n_mark;
 }
 
+/*
+ * 【機能】行のリスト(pp)の内容を、ファイルへ書き出す。fmodeが"a"なら書き出し用ファイル(S_write)へ追記、
+ *       それ以外は作業ファイル(S_w)へ書く。
+ * 【C++】なし(C++には、画面の内容をファイルへ書き出す機能が無い)
+ */
 int send_pp(PP *pp, char fmode[])/*usilic*/
 {
   FILE *fp;
@@ -768,6 +834,10 @@ int send_pp(PP *pp, char fmode[])/*usilic*/
   return row;
 }
 
+/*
+ * 【機能】履歴のリスト(LL)から、選ばれた項目(ssp)を削除する(FILE/DIR等の履歴から消す操作)。
+ * 【C++】History (src/cpp/src/history.cpp)
+ */
 int do_rm(LL *llp, SS *ssp, u_char prev[], FILE *fp)/*usilic*/
 {
   int m;
@@ -794,6 +864,12 @@ int do_rm(LL *llp, SS *ssp, u_char prev[], FILE *fp)/*usilic*/
   return m;
 }
 
+/*
+ * 【機能】usilic終了後に、子プロセスをkillするためのプロセスIDを、覚える(正の値)・忘れる(負の値)・
+ *       返す(0)。
+ * 【C++】ProgramMode::run (src/cpp/src/program_mode.cpp)
+ * 【備考】C++は、子プロセスの終了をwaitで待ち、必要ならmainのシグナル処理で終了させる。
+ */
 int get_hup(int pid0)/*usilic*/
 { /* usilic終了後に子プロセスをkillする */
   static int pid;
@@ -803,12 +879,21 @@ int get_hup(int pid0)/*usilic*/
   return pid;
 }
 
+/*
+ * 【機能】SIGCONT(停止からの再開)のハンドラ。ハンドラを登録し直し、プロセスIDを表示し直す。
+ * 【C++】なし(C++はSIGCONTを、このために特別扱いしない)
+ */
 static void mode_cont(int dummy)
 {
   signal(SIGCONT, mode_cont);
   if (s_S(S_pid)) print_pid(getpid());
 }
 
+/*
+ * 【機能】外部プログラム(PROGRAM)を実行する。実行したコマンドを、コマンド履歴(cmdp)と履歴(histp)へ
+ *       保存し、子プロセスとして起動して、f_waitなら終了を待つ。
+ * 【C++】ProgramMode::run (src/cpp/src/program_mode.cpp); Application::executeProgram (src/cpp/src/application.cpp)
+ */
 void do_prog(char *str, STR **cmdp, STR **histp, int f_wait)/*usilic*/
 {
   int pid;
@@ -844,6 +929,11 @@ void do_prog(char *str, STR **cmdp, STR **histp, int f_wait)/*usilic*/
   else vt_init(2); /* usilicのraw termioを復元するためになお必要(上のvt_init(-2)参照) */
 }
 
+/*
+ * 【機能】履歴のリスト(LL)へ、項目(ssp/full)を保存する。n_llの値(FILE/DIR/MAN等)で、どのリストへ
+ *       入れるかが決まる。
+ * 【C++】History::pushRecent (src/cpp/src/history.cpp)
+ */
 void save_ll(int n_ll, LL *llp, SS *ssp, char full[], PN *pnp)/*usilic*/
 {
   int f_cut = 0;
@@ -895,6 +985,11 @@ void save_ll(int n_ll, LL *llp, SS *ssp, char full[], PN *pnp)/*usilic*/
     llp->a[0] = (u_long)save_list((LIST*)llp->a[0], full, pnp);
 }
 
+/*
+ * 【機能】エディタを起動する(行番号付き)。ファイルの種類(f_M)に応じて、アーカイブ内のファイル等は
+ *       一時ファイルへ取り出してから編集する。終了を待ち、SIGCONTも扱う。
+ * 【C++】EditMode::edit (src/cpp/src/edit_mode.cpp)
+ */
 int do_edit(int row, char name[], char arg[], int f_M)/*mode*/
 {
   int pid;
@@ -949,6 +1044,11 @@ int do_edit(int row, char name[], char arg[], int f_M)/*mode*/
   return (st.st_ctime == st_file.st_ctime) ? -M_clear : 0;
 }
 
+/*
+ * 【機能】EXECの設定(chp)にしたがって、外部プログラム(IINA等)を、ファイル(name)を渡して起動する。
+ *       引数を組み立て、子プロセスとして実行し、終了を待つ。
+ * 【C++】ExecMode::run (src/cpp/src/exec_mode.cpp)
+ */
 void do_exec(char name[], CHILD *chp)/*usilic*/
 {
   int i, j, pid;
@@ -994,6 +1094,10 @@ void do_exec(char name[], CHILD *chp)/*usilic*/
   free_arg(argv);
 }
 
+/*
+ * 【機能】BASEの内容(buff)を解放して、サイズを0にする。
+ * 【C++】なし(C++はstd::stringなどの自動解放で足りる)
+ */
 void clear_base(BASE *base)/*usilic*/
 {
   if (base->buff) {
@@ -1003,6 +1107,10 @@ void clear_base(BASE *base)/*usilic*/
   base->size = 0;
 }
 
+/*
+ * 【機能】行(PP)の連結リストを、先頭から順に解放する(行の文字列、属性を含む)。
+ * 【C++】なし(C++はstd::vectorの自動解放で足りる)
+ */
 PP *free_pp(PP *pp)/*usilic*/
 {
   PP *p0;
@@ -1017,6 +1125,11 @@ PP *free_pp(PP *pp)/*usilic*/
   return pp;
 }
 
+/*
+ * 【機能】アーカイブの選択行(cp)から、展開コマンドの前半を、fpへ書き出す。種類(is_chp)ごとに違う: tar系、
+ *       lha、unzip、rpm(rpm2cpio | cpio)、deb(ar | gzip | tar)等。戻り値でコマンドの形を知らせる。
+ * 【C++】ArchiveMode::extractSelected (src/cpp/src/archive_mode.cpp); ChildProcess::runPipeline (src/cpp/src/child_process.cpp)
+ */
 static int print_arc(char *cp, char dir[], FILE *fp)
 {
   CHILD *chp, *chp2;
@@ -1073,6 +1186,12 @@ static int print_arc(char *cp, char dir[], FILE *fp)
   return 1;
 }
 
+/*
+ * 【機能】CP/MV/RM/ARC(展開)のコマンドを組み立てて実行する。対象のファイルを、シェルスクリプトとして子プロセスへ
+ *       パイプで渡し(`cd ディレクトリ`、`cp/mv/rm ...`、`||`での失敗検知)、結果を返す。
+ * 【C++】CpMvRmMode::copyTo; CpMvRmMode::moveTo; CpMvRmMode::remove; CpMvRmMode::buildArgv (src/cpp/src/cp_mv_rm_mode.cpp)
+ * 【備考】C++はシェルスクリプトを組み立てず、argvを直接組み立てて実行する。
+ */
 char *command(int f_Mb, u_char str[], BASE *bp, LINE *lp, int klen, u_char du[], int *fdp)/*usilic*/
 {
   PP *pp;
@@ -1255,6 +1374,11 @@ char *command(int f_Mb, u_char str[], BASE *bp, LINE *lp, int klen, u_char du[],
   }
 }
 
+/*
+ * 【機能】RM/MVの対象(name)が操作できるかを調べる。rootなら常に可。ディレクトリの確認(f_dir)もできる。
+ *       シンボリックリンクは可、権限が無ければ-EACCES、存在しなければ-ENOENTを返す。
+ * 【C++】CpMvRmMode::isWritable (src/cpp/src/cp_mv_rm_mode.cpp)
+ */
 int is_write(u_char name[], int f_dir)/*mode*/
 {
   u_char *cp, *arrow;
@@ -1303,6 +1427,10 @@ debug("is_write:%s\n", cp);
   return -EACCES;
 }
 
+/*
+ * 【機能】CUT一覧の行(arg)の`(プログラム名)`から、対応する外部プログラム(CHILD)を引き当てる。
+ * 【C++】Configuration::programForSuffix (src/cpp/src/configuration.cpp)
+ */
 CHILD *set_cutchp(char arg[])/*usilic*/
 {
   char *cp;
@@ -1316,6 +1444,11 @@ CHILD *set_cutchp(char arg[])/*usilic*/
   return NULL;
 }
 
+/*
+ * 【機能】中断(SIGINT)やエラーの記録を、最下行に表示する。savef8のときは、Exitの表示を消す。エラーの
+ *       記録(save_error)の内容も出す。
+ * 【C++】Application::drawPromptLabel (src/cpp/src/application.cpp)
+ */
 void print_intr(char *save, char *mess)/*usilic*/
 {
   static int f_errg;
@@ -1383,6 +1516,10 @@ void print_intr(char *save, char *mess)/*usilic*/
   }
 }
   
+/*
+ * 【機能】文字列中の制御文字の前へ、引用符(`^Q`=K_q)を差し込む(入力欄に制御文字をそのまま入れるため)。
+ * 【C++】LineEditor (src/cpp/src/line_editor.cpp)
+ */
 void ins_q(u_char str[])/*mode*/
 {
   u_char *cp;
