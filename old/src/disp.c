@@ -1,4 +1,11 @@
 #include "usilic.h"
+/*
+ * 【機能】nroff形式の下線(`_\b文字`)と太字(`文字\b文字`)の重ね打ちを読み飛ばし、タブを空白に
+ *       変換して、最大256バイトをstrへコピーする(モードラインに出す文字列の下ごしらえ)。
+ * 【C++】PipeBuffer::wrapLine (src/cpp/src/pipe_buffer.cpp)
+ * 【備考】C++では重ね打ちの検出とタブの展開をPipeBufferが一括して行い、下線・太字はAttributeRunとして
+ *       保持する(取り除かずに描き分ける)。
+ */
 static void tabtospc(char str[], char tmp[])
 { /* underlineまたはboldの属性を読み飛ばす */
   /* '\t'を' 'へ変換する */
@@ -28,6 +35,14 @@ static void tabtospc(char str[], char tmp[])
   if (j == 256) str[255] = '\0';
 }
 
+/*
+ * 【機能】1行(pp)を画面へ描く。属性列(ATTR)に従って太字・下線を切り替え、制御コードは反転の
+ *       `^X`や`<XX>`で見せる。f_markが真のときは反転表示にする。ウィンドウ右端での
+ *       バックスペースの扱いと、UTF-8では継続バイト0xa0を番兵と誤認しない処理を含む。
+ * 【C++】ContentView::renderLine (src/cpp/src/content_view.cpp)
+ * 【備考】旧はバイト列を1文字ずつ端末へ出す。C++は幅計算(Utf8::display_width)を使い、全角の
+ *       境界や最終桁の扱いを明示的に決めている。
+ */
 void put_str(PP *pp, int f_mark)/*usilic*/
 {
   int c2, c3;
@@ -130,6 +145,11 @@ void put_str(PP *pp, int f_mark)/*usilic*/
   else vt_endstand();
 }
 
+/*
+ * 【機能】画面の本文部分(最下行のモードラインを除く全行)を、ppから順に描き直す。行が尽きた
+ *       残りは空行にする。
+ * 【C++】ContentView::redraw (src/cpp/src/content_view.cpp)
+ */
 PP *disp_pp(PP *pp, int f_mark)/*usilic*/
 { /* 行を表示する */
   int i, f_pp, f_rc = 0;
@@ -155,6 +175,15 @@ PP *disp_pp(PP *pp, int f_mark)/*usilic*/
   return pp;
 }
 
+/*
+ * 【機能】最下行のモードラインを組み立てて描く。左から、モード名(反転)、現在行/総行数と%、
+ *       引数(バイト数や`(ls)`等)、直前のモード(戻り先)、右端のプログラム名。幅が足りなければ
+ *       名前や戻り先の先頭を`...`で切り詰める。文字列を入力させるモード(f_enter)では入力欄を
+ *       確保する。最後に必要なら本文も描き直す(disp_pp)。
+ * 【C++】ContentView::renderModeLine; ContentView::fitModeLineFields; ContentView::ModeLineFields (src/cpp/src/content_view.cpp)
+ * 【備考】旧は状態をstatic変数に溜めて、呼び出しごとに全部を組み立て直す。C++はModeLineFieldsという
+ *       構造体で各欄を渡し、幅に収まらない場合の欠落順もfitModeLineFieldsに集約されている。
+ */
 int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *argp, int *lenp0)/*usilic*/
 {
   int f_mark, f_arc, i, j, n, len, llen;
@@ -382,6 +411,14 @@ int disp_window(PP *ps0, PP *pp0, int f_M0, char name0[], u_char prev0[], char *
   return (f_M == M_shell) ? len - strlen(arg) : nlen;
 }
 
+/*
+ * 【機能】モードラインの「現在行/総行数 %」の文字列を作る(linepへ返すか、直接描く)。linepがF2のときは、
+ *       行番号のジャンプ先を数字で入力させて値を返す(^Gで取消し)。ps0がF2のときは`Mark set`を
+ *       表示する。
+ * 【C++】ContentView::renderModeLine (src/cpp/src/content_view.cpp); Application::resolveGotoLineRow (src/cpp/src/application.cpp)
+ * 【備考】旧は1つの関数に、表示文字列の生成・行番号の入力・Mark set表示が同居している。C++では
+ *       位置表示(renderModeLine)と行番号ジャンプ(Application側)が別々になっている。
+ */
 int print_line(void *ps0, PP *pp, int len, u_char *linep)/*usilic*/
 { /* mode-lineに現在行と総行数を表示する */
   int c, i, j, k, row, e_row, n_row, f_code;
@@ -505,6 +542,12 @@ int print_line(void *ps0, PP *pp, int len, u_char *linep)/*usilic*/
   return tlen + tcol;
 }
 
+/*
+ * 【機能】モードライン右側の「直前のモード(戻り先)」欄を描く。長ければ先頭を`...`で切り詰め、短ければ
+ *       空白で埋める。dirがNULLのときは描かずに、整形した文字列をprevへ返す。
+ * 【C++】ContentView::ModeLineFields (src/cpp/src/content_view.cpp); ContentView::fitModeLineFields (src/cpp/src/content_view.cpp)
+ * 【備考】C++では戻り先の欄はModeLineFieldsのtrailing3にあたる。
+ */
 void disp_prev(u_char *prev, void *dir, int klen0)/*usilic*/
 {
   int i, j, k, col;
@@ -556,6 +599,12 @@ void disp_prev(u_char *prev, void *dir, int klen0)/*usilic*/
   } else strcpy(prev, str);
 }
   
+/*
+ * 【機能】COPYモードの画面を描く。本文の各行を出し、最下行にモード名・位置・戻り先の3欄を反転で
+ *       並べる。
+ * 【C++】CopyMode (src/cpp/src/copy_mode.cpp)
+ * 【備考】C++のCopyModeは、COPY開始時点の画面をスナップショットとして保持して選択を扱う。
+ */
 void disp_copy(void *p, int nlen)/*usilic*/
 {
   int i;

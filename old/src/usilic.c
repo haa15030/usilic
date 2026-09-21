@@ -14,6 +14,11 @@ static struct {
   char path[N_line];
 } Usilic;
 
+/*
+ * 【機能】使い方(プログラム名のみ、`[directory]`付き、`[file] [< file]`付き)とバージョン行を標準エラーへ出す。
+ * 【C++】main (src/cpp/app/main.cpp)
+ * 【備考】C++は-hオプションの処理の中で使い方を出す。
+ */
 static void usage(char usilic[], char version[])
 {
 
@@ -29,6 +34,11 @@ static void usage(char usilic[], char version[])
   fprintf(stderr, "%s\n", tmp);
 }
  
+/*
+ * 【機能】SHELLからのパイプ引き渡し用のソケットを閉じ、その一時ファイルを消して終了する
+ *       (SIGPIPEのハンドラ)。
+ * 【C++】tryHandoffToParentShell (src/cpp/app/main.cpp)
+ */
 static void main_pipe(int dummy)
 {
   if (Usilic.sfd) {
@@ -40,6 +50,11 @@ static void main_pipe(int dummy)
   exit(0);
 }
 
+/*
+ * 【機能】起動引数のパス(name)を、カレントディレクトリ(dir)を基にフルパス化し、ディレクトリなら
+ *       末尾へ`/`を補って(T_dir)、ファイルなら(T_file)を返す。`.`・`..`を整理してdirへも書く。
+ * 【C++】PathResolver (src/cpp/src/path_resolver.cpp)
+ */
 static int set_path(char dir[], char name[])
 {
   int f_M, i;
@@ -62,6 +77,13 @@ static int set_path(char dir[], char name[])
   return f_M;
 }
 
+/*
+ * 【機能】SHELLモードの中から起動されたU(引数付き、または標準入力のパイプ)の入力を、親のSHELLの
+ *       持つUへ引き渡して終了する。引数が無いパイプ入力はUNIXドメインソケットで、ファイル・
+ *       ディレクトリ・`-u`/`-U`(DU)はファイルへ書いて渡す。
+ * 【C++】tryHandoffToParentShell (src/cpp/app/main.cpp)
+ * 【備考】SHELLの中で`ls | <プログラム名>`や`<プログラム名> ファイル`を実行したとき、新しいUを起こさず親のUで開くための仕組み。
+ */
 static void from_shell(char *name, int pid, int f, char *mess)
 {
   char str[N_pipe+1];
@@ -154,6 +176,12 @@ static void from_shell(char *name, int pid, int f, char *mess)
   exit(0);
 }
 
+/*
+ * 【機能】psとgrepを子プロセスで実行して、同じ端末(-N)で既に動いているか(f_tty)、または指定した
+ *       プロセスが実際に動作中か(pid)を調べる。動いていれば、メッセージを出して1を返す。
+ * 【C++】main (src/cpp/app/main.cpp)
+ * 【備考】C++は、この確認にps/grepを使わずkill(pid,0)一発で生死を確認する。
+ */
 static int check_ps(int f_tty, int pid, char **err)
 {
   int n_pid, pv[4];
@@ -215,6 +243,14 @@ static int check_ps(int f_tty, int pid, char **err)
   return 1;
 }
     
+/*
+ * 【機能】引数なしの多重起動を防ぐ。~/.<プログラム名>/pidに記録されたプロセスが生きていれば(SIGCONTを送り、
+ *       ファイルの更新時刻で応答を確認して)、警告を出して終了する。応答が無ければpidファイルを
+ *       消す。端末指定(f_tty)のときはcheck_psへ回す。
+ * 【C++】main (src/cpp/app/main.cpp)
+ * 【備考】C++は警告で終了せず、旧プロセスへSIGTERM(応答が無ければSIGKILL)を送って乗っ取る
+ *       (2026-09-20、ユーザー要望)。
+ */
 static void check_pl(int f_tty, char **err)
 {
   struct stat st;
@@ -257,6 +293,15 @@ static void check_pl(int f_tty, char **err)
   }
 } 
 
+/*
+ * 【機能】起動処理全体。作業ディレクトリ(config.shが決めるTMP、既定は/tmp/.<プログラム名>)の確認、環境変数(ENV_PROG、USILIC_LIVE_SHELL)による
+ *       SHELL内起動の判定、コマンドライン引数の解釈(-p/-l/-u/-U/-h/-?、ディレクトリ・ファイル)、
+ *       二重起動の確認、設定(conf)・端末(vt_set/vt_init)・シグナルの初期化を行い、menu()の
+ *       ループへ入る。終了時にexit_usilic()で後始末をする。
+ * 【C++】main (src/cpp/app/main.cpp)
+ * 【備考】旧はf.usilicのビット(0x80=ファイルマネージャ、0x20=ページャ(stdin)など)で起動形態を持つ。
+ *       C++は起動形態を変数に分けており、GUI(-g)の分岐も加わっている。
+ */
 int main(int argc, char *argv[])
 {
   char pathname[N_line], args[N_line] = {'\0',};
@@ -436,6 +481,13 @@ int main(int argc, char *argv[])
   return 0;
 }
 
+/*
+ * 【機能】終了処理。SEGVのハンドラを戻し、SHELLを終了して(ファイルマネージャのとき)ログとエラー
+ *       一覧をw.N(作業ファイル)へ改名して残し、一時ファイルを消し、端末を元に戻して、確保した
+ *       メモリと履歴を解放する。
+ * 【C++】main (src/cpp/app/main.cpp)
+ * 【備考】C++はデストラクタ(RAII)で解放し、履歴の保存はHistoryが行う。
+ */
 void exit_usilic(void)/*usilic*/
 {
   signal(SIGSEGV, SIG_DFL);

@@ -1,6 +1,12 @@
 #include "usilic.h"
 #include <signal.h>
 #include <termios.h>
+/*
+ * 【機能】カーソル行(rvp->pp)の文字列のうち、名前の開始桁(rvp->col)以降だけを
+ *       rvp->strへ取り出す(選択中のエントリ名の取得)。SHELLの仮想行では何もしない。
+ * 【C++】DirectoryMode::selectedEntry (src/cpp/src/directory_mode.cpp)
+ * 【備考】旧は表示行の文字列そのものから名前を切り出す。C++はDirectoryEntry.nameへ構造化済み。
+ */
 static void rv_str(RV *rvp, int f_M)
 {
   if (f_M == M_shell /* rvp->pp->cs == F3 : 仮想行(SHELLプロンプト) */
@@ -10,6 +16,11 @@ static void rv_str(RV *rvp, int f_M)
   rvp->str[vt_col(0) - rvp->col - (is_ls(f_M) != 0)] = '\0';
 }
 
+/*
+ * 【機能】ページ先頭行(pp)が、行のリストの先頭から数えて何行目か(0始まり)を返す。
+ * 【C++】ContentView::topIndex (src/cpp/src/content_view.cpp)
+ * 【備考】旧は双方向リストを辿って数える。C++は配列の添字をそのまま保持する。
+ */
 static int set_top(PP *pp)
 {
   int top;
@@ -18,6 +29,16 @@ static int set_top(PP *pp)
   return top;
 }
 
+/*
+ * 【機能】ページ単位の移動。M_back/M_kback/M_headは前のページ・先頭へ、M_forw/M_kforw/M_tailは
+ *       次のページ・末尾へ移す。パイプ入力は必要なだけ追加で読み込み(alloc_pipe)、移動後に
+ *       画面を更新する(端末にステータス行(hs、vt_mode 'H')が有れば端末のスクロールで
+ *       1行ずつ、無ければ全体を再描画)。位置情報(pnp)を更新し、端末の入力バッファを捨てる
+ *       (tcflush)。
+ * 【C++】ContentView::pageUp; ContentView::pageDown; ContentView::goToTop; ContentView::goToBottom (src/cpp/src/content_view.cpp)
+ * 【備考】旧はPP(行の双方向リスト)のポインタ操作。C++は行の配列+添字で、端末スクロールと描画は
+ *       Display側(TerminalDisplay::scrollForward等)に分離されている。
+ */
 int move_page(int m, RV *rvp, PN *pnp, FILE **pinp, int f_M)/*usilic*/
 {
   FILE *pin;
@@ -134,6 +155,14 @@ int move_page(int m, RV *rvp, PN *pnp, FILE **pinp, int f_M)/*usilic*/
   return i;
 }
 
+/*
+ * 【機能】行単位の移動。M_up/M_kupは1行上、M_dn/M_kdnは1行下へカーソルを動かす。ページの端では
+ *       画面をスクロールする(パイプ入力は必要に応じて追加で読み込む)。M_prev/M_next系は、
+ *       一度ページの端へ寄せてから同じ動作をする。
+ * 【C++】ContentView::moveUp; ContentView::moveDown; ContentView::scrollLineUp; ContentView::scrollLineDown (src/cpp/src/content_view.cpp)
+ * 【備考】旧はカーソル移動とスクロールを同じ関数で扱う。C++はmoveUp/Down(カーソル)と
+ *       scrollLineUp/Down(画面だけ)に分かれている。
+ */
 void move_row(int m, RV *rvp, PN *pnp, FILE **pinp, int f_M)/*usilic*/
 {
   FILE *pin;
@@ -216,6 +245,11 @@ void move_row(int m, RV *rvp, PN *pnp, FILE **pinp, int f_M)/*usilic*/
   tcflush(vt_tfd(0), TCIFLUSH);
 }
 
+/*
+ * 【機能】画面を1行分下へずらして(端末のsrコマンド)、空いた先頭行にppを描く。ウィンドウ表示が
+ *       無効(vt_mode 'D'が偽)のときは何もしない。
+ * 【C++】TerminalDisplay::scrollReverse (src/cpp/src/terminal_display.cpp)
+ */
 PP *sr_row(PP *pp, int f_mark)/*usilic*/
 {
   if (!vt_mode('D')) return pp;
@@ -225,6 +259,12 @@ PP *sr_row(PP *pp, int f_mark)/*usilic*/
   return pp;
 }  
 
+/*
+ * 【機能】画面を1行分上へずらして(端末のsfコマンド)、空いた最下行にppを描く。ウィンドウ表示が
+ *       無効(vt_mode 'D'が偽)のときは何もしない。端末にステータス行(hs、vt_mode 'H')が
+ *       有るかどうかで、カーソル位置と描く順序が変わる。
+ * 【C++】TerminalDisplay::scrollForward (src/cpp/src/terminal_display.cpp)
+ */
 PP *sf_row(PP *pp, int f_mark)/*usilic*/
 {
   if (!vt_mode('D')) return pp;
@@ -242,6 +282,12 @@ PP *sf_row(PP *pp, int f_mark)/*usilic*/
   return pp;
 }  
 
+/*
+ * 【機能】モード(f_M)ごとに、カーソルが指す名前の開始桁の初期値を返す。lsの出力を持つモード(T_dir、
+ *       アーカイブ各種)はget_col()で求め、一覧系は0、CP/MV/RM等は-1(桁の概念なし)。
+ * 【C++】DirectoryEntry::nameStartColumn (src/cpp/src/directory_mode.hpp); ContentView::Line (src/cpp/src/content_view.hpp)
+ * 【備考】C++では一覧の各行がhighlightStartColumn(名前の開始桁)を持つ。
+ */
 int init_col(int f_M, char str[], int size)/*usilic*/
 {
   int col, row;
@@ -286,6 +332,11 @@ int init_col(int f_M, char str[], int size)/*usilic*/
   return col;
 }
 
+/*
+ * 【機能】記憶していた位置(tell=行番号、1始まり)から、ページ先頭のPP(*ppp)とカーソル行(pnp->row)を
+ *       復元する。総行数が1画面に収まらないときは、記憶した行が画面内に入るようtopを決める。
+ * 【C++】History::positionFor (src/cpp/src/history.cpp); ContentView::setCursorIndex (src/cpp/src/content_view.cpp)
+ */
 int init_row(PP **ppp, PN *pnp, int tell, int etop)/*usilic*/
 {
   int i, j, row;
@@ -306,6 +357,13 @@ int init_row(PP **ppp, PN *pnp, int tell, int etop)/*usilic*/
   return row;
 }
 
+/*
+ * 【機能】`ls -alF`の1行から、ファイル名が始まる桁(0始まり)を返す。月の略称(Jan〜Dec)を目印に、
+ *       その13バイト後ろをファイル名の開始とする(ファイル名に空白があっても壊れない)。目印が無い
+ *       行(アーカイブ一覧等)だけ、旧来の「最後の空白」で代用する。
+ * 【C++】DirectoryMode::parseLsLine (src/cpp/src/directory_mode.cpp)
+ * 【備考】lsの日付が常に英語形式になるよう、子プロセスにLC_ALL=Cを強制する(fork_bin)ことが前提。
+ */
 int get_col(char str[])/*usilic*/
 {
   static char *mon[] = {"Jan","Feb","Mar","Apr","May","Jun",

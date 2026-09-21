@@ -3,6 +3,15 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
+/*
+ * 【機能】usilicrcの1行(`suffix 'プログラム' 引数... [| 後段のプログラム]`)を解析して、外部プログラムの
+ *       定義(CHILD)を連結リストへ追加する。ARCHIVE/EXEC/EDITOR/SHELL/PROGRAMの各設定で共用し
+ *       (f_childで区別)、`'...'`・`"..."`の引用と`#`のコメントを解釈する。パスにプログラムが無ければ、
+ *       エラーを記録して捨てる。chpがF10のときは、エラー一覧の解放だけを行う。
+ * 【C++】Configuration::Configuration; Configuration::load (src/cpp/src/configuration.cpp)
+ * 【備考】C++は、設定の種類ごとにConfigurationのメンバー(表)へ読み込む。CHILDの連結リストに
+ *       相当するものは、ProgramCommand/SuffixEntryの配列になっている。
+ */
 CHILD *save_child(CHILD *chp, char *cp0, int f_child, LIST **lpp)/*usilic*/
 {
   static LIST *lp;
@@ -125,6 +134,12 @@ CHILD *save_child(CHILD *chp, char *cp0, int f_child, LIST **lpp)/*usilic*/
   return chp;
 }
 
+/*
+ * 【機能】ファイル名の末尾(suffix)から、対応する外部プログラム(CHILD)を探す(最長一致)。見つからなければ、
+ *       ファイルの先頭N_man(0x1000)バイトを調べて、manページ形式ならgroffのCHILDを返す。
+ * 【C++】Configuration::programForSuffix (src/cpp/src/configuration.cpp); FileMode::loadAndTransformContent (src/cpp/src/file_mode.cpp)
+ * 【備考】suffixの照合はConfiguration、manページ形式(.TH等)の検出とgroffの適用はFileModeに分かれている。
+ */
 CHILD *check_ext(char *name, u_char *split, int size)/*usilic*/
 { /* プログラム名を設定するためsuffixを調べる */
   int i, len, size0;
@@ -179,6 +194,12 @@ CHILD *check_ext(char *name, u_char *split, int size)/*usilic*/
   return chp;
 }
 
+/*
+ * 【機能】組み込みのプログラム定義(s_P(P_child))を読み込んで、外部プログラムのリスト(CHILD)を初期化する。
+ *       ファイルマネジャーかどうかで、読み始める位置が違う。
+ * 【C++】Configuration::Configuration (src/cpp/src/configuration.cpp)
+ * 【備考】C++は、組み込みの表をConfigurationのコンストラクタで作る。
+ */
 CHILD *init_child(void)/*usilic*/
 { /* 組み込みプログラム */
   int i;
@@ -191,6 +212,14 @@ CHILD *init_child(void)/*usilic*/
   return chp;
 }
 
+/*
+ * 【機能】外部プログラムのリスト(CHILD)を、suffix・プログラム名(bin)・次の要素のいずれかで検索する。
+ *       name指定があれば、見つかった要素の引数の末尾へファイル名を設定する。全引数がNULLのときは、
+ *       先頭を登録/取得する。
+ * 【C++】Configuration::programForSuffix; Configuration::commandFor (src/cpp/src/configuration.cpp)
+ * 【備考】旧はグローバルなリストを検索する。C++はConfigurationのメソッドで、役割(ConfiguredRole)や
+ *       suffixから引く。
+ */
 CHILD *get_child(CHILD *chp0, char *suffix, char *bin, char *name, CHILD *next)/*usilic*/
 {
   static CHILD *child;
@@ -214,6 +243,11 @@ CHILD *get_child(CHILD *chp0, char *suffix, char *bin, char *name, CHILD *next)/
   return chp;
 }
 
+/*
+ * 【機能】FILE一覧の表示用に、パス名の末尾へ` (プログラム名)`を付ける。ディレクトリや空白始まりの
+ *       行には付けない。
+ * 【C++】なし(C++のFILE履歴は実パスだけを持ち、プログラムはConfiguration::programForSuffixで都度引く)
+ */
 int cat_child(CHILD *chp, char pathname[])/*usilic*/
 {  /* FILE-listへ`filename (program)'を設定する */
   int i;
@@ -227,6 +261,10 @@ int cat_child(CHILD *chp, char pathname[])/*usilic*/
   return i;
 }
 
+/*
+ * 【機能】外部プログラム1件(CHILD)と、その引数・suffix・パイプ後段を解放する。
+ * 【C++】なし(C++はデストラクタとstd::vectorの自動解放で足りる)
+ */
 void free_chp(CHILD *chp)/*usilic*/
 {
   int argc, f_pipe;
@@ -242,6 +280,10 @@ void free_chp(CHILD *chp)/*usilic*/
   free(chp);
 }
   
+/*
+ * 【機能】外部プログラムのリスト(CHILD)全体を解放する。
+ * 【C++】なし(C++はデストラクタとstd::vectorの自動解放で足りる)
+ */
 void free_child(CHILD *chp0)/*usilic*/
 {
   CHILD *chp, *chb;
@@ -252,6 +294,13 @@ void free_child(CHILD *chp0)/*usilic*/
   }  
 }
 
+/*
+ * 【機能】ファイルを開くための外部プログラム(CHILD)から、そのファイルを表示するモード
+ *       (T_tar/T_lha/T_unzip/T_rpm/T_deb/T_gz/T_roff/T_exec/T_bin)を決めて返す。ファイル名を
+ *       プログラムの引数へ設定する。
+ * 【C++】ArchiveKind (src/cpp/src/configuration.hpp); Application::openSelectedEntry (src/cpp/src/application.cpp)
+ * 【備考】C++では、種別(ArchiveKind)を返し、どのモードで開くかはApplicationが決める。
+ */
 int is_child(char name[], CHILD *chp)/*usilic*/
 {
   int i, f_M;
@@ -279,6 +328,11 @@ int is_child(char name[], CHILD *chp)/*usilic*/
   return f_M;
 }
 
+/*
+ * 【機能】FILE一覧の`ファイル名 (プログラム名)`という行から、括弧内のプログラム名を取り出して、外部プログラム
+ *       (CHILD)を引き当てる。
+ * 【C++】なし(cat_childと対。C++のFILE履歴はプログラム名を持たない)
+ */
 CHILD *load_chp(char arg[])/*usilic*/
 {
   CHILD *chp;
@@ -294,6 +348,13 @@ CHILD *load_chp(char arg[])/*usilic*/
   return chp;
 }
 
+/*
+ * 【機能】外部プログラムが「展開して一覧を出す」種類か判定し、種別の番号を返す(deb=9、rpm=8、tar=5、
+ *       lha=4、unzip=3、bzip2=2、パイプ後段付きは6/7)。argを渡した場合は、その名前が後段に
+ *       使われているかを調べる。
+ * 【C++】ArchiveKind (src/cpp/src/configuration.hpp)
+ * 【備考】C++はArchiveKind(Tar/Lha/Zip/Bzip2/Rpm/Deb/Rar/SevenZip)という列挙型に置き換わっている。
+ */
 int is_chp(CHILD *chp, char *arg)/*usilic*/
 {
   int i;
