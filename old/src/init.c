@@ -11,6 +11,11 @@ static struct {
   jmp_buf jb;
 } Init;
 
+/*
+ * 【機能】SIGSEGVのハンドラ。直前のシグナル処理を元に戻し、目印(Init.abort)を立てて、longjmpで
+ *       init_*の入口へ戻る(クラッシュしても、その画面をエラー表示にして続行するため)。
+ * 【C++】なし(C++版はSIGSEGVを回収しない。範囲チェックとRAIIで防ぐ設計)
+ */
 static void init_clear(int dummy)
 {
   signal(SIGSEGV, Init.segv);
@@ -18,6 +23,11 @@ static void init_clear(int dummy)
   longjmp(Init.jb, 0);
 }
 
+/*
+ * 【機能】manページ(name)をfork_manで取得し、1画面分ではなくページ全体を先に読み込んで、バッファ(bp)へ
+ *       載せる。バイト数も合計しておく(モードラインに出すため)。無ければ`No manual entry`。
+ * 【C++】ManMode::loadPage (src/cpp/src/man_mode.cpp)
+ */
 void init_man(BASE *bp, FILE **pinp, char name[], u_char prev[], char arg[], int *klenp)/*usilic*/
 {
   free_bp(bp);
@@ -39,6 +49,14 @@ void init_man(BASE *bp, FILE **pinp, char name[], u_char prev[], char arg[], int
   }
 }
   
+/*
+ * 【機能】パイプ入力(標準入力、SHELLからの引き渡し、パイプ系のT_pipe*)のページャを初期化する。モードラインを
+ *       描き、最初の1画面分まで読み込む。読み込み中は子プロセスがキー入力を見張り、何かキーが
+ *       押されたら中断のシグナルを送る。
+ * 【C++】FileMode::loadStream (src/cpp/src/file_mode.cpp); Application::startPagerStdin (src/cpp/src/application.cpp)
+ * 【備考】旧は子プロセスでキーを監視して中断する。C++は入力を少しずつ読み込む(ペーシング)ので、
+ *       読み込みの合間に^Gを確認できる。
+ */
 int init_pipe(BASE *bp, FILE **pinp, int f_Mb, char mess[], char prev[], char arg[], int *klenp, CHILD **chpp, int ppid)/*usilic*/
 {
   int f_M, nlen, pid = 0;
@@ -87,6 +105,11 @@ int init_pipe(BASE *bp, FILE **pinp, int f_Mb, char mess[], char prev[], char ar
   return nlen;
 }
   
+/*
+ * 【機能】CUT(バッファの分割)。検索文字列strで、分割元(cut_bp)の行を検索して(fork_grep)、結果をbpへ
+ *       載せる。SEGV時はエラー表示に切り替えて戻る。
+ * 【C++】CutMode::split (src/cpp/src/cut_mode.cpp)
+ */
 void init_cut(BASE *bp, char name[], u_char str[], BASE *cut_bp)/*usilic*/
 {
   int f_M, code;
@@ -110,6 +133,11 @@ void init_cut(BASE *bp, char name[], u_char str[], BASE *cut_bp)/*usilic*/
   signal(SIGSEGV, Init.segv);
 }
   
+/*
+ * 【機能】CUT(ファイルを直接分割)。検索文字列strで、バッファ・ファイルを検索して(fork_grep2)、結果を
+ *       bpへ載せる。
+ * 【C++】CutMode::split (src/cpp/src/cut_mode.cpp)
+ */
 void init_cut2(BASE *bp, u_char *buff, char name[], u_char str[])/*usilic*/
 {
   struct stat st;
@@ -136,6 +164,12 @@ void init_cut2(BASE *bp, u_char *buff, char name[], u_char str[])/*usilic*/
   signal(SIGSEGV, Init.segv);
 }
   
+/*
+ * 【機能】アーカイブの1項目(pp)の内容を取り出す(read_arc、または記憶済みの領域から複写)。必要なら解凍や
+ *       groff変換(fork_chp)を続けて掛け、結果をbpへ載せる。EXEC対象なら外部プログラムへ
+ *       渡して終わる(F9を返す)。
+ * 【C++】ArchiveMode::extractSelected (src/cpp/src/archive_mode.cpp); FileMode::loadAndTransformContent (src/cpp/src/file_mode.cpp)
+ */
 CHILD *init_arc(BASE *bp, CHILD *arc, char name[], u_int bsize, u_char prev[], char arg[], PP *pp, int f_chkbin)/*usilic*/
 {
   int size, f_M, code;
@@ -208,6 +242,12 @@ CHILD *init_arc(BASE *bp, CHILD *arc, char name[], u_int bsize, u_char prev[], c
   return chp;
 }
 
+/*
+ * 【機能】アーカイブの1項目を、展開プログラム(tar/gzip/bzip2/unzip/rpm/deb等)のパイプラインを子プロセスで
+ *       組んで流し込み、その出力を読むFILE*を返す。
+ * 【C++】ChildProcess::runPipeline (src/cpp/src/child_process.cpp); ArchiveMode::extractSelected (src/cpp/src/archive_mode.cpp)
+ * 【備考】旧はfork/pipe/dup2を手で組む。C++はChildProcessがパイプラインの構築を担う。
+ */
 FILE *init_arc2(BASE *bp, CHILD *arc, char name[], PP *pp, char prev[], char arg[])/*usilic*/
 {
   u_char *buff;
@@ -328,6 +368,10 @@ FILE *init_arc2(BASE *bp, CHILD *arc, char name[], PP *pp, char prev[], char arg
   return fdopen(pv[0], "r");
 }
 
+/*
+ * 【機能】GREP(検索)。検索文字列strで、対象(pp)を検索して(fork_grep)、結果をbpへ載せる。
+ * 【C++】GrepMode::search (src/cpp/src/grep_mode.cpp)
+ */
 void init_grep(BASE *bp, char name[], u_char str[], PP *pp, int fgrep)/*usilic*/
 {
   Init.abort = 0;
@@ -346,6 +390,11 @@ void init_grep(BASE *bp, char name[], u_char str[], PP *pp, int fgrep)/*usilic*/
   signal(SIGSEGV, Init.segv);
 }
   
+/*
+ * 【機能】ディレクトリ一覧(T_dir: `ls -alF`を実行し、以前のsplit(マーク)を引き継ぐ)、またはlocateの
+ *       結果(T_locate)を作る。パスがディレクトリでなければ、カレントディレクトリに置き換える。
+ * 【C++】DirectoryMode::refresh; DirectoryMode::enterDirectory (src/cpp/src/directory_mode.cpp); LocateMode::search (src/cpp/src/locate_mode.cpp)
+ */
 void init_ls(BASE *bp, char name[], int f_M, int f_ls)/*usilic*/
 {
   struct stat st;
@@ -420,6 +469,11 @@ void init_ls(BASE *bp, char name[], int f_M, int f_ls)/*usilic*/
   signal(SIGSEGV, Init.segv);
 }
   
+/*
+ * 【機能】CUTで分割した1セグメントの内容(fork_split)を取り出して、bpへ載せる。文字コード判定(check_type)と
+ *       改行位置の決定(set_pp)も行う。
+ * 【C++】CutMode::segmentContent (src/cpp/src/cut_mode.cpp)
+ */
 void init_split(BASE *bp, char name[], PP *pp, BASE *cut_bp, int f_chkbin)/*usilic*/
 {
   int code, f_M = T_split;
@@ -443,6 +497,11 @@ void init_split(BASE *bp, char name[], PP *pp, BASE *cut_bp, int f_chkbin)/*usil
   signal(SIGSEGV, Init.segv);
 }
 
+/*
+ * 【機能】init_splitと同じく、CUTの1セグメントの内容を、記憶済みのバッファ、または元ファイルの範囲から
+ *       取り出してbpへ載せる。
+ * 【C++】CutMode::segmentContent (src/cpp/src/cut_mode.cpp)
+ */
 void init_split2(BASE *bp, u_char *buff, u_int bsize, u_char name[], PP *pp, int f_chkbin)/*usilic*/
 {
   int code, f_M;
@@ -470,6 +529,11 @@ void init_split2(BASE *bp, u_char *buff, u_int bsize, u_char name[], PP *pp, int
   signal(SIGSEGV, Init.segv);
 }
 
+/*
+ * 【機能】CUTのセグメント(ps〜pe)を、外部プログラムへ流し込むためのパイプを作り、その読み側を返す。
+ * 【C++】CutMode::segmentContent (src/cpp/src/cut_mode.cpp)
+ * 【備考】C++はメモリ上のStyledLineを直接扱うので、この受け渡し用のパイプは不要。
+ */
 FILE *init_split3(BASE *bp, char name[], PP *pp, PP *ps)/*usilic*/
 {
   int i, pv[2];
@@ -498,6 +562,12 @@ FILE *init_split3(BASE *bp, char name[], PP *pp, PP *ps)/*usilic*/
   return fdopen(pv[0], "r");
 }
 
+/*
+ * 【機能】init_split3と同じく、CUTのセグメントを、ファイルまたはバッファの範囲から書き出すパイプを作り、
+ *       その読み側を返す。
+ * 【C++】CutMode::segmentContent (src/cpp/src/cut_mode.cpp)
+ * 【備考】C++はメモリ上のStyledLineを直接扱うので、この受け渡し用のパイプは不要。
+ */
 FILE *init_split4(BASE *bp, u_char *buff, u_char name[], PP *pp)/*usilic*/
 {
   int i, pv[2];
@@ -530,6 +600,13 @@ FILE *init_split4(BASE *bp, u_char *buff, u_char name[], PP *pp)/*usilic*/
   return fdopen(pv[0], "r");
 }
 
+/*
+ * 【機能】汎用のバッファ初期化。モード(f_M)に応じて、KEY一覧(fork_key)、DUの結果、ERROR/LOG・ファイルの
+ *       読み込み(read_buff、文字コード判定check_type)、アーカイブ一覧(T_tar等)、解凍・groff変換
+ *       (T_bin/T_gz/T_roff)を、bpへ作る。
+ * 【C++】FileMode::loadFile (src/cpp/src/file_mode.cpp); ArchiveMode::loadArchive (src/cpp/src/archive_mode.cpp); DuMode::loadUsage (src/cpp/src/du_mode.cpp); Application::startKey (src/cpp/src/application.cpp)
+ * 【備考】旧は1つの巨大なswitchに全モードの読み込みが集まっている。C++はモードごとのクラスに分かれている。
+ */
 int init_bin(BASE *bp, BASE *head, CHILD **chpp, int f_M, char name[], int f_chkbin)/*usilic*/
 {
   int i, fd, f_Mb, code;

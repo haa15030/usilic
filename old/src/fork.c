@@ -6,6 +6,12 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 
+/*
+ * 【機能】特定のsuffix(.dvi等)を必要とする外部プログラム(dvi2tty等)のために、作業ファイル名
+ *       `w.<プログラム名>.<元のファイル名>`を作って返す。
+ * 【C++】ExecMode::run (src/cpp/src/exec_mode.cpp)
+ * 【備考】C++は、作業ファイルの名前を工夫せずパスをそのままプログラムへ渡す。
+ */
 static char *w_arg(char arg[], char argv[])
 { /* 特定のsuffix(.dvi等)を必要とするプログラム(dvi2tty等)のために
      ファイル名を設定する */
@@ -17,6 +23,12 @@ static char *w_arg(char arg[], char argv[])
   return wa;
 }
 
+/*
+ * 【機能】ファイル記述子fdから全データをバッファへ読み込む(alloc_buff)。読み込み中は`echo_mess`で
+ *       表示する。f_chkbinで、バイナリ判定の有無を切り替える。
+ * 【C++】ChildProcess::run (src/cpp/src/child_process.cpp); FileMode::loadFile (src/cpp/src/file_mode.cpp)
+ * 【備考】C++は、子プロセスの出力をChildProcess::Result::outputへ捕捉し、ファイルはFileModeが読む。
+ */
 u_char *read_buff(int *sizep, u_int fd, int f_chkbin)/*usilic*/
 {
   int pid = 0;
@@ -41,6 +53,10 @@ u_char *read_buff(int *sizep, u_int fd, int f_chkbin)/*usilic*/
   return buff;
 }
 
+/*
+ * 【機能】KEYモード(キー一覧)の内容を、子プロセスにconf_keyで書かせ、パイプ越しにバッファへ読み込む。
+ * 【C++】Application::startKey (src/cpp/src/application.cpp)
+ */
 u_char *fork_key(int *sizep)/*usilic*/
 {
   int pv[2];
@@ -61,6 +77,12 @@ u_char *fork_key(int *sizep)/*usilic*/
   return buff;
 }
 
+/*
+ * 【機能】外部プログラム(chp)を子プロセスで実行し、その出力(標準出力)をバッファへ読み込む(ls、locate、
+ *       groff等)。ディレクトリ一覧(T_dir)ではLC_ALL=Cを強制する(月名がマルチバイトだと、
+ *       ファイル名の開始桁がずれるため)。
+ * 【C++】ChildProcess::run (src/cpp/src/child_process.cpp); DirectoryMode::refresh (src/cpp/src/directory_mode.cpp)
+ */
 u_char *fork_bin(CHILD *chp, int *sizep, int f_M, int f_chkbin)/*usilic*/
 {
   int pv[2];
@@ -98,6 +120,11 @@ u_char *fork_bin(CHILD *chp, int *sizep, int f_M, int f_chkbin)/*usilic*/
   return buff;
 }
 
+/*
+ * 【機能】バッファの内容を作業ファイル(w_arg)へ書き出し、EXEC設定の外部プログラムで開く(do_exec)。
+ *       終わったら作業ファイルを消す。
+ * 【C++】ExecMode::run (src/cpp/src/exec_mode.cpp)
+ */
 void fork_exec(CHILD *chp, char arg[], u_char buff[], int size)/*usilic*/
 {
   FILE *fp;
@@ -111,6 +138,11 @@ void fork_exec(CHILD *chp, char arg[], u_char buff[], int size)/*usilic*/
   unlink(cp);
 }
 
+/*
+ * 【機能】バッファを作業ファイルへ書き出し、外部プログラム(解凍やgroff等。パイプの後段があれば連鎖)を
+ *       通した結果を、新しいバッファとして返す。
+ * 【C++】ChildProcess::runPipeline (src/cpp/src/child_process.cpp); FileMode::loadAndTransformContent (src/cpp/src/file_mode.cpp)
+ */
 u_char *fork_chp(CHILD *chp, u_char *buff, int *sizep, char arg[])/*usilic*/
 {
   CHILD *chp2 = NULL;
@@ -158,6 +190,11 @@ u_char *fork_chp(CHILD *chp, u_char *buff, int *sizep, char arg[])/*usilic*/
   return buff2;
 }
 
+/*
+ * 【機能】アーカイブの一覧を取得する(tar/lha/unzip/rpm/deb)。展開プログラムを子プロセスで実行して、
+ *       その出力を読み込む。tgzやdebは、パイプの後段(gzip、ar等)をつないで実行する。
+ * 【C++】ArchiveMode::loadArchive (src/cpp/src/archive_mode.cpp); ArchiveReader (src/cpp/src/archive_reader.cpp)
+ */
 u_char *fork_arc(char name[], int f_M, CHILD *chp0, int *tmp_sizep, int *bp_sizep, BASE *bp)/*usilic*/
 {
   CHILD *chp = NULL, *chp2 = NULL;
@@ -346,6 +383,12 @@ u_char *fork_arc(char name[], int f_M, CHILD *chp0, int *tmp_sizep, int *bp_size
   return tmp_buff;
 }
 
+/*
+ * 【機能】CUTのセグメント(pp〜)の行を、子プロセスからパイプへ書き出し、読み戻してバッファにする。
+ *       制御コードは`^X`の形に直す。
+ * 【C++】CutMode::segmentContent (src/cpp/src/cut_mode.cpp)
+ * 【備考】C++はStyledLineをメモリ上で直接扱うので、パイプ経由の往復は不要。
+ */
 u_char *fork_split(int *sizep, PP *pp, PP *ps)/*usilic*/
 {
   int i, pv[2];
@@ -386,6 +429,10 @@ u_char *fork_split(int *sizep, PP *pp, PP *ps)/*usilic*/
   return cp;
 }  
 
+/*
+ * 【機能】メモリ上のバッファtpから、改行までの1行(最大len)をbuffへ複写して、進めたtpを返す。
+ * 【C++】なし(C++は標準ライブラリ(std::getline等)で足りる)
+ */
 static u_char *sgets(u_char *buff, int len, u_char *tp)
 {
   for (; len; len--) 
@@ -394,6 +441,11 @@ static u_char *sgets(u_char *buff, int len, u_char *tp)
   return tp;
 }
 
+/*
+ * 【機能】MIME(`=?...?=`)でエンコードされ、複数行に分かれたヘッダ行を連結して、検索できる形にする。
+ * 【C++】なし(C++のGREPは外部のgrepへ委ねる)
+ * 【備考】旧はGREPを自前で実装しており、メールのMIMEヘッダを検索対象に含めるための処理があった。
+ */
 static int cat_mime(u_char line0[], FILE *fp, FILE *fp1, u_char **tpp)
 { /* mimeを連結する */
   static u_char line1[N_pipe];
@@ -441,6 +493,12 @@ static int cat_mime(u_char line0[], FILE *fp, FILE *fp1, u_char **tpp)
   return len;
 }
 
+/*
+ * 【機能】GREP/FGREPを子プロセスのパイプで実行する。検索元(pp)の行を子から書き出して、検索に掛け、
+ *       マッチした行をバッファへ読み込む(制御コードは`K_a0`+文字で表す)。
+ * 【C++】GrepMode::search (src/cpp/src/grep_mode.cpp)
+ * 【備考】C++は外部のgrep -F/-Eを実行し、その出力を解釈する。
+ */
 u_char *fork_grep(int *sizep, u_char str[], PP *pp, int f_fgrep)/*usilic*/
 {
   u_char *cp, *ce;
@@ -507,6 +565,11 @@ u_char *fork_grep(int *sizep, u_char str[], PP *pp, int f_fgrep)/*usilic*/
   return cp;
 }  
 
+/*
+ * 【機能】ファイルまたはバッファを直接検索する版のGREP。文字コード(EUC/SJIS/JIS)を判定して、検索文字列と
+ *       照合できる形に直してから検索する。
+ * 【C++】GrepMode::search (src/cpp/src/grep_mode.cpp)
+ */
 u_char *fork_grep2(int *sizep, u_char *buff, u_char str[], char name[])/*usilic*/
 {
   static u_char line0[N_pipe], line1[N_pipe];
@@ -640,6 +703,11 @@ u_char *fork_grep2(int *sizep, u_char *buff, u_char str[], char name[])/*usilic*
   return tp;
 }  
 
+/*
+ * 【機能】manコマンドを子プロセスで実行して、その出力の読み取り口(FILE*)を返す。PAGER=catに、LANGを
+ *       文字コードに合わせて設定する。`変数=値 ページ名`の形の環境変数の前置に対応する。
+ * 【C++】ManMode::loadPage (src/cpp/src/man_mode.cpp)
+ */
 FILE *fork_man(char str[])/*usilic*/
 {
   int argc;
@@ -682,6 +750,11 @@ FILE *fork_man(char str[])/*usilic*/
   return fdopen(pv[0], "r");
 }
 
+/*
+ * 【機能】展開が必要なファイル(gzip/bzip2/tar系/deb等。種別はf_chp)を、外部プログラムの連鎖を子プロセスで
+ *       実行し、その出力を読む口(FILE*)を返す。
+ * 【C++】ChildProcess::runPipeline (src/cpp/src/child_process.cpp)
+ */
 FILE *fork_pipe(int f_chp, CHILD *chp, char name[])/*usilic*/
 {
   int pv[6];
@@ -739,6 +812,10 @@ FILE *fork_pipe(int f_chp, CHILD *chp, char name[])/*usilic*/
   return fdopen(pv[0], "r");
 }
 
+/*
+ * 【機能】fileコマンドでファイルの種類を調べ、その出力の1行を返す(最初の1回だけコマンドを引き当てる)。
+ * 【C++】なし(C++はfileコマンドを使わない)
+ */
 char *fork_file(char name[])/*usilic*/
 {
   static char str[N_pipe];
@@ -764,6 +841,13 @@ char *fork_file(char name[])/*usilic*/
   return str;
 }
 
+/*
+ * 【機能】duを子プロセスで実行して、その結果を読む口(fd)を返す。実行中を示す目印のファイルを作り、
+ *       完了すると別の目印を作って知らせる(前回の実行が終わっていなければ-1を返す)。
+ * 【C++】DuMode::loadUsage; DuMode::commandArgvFor (src/cpp/src/du_mode.cpp)
+ * 【備考】C++はduの実行と結果の表示を分離し(commandArgvForとloadUsageFromOutput)、非同期の
+ *       実行を呼び出し側(Application)が行う。
+ */
 int fork_du(u_char dir[])/*usilic*/
 {
   static char mess[N_line];
@@ -809,6 +893,11 @@ int fork_du(u_char dir[])/*usilic*/
   return pv[0];
 }
 
+/*
+ * 【機能】アーカイブの1項目(name)の内容を、展開プログラムで取り出してバッファにする(tar/deb/unzip/rpm等で
+ *       手順が違う)。サイズはsizepへ返す。
+ * 【C++】ArchiveMode::extractSelected (src/cpp/src/archive_mode.cpp); ArchiveReader (src/cpp/src/archive_reader.cpp)
+ */
 char *read_arc(CHILD *arc, char prev[], char name[], int *sizep)/*usilic*/
 {
   CHILD *chp = NULL, *chp2 = NULL;

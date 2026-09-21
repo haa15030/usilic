@@ -5,6 +5,12 @@
 typedef int (CONV) (int, int, u_char*, u_char[], JIS *);
 typedef void (DECODE) (u_char*, u_char[], u_char[]);
 
+/*
+ * 【機能】行の先頭が、roffのマクロ(`."`、`.B`、`.I`、`.aa`〜`.zz`、`.Aa`〜`.ZZ`)で始まるかを見て、manページ
+ *       形式のテキストかどうかを判定する。
+ * 【C++】FileMode::loadAndTransformContent (src/cpp/src/file_mode.cpp)
+ * 【備考】C++は、`.TH`で始まるファイルをgroffで整形する、という判定になっている。
+ */
 int is_man(char *man)/*usilic*/
 { /*
    * \012.\\042
@@ -28,6 +34,10 @@ int is_man(char *man)/*usilic*/
   return 0;
 }
 
+/*
+ * 【機能】メモリ上のバッファの型を、fileコマンドで調べて文字列で返す(バイナリの表示用)。
+ * 【C++】なし(C++はfileコマンドを使わない)
+ */
 char *type_pipe(char *buff, int size, int code)/*usilic*/
 { /* ファイルの型を表示する(pipeから) */
   CHILD *chp;
@@ -77,6 +87,10 @@ char *type_pipe(char *buff, int size, int code)/*usilic*/
   return buff;
 }
 
+/*
+ * 【機能】ファイルの型を、fileコマンドで調べて文字列で返す(バイナリの表示用)。
+ * 【C++】なし(C++はfileコマンドを使わない)
+ */
 char *type_file(char *buff, char name[], int code)/*usilic*/
 { /* ファイルの型を表示する(fileから) */
   CHILD *chp;
@@ -114,6 +128,11 @@ char *type_file(char *buff, char name[], int code)/*usilic*/
   return buff;
 }
 
+/*
+ * 【機能】バッファの文字コードを判定して(init_code)、JIS/BASE64/QUOTEならEUCへ、必要ならEUCから
+ *       UTF-8へ変換して返す。バイナリなら変換せず、コードC_binを返す。f_chkbinが0のときは判定しない。
+ * 【C++】Charset::detect; Charset::jis_to_euc; Charset::sjis_to_euc; Charset::euc_to_utf8 (src/cpp/src/charset.cpp); FileMode::loadAndTransformContent (src/cpp/src/file_mode.cpp)
+ */
 u_char *check_type(u_char *buff, int *sizep, char *name, int *f_Mp, int f_chkbin, int *codep)/*usilic*/
 {
   int size, oldsize, code;
@@ -159,6 +178,10 @@ u_char *check_type(u_char *buff, int *sizep, char *name, int *f_Mp, int f_chkbin
   return buff;
 }
 
+/*
+ * 【機能】BASE64の1文字を、6ビットの値へ変換する。
+ * 【C++】なし(C++はMIMEヘッダ(=?...?=)の復号を移植していない)
+ */
 static int b_code(int c)
 {
   if (c >= '[') c -= 'G';
@@ -169,6 +192,10 @@ static int b_code(int c)
   return c & 0x3f;
 }
 
+/*
+ * 【機能】quoted-printableの16進の1文字(0-9、A-F、a-f)を、数値へ変換する。
+ * 【C++】なし(C++はMIMEヘッダ(=?...?=)の復号を移植していない)
+ */
 static int q_code(int c)
 {
   if (c >= '0' && c <= '9') c -= '0';
@@ -178,6 +205,10 @@ static int q_code(int c)
   return c;
 }
 
+/*
+ * 【機能】BASE64でエンコードされた文字列(mime〜end)を、元のバイト列(code)へ復号する。
+ * 【C++】なし(C++はMIMEヘッダ(=?...?=)の復号を移植していない)
+ */
 static void decode_base64(u_char *code, u_char mime[], u_char end[])/*code*/
 {
   u_char *mp;
@@ -192,6 +223,10 @@ static void decode_base64(u_char *code, u_char mime[], u_char end[])/*code*/
   *code = 0;
 }
 
+/*
+ * 【機能】quoted-printable(`=XX`と`_`=空白)でエンコードされた文字列を、元のバイト列へ復号する。
+ * 【C++】なし(C++はMIMEヘッダ(=?...?=)の復号を移植していない)
+ */
 static void decode_quote(u_char *code, u_char mime[], u_char end[])/*code*/
 {
   u_char *mp;
@@ -210,6 +245,11 @@ static void decode_quote(u_char *code, u_char mime[], u_char end[])/*code*/
   *code = 0;
 }
 
+/*
+ * 【機能】MIMEエンコード語`=?文字集合?B/Q?...?=`の文字集合(ISO-2022-JP、Shift_JIS、EUC-JP)と方式(B/Q)を
+ *       読み取り、使う変換関数と復号関数を選ぶ。
+ * 【C++】なし(C++はMIMEヘッダ(=?...?=)の復号を移植していない)
+ */
 static int set_func(u_char *cp, CONV **convp, DECODE **decodep)
 {
   static CONV *conv[] = {
@@ -245,6 +285,10 @@ static int set_func(u_char *cp, CONV **convp, DECODE **decodep)
   return len;
 }
 
+/*
+ * 【機能】quoted-printableで復号したバイト列が、JIS・SJIS・EUCのどれかを判定して、EUCへ変換する。
+ * 【C++】なし(C++はMIMEヘッダ(=?...?=)の復号を移植していない)
+ */
 static int conv_q(int buff_i, int len, u_char *cp, u_char euc[], JIS *dummy)/*code*/
 {
   u_char *p = cp;
@@ -271,6 +315,12 @@ static int conv_q(int buff_i, int len, u_char *cp, u_char euc[], JIS *dummy)/*co
   return buff_i;
 }
 
+/*
+ * 【機能】ISO-2022-JP(JIS)をEUCへ変換する。ESC列(`ESC $ B`、`ESC ( B`等)で状態を切り替えながら、
+ *       2バイト文字の最上位ビットを立てる。MIME(buff_i<0)の場合は状態を保持する。
+ * 【C++】Charset::jis_to_euc (src/cpp/src/charset.cpp)
+ * 【備考】C++はISO-2022-JPの状態遷移を、旧の状態番号に合わせて移植している(MIME用の分岐を除く)。
+ */
 static int conv_jis(int buff_i, int len, u_char *cp, u_char euc[], JIS *jisp)/*code*/
 {
   static int jis_i;
@@ -413,6 +463,10 @@ static int conv_jis(int buff_i, int len, u_char *cp, u_char euc[], JIS *jisp)/*c
   return buff_i;
 }
 
+/*
+ * 【機能】`=?...?=`のMIMEエンコード語を見つけて復号し、EUCへ変換して、出力(euc)へ置き換える。
+ * 【C++】なし(C++はMIMEヘッダ(=?...?=)の復号を移植していない)
+ */
 static int decode_mime(u_char **cpp, int *buff_ip, int *lenp, u_char euc[], u_char *end)/*code*/
 { 
   int i, len, buff_i, f_nl;
@@ -443,6 +497,11 @@ static int decode_mime(u_char **cpp, int *buff_ip, int *lenp, u_char euc[], u_ch
   return i;
 }
 
+/*
+ * 【機能】Shift_JISをEUCへ変換する(半角カナは`0x8e`+1バイトの形にする)。MIME(buff_i<0)の場合や、長さの
+ *       指定(len<0)による文字列の終端まで、を扱い分ける。
+ * 【C++】Charset::sjis_to_euc (src/cpp/src/charset.cpp)
+ */
 static int conv_sjis(int buff_i, int len, u_char *cp, u_char euc[], JIS *dummy)/*code*/
 {
   static int euc_e;
@@ -492,6 +551,12 @@ static int conv_sjis(int buff_i, int len, u_char *cp, u_char euc[], JIS *dummy)/
   return buff_i;
 }
 
+/*
+ * 【機能】EUC文字列を、制御文字(CODE設定で許可されたものを除く)を落としながらeucへ複写する。MIME
+ *       (`=?`)の復号も、ここで行う。
+ * 【C++】PipeBuffer::feed (src/cpp/src/pipe_buffer.cpp)
+ * 【備考】C++では、制御文字の扱いをPipeBufferが行い、MIMEの復号は移植していない。
+ */
 static int conv_euc(int buff_i, int len, u_char *cp, u_char euc[], JIS *dummy)/*code*/
 {
   static int euc_e;
@@ -525,12 +590,21 @@ static int conv_euc(int buff_i, int len, u_char *cp, u_char euc[], JIS *dummy)/*
   return buff_i;
 }
 
+/*
+ * 【機能】JISのバッファを、EUCへ変換する(conv_jisの窓口)。
+ * 【C++】Charset::jis_to_euc (src/cpp/src/charset.cpp)
+ */
 int jistoeuc(int buff_i, u_char jis[], JIS *jisp)/*usilic*/
 { /* jisをeucへ変換する */
   buff_i = conv_jis(-1, buff_i, jis, jis, jisp);
   return buff_i;
 }
 
+/*
+ * 【機能】SJISのバッファを、新しく確保した領域へEUCとして変換し、元の領域を解放して置き換える。
+ *       確保に失敗したらエラーを記録する。
+ * 【C++】Charset::sjis_to_euc (src/cpp/src/charset.cpp)
+ */
 int sjistoeuc(int buff_i, u_char **sjisp, int sjis_i, JIS *dummy)/*usilic*/
 { /* sjisをeucへ変換する */
   u_char *euc;
@@ -546,6 +620,11 @@ int sjistoeuc(int buff_i, u_char **sjisp, int sjis_i, JIS *dummy)/*usilic*/
   return buff_i;
 }
 
+/*
+ * 【機能】EUCのバッファを、新しく確保した領域へ複写し(制御文字を落とす、MIMEを復号する)、元の領域を
+ *       解放して置き換える。
+ * 【C++】PipeBuffer::feed (src/cpp/src/pipe_buffer.cpp)
+ */
 int euctoeuc(int buff_i, u_char **eucp, int euc_i, JIS *dummy)/*usilic*/
 { /* メモリの確保無しでsjisをeucへ変換する */
   u_char *euc;
@@ -579,6 +658,10 @@ int euctoeuc(int buff_i, u_char **eucp, int euc_i, JIS *dummy)/*usilic*/
  * 追跡ではなく単一のグローバルな文字コード解釈を持つため、本物の
  * UTF-8端末では文字化けとして表示されてしまう。
  */
+/*
+ * 【機能】Unicodeのコードポイントを、UTF-8のバイト列(1〜3バイト)へ変換して、書き込んだ長さを返す。
+ * 【C++】uni_to_utf8 (src/cpp/src/charset.cpp)
+ */
 static int uni_to_utf8(u_int cp, u_char *out)
 {
   if (cp < 0x80) {
@@ -596,6 +679,11 @@ static int uni_to_utf8(u_int cp, u_char *out)
   return 3;
 }
 
+/*
+ * 【機能】EUC-JP(半角カナ`0x8e`、JIS X 0208の2バイト)を、変換表(euc_uni.h)でUnicodeに直して、
+ *       UTF-8へ変換する。
+ * 【C++】Charset::euc_to_utf8 (src/cpp/src/charset.cpp)
+ */
 static int euc_to_utf8_core(u_char *euc, int size, u_char *out)
 {
   u_char *end = euc + size, *op = out;
@@ -620,6 +708,10 @@ static int euc_to_utf8_core(u_char *euc, int size, u_char *out)
   return op - out;
 }
 
+/*
+ * 【機能】EUCの領域(*eucp)を、UTF-8へ変換して新しい領域へ置き換える(呼び出し元が領域を所有する場合用)。
+ * 【C++】Charset::euc_to_utf8 (src/cpp/src/charset.cpp)
+ */
 int euctoutf8(int size, u_char **eucp)/*usilic*/
 { /* *eucpを所有していてそれを解放/置換できる呼び出し元
      (check_type())のため */
@@ -633,6 +725,11 @@ int euctoutf8(int size, u_char **eucp)/*usilic*/
   return newsize;
 }
 
+/*
+ * 【機能】固定サイズの共有バッファ(alloc.cのlinein)の中で、EUCをUTF-8へ変換する。入力がN_buff/2バイト
+ *       までなら、最大でも1.5倍にしかならず、必ずバッファに収まる。
+ * 【C++】Charset::euc_to_utf8 (src/cpp/src/charset.cpp)
+ */
 int euctoutf8_buf(u_char *buff, int size)/*usilic*/
 { /* 再確保可能なポインタではなく、固定サイズの共有行バッファへ
      読み込む呼び出し元(alloc.cのlinein())のため。N_buff/2バイトの
@@ -663,6 +760,10 @@ int euctoutf8_buf(u_char *buff, int size)/*usilic*/
  * 結合文字範囲を加えたものである; 完全なUnicode East-Asian-Width
  * テーブルではない。
  */
+/*
+ * 【機能】UTF-8の先頭バイトから、その文字のバイト長(1〜4)を返す。
+ * 【C++】Charset::sequence_length (src/cpp/src/charset.cpp); Utf8::sequence_length (src/cpp/src/utf8.cpp)
+ */
 int utf8_seqlen(u_char c)/*usilic*/
 {
   if (c < 0x80) return 1;
@@ -672,6 +773,11 @@ int utf8_seqlen(u_char c)/*usilic*/
   return 1;
 }
 
+/*
+ * 【機能】UTF-8の1文字(lenバイト)の表示幅(0、1、2カラム)を返す。幅0の結合文字と、幅2の全角・絵文字の
+ *       範囲表を持つ。
+ * 【C++】Charset::display_width (src/cpp/src/charset.cpp); Utf8::display_width (src/cpp/src/utf8.cpp)
+ */
 int utf8_width(u_char *cp, int len)/*usilic*/
 {
   u_int cpt;
@@ -708,6 +814,11 @@ int utf8_width(u_char *cp, int len)/*usilic*/
   return 1;
 }
 
+/*
+ * 【機能】バイト位置ciが、マルチバイト文字(漢字)の途中にあるかを判定する(途中なら1)。UTF-8では
+ *       シーケンス長で、EUCでは0x80以上の連続で数える。
+ * 【C++】Charset::splits_character (src/cpp/src/charset.cpp)
+ */
 int count_k(u_char *cp, int ci)/*usilic*/
 {
   int i, f_kanji;
@@ -726,6 +837,11 @@ int count_k(u_char *cp, int ci)/*usilic*/
   return f_kanji;
 }
 
+/*
+ * 【機能】文字列の先頭からciバイト目までの表示桁数を数える。タブは8桁ごとの位置へ進める。
+ * 【C++】PipeBuffer::wrapLine (src/cpp/src/pipe_buffer.cpp)
+ * 【備考】C++はタブをU+2060+空白へ展開する時点で、桁を数える。
+ */
 static int count_h(u_char *cp, int ci)
 {
   int i, j, h, col;
@@ -741,6 +857,10 @@ static int count_h(u_char *cp, int ci)
   return col;
 }
 
+/*
+ * 【機能】表示桁colに対応する、文字列のバイト位置を返す(count_hの逆引き)。
+ * 【C++】PipeBuffer::wrapLine (src/cpp/src/pipe_buffer.cpp)
+ */
 static int count_i(u_char *cp, int col)
 {
   int ci;
@@ -760,6 +880,11 @@ static int count_i(u_char *cp, int col)
  * (例えばプレビューサイズの読み込みが文字の途中で切れた場合)は、
  * 拒否せず許容する。
  */
+/*
+ * 【機能】バッファが、整形式のUTF-8か(マルチバイトの先頭バイトの後に正しい数の継続バイトが続き、
+ *       少なくとも1つのマルチバイト文字がある)を判定する。素のASCIIは、UTF-8とは扱わない。
+ * 【C++】Charset::detect (src/cpp/src/charset.cpp)
+ */
 static int is_utf8(u_char *buff, int size)
 {
   int i, len, j, f_multi;
@@ -776,6 +901,13 @@ static int is_utf8(u_char *buff, int size)
   return f_multi;
 }
 
+/*
+ * 【機能】バッファの文字コード(ASCII/EUC/SJIS/JIS/UTF-8/BASE64/QUOTE/バイナリ)を自動判定する。
+ *       UTF-8端末で整形式のUTF-8なら、他の判定より先に決める。制御文字はCODE設定(S_code)で
+ *       許可されたものだけを許容し、それ以外があればバイナリとする。
+ * 【C++】Charset::detect (src/cpp/src/charset.cpp)
+ * 【備考】C++はBASE64/QUOTEの判定を持たない(MIMEの復号を移植していないため)。
+ */
 int init_code(int *sizep, u_char *buff, int f_chkbin)/*usilic*/
 {
   int i, code, size, c1, c2, c3, c4, c5, kn[3];
@@ -875,6 +1007,12 @@ int init_code(int *sizep, u_char *buff, int f_chkbin)/*usilic*/
   return code;
 }
 
+/*
+ * 【機能】COPYモードのために、画面の各行を、桁ごとに文字位置を引ける対応表(map)へ展開する。タブや
+ *       全角文字を考慮して、選択範囲の桁と文字を対応させる。
+ * 【C++】CopyMode::loadSnapshot (src/cpp/src/copy_mode.cpp)
+ * 【備考】C++のCopyModeは、COPY開始時点の画面をスナップショットとして保持する。
+ */
 void make_map(RV *rvp, int nlen)/*usilic*/
 {
   static int key_copy[] = {
@@ -1099,6 +1237,10 @@ void make_map(RV *rvp, int nlen)/*usilic*/
   free(p1);
 }
 
+/*
+ * 【機能】SJISの文字列を、一時領域を使って、その場でEUCへ変換する(行末の改行を保つ)。
+ * 【C++】Charset::sjis_to_euc (src/cpp/src/charset.cpp)
+ */
 int toeuc(u_char sjis[])/*usilic*/
 { /* メモリの確保無しでsjisをeucへ変換する */
   int buff_i;
