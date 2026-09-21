@@ -2800,13 +2800,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 2026-09-21、直接のユーザー依頼(USILICモード=アクセス履歴、
       // 案B): `^J^U`はファイル/ディレクトリ/manごとのソート一覧、`^Ju`は
       // 種別を問わない純粋な時系列HISTORY(直近が一番下)。従来の
-      // マーク済みファイルの一覧(旧`^J^U`)は`^J^Y`へ移した。
+      // マーク済みファイルの一覧(旧`^J^U`)は`^Ou`へ戻した。
       case 0x15:  // ^J ^U : USILIC、種別ごとのソート一覧
         return handleCommand(Command::StartUsilicHistorySorted);
       case 'u':  // ^J u : USILIC、時系列HISTORY
         return handleCommand(Command::StartUsilicHistory);
-      case 0x19:  // ^J ^Y : USILIC、マークしたファイル/ディレクトリの一覧
-        return handleCommand(Command::StartUnderlineView);
       case 'y':  // ^J y : 全マーク(CP、MV、RM、ARC)
         return handleCommand(Command::MarkAll);
       case 'n':  // ^J n : 全マーク解除(CP、MV、RM、ARC)
@@ -2954,6 +2952,11 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
         return handleCommand(Command::StartMove);
       case 'r':  // ^O r : RM(旧^X r)
         return handleCommand(Command::StartRemove);
+      // 2026-09-21、直接のユーザー提案("^Ouを復活では？"): マーク済みの
+      // 複数項目を渡して閲覧する機能はCP/MV/RMと同じ^O系。従来のマーク
+      // 済みファイル/ディレクトリの一覧(旧^J^Y)をここへ戻した。
+      case 'u':  // ^O u : USILIC、マークしたファイル/ディレクトリの一覧
+        return handleCommand(Command::StartUnderlineView);
       case 'a':  // ^O a : ARC展開(旧^X a、K-58)――^O aはここへ移る
                  // 前にHELP/KEYの表示言語切り替えが占めていたが、
                  // それは^J aへ先に移した(kKeyTable自身の"^Ja"コメント
