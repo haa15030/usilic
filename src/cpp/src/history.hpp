@@ -40,6 +40,13 @@ enum class RingCategory {
   RecentLocateQuery,   // " LOCATE_HISTORY"
   RecentFgrepPattern,  // " FGREP_HISTORY"
   RecentEgrepPattern,  // " EGREP_HISTORY"
+  // 2026-09-21新設、直接のユーザー依頼(USILICモード=アクセス履歴): ファイル
+  // (CUTを含む)・ディレクトリ・manページへのアクセスを、FILE/DIR/MANとは
+  // 別に時系列で1本に記録する。エントリの種別は文字列から判定する:
+  // 末尾が"/"ならディレクトリ、末尾が" (man)"ならmanページ、それ以外は
+  // 通常ファイル。FILE/DIR/MAN側のpushRecent()から自動で複写される
+  // (mirrorToUsilicImpl()参照)ので、呼び出し側が直接pushする必要は無い。
+  Usilic,              // " USILIC_HISTORY"
 };
 
 // カーソル位置の記憶、最近使ったものの一覧、いくつかのセッション
@@ -312,6 +319,8 @@ class History {
   void setPositionImpl(PositionCategory category, const std::string &name, CursorPosition position);
   void rememberNameImpl(NameSetCategory category, const std::string &name);
   void pushRecentImpl(RingCategory category, const std::string &name);
+  // pushRecent()から呼ばれ、FILE/DIR/MANへの記録をUsilicリングへも複写する。
+  void mirrorToUsilicImpl(RingCategory source, const std::string &name);
   void setSmoothScrollEnabledImpl(bool enabled);
   void setModeLineVisibleImpl(bool visible);
   void setLsModeImpl(int mode);

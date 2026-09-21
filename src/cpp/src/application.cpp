@@ -1717,6 +1717,8 @@ std::string Application::ringCategoryLabel(RingCategory category) const {
       return "FGREP";
     case RingCategory::RecentEgrepPattern:
       return "EGREP";
+    case RingCategory::Usilic:
+      return "USILIC";
   }
   return "";
 }
@@ -2795,14 +2797,16 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // (set-fill-column)は使用頻度が極めて低いと判明したため、衝突を
       // 避ける目的での移行自体が不要と判断された)。
       // 2026-09-08、キー再編で^X^Y/^X^Nから移行(全マーク/全解除)。
-      // 2026-09-21、直接のユーザー依頼(`^Ou`→`^Ju`/`^J^U`、一覧を持つ
-      // モードの接頭キーを`^J`へ揃える): `^J^U`は一覧表示、`^Ju`は
-      // 一覧のトップを`^M`で開いた後の画面(Command::
-      // StartUnderlineViewOpenFirst自身のコメント参照)。
-      case 0x15:  // ^J ^U : USILIC(マークしたファイル/ディレクトリの一覧)
+      // 2026-09-21、直接のユーザー依頼(USILICモード=アクセス履歴、
+      // 案B): `^J^U`はファイル/ディレクトリ/manごとのソート一覧、`^Ju`は
+      // 種別を問わない純粋な時系列HISTORY(直近が一番下)。従来の
+      // マーク済みファイルの一覧(旧`^J^U`)は`^J^Y`へ移した。
+      case 0x15:  // ^J ^U : USILIC、種別ごとのソート一覧
+        return handleCommand(Command::StartUsilicHistorySorted);
+      case 'u':  // ^J u : USILIC、時系列HISTORY
+        return handleCommand(Command::StartUsilicHistory);
+      case 0x19:  // ^J ^Y : USILIC、マークしたファイル/ディレクトリの一覧
         return handleCommand(Command::StartUnderlineView);
-      case 'u':  // ^J u : USILIC、一覧のトップを開く
-        return handleCommand(Command::StartUnderlineViewOpenFirst);
       case 'y':  // ^J y : 全マーク(CP、MV、RM、ARC)
         return handleCommand(Command::MarkAll);
       case 'n':  // ^J n : 全マーク解除(CP、MV、RM、ARC)
@@ -4140,8 +4144,10 @@ bool Application::handleCommand(Command command) {
       return navigateToPagerFile(static_cast<int>(pagerFileList_.size()) - 1);
     case Command::StartUnderlineView:
       return startUnderlineFileView();
-    case Command::StartUnderlineViewOpenFirst:
-      return startUnderlineFileView() && openSelectedUnderlineEntry();
+    case Command::StartUsilicHistorySorted:
+      return startUsilicHistory(/*sorted=*/true);
+    case Command::StartUsilicHistory:
+      return startUsilicHistory(/*sorted=*/false);
     case Command::QuickLook:
       return executeQuickLook();
     case Command::StartCopy:
@@ -4991,6 +4997,7 @@ void Application::clearListReturnAnnotations() {
   // 2026-09-21修正: 移動元がDu/Locate/Man一覧やFile等の場合も含め、
   // 現在地が変わる操作では常に戻り値を破棄する(モードのガードは不要)。
   manReturnsToCandidateList_ = false;
+  manReturnsToUnderline_ = false;
   auto kind = directoryMode_.primaryAnnotations().topKind();
   if (!kind) return;
   if (*kind == DirectoryMode::DirAnnotationKind::Du || *kind == DirectoryMode::DirAnnotationKind::Locate ||
@@ -5642,9 +5649,45 @@ bool Application::startUnderlineFileView() {
   return true;
 }
 
+bool Application::startUsilicHistory(bool sorted) {
+  if (currentMode_ != ApplicationMode::Directory) return false;
+  const auto &ring = history_.recentEntries(RingCategory::Usilic);
+  std::vector<std::string> entries(ring.begin(), ring.end());
+  if (entries.empty()) return false;
+  if (sorted) {
+    auto isMan = [](const std::string &e) { return e.size() > 6 && e.compare(e.size() - 6, 6, " (man)") == 0; };
+    auto isDir = [](const std::string &e) { return !e.empty() && e.back() == '/'; };
+    std::sort(entries.begin(), entries.end());
+    entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
+    // ファイル→ディレクトリ→manの順(各群の中は上のソート順を保つ)。
+    auto rank = [&](const std::string &e) { return isMan(e) ? 2 : (isDir(e) ? 1 : 0); };
+    std::stable_sort(entries.begin(), entries.end(),
+                     [&](const std::string &a, const std::string &b) { return rank(a) < rank(b); });
+  }
+  underlineOriginDirectory_ = directoryMode_.currentDirectory();
+  underlineMode_.show(std::move(entries), /*cursorAtEnd=*/!sorted);
+  currentMode_ = ApplicationMode::Underline;
+  return true;
+}
+
 bool Application::openSelectedUnderlineEntry() {
   const std::string *path = underlineMode_.selectedEntry();
   if (!path) return false;
+  // 2026-09-21追加: アクセス履歴の"名前 (man)"はmanページとして開き、^Gで
+  // このUSILIC一覧へ戻る。
+  if (path->size() > 6 && path->compare(path->size() - 6, 6, " (man)") == 0) {
+    ApplicationMode anchor = nearestFileOrDirectoryAnchor();
+    manReturnStack_ = {anchor};
+    manAnchor_ = anchorSnapshotFor(anchor);
+    if (!executeMan(path->substr(0, path->size() - 6))) return false;
+    manReturnsToUnderline_ = true;
+    return true;
+  }
+  // "パス \"文字列\""(CUT履歴)など、実在するパスでないものはFILE履歴と同じ経路で開く。
+  {
+    std::error_code existsEc;
+    if (!std::filesystem::exists(*path, existsEc)) return openRecentFileEntry(*path);
+  }
   // 2026-09-21追加: ディレクトリはopenSelectedDuEntry()自身の
   // ディレクトリ分岐と同型――移動先へ注釈(Usilic)を積み、^Gで
   // 一覧へ戻れるようにする。
@@ -6276,6 +6319,12 @@ bool Application::returnToCutResults() {
 
 bool Application::returnFromMan() {
   manMode_.saveCursorPosition();
+  if (manReturnsToUnderline_) {
+    manReturnsToUnderline_ = false;
+    currentMode_ = ApplicationMode::Underline;
+    underlineView_.redraw();
+    return true;
+  }
   if (manReturnsToCandidateList_) {
     // ソート済みMAN一覧から開いたページ: ^Gはその一覧へ戻る(2回目の^Gが
     // 通常の戻り先へ)。
@@ -11864,6 +11913,7 @@ bool Application::executeCut(const std::string &pattern) {
 }
 
 bool Application::executeMan(const std::string &name) {
+  manReturnsToUnderline_ = false;  // USILIC一覧から開いた場合だけ、呼び出し元が立て直す
   manReturnsToCandidateList_ = false;  // 一覧から開いた場合だけ、呼び出し元(openSelectedListEntry())が立て直す
   history_.pushRecent(RingCategory::RecentManPage, name);  // 下のloadPage()自身の結果に関わらず記録される
   if (!manMode_.loadPage(name)) {

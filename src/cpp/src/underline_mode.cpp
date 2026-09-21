@@ -4,7 +4,7 @@ namespace fm {
 
 UnderlineMode::UnderlineMode(ContentView &view) : view_(view) {}
 
-void UnderlineMode::show(std::vector<std::string> paths) {
+void UnderlineMode::show(std::vector<std::string> paths, bool cursorAtEnd) {
   entries_ = std::move(paths);
 
   // ellipsisEligible=true: LocateMode::search()自身の同一のコメント
@@ -14,7 +14,7 @@ void UnderlineMode::show(std::vector<std::string> paths) {
   lines.reserve(entries_.size());
   for (const auto &path : entries_) lines.push_back({path, std::nullopt, std::nullopt, {}, true});
   view_.setLines(std::move(lines));
-  view_.setCursorIndex(0);
+  view_.setCursorIndex(cursorAtEnd && !entries_.empty() ? static_cast<int>(entries_.size()) - 1 : 0);
   view_.redraw();
 }
 

@@ -15130,3 +15130,53 @@ TEST_CASE_FIXTURE(Fixture, "DU started from a File that was ITSELF reached via a
   CHECK(app.handleCommand(Command::Back));
   CHECK(app.currentMode() == ApplicationMode::Directory);
 }
+
+// -- USILIC history (2026-09-21): ^J^U sorted / ^Ju chronological ------------
+
+TEST_CASE_FIXTURE(Fixture, "^J^U/^Ju: FILE/DIR/MAN accesses are mirrored into the USILIC ring; ^Ju lists "
+                           "them chronologically with the cursor on the newest (bottom), ^J^U groups them "
+                           "files, directories, man pages") {
+  history.pushRecent(RingCategory::RecentFile, "/tmp/zzz.txt");
+  history.pushRecent(RingCategory::RecentDirectory, "/tmp/aaa");
+  history.pushRecent(RingCategory::RecentManPage, "ls");
+  history.pushRecent(RingCategory::RecentFile, "/tmp/bbb.txt");
+  REQUIRE(app.start(path()));
+
+  REQUIRE(app.handleCommand(Command::StartUsilicHistory));
+  CHECK(app.currentMode() == ApplicationMode::Underline);
+  const auto &chrono = app.underlineMode().entries();
+  REQUIRE(chrono.size() >= 4);
+  // app.start()自身のディレクトリ入場が最新のDIRアクセスとして末尾に来る。
+  CHECK(chrono.back() == path());
+  CHECK(chrono[chrono.size() - 2] == "/tmp/bbb.txt");
+  CHECK(app.underlineMode().selectedEntry() == &chrono.back());
+  REQUIRE(app.handleCommand(Command::Back));
+
+  REQUIRE(app.handleCommand(Command::StartUsilicHistorySorted));
+  const auto &sorted = app.underlineMode().entries();
+  auto pos = [&](const std::string &e) { return std::find(sorted.begin(), sorted.end(), e) - sorted.begin(); };
+  CHECK(pos("/tmp/bbb.txt") < pos("/tmp/zzz.txt"));      // sorted within files
+  CHECK(pos("/tmp/zzz.txt") < pos("/tmp/aaa/"));         // files before directories
+  CHECK(pos("/tmp/aaa/") < pos("ls (man)"));             // directories before man pages
+}
+
+TEST_CASE("History: the USILIC ring survives serialize/load, and files without the section still load") {
+  fm::History h;
+  h.pushRecent(RingCategory::RecentFile, "/tmp/x.txt");
+  h.pushRecent(RingCategory::RecentManPage, "ls");
+  std::string text = h.serialize("usilic", "now");
+  fm::History h2;
+  REQUIRE(h2.loadHistoryText(text, false));
+  const auto &ring = h2.recentEntries(RingCategory::Usilic);
+  REQUIRE(ring.size() >= 2);
+  CHECK(ring.back() == "ls (man)");
+
+  std::string legacy = text;
+  auto at = legacy.find(std::string(1, '\f') + " USILIC_HISTORY");
+  REQUIRE(at != std::string::npos);
+  auto end = legacy.find(std::string(1, '\f') + " MODE", at);
+  REQUIRE(end != std::string::npos);
+  legacy.erase(at, end - at);
+  fm::History h3;
+  CHECK(h3.loadHistoryText(legacy, false));
+}

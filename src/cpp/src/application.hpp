@@ -264,7 +264,8 @@ enum class Command {
   // 発動した上で、一覧のトップのエントリを`^M`で開いた後の画面へ
   // 直接遷移する(`^Jd`/`^J^D`、`^Jm`/`^J^M`が「実行・入力」と
   // 「一覧表示」に分かれているのと同じ形)。
-  StartUnderlineViewOpenFirst,
+  StartUsilicHistorySorted,  // `^J^U`
+  StartUsilicHistory,        // `^Ju`
   StartCopy,
   StartMove,
   StartRemove,
@@ -1496,6 +1497,10 @@ class Application {
   // currentMode_ != Directoryなら何もせずfalse。対象0件でもfalse。
   // underlineMode_.show()でApplicationMode::Underlineへ切り替える。
   bool startUnderlineFileView();
+  // 2026-09-21追加: アクセス履歴(RingCategory::Usilic)をUSILIC一覧として
+  // 表示する。sorted=trueはファイル/ディレクトリ/manの順に、各々ソート
+  // 済み重複排除。falseは記録順(直近が一番下、カーソルもそこ)。
+  bool startUsilicHistory(bool sorted);
   // UnderlineMode一覧からEnterで選んだファイルを開く――
   // openSelectedDuEntry()/openSelectedLocateResult()と同型。
   bool openSelectedUnderlineEntry();
@@ -3596,6 +3601,8 @@ class Application {
   // ソート済み一覧から選んで開いたManは、^Gでその一覧へ戻る(Grepの
   // grepReturnsToCandidateList_と同型)。ディレクトリ移動でクリアする。
   bool manReturnsToCandidateList_ = false;
+  // USILIC一覧(アクセス履歴)から開いたManは、^GでそのUSILIC一覧へ戻る。
+  bool manReturnsToUnderline_ = false;
   // DIR一覧(^X^D)から選んで移動する前のディレクトリ。注釈Dirの^Gで
   // 元の位置へ戻した上で一覧を再表示する。
   std::string dirListOriginDirectory_;

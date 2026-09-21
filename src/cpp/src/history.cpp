@@ -198,7 +198,32 @@ void History::setOnRingPushed(std::function<void(RingCategory)> callback) { onRi
 void History::pushRecent(RingCategory category, const std::string &name) {
   journal_.emplace_back([category, name](History &h) { h.pushRecentImpl(category, name); });
   pushRecentImpl(category, name);
+  journal_.emplace_back([category, name](History &h) { h.mirrorToUsilicImpl(category, name); });
+  mirrorToUsilicImpl(category, name);
   if (onRingPushed_) onRingPushed_(category);
+}
+
+void History::mirrorToUsilicImpl(RingCategory source, const std::string &name) {
+  std::string entry;
+  switch (source) {
+    case RingCategory::RecentFile:
+      entry = name;
+      break;
+    case RingCategory::RecentDirectory:
+      entry = name;
+      if (entry.empty() || entry.back() != '/') entry += '/';
+      break;
+    case RingCategory::RecentManPage:
+      entry = name + " (man)";
+      break;
+    default:
+      return;
+  }
+  auto &ring = rings_[RingCategory::Usilic];
+  if (!ring.empty() && ring.back() == entry) return;
+  ring.push_back(entry);
+  // 3種(FILE/DIR/MAN)を1本にまとめるので、保持数もそれに合わせて3倍にする。
+  if (static_cast<int>(ring.size()) > retentionCount_ * 3) ring.pop_front();
 }
 
 void History::pushRecentImpl(RingCategory category, const std::string &name) {
@@ -432,7 +457,8 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
     auto &ring = rings_[category];
     while (i < lines.size() && !isSectionBoundary(lines[i])) {
       ring.push_back(decodeField(lines[i]));
-      if (static_cast<int>(ring.size()) > retentionCount_) ring.pop_front();
+      if (static_cast<int>(ring.size()) > (category == RingCategory::Usilic ? retentionCount_ * 3 : retentionCount_))
+        ring.pop_front();
       i++;
     }
   };
@@ -464,8 +490,14 @@ bool History::loadHistoryText(const std::string &text, bool environmentCharsetEx
       {" LOCATE_HISTORY", RingCategory::RecentLocateQuery},
       {" FGREP_HISTORY", RingCategory::RecentFgrepPattern},
       {" EGREP_HISTORY", RingCategory::RecentEgrepPattern},
+      {" USILIC_HISTORY", RingCategory::Usilic},
   };
   for (const auto &spec : kRings) {
+    // USILIC_HISTORYはこのセクションを持たない旧形式のファイルも読めるよう
+    // 省略可能とする(2026-09-21追加のセクションのため)。
+    if (spec.category == RingCategory::Usilic &&
+        (i >= lines.size() || lines[i] != std::string(1, kFormFeed) + spec.label))
+      continue;
     if (!expectLabel(spec.label)) return false;
     readRingSection(spec.category);
   }
@@ -588,6 +620,7 @@ std::string History::serialize(const std::string &programName, const std::string
   writeRingSection(" LOCATE_HISTORY", RingCategory::RecentLocateQuery);
   writeRingSection(" FGREP_HISTORY", RingCategory::RecentFgrepPattern);
   writeRingSection(" EGREP_HISTORY", RingCategory::RecentEgrepPattern);
+  writeRingSection(" USILIC_HISTORY", RingCategory::Usilic);
   writePositionSection(" MODE", PositionCategory::Screen);
 
   out += std::string(1, kFormFeed) + " USILIC\n";
