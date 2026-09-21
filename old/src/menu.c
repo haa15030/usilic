@@ -12,6 +12,11 @@ static struct {
   jmp_buf jb;
 } Menu;
 
+/*
+ * 【機能】SIGSEGVのハンドラ。ハンドラを登録し直し、モードをT_skip(状態を巻き戻す)にして、longjmpで
+ *       menu()のループへ戻る(クラッシュしても状態を戻して続行するため)。
+ * 【C++】なし(C++版はSIGSEGVを回収しない。範囲チェックとRAIIで防ぐ設計)
+ */
 static void menu_clear(int dummy)
 {
   signal(SIGSEGV, menu_clear);
@@ -19,6 +24,11 @@ static void menu_clear(int dummy)
   longjmp(Menu.jb, 0);
 }
 
+/*
+ * 【機能】CUTの状態(cutp)の名前を消し、確保していたバッファを解放する。
+ * 【C++】CutMode (src/cpp/src/cut_mode.cpp)
+ * 【備考】C++はデストラクタと、CutModeの状態のリセットで足りる。
+ */
 static void clear_cut(CUT *cutp)
 {
   if (*cutp->name) *cutp->name = '\0';
@@ -28,6 +38,11 @@ static void clear_cut(CUT *cutp)
   }
 }
 
+/*
+ * 【機能】COPYモードへ移る。現在の状態をスタックへ保存し、直前のモードの名前を戻り先にして、COPYの名前へ
+ *       切り替える。
+ * 【C++】Application::startCopy (src/cpp/src/application.cpp)
+ */
 static void m_copy(LINE *lp, NUM *np, HEAP *hp, char name[])
 {
   if (is_name(name, M_copy)) return;
@@ -39,6 +54,10 @@ static void m_copy(LINE *lp, NUM *np, HEAP *hp, char name[])
   np->Mb = 0;
 }
 
+/*
+ * 【機能】数字で指定された行(N_numを引いた値)へ移動する。パイプ入力のときは、その行まで読み進める。
+ * 【C++】Application::resolveGotoLineRow (src/cpp/src/application.cpp)
+ */
 static void m_num(NUM *np, int m, HEAP *hp, FILE **pinp, PN *pnp, char full[])
 {
   int i, j, f_pipe;
@@ -76,6 +95,11 @@ static void m_num(NUM *np, int m, HEAP *hp, FILE **pinp, PN *pnp, char full[])
   }
 }
 
+/*
+ * 【機能】DIR(ディレクトリ名の入力・選択)の処理。一覧の行が`/`で始まっていればそれを、無ければカレント
+ *       ディレクトリを、移動先の候補にする。
+ * 【C++】DirectoryMode::enterDirectory (src/cpp/src/directory_mode.cpp); Application::startRegexPromptList (src/cpp/src/application.cpp)
+ */
 static int m_dir(int m, HEAP *hp, LINE *lp, char name[], RV *rvp, ARRAY *ap, int *f_Mp)
 {
   static u_char dir[N_line];
@@ -120,6 +144,10 @@ static int m_dir(int m, HEAP *hp, LINE *lp, char name[], RV *rvp, ARRAY *ap, int
   return 0;
 }
 
+/*
+ * 【機能】カーソルを1行動かす(move_row)。表示の総行数を更新して、モードラインを描き直す。
+ * 【C++】ContentView::moveUp; ContentView::moveDown (src/cpp/src/content_view.cpp)
+ */
 static void m_row(int m, HEAP *hp, RV *rvp, PN *pnp, NUM *np, FILE **pinp)
 {
   static FILE *pin0 = F1;
@@ -131,6 +159,10 @@ static void m_row(int m, HEAP *hp, RV *rvp, PN *pnp, NUM *np, FILE **pinp)
   print_intr(NULL, NULL); /* バッファ不足 && T_pipe? && M_tail */
 }
 
+/*
+ * 【機能】ページ単位の移動をする(move_page)。総行数を更新して、モードラインを描き直す。
+ * 【C++】ContentView::pageUp; ContentView::pageDown (src/cpp/src/content_view.cpp)
+ */
 static int m_page(int m, HEAP *hp, RV *rvp, PN *pnp, NUM *np, FILE **pinp)
 {
   int i, j;
@@ -157,6 +189,10 @@ static int m_page(int m, HEAP *hp, RV *rvp, PN *pnp, NUM *np, FILE **pinp)
   return ((i = pnp->nrow - (vt_row(0) - 1)) > 0) ? i : 0;
 }
 
+/*
+ * 【機能】画面の内容などを、作業ファイル(S_w)へ書き出す(M_w等)。
+ * 【C++】なし(C++には、画面の内容をファイルへ書き出す機能が無い)
+ */
 static u_char *m_w(int m, PP *pp, u_char name[], u_char dir[], char comm[])
 {
   u_char *cp = NULL;
@@ -186,6 +222,11 @@ static u_char *m_w(int m, PP *pp, u_char name[], u_char dir[], char comm[])
   return cp;
 }
 
+/*
+ * 【機能】CP/MV/RM/ARC(展開)を始める前の確認。必要なプログラム(cp/mv/rm)がインストールされているか、
+ *       ARCなら対応しているアーカイブ(tar/lha/unzip/rpm/deb)かを調べて、だめならエラーを出す。
+ * 【C++】Application::startCopyPrompt; Application::startMovePrompt; Application::startRemovePrompt; Application::startArchivePrompt (src/cpp/src/application.cpp)
+ */
 static int m_arc(int m, int f_Mb)
 {
   if ((m == M_cp && !check_chp(S_cp))
@@ -208,6 +249,10 @@ static int m_arc(int m, int f_Mb)
   return m;
 }
 
+/*
+ * 【機能】EXITの処理。モードのスタックを遡って(load_stack)最初のモードまで戻し、終了の確認(y/n)に進む。
+ * 【C++】Application::startExitPrompt (src/cpp/src/application.cpp)
+ */
 static int m_exit(int m, HEAP *hp, LINE *lp, ARRAY *ap, int *f_Mp, int f_comm)
 {
   int i, f_M;
@@ -229,6 +274,11 @@ static int m_exit(int m, HEAP *hp, LINE *lp, ARRAY *ap, int *f_Mp, int f_comm)
   return 0;
 }
 
+/*
+ * 【機能】LOCATEの入口。locateがインストールされているか確認し、LOCATE中なら拒否する。M_locate2は、前回の
+ *       結果の画面へ戻る。
+ * 【C++】Application::startLocatePrompt (src/cpp/src/application.cpp)
+ */
 static int m_locate(int m, ARRAY *ap, HEAP *hp, NUM *np, LINE *lp, RV *rvp)
 {
   if (!check_chp(S_locate)) return m;
@@ -250,6 +300,11 @@ static int m_locate(int m, ARRAY *ap, HEAP *hp, NUM *np, LINE *lp, RV *rvp)
   return 0;
 }
 
+/*
+ * 【機能】FGREP/EGREPの入口。プログラム(fgrep/egrep)の有無を確認し、履歴やCUTの一覧の上からの起動も
+ *       扱う。
+ * 【C++】Application::startGrepPrompt (src/cpp/src/application.cpp)
+ */
 static int m_grep(int m, ARRAY *ap, LINE *lp, FLAG *fp, HEAP *hp, NUM *np)
 {
   if (!check_chp((m == M_fgrep) ? S_fgrep : S_egrep)) return m;
@@ -271,6 +326,10 @@ static int m_grep(int m, ARRAY *ap, LINE *lp, FLAG *fp, HEAP *hp, NUM *np)
   return 0;
 }
 
+/*
+ * 【機能】CUTの入口。既にCUT中なら拒否する。パイプ入力のときは、末尾まで読み進めてから始める。
+ * 【C++】Application::startCutPrompt (src/cpp/src/application.cpp)
+ */
 static int m_cut(int m, ARRAY *ap, HEAP *hp, NUM *np, PN *pnp, FILE **pinp, LINE *lp)
 {
   int i;
@@ -295,6 +354,10 @@ static int m_cut(int m, ARRAY *ap, HEAP *hp, NUM *np, PN *pnp, FILE **pinp, LINE
   return 0;
 }
 
+/*
+ * 【機能】MANの入口。manがインストールされているか確認し、モードのスタックを整理して、MANモードへ移る。
+ * 【C++】Application::startManPrompt (src/cpp/src/application.cpp)
+ */
 static int m_man(int m, HEAP *hp, LINE *lp, int *f_Mp, char name[])
 {
   if (!check_chp(S_man)) return m;
@@ -307,6 +370,11 @@ static int m_man(int m, HEAP *hp, LINE *lp, int *f_Mp, char name[])
   return 0;
 }
 
+/*
+ * 【機能】KEY(キー一覧)/HELPの入口。現在の状態をスタックへ保存し、直前のモードの名前を戻り先にして、
+ *       KEYの名前へ切り替える。
+ * 【C++】Application::startKey (src/cpp/src/application.cpp)
+ */
 static void m_help(int m, ARRAY *ap, LINE *lp, HEAP *hp, NUM *np)
 {
   if (m == M_key || m == T_key) {
@@ -330,6 +398,11 @@ static void m_help(int m, ARRAY *ap, LINE *lp, HEAP *hp, NUM *np)
   np->Mb = 0;
 }
 
+/*
+ * 【機能】PROGRAM(外部プログラムの実行)の入口。SHELLが対話中なら拒否する。FILE/DIRの選択(M_lfile2
+ *       等)からの起動も扱う。
+ * 【C++】Application::startProgramPrompt (src/cpp/src/application.cpp)
+ */
 static int m_prog(int m, LINE *lp, NUM *np, HEAP *hp, char name[])
 {
   np->Mb = 0;
@@ -355,6 +428,11 @@ static int m_prog(int m, LINE *lp, NUM *np, HEAP *hp, char name[])
   return 0;
 }
 
+/*
+ * 【機能】LIST(履歴の一覧、^R)の入口。現在のモード(FILE/DIR/MAN/LOCATE/FGREP等)に応じて、対応する
+ *       履歴(T_hfile/T_hdir/T_hman等)へ切り替える。
+ * 【C++】Application::startPromptHistoryRecall (src/cpp/src/application.cpp)
+ */
 static int m_list(int m, HEAP *hp, NUM *np, ARRAY *ap, LINE *lp)
 {
   int f_fgrep;
@@ -409,6 +487,10 @@ static int m_list(int m, HEAP *hp, NUM *np, ARRAY *ap, LINE *lp)
   return 0;
 }
 
+/*
+ * 【機能】エディタを起動し(do_edit)、戻った後に、表示用のバッファを作り直す。
+ * 【C++】Application::executeEdit (src/cpp/src/application.cpp)
+ */
 static int m_edit(int line, char name[], char arg[], HEAP *hp, NUM *np)
 {
   int m;
@@ -423,6 +505,11 @@ static int m_edit(int line, char name[], char arg[], HEAP *hp, NUM *np)
   return m;
 }
 
+/*
+ * 【機能】SHELLモードの入口と復帰の処理。SHELLの起動・再開、直前のモードへの戻り、標準入力(パイプ)の
+ *       引き渡しなどを行う。
+ * 【C++】Application::startShell (src/cpp/src/application.cpp)
+ */
 static int m_shell(int m, HEAP *hp, LINE *lp, NUM *np, ARRAY *ap, PN *pnp, FILE **pinp, FLAG *fp, struct stat st0)
 {
   static char name[N_line];
@@ -548,6 +635,11 @@ static int m_shell(int m, HEAP *hp, LINE *lp, NUM *np, ARRAY *ap, PN *pnp, FILE 
   return m;
 }
 
+/*
+ * 【機能】DUの処理。結果を作る/再表示する(M_du2)。パイプの読み込みを止め、スタックを整理して、DUの
+ *       モードへ移る。
+ * 【C++】Application::runDuOnCurrentFolder; Application::redisplayDu (src/cpp/src/application.cpp)
+ */
 static int m_du(int m, HEAP *hp, ARRAY *ap, NUM *np, LINE *lp, FILE **pinp, struct stat *st0p)
 {
   if (m == M_du2 && !hp->base[2].pp) return echo_mess(S_errv);
@@ -575,6 +667,11 @@ static int m_du(int m, HEAP *hp, ARRAY *ap, NUM *np, LINE *lp, FILE **pinp, stru
   return 0;
 }
 
+/*
+ * 【機能】y/nによる複数の選択(M_yes/M_no)。CP/MV/RM/ARC等の対象一覧の全ての行に、印を付ける/外す。
+ * 【C++】Application::markAll (src/cpp/src/application.cpp)
+ * 【備考】C++では全選択・全解除は、^J y / ^J n に割り当てられている。
+ */
 static int m_yn(int m, PP *pp, int f_Mb, u_char prev[])
 {
   int i, j;
@@ -595,6 +692,10 @@ static int m_yn(int m, PP *pp, int f_Mb, u_char prev[])
   return -M_clear;
 }
 
+/*
+ * 【機能】CP/MV/ARCの宛先の決定。宛先の入力・選択を受け、対象の一覧を作って、実行へ進める。
+ * 【C++】Application::startCopyPrompt; Application::startArchivePrompt (src/cpp/src/application.cpp)
+ */
 static int m_dest(int m, LINE *lp, RV *rvp, NUM *np, HEAP *hp, ARRAY *ap, FLAG *fp)
 {
   FILE *tp;
@@ -683,6 +784,11 @@ static int m_dest(int m, LINE *lp, RV *rvp, NUM *np, HEAP *hp, ARRAY *ap, FLAG *
   return m;
 }
 
+/*
+ * 【機能】^O^M(行単位で読む)の準備。ファイルを、直接ではなく、パイプ越しに読ませる(展開が必要ならその
+ *       プログラム経由)。
+ * 【C++】FileMode::loadFileAsPipe (src/cpp/src/file_mode.cpp); Application::openSelectedEntryNoWrap (src/cpp/src/application.cpp)
+ */
 static FILE *m_pipe(NUM *np, ARRAY *ap, LINE *lp)
 {
   int f_chp;
@@ -705,6 +811,12 @@ static FILE *m_pipe(NUM *np, ARRAY *ap, LINE *lp)
   return pin;
 }
 
+/*
+ * 【機能】Enter(^M、^O^M、ESC ^M等)の処理。モードごとに、選択した行を開く。ディレクトリなら降り、ファイルなら
+ *       開き、アーカイブなら一覧を作り、EGREP/CUT/DU/LOCATEの結果なら、その行へ移る。
+ * 【C++】Application::handleCommand; Application::openSelectedEntry (src/cpp/src/application.cpp)
+ * 【備考】旧は318行の1つの関数に、全モードのEnterが集まる。C++は、モードごとのopenSelected*関数に分かれている。
+ */
 static int m_cr(int m, NUM *np, HEAP *hp, LINE *lp, ARRAY *ap, RV *rvp, FLAG *fp, PN *pnp, FILE **pinp)
 {
   int i, j, size;
@@ -1023,6 +1135,11 @@ static int m_cr(int m, NUM *np, HEAP *hp, LINE *lp, ARRAY *ap, RV *rvp, FLAG *fp
   return m;
 }
 
+/*
+ * 【機能】画面を再描画する。表示を有効にし、中断の表示を消して、本文とモードラインを描き直す。
+ * 【C++】Application::handleCommand (src/cpp/src/application.cpp)
+ * 【備考】C++ではCommand::Redrawが対応する。
+ */
 static void m_clear(RV *rvp, PN *pnp, LINE *lp, NUM *np, ARRAY *ap, HEAP *hp, FLAG *fp)
 {
   vt_mode('d');
@@ -1036,6 +1153,12 @@ static void m_clear(RV *rvp, PN *pnp, LINE *lp, NUM *np, ARRAY *ap, HEAP *hp, FL
   if (*ap->intr) *ap->intr = '\0';
 }
 
+/*
+ * 【機能】戻る(^G)の処理。現在のモード(np->Mb)ごとに、前のモードへ戻る。入力欄の取消し、検索結果からの
+ *       戻りなども、ここで扱う。
+ * 【C++】Application::handleCommand (src/cpp/src/application.cpp)
+ * 【備考】C++ではCommand::Backと、各モードのreturnFrom*関数が対応する。
+ */
 static int m_bl(int m, NUM *np, ARRAY *ap, LINE *lp, HEAP *hp, FLAG *fp, FILE **pinp, PN *pnp, struct stat st0)
 {
   int i;
@@ -1157,6 +1280,11 @@ static int m_bl(int m, NUM *np, ARRAY *ap, LINE *lp, HEAP *hp, FLAG *fp, FILE **
   return 0;
 }
 
+/*
+ * 【機能】1つのコマンドを取得して実行する。キーを読み(read_m)、コマンドの種類ごとに、上のm_*関数へ
+ *       振り分ける。
+ * 【C++】Application::dispatchByte; Application::handleCommand (src/cpp/src/application.cpp)
+ */
 static int get_m(HEAP *hp, ARRAY *ap, FLAG *fp, NUM *np, LINE *lp, RV *rvp, FILE **pinp, PN *pnp, CHILD *chp)
 {
   char tmp[N_line];
@@ -1469,6 +1597,11 @@ static int get_m(HEAP *hp, ARRAY *ap, FLAG *fp, NUM *np, LINE *lp, RV *rvp, FILE
   return 0;
 }
 
+/*
+ * 【機能】menu()の初期化。起動形態(ディレクトリ・ファイル・パイプ)に応じて、最初のモード、履歴、カーソル位置を
+ *       決める。
+ * 【C++】Application::start (src/cpp/src/application.cpp); main (src/cpp/app/main.cpp)
+ */
 static int init_menu(HEAP *hp, ARRAY *ap, NUM *np, LINE *lp, FILE **pinp)
 {
   char tmp[N_line];
@@ -1597,6 +1730,11 @@ static int init_menu(HEAP *hp, ARRAY *ap, NUM *np, LINE *lp, FILE **pinp)
   return conf_ls(NULL, NULL);
 }
 
+/*
+ * 【機能】モード(np->M)に応じて、表示用のバッファ(bp)を作る。文字列リスト、履歴リスト、`ls`の結果、ファイル、
+ *       アーカイブ等。
+ * 【C++】FileMode::loadFile (src/cpp/src/file_mode.cpp); DirectoryMode::enterDirectory (src/cpp/src/directory_mode.cpp); ListBrowserMode::show (src/cpp/src/list_browser_mode.cpp)
+ */
 static void init_bp(NUM *np, HEAP *hp, ARRAY *ap, CHILD **chpp, FILE **pinp, CUT *cutp, u_char prev[], char arg[], RV *rvp, FLAG *fp)
 {
   int c, i;
@@ -1772,6 +1910,13 @@ static void init_bp(NUM *np, HEAP *hp, ARRAY *ap, CHILD **chpp, FILE **pinp, CUT
   }
 }
 
+/*
+ * 【機能】メインループ。初期化(init_menu)の後、モードごとの画面(bp)を作り(init_bp)、コマンドを取得・実行
+ *       (get_m)し続ける。SIGSEGVからの回収(setjmp)も、ここで行う。base[]は、モードごとの表示領域
+ *       (0=KEY/FILE/DIR/LOG/PROGRAM/MAN、1=DIR、2=DU、3=EGREP、…)。
+ * 【C++】Application::start; Application::run (src/cpp/src/application.cpp); main (src/cpp/app/main.cpp)
+ * 【備考】旧は1つのループの中で、全モードの状態を持つ。C++はモードごとのクラスに状態が分かれている。
+ */
 void menu(char pathname[], FILE *pin)/*usilic*/
 {
   /*

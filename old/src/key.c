@@ -16,6 +16,11 @@ static struct {
 
 typedef int (*GETCH)(void);
 
+/*
+ * 【機能】端末が送るエスケープ列(esc)が、キーの表(ks: カーソルキー等)のどれと一致するかを調べて、その番号を
+ *       返す(見つからなければ0)。
+ * 【C++】KeyInput::readEscapeSequence (src/cpp/src/key_input.cpp)
+ */
 static int is_esc(char *ks[], char esc[])
 {
   int i;
@@ -24,6 +29,11 @@ static int is_esc(char *ks[], char esc[])
   return (ks[i]) ? i : 0;
 }
 
+/*
+ * 【機能】補完の候補(sp0からの連結リスト)の、共通する先頭部分を求めて、入力済みの文字列(name)を、そこまで
+ *       伸ばす。
+ * 【C++】Application::completeFilesystemPath (src/cpp/src/application.cpp)
+ */
 static void set_name(STR *sp0, char name[])
 {
   STR *sp;
@@ -41,6 +51,11 @@ static void set_name(STR *sp0, char name[])
   }
 }
 
+/*
+ * 【機能】キー入力を1文字返す関数(GETCHの実体の1つ)。f_keyが2/3のときは、再生する文字列(cva)を設定する
+ *       (キーボードマクロの再生)。それ以外は、設定済みの文字列から1文字ずつ返し、尽きたら-1を返す。
+ * 【C++】KeyInput::playRawMacro; KeyInput::readByte (src/cpp/src/key_input.cpp)
+ */
 static int key_getch(int f_key, u_char cva[])
 {
   static u_char *cvp, cvp0[N_line];
@@ -68,11 +83,21 @@ static int key_getch(int f_key, u_char cva[])
    いる。それは未定義動作であり、実際にクラッシュすることが観測
    された: このラッパーはGETCHの本物のシグネチャに合わせ、2でも
    3でもないことが保証された値を渡す。 */
+/*
+ * 【機能】key_getchの再生側の窓口。GETCHの本物の形(引数なし)に合わせて、引数に2でも3でもない値を渡す
+ *       (以前は、引数レジスタに残った値が偶然2/3と一致するとクラッシュした)。
+ * 【C++】KeyInput::playRawMacro (src/cpp/src/key_input.cpp)
+ */
 static int key_getch_play(void)
 {
   return key_getch(1, NULL);
 }
 
+/*
+ * 【機能】キーボードマクロ。押されたキーを、配列(a_km)へ記録する(M_ms=記録開始、M_me=記録終了、M_mm=
+ *       再生、-1=先頭を返す)。記録が満杯になっても終了する。
+ * 【C++】Application::startMacroRecording; Application::stopMacroRecording (src/cpp/src/application.cpp)
+ */
 static int set_km(int m, int **p_kmp, int f_M)
 { /* キーボードマクロ */
   static int f_me, n_km, a_km[N_macro];
@@ -103,6 +128,11 @@ static int set_km(int m, int **p_kmp, int f_M)
   return n_km + 1;
 }
 
+/*
+ * 【機能】SIGTTOU(バックグラウンドから端末へ出力しようとした)のハンドラ。ハンドラを登録し直し、プロセスIDを
+ *       表示し、自分(またはプロセスグループ)をSIGTSTPで停止する。
+ * 【C++】KeyInput::installSignalHandlers (src/cpp/src/key_input.cpp)
+ */
 static void key_ttou(int dummy)
 {
   signal(SIGTTOU, key_ttou);
@@ -111,6 +141,11 @@ static void key_ttou(int dummy)
   else killpg(getpgrp(), SIGTSTP);
 }
 
+/*
+ * 【機能】SIGCONT(停止からの再開)のハンドラ。ハンドラを登録し直し、プロセスIDを表示して、端末の状態を
+ *       rawモードに設定し直す(SIGTTOUを確認するため)。
+ * 【C++】KeyInput::installSignalHandlers (src/cpp/src/key_input.cpp)
+ */
 static void key_cont(int dummy)
 {
   signal(SIGCONT, key_cont);
@@ -118,6 +153,11 @@ static void key_cont(int dummy)
   vt_init(-9); /* SIGTTOUを確認する */
 }
 
+/*
+ * 【機能】SIGWINCH(ウィンドウの大きさの変更)のハンドラ。端末の大きさを取得し直し、SHELLが動いていれば
+ *       通知し、winchの旗を立てる。引数が負のときは、SHELLのプロセスIDを覚えるだけ。
+ * 【C++】KeyInput::consumeResizeSignal (src/cpp/src/key_input.cpp)
+ */
 void key_winch(int spid0)/*usilic*/
 {
   static int spid;
@@ -132,6 +172,10 @@ void key_winch(int spid0)/*usilic*/
   Key.f.winch = 1;
 }
 
+/*
+ * 【機能】SIGSEGVのハンドラ。エラーを記録して、終了処理(exit_usilic)をしてから、終了する。
+ * 【C++】なし(C++はSIGSEGVを回収しない。範囲チェックとRAIIで防ぐ設計)
+ */
 static void key_segv(int dummy)
 {
   save_stderr("%s: %s.\n", s_S(S_usilic), s_S(S_err8));
@@ -140,6 +184,12 @@ static void key_segv(int dummy)
   exit(1);
 }
 
+/*
+ * 【機能】SIGTERM/SIGHUPのハンドラ。起動した子プロセスをkillし、一時ファイルを消して、終了の旗(Key.f.term)を
+ *       立てる。
+ * 【C++】main (src/cpp/app/main.cpp)
+ * 【備考】C++は、旗だけを立てて、次のループで通常の終了処理に入る(gTerminationSignalReceived)。
+ */
 void key_term(int dummy)/*usilic*/
 {
   int pid;
@@ -149,6 +199,12 @@ void key_term(int dummy)/*usilic*/
   Key.f.term = 1;
 }
 
+/*
+ * 【機能】カーソル行の文字列を、反転表示で描く(rvp0あり)/通常表示に戻す(rvp0なし)。幅に収まる範囲に切り詰め、
+ *       制御コードの属性も付ける。SHELL等では何もしない。
+ * 【C++】ContentView::renderLine (src/cpp/src/content_view.cpp)
+ * 【備考】C++は、カーソル行の反転を、ContentViewの描画の中で行う。
+ */
 static void stand_str(RV *rvp0, int f_M)
 {
   static RV *rvp;
@@ -203,6 +259,10 @@ static void stand_str(RV *rvp0, int f_M)
   vt_endstand();
 }
 
+/*
+ * 【機能】キー(k)が、キーの表(key_c)の何番目にあるかを返す(無ければ0)。
+ * 【C++】Application::resolveCommand (src/cpp/src/application.cpp)
+ */
 static int kton(int k, int key_c[])
 {
   int i, i_tab;
@@ -212,6 +272,10 @@ static int kton(int k, int key_c[])
   return (i < i_tab) ? i : 0;
 }
 
+/*
+ * 【機能】入力欄の(row, col0)から長さlen分を空白で埋めて、カーソルをその位置へ戻す(欄の消去)。
+ * 【C++】LineEditor::redraw (src/cpp/src/line_editor.cpp)
+ */
 static void key_eeol(int row, int col0, int len, int f_exit)
 {
   if (!f_exit) vt_endstand();
@@ -236,6 +300,11 @@ static void key_eeol(int row, int col0, int len, int f_exit)
    これらのヘルパーは、バイトオフセットを本物の画面カラムへ(そして
    その逆へも)橋渡しするので、このファイルの残りのバイトベースの
    インデックス付けを変更する必要が無い。 */
+/*
+ * 【機能】バイト位置(bytepos)で終わる文字のバイト数を返す(UTF-8ではシーケンス長、EUCでは2、他は1)。
+ *       入力欄でカーソルを1文字戻すのに使う。
+ * 【C++】LineEditor::charBytesBefore (src/cpp/src/line_editor.cpp)
+ */
 static int char_bytes_before(u_char *buff, int pos)
 {
   int end = pos - 1, start;
@@ -246,6 +315,11 @@ static int char_bytes_before(u_char *buff, int pos)
   return end - start + 1;
 }
 
+/*
+ * 【機能】バイトオフセット(bytepos)を、画面上の桁数へ変換する(shift以降の文字の幅の合計)。UTF-8では、
+ *       文字の幅(0〜2桁)を数える。
+ * 【C++】LineEditor::redraw (src/cpp/src/line_editor.cpp)
+ */
 static int b2col(u_char *buff, int shift, int bytepos)
 {
   int pos, col, sl;
@@ -258,6 +332,10 @@ static int b2col(u_char *buff, int shift, int bytepos)
   return col;
 }
 
+/*
+ * 【機能】UTF-8の文字列全体の表示幅(桁数)を返す。
+ * 【C++】LineEditor::redraw (src/cpp/src/line_editor.cpp)
+ */
 static int utf8_total_width(u_char *buff)
 {
   int total = 0, pos, sl;
@@ -272,6 +350,10 @@ static int utf8_total_width(u_char *buff)
 /* `buff'の画面上の最後の`len'カラムを表示範囲に入れるバイトオフセット
    (つまり「`len'カラムに収まるよう右寄せでスクロールする」ときに、
    どこから読み始めるべきか)、常に文字の先頭に着地する。 */
+/*
+ * 【機能】入力欄(len桁)に右寄せで収める場合の、読み始めるバイト位置を返す。必ず文字の先頭に着地する。
+ * 【C++】LineEditor::redraw (src/cpp/src/line_editor.cpp)
+ */
 static int utf8_right_shift(u_char *buff, int len)
 {
   int col = utf8_total_width(buff) - len, pos, sl;
@@ -298,6 +380,11 @@ static int utf8_right_shift(u_char *buff, int len)
    (カラム数)ではなく、col0 + 見えている部分の「バイト」長に位置
    すべきである――後者を使うと、colがバッファとずれてしまい、次の
    挿入を壊してしまう。 */
+/*
+ * 【機能】入力欄の内容が、幅(len桁)に収まらないか調べる。収まらなければ、スクロール量(*shiftp)と
+ *       カーソル位置(*colp)を設定して1を返す。収まっていれば0を返す(バイト数ではなく桁数で比較する)。
+ * 【C++】LineEditor::redraw (src/cpp/src/line_editor.cpp)
+ */
 static int need_scroll(u_char *buff, int col0, int cole, int len, int *shiftp, int *colp)
 {
   if (vt_charset(0) == C_utf8) {
@@ -312,6 +399,11 @@ static int need_scroll(u_char *buff, int col0, int cole, int len, int *shiftp, i
   return 1;
 }
 
+/*
+ * 【機能】最下行の入力欄で、文字列を入力させる(1行の編集)。キーを読み、編集(edit_line)、履歴、補完
+ *       (make_list)、確定(改行)・取消(^G)を処理して、入力結果を返す。
+ * 【C++】LineEditor (src/cpp/src/line_editor.cpp); Application::activatePrompt (src/cpp/src/application.cpp)
+ */
 static int input_key(int f_M, u_char mess[], u_char *cs, int col0, char *cname, LIST **listp, STR *cmd, u_char iname[], char dir[], char old[], u_char copy[])
 {
   int i, j, k, m, len, row, col, cole, shift, f_list, ti;
@@ -566,6 +658,13 @@ static int input_key(int f_M, u_char mess[], u_char *cs, int col0, char *cname, 
   return m;
 }  
 
+/*
+ * 【機能】キー入力を読んで、コマンド(M_*)へ変換して返す中核の関数。エスケープ列(^[...)、カーソルキー、
+ *       `^J`/`^X`/`^O`のような先頭キー、キーボードマクロ(M_ms/M_me/M_mm)、入力欄への切り替えなどを扱う。
+ *       モード(f_M)ごとに、使えるキーの表(key_m)を切り替える。
+ * 【C++】Application::dispatchByte; Application::resolveCommand; Application::dispatchLeaderByte (src/cpp/src/application.cpp)
+ * 【備考】旧は1つの巨大な関数にキーの解釈が集まる。C++は、キー→Commandの解決と、Commandの実行が分かれている。
+ */
 int read_m(RV *rvp, int f_M, int klen, u_char *cva, char *cname, LIST **listp, STR *cmd, u_char *iname, char *dir, char *old)/*usilic*/
 {
   static int key_k[32], key_r[8], key_g[14], key_y[6];
@@ -978,6 +1077,10 @@ SET_KM:
   return c;
 }
 
+/*
+ * 【機能】全てのシグナルを、既定の動作(SIG_DFL)に戻す(子プロセスの起動時に使う)。
+ * 【C++】ChildProcess (src/cpp/src/child_process.cpp)
+ */
 void load_signal(void)/*usilic*/
 {
   int i;
@@ -985,6 +1088,11 @@ void load_signal(void)/*usilic*/
   for (i = 1; i < NSIG; i++) signal(i, SIG_DFL);
 }
 
+/*
+ * 【機能】シグナルのハンドラを登録する: SIGWINCH、SIGTTOU、SIGCONT、SIGSEGV、SIGTERM/SIGHUP等。起動形態
+ *       (f_usilic)に応じて、対象が変わる。
+ * 【C++】KeyInput::installSignalHandlers (src/cpp/src/key_input.cpp); main (src/cpp/app/main.cpp)
+ */
 void save_signal(int f_usilic)/*usilic*/
 {
   int i;
@@ -1019,6 +1127,11 @@ void save_signal(int f_usilic)/*usilic*/
     }
 }
 
+/*
+ * 【機能】ディレクトリ(str)の中から、入力済みの名前(name)で始まるファイル名を集めて、補完の候補リストへ
+ *       追加する。ディレクトリには`/`を付ける。f_findで、実行可能ファイルだけ/ディレクトリだけに絞る。
+ * 【C++】Application::completeFilesystemPath (src/cpp/src/application.cpp)
+ */
 int find_name(int n_name, STR **spp, LIST **listp, char name[], char str[], char bak[], int f_find)
 {
   DIR *dirp;
@@ -1058,6 +1171,10 @@ int find_name(int n_name, STR **spp, LIST **listp, char name[], char str[], char
   return n_name;
 }
   
+/*
+ * 【機能】補完の候補(STRの連結リスト)を、一覧表示用のLISTへ移す。
+ * 【C++】Application::completeFilesystemPath (src/cpp/src/application.cpp)
+ */
 void make_cmd(STR *sp, LIST **listp)/*usilic*/
 {
   static PN pn;
@@ -1078,6 +1195,11 @@ void make_cmd(STR *sp, LIST **listp)/*usilic*/
    のように、後に続くものによってはマッチに失敗することがある
    ――ユーザーは、コマンドライン上では「正しく見える」ファイル名が
    何にもマッチしない理由を、手作業で突き止める羽目になる。 */
+/*
+ * 【機能】補完したファイル名の中の、シェルの特殊文字(空白、`[]{}()<>|&;'"$*?!~#\`)の前へ、バックスラッシュを
+ *       付ける(SHELLのコマンドラインへ入れる場合のみ)。
+ * 【C++】shellQuoteArg (src/cpp/src/application.cpp)
+ */
 static void esc_shell(u_char dst[], u_char src[])
 {
   static char sp[] = " \t[]{}()<>|&;'\"`$*?!~#\\";
@@ -1090,6 +1212,12 @@ static void esc_shell(u_char dst[], u_char src[])
   dst[j] = '\0';
 }
 
+/*
+ * 【機能】Tab補完の候補一覧を作る。入力済みの文字列(buff)から、ディレクトリと名前の部分を切り分けて、
+ *       find_nameで候補を集め、共通部分まで補完する。PROGRAM/LFILE/LDIR/SHELL等、モード(f_M)ごとに
+ *       対象が違う。
+ * 【C++】Application::completeFilesystemPath (src/cpp/src/application.cpp); Shell::onTab (src/cpp/src/shell.cpp)
+ */
 int make_list(u_char dir0[], u_char buff[], int *lenp, LIST **listp, int f_M)/*usilic*/
 {
   int c, i, n_name, f_prog, f_dir;
@@ -1204,6 +1332,11 @@ int make_list(u_char dir0[], u_char buff[], int *lenp, LIST **listp, int f_M)/*u
   return n_name;
 }
 
+/*
+ * 【機能】入力欄のバッファへ、1文字(m)を挿入する。UTF-8では、複数バイトの文字を組み立ててから入れ、
+ *       桁数を計算して、スクロールが必要なら位置(shift)を更新する。
+ * 【C++】LineEditor::insertByte (src/cpp/src/line_editor.cpp)
+ */
 static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, int *colep, u_char back[], u_char buff[])
 {
   int i;
@@ -1304,6 +1437,11 @@ static void add_buff(int m, int *shiftp, int row, int *colp, int col0, int len, 
   }
 }
 
+/*
+ * 【機能】入力欄の編集。カーソル移動(^F/^B/^A/^E)、削除(^D/^H/DEL/^K/^U)、貼り付け(^Y)、次の文字を
+ *       そのまま入れる(^Q)等を処理する。back/yankに、消した文字を保存する。
+ * 【C++】LineEditor (src/cpp/src/line_editor.cpp)
+ */
 int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *colp, int *colep, int *shiftp, u_char *copy)/*usilic*/
 {
   int i, col, cole, shift;
@@ -1601,6 +1739,10 @@ int edit_line(int m, int mb, u_char buff[], int len, int row, int col0, int *col
   return m;
 }
 
+/*
+ * 【機能】エスケープ列を読み、カーソルキーや、`^[` に続くキーを、対応するコマンド番号へ変換する。
+ * 【C++】KeyInput::readEscapeSequence (src/cpp/src/key_input.cpp)
+ */
 int read_esc(int f_M, int *key_r0, int *key_c0)/*usilic*/
 {
   int i, c;

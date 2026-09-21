@@ -14,11 +14,14 @@ SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')
 
 
 def functions(path):
-    lines = open(path, encoding='utf-8', errors='replace').read().split('\n')
+    raw = open(path, encoding='utf-8', errors='replace').read()
+    # コメントの中の文章を関数の頭と取り違えないよう、コメントを空白にして(行数は保つ)解析する
+    text = re.sub(r'/\*.*?\*/', lambda m: re.sub(r'[^\n]', ' ', m.group(0)), raw, flags=re.S)
+    lines = text.split('\n')
     out = []
     for i, l in enumerate(lines):
         # 行頭の`{`(後ろに行内コメントが付くものも含む)
-        if not re.match(r'^\{\s*(/\*.*)?$', l):
+        if not re.match(r'^\{\s*$', l):
             continue
         j = i - 1
         head = []
