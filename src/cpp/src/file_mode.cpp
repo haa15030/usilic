@@ -524,7 +524,11 @@ bool FileMode::loadContentAsPipe(const std::string &content) {
     return false;
   }
 
-  loadStream(fd, /*ownsFd=*/true, "", 1, /*noWrap=*/true);
+  // 2026-09-21、直接のユーザー判断(旧版との比較、実機スクリーンショット): 旧版の^O^M(M_fp、
+  // fp->cr=2)は、m_pipe()経由でファイルをパイプ越しに読ませるだけで、行の折り返しは止めない
+  // (81桁の行は"…</date"と">"の2行に折り返して全文字が見える)。2026-09-14には「画面幅で切り詰める
+  // (less -S相当)」としていたが、行末の文字が欠けるため旧版に合わせて折り返す。
+  loadStream(fd, /*ownsFd=*/true, "", 1, /*noWrap=*/false);
   // "(stdin)"――loadStream()自身のクラスコメント/実際のSTDINパイプ
   // 起動が使うのと全く同じラベル付け。displayName/labelを空のまま
   // にするのは、その本物のケースと同じくcurrentFile_を空のままにし

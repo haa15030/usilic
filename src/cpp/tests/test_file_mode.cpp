@@ -451,13 +451,16 @@ TEST_CASE_FIXTURE(Fixture, "loadFileAsPipe: a `.TH`-led file IS groff-rendered (
   CHECK(view.modeLineText().find("(stdin)") != std::string::npos);
 }
 
-TEST_CASE_FIXTURE(Fixture, "loadFileAsPipe: long lines are not wrapped, matching loadFileNoWrap()'s own "
-                           "policy") {
+// 2026-09-21、直接のユーザー判断: 旧版のM_fp(^O^M)は折り返しを止めない(パイプ越しに読むだけ)ので、
+// 長い行は通常の表示と同様に画面幅で折り返し、全文字が見える(以前は切り詰めていた)。
+TEST_CASE_FIXTURE(Fixture, "loadFileAsPipe: long lines ARE wrapped at the display width, like legacy's M_fp") {
   std::string longLine(200, 'x');
   std::string path = writeFile("long.txt", longLine + "\n");
   REQUIRE(mode.loadFileAsPipe(path));
-  REQUIRE(view.lines().size() == 1);
-  CHECK(view.lines()[0].text == longLine);
+  REQUIRE(view.lines().size() > 1);
+  std::string joined;
+  for (const auto &l : view.lines()) joined += l.text;
+  CHECK(joined == longLine);  // 全文字が残る(欠けない)
 }
 
 // 2026-09-15追加、直接のユーザー指摘("バッファへの読み込みが、最初に

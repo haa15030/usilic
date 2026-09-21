@@ -309,8 +309,10 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(Enter) on a regular file switches to F
 
 // 2026-09-14追加、直接のユーザー依頼("（ls）での^O^M/^[^Mを実装
 // して"、QUICK.txt自身のK-23/K-24自身の説明参照)。
-TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap): a line longer than the display width is NOT "
-                           "wrapped into multiple lines (unlike a plain Enter)") {
+// 2026-09-21、直接のユーザー判断(旧版との比較): 旧版の^O^Mは折り返しを止めないので、長い行は
+// 通常のEnterと同様に折り返され、全文字が見える(以前は「折り返さない」としていた)。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap): a line longer than the display width IS wrapped, "
+                           "keeping every character (like legacy's ^O^M and a plain Enter)") {
   std::string longLine(200, 'x');
   { std::ofstream(root / "long.txt") << longLine << "\n"; }
   REQUIRE(app.start(path()));
@@ -320,8 +322,10 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ReadFileNoWrap): a line longer than th
 
   REQUIRE(app.handleCommand(Command::ReadFileNoWrap));
   CHECK(app.currentMode() == ApplicationMode::File);
-  REQUIRE(app.activeContentView().lines().size() == 1);
-  CHECK(app.activeContentView().lines()[0].text == longLine);
+  REQUIRE(app.activeContentView().lines().size() > 1);
+  std::string joined;
+  for (const auto &l : app.activeContentView().lines()) joined += l.text;
+  CHECK(joined == longLine);
 }
 
 // 2026-09-15追加、直接のユーザー指摘("^O^MはSTDINなページャー仕様へ
