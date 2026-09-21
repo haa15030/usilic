@@ -49,6 +49,10 @@ def cpp_ref_ok(item):
             text += open(base + ext, encoding='utf-8', errors='replace').read()
     if os.path.splitext(full)[1] not in ('.cpp', '.hpp', '.cc', '.h'):
         text = open(full, encoding='utf-8', errors='replace').read()
+    # コメント(/* */ と //)を除いた本文だけで探す(コメントに名前が残っているだけの、廃止された
+    # 関数を「実在する」と誤認しないため)
+    text = re.sub(r'/\*.*?\*/', ' ', text, flags=re.S)
+    text = re.sub(r'//[^\n]*', ' ', text)
     name = sym.split('::')[-1].strip()
     if not re.search(r'\b' + re.escape(name) + r'\b', text):
         return False, f'{name} が {path} に見つからない'

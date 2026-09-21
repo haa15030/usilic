@@ -55,7 +55,8 @@ u_char *read_buff(int *sizep, u_int fd, int f_chkbin)/*usilic*/
 
 /*
  * 【機能】KEYモード(キー一覧)の内容を、子プロセスにconf_keyで書かせ、パイプ越しにバッファへ読み込む。
- * 【C++】Application::startKey (src/cpp/src/application.cpp)
+ * 【C++】Application::startHelp (src/cpp/src/application.cpp)
+ * 【備考】C++のKEYモード(キー一覧)は2026-09-20に廃止され、HELPに置き換わった。
  */
 u_char *fork_key(int *sizep)/*usilic*/
 {

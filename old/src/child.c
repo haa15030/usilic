@@ -8,7 +8,7 @@
  *       定義(CHILD)を連結リストへ追加する。ARCHIVE/EXEC/EDITOR/SHELL/PROGRAMの各設定で共用し
  *       (f_childで区別)、`'...'`・`"..."`の引用と`#`のコメントを解釈する。パスにプログラムが無ければ、
  *       エラーを記録して捨てる。chpがF10のときは、エラー一覧の解放だけを行う。
- * 【C++】Configuration::Configuration; Configuration::load (src/cpp/src/configuration.cpp)
+ * 【C++】Configuration::Configuration; Configuration::loadRcText (src/cpp/src/configuration.cpp)
  * 【備考】C++は、設定の種類ごとにConfigurationのメンバー(表)へ読み込む。CHILDの連結リストに
  *       相当するものは、ProgramCommand/SuffixEntryの配列になっている。
  */

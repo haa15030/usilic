@@ -7,6 +7,10 @@ static struct {
   u_char *S[S_nn];
 } Str;
 
+/*
+ * 【機能】文字列の表(Str.S)の、番号n_Sの1件を解放する。
+ * 【C++】なし(C++はstd::stringの自動解放で足りる)
+ */
 void r_S(int n_S)/*usilic*/
 {
   if (n_S < S_nn && Str.S[n_S]) {
@@ -15,11 +19,21 @@ void r_S(int n_S)/*usilic*/
   }
 }
 
+/*
+ * 【機能】文字列の表(Str.S)から、番号n_Sの文字列(メッセージ、パス、コマンド等)を返す。
+ * 【C++】Configuration::commandFor (src/cpp/src/configuration.cpp)
+ * 【備考】C++は、文字列を番号で引かず、ConfiguredRoleで役割ごとのProgramCommandを引く。
+ */
 char *s_S(int n_S)/*usilic*/
 {
   return (n_S < S_nn) ? (char*)Str.S[n_S] : NULL;
 }
 
+/*
+ * 【機能】組み込みの文字列の配列(外部プログラムの定義child[]、モード名、ラベル等)を、番号で返す。
+ * 【C++】Configuration::Configuration (src/cpp/src/configuration.cpp)
+ * 【備考】C++は、組み込みのプログラム定義をConfigurationのコンストラクタで作る。
+ */
 char **s_P(uintptr_t n_P)/*usilic*/
 {
   static char *child[] = { /* 組み込みプログラム */
@@ -140,6 +154,10 @@ char **s_P(uintptr_t n_P)/*usilic*/
   return (n_P < P_nn) ? P[n_P] : NULL;
 }
 
+/*
+ * 【機能】コマンド行の文字列から、最初の単語(空白まで)を取り出す。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static void get_prog(char str[])
 { 
   int i;
@@ -151,6 +169,10 @@ static void get_prog(char str[])
   strcpy(str, p);
 }
 
+/*
+ * 【機能】INFO(バージョンと設定の要約)の画面を表示する。C++版のINFO画面のフィールド構成に合わせてある。
+ * 【C++】Application::executeShowUsilicBanner (src/cpp/src/application.cpp)
+ */
 static void print_usilic(char *str, int f_usilic)
 {
   /* 新(C++移植)のINFO画面(application.cpp、field()、kLabelWidth=12)
@@ -171,6 +193,10 @@ static void print_usilic(char *str, int f_usilic)
   }
 }
 
+/*
+ * 【機能】設定の行から、`#`と改行以降を取り除き、先頭の空白を飛ばした位置を返す(空ならNULL)。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static char *get_cp(char str[])
 {
   char *cp;
@@ -181,6 +207,10 @@ static char *get_cp(char str[])
   return (*cp) ? cp : NULL;
 }
 
+/*
+ * 【機能】設定の値の行を、コメント・空行を飛ばして読む。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static char *get_val(FILE *fp, char str[], int *ip)
 {
   int i = 0;
@@ -197,6 +227,10 @@ static char *get_val(FILE *fp, char str[], int *ip)
   return cp;
 }
 
+/*
+ * 【機能】usilicrcのARCHIVEの設定(`.tar tar tvf`のような、suffixと展開コマンド)を読み込む。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static int conf_arc(FILE *fp, char *str, CHILD *chp)
 {
   char *cp, *p, *p2, **cpp;
@@ -239,6 +273,10 @@ static int conf_arc(FILE *fp, char *str, CHILD *chp)
   return -1;
 }
 
+/*
+ * 【機能】外部プログラムの設定(EXEC、EDITOR、SHELL、PROGRAM等。種類はf_child)を読み込む。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static int conf_bin(FILE *fp, char str[], int f_child, CHILD *chp, char sh[])
 {
   CHILD *chp2, *chp3;
@@ -275,6 +313,10 @@ static int conf_bin(FILE *fp, char str[], int f_child, CHILD *chp, char sh[])
   return -1;
 }
 
+/*
+ * 【機能】usilicrcのGREPの設定(検索文字列の候補)を読み込む。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static int conf_grep(FILE *fp, char str[], LIST **lgpp, STR **sgpp)
 {
   int size, code;
@@ -310,6 +352,10 @@ static int conf_grep(FILE *fp, char str[], LIST **lgpp, STR **sgpp)
   return -1;
 }
 
+/*
+ * 【機能】usilicrcのPROGRAMの設定(外部プログラムの候補)を読み込む。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static int conf_prog(FILE *fp, char str[], LIST **lcpp, STR **scpp)
 {
   int i;
@@ -327,6 +373,10 @@ static int conf_prog(FILE *fp, char str[], LIST **lcpp, STR **scpp)
   return -1;
 }
 
+/*
+ * 【機能】usilicrcのBUFFERの設定(読み込みバッファの大きさ、1〜100)を読み込む。範囲外ならエラー。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static int conf_bsize(FILE *fp, char str[], int *bsizep)
 {
   char *cp;
@@ -341,6 +391,10 @@ static int conf_bsize(FILE *fp, char str[], int *bsizep)
   return 0;
 }
 
+/*
+ * 【機能】usilicrcのCODEの設定(バイナリ判定で許可する制御文字)を読み込む。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static int conf_code(FILE *fp, char str[])
 {
   char *cp, *sp, val[3];
@@ -366,6 +420,10 @@ static int conf_code(FILE *fp, char str[])
   return 0;
 }
 
+/*
+ * 【機能】usilicrcのHISTORYの設定(履歴のファイル)を読み込む。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static int conf_history(FILE *fp, char str[])
 {
   char *cp;
@@ -377,6 +435,10 @@ static int conf_history(FILE *fp, char str[])
 }
 
 
+/*
+ * 【機能】usilicrcのWAITの設定(表示の待ち時間、既定100000マイクロ秒)を読み込む/返す。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 int conf_wait(FILE *fp, char str[])/*usilic*/
 {
   static int k_wait = 100000;
@@ -390,6 +452,10 @@ int conf_wait(FILE *fp, char str[])/*usilic*/
   } else return k_wait;
 }
 
+/*
+ * 【機能】usilicrcのSCROLLの設定を読み込む/返す。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static int conf_scroll(FILE *fp, char *str)
 {
   static int f_scroll;
@@ -410,6 +476,11 @@ static int conf_scroll(FILE *fp, char *str)
   return i;
 }
 
+/*
+ * 【機能】環境変数(<プログラム名>CHARSET)が、明示的に設定されたかを返す。明示された場合は、前回の
+ *       セッションで保存された文字コードより優先する。
+ * 【C++】main (src/cpp/app/main.cpp); Configuration::setEnvironmentCharset (src/cpp/src/configuration.cpp)
+ */
 int env_charset(int f)/*usilic*/
 { /* ユーザーがUSILICCHARSETを明示的にexportしたかどうか(下の
      自動既定値によって設定されただけなのとは対照的に)。明示的な
@@ -422,6 +493,10 @@ int env_charset(int f)/*usilic*/
   return f_env;
 }
 
+/*
+ * 【機能】usilicrcのLSの設定(lsのオプション)を読み込む/返す。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 int conf_ls(FILE *fp, char *str)/*usilic*/
 {
   static int f_ls;
@@ -436,6 +511,10 @@ int conf_ls(FILE *fp, char *str)/*usilic*/
   return f_ls;
 }
 
+/*
+ * 【機能】usilicrcを1行(最大N_char)読む。`P-?`の行の扱いを含む。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ */
 static int get_str(FILE *fp, u_char str[])
 {
   u_char *p, *cp;
@@ -467,6 +546,10 @@ static int get_str(FILE *fp, u_char str[])
   return 0;
 }
 
+/*
+ * 【機能】usilicrcのKEYの設定の書式エラーを記録して、終了する。
+ * 【C++】なし(C++は、usilicrcのKEY節(キーの割り当ての変更)を解釈しない。キーは固定で、KEYモード自体も2026-09-20に廃止)
+ */
 static void key_err(FILE *fp, char mark[], int f_err)
 {
   fclose(fp);
@@ -476,6 +559,10 @@ static void key_err(FILE *fp, char mark[], int f_err)
   exit(1);
 }
 
+/*
+ * 【機能】キーの番号から、表示用の名前(`^A`、`DEL`等)の文字列を作る。
+ * 【C++】なし(C++は、usilicrcのKEY節(キーの割り当ての変更)を解釈しない。キーは固定で、KEYモード自体も2026-09-20に廃止)
+ */
 static char *save_ov(int k)
 {
   int c, d;
@@ -511,6 +598,10 @@ static char *save_ov(int k)
   return tmp;
 }
 
+/*
+ * 【機能】KEYの設定の中の、数字(番号)を読み取る。
+ * 【C++】なし(C++は、usilicrcのKEY節(キーの割り当ての変更)を解釈しない。キーは固定で、KEYモード自体も2026-09-20に廃止)
+ */
 static char *set_m(char *cp, int *mp)
 {
   int i;
@@ -523,6 +614,10 @@ static char *set_m(char *cp, int *mp)
   return cp;
 }
 
+/*
+ * 【機能】KEYの設定の中の`"..."`の文字列を読み取り、`\cX`等の記法を制御文字へ変換する。
+ * 【C++】なし(C++は、usilicrcのKEY節(キーの割り当ての変更)を解釈しない。キーは固定で、KEYモード自体も2026-09-20に廃止)
+ */
 static char *set_s(u_char *cp, u_char s[])
 {
   int i, len;
@@ -540,6 +635,11 @@ static char *set_s(u_char *cp, u_char s[])
   return cp;
 }
 
+/*
+ * 【機能】設定全体の初期化。組み込みの既定値(`ls -alFN`、`xvf`等)、ARCHIVEの表、エラーメッセージの表を
+ *       文字列の表(Str.S)へ設定し、作業ディレクトリ、HOME、LANG、usilicrcの場所を決める。
+ * 【C++】Configuration::Configuration (src/cpp/src/configuration.cpp); main (src/cpp/app/main.cpp)
+ */
 int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
 {
 #include "config.h"
@@ -864,6 +964,10 @@ int conf(char *temp, char *args, char *version, int f_usilic)/*usilic*/
   return 0;
 }
 
+/*
+ * 【機能】文字列の表(Str.S)の全体を解放する。
+ * 【C++】なし(C++はstd::stringの自動解放で足りる)
+ */
 void free_S(void)/*usilic*/
 {
   int i;
@@ -871,6 +975,11 @@ void free_S(void)/*usilic*/
   for (i = 0; i < S_nn; i++) r_S(i);
 }
 
+/*
+ * 【機能】KEYモードの一覧(キーとコマンドの対応)を出力する。
+ * 【C++】なし(C++は、usilicrcのKEY節(キーの割り当ての変更)を解釈しない。キーは固定で、KEYモード自体も2026-09-20に廃止)
+ * 【備考】C++のキー一覧は、HELPの文章にまとめられている。
+ */
 u_char *print_key(int *key_c)/*usilic*/
 {
   static struct {
@@ -966,6 +1075,10 @@ u_char *print_key(int *key_c)/*usilic*/
   return NULL;
 }
 
+/*
+ * 【機能】キーの表(key_m、key_c)を初期化する。
+ * 【C++】なし(C++は、usilicrcのKEY節(キーの割り当ての変更)を解釈しない。キーは固定で、KEYモード自体も2026-09-20に廃止)
+ */
 void set_key(int **key_mp, int **key_cp, int key_m0[], int key_m[], int key_c[])
 {
   int i;
@@ -995,6 +1108,10 @@ void set_key(int **key_mp, int **key_cp, int key_m0[], int key_m[], int key_c[])
   key_c[M_mm] = (K_x<<8) + 'e';
 }
 
+/*
+ * 【機能】usilicrcのKEYの節の中の見出し(`M-?`、`F-?`、`K-?`)まで読み進める。無ければ書式エラー。
+ * 【C++】なし(C++は、usilicrcのKEY節(キーの割り当ての変更)を解釈しない。キーは固定で、KEYモード自体も2026-09-20に廃止)
+ */
 void read_mark(FILE *fp, char mark[], u_char str[])
 {
   if (!strncmp(&str[1], &mark[1], strlen(mark) - 1)) {
@@ -1006,6 +1123,10 @@ void read_mark(FILE *fp, char mark[], u_char str[])
   } while (strncmp(str, mark, strlen(mark)));
 }
 
+/*
+ * 【機能】usilicrcのKEYの節の`M-?`(キーボードマクロの定義)を読み込む。
+ * 【C++】なし(C++は、usilicrcのKEY節(キーの割り当ての変更)を解釈しない。キーは固定で、KEYモード自体も2026-09-20に廃止)
+ */
 static void conf_m(FILE *fp, u_char str[])
 {
   static char mark[] = "M-?";
@@ -1043,6 +1164,10 @@ static void conf_m(FILE *fp, u_char str[])
   }
 }
 
+/*
+ * 【機能】usilicrcのKEYの節の`F-?`(ファンクションキー等の割り当て)を読み込む。
+ * 【C++】なし(C++は、usilicrcのKEY節(キーの割り当ての変更)を解釈しない。キーは固定で、KEYモード自体も2026-09-20に廃止)
+ */
 static void conf_f(FILE *fp, u_char str[], int *i_mp, int *n_mp, int key_m0[], int key_m[])
 {
   int i, j, k;
@@ -1100,6 +1225,10 @@ static void conf_f(FILE *fp, u_char str[], int *i_mp, int *n_mp, int key_m0[], i
   }
 }
 
+/*
+ * 【機能】usilicrcのKEYの節の`K-?`(キーとコマンドの割り当て)を読み込む。
+ * 【C++】なし(C++は、usilicrcのKEY節(キーの割り当ての変更)を解釈しない。キーは固定で、KEYモード自体も2026-09-20に廃止)
+ */
 static int conf_c(FILE *fp, u_char str[], int i0, int *i_mp, int n_m, int key_m0[], int key_c[], int key_m[], char comm[])
 {
   static char mark[] = "K-?";
@@ -1206,6 +1335,10 @@ static int conf_c(FILE *fp, u_char str[], int i0, int *i_mp, int n_m, int key_m0
   return 0;
 }
 
+/*
+ * 【機能】usilicrcのKEYの節(M-?、F-?、K-?)の全体を読み込む。一覧の出力(print_key)にも使う。
+ * 【C++】なし(C++は、usilicrcのKEY節(キーの割り当ての変更)を解釈しない。キーは固定で、KEYモード自体も2026-09-20に廃止)
+ */
 int conf_key(FILE *fp, char str[], int **key_mp, int **key_cp, char *comm)/*usilic*/
 {
   static int key_m[N_f*5];
@@ -1225,6 +1358,12 @@ int conf_key(FILE *fp, char str[], int **key_mp, int **key_cp, char *comm)/*usil
   return f_skip;
 }
 
+/*
+ * 【機能】usilicrcの全体(ARCHIVE、EXEC、GREP、PROGRAM、EDITOR、BUFFER、CODE、SHELL、HISTORY、WAIT、
+ *       SCROLL、LS、CP/MV/RM、KEY)を読み込んで、各設定へ反映する。
+ * 【C++】Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ * 【備考】C++のloadRcTextは、KEYの節を意図的に読み飛ばす。
+ */
 int init_config(CHILD *chp, LIST **lcpp, LIST **lgpp, STR **scpp, STR **sgpp, u_int *bsizep, int **key_mp, int **key_cp, char name[], u_char comm[])/*usilic*/
 {
   FILE *fp;
@@ -1332,6 +1471,14 @@ int init_config(CHILD *chp, LIST **lcpp, LIST **lgpp, STR **scpp, STR **sgpp, u_
   return f_usilicrc;
 }
 
+/*
+ * 【機能】usilicrcの場所を決めて返す。`~/.<プログラム名>/<プログラム名>rc`(ホーム側)があればそれを使う。
+ *       ただし、LIB側の同名ファイルの方が新しい(ctime)と判定されたときは、*errepへ1を入れてLIB側を
+ *       返す。ホーム側が無ければLIB側を返し、そのLIB側も無ければ*errepへ-1を入れる。
+ * 【C++】main (src/cpp/app/main.cpp); Configuration::loadRcText (src/cpp/src/configuration.cpp)
+ * 【備考】旧ソースでは、st_libを一度もstat()していないため、「LIB側が新しい」の判定は不定の値で
+ *       行われている(既存の不具合の疑い)。
+ */
 char *set_usilicrc(int *errep)/*usilic*/
 {
   char *home, *lib;

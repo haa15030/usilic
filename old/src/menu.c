@@ -373,7 +373,8 @@ static int m_man(int m, HEAP *hp, LINE *lp, int *f_Mp, char name[])
 /*
  * 【機能】KEY(キー一覧)/HELPの入口。現在の状態をスタックへ保存し、直前のモードの名前を戻り先にして、
  *       KEYの名前へ切り替える。
- * 【C++】Application::startKey (src/cpp/src/application.cpp)
+ * 【C++】Application::startHelp (src/cpp/src/application.cpp)
+ * 【備考】C++のKEYモード(キー一覧)は2026-09-20に廃止され、HELPに置き換わった。
  */
 static void m_help(int m, ARRAY *ap, LINE *lp, HEAP *hp, NUM *np)
 {

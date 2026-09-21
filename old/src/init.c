@@ -604,8 +604,9 @@ FILE *init_split4(BASE *bp, u_char *buff, u_char name[], PP *pp)/*usilic*/
  * 【機能】汎用のバッファ初期化。モード(f_M)に応じて、KEY一覧(fork_key)、DUの結果、ERROR/LOG・ファイルの
  *       読み込み(read_buff、文字コード判定check_type)、アーカイブ一覧(T_tar等)、解凍・groff変換
  *       (T_bin/T_gz/T_roff)を、bpへ作る。
- * 【C++】FileMode::loadFile (src/cpp/src/file_mode.cpp); ArchiveMode::loadArchive (src/cpp/src/archive_mode.cpp); DuMode::loadUsage (src/cpp/src/du_mode.cpp); Application::startKey (src/cpp/src/application.cpp)
+ * 【C++】FileMode::loadFile (src/cpp/src/file_mode.cpp); ArchiveMode::loadArchive (src/cpp/src/archive_mode.cpp); DuMode::loadUsage (src/cpp/src/du_mode.cpp); Application::startHelp (src/cpp/src/application.cpp)
  * 【備考】旧は1つの巨大なswitchに全モードの読み込みが集まっている。C++はモードごとのクラスに分かれている。
+ *       KEY一覧は、C++では2026-09-20に廃止され、HELP(startHelp)に置き換わった。
  */
 int init_bin(BASE *bp, BASE *head, CHILD **chpp, int f_M, char name[], int f_chkbin)/*usilic*/
 {

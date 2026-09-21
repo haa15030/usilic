@@ -11,12 +11,21 @@ static struct {
   jmp_buf jb;
 } Sub;
 
+/*
+ * 【機能】SIGSEGVのハンドラ。中断の旗(Sub.abort)を立てて、longjmpで呼び出し元へ戻る(履歴ファイルの
+ *       読み込み中のクラッシュ回収)。
+ * 【C++】なし(C++版はSIGSEGVを回収しない)
+ */
 static void sub_clear(int dummy)
 {
   Sub.abort = 1;
   longjmp(Sub.jb, 0);
 }
 
+/*
+ * 【機能】sscanfで読めるよう、文字列中の制御文字と空白を、印(`K_o`+文字、`K_a`)へ変換する(履歴ファイル用)。
+ * 【C++】History::serialize (src/cpp/src/history.cpp)
+ */
 static void sspc(u_char *cp, u_char *np)
 { /* sscanf()のために空白文字を変換する */
   if (np)
@@ -32,6 +41,10 @@ static void sspc(u_char *cp, u_char *np)
   else for (; (cp = strchr(cp, ' ')); *cp = K_a) ;
 }
 
+/*
+ * 【機能】sspcの逆。印(`K_o`+文字、`K_a`)を、元の制御文字と空白に戻す(履歴ファイルの読み込み用)。
+ * 【C++】History::loadHistoryText (src/cpp/src/history.cpp)
+ */
 void rspc(u_char *cp, u_char *np)/*usilic*/
 { /* sscanf()のために空白文字を変換する */
   if (np)
@@ -47,6 +60,10 @@ void rspc(u_char *cp, u_char *np)/*usilic*/
   else for (; (cp = strchr(cp, K_a)); *cp = ' ') ;
 }
 
+/*
+ * 【機能】LIST(二分木)を、左・自分・右の順(=名前の順)に、1行ずつファイルへ書き出す。
+ * 【C++】History::serialize (src/cpp/src/history.cpp)
+ */
 static void print_list(LIST *lp, FILE *fp)
 {
   if (lp) {
@@ -56,6 +73,10 @@ static void print_list(LIST *lp, FILE *fp)
   }
 }
 
+/*
+ * 【機能】履歴ファイルから、モードmの履歴(STR)を読み込む。見出し行(`K_l`+モード名)から次の見出しまで。
+ * 【C++】History::loadHistoryText (src/cpp/src/history.cpp)
+ */
 static int read_str(FILE *fp, u_char str[], STR **spp, LIST **lpp, int f, int m)
 {
   char tmp[N_line], name[N_line], *cp;
@@ -91,6 +112,10 @@ static int read_str(FILE *fp, u_char str[], STR **spp, LIST **lpp, int f, int m)
   return (cp) ? 0 : -1;
 }
 
+/*
+ * 【機能】履歴(STR)を、順序を保ったまま履歴ファイル(~/.<プログラム名>/history)へ書き出す。
+ * 【C++】History::serialize (src/cpp/src/history.cpp)
+ */
 static void write_str(FILE *fp, STR *sp, LIST *lp, int f, int m)
 { /* STRリストの順序で~/.usilic/historyへ文字列を保存する */
   char name[N_line];
@@ -108,6 +133,10 @@ static void write_str(FILE *fp, STR *sp, LIST *lp, int f, int m)
   } else print_list(lp, fp);
 }
 
+/*
+ * 【機能】履歴(STR)から、名前が一致する項目を削除する(名前をNULLにする)。
+ * 【C++】History (src/cpp/src/history.cpp)
+ */
 static void delete_str(STR *sp, char name[])
 { 
   while (sp) {
@@ -120,6 +149,10 @@ static void delete_str(STR *sp, char name[])
   }
 }
 
+/*
+ * 【機能】ディレクトリ名(dir)を、親ディレクトリの名前に置き換える(`/`ならそのまま)。
+ * 【C++】DirectoryMode::goToParent (src/cpp/src/directory_mode.cpp)
+ */
 static void get_par(char *dir)
 { /* 親ディレクトリ名をdir[]へ設定する */
   if (!strcmp(dir, "/")) return;
@@ -127,6 +160,10 @@ static void get_par(char *dir)
   dir[1] = '\0';
 }
 
+/*
+ * 【機能】現在の時刻を、asctimeの形式の文字列にして返す(履歴ファイルの先頭用)。
+ * 【C++】currentTimestampText (src/cpp/app/main.cpp)
+ */
 static void get_time(char str[])
 {
   struct tm tt;
@@ -138,6 +175,10 @@ static void get_time(char str[])
   *strchr(str, '\n') = '\0';
 }
 
+/*
+ * 【機能】PROGRAMの候補リスト(prog)の中に、buffのコマンド名と一致するものがあるかを、二分木の順に探す。
+ * 【C++】Shell::onTab (src/cpp/src/shell.cpp)
+ */
 int find_prog(LIST *prog, u_char buff[])/*usilic*/
 { /* PROGRAMのprogram-listの中でbuff[]を検索する */
   if (prog) {
@@ -154,6 +195,10 @@ int find_prog(LIST *prog, u_char buff[])/*usilic*/
   return 0;
 }
 
+/*
+ * 【機能】GREPの状態を積んだ連結リストから、先頭の1つを取り除いて(解放)、その1つ前を返す。
+ * 【C++】ModeStack (src/cpp/src/mode_stack.cpp)
+ */
 GREP *load_grep(GREP *grep)/*usilic*/
 {
   GREP *gp;
@@ -164,6 +209,10 @@ GREP *load_grep(GREP *grep)/*usilic*/
   return gp;
 }
 
+/*
+ * 【機能】GREPの状態を、連結リストへ新しく1つ積んで返す。
+ * 【C++】ModeStack (src/cpp/src/mode_stack.cpp)
+ */
 GREP *save_grep(GREP *grep)/*usilic*/
 {
   GREP *gp;
@@ -174,6 +223,10 @@ GREP *save_grep(GREP *grep)/*usilic*/
 }
 
 
+/*
+ * 【機能】GREPの状態の連結リストの中に、表示領域(bp)が対応するものがあるかを探す。
+ * 【C++】ModeStack (src/cpp/src/mode_stack.cpp)
+ */
 int find_grep(GREP *grep, BASE *bp)/*usilic*/
 {
   GREP *gp;
@@ -186,6 +239,10 @@ int find_grep(GREP *grep, BASE *bp)/*usilic*/
   return 0;
 }
 
+/*
+ * 【機能】ファイル(fp)に書かれた名前を1行ずつ読み、それらを履歴(STR)から削除して、LISTを返す。
+ * 【C++】History (src/cpp/src/history.cpp)
+ */
 LIST *delete_name(LIST *lp, STR *sp, STR *rsp, FILE *fp)/*usilic*/
 {
   char *cp, str[N_line];
@@ -209,6 +266,10 @@ LIST *delete_name(LIST *lp, STR *sp, STR *rsp, FILE *fp)/*usilic*/
   return lp;
 }
 
+/*
+ * 【機能】履歴(STR)の末尾へ、名前と位置(PN)を追加する(再帰で末尾まで辿る)。
+ * 【C++】History::pushRecent (src/cpp/src/history.cpp)
+ */
 static STR *save_hist(STR *hist, char name[], PN pn)
 {
   if (!hist) {
@@ -219,6 +280,10 @@ static STR *save_hist(STR *hist, char name[], PN pn)
   return hist;
 }
 
+/*
+ * 【機能】履歴(STR)の末尾の項目が、名前と一致するかを調べ、個数をcountpへ返す。
+ * 【C++】History::pushRecent (src/cpp/src/history.cpp)
+ */
 static int find_hist(STR *hist, char *name, int *countp)
 {
   int count;
@@ -230,6 +295,10 @@ static int find_hist(STR *hist, char *name, int *countp)
   return 1;
 }
 
+/*
+ * 【機能】履歴(STR)へ、名前を追加する。直前と同じなら追加しない。保存する個数の上限も管理する。
+ * 【C++】History::pushRecent; History::retentionCount (src/cpp/src/history.cpp)
+ */
 STR *save_history(STR *hist, char name[], int f_find)/*usilic*/
 {
   static int n_history;
@@ -260,6 +329,11 @@ STR *save_history(STR *hist, char name[], int f_find)/*usilic*/
   return sp;
 }
 
+/*
+ * 【機能】履歴(STR)のうち、保存する個数(n_hist)を超えた古いものを、先頭から取り除く。
+ * 【C++】History::pushRecent (src/cpp/src/history.cpp)
+ * 【備考】C++は、上限を超えたら古いものを、追加時に落とす。
+ */
 STR *free_history(STR *hist, char tmp[], int n_hist)/*usilic*/
 {
   int count;
@@ -277,6 +351,10 @@ STR *free_history(STR *hist, char tmp[], int n_hist)/*usilic*/
   return hist;
 }
 
+/*
+ * 【機能】LIST(二分木)の中に、名前があるかを探す(見つかれば*ipを1にする)。
+ * 【C++】History::containsName (src/cpp/src/history.cpp)
+ */
 void find_list(LIST *lp, char name[], int *ip)/*usilic*/
 {
   if (lp && !*ip) {
@@ -286,6 +364,10 @@ void find_list(LIST *lp, char name[], int *ip)/*usilic*/
   }
 }
 
+/*
+ * 【機能】STR(連結リスト)へ、名前と位置(PN)を追加する。既にある名前は追加しない。
+ * 【C++】History::pushRecent (src/cpp/src/history.cpp)
+ */
 STR *save_str(STR *sp, char name[], PN *pnp)/*usilic*/
 {
   if (!sp) {
@@ -297,6 +379,10 @@ STR *save_str(STR *sp, char name[], PN *pnp)/*usilic*/
   return sp;
 }
 
+/*
+ * 【機能】モードのスタックを辿って、表示領域(f_read=0)または名前(f_read=1)が一致するものを探す。
+ * 【C++】ModeStack (src/cpp/src/mode_stack.cpp)
+ */
 STACK *read_stack(STACK *sp, void *p, int f_read)/*usilic*/
 {
   while (sp) {
@@ -316,6 +402,10 @@ jump:
   return sp;
 }
 
+/*
+ * 【機能】モードのスタックの先頭を降ろして(戻る)、その時の状態(LINE、モード、名前、表示領域)を復元する。
+ * 【C++】ModeStack::pop (src/cpp/src/mode_stack.cpp)
+ */
 STACK *load_stack(STACK *sp, LINE *lp, int *f_Mp, char *name, BASE **bpp, BASE base[])/*usilic*/
 {
   STACK *s0, *sb = NULL;
@@ -356,6 +446,10 @@ STACK *load_stack(STACK *sp, LINE *lp, int *f_Mp, char *name, BASE **bpp, BASE b
   } else return NULL;
 }
 
+/*
+ * 【機能】現在のモードの状態(直前のモード、名前、ディレクトリ、表示領域等)を、モードのスタックへ積む。
+ * 【C++】ModeStack::push (src/cpp/src/mode_stack.cpp)
+ */
 STACK *save_stack(STACK *sp, LINE *lp, int f_M, char name[], BASE *bp, int f_bp)/*usilic*/
 {
   if (!sp) {
@@ -377,6 +471,10 @@ STACK *save_stack(STACK *sp, LINE *lp, int f_M, char name[], BASE *bp, int f_bp)
   return sp;
 }
 
+/*
+ * 【機能】カレントディレクトリを、モードのスタックの底として積む。
+ * 【C++】ModeStack::pushFloor (src/cpp/src/mode_stack.cpp)
+ */
 STACK *save_stack_dir(STACK *sp, char dir[], char old[], BASE *bp)/*usilic*/
 { /* カレントディレクトリを保存する(スタックの底) */
   char str[3];
@@ -394,6 +492,10 @@ STACK *save_stack_dir(STACK *sp, char dir[], char old[], BASE *bp)/*usilic*/
   return sp;
 }
 
+/*
+ * 【機能】パス名(pathname)を、最後の`/`より後(ファイル名だけ)に置き換える。
+ * 【C++】PathResolver (src/cpp/src/path_resolver.cpp)
+ */
 void get_name(char *pathname)/*usilic*/
 { /* 通常のファイル名をpathnameへ設定する */
   char *cp, *cp0 = pathname;
@@ -402,6 +504,10 @@ void get_name(char *pathname)/*usilic*/
   if (cp0 != pathname) strcpy(cp0, pathname);
 }
 
+/*
+ * 【機能】パス名(pathname)を、最後の`/`まで(ディレクトリ部分だけ)にする。`/`が無い/ルートなら0を返す。
+ * 【C++】PathResolver (src/cpp/src/path_resolver.cpp)
+ */
 int get_dir(char *pathname)/*usilic*/
 { /* カレントディレクトリ名をpathnameへ設定する */
   char *cp;
@@ -412,6 +518,10 @@ int get_dir(char *pathname)/*usilic*/
   return 1;
 }
 
+/*
+ * 【機能】パス名から、`./`(カレント)と`../`(親)を整理して取り除く。
+ * 【C++】PathResolver::resolve (src/cpp/src/path_resolver.cpp)
+ */
 void erase_dot(char name[])/*usilic*/
 { /* name[]からカレント("./")または親("../")ディレクトリ名を取り除く */
   int i, j;
@@ -441,6 +551,12 @@ void erase_dot(char name[])/*usilic*/
   if (strlen(tmp)) strcat(name, tmp);
 }
 
+/*
+ * 【機能】履歴ファイル(~/.<プログラム名>/history)を読み込み、FILE/DIR/MAN/LOCATE/GREP/PROGRAM等の
+ *       履歴(LL/SS)と、位置の記憶を復元する。
+ * 【C++】History::loadHistoryText (src/cpp/src/history.cpp)
+ * 【備考】C++は、履歴の読み込みをmainが行い、解釈をHistoryが行う。
+ */
 void read_list(LL *llp, SS *ssp, LINE *lp, char name[])/*usilic*/
 {
   char *cp, str[N_line], str1[N_line];
@@ -552,6 +668,10 @@ void read_list(LL *llp, SS *ssp, LINE *lp, char name[])/*usilic*/
   fclose(fp);
 }
 
+/*
+ * 【機能】履歴(LL/SS)を、履歴ファイルへ書き出す。書く前に、古いファイルを`.old`へ退避する。
+ * 【C++】History::serialize (src/cpp/src/history.cpp)
+ */
 void write_list(LL ll, SS ss, LINE *lp, char name[])/*usilic*/
 {
   FILE *fp;
@@ -596,6 +716,10 @@ void write_list(LL ll, SS ss, LINE *lp, char name[])/*usilic*/
   fclose(fp);
 }
 
+/*
+ * 【機能】LIST(二分木)の全体を解放する。
+ * 【C++】なし(C++はデストラクタとstd::vectorの自動解放で足りる)
+ */
 LIST *free_list(LIST *list)/*usilic*/
 {
   if (list) {
@@ -607,6 +731,10 @@ LIST *free_list(LIST *list)/*usilic*/
   return NULL;
 }
 
+/*
+ * 【機能】STR(連結リスト)の全体を解放する。
+ * 【C++】なし(C++はデストラクタとstd::vectorの自動解放で足りる)
+ */
 void free_str(STR *sp)/*usilic*/
 {
   STR *sb;
@@ -619,6 +747,10 @@ void free_str(STR *sp)/*usilic*/
   }
 }
 
+/*
+ * 【機能】履歴(STR)から、モード(f_M)に応じた表示用のバッファ(bp)を作る(履歴の一覧画面)。
+ * 【C++】ListBrowserMode::show (src/cpp/src/list_browser_mode.cpp)
+ */
 BASE *init_str(int f_M, BASE *bp, STR s0[], char name[])/*usilic*/
 {
   int f_grep = 0;
@@ -640,6 +772,10 @@ BASE *init_str(int f_M, BASE *bp, STR s0[], char name[])/*usilic*/
   return bp;
 }
 
+/*
+ * 【機能】LIST(二分木)から、モード(f_M)に応じた表示用のバッファ(bp)を作る(候補・履歴の一覧画面)。
+ * 【C++】ListBrowserMode::show (src/cpp/src/list_browser_mode.cpp)
+ */
 BASE *init_list(int f_M, BASE *bp, LIST *lp, char name[])/*usilic*/
 {
   int f_grep = 0, f_ls = 0;
@@ -660,6 +796,10 @@ BASE *init_list(int f_M, BASE *bp, LIST *lp, char name[])/*usilic*/
   return bp;
 }
 
+/*
+ * 【機能】LIST(二分木)から名前を探して、記憶していた位置(PN)を返す(見つかれば1)。
+ * 【C++】History::positionFor (src/cpp/src/history.cpp)
+ */
 int load_list(LIST *list, char name[], PN *pn)/*usilic*/
 {
   if (list) {
@@ -673,6 +813,10 @@ int load_list(LIST *list, char name[], PN *pn)/*usilic*/
   return 0;
 }
 
+/*
+ * 【機能】LIST(二分木)へ、名前と位置(PN)を、名前の順(ソート順)に追加する。
+ * 【C++】History::setPosition; History::rememberName (src/cpp/src/history.cpp)
+ */
 LIST *save_list(LIST *list, char name[], PN *pnp)/*usilic*/
 {
   int i;
@@ -688,6 +832,10 @@ LIST *save_list(LIST *list, char name[], PN *pnp)/*usilic*/
   return list;
 }
 
+/*
+ * 【機能】unsigned intを、10進の文字列へ変換して返す。
+ * 【C++】なし(C++はstd::to_stringで足りる)
+ */
 char *utoa(u_int u)/*usilic*/
 { /* unsigned-intを文字列へ変換する */
   char tmp[32];
@@ -705,6 +853,10 @@ char *utoa(u_int u)/*usilic*/
   return (char*)str;
 }
 
+/*
+ * 【機能】文字列を、太字の重ね打ち(`X^HX`)へ変換する。
+ * 【C++】なし(C++は重ね打ちにせず、AttributeRunで太字を持つ)
+ */
 char *tobo(char str[], int f_nl)/*usilic*/
 { /* str[]をbold属性へ変換する */
   static char tmp[N_line];
@@ -720,6 +872,10 @@ char *tobo(char str[], int f_nl)/*usilic*/
   return tmp;
 }
 
+/*
+ * 【機能】文字列を、下線の重ね打ち(`_^HX`)へ変換する。
+ * 【C++】なし(C++は重ね打ちにせず、AttributeRunで下線を持つ)
+ */
 char *toul(char str[], int f_nl)/*usilic*/
 { /* str[]をunderline属性へ変換する */
   static char tmp[N_line];
@@ -735,6 +891,10 @@ char *toul(char str[], int f_nl)/*usilic*/
   return tmp;
 }
 
+/*
+ * 【機能】文字列から、重ね打ち(`X^H..`)の部分を取り除き、改行までを複写して返す。
+ * 【C++】なし(C++は重ね打ちにせず、AttributeRunで属性を持つ)
+ */
 char *tome(char str[], int f_nl)/*usilic*/
 {
   static char tmp[N_line];
@@ -749,6 +909,10 @@ char *tome(char str[], int f_nl)/*usilic*/
   return tmp;
 }
 
+/*
+ * 【機能】文字列(str0)の中で、文字cまたは文字列strが最初に現れる位置(1始まり)を返す(無ければ0)。
+ * 【C++】なし(C++はstd::string::findで足りる)
+ */
 int ichrstr(char str0[], char c, char *str)/*usilic*/
 {
   char *cp;
@@ -758,6 +922,10 @@ int ichrstr(char str0[], char c, char *str)/*usilic*/
   else return 0;
 }
 
+/*
+ * 【機能】モードラインの引数欄(バイト数と`(プログラム名)`)を組み立てる。
+ * 【C++】ContentView::ModeLineFields (src/cpp/src/content_view.cpp)
+ */
 void print_arg(char arg[], int size, u_char *buff, CHILD *chp, int f_M)/*usilic*/
 {
   *arg = K_z; /* mode-line[4]を表示しない */
@@ -799,6 +967,11 @@ void print_arg(char arg[], int size, u_char *buff, CHILD *chp, int f_M)/*usilic*
     }
 }  
 
+/*
+ * 【機能】子プロセスの標準エラー出力を、エラーファイル(S_error)へ付け替える。
+ * 【C++】ChildProcess (src/cpp/src/child_process.cpp)
+ * 【備考】C++は、ChildProcess::Optionsのstderrへ書き出す先を渡す。
+ */
 void dup_error()/*usilic*/
 {
   int fd;
@@ -814,6 +987,10 @@ void dup_error()/*usilic*/
   close(fd);
 }
 
+/*
+ * 【機能】書式付きのエラーメッセージを、エラーファイル(S_error)へ追記する(ERROR画面で見られる)。
+ * 【C++】ChildProcess (src/cpp/src/child_process.cpp)
+ */
 void save_error(char *fmt, ...)/*usilic*/
 {
   FILE *fp;
@@ -827,6 +1004,10 @@ void save_error(char *fmt, ...)/*usilic*/
   fclose(fp);
 }
 
+/*
+ * 【機能】端末を元に戻した後に、標準エラーへ出す内容を、ファイル(S_stderr)へ保存しておく。
+ * 【C++】main (src/cpp/app/main.cpp)
+ */
 void save_stderr(char *fmt, ...)/*usilic*/
 { /* 端末をリセットした後に`stderr'へ表示する */
   FILE *fp;
@@ -840,6 +1021,10 @@ void save_stderr(char *fmt, ...)/*usilic*/
   fclose(fp);
 }
 
+/*
+ * 【機能】中断・エラーの番号を、ファイル(S_intr)へ書く(別のプロセスへ知らせるため)。
+ * 【C++】なし(C++は単一のプロセスなので、状態を変数で持つ)
+ */
 void save_intr(int n_error)/*usilic*/
 {
   FILE *fp;
@@ -850,6 +1035,10 @@ void save_intr(int n_error)/*usilic*/
   fclose(fp);
 }
 
+/*
+ * 【機能】save_intrが書いた、中断・エラーの番号を読む(無ければ0)。
+ * 【C++】なし(C++は単一のプロセスなので、状態を変数で持つ)
+ */
 int load_intr(void)/*usilic*/
 {
   FILE *fp;
@@ -863,6 +1052,10 @@ int load_intr(void)/*usilic*/
   return n_error;
 }
 
+/*
+ * 【機能】PATH(コロン区切り)の中に、プログラム(prog)があるかを探す(インストールの確認)。
+ * 【C++】なし(C++は、実行の失敗で不在を知る。PATHの探索はTab補完(Shell::onTab)だけが行う)
+ */
 char *is_inst(char *path, char *prog)/*usilic*/
 { /* `path'の中から`prog'を探す */
   int i;
@@ -889,6 +1082,11 @@ char *is_inst(char *path, char *prog)/*usilic*/
   return NULL;
 }
 
+/*
+ * 【機能】ファイル名(name)にアクセスできるかを調べ、できなければエラーメッセージ用のバッファ(bp)を作って-1を
+ *       返す。
+ * 【C++】DirectoryMode::reportError (src/cpp/src/directory_mode.cpp)
+ */
 int is_access(char name[], BASE *bp)/*usilic*/
 {
   struct stat st;
@@ -906,6 +1104,10 @@ int is_access(char name[], BASE *bp)/*usilic*/
   return 0;
 }  
 
+/*
+ * 【機能】モード(f_M)に対応する履歴(STR)の番号と、表示領域の番号(*n_bp)を返す(履歴の一覧画面の種類)。
+ * 【C++】RingCategory (src/cpp/src/history.hpp)
+ */
 int is_str(int f_M, int *n_bp)/*usilic*/
 {
   int n_ll;
@@ -947,6 +1149,10 @@ int is_str(int f_M, int *n_bp)/*usilic*/
   return n_ll;
 }  
   
+/*
+ * 【機能】モード(f_M)に対応する候補・履歴(LIST)の番号と、表示領域の番号(*n_bp)を返す。
+ * 【C++】RingCategory (src/cpp/src/history.hpp)
+ */
 int is_list(int f_M, int *n_bp)/*usilic*/
 {
   int n_ll;
@@ -993,11 +1199,20 @@ int is_list(int f_M, int *n_bp)/*usilic*/
   
 static char pty_err[128] = "";
 
+/*
+ * 【機能】擬似端末を開けなかった理由の文字列を返す(記録が無ければ`unknown reason`)。
+ * 【C++】Shell::start (src/cpp/src/shell.cpp)
+ */
 char *pty_strerror(void)/*usilic*/
 {
   return pty_err[0] ? pty_err : "unknown reason";
 }
 
+/*
+ * 【機能】擬似端末を開く。POSIX(Unix98)のAPIで、スレーブのパス(Linuxの`/dev/pts/N`、macOSの`/dev/ttysNNN`)を
+ *       strへ返す。f_openで、開くか、名前だけかを切り替える。
+ * 【C++】Shell::start (src/cpp/src/shell.cpp)
+ */
 int open_pty(char str[], int f_open)/*usilic*/
 {
   /*
@@ -1040,6 +1255,10 @@ int open_pty(char str[], int f_open)/*usilic*/
   return 1;
 }
 
+/*
+ * 【機能】整数(モード番号)のバイト順を入れ替えて、文字列にする(モードのスタックの名前の照合用)。
+ * 【C++】なし(C++はモードを列挙型で持つ)
+ */
 u_char *mtoa(int f_M)/*usilic*/
 { /* m.iの順序を入れ替える */
   union {
@@ -1055,6 +1274,10 @@ u_char *mtoa(int f_M)/*usilic*/
   return cstr;
 }
 
+/*
+ * 【機能】バッファを、制御文字を反転表示にしながら描く(入力欄など)。
+ * 【C++】ContentView::renderLine (src/cpp/src/content_view.cpp)
+ */
 void print_buff(u_char buff[], int kanji_s)/*usilic*/
 { /* 制御文字を反転属性で表示する */
   int c, i, len, kanji_e;
@@ -1090,6 +1313,10 @@ void print_buff(u_char buff[], int kanji_s)/*usilic*/
   if (kanji_e) vt_putchar(' ');
 }
 
+/*
+ * 【機能】文字列の制御文字を、接頭文字ccと`X@`の形(`^A`など)に直す。
+ * 【C++】ContentView::renderLine (src/cpp/src/content_view.cpp)
+ */
 void print_ctrl(int cc, u_char str[])/*usilic*/
 {
   int c, i, j;
@@ -1104,6 +1331,10 @@ void print_ctrl(int cc, u_char str[])/*usilic*/
   strcpy(str, p);
 }
 
+/*
+ * 【機能】作業ファイル(w、mess、enter、intr、pid、error等)を削除する(終了処理)。
+ * 【C++】main (src/cpp/app/main.cpp)
+ */
 void unlink_file()/*usilic*/
 {
   unlink(s_S(S_w));
@@ -1117,6 +1348,11 @@ void unlink_file()/*usilic*/
   }
 }
 
+/*
+ * 【機能】プロセスIDを、pidファイル(S_pid)へ書く。
+ * 【C++】main (src/cpp/app/main.cpp)
+ * 【備考】C++は~/.usilic/pidに書き、引数なしの多重起動の乗っ取りに使う。
+ */
 void print_pid(int pid)/*usilic*/
 {
   FILE *fp = fopen(s_S(S_pid), "w");
@@ -1124,6 +1360,10 @@ void print_pid(int pid)/*usilic*/
   fclose(fp);
 }
 
+/*
+ * 【機能】整数の表(tab、0で終わり)の中にuがあれば、その値を返す(無ければ0)。
+ * 【C++】なし(C++は標準ライブラリで足りる)
+ */
 int strint(int tab[], int u)/*usilic*/
 {
   int i;
@@ -1132,6 +1372,11 @@ int strint(int tab[], int u)/*usilic*/
   return tab[i];
 }
 
+/*
+ * 【機能】モード(f_M)が、CP/MV/RM/ARC等の、複数選択して実行するモード(f_comm=0)か、その入力・確認の段階
+ *       (f_comm=1)かを判定して、対応するモード番号を返す。
+ * 【C++】Application::startCopyPrompt; Application::startMovePrompt; Application::startRemovePrompt; Application::startArchivePrompt (src/cpp/src/application.cpp)
+ */
 int is_comm(int f_M, int f_comm)/*usilic*/
 {
   switch(f_comm) {
@@ -1205,6 +1450,11 @@ int is_comm(int f_M, int f_comm)/*usilic*/
   return f_M;
 }
 
+/*
+ * 【機能】設定に、外部プログラム(s_i)が登録されているかを確認し、なければ`Not installed`のエラーを出してNULLを
+ *       返す。
+ * 【C++】Configuration::commandFor (src/cpp/src/configuration.cpp)
+ */
 CHILD *check_chp(int s_i)/*usilic*/
 {
   CHILD *chp;
@@ -1219,6 +1469,10 @@ CHILD *check_chp(int s_i)/*usilic*/
   return chp;
 }
 
+/*
+ * 【機能】保存しておいた内容(save_stderr)を、標準エラーへ出す(端末を戻した後)。err0を渡すと、内容を設定する。
+ * 【C++】main (src/cpp/app/main.cpp)
+ */
 void print_stderr(char *err0)/*usilic*/
 {
   static char err[N_line];
@@ -1236,6 +1490,10 @@ void print_stderr(char *err0)/*usilic*/
   unlink(err);
 }
  
+/*
+ * 【機能】モード(f_M)が、ls形式の一覧(DIR、DU、FILE/DIRの選択、履歴等)かどうかを返す。
+ * 【C++】DirectoryEntry (src/cpp/src/directory_mode.hpp)
+ */
 int is_ls(int f_M)/*usilic*/
 {
   switch(f_M) {
@@ -1250,6 +1508,10 @@ int is_ls(int f_M)/*usilic*/
   return 0;
 }
 
+/*
+ * 【機能】HELPファイルの名前(文字コードに応じて、英語版・日本語版)を選んで覚える。cpがF13なら解放する。
+ * 【C++】Application::startHelp (src/cpp/src/application.cpp); expandHelpMarkup (src/cpp/src/help_text.cpp)
+ */
 char *set_help(char *cp)/*usilic*/
 {
   static char *help;
