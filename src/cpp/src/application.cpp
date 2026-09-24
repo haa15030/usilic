@@ -9954,7 +9954,18 @@ bool Application::feedPromptByteInner(int byte) {
     // 絞られている。completeFilesystemPath()自身はディレクトリの候補に
     // 常に末尾"/"を付ける(このファイル冒頭の一覧表示との既存の慣習)
     // ので、ご提案通りそれだけを目印に除外すれば足りる。
-    if (promptKind_ == PromptKind::RecentFile) {
+    // 2026-09-24修正、直接のユーザー報告("^Xf^I（履歴一覧無しFILEで
+    // 補完）で通常ファイルのみ、にならない"): フォローアップ11時点では
+    // "^Xf"をRecentFile(^X^F)の書き間違いと誤読しており、この除外を
+    // RecentFileだけに適用していた。実際には履歴一覧の無いFILE入力
+    // (PathInput、pathInputIsDirectory_==false、K-45)自体が要望の対象
+    // だった――wholeFieldKind側(Tab確定時の即時submit)には後日別途
+    // PathInputが追加されていたが、この「ディレクトリ除外」フィルタ側
+    // への追加が抜けていたため、症状(ディレクトリ候補が混ざる)が
+    // 残っていた。RecentDirectory/ArchiveDestination(directoriesOnly側)
+    // と対称的に、PathInputがFILE用途の時もここに含める。
+    if (promptKind_ == PromptKind::RecentFile ||
+        (promptKind_ == PromptKind::PathInput && !pathInputIsDirectory_)) {
       candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
                                        [](const std::string &c) { return !c.empty() && c.back() == '/'; }),
                         candidates.end());

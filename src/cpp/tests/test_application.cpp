@@ -4158,6 +4158,46 @@ TEST_CASE_FIXTURE(Fixture, "LIST: the opened (ambiguous) candidate list within R
   CHECK(app.fileMode().currentFile() == items.front());
 }
 
+// 2026-09-24追加、直接のユーザー報告("^Xf^I（履歴一覧無しFILEで補完）で
+// 通常ファイルのみ、にならない"): フォローアップ11のRecentFile(^X^F)向け
+// 除外はPathInput(^X f、履歴一覧の無いFILE)には適用されていなかった
+// ――上のRecentFile向けテストと対称的に、PathInputでも同じ除外が効くこと
+// を確認する。
+TEST_CASE_FIXTURE(Fixture, "PathInput (^X f, no history list): Tab-completion excludes directories, "
+                           "offering only regular files, and auto-opens the file once Tab resolves "
+                           "it unambiguously") {
+  REQUIRE(app.start(path()));
+  std::ofstream(root / "pathinputmix_alpha.txt") << "a\n";
+  fs::create_directories(root / "pathinputmix_beta");  // a directory sharing the same prefix
+
+  REQUIRE(app.handleCommand(Command::StartFileInput));
+  feedText((root / "pathinputmix_").string());
+
+  app.feedByte(0x09, std::nullopt);
+  CHECK(app.currentMode() == ApplicationMode::File);
+  CHECK(app.fileMode().currentFile() == (root / "pathinputmix_alpha.txt").string());
+}
+
+TEST_CASE_FIXTURE(Fixture, "PathInput (^X f, no history list): the opened (ambiguous) candidate "
+                           "list excludes directories too, not just the direct/unambiguous "
+                           "completion path") {
+  REQUIRE(app.start(path()));
+  std::ofstream(root / "pathinputmix2_alpha.txt") << "a\n";
+  std::ofstream(root / "pathinputmix2_beta.txt") << "b\n";
+  fs::create_directories(root / "pathinputmix2_gamma");  // a directory sharing the same prefix
+
+  REQUIRE(app.handleCommand(Command::StartFileInput));
+  feedText((root / "pathinputmix2_").string());
+
+  app.feedByte(0x09, std::nullopt);
+  REQUIRE(app.feedByte(0x09, std::nullopt));  // still ambiguous (alpha/beta) -> opens the LIST
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+
+  const auto &items = app.listBrowserMode().items();
+  REQUIRE(items.size() == 2);  // NOT 3 -- the directory must not be among them
+  for (const auto &item : items) CHECK((item.empty() || item.back() != '/'));
+}
+
 // 2026-09-19追加(フォローアップ12, real report: "DIRではカレント以外を
 // 選んでもカレント"): completing to a directory OTHER than the current
 // one must actually navigate there, not silently stay put.
@@ -8316,9 +8356,18 @@ TEST_CASE_FIXTURE(Fixture, "feedByte: ^X f prompt, selecting from an opened (amb
 
   REQUIRE(app.feedByte(0x0d, std::nullopt));  // selects it -- must actually open/navigate, not just fill
                                                // in and leave the SAME original (ls) untouched
+  // 2026-09-24修正、直接のユーザー報告("^Xf^I（履歴一覧無しFILEで補完）
+  // で通常ファイルのみ、にならない")の修正に伴う訂正: この一覧から
+  // ディレクトリが除外されるようになったため、このFixtureのroot直下
+  // では先頭候補が(ディレクトリではなく)`archive.tar`になり得る――
+  // これはArchiveMode(拡張子による自動判定)で開かれるので、File/
+  // Directoryのどちらでもない。この doctest自体の主旨(「選択したら
+  // 実際に何か開く/移動する、元の(ls)のまま止まらない」)には
+  // Archiveも合致するので、判定にこの分岐を加える。
   bool opened = (app.currentMode() == ApplicationMode::File && app.fileMode().currentFile() == chosen) ||
                 (app.currentMode() == ApplicationMode::Directory &&
-                 app.directoryMode().currentDirectory() == chosen);
+                 app.directoryMode().currentDirectory() == chosen) ||
+                (app.currentMode() == ApplicationMode::Archive && app.archiveMode().currentArchive() == chosen);
   CHECK(opened);
 }
 
