@@ -1806,6 +1806,18 @@ std::string Application::currentResumableName() const {
 
 bool Application::startResumingSession(const std::string &lastOpenName, const std::string &fallbackDirectory,
                                         bool consultHistory) {
+  // 2026-09-25追加、直接のユーザー報告("INFOで^X^C^Mすると次回起動時
+  // INFOではなく~/.usilic/usilic（平文テキスト）が表示される"): INFOは
+  // bannerFilePath()へ書き出した合成ファイルをFILEモードで見せている
+  // だけなので、INFO表示中に終了するとcurrentResumableName()がその
+  // パスを返し、次回はただのテキストとして開き直されていた。ここで
+  // 見分け、戻り先ディレクトリ(直近のディレクトリ、lastOpenNameが空の
+  // 場合と同じ扱い)を開いてからINFOを作り直す。
+  if (!lastOpenName.empty() && lastOpenName == bannerFilePath()) {
+    if (!startResumingSession("", fallbackDirectory, consultHistory)) return false;
+    executeShowUsilicBanner();
+    return true;
+  }
   std::error_code ec;
   if (!lastOpenName.empty() && std::filesystem::is_regular_file(lastOpenName, ec) && !ec) {
     std::string parent = std::filesystem::path(lastOpenName).parent_path().string();
