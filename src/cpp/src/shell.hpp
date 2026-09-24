@@ -410,28 +410,36 @@ class Shell {
   int promptGeneration() const;
 
   // 2026-09-24追加、直接のユーザー報告("bash^M以後、プロンプトが
-  // haa15030@mpi:~$になる。^Mを押さないとそれが出ない"): 対話的な
-  // 子シェル(例えば`bash`)を起動すると、多くの場合その子自身の
-  // ~/.bashrc等がPS1をmarkerPrefix_を含まない値で上書きしてしまう
-  // ――結果、processOutputBytes()のマーカー一致は二度と起きず、
-  // handlePromptDetected()(flushPendingLine()/pipeBuffer_.flush()の
-  // 唯一の呼び出し元)も呼ばれない。新プロンプトのバイト列は改行で
-  // 終端されない(端末は入力を待つ間、行末に改行を送らない)ため、
-  // appendBodyByte()自身のpendingLine_に溜まったまま、次にユーザーが
-  // 何か打ってEnterを押し、その`\r\n`エコーがpendingLine_を「完成」
-  // させるまで一切画面に出なかった(報告通りの症状)。
+  // haa15030@mpi:~$になる。^Mを押さないとそれが出ない")+訂正報告
+  // ("プロンプトは出るんだが同時に改行も起きるため「~$」の右隣への
+  // 入力にならない"): 対話的な子シェル(例えば`bash`)を起動すると、
+  // 多くの場合その子自身の~/.bashrc等がPS1をmarkerPrefix_を含まない
+  // 値で上書きしてしまう――結果、processOutputBytes()のマーカー
+  // 一致は二度と起きず、handlePromptDetected()も呼ばれない。新
+  // プロンプトのバイト列は改行で終端されない(端末は入力を待つ間、
+  // 行末に改行を送らない)ため、appendBodyByte()自身のpendingLine_に
+  // 溜まったまま画面に一切出なかった(1回目の報告)。
+  // 最初の修正はpendingLine_をpipeBuffer_へ強制feedしていたが、
+  // pipeBuffer_/scrollback_は「閉じた行」のモデルであり、閉じた行の
+  // 直後には常に新しい(空の)生きた入力行が続く――本物のプロンプト
+  // (行末に改行が来ない、カーソルはまさにその文字列の右隣に留まる)
+  // を、閉じた行として描くと、必然的にその下へ改行してしまう(2回目の
+  // 報告)。正しい経路は、handlePromptDetected()が使うのと同じ
+  // 「生きたプロンプト行」(promptPlain_/promptDecorated_+
+  // redrawPromptRow())で、まさにこのpendingLine_の「今の」内容を仮に
+  // 表示することであり、pipeBuffer_には一切触れない(pendingLine_は
+  // クリアしない――appendBodyByte()側のtentativeLivePrompt_自身の
+  // コメント参照)。
   // onPtyReadable()を呼ぶapp/main.cpp自身のpollループが、この
   // タイムアウト(ready<=0、真にPTYが静かになった瞬間)を既に検出
-  // できるので、そこから呼ばれる想定――マーカー一致を待たずに、
-  // 溜まったままの未確定行を「今分かっている内容」として仮に確定
-  // させる。handlePromptDetected()自身と全く同じ3呼び出し
-  // (flushPendingLine()→pipeBuffer_.flush()→flushNewScrollbackLines())
-  // だが、プロンプト自身のメタデータ(promptPlain_/currentDirectory_
-  // 等)は更新しない――「マーカーを検出した」わけではないため、
-  // そちらは引き続き本物のマーカー一致でしか更新されない(モード
-  // ラインのプロンプト表示は古いまま残るが、内容自体はもう画面に
-  // 出ている状態になる)。pendingLine_が空ならno-op(毎回のidle
-  // tickで呼んでも安価)。
+  // できるので、そこから呼ばれる想定。
+  //
+  // ちなみに、PTY自体から「子が今まさに入力待ちで止まっている」ことを
+  // 直接・確実に知る移植可能な手段は無い(だからこそこのプロジェクトは
+  // そもそもPS1へマーカーを埋め込むという手法を取っている――
+  // expect/pexpect等の端末自動化ツールが軒並み出力のパターンマッチに
+  // 頼るのと同じ理由)。ここでの「idle」はあくまで「一定時間(100ms)
+  // 新しいバイトが来ない」という間接的な推測に過ぎない。
   void flushIdleOutput();
 
  private:
@@ -515,6 +523,16 @@ class Shell {
   PipeBuffer pipeBuffer_;
   std::string pendingLine_;  // appendBodyByte()自身の行組み立てバッファ、自身のコメント参照
   bool sawBareCr_ = false;   // appendBodyByte()自身のCR対CRLFの先読みフラグ
+  // flushIdleOutput()自身の宣言コメント参照: pendingLine_を(クリア
+  // せずに)promptPlain_/promptDecorated_へ「仮に」ミラーして生きた
+  // プロンプト行として描いた状態かどうか。trueの間、appendBodyByte()
+  // 側でpendingLine_が本物の改行で閉じられたら(=仮定が誤りで、実は
+  // まだ続く通常の出力行だったと判明)、retireTentativeLivePrompt()で
+  // promptPlain_/promptDecorated_を空へ戻す――そうしないと、今や
+  // 1つ上の(閉じた)scrollback行として確定した内容が、その下の生きた
+  // プロンプト行にも重複して居座ってしまう。
+  bool tentativeLivePrompt_ = false;
+  void retireTentativeLivePrompt();  // 自身の宣言コメント(tentativeLivePrompt_)参照
   ContentView scrollback_;
   bool historyBrowsing_ = false;  // historyBrowsing()自身の宣言コメント参照
   // submitLine()自身の2026-09-06追加分のコメント参照――平文の

@@ -611,9 +611,11 @@ void Shell::appendBodyByte(unsigned char c) {
       pendingLine_.push_back('\n');
       pipeBuffer_.feed(pendingLine_);
       pendingLine_.clear();
+      retireTentativeLivePrompt();
       return;
     }
     pendingLine_.clear();
+    retireTentativeLivePrompt();
     // フォールスルー: `c`自体はまだ以下で処理する必要がある
   }
   if (c == '\r') {
@@ -628,7 +630,16 @@ void Shell::appendBodyByte(unsigned char c) {
   if (c == '\n') {
     pipeBuffer_.feed(pendingLine_);
     pendingLine_.clear();
+    retireTentativeLivePrompt();
   }
+}
+
+// tentativeLivePrompt_自身の宣言コメント(shell.hpp)参照。
+void Shell::retireTentativeLivePrompt() {
+  if (!tentativeLivePrompt_) return;
+  tentativeLivePrompt_ = false;
+  promptPlain_.clear();
+  promptDecorated_.clear();
 }
 
 // pendingLine_に蓄積された部分的な(まだ改行で終端されていない)行
@@ -643,12 +654,18 @@ void Shell::flushPendingLine() {
   pendingLine_.clear();
 }
 
-// 自身の宣言コメント(shell.hpp)参照。
+// 自身の宣言コメント(shell.hpp)参照。pendingLine_はクリアしない
+// (tentativeLivePrompt_自身のコメント参照――まだ続く通常の出力行
+// だった場合、appendBodyByte()側が改行到達時に正しく後始末する)。
 void Shell::flushIdleOutput() {
   if (pendingLine_.empty()) return;
-  flushPendingLine();
-  pipeBuffer_.flush();
-  flushNewScrollbackLines();
+  if (tentativeLivePrompt_ && pendingLine_ == promptPlain_) return;  // 前回描画から変化無し
+  awaitingRealPrompt_ = false;  // handlePromptDetected()自身の同名の代入と同じ理由
+  promptPlain_ = pendingLine_;
+  promptDecorated_ = pendingLine_;  // 確証の無い推測なので、usilic-1.5b:のような装飾は付けず生のバイト列のまま
+  tentativeLivePrompt_ = true;
+  updateCommandLineField();
+  redrawPromptRow();
 }
 
 void Shell::flushNewScrollbackLines() {
@@ -789,6 +806,7 @@ void Shell::resetSessionState() {
   scrollback_.setLines({});
   commandLine_.setText("");
   awaitingRealPrompt_ = false;  // 自身の宣言コメント参照、新しいセッションは常に真っ新から始まる
+  tentativeLivePrompt_ = false;  // 同上
 }
 
 int Shell::promptGeneration() const { return promptGeneration_; }
@@ -800,6 +818,10 @@ void Shell::handlePromptDetected(const std::string &tailBeforeMark) {
   // 確認できたので、submitLine()自身が空欄のままにしていた行を、
   // このすぐ下のredrawPromptRow()が正しい内容で描き直す。
   awaitingRealPrompt_ = false;
+  // 本物のマーカー一致による確定なので、flushIdleOutput()自身の
+  // 仮の推測(tentativeLivePrompt_)はもう無関係――以下で無条件に
+  // promptPlain_/promptDecorated_を上書きするので、フラグだけ戻す。
+  tentativeLivePrompt_ = false;
   // シェル自身の\w(bash)/%~(csh)展開に、そのリテラルなプロンプト
   // 文字('$'/'#'/'%')と1つの空白が続く――クリーンなディレクトリ
   // 文字列を取り戻すため、その末尾の2バイトを取り除く。これは、

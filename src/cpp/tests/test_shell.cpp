@@ -465,21 +465,28 @@ TEST_CASE("processOutputBytes: a marker split across two feed() calls is still r
 }
 
 // 2026-09-24追加、直接のユーザー報告("bash^M以後、プロンプトが
-// haa15030@mpi:~$になる。^Mを押さないとそれが出ない"): 対話的な子
-// シェル(`bash`)が~/.bashrc等でPS1をpromptMarkを含まない値へ完全に
-// 上書きすると、processOutputBytes()のマーカー一致は二度と起きず
-// (このテストの合成バイト列に一切"<M>"が現れないのがその再現)、
-// 新しいプロンプト(改行で終端されない)はpendingLine_に溜まったまま
-// 画面に一切出なかった――flushIdleOutput()(app/main.cppのpoll()
-// タイムアウト/GUIフレームループのidle検出から呼ばれる)が、マーカー
-// 一致を待たずにこの未確定行を仮確定させることを確認する。
+// haa15030@mpi:~$になる。^Mを押さないとそれが出ない")+訂正報告
+// ("プロンプトは出るんだが同時に改行も起きるため「~$」の右隣への
+// 入力にならない"): 対話的な子シェル(`bash`)が~/.bashrc等でPS1を
+// promptMarkを含まない値へ完全に上書きすると、processOutputBytes()の
+// マーカー一致は二度と起きず(このテストの合成バイト列に一切"<M>"が
+// 現れないのがその再現)、新しいプロンプト(改行で終端されない)は
+// pendingLine_に溜まったまま画面に一切出なかった。flushIdleOutput()
+// (app/main.cppのpoll()タイムアウト/GUIフレームループのidle検出から
+// 呼ばれる)が、マーカー一致を待たずにこの未確定行を「生きたプロン
+// プト行」として仮に表示することを確認する――scrollback_(閉じた行の
+// モデル)には一切触れない(そちらへ流すと閉じた行の直後に必ず新しい
+// 空行が続いてしまい、「~$」の右隣ではなくその下へ入力することに
+// なってしまう、というのがまさに訂正報告の症状だった)。
 TEST_CASE("flushIdleOutput: a prompt with NO marker (PS1 overwritten by a nested shell's rc file) "
-          "still becomes visible once the PTY goes idle, without needing a marker match") {
+          "becomes visible as the LIVE prompt row (not a closed scrollback line) once the PTY goes "
+          "idle, so input still lands right after it on the same row") {
   RecordingDisplay d(24, 80);
   ShellOptions options;
   options.promptMark = "<M>";
   options.programName = "prog";
   Shell shell(d, options);
+  int promptRow = 24 - 2;  // Shell::commandLineRow()自身の定数と同じ計算
 
   // No "<M>" anywhere -- simulates bash's own default PS1 (e.g.
   // "user@host:~$ ") replacing usilic's synthetic PS1 entirely, and
@@ -487,10 +494,11 @@ TEST_CASE("flushIdleOutput: a prompt with NO marker (PS1 overwritten by a nested
   // line.
   shell.processOutputBytes("user@host:~$ ");
   CHECK(shell.scrollback().lines().empty());  // reproduces the bug: invisible so far
+  CHECK(d.rowText(promptRow).find("user@host:~$") == std::string::npos);
 
   shell.flushIdleOutput();
-  REQUIRE(shell.scrollback().lines().size() == 1);
-  CHECK(shell.scrollback().lines()[0].text == "user@host:~$ ");
+  CHECK(d.rowText(promptRow).find("user@host:~$ ") == 0);  // the live row itself, not a scrollback line
+  CHECK(shell.scrollback().lines().empty());  // still no closed line -- no implied newline below it
 }
 
 TEST_CASE("flushIdleOutput: is a no-op when there is no pending unterminated line") {
@@ -506,6 +514,33 @@ TEST_CASE("flushIdleOutput: is a no-op when there is no pending unterminated lin
   shell.flushIdleOutput();  // nothing pending -- must not duplicate or alter the existing line
   REQUIRE(shell.scrollback().lines().size() == 1);
   CHECK(shell.scrollback().lines()[0].text == "complete line");
+}
+
+// The tentative guess can be wrong -- e.g. a program legitimately
+// pauses mid-line for over 100ms before continuing the SAME line and
+// eventually terminating it with '\n'. Confirms the tentative live
+// row gets correctly retired (not left duplicated) once that happens.
+TEST_CASE("flushIdleOutput: a tentative guess that turns out wrong (more bytes complete the SAME "
+          "line with a real newline) is retired from the live row once it becomes a closed "
+          "scrollback line instead") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.promptMark = "<M>";
+  options.programName = "prog";
+  Shell shell(d, options);
+  int promptRow = 24 - 2;
+
+  shell.processOutputBytes("partial outp");
+  shell.flushIdleOutput();
+  CHECK(d.rowText(promptRow).find("partial outp") == 0);
+  CHECK(shell.scrollback().lines().empty());
+
+  // Turns out it wasn't a prompt after all -- more of the SAME line
+  // arrives, terminated normally.
+  shell.processOutputBytes("ut, delayed\n");
+  REQUIRE(shell.scrollback().lines().size() == 1);
+  CHECK(shell.scrollback().lines()[0].text == "partial output, delayed");
+  CHECK(d.rowText(promptRow).find("partial outp") == std::string::npos);  // retired, not left stale
 }
 
 TEST_CASE("processOutputBytes: a runaway prompt tail with no closing mark eventually gives up") {
