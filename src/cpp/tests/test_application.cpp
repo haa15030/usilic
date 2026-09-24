@@ -7898,6 +7898,43 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): also reaches an ordin
   CHECK(app.fileMode().currentFile() == path() + "plain.txt");
 }
 
+// 2026-09-24追加、直接のユーザー報告("^J^Jでカーソル位置が保存され
+// ない。^Vでスクロールしたのち^J^Jしてもスクロール前の位置になる"):
+// openRecentFileEntry()自身の2026-09-24修正のコメント参照――離れる
+// 前のFileモード自身のカーソル位置をsaveCursorPosition()で保存する
+// 呼び出しが、goToRecentFile()(^J^J)が共有するこの経路にだけ
+// 抜けていた。PageDownでスクロールした後に^J^Jで離れ、もう一度^J^Jで
+// 戻った時、スクロール後の位置が正しく復元されることを確認する。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): a scrolled cursor position (^V/PageDown) "
+                           "is preserved across a round trip through ^J^J, not reset to where it "
+                           "was before scrolling") {
+  { std::ofstream f(root / "manylines.txt"); for (int i = 0; i < 200; i++) f << "line " << i << "\n"; }
+  REQUIRE(app.start(path()));
+
+  int idxB = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxB) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // open plain.txt (B)
+  REQUIRE(app.handleCommand(Command::Back));
+
+  int idxA = indexOf("manylines.txt");
+  REQUIRE(app.handleCommand(Command::GoToTop));
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));  // open manylines.txt (A) -- ring: [plain.txt, manylines.txt]
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+  REQUIRE(app.activeView().cursorIndex() == 0);
+
+  REQUIRE(app.handleCommand(Command::PageDown));
+  int scrolledPos = app.activeView().cursorIndex();
+  REQUIRE(scrolledPos > 0);  // genuinely moved, not a no-op on this 200-line file
+
+  REQUIRE(app.handleCommand(Command::GoToRecentFile));  // A -> B (^J^J, first hop)
+  REQUIRE(app.fileMode().currentFile() == path() + "plain.txt");
+
+  REQUIRE(app.handleCommand(Command::GoToRecentFile));  // B -> A again (^J^J, second hop)
+  REQUIRE(app.fileMode().currentFile() == path() + "manylines.txt");
+  CHECK(app.activeView().cursorIndex() == scrolledPos);  // NOT back to 0
+}
+
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): false when nothing has ever been opened this "
                            "session yet") {
   REQUIRE(app.start(path()));

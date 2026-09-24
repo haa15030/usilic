@@ -5517,6 +5517,24 @@ bool Application::openSelectedListEntry() {
 // openSelectedEntry()自身の「アーカイブを先に、ファイルをフォール
 // バックとして」という順序を正確に反映している。
 bool Application::openRecentFileEntry(const std::string &path) {
+  // 2026-09-24追加、直接のユーザー報告("^J^Jでカーソル位置が保存
+  // されない。^Vでスクロールしたのち^J^Jしてもスクロール前の位置に
+  // なる"): openSelectedArchiveEntry()自身の2026-08-27修正・
+  // executeArchiveExtract()自身の2026-08-27修正(すぐ下)と全く同じ
+  // 抜け――離れる前のFile/Archive自身のカーソル位置を保存しておか
+  // ないと、loadFile()/loadArchive()側のhistory_.positionFor()問い
+  // 合わせは「前回この関数を通って離れた時点」の古い位置しか知らず、
+  // その間にPageDown等でcursorIndex_が進んでいても反映されない。
+  // goToRecentFile()(^J^J)だけでなく、このopenRecentFileEntry()自体
+  // を共有する全ての呼び出し元(^X^F自身のListBrowser選択・プロンプト
+  // 直接入力・TUTORIAL画面等)に対して、ここ1箇所で一元的に直す
+  // ――どの経路でも「今File/Archiveにいるなら、離れる前に保存する」
+  // という条件は同じであるため。
+  if (currentMode_ == ApplicationMode::File) {
+    fileMode_.saveCursorPosition();
+  } else if (currentMode_ == ApplicationMode::Archive || currentMode_ == ApplicationMode::ArchiveContent) {
+    archiveMode_.saveCursorPosition();
+  }
   // 2026-09-20追加、直接のユーザー依頼(QUICK.txt自身のC-j bの説明
   // "後述[FILE]によるアクセス履歴一覧では「ファイル名 "文字列"」で
   // 表示され、選択すると文字列行の目次一覧画面となる"): executeCut()
