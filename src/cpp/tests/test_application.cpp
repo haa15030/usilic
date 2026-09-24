@@ -6712,6 +6712,11 @@ TEST_CASE_FIXTURE(Fixture, "LOG (ESC l): splits the current SHELL log on \"usili
 // not just renamed.
 TEST_CASE_FIXTURE(Fixture, "INFO banner (^I, K-0): shows a status screen with the new Boot options/Startup "
                            "file/ERROR/SHELL/WORK field layout") {
+  // Startup fileは実在するusilicrcを指す(Application::startupFilePath()
+  // 参照)ので、~/.usilic/usilicrcを用意しておかないと実機の
+  // /usr/local/lib/usilic/usilicrc等へフォールバックしてしまう。
+  std::filesystem::create_directories(root / ".usilic");
+  { std::ofstream(root / ".usilic" / "usilicrc") << "\n"; }
   REQUIRE(app.start(path()));
   CHECK(app.feedByte(0x09, std::nullopt));  // ^I
   CHECK(app.currentMode() == ApplicationMode::File);

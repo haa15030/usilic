@@ -7583,6 +7583,16 @@ bool Application::executeStartLog() {
 // タンスが今使っているものはこれ」という枠組みが対象とするインス
 // タンスごとの成果物ではなく、User nameはこの回のどんな報告にも
 // 一度も言及されなかった。
+std::string Application::startupFilePath() const {
+  std::string home = std::filesystem::path(usilicrcPath_).parent_path().parent_path().string();
+  for (const std::string &candidate :
+       {usilicrcPath_, home + "/.local/lib/usilic/usilicrc", std::string("/usr/local/lib/usilic/usilicrc")}) {
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(candidate, ec)) return candidate;
+  }
+  return usilicrcPath_;
+}
+
 std::string Application::bannerFilePath() const {
   return std::filesystem::path(usilicrcPath_).parent_path().string() + "/usilic";
 }
@@ -7714,7 +7724,7 @@ bool Application::executeShowUsilicBanner() {
 
   std::ostringstream banner;
   banner << field("Boot options") << bootOptions_ << "\n";
-  banner << field("Startup file") << usilicrcPath_ << "\n";
+  banner << field("Startup file") << startupFilePath() << "\n";
   banner << field("ERROR") << errorLogPath_ << "\n";
   banner << field("SHELL") << logFilePath_ << "\n";
   banner << field("TUTORIAL") << tutorialPath_ << "\n";
@@ -7938,7 +7948,7 @@ bool Application::openSelectedBannerEntry() {
   // ――openTutorial()自身のコメント参照(2026-09-20、^T単独キーとの
   // 共有のため括り出した)。
   if (endsWith(tutorialPath_)) return openTutorial();
-  for (const std::string &fixedPath : {usilicrcPath_, errorLogPath_, logFilePath_}) {
+  for (const std::string &fixedPath : {startupFilePath(), errorLogPath_, logFilePath_}) {
     if (!endsWith(fixedPath)) continue;
     // 2026-08-27修正、実際の報告("^T→「/tmp/.usilic.NNNNN/shell」
     // [return]→反応なし（ファイルコピーがSHELLで行われたのに）"):
@@ -13537,6 +13547,22 @@ bool Application::handleMouseClick(int row, int column) {
   // 理由でisColumnWithinRowText()(上限のみ)を使う――セグメントの
   // ラベルはls形式のパーミッション/サイズ/日付列を持たない、単純な
   // 1列のテキストなので。
+  // 2026-09-25追加、直接のユーザー報告("^I（INFO）ではハイライトを
+  // クリックしても開かない"): INFOはFILEモード上のバナー(bannerFilePath()
+  // を読み込んだfileView_)として実装されているが、ここにFile分岐が
+  // 無かった――上のDu/Cut分岐自身のコメントと同じ種類の欠落。バナー
+  // 表示中に限り、開けない行(neverHighlighted、Boot options等)を除いて
+  // Directory等と同じ「1回目で選択、2回目で開く」にする。
+  if (currentMode_ == ApplicationMode::File && fileMode_.currentFile() == bannerFilePath()) {
+    int idx = fileView_.lineIndexAtRow(row);
+    if (idx < 0) return false;
+    if (fileView_.lines()[idx].neverHighlighted) return false;
+    if (!fileView_.isColumnWithinRowText(idx, column)) return false;
+    if (idx == fileView_.cursorIndex()) return openSelectedBannerEntry();
+    fileView_.setCursorIndex(idx);
+    fileView_.redraw();
+    return true;
+  }
   if (currentMode_ == ApplicationMode::Cut) {
     int idx = cutView_.lineIndexAtRow(row);
     if (idx < 0) return false;

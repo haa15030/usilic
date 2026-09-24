@@ -2416,6 +2416,14 @@ class Application {
   // ドとして「/tmp/.usilic.<pid>/」を漏らすだけだった)。専用の
   // メンバーではなく、usilicrcPath_自身のディレクトリを共有する。
   std::string bannerFilePath() const;
+  // 2026-09-25追加、直接のユーザー報告("Startup file:のusilicrcは
+  // -c起動でも無反応"): INFOの「Startup file」行に出す/開くパス。
+  // usilicrcPath_(~/.usilic/usilicrc)は~/.usilic自体の所在(saved/や
+  // バナーの置き場所)を求めるためにも使われるので書き換えず、起動時に
+  // main.cppが実際に読むのと同じ順(~/.usilic/usilicrc →
+  // ~/.local/lib/usilic/usilicrc → /usr/local/lib/usilic/usilicrc)で
+  // 最初に実在するものを返す。どれも無ければusilicrcPath_。
+  std::string startupFilePath() const;
   // K-0/^T自身のWORK/ARC候補一覧の選択(2026-08-18): 元の仕様自身の
   // モックアップは、WORK/arc.N行に
   // "[hit highlighted string][returns to the usilic screen]"と注釈
