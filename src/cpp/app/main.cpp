@@ -1889,6 +1889,12 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   // would otherwise leave stale renderScrolled() output on screen
   // forever -- see the render-mode branch below).
   bool wasActivelyScrolling = false;
+  // 2026-09-25追加、renderScrolled()へ渡す行バッファ――下のレンダ分岐
+  // 自身のコメント参照。フレームをまたいで使い回し、実際に中身を
+  // 詰めたのは[scrolledFilledBegin, scrolledFilledEnd)だけ。
+  std::vector<fm::Display::ScrolledLine> scrolledLines;
+  int scrolledFilledBegin = 0;
+  int scrolledFilledEnd = 0;
   // Rolling window of recent Motion samples, trimmed to the last
   // ~150ms -- summed at ButtonUp to get the "cursor movement at the
   // moment you let go" release distance cb's own speed control used.
@@ -2035,7 +2041,23 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // オープンまで進む――ユーザーの言う「統合」そのもの。
         int row = click->row;
         int column = click->column;
+        // 2026-09-25追加、直接のユーザー要望("マウスで慣性スクロールを
+        // 停止「だけ」する手段がない。画面左端のようにハイライト範囲外
+        // で左クリックすればスクロールが停止する機能を実装してほしい"):
+        // 上の「統合」はコースト中の押下を常にハイライト行のオープンへ
+        // 差し替えていたため、止めるだけの手段が無くなっていた。生の
+        // 押下位置が、その位置にある行自身のハイライト範囲
+        // (isColumnWithinLineScope()、lsの権限/サイズ/日付の左マージンや
+        // 短いエントリ名の後ろの空白は範囲外)に入っていなければ、
+        // 押下(ButtonDown)でコーストが止まった時点で役目は終わりとし、
+        // クリックは実行しない。
+        bool stopOnly = false;
         if (clickInterruptedCoast) {
+          fm::ContentView &v = app.activeContentView();
+          int rawIdx = v.lineIndexAtRow(click->row);
+          stopOnly = rawIdx < 0 || !v.isColumnWithinLineScope(rawIdx, click->column);
+        }
+        if (clickInterruptedCoast && !stopOnly) {
           int cursorRow = app.activeContentView().cursorDisplayRow();
           if (cursorRow >= 0) {
             row = cursorRow;
@@ -2047,7 +2069,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
             column = 0;
           }
         }
-        app.handleMouseClick(row, column);
+        if (!stopOnly) app.handleMouseClick(row, column);
       } else if (click->rightButton && !dragging) {
         // 2026-09-07追加、直接のユーザー要望("右クリックに`^G`の機能を
         // 持たせて欲しい"): app.feedByte()経由で本物のキーボード^G
@@ -2948,21 +2970,48 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       // highlightStartColumnしか見ないのでtruncateHighlightedSuffix()
       // へ流れる)とで別のアルゴリズムが使われ、"..."の挿入位置が
       // 食い違っていた。renderLine()自身と一字一句同じ優先順位へ揃えた。
+      //
+      // 2026-09-25修正、直接のユーザー報告("LOCATE等...下への速度を
+      // 速めると最下行ファイル名は激しく切り替わっているのにハイライト
+      // は最下行とその上の行をゆっくり行き来するだけ...スクロール自体
+      // にも滑らかさがない。なにか処理が挟まってる？"): 以前はここで
+      // 毎フレーム「全行」をコピーし、上の"..."切り詰めまで全行に
+      // かけていた。renderScrolled()が実際に読むのは[topIndex-1,
+      // topIndex+contentRows]の高々数十行(と、スクロールバー用の
+      // lines.size())だけなので、LOCATEのように数千〜数万行ある一覧
+      // ではこの全行処理が1フレームを大きく引き延ばし、その間コースト
+      // 物理(16msぶんだけ進めては描く)が間引かれてカクつく。さらに
+      // 間引かれたフレームがpixelOffsetのどの位相で描かれるかが
+      // ほぼランダムになり、ハイライト(cursorIndex_=最下端の行、
+      // pixelOffsetぶん上へずれて描かれる)が「最下行とその上の行を
+      // ゆっくり行き来する」ように見えていた(行数の少ない(ls)では
+      // 目立たなかった)。バッファをフレームをまたいで使い回し、画面に
+      // 映る範囲だけを詰め直す。
       int ellipsisBudget = view.ellipsisBudget();
-      std::vector<fm::Display::ScrolledLine> lines;
-      lines.reserve(view.lines().size());
-      for (std::size_t i = 0; i < view.lines().size(); i++) {
+      int totalLines = static_cast<int>(view.lines().size());
+      if (static_cast<int>(scrolledLines.size()) != totalLines) {
+        scrolledLines.clear();
+        scrolledLines.resize(totalLines);
+        scrolledFilledBegin = scrolledFilledEnd = 0;
+      }
+      for (int i = scrolledFilledBegin; i < scrolledFilledEnd && i < totalLines; i++) scrolledLines[i] = {};
+      int fillBegin = std::clamp(view.topIndex() - 1, 0, totalLines);
+      int fillEnd = std::clamp(view.topIndex() + gui.rows() + 1, fillBegin, totalLines);
+      for (int i = fillBegin; i < fillEnd; i++) {
         const auto &line = view.lines()[i];
         std::vector<fm::Display::AttributeRun> attrs = line.attributes;
-        if (auto highlight = view.scrollHighlightForLine(static_cast<int>(i))) attrs.push_back(*highlight);
+        if (auto highlight = view.scrollHighlightForLine(i)) attrs.push_back(*highlight);
         std::string text = line.text;
         if (line.ellipsisEligible && static_cast<int>(text.size()) > ellipsisBudget) {
           text = fm::middleEllipsisTruncateByWidth(text, ellipsisBudget);
         } else if (line.highlightStartColumn.has_value() && static_cast<int>(text.size()) > ellipsisBudget) {
           text = fm::truncateHighlightedSuffix(text, std::max(0, *line.highlightStartColumn), ellipsisBudget);
         }
-        lines.push_back({std::move(text), std::move(attrs), line.ellipsisEligible});
+        scrolledLines[i] = {std::move(text), std::move(attrs), line.ellipsisEligible};
       }
+      scrolledFilledBegin = fillBegin;
+      scrolledFilledEnd = fillEnd;
+      const auto &lines = scrolledLines;
       // trackCursorPosition=true(2026-09-07追加): ContentView::
       // scrollModeLineSegments()自身の宣言コメント参照――GUIのコースト/
       // ドラッグはcursorIndex_を常に追従させ続けているので、キーボード

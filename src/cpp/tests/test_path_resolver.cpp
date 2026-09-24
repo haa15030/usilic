@@ -59,6 +59,11 @@ TEST_CASE_FIXTURE(Fixture, "resolve: expands a bare '~' to the home directory") 
   CHECK(matches);
 }
 
+TEST_CASE_FIXTURE(Fixture, "resolve: a trailing '/~' goes to the home directory (legacy menu.c M_ldir)") {
+  CHECK(resolver.resolve("/~").path == root.string() + "/");
+  CHECK(resolver.resolve("/some/where//~").path == root.string() + "/");
+}
+
 TEST_CASE_FIXTURE(Fixture, "resolve: expands '~/...' to home-relative") {
   auto result = resolver.resolve("~/subdir");
   CHECK(result.isDirectory);

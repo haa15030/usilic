@@ -7921,10 +7921,10 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): a scrolled cursor pos
   while (indexOf(app.directoryMode().selectedEntry()->name) != idxA) app.handleCommand(Command::MoveDown);
   REQUIRE(app.handleCommand(Command::Enter));  // open manylines.txt (A) -- ring: [plain.txt, manylines.txt]
   REQUIRE(app.currentMode() == ApplicationMode::File);
-  REQUIRE(app.activeView().cursorIndex() == 0);
+  REQUIRE(app.activeContentView().cursorIndex() == 0);
 
   REQUIRE(app.handleCommand(Command::PageDown));
-  int scrolledPos = app.activeView().cursorIndex();
+  int scrolledPos = app.activeContentView().cursorIndex();
   REQUIRE(scrolledPos > 0);  // genuinely moved, not a no-op on this 200-line file
 
   REQUIRE(app.handleCommand(Command::GoToRecentFile));  // A -> B (^J^J, first hop)
@@ -7932,7 +7932,7 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): a scrolled cursor pos
 
   REQUIRE(app.handleCommand(Command::GoToRecentFile));  // B -> A again (^J^J, second hop)
   REQUIRE(app.fileMode().currentFile() == path() + "manylines.txt");
-  CHECK(app.activeView().cursorIndex() == scrolledPos);  // NOT back to 0
+  CHECK(app.activeContentView().cursorIndex() == scrolledPos);  // NOT back to 0
 }
 
 TEST_CASE_FIXTURE(Fixture, "handleCommand(GoToRecentFile): false when nothing has ever been opened this "

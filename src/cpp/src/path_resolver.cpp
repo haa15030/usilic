@@ -10,6 +10,13 @@ ResolvedPath PathResolver::resolve(const std::string &rawPath, const std::string
   std::string path = rawPath;
   while (!path.empty() && (path.back() == ' ' || path.back() == '\t')) path.pop_back();
 
+  // 2026-09-25追加、直接のユーザー報告("`^Xd/~^M`...が利かない"):
+  // 末尾の"/~"は"~"単独と同じ扱い――legacy menu.c(M_ldir/M_lfile)の
+  // `if (... cp[0] == '/' && cp[1] == '~') memmove(...)`から移植。
+  // 下の"~/"検索は後ろにスラッシュが続く場合しか拾わないため、
+  // これが無いと"/~"はリテラルな"/~"として解決されていた。
+  if (path.size() >= 2 && path.compare(path.size() - 2, 2, "/~") == 0) path = "~";
+
   if (path == "~") {
     path = homeDirectory_;
   } else if (path.size() >= 2 && path[0] == '~' && path[1] == '/') {
