@@ -2789,8 +2789,13 @@ void GraphicalDisplay::renderTextRun(int y, const std::string &line, Color fg, i
         // fitGlyphRect()経由で`width`セルに合わせる――なぜこれが
         // 引き伸ばすのではなく縮小して中央寄せするのかについては
         // renderCell()自身のコメント参照。
+        // wantBoldも(2026-09-25修正、直接のユーザー報告"-gの(ls)で右下の
+        // 「usilic v1.5b」のフォントサイズが小さい不具合は修正済みだが
+        // スクロールが始まると復活する"): c678ffbでrenderCell()側だけ
+        // cell.italic || cell.boldへ広げ、ドラッグ/コースト中の描画経路
+        // (renderScrolled()→ここ)は斜体のみのまま取り残されていた。
         SDL_Rect dst = fitGlyphRect(Impl::kMarginX + x * impl_->cellWidth, Impl::kMarginY + y,
-                                     width * impl_->cellWidth, impl_->cellHeight, w, h, wantItalic);
+                                     width * impl_->cellWidth, impl_->cellHeight, w, h, wantItalic || wantBold);
         SDL_RenderCopy(impl_->renderer, texture, nullptr, &dst);
       }
     }
