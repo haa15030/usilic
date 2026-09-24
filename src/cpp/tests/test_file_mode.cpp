@@ -15,6 +15,8 @@ using fm::Charset;
 using fm::Configuration;
 using fm::FileMode;
 using fm::History;
+using fm::Display;
+using fm::isMarkdownFile;
 using fm::looksLikeRoffDocument;
 using fm::PositionCategory;
 using fm::test::RecordingDisplay;
@@ -486,4 +488,50 @@ TEST_CASE_FIXTURE(Fixture, "loadFileAsPipe: content is paced in one line at a ti
   REQUIRE(mode.ensureLoadedThrough(50, /*bypassPacing=*/false));
   REQUIRE(view.lines().size() == 3);
   CHECK(view.lines()[2].text == "line3");
+}
+
+// -- isMarkdownFile() / auto-markdown-render (2026-09-22 addition) --
+//
+// Direct user request ("せっかく.mdフォーマットで書かれているので
+// usilicに文字装飾機能を実装してほしい。ベタで読みたければ^[^M
+// ということで"): .md/.markdownファイルは、loadFile()(通常の^M)経由では
+// markdownToHelpMarkup()+expandHelpMarkup()で装飾され、loadFileRaw()
+// (^[^M、rawControlCodesMode_)経由では変換をスキップして生のMarkdown
+// 記法のまま見える。
+
+TEST_CASE("isMarkdownFile: recognizes .md/.markdown (case-insensitive), not other extensions") {
+  CHECK(isMarkdownFile("/tmp/README.md"));
+  CHECK(isMarkdownFile("/tmp/README.MD"));
+  CHECK(isMarkdownFile("/tmp/doc.markdown"));
+  CHECK_FALSE(isMarkdownFile("/tmp/README.txt"));
+  CHECK_FALSE(isMarkdownFile("/tmp/README"));
+}
+
+TEST_CASE_FIXTURE(Fixture, "loadFile: a .md file's headings/bold are rendered as AttributeRuns "
+                           "via loadAndTransformContent()'s markdown branch") {
+  std::string path = writeFile("README.md", "# Title\n\n**bold** word\n");
+  REQUIRE(mode.loadFile(path));
+  REQUIRE(view.lines().size() >= 2);
+  CHECK(view.lines()[0].text == "Title");
+  bool sawUnderline = false;
+  for (const auto &run : view.lines()[0].attributes)
+    if (run.attribute == Display::Attribute::Underline) sawUnderline = true;
+  CHECK(sawUnderline);
+  bool sawBold = false;
+  for (const auto &line : view.lines())
+    for (const auto &run : line.attributes)
+      if (run.attribute == Display::Attribute::Bold) sawBold = true;
+  CHECK(sawBold);
+}
+
+TEST_CASE_FIXTURE(Fixture, "loadFileRaw (^[^M): a .md file is shown with its literal Markdown "
+                           "syntax, NOT decorated (rawControlCodesMode_ bypasses the markdown "
+                           "transform, matching isHelpMarkupPagerFile()'s own established "
+                           "as-is behavior)") {
+  std::string path = writeFile("README.md", "# Title\n\n**bold** word\n");
+  REQUIRE(mode.loadFileRaw(path));
+  bool sawLiteralHash = false;
+  for (const auto &line : view.lines())
+    if (line.text.find("# Title") != std::string::npos) sawLiteralHash = true;
+  CHECK(sawLiteralHash);
 }

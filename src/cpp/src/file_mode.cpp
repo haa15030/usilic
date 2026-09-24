@@ -16,6 +16,7 @@
 
 #include "child_process.hpp"
 #include "help_text.hpp"
+#include "markdown_to_help_markup.hpp"
 #include "pipe_buffer.hpp"
 
 namespace fm {
@@ -38,6 +39,17 @@ constexpr int kNoWrapWidth = 1 << 20;
 bool isHelpMarkupPagerFile(const std::string &path) {
   std::string name = std::filesystem::path(path).filename().string();
   return name == "HELP.txt" || name == "QUICK.txt";
+}
+
+// 2026-09-22追加、直接のユーザー依頼("せっかく.mdフォーマットで書かれているので
+// usilicに文字装飾機能を実装してほしい"): 拡張子(大小無視)で判定する
+// ――isHelpMarkupPagerFile()自身のコメントと同じ理由(内容を見て自動判定すると、
+// たまたま`*`や`#`を含むプレーンテキストを誤検出しかねない)で、名前(ここでは
+// 拡張子)だけを見る。
+bool isMarkdownFile(const std::string &path) {
+  std::string ext = std::filesystem::path(path).extension().string();
+  for (char &c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return ext == ".md" || ext == ".markdown";
 }
 
 // old/src/code.cのis_man()から移植: `man[0]`が'.'で、続く1〜2文字が
@@ -374,6 +386,11 @@ std::string FileMode::loadAndTransformContent(const std::string &path) const {
   // ^Jh自身のkHelpTextJa/kHelpTextGuiJaと同じ規約で展開する)。
   if (isHelpMarkupPagerFile(path)) {
     content = expandHelpMarkup(content);
+  } else if (isMarkdownFile(path)) {
+    // markdownToHelpMarkup()自身のコメント参照: Markdownを<b>/<u>/<i>/<indentN>タグへ
+    // 変換してから、既存のexpandHelpMarkup()でHELP.txt/QUICK.txtと同じ制御バイトへ
+    // 展開する(二段構成)。
+    content = expandHelpMarkup(markdownToHelpMarkup(content));
   } else if (looksLikeRoffDocument(content)) {
     // 2026-09-20追加、直接のユーザー依頼("usilic -m src/QUICK.txt > .../
     // usilic.man...HELPは同ファイルを「C-j b」でCUTする")、HELP.jp

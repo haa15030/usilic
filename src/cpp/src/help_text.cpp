@@ -32,7 +32,6 @@ std::string expandHelpMarkup(const std::string &text) {
   // 本文の一部として扱わないようにする(2個以上の空行はそのまま――
   // 意図的な空行かもしれないので、あくまで1個だけを特別扱いする)。
   if (!text.empty() && text[0] == '\n') i = 1;
-  const std::string boldOpen = "<b>", boldClose = "</b>";
   const std::string underlineOpen = "<u>", underlineClose = "</u>";
   // 2026-09-04追加、直接のユーザー依頼("行頭にパディングするスペース
   // の個数を指定するだけのusilic特化マークアップ書式"、EPUBの
@@ -147,46 +146,44 @@ std::string expandHelpMarkup(const std::string &text) {
       i += italicClose.size();
       continue;
     }
-    bool isBold = text.compare(i, boldOpen.size(), boldOpen) == 0;
-    bool isUnderline = !isBold && text.compare(i, underlineOpen.size(), underlineOpen) == 0;
-    if (isBold || isUnderline) {
-      const std::string &openTag = isBold ? boldOpen : underlineOpen;
-      const std::string &closeTag = isBold ? boldClose : underlineClose;
-      std::size_t contentStart = i + openTag.size();
-      std::size_t closePos = text.find(closeTag, contentStart);
-      if (closePos == std::string::npos) {
-        // 対応する終了タグが無い――壊れたマークアップとして、開始タグ自体を
-        // そのまま素通りさせる(無限ループ/データ消失より安全側に倒す)。
-        out += openTag;
-        i = contentStart;
-        continue;
-      }
-      std::string content = text.substr(contentStart, closePos - contentStart);
-      // 1文字ごとに重ね打ちを生成する――wrapLine()自身の検出ロジック
-      // (help_text.hpp自身のコメント参照)が、複数文字をまとめてではなく
-      // 1文字ずつのX\bX/_\bXしか認識しないため。UTF-8のマルチバイト文字は
-      // シーケンス全体を「1文字」として扱う必要がある。
-      std::size_t j = 0;
-      while (j < content.size()) {
-        unsigned char lead = static_cast<unsigned char>(content[j]);
-        std::size_t len = 1;
-        if ((lead & 0xE0) == 0xC0) len = 2;
-        else if ((lead & 0xF0) == 0xE0) len = 3;
-        else if ((lead & 0xF8) == 0xF0) len = 4;
-        len = std::min(len, content.size() - j);
-        std::string ch = content.substr(j, len);
-        if (isBold) {
-          out += ch;
-          out += '\b';
-          out += ch;
-        } else {
-          out += '_';
-          out += '\b';
-          out += ch;
-        }
-        j += len;
-      }
-      i = closePos + closeTag.size();
+    // 2026-09-22修正、直接のユーザー依頼("CommonMarkの強調解決アルゴリズム
+    // 対応が普通なら実装してほしい"): <b>/<u>を、上の<i>と全く同じ
+    // 「トグル式の制御バイト」方式(\x03=太字、\x04=下線)へ書き換えた。
+    // 従来は開始〜終了タグの間を生の文字列として切り出し、1文字ずつ
+    // "X\bX"/"_\bX"の重ね打ちバイト列へ変換していた(legacyのnroff規約
+    // からの移植)――しかしこの方式は中に他のタグがあっても再帰的には
+    // 解釈しないため、markdownToHelpMarkup()が生成し得る
+    // `**太字 *斜体* まだ太字**`のような入れ子ができなかった(旧コメント
+    // 「同じ文字が斜体と太字/下線を同時に持つケースは非対応」参照)。
+    // トグル方式にすることで、<i>と全く同じ理由で入れ子が自然に機能する
+    // ようになる(PipeBuffer::wrapLine()側のcurrentBold_/currentUnderline_
+    // 参照)。本物のnroff重ね打ち("X\bX"/"_\bX")の検出――man/groff出力
+    // 等、expandHelpMarkup()を一切経由しない実ファイルの内容向け――は
+    // 別の、無関係なコードパスのままなので、このタグの書式変更の影響を
+    // 受けない。
+    const std::string boldOpenPlain = "<b>", boldClosePlain = "</b>";
+    if (text.compare(i, boldOpenPlain.size(), boldOpenPlain) == 0) {
+      out += '\x03';
+      out += '1';
+      i += boldOpenPlain.size();
+      continue;
+    }
+    if (text.compare(i, boldClosePlain.size(), boldClosePlain) == 0) {
+      out += '\x03';
+      out += '0';
+      i += boldClosePlain.size();
+      continue;
+    }
+    if (text.compare(i, underlineOpen.size(), underlineOpen) == 0) {
+      out += '\x04';
+      out += '1';
+      i += underlineOpen.size();
+      continue;
+    }
+    if (text.compare(i, underlineClose.size(), underlineClose) == 0) {
+      out += '\x04';
+      out += '0';
+      i += underlineClose.size();
       continue;
     }
     out += text[i];

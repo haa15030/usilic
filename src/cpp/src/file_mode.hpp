@@ -68,6 +68,12 @@ namespace fm {
 // expandHelpMarkup()展開の経路を選ぶかどうかの判定に使う。
 bool isHelpMarkupPagerFile(const std::string &path);
 
+// 2026-09-22追加、直接のユーザー依頼("せっかく.mdフォーマットで書かれているので
+// usilicに文字装飾機能を実装してほしい"): file_mode.cpp自身のコメント参照。
+// isHelpMarkupPagerFile()と同じ位置でFileMode::loadAndTransformContent()から呼ばれ、
+// markdownToHelpMarkup()+expandHelpMarkup()の二段展開を発動する。
+bool isMarkdownFile(const std::string &path);
+
 // 2026-09-20追加、直接のユーザー依頼("usilic -m src/QUICK.txt > .../
 // usilic.man...HELPは同ファイルを「C-j b」でCUTする"): legacy自身の
 // is_man()(old/src/code.cから移植、readAndWrap()自身のコメント参照)

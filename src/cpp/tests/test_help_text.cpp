@@ -33,11 +33,11 @@ TEST_CASE("expandHelpMarkup: <indentN>...</indent> becomes \\x01<value>...\\x01\
   CHECK(out == "a" + indentMarker(2) + "bcd" + indentMarker(0) + "e");
 }
 
-TEST_CASE("expandHelpMarkup: <indentN> nests correctly with <b>/<u> inside its span") {
+TEST_CASE("expandHelpMarkup: <indentN> nests correctly with <b>/<u> inside its span "
+          "(2026-09-22: <b>/<u> now use the same toggle-marker encoding as <i>, see "
+          "pipe_buffer.hpp's own currentBold_/currentUnderline_ comment for why)") {
   std::string out = fm::expandHelpMarkup("<indent3>x<b>y</b>z</indent>");
-  // <b>y</b> still expands to its own per-character overstrike "y\by" as usual;
-  // only the indent tags themselves become the \x01 control bytes.
-  CHECK(out == indentMarker(3) + "x" "y\by" "z" + indentMarker(0));
+  CHECK(out == indentMarker(3) + "x" "\x03" "1y\x03" "0" "z" + indentMarker(0));
 }
 
 TEST_CASE("expandHelpMarkup: a digit 1-9 is accepted, and unrelated text around the tags "
@@ -99,9 +99,19 @@ TEST_CASE("expandHelpMarkup: <i>...</i> becomes \\x021...\\x020, leaving the con
 }
 
 TEST_CASE("expandHelpMarkup: <i> and <b>/<u> can be used independently in the same text "
-          "without interfering with each other's control bytes") {
+          "without interfering with each other's control bytes (2026-09-22: <b> now uses "
+          "\\x03 toggle bytes, same shape as <i>'s \\x02)") {
   std::string out = fm::expandHelpMarkup("<i>x</i><b>y</b>");
-  CHECK(out == "\x02" "1x\x02" "0" "y\by");
+  CHECK(out == "\x02" "1x\x02" "0" "\x03" "1y\x03" "0");
+}
+
+TEST_CASE("expandHelpMarkup: <b> may now safely nest <i>/<u>/<indentN> inside it (2026-09-22, "
+          "direct user request \"CommonMarkの強調解決アルゴリズム対応が普通なら実装して"
+          "ほしい\" -- <b>/<u> switched from a raw-substring, non-recursive per-character "
+          "overstrike encoding to the same non-consuming toggle-marker approach as <i>, so "
+          "nested tags inside <b>/<u> are no longer swallowed as literal text)") {
+  std::string out = fm::expandHelpMarkup("<b>bold <i>and italic</i> still bold</b>");
+  CHECK(out == "\x03" "1bold \x02" "1and italic\x02" "0 still bold\x03" "0");
 }
 
 // 2026-09-04追加、実機での実際の再現(初回のsrc/HELP.txt全面改稿を

@@ -192,7 +192,9 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
   int lastCharSeqStart = -1;      // その文字の処理がconvertedLine中で始まった位置(このループのトップでのi)
   int lastCharRenderedBytes = 0;  // wrapText_へ実際に書き込まれたバイト数
   int lastCharWidth = 0;          // その文字の表示カラム数
-  int lastCharAttrCount = 0;      // その文字のためだけにwrapAttrs_へ積んだ要素数(太字/下線+斜体で最大2)
+  int lastCharAttrCount = 0;      // その文字のためだけにwrapAttrs_へ積んだ要素数(2026-09-22:
+                                   // currentBold_/currentUnderline_追加により、本物の重ね打ち+
+                                   // 斜体/太字/下線トグルの組み合わせで最大4)
 
   auto finalize = [&](bool endsWithNewline) {
     lines_.push_back({wrapText_, wrapAttrs_, endsWithNewline, nextRawLineNumber_});
@@ -342,27 +344,39 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     }
     return {count, p};
   };
+  // 2026-09-24修正、直接のユーザー報告("CLAUDE.mdを開くと53行目以降が
+  // 全部アンダーラインになる"): この関数はpeekNewlineAfterMarkers()/
+  // nextIsForbiddenAtLineStart()から「先読み」目的だけで呼ばれ、
+  // 呼び出し側は返り値の位置しか使わない(自分のiは進めない)――にも
+  // 関わらず、通過するマーカーごとにcurrentIndent_/currentItalic_/
+  // currentBold_/currentUnderline_という「実際の描画状態」を直接
+  // 書き換えていたため、同じマーカーが後で本物の消費パス(下のメイン
+  // ループ、422〜470行目)によってもう一度処理される時に、二重(先読みが
+  // 複数箇所から呼ばれる行では三重)に加算/減算されていた。<b>/<u>が
+  // 密集する行(連続するコードスパン等)ほど先読みの呼び出し回数が
+  // 増えやすく、開始側('1')が閉じ側('0')より多く重複適用される
+  // ケースが蓄積すると、currentUnderline_が0に戻らなくなり、それ以降
+  // 全ての行が下線付きのまま描画され続けていた。先読みは位置を
+  // 進めるだけにし、実際の状態更新は本物の消費パス側だけの責務にする。
   auto skipMarkersFrom = [&](int pos) -> int {
     while (pos + 1 < n) {
       unsigned char mc = static_cast<unsigned char>(convertedLine[pos]);
       if (mc == '\x01') {
         auto [value, digitsEnd] = readIndentDigits(pos + 1);
         if (value < 0) break;
-        currentIndent_ = value;
         pos = digitsEnd;
         continue;
       }
       if (mc == 0xEF) {
         auto [count, runEnd] = readPortableIndentRun(pos);
         if (count > 0) {
-          currentIndent_ = count - 1;
           pos = runEnd;
           continue;
         }
       }
       unsigned char value = static_cast<unsigned char>(convertedLine[pos + 1]);
-      if (mc == '\x02' && value >= '0' && value <= '9') {
-        currentItalic_ = (value == '1');
+      if ((mc == '\x02' || mc == '\x03' || mc == '\x04') && value >= '0' && value <= '9') {
+        // ゼロ幅マーカー、位置だけ進める(状態の更新は本物の消費パス側の責務)。
       } else {
         break;
       }
@@ -438,7 +452,25 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     if (c == '\x02' && i + 1 < n) {
       unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
       if (digit == '0' || digit == '1') {
-        currentItalic_ = (digit == '1');
+        currentItalic_ = std::max(0, currentItalic_ + (digit == '1' ? 1 : -1));
+        i += 2;
+        continue;
+      }
+    }
+    // currentBold_/currentUnderline_自身のコメント参照(pipe_buffer.hpp): \x02と
+    // 全く同じ「ゼロ幅、状態だけ更新して読み飛ばす」形の太字/下線版。
+    if (c == '\x03' && i + 1 < n) {
+      unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
+      if (digit == '0' || digit == '1') {
+        currentBold_ = std::max(0, currentBold_ + (digit == '1' ? 1 : -1));
+        i += 2;
+        continue;
+      }
+    }
+    if (c == '\x04' && i + 1 < n) {
+      unsigned char digit = static_cast<unsigned char>(convertedLine[i + 1]);
+      if (digit == '0' || digit == '1') {
+        currentUnderline_ = std::max(0, currentUnderline_ + (digit == '1' ? 1 : -1));
         i += 2;
         continue;
       }
@@ -613,12 +645,21 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
       // ORするだけ)なので、単にここでも同じ範囲へItalic用の
       // AttributeRunをもう1つ積むだけでよい。
       if (currentItalic_) wrapAttrs_.push_back({start, start + keepBytes, Display::Attribute::Italic});
+      // currentBold_/currentUnderline_自身のコメント参照: 上のcurrentItalic_と同じ
+      // 理屈――本物のnroff重ね打ちで検出したattr(Bold/Underlineのどちらか一方)に
+      // 加えて、我々自身のトグルバイトで有効になっている方をもう1つ重ねて積む
+      // (attrと同じ属性なら単なる重複runで無害、違う属性なら組み合わせが揃う)。
+      if (currentBold_) wrapAttrs_.push_back({start, start + keepBytes, Display::Attribute::Bold});
+      if (currentUnderline_) wrapAttrs_.push_back({start, start + keepBytes, Display::Attribute::Underline});
       wrapCol_ += w;
       i = keepStart + keepBytes;
       lastCharSeqStart = placementStart;
       lastCharRenderedBytes = keepBytes;
       lastCharWidth = w;
-      lastCharAttrCount = currentItalic_ ? 2 : 1;
+      // 実際にwrapAttrs_へ積んだ要素数と一致させる(popLastCharForKinsoku()が
+      // 過不足なく取り消せるように)――base(attr自身)1つ+italic/bold/underlineの
+      // トグルがそれぞれ有効な分。
+      lastCharAttrCount = 1 + (currentItalic_ ? 1 : 0) + (currentBold_ ? 1 : 0) + (currentUnderline_ ? 1 : 0);
       if (wrapCol_ >= width_) {
         // popLastCharForKinsoku()自身のコメント参照(禁則処理の作り
         // 直し): ちょうど幅ぴったりで満杯になった直後、次の(マーカー
@@ -661,11 +702,24 @@ void PipeBuffer::wrapLine(const std::string &convertedLine) {
     // currentItalic_自身のコメント参照: 太字/下線自身の1文字ごとの
     // AttributeRunの粒度に合わせている(隣接runのまとめはこのクラス
     // 自身の責務ではない――decode_help.cpp自身のコメント参照)。
+    // currentBold_/currentUnderline_(2026-09-22追加)も同じ粒度で重ねる――
+    // 本物のnroff重ね打ちを経ない、我々自身のトグルバイトだけが有効な
+    // (=このプレーン文字パスに来る)場合の太字/下線の唯一の発生源。
     int charAttrCount = 0;
-    if (currentItalic_) {
+    if (currentItalic_ || currentBold_ || currentUnderline_) {
       int start = static_cast<int>(wrapText_.size());
-      wrapAttrs_.push_back({start, start + charBytes, Display::Attribute::Italic});
-      charAttrCount = 1;
+      if (currentItalic_) {
+        wrapAttrs_.push_back({start, start + charBytes, Display::Attribute::Italic});
+        charAttrCount++;
+      }
+      if (currentBold_) {
+        wrapAttrs_.push_back({start, start + charBytes, Display::Attribute::Bold});
+        charAttrCount++;
+      }
+      if (currentUnderline_) {
+        wrapAttrs_.push_back({start, start + charBytes, Display::Attribute::Underline});
+        charAttrCount++;
+      }
     }
     wrapText_.append(convertedLine, i, charBytes);
     wrapCol_ += w;
