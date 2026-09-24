@@ -190,8 +190,10 @@ static int m_page(int m, HEAP *hp, RV *rvp, PN *pnp, NUM *np, FILE **pinp)
 }
 
 /*
- * 【機能】画面の内容などを、作業ファイル(S_w)へ書き出す(M_w等)。
- * 【C++】なし(C++には、画面の内容をファイルへ書き出す機能が無い)
+ * 【機能】選択中の項目の名前(M_w)/画面の内容(M_w2)を作業ファイル(S_w)へ書き出し、SHELLへ挿入する
+ *       コマンド文字列(`echo`/`cat`)を組み立てて返す(K-63/K-64、^Jw/^J^W)。M_chdir/M_chdir2は
+ *       ディレクトリ移動用の`cd`。
+ * 【C++】Application::shellInsertName; Application::shellInsertBufferContent (src/cpp/src/application.cpp)
  */
 static u_char *m_w(int m, PP *pp, u_char name[], u_char dir[], char comm[])
 {

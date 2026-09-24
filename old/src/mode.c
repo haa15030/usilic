@@ -812,9 +812,9 @@ int nmark(PP *pp, int f_M)/*usilic*/
 }
 
 /*
- * 【機能】行のリスト(pp)の内容を、ファイルへ書き出す。fmodeが"a"なら書き出し用ファイル(S_write)へ追記、
- *       それ以外は作業ファイル(S_w)へ書く。
- * 【C++】なし(C++には、画面の内容をファイルへ書き出す機能が無い)
+ * 【機能】行のリスト(pp)の内容を、ファイルへ書き出す。fmodeが"a"なら書き出し用ファイル(S_write)へ追記
+ *       (K-17、^X^W)、それ以外は作業ファイル(S_w)へ書く(K-64、^J^W)。
+ * 【C++】Application::shellInsertBufferContent (src/cpp/src/application.cpp)
  */
 int send_pp(PP *pp, char fmode[])/*usilic*/
 {

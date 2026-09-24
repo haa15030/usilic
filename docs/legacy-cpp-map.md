@@ -206,7 +206,7 @@
 | `m_dir` | DIR(ディレクトリ名の入力・選択)の処理。一覧の行が`/`で始まっていればそれを、無ければカレントディレクトリを、移動先の候補にする。 | DirectoryMode::enterDirectory (src/cpp/src/directory_mode.cpp); Application::startRegexPromptList (src/cpp/src/application.cpp) |
 | `m_row` | カーソルを1行動かす(move_row)。表示の総行数を更新して、モードラインを描き直す。 | ContentView::moveUp; ContentView::moveDown (src/cpp/src/content_view.cpp) |
 | `m_page` | ページ単位の移動をする(move_page)。総行数を更新して、モードラインを描き直す。 | ContentView::pageUp; ContentView::pageDown (src/cpp/src/content_view.cpp) |
-| `m_w` | 画面の内容などを、作業ファイル(S_w)へ書き出す(M_w等)。 | なし(C++には、画面の内容をファイルへ書き出す機能が無い) |
+| `m_w` | 選択中の項目の名前(M_w)/画面の内容(M_w2)を作業ファイル(S_w)へ書き出し、SHELLへ挿入するコマンド文字列(`echo`/`cat`)を組み立てて返す(K-63/K-64、^Jw/^J^W)。M_chdir/M_chdir2はディレクトリ移動用の`cd`。 | Application::shellInsertName; Application::shellInsertBufferContent (src/cpp/src/application.cpp) |
 | `m_arc` | CP/MV/RM/ARC(展開)を始める前の確認。必要なプログラム(cp/mv/rm)がインストールされているか、 ARCなら対応しているアーカイブ(tar/lha/unzip/rpm/deb)かを調べて、だめならエラーを出す。 | Application::startCopyPrompt; Application::startMovePrompt; Application::startRemovePrompt; Application::startArchivePrompt (src/cpp/src/application.cpp) |
 | `m_exit` | EXITの処理。モードのスタックを遡って(load_stack)最初のモードまで戻し、終了の確認(y/n)に進む。 | Application::startExitPrompt (src/cpp/src/application.cpp) |
 | `m_locate` | LOCATEの入口。locateがインストールされているか確認し、LOCATE中なら拒否する。M_locate2は、前回の結果の画面へ戻る。 | Application::startLocatePrompt (src/cpp/src/application.cpp) |
@@ -246,7 +246,7 @@
 | `check_dir` | ディレクトリを変えるときの共通処理。スタックを空にし、カレントディレクトリと直前のディレクトリを入れ替えてchdirし、ディレクトリの履歴(dirp)へ記録する。 | DirectoryMode::enterDirectory (src/cpp/src/directory_mode.cpp) |
 | `fmark` | モードf_Mで、複数選択(マーク)に使う値(行のsplitに入れる印)を返す。CP/MV/RM/ARC等が対象で、 EXITでは常に1。 | DirectoryMode::targetEntries (src/cpp/src/directory_mode.cpp) |
 | `nmark` | 行のリスト(pp)の中で、マーク(fmarkの値)が付いた行の数を数える。 | DirectoryMode::targetEntries (src/cpp/src/directory_mode.cpp) |
-| `send_pp` | 行のリスト(pp)の内容を、ファイルへ書き出す。fmodeが"a"なら書き出し用ファイル(S_write)へ追記、それ以外は作業ファイル(S_w)へ書く。 | なし(C++には、画面の内容をファイルへ書き出す機能が無い) |
+| `send_pp` | 行のリスト(pp)の内容を、ファイルへ書き出す。fmodeが"a"なら書き出し用ファイル(S_write)へ追記 (K-17、^X^W)、それ以外は作業ファイル(S_w)へ書く(K-64、^J^W)。 | Application::shellInsertBufferContent (src/cpp/src/application.cpp) |
 | `do_rm` | 履歴のリスト(LL)から、選ばれた項目(ssp)を削除する(FILE/DIR等の履歴から消す操作)。 | History (src/cpp/src/history.cpp) |
 | `get_hup` | usilic終了後に、子プロセスをkillするためのプロセスIDを、覚える(正の値)・忘れる(負の値)・返す(0)。 | ProgramMode::run (src/cpp/src/program_mode.cpp) |
 | `mode_cont` | SIGCONT(停止からの再開)のハンドラ。ハンドラを登録し直し、プロセスIDを表示し直す。 | なし(C++はSIGCONTを、このために特別扱いしない) |
@@ -499,7 +499,7 @@ C++のファイルごとに、対応する旧関数を挙げる(そのファイ�
 
 ### `src/cpp/src/application.cpp`
 
-`child.c:is_child`, `disp.c:print_line`, `fork.c:fork_key`, `init.c:init_pipe`, `init.c:init_bin`, `key.c:set_name`, `key.c:set_km`, `key.c:kton`, `key.c:input_key`, `key.c:read_m`, `key.c:find_name`, `key.c:make_cmd`, `key.c:esc_shell`, `key.c:make_list`, `menu.c:m_copy`, `menu.c:m_num`, `menu.c:m_dir`, `menu.c:m_arc`, `menu.c:m_exit`, `menu.c:m_locate`, `menu.c:m_grep`, `menu.c:m_cut`, `menu.c:m_man`, `menu.c:m_help`, `menu.c:m_prog`, `menu.c:m_list`, `menu.c:m_edit`, `menu.c:m_shell`, `menu.c:m_du`, `menu.c:m_yn`, `menu.c:m_dest`, `menu.c:m_pipe`, `menu.c:m_cr`, `menu.c:m_clear`, `menu.c:m_bl`, `menu.c:get_m`, `menu.c:init_menu`, `menu.c:menu`, `mode.c:echo_mess`, `mode.c:load_ll`, `mode.c:mode`, `mode.c:set_cut`, `mode.c:do_prog`, `mode.c:print_intr`, `shell.c:input_shell`, `shell.c:set_pos`, `shell.c:read_shell`, `shell.c:from_main`, `shell.c:do_shell`, `str.c:print_usilic`, `sub.c:is_comm`, `sub.c:set_help`
+`child.c:is_child`, `disp.c:print_line`, `fork.c:fork_key`, `init.c:init_pipe`, `init.c:init_bin`, `key.c:set_name`, `key.c:set_km`, `key.c:kton`, `key.c:input_key`, `key.c:read_m`, `key.c:find_name`, `key.c:make_cmd`, `key.c:esc_shell`, `key.c:make_list`, `menu.c:m_copy`, `menu.c:m_num`, `menu.c:m_dir`, `menu.c:m_w`, `menu.c:m_arc`, `menu.c:m_exit`, `menu.c:m_locate`, `menu.c:m_grep`, `menu.c:m_cut`, `menu.c:m_man`, `menu.c:m_help`, `menu.c:m_prog`, `menu.c:m_list`, `menu.c:m_edit`, `menu.c:m_shell`, `menu.c:m_du`, `menu.c:m_yn`, `menu.c:m_dest`, `menu.c:m_pipe`, `menu.c:m_cr`, `menu.c:m_clear`, `menu.c:m_bl`, `menu.c:get_m`, `menu.c:init_menu`, `menu.c:menu`, `mode.c:echo_mess`, `mode.c:load_ll`, `mode.c:mode`, `mode.c:set_cut`, `mode.c:send_pp`, `mode.c:do_prog`, `mode.c:print_intr`, `shell.c:input_shell`, `shell.c:set_pos`, `shell.c:read_shell`, `shell.c:from_main`, `shell.c:do_shell`, `str.c:print_usilic`, `sub.c:is_comm`, `sub.c:set_help`
 
 ### `src/cpp/src/archive_mode.cpp`
 
