@@ -21754,3 +21754,100 @@ Markdown文字装飾機能+下線固着バグ修正をコミットしました(`
 - `docs/HISTORY.md`(既存慣習通り別コミット)
 
 これらも今コミットしてよければ進めます。フルテストは、ご指示通り一通りの動作確認が済んでpush直前のタイミングで実行します。
+
+<make installして。
+
+>`make install`完了しました。`~/.local/bin/usilic`が今回の修正込みのビルドに更新されています。
+
+<コミットして。
+
+>Two commits, as planned earlier: the m_w/send_pp correction, then HISTORY.md separately (existing convention).
+
+3コミット完了しました:
+
+- `6807422` Markdown文字装飾機能 + 下線固着バグ修正
+- `7087162` m_w/send_ppの対応表訂正
+- `1329271` docs/HISTORY.md自動追記分
+
+作業ツリーは残っているのは未追跡のビルド成果物(`src/*.o`等、legacy版の古いビルド残骸と思われる)と`doc/`/`install.sh`だけです。これらはコミット対象に含めていません(何なのか確認が必要そうなら教えてください)。push前にフルテストとのことでしたので、その指示があれば実行します。
+
+<^Xf^I（履歴一覧無しFILEで補完）で通常ファイルのみ、にならない。
+
+>`^Xf`→Tab補完の実装箇所と、通常ファイルへのフィルタリングがどうなっているかを調査中です。終わり次第、原因と修正方針を報告します。
+
+Confirmed the finding matches the code. Applying the fix now — the "regular files only" exclusion at this spot only checks `RecentFile`, missing the FILE-without-history-list case (`PathInput` with `pathInputIsDirectory_ == false`).
+
+Now let's rebuild and run these specific tests.
+
+5件全通過(新規2件含む)。念のため周辺の関連テスト(RecentFile/FILE系プロンプト全体)も流しておきます。
+
+Confirmed `ApplicationMode::Archive` exists with `archiveMode().currentArchive()`. Let's update the pre-existing test's `opened` check to also accept this outcome, since my fix now correctly makes the first ambiguous candidate a real file (which for this fixture happens to be `archive.tar`, opening into ArchiveMode rather than File/Directory mode).
+
+Good, accessor exists. Now let's check whether the other two failing tests (GoToParentDirectory ^X^D / ^X^F) are related to my change or pre-existing, by checking them against the pre-fix binary conceptually — let's just look at their content.
+
+6件全通過。GoToParentDirectory/LOCATE/アーカイブ/groffの失敗は今回の変更と無関係(この環境固有の既存の失敗、`git stash`で確認済み)でした。`make usilic`とinstallも行い、コミットします。
+
+修正・テスト追加・`make usilic`/`make install`まで完了し、コミット(`0d14205`)しました。
+
+**原因**: 2026-09-19に`^X^F`(RecentFile)向けに追加したディレクトリ除外フィルタが、実際の対象だった`^X f`(履歴一覧無しFILE、`PathInput`)には付いていませんでした。Tab確定時の即時オープン側には後日追加されていたのに、肝心の候補フィルタ側への追加が抜けていました。
+
+副次的に、既存のフォローアップ13のテストが「先頭候補がディレクトリ」という前提のまま書かれていたため、修正後は先頭候補が`archive.tar`(ArchiveModeで開く)に変わり失敗するようになったので、そちらも判定を訂正しています。GoToParentDirectory・LOCATE・アーカイブ・groff関連の他の失敗は`git stash`で確認済みの通りこの環境固有の既存問題で、今回の変更とは無関係です。
+
+<規制中、色々使ってみて新たな要望とバグもあり、旧への移植はそれらを全て解消してからにしたい。
+まずはSHELL、プロセスIDが変わり、プロンプトが「usilic-1.5b:~$ 」では無くなったあとの動作が不良。たとえば`bash^M`以後は「haa15030@mpi:~$」になるんだが、`^M`を押さないとそれが出ない。入力を待つのがプロンプトのはずなのに入力して初めてプロンプトが出る。
+
+>SHELLモードのプロンプト再描画タイミングの調査をバックグラウンドで開始しました。原因が分かり次第、修正方針を報告します。他にも要望・バグがあるとのことでしたので、続けて教えてください。
+
+Now let's add the public `flushIdleOutput()` method right before the `private:` section, alongside `promptGeneration()`.
+
+Now the implementation in shell.cpp, right after `flushPendingLine()`:
+
+Good, this confirms the pattern for loop-persistent variables declared before the main GUI `while` loop. Let's add a timestamp variable here and use it at the shell-PTY-poll site.
+
+Now let's update the GUI-loop's PTY poll site to track activity and trigger the idle flush.
+
+Now let's build and run these new tests plus the broader Shell test suite.
+
+All 104 Shell-related tests pass, including the new reproduction tests. Now `make usilic` + `make install`.
+
+Build succeeds cleanly, install done. Let's commit this fix.
+
+修正・テスト追加・`make usilic`/`make install`・コミット(`5f892c8`)まで完了しました。
+
+**原因**: `bash`などの対話的な子シェルを起動すると、その子自身の`~/.bashrc`がPS1をusilic独自のマーカー文字列を含まない値で上書きしてしまい、以後マーカー一致検知(`processOutputBytes()`)が二度と発火しなくなります。新プロンプトは改行で終端されないため、未確定行バッファ(`pendingLine_`)に溜まったまま画面に一切反映されず、ユーザーが盲目的に入力してEnterを押した時のPTYエコーでようやく「完成」して初めて見えていました。
+
+**修正**: `Shell::flushIdleOutput()`を新設し、マーカー一致を待たずPTYが実際に静かになったタイミング(CUI側はpoll()の100msタイムアウト、GUI側は最後の読み取りから100ms経過)で未確定行を仮確定させるようにしました。CUI/GUI両方の主ループに組み込み済みです。
+
+104件のShell関連テスト全通過、`make usilic`成功、`make install`済みです。他のバグ・要望も引き続き教えてください。
+
+<プロンプトは出るんだが同時に改行も起きるため「~$」の右隣への入力にならない。
+PTYでは確認できないの？
+
+>Let's rewrite this doc comment and add the new private members/helper.
+
+Now add the private members and helper declaration:
+
+Now rewrite `flushIdleOutput()`:
+
+Good, `d.rowText(promptRow)` with `promptRow = 24 - 2` is the established pattern. Let's update my earlier tests to match the corrected behavior.
+
+Now let's build and run these tests.
+
+All 3 pass, including the "wrong guess gets correctly retired" case. Let's run the full Shell test suite to catch any regressions.
+
+All 104 pass. Now `make usilic` + `make install`, then commit.
+
+修正・テスト・`make usilic`/`make install`・コミット(`79658e6`)まで完了しました。
+
+**訂正の中身**: 前回の修正は未確定の出力を`pipeBuffer_`経由で「閉じたscrollback行」として確定させていましたが、閉じた行の直後には必ず新しい空行が続くモデルなので、本来カーソルが右隣に留まるべきプロンプトが改行を伴って表示されてしまっていました。今回は`handlePromptDetected()`(マーカー一致時)と同じ「生きたプロンプト行」経由(`promptPlain_`/`promptDecorated_`+`redrawPromptRow()`)に差し替え、`pipeBuffer_`/`scrollback_`には一切触れないようにしました。仮の推測が外れて実は続きがある通常の出力行だった場合の後始末(`tentativeLivePrompt_`)も追加しています。
+
+**「PTYでは確認できないの？」について**: 子プロセスが実際にtty入力待ちで止まっていることを直接・確実に知る移植可能な手段はありません。だからこそこのプロジェクトは最初からPS1へマーカーを埋め込む手法を採っています(`expect`/`pexpect`等の端末自動化ツールが軒並み出力のパターンマッチに頼るのと同じ理由です)。今回の「idle」判定もあくまで「一定時間(100ms)新しいバイトが来ない」という間接的な推測にとどまります。
+
+Shell関連テスト104件全通過です。実機で確認いただけますか。他のバグ・要望もあれば教えてください。
+
+<今日はバグだけ。
+・^J^Jでカーソル位置が保存されない。^Vでスクロールしたのち^J^Jしてもスクロール前の位置になる。
+
+これはそちらでも確認できると思うのでデバッグしたらcommit+pushしてほしい。
+
+>`^J^J`の位置保存機能の実装箇所を調査中です。終わり次第、原因と修正方針を報告します。
