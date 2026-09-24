@@ -464,6 +464,50 @@ TEST_CASE("processOutputBytes: a marker split across two feed() calls is still r
   CHECK(shell.currentDirectory() == "/opt");
 }
 
+// 2026-09-24追加、直接のユーザー報告("bash^M以後、プロンプトが
+// haa15030@mpi:~$になる。^Mを押さないとそれが出ない"): 対話的な子
+// シェル(`bash`)が~/.bashrc等でPS1をpromptMarkを含まない値へ完全に
+// 上書きすると、processOutputBytes()のマーカー一致は二度と起きず
+// (このテストの合成バイト列に一切"<M>"が現れないのがその再現)、
+// 新しいプロンプト(改行で終端されない)はpendingLine_に溜まったまま
+// 画面に一切出なかった――flushIdleOutput()(app/main.cppのpoll()
+// タイムアウト/GUIフレームループのidle検出から呼ばれる)が、マーカー
+// 一致を待たずにこの未確定行を仮確定させることを確認する。
+TEST_CASE("flushIdleOutput: a prompt with NO marker (PS1 overwritten by a nested shell's rc file) "
+          "still becomes visible once the PTY goes idle, without needing a marker match") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.promptMark = "<M>";
+  options.programName = "prog";
+  Shell shell(d, options);
+
+  // No "<M>" anywhere -- simulates bash's own default PS1 (e.g.
+  // "user@host:~$ ") replacing usilic's synthetic PS1 entirely, and
+  // no trailing '\n' since a real prompt waits for input on the same
+  // line.
+  shell.processOutputBytes("user@host:~$ ");
+  CHECK(shell.scrollback().lines().empty());  // reproduces the bug: invisible so far
+
+  shell.flushIdleOutput();
+  REQUIRE(shell.scrollback().lines().size() == 1);
+  CHECK(shell.scrollback().lines()[0].text == "user@host:~$ ");
+}
+
+TEST_CASE("flushIdleOutput: is a no-op when there is no pending unterminated line") {
+  RecordingDisplay d(24, 80);
+  ShellOptions options;
+  options.promptMark = "<M>";
+  options.programName = "prog";
+  Shell shell(d, options);
+
+  shell.processOutputBytes("complete line\n");
+  REQUIRE(shell.scrollback().lines().size() == 1);
+
+  shell.flushIdleOutput();  // nothing pending -- must not duplicate or alter the existing line
+  REQUIRE(shell.scrollback().lines().size() == 1);
+  CHECK(shell.scrollback().lines()[0].text == "complete line");
+}
+
 TEST_CASE("processOutputBytes: a runaway prompt tail with no closing mark eventually gives up") {
   RecordingDisplay d(24, 80);
   ShellOptions options;

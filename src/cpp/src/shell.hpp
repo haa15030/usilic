@@ -409,6 +409,31 @@ class Shell {
   // 呼び出し元が何を待っているかについて何も知る必要が無い。
   int promptGeneration() const;
 
+  // 2026-09-24追加、直接のユーザー報告("bash^M以後、プロンプトが
+  // haa15030@mpi:~$になる。^Mを押さないとそれが出ない"): 対話的な
+  // 子シェル(例えば`bash`)を起動すると、多くの場合その子自身の
+  // ~/.bashrc等がPS1をmarkerPrefix_を含まない値で上書きしてしまう
+  // ――結果、processOutputBytes()のマーカー一致は二度と起きず、
+  // handlePromptDetected()(flushPendingLine()/pipeBuffer_.flush()の
+  // 唯一の呼び出し元)も呼ばれない。新プロンプトのバイト列は改行で
+  // 終端されない(端末は入力を待つ間、行末に改行を送らない)ため、
+  // appendBodyByte()自身のpendingLine_に溜まったまま、次にユーザーが
+  // 何か打ってEnterを押し、その`\r\n`エコーがpendingLine_を「完成」
+  // させるまで一切画面に出なかった(報告通りの症状)。
+  // onPtyReadable()を呼ぶapp/main.cpp自身のpollループが、この
+  // タイムアウト(ready<=0、真にPTYが静かになった瞬間)を既に検出
+  // できるので、そこから呼ばれる想定――マーカー一致を待たずに、
+  // 溜まったままの未確定行を「今分かっている内容」として仮に確定
+  // させる。handlePromptDetected()自身と全く同じ3呼び出し
+  // (flushPendingLine()→pipeBuffer_.flush()→flushNewScrollbackLines())
+  // だが、プロンプト自身のメタデータ(promptPlain_/currentDirectory_
+  // 等)は更新しない――「マーカーを検出した」わけではないため、
+  // そちらは引き続き本物のマーカー一致でしか更新されない(モード
+  // ラインのプロンプト表示は古いまま残るが、内容自体はもう画面に
+  // 出ている状態になる)。pendingLine_が空ならno-op(毎回のidle
+  // tickで呼んでも安価)。
+  void flushIdleOutput();
+
  private:
   void handlePromptDetected(const std::string &tailBeforeMark);
   void appendBodyByte(unsigned char c);

@@ -1530,6 +1530,15 @@ bool runTerminalPhase(fm::Application &app, fm::KeyInput &keyInput, fm::Display 
 
     if (ready <= 0) {
       if (keyInput.consumeResizeSignal()) app.handleResize();  // updates Display's geometry, then reflows content
+      // 2026-09-24追加、直接のユーザー報告("bash^M以後、プロンプトが
+      // haa15030@mpi:~$になる。^Mを押さないとそれが出ない"):
+      // Shell::flushIdleOutput()自身の宣言コメント参照。poll()が
+      // 100msタイムアウトした(=PTYが真に静かになった)このまさに
+      // その瞬間が、マーカー一致を待たずに未確定の出力行を仮確定
+      // させるべきタイミング――watchShellPtyと同じガード(Shellモード
+      // かつ生きていて、かつ他のプロンプトがこの行を専有していない
+      // 時だけ)を再利用する。
+      if (watchShellPty) app.shell().flushIdleOutput();
       continue;
     }
     // POLLHUP/POLLERR, not just POLLIN: a real Ubuntu/bash test found
@@ -1862,6 +1871,16 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   // ここでも再現する――pollPagerExitNotice()自身のlastPagerPollTopIndex_
   // と全く同じ役割の、コースト/ドラッグ専用のローカルな記憶。
   int lastMarginPreloadTopIndex = -1;
+  // 2026-09-24追加、直接のユーザー報告("bash^M以後、プロンプトが
+  // haa15030@mpi:~$になる。^Mを押さないとそれが出ない"):
+  // Shell::flushIdleOutput()自身の宣言コメント参照(CUI側のpoll()の
+  // 100msタイムアウトと同じ役割)。GUIのフレームループはpoll(&fd,1,0)
+  // を毎フレーム(概ね16ms間隔)ノンブロッキングで呼ぶだけで、CUI側の
+  // ような「タイムアウト=真に静かになった」という自然な合図が無い
+  // ため、最後にPTYから実際にバイトを読めた時刻を自前で記録し、
+  // 一定時間(CUI側と同じ100ms)新しいバイトが来ていなければ「静か」
+  // とみなす。
+  auto lastShellPtyActivity = std::chrono::steady_clock::now();
   // Set on any frame that renders via renderScrolled() (dragging or
   // coasting); checked on the FIRST frame back on the normal redraw()
   // path so that settle-transition frame's redraw() always happens
@@ -2860,10 +2879,15 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
       struct pollfd fd{app.shell().ptyFd(), POLLIN, 0};
       // POLLHUP/POLLERR too -- see the CUI phase's own comment on why.
       if (poll(&fd, 1, 0) > 0 && (fd.revents & (POLLIN | POLLHUP | POLLERR))) {
-        if (app.shell().onPtyReadable())
+        if (app.shell().onPtyReadable()) {
           anyEventThisFrame = true;
-        else
+          lastShellPtyActivity = std::chrono::steady_clock::now();
+        } else {
           app.handleShellChildExited();
+        }
+      } else if (std::chrono::steady_clock::now() - lastShellPtyActivity >= std::chrono::milliseconds(100)) {
+        // lastShellPtyActivity自身の宣言コメント参照。
+        app.shell().flushIdleOutput();
       }
     }
 

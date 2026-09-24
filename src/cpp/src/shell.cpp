@@ -643,6 +643,14 @@ void Shell::flushPendingLine() {
   pendingLine_.clear();
 }
 
+// 自身の宣言コメント(shell.hpp)参照。
+void Shell::flushIdleOutput() {
+  if (pendingLine_.empty()) return;
+  flushPendingLine();
+  pipeBuffer_.flush();
+  flushNewScrollbackLines();
+}
+
 void Shell::flushNewScrollbackLines() {
   const auto &plines = pipeBuffer_.lines();
   if (plines.size() <= linesConsumed_) return;
