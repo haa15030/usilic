@@ -52,7 +52,14 @@ LDLIBS += -framework CoreText -framework CoreFoundation -framework Cocoa
 # own linker already warns `-ld_classic` will be removed in a future
 # Xcode release -- if that happens, revisit whether the underlying
 # Homebrew/ld-prime incompatibility has been fixed upstream by then.
+# 2026-09-25: that removal has now happened -- a real user report
+# from a MacBook with a newer Xcode, where `-ld_classic` made the link
+# fail outright (the user had to delete this line by hand). Probe the
+# linker once and only add the flag when it's still accepted.
+LD_CLASSIC_OK := $(shell printf 'int main(){return 0;}' | $(CXX) -x c++ - -Wl,-ld_classic -o /dev/null >/dev/null 2>&1 && echo yes)
+ifeq ($(LD_CLASSIC_OK),yes)
 LDLIBS += -Wl,-ld_classic
+endif
 endif
 
 SRC_DIR   = src

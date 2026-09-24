@@ -221,6 +221,26 @@ std::string composeDakutenInString(const std::string &utf8Text) {
   return out;
 }
 
+// ウィンドウのポイント寸法とレンダラーの実際の描画領域(物理ピクセル)
+// の比でレンダラーをスケーリングする――create()自身のコメント参照。
+// 2026-09-25、直接のユーザー報告("macbookで...GUI起動では-cでの画面を
+// 4等分したうちのひとつ分のサイズで表示された")を受けて括り出した:
+// 以前はcreate()の中で1回だけ、まだSDL_WINDOW_HIDDENのウィンドウに
+// 対して計算していた。非表示のウィンドウの描画領域が(環境によって)
+// 1倍で報告されると倍率1のまま固定され、表示後に描画領域がRetinaの
+// 2倍になっても1倍の座標で描き続けるため、左上4分の1(縦横半分)に
+// しか描かれない。表示直後(open())・サイズ変更・ディスプレイ間の
+// 移動のたびにも呼び直す。
+void syncHighDpiRenderScale(SDL_Window *window, SDL_Renderer *renderer) {
+  int windowWidthPoints = 0, windowHeightPoints = 0;
+  int drawableWidthPixels = 0, drawableHeightPixels = 0;
+  SDL_GetWindowSize(window, &windowWidthPoints, &windowHeightPoints);
+  SDL_GetRendererOutputSize(renderer, &drawableWidthPixels, &drawableHeightPixels);
+  if (windowWidthPoints > 0 && windowHeightPoints > 0 && drawableWidthPixels > 0 && drawableHeightPixels > 0)
+    SDL_RenderSetScale(renderer, static_cast<float>(drawableWidthPixels) / windowWidthPoints,
+                       static_cast<float>(drawableHeightPixels) / windowHeightPoints);
+}
+
 // グリフのサーフェスを、割り当てられたboxX/boxY..maxW/maxHのセル
 // (複数)の中のどこに描くかを計算する。それがそうでなければ溢れて
 // しまう場合、「一様に」(決して拡大せず、決してXとYで独立には
@@ -941,13 +961,7 @@ std::unique_ptr<GraphicalDisplay> GraphicalDisplay::create(int rows, int columns
   // 内部的にはより高い物理解像度でレンダリングする――下流のピクセル
   // 計算を別の単位に書き換えることなくHiDPI対応を追加する、標準的な
   // SDL2のパターン。
-  int windowWidthPoints = 0, windowHeightPoints = 0;
-  int drawableWidthPixels = 0, drawableHeightPixels = 0;
-  SDL_GetWindowSize(window, &windowWidthPoints, &windowHeightPoints);
-  SDL_GetRendererOutputSize(renderer, &drawableWidthPixels, &drawableHeightPixels);
-  if (windowWidthPoints > 0 && windowHeightPoints > 0)
-    SDL_RenderSetScale(renderer, static_cast<float>(drawableWidthPixels) / windowWidthPoints,
-                        static_cast<float>(drawableHeightPixels) / windowHeightPoints);
+  syncHighDpiRenderScale(window, renderer);
 
   // std::unique_ptr<GraphicalDisplay>(new ...): コンストラクタは
   // privateであり(呼び出し元はこのファクトリを経由する必要がある、
@@ -1798,6 +1812,7 @@ void GraphicalDisplay::open() {
   SDL_RenderClear(impl_->renderer);
   SDL_RenderPresent(impl_->renderer);
   SDL_ShowWindow(impl_->window);
+  syncHighDpiRenderScale(impl_->window, impl_->renderer);  // それ自身のコメント参照
   SDL_RaiseWindow(impl_->window);
 }
 void GraphicalDisplay::close() {}  // 代わりにデストラクタで破棄される、それ自身のコメント参照
@@ -1858,6 +1873,13 @@ bool GraphicalDisplay::pumpEvents() {
       // 行/列数が実際には変わらない場合には無害にno-opするよう書か
       // れているので、これはそのどちらとも競合しない)。
       case SDL_WINDOWEVENT:
+        // syncHighDpiRenderScale()自身のコメント参照: 表示・サイズ変更・
+        // (倍率の異なる)ディスプレイ間の移動のたびに倍率を取り直す。
+        if (event.window.event == SDL_WINDOWEVENT_SHOWN || event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+            event.window.event == SDL_WINDOWEVENT_RESIZED || event.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
+          syncHighDpiRenderScale(impl_->window, impl_->renderer);
+          impl_->needsRedraw = true;
+        }
         if (event.window.event == SDL_WINDOWEVENT_EXPOSED || event.window.event == SDL_WINDOWEVENT_SHOWN) {
           impl_->needsRedraw = true;
         } else if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
