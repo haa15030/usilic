@@ -241,6 +241,10 @@ DirectoryMode::DirectoryMode(ContentView &view, ModeStack &modeStack, History &h
     // 実際のファイル/ディレクトリの「名前」は任意に長くなり得る)
     // ので、今は同じ処理を受ける。
     fields.splitLayoutWhenCrowded = true;
+    if (sortLabelShown_) {  // setSortLabelShown()自身の宣言コメント参照
+      fields.trailing2 = sortKeyLabel(sortKey_);
+      fields.trailing2Plain = true;
+    }
     return fields;
   });
 }
@@ -784,5 +788,21 @@ void DirectoryMode::cycleSortKey() {
 }
 
 DirectoryMode::LsSortKey DirectoryMode::sortKey() const { return sortKey_; }
+
+void DirectoryMode::setSortLabelShown(bool shown) { sortLabelShown_ = shown; }
+
+const char *DirectoryMode::sortKeyLabel(LsSortKey key) {
+  switch (key) {
+    case LsSortKey::Default:
+      return "Name";
+    case LsSortKey::Time:
+      return "Date";
+    case LsSortKey::Size:
+      return "Size";
+    case LsSortKey::Kind:
+      return "Kind";
+  }
+  return "";
+}
 
 }  // namespace fm

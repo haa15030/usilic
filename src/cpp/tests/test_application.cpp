@@ -15473,3 +15473,23 @@ TEST_CASE_FIXTURE(Fixture, "^M on a file within BUFFER still loads it whole, wit
   CHECK_FALSE(app.fileMode().hasActiveStream());
   CHECK(app.activeContentView().lines().size() == 2);
 }
+
+// DirectoryMode::setSortLabelShown()自身の宣言コメント参照(2026-09-25)。
+TEST_CASE_FIXTURE(Fixture, "^O^L shows the new sort key (Date/Size/Kind/Name) in place of \"(ls)\"; any key clears it") {
+  REQUIRE(app.start(path()));
+  auto pressCtrlOCtrlL = [&] {
+    app.feedByte(0x0f, std::nullopt);  // ^O
+    app.feedByte(0x0c, std::nullopt);  // ^L
+    return app.activeContentView().modeLineText();
+  };
+  CHECK(pressCtrlOCtrlL().find("Date") != std::string::npos);
+  CHECK(pressCtrlOCtrlL().find("Size") != std::string::npos);
+  CHECK(pressCtrlOCtrlL().find("Kind") != std::string::npos);
+  std::string line = pressCtrlOCtrlL();
+  CHECK(line.find("Name") != std::string::npos);
+  CHECK(line.find("(ls)") == std::string::npos);
+  app.feedByte('j', std::nullopt);
+  line = app.activeContentView().modeLineText();
+  CHECK(line.find("Name") == std::string::npos);
+  CHECK(line.find("(ls)") != std::string::npos);
+}

@@ -3820,6 +3820,11 @@ void Application::showTransientNotice(ContentView &view, const std::string &text
 }
 
 void Application::clearTransientNotice() {
+  if (sortLabelNoticeShown_) {  // ^O^Lのソートキーのラベル(CycleLsSortKey参照)
+    sortLabelNoticeShown_ = false;
+    directoryMode_.setSortLabelShown(false);
+    if (currentMode_ == ApplicationMode::Directory) directoryView_.redraw();
+  }
   if (!transientNoticeView_) return;
   ContentView *view = transientNoticeView_;
   transientNoticeView_ = nullptr;
@@ -4640,6 +4645,11 @@ bool Application::handleCommandImpl(Command command) {
     case Command::CycleLsSortKey:
       if (currentMode_ != ApplicationMode::Directory) return false;
       directoryMode_.cycleSortKey();
+      // DirectoryMode::setSortLabelShown()自身の宣言コメント参照(2026-09-25):
+      // 新しいソートキーのラベルを"(ls)"の欄に出し、どのキーでも消す。
+      directoryMode_.setSortLabelShown(true);
+      sortLabelNoticeShown_ = true;
+      directoryView_.redraw();
       return true;
     case Command::MarkAll:
       if (currentMode_ == ApplicationMode::Archive) {

@@ -290,6 +290,13 @@ class DirectoryMode {
   // 例外(SHELL/^[i(in-place GREP)と同じ扱い、直接のユーザー自身の
   // 言葉)。トグル同様、切り替え後は即座に再読み込み/再ソートする。
   void cycleSortKey();
+  // 2026-09-25追加、直接のユーザー依頼("^O^Lソート巡回の種別を「(ls)」の
+  // 箇所に非ハイライトで表示してほしい。ラベルはName→Date→Size→Kind。
+  // どれかのキーで消える"): 設定している間、モードラインの"(ls)"の欄
+  // (trailing2)に今のソートキーのラベルを非ハイライトで出す。消すのは
+  // Application(どのキーでも消える一時メッセージと同じ後始末)。
+  void setSortLabelShown(bool shown);
+  static const char *sortKeyLabel(LsSortKey key);
   LsSortKey sortKey() const;
 
   // ユーザーがこの一覧に対するFGREP/EGREP/CUT/DU/LOCATE検索から戻って
@@ -444,6 +451,7 @@ class DirectoryMode {
   // toggleReverseSort()/cycleSortKey()自身のコメント参照。
   bool reverseSort_ = false;
   LsSortKey sortKey_ = LsSortKey::Default;
+  bool sortLabelShown_ = false;  // setSortLabelShown()参照
   AnnotationStack<DirAnnotationKind> primaryAnnotations_;
   bool showEditError_ = false;
   std::string editErrorMessage_ = "Invalid mode";

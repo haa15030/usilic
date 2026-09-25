@@ -3141,6 +3141,7 @@ class Application {
   // 2026-09-25追加、次のキーで消える一時メッセージ(showTransientNotice()
   // 参照)を今表示しているビュー。nullptrなら表示していない。
   ContentView *transientNoticeView_ = nullptr;
+  bool sortLabelNoticeShown_ = false;  // ^O^Lのソートキーのラベル表示中(CycleLsSortKey参照)
   // 一時メッセージを`view`のモードラインの位置欄(GREPの"No String"と同じ
   // 場所、非ハイライト)に出す。どのキーでも(feedUntranslatedByte()の冒頭、
   // あるいはhandleCommand()の冒頭で)消え、そのキー自体は通常どおり働く。
