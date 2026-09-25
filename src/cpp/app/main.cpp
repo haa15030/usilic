@@ -4326,7 +4326,12 @@ int main(int argc, char **argv) {
   fm::Charset::Encoding encoding = history.savedCharset().value_or(configuration.defaultCharset());
 
   fm::ShellOptions shellOptions;
-  if (const char *shellEnv = std::getenv("SHELL"); shellEnv && *shellEnv) shellOptions.argv = {shellEnv};
+  // Configuration::shellArgv()自身の宣言コメント参照(2026-09-25): $SHELLが
+  // 対応するシェルでなければusilicrcのSHELL、それも無ければbash。
+  {
+    const char *shellEnv = std::getenv("SHELL");
+    shellOptions.argv = configuration.shellArgv(shellEnv ? shellEnv : "");
+  }
   // resolveOwnExecutablePath()自身のコメント参照(2026-09-20追加、
   // "SHELLプロンプトでman ls...(stdin)で表示して欲しい")――空(失敗)
   // ならShellOptions::pagerPath自身のデフォルトのまま(PAGERのexport

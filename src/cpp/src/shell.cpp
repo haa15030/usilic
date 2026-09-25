@@ -1201,11 +1201,22 @@ std::string Shell::buildSetupCommand(const std::string &initialDirectory) const 
   // 参照――そしてcsh/tcshの`#`は無条件にコメント文字なので、
   // どちらにせよ`:`スタイルの何もしない接頭辞に頼ることもできな
   // かった)。
+  // tcsh/csh(2026-09-25拡張、直接のユーザー依頼): それまではプロンプトと
+  // ignoreeofだけで、bash/zshが設定するPAGER/MANPAGER(SHELLで実行した
+  // man等の出力をusilicで読む仕組み)とCOLUMNSが無かった。csh系には
+  // exportが無いのでsetenvで同じ値を設定する(pagerCommand自身の
+  // '...'"..."の引用は、csh系でもそのまま同じ意味になる)。
   std::vector<std::string> cshStatements = {
       "set prompt = \"" + mark + prog + ":%~%# " + mark + "\"",
       "set ignoreeof",
-      eos,
+      "setenv COLUMNS " + std::to_string(columns_),
   };
+  if (!options_.pagerPath.empty()) {
+    std::string pagerCommand = "'" + options_.pagerPath + "'\" --usilic-pager $$\"";
+    cshStatements.push_back("setenv PAGER " + pagerCommand);
+    cshStatements.push_back("setenv MANPAGER " + pagerCommand);
+  }
+  cshStatements.push_back(eos);
   cshStatements.insert(cshStatements.begin(), cdStatement.begin(), cdStatement.end());
   return chain(cshStatements);
 }

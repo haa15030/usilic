@@ -154,8 +154,10 @@ CODE
 SHELL
 # 書式: shell
 #
-# SHELL モードを shell で起動します(環境変数 SHELL が bash でも tcsh でも
-# ない場合に必要。bash(1) か tcsh(1) を指定できます)。
+# SHELL モードで起動するシェル。環境変数 SHELL が bash、zsh、tcsh、csh の
+# どれかならそちらが使われ、ここの設定はそれ以外(fish 等)の時だけ使われ
+# ます。ここにも設定が無ければ bash を使います。SHELL モードが対応している
+# のは bash、zsh、tcsh、csh です。
 
 	bash
 #	tcsh

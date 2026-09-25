@@ -648,14 +648,15 @@ std::vector<std::string> Configuration::editorArgv(const std::string &path, int 
   return result;
 }
 
-std::vector<std::string> Configuration::shellArgv() const {
-  std::vector<std::string> result = shellProgram_.empty() ? fallbackShellArgv_ : shellProgram_;
-  if (result.empty()) return result;
-  result.push_back("-i");
-  return result;
+std::vector<std::string> Configuration::shellArgv(const std::string &envShell) const {
+  auto supported = [](const std::string &program) {
+    std::string base = program.substr(program.find_last_of('/') + 1);
+    return base == "bash" || base == "zsh" || base == "tcsh" || base == "csh";
+  };
+  if (!envShell.empty() && supported(envShell)) return {envShell};
+  if (!shellProgram_.empty()) return shellProgram_;
+  return {"bash"};
 }
-
-void Configuration::setFallbackShellArgv(std::vector<std::string> argv) { fallbackShellArgv_ = std::move(argv); }
 
 void Configuration::setUserLocateDatabasePath(const std::string &path) {
 #ifdef __APPLE__

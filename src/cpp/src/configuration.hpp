@@ -224,22 +224,23 @@ class Configuration {
   // 伸長できなかった1990年代の回避策)。これは単に本物の
   // "+<lineNumber>"引数を直接組み立てるだけ。
   std::vector<std::string> editorArgv(const std::string &path, int lineNumber) const;
-  std::vector<std::string> shellArgv() const;
-  // usilicrcにSHELLディレクティブが全く無い場合に使われる――legacyは
-  // その場合、$SHELL/file(1)による検出でログインシェルを推測する
-  // ことにフォールバックし、それでもSHELLディレクティブでも
-  // bash/tcshに解決できなければ起動を拒否していた。Configurationは
-  // 自分ではgetenv()を呼んだりファイルシステムを嗅ぎ回ったりしない
-  // (setEnvironmentCharset()と同じ「隠れたグローバル状態を持たない」
-  // 原則)――呼び出し側がフォールバックを解決し、ここへ渡す。これを
-  // 全く呼ばなければ、SHELLディレクティブが無い場合shellArgv()は
-  // 空のままになる。
-  void setFallbackShellArgv(std::vector<std::string> argv);
+  // SHELLモードで起動するシェル(2026-09-25作り直し、直接のユーザー依頼。
+  // それまでは誰からも呼ばれておらず、usilicrcのSHELLは読むだけで使われて
+  // いなかった――main.cppは常に$SHELLを使っていた)。legacyの趣旨(usilicrc
+  // のSHELLは「環境変数SHELLがbashでもtcshでもない時に必要」)に沿って:
+  //   1. envShell(呼び出し側が渡す$SHELL)がShell自身の対応するシェル
+  //      (bash/zsh/tcsh/csh、Shell::startupScript()参照)ならそれ。
+  //   2. そうでなければusilicrcのSHELL。
+  //   3. どちらも無ければbash。
+  // Configurationは自分ではgetenv()を呼ばない(setEnvironmentCharset()と
+  // 同じ原則)ので、$SHELLは呼び出し側が渡す。-iは付けない(Shellはpty上で
+  // 起動するので、シェル自身が対話的と判断する)。
+  std::vector<std::string> shellArgv(const std::string &envShell) const;
 
   // ConfiguredRole::LocateUserDb/LocateUserDbBuildの既定コマンドを
   // `path`(main.cpp自身の`usilicDir + "locate.db"`、loadRcText()の
-  // 直後に呼ばれる――上のsetFallbackShellArgv()と同じ「呼び出し側が
-  // ファイルシステムの詳細を解決し、Configurationはそれを保存する
+  // 直後に呼ばれる――上のshellArgv()の$SHELLと同じ「呼び出し側が
+  // 環境/ファイルシステムの詳細を解決し、Configurationはそれを受け取る
   // だけ」という境界であり、理由も同じ: Configuration自身は決して
   // getenv()を呼んだりファイルシステムに触れたりしない)へ配線する。
   // これを全く呼ばない場合(これを配線せずに素のConfigurationを
@@ -340,7 +341,6 @@ class Configuration {
 
   std::vector<std::string> editorProgram_;
   std::vector<std::string> shellProgram_;
-  std::vector<std::string> fallbackShellArgv_;
 
   std::map<ConfiguredRole, ProgramCommand> roleCommands_;
 

@@ -39,8 +39,8 @@ TEST_CASE("built-in defaults: LOCATE's UpdateDb role uses the platform-appropria
 // 2026-08-22 addition (docs/CHANGES.md item 406): unwired by default
 // (every other test in this file constructs a bare Configuration and
 // never calls this setter) -- LocateUserDb/LocateUserDbBuild simply
-// stay unconfigured, matching setFallbackShellArgv()'s own "caller
-// resolves the filesystem detail" boundary right above it.
+// stay unconfigured, matching shellArgv()'s own "caller resolves the
+// environment detail" boundary.
 TEST_CASE("built-in defaults: LocateUserDb/LocateUserDbBuild stay unconfigured until "
           "setUserLocateDatabasePath() is called") {
   Configuration config;
@@ -185,14 +185,18 @@ TEST_CASE("EDITOR/SHELL directives build the full launch argv") {
   REQUIRE(config.loadRcText("EDITOR\n vi\nSHELL\n bash\n", true));
   CHECK(config.editorArgv("/tmp/file.txt", 42) ==
         std::vector<std::string>{"vi", "+42", "/tmp/file.txt"});
-  CHECK(config.shellArgv() == std::vector<std::string>{"bash", "-i"});
+  CHECK(config.shellArgv("") == std::vector<std::string>{"bash"});
 }
 
-TEST_CASE("shellArgv: falls back to the caller-supplied shell when no SHELL directive is present") {
+// Configuration::shellArgv()自身の宣言コメント参照(2026-09-25)。
+TEST_CASE("shellArgv: $SHELL if it is bash/zsh/tcsh/csh, else usilicrc's SHELL, else bash") {
   Configuration config;
-  CHECK(config.shellArgv().empty());
-  config.setFallbackShellArgv({"/bin/tcsh"});
-  CHECK(config.shellArgv() == std::vector<std::string>{"/bin/tcsh", "-i"});
+  CHECK(config.shellArgv("/bin/zsh") == std::vector<std::string>{"/bin/zsh"});
+  CHECK(config.shellArgv("/usr/local/bin/fish") == std::vector<std::string>{"bash"});
+  CHECK(config.shellArgv("") == std::vector<std::string>{"bash"});
+  REQUIRE(config.loadRcText("SHELL\n\t/bin/tcsh\n", true));
+  CHECK(config.shellArgv("/bin/bash") == std::vector<std::string>{"/bin/bash"});
+  CHECK(config.shellArgv("/usr/local/bin/fish") == std::vector<std::string>{"/bin/tcsh"});
 }
 
 TEST_CASE("CODE directive: only byte values under 32 are accepted, clamped to 2 digits each") {
