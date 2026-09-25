@@ -472,6 +472,36 @@ TEST_CASE_FIXTURE(Fixture, "cycleSortKey: Kind (extension) sort is implemented i
   CHECK(mode.sortKey() == DirectoryMode::LsSortKey::Default);
 }
 
+// cycleSortKey()のKind自身の2026-09-25のコメント参照(拡張子の無い通常ファイルが
+// ディレクトリに混ざっていた件)。
+TEST_CASE_FIXTURE(Fixture, "cycleSortKey: Kind puts files with an extension first (by extension), then files "
+                           "without one, then directories") {
+  { std::ofstream(root / "b.jpg") << "j"; }
+  { std::ofstream(root / "a.txt") << "t"; }
+  { std::ofstream(root / "g") << "g"; }
+  fs::create_directory(root / "adir");
+  fs::create_directory(root / "zdir");
+  REQUIRE(mode.enterDirectory(path()));
+  for (int i = 0; i < 3; i++) mode.cycleSortKey();
+  REQUIRE(mode.sortKey() == DirectoryMode::LsSortKey::Kind);
+
+  const auto &entries = mode.entries();
+  auto indexOfName = [&](const std::string &name) {
+    for (std::size_t i = 0; i < entries.size(); i++)
+      if (entries[i].name == name || entries[i].name == name + "/") return static_cast<int>(i);
+    return -1;
+  };
+  int jpg = indexOfName("b.jpg"), txt = indexOfName("a.txt"), noExt = indexOfName("g");
+  int adir = indexOfName("adir"), zdir = indexOfName("zdir");
+  REQUIRE(jpg >= 2);
+  CHECK(jpg < txt);
+  CHECK(txt < noExt);
+  CHECK(noExt < adir);
+  CHECK(adir < zdir);
+  // ディレクトリより後ろに通常ファイルは無い。
+  for (std::size_t i = static_cast<std::size_t>(adir); i < entries.size(); i++) CHECK(entries[i].isDirectory);
+}
+
 // 2026-09-12追加、直接のユーザー依頼("usilicrcにCOLUMNを新設...（ls）
 // のハイライト表示域長がCOLUMNよりも短い場合は、自動的にlsの-l
 // オプションを削除、長ければ付加される"): applyColumnAutoDisplay()

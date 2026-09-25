@@ -322,10 +322,23 @@ bool DirectoryMode::enterDirectory(const std::string &path, bool consultHistory)
       std::size_t dot = stripped.find_last_of('.');
       return (dot == std::string::npos || dot == 0) ? std::string() : stripped.substr(dot + 1);
     };
+    // 2026-09-25修正、直接のユーザー指摘("Kindのはずなのに通常ファイル g と n
+    // がディレクトリ群の中にある"、"通常ファイルとディレクトリとでは明らかに
+    // 種類が違う"): 以前は拡張子だけを比べていたため、拡張子の無い通常
+    // ファイルがディレクトリ(名前に拡張子が無い)と同じ「拡張子無し」の群に
+    // 入り、名前順で混ざっていた。ユーザー指定の順: 拡張子のある通常ファイル
+    // (拡張子順)→拡張子の無い通常ファイル→ディレクトリ。同じ群・同じ拡張子の
+    // 中はlsが出した元の並び(名前順)のまま(stable_sort)。
+    auto rankOf = [&](std::size_t idx) {
+      if (entries[idx].isDirectory) return 2;
+      return extensionOf(entries[idx].name).empty() ? 1 : 0;
+    };
     std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
       bool aNav = isNav(a), bNav = isNav(b);
       if (aNav != bNav) return aNav;
       if (aNav && bNav) return false;  // どちらもナビゲーション用: stable_sort自身が元の順序を保つ
+      int aRank = rankOf(a), bRank = rankOf(b);
+      if (aRank != bRank) return aRank < bRank;
       return extensionOf(entries[a].name) < extensionOf(entries[b].name);
     });
     if (reverseSort_) {
