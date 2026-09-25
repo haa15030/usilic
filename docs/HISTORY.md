@@ -23520,3 +23520,7 @@ IDEAS.mdそのものに「実装済み」の印を付けて整理することも
 pushしますか？
 
 <pushして。
+
+>pushしました（`origin/mpi-gui-fix`は`3ebfe22..89d66b6`）。自動追記された`docs/HISTORY.md`の変更は、まだコミットしていません。
+
+<コミットしてよ。
