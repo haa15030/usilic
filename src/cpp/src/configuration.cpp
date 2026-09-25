@@ -1,4 +1,5 @@
 #include "configuration.hpp"
+#include "key_bindings.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -562,9 +563,29 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         // に正確なキーワード一致でスキップする: 最初のトークンが
         // 18個の既知のディレクティブキーワードのどれかに正確に等しい
         // 次の行までの全てを消費する。
+        //
+        // 2026-09-25: 各行を解析するようになった(KeyBindings自身のコメント、
+        // .steering/20260925-usilicrc-key-bindings/参照)。行の最初の
+        // トークンが"F-n"/"K-n"なら、残りをそのキー表記として保持する
+        // (空なら割り当て無し)。それ以外の行(旧書式の"F-?"/"K-?"等の見出し
+        // やコメントだけの行)は無視する。キー表記自体の検査は、組み込みの
+        // 表と突き合わせるKeyBindings::configure()が行う。
         while (i < lines.size()) {
           if (std::find(keywords.begin(), keywords.end(), firstToken(lines[i])) != keywords.end()) break;
+          auto trimmed = trimCommentAndLeadingWs(lines[i]);
           i++;
+          if (!trimmed) continue;
+          std::string line = *trimmed;
+          std::size_t sp = line.find_first_of(" \t");
+          std::string head = line.substr(0, sp);
+          std::string spec = (sp == std::string::npos) ? "" : line.substr(sp + 1);
+          while (!spec.empty() && (spec.back() == ' ' || spec.back() == '\t')) spec.pop_back();
+          if (head.size() >= 3 && (head[0] == 'F' || head[0] == 'K') && head[1] == '-' &&
+              head.find_first_not_of("0123456789", 2) == std::string::npos) {
+            int number = std::atoi(head.c_str() + 2);
+            if (head[0] == 'F') keyPrefixSpecs_[number] = spec;
+            else keyEntrySpecs_[number] = spec;
+          }
         }
         break;
       }
@@ -589,6 +610,9 @@ bool Configuration::loadRcText(const std::string &text, bool fileManagerMode) {
         break;
     }
   }
+  // KEY節(2026-09-25実装): 組み込みの表と突き合わせて置き換え表を組み、
+  // 不正な指定はこのusilicrcのエラーとして積む(keyBindings()参照)。
+  keyBindings_.configure(keyPrefixSpecs_, keyEntrySpecs_, &errors_);
   return true;
 }
 
@@ -676,6 +700,9 @@ const std::vector<std::string> &Configuration::programSeedCommands() const { ret
 
 const std::string &Configuration::allowedControlBytes() const { return allowedControlBytes_; }
 const std::vector<std::string> &Configuration::grepPresets() const { return grepPresets_; }
+const std::map<int, std::string> &Configuration::keyPrefixSpecs() const { return keyPrefixSpecs_; }
+const std::map<int, std::string> &Configuration::keyEntrySpecs() const { return keyEntrySpecs_; }
+const KeyBindings &Configuration::keyBindings() const { return keyBindings_; }
 int Configuration::bufferSizeLimitBytes() const { return bufferSizeLimitBytes_; }
 int Configuration::historyRetentionCount() const { return historyRetentionCount_; }
 int Configuration::waitIntervalMicros() const { return waitIntervalMicros_; }

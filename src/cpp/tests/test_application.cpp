@@ -15416,3 +15416,31 @@ TEST_CASE_FIXTURE(Fixture, "EGREP list (^J^S then ^R): usilicrc GREP presets are
   REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
   CHECK(app.listBrowserMode().items() == std::vector<std::string>{"m.n", "CP|MV|RM", "typed"});
 }
+
+// usilicrcのKEY節(KeyBindings、2026-09-25)をApplication::feedByte()の入口で
+// 反映すること――tests/test_key_bindings.cpp自身の単体テストの結合版。
+TEST_CASE_FIXTURE(Fixture, "usilicrc KEY: ^J^C moved to ^Jz -- ^Jz goes to the file selector, ^J^C no longer does") {
+  REQUIRE(configuration.loadRcText("KEY\n\tK-16\tF-1 z\n", true));
+  REQUIRE(app.start(path()));
+  int idx = indexOf("plain.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.currentMode() == ApplicationMode::File);
+
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  app.feedByte(0x03, std::nullopt);  // ^C -- 元のキーは効かない
+  CHECK(app.currentMode() == ApplicationMode::File);
+  app.feedByte(0x0a, std::nullopt);  // ^J
+  app.feedByte('z', std::nullopt);   // z
+  CHECK(app.currentMode() == ApplicationMode::Directory);
+  CHECK(app.directoryMode().currentDirectory() == path());
+}
+
+TEST_CASE_FIXTURE(Fixture, "usilicrc KEY: a one-character key change (j -> J) doesn't touch text typed at a prompt") {
+  REQUIRE(configuration.loadRcText("KEY\n\tK-70\tJ\n", true));
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::StartEgrep));
+  app.feedByte('j', std::nullopt);
+  app.feedByte('J', std::nullopt);
+  CHECK(app.promptText() == "jJ");
+}

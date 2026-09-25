@@ -1,25 +1,22 @@
-# usilicrc  version 1.5b-1  20 Mar 2000
+# usilicrc  version 1.5b
 # -------------------------------------------------------------
-# All blank lines or strings begin with the character '#' will be ignored.
-# Lines begin with one of the following strings are available.  Other lines 
-# begin with any character except for '#', Space, Tab, and '\n' will cause 
-# an error. 
+# 空行と、'#' で始まる行(および行中の '#' 以降)は無視されます。
+# 行頭が以下の見出しの行が節の始まりで、節の中身の行はタブ(または空白)で
+# 始めます。それ以外の文字で始まる行はエラーになります。
 #
 # ARCHIVE, FILE, EXEC, GREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
-# HISTORY, WAIT, SCROLL, LS, CP, MV, RM, KEY, F-?, M-?, P-?, K-?
+# HISTORY, WAIT, LS, SCROLL, CP, MV, RM, KEY
+#
+# 英語のコメント付きの同じ内容のファイルが usilicrc.en です。
 # -------------------------------------------------------------
 
 ARCHIVE
-# Format: `newSuffix' `builtinSuffix'
+# 書式: 新しいsuffix  組み込みのsuffix
 #
-# Each line adds `newSuffix' as an ALIAS of an already-built-in archive
-# entry, looked up by `builtinSuffix' (an exact match against one of the
-# suffixes below -- not a free-form suffix/program pair; this directive
-# cannot define a brand-new extraction command, only alias a new suffix
-# onto an existing one).
+# 組み込みのアーカイブの suffix(下の一覧)に、新しい suffix を別名として
+# 追加します。新しい展開コマンドを定義するものではありません。
 #
-# Built-in suffixes (2026-09-15, this C++ port's own table, Configuration's
-# constructor):
+# 組み込みの suffix:
 #  .tar        tar tvf
 #  .tgz        gzip -dc | tar tvf -
 #  .tar.bz2    bzip2 -dc | tar tvf -
@@ -32,6 +29,7 @@ ARCHIVE
 #  .rar        lsar -l
 #  .7z         7z l
 #
+
 	.taz	.tgz
 	.tar.z	.tgz
 	.tar.gz	.tgz
@@ -39,12 +37,11 @@ ARCHIVE
 	.tbz2	.tar.bz2
 	.txz	.tar.xz
 	.tzst	.tar.zst
-	
+
 FILE
-# format: `suffix' `program' (option)
+# 書式: suffix  program  (option)
 #
-# The `program' will display the content of the regular-file that has the 
-# `suffix' as a plain text.
+# suffix を持つ file の内容を、program を実行して平文で表示します。
 
 	.gz	gzip	-dc
 	.bz2	bzip2	-dc
@@ -52,16 +49,14 @@ FILE
 #	.dvi	dvi2tty
 
 EXEC
-# format: `suffix' `program' (option)
+# 書式: suffix  program  (option)
 #
-# The `program' will be launched with argument of the file that has the `suffix'.
+# suffix を持つ file を引数にして program を起動します。
 #
-# macOS note: a bare app name (e.g. `IINA') is usually NOT a real
-# command -- GUI .app bundles aren't on $PATH, so this fails silently
-# (`execvp' just can't find it). Use macOS's own `open -a AppName'
-# bridge instead, e.g.:
-#	.mp4	open	-a	IINA
+# macOS の注意: アプリ名だけ(例: IINA)は $PATH 上のコマンドではないので
+# 起動できません。open -a を使います(下の .mp4 の例)。
 
+#	.mp4	open	-a	IINA
 	.html	lynx
 	.htm	lynx
 	.info	info	-f
@@ -70,46 +65,46 @@ EXEC
 #	.dvi	dviout
 
 GREP
-# format: `string'
+# 書式: 文字列
 #
-# The `string' that will be used in EGREP or CUT.
-# (String contains a space character must be enclosed within parentheses "".)
+# EGREP と CUT(正規表現)の一覧に、最初から載せておく検索文字列。
+# (空白を含む文字列は "" で囲みます。)
 #
-# 2026-09-25: TUTORIAL's EGREP chapter examples, in the same order as its
-# regular-expression list -- each one matches some text in TUTORIAL itself.
-# Written for `grep -E' on both macOS (BSD grep) and Linux (GNU grep):
-# \d/\D are spelled [0-9]/[^0-9], and grep -E has no non-greedy *?/+?,
-# (?:...) or look-around, so those have no example.
+# TUTORIAL の EGREP の章の正規表現一覧と同じ順に、TUTORIAL 自身の本文に
+# マッチする例を並べています。macOS(BSD grep)と Linux(GNU grep)の両方の
+# grep -E で同じ意味になるように、\d/\D は [0-9]/[^0-9] で書き、grep -E に
+# 無い最短一致(*?/+?)・(?:...)・先読み/後読みの例はありません。
+#
 
-	"^  [0-9]+\."            # ^     : chapter headings (1. 2. ...)
-	）$                       # $     : lines ending with a full-width )
-	\bls\b                   # \b    : ls as a word
-	usilic\B                 # \B    : usilic in usilicrc
+	"^  [0-9]+\."            # ^     : 章の見出し(1. 2. ...)
+	）$                       # $     : 全角の閉じ括弧で終わる行
+	\bls\b                   # \b    : 単独の ls
+	usilic\B                 # \B    : usilicrc の usilic
 	m.n                      # .     : man
-	\^[JOX][a-z]             # [ ]   : ^Jp ^Ou ^Xd ...
-	"\^[^JOX ]"              # [^ ]  : ^M ^[ ^K ...
-	[a-z]+\(1\)              # [a-z] : usilic(1) man(1) ...
-	[0-9]\.[0-9]\.           # \d    : section numbers 2.2. ...
-	[0-9]+[^0-9][0-9]+       # \D    : 01/66 1.5 0x20 ...
+	\^[JOX][a-z]             # [ ]   : ^Jp ^Ou ^Xd など
+	"\^[^JOX ]"              # [^ ]  : ^M ^[ ^K など
+	[a-z]+\(1\)              # [a-z] : usilic(1) man(1) など
+	[0-9]\.[0-9]\.           # \d    : 節番号 2.2. など
+	[0-9]+[^0-9][0-9]+       # \D    : 01/66 1.5 0x20 など
 	\w+rc\b                  # \w    : usilicrc
 	\^\W                     # \W    : ^[ ^@
 	\^J\s                    # \s    : ^J b
-	~/\S+                    # \S    : ~/.usilic/history ...
-	-[a-z]*v[a-z]*           # *     : -rvi -vf ...
-	[0-9]+%                  # +     : 48% ...
+	~/\S+                    # \S    : ~/.usilic/history など
+	-[a-z]*v[a-z]*           # *     : -rvi -vf など
+	[0-9]+%                  # +     : 48% など
 	\.tar(\.gz)?             # ?     : .tar .tar.gz
-	[0-9]{4}                 # {n}   : 1918 2000 ...
-	[0-9]{2,}                # {n,}  : numbers of 2+ digits
-	\b[a-z]{2,3}\(1\)        # {n,m} : ls(1) man(1) vi(1) ...
+	[0-9]{4}                 # {n}   : 1918 2000 など
+	[0-9]{2,}                # {n,}  : 2桁以上の数
+	\b[a-z]{2,3}\(1\)        # {n,m} : ls(1) man(1) vi(1) など
 	CP|MV|RM                 # |     : CP MV RM
-	\.(gz|bz2|xz|zst)        # ( )   : compressed-file suffixes
+	\.(gz|bz2|xz|zst)        # ( )   : 圧縮形式の suffix
 	~/\.usilic/              # \.    : ~/.usilic/
-	\(\?                     # \?    : (?: (?= ...
+	\(\?                     # \?    : (?: (?= など
 
 PROGRAM
-# Format: `program' (option)
+# 書式: program  (option)
 #
-# The `program' that will be launched by PROGRAM.
+# PROGRAM で起動する program の一覧。
 
 	jed
 	emacs
@@ -131,271 +126,218 @@ PROGRAM
 	qlmanage -p
 
 EDITOR
-# Format: `editor'
+# 書式: エディター
 #
-# The `editor' will be launched by EDIT.
+# EDIT で起動するエディター。
 
 	vi
 #	jed
 
 BUFFER
-# Format: `size'
+# 書式: サイズ
 #
-# The maximun `size' of the buffer (a unit is MB) which will be
-# allocated for the regular-file or archive.
+# file やアーカイブに割り当てるバッファの最大サイズ(単位は MB)。
 
 	8
 
 CODE
-# Format: `code0' `code1' ...
+# 書式: code0  code1 ...
 #
-# If a regular-file that has no above suffixes contains a control
-# character under 0x20 excluding the ones set in here, it will be
-# assumed as a binary file.  Usilic(1) will execute file(1) and
-# display the code and the file-type. (If `code0' is equal to 0,
-# this setting will be ignored.)
+# 上の suffix を持たない file に、ここに無い 0x20 未満の制御コードが含まれて
+# いれば、バイナリファイルとみなして file(1) を実行し、その制御コードと
+# ファイルの種類を表示します(code0 が 0 ならこの判定をしません)。
+#
 
 # ^A(TAGS)  \b  \t  \n  \f  \r  ^N(SO)  ^O(SI)  ^Z(EOF)  ^[(ESC)  ^_(info)
    1         8   9  10  12  13  14      15      26       27       31
 
 SHELL
-# Format: `shell'
+# 書式: shell
 #
-# SHELL-mode will be launched with `shell'.  (When the environment
-# variable ``SHELL'' is set to neither ``bash'' nor ``tcsh'', 
-# this setting (bash(1) or tcsh(1) can be set) is needed.)
+# SHELL モードを shell で起動します(環境変数 SHELL が bash でも tcsh でも
+# ない場合に必要。bash(1) か tcsh(1) を指定できます)。
 
 	bash
 #	tcsh
 
 HISTORY
-# Format: `line'
+# 書式: 行数
 #
-# It determines the maximum `line' that will be saved to the HISTORY
-# list.  When the value of total-lines are equal to this line, 
-# the oldest line will be deleted.
+# HISTORY の一覧に残す最大の行数。これを超えると古い行から消えます。
 
 	500
 
 WAIT
-# Format: `wait' 
-# 
-# Built-in or keyboard macro will be executed at intervals of `wait'
-# (a unit is 10 msec).
+# 書式: wait
+#
+# マクロを wait(単位は 10 msec)の間隔で実行します。
 
 	1
 
 LS
-# Format: `flag' 
-# 
-# The `flag' for switching display-mode of file-selector. (can be
-# switched by ^Ol.)  When the `flag' set, file-selector will display
-# only filename.
+# 書式: フラグ
+#
+# ls 表示の形式(起動後は ^Oo で切替)の初期値。セットするとファイル名のみを
+# 表示します。
 
 	0
 
 SCROLL
-# Format: `flag' 
-# 
-# The `flag' for switching scroll-mode. (can be switched by ^Oh.)
-# When the `flag' set, usilic window will scroll within the range above
-# bottom line.
+# 書式: フラグ
+#
+# スクロールモードの初期値(起動時のみ。^Oh は mode-line の表示/非表示の
+# 切替です)。セットすると最下行より上の範囲でスクロールします。
 
 	0
 
 CP
-# Format: `cp' (option)
+# 書式: cp  (option)
 #
-# Command of CP mode. (default : cp -vRi) 
+# CP のコマンド。(既定: cp -vRi)
 #
+
 #	cp -vR
 
 MV
-# Format: `mv' (option)
+# 書式: mv  (option)
 #
-# Command of MV mode. (default : mv -vi) 
+# MV のコマンド。(既定: mv -vi)
 #
+
 #	mv -v
 
 RM
-# Format: `rm' (option) 
+# 書式: rm  (option)
 #
-# Command of RM mode. (default : rm -vri) 
+# RM のコマンド。(既定: rm -vri)
 #
+
 #	rm -vr
 
 KEY
-# Customizing keys described in the KEY mode.
+# キーの割り当て。
 #
-# (1) ... Mode No. used in `mode.h' of source file.
-# (2) ... Any keys except for ESC can be set to `F-?' (from F-0 to F-9) 
-	  up to 2-stroke.
-# (3) ... Though up to 2-stroke, only `F-?' or ESC can be used as the
-#	  first key.  (Since K-54 and K-65 are also the first key,
-#	  set either `F-?' or ESC.)
-# (4) ... The string enclosed in "" will be used in KEY-mode.  The comannd
-          enclosed within parentheses '' in the line of K-43 will be 
-	  executed at SHELL-prompt. 
-# (5) ... Setting of `F-?' isn't one of the following keys can't be 
-#	  executed from the command-line such as the SHELL-prompt.
-#	  (Following keys aren't used for the keys of `Command-line' 
-#	  described in the HELP-mode.)
+# 書式: F-n  キー    (接頭キー F-0〜F-4 の定義)
+#       K-n  キー    (機能 K-n のキー)
 #
-#         	C-j, C-o, C-t, C-x, C-[
+# K-1 以降は TUTORIAL に出てくる順です(TUTORIAL の本文に出てこないキーは
+# その後、^T/^H(HELP)とマクロは最後)。キーを変えると、その機能は新しい
+# キーでだけ動き、元のキーは効かなくなります(元のキーを別の機能に
+# 割り当てることもできます)。キーを空にすると、その機能は割り当て無しに
+# なります。行を消した番号は、既定のキーのまま(接頭キー F-n を変えていれば
+# 新しい接頭キー)で動きます。
 #
-# (6) ... Built-in macro definition (M-0 ... M-19).  Enclose in "" the 
-#	  string which you want to use in `Command-line'.  The keys of (7) 
-#	  will launch execution of the definition.
-# (7) ... Keys will launch execution of the definition of (6).
-# (8) ... Mark for the content of Setting.
-# (9) ... Setting can be used by `usilic' executed as `pager'.
+# キーの書き方:
+#   F-n    接頭キー F-n
+#   C-x    Ctrl+x(C-a〜C-z、C-[ C-\ C-] C-^ C-_、C-SPC)
+#   ESC    esc      SPC  space
+#   N      数字 0〜9 のいずれか(末尾のみ。^JN や ^[N のように N を使う機能だけ)
+#   その他 その 1 文字(# は書けません)
 #
-# Notations :
-#	  C-x ... Ctrl+'x'
-#	  \cX ... Ctrl+'x'
-# 	  ESC ... C-[
-# 	  SPC ... Space
+# プロンプトの入力中、SHELL 画面、文字を入力する一覧では、F-0/F-1/F-2/F-4
+# または ESC で始まるキーだけが置き換わります(1 文字のキーや ^C で始まる
+# キーは、そこでは文字や入力の中断として扱われます)。同じキーを二つの機能に
+# 割り当てたり、あるキーが別のキーの頭になっていたりすると、usilicrc の
+# エラーとして後の方が割り当て無しになります。
+#
+	F-0	C-x         # ^X
+	F-1	C-j         # ^J
+	F-2	C-o         # ^O
+	F-3	C-c         # ^C
+	F-4	C-j C-o     # ^J^O
 
-# <-- (2) -->             
-F-?	<-- (8)
-	C-x	# ^X							F-0
-	C-j	# ^J							F-1
-	C-x C-k # ^X^K							F-2
-	C-o     # ^O							F-3
-		#							F-4
-		#							F-5
-		#							F-6
-		#							F-7
-		#							F-8
-		#							F-9
-
-#  <-- (3) -->  <-- (4) -->                 		           <-- (1) -->
-K-?	<-- (8)
-	C-t	"USILIC"	# ^T						K-0
-  	F-1 C-h	"HELP"	# ^J^H		<-- (5)				K-1
-	C-g	"Return to previous mode"	# ^G			K-2
-	C-l	"Redisplay current window (clear "Exit" message)" # ^L	K-3
- 	SPC	"Move window one page down"	# Space			K-4
-	b	"Move window one page up"	# b			K-5
- 	C-f	"Move window one page down"	# ^F			K-6
-	C-b	"Move window one page up"	# ^B			K-7
-	j	"Move window one line down"	# j			K-8
-	k	"Move window one line up"	# k			K-9
-	C-n	"Move cursor one line down"	# ^N			K-10
-	C-p	"Move cursor one line up"	# ^P			K-11
-	ESC <	"Go to beginning of buffer"	# ^[<			K-12
-	ESC >	"Go to end of buffer"	# ^[>				K-13
-	ESC	"Go to the N-th line"	# ^[N				K-14
-	C-SPC	"Set mark"	# ^SPC					K-15
-	F-0 F-0	"Get mark"	# ^X^X	 				K-16
-	F-0 C-w	"Save buffer to ~/.usilic/w.usilic"	# ^X^W			K-17
-	F-1 C-k	"Go to file-selector"	# ^J^K				K-18
-	F-3 C-k	"Go to parent directory"	# ^O^K			K-19
-	F-1	"Go to the N-th directory"	# ^JN			K-20
-	F-1 F-1	"Go to previous regular file"	# ^J^J			K-21
-	C-m	"Read content of file to buffer"	# ^M		K-22
-	F-3 C-m	"Read per line"	# ^O^M					K-23
-	ESC C-m	"Read as is"	# ^[^M					K-24
-	F-3 h	"Switch scroll mode"	# ^Oh				K-25
-	F-3 l	"Switch format of `ls' output"	# ^Ol			K-26
-	F-3 a	"Switch ascii mode"	# ^Oa				K-27
-	F-2 d	"Switch kanji code of display"	# ^X^Kd			K-28
-	F-3 C-c	"Copy string"	# ^O^C					K-29
-	F-3 C-y	"Paste string (Command-line)"	# ^O^Y			K-30
-	C-s	"FGREP   : Input string"	# ^S			K-31
-	F-1 C-s	"EGREP   : Select string"	# ^J^S			K-32
-	F-1 c	"CUT     : Input string (buffer)"	# ^Jc 		K-33
-	F-1 C-c	"CUT     : Select string (buffer)"	# ^J^C		K-34
-	F-1 b	"CUT     : Input string (regular file)"	# ^Jb		K-35
-	F-1 C-b	"CUT     : Select string (regular file)"	# ^J^B	K-36
-	F-1 d	"DU      : Execute `du'"	# ^Jd			K-37
-	F-1 C-d	"DU      : Redisplay window"	# ^J^D			K-38
-	F-1 l	"LOCATE  : Execute `locate'"	# ^Jl			K-39
-	F-1 C-l	"LOCATE  : Redisplay window"	# ^J^L			K-40
-	F-1 p	"PROGRAM : Input program name"	# ^Jp			K-41
-	F-1 C-p	"PROGRAM : Select program name"	# ^J^P			K-42
-	F-1 m	"MAN     : Input manual page"	# ^Jm			K-43
-	F-1 C-m	"MAN     : Select manual page"	# ^J^M			K-44
-	F-0 f	"FILE    : Input file name"	# ^Xf			K-45
-	F-0 C-f	"FILE    : Select file name"	# ^X^F			K-46
-	F-0 d	"DIR     : Input directory name"	# ^Xd		K-47
-	F-0 C-d	"DIR     : Select directory name"	# ^X^D		K-48
-	C-r	"HISTORY : History"	# ^R				K-49
-	F-1 C-r	"COMMAND : Select program executed at SHELL"# ^J^R	K-50
-	F-2 c	"CP      : Copy file with SHELL window"	# ^X^Kc		K-51
-	F-0 c	"CP      : Without SHELL window"	# ^Xc		K-52
-	F-2 m	"MV      : Move file with SHELL window"	# ^X^Km		K-53
-	F-0 m	"MV      : Without SHELL window"	# ^Xm		K-54
-	F-2 r	"RM      : Delete file with SHELL window"	# ^X^Kr K-55
-	F-0 r	"RM      : Without SHELL window"	# ^Xr		K-56
-	F-2 a	"ARC     : Expand archive"	# ^X^Ka			K-57
-	F-0 a	"ARC     : Without SHELL window"	# ^Xa		K-58
-	ESC s	"SHELL   : Go to SHELL"	# ^[s				K-59
-	F-0 s	"SHELL   : Restart SHELL"	# ^Xs			K-60
-	F-1 .	"SHELL   : Change current directory"	# ^J.		K-61
-	F-1 ,	"SHELL   : Execute `ls -l \cM'"	# ^J,			K-62
-#	F-1 ,	"SHELL   : Execute `top \cM'"	# ^J,
-	F-1 w	"SHELL   : Display access-name"	# ^Jw			K-63
-	F-1 C-w	"SHELL   : Display content of buffer"	# ^J^W		K-64
-	C-i	"LIST    : Complete file name"	# ^I			K-65
-	F-1 e	"EDIT    : Edit regular-file"	# ^Je			K-66
-	F-2 e	"ERROR   : Standard error"	# ^X^Ke			K-67
-	F-2 l	"LOG     : SHELL output"	# ^X^Kl			K-68
-	F-0 C-c	"EXIT    : Exit usilic"	# ^X^C				K-69
-	q	"Exit usilic (pager)"	# q				K-70
-	F-0 C-m	"Input destination (CP, MV, RM, ARC)"	# ^X^M		K-71
-	F-0 C-y	"Mark all (CP, MV, RM, ARC)"	# ^X^Y			K-72
-	F-0 C-n	"Clear all (CP, MV, RM, ARC)"	# ^X^N			K-73
-	F-0 (	"Begin macro definition"	# ^X(			K-74
-	F-0 )	"End macro definition"	# ^X)				K-75
-	F-0 e	"Execute macro definition"	# ^Xe			K-76
-
-#	<-- (6) -->
-M-?	<-- (8)
-P-?	<-- (9)
-	K-2 K-11 K-22			# (;) ^G ^P ^M			M-0
-P-?
-	K-2 K-10 K-22			# (:) ^G ^N ^M			M-1
-	K-2 K-2 K-11 K-22 K-22		# (+) ^G ^G ^P ^M ^M		M-2
-	K-2 K-2 K-10 K-22 K-22		# (*) ^G ^G ^N ^M ^M		M-3
-	K-22 K-11			# (,) ^M ^P			M-4
-	K-22 K-10			# (.) ^M ^N			M-5
-	K-22 K-2 K-11 K-22		# (<) ^M ^G ^N ^M		M-6
-	K-22 K-2 K-10 K-22		# (>) ^M ^G ^N ^M		M-7
-	K-45 "~/.usilic/usilicrc\cM" \
-	K-32 "\cU^[A-Z]+\cM"		# (ESC t) ^Xf "..." ^J^S "..."	M-8
-	K-68 K-33 "usilic v1.5b\cM"	# (ESC l) ^X^Kl ^Jc "usilic v..."	M-9
-					# 				M-10
-					# 				M-11
-					# 				M-12
-					# 				M-13
-					# 				M-14
-					# 				M-15
-					# 				M-16
-					# 				M-17
-					# 				M-18
-					# 				M-19
-
-# <-- (7) -->
-K-?
-	;	"Go to previous line"			# (M-0)		K-80
-	:	"Go to next line"			# (M-1)		K-81
-	+	"Go to upper specific line"		# (M-2)		K-82
-	*	"Go to lower specific line"		# (M-3)		K-83
-	,	"Mark and move cursor one line up"	# (M-4)		K-84
-	.	"Mark and move cursor one line down"	# (M-5)		K-85
-	<	"Mark and go to upper specific line"	# (M-6)		K-86
-	>	"Mark and go to lower specific line"	# (M-7)		K-87
-	ESC t	"Search section name in ~/.usilic/usilicrc"	# (M-8)		K-88
-	ESC l	"Output from SHELL-prompt"		# (M-9)		K-88
-							# (M-10)	K-90
-							# (M-11)	K-91
-							# (M-12)	K-92
-							# (M-13)	K-93
-							# (M-14)	K-94
-							# (M-15)	K-95
-							# (M-16)	K-96
-							# (M-17)	K-97
-							# (M-18)	K-98
-							# (M-19)	K-99
-
+	K-1	C-g         # ^G     前のモードへ戻る
+	K-2	C-p         # ^P     カーソルを1行上へ
+	K-3	C-n         # ^N     カーソルを1行下へ
+	K-4	;           # ;      前の項目を開く
+	K-5	:           # :      次の項目を開く
+	K-6	C-i         # ^I     INFO
+	K-7	e           # e      EDIT
+	K-8	F-2 C-i     # ^O^I   INFO(SHELL内から)
+	K-9	p           # p      前のfile(pager)
+	K-10	n           # n      次のfile(pager)
+	K-11	x           # x      最初のfile(pager)
+	K-12	f           # f      最後のfile(pager)
+	K-13	q           # q      pagerの終了
+	K-14	C-m         # ^M     開く/表示
+	K-15	F-0 d       # ^Xd    DIR: 入力
+	K-16	F-1 C-c     # ^J^C   カレントディレクトリへ
+	K-17	F-1 C-k     # ^J^K   親ディレクトリへ
+	K-18	F-1 N       # ^JN    N番目のディレクトリへ
+	K-19	F-0 f       # ^Xf    FILE: 入力
+	K-20	F-0 C-f     # ^X^F   FILE: 一覧
+	K-21	F-2 C-m     # ^O^M   1行ずつ読む
+	K-22	ESC C-m     # ^[^M   そのまま読む
+	K-23	F-1 F-1     # ^J^J   以前のfileへ
+	K-24	.           # .      選択/非選択
+	K-25	[           # [      選択して上へ
+	K-26	]           # ]      選択して下へ
+	K-27	F-2 y       # ^Oy    全選択
+	K-28	F-2 n       # ^On    全解除
+	K-29	F-2 u       # ^Ou    選択したfileの一覧(USILIC)
+	K-30	F-2 c       # ^Oc    CP
+	K-31	F-2 m       # ^Om    MV
+	K-32	F-2 r       # ^Or    RM
+	K-33	F-1 p       # ^Jp    PROGRAM: 入力
+	K-34	F-1 C-p     # ^J^P   PROGRAM: 一覧
+	K-35	SPC         # ␣      ページ送り/クイックルック
+	K-36	F-2 s       # ^Os    SHELLを再起動
+	K-37	F-2 a       # ^Oa    ARC: 展開
+	K-38	C-r         # ^R     履歴一覧
+	K-39	C-s         # ^S     逐次検索
+	K-40	F-1 C-s     # ^J^S   EGREP
+	K-41	F-3 b       # ^Cb    CUT: バッファ
+	K-42	F-3 f       # ^Cf    CUT: file
+	K-43	F-1 d       # ^Jd    DU: 集計
+	K-44	F-1 C-d     # ^J^D   DU: 結果へ戻る
+	K-45	F-1 l       # ^Jl    LOCATE: データベース作成
+	K-46	F-1 C-l     # ^J^L   LOCATE
+	K-47	F-1 m       # ^Jm    MAN: 入力
+	K-48	F-1 C-m     # ^J^M   MAN: 一覧
+	K-49	F-0 C-d     # ^X^D   DIR: 一覧
+	K-50	F-2 C-c     # ^O^C   COPY
+	K-51	F-2 C-y     # ^O^Y   ペースト
+	K-52	F-4 e       # ^J^Oe  ERROR
+	K-53	F-4 l       # ^J^Ol  SHELLのログ
+	K-54	ESC l       # ^[l    SHELLのログ
+	K-55	ESC s       # ^[s    SHELLへ
+	K-56	F-1 .       # ^J.    SHELL: カレントディレクトリへcd
+	K-57	F-1 ,       # ^J,    SHELL: ls -l
+	K-58	F-1 w       # ^Jw    SHELL: アクセス名
+	K-59	F-1 C-w     # ^J^W   SHELL: バッファの内容
+	K-60	F-2 /       # ^O/    検索(SHELL内から)
+	K-61	F-2 C-f     # ^O^F   ページ送り(SHELL内から)
+	K-62	F-2 C-b     # ^O^B   ページ戻し(SHELL内から)
+	K-63	F-2 C-l     # ^O^L   再表示(SHELL内から)/ls のソートキー巡回
+	K-64	F-0 C-c     # ^X^C   EXIT
+	K-65	ESC ESC     # ^[^[   EXIT
+	K-66	F-2 o       # ^Oo    ls の表示形式
+	K-67	F-2 h       # ^Oh    mode-line の表示/非表示
+	K-68	F-0 C-w     # ^X^W   バッファを作業fileへ保存
+	K-69	C-z         # ^Z     サスペンド
+	K-70	j           # j      画面を1行下へ
+	K-71	k           # k      画面を1行上へ
+	K-72	C-f         # ^F     ページ送り
+	K-73	C-v         # ^V     ページ送り
+	K-74	b           # b      ページ戻し
+	K-75	C-b         # ^B     ページ戻し
+	K-76	ESC v       # ^[v    ページ戻し
+	K-77	ESC <       # ^[<    先頭へ
+	K-78	ESC >       # ^[>    末尾へ
+	K-79	ESC N       # ^[N    N行目へ
+	K-80	F-0 F-0     # ^X^X   大きく移動する前の行と行き来
+	K-81	F-1 C-u     # ^J^U   USILIC: 種類ごとの一覧
+	K-82	F-1 u       # ^Ju    USILIC: 時系列
+	K-83	F-1 a       # ^Ja    TUTORIAL の言語切替
+	K-84	F-2 g       # ^Og    GUI 表示との切替
+	K-85	F-2 l       # ^Ol    ls のソート順を逆順に
+	K-86	C-l         # ^L     再表示
+	K-87	C-SPC       # ^SPC   選択/非選択
+	K-88	ESC P       # ^[P    一時的な選択対象の貼り付け
+	K-89	ESC u       # ^[u    USILIC: 目次
+	K-90	C-t         # ^T     TUTORIAL
+	K-91	C-h         # ^H     HELP
+	K-92	F-1 C-h     # ^J^H   HELP
+	K-93	F-0 (       # ^X(    マクロの記録開始
+	K-94	F-0 )       # ^X)    マクロの記録終了
+	K-95	F-0 e       # ^Xe    マクロの実行

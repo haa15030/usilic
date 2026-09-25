@@ -1,0 +1,360 @@
+#include "key_bindings.hpp"
+
+#include <algorithm>
+#include <sstream>
+
+namespace fm {
+
+namespace {
+constexpr int kCtrlX = 0x18, kCtrlJ = 0x0a, kCtrlO = 0x0f, kCtrlC = 0x03, kEsc = 0x1b;
+
+bool isLeaderByte(int b) { return b == kCtrlX || b == kCtrlJ || b == kCtrlO || b == kEsc; }
+}  // namespace
+
+const std::vector<const char *> &KeyBindings::defaultPrefixSpecs() {
+  static const std::vector<const char *> prefixes = {"C-x", "C-j", "C-o", "C-c", "C-j C-o"};
+  return prefixes;
+}
+
+// K番号の組み込みの表。K-1〜K-69はTUTORIAL(1〜5章、6章の「Key」)に出てくる順、
+// K-70〜K-89はTUTORIALの本文に出てこないキー、K-90〜K-92は^T/^H(HELP)、
+// K-93〜K-95はマクロ――直接のユーザー依頼(requirements.md参照)。src/usilicrc/
+// usilicrc.enのKEY節はこの表と同じ内容で、test_key_bindings.cppがそれを確かめる。
+const std::vector<KeyBindings::DefaultEntry> &KeyBindings::defaultEntries() {
+  static const std::vector<DefaultEntry> entries = {
+      {1, "C-g"},        // ^G    前のモードへ戻る
+      {2, "C-p"},        // ^P    カーソルを1行上へ
+      {3, "C-n"},        // ^N    カーソルを1行下へ
+      {4, ";"},          // ;     前の項目を開く
+      {5, ":"},          // :     次の項目を開く
+      {6, "C-i"},        // ^I    INFO
+      {7, "e"},          // e     EDIT
+      {8, "F-2 C-i"},    // ^O^I  INFO(SHELL内から)
+      {9, "p"},          // p     前のfile(pager)
+      {10, "n"},         // n     次のfile(pager)
+      {11, "x"},         // x     最初のfile(pager)
+      {12, "f"},         // f     最後のfile(pager)
+      {13, "q"},         // q     pagerの終了
+      {14, "C-m"},       // ^M    開く/表示
+      {15, "F-0 d"},     // ^Xd   DIR: 入力
+      {16, "F-1 C-c"},   // ^J^C  カレントディレクトリへ
+      {17, "F-1 C-k"},   // ^J^K  親ディレクトリへ
+      {18, "F-1 N"},     // ^JN   N番目のディレクトリへ
+      {19, "F-0 f"},     // ^Xf   FILE: 入力
+      {20, "F-0 C-f"},   // ^X^F  FILE: 一覧
+      {21, "F-2 C-m"},   // ^O^M  1行ずつ読む
+      {22, "ESC C-m"},   // ^[^M  そのまま読む
+      {23, "F-1 F-1"},   // ^J^J  以前のfileへ
+      {24, "."},         // .     選択/非選択
+      {25, "["},         // [     選択して上へ
+      {26, "]"},         // ]     選択して下へ
+      {27, "F-2 y"},     // ^Oy   全選択
+      {28, "F-2 n"},     // ^On   全解除
+      {29, "F-2 u"},     // ^Ou   選択したfileの一覧(USILIC)
+      {30, "F-2 c"},     // ^Oc   CP
+      {31, "F-2 m"},     // ^Om   MV
+      {32, "F-2 r"},     // ^Or   RM
+      {33, "F-1 p"},     // ^Jp   PROGRAM: 入力
+      {34, "F-1 C-p"},   // ^J^P  PROGRAM: 一覧
+      {35, "SPC"},       // ␣     ページ送り/クイックルック
+      {36, "F-2 s"},     // ^Os   SHELLを再起動
+      {37, "F-2 a"},     // ^Oa   ARC: 展開
+      {38, "C-r"},       // ^R    履歴一覧
+      {39, "C-s"},       // ^S    逐次検索
+      {40, "F-1 C-s"},   // ^J^S  EGREP
+      {41, "F-3 b"},     // ^Cb   CUT: バッファ
+      {42, "F-3 f"},     // ^Cf   CUT: file
+      {43, "F-1 d"},     // ^Jd   DU: 集計
+      {44, "F-1 C-d"},   // ^J^D  DU: 結果へ戻る
+      {45, "F-1 l"},     // ^Jl   LOCATE: データベース作成
+      {46, "F-1 C-l"},   // ^J^L  LOCATE
+      {47, "F-1 m"},     // ^Jm   MAN: 入力
+      {48, "F-1 C-m"},   // ^J^M  MAN: 一覧
+      {49, "F-0 C-d"},   // ^X^D  DIR: 一覧
+      {50, "F-2 C-c"},   // ^O^C  COPY
+      {51, "F-2 C-y"},   // ^O^Y  ペースト
+      {52, "F-4 e"},     // ^J^Oe ERROR
+      {53, "F-4 l"},     // ^J^Ol SHELLのログ
+      {54, "ESC l"},     // ^[l   SHELLのログ
+      {55, "ESC s"},     // ^[s   SHELLへ
+      {56, "F-1 ."},     // ^J.   SHELL: カレントディレクトリへcd
+      {57, "F-1 ,"},     // ^J,   SHELL: ls -l
+      {58, "F-1 w"},     // ^Jw   SHELL: アクセス名
+      {59, "F-1 C-w"},   // ^J^W  SHELL: バッファの内容
+      {60, "F-2 /"},     // ^O/   検索(SHELL内から)
+      {61, "F-2 C-f"},   // ^O^F  ページ送り(SHELL内から)
+      {62, "F-2 C-b"},   // ^O^B  ページ戻し(SHELL内から)
+      {63, "F-2 C-l"},   // ^O^L  再表示(SHELL内から)/ls のソートキー巡回
+      {64, "F-0 C-c"},   // ^X^C  EXIT
+      {65, "ESC ESC"},   // ^[^[  EXIT
+      {66, "F-2 o"},     // ^Oo   ls の表示形式
+      {67, "F-2 h"},     // ^Oh   mode-line の表示/非表示
+      {68, "F-0 C-w"},   // ^X^W  バッファを作業fileへ保存
+      {69, "C-z"},       // ^Z    サスペンド
+      {70, "j"},         // j     画面を1行下へ
+      {71, "k"},         // k     画面を1行上へ
+      {72, "C-f"},       // ^F    ページ送り
+      {73, "C-v"},       // ^V    ページ送り
+      {74, "b"},         // b     ページ戻し
+      {75, "C-b"},       // ^B    ページ戻し
+      {76, "ESC v"},     // ^[v   ページ戻し
+      {77, "ESC <"},     // ^[<   先頭へ
+      {78, "ESC >"},     // ^[>   末尾へ
+      {79, "ESC N"},     // ^[N   N行目へ
+      {80, "F-0 F-0"},   // ^X^X  大きく移動する前の行と行き来
+      {81, "F-1 C-u"},   // ^J^U  USILIC: 種類ごとの一覧
+      {82, "F-1 u"},     // ^Ju   USILIC: 時系列
+      {83, "F-1 a"},     // ^Ja   TUTORIAL の言語切替
+      {84, "F-2 g"},     // ^Og   GUI 表示との切替
+      {85, "F-2 l"},     // ^Ol   ls のソート順を逆順に
+      {86, "C-l"},       // ^L    再表示
+      {87, "C-SPC"},     // ^SPC  選択/非選択
+      {88, "ESC P"},     // ^[P   一時的な選択対象の貼り付け
+      {89, "ESC u"},     // ^[u   USILIC: 目次
+      {90, "C-t"},       // ^T    TUTORIAL
+      {91, "C-h"},       // ^H    HELP
+      {92, "F-1 C-h"},   // ^J^H  HELP
+      {93, "F-0 ("},     // ^X(   マクロの記録開始
+      {94, "F-0 )"},     // ^X)   マクロの記録終了
+      {95, "F-0 e"},     // ^Xe   マクロの実行
+  };
+  return entries;
+}
+
+std::optional<KeyBindings::Sequence> KeyBindings::parseSpec(const std::string &spec,
+                                                           const std::vector<Sequence> &prefixes,
+                                                           std::string *error) {
+  std::istringstream in(spec);
+  std::string token;
+  Sequence out;
+  bool sawDigit = false;
+  while (in >> token) {
+    if (sawDigit) {
+      if (error) *error = "N must be the last key: " + spec;
+      return std::nullopt;
+    }
+    if (token.size() == 3 && token.compare(0, 2, "F-") == 0 && token[2] >= '0' && token[2] <= '9') {
+      int n = token[2] - '0';
+      if (n >= static_cast<int>(prefixes.size()) || prefixes[n].empty()) {
+        if (error) *error = "undefined prefix " + token + ": " + spec;
+        return std::nullopt;
+      }
+      out.insert(out.end(), prefixes[n].begin(), prefixes[n].end());
+    } else if (token == "C-SPC" || token == "C-@") {
+      out.push_back(0x80);  // KeyInputは^Space(NUL)を0x80として報告する
+    } else if (token.size() == 3 && token.compare(0, 2, "C-") == 0) {
+      char c = token[2];
+      if (c >= 'a' && c <= 'z') out.push_back(c - 'a' + 1);
+      else if (c == '[' || c == '\\' || c == ']' || c == '^' || c == '_') out.push_back(c - 0x40);
+      else {
+        if (error) *error = "invalid key " + token + ": " + spec;
+        return std::nullopt;
+      }
+    } else if (token == "ESC") {
+      out.push_back(kEsc);
+    } else if (token == "SPC") {
+      out.push_back(' ');
+    } else if (token == "N") {
+      out.push_back(kDigit);
+      sawDigit = true;
+    } else if (token.size() == 1 && static_cast<unsigned char>(token[0]) > 0x20 &&
+               static_cast<unsigned char>(token[0]) < 0x7f) {
+      out.push_back(static_cast<unsigned char>(token[0]));
+    } else {
+      if (error) *error = "invalid key " + token + ": " + spec;
+      return std::nullopt;
+    }
+  }
+  if (out.empty()) {
+    if (error) *error = "empty";
+    return std::nullopt;
+  }
+  return out;
+}
+
+namespace {
+// 数字の族(kDigit)を考慮した、パターン同士の「同じキー列か」「一方が他方の
+// 真の接頭か」の判定(configure()の重複/接頭の検査用)。
+bool samePattern(const KeyBindings::Sequence &a, const KeyBindings::Sequence &b) { return a == b; }
+bool patternIsProperPrefix(const KeyBindings::Sequence &shorter, const KeyBindings::Sequence &longer) {
+  if (shorter.size() >= longer.size()) return false;
+  for (std::size_t i = 0; i < shorter.size(); i++) {
+    int s = shorter[i], l = longer[i];
+    if (s == l) continue;
+    bool sDigitMatchesL = s == KeyBindings::kDigit && l >= '0' && l <= '9';
+    bool lDigitMatchesS = l == KeyBindings::kDigit && s >= '0' && s <= '9';
+    if (!sDigitMatchesL && !lDigitMatchesS) return false;
+  }
+  return true;
+}
+std::string fnName(int n) { return "F-" + std::to_string(n); }
+std::string knName(int n) { return "K-" + std::to_string(n); }
+}  // namespace
+
+void KeyBindings::configure(const std::map<int, std::string> &userPrefixes,
+                            const std::map<int, std::string> &userEntries, std::vector<std::string> *errors) {
+  rules_.clear();
+  auto report = [&](const std::string &message) {
+    if (errors) errors->push_back("KEY: " + message);
+  };
+
+  // 既定の接頭キー(F-n)と、利用者の接頭キー。F-nの中ではより小さい番号の
+  // F-nを使ってよい(既定のF-4 = C-j C-oのように、自分自身の展開は不要)。
+  std::vector<Sequence> defaultPrefixes(kPrefixCount), userPrefixSeqs(kPrefixCount);
+  for (int n = 0; n < kPrefixCount; n++) {
+    std::string error;
+    defaultPrefixes[n] = *parseSpec(defaultPrefixSpecs()[n], defaultPrefixes, &error);
+  }
+  for (int n = 0; n < kPrefixCount; n++) {
+    userPrefixSeqs[n] = defaultPrefixes[n];
+    auto it = userPrefixes.find(n);
+    // キーが空のF-nは既定のまま(接頭キーを空にするとその下の機能が全て使え
+    // なくなるので意味が無く、旧書式のKEY節の"F-0"だけの行もこれに当たる)。
+    if (it == userPrefixes.end() || it->second.find_first_not_of(" \t") == std::string::npos) continue;
+    std::string error;
+    auto seq = parseSpec(it->second, userPrefixSeqs, &error);
+    if (!seq) report(fnName(n) + ": " + error);
+    else if (std::find(seq->begin(), seq->end(), kDigit) != seq->end()) report(fnName(n) + ": N is not allowed");
+    else userPrefixSeqs[n] = *seq;
+  }
+  for (const auto &kv : userPrefixes)
+    if (kv.first < 0 || kv.first >= kPrefixCount) report("unknown " + fnName(kv.first));
+
+  // 各K番号の既定のキー列と利用者のキー列(割り当て無しはnullopt)。
+  struct Resolved {
+    int number;
+    Sequence defaultSeq;
+    std::optional<Sequence> userSeq;
+  };
+  std::vector<Resolved> resolved;
+  for (const auto &entry : defaultEntries()) {
+    std::string error;
+    Resolved r{entry.number, *parseSpec(entry.spec, defaultPrefixes, &error), std::nullopt};
+    auto it = userEntries.find(entry.number);
+    if (it == userEntries.end()) {
+      // usilicrcに無い番号は既定のキー表記のまま(ただし接頭キーは利用者のもの)。
+      r.userSeq = parseSpec(entry.spec, userPrefixSeqs, &error);
+    } else if (it->second.find_first_not_of(" \t") != std::string::npos) {
+      auto seq = parseSpec(it->second, userPrefixSeqs, &error);
+      if (!seq) {
+        report(knName(entry.number) + ": " + error);
+        r.userSeq = parseSpec(entry.spec, userPrefixSeqs, &error);
+      } else {
+        bool defaultHasDigit = std::find(r.defaultSeq.begin(), r.defaultSeq.end(), kDigit) != r.defaultSeq.end();
+        bool userHasDigit = std::find(seq->begin(), seq->end(), kDigit) != seq->end();
+        if (defaultHasDigit != userHasDigit) {
+          report(knName(entry.number) + ": N must be used exactly when the default uses it");
+          r.userSeq = parseSpec(entry.spec, userPrefixSeqs, &error);
+        } else {
+          r.userSeq = *seq;
+        }
+      }
+    }
+    resolved.push_back(std::move(r));
+  }
+  for (const auto &kv : userEntries) {
+    bool known = std::any_of(defaultEntries().begin(), defaultEntries().end(),
+                             [&](const DefaultEntry &e) { return e.number == kv.first; });
+    if (!known) report("unknown " + knName(kv.first));
+  }
+
+  // 重複/接頭の衝突: 後に出てきた方を割り当て無しにする。
+  for (std::size_t i = 0; i < resolved.size(); i++) {
+    if (!resolved[i].userSeq) continue;
+    for (std::size_t j = 0; j < i; j++) {
+      if (!resolved[j].userSeq) continue;
+      const Sequence &a = *resolved[j].userSeq, &b = *resolved[i].userSeq;
+      if (samePattern(a, b) || patternIsProperPrefix(a, b) || patternIsProperPrefix(b, a)) {
+        report(knName(resolved[i].number) + " conflicts with " + knName(resolved[j].number));
+        resolved[i].userSeq.reset();
+        break;
+      }
+    }
+  }
+
+  // 接頭キー(F-n)の先頭のバイト――プロンプト/SHELL等でも照合してよい列の判定用。
+  std::vector<int> leaderFirstBytes = {kEsc};
+  for (int n : {0, 1, 2, 4})
+    if (!userPrefixSeqs[n].empty() && userPrefixSeqs[n][0] != kCtrlC) leaderFirstBytes.push_back(userPrefixSeqs[n][0]);
+  auto leaderEligible = [&](const Sequence &from, const Sequence &defaultSeq) {
+    return from.size() >= 2 && isLeaderByte(defaultSeq[0]) &&
+           std::find(leaderFirstBytes.begin(), leaderFirstBytes.end(), from[0]) != leaderFirstBytes.end();
+  };
+
+  for (const auto &r : resolved) {
+    if (r.userSeq && *r.userSeq == r.defaultSeq) continue;
+    if (r.userSeq) rules_.push_back({*r.userSeq, r.defaultSeq, leaderEligible(*r.userSeq, r.defaultSeq)});
+    // 元の(既定の)キーは、他のK番号の利用者のキーになっていない限り効かなくする。
+    bool reused = std::any_of(resolved.begin(), resolved.end(),
+                              [&](const Resolved &o) { return o.userSeq && *o.userSeq == r.defaultSeq; });
+    if (!reused)
+      rules_.push_back({r.defaultSeq, std::nullopt, isLeaderByte(r.defaultSeq[0]) && r.defaultSeq.size() >= 2});
+  }
+}
+
+bool KeyBindings::isIdentity() const { return rules_.empty(); }
+
+bool KeyBindings::matches(const Sequence &pattern, const std::vector<int> &input) {
+  if (pattern.size() != input.size()) return false;
+  for (std::size_t i = 0; i < pattern.size(); i++) {
+    if (pattern[i] == kDigit ? !(input[i] >= '0' && input[i] <= '9') : pattern[i] != input[i]) return false;
+  }
+  return true;
+}
+
+bool KeyBindings::isPrefixOf(const std::vector<int> &input, const Sequence &pattern) {
+  if (input.size() >= pattern.size()) return false;
+  for (std::size_t i = 0; i < input.size(); i++) {
+    if (pattern[i] == kDigit ? !(input[i] >= '0' && input[i] <= '9') : pattern[i] != input[i]) return false;
+  }
+  return true;
+}
+
+std::vector<int> KeyBindings::feed(int byte, Context context, Pending &pending) const {
+  if (rules_.empty()) return {byte};
+  if (pending.bytes.empty()) {
+    if (context == Context::None) return {byte};
+    pending.context = context;
+  }
+  pending.bytes.push_back(byte);
+  auto eligible = [&](const Rule &rule) {
+    return pending.context != Context::LeaderOnly || rule.leaderEligible;
+  };
+  std::vector<int> out;
+  // 最長一致: 溜めたキーがどれかの列の途中である間は待つ。行き止まりになったら、
+  // 頭から最も長く一致する列を処理し(置き換える/捨てる)、一致が無ければ頭の
+  // 1バイトをそのまま渡し、残りを改めて照合する。無効化された短い列(例えば
+  // 接頭キーに変えられた^T)が、それで始まる長い列より先に捨てられないように
+  // するため。
+  while (!pending.bytes.empty()) {
+    bool anyLonger = std::any_of(rules_.begin(), rules_.end(), [&](const Rule &rule) {
+      return eligible(rule) && isPrefixOf(pending.bytes, rule.from);
+    });
+    if (anyLonger) return out;
+    const Rule *best = nullptr;
+    std::size_t bestLength = 0;
+    for (const auto &rule : rules_) {
+      if (!eligible(rule) || rule.from.size() > pending.bytes.size() || rule.from.size() <= bestLength) continue;
+      std::vector<int> head(pending.bytes.begin(), pending.bytes.begin() + rule.from.size());
+      if (matches(rule.from, head)) {
+        best = &rule;
+        bestLength = rule.from.size();
+      }
+    }
+    if (best) {
+      if (best->to) {
+        for (int k : *best->to) {
+          // 数字の族: 既定の列のNの位置へ、実際に押された数字を入れる。
+          out.push_back(k == kDigit ? pending.bytes[bestLength - 1] : k);
+        }
+      }
+      pending.bytes.erase(pending.bytes.begin(), pending.bytes.begin() + bestLength);
+    } else {
+      out.push_back(pending.bytes.front());
+      pending.bytes.erase(pending.bytes.begin());
+    }
+  }
+  return out;
+}
+
+}  // namespace fm

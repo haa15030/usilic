@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "charset.hpp"
+#include "key_bindings.hpp"
 
 namespace fm {
 
@@ -295,6 +296,13 @@ class Configuration {
   // GREP(2026-09-25再実装): EGREP/CUT(正規表現)の履歴の一覧に常に加える
   // 検索文字列。Application::startPromptHistoryRecall()参照。
   const std::vector<std::string> &grepPresets() const;
+  // KEY(2026-09-25実装): usilicrcのKEY節のF-n/K-n行のキー表記(番号→表記、
+  // 空なら割り当て無し)。解釈と検査はKeyBindings::configure()が行う。
+  const std::map<int, std::string> &keyPrefixSpecs() const;
+  const std::map<int, std::string> &keyEntrySpecs() const;
+  // 上の2つから組んだ置き換え表(loadRcText()の最後に作る。KEY節が無い/
+  // 既定のままならisIdentity())。Applicationはこれを複製して入力に使う。
+  const KeyBindings &keyBindings() const;
   int bufferSizeLimitBytes() const;                // BUFFER
   int historyRetentionCount() const;               // HISTORY
   int waitIntervalMicros() const;                  // WAIT
@@ -340,6 +348,9 @@ class Configuration {
 
   std::string allowedControlBytes_;
   std::vector<std::string> grepPresets_;  // GREP
+  std::map<int, std::string> keyPrefixSpecs_;  // KEY: F-n
+  std::map<int, std::string> keyEntrySpecs_;   // KEY: K-n
+  KeyBindings keyBindings_;
   int bufferSizeLimitBytes_ = 1 * 1024 * 1024;
   int historyRetentionCount_ = 200;
   int waitIntervalMicros_ = 100000;  // conf_wait()の静的k_wait初期化値(100000)

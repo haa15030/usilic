@@ -131,6 +131,7 @@ install: $(BUILD_DIR)/usilic
 	install -m 755 $(BUILD_DIR)/usilic $(INSTALL_DIR)/$(INSTALL_NAME)
 	install -d $(LIB_DIR)
 	install -m 644 ../usilicrc $(LIB_DIR)/usilicrc
+	install -m 644 ../usilicrc.en $(LIB_DIR)/usilicrc.en  # 英語コメント版(2026-09-25、設定値はusilicrcと同一)
 	install -m 644 ../TUTORIAL $(LIB_DIR)/TUTORIAL
 
 # macOS .app bundle (2026-08-24, docs/CHANGES.md item 421, a direct

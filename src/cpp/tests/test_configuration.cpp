@@ -278,7 +278,7 @@ TEST_CASE("CP/MV/RM directives override the default command, only in file-manage
   CHECK(pagerConfig.commandFor(ConfiguredRole::Cp).argv == before);  // unaffected outside file-manager mode
 }
 
-TEST_CASE("KEY sections are skipped without error (deferred, see class comment)") {
+TEST_CASE("KEY: legacy-format lines (no F-n/K-n head, or an F-n with no keys) are ignored without error") {
   Configuration config;
   std::string rc =
       "KEY\n"

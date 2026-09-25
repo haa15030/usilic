@@ -1,0 +1,350 @@
+# usilicrc  version 1.5b
+# -------------------------------------------------------------
+# Blank lines, lines beginning with '#', and anything after a '#' are
+# ignored.  A line beginning with one of the following names starts a
+# section; the lines inside a section begin with a tab (or spaces).  Any
+# other line is an error.
+#
+# ARCHIVE, FILE, EXEC, GREP, PROGRAM, EDITOR, BUFFER, CODE, SHELL,
+# HISTORY, WAIT, LS, SCROLL, CP, MV, RM, KEY
+#
+# usilicrc is the same file with Japanese comments.
+# -------------------------------------------------------------
+
+ARCHIVE
+# Format: `newSuffix' `builtinSuffix'
+#
+# Each line adds `newSuffix' as an alias of a built-in archive suffix
+# (the list below).  It cannot define a new extraction command.
+#
+# Built-in suffixes:
+#  .tar        tar tvf
+#  .tgz        gzip -dc | tar tvf -
+#  .tar.bz2    bzip2 -dc | tar tvf -
+#  .tar.xz     xz -dc | tar tvf -
+#  .tar.zst    zstd -dc | tar tvf -
+#  .lzh        lha
+#  .zip        unzip -l
+#  .rpm        rpm -qplv
+#  .deb        ar tv
+#  .rar        lsar -l
+#  .7z         7z l
+#
+
+	.taz	.tgz
+	.tar.z	.tgz
+	.tar.gz	.tgz
+	.jar	.zip
+	.tbz2	.tar.bz2
+	.txz	.tar.xz
+	.tzst	.tar.zst
+
+FILE
+# Format: `suffix' `program' (option)
+#
+# The `program' displays the content of a file with the `suffix' as
+# plain text.
+
+	.gz	gzip	-dc
+	.bz2	bzip2	-dc
+	.z	gzip	-dc			
+#	.dvi	dvi2tty
+
+EXEC
+# Format: `suffix' `program' (option)
+#
+# The `program' is launched with a file that has the `suffix'.
+#
+# macOS note: a bare app name (e.g. IINA) is not a command on $PATH, so
+# it cannot be launched.  Use `open -a' (the .mp4 example below).
+
+#	.mp4	open	-a	IINA
+	.html	lynx
+	.htm	lynx
+	.info	info	-f
+	.info.gz info	-f
+	.dvi	xdvi
+#	.dvi	dviout
+
+GREP
+# Format: `string'
+#
+# Search strings listed from the start in the EGREP and CUT (regular
+# expression) lists.  (Enclose a string containing a space in "".)
+#
+# TUTORIAL's EGREP chapter examples, in the same order as its regular-
+# expression list -- each one matches some text in TUTORIAL itself.
+# Written for `grep -E' on both macOS (BSD grep) and Linux (GNU grep):
+# \d/\D are spelled [0-9]/[^0-9], and grep -E has no non-greedy *?/+?,
+# (?:...) or look-around, so those have no example.
+#
+
+	"^  [0-9]+\."            # ^     : chapter headings (1. 2. ...)
+	）$                       # $     : lines ending with a full-width )
+	\bls\b                   # \b    : ls as a word
+	usilic\B                 # \B    : usilic in usilicrc
+	m.n                      # .     : man
+	\^[JOX][a-z]             # [ ]   : ^Jp ^Ou ^Xd ...
+	"\^[^JOX ]"              # [^ ]  : ^M ^[ ^K ...
+	[a-z]+\(1\)              # [a-z] : usilic(1) man(1) ...
+	[0-9]\.[0-9]\.           # \d    : section numbers 2.2. ...
+	[0-9]+[^0-9][0-9]+       # \D    : 01/66 1.5 0x20 ...
+	\w+rc\b                  # \w    : usilicrc
+	\^\W                     # \W    : ^[ ^@
+	\^J\s                    # \s    : ^J b
+	~/\S+                    # \S    : ~/.usilic/history ...
+	-[a-z]*v[a-z]*           # *     : -rvi -vf ...
+	[0-9]+%                  # +     : 48% ...
+	\.tar(\.gz)?             # ?     : .tar .tar.gz
+	[0-9]{4}                 # {n}   : 1918 2000 ...
+	[0-9]{2,}                # {n,}  : numbers of 2+ digits
+	\b[a-z]{2,3}\(1\)        # {n,m} : ls(1) man(1) vi(1) ...
+	CP|MV|RM                 # |     : CP MV RM
+	\.(gz|bz2|xz|zst)        # ( )   : compressed-file suffixes
+	~/\.usilic/              # \.    : ~/.usilic/
+	\(\?                     # \?    : (?: (?= ...
+
+PROGRAM
+# Format: `program' (option)
+#
+# The programs launched by PROGRAM.
+
+	jed
+	emacs
+	emacs -nw
+	xemacs
+	vi
+	less
+	man
+	dviout
+	xdvi
+	lynx
+	mule
+	mule -nw
+	info
+	top
+	lv
+	lv -Oe
+	lv -Ir
+	qlmanage -p
+
+EDITOR
+# Format: `editor'
+#
+# The editor launched by EDIT.
+
+	vi
+#	jed
+
+BUFFER
+# Format: `size'
+#
+# The maximum size of the buffer (in MB) allocated for a file or archive.
+
+	8
+
+CODE
+# Format: `code0' `code1' ...
+#
+# If a file without any of the suffixes above contains a control code
+# under 0x20 that is not listed here, it is treated as a binary file:
+# usilic runs file(1) and shows the code and the file type.  (If `code0'
+# is 0, this check is not done.)
+#
+
+# ^A(TAGS)  \b  \t  \n  \f  \r  ^N(SO)  ^O(SI)  ^Z(EOF)  ^[(ESC)  ^_(info)
+   1         8   9  10  12  13  14      15      26       27       31
+
+SHELL
+# Format: `shell'
+#
+# SHELL mode is launched with `shell'.  (Needed when the environment
+# variable SHELL is neither bash nor tcsh; bash(1) or tcsh(1) can be set.)
+
+	bash
+#	tcsh
+
+HISTORY
+# Format: `line'
+#
+# The maximum number of lines kept in the HISTORY list.  Beyond this, the
+# oldest line is removed.
+
+	500
+
+WAIT
+# Format: `wait'
+#
+# Macros are executed at intervals of `wait' (in units of 10 msec).
+
+	1
+
+LS
+# Format: `flag'
+#
+# The initial ls display format (switched by ^Oo afterwards).  When set,
+# only file names are shown.
+
+	0
+
+SCROLL
+# Format: `flag'
+#
+# The initial scroll mode (at startup only; ^Oh switches the mode-line on
+# and off).  When set, the window scrolls within the range above the
+# bottom line.
+
+	0
+
+CP
+# Format: `cp' (option)
+#
+# Command of CP.  (default: cp -vRi)
+#
+
+#	cp -vR
+
+MV
+# Format: `mv' (option)
+#
+# Command of MV.  (default: mv -vi)
+#
+
+#	mv -v
+
+RM
+# Format: `rm' (option)
+#
+# Command of RM.  (default: rm -vri)
+#
+
+#	rm -vr
+
+KEY
+# Key assignments.
+#
+# Format: F-n  keys    (defines prefix key F-0 .. F-4)
+#         K-n  keys    (the keys of function K-n)
+#
+# K-1 onward follow the order of TUTORIAL (keys not in TUTORIAL's text
+# come after them, then ^T/^H (HELP) and the macros last).  Changing the
+# keys of a function makes it work only with the new keys; the old keys
+# stop working (they can be given to another function).  Leaving the keys
+# empty unassigns the function.  A number whose line is removed keeps its
+# default keys (with the new prefix if F-n was changed).
+#
+# Writing keys:
+#   F-n    prefix key F-n
+#   C-x    Ctrl+x (C-a .. C-z, C-[ C-\ C-] C-^ C-_, C-SPC)
+#   ESC    esc      SPC  space
+#   N      any digit 0-9 (last only; only for functions that use N, such
+#          as ^JN and ^[N)
+#   other  that one character (# cannot be written)
+#
+# While typing at a prompt, in the SHELL window, or in a list you can type
+# into, only keys beginning with F-0/F-1/F-2/F-4 or ESC are replaced (one-
+# character keys and keys beginning with ^C are text or cancel there).
+# Giving the same keys to two functions, or keys that begin other keys, is
+# a usilicrc error, and the later one is unassigned.
+#
+	F-0	C-x         # ^X
+	F-1	C-j         # ^J
+	F-2	C-o         # ^O
+	F-3	C-c         # ^C
+	F-4	C-j C-o     # ^J^O
+
+	K-1	C-g         # ^G     Return to previous mode
+	K-2	C-p         # ^P     Move cursor one line up
+	K-3	C-n         # ^N     Move cursor one line down
+	K-4	;           # ;      Open previous entry
+	K-5	:           # :      Open next entry
+	K-6	C-i         # ^I     INFO
+	K-7	e           # e      EDIT
+	K-8	F-2 C-i     # ^O^I   INFO (from SHELL)
+	K-9	p           # p      Previous file (pager)
+	K-10	n           # n      Next file (pager)
+	K-11	x           # x      First file (pager)
+	K-12	f           # f      Last file (pager)
+	K-13	q           # q      Quit (pager)
+	K-14	C-m         # ^M     Open / show
+	K-15	F-0 d       # ^Xd    DIR: input name
+	K-16	F-1 C-c     # ^J^C   Go to current directory
+	K-17	F-1 C-k     # ^J^K   Go to parent directory
+	K-18	F-1 N       # ^JN    Go to N-th directory
+	K-19	F-0 f       # ^Xf    FILE: input name
+	K-20	F-0 C-f     # ^X^F   FILE: select from list
+	K-21	F-2 C-m     # ^O^M   Read per line
+	K-22	ESC C-m     # ^[^M   Read as is
+	K-23	F-1 F-1     # ^J^J   Go to previous file
+	K-24	.           # .      Toggle selection
+	K-25	[           # [      Select and move up
+	K-26	]           # ]      Select and move down
+	K-27	F-2 y       # ^Oy    Select all
+	K-28	F-2 n       # ^On    Clear all
+	K-29	F-2 u       # ^Ou    List of selected files (USILIC)
+	K-30	F-2 c       # ^Oc    CP
+	K-31	F-2 m       # ^Om    MV
+	K-32	F-2 r       # ^Or    RM
+	K-33	F-1 p       # ^Jp    PROGRAM: input name
+	K-34	F-1 C-p     # ^J^P   PROGRAM: select from list
+	K-35	SPC         # ␣      Page down / Quick Look
+	K-36	F-2 s       # ^Os    Restart SHELL
+	K-37	F-2 a       # ^Oa    ARC: extract
+	K-38	C-r         # ^R     History list
+	K-39	C-s         # ^S     Incremental search
+	K-40	F-1 C-s     # ^J^S   EGREP
+	K-41	F-3 b       # ^Cb    CUT: buffer
+	K-42	F-3 f       # ^Cf    CUT: file
+	K-43	F-1 d       # ^Jd    DU: run du
+	K-44	F-1 C-d     # ^J^D   DU: back to result
+	K-45	F-1 l       # ^Jl    LOCATE: build database
+	K-46	F-1 C-l     # ^J^L   LOCATE
+	K-47	F-1 m       # ^Jm    MAN: input page
+	K-48	F-1 C-m     # ^J^M   MAN: select from list
+	K-49	F-0 C-d     # ^X^D   DIR: select from list
+	K-50	F-2 C-c     # ^O^C   COPY
+	K-51	F-2 C-y     # ^O^Y   Paste
+	K-52	F-4 e       # ^J^Oe  ERROR
+	K-53	F-4 l       # ^J^Ol  SHELL log
+	K-54	ESC l       # ^[l    SHELL log
+	K-55	ESC s       # ^[s    Go to SHELL
+	K-56	F-1 .       # ^J.    SHELL: cd to current directory
+	K-57	F-1 ,       # ^J,    SHELL: ls -l
+	K-58	F-1 w       # ^Jw    SHELL: insert access name
+	K-59	F-1 C-w     # ^J^W   SHELL: insert buffer content
+	K-60	F-2 /       # ^O/    Search (from SHELL)
+	K-61	F-2 C-f     # ^O^F   Page down (from SHELL)
+	K-62	F-2 C-b     # ^O^B   Page up (from SHELL)
+	K-63	F-2 C-l     # ^O^L   Redraw (from SHELL) / cycle ls sort key
+	K-64	F-0 C-c     # ^X^C   EXIT
+	K-65	ESC ESC     # ^[^[   EXIT
+	K-66	F-2 o       # ^Oo    Switch ls format
+	K-67	F-2 h       # ^Oh    Show/hide mode-line
+	K-68	F-0 C-w     # ^X^W   Save buffer to work file
+	K-69	C-z         # ^Z     Suspend
+	K-70	j           # j      Scroll one line down
+	K-71	k           # k      Scroll one line up
+	K-72	C-f         # ^F     Page down
+	K-73	C-v         # ^V     Page down
+	K-74	b           # b      Page up
+	K-75	C-b         # ^B     Page up
+	K-76	ESC v       # ^[v    Page up
+	K-77	ESC <       # ^[<    Go to top
+	K-78	ESC >       # ^[>    Go to bottom
+	K-79	ESC N       # ^[N    Go to N-th line
+	K-80	F-0 F-0     # ^X^X   Swap with line before big move
+	K-81	F-1 C-u     # ^J^U   USILIC: list by kind
+	K-82	F-1 u       # ^Ju    USILIC: chronological
+	K-83	F-1 a       # ^Ja    Switch TUTORIAL language
+	K-84	F-2 g       # ^Og    Switch GUI
+	K-85	F-2 l       # ^Ol    Reverse ls sort order
+	K-86	C-l         # ^L     Redraw
+	K-87	C-SPC       # ^SPC   Toggle selection
+	K-88	ESC P       # ^[P    Paste transient targets
+	K-89	ESC u       # ^[u    USILIC: contents
+	K-90	C-t         # ^T     TUTORIAL
+	K-91	C-h         # ^H     HELP
+	K-92	F-1 C-h     # ^J^H   HELP
+	K-93	F-0 (       # ^X(    Begin macro
+	K-94	F-0 )       # ^X)    End macro
+	K-95	F-0 e       # ^Xe    Execute macro

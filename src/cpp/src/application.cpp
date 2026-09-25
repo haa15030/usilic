@@ -3126,7 +3126,49 @@ void Application::discardStdinPager(bool returnsToShell) {
   fileMode_.closeStream();
 }
 
+// usilicrcのKEY節(2026-09-25実装、KeyBindings自身のクラスコメント参照):
+// 置き換え表を、今どの範囲で効かせてよいか。本体が接頭キーの途中や行番号の
+// 入力中、COPY画面の中ならNone(照合を始めない)。プロンプト入力中・SHELL画面・
+// 文字入力を受け付ける一覧では、文字キーは文字として入力されるので、接頭キー
+// (^X/^J/^O/ESC)で始まる列だけ(LeaderOnly)。それ以外の通常の画面ならAll。
+KeyBindings::Context Application::keyBindingContext() const {
+  if (escPending_ || leaderJPending_ || leaderJOPending_ || leaderXPending_ || leaderOPending_ || leaderCPending_ ||
+      gotoLineGPending_ || gotoLineDigitsPending_)
+    return KeyBindings::Context::None;
+  if (currentMode_ == ApplicationMode::Copy) return KeyBindings::Context::None;
+  if (tabCompletionContext_ || promptKind_ != PromptKind::None || currentMode_ == ApplicationMode::Shell)
+    return KeyBindings::Context::LeaderOnly;
+  if (currentMode_ == ApplicationMode::ListBrowser && promptHistoryContext_ &&
+      (promptHistoryContext_->kind == PromptKind::GrepPattern || promptHistoryContext_->kind == PromptKind::CutPattern ||
+       promptHistoryContext_->kind == PromptKind::ManName || promptHistoryContext_->kind == PromptKind::RecentFile ||
+       promptHistoryContext_->kind == PromptKind::RecentDirectory))
+    return KeyBindings::Context::LeaderOnly;
+  return KeyBindings::Context::All;
+}
+
+// keyBindingContext()自身のコメント参照。利用者が押したキー列を既定のキー列へ
+// 置き換えてから、下のfeedUntranslatedByte()(本体の入口)へ渡す。既定のまま
+// (isIdentity())なら素通しで、挙動は一切変わらない。特殊キー(矢印等)はKEY節の
+// 対象外なので、溜めているキーがあれば先にそのまま渡してから処理する。
 bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  const KeyBindings &bindings = configuration_.keyBindings();
+  if (bindings.isIdentity()) return feedUntranslatedByte(byte, special);
+  if (special) {
+    std::vector<int> flushed;
+    flushed.swap(keyBindingPending_.bytes);
+    for (int b : flushed) feedUntranslatedByte(b, std::nullopt);
+    return feedUntranslatedByte(byte, special);
+  }
+  std::vector<int> out = bindings.feed(byte, keyBindingContext(), keyBindingPending_);
+  if (out.empty()) return true;  // 溜めている途中、または無効化されたキー
+  bool result = false;
+  for (int b : out) result = feedUntranslatedByte(b, std::nullopt);
+  return result;
+}
+
+bool Application::feedCanonicalByte(int byte) { return feedUntranslatedByte(byte, std::nullopt); }
+
+bool Application::feedUntranslatedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
   bool outermost = stdinPagerCheckDepth_ == 0;
   bool wasStdin = outermost && stdinPagerActive();
   bool wasReturnsToShell = wasStdin && fileMode_.pagerReturnsToShell();

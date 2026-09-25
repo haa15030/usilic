@@ -2190,7 +2190,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
         // 受けさせるため。左クリックと同じく`!dragging`で、コースト/
         // ドラッグ中の右クリックは無視する(左クリックの同種のガードと
         // 揃える、意図しない「掴んで止める」中の暴発を避ける)。
-        app.feedByte(0x07, std::nullopt);
+        app.feedCanonicalByte(0x07);  // usilicrcのKEYで^Gを変えても右クリックは「戻る」のまま
       }
       clickInterruptedCoast = false;
     }

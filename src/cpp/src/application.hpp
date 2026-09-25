@@ -1555,6 +1555,10 @@ class Application {
   // recordedMacro_へも追加する(またはpendingLeaderXByte_に保持
   // する)。
   bool feedByte(int byte, std::optional<KeyInput::SpecialKey> special);
+  // usilicrcのKEY節の置き換えを通さずに、既定のキーとして本体へ渡す
+  // (2026-09-25)。GUIの右クリック(=^G、「戻る」)のように、利用者が押した
+  // キーではなくプログラムが意味を決めて合成するキー用。
+  bool feedCanonicalByte(int byte);
 
   bool isRecordingMacro() const;
   std::size_t recordedMacroLength() const;
@@ -2208,6 +2212,11 @@ class Application {
   // feedByte()/handleCommand()の実体(2026-09-25、stdinPagerActive()の
   // 前後比較で包むために分離――それ自身のコメント参照)。
   bool feedByteImpl(int byte, std::optional<KeyInput::SpecialKey> special);
+  // usilicrcのKEY節(2026-09-25): feedByte()が置き換えた後の本体の入口と、
+  // 置き換えを効かせる範囲の判定、照合の途中状態。
+  bool feedUntranslatedByte(int byte, std::optional<KeyInput::SpecialKey> special);
+  KeyBindings::Context keyBindingContext() const;
+  KeyBindings::Pending keyBindingPending_;
   bool handleCommandImpl(Command command);
   bool stdinPagerActive() const;
   void discardStdinPager(bool returnsToShell);
