@@ -152,8 +152,8 @@ CODE
 # is 0, this check is not done.)
 #
 
-# ^A(TAGS)  \b  \t  \n  \f  \r  ^N(SO)  ^O(SI)  ^Z(EOF)  ^[(ESC)  ^_(info)
-   1         8   9  10  12  13  14      15      26       27       31
+# ^A(TAGS)  ^G(BEL)  \b  \t  \n  \f  \r  ^N(SO)  ^O(SI)  ^Z(EOF)  ^[(ESC)  ^_(info)
+   1         7        8   9  10  12  13  14      15      26       27       31
 
 SHELL
 # Format: `shell'

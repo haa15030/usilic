@@ -148,8 +148,8 @@ CODE
 # ファイルの種類を表示します(code0 が 0 ならこの判定をしません)。
 #
 
-# ^A(TAGS)  \b  \t  \n  \f  \r  ^N(SO)  ^O(SI)  ^Z(EOF)  ^[(ESC)  ^_(info)
-   1         8   9  10  12  13  14      15      26       27       31
+# ^A(TAGS)  ^G(BEL)  \b  \t  \n  \f  \r  ^N(SO)  ^O(SI)  ^Z(EOF)  ^[(ESC)  ^_(info)
+   1         7        8   9  10  12  13  14      15      26       27       31
 
 SHELL
 # 書式: shell
