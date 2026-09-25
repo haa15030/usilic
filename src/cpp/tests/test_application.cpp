@@ -2162,6 +2162,37 @@ TEST_CASE_FIXTURE(Fixture, "CUT list: ^S (FGREP) and ^J^S (EGREP) search the seg
   CHECK(app.currentMode() == ApplicationMode::CutContent);
 }
 
+// 2026-09-26追加、直接のユーザー報告: ^Sの入力行を開いたまま^N/^Pで
+// マッチを見て^Gで抜けた場合も、入力した文字列は^S^Rの履歴一覧に残る。
+// その一覧の右端には種別("FGREP")ではなく戻り先("CUT")が出る。
+TEST_CASE_FIXTURE(Fixture, "CUT list: ^S, ^N, then ^G still records the pattern; ^S^R's list shows the return mode") {
+  REQUIRE(app.start(path()));
+  int idx = indexOf("log.txt");
+  while (indexOf(app.directoryMode().selectedEntry()->name) != idx) app.handleCommand(Command::MoveDown);
+  REQUIRE(app.handleCommand(Command::Enter));
+  REQUIRE(app.handleCommand(Command::StartCut));
+  feedText("marker");
+  REQUIRE(app.feedByte(0x0d, std::nullopt));
+  REQUIRE(app.currentMode() == ApplicationMode::Cut);
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));  // ^S
+  feedText("t");
+  app.feedByte(0x0e, std::nullopt);           // ^N, prompt still open
+  REQUIRE(app.promptActive());
+  app.feedByte(0x07, std::nullopt);           // ^G
+  CHECK_FALSE(app.promptActive());
+  const auto &ring = history.recentEntries(RingCategory::RecentFgrepPattern);
+  REQUIRE(ring.size() == 1);
+  CHECK(ring[0] == "t");
+
+  REQUIRE(app.feedByte(0x13, std::nullopt));
+  REQUIRE(app.feedByte(0x12, std::nullopt));  // ^R
+  REQUIRE(app.currentMode() == ApplicationMode::ListBrowser);
+  std::string modeLine = display.rowText(display.rows() - 1);
+  CHECK(modeLine.find("CUT") != std::string::npos);
+  CHECK(modeLine.find("FGREP") == std::string::npos);
+}
+
 TEST_CASE_FIXTURE(Fixture, "CUT (regular file, K-35/^Jb): splits the SELECTED entry directly, without opening it first") {
   REQUIRE(app.start(path()));
   int idx = indexOf("log.txt");
@@ -11363,8 +11394,12 @@ TEST_CASE_FIXTURE(Fixture, "^R (startPromptHistoryRecall): opens the RAW chronol
   REQUIRE(app.listBrowserMode().items().size() == 1);
   CHECK(app.listBrowserMode().items()[0] == "plain.txt");
   CHECK(app.activeContentView().modeLineText().rfind("HISTORY ", 0) == 0);
+  // 2026-09-26変更、直接のユーザー依頼("戻り値は①のときの「CUT」と同じで
+  // いい"): 右端は種別("FGREP")ではなく、呼び出し元の入力行と同じく
+  // 確定後の戻り先のモード名になった(ListBrowserのモード行プロバイダ
+  // 自身のコメント参照)。
   std::string row = display.rowText(display.rows() - 1);
-  CHECK(row.find("FGREP") != std::string::npos);  // the right-aligned category badge
+  CHECK(row.find("FGREP") == std::string::npos);
 }
 
 TEST_CASE_FIXTURE(Fixture, "^R prompt-time recall: Enter on a picked pattern re-runs the search exactly as a "

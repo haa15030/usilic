@@ -923,6 +923,22 @@ Application::Application(Display &display, KeyInput &keyInput, History &history,
         return {promptLabelText(kind), trailing, /*fillTrailingToEdge=*/!trailing2.empty(),
                 /*rightWatermark=*/"", trailing2, /*trailingPlain=*/true, /*trailing2RightJustified=*/true};
       }
+      // 2026-09-26追加、直接のユーザー依頼(CUT一覧で`^S^R`した時、右端に
+      // 非ハイライトの"FGREP"が出る件について"戻り値は①のときの「CUT」と
+      // 同じでいい"): 検索パターン(^S/^J^S)の履歴一覧では、右端に種別
+      // ("FGREP"/"EGREP")ではなく、確定後に戻る先のモード名を、呼び出し元
+      // の入力行(drawPromptLabel()、例: "FGREP 1/24 色 ... CUT")と同じ形で
+      // 出す――種別自体は入力行の時点で既に見えているので、ここで繰り返す
+      // より「どこへ戻るか」の方が役に立つ。上の直接入力一覧と同じ組み立て。
+      if (promptHistoryContext_->kind == PromptKind::GrepPattern) {
+        std::string destinationName = (grepReturnMode_ == ApplicationMode::ListBrowser)
+                                          ? (grepReturnListCategory_ == RingCategory::RecentFile ? "FILE" : "DIR")
+                                          : previousModeName(grepReturnMode_);
+        if (!destinationName.empty()) {
+          return {"HISTORY", trailing, /*fillTrailingToEdge=*/true, /*rightWatermark=*/"",
+                  truncatedTrailingPath(destinationName), /*trailingPlain=*/true, /*trailing2RightJustified=*/true};
+        }
+      }
       return {"HISTORY", trailing, /*fillTrailingToEdge=*/false,
               /*rightWatermark=*/promptLabelText(promptHistoryContext_->kind), /*trailing2=*/"",
               /*trailingPlain=*/false, /*trailing2RightJustified=*/false,
@@ -10699,6 +10715,20 @@ void Application::cancelPrompt() {
   if (incrementalGrepActive_) {
     incrementalGrepActive_ = false;
     if (grepInPlaceActive_) deactivateGrepInPlace();
+    // 2026-09-26追加、直接のユーザー報告("「^<」のファイル分割一覧上で
+    // 「色」を検索...^N/^Pでちゃんと次/前のマッチ文字列へ移動する...
+    // 一旦戻って再度「色」を検索しようと^S^Rとやっても「色」はやはり
+    // 無い"): ^Sは入力行を開いたまま^N/^Pでマッチ間を移動できる
+    // (feedByte()自身の0x0e/0x10の横取り参照)ので、「見たいところを
+    // 見終えたら^Gで抜ける」のが自然な使い方になる。ところが履歴への
+    // 記録はEnterでの確定(finalizeIncrementalGrep())にしか無く、^Gで
+    // 抜けると何度検索しても^Rの一覧に一切残らなかった。表示の取り消し
+    // (上のdeactivateGrepInPlace())はemacsのisearch同様そのままにし、
+    // 入力した文字列だけは確定時と同じringへ記録する。
+    std::string pattern = promptEditor_.text();
+    if (promptKind_ == PromptKind::GrepPattern && !pattern.empty()) {
+      history_.pushRecent(grepSyntaxRingCategory(grepSyntax_), pattern);
+    }
   }
   // 2026-08-27: CP/MV/RMの宛先プロンプトのキャンセルは、以前は
   // cancelPendingCpMvRm()(directoryMode_.refresh()を呼ぶ、マークも
