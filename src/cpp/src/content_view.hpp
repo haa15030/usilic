@@ -414,6 +414,16 @@ class ContentView {
   // しない(setTopIndex()自身と同じ)――呼び出し元が自分のタイミングで
   // 行う。
   void centerOnCursor();
+  // 2026-09-25追加、直接のユーザー要望("`^X^X`連打で元のカーソル行との
+  // 間で行き来"、legacyのK-15/16 M_mark/M_jumpに相当――ただし^SPCに
+  // よる明示的なマーク設定はCP/MV/RMの選択キーと衝突するため保留の
+  // まま、emacs流に「大きく移動する直前」の位置を自動で記録する形):
+  // markJumpOrigin()は現在のカーソル行を記録し、ESC </ESC >/スクロール
+  // バーのクリック等、大きく飛ぶ操作の直前に呼ぶ。exchangeJumpMark()は
+  // 記録位置と現在位置を入れ替える(連打で行き来)。記録が無ければfalse。
+  // 内容が丸ごと置き換わる(setLines())と記録は捨てる。
+  void markJumpOrigin();
+  bool exchangeJumpMark();
 
   // topIndex_を`direction`(>0は「より後の」内容を明かし、<0は
   // 「より前の」内容を明かす――GraphicalDisplay::renderScrolled()の
@@ -1370,6 +1380,7 @@ class ContentView {
 
   std::vector<Line> lines_;
   int cursorIndex_ = 0;
+  std::optional<int> jumpMark_;  // markJumpOrigin()参照
   int topIndex_ = 0;
   std::optional<int> hoverIndex_;
   bool cursorHighlightEnabled_ = true;

@@ -639,6 +639,10 @@ struct GraphicalDisplay::Impl {
   // 感じられるかを含めて、まずは実機で試してもらうための実装。
   std::optional<MouseClick> pendingLeftClick;
   std::deque<KeyEvent> keyQueue;
+  // consumeDroppedFiles()自身の宣言コメント参照。
+  std::vector<std::string> pendingDrop;       // 受け渡しの途中
+  std::vector<std::string> completedDrop;     // 揃った一式(consumeDroppedFiles()が返す)
+  bool dropInProgress = false;                // SDL_DROPBEGIN〜SDL_DROPCOMPLETEの間
   std::deque<DragEvent> dragQueue;
   std::deque<HoverEvent> hoverQueue;
   // 2026-09-20追加、直接のユーザー報告("^[97^M e で戻った直後、マウス
@@ -1076,7 +1080,10 @@ void GraphicalDisplay::putByte(unsigned char c) {
     return;
   }
 
-  if (c == 7) return;  // BEL――このスライスでは視覚的/音によるベルは無い、クラスコメント参照
+  if (c == 7) {  // BEL――2026-09-25からsystemBeep()(macOSのNSBeep()、mac_cursor.hpp参照)で鳴らす
+    systemBeep();
+    return;
+  }
 
   int len = Utf8::sequence_length(c);
   if (len > 1) {
@@ -1470,7 +1477,10 @@ void GraphicalDisplay::flush() {
   // ズレている」の正体(下記drawIdleScrollbarImage()の修正参照:
   // 画像自身の実際の幅で測った右端フラッシュへ変更)。ここのゲートは
   // 不要なので撤去し、everInteractedだけで切り替える元の設計へ戻す。
-  if (!impl_->everInteracted) {
+  // 2026-09-25追加、直接のユーザー要望("-g起動ではスクロールバーが
+  // フルの時は張りぼて復活"): 内容が1画面に収まっている(つまみが全長に
+  // なる)間は、一度操作した後でも張りぼて画像へ戻す。
+  if (!impl_->everInteracted || impl_->scrollTotalLines <= impl_->scrollContentRows) {
     drawIdleScrollbarImage();
   } else {
     drawScrollbar(static_cast<double>(impl_->scrollTopIndex), impl_->scrollTotalLines, impl_->scrollContentRows);
@@ -1848,6 +1858,25 @@ bool GraphicalDisplay::pumpEvents() {
       case SDL_QUIT:
         stillOpen = false;
         break;
+      // consumeDroppedFiles()自身の宣言コメント参照。
+      case SDL_DROPBEGIN:
+        impl_->dropInProgress = true;
+        break;
+      case SDL_DROPFILE:
+        if (event.drop.file) {
+          impl_->pendingDrop.emplace_back(event.drop.file);
+          SDL_free(event.drop.file);
+        }
+        if (!impl_->dropInProgress) {  // DROPBEGIN無しの単発
+          for (auto &path : impl_->pendingDrop) impl_->completedDrop.push_back(std::move(path));
+          impl_->pendingDrop.clear();
+        }
+        break;
+      case SDL_DROPCOMPLETE:
+        impl_->dropInProgress = false;
+        for (auto &path : impl_->pendingDrop) impl_->completedDrop.push_back(std::move(path));
+        impl_->pendingDrop.clear();
+        break;
       // consumeNeedsRedraw()自身の宣言側のコメント参照(2026-08-24の
       // 修正、docs/CHANGES.md項目422) -- SDL_WINDOWEVENT_EXPOSEDは
       // WindowServer自身の「このウィンドウは(再)描画される必要がある」
@@ -2181,6 +2210,12 @@ std::optional<GraphicalDisplay::HoverEvent> GraphicalDisplay::consumeHoverEvent(
   HoverEvent hover = impl_->hoverQueue.front();
   impl_->hoverQueue.pop_front();
   return hover;
+}
+
+std::vector<std::string> GraphicalDisplay::consumeDroppedFiles() {
+  std::vector<std::string> result;
+  result.swap(impl_->completedDrop);
+  return result;
 }
 
 std::optional<GraphicalDisplay::KeyEvent> GraphicalDisplay::consumeKeyEvent() {
@@ -3296,7 +3331,9 @@ void GraphicalDisplay::renderScrolled(const std::vector<Display::ScrolledLine> &
   // 完全な1行を超えるたびに飛ぶのではなく滑らかに追従するよう、
   // 現在の行内の副次的なpixelOffsetYで補正されたtopIndexである。
   double effectiveTop = topIndex - static_cast<double>(pixelOffsetY) / std::max(impl_->cellHeight, 1);
-  drawScrollbar(effectiveTop, static_cast<int>(lines.size()), contentRows);
+  // flush()自身の同じ分岐参照(収まっている間は張りぼて)。
+  if (static_cast<int>(lines.size()) <= contentRows) drawIdleScrollbarImage();
+  else drawScrollbar(effectiveTop, static_cast<int>(lines.size()), contentRows);
 
   if (impl_->rows > 0 && impl_->modeLineVisible) {
     // 行全体にわたる1つの連続したバーとしてではなく、セグメントごと

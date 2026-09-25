@@ -11,4 +11,6 @@ namespace fm {
 
 CursorImage extractOpenHandCursorImage() { return CursorImage{}; }
 
+void systemBeep() {}
+
 }  // namespace fm

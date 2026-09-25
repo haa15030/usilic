@@ -341,6 +341,9 @@ enum class Command {
   // CLAUDE.md参照)。
   GoToTop,
   GoToBottom,
+  // ^X^X(K-16、M_jump相当): ContentView::markJumpOrigin()自身の宣言
+  // コメント参照(2026-09-25追加)。
+  ExchangeJumpMark,
   // K-70('q'、M_quit): (StartExit/^X^Cとは異なり)y/nの確認無しで
   // 即座に終了する――usilicrcはこれをページャー専用("Exit usilic
   // (pager)")として文書化しているので、handleCommand()はDirectory
@@ -1941,6 +1944,15 @@ class Application {
   // main.cppのrunGuiPhase()が設定し、抜ける時にnullptrへ戻す。
   // openSelectedEntryRaw()自身のshouldAbortのコメント参照。
   void setInterruptPeeker(std::function<bool()> peeker);
+  // 2026-09-25追加(main.cppのofferGroffInstallOnce()用): SHELLへ
+  // 切り替え、`commandLine`を入力欄に置いた状態で(実行はせずに)待つ。
+  bool offerShellCommand(const std::string &commandLine);
+  // 2026-09-25追加: GUIウィンドウへドロップされた/Finderから「この
+  // アプリケーションで開く」で渡されたパスを開く(GraphicalDisplay::
+  // consumeDroppedFiles()参照)。1つなら^Xfでパスを入力した時と同じ
+  // executePathInput()(ディレクトリ→DIR、アーカイブ→ARC、他→FILE)、
+  // 複数なら`usilic a b c`起動と同じstartPagerFileList()。
+  bool openDroppedPaths(const std::vector<std::string> &paths);
 
  private:
   // p_kmのための、1つの記録されたバイト(クラスコメント参照)――
@@ -2193,6 +2205,13 @@ class Application {
   // 再描画する。
   bool returnFromCopy();
   ContentView &activeView();
+  // feedByte()/handleCommand()の実体(2026-09-25、stdinPagerActive()の
+  // 前後比較で包むために分離――それ自身のコメント参照)。
+  bool feedByteImpl(int byte, std::optional<KeyInput::SpecialKey> special);
+  bool handleCommandImpl(Command command);
+  bool stdinPagerActive() const;
+  void discardStdinPager(bool returnsToShell);
+  int stdinPagerCheckDepth_ = 0;
   std::function<bool()> interruptPeeker_;  // setInterruptPeeker()参照
   ContentView &viewForMode(ApplicationMode mode);
   void layoutViews();
@@ -3108,6 +3127,10 @@ class Application {
   bool leaderOPending_ = false;  // ^Oを見た、2バイトのコマンドを完成させるバイトを待っている(2026-09-08のキー再編で^Xの大半の役割を引き継いだ)
   bool wantsExit_ = false;
   bool guiModeToggleRequested_ = false;
+  // 2026-09-25追加、toggleMark()自身のディレクトリ複数選択の拒否
+  // メッセージ(directoryView_の位置欄へ出す)が表示中か。次に
+  // handleCommand()へ来たコマンドの冒頭で消す。
+  bool directoryMarkRefusalShown_ = false;
 
   enum class PromptKind {
     None,
@@ -3409,6 +3432,7 @@ class Application {
   // 可視の通知をここへ集約する――shell_.busy()がtrueならベル付きで
   // 通知を出してtrueを返す(呼び出し元はそのままreturn falseする)。
   bool refuseIfShellBusy();
+  bool switchToShellIfBusy();  // それ自身のコメント(application.cpp)参照
   void showShellBusyNotice();
   // `bypassPacing`(2026-09-06追加): pollPagerExitNotice()自身の
   // コメント参照――呼び出し元が「まだ最初の1画面を埋めている最中」

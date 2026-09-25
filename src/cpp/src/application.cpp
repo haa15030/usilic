@@ -174,6 +174,7 @@ bool isGrepInPlaceSafeCommand(Command command) {
     case Command::ScrollLineDown:
     case Command::GoToTop:
     case Command::GoToBottom:
+    case Command::ExchangeJumpMark:
     case Command::Redraw:
       return true;
     default:
@@ -2884,6 +2885,8 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
       // 移動する理由が無い。
       case 'd':  // ^X d : DIR(ディレクトリ名を入力)
         return handleCommand(Command::StartDirectoryInput);
+      case kLeaderX:  // ^X ^X : 大きく飛ぶ前の行と行き来(K-16、Command::ExchangeJumpMark参照)
+        return handleCommand(Command::ExchangeJumpMark);
       case 0x04:  // ^X ^D : DIR(ディレクトリ名を選択、K-48)
         return handleCommand(Command::StartDirectoryHistory);
       case kControlC:  // ^X ^C : 終了
@@ -3062,7 +3065,50 @@ bool Application::dispatchLeaderByte(int byte, std::optional<KeyInput::SpecialKe
 // 元の^X用から^O用へ付け替えたことがあったが、2026-09-10、直接の
 // ユーザー依頼("^X(/^X)/^Xeへ戻す(^Oは廃止)")により^X用へ差し戻した
 // ――pendingLeaderXByte_自身のコメント参照。
+// 2026-09-25追加、直接のユーザー要望("(stdin)は^Gおよび他のモードが
+// 発動した時点で抹消（CP/MV/RM等への配慮）"、"(stdin)はFILE履歴にも
+// 残らない一時的な存在なのでそこから離れたら抹消でいい。文字通り何も
+// 無いので^Gでも戻れない"): (stdin)ページャ(パイプ入力、^O^Mの
+// 「行単位で読む」、PROGRAMの出力、SHELLからのusilicへのパイプ)を
+// 表示していたのに、キー1回/コマンド1回の処理の後にFILEモードでなく
+// なっていたら、(stdin)を離れたとみなして抹消する。個々のモード切替
+// 経路(21箇所以上)を1つずつ潰すのではなく、ここ(feedByte()/
+// handleCommand()の最も外側の呼び出し)で前後を比べる――入れ子の
+// 呼び出しは最も外側だけが判定する。
+bool Application::stdinPagerActive() const {
+  return currentMode_ == ApplicationMode::File && fileMode_.isPagerMode() &&
+         (fileMode_.pagerReturnsToDirectory() || fileMode_.pagerReturnsToProgram() || fileMode_.pagerReturnsToShell());
+}
+
+// stdinPagerActive()自身のコメント参照。他のモード(CUT/COPY/GREP/
+// SHELL)が戻り先として「FILE(=この(stdin))」を記録していたら、
+// (stdin)自身の^Gの行き先(SHELLから来たものはSHELL、それ以外は
+// fileReturnMode_)へ差し替え、(stdin)には二度と戻れないようにする。
+void Application::discardStdinPager(bool returnsToShell) {
+  ApplicationMode target = returnsToShell ? ApplicationMode::Shell : fileReturnMode_;
+  if (target == ApplicationMode::File) target = ApplicationMode::Directory;
+  for (ApplicationMode *mode : {&cutReturnMode_, &copyReturnMode_, &grepReturnMode_}) {
+    if (*mode == ApplicationMode::File) *mode = target;
+  }
+  if (shellReturnMode_ == ApplicationMode::File) {
+    shellReturnMode_ = (target == ApplicationMode::Shell) ? ApplicationMode::Directory : target;
+    shellReturnName_ = previousModeName(shellReturnMode_);
+  }
+  fileMode_.closeStream();
+}
+
 bool Application::feedByte(int byte, std::optional<KeyInput::SpecialKey> special) {
+  bool outermost = stdinPagerCheckDepth_ == 0;
+  bool wasStdin = outermost && stdinPagerActive();
+  bool wasReturnsToShell = wasStdin && fileMode_.pagerReturnsToShell();
+  ++stdinPagerCheckDepth_;
+  bool result = feedByteImpl(byte, special);
+  --stdinPagerCheckDepth_;
+  if (wasStdin && currentMode_ != ApplicationMode::File) discardStdinPager(wasReturnsToShell);
+  return result;
+}
+
+bool Application::feedByteImpl(int byte, std::optional<KeyInput::SpecialKey> special) {
   bool wasLeaderXPending = leaderXPending_;
   bool wasRecording = recordingMacro_;
 
@@ -3671,6 +3717,24 @@ ContentView &Application::viewForMode(ApplicationMode mode) {
 }
 
 bool Application::handleCommand(Command command) {
+  // feedByte()自身の同じ判定参照(テスト等、handleCommand()を直接
+  // 呼ぶ経路のため)。
+  bool outermost = stdinPagerCheckDepth_ == 0;
+  bool wasStdin = outermost && stdinPagerActive();
+  bool wasReturnsToShell = wasStdin && fileMode_.pagerReturnsToShell();
+  ++stdinPagerCheckDepth_;
+  bool result = handleCommandImpl(command);
+  --stdinPagerCheckDepth_;
+  if (wasStdin && currentMode_ != ApplicationMode::File) discardStdinPager(wasReturnsToShell);
+  return result;
+}
+
+bool Application::handleCommandImpl(Command command) {
+  if (directoryMarkRefusalShown_) {  // toggleMark()自身のコメント参照
+    directoryMarkRefusalShown_ = false;
+    directoryView_.setPositionTextOverride(std::nullopt);
+    if (currentMode_ == ApplicationMode::Directory) directoryView_.redraw();
+  }
   // なぜこれがモードラインのプロバイダ自体の内部ではなく「ここ」
   // (ディスパッチされたコマンドごとに一度)に生きているのか、そして
   // なぜ(ほとんどの実際のキー入力はそこを通るが、副次的なホバー/
@@ -4378,6 +4442,7 @@ bool Application::handleCommand(Command command) {
       return handleSuspend();
     case Command::GoToTop:
       activeView().setHoverIndex(std::nullopt);
+      if (currentMode_ != ApplicationMode::Shell) activeView().markJumpOrigin();  // ^X^X用、それ自身のコメント参照
       activeView().goToTop();
       // 2026-08-26のバグ修正(すぐ上のESC-</ESC->のSHELL退出の報告と
       // 併せて発見): この汎用のコマンドはscrollback_自身のcursorIndex_
@@ -4396,6 +4461,7 @@ bool Application::handleCommand(Command command) {
       return true;
     case Command::GoToBottom:
       activeView().setHoverIndex(std::nullopt);
+      if (currentMode_ != ApplicationMode::Shell) activeView().markJumpOrigin();  // ^X^X用、それ自身のコメント参照
       activeView().goToBottom();
       // すぐ上のCommand::GoToTop自身の同一の2026-08-26のコメント参照:
       // scrollback_の「底」に到達することは、まさにShell自身の
@@ -4405,6 +4471,14 @@ bool Application::handleCommand(Command command) {
       // そこにある)と重複する無害なno-opであり、実際に欠けていたのは
       // atLivePromptLine自身のフラグの同期である。
       if (currentMode_ == ApplicationMode::Shell) shell_.exitHistoryBrowsing();
+      activeView().syncVisibleCursor();
+      return true;
+    case Command::ExchangeJumpMark:
+      // SHELLのスクロールバックはESC </>自体が履歴閲覧の開始/終了を
+      // 兼ねる別物(上のGoToTop/GoToBottom参照)なので対象外。
+      if (currentMode_ == ApplicationMode::Shell) return false;
+      activeView().setHoverIndex(std::nullopt);
+      if (!activeView().exchangeJumpMark()) return false;
       activeView().syncVisibleCursor();
       return true;
     case Command::QuitPager:
@@ -5696,8 +5770,30 @@ bool Application::toggleMark() {
     return true;
   }
   if (currentMode_ != ApplicationMode::Directory) return false;
-  if (!directoryMode_.selectedEntry()) return false;
-  directoryMode_.toggleMark(directoryView_.cursorIndex());
+  const DirectoryEntry *selected = directoryMode_.selectedEntry();
+  if (!selected) return false;
+  // 2026-09-25追加、直接のユーザー要望("(ls)で`.[]`による項目選択時、
+  // ディレクトリを複数しようとするとビープ音とエラーメッセージ
+  // (「複数は選択不可」の簡潔英文)を出力。表示場所はGREPの
+  // 「No String」...と同じ位置にでも"): 既に別のディレクトリが選択済み
+  // の状態で、未選択のディレクトリを新たに選択しようとした場合は拒否
+  // する(選択の解除はいつでもできる)。メッセージはGREPの"No String"と
+  // 同じ位置欄(setPositionTextOverride()、非ハイライト)に出し、次の
+  // コマンドでhandleCommand()の冒頭が消す。
+  int cursor = directoryView_.cursorIndex();
+  if (selected->isDirectory && !directoryMode_.isMarked(cursor)) {
+    const auto &entries = directoryMode_.entries();
+    for (int i = 0; i < static_cast<int>(entries.size()); i++) {
+      if (i == cursor || !entries[i].isDirectory || !directoryMode_.isMarked(i)) continue;
+      directoryView_.setPositionTextOverride("Cannot select multiple directories", /*plain=*/true);
+      directoryMarkRefusalShown_ = true;
+      directoryView_.redraw();
+      display_.putChar(0x07);
+      display_.flush();
+      return false;
+    }
+  }
+  directoryMode_.toggleMark(cursor);
   directoryView_.redraw();
   return true;
 }
@@ -8068,6 +8164,7 @@ bool Application::openSelectedBannerEntry() {
 bool Application::startCopyPrompt() {
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (directoryMode_.markedCount() == 0) return false;
+  if (switchToShellIfBusy()) return true;  // それ自身のコメント参照
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::CopyDestination, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("CP");
   // 2026-08-27修正、実際の報告("残留ハイライトを消去かつ全アンダー
@@ -8101,6 +8198,7 @@ bool Application::startCopyPrompt() {
 bool Application::startMovePrompt() {
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (directoryMode_.markedCount() == 0) return false;
+  if (switchToShellIfBusy()) return true;  // それ自身のコメント参照
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::MoveDestination, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("MV");
   directoryView_.setCursorRowAlsoHighlighted(false);  // startCopyPrompt()自身のコメント参照
@@ -8118,6 +8216,7 @@ bool Application::startMovePrompt() {
 bool Application::startRemovePrompt() {
   if (currentMode_ != ApplicationMode::Directory) return false;
   if (directoryMode_.markedCount() == 0) return false;
+  if (switchToShellIfBusy()) return true;  // それ自身のコメント参照
   pendingCpMvRm_ = PendingCpMvRmOperation{PromptKind::RemoveConfirm, directoryMode_.currentDirectory()};
   directoryMode_.setPendingOperationLabel("RM");
   directoryView_.setCursorRowAlsoHighlighted(false);  // startCopyPrompt()自身のコメント参照
@@ -11076,6 +11175,18 @@ void Application::showShellBusyNotice() {
   display_.flush();
 }
 
+// 2026-09-25追加、直接のユーザー要望("SHELLプロンプトが戻っていない
+// 状態でCP/MV/RMを実行しようとすると自動的にSHELL画面へ切り替わる
+// (戻っていない理由確認のため)"): CP/MV/RMは実際にはSHELLへコマンドを
+// 送り込んで実行する(startCpMvRmShellRun())ので、前のコマンドがまだ
+// 終わっていないSHELLへは送れない。宛先の入力/確認へ進む前にSHELL画面
+// へ切り替えて、何が終わっていないのかを見せる。選択(マーク)はその
+// まま残るので、^Gで戻ればやり直せる。
+bool Application::switchToShellIfBusy() {
+  if (!shellStarted_ || !shell_.busy()) return false;
+  return ensureShellActive();
+}
+
 bool Application::refuseIfShellBusy() {
   if (!shell_.busy()) return false;
   showShellBusyNotice();
@@ -13678,5 +13789,30 @@ ExecMode &Application::execMode() { return execMode_; }
 ContentView &Application::activeContentView() { return activeView(); }
 
 void Application::setInterruptPeeker(std::function<bool()> peeker) { interruptPeeker_ = std::move(peeker); }
+
+bool Application::openDroppedPaths(const std::vector<std::string> &paths) {
+  if (paths.empty() || promptActive()) return false;
+  bool opened;
+  if (paths.size() == 1) {
+    opened = executePathInput(paths.front());
+  } else {
+    // 実在する通常ファイルだけに絞る(フォルダ混じりのドロップ等)。
+    std::vector<std::string> files;
+    for (const auto &path : paths) {
+      std::error_code ec;
+      if (std::filesystem::is_regular_file(path, ec)) files.push_back(path);
+    }
+    opened = !files.empty() && startPagerFileList(files);
+  }
+  activeView().redraw();
+  return opened;
+}
+
+bool Application::offerShellCommand(const std::string &commandLine) {
+  if (!ensureShellActive()) return false;
+  shell_.commandLine().setText(commandLine);
+  shell_.redrawPromptRow();
+  return true;
+}
 
 }  // namespace fm

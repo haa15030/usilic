@@ -55,4 +55,9 @@ struct CursorImage {
 // 他のプラットフォームには単純に存在しないため。
 CursorImage extractOpenHandCursorImage();
 
+// 2026-09-25追加: GUIのビープ音。SDLにはベルの仕組みが無く、
+// GraphicalDisplay::putByte()はBEL(0x07)を黙って捨てるため、macOSでは
+// NSBeep()で鳴らす。macOS以外(mac_cursor_stub.cpp)では何もしない。
+void systemBeep();
+
 }  // namespace fm

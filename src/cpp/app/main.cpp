@@ -1839,6 +1839,60 @@ struct IgnoreSigintWhileChildRuns {
   ~IgnoreSigintWhileChildRuns() { std::signal(SIGINT, previous); }
 };
 
+// 2026-09-25追加、offerGroffInstallOnce()用: PATHと、Finderからの
+// 起動ではPATHに含まれないHomebrewの既定の場所の両方から実行ファイルを
+// 探す。見つかればそのフルパス、無ければ空。
+std::string findExecutableIn(const std::string &name, bool includeHomebrewDefaults) {
+  std::vector<std::string> dirs;
+  if (const char *path = std::getenv("PATH")) {
+    std::stringstream ss(path);
+    std::string dir;
+    while (std::getline(ss, dir, ':'))
+      if (!dir.empty()) dirs.push_back(dir);
+  }
+  if (includeHomebrewDefaults) {
+    dirs.push_back("/opt/homebrew/bin");
+    dirs.push_back("/usr/local/bin");
+  }
+  for (const auto &dir : dirs) {
+    std::string candidate = dir + "/" + name;
+    if (::access(candidate.c_str(), X_OK) == 0) return candidate;
+  }
+  return "";
+}
+std::string findExecutable(const std::string &name) { return findExecutableIn(name, true); }
+[[maybe_unused]] std::string findExecutableOnPathOnly(const std::string &name) { return findExecutableIn(name, false); }
+
+// 2026-09-25追加、直接のユーザー要望("groff未インストールの環境では
+// 最初のusilic起動時SHELLに切り替わり、プロンプトで`brew install groff`
+// の return 待ちにする。brewがなければインストール用URLをプロンプトから
+// 表示"、"SHELLのログはINFOで確認できるので1回で。Ubuntuはそれでいい"
+// ――Ubuntuは`sudo apt install groff`): IDEAS.mdの「機能上必要な外部
+// プログラムが無い場合、SHELLに切り替えて当該プログラムを自動インス
+// トール」の第一弾。~/.usilic/groff-offeredを印に、生涯で1回だけ出す。
+// コマンドは入力欄に置くだけで実行はしない(returnを押すかどうかは
+// ユーザーが決める)。通常のディレクトリ起動の時だけ(ページャ起動には
+// 割り込まない)。
+void offerGroffInstallOnce(fm::Application &app, const std::string &usilicDir) {
+  if (!findExecutable("groff").empty()) return;
+  std::string marker = usilicDir + "groff-offered";
+  std::error_code ec;
+  if (std::filesystem::exists(marker, ec)) return;
+  std::ofstream(marker) << "";
+#ifdef __APPLE__
+  std::string brew = findExecutable("brew");
+  // brewがPATH上に無い(Finderからの起動でHomebrewの既定の場所だけで
+  // 見つかった)場合は、SHELLでもそのまま実行できるようフルパスで書く。
+  std::string command;
+  if (brew.empty()) command = "open https://brew.sh  # Homebrew未インストール: 導入後に brew install groff";
+  else if (brew == findExecutableOnPathOnly("brew")) command = "brew install groff";
+  else command = brew + " install groff";
+#else
+  std::string command = "sudo apt install groff";
+#endif
+  app.offerShellCommand(command);
+}
+
 void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
   // 2026-09-25追加、Application::setInterruptPeeker()自身の宣言コメント
   // 参照: ^[^Mの読み込み中にGUIウィンドウ側で押されたキーで中断できる
@@ -2004,6 +2058,16 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
     // doesn't change what gets rendered, only how often a genuinely
     // unchanged frame gets re-rendered.
     bool anyEventThisFrame = false;
+    // GraphicalDisplay::consumeDroppedFiles()/Application::openDroppedPaths()
+    // 自身の宣言コメント参照(2026-09-25追加)。
+    {
+      std::vector<std::string> dropped = gui.consumeDroppedFiles();
+      if (!dropped.empty()) {
+        app.openDroppedPaths(dropped);
+        gui.raise();
+        anyEventThisFrame = true;
+      }
+    }
     // 2026-08-24 fix (docs/CHANGES.md item 422, see GraphicalDisplay::
     // consumeNeedsRedraw()'s own declaration comment for the full
     // story): a real user report against `make app`'s new .app bundle
@@ -2505,6 +2569,7 @@ void runGuiPhase(fm::Application &app, fm::GraphicalDisplay &gui) {
           // request, 2026-08-10, asked for exactly this split -- see
           // setHandCursor()/setPointingCursor()'s own comments).
           gui.setPointingCursor(true);
+          view.markJumpOrigin();  // ^X^X用(ContentView::markJumpOrigin()参照)、クリック前の行を記録
           jumpToScrollbarY(sb->y);
           break;
         case fm::GraphicalDisplay::ScrollbarEventType::Motion:
@@ -4615,6 +4680,7 @@ int main(int argc, char **argv) {
       std::cerr << "usilic: cannot list " << startDirectory << "\n";
       return 1;
     }
+    offerGroffInstallOnce(app, usilicDir);
   }
 
   if (guiOwnsWholeSession) {

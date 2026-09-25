@@ -9395,6 +9395,44 @@ TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleMark): toggles the mark at the c
   CHECK_FALSE(app.directoryMode().isMarked(2));
 }
 
+// Application::toggleMark()自身の2026-09-25のコメント参照。
+TEST_CASE_FIXTURE(Fixture, "handleCommand(ToggleMark): a second directory can't be marked while another is marked "
+                           "(files still can)") {
+  REQUIRE(app.start(path()));
+  const auto &entries = app.directoryMode().entries();
+  std::vector<int> dirs, files;
+  for (int i = 2; i < static_cast<int>(entries.size()); i++) (entries[i].isDirectory ? dirs : files).push_back(i);
+  REQUIRE(dirs.size() >= 2);  // ".usilic/", "subdir/"
+  REQUIRE_FALSE(files.empty());
+  app.activeContentView().setCursorIndex(dirs[0]);
+  REQUIRE(app.handleCommand(Command::ToggleMark));
+  app.activeContentView().setCursorIndex(dirs[1]);
+  CHECK_FALSE(app.handleCommand(Command::ToggleMark));
+  CHECK_FALSE(app.directoryMode().isMarked(dirs[1]));
+  app.activeContentView().setCursorIndex(files[0]);
+  CHECK(app.handleCommand(Command::ToggleMark));
+  CHECK(app.directoryMode().isMarked(files[0]));
+  app.activeContentView().setCursorIndex(dirs[0]);  // 選択の解除はいつでもできる
+  CHECK(app.handleCommand(Command::ToggleMark));
+  CHECK_FALSE(app.directoryMode().isMarked(dirs[0]));
+}
+
+// ContentView::markJumpOrigin()自身のコメント参照(2026-09-25)。
+TEST_CASE_FIXTURE(Fixture, "feedByte: ^X^X goes back to the line before ESC >, and repeating it toggles") {
+  REQUIRE(app.start(path()));
+  REQUIRE(app.handleCommand(Command::MoveDown));
+  int before = app.activeContentView().cursorIndex();
+  REQUIRE(app.handleCommand(Command::GoToBottom));
+  int bottom = app.activeContentView().cursorIndex();
+  REQUIRE(bottom != before);
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  CHECK(app.feedByte(0x18, std::nullopt));
+  CHECK(app.activeContentView().cursorIndex() == before);
+  REQUIRE(app.feedByte(0x18, std::nullopt));
+  CHECK(app.feedByte(0x18, std::nullopt));
+  CHECK(app.activeContentView().cursorIndex() == bottom);
+}
+
 // 2026-09-08、直接のユーザー依頼によるキー再編で^X^Y/^X^Nから^Jy/^Jn
 // へ移行(両方とも既存の^O割り当てと衝突するため、揃えて^Jへ)。
 TEST_CASE_FIXTURE(Fixture, "feedByte: ^J y marks all entries (K-72), ^J n clears all marks (K-73), "

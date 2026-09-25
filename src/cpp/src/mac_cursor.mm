@@ -62,4 +62,6 @@ CursorImage extractOpenHandCursorImage() {
   return result;
 }
 
+void systemBeep() { NSBeep(); }
+
 }  // namespace fm

@@ -334,6 +334,16 @@ class GraphicalDisplay : public Display {
   // 入力を消費することを既に期待しているのに合わせている。
   std::optional<KeyEvent> consumeKeyEvent();
 
+  // 2026-09-25追加、直接のユーザー要望("usilicウィンドウに任意のfileを
+  // ドラッグするとsuffixに応じた表示画面になる"、"Finderで複数ファイル
+  // 選択後、右クリック→「このアプリケーションで開く」...複数ファイルを
+  // 受け付ける"): ウィンドウへドロップされた、またはFinderから「この
+  // アプリケーションで開く」で渡されたファイルのパス(macOSのSDL2は後者
+  // もSDL_DROPFILEとして届ける)。1回分の受け渡し(SDL_DROPCOMPLETE、
+  // あるいはDROPBEGIN無しの単発)が揃った時点で、その一式を返してクリア
+  // する。揃っていなければ空。
+  std::vector<std::string> consumeDroppedFiles();
+
   // -- ドラッグスクロールのプロトタイプサポート(2026-07-30、
   // 実現可能性サンプル) --
   // GUIモードの残りの部分へさらに踏み込む前に、「ドット単位の

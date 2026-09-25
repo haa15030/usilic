@@ -24,5 +24,24 @@
 	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
+	<!-- 2026-09-25: Finderの「このアプリケーションで開く」に出す。どんな
+	     ファイル/フォルダでも開ける閲覧アプリ(Viewer、既定の関連付けは
+	     奪わないようLSHandlerRankはAlternate)。受け取ったパスはSDL2が
+	     SDL_DROPFILEとして届ける(GraphicalDisplay::consumeDroppedFiles()参照)。 -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Any File</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.item</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
